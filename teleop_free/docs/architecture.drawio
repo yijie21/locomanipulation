@@ -77,4 +77,62 @@
     <mxCell id="g4" value=":5555 图像" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.85;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="sim2" target="exp2"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="g5" value=":5580 'c' 保存 / 'x' 丢弃" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.15;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent2" target="exp2"><mxGeometry relative="1" as="geometry" /></mxCell>
   </root>
+</mxGraphModel></diagram><diagram name="dataflow-detail"><mxGraphModel dx="1550" dy="1000" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1520" pageHeight="960" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="title" value="执行层数据流：每条链路上传的是什么、什么维度、什么频率" style="text;html=1;fontSize=19;fontStyle=1;align=center;" vertex="1" parent="1">
+      <mxGeometry x="260" y="14" width="1000" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="agent" value="&lt;b&gt;脚本 Agent（Python）&lt;/b&gt;&lt;br&gt;collect_episode / stream_reach / agent_server&lt;br&gt;&lt;br&gt;&lt;b&gt;每 tick（50 Hz）的处理链：&lt;/b&gt;&lt;br&gt;物体位姿（世界系）&lt;br&gt;→ EMA 滤波（0.85/0.15）&lt;br&gt;→ 手腕目标 pos[3] + rot[3×3]（pelvis 系）&lt;br&gt;→ warm-start IK，10 次迭代&lt;br&gt;→ q[29]（转成 IsaacLab 顺序）&lt;br&gt;→ 打包 pose chunk 发出&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;输入：② 真值　输出：③④⑤ 控制、⑧ 录制键&lt;/font&gt;" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f8e9f3;strokeColor=#a2367e;strokeWidth=2;fontSize=12;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="40" y="70" width="380" height="310" as="geometry" />
+    </mxCell>
+    <mxCell id="deploy" value="&lt;b&gt;g1_deploy_onnx_ref（C++）&lt;/b&gt;&lt;br&gt;&lt;br&gt;输入：③④⑤（ZMQ）+ ①lowstate（DDS）&lt;br&gt;&lt;br&gt;model_encoder / model_decoder.onnx&lt;br&gt;（TensorRT 引擎）&lt;br&gt;planner_sonic.onnx（target_vel V2）&lt;br&gt;&lt;br&gt;输出：①lowcmd @50 Hz（DDS）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="700" y="70" width="300" height="310" as="geometry" />
+    </mxCell>
+    <mxCell id="sim" value="&lt;b&gt;MuJoCo 仿真（实时，EGL 离屏）&lt;/b&gt;&lt;br&gt;&lt;br&gt;输入：①lowcmd&lt;br&gt;物理步进 → 29 关节执行&lt;br&gt;&lt;br&gt;输出：&lt;br&gt;①lowstate（DDS）&lt;br&gt;②特权真值（:5581）&lt;br&gt;⑦相机流（:5555）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff2e0;strokeColor=#c65a1e;strokeWidth=2;fontSize=12;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="1230" y="70" width="260" height="310" as="geometry" />
+    </mxCell>
+    <mxCell id="cardP" value="&lt;b&gt;③ topic `planner`&amp;nbsp;&amp;nbsp;@50 Hz&lt;/b&gt;（走路 + 粗手腕）&lt;br&gt;locomotion_mode:i32 · movement[3] · facing[3]（单位向量）· speed:f32 · height:f32&lt;br&gt;vr_3pt_position[9] = 3×xyz（L 腕, R 腕, 颈）&lt;br&gt;vr_3pt_orientation[12] = 3×quat（wxyz）· compliance[3]&lt;br&gt;left/right_hand_position[7] ×2（手指开合）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="440" y="60" width="240" height="120" as="geometry" />
+    </mxCell>
+    <mxCell id="cardS" value="&lt;b&gt;④ topic `pose`：STREAMED_MOTION（v1）@50 Hz&lt;/b&gt;&lt;br&gt;5 帧重叠 chunk，精确手臂控制：&lt;br&gt;joint_pos[N,29] f32 —— IsaacLab interleaved 顺序&lt;br&gt;joint_vel[N,29] = 0 · body_quat[N,1,4] wxyz（仅 yaw）&lt;br&gt;frame_index[N] i64（必须连续）&lt;br&gt;left/right_hand_joints[7]（可选）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fdf3fa;strokeColor=#a2367e;strokeWidth=2;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="440" y="196" width="240" height="128" as="geometry" />
+    </mxCell>
+    <mxCell id="cardC" value="&lt;b&gt;⑤ topic `command` / `manager_state`&lt;/b&gt;&lt;br&gt;command: start/stop/planner:bool（通道切换：planner=false 即进入 STREAMED_MOTION）&lt;br&gt;manager_state: stream_mode:i32（5 = PLANNER_VR_3PT，exporter 只在 5 录制）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#999999;dashed=1;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="440" y="340" width="240" height="104" as="geometry" />
+    </mxCell>
+    <mxCell id="cardD" value="&lt;b&gt;① DDS（domain = 实例号）&lt;/b&gt;&lt;br&gt;lowcmd：29 × (q, dq, kp, kd, τ)&lt;br&gt;电机指令 @50 Hz →&lt;br&gt;← lowstate：29 × (q, dq) +&lt;br&gt;IMU（quat[4], gyro[3], acc[3]）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1030" y="150" width="170" height="130" as="geometry" />
+    </mxCell>
+    <mxCell id="cardV" value="&lt;b&gt;② ZMQ :5581 特权真值&amp;nbsp;&amp;nbsp;@50 Hz（PUB）&lt;/b&gt;&amp;nbsp;&amp;nbsp;—— 所有决策与伺服的输入&lt;br&gt;objects：can / plate / 家具 位姿 pos[3] + quat[4]（wxyz，世界系）&lt;br&gt;robot：base pos[3] + quat[4] · joints[29]（&lt;b&gt;MuJoCo 顺序&lt;/b&gt;）&lt;br&gt;contacts：手指–物体、机器人–家具 接触对列表（碰撞判定 / 抓握锁定用）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#eaf5ee;strokeColor=#2e7d4f;strokeWidth=2;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="440" y="480" width="480" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="cardI" value="&lt;b&gt;⑦ ZMQ :5555 相机流&lt;/b&gt;&lt;br&gt;头部视角 + 手部特写&lt;br&gt;RGB 帧（JPEG 压缩）——&lt;br&gt;训练时模型能看到的观测" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1230" y="640" width="220" height="100" as="geometry" />
+    </mxCell>
+    <mxCell id="cardK" value="&lt;b&gt;⑧ ZMQ :5580 录制键&lt;/b&gt;&lt;br&gt;单字符：'c' 开始/保存 · 'x' 丢弃&lt;br&gt;（代替人按手柄按钮）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="140" y="660" width="240" height="80" as="geometry" />
+    </mxCell>
+    <mxCell id="exporter" value="&lt;b&gt;data exporter（零修改）&lt;/b&gt;&lt;br&gt;&lt;br&gt;输入：⑦ 图像流 + teleop.planner_* 状态 + ⑧ 录制键&lt;br&gt;输出：LeRobot 格式数据集（每个成功 episode 一个目录：&lt;br&gt;视频 + 关节/动作序列 + task prompt）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=12;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="560" y="640" width="400" height="130" as="geometry" />
+    </mxCell>
+    <mxCell id="warn" value="&lt;b&gt;⚠ 两套关节顺序并存&lt;/b&gt;：② 真值里的 joints[29] 是 &lt;b&gt;MuJoCo 顺序&lt;/b&gt;；④ pose 流要求 &lt;b&gt;IsaacLab interleaved 顺序&lt;/b&gt;。转换在 Agent 内完成（g1_joints.py）——直接混用会肩/腿错位。&lt;br&gt;&lt;b&gt;⚠ 时序约束&lt;/b&gt;：④ 必须先灌入 ≥1 个 chunk，再发 ⑤ 的通道切换（否则 deploy 因缓冲区为空直接停控）；frame_index 断号会被丢帧。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;strokeWidth=2;fontSize=11.5;align=left;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="40" y="810" width="1180" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=1;exitY=0.18;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="cardP"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cardP" target="deploy"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=3;exitX=1;exitY=0.55;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="cardS"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=3;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cardS" target="deploy"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#999999;strokeWidth=1.5;dashed=1;exitX=1;exitY=0.9;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="cardC"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#999999;strokeWidth=1.5;dashed=1;exitX=1;exitY=0.5;entryX=0.35;entryY=1;" edge="1" parent="1" source="cardC" target="deploy"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;startArrow=classic;startFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="deploy" target="cardD"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;startArrow=classic;startFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cardD" target="sim"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d4f;strokeWidth=2.5;dashed=1;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="sim" target="cardV"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1360" y="535" /></Array></mxGeometry></mxCell>
+    <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d4f;strokeWidth=2.5;dashed=1;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="cardV" target="agent"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="230" y="535" /></Array></mxGeometry></mxCell>
+    <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="sim" target="cardI"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1360" y="620" /></Array></mxGeometry></mxCell>
+    <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="cardI" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="agent" target="cardK"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="135" y="620" /></Array></mxGeometry></mxCell>
+    <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cardK" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
+  </root>
 </mxGraphModel></diagram></mxfile>
