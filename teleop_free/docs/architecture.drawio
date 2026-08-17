@@ -182,7 +182,7 @@
     <mxCell id="slot" value="&lt;b&gt;参考动作序列（同一个槽位，⑤ 选谁来填）&lt;/b&gt;&lt;br&gt;未来 10 帧窗口：目标关节角、根部高度、锚定朝向&lt;br&gt;—— SONIC 唯一认的&quot;命令&quot;，对来源无感" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;strokeWidth=2;fontSize=12;align=left;spacing=10;" vertex="1" parent="1">
       <mxGeometry x="820" y="380" width="420" height="90" as="geometry" />
     </mxCell>
-    <mxCell id="obs" value="&lt;b&gt;encoder 观测 ≈ 1762 个数&lt;/b&gt;&lt;br&gt;参考动作窗口 ~957：关节角 10帧[290] · 速度[290] · 根高[11] · 锚定朝向[66] · 下肢子集[240] · 腕子集[60]&lt;br&gt;VR 三点目标 21（腕/颈位置9+姿态12）　·　SMPL 人体关键点 780（真人遥操作才用，脚本模式置零）&lt;br&gt;模式标志 4（one-hot，告诉 encoder 哪组观测有效）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#b8962e;fontSize=11.5;align=left;spacing=10;" vertex="1" parent="1">
+    <mxCell id="obs" value="&lt;b&gt;encoder 观测 ≈ 1762 个数&lt;/b&gt;&lt;br&gt;参考动作窗口 ~957：关节角 10帧[290] · 速度[290] · 根高[11] · 锚定朝向[66] · 下肢子集[240] · 腕子集[60]&lt;br&gt;VR 三点目标 21（腕/颈位置9+姿态12）　·　SMPL 人体关键点 780（真人遥操作才用，脚本模式置零）&lt;br&gt;模式标志 4（槽0=模式号：0 关节参考 / 1 VR三点 / 2 SMPL，其余 3 位恒零）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#b8962e;fontSize=11.5;align=left;spacing=10;" vertex="1" parent="1">
       <mxGeometry x="690" y="520" width="700" height="110" as="geometry" />
     </mxCell>
     <mxCell id="enc" value="&lt;b&gt;encoder&lt;/b&gt;（TensorRT）→ &lt;b&gt;latent [64]&lt;/b&gt;（= 数据集里的 motion token）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12.5;spacing=10;" vertex="1" parent="1">
