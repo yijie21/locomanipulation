@@ -140,4 +140,68 @@
     <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=0.7;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="deploy" target="card6"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.35;" edge="1" parent="1" source="card6" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
   </root>
+</mxGraphModel></diagram><diagram name="internals"><mxGraphModel dx="1550" dy="1050" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1010" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="title" value="内部放大：Agent 的两套生成器（左） 与 deploy 里 ③④ 如何汇合成 SONIC 的输入（右）" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+      <mxGeometry x="150" y="14" width="1200" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="grpA" value="脚本 Agent 内部" style="rounded=1;html=1;fillColor=#faf1f7;strokeColor=#a2367e;strokeWidth=2;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#7d2861;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="40" y="60" width="560" height="560" as="geometry" />
+    </mxCell>
+    <mxCell id="sm" value="&lt;b&gt;状态机（collect_episode）&lt;/b&gt;&lt;br&gt;导航→抓取→搬运→放置→撤退（决策流见第 1 页）&lt;br&gt;每个阶段激活下面两套生成器之一，用 ⑤ 切换" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#a2367e;fontSize=12;align=left;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="60" y="100" width="520" height="86" as="geometry" />
+    </mxCell>
+    <mxCell id="nav" value="&lt;b&gt;导航生成器&lt;/b&gt;（走路 / 搬运阶段）&lt;br&gt;&lt;br&gt;每 tick：&lt;br&gt;真值 → 目标的方位角 + 距离&lt;br&gt;→ 移动方向[3]、朝向[3]、速度&lt;br&gt;→ 发 ③&lt;br&gt;&lt;br&gt;手臂不参与：腕目标固定&lt;br&gt;（休息位 / 抓握冻结位）&lt;br&gt;没有 IK" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12;align=left;spacing=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="60" y="240" width="250" height="230" as="geometry" />
+    </mxCell>
+    <mxCell id="ik" value="&lt;b&gt;IK 生成器&lt;/b&gt;（抓取 / 放置阶段）&lt;br&gt;&lt;br&gt;每 tick：&lt;br&gt;真值物体位姿 → 平滑滤波&lt;br&gt;→ 骨盆系手腕目标&lt;br&gt;→ warm-start IK（只解手臂关节）&lt;br&gt;→ 拼全身 29 关节帧&lt;br&gt;（腿/腰填站立参考）&lt;br&gt;→ 发 ④&lt;br&gt;&lt;br&gt;下半身平衡不管，SONIC 负责" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fdf3fa;strokeColor=#a2367e;strokeWidth=2;fontSize=12;align=left;spacing=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="330" y="240" width="250" height="230" as="geometry" />
+    </mxCell>
+    <mxCell id="mux" value="⑤ 任一时刻只有一条激活；切回走路会触发 heading 重锚定（需补偿）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="60" y="510" width="520" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="a1" value="走路阶段" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="sm" target="nav"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="a2" value="操作阶段" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="sm" target="ik"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="grpB" value="SONIC deploy 内部" style="rounded=1;html=1;fillColor=#eef3fb;strokeColor=#6c8ebf;strokeWidth=2;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#3a5a8c;spacingTop=8;" vertex="1" parent="1">
+      <mxGeometry x="650" y="60" width="810" height="920" as="geometry" />
+    </mxCell>
+    <mxCell id="in3" value="&lt;b&gt;③ 意图命令&lt;/b&gt;&lt;br&gt;必选 9 个数（模式1·移动3·朝向3·速度1·身高1）&lt;br&gt;+ 可选 38 个（腕/颈目标21·compliance 3·手指14）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="680" y="100" width="330" height="80" as="geometry" />
+    </mxCell>
+    <mxCell id="in4" value="&lt;b&gt;④ 关节流帧&lt;/b&gt;&lt;br&gt;每帧 29 关节角 + 根部 yaw&lt;br&gt;+ 帧序号" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fdf3fa;strokeColor=#a2367e;strokeWidth=2;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1120" y="100" width="240" height="80" as="geometry" />
+    </mxCell>
+    <mxCell id="planner" value="&lt;b&gt;planner 网络（SONIC 自带）&lt;/b&gt;&lt;br&gt;planner/target_vel/V2/planner_sonic.onnx&lt;br&gt;意图 + 机器人当前状态&lt;br&gt;→ 合成参考动作（迈步/摆臂细节它自己编）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="680" y="220" width="330" height="96" as="geometry" />
+    </mxCell>
+    <mxCell id="buffer" value="&lt;b&gt;帧缓冲队列&lt;/b&gt;&lt;br&gt;按帧序号排队消费&lt;br&gt;（队列空 → 停控，所以要先灌 chunk）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fdf3fa;strokeColor=#a2367e;strokeWidth=2;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1120" y="220" width="240" height="96" as="geometry" />
+    </mxCell>
+    <mxCell id="slot" value="&lt;b&gt;参考动作序列（同一个槽位，⑤ 选谁来填）&lt;/b&gt;&lt;br&gt;未来 10 帧窗口：目标关节角、根部高度、锚定朝向&lt;br&gt;—— SONIC 唯一认的&quot;命令&quot;，对来源无感" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;strokeWidth=2;fontSize=12;align=left;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="820" y="380" width="420" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="obs" value="&lt;b&gt;encoder 观测 ≈ 1762 个数&lt;/b&gt;&lt;br&gt;参考动作窗口 ~957：关节角 10帧[290] · 速度[290] · 根高[11] · 锚定朝向[66] · 下肢子集[240] · 腕子集[60]&lt;br&gt;VR 三点目标 21（腕/颈位置9+姿态12）　·　SMPL 人体关键点 780（真人遥操作才用，脚本模式置零）&lt;br&gt;模式标志 4（one-hot，告诉 encoder 哪组观测有效）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#b8962e;fontSize=11.5;align=left;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="690" y="520" width="700" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="enc" value="&lt;b&gt;encoder&lt;/b&gt;（TensorRT）→ &lt;b&gt;latent [64]&lt;/b&gt;（= 数据集里的 motion token）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12.5;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="820" y="670" width="420" height="56" as="geometry" />
+    </mxCell>
+    <mxCell id="dec" value="&lt;b&gt;decoder&lt;/b&gt;（TensorRT）&lt;br&gt;输入：latent[64] + 本体历史 10 帧 —— 关节角[290] · 关节速度[290] · 上次动作[290] · 角速度[30] · 重力方向[30]&lt;br&gt;输出：29 路电机目标 → ① DDS → 仿真" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11.5;align=left;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="690" y="770" width="700" height="96" as="geometry" />
+    </mxCell>
+    <mxCell id="lownote" value="本体历史来自 ① lowstate（29 关节 + IMU）" style="text;html=1;fontSize=11;fontColor=#666666;align=left;" vertex="1" parent="1">
+      <mxGeometry x="690" y="880" width="400" height="22" as="geometry" />
+    </mxCell>
+    <mxCell id="b1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in3" target="planner"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="b2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=3;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in4" target="buffer"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="b3" value="走路模式" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="planner" target="slot"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="b4" value="关节流模式" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=3;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="buffer" target="slot"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="b5" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b8962e;strokeWidth=2.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="slot" target="obs"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="b6" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b8962e;strokeWidth=2.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="obs" target="enc"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="b7" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="enc" target="dec"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="x1" value="③" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=13;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="nav" target="planner"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="625" y="355" /><mxPoint x="625" y="268" /></Array></mxGeometry></mxCell>
+    <mxCell id="x2" value="④" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=3;fontSize=13;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ik" target="in4"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="625" y="355" /><mxPoint x="625" y="40" /><mxPoint x="1080" y="40" /><mxPoint x="1080" y="140" /></Array></mxGeometry></mxCell>
+  </root>
 </mxGraphModel></diagram></mxfile>
