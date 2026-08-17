@@ -688,6 +688,44 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     return False, f"continuous servo timed out in the {phase} phase"
 
 
+def _raise_palm(p: Primitives, arm: StreamedArm, target_w, side: str,
+                timeout: float = 2.5) -> None:
+    """Servo the palm to target_w before anything else moves the torso.
+
+    Runs ahead of the squat: the squat drops the whole reference ~13 cm with
+    the hand still at its rest pose beside the table edge, which can dip the
+    hand below the tabletop and drag it up along the rim on the next travel
+    phase.  Raising first keeps the whole approach above the table.
+    """
+    s = p.obs()
+    rot_t = Primitives._rot(s["palms"][side]["quat"])
+    ref = np.array(s["palms"][side]["pos"], dtype=float)
+    tgt = np.asarray(target_w, dtype=float)
+    t_prev = time.time()
+    deadline = t_prev + timeout
+    while time.time() < deadline:
+        now = time.time()
+        dt = min(max(now - t_prev, 1e-3), 0.1)
+        t_prev = now
+        s = p.obs()
+        palm = np.array(s["palms"][side]["pos"], dtype=float)
+        if float(np.linalg.norm(palm - tgt)) < 0.05:
+            return
+        ref = ref + _clipn(tgt - ref, V_TRAVEL * dt)
+        lead = ref - palm
+        if float(np.linalg.norm(lead)) > LEAD_MAX:
+            ref = palm + _clipn(lead, LEAD_MAX)
+            lead = ref - palm
+        cmd = ref + np.clip(KP_TRACK * lead, -0.05, 0.05)
+        aim_pf = p.world_to_root_full(cmd, s)
+        rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_t
+        q_sol, res, _ = arm.ik.solve(side, aim_pf, rot_pf, q_mj29=arm.q,
+                                     use_waist=True, iters=10)
+        if res < 0.10:
+            arm.q = q_sol
+        arm._push(arm.q)
+
+
 def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                    side: str = "right") -> tuple[bool, str]:
     """The whole grasp: pregrasp, align, advance, close, lift. -> (ok, why)."""
@@ -699,8 +737,13 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
         z0 = float(p.object_pos(obj_key, s)[2])
         grip_pf = p.world_to_root_full(grip_world, s)
         if grip_pf[2] < SQUAT_TRIGGER:
+            # Hand up first, THEN squat — see _raise_palm.
+            safe = np.array(s["palms"][side]["pos"], dtype=float)
+            safe[2] = max(safe[2], float(grip_world[2]) + 0.18)
+            _raise_palm(p, arm, safe, side)
             got = arm.squat(SQUAT_TRIGGER - grip_pf[2])
-            p.log(f"  stream: squat dropped pelvis {got * 100:.1f} cm")
+            p.log(f"  stream: raised palm, then squat dropped pelvis "
+                  f"{got * 100:.1f} cm")
 
         # One continuous 50 Hz servo does the rest: up over the pregrasp,
         # down, jaw-gated slide onto the can, close, lift — no stop-and-
