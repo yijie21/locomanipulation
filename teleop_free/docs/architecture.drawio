@@ -1,53 +1,80 @@
-<mxfile><diagram name="teleop-free-architecture"><mxGraphModel dx="1400" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="820" math="0" shadow="0">
+<mxfile><diagram name="teleop-free-architecture"><mxGraphModel dx="1500" dy="1100" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1080" math="0" shadow="0">
   <root>
     <mxCell id="0" />
     <mxCell id="1" parent="0" />
-    <mxCell id="title" value="Teleop-Free 数据引擎：把&quot;人&quot;换成三个进程，其余与真人遥操作完全相同" style="text;html=1;fontSize=20;fontStyle=1;align=center;" vertex="1" parent="1">
-      <mxGeometry x="200" y="20" width="1000" height="36" as="geometry" />
+    <mxCell id="title" value="Teleop-Free 数据引擎：决策流（上）与执行层（下）" style="text;html=1;fontSize=20;fontStyle=1;align=center;" vertex="1" parent="1">
+      <mxGeometry x="200" y="16" width="1000" height="32" as="geometry" />
     </mxCell>
-    <mxCell id="grpA" value="脚本 Agent —— 替代戴头显的真人" style="rounded=1;html=1;fillColor=#f8e9f3;strokeColor=#a2367e;strokeWidth=2;verticalAlign=top;fontSize=15;fontStyle=1;fontColor=#7d2861;spacingTop=8;" vertex="1" parent="1">
-      <mxGeometry x="40" y="80" width="340" height="480" as="geometry" />
+    <mxCell id="sec1" value="① 一集的决策流 —— collect_episode.py 状态机。每个切换条件都是对特权真值的一次判断（代替人眼+人脑）" style="text;html=1;fontSize=14;fontStyle=1;fontColor=#555555;align=left;" vertex="1" parent="1">
+      <mxGeometry x="60" y="56" width="1240" height="26" as="geometry" />
     </mxCell>
-    <mxCell id="collect" value="&lt;b&gt;collect_episode.py&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔脑〕&lt;br&gt;一集的编排：导航 → 抓取 → 搬运 → 放置 → 撤退&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;成功判定用仿真真值，失败集直接丢弃&lt;/font&gt;" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#a2367e;fontSize=13;align=left;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="60" y="120" width="300" height="100" as="geometry" />
+    <mxCell id="nav" value="&lt;b&gt;1. 导航&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔planner：走路〕&lt;br&gt;&lt;br&gt;• 真值算出罐子方位&lt;br&gt;• 走弧线转向 + 直行逼近&lt;br&gt;• 卡住检测：8 s 无进展 → 重新规划路线" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=13;align=left;spacing=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="60" y="92" width="300" height="180" as="geometry" />
     </mxCell>
-    <mxCell id="servo" value="&lt;b&gt;stream_reach.py&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔小脑〕&lt;br&gt;抓取/放置的 50 Hz 连续伺服：&lt;br&gt;物体真值 → 笛卡尔手部目标 → warm-start IK → 29 关节参考" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#a2367e;fontSize=13;align=left;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="60" y="250" width="300" height="100" as="geometry" />
+    <mxCell id="c1" value="距罐子&lt;br&gt;XY &amp;lt; 0.65 m ?&lt;br&gt;&lt;font color=&quot;#666666&quot; style=&quot;font-size:11px&quot;&gt;→ 站定，锚定 heading，&lt;br&gt;切入手臂关节流&lt;/font&gt;" style="rhombus;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="378" y="112" width="124" height="140" as="geometry" />
     </mxCell>
-    <mxCell id="agent" value="&lt;b&gt;agent_server.py&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔手柄〕&lt;br&gt;绑定与 pico_manager_thread_server 相同的端口、&lt;br&gt;发相同格式的 ZMQ 消息 ——&lt;br&gt;&lt;font color=&quot;#a2367e&quot;&gt;&lt;b&gt;deploy 无法区分背后是人还是脚本&lt;/b&gt;&lt;/font&gt;" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#a2367e;fontSize=13;align=left;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="60" y="380" width="300" height="110" as="geometry" />
+    <mxCell id="grasp" value="&lt;b&gt;2. 抓取&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔STREAMED_MOTION：50 Hz 伺服〕&lt;br&gt;&lt;br&gt;抬手 → 下探 → 进入 → 合指 → 提起&lt;br&gt;• 进入门控：横向误差 &amp;lt; 12 mm 才许前进&lt;br&gt;• 罐子被推动 &amp;gt; 1.5 cm → 回退 5 cm 重试&lt;br&gt;• 合指：连续 3 tick 检到接触才算抓住" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f8e9f3;strokeColor=#a2367e;strokeWidth=2;fontSize=13;align=left;spacing=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="520" y="92" width="300" height="180" as="geometry" />
     </mxCell>
-    <mxCell id="deploy" value="&lt;b&gt;g1_deploy_onnx_ref (C++)&lt;/b&gt;&lt;br&gt;SONIC WBC policy 推理&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;与真机遥操作同一个二进制、&lt;br&gt;同一个 checkpoint，零修改&lt;/font&gt;" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=14;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="560" y="270" width="280" height="130" as="geometry" />
+    <mxCell id="c2" value="罐子提离桌面&lt;br&gt;&amp;gt; 6 cm ?&lt;br&gt;&lt;font color=&quot;#666666&quot; style=&quot;font-size:11px&quot;&gt;→ 真值确认抓稳，&lt;br&gt;切回 planner 走路&lt;/font&gt;" style="rhombus;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="838" y="112" width="124" height="140" as="geometry" />
     </mxCell>
-    <mxCell id="grpB" value="MuJoCo 仿真（实时，headless EGL）" style="rounded=1;html=1;fillColor=#fff2e0;strokeColor=#c65a1e;strokeWidth=2;verticalAlign=top;fontSize=15;fontStyle=1;fontColor=#9a4413;spacingTop=8;" vertex="1" parent="1">
-      <mxGeometry x="1020" y="80" width="340" height="480" as="geometry" />
+    <mxCell id="carry" value="&lt;b&gt;3. 搬运&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔planner：走路〕&lt;br&gt;&lt;br&gt;• 手臂冻结在抓握姿态&lt;br&gt;• 走向 2.4 m 外的柜台&lt;br&gt;• heading 重锚定补偿（heading_offset）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=13;align=left;spacing=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="980" y="92" width="300" height="180" as="geometry" />
     </mxCell>
-    <mxCell id="scene" value="&lt;b&gt;run_sim_locomani.py&lt;/b&gt;&lt;br&gt;场景：桌子 + 罐子 + 柜台 + 盘子&lt;br&gt;G1 全身物理仿真" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#c65a1e;fontSize=13;align=left;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="1040" y="120" width="300" height="90" as="geometry" />
+    <mxCell id="c3" value="距盘子 XY &amp;lt; 0.58 m ?&lt;br&gt;&lt;font color=&quot;#666666&quot; style=&quot;font-size:11px&quot;&gt;→ 再走近到 0.42 m，站定，切入手臂关节流&lt;/font&gt;" style="rhombus;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="1030" y="296" width="200" height="90" as="geometry" />
     </mxCell>
-    <mxCell id="priv" value="&lt;b&gt;privileged_pub&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔眼〕&lt;br&gt;特权真值：物体 6D 位姿、29 关节、接触对&lt;br&gt;ZMQ PUB :5581" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#c65a1e;fontSize=13;align=left;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="1040" y="250" width="300" height="90" as="geometry" />
+    <mxCell id="place" value="&lt;b&gt;4. 放置&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔STREAMED_MOTION：50 Hz 伺服〕&lt;br&gt;&lt;br&gt;• 以盘心为目标对中 ×2 轮 → 罐身竖直化&lt;br&gt;• 下放到盘面高度&lt;br&gt;• 张指 2.5 s，全程 station-keeping 防手臂回缩" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f8e9f3;strokeColor=#a2367e;strokeWidth=2;fontSize=13;align=left;spacing=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="980" y="410" width="300" height="180" as="geometry" />
     </mxCell>
-    <mxCell id="cam" value="&lt;b&gt;相机渲染流&lt;/b&gt;&amp;nbsp;&amp;nbsp;ZMQ PUB :5555&lt;br&gt;头部视角 + 手部特写（训练用观测）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#c65a1e;fontSize=13;align=left;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="1040" y="380" width="300" height="70" as="geometry" />
+    <mxCell id="c4" value="手指已张开、&lt;br&gt;罐子脱手 ?&lt;br&gt;&lt;font color=&quot;#666666&quot; style=&quot;font-size:11px&quot;&gt;→ 后滑抽手，&lt;br&gt;切回 planner&lt;/font&gt;" style="rhombus;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="838" y="430" width="124" height="140" as="geometry" />
     </mxCell>
-    <mxCell id="exporter" value="&lt;b&gt;data exporter&lt;/b&gt;&lt;br&gt;把相机流 + 状态录成训练数据&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;SONIC 原生录制器，零修改&lt;/font&gt;" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=14;spacing=10;" vertex="1" parent="1">
-      <mxGeometry x="560" y="620" width="280" height="110" as="geometry" />
+    <mxCell id="retreat" value="&lt;b&gt;5. 撤退 + 判定&lt;/b&gt;&amp;nbsp;&amp;nbsp;〔planner + 真值〕&lt;br&gt;&lt;br&gt;• 沿背向滑出 → 抬手 → 双臂收拢 → 走开&lt;br&gt;• 用真值终审：罐子在盘上？直立（up·z ≈ 1）？&lt;br&gt;&amp;nbsp;&amp;nbsp;机器人没摔？" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#555555;strokeWidth=2;fontSize=13;align=left;spacing=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="520" y="410" width="300" height="180" as="geometry" />
     </mxCell>
-    <mxCell id="legend" value="&lt;b&gt;读图指南&lt;/b&gt;：真人遥操作 = 人眼 + 人脑 + VR 手柄。这里〔眼〕= 特权真值，〔脑/小脑〕= 编排与伺服，〔手柄〕= agent_server。&lt;br&gt;中间蓝色的 deploy / policy 与录真人数据时完全一致 —— 所以采出的数据分布与真人遥操作数据一致。&lt;br&gt;&lt;font color=&quot;#a2367e&quot;&gt;粗紫箭头&lt;/font&gt;是精确手控的关键通道（Pico 真正用的 STREAMED_MOTION）；&lt;font color=&quot;#2e7d4f&quot;&gt;绿色虚线&lt;/font&gt;是闭环反馈。&lt;br&gt;多开并行：实例 i 用端口块 base+10i 和 DDS domain=i，互相完全隔离，一台机器同时跑 3 套。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=13;align=left;spacing=12;" vertex="1" parent="1">
-      <mxGeometry x="40" y="600" width="480" height="150" as="geometry" />
+    <mxCell id="okbox" value="&lt;b&gt;EPISODE OK&lt;/b&gt;&lt;br&gt;发 'c' → 保存这集训练数据" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#2e7d4f;strokeWidth=2;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="60" y="410" width="300" height="76" as="geometry" />
     </mxCell>
-    <mxCell id="e1" value="ZMQ :5556 ─ planner topic（下半身：走路）&lt;br&gt;movement / facing / speed 载体向量" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.25;entryX=0;entryY=0.2;" edge="1" parent="1" source="agent" target="deploy"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e2" value="&lt;b&gt;ZMQ :5556 ─ pose topic：STREAMED_MOTION&lt;/b&gt;&lt;br&gt;&lt;b&gt;29-DoF 关节流 @50 Hz（上半身：抓取/放置）&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#a2367e;strokeWidth=4;fontSize=12;fontColor=#a2367e;labelBackgroundColor=#ffffff;exitX=1;exitY=0.55;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="deploy"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e3" value="ZMQ :5556 ─ command topic：两条通道间切换" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#999999;strokeWidth=1.5;dashed=1;fontSize=11;fontColor=#666666;labelBackgroundColor=#ffffff;exitX=1;exitY=0.85;entryX=0;entryY=0.8;" edge="1" parent="1" source="agent" target="deploy"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e4" value="DDS：lowcmd（电机指令）→&lt;br&gt;← lowstate（本体状态）&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;domain = 实例号 i&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;startArrow=classic;startFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="deploy" target="scene"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e5" value="ZMQ :5581 ─ 物体/关节真值（闭环反馈：代替人眼）" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#2e7d4f;strokeWidth=3;dashed=1;fontSize=12;fontColor=#2e7d4f;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" edge="1" parent="1" source="priv" target="servo">
-      <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="700" y="90" /></Array></mxGeometry>
+    <mxCell id="failbox" value="&lt;b&gt;EPISODE FAILED&lt;/b&gt;&lt;br&gt;发 'x' → 丢弃录制，重置场景进下一集&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#8a3835&quot;&gt;任何阶段中途失败（抓空 / 罐倒 / 摔倒 / 超时）也直接到这里&lt;/font&gt;" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b3403a;strokeWidth=2;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="60" y="506" width="300" height="84" as="geometry" />
     </mxCell>
-    <mxCell id="e6" value="ZMQ :5555 ─ 图像流" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="cam" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e7" value="ZMQ :5580 ─ 录制键：'c' 开始/保存，'x' 丢弃&lt;br&gt;（代替人按手柄按钮）" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=1.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="collect" target="servo"><mxGeometry relative="1" as="geometry" /></mxCell>
-    <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=1.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="servo" target="agent"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="chan" value="方块颜色 = 控制通道：&lt;font color=&quot;#6c8ebf&quot;&gt;&lt;b&gt;蓝 = planner（下半身走路）&lt;/b&gt;&lt;/font&gt;　&lt;font color=&quot;#a2367e&quot;&gt;&lt;b&gt;紫 = STREAMED_MOTION（上半身 29 关节流）&lt;/b&gt;&lt;/font&gt;。菱形里的切换动作通过 command topic 完成；每次切回 planner 都会触发 heading 重锚定，由 heading_offset 补偿。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=12;align=left;spacing=10;" vertex="1" parent="1">
+      <mxGeometry x="410" y="620" width="870" height="64" as="geometry" />
+    </mxCell>
+    <mxCell id="f1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="nav" target="c1"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="c1" target="grasp"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="grasp" target="c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="c2" target="carry"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f5" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="carry" target="c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f6" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="c3" target="place"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f7" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="place" target="c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f8" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#555555;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="c4" target="retreat"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f9" value="全部满足" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d4f;strokeWidth=2.5;fontSize=12;fontColor=#2e7d4f;labelBackgroundColor=#ffffff;exitX=0;exitY=0.25;entryX=1;entryY=0.5;" edge="1" parent="1" source="retreat" target="okbox"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="f10" value="任一不满足" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b3403a;strokeWidth=2.5;fontSize=12;fontColor=#b3403a;labelBackgroundColor=#ffffff;exitX=0;exitY=0.75;entryX=1;entryY=0.5;" edge="1" parent="1" source="retreat" target="failbox"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="sec2" value="② 执行层 —— 决策以 ZMQ 消息落地；deploy / policy / exporter 与真人遥操作完全相同，零修改" style="text;html=1;fontSize=14;fontStyle=1;fontColor=#555555;align=left;" vertex="1" parent="1">
+      <mxGeometry x="60" y="710" width="1240" height="26" as="geometry" />
+    </mxCell>
+    <mxCell id="agent2" value="&lt;b&gt;脚本 Agent&lt;/b&gt;&lt;br&gt;collect_episode（决策）&lt;br&gt;stream_reach（伺服+IK）&lt;br&gt;agent_server（ZMQ 接口）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f8e9f3;strokeColor=#a2367e;strokeWidth=2;fontSize=13;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="60" y="770" width="280" height="120" as="geometry" />
+    </mxCell>
+    <mxCell id="deploy2" value="&lt;b&gt;g1_deploy_onnx_ref&lt;/b&gt;&lt;br&gt;SONIC WBC policy&lt;br&gt;（C++，零修改）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=13;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="560" y="770" width="260" height="120" as="geometry" />
+    </mxCell>
+    <mxCell id="sim2" value="&lt;b&gt;MuJoCo 仿真&lt;/b&gt;&lt;br&gt;场景 + G1 物理（实时）&lt;br&gt;privileged_pub 真值 :5581&lt;br&gt;相机流 :5555" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff2e0;strokeColor=#c65a1e;strokeWidth=2;fontSize=13;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1040" y="770" width="280" height="120" as="geometry" />
+    </mxCell>
+    <mxCell id="exp2" value="&lt;b&gt;data exporter&lt;/b&gt;&lt;br&gt;录制训练数据（零修改）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=13;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="560" y="960" width="260" height="80" as="geometry" />
+    </mxCell>
+    <mxCell id="g1" value="ZMQ :5556（planner / pose / command）" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#a2367e;strokeWidth=2.5;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent2" target="deploy2"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="g2" value="DDS（domain = 实例号，多开隔离）" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;startArrow=classic;startFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="deploy2" target="sim2"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="g3" value=":5581 特权真值 —— 上面每个菱形判断的输入" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d4f;strokeWidth=2.5;dashed=1;fontSize=12;fontColor=#2e7d4f;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="sim2" target="agent2">
+      <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1180" y="930" /><mxPoint x="200" y="930" /></Array></mxGeometry>
+    </mxCell>
+    <mxCell id="g4" value=":5555 图像" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.85;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="sim2" target="exp2"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="g5" value=":5580 'c' 保存 / 'x' 丢弃" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.15;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent2" target="exp2"><mxGeometry relative="1" as="geometry" /></mxCell>
   </root>
 </mxGraphModel></diagram></mxfile>
