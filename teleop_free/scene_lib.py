@@ -1,0 +1,593 @@
+"""Shared builder for the two-surface loco-manipulation scene.
+
+One place that knows the arrangement, so the render check (compose_scene.py),
+the physics sim (build_sim_scene.py -> run_sim_locomani.py) and the Isaac
+renderer (isaac_scene.py) can never drift apart.
+
+EmbodiedGen's `bfs_placement` forces every manipulated object to within
+0.20-0.85 m of the robot (`limit_reach_range`, geometry.py:756) because it is
+built for a fixed-base arm. That produces a tabletop scene where a humanoid
+never has to walk. So we take EmbodiedGen's *assets* and own the *arrangement*:
+
+    surface A (dining table, origin)          surface B (counter, +2.5 m)
+        orange + distractors                      plate
+                    \\____ robot walks 2.5 m carrying the orange ____/
+
+Pose convention: layout.json stores [x, y, z, qx, qy, qz, qw]; MuJoCo wants
+[w, x, y, z].
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import xml.etree.ElementTree as ET
+
+import mujoco
+import numpy as np
+
+SONIC_SCENE = (
+    "/workspace/code/locomanipulation/GR00T-WholeBodyControl/"
+    "gear_sonic/data/robot_model/model_data/g1/scene_43dof.xml"
+)
+
+# --- global arrangement (the part EmbodiedGen cannot express) ---------------
+SURFACE_A_XY = (0.0, 0.0)
+SURFACE_B_XY = (2.5, 0.0)
+
+# Robot starts clear of A on the far side from B, so the episode is
+# approach -> grasp -> carry 2.5 m -> place. Also the quantity P2 perturbs.
+ROBOT_START_XY = (-1.5, 0.0)
+ROBOT_START_YAW_DEG = 0.0      # robot forward is +x, i.e. towards both surfaces
+ROBOT_PELVIS_Z = 0.793         # g1_29dof_with_hand.xml:78
+
+ON_SURFACE_A = ["orange", "fork", "napkin"]   # plus PRIMITIVE_OBJECTS
+ON_SURFACE_B = ["plate"]
+
+# The object the task is about, and where it has to end up.
+TARGET_OBJECT = "can"
+GOAL_OBJECT = "plate"
+
+# The MJCF exporter already bakes the URDF's `<origin rpy="1.5708 0 0">` into
+# the geoms, so the assets are upright as loaded — no extra rotation, and
+# layout.json's quaternions are pure yaw on top of that.
+#
+# Getting this wrong twice cost an hour, so: measure orientation with the
+# engine's own forward kinematics over the ATTACHED BODY'S geoms only. Deriving
+# it from `geom_rbound` overestimates flat objects (floated everything ~8 cm),
+# and deriving it from raw `mesh_vert` ignores the per-geom transform (said the
+# assets needed a -90 deg y rotation, which tipped the table over). Both agreed
+# with each other and both were wrong.
+UPRIGHT_QUAT = (1.0, 0.0, 0.0, 0.0)
+
+# Surface heights, set by where the arm can actually work.
+#
+# These were 0.62 and 0.74, lowered from EmbodiedGen's human 0.75 / 0.90 on the
+# reasoning that a 0.75 m table is level with the G1's hips and the arm catches
+# its edge on the way up. That reasoning was about a top-down grasp, and a
+# top-down grasp is not available: the controller keeps the palm pointing
+# forward whatever quaternion the wrist is sent (teleop_free/diag_wrist.py), so
+# the hand can only come in horizontally.
+#
+# For a horizontal grasp the constraint inverts — higher is better. Solving the
+# arm's IK over its joint limits (teleop_free/diag_reach_map.py) gives the
+# reachable band for the grip centre, in the pelvis frame, with the palm
+# pointing along the approach:
+#
+#     x = 0.30    z in [+0.00, +0.20]
+#     x = 0.35    z in [+0.04, +0.20]
+#     x = 0.40    z in [+0.08, +0.20]
+#
+# The grip centre never gets below the pelvis. At a 0.62 m table the grasp
+# needs it at -0.08, which is 8 to 16 cm outside the arm's range — no standing
+# distance and no staging offset can fix that, which is why ten batches of
+# tuning them did not. The grip sits FINGER_DROP + margins = 0.081 m above the
+# surface, so a 0.76 m table puts it at +0.06 relative to a 0.78 m pelvis:
+# inside the band, with room for the pelvis to bob.
+# 0.72 / 0.76. Sweeping the table height against the arm's IK counts the
+# feasible (standing distance, object bearing) combinations out of 12:
+#
+#     0.64  ->  0/12     0.70  ->  7/12     0.76  -> 10/12
+#     0.68  ->  4/12     0.72  ->  9/12     0.78  ->  8/12
+#
+# 0.72 is the lowest that keeps the grasp comfortable — 6 cm below the pelvis,
+# so it reads as waist height rather than chest height, and it costs one cell
+# out of twelve against 0.76.
+SURFACE_TARGET_TOP = {"dining_table": 0.62, "counter": 0.66}
+
+# Per-object scale, applied on top of the generated asset. Kept because the
+# hand's limits are tight enough that asset size is a real design variable —
+# see PRIMITIVE_OBJECTS below for the measurements.
+OBJECT_SCALE: dict[str, float] = {}
+
+# Objects built from MuJoCo primitives rather than generated assets.
+#
+# The G1's three-finger hand cannot grasp anything the EmbodiedGen layout put
+# on this table, and not for want of tuning. Two measurements bracket it
+# (teleop_free/diag_hand.py, purely kinematic):
+#
+#   * the hand opens 6.1 cm, thumb surface to finger surface, over every
+#     joint-limit combination — so the pinch is capped at 6.1 cm
+#   * the fingers hang 5.6 cm below the grip centre along the palm's z, and
+#     the palm's z points up (teleop_free/diag_wrist.py: the controller keeps
+#     the palm facing forward whatever quaternion it is sent) — so on a
+#     horizontal approach the grip point cannot come within 5.6 cm of the
+#     table top
+#
+# For a sphere those are incompatible: its centre only reaches 5.6 cm at a
+# diameter of 11.2 cm, which is nearly twice the aperture. Flat objects — the
+# plate, the napkin, the fork lying down — fail the same test. What does work
+# is tall and thin, gripped around the middle: a can, a bottle, a cup.
+#
+# A primitive stands in for a generated asset until the pipeline is proven
+# end to end. Swapping in a real bottle later is an entry in layout.json and
+# touches no control code.
+PRIMITIVE_OBJECTS = {
+    # Near the table's edge, not its middle. The navigator stands the robot on
+    # a ring 0.45 m from the target, and that ring has to fall outside the
+    # table's own footprint plus the body inflation — at 0.36 m from the centre
+    # it does not, and approach_A failed 4 of 6 episodes converging to 0.5-0.74
+    # m instead. The orange sat at 0.49 m out for the same reason.
+    # phi4 x h12, not phi5 x h14. Two measured reasons:
+    #
+    #   * clearance. The jaw is 6.1 cm, so a 5 cm can leaves 5.5 mm either
+    #     side — tighter than the 6 mm the alignment servo converges to, and
+    #     the fingertip caught it on the way in. At 4 cm the margin is 10.5 mm.
+    #   * toppling. A 14 cm cylinder is tippy enough that a brush knocks it
+    #     over, and a fallen can's centre has moved 5 cm — which the guard
+    #     reported as "shoved", with nothing touching it any more, because the
+    #     contact was over by the time the motion showed up.
+    # Well clear of the other objects: at (0.10, 0.42) it stood 13 cm from the
+    # orange, close enough to be hard to see in a render and to leave doubt
+    # about which object a contact belonged to. 0.50 m from the table centre
+    # puts it in the same band the orange occupied, which navigation is known
+    # to handle.
+    # Close to the table's EDGE, which is not the same as far from its centre —
+    # the table is square, and what decides how near the pelvis can stand is the
+    # gap to the nearest face plus the body inflation, not the radial distance.
+    # At (-0.35, 0.46) the can was 0.16 m inside the +y face, so with 0.26 m of
+    # inflation no pelvis could get closer than 0.42 m; the standing ring came
+    # back empty every episode, the planner widened it, and the widening went
+    # into the arrival tolerance — which is how the robot came to stop 0.6 m
+    # out and call it arrived.
+    # Radius raised from 0.020 because the can kept sliding out of the closed
+    # hand. It cannot go to the 1.5x asked for: the jaw opens 6.1 cm and the
+    # planner refuses any span wider than 5.1 cm (aperture minus the pinch
+    # margin, without which closing jams instead of grips), so 1.5x — 6.0 cm
+    # across — is rejected before the robot moves. 1.27x is the arithmetic
+    # ceiling; 1.2x is the largest that still leaves the alignment servo the
+    # few millimetres it actually converges within.
+    # y 0.470 -> 0.385: 3 cm from the rim was inside the swing of a passing
+    # arm — the can got swept off the table during approach in 2 of 3
+    # episodes before the robot ever reached for it. 12 cm inboard is out of
+    # the sweep; the extra stand-off it costs is covered by the streamed
+    # grasp's own walk-in (stream_reach._nudge_closer), which the planner-era
+    # placement note above predates.
+    "can": dict(surface="A", xy=(-0.16, 0.385), radius=0.024, height=0.12,
+                mass=0.25, rgba=(0.82, 0.28, 0.22, 1.0)),
+}
+
+
+def mjcf_name(obj: str) -> str:
+    return obj.replace(" ", "_")
+
+
+def upright_extent(mjcf_path: str) -> float:
+    """Vertical size of an asset as placed, in metres.
+
+    Compiles the asset on its own and measures the world-space AABB of its mesh
+    geoms after `mj_forward`, so per-geom transforms are included.
+    """
+    spec = mujoco.MjSpec.from_file(mjcf_path)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    lo, hi = [], []
+    for g in range(model.ngeom):
+        if model.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
+            continue
+        mi = model.geom_dataid[g]
+        v = model.mesh_vert[
+            model.mesh_vertadr[mi]: model.mesh_vertadr[mi] + model.mesh_vertnum[mi]
+        ]
+        w = v @ data.geom_xmat[g].reshape(3, 3).T + data.geom_xpos[g]
+        lo.append(w.min(0))
+        hi.append(w.max(0))
+
+    return float(np.max(hi, 0)[2] - np.min(lo, 0)[2])
+
+
+def planar_extent(mjcf_path: str, scale: float = 1.0) -> tuple[float, float]:
+    """Half-extent in x and y of an asset's mesh geoms, as placed."""
+    spec = mujoco.MjSpec.from_file(mjcf_path)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    lo, hi = [], []
+    for g in range(model.ngeom):
+        if model.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
+            continue
+        mi = model.geom_dataid[g]
+        v = model.mesh_vert[
+            model.mesh_vertadr[mi]: model.mesh_vertadr[mi] + model.mesh_vertnum[mi]
+        ]
+        w = v @ data.geom_xmat[g].reshape(3, 3).T + data.geom_xpos[g]
+        lo.append(w.min(0))
+        hi.append(w.max(0))
+    lo, hi = np.min(lo, 0), np.max(hi, 0)
+
+    return (float(0.5 * (hi[0] - lo[0]) * scale),
+            float(0.5 * (hi[1] - lo[1]) * scale))
+
+
+def flatten_collision(spec, body_name: str, half_xy, top: float,
+                      inset: float = 0.015, thickness: float = 0.04) -> None:
+    """Replace a surface's mesh collision with one flat box.
+
+    EmbodiedGen's surfaces are photogrammetry-grade meshes, and their tops are
+    not level. An object standing on one slides: a can placed 4 cm inside the
+    dining table's edge drifted steadily in +y and fell off in 0.85 s, with
+    nothing touching it — which the grasp diagnostics reported as "the object
+    is too short to grip", because a fallen can is 4 cm tall.
+
+    The mesh stays for rendering; the physics gets a box. `inset` keeps the box
+    just inside the visible edge so nothing appears to float past it.
+    """
+    body = spec.body(body_name)
+    for geom in body.geoms:
+        geom.contype = 0
+        geom.conaffinity = 0
+    box = body.add_geom()
+    box.name = f"{body_name}_top"
+    box.type = mujoco.mjtGeom.mjGEOM_BOX
+    box.size = [max(half_xy[0] - inset, 0.05),
+                max(half_xy[1] - inset, 0.05), thickness / 2]
+    # The body sits at top/2, so the box's centre goes half a thickness below
+    # the top surface in the body's own frame.
+    box.pos = [0.0, 0.0, top / 2 - thickness / 2]
+    box.rgba = [0, 0, 0, 0]          # invisible; the mesh is what is seen
+    box.friction = [1.0, 0.005, 0.0001]
+
+
+def yaw_times_upright(qx, qy, qz, qw) -> list[float]:
+    """layout.json quaternions are already correct; just reorder to wxyz."""
+    return [qw, qx, qy, qz]
+
+
+def _absolutise_assets(child: mujoco.MjSpec, subdir: str = "") -> None:
+    """Rewrite mesh/texture paths so the composed XML can be saved anywhere.
+
+    MjSpec resolves asset files against the *child's* modelfiledir. Once the
+    child is attached and the parent is serialised to a different directory,
+    those relative paths no longer resolve.
+    """
+    # abspath, not just join: once attached, relative asset paths get resolved
+    # against the *parent's* modelfiledir (the SONIC model dir), not the
+    # child's, so anything relative silently points at the wrong tree.
+    root = os.path.abspath(os.path.join(child.modelfiledir, subdir))
+    for mesh in child.meshes:
+        if mesh.file and not os.path.isabs(mesh.file):
+            mesh.file = os.path.join(root, mesh.file)
+    for tex in child.textures:
+        if tex.file and not os.path.isabs(tex.file):
+            tex.file = os.path.join(root, tex.file)
+
+
+def attach(spec, mjcf_path: str, name: str, pos, quat_wxyz, scale=1.0, freeze=True) -> str:
+    """Attach an asset. Returns the resulting body name in the composed model."""
+    child = mujoco.MjSpec.from_file(mjcf_path)
+    _absolutise_assets(child)
+    if scale != 1.0:
+        for mesh in child.meshes:
+            mesh.scale = [s * scale for s in mesh.scale]
+    body = child.worldbody.bodies[0]
+    if freeze:
+        # Surfaces, and the whole model in the render-only path.
+        for joint in list(body.joints):
+            child.delete(joint)
+    # attach_body renames the body in place, so read it first.
+    child_name = body.name
+    frame = spec.worldbody.add_frame()
+    frame.pos = list(pos)
+    frame.quat = list(quat_wxyz)
+    frame.attach_body(body, f"{name}_", "")
+
+    return f"{name}_{child_name}"
+
+
+GHOST_BODY = "ghost_hand"
+# Magenta at 0.6, not green at 0.35. Measured on the first attempt: the ghost
+# occupied 500-700 pixels of a 388,800-pixel frame — 0.15% — and a translucent
+# green hand over an orange table is invisible at that size. Magenta is the one
+# hue that separates from both the table and the blue floor.
+GHOST_ALPHA = 0.85
+GHOST_RGB = (1.0, 0.15, 0.75)
+GHOST_MARKER_R = 0.022
+GHOST_PARK = (0.0, 0.0, -5.0)      # out of sight until a plan places it
+
+
+def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
+    """A see-through copy of the hand, as a mocap body.
+
+    The videos show where the hand ended up but not where it was *aimed*, so a
+    grasp that misses by 4 cm and one that misses by 15 look the same. This
+    puts the plan itself in the picture: the ghost is parked at the grasp pose
+    the moment it is computed, and the real hand can be watched arriving at it
+    — or not.
+
+    A mocap body carries no joints and no collision, so it can be teleported
+    every frame from `data.mocap_pos` without touching the simulation.
+
+    The link transforms are read from a throwaway compile of the robot with the
+    fingers open, then baked in as fixed geom offsets — the ghost is one rigid
+    body, not an articulated hand.
+    """
+    probe = mujoco.MjSpec.from_file(SONIC_SCENE)
+    _absolutise_assets(probe, probe.meshdir)
+    pm = probe.compile()
+    pd = mujoco.MjData(pm)
+    mujoco.mj_forward(pm, pd)
+
+    wrist = mujoco.mj_name2id(pm, mujoco.mjtObj.mjOBJ_BODY, f"{side}_wrist_yaw_link")
+    w_pos, w_rot = pd.xpos[wrist], pd.xmat[wrist].reshape(3, 3)
+
+    body = spec.worldbody.add_body()
+    body.name = GHOST_BODY
+    body.mocap = True
+    body.pos = list(GHOST_PARK)
+
+    n = 0
+    seen = set()
+    for g in range(pm.ngeom):
+        bid = pm.geom_bodyid[g]
+        nm = mujoco.mj_id2name(pm, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+        if not (nm == f"{side}_wrist_yaw_link" or nm.startswith(f"{side}_hand_")):
+            continue
+        if pm.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
+            continue
+        mi = pm.geom_dataid[g]
+        mesh = mujoco.mj_id2name(pm, mujoco.mjtObj.mjOBJ_MESH, mi)
+        if mesh is None:
+            continue
+        # Each link carries the same mesh twice (visual and collision); one
+        # copy is enough and halves the ghost's triangle count.
+        if mesh in seen:
+            continue
+        seen.add(mesh)
+
+        # Geom pose in the wrist's frame: where it sits once the ghost is
+        # placed by its wrist.
+        rel_pos = w_rot.T @ (pd.geom_xpos[g] - w_pos)
+        rel_rot = w_rot.T @ pd.geom_xmat[g].reshape(3, 3)
+
+        # Undo the mesh alignment before authoring, or the compiler applies it
+        # twice. The compiler recentres each mesh's vertices on its own frame
+        # (mesh_pos/mesh_quat) and folds the inverse into the referencing
+        # geom's pose, so geom_xpos already includes it. Author that same pose
+        # verbatim and the next compile adds the offset a second time — 1-4 cm
+        # per part, each in its own direction, which scatters the hand into
+        # loose pieces instead of assembling it.
+        m_rot = np.empty(9)
+        mujoco.mju_quat2Mat(m_rot, pm.mesh_quat[mi])
+        m_rot = m_rot.reshape(3, 3)
+        rel_rot = rel_rot @ m_rot.T
+        rel_pos = rel_pos - rel_rot @ pm.mesh_pos[mi]
+
+        quat = np.empty(4)
+        mujoco.mju_mat2Quat(quat, rel_rot.flatten())
+
+        ng = body.add_geom()
+        ng.name = f"{GHOST_BODY}_{n}"
+        ng.type = mujoco.mjtGeom.mjGEOM_MESH
+        ng.meshname = mesh
+        ng.pos = rel_pos.tolist()
+        ng.quat = quat.tolist()
+        ng.rgba = [*GHOST_RGB, alpha]
+        ng.contype = 0
+        ng.conaffinity = 0
+        ng.mass = 0.0
+        ng.group = 0
+        n += 1
+
+    # A solid bead at the grip centre. The hand's outline is legible up close
+    # and nothing at all from the tracking camera's 3 m; a small opaque marker
+    # reads at any distance, and it marks the one point the servo is actually
+    # driving to.
+    from primitives_const import GRASP_CENTRE_OFFSET_CONST as _g  # noqa
+    bead = body.add_geom()
+    bead.name = f"{GHOST_BODY}_bead"
+    bead.type = mujoco.mjtGeom.mjGEOM_SPHERE
+    bead.size = [GHOST_MARKER_R, 0, 0]
+    bead.pos = list(_g)
+    bead.rgba = [*GHOST_RGB, 1.0]
+    bead.contype = 0
+    bead.conaffinity = 0
+    bead.mass = 0.0
+
+    return n + 1
+
+
+def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
+    """Compose the scene. Returns (spec, meta).
+
+    freeze_objects=True strips the objects' free joints — right for a static
+    placement render, wrong for physics.
+    """
+    layout = json.load(open(f"{scene_root}/layout/layout.json"))
+    mjcf_root = f"{scene_root}/mjcf"
+
+    spec = mujoco.MjSpec.from_file(SONIC_SCENE)
+    # The robot's own meshes are relative to the SONIC model dir; the composed
+    # XML gets written elsewhere, so they need absolutising as well.
+    _absolutise_assets(spec, spec.meshdir)
+    spec.meshdir = ""
+    spec.visual.global_.offwidth = 1280
+    spec.visual.global_.offheight = 960
+
+    meta = {
+        "surfaces": {},
+        "objects": {},
+        "target_object": TARGET_OBJECT,
+        "goal_object": GOAL_OBJECT,
+        "robot_start": {
+            "xy": list(ROBOT_START_XY),
+            "yaw_deg": ROBOT_START_YAW_DEG,
+            "pelvis_z": ROBOT_PELVIS_Z,
+        },
+    }
+
+    # --- surfaces ----------------------------------------------------------
+    for key, obj, xy in (
+        ("A", "dining table", SURFACE_A_XY),
+        ("B", "counter", SURFACE_B_XY),
+    ):
+        name = mjcf_name(obj)
+        mjcf = f"{mjcf_root}/{name}/{name}.xml"
+        if not os.path.exists(mjcf):
+            print(f"  MISSING surface {key}: {mjcf}")
+            continue
+
+        raw = upright_extent(mjcf)
+        target = SURFACE_TARGET_TOP[name]
+        scale = target / raw
+        body = attach(spec, mjcf, name, (xy[0], xy[1], target / 2), UPRIGHT_QUAT,
+                      scale, freeze=True)
+        half_xy = planar_extent(mjcf, scale)
+        flatten_collision(spec, body, half_xy, target)
+        meta["surfaces"][key] = dict(name=name, body=body, xy=list(xy), top=target,
+                                     flat_half_extent=list(half_xy))
+        if verbose:
+            print(f"  surface {key}: {name:14s} xy={xy} top_z={target:.3f} "
+                  f"(mesh {raw:.3f} m, scaled x{scale:.3f})")
+
+    # --- objects -----------------------------------------------------------
+    for obj, pose in layout["position"].items():
+        if obj not in layout["assets"] or obj in ("dining table", "kitchen"):
+            continue
+        name = mjcf_name(obj)
+        mjcf = f"{mjcf_root}/{name}/{name}.xml"
+        if not os.path.exists(mjcf):
+            print(f"  skip {obj}: no MJCF")
+            continue
+
+        key = "A" if obj in ON_SURFACE_A else "B" if obj in ON_SURFACE_B else None
+        if key is None or key not in meta["surfaces"]:
+            print(f"  skip {obj}: no surface assignment")
+            continue
+        surf = meta["surfaces"][key]
+
+        x, y, z, qx, qy, qz, qw = pose
+        scale = OBJECT_SCALE.get(name, 1.0)
+        obj_h = upright_extent(mjcf) * scale
+        if key == "A":
+            # keep the generated in-plane arrangement, re-seat on A's top —
+            # but pull anything the generator left within 12 cm of an edge
+            # inboard. The can sat 3 cm from the rim and got swept off the
+            # table by a passing arm in two of three episodes before the
+            # robot ever reached for it.
+            margin = 0.12
+            hx, hy = surf["flat_half_extent"]
+            px = surf["xy"][0] + float(np.clip(x, -(hx - margin), hx - margin))
+            py = surf["xy"][1] + float(np.clip(y, -(hy - margin), hy - margin))
+        else:
+            # B was not part of the generated layout. Not centred: the
+            # counter is 0.19 m deep and a centred plate is unreachable —
+            # the legal stand ring bottoms out 0.5 m from it and the whole
+            # place stage dies there. Seat it against the near edge (the -x
+            # side, facing surface A), a conservative plate-radius in.
+            px = surf["xy"][0] - max(0.0, surf["flat_half_extent"][0] - 0.13)
+            py = surf["xy"][1]
+        # 2 mm of clearance so the first physics step resolves a gap, not a
+        # penetration — a mesh already interpenetrating the table launches.
+        pz = surf["top"] + obj_h / 2 + (0.0 if freeze_objects else 0.002)
+        body = attach(spec, mjcf, name, (px, py, pz),
+                      yaw_times_upright(qx, qy, qz, qw), scale=scale,
+                      freeze=freeze_objects)
+        meta["objects"][name] = dict(
+            body=body, surface=key, init_pos=[px, py, pz],
+            init_quat=yaw_times_upright(qx, qy, qz, qw), height=obj_h,
+            scale=scale,
+        )
+        if verbose:
+            tag = f" x{scale:g}" if scale != 1.0 else ""
+            print(f"  {obj:12s} -> surface {key} at "
+                  f"({px:.3f}, {py:.3f}, {pz:.3f}){tag}")
+
+    # --- primitive objects ---------------------------------------------------
+    for name, spec_o in PRIMITIVE_OBJECTS.items():
+        surf = meta["surfaces"].get(spec_o["surface"])
+        if surf is None:
+            print(f"  skip {name}: surface {spec_o['surface']} missing")
+            continue
+        half_h = spec_o["height"] / 2
+        px = surf["xy"][0] + spec_o["xy"][0]
+        py = surf["xy"][1] + spec_o["xy"][1]
+        pz = surf["top"] + half_h + (0.0 if freeze_objects else 0.002)
+
+        body = spec.worldbody.add_body(name=name, pos=[px, py, pz],
+                                       quat=list(UPRIGHT_QUAT))
+        if not freeze_objects:
+            body.add_freejoint()
+        geom = body.add_geom()
+        geom.name = name
+        geom.type = mujoco.mjtGeom.mjGEOM_CYLINDER
+        # MuJoCo sizes a cylinder as (radius, half-length); the third entry is
+        # unused but must be present.
+        geom.size = [spec_o["radius"], half_h, 0.0]
+        geom.rgba = list(spec_o["rgba"])
+        geom.mass = spec_o["mass"]
+        # Friction high enough that a 5 cm cylinder does not squirt out of the
+        # fingers the moment they touch it; the default 1.0 slides.
+        geom.friction = [1.5, 0.02, 0.001]
+
+        meta["objects"][name] = dict(
+            body=name, surface=spec_o["surface"], init_pos=[px, py, pz],
+            init_quat=list(UPRIGHT_QUAT), height=spec_o["height"],
+            scale=1.0, primitive="cylinder", radius=spec_o["radius"],
+        )
+        if verbose:
+            print(f"  {name:12s} -> surface {spec_o['surface']} at "
+                  f"({px:.3f}, {py:.3f}, {pz:.3f})  "
+                  f"phi{spec_o['radius'] * 200:.0f} x h{spec_o['height'] * 100:.0f} cm")
+
+    # --- robot start pose --------------------------------------------------
+    # qpos0 of a free joint comes from its body's pos/quat, so moving the
+    # pelvis body here is also what mj_resetData restores.
+    yaw = np.deg2rad(ROBOT_START_YAW_DEG)
+    pelvis = spec.body("pelvis")
+    pelvis.pos = [ROBOT_START_XY[0], ROBOT_START_XY[1], ROBOT_PELVIS_Z]
+    pelvis.quat = [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]
+
+    n_ghost = add_ghost_hand(spec)
+    if verbose:
+        print(f"  ghost hand: {n_ghost} geoms (mocap, no collision)")
+
+    if verbose:
+        a, b = SURFACE_A_XY, SURFACE_B_XY
+        carry = float(np.hypot(b[0] - a[0], b[1] - a[1]))
+        approach = float(np.hypot(a[0] - ROBOT_START_XY[0], a[1] - ROBOT_START_XY[1]))
+        print(f"  robot start xy={ROBOT_START_XY} yaw={ROBOT_START_YAW_DEG:.0f}deg "
+              f"z={ROBOT_PELVIS_Z:.3f}")
+        print(f"base path: approach {approach:.2f} m + carry {carry:.2f} m "
+              f"= {approach + carry:.2f} m  (official reference: 0.97 m)")
+
+    return spec, meta
+
+
+def find_urdf(scene_root: str, name: str) -> str | None:
+    """Assets live under layout/ or surface_b/ depending on when they were made."""
+    for sub in ("layout", "surface_b"):
+        p = f"{scene_root}/{sub}/asset3d/{name}/result/{name}.urdf"
+        if os.path.exists(p):
+            return p
+
+    return None
+
+
+def vertical_size(urdf_path: str) -> float:
+    """`extra_info/real_height` — the asset's placed vertical size, in metres."""
+    root = ET.parse(urdf_path).getroot()
+    el = root.find(".//extra_info/real_height")
+
+    return float(el.text) if el is not None else 0.0
