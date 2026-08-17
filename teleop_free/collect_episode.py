@@ -460,6 +460,14 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         p.object_pos(obj_key, s)[:2] - p.object_pos(goal_key, s)[:2]))
     require("retreat", still_there < PLACE_XY_TOL,
             f"orange left the plate during retreat ({still_there * 100:.1f} cm)")
+    # XY alone let knocked-over cans through: tipped during the walk-away but
+    # still inside the plate radius -> "OK" with a lying can in the last
+    # frames (batch recbatch1 eps 2/5/13). Re-check uprightness at the very
+    # end too.
+    w, x, y, z = p.obs()["objects"][obj_key]["quat"]
+    up_z = 1 - 2 * (x * x + y * y)
+    require("retreat", up_z > 0.8,
+            f"orange tipped over during retreat (up.z {up_z:.2f})")
     result["retreat_distance"] = moved
 
     result["ok"] = True

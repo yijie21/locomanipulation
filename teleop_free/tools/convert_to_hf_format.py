@@ -234,6 +234,8 @@ def main():
     ap.add_argument("--sessions", nargs="+", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--include-discarded", action="store_true")
+    ap.add_argument("--only", type=int, nargs="*", default=None,
+                    help="keep only these source episode indices")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -253,6 +255,8 @@ def main():
         for pq in sorted((sess / "data/chunk-000").glob("episode_*.parquet")):
             src_ep = int(pq.stem.split("_")[1])
             if src_ep in discarded and not args.include_discarded:
+                continue
+            if args.only is not None and src_ep not in args.only:
                 continue
             table = pq_mod.read_table(pq)
             n50 = table.num_rows
