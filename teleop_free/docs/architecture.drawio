@@ -87,7 +87,7 @@
     <mxCell id="agent" value="&lt;b&gt;脚本 Agent（Python）&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;每 tick（50 Hz）：&lt;/b&gt;&lt;br&gt;物体位姿（世界系）&lt;br&gt;→ 平滑滤波&lt;br&gt;→ 手腕目标：位置[3] + 姿态（骨盆系）&lt;br&gt;→ IK 解算&lt;br&gt;→ 全身关节角 [29]&lt;br&gt;→ 打包成关节流发出" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#f8e9f3;strokeColor=#a2367e;strokeWidth=2;fontSize=12.5;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
       <mxGeometry x="40" y="70" width="360" height="280" as="geometry" />
     </mxCell>
-    <mxCell id="deploy" value="&lt;b&gt;SONIC deploy（C++）&lt;/b&gt;&lt;br&gt;&lt;br&gt;输入：③④⑤ + ① 本体状态&lt;br&gt;WBC policy 推理（TensorRT）&lt;br&gt;输出：① 电机指令 @50 Hz" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12.5;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+    <mxCell id="deploy" value="&lt;b&gt;SONIC deploy（C++）&lt;/b&gt;&lt;br&gt;&lt;br&gt;输入：③④⑤ + ① 本体状态&lt;br&gt;WBC policy 推理（TensorRT）&lt;br&gt;输出：① 电机指令 @50 Hz&lt;br&gt;⑥ 状态 + motion latent" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12.5;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
       <mxGeometry x="700" y="100" width="280" height="220" as="geometry" />
     </mxCell>
     <mxCell id="sim" value="&lt;b&gt;MuJoCo 仿真（实时）&lt;/b&gt;&lt;br&gt;&lt;br&gt;输入：① 电机指令&lt;br&gt;物理步进&lt;br&gt;输出：① 本体状态&lt;br&gt;② 真值　⑦ 相机" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff2e0;strokeColor=#c65a1e;strokeWidth=2;fontSize=12.5;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
@@ -114,7 +114,7 @@
     <mxCell id="cardK" value="&lt;b&gt;⑧ 录制键&lt;/b&gt;&lt;br&gt;保存 / 丢弃（代替人按按钮）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
       <mxGeometry x="140" y="600" width="220" height="60" as="geometry" />
     </mxCell>
-    <mxCell id="exporter" value="&lt;b&gt;data exporter&lt;/b&gt;&lt;br&gt;输入：⑦ 相机流 + ⑧ 录制键&lt;br&gt;输出：LeRobot 数据集（每个成功 episode：视频 + 状态/动作序列 + 任务描述）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=12.5;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+    <mxCell id="exporter" value="&lt;b&gt;data exporter&lt;/b&gt;&lt;br&gt;输入：⑥ 状态+latent、⑦ 相机流、⑧ 录制键&lt;br&gt;输出：LeRobot 数据集（每个成功 episode：视频 + 状态/动作序列 + 64 维 latent + 任务描述）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=12.5;align=left;spacing=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
       <mxGeometry x="540" y="580" width="380" height="100" as="geometry" />
     </mxCell>
     <mxCell id="warn" value="&lt;b&gt;⚠ 两个数据坑&lt;/b&gt;：真值的关节角是 MuJoCo 顺序，④ 关节流要 IsaacLab 顺序 —— Agent 负责转换，混用会肩/腿错位。切入 ④ 前必须先灌入至少一个 chunk，否则 deploy 因缓冲区空直接停控。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#fff9e6;strokeColor=#b8962e;strokeWidth=2;fontSize=11.5;align=left;spacing=10;" vertex="1" parent="1">
@@ -134,5 +134,10 @@
     <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="cardI" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
     <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="agent" target="cardK"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="130" y="560" /></Array></mxGeometry></mxCell>
     <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cardK" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="card6" value="&lt;b&gt;⑥ 状态/调试流&lt;/b&gt;&lt;br&gt;deploy 每帧的关节状态、参考位姿&lt;br&gt;+ &lt;b&gt;64 维 motion latent&lt;/b&gt;（encoder 输出）&lt;br&gt;→ 数据集列 action.motion_token [64]&lt;br&gt;（收不到时记零，注意校验）" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#eef2fb;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11.5;align=left;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="980" y="545" width="240" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=0.7;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="deploy" target="card6"><mxGeometry relative="1" as="geometry" /></mxCell>
+    <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.35;" edge="1" parent="1" source="card6" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
   </root>
 </mxGraphModel></diagram></mxfile>
