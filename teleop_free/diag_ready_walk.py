@@ -46,8 +46,13 @@ def main() -> None:
     # the POLICY expecting the arms there (so its balance model is roughly
     # honest), and the sim-side actuator pin makes the pose exact — the
     # policy alone tops out at elbow ~1.5 rad and the forearms sag 15-30 deg.
-    PIN = {"left": [0.10, 0.20, 0.0, 1.70, 0.0, 0.0, 0.0],
-           "right": [0.10, -0.20, 0.0, 1.70, 0.0, 0.0, 0.0]}
+    # Elbow ZERO is the level forearm: the G1's joint zero pose is already
+    # the L-shape (upper arm vertical, forearm horizontal), and POSITIVE
+    # elbow angle extends the arm downward — 1.5 rad is hanging straight.
+    # Every earlier attempt commanded 1.5-2.09 believing bigger = more fold,
+    # i.e. commanded the arms DOWN and then fought the result.
+    PIN = {"left": [0.0, 0.20, 0.0, 0.0, 0.0, 0.0, 0.0],
+           "right": [0.0, -0.20, 0.0, 0.0, 0.0, 0.0, 0.0]}
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     from primitives import upper_body_17
     p.cmd.set_upper_body(upper_body_17(PIN["left"], PIN["right"]))
