@@ -57,9 +57,16 @@ TABLE_CLEARANCE = 0.012
 # How far off horizontal the pinch axis may sit. A vertical cylinder can be
 # gripped across any horizontal chord, and a tilted jaw still catches the
 # barrel, but past this the grip is riding up the side rather than around it.
-JAW_TILT_MAX = np.deg2rad(25.0)   # was 45; at 35+ the descending fingers led
+JAW_TILT_MAX = np.deg2rad(12.0)   # was 45, then 25; tilt drops a fingertip
                                   # into the can before the jaw arrived
-MAX_DESCEND = np.deg2rad(25.0)    # steepest allowed approach dive
+MAX_DESCEND = np.deg2rad(8.0)     # steepest allowed approach dive. 25 deg
+                                  # let the fingertips lead ~10 cm below the
+                                  # palm: with the grip 8.5 cm over the table
+                                  # the plan required fingertips BELOW the
+                                  # tabletop — the z-floor held the palm 2.4 cm
+                                  # above the grasp line (v-24..-28 telemetry)
+                                  # while the fingertips still scraped, and
+                                  # every entry ended in a wedge/flinch loop
 # Weights for the spin score. Closeness to the current palm dominates, because
 # every degree of it is arm travel; clearance is a hard gate rather than a cost.
 W_CLOSENESS = 1.0

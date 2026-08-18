@@ -404,7 +404,15 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     ok, why = stream_reach.grasp_streamed(p, obj_key, grip, plan, side=side,
                                           surface_top=surf_a["top"],
                                           replan=replan, ghost=show_ghost,
-                                          nudge=False, pin=None)
+                                          nudge=False, pin=reset.pin_arms)
+    # pin=pin_arms: the policy delivers the streamed WRIST ORIENTATION with a
+    # heavy droop — z-chain telemetry showed the palm 2.6 cm above its own
+    # command while the fingertips pressed the tabletop (the table was
+    # propping the drooped hand up). No command-side bias can fix delivered
+    # orientation; the sim-side actuator pin executes the IK joints exactly
+    # (+-0.03 rad), wrist included. The old objection to the pin (IK-exact
+    # heights scraping the table) was the diving-approach geometry, fixed by
+    # MAX_DESCEND=8 deg + the z-floor.
     require("grasp", ok, why)
 
     # VLA data gate 2: the object must have stayed in the ego frame through

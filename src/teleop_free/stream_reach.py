@@ -723,7 +723,10 @@ V_APPROACH = 0.10         # m/s inside the jaw-alignment approach
 # flat finger (which shoves): the graze-and-roll that killed 8 of 15
 # episodes happens at the OPEN aperture's finger tips.
 PRE_NARROW = 0.10
-SAG_COMP = 0.035          # measured: 0.02 still left FURN[R:middle_1] wedges
+SAG_COMP = 0.018          # free-air sag is ~1.6-2 cm; 0.035 was measured
+                          # against a WEDGED hand (the table held it down) and
+                          # overcompensated: signed telemetry showed the palm
+                          # riding 15-19 mm HIGH, closing the jaw at the rim
 V_LIFT = 0.22
 LEAD_MAX = 0.08           # m the reference may run ahead of the real palm
 KP_TRACK = 0.7            # extra command past the reference, fights the sag
@@ -795,6 +798,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     stall_palm, stall_t = None, time.time()
     vis_n = tot_n = 0        # ego-camera visibility, for the VLA data gate
     in_lift = 0.0            # slide-in extra height, set in the in phase
+    dbg_z = ""               # z-chain telemetry (line/cmd/palm/floor)
+    touch_seen: set = set()  # object-contact links since the last status line
 
     while time.time() < deadline:
         s = p.state.latest(5) or s
@@ -807,6 +812,9 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
         rot_p = Primitives._rot(s["palms"][side]["quat"])
         obj = p.object_pos(obj_key, s)
 
+        tl0 = s["objects"][obj_key].get("touch_links")
+        if tl0:
+            touch_seen.update(tl0)
         if "cam" in s["objects"][obj_key]:
             global LAST_EGO_VIS
             cam = s["objects"][obj_key]["cam"]
@@ -933,19 +941,40 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     d_err = d_err.copy()
                     d_err[2] = 0.0
                 trim_w = np.clip(trim_w + 0.5 * dt * d_err, -0.04, 0.04)
-            final_w = obj_f - rot_t @ offset + trim_w
+            base = obj_f - rot_t @ offset
+            if surface_top is not None:
+                # Grip-height feasibility. The z-floor (hand lowest point
+                # over the table) moves with the PLAN's rotation, and some
+                # plans put it above the grasp line — the palm then hovers
+                # at the floor while the thumb sweeps the can at rim height
+                # (TOUCH[R:thumb_1] + can_moved telemetry). Raise the grip
+                # on the can by up to 2 cm to clear the floor; a grip that
+                # needs more is unreachable — fail instead of bulldozing.
+                import adaptive_grasp as _ag
+                low_c2 = float((_ag.hand_points() @ rot_t.T)[:, 2].min())
+                zf2 = (surface_top + 0.012 - low_c2
+                       - float((rot_t @ _ag.OFFSET)[2]))
+                need = zf2 + 0.003 - float(base[2])
+                if need > 0.02:
+                    return False, (
+                        "grip height unreachable over the table: the hand's "
+                        f"low point forces the palm {need * 100:.1f} cm "
+                        "above the grasp line")
+                if need > 0:
+                    base = base + np.array([0.0, 0.0, need])
+            final_w = base + trim_w
             # The gate measures the DELIVERED palm against the TRUE grip
             # line (trim excluded): the trim deliberately biases the COMMAND
             # to cancel the policy's delivery offset, so measuring against
             # the biased line would hold the gate shut by that offset
             # forever.
-            to_true = (obj_f - rot_t @ offset) - palm
+            to_true = base - palm
             e_ent = float(np.dot(to_true, entry))
             perp = to_true - e_ent * entry
             lat = float(np.linalg.norm(perp))
             lat_h = float(np.hypot(perp[0], perp[1]))
-            full_f = (np.array([lat, e_ent, 0.0]) if full_f is None
-                      else 0.8 * full_f + 0.2 * np.array([lat, e_ent, 0.0]))
+            raw_f = np.array([lat, e_ent, lat_h, perp[2]])
+            full_f = raw_f if full_f is None else 0.8 * full_f + 0.2 * raw_f
             # HARD align precondition, like the discrete servo's separate
             # align phase: zero forward motion until laterally within 12 mm.
             # The soft 18 mm gate let the hand creep in 17%-speed while still
@@ -965,6 +994,13 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # thumb-graze the gate exists to prevent is a horizontal miss.
             gate = 0.0 if lat_h > 0.018 else float(
                 np.clip(1.0 - lat_h / 0.018, 0.0, 1.0))
+            if e_ent < 0.08 and lat > 0.022:
+                # Final 8 cm only fully ON the line, vertical included: the
+                # batch that gated horizontally all the way in finished the
+                # entry 26-31 mm off and bulldozed the can 15 cm through
+                # flinch loops (10/15). The trim integrates while this
+                # holds, so the hold is convergent, not a deadlock.
+                gate = 0.0
             # Hold back the un-gated part of the entry distance: laterally
             # free, forward only as far as alignment has earned.
             tgt = final_w - (1.0 - gate) * max(e_ent, 0.0) * entry
@@ -974,14 +1010,17 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # dragging across it (the wedge that froze lat at 21-30 mm).
             in_lift = 0.03 * float(np.clip((e_ent - 0.08) / 0.12, 0.0, 1.0))
             v = V_APPROACH if e_ent > 0.05 else V_APPROACH * 0.5
-            # Strict gate, or the patience gate: at a side-extended reach
-            # the policy's station-keeping wobble sits at 12-15 mm and the
-            # strict gate never latches — watched hovering ON the can, jaw
-            # around it, for 40 s. Past 12 s of station-keeping the extra
-            # wait buys nothing; the pre-narrowed jaw wraps from 18 mm.
-            good = lat < 0.012 and abs(full[1]) < 0.010
-            patient = (now - in_since > 12.0
-                       and lat < 0.018 and abs(full[1]) < 0.015)
+            # Close on the palm-frame TRUTH (`full` = measured object minus
+            # the wanted offset), not on distance to the planned line: with
+            # the pinned arm the hover sits 15-21 mm off the LINE while the
+            # can is already inside the jaw envelope, and every extra hover
+            # second is another fingertip graze inching the can away (the
+            # 15 cm-cumulative aborts). If the can is within the envelope,
+            # closing funnels it to the palm — that is what fingers curl FOR.
+            g_lat = float(np.hypot(full[0], full[2]))
+            good = g_lat < 0.015 and abs(full[1]) < 0.012
+            patient = (now - in_since > 8.0
+                       and g_lat < 0.020 and abs(full[1]) < 0.018)
             if good or patient:
                 ok_ticks += 1
                 if ok_ticks > 20:                     # ~0.4 s in tolerance
@@ -1054,6 +1093,11 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             if cmd[2] < z_floor:
                 cmd = cmd.copy()
                 cmd[2] = z_floor
+            if phase == "in" and obj_f is not None:
+                line_z = float((obj_f - rot_t @ offset)[2])
+                dbg_z = (f"  z(pal{palm[2] - line_z:+.3f}"
+                         f" cmd{float(cmd[2]) - line_z:+.3f}"
+                         f" fl{z_floor - line_z:+.3f})")
         aim_pf = p.world_to_root_full(cmd, s)
         rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_t
         q_sol, res, _ = arm.ik.solve(side, aim_pf, rot_pf, q_mj29=arm.q,
@@ -1087,9 +1131,18 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             ft = s.get("furniture_touch")
             if ft:
                 extra += f"  FURN[{','.join(ft)}]"
+            if touch_seen:
+                extra += f"  TOUCH[{','.join(sorted(touch_seen))}]"
+                touch_seen.clear()
+            dcan = float(np.linalg.norm(obj - obj0))
+            if dcan > 0.01:
+                extra += f"  can_moved {dcan * 100:.1f}cm"
             if phase == "in" and full_f is not None:
                 extra += (f"  lat {full_f[0] * 1000:.0f}mm"
-                          f" ent {full_f[1] * 100:.1f}cm")
+                          f"(h{full_f[2] * 1000:.0f}"
+                          f" v{full_f[3] * 1000:+.0f})"
+                          f" ent {full_f[1] * 100:.1f}cm"
+                          + (dbg_z if dbg_z else ""))
             tpf = p.world_to_root_full(np.asarray(tgt, dtype=float), s)
             p.log(f"    stream cont[{phase}] palm->ref "
                   f"{float(np.linalg.norm(lead)) * 100:.1f} cm  res {res:.3f}"
