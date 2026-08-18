@@ -196,9 +196,19 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     p.tuck_arms()
     if reset is not None:
         # The actuator-level pin is what actually HOLDS the level forearms
-        # through the gait; the frozen reference alone under-delivers.
-        from primitives import READY_ARM
-        reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
+        # through the gait; the frozen reference alone under-delivers. The
+        # POSE is chosen by the hand-sweep clearance rule: with level
+        # forearms the effective radius grows, so the hands' lowest swept
+        # point must clear the tallest object on the table by a margin —
+        # collision avoidance by ALTITUDE, since steering around would
+        # conflict with having to reach the table at all.
+        from primitives import walking_arm_pose
+        _tallest = surf_a["top"] + max(
+            o.get("height", 0.15) for o in meta["objects"].values())
+        _pn, _pose = walking_arm_pose(_tallest)
+        print(f"  walking arms: '{_pn}' pose (hand sweep must clear "
+              f"{_tallest + 0.08:.2f} m)")
+        reset.pin_arms(left=_pose["left"], right=_pose["right"])
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
     # Both recordings start here, after the settle, so their first frame is the

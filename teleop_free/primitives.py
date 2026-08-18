@@ -352,6 +352,29 @@ READY_WRISTS = {"left": np.array([0.24, 0.18, 0.05]),
 READY_ARM = {"left": [0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
              "right": [0.0, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]}
 
+# The raised walking variant: shoulder pulled back, elbow compensating so
+# the forearm stays level, wrist pitched up. Lifts the hand's LOWEST point
+# (FK + measured hand point cloud) from pelvis-frame +0.055 to +0.113 —
+# the hand-sweep clearance pose for walking near tables with objects on
+# them, where the level-forearm posture's larger effective radius would
+# otherwise sweep through anything taller than ~0.80 m.
+READY_ARM_NEAR = {"left": [-0.35, 0.2, 0.0, 0.30, 0.0, -0.40, 0.0],
+                  "right": [-0.35, -0.2, 0.0, 0.30, 0.0, -0.40, 0.0]}
+# Lowest hand point, pelvis frame, for each walking pose (FK, hand_points).
+HAND_LOW_PF = {"ready": 0.055, "near": 0.113}
+GAIT_PELVIS_DIP = 0.04        # how far the pelvis dips below standing mid-gait
+
+
+def walking_arm_pose(obstacle_top_z: float, margin: float = 0.08):
+    """Pick the walking arm pose whose swept hand volume clears
+    `obstacle_top_z` (world) by `margin` even at the gait's lowest pelvis.
+    Returns (name, {side: 7 joints}). Falls back to the raised pose."""
+    for name, pose in (("ready", READY_ARM), ("near", READY_ARM_NEAR)):
+        low = STANDING_PELVIS_Z - GAIT_PELVIS_DIP + HAND_LOW_PF[name]
+        if low >= obstacle_top_z + margin:
+            return name, pose
+    return "near", READY_ARM_NEAR
+
 
 def upper_body_17(left7, right7, waist=(0.0, 0.0, 0.0)) -> np.ndarray:
     """The planner message's 17-value upper-body order: waist y/r/p, then
