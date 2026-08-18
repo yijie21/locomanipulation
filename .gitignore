@@ -1,9 +1,5 @@
 # Upstream clones — each is its own git repo, tens of GB. Never tracked here.
-/EmbodiedGen/
-/GR00T-WholeBodyControl/
-/Isaac-GR00T/
-/IsaacLab/
-/IsaacLab-Arena/
+/third_party/
 
 # Generated data (episodes, logs, raw videos live here; curated videos go to /videos)
 /outputs/
