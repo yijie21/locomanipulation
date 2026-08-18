@@ -87,7 +87,10 @@ SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json
 # Coarse arrival is all the approach owes us now — the streamed grasp's own
 # guarded walk-in (stream_reach._nudge_closer) closes the final gap to a
 # pelvis-frame grip depth of 0.24-0.34 m.
-REACH_XY_TOL = 0.65
+# Stage-1 endpoint: a SAFE distance — greater than arm extent + object
+# radius, so no contact is possible regardless of anything's height. The
+# careful stage-2 approach (stream_reach.final_approach) closes the rest.
+REACH_XY_TOL = 0.90
 # The plate sits deep inside surface B's footprint: the legal stand ring is
 # ~0.50 m out no matter how many times the approach re-plans. Dropping from
 # above is tolerant, so let the place stages accept what the geometry allows.
@@ -196,19 +199,12 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     p.tuck_arms()
     if reset is not None:
         # The actuator-level pin is what actually HOLDS the level forearms
-        # through the gait; the frozen reference alone under-delivers. The
-        # POSE is chosen by the hand-sweep clearance rule: with level
-        # forearms the effective radius grows, so the hands' lowest swept
-        # point must clear the tallest object on the table by a margin —
-        # collision avoidance by ALTITUDE, since steering around would
-        # conflict with having to reach the table at all.
-        from primitives import walking_arm_pose
-        _tallest = surf_a["top"] + max(
-            o.get("height", 0.15) for o in meta["objects"].values())
-        _pn, _pose = walking_arm_pose(_tallest)
-        print(f"  walking arms: '{_pn}' pose (hand sweep must clear "
-              f"{_tallest + 0.08:.2f} m)")
-        reset.pin_arms(left=_pose["left"], right=_pose["right"])
+        # through the gait; the frozen reference alone under-delivers.
+        # Safety near obstacles is DISTANCE-staged (stage 1 stops 0.9 m out)
+        # and reactive (stage 2 backs off on any disturbance) — no altitude
+        # assumptions about the world.
+        from primitives import READY_ARM
+        reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
     # Both recordings start here, after the settle, so their first frame is the
@@ -310,35 +306,17 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         return float(np.hypot(out[0], out[1])) if (dxy > 0).any() else \
             -float(max(dxy))
 
-    # Division of labour, learned the hard way: the true feasible band
-    # (no body-table contact AND reach core AND front-sector approach) is
-    # 1-2 voxels wide — narrower than walking noise — so the map picks the
-    # AZIMUTH and the side (what it is good at), and the depth is closed by
-    # the guarded shuffle in grasp_streamed's nudge (what IT is good at).
-    # A failed lookup degrades to the current stand instead of failing.
+    # Stage-2 navigation: careful facing-the-object advance from the safe
+    # ring, reactive back-off on any disturbance, stop at grasping depth or
+    # the hip's table-edge limit, then the minimal side-turn that puts the
+    # object inside the reach map (dead-centre is kinematically infeasible
+    # past the hip-contact line, so this is "as centred as possible").
     rm = reach_map.ReachMap()
     z_pf_std = float(grip_pre[2] - STANDING_PELVIS_Z)
-    st = p.obs()
-    sel = reach_map.best_stand(
-        rm, grip_pre, z_pf_std, p.pelvis_xy(st), p.pelvis_yaw(st),
-        edge_dist, arm=side, margin_floor=0.025, edge_floor=0.12)
-    if sel is not None:
-        s_xy, psi, m_pred = sel
-        if float(np.linalg.norm(s_xy - p.pelvis_xy(st))) > 0.10:
-            p.walk_to(s_xy, stop_dist=0.10, timeout=20.0, face_target=False)
-        p.turn_to(psi)
-        p.log(f"stand: map azimuth taken (predicted margin "
-              f"{m_pred * 100:.0f} mm-class)")
-    else:
-        d = grip_pre[:2] - p.pelvis_xy(st)
-        p.turn_to(float(np.arctan2(d[1], d[0])) - np.deg2rad(12))
-        p.log("stand: map found nothing nearby, facing the can at -12 deg")
-
-    # Anchor the heading the moment the turn finishes: every later loop faces
-    # this yaw. Without the anchor the robot wandered ~50 deg between planning
-    # and reaching, which put the pregrasp behind the shoulder and surfaced as
-    # nonsense stalls of 0.5-1.3 m.
-    p.hold_yaw = p.pelvis_yaw()
+    ok2, side, why2 = stream_reach.final_approach(
+        p, obj_key, rm, edge_dist, z_pf_std, side_pref=side)
+    require("grasp", ok2, why2)
+    hold_side = "left" if side == "right" else "right"
 
     # Plan first, then crouch only as far as THIS plan needs. The order used to
     # be the other way round because the grip height was a constant of the

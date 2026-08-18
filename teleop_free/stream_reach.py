@@ -404,6 +404,100 @@ def _nudge_pass(p: Primitives, grip_world, side: str) -> None:
     p.log(f"  stream: grip now {p.world_to_root_full(grip_world, s)[0]:.2f} m out")
 
 
+def final_approach(p: Primitives, obj_key: str, rm, edge_dist_fn,
+                   z_pf: float, side_pref: str = "right",
+                   timeout: float = 25.0):
+    """Stage-2 navigation: slow, guarded, facing the object the whole way.
+
+    Advances straight at the object (facing == movement == bearing, the
+    heading-compensated pattern), re-measuring at 50 Hz, and stops when the
+    object reaches grasping depth or the hip reaches the table edge. Safety
+    is REACTIVE, not omniscient: any disturbance of the object (>2 cm) backs
+    the robot off and re-anchors — no assumption about how tall anything is.
+    A final minimal side-turn then places the object at the smallest lateral
+    offset the reach map accepts (dead-centre is kinematically empty beyond
+    the hip-contact line, so "as centred as physically possible").
+
+    -> (ok, side, why)
+    """
+    from agent_server import LocomotionMode
+    X_STOP = 0.26             # object depth at which grasping is possible
+    EDGE_STOP = 0.16          # hip-to-edge, incl. ~3 cm of reach-lean sway
+    s = p.obs()
+    can0 = p.object_pos(obj_key, s)
+    backoffs = 0
+    end = time.time() + timeout
+    while time.time() < end:
+        s = p.obs()
+        if s["fallen"]:
+            return False, side_pref, "fell during the final approach"
+        can = p.object_pos(obj_key, s)
+        moved = float(np.linalg.norm(can - can0))
+        if moved > 0.10:
+            return False, side_pref, (
+                f"object knocked {moved * 100:.0f} cm away during the final "
+                f"approach")
+        yaw = p.pelvis_yaw(s)
+        d = can[:2] - p.pelvis_xy(s)
+        c, sn = np.cos(yaw), np.sin(yaw)
+        x_pf = c * d[0] + sn * d[1]
+        if moved > 0.02 and backoffs < 3:
+            # Reactive guard: something (us, most likely) disturbed it.
+            # Back straight off, let it settle, re-anchor, resume.
+            backoffs += 1
+            p.log(f"  approach2: object stirred {moved * 100:.1f} cm, "
+                  f"backing off ({backoffs}/3)")
+            stop_t = time.time() + 0.8
+            fv = (c, sn, 0.0)
+            while time.time() < stop_t:
+                p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=0.22,
+                            movement=(-fv[0], -fv[1], 0.0), facing=fv)
+                time.sleep(DT)
+            p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
+            can0 = p.object_pos(obj_key)
+            continue
+        if x_pf <= X_STOP or edge_dist_fn(p.pelvis_xy(s)) <= EDGE_STOP:
+            break
+        bearing = float(np.arctan2(d[1], d[0]))
+        face = yaw + float(np.clip(wrap(bearing - yaw), -0.6, 0.6))
+        fv = (np.cos(face), np.sin(face), 0.0)
+        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=0.25,
+                    movement=fv, facing=fv)
+        time.sleep(DT)
+    stop_t = time.time() + 1.2
+    while time.time() < stop_t:
+        p.cmd.frame(mode=LocomotionMode.IDLE, facing=p._facing(p.obs()))
+        time.sleep(DT)
+
+    # Minimal side-turn into the reach map: try facing offsets outward from
+    # zero; the first (smallest) that lands the object in a graspable voxel
+    # with a voxel of margin wins. Prefers the requested arm, falls back to
+    # the other.
+    s = p.obs()
+    can = p.object_pos(obj_key, s)
+    d = can[:2] - p.pelvis_xy(s)
+    dist = float(np.linalg.norm(d))
+    bearing = float(np.arctan2(d[1], d[0]))
+    sides = [side_pref, "left" if side_pref == "right" else "right"]
+    for delta_deg in range(0, 42, 3):
+        for sgn in ((0,) if delta_deg == 0 else (1, -1)):
+            delta = np.deg2rad(delta_deg) * (sgn or 1)
+            rel = np.array([dist * np.cos(delta), -dist * np.sin(delta),
+                            z_pf])
+            for side in sides:
+                if rm.graspable(rel, side):
+                    psi = bearing + delta
+                    p.turn_to(psi)
+                    p.hold_yaw = p.pelvis_yaw()
+                    p.log(f"  approach2: stopped at depth {dist:.2f} m, "
+                          f"turned {np.degrees(delta):+.0f} deg -> {side} "
+                          f"arm, object at rel {np.round(rel, 2)}")
+                    return True, side, ""
+    return False, side_pref, (
+        f"object at {dist:.2f} m is outside the reach map at every facing "
+        f"the body can take without touching the table")
+
+
 def place_streamed(p: Primitives, obj_key: str, drop_world,
                    side: str = "right") -> tuple[bool, str]:
     """Carry the palm over the drop point and open the hand. -> (ok, why)."""
@@ -854,7 +948,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
         aim_pf = p.world_to_root_full(cmd, s)
         rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_t
         q_sol, res, _ = arm.ik.solve(side, aim_pf, rot_pf, q_mj29=arm.q,
-                                     use_waist=True, iters=10)
+                                     use_waist=True, iters=10, waist_cost=40.0)
         if res < 0.10:
             arm.q = q_sol
         arm._push(arm.q)
