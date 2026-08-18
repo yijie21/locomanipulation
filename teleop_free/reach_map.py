@@ -208,3 +208,45 @@ class ReachMap:
 
 if __name__ == "__main__":
     build()
+
+
+def best_stand(rm: "ReachMap", obj_w, obj_z_pf: float, pelvis_xy, yaw_now: float,
+               edge_dist_fn, arm: str = "both",
+               margin_floor: float = 0.05, edge_floor: float = 0.10):
+    """Pick (stand_xy, yaw) near the current stand that puts the object deep
+    inside the reach map.
+
+    `edge_dist_fn(xy) -> m` gives the distance from a candidate stand to the
+    nearest table edge. The floor is 0.10 — the squat-era knee clearance of
+    0.26 CONFLICTS with the reach core (the can sits only 0.12 m inboard, so
+    a core stand necessarily hugs the edge), and the no-squat flow's
+    successful episodes all stood at 0.10-0.20. The facing offset
+    from the object's bearing is capped at 40 deg — the body faces the table
+    edge, the hand crosses it from above, and the object stays in the ego
+    camera. Returns (stand_xy, yaw, margin) or None if nothing qualifies.
+    """
+    obj_w = np.asarray(obj_w, dtype=float)
+    best = None
+    for dx in np.arange(-0.45, 0.46, 0.05):
+        for dy in np.arange(-0.45, 0.46, 0.05):
+            s = np.asarray(pelvis_xy, dtype=float) + [dx, dy]
+            if edge_dist_fn(s) < edge_floor:
+                continue
+            d = obj_w[:2] - s
+            if np.linalg.norm(d) < 0.05:
+                continue
+            bearing = float(np.arctan2(d[1], d[0]))
+            for delta in np.arange(-0.7, 0.71, 0.1):
+                psi = bearing + delta
+                c, sn = np.cos(psi), np.sin(psi)
+                rel = np.array([c * d[0] + sn * d[1],
+                                -sn * d[0] + c * d[1], obj_z_pf])
+                m = rm.margin(rel, arm)
+                if m < margin_floor:
+                    continue
+                J = m - 0.3 * abs(delta) - 0.2 * float(np.hypot(dx, dy))
+                if best is None or J > best[0]:
+                    best = (J, s, psi, m)
+    if best is None:
+        return None
+    return best[1], best[2], best[3]

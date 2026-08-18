@@ -866,7 +866,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
 
 def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                    side: str = "right", surface_top: float | None = None,
-                   replan=None, ghost=None) -> tuple[bool, str]:
+                   replan=None, ghost=None,
+                   nudge: bool = True) -> tuple[bool, str]:
     """The whole grasp: raise, walk in, servo, close, lift. -> (ok, why)."""
     # Raise BEFORE walking in: from here on the hand is above the tabletop
     # and the approach can only ever come down onto the can, never up through
@@ -883,7 +884,8 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
         p.cmd.frame(facing=p._facing(s0))
         time.sleep(DT)
     _raise_hand(p, side, surface_top, grip_world)
-    _nudge_closer(p, grip_world, side)
+    if nudge:
+        _nudge_closer(p, grip_world, side)
     arm = StreamedArm(p, side)
     arm.start()
     try:

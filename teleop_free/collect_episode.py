@@ -38,6 +38,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import adaptive_grasp  # noqa: E402
+import reach_map  # noqa: E402
 import grasping  # noqa: E402
 import stream_reach  # noqa: E402
 
@@ -276,81 +277,61 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
               + grasping.GRIP_LIFT)
     hold_side = "left" if side == "right" else "right"
 
-    def aim(state):
-        """Pick the heading whose harder end of the reach is nearest the shoulder.
+    # Stand-pose selection from the reach map: put the GRIP POINT deep
+    # inside the chosen arm's graspable region (margin-maximised), with the
+    # facing within 40 deg of the object's bearing and the knees clear of
+    # the table edge. Replaces aim()'s shoulder-distance scoring — the map
+    # already encodes handedness, self-collision, grasp-quality orientation
+    # and the delivered torso envelope, so the side bearing and the stand
+    # depth fall out of one lookup instead of three tuned thresholds.
+    grip_pre = np.array([p.object_pos(obj_key)[0], p.object_pos(obj_key)[1],
+                         obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
+    _half = np.asarray(surf_a.get("half_extent", [0.6, 0.6])[:2], dtype=float)
+    _cxy = np.asarray(surf_a["xy"], dtype=float)
 
-        The bearing used to be a constant 32 deg, chosen so the object lands
-        where the hand naturally hangs rather than across the body. That is the
-        right instinct and the wrong resolution, because the reach has TWO ends
-        and the bearing pulls them in opposite directions: swinging further off
-        the object line brings the grip point in and pushes the staging point
-        out. Measured on the last batch, at the fixed 32 deg the grip sat at a
-        comfortable 0.32 m from the shoulder while the staging point it has to
-        pass through first sat at 0.38-0.44 — outside the arm. The reach was
-        never failing at the object. It was failing 20 cm to the side of it.
+    def edge_dist(xy):
+        dxy = np.abs(np.asarray(xy) - _cxy) - _half
+        out = np.maximum(dxy, 0.0)
+        return float(np.hypot(out[0], out[1])) if (dxy > 0).any() else \
+            -float(max(dxy))
 
-        So score a heading by its WORSE end and take the argmin. On the same
-        four episodes that moves the answer from 32 deg to 10-20 deg and brings
-        both ends inside the arm wherever the stand pose allows it at all.
-
-        Returns None when no heading gives a plannable grasp.
-        """
-        here = p.pelvis_xy(state)
-        base = float(np.arctan2(*(p.object_pos(obj_key, state)[:2] - here)[::-1]))
-        sign = 1.0 if side == "right" else -1.0
-        sh = SHOULDER_OFFSET * np.array([1.0, sign, 1.0])
-        pelvis_z = grip_z - CROUCH_MARGIN
-        best = None
-        # Never square-on: 0 deg keeps winning on the turn penalty, but a
-        # can at the body's midline puts the whole slide-in across the
-        # chest, where the policy under-delivers and every graze rolled the
-        # can along the table edge. The measured sweet spot is 10-20 deg.
-        for off in np.deg2rad(np.arange(10.0, 61.0, 5.0)):
-            yaw = wrap(base + sign * off)
-            pl = plan_for(here, yaw, state)
-            if not pl.ok:
-                continue
-            c, sn = np.cos(yaw), np.sin(yaw)
-            rot = (np.array([[c, -sn, 0.0], [sn, c, 0.0], [0.0, 0.0, 1.0]])
-                   @ grasping.PALM_PITCHED_ROT)
-            worst = 0.0
-            for pt in (pl.pregrasp, pl.grip):
-                w = pt - rot @ GRASP_CENTRE_OFFSET
-                local = rot.T @ np.array([w[0] - here[0], w[1] - here[1],
-                                          w[2] - pelvis_z])
-                worst = max(worst, float(np.linalg.norm(local - sh)))
-            # Penalise turning far. Several headings usually work, and the
-            # reachability numbers barely separate them, but the turn itself
-            # is real: aim kept picking a heading 99-137 deg off the one the
-            # robot arrived on, and turn_to timed out trying to wind there in
-            # place. At this weight a 90 deg turn costs the same as 8 cm of
-            # reach, so a close heading wins whenever it is nearly as good.
-            cost = worst + AIM_TURN_W * abs(wrap(yaw - p.pelvis_yaw(state)))
-            if best is None or cost < best[0]:
-                best = (cost, yaw, off, worst)
-
-        return best
-
-    aimed = aim(p.obs())
-    require("grasp", aimed is not None, "no heading here yields a graspable pose")
-    _cost, _yaw, _off, _worst = aimed
-    p.log(f"aim: {np.rad2deg(_off):.0f} deg off the object line, worst end "
-          f"{_worst:.3f} m from the shoulder (arm {ARM_REACH_LIMIT})")
-    # Fail here rather than in reach(). Reaching for a point the arm cannot
-    # make costs 14 s and reports "out of the arm's workspace" without saying
-    # by how much or which end; this says both, in one line, before moving.
-    # Coarse bound only: the streamed grasp walks itself into range
-    # (stream_reach._nudge_closer) and judges reachability with its own IK,
-    # so the planner-era arm limit no longer decides — it just catches stands
-    # so bad that no amount of walking in will fix the heading.
-    # +0.23, was +0.18: the guarded walk-in (stream_reach._nudge_closer) now
-    # reliably closes the last ~0.2 m itself, so this only needs to catch
-    # stands the walk-in cannot fix; 0.578 borderline-failed a graspable one.
-    require("grasp", _worst <= ARM_REACH_LIMIT + 0.23,
-            f"hopeless stand pose: best heading puts the reach {_worst:.3f} m "
-            f"from the shoulder")
-    if not p.turn_to(_yaw):
-        raise EpisodeFailed("grasp", p.aborted or "could not turn to the aim")
+    rm = reach_map.ReachMap()
+    z_pf_std = float(grip_pre[2] - STANDING_PELVIS_Z)
+    m_act = 0.0
+    for _attempt in range(3):
+        st = p.obs()
+        sel = reach_map.best_stand(
+            rm, grip_pre, z_pf_std, p.pelvis_xy(st), p.pelvis_yaw(st),
+            edge_dist, arm=side)
+        require("grasp", sel is not None,
+                "no nearby stand puts the object in the reach core")
+        s_xy, psi, m_pred = sel
+        if float(np.linalg.norm(s_xy - p.pelvis_xy(st))) > 0.08:
+            p.walk_to(s_xy, stop_dist=0.10, timeout=20.0, face_target=False)
+            # walk_to stops on the NEAR side of its radius, which here is
+            # always the far-from-the-can side; walk the residual once with
+            # an overshoot-compensated target.
+            err = s_xy - p.pelvis_xy()
+            if float(np.linalg.norm(err)) > 0.05:
+                p.walk_to(s_xy + err, stop_dist=0.08, timeout=10.0,
+                          face_target=False)
+        p.turn_to(psi)
+        st = p.obs()
+        yaw = p.pelvis_yaw(st)
+        d = grip_pre[:2] - p.pelvis_xy(st)
+        rel = np.array([np.cos(yaw) * d[0] + np.sin(yaw) * d[1],
+                        -np.sin(yaw) * d[0] + np.cos(yaw) * d[1], z_pf_std])
+        m_act = rm.margin(rel, side)
+        p.log(f"stand: margin predicted {m_pred * 100:.0f} -> actual "
+              f"{m_act * 100:.0f} mm-class at rel {np.round(rel, 2)}")
+        if m_act >= 0.025:
+            # One voxel of real margin is enough: the walk only lands within
+            # ~8 cm anyway and the grasp servo closes the loop from there —
+            # demanding more just makes the refinement bounce around the
+            # narrow core chasing its own stopping noise.
+            break
+    require("grasp", m_act >= 0.025,
+            f"stand refinement did not converge (margin {m_act * 100:.0f})")
 
     # Anchor the heading the moment the turn finishes: every later loop faces
     # this yaw. Without the anchor the robot wandered ~50 deg between planning
@@ -412,9 +393,13 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # (stream_reach squats the legs and leans the waist), so the planner-era
     # crouch machinery is bypassed entirely.
 
+    # The map refinement above already placed the stand; the planner-era
+    # walk-in band (grip x 0.24-0.34) is tuned for a farther stand and would
+    # walk the robot back OUT of the map core, so it is skipped.
     ok, why = stream_reach.grasp_streamed(p, obj_key, grip, plan, side=side,
                                           surface_top=surf_a["top"],
-                                          replan=replan, ghost=show_ghost)
+                                          replan=replan, ghost=show_ghost,
+                                          nudge=False)
     require("grasp", ok, why)
 
     s = p.obs()
