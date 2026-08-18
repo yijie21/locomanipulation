@@ -271,10 +271,11 @@ def reanchor(p: Primitives, side: str = "right") -> None:
     arm.stop()
 
 
-GRIP_X_MAX = 0.30         # was 0.34: at 0.38+ the policy's delivered lean
-                          # saturates ~3 cm short and the straining hand
-                          # grazes the can; tighter band, shorter reach
-GRIP_X_MIN = 0.24         # closer than this, the squatting knees hit the table
+GRIP_X_MAX = 0.30         # the reach map's outer band: [0.22, 0.30] is the
+                          # only overlap of the graspable region with stands
+                          # whose hip does not press the table edge
+GRIP_X_MIN = 0.22         # closer, and the hip leans on the table edge
+                          # and shoves it (FURN[R.hip_roll] forensics)
 
 RAISE_CLEAR = 0.10        # palm above the tabletop while walking the last bit
 
@@ -617,7 +618,8 @@ PRE_XY_MAX = 0.46         # horizontal reach from the pelvis
 
 
 def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
-                      side: str, replan=None, ghost=None) -> tuple[bool, str]:
+                      side: str, replan=None, ghost=None,
+                      pin=None, surface_top=None) -> tuple[bool, str]:
     """Travel, align, slide in, close, lift — one uninterrupted 50 Hz loop.
 
     `replan(wrist_now, palm_rot) -> Grasp` re-derives the candidate pose from
@@ -696,11 +698,17 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # LIVE can, so a thumb-graze that scoots it 5 cm is recoverable —
             # the hand simply re-centres on where it now is. Five episodes
             # died at exactly "5 cm in the in phase" for no lasting reason.
-            limit = NUDGE_MAX * 3 if phase == "in" else NUDGE_MAX
+            # Up/down tolerate a table-shove: the close stands lean the hip
+            # on the edge and slide the can a few cm with no robot contact;
+            # the live replan re-anchors on it, so only a big displacement
+            # (roll-away) is fatal before the slide-in begins.
+            limit = NUDGE_MAX * 3 if phase == "in" else NUDGE_MAX * 2.4
             if moved > limit:
                 hit = s["objects"][obj_key].get("touch_links") or ["nothing"]
+                ft = s.get("furniture_touch") or []
                 return False, (f"{obj_key} moved {moved * 100:.0f} cm in the "
-                               f"{phase} phase (touched {', '.join(hit)})")
+                               f"{phase} phase (touched {', '.join(hit)}"
+                               f"{'; furniture: ' + ', '.join(ft) if ft else ''})")
 
         if phase == "up":
             tgt, v = above_w, V_TRAVEL
@@ -830,6 +838,19 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             ref = palm + _clipn(lead, LEAD_MAX)
             lead = ref - palm
         cmd = ref + np.clip(KP_TRACK * lead, -0.05, 0.05)
+        if surface_top is not None:
+            # Hard geometric floor: with the pinned arm executing IK heights
+            # EXACTLY, any command whose HAND (not wrist — the fingertips
+            # hang below) would dip under tabletop+1.2 cm turns into a
+            # scrape that bulldozes the can. Computed from the measured
+            # hand point cloud at the CURRENT planned rotation.
+            import adaptive_grasp as _ag
+            low_c = float((_ag.hand_points() @ rot_t.T)[:, 2].min())
+            z_floor = (surface_top + 0.012 - low_c
+                       - float((rot_t @ _ag.OFFSET)[2]))
+            if cmd[2] < z_floor:
+                cmd = cmd.copy()
+                cmd[2] = z_floor
         aim_pf = p.world_to_root_full(cmd, s)
         rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_t
         q_sol, res, _ = arm.ik.solve(side, aim_pf, rot_pf, q_mj29=arm.q,
@@ -837,6 +858,13 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
         if res < 0.10:
             arm.q = q_sol
         arm._push(arm.q)
+        if pin is not None:
+            # Position-mode arm: the sim-side per-motor PD tracks the IK
+            # solution exactly (+-0.03 rad measured), instead of the policy's
+            # ~1 cm-and-worse delivery. The streamed reference above still
+            # runs so the policy's balance model sees the arm where it is;
+            # its arm torques are overridden at the actuator.
+            pin(**{side: [float(v) for v in arm.q[ARM_MJ[side]]]})
 
         # A palm that has not moved 2 cm in 8 s during the travel phases is
         # not slow, it is stuck — either the IK is rejecting every solution
@@ -853,6 +881,9 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
 
         if now - last_log > 2.0:
             extra = ""
+            ft = s.get("furniture_touch")
+            if ft:
+                extra += f"  FURN[{','.join(ft)}]"
             if phase == "in" and full_f is not None:
                 extra = (f"  lat {float(np.linalg.norm(full_f[[0, 2]])) * 1000:.0f}mm"
                          f" depth {full_f[1] * 100:.1f}cm")
@@ -867,7 +898,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
 def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                    side: str = "right", surface_top: float | None = None,
                    replan=None, ghost=None,
-                   nudge: bool = True) -> tuple[bool, str]:
+                   nudge: bool = True, pin=None) -> tuple[bool, str]:
     """The whole grasp: raise, walk in, servo, close, lift. -> (ok, why)."""
     # Raise BEFORE walking in: from here on the hand is above the tabletop
     # and the approach can only ever come down onto the can, never up through
@@ -877,6 +908,8 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     # the naturally hanging arm — the exact start geometry the 5/8 batch
     # proved out. Walking to the table keeps the level forearms; the last
     # 0.3 m and the reach do not need them.
+    if pin is not None:
+        pin()                    # drop the actuator pin with the reference
     p.cmd.upper_body = None
     s0 = p.obs()
     end0 = time.time() + 1.0
@@ -896,7 +929,8 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
         # normal table heights, and the squat survives only as the
         # out-of-reach fallback below.
         ok, why = _servo_continuous(p, arm, obj_key, plan, side,
-                                    replan=replan, ghost=ghost)
+                                    replan=replan, ghost=ghost, pin=pin,
+                                    surface_top=surface_top)
         if not ok and ("timed out" in why or "not tracking" in why):
             # Diagnose before medicating: "cannot reach" is usually the grip
             # sitting outside the depth band (a nudge overshoot), and walking
@@ -919,7 +953,10 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
             # surface needs a planned crouch, not a panic one.
             p.log("  stream: retrying the servo after re-nudging")
             ok, why = _servo_continuous(p, arm, obj_key, plan, side,
-                                        replan=replan, ghost=ghost)
+                                        replan=replan, ghost=ghost, pin=pin,
+                                        surface_top=surface_top)
         return ok, why
     finally:
+        if pin is not None:
+            pin()          # release the arm motors back to the policy
         arm.stop()

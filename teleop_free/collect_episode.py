@@ -194,6 +194,11 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # tabletop — from the first step to the table.
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
+    if reset is not None:
+        # The actuator-level pin is what actually HOLDS the level forearms
+        # through the gait; the frozen reference alone under-delivers.
+        from primitives import READY_ARM
+        reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
     # Both recordings start here, after the settle, so their first frame is the
@@ -295,43 +300,29 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         return float(np.hypot(out[0], out[1])) if (dxy > 0).any() else \
             -float(max(dxy))
 
+    # Division of labour, learned the hard way: the true feasible band
+    # (no body-table contact AND reach core AND front-sector approach) is
+    # 1-2 voxels wide — narrower than walking noise — so the map picks the
+    # AZIMUTH and the side (what it is good at), and the depth is closed by
+    # the guarded shuffle in grasp_streamed's nudge (what IT is good at).
+    # A failed lookup degrades to the current stand instead of failing.
     rm = reach_map.ReachMap()
     z_pf_std = float(grip_pre[2] - STANDING_PELVIS_Z)
-    m_act = 0.0
-    for _attempt in range(3):
-        st = p.obs()
-        sel = reach_map.best_stand(
-            rm, grip_pre, z_pf_std, p.pelvis_xy(st), p.pelvis_yaw(st),
-            edge_dist, arm=side)
-        require("grasp", sel is not None,
-                "no nearby stand puts the object in the reach core")
+    st = p.obs()
+    sel = reach_map.best_stand(
+        rm, grip_pre, z_pf_std, p.pelvis_xy(st), p.pelvis_yaw(st),
+        edge_dist, arm=side, margin_floor=0.025, edge_floor=0.12)
+    if sel is not None:
         s_xy, psi, m_pred = sel
-        if float(np.linalg.norm(s_xy - p.pelvis_xy(st))) > 0.08:
+        if float(np.linalg.norm(s_xy - p.pelvis_xy(st))) > 0.10:
             p.walk_to(s_xy, stop_dist=0.10, timeout=20.0, face_target=False)
-            # walk_to stops on the NEAR side of its radius, which here is
-            # always the far-from-the-can side; walk the residual once with
-            # an overshoot-compensated target.
-            err = s_xy - p.pelvis_xy()
-            if float(np.linalg.norm(err)) > 0.05:
-                p.walk_to(s_xy + err, stop_dist=0.08, timeout=10.0,
-                          face_target=False)
         p.turn_to(psi)
-        st = p.obs()
-        yaw = p.pelvis_yaw(st)
+        p.log(f"stand: map azimuth taken (predicted margin "
+              f"{m_pred * 100:.0f} mm-class)")
+    else:
         d = grip_pre[:2] - p.pelvis_xy(st)
-        rel = np.array([np.cos(yaw) * d[0] + np.sin(yaw) * d[1],
-                        -np.sin(yaw) * d[0] + np.cos(yaw) * d[1], z_pf_std])
-        m_act = rm.margin(rel, side)
-        p.log(f"stand: margin predicted {m_pred * 100:.0f} -> actual "
-              f"{m_act * 100:.0f} mm-class at rel {np.round(rel, 2)}")
-        if m_act >= 0.025:
-            # One voxel of real margin is enough: the walk only lands within
-            # ~8 cm anyway and the grasp servo closes the loop from there —
-            # demanding more just makes the refinement bounce around the
-            # narrow core chasing its own stopping noise.
-            break
-    require("grasp", m_act >= 0.025,
-            f"stand refinement did not converge (margin {m_act * 100:.0f})")
+        p.turn_to(float(np.arctan2(d[1], d[0])) - np.deg2rad(12))
+        p.log("stand: map found nothing nearby, facing the can at -12 deg")
 
     # Anchor the heading the moment the turn finishes: every later loop faces
     # this yaw. Without the anchor the robot wandered ~50 deg between planning
@@ -375,16 +366,21 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     show_ghost(plan)
 
     def replan(wrist_now, palm_rot):
-        """The live candidate: the shortest line from the REAL wrist.
+        """The live candidate: the shortest line from the REAL wrist to the
+        LIVE can.
 
         Called from inside the streamed servo at ~5 Hz until it freezes. The
-        virtual-start plan above stays as the feasibility gate and the
-        fallback; this one is what the hand actually follows, and what the
-        ghost shows frame by frame.
+        grip point is recomputed from the can's CURRENT position — the close
+        stands lean the hip on the table edge and shove it a few cm, and a
+        plan anchored on where the can USED to be turns that nudge into a
+        guaranteed miss. The hand follows the can the way a person's would.
         """
         st2 = p.obs()
+        c = p.object_pos(obj_key, st2)
+        grip_live = np.array([c[0], c[1],
+                              obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
         return adaptive_grasp.plan(
-            grip, wrist_now, palm_rot, surf_a["top"], box=obj_box,
+            grip_live, wrist_now, palm_rot, surf_a["top"], box=obj_box,
             obj_rot=Primitives._rot(st2["objects"][obj_key]["quat"]))
 
     # Streamed motion from here to the lift: full joint references on the
@@ -399,7 +395,9 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     ok, why = stream_reach.grasp_streamed(p, obj_key, grip, plan, side=side,
                                           surface_top=surf_a["top"],
                                           replan=replan, ghost=show_ghost,
-                                          nudge=False)
+                                          nudge=True,
+                                          pin=(reset.pin_arms if reset
+                                               else None))
     require("grasp", ok, why)
 
     s = p.obs()

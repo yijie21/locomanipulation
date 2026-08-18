@@ -51,8 +51,8 @@ def main() -> None:
     # elbow angle extends the arm downward — 1.5 rad is hanging straight.
     # Every earlier attempt commanded 1.5-2.09 believing bigger = more fold,
     # i.e. commanded the arms DOWN and then fought the result.
-    PIN = {"left": [0.0, 0.20, 0.0, 0.0, 0.0, 0.0, 0.0],
-           "right": [0.0, -0.20, 0.0, 0.0, 0.0, 0.0, 0.0]}
+    from primitives import READY_ARM
+    PIN = READY_ARM          # the exact pose collect_episode pins
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     from primitives import upper_body_17
     p.cmd.set_upper_body(upper_body_17(PIN["left"], PIN["right"]))

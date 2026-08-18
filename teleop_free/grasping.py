@@ -66,7 +66,10 @@ PITCHED_FINGER_DROP = 0.030
 # at rim height, reporting contact, and lifting air. 4.5 cm buries the jaw in
 # the barrel with 3 cm of finger clearance left above the table (can 12 cm,
 # fingers reach 4.5 cm below the grip centre).
-GRIP_BELOW_RIM = 0.045
+GRIP_BELOW_RIM = 0.030   # was 0.045: the pinned arm executes the IK height
+                         # EXACTLY, and at 0.045 the fingertips ride the
+                         # tabletop (FURN[R:middle_1] scraping all through
+                         # the slide); 1.5 cm higher clears them
 # The palm's axes, in the pelvis frame, once PALM_PITCH_CMD has been commanded
 # and the hand has settled — measured, not derived (diag_pitch.py). Columns are
 # +x (along the fingers), +y (the thumb side, which is the direction the object

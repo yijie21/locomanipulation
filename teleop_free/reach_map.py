@@ -56,7 +56,7 @@ WAIST_PITCH = (0.0, 0.05)     # DELIVERED lean while standing: commanding
 
 # Voxel grid, pelvis frame.
 VOX = 0.025
-X0, X1 = 0.00, 0.75
+X0, X1 = 0.12, 0.75
 Y0, Y1 = -0.75, 0.75
 Z0, Z1 = -0.55, 0.45
 
@@ -128,6 +128,15 @@ def build(seed: int = 0) -> dict:
                 dh = float(np.hypot(appr[0], appr[1]))
                 if -appr[2] > np.tan(MAX_DESCEND) * max(dh, 1e-9):
                     continue                   # diving too steeply
+                if appr[0] < dh * 0.5:
+                    # Approach must come from the FRONT sector (within ~60
+                    # deg of pelvis +x): the executed pipeline plans its
+                    # travel from a virtual start on the robot->object
+                    # bearing, so a voxel only reachable by a sideways or
+                    # backwards approach is a promise the servo cannot keep
+                    # — the map accepted one and the planner then refused
+                    # "a direction this object cannot be gripped from".
+                    continue
                 if appr[2] > 0.5:
                     continue                   # grasping upward: not a table
                 jaw_tilt = abs(float(np.arcsin(np.clip(rot[2, 1], -1, 1))))

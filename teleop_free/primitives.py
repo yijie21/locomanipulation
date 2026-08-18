@@ -343,16 +343,14 @@ READY_WRISTS = {"left": np.array([0.24, 0.18, 0.05]),
 # set). Shoulder hanging, elbow folded to 1.5 rad = forearm level with the
 # ground — the joint pose the elbow-raise era verified keeps the torso
 # upright.
-# Calibrated for the DELIVERED pose, not the commanded one: mid-gait the
-# policy caps the elbow near 1.6 rad and swings the shoulder ~0.2 forward,
-# so the command is exaggerated to compensate. Measured while walking
-# (scratchpad calib, 118 samples): this command delivers shoulder +0.06,
-# elbow 1.58 -> forearm -3 deg from horizontal (p10 -7, p90 +1).
-# Per-arm: the policy is measurably right-handed — at the same command the
-# left forearm rides 12 deg lower, so its shoulder is pulled further back.
-# Delivered mid-gait (calib3, n=125): L -6 deg, R -1 deg from horizontal.
-READY_ARM = {"left": [-0.35, 0.2, 0.0, 2.09, 0.0, 0.0, 0.0],
-             "right": [-0.15, -0.2, 0.0, 2.09, 0.0, 0.0, 0.0]}
+# Elbow ZERO is the level forearm: the G1's joint zero is the L-pose and
+# POSITIVE elbow EXTENDS the arm downward. (The earlier 2.09 values here
+# were the inverted-sign era — commanded hanging arms while believing they
+# commanded a fold.) Held exactly by the sim-side arm pin during walking;
+# the frozen-upper-body reference carries the same values so the policy's
+# balance model agrees with what the motors do.
+READY_ARM = {"left": [0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
+             "right": [0.0, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]}
 
 
 def upper_body_17(left7, right7, waist=(0.0, 0.0, 0.0)) -> np.ndarray:
