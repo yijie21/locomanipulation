@@ -348,7 +348,10 @@ READY_WRISTS = {"left": np.array([0.24, 0.18, 0.05]),
 # so the command is exaggerated to compensate. Measured while walking
 # (scratchpad calib, 118 samples): this command delivers shoulder +0.06,
 # elbow 1.58 -> forearm -3 deg from horizontal (p10 -7, p90 +1).
-READY_ARM = {"left": [-0.15, 0.2, 0.0, 2.09, 0.0, 0.0, 0.0],
+# Per-arm: the policy is measurably right-handed — at the same command the
+# left forearm rides 12 deg lower, so its shoulder is pulled further back.
+# Delivered mid-gait (calib3, n=125): L -6 deg, R -1 deg from horizontal.
+READY_ARM = {"left": [-0.35, 0.2, 0.0, 2.09, 0.0, 0.0, 0.0],
              "right": [-0.15, -0.2, 0.0, 2.09, 0.0, 0.0, 0.0]}
 
 

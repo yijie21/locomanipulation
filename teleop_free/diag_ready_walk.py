@@ -53,9 +53,22 @@ def main() -> None:
             home + np.array([-1.6, 1.2]),
             home + np.array([0.0, 1.2]),
             home]
+    from primitives import wrap
     for i, wp in enumerate(legs):
-        ok = p.walk_to(wp, stop_dist=0.20, timeout=25.0, face_target=True)
-        print(f"leg {i}: {'ok' if ok else 'gave up'} at {np.round(p.pelvis_xy(), 2)}")
+        end = time.time() + 25.0
+        while time.time() < end:
+            s = p.obs()
+            d = wp - p.pelvis_xy(s)
+            if np.linalg.norm(d) < 0.22:
+                break
+            yaw = p.pelvis_yaw(s)
+            b = float(np.arctan2(d[1], d[0]))
+            face = yaw + float(np.clip(wrap(b - yaw), -0.5, 0.5))
+            fv = (np.cos(face), np.sin(face), 0.0)
+            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=0.6,
+                        movement=fv, facing=fv)
+            time.sleep(0.02)
+        print(f"leg {i}: at {np.round(p.pelvis_xy(), 2)}")
         p.cmd.hold(0.5, mode=LocomotionMode.IDLE)
 
     # Log the delivered arm pose vs the command, so the video has numbers.
