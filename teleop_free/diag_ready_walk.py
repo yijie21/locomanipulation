@@ -42,10 +42,18 @@ def main() -> None:
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     stream_reach.reanchor(p)
 
-    # Pin the walking pose and give the arms a moment to get there.
+    # Pin the walking pose twice over: the frozen-upper-body reference keeps
+    # the POLICY expecting the arms there (so its balance model is roughly
+    # honest), and the sim-side actuator pin makes the pose exact — the
+    # policy alone tops out at elbow ~1.5 rad and the forearms sag 15-30 deg.
+    PIN = {"left": [0.10, 0.20, 0.0, 1.70, 0.0, 0.0, 0.0],
+           "right": [0.10, -0.20, 0.0, 1.70, 0.0, 0.0, 0.0]}
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
-    p.cmd.set_upper_body(READY_UPPER)
-    p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
+    from primitives import upper_body_17
+    p.cmd.set_upper_body(upper_body_17(PIN["left"], PIN["right"]))
+    p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
+    reset.pin_arms(left=PIN["left"], right=PIN["right"])
+    p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
     reset.start_video(f"readywalk_{int(time.time())}")
     home = p.pelvis_xy().copy()

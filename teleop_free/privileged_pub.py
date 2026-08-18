@@ -25,6 +25,12 @@ import numpy as np
 import zmq
 
 GHOST_BODY = "ghost_hand"
+
+# Arm-pin state shared between the episode-control server (which sets it over
+# :5582) and the wrapped bridge GetAction in run_sim_locomani (which applies
+# it to the arm motors' position targets every physics step). 7 joint values
+# per side (shoulder p/r/y, elbow, wrist r/p/y) or None = released.
+ARM_PIN: dict = {"left": None, "right": None}
 GHOST_PARK = (0.0, 0.0, -5.0)
 
 # Per-instance overrides so several stacks can share the host (parallel
@@ -369,6 +375,21 @@ class EpisodeControlServer:
                 # Park the ghost when no pose is given, so a stale plan from
                 # the last episode is never left hanging in the shot.
                 self._place_ghost(req.get("pos"), req.get("quat"))
+            elif req.get("cmd") == "pin_arms":
+                # Sim-side arm pin: the walking policy refuses to hold the
+                # elbow past ~1.5 rad (its gait prior wins over any joint
+                # reference, commanded up to the 2.09 joint limit), so the
+                # level-forearm walking pose CANNOT be produced through the
+                # policy. Instead the bridge's GetAction is wrapped
+                # (run_sim_locomani) to overwrite the arm motors' position
+                # targets with these values — the arm motors run their own
+                # stiff position loop, exactly as real hardware allows,
+                # while the policy keeps the legs and waist.
+                ARM_PIN["left"] = req.get("left")
+                ARM_PIN["right"] = req.get("right")
+                print(f"[episode] arm pin: "
+                      f"L={'on' if ARM_PIN['left'] else 'off'} "
+                      f"R={'on' if ARM_PIN['right'] else 'off'}")
             elif req.get("cmd") == "endvideo":
                 # Nothing else closes the writer. A recording is only ever
                 # stopped by the *next* reset, so the last episode of every
@@ -405,6 +426,14 @@ class EpisodeControlClient:
         self.sock.send_string(json.dumps(
             {"cmd": "reset", "objects": objects or {}, "robot": robot or {},
              "label": label}))
+
+    def pin_arms(self, left=None, right=None) -> None:
+        """Pin (or with None release) the sim-side arm position loops."""
+        self.sock.send_string(json.dumps({
+            "cmd": "pin_arms",
+            "left": list(map(float, left)) if left is not None else None,
+            "right": list(map(float, right)) if right is not None else None,
+        }))
 
     def set_ghost(self, pos=None, quat=None) -> None:
         """Show the planned grasp pose in the render; no args parks it."""

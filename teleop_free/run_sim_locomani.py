@@ -147,6 +147,44 @@ def main(config: SimLoopConfig) -> None:
         band.enable = False
         print("[sim] elastic band disabled")
 
+    # Arm pin: give the arm motors their own position loop, on demand. The
+    # walking policy will not hold an elbow past ~1.5 rad no matter what
+    # reference it is given (its gait prior wins), so the level-forearm
+    # walking pose is applied here, at the actuator, the way real hardware
+    # would run those joints in position mode. GetAction returns the 43
+    # position targets [legs 12 | waist 3 | L arm 7 | L hand 7 | R arm 7 |
+    # R hand 7]; the pin overwrites the two arm slices while set.
+    from privileged_pub import ARM_PIN
+
+    _orig_cbt = DefaultEnv.compute_body_torques
+    PIN_KP, PIN_KD, PIN_TAU_MAX = 120.0, 3.0, 30.0
+    ARM_MOTORS = {"left": list(range(15, 22)), "right": list(range(22, 29))}
+
+    def compute_body_torques(self):
+        tau = _orig_cbt(self)
+        br = self.unitree_bridge
+        if br is None or not br.low_cmd:
+            return tau
+        for side, motors in ARM_MOTORS.items():
+            pin = ARM_PIN[side]
+            if pin is None:
+                continue
+            for k, i in enumerate(motors):
+                if br.use_sensor:
+                    q = self.mj_data.sensordata[i]
+                    dq = self.mj_data.sensordata[i + br.num_body_motor]
+                else:
+                    q = self.mj_data.qpos[self.body_joint_index[i]
+                                          + self.qpos_offset - 1]
+                    dq = self.mj_data.qvel[self.body_joint_index[i]
+                                           + self.qvel_offset - 1]
+                t = PIN_KP * (pin[k] - q) - PIN_KD * dq
+                tau[i] = max(-PIN_TAU_MAX, min(PIN_TAU_MAX, t))
+        return tau
+
+    DefaultEnv.compute_body_torques = compute_body_torques
+    print("[sim] arm pin hook installed (compute_body_torques)")
+
     SimulatorFactory.start_simulator(
         sim_wrapper.sim,
         as_thread=False,
