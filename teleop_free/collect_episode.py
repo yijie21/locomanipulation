@@ -55,6 +55,7 @@ from primitives import (  # noqa: E402
     LIFT_HEIGHT,
     PREGRASP_ABOVE,
     LocomotionMode,
+    StreamMode,
     Primitives,
     STAND_OFF,
     TRACK_STOP_SHORT,
@@ -186,8 +187,12 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # had — diag_heading.py). Re-anchor it HERE at a yaw this process knows,
     # so the commander's compensation is exact from the first step.
     stream_reach.reanchor(p, side=side)
-    p.tuck_arms()        # READY pose from frame one: forearms level, hands
-                         # above tabletop height, held through every walk
+    # FROZEN_UPPER_BODY: the one planner sub-mode that holds an arm pose
+    # THROUGH a walk (VR-3pt wrist tracking dies the moment the gait starts).
+    # tuck_arms then pins the READY pose — forearms level, hands above the
+    # tabletop — from the first step to the table.
+    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+    p.tuck_arms()
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
     # Both recordings start here, after the settle, so their first frame is the

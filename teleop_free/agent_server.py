@@ -140,6 +140,15 @@ class AgentCommander:
         self.right_wrist_quat = np.array([1, 0, 0, 0], dtype=np.float32)
         self.left_hand = HAND_OPEN.copy()
         self.right_hand = HAND_OPEN.copy()
+        self.upper_body = None
+        # Which planner sub-mode `frame()` runs in. PLANNER_VR_3PT tracks the
+        # wrist position targets above but ONLY while standing — the walking
+        # policy ignores them and swings the arms. PLANNER_FROZEN_UPPER_BODY
+        # instead pins the 17 upper-body joints to `upper_body` (waist 3 +
+        # left/right-interleaved arms 14, the pico feedback-reader order)
+        # through the walk as well.
+        self.stream_mode = StreamMode.PLANNER_VR_3PT
+        self.upper_body: np.ndarray | None = None
 
     # -- control plane -----------------------------------------------------
 
@@ -189,6 +198,11 @@ class AgentCommander:
         if right_quat is not None:
             self.right_wrist_quat = np.asarray(right_quat, dtype=np.float32)
 
+    def set_upper_body(self, q17) -> None:
+        """17 joint targets for FROZEN_UPPER_BODY mode: waist y/r/p, then
+        L/R-interleaved shoulder p, r, y, elbow, wrist r, p, y."""
+        self.upper_body = np.asarray(q17, dtype=np.float32)
+
     def set_hands(self, left=None, right=None):
         if left is not None:
             self.left_hand = np.asarray(left, dtype=np.float32)
@@ -211,18 +225,34 @@ class AgentCommander:
         facing=(1.0, 0.0, 0.0),
         speed: float = -1.0,
         height: float = -1.0,
-        stream_mode: StreamMode = StreamMode.PLANNER_VR_3PT,
+        stream_mode: StreamMode | None = None,
         compliance=DEFAULT_COMPLIANCE,
     ) -> None:
-        """Emit one full control frame: manager_state + planner."""
-        self.manager_state(stream_mode)
+        """Emit one full control frame: manager_state + planner.
+
+        `stream_mode` defaults to the commander's `self.stream_mode`, so a
+        session-wide choice (frozen upper body vs VR-3pt wrists) does not have
+        to be threaded through every call site.
+        """
+        sm = self.stream_mode if stream_mode is None else stream_mode
+        self.manager_state(sm)
         if self.heading_offset:
             c, s = np.cos(-self.heading_offset), np.sin(-self.heading_offset)
             facing = (c * facing[0] - s * facing[1],
                       s * facing[0] + c * facing[1], facing[2])
             movement = (c * movement[0] - s * movement[1],
                         s * movement[0] + c * movement[1], movement[2])
-        vr_pos, vr_quat = self._vr_3pt()
+        kw = {}
+        if (sm == StreamMode.PLANNER_FROZEN_UPPER_BODY
+                and self.upper_body is not None):
+            # Mirror the pico manager (pico_manager_thread_server.py:1832-38):
+            # frozen mode carries explicit upper-body joint targets and no
+            # VR fields.
+            kw["upper_body_position"] = self.upper_body.tolist()
+        else:
+            vr_pos, vr_quat = self._vr_3pt()
+            kw.update(vr_3pt_position=vr_pos, vr_3pt_orientation=vr_quat,
+                      vr_3pt_compliance=list(compliance))
         self.sonic.send(
             build_planner_message(
                 int(mode),
@@ -232,9 +262,7 @@ class AgentCommander:
                 height=height,
                 left_hand_position=self.left_hand.tolist(),
                 right_hand_position=self.right_hand.tolist(),
-                vr_3pt_position=vr_pos,
-                vr_3pt_orientation=vr_quat,
-                vr_3pt_compliance=list(compliance),
+                **kw,
             )
         )
 
@@ -247,6 +275,11 @@ class AgentCommander:
         g1_deploy_onnx_ref.cpp:618 stops control if the mode is active with no
         motion frames buffered.
         """
+        # Tell the manager the stream is POSE too: with a stale
+        # FROZEN_UPPER_BODY manager state the deploy keeps the upper body
+        # pinned to the frozen targets and the streamed reach stalls with
+        # IK res 0.000 and a motionless palm.
+        self.manager_state(StreamMode.POSE)
         self.command(start=True, stop=False, planner=False)
 
     def exit_streamed(self) -> None:

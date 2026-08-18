@@ -336,6 +336,39 @@ TUCK_WRISTS = {"left": np.array([0.16, 0.16, -0.02]),
 READY_WRISTS = {"left": np.array([0.24, 0.18, 0.05]),
                 "right": np.array([0.24, -0.18, 0.05])}
 
+# The same READY pose in JOINT space, for the planner's FROZEN_UPPER_BODY
+# mode — the only mode that actually holds the arms through a walk (VR-3pt
+# wrist targets are tracked while standing and ignored the moment the gait
+# starts; watched: arms swinging straight down mid-walk with READY_WRISTS
+# set). Shoulder hanging, elbow folded to 1.5 rad = forearm level with the
+# ground — the joint pose the elbow-raise era verified keeps the torso
+# upright.
+# Elbow 1.75, not the level-forearm 1.5: the walking policy delivers only
+# ~2/3 of the commanded fold (video: forearms at ~45 deg on a 1.5 command),
+# so the reference is exaggerated for the DELIVERED pose to come out level.
+READY_ARM = {"left": [0.05, 0.2, 0.0, 1.75, 0.0, 0.0, 0.0],
+             "right": [0.05, -0.2, 0.0, 1.75, 0.0, 0.0, 0.0]}
+
+
+def upper_body_17(left7, right7, waist=(0.0, 0.0, 0.0)) -> np.ndarray:
+    """The planner message's 17-value upper-body order: waist y/r/p, then
+    left/right-interleaved shoulder p, r, y, elbow, wrist r, p, y."""
+    v = list(waist)
+    for i in range(7):
+        v += [left7[i], right7[i]]
+
+    return np.array(v, dtype=np.float32)
+
+
+def upper_body_from_mj(q29) -> np.ndarray:
+    """Snapshot a MuJoCo-ordered 29-joint state into the 17-value target."""
+    q = np.asarray(q29, dtype=np.float32)
+
+    return upper_body_17(q[15:22], q[22:29], waist=q[12:15])
+
+
+READY_UPPER = upper_body_17(READY_ARM["left"], READY_ARM["right"])
+
 # Crouch. The holding arm's target sits beside the body, not in front of it,
 # so a deep squat does not swing that hand into the table.
 CROUCH_HOLD_X, CROUCH_HOLD_Y = 0.12, 0.26
@@ -1345,6 +1378,18 @@ class Primitives:
         if self.crouch_cmd is not None:
             kw.pop("left_pos", None)
         self.cmd.set_wrists(**kw)
+        if self.cmd.stream_mode == StreamMode.PLANNER_FROZEN_UPPER_BODY:
+            if hold is None:
+                self.cmd.set_upper_body(READY_UPPER)
+            else:
+                # Freeze the holding arm where it is (it has the object);
+                # only the free arm goes to READY.
+                v = upper_body_from_mj(self.obs()["joints"])
+                free = "left" if hold == "right" else "right"
+                col = 0 if free == "left" else 1
+                for k in range(7):
+                    v[3 + 2 * k + col] = READY_ARM[free][k]
+                self.cmd.set_upper_body(v)
 
     def navigate(self, timeout: float = 60.0, stop_dist: float = NAV_ARRIVE,
                  tuck: bool = True, hold: str | None = None) -> bool:

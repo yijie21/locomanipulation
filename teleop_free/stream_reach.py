@@ -95,6 +95,17 @@ class StreamedArm:
 
     def start(self) -> None:
         s = self.p.obs()
+        # Release the planner's upper-body pin before streaming: the deploy
+        # OVERWRITES the upper-body joints of any reference motion while
+        # `has_upper_body_control_` is latched (g1_deploy_onnx_ref.cpp:780),
+        # and the latch updates per planner message — so one frame WITHOUT
+        # the field clears it. Skipping this froze the arm mid-grasp with
+        # IK res 0.000 and a motionless palm.
+        self.p.cmd.upper_body = None
+        end = time.time() + 0.4
+        while time.time() < end:      # one frame raced the deploy's reader;
+            self.p.cmd.frame(facing=self.p._facing(s))
+            time.sleep(DT)
         self.q = np.array(s["joints"])
         self.root_quat = yaw_only(s["pelvis"]["quat"])
         self.next_t = time.time()
@@ -106,10 +117,16 @@ class StreamedArm:
 
     def stop(self) -> None:
         """Hand control back to the planner without a discontinuity."""
+        from primitives import upper_body_from_mj
         s = self.p.obs()
         palm_pf = self.p.world_to_root_full(s["palms"][self.side]["pos"], s)
         self.p.cmd.set_wrists(**{f"{self.side}_pos":
                                  np.asarray(palm_pf, dtype=np.float32)})
+        # In FROZEN_UPPER_BODY mode the planner pins the arms to the 17-value
+        # target, so hand back the pose the streamed reach actually ended in
+        # — otherwise the switch snaps the arms to the stale target and yanks
+        # whatever the hand is holding.
+        self.p.cmd.set_upper_body(upper_body_from_mj(s["joints"]))
         self.p.cmd.set_hands(**{self.side: self.hands[self.side]})
         self.p.cmd.exit_streamed()
         # The switch re-anchors the deploy's planner heading at the robot's
@@ -351,17 +368,22 @@ def _nudge_pass(p: Primitives, grip_world, side: str) -> None:
         # deploy uses, so the robot walks where its nose points, and the
         # nose is steered by ground truth.
         yaw = p.pelvis_yaw(s)
-        if p.hold_yaw is not None:
+        d = np.asarray(grip_world[:2]) - p.pelvis_xy(s)
+        bearing_can = float(np.arctan2(d[1], d[0]))
+        if p.hold_yaw is not None and abs(wrap(float(p.hold_yaw)
+                                               - bearing_can)) < 0.8:
             # Keep the AIM heading. Steering at the can's bearing re-centred
             # it azimuthally by the end of every walk-in (video: can at
             # pelvis y -0.05, hand pinned against the thigh trying to cross
             # to it), throwing away exactly the 10-20 deg side offset the
             # aim chose. Walking straight along the held heading closes the
-            # depth just as well and keeps the can on the arm's side.
+            # depth just as well and keeps the can on the arm's side — but
+            # only while the can is still roughly ahead on that heading; a
+            # stale anchor once marched the robot straight PAST the can
+            # (final target at pelvis x -0.09, behind the hip).
             bearing = float(p.hold_yaw)
         else:
-            d = np.asarray(grip_world[:2]) - p.pelvis_xy(s)
-            bearing = float(np.arctan2(d[1], d[0]))
+            bearing = bearing_can
         face = yaw + float(np.clip(wrap(bearing - yaw), -0.4, 0.4))
         fv = (np.cos(face), np.sin(face), 0.0)
         backing = grip_pf[0] <= GRIP_X_MAX
@@ -703,6 +725,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             if obj_in0 is None:
                 obj_in0 = obj.copy()
                 obj_f = obj.copy()
+                in_since = now
                 alpha = PRE_NARROW
                 arm.hands[side] = closed * alpha
             if float(np.linalg.norm(obj - obj_in0)) > 0.015:
@@ -739,13 +762,24 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # 15 mm off line, and that is exactly the thumb-graze band —
             # four episodes per batch died re-flinching their way to the
             # 10 cm guard.
-            gate = 0.0 if lat > 0.010 else float(
-                np.clip(1.0 - lat / 0.010, 0.0, 1.0))
+            if float(p.world_to_root_full(final_w, s)[0]) < 0.05:
+                return False, ("grip target ended up at the body/behind it "
+                               "— the stand is wrong, not the arm")
+            gate = 0.0 if lat > 0.012 else float(
+                np.clip(1.0 - lat / 0.012, 0.0, 1.0))
             # Hold back the un-gated part of the entry distance: laterally
             # free, forward only as far as alignment has earned.
             tgt = final_w - (1.0 - gate) * max(e_ent, 0.0) * entry
             v = V_APPROACH if e_ent > 0.05 else V_APPROACH * 0.5
-            if lat < 0.010 and abs(full[1]) < 0.010:
+            # Strict gate, or the patience gate: at a side-extended reach
+            # the policy's station-keeping wobble sits at 12-15 mm and the
+            # strict gate never latches — watched hovering ON the can, jaw
+            # around it, for 40 s. Past 12 s of station-keeping the extra
+            # wait buys nothing; the pre-narrowed jaw wraps from 18 mm.
+            good = lat < 0.012 and abs(full[1]) < 0.010
+            patient = (now - in_since > 12.0
+                       and lat < 0.018 and abs(full[1]) < 0.015)
+            if good or patient:
                 ok_ticks += 1
                 if ok_ticks > 20:                     # ~0.4 s in tolerance
                     phase = "close"
@@ -837,6 +871,17 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     # Raise BEFORE walking in: from here on the hand is above the tabletop
     # and the approach can only ever come down onto the can, never up through
     # the table from under its rim.
+    # Release the walking pose's upper-body pin HERE, at the ring, not
+    # inside the streamed switch: the whole walk-in and grasp then run from
+    # the naturally hanging arm — the exact start geometry the 5/8 batch
+    # proved out. Walking to the table keeps the level forearms; the last
+    # 0.3 m and the reach do not need them.
+    p.cmd.upper_body = None
+    s0 = p.obs()
+    end0 = time.time() + 1.0
+    while time.time() < end0:
+        p.cmd.frame(facing=p._facing(s0))
+        time.sleep(DT)
     _raise_hand(p, side, surface_top, grip_world)
     _nudge_closer(p, grip_world, side)
     arm = StreamedArm(p, side)
