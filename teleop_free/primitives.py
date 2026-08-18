@@ -325,6 +325,17 @@ NAV_SPEED_MIN = 0.35
 TUCK_WRISTS = {"left": np.array([0.16, 0.16, -0.02]),
                "right": np.array([0.16, -0.16, -0.02])}
 
+# The standing/walking READY pose: upper arm hanging, forearm LEVEL with the
+# ground, wrists just above pelvis height — the posture a waiter walks with.
+# Carried from the first step of the episode so the hand never has to come up
+# from a tuck at the table (the raise-at-the-table step swept the can once
+# and clipped the tabletop before that). The z puts the hands above every
+# surface-A tabletop, so the extra forward radius (~0.35 m vs 0.25 tucked)
+# lives entirely ABOVE table height and the corner-catch that felled
+# low_004 cannot recur.
+READY_WRISTS = {"left": np.array([0.24, 0.18, 0.05]),
+                "right": np.array([0.24, -0.18, 0.05])}
+
 # Crouch. The holding arm's target sits beside the body, not in front of it,
 # so a deep squat does not swing that hand into the table.
 CROUCH_HOLD_X, CROUCH_HOLD_Y = 0.12, 0.26
@@ -1321,8 +1332,13 @@ class Primitives:
 
         `hold` names an arm that is already carrying something and has its own
         pose (carry_pose): re-commanding it mid-carry would swing the load.
+
+        The walking pose is READY_WRISTS — forearms level, hands above
+        tabletop height — so the grasp never has to raise the hand at the
+        table; the arms travel the whole episode in the posture the reach
+        starts from.
         """
-        kw = {f"{s}_pos": TUCK_WRISTS[s] for s in ("left", "right")
+        kw = {f"{s}_pos": READY_WRISTS[s] for s in ("left", "right")
               if s != hold}
         # Never overwrite an arm that is holding a crouch — that arm's low
         # target is the only thing keeping the body down.

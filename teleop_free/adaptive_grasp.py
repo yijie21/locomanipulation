@@ -57,11 +57,17 @@ TABLE_CLEARANCE = 0.012
 # How far off horizontal the pinch axis may sit. A vertical cylinder can be
 # gripped across any horizontal chord, and a tilted jaw still catches the
 # barrel, but past this the grip is riding up the side rather than around it.
-JAW_TILT_MAX = np.deg2rad(45.0)
+JAW_TILT_MAX = np.deg2rad(25.0)   # was 45; at 35+ the descending fingers led
+                                  # into the can before the jaw arrived
+MAX_DESCEND = np.deg2rad(25.0)    # steepest allowed approach dive
 # Weights for the spin score. Closeness to the current palm dominates, because
 # every degree of it is arm travel; clearance is a hard gate rather than a cost.
 W_CLOSENESS = 1.0
 W_JAW = 0.6
+# Widest span the jaw can usefully close over, minus a pinch margin. Kept
+# numerically in sync with grasping.HAND_APERTURE / PINCH_MARGIN without
+# importing that module (it drags in the planner-era pose machinery).
+APERTURE_MAX = 0.061 - 0.010
 
 
 @dataclass
@@ -116,7 +122,7 @@ def _spin(axis, angle) -> np.ndarray:
 
 
 def plan(grip, wrist_now, palm_now, surface_top: float,
-         obj_axis=(0.0, 0.0, 1.0)) -> Grasp:
+         obj_axis=(0.0, 0.0, 1.0), box=None, obj_rot=None) -> Grasp:
     """Orient the palm so the grip offset points along the line to the object.
 
     `grip` is where the grasp centre must end up — on the object's own axis, and
@@ -138,6 +144,21 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
             f"from the wrist and the offset alone is {OFFSET_LEN:.3f} m"))
     direction = to_grip / travel
 
+    # Cap the dive. The azimuth follows the real wrist — that is the whole
+    # point of planning from where the hand is — but a hand that happens to
+    # hover above the grip must not turn into a top-down strike: past ~25 deg
+    # the fingertips lead the descent and press the object over before the
+    # jaw arrives (watched happening: palm flat over the can, can rolling).
+    dh = float(np.hypot(direction[0], direction[1]))
+    if -direction[2] > np.tan(MAX_DESCEND) * dh:
+        if dh < 1e-6:
+            return Grasp(False, why=(
+                "directly above the grip — no approach azimuth to flatten "
+                "the dive along"))
+        direction = np.array([direction[0], direction[1],
+                              -np.tan(MAX_DESCEND) * dh])
+        direction /= np.linalg.norm(direction)
+
     # Base rotation: the smallest turn from the CURRENT palm that puts its grip
     # offset on the line. Starting from the current pose rather than from an
     # arbitrary frame is what keeps `turn` small.
@@ -158,6 +179,41 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
         tilt = abs(float(np.arcsin(np.clip(abs(float(jaw @ axis)), -1.0, 1.0))))
         if tilt > JAW_TILT_MAX:
             continue
+
+        # The continuous envelope gate: the span the jaw would have to close
+        # over, projected onto the jaw axis. A raw AABB projection
+        # overestimates a cylinder by up to sqrt(2) (corner-to-corner where
+        # the barrel is round), which refused every heading on the can — so
+        # when two half-extents tie the shape is treated as the cylinder it
+        # is, with its exact support width. Elongated objects keep the box
+        # projection and get their infeasible headings cut here instead of
+        # by a pick-the-shortest-edge rule.
+        if box is not None and obj_rot is not None:
+            # A pinch closes over a local cross-section, not over the whole
+            # solid, so the span that must fit in the jaw is measured in the
+            # plane perpendicular to the object's axis — a jaw tilted 20 deg
+            # on a can still only spans the barrel's diameter, not diameter-
+            # plus-height. (JAW_TILT_MAX separately caps how far the jaw may
+            # lean before it stops gripping at all.)
+            j_in = jaw - float(jaw @ axis) * axis
+            nj = float(np.linalg.norm(j_in))
+            if nj > 1e-6:
+                j_in /= nj
+                half = np.asarray(box["half_extent"], dtype=float)
+                ax = np.abs(np.asarray(obj_rot, dtype=float).T @ j_in)
+                pairs = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
+                i, j, k = min(pairs,
+                              key=lambda t: abs(half[t[0]] - half[t[1]]))
+                if abs(half[i] - half[j]) < 0.005:
+                    # Symmetric footprint: the cross-section is a circle and
+                    # the box's diagonal would overestimate it by sqrt(2).
+                    r = 0.5 * (half[i] + half[j])
+                    width = 2.0 * (r * float(np.hypot(ax[i], ax[j]))
+                                   + half[k] * float(ax[k]))
+                else:
+                    width = 2.0 * float(ax @ half)
+                if width > APERTURE_MAX:
+                    continue
 
         # Where the whole hand sits once it is there.
         world = points @ rot.T + grip

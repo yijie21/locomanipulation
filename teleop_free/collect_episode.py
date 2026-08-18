@@ -58,7 +58,7 @@ from primitives import (  # noqa: E402
     Primitives,
     STAND_OFF,
     TRACK_STOP_SHORT,
-    TUCK_WRISTS,
+    READY_WRISTS,
     wrap,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
@@ -182,6 +182,8 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # had — diag_heading.py). Re-anchor it HERE at a yaw this process knows,
     # so the commander's compensation is exact from the first step.
     stream_reach.reanchor(p, side=side)
+    p.tuck_arms()        # READY pose from frame one: forearms level, hands
+                         # above tabletop height, held through every walk
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
     # Both recordings start here, after the settle, so their first frame is the
@@ -239,7 +241,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     _head += GRASP_BEARING if side == "right" else -GRASP_BEARING
     _yawrot = Primitives._rot([np.cos(_head / 2), 0.0, 0.0, np.sin(_head / 2)])
     _wrist = (np.array([_stand[0], _stand[1], STANDING_PELVIS_Z])
-              + _yawrot @ np.asarray(TUCK_WRISTS[side], dtype=float))
+              + _yawrot @ np.asarray(READY_WRISTS[side], dtype=float))
     show_ghost(adaptive_grasp.plan(
         np.array([p.object_pos(obj_key)[0], p.object_pos(obj_key)[1],
                   obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM]),
@@ -290,7 +292,11 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         sh = SHOULDER_OFFSET * np.array([1.0, sign, 1.0])
         pelvis_z = grip_z - CROUCH_MARGIN
         best = None
-        for off in np.deg2rad(np.arange(0.0, 61.0, 5.0)):
+        # Never square-on: 0 deg keeps winning on the turn penalty, but a
+        # can at the body's midline puts the whole slide-in across the
+        # chest, where the policy under-delivers and every graze rolled the
+        # can along the table edge. The measured sweet spot is 10-20 deg.
+        for off in np.deg2rad(np.arange(10.0, 61.0, 5.0)):
             yaw = wrap(base + sign * off)
             pl = plan_for(here, yaw, state)
             if not pl.ok:
@@ -328,7 +334,10 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # (stream_reach._nudge_closer) and judges reachability with its own IK,
     # so the planner-era arm limit no longer decides — it just catches stands
     # so bad that no amount of walking in will fix the heading.
-    require("grasp", _worst <= ARM_REACH_LIMIT + 0.18,
+    # +0.23, was +0.18: the guarded walk-in (stream_reach._nudge_closer) now
+    # reliably closes the last ~0.2 m itself, so this only needs to catch
+    # stands the walk-in cannot fix; 0.578 borderline-failed a graspable one.
+    require("grasp", _worst <= ARM_REACH_LIMIT + 0.23,
             f"hopeless stand pose: best heading puts the reach {_worst:.3f} m "
             f"from the shoulder")
     if not p.turn_to(_yaw):
@@ -364,12 +373,29 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     _d = grip[:2] - p.pelvis_xy(st)
     _d = _d / max(np.linalg.norm(_d), 1e-6)
     virtual_start = grip - 0.25 * np.array([_d[0], _d[1], 0.0]) + [0, 0, 0.08]
+    obj_box = meta["objects"][obj_key]["box"]
     plan = adaptive_grasp.plan(grip, virtual_start,
                                Primitives._rot(st["palms"][side]["quat"]),
-                               surf_a["top"])
+                               surf_a["top"],
+                               box=obj_box,
+                               obj_rot=Primitives._rot(
+                                   st["objects"][obj_key]["quat"]))
     p.log(adaptive_grasp.describe(plan))
     require("grasp", plan.ok, plan.why)
     show_ghost(plan)
+
+    def replan(wrist_now, palm_rot):
+        """The live candidate: the shortest line from the REAL wrist.
+
+        Called from inside the streamed servo at ~5 Hz until it freezes. The
+        virtual-start plan above stays as the feasibility gate and the
+        fallback; this one is what the hand actually follows, and what the
+        ghost shows frame by frame.
+        """
+        st2 = p.obs()
+        return adaptive_grasp.plan(
+            grip, wrist_now, palm_rot, surf_a["top"], box=obj_box,
+            obj_rot=Primitives._rot(st2["objects"][obj_key]["quat"]))
 
     # Streamed motion from here to the lift: full joint references on the
     # `pose` topic — the channel Pico teleop actually drives — with IK on the
@@ -377,7 +403,9 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # (stream_reach squats the legs and leans the waist), so the planner-era
     # crouch machinery is bypassed entirely.
 
-    ok, why = stream_reach.grasp_streamed(p, obj_key, grip, plan, side=side)
+    ok, why = stream_reach.grasp_streamed(p, obj_key, grip, plan, side=side,
+                                          surface_top=surf_a["top"],
+                                          replan=replan, ghost=show_ghost)
     require("grasp", ok, why)
 
     s = p.obs()
