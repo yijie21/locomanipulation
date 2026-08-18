@@ -343,11 +343,13 @@ READY_WRISTS = {"left": np.array([0.24, 0.18, 0.05]),
 # set). Shoulder hanging, elbow folded to 1.5 rad = forearm level with the
 # ground — the joint pose the elbow-raise era verified keeps the torso
 # upright.
-# Elbow 1.75, not the level-forearm 1.5: the walking policy delivers only
-# ~2/3 of the commanded fold (video: forearms at ~45 deg on a 1.5 command),
-# so the reference is exaggerated for the DELIVERED pose to come out level.
-READY_ARM = {"left": [0.05, 0.2, 0.0, 1.75, 0.0, 0.0, 0.0],
-             "right": [0.05, -0.2, 0.0, 1.75, 0.0, 0.0, 0.0]}
+# Calibrated for the DELIVERED pose, not the commanded one: mid-gait the
+# policy caps the elbow near 1.6 rad and swings the shoulder ~0.2 forward,
+# so the command is exaggerated to compensate. Measured while walking
+# (scratchpad calib, 118 samples): this command delivers shoulder +0.06,
+# elbow 1.58 -> forearm -3 deg from horizontal (p10 -7, p90 +1).
+READY_ARM = {"left": [-0.15, 0.2, 0.0, 2.09, 0.0, 0.0, 0.0],
+             "right": [-0.15, -0.2, 0.0, 2.09, 0.0, 0.0, 0.0]}
 
 
 def upper_body_17(left7, right7, waist=(0.0, 0.0, 0.0)) -> np.ndarray:
