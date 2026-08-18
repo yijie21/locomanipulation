@@ -794,6 +794,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     ent_mark = None
     stall_palm, stall_t = None, time.time()
     vis_n = tot_n = 0        # ego-camera visibility, for the VLA data gate
+    in_lift = 0.0            # slide-in extra height, set in the in phase
 
     while time.time() < deadline:
         s = p.state.latest(5) or s
@@ -911,17 +912,38 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # rotation-truth) into the absolute target at 0.5/s — absolute
             # geometry keeps the loop calm, the trim keeps it honest.
             can_still = float(np.linalg.norm(obj - obj_in0)) < 0.008
-            if can_still and float(np.linalg.norm(
-                    (obj_f - rot_t @ offset + trim_w) - palm)) < 0.06:
+            if can_still:
                 # Trim only while the can is stationary: integrating the
                 # error of a can the hand is pushing turns the trim into a
                 # positive-feedback bulldozer.
-                trim_w = np.clip(trim_w + 0.5 * dt * (rot_p @ full),
-                                 -0.04, 0.04)
+                err_w = rot_p @ full
+                near = float(np.linalg.norm(
+                    (obj_f - rot_t @ offset + trim_w) - palm)) < 0.06
+                if near:
+                    d_err = err_w
+                else:
+                    # Far out, the entry component of the error is just the
+                    # un-traveled distance and the vertical one is the
+                    # deliberate slide-in lift — only the horizontal lateral
+                    # part is delivery bias. Integrating it HERE breaks the
+                    # old deadlock: the gate needed lat small, lat needed
+                    # the trim, and the trim waited for a closeness the
+                    # closed gate never allowed.
+                    d_err = err_w - float(np.dot(err_w, entry)) * entry
+                    d_err = d_err.copy()
+                    d_err[2] = 0.0
+                trim_w = np.clip(trim_w + 0.5 * dt * d_err, -0.04, 0.04)
             final_w = obj_f - rot_t @ offset + trim_w
-            to_final = final_w - palm
-            e_ent = float(np.dot(to_final, entry))
-            lat = float(np.linalg.norm(to_final - e_ent * entry))
+            # The gate measures the DELIVERED palm against the TRUE grip
+            # line (trim excluded): the trim deliberately biases the COMMAND
+            # to cancel the policy's delivery offset, so measuring against
+            # the biased line would hold the gate shut by that offset
+            # forever.
+            to_true = (obj_f - rot_t @ offset) - palm
+            e_ent = float(np.dot(to_true, entry))
+            perp = to_true - e_ent * entry
+            lat = float(np.linalg.norm(perp))
+            lat_h = float(np.hypot(perp[0], perp[1]))
             full_f = (np.array([lat, e_ent, 0.0]) if full_f is None
                       else 0.8 * full_f + 0.2 * np.array([lat, e_ent, 0.0]))
             # HARD align precondition, like the discrete servo's separate
@@ -937,11 +959,20 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # 12 mm hard gate kept zeroing the advance — hands hovered a
             # full 14 cm out until the deadline. The pre-narrowed jaw wraps
             # from 18 mm of lateral error.
-            gate = 0.0 if lat > 0.018 else float(
-                np.clip(1.0 - lat / 0.018, 0.0, 1.0))
+            # The gate keys on the HORIZONTAL lateral error only: the
+            # vertical offset during the slide-in is the deliberate lift
+            # (managed by SAG_COMP / the z-floor / the ramp below), and the
+            # thumb-graze the gate exists to prevent is a horizontal miss.
+            gate = 0.0 if lat_h > 0.018 else float(
+                np.clip(1.0 - lat_h / 0.018, 0.0, 1.0))
             # Hold back the un-gated part of the entry distance: laterally
             # free, forward only as far as alignment has earned.
             tgt = final_w - (1.0 - gate) * max(e_ent, 0.0) * entry
+            # Slide in HIGH, drop late: full 3 cm of extra height while the
+            # entry residual is >20 cm, blending to zero by 8 cm — the
+            # fingertips clear the tabletop for the whole travel instead of
+            # dragging across it (the wedge that froze lat at 21-30 mm).
+            in_lift = 0.03 * float(np.clip((e_ent - 0.08) / 0.12, 0.0, 1.0))
             v = V_APPROACH if e_ent > 0.05 else V_APPROACH * 0.5
             # Strict gate, or the patience gate: at a side-extended reach
             # the policy's station-keeping wobble sits at 12-15 mm and the
@@ -1008,7 +1039,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # in the flesh (FURN[R:middle_1] wedged, lat/ent frozen for a
             # minute). Bias the commanded height so the DELIVERED height is
             # the planned one.
-            cmd = cmd + np.array([0.0, 0.0, SAG_COMP])
+            cmd = cmd + np.array([0.0, 0.0, SAG_COMP
+                                  + (in_lift if phase == "in" else 0.0)])
         if surface_top is not None:
             # Hard geometric floor: with the pinned arm executing IK heights
             # EXACTLY, any command whose HAND (not wrist — the fingertips
