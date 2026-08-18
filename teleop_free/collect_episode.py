@@ -98,6 +98,10 @@ RETREAT_MIN = 0.30         # how far the pelvis must back off at the end
 STAND_SETTLE = 4.0         # seconds of IDLE after a reset before any walking
 OBJECT_NUDGE_MAX = 0.10    # how far the arm may shove the object before grasping
 AIM_TURN_W = 0.05          # metres of reach a radian of in-place turn is worth
+# Full task = grasp + transport + place + retreat. Off by default while the
+# grasp is under iteration: a grasp-only episode is the same data at half the
+# wall-clock. Turn the rest back on with FULL_TASK=1.
+FULL_TASK = os.environ.get("FULL_TASK", "0") == "1"
 
 
 class EpisodeFailed(Exception):
@@ -413,6 +417,26 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # Back up before walking: a crouched humanoid carrying something is not a
     # gait the controller was trained on.
     p.stand_up(hold_side)
+
+    if not FULL_TASK:
+        # Grasp-only episode: walk to the table, pick the can up, hold it.
+        # The transport/place/retreat stages exist and still run with
+        # FULL_TASK=1; while the grasp is the thing being iterated they only
+        # double the episode time and hide the grasp statistics behind
+        # unrelated place scatter.
+        stage("hold")
+        p.carry_pose(side)
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
+        s = p.obs()
+        drift = float(np.linalg.norm(
+            palm_frame_offset(s, obj_key, side) - hold_ref))
+        require("hold", drift < PALM_DRIFT_MAX,
+                f"orange slipped {drift * 100:.1f} cm in the palm frame "
+                f"during the hold")
+        require("hold", float(p.object_pos(obj_key, s)[2]) > surf_a["top"] + 0.03,
+                "orange is back on the table after the hold")
+        result["ok"] = True
+        return result
 
     # --- 3. transport ----------------------------------------------------
     stage("transport")
