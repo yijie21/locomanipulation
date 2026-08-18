@@ -47,7 +47,12 @@ JAW_TILT_MAX = np.deg2rad(25.0)
 # Delivered torso capability (measured on this stack, not commanded):
 PELVIS_MAX = 0.793            # standing pelvis height
 PELVIS_MIN = 0.660            # deepest DELIVERED squat (~13 cm, stream_reach)
-WAIST_PITCH = (0.0, 0.25)     # forward lean the policy actually tracks
+WAIST_PITCH = (0.0, 0.05)     # DELIVERED lean while standing: commanding
+                              # 0.25 measures 0.03-0.06, and the policy also
+                              # wanders waist yaw ~0.2 rad in response to
+                              # unusual arm poses — the map keeps the waist
+                              # nearly neutral and the navigator erodes the
+                              # lookup by 5 cm instead of trusting lean
 
 # Voxel grid, pelvis frame.
 VOX = 0.025
@@ -55,7 +60,7 @@ X0, X1 = 0.00, 0.75
 Y0, Y1 = -0.75, 0.75
 Z0, Z1 = -0.55, 0.45
 
-N_SAMPLES = 250_000           # per arm per waist config
+N_SAMPLES = 120_000           # per arm per waist config
 
 
 def _grid_shape():
@@ -66,11 +71,47 @@ def _grid_shape():
 
 
 def build(seed: int = 0) -> dict:
+    import mujoco
     ik = ArmIK()
     rng = np.random.default_rng(seed)
+    # Self-collision filter. mj_kinematics alone accepted configurations
+    # with the forearm through the chest — the probe measured 30+ cm of
+    # "delivery error" there because the sim, unlike bare FK, has a torso.
+    # Robot-robot contact pairs (non-adjacent bodies) reject a sample.
+    m = ik.model
+    robot_geoms = set()
+    for g in range(m.ngeom):
+        nm = m.body(m.geom_bodyid[g]).name
+        if nm.startswith(("left_", "right_", "pelvis", "torso", "waist",
+                          "logo", "head", "imu")):
+            robot_geoms.add(g)
+
+    def self_collides() -> bool:
+        mujoco.mj_collision(m, ik.data)
+        d = ik.data
+        for ci in range(d.ncon):
+            g1, g2 = d.contact.geom1[ci], d.contact.geom2[ci]
+            if g1 not in robot_geoms or g2 not in robot_geoms:
+                continue
+            b1, b2 = m.geom_bodyid[g1], m.geom_bodyid[g2]
+            if b1 == b2 or m.body_parentid[b1] == b2 or m.body_parentid[b2] == b1:
+                continue
+            return True
+        return False
     nx, ny, nz = _grid_shape()
     occ = {"left": np.zeros((nx, ny, nz), dtype=bool),
            "right": np.zeros((nx, ny, nz), dtype=bool)}
+    # Exemplar evidence per voxel: the joint solution that made it feasible.
+    # The verification probe replays exactly this — the promise, not a
+    # re-derivation of it.
+    ex_q = {s2: np.zeros((nx, ny, nz, 7), dtype=np.float32)
+            for s2 in ("left", "right")}
+    ex_wp = {s2: np.full((nx, ny, nz), np.nan, dtype=np.float32)
+             for s2 in ("left", "right")}
+    ex_pos = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32)
+              for s2 in ("left", "right")}
+    ex_appr = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32)
+               for s2 in ("left", "right")}
 
     for side in ("left", "right"):
         arm = ARM_MJ[side]
@@ -92,10 +133,17 @@ def build(seed: int = 0) -> dict:
                 jaw_tilt = abs(float(np.arcsin(np.clip(rot[2, 1], -1, 1))))
                 if jaw_tilt > JAW_TILT_MAX:
                     continue
+                if self_collides():
+                    continue
                 i = int((pos[0] - X0) / VOX)
                 j = int((pos[1] - Y0) / VOX)
                 k = int((pos[2] - Z0) / VOX)
                 if 0 <= i < nx and 0 <= j < ny and 0 <= k < nz:
+                    if not occ[side][i, j, k]:
+                        ex_q[side][i, j, k] = row
+                        ex_wp[side][i, j, k] = wp
+                        ex_pos[side][i, j, k] = pos
+                        ex_appr[side][i, j, k] = appr
                     occ[side][i, j, k] = True
                     kept += 1
             print(f"  {side} waist {wp:.2f}: kept {kept}/{N_SAMPLES}")
@@ -104,7 +152,11 @@ def build(seed: int = 0) -> dict:
     np.savez_compressed(
         MAP_PATH, left=occ["left"], right=occ["right"], both=both,
         vox=VOX, origin=np.array([X0, Y0, Z0]),
-        pelvis_range=np.array([PELVIS_MIN, PELVIS_MAX]))
+        pelvis_range=np.array([PELVIS_MIN, PELVIS_MAX]),
+        ex_q_left=ex_q["left"], ex_q_right=ex_q["right"],
+        ex_wp_left=ex_wp["left"], ex_wp_right=ex_wp["right"],
+        ex_pos_left=ex_pos["left"], ex_pos_right=ex_pos["right"],
+        ex_appr_left=ex_appr["left"], ex_appr_right=ex_appr["right"])
     print(f"saved {MAP_PATH}: both {both.sum()} voxels "
           f"({both.sum() * VOX**3 * 1e3:.1f} litres)")
     return {"left": occ["left"], "right": occ["right"], "both": both}
