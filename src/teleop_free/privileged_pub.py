@@ -83,6 +83,13 @@ class PrivilegedPublisher:
         self.palms = {s: bid(n) for s, n in PALM_BODY.items()}
         self.pelvis = bid("pelvis")
 
+        # Ego camera, for the VLA data-quality predicate: an episode whose RGB
+        # never shows the object teaches a policy to act blind. The exporter
+        # renders "head_camera" at 640x480.
+        self.cam_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
+        self.cam_aspect = 640.0 / 480.0
+
         surface_bodies = {bid(n) for n in surfaces} if surfaces else set()
 
         # geom -> True for every geom on a surface (table/counter) body, so
@@ -200,6 +207,20 @@ class PrivilegedPublisher:
                 "pos": pos, "quat": quat, "touching": contacts.get(key, []),
                 "touch_links": contact_links.get(key, []),
             }
+            if self.cam_id >= 0:
+                # Normalized image coords in [-1, 1]: the MuJoCo camera looks
+                # along its frame's -z, +x right, +y up.
+                cp = d.cam_xpos[self.cam_id]
+                cm = d.cam_xmat[self.cam_id].reshape(3, 3)
+                v = cm.T @ (np.asarray(pos) - cp)
+                if v[2] < -1e-6:
+                    ty = float(np.tan(0.5 * np.deg2rad(
+                        self.model.cam_fovy[self.cam_id])))
+                    objects[key]["cam"] = [
+                        float(v[0] / -v[2] / (ty * self.cam_aspect)),
+                        float(v[1] / -v[2] / ty)]
+                else:
+                    objects[key]["cam"] = None    # behind the camera
 
         palms = {}
         for side, b in self.palms.items():

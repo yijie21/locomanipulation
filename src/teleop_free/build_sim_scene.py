@@ -126,8 +126,20 @@ def main() -> None:
     mujoco.mj_forward(model, data)
 
     xml_path = os.path.join(out_dir, "scene_locomani.xml")
+    xml_text = spec.to_xml()
+    # Ego camera: the stock mount (44-deg depression, default fovy 45) leaves
+    # the grasp workspace outside the frame — at the actual stand the object
+    # sits ~76 deg below horizontal, past the bottom edge, so the RGB never
+    # shows the task and the episodes are worthless to a VLA. Pitch 52 deg +
+    # fovy 70 covers 17-87 deg vertically (object at fy~0.68 with margin,
+    # in frame from ~1.3 m out through the whole grasp).
+    xml_text = xml_text.replace(
+        '<camera name="head_camera" pos="0.06 0 0.45" '
+        'quat="0.651548 0.275251 -0.27547 -0.651029"',
+        '<camera name="head_camera" fovy="70" pos="0.06 0 0.45" '
+        'quat="0.668835 0.230083 -0.230336 -0.668332"')
     with open(xml_path, "w") as f:
-        f.write(spec.to_xml())
+        f.write(xml_text)
 
     # Resolve body ids/qpos addresses now so the agent never has to guess.
     for name, info in meta["objects"].items():

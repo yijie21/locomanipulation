@@ -318,6 +318,16 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     require("grasp", ok2, why2)
     hold_side = "left" if side == "right" else "right"
 
+    # VLA data gate 1: at the stand, the object must sit inside the central
+    # 80% of the ego camera. An episode acted out below the frame's bottom
+    # edge records RGB that never shows the task.
+    sv = p.obs()
+    cam = sv["objects"][obj_key].get("cam")
+    if cam is not None or "cam" in sv["objects"][obj_key]:
+        require("view", cam is not None
+                and abs(cam[0]) <= 0.8 and abs(cam[1]) <= 0.8,
+                f"object outside ego view at stand (cam={cam})")
+
     # Plan first, then crouch only as far as THIS plan needs. The order used to
     # be the other way round because the grip height was a constant of the
     # table, so the squat could be computed without the plan. With the tilted
@@ -396,6 +406,15 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
                                           replan=replan, ghost=show_ghost,
                                           nudge=False, pin=None)
     require("grasp", ok, why)
+
+    # VLA data gate 2: the object must have stayed in the ego frame through
+    # most of the servo — a grasp executed off-screen is clean kinematics but
+    # blind RGB, and the dataset must not reward acting without seeing.
+    vis = stream_reach.LAST_EGO_VIS
+    if vis is not None:
+        p.log(f"  ego visibility through servo: {vis * 100:.0f}%")
+        require("view", vis >= 0.7,
+                f"object in ego view only {vis * 100:.0f}% of the servo")
 
     s = p.obs()
     hold_ref = palm_frame_offset(s, obj_key, side)

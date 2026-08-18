@@ -48,6 +48,11 @@ SAFE_GAP = 0.13           # hold the object this far out along the entry axis
 # (0.10 left only 5 cm of margin over a bad pregrasp, and 5 cm pregrasp
 # errors do happen — the fingertips grazed the can twice)
 DEPTH_TOL = 0.03
+
+# Fraction of servo ticks with the object inside the ego camera's central 90%
+# (set by _servo_continuous; None until a servo has run). The episode gate
+# reads it: RGB frames that never show the task are worthless to a VLA.
+LAST_EGO_VIS = None
 # Looser than servo_grasp's 6 mm: that loop nudged a 50 Hz drifting command,
 # this one hops between IK solutions with a ~1 cm delivery floor, so an 8 mm
 # gate just oscillates. The advance gate keeps re-centring on the way in.
@@ -788,6 +793,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     in_since = None
     ent_mark = None
     stall_palm, stall_t = None, time.time()
+    vis_n = tot_n = 0        # ego-camera visibility, for the VLA data gate
 
     while time.time() < deadline:
         s = p.state.latest(5) or s
@@ -799,6 +805,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
         palm = np.array(s["palms"][side]["pos"])
         rot_p = Primitives._rot(s["palms"][side]["quat"])
         obj = p.object_pos(obj_key, s)
+
+        if "cam" in s["objects"][obj_key]:
+            global LAST_EGO_VIS
+            cam = s["objects"][obj_key]["cam"]
+            tot_n += 1
+            if cam is not None and abs(cam[0]) < 0.9 and abs(cam[1]) < 0.9:
+                vis_n += 1
+            LAST_EGO_VIS = vis_n / tot_n
 
         if not frozen and phase in ("up", "down") and now - last_replan > 0.2:
             last_replan = now
