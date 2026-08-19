@@ -180,8 +180,16 @@ def main() -> None:
               f" side {side}")
 
         # -- reset + settle -----------------------------------------------
-        ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
-                            d_can, stand - robot_nom, psi, side, rel)
+        # Stand-stage failures (fell on the walk-up / never stabilised) are
+        # deploy-state contamination from the PREVIOUS round, not properties
+        # of this sample — round 1 of every fresh deploy stands clean, and a
+        # plain reset recovers (OK streaks follow falls). Retry those once.
+        for attempt in range(2):
+            ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
+                                d_can, stand - robot_nom, psi, side, rel)
+            if ok or not why.startswith("[stand]"):
+                break
+            p.log(f"[gym] stand-stage retry ({why})")
         dt = time.time() - t0
         if ok:
             wins += 1
@@ -211,8 +219,16 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                 robot={"dxy": [float(spawn_d[0]), float(spawn_d[1])],
                        "yaw": float(psi)})
     time.sleep(0.3)
+    # Round 2+ contamination: the commander KEEPS the previous round's
+    # FROZEN_UPPER_BODY mode and its stale 17-value arm target across the
+    # reset, so the stand-up runs with the upper body pinned to a pose from
+    # another stand — round 1 of every process stood clean, rounds 2+ fell
+    # on ~half the walk-ups. Stand up in the default mode with no target,
+    # like a fresh process does.
+    p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
+    p.cmd.upper_body = None
     p.cmd.start_control()
-    p.cmd.hold(3.0, mode=LocomotionMode.IDLE)
+    p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     s = p.obs()
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
@@ -221,7 +237,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
     reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
-    p.cmd.hold(1.5, mode=LocomotionMode.IDLE)
+    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
     reset.start_video(f"gym_{int(time.time())}")
     # Walk the last 0.55 m to the sampled stand (SLOW_WALK, facing locked
     # at psi), then settle.
