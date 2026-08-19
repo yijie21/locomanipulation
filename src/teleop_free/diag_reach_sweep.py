@@ -22,6 +22,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import adaptive_grasp as ag  # noqa: E402
 import stream_reach  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
@@ -71,7 +72,13 @@ def main() -> None:
                 wx, wy = px + c * tx - sn * ty, py + sn * tx + c * ty
                 aim_pf = p.world_to_root_full(
                     np.array([wx, wy, GRIP_Z]), p.obs())
-                q_sol, res, _ = arm.ik.solve("right", aim_pf, None,
+                # CONSTRAINED orientation: a level grasp pose whose approach
+                # axis points outward along the sweep azimuth — the same
+                # semantics as the reach map. rot=None showed the position-
+                # only envelope with the wrist flipping freely at the rim.
+                dir_pf = np.array([np.cos(az), np.sin(az), 0.0])
+                rot_pf = ag._align(ag.OFFSET_DIR, dir_pf)
+                q_sol, res, _ = arm.ik.solve("right", aim_pf, rot_pf,
                                              q_mj29=arm.q, use_waist=True,
                                              iters=20)
                 if res > 0.02:
