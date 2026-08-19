@@ -89,7 +89,8 @@ def fresh_deploy(p) -> bool:
         print(f"[gym] deploy restart failed: {r.stdout[-300:]}")
         return False
     p._gym_started = False   # fresh process: nothing to quiesce
-    time.sleep(1.0)
+    time.sleep(4.0)          # let the engines finish lazy-loading before
+                             # the round's start_control leans on them
     return True
 
 
@@ -250,18 +251,13 @@ def main() -> None:
                 # A fresh deploy per round (and per stand retry): the
                 # nominal-spawn calibration already ran on this one, so
                 # round 1 right after a stack boot skips the restart.
-                if fresh_deploy(p):
-                    # Warm-up stand: the deploy's MAIDEN start_control is
-                    # shaky (10/24 fell on the walk-up when the round rode
-                    # it directly) — burn it on a throwaway reset, exactly
-                    # like the boot-time calibration does.
-                    p.cmd.reset_pose()
-                    reset.pin_arms()
-                    reset.reset()
-                    time.sleep(0.3)
-                    p.cmd.start_control()
-                    p._gym_started = True
-                    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
+                # (A warm-up stand after the restart was tried and REVERTED:
+                # it made 9/24 rounds fail to rise at all — start_control
+                # right after "Init Done" while the engines still lazy-load
+                # leaves the deploy's stand controller broken. The walk-up
+                # falls it targeted turned out to be table brushes, fixed by
+                # the walk-line clearance in the sampler.)
+                fresh_deploy(p)
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                 can_xy - can_nom, stand - robot_nom, psi,
                                 side, rel, rm, stand, squat_hint)
