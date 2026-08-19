@@ -6,6 +6,9 @@ cd /workspace/code/locomanipulation
 PY=/workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 OUT=outputs/logs/parbatch
 EPN="${EPN:-5}"
+# GYM=1 runs the teleport grasp gym (grasp_gym.py, one round per invocation)
+# instead of full navigation episodes — ~2x the grasp samples per wall-clock.
+if [ "${GYM:-0}" = "1" ]; then EPCMD="grasp_gym.py --rounds 1"; else EPCMD="collect_episode.py --no-record"; fi
 mkdir -p $OUT
 rm -f $OUT/ep_*.log $OUT/result.txt outputs/logs/parbatch_done.flag
 
@@ -35,7 +38,7 @@ run_instance() {
   sleep 3
   for e in $(seq 1 "$EPN"); do
     ( cd src/teleop_free && eval env $envs OMP_NUM_THREADS=1 \
-        $PY collect_episode.py --no-record ) > $OUT/ep_${i}_$e.log 2>&1
+        $PY $EPCMD ) > $OUT/ep_${i}_$e.log 2>&1
     if grep -qE "fell|did not stabilise|ZMQError|Address already in use" $OUT/ep_${i}_$e.log; then
       kill_instance $i
       sleep 2

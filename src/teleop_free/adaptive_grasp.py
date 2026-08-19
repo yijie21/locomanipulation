@@ -128,8 +128,12 @@ def _spin(axis, angle) -> np.ndarray:
     return (np.eye(3) + np.sin(angle) * k + (1.0 - np.cos(angle)) * (k @ k))
 
 
+MIN_SIDE_ANGLE = np.deg2rad(25.0)
+
+
 def plan(grip, wrist_now, palm_now, surface_top: float,
-         obj_axis=(0.0, 0.0, 1.0), box=None, obj_rot=None) -> Grasp:
+         obj_axis=(0.0, 0.0, 1.0), box=None, obj_rot=None,
+         azimuth_from=None, avoid_dir=None, avoid_sign: float = 1.0) -> Grasp:
     """Orient the palm so the grip offset points along the line to the object.
 
     `grip` is where the grasp centre must end up — on the object's own axis, and
@@ -149,7 +153,35 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
         return Grasp(False, why=(
             f"already inside the grasp offset: the grip point is {travel:.3f} m "
             f"from the wrist and the offset alone is {OFFSET_LEN:.3f} m"))
-    direction = to_grip / travel
+    # The approach AZIMUTH may come from a separate anchor (the shoulder
+    # pushed outboard) rather than the live wrist: with the object dead
+    # ahead the wrist starts at the chest, and a wrist-anchored azimuth
+    # points the entry corridor straight back at the torso — the arm folds
+    # against the body. Humans take a front-centre object from the side;
+    # the outboard-shoulder anchor reproduces that, and far to the side it
+    # converges to the wrist direction anyway. `travel` (the freeze logic's
+    # input) stays wrist-based.
+    if azimuth_from is not None:
+        av = grip - np.asarray(azimuth_from, dtype=float)
+        n = float(np.linalg.norm(av))
+        direction = av / n if n > 1e-6 else to_grip / travel
+    else:
+        direction = to_grip / travel
+    if avoid_dir is not None:
+        # Backstop: keep the entry at least MIN_SIDE_ANGLE away from the
+        # torso->grip bearing, rotating outboard (avoid_sign: +1 right arm,
+        # -1 left) — an entry corridor down the body's centreline pins the
+        # elbow against the chest regardless of where the azimuth came from.
+        b = np.asarray(avoid_dir, dtype=float)
+        b = b / max(float(np.linalg.norm(b[:2])), 1e-9)
+        # Signed horizontal offset of the entry from the bearing
+        # (positive = counter-clockwise of it, seen from above).
+        theta = float(np.arctan2(b[0] * direction[1] - b[1] * direction[0],
+                                 b[0] * direction[0] + b[1] * direction[1]))
+        want = avoid_sign * MIN_SIDE_ANGLE
+        if abs(theta) < MIN_SIDE_ANGLE:
+            direction = _spin(np.array([0.0, 0.0, 1.0]),
+                              want - theta) @ direction
 
     # Cap the dive. The azimuth follows the real wrist — that is the whole
     # point of planning from where the hand is — but a hand that happens to

@@ -788,7 +788,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     rot_t = np.asarray(plan.rot)
     entry = rot_t[:, 1]
     pre_w = np.asarray(plan.wrist) - entry * SAFE_GAP
-    above_w = pre_w + np.array([0.0, 0.0, 0.15])
+    above_w = pre_w + np.array([0.0, 0.0, 0.10])
     frozen = replan is None
     last_replan = 0.0
     offset = np.asarray(GRASP_CENTRE_OFFSET, dtype=float)
@@ -859,7 +859,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     rot_t = cand_rot
                     entry = rot_t[:, 1]
                     pre_w = cand_pre
-                    above_w = pre_w + np.array([0.0, 0.0, 0.15])
+                    above_w = pre_w + np.array([0.0, 0.0, 0.10])
                     if ghost is not None:
                         ghost(npl)
             elif npl.ok:

@@ -353,12 +353,33 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     _d = _d / max(np.linalg.norm(_d), 1e-6)
     virtual_start = grip - 0.25 * np.array([_d[0], _d[1], 0.0]) + [0, 0, 0.08]
     obj_box = meta["objects"][obj_key]["box"]
+
+    def azimuth_anchor(st2):
+        """Outboard-shoulder anchor for the approach azimuth (world frame):
+        same-side shoulder pushed 0.15 m further outboard. A wrist-anchored
+        azimuth degenerates with the object dead ahead (entry corridor down
+        the chest); this is where a human hand actually sets out from."""
+        yaw2 = p.pelvis_yaw(st2)
+        lat = -0.31 if side == "right" else 0.31
+        c2, s2 = np.cos(yaw2), np.sin(yaw2)
+        pz = st2["pelvis"]["pos"]
+        return np.array([pz[0] - s2 * lat, pz[1] + c2 * lat, pz[2] + 0.44])
+
+    def bearing_h(st2, grip_pt):
+        d2 = np.asarray(grip_pt[:2]) - p.pelvis_xy(st2)
+        n2 = max(float(np.linalg.norm(d2)), 1e-6)
+        return np.array([d2[0] / n2, d2[1] / n2, 0.0])
+
+    avoid_sign = 1.0 if side == "right" else -1.0
     plan = adaptive_grasp.plan(grip, virtual_start,
                                Primitives._rot(st["palms"][side]["quat"]),
                                surf_a["top"],
                                box=obj_box,
                                obj_rot=Primitives._rot(
-                                   st["objects"][obj_key]["quat"]))
+                                   st["objects"][obj_key]["quat"]),
+                               azimuth_from=azimuth_anchor(st),
+                               avoid_dir=bearing_h(st, grip),
+                               avoid_sign=avoid_sign)
     p.log(adaptive_grasp.describe(plan))
     require("grasp", plan.ok, plan.why)
     show_ghost(plan)
@@ -379,7 +400,10 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
                               obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
         return adaptive_grasp.plan(
             grip_live, wrist_now, palm_rot, surf_a["top"], box=obj_box,
-            obj_rot=Primitives._rot(st2["objects"][obj_key]["quat"]))
+            obj_rot=Primitives._rot(st2["objects"][obj_key]["quat"]),
+            azimuth_from=azimuth_anchor(st2),
+            avoid_dir=bearing_h(st2, grip_live),
+            avoid_sign=avoid_sign)
 
     # Streamed motion from here to the lift: full joint references on the
     # `pose` topic — the channel Pico teleop actually drives — with IK on the
