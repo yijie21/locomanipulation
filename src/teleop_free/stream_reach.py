@@ -1185,7 +1185,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
 def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                    side: str = "right", surface_top: float | None = None,
                    replan=None, ghost=None,
-                   nudge: bool = True, pin=None) -> tuple[bool, str]:
+                   nudge: bool = True, pin=None,
+                   squat_hint: float | None = None) -> tuple[bool, str]:
     """The whole grasp: raise, walk in, servo, close, lift. -> (ok, why)."""
     # Raise BEFORE walking in: from here on the hand is above the tabletop
     # and the approach can only ever come down onto the can, never up through
@@ -1229,6 +1230,10 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
         palm_z = float(s0["palms"][side]["pos"][2])
         drop = float(np.clip(palm_z - (float(grip_world[2]) + 0.06),
                              0.0, 0.13))
+        if squat_hint is not None:
+            # Navigation planned this crouch so the sweet core's THICK band
+            # lands on the object — never crouch less than the plan.
+            drop = float(np.clip(max(drop, squat_hint), 0.0, 0.13))
         if drop > 0.03:
             got = arm.squat(drop)
             p.log(f"  stream: planned crouch {drop * 100:.0f} cm "

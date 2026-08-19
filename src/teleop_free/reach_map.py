@@ -85,6 +85,20 @@ def _erode6(o: np.ndarray) -> np.ndarray:
             & p[1:-1, 1:-1, 2:] & p[1:-1, 1:-1, :-2])
 
 
+def _dilate6(o: np.ndarray) -> np.ndarray:
+    p = np.pad(o, 1)
+    return (o | p[2:, 1:-1, 1:-1] | p[:-2, 1:-1, 1:-1]
+            | p[1:-1, 2:, 1:-1] | p[1:-1, :-2, 1:-1]
+            | p[1:-1, 1:-1, 2:] | p[1:-1, 1:-1, :-2])
+
+
+def _close6(o: np.ndarray) -> np.ndarray:
+    """Morphological closing: fills single-voxel Monte-Carlo sampling holes
+    without extending the true boundary — the occupancy is a ~5-hit/voxel
+    MC estimate whose interior holes are noise, not unreachability."""
+    return _erode6(_dilate6(o))
+
+
 def _grid_shape():
     nx = int(round((X1 - X0) / VOX))
     ny = int(round((Y1 - Y0) / VOX))
@@ -206,7 +220,11 @@ def build(seed: int = 0) -> dict:
         nb = np.zeros(bits.shape, dtype=np.uint8)
         for b in range(AZ_BINS):
             nb += ((bits >> b) & 1).astype(np.uint8)
-        sweet[s2] = (_erode6(occ[s2]) & (jmargin[s2] >= CORE_JMARGIN)
+        # Erode the CLOSED occupancy (sampling holes are noise), but keep
+        # only genuinely sampled voxels — the comfort criteria are only
+        # defined where a sample landed.
+        sweet[s2] = (_erode6(_close6(occ[s2])) & occ[s2]
+                     & (jmargin[s2] >= CORE_JMARGIN)
                      & (nb >= CORE_AZBINS) & x_ok)
         print(f"  {s2}: envelope {occ[s2].sum()} -> core {sweet[s2].sum()}")
     np.savez_compressed(
@@ -265,6 +283,75 @@ class ReachMap:
             if self._at(grid, p + [0.0, 0.0, dz]):
                 return True
         return False
+
+    def plan_core_stand(self, obj_z_pf, arm: str = "right",
+                        aim_ang_max: float = np.deg2rad(30.0),
+                        min_margin: float = 0.05):
+        """Joint (aim, squat) stand plan against the sweet core.
+
+        The core narrows below the elbow band, so forcing the object into
+        the STANDING core drags the stand toward the table. Instead: pick
+        the smallest squat drop that brings a THICK core slice down onto
+        the object, and aim THAT slice at it. obj_z_pf is the object's z
+        in the pelvis frame at STANDING height.
+
+        Returns (aim_cells_xy, drop, margin) or None:
+        aim_cells_xy — pelvis-frame (x, y) core cells of the chosen slice,
+        deep inside it (in-slice chebyshev clearance >= margin) and within
+        aim_ang_max of straight ahead so the ego camera keeps the object;
+        drop — the pelvis drop to command before grasping.
+        """
+        grid = self._grid(arm, core=True)
+        grid_env = _close6(self._grid(arm, core=False))
+        nz = grid.shape[2]
+        drop_max = float(self.pelvis_max - self.pelvis_min)
+        layers = []
+        for dz in np.arange(0.0, drop_max + 1e-9, self.vox):
+            k = int((float(obj_z_pf) + dz - self.origin[2]) / self.vox)
+            if not (0 <= k < nz):
+                continue
+            sl = grid[:, :, k]
+            occ = np.argwhere(sl)
+            if len(occ) == 0:
+                continue
+            # Aim cells come from the CORE (comfort); the scatter margin is
+            # measured against the ENVELOPE boundary (feasibility): a stand
+            # that lands 1-2 cells off a core aim still only needs the grasp
+            # to be POSSIBLE there — the core slice itself is too ragged
+            # (~30 cells/layer) to have an interior.
+            occ_set = {(int(i), int(j))
+                       for i, j in np.argwhere(grid_env[:, :, k])}
+
+            def cheb_margin(i, j):
+                # Chebyshev distance to the nearest non-core cell (off-grid
+                # counts as non-core).
+                for r in range(1, 7):
+                    for di in range(-r, r + 1):
+                        for dj in range(-r, r + 1):
+                            if (max(abs(di), abs(dj)) == r
+                                    and (i + di, j + dj) not in occ_set):
+                                return (r - 1) * self.vox
+                return 6 * self.vox
+
+            pts, margs = [], []
+            for i, j in occ:
+                x = self.origin[0] + (i + 0.5) * self.vox
+                y = self.origin[1] + (j + 0.5) * self.vox
+                if abs(np.arctan2(y, x)) > aim_ang_max:
+                    continue
+                pts.append((x, y))
+                margs.append(cheb_margin(int(i), int(j)))
+            if pts:
+                layers.append((float(dz), np.asarray(pts),
+                               np.asarray(margs)))
+        if not layers:
+            return None
+        for dz, pts, margs in layers:      # ascending dz: the least squat
+            sel = pts[margs >= min_margin]  # whose slice is thick enough
+            if len(sel):
+                return sel, dz, float(margs.max())
+        dz, pts, margs = max(layers, key=lambda l: float(l[2].max()))
+        return pts[margs >= margs.max()], dz, float(margs.max())
 
     def margin(self, p_pelvis, arm: str = "both") -> float:
         """Distance (m) to the nearest non-graspable voxel, xy-plane, at the

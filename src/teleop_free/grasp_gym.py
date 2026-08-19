@@ -60,7 +60,9 @@ SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json
 EDGE_MIN = 0.15            # pelvis-to-edge HARD floor, enforced at arrival.
                            # 0.10 -> 17 hip contacts, 0.12 -> 22: the crouch
                            # lean protrudes ~14 cm past the pelvis centre
-EDGE_MAX = 0.20            # sampling ring upper bound
+EDGE_MAX = 0.32            # sampling ring upper bound: core-aim stands sit
+                           # at rel depth 0.18-0.36 (the sweet slice), so
+                           # they clear the edge by more than the old 0.20
 CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
                             # close enough that a 15 cm stand-off still
                             # reaches it, far enough that it cannot roll off
@@ -131,8 +133,26 @@ def main() -> None:
         return best
 
     rm = reach_map.ReachMap()
-    rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
-    print(f"[gym] {len(rel_cands)} candidate stands in the reach map")
+    # Core-aim stand plan: the smallest squat that brings a THICK sweet-core
+    # slice onto the grip height, plus that slice's ego-safe aim cells. The
+    # sampled rel then points the CORE (arm-centred, offset right) at the
+    # can instead of the torso, and the crouch is planned before arrival.
+    plan_cs = rm.plan_core_stand(float(grip_z - STANDING_PELVIS_Z))
+    if plan_cs is not None:
+        rel_cands, want_drop, core_marg = plan_cs
+        # plan_core_stand's drop is a DELIVERED pelvis drop; arm.squat takes
+        # a command whose delivery runs ~1.5x (measured: cmd 5/9/13 cm ->
+        # 4.4/12/19.5 cm) — invert that curve for the hint.
+        squat_hint = float(np.interp(want_drop,
+                                     [0.0, 0.044, 0.12, 0.195],
+                                     [0.0, 0.05, 0.09, 0.13]))
+        print(f"[gym] core stand: {len(rel_cands)} aim cells, "
+              f"drop {want_drop * 100:.1f} cm (cmd {squat_hint * 100:.1f}), "
+              f"scatter margin {core_marg * 100:.0f} cm")
+    else:
+        rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
+        squat_hint = None
+        print(f"[gym] no core slice — {len(rel_cands)} envelope stands")
 
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
@@ -195,7 +215,7 @@ def main() -> None:
         for attempt in range(2):
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                 can_xy - can_nom, stand - robot_nom, psi,
-                                side, rel, rm, stand)
+                                side, rel, rm, stand, squat_hint)
             if ok or not why.startswith("[stand]"):
                 break
             p.log(f"[gym] stand-stage retry ({why})")
@@ -211,7 +231,7 @@ def main() -> None:
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
-              spawn_xy) -> tuple[bool, str]:
+              spawn_xy, squat_hint=None) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -296,6 +316,11 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         return [c2 * dv2[0] + s2n * dv2[1], -s2n * dv2[0] + c2 * dv2[1],
                 grip_za - float(s2["pelvis"]["pos"][2])]
 
+    # Arrival criterion is the ENVELOPE on purpose: the plan AIMS at a core
+    # cell, but the scatter tolerance around it was measured against the
+    # envelope boundary (plan_core_stand's margin) — demanding core
+    # membership at arrival turned +-10 cm walk-up scatter into corrective
+    # steps (and their falls) on nearly every round (2/24 batch).
     rel_a = rel_now(s)
     if not rm.graspable(rel_a, "right"):
         # One corrective step: the walk-up lands with +-10 cm of scatter and
@@ -389,7 +414,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     reset.pin_arms()
     ok, why = stream_reach.grasp_streamed(
         p, obj_key, grip, plan, side=side, surface_top=surf_a["top"],
-        replan=replan, ghost=show_ghost, nudge=False, pin=reset.pin_arms)
+        replan=replan, ghost=show_ghost, nudge=False, pin=reset.pin_arms,
+        squat_hint=squat_hint)
     if not ok:
         return False, f"[grasp] {why}"
 
