@@ -92,7 +92,7 @@ class StreamedArm:
         # pregrasps went unreachable (res 0.13). Indices 12/13/14 = waist
         # yaw/roll/pitch in MuJoCo order.
         for j, (lo, hi) in {12: (-0.35, 0.35), 13: (-0.15, 0.15),
-                            14: (-0.05, 0.40)}.items():
+                            14: (-0.05, 0.20)}.items():
             self.ik.lo[j], self.ik.hi[j] = lo, hi
         self.buf: deque = deque(maxlen=CHUNK)
         self.i = 0
@@ -954,16 +954,19 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     d_err = err_w
                 else:
                     # Far out, the entry component of the error is just the
-                    # un-traveled distance and the vertical one is the
-                    # deliberate slide-in lift — only the horizontal lateral
-                    # part is delivery bias. Integrating it HERE breaks the
-                    # old deadlock: the gate needed lat small, lat needed
-                    # the trim, and the trim waited for a closeness the
-                    # closed gate never allowed.
+                    # un-traveled distance — project it out. The VERTICAL
+                    # error is genuine delivery bias (the policy under-
+                    # delivers the waist lean by ~2/3, pin covers only the
+                    # arm joints — measured pal 4-5 cm above cmd) except for
+                    # the deliberate slide-in lift, which is added back.
                     d_err = err_w - float(np.dot(err_w, entry)) * entry
                     d_err = d_err.copy()
-                    d_err[2] = 0.0
-                trim_w = np.clip(trim_w + 0.5 * dt * d_err, -0.04, 0.04)
+                    d_err[2] = err_w[2] + in_lift
+                trim_w = trim_w + 0.5 * dt * d_err
+                trim_w[:2] = np.clip(trim_w[:2], -0.04, 0.04)
+                # z gets more headroom: the waist-lean shortfall alone is
+                # 4-5 cm.
+                trim_w[2] = float(np.clip(trim_w[2], -0.08, 0.08))
             base = obj_f - rot_t @ offset
             if surface_top is not None:
                 # Grip-height feasibility. The z-floor (hand lowest point
@@ -1135,6 +1138,9 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # ~1 cm-and-worse delivery. The streamed reference above still
             # runs so the policy's balance model sees the arm where it is;
             # its arm torques are overridden at the actuator.
+            # Waist stays with the policy: pinning it stiff fought the
+            # balance controller (torso jitter, 9/15 toppled) — the arm pin
+            # plus the vertical trim absorb the lean shortfall instead.
             pin(**{side: [float(v) for v in arm.q[ARM_MJ[side]]]})
 
         # A palm that has not moved 2 cm in 8 s during the travel phases is
@@ -1194,6 +1200,25 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     arm = StreamedArm(p, side)
     arm.start()
     try:
+        # Tuck the IDLE arm before crouching. The crouch lowers the whole
+        # body, and the idle arm — frozen at the level-forearm READY joint
+        # angles — sinks 13 cm with it, straight into the can's height band
+        # and onto the tabletop (up-phase topples, FURN[wrist_yaw] on the
+        # non-servo side). The SERVO arm is safe: its IK closes on world
+        # targets each tick and re-raises itself. Elbow NEGATIVE folds the
+        # forearm UP (elbow zero = level).
+        other = "left" if side == "right" else "right"
+        q_t = arm.q.copy()
+        roll = 0.35 if other == "left" else -0.35
+        q_t[ARM_MJ[other]] = [-0.4, roll, 0.0, -0.6, 0.0, 0.0, 0.0]
+        # ...and pre-lift the SERVO arm the same way: during the crouch its
+        # joints are frozen too (the world-frame IK loop only starts with
+        # the servo), so a level READY forearm sinks with the body straight
+        # through the can's height band — that was the topple right at
+        # servo start, before any status line.
+        roll_s = 0.25 if side == "left" else -0.25
+        q_t[ARM_MJ[side]] = [-0.5, roll_s, 0.0, -0.5, 0.0, 0.0, 0.0]
+        arm.move_to(q_t, speed=1.0)
         # PLANNED crouch before reaching: bring the body down until the
         # wrist's natural height is near the grip, so the (limit-clamped)
         # waist only fine-tunes instead of folding to bridge the gap. The

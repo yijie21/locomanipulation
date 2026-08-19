@@ -158,7 +158,12 @@ def main(config: SimLoopConfig) -> None:
 
     _orig_cbt = DefaultEnv.compute_body_torques
     PIN_KP, PIN_KD, PIN_TAU_MAX = 120.0, 3.0, 30.0
-    ARM_MOTORS = {"left": list(range(15, 22)), "right": list(range(22, 29))}
+    ARM_MOTORS = {"left": list(range(15, 22)), "right": list(range(22, 29)),
+                  # Waist trio: frozen-upper mode pins these through the
+                  # deploy during walking anyway; during the streamed grasp
+                  # the pin makes the IK's (limit-clamped) lean deliver
+                  # exactly instead of at the policy's ~1/3.
+                  "waist": [12, 13, 14]}
 
     def compute_body_torques(self):
         tau = _orig_cbt(self)
