@@ -57,7 +57,9 @@ from privileged_pub import EpisodeControlClient  # noqa: E402
 
 SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
 
-EDGE_MIN = 0.16            # hip-to-table-edge floor (same as final_approach)
+EDGE_MIN = 0.13            # hip-to-edge floor; final_approach tolerates 0.14
+                           # (EDGE_STOP 0.16 - 0.02 sway) and the successful
+                           # episodes historically stood at 0.10-0.20
 CAN_EDGE_MIN = 0.10        # keep the sampled can this far inboard
 FACING_MAX = np.deg2rad(30.0)
 
@@ -68,11 +70,20 @@ def build_rel_candidates(rm: reach_map.ReachMap, z_pf: float) -> np.ndarray:
     No |y| >= 0.12 filter on purpose: dead-ahead placements are exactly what
     the side-grasp azimuth is being tested on."""
     cands = []
-    for x in np.arange(0.14, 0.45, 0.025):
+    # x capped at 0.32: stage-2 navigation delivers stands at depth
+    # 0.22-0.30, and beyond ~0.32 the OUTBOARD staging point (pregrasp =
+    # grip - 0.13*entry) leaves the waist-clamped arm's reach even where
+    # the grip itself is in the map (batch: 12x 'arm not tracking',
+    # IK res 0.06-0.09).
+    for x in np.arange(0.16, 0.30, 0.025):
         for y in np.arange(-0.40, 0.401, 0.025):
             if abs(np.arctan2(y, x)) > FACING_MAX:
                 continue
-            if not rm.graspable([x, y, z_pf]):
+            # RIGHT arm only for now: GRASP_CENTRE_OFFSET / hand_points
+            # are right-hand palm-frame constants that were never mirrored
+            # — the all-left batch produced targets on the wrong side of the
+            # body (9x arm-not-tracking). Left support is its own work item.
+            if not rm.graspable([x, y, z_pf], "right"):
                 continue
             cands.append((x, y))
     return np.asarray(cands)
@@ -94,11 +105,27 @@ def main() -> None:
     can_nom = np.asarray(meta["objects"][obj_key]["init_pos"][:2], dtype=float)
     grip_z = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
 
+    surf_b = meta["surfaces"].get("B")
+    rects = [(cxy, half)]
+    if surf_b:
+        rects.append((np.asarray(surf_b["xy"], dtype=float),
+                      np.asarray(surf_b.get("half_extent",
+                                            [0.6, 0.6])[:2], dtype=float)))
+
     def edge_dist(xy):
-        dxy = np.abs(np.asarray(xy) - cxy) - half
-        out = np.maximum(dxy, 0.0)
-        return float(np.hypot(out[0], out[1])) if (dxy > 0).any() else \
-            -float(max(dxy))
+        """SIGNED clearance to the nearest table footprint: positive
+        outside, NEGATIVE inside. (collect_episode's version returns the
+        penetration depth as a positive number for inside points — its
+        callers never sample inside a table; the gym does, and that sign
+        error spawned robots standing in the tabletop.)"""
+        best = np.inf
+        for rc, rh in rects:
+            dxy = np.abs(np.asarray(xy) - rc) - rh
+            out = np.maximum(dxy, 0.0)
+            d = (float(np.hypot(out[0], out[1])) if (dxy > 0).any()
+                 else float(max(dxy)))
+            best = min(best, d)
+        return best
 
     rm = reach_map.ReachMap()
     rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
@@ -121,22 +148,33 @@ def main() -> None:
     for rnd in range(args.rounds):
         t0 = time.time()
         # -- sample --------------------------------------------------------
-        for _ in range(200):
+        for _ in range(500):
             d_can = rng.uniform(-0.10, 0.10, 2)
             can_xy = can_nom + d_can
             if (np.abs(can_xy - cxy) > half - CAN_EDGE_MIN).any():
                 continue
             rel = rel_cands[rng.integers(len(rel_cands))]
-            psi = float(rng.uniform(-np.pi, np.pi))
+            # Face the table the way navigation does: from outside, along
+            # the inward normal of the can's nearest edge, +-25 deg. A
+            # uniform world yaw almost never yields a stand outside the
+            # table (10/24 rounds died in rejection sampling).
+            e = can_xy - cxy
+            if abs(abs(e[0]) - half[0]) < abs(abs(e[1]) - half[1]):
+                normal = np.array([-np.sign(e[0]), 0.0])
+            else:
+                normal = np.array([0.0, -np.sign(e[1])])
+            psi = float(np.arctan2(normal[1], normal[0])
+                        + rng.uniform(-0.44, 0.44))
             c, s = np.cos(psi), np.sin(psi)
             stand = can_xy - np.array([c * rel[0] - s * rel[1],
                                        s * rel[0] + c * rel[1]])
-            if edge_dist(stand) >= EDGE_MIN:
+            spawn = stand - 0.55 * np.array([np.cos(psi), np.sin(psi)])
+            if edge_dist(stand) >= EDGE_MIN and edge_dist(spawn) >= 0.05:
                 break
         else:
             print("EPISODE FAILED [gym] no feasible sample found")
             continue
-        side = "right" if rel[1] < 0 else "left"
+        side = "right"
         print(f"[gym] round {rnd + 1}/{args.rounds}: can {np.round(can_xy, 2)}"
               f" rel [{rel[0]:.2f} {rel[1]:+.2f}] yaw {np.degrees(psi):.0f}"
               f" side {side}")
@@ -190,22 +228,10 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     stand_w = p.obs()["pelvis"]["pos"][:2] + back * np.array(
         [np.cos(psi), np.sin(psi)])
     fv = (float(np.cos(psi)), float(np.sin(psi)), 0.0)
-    end = time.time() + 14.0
-    t_walk = time.time()
-    while time.time() < end:
-        s = p.obs()
-        if s["fallen"]:
-            return False, "[stand] fell during the walk-up"
-        gap = stand_w - p.pelvis_xy(s)
-        if float(np.linalg.norm(gap)) < 0.06:
-            break
-        g = gap / max(float(np.linalg.norm(gap)), 1e-6)
-        # Ramp in: a full-speed SLOW_WALK command into the post-reset
-        # stance transient is what tips the robot over.
-        spd = 0.12 if time.time() - t_walk < 1.5 else 0.25
-        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=spd,
-                    movement=(float(g[0]), float(g[1]), 0.0), facing=fv)
-        time.sleep(0.02)
+    # walk_to is the primitive every proven navigation path uses — the
+    # hand-rolled frame loop here fell over in 1/4 of the rounds.
+    if not p.walk_to(stand_w, stop_dist=0.07, timeout=20.0):
+        return False, "[stand] fell during the walk-up"
     for _ in range(int(1.5 / 0.02)):
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
         time.sleep(0.02)
