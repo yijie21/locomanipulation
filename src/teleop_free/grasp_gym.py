@@ -58,9 +58,11 @@ from privileged_pub import EpisodeControlClient  # noqa: E402
 
 SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
 
-EDGE_MIN = 0.15            # pelvis-to-edge HARD floor, enforced at arrival.
+EDGE_MIN = 0.17            # pelvis-to-edge HARD floor, enforced at arrival.
                            # 0.10 -> 17 hip contacts, 0.12 -> 22: the crouch
-                           # lean protrudes ~14 cm past the pelvis centre
+                           # lean protrudes ~14 cm past the pelvis centre;
+                           # 0.15 still brushed the hip 15x/batch once the
+                           # planned crouch deepened to 13-15 cm delivered
 EDGE_MAX = 0.32            # sampling ring upper bound: core-aim stands sit
                            # at rel depth 0.18-0.36 (the sweet slice), so
                            # they clear the edge by more than the old 0.20
@@ -411,6 +413,22 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         if not rm.graspable(rel_a, "right"):
             return False, (f"[stand] arrival left the object out of reach "
                            f"(rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}])")
+
+    # Depth trim: a grip deeper than 0.26 sits at the servo's walk-in band
+    # edge (in-phase thrash) and past the waist-clamped arm (palm lags its
+    # ref ~8 cm at res 0 — the missing piece is waist lean the policy will
+    # not deliver). Step in just enough, never below the edge floor.
+    if rel_a[0] > 0.26:
+        s = p.obs()
+        step = min(rel_a[0] - 0.22,
+                   edge_dist(p.pelvis_xy(s)) - EDGE_MIN)
+        if step > 0.02:
+            p.log(f"[gym] depth trim: rel x {rel_a[0]:.2f} — stepping in "
+                  f"{step * 100:.0f} cm")
+            tgt = np.asarray(p.pelvis_xy(s)) + np.array(fv[:2]) * step
+            if not p.walk_to(tgt, stop_dist=0.03, timeout=6.0):
+                return False, "[stand] fell during the depth trim"
+            p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
 
     # -- the grasp, same path as collect_episode ---------------------------
     st = p.obs()
