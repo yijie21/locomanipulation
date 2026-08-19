@@ -6,14 +6,14 @@
 # pattern appears in that shell's own /proc/<pid>/cmdline), so the killer
 # kills itself and the real targets survive.
 
-pkill -x "g1_deploy_onnx_" 2>/dev/null      # comm is truncated to 15 chars
-pkill -f "run_sim_loop.py" 2>/dev/null
-pkill -f "run_sim_locomani.py" 2>/dev/null
-pkill -f "run_data_exporter.py" 2>/dev/null
-pkill -f "zmq_driver.py" 2>/dev/null
-pkill -f "collect_episode.py" 2>/dev/null
-pkill -f "diag_walk.py" 2>/dev/null
-pkill -f "spawn_main" 2>/dev/null            # MuJoCo image-publish subprocess
+pkill -9 -x "g1_deploy_onnx_" 2>/dev/null      # comm is truncated to 15 chars
+pkill -9 -f "run_sim_loop.py" 2>/dev/null
+pkill -9 -f "run_sim_locomani.py" 2>/dev/null
+pkill -9 -f "run_data_exporter.py" 2>/dev/null
+pkill -9 -f "zmq_driver.py" 2>/dev/null
+pkill -9 -f "collect_episode.py" 2>/dev/null
+pkill -9 -f "diag_walk.py" 2>/dev/null
+pkill -9 -f "spawn_main" 2>/dev/null            # MuJoCo image-publish subprocess
 
 # The sim binds :5555 and :5581; a survivor makes the next start fail with
 # "Address already in use" *after* it has already printed its startup banner,

@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -67,6 +68,29 @@ CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
                             # close enough that a 15 cm stand-off still
                             # reaches it, far enough that it cannot roll off
 FACING_MAX = np.deg2rad(30.0)
+
+# Per-round deploy restart (GYM_RESTART_DEPLOY=0 disables). The deploy keeps
+# locomotion/heading state across sim resets; round 1 of a fresh deploy is
+# always clean, rounds 2+ wander, fall on the walk-up, or land metres off.
+# ~30 s a round buys back the dominant failure class.
+RESTART_DEPLOY = os.environ.get("GYM_RESTART_DEPLOY", "1") == "1"
+RESTART_SCRIPT = "/workspace/code/locomanipulation/scripts/restart_deploy.sh"
+
+
+def fresh_deploy(p) -> bool:
+    """Kill + relaunch this instance's deploy; returns True when it's up."""
+    try:
+        r = subprocess.run(["bash", RESTART_SCRIPT], capture_output=True,
+                           text=True, timeout=360)
+    except subprocess.TimeoutExpired:
+        print("[gym] deploy restart timed out")
+        return False
+    if "deploy restarted" not in r.stdout:
+        print(f"[gym] deploy restart failed: {r.stdout[-300:]}")
+        return False
+    p._gym_started = False   # fresh process: nothing to quiesce
+    time.sleep(1.0)
+    return True
 
 
 def build_rel_candidates(rm: reach_map.ReachMap, z_pf: float) -> np.ndarray:
@@ -197,7 +221,16 @@ def main() -> None:
             c, s = np.cos(psi), np.sin(psi)
             stand = can_xy - np.array([c * rel[0] - s * rel[1],
                                        s * rel[0] + c * rel[1]])
-            if EDGE_MIN <= edge_dist(stand) <= EDGE_MAX:
+            if not (EDGE_MIN <= edge_dist(stand) <= EDGE_MAX):
+                continue
+            # The WALK must clear the table too: the batch's "fell during
+            # the walk-up" class was the robot brushing the table edge on
+            # the way in (video: hip catches the rim, robot tips backwards
+            # onto the tabletop) — the spawn sits 0.30 m behind the stand
+            # and the line between them ran along the edge.
+            spawn_pt = stand - 0.30 * np.array([np.cos(psi), np.sin(psi)])
+            mid_pt = 0.5 * (spawn_pt + stand)
+            if edge_dist(spawn_pt) >= EDGE_MIN and edge_dist(mid_pt) >= EDGE_MIN:
                 break
         else:
             print("EPISODE FAILED [gym] no feasible sample found")
@@ -213,6 +246,22 @@ def main() -> None:
         # of this sample — round 1 of every fresh deploy stands clean, and a
         # plain reset recovers (OK streaks follow falls). Retry those once.
         for attempt in range(2):
+            if RESTART_DEPLOY and (rnd > 0 or attempt > 0):
+                # A fresh deploy per round (and per stand retry): the
+                # nominal-spawn calibration already ran on this one, so
+                # round 1 right after a stack boot skips the restart.
+                if fresh_deploy(p):
+                    # Warm-up stand: the deploy's MAIDEN start_control is
+                    # shaky (10/24 fell on the walk-up when the round rode
+                    # it directly) — burn it on a throwaway reset, exactly
+                    # like the boot-time calibration does.
+                    p.cmd.reset_pose()
+                    reset.pin_arms()
+                    reset.reset()
+                    time.sleep(0.3)
+                    p.cmd.start_control()
+                    p._gym_started = True
+                    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                 can_xy - can_nom, stand - robot_nom, psi,
                                 side, rel, rm, stand, squat_hint)
