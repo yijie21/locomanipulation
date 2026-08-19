@@ -114,24 +114,32 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
         print(f"[sim] reach zone skipped ({e})")
         return scene_xml
     occ = z["right"]
+    sweet = z["sweet_right"] if "sweet_right" in z else np.zeros_like(occ)
     vox, org = float(z["vox"]), z["origin"]
-    idx = np.argwhere(occ)
-    if len(idx) == 0:
+    if not occ.any():
         return scene_xml
-    pts = idx * vox + org + vox / 2.0
-    geoms = "".join(
-        f'<geom name="reach_zone_{k}" type="box" '
-        f'size="0.0100 0.0100 0.0100" '
-        f'pos="{x:.4f} {y:.4f} {zz:.4f}" contype="0" conaffinity="0" '
-        f'mass="0" group="4" rgba="0.2 0.9 0.35 0.16"/>'
-        for k, (x, y, zz) in enumerate(pts))
-    body = f'<body name="reach_zone" mocap="true" pos="0 0 0">{geoms}</body>'
+    # Two tones: pale = full envelope (grasp possible), dark opaque core =
+    # sweet zone (grasp comfortable, servo has correction room).
+    parts = []
+    for tag, grid, size, rgba in (
+            ("env", occ & ~sweet, 0.0100, "0.2 0.9 0.35 0.10"),
+            ("core", sweet, 0.0115, "0.02 0.45 0.12 0.55")):
+        pts = np.argwhere(grid) * vox + org + vox / 2.0
+        parts += [
+            f'<geom name="reach_{tag}_{k}" type="box" '
+            f'size="{size:.4f} {size:.4f} {size:.4f}" '
+            f'pos="{x:.4f} {y:.4f} {zz:.4f}" contype="0" conaffinity="0" '
+            f'mass="0" group="4" rgba="{rgba}"/>'
+            for k, (x, y, zz) in enumerate(pts)]
+    body = ('<body name="reach_zone" mocap="true" pos="0 0 0">'
+            + "".join(parts) + "</body>")
     xml = open(scene_xml).read().replace("</worldbody>",
                                          body + "</worldbody>")
     out = os.path.join(SCENE_DIR, "scene_locomani_zone.xml")
     with open(out, "w") as f:
         f.write(xml)
-    print(f"[sim] reach volume: {len(pts)} voxels (pelvis frame)")
+    print(f"[sim] reach volume: {int(occ.sum())} voxels, "
+          f"core {int(sweet.sum())} (pelvis frame)")
     return out
 
 

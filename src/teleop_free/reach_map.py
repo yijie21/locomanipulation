@@ -46,7 +46,10 @@ JAW_TILT_MAX = np.deg2rad(25.0)
 
 # Delivered torso capability (measured on this stack, not commanded):
 PELVIS_MAX = 0.793            # standing pelvis height
-PELVIS_MIN = 0.660            # deepest DELIVERED squat (~13 cm, stream_reach)
+PELVIS_MIN = 0.598            # deepest DELIVERED squat: stepped commands to
+                              # 13 cm measured pelvis drops of 19.5-19.9 cm
+                              # (diag_reach_volume / diag_reach_sweep) — the
+                              # earlier 0.660 assumed the single-shot 13 cm
 WAIST_PITCH = (0.0, 0.05)     # DELIVERED lean while standing: commanding
                               # 0.25 measures 0.03-0.06, and the policy also
                               # wanders waist yaw ~0.2 rad in response to
@@ -60,7 +63,26 @@ X0, X1 = 0.12, 0.75
 Y0, Y1 = -0.75, 0.75
 Z0, Z1 = -0.55, 0.45
 
-N_SAMPLES = 120_000           # per arm per waist config
+N_SAMPLES = 600_000           # per arm per waist config: at 120k each voxel
+                              # averaged 1.6 hits, so the erosion and the
+                              # azimuth-coverage statistics were pure noise
+
+# Sweet-zone ("core") criteria: the envelope is where a grasp is POSSIBLE;
+# the core is where it is COMFORTABLE — room left for servo corrections.
+AZ_BINS = 9                   # approach-azimuth bins over the front sector
+AZ_SECTOR = np.deg2rad(60.0)  # matches the front-sector sample filter
+CORE_JMARGIN = np.deg2rad(15.0)   # min distance of any arm joint to a limit
+CORE_AZBINS = 3               # distinct approach azimuths seen at the voxel
+CORE_X_MIN = 0.16             # inboard cut: closer voxels put the pregrasp
+                              # against the torso (self-collision entries)
+
+
+def _erode6(o: np.ndarray) -> np.ndarray:
+    """Keep a voxel only if all 6 face-neighbours are also occupied."""
+    p = np.pad(o, 1)
+    return (o & p[2:, 1:-1, 1:-1] & p[:-2, 1:-1, 1:-1]
+            & p[1:-1, 2:, 1:-1] & p[1:-1, :-2, 1:-1]
+            & p[1:-1, 1:-1, 2:] & p[1:-1, 1:-1, :-2])
 
 
 def _grid_shape():
@@ -112,6 +134,13 @@ def build(seed: int = 0) -> dict:
               for s2 in ("left", "right")}
     ex_appr = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32)
                for s2 in ("left", "right")}
+    # Comfort evidence per voxel: the BEST joint-limit margin any sample
+    # achieved there, and a bitmask of which approach-azimuth bins produced
+    # a hit — forward-MC's version of "how many directions work here".
+    jmargin = {s2: np.zeros((nx, ny, nz), dtype=np.float32)
+               for s2 in ("left", "right")}
+    azmask = {s2: np.zeros((nx, ny, nz), dtype=np.uint16)
+              for s2 in ("left", "right")}
 
     for side in ("left", "right"):
         arm = ARM_MJ[side]
@@ -148,18 +177,43 @@ def build(seed: int = 0) -> dict:
                 j = int((pos[1] - Y0) / VOX)
                 k = int((pos[2] - Z0) / VOX)
                 if 0 <= i < nx and 0 <= j < ny and 0 <= k < nz:
-                    if not occ[side][i, j, k]:
+                    marg = float(np.minimum(row - lo, hi - row).min())
+                    if marg > jmargin[side][i, j, k] or not occ[side][i, j, k]:
+                        # Exemplar = the most comfortable solution seen, not
+                        # the first: replays and demos then avoid limit-pinned
+                        # postures.
+                        jmargin[side][i, j, k] = marg
                         ex_q[side][i, j, k] = row
                         ex_wp[side][i, j, k] = wp
                         ex_pos[side][i, j, k] = pos
                         ex_appr[side][i, j, k] = appr
+                    az = float(np.arctan2(appr[1], appr[0]))
+                    b = int((az + AZ_SECTOR) / (2 * AZ_SECTOR) * AZ_BINS)
+                    if 0 <= b < AZ_BINS:
+                        azmask[side][i, j, k] |= np.uint16(1 << b)
                     occ[side][i, j, k] = True
                     kept += 1
             print(f"  {side} waist {wp:.2f}: kept {kept}/{N_SAMPLES}")
 
     both = occ["left"] | occ["right"]
+    # Sweet zone: eroded envelope, comfortable joints, several approach
+    # azimuths, and clear of the torso.
+    xc = X0 + (np.arange(nx) + 0.5) * VOX
+    x_ok = (xc >= CORE_X_MIN)[:, None, None]
+    sweet = {}
+    for s2 in ("left", "right"):
+        bits = azmask[s2]
+        nb = np.zeros(bits.shape, dtype=np.uint8)
+        for b in range(AZ_BINS):
+            nb += ((bits >> b) & 1).astype(np.uint8)
+        sweet[s2] = (_erode6(occ[s2]) & (jmargin[s2] >= CORE_JMARGIN)
+                     & (nb >= CORE_AZBINS) & x_ok)
+        print(f"  {s2}: envelope {occ[s2].sum()} -> core {sweet[s2].sum()}")
     np.savez_compressed(
         MAP_PATH, left=occ["left"], right=occ["right"], both=both,
+        sweet_left=sweet["left"], sweet_right=sweet["right"],
+        jmargin_left=jmargin["left"], jmargin_right=jmargin["right"],
+        azmask_left=azmask["left"], azmask_right=azmask["right"],
         vox=VOX, origin=np.array([X0, Y0, Z0]),
         pelvis_range=np.array([PELVIS_MIN, PELVIS_MAX]),
         ex_q_left=ex_q["left"], ex_q_right=ex_q["right"],
@@ -177,9 +231,20 @@ class ReachMap:
     def __init__(self, path: str = MAP_PATH):
         z = np.load(path)
         self.left, self.right, self.both = z["left"], z["right"], z["both"]
+        # Sweet zone (comfortable core) — present on maps built after the
+        # comfort-metrics rebuild; fall back to the envelope on old files.
+        self.sweet_left = z["sweet_left"] if "sweet_left" in z else self.left
+        self.sweet_right = (z["sweet_right"] if "sweet_right" in z
+                            else self.right)
         self.vox = float(z["vox"])
         self.origin = z["origin"]
         self.pelvis_min, self.pelvis_max = z["pelvis_range"]
+
+    def _grid(self, arm: str, core: bool):
+        if core:
+            return {"left": self.sweet_left, "right": self.sweet_right,
+                    "both": self.sweet_left | self.sweet_right}[arm]
+        return {"left": self.left, "right": self.right, "both": self.both}[arm]
 
     def _at(self, grid, p) -> bool:
         idx = ((np.asarray(p) - self.origin) / self.vox).astype(int)
@@ -187,12 +252,13 @@ class ReachMap:
             return False
         return bool(grid[tuple(idx)])
 
-    def graspable(self, p_pelvis, arm: str = "both") -> bool:
+    def graspable(self, p_pelvis, arm: str = "both",
+                  core: bool = False) -> bool:
         """p in the pelvis frame at STANDING height. The squat extends reach
         DOWNWARD: a point below the map is re-tested as if the pelvis had
-        come down by up to (PELVIS_MAX - PELVIS_MIN)."""
-        grid = {"left": self.left, "right": self.right,
-                "both": self.both}[arm]
+        come down by up to (PELVIS_MAX - PELVIS_MIN). core=True tests the
+        sweet zone instead of the full envelope."""
+        grid = self._grid(arm, core)
         p = np.asarray(p_pelvis, dtype=float)
         drop = self.pelvis_max - self.pelvis_min
         for dz in np.arange(0.0, drop + 1e-9, self.vox):
