@@ -204,7 +204,9 @@ class PrivilegedPublisher:
         w, x, y, z = pelvis_quat
         yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
         if self.zone_mocap >= 0:
-            d.mocap_pos[self.zone_mocap] = [pelvis_pos[0], pelvis_pos[1], 0.0]
+            # Full 3D pose incl. HEIGHT: the volume rides down with a squat.
+            d.mocap_pos[self.zone_mocap] = [pelvis_pos[0], pelvis_pos[1],
+                                            pelvis_pos[2]]
             d.mocap_quat[self.zone_mocap] = [np.cos(yaw / 2), 0.0, 0.0,
                                              np.sin(yaw / 2)]
 

@@ -98,47 +98,40 @@ def disable_fall_reset() -> None:
 
 
 def inject_reach_zone(scene_xml: str, meta: dict) -> str:
-    """Add a translucent 'graspable region' carpet to the scene XML.
+    """Add the FULL 3D graspable volume as a translucent cloud.
 
-    A mocap body carrying one small green box per reach-map cell at the
-    GRASP height (right arm, squat extrusion included). The privileged
-    publisher drags it along with the pelvis every step, so the videos show
-    at a glance whether the object is inside the region the sampler / stop
-    criterion reasons about. Group 4: debug tracking camera only — the ego
-    stream (VLA data) never sees it. Returns the path of the patched XML.
+    Every right-arm reach-map voxel (pelvis frame) becomes a small green
+    box on a mocap body that the privileged publisher keeps glued to the
+    pelvis (position incl. HEIGHT + yaw). Standing, the cloud hangs where
+    the arm can grasp; when the robot squats the whole cloud rides down
+    with the body — the volume it sweeps is the total graspable region
+    from standing to the deepest crouch. Group 4: debug camera only.
     """
     try:
-        import grasping
         import reach_map
-        rm = reach_map.ReachMap()
+        z = np.load(reach_map.MAP_PATH)
     except Exception as e:  # a missing map must not kill the sim
         print(f"[sim] reach zone skipped ({e})")
         return scene_xml
-    # Slice height: the ELBOW/READY-forearm level (world 0.894 at a
-    # standing pelvis; READY palm FK), not the low grasp height — the
-    # carried arms live here, and the reach envelope at this height is the
-    # wide one a viewer intuitively expects to see.
-    zone_z = 0.894
-    z_pf = zone_z - 0.793          # standing pelvis height
-    cells = []
-    for x in np.arange(0.12, 0.60, 0.025):
-        for y in np.arange(-0.60, 0.601, 0.025):
-            if rm.graspable([float(x), float(y), z_pf], "right"):
-                cells.append((float(x), float(y)))
-    if not cells:
+    occ = z["right"]
+    vox, org = float(z["vox"]), z["origin"]
+    idx = np.argwhere(occ)
+    if len(idx) == 0:
         return scene_xml
+    pts = idx * vox + org + vox / 2.0
     geoms = "".join(
-        f'<geom name="reach_zone_{k}" type="box" size="0.0115 0.0115 0.003" '
-        f'pos="{x:.4f} {y:.4f} {zone_z:.4f}" contype="0" conaffinity="0" '
-        f'mass="0" group="4" rgba="0.2 0.9 0.35 0.28"/>'
-        for k, (x, y) in enumerate(cells))
+        f'<geom name="reach_zone_{k}" type="box" '
+        f'size="0.0100 0.0100 0.0100" '
+        f'pos="{x:.4f} {y:.4f} {zz:.4f}" contype="0" conaffinity="0" '
+        f'mass="0" group="4" rgba="0.2 0.9 0.35 0.16"/>'
+        for k, (x, y, zz) in enumerate(pts))
     body = f'<body name="reach_zone" mocap="true" pos="0 0 0">{geoms}</body>'
     xml = open(scene_xml).read().replace("</worldbody>",
                                          body + "</worldbody>")
     out = os.path.join(SCENE_DIR, "scene_locomani_zone.xml")
     with open(out, "w") as f:
         f.write(xml)
-    print(f"[sim] reach zone: {len(cells)} cells at z={zone_z:.3f}")
+    print(f"[sim] reach volume: {len(pts)} voxels (pelvis frame)")
     return out
 
 
