@@ -89,6 +89,12 @@ def fresh_deploy(p) -> bool:
         print(f"[gym] deploy restart failed: {r.stdout[-300:]}")
         return False
     p._gym_started = False   # fresh process: nothing to quiesce
+    # The heading compensation pairs with the DEAD deploy's anchor: the
+    # commander keeps rotating facing/movement by the previous round's yaw
+    # (~-80 deg) while the fresh deploy anchors clean — every IDLE frame
+    # then steers sideways and the stand drifts 0.4-0.6 m ("teleport did
+    # not land"). A fresh deploy starts like a fresh boot: offset zero.
+    p.cmd.heading_offset = 0.0
     time.sleep(4.0)          # let the engines finish lazy-loading before
                              # the round's start_control leans on them
     return True
@@ -313,7 +319,12 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.upper_body = None
     p.cmd.start_control()
     p._gym_started = True
-    p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
+    # Every IDLE frame carries a facing, and the default is the ABSOLUTE
+    # world +x — the settle was quietly rotating the freshly-teleported
+    # robot 50-70 deg off its sampled yaw (pre-walk yaw_err telemetry).
+    # Hold the sampled heading explicitly through every settle.
+    fv = (float(np.cos(psi)), float(np.sin(psi)), 0.0)
+    p.cmd.hold(4.0, mode=LocomotionMode.IDLE, facing=fv)
     s = p.obs()
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
@@ -328,15 +339,29 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
     reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
-    p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
+    p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     reset.start_video(f"gym_{int(time.time())}")
-    fv = (float(np.cos(psi)), float(np.sin(psi)), 0.0)
+    grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
+
+    def rel_dbg(tag, s2):
+        y2 = p.pelvis_yaw(s2)
+        c2, s2n = np.cos(y2), np.sin(y2)
+        dv2 = p.object_pos(obj_key, s2)[:2] - p.pelvis_xy(s2)
+        rx = c2 * dv2[0] + s2n * dv2[1]
+        ry = -s2n * dv2[0] + c2 * dv2[1]
+        yerr = np.degrees((y2 - psi + np.pi) % (2 * np.pi) - np.pi)
+        p.log(f"[gym] {tag}: rel [{rx:.2f} {ry:+.2f}] "
+              f"yaw_err {yerr:+.0f} deg")
+
+    rel_dbg("pre-walk ", p.obs())
     # Two steps forward onto the stand.
     if not p.walk_to(np.asarray(spawn_xy), stop_dist=0.06, timeout=10.0):
         return False, "[stand] fell during the walk-up"
+    rel_dbg("post-walk", p.obs())
     for _ in range(int(1.0 / 0.02)):
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
         time.sleep(0.02)
+    rel_dbg("post-face", p.obs())
     # No turn correction: the teleport already faces the sampled yaw, and a
     # turn_to on a contamination-stale heading anchor sent the robot
     # marching metres across the room (rel [6.66 +2.19] telemetry).
@@ -348,12 +373,10 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         p.log(f"[gym] arrival {ed:.2f} m from the edge — backing off")
         if not p.walk_to(back_tgt, stop_dist=0.04, timeout=8.0):
             return False, "[stand] fell while backing off the table edge"
-        p.cmd.hold(0.8, mode=LocomotionMode.IDLE)
+        p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
         s = p.obs()
         if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.01:
             return False, "[stand] could not hold the edge clearance"
-    grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
-
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)
         c2, s2n = np.cos(y2), np.sin(y2)
@@ -380,7 +403,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               "the map — corrective step")
         if not p.walk_to(stand2, stop_dist=0.05, timeout=8.0):
             return False, "[stand] fell during the corrective step"
-        p.cmd.hold(0.8, mode=LocomotionMode.IDLE)
+        p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
         s = p.obs()
         if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.01:
             return False, "[stand] could not hold the edge clearance"
