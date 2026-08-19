@@ -85,6 +85,15 @@ class StreamedArm:
         self.p = p
         self.side = side
         self.ik = ArmIK()
+        # The waist may HELP the reach but only within a human lean. With the
+        # stock limits the IK bridged any height/side gap by folding the
+        # torso flat onto the table (head down, palm never reaching its
+        # lifted reference); with the waist excluded entirely, side-offset
+        # pregrasps went unreachable (res 0.13). Indices 12/13/14 = waist
+        # yaw/roll/pitch in MuJoCo order.
+        for j, (lo, hi) in {12: (-0.35, 0.35), 13: (-0.15, 0.15),
+                            14: (-0.05, 0.40)}.items():
+            self.ik.lo[j], self.ik.hi[j] = lo, hi
         self.buf: deque = deque(maxlen=CHUNK)
         self.i = 0
         # Start from the commander's CURRENT hand targets, not open: entering
@@ -409,6 +418,16 @@ def _nudge_pass(p: Primitives, grip_world, side: str) -> None:
     p.log(f"  stream: grip now {p.world_to_root_full(grip_world, s)[0]:.2f} m out")
 
 
+def toppled(s, obj_key: str) -> bool:
+    """Has the (upright-cylinder) object fallen over? Its body z-axis more
+    than ~60 deg off vertical. Failure ATTRIBUTION: a toppled can later
+    surfaces as 'grip height unreachable' (the grasp line follows the body
+    origin down to lying height), which blames the arm for a knock that
+    happened during the approach."""
+    rot = Primitives._rot(s["objects"][obj_key]["quat"])
+    return float(rot[2, 2]) < 0.5
+
+
 def final_approach(p: Primitives, obj_key: str, rm, edge_dist_fn,
                    z_pf: float, side_pref: str = "right",
                    timeout: float = 25.0):
@@ -436,6 +455,8 @@ def final_approach(p: Primitives, obj_key: str, rm, edge_dist_fn,
         s = p.obs()
         if s["fallen"]:
             return False, side_pref, "fell during the final approach"
+        if toppled(s, obj_key):
+            return False, side_pref, "object toppled during the final approach"
         can = p.object_pos(obj_key, s)
         moved = float(np.linalg.norm(can - can0))
         if moved > 0.10:
@@ -808,6 +829,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
         t_prev = now
         if s["fallen"]:
             return False, "fell during the continuous servo"
+        if toppled(s, obj_key):
+            return False, f"{obj_key} toppled in the {phase} phase"
         palm = np.array(s["palms"][side]["pos"])
         rot_p = Primitives._rot(s["palms"][side]["quat"])
         obj = p.object_pos(obj_key, s)
@@ -959,7 +982,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     return False, (
                         "grip height unreachable over the table: the hand's "
                         f"low point forces the palm {need * 100:.1f} cm "
-                        "above the grasp line")
+                        f"above the grasp line (obj z {float(obj_f[2]):.3f}, "
+                        f"low_c {low_c2:.3f})")
                 if need > 0:
                     base = base + np.array([0.0, 0.0, need])
             final_w = base + trim_w
@@ -1170,12 +1194,22 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     arm = StreamedArm(p, side)
     arm.start()
     try:
+        # PLANNED crouch before reaching: bring the body down until the
+        # wrist's natural height is near the grip, so the (limit-clamped)
+        # waist only fine-tunes instead of folding to bridge the gap. The
+        # wrist rides ~7.5 cm above the grip point, so the drop is the
+        # palm's current height minus (grip + that margin).
+        s0 = p.obs()
+        palm_z = float(s0["palms"][side]["pos"][2])
+        drop = float(np.clip(palm_z - (float(grip_world[2]) + 0.06),
+                             0.0, 0.13))
+        if drop > 0.03:
+            got = arm.squat(drop)
+            p.log(f"  stream: planned crouch {drop * 100:.0f} cm "
+                  f"wanted, {got * 100:.0f} cm delivered")
         # One continuous 50 Hz servo does everything: down the live
         # replanned line to the pregrasp, jaw-gated slide onto the can,
-        # close, lift — no stop-and-settle anywhere. The old unconditional
-        # squat is gone; the raised hand plus the tilted approach covers
-        # normal table heights, and the squat survives only as the
-        # out-of-reach fallback below.
+        # close, lift — no stop-and-settle anywhere.
         ok, why = _servo_continuous(p, arm, obj_key, plan, side,
                                     replan=replan, ghost=ghost, pin=pin,
                                     surface_top=surface_top)

@@ -387,7 +387,10 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
         ng.contype = 0
         ng.conaffinity = 0
         ng.mass = 0.0
-        ng.group = 0
+        # Group 4: hidden from every default-option render (the exporter's
+        # ego camera included — debug ghosts must not leak into VLA RGB);
+        # the diagnostic tracking camera opts back in via scene_option.
+        ng.group = 4
         n += 1
 
     # A solid bead at the grip centre. The hand's outline is legible up close
@@ -404,6 +407,7 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
     bead.contype = 0
     bead.conaffinity = 0
     bead.mass = 0.0
+    bead.group = 4
 
     return n + 1
 

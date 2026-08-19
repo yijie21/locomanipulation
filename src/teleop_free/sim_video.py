@@ -110,6 +110,13 @@ class VideoRecorder:
         # the object are a few dozen pixels each.
         self.cam.distance, self.cam.azimuth, self.cam.elevation = 2.5, 135.0, -20.0
 
+        # Debug visuals (ghost hand, grip bead) live in geom group 4, which
+        # default options hide: the ego inset and the exporter's ego stream
+        # stay clean for VLA data, and only this tracking view opts back in.
+        self.vopt = mujoco.MjvOption()
+        mujoco.mjv_defaultOption(self.vopt)
+        self.vopt.geomgroup[4] = 1
+
         self.inset = None
         cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, INSET_CAMERA)
         if cid >= 0:
@@ -150,13 +157,16 @@ class VideoRecorder:
         self.n += 1
         if self.n % EVERY_NTH:
             return
-        self.renderer.update_scene(data, camera=self.cam)
+        self.renderer.update_scene(data, camera=self.cam,
+                                   scene_option=self.vopt)
         _draw_boxes(self.renderer, data, self.pose_boxes)
         # MuJoCo renders RGB; OpenCV writes BGR.
         frame = self.renderer.render()[:, :, ::-1].copy()
         if self.inset is not None:
+            # The inset mirrors what the VLA will actually see: default
+            # options (no group 4), no bbox overlay — debug art stays in the
+            # tracking view above.
             self.inset.update_scene(data, camera=self.icam)
-            _draw_boxes(self.inset, data, self.pose_boxes)
             tile = self.inset.render()[:, :, ::-1]
             # Bottom-right, with a hairline so it reads as a separate view.
             y, x = HEIGHT - INSET_H - 8, WIDTH - INSET_W - 8
