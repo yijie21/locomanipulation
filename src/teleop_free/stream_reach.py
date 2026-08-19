@@ -810,7 +810,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                              # the PLANNED palm rotation the absolute target
                              # assumes and the rotation the policy delivers
     lift_target, settle_until = None, None
-    deadline = time.time() + 90.0
+    deadline = time.time() + 60.0   # wedge class fixed; a 90 s hover is a
+                                     # real failure, not a slow success
     t_prev = time.time()
     last_log = 0.0
     res = 0.0

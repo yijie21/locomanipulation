@@ -140,7 +140,7 @@ def main() -> None:
     reset.reset()
     time.sleep(0.3)
     p.cmd.start_control()
-    p.cmd.hold(STAND_SETTLE, mode=LocomotionMode.IDLE)
+    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
     robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
     print(f"[gym] nominal robot xy {np.round(robot_nom, 3)}")
 
@@ -212,7 +212,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                        "yaw": float(psi)})
     time.sleep(0.3)
     p.cmd.start_control()
-    p.cmd.hold(STAND_SETTLE, mode=LocomotionMode.IDLE)
+    p.cmd.hold(3.0, mode=LocomotionMode.IDLE)
     s = p.obs()
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
@@ -221,7 +221,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
     reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
-    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
+    p.cmd.hold(1.5, mode=LocomotionMode.IDLE)
     reset.start_video(f"gym_{int(time.time())}")
     # Walk the last 0.55 m to the sampled stand (SLOW_WALK, facing locked
     # at psi), then settle.
@@ -232,7 +232,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # hand-rolled frame loop here fell over in 1/4 of the rounds.
     if not p.walk_to(stand_w, stop_dist=0.07, timeout=20.0):
         return False, "[stand] fell during the walk-up"
-    for _ in range(int(1.5 / 0.02)):
+    for _ in range(int(1.0 / 0.02)):
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
         time.sleep(0.02)
     # The walk-up lands with 0.1-0.2 m of gait scatter, which shifts the
@@ -244,7 +244,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     bearing = float(np.arctan2(d2[1], d2[0]))
     delta = -float(np.arctan2(rel[1], rel[0]))
     p.turn_to(bearing + delta, timeout=8.0)
-    p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
+    p.cmd.hold(0.8, mode=LocomotionMode.IDLE)
 
     # -- the grasp, same path as collect_episode ---------------------------
     st = p.obs()
