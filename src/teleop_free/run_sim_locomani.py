@@ -114,12 +114,12 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
     except Exception as e:  # a missing map must not kill the sim
         print(f"[sim] reach zone skipped ({e})")
         return scene_xml
-    can = meta["objects"].get("can")
-    if can is None:
-        return scene_xml
-    top = float(can["init_pos"][2]) + float(can["box"]["half_extent"][2])
-    grip_z = top - grasping.GRIP_BELOW_RIM
-    z_pf = grip_z - 0.793          # standing pelvis height
+    # Slice height: the ELBOW/READY-forearm level (world 0.894 at a
+    # standing pelvis; READY palm FK), not the low grasp height — the
+    # carried arms live here, and the reach envelope at this height is the
+    # wide one a viewer intuitively expects to see.
+    zone_z = 0.894
+    z_pf = zone_z - 0.793          # standing pelvis height
     cells = []
     for x in np.arange(0.12, 0.60, 0.025):
         for y in np.arange(-0.60, 0.601, 0.025):
@@ -129,7 +129,7 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
         return scene_xml
     geoms = "".join(
         f'<geom name="reach_zone_{k}" type="box" size="0.0115 0.0115 0.003" '
-        f'pos="{x:.4f} {y:.4f} {grip_z:.4f}" contype="0" conaffinity="0" '
+        f'pos="{x:.4f} {y:.4f} {zone_z:.4f}" contype="0" conaffinity="0" '
         f'mass="0" group="4" rgba="0.2 0.9 0.35 0.28"/>'
         for k, (x, y) in enumerate(cells))
     body = f'<body name="reach_zone" mocap="true" pos="0 0 0">{geoms}</body>'
@@ -138,7 +138,7 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
     out = os.path.join(SCENE_DIR, "scene_locomani_zone.xml")
     with open(out, "w") as f:
         f.write(xml)
-    print(f"[sim] reach zone: {len(cells)} cells at z={grip_z:.3f}")
+    print(f"[sim] reach zone: {len(cells)} cells at z={zone_z:.3f}")
     return out
 
 
