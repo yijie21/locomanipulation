@@ -90,6 +90,11 @@ class PrivilegedPublisher:
             model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
         self.cam_aspect = 640.0 / 480.0
 
+        # The reach-zone carpet (debug visual injected by run_sim_locomani)
+        # follows the pelvis: xy + yaw only, like the map's pelvis frame.
+        zb = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "reach_zone")
+        self.zone_mocap = int(model.body_mocapid[zb]) if zb >= 0 else -1
+
         surface_bodies = {bid(n) for n in surfaces} if surfaces else set()
 
         # geom -> True for every geom on a surface (table/counter) body, so
@@ -198,6 +203,10 @@ class PrivilegedPublisher:
         # Yaw from the pelvis quaternion (w, x, y, z).
         w, x, y, z = pelvis_quat
         yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+        if self.zone_mocap >= 0:
+            d.mocap_pos[self.zone_mocap] = [pelvis_pos[0], pelvis_pos[1], 0.0]
+            d.mocap_quat[self.zone_mocap] = [np.cos(yaw / 2), 0.0, 0.0,
+                                             np.sin(yaw / 2)]
 
         contacts, contact_links = self._contacts()
         objects = {}

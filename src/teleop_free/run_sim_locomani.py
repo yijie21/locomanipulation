@@ -21,6 +21,7 @@ Usage (same flags as run_sim_loop.py):
 from __future__ import annotations
 
 import json
+import numpy as np
 import os
 import sys
 
@@ -96,6 +97,51 @@ def disable_fall_reset() -> None:
     DefaultEnv.check_fall = check_fall
 
 
+def inject_reach_zone(scene_xml: str, meta: dict) -> str:
+    """Add a translucent 'graspable region' carpet to the scene XML.
+
+    A mocap body carrying one small green box per reach-map cell at the
+    GRASP height (right arm, squat extrusion included). The privileged
+    publisher drags it along with the pelvis every step, so the videos show
+    at a glance whether the object is inside the region the sampler / stop
+    criterion reasons about. Group 4: debug tracking camera only — the ego
+    stream (VLA data) never sees it. Returns the path of the patched XML.
+    """
+    try:
+        import grasping
+        import reach_map
+        rm = reach_map.ReachMap()
+    except Exception as e:  # a missing map must not kill the sim
+        print(f"[sim] reach zone skipped ({e})")
+        return scene_xml
+    can = meta["objects"].get("can")
+    if can is None:
+        return scene_xml
+    top = float(can["init_pos"][2]) + float(can["box"]["half_extent"][2])
+    grip_z = top - grasping.GRIP_BELOW_RIM
+    z_pf = grip_z - 0.793          # standing pelvis height
+    cells = []
+    for x in np.arange(0.12, 0.60, 0.025):
+        for y in np.arange(-0.60, 0.601, 0.025):
+            if rm.graspable([float(x), float(y), z_pf], "right"):
+                cells.append((float(x), float(y)))
+    if not cells:
+        return scene_xml
+    geoms = "".join(
+        f'<geom name="reach_zone_{k}" type="box" size="0.0115 0.0115 0.003" '
+        f'pos="{x:.4f} {y:.4f} {grip_z:.4f}" contype="0" conaffinity="0" '
+        f'mass="0" group="4" rgba="0.2 0.9 0.35 0.28"/>'
+        for k, (x, y) in enumerate(cells))
+    body = f'<body name="reach_zone" mocap="true" pos="0 0 0">{geoms}</body>'
+    xml = open(scene_xml).read().replace("</worldbody>",
+                                         body + "</worldbody>")
+    out = os.path.join(SCENE_DIR, "scene_locomani_zone.xml")
+    with open(out, "w") as f:
+        f.write(xml)
+    print(f"[sim] reach zone: {len(cells)} cells at z={grip_z:.3f}")
+    return out
+
+
 def main(config: SimLoopConfig) -> None:
     meta = json.load(open(f"{SCENE_DIR}/scene_meta.json"))
     scene_xml = meta["scene_xml"]
@@ -105,6 +151,7 @@ def main(config: SimLoopConfig) -> None:
         raise FileNotFoundError(
             f"{scene_xml} missing — run teleop_free/build_sim_scene.py first"
         )
+    scene_xml = inject_reach_zone(scene_xml, meta)
 
     wbc_config = config.load_wbc_yaml()
     wbc_config["ENV_NAME"] = config.env_name

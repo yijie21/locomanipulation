@@ -57,10 +57,13 @@ from privileged_pub import EpisodeControlClient  # noqa: E402
 
 SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
 
-EDGE_MIN = 0.13            # hip-to-edge floor; final_approach tolerates 0.14
-                           # (EDGE_STOP 0.16 - 0.02 sway) and the successful
-                           # episodes historically stood at 0.10-0.20
-CAN_EDGE_MIN = 0.10        # keep the sampled can this far inboard
+EDGE_MIN = 0.15            # pelvis-to-edge HARD floor, enforced at arrival.
+                           # 0.10 -> 17 hip contacts, 0.12 -> 22: the crouch
+                           # lean protrudes ~14 cm past the pelvis centre
+EDGE_MAX = 0.20            # sampling ring upper bound
+CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
+                            # close enough that a 15 cm stand-off still
+                            # reaches it, far enough that it cannot roll off
 FACING_MAX = np.deg2rad(30.0)
 
 
@@ -148,28 +151,33 @@ def main() -> None:
     for rnd in range(args.rounds):
         t0 = time.time()
         # -- sample --------------------------------------------------------
+        # The can lives in a band hugging its nominal edge (radial 5-10 cm
+        # inboard, +-10 cm along the edge): a pelvis 10 cm OUTSIDE the edge
+        # then reaches it at rel depth 0.15-0.24 — comfortably inside the
+        # map instead of at its rim, which is what lets the no-contact
+        # stand-off exist at all.
+        e0 = can_nom - cxy
+        if abs(abs(e0[0]) - half[0]) < abs(abs(e0[1]) - half[1]):
+            ax, sgn = 0, float(np.sign(e0[0]))
+        else:
+            ax, sgn = 1, float(np.sign(e0[1]))
         for _ in range(500):
-            d_can = rng.uniform(-0.10, 0.10, 2)
-            can_xy = can_nom + d_can
-            if (np.abs(can_xy - cxy) > half - CAN_EDGE_MIN).any():
-                continue
+            can_xy = can_nom.copy()
+            can_xy[ax] = cxy[ax] + sgn * (half[ax]
+                                          - rng.uniform(*CAN_INBOARD))
+            can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(-0.10, 0.10)
             rel = rel_cands[rng.integers(len(rel_cands))]
-            # Face the table the way navigation does: from outside, along
-            # the inward normal of the can's nearest edge, +-25 deg. A
-            # uniform world yaw almost never yields a stand outside the
-            # table (10/24 rounds died in rejection sampling).
-            e = can_xy - cxy
-            if abs(abs(e[0]) - half[0]) < abs(abs(e[1]) - half[1]):
-                normal = np.array([-np.sign(e[0]), 0.0])
-            else:
-                normal = np.array([0.0, -np.sign(e[1])])
+            # Face the table from outside, along the can's inward edge
+            # normal, +-25 deg (a uniform world yaw almost never yields a
+            # stand outside the table).
+            normal = np.zeros(2)
+            normal[ax] = -sgn
             psi = float(np.arctan2(normal[1], normal[0])
                         + rng.uniform(-0.44, 0.44))
             c, s = np.cos(psi), np.sin(psi)
             stand = can_xy - np.array([c * rel[0] - s * rel[1],
                                        s * rel[0] + c * rel[1]])
-            spawn = stand - 0.55 * np.array([np.cos(psi), np.sin(psi)])
-            if edge_dist(stand) >= EDGE_MIN and edge_dist(spawn) >= 0.05:
+            if EDGE_MIN <= edge_dist(stand) <= EDGE_MAX:
                 break
         else:
             print("EPISODE FAILED [gym] no feasible sample found")
@@ -186,7 +194,8 @@ def main() -> None:
         # plain reset recovers (OK streaks follow falls). Retry those once.
         for attempt in range(2):
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
-                                d_can, stand - robot_nom, psi, side, rel)
+                                can_xy - can_nom, stand - robot_nom, psi,
+                                side, rel, rm, stand)
             if ok or not why.startswith("[stand]"):
                 break
             p.log(f"[gym] stand-stage retry ({why})")
@@ -201,66 +210,114 @@ def main() -> None:
 
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
-              d_can, d_robot, psi, side, rel) -> tuple[bool, str]:
-    # Spawn 0.55 m BEHIND the sampled stand: a teleport straight to the
-    # stand puts the nominal pose's hanging hands inside the table volume
-    # (the stand is only ~0.16 m off the edge) and the contact explosion
-    # knocks the can over before the round starts. The short walk up also
-    # IS the arrival noise a real approach would carry.
-    back = 0.55
-    spawn_d = np.asarray(d_robot, dtype=float) - back * np.array(
-        [np.cos(psi), np.sin(psi)])
+              d_can, d_robot, psi, side, rel, rm,
+              spawn_xy) -> tuple[bool, str]:
+    # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
+    # fails (13/24 never rose): the nominal pose is a deep crouch whose
+    # knees ride ~0.25 m forward, and the rise needs more clearance than
+    # standing does. 0.30 m back gives the rise ~0.5 m of room and leaves
+    # only a two-step walk to the stand.
+    spawn_off = 0.30
+    d_robot = (np.asarray(d_robot, dtype=float)
+               - spawn_off * np.array([np.cos(psi), np.sin(psi)]))
+    # QUIESCE the deploy before the teleport: it keeps executing the
+    # previous round's locomotion intent through the reset (fresh-deploy
+    # round 1 was always clean, later rounds marched off mid-settle,
+    # toppled the can, or 'failed to land'). A second of IDLE in default
+    # mode makes 'standing still' the intent the reset inherits.
+    p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
+    p.cmd.upper_body = None
+    if getattr(p, "_gym_started", False):
+        # Quiesce only a RUNNING deploy (holding frames before the first
+        # start_control broke every fresh-deploy round).
+        p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
     p.cmd.reset_pose()
     reset.pin_arms()
     reset.set_ghost()
     reset.reset(objects={obj_key: {"dxy": [float(d_can[0]), float(d_can[1])],
                                    "yaw": float(np.random.uniform(-np.pi,
                                                                   np.pi))}},
-                robot={"dxy": [float(spawn_d[0]), float(spawn_d[1])],
+                robot={"dxy": [float(d_robot[0]), float(d_robot[1])],
                        "yaw": float(psi)})
     time.sleep(0.3)
     # Round 2+ contamination: the commander KEEPS the previous round's
     # FROZEN_UPPER_BODY mode and its stale 17-value arm target across the
-    # reset, so the stand-up runs with the upper body pinned to a pose from
-    # another stand — round 1 of every process stood clean, rounds 2+ fell
-    # on ~half the walk-ups. Stand up in the default mode with no target,
-    # like a fresh process does.
+    # reset — stand up in the default mode with no target, like a fresh
+    # process does.
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
     p.cmd.upper_body = None
     p.cmd.start_control()
+    p._gym_started = True
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     s = p.obs()
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
                        f"(pelvis z {s['pelvis']['pos'][2]:.3f})")
+    land_err = float(np.linalg.norm(
+        np.asarray(p.pelvis_xy(s)) - np.asarray(spawn_xy)
+        + spawn_off * np.array([np.cos(psi), np.sin(psi)])))
+    if land_err > 0.30:
+        return False, (f"[stand] teleport did not land "
+                       f"({land_err:.2f} m from the spawn)")
     stream_reach.reanchor(p, side=side)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
     reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
-    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
+    p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
     reset.start_video(f"gym_{int(time.time())}")
-    # Walk the last 0.55 m to the sampled stand (SLOW_WALK, facing locked
-    # at psi), then settle.
-    stand_w = p.obs()["pelvis"]["pos"][:2] + back * np.array(
-        [np.cos(psi), np.sin(psi)])
     fv = (float(np.cos(psi)), float(np.sin(psi)), 0.0)
-    # walk_to is the primitive every proven navigation path uses — the
-    # hand-rolled frame loop here fell over in 1/4 of the rounds.
-    if not p.walk_to(stand_w, stop_dist=0.07, timeout=20.0):
+    # Two steps forward onto the stand.
+    if not p.walk_to(np.asarray(spawn_xy), stop_dist=0.06, timeout=10.0):
         return False, "[stand] fell during the walk-up"
     for _ in range(int(1.0 / 0.02)):
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
         time.sleep(0.02)
-    # The walk-up lands with 0.1-0.2 m of gait scatter, which shifts the
-    # can's bearing; re-realize the SAMPLED facing offset (delta between
-    # facing and bearing is what the rel sample encodes) from where the
-    # robot actually ended up.
+    # No turn correction: the teleport already faces the sampled yaw, and a
+    # turn_to on a contamination-stale heading anchor sent the robot
+    # marching metres across the room (rel [6.66 +2.19] telemetry).
+    # HARD no-contact floor on the actual pose (the settle can drift).
     s = p.obs()
-    d2 = p.object_pos(obj_key, s)[:2] - p.pelvis_xy(s)
-    bearing = float(np.arctan2(d2[1], d2[0]))
-    delta = -float(np.arctan2(rel[1], rel[0]))
-    p.turn_to(bearing + delta, timeout=8.0)
-    p.cmd.hold(0.8, mode=LocomotionMode.IDLE)
+    ed = edge_dist(p.pelvis_xy(s))
+    if ed < EDGE_MIN:
+        back_tgt = p.pelvis_xy(s) - np.array(fv[:2]) * (0.17 - ed)
+        p.log(f"[gym] arrival {ed:.2f} m from the edge — backing off")
+        if not p.walk_to(back_tgt, stop_dist=0.04, timeout=8.0):
+            return False, "[stand] fell while backing off the table edge"
+        p.cmd.hold(0.8, mode=LocomotionMode.IDLE)
+        s = p.obs()
+        if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.01:
+            return False, "[stand] could not hold the edge clearance"
+    grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
+
+    def rel_now(s2):
+        y2 = p.pelvis_yaw(s2)
+        c2, s2n = np.cos(y2), np.sin(y2)
+        dv2 = p.object_pos(obj_key, s2)[:2] - p.pelvis_xy(s2)
+        return [c2 * dv2[0] + s2n * dv2[1], -s2n * dv2[0] + c2 * dv2[1],
+                grip_za - float(s2["pelvis"]["pos"][2])]
+
+    rel_a = rel_now(s)
+    if not rm.graspable(rel_a, "right"):
+        # One corrective step: the walk-up lands with +-10 cm of scatter and
+        # the right-arm map is narrow — re-derive the stand that realizes
+        # the SAMPLED rel from where the can and the yaw actually are.
+        y2 = p.pelvis_yaw(s)
+        c2, s2n = np.cos(y2), np.sin(y2)
+        stand2 = (p.object_pos(obj_key, s)[:2]
+                  - np.array([c2 * rel[0] - s2n * rel[1],
+                              s2n * rel[0] + c2 * rel[1]]))
+        p.log(f"[gym] arrival rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}] out of "
+              "the map — corrective step")
+        if not p.walk_to(stand2, stop_dist=0.05, timeout=8.0):
+            return False, "[stand] fell during the corrective step"
+        p.cmd.hold(0.8, mode=LocomotionMode.IDLE)
+        s = p.obs()
+        if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.01:
+            return False, "[stand] could not hold the edge clearance"
+        rel_a = rel_now(s)
+        if not rm.graspable(rel_a, "right"):
+            return False, (f"[stand] arrival left the object out of reach "
+                           f"(rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}])")
 
     # -- the grasp, same path as collect_episode ---------------------------
     st = p.obs()
