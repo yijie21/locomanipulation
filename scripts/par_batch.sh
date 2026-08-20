@@ -1,5 +1,6 @@
 #!/bin/bash
-# Three sim stacks in parallel (INSTANCE=0,1,2), EPN episodes each.
+# N_INST sim stacks in parallel (INSTANCE=0..N_INST-1), EPN episodes each.
+# 32 cores / 2x5090 measured ~15% busy at 3 instances — 6 is the default.
 # Iteration batches: --no-record (no exporter dependency on instances 1/2).
 # GYM=1 runs the teleport grasp gym instead of full navigation episodes.
 trap '' TERM HUP
@@ -8,6 +9,7 @@ PY=/workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl/.venv_sim
 OUT=outputs/logs/parbatch
 EPN="${EPN:-5}"
 GYM="${GYM:-0}"
+N_INST="${N_INST:-6}"
 mkdir -p $OUT
 rm -f $OUT/ep_*.log $OUT/result.txt outputs/logs/parbatch_done.flag
 
@@ -76,7 +78,7 @@ run_instance() {
   fi
 }
 
-for i in 0 1 2; do run_instance $i & done
+for i in $(seq 0 $((N_INST - 1))); do run_instance $i & done
 wait
 grep -h EPISODE $OUT/ep_*.log | sed 's/ in .*//' | sort | uniq -c > $OUT/result.txt
 echo DONE > outputs/logs/parbatch_done.flag
