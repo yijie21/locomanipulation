@@ -131,6 +131,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--spawn-off", type=float, default=0.30,
+                    help="spawn this far behind the stand and walk in")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed if args.seed is not None
                                 else (os.getpid() * 7919) % 2 ** 31)
@@ -235,11 +237,13 @@ def main() -> None:
             # The WALK must clear the table too: the batch's "fell during
             # the walk-up" class was the robot brushing the table edge on
             # the way in (video: hip catches the rim, robot tips backwards
-            # onto the tabletop) — the spawn sits 0.30 m behind the stand
-            # and the line between them ran along the edge.
-            spawn_pt = stand - 0.30 * np.array([np.cos(psi), np.sin(psi)])
-            mid_pt = 0.5 * (spawn_pt + stand)
-            if edge_dist(spawn_pt) >= EDGE_MIN and edge_dist(mid_pt) >= EDGE_MIN:
+            # onto the tabletop). Check the whole spawn->stand line — for a
+            # long approach it can cross the OTHER table.
+            spawn_pt = stand - args.spawn_off * np.array([np.cos(psi),
+                                                          np.sin(psi)])
+            n_chk = max(2, int(np.ceil(args.spawn_off / 0.25)) + 1)
+            line = np.linspace(spawn_pt, stand, n_chk, endpoint=False)
+            if all(edge_dist(q) >= EDGE_MIN for q in line):
                 break
         else:
             print("EPISODE FAILED [gym] no feasible sample found")
@@ -268,7 +272,8 @@ def main() -> None:
                 fresh_deploy(p)
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                 can_xy - can_nom, stand - robot_nom, psi,
-                                side, rel, rm, stand, squat_hint)
+                                side, rel, rm, stand, squat_hint,
+                                spawn_off=args.spawn_off)
             if ok or not why.startswith("[stand]"):
                 break
             p.log(f"[gym] stand-stage retry ({why})")
@@ -284,13 +289,13 @@ def main() -> None:
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
-              spawn_xy, squat_hint=None) -> tuple[bool, str]:
+              spawn_xy, squat_hint=None,
+              spawn_off=0.30) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
     # standing does. 0.30 m back gives the rise ~0.5 m of room and leaves
     # only a two-step walk to the stand.
-    spawn_off = 0.30
     d_robot = (np.asarray(d_robot, dtype=float)
                - spawn_off * np.array([np.cos(psi), np.sin(psi)]))
     # QUIESCE the deploy before the teleport: it keeps executing the
@@ -360,7 +365,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # settle carries ~6-11 cm of forward drift (post-walk vs post-face
     # telemetry), which was eating the edge clearance at the stand.
     walk_tgt = np.asarray(spawn_xy) - 0.06 * np.array(fv[:2])
-    if not p.walk_to(walk_tgt, stop_dist=0.06, timeout=10.0):
+    if not p.walk_to(walk_tgt, stop_dist=0.06,
+                     timeout=10.0 + 8.0 * spawn_off):
         return False, "[stand] fell during the walk-up"
     rel_dbg("post-walk", p.obs())
     for _ in range(int(1.0 / 0.02)):
