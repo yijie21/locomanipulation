@@ -1047,6 +1047,15 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # closing funnels it to the palm — that is what fingers curl FOR.
             g_lat = float(np.hypot(full[0], full[2]))
             good = g_lat < 0.015 and abs(full[1]) < 0.012
+            if e_ent < 0.02 and side in s["objects"][obj_key]["touching"]:
+                # The hand is already riding the can with the entry spent:
+                # the can is inside the jaw envelope but the wrist presses
+                # its top, the moving can freezes the trim (anti-bulldozer),
+                # and every extra hover second pushes it further (4x
+                # "toppled in the in phase"/batch, lat hovering 8-18 mm).
+                # Closing now funnels it to the palm — take the patient
+                # tolerance immediately instead of after 8 s.
+                good = g_lat < 0.020 and abs(full[1]) < 0.018
             patient = (now - in_since > 8.0
                        and g_lat < 0.020 and abs(full[1]) < 0.018)
             if good or patient:
