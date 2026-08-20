@@ -361,10 +361,12 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"yaw_err {yerr:+.0f} deg")
 
     rel_dbg("pre-walk ", p.obs())
-    # Two steps forward onto the stand. Aim 6 cm SHORT: the stop + facing
-    # settle carries ~6-11 cm of forward drift (post-walk vs post-face
-    # telemetry), which was eating the edge clearance at the stand.
-    walk_tgt = np.asarray(spawn_xy) - 0.06 * np.array(fv[:2])
+    # Two steps forward onto the stand. Aim 12 cm SHORT and bias every
+    # arrival error toward TOO FAR: the stop + settle creeps 6-13 cm
+    # forward, backward stepping barely moves (edge back-offs measured
+    # 0.13 -> 0.11 -> 0.11), while the forward depth-trim step is reliable
+    # — so land far and walk the remainder in.
+    walk_tgt = np.asarray(spawn_xy) - 0.12 * np.array(fv[:2])
     if not p.walk_to(walk_tgt, stop_dist=0.06,
                      timeout=10.0 + 8.0 * spawn_off):
         return False, "[stand] fell during the walk-up"
