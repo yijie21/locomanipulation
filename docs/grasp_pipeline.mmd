@@ -1,0 +1,64 @@
+%% 抓取全流程 (2026-08-20) — draw.io: Insert > Advanced > Mermaid 可导入
+flowchart TD
+  subgraph P0["P0 规划 — 蹲深与站位联合求解 (行动前, 纯计算)"]
+    A1["采样罐位: 贴桌沿带内 4~8cm, 沿边 ±10cm"]
+    A2["grip_z = 罐顶 − 6cm (dex1 中段握点)"]
+    A3["plan_core_stand: 扫每个下蹲深度 dz = 0~19.5cm 的深绿芯水平切片"]
+    A4["aim cell 过滤: ego 锥内 ≤33°, 距 envelope 边界 ≥5cm, 右肩侧 y ≤ −0.06"]
+    A5["选『最远重叠』层: 可用半径最大 (≤0.34m) 的下蹲深度, 得 rel≈(0.23, −0.11) + squat_hint"]
+    A6["采样朝向 psi = 桌沿内法线 ±25°, stand = can − R(psi)·rel"]
+    A7{"edge 裕量够 (优先 ≥0.20, 兜底 ≥0.17) 且 spawn→stand 全线离桌沿 ≥0.17 ?"}
+    A8["spawn = stand − 0.60·fv (出生在站点后方 0.6m)"]
+    A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> A7
+    A7 -- "否 (≤500 次重采样)" --> A6
+    A7 -- 是 --> A8
+  end
+
+  subgraph P1["P1 出发"]
+    B1["重启 deploy (清残留 heading 状态), heading_offset = 0, 等 4s"]
+    B2["teleport 机器人+罐 → start_control → 4s IDLE 稳定 (facing = fv)"]
+    B3["释放 sim-side arm pin: 双臂自然垂放 (retry 会继承上次的 pin)"]
+    B1 --> B2 --> B3
+  end
+
+  subgraph P2["P2 两段式接近"]
+    C1["远段: VR 模式垂手摆臂, walk_to(stand − 0.35·fv)"]
+    C2["0.35m 线抬手: 切 FROZEN_UPPER + pin READY 前臂端平 (手高于桌面, 离桌沿还有 ~0.15m 安全余量)"]
+    C3["末段: walk_to(stand − 0.12·fv), 故意瞄短 12cm 让停步前爬 (6~13cm) 把人带进去, 1s facing 稳定"]
+    C1 --> C2 --> C3
+  end
+
+  subgraph P3["P3 站位验收环 (单一目标点, ≤3 轮)"]
+    D1{"验收: 离桌沿 ≥0.14 且 方位角 ≤45° 且 envelope 内可达 且 深度 ≤ plan_r + 0.06 ?"}
+    D2["仅过深 → 一步前进 depth trim (唯一可靠的微步)"]
+    D3["其余情况 → 整段重走: 退到 stand − 0.45·fv, 按实测罐位重解 stand (edge clamp ≥0.19), 带 −0.18 偏置走入 (5~15cm 微步在 SONIC 上双峰不可控, 只有 0.4m+ 的行走是准的)"]
+    D4{"3 轮后硬地板: edge ≥ 0.14 且 envelope 可达 ?"}
+    D1 -- 通过 --> E1
+    D1 -- 仅深度超 --> D2 --> D1
+    D1 -- "太近 / 出界 / 方位偏" --> D3 --> D1
+    D1 -. 3 轮用尽 .-> D4
+    D4 -- 否 --> R["stand-stage retry: 整局从 P1 重来一次"]
+    R -.-> B1
+  end
+
+  subgraph P4["P4 视野 gate"]
+    E1{"ego 相机看得到罐: |fx| ≤ 0.8, |fy| ≤ 0.9 ?"}
+    FV["EPISODE FAILED (view)"]
+    E1 -- 否 --> FV
+  end
+
+  subgraph P5["P5 下蹲 + streamed 抓取"]
+    E2["adaptive_grasp.plan: dex1 沿 palm +x 直插进入, SAFE_GAP 0.17 (指尖领先 3.3cm), 品红 ghost 显示规划腕位"]
+    E3["按 squat_hint 下蹲 (左手低位目标当杠杆压住骨盆高度)"]
+    E4["streamed 29-DoF servo: 手先抬到桌面 +3cm 再前伸, tip-up 55° 飞行姿态 (最后 12cm 拍平), 深度带跟随 plan_r"]
+    E5["罐进爪内 (entry 轴距 <6cm) → 立即闭合: 开口 9.48cm → 夹持 (gear 250, 每指 ~8N)"]
+    E6["提起 → carry pose → 2s hold, 掌系漂移超限判 slip"]
+    OK["EPISODE OK"]
+    E2 --> E3 --> E4 --> E5 --> E6 --> OK
+  end
+
+  A8 --> B1
+  B3 --> C1
+  C3 --> D1
+  D4 -- 是 --> E1
+  E1 -- 是 --> E2
