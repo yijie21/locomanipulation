@@ -42,6 +42,9 @@ CAN_INBOARD = 0.06      # can centre sits this far in from the table edge
 AIM_ANG = np.deg2rad(33.0)
 MIN_MARGIN = 0.05
 OLD_CAP = 0.28          # shallow-squat-era servo cap: reference line only
+R_CAP = 0.34            # execution wall (pregrasp staging ~0.36): the map
+                        # now reaches past it, so THIS is what binds
+SIDE_Y = -0.06          # right-shoulder aim bias, same as plan_core_stand
 
 # Nested hierarchy -> one sequential green ramp + a labelled gold accent.
 C_ENV = "#DDE9DD"
@@ -91,7 +94,12 @@ def main() -> None:
         margs = np.array([marg(int(i), int(j)) for i, j in cocc])
         ang = np.abs(np.arctan2(cpts[:, 1], cpts[:, 0]))
         r = np.hypot(cpts[:, 0], cpts[:, 1])
-        use = (margs >= MIN_MARGIN) & (ang <= AIM_ANG)   # NO distance cap
+        # Same rule as plan_core_stand: margin + ego cone + the execution
+        # wall R_CAP, preferring right-shoulder-side cells (untwisted arm).
+        use = (margs >= MIN_MARGIN) & (ang <= AIM_ANG) & (r <= R_CAP)
+        side = cpts[:, 1] <= SIDE_Y
+        if (use & side).any():
+            use = use & side
         return epts, cpts, margs >= MIN_MARGIN, use, r
 
     dzs = np.arange(0.0, 0.195 + 1e-9, vox)
@@ -160,6 +168,10 @@ def main() -> None:
                           lw=1.2, ls="--"))
         ax2.text(0.02, OLD_CAP + 0.015, "old servo cap 0.28 (to lift)",
                  color="#8A9199", fontsize=8.5)
+        ax2.add_patch(Arc((0, 0), 2 * R_CAP, 2 * R_CAP, color=C_AIM,
+                          lw=1.4, ls="--", alpha=0.8))
+        ax2.text(0.02, R_CAP + 0.015, "R_CAP 0.34 (execution wall)",
+                 color=C_AIM, fontsize=8.5)
         for sgn in (1, -1):
             ax2.plot([0, 0.55 * np.cos(sgn * AIM_ANG)],
                      [0, 0.55 * np.sin(sgn * AIM_ANG)], color=INK2,
