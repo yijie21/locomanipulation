@@ -324,8 +324,11 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     sv = p.obs()
     cam = sv["objects"][obj_key].get("cam")
     if cam is not None or "cam" in sv["objects"][obj_key]:
+        # Vertical 0.9 / horizontal 0.8 — matches the gym gate: the pitched
+        # camera puts a close can low in the frame; fy 0.9 is still inside
+        # the physical image, so the object stays detectable on real RGB.
         require("view", cam is not None
-                and abs(cam[0]) <= 0.8 and abs(cam[1]) <= 0.8,
+                and abs(cam[0]) <= 0.8 and abs(cam[1]) <= 0.9,
                 f"object outside ego view at stand (cam={cam})")
 
     # Plan first, then crouch only as far as THIS plan needs. The order used to

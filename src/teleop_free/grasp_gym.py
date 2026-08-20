@@ -435,8 +435,13 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     if stream_reach.toppled(st, obj_key):
         return False, "[gym] object toppled during the settle"
     cam = st["objects"][obj_key].get("cam")
+    # Vertical bound 0.9, horizontal 0.8: the 52-deg-pitched camera puts a
+    # close can low in the frame (fy -0.82..-0.94 killed 4 otherwise-good
+    # rounds/batch). fy 0.9 is still inside the physical image (edge 1.0),
+    # so on real hardware the object stays detectable — the horizontal
+    # bound keeps the stricter margin because yaw scatter moves it fast.
     if "cam" in st["objects"][obj_key] and (
-            cam is None or abs(cam[0]) > 0.8 or abs(cam[1]) > 0.8):
+            cam is None or abs(cam[0]) > 0.8 or abs(cam[1]) > 0.9):
         return False, f"[view] object outside ego view at stand (cam={cam})"
 
     grip = np.array([p.object_pos(obj_key, st)[0],
