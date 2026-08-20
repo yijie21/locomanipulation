@@ -356,8 +356,11 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"yaw_err {yerr:+.0f} deg")
 
     rel_dbg("pre-walk ", p.obs())
-    # Two steps forward onto the stand.
-    if not p.walk_to(np.asarray(spawn_xy), stop_dist=0.06, timeout=10.0):
+    # Two steps forward onto the stand. Aim 6 cm SHORT: the stop + facing
+    # settle carries ~6-11 cm of forward drift (post-walk vs post-face
+    # telemetry), which was eating the edge clearance at the stand.
+    walk_tgt = np.asarray(spawn_xy) - 0.06 * np.array(fv[:2])
+    if not p.walk_to(walk_tgt, stop_dist=0.06, timeout=10.0):
         return False, "[stand] fell during the walk-up"
     rel_dbg("post-walk", p.obs())
     for _ in range(int(1.0 / 0.02)):
@@ -369,15 +372,24 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # marching metres across the room (rel [6.66 +2.19] telemetry).
     # HARD no-contact floor on the actual pose (the settle can drift).
     s = p.obs()
-    ed = edge_dist(p.pelvis_xy(s))
-    if ed < EDGE_MIN:
-        back_tgt = p.pelvis_xy(s) - np.array(fv[:2]) * (0.17 - ed)
+    # Back-off loop: the forward creep near the table decays over a few
+    # seconds, so one back-off + one re-check kept failing stands the creep
+    # had already re-eaten (5x/batch). Step back (heading held — walk_to
+    # would pivot at the table edge, which fell 3x), settle 2 s, re-measure,
+    # up to three times.
+    for _ in range(3):
+        ed = edge_dist(p.pelvis_xy(s))
+        if ed >= EDGE_MIN - 0.01:
+            break
         p.log(f"[gym] arrival {ed:.2f} m from the edge — backing off")
-        if not p.walk_to(back_tgt, stop_dist=0.04, timeout=8.0):
+        back_tgt = p.pelvis_xy(s) - np.array(fv[:2]) * (0.18 - ed)
+        if not p.walk_to(back_tgt, stop_dist=0.04, timeout=8.0,
+                         face_target=False):
             return False, "[stand] fell while backing off the table edge"
-        p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
         s = p.obs()
-        if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.01:
+    else:
+        if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.03:
             return False, "[stand] could not hold the edge clearance"
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)
@@ -403,7 +415,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                               s2n * rel[0] + c2 * rel[1]]))
         p.log(f"[gym] arrival rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}] out of "
               "the map — corrective step")
-        if not p.walk_to(stand2, stop_dist=0.05, timeout=8.0):
+        if not p.walk_to(stand2, stop_dist=0.05, timeout=8.0,
+                         face_target=False):
             return False, "[stand] fell during the corrective step"
         p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
         s = p.obs()
@@ -418,15 +431,19 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # edge (in-phase thrash) and past the waist-clamped arm (palm lags its
     # ref ~8 cm at res 0 — the missing piece is waist lean the policy will
     # not deliver). Step in just enough, never below the edge floor.
-    if rel_a[0] > 0.26:
+    # Threshold sits just past the farthest-overlap aim band (r <= 0.28):
+    # only genuine overshoot past the servo's 0.30 walk-in band gets pulled
+    # back, never the deliberately-far stand itself.
+    if rel_a[0] > 0.30:
         s = p.obs()
-        step = min(rel_a[0] - 0.22,
+        step = min(rel_a[0] - 0.26,
                    edge_dist(p.pelvis_xy(s)) - EDGE_MIN)
         if step > 0.02:
             p.log(f"[gym] depth trim: rel x {rel_a[0]:.2f} — stepping in "
                   f"{step * 100:.0f} cm")
             tgt = np.asarray(p.pelvis_xy(s)) + np.array(fv[:2]) * step
-            if not p.walk_to(tgt, stop_dist=0.03, timeout=6.0):
+            if not p.walk_to(tgt, stop_dist=0.03, timeout=6.0,
+                             face_target=False):
                 return False, "[stand] fell during the depth trim"
             p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
 

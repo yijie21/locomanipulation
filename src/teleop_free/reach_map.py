@@ -285,7 +285,7 @@ class ReachMap:
         return False
 
     def plan_core_stand(self, obj_z_pf, arm: str = "right",
-                        aim_ang_max: float = np.deg2rad(30.0),
+                        aim_ang_max: float = np.deg2rad(33.0),
                         min_margin: float = 0.05):
         """Joint (aim, squat) stand plan against the sweet core.
 
@@ -346,12 +346,27 @@ class ReachMap:
                                np.asarray(margs)))
         if not layers:
             return None
-        for dz, pts, margs in layers:      # ascending dz: the least squat
-            sel = pts[margs >= min_margin]  # whose slice is thick enough
-            if len(sel):
-                return sel, dz, float(margs.max())
-        dz, pts, margs = max(layers, key=lambda l: float(l[2].max()))
-        return pts[margs >= margs.max()], dz, float(margs.max())
+        # Selection: the FARTHEST overlap, not the least squat. Squatting is
+        # free; standing close to the table is what collides. Across all
+        # squat depths pick the layer whose usable cells reach the largest
+        # horizontal distance, and aim at that layer's far band. R_CAP keeps
+        # the aim under the servo's walk-in depth band (GRIP_X_MAX 0.30) and
+        # the pregrasp staging limit (~0.32).
+        R_CAP = 0.28
+        best = None
+        for dz, pts, margs in layers:
+            r = np.hypot(pts[:, 0], pts[:, 1])
+            use = (margs >= min_margin) & (r <= R_CAP)
+            if not use.any():
+                continue
+            r_max = float(r[use].max())
+            if best is None or r_max > best[0]:
+                far = use & (r >= r_max - 0.03)
+                best = (r_max, pts[far], dz, float(margs[far].max()))
+        if best is None:
+            dz, pts, margs = max(layers, key=lambda l: float(l[2].max()))
+            return pts[margs >= margs.max()], dz, float(margs.max())
+        return best[1], best[2], best[3]
 
     def margin(self, p_pelvis, arm: str = "both") -> float:
         """Distance (m) to the nearest non-graspable voxel, xy-plane, at the
