@@ -49,7 +49,7 @@ MASS = "0.086783"
 BASE_INERTIAL = dict(pos="0.043853 -0.0001306 1.4003E-05", mass="0.19138",
                      fullinertia=("7.4842E-05 5.861E-05 3.9364E-05 "
                                   "1.6252E-07 -8.0516E-09 -3.5931E-08"))
-GEAR = "150"
+GEAR = "250"   # 150 gave ~4.7 N/finger: cans slipped out mid-carry (2/6)
 CTRL = "-20 20"
 
 
