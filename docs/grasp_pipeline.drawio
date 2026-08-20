@@ -124,8 +124,8 @@
         <mxCell id="E5" value="罐进爪内 (entry 轴距 &lt;6cm) → 立即闭合: 开口 9.48cm → 夹持 (gear 250, 每指 ~8N)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
           <mxGeometry x="110" y="245" width="640" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="E6" value="提起 → carry pose → 2s hold, 掌系漂移超限判 slip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
-          <mxGeometry x="110" y="315" width="640" height="40" as="geometry" />
+        <mxCell id="E6" value="提起 → carry pose → 锁向后退 ~0.35m (两步) 离开桌沿 → 2s hold, 掌系漂移超限判 slip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
+          <mxGeometry x="110" y="315" width="640" height="45" as="geometry" />
         </mxCell>
         <mxCell id="OKn" value="EPISODE OK" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="P5">
           <mxGeometry x="310" y="375" width="240" height="40" as="geometry" />

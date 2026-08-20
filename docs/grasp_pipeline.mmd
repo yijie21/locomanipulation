@@ -52,7 +52,7 @@ flowchart TD
     E3["闲置臂水平侧摆到体侧 (shoulder yaw, 无上抬) → squat(track=True) 下蹲: IK 实时保持抓取手掌的世界位姿, 腿在手下折叠, 无预抬弹跳"]
     E4["streamed 29-DoF servo: 手先抬到桌面 +3cm 再前伸, tip-up 55° 飞行姿态 (最后 12cm 拍平), 深度带跟随 plan_r"]
     E5["罐进爪内 (entry 轴距 <6cm) → 立即闭合: 开口 9.48cm → 夹持 (gear 250, 每指 ~8N)"]
-    E6["提起 → carry pose → 2s hold, 掌系漂移超限判 slip"]
+    E6["提起 → carry pose → 锁向后退 ~0.35m (两步) 离开桌沿 → 2s hold, 掌系漂移超限判 slip"]
     OK["EPISODE OK"]
     E2 --> E3 --> E4 --> E5 --> E6 --> OK
   end

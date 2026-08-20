@@ -605,7 +605,17 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     hold_side = "left" if side == "right" else "right"
     p.stand_up(hold_side)
     p.carry_pose(side)
-    p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
+    p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=fv)
+    # With the can secured in the carry pose, back off two steps (~0.35 m,
+    # heading held) before the hold check: clears the table edge so
+    # whatever comes next (turn, navigation) cannot clip it, and a grip
+    # that cannot survive two steps should fail HERE, not mid-carry.
+    s = p.obs()
+    back_tgt = np.asarray(p.pelvis_xy(s)) - 0.35 * np.array(fv[:2])
+    if not p.walk_to(back_tgt, stop_dist=0.08, timeout=8.0,
+                     face_target=False):
+        return False, "[hold] fell while backing away from the table"
+    p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     s = p.obs()
     drift = float(np.linalg.norm(palm_frame_offset(s, obj_key, side)
                                  - hold_ref))
