@@ -437,12 +437,12 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # edge (in-phase thrash) and past the waist-clamped arm (palm lags its
     # ref ~8 cm at res 0 — the missing piece is waist lean the policy will
     # not deliver). Step in just enough, never below the edge floor.
-    # Threshold sits just past the farthest-overlap aim band (r <= 0.28):
-    # only genuine overshoot past the servo's 0.30 walk-in band gets pulled
-    # back, never the deliberately-far stand itself.
-    if rel_a[0] > 0.30:
+    # Threshold follows the PLANNED stand distance: only genuine overshoot
+    # past the plan gets pulled back, never the deliberately-far stand.
+    plan_r = float(np.hypot(rel[0], rel[1]))
+    if rel_a[0] > plan_r + 0.04:
         s = p.obs()
-        step = min(rel_a[0] - 0.26,
+        step = min(rel_a[0] - plan_r,
                    edge_dist(p.pelvis_xy(s)) - EDGE_MIN)
         if step > 0.02:
             p.log(f"[gym] depth trim: rel x {rel_a[0]:.2f} — stepping in "
@@ -529,7 +529,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     ok, why = stream_reach.grasp_streamed(
         p, obj_key, grip, plan, side=side, surface_top=surf_a["top"],
         replan=replan, ghost=show_ghost, nudge=False, pin=reset.pin_arms,
-        squat_hint=squat_hint)
+        squat_hint=squat_hint, plan_r=float(np.hypot(rel[0], rel[1])))
     if not ok:
         return False, f"[grasp] {why}"
 

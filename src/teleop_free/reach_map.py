@@ -352,7 +352,10 @@ class ReachMap:
         # horizontal distance, and aim at that layer's far band. R_CAP keeps
         # the aim under the servo's walk-in depth band (GRIP_X_MAX 0.30) and
         # the pregrasp staging limit (~0.32).
-        R_CAP = 0.28
+        R_CAP = 0.34            # execution-side staging limit, deep-squat
+                                # era: the servo's depth band now follows
+                                # the plan (plan_r), so only the hard
+                                # pregrasp-staging wall (~0.36) remains
         best = None
         for dz, pts, margs in layers:
             r = np.hypot(pts[:, 0], pts[:, 1])

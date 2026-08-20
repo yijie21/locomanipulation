@@ -329,7 +329,8 @@ def _raise_hand(p: Primitives, side: str, surface_top: float | None,
           f"(z_pf {z_pf:+.2f})")
 
 
-def _nudge_closer(p: Primitives, grip_world, side: str) -> None:
+def _nudge_closer(p: Primitives, grip_world, side: str,
+                  x_max: float = None) -> None:
     """Small guarded forward steps until the grip is within the lean budget.
 
     The approach ring leaves the pelvis anywhere from 0.28 to 0.45 m from
@@ -343,17 +344,18 @@ def _nudge_closer(p: Primitives, grip_world, side: str) -> None:
     for _pass in range(3):
         s = p.obs()
         x0 = p.world_to_root_full(grip_world, s)[0]
-        if GRIP_X_MIN <= x0 <= GRIP_X_MAX:
+        if GRIP_X_MIN <= x0 <= (x_max or GRIP_X_MAX):
             return
         p.log(f"  stream: grip {x0:.2f} m out, "
-              f"{'walking in' if x0 > GRIP_X_MAX else 'backing off'}")
-        _nudge_pass(p, grip_world, side)
+              f"{'walking in' if x0 > (x_max or GRIP_X_MAX) else 'backing off'}")
+        _nudge_pass(p, grip_world, side, x_max=x_max)
     s = p.obs()
     p.log(f"  stream: grip still {p.world_to_root_full(grip_world, s)[0]:.2f} "
           f"m out after 3 nudge passes")
 
 
-def _nudge_pass(p: Primitives, grip_world, side: str) -> None:
+def _nudge_pass(p: Primitives, grip_world, side: str,
+                x_max: float = None) -> None:
     """One guarded walk toward the band, then a settle and a re-measure.
 
     Split out of _nudge_closer so overshoot is recoverable: the gait carries
@@ -373,7 +375,7 @@ def _nudge_pass(p: Primitives, grip_world, side: str) -> None:
     while time.time() < end:
         s = p.obs()
         grip_pf = p.world_to_root_full(grip_world, s)
-        if GRIP_X_MIN <= grip_pf[0] <= GRIP_X_MAX or s["fallen"]:
+        if GRIP_X_MIN <= grip_pf[0] <= (x_max or GRIP_X_MAX) or s["fallen"]:
             break
         # Walk along the commanded FACING, not a world movement vector: the
         # facing channel's frame is measured and compensated
@@ -401,7 +403,7 @@ def _nudge_pass(p: Primitives, grip_world, side: str) -> None:
             bearing = bearing_can
         face = yaw + float(np.clip(wrap(bearing - yaw), -0.4, 0.4))
         fv = (np.cos(face), np.sin(face), 0.0)
-        backing = grip_pf[0] <= GRIP_X_MAX
+        backing = grip_pf[0] <= (x_max or GRIP_X_MAX)
         mv = (-fv[0], -fv[1], 0.0) if backing else fv
         # Backing off slower than walking in: the stop takes ~0.2 m of gait
         # momentum either way, but overshooting outward puts the grip beyond
@@ -1195,7 +1197,8 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                    side: str = "right", surface_top: float | None = None,
                    replan=None, ghost=None,
                    nudge: bool = True, pin=None,
-                   squat_hint: float | None = None) -> tuple[bool, str]:
+                   squat_hint: float | None = None,
+                   plan_r: float | None = None) -> tuple[bool, str]:
     """The whole grasp: raise, walk in, servo, close, lift. -> (ok, why)."""
     # Raise BEFORE walking in: from here on the hand is above the tabletop
     # and the approach can only ever come down onto the can, never up through
@@ -1206,8 +1209,12 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     # up-phase then hooked the fingers on the table (FURN[R:middle_*],
     # palm pinned at the lead cap for 8 s). The servo's first target is
     # above the pregrasp at ~the same height the hands already are.
+    # Deep-squat plans stand deliberately FAR (plan_core_stand's farthest
+    # overlap): the walk-in band's upper edge follows the plan instead of
+    # the shallow-squat-era 0.30 constant.
+    x_band = max(GRIP_X_MAX, plan_r + 0.03) if plan_r else GRIP_X_MAX
     if nudge:
-        _nudge_closer(p, grip_world, side)
+        _nudge_closer(p, grip_world, side, x_max=x_band)
     arm = StreamedArm(p, side)
     arm.start()
     try:
@@ -1260,9 +1267,9 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
             # squatting at the wrong depth just adds a knee into the table.
             s = p.obs()
             grip_pf = p.world_to_root_full(grip_world, s)
-            if not (GRIP_X_MIN <= grip_pf[0] <= GRIP_X_MAX):
+            if not (GRIP_X_MIN <= grip_pf[0] <= x_band):
                 arm.stop()
-                _nudge_closer(p, grip_world, side)
+                _nudge_closer(p, grip_world, side, x_max=x_band)
                 arm = StreamedArm(p, side)
                 arm.start()
                 s = p.obs()
