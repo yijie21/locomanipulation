@@ -189,9 +189,17 @@ def build(seed: int = 0) -> dict:
                     continue
                 if self_collides():
                     continue
-                i = int((pos[0] - X0) / VOX)
-                j = int((pos[1] - Y0) / VOX)
-                k = int((pos[2] - Z0) / VOX)
+                # Bin the GRASP CENTRE, not the wrist: the map is queried
+                # with the OBJECT's pelvis-frame position (graspable(),
+                # plan_core_stand aim cells), and the object sits at the
+                # grasp centre — GRASP_CENTRE_OFFSET ahead of the wrist
+                # (15.15 cm for dex1). Binning the wrist understated the
+                # graspable distance by that whole offset: every executed
+                # grasp had the wrist ~15 cm SHORT of its "verified" cell.
+                gc = pos + rot @ np.asarray(GRASP_CENTRE_OFFSET_CONST)
+                i = int((gc[0] - X0) / VOX)
+                j = int((gc[1] - Y0) / VOX)
+                k = int((gc[2] - Z0) / VOX)
                 if 0 <= i < nx and 0 <= j < ny and 0 <= k < nz:
                     marg = float(np.minimum(row - lo, hi - row).min())
                     if marg > jmargin[side][i, j, k] or not occ[side][i, j, k]:

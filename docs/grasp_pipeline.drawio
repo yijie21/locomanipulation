@@ -14,13 +14,13 @@
         <mxCell id="A2" value="grip_z = 罐顶 − 6cm (dex1 中段握点)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
           <mxGeometry x="110" y="105" width="640" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="A3" value="plan_core_stand: 扫每个下蹲深度 dz = 0~19.5cm 的深绿芯水平切片" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+        <mxCell id="A3" value="plan_core_stand: 扫每个下蹲深度 dz = 0~19.5cm 的深绿芯水平切片 (图以抓取中心为坐标, 非手腕)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
           <mxGeometry x="110" y="165" width="640" height="40" as="geometry" />
         </mxCell>
         <mxCell id="A4" value="aim cell 过滤: ego 锥内 ≤33°, 距 envelope 边界 ≥5cm, 右肩侧 y ≤ −0.06" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
           <mxGeometry x="110" y="225" width="640" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="A5" value="选『最远重叠』层: 可用半径最大 (≤0.34m) 的下蹲深度 → rel≈(0.23, −0.11) + squat_hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+        <mxCell id="A5" value="选『最远重叠』层: 可用半径最大 (R_CAP 0.34 封顶) 的下蹲深度 → rel≈(0.31, −0.11) + squat_hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
           <mxGeometry x="110" y="285" width="640" height="50" as="geometry" />
         </mxCell>
         <mxCell id="A6" value="采样朝向 psi = 桌沿内法线 ±25°, stand = can − R(psi)·rel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">

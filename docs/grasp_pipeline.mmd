@@ -3,9 +3,9 @@ flowchart TD
   subgraph P0["P0 规划 — 蹲深与站位联合求解 (行动前, 纯计算)"]
     A1["采样罐位: 贴桌沿带内 4~8cm, 沿边 ±10cm"]
     A2["grip_z = 罐顶 − 6cm (dex1 中段握点)"]
-    A3["plan_core_stand: 扫每个下蹲深度 dz = 0~19.5cm 的深绿芯水平切片"]
+    A3["plan_core_stand: 扫每个下蹲深度 dz = 0~19.5cm 的深绿芯水平切片 (图以抓取中心为坐标, 非手腕)"]
     A4["aim cell 过滤: ego 锥内 ≤33°, 距 envelope 边界 ≥5cm, 右肩侧 y ≤ −0.06"]
-    A5["选『最远重叠』层: 可用半径最大 (≤0.34m) 的下蹲深度, 得 rel≈(0.23, −0.11) + squat_hint"]
+    A5["选『最远重叠』层: 可用半径最大 (R_CAP 0.34 封顶) 的下蹲深度, 得 rel≈(0.31, −0.11) + squat_hint"]
     A6["采样朝向 psi = 桌沿内法线 ±25°, stand = can − R(psi)·rel"]
     A7{"edge 裕量够 (优先 ≥0.20, 兜底 ≥0.17) 且 spawn→stand 全线离桌沿 ≥0.17 ?"}
     A8["spawn = stand − 0.60·fv (出生在站点后方 0.6m)"]
