@@ -31,7 +31,9 @@ from export_grasp_model import mesh_triangles  # noqa: E402
 from primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 
 GHOST_BODY = "ghost_hand"
-OUT = "/workspace/code/locomanipulation/outputs/scene/hand_points.npy"
+from primitives_const import HAND as _HAND
+OUT = ("/workspace/code/locomanipulation/outputs/scene/"
+       + ("hand_points_dex1.npy" if _HAND == "dex1" else "hand_points.npy"))
 
 
 def main() -> None:

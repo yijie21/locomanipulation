@@ -45,7 +45,13 @@ FINE_SPEED = 0.4          # rad/s inside the servo
 SETTLE = 2.0              # s after a repositioning move
 REFINE_TOL = 0.015        # m, palm error to stop refining the pregrasp at
 REFINE_MAX = 3
-SAFE_GAP = 0.13           # hold the object this far out along the entry axis
+from primitives_const import HAND as _HAND
+# hold the object this far out along the entry axis. dex1's fingertips
+# LEAD the grasp centre by 3.3 cm along the approach (tips at wrist+18.5,
+# grasp centre at wrist+15.15) — the whole slide-in geometry needs that
+# lead budgeted or the tips reach the can while the servo still thinks
+# it is 4-6 cm out.
+SAFE_GAP = 0.17 if _HAND == "dex1" else 0.13
 # (0.10 left only 5 cm of margin over a bad pregrasp, and 5 cm pregrasp
 # errors do happen — the fingertips grazed the can twice)
 DEPTH_TOL = 0.03
@@ -259,7 +265,7 @@ class StreamedArm:
             alpha = k / n
             if contact_alpha is not None and alpha >= contact_alpha + squeeze:
                 break
-            self.hands[self.side] = closed * alpha
+            self.hands[self.side] = HAND_OPEN + alpha * (closed - HAND_OPEN)
             self._push(self.q)
             if k % 5 == 0 and contact_alpha is None:
                 s = p.obs()
@@ -789,7 +795,12 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     every accepted replan into the video's translucent hand.
     """
     rot_t = np.asarray(plan.rot)
-    entry = rot_t[:, 1]
+    # Entry axis: dex3 slides along palm +y (the finger cage sweeps the can
+    # in sideways); dex1 is a parallel jaw and MUST come in along palm +x,
+    # between the fingers — sliding along +y leads with one finger and rams
+    # the can (TOUCH[dex1_finger_2] on every approach).
+    ENTRY_COL = 0 if _HAND == "dex1" else 1
+    entry = rot_t[:, ENTRY_COL]
     pre_w = np.asarray(plan.wrist) - entry * SAFE_GAP
     above_w = pre_w + np.array([0.0, 0.0, 0.10])
     frozen = replan is None
@@ -855,13 +866,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             npl = replan(palm, rot_p)
             if npl.ok and npl.travel > FREEZE_TRAVEL:
                 cand_rot = np.asarray(npl.rot)
-                cand_pre = np.asarray(npl.wrist) - cand_rot[:, 1] * SAFE_GAP
+                cand_pre = (np.asarray(npl.wrist)
+                            - cand_rot[:, ENTRY_COL] * SAFE_GAP)
                 pre_pf = p.world_to_root_full(cand_pre, s)
                 if (float(np.hypot(pre_pf[0], pre_pf[1])) <= PRE_XY_MAX
                         and PRE_X_MIN <= pre_pf[0] <= PRE_X_MAX
                         and PRE_Z_MIN <= pre_pf[2] <= PRE_Z_MAX):
                     rot_t = cand_rot
-                    entry = rot_t[:, 1]
+                    entry = rot_t[:, ENTRY_COL]
                     pre_w = cand_pre
                     above_w = pre_w + np.array([0.0, 0.0, 0.10])
                     if ghost is not None:
@@ -922,6 +934,15 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 alpha = PRE_NARROW
                 arm.hands[side] = HAND_OPEN + alpha * (closed - HAND_OPEN)
             if float(np.linalg.norm(obj - obj_in0)) > 0.015:
+                if (_HAND == "dex1" and full_f is not None
+                        and full_f[1] < 0.06):
+                    # Parallel jaw, can already between the pads (entry
+                    # nearly spent): contact means CLOSE NOW and funnel it
+                    # to the palm. The dex3-era flinch re-dives and pokes
+                    # the can over, once per cycle, until it topples.
+                    p.log("  stream: contact inside the jaw — closing")
+                    phase = "close"
+                    continue
                 backoff_until = now + 1.0
                 p.log("  stream: contact flinch, backing off to re-centre")
                 continue
@@ -982,7 +1003,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 # needs more is unreachable — fail instead of bulldozing.
                 import adaptive_grasp as _ag
                 low_c2 = float((_ag.hand_points() @ rot_t.T)[:, 2].min())
-                zf2 = (surface_top + 0.012 - low_c2
+                zf2 = (surface_top + (0.030 if _HAND == 'dex1' else 0.012) - low_c2
                        - float((rot_t @ _ag.OFFSET)[2]))
                 need = zf2 + 0.003 - float(base[2])
                 if need > 0.02:
@@ -1039,7 +1060,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # entry residual is >20 cm, blending to zero by 8 cm — the
             # fingertips clear the tabletop for the whole travel instead of
             # dragging across it (the wedge that froze lat at 21-30 mm).
-            in_lift = 0.03 * float(np.clip((e_ent - 0.08) / 0.12, 0.0, 1.0))
+            # dex1: no slide-in lift. Its fingertips hang only 1.45 cm
+            # under the grasp centre (vs dex3's table-dragging wedge), and
+            # any extra height puts the leading finger's UNDERSIDE at the
+            # can's rim — it rides the rim and knocks the can over
+            # (TOUCH[dex1_finger_2] at ent 5-12 cm with pal 3-7 cm high).
+            in_lift = (0.0 if _HAND == "dex1" else
+                       0.03 * float(np.clip((e_ent - 0.08) / 0.12,
+                                            0.0, 1.0)))
             v = V_APPROACH if e_ent > 0.05 else V_APPROACH * 0.5
             # Close on the palm-frame TRUTH (`full` = measured object minus
             # the wanted offset), not on distance to the planned line: with
@@ -1048,9 +1076,13 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # second is another fingertip graze inching the can away (the
             # 15 cm-cumulative aborts). If the can is within the envelope,
             # closing funnels it to the palm — that is what fingers curl FOR.
-            g_lat = float(np.hypot(full[0], full[2]))
-            good = g_lat < 0.015 and abs(full[1]) < 0.012
-            if e_ent < 0.02 and side in s["objects"][obj_key]["touching"]:
+            # Palm-frame gate axes follow the entry column: depth along
+            # the entry axis, lateral = the other two.
+            la, lb = ((1, 2) if ENTRY_COL == 0 else (0, 2))
+            g_lat = float(np.hypot(full[la], full[lb]))
+            good = g_lat < 0.015 and abs(full[ENTRY_COL]) < 0.012
+            if (e_ent < (0.06 if _HAND == "dex1" else 0.02)
+                    and side in s["objects"][obj_key]["touching"]):
                 # The hand is already riding the can with the entry spent:
                 # the can is inside the jaw envelope but the wrist presses
                 # its top, the moving can freezes the trim (anti-bulldozer),
@@ -1058,9 +1090,9 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 # "toppled in the in phase"/batch, lat hovering 8-18 mm).
                 # Closing now funnels it to the palm — take the patient
                 # tolerance immediately instead of after 8 s.
-                good = g_lat < 0.020 and abs(full[1]) < 0.018
+                good = g_lat < 0.020 and abs(full[ENTRY_COL]) < 0.018
             patient = (now - in_since > 8.0
-                       and g_lat < 0.020 and abs(full[1]) < 0.018)
+                       and g_lat < 0.020 and abs(full[ENTRY_COL]) < 0.018)
             if good or patient:
                 ok_ticks += 1
                 if ok_ticks > 20:                     # ~0.4 s in tolerance
@@ -1128,7 +1160,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # hand point cloud at the CURRENT planned rotation.
             import adaptive_grasp as _ag
             low_c = float((_ag.hand_points() @ rot_t.T)[:, 2].min())
-            z_floor = (surface_top + 0.012 - low_c
+            z_floor = (surface_top + (0.030 if _HAND == 'dex1' else 0.012) - low_c
                        - float((rot_t @ _ag.OFFSET)[2]))
             if cmd[2] < z_floor:
                 cmd = cmd.copy()
@@ -1139,7 +1171,29 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                          f" cmd{float(cmd[2]) - line_z:+.3f}"
                          f" fl{z_floor - line_z:+.3f})")
         aim_pf = p.world_to_root_full(cmd, s)
-        rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_t
+        rot_use = rot_t
+        if _HAND == "dex1" and phase in ("up", "down"):
+            # Dex1's fingers reach 18.5 cm past the wrist: flying to the
+            # pregrasp with them already pointing down the entry sweeps a
+            # tip arc through the can's column (video: topple with the
+            # grasp centre still 14 cm out). Keep the tips pitched UP
+            # while far from the pregrasp and blend flat over the last
+            # 12 cm of the flight — the rotation then happens ~17 cm out,
+            # where the arc is clear of the object.
+            d_pre = float(np.linalg.norm(np.asarray(cmd) - palm))
+            k_up = float(np.clip((d_pre - 0.02) / 0.12, 0.0, 1.0))
+            th = np.deg2rad(55.0) * k_up
+            if th > 1e-3:
+                c, sn = np.cos(th), np.sin(th)
+                for sgn in (1.0, -1.0):
+                    ry = np.array([[c, 0.0, sgn * sn],
+                                   [0.0, 1.0, 0.0],
+                                   [-sgn * sn, 0.0, c]])
+                    cand = rot_t @ ry
+                    if (cand @ np.array([1.0, 0.0, 0.0]))[2] > 0:
+                        rot_use = cand
+                        break
+        rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_use
         q_sol, res, _ = arm.ik.solve(side, aim_pf, rot_pf, q_mj29=arm.q,
                                      use_waist=True, iters=10)
         if res < 0.10:
@@ -1186,6 +1240,12 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                           f" v{full_f[3] * 1000:+.0f})"
                           f" ent {full_f[1] * 100:.1f}cm"
                           + (dbg_z if dbg_z else ""))
+                # jaw-axis vertical components: planned rot vs MEASURED palm
+                extra += (f"  jawz(t{rot_t[2, 1]:+.2f}"
+                          f" m{rot_p[2, 1]:+.2f})")
+                hq = s["palms"][side].get("hand_q")
+                if hq:
+                    extra += "  hq[" + ",".join(f"{v:+.3f}" for v in hq) + "]"
             tpf = p.world_to_root_full(np.asarray(tgt, dtype=float), s)
             p.log(f"    stream cont[{phase}] palm->ref "
                   f"{float(np.linalg.norm(lead)) * 100:.1f} cm  res {res:.3f}"

@@ -350,7 +350,8 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
     for g in range(pm.ngeom):
         bid = pm.geom_bodyid[g]
         nm = mujoco.mj_id2name(pm, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
-        if not (nm == f"{side}_wrist_yaw_link" or nm.startswith(f"{side}_hand_")):
+        if not (nm == f"{side}_wrist_yaw_link" or nm.startswith(f"{side}_hand_")
+                or nm.startswith(f"{side}_dex1_")):
             continue
         if pm.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
             continue

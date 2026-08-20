@@ -41,7 +41,10 @@ import numpy as np
 
 from primitives_const import GRASP_CENTRE_OFFSET_CONST
 
-HAND_POINTS_PATH = "/workspace/code/locomanipulation/outputs/scene/hand_points.npy"
+from primitives_const import HAND as _HAND
+HAND_POINTS_PATH = ("/workspace/code/locomanipulation/outputs/scene/"
+                    + ("hand_points_dex1.npy" if _HAND == "dex1"
+                       else "hand_points.npy"))
 
 OFFSET = np.asarray(GRASP_CENTRE_OFFSET_CONST, dtype=float)
 OFFSET_DIR = OFFSET / np.linalg.norm(OFFSET)
@@ -74,7 +77,8 @@ W_JAW = 0.6
 # Widest span the jaw can usefully close over, minus a pinch margin. Kept
 # numerically in sync with grasping.HAND_APERTURE / PINCH_MARGIN without
 # importing that module (it drags in the planner-era pose machinery).
-APERTURE_MAX = 0.061 - 0.010
+# dex1: 9.48 cm max opening (2x 0.0245 travel + 4.58 cm zero gap).
+APERTURE_MAX = (0.0948 - 0.010) if _HAND == "dex1" else (0.061 - 0.010)
 
 
 @dataclass

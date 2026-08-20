@@ -27,7 +27,9 @@ from dataclasses import dataclass
 import numpy as np
 
 # Measured, teleop_free/diag_hand.py.
-HAND_APERTURE = 0.061          # widest thumb-to-finger opening
+from primitives_const import HAND as _HAND
+# widest opening: dex3 thumb-to-finger 6.1 cm; dex1 parallel jaw 9.48 cm
+HAND_APERTURE = 0.0948 if _HAND == "dex1" else 0.061
 FINGER_DROP = 0.056            # how far the fingers hang below the grip centre
 FINGER_LEAD = 0.110            # how far the fingertips reach past the grip centre
 
@@ -66,7 +68,11 @@ PITCHED_FINGER_DROP = 0.030
 # at rim height, reporting contact, and lifting air. 4.5 cm buries the jaw in
 # the barrel with 3 cm of finger clearance left above the table (can 12 cm,
 # fingers reach 4.5 cm below the grip centre).
-GRIP_BELOW_RIM = 0.035
+# dex3 grips just under the rim (finger cage catches +-4 cm vertically).
+# dex1's pads are 2.9 cm tall bars: rim grips left ~1.5 cm of vertical
+# tolerance while the platform sways 3-5 cm — grip the can's BODY instead,
+# 6 cm below the rim, and the capture window covers the whole sway.
+GRIP_BELOW_RIM = 0.060 if _HAND == "dex1" else 0.035
 # The palm's axes, in the pelvis frame, once PALM_PITCH_CMD has been commanded
 # and the hand has settled — measured, not derived (diag_pitch.py). Columns are
 # +x (along the fingers), +y (the thumb side, which is the direction the object
