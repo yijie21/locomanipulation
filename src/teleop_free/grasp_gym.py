@@ -349,11 +349,9 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         return False, (f"[stand] teleport did not land "
                        f"({land_err:.2f} m from the spawn)")
     stream_reach.reanchor(p, side=side)
-    # The far approach is walked ARMS DOWN: no sim-side pin and VR mode,
-    # so the gait prior swings the arms naturally. A stand-stage retry
-    # inherits the previous attempt's pin (a scene reset does not clear
-    # the sim's ARM_PIN global) — release it explicitly.
-    reset.pin_arms()
+    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+    p.tuck_arms()
+    reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
     p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     reset.start_video(f"gym_{int(time.time())}")
     grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
@@ -369,30 +367,14 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"yaw_err {yerr:+.0f} deg")
 
     rel_dbg("pre-walk ", p.obs())
-    # Approach in two legs. Far leg: arms hanging, natural gait swing —
-    # the READY walking pose is only NEEDED near the table. At RAISE_OFF
-    # from the stand, adopt READY (forearms level, hands above every
-    # tabletop): raising THERE keeps the low_004-era invariant — never
-    # raise at the table itself, where the transition once swept the can
-    # and clipped the tabletop — while the hand's ~0.35 m radius still
-    # clears the edge by ~0.15 m.
-    RAISE_OFF = 0.35
-    if spawn_off > RAISE_OFF + 0.05:
-        raise_pt = np.asarray(spawn_xy) - RAISE_OFF * np.array(fv[:2])
-        if not p.walk_to(raise_pt, stop_dist=0.06,
-                         timeout=10.0 + 8.0 * spawn_off):
-            return False, "[stand] fell during the walk-up"
-    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
-    p.tuck_arms()
-    reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
-    p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=fv)
     # Two steps forward onto the stand. Aim 12 cm SHORT and bias every
     # arrival error toward TOO FAR: the stop + settle creeps 6-13 cm
     # forward, backward stepping barely moves (edge back-offs measured
     # 0.13 -> 0.11 -> 0.11), while the forward depth-trim step is reliable
     # — so land far and walk the remainder in.
     walk_tgt = np.asarray(spawn_xy) - 0.12 * np.array(fv[:2])
-    if not p.walk_to(walk_tgt, stop_dist=0.06, timeout=14.0):
+    if not p.walk_to(walk_tgt, stop_dist=0.06,
+                     timeout=10.0 + 8.0 * spawn_off):
         return False, "[stand] fell during the walk-up"
     rel_dbg("post-walk", p.obs())
     for _ in range(int(1.0 / 0.02)):

@@ -186,8 +186,14 @@ class StreamedArm:
 
     # -- behaviours --------------------------------------------------------
 
-    def squat(self, drop_m: float) -> float:
-        """Bend the legs in the reference; returns the measured pelvis drop."""
+    def squat(self, drop_m: float, track: bool = False) -> float:
+        """Bend the legs in the reference; returns the measured pelvis drop.
+
+        track=True re-solves the servo arm against the LIVE pelvis pose a
+        few times per second so the palm holds its world pose while the
+        body sinks — the legs fold under the hand. Without it the frozen
+        arm rides down with the body into the can's height band (the old
+        pre-lift bounce existed only to survive that sink)."""
         a = float(np.clip(drop_m * SQUAT_GAIN, 0.0, SQUAT_MAX))
         if a < 0.05:
             return 0.0
@@ -198,7 +204,35 @@ class StreamedArm:
             q_squat[hip] -= a
             q_squat[knee] += 2 * a
             q_squat[ank] -= a
-        self.move_to(q_squat, speed=0.6)
+        if not track:
+            self.move_to(q_squat, speed=0.6)
+            self.hold(2.0)
+            s = self.p.obs()
+            return float(z0 - s["pelvis"]["pos"][2])
+        palm_w = np.array(s["palms"][self.side]["pos"])
+        rot_w = Primitives._rot(s["palms"][self.side]["quat"])
+        q0 = self.q.copy()
+        arm_idx = ARM_MJ[self.side]
+        arm_hold = q0[arm_idx].copy()
+        dur = max(0.4, float(np.abs(q_squat - q0).max()) / 0.6)
+        n = max(1, int(round(dur / DT)))
+        for k in range(1, n + 1):
+            u = k / n
+            sm = 3 * u * u - 2 * u ** 3
+            q_ref = q0 + sm * (q_squat - q0)
+            if k % 5 == 1:
+                s = self.p.obs()
+                aim_pf = self.p.world_to_root_full(palm_w, s)
+                rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_w
+                q_sol, res, _ = self.ik.solve(self.side, aim_pf, rot_pf,
+                                              q_mj29=q_ref, use_waist=False)
+                if res < 0.08:
+                    arm_hold = q_sol[arm_idx]
+            q_ref[arm_idx] = arm_hold
+            self.q = q_ref
+            self._push(q_ref)
+        self.q = q_squat.copy()
+        self.q[arm_idx] = arm_hold
         self.hold(2.0)
         s = self.p.obs()
 
@@ -1279,25 +1313,25 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     arm = StreamedArm(p, side)
     arm.start()
     try:
-        # Tuck the IDLE arm before crouching. The crouch lowers the whole
-        # body, and the idle arm — frozen at the level-forearm READY joint
-        # angles — sinks 13 cm with it, straight into the can's height band
-        # and onto the tabletop (up-phase topples, FURN[wrist_yaw] on the
-        # non-servo side). The SERVO arm is safe: its IK closes on world
-        # targets each tick and re-raises itself. Elbow NEGATIVE folds the
-        # forearm UP (elbow zero = level).
+        # Clear the IDLE arm before crouching — but SIDEWAYS, not up. The
+        # crouch sinks whatever the arms hold: the idle arm frozen at the
+        # level-forearm READY pose ended inside the tabletop
+        # (FURN[wrist_yaw] on the non-servo side), and the old fix bounced
+        # BOTH arms upward first, which read as a robotic "lift" tic. A
+        # shoulder-yaw sweep moves the level forearm horizontally over the
+        # free flank (FK: wrist x 0.20 -> 0.07, z unchanged): no bounce,
+        # and after a 13 cm sink the hand sits at ~0.80 m, still above
+        # every tabletop and BEHIND the table edge line.
         other = "left" if side == "right" else "right"
         q_t = arm.q.copy()
         roll = 0.35 if other == "left" else -0.35
-        q_t[ARM_MJ[other]] = [-0.4, roll, 0.0, -0.6, 0.0, 0.0, 0.0]
-        # ...and pre-lift the SERVO arm the same way: during the crouch its
-        # joints are frozen too (the world-frame IK loop only starts with
-        # the servo), so a level READY forearm sinks with the body straight
-        # through the can's height band — that was the topple right at
-        # servo start, before any status line.
-        roll_s = 0.25 if side == "left" else -0.25
-        q_t[ARM_MJ[side]] = [-0.5, roll_s, 0.0, -0.5, 0.0, 0.0, 0.0]
+        yaw_out = 1.2 if other == "left" else -1.2
+        q_t[ARM_MJ[other]] = [0.0, roll, yaw_out, 0.0, 0.0, 0.0, 0.0]
         arm.move_to(q_t, speed=1.0)
+        # The SERVO arm gets no pre-lift at all: squat(track=True) below
+        # holds its palm at the CURRENT world pose via live IK while the
+        # legs fold under it — the grasp trajectory then starts from
+        # exactly where the hand already is.
         # PLANNED crouch before reaching: bring the body down until the
         # wrist's natural height is near the grip, so the (limit-clamped)
         # waist only fine-tunes instead of folding to bridge the gap. The
@@ -1312,7 +1346,7 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
             # lands on the object — never crouch less than the plan.
             drop = float(np.clip(max(drop, squat_hint), 0.0, 0.13))
         if drop > 0.03:
-            got = arm.squat(drop)
+            got = arm.squat(drop, track=True)
             p.log(f"  stream: planned crouch {drop * 100:.0f} cm "
                   f"wanted, {got * 100:.0f} cm delivered")
         # One continuous 50 Hz servo does everything: down the live

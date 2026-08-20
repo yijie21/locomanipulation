@@ -1,0 +1,149 @@
+<mxfile host="claude" modified="2026-08-20" agent="claude-code" version="24.0.0">
+  <diagram id="grasp-pipeline" name="grasp pipeline">
+    <mxGraphModel dx="1000" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="2550" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="P0" value="P0 规划 — 蹲深与站位联合求解 (行动前, 纯计算)" style="swimlane;html=1;startSize=30;fillColor=#f5f9ff;strokeColor=#6c8ebf;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="860" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="A1" value="采样罐位: 贴桌沿带内 4~8cm, 沿边 ±10cm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="45" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="A2" value="grip_z = 罐顶 − 6cm (dex1 中段握点)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="105" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="A3" value="plan_core_stand: 扫每个下蹲深度 dz = 0~19.5cm 的深绿芯水平切片" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="165" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="A4" value="aim cell 过滤: ego 锥内 ≤33°, 距 envelope 边界 ≥5cm, 右肩侧 y ≤ −0.06" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="225" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="A5" value="选『最远重叠』层: 可用半径最大 (≤0.34m) 的下蹲深度 → rel≈(0.23, −0.11) + squat_hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="285" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="A6" value="采样朝向 psi = 桌沿内法线 ±25°, stand = can − R(psi)·rel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="355" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="A7" value="edge 裕量够 (优先 ≥0.20, 兜底 ≥0.17) 且 spawn→stand 全线离桌沿 ≥0.17 ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00" vertex="1" parent="P0">
+          <mxGeometry x="190" y="415" width="480" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="A8" value="spawn = stand − 0.60·fv (出生在站点后方 0.6m)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="P0">
+          <mxGeometry x="110" y="540" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eA1" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A1" target="A2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eA2" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A2" target="A3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eA3" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A3" target="A4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eA4" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A4" target="A5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eA5" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A5" target="A6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eA6" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A6" target="A7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eA7no" value="否 (≤500 次重采样)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5" edge="1" parent="P0" source="A7" target="A6">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="800" y="465" /><mxPoint x="800" y="375" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="eA7yes" value="是" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P0" source="A7" target="A8"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="P1" value="P1 出发" style="swimlane;html=1;startSize=30;fillColor=#fbf8ff;strokeColor=#9673a6;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="650" width="860" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="B1" value="重启 deploy (清残留 heading 状态), heading_offset = 0, 等 4s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6" vertex="1" parent="P1">
+          <mxGeometry x="110" y="45" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="B2" value="teleport 机器人+罐 → start_control → 4s IDLE 稳定 (facing = fv)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6" vertex="1" parent="P1">
+          <mxGeometry x="110" y="105" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="B3" value="pin READY 行走姿势: 前臂端平, 手高于一切桌面 (绝不在桌边才抬手)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6" vertex="1" parent="P1">
+          <mxGeometry x="110" y="165" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eB1" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P1" source="B1" target="B2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eB2" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P1" source="B2" target="B3"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="P2" value="P2 两段式接近" style="swimlane;html=1;startSize=30;fillColor=#f7fcf5;strokeColor=#82b366;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="910" width="860" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="C1" value="全程 READY 端平行走: walk_to(stand − 0.12·fv), 故意瞄短 12cm 让停步前爬 (6~13cm) 带进站点" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
+          <mxGeometry x="110" y="60" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C3" value="1s facing 稳定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
+          <mxGeometry x="110" y="160" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eC1" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P2" source="C1" target="C3"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="P3" value="P3 站位验收环 (单一目标点, ≤3 轮)" style="swimlane;html=1;startSize=30;fillColor=#fffdf5;strokeColor=#d6b656;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="1200" width="860" height="570" as="geometry" />
+        </mxCell>
+        <mxCell id="D1" value="验收: 离桌沿 ≥0.14 且 方位角 ≤45° 且 envelope 内可达 且 深度 ≤ plan_r + 0.06 ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00" vertex="1" parent="P3">
+          <mxGeometry x="150" y="50" width="560" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="D2" value="仅过深 → 一步前进 depth trim (唯一可靠的微步)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656" vertex="1" parent="P3">
+          <mxGeometry x="40" y="215" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="D3" value="其余情况 → 整段重走: 退到 stand − 0.45·fv, 按实测罐位重解 stand (edge clamp ≥0.19), 带 −0.18 偏置走入 — 5~15cm 微步在 SONIC 上双峰不可控, 只有 0.4m+ 的行走是准的" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656" vertex="1" parent="P3">
+          <mxGeometry x="440" y="215" width="390" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="D4" value="3 轮后硬地板: edge ≥ 0.14 且 envelope 可达 ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00" vertex="1" parent="P3">
+          <mxGeometry x="190" y="390" width="480" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="R" value="stand-stage retry: 整局从 P1 重来一次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450" vertex="1" parent="P3">
+          <mxGeometry x="230" y="515" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eD1a" value="仅深度超" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5" edge="1" parent="P3" source="D1" target="D2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eD1b" value="太近 / 出界 / 方位偏" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5" edge="1" parent="P3" source="D1" target="D3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eD2" style="edgeStyle=orthogonalEdgeStyle;html=1;entryX=0.25;entryY=1;dashed=1" edge="1" parent="P3" source="D2" target="D1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eD3" style="edgeStyle=orthogonalEdgeStyle;html=1;entryX=0.75;entryY=1;dashed=1" edge="1" parent="P3" source="D3" target="D1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eD1c" value="3 轮用尽" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;exitX=0.5;exitY=1" edge="1" parent="P3" source="D1" target="D4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eD4no" value="否" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P3" source="D4" target="R"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="P4" value="P4 视野 gate" style="swimlane;html=1;startSize=30;fillColor=#fff8f8;strokeColor=#b85450;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="1800" width="860" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="E1" value="ego 相机看得到罐: |fx| ≤ 0.8, |fy| ≤ 0.9 ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00" vertex="1" parent="P4">
+          <mxGeometry x="190" y="45" width="480" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="FV" value="EPISODE FAILED (view)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450" vertex="1" parent="P4">
+          <mxGeometry x="550" y="155" width="270" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eE1no" value="否" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5" edge="1" parent="P4" source="E1" target="FV"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="P5" value="P5 下蹲 + streamed 抓取" style="swimlane;html=1;startSize=30;fillColor=#f5fbfc;strokeColor=#10739e;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="20" y="2050" width="860" height="440" as="geometry" />
+        </mxCell>
+        <mxCell id="E2" value="adaptive_grasp.plan: dex1 沿 palm +x 直插进入, SAFE_GAP 0.17 (指尖领先 3.3cm), 品红 ghost 显示规划腕位" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
+          <mxGeometry x="110" y="45" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E3" value="闲置臂水平侧摆到体侧 (shoulder yaw, 无上抬) → squat(track=True) 下蹲: IK 实时保持抓取手掌的世界位姿, 腿在手下折叠, 无预抬弹跳" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
+          <mxGeometry x="110" y="115" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E4" value="streamed 29-DoF servo: 手先抬到桌面 +3cm 再前伸, tip-up 55° 飞行姿态 (最后 12cm 拍平), 深度带跟随 plan_r" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
+          <mxGeometry x="110" y="175" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E5" value="罐进爪内 (entry 轴距 &lt;6cm) → 立即闭合: 开口 9.48cm → 夹持 (gear 250, 每指 ~8N)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
+          <mxGeometry x="110" y="245" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E6" value="提起 → carry pose → 2s hold, 掌系漂移超限判 slip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe8ef;strokeColor=#10739e" vertex="1" parent="P5">
+          <mxGeometry x="110" y="315" width="640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="OKn" value="EPISODE OK" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="P5">
+          <mxGeometry x="310" y="375" width="240" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eE2" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P5" source="E2" target="E3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eE3" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P5" source="E3" target="E4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eE4" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P5" source="E4" target="E5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eE5" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P5" source="E5" target="E6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eE6" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P5" source="E6" target="OKn"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="x1" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="1" source="A8" target="B1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="x2" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="1" source="B3" target="C1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="x3" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="1" source="C3" target="D1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="x4" value="通过" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5" edge="1" parent="1" source="D1" target="E1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="905" y="1305" /><mxPoint x="905" y="1890" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x5" value="是" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="D4" target="E1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="x6" value="是" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1" edge="1" parent="1" source="E1" target="E2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="x7" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;exitX=0;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="R" target="B1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="-20" y="1735" /><mxPoint x="-20" y="715" /></Array></mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

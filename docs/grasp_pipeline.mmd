@@ -17,15 +17,14 @@ flowchart TD
   subgraph P1["P1 出发"]
     B1["重启 deploy (清残留 heading 状态), heading_offset = 0, 等 4s"]
     B2["teleport 机器人+罐 → start_control → 4s IDLE 稳定 (facing = fv)"]
-    B3["释放 sim-side arm pin: 双臂自然垂放 (retry 会继承上次的 pin)"]
+    B3["pin READY 行走姿势: 前臂端平, 手高于一切桌面 (绝不在桌边才抬手)"]
     B1 --> B2 --> B3
   end
 
   subgraph P2["P2 两段式接近"]
-    C1["远段: VR 模式垂手摆臂, walk_to(stand − 0.35·fv)"]
-    C2["0.35m 线抬手: 切 FROZEN_UPPER + pin READY 前臂端平 (手高于桌面, 离桌沿还有 ~0.15m 安全余量)"]
-    C3["末段: walk_to(stand − 0.12·fv), 故意瞄短 12cm 让停步前爬 (6~13cm) 把人带进去, 1s facing 稳定"]
-    C1 --> C2 --> C3
+    C1["全程 READY 端平行走: walk_to(stand − 0.12·fv), 故意瞄短 12cm 让停步前爬 (6~13cm) 带进站点"]
+    C3["1s facing 稳定"]
+    C1 --> C3
   end
 
   subgraph P3["P3 站位验收环 (单一目标点, ≤3 轮)"]
@@ -49,7 +48,7 @@ flowchart TD
 
   subgraph P5["P5 下蹲 + streamed 抓取"]
     E2["adaptive_grasp.plan: dex1 沿 palm +x 直插进入, SAFE_GAP 0.17 (指尖领先 3.3cm), 品红 ghost 显示规划腕位"]
-    E3["按 squat_hint 下蹲 (左手低位目标当杠杆压住骨盆高度)"]
+    E3["闲置臂水平侧摆到体侧 (shoulder yaw, 无上抬) → squat(track=True) 下蹲: IK 实时保持抓取手掌的世界位姿, 腿在手下折叠, 无预抬弹跳"]
     E4["streamed 29-DoF servo: 手先抬到桌面 +3cm 再前伸, tip-up 55° 飞行姿态 (最后 12cm 拍平), 深度带跟随 plan_r"]
     E5["罐进爪内 (entry 轴距 <6cm) → 立即闭合: 开口 9.48cm → 夹持 (gear 250, 每指 ~8N)"]
     E6["提起 → carry pose → 2s hold, 掌系漂移超限判 slip"]
