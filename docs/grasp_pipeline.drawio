@@ -61,13 +61,17 @@
         <mxCell id="P2" value="P2 两段式接近" style="swimlane;html=1;startSize=30;fillColor=#f7fcf5;strokeColor=#82b366;fontSize=14;fontStyle=1" vertex="1" parent="1">
           <mxGeometry x="20" y="910" width="860" height="260" as="geometry" />
         </mxCell>
-        <mxCell id="C1" value="全程 READY 端平行走: walk_to(stand − 0.12·fv), 故意瞄短 12cm 让停步前爬 (6~13cm) 带进站点" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
-          <mxGeometry x="110" y="60" width="640" height="50" as="geometry" />
+        <mxCell id="C1" value="动量段: READY 端平, 锁定朝向 walk_to(stand − 0.30·fv) — 行走本身准至 ±5cm, 散布全来自减速滑行" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
+          <mxGeometry x="110" y="45" width="640" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="C3" value="1s facing 稳定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
-          <mxGeometry x="110" y="160" width="640" height="40" as="geometry" />
+        <mxCell id="C2" value="2s IDLE 等滑行散尽" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
+          <mxGeometry x="110" y="110" width="640" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="eC1" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P2" source="C1" target="C3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="C3" value="deadband 爬行: speed=0.30 (实测 ~0.05m/s 近零动量), 50Hz 盯实时罐距, 刹车提前量 = 1.2s × 实测逼近速度" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="P2">
+          <mxGeometry x="110" y="160" width="640" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="eC1" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P2" source="C1" target="C2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eC2" style="edgeStyle=orthogonalEdgeStyle;html=1" edge="1" parent="P2" source="C2" target="C3"><mxGeometry relative="1" as="geometry" /></mxCell>
 
         <mxCell id="P3" value="P3 站位验收环 (单一目标点, ≤3 轮)" style="swimlane;html=1;startSize=30;fillColor=#fffdf5;strokeColor=#d6b656;fontSize=14;fontStyle=1" vertex="1" parent="1">
           <mxGeometry x="20" y="1200" width="860" height="570" as="geometry" />

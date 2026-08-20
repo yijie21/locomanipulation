@@ -22,9 +22,10 @@ flowchart TD
   end
 
   subgraph P2["P2 两段式接近"]
-    C1["全程 READY 端平行走: walk_to(stand − 0.12·fv), 故意瞄短 12cm 让停步前爬 (6~13cm) 带进站点"]
-    C3["1s facing 稳定"]
-    C1 --> C3
+    C1["动量段: READY 端平, 锁定朝向 walk_to(stand − 0.30·fv) — 行走本身准至 ±5cm, 散布全来自减速滑行"]
+    C2["2s IDLE 等滑行散尽"]
+    C3["deadband 爬行: speed=0.30 (实测 ~0.05m/s 近零动量), 50Hz 盯实时罐距, 刹车提前量 = 1.2s × 实测逼近速度"]
+    C1 --> C2 --> C3
   end
 
   subgraph P3["P3 站位验收环 (单一目标点, ≤3 轮)"]

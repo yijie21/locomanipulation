@@ -367,25 +367,6 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"yaw_err {yerr:+.0f} deg")
 
     rel_dbg("pre-walk ", p.obs())
-    # Two steps forward onto the stand. Aim 12 cm SHORT and bias every
-    # arrival error toward TOO FAR: the stop + settle creeps 6-13 cm
-    # forward, backward stepping barely moves (edge back-offs measured
-    # 0.13 -> 0.11 -> 0.11), while the forward depth-trim step is reliable
-    # — so land far and walk the remainder in.
-    walk_tgt = np.asarray(spawn_xy) - 0.12 * np.array(fv[:2])
-    if not p.walk_to(walk_tgt, stop_dist=0.06,
-                     timeout=10.0 + 8.0 * spawn_off):
-        return False, "[stand] fell during the walk-up"
-    rel_dbg("post-walk", p.obs())
-    for _ in range(int(1.0 / 0.02)):
-        p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
-        time.sleep(0.02)
-    rel_dbg("post-face", p.obs())
-    # No turn correction: the teleport already faces the sampled yaw, and a
-    # turn_to on a contamination-stale heading anchor sent the robot
-    # marching metres across the room (rel [6.66 +2.19] telemetry).
-    # HARD no-contact floor on the actual pose (the settle can drift).
-    s = p.obs()
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)
@@ -394,6 +375,54 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         return [c2 * dv2[0] + s2n * dv2[1], -s2n * dv2[0] + c2 * dv2[1],
                 grip_za - float(s2["pelvis"]["pos"][2])]
 
+    plan_r = float(np.hypot(rel[0], rel[1]))
+    # Two-stage arrival. The WALK is precise (telemetry: walk_to returns
+    # within 0.05 m of its target) — what scatters is the DECELERATION:
+    # 0.03-0.34 m of momentum creep lands AFTER walk_to returns. So stop
+    # the momentum walk 0.30 m short (heading held: face_target near a
+    # close target spun the robot 110-160 deg at the stop), wait 2 s for
+    # the creep to finish, then CRAWL the remainder inside the gait's
+    # deadband: a 0.30 speed command measures ~0.05 m/s, i.e. near-zero
+    # momentum, closed 50 Hz on the LIVE can depth — stop the tick it
+    # enters the plan band.
+    walk_tgt = np.asarray(spawn_xy) - 0.30 * np.array(fv[:2])
+    if not p.walk_to(walk_tgt, stop_dist=0.06,
+                     timeout=10.0 + 8.0 * spawn_off,
+                     face_target=False):
+        return False, "[stand] fell during the walk-up"
+    p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
+    rel_dbg("post-walk", p.obs())
+    crawl_end = time.time() + 12.0
+    v_est, last_x, last_t = 0.0, None, None
+    while time.time() < crawl_end:
+        s = p.obs()
+        if s["fallen"]:
+            return False, "[stand] fell during the crawl-in"
+        x_now = rel_now(s)[0]
+        t_now = time.time()
+        if last_x is not None and t_now > last_t + 1e-3:
+            v_inst = (last_x - x_now) / (t_now - last_t)
+            v_est = 0.9 * v_est + 0.1 * max(v_inst, 0.0)
+        last_x, last_t = x_now, t_now
+        # Speed-proportional brake lead: the stop carry is the stride
+        # finishing, so it scales with how fast the crawl is actually
+        # moving (measured 0.09 m carry off a slow crawl, 0.21 off a long
+        # one — no fixed threshold fits both). Lead = 1.2 s worth of the
+        # estimated approach speed.
+        lead = float(np.clip(1.2 * v_est, 0.02, 0.20))
+        if (x_now <= plan_r + lead
+                or edge_dist(p.pelvis_xy(s)) <= EDGE_MIN):
+            break
+        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
+                    movement=(fv[0], fv[1], 0.0), speed=0.30)
+        time.sleep(0.02)
+    p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=fv)
+    rel_dbg("post-crawl", p.obs())
+    # No turn correction: the teleport already faces the sampled yaw, and a
+    # turn_to on a contamination-stale heading anchor sent the robot
+    # marching metres across the room (rel [6.66 +2.19] telemetry).
+    # HARD no-contact floor on the actual pose (the settle can drift).
+    s = p.obs()
     # Unified stand correction. Edge clearance, map membership and depth
     # used to be three independent correctors on the same axis with
     # different setpoints — near the boundaries they triggered each other
@@ -412,7 +441,6 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # not step 2 cm anyway and its near-misses were accepted): edge
     # EDGE_MIN-0.03, envelope membership (not core — 2/24 batch), depth
     # plan_r+0.06.
-    plan_r = float(np.hypot(rel[0], rel[1]))
 
     def stand_from(s2):
         y2 = p.pelvis_yaw(s2)
