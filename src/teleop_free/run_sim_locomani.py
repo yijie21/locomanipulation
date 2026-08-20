@@ -157,6 +157,19 @@ def main(config: SimLoopConfig) -> None:
     wbc_config = config.load_wbc_yaml()
     wbc_config["ENV_NAME"] = config.env_name
     wbc_config["ROBOT_SCENE"] = scene_xml
+    # Hand type follows the composed scene (scene_lib.HAND): the dex1
+    # gripper has 2 actuated prismatic joints per hand instead of dex3's 7.
+    import scene_lib as _sl
+    wbc_config["NUM_HAND_MOTORS"] = _sl.NUM_HAND_MOTORS
+    wbc_config["NUM_HAND_JOINTS"] = _sl.NUM_HAND_MOTORS
+    if _sl.NUM_HAND_MOTORS == 2:
+        # The 43-entry effort list interleaves 7 dex3 hand efforts after
+        # each arm ([legs+waist 15][l-arm 7][l-hand 7][r-arm 7][r-hand 7]);
+        # dex1 has 2 prismatic fingers per hand (URDF effort 20 N).
+        e = wbc_config["motor_effort_limit_list"]
+        assert len(e) == 43, len(e)
+        wbc_config["motor_effort_limit_list"] = (
+            e[:22] + [20.0, 20.0] + e[29:36] + [20.0, 20.0])
     # Parallel instances: each sim+deploy pair gets its own DDS domain so
     # their unitree channels never cross on lo. Pairs with the deploy's
     # SONIC_DDS_DOMAIN patch.

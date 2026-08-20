@@ -44,12 +44,17 @@ PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
 
 # Everything distal of the wrist — used for the "is it actually grasped"
 # contact test.
-HAND_LINK_PREFIX = ("left_hand_", "right_hand_")
+HAND_LINK_PREFIX = ("left_hand_", "right_hand_",
+                    "left_dex1_", "right_dex1_")
 
-# Order matters: it is the order the 7 values in a `planner` message's
-# left/right_hand_joints field are interpreted in.
-HAND_JOINTS = ["thumb_0", "thumb_1", "thumb_2",
-               "middle_0", "middle_1", "index_0", "index_1"]
+# Order matters: it is the order the values in a `planner` message's
+# left/right_hand_joints field are interpreted in. Per hand type (HAND env):
+# dex3 = 7 finger joints; dex1 = the two prismatic gripper fingers.
+if os.environ.get("HAND", "dex1") == "dex1":
+    HAND_JOINTS = ["gripper_1", "gripper_2"]
+else:
+    HAND_JOINTS = ["thumb_0", "thumb_1", "thumb_2",
+                   "middle_0", "middle_1", "index_0", "index_1"]
 
 
 def _body_pose(model, data, bid: int):

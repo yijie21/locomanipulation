@@ -25,6 +25,8 @@ world-frame heading vector, planner loop line 1826-1830).
 
 from __future__ import annotations
 
+import os
+
 import collections
 import time
 
@@ -45,11 +47,20 @@ from privileged_pub import PrivilegedSubscriber
 CONTROL_HZ = 50.0
 DT = 1.0 / CONTROL_HZ
 
-# The G1 three-finger hand, in the joint order privileged_pub.HAND_JOINTS lists.
-# Signs are mirrored between hands because the joint axes are (see the ranges in
-# g1_29dof_with_hand.xml: left middle_0 is [-1.5708, 0], right is [0, 1.5708]).
-HAND_CLOSED_LEFT = np.array([0.5, 0.6, 1.2, -1.2, -1.3, -1.2, -1.3], dtype=np.float32)
-HAND_CLOSED_RIGHT = -HAND_CLOSED_LEFT
+# Hand close/open poses per hand type (HAND env, default dex1).
+# dex3: G1 three-finger hand, joint order per privileged_pub.HAND_JOINTS;
+# signs mirrored between hands (left middle_0 range [-1.5708,0], right
+# [0,1.5708]). dex1: two prismatic fingers, both commanded identically —
+# +0.0245 = 9.5 cm open, -0.02 = 0.6 cm closed; NOT mirrored.
+HAND_TYPE = os.environ.get("HAND", "dex1")
+if HAND_TYPE == "dex1":
+    HAND_CLOSED_LEFT = np.array([-0.02, -0.02, 0, 0, 0, 0, 0],
+                                dtype=np.float32)
+    HAND_CLOSED_RIGHT = HAND_CLOSED_LEFT.copy()
+else:
+    HAND_CLOSED_LEFT = np.array([0.5, 0.6, 1.2, -1.2, -1.3, -1.2, -1.3],
+                                dtype=np.float32)
+    HAND_CLOSED_RIGHT = -HAND_CLOSED_LEFT
 
 # Pre-grasp geometry, LEGS-style: a fixed offset from the object's known pose.
 # Approach the object from above, in three steps. A single reach straight to a
@@ -1051,7 +1062,9 @@ class Primitives:
             alpha = min(t / ramp, 1.0)
             if touched_at is not None:
                 alpha = min(touched_at + squeeze, 1.0)
-            self.cmd.set_hands(**{side: (closed * alpha).astype(np.float32)})
+            self.cmd.set_hands(**{side: (HAND_OPEN + alpha
+                                          * (closed - HAND_OPEN)
+                                          ).astype(np.float32)})
             s = self.obs()
             self._maintain_crouch(s)
             self.cmd.frame(mode=LocomotionMode.IDLE, facing=self._facing(s))

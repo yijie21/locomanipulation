@@ -54,9 +54,17 @@ NECK_LINK_LENGTH = 0.35
 # pico_manager prints this as its startup value.
 DEFAULT_COMPLIANCE = (0.5, 0.5, 0.0)
 
-N_HAND_JOINTS = 7
-HAND_OPEN = np.zeros(N_HAND_JOINTS, dtype=np.float32)
-HAND_CLOSED = np.full(N_HAND_JOINTS, 1.0, dtype=np.float32)
+N_HAND_JOINTS = 7          # WIRE width (deploy pass-through) — dex1 uses
+                           # only the first 2 entries (two prismatic fingers)
+HAND_TYPE = os.environ.get("HAND", "dex1")
+if HAND_TYPE == "dex1":
+    # Dex1 zero pose leaves a 4.58 cm jaw gap — SMALLER than the can.
+    # "Open" must be commanded explicitly (+0.0245 -> 9.5 cm).
+    HAND_OPEN = np.array([0.0245, 0.0245] + [0.0] * 5, dtype=np.float32)
+    HAND_CLOSED = np.array([-0.02, -0.02] + [0.0] * 5, dtype=np.float32)
+else:
+    HAND_OPEN = np.zeros(N_HAND_JOINTS, dtype=np.float32)
+    HAND_CLOSED = np.full(N_HAND_JOINTS, 1.0, dtype=np.float32)
 
 
 class LocomotionMode(IntEnum):

@@ -31,6 +31,7 @@ from primitives import (
     GRASP_CENTRE_OFFSET,
     HAND_CLOSED_LEFT,
     HAND_CLOSED_RIGHT,
+    HAND_OPEN,
     LIFT_HEIGHT,
     Primitives,
     wrap,
@@ -687,7 +688,7 @@ def place_streamed(p: Primitives, obj_key: str, drop_world,
         hold_w = np.array(s["palms"][side]["pos"])
         n = int(round(2.5 / DT))
         for k in range(n + 1):
-            arm.hands[side] = start * (1.0 - k / n)
+            arm.hands[side] = start + (HAND_OPEN - start) * (k / n)
             if k % 3 == 0:
                 s = p.state.latest(5) or s
                 palm_now = np.array(s["palms"][side]["pos"])
@@ -919,7 +920,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     # can until the 75 s deadline instead.
                     in_since = now
                 alpha = PRE_NARROW
-                arm.hands[side] = closed * alpha
+                arm.hands[side] = HAND_OPEN + alpha * (closed - HAND_OPEN)
             if float(np.linalg.norm(obj - obj_in0)) > 0.015:
                 backoff_until = now + 1.0
                 p.log("  stream: contact flinch, backing off to re-centre")
@@ -1075,7 +1076,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 close_tgt = obj_f - rot_t @ offset + trim_w
             tgt, v = close_tgt, 0.03
             alpha = min(1.0, alpha + dt / CLOSE_RAMP_S)
-            arm.hands[side] = closed * alpha
+            arm.hands[side] = HAND_OPEN + alpha * (closed - HAND_OPEN)
             # Latch contact only when SUSTAINED: a single-tick graze latched
             # contact_alpha early, capped the squeeze low, and the under-
             # gripped can dropped out during the lift.
