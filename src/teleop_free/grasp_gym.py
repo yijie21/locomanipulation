@@ -216,7 +216,7 @@ def main() -> None:
             ax, sgn = 0, float(np.sign(e0[0]))
         else:
             ax, sgn = 1, float(np.sign(e0[1]))
-        for _ in range(500):
+        for try_i in range(500):
             can_xy = can_nom.copy()
             can_xy[ax] = cxy[ax] + sgn * (half[ax]
                                           - rng.uniform(*CAN_INBOARD))
@@ -232,7 +232,13 @@ def main() -> None:
             c, s = np.cos(psi), np.sin(psi)
             stand = can_xy - np.array([c * rel[0] - s * rel[1],
                                        s * rel[0] + c * rel[1]])
-            if not (EDGE_MIN <= edge_dist(stand) <= EDGE_MAX):
+            # Prefer slack over the bare floor: a stand SAMPLED at edge
+            # 0.17 exactly leaves the +-4 cm execution scatter nowhere to
+            # land (the edge-hold retry loop — a yaw -90 draw spent six
+            # re-approaches hovering at 0.11-0.15). First 300 tries demand
+            # 3 cm of headroom; only then fall back to the bare band.
+            edge_lo = EDGE_MIN + (0.03 if try_i < 300 else 0.0)
+            if not (edge_lo <= edge_dist(stand) <= EDGE_MAX):
                 continue
             # The WALK must clear the table too: the batch's "fell during
             # the walk-up" class was the robot brushing the table edge on
@@ -380,25 +386,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # marching metres across the room (rel [6.66 +2.19] telemetry).
     # HARD no-contact floor on the actual pose (the settle can drift).
     s = p.obs()
-    # Back-off loop: the forward creep near the table decays over a few
-    # seconds, so one back-off + one re-check kept failing stands the creep
-    # had already re-eaten (5x/batch). Step back (heading held — walk_to
-    # would pivot at the table edge, which fell 3x), settle 2 s, re-measure,
-    # up to three times.
-    for _ in range(3):
-        ed = edge_dist(p.pelvis_xy(s))
-        if ed >= EDGE_MIN - 0.01:
-            break
-        p.log(f"[gym] arrival {ed:.2f} m from the edge — backing off")
-        back_tgt = p.pelvis_xy(s) - np.array(fv[:2]) * (0.18 - ed)
-        if not p.walk_to(back_tgt, stop_dist=0.04, timeout=8.0,
-                         face_target=False):
-            return False, "[stand] fell while backing off the table edge"
-        p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
-        s = p.obs()
-    else:
-        if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.03:
-            return False, "[stand] could not hold the edge clearance"
+
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)
         c2, s2n = np.cos(y2), np.sin(y2)
@@ -406,47 +394,60 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         return [c2 * dv2[0] + s2n * dv2[1], -s2n * dv2[0] + c2 * dv2[1],
                 grip_za - float(s2["pelvis"]["pos"][2])]
 
-    # Arrival criterion is the ENVELOPE on purpose: the plan AIMS at a core
-    # cell, but the scatter tolerance around it was measured against the
-    # envelope boundary (plan_core_stand's margin) — demanding core
-    # membership at arrival turned +-10 cm walk-up scatter into corrective
-    # steps (and their falls) on nearly every round (2/24 batch).
-    rel_a = rel_now(s)
-    if not rm.graspable(rel_a, "right"):
-        # One corrective step: the walk-up lands with +-10 cm of scatter and
-        # the right-arm map is narrow — re-derive the stand that realizes
-        # the SAMPLED rel from where the can and the yaw actually are.
-        y2 = p.pelvis_yaw(s)
-        c2, s2n = np.cos(y2), np.sin(y2)
-        stand2 = (p.object_pos(obj_key, s)[:2]
-                  - np.array([c2 * rel[0] - s2n * rel[1],
-                              s2n * rel[0] + c2 * rel[1]]))
-        p.log(f"[gym] arrival rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}] out of "
-              "the map — corrective step")
-        if not p.walk_to(stand2, stop_dist=0.05, timeout=8.0,
-                         face_target=False):
-            return False, "[stand] fell during the corrective step"
-        p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
-        s = p.obs()
-        if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.01:
-            return False, "[stand] could not hold the edge clearance"
-        rel_a = rel_now(s)
-        if not rm.graspable(rel_a, "right"):
-            return False, (f"[stand] arrival left the object out of reach "
-                           f"(rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}])")
-
-    # Depth trim: a grip deeper than 0.26 sits at the servo's walk-in band
-    # edge (in-phase thrash) and past the waist-clamped arm (palm lags its
-    # ref ~8 cm at res 0 — the missing piece is waist lean the policy will
-    # not deliver). Step in just enough, never below the edge floor.
-    # Threshold follows the PLANNED stand distance: only genuine overshoot
-    # past the plan gets pulled back, never the deliberately-far stand.
+    # Unified stand correction. Edge clearance, map membership and depth
+    # used to be three independent correctors on the same axis with
+    # different setpoints — near the boundaries they triggered each other
+    # (the visible pacing). Micro-steps are no fix either: 5-15 cm
+    # commands are bimodal on SONIC (small ones stall, larger ones stride
+    # 2-3x past — a 12 cm back command measured 29 cm), so iterating on
+    # them oscillated. What IS accurate is a 0.4 m+ walk, i.e. the main
+    # approach itself. So: ONE target (the stand that realizes the
+    # SAMPLED rel from the actual can pose/yaw, clamped back along the
+    # facing until the edge keeps EDGE_MIN), and per violation ONE of two
+    # proven moves — pure overshoot past the plan gets the old one-step
+    # forward trim; anything needing net backward/lateral motion gets a
+    # full re-approach (retreat 0.45 m, walk back in with the same -0.12
+    # far bias as the main walk). Trigger thresholds are the LENIENT
+    # floors the 18/24 batches actually ran at (the old back-off could
+    # not step 2 cm anyway and its near-misses were accepted): edge
+    # EDGE_MIN-0.03, envelope membership (not core — 2/24 batch), depth
+    # plan_r+0.06.
     plan_r = float(np.hypot(rel[0], rel[1]))
-    if rel_a[0] > plan_r + 0.04:
-        s = p.obs()
-        step = min(rel_a[0] - plan_r,
-                   edge_dist(p.pelvis_xy(s)) - EDGE_MIN)
-        if step > 0.02:
+
+    def stand_from(s2):
+        y2 = p.pelvis_yaw(s2)
+        c2, s2n = np.cos(y2), np.sin(y2)
+        st2 = (p.object_pos(obj_key, s2)[:2]
+               - np.array([c2 * rel[0] - s2n * rel[1],
+                           s2n * rel[0] + c2 * rel[1]]))
+        # Clamp to 2 cm ABOVE the floor, not the floor itself: the accept
+        # threshold is EDGE_MIN-0.03 and execution scatters +-4 cm, so a
+        # target at the floor lands half its attempts below acceptance.
+        # The extra depth this costs sits inside the +0.06 depth band.
+        short = (EDGE_MIN + 0.02) - edge_dist(st2)
+        if short > 0:
+            st2 = st2 - np.array(fv[:2]) * short
+        return st2
+
+    for _ in range(3):
+        rel_a = rel_now(s)
+        ed = edge_dist(p.pelvis_xy(s))
+        bad_edge = ed < EDGE_MIN - 0.03
+        # Bearing: an arrival 60+ deg off-axis is still IN the envelope
+        # (lateral cells exist) but the ego camera loses the can — that
+        # was a [view] episode fail; catch it here and re-approach.
+        bad_map = (not rm.graspable(rel_a, "right")
+                   or abs(np.arctan2(rel_a[1], rel_a[0]))
+                   > np.deg2rad(45.0))
+        too_deep = rel_a[0] > plan_r + 0.06
+        if not (bad_edge or bad_map or too_deep):
+            break
+        stand2 = stand_from(s)
+        if too_deep and not (bad_edge or bad_map):
+            step = min(rel_a[0] - plan_r,
+                       edge_dist(p.pelvis_xy(s)) - EDGE_MIN)
+            if step <= 0.02:
+                break
             p.log(f"[gym] depth trim: rel x {rel_a[0]:.2f} — stepping in "
                   f"{step * 100:.0f} cm")
             tgt = np.asarray(p.pelvis_xy(s)) + np.array(fv[:2]) * step
@@ -454,6 +455,35 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                              face_target=False):
                 return False, "[stand] fell during the depth trim"
             p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
+        else:
+            p.log(f"[gym] stand correct: rel [{rel_a[0]:.2f} "
+                  f"{rel_a[1]:+.2f}] edge {ed:.2f} — re-approach")
+            far_pt = stand2 - 0.45 * np.array(fv[:2])
+            if not p.walk_to(far_pt, stop_dist=0.06, timeout=10.0,
+                             face_target=False):
+                return False, "[stand] fell during the stand correction"
+            p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
+            s = p.obs()
+            stand2 = stand_from(s)
+            # -0.18, not the main walk's -0.12: correction re-approaches
+            # start table-adjacent where the stop creep measured ~20 cm
+            # (three -0.12 re-approaches in a row landed 8 cm short).
+            # Landing far is safe — the forward depth trim is the one
+            # reliable micro-step and closes the remainder.
+            if not p.walk_to(stand2 - 0.18 * np.array(fv[:2]),
+                             stop_dist=0.06, timeout=10.0,
+                             face_target=False):
+                return False, "[stand] fell during the stand correction"
+            for _ in range(int(1.0 / 0.02)):
+                p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
+                time.sleep(0.02)
+        s = p.obs()
+    rel_a = rel_now(s)
+    if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.03:
+        return False, "[stand] could not hold the edge clearance"
+    if not rm.graspable(rel_a, "right"):
+        return False, (f"[stand] arrival left the object out of reach "
+                       f"(rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}])")
 
     # -- the grasp, same path as collect_episode ---------------------------
     st = p.obs()
