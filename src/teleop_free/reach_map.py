@@ -358,16 +358,30 @@ class ReachMap:
                                 # era: the servo's depth band now follows
                                 # the plan (plan_r), so only the hard
                                 # pregrasp-staging wall (~0.36) remains
-        best = None
-        for dz, pts, margs in layers:
-            r = np.hypot(pts[:, 0], pts[:, 1])
-            use = (margs >= min_margin) & (r <= R_CAP)
-            if not use.any():
-                continue
-            r_max = float(r[use].max())
-            if best is None or r_max > best[0]:
-                far = use & (r >= r_max - 0.03)
-                best = (r_max, pts[far], dz, float(margs[far].max()))
+        # Hand-side bias: a can on the torso centreline forces the arm to
+        # reach ACROSS the chest (wrist yaw at its limit — the "twisted"
+        # pregrasp), while a can in front of the shoulder is a short
+        # straight entry. Prefer aim cells >= 6 cm on the grasping arm's
+        # side; the ego cone (33 deg < the ~36.7 deg view gate) already
+        # bounds how far out they can sit. Fall back to the full band only
+        # when no layer has side cells.
+        def _pick(side_only):
+            best = None
+            for dz, pts, margs in layers:
+                r = np.hypot(pts[:, 0], pts[:, 1])
+                use = (margs >= min_margin) & (r <= R_CAP)
+                if side_only:
+                    use &= (pts[:, 1] <= -0.06 if arm == "right"
+                            else pts[:, 1] >= 0.06)
+                if not use.any():
+                    continue
+                r_max = float(r[use].max())
+                if best is None or r_max > best[0]:
+                    far = use & (r >= r_max - 0.03)
+                    best = (r_max, pts[far], dz, float(margs[far].max()))
+            return best
+
+        best = _pick(True) or _pick(False)
         if best is None:
             dz, pts, margs = max(layers, key=lambda l: float(l[2].max()))
             return pts[margs >= margs.max()], dz, float(margs.max())
