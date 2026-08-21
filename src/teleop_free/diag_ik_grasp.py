@@ -139,12 +139,25 @@ def main() -> None:
             R = data.xmat[pelvis_b].reshape(3, 3).copy()
             grip_pf = pts[rng.integers(len(pts))]
             grip_w = P + R @ grip_pf
-            yaw = float(rng.uniform(-np.pi, np.pi))
-            # the can's grip point sits GRIP_BELOW_RIM under its rim
-            c_z = grip_w[2] - (can["height"] / 2.0 - grasping.GRIP_BELOW_RIM)
-            data.qpos[can_adr:can_adr + 3] = [grip_w[0], grip_w[1], c_z]
-            data.qpos[can_adr + 3:can_adr + 7] = [np.cos(yaw / 2), 0, 0,
-                                                  np.sin(yaw / 2)]
+            # FULL random orientation (uniform on SO(3), Shoemake), not just
+            # yaw: a tilted can is what tests the planner's jaw-tilt gate and
+            # the entry geometry. The live scene only ever spawns cans
+            # upright, so this is strictly harder than the real task.
+            u1, u2, u3 = rng.random(3)
+            quat = np.array([np.sqrt(u1) * np.cos(2 * np.pi * u3),
+                             np.sqrt(1 - u1) * np.sin(2 * np.pi * u2),
+                             np.sqrt(1 - u1) * np.cos(2 * np.pi * u2),
+                             np.sqrt(u1) * np.sin(2 * np.pi * u3)])
+            cR = np.empty(9)
+            mujoco.mju_quat2Mat(cR, quat)
+            axis_w = cR.reshape(3, 3) @ np.array([0.0, 0.0, 1.0])
+            tilt = float(np.degrees(np.arccos(np.clip(abs(axis_w[2]), -1, 1))))
+            # The grip point sits GRIP_BELOW_RIM under the rim ALONG THE CAN'S
+            # OWN AXIS — with a tilted can that is no longer a z offset.
+            centre = grip_w - axis_w * (can["height"] / 2.0
+                                        - grasping.GRIP_BELOW_RIM)
+            data.qpos[can_adr:can_adr + 3] = centre
+            data.qpos[can_adr + 3:can_adr + 7] = quat
             mujoco.mj_forward(model, data)
 
             # -- plan, exactly like the live pipeline -----------------------
@@ -156,11 +169,13 @@ def main() -> None:
             shoulder = P + R @ np.array([0.0, -0.31, 0.44])
             plan = adaptive_grasp.plan(
                 grip_w, v_start, palm_R, surf_top, box=can["box"],
+                obj_axis=axis_w,
                 obj_rot=data.xmat[can_b].reshape(3, 3).copy(),
                 azimuth_from=shoulder,
                 avoid_dir=np.array([d_h[0], d_h[1], 0.0]), avoid_sign=1.0)
             if not plan.ok:
-                rows.append((t, grip_pf, None, None, None, None, f"PLAN {plan.why}"))
+                rows.append((t, grip_pf, tilt, None, None, None, None,
+                             f"PLAN REJECTED: {plan.why}"))
                 continue
             if ghost_m >= 0:
                 gq = np.empty(4)
@@ -229,7 +244,7 @@ def main() -> None:
                     img = cv2.cvtColor(r.render(), cv2.COLOR_RGB2BGR)
                     lines = [f"trial {t + 1}/{args.trials}   core cell (pelvis) "
                              f"[{grip_pf[0]:+.2f} {grip_pf[1]:+.2f} {grip_pf[2]:+.2f}]"
-                             f"   can yaw {np.degrees(yaw):+.0f}deg",
+                             f"   can tilt {tilt:.0f}deg",
                              f"IK res {res_last * 100:.1f}cm   jaw-centre err "
                              f"{e_jaw * 100:.1f}cm   palm rot err {e_rot:.0f}deg"
                              f"   worst joint margin {marg:.0f}deg"
@@ -243,29 +258,34 @@ def main() -> None:
                     cv2.imwrite(f"{TMP}/f_{frames:05d}.png", img)
                     frames += 1
             pre_c = sorted(touch["flight"] | touch["entry"])
-            rows.append((t, grip_pf, res_last, e_jaw, e_rot, marg,
+            rows.append((t, grip_pf, tilt, res_last, e_jaw, e_rot, marg,
                          ("in jaw" if inside else "NOT IN JAW")
                          + (f"; pre-contact {pre_c}" if pre_c else "")
                          + ("" if touch["close"] else "; CLOSED ON NOTHING")))
 
-    print(f"\n{'#':>3} {'core cell (pelvis)':>26} {'IKres':>7} {'jawErr':>7} "
-          f"{'rotErr':>7} {'margin':>7}  verdict")
-    for t, c, res, ej, er, mg, note in rows:
+    print(f"\n{'#':>3} {'core cell (pelvis)':>26} {'tilt':>5} {'IKres':>7} "
+          f"{'jawErr':>7} {'rotErr':>7} {'margin':>7}  verdict")
+    for t, c, ti, res, ej, er, mg, note in rows:
         cell = f"[{c[0]:+.2f} {c[1]:+.2f} {c[2]:+.2f}]"
         if res is None:
-            print(f"{t + 1:>3} {cell:>26} {'-':>7} {'-':>7} {'-':>7} {'-':>7}  {note}")
+            print(f"{t + 1:>3} {cell:>26} {ti:>4.0f}d {'-':>7} {'-':>7} "
+                  f"{'-':>7} {'-':>7}  {note}")
         else:
-            print(f"{t + 1:>3} {cell:>26} {res * 100:>6.1f}c {ej * 100:>6.1f}c "
-                  f"{er:>6.0f}d {mg:>6.0f}d  {note}")
-    ok = [r for r in rows if r[2] is not None]
+            print(f"{t + 1:>3} {cell:>26} {ti:>4.0f}d {res * 100:>6.1f}c "
+                  f"{ej * 100:>6.1f}c {er:>6.0f}d {mg:>6.0f}d  {note}")
+    rej = [r for r in rows if r[3] is None]
+    if rej:
+        print(f"\n规划直接拒绝 {len(rej)}/{len(rows)}  倾角 "
+              f"{sorted(round(r[2]) for r in rej)} deg")
+    ok = [r for r in rows if r[3] is not None]
     if ok:
-        print(f"\n在爪内 {sum('NOT IN JAW' not in r[6] for r in ok)}/{len(ok)}   "
-              f"进入途中撞到罐子 {sum('pre-contact' in r[6] for r in ok)}/{len(ok)}   "
-              f"闭合无接触 {sum('NOTHING' in r[6] for r in ok)}/{len(ok)}\n"
-              f"IK 残差中位 {np.median([r[2] for r in ok]) * 100:.2f} cm   "
-              f"jaw 误差中位 {np.median([r[3] for r in ok]) * 100:.2f} cm   "
-              f"姿态误差中位 {np.median([r[4] for r in ok]):.1f} deg   "
-              f"最差关节裕量中位 {np.median([r[5] for r in ok]):.0f} deg")
+        print(f"\n在爪内 {sum('NOT IN JAW' not in r[7] for r in ok)}/{len(ok)}   "
+              f"进入途中撞到罐子 {sum('pre-contact' in r[7] for r in ok)}/{len(ok)}   "
+              f"闭合无接触 {sum('NOTHING' in r[7] for r in ok)}/{len(ok)}\n"
+              f"IK 残差中位 {np.median([r[3] for r in ok]) * 100:.2f} cm   "
+              f"jaw 误差中位 {np.median([r[4] for r in ok]) * 100:.2f} cm   "
+              f"姿态误差中位 {np.median([r[5] for r in ok]):.1f} deg   "
+              f"最差关节裕量中位 {np.median([r[6] for r in ok]):.0f} deg")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS),
                     "-i", f"{TMP}/f_%05d.png", "-vf", "format=yuv420p",
                     "-c:v", "libx264", "-crf", "23", OUT], check=True)
