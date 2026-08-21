@@ -470,138 +470,128 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # representable. (The CORE margin is 0 everywhere at this height: the
     # sweet zone is too thin below the pelvis, so the test is against the
     # full envelope.)
+    # ONE monotone approach, stopped by a MEASUREMENT instead of a plan,
+    # and re-entrant. The old arrival walked to a point 0.30 m short of the
+    # planned stand, waited out the creep, then crawled against that plan;
+    # for VLA data the setpoint is the problem, because it is a hidden
+    # variable and two near-identical ego frames then carry opposite
+    # actions. Here the plan only sets the LINE -- that is what puts the
+    # can on the right-hand side -- while the STOP is rm.margin() on the
+    # live can, a property of the scene the camera can see.
+    #
+    # Re-entrant matters as much as monotone. When the arrival left the can
+    # a little too far, the old corrector commanded an open-loop "depth
+    # trim" -- and SONIC micro-steps overshoot 2-3x, so a 15 cm trim
+    # measured 27 cm, put the robot inside the edge floor, and the
+    # corrector then backed 0.45 m out and rewalked. Stop-a-little-far ->
+    # trim -> overshoot -> retreat -> stop-a-little-far IS the pacing.
+    # Running this gate-stopped walk again cannot overshoot the gate.
     MARGIN_STOP = 0.075
-    APPR_COARSE, APPR_SHUFFLE, SHUFFLE_BAND = 0.26, 0.20, 0.12
-    appr_end = time.time() + 45.0
-    why, stall_x, stall_t = "timeout", None, time.time()
-    while time.time() < appr_end:
-        s = p.obs()
-        if s["fallen"]:
-            return False, "[stand] fell during the approach"
-        r = rel_now(s)
-        raise_arm(s, float(np.linalg.norm(
-            np.asarray(spawn_xy) - p.pelvis_xy(s))))
-        if rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP:
-            why = "can reachable"
-            break
-        if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN:
-            why = "edge floor"
-            break
-        if stall_x is None or stall_x - r[0] > 0.015:
-            stall_x, stall_t = r[0], time.time()
-        elif time.time() - stall_t > 5.0:
-            why = "stalled"
-            break
-        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
-                    movement=(fv[0], fv[1], 0.0),
-                    speed=(APPR_SHUFFLE if r[0] - plan_r <= SHUFFLE_BAND
-                           else APPR_COARSE))
-        time.sleep(0.02)
-    # Finish whatever is left of the arm ramp smoothly -- the stop can fire
-    # before the ramp completes, and the deploy substitutes the 17 joints
-    # verbatim, so a snap to READY here would be a step in the reference.
-    q_now = upper_body_from_mj(p.obs()["joints"])
-    for k in range(1, 41):
-        u = k / 40.0
-        p.cmd.set_upper_body(q_now + (3 * u * u - 2 * u ** 3)
-                             * (READY_UPPER - q_now))
-        p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
-        time.sleep(0.02)
-    p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=fv)
-    p.log(f"[gym] approach: exit={why} at rel x "
-          f"{rel_now(p.obs())[0]:.2f} (plan_r {plan_r:.2f})")
-    rel_dbg("post-approach", p.obs())
-    # No turn correction: the teleport already faces the sampled yaw, and a
-    # turn_to on a contamination-stale heading anchor sent the robot
-    # marching metres across the room (rel [6.66 +2.19] telemetry).
-    # HARD no-contact floor on the actual pose (the settle can drift).
-    s = p.obs()
-    # Unified stand correction. Edge clearance, map membership and depth
-    # used to be three independent correctors on the same axis with
-    # different setpoints — near the boundaries they triggered each other
-    # (the visible pacing). Micro-steps are no fix either: 5-15 cm
-    # commands are bimodal on SONIC (small ones stall, larger ones stride
-    # 2-3x past — a 12 cm back command measured 29 cm), so iterating on
-    # them oscillated. What IS accurate is a 0.4 m+ walk, i.e. the main
-    # approach itself. So: ONE target (the stand that realizes the
-    # SAMPLED rel from the actual can pose/yaw, clamped back along the
-    # facing until the edge keeps EDGE_MIN), and per violation ONE of two
-    # proven moves — pure overshoot past the plan gets the old one-step
-    # forward trim; anything needing net backward/lateral motion gets a
-    # full re-approach (retreat 0.45 m, walk back in with the same -0.12
-    # far bias as the main walk). Trigger thresholds are the LENIENT
-    # floors the 18/24 batches actually ran at (the old back-off could
-    # not step 2 cm anyway and its near-misses were accepted): edge
-    # EDGE_MIN-0.03, envelope membership (not core — 2/24 batch), depth
-    # plan_r+0.06.
+    EDGE_LEAD = 0.06           # brake lead on the edge floor
+    # Three speed bands, from the measured gait quantum (diag_shuffle.py):
+    #   0.26  -> 0.155 m/s, 11 cm per step
+    #   0.215 -> 0.040 m/s,  5 cm per step
+    #   0.20  -> 0.013 m/s,  1-2 cm per step
+    # The gate fires at x 0.37-0.42 (matching the offline margin profile),
+    # so the braking has to be DONE by then. With a single 0.12 m shuffle
+    # band the robot only slowed at x 0.43 and an 11 cm coarse stride was
+    # still in flight when the gate fired: measured carry 0.08-0.24 m, and
+    # every round whose carry passed ~0.15 m ended inside the edge floor.
+    APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.26, 0.215, 0.20
+    MID_BAND, SHUFFLE_BAND = 0.30, 0.10
 
-    def stand_from(s2):
-        y2 = p.pelvis_yaw(s2)
-        c2, s2n = np.cos(y2), np.sin(y2)
-        st2 = (p.object_pos(obj_key, s2)[:2]
-               - np.array([c2 * rel[0] - s2n * rel[1],
-                           s2n * rel[0] + c2 * rel[1]]))
-        # Clamp to 2 cm ABOVE the floor, not the floor itself: the accept
-        # threshold is EDGE_MIN-0.03 and execution scatters +-4 cm, so a
-        # target at the floor lands half its attempts below acceptance.
-        # The extra depth this costs sits inside the +0.06 depth band.
-        short = (EDGE_MIN + 0.02) - edge_dist(st2)
-        if short > 0:
-            st2 = st2 - np.array(fv[:2]) * short
-        return st2
-
-    for _ in range(3):
-        rel_a = rel_now(s)
-        ed = edge_dist(p.pelvis_xy(s))
-        bad_edge = ed < EDGE_MIN - 0.03
-        # Bearing: an arrival 60+ deg off-axis is still IN the envelope
-        # (lateral cells exist) but the ego camera loses the can — that
-        # was a [view] episode fail; catch it here and re-approach.
-        bad_map = (not rm.graspable(rel_a, "right")
-                   or abs(np.arctan2(rel_a[1], rel_a[0]))
-                   > np.deg2rad(45.0))
-        too_deep = rel_a[0] > plan_r + 0.06
-        if not (bad_edge or bad_map or too_deep):
-            break
-        stand2 = stand_from(s)
-        if too_deep and not (bad_edge or bad_map):
-            step = min(rel_a[0] - plan_r,
-                       edge_dist(p.pelvis_xy(s)) - EDGE_MIN)
-            if step <= 0.02:
-                break
-            p.log(f"[gym] depth trim: rel x {rel_a[0]:.2f} — stepping in "
-                  f"{step * 100:.0f} cm")
-            tgt = np.asarray(p.pelvis_xy(s)) + np.array(fv[:2]) * step
-            if not p.walk_to(tgt, stop_dist=0.03, timeout=6.0,
-                             face_target=False):
-                return False, "[stand] fell during the depth trim"
-            p.cmd.hold(0.8, mode=LocomotionMode.IDLE, facing=fv)
-        else:
-            p.log(f"[gym] stand correct: rel [{rel_a[0]:.2f} "
-                  f"{rel_a[1]:+.2f}] edge {ed:.2f} — re-approach")
-            far_pt = stand2 - 0.45 * np.array(fv[:2])
-            if not p.walk_to(far_pt, stop_dist=0.06, timeout=10.0,
-                             face_target=False):
-                return False, "[stand] fell during the stand correction"
-            p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
+    def do_approach(seconds: float, ramp: bool) -> str:
+        appr_end = time.time() + seconds
+        why, stall_x, stall_t = "timeout", None, time.time()
+        brake_x, brake_e = float("nan"), float("nan")
+        while time.time() < appr_end:
             s = p.obs()
-            stand2 = stand_from(s)
-            # -0.18, not the main walk's -0.12: correction re-approaches
-            # start table-adjacent where the stop creep measured ~20 cm
-            # (three -0.12 re-approaches in a row landed 8 cm short).
-            # Landing far is safe — the forward depth trim is the one
-            # reliable micro-step and closes the remainder.
-            if not p.walk_to(stand2 - 0.18 * np.array(fv[:2]),
-                             stop_dist=0.06, timeout=10.0,
-                             face_target=False):
-                return False, "[stand] fell during the stand correction"
-            for _ in range(int(1.0 / 0.02)):
+            if s["fallen"]:
+                return "fell"
+            r = rel_now(s)
+            if ramp:
+                raise_arm(s, float(np.linalg.norm(
+                    np.asarray(spawn_xy) - p.pelvis_xy(s))))
+            if rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP:
+                why = "can reachable"
+                brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
+                break
+            if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN + EDGE_LEAD:
+                why = "edge floor"
+                brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
+                break
+            if stall_x is None or stall_x - r[0] > 0.015:
+                stall_x, stall_t = r[0], time.time()
+            elif time.time() - stall_t > 5.0:
+                why = "stalled"
+                break
+            # STEER at the planned stand, do not just push along the
+            # heading. Pushing along fv was the first version of this loop
+            # and it lost the lateral geometry: sideways error persisted,
+            # the can drifted onto the centreline (measured rel y +0.14
+            # where the plan wanted -0.12), the right arm's envelope is
+            # narrower there so the gate fired late, and the walk ran on to
+            # the edge floor -- which is what the corrector then backed out
+            # of.
+            to_stand = np.asarray(spawn_xy) - p.pelvis_xy(s)
+            n_ts = float(np.linalg.norm(to_stand))
+            mv = to_stand / n_ts if n_ts > 1e-3 else np.array(fv[:2])
+            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
+                        movement=(float(mv[0]), float(mv[1]), 0.0),
+                        speed=(APPR_SHUFFLE if r[0] - plan_r <= SHUFFLE_BAND
+                               else APPR_MID if r[0] - plan_r <= MID_BAND
+                               else APPR_COARSE))
+            time.sleep(0.02)
+        if ramp:
+            # Finish whatever is left of the arm ramp smoothly: the stop can
+            # fire before the ramp completes, and the deploy substitutes the
+            # 17 joints verbatim, so a snap to READY would be a step.
+            q_now = upper_body_from_mj(p.obs()["joints"])
+            for k in range(1, 41):
+                u = k / 40.0
+                p.cmd.set_upper_body(q_now + (3 * u * u - 2 * u ** 3)
+                                     * (READY_UPPER - q_now))
                 p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
                 time.sleep(0.02)
+        p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=fv)
+        x_end = rel_now(p.obs())[0]
+        p.log(f"[gym] approach: exit={why} braked at x {brake_x:.2f} "
+              f"edge {brake_e:.2f} -> stopped x {x_end:.2f} "
+              f"edge {edge_dist(p.pelvis_xy(p.obs())):.2f} "
+              f"(carry {brake_x - x_end:+.2f}, plan_r {plan_r:.2f})")
+        rel_dbg("post-approach", p.obs())
+
+        return why
+
+    if do_approach(45.0, ramp=True) == "fell":
+        return False, "[stand] fell during the approach"
+
+    # FORWARD-ONLY repair. Too far -> walk in again on the same gate. Too
+    # close, or laterally off -> ACCEPT: 12 rounds that stopped anywhere
+    # from x 0.15 to 0.46 (edge 0.09 to 0.35) went 12/12 with ZERO
+    # furniture contacts, so the arm absorbs the arrival scatter, which is
+    # where that precision belongs. Nothing in an episode walks backwards
+    # any more except the deliberate post-grasp back-off.
+    for _ in range(2):
         s = p.obs()
+        rel_a = rel_now(s)
+        too_far = (rel_a[0] > plan_r + 0.06
+                   or not rm.graspable(rel_a, "right"))
+        if not too_far:
+            break
+        p.log(f"[gym] still far: rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}] "
+              f"— walking in again")
+        if do_approach(12.0, ramp=False) == "fell":
+            return False, "[stand] fell walking in again"
+    s = p.obs()
     rel_a = rel_now(s)
-    if edge_dist(p.pelvis_xy(s)) < EDGE_MIN - 0.03:
-        return False, "[stand] could not hold the edge clearance"
+    # A real safety floor, not the planning floor. EDGE_MIN (0.17) is where
+    # the PLANNER aims; rounds that actually stopped at edge 0.09-0.17 went
+    # 12/12 with zero furniture contacts in the whole batch, so failing them
+    # here would only discard good episodes now that nothing backs up to
+    # rescue them.
+    if edge_dist(p.pelvis_xy(s)) < 0.06:
+        return False, "[stand] pelvis ended against the table edge"
     if not rm.graspable(rel_a, "right"):
         return False, (f"[stand] arrival left the object out of reach "
                        f"(rel [{rel_a[0]:.2f} {rel_a[1]:+.2f}])")
