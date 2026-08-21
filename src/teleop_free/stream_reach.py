@@ -1313,22 +1313,15 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     arm = StreamedArm(p, side)
     arm.start()
     try:
-        # Clear the IDLE arm before crouching — but SIDEWAYS, not up. The
-        # crouch sinks whatever the arms hold: the idle arm frozen at the
-        # level-forearm READY pose ended inside the tabletop
-        # (FURN[wrist_yaw] on the non-servo side), and the old fix bounced
-        # BOTH arms upward first, which read as a robotic "lift" tic. A
-        # shoulder-yaw sweep moves the level forearm horizontally over the
-        # free flank (FK: wrist x 0.20 -> 0.07, z unchanged): no bounce,
-        # and after a 13 cm sink the hand sits at ~0.80 m, still above
-        # every tabletop and BEHIND the table edge line.
-        other = "left" if side == "right" else "right"
-        q_t = arm.q.copy()
-        roll = 0.35 if other == "left" else -0.35
-        yaw_out = 1.2 if other == "left" else -1.2
-        q_t[ARM_MJ[other]] = [0.0, roll, yaw_out, 0.0, 0.0, 0.0, 0.0]
-        arm.move_to(q_t, speed=1.0)
-        # The SERVO arm gets no pre-lift at all: squat(track=True) below
+        # The IDLE arm is left ALONE — no sweep, no pre-lift. It rides the
+        # crouch at the READY pose, and that clears the tabletop with room
+        # to spare: measured on the true hand meshes (not the bounding
+        # spheres, which sit 6.2 cm low and drove an earlier sideways
+        # sweep), its lowest point is pelvis +0.065, i.e. 0.698 m world
+        # after a 16 cm squat and 0.663 m at the 19.5 cm floor — above
+        # both tabletops (0.62 / 0.66). The old FURN[wrist_yaw] contacts
+        # came from the deep-squat era standing 7 cm closer.
+        # The SERVO arm gets no pre-lift either: squat(track=True) below
         # holds its palm at the CURRENT world pose via live IK while the
         # legs fold under it — the grasp trajectory then starts from
         # exactly where the hand already is.
