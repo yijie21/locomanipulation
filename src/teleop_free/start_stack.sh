@@ -84,15 +84,29 @@ cd "$SONIC_DEPLOY_ROOT" || exit 1
 # the obs-config has to travel with it; the deploy binary already knows the
 # names. First run rebuilds the TensorRT engines, which takes ~10 min.
 #
-# TESTED AND REVERTED. v1.1 loads cleanly — every observation dimension matches
-# (encoder 1751, decoder 994) and the same planner_sonic.onnx serves both — but
-# the robot cannot use it through this interface: 4 of 8 episodes failed to
-# stand at all and the other 4 could not walk ("no progress for 8s", 1.0-1.3 m
-# of field left). Dimensions matching while behaviour collapses points at the
-# heading normalization: v1.1 expects reference orientations relative to the
-# robot's heading, and every `facing` this pipeline sends is a WORLD-frame
-# heading vector. Adopting v1.1 means re-deriving that convention, not swapping
-# a file. Set SONIC_POLICY=policy/sonic_v1_1 to pick the experiment back up.
+# RETESTED 2026-08-21 and now WORKING. The earlier note here blamed the
+# facing convention ("v1.1 expects reference orientations relative to the
+# robot's heading, every `facing` we send is world-frame") — wrong on the
+# mechanism: the heading-normalized observations are computed inside the
+# deploy from the robot's own pelvis quaternion
+# (g1_deploy_onnx_ref.cpp:1720, mode=1), so the wire format needs nothing.
+# The real blocker was the heading ANCHOR: the deploy captures it at
+# start_control, i.e. before the gym teleports the robot to the round's
+# yaw. The release model tolerates a stale anchor (absolute reference
+# orientations); v1.1 normalizes by the robot heading, so a stale anchor
+# is a standing heading error it keeps turning to close — 0.134 m of
+# drift and up to 60 deg of yaw during a 5 s IDLE hold, which failed
+# every round at "teleport did not land". grasp_gym now re-anchors before
+# the settle and the drift falls to 0.004 m, better than release's
+# 0.03-0.12 m (diag_idle_drift.py).
+#
+# What v1.1 changes once it runs: the stand stage gets better (six rounds,
+# zero stand corrections, yaw_err within 4 deg) and the stride gets much
+# shorter (speed 0.30 delivers 4.3 cm/step against release's 17), so the
+# walk timings want re-measuring with diag_shuffle.py before adopting it.
+# Grasp success was 2/6 against release's 4/6 on the same seed — the same
+# close-phase topple tail, and both samples far too small to separate.
+# Set SONIC_POLICY=policy/sonic_v1_1 to run it.
 SONIC_POLICY="${SONIC_POLICY:-policy/release}"
 echo "  policy: $SONIC_POLICY"
 nohup ./target/release/g1_deploy_onnx_ref lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \

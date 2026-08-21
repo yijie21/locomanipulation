@@ -337,6 +337,17 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # robot 50-70 deg off its sampled yaw (pre-walk yaw_err telemetry).
     # Hold the sampled heading explicitly through every settle.
     fv = (float(np.cos(psi)), float(np.sin(psi)), 0.0)
+    # Re-anchor BEFORE the settle, not after it. The deploy captures its
+    # heading anchor at start_control, i.e. at the pose the robot had
+    # BEFORE this round's teleport, and reanchor() re-captures it here and
+    # records the yaw in cmd.heading_offset — which frame() then uses to
+    # express `facing` in the robot's own heading frame. The release policy
+    # tolerates a stale anchor (its reference orientations are absolute),
+    # but SONIC v1.1 normalizes its observations by the robot heading, so a
+    # stale anchor is a standing heading error it keeps turning to close:
+    # measured over a 5 s IDLE hold, 0.134 m of drift without this call and
+    # 0.004 m with it (diag_idle_drift.py).
+    stream_reach.reanchor(p, side=side)
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE, facing=fv)
     s = p.obs()
     if s["fallen"]:
@@ -348,7 +359,6 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     if land_err > 0.30:
         return False, (f"[stand] teleport did not land "
                        f"({land_err:.2f} m from the spawn)")
-    stream_reach.reanchor(p, side=side)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
     reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
