@@ -34,7 +34,9 @@ from primitives import (
     HAND_CLOSED_RIGHT,
     HAND_OPEN,
     LIFT_HEIGHT,
+    LocomotionMode,
     Primitives,
+    StreamMode,
     wrap,
 )
 
@@ -73,9 +75,26 @@ NUDGE_MAX = 0.05          # m, object displacement that aborts the attempt
 # purpose: the palm's sweet spot is at or above pelvis height minus a few cm,
 # and every centimetre of squat is a centimetre of waist lean the policy does
 # not have to deliver (it delivers only ~2/3 of a commanded lean).
+SQUAT_DROP_MAX = 0.20     # deepest crouch the planner squat is asked for
+SQUAT_HEIGHT_BIAS = 0.02  # delivered pelvis_z - commanded height (measured)
+SQUAT_SETTLE = 2.5        # s; t90 of the k-planner squat is 1.1-1.6 s
 SQUAT_TRIGGER = 0.03
 SQUAT_GAIN = 6.8          # rad of squat per metre of wanted drop (measured)
 SQUAT_MAX = 0.65
+
+
+def make_arm(p: Primitives, side: str):
+    """Build the arm driver for the channel this run is testing.
+
+    GYM_ARM_CHANNEL=planner keeps the deploy in planner mode for the whole
+    grasp (no mode switch, so no latch-clear window and no stand twitch);
+    the default reproduces the streamed channel the pipeline shipped with.
+    """
+    if os.environ.get("GYM_ARM_CHANNEL", "streamed") == "planner":
+        return PlannerArm(p, side,
+                          send_vel=os.environ.get("GYM_ARM_VEL", "1") == "1")
+
+    return StreamedArm(p, side)
 
 
 def yaw_only(quat_wxyz):
@@ -335,6 +354,128 @@ class StreamedArm:
         return self.side in s["objects"][obj_key]["touching"]
 
 
+class PlannerArm(StreamedArm):
+    """The same arm interface, driven through the PLANNER channel.
+
+    StreamedArm authors the whole 29-DoF reference and therefore has to
+    switch the deploy out of planner mode, which forces the 0.4 s
+    latch-clear window that makes the arms twitch (see StreamedArm.start).
+    This class never switches: it stays in PLANNER_FROZEN_UPPER_BODY and
+    writes only the 17 upper-body joints (waist 3 + arms 14), which the
+    deploy substitutes into the k-planner's reference every tick
+    (g1_deploy_onnx_ref.cpp:781-787). `has_upper_body_control_` therefore
+    never clears and no twitch is possible.
+
+    The cost is the legs: they belong to the k-planner animation, so
+    `squat()` is a no-op here and pelvis height is only reachable through
+    the planner message's `height` field.
+
+    `send_vel=True` also fills `upper_body_velocity` by finite difference.
+    The encoder observes motion_joint_velocities_* but every channel we
+    have used so far sends zeros, which makes a moving reference look
+    stationary to it.
+    """
+
+    def __init__(self, p: Primitives, side: str, send_vel: bool = False):
+        super().__init__(p, side)
+        self.send_vel = send_vel
+        self.height = -1.0          # planner-message height; -1 = default
+        self.mode = LocomotionMode.IDLE
+        self._q_prev = None
+        self._face = (1.0, 0.0, 0.0)
+
+    def start(self) -> None:
+        from primitives import upper_body_from_mj
+        s = self.p.obs()
+        self.q = np.array(s["joints"])
+        self._q_prev = self.q.copy()
+        self.root_quat = yaw_only(s["pelvis"]["quat"])
+        self._face = self.p._facing(s)
+        self.p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+        self.p.cmd.set_upper_body(upper_body_from_mj(self.q))
+        self.p.cmd.set_upper_body_vel(
+            np.zeros(17, dtype=np.float32) if self.send_vel else None)
+        self.next_t = time.time()
+        self.hold(0.6)
+
+    def stop(self) -> None:
+        """No mode switch to make; just leave the target where the arm is."""
+        from primitives import upper_body_from_mj
+        if self.mode != LocomotionMode.IDLE:
+            self.stand()
+        s = self.p.obs()
+        self.p.cmd.set_upper_body(upper_body_from_mj(s["joints"]))
+        self.p.cmd.set_upper_body_vel(None)
+
+    def _push(self, q_mj29) -> None:
+        from primitives import upper_body_from_mj
+        q = np.asarray(q_mj29, dtype=float)
+        u = upper_body_from_mj(q)
+        self.p.cmd.set_upper_body(u)
+        if self.send_vel:
+            self.p.cmd.set_upper_body_vel(
+                (u - upper_body_from_mj(self._q_prev)) / DT)
+        self._q_prev = q.copy()
+        self.p.cmd.set_hands(left=self.hands["left"], right=self.hands["right"])
+        self.p.cmd.frame(mode=self.mode, facing=self._face,
+                         height=self.height)
+        self.i += 1
+        self.next_t += DT
+        lag = self.next_t - time.time()
+        if lag > 0:
+            time.sleep(lag)
+        else:
+            self.next_t = time.time()
+
+    def squat(self, drop_m: float, track: bool = True) -> float:
+        """Crouch through the k-planner's own squat gait. -> measured drop.
+
+        The legs are not ours in this channel, so the depth comes from
+        LocomotionMode::IDEL_SQUAT plus the planner message's `height`,
+        which is an ABSOLUTE pelvis-height command and is honoured ONLY in
+        a squat mode (in IDLE / SLOW_WALK it has 0.2 cm of authority).
+        Calibrated 2026-08-21 (diag_squatmode.py --sweep): delivered
+        pelvis_z ~= height + 0.02 over 0.75..0.50, i.e. 2.6..20 cm of drop,
+        saturating near 27 cm below 0.40.
+
+        IDEL_SQUAT is a STATIC mode, so nothing may walk until stand() puts
+        the mode back. `track` re-solves the arm against the live pelvis
+        while the body sinks, which matters more here than in the streamed
+        channel: the held 17-joint target drifts up to 0.24 rad during the
+        descent.
+        """
+        s = self.p.obs()
+        z0 = float(s["pelvis"]["pos"][2])
+        target_z = z0 - float(np.clip(drop_m, 0.0, SQUAT_DROP_MAX))
+        if z0 - target_z < 0.02:
+            return 0.0
+        self.height = float(np.clip(target_z - SQUAT_HEIGHT_BIAS, 0.40, 0.78))
+        self.mode = LocomotionMode.IDEL_SQUAT
+        palm_w = np.array(s["palms"][self.side]["pos"])
+        rot_w = Primitives._rot(s["palms"][self.side]["quat"])
+        arm_idx = ARM_MJ[self.side]
+        n = int(round(SQUAT_SETTLE / DT))
+        for k in range(n):
+            if track and k % 5 == 1:
+                st = self.p.obs()
+                aim_pf = self.p.world_to_root_full(palm_w, st)
+                rot_pf = Primitives._rot(st["pelvis"]["quat"]).T @ rot_w
+                q_sol, res, _ = self.ik.solve(self.side, aim_pf, rot_pf,
+                                              q_mj29=self.q, use_waist=False)
+                if res < 0.08:
+                    self.q[arm_idx] = q_sol[arm_idx]
+            self._push(self.q)
+        st = self.p.obs()
+
+        return float(z0 - st["pelvis"]["pos"][2])
+
+    def stand(self) -> None:
+        """Back to the standing gait, so walking is possible again."""
+        self.mode = LocomotionMode.IDLE
+        self.height = -1.0
+        self.hold(1.5)
+
+
 def reanchor(p: Primitives, side: str = "right") -> None:
     """Force a planner heading re-anchor at a yaw this process knows.
 
@@ -342,6 +483,13 @@ def reanchor(p: Primitives, side: str = "right") -> None:
     session (the anchor lives in the deploy, the compensation in the
     commander). A two-second streamed toggle re-anchors it at the robot's
     current yaw and records that yaw in cmd.heading_offset.
+
+    This one is ALWAYS a StreamedArm, never make_arm(): the re-anchor IS the
+    mode switch, so a PlannerArm here is a no-op and the deploy keeps the
+    stale anchor -- the robot then walks off closing a standing heading
+    error (measured 1.01 m of drift through the 4 s settle, which the gym
+    reports as "teleport did not land"). The twitch this toggle costs
+    happens before the recording starts, so it is free.
     """
     arm = StreamedArm(p, side)
     arm.start()
@@ -649,7 +797,7 @@ def place_streamed(p: Primitives, obj_key: str, drop_world,
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=p._facing(s))
         time.sleep(DT)
 
-    arm = StreamedArm(p, side)
+    arm = make_arm(p, side)
     arm.start()
     try:
         # Tuck the FREE arm against the chest first: it hangs at walking
@@ -1349,7 +1497,7 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     x_band = max(GRIP_X_MAX, plan_r + 0.03) if plan_r else GRIP_X_MAX
     if nudge:
         _nudge_closer(p, grip_world, side, x_max=x_band)
-    arm = StreamedArm(p, side)
+    arm = make_arm(p, side)
     arm.start()
     # NOTE: the sim-side pin must already be RELEASED before this call.
     # Holding it through start() and releasing here removes the visible
@@ -1419,7 +1567,7 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
             if not (GRIP_X_MIN <= grip_pf[0] <= x_band):
                 arm.stop()
                 _nudge_closer(p, grip_world, side, x_max=x_band)
-                arm = StreamedArm(p, side)
+                arm = make_arm(p, side)
                 arm.start()
                 s = p.obs()
                 grip_pf = p.world_to_root_full(grip_world, s)

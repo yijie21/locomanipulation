@@ -622,9 +622,17 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # through the handoff instead took seed 11 from 5/6 to 0/6 — see the
     # note in grasp_streamed.
     reset.pin_arms()
+    # GYM_ARM_PIN=0 runs the grasp on the policy alone. The pin makes the
+    # executed motion precise (3.0 cm / 5 deg) but the recorded latent is
+    # then not the latent that produced it: the same reference without the
+    # pin delivers 4.1 cm / 16 deg (diag_channel.py, 216 samples). For VLA
+    # data the label has to match the outcome, so the pin has to go once
+    # the policy alone can grasp.
     ok, why = stream_reach.grasp_streamed(
         p, obj_key, grip, plan, side=side, surface_top=surf_a["top"],
-        replan=replan, ghost=show_ghost, nudge=False, pin=reset.pin_arms,
+        replan=replan, ghost=show_ghost, nudge=False,
+        pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "1") == "1"
+             else None),
         squat_hint=squat_hint, plan_r=float(np.hypot(rel[0], rel[1])))
     if not ok:
         return False, f"[grasp] {why}"

@@ -68,10 +68,25 @@ else:
 
 
 class LocomotionMode(IntEnum):
+    """Subset of the deploy's 27 modes (localmotion_kplanner.hpp:78).
+
+    IDEL_SQUAT is the only depth control planner mode has: the planner
+    message's `height` field is an absolute pelvis-height command that a
+    squat mode honours and IDLE / SLOW_WALK ignore (measured 2026-08-21,
+    diag_squatmode.py). It is a STATIC mode -- the robot cannot walk in it.
+    """
+
     IDLE = 0
     SLOW_WALK = 1
     WALK = 2
     RUN = 3
+    IDEL_SQUAT = 4
+    IDEL_KNEEL_TWO_LEGS = 5
+    IDEL_KNEEL = 6
+    CRAWLING = 8
+    STEALTH_WALK = 18
+    LEDGE_WALKING = 20
+    OBJECT_CARRYING = 21
 
 
 class StreamMode(IntEnum):
@@ -157,6 +172,11 @@ class AgentCommander:
         # through the walk as well.
         self.stream_mode = StreamMode.PLANNER_VR_3PT
         self.upper_body: np.ndarray | None = None
+        # Reference joint VELOCITY for the 17 upper-body joints. The encoder
+        # observes motion_joint_velocities_* (observation_config.yaml), so a
+        # reference whose angles change while its velocity reads zero is
+        # self-contradictory; None keeps the old behaviour (field omitted).
+        self.upper_body_vel: np.ndarray | None = None
 
     # -- control plane -----------------------------------------------------
 
@@ -205,6 +225,11 @@ class AgentCommander:
             self.right_wrist_pos = np.asarray(right_pos, dtype=np.float32)
         if right_quat is not None:
             self.right_wrist_quat = np.asarray(right_quat, dtype=np.float32)
+
+    def set_upper_body_vel(self, v17) -> None:
+        """17 joint velocities, same order as set_upper_body. None to omit."""
+        self.upper_body_vel = (None if v17 is None
+                               else np.asarray(v17, dtype=np.float32))
 
     def set_upper_body(self, q17) -> None:
         """17 joint targets for FROZEN_UPPER_BODY mode: waist y/r/p, then
@@ -257,6 +282,8 @@ class AgentCommander:
             # frozen mode carries explicit upper-body joint targets and no
             # VR fields.
             kw["upper_body_position"] = self.upper_body.tolist()
+            if self.upper_body_vel is not None:
+                kw["upper_body_velocity"] = self.upper_body_vel.tolist()
         else:
             vr_pos, vr_quat = self._vr_3pt()
             kw.update(vr_3pt_position=vr_pos, vr_3pt_orientation=vr_quat,
