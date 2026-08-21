@@ -395,17 +395,24 @@ class ReachMap:
             return pts[margs >= margs.max()], dz, float(margs.max())
         return best[1], best[2], best[3]
 
-    def margin(self, p_pelvis, arm: str = "both") -> float:
+    def margin(self, p_pelvis, arm: str = "both", core: bool = False,
+               cap: float = 0.15) -> float:
         """Distance (m) to the nearest non-graspable voxel, xy-plane, at the
-        best squat level — the stand-quality score the navigator maximises."""
-        if not self.graspable(p_pelvis, arm):
+        best squat level — the stand-quality score the navigator maximises.
+
+        `core=True` measures against the sweet zone instead of the full
+        envelope, which is what an arrival test wants: "can I reach it" is
+        not the same question as "can I reach it comfortably". `cap` stops
+        the search early; the walk-in only needs to know whether the margin
+        clears its threshold, and each ring costs 8 squat scans."""
+        if not self.graspable(p_pelvis, arm, core):
             return 0.0
         m = 0.0
-        while m < 0.15:
+        while m < cap:
             m += self.vox
             for a in np.linspace(0, 2 * np.pi, 8, endpoint=False):
                 q = np.asarray(p_pelvis) + [m * np.cos(a), m * np.sin(a), 0]
-                if not self.graspable(q, arm):
+                if not self.graspable(q, arm, core):
                     return m - self.vox
         return m
 

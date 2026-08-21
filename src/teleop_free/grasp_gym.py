@@ -48,11 +48,13 @@ from collect_episode import (  # noqa: E402
 )
 from primitives import (  # noqa: E402
     READY_ARM,
+    READY_UPPER,
     READY_WRISTS,
     STANDING_PELVIS_Z,
     LocomotionMode,
     Primitives,
     StreamMode,
+    upper_body_from_mj,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
 
@@ -131,8 +133,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--spawn-off", type=float, default=0.60,
-                    help="spawn this far behind the stand and walk in")
+    ap.add_argument("--spawn-off", type=float, default=1.80,
+                    help="spawn this far behind the stand and walk in. Long "
+                         "enough that the approach is a real walk: the arm "
+                         "rises over the last RAISE_LEAD metres instead of "
+                         "being held out level the whole way, and the ego "
+                         "camera picks the can up at 1.77 m (diag_ego_geom).")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed if args.seed is not None
                                 else (os.getpid() * 7919) % 2 ** 31)
@@ -197,10 +203,20 @@ def main() -> None:
     reset.pin_arms()
     reset.reset()
     time.sleep(0.3)
+    # Read the nominal from the TELEPORT LANDING, before standing up. The
+    # sim's reset is `qpos[:] = qpos0` then `+= dxy` (privileged_pub:386),
+    # so every per-round teleport lands at qpos0 + dxy -- and the round's
+    # dxy is built as `stand - robot_nom`, which is only correct if
+    # robot_nom IS qpos0. Reading it after start_control + a 2.5 s stand
+    # instead (what this used to do) folds the stand-up drift into the
+    # nominal, and that drift is not repeatable: measured 0.12 m on a fresh
+    # stack and 0.91 m once the deploy carried a stale intent, which then
+    # biased EVERY teleport in that process by the same amount and showed
+    # up as "teleport did not land" for the rest of the run.
+    robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
+    print(f"[gym] nominal robot xy {np.round(robot_nom, 3)} (teleport landing)")
     p.cmd.start_control()
     p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
-    robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
-    print(f"[gym] nominal robot xy {np.round(robot_nom, 3)}")
 
     wins = 0
     for rnd in range(args.rounds):
@@ -324,6 +340,13 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                 robot={"dxy": [float(d_robot[0]), float(d_robot[1])],
                        "yaw": float(psi)})
     time.sleep(0.3)
+    landed_xy = np.asarray(p.pelvis_xy(p.obs()))
+    want_xy = (np.asarray(spawn_xy)
+               - spawn_off * np.array([np.cos(psi), np.sin(psi)]))
+    tp_err = float(np.linalg.norm(landed_xy - want_xy))
+    if tp_err > 0.10:
+        return False, (f"[stand] teleport landed {tp_err:.2f} m off "
+                       f"({np.round(landed_xy, 2)} vs {np.round(want_xy, 2)})")
     # Round 2+ contamination: the commander KEEPS the previous round's
     # FROZEN_UPPER_BODY mode and its stale 17-value arm target across the
     # reset — stand up in the default mode with no target, like a fresh
@@ -353,15 +376,25 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
                        f"(pelvis z {s['pelvis']['pos'][2]:.3f})")
-    land_err = float(np.linalg.norm(
-        np.asarray(p.pelvis_xy(s)) - np.asarray(spawn_xy)
-        + spawn_off * np.array([np.cos(psi), np.sin(psi)])))
-    if land_err > 0.30:
-        return False, (f"[stand] teleport did not land "
-                       f"({land_err:.2f} m from the spawn)")
-    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
-    p.tuck_arms()
-    reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
+    # Separate check, separate meaning: the teleport itself was verified
+    # above; this one is how far the STAND-UP walked the robot off its
+    # spawn, which is a policy behaviour and gets its own budget.
+    drift = float(np.linalg.norm(np.asarray(p.pelvis_xy(s)) - landed_xy))
+    p.log(f"[gym] spawn {np.round(landed_xy, 2)} -> settled "
+          f"{np.round(p.pelvis_xy(s), 2)} (stand drift {drift:.2f} m)")
+    if drift > 0.35:
+        return False, (f"[stand] walked {drift:.2f} m off the spawn "
+                       f"while standing up")
+    # Walk with the arms FREE. In PLANNER_VR_3PT the walking policy ignores
+    # the wrist targets and swings the arms with the gait (agent_server:151),
+    # which is what a person does; the old pre-walk switch to
+    # FROZEN_UPPER_BODY held both forearms out level for the whole approach
+    # and is where the stiff, un-human walk came from. Nothing is pinned
+    # either -- the hands only need to be up by the time the reach starts,
+    # and that is what the RAISE_LEAD ramp below does.
+    p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
+    p.cmd.upper_body = None
+    reset.pin_arms()
     p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     reset.start_video(f"gym_{int(time.time())}")
     grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
@@ -395,59 +428,89 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # deadband: a 0.30 speed command measures ~0.05 m/s, i.e. near-zero
     # momentum, closed 50 Hz on the LIVE can depth — stop the tick it
     # enters the plan band.
-    walk_tgt = np.asarray(spawn_xy) - 0.30 * np.array(fv[:2])
-    if not p.walk_to(walk_tgt, stop_dist=0.06,
-                     timeout=10.0 + 8.0 * spawn_off,
-                     face_target=False):
-        return False, "[stand] fell during the walk-up"
-    p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
-    rel_dbg("post-walk", p.obs())
-    # Two crawl bands, sized from the measured gait quantum
-    # (diag_shuffle.py, open floor, 3 repeats):
-    #   speed 0.26 -> 0.155 m/s, 11 cm per step
-    #   speed 0.20 -> 0.013 m/s,  1-2 cm per step, stop carry 1.6-6.2 cm
-    #   speed 0.30 -> 0.247 m/s, 17 cm per step   <- what this loop used to
-    #                                                run at, believing the
-    #                                                stale "0.30 is inside
-    #                                                the deadband" note
-    # So: close the bulk at 0.26, then SHUFFLE the last 12 cm at 0.20 —
-    # feet still alternating (1.1 steps/s), just 1-2 cm of travel each, so
-    # whatever step is in flight when the loop stops costs ~3 cm instead of
-    # the ~17 cm stride that forced the old speed-proportional brake lead.
-    CRAWL_COARSE, CRAWL_SHUFFLE = 0.26, 0.20
-    SHUFFLE_BAND, SHUFFLE_LEAD = 0.12, 0.03
-    crawl_end = time.time() + 30.0
-    stall_x, stall_t = None, time.time()
-    crawl_x0, crawl_why = rel_now(p.obs())[0], "timeout"
-    while time.time() < crawl_end:
+    # The reach begins ON THE WAY IN, not after arriving. Leg 1 walks with
+    # the arms swinging; leg 2 hands the 17 upper-body joints over -- seeded
+    # from the arm's CURRENT angles, so the takeover has no step in it (the
+    # deploy substitutes them into the reference verbatim, with no ramp of
+    # its own, g1_deploy_onnx_ref.cpp:781) -- and drives them to READY by
+    # distance remaining, so the arm is up exactly when the body arrives.
+    RAISE_LEAD = 1.00
+    lead_tgt = np.asarray(spawn_xy) - (0.30 + RAISE_LEAD) * np.array(fv[:2])
+    if float(np.linalg.norm(lead_tgt - p.pelvis_xy(p.obs()))) > 0.20:
+        if not p.walk_to(lead_tgt, stop_dist=0.10,
+                         timeout=10.0 + 8.0 * spawn_off,
+                         face_target=False):
+            return False, "[stand] fell during the walk-up"
+    q_free = upper_body_from_mj(p.obs()["joints"])
+    p.cmd.set_upper_body(q_free)
+    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+
+    def raise_arm(_s, dist):
+        u = float(np.clip(1.0 - (dist - 0.06) / RAISE_LEAD, 0.0, 1.0))
+        sm = 3 * u * u - 2 * u ** 3
+        p.cmd.set_upper_body(q_free + sm * (READY_UPPER - q_free))
+
+    # ONE monotone approach, stopped by a measurement instead of a plan.
+    #
+    # The old arrival walked to a point 0.30 m short of the planned stand,
+    # waited 2 s for the deceleration creep, then crawled the remainder
+    # against that plan. For VLA data the setpoint is the problem: it is a
+    # hidden variable, so two near-identical ego frames carry opposite
+    # actions whenever the correction reverses -- the visible pacing, and
+    # an action the student cannot learn because nothing in RGB says which
+    # way to go. It also left 35-57 cm to shuffle once the spawn moved out
+    # to 1.8 m.
+    #
+    # Here the plan only sets the LINE (which is what puts the can on the
+    # right-hand side); the STOP is rm.margin() on the live can, a property
+    # of the scene the camera can see. Measured profile along the approach
+    # at this can height (y_pf -0.06..-0.18): margin is 0 beyond x 0.45,
+    # 0.025 at 0.40, 0.075 at 0.35, 0.100-0.125 by 0.25 -- monotone while
+    # walking in, so the first crossing is the stop and reversing is not
+    # representable. (The CORE margin is 0 everywhere at this height: the
+    # sweet zone is too thin below the pelvis, so the test is against the
+    # full envelope.)
+    MARGIN_STOP = 0.075
+    APPR_COARSE, APPR_SHUFFLE, SHUFFLE_BAND = 0.26, 0.20, 0.12
+    appr_end = time.time() + 45.0
+    why, stall_x, stall_t = "timeout", None, time.time()
+    while time.time() < appr_end:
         s = p.obs()
         if s["fallen"]:
-            return False, "[stand] fell during the crawl-in"
-        x_now = rel_now(s)[0]
-        far = x_now - plan_r
-        shuffling = far <= SHUFFLE_BAND
-        lead = SHUFFLE_LEAD if shuffling else SHUFFLE_BAND
-        if far <= lead:
-            crawl_why = "on target"
+            return False, "[stand] fell during the approach"
+        r = rel_now(s)
+        raise_arm(s, float(np.linalg.norm(
+            np.asarray(spawn_xy) - p.pelvis_xy(s))))
+        if rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP:
+            why = "can reachable"
             break
         if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN:
-            crawl_why = "edge floor"
+            why = "edge floor"
             break
-        # Stall guard: the shuffle band sits right at the gait's deadband
-        # and some legs deliver 0.2 cm/s. Accept rather than hover.
-        if stall_x is None or stall_x - x_now > 0.015:
-            stall_x, stall_t = x_now, time.time()
-        elif time.time() - stall_t > 4.0:
-            crawl_why = "stalled"
+        if stall_x is None or stall_x - r[0] > 0.015:
+            stall_x, stall_t = r[0], time.time()
+        elif time.time() - stall_t > 5.0:
+            why = "stalled"
             break
         p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
                     movement=(fv[0], fv[1], 0.0),
-                    speed=CRAWL_SHUFFLE if shuffling else CRAWL_COARSE)
+                    speed=(APPR_SHUFFLE if r[0] - plan_r <= SHUFFLE_BAND
+                           else APPR_COARSE))
         time.sleep(0.02)
-    p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=fv)
-    p.log(f"[gym] crawl: {(crawl_x0 - rel_now(p.obs())[0]) * 100:+.0f} cm "
-          f"closed, exit={crawl_why} (plan_r {plan_r:.2f})")
-    rel_dbg("post-crawl", p.obs())
+    # Finish whatever is left of the arm ramp smoothly -- the stop can fire
+    # before the ramp completes, and the deploy substitutes the 17 joints
+    # verbatim, so a snap to READY here would be a step in the reference.
+    q_now = upper_body_from_mj(p.obs()["joints"])
+    for k in range(1, 41):
+        u = k / 40.0
+        p.cmd.set_upper_body(q_now + (3 * u * u - 2 * u ** 3)
+                             * (READY_UPPER - q_now))
+        p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
+        time.sleep(0.02)
+    p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=fv)
+    p.log(f"[gym] approach: exit={why} at rel x "
+          f"{rel_now(p.obs())[0]:.2f} (plan_r {plan_r:.2f})")
+    rel_dbg("post-approach", p.obs())
     # No turn correction: the teleport already faces the sampled yaw, and a
     # turn_to on a contamination-stale heading anchor sent the robot
     # marching metres across the room (rel [6.66 +2.19] telemetry).
@@ -622,16 +685,16 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # through the handoff instead took seed 11 from 5/6 to 0/6 — see the
     # note in grasp_streamed.
     reset.pin_arms()
-    # GYM_ARM_PIN=0 runs the grasp on the policy alone. The pin makes the
+    # The pin is OFF by default now (GYM_ARM_PIN=1 restores it). It makes the
     # executed motion precise (3.0 cm / 5 deg) but the recorded latent is
     # then not the latent that produced it: the same reference without the
     # pin delivers 4.1 cm / 16 deg (diag_channel.py, 216 samples). For VLA
-    # data the label has to match the outcome, so the pin has to go once
-    # the policy alone can grasp.
+    # data the label has to match the outcome, and on the planner channel
+    # the policy alone now grasps 12/12, so the pin is gone.
     ok, why = stream_reach.grasp_streamed(
         p, obj_key, grip, plan, side=side, surface_top=surf_a["top"],
         replan=replan, ghost=show_ghost, nudge=False,
-        pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "1") == "1"
+        pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "0") == "1"
              else None),
         squat_hint=squat_hint, plan_r=float(np.hypot(rel[0], rel[1])))
     if not ok:

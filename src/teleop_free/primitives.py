@@ -626,13 +626,17 @@ class Primitives:
 
     def walk_to(self, target_xy, stop_dist: float = 0.05, timeout: float = 30.0,
                 mode: LocomotionMode = LocomotionMode.SLOW_WALK,
-                face_target: bool = True) -> bool:
+                face_target: bool = True, on_tick=None) -> bool:
         """Drive the pelvis to within `stop_dist` of `target_xy`.
 
         `movement` is a world-frame direction with magnitude in [0, 1] acting as
         a speed scale, so it is recomputed every tick from the live position
         error — which is what makes this robust to the perturbed start poses
         P2 samples.
+
+        `on_tick(state, dist)` runs once per control tick before the frame is
+        sent, so a caller can shape the upper body WHILE the legs walk — that
+        is what lets the arm rise on the way in instead of after arriving.
         """
         target = np.asarray(target_xy, dtype=float)
         end = time.time() + timeout
@@ -653,6 +657,8 @@ class Primitives:
                 self.log(f"walk_to {target.round(2)} done ({dist:.3f} m)")
                 return True
 
+            if on_tick is not None:
+                on_tick(s, dist)
             direction = err / max(dist, 1e-6)
             # Ease off over the last 0.5 m so it does not overshoot the stop.
             gain = float(np.clip(dist / 0.5, 0.25, 1.0))

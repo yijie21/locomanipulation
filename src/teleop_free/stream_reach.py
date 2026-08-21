@@ -86,11 +86,13 @@ SQUAT_MAX = 0.65
 def make_arm(p: Primitives, side: str):
     """Build the arm driver for the channel this run is testing.
 
-    GYM_ARM_CHANNEL=planner keeps the deploy in planner mode for the whole
-    grasp (no mode switch, so no latch-clear window and no stand twitch);
-    the default reproduces the streamed channel the pipeline shipped with.
+    The default is now `planner`: it keeps the deploy in planner mode for
+    the whole grasp, so there is no mode switch, no latch-clear window and
+    no stand twitch. Measured 12/12 with the sim pin OFF against 2/12 for
+    the streamed channel with its pin ON, same seed (see the Phase 0
+    commit). GYM_ARM_CHANNEL=streamed restores the old path.
     """
-    if os.environ.get("GYM_ARM_CHANNEL", "streamed") == "planner":
+    if os.environ.get("GYM_ARM_CHANNEL", "planner") == "planner":
         return PlannerArm(p, side,
                           send_vel=os.environ.get("GYM_ARM_VEL", "1") == "1")
 
