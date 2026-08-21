@@ -320,11 +320,16 @@ NAV_PROGRESS = 0.05            # metres of geodesic progress that counts
 # 0.30 -> 0.05 m/s, 0.50 -> 0.42 m/s), so this sits just under the knee: brisk
 # enough to cross the room, slow enough that the gait is not fighting itself.
 NAV_SPEED = 0.45
-# Below about 0.35 the gait has a deadband — commanded 0.30 travels 0.05 m/s
-# and 0.20 travels 0.02, i.e. nothing (teleop_free/diag_speed.py). Easing the
-# speed toward zero on approach therefore does not slow the robot down, it
-# stops it: 7 of 10 episodes halted 0.2 m short reporting "no progress". Stop
-# by arriving, not by fading out.
+# Re-measured on open floor with a reset per leg (teleop_free/diag_shuffle.py,
+# 3 repeats): 0.40 -> 0.29 m/s (25 cm/step), 0.30 -> 0.247 (17), 0.26 -> 0.155
+# (11), 0.215 -> 0.04 (5), 0.185-0.205 -> ~0.013 (1-2 cm/step, still stepping
+# at 1.1 Hz — the shuffle), and a zero movement vector marches in place. The
+# OLD note here claimed 0.30 travelled 0.05 m/s "i.e. nothing"; that reading
+# came from a leg that had walked into the table, and believing it is what
+# made the gym's final crawl run at a 17 cm stride. Easing toward zero on a
+# long walk still stalls the approach (7 of 10 episodes halted 0.2 m short),
+# so NAV_SPEED_MIN stays — the shuffle band is for the last few centimetres,
+# where the loop closes on the measured object instead of on arrival.
 NAV_SPEED_MIN = 0.35
 
 # Where the wrists sit while walking. Not cosmetic: an episode analysed frame

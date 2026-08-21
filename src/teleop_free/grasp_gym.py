@@ -392,31 +392,51 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         return False, "[stand] fell during the walk-up"
     p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     rel_dbg("post-walk", p.obs())
-    crawl_end = time.time() + 12.0
-    v_est, last_x, last_t = 0.0, None, None
+    # Two crawl bands, sized from the measured gait quantum
+    # (diag_shuffle.py, open floor, 3 repeats):
+    #   speed 0.26 -> 0.155 m/s, 11 cm per step
+    #   speed 0.20 -> 0.013 m/s,  1-2 cm per step, stop carry 1.6-6.2 cm
+    #   speed 0.30 -> 0.247 m/s, 17 cm per step   <- what this loop used to
+    #                                                run at, believing the
+    #                                                stale "0.30 is inside
+    #                                                the deadband" note
+    # So: close the bulk at 0.26, then SHUFFLE the last 12 cm at 0.20 —
+    # feet still alternating (1.1 steps/s), just 1-2 cm of travel each, so
+    # whatever step is in flight when the loop stops costs ~3 cm instead of
+    # the ~17 cm stride that forced the old speed-proportional brake lead.
+    CRAWL_COARSE, CRAWL_SHUFFLE = 0.26, 0.20
+    SHUFFLE_BAND, SHUFFLE_LEAD = 0.12, 0.03
+    crawl_end = time.time() + 30.0
+    stall_x, stall_t = None, time.time()
+    crawl_x0, crawl_why = rel_now(p.obs())[0], "timeout"
     while time.time() < crawl_end:
         s = p.obs()
         if s["fallen"]:
             return False, "[stand] fell during the crawl-in"
         x_now = rel_now(s)[0]
-        t_now = time.time()
-        if last_x is not None and t_now > last_t + 1e-3:
-            v_inst = (last_x - x_now) / (t_now - last_t)
-            v_est = 0.9 * v_est + 0.1 * max(v_inst, 0.0)
-        last_x, last_t = x_now, t_now
-        # Speed-proportional brake lead: the stop carry is the stride
-        # finishing, so it scales with how fast the crawl is actually
-        # moving (measured 0.09 m carry off a slow crawl, 0.21 off a long
-        # one — no fixed threshold fits both). Lead = 1.2 s worth of the
-        # estimated approach speed.
-        lead = float(np.clip(1.2 * v_est, 0.02, 0.20))
-        if (x_now <= plan_r + lead
-                or edge_dist(p.pelvis_xy(s)) <= EDGE_MIN):
+        far = x_now - plan_r
+        shuffling = far <= SHUFFLE_BAND
+        lead = SHUFFLE_LEAD if shuffling else SHUFFLE_BAND
+        if far <= lead:
+            crawl_why = "on target"
+            break
+        if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN:
+            crawl_why = "edge floor"
+            break
+        # Stall guard: the shuffle band sits right at the gait's deadband
+        # and some legs deliver 0.2 cm/s. Accept rather than hover.
+        if stall_x is None or stall_x - x_now > 0.015:
+            stall_x, stall_t = x_now, time.time()
+        elif time.time() - stall_t > 4.0:
+            crawl_why = "stalled"
             break
         p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
-                    movement=(fv[0], fv[1], 0.0), speed=0.30)
+                    movement=(fv[0], fv[1], 0.0),
+                    speed=CRAWL_SHUFFLE if shuffling else CRAWL_COARSE)
         time.sleep(0.02)
     p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=fv)
+    p.log(f"[gym] crawl: {(crawl_x0 - rel_now(p.obs())[0]) * 100:+.0f} cm "
+          f"closed, exit={crawl_why} (plan_r {plan_r:.2f})")
     rel_dbg("post-crawl", p.obs())
     # No turn correction: the teleport already faces the sampled yaw, and a
     # turn_to on a contamination-stale heading anchor sent the robot
