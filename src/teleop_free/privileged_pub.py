@@ -31,6 +31,12 @@ GHOST_BODY = "ghost_hand"
 # it to the arm motors' position targets every physics step). 7 joint values
 # per side (shoulder p/r/y, elbow, wrist r/p/y) or None = released.
 ARM_PIN: dict = {"left": None, "right": None, "waist": None}
+# Sim-side OBJECT pin: {name: [x, y, z, qw, qx, qy, qz]} or empty. The episode
+# server rewrites those free joints every poll, which holds an object exactly
+# where a diagnostic put it — gravity, contact and the robot all stop moving
+# it. Used by diag_reach_error.py to measure delivery error against a target
+# that cannot be knocked away.
+OBJ_PIN: dict = {}
 GHOST_PARK = (0.0, 0.0, -5.0)
 
 # Per-instance overrides so several stacks can share the host (parallel
@@ -388,6 +394,8 @@ class EpisodeControlServer:
 
     def poll(self) -> None:
         """Non-blocking; call once per sim step."""
+        if OBJ_PIN:
+            self._apply_obj_pin()
         while self.sock.poll(0):
             try:
                 req = json.loads(self.sock.recv_string())
@@ -428,6 +436,13 @@ class EpisodeControlServer:
                 print(f"[episode] arm pin: "
                       f"L={'on' if ARM_PIN['left'] else 'off'} "
                       f"R={'on' if ARM_PIN['right'] else 'off'}")
+            elif req.get("cmd") == "pin_object":
+                name, pose = req.get("name"), req.get("pose")
+                if pose is None:
+                    OBJ_PIN.pop(name, None)
+                else:
+                    OBJ_PIN[name] = [float(v) for v in pose]
+                    self._apply_obj_pin()
             elif req.get("cmd") == "endvideo":
                 # Nothing else closes the writer. A recording is only ever
                 # stopped by the *next* reset, so the last episode of every
@@ -435,6 +450,21 @@ class EpisodeControlServer:
                 # and precisely the episode most worth watching.
                 if self.recorder is not None:
                     self.recorder.stop()
+
+    def _apply_obj_pin(self) -> None:
+        """Hold every pinned object at its commanded pose, velocity zero."""
+        for name, pose in OBJ_PIN.items():
+            adr = self.obj_qadr.get(name)
+            if adr is None:
+                continue
+            self.data.qpos[adr:adr + 7] = pose
+            dadr = adr - 7 if adr >= 7 else adr      # free joint: 6 dof
+            bid = self._mj.mj_name2id(self.model, self._mj.mjtObj.mjOBJ_BODY,
+                                      self.meta["objects"][name]["body"])
+            jadr = self.model.body_jntadr[bid]
+            if jadr >= 0:
+                v0 = int(self.model.jnt_dofadr[jadr])
+                self.data.qvel[v0:v0 + 6] = 0.0
 
     def _place_ghost(self, pos, quat) -> None:
         if self.ghost_mocap < 0:
@@ -473,6 +503,15 @@ class EpisodeControlClient:
             "left": list(map(float, left)) if left is not None else None,
             "right": list(map(float, right)) if right is not None else None,
         }))
+
+    def pin_object(self, name: str, pos=None, quat=None) -> None:
+        """Hold `name` at (pos, quat) every sim step; no args releases it."""
+        pose = None
+        if pos is not None:
+            q = [1.0, 0.0, 0.0, 0.0] if quat is None else list(map(float, quat))
+            pose = list(map(float, pos)) + q
+        self.sock.send_string(json.dumps({
+            "cmd": "pin_object", "name": name, "pose": pose}))
 
     def set_ghost(self, pos=None, quat=None) -> None:
         """Show the planned grasp pose in the render; no args parks it."""
