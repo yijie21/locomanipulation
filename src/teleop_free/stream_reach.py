@@ -990,6 +990,24 @@ def _clipn(v, m):
 # every "toppled in the close phase" in the corpus came through it.
 CLOSE_ENT_MAX = 0.02
 
+# How far the can centre may sit from the grasp centre ALONG THE ENTRY AXIS
+# and still be between the pads. Straight off the dex1 collision meshes: the
+# pads span wrist+0.1206..0.1848 and the grasp centre is wrist+0.1515, so the
+# can is seated for -0.031..+0.033; 0.030 keeps 3 mm at the near end and
+# 3 mm at the far end.
+#
+# The tolerance gate used to ask for 0.012 (0.018 once riding or patient),
+# which was tuned when the sim-side pin executed the IK solution exactly and
+# the arm really could reach 0.012. Without the pin the arm stalls 2-3.7 cm
+# short -- measured palm->ref pinned at LEAD_MAX with res 0.000, i.e. the
+# joints solve and the policy does not deliver, which is the p90 of the
+# 216-sample pin-off error. The can was then SEATED and the gate still
+# refused, so the servo hovered until the 6 s wedge timer lifted it off, twice
+# (one 118 s episode against 66-71 s for the successes). This is not the old
+# 0.06 contact shortcut that succeeded 26/64: that one fired with the can
+# centre 2.7 cm BEYOND the fingertips, where closing is a one-sided shove.
+CLOSE_SEATED = 0.030
+
 FREEZE_TRAVEL = 0.10      # residual travel below which the plan is frozen
 # Deliverable staging box, pelvis frame. The scene-model IK reaches further
 # than the policy delivers (res 0.000 while the palm stalls): a pregrasp
@@ -1313,9 +1331,10 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 # "toppled in the in phase"/batch, lat hovering 8-18 mm).
                 # Closing now funnels it to the palm — take the patient
                 # tolerance immediately instead of after 8 s.
-                good = g_lat < 0.020 and abs(full[ENTRY_COL]) < 0.018
+                good = g_lat < 0.020 and abs(full[ENTRY_COL]) < CLOSE_SEATED
             patient = (now - in_since > 8.0
-                       and g_lat < 0.020 and abs(full[ENTRY_COL]) < 0.018)
+                       and g_lat < 0.020
+                       and abs(full[ENTRY_COL]) < CLOSE_SEATED)
             if good or patient:
                 ok_ticks += 1
                 if ok_ticks > 20:                     # ~0.4 s in tolerance
