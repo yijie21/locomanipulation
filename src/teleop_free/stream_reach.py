@@ -826,6 +826,20 @@ def _clipn(v, m):
     return v if n <= m else v * (m / n)
 
 
+# How much entry travel may remain when a CONTACT is allowed to trigger the
+# close. Geometry, measured off the dex1 collision meshes: the pads span
+# wrist+0.1206..0.1848 along the entry axis and the grasp centre sits at
+# wrist+0.1515, so with e_ent still to travel the can centre sits at
+# 0.1515+e_ent from the wrist. It is inside the pad span only for
+# e_ent <= 0.033, while the fingertips (0.1848) first touch a 24 mm-radius
+# can at e_ent ~ 0.0575. The old 0.06 gate therefore fired at the exact
+# moment the TIPS grazed the can, with the can centre still 27 mm beyond
+# them — closing there dealt the can a one-sided shove. Mined over 158
+# labelled rounds: reaching the close phase through the servo's tolerance
+# gate succeeded 70/70, while this contact shortcut succeeded 26/64, and
+# every "toppled in the close phase" in the corpus came through it.
+CLOSE_ENT_MAX = 0.02
+
 FREEZE_TRAVEL = 0.10      # residual travel below which the plan is frozen
 # Deliverable staging box, pelvis frame. The scene-model IK reaches further
 # than the policy delivers (res 0.000 while the palm stalls): a pregrasp
@@ -992,12 +1006,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 arm.hands[side] = HAND_OPEN + alpha * (closed - HAND_OPEN)
             if float(np.linalg.norm(obj - obj_in0)) > 0.015:
                 if (_HAND == "dex1" and full_f is not None
-                        and full_f[1] < 0.06):
+                        and full_f[1] < CLOSE_ENT_MAX):
                     # Parallel jaw, can already between the pads (entry
                     # nearly spent): contact means CLOSE NOW and funnel it
                     # to the palm. The dex3-era flinch re-dives and pokes
                     # the can over, once per cycle, until it topples.
-                    p.log("  stream: contact inside the jaw — closing")
+                    p.log(f"  stream: contact inside the jaw — closing "
+                          f"(ent {full_f[1] * 100:.1f}cm "
+                          f"lat {full_f[0] * 1000:.0f}mm)")
                     phase = "close"
                     continue
                 backoff_until = now + 1.0
