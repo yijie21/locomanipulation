@@ -54,13 +54,18 @@ SIDE = "right"
 PELVIS_Z = rmm.PELVIS_MAX          # 0.793, the standing pelvis height
 
 
-def stance_qpos(model, data, arm_q=None):
-    """Nominal standing pose: the controller's stance legs + READY arms."""
+def stance_qpos(model, data, arm_q=None, squat=0.0):
+    """Nominal standing pose: the controller's stance legs + READY arms.
+
+    `squat` is a metres-of-drop request mapped through the same gain the
+    streamed squat uses (SQUAT_GAIN 6.8 rad/m), so --live reproduces the
+    body the servo actually grasps from."""
     mujoco.mj_resetData(model, data)
     q = np.zeros(29)
-    q[[0, 6]] = -0.10             # hip pitch
-    q[[3, 9]] = 0.30              # knee
-    q[[4, 10]] = -0.20            # ankle pitch
+    a = float(np.clip(squat * 6.8, 0.0, 0.65))
+    q[[0, 6]] = -0.10 - a         # hip pitch
+    q[[3, 9]] = 0.30 + 2 * a      # knee
+    q[[4, 10]] = -0.20 - a        # ankle pitch
     q[ARM_MJ["left"]] = READY_ARM["left"]
     q[ARM_MJ["right"]] = arm_q if arm_q is not None else READY_ARM["right"]
     return q
@@ -97,6 +102,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials", type=int, default=12)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--live", action="store_true",
+                    help="reproduce the EXECUTED pose instead of sampling the "
+                         "whole core: squat to the planned depth, stand the "
+                         "can upright at the planned rel, randomize yaw only")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed)
     os.makedirs(TMP, exist_ok=True)
@@ -106,6 +115,9 @@ def main() -> None:
     meta = json.load(open(META))
     can = meta["objects"]["can"]
     surf_top = meta["surfaces"]["A"]["top"]
+    grip_z_w = float(can["init_pos"][2] + can["height"] / 2.0
+                     - grasping.GRIP_BELOW_RIM)
+    grip_z_pf = grip_z_w - PELVIS_Z
     model = mujoco.MjModel.from_xml_path(SCENE)
     data = mujoco.MjData(model)
     ik = ArmIK()
@@ -124,7 +136,21 @@ def main() -> None:
     core = rm._grid(SIDE, core=True)
     cells = np.argwhere(core)
     pts = rm.origin + (cells + 0.5) * rm.vox
-    print(f"[ik] {len(pts)} core cells to sample from")
+    live_plan = None
+    if args.live:
+        # The executed geometry: plan_core_stand's aim cell, the crouch the
+        # gym commands for it, and an upright can at grip height.
+        res = rm.plan_core_stand(float(grip_z_pf))
+        if res is None:
+            sys.exit("no core slice at the grip height")
+        aim, want_drop, marg = res
+        squat_cmd = float(np.interp(want_drop, [0.0, 0.044, 0.12, 0.195],
+                                    [0.0, 0.05, 0.09, 0.13]))
+        live_plan = (aim, want_drop, squat_cmd)
+        print(f"[ik] LIVE mode: {len(aim)} aim cells, drop {want_drop:.3f} m "
+              f"(cmd {squat_cmd:.3f}), scatter margin {marg:.2f} m")
+    else:
+        print(f"[ik] {len(pts)} core cells to sample from")
 
     lo, hi = ik.lo[ARM_MJ[SIDE]], ik.hi[ARM_MJ[SIDE]]
     rows, frames = [], 0
@@ -132,22 +158,36 @@ def main() -> None:
     with mujoco.Renderer(model, height=H, width=W) as r:
         for t in range(args.trials):
             # -- pose the robot, pin the can at a random core cell ----------
-            q = stance_qpos(model, data)
+            sq = live_plan[2] if live_plan else 0.0
+            q = stance_qpos(model, data, squat=sq)
             apply_q(model, data, q)
             seat_on_floor(model, data, root_id)
             P = data.xpos[pelvis_b].copy()
             R = data.xmat[pelvis_b].reshape(3, 3).copy()
-            grip_pf = pts[rng.integers(len(pts))]
+            if live_plan:
+                aim = live_plan[0]
+                xy = aim[rng.integers(len(aim))]
+                # grip height in the SQUATTED pelvis frame, plus the +-4 cm
+                # of arrival scatter the stand loop accepts
+                grip_pf = np.array([xy[0] + rng.uniform(-0.04, 0.04),
+                                    xy[1] + rng.uniform(-0.04, 0.04),
+                                    grip_z_w - float(P[2])])
+            else:
+                grip_pf = pts[rng.integers(len(pts))]
             grip_w = P + R @ grip_pf
             # FULL random orientation (uniform on SO(3), Shoemake), not just
             # yaw: a tilted can is what tests the planner's jaw-tilt gate and
             # the entry geometry. The live scene only ever spawns cans
             # upright, so this is strictly harder than the real task.
-            u1, u2, u3 = rng.random(3)
-            quat = np.array([np.sqrt(u1) * np.cos(2 * np.pi * u3),
-                             np.sqrt(1 - u1) * np.sin(2 * np.pi * u2),
-                             np.sqrt(1 - u1) * np.cos(2 * np.pi * u2),
-                             np.sqrt(u1) * np.sin(2 * np.pi * u3)])
+            if live_plan:                      # upright, yaw only: the scene
+                yaw = float(rng.uniform(-np.pi, np.pi))
+                quat = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+            else:
+                u1, u2, u3 = rng.random(3)
+                quat = np.array([np.sqrt(u1) * np.cos(2 * np.pi * u3),
+                                 np.sqrt(1 - u1) * np.sin(2 * np.pi * u2),
+                                 np.sqrt(1 - u1) * np.cos(2 * np.pi * u2),
+                                 np.sqrt(u1) * np.sin(2 * np.pi * u3)])
             cR = np.empty(9)
             mujoco.mju_quat2Mat(cR, quat)
             axis_w = cR.reshape(3, 3) @ np.array([0.0, 0.0, 1.0])

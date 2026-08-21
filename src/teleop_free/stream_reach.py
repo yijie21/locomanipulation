@@ -19,6 +19,7 @@ nudged through the planner.
 
 from __future__ import annotations
 
+import os
 import time
 from collections import deque
 
@@ -122,6 +123,28 @@ class StreamedArm:
         # and the latch updates per planner message — so one frame WITHOUT
         # the field clears it. Skipping this froze the arm mid-grasp with
         # IK res 0.000 and a motionless palm.
+        #
+        # This window is what makes the arms twitch at the stand (the deploy
+        # is still driving the body, hears "no upper-body target", and hands
+        # the arms to the gait prior until the first streamed frame snaps
+        # them back), and two ways round it have now been measured and
+        # reverted, both 0/6 on seed 11/7 against 5/6 here:
+        #   - hold the sim-side pin through the handoff: the arm comes out
+        #     of a stiff position loop and the servo cannot absorb it;
+        #   - skip the clear entirely and let PLANNER_TIMEOUT do it (the
+        #     official Pico manager's order, pico_manager_thread_server.py
+        #     :2098): the deploy only evaluates that timeout while the
+        #     planner is ENABLED (zmq_manager.hpp:623), so once
+        #     enter_streamed() disables it the latch never expires and the
+        #     upper body stays pinned to the last frozen target — exactly
+        #     the "arm not tracking, res 0.000" failure above.
+        # The latch can therefore only be cleared from inside planner mode.
+        # What has NOT been tried: hold the arms through the window with
+        # VR-3pt wrist targets at the measured palm pose (switch
+        # stream_mode to PLANNER_VR_3PT for these 0.4 s) — same control
+        # regime as the streamed tracking that follows, so no stiff-pin
+        # discontinuity, and the planner stays enabled so the clear still
+        # happens.
         self.p.cmd.upper_body = None
         end = time.time() + 0.4
         while time.time() < end:      # one frame raced the deploy's reader;
@@ -1321,6 +1344,20 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     # release. Whatever the arm carries out of a stiff pin, the servo
     # cannot absorb it. Fix the twitch some other way.
     try:
+        # A/B knob (GYM_IDLE_SWEEP=1): sweep the idle arm to the free flank
+        # with a shoulder-yaw turn before the crouch. Removing this sweep is
+        # the only grasp-path change at the batch boundary where the success
+        # rate fell (19/21 -> 9/24), but the mechanism I proposed for it (a
+        # centre-of-mass shift) measures just 6.1 mm on a 35.9 kg robot, so
+        # the link is unproven — this switch exists to settle it by
+        # experiment rather than by argument.
+        if os.environ.get("GYM_IDLE_SWEEP") == "1":
+            other = "left" if side == "right" else "right"
+            q_sw = arm.q.copy()
+            q_sw[ARM_MJ[other]] = [0.0, 0.35 if other == "left" else -0.35,
+                                   1.2 if other == "left" else -1.2,
+                                   0.0, 0.0, 0.0, 0.0]
+            arm.move_to(q_sw, speed=1.0)
         # The IDLE arm is left ALONE — no sweep, no pre-lift. It rides the
         # crouch at the READY pose, and that clears the tabletop with room
         # to spare: measured on the true hand meshes (not the bounding
