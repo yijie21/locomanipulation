@@ -1312,6 +1312,14 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
         _nudge_closer(p, grip_world, side, x_max=x_band)
     arm = StreamedArm(p, side)
     arm.start()
+    # NOTE: the sim-side pin must already be RELEASED before this call.
+    # Holding it through start() and releasing here removes the visible
+    # arm twitch (the gait prior pulls the unheld arms in during the
+    # 0.7 s latch-clear window, then the first streamed frame snaps them
+    # back) — but it also cost every grasp: 0/6 on seed 11 versus 5/6
+    # with the early release, with or without a 1 s settle after the
+    # release. Whatever the arm carries out of a stiff pin, the servo
+    # cannot absorb it. Fix the twitch some other way.
     try:
         # The IDLE arm is left ALONE — no sweep, no pre-lift. It rides the
         # crouch at the READY pose, and that clears the tabletop with room

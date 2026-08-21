@@ -585,6 +585,12 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
 
     p.cmd.set_wrists(left_pos=READY_WRISTS["left"],
                      right_pos=READY_WRISTS["right"])
+    # Release the sim-side pin BEFORE the streamed handoff. This is what
+    # makes the arms twitch at the stand (they hang unheld for the 0.7 s
+    # StreamedArm.start() spends clearing the deploy's upper-body latch,
+    # then the first streamed frame snaps them back), but holding the pin
+    # through the handoff instead took seed 11 from 5/6 to 0/6 — see the
+    # note in grasp_streamed.
     reset.pin_arms()
     ok, why = stream_reach.grasp_streamed(
         p, obj_key, grip, plan, side=side, surface_top=surf_a["top"],
