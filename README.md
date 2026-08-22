@@ -410,6 +410,26 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 
 ---
 
+## 机器人从哪里出发
+
+每局的出生点也是随机的 —— 距离、横向偏移、初始朝向各一个轴:
+
+```bash
+--spawn-off 1.0 3.0     # 出生在站位后方这个范围(单值=固定)
+--spawn-lateral 0.35    # 最多偏离接近线这么远
+--spawn-yaw-err 90      # 初始朝向最多偏这么多度,走之前在出生点转出来
+```
+
+**转身发生在出生点**,离桌子 1–3 m。近距离转身是记录在案的坑:靠近物体时的
+`face_target` 会让机器人原地转 110–160°,骨盆直接怼上桌沿。
+
+两个反直觉的点(都由 `diag_turn.py` 测出来):
+
+- **控制器有 7–8° 的朝向死区。**转身容差不能收到 0.15 rad 以下,收进死区里不会转得
+  更准,只会耗光超时。转完必然残留 ±8–9°,后面的接近段按位置闭环把它吸收掉。
+- **转身用 `SLOW_WALK` 不用 `IDLE`。**SLOW_WALK 12/12 全收敛、±120° 只要 6 s;
+  IDLE 10/12 且耗时在 1–13 s 之间乱跳。人本来也是踏步转身的。
+
 ## 目标与指令
 
 每局的目标是从**目标池**里随机抽的,指令里指名它 —— 这是"抓取策略"和"VLA"的
@@ -568,6 +588,7 @@ the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。�
 | `diag_ego_geom.py` | 罐子在 ego 相机里的可见距离区间,随躯干前倾的变化 |
 | `diag_token_replay.py --phase capture/replay` | 录下的 token 能否复现动作 |
 | `diag_shuffle.py` | 每个 speed 命令实际走多快、一步多长 |
+| `diag_turn.py` | 原地转身:每个模式、每个角度要多久,以及控制器的朝向死区 |
 | `diag_reach_probe.py` | reach map 的实测校验 |
 | `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
 

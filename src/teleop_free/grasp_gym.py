@@ -55,6 +55,7 @@ from primitives import (  # noqa: E402
     Primitives,
     StreamMode,
     upper_body_from_mj,
+    wrap,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
 import paths
@@ -67,6 +68,11 @@ EDGE_MIN = 0.17            # pelvis-to-edge HARD floor, enforced at arrival.
                            # lean protrudes ~14 cm past the pelvis centre;
                            # 0.15 still brushed the hip 15x/batch once the
                            # planned crouch deepened to 13-15 cm delivered
+# How far before the stand the arm starts coming up, and therefore where the
+# momentum walk hands over to the deadband approach. Module scope because the
+# sampler needs it too: the walk is two legs, spawn -> lead point -> stand,
+# and both have to clear the furniture.
+RAISE_LEAD = 1.00
 EDGE_MAX = 0.32            # sampling ring upper bound: core-aim stands sit
                            # at rel depth 0.18-0.36 (the sweet slice), so
                            # they clear the edge by more than the old 0.20
@@ -210,12 +216,25 @@ def main() -> None:
                     help="drive the data exporter too, and keep only the "
                          "episodes that pass every stage predicate")
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--spawn-off", type=float, default=1.80,
-                    help="spawn this far behind the stand and walk in. Long "
+    ap.add_argument("--spawn-off", type=float, nargs="+", default=[1.0, 3.0],
+                    metavar="M",
+                    help="spawn this far behind the stand and walk in. One "
+                         "value fixes it, two give a per-round range. Long "
                          "enough that the approach is a real walk: the arm "
                          "rises over the last RAISE_LEAD metres instead of "
                          "being held out level the whole way, and the ego "
-                         "camera picks the can up at 1.77 m (diag_ego_geom).")
+                         "camera picks the object up at 1.77 m "
+                         "(diag_ego_geom).")
+    ap.add_argument("--spawn-lateral", type=float, default=0.35, metavar="M",
+                    help="spawn up to this far to either side of the approach "
+                         "line. 0 puts every episode dead on it, which is a "
+                         "correction the model then never sees.")
+    ap.add_argument("--spawn-yaw-err", type=float, default=90.0, metavar="DEG",
+                    help="spawn facing up to this far off the approach "
+                         "heading, and turn to it before walking. The turn "
+                         "happens AT THE SPAWN, metres from the table: near "
+                         "the object a heading correction is a 110-160 deg "
+                         "pirouette that walks the pelvis into the edge.")
     ap.add_argument("--targets", default="pool",
                     help="which objects to draw the round's target from: "
                          "'pool' (every entry in the scene's target_pool), "
@@ -228,6 +247,9 @@ def main() -> None:
                          "episode its own task string, which the exporter "
                          "cannot do -- its --task-prompt is per SESSION.")
     args = ap.parse_args()
+    off_lo, off_hi = (args.spawn_off * 2)[:2]
+    if off_lo > off_hi:
+        off_lo, off_hi = off_hi, off_lo
     rng = np.random.default_rng(args.seed if args.seed is not None
                                 else (os.getpid() * 7919) % 2 ** 31)
 
@@ -347,16 +369,31 @@ def main() -> None:
             edge_lo = EDGE_MIN + (0.03 if try_i < 300 else 0.0)
             if not (edge_lo <= edge_dist(stand) <= EDGE_MAX):
                 continue
+            # Where the robot starts. Sampled INSIDE the rejection loop
+            # because the clearance check below depends on all three: a
+            # spawn 3 m out with 0.35 m of lateral offset crosses different
+            # furniture than one 1 m out dead on the line.
+            spawn_off = float(rng.uniform(off_lo, off_hi))
+            spawn_lat = float(rng.uniform(-args.spawn_lateral,
+                                          args.spawn_lateral))
+            dpsi = float(np.deg2rad(rng.uniform(-args.spawn_yaw_err,
+                                                args.spawn_yaw_err)))
+            fv2 = np.array([np.cos(psi), np.sin(psi)])
+            perp = np.array([-fv2[1], fv2[0]])
+            spawn_pt = stand - spawn_off * fv2 + spawn_lat * perp
             # The WALK must clear the table too: the batch's "fell during
             # the walk-up" class was the robot brushing the table edge on
             # the way in (video: hip catches the rim, robot tips backwards
-            # onto the tabletop). Check the whole spawn->stand line — for a
-            # long approach it can cross the OTHER table.
-            spawn_pt = stand - args.spawn_off * np.array([np.cos(psi),
-                                                          np.sin(psi)])
-            n_chk = max(2, int(np.ceil(args.spawn_off / 0.25)) + 1)
-            line = np.linspace(spawn_pt, stand, n_chk, endpoint=False)
-            if all(edge_dist(q) >= EDGE_MIN for q in line):
+            # onto the tabletop). Check the ACTUAL two legs, not one
+            # straight line: with a lateral offset the robot goes
+            # spawn -> lead_tgt (a diagonal) -> stand (on the line), and
+            # the diagonal is the segment that swings widest.
+            lead_pt = stand - (0.30 + RAISE_LEAD) * fv2
+            legs = [(spawn_pt, lead_pt), (lead_pt, stand)]
+            n_chk = max(2, int(np.ceil(spawn_off / 0.25)) + 1)
+            pts = [q for a, b in legs
+                   for q in np.linspace(a, b, n_chk, endpoint=False)]
+            if all(edge_dist(q) >= EDGE_MIN for q in pts):
                 break
         else:
             print("EPISODE FAILED [gym] no feasible sample found")
@@ -365,7 +402,8 @@ def main() -> None:
         print(f"[gym] round {rnd + 1}/{args.rounds}: {obj_key} "
               f"{np.round(can_xy, 2)}"
               f" rel [{rel[0]:.2f} {rel[1]:+.2f}] yaw {np.degrees(psi):.0f}"
-              f" side {side} | \"{task}\"")
+              f" side {side} | spawn {spawn_off:.2f}m lat {spawn_lat:+.2f}m "
+              f"yaw_err {np.degrees(dpsi):+.0f}deg | \"{task}\"")
 
         # -- reset + settle -----------------------------------------------
         # Stand-stage failures (fell on the walk-up / never stabilised) are
@@ -390,7 +428,9 @@ def main() -> None:
                                d_robot=list(map(float, stand - robot_nom)),
                                psi=float(psi), side=side,
                                rel=list(map(float, rel)),
-                               spawn_off=float(args.spawn_off),
+                               spawn_off=float(spawn_off),
+                               spawn_lat=float(spawn_lat),
+                               dpsi=float(dpsi),
                                squat_hint=(None if squat_hint is None
                                            else float(squat_hint)),
                                stand=list(map(float, stand)),
@@ -400,7 +440,8 @@ def main() -> None:
                 p, reset, meta, obj_key, surf_a, edge_dist,
                 can_xy - can_nom, stand - robot_nom, psi,
                 side, rel, rm, stand, squat_hint,
-                spawn_off=args.spawn_off, record=args.record)
+                spawn_off=spawn_off, spawn_lat=spawn_lat, dpsi=dpsi,
+                record=args.record)
             if args.record and produced and ok:
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
@@ -436,7 +477,8 @@ def main() -> None:
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
               spawn_xy, squat_hint=None,
-              spawn_off=0.30, record: bool = False) -> tuple[bool, str, bool]:
+              spawn_off=0.30, spawn_lat=0.0, dpsi=0.0,
+              record: bool = False) -> tuple[bool, str, bool]:
     """One round, and the exporter left in a clean state whatever happens.
 
     Returns (ok, why, produced_episode). The third value is what the
@@ -455,7 +497,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     rec = {"on": False}
     ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                          d_can, d_robot, psi, side, rel, rm, spawn_xy,
-                         squat_hint, spawn_off, record, rec)
+                         squat_hint, spawn_off, spawn_lat, dpsi, record, rec)
     if record and rec["on"] and not ok:
         p.cmd.key("x")
         p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
@@ -465,15 +507,22 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
 def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                d_can, d_robot, psi, side, rel, rm,
                spawn_xy, squat_hint=None,
-               spawn_off=0.30, record: bool = False,
+               spawn_off=0.30, spawn_lat=0.0, dpsi=0.0,
+               record: bool = False,
                rec: dict | None = None) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
     # standing does. 0.30 m back gives the rise ~0.5 m of room and leaves
     # only a two-step walk to the stand.
+    fv2 = np.array([np.cos(psi), np.sin(psi)])
+    perp = np.array([-fv2[1], fv2[0]])
     d_robot = (np.asarray(d_robot, dtype=float)
-               - spawn_off * np.array([np.cos(psi), np.sin(psi)]))
+               - spawn_off * fv2 + spawn_lat * perp)
+    # The heading the robot WAKES UP with, which is not the heading it walks
+    # in on. psi is the approach heading; dpsi is the error it has to turn
+    # out at the spawn, before the walk, metres from the table.
+    psi_spawn = float(psi + dpsi)
     # QUIESCE the deploy before the teleport: it keeps executing the
     # previous round's locomotion intent through the reset (fresh-deploy
     # round 1 was always clean, later rounds marched off mid-settle,
@@ -492,11 +541,10 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                    "yaw": float(np.random.uniform(-np.pi,
                                                                   np.pi))}},
                 robot={"dxy": [float(d_robot[0]), float(d_robot[1])],
-                       "yaw": float(psi)})
+                       "yaw": psi_spawn})
     time.sleep(0.3)
     landed_xy = np.asarray(p.pelvis_xy(p.obs()))
-    want_xy = (np.asarray(spawn_xy)
-               - spawn_off * np.array([np.cos(psi), np.sin(psi)]))
+    want_xy = np.asarray(spawn_xy) - spawn_off * fv2 + spawn_lat * perp
     tp_err = float(np.linalg.norm(landed_xy - want_xy))
     if tp_err > 0.10:
         return False, (f"[stand] teleport landed {tp_err:.2f} m off "
@@ -514,18 +562,33 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # robot 50-70 deg off its sampled yaw (pre-walk yaw_err telemetry).
     # Hold the sampled heading explicitly through every settle.
     fv = (float(np.cos(psi)), float(np.sin(psi)), 0.0)
-    # Re-anchor BEFORE the settle, not after it. The deploy captures its
-    # heading anchor at start_control, i.e. at the pose the robot had
-    # BEFORE this round's teleport, and reanchor() re-captures it here and
-    # records the yaw in cmd.heading_offset — which frame() then uses to
-    # express `facing` in the robot's own heading frame. The release policy
-    # tolerates a stale anchor (its reference orientations are absolute),
-    # but SONIC v1.1 normalizes its observations by the robot heading, so a
-    # stale anchor is a standing heading error it keeps turning to close:
-    # measured over a 5 s IDLE hold, 0.134 m of drift without this call and
-    # 0.004 m with it (diag_idle_drift.py).
-    stream_reach.reanchor(p, side=side)
-    p.cmd.hold(4.0, mode=LocomotionMode.IDLE, facing=fv)
+    # The settle holds the heading the robot WOKE UP with. Commanding the
+    # approach heading here instead would make the stand-up fight the turn,
+    # and an IDLE facing more than ~60 deg away does not turn at all -- it
+    # stalls (Primitives.turn_to: 68 deg timed out where 30 deg finished in
+    # a second). The turn gets its own phase below, after the robot is up.
+    fv_spawn = (float(np.cos(psi_spawn)), float(np.sin(psi_spawn)), 0.0)
+    # Tell the commander where the deploy's heading anchor IS, rather than
+    # forcing a new one. The deploy captures its anchor at start_control,
+    # from the yaw it sees THEN -- which is the post-teleport yaw, because
+    # the reset above already happened. So the anchor is simply the landing
+    # yaw, and frame() can undo the rotation from that.
+    #
+    # This replaces a stream_reach.reanchor(p) call, which was there to
+    # force the anchor to a yaw this process knew. Measured side by side
+    # from a -63 deg spawn, holding that heading for 5 s:
+    #
+    #     offset := landing yaw   ->  yaw -61.1 (err +1.9 deg), moved 0.10 m
+    #     reanchor() toggle       ->  yaw -71.5 (err -8.5 deg), moved 0.05 m
+    #
+    # and reanchor is worse than those numbers suggest: its streamed toggle
+    # SPINS the robot ~40 deg while it runs, then records that spun yaw as
+    # the anchor. With a spawn heading error to turn out afterwards, that
+    # left the robot chasing a 40 deg phantom through the settle -- 0.55 m
+    # of stand drift, over the 0.35 m budget, before the deliberate turn
+    # even started.
+    p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
+    p.cmd.hold(4.0, mode=LocomotionMode.IDLE, facing=fv_spawn)
     s = p.obs()
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
@@ -539,6 +602,41 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     if drift > 0.35:
         return False, (f"[stand] walked {drift:.2f} m off the spawn "
                        f"while standing up")
+    # TURN AT THE SPAWN. This is the whole reason the spawn heading and the
+    # approach heading are separate: a heading correction near the object is
+    # a 110-160 deg pirouette that walks the pelvis into the table edge,
+    # whereas out here there is nothing to hit. turn_to walks the commanded
+    # facing across in <=0.5 rad steps because a larger jump stalls the
+    # controller outright.
+    # tol 0.16, not tighter: the controller holds a 7-8 deg heading dead
+    # zone (diag_turn.py measures a 6.5-8.1 deg residual on every probe in
+    # both modes at every angle), and a tolerance inside it does not turn
+    # harder, it just burns the timeout -- which is exactly how the first
+    # attempt at this failed. SLOW_WALK, not IDLE: it converged on every
+    # probe and roughly three times faster at the angles that matter, while
+    # IDLE failed outright at +60 and +120. A stepping turn is also what a
+    # person does.
+    if abs(wrap(dpsi)) > 0.10:
+        turned_from = np.asarray(p.pelvis_xy(p.obs()))
+        if not p.turn_to(psi, tol=0.16, timeout=20.0,
+                         mode=LocomotionMode.SLOW_WALK):
+            return False, (f"[stand] could not turn "
+                           f"{np.degrees(dpsi):+.0f} deg to the approach "
+                           f"heading at the spawn ({p.aborted})")
+        s = p.obs()
+        if s["fallen"]:
+            return False, "[stand] fell while turning at the spawn"
+        # The turn is allowed to shuffle, not to walk away: it happens
+        # before the sampler's clearance guarantees mean anything, since
+        # those were computed for the spawn POINT.
+        walked = float(np.linalg.norm(np.asarray(p.pelvis_xy(s))
+                                      - turned_from))
+        p.log(f"[gym] spawn turn {np.degrees(dpsi):+.0f} deg -> "
+              f"yaw_err {np.degrees(wrap(p.pelvis_yaw(s) - psi)):+.0f} deg, "
+              f"moved {walked:.2f} m")
+        if walked > 0.40:
+            return False, (f"[stand] the spawn turn walked {walked:.2f} m "
+                           f"off the sampled spawn")
     # Walk with the arms FREE. In PLANNER_VR_3PT the walking policy ignores
     # the wrist targets and swings the arms with the gait (agent_server:151),
     # which is what a person does; the old pre-walk switch to
@@ -596,13 +694,26 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # deploy substitutes them into the reference verbatim, with no ramp of
     # its own, g1_deploy_onnx_ref.cpp:781) -- and drives them to READY by
     # distance remaining, so the arm is up exactly when the body arrives.
-    RAISE_LEAD = 1.00
     lead_tgt = np.asarray(spawn_xy) - (0.30 + RAISE_LEAD) * np.array(fv[:2])
-    if float(np.linalg.norm(lead_tgt - p.pelvis_xy(p.obs()))) > 0.20:
+    # ALONG-TRACK, not distance. The lead point is fixed 1.30 m behind the
+    # stand while the spawn is now sampled anywhere from 1.0 to 3.0 m back,
+    # so for a close spawn the lead point sits BEHIND the robot -- and a
+    # plain distance test still fires, because a lateral offset keeps the
+    # distance above the old 0.20 m threshold. Leg 1 would then walk the
+    # robot backwards away from the table. Project onto the approach
+    # direction and skip leg 1 when there is nothing forward to walk to;
+    # the deadband approach closes the whole gap on its own, lateral error
+    # included, because it steers at the stand rather than pushing along
+    # the heading.
+    along = float(np.dot(lead_tgt - np.asarray(p.pelvis_xy(p.obs())),
+                         np.array(fv[:2])))
+    if along > 0.20:
         if not p.walk_to(lead_tgt, stop_dist=0.10,
                          timeout=10.0 + 8.0 * spawn_off,
                          face_target=False):
             return False, "[stand] fell during the walk-up"
+    else:
+        p.log(f"[gym] leg 1 skipped (lead point {along:+.2f} m along track)")
     q_free = upper_body_from_mj(p.obs()["joints"])
     p.cmd.set_upper_body(q_free)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY

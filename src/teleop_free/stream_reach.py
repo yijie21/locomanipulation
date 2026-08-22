@@ -197,7 +197,20 @@ class StreamedArm:
         # The switch re-anchors the deploy's planner heading at the robot's
         # current yaw (diag_heading.py); record it so frame() can undo the
         # rotation, or the next navigation walks confidently sideways.
-        self.p.cmd.heading_offset = float(s["pelvis"]["yaw"])
+        #
+        # Read the yaw HERE, not from `s` at the top of this method. The
+        # deploy anchors at the instant of the switch, and `s` is several
+        # hundred milliseconds older -- which is invisible while the robot
+        # is standing still and catastrophic while it is not. reanchor()
+        # runs right after start_control, with the robot still rising out of
+        # the reset crouch and turning as it rises: measured 50.6 deg of
+        # error between the recorded offset and the robot's actual yaw. The
+        # settle then quietly turned the robot 10 deg off the heading it was
+        # being commanded to hold, and every later facing command was skewed
+        # by the same 50 deg, which is what made a 70 deg spawn turn
+        # unreachable.
+        self.p.cmd.heading_offset = float(
+            self.p.obs()["pelvis"]["yaw"])
 
     def _push(self, q_mj29) -> None:
         self.buf.append(mujoco_to_isaac(q_mj29).astype(np.float32))

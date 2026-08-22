@@ -677,7 +677,38 @@ class Primitives:
         self.aborted = f"walk_to {target.round(2)} timed out"
         return False
 
-    def turn_to(self, yaw: float, tol: float = 0.15, timeout: float = 15.0) -> bool:
+    def turn_to(self, yaw: float, tol: float = 0.15, timeout: float = 15.0,
+                mode: LocomotionMode = LocomotionMode.IDLE) -> bool:
+        """Turn on the spot to a world yaw.
+
+        `tol` cannot be tightened below ~0.15 rad. The controller has a
+        heading DEAD ZONE of about 7-8 deg: every probe in diag_turn.py, in
+        both modes and at every angle from 15 to 120 deg, stops with a
+        residual of 6.5-8.1 deg and then holds there. A tol inside that band
+        does not turn harder, it just spins out the timeout -- which is how a
+        -70 deg spawn turn came to fail at tol=0.12.
+
+        `mode` matters more than the angle does. Measured (diag_turn.py,
+        seconds to converge, +/- pairs):
+
+            deg      IDLE          SLOW_WALK
+             15    1.2 / 1.3       0.5 / 2.1
+             30    8.8 / 4.3       1.0 / 3.0
+             45   13.0 / 4.7       2.9 / 5.0
+             60   FAIL / 4.4       4.0 / 6.7
+             90    5.2 / 3.0       4.0 / 4.0
+            120   FAIL / 4.5       5.8 / 6.1
+
+        SLOW_WALK converged on all 12 probes, never slower than 6.7 s, and
+        is barely affected by the angle -- 120 deg costs about as much as
+        45. IDLE managed 10 of 12, erratically, and both of its failures are
+        dead-zone near-misses (residual 7.9-8.1 deg) rather than stalls. This also
+        replaces the older note here -- "an IDLE facing more than ~60 deg
+        away stalls the controller (68 deg turns timing out while 30 deg
+        turns finish in a second)" -- which read a tolerance artefact as an
+        angle limit. Stepping the commanded facing is still right and still
+        done; it is just not what was rescuing the 30 deg case.
+        """
         end = time.time() + timeout
         while time.time() < end:
             s = self.obs()
@@ -691,12 +722,11 @@ class Primitives:
                 self.log(f"turn_to {np.rad2deg(yaw):.0f}deg done")
                 return True
             # Walk the facing command toward the goal instead of jumping it
-            # there: an IDLE facing more than ~60 deg away stalls the
-            # controller (measured: 68 deg turns timing out while 30 deg turns
-            # finish in a second), so keep the commanded heading within a step
-            # the policy actually takes.
+            # there — keep the commanded heading within a step the policy
+            # actually takes. See the docstring for what this does and does
+            # not buy.
             goal = self.pelvis_yaw(s) + np.clip(err, -0.5, 0.5)
-            self.cmd.frame(mode=LocomotionMode.IDLE,
+            self.cmd.frame(mode=mode, movement=(0.0, 0.0, 0.0),
                            facing=(np.cos(goal), np.sin(goal), 0.0))
             time.sleep(DT)
 
