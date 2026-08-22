@@ -131,6 +131,10 @@ def build_rel_candidates(rm: reach_map.ReachMap, z_pf: float) -> np.ndarray:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=5)
+    ap.add_argument("--dump-sample", default=None,
+                    help="write this round's scene sample to a JSON file so a "
+                         "replay can reproduce the identical initial condition "
+                         "(diag_token_replay.py)")
     ap.add_argument("--record", action="store_true",
                     help="drive the data exporter too, and keep only the "
                          "episodes that pass every stage predicate")
@@ -294,6 +298,17 @@ def main() -> None:
                 # falls it targeted turned out to be table brushes, fixed by
                 # the walk-line clearance in the sampler.)
                 fresh_deploy(p)
+            if args.dump_sample:
+                json.dump(dict(d_can=list(map(float, can_xy - can_nom)),
+                               d_robot=list(map(float, stand - robot_nom)),
+                               psi=float(psi), side=side,
+                               rel=list(map(float, rel)),
+                               spawn_off=float(args.spawn_off),
+                               squat_hint=(None if squat_hint is None
+                                           else float(squat_hint)),
+                               stand=list(map(float, stand)),
+                               robot_nom=list(map(float, robot_nom))),
+                          open(args.dump_sample, "w"), indent=1)
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                 can_xy - can_nom, stand - robot_nom, psi,
                                 side, rel, rm, stand, squat_hint,

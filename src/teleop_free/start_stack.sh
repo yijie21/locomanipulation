@@ -109,9 +109,21 @@ cd "$SONIC_DEPLOY_ROOT" || exit 1
 # Set SONIC_POLICY=policy/sonic_v1_1 to run it.
 SONIC_POLICY="${SONIC_POLICY:-policy/release}"
 echo "  policy: $SONIC_POLICY"
+# NO_ENCODER=1 launches the deploy WITHOUT the encoder, which is the
+# token-only (VLA) configuration. It is not just a saving: with an encoder
+# loaded, initial_encoder_mode_ is 0, and the deploy's token path then keeps
+# flipping back ("if encoder mode is not -1, we need to turn on the encoder",
+# g1_deploy_onnx_ref.cpp:3096) so an external token stream never holds. Drop
+# the file and the mode becomes -1, "Encoder config found but no encoder file
+# provided - tokens can be set externally".
+ENC_ARG=(--encoder-file "$SONIC_POLICY/model_encoder.onnx")
+if [ "${NO_ENCODER:-0}" = "1" ]; then
+    ENC_ARG=()
+    echo "  encoder: OFF (token-only / VLA deployment mode)"
+fi
 nohup ./target/release/g1_deploy_onnx_ref lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \
     --obs-config "$SONIC_POLICY/observation_config.yaml" \
-    --encoder-file "$SONIC_POLICY/model_encoder.onnx" \
+    "${ENC_ARG[@]}" \
     --planner-file planner/target_vel/V2/planner_sonic.onnx \
     --input-type zmq_manager --output-type all --zmq-host localhost --zmq-port "$TF_SONIC_PORT" --zmq-out-port "$TF_OUT_PORT" --disable-crc-check \
     > "$LOGS/deploy.log" 2>&1 &

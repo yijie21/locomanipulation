@@ -349,6 +349,28 @@ class AgentCommander:
             data["right_hand_joints"] = np.asarray(right_hand, dtype=np.float32)
         self.sonic.send(pack_pose_message(data, topic="pose", version=1))
 
+    def token_frame(self, token, right_hand=None, left_hand=None,
+                    frame_index: int | None = None) -> None:
+        """One protocol-v4 `pose` message: a SONIC latent, no motion data.
+
+        This is the interface a VLA deploys through. v4 is token-only
+        streaming (zmq_endpoint_interface.hpp:82): REQUIRED token_state,
+        OPTIONAL frame_index / hand joints / body_quat_w, and sending motion
+        alongside it is rejected outright ("Protocol version 4 with motion
+        data is impossible!", :396). The deploy flips is_using_encoder_ off
+        the moment the first external token lands
+        (g1_deploy_onnx_ref.cpp:3038), so the encoder is bypassed without
+        relaunching anything.
+        """
+        data = {"token_state": np.asarray(token, dtype=np.float32).ravel()}
+        if frame_index is not None:
+            data["frame_index"] = np.array([frame_index], dtype=np.int64)
+        if left_hand is not None:
+            data["left_hand_joints"] = np.asarray(left_hand, dtype=np.float32)
+        if right_hand is not None:
+            data["right_hand_joints"] = np.asarray(right_hand, dtype=np.float32)
+        self.sonic.send(pack_pose_message(data, topic="pose", version=4))
+
     def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
         """Stream the current target at a fixed rate."""
         dt = 1.0 / hz
