@@ -134,12 +134,18 @@ def main() -> None:
     from privileged_pub import EpisodeControlClient  # noqa: E402
 
     meta = json.load(open(SCENE_META))
+    # NOT meta["target_object"]. The gym draws its target from a pool now, so
+    # the captured round may be about any of them; the sample records which,
+    # and every predicate below has to be about that same object. Falls back
+    # to the scene default for samples captured before the pool existed.
     obj_key = meta["target_object"]
 
     if args.phase == "capture":
         print("[replay] === CAPTURE (normal stack, encoder ON) ===")
         tap = TokenTap()
         sample, rows = capture(args.seed, tap)
+        obj_key = sample.get("target", obj_key)
+        print(f"[replay] captured round's target: {obj_key}")
         if len(rows) < 200:
             sys.exit(f"only {len(rows)} token frames captured — is the deploy "
                      f"publishing g1_debug on :{STATE_PORT}?")
@@ -161,6 +167,7 @@ def main() -> None:
     tokens, caps_q, rh = cap["tokens"], cap["body_q"], cap["rh"]
     ts_cap = cap["ts"]
     sample = json.loads(str(cap["sample"]))
+    obj_key = sample.get("target", obj_key)
     rows = [{"t": float(t)} for t in ts_cap]
     span = ts_cap[-1] - ts_cap[0]
     print(f"[replay] === REPLAY (stack must be NO_ENCODER=1) ===")

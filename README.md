@@ -166,8 +166,17 @@ bash scripts/install_scene.sh
 ```
 
 解包 `assets/scene_locomani_v1.tar.gz` 到 `outputs/scene/`(双桌面 + 橙子/盘子等物体的
-MJCF、抓取标注、reach map、hand points),并自动把 MJCF 里的绝对路径改写到当前
-checkout —— 打包时的路径是**探测**出来的,不是写死的,所以在哪台机器上重新打包都不会坏。
+MJCF、布局、抓取标注、reach map、hand points),把 MJCF 里的绝对路径改写到当前
+checkout,**然后重建场景**。
+
+三点值得知道:
+
+- 路径前缀是**探测**出来的,不是写死的,所以在哪台机器上重新打包都不会坏。
+- **重建不是多余的一步。**tarball 装的是 EmbodiedGen 慢慢生成的那部分(网格与布局),
+  而摆放、桌高、目标物体全在 `scene_lib.py` 里,改得很勤。tarball 里放一个构建好的
+  `scene_locomani.xml`,第一次有人编辑 `scene_lib.py` 它就过时了,而且失败是静默的:
+  sim 照常跑,只是新目标物体不存在。重建约 1 秒。
+- 需要 `.venv_sim` 才能重建;venv 还没建时脚本会明确说它跳过了这一步。
 
 如需重新生成场景:装好 EmbodiedGen(`src/teleop_free/install_embodiedgen.sh`),依次跑
 `compose_scene.py` → `inject_physics_into_mjcf.py` → `build_sim_scene.py`,再用
@@ -383,8 +392,12 @@ SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh "pick up the
 
 # 2. 采集(--record 驱动 exporter 落盘;不加就是只跑不落盘)
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
-    src/teleop_free/grasp_gym.py --rounds 12 --seed 21 --record
+    src/teleop_free/grasp_gym.py --rounds 12 --seed 21 --record \
+    --manifest outputs/logs/manifest.jsonl
 ```
+
+`--manifest` 不是可选的调试项 —— **要做逐局不同的指令就必须有它**,原因见
+[目标与指令](#目标与指令)。
 
 要点:
 
@@ -396,6 +409,66 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 - 停止:`bash src/teleop_free/stop_stack.sh`。
 
 ---
+
+## 目标与指令
+
+每局的目标是从**目标池**里随机抽的,指令里指名它 —— 这是"抓取策略"和"VLA"的
+分界线:目标固定时,一个完全不读指令的模型和一个读指令的模型得分一样。
+
+```bash
+--targets pool          # 默认,scene_meta 里的整个 target_pool
+--targets default       # 只用单一目标(旧行为)
+--targets can,bottle    # 指定
+```
+
+| 目标 | 尺寸 | 桌沿 | 指令 |
+|---|---|---|---|
+| `can` | φ4.8 × 12 cm 深红 | +y | pick up the red can |
+| `bottle` | φ6.0 × 14 cm 蓝 | −y | pick up the blue bottle |
+| `cup` | φ7.0 × 10 cm 米白 | −x | pick up the cream cup |
+| `jar` | φ3.6 × 11 cm 绿 | −y | pick up the green jar |
+
+`plate` / `fork` / `napkin` / `orange` 是**干扰物**,不进目标池。
+
+### 为什么目标池只能是细高物体
+
+dex1 平行夹爪有两条硬约束,是量出来的不是拍的:
+
+```
+水平跨距 ≤ HAND_APERTURE − PINCH_MARGIN      = 8.48 cm
+高度     ≥ GRIP_BELOW_RIM + 伺服 z 地板       = 9.0 cm
+```
+
+抓取中心在物体顶面下 6 cm,而伺服把命令 z 压在桌面 +3 cm 以上
+(`stream_reach.py:1405`)。**球体因此在结构上出局**:直径 = 高度,不可能同时
+≤ 8.48 且 ≥ 9.0 —— 橘子(9.3 cm)缩放也进不来,缩小解决宽度的同时等速破坏高度。
+目标只能是 **φ3–8.5 cm × 高 9–14 cm** 的一族(圆柱、瓶、杯)。
+
+`scene_lib.PRIMITIVE_OBJECTS` 里加一条就是一个新目标,重建场景 1.2 秒。
+
+### 指令是怎么进数据集的
+
+exporter 的 `--task-prompt` 是 **per-session** 的,整个 session 共用一条,所以
+逐局不同的指令必须绕过它:
+
+```
+grasp_gym --manifest m.jsonl     每产生一个 episode 追加一行(目标、指令、成败)
+        ↓
+convert_to_hf_format.py --manifest m.jsonl
+        ↓
+meta/tasks.jsonl      多条 task
+meta/episodes.jsonl   每局自己的 task_index
+```
+
+对齐靠**顺序**:exporter 按写入顺序给 episode 编号,就是 gym 产生它们的顺序。
+转换器会硬校验两件事,不符就**直接报错退出**而不是警告 —— 指令标错在数据里是
+看不见的,而且恰好毁掉目标随机化想教的东西:
+
+- manifest 里 `produced` 的行数 == session 里的 episode 数
+- 每一行的 `ok` == 该 episode 在 disk 上是否被 discarded
+
+manifest 是**每次尝试一行**而不是每局一行:`[stand]` 类失败会重试整局,而如果
+那次失败发生在开始录制之后,session 里就已经留下了一个 episode。
 
 ## 数据 schema
 
@@ -433,8 +506,12 @@ exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`。转换成 LeRobot 
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
     src/teleop_free/tools/convert_to_hf_format.py \
     --sessions "$LOCOMANI_TMP"/p03/outputs/<session...> \
+    --manifest outputs/logs/manifest.jsonl \
     --out datasets/g1_locomani_lerobot
 ```
+
+`--manifest` 按顺序与 `--sessions` 一一对应,一个 gym 进程写一个 manifest、填一个
+session。不给的话每局都会拿到同一条兜底指令。
 
 得到的数据集可直接喂给 `third_party/Isaac-GR00T` 做 GR00T 微调。上层/底层的详细
 数据流见 `docs/architecture.drawio`。
@@ -469,6 +546,9 @@ the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。�
 | `SIM_VIS=none` 但幽灵夹爪还在 | `SIM_VIS` 只给了 stack,没给 gym。两个进程都要设 |
 | 录下来的 `planner_height` 全是 -1 | `patches/vla_action_space.patch` 没打。整段下蹲会从 action 里消失 |
 | action 是 267 维而不是 66 维 | 同上,补丁没打 |
+| `[manifest] ...: N produced rounds but M episodes on disk` | manifest 和 session 不是同一次运行。一个 gym 进程写一个 manifest、填一个 session,别混用 |
+| `[manifest] ... join is out of phase` | 更糟:数量对上了但成败对不上。**别转这个 session**,指令会标错 |
+| `[gym] targets not in the scene` | 场景是旧的。`bash scripts/install_scene.sh` 会解包并重建 |
 | 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
 | 场景 MJCF 找不到 mesh | 重跑 `bash scripts/install_scene.sh`;它会探测并改写 tarball 里烘死的路径 |
 

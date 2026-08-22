@@ -54,8 +54,43 @@ ON_SURFACE_A = ["orange", "fork", "napkin"]   # plus PRIMITIVE_OBJECTS
 ON_SURFACE_B = ["plate"]
 
 # The object the task is about, and where it has to end up.
-TARGET_OBJECT = "can"
+TARGET_OBJECT = "can"          # the default single target (back-compat)
 GOAL_OBJECT = "plate"
+
+# The pool the episode sampler draws its target from. Instruction-following
+# only becomes testable once the target VARIES and the instruction names it;
+# with one target forever, a model that ignores the prompt scores the same as
+# one that reads it.
+#
+# Membership is decided by two measured dex1 constraints, not by taste:
+#
+#     horizontal span <= HAND_APERTURE - PINCH_MARGIN         = 8.48 cm
+#     height          >= GRIP_BELOW_RIM + servo z floor       = 9.0 cm
+#
+# (the grip centre sits GRIP_BELOW_RIM = 6 cm below the object top, and the
+# servo floors its commanded z at the surface + 3 cm, stream_reach.py:1405)
+#
+# Those two exclude every generated asset on the table, and a sphere in
+# principle: diameter = height cannot be both <= 8.48 and >= 9.0, so the
+# orange (9.3 cm) cannot be scaled into the pool -- shrinking it to fix the
+# width breaks the height at the same rate. plate / fork / napkin / orange
+# stay in the scene as DISTRACTORS, which is all they need to be: visible
+# and nameable.
+TARGET_POOL = ("can", "bottle", "cup", "jar")
+
+# What the instruction calls each object. The dataset's per-episode task
+# string is built from this, so it is the model's only handle on which one
+# to fetch -- keep the words a person would actually use.
+OBJECT_PHRASE = {
+    "can": "the red can",
+    "bottle": "the blue bottle",
+    "cup": "the cream cup",
+    "jar": "the green jar",
+    "orange": "the orange",
+    "plate": "the plate",
+    "fork": "the fork",
+    "napkin": "the napkin",
+}
 
 # The MJCF exporter already bakes the URDF's `<origin rpy="1.5708 0 0">` into
 # the geoms, so the assets are upright as loaded — no extra rotation, and
@@ -199,6 +234,28 @@ PRIMITIVE_OBJECTS = {
     # placement note above predates.
     "can": dict(surface="A", xy=(-0.16, 0.385), radius=0.024, height=0.12,
                 mass=0.25, rgba=(0.82, 0.28, 0.22, 1.0)),
+    # The other three targets. Each sits near a DIFFERENT table edge, which
+    # costs nothing and buys a lot: the sampler picks its edge band from the
+    # object's nominal position and aims the stand along that edge's inward
+    # normal, so varying the target varies which side the robot approaches
+    # from -- four targets, three approach directions, one scene.
+    #
+    # Not the +x edge. Surface B (the counter) is centred at x 2.5 with a
+    # 0.66 m half-extent, so a stand on A's +x face puts the spawn, 1.8 m
+    # further out, inside the counter; the sampler's walk-line check rejects
+    # every such draw and that target would never place.
+    #
+    # Sizes span the graspable envelope on purpose, so the dataset carries
+    # more than one aperture: jar 3.6 cm (loosest) to cup 7.0 cm (tightest,
+    # 1.24 cm of clearance either side against the servo's ~0.6 cm lateral
+    # convergence). Colours are chosen to be separable in the ego RGB, since
+    # colour is most of what names them in the instruction.
+    "bottle": dict(surface="A", xy=(0.30, -0.40), radius=0.030, height=0.14,
+                   mass=0.45, rgba=(0.20, 0.35, 0.75, 1.0)),
+    "cup": dict(surface="A", xy=(-0.42, 0.20), radius=0.035, height=0.10,
+                mass=0.30, rgba=(0.90, 0.88, 0.82, 1.0)),
+    "jar": dict(surface="A", xy=(-0.20, -0.40), radius=0.018, height=0.11,
+                mass=0.15, rgba=(0.25, 0.60, 0.30, 1.0)),
 }
 
 
@@ -468,6 +525,8 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
         "surfaces": {},
         "objects": {},
         "target_object": TARGET_OBJECT,
+        "target_pool": list(TARGET_POOL),
+        "object_phrase": dict(OBJECT_PHRASE),
         "goal_object": GOAL_OBJECT,
         "robot_start": {
             "xy": list(ROBOT_START_XY),

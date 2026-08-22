@@ -33,6 +33,7 @@ import time
 
 import mujoco
 import numpy as np
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -80,6 +81,74 @@ FACING_MAX = np.deg2rad(30.0)
 # ~30 s a round buys back the dominant failure class.
 RESTART_DEPLOY = os.environ.get("GYM_RESTART_DEPLOY", "1") == "1"
 RESTART_SCRIPT = f"{paths.REPO}/scripts/restart_deploy.sh"
+
+
+class TargetPlan(NamedTuple):
+    """Everything about one candidate target that does not change per round."""
+    key: str
+    phrase: str            # how the instruction names it
+    nom: np.ndarray        # nominal xy on the surface
+    grip_z: float          # world z of the grip centre
+    rel_cands: np.ndarray  # pelvis-frame (x, y) stands that put it in the core
+    squat_hint: float | None
+    ax: int                # 0 = x edge, 1 = y edge -- the edge it hugs
+    sgn: float             # which side of that axis
+
+
+def resolve_pool(meta: dict, spec: str) -> list[str]:
+    """--targets -> a list of object keys, checked against the scene."""
+    if spec == "pool":
+        want = list(meta.get("target_pool") or [meta["target_object"]])
+    elif spec == "default":
+        want = [meta["target_object"]]
+    else:
+        want = [t.strip() for t in spec.split(",") if t.strip()]
+    missing = [t for t in want if t not in meta["objects"]]
+    if missing:
+        raise SystemExit(f"[gym] targets not in the scene: {missing}. "
+                         f"Rebuild it with build_sim_scene.py, or pick from "
+                         f"{sorted(meta['objects'])}")
+    return want
+
+
+def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap) -> TargetPlan:
+    """Solve the stand plan for one target.
+
+    Split out of main() when the target stopped being fixed. The edge the
+    object hugs is derived here too: the sampler slides the target along
+    ITS OWN nearest edge, so a pool spread around the table is also a pool
+    of approach directions.
+    """
+    surf = meta["surfaces"][meta["objects"][key].get("surface", "A")]
+    cxy = np.asarray(surf["xy"], dtype=float)
+    half = np.asarray(surf.get("half_extent", [0.6, 0.6])[:2], dtype=float)
+    nom = np.asarray(meta["objects"][key]["init_pos"][:2], dtype=float)
+    grip_z = obj_top(meta, key) - grasping.GRIP_BELOW_RIM
+
+    e0 = nom - cxy
+    ax = 0 if abs(abs(e0[0]) - half[0]) < abs(abs(e0[1]) - half[1]) else 1
+    sgn = float(np.sign(e0[ax]))
+
+    plan_cs = rm.plan_core_stand(float(grip_z - STANDING_PELVIS_Z))
+    if plan_cs is not None:
+        rel_cands, want_drop, _ = plan_cs
+        # plan_core_stand's drop is a DELIVERED pelvis drop; arm.squat takes
+        # a command whose delivery runs ~1.5x (measured: cmd 5/9/13 cm ->
+        # 4.4/12/19.5 cm) — invert that curve for the hint.
+        squat_hint = float(np.interp(want_drop, [0.0, 0.044, 0.12, 0.195],
+                                     [0.0, 0.05, 0.09, 0.13]))
+    else:
+        rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
+        squat_hint = None
+    phrase = meta.get("object_phrase", {}).get(key, f"the {key}")
+    return TargetPlan(key, phrase, nom, grip_z, rel_cands, squat_hint,
+                      ax, sgn)
+
+
+def instruction(phrase: str) -> str:
+    """The episode's task string. One place, so the dataset and any future
+    eval harness cannot drift apart."""
+    return f"pick up {phrase}"
 
 
 def fresh_deploy(p) -> bool:
@@ -147,18 +216,27 @@ def main() -> None:
                          "rises over the last RAISE_LEAD metres instead of "
                          "being held out level the whole way, and the ego "
                          "camera picks the can up at 1.77 m (diag_ego_geom).")
+    ap.add_argument("--targets", default="pool",
+                    help="which objects to draw the round's target from: "
+                         "'pool' (every entry in the scene's target_pool), "
+                         "'default' (the single scene target, the old "
+                         "behaviour), or a comma-separated list of names")
+    ap.add_argument("--manifest", default=None,
+                    help="append one JSON line per round: the target, the "
+                         "instruction, and whether the episode was kept. "
+                         "convert_to_hf_format.py joins on this to give each "
+                         "episode its own task string, which the exporter "
+                         "cannot do -- its --task-prompt is per SESSION.")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed if args.seed is not None
                                 else (os.getpid() * 7919) % 2 ** 31)
 
     meta = json.load(open(SCENE_META))
-    obj_key = meta["target_object"]
+    pool = resolve_pool(meta, args.targets)
+    print(f"[gym] target pool: {', '.join(pool)}")
     surf_a = meta["surfaces"]["A"]
     half = np.asarray(surf_a.get("half_extent", [0.6, 0.6])[:2], dtype=float)
     cxy = np.asarray(surf_a["xy"], dtype=float)
-    can_nom = np.asarray(meta["objects"][obj_key]["init_pos"][:2], dtype=float)
-    grip_z = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
-
     surf_b = meta["surfaces"].get("B")
     rects = [(cxy, half)]
     if surf_b:
@@ -182,26 +260,16 @@ def main() -> None:
         return best
 
     rm = reach_map.ReachMap()
-    # Core-aim stand plan: the smallest squat that brings a THICK sweet-core
-    # slice onto the grip height, plus that slice's ego-safe aim cells. The
-    # sampled rel then points the CORE (arm-centred, offset right) at the
-    # can instead of the torso, and the crouch is planned before arrival.
-    plan_cs = rm.plan_core_stand(float(grip_z - STANDING_PELVIS_Z))
-    if plan_cs is not None:
-        rel_cands, want_drop, core_marg = plan_cs
-        # plan_core_stand's drop is a DELIVERED pelvis drop; arm.squat takes
-        # a command whose delivery runs ~1.5x (measured: cmd 5/9/13 cm ->
-        # 4.4/12/19.5 cm) — invert that curve for the hint.
-        squat_hint = float(np.interp(want_drop,
-                                     [0.0, 0.044, 0.12, 0.195],
-                                     [0.0, 0.05, 0.09, 0.13]))
-        print(f"[gym] core stand: {len(rel_cands)} aim cells, "
-              f"drop {want_drop * 100:.1f} cm (cmd {squat_hint * 100:.1f}), "
-              f"scatter margin {core_marg * 100:.0f} cm")
-    else:
-        rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
-        squat_hint = None
-        print(f"[gym] no core slice — {len(rel_cands)} envelope stands")
+    # One stand plan per target, solved once up front. Every target has its
+    # own grip height, so every target has its own squat and its own set of
+    # aim cells -- this used to be a single plan because there was a single
+    # target.
+    plans = {k: plan_for_target(meta, k, rm) for k in pool}
+    for k, pl in plans.items():
+        print(f"[gym] {k:8s} grip_z {pl.grip_z:.3f}  {len(pl.rel_cands)} aim "
+              f"cells  squat_hint "
+              f"{'none' if pl.squat_hint is None else f'{pl.squat_hint * 100:.1f} cm'}"
+              f"  edge {'+' if pl.sgn > 0 else '-'}{'xy'[pl.ax]}")
 
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
@@ -227,19 +295,34 @@ def main() -> None:
     p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
 
     wins = 0
+    deck: list[str] = []
     for rnd in range(args.rounds):
         t0 = time.time()
         # -- sample --------------------------------------------------------
-        # The can lives in a band hugging its nominal edge (radial 5-10 cm
+        # Draw the round's target first: everything after it -- the edge to
+        # hug, the grip height, the stand candidates, the squat -- is a
+        # property of WHICH object this round is about.
+        #
+        # A shuffled deck drawn without replacement, not iid uniform. What
+        # this feeds is a dataset, and a dataset wants BALANCE: an iid draw
+        # over four targets left one of them unseen for the first eight
+        # rounds of a twelve-round batch, which at collection scale is a
+        # class the model gets much less of for no reason anyone chose. The
+        # deck guarantees every target appears once per cycle and still
+        # randomises the order within it.
+        if not deck:
+            deck = list(pool)
+            rng.shuffle(deck)
+        obj_key = deck.pop()
+        pl = plans[obj_key]
+        can_nom, rel_cands, squat_hint = pl.nom, pl.rel_cands, pl.squat_hint
+        ax, sgn = pl.ax, pl.sgn
+        task = instruction(pl.phrase)
+        # The target lives in a band hugging its nominal edge (radial 5-10 cm
         # inboard, +-10 cm along the edge): a pelvis 10 cm OUTSIDE the edge
         # then reaches it at rel depth 0.15-0.24 — comfortably inside the
         # map instead of at its rim, which is what lets the no-contact
         # stand-off exist at all.
-        e0 = can_nom - cxy
-        if abs(abs(e0[0]) - half[0]) < abs(abs(e0[1]) - half[1]):
-            ax, sgn = 0, float(np.sign(e0[0]))
-        else:
-            ax, sgn = 1, float(np.sign(e0[1]))
         for try_i in range(500):
             can_xy = can_nom.copy()
             can_xy[ax] = cxy[ax] + sgn * (half[ax]
@@ -279,9 +362,10 @@ def main() -> None:
             print("EPISODE FAILED [gym] no feasible sample found")
             continue
         side = "right"
-        print(f"[gym] round {rnd + 1}/{args.rounds}: can {np.round(can_xy, 2)}"
+        print(f"[gym] round {rnd + 1}/{args.rounds}: {obj_key} "
+              f"{np.round(can_xy, 2)}"
               f" rel [{rel[0]:.2f} {rel[1]:+.2f}] yaw {np.degrees(psi):.0f}"
-              f" side {side}")
+              f" side {side} | \"{task}\"")
 
         # -- reset + settle -----------------------------------------------
         # Stand-stage failures (fell on the walk-up / never stabilised) are
@@ -301,7 +385,8 @@ def main() -> None:
                 # the walk-line clearance in the sampler.)
                 fresh_deploy(p)
             if args.dump_sample:
-                json.dump(dict(d_can=list(map(float, can_xy - can_nom)),
+                json.dump(dict(target=obj_key,
+                               d_can=list(map(float, can_xy - can_nom)),
                                d_robot=list(map(float, stand - robot_nom)),
                                psi=float(psi), side=side,
                                rel=list(map(float, rel)),
@@ -311,21 +396,34 @@ def main() -> None:
                                stand=list(map(float, stand)),
                                robot_nom=list(map(float, robot_nom))),
                           open(args.dump_sample, "w"), indent=1)
-            ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
-                                can_xy - can_nom, stand - robot_nom, psi,
-                                side, rel, rm, stand, squat_hint,
-                                spawn_off=args.spawn_off, record=args.record)
+            ok, why, produced = run_round(
+                p, reset, meta, obj_key, surf_a, edge_dist,
+                can_xy - can_nom, stand - robot_nom, psi,
+                side, rel, rm, stand, squat_hint,
+                spawn_off=args.spawn_off, record=args.record)
+            if args.record and produced and ok:
+                # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
+                # own loop writes the episode. Failures need no branch here
+                # any more: run_round discards them itself, before the retry
+                # below can toggle the exporter out of phase.
+                p.cmd.key("c")
+                p.cmd.hold(4.0, mode=LocomotionMode.IDLE)  # let the write finish
+            if args.manifest:
+                # One line per ATTEMPT, not per round: a stand retry that got
+                # as far as recording leaves an episode in the session, so
+                # the converter's join has to see it too. It filters on
+                # `produced`; the rest is for reading per-target success.
+                with open(args.manifest, "a") as f:
+                    rec_line = dict(round=rnd, attempt=attempt,
+                                    target=obj_key, task=task, ok=bool(ok),
+                                    why=why,
+                                    produced=bool(args.record and produced),
+                                    seconds=round(time.time() - t0, 1))
+                    f.write(json.dumps(rec_line) + chr(10))
             if ok or not why.startswith("[stand]"):
                 break
             p.log(f"[gym] stand-stage retry ({why})")
         dt = time.time() - t0
-        if args.record:
-            # One 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
-            # own loop writes the episode; 'x' throws it away. A failed round
-            # must be discarded, not saved: the stage predicates are what
-            # turn a scripted sequence into a dataset.
-            p.cmd.key("c" if ok else "x")
-            p.cmd.hold(4.0, mode=LocomotionMode.IDLE)   # let the write finish
         if ok:
             wins += 1
             print(f"EPISODE OK in {dt:.0f}s")
@@ -338,7 +436,37 @@ def main() -> None:
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
               spawn_xy, squat_hint=None,
-              spawn_off=0.30, record: bool = False) -> tuple[bool, str]:
+              spawn_off=0.30, record: bool = False) -> tuple[bool, str, bool]:
+    """One round, and the exporter left in a clean state whatever happens.
+
+    Returns (ok, why, produced_episode). The third value is what the
+    dataset's per-episode instruction manifest is keyed on: an attempt that
+    started recording produced an episode even if it then failed, because
+    the exporter's 'x' path is save_episode_as_discarded(), not "forget it".
+
+    The discard here is not tidiness. The exporter's 'c' is a three-state
+    cycle -- IDLE -> RECORDING -> NEED_TO_SAVE -> IDLE -- and [stand]
+    failures are RETRIED, so before this wrapper the retry's opening 'c'
+    landed on a live recording and SAVED the attempt that had just fallen
+    over. Every episode after it in the session was then one 'c' out of
+    phase. It never fired in the recorded batches because none of them hit
+    a stand retry; at collection scale it certainly would.
+    """
+    rec = {"on": False}
+    ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
+                         d_can, d_robot, psi, side, rel, rm, spawn_xy,
+                         squat_hint, spawn_off, record, rec)
+    if record and rec["on"] and not ok:
+        p.cmd.key("x")
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
+    return ok, why, rec["on"]
+
+
+def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
+               d_can, d_robot, psi, side, rel, rm,
+               spawn_xy, squat_hint=None,
+               spawn_off=0.30, record: bool = False,
+               rec: dict | None = None) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -429,6 +557,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         # after the settle, so the first frame of the episode is the first
         # frame of the task rather than a robot standing still.
         p.cmd.key("c")
+        if rec is not None:
+            rec["on"] = True
     grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
 
     def rel_dbg(tag, s2):

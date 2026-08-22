@@ -35,7 +35,52 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq_mod
 
-TASK = "place the orange on the plate"
+# Fallback only. It is what every episode gets when no --manifest is given,
+# i.e. when the whole run had one target. It used to read "place the orange
+# on the plate", which described neither the pipeline (which picks the object
+# up and holds it) nor the object (a can), and every episode ever converted
+# carried it.
+TASK = "pick up the red can"
+
+
+def load_manifest(path):
+    """grasp_gym --manifest -> the session's episodes, in order.
+
+    Only lines with `produced` are episodes: a round that failed before the
+    exporter started recording leaves nothing in the session, and a stand
+    retry that got as far as recording leaves one even though it failed.
+    Order is the join -- the exporter numbers episodes in the order it wrote
+    them, which is the order the gym produced them.
+    """
+    rows = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            if r.get("produced"):
+                rows.append(r)
+    return rows
+
+
+def check_manifest(rows, src_eps, discarded, sess_name):
+    """Refuse to guess. A mislabelled instruction is invisible in the data
+    and poisons exactly the thing the target randomisation exists to teach,
+    so a join that does not line up is a hard error, never a warning."""
+    if len(rows) != len(src_eps):
+        raise SystemExit(
+            f"[manifest] {sess_name}: {len(rows)} produced rounds but "
+            f"{len(src_eps)} episodes on disk. The manifest and the session "
+            f"do not describe the same run -- pass the manifest written by "
+            f"the gym invocation that filled this session.")
+    for r, ep in zip(rows, src_eps):
+        if (ep in discarded) != (not r["ok"]):
+            raise SystemExit(
+                f"[manifest] {sess_name}: episode {ep} is "
+                f"{'discarded' if ep in discarded else 'kept'} on disk but "
+                f"the manifest says ok={r['ok']} (target {r['target']}). The "
+                f"join is out of phase; do not convert this session.")
 SRC_FPS, DST_FPS = 50, 30
 W, H = 640, 480
 
@@ -240,6 +285,11 @@ def main():
     ap.add_argument("--include-discarded", action="store_true")
     ap.add_argument("--only", type=int, nargs="*", default=None,
                     help="keep only these source episode indices")
+    ap.add_argument("--manifest", nargs="+", default=None,
+                    help="grasp_gym --manifest files, one per --sessions "
+                         "entry and in the same order. Gives each episode "
+                         "its own instruction, which the exporter cannot: "
+                         "its --task-prompt is fixed for a whole session.")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -251,12 +301,24 @@ def main():
     episodes, ep_stats = [], []
     new_ep, global_index, total_videos = 0, 0, 0
 
-    for sess in args.sessions:
+    if args.manifest and len(args.manifest) != len(args.sessions):
+        raise SystemExit(f"--manifest takes one file per --sessions entry "
+                         f"({len(args.manifest)} vs {len(args.sessions)})")
+    task_ids = {}          # task string -> task_index, in first-seen order
+
+    for si, sess in enumerate(args.sessions):
         sess = Path(sess)
         info = json.load(open(sess / "meta/info.json"))
         src_info = src_info or info
         discarded = set(info.get("discarded_episode_indices", []))
-        for pq in sorted((sess / "data/chunk-000").glob("episode_*.parquet")):
+        pqs = sorted((sess / "data/chunk-000").glob("episode_*.parquet"))
+        src_eps = [int(q.stem.split("_")[1]) for q in pqs]
+        man = None
+        if args.manifest:
+            man = load_manifest(args.manifest[si])
+            check_manifest(man, src_eps, discarded, sess.name)
+            man = dict(zip(src_eps, man))     # keyed by the episode's own id
+        for pq in pqs:
             src_ep = int(pq.stem.split("_")[1])
             if src_ep in discarded and not args.include_discarded:
                 continue
@@ -282,7 +344,10 @@ def main():
             sub = set_col(sub, "frame_index", np.arange(n30, dtype=np.int64), pa.int64())
             sub = set_col(sub, "episode_index", np.full(n30, new_ep, dtype=np.int64), pa.int64())
             sub = set_col(sub, "index", np.arange(global_index, global_index + n30, dtype=np.int64), pa.int64())
-            sub = set_col(sub, "task_index", np.zeros(n30, dtype=np.int64), pa.int64())
+            ep_task = man[src_ep]["task"] if man else TASK
+            ti = task_ids.setdefault(ep_task, len(task_ids))
+            sub = set_col(sub, "task_index",
+                          np.full(n30, ti, dtype=np.int64), pa.int64())
             ts_pos = sub.schema.get_field_index("timestamp")
             sub = sub.add_column(ts_pos, pa.field("observation.state_psi0", pa.list_(pa.float32(), 15)), fsl(state_psi0, 15))
             sub = sub.add_column(ts_pos + 1, pa.field("action.psi0_18", pa.list_(pa.float32(), 18)), fsl(psi0_18, 18))
@@ -297,8 +362,10 @@ def main():
                 stats[name] = feat_stats(np.asarray(sub[name].to_pylist()))
             stats["observation.images.ego_view"] = video_stats(frames)
             ep_stats.append({"episode_index": new_ep, "stats": stats})
-            episodes.append({"episode_index": new_ep, "tasks": [TASK], "length": n30})
-            print(f"[{new_ep}] {sess.name}/ep{src_ep}: {n50} rows @50Hz -> {n30} @30Hz")
+            episodes.append({"episode_index": new_ep, "tasks": [ep_task],
+                             "length": n30})
+            print(f"[{new_ep}] {sess.name}/ep{src_ep}: {n50} rows @50Hz -> "
+                  f"{n30} @30Hz  task[{ti}] \"{ep_task}\"")
             new_ep += 1
             global_index += n30
             total_videos += 1
@@ -320,7 +387,7 @@ def main():
         "fps": DST_FPS,
         "total_episodes": new_ep,
         "total_frames": total_frames,
-        "total_tasks": 1,
+        "total_tasks": max(1, len(task_ids)),
         "total_videos": total_videos,
         "total_chunks": 1,
         "splits": {"train": f"0:{new_ep}"},
@@ -337,14 +404,21 @@ def main():
     json.dump(MODALITY, open(out / "meta/modality_gr00t_sonic.json", "w"), indent=4)
     json.dump(MODALITY_PSI0, open(out / "meta/modality_psi0.json", "w"), indent=4)
     with open(out / "meta/tasks.jsonl", "w") as f:
-        f.write(json.dumps({"task_index": 0, "task": TASK}) + "\n")
+        for t, i in sorted(task_ids.items(), key=lambda kv: kv[1]):
+            f.write(json.dumps({"task_index": i, "task": t}) + "\n")
+        if not task_ids:
+            f.write(json.dumps({"task_index": 0, "task": TASK}) + "\n")
     with open(out / "meta/episodes.jsonl", "w") as f:
         for e in episodes:
             f.write(json.dumps(e) + "\n")
     with open(out / "meta/episodes_stats.jsonl", "w") as f:
         for e in ep_stats:
             f.write(json.dumps(e) + "\n")
-    print(f"done: {new_ep} episodes, {total_frames} frames -> {out}")
+    print(f"done: {new_ep} episodes, {total_frames} frames, "
+          f"{max(1, len(task_ids))} task(s) -> {out}")
+    for t, i in sorted(task_ids.items(), key=lambda kv: kv[1]):
+        n = sum(1 for e in episodes if e["tasks"] == [t])
+        print(f"  task[{i}] {n:4d} episodes  \"{t}\"")
 
 
 if __name__ == "__main__":
