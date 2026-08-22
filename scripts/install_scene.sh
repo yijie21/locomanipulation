@@ -39,4 +39,25 @@ else
       | xargs -r sed -i "s#$BAKED#$ROOT#g"
 fi
 
+# Rebuild the simulation scene from the unpacked source assets rather than
+# shipping a built one. The tarball carries mjcf/ and layout/ -- the parts
+# EmbodiedGen is slow to produce -- while the arrangement, the surface
+# heights and the primitive target objects all live in scene_lib.py and
+# change often. A prebuilt scene_locomani.xml in the tarball goes stale the
+# first time anyone edits that file, and the failure is quiet: the sim runs,
+# the new target objects are simply absent. The rebuild costs ~1 s.
+PY="$SONIC_ROOT/.venv_sim/bin/python"
+if [ -x "$PY" ]; then
+    "$PY" "$LOCOMANI_SRC/build_sim_scene.py" \
+        "$ROOT/outputs/scene" "$ROOT/outputs/scene/sim" \
+        | tail -n 3
+else
+    echo
+    echo "NOTE: $PY not found, so the scene was NOT rebuilt and still holds"
+    echo "      whatever scene_lib.py looked like when the tarball was packed."
+    echo "      After creating the sim venv, run:"
+    echo "        \$PY src/teleop_free/build_sim_scene.py \\"
+    echo "            outputs/scene outputs/scene/sim"
+fi
+
 echo "scene installed at $ROOT/outputs/scene"
