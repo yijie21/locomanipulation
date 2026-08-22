@@ -43,6 +43,11 @@ GHOST_PARK = (0.0, 0.0, -5.0)
 # data collection); instance i uses base + 10*i via start_stack.sh.
 PRIVILEGED_PORT = int(os.environ.get("TF_PRIVILEGED_PORT", "5581"))
 EPISODE_PORT = int(os.environ.get("TF_EPISODE_PORT", "5582"))
+# SCENE_RANDOM=0 pins the appearance, which is what a controlled comparison
+# wants (two runs differing only in the thing under test) and what a replay of
+# an old capture needs. On by default: a dataset where every frame shares one
+# lighting rig and one table colour teaches the model to rely on both.
+SCENE_RANDOM = os.environ.get("SCENE_RANDOM", "1") != "0"
 
 # Palm frame. The G1's three-finger hand hangs off the wrist yaw link, so this
 # is the frame a pre-grasp offset is naturally expressed in.
@@ -300,6 +305,11 @@ class EpisodeControlServer:
         # by writing mocap_pos. -1 when the scene predates it.
         gb = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, GHOST_BODY)
         self.ghost_mocap = int(model.body_mocapid[gb]) if gb >= 0 else -1
+        # Built on first use: snapshotting the pristine appearance costs a
+        # copy of the texture block, and a run with SCENE_RANDOM=0 should not
+        # pay it.
+        self._rand = None
+        self._rand_mod = None
 
         self._mj = mujoco
         self.model = model
@@ -359,8 +369,27 @@ class EpisodeControlServer:
         )
         self.data.qpos[2] -= lowest
 
+    def _appearance(self, seed) -> None:
+        """Re-roll what the ego camera sees, from one integer.
+
+        Lives here, not in the agent, because the model is here: it is a
+        mutation of mjModel fields between two physics steps, exactly like the
+        pose writes above, and just as atomic. Nothing about it touches the
+        control path -- geometry, masses and contacts are untouched -- so an
+        episode looks different and behaves identically.
+        """
+        if seed is None or not SCENE_RANDOM:
+            return
+        if self._rand is None:
+            import scene_random
+            self._rand = scene_random.SceneRandomizer(self.model, self._mj)
+            self._rand_mod = scene_random
+        print(f"[episode] appearance: "
+              f"{self._rand.apply(self._rand_mod.sample(int(seed)))}")
+
     def _apply(self, req: dict) -> None:
         mujoco = self._mj
+        self._appearance(req.get("appearance"))
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[:] = self.qpos0
 
@@ -490,10 +519,13 @@ class EpisodeControlClient:
         time.sleep(0.3)          # PUSH drops until the connection is up
 
     def reset(self, objects: dict | None = None, robot: dict | None = None,
-              label: str = "") -> None:
+              label: str = "", appearance: int | None = None) -> None:
+        """`appearance` re-rolls materials, lighting and the sky for this
+        episode. One integer, so the manifest can record it and a replay can
+        reproduce the exact frame."""
         self.sock.send_string(json.dumps(
             {"cmd": "reset", "objects": objects or {}, "robot": robot or {},
-             "label": label}))
+             "label": label, "appearance": appearance}))
 
     def pin_arms(self, left=None, right=None, waist=None) -> None:
         """Pin (or with None release) the sim-side arm position loops."""

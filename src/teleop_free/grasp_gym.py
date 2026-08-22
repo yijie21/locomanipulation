@@ -340,6 +340,9 @@ def main() -> None:
         can_nom, rel_cands, squat_hint = pl.nom, pl.rel_cands, pl.squat_hint
         ax, sgn = pl.ax, pl.sgn
         task = instruction(pl.phrase)
+        # One integer per episode decides the whole look of the scene, so the
+        # manifest can record it and a replay can reproduce the exact frame.
+        appearance = int(rng.integers(0, 2 ** 31 - 1))
         # The target lives in a band hugging its nominal edge (radial 5-10 cm
         # inboard, +-10 cm along the edge): a pelvis 10 cm OUTSIDE the edge
         # then reaches it at rel depth 0.15-0.24 — comfortably inside the
@@ -423,7 +426,7 @@ def main() -> None:
                 # the walk-line clearance in the sampler.)
                 fresh_deploy(p)
             if args.dump_sample:
-                json.dump(dict(target=obj_key,
+                json.dump(dict(target=obj_key, appearance=appearance,
                                d_can=list(map(float, can_xy - can_nom)),
                                d_robot=list(map(float, stand - robot_nom)),
                                psi=float(psi), side=side,
@@ -441,7 +444,7 @@ def main() -> None:
                 can_xy - can_nom, stand - robot_nom, psi,
                 side, rel, rm, stand, squat_hint,
                 spawn_off=spawn_off, spawn_lat=spawn_lat, dpsi=dpsi,
-                record=args.record)
+                appearance=appearance, record=args.record)
             if args.record and produced and ok:
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
@@ -457,7 +460,7 @@ def main() -> None:
                 with open(args.manifest, "a") as f:
                     rec_line = dict(round=rnd, attempt=attempt,
                                     target=obj_key, task=task, ok=bool(ok),
-                                    why=why,
+                                    why=why, appearance=appearance,
                                     produced=bool(args.record and produced),
                                     seconds=round(time.time() - t0, 1))
                     f.write(json.dumps(rec_line) + chr(10))
@@ -477,7 +480,7 @@ def main() -> None:
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
               spawn_xy, squat_hint=None,
-              spawn_off=0.30, spawn_lat=0.0, dpsi=0.0,
+              spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
               record: bool = False) -> tuple[bool, str, bool]:
     """One round, and the exporter left in a clean state whatever happens.
 
@@ -497,7 +500,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     rec = {"on": False}
     ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                          d_can, d_robot, psi, side, rel, rm, spawn_xy,
-                         squat_hint, spawn_off, spawn_lat, dpsi, record, rec)
+                         squat_hint, spawn_off, spawn_lat, dpsi, appearance,
+                         record, rec)
     if record and rec["on"] and not ok:
         p.cmd.key("x")
         p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
@@ -507,7 +511,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
 def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                d_can, d_robot, psi, side, rel, rm,
                spawn_xy, squat_hint=None,
-               spawn_off=0.30, spawn_lat=0.0, dpsi=0.0,
+               spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
                record: bool = False,
                rec: dict | None = None) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
@@ -541,7 +545,8 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                    "yaw": float(np.random.uniform(-np.pi,
                                                                   np.pi))}},
                 robot={"dxy": [float(d_robot[0]), float(d_robot[1])],
-                       "yaw": psi_spawn})
+                       "yaw": psi_spawn},
+                appearance=appearance)
     time.sleep(0.3)
     landed_xy = np.asarray(p.pelvis_xy(p.obs()))
     want_xy = np.asarray(spawn_xy) - spawn_off * fv2 + spawn_lat * perp
