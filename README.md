@@ -1,43 +1,105 @@
 # Teleop-Free Loco-Manipulation Data Engine (Unitree G1 + SONIC)
 
-不需要遥操作的人形机器人 loco-manipulation 数据引擎:在 MuJoCo 里由脚本化 agent 驱动
-Unitree G1(SONIC 全身控制),自动完成"走到桌前 → 抓起物体"的完整 episode,导出
-**LeRobot v2.1** 格式数据集,用于 GR00T + SONIC 的微调训练。
+不需要遥操作的人形机器人 loco-manipulation 数据引擎:在 MuJoCo 里由**脚本化 agent**
+驱动 Unitree G1(SONIC 全身控制),自动完成"走到桌前 → 抓起物体"的完整 episode,
+导出 **LeRobot v2.1** 数据集,用于 GR00T + SONIC 的 VLA 微调。
 
-核心链路:
+**它到底产出什么。**每条成功 episode 一段 ego RGB + 一条 **66 维 action 序列**
+(SONIC 的 64 维 motion latent + 左右夹爪各 1 维)。这 66 维不是设计选择,是被
+deploy 的 wire protocol 定死的:v4 只运 `token_state` + 可选夹爪。训练出的 VLA
+输入 ego RGB(数据集里同时存了 29 维本体状态,要不要喂给模型是训练侧的选择),
+输出这 66 维,直接喂回同一个 deploy 就能驱动机器人 —— 这条链路已经端到端验证过
+(见 [VLA 部署时这条链路怎么变](#vla-部署时这条链路怎么变))。
 
-```
-MuJoCo sim (run_sim_locomani.py)
-   ↑ DDS (lo)                 ──camera :5555──→  data exporter (LeRobot 原始 session)
-C++ deploy (g1_deploy_onnx_ref, SONIC policy)
-   ↑ :5556 planner/pose 意图流
-脚本化 agent (collect_episode.py: 导航 → 两段式接近 → 流式手臂 servo 抓取)
-```
+脚本化 agent 用的是仿真里的**特权信息**(物体真值位姿、可达域、桌沿距离),所以不需要
+人来遥操作,也不需要人来判断成功 —— 但这些特权信息只用于**生成**动作,不进入训练输入。
+
+---
 
 ## 目录结构
 
 ```
-src/teleop_free/   数据引擎全部代码(sim 封装、primitives、导航、抓取、episode、诊断脚本)
+src/teleop_free/        数据引擎全部代码(见下面的模块地图)
 src/teleop_free/tools/  LeRobot v2.1 转换器
-scripts/           安装 / 启动 / 批跑脚本
-assets/            预生成的仿真场景 tarball(免去 EmbodiedGen 场景生成)
-docs/              架构图、reach map 可视化等
-patches/           对上游仓库的小改动说明
-third_party/       clone 的上游仓库(不入 git):GR00T-WholeBodyControl、Isaac-GR00T、
-                   EmbodiedGen、IsaacLab、IsaacLab-Arena
-outputs/           运行时生成(场景、日志、原始视频、episodes),不入 git
-videos/            最新一批演示视频(每次推送会整体替换)
+scripts/                安装 / 启动 / 批跑脚本
+assets/                 预生成的仿真场景 tarball(免去 EmbodiedGen 场景生成)
+docs/                   架构图、路线图、reach map 可视化
+patches/                对上游仓库的小改动说明(third_party 不入 git)
+third_party/            clone 的上游仓库(不入 git)
+outputs/                运行时生成(场景、日志、视频、episodes),不入 git
+videos/                 最新一批演示视频(每次推送会整体替换)
 ```
 
-> **路径约定**:代码内的绝对路径假定仓库位于 `/workspace/code/locomanipulation`。
-> 如果放在别处,先全局替换:
-> `grep -rl "/workspace/code/locomanipulation" src scripts | xargs sed -i "s#/workspace/code/locomanipulation#<你的路径>#g"`,
-> 场景内的路径由 `scripts/install_scene.sh` 自动改写。
+### 模块地图
+
+`src/teleop_free/` 有 60 多个文件,其中 **50 个是 `diag_*.py` 一次性测量脚本**。
+真正的流水线只有下面这些:
+
+| 文件 | 角色 |
+|---|---|
+| **`grasp_gym.py`** | **唯一采集入口**。一局的全部流程:采样 → 复位 → 走 → 接近 → 抓 → 抱稳,以及所有成功判据 |
+| `primitives.py` | 动作原语:`walk_to` / `turn_to` / `reach` / `stand_up` / `carry_pose`,以及世界系↔骨盆系换算 |
+| `stream_reach.py` | 伸手与抓取的 50 Hz 伺服状态机(`PlannerArm`、`grasp_streamed`) |
+| `agent_server.py` | ZMQ 发布端,占据 Pico 遥操作服务器的位置(`frame` / `set_upper_body` / `token_frame`) |
+| `reach_map.py` | 可达域体素图:骨盆系里哪些位置**抓得到**,以及站位联合求解 |
+| `adaptive_grasp.py` | 从手当前的位置反推抓取朝向与进刀轴 |
+| `arm_ik.py` | 单臂阻尼最小二乘 IK(骨盆系) |
+| `grasping.py` | 由物体尺寸与 6D 位姿算出手该放哪 |
+| `privileged_pub.py` | sim 侧:发布特权真值(:5581),并接收 episode 控制(:5582) |
+| `run_sim_locomani.py` | sim 入口:上游 `run_sim_loop.py` 换成我们的双桌面场景 + 特权发布 |
+| `sim_video.py` | 第三人称录像(带 ego 画中画、6D 线框盒、坐标读数) |
+| `sim_vis.py` | `SIM_VIS` 开关的解析(见[可视化开关](#可视化开关)) |
+| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](#路径约定)) |
+| `scene_lib.py` / `build_sim_scene.py` | 场景构建(只有重新生成场景才用得上) |
+| `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
+
+不在流水线上的:`navigator.py`(FMM 导航,当前 gym 不走这条)、`zmq_driver.py`
+(最早的 walk-only 验证)、`isaac_scene.py` / `compose_scene.py`(渲染检查)。
+
+`collect_episode.py` 处在中间状态:`grasp_gym.py` 仍然从它 import 四个共享常量与
+辅助函数(`PALM_DRIFT_MAX` / `STAND_SETTLE` / `obj_top` / `palm_frame_offset`),
+但它**自己那条跑 episode 的路径是旧的**,只有 `FULL_TASK=1` 的完整任务还走它。
+
+---
 
 ## 环境安装
 
 前置:Linux + NVIDIA GPU(本仓库在 RTX 5090 / driver CUDA 13 上验证)、
 [miniconda](https://docs.conda.io)、[uv](https://docs.astral.sh/uv/)。
+
+### 路径约定
+
+**仓库可以放在任何路径,不需要改任何代码。**仓库内的路径由 `src/teleop_free/paths.py`
+和 `scripts/paths.sh` 从文件自身位置推导出来。
+
+仓库**外**的东西(依赖、conda、日志、缓存)默认挂在 `/workspace` 下。如果你的机器
+不是这个布局,export 一个变量即可:
+
+```bash
+export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
+```
+
+需要更细的控制时,这几个可以单独覆盖(默认都在 `$LOCOMANI_WORKSPACE` 下):
+
+| 变量 | 默认 | 是什么 |
+|---|---|---|
+| `LOCOMANI_WORKSPACE` | `/workspace` | 仓库外一切东西的根 |
+| `DEPS_DIR` | `$LOCOMANI_WORKSPACE/deps` | TensorRT / ONNX Runtime 解包位置 |
+| `CONDA_BASE` | `$LOCOMANI_WORKSPACE/miniconda3` | conda 安装位置 |
+| `LOCOMANI_TMP` | `$LOCOMANI_WORKSPACE/tmp` | stack 日志与 exporter 原始 session |
+| `LOCOMANI_CACHE` | `$LOCOMANI_WORKSPACE/.cache` | pip / torch / HF 缓存 |
+| `LOCOMANI_ROOT` | 自动推导 | 仓库根;只有在极特殊情况下才需要手动指定 |
+
+自查当前解析结果:
+
+```bash
+python src/teleop_free/paths.py     # 或 . scripts/paths.sh; echo $LOCOMANI_ROOT
+```
+
+> EmbodiedGen 的 4 个安装脚本(`install_embodiedgen.sh`、
+> `install_affordance_noflash.sh`、`eg_env.sh`、`setup_sonic*.sh`)同样改成了这套
+> 变量,但**没有在别的机器上实测过** —— 它们只在重新生成场景时才用得到,
+> 而重新生成场景需要几十 GB 下载。用现成场景的话完全不碰它们。
 
 ### 1. Clone 上游仓库到 third_party/
 
@@ -60,33 +122,40 @@ bash install_scripts/install_data_collection.sh   # -> .venv_data_collection(跑
 python download_from_hf.py                        # 下载 SONIC policy 权重(policy/release)
 ```
 
-### 3. 编译 C++ deploy(必需)
-
-> **警告:不要运行 `gear_sonic_deploy/scripts/install_deps.sh`。**
-> 它有 `apt install cuda` 的 fallback,会连带安装 `cuda-drivers` 覆盖宿主 NVIDIA 驱动
-> (在云 GPU 容器里会直接毁掉整机 GPU)。按下面手动装依赖:
+装完之后再打上两个补丁,否则**录下来的 action 是错的**(整段下蹲会丢失,action 维度
+是 267 而不是 66):
 
 ```bash
-# 依赖放 /workspace/deps(路径写在 scripts/env_deploy.sh 里,可自行修改)
+cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch
+```
+
+原因见 [`patches/vla_action_space.md`](patches/vla_action_space.md)。
+
+### 3. 编译 C++ deploy(必需)
+
+```bash
+# 依赖放 $DEPS_DIR(默认 $LOCOMANI_WORKSPACE/deps)
 # 1) TensorRT 10.13.x:apt-get download 对应 deb 后 dpkg -x 解包,并把
 #    include/lib 软链成官方 TAR 布局;2) ONNX Runtime 1.16.3 tarball 解包;
 # 3) 小依赖:apt install libeigen3-dev libzmq3-dev cppzmq-dev libgtest-dev \
 #            nlohmann-json3-dev libmsgpack-cxx-dev
 source scripts/env_deploy.sh
 cmake -S "$SONIC_DEPLOY_ROOT" -B "$SONIC_DEPLOY_ROOT/build" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$SONIC_DEPLOY_ROOT/build" -j$(nproc)
+cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 ```
 
-首次运行 deploy 会编译 TensorRT engine(约 10 分钟),之后走缓存。
+> **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
+> 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。
+> `scripts/env_deploy.sh` 就是用来替代它的。
 
 ### 4. conda 训练环境(可选)
 
-只在需要 SONIC 训练/eval(Isaac Sim)时安装:
-
 ```bash
-bash scripts/setup_sonic.sh    # conda env "sonic":Isaac Sim 5.1 + torch cu128 + IsaacLab
+bash scripts/setup_sonic.sh    # gear_sonic + Isaac-GR00T
 bash scripts/setup_sonic2.sh   # IsaacLab 固定到 v2.3.2 并装 gear_sonic[training]
 ```
+
+---
 
 ## 场景:直接用现成的(推荐)
 
@@ -97,17 +166,220 @@ bash scripts/install_scene.sh
 ```
 
 解包 `assets/scene_locomani_v1.tar.gz` 到 `outputs/scene/`(双桌面 + 橙子/盘子等物体的
-MJCF、抓取标注、reach map、hand points),并自动把 MJCF 里的绝对路径改写到当前 checkout。
+MJCF、抓取标注、reach map、hand points),并自动把 MJCF 里的绝对路径改写到当前
+checkout —— 打包时的路径是**探测**出来的,不是写死的,所以在哪台机器上重新打包都不会坏。
 
 如需重新生成场景:装好 EmbodiedGen(`src/teleop_free/install_embodiedgen.sh`),依次跑
 `compose_scene.py` → `inject_physics_into_mjcf.py` → `build_sim_scene.py`,再用
 `make_hand_points.py` / `reach_map.py` / `wrist_map.py` 重建缓存。
 
+---
+
+## 进程、端口与环境变量
+
+### 三个进程
+
+`start_stack.sh` 按依赖顺序拉起三个长驻进程,采集脚本(`grasp_gym.py`)是第四个,
+单独启动:
+
+| 进程 | 用哪个 python | 干什么 |
+|---|---|---|
+| MuJoCo sim | `.venv_sim` | 跑物理、发 ego 相机、发特权真值、录第三人称视频 |
+| C++ deploy | 编译出的二进制 | SONIC:encoder 产 token,policy 产关节指令 |
+| data exporter | `.venv_data_collection` | 订阅相机与 deploy 输出,落 LeRobot 原始 session |
+| **`grasp_gym.py`** | `.venv_sim` | 脚本化 agent:决定机器人做什么 |
+
+### 端口
+
+`INSTANCE=i` 时全部加 `10*i`,DDS domain 也用 `i`,多实例互不干扰;只有 instance 0
+挂 exporter 落盘。
+
+| 端口 | 方向 | 内容 |
+|---|---|---|
+| 5555 | sim → exporter | ego 相机 RGB |
+| 5556 | **agent → deploy** | `command` / `planner` / `pose` 三个 topic,机器人的全部意图 |
+| 5557 | deploy → exporter | `g1_debug`,**录下来的 64 维 token 从这里来** |
+| 5580 | agent → exporter | 录制控制键(`c` 开始/保存,`x` 丢弃) |
+| 5581 | sim → agent | 特权真值(物体位姿、掌位、接触、ego 可见性) |
+| 5582 | agent → sim | episode 控制(teleport、pin、ghost、录像开关) |
+
+### 环境变量
+
+| 变量 | 默认 | 谁读 | 作用 |
+|---|---|---|---|
+| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](#路径约定) |
+| `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export** |
+| `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
+| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行 |
+| `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
+| `SONIC_POLICY` | `policy/release` | deploy | 换 checkpoint(`policy/sonic_v1_1` 可用,但步长与时序要重测) |
+| `NO_ENCODER` | `0` | deploy | `1` = **不加载 encoder**,token-only / VLA 部署配置 |
+| `HAND` | `dex1` | 全部 | `dex1` 平行夹爪 / `dex3` 三指手 |
+| `GYM_ARM_PIN` | `0` | gym | `1` 恢复 sim 侧关节 pin(动作更准,但录下的 latent 不再是产生该动作的 latent) |
+| `GYM_ARM_CHANNEL` | `planner` | gym | `streamed` 切回旧的流式手臂通道 |
+| `GYM_RESTART_DEPLOY` | `1` | gym | 每局重启 deploy。关掉会让第 2 局起漂移、摔倒 |
+| `FULL_TASK` | `0` | `collect_episode.py` | 抓起 → 搬运 → 放下的完整任务(尚未迁移到新控制逻辑) |
+
+### 可视化开关
+
+四个调试可视化由一个变量 `SIM_VIS` 控制:
+
+```bash
+SIM_VIS=full            # 默认,全开
+SIM_VIS=none            # 录像完全干净
+SIM_VIS=bbox,readout    # 只留 6D 线框盒 + 坐标读数
+# 可选项: reach | ghost | bbox | readout
+```
+
+| 项 | 是什么 | 关掉省什么 |
+|---|---|---|
+| `reach` | 可达域点云:淡绿 = 能抓到的包络,**深绿核心 = 舒适区** | **约 5800 个 box geom** 的模型编译与渲染开销 |
+| `ghost` | 洋红色的"幽灵夹爪",停在规划出的抓取位姿上,含抓取中心小球 | 渲染开销 |
+| `bbox` | can / plate 的 6D 定向线框盒(数据集记录的就是这两个物体的位姿) | 少量 |
+| `readout` | 烧在录像里的骨盆系坐标文字 | 无 |
+
+**这些从来没有污染过训练数据。**`reach` 和 `ghost` 在 geom group 4,MuJoCo 默认可视化
+选项就隐藏它;ego 相机和 exporter 用的正是默认选项。`bbox` / `readout` 只画进第三人称
+mp4。所以这些开关是为了**录像干净**和**省开销**,不是为了数据干净。
+
+两个实现细节:`reach` 的开销只有"不注入"才省得下来,所以它在 sim 启动时读一次,
+**跑起来之后改不了**;`ghost` 是建场景时烘进 XML 的,关不掉它的可视化,只能让 gym
+**不去摆它**(留在地板下面的出生点)—— 因此 **`SIM_VIS` 要同时给 stack 和 gym 设**:
+
+```bash
+export SIM_VIS=none                                   # 对两个进程都生效
+SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gym.py --rounds 3
+```
+
+---
+
+## 控制流
+
+三张图,分别回答三个不同的问题。**这里是唯一的真相源** —— `docs/` 下不再有平行的
+流程图,因为两份平行文档正是上一版图落后 10 个 commit 的原因。
+
+### ① SONIC latent 是怎么产生的
+
+最容易误解的一点:脚本化 agent **从来不直接输出 latent**,也不直接输出关节角。
+它输出的是**意图**;latent 是 deploy 内部的 encoder 从意图渲染出的参考动作里编码出来的。
+
+```mermaid
+flowchart LR
+  subgraph AG["脚本化 agent — grasp_gym.py + agent_server.py"]
+    A1["planner 帧<br/>mode / movement / facing / speed / height"]
+    A2["upper_body_position[17]<br/>腰 3 + 双臂 14，由 IK 解出"]
+    A3["left/right_hand_joints<br/>夹爪开合"]
+  end
+  subgraph DP["C++ deploy — g1_deploy_onnx_ref"]
+    D1["k-planner ONNX<br/>合成 29-DoF 参考动作"]
+    D2["★ 逐字替换 17 个上身关节<br/>无 ramp — cpp:781"]
+    D3["encoder<br/>只读 4 个观测 / 644 个数"]
+    D4["64 维 token"]
+    D5["policy<br/>token + 本体感受 436 维"]
+  end
+  subgraph SM["MuJoCo sim — run_sim_locomani.py"]
+    S1["物理"]
+    S2["ego 相机"]
+    S3["特权真值"]
+  end
+  EX["data exporter<br/>LeRobot 原始 session"]
+
+  A1 -->|":5556 planner"| D1
+  A2 -->|":5556 planner"| D2
+  A3 -->|":5556 planner"| D5
+  D1 --> D2 --> D3 --> D4 --> D5
+  D5 -->|"29 关节目标 · DDS lo"| S1
+  S2 -->|":5555"| EX
+  D4 -->|":5557 g1_debug"| EX
+  S3 -->|":5581"| AG
+```
+
+三个必须记住的点:
+
+1. **`upper_body_position` 是 17 个关节一起替换的**(腰 3 + 双臂 14,MuJoCo 索引
+   12–28),而且是**逐字替换、没有 ramp**。所以 IK 只解一只手,另一只手也会被这 17 维
+   带走 —— 走路时"举起手臂"是**双臂一起举**,闲着的那只只是被顺带写进去了。
+2. **encoder 看不见机器人。**mode 0 下它只读 4 个观测共 644 个数:`encoder_mode_4`(4)、
+   `motion_joint_positions_10frame_step5`(290)、`motion_joint_velocities_...`(290)、
+   `motion_anchor_orientation_...`(60)。其余声明过的观测全被置零。**token 是纯意图**,
+   不含任何本体状态。
+3. **下蹲不走 `upper_body`。**它是 planner 帧里的 `mode=IDEL_SQUAT` + `height=<骨盆
+   目标高度,绝对米>`,由 k-planner 渲染成弯腿参考动作,再由 encoder 编码进 token。
+   所以下蹲**在 token 里**,不需要额外通道。(实测:命令的腰部前倾只交付 2–10%,
+   基本等于没有,这条路是死的 —— 见 `diag_lean.py`。)
+
+### ② 一局 episode 分几步
+
+```mermaid
+flowchart TD
+  P0["<b>P0 进程启动一次</b><br/>载入 reach_map_dex1.npz → plan_core_stand 联合求解站位与蹲深<br/>标定名义出生点（读 teleport 落点，在 start_control 之前）"]
+  P1["<b>P1 采样</b> 拒绝采样罐位 + 站位<br/>罐贴桌沿内侧，站位 edge ∈ 合法带，整条接近线不撞桌"]
+  P2["<b>P2 复位</b> IDLE 1s 静默 deploy → reset_pose → teleport<br/>→ start_control → reanchor → IDLE 4s 沉降 → 松臂 → 开录像 + 'c'"]
+  P3["<b>P3 行走（腿 1）</b> walk_to 到 stand 后方 1.30 m<br/>锁向；双臂随步态自然摆动"]
+  P4["<b>P4 接近（腿 2）</b> 切 FROZEN_UPPER，从当前关节角接管（无跳变）<br/>三段速 0.26 → 0.215 → 0.20 朝 stand 转向前进<br/>同时按剩余距离把 17 关节 ramp 到 READY"]
+  P4G{"停止判据<br/>可达裕度 ≥ 0.075<br/>或 桌沿 ≤ 0.23"}
+  P4R["<b>前向修复 ≤2 次</b><br/>太远 → 再走一次。<b>永不后退</b>"]
+  P5{"<b>P5 门</b> 桌沿 ≥ 0.06 ∧ 在可达域内<br/>∧ 罐未倒 ∧ ego 视野 |x| ≤ 0.8, |y| ≤ 0.9"}
+  P6["<b>P6 抓取</b> adaptive_grasp 定朝向与进刀轴<br/>→ IDEL_SQUAT 下蹲（掌位由实时 IK 钉住）<br/>→ 50 Hz 伺服（见图 ③）"]
+  P7["<b>P7 抱稳</b> ego 可见度 ≥ 70% → stand_up + carry_pose<br/>→ 锁向后退 0.35 m（两步）→ IDLE 2s"]
+  P7G{"掌系漂移 3 cm 以内 ∧ 罐高于桌面 3 cm 以上"}
+  OK(["EPISODE OK ≈ 40–70 s"])
+  BAD(["EPISODE FAILED — 16 个出口<br/>[stand]×8 [view]×2 [grasp]×2 [hold]×3 [gym]×1"])
+
+  P0 --> P1 --> P2 --> P3 --> P4 --> P4G
+  P4G -- 未达标 --> P4R --> P4G
+  P4G -- 达标 --> P5
+  P5 -- 通过 --> P6 --> P7 --> P7G
+  P7G -- 通过 --> OK
+  P2 -. 落点偏 / 站不稳 / 站起时走偏 .-> BAD
+  P3 -. 摔倒 .-> BAD
+  P4R -. 摔倒 .-> BAD
+  P5 -. 顶到桌沿 / 够不到 / 罐倒 / 看不见 .-> BAD
+  P6 -. 规划失败 / 摔倒 / 罐被推倒 / 超时 .-> BAD
+  P7G -. 滑脱 / 掉回桌上 .-> BAD
+```
+
+失败的 episode 直接丢弃(exporter 收到 `x`),**不重试** —— 数据集里只留一次成功的
+episode,训出来的模型才会一次成功。
+
+### ③ 伸手那几秒里发生了什么
+
+`stream_reach._servo_continuous`,50 Hz 闭环,目标全部由**实时物体真值**重算,
+从不从当前掌位外推(否则会追着自己推动的罐子跑)。
+
+```mermaid
+stateDiagram-v2
+  [*] --> up
+  up: <b>up</b> 抬到物体正上方
+  down: <b>down</b> 降到 pregrasp
+  in: <b>in</b> 沿进刀轴平移进入夹爪包络
+  close: <b>close</b> 2 s 斜坡闭合
+  lift: <b>lift</b> 抬升 0.20 m
+  up --> down: 参考位距目标 3 cm 以内
+  down --> in: 参考 1.5 cm、实际掌位 4.5 cm 以内
+  in --> in: <b>接触闪避</b> 罐被推动超过 1.5 cm<br/>→ 沿进刀轴退 5 cm，1 s 后重新对准
+  in --> in: <b>卡死解锁</b> 6 s 无进刀进展 → 抬起脱离摩擦锁
+  in --> close: 对准容差保持 0.4 s<br/>横向 2.0 cm、进刀残差 3.0 cm 以内
+  in --> close: <b>包络内接触</b> 罐已在夹爪之间且进刀将尽<br/>→ 立刻闭合，别再退了
+  close --> lift: 持续接触后再多压 0.6 个行程
+  lift --> [*]: 到位停 0.8 s 后确认抬起
+  close --> [*]: 闭合到底仍无接触 → 失败
+```
+
+两个当初花了很多局才找对的细节:
+
+- **`in → close` 的"包络内接触"分支**是必须的。罐子已经进了夹爪、只是被腕部压着时,
+  再执行"接触闪避"退一次就会把它捅倒。改成立刻闭合之后,悬停不闭合的现象消失了。
+- **`close` 阶段仍在主动保位**。冻结参考会让手掌下沉,闭合的横扫把罐子带倒。
+
+---
+
 ## 运行:收集数据
 
 ```bash
-# 1. 起整个 stack(sim + deploy + exporter),日志在 /workspace/tmp/p03/
-SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh
+# 1. 起整个 stack(sim + deploy + exporter),日志在 $LOCOMANI_TMP/p03/
+SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh "pick up the can"
 
 # 2. 采集(--record 驱动 exporter 落盘;不加就是只跑不落盘)
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
@@ -116,115 +388,96 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 
 要点:
 
-- **采集入口是 `grasp_gym.py --record`,不是 `collect_episode.py`。** 后者还停在旧的
-  控制路径上(走路时双臂被 pin 成平举、抓取带 sim 侧关节 pin),而且有一套独立的导航
-  实现 —— 所有经过验证的逻辑都在 `grasp_gym.py` 里。`collect_episode.py` 只在需要
-  完整任务(抓起 → 搬运 → 放下,`FULL_TASK=1`)时才有用,那条路径尚未迁移。
-- 失败的 episode 会被 `x` 丢弃,只有通过全部 stage 谓词的才落盘。
-- `INSTANCE=i` 让第 i 个实例用 `基准端口+10*i` 和 DDS domain i,多实例互不干扰;
-  只有 instance 0 挂 exporter 落盘。
-- `NO_ENCODER=1` 起 stack 会**不加载 encoder**,这是 token-only(VLA 部署)配置,
-  见下面的路线图第 0 节。
-- 一条 episode 约 67 s、约 4.7 MB(视频 + parquet)。
+- **采集入口是 `grasp_gym.py --record`,不是 `collect_episode.py`。**所有经过验证的
+  控制逻辑都在 `grasp_gym.py` 里;`collect_episode.py` 还停在旧路径上(走路时双臂被
+  pin 成平举、抓取带 sim 侧关节 pin),只在需要完整任务(`FULL_TASK=1`)时才有用。
+- 失败的 episode 会被 `x` 丢弃,只有通过全部 stage 判据的才落盘。
+- 一条 episode 约 40–70 s、约 4.7 MB(视频 + parquet)。
+- 停止:`bash src/teleop_free/stop_stack.sh`。
 
-## 导出 LeRobot v2.1 并对接 GR00T + SONIC
+---
 
-exporter 的原始 session 在 `/workspace/tmp/p03/outputs/`。转换成 LeRobot v2.1
+## 数据 schema
+
+一条 episode 的 parquet 里列很多,但**训练用的只有下面这些**。完整推导见
+[`patches/vla_action_space.md`](patches/vla_action_space.md)。
+
+### action:66 维
+
+| 分量 | 维度 | 说明 |
+|---|---|---|
+| `motion_token` | 64 | SONIC latent。**1/16 量化**(整条 episode 只有 31 个取值,约 5 bit/维)→ VLA 输出头应该做**分类**而不是回归 |
+| `left_gripper` | 1 | 目前恒定(单手任务),为将来双手任务保留 |
+| `right_gripper` | 1 | dex1 的两根平动手指永远同值 |
+
+维度是被 wire protocol 定死的:deploy 的 pose protocol v4 是 token-only 流,
+必填 `token_state`,选填 `frame_index` / `left_hand_joints` / `right_hand_joints` /
+`body_quat_w` —— **planner 指令(mode / movement / facing / speed / height)没有通道**。
+它们仍然被写进 parquet(将来可以当辅助监督),但不是 action。
+
+### observation
+
+ego RGB(`head_camera`,pitch 52° / fovy 70°)+ 29 维关节状态。特权量
+(`can_pose` / `plate_pose`,骨盆系)也在 parquet 里,**训练时不能进输入** ——
+它们的用途是分析和写判据。
+
+---
+
+## 导出 LeRobot v2.1 并对接 GR00T
+
+exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`。转换成 LeRobot v2.1
 (格式对齐 `hojjunekim/g1_sonic_orange_to_plate_locomani`,含 29-DoF 关节状态 +
 64 维 SONIC motion latent + 30fps 视频):
 
 ```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
     src/teleop_free/tools/convert_to_hf_format.py \
-    --sessions /workspace/tmp/p03/outputs/<session...> \
+    --sessions "$LOCOMANI_TMP"/p03/outputs/<session...> \
     --out datasets/g1_locomani_lerobot
 ```
 
-得到的数据集可直接喂给 `third_party/Isaac-GR00T` 做 GR00T 微调(SONIC 作为底层 WBC,
-GR00T 输出的动作经 SONIC encoder 的 64 维 latent 通道驱动机器人)。上层/底层的详细
+得到的数据集可直接喂给 `third_party/Isaac-GR00T` 做 GR00T 微调。上层/底层的详细
 数据流见 `docs/architecture.drawio`。
 
+### VLA 部署时这条链路怎么变
 
-## 路线图:从这里到大规模数据集
+训练好的模型输出 66 维,**不经过 encoder**,用 protocol v4 直接喂进 :5556:
 
-按顺序做。每一步都可能打破规划器的假设,所以**每加一个随机化维度都要先跑 12 局
-确认成功率没崩**,再采数据 —— 否则采到的是一堆废片。
+```bash
+NO_ENCODER=1 bash src/teleop_free/start_stack.sh     # 关键:必须不加载 encoder
+```
 
-### 第 0 节:已经验证过的,不要重做
+`NO_ENCODER=1` 不是省显存。deploy 只要加载了 encoder,`initial_encoder_mode_` 就是 0,
+它的 token 路径会不停地翻回 encoder("if encoder mode is not -1, we need to turn on
+the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。不给
+`--encoder-file`,mode 变成 -1,才会走 "tokens can be set externally"。
 
-- **动作质量**:不踱步、不撞桌、站定不跳变、抓取不悬停。12/12(seed 21)、6/6(seed 33)。
-- **没有 sim 侧关节 pin**。抓取全程由 policy 自己完成(`GYM_ARM_PIN` 默认 0)。
-- **latent 就是 action**(`diag_token_replay.py`):录下成功 episode 的 64 维 token,
-  在 `NO_ENCODER=1` 的 stack 上用 protocol v4 喂回去,关节轨迹复现到 **0.2–0.9°**。
-  开环回放不会抓到罐子(浮动基座把误差积分成 0.77 m 位移),这是开环的固有性质,
-  不是失败 —— VLA 部署是闭环的。
-- **Action 空间 = 66 维**(token 64 + 双夹爪 1+1),由 wire protocol 定死:v4 只运
-  `token_state` + 可选夹爪,planner 指令没有通道。
-- **数据集能被真 LeRobot loader 加载**,不只是手工检查 parquet。
-- **token 是 1/16 量化的**(整条 episode 31 个取值,约 5 bit/维)→ VLA 输出头应该
-  **分类**而不是回归。
+这条路已经端到端验证过(`diag_token_replay.py`):录下成功 episode 的 64 维 token
+再喂回去,关节轨迹复现到 **0.2–0.9°**。开环回放抓不到罐子(浮动基座把误差积分成
+0.77 m 位移),那是开环的固有性质,不是链路问题 —— VLA 部署是闭环的。
 
-### 第 1 步:摸清场景生成的参数化能力(~15 分钟)
+---
 
-查 `build_sim_scene.py` 是否支持参数化**桌高**和**物体尺寸**。这一步把随机化
-第 1/3/4 项的成本从"未知"变成"已知",不做的话后面无法排期。
+## 常见问题
 
-### 第 2 步:上两个不需要重新生成场景的随机化
+| 现象 | 原因 / 处理 |
+|---|---|
+| `start_stack.sh` 卡在 `[2/3]` 十分钟 | 首次运行在编译 TensorRT engine,正常。之后走缓存,20–40 s |
+| deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |
+| 每局都 `teleport did not land` | 上一局的 deploy 状态没清干净。`GYM_RESTART_DEPLOY=1`(默认)每局重启 deploy 就是为这个 |
+| 录像里没有绿色点云 | `SIM_VIS` 里没有 `reach`。它在 sim 启动时读一次,跑起来之后改不了 |
+| `SIM_VIS=none` 但幽灵夹爪还在 | `SIM_VIS` 只给了 stack,没给 gym。两个进程都要设 |
+| 录下来的 `planner_height` 全是 -1 | `patches/vla_action_space.patch` 没打。整段下蹲会从 action 里消失 |
+| action 是 267 维而不是 66 维 | 同上,补丁没打 |
+| 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
+| 场景 MJCF 找不到 mesh | 重跑 `bash scripts/install_scene.sh`;它会探测并改写 tarball 里烘死的路径 |
 
-- **目标物体身份 + 指令**:桌上已有 plate / fork / napkin / orange,但目标永远是罐子,
-  模型可以完全不读指令。把目标随机化并在指令里指名 —— **这是"抓取策略"和"VLA"的
-  分界线**。注意 fork / napkin 是扁平的,dex1 平行夹爪多半抓不了,别放进目标池。
-- **机器人初始位置与朝向**:现在严格在接近线后方 1.8 m、朝向 ±25°。加出生距离
-  (1.0–3.0 m)、**横向偏移**、更大的初始朝向误差(到 ±90°)。转身必须发生在远处 ——
-  近距离的 `face_target` 会让机器人原地转 110–160°,这是记录在案的坑。
-
-### 第 3 步:验证(12 局)
-
-成功率没崩再往下。崩了就先修,别继续叠维度。
-
-### 第 4 步:外观随机化
-
-物体/桌面材质与颜色、光照方向与强度、地面纹理、背景。**一样都没变过** —— 现在训出来的
-模型很可能是在认"那个特定灰色的圆柱"。只改 material,不碰控制逻辑,零风险。
-
-### 第 5 步:放开蹲深上限,然后上桌高与物体尺寸
-
-前置(**这是硬阻塞**):
-
-- `reach_map.py` 的 `PELVIS_MIN = 0.598` 是**旧下蹲机制**的上限(19.5 cm),而
-  `IDEL_SQUAT` 实测能到 **0.51**(27 cm,见 `diag_squatmode.py --sweep`)。不放开的话
-  矮桌会被 `plan_core_stand` 判成不可达。改完要重建 reach map。
-- 每个桌高都要用 `diag_ego_geom.py` 复查罐子在决策点(约 1 m 外)是否可见:直立时
-  可见区间是 0.15–1.77 m,而这个上限随物体高度变,桌子越矮远端越近。
-
-然后才是:
-
-- **桌高**(现在固定 0.62 m,真实桌子 0.72–0.75)
-- **物体尺寸与高度**(现在固定 4.8×12 cm;夹爪开口 9.49 cm,所以 3–8 cm 直径都在能力内)。
-  物体高度直接决定蹲多深 —— **现在蹲深永远是 13 cm,这个轴等于没训**。
-
-### 第 6 步:大规模采集
-
-一条约 67 s、4.7 MB。规模不是瓶颈(1000 条约 5 GB),但加上 5 个随机化维度后
-200 条会被摊得很薄,先定目标数量。
-
-### 以后再说
-
-- **episode 内扰动**:接近/伸手途中推罐子(`pin_object` 现成),或给骨盆一个冲量
-  (需要在 `privileged_pub` 加 `xfrc_applied`)。按之前的结论,**等第一批模型告诉我们
-  缺什么再上** —— 如果失败是"轻微偏了然后越偏越远"就补扰动,如果是"完全没对准"
-  就补多样性。
-- **质量 / 摩擦 / 重心**:RGB 看不见却改变结果,进训练集会造成别名化。**只做评测集**。
-- **完整任务**(抓起 → 搬运 → 放下):在 `collect_episode.py` 的 `FULL_TASK=1` 里,
-  那条路径还没迁移到新控制逻辑。只有抓取的数据集上限比较低。
+---
 
 ## 常用诊断脚本
 
-`src/teleop_free/diag_*.py`(都用 `.venv_sim` 的 python,在 stack 起来后运行):
-`diag_ready_walk.py` 端臂行走、`diag_reach_probe.py` reach map 实测校验、
-`diag_stream.py` 流式手臂通道、`diag_nav.py` 导航等。
-
-Phase 0 / Phase 1 期间新增的(结论都写在各自的 docstring 里):
+`src/teleop_free/diag_*.py`(都用 `.venv_sim` 的 python,在 stack 起来后运行)。
+结论都写在各自的 docstring 里 —— **它们是这个仓库大部分"为什么是这个数"的出处**。
 
 | 脚本 | 回答什么 |
 |---|---|
@@ -233,4 +486,14 @@ Phase 0 / Phase 1 期间新增的(结论都写在各自的 docstring 里):
 | `diag_lean.py` | 命令的腰部前倾有多少被交付(答案:2–10%,基本不交付) |
 | `diag_height.py` | `height` 字段在 IDLE / SLOW_WALK 下是否有效(答案:没有) |
 | `diag_ego_geom.py` | 罐子在 ego 相机里的可见距离区间,随躯干前倾的变化 |
-| `diag_token_replay.py --phase capture/replay` | 录下的 token 能否复现动作(见路线图第 0 节) |
+| `diag_token_replay.py --phase capture/replay` | 录下的 token 能否复现动作 |
+| `diag_shuffle.py` | 每个 speed 命令实际走多快、一步多长 |
+| `diag_reach_probe.py` | reach map 的实测校验 |
+| `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
+
+---
+
+## 路线图
+
+下一步要做什么、按什么顺序做,在 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+其中**第 0 节列了已经验证过、不要重做的结论**,动手前先看那一节。
