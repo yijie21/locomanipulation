@@ -49,7 +49,6 @@ from collect_episode import (  # noqa: E402
 from primitives import (  # noqa: E402
     READY_ARM,
     READY_UPPER,
-    READY_WRISTS,
     STANDING_PELVIS_Z,
     LocomotionMode,
     Primitives,
@@ -132,6 +131,9 @@ def build_rel_candidates(rm: reach_map.ReachMap, z_pf: float) -> np.ndarray:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=5)
+    ap.add_argument("--record", action="store_true",
+                    help="drive the data exporter too, and keep only the "
+                         "episodes that pass every stage predicate")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--spawn-off", type=float, default=1.80,
                     help="spawn this far behind the stand and walk in. Long "
@@ -295,11 +297,18 @@ def main() -> None:
             ok, why = run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                 can_xy - can_nom, stand - robot_nom, psi,
                                 side, rel, rm, stand, squat_hint,
-                                spawn_off=args.spawn_off)
+                                spawn_off=args.spawn_off, record=args.record)
             if ok or not why.startswith("[stand]"):
                 break
             p.log(f"[gym] stand-stage retry ({why})")
         dt = time.time() - t0
+        if args.record:
+            # One 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
+            # own loop writes the episode; 'x' throws it away. A failed round
+            # must be discarded, not saved: the stage predicates are what
+            # turn a scripted sequence into a dataset.
+            p.cmd.key("c" if ok else "x")
+            p.cmd.hold(4.0, mode=LocomotionMode.IDLE)   # let the write finish
         if ok:
             wins += 1
             print(f"EPISODE OK in {dt:.0f}s")
@@ -312,7 +321,7 @@ def main() -> None:
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
               spawn_xy, squat_hint=None,
-              spawn_off=0.30) -> tuple[bool, str]:
+              spawn_off=0.30, record: bool = False) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -397,6 +406,12 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     reset.pin_arms()
     p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     reset.start_video(f"gym_{int(time.time())}")
+    if record:
+        # 'c' toggles the exporter IDLE -> RECORDING; a second 'c' saves and
+        # 'x' discards (zmq_driver.SonicCommander.key). Recording starts HERE,
+        # after the settle, so the first frame of the episode is the first
+        # frame of the task rather than a robot standing still.
+        p.cmd.key("c")
     grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
 
     def rel_dbg(tag, s2):
@@ -666,14 +681,11 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             avoid_dir=bearing_h(st2, grip_live),
             avoid_sign=avoid_sign)
 
-    p.cmd.set_wrists(left_pos=READY_WRISTS["left"],
-                     right_pos=READY_WRISTS["right"])
-    # Release the sim-side pin BEFORE the streamed handoff. This is what
-    # makes the arms twitch at the stand (they hang unheld for the 0.7 s
-    # StreamedArm.start() spends clearing the deploy's upper-body latch,
-    # then the first streamed frame snaps them back), but holding the pin
-    # through the handoff instead took seed 11 from 5/6 to 0/6 — see the
-    # note in grasp_streamed.
+    # Nothing to set up for the arm here any more. The wrist targets this
+    # used to write are only read in PLANNER_VR_3PT, and PlannerArm.start()
+    # switches to PLANNER_FROZEN_UPPER_BODY on its first frame -- a leftover
+    # from the streamed channel, which also needed the pin released before
+    # its handoff. The planner channel has no handoff.
     reset.pin_arms()
     # The pin is OFF by default now (GYM_ARM_PIN=1 restores it). It makes the
     # executed motion precise (3.0 cm / 5 deg) but the recorded latent is

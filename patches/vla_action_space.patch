@@ -1,0 +1,290 @@
+diff --git a/gear_sonic/data/features_sonic_vla.py b/gear_sonic/data/features_sonic_vla.py
+index b59fd0f..95f1602 100644
+--- a/gear_sonic/data/features_sonic_vla.py
++++ b/gear_sonic/data/features_sonic_vla.py
+@@ -74,6 +74,29 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+                 "original_key": "observation.eef_state",
+                 "rotation_type": "quaternion",
+             },
++            # teleop_free: pelvis-frame 6D object poses (pos3 + rot6d)
++            "can_pos": {
++                "start": 0,
++                "end": 3,
++                "original_key": "observation.can_pose",
++            },
++            "can_rot6d": {
++                "start": 3,
++                "end": 9,
++                "original_key": "observation.can_pose",
++                "rotation_type": "rotation_6d",
++            },
++            "plate_pos": {
++                "start": 0,
++                "end": 3,
++                "original_key": "observation.plate_pose",
++            },
++            "plate_rot6d": {
++                "start": 3,
++                "end": 9,
++                "original_key": "observation.plate_pose",
++                "rotation_type": "rotation_6d",
++            },
+             "root_orientation": {
+                 "start": 0,
+                 "end": 4,
+@@ -98,99 +121,53 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+                 "rotation_type": "quaternion",
+             },
+         },
++        # The action is exactly what the robot can be TOLD at deployment,
++        # and that is fixed by the wire protocol, not by taste. The deploy's
++        # pose protocol v4 is token-only streaming
++        # (zmq_endpoint_interface.hpp:82, and :678 "Token-only mode - no
++        # motion data, just tokens for the policy"; supplying motion with it
++        # is rejected outright):
++        #
++        #   REQUIRED: token_state
++        #   OPTIONAL: frame_index, left_hand_joints, right_hand_joints,
++        #             body_quat_w
++        #
++        # So a deployed VLA emits a 64-d token plus a gripper, and nothing
++        # else has a channel to travel on. Everything the expert used to
++        # AUTHOR that token -- the planner mode/movement/facing/speed/height
++        # -- is upstream of the encoder and redundant with its output: the
++        # crouch, for instance, reaches the token as the k-planner's bent-leg
++        # reference inside motion_joint_positions_10frame_step5, which is
++        # what encoder mode 0 reads.
++        #
++        #   motion_token 64  the SONIC latent
++        #   gripper    1+1   dex1 is a parallel jaw: two prismatic fingers
++        #                    ALWAYS commanded to the same value, so component
++        #                    0 is the whole gripper action. The 7-wide column
++        #                    is a Dex3 leftover and stays in the parquet;
++        #                    only the modality slice narrows.
++        #
++        # Measured on a recorded episode, the block this replaces declared
++        # 267 dims of which 180 never changed in a single frame (the SMPL
++        # slots alone are 135 dead numbers without a Pico headset). The
++        # planner columns are still WRITTEN, so using them as auxiliary
++        # supervision later needs no re-recording -- but they are not the
++        # action.
+         "action": {
+-            "delta_heading": {
+-                "start": 0,
+-                "end": 1,
+-                "original_key": "teleop.delta_heading",
+-            },
+             "motion_token": {
+                 "start": 0,
+                 "end": 64,
+                 "original_key": "action.motion_token",
+             },
+-            "smpl_joints": {
+-                "start": 0,
+-                "end": 72,
+-                "original_key": "teleop.smpl_joints",
+-            },
+-            "smpl_pose": {
+-                "start": 0,
+-                "end": 63,
+-                "original_key": "teleop.smpl_pose",
+-            },
+-            "body_quat_w": {
+-                "start": 0,
+-                "end": 4,
+-                "original_key": "teleop.body_quat_w",
+-                "rotation_type": "quaternion",
+-            },
+-            "target_body_orientation": {
+-                "start": 0,
+-                "end": 6,
+-                "original_key": "teleop.target_body_orientation",
+-                "rotation_type": "rotation_6d",
+-            },
+-            "left_hand_joints": {
+-                "start": 0,
+-                "end": 7,
+-                "original_key": "teleop.left_hand_joints",
+-            },
+-            "right_hand_joints": {
+-                "start": 0,
+-                "end": 7,
+-                "original_key": "teleop.right_hand_joints",
+-            },
+-            "left_wrist_joints": {
+-                "start": 0,
+-                "end": 3,
+-                "original_key": "teleop.left_wrist_joints",
+-            },
+-            "right_wrist_joints": {
+-                "start": 0,
+-                "end": 3,
+-                "original_key": "teleop.right_wrist_joints",
+-            },
+-            "stream_mode": {
+-                "start": 0,
+-                "end": 1,
+-                "original_key": "teleop.stream_mode",
+-            },
+-            "planner_mode": {
+-                "start": 0,
+-                "end": 1,
+-                "original_key": "teleop.planner_mode",
+-            },
+-            "planner_movement": {
+-                "start": 0,
+-                "end": 3,
+-                "original_key": "teleop.planner_movement",
+-            },
+-            "planner_facing": {
+-                "start": 0,
+-                "end": 3,
+-                "original_key": "teleop.planner_facing",
+-            },
+-            "planner_speed": {
++            "left_gripper": {
+                 "start": 0,
+                 "end": 1,
+-                "original_key": "teleop.planner_speed",
++                "original_key": "teleop.left_hand_joints",
+             },
+-            "planner_height": {
++            "right_gripper": {
+                 "start": 0,
+                 "end": 1,
+-                "original_key": "teleop.planner_height",
+-            },
+-            "vr_3pt_position": {
+-                "start": 0,
+-                "end": 9,
+-                "original_key": "teleop.vr_3pt_position",
+-            },
+-            "vr_3pt_orientation": {
+-                "start": 0,
+-                "end": 18,
+-                "original_key": "teleop.vr_3pt_orientation",
+-                "rotation_type": "rotation_6d",
++                "original_key": "teleop.right_hand_joints",
+             },
+         },
+         "video": {
+@@ -231,6 +208,17 @@ def get_features_sonic_vla(robot_model: RobotModel) -> dict:
+                 "right_wrist_abs_quat",
+             ],
+         },
++        # teleop_free: privileged object poses in the pelvis frame, pos3+rot6d
++        "observation.can_pose": {
++            "dtype": "float32",
++            "shape": (9,),
++            "names": ["pos", "rot6d"],
++        },
++        "observation.plate_pose": {
++            "dtype": "float32",
++            "shape": (9,),
++            "names": ["pos", "rot6d"],
++        },
+         "action.wbc": {
+             "dtype": "float64",
+             "shape": (num_joints,),
+diff --git a/gear_sonic/scripts/run_data_exporter.py b/gear_sonic/scripts/run_data_exporter.py
+index 4737bcb..395cf94 100644
+--- a/gear_sonic/scripts/run_data_exporter.py
++++ b/gear_sonic/scripts/run_data_exporter.py
+@@ -23,6 +23,7 @@ from collections import deque
+ from dataclasses import dataclass
+ from datetime import datetime
+ import json
++import os
+ import time
+ 
+ import numpy as np
+@@ -268,6 +269,19 @@ class GrootDataCollector:
+             self._sonic_zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "planner")
+             self._sonic_zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "manager_state")
+             time.sleep(0.5)
++
++            # teleop_free: privileged simulator truth (:5581, JSON) supplies
++            # pelvis-frame 6D object poses for observation.<key>_pose.
++            self._priv_socket = None
++            self._latest_priv = None
++            try:
++                priv_port = int(os.environ.get("TF_PRIVILEGED_PORT", "5581"))
++                self._priv_socket = self._sonic_zmq_ctx.socket(zmq.SUB)
++                self._priv_socket.setsockopt(zmq.CONFLATE, 1)
++                self._priv_socket.setsockopt_string(zmq.SUBSCRIBE, "")
++                self._priv_socket.connect(f"tcp://localhost:{priv_port}")
++            except Exception as exc:  # noqa: BLE001
++                print(f"[object-pose] privileged subscriber disabled: {exc}")
+             print(f"[Sonic] Connected to ZMQ at {sonic_data_zmq_host}:{sonic_data_zmq_port}")
+             print("[Sonic] Subscribed to: pose, planner, manager_state")
+         except Exception as e:
+@@ -523,6 +537,44 @@ class GrootDataCollector:
+             if parts:
+                 print(f"[Latency] {', '.join(parts)}")
+ 
++    def _add_object_poses(self, frame_data: dict) -> None:
++        """teleop_free: pelvis-frame 6D poses (pos3 + rot6d) of task objects.
++
++        Pose of object o in the pelvis frame: p = R_pelvis^T (p_o - p_pelvis),
++        q = q_pelvis^-1 * q_o, stored as pos3 + quat_to_rot6d(q) so the rot6d
++        convention matches every other rotation in this dataset.  Zeros until
++        the first privileged message arrives.
++        """
++        if getattr(self, "_priv_socket", None) is not None:
++            try:
++                while True:
++                    self._latest_priv = json.loads(
++                        self._priv_socket.recv_string(zmq.NOBLOCK))
++            except zmq.Again:
++                pass
++        s = self._latest_priv
++        for key in os.environ.get("TF_POSE_OBJECTS", "can,plate").split(","):
++            key = key.strip()
++            out = np.zeros(9, dtype=np.float32)
++            if s is not None and key in s.get("objects", {}):
++                pw, xw, yw, zw = s["pelvis"]["quat"]
++                Rp = np.array([
++                    [1 - 2 * (yw * yw + zw * zw), 2 * (xw * yw - pw * zw), 2 * (xw * zw + pw * yw)],
++                    [2 * (xw * yw + pw * zw), 1 - 2 * (xw * xw + zw * zw), 2 * (yw * zw - pw * xw)],
++                    [2 * (xw * zw - pw * yw), 2 * (yw * zw + pw * xw), 1 - 2 * (xw * xw + yw * yw)],
++                ])
++                dp = np.asarray(s["objects"][key]["pos"]) - np.asarray(s["pelvis"]["pos"])
++                out[0:3] = Rp.T @ dp
++                ow, ox, oy, oz = s["objects"][key]["quat"]
++                q_rel = np.array([
++                    pw * ow + xw * ox + yw * oy + zw * oz,
++                    pw * ox - xw * ow - yw * oz + zw * oy,
++                    pw * oy + xw * oz - yw * ow - zw * ox,
++                    pw * oz - xw * oy + yw * ox - zw * ow,
++                ])
++                out[3:9] = np.asarray(quat_to_rot6d(q_rel), dtype=np.float32).reshape(-1)
++            frame_data[f"observation.{key}_pose"] = out
++
+     def _add_images_to_frame_data(self, frame_data: dict) -> None:
+         if self.latest_image_msg is None:
+             return
+@@ -664,6 +716,8 @@ class GrootDataCollector:
+         else:
+             frame_data["action.motion_token"] = np.zeros(64, dtype=np.float64)
+ 
++        self._add_object_poses(frame_data)
++
+     def _add_sonic_pose_features(self, frame_data: dict) -> float | None:
+         """Add teleop features based on current stream mode."""
+         sonic_latency_ms = None
+@@ -690,7 +744,14 @@ class GrootDataCollector:
+ 
+         planner_msg = self.latest_planner_msg
+         use_planner = False
+-        if self.current_stream_mode == 5 and planner_msg is not None:
++        # Mode 3 (PLANNER_FROZEN_UPPER_BODY) is a planner sub-mode too, and
++        # it is the one the teleop-free pipeline now runs the WHOLE grasp in.
++        # Gating on 5 alone was written for the pico manager, where 5 was the
++        # only planner mode in use; leaving it would have zeroed planner_mode
++        # and planner_height for every grasp frame -- and the crouch is
++        # commanded exactly there (mode=IDEL_SQUAT, height=<pelvis target>),
++        # so the squat would have vanished from the recorded action.
++        if self.current_stream_mode in (3, 5) and planner_msg is not None:
+             receive_ts = planner_msg.get("receive_timestamp")
+             if receive_ts is not None:
+                 age_sec = time.time() - receive_ts
