@@ -56,8 +56,10 @@ from primitives import (  # noqa: E402
     upper_body_from_mj,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
+import sim_vis
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 EDGE_MIN = 0.17            # pelvis-to-edge HARD floor, enforced at arrival.
                            # 0.10 -> 17 hip contacts, 0.12 -> 22: the crouch
@@ -77,7 +79,7 @@ FACING_MAX = np.deg2rad(30.0)
 # always clean, rounds 2+ wander, fall on the walk-up, or land metres off.
 # ~30 s a round buys back the dominant failure class.
 RESTART_DEPLOY = os.environ.get("GYM_RESTART_DEPLOY", "1") == "1"
-RESTART_SCRIPT = "/workspace/code/locomanipulation/scripts/restart_deploy.sh"
+RESTART_SCRIPT = f"{paths.REPO}/scripts/restart_deploy.sh"
 
 
 def fresh_deploy(p) -> bool:
@@ -663,7 +665,11 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     avoid_sign = 1.0 if side == "right" else -1.0
 
     def show_ghost(pl):
-        if not pl.ok:
+        # The ghost is baked into the scene at build time and shares geom
+        # group 4 with the reach cloud, so it cannot be hidden from the video
+        # side alone. Leaving it parked at its spawn (below the floor) is the
+        # lever that works with an already-built scene.
+        if not pl.ok or not sim_vis.enabled("ghost"):
             return
         q = np.empty(4)
         mujoco.mju_mat2Quat(q, np.asarray(pl.rot, dtype=float).flatten())

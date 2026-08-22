@@ -38,12 +38,14 @@ from gear_sonic.data.robot_model.instantiation.g1 import (  # noqa: E402
 )
 
 from privileged_pub import EpisodeControlServer, PrivilegedPublisher  # noqa: E402
+import paths
+import sim_vis
 
 # Set SIM_VIDEO_DIR to record a tracking-camera mp4 per episode. Off by default
 # because rendering costs sim time.
 VIDEO_DIR = os.environ.get("SIM_VIDEO_DIR")
 
-SCENE_DIR = "/workspace/code/locomanipulation/outputs/scene/sim"
+SCENE_DIR = f"{paths.REPO}/outputs/scene/sim"
 
 
 def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
@@ -107,6 +109,11 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
     with the body — the volume it sweeps is the total graspable region
     from standing to the deepest crouch. Group 4: debug camera only.
     """
+    if not sim_vis.enabled("reach"):
+        # Not "hide it": ~5800 box geoms cost model-compile and render time
+        # whether or not they are drawn, so the switch has to act here.
+        print(f"[sim] reach zone off ({sim_vis.describe()})")
+        return scene_xml
     try:
         import reach_map
         z = np.load(reach_map.MAP_PATH)

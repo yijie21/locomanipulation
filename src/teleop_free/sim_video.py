@@ -18,6 +18,8 @@ import cv2
 import mujoco
 import numpy as np
 
+import sim_vis
+
 WIDTH, HEIGHT = 720, 540
 # A close-up inset, because the wide shot cannot answer the question the videos
 # exist for. At the tracking camera's 2.5 m the hand is roughly 40x40 px of
@@ -110,12 +112,17 @@ class VideoRecorder:
         # the object are a few dozen pixels each.
         self.cam.distance, self.cam.azimuth, self.cam.elevation = 2.5, 135.0, -20.0
 
-        # Debug visuals (ghost hand, grip bead) live in geom group 4, which
-        # default options hide: the ego inset and the exporter's ego stream
-        # stay clean for VLA data, and only this tracking view opts back in.
+        # Debug visuals (ghost hand, grip bead, reach cloud) live in geom
+        # group 4, which default options hide: the ego inset and the exporter's
+        # ego stream stay clean for VLA data, and only this tracking view opts
+        # back in.  One group holds both, so the group is on if EITHER is
+        # wanted; they are separated upstream instead — the cloud by not being
+        # injected (run_sim_locomani), the ghost by never being placed
+        # (grasp_gym.show_ghost), which leaves it parked below the floor.
         self.vopt = mujoco.MjvOption()
         mujoco.mjv_defaultOption(self.vopt)
-        self.vopt.geomgroup[4] = 1
+        self.vopt.geomgroup[4] = int(sim_vis.enabled("ghost")
+                                     or sim_vis.enabled("reach"))
 
         self.inset = None
         cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, INSET_CAMERA)
@@ -127,7 +134,8 @@ class VideoRecorder:
             self.icam.fixedcamid = cid
 
         self.pose_names, self.pose_bids, self.pose_boxes = [], [], []
-        for n in POSE_BODIES:
+        for n in (POSE_BODIES if sim_vis.enabled("bbox")
+                  or sim_vis.enabled("readout") else ()):
             b = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n)
             if b < 0:
                 continue
@@ -149,7 +157,7 @@ class VideoRecorder:
         self.writer = cv2.VideoWriter(
             self.path, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (WIDTH, HEIGHT))
         self.n = self.frames = 0
-        print(f"[video] recording {self.path}")
+        print(f"[video] recording {self.path} ({sim_vis.describe()})")
 
     def frame(self, data) -> None:
         if self.writer is None:
@@ -159,7 +167,8 @@ class VideoRecorder:
             return
         self.renderer.update_scene(data, camera=self.cam,
                                    scene_option=self.vopt)
-        _draw_boxes(self.renderer, data, self.pose_boxes)
+        if sim_vis.enabled("bbox"):
+            _draw_boxes(self.renderer, data, self.pose_boxes)
         # MuJoCo renders RGB; OpenCV writes BGR.
         frame = self.renderer.render()[:, :, ::-1].copy()
         if self.inset is not None:
@@ -174,7 +183,7 @@ class VideoRecorder:
             cv2.rectangle(frame, (x - 1, y - 1), (x + INSET_W, y + INSET_H),
                           (255, 255, 255), 1)
         # Pelvis-frame position readout — the numbers the dataset records.
-        if self.pelvis_bid >= 0:
+        if self.pelvis_bid >= 0 and sim_vis.enabled("readout"):
             rp = data.xmat[self.pelvis_bid].reshape(3, 3)
             pp = data.xpos[self.pelvis_bid]
             for i, (name, bid) in enumerate(zip(self.pose_names,
