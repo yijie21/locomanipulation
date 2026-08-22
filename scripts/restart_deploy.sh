@@ -13,10 +13,9 @@ INSTANCE="${INSTANCE:-0}"
 export SONIC_DDS_DOMAIN=$INSTANCE
 TF_SONIC_PORT=$((5556 + 10 * INSTANCE))
 TF_OUT_PORT=$((5557 + 10 * INSTANCE))
-if [ "$INSTANCE" = "0" ]; then LOGS=/workspace/tmp/p03; else LOGS=/workspace/tmp/p03_i$INSTANCE; fi
-
 # shellcheck disable=SC1091
-source /workspace/code/locomanipulation/scripts/env_deploy.sh
+source "$(dirname "$0")/env_deploy.sh"        # also pulls in paths.sh
+LOGS=$(locomani_session_root "$INSTANCE")
 
 # Instance-selective kill: the port is part of the deploy's own cmdline and
 # never part of this script's, so the pattern cannot self-match.

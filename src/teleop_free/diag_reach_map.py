@@ -41,8 +41,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import grasping  # noqa: E402
 from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
+import paths
 
-SCENE_META = ("/workspace/code/locomanipulation/outputs/scene/sim/"
+SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
               "scene_meta.json")
 
 # What the controller was measured to deliver, in the pelvis frame, across the

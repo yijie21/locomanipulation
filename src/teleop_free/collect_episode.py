@@ -64,8 +64,9 @@ from primitives import (  # noqa: E402
     wrap,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 # Predicate thresholds. Deliberately explicit rather than tuned-in-place, so a
 # failed episode can be attributed to a specific one.
@@ -569,7 +570,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-record", action="store_true")
     ap.add_argument("--side", default="right", choices=["left", "right"])
-    ap.add_argument("--out", default="/workspace/code/locomanipulation/outputs/logs")
+    ap.add_argument("--out", default=f"{paths.REPO}/outputs/logs")
     args = ap.parse_args()
 
     meta = json.load(open(SCENE_META))

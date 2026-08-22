@@ -26,8 +26,9 @@ from __future__ import annotations
 import os
 import shutil
 import xml.etree.ElementTree as ET
+import paths
 
-REPO = "/workspace/code/locomanipulation"
+REPO = paths.REPO
 SRC_DIR = f"{REPO}/assets/dex1"
 G1 = (f"{REPO}/third_party/GR00T-WholeBodyControl/gear_sonic/data/"
       "robot_model/model_data/g1")

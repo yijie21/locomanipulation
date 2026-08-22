@@ -35,8 +35,9 @@ from __future__ import annotations
 import os
 
 import numpy as np
+import paths
 
-MAP_PATH = "/workspace/code/locomanipulation/outputs/scene/wrist_map.npz"
+MAP_PATH = f"{paths.REPO}/outputs/scene/wrist_map.npz"
 
 _WG: np.ndarray | None = None
 _WF: np.ndarray | None = None

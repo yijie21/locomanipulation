@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from collect_episode import SCENE_META, EpisodeFailed, run_episode  # noqa: E402
 from primitives import Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
 # Perturbation ranges for P2. Modest on purpose: the aim is a policy that
 # generalises over where things are, not one that has seen the object fall off
@@ -66,7 +67,7 @@ def main() -> None:
     ap.add_argument("--side", default="right", choices=["left", "right"])
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default="ep", help="prefix for per-episode video files")
-    ap.add_argument("--out", default="/workspace/code/locomanipulation/outputs/logs")
+    ap.add_argument("--out", default=f"{paths.REPO}/outputs/logs")
     args = ap.parse_args()
 
     meta = json.load(open(SCENE_META))

@@ -26,8 +26,9 @@ import stream_reach  # noqa: E402
 from g1_joints import ARM_MJ  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 STEPS = (0.05, 0.04, 0.04)          # incremental drops -> ~5/9/13 cm cmd
 STRIDE_XY = 2                       # visit every 2nd voxel in x and y
                                     # (all z layers): 402 of 1446 targets

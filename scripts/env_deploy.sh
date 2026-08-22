@@ -1,17 +1,19 @@
 #!/bin/bash
 # Environment for gear_sonic_deploy (C++ stack).
-# Usage:  source /workspace/code/locomanipulation/scripts/env_deploy.sh
+# Usage:  source scripts/env_deploy.sh   (from anywhere; it locates itself)
 #
 # Replaces gear_sonic_deploy/scripts/setup_env.sh, which is not used here:
 # that script's companion install_deps.sh has `apt install cuda` fallbacks,
 # and the `cuda` metapackage pulls cuda-drivers, which would overwrite the
 # host-injected NVIDIA driver on this Vast instance.
 
-export TensorRT_ROOT=/workspace/deps/TensorRT-10.13.3.9
-export onnxruntime_ROOT=/workspace/deps/onnxruntime
-export CUDA_HOME=/usr/local/cuda
+# LOCOMANI_ROOT / DEPS_DIR / SONIC_DEPLOY_ROOT — see scripts/paths.sh.
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE:-$0}")/paths.sh"
 
-export SONIC_DEPLOY_ROOT=/workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl/gear_sonic_deploy
+export TensorRT_ROOT="${TensorRT_ROOT:-$DEPS_DIR/TensorRT-10.13.3.9}"
+export onnxruntime_ROOT="${onnxruntime_ROOT:-$DEPS_DIR/onnxruntime}"
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
 
 # unitree_sdk2's libddsc is also on the binary's baked-in RUNPATH, but that
 # RUNPATH holds the build-time absolute path — LD_LIBRARY_PATH keeps the

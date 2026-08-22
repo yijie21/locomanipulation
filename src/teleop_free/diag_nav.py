@@ -20,8 +20,9 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import navigator as nav  # noqa: E402
+import paths
 
-SCENE_META = ("/workspace/code/locomanipulation/outputs/scene/sim/"
+SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
               "scene_meta.json")
 WANT = 0.45          # pelvis-to-object distance the grasp needs
 BAND = 0.08

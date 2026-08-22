@@ -32,7 +32,8 @@ from primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 
 GHOST_BODY = "ghost_hand"
 from primitives_const import HAND as _HAND
-OUT = ("/workspace/code/locomanipulation/outputs/scene/"
+import paths
+OUT = (f"{paths.REPO}/outputs/scene/"
        + ("hand_points_dex1.npy" if _HAND == "dex1" else "hand_points.npy"))
 
 

@@ -4,8 +4,10 @@
 # Iteration batches: --no-record (no exporter dependency on instances 1/2).
 # GYM=1 runs the teleport grasp gym instead of full navigation episodes.
 trap '' TERM HUP
-cd /workspace/code/locomanipulation
-PY=/workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
+# shellcheck disable=SC1091
+. "$(dirname "$0")/paths.sh"
+cd "$LOCOMANI_ROOT" || exit 1
+PY="$VENV_SIM_PY"
 OUT=outputs/logs/parbatch
 EPN="${EPN:-5}"
 GYM="${GYM:-0}"

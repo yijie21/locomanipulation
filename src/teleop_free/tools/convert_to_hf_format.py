@@ -18,7 +18,7 @@ skipped unless --include-discarded.
 
 Usage:
   .venv_data_collection/bin/python convert_to_hf_format.py \
-      --sessions /workspace/tmp/p03/outputs/<ts> [<ts2> ...] \
+      --sessions "$LOCOMANI_WORKSPACE"/tmp/p03/outputs/<ts> [<ts2> ...] \
       --out outputs/lerobot/g1_sonic_orange_to_plate_locomani \
       [--include-discarded]
 """

@@ -15,19 +15,20 @@
 #
 # Usage:  bash src/teleop_free/install_affordance_noflash.sh
 
-export TMPDIR=/workspace/tmp
-export PIP_CACHE_DIR=/workspace/.cache/pip
-export HF_HOME=/workspace/.hf_home
-export XDG_CACHE_HOME=/workspace/.cache
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE:-$0}")/../../scripts/paths.sh"
+export TMPDIR="$LOCOMANI_TMP"
+export PIP_CACHE_DIR="$LOCOMANI_CACHE/pip"
+export HF_HOME="$LOCOMANI_WORKSPACE/.hf_home"
+export XDG_CACHE_HOME="$LOCOMANI_CACHE"
 export MAX_JOBS=4
 mkdir -p "$TMPDIR" "$PIP_CACHE_DIR" "$HF_HOME"
 
-CONDA_BASE=/workspace/miniconda3
 # shellcheck disable=SC1091
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate embodiedgen
 
-REPO=/workspace/code/locomanipulation/third_party/EmbodiedGen
+REPO="$LOCOMANI_ROOT"/third_party/EmbodiedGen
 cd "$REPO" || exit 1
 
 echo "=== python: $(which python) ==="

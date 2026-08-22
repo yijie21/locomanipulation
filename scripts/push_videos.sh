@@ -39,4 +39,4 @@ ls -la videos/
 
 git add -A videos
 git commit -m "${MSG:-videos: latest attempt}" || { echo "nothing to commit"; exit 0; }
-git push origin main
+git push origin HEAD

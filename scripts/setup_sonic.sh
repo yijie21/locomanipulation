@@ -2,16 +2,18 @@
 # Setup script for GR00T-WholeBodyControl (SONIC) training/eval env
 set -euo pipefail
 
-ROOT=/workspace/code/locomanipulation
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE:-$0}")/paths.sh"
+ROOT="$LOCOMANI_ROOT"
 REPO=$ROOT/third_party/GR00T-WholeBodyControl
 ENV_NAME=sonic
 
 # keep caches off the small (4GB) root overlay
-export PIP_CACHE_DIR=/workspace/.cache/pip
-export TMPDIR=/workspace/tmp
+export PIP_CACHE_DIR="$LOCOMANI_CACHE/pip"
+export TMPDIR="$LOCOMANI_TMP"
 mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
 
-source /workspace/miniconda3/etc/profile.d/conda.sh
+source "$CONDA_BASE"/etc/profile.d/conda.sh
 
 echo "=== [1/5] conda env ==="
 conda env list | grep -qE "^${ENV_NAME}\s" || conda create -n "$ENV_NAME" python=3.11 -y

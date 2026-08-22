@@ -9,8 +9,8 @@ publisher is a VR headset or this script.
 
 P0.3 usage (walk forward for 10 s and record one episode):
 
-    source /workspace/code/locomanipulation/scripts/env_deploy.sh
-    .venv_sim/bin/python /workspace/code/locomanipulation/src/teleop_free/zmq_driver.py \
+    source scripts/env_deploy.sh          # from the repo root
+    "$VENV_SIM_PY" src/teleop_free/zmq_driver.py \
         --duration 10 --record
 """
 

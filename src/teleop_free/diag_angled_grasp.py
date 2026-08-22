@@ -40,6 +40,7 @@ from primitives import (  # noqa: E402
     GRASP_CENTRE_OFFSET,
     SHOULDER_OFFSET,
 )
+import paths  # noqa: E402
 
 GHOST_BODY = "ghost_hand"
 STANDING_PELVIS_Z = 0.793      # what the robot holds with no crouch commanded
@@ -163,7 +164,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pitch", default="0,20,35,50",
                     help="comma-separated degrees, nose-down")
-    ap.add_argument("--out", default="/workspace/code/locomanipulation/outputs/models/angled")
+    ap.add_argument("--out", default=f"{paths.REPO}/outputs/models/angled")
     ap.add_argument("--side", default="right", choices=["left", "right"])
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)

@@ -21,8 +21,9 @@ import sys
 
 import mujoco
 import numpy as np
+import paths
 
-SCENE_META = ("/workspace/code/locomanipulation/outputs/scene/sim/"
+SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
               "scene_meta.json")
 TOL = 0.01          # a millimetre or two of settling is fine; a centimetre is not
 

@@ -27,8 +27,9 @@ import stream_reach  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
 from g1_joints import ARM_MJ  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 GRIP_Z = 0.894              # same absolute height as the green carpet
                             # (the READY/elbow level, where the carried arm lives)
 RADII = (0.50, 0.42, 0.34, 0.26, 0.20)

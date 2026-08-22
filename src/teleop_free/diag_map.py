@@ -37,8 +37,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives  # noqa: E402
+import paths
 
-OUT = "/workspace/code/locomanipulation/outputs/scene/wrist_map.npz"
+OUT = f"{paths.REPO}/outputs/scene/wrist_map.npz"
 # The region the grasp actually commands, not the whole REACH_BOX. Fitting
 # where the arm never goes spends samples on extrapolation nobody needs.
 X_RANGE = (0.20, 1.00)

@@ -38,9 +38,10 @@ from primitives import (  # noqa: E402
     upper_body_from_mj,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
-OUT = "/workspace/code/locomanipulation/outputs/diag/squatmode.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+OUT = f"{paths.REPO}/outputs/diag/squatmode.json"
 SQUAT = 4                        # LocomotionMode::IDEL_SQUAT in the deploy enum
 PHASE_S = 6.0
 

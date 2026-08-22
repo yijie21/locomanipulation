@@ -34,8 +34,9 @@ import json  # noqa: E402
 from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 LEG = 5.0          # seconds per setting
 WARMUP = 1.5       # let the gait build before counting

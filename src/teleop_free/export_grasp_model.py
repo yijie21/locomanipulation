@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import grasping  # noqa: E402
 from diag_grasp_pose import SCENE_META, place_robot, stand_pose  # noqa: E402
 from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
+import paths
 
 GHOST_BODY = "ghost_hand"
 CYL_SEGMENTS = 48
@@ -86,7 +87,7 @@ def write_obj(path, groups) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/workspace/code/locomanipulation/outputs/models")
+    ap.add_argument("--out", default=f"{paths.REPO}/outputs/models")
     ap.add_argument("--side", default="right", choices=["left", "right"])
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)

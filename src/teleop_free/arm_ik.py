@@ -16,8 +16,9 @@ from __future__ import annotations
 import numpy as np
 
 from g1_joints import ARM_MJ, MUJOCO_JOINT_NAMES
+import paths
 
-SCENE_XML = "/workspace/code/locomanipulation/outputs/scene/sim/scene_locomani.xml"
+SCENE_XML = f"{paths.REPO}/outputs/scene/sim/scene_locomani.xml"
 PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
 
 

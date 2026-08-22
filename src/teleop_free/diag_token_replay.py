@@ -42,8 +42,9 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
 
-REPO = "/workspace/code/locomanipulation"
+REPO = paths.REPO
 PY_SIM = f"{REPO}/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 SCENE_META = f"{REPO}/outputs/scene/sim/scene_meta.json"
 OUT = f"{REPO}/outputs/diag/token_replay.npz"

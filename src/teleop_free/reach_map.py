@@ -37,7 +37,8 @@ from g1_joints import ARM_MJ
 from primitives_const import GRASP_CENTRE_OFFSET_CONST
 
 from primitives_const import HAND as _HAND
-MAP_PATH = ("/workspace/code/locomanipulation/outputs/scene/"
+import paths
+MAP_PATH = (f"{paths.REPO}/outputs/scene/"
             + ("reach_map_dex1.npz" if _HAND == "dex1" else "reach_map.npz"))
 
 OFFSET_DIR = (np.asarray(GRASP_CENTRE_OFFSET_CONST)

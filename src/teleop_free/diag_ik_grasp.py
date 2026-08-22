@@ -43,11 +43,12 @@ from primitives import (  # noqa: E402
     READY_ARM,
 )
 from stream_reach import SAFE_GAP  # noqa: E402
+import paths
 
-SCENE_DIR = "/workspace/code/locomanipulation/outputs/scene/sim"
+SCENE_DIR = f"{paths.REPO}/outputs/scene/sim"
 SCENE = f"{SCENE_DIR}/scene_locomani_zone.xml"
 META = f"{SCENE_DIR}/scene_meta.json"
-OUT = "/workspace/code/locomanipulation/outputs/videos/ik_grasp.mp4"
+OUT = f"{paths.REPO}/outputs/videos/ik_grasp.mp4"
 TMP = "/tmp/claude-1002/ik_grasp_frames"
 W, H, FPS = 1280, 720, 30
 SIDE = "right"

@@ -40,8 +40,9 @@ from primitives import (  # noqa: E402
     STAND_OFF,
 )
 from privileged_pub import HAND_JOINTS  # noqa: E402
+import paths
 
-SCENE_META = ("/workspace/code/locomanipulation/outputs/scene/sim/"
+SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
               "scene_meta.json")
 PELVIS_Z = 0.78
 WIDTH, HEIGHT = 900, 700
@@ -125,7 +126,7 @@ def render(model, data, out_dir, tag, lookat) -> list[str]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--side", default="right", choices=["left", "right"])
-    ap.add_argument("--out", default="/workspace/code/locomanipulation/outputs/"
+    ap.add_argument("--out", default=f"{paths.REPO}/outputs/"
                                      "renders/grasp_check")
     args = ap.parse_args()
 

@@ -30,8 +30,9 @@ from matplotlib.patches import Arc, Rectangle
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import reach_map as rmm  # noqa: E402
+import paths
 
-OUT = "/workspace/code/locomanipulation/outputs/videos/plan_scan.mp4"
+OUT = f"{paths.REPO}/outputs/videos/plan_scan.mp4"
 TMP = "/tmp/claude-1002/plan_scan_frames"
 
 GRIP_Z = 0.707          # world grasp height of the can

@@ -54,9 +54,10 @@ from primitives import (  # noqa: E402
     StreamMode,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
-OUT = "/workspace/code/locomanipulation/outputs/diag/channel.npz"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+OUT = f"{paths.REPO}/outputs/diag/channel.npz"
 SIDE = "right"
 SETTLE_OPEN = 1.5
 STAND_DRIFT_MAX = 0.25

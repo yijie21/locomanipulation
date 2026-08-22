@@ -37,9 +37,10 @@ from primitives import (  # noqa: E402
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
 from reach_map import MAP_PATH, OFFSET_DIR  # noqa: E402
+import paths
 
-OUT = "/workspace/code/locomanipulation/outputs/logs/reach_probe.jsonl"
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+OUT = f"{paths.REPO}/outputs/logs/reach_probe.jsonl"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 N_CORE, N_EDGE, N_CHEST, N_OUT = 4, 6, 2, 3   # per arm
 

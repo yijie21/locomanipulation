@@ -42,7 +42,8 @@ import numpy as np
 from primitives_const import GRASP_CENTRE_OFFSET_CONST
 
 from primitives_const import HAND as _HAND
-HAND_POINTS_PATH = ("/workspace/code/locomanipulation/outputs/scene/"
+import paths
+HAND_POINTS_PATH = (f"{paths.REPO}/outputs/scene/"
                     + ("hand_points_dex1.npy" if _HAND == "dex1"
                        else "hand_points.npy"))
 

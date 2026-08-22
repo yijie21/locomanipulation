@@ -48,9 +48,10 @@ from primitives import (  # noqa: E402
     StreamMode,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
-OUT_DIR = "/workspace/code/locomanipulation/outputs/diag"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+OUT_DIR = f"{paths.REPO}/outputs/diag"
 SIDE = "right"
 ORIENTS = {                      # (name, axis-angle applied to the upright can)
     "up_yaw0":  (0.0, 0.0),

@@ -2,15 +2,17 @@
 # Stage 2: Isaac Lab v2.3.2 (pairs with Isaac Sim 5.1.0 + torch 2.7.0/cu128) + gear_sonic
 set -euo pipefail
 
-ROOT=/workspace/code/locomanipulation
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE:-$0}")/paths.sh"
+ROOT="$LOCOMANI_ROOT"
 REPO=$ROOT/third_party/GR00T-WholeBodyControl
 ENV_NAME=sonic
 
-export PIP_CACHE_DIR=/workspace/.cache/pip
-export TMPDIR=/workspace/tmp
+export PIP_CACHE_DIR="$LOCOMANI_CACHE/pip"
+export TMPDIR="$LOCOMANI_TMP"
 mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
 
-source /workspace/miniconda3/etc/profile.d/conda.sh
+source "$CONDA_BASE"/etc/profile.d/conda.sh
 conda activate "$ENV_NAME"
 
 echo "=== [1/4] checkout Isaac Lab v2.3.2 ==="

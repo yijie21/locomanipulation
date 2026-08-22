@@ -25,14 +25,17 @@ import asyncio
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
+
 # abspath is not cosmetic. A relative OUT_DIR produces relative `references =`
 # in scene.usda, which USD then resolves against the layer's own directory, so
 # every asset silently fails to load and only the background renders. It also
 # sends replicator's output to ~/omni.replicator_out/<relative path>.
 SCENE_ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else (
-    "/workspace/code/locomanipulation/outputs/scene"))
+    f"{paths.REPO}/outputs/scene"))
 OUT_DIR = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else (
-    "/workspace/code/locomanipulation/outputs/renders_isaac"))
+    f"{paths.REPO}/outputs/renders_isaac"))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 BUILD_LOG = os.path.join(OUT_DIR, "build.log")
@@ -60,7 +63,7 @@ import trimesh  # noqa: E402
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade, Vt  # noqa: E402
 
 G1_USD = (
-    "/workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl/"
+    f"{paths.REPO}/third_party/GR00T-WholeBodyControl/"
     "gear_sonic/data/robots/g1/g1_29dof_with_hand_rev_1_0.usd"
 )
 

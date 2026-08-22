@@ -39,9 +39,10 @@ from primitives import (  # noqa: E402
     upper_body_from_mj,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
-OUT = "/workspace/code/locomanipulation/outputs/diag/height.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+OUT = f"{paths.REPO}/outputs/diag/height.json"
 HEIGHTS = [-1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.3, 0.0]
 HOLD_S = 5.0
 KNEE_MJ = (3, 9)                 # left / right knee in MuJoCo joint order

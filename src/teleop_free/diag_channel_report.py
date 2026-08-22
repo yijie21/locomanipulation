@@ -9,8 +9,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
+import paths
 
-NPZ = "/workspace/code/locomanipulation/outputs/diag/channel.npz"
+NPZ = f"{paths.REPO}/outputs/diag/channel.npz"
 ORDER = ["streamed", "planner", "planner_vel", "planner_pin"]
 
 

@@ -19,19 +19,21 @@
 # this account, so both resolve. kolors and chroma need no licence.
 export TEXT_MODEL="${TEXT_MODEL:-sd35}"
 
-export TMPDIR=/workspace/tmp
-export PIP_CACHE_DIR=/workspace/.cache/pip
-export HF_HOME=/workspace/.hf_home
-export TORCH_HOME=/workspace/.cache/torch
-export XDG_CACHE_HOME=/workspace/.cache
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE:-$0}")/../../scripts/paths.sh"
+export TMPDIR="$LOCOMANI_TMP"
+export PIP_CACHE_DIR="$LOCOMANI_CACHE/pip"
+export HF_HOME="$LOCOMANI_WORKSPACE/.hf_home"
+export TORCH_HOME="$LOCOMANI_CACHE/torch"
+export XDG_CACHE_HOME="$LOCOMANI_CACHE"
 mkdir -p "$TMPDIR" "$HF_HOME" "$TORCH_HOME"
 
 # OpenAI credentials for the quality checkers (kept out of the repo).
 # shellcheck disable=SC1091
-source /workspace/.secrets/embodiedgen.env
+source "$LOCOMANI_SECRETS"/embodiedgen.env
 
 # shellcheck disable=SC1091
-source /workspace/miniconda3/etc/profile.d/conda.sh
+source "$CONDA_BASE"/etc/profile.d/conda.sh
 conda activate embodiedgen
 
-cd /workspace/code/locomanipulation/third_party/EmbodiedGen || return 1
+cd "$LOCOMANI_ROOT"/third_party/EmbodiedGen || return 1

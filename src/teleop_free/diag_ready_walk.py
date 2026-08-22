@@ -25,8 +25,9 @@ from primitives import (  # noqa: E402
     StreamMode,
 )
 from privileged_pub import EpisodeControlClient
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 
 def main() -> None:

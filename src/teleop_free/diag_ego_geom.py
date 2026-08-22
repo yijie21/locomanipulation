@@ -25,9 +25,10 @@ import mujoco
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
 
-SCENE = "/workspace/code/locomanipulation/outputs/scene/sim/scene_locomani.xml"
-META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE = f"{paths.REPO}/outputs/scene/sim/scene_locomani.xml"
+META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 CENTRAL = 0.90                    # the servo's gate: central 90% of the frame
 WAIST_PITCH = [0.0, 0.20, 0.35, 0.52]
 

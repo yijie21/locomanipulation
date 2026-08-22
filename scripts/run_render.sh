@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
-source /workspace/miniconda3/etc/profile.d/conda.sh
+# shellcheck disable=SC1091
+. "$(dirname "$0")/paths.sh"
+# shellcheck disable=SC1091
+source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate sonic
 export OMNI_KIT_ACCEPT_EULA=YES
-cd /workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl
+cd "$SONIC_ROOT"
 
 python gear_sonic/eval_agent_trl.py \
     +checkpoint=sonic_release/last.pt \

@@ -13,7 +13,9 @@
 
 set -u
 
-REPO=/workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl
+# shellcheck disable=SC1091
+. "$(dirname "$0")/../../scripts/paths.sh"
+REPO="$SONIC_ROOT"
 # INSTANCE selects a port block and DDS domain so several stacks can share
 # the host: instance i uses ports base+10*i and DDS domain i. Instance 0 is
 # byte-identical to the historical single-stack layout.
@@ -25,14 +27,14 @@ TF_OUT_PORT=$((5557 + 10 * INSTANCE))
 export TF_KEYBOARD_PORT=$((5580 + 10 * INSTANCE))
 export TF_PRIVILEGED_PORT=$((5581 + 10 * INSTANCE))
 export TF_EPISODE_PORT=$((5582 + 10 * INSTANCE))
-if [ "$INSTANCE" = "0" ]; then LOGS=/workspace/tmp/p03; else LOGS=/workspace/tmp/p03_i$INSTANCE; fi
+LOGS=$(locomani_session_root "$INSTANCE")
 TASK_PROMPT="${1:-walk forward}"
 
 mkdir -p "$LOGS"
 cd "$REPO" || exit 1
 
 # shellcheck disable=SC1091
-source /workspace/code/locomanipulation/scripts/env_deploy.sh
+source "$LOCOMANI_ROOT/scripts/env_deploy.sh"
 export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
 
 wait_for_port() {  # $1=port $2=timeout_s
@@ -58,7 +60,7 @@ wait_for_text() {  # $1=file $2=pattern $3=timeout_s
 # the P0.3 walk-only proof used.
 SCENE="${SCENE:-locomani}"
 if [ "$SCENE" = "locomani" ]; then
-    SIM_SCRIPT=/workspace/code/locomanipulation/src/teleop_free/run_sim_locomani.py
+    SIM_SCRIPT="$LOCOMANI_SRC/run_sim_locomani.py"
 else
     SIM_SCRIPT=gear_sonic/scripts/run_sim_loop.py
 fi
@@ -140,7 +142,7 @@ else
 cd "$REPO" || exit 1
 nohup "$REPO/.venv_data_collection/bin/python" gear_sonic/scripts/run_data_exporter.py \
     --task-prompt "$TASK_PROMPT" \
-    --root-output-dir /workspace/tmp/p03/outputs \
+    --root-output-dir "$LOGS/outputs" \
     --no-text-to-speech \
     > "$LOGS/exporter.log" 2>&1 &
 sleep 8
@@ -149,4 +151,4 @@ fi
 
 echo
 echo "stack up. logs in $LOGS/{sim,deploy,exporter}.log"
-echo "next:  $REPO/.venv_sim/bin/python /workspace/code/locomanipulation/src/teleop_free/zmq_driver.py --record"
+echo "next:  $VENV_SIM_PY $LOCOMANI_SRC/zmq_driver.py --record"

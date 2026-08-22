@@ -25,8 +25,9 @@ import stream_reach  # noqa: E402
 from g1_joints import ARM_MJ  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
+import paths
 
-SCENE_META = "/workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json"
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 STEPS = (0.05, 0.04, 0.04)
 DWELL = 0.16                        # s per voxel (interpolated transit)
 
