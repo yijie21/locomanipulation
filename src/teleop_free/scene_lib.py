@@ -102,6 +102,31 @@ UPRIGHT_QUAT = (1.0, 0.0, 0.0, 0.0)
 # 0.72 is the lowest that keeps the grasp comfortable — 6 cm below the pelvis,
 # so it reads as waist height rather than chest height, and it costs one cell
 # out of twelve against 0.76.
+#
+# EVERYTHING ABOVE IS OBSOLETE, and the shipped 0.62 is the evidence: this
+# analysis said a 0.62 m table was unreachable by any standing distance, and
+# the pipeline grasps off one 12/12. Two things changed under it.
+#
+#   * The hand. Those numbers are dex3's: a 6.1 cm aperture and a 5.6 cm
+#     finger drop. dex1 opens 9.48 cm and sits GRIP_BELOW_RIM 6.0 cm down.
+#   * The squat. "No standing distance can fix that" was true; a standing
+#     distance was not the only axis. IDEL_SQUAT drops the pelvis, which is
+#     exactly the axis the sweep held fixed. At 0.62 the grip is 0.113 m
+#     below the standing pelvis — outside the band, as claimed — and a 10 cm
+#     commanded drop puts it at -0.013, inside it.
+#
+# Re-measured 2026-08-22 against reach_map.plan_core_stand with the shipped
+# PELVIS_MIN of 0.598 (a 19.5 cm drop). What decides feasibility is not the
+# table height but the OBJECT TOP, since grip_z = obj_top - GRIP_BELOW_RIM:
+#
+#     kinematically feasible object top: 0.63 - 1.24 m, continuous
+#     -> with the 0.12 m can, table tops 0.51 - 1.12 m
+#
+# So real dining tables (0.72-0.75) are well inside the band today and need
+# no change to PELVIS_MIN. That is a PLANNER feasibility result only: it says
+# plan_core_stand returns a stand, not that the grasp succeeds. Ego
+# visibility (diag_ego_geom.py) and the actual success rate are unverified at
+# any height but this one.
 SURFACE_TARGET_TOP = {"dining_table": 0.62, "counter": 0.66}
 
 # Per-object scale, applied on top of the generated asset. Kept because the
