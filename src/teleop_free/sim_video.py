@@ -27,9 +27,24 @@ WIDTH, HEIGHT = 720, 540
 # (verified by overlaying it on the real hand, agreement 14-42 mm) but at that
 # size no silhouette survives. The inset watches the wrist from 0.55 m.
 INSET_W, INSET_H = 288, 216
-# The inset shows the robot's own ego view — the same fixed head camera the
-# data exporter records — so the reviewer sees exactly what the VLA will see.
-INSET_CAMERA = "head_camera"
+# Every inset is a camera the DATASET records, rendered with default
+# visualisation options — so what a reviewer checks is what the VLA is
+# actually trained on, not a debug view of it. Laid out around the edges so
+# the robot stays visible in the middle:
+#
+#     left_wrist          right_wrist         ego_view
+#     top-left            bottom-left         bottom-right
+#
+# The wrist pair is smaller because there are two of them and because the
+# tracking shot is the thing being watched; they are there to answer "what
+# did the gripper see when it missed", which does not need to be large.
+WRIST_W, WRIST_H = 240, 180
+INSETS = (
+    ("head_camera", "ego", INSET_W, INSET_H,
+     WIDTH - INSET_W - 8, HEIGHT - INSET_H - 8),
+    ("left_wrist", "L wrist", WRIST_W, WRIST_H, 8, 8),
+    ("right_wrist", "R wrist", WRIST_W, WRIST_H, 8, HEIGHT - WRIST_H - 8),
+)
 EVERY_NTH = 4          # publishes are 50 Hz, so this records at 12.5 fps
 FPS = 50.0 / EVERY_NTH
 
@@ -124,14 +139,21 @@ class VideoRecorder:
         self.vopt.geomgroup[4] = int(sim_vis.enabled("ghost")
                                      or sim_vis.enabled("reach"))
 
-        self.inset = None
-        cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, INSET_CAMERA)
-        if cid >= 0:
-            self.inset = mujoco.Renderer(model, height=INSET_H, width=INSET_W)
-            self.icam = mujoco.MjvCamera()
-            mujoco.mjv_defaultCamera(self.icam)
-            self.icam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-            self.icam.fixedcamid = cid
+        # One renderer per inset. A camera the scene does not have is simply
+        # skipped: an older scene, or a run with WRIST_CAMS=0, still records
+        # a video with the ego inset alone.
+        self.insets = []
+        for cam_name, label, w, h, x, y in INSETS:
+            cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam_name)
+            if cid < 0:
+                continue
+            cam = mujoco.MjvCamera()
+            mujoco.mjv_defaultCamera(cam)
+            cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+            cam.fixedcamid = cid
+            self.insets.append(
+                (mujoco.Renderer(model, height=h, width=w), cam, label,
+                 w, h, x, y))
 
         self.pose_names, self.pose_bids, self.pose_boxes = [], [], []
         for n in (POSE_BODIES if sim_vis.enabled("bbox")
@@ -171,17 +193,20 @@ class VideoRecorder:
             _draw_boxes(self.renderer, data, self.pose_boxes)
         # MuJoCo renders RGB; OpenCV writes BGR.
         frame = self.renderer.render()[:, :, ::-1].copy()
-        if self.inset is not None:
-            # The inset mirrors what the VLA will actually see: default
-            # options (no group 4), no bbox overlay — debug art stays in the
-            # tracking view above.
-            self.inset.update_scene(data, camera=self.icam)
-            tile = self.inset.render()[:, :, ::-1]
-            # Bottom-right, with a hairline so it reads as a separate view.
-            y, x = HEIGHT - INSET_H - 8, WIDTH - INSET_W - 8
-            frame[y:y + INSET_H, x:x + INSET_W] = tile
-            cv2.rectangle(frame, (x - 1, y - 1), (x + INSET_W, y + INSET_H),
+        for rend, cam, label, w, h, x, y in self.insets:
+            # Default options (no group 4), no bbox overlay: the insets mirror
+            # what the VLA will actually see, and debug art stays in the
+            # tracking view behind them.
+            rend.update_scene(data, camera=cam)
+            frame[y:y + h, x:x + w] = rend.render()[:, :, ::-1]
+            # Hairline so it reads as a separate view, and a label because
+            # three insets are no longer self-evident.
+            cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h),
                           (255, 255, 255), 1)
+            for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+                cv2.putText(frame, label, (x + 6, y + 18),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick,
+                            cv2.LINE_AA)
         # Pelvis-frame position readout — the numbers the dataset records.
         if self.pelvis_bid >= 0 and sim_vis.enabled("readout"):
             rp = data.xmat[self.pelvis_bid].reshape(3, 3)
@@ -189,12 +214,14 @@ class VideoRecorder:
             for i, (name, bid) in enumerate(zip(self.pose_names,
                                                 self.pose_bids)):
                 rel = rp.T @ (data.xpos[bid] - pp)
-                cv2.putText(
-                    frame,
-                    f"{name}@pelvis [{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]",
-                    (10, HEIGHT - 12 - 20 * (len(self.pose_bids) - 1 - i)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1,
-                    cv2.LINE_AA)
+                # Top strip, right of the left-hand insets. It used to sit
+                # bottom-left, which the right-wrist inset now occupies.
+                txt = (f"{name}@pelvis "
+                       f"[{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]")
+                org = (WRIST_W + 20, 22 + 20 * i)
+                for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+                    cv2.putText(frame, txt, org, cv2.FONT_HERSHEY_SIMPLEX,
+                                0.45, colour, thick, cv2.LINE_AA)
         self.writer.write(np.ascontiguousarray(frame))
         self.frames += 1
 
