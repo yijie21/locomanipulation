@@ -43,6 +43,19 @@ import pyarrow.parquet as pq_mod
 TASK = "pick up the red can"
 
 
+def video_streams(info):
+    """Which image features this session actually carries.
+
+    The exporter adds observation.images.{left,right}_wrist when it is run
+    with --record-wrist-cameras, so the set is a property of the recording,
+    not of this script. Deriving it means a session with or without the wrist
+    streams converts with the same command.
+    """
+    return [k for k, v in info.get("features", {}).items()
+            if k.startswith("observation.images.")
+            and v.get("dtype") in ("image", "video")]
+
+
 def load_manifest(path):
     """grasp_gym --manifest -> the session's episodes, in order.
 
@@ -126,7 +139,11 @@ MODALITY = {
         "vr_3pt_position": {"start": 0, "end": 9, "original_key": "teleop.vr_3pt_position"},
         "vr_3pt_orientation": {"start": 0, "end": 18, "original_key": "teleop.vr_3pt_orientation", "rotation_type": "rotation_6d"},
     },
-    "video": {"ego_view": {"original_key": "observation.images.ego_view"}},
+    # Filled from the session's own features -- see video_streams(). Fixing it
+    # to ego_view here is what made the wrist cameras invisible to this
+    # converter even after the sim published them and the exporter recorded
+    # them.
+    "video": {},
     "annotation": {"human.task_description": {"original_key": "task_index"}},
 }
 MODALITY_PSI0 = {
@@ -294,7 +311,12 @@ def main():
 
     out = Path(args.out)
     (out / "data/chunk-000").mkdir(parents=True, exist_ok=True)
-    (out / "videos/chunk-000/observation.images.ego_view").mkdir(parents=True, exist_ok=True)
+    streams = video_streams(json.load(open(Path(args.sessions[0]) / "meta/info.json")))
+    if not streams:
+        raise SystemExit("no observation.images.* features in the first session")
+    print(f"video streams: {', '.join(s.split('.')[-1] for s in streams)}")
+    for st in streams:
+        (out / f"videos/chunk-000/{st}").mkdir(parents=True, exist_ok=True)
     (out / "meta").mkdir(parents=True, exist_ok=True)
 
     src_info = None
@@ -353,14 +375,17 @@ def main():
             sub = sub.add_column(ts_pos + 1, pa.field("action.psi0_18", pa.list_(pa.float32(), 18)), fsl(psi0_18, 18))
             pq_mod.write_table(sub, out / f"data/chunk-000/episode_{new_ep:06d}.parquet")
 
-            vsrc = sess / f"videos/chunk-000/observation.images.ego_view/episode_{src_ep:06d}.mp4"
-            vdst = out / f"videos/chunk-000/observation.images.ego_view/episode_{new_ep:06d}.mp4"
-            frames = convert_video(vsrc, vdst, sel)
+            vid_frames = {}
+            for st in streams:
+                vsrc = sess / f"videos/chunk-000/{st}/episode_{src_ep:06d}.mp4"
+                vdst = out / f"videos/chunk-000/{st}/episode_{new_ep:06d}.mp4"
+                vid_frames[st] = convert_video(vsrc, vdst, sel)
 
             stats = {}
             for name in sub.schema.names:
                 stats[name] = feat_stats(np.asarray(sub[name].to_pylist()))
-            stats["observation.images.ego_view"] = video_stats(frames)
+            for st, fr in vid_frames.items():
+                stats[st] = video_stats(fr)
             ep_stats.append({"episode_index": new_ep, "stats": stats})
             episodes.append({"episode_index": new_ep, "tasks": [ep_task],
                              "length": n30})
@@ -378,9 +403,12 @@ def main():
             feats["observation.state_psi0"] = {"dtype": "float32", "shape": [15], "names": None}
             feats["action.psi0_18"] = {"dtype": "float32", "shape": [18], "names": None}
         feats[k] = v
-    vi = feats["observation.images.ego_view"]
-    if "info" in vi and vi["info"]:
-        vi["info"]["video.fps"] = float(DST_FPS)
+    for st in streams:
+        vi = feats.get(st, {})
+        if vi.get("info"):
+            vi["info"]["video.fps"] = float(DST_FPS)
+    MODALITY["video"] = {st.split(".")[-1]: {"original_key": st}
+                         for st in streams}
 
     info_out = dict(src_info)
     info_out.update({
@@ -388,7 +416,7 @@ def main():
         "total_episodes": new_ep,
         "total_frames": total_frames,
         "total_tasks": max(1, len(task_ids)),
-        "total_videos": total_videos,
+        "total_videos": total_videos * len(streams),
         "total_chunks": 1,
         "splits": {"train": f"0:{new_ep}"},
         "features": feats,

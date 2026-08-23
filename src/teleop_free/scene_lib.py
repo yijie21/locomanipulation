@@ -493,6 +493,71 @@ def attach(spec, mjcf_path: str, name: str, pos, quat_wxyz, scale=1.0, freeze=Tr
     return f"{name}_{child_name}"
 
 
+# --- wrist cameras --------------------------------------------------------
+#
+# No official asset provides these. The only camera in the Unitree URDF is
+# `d435_link`, and it hangs off `torso_link` -- that IS the head camera. So
+# the mounts are ours; everything downstream of them is not.
+#
+# The plumbing on both sides is upstream and generic, which is why this is a
+# dozen lines rather than a project:
+#
+#   sim      base_sim.camera_configs = {stream: {height, width, mjcf_name}}
+#   exporter run_data_exporter.py --record-wrist-cameras adds the features
+#            observation.images.{left,right}_wrist at 640x480
+#   join     the exporter looks up images[<last segment of the feature name>],
+#            so a stream named "left_wrist" lands in the right column with no
+#            configuration at all (and raises loudly if it is missing).
+#
+# Mounted on wrist_yaw_link, so the gripper is FIXED in frame and the object
+# moves relative to it -- which is the relation the servo cares about, and
+# what a real wrist camera sees.
+#
+# The pose has to clear the wrist's own housing, and that is what the first
+# attempt got wrong. Measured in this body's frame: the housing spans
+# x -0.018..0.111 and z +-0.031, the fingers sit at x 0.123..0.148, and the
+# grasp centre is at x 0.1515. A camera at (-0.02, 0, 0.045) looking along +x
+# pitched 20 deg down has a sight line of z = 0.045 - 0.364x, which is INSIDE
+# the housing (z 0.005 at x 0.111) for most of its length -- rendered, the
+# frame was almost entirely white plastic with the jaws squeezed against the
+# top edge.
+#
+# It is worth naming why that got past a check: the analytic projection I ran
+# first agreed with the intended framing, because it used the same assumption
+# about the body frame that the mount did. Self-consistent and wrong. Only
+# rendering the actual compiled model showed it.
+#
+# So: mounted at the housing's front-top, aimed at the grasp centre. The sight
+# line passes z 0.039 at the housing's front edge, clear of the 0.031 top.
+WRIST_CAM_POS = (0.095, 0.0, 0.055)
+WRIST_CAM_QUAT = (0.651447, 0.274986, -0.274986, -0.651447)  # 44 deg down
+WRIST_CAM_FOVY = 80.0
+
+
+def add_wrist_cameras(spec, verbose: bool = True) -> int:
+    """One camera per wrist, named to match the exporter's feature keys."""
+    n = 0
+    for side in ("left", "right"):
+        try:
+            body = spec.body(f"{side}_wrist_yaw_link")
+        except (KeyError, ValueError):
+            body = None
+        if body is None:
+            if verbose:
+                print(f"  wrist camera: no {side}_wrist_yaw_link, skipped")
+            continue
+        c = body.add_camera()
+        c.name = f"{side}_wrist"
+        c.pos = list(WRIST_CAM_POS)
+        c.quat = list(WRIST_CAM_QUAT)
+        c.fovy = WRIST_CAM_FOVY
+        n += 1
+    if verbose and n:
+        print(f"  wrist cameras: {n} (fovy {WRIST_CAM_FOVY:.0f}, "
+              f"aimed at the grasp centre from the housing's front-top)")
+    return n
+
+
 GHOST_BODY = "ghost_hand"
 # Magenta at 0.6, not green at 0.35. Measured on the first attempt: the ghost
 # occupied 500-700 pixels of a 388,800-pixel frame — 0.15% — and a translucent
@@ -763,6 +828,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
     pelvis.pos = [ROBOT_START_XY[0], ROBOT_START_XY[1], ROBOT_PELVIS_Z]
     pelvis.quat = [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]
 
+    add_wrist_cameras(spec, verbose)
     n_ghost = add_ghost_hand(spec)
     if verbose:
         print(f"  ghost hand: {n_ghost} geoms (mocap, no collision)")

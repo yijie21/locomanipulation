@@ -140,9 +140,18 @@ if [ "$INSTANCE" != "0" ]; then
     echo "  skipped (instance $INSTANCE records no episodes)"
 else
 cd "$REPO" || exit 1
+# --record-wrist-cameras adds observation.images.{left,right}_wrist to the
+# dataset. It pairs with the sim's CAMERA_CONFIGS (run_sim_locomani.py): the
+# exporter resolves each image feature by the last segment of its name, so the
+# stream names line the two up with no further configuration -- and it raises
+# rather than recording blanks if a stream is missing. WRIST_CAMS=0 turns both
+# halves off together.
+WRIST_ARG=(--record-wrist-cameras)
+if [ "${WRIST_CAMS:-1}" = "0" ]; then WRIST_ARG=(); fi
 nohup "$REPO/.venv_data_collection/bin/python" gear_sonic/scripts/run_data_exporter.py \
     --task-prompt "$TASK_PROMPT" \
     --root-output-dir "$LOGS/outputs" \
+    "${WRIST_ARG[@]}" \
     --no-text-to-speech \
     > "$LOGS/exporter.log" 2>&1 &
 sleep 8

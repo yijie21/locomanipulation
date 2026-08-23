@@ -220,6 +220,8 @@ checkout,**然后重建场景**。
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export** |
 | `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `SCENE_RANDOM` | `1` | sim | `0` 固定外观,见[外观随机化](#外观随机化) |
+| `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](#相机) |
+| `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行 |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
 | `SONIC_POLICY` | `policy/release` | deploy | 换 checkpoint(`policy/sonic_v1_1` 可用,但步长与时序要重测) |
@@ -528,6 +530,46 @@ meta/episodes.jsonl   每局自己的 task_index
 
 manifest 是**每次尝试一行**而不是每局一行:`[stand]` 类失败会重试整局,而如果
 那次失败发生在开始录制之后,session 里就已经留下了一个 episode。
+
+## 相机
+
+三路 **640×480**,都进数据集:
+
+| 流名 | 挂在哪 | 用途 |
+|---|---|---|
+| `ego_view` | `head_camera`(躯干,pitch 52° / fovy 70) | 主视角,VLA 的输入 |
+| `left_wrist` / `right_wrist` | `wrist_yaw_link`(fovy 80) | 近距离看夹爪与物体的相对关系 |
+
+`WRIST_CAMS=0` 同时关掉两侧(sim 少渲染两路、exporter 少录两路)。三路的代价:
+渲染约 3 倍,单局视频从约 4.7 MB 涨到约 **17.6 MB**。
+
+### 官方提供到什么程度
+
+**URDF 里没有腕上相机。**`assets/dex1/...urdf` 唯一的相机是 `d435_link`,挂在
+`torso_link` —— 那就是 `head_camera`。挂载点是我们自己加的。
+
+**但对接方式是官方的、统一的**,所以接进去只有几行:
+
+```
+sim       base_sim.camera_configs = {流名: {height, width, mjcf_name}}
+exporter  run_data_exporter.py --record-wrist-cameras
+          → observation.images.{left,right}_wrist
+对接约定   exporter 用 feature 名的最后一段查 images[...]
+          所以流名叫 left_wrist 就自动对上,缺了会报错而不是录空
+```
+
+唯一需要绕的是 `SimulatorFactory` 不转发 `camera_configs`,所以按仓库已有的惯例
+monkey-patch `DefaultEnv.__init__`(`run_sim_locomani.install_camera_configs`)。
+
+### 挂载位置是量出来的,不是猜的
+
+`wrist_yaw_link` 系里:外壳占 x −0.018..0.111 / z ±0.031,手指 x 0.123..0.148,
+抓取中心 x 0.1515。相机在 **(0.095, 0, 0.055)** 瞄准抓取中心(下俯 44°),视线在
+外壳前端高 0.039 > 顶面 0.031,**避开自己的外壳**。
+
+第一版放在 (−0.02, 0, 0.045) 沿 +x 下俯 20°,视线整条从外壳内部穿过,渲染出来
+满屏白塑料。**它没被解析检查拦住,因为那个检查和挂载点用了同一个坐标系假设** ——
+自洽但同样错。挂载参数改动之后,一定要渲染真实编译后的模型确认。
 
 ## 数据 schema
 

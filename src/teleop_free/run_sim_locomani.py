@@ -99,6 +99,46 @@ def disable_fall_reset() -> None:
     DefaultEnv.check_fall = check_fall
 
 
+# WRIST_CAMS=0 publishes the ego view alone, which is the old behaviour and
+# what a run that does not need the wrist streams should use: three 640x480
+# renders cost roughly three times one, and the episode's video grows from
+# ~4.7 MB to ~12 MB.
+WRIST_CAMS = os.environ.get("WRIST_CAMS", "1") != "0"
+
+# The stream names are the contract with the exporter. It resolves an image by
+# the LAST SEGMENT of the feature name -- observation.images.left_wrist looks
+# up images["left_wrist"] -- so naming them this way is the whole integration,
+# and a missing one raises there rather than silently recording nothing.
+CAMERA_CONFIGS = {
+    "ego_view": {"height": 480, "width": 640, "mjcf_name": "head_camera"},
+    "left_wrist": {"height": 480, "width": 640, "mjcf_name": "left_wrist"},
+    "right_wrist": {"height": 480, "width": 640, "mjcf_name": "right_wrist"},
+}
+
+
+def install_camera_configs() -> None:
+    """Publish the wrist streams alongside the ego view.
+
+    Injected rather than passed: SimWrapper forwards **kwargs to
+    SimulatorFactory, and the factory hands BaseSimulator a fixed list of
+    arguments that does not include camera_configs -- so there is no route
+    through the public call. DefaultEnv fills in an ego-only default when the
+    argument is empty, and builds its renderers inside __init__, so this has
+    to land before construction rather than after.
+    """
+    if not WRIST_CAMS:
+        return
+    from gear_sonic.utils.mujoco_sim.base_sim import DefaultEnv
+    orig = DefaultEnv.__init__
+
+    def patched(self, *args, **kwargs):
+        kwargs.setdefault("camera_configs", CAMERA_CONFIGS)
+        orig(self, *args, **kwargs)
+
+    DefaultEnv.__init__ = patched
+    print(f"[sim] cameras: {', '.join(CAMERA_CONFIGS)}")
+
+
 def inject_reach_zone(scene_xml: str, meta: dict) -> str:
     """Add the FULL 3D graspable volume as a translucent cloud.
 
@@ -188,6 +228,7 @@ def main(config: SimLoopConfig) -> None:
             "enable_offscreen must be True when enable_image_publish is True"
         )
 
+    install_camera_configs()
     install_privileged_publisher(meta, wbc_config.get("DEFAULT_DOF_ANGLES"))
     disable_fall_reset()
     print(f"[sim] scene   {scene_xml}")
