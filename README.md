@@ -966,9 +966,24 @@ monkey-patch `DefaultEnv.__init__`(`run_sim_locomani.install_camera_configs`)。
 
 ### observation
 
-三路 RGB(`ego_view` / `left_wrist` / `right_wrist`)+ 29 维关节状态 + 每局自己的
-指令(`task_index` → `meta/tasks.jsonl`)。特权量(目标与干扰物的骨盆系 6D 位姿)
-也在 parquet 里,**训练时不能进输入** —— 它们的用途是分析和写判据。
+三路 RGB(`ego_view` / `left_wrist` / `right_wrist`)+ 43 维本体状态(腿 12 + 腰 3 +
+双臂 14 + 双手 14)+ 每局自己的指令(`task_index` → `meta/tasks.jsonl`)。
+
+特权量(`observation.can_pose` / `plate_pose`,骨盆系)**留在 parquet 里但不在
+modality 里**。它们是分析和写判据用的;把它们声明成 state 就等于让模型吃一条部署时
+根本不存在的通道 —— deploy 只有 ego 相机和本体感受。这是这里唯一一个**会照样让 loss
+下降**的错误,所以 `convert_to_hf_format.py` 的 `MODALITY` 明确把它们排除在外。
+
+### modality.json 里的切片
+
+转换器写出的 `meta/modality.json` / `modality_gr00t_sonic.json` 就是 GR00T 实际读的
+切片表:
+
+| | 维度 | 内容 |
+|---|---|---|
+| `action` | **66** | `motion_token` 64 + 左右夹爪各 1(7 宽的列是 Dex3 遗留,只取第 0 个分量) |
+| `state` | **72** | 43 维关节 + 腕位姿 14 + root/gravity/offset/init_quat 15 |
+| `video` | 3 | 按 session 实际有的流填,不写死 |
 
 ---
 

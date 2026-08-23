@@ -114,30 +114,31 @@ MODALITY = {
         "projected_gravity": {"start": 0, "end": 3, "original_key": "observation.projected_gravity"},
         "cpp_rotation_offset": {"start": 0, "end": 4, "original_key": "observation.cpp_rotation_offset", "rotation_type": "quaternion"},
         "init_base_quat": {"start": 0, "end": 4, "original_key": "observation.init_base_quat", "rotation_type": "quaternion"},
-        "can_pos": {"start": 0, "end": 3, "original_key": "observation.can_pose"},
-        "can_rot6d": {"start": 3, "end": 9, "original_key": "observation.can_pose", "rotation_type": "rotation_6d"},
-        "plate_pos": {"start": 0, "end": 3, "original_key": "observation.plate_pose"},
-        "plate_rot6d": {"start": 3, "end": 9, "original_key": "observation.plate_pose", "rotation_type": "rotation_6d"},
+        # observation.can_pose / observation.plate_pose are NOT here on
+        # purpose. They stay in the parquet -- they are what an analysis reads
+        # and what the stage predicates were written against -- but a model
+        # that gets the object's true pose as an input is being trained on a
+        # channel that does not exist at deployment: the deploy has an ego
+        # camera and proprioception, and nothing else. Declaring them as state
+        # is the one mistake here that would still show a falling loss.
     },
+    # The wire protocol, not taste, fixes the action. The deploy's pose
+    # protocol v4 is token-only streaming: REQUIRED token_state, OPTIONAL
+    # frame_index / left_hand_joints / right_hand_joints / body_quat_w. So a
+    # deployed VLA emits a token plus a gripper and nothing else has a channel
+    # to travel on. This mirrors the patched exporter's own declaration
+    # (features_sonic_vla.py, patches/vla_action_space.md); the columns this
+    # used to slice -- planner mode/movement/facing/speed/height, and 135
+    # SMPL slots that never change without a Pico headset -- are still WRITTEN
+    # to the parquet, so using them as auxiliary supervision later needs no
+    # re-recording. They are just not the action.
     "action": {
-        "delta_heading": {"start": 0, "end": 1, "original_key": "teleop.delta_heading"},
         "motion_token": {"start": 0, "end": 64, "original_key": "action.motion_token"},
-        "smpl_joints": {"start": 0, "end": 72, "original_key": "teleop.smpl_joints"},
-        "smpl_pose": {"start": 0, "end": 63, "original_key": "teleop.smpl_pose"},
-        "body_quat_w": {"start": 0, "end": 4, "original_key": "teleop.body_quat_w", "rotation_type": "quaternion"},
-        "target_body_orientation": {"start": 0, "end": 6, "original_key": "teleop.target_body_orientation", "rotation_type": "rotation_6d"},
-        "left_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.left_hand_joints"},
-        "right_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.right_hand_joints"},
-        "left_wrist_joints": {"start": 0, "end": 3, "original_key": "teleop.left_wrist_joints"},
-        "right_wrist_joints": {"start": 0, "end": 3, "original_key": "teleop.right_wrist_joints"},
-        "stream_mode": {"start": 0, "end": 1, "original_key": "teleop.stream_mode"},
-        "planner_mode": {"start": 0, "end": 1, "original_key": "teleop.planner_mode"},
-        "planner_movement": {"start": 0, "end": 3, "original_key": "teleop.planner_movement"},
-        "planner_facing": {"start": 0, "end": 3, "original_key": "teleop.planner_facing"},
-        "planner_speed": {"start": 0, "end": 1, "original_key": "teleop.planner_speed"},
-        "planner_height": {"start": 0, "end": 1, "original_key": "teleop.planner_height"},
-        "vr_3pt_position": {"start": 0, "end": 9, "original_key": "teleop.vr_3pt_position"},
-        "vr_3pt_orientation": {"start": 0, "end": 18, "original_key": "teleop.vr_3pt_orientation", "rotation_type": "rotation_6d"},
+        # dex1 is a parallel jaw: its two prismatic fingers are always
+        # commanded to the same value, so component 0 is the whole gripper
+        # action. The 7-wide column is a Dex3 leftover.
+        "left_gripper": {"start": 0, "end": 1, "original_key": "teleop.left_hand_joints"},
+        "right_gripper": {"start": 0, "end": 1, "original_key": "teleop.right_hand_joints"},
     },
     # Filled from the session's own features -- see video_streams(). Fixing it
     # to ego_view here is what made the wrist cameras invisible to this
