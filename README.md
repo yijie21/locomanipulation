@@ -103,6 +103,7 @@ videos/                 最新一批演示视频(每次推送会整体替换)
 |---|---|
 | `src/teleop_free/start_stack.sh` / `stop_stack.sh` | 起 / 停三进程 stack |
 | `scripts/collect.sh` | **大规模采集**:按批换场景尺寸,批内逐局换目标/出生/外观 |
+| `scripts/collect_pilot.sh` | **先导批**:单目标、外观钉死,只变出生点和物体位置,采到 N 条成功为止 |
 | `scripts/install_scene.sh` | 解包并重建场景 |
 | `scripts/paths.sh` | 所有 shell 脚本的路径来源 |
 | `scripts/env_deploy.sh` | 编译 / 运行 C++ deploy 的环境(替代上游的 `install_deps.sh`) |
@@ -427,6 +428,34 @@ tail -3 outputs/logs/collect/gym_*.log | tail -20         # 现在跑到哪
 
 按当前 11–12/12 的成功率,200 条大约要跑 210–220 局。
 
+### 只想先测通 pipeline:`collect_pilot.sh`
+
+第一批数据的目的往往不是"模型能泛化到哪",而是"**转换 → 微调 → 66 维喂回 deploy**
+这条链路通不通"。那就不要摊开五个轴 —— 摊得越开,失败时越说不清是哪一环:
+
+```bash
+export SCENE_RANDOM=0 SIM_VIS=bbox,readout       # 外观钉死,去掉可达域点云
+bash scripts/install_scene.sh                    # 回到出厂尺寸
+SIM_VIDEO_DIR=outputs/sim_video \
+    bash src/teleop_free/start_stack.sh "pick up the red can"
+
+bash scripts/collect_pilot.sh 200 can            # 200 条成功为止
+```
+
+只有两样东西变:**机器人出生点**和**物体在桌沿上的位置**。这两个是有理由留下的 ——
+去掉出生点,200 条就是同一条轨迹的 200 次重放,模型可以纯按时间索引拟合;去掉物体
+位置,伸手那一段同理。留着它们,"能 work"才说明了点什么。
+
+`collect_pilot.sh` 和 `collect.sh` 的关键区别:**它不起 stack**。所有 chunk 必须落进
+**同一个 exporter session**(session 是 exporter 启动时创建的),所以 stack 自己起一次、
+一直不动。分 chunk 只为可续 —— 崩了再跑一次,它会数已经落盘的成功条数接着补。
+
+跑完直接转:
+
+```bash
+--sessions <那一个 session>  --manifest outputs/logs/pilot/manifest_all.jsonl
+```
+
 ### 两个坑
 
 - `collect.sh` **就地重建 `outputs/scene/sim`**,跑完场景停在最后一批的尺寸上。
@@ -495,6 +524,8 @@ the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。�
 | `--spawn-off A [B]` | `1.0 3.0` | 出生在站位后方多远。一个值=固定,两个值=逐局在区间内取 |
 | `--spawn-lateral M` | `0.35` | 最多偏离接近线多远。`0` 会让每局都正对着走,那种修正模型就永远学不到 |
 | `--spawn-yaw-err DEG` | `90` | 初始朝向最多偏多少度,**在出生点**转出来 |
+| `--edge-jitter M` | `0.10` | 目标沿桌沿滑动的范围。默认只在 100 cm 桌沿的 20 cm 一段里动,接近段可能被学成"走到 +y 边",目标少的批次建议放宽到 `0.20` |
+| `--until-ok N` | 无 | 跑到 **N 局成功**为止,`--rounds` 变成尝试次数上限 |
 | `--dump-sample PATH` | 无 | 把这一局的场景采样写成 JSON,给 `diag_token_replay.py` 复现同一初始条件 |
 
 ### 环境变量

@@ -235,6 +235,23 @@ def main() -> None:
                          "happens AT THE SPAWN, metres from the table: near "
                          "the object a heading correction is a 110-160 deg "
                          "pirouette that walks the pelvis into the edge.")
+    ap.add_argument("--edge-jitter", type=float, default=0.10, metavar="M",
+                    help="how far the target may slide ALONG its edge, either "
+                         "way, from its nominal spot. The default 0.10 puts "
+                         "it in a 20 cm segment of a 100 cm edge, which is "
+                         "enough variation for the grasp but lets the "
+                         "walk-up be learnt as 'go to the +y edge, reach a "
+                         "little left' rather than as locating the object. "
+                         "Widen it when the batch has few targets and the "
+                         "approach is what has to generalise. The rejection "
+                         "sampler validates the stand and both walk legs "
+                         "against the table, so a value too large costs "
+                         "retries, not bad samples.")
+    ap.add_argument("--until-ok", type=int, default=None, metavar="N",
+                    help="stop as soon as N rounds have SUCCEEDED instead of "
+                         "running all --rounds. --rounds is then the cap on "
+                         "how many attempts that may take, so a run that "
+                         "never reaches N still terminates.")
     ap.add_argument("--targets", default="pool",
                     help="which objects to draw the round's target from: "
                          "'pool' (every entry in the scene's target_pool), "
@@ -317,8 +334,15 @@ def main() -> None:
     p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
 
     wins = 0
+    played = 0
     deck: list[str] = []
     for rnd in range(args.rounds):
+        # --until-ok collects a fixed number of SUCCESSES, which is what a
+        # dataset is counted in; --rounds stays the attempt cap so a run
+        # whose success rate collapses still ends.
+        if args.until_ok is not None and wins >= args.until_ok:
+            break
+        played += 1
         t0 = time.time()
         # -- sample --------------------------------------------------------
         # Draw the round's target first: everything after it -- the edge to
@@ -344,7 +368,7 @@ def main() -> None:
         # manifest can record it and a replay can reproduce the exact frame.
         appearance = int(rng.integers(0, 2 ** 31 - 1))
         # The target lives in a band hugging its nominal edge (radial 5-10 cm
-        # inboard, +-10 cm along the edge): a pelvis 10 cm OUTSIDE the edge
+        # inboard, +-args.edge_jitter along it): a pelvis 10 cm OUTSIDE the edge
         # then reaches it at rel depth 0.15-0.24 — comfortably inside the
         # map instead of at its rim, which is what lets the no-contact
         # stand-off exist at all.
@@ -352,7 +376,8 @@ def main() -> None:
             can_xy = can_nom.copy()
             can_xy[ax] = cxy[ax] + sgn * (half[ax]
                                           - rng.uniform(*CAN_INBOARD))
-            can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(-0.10, 0.10)
+            can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(
+                -args.edge_jitter, args.edge_jitter)
             rel = rel_cands[rng.integers(len(rel_cands))]
             # Face the table from outside, along the can's inward edge
             # normal, +-25 deg (a uniform world yaw almost never yields a
@@ -402,7 +427,9 @@ def main() -> None:
             print("EPISODE FAILED [gym] no feasible sample found")
             continue
         side = "right"
-        print(f"[gym] round {rnd + 1}/{args.rounds}: {obj_key} "
+        goal = (f"{args.until_ok} ok" if args.until_ok is not None
+                else f"{args.rounds}")
+        print(f"[gym] round {rnd + 1}/{goal} (ok {wins}): {obj_key} "
               f"{np.round(can_xy, 2)}"
               f" rel [{rel[0]:.2f} {rel[1]:+.2f}] yaw {np.degrees(psi):.0f}"
               f" side {side} | spawn {spawn_off:.2f}m lat {spawn_lat:+.2f}m "
@@ -483,7 +510,7 @@ def main() -> None:
         else:
             print(f"EPISODE FAILED {why} in {dt:.0f}s")
         reset.end_video()
-    print(f"[gym] {wins}/{args.rounds} OK")
+    print(f"[gym] {wins}/{played} OK")
 
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
