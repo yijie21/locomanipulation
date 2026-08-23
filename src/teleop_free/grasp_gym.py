@@ -458,9 +458,18 @@ def main() -> None:
                 # the converter's join has to see it too. It filters on
                 # `produced`; the rest is for reading per-target success.
                 with open(args.manifest, "a") as f:
+                    # The scene's actual dimensions, not the seed that
+                    # produced them: they are what an analysis wants, they
+                    # survive a change to the sampling ranges, and they cost
+                    # nothing since the scene already declares them.
+                    o = meta["objects"][obj_key]
                     rec_line = dict(round=rnd, attempt=attempt,
                                     target=obj_key, task=task, ok=bool(ok),
                                     why=why, appearance=appearance,
+                                    table_top=round(float(surf_a["top"]), 4),
+                                    obj_height=round(float(o["height"]), 4),
+                                    obj_diameter=round(
+                                        float(o["box"]["half_extent"][0]) * 2, 4),
                                     produced=bool(args.record and produced),
                                     seconds=round(time.time() - t0, 1))
                     f.write(json.dumps(rec_line) + chr(10))
@@ -713,9 +722,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     along = float(np.dot(lead_tgt - np.asarray(p.pelvis_xy(p.obs())),
                          np.array(fv[:2])))
     if along > 0.20:
+        # face_yaw, not face_target=False: hold the LINE, not the current
+        # heading. See Primitives.walk_to -- holding the heading locks in the
+        # spawn turn's dead-zone residual, which a long walk then magnifies
+        # into a lateral error the deadband approach cannot erase.
         if not p.walk_to(lead_tgt, stop_dist=0.10,
                          timeout=10.0 + 8.0 * spawn_off,
-                         face_target=False):
+                         face_target=False, face_yaw=psi):
             return False, "[stand] fell during the walk-up"
     else:
         p.log(f"[gym] leg 1 skipped (lead point {along:+.2f} m along track)")

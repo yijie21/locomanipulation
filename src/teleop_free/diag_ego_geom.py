@@ -13,6 +13,21 @@ pitches the camera further down, so the lean that buys reach also costs
 far-field visibility; the point is to see how much.
 
     python src/teleop_free/diag_ego_geom.py
+    python src/teleop_free/diag_ego_geom.py --height-sweep
+
+`--height-sweep` answers the question roadmap step 5 blocks on: as the table
+height varies, does the target stay inside the ego gates? Two gates, two
+regimes, and they pull in opposite directions --
+
+  * `[view] object outside ego view at stand` fires while the robot is
+    STANDING at the stand, before the squat. A higher object rises in the
+    frame, so this one gets easier as the table gets taller.
+  * the servo's `ego visibility >= 70%` runs while the robot is SQUATTING,
+    and the squat is planned per table height, so the pelvis moves with it.
+
+The sweep reports the object's normalised frame position for both, at the
+planned stand depth, so a candidate height can be accepted or rejected
+before any episode is run.
 """
 
 from __future__ import annotations
@@ -33,7 +48,85 @@ CENTRAL = 0.90                    # the servo's gate: central 90% of the frame
 WAIST_PITCH = [0.0, 0.20, 0.35, 0.52]
 
 
+def frame_pos(m, d, cam, pel, z_obj, x_rel, y_rel=0.0):
+    """Where the object lands in the ego frame: (u_x, u_y) normalised so the
+    frame edge is 1.0. The gym's gate is |u_x| <= 0.8, |u_y| <= 0.9."""
+    C = np.array(d.cam_xpos[cam])
+    R = np.array(d.cam_xmat[cam]).reshape(3, 3)
+    P = np.array(d.xpos[pel])
+    Rp = np.array(d.xmat[pel]).reshape(3, 3)
+    w = P + Rp @ np.array([x_rel, y_rel, z_obj - P[2]])
+    v = R.T @ (w - C)
+    if -v[2] <= 0.05:
+        return None
+    half = np.tan(np.radians(float(m.cam_fovy[cam]) / 2.0))
+    return float(v[0] / -v[2] / half), float(v[1] / -v[2] / half)
+
+
+def height_sweep() -> None:
+    """Ego-frame position of the target versus table height."""
+    import grasping
+    import reach_map
+    from primitives import STANDING_PELVIS_Z
+
+    meta = json.load(open(META))
+    can = meta["objects"][meta["target_object"]]
+    obj_h = float(can["height"])
+    m = mujoco.MjModel.from_xml_path(SCENE)
+    d = mujoco.MjData(m)
+    cam = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
+    pel = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
+    rm = reach_map.ReachMap()
+
+    print(f"[ego] object height {obj_h * 100:.0f} cm, fovy "
+          f"{float(m.cam_fovy[cam]):.0f} deg. Gate at the stand: "
+          f"|u_x| <= 0.80, |u_y| <= 0.90.")
+    print(f"{'table':>6} {'obj top':>8} {'squat':>7}   worst stand/squat "
+          f"position in frame")
+    for top in np.arange(0.50, 0.95001, 0.02):
+        obj_top = top + obj_h
+        z_obj = top + obj_h / 2.0
+        grip_z = obj_top - grasping.GRIP_BELOW_RIM
+        plan = rm.plan_core_stand(float(grip_z - STANDING_PELVIS_Z))
+        if plan is None:
+            print(f"{top:6.2f} {obj_top:8.3f}      --         --         --  "
+                  f"no stand plan")
+            continue
+        rel_cands, drop, _ = plan
+        # EVERY stand candidate, at its own (x, y). The first version of this
+        # sweep put the object dead ahead (y = 0) and passed every height --
+        # then a 0.80 m table failed live on cam_x 0.994. The stand plan aims
+        # the arm's core, which sits offset to the right, so the object is
+        # never centred: rel_y runs -0.06 to -0.16. A taller table also
+        # shortens the range at which the pitched-down camera sees it, which
+        # widens the lateral angle it subtends. Both push u_x out, and u_x is
+        # the tighter gate (0.80 against 0.90).
+        worst = None
+        for tag, dz in (("stand", 0.0), ("squat", -drop)):
+            mujoco.mj_resetData(m, d)
+            d.qpos[2] += dz
+            mujoco.mj_forward(m, d)
+            for c in rel_cands:
+                p_ = frame_pos(m, d, cam, pel, z_obj, float(c[0]), float(c[1]))
+                if p_ is None:
+                    continue
+                score = max(abs(p_[0]) / 0.80, abs(p_[1]) / 0.90)
+                if worst is None or score > worst[0]:
+                    worst = (score, tag, p_)
+        if worst is None:
+            print(f"{top:6.2f} {obj_top:8.3f} {drop * 100:6.1f}cm "
+                  f"    behind the camera")
+            continue
+        score, tag, (ux, uy) = worst
+        print(f"{top:6.2f} {obj_top:8.3f} {drop * 100:6.1f}cm "
+              f"  u_x {ux:+.2f}  u_y {uy:+.2f}  ({tag}, worst of "
+              f"{len(rel_cands)} stands)  "
+              f"{'ok' if score <= 1.0 else 'OUT OF FRAME'}")
+
+
 def main() -> None:
+    if "--height-sweep" in sys.argv:
+        return height_sweep()
     meta = json.load(open(META))
     can = meta["objects"][meta["target_object"]]
     top = meta["surfaces"]["A"]["top"]

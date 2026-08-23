@@ -259,6 +259,112 @@ PRIMITIVE_OBJECTS = {
 }
 
 
+# --- per-BATCH dimension randomisation ------------------------------------
+#
+# Table height and object size are baked into the compiled scene, so unlike
+# the appearance (scene_random.py, per episode) these can only change when the
+# scene is rebuilt -- ~1 s, but the sim reads the XML once at boot, so in
+# practice it is once per batch.
+#
+# The bounds come from measurement, not taste:
+#
+#   * dex1 needs span <= 8.48 cm and height >= 9.0 cm (see PRIMITIVE_OBJECTS
+#     and the target-pool note in the README). Every range below sits inside
+#     that with margin.
+#   * plan_core_stand has a solution for object tops 0.63-1.24 m, i.e. table
+#     tops 0.51-1.12 m at these object heights (roadmap step 1).
+#   * ego visibility is NOT a constraint anywhere in that band: swept over
+#     0.52-0.94 m the target sits at u_y -0.56..+0.11 standing against a
+#     +-0.90 gate (diag_ego_geom.py --height-sweep).
+#
+# A fourth bound, and the one that actually binds, found by running rather
+# than by analysis. The first range tried here was 0.62-0.80, and at 0.799 the
+# grasp went 1/4 and then 1/5 across two runs, with `continuous servo timed
+# out in the in phase` appearing at that height and nowhere else.
+#
+# The mechanism is not the table, it is where the GRIP ends up relative to the
+# standing pelvis. grip_z = table + object height - GRIP_BELOW_RIM; the pelvis
+# stands at 0.793. At a 0.80 m table with an 11 cm object the grip sits 6 cm
+# ABOVE the pelvis, and the servo's in-phase geometry -- entry axis, the
+# surface+3 cm z floor, the low_c correction -- was tuned for reaching
+# slightly DOWN. Reaching up, it does not converge.
+#
+# So the table height is sampled AFTER the objects and capped by them: the
+# tallest thing in the pool has to keep its grip at or below the pelvis. That
+# is the real constraint, and expressing it this way lets a scene full of
+# short objects use a taller table.
+#
+# Consequence worth knowing, and it is a real limitation rather than a
+# rounding: real dining tables are 0.72-0.76, and this cap keeps the table at
+# roughly 0.63-0.67. The table-height axis is therefore nearly CLOSED at the
+# current servo tuning, and most of the grip-height variety in the dataset
+# comes from the object heights instead. Opening it needs the servo to work
+# with the grip at or above the pelvis, which is a separate job.
+# Where the grip may sit relative to the standing pelvis. Not a hair of
+# margin -- 8 cm -- because the number came out of running, not reasoning.
+# Pooling 42 rounds across three collection runs by grip height:
+#
+#     grip_z - pelvis        success
+#       < -0.070             12/15
+#       -0.070 .. -0.045      4/6
+#       -0.045 .. -0.020      4/10
+#       -0.020 .. +0.005      0/2
+#       > +0.005              2/9
+#
+# Monotone, and the split at -0.07 vs -0.045 is 12/15 against 6/21, Fisher
+# p = 0.006. The shipped 0.62 m table with a 12 cm object sits at -0.113,
+# which is why it has always run 11-12/12.
+#
+# An earlier version of this constant sat at -0.005, on the theory that only
+# reaching ABOVE the pelvis was the problem. The pooled data says otherwise:
+# the servo's in-phase timeouts appear from -0.065 upward, not just above
+# zero, so it is a gradient rather than a cliff and the ceiling has to sit
+# well clear of it.
+GRIP_CEILING = 0.793 - 0.080
+TABLE_TOP_RANGE = (0.62, 0.80)   # upper end is a cap, not a target
+COUNTER_TOP_RANGE = (0.62, 0.86)
+# radius and height, metres. Each target keeps its identity -- a can stays the
+# slim red one -- and varies the way real examples of it vary.
+OBJECT_SIZE_RANGE = {
+    "can":    dict(radius=(0.020, 0.028), height=(0.100, 0.130)),
+    "bottle": dict(radius=(0.026, 0.034), height=(0.120, 0.150)),
+    "cup":    dict(radius=(0.031, 0.038), height=(0.095, 0.110)),
+    "jar":    dict(radius=(0.015, 0.021), height=(0.100, 0.120)),
+}
+
+
+def apply_scene_seed(seed: int) -> str:
+    """Re-roll table height and object sizes from one integer.
+
+    Mutates the module constants that build() reads, which is how the rest of
+    this file is parameterised. Returns a one-line summary for the log.
+    """
+    import numpy as _np
+    from primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: F401
+    rng = _np.random.default_rng(int(seed) & 0x7FFFFFFF)
+    # Objects first: the table's ceiling depends on the tallest of them.
+    for name, rng_spec in OBJECT_SIZE_RANGE.items():
+        if name not in PRIMITIVE_OBJECTS:
+            continue
+        PRIMITIVE_OBJECTS[name]["radius"] = float(rng.uniform(*rng_spec["radius"]))
+        PRIMITIVE_OBJECTS[name]["height"] = float(rng.uniform(*rng_spec["height"]))
+    tallest = max(PRIMITIVE_OBJECTS[n]["height"] for n in OBJECT_SIZE_RANGE
+                  if n in PRIMITIVE_OBJECTS)
+    # grip_z = top + tallest - GRIP_BELOW_RIM must stay under the pelvis.
+    import grasping
+    cap = GRIP_CEILING - tallest + grasping.GRIP_BELOW_RIM
+    lo, hi = TABLE_TOP_RANGE
+    hi = min(hi, cap)
+    SURFACE_TARGET_TOP["dining_table"] = float(rng.uniform(lo, max(lo, hi)))
+    SURFACE_TARGET_TOP["counter"] = float(rng.uniform(*COUNTER_TOP_RANGE))
+    sizes = " ".join(
+        f"{n}{PRIMITIVE_OBJECTS[n]['radius'] * 200:.1f}x{PRIMITIVE_OBJECTS[n]['height'] * 100:.0f}"
+        for n in OBJECT_SIZE_RANGE if n in PRIMITIVE_OBJECTS)
+    return (f"seed {seed} table {SURFACE_TARGET_TOP['dining_table']:.3f} "
+            f"(cap {hi:.3f} from a {tallest * 100:.0f} cm object) "
+            f"counter {SURFACE_TARGET_TOP['counter']:.3f} | {sizes}")
+
+
 def mjcf_name(obj: str) -> str:
     return obj.replace(" ", "_")
 

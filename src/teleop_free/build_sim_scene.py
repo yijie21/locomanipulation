@@ -120,6 +120,14 @@ def main() -> None:
     out_dir = os.path.abspath(sys.argv[2])
     os.makedirs(out_dir, exist_ok=True)
 
+    # SCENE_SEED re-rolls table height and object sizes. These are baked into
+    # the compiled model, so they change here rather than at reset -- once per
+    # batch, since the sim reads the XML at boot. Unset means the shipped
+    # dimensions, which keeps a rebuild reproducible by default.
+    seed = os.environ.get("SCENE_SEED")
+    if seed:
+        print(f"[scene] dimensions: {scene_lib.apply_scene_seed(int(seed))}")
+
     spec, meta = scene_lib.build(scene_root, freeze_objects=False)
     model = spec.compile()          # fail here rather than at sim start-up
     data = mujoco.MjData(model)

@@ -626,7 +626,8 @@ class Primitives:
 
     def walk_to(self, target_xy, stop_dist: float = 0.05, timeout: float = 30.0,
                 mode: LocomotionMode = LocomotionMode.SLOW_WALK,
-                face_target: bool = True, on_tick=None) -> bool:
+                face_target: bool = True, face_yaw: float | None = None,
+                on_tick=None) -> bool:
         """Drive the pelvis to within `stop_dist` of `target_xy`.
 
         `movement` is a world-frame direction with magnitude in [0, 1] acting as
@@ -662,8 +663,31 @@ class Primitives:
             direction = err / max(dist, 1e-6)
             # Ease off over the last 0.5 m so it does not overshoot the stop.
             gain = float(np.clip(dist / 0.5, 0.25, 1.0))
-            facing = direction if face_target else np.array(
-                [np.cos(self.pelvis_yaw(s)), np.sin(self.pelvis_yaw(s))])
+            if face_target:
+                facing = direction
+            elif face_yaw is None:
+                facing = np.array([np.cos(self.pelvis_yaw(s)),
+                                   np.sin(self.pelvis_yaw(s))])
+            else:
+                # EASE toward a world heading while walking, the way a person
+                # curves onto a line rather than turning first and then
+                # translating. Stepped like turn_to, because a facing command
+                # far from the robot's actual yaw does not turn it faster.
+                #
+                # Without this the plain `face_target=False` branch above
+                # commands the robot's OWN current yaw -- "hold whatever you
+                # have" -- so the residual the spawn turn leaves (the
+                # controller's 7-8 deg heading dead zone, unavoidable) is
+                # LOCKED IN for the whole walk instead of decaying. At a 3 m
+                # spawn that residual is not small: rel is a pelvis-frame
+                # bearing, so 9 deg of heading error reads as 0.48 m of
+                # lateral error, the deadband approach then has to crawl
+                # sideways to erase it, and it stalls trying. Measured on one
+                # such round: pre-walk rel_y -0.56 with yaw_err +9, ending at
+                # yaw_err +17 and out of the ego frame.
+                err = wrap(face_yaw - self.pelvis_yaw(s))
+                goal = self.pelvis_yaw(s) + np.clip(err, -0.5, 0.5)
+                facing = np.array([np.cos(goal), np.sin(goal)])
             # Same as navigate: the deploy normalises the movement vector, so
             # the gain has to go into `speed` to have any effect at all.
             self.cmd.frame(
