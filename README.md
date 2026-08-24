@@ -4,11 +4,11 @@
 驱动 Unitree G1(SONIC 全身控制),自动完成"走到桌前 → 抓起物体"的完整 episode,
 导出 **LeRobot v2.1** 数据集,用于 GR00T + SONIC 的 VLA 微调。
 
-**它到底产出什么。**每条成功 episode = 三路 RGB(ego + 左右腕)+ 一条 **66 维 action
-序列**(SONIC 的 64 维 motion latent + 左右夹爪各 1 维)。这 66 维不是设计选择,是被
-deploy 的 wire protocol 定死的:v4 只运 `token_state` + 可选夹爪。训练出的 VLA 输入
+**它到底产出什么。**每条成功 episode = 三路 RGB(ego + 左右腕)+ 一条 **78 维 action
+序列**(SONIC 的 64 维 motion latent + 左右手关节各 7 维)。这 78 维不是设计选择,是被
+deploy 的 wire protocol 定死的:v4 只运 `token_state` + 可选手关节。训练出的 VLA 输入
 RGB + 指令(数据集里同时存了 29 维本体状态,要不要喂给模型是训练侧的选择),输出这
-66 维,直接喂回同一个 deploy 就能驱动机器人 —— 这条链路已经端到端验证过
+78 维,直接喂回同一个 deploy 就能驱动机器人 —— 这条链路已经端到端验证过
 (见 [VLA 部署时这条链路怎么变](#vla-部署时这条链路怎么变))。
 
 脚本化 agent 用的是仿真里的**特权信息**(物体真值位姿、可达域、桌沿距离),所以不需要
@@ -208,7 +208,7 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 ```
 
 装完之后**必须**再打补丁,否则**录下来的 action 是错的**(整段下蹲会丢失,action 维度
-是 267 而不是 66):
+是 267 而不是 78):
 
 ```bash
 cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch
@@ -489,7 +489,7 @@ tail -3 outputs/logs/collect/gym_*.log | tail -20         # 现在跑到哪
 
 ### 只想先测通 pipeline:`collect_pilot.sh`
 
-第一批数据的目的往往不是"模型能泛化到哪",而是"**转换 → 微调 → 66 维喂回 deploy**
+第一批数据的目的往往不是"模型能泛化到哪",而是"**转换 → 微调 → 78 维喂回 deploy**
 这条链路通不通"。那就不要摊开五个轴 —— 摊得越开,失败时越说不清是哪一环:
 
 ```bash
@@ -552,7 +552,7 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 
 ### VLA 部署时这条链路怎么变
 
-训练好的模型输出 66 维,**不经过 encoder**,用 protocol v4 直接喂进 :5556:
+训练好的模型输出 78 维,**不经过 encoder**,用 protocol v4 直接喂进 :5556:
 
 ```bash
 NO_ENCODER=1 bash src/teleop_free/start_stack.sh     # 关键:必须不加载 encoder
@@ -1011,18 +1011,32 @@ monkey-patch `DefaultEnv.__init__`(`run_sim_locomani.install_camera_configs`)。
 一条 episode 的 parquet 里列很多,但**训练用的只有下面这些**。完整推导见
 [`patches/vla_action_space.md`](patches/vla_action_space.md)。
 
-### action:66 维
+### action:78 维
 
 | 分量 | 维度 | 说明 |
 |---|---|---|
 | `motion_token` | 64 | SONIC latent。**1/16 量化**(整条 episode 只有 31 个取值,约 5 bit/维)→ VLA 输出头应该做**分类**而不是回归 |
-| `left_gripper` | 1 | 目前恒定(单手任务),为将来双手任务保留 |
-| `right_gripper` | 1 | dex1 的两根平动手指永远同值 |
+| `left_hand_joints` | 7 | 本仓库的任务全程用右手,这一列恒定 |
+| `right_hand_joints` | 7 | dex1 是平行夹爪:分量 0 和 1 同步开合(−0.020..0.024),2–6 恒定 |
 
-维度是被 wire protocol 定死的:deploy 的 pose protocol v4 是 token-only 流,
-必填 `token_state`,选填 `frame_index` / `left_hand_joints` / `right_hand_joints` /
-`body_quat_w` —— **planner 指令(mode / movement / facing / speed / height)没有通道**。
-它们仍然被写进 parquet(将来可以当辅助监督),但不是 action。
+**这三个名字和 7 这个宽度都不能改。** Isaac-GR00T 的 `unitree_g1_sonic` 配置
+(`gr00t/configs/data/embodiment_configs.py`)是**按名字**挑 action group 的,挑不到只打
+一句 `Warning: Joint group 'left_hand_joints' not found` 就继续跑 —— 训练照常收敛,只是
+两只手被静默丢掉。78 = 64 + 7 + 7 也正是 SONIC 推理端期望的 action space。
+
+至于为什么只有这三个:deploy 的 pose protocol v4 是 token-only 流,必填 `token_state`,
+选填 `frame_index` / `left_hand_joints` / `right_hand_joints` / `body_quat_w` ——
+**planner 指令(mode / movement / facing / speed / height)没有通道**。它们仍然被写进
+parquet(将来可以当辅助监督),但不是 action。
+
+### state:46 维
+
+官方配置只取 8 个 group:`left_leg` 6 + `right_leg` 6 + `waist` 3 + `left_arm` 7 +
+`right_arm` 7 + `left_hand` 7 + `right_hand` 7 + `projected_gravity` 3。
+
+`meta/modality.json` 是**菜单**,embodiment 配置才是**点单** —— 菜单里多列的条目
+(腕位姿、root 四元数、`can_pose`/`plate_pose` 等特权信息)一个都不会进模型,所以多列
+无害;但**改名会致命**,因为点单点不到。
 
 ### observation
 
@@ -1059,7 +1073,7 @@ modality 里**。它们是分析和写判据用的;把它们声明成 state 就�
 | 录像里没有绿色点云 | `SIM_VIS` 里没有 `reach`。它在 sim 启动时读一次,跑起来之后改不了 |
 | `SIM_VIS=none` 但幽灵夹爪还在 | `SIM_VIS` 只给了 stack,没给 gym。两个进程都要设 |
 | 录下来的 `planner_height` 全是 -1 | `patches/vla_action_space.patch` 没打。整段下蹲会从 action 里消失 |
-| action 是 267 维而不是 66 维 | 同上,补丁没打 |
+| action 是 267 维而不是 78 维 | 同上,补丁没打 |
 | `[manifest] ...: N produced rounds but M episodes on disk` | manifest 和 session 不是同一批。一批写一个 manifest、填一个 session,别混用 |
 | `[manifest] ... join is out of phase` | 更糟:数量对上了但成败对不上。**别转这个 session**,指令会标错 |
 | `[gym] targets not in the scene` | 场景是旧的。`bash scripts/install_scene.sh` 会解包并重建 |

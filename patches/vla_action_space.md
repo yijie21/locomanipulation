@@ -25,7 +25,7 @@ Measured before/after on a two-episode recording:
 The crouch is commanded as `mode=IDEL_SQUAT` + `height=<pelvis target>`, so
 the un-patched exporter dropped the entire squat from the recorded action.
 
-## 2. `features_sonic_vla.py` — action is 66 dims, not 267
+## 2. `features_sonic_vla.py` — action is 78 dims, not 267
 
 The action modality declared 267 dims. Measured on a recorded episode, **180
 of them never changed in a single frame** (the SMPL slots alone are 135 dead
@@ -39,15 +39,29 @@ data, just tokens for the policy"; supplying motion alongside it is rejected):
     REQUIRED: token_state
     OPTIONAL: frame_index, left_hand_joints, right_hand_joints, body_quat_w
 
-So a deployed VLA emits a token plus a gripper and nothing else has a channel
+So a deployed VLA emits a token plus the hands and nothing else has a channel
 to travel on:
 
 | component | dim | note |
 |---|---|---|
 | `motion_token` | 64 | the SONIC latent |
-| `left_gripper` | 1 | slice 0 of the 7-wide Dex3-legacy column |
-| `right_gripper` | 1 | dex1's two prismatic fingers always share one value |
-| | **66** | 65 of which vary; the left gripper is constant today |
+| `left_hand_joints` | 7 | constant here — the gym is right-handed throughout |
+| `right_hand_joints` | 7 | dex1 is a parallel jaw: components 0 and 1 move together (−0.020..0.024), 2..6 constant |
+| | **78** | matches the action space the SONIC inference client expects |
+
+**The group names and the width are load-bearing, not cosmetic.**
+Isaac-GR00T's `unitree_g1_sonic` config
+(`gr00t/configs/data/embodiment_configs.py`) selects action groups **by name** —
+exactly `motion_token`, `left_hand_joints`, `right_hand_joints`. A name it
+cannot find produces only
+
+    Warning: Joint group 'left_hand_joints' not found in action modality.
+    Available groups: [...]
+
+and training then runs to completion on a 64-dim action with both hands
+silently dropped. An earlier revision of this patch narrowed these to 1-dim
+`left_gripper` / `right_gripper` — correct about dex1's kinematics, and exactly
+the rename that triggers the silent drop.
 
 Everything the expert used to AUTHOR that token — planner mode / movement /
 facing / speed / height — is upstream of the encoder and redundant with its

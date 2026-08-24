@@ -134,11 +134,22 @@ MODALITY = {
     # re-recording. They are just not the action.
     "action": {
         "motion_token": {"start": 0, "end": 64, "original_key": "action.motion_token"},
-        # dex1 is a parallel jaw: its two prismatic fingers are always
-        # commanded to the same value, so component 0 is the whole gripper
-        # action. The 7-wide column is a Dex3 leftover.
-        "left_gripper": {"start": 0, "end": 1, "original_key": "teleop.left_hand_joints"},
-        "right_gripper": {"start": 0, "end": 1, "original_key": "teleop.right_hand_joints"},
+        # These names are load-bearing, and the width is too. Isaac-GR00T's
+        # unitree_g1_sonic config (gr00t/configs/data/embodiment_configs.py)
+        # selects action groups BY NAME -- exactly motion_token,
+        # left_hand_joints, right_hand_joints -- and a name it cannot find is a
+        # `Warning: Joint group 'left_hand_joints' not found`, not an error.
+        # Training then runs to completion on a 64-dim action with both hands
+        # silently dropped. Calling these left_gripper/right_gripper, or
+        # slicing them to the single component dex1 actually moves, does that.
+        # The 7 wide is what makes the total 78 = 64 + 7 + 7, the action space
+        # the SONIC inference client expects. dex1 is a parallel jaw: measured
+        # over this dataset, components 0 and 1 move together (-0.020..0.024)
+        # and 2..6 are constant, which is the same sparsity a real Dex3 shows
+        # when only part of the hand is driven. The left column never varies
+        # here at all -- the gym is right-handed throughout.
+        "left_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.left_hand_joints"},
+        "right_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.right_hand_joints"},
     },
     # Filled from the session's own features -- see video_streams(). Fixing it
     # to ego_view here is what made the wrist cameras invisible to this

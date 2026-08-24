@@ -1,5 +1,5 @@
 diff --git a/gear_sonic/data/features_sonic_vla.py b/gear_sonic/data/features_sonic_vla.py
-index b59fd0f..95f1602 100644
+index b59fd0f..92a012e 100644
 --- a/gear_sonic/data/features_sonic_vla.py
 +++ b/gear_sonic/data/features_sonic_vla.py
 @@ -74,6 +74,29 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
@@ -32,7 +32,7 @@ index b59fd0f..95f1602 100644
              "root_orientation": {
                  "start": 0,
                  "end": 4,
-@@ -98,99 +121,53 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+@@ -98,39 +121,50 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
                  "rotation_type": "quaternion",
              },
          },
@@ -55,12 +55,18 @@ index b59fd0f..95f1602 100644
 +        # reference inside motion_joint_positions_10frame_step5, which is
 +        # what encoder mode 0 reads.
 +        #
-+        #   motion_token 64  the SONIC latent
-+        #   gripper    1+1   dex1 is a parallel jaw: two prismatic fingers
-+        #                    ALWAYS commanded to the same value, so component
-+        #                    0 is the whole gripper action. The 7-wide column
-+        #                    is a Dex3 leftover and stays in the parquet;
-+        #                    only the modality slice narrows.
++        #   motion_token      64  the SONIC latent
++        #   *_hand_joints    7+7  dex1 is a parallel jaw, so components 0 and 1
++        #                         move together and 2..6 are constant -- but the
++        #                         GROUP NAMES AND THE WIDTH ARE LOAD-BEARING.
++        #                         Isaac-GR00T's unitree_g1_sonic config selects
++        #                         action groups by name (exactly motion_token,
++        #                         left_hand_joints, right_hand_joints) and a name
++        #                         it cannot find is only a "Joint group not
++        #                         found" WARNING: training then runs to
++        #                         completion with both hands silently dropped.
++        #                         78 = 64+7+7 is also the action space the SONIC
++        #                         inference client expects.
 +        #
 +        # Measured on a recorded episode, the block this replaces declared
 +        # 267 dims of which 180 never changed in a single frame (the SMPL
@@ -101,16 +107,13 @@ index b59fd0f..95f1602 100644
 -                "original_key": "teleop.target_body_orientation",
 -                "rotation_type": "rotation_6d",
 -            },
--            "left_hand_joints": {
--                "start": 0,
--                "end": 7,
--                "original_key": "teleop.left_hand_joints",
--            },
--            "right_hand_joints": {
--                "start": 0,
--                "end": 7,
--                "original_key": "teleop.right_hand_joints",
--            },
+             "left_hand_joints": {
+                 "start": 0,
+                 "end": 7,
+@@ -141,57 +175,6 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+                 "end": 7,
+                 "original_key": "teleop.right_hand_joints",
+             },
 -            "left_wrist_joints": {
 -                "start": 0,
 -                "end": 3,
@@ -142,16 +145,13 @@ index b59fd0f..95f1602 100644
 -                "original_key": "teleop.planner_facing",
 -            },
 -            "planner_speed": {
-+            "left_gripper": {
-                 "start": 0,
-                 "end": 1,
+-                "start": 0,
+-                "end": 1,
 -                "original_key": "teleop.planner_speed",
-+                "original_key": "teleop.left_hand_joints",
-             },
+-            },
 -            "planner_height": {
-+            "right_gripper": {
-                 "start": 0,
-                 "end": 1,
+-                "start": 0,
+-                "end": 1,
 -                "original_key": "teleop.planner_height",
 -            },
 -            "vr_3pt_position": {
@@ -164,11 +164,11 @@ index b59fd0f..95f1602 100644
 -                "end": 18,
 -                "original_key": "teleop.vr_3pt_orientation",
 -                "rotation_type": "rotation_6d",
-+                "original_key": "teleop.right_hand_joints",
-             },
+-            },
          },
          "video": {
-@@ -231,6 +208,17 @@ def get_features_sonic_vla(robot_model: RobotModel) -> dict:
+             "ego_view": {"original_key": "observation.images.ego_view"},
+@@ -231,6 +214,17 @@ def get_features_sonic_vla(robot_model: RobotModel) -> dict:
                  "right_wrist_abs_quat",
              ],
          },
