@@ -1,38 +1,51 @@
 diff --git a/gear_sonic/data/features_sonic_vla.py b/gear_sonic/data/features_sonic_vla.py
-index b59fd0f..92a012e 100644
+index b59fd0f..bc8dcf8 100644
 --- a/gear_sonic/data/features_sonic_vla.py
 +++ b/gear_sonic/data/features_sonic_vla.py
-@@ -74,6 +74,29 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+@@ -11,6 +11,8 @@ Joint names, counts, and group indices are derived at runtime from the
+ 
+ from __future__ import annotations
+ 
++import os
++
+ from typing import Literal
+ 
+ from gear_sonic.data.robot_model import RobotModel
+@@ -22,6 +24,18 @@ WRIST_VIEW_WIDTH: int = 640
+ FPS: int = 50
+ 
+ 
++def _pose_objects() -> list[str]:
++    """teleop_free: which objects get a privileged pelvis-frame pose column.
++
++    One source for the schema and the writer. TF_POSE_OBJECTS is read by
++    run_data_exporter._add_object_poses too, and start_stack.sh defaults it
++    from the scene's own meta, so a scene whose target is not called "can"
++    still gets a live column instead of 9 zeros.
++    """
++    raw = os.environ.get("TF_POSE_OBJECTS", "can,plate")
++    return [k.strip() for k in raw.split(",") if k.strip()]
++
++
+ _JOINT_GROUPS_FOR_STATE: list[str] = [
+     "left_leg",
+     "right_leg",
+@@ -74,6 +88,14 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
                  "original_key": "observation.eef_state",
                  "rotation_type": "quaternion",
              },
 +            # teleop_free: pelvis-frame 6D object poses (pos3 + rot6d)
-+            "can_pos": {
-+                "start": 0,
-+                "end": 3,
-+                "original_key": "observation.can_pose",
-+            },
-+            "can_rot6d": {
-+                "start": 3,
-+                "end": 9,
-+                "original_key": "observation.can_pose",
-+                "rotation_type": "rotation_6d",
-+            },
-+            "plate_pos": {
-+                "start": 0,
-+                "end": 3,
-+                "original_key": "observation.plate_pose",
-+            },
-+            "plate_rot6d": {
-+                "start": 3,
-+                "end": 9,
-+                "original_key": "observation.plate_pose",
-+                "rotation_type": "rotation_6d",
++            **{
++                f"{k}_{suf}": dict(
++                    {"start": 0, "end": 3} if suf == "pos"
++                    else {"start": 3, "end": 9, "rotation_type": "rotation_6d"},
++                    original_key=f"observation.{k}_pose")
++                for k in _pose_objects() for suf in ("pos", "rot6d")
 +            },
              "root_orientation": {
                  "start": 0,
                  "end": 4,
-@@ -98,39 +121,50 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+@@ -98,39 +120,50 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
                  "rotation_type": "quaternion",
              },
          },
@@ -110,7 +123,7 @@ index b59fd0f..92a012e 100644
              "left_hand_joints": {
                  "start": 0,
                  "end": 7,
-@@ -141,57 +175,6 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
+@@ -141,57 +174,6 @@ def get_modality_config_sonic_vla(robot_model: RobotModel) -> dict:
                  "end": 7,
                  "original_key": "teleop.right_hand_joints",
              },
@@ -168,26 +181,31 @@ index b59fd0f..92a012e 100644
          },
          "video": {
              "ego_view": {"original_key": "observation.images.ego_view"},
-@@ -231,6 +214,17 @@ def get_features_sonic_vla(robot_model: RobotModel) -> dict:
+@@ -231,6 +213,22 @@ def get_features_sonic_vla(robot_model: RobotModel) -> dict:
                  "right_wrist_abs_quat",
              ],
          },
-+        # teleop_free: privileged object poses in the pelvis frame, pos3+rot6d
-+        "observation.can_pose": {
-+            "dtype": "float32",
-+            "shape": (9,),
-+            "names": ["pos", "rot6d"],
-+        },
-+        "observation.plate_pose": {
-+            "dtype": "float32",
-+            "shape": (9,),
-+            "names": ["pos", "rot6d"],
++        # teleop_free: privileged object poses in the pelvis frame, pos3+rot6d.
++        # Declared from the SAME env var the writer reads
++        # (run_data_exporter._add_object_poses), because the two drifting apart
++        # is silent: the writer emits observation.<key>_pose for whatever
++        # TF_POSE_OBJECTS names, and a column the schema does not declare is
++        # dropped while the declared-but-unwritten one stays all zeros. That is
++        # what a bottle_only scene produced -- can_pose and plate_pose, 1008
++        # rows, every one of them 0.0, with nothing logged.
++        **{
++            f"observation.{k}_pose": {
++                "dtype": "float32",
++                "shape": (9,),
++                "names": ["pos", "rot6d"],
++            }
++            for k in _pose_objects()
 +        },
          "action.wbc": {
              "dtype": "float64",
              "shape": (num_joints,),
 diff --git a/gear_sonic/scripts/run_data_exporter.py b/gear_sonic/scripts/run_data_exporter.py
-index 4737bcb..395cf94 100644
+index 4737bcb..83b7585 100644
 --- a/gear_sonic/scripts/run_data_exporter.py
 +++ b/gear_sonic/scripts/run_data_exporter.py
 @@ -23,6 +23,7 @@ from collections import deque
@@ -198,7 +216,15 @@ index 4737bcb..395cf94 100644
  import time
  
  import numpy as np
-@@ -268,6 +269,19 @@ class GrootDataCollector:
+@@ -32,6 +33,7 @@ import zmq
+ 
+ from gear_sonic.data.exporter import Gr00tDataExporter
+ from gear_sonic.data.features_sonic_vla import (
++    _pose_objects,
+     get_features_sonic_vla,
+     get_g1_robot_model,
+     get_modality_config_sonic_vla,
+@@ -268,6 +270,19 @@ class GrootDataCollector:
              self._sonic_zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "planner")
              self._sonic_zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "manager_state")
              time.sleep(0.5)
@@ -218,7 +244,7 @@ index 4737bcb..395cf94 100644
              print(f"[Sonic] Connected to ZMQ at {sonic_data_zmq_host}:{sonic_data_zmq_port}")
              print("[Sonic] Subscribed to: pose, planner, manager_state")
          except Exception as e:
-@@ -523,6 +537,44 @@ class GrootDataCollector:
+@@ -523,6 +538,56 @@ class GrootDataCollector:
              if parts:
                  print(f"[Latency] {', '.join(parts)}")
  
@@ -238,9 +264,21 @@ index 4737bcb..395cf94 100644
 +            except zmq.Again:
 +                pass
 +        s = self._latest_priv
-+        for key in os.environ.get("TF_POSE_OBJECTS", "can,plate").split(","):
-+            key = key.strip()
++        for key in _pose_objects():
 +            out = np.zeros(9, dtype=np.float32)
++            if s is not None and key not in s.get("objects", {}):
++                # Say so ONCE per key. Silence here is how a bottle_only scene
++                # recorded 1008 rows of can_pose = 0.0: the writer asked the
++                # privileged stream for an object the scene no longer had, got
++                # nothing, and wrote zeros -- which every downstream check then
++                # reads as "the object never moved".
++                seen = self.__dict__.setdefault("_pose_missing_warned", set())
++                if key not in seen:
++                    seen.add(key)
++                    print(f"[object-pose] {key!r} is not in the privileged "
++                          f"stream (it has {sorted(s.get('objects', {}))}); "
++                          f"observation.{key}_pose will be all zeros. Set "
++                          f"TF_POSE_OBJECTS to the scene's own objects.")
 +            if s is not None and key in s.get("objects", {}):
 +                pw, xw, yw, zw = s["pelvis"]["quat"]
 +                Rp = np.array([
@@ -263,7 +301,7 @@ index 4737bcb..395cf94 100644
      def _add_images_to_frame_data(self, frame_data: dict) -> None:
          if self.latest_image_msg is None:
              return
-@@ -664,6 +716,8 @@ class GrootDataCollector:
+@@ -664,6 +729,8 @@ class GrootDataCollector:
          else:
              frame_data["action.motion_token"] = np.zeros(64, dtype=np.float64)
  
@@ -272,7 +310,7 @@ index 4737bcb..395cf94 100644
      def _add_sonic_pose_features(self, frame_data: dict) -> float | None:
          """Add teleop features based on current stream mode."""
          sonic_latency_ms = None
-@@ -690,7 +744,14 @@ class GrootDataCollector:
+@@ -690,7 +757,14 @@ class GrootDataCollector:
  
          planner_msg = self.latest_planner_msg
          use_planner = False

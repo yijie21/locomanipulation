@@ -75,3 +75,24 @@ action.
 decision. Which ZMQ sub-mode a frame goes out in follows from the pipeline
 stage, so the model would be regressing a discrete 3-or-5 label it has no
 reason to choose.
+
+## 3. Privileged pose columns follow the SCENE, not a hardcoded name
+
+`observation.<key>_pose` is written by `run_data_exporter._add_object_poses`
+and declared by `features_sonic_vla`. Those were two independent hardcoded
+lists -- the writer defaulted `TF_POSE_OBJECTS` to `"can,plate"`, the schema
+declared `observation.can_pose` / `observation.plate_pose` -- and disagreement
+between them is silent in BOTH directions: a column the schema does not
+declare is dropped, and one it declares but nobody writes stays all zeros.
+
+A scene whose target is not called `can` therefore recorded 1008 rows of
+`can_pose = 0.0` with nothing logged, and every downstream check read that as
+"the object never moved". `check_dataset.py`'s whole grasp-causality pass is
+built on that column.
+
+Both sides now come from one `_pose_objects()` helper reading `TF_POSE_OBJECTS`,
+the writer warns once per name the privileged stream does not carry, and
+`start_stack.sh` defaults the variable from the booted scene's own
+`scene_meta.json` so the warning should never be needed. Verified on a
+bottle-only scene: `observation.water_bottle_pose`, 1133 rows, 693 distinct,
+x 0.750 -> 0.259 as the robot walks in and z -0.120 -> +0.321 as it lifts.

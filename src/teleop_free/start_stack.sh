@@ -165,6 +165,22 @@ cd "$REPO" || exit 1
 # halves off together.
 WRIST_ARG=(--record-wrist-cameras)
 if [ "${WRIST_CAMS:-1}" = "0" ]; then WRIST_ARG=(); fi
+# Which objects get a privileged pelvis-frame pose column, defaulted from the
+# scene the sim actually booted rather than from a hardcoded "can,plate". The
+# exporter asks the privileged stream for each name and writes zeros for one
+# it does not find -- so a scene whose target is called anything else recorded
+# 1008 rows of can_pose = 0.0 with nothing logged, and every downstream check
+# read that as "the object never moved". It warns now, but not needing the
+# warning is better.
+if [ -z "${TF_POSE_OBJECTS:-}" ] && [ -f "$LOCOMANI_ROOT/outputs/scene/sim/scene_meta.json" ]; then
+    TF_POSE_OBJECTS="$("$REPO/.venv_sim/bin/python" -c "
+import json, sys
+m = json.load(open(sys.argv[1]))
+print(','.join(m.get('objects', {})))
+" "$LOCOMANI_ROOT/outputs/scene/sim/scene_meta.json" 2>/dev/null)"
+    export TF_POSE_OBJECTS
+    echo "  pose columns: ${TF_POSE_OBJECTS:-<none found>}"
+fi
 nohup "$REPO/.venv_data_collection/bin/python" gear_sonic/scripts/run_data_exporter.py \
     --task-prompt "$TASK_PROMPT" \
     --root-output-dir "$LOGS/outputs" \
