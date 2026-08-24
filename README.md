@@ -100,6 +100,7 @@ videos/                 最新一批演示视频(每次推送会整体替换)
 | `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](#0-路径约定)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
+| `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](#转完先查一遍强烈建议)) |
 
 脚本:
 
@@ -108,6 +109,7 @@ videos/                 最新一批演示视频(每次推送会整体替换)
 | `src/teleop_free/start_stack.sh` / `stop_stack.sh` | 起 / 停三进程 stack |
 | `scripts/collect.sh` | **大规模采集**:按批换场景尺寸,批内逐局换目标/出生/外观 |
 | `scripts/collect_pilot.sh` | **先导批**:单目标、外观钉死,只变出生点和物体位置,采到 N 条成功为止 |
+| `scripts/export_rerun.py` | 把 episode 导成 Rerun `.rrd`,本地 `pip install rerun-sdk && rerun <file>` 看视频+曲线+3D |
 | `scripts/install_scene.sh` | 解包并重建场景 |
 | `scripts/paths.sh` | 所有 shell 脚本的路径来源 |
 | `scripts/env_deploy.sh` | 编译 / 运行 C++ deploy 的环境(替代上游的 `install_deps.sh`) |
@@ -549,6 +551,46 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 
 得到的数据集可直接喂给 `third_party/Isaac-GR00T` 做 GR00T 微调。上层/底层的详细
 数据流见 `docs/architecture.drawio`。
+
+### 转完先查一遍(强烈建议)
+
+```bash
+third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
+    src/teleop_free/tools/check_dataset.py datasets/g1_locomani_lerobot
+```
+
+**通过全部检查才去烧 GPU。** 有问题就退出码 1,能直接挂在 CI 或训练前的 gate 上。
+四段检查,由便宜到贵:
+
+| 段 | 回答什么 | 内容 |
+|---|---|---|
+| **structure** | 文件之间自洽吗 | 计数三方一致、`episode_index` 连续、parquet 行数 == 声明长度、`index`/`frame_index`/`timestamp`/`task_index` 自洽、列宽 == `info.json` 声明、无 NaN/Inf、抽检视频帧数 == parquet 行数 |
+| **modality** | GR00T 认得出来吗 | 官方 `unitree_g1_sonic` 点的 8 个 state group / 3 个 action group 是否都在、切片是否越界、总维度是否 46 / 78 |
+| **grasp** | 数字描述的是一次抓取吗 | 每局有闭合事件、闭合时腕已在物体 30 cm 内、闭合**之后**物体才升、末段物↔腕距离恒定 |
+| **alignment** | 第 t 帧和第 t 行是同一时刻吗 | 见下 |
+
+常用开关:`--quick`(只跑前两段,不解码视频,几秒)、`--videos N`、`--align-episodes N`。
+
+**为什么 alignment 要单独测。** 时序错位是这类数据最贵的 bug,而且**看不出来** ——
+拖着视频对曲线,差一秒以内怎么看都像对的。所以这里是**量**出来的:腕相机硬连在手臂上,
+所以逐帧图像变化量是手臂速度的代理,而手臂速度在表里也有
+(`|d(observation.state)/dt|`)。两者互相关,峰值所在的 lag 就是错位帧数。
+
+```
+video vs table: 16 wrist-camera measurements, lag distribution {0: 16}
+action vs state: body trails the token by a median +3 frames (100 ms)
+```
+
+第二条查的是**因果方向**:token 是指令、身体是响应,身体必须**滞后**。0 或负数说明两列在
+时间上被搞反了。+3 帧 ≈ 100 ms 就是 SONIC WBC 从 latent 解码到关节动起来的响应时间。
+
+> 相关曲线在 ±3、±6 有规律小凸起,是 50→30 Hz 重采样的混叠(5:3 每 3 帧重复一次取帧
+> 模式),不是真实时延 —— 脚本对小于 0.02 的领先量直接当 0,就是为了不被它骗。
+
+**一个反直觉的坑,写在这里免得再踩:** `observation.can_pose` / `plate_pose` 是
+**9 维(xyz + rot6d)且在机器人坐标系下**,不是世界坐标。所以"物体相对起始高度上升了吗"
+这种判据会在**机器人下蹲**时触发(骨盆降低 → 物体相对高度跳变),在完全正常的数据上报
+0/200。判据必须锚在**夹爪闭合那一帧**上。
 
 ### VLA 部署时这条链路怎么变
 
@@ -1076,6 +1118,9 @@ modality 里**。它们是分析和写判据用的;把它们声明成 state 就�
 | action 是 267 维而不是 78 维 | 同上,补丁没打 |
 | `[manifest] ...: N produced rounds but M episodes on disk` | manifest 和 session 不是同一批。一批写一个 manifest、填一个 session,别混用 |
 | `[manifest] ... join is out of phase` | 更糟:数量对上了但成败对不上。**别转这个 session**,指令会标错 |
+| `check_dataset.py` 报 `action: MISSING ['left_hand_joints', ...]` | modality 的 action key 被改过名。GR00T 只 warn 不报错,照训但两只手会被静默丢掉 —— 必须修完再训 |
+| `check_dataset.py` 报 `lag distribution {3: ...}` 之类的非零 | 视频和表差了那么多帧。先查 exporter 的时间戳,再查转换时的 50→30 Hz 重采样 |
+| `check_dataset.py` 报 `body trails the token by -N frames` | action 和 state 在时间上被搞反了,是最严重的一类,**不要拿去训** |
 | `[gym] targets not in the scene` | 场景是旧的。`bash scripts/install_scene.sh` 会解包并重建 |
 | 采完之后场景尺寸不对了 | `collect.sh` 就地重建场景。`bash scripts/install_scene.sh` 恢复 |
 | 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
@@ -1102,6 +1147,8 @@ modality 里**。它们是分析和写判据用的;把它们声明成 state 就�
 | `diag_turn.py` | 原地转身:每个模式、每个角度要多久,以及控制器的朝向死区 |
 | `diag_reach_probe.py` | reach map 的实测校验 |
 | `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
+
+数据集本身的检查不在这里,在 [`tools/check_dataset.py`](#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。
 
 ---
 
