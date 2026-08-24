@@ -350,7 +350,13 @@ OBJECT_SIZE_RANGE = {
 MESH_TARGETS = {
     "water_bottle": dict(
         mjcf=f"{paths.REPO}/assets/robocasa/bottled_water_1/model.xml",
-        height=0.12,
+        # The asset's own size: 16.0 cm tall on a 4.3 cm barrel, which is what
+        # a 500 ml bottle actually is. Scaled to the 12 cm the cylinder used,
+        # the barrel came out at 3.4 cm -- correct proportions, but thin enough
+        # on camera to read as a straw. dex1 opens HAND_APERTURE 9.48 cm with
+        # PINCH_MARGIN leaving 8.48 cm usable (grasping.py), so 4.3 cm has
+        # 21 mm either side and nothing about the grip needs the object small.
+        height=0.160,
         surface="A",
         xy=(-0.16, 0.385),      # where the can stands today, so the stand plan
                                 # and the reach map carry over unchanged
@@ -434,6 +440,52 @@ def upright_extent(mjcf_path: str) -> float:
     return float(np.max(hi, 0)[2] - np.min(lo, 0)[2])
 
 
+# The widest a dex1 jaw can close on: HAND_APERTURE - PINCH_MARGIN from
+# grasping.py, restated here so scene building does not import the grasp stack.
+JAW_SPAN_MAX = 0.0948 - 0.010 if HAND == "dex1" else 0.061 - 0.010
+
+
+def barrel_span(mjcf_path: str) -> float:
+    """Widest jaw opening the asset's BARREL needs, in metres.
+
+    Not the AABB: a parallel jaw closes along one axis of its choosing, so what
+    it must span is the narrowest width over all approach directions -- and it
+    grips the body, not the neck or the base fillet. Rotating calipers over the
+    middle half of the height answers both at once.
+
+    Collision geoms only, since those are what the fingers meet, and RoboCasa
+    ships an invisible non-colliding `class="region"` box holding the asset's
+    authored bounding box that is both larger than the object and unscaled.
+    """
+    spec = mujoco.MjSpec.from_file(mjcf_path)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    pts = []
+    for g in range(model.ngeom):
+        if model.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
+            continue
+        if model.geom_contype[g] == 0 and model.geom_conaffinity[g] == 0:
+            continue
+        mi = model.geom_dataid[g]
+        v = model.mesh_vert[
+            model.mesh_vertadr[mi]: model.mesh_vertadr[mi] + model.mesh_vertnum[mi]
+        ]
+        pts.append(v @ data.geom_xmat[g].reshape(3, 3).T + data.geom_xpos[g])
+    if not pts:
+        raise SystemExit(f"{mjcf_path}: no collision mesh geoms to measure")
+    v = np.concatenate(pts)
+    z = v[:, 2]
+    lo, hi = z.min(), z.max()
+    body = v[(z >= lo + 0.25 * (hi - lo)) & (z <= lo + 0.75 * (hi - lo))][:, :2]
+    ang = np.linspace(0, np.pi, 48, endpoint=False)
+    dirs = np.stack([np.cos(ang), np.sin(ang)], 1)
+    proj = body @ dirs.T
+
+    return float((proj.max(0) - proj.min(0)).min())
+
+
 def planar_extent(mjcf_path: str, scale: float = 1.0) -> tuple[float, float]:
     """Half-extent in x and y of an asset's mesh geoms, as placed."""
     spec = mujoco.MjSpec.from_file(mjcf_path)
@@ -514,9 +566,13 @@ def attach(spec, mjcf_path: str, name: str, pos, quat_wxyz, scale=1.0, freeze=Tr
     """Attach an asset. Returns the resulting body name in the composed model."""
     child = mujoco.MjSpec.from_file(mjcf_path)
     _absolutise_assets(child)
+    # Uniform. Scaling xy and z apart does let the height and the barrel be
+    # dialled in separately, but it distorts the object's proportions, and a
+    # bottle that is the wrong shape is a worse training target than one that
+    # is the wrong size.
     if scale != 1.0:
         for mesh in child.meshes:
-            mesh.scale = [s * scale for s in mesh.scale]
+            mesh.scale = [m * scale for m in mesh.scale]
     body = child.worldbody.bodies[0]
     if freeze:
         # Surfaces, and the whole model in the render-only path.
@@ -930,6 +986,14 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
         # height it wants and never a magic multiplier.
         raw_h = upright_extent(spec_m["mjcf"])
         scale = spec_m["height"] / raw_h
+        # A target the jaw cannot close on is not a target. Checked here rather
+        # than discovered as a grasp that never converges.
+        barrel = barrel_span(spec_m["mjcf"]) * scale
+        if barrel > JAW_SPAN_MAX:
+            raise SystemExit(
+                f"{name}: barrel is {barrel * 100:.1f} cm after scaling, over "
+                f"the {JAW_SPAN_MAX * 100:.2f} cm dex1 can close on "
+                f"(HAND_APERTURE - PINCH_MARGIN). Lower its height.")
         px = surf["xy"][0] + spec_m["xy"][0]
         py = surf["xy"][1] + spec_m["xy"][1]
         # attach() places the asset's ORIGIN, and these are modelled centred,
@@ -947,7 +1011,8 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
         if verbose:
             print(f"  {name:12s} -> surface {spec_m['surface']} at "
                   f"({px:.3f}, {py:.3f}, {pz:.3f})  mesh x{scale:.3f} "
-                  f"(asset {raw_h * 100:.1f} cm -> {spec_m['height'] * 100:.0f} cm)")
+                  f"(h {raw_h * 100:.1f} -> {spec_m['height'] * 100:.1f} cm, "
+                  f"barrel {barrel * 100:.1f} cm, jaw {JAW_SPAN_MAX * 100:.2f})")
 
     # --- robot start pose --------------------------------------------------
     # qpos0 of a free joint comes from its body's pos/quat, so moving the
