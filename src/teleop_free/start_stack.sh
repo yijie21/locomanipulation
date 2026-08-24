@@ -35,7 +35,18 @@ cd "$REPO" || exit 1
 
 # shellcheck disable=SC1091
 source "$LOCOMANI_ROOT/scripts/env_deploy.sh"
-export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+# EGL renders straight to the offscreen framebuffer the ego camera reads,
+# skipping the display entirely -- exactly what a headless box needs. But
+# MUJOCO_GL is a single process-wide backend choice, not per-renderer: with
+# SIM_ONSCREEN's window open (mujoco.viewer.launch_passive, GLFW/GLX), forcing
+# EGL hands the viewer's render calls a context that was never bound to its
+# GLX drawable ("Failed to make the EGL context current", then GLXBadDrawable
+# on swap -- window opens and dies immediately). So SIM_ONSCREEN skips EGL and
+# lets MuJoCo default to GLX, which renders the offscreen camera feed fine too
+# as long as a real $DISPLAY is up.
+if [ "${SIM_ONSCREEN:-0}" != "1" ]; then
+    export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+fi
 
 wait_for_port() {  # $1=port $2=timeout_s
     local end=$((SECONDS + $2))
@@ -65,9 +76,15 @@ else
     SIM_SCRIPT=gear_sonic/scripts/run_sim_loop.py
 fi
 
-echo "[1/3] MuJoCo sim (headless, EGL, camera -> :5555, scene=$SCENE)"
+# SIM_ONSCREEN=1 opens a live MuJoCo viewer window (mujoco.viewer.launch_passive,
+# base_sim.py) tracking the pelvis. Needs a real $DISPLAY (see the MUJOCO_GL
+# switch above); off by default because it costs render time and does nothing
+# on a headless box.
+ONSCREEN_ARG=--no-enable-onscreen
+if [ "${SIM_ONSCREEN:-0}" = "1" ]; then ONSCREEN_ARG=--enable-onscreen; fi
+echo "[1/3] MuJoCo sim (headless, EGL, camera -> :5555, scene=$SCENE, onscreen=${SIM_ONSCREEN:-0})"
 nohup "$REPO/.venv_sim/bin/python" "$SIM_SCRIPT" \
-    --interface lo --no-enable-onscreen --enable-offscreen --enable-image-publish \
+    --interface lo "$ONSCREEN_ARG" --enable-offscreen --enable-image-publish \
     > "$LOGS/sim.log" 2>&1 &
 wait_for_port "$TF_CAMERA_PORT" 90 || { echo "  FAILED: camera port never opened"; tail -20 "$LOGS/sim.log"; exit 1; }
 echo "  ok"
