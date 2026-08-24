@@ -332,6 +332,45 @@ OBJECT_SIZE_RANGE = {
     "jar":    dict(radius=(0.015, 0.021), height=(0.100, 0.120)),
 }
 
+# --- mesh targets ----------------------------------------------------------
+#
+# A target that arrives as its own MJCF instead of as a primitive we size
+# ourselves. The primitives above are calibrated and cheap, but a red cylinder
+# is not what a camera-driven policy will meet, and no amount of appearance
+# randomisation makes one look like a bottle.
+#
+# `scale` is derived, not chosen: each entry names the HEIGHT it should end up
+# at and build() divides by the asset's own upright extent. Height is the
+# constrained quantity -- the surface heights, the squat, and GRIP_CEILING are
+# all calibrated against 12 cm objects, and the note above records that a 14 cm
+# cylinder is tippy enough for a passing arm to knock over. Width comes along
+# for free: bottled_water_1's barrel is 4.3 cm before scaling, already inside
+# dex1's 6.1 cm jaw with 9 mm either side, so shrinking for height only widens
+# the margin.
+MESH_TARGETS = {
+    "water_bottle": dict(
+        mjcf=f"{paths.REPO}/assets/robocasa/bottled_water_1/model.xml",
+        height=0.12,
+        surface="A",
+        xy=(-0.16, 0.385),      # where the can stands today, so the stand plan
+                                # and the reach map carry over unchanged
+        phrase="the water bottle",
+        mass=0.30,
+    ),
+}
+
+# Scene presets. The default is every object the pipeline has always had; a
+# preset is a NAMED subset, so an experiment that wants a bare table does not
+# have to edit (and then remember to un-edit) the module's globals.
+#
+#   SCENE_PRESET=bottle_only   one mesh bottle, nothing else on either surface
+#
+SCENE_PRESETS = {
+    "bottle_only": dict(on_surface_a=[], on_surface_b=[], primitives=[],
+                        mesh_targets=["water_bottle"],
+                        target_object="water_bottle"),
+}
+
 
 def apply_scene_seed(seed: int) -> str:
     """Re-roll table height and object sizes from one integer.
@@ -483,7 +522,44 @@ def attach(spec, mjcf_path: str, name: str, pos, quat_wxyz, scale=1.0, freeze=Tr
         # Surfaces, and the whole model in the render-only path.
         for joint in list(body.joints):
             child.delete(joint)
-    # attach_body renames the body in place, so read it first.
+    # The body that carries the geoms is not always the root: RoboCasa wraps
+    # its object in an unnamed body, so `bodies[0].name` is "" and the composed
+    # model ends up with `<name>_object`, not `<name>_`. Take the first
+    # DESCENDANT with geoms -- that is what the grasp has to look up, and an
+    # unresolvable name only shows up later as body_id = -1.
+    def _first_with_geoms(b):
+        if b.geoms:
+            return b
+        for c in b.bodies:
+            got = _first_with_geoms(c)
+            if got is not None:
+                return got
+        return None
+
+    target = _first_with_geoms(body) or body
+    if not freeze and target is not body:
+        # MuJoCo allows a free joint only on a top-level body, and everything
+        # downstream reads the object's qpos_adr off the body that owns its
+        # geoms -- so the geom-carrying body has to BE the top-level one.
+        # Attach it directly and drop the wrapper. Only safe while the wrapper
+        # is a pure grouping node; check rather than assume, because a wrapper
+        # transform silently offsets the object from where the layout put it.
+        for anc in (body,):
+            if (tuple(anc.pos) != (0.0, 0.0, 0.0)
+                    or tuple(anc.quat) != (1.0, 0.0, 0.0, 0.0)):
+                raise SystemExit(
+                    f"{mjcf_path}: wrapper body {anc.name!r} carries a "
+                    f"transform (pos={list(anc.pos)}, quat={list(anc.quat)}); "
+                    f"attach() would drop it")
+        body = target
+    if not freeze and not body.joints:
+        # Physics, and an asset that ships without one. RoboCasa's objects are
+        # authored to be attached by a task builder that adds the joint, so
+        # without this the bottle compiles welded in mid-air -- which reads as
+        # a successful build and then a target that cannot be knocked over,
+        # picked up, or dropped.
+        body.add_freejoint()
+    # attach_body renames in place, so read the name first.
     child_name = body.name
     frame = spec.worldbody.add_frame()
     frame.pos = list(pos)
@@ -684,6 +760,24 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
     layout = json.load(open(f"{scene_root}/layout/layout.json"))
     mjcf_root = f"{scene_root}/mjcf"
 
+    # A preset narrows what goes on the table. Resolved here rather than by
+    # editing the module globals, so the default scene is exactly what it has
+    # always been unless SCENE_PRESET names otherwise.
+    preset_name = _os.environ.get("SCENE_PRESET", "").strip()
+    if preset_name and preset_name not in SCENE_PRESETS:
+        raise SystemExit(f"unknown SCENE_PRESET={preset_name!r}; "
+                         f"have {sorted(SCENE_PRESETS)}")
+    preset = SCENE_PRESETS.get(preset_name, {})
+    on_a = preset.get("on_surface_a", ON_SURFACE_A)
+    on_b = preset.get("on_surface_b", ON_SURFACE_B)
+    prims = {k: v for k, v in PRIMITIVE_OBJECTS.items()
+             if k in preset.get("primitives", list(PRIMITIVE_OBJECTS))}
+    meshes = {k: MESH_TARGETS[k] for k in preset.get("mesh_targets", [])}
+    if preset_name and verbose:
+        print(f"  preset {preset_name}: surface A {on_a or '[]'}, "
+              f"B {on_b or '[]'}, primitives {sorted(prims) or '[]'}, "
+              f"mesh {sorted(meshes) or '[]'}")
+
     spec = mujoco.MjSpec.from_file(SONIC_SCENE)
     # The robot's own meshes are relative to the SONIC model dir; the composed
     # XML gets written elsewhere, so they need absolutising as well.
@@ -692,12 +786,15 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
     spec.visual.global_.offwidth = 1280
     spec.visual.global_.offheight = 960
 
+    phrases = dict(OBJECT_PHRASE)
+    phrases.update({k: v["phrase"] for k, v in meshes.items()})
+    pool = [k for k in TARGET_POOL if k in prims] + list(meshes)
     meta = {
         "surfaces": {},
         "objects": {},
-        "target_object": TARGET_OBJECT,
-        "target_pool": list(TARGET_POOL),
-        "object_phrase": dict(OBJECT_PHRASE),
+        "target_object": preset.get("target_object", TARGET_OBJECT),
+        "target_pool": pool or list(TARGET_POOL),
+        "object_phrase": phrases,
         "goal_object": GOAL_OBJECT,
         "robot_start": {
             "xy": list(ROBOT_START_XY),
@@ -740,7 +837,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
             print(f"  skip {obj}: no MJCF")
             continue
 
-        key = "A" if obj in ON_SURFACE_A else "B" if obj in ON_SURFACE_B else None
+        key = "A" if obj in on_a else "B" if obj in on_b else None
         if key is None or key not in meta["surfaces"]:
             print(f"  skip {obj}: no surface assignment")
             continue
@@ -784,7 +881,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
                   f"({px:.3f}, {py:.3f}, {pz:.3f}){tag}")
 
     # --- primitive objects ---------------------------------------------------
-    for name, spec_o in PRIMITIVE_OBJECTS.items():
+    for name, spec_o in prims.items():
         surf = meta["surfaces"].get(spec_o["surface"])
         if surf is None:
             print(f"  skip {name}: surface {spec_o['surface']} missing")
@@ -819,6 +916,38 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
             print(f"  {name:12s} -> surface {spec_o['surface']} at "
                   f"({px:.3f}, {py:.3f}, {pz:.3f})  "
                   f"phi{spec_o['radius'] * 200:.0f} x h{spec_o['height'] * 100:.0f} cm")
+
+    # --- mesh targets ------------------------------------------------------
+    for name, spec_m in meshes.items():
+        surf = meta["surfaces"].get(spec_m["surface"])
+        if surf is None:
+            print(f"  skip {name}: surface {spec_m['surface']} missing")
+            continue
+        if not os.path.exists(spec_m["mjcf"]):
+            print(f"  skip {name}: no MJCF at {spec_m['mjcf']}")
+            continue
+        # The asset's own height decides the scale, so an entry names the
+        # height it wants and never a magic multiplier.
+        raw_h = upright_extent(spec_m["mjcf"])
+        scale = spec_m["height"] / raw_h
+        px = surf["xy"][0] + spec_m["xy"][0]
+        py = surf["xy"][1] + spec_m["xy"][1]
+        # attach() places the asset's ORIGIN, and these are modelled centred,
+        # so seat the centre half a height up like the primitives do. The 2 mm
+        # is the same clearance the surface objects get: a mesh already
+        # interpenetrating the table launches on the first physics step.
+        pz = surf["top"] + spec_m["height"] / 2 + (0.0 if freeze_objects else 0.002)
+        body = attach(spec, spec_m["mjcf"], name, (px, py, pz),
+                      UPRIGHT_QUAT, scale=scale, freeze=freeze_objects)
+        meta["objects"][name] = dict(
+            body=body, surface=spec_m["surface"], init_pos=[px, py, pz],
+            init_quat=list(UPRIGHT_QUAT), height=spec_m["height"],
+            scale=scale, mesh=spec_m["mjcf"],
+        )
+        if verbose:
+            print(f"  {name:12s} -> surface {spec_m['surface']} at "
+                  f"({px:.3f}, {py:.3f}, {pz:.3f})  mesh x{scale:.3f} "
+                  f"(asset {raw_h * 100:.1f} cm -> {spec_m['height'] * 100:.0f} cm)")
 
     # --- robot start pose --------------------------------------------------
     # qpos0 of a free joint comes from its body's pos/quat, so moving the

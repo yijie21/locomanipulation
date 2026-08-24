@@ -82,6 +82,24 @@ def _geom_corners(model, data, g):
     return corners @ rot.T + pos
 
 
+def _is_marker(model, g: int) -> bool:
+    """A geom that can neither be touched nor seen.
+
+    RoboCasa ships one per object -- `<default class="region">`, a BOX with
+    contype/conaffinity 0 and rgba alpha 0, carrying the asset's authored
+    bounding box. It is bigger than the object it annotates, and MuJoCo's mesh
+    `scale` does not apply to a primitive geom's `size`, so on a scaled asset
+    it is stale as well as oversized: the water bottle's marker still reports
+    the unscaled 15.9 cm while the meshes are 12.0 cm.
+
+    Left in, it becomes the object's box, and obj_top() then aims the grasp
+    4 cm above the bottle's actual cap.
+    """
+    return (model.geom_contype[g] == 0
+            and model.geom_conaffinity[g] == 0
+            and float(model.geom_rgba[g][3]) == 0.0)
+
+
 def _local_box(model, data, body_id: int):
     """Half-extents and centre of a body's mesh geoms, in the *body's* frame.
 
@@ -102,6 +120,8 @@ def _local_box(model, data, body_id: int):
     bpos, bmat = data.xpos[body_id], data.xmat[body_id].reshape(3, 3)
     for g in range(model.ngeom):
         if model.geom_bodyid[g] != body_id:
+            continue
+        if _is_marker(model, g):
             continue
         w = _geom_corners(model, data, g)
         if w is None:
