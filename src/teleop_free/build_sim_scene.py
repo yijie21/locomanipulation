@@ -62,7 +62,11 @@ def _geom_corners(model, data, g):
         return v @ rot.T + pos
 
     s = model.geom_size[g]
-    t = model.geom_type[g]
+    # int(): geom_type is numpy.int32, and mujoco's pybind11 enum only
+    # implements __eq__ with itself on the left — `t in (enum, enum)` silently
+    # comes back False for a real match because tuple.__contains__ compares
+    # `t == enum`, not `enum == t`. Plain int compares fine either way.
+    t = int(model.geom_type[g])
     if t == mujoco.mjtGeom.mjGEOM_SPHERE:
         h = np.array([s[0], s[0], s[0]])
     elif t in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):

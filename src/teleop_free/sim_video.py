@@ -85,9 +85,12 @@ def _body_aabb(model, bid):
     return lo - BOX_MARGIN, hi + BOX_MARGIN
 
 
-def _draw_boxes(renderer, data, boxes):
-    """Inject wireframe-bbox capsule edges into an updated scene."""
-    scn = getattr(renderer, "scene", None) or renderer._scene
+def _draw_boxes(scn, data, boxes):
+    """Inject wireframe-bbox capsule edges directly into a live mjvScene.
+
+    Takes the scene itself, not a renderer, so this is reusable for both an
+    offscreen mujoco.Renderer's .scene and a passive viewer's .user_scn.
+    """
     for bid, lo, hi, rgba in boxes:
         pos = data.xpos[bid]
         rot = data.xmat[bid].reshape(3, 3)
@@ -106,6 +109,25 @@ def _draw_boxes(renderer, data, boxes):
                 g, mujoco.mjtGeom.mjGEOM_CAPSULE, BOX_EDGE_W,
                 corners[a], corners[b])
             scn.ngeom += 1
+
+
+def _draw_label(scn, pos, text: str, rgba) -> None:
+    """A borderless, invisible-radius sphere carrying a floating text label —
+    mjvGeom.label renders as a 3D billboard at the geom's position regardless
+    of vopt.label (that option only auto-labels named MODEL entities; a label
+    set on a geom WE added ourselves, via mjv_initGeom, is drawn unconditionally)."""
+    if scn.ngeom >= scn.maxgeom:
+        return
+    g = scn.geoms[scn.ngeom]
+    mujoco.mjv_initGeom(
+        g, mujoco.mjtGeom.mjGEOM_SPHERE, np.array([1e-6, 0, 0]),
+        np.asarray(pos, dtype=float), np.eye(3).flatten(),
+        np.asarray(rgba, dtype=np.float32))
+    # mjvGeom.label's setter only accepts numpy.bytes_ -- a plain str or
+    # bytes both raise "TypeError: string argument without an encoding"
+    # (mujoco 3.12.0's pybind11 binding), confirmed empirically.
+    g.label = np.bytes_(text.encode())
+    scn.ngeom += 1
 
 
 class VideoRecorder:
@@ -190,7 +212,8 @@ class VideoRecorder:
         self.renderer.update_scene(data, camera=self.cam,
                                    scene_option=self.vopt)
         if sim_vis.enabled("bbox"):
-            _draw_boxes(self.renderer, data, self.pose_boxes)
+            scn = getattr(self.renderer, "scene", None) or self.renderer._scene
+            _draw_boxes(scn, data, self.pose_boxes)
         # MuJoCo renders RGB; OpenCV writes BGR.
         frame = self.renderer.render()[:, :, ::-1].copy()
         for rend, cam, label, w, h, x, y in self.insets:
@@ -232,3 +255,45 @@ class VideoRecorder:
         print(f"[video] wrote {self.path} ({self.frames} frames, "
               f"{self.frames / FPS:.1f}s)")
         self.writer = None
+
+
+class LiveOverlay:
+    """SIM_ONSCREEN's live-window equivalent of the recorded video's bbox and
+    readout: the same two SIM_VIS items, but injected into the passive
+    viewer's user_scn instead of drawn onto an offscreen frame with cv2 --
+    that pixel-drawing path has no live-window counterpart, this is a
+    from-scratch match against the same POSE_BODIES / boxes the video uses.
+
+    reach/ghost are handled separately (viewer.opt.geomgroup[4] in
+    run_sim_locomani.py) because those are real model geoms, not injected
+    per frame.
+    """
+
+    def __init__(self, model):
+        self.pose_names, self.pose_bids, self.pose_boxes = [], [], []
+        for n in POSE_BODIES:
+            b = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n)
+            if b < 0:
+                continue
+            lo, hi = _body_aabb(model, b)
+            self.pose_names.append(n)
+            self.pose_bids.append(b)
+            self.pose_boxes.append((b, lo, hi, POSE_RGBA[n]))
+        self.pelvis_bid = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
+
+    def update(self, viewer, data) -> None:
+        with viewer.lock():
+            scn = viewer.user_scn
+            scn.ngeom = 0
+            if sim_vis.enabled("bbox"):
+                _draw_boxes(scn, data, self.pose_boxes)
+            if sim_vis.enabled("readout") and self.pelvis_bid >= 0:
+                rp = data.xmat[self.pelvis_bid].reshape(3, 3)
+                pp = data.xpos[self.pelvis_bid]
+                for name, bid in zip(self.pose_names, self.pose_bids):
+                    rel = rp.T @ (data.xpos[bid] - pp)
+                    txt = (f"{name}@pelvis "
+                           f"[{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]")
+                    label_pos = data.xpos[bid] + np.array([0.0, 0.0, 0.12])
+                    _draw_label(scn, label_pos, txt, POSE_RGBA[name])
