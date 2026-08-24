@@ -264,6 +264,14 @@ def main() -> None:
                          "episode its own task string, which the exporter "
                          "cannot do -- its --task-prompt is per SESSION.")
     args = ap.parse_args()
+    if args.manifest:
+        # collect.sh mkdir -p's its own $OUT before this, but a bare
+        # `--manifest outputs/logs/x.jsonl` run (the README quickstart) would
+        # otherwise fail with FileNotFoundError on the FIRST round's write,
+        # after already having paid for the reset + walk + grasp.
+        manifest_dir = os.path.dirname(args.manifest)
+        if manifest_dir:
+            os.makedirs(manifest_dir, exist_ok=True)
     off_lo, off_hi = (args.spawn_off * 2)[:2]
     if off_lo > off_hi:
         off_lo, off_hi = off_hi, off_lo

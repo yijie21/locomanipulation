@@ -24,6 +24,7 @@ import json
 import numpy as np
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -68,12 +69,52 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             self._episode_ctl = EpisodeControlServer(
                 self.mj_model, self.mj_data, meta, default_dof_angles,
                 recorder=recorder)
+            self._live_overlay = None
+            if self.viewer is not None and (sim_vis.enabled("bbox")
+                                            or sim_vis.enabled("readout")):
+                from sim_video import LiveOverlay
+                self._live_overlay = LiveOverlay(self.mj_model)
         self._episode_ctl.poll()
         if getattr(self, "_recorder", None) is not None:
             self._recorder.frame(self.mj_data)
+        if getattr(self, "_live_overlay", None) is not None:
+            self._live_overlay.update(self.viewer, self.mj_data)
         pub.publish()
 
     DefaultEnv.update_reward = update_reward
+
+
+def _install_loop_timing_probe(report_every: int = 100) -> None:
+    """Diagnostic only: break down where BaseSimulator.start()'s loop spends
+    wall time (sim_step / update_viewer / update_render_caches), printed
+    periodically. For root-causing why SIM_ONSCREEN stalls grasp_gym's walk
+    even with VIEWER_DT throttled -- viewer.sync() in isolation costs ~9ms,
+    but that alone didn't explain the stall, so this measures the real loop.
+    """
+    stats = {"sim_step": [], "update_viewer": [], "update_render_caches": []}
+
+    def _wrap(name):
+        original = getattr(DefaultEnv, name)
+
+        def wrapped(self, *a, **kw):
+            t0 = time.perf_counter()
+            r = original(self, *a, **kw)
+            xs = stats[name]
+            xs.append(time.perf_counter() - t0)
+            if len(xs) >= report_every:
+                xs.sort()
+                print(f"[timing] {name}: n={len(xs)} "
+                      f"mean={sum(xs) / len(xs) * 1000:.2f}ms "
+                      f"p50={xs[len(xs) // 2] * 1000:.2f}ms "
+                      f"p90={xs[int(len(xs) * 0.9)] * 1000:.2f}ms "
+                      f"max={xs[-1] * 1000:.2f}ms")
+                stats[name] = []
+            return r
+
+        setattr(DefaultEnv, name, wrapped)
+
+    for m in ("sim_step", "update_viewer", "update_render_caches"):
+        _wrap(m)
 
 
 def disable_fall_reset() -> None:
@@ -223,6 +264,23 @@ def main(config: SimLoopConfig) -> None:
     wbc_config["DOMAIN_ID"] = int(os.environ.get(
         "SONIC_DDS_DOMAIN", wbc_config.get("DOMAIN_ID", 0)))
 
+    # viewer.sync() costs a fixed ~9-10ms per call on this box, independent of
+    # scene complexity (measured: 103 geoms and 5889 geoms both ~8.7-9.1ms
+    # mean, bench_viewer.py) -- at the default 50 Hz VIEWER_DT that alone eats
+    # half the 20 ms loop budget before physics, control, or DDS publish run
+    # at all, and the sim falls behind real time. The C++ deploy is NOT
+    # sim-time synchronized -- it runs its own wall-clock-paced control loop
+    # off LowState messages -- so a sim that can't keep up desyncs the whole
+    # locomotion controller (observed: grasp_gym's approach walk stalls with
+    # SIM_ONSCREEN=1, reproduced even with SIM_VIS=none, i.e. nothing extra
+    # drawn). Since the per-call cost doesn't scale with content, the only
+    # lever that reduces the aggregate tax is calling it less often: 10 Hz
+    # keeps the sync affordable (~9% of a 100 ms budget) while still giving a
+    # watchable live view.
+    if wbc_config.get("ENABLE_ONSCREEN"):
+        wbc_config["VIEWER_DT"] = 0.1
+        _install_loop_timing_probe()
+
     if config.enable_image_publish:
         assert config.enable_offscreen, (
             "enable_offscreen must be True when enable_image_publish is True"
@@ -243,6 +301,15 @@ def main(config: SimLoopConfig) -> None:
         offscreen=wbc_config.get("ENABLE_OFFSCREEN", False),
         enable_image_publish=config.enable_image_publish,
     )
+    if sim_wrapper.sim.sim_env.viewer is not None:
+        # Mirror sim_video.py's own gate (VideoRecorder.vopt.geomgroup[4]): reach
+        # and ghost are real geoms in group 4, so SIM_ONSCREEN's live window can
+        # show them the same way the recorded third-person video does. (bbox and
+        # readout are handled separately, per-frame, in install_privileged_pub-
+        # lisher's update_reward -- they are injected geoms/labels, not part of
+        # the model, so there is no static group to flip for them.)
+        sim_wrapper.sim.sim_env.viewer.opt.geomgroup[4] = int(
+            sim_vis.enabled("ghost") or sim_vis.enabled("reach"))
 
     # The elastic band hauls the pelvis towards a fixed anchor at (0, 0, 1) with
     # kp 10000 (unitree_sdk2py_bridge.py:371-387) — a constant sideways yank on a

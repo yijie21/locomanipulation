@@ -29,8 +29,10 @@ export LOCOMANI_WORKSPACE=/workspace
 bash scripts/install_scene.sh
 
 # 2. 起 stack = MuJoCo sim + C++ deploy + data exporter
-#    首次约 10 min(编 TensorRT engine),之后 40 s。SIM_VIDEO_DIR 必须在这里给
-SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh "pick up the can"
+#    首次约 10 min(编 TensorRT engine),之后 40 s。SIM_VIDEO_DIR 必须在这里给,
+#    而且必须是绝对路径 —— sim 进程的 cwd 是 third_party/GR00T-WholeBodyControl/,
+#    不是仓库根,相对路径会悄悄写到那边去
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the can"
 
 # 3. 跑 12 局,通过全部判据的落盘,失败的自动丢弃
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
@@ -51,8 +53,10 @@ EPISODE FAILED [grasp] can toppled in the up phase in 64s
 | 东西 | 在哪 |
 |---|---|
 | exporter 原始 session(训练数据) | `$LOCOMANI_TMP/p03/outputs/<时间戳>/` |
-| 第三人称录像(带 ego + 双腕画中画) | `outputs/sim_video/` |
+| 第三人称录像(带 ego + 双腕画中画) | 上面第 2 步 `SIM_VIDEO_DIR` 给的那个绝对路径 |
 | manifest(每局的目标、指令、成败) | 你用 `--manifest` 指定的路径 |
+
+三条各自怎么配、有什么坑,见[跑一局 → 保存的数据在哪、怎么配路径](#保存的数据在哪怎么配路径)。
 
 **要采一整个数据集不要手跑这几步**,用 `scripts/collect.sh`,见
 [大规模采集](#大规模采集)。转成 LeRobot 见[导出](#导出-lerobot-v21-并对接-gr00t)。
@@ -194,6 +198,15 @@ bash install_scripts/install_data_collection.sh   # -> .venv_data_collection(跑
 python download_from_hf.py                        # SONIC policy 权重 -> gear_sonic_deploy/policy/release/
 ```
 
+`.venv_sim` 装完之后还缺一个包:`src/teleop_free/navigator.py` 用 `skfmm`(路径规划的
+快速行进法)算距离场,但它是这个仓库自己的依赖,上游安装脚本不装,**必须**手动补上,
+否则跑 `grasp_gym.py` 等脚本会在 import 阶段就报 `ModuleNotFoundError: No module named
+'skfmm'`:
+
+```bash
+uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm
+```
+
 装完之后**必须**再打补丁,否则**录下来的 action 是错的**(整段下蹲会丢失,action 维度
 是 267 而不是 66):
 
@@ -208,6 +221,7 @@ cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_spac
 ```bash
 cd third_party/GR00T-WholeBodyControl
 .venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)"
+.venv_sim/bin/python -c "import skfmm; print(skfmm.__version__)"
 ls gear_sonic_deploy/policy/release/model_decoder.onnx   # 权重下来了
 git apply --check --reverse ../../patches/vla_action_space.patch && echo "补丁已打"
 ```
@@ -237,7 +251,15 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 
 ### 4. 装场景(必需)
 
-见[下一节](#场景直接用现成的推荐)。一行 `bash scripts/install_scene.sh`。
+先生成 dex1(平行夹爪)机器人模型 —— `scene_31dof.xml` / `g1_29dof_with_dex1.xml` 是
+gitignored 的生成产物,新 clone 的 `third_party/GR00T-WholeBodyControl` 里没有,不生成
+会导致 `MjSpec.from_file` 报 `Error opening file ... scene_31dof.xml`:
+
+```bash
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/make_dex1_model.py
+```
+
+然后见[下一节](#场景直接用现成的推荐)。一行 `bash scripts/install_scene.sh`。
 
 ### 5. conda 训练环境(可选)
 
@@ -302,7 +324,7 @@ python -c "import json;m=json.load(open('outputs/scene/sim/scene_meta.json'));pr
 | **`grasp_gym.py`** | `.venv_sim` | 脚本化 agent:决定机器人做什么 |
 
 ```bash
-SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh "pick up the can"
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the can"
 ```
 
 它按 `[1/3] [2/3] [3/3]` 打印,每一步等到真的起来了才继续(等端口、等日志关键字,
@@ -315,8 +337,18 @@ stack up. logs in /workspace/tmp/p03/{sim,deploy,exporter}.log
 **没看到这一行就是没起来**,去那三个日志里看。`[2/3]` 第一次会卡十分钟,那是在编
 TensorRT engine,属正常;之后走缓存,20–40 s。
 
-两个参数在这一步就定死、后面改不了:`SIM_VIDEO_DIR`(不设就完全不录第三人称视频)、
-`SIM_VIS` 里的 `reach`(可达域点云在建模型时注入)。
+三个参数在这一步就定死、后面改不了:`SIM_VIDEO_DIR`(不设就完全不录第三人称视频)、
+`SIM_VIS` 里的 `reach`(可达域点云在建模型时注入)、`SIM_ONSCREEN=1`(开一个实时
+MuJoCo 窗口,需要真的 `$DISPLAY`;`grasp_gym.py` 只是连过去的客户端,不管渲染)。
+
+```bash
+SIM_ONSCREEN=1 bash src/teleop_free/start_stack.sh "pick up the can"
+```
+
+**已知限制**:`SIM_ONSCREEN=1` 偶尔会拖垮走路控制(sim 单线程被窗口刷新阻塞,
+C++ deploy 按真实墙钟时间跑自己的控制环路,两边对不上就可能失稳、走到一半卡住)。
+已经做了节流缓解,但没根治。**不要跟正式 `--record` 采集同时开**——平时调参数用它看
+效果,采数据时关掉。
 
 ### 先不落盘跑一局
 
@@ -341,6 +373,27 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
   [指令是怎么进数据集的](#指令是怎么进数据集的)。
 - `--seed` 固定这一串局的随机数(目标、出生点、外观),复现问题时用。
 
+#### 保存的数据在哪、怎么配路径
+
+三类产出,三个不同的配置入口——**都是 `start_stack.sh` 启动时定死,中途改了不生效**:
+
+| 产出 | 路径 | 怎么配 |
+|---|---|---|
+| exporter 原始 session(LeRobot 训练数据:三路视频 + 关节/latent parquet) | `$LOCOMANI_TMP/p03/outputs/<时间戳>/`。一次 `start_stack.sh` 一个 session,这次启动之后跑的所有 episode(不管跑几次 `grasp_gym.py`)都落进同一个目录,直到你 `stop_stack.sh` 再重新 `start_stack.sh` | `LOCOMANI_TMP`(默认 `$LOCOMANI_WORKSPACE/tmp`,见[路径约定](#0-路径约定));多实例并行时目录名跟 `INSTANCE` 走 |
+| 第三人称跟踪录像(`gym_<timestamp>.mp4`,ego + 双腕画中画) | `$SIM_VIDEO_DIR`,不设就完全不录 | `export SIM_VIDEO_DIR=<绝对路径>`,**必须在 `start_stack.sh` 之前**,而且**必须给绝对路径**——sim 进程自己的工作目录是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,给相对路径会悄悄写到 `third_party/GR00T-WholeBodyControl/outputs/sim_video/` 那边去,不是你以为的仓库根 `outputs/sim_video/` |
+| manifest(每次**尝试**一行 JSON:目标、指令、成败、外观 seed、桌高、物体尺寸) | 你用 `--manifest PATH` 指定的路径,`grasp_gym.py` 会自动建好父目录 | `grasp_gym.py --manifest <路径>`。**追加写**(`open(path, "a")`),不会清空旧内容——同一个文件跑多次,新记录接在旧记录后面,统计成功率前检查一下别把几批数据混在了一起 |
+
+```bash
+# 三个都配好的完整例子(注意 SIM_VIDEO_DIR 是绝对路径):
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the can"
+
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
+    src/teleop_free/grasp_gym.py --rounds 12 --record \
+    --manifest outputs/logs/manifest_$(date +%s).jsonl   # 时间戳文件名,避免和旧数据混在一起
+```
+
+批量采集(`scripts/collect.sh`)是另一套路径,自动按批建目录,见[大规模采集 → 产出在哪](#产出在哪)。
+
 ### 结果怎么读
 
 每局一行,失败的行带**阶段前缀**,一眼能看出是哪一段坏的:
@@ -359,11 +412,17 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 **当前实测**:近几批 11/12、12/12、5/5;一条成功 episode 约 **70–105 s**,
 落盘约 **13–18 MB**(三路相机;只留 ego 时约 4.7 MB)。
 
-### 停
+### Stop and Clean 
 
 ```bash
 bash src/teleop_free/stop_stack.sh
 ```
+
+杀掉 sim / deploy / exporter 三个长驻进程,以及 `zmq_driver.py`、`collect_episode.py`、
+`grasp_gym.py`、`diag_walk.py` 这几个会绑 `:5556`/`:5580`(跟 `zmq_driver.py` 抢同一对
+端口,见 `Primitives` -> `AgentCommander`)的客户端脚本。杀完会打印 `remaining:` /
+`ports:` 让你确认真的干净了 —— **不干净**的话下一次 `start_stack.sh` 会在打完启动
+横幅之后才报 `Address already in use`,看着像起来了其实没有。
 
 ---
 
@@ -533,7 +592,8 @@ the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。�
 | 变量 | 默认 | 谁读 | 作用 |
 |---|---|---|---|
 | `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](#0-路径约定) |
-| `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export** |
+| `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
+| `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `start_stack.sh` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `SCENE_RANDOM` | `1` | sim | `0` 固定外观,见[外观](#4-外观每局重掷) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](#相机) |
@@ -593,7 +653,7 @@ mp4。所以这些开关是为了**录像干净**和**省开销**,不是为了�
 
 ```bash
 export SIM_VIS=none                                   # 对两个进程都生效
-SIM_VIDEO_DIR=outputs/sim_video bash src/teleop_free/start_stack.sh
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gym.py --rounds 3
 ```
 
@@ -1006,6 +1066,8 @@ modality 里**。它们是分析和写判据用的;把它们声明成 state 就�
 | 采完之后场景尺寸不对了 | `collect.sh` 就地重建场景。`bash scripts/install_scene.sh` 恢复 |
 | 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
 | 场景 MJCF 找不到 mesh | 重跑 `bash scripts/install_scene.sh`;它会探测并改写 tarball 里烘死的路径 |
+| `ValueError: ... Error opening file ... scene_31dof.xml` | 新 clone 的 `third_party` 里没有 dex1 生成文件。先跑 `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/make_dex1_model.py`,再 `bash scripts/install_scene.sh` |
+| `ModuleNotFoundError: No module named 'skfmm'` | `.venv_sim` 里没装 `scikit-fmm`(上游安装脚本不带,这个仓库自己的依赖)。`uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm` |
 
 ---
 

@@ -13,6 +13,12 @@ pkill -9 -f "run_data_exporter.py" 2>/dev/null
 pkill -9 -f "zmq_driver.py" 2>/dev/null
 pkill -9 -f "collect_episode.py" 2>/dev/null
 pkill -9 -f "diag_walk.py" 2>/dev/null
+# grasp_gym.py binds the same :5556/:5580 pair zmq_driver.py does (it builds
+# a Primitives -> AgentCommander like every diag_*.py script does too, see
+# run_batch.py's docstring) -- left running, it holds those ports and the
+# NEXT start_stack.sh fails with "Address already in use" even though this
+# script reports everything stopped.
+pkill -9 -f "grasp_gym.py" 2>/dev/null
 pkill -9 -f "spawn_main" 2>/dev/null            # MuJoCo image-publish subprocess
 
 # The sim binds :5555 and :5581; a survivor makes the next start fail with
@@ -25,7 +31,7 @@ for _ in $(seq 1 15); do
 done
 
 echo "remaining:"
-pgrep -a -f "g1_deploy_onnx_ref|run_sim_loop|run_sim_locomani|run_data_exporter|zmq_driver|collect_episode" \
+pgrep -a -f "g1_deploy_onnx_ref|run_sim_loop|run_sim_locomani|run_data_exporter|zmq_driver|collect_episode|grasp_gym" \
   | grep -v stop_stack || echo "  (none)"
 
 echo "ports:"
