@@ -225,6 +225,24 @@ def main() -> None:
                          "being held out level the whole way, and the ego "
                          "camera picks the object up at 1.77 m "
                          "(diag_ego_geom).")
+    ap.add_argument("--spawn-edge", type=float, nargs="+", default=None,
+                    metavar="M",
+                    help="spawn this far from the TABLE, overriding "
+                         "--spawn-off. One value fixes it, two give a range. "
+                         "The table is what a person measures from, and it is "
+                         "the quantity the clearance floor (EDGE_MIN) is in; "
+                         "--spawn-off is measured behind the STAND, which "
+                         "itself sits 0.17-0.32 m from the edge and moves with "
+                         "the target, so the same --spawn-off is a different "
+                         "table distance every round. Solved per round by "
+                         "bisection on the sampled approach line.")
+    ap.add_argument("--face-object", action="store_true",
+                    help="wake up pointing at the OBJECT rather than along the "
+                         "approach line, and take --spawn-yaw-err as jitter "
+                         "around that. The two coincide only for a spawn dead "
+                         "on the line: with a lateral offset, and especially "
+                         "with a close --spawn-edge, facing the approach "
+                         "heading leaves the object well off centre.")
     ap.add_argument("--spawn-lateral", type=float, default=0.35, metavar="M",
                     help="spawn up to this far to either side of the approach "
                          "line. 0 puts every episode dead on it, which is a "
@@ -273,6 +291,12 @@ def main() -> None:
         if manifest_dir:
             os.makedirs(manifest_dir, exist_ok=True)
     off_lo, off_hi = (args.spawn_off * 2)[:2]
+    edge_range = None
+    if args.spawn_edge is not None:
+        edge_range = tuple(sorted((args.spawn_edge * 2)[:2]))
+        if edge_range[0] < EDGE_MIN:
+            raise SystemExit(f"--spawn-edge {edge_range[0]} is inside the "
+                             f"pelvis-to-edge floor EDGE_MIN={EDGE_MIN}")
     if off_lo > off_hi:
         off_lo, off_hi = off_hi, off_lo
     rng = np.random.default_rng(args.seed if args.seed is not None
@@ -409,14 +433,38 @@ def main() -> None:
             # because the clearance check below depends on all three: a
             # spawn 3 m out with 0.35 m of lateral offset crosses different
             # furniture than one 1 m out dead on the line.
-            spawn_off = float(rng.uniform(off_lo, off_hi))
             spawn_lat = float(rng.uniform(-args.spawn_lateral,
                                           args.spawn_lateral))
-            dpsi = float(np.deg2rad(rng.uniform(-args.spawn_yaw_err,
-                                                args.spawn_yaw_err)))
             fv2 = np.array([np.cos(psi), np.sin(psi)])
             perp = np.array([-fv2[1], fv2[0]])
+            if edge_range is None:
+                spawn_off = float(rng.uniform(off_lo, off_hi))
+            else:
+                # Bisect for the offset that lands the spawn the requested
+                # distance from the table. edge_dist grows monotonically as
+                # the robot backs off along -fv2, so 60 halvings of [0, 6]
+                # resolve it far below any distance that matters.
+                want = float(rng.uniform(*edge_range))
+                lo_off, hi_off = 0.0, 6.0
+                for _ in range(60):
+                    mid = 0.5 * (lo_off + hi_off)
+                    if edge_dist(stand - mid * fv2 + spawn_lat * perp) < want:
+                        lo_off = mid
+                    else:
+                        hi_off = mid
+                spawn_off = 0.5 * (lo_off + hi_off)
             spawn_pt = stand - spawn_off * fv2 + spawn_lat * perp
+            jitter = float(np.deg2rad(rng.uniform(-args.spawn_yaw_err,
+                                                  args.spawn_yaw_err)))
+            if args.face_object:
+                # Face the object FROM THE SPAWN, then jitter. dpsi stays the
+                # quantity the episode turns out at the spawn, so everything
+                # downstream (the turn, its guards, the manifest) is unchanged.
+                to_obj = can_xy - spawn_pt
+                dpsi = float(wrap(np.arctan2(to_obj[1], to_obj[0]) - psi)
+                             + jitter)
+            else:
+                dpsi = jitter
             # The WALK must clear the table too: the batch's "fell during
             # the walk-up" class was the robot brushing the table edge on
             # the way in (video: hip catches the rim, robot tips backwards
