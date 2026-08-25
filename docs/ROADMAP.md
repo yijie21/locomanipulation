@@ -251,7 +251,35 @@ rel 是骨盆系**方位**,9° 读作 0.48 m 的横向偏移,deadband 接近段�
 场景尺寸。每个目标只有 50 条。如果第一批模型的失败是"多样性不够",那不是再采
 200 条能解决的 —— 按第 0 节的结论,**等模型告诉我们缺什么**。
 
+### 排队中:训练显存两项(2026-08-25 定,**等当前 bottle250 训练跑完就做**)
+
+单卡放不下的根因是 Adam 状态跟着 1.62B 可训参数走(fp32 m+v 就 13 GB),
+不是模型本身。两个待办,都在腾出第二张卡:
+
+1. **8-bit 优化器**(bitsandbytes AdamW8bit):Adam 13 GB → 3.2 GB,总量 ~22 GB
+   单卡稳。改 src/gr00t 的 optimizer 构造(vendored 之后这正是该改的地方),
+   做成 train_bottle.sh 的 `SINGLE_GPU=1` 开关。
+2. **冻结 DiT 消融**(只训 projector + vlln,527 M):单卡轻松,而且回答一个
+   悬而未决的科学问题 —— DiT 那 1.09B 在 SONIC 的 FSQ 动作空间上到底迁移了
+   什么。如果冻结版闭环成绩接近,以后永远单卡。
+
+(降 batch/梯度累积解决不了 —— 只省激活,省不掉权重+优化器状态。)
+
 ### 以后再说
+
+- **渲染端换 Unreal Engine / 3DGS**(2026-08-25 定的待办,**在 MuJoCo/Isaac 里验证
+  完可行性之前不动**):物理与渲染本来就是可拆的两层,而且路已有人趟过 ——
+  UnrealRoboticsLab(ICRA 2026,UE5 插件内嵌 MuJoCo,MJCF 直接导入)证明
+  "MuJoCo 物理 + UE 渲染"可用;2025–26 拼 sim2real 视觉真实感的主流赛道则是
+  3DGS 渲染 + 物理引擎状态(SplatSim 零样本 RGB sim2real、Splatting Physical
+  Scenes 的 MuJoCo 可微物理 + 可微渲染联合优化)。分工:UE = 可控多样性
+  (任意资产/光照,做域随机化),3DGS = 特定场景照片级还原(把真实实验室搬进 sim)。
+  我们的架构对此友好:exporter 和 VLA 都从 :5555 的相机 ZMQ 流原样拿图,渲染器
+  天然可插拔 —— 到时候只需给 run_sim_locomani.py 加状态外发通道,由 UE/3DGS
+  镜像进程订阅状态、渲染三路相机、发回 :5555,物理/控制/deploy/数据格式全不动。
+  实事三件:资产与相机内外参对齐、30 Hz 镜像延迟预算、本容器的 Vulkan/显示驱动
+  (vast-capabilities 查 render,缺了跑 install-display-drivers)。
+  **优先级排在 DAgger 修复与闭环成功率之后**:当前瓶颈是 covariate shift,不是渲染。
 
 - **episode 内扰动**:接近/伸手途中推罐子(`pin_object` 现成),或给骨盆一个冲量
   (需要在 `privileged_pub` 加 `xfrc_applied`)。按之前的结论,**等第一批模型告诉我们

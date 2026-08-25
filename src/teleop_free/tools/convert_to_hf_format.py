@@ -150,6 +150,18 @@ MODALITY = {
         # here at all -- the gym is right-handed throughout.
         "left_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.left_hand_joints"},
         "right_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.right_hand_joints"},
+        # The group the 65-dim action space actually selects
+        # (configs/gr00t_sonic_2cam.py). Same column, sliced to the one
+        # component that carries information: measured over 23,103 frames,
+        # left_hand_joints has std exactly 0 in all 7 components and
+        # right_hand_joints is rank 1 -- components 0 and 1 are the same
+        # mirrored jaw value and 2..6 are identically 0. So component 0 IS the
+        # gripper, and the other 13 columns are constants that would be
+        # predicted perfectly while carrying nothing, diluting every MSE.
+        # modality.json is a menu, not a selection: the 7-wide groups above
+        # stay declared, so going back to the 78-dim action is a config edit
+        # and needs no re-conversion.
+        "right_gripper": {"start": 0, "end": 1, "original_key": "teleop.right_hand_joints"},
     },
     # Filled from the session's own features -- see video_streams(). Fixing it
     # to ego_view here is what made the wrist cameras invisible to this
@@ -307,6 +319,129 @@ def video_stats(frames_dict):
             "count": [int(px.shape[0])]}
 
 
+
+
+class Sink:
+    """One output dataset: its directory, its counters, its metadata.
+
+    The train/val split writes two of these from one pass over the sessions,
+    so an episode is decoded, resampled and re-encoded exactly once and lands
+    in exactly one dataset. Each sink numbers its own episodes from 0 and
+    keeps its own task table, so both come out as self-contained LeRobot v2.1
+    datasets rather than one dataset with a hole in its episode indices.
+    """
+
+    def __init__(self, out, streams):
+        self.out = Path(out)
+        self.streams = streams
+        (self.out / "data/chunk-000").mkdir(parents=True, exist_ok=True)
+        (self.out / "meta").mkdir(parents=True, exist_ok=True)
+        for st in streams:
+            (self.out / f"videos/chunk-000/{st}").mkdir(parents=True, exist_ok=True)
+        self.episodes, self.ep_stats = [], []
+        self.new_ep = self.global_index = self.total_videos = 0
+        self.task_ids = {}
+
+
+def plan_holdout(items, n, seed):
+    """Choose `n` episodes to hold out, spread evenly across sessions.
+
+    Stratified by session, not random over the pool, because each session is
+    its own exporter process: a clock drift or a dropped-frame bug is a
+    property of one session, and letting it concentrate in the holdout would
+    silently make the validation set the odd one out. Taking the same share
+    from every chunk averages that away.
+
+    Deterministic in `seed` so a re-conversion reproduces the split -- the
+    checkpoint's normalization statistics are computed from the train half,
+    so a split that moved between conversions would invalidate every metric
+    already measured against it.
+    """
+    if n <= 0:
+        return set()
+    if n > len(items):
+        raise SystemExit(f"--holdout {n} exceeds {len(items)} kept episodes")
+    by_sess = {}
+    for it in items:
+        by_sess.setdefault(it["si"], []).append(it)
+    rng = np.random.default_rng(seed)
+    order = sorted(by_sess)
+    # Largest-remainder apportionment: every session gives up the same
+    # fraction, and the leftover goes to the sessions with the largest
+    # fractional part rather than always to the first ones.
+    exact = {si: n * len(by_sess[si]) / len(items) for si in order}
+    take = {si: int(exact[si]) for si in order}
+    for si in sorted(order, key=lambda s: (-(exact[s] - take[s]), s))[:n - sum(take.values())]:
+        take[si] += 1
+    chosen = set()
+    for si in order:
+        pool = by_sess[si]
+        k = min(take[si], len(pool))
+        for i in rng.choice(len(pool), size=k, replace=False):
+            chosen.add((si, pool[int(i)]["src_ep"]))
+    return chosen
+
+
+def finalize(sink, src_info, args, feats_extra=True):
+    """Write one sink's meta/ and print its summary."""
+    total_frames = sum(e["length"] for e in sink.episodes)
+    feats = {}
+    for k, v in dict(src_info["features"]).items():
+        if (getattr(args, "strip_pose_columns", False)
+                and k.startswith("observation.") and k.endswith("_pose")):
+            continue
+        if k == "timestamp":
+            feats["observation.state_psi0"] = {"dtype": "float32", "shape": [15], "names": None}
+            feats["action.psi0_18"] = {"dtype": "float32", "shape": [18], "names": None}
+        feats[k] = v
+    for st in sink.streams:
+        vi = feats.get(st, {})
+        if vi.get("info"):
+            vi["info"]["video.fps"] = float(DST_FPS)
+    modality = json.loads(json.dumps(MODALITY))
+    modality["video"] = {st.split(".")[-1]: {"original_key": st} for st in sink.streams}
+
+    info_out = dict(src_info)
+    info_out.update({
+        "fps": DST_FPS,
+        "total_episodes": sink.new_ep,
+        "total_frames": total_frames,
+        "total_tasks": max(1, len(sink.task_ids)),
+        "total_videos": sink.total_videos * len(sink.streams),
+        "total_chunks": 1,
+        "splits": {"train": f"0:{sink.new_ep}"},
+        "features": feats,
+        "discarded_episode_indices": [],
+        "script_config": {
+            "source": "teleop_free/tools/convert_to_hf_format.py",
+            "sessions": [str(s) for s in args.sessions],
+            "resample": f"{SRC_FPS}->{DST_FPS} nearest",
+            "holdout": args.holdout,
+            "holdout_seed": args.holdout_seed,
+        },
+    })
+    json.dump(info_out, open(sink.out / "meta/info.json", "w"), indent=4)
+    json.dump(modality, open(sink.out / "meta/modality.json", "w"), indent=4)
+    json.dump(modality, open(sink.out / "meta/modality_gr00t_sonic.json", "w"), indent=4)
+    json.dump(MODALITY_PSI0, open(sink.out / "meta/modality_psi0.json", "w"), indent=4)
+    with open(sink.out / "meta/tasks.jsonl", "w") as f:
+        for t, i in sorted(sink.task_ids.items(), key=lambda kv: kv[1]):
+            f.write(json.dumps({"task_index": i, "task": t}) + "\n")
+        if not sink.task_ids:
+            f.write(json.dumps({"task_index": 0, "task": TASK}) + "\n")
+    with open(sink.out / "meta/episodes.jsonl", "w") as f:
+        for e in sink.episodes:
+            f.write(json.dumps(e) + "\n")
+    with open(sink.out / "meta/episodes_stats.jsonl", "w") as f:
+        for e in sink.ep_stats:
+            f.write(json.dumps(e) + "\n")
+    print(f"done: {sink.new_ep} episodes, {total_frames} frames, "
+          f"{max(1, len(sink.task_ids))} task(s) -> {sink.out}")
+    for t, i in sorted(sink.task_ids.items(), key=lambda kv: kv[1]):
+        n = sum(1 for e in sink.episodes if e["tasks"] == [t])
+        print(f"  task[{i}] {n:4d} episodes  \"{t}\"")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sessions", nargs="+", required=True)
@@ -319,27 +454,44 @@ def main():
                          "entry and in the same order. Gives each episode "
                          "its own instruction, which the exporter cannot: "
                          "its --task-prompt is fixed for a whole session.")
+    ap.add_argument("--holdout", type=int, default=0,
+                    help="hold this many episodes out of --out and write them "
+                         "to --holdout-out instead, taking the same share from "
+                         "every session. GR00T has no validation split of its "
+                         "own -- DatasetFactory.build asserts eval_strategy "
+                         "== 'no' -- so the split has to happen here.")
+    ap.add_argument("--holdout-out", default=None,
+                    help="where the held-out episodes go (required with "
+                         "--holdout)")
+    ap.add_argument("--holdout-seed", type=int, default=0,
+                    help="seed for the holdout draw; recorded in info.json")
+    ap.add_argument("--strip-pose-columns", action="store_true",
+                    help="drop every observation.*_pose column while "
+                         "converting. The pose channel is privileged analysis "
+                         "data, never a model input, and it is the one column "
+                         "set that legitimately differs between recording "
+                         "eras (the TF_POSE_OBJECTS restart bug); stripping "
+                         "it lets a mixed-era collection convert as one "
+                         "dataset without weakening the schema check for "
+                         "every other column.")
     args = ap.parse_args()
 
-    out = Path(args.out)
-    (out / "data/chunk-000").mkdir(parents=True, exist_ok=True)
+    if args.holdout and not args.holdout_out:
+        raise SystemExit("--holdout needs --holdout-out")
+    if args.manifest and len(args.manifest) != len(args.sessions):
+        raise SystemExit(f"--manifest takes one file per --sessions entry "
+                         f"({len(args.manifest)} vs {len(args.sessions)})")
+
     streams = video_streams(json.load(open(Path(args.sessions[0]) / "meta/info.json")))
     if not streams:
         raise SystemExit("no observation.images.* features in the first session")
     print(f"video streams: {', '.join(s.split('.')[-1] for s in streams)}")
-    for st in streams:
-        (out / f"videos/chunk-000/{st}").mkdir(parents=True, exist_ok=True)
-    (out / "meta").mkdir(parents=True, exist_ok=True)
 
-    src_info = None
-    episodes, ep_stats = [], []
-    new_ep, global_index, total_videos = 0, 0, 0
-
-    if args.manifest and len(args.manifest) != len(args.sessions):
-        raise SystemExit(f"--manifest takes one file per --sessions entry "
-                         f"({len(args.manifest)} vs {len(args.sessions)})")
-    task_ids = {}          # task string -> task_index, in first-seen order
-
+    # Pass 1 -- enumerate what will be kept, and validate every manifest join,
+    # before a single frame is decoded. The split has to be decided over the
+    # whole pool, and finding a broken join after two hours of transcoding is
+    # a bad way to find out.
+    items, src_info, mans = [], None, {}
     for si, sess in enumerate(args.sessions):
         sess = Path(sess)
         info = json.load(open(sess / "meta/info.json"))
@@ -347,118 +499,125 @@ def main():
         discarded = set(info.get("discarded_episode_indices", []))
         pqs = sorted((sess / "data/chunk-000").glob("episode_*.parquet"))
         src_eps = [int(q.stem.split("_")[1]) for q in pqs]
-        man = None
         if args.manifest:
             man = load_manifest(args.manifest[si])
             check_manifest(man, src_eps, discarded, sess.name)
-            man = dict(zip(src_eps, man))     # keyed by the episode's own id
+            mans[si] = dict(zip(src_eps, man))
         for pq in pqs:
             src_ep = int(pq.stem.split("_")[1])
             if src_ep in discarded and not args.include_discarded:
                 continue
             if args.only is not None and src_ep not in args.only:
                 continue
-            table = pq_mod.read_table(pq)
-            n50 = table.num_rows
-            n30 = int(np.floor((n50 - 1) * DST_FPS / SRC_FPS)) + 1
-            sel = np.clip(np.round(np.arange(n30) * SRC_FPS / DST_FPS).astype(int), 0, n50 - 1)
-            sub = table.take(pa.array(sel))
+            items.append({"si": si, "sess": sess, "src_ep": src_ep, "pq": pq})
 
-            pdf = sub.select([
-                "observation.eef_state", "teleop.delta_heading",
-                "observation.init_base_quat", "teleop.vr_3pt_position",
-                "teleop.vr_3pt_orientation"]).to_pandas()
-            state_psi0, psi0_18 = compute_psi0_columns(pdf)
+    # Every session must describe the same columns. info.json is copied from
+    # the FIRST session and becomes the dataset's declared schema, so a session
+    # that carries different columns produces a dataset whose metadata is a
+    # confident description of 10% of its own parquet files -- and nothing
+    # downstream notices until gr00t.data.stats concatenates them and dies on a
+    # width mismatch, an hour of transcoding later.
+    #
+    # This is not hypothetical. The first bottle collection restarted the
+    # exporter between chunks (it leaks threads), the restart did not carry
+    # TF_POSE_OBJECTS, and sessions 2..10 silently recorded observation.can_pose
+    # = 0.0 instead of observation.water_bottle_pose. Refuse rather than guess:
+    # a mixed dataset is worth catching before the videos are re-encoded.
+    def _is_pose(c):
+        return c.startswith("observation.") and c.endswith("_pose")
 
-            def set_col(t, name, arr, typ):
-                i = t.schema.get_field_index(name)
-                return t.set_column(i, pa.field(name, typ), pa.array(arr, type=typ))
+    schemas = {}
+    for si, sess in enumerate(args.sessions):
+        cols = tuple(sorted(
+            c for c in json.load(open(Path(sess) / "meta/info.json"))
+            .get("features", {})
+            if not (args.strip_pose_columns and _is_pose(c))))
+        schemas.setdefault(cols, []).append(Path(sess).name)
+    if len(schemas) > 1:
+        print("\nsessions do NOT share a schema:")
+        ref = max(schemas.items(), key=lambda kv: len(kv[1]))[0]
+        for cols, names in schemas.items():
+            extra, missing = set(cols) - set(ref), set(ref) - set(cols)
+            print(f"  {len(names):3d} session(s) {names[0]}..."
+                  f"  +{sorted(extra) or '-'}  -{sorted(missing) or '-'}")
+        raise SystemExit(
+            "refusing to build a dataset whose info.json would describe only "
+            "some of its parquet files. Re-record the odd sessions, or pass "
+            "only the sessions that agree.")
 
-            sub = set_col(sub, "timestamp", (np.arange(n30) / DST_FPS).astype(np.float32), pa.float32())
-            sub = set_col(sub, "frame_index", np.arange(n30, dtype=np.int64), pa.int64())
-            sub = set_col(sub, "episode_index", np.full(n30, new_ep, dtype=np.int64), pa.int64())
-            sub = set_col(sub, "index", np.arange(global_index, global_index + n30, dtype=np.int64), pa.int64())
-            ep_task = man[src_ep]["task"] if man else TASK
-            ti = task_ids.setdefault(ep_task, len(task_ids))
-            sub = set_col(sub, "task_index",
-                          np.full(n30, ti, dtype=np.int64), pa.int64())
-            ts_pos = sub.schema.get_field_index("timestamp")
-            sub = sub.add_column(ts_pos, pa.field("observation.state_psi0", pa.list_(pa.float32(), 15)), fsl(state_psi0, 15))
-            sub = sub.add_column(ts_pos + 1, pa.field("action.psi0_18", pa.list_(pa.float32(), 18)), fsl(psi0_18, 18))
-            pq_mod.write_table(sub, out / f"data/chunk-000/episode_{new_ep:06d}.parquet")
+    held = plan_holdout(items, args.holdout, args.holdout_seed)
+    train = Sink(args.out, streams)
+    val = Sink(args.holdout_out, streams) if args.holdout else None
+    if val is not None:
+        per_sess = {}
+        for si, _ in held:
+            per_sess[si] = per_sess.get(si, 0) + 1
+        print(f"holdout: {len(held)} of {len(items)} episodes "
+              f"(seed {args.holdout_seed}), per session "
+              f"{[per_sess.get(i, 0) for i in range(len(args.sessions))]}")
 
-            vid_frames = {}
-            for st in streams:
-                vsrc = sess / f"videos/chunk-000/{st}/episode_{src_ep:06d}.mp4"
-                vdst = out / f"videos/chunk-000/{st}/episode_{new_ep:06d}.mp4"
-                vid_frames[st] = convert_video(vsrc, vdst, sel)
+    # Pass 2 -- convert, routing each episode to its sink.
+    for it in items:
+        si, sess, src_ep, pq = it["si"], it["sess"], it["src_ep"], it["pq"]
+        sink = val if (si, src_ep) in held else train
+        man = mans.get(si)
 
-            stats = {}
-            for name in sub.schema.names:
-                stats[name] = feat_stats(np.asarray(sub[name].to_pylist()))
-            for st, fr in vid_frames.items():
-                stats[st] = video_stats(fr)
-            ep_stats.append({"episode_index": new_ep, "stats": stats})
-            episodes.append({"episode_index": new_ep, "tasks": [ep_task],
-                             "length": n30})
-            print(f"[{new_ep}] {sess.name}/ep{src_ep}: {n50} rows @50Hz -> "
-                  f"{n30} @30Hz  task[{ti}] \"{ep_task}\"")
-            new_ep += 1
-            global_index += n30
-            total_videos += 1
+        table = pq_mod.read_table(pq)
+        if args.strip_pose_columns:
+            table = table.drop(
+                [c for c in table.column_names if _is_pose(c)])
+        n50 = table.num_rows
+        n30 = int(np.floor((n50 - 1) * DST_FPS / SRC_FPS)) + 1
+        sel = np.clip(np.round(np.arange(n30) * SRC_FPS / DST_FPS).astype(int), 0, n50 - 1)
+        sub = table.take(pa.array(sel))
 
-    total_frames = sum(e["length"] for e in episodes)
-    features = dict(src_info["features"])
-    feats = {}
-    for k, v in features.items():
-        if k == "timestamp":
-            feats["observation.state_psi0"] = {"dtype": "float32", "shape": [15], "names": None}
-            feats["action.psi0_18"] = {"dtype": "float32", "shape": [18], "names": None}
-        feats[k] = v
-    for st in streams:
-        vi = feats.get(st, {})
-        if vi.get("info"):
-            vi["info"]["video.fps"] = float(DST_FPS)
-    MODALITY["video"] = {st.split(".")[-1]: {"original_key": st}
-                         for st in streams}
+        pdf = sub.select([
+            "observation.eef_state", "teleop.delta_heading",
+            "observation.init_base_quat", "teleop.vr_3pt_position",
+            "teleop.vr_3pt_orientation"]).to_pandas()
+        state_psi0, psi0_18 = compute_psi0_columns(pdf)
 
-    info_out = dict(src_info)
-    info_out.update({
-        "fps": DST_FPS,
-        "total_episodes": new_ep,
-        "total_frames": total_frames,
-        "total_tasks": max(1, len(task_ids)),
-        "total_videos": total_videos * len(streams),
-        "total_chunks": 1,
-        "splits": {"train": f"0:{new_ep}"},
-        "features": feats,
-        "discarded_episode_indices": [],
-        "script_config": {
-            "source": "teleop_free/tools/convert_to_hf_format.py",
-            "sessions": [str(s) for s in args.sessions],
-            "resample": f"{SRC_FPS}->{DST_FPS} nearest",
-        },
-    })
-    json.dump(info_out, open(out / "meta/info.json", "w"), indent=4)
-    json.dump(MODALITY, open(out / "meta/modality.json", "w"), indent=4)
-    json.dump(MODALITY, open(out / "meta/modality_gr00t_sonic.json", "w"), indent=4)
-    json.dump(MODALITY_PSI0, open(out / "meta/modality_psi0.json", "w"), indent=4)
-    with open(out / "meta/tasks.jsonl", "w") as f:
-        for t, i in sorted(task_ids.items(), key=lambda kv: kv[1]):
-            f.write(json.dumps({"task_index": i, "task": t}) + "\n")
-        if not task_ids:
-            f.write(json.dumps({"task_index": 0, "task": TASK}) + "\n")
-    with open(out / "meta/episodes.jsonl", "w") as f:
-        for e in episodes:
-            f.write(json.dumps(e) + "\n")
-    with open(out / "meta/episodes_stats.jsonl", "w") as f:
-        for e in ep_stats:
-            f.write(json.dumps(e) + "\n")
-    print(f"done: {new_ep} episodes, {total_frames} frames, "
-          f"{max(1, len(task_ids))} task(s) -> {out}")
-    for t, i in sorted(task_ids.items(), key=lambda kv: kv[1]):
-        n = sum(1 for e in episodes if e["tasks"] == [t])
-        print(f"  task[{i}] {n:4d} episodes  \"{t}\"")
+        def set_col(t, name, arr, typ):
+            i = t.schema.get_field_index(name)
+            return t.set_column(i, pa.field(name, typ), pa.array(arr, type=typ))
+
+        new_ep = sink.new_ep
+        sub = set_col(sub, "timestamp", (np.arange(n30) / DST_FPS).astype(np.float32), pa.float32())
+        sub = set_col(sub, "frame_index", np.arange(n30, dtype=np.int64), pa.int64())
+        sub = set_col(sub, "episode_index", np.full(n30, new_ep, dtype=np.int64), pa.int64())
+        sub = set_col(sub, "index",
+                      np.arange(sink.global_index, sink.global_index + n30, dtype=np.int64), pa.int64())
+        ep_task = man[src_ep]["task"] if man else TASK
+        ti = sink.task_ids.setdefault(ep_task, len(sink.task_ids))
+        sub = set_col(sub, "task_index", np.full(n30, ti, dtype=np.int64), pa.int64())
+        ts_pos = sub.schema.get_field_index("timestamp")
+        sub = sub.add_column(ts_pos, pa.field("observation.state_psi0", pa.list_(pa.float32(), 15)), fsl(state_psi0, 15))
+        sub = sub.add_column(ts_pos + 1, pa.field("action.psi0_18", pa.list_(pa.float32(), 18)), fsl(psi0_18, 18))
+        pq_mod.write_table(sub, sink.out / f"data/chunk-000/episode_{new_ep:06d}.parquet")
+
+        vid_frames = {}
+        for st in streams:
+            vsrc = sess / f"videos/chunk-000/{st}/episode_{src_ep:06d}.mp4"
+            vdst = sink.out / f"videos/chunk-000/{st}/episode_{new_ep:06d}.mp4"
+            vid_frames[st] = convert_video(vsrc, vdst, sel)
+
+        stats = {}
+        for name in sub.schema.names:
+            stats[name] = feat_stats(np.asarray(sub[name].to_pylist()))
+        for st, fr in vid_frames.items():
+            stats[st] = video_stats(fr)
+        sink.ep_stats.append({"episode_index": new_ep, "stats": stats})
+        sink.episodes.append({"episode_index": new_ep, "tasks": [ep_task], "length": n30})
+        tag = "val " if sink is val else "train"
+        print(f"[{tag} {new_ep:3d}] {sess.name}/ep{src_ep}: {n50} rows @50Hz -> "
+              f"{n30} @30Hz  task[{ti}] \"{ep_task}\"")
+        sink.new_ep += 1
+        sink.global_index += n30
+        sink.total_videos += 1
+
+    finalize(train, src_info, args)
+    if val is not None:
+        finalize(val, src_info, args)
 
 
 if __name__ == "__main__":

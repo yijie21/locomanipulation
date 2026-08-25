@@ -546,9 +546,33 @@ def main() -> None:
                     # survive a change to the sampling ranges, and they cost
                     # nothing since the scene already declares them.
                     o = meta["objects"][obj_key]
+                    # The INITIAL CONDITIONS, not just the outcome. Without
+                    # these a finished dataset cannot be replayed: an episode
+                    # says what happened but not what it started from, so a
+                    # closed-loop policy cannot be put on the same scene a
+                    # recorded episode used, and "same initial conditions" is
+                    # the only way to compare two policies without paying for
+                    # the variance of independent draws. Cheap to write, and
+                    # impossible to recover afterwards -- the collection that
+                    # produced the first 200-episode bottle set omitted them
+                    # and the holdout episodes' scenes are simply gone.
+                    # World-frame, which is what EpisodeControlClient.reset
+                    # takes: object xy, the robot's spawn xy, and its yaw.
+                    fv2 = np.array([np.cos(psi), np.sin(psi)])
+                    spawn_xy = (stand - spawn_off * fv2
+                                + spawn_lat * np.array([-fv2[1], fv2[0]]))
                     rec_line = dict(round=rnd, attempt=attempt,
                                     target=obj_key, task=task, ok=bool(ok),
                                     why=why, appearance=appearance,
+                                    init=dict(
+                                        obj_xy=[round(float(v), 5) for v in can_xy],
+                                        robot_xy=[round(float(v), 5) for v in spawn_xy],
+                                        stand_xy=[round(float(v), 5) for v in stand],
+                                        yaw=round(float(psi + dpsi), 5),
+                                        psi=round(float(psi), 5),
+                                        side=side,
+                                        spawn_off=round(float(spawn_off), 4),
+                                        spawn_lat=round(float(spawn_lat), 4)),
                                     table_top=round(float(surf_a["top"]), 4),
                                     obj_height=round(float(o["height"]), 4),
                                     obj_diameter=round(
@@ -567,6 +591,21 @@ def main() -> None:
             print(f"EPISODE FAILED {why} in {dt:.0f}s")
         reset.end_video()
     print(f"[gym] {wins}/{played} OK")
+
+
+# Installed by tools/eval_closed_loop.py to swap the SCRIPTED policy for a
+# VLA, leaving everything around it identical. The fork is placed after the
+# settle and before the walk (see _run_round), so a VLA round shares the round
+# sampling, the spawn bisection, the teleport, the re-anchor, the appearance
+# seed, the video and the exporter toggle with a scripted round, and differs
+# only in what drives the robot.
+#
+# That sharing is the whole point: the reference number a closed-loop result is
+# read against is the scripted policy's 200/210 = 95.2% on THIS distribution,
+# measured by the collection itself. Re-implementing the sampler in the eval
+# would put the two policies on subtly different distributions and quietly
+# invalidate the comparison.
+VLA_POLICY = None
 
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
@@ -618,6 +657,20 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # The heading the robot WAKES UP with, which is not the heading it walks
     # in on. psi is the approach heading; dpsi is the error it has to turn
     # out at the spawn, before the walk, metres from the table.
+    # A VLA round spawns ALREADY FACING the approach heading and skips the
+    # scripted spawn turn below. Not a convenience -- a necessity twice over:
+    #   1. The turn runs on the deploy's locomotion policy, whose token_state
+    #      is ZEROED in the token-only deployment until external tokens
+    #      arrive (g1_deploy_onnx_ref.cpp:3066 "Robot will use zero tokens").
+    #      Standing survives that; active turning does not (measured: turn
+    #      timeouts and 0.43 m of walk-off, where the encoder-loaded
+    #      collection runs turned cleanly at 95%).
+    #   2. The training episodes START after the turn anyway -- recording
+    #      begins at pre-walk, residual yaw error <= ~9 deg -- so a spawn
+    #      that faces psi directly is what the policy's t=0 actually looked
+    #      like in every episode it learned from.
+    if VLA_POLICY is not None:
+        dpsi = 0.0
     psi_spawn = float(psi + dpsi)
     # QUIESCE the deploy before the teleport: it keeps executing the
     # previous round's locomotion intent through the reset (fresh-deploy
@@ -713,7 +766,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # probe and roughly three times faster at the angles that matter, while
     # IDLE failed outright at +60 and +120. A stepping turn is also what a
     # person does.
-    if abs(wrap(dpsi)) > 0.10:
+    if abs(wrap(dpsi)) > 0.10 and VLA_POLICY is None:
         turned_from = np.asarray(p.pelvis_xy(p.obs()))
         if not p.turn_to(psi, tol=0.16, timeout=20.0,
                          mode=LocomotionMode.SLOW_WALK):
@@ -767,6 +820,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"yaw_err {yerr:+.0f} deg")
 
     rel_dbg("pre-walk ", p.obs())
+
+    # ---- policy fork: everything above is shared, everything below is the
+    # scripted policy. A VLA round hands over here, with the robot standing
+    # settled at its spawn, facing the object, recording already started.
+    if VLA_POLICY is not None:
+        return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
+                          psi=psi, fv=fv, grip_za=grip_za, record=record)
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)

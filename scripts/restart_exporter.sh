@@ -32,6 +32,25 @@ sleep 2
 
 WRIST_ARG=(--record-wrist-cameras)
 if [ "${WRIST_CAMS:-1}" = "0" ]; then WRIST_ARG=(); fi
+
+# Which objects get a privileged pelvis-frame pose column. This MUST be
+# repeated here and not merely set by start_stack.sh: this script replaces the
+# exporter process, and the fresh one inherits only what is exported into its
+# environment -- so a chunked collection, which restarts the exporter between
+# every chunk, gets the exporter's hardcoded "can,plate" fallback from chunk 2
+# onwards. That is not a warning, it is 9 sessions of observation.can_pose =
+# 0.0 with a real water_bottle standing next to it, and it cost the privileged
+# channel of a 200-episode set before it was noticed. Same default source as
+# start_stack.sh: the scene the sim actually booted.
+if [ -z "${TF_POSE_OBJECTS:-}" ] && [ -f "$LOCOMANI_ROOT/outputs/scene/sim/scene_meta.json" ]; then
+    TF_POSE_OBJECTS="$("$REPO/.venv_sim/bin/python" -c "
+import json, sys
+print(','.join(json.load(open(sys.argv[1])).get('objects', {})))
+" "$LOCOMANI_ROOT/outputs/scene/sim/scene_meta.json" 2>/dev/null)"
+fi
+export TF_POSE_OBJECTS
+echo "  pose columns: ${TF_POSE_OBJECTS:-<none>}" >&2
+
 cd "$REPO" || exit 1
 nohup "$REPO/.venv_data_collection/bin/python" gear_sonic/scripts/run_data_exporter.py \
     --task-prompt "$TASK_PROMPT" \

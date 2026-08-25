@@ -46,7 +46,12 @@ JITTER="${JITTER:-0.20}"      # along-edge scatter, metres either way
 SPARE="${SPARE:-20}"          # attempts a chunk may spend above its target
 MAX_CHUNKS="${MAX_CHUNKS:-12}"
 PROMPT="${PROMPT:-pick up the red can}"
-OUT="$LOCOMANI_OUTPUTS/logs/pilot"
+# Where the robot wakes up. Empty keeps grasp_gym's own defaults (spawn 1-3 m
+# behind the STAND, jitter around the approach line), which is what the first
+# pilot used. SPAWN_ARGS lets a batch pin the near, object-facing start
+# without this script growing a flag per knob.
+SPAWN_ARGS="${SPAWN_ARGS:-}"
+OUT="${OUT:-$LOCOMANI_OUTPUTS/logs/pilot}"
 mkdir -p "$OUT"
 
 # Successes already on disk. Counted from the manifests, not from the logs:
@@ -64,6 +69,8 @@ print(n)'
 }
 
 echo "pilot: $TARGET_OK successful episodes of \"$OBJ\", edge jitter +-$JITTER m"
+echo "  out       $OUT"
+echo "  spawn     ${SPAWN_ARGS:-<grasp_gym defaults>}"
 i=0
 while :; do
     have=$(kept)
@@ -91,6 +98,7 @@ while :; do
     "$VENV_SIM_PY" -u src/teleop_free/grasp_gym.py \
         --rounds "$cap" --until-ok "$need" \
         --targets "$OBJ" --edge-jitter "$JITTER" --record \
+        $SPAWN_ARGS \
         --manifest "$OUT/manifest_$tag.jsonl" \
         > "$OUT/gym_$tag.log" 2>&1
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$tag.log" || echo "  (no result line)"
