@@ -101,11 +101,17 @@ videos/                 最新一批演示视频(每次推送整体替换)
 
 ## 当前状态(2026-08-25)
 
-第一轮 VLA 微调已闭环:200 局数据 → 10k 步训练 → 开环贴噪声底(关节角差
-1.05°)→ **闭环 6/101**,失败塌缩在 walk→reach 停滞(训练数据没有"到桌边臂还
-垂着"这个状态)。数字与诊断在 [docs/evaluation.md](docs/evaluation.md),
-靶向 DAgger 修复在跑。wandb: locomani-bottle / bottle200。
+两轮微调已闭环,方向已验证:
 
+- **Round 1**(200 局采集数据):开环贴测量噪声底(关节角差 1.05°),**闭环 6/101**,
+  失败塌缩在 walk→reach 停滞 —— 训练数据没有"到桌边臂还垂着"这个状态。
+- **Round 2**(+50 局靶向 DAgger 恢复数据,bottle250):同款开环质量,
+  **闭环成功率约 2.5 倍于 round 1**(终局统计在跑)。诊断与两轮数字在
+  [docs/evaluation.md](docs/evaluation.md)。
+- 训练支持 **`SINGLE_GPU=1`**(8-bit 优化器,一张 5090 跑满血 1.62B 微调),
+  以及冻结 DiT 消融(初步:DiT 贡献 ~12% 开环精度、约 2 倍步数效率)。
+
+wandb: locomani-bottle / bottle200 · bottle250 · bottle250_frozen_dit。
 
 ---
 

@@ -91,6 +91,24 @@ GR00T 没有验证集机制(`DatasetFactory.build` 断言 `eval_strategy == "no"
 对 10 个 checkpoint 逐个跑开环评测 → 按 held-out token nMSE 选,平票取**更早**的
 那个。bottle200 实测:nMSE 0.314 → 0.1415 **单调降**,最优 = 10000,无过拟合。
 
+## 单卡训练:`SINGLE_GPU=1`
+
+```bash
+SINGLE_GPU=1 RUN=<name> DATA=<train_ds> bash scripts/train_bottle.sh
+```
+
+双卡需求从来不是算力,是 Adam:1.62B 可训参数的 fp32 m/v 就要 13 GB,加上主权重、
+梯度、冻结 VLM 和激活约 33 GB,超出单卡 31.4 GB。ZeRO-2 靠**分片**解决;这个开关
+靠**量化**解决(`adamw_bnb_8bit`,13 → 3.2 GB)。三个数字全是实测:per-device 32
+OOM(峰值 32.1 GB)、16 能跑但只剩 950 MiB 余量、**8(accum 8)峰值 27.0 GB** ——
+有效 batch 恒为 64,lr 与实验可比性不变。代价 ~1.4 s/it,10k 步约 3.9 h
+(双卡 2.1 h),换回第二张卡做并行实验。
+
+**磁盘预算教训(2026-08-25 用一次事故换的)**:两个训练同时存 checkpoint 时先算账
+—— checkpoint 大小 × save_total_limit × 任务数。一次 bottle250(6.5 GB × 10)+
+frozen_dit(12 GB × 8)并行把 165 GB 吃穿,closed-loop 和训练双双死于 ENOSPC。
+旧 checkpoint 评完即删,或按盘调 SAVE_LIMIT。
+
 ## Token 的三个不能不知道
 
 1. **motion_token 是 FSQ 离散码**,不是连续 latent:每维 32 格、步长 1/16

@@ -6,6 +6,11 @@
 /datasets/
 *.log
 
+# wandb run scratch (metrics live on wandb.ai; these are local caches that
+# git add -A swept in once -- 116 files of requirements.txt and .wandb blobs)
+/wandb/
+third_party/**/wandb/
+
 # Python
 __pycache__/
 *.pyc
