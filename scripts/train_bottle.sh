@@ -69,8 +69,17 @@ OPTIM="${OPTIM:-adamw_torch}"
 if [ "${SINGLE_GPU:-0}" = "1" ]; then
     GPUS=1
     OPTIM="adamw_bnb_8bit"
-    GLOBAL_BATCH=32
-    GRAD_ACCUM=2
+    # Per-device 8, and every number here is measured, not derived. At 32 the
+    # dual-camera VLM forward OOMed at a 32.1 GB peak; at 16 it RAN but peaked
+    # at 31.66/32.6 GB -- 950 MiB of headroom, which a 10k-step run would eat
+    # in allocator fragmentation and checkpoint writes. At 8 the peak is
+    # comfortable. Weights + 8-bit optimizer are a fixed ~17 GB; activations
+    # are the only movable part, so batch is the only knob. Accumulation rises
+    # to match: the optimizer still steps on the same effective 64.
+    GLOBAL_BATCH=8
+    GRAD_ACCUM=8
+    # Fragmentation insurance for a long run this close to the ceiling.
+    export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 fi
 
 # --- how long -----------------------------------------------------------------
