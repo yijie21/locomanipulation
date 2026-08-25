@@ -101,10 +101,28 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
 - 闭环终局:**14/102 = 13.7%(Wilson 8–22%)**,round 1 的 2.3 倍,置信区间
   几乎不重叠 —— 靶向 DAgger 方向确认。失败仍以 reach 停滞为主:50 局恢复数据
   补上了洞的一部分,没补完(配比 50:200)。
-- 客户端 A/B 进行中:blocking(上面这些数字的采法)每 ~0.9 s 冻结意图
-  0.3–0.6 s,是训练数据没有的走走停停;async 客户端(官方
-  run_vla_inference.py 同款:worker 线程推理、不间断发布、延迟补偿索引)
-  的 100 局对照在跑。
+- 客户端 A/B 判定:async 在 3/38(7.9%)处存档,**与 blocking 的 13.7% 相比
+  无改善迹象 —— 客户端不是瓶颈**。真正的病灶随后被数据测量找到:训练数据里
+  到位→伸手中位 4.6 s 的准静态站立(官方人类遥操作参考集是 0.2 s),
+  96% 超过一个 chunk 的覆盖能力 —— policy 在正确模仿"站着"。
+  见 fast-reach 分支的 settle 削减与重采。
+
+### async 客户端(默认,官方部署同款)
+
+`eval_closed_loop.py --client async`(默认)。结构照抄 NVIDIA 自己的
+`gear_sonic/scripts/run_vla_inference.py`:
+
+```
+worker 线程:每 0.4 s 取最新观测 → policy server 出 40 步 chunk
+主循环:   30 Hz 不间断发 token;新 chunk 以延迟补偿索引接入
+           (idx = 推理耗时 × 30,机器人执行的动作永远对应"现在")
+```
+
+线程分工承重:worker 持有相机/状态 socket 与 policy link,主线程持有
+commander 与特权判据(ZMQ socket 不可跨线程)。与官方的两处有意差异,
+均注释在 `vla_round.make_vla_policy_async`:30 Hz 发布(我们的数据是
+30 fps;官方 50/50,各自自洽)、FSQ 吸附保留(官方裸发浮点,仅
+|x|>1.25 整块丢弃)。`--client blocking` 保留作 A/B 对照。
 - 冻结 DiT 消融(单卡,`--no-tune-diffusion-model`):val 曲线稳定落后全量
   ~12%,约等于慢 1000–2000 步 —— DiT 贡献真实但不巨大;闭环等价性未测。
 

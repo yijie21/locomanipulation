@@ -7,7 +7,9 @@
 场景生成(EmbodiedGen 文生 3D + 布局 + 物理注入)非常耗时,仓库直接附带了做好的场景:
 
 ```bash
-bash scripts/install_scene.sh
+SCENE_PRESET=bottle_only bash scripts/install_scene.sh   # VLA 实验的瓶子场景
+# 不带 SCENE_PRESET = 老的多物体桌面。预设定义在 scene_lib.SCENE_PRESETS;
+# bottle_only = 一个 RoboCasa 水瓶(assets/robocasa/,已入 git),其余全空。
 ```
 
 解包 `assets/scene_locomani_v1.tar.gz` 到 `outputs/scene/`(双桌面 + 目标/干扰物体的

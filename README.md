@@ -28,7 +28,10 @@ RGB + 指令(数据集里同时存了 29 维本体状态,要不要喂给模型�
 export LOCOMANI_WORKSPACE=/workspace
 
 # 1. 装场景(解包 tarball + 改写路径 + 重建),约 5 s
-bash scripts/install_scene.sh
+# SCENE_PRESET=bottle_only 是复现本仓库两轮 VLA 实验的那张桌子(一个 RoboCasa
+# 水瓶,别无他物)。不加的话得到的是老的多物体桌面 —— 资产都在 git 里,
+# 选哪套只由这个变量决定,建场景时生效而不是起 stack 时。
+SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 
 # 2. 起 stack = MuJoCo sim + C++ deploy + data exporter
 #    首次约 10 min(编 TensorRT engine),之后 40 s。SIM_VIDEO_DIR 必须在这里给,

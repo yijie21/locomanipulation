@@ -45,7 +45,16 @@ LIFT_MIN = 0.06           # the object must actually leave the table
 CHUNK = 5                 # pose frames per message, like the pico manager
 JOINT_SPEED = 0.8         # rad/s for large repositioning moves
 FINE_SPEED = 0.4          # rad/s inside the servo
-SETTLE = 2.0              # s after a repositioning move
+# TRIMMED FOR IMITATION DATA (2026-08-25). These settles were tuned for
+# scripted-expert reliability, and for the script they are free -- but they are
+# recorded, and a VLA trained on them learns them: measured over the bottle
+# datasets, arrival->reach sat at median 4.6 s of quasi-static standing (the
+# human-teleop reference the official recipe trains from has 0.2 s), and every
+# pause longer than one 40-frame chunk is a state where "keep standing" is the
+# majority label -- the exact standing-still attractor both closed-loop rounds
+# died in. The 50 Hz servo re-aims on the measured object continuously, so a
+# settled base is a comfort, not a requirement.
+SETTLE = 0.8              # s after a repositioning move (was 2.0)
 REFINE_TOL = 0.015        # m, palm error to stop refining the pregrasp at
 REFINE_MAX = 3
 from primitives_const import HAND as _HAND
@@ -77,7 +86,7 @@ NUDGE_MAX = 0.05          # m, object displacement that aborts the attempt
 # not have to deliver (it delivers only ~2/3 of a commanded lean).
 SQUAT_DROP_MAX = 0.20     # deepest crouch the planner squat is asked for
 SQUAT_HEIGHT_BIAS = 0.02  # delivered pelvis_z - commanded height (measured)
-SQUAT_SETTLE = 2.5        # s; t90 of the k-planner squat is 1.1-1.6 s
+SQUAT_SETTLE = 1.6        # s; covers the k-planner squat's own t90 of 1.1-1.6 s (was 2.5 -- the extra 0.9 s was recorded dead time)
 SQUAT_TRIGGER = 0.03
 SQUAT_GAIN = 6.8          # rad of squat per metre of wanted drop (measured)
 SQUAT_MAX = 0.65
@@ -178,7 +187,10 @@ class StreamedArm:
         # streamed mode goes active over an empty motion buffer.
         self.hold(0.3)
         self.p.cmd.enter_streamed()
-        self.hold(1.0)
+        # 0.4 s, not 1.0: the replay diag validated the switch with 0.6 s of
+        # held frames; what the deploy needs is a non-empty buffer and a few
+        # frames of continuity, not a second of recorded standing.
+        self.hold(0.4)
 
     def stop(self) -> None:
         """Hand control back to the planner without a discontinuity."""
@@ -263,7 +275,7 @@ class StreamedArm:
             q_squat[ank] -= a
         if not track:
             self.move_to(q_squat, speed=0.6)
-            self.hold(2.0)
+            self.hold(SETTLE)
             s = self.p.obs()
             return float(z0 - s["pelvis"]["pos"][2])
         palm_w = np.array(s["palms"][self.side]["pos"])
@@ -290,7 +302,7 @@ class StreamedArm:
             self._push(q_ref)
         self.q = q_squat.copy()
         self.q[arm_idx] = arm_hold
-        self.hold(2.0)
+        self.hold(SETTLE)
         s = self.p.obs()
 
         return float(z0 - s["pelvis"]["pos"][2])
