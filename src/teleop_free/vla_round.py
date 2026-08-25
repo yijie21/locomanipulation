@@ -268,7 +268,13 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                 dist = float(np.linalg.norm(obj[:2] - pel))
                 trace.append(dict(t=time.time() - t_start, rise=rise, dist=dist,
                                   fallen=bool(st["fallen"]),
-                                  grip=float(grip[:n].min())))
+                                  grip=float(grip[:n].min()),
+                                  # the stall poses are the whole point of the
+                                  # trace: they are what a targeted recovery
+                                  # collection spawns the expert at
+                                  pelvis_xy=[float(v) for v in pel],
+                                  pelvis_yaw=float(p.pelvis_yaw(st)),
+                                  obj_xy=[float(v) for v in obj[:2]]))
                 if st["fallen"]:
                     why = "[vla] fell"
                     break

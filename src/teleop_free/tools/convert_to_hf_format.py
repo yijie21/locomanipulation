@@ -387,6 +387,9 @@ def finalize(sink, src_info, args, feats_extra=True):
     total_frames = sum(e["length"] for e in sink.episodes)
     feats = {}
     for k, v in dict(src_info["features"]).items():
+        if (getattr(args, "strip_pose_columns", False)
+                and k.startswith("observation.") and k.endswith("_pose")):
+            continue
         if k == "timestamp":
             feats["observation.state_psi0"] = {"dtype": "float32", "shape": [15], "names": None}
             feats["action.psi0_18"] = {"dtype": "float32", "shape": [18], "names": None}
@@ -462,6 +465,15 @@ def main():
                          "--holdout)")
     ap.add_argument("--holdout-seed", type=int, default=0,
                     help="seed for the holdout draw; recorded in info.json")
+    ap.add_argument("--strip-pose-columns", action="store_true",
+                    help="drop every observation.*_pose column while "
+                         "converting. The pose channel is privileged analysis "
+                         "data, never a model input, and it is the one column "
+                         "set that legitimately differs between recording "
+                         "eras (the TF_POSE_OBJECTS restart bug); stripping "
+                         "it lets a mixed-era collection convert as one "
+                         "dataset without weakening the schema check for "
+                         "every other column.")
     args = ap.parse_args()
 
     if args.holdout and not args.holdout_out:
@@ -511,10 +523,15 @@ def main():
     # TF_POSE_OBJECTS, and sessions 2..10 silently recorded observation.can_pose
     # = 0.0 instead of observation.water_bottle_pose. Refuse rather than guess:
     # a mixed dataset is worth catching before the videos are re-encoded.
+    def _is_pose(c):
+        return c.startswith("observation.") and c.endswith("_pose")
+
     schemas = {}
     for si, sess in enumerate(args.sessions):
-        cols = tuple(sorted(json.load(open(Path(sess) / "meta/info.json"))
-                            .get("features", {})))
+        cols = tuple(sorted(
+            c for c in json.load(open(Path(sess) / "meta/info.json"))
+            .get("features", {})
+            if not (args.strip_pose_columns and _is_pose(c))))
         schemas.setdefault(cols, []).append(Path(sess).name)
     if len(schemas) > 1:
         print("\nsessions do NOT share a schema:")
@@ -546,6 +563,9 @@ def main():
         man = mans.get(si)
 
         table = pq_mod.read_table(pq)
+        if args.strip_pose_columns:
+            table = table.drop(
+                [c for c in table.column_names if _is_pose(c)])
         n50 = table.num_rows
         n30 = int(np.floor((n50 - 1) * DST_FPS / SRC_FPS)) + 1
         sel = np.clip(np.round(np.arange(n30) * SRC_FPS / DST_FPS).astype(int), 0, n50 - 1)
