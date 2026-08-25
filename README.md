@@ -798,6 +798,8 @@ Agent 进程和 Sim 进程虽然都用同一个 `.venv_sim`,但是**两个独立
 
 ### ② 一局 episode 分几步
 
+下面这整张图跑在同一个 Python 脚本里 —— [`grasp_gym.py`](src/teleop_free/grasp_gym.py)。它是纯决策/编排层,自己不做仿真也不做控制:P0/P1 在 `main()` 里,P2 起的每一步都在 `run_round()` → `_run_round()` 里,组合 `reach_map`(哪里能抓)+ `primitives`/`agent_server`(怎么走/怎么发指令)+ `stream_reach`/`adaptive_grasp`(怎么抓)+ `privileged_pub`(怎么控制 sim/录像),把"这一局该干什么"翻译成发给 SONIC deploy 的意图流(:5556)。
+
 ```mermaid
 flowchart TD
   P0["<b>P0 进程启动一次</b><br/>载入 reach_map_dex1.npz → plan_core_stand 联合求解站位与蹲深<br/>标定名义出生点（读 teleport 落点，在 start_control 之前）"]

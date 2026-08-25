@@ -193,4 +193,4 @@ fi
 
 echo
 echo "stack up. logs in $LOGS/{sim,deploy,exporter}.log"
-echo "next:  $VENV_SIM_PY $LOCOMANI_SRC/zmq_driver.py --record"
+echo "next:  $VENV_SIM_PY $LOCOMANI_SRC/grasp_gym.py --rounds 12 --record --manifest outputs/logs/manifest.jsonl"
