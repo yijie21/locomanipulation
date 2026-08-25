@@ -56,6 +56,23 @@ WANDB_PROJECT="${WANDB_PROJECT:-locomani-bottle}"
 GLOBAL_BATCH="${GLOBAL_BATCH:-64}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
 
+# --- SINGLE_GPU=1: the whole finetune on one 32 GB card ----------------------
+# The two-GPU requirement was never compute -- it is Adam: fp32 m+v for 1.62B
+# trainable params is 13 GB, and 6.5 (master weights) + 13 + grads + frozen VLM
+# + activations ≈ 33 GB > 31.4. ZeRO-2 solved it by SHARDING the optimizer;
+# this solves it by QUANTISING it (adamw_bnb_8bit, 13 -> 3.2 GB, total ~22 GB).
+# The per-device batch halves and grad accumulation doubles, so the OPTIMIZER
+# still sees the same effective 64 -- lr stays valid, the experiment stays the
+# same experiment, only slower (~2x: half the FLOPs/step throughput, plus no
+# fused optimizer).
+OPTIM="${OPTIM:-adamw_torch}"
+if [ "${SINGLE_GPU:-0}" = "1" ]; then
+    GPUS=1
+    OPTIM="adamw_bnb_8bit"
+    GLOBAL_BATCH=32
+    GRAD_ACCUM=2
+fi
+
 # --- how long -----------------------------------------------------------------
 # 180 episodes x ~630 frames @30Hz is ~113k samples, so 10k steps at an
 # effective batch of 64 is ~5.6 epochs. The number is a budget, not the answer:
@@ -107,6 +124,7 @@ else
 fi
 echo "gpus         $GPUS"
 echo "batch        $GLOBAL_BATCH x $GRAD_ACCUM accum = $((GLOBAL_BATCH * GRAD_ACCUM)) effective"
+echo "optim        $OPTIM${SINGLE_GPU:+ (SINGLE_GPU=$SINGLE_GPU)}"
 echo "steps        $MAX_STEPS, checkpoint every $SAVE_STEPS (keep $SAVE_LIMIT)"
 echo
 
@@ -128,6 +146,7 @@ if [ "${DRY:-0}" = "1" ]; then RUNNER=(echo); fi
     --max-steps "$MAX_STEPS" \
     --global-batch-size "$GLOBAL_BATCH" \
     --gradient-accumulation-steps "$GRAD_ACCUM" \
+    --optim "$OPTIM" \
     --save-steps "$SAVE_STEPS" \
     --save-total-limit "$SAVE_LIMIT" \
     --save-only-model \

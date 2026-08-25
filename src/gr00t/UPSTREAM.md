@@ -35,4 +35,8 @@ below.
 
 ## Local changes since the copy
 
-(none yet)
+- 2026-08-25  configs/finetune_config.py, experiment/launch_finetune.py:
+  expose `optim` as a FinetuneConfig field (launch_finetune hardcoded
+  "adamw_torch"). Motivation: "adamw_bnb_8bit" shrinks Adam state 13 GB ->
+  3.2 GB, letting the full 1.62B-trainable finetune fit ONE 32 GB GPU
+  (SINGLE_GPU=1 in scripts/train_bottle.sh).

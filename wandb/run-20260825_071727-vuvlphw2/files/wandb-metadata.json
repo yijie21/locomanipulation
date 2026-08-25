@@ -1,0 +1,81 @@
+{
+  "os": "Linux-5.15.0-187-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.12.3",
+  "startedAt": "2026-08-25T07:17:27.569037Z",
+  "args": [
+    "--base-model-path",
+    "nvidia/GR00T-N1.7-3B",
+    "--dataset-path",
+    "/workspace/code/locomanipulation/datasets/g1_locomani_bottle250_train",
+    "--embodiment-tag",
+    "UNITREE_G1_SONIC",
+    "--modality-config-path",
+    "/workspace/code/locomanipulation/configs/gr00t_sonic_2cam.py",
+    "--num-gpus",
+    "2",
+    "--output-dir",
+    "/workspace/code/locomanipulation/outputs/train",
+    "--max-steps",
+    "10000",
+    "--global-batch-size",
+    "64",
+    "--gradient-accumulation-steps",
+    "1",
+    "--save-steps",
+    "1000",
+    "--save-total-limit",
+    "10",
+    "--save-only-model",
+    "--dataloader-num-workers",
+    "4",
+    "--use-wandb",
+    "--wandb-project",
+    "locomani-bottle",
+    "--experiment-name",
+    "bottle250",
+    "--tune-projector",
+    "--tune-diffusion-model",
+    "--no-tune-visual",
+    "--no-tune-llm"
+  ],
+  "program": "-m gr00t.experiment.launch_finetune",
+  "git": {
+    "remote": "git@github.com:yijie21/locomanipulation.git",
+    "commit": "6fe29a964b40492cf947b22362c4f505e42e065e"
+  },
+  "email": "1396599708@qq.com",
+  "root": "/workspace/code/locomanipulation",
+  "host": "88fe07058b75",
+  "executable": "/workspace/code/locomanipulation/third_party/Isaac-GR00T/.venv/bin/python",
+  "cpu_count": 16,
+  "cpu_count_logical": 32,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "gpu_count": 2,
+  "disk": {
+    "/": {
+      "total": "34359738368",
+      "used": "23509778432"
+    }
+  },
+  "memory": {
+    "total": "134606348288"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 5090",
+      "memoryTotal": "34190917632",
+      "cudaCores": 21760,
+      "architecture": "Blackwell",
+      "uuid": "GPU-9a62e3d2-fe59-7f3f-8ada-f46a711e4e95"
+    },
+    {
+      "name": "NVIDIA GeForce RTX 5090",
+      "memoryTotal": "34190917632",
+      "cudaCores": 21760,
+      "architecture": "Blackwell",
+      "uuid": "GPU-4ae277ff-4fde-c232-9607-f47b5696b44c"
+    }
+  ],
+  "cudaVersion": "13.0",
+  "writerId": "b3anm9ee9h733bzmxf6doyal3q8rdwp8"
+}

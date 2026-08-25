@@ -166,6 +166,14 @@ class FinetuneConfig:
     weight_decay: float = 1e-5
     """Weight decay coefficient for optimizer (L2 regularization)."""
 
+    optim: str = "adamw_torch"
+    """HuggingFace TrainingArguments.optim. The default matches what
+    launch_finetune always hardcoded. "adamw_bnb_8bit" (needs bitsandbytes)
+    quantises the Adam m/v states 4x -- for this model that is 13 GB -> 3.2 GB,
+    which is the difference between needing two GPUs (ZeRO-2 sharding) and
+    fitting a single 32 GB card: the memory wall is optimizer state tied to the
+    1.62B trainable params, not the weights or activations."""
+
     warmup_ratio: float = 0.05
     """Proportion of total training steps used for learning rate warm-up."""
 
