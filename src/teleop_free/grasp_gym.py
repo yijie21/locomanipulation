@@ -987,7 +987,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                      * (READY_UPPER - q_now))
                 p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
                 time.sleep(0.02)
-        p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=fv)
+        # 0.2 s, not 1.0. The full second waited out momentum creep so a
+        # STATIC aim would be taken from a settled base -- but the grasp that
+        # follows is a 50 Hz servo that re-aims on the measured object pose
+        # every tick, so the settled base buys nothing, and the second of
+        # recorded standing teaches a VLA that standing is what one does at
+        # the table (the round-1/2 stall).
+        p.cmd.hold(0.2, mode=LocomotionMode.IDLE, facing=fv)
         x_end = rel_now(p.obs())[0]
         p.log(f"[gym] approach: exit={why} braked at x {brake_x:.2f} "
               f"edge {brake_e:.2f} -> stopped x {x_end:.2f} "
