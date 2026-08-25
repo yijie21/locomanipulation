@@ -106,8 +106,8 @@ videos/                 最新一批演示视频(每次推送整体替换)
 - **Round 1**(200 局采集数据):开环贴测量噪声底(关节角差 1.05°),**闭环 6/101**,
   失败塌缩在 walk→reach 停滞 —— 训练数据没有"到桌边臂还垂着"这个状态。
 - **Round 2**(+50 局靶向 DAgger 恢复数据,bottle250):同款开环质量,
-  **闭环成功率约 2.5 倍于 round 1**(终局统计在跑)。诊断与两轮数字在
-  [docs/evaluation.md](docs/evaluation.md)。
+  **闭环 14/102 = 13.7%(Wilson 8–22%)**,round 1 的 2.3 倍 —— 靶向 DAgger
+  方向确认。诊断与两轮数字在 [docs/evaluation.md](docs/evaluation.md)。
 - 训练支持 **`SINGLE_GPU=1`**(8-bit 优化器,一张 5090 跑满血 1.62B 微调),
   以及冻结 DiT 消融(初步:DiT 贡献 ~12% 开环精度、约 2 倍步数效率)。
 
