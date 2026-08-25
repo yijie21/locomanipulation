@@ -728,24 +728,29 @@ agent 能往 deploy 发的**只有三种东西**,全部走 :5556:
 
 ```mermaid
 flowchart LR
-  subgraph AG["脚本化 agent — grasp_gym.py + agent_server.py"]
-    A1["planner 帧<br/>mode / movement / facing / speed / height"]
-    A2["upper_body_position[17]<br/>腰 3 + 双臂 14，由 IK 解出"]
-    A3["left/right_hand_joints<br/>夹爪开合"]
+  subgraph AG["🤖 Agent 进程 — Python .venv_sim<br/>入口: grasp_gym.py"]
+    A1["planner 帧<br/>mode/movement/facing/speed/height<br/>—<br/>agent_server.py: AgentCommander.frame()<br/>调用方: primitives.py (walk_to/turn_to/reach)"]
+    A2["upper_body_position[17]<br/>腰 3 + 双臂 14，由 IK 解出<br/>—<br/>agent_server.py: set_upper_body()<br/>IK: arm_ik.py　驱动: stream_reach.py"]
+    A3["left/right_hand_joints<br/>夹爪开合<br/>—<br/>agent_server.py: frame(left_hand=,right_hand=)<br/>驱动: grasp_gym.py 抓取逻辑"]
   end
-  subgraph DP["C++ deploy — g1_deploy_onnx_ref"]
-    D1["k-planner ONNX<br/>合成 29-DoF 参考动作"]
-    D2["★ 逐字替换 17 个上身关节<br/>无 ramp — cpp:781"]
-    D3["encoder<br/>只读 4 个观测 / 644 个数"]
-    D4["64 维 token"]
-    D5["policy<br/>token + 本体感受 436 维"]
+
+  subgraph DP["⚙️ SONIC Deploy 进程 — C++<br/>third_party/GR00T-WholeBodyControl/gear_sonic_deploy<br/>二进制: g1_deploy_onnx_ref"]
+    D1["k-planner ONNX<br/>合成 29-DoF 参考动作<br/>—<br/>include/localmotion_kplanner*.hpp<br/>模型: planner/target_vel/V2/planner_sonic.onnx"]
+    D2["★ 逐字替换 17 个上身关节<br/>无 ramp<br/>—<br/>g1_deploy_onnx_ref.cpp:~781"]
+    D3["encoder<br/>只读 4 个观测 / 644 个数<br/>—<br/>include/encoder.hpp<br/>模型: policy/release/model_encoder.onnx(.trt)"]
+    D4["64 维 token<br/>（encoder 输出缓冲区，无独立文件）"]
+    D5["policy<br/>token + 本体感受 436 维<br/>—<br/>include/control_policy.hpp<br/>模型: policy/release/model_decoder.onnx(.trt)"]
   end
-  subgraph SM["MuJoCo sim — run_sim_locomani.py"]
-    S1["物理"]
-    S2["三路相机<br/>ego + 左右腕"]
-    S3["特权真值"]
+
+  subgraph SM["🌐 MuJoCo Sim 进程 — Python .venv_sim<br/>入口: run_sim_locomani.py"]
+    S1["物理<br/>—<br/>run_sim_locomani.py<br/>（改自上游 run_sim_loop.py）"]
+    S2["三路相机<br/>ego + 左右腕<br/>—<br/>run_sim_locomani.py + sim_video.py<br/>相机定义: scene_lib.py"]
+    S3["特权真值<br/>—<br/>privileged_pub.py:<br/>PrivilegedPublisher / EpisodeControlServer"]
   end
-  EX["data exporter<br/>LeRobot 原始 session"]
+
+  subgraph EXG["📦 Data Exporter 进程 — Python .venv_data_collection<br/>third_party/GR00T-WholeBodyControl"]
+    EX["data exporter<br/>LeRobot 原始 session<br/>—<br/>gear_sonic/scripts/run_data_exporter.py<br/>核心: gear_sonic/data/exporter.py"]
+  end
 
   A1 -->|":5556 planner"| D1
   A2 -->|":5556 planner"| D2
@@ -754,8 +759,28 @@ flowchart LR
   D5 -->|"29 关节目标 · DDS lo"| S1
   S2 -->|":5555"| EX
   D4 -->|":5557 g1_debug"| EX
-  S3 -->|":5581"| AG
+  S3 -->|"5581<br/>agent 侧接收:<br/>privileged_pub.py EpisodeControlClient"| AG
+
+  classDef agentStyle fill:#d6e8ff,stroke:#3070c0,color:#000
+  classDef deployStyle fill:#ffe6d6,stroke:#d2691e,color:#000
+  classDef simStyle fill:#d9f2d9,stroke:#2e8b57,color:#000
+  classDef exportStyle fill:#e8d9ff,stroke:#7b3fbf,color:#000
+  class A1,A2,A3 agentStyle
+  class D1,D2,D3,D4,D5 deployStyle
+  class S1,S2,S3 simStyle
+  class EX exportStyle
 ```
+
+**进程归属速查:**
+
+| 分组 | 语言 / venv | 入口进程 | 关键源码 |
+|---|---|---|---|
+| 🤖 Agent | Python, `.venv_sim` | `grasp_gym.py` | `agent_server.py`(ZMQ 发布端)、`arm_ik.py`、`primitives.py`、`stream_reach.py` |
+| ⚙️ SONIC Deploy | C++,不在本仓库 | `g1_deploy_onnx_ref` | `third_party/GR00T-WholeBodyControl/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp`,及 `include/{localmotion_kplanner,encoder,control_policy}.hpp` |
+| 🌐 MuJoCo Sim | Python, `.venv_sim` | `run_sim_locomani.py` | `privileged_pub.py`(发布端)、`sim_video.py`、`scene_lib.py` |
+| 📦 Data Exporter | Python, `.venv_data_collection` | `run_data_exporter.py` | `third_party/GR00T-WholeBodyControl/gear_sonic/{scripts/run_data_exporter.py, data/exporter.py}` |
+
+Agent 进程和 Sim 进程虽然都用同一个 `.venv_sim`,但是**两个独立的操作系统进程**,靠 ZMQ(:5581/:5582)通信,不是同一个 Python 解释器;D4(64 维 token)没有独立文件,只是 `encoder.hpp` 输出、`control_policy.hpp` 读取之间的一段内存缓冲区,同时镜像发到 `:5557` 给 exporter;SONIC Deploy 的源码在 `third_party/` 下,是 clone 来的上游仓库,不受本仓库 git 管理。
 
 三个必须记住的点:
 
