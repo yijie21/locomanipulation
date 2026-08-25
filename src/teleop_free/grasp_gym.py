@@ -546,9 +546,33 @@ def main() -> None:
                     # survive a change to the sampling ranges, and they cost
                     # nothing since the scene already declares them.
                     o = meta["objects"][obj_key]
+                    # The INITIAL CONDITIONS, not just the outcome. Without
+                    # these a finished dataset cannot be replayed: an episode
+                    # says what happened but not what it started from, so a
+                    # closed-loop policy cannot be put on the same scene a
+                    # recorded episode used, and "same initial conditions" is
+                    # the only way to compare two policies without paying for
+                    # the variance of independent draws. Cheap to write, and
+                    # impossible to recover afterwards -- the collection that
+                    # produced the first 200-episode bottle set omitted them
+                    # and the holdout episodes' scenes are simply gone.
+                    # World-frame, which is what EpisodeControlClient.reset
+                    # takes: object xy, the robot's spawn xy, and its yaw.
+                    fv2 = np.array([np.cos(psi), np.sin(psi)])
+                    spawn_xy = (stand - spawn_off * fv2
+                                + spawn_lat * np.array([-fv2[1], fv2[0]]))
                     rec_line = dict(round=rnd, attempt=attempt,
                                     target=obj_key, task=task, ok=bool(ok),
                                     why=why, appearance=appearance,
+                                    init=dict(
+                                        obj_xy=[round(float(v), 5) for v in can_xy],
+                                        robot_xy=[round(float(v), 5) for v in spawn_xy],
+                                        stand_xy=[round(float(v), 5) for v in stand],
+                                        yaw=round(float(psi + dpsi), 5),
+                                        psi=round(float(psi), 5),
+                                        side=side,
+                                        spawn_off=round(float(spawn_off), 4),
+                                        spawn_lat=round(float(spawn_lat), 4)),
                                     table_top=round(float(surf_a["top"]), 4),
                                     obj_height=round(float(o["height"]), 4),
                                     obj_diameter=round(
@@ -567,6 +591,21 @@ def main() -> None:
             print(f"EPISODE FAILED {why} in {dt:.0f}s")
         reset.end_video()
     print(f"[gym] {wins}/{played} OK")
+
+
+# Installed by tools/eval_closed_loop.py to swap the SCRIPTED policy for a
+# VLA, leaving everything around it identical. The fork is placed after the
+# settle and before the walk (see _run_round), so a VLA round shares the round
+# sampling, the spawn bisection, the teleport, the re-anchor, the appearance
+# seed, the video and the exporter toggle with a scripted round, and differs
+# only in what drives the robot.
+#
+# That sharing is the whole point: the reference number a closed-loop result is
+# read against is the scripted policy's 200/210 = 95.2% on THIS distribution,
+# measured by the collection itself. Re-implementing the sampler in the eval
+# would put the two policies on subtly different distributions and quietly
+# invalidate the comparison.
+VLA_POLICY = None
 
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
@@ -767,6 +806,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"yaw_err {yerr:+.0f} deg")
 
     rel_dbg("pre-walk ", p.obs())
+
+    # ---- policy fork: everything above is shared, everything below is the
+    # scripted policy. A VLA round hands over here, with the robot standing
+    # settled at its spawn, facing the object, recording already started.
+    if VLA_POLICY is not None:
+        return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
+                          psi=psi, fv=fv, grip_za=grip_za, record=record)
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)

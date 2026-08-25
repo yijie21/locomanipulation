@@ -46,6 +46,18 @@ SONIC_STATE = ["left_leg", "right_leg", "waist", "left_arm", "right_arm",
 SONIC_ACTION = ["motion_token", "left_hand_joints", "right_hand_joints"]
 SONIC_STATE_DIM, SONIC_ACTION_DIM = 46, 78
 
+# What configs/gr00t_sonic_2cam.py actually selects -- and therefore what the
+# checkpoint's projector is shaped for. The stock 46/78 above is still checked
+# because modality.json stays a superset (a menu, not a selection), so both
+# layouts have to resolve. Checking only the stock one would pass a dataset
+# that cannot be trained on, and checking only ours would let the menu rot.
+LOCAL_STATE = SONIC_STATE + ["right_wrist_pos", "right_wrist_abs_quat"]
+LOCAL_ACTION = ["motion_token", "right_gripper"]
+LOCAL_STATE_DIM, LOCAL_ACTION_DIM = 53, 65
+LOCAL_VIDEO = ["ego_view", "right_wrist"]
+
+ALLOW_NO_POSE = False        # set from --allow-missing-object-pose
+
 ARM_STATE = slice(15, 43)     # both arms + hands: the joints a wrist cam sees
 MAX_LAG = 15                  # frames searched either side of zero
 
@@ -203,11 +215,14 @@ def pass_modality(root, r):
     t = pq.read_table(ep_paths(root, info, 0)[0])
     defaults = {"state": "observation.state", "action": "action.wbc"}
 
-    for grp, want, want_dim in (("state", SONIC_STATE, SONIC_STATE_DIM),
-                                ("action", SONIC_ACTION, SONIC_ACTION_DIM)):
+    for label, grp, want, want_dim in (
+            ("stock", "state", SONIC_STATE, SONIC_STATE_DIM),
+            ("stock", "action", SONIC_ACTION, SONIC_ACTION_DIM),
+            ("2cam", "state", LOCAL_STATE, LOCAL_STATE_DIM),
+            ("2cam", "action", LOCAL_ACTION, LOCAL_ACTION_DIM)):
         missing = [k for k in want if k not in mod.get(grp, {})]
         r.check(not missing,
-                f"{grp}: all {len(want)} groups the config selects are present"
+                f"[{label}] {grp}: all {len(want)} groups the config selects are present"
                 + (f" -- MISSING {missing} (GR00T only WARNS about these, "
                    f"then trains without them)" if missing else ""))
         total, oor = 0, []
@@ -219,15 +234,21 @@ def pass_modality(root, r):
             col = e.get("original_key", defaults[grp])
             if col in t.column_names and e["end"] > len(t[col].to_pylist()[0]):
                 oor.append((k, col, e["end"], len(t[col].to_pylist()[0])))
-        r.check(not oor, f"{grp}: every slice is in range of its source column"
+        r.check(not oor, f"[{label}] {grp}: every slice is in range of its source column"
                 + (f" -- {oor}" if oor else ""))
-        r.check(total == want_dim, f"{grp} totals {total} (expected {want_dim})")
+        r.check(total == want_dim,
+                f"[{label}] {grp} totals {total} (expected {want_dim})")
 
     have = set(mod.get("video", {}))
-    r.check("ego_view" in have, f"video streams present: {sorted(have)}")
-    if have - {"ego_view"}:
-        r.note("the built-in config reads ego_view only -- pass "
-               "configs/gr00t_sonic_3cam.py to train on the wrist streams too")
+    r.check(set(LOCAL_VIDEO) <= have,
+            f"video: both streams gr00t_sonic_2cam.py reads are present "
+            f"{sorted(have)}"
+            + (f" -- MISSING {sorted(set(LOCAL_VIDEO) - have)}"
+               if not set(LOCAL_VIDEO) <= have else ""))
+    if "left_wrist" in have:
+        r.note("left_wrist is recorded but NOT trained on: over this dataset the "
+               "left arm never moves, so its camera shows the table and an idle "
+               "gripper for the whole episode. Kept for the 3cam ablation.")
 
 
 def pass_grasp(root, info, eps, r):
@@ -239,13 +260,38 @@ def pass_grasp(root, info, eps, r):
     gripper-close frame instead.
     """
     print("\n[3/3] grasp causality")
+    # The privileged pose column is named after the object, not after "can":
+    # the exporter writes observation.<name>_pose for whatever the scene's
+    # target is (water_bottle here, can in the older sets). Hardcoding one name
+    # is the same mistake that once recorded 1008 rows of zeros without a word
+    # -- so discover it, and say which one was used.
+    pose_cols = [c for c in pq.read_schema(ep_paths(root, info, eps[0]["episode_index"])[0]).names
+                 if c.startswith("observation.") and c.endswith("_pose")]
+    if len(pose_cols) != 1:
+        # A hard failure by default, and only skippable with an explicit flag.
+        # This pass is the ONLY independent evidence that the episodes contain
+        # real grasps rather than plausible-looking numbers, so losing it has
+        # to be a recorded decision, never a quiet no-op.
+        if ALLOW_NO_POSE:
+            r.note(f"SKIPPED: no single object-pose column ({pose_cols or 'none'}). "
+                   f"Grasp causality is UNVERIFIED here; the surviving evidence "
+                   f"is the gym's own per-episode predicate (manifest ok=true).")
+            return
+        r.check(False, f"exactly one observation.*_pose column "
+                       f"(found {pose_cols or 'none'}) -- pass "
+                       f"--allow-missing-object-pose to skip this pass on "
+                       f"purpose")
+        return
+    pose_col = pose_cols[0]
+    r.note(f"object pose column: {pose_col}")
+
     at_hand, rose_after, held, no_event = 0, 0, 0, 0
     rises, dists = [], []
     for e in eps:
         p, _ = ep_paths(root, info, e["episode_index"])
-        t = pq.read_table(p, columns=["observation.can_pose", "observation.eef_state",
+        t = pq.read_table(p, columns=[pose_col, "observation.eef_state",
                                       "teleop.right_hand_joints"])
-        can = np.stack(t["observation.can_pose"].to_pylist())[:, :3]
+        can = np.stack(t[pose_col].to_pylist())[:, :3]
         wrist = np.stack(t["observation.eef_state"].to_pylist())[:, 7:10]
         grip = np.stack(t["teleop.right_hand_joints"].to_pylist())[:, 0]
         thr = (np.percentile(grip, 95) + np.percentile(grip, 5)) / 2
@@ -306,6 +352,54 @@ def _profile(a, b, max_lag=MAX_LAG):
     return out
 
 
+# Ripple sidelobes stay roughly symmetric about lag 0; a real delay carries the
+# whole comb with it. Measured on the bottle val set by shifting the video
+# stream by a known 3 frames: unshifted peaks-at-+3 scored 2.36-3.66, genuinely
+# shifted ones 5.14-10.1, with nothing in between. 4.5 sits in that gap.
+RIPPLE_ASYMMETRY = 4.5
+
+
+def _is_resample_ripple(prof: dict, peak: int) -> bool:
+    """Is this peak the 50->30 Hz comb rather than a real delay?
+
+    The nearest-source-frame resample is 5:3, so the sampling phase repeats
+    every 3 output frames and the correlation grows sidelobes at +-3, +-6...
+    Telling those from a genuine delay by a MARGIN threshold does not work:
+    measured on the bottle set, ripple sidelobes beat lag 0 by up to 0.059,
+    while the first version of this check allowed only 0.02 and so called 9 of
+    24 measurements misaligned.
+
+    Two properties separate them, and BOTH are needed:
+
+      1. shape -- a real k-frame delay pulls the profile up monotonically
+         0 -> 1 -> ... -> k, whereas the ripple leaves local maxima at 0 AND k
+         with lag 1 and 2 the lowest points on the whole profile.
+      2. symmetry -- the ripple comb stays centred on 0, so prof[+k] and
+         prof[-k] are comparable. A real delay moves the comb bodily, and
+         prof[-k] collapses.
+
+    Property 1 alone is not enough, and the way it fails is the way that
+    matters: a real 3-frame delay landing on top of an existing sidelobe still
+    leaves lag 0 a local maximum, so shape alone waved through 3 of 24 injected
+    delays. Adding the symmetry ratio catches all of them.
+
+    Verified by injection, not by assertion: shifting the video stream a known
+    3 frames and confirming this returns False for every measurement (see the
+    dataset audit notes in the README).
+    """
+    if peak == 0:
+        return True
+    if peak % 3 != 0:
+        return False
+    p0, p1, pm1 = prof.get(0, 0.0), prof.get(1, 0.0), prof.get(-1, 0.0)
+    if not (p0 >= p1 and p0 >= pm1):
+        return False                      # profile climbs toward the peak: real
+    mirror = prof.get(-peak, 0.0)
+    if mirror <= 0:
+        return False                      # nothing on the other side: real
+    return prof[peak] / mirror < RIPPLE_ASYMMETRY
+
+
 def pass_alignment(root, info, eps, r, n_eps):
     """Measure the video/table lag, and the action/state lag."""
     print("\n[4/4] alignment")
@@ -315,7 +409,7 @@ def pass_alignment(root, info, eps, r, n_eps):
     step = max(1, len(eps) // n_eps)
     picks = [e["episode_index"] for e in eps[::step][:n_eps]]
 
-    lags, weak = [], []
+    lags, weak, pairs = [], [], []
     act_lags = []
     for ep in picks:
         p, vids = ep_paths(root, info, ep)
@@ -328,10 +422,8 @@ def pass_alignment(root, info, eps, r, n_eps):
                 continue           # the head camera sees the scene, not the arm
             prof = _profile(video_motion(vp, t.num_rows), body)
             peak = max(prof, key=prof.get)
-            # A "peak" that beats lag 0 by less than this is the period-3 ripple
-            # the 50->30 Hz resample leaves behind (5:3 repeats every 3 frames),
-            # not a real delay.
-            lags.append(0 if prof[peak] - prof[0] < 0.02 else peak)
+            lags.append(0 if _is_resample_ripple(prof, peak) else peak)
+            pairs.append((ep, name.split(".")[-1]))
             if prof[peak] < 0.25:
                 weak.append((ep, name, round(prof[peak], 2)))
 
@@ -344,9 +436,39 @@ def pass_alignment(root, info, eps, r, n_eps):
         act_lags.append(max(prof, key=prof.get))
 
     uniq, counts = np.unique(lags, return_counts=True)
-    r.check(set(lags) == {0},
+    # A MAJORITY test, not a unanimity test, and the injection experiment is
+    # what says that is the right level. Each measurement is a noisy estimate
+    # from one camera on one episode; on a clean set 37 of 40 land on 0, and
+    # demanding all 40 would fail good data. A real delay is not a per-episode
+    # accident -- shifting the video a known 3 frames moved 39 of 40 off zero,
+    # and 5 frames moved 40 of 40 -- so the aggregate separates the two cases
+    # with an enormous margin even though a single measurement does not.
+    at_zero = float(np.mean(np.asarray(lags) == 0)) if lags else 0.0
+    med = float(np.median(lags)) if lags else 0.0
+    # 0.5, and the number comes from the injection experiment rather than from
+    # what this dataset happens to score. A genuinely delayed stream leaves at
+    # most 2.5% of measurements at lag 0 (39/40 and 40/40 detected at shifts of
+    # 3 and 5 frames); a clean set scores 75-100%. Anything in between those two
+    # regimes separates them, and a plain majority is the least tunable choice
+    # in that gap.
+    #
+    # The minority that lands off zero is NOT noise to be explained away. On
+    # this set it is real, episode-scoped camera lag of up to 3 frames (100 ms):
+    # the exporter takes whatever frame the camera SUB socket last delivered
+    # (non-blocking read), and that latency varies, so an episode can carry a
+    # constant offset for its whole length. That is a property worth seeing in
+    # the report, which is why the outliers are listed rather than summarised
+    # into a pass.
+    r.check(bool(med == 0 and at_zero > 0.5),
             f"video vs table: {len(lags)} wrist-camera measurements, "
-            f"lag distribution {dict(zip(uniq.tolist(), counts.tolist()))}")
+            f"{at_zero * 100:.0f}% at lag 0 (median {med:+.0f}), "
+            f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}")
+    off = [(ep, cam, lag) for (ep, cam), lag in zip(pairs, lags) if lag != 0]
+    if off:
+        r.note(f"{len(off)}/{len(lags)} measurements off zero (camera-latency "
+               f"jitter, up to {max(abs(l) for _, _, l in off)} frames "
+               f"= {max(abs(l) for _, _, l in off) / info['fps'] * 1000:.0f} ms): "
+               f"{off}")
     if weak:
         r.note(f"weak correlation (lag unreliable) on {weak}")
 
@@ -368,7 +490,12 @@ def main():
                     help="episodes to measure the video/table lag on")
     ap.add_argument("--quick", action="store_true",
                     help="structure and modality only -- no video decode")
+    ap.add_argument("--allow-missing-object-pose", action="store_true",
+                    help="downgrade the grasp-causality pass to a loud note "
+                         "when the privileged object-pose column is absent or "
+                         "ambiguous, instead of failing")
     args = ap.parse_args()
+    globals()["ALLOW_NO_POSE"] = args.allow_missing_object_pose
 
     root = Path(args.dataset)
     if not (root / "meta/info.json").exists():
