@@ -228,7 +228,9 @@ def main():
     args = ap.parse_args()
 
     repo = Path(__file__).resolve().parents[3]
-    sys.path.insert(0, str(repo / "third_party/Isaac-GR00T"))
+    # src/gr00t is the vendored, COMMITTED copy (src/gr00t/UPSTREAM.md);
+    # the third_party clone is reference only and must not shadow it
+    sys.path.insert(0, str(repo / "src"))
     cfg_path = Path(args.modality_config or repo / "configs/gr00t_sonic_2cam.py")
     sys.path.insert(0, str(cfg_path.parent))
     __import__(cfg_path.stem)          # rewrites MODALITY_CONFIGS in place

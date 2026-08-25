@@ -10,8 +10,19 @@ set -eu
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/paths.sh"
+# The venv lives with the upstream clone (an environment is not code); the
+# gr00t PACKAGE it imports is the vendored copy in src/ (src/gr00t/UPSTREAM.md,
+# wired by scripts/link_gr00t_src.sh). The check below is not optional
+# paranoia: the failure mode is a stale third_party copy imported under the
+# same name and version, which trains to completion on the wrong code.
 GR00T="$LOCOMANI_ROOT/third_party/Isaac-GR00T"
 PY="$GR00T/.venv/bin/python"
+GR00T_SRC=$("$PY" -c "import gr00t; print(gr00t.__file__)")
+case "$GR00T_SRC" in
+    "$LOCOMANI_ROOT/src/gr00t/"*) : ;;
+    *) echo "gr00t resolves to $GR00T_SRC, not src/gr00t --"
+       echo "run: bash scripts/link_gr00t_src.sh"; exit 1 ;;
+esac
 export HF_HOME="${HF_HOME:-$LOCOMANI_WORKSPACE/huggingface_cache}"
 
 DATA="${DATA:-$LOCOMANI_ROOT/datasets/g1_locomani_bottle200_train}"
@@ -99,7 +110,7 @@ echo "batch        $GLOBAL_BATCH x $GRAD_ACCUM accum = $((GLOBAL_BATCH * GRAD_AC
 echo "steps        $MAX_STEPS, checkpoint every $SAVE_STEPS (keep $SAVE_LIMIT)"
 echo
 
-cd "$GR00T"
+cd "$LOCOMANI_ROOT"
 # DRY=1 prints the assembled command instead of running it. Worth having: most
 # of what can go wrong here (a stale flag name, a path that resolved to the
 # wrong tree, an env override that did not take) is visible in the command line
@@ -107,7 +118,7 @@ cd "$GR00T"
 RUNNER=(exec)
 if [ "${DRY:-0}" = "1" ]; then RUNNER=(echo); fi
 "${RUNNER[@]}" "$GR00T/.venv/bin/torchrun" --nproc_per_node="$GPUS" --master_port="${PORT:-29500}" \
-    gr00t/experiment/launch_finetune.py \
+    -m gr00t.experiment.launch_finetune \
     --base-model-path nvidia/GR00T-N1.7-3B \
     --dataset-path "$DATA" \
     --embodiment-tag UNITREE_G1_SONIC \
