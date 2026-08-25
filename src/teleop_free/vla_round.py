@@ -312,3 +312,187 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         return ok, why
 
     return vla_round
+
+
+def make_vla_policy_async(link: PolicyLink, task: str,
+                          inference_interval: float = 0.4,
+                          trace_dir: str | None = None):
+    """The official streaming pattern: never stop publishing.
+
+    NVIDIA's own client (gear_sonic/scripts/run_vla_inference.py) does not
+    execute-a-block-then-replan the way make_vla_policy above does. It runs
+    inference in a WORKER THREAD on a fresh observation every 0.4 s, keeps a
+    cached chunk, and the main loop publishes from that cache at the action
+    rate WITHOUT EVER PAUSING -- when a fresh chunk lands it starts at a
+    LATENCY-COMPENSATED index (inference_delay x rate), so the robot is always
+    executing an action whose timestamp matches "now", not the moment the
+    camera frame was taken.
+
+    Why the difference matters here: the blocking client freezes the deploy on
+    a held token for 0.3-0.6 s out of every ~0.9 s. Training data contains no
+    such stop-and-go (the expert streamed continuously), and our dominant
+    failure mode is a standing-still attractor -- a client that periodically
+    freezes the intent is plausibly feeding it. This variant removes that
+    difference; the A/B against the blocking client is the measurement.
+
+    Differences from NVIDIA's client kept ON PURPOSE:
+      - 30 Hz publish, because OUR dataset is 30 fps (theirs is 50 both sides;
+        each is self-consistent, mixing them would replay motions fast).
+      - FSQ snap stays (sonic_token.snap): NVIDIA sends raw floats with only a
+        |x| > 1.25 sanity bound. Snapping to the codebook cannot hurt a
+        near-grid prediction; dropping it is a separate ablation.
+    """
+    import threading
+
+    counter = {"n": 0}
+    RATE = 30.0
+
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record):
+        from primitives import LocomotionMode
+
+        obs_src = ObsBuilder(task)
+        if not obs_src.wait_ready():
+            obs_src.close()
+            return False, "[vla] camera/state streams never became ready"
+
+        s0 = p.obs()
+        obj0 = np.asarray(p.object_pos(obj_key, s0))
+        trace = []
+        ok, why = False, "[vla] timeout"
+        commanded_close = False
+
+        # -- worker: obs -> inference -> (chunk, started_at), forever ---------
+        # The worker owns the camera/state sockets and the policy link; the
+        # main thread owns the commander and the privileged predicates. ZMQ
+        # sockets are not thread-safe, so the split is load-bearing.
+        latest = {"chunk": None, "t0": None}
+        lock = threading.Lock()
+        stop = threading.Event()
+
+        def worker():
+            while not stop.is_set():
+                t0 = time.time()
+                obs = obs_src.build()
+                if obs is not None:
+                    try:
+                        tok, grip = link.get_chunk(obs)
+                    except Exception:
+                        time.sleep(0.1)
+                        continue
+                    with lock:
+                        latest["chunk"] = (tok, grip)
+                        latest["t0"] = t0
+                rest = inference_interval - (time.time() - t0)
+                if rest > 0:
+                    time.sleep(rest)
+
+        th = threading.Thread(target=worker, daemon=True)
+        th.start()
+
+        # wait for the first chunk, prime, switch -- same order the replay
+        # diag validated (buffer before mode switch, cpp:618)
+        t_wait = time.time()
+        while True:
+            with lock:
+                ready = latest["chunk"] is not None
+            if ready or time.time() - t_wait > 15:
+                break
+            time.sleep(0.05)
+        if not ready:
+            stop.set()
+            obs_src.close()
+            return False, "[vla] first inference never returned"
+
+        with lock:
+            tok0, grip0 = latest["chunk"]
+        l0, r0 = expand_hands(grip0[0])
+        for _ in range(30):
+            p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
+            time.sleep(0.02)
+        p.cmd.enter_streamed()
+        for _ in range(30):
+            p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
+            time.sleep(0.02)
+
+        t_start = time.time()
+        frame_index = 0
+        lifted_at = None
+        chunk_t0, idx = None, 0
+        tok, grip = tok0, grip0
+        last_status = 0.0
+        try:
+            while time.time() - t_start < TIMEOUT_S:
+                tick = time.time()
+                # adopt a fresh chunk at a latency-compensated index
+                with lock:
+                    if latest["t0"] is not None and latest["t0"] != chunk_t0:
+                        tok, grip = latest["chunk"]
+                        chunk_t0 = latest["t0"]
+                        idx = min(int((time.time() - chunk_t0) * RATE),
+                                  len(tok) - 1)
+                j = min(idx, len(tok) - 1)
+                lhj, rhj = expand_hands(grip[j])
+                if grip[j] < 0.005:
+                    commanded_close = True
+                p.cmd.token_frame(tok[j], right_hand=rhj, left_hand=lhj,
+                                  frame_index=frame_index)
+                frame_index += 1
+                idx = min(idx + 1, len(tok) - 1)
+
+                # predicates at ~2 Hz, off the hot path
+                if tick - last_status > 0.5:
+                    last_status = tick
+                    st = p.obs()
+                    obj = np.asarray(p.object_pos(obj_key, st))
+                    pel = np.asarray(p.pelvis_xy(st))
+                    rise = float(obj[2] - obj0[2])
+                    trace.append(dict(t=tick - t_start, rise=rise,
+                                      dist=float(np.linalg.norm(obj[:2] - pel)),
+                                      fallen=bool(st["fallen"]),
+                                      grip=float(grip[j]),
+                                      pelvis_xy=[float(v) for v in pel],
+                                      pelvis_yaw=float(p.pelvis_yaw(st)),
+                                      obj_xy=[float(v) for v in obj[:2]]))
+                    if st["fallen"]:
+                        why = "[vla] fell"
+                        break
+                    if rise > LIFT_M:
+                        if lifted_at is None:
+                            lifted_at = tick
+                        elif tick - lifted_at > 2.0:
+                            ok, why = True, "ok"
+                            break
+                    else:
+                        lifted_at = None
+
+                rest = 1.0 / RATE - (time.time() - tick)
+                if rest > 0:
+                    time.sleep(rest)
+        finally:
+            stop.set()
+            p.cmd.exit_streamed()
+            p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
+            th.join(timeout=1.0)
+            obs_src.close()
+
+        if not ok and why == "[vla] timeout" and trace:
+            min_dist = min(r["dist"] for r in trace)
+            if min_dist > NEAR_M:
+                why = f"[vla] walk: never closer than {min_dist:.2f} m"
+            elif not commanded_close:
+                why = (f"[vla] reach: at the table (min {min_dist:.2f} m) "
+                       f"but never commanded a close")
+            else:
+                moved = float(np.linalg.norm(
+                    np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
+                why = (f"[vla] close: commanded a grasp but no lift "
+                       f"(object moved {moved * 100:.0f} cm laterally)")
+
+        if trace_dir:
+            os.makedirs(trace_dir, exist_ok=True)
+            with open(os.path.join(trace_dir, f"round_{counter['n']:03d}.json"), "w") as f:
+                json.dump(dict(ok=ok, why=why, trace=trace), f)
+        counter["n"] += 1
+        return ok, why
+
+    return vla_round

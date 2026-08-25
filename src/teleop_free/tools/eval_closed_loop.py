@@ -62,7 +62,13 @@ def main():
     ap.add_argument("--fresh", type=int, default=100,
                     help="rounds to run, sampled fresh from the collection "
                          "distribution")
-    ap.add_argument("--execution-horizon", type=int, default=16)
+    ap.add_argument("--execution-horizon", type=int, default=16,
+                    help="blocking client only: chunk steps per replan")
+    ap.add_argument("--client", choices=("async", "blocking"), default="async",
+                    help="async = NVIDIA's own streaming pattern (worker-thread "
+                         "inference, uninterrupted publishing, latency-"
+                         "compensated chunk indexing); blocking = execute-N-"
+                         "then-replan, the round-1/round-2 baseline client")
     ap.add_argument("--policy-port", type=int, default=5590)
     ap.add_argument("--task", default="pick up the water bottle")
     ap.add_argument("--target", default="water_bottle")
@@ -106,9 +112,13 @@ def main():
     # --- install the policy and run the gym's own loop ---------------------
     import grasp_gym
 
-    grasp_gym.VLA_POLICY = vla_round.make_vla_policy(
-        link, args.task, execution_horizon=args.execution_horizon,
-        trace_dir=trace_dir)
+    if args.client == "async":
+        grasp_gym.VLA_POLICY = vla_round.make_vla_policy_async(
+            link, args.task, trace_dir=trace_dir)
+    else:
+        grasp_gym.VLA_POLICY = vla_round.make_vla_policy(
+            link, args.task, execution_horizon=args.execution_horizon,
+            trace_dir=trace_dir)
 
     # The same spawn distribution the collection ran (collect_pilot.sh),
     # WITHOUT --record (no dataset is being written) and WITHOUT --until-ok
@@ -148,7 +158,7 @@ def main():
         rounds=n, successes=k, success_rate=k / n if n else 0.0,
         wilson95=[lo, hi],
         scripted_reference=dict(successes=200, attempts=210, rate=200 / 210),
-        execution_horizon=args.execution_horizon,
+        execution_horizon=args.execution_horizon, client=args.client,
         failure_stages=stages, seed=args.seed, manifest=str(manifest))
     out.write_text(json.dumps(results, indent=2))
 
