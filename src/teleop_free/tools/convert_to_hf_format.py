@@ -321,6 +321,42 @@ def video_stats(frames_dict):
 
 
 
+def _active_frame_mask(table, max_pause_s: float, hz: float = SRC_FPS):
+    """True where the frame stays; False inside over-long quasi-static runs.
+
+    Quasi-static = body joints barely moving AND the gripper command not
+    changing. Runs longer than max_pause_s keep only their last max_pause_s
+    (the tail carries the transition INTO motion, which is the part worth
+    learning); the excess middle is dropped. Cutting whole runs to zero was
+    deliberately rejected -- the policy still needs to see a beat of standing
+    before acting, or arrival itself becomes out-of-distribution.
+    """
+    import numpy as np
+
+    st = np.stack(table["observation.state"].to_pylist())
+    g = np.stack(table["teleop.right_hand_joints"].to_pylist())[:, 0]
+    body = np.linalg.norm(np.diff(st[:, :43], axis=0, prepend=st[:1, :43]), axis=1)
+    gmove = np.abs(np.diff(g, prepend=g[0]))
+    # thresholds from the walking phase's own scale, so the mask adapts to
+    # the episode rather than to a magic constant
+    thr = max(0.15 * np.median(body[body > 1e-6]), 1e-4)
+    quiet = (body < thr) & (gmove < 1e-4)
+    keep = np.ones(len(quiet), dtype=bool)
+    limit = int(max_pause_s * hz)
+    i = 0
+    while i < len(quiet):
+        if not quiet[i]:
+            i += 1
+            continue
+        j = i
+        while j < len(quiet) and quiet[j]:
+            j += 1
+        if j - i > limit:                 # keep the TAIL of the run
+            keep[i:j - limit] = False
+        i = j
+    return keep
+
+
 class Sink:
     """One output dataset: its directory, its counters, its metadata.
 
@@ -465,6 +501,23 @@ def main():
                          "--holdout)")
     ap.add_argument("--holdout-seed", type=int, default=0,
                     help="seed for the holdout draw; recorded in info.json")
+    ap.add_argument("--drop-idle", type=float, default=None, metavar="SECONDS",
+                    help="drop runs of quasi-static frames longer than this "
+                         "many seconds, keeping that much of each run's tail. "
+                         "THE PAUSE PROBLEM: a pause makes the demo "
+                         "non-Markovian -- 'standing at second 1' and "
+                         "'standing at second 4' are the same observation "
+                         "with different correct actions -- and action "
+                         "chunking only absorbs pauses shorter than one "
+                         "chunk (1.33 s here). Measured on the bottle data, "
+                         "arrival->reach stood at median 4.6 s (the human-"
+                         "teleop reference the official recipe trains from: "
+                         "0.2 s), and the trained policy died in exactly the "
+                         "standing-still attractor this predicts. Source-"
+                         "side trims got it to ~4.2 s; this filter removes "
+                         "what machinery remains. 1.0 is a sensible value: "
+                         "pauses stay sub-chunk, and the kept tail still "
+                         "teaches a beat of settling.")
     ap.add_argument("--strip-pose-columns", action="store_true",
                     help="drop every observation.*_pose column while "
                          "converting. The pose channel is privileged analysis "
@@ -566,6 +619,14 @@ def main():
         if args.strip_pose_columns:
             table = table.drop(
                 [c for c in table.column_names if _is_pose(c)])
+        if args.drop_idle:
+            keep = _active_frame_mask(table, args.drop_idle)
+            if keep is not None and not keep.all():
+                dropped = int((~keep).sum())
+                table = table.take(pa.array(np.flatnonzero(keep)))
+                print(f"    idle filter: dropped {dropped} of "
+                      f"{len(keep)} frames "
+                      f"({dropped / len(keep) * 100:.0f}%)")
         n50 = table.num_rows
         n30 = int(np.floor((n50 - 1) * DST_FPS / SRC_FPS)) + 1
         sel = np.clip(np.round(np.arange(n30) * SRC_FPS / DST_FPS).astype(int), 0, n50 - 1)
