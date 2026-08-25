@@ -144,7 +144,7 @@ class ObsBuilder:
             "state.projected_gravity": f32(compute_projected_gravity(base_quat)),
             "state.right_wrist_pos": f32(rw_pos),
             "state.right_wrist_abs_quat": f32(rw_quat),
-            "annotation.language.language_instruction": self.task,
+            "annotation.human.task_description": self.task,
         }
         for key in ("ego_view", "right_wrist"):
             img = np.asarray(self._last_img[key])

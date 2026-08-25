@@ -24,12 +24,24 @@ sleep 1
 pkill -9 -f "g1_deploy_onnx_ref lo .*zmq-port $TF_SONIC_PORT " 2>/dev/null
 
 SONIC_POLICY="${SONIC_POLICY:-policy/release}"
+# NO_ENCODER=1 relaunches WITHOUT the encoder, mirroring start_stack.sh. This
+# must be honoured HERE and not only at stack boot: grasp_gym restarts the
+# deploy through this script every round, so a closed-loop VLA run that booted
+# the stack token-only got its deploy silently swapped for an encoder-loaded
+# one at the first round-2/stand-retry -- and with an encoder loaded,
+# initial_encoder_mode_ is 0 and the external token stream never holds
+# (g1_deploy_onnx_ref.cpp:3096).
+ENC_ARG=(--encoder-file "$SONIC_POLICY/model_encoder.onnx")
+if [ "${NO_ENCODER:-0}" = "1" ]; then
+    ENC_ARG=()
+    echo "encoder: OFF (token-only / VLA deployment mode)"
+fi
 cd "$SONIC_DEPLOY_ROOT" || exit 1
 echo "----- deploy restart $(date +%T) -----" >> "$LOGS/deploy.log"
 mark=$(wc -l < "$LOGS/deploy.log")
 nohup ./target/release/g1_deploy_onnx_ref lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \
     --obs-config "$SONIC_POLICY/observation_config.yaml" \
-    --encoder-file "$SONIC_POLICY/model_encoder.onnx" \
+    "${ENC_ARG[@]}" \
     --planner-file planner/target_vel/V2/planner_sonic.onnx \
     --input-type zmq_manager --output-type all --zmq-host localhost \
     --zmq-port "$TF_SONIC_PORT" --zmq-out-port "$TF_OUT_PORT" --disable-crc-check \

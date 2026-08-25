@@ -657,6 +657,20 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # The heading the robot WAKES UP with, which is not the heading it walks
     # in on. psi is the approach heading; dpsi is the error it has to turn
     # out at the spawn, before the walk, metres from the table.
+    # A VLA round spawns ALREADY FACING the approach heading and skips the
+    # scripted spawn turn below. Not a convenience -- a necessity twice over:
+    #   1. The turn runs on the deploy's locomotion policy, whose token_state
+    #      is ZEROED in the token-only deployment until external tokens
+    #      arrive (g1_deploy_onnx_ref.cpp:3066 "Robot will use zero tokens").
+    #      Standing survives that; active turning does not (measured: turn
+    #      timeouts and 0.43 m of walk-off, where the encoder-loaded
+    #      collection runs turned cleanly at 95%).
+    #   2. The training episodes START after the turn anyway -- recording
+    #      begins at pre-walk, residual yaw error <= ~9 deg -- so a spawn
+    #      that faces psi directly is what the policy's t=0 actually looked
+    #      like in every episode it learned from.
+    if VLA_POLICY is not None:
+        dpsi = 0.0
     psi_spawn = float(psi + dpsi)
     # QUIESCE the deploy before the teleport: it keeps executing the
     # previous round's locomotion intent through the reset (fresh-deploy
@@ -752,7 +766,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # probe and roughly three times faster at the angles that matter, while
     # IDLE failed outright at +60 and +120. A stepping turn is also what a
     # person does.
-    if abs(wrap(dpsi)) > 0.10:
+    if abs(wrap(dpsi)) > 0.10 and VLA_POLICY is None:
         turned_from = np.asarray(p.pelvis_xy(p.obs()))
         if not p.turn_to(psi, tol=0.16, timeout=20.0,
                          mode=LocomotionMode.SLOW_WALK):

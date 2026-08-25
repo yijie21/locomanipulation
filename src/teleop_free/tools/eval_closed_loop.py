@@ -96,6 +96,13 @@ def main():
     manifest = out.with_suffix(".manifest.jsonl")
     trace_dir = args.trace_dir or str(out.parent / "closed_loop_traces")
 
+    # The gym restarts the deploy every round (fresh_deploy ->
+    # scripts/restart_deploy.sh, a subprocess that inherits this environment).
+    # Without this the round-2 restart brings the encoder back and the token
+    # stream stops holding -- the preflight above would only have caught it on
+    # the NEXT invocation.
+    os.environ["NO_ENCODER"] = "1"
+
     # --- install the policy and run the gym's own loop ---------------------
     import grasp_gym
 

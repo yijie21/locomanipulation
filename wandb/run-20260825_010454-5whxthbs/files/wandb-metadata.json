@@ -1,0 +1,29 @@
+{
+  "os": "Linux-5.15.0-187-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.12.3",
+  "startedAt": "2026-08-25T01:04:54.584267Z",
+  "args": [
+    "--model-path",
+    "outputs/train/bottle200/checkpoint-7000",
+    "--dataset",
+    "datasets/g1_locomani_bottle200_val",
+    "--horizons",
+    "16",
+    "--out",
+    "outputs/eval/bottle200/open_loop_checkpoint-7000.json",
+    "--wandb-run",
+    "bottle200"
+  ],
+  "program": "/workspace/code/locomanipulation/src/teleop_free/tools/eval_open_loop.py",
+  "codePath": "src/teleop_free/tools/eval_open_loop.py",
+  "codePathLocal": "src/teleop_free/tools/eval_open_loop.py",
+  "git": {
+    "remote": "git@github.com:yijie21/locomanipulation.git",
+    "commit": "f65c6a1c3cc4bf549a23e88a76b574e33c40d8a6"
+  },
+  "email": "1396599708@qq.com",
+  "root": "/workspace/code/locomanipulation",
+  "host": "88fe07058b75",
+  "executable": "/workspace/code/locomanipulation/third_party/Isaac-GR00T/.venv/bin/python",
+  "writerId": "htx0ixi31ur8amnbrotu1zl6jwial4xi"
+}
