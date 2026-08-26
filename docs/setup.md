@@ -5,9 +5,21 @@
 ## 环境安装
 
 前置:Linux + NVIDIA GPU(本仓库在 RTX 5090 / driver CUDA 13 上验证)、
-[uv](https://docs.astral.sh/uv/)。第 0–4 步只要这些 —— venv 是 uv 建的、
-deploy 是 cmake 编的、场景是 `.venv_sim` 建的。**[miniconda](https://docs.conda.io)
-只有第 6 步才用到**,那一步是可选的。
+[uv](https://docs.astral.sh/uv/),以及:
+
+```bash
+sudo apt-get install -y git git-lfs cmake build-essential curl
+git lfs install          # 只需一次;不做的话下面 clone 出来的是空壳,见第 1 步
+```
+
+**`git-lfs` 不是可选的。**上游 `GR00T-WholeBodyControl` 用 LFS 存 1275 个文件 ——
+不只是模型,还有机器人网格(`*.STL` `*.obj` `*.dae`)和共享库(`*.so` `*.a`)。
+没装 git-lfs 时 `git clone` **返回 0、不打印任何警告**,只是把这些文件换成约 130
+字节的 pointer 文本。症状要到编译链接或建场景时才炸,跟病因隔十万八千里。
+
+第 0–4 步只要上面这些 —— venv 是 uv 建的、deploy 是 cmake 编的、场景是
+`.venv_sim` 建的。**[miniconda](https://docs.conda.io) 只有第 6 步才用到**,
+那一步是可选的。
 
 先看要装哪些。**第 0–4 步是跑仿真采数据的最小集;要训练或评测 VLA 还得加第 5 步**:
 
@@ -16,7 +28,7 @@ deploy 是 cmake 编的、场景是 `.venv_sim` 建的。**[miniconda](https://d
 | 0 | 路径变量 | 必需 | 1 min |
 | 1 | clone 上游仓库 | 必需(`GR00T-WholeBodyControl`) | 5 min |
 | 2 | 两个 venv + SONIC 权重 + **补丁** | 必需 | 20 min |
-| 3 | 编译 C++ deploy | 必需 | 30 min(含手动放依赖) |
+| 3 | 编译 C++ deploy | 必需 | 主要看网速(3.9 GB 下载);千兆下约 3 min,慢网可到 30 min+ |
 | 4 | 装场景 | 必需 | 5 s |
 | 5 | GR00T 微调 venv | **要训练或评测 VLA 就必需** | 按上游 README |
 | 6 | conda 训练环境 / EmbodiedGen | 可选,只有 SONIC 自身 RL 训练或重新生成场景才要 | 1 h+ |
@@ -56,7 +68,7 @@ export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
 
 **验证** —— 这一步永远先做,后面每一步的路径都从它来:
 
-```bash
+```console
 $ python3 src/teleop_free/paths.py
   REPO         /workspace/code/locomanipulation
   WORKSPACE    /workspace
@@ -72,6 +84,24 @@ $ python3 src/teleop_free/paths.py
 clone 的位置、`WORKSPACE` 指着你 `LOCOMANI_WORKSPACE` 设的地方,而不是逐字对上。
 
 shell 一侧是 `. scripts/paths.sh; echo "$LOCOMANI_ROOT $VENV_SIM_PY"`。
+
+#### 两条贯穿全文的约定
+
+**一、所有代码块都从仓库根出发,而且用 bash。**凡是要进 `third_party/` 的都写成
+`( cd ... && ... )` 子 shell,出来还在原地;整块粘进同一个 shell 就行。
+
+**二、`LOCOMANI_WORKSPACE` 要在整个安装过程里一直 export 着。**换终端、重开
+session 都要重新设。
+
+这两条都不是洁癖,它们防的是**同一种静默故障**:东西装到了别处,而一切看起来正常。
+
+- 漏一个 `cd ../..`:后面 `. scripts/paths.sh` 找不到文件而短路,`DEPS_DIR` 保持
+  未设置,而 bash 里 `cd ""` **返回 0 且原地不动** —— 几个 GB 的依赖倒进上游 clone
+  的根目录,那里是 gitignored 的,`git status` 也不提醒。
+- 丢了 `LOCOMANI_WORKSPACE`:它会**静默回落到默认的 `/workspace`**,于是第 3 步那
+  3.9 GB 装进 `/workspace/deps` 而不是你指定的地方 —— 而且编译照样成功、不报任何错。
+
+两种成因,同一个后果:要到二十行后 cmake 报一个和病因毫无关系的错,或者更晚。
 
 ### 1. Clone 上游仓库到 third_party/
 
@@ -90,6 +120,19 @@ mkdir -p third_party
 #   EmbodiedGen   -> 第 6 步(只有重新生成场景才需要)
 #   IsaacLab      -> 第 6 步(只有 SONIC 自身 RL 训练才需要)
 ```
+
+**验证** —— 查的是**大小**不是存在性,因为缺 git-lfs 时文件照样在,只是变成了
+130 字节的 pointer:
+
+```bash
+stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/model_data/g1/meshes/head_link.STL
+# 期望 932784(约 911 KB)。如果是 ~130,就是 git-lfs 没装:
+#   sudo apt-get install -y git-lfs && git lfs install
+#   然后 cd 进去 git lfs pull,不用重新 clone
+```
+
+**第 2 步那条 `ls ... model_decoder.onnx` 查不出这个问题** —— `policy/release/`
+下的权重是 `download_from_hf.py` 下载的,不走 LFS,所以它存在并不说明 LFS 正常。
 
 ### 2. 两个 venv + 权重 + 补丁(必需)
 
@@ -149,12 +192,7 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
  && git apply --check --reverse ../../patches/vla_action_space.patch && echo "补丁已打")
 ```
 
-> **本文所有代码块都从仓库根出发。**凡是要进 `third_party/` 的都写成
-> `( cd ... && ... )` 子 shell,出来还在原地。这不是洁癖:漏一个 `cd ../..`,
-> 后面 `. scripts/paths.sh` 会静默短路,`DEPS_DIR` 保持未设置,而 bash 里
-> `cd ""` **返回 0 且原地不动** —— 于是几个 GB 的依赖倒进上游 clone 的根目录
-> (那里是 gitignored 的,`git status` 也不会提醒),要到二十行后 cmake 才炸,
-> 报错和病因隔了十万八千里。
+
 
 ### 3. 编译 C++ deploy(必需)
 
@@ -222,11 +260,13 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 两个 root 都是 `env_deploy.sh` 里的 `${VAR:-默认}`,所以不想改名也可以直接
 `export onnxruntime_ROOT=...` / `export TensorRT_ROOT=...` 覆盖。
 
-**三个无害的输出,不要去追**(都已诊断过):
+**这些输出无害,不要去追**(不是穷举,但常见的都在这儿):
 
 - `missing components: nvparsers` —— TensorRT 10 里已删除,`find_package` 也没把它标为 required
 - cmake 报 TensorRT 版本号为空 —— `NvInferVersion.h` 用 `TRT_*_ENTERPRISE` 宏而不是字面量,实际就是 10.13.3.9
 - 单个 gtest `FK.TestFKAndGlobalVelocities` 失败 —— fixture 目录 `reference/bones_072925_test/` 没随仓库发布,不是编译问题。**按上面的命令你不会看到它**:`run_tests` 只编不跑,`.justfile` 的 `test` target 是个空壳(只 echo 一行)。只有手动执行 `build/run_tests` 才会撞上
+
+- configure 阶段的 `CMake Warning (dev) ... DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is not set`(来自 `FetchContent_Declare`),以及编译阶段 `picosha2.h:210:23: warning: writing 1 byte into a region of size 0` —— 都是上游代码的告警,与本仓库无关
 
 `just` 不需要装:`.justfile` 的 `build` 就是上面这两条 cmake。
 
@@ -269,8 +309,19 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 `fork` 当遮挡物 —— 和本仓库所有实验数字都不是同一个任务。
 
 变量在**重建场景那一刻**被读(`scene_lib.py`),不是起 stack 时,所以补在
-`start_stack.sh` 上没用,只能重跑本脚本。脚本跑完会回显它实际建出来的
-preset / target / target_pool / 桌上物体,对不上就是没生效。
+`start_stack.sh` 上没用,只能重跑本脚本。
+
+**验证** —— 这一步自己会报告结果,不用另外敲命令。脚本跑完回显它实际建出来的
+preset / target / target_pool / 桌上物体:
+
+```
+  preset      bottle_only
+  target      water_bottle
+  target_pool ['water_bottle']
+  on the table ['water_bottle']
+```
+
+对不上就是 `SCENE_PRESET` 没生效(最常见的是给在了 `start_stack.sh` 上)。
 
 细节见[下一节](collection.md#场景直接用现成的推荐)。
 
