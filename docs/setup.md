@@ -5,7 +5,9 @@
 ## 环境安装
 
 前置:Linux + NVIDIA GPU(本仓库在 RTX 5090 / driver CUDA 13 上验证)、
-[miniconda](https://docs.conda.io)、[uv](https://docs.astral.sh/uv/)。
+[uv](https://docs.astral.sh/uv/)。第 0–4 步只要这些 —— venv 是 uv 建的、
+deploy 是 cmake 编的、场景是 `.venv_sim` 建的。**[miniconda](https://docs.conda.io)
+只有第 6 步才用到**,那一步是可选的。
 
 先看要装哪些。**第 0–4 步是跑仿真采数据的最小集;要训练或评测 VLA 还得加第 5 步**:
 
@@ -41,8 +43,16 @@ export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
 | `DEPS_DIR` | `$LOCOMANI_WORKSPACE/deps` | TensorRT / ONNX Runtime 解包位置 |
 | `CONDA_BASE` | `$LOCOMANI_WORKSPACE/miniconda3` | conda 安装位置 |
 | `LOCOMANI_TMP` | `$LOCOMANI_WORKSPACE/tmp` | stack 日志与 exporter 原始 session |
-| `LOCOMANI_CACHE` | `$LOCOMANI_WORKSPACE/.cache` | pip / torch / HF 缓存 |
+| `LOCOMANI_CACHE` | `$LOCOMANI_WORKSPACE/.cache` | pip / torch 缓存,**只有第 5–6 步的安装脚本读它**;第 0–4 步一处都不读 |
 | `LOCOMANI_ROOT` | 自动推导 | 仓库根;只有在极特殊情况下才需要手动指定 |
+
+> **Hugging Face 缓存不归 `LOCOMANI_CACHE` 管,而且第 0–4 步根本没人设 `HF_HOME`。**
+> 全仓设它的只有两处,值还不一样:EmbodiedGen 那套脚本设成
+> `$LOCOMANI_WORKSPACE/.hf_home`,`scripts/train_bottle.sh` 设成
+> `$LOCOMANI_WORKSPACE/huggingface_cache`。所以第 2 步下载 SONIC 权重时,它会落在
+> HF 的默认位置(`~/.cache/huggingface`,即**根分区**)。根分区小的机器要自己先
+> `export HF_HOME=$LOCOMANI_WORKSPACE/huggingface_cache`,和下一节那三个
+> `TMPDIR`/`UV_*` 一起。
 
 **验证** —— 这一步永远先做,后面每一步的路径都从它来:
 
@@ -55,20 +65,30 @@ $ python3 src/teleop_free/paths.py
   OUTPUTS      /workspace/code/locomanipulation/outputs
   LOGS_DIR     /workspace/code/locomanipulation/outputs/logs
   session_root() /workspace/tmp/p03
+  derived from /workspace/code/locomanipulation/src/teleop_free/paths.py
 ```
+
+**你看到的路径会是你自己的**,上面是作者机器上的值。要核的是形状:`REPO` 指着你
+clone 的位置、`WORKSPACE` 指着你 `LOCOMANI_WORKSPACE` 设的地方,而不是逐字对上。
 
 shell 一侧是 `. scripts/paths.sh; echo "$LOCOMANI_ROOT $VENV_SIM_PY"`。
 
 ### 1. Clone 上游仓库到 third_party/
 
 ```bash
-# third_party/ 是 gitignored 的(几十 GB,各自是独立的 git 仓库),全新 clone
+# third_party/ 是gitignored 的(几十 GB,各自是独立的 git 仓库),全新 clone
 # 里没有这个目录 —— 必须自己建
-mkdir -p third_party && cd third_party
-git clone https://github.com/NVlabs/GR00T-WholeBodyControl.git   # 必需:SONIC sim + deploy + exporter
-git clone https://github.com/NVIDIA/Isaac-GR00T.git              # 可选:GR00T 微调
-git clone https://github.com/HorizonRobotics/EmbodiedGen.git     # 可选:只有重新生成场景才需要
-git clone https://github.com/isaac-sim/IsaacLab.git              # 可选:SONIC 训练(Isaac Sim)
+mkdir -p third_party
+
+# 第 0-4 步只需要这一个。5 min 的耗时估计也是指它。
+# 子 shell:出来还在仓库根,下一步的相对路径才对得上
+(cd third_party && git clone https://github.com/NVlabs/GR00T-WholeBodyControl.git)
+
+# 下面三个现在【不要】clone —— 它们分属后面的步骤,加起来几十 GB,
+# 走到那一步再回来拿:
+#   Isaac-GR00T   -> 第 5 步(要训练/评测 VLA 才需要)
+#   EmbodiedGen   -> 第 6 步(只有重新生成场景才需要)
+#   IsaacLab      -> 第 6 步(只有 SONIC 自身 RL 训练才需要)
 ```
 
 ### 2. 两个 venv + 权重 + 补丁(必需)
@@ -90,12 +110,15 @@ git clone https://github.com/isaac-sim/IsaacLab.git              # 可选:SONIC 
 用上游自带的安装脚本,在 `third_party/GR00T-WholeBodyControl/` 下创建两个 venv:
 
 ```bash
-cd third_party/GR00T-WholeBodyControl
-bash install_scripts/install_mujoco_sim.sh        # -> .venv_sim(跑 MuJoCo sim 与所有 src/teleop_free 脚本)
-bash install_scripts/install_data_collection.sh   # -> .venv_data_collection(跑 data exporter)
-# 权重下载脚本要 huggingface_hub,只有刚建好的 venv 里有,裸 python 会直接退出
-.venv_sim/bin/python download_from_hf.py          # SONIC policy 权重 -> gear_sonic_deploy/policy/release/
-cd ../..                                          # 回仓库根 —— 下面的命令都从这里出发
+(cd third_party/GR00T-WholeBodyControl \
+ && bash install_scripts/install_mujoco_sim.sh \
+ && bash install_scripts/install_data_collection.sh \
+ && .venv_data_collection/bin/python download_from_hf.py)
+# install_mujoco_sim.sh      -> .venv_sim(跑 MuJoCo sim 与所有 src/teleop_free 脚本)
+# install_data_collection.sh -> .venv_data_collection(跑 data exporter)
+# download_from_hf.py        -> SONIC policy 权重落到 gear_sonic_deploy/policy/release/
+#   它要 huggingface_hub,而这个包只随 install_data_collection.sh 那条依赖链进来:
+#   .venv_sim 里没有,裸 python 里更没有,两者都会直接退出
 ```
 
 `.venv_sim` 装完之后还缺一个包:`src/teleop_free/navigator.py` 用 `skfmm`(路径规划的
@@ -111,7 +134,7 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 是 267 而不是 78):
 
 ```bash
-cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch
+(cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch)
 ```
 
 原因见 [`patches/vla_action_space.md`](../patches/vla_action_space.md)。
@@ -119,28 +142,44 @@ cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_spac
 **验证**:
 
 ```bash
-cd third_party/GR00T-WholeBodyControl
-.venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)"
-.venv_sim/bin/python -c "import skfmm; print(skfmm.__version__)"
-ls gear_sonic_deploy/policy/release/model_decoder.onnx   # 权重下来了
-git apply --check --reverse ../../patches/vla_action_space.patch && echo "补丁已打"
+(cd third_party/GR00T-WholeBodyControl \
+ && .venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)" \
+ && .venv_sim/bin/python -c "import skfmm; print(skfmm.__version__)" \
+ && ls gear_sonic_deploy/policy/release/model_decoder.onnx \
+ && git apply --check --reverse ../../patches/vla_action_space.patch && echo "补丁已打")
 ```
+
+> **本文所有代码块都从仓库根出发。**凡是要进 `third_party/` 的都写成
+> `( cd ... && ... )` 子 shell,出来还在原地。这不是洁癖:漏一个 `cd ../..`,
+> 后面 `. scripts/paths.sh` 会静默短路,`DEPS_DIR` 保持未设置,而 bash 里
+> `cd ""` **返回 0 且原地不动** —— 于是几个 GB 的依赖倒进上游 clone 的根目录
+> (那里是 gitignored 的,`git status` 也不会提醒),要到二十行后 cmake 才炸,
+> 报错和病因隔了十万八千里。
 
 ### 3. 编译 C++ deploy(必需)
 
-三样依赖,前两样不能用 `apt install` 装(见每段的理由),都落在 `$DEPS_DIR`
-(默认 `$LOCOMANI_WORKSPACE/deps`)。
+三样依赖。第一样正常 `apt install`;**后两样不能**(见每段的理由),它们落在
+`$DEPS_DIR`(默认 `$LOCOMANI_WORKSPACE/deps`)。
 
 ```bash
 . scripts/paths.sh && mkdir -p "$DEPS_DIR"
 
-# 1) 小依赖:几 MB,正常装
+# 1) 小依赖:几 MB,正常装。久没 update 过的机器先 apt-get update,否则可能 404。
+#    (这一行未在干净机器上验证过 —— 开发机上六个包本来就装着)
+sudo apt-get update
 sudo apt-get install -y libeigen3-dev libzmq3-dev cppzmq-dev libgtest-dev \
                         nlohmann-json3-dev libmsgpack-cxx-dev
 
-# 2) TensorRT 10.13.3.9 —— 8 个 deb 共 3.9 GB。apt 源里就有这个确切版本,
-#    不需要 NVIDIA developer 登录。但**不要 apt install**:装进 /usr 会撑爆
-#    小根分区,而且 `cuda` 系元包有可能连带拉 cuda-drivers 覆盖宿主驱动。
+# 2) TensorRT 10.13.3.9 —— 8 个 deb 共 3.9 GB。这些包【只】由 NVIDIA 自己的
+#    CUDA apt 源提供,Ubuntu 默认源里没有。没配过就会得到
+#    "Unable to locate package libnvinfer10",那不是版本问题,是缺源。
+#    干净的 Ubuntu 24.04 上先加源(改 ubuntu2404 为你的版本):
+#      curl -fsSLO https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+#      sudo dpkg -i cuda-keyring_1.1-1_all.deb && sudo apt-get update
+#    配好源【只是为了 apt-get download】。千万不要顺手 `apt install cuda` 或
+#    `cuda-toolkit` —— 元包会拉 cuda-drivers 覆盖宿主注入的 NVIDIA 驱动
+#    (和本节末尾那条警告是同一个雷)。
+#    也不要 apt install 这些 TensorRT 包本身:装进 /usr 会撑爆小根分区。
 #    下载 + 解包到 $DEPS_DIR,不需要 root。
 cd "$DEPS_DIR"
 V=10.13.3.9-1+cuda13.0
@@ -187,9 +226,16 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 
 - `missing components: nvparsers` —— TensorRT 10 里已删除,`find_package` 也没把它标为 required
 - cmake 报 TensorRT 版本号为空 —— `NvInferVersion.h` 用 `TRT_*_ENTERPRISE` 宏而不是字面量,实际就是 10.13.3.9
-- 单个 gtest `FK.TestFKAndGlobalVelocities` 失败 —— 它的 fixture 目录 `reference/bones_072925_test/` 没随仓库发布,不是编译问题
+- 单个 gtest `FK.TestFKAndGlobalVelocities` 失败 —— fixture 目录 `reference/bones_072925_test/` 没随仓库发布,不是编译问题。**按上面的命令你不会看到它**:`run_tests` 只编不跑,`.justfile` 的 `test` target 是个空壳(只 echo 一行)。只有手动执行 `build/run_tests` 才会撞上
 
 `just` 不需要装:`.justfile` 的 `build` 就是上面这两条 cmake。
+
+> **`patches/` 里有两样东西,只有一样属于这条流程。**
+> `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。
+> `sonic_dds_domain.md` 不是补丁,是一份手改 `g1_deploy_onnx_ref.cpp` 再重编的
+> 说明,**只有要同时跑多条并行采集 stack 时才需要**:不打的话单条 stack 完全
+> 正常,但两条会在 DDS domain 0 上串扰,lowstate/lowcmd 互相污染 —— 那个症状
+> 几乎不可能反推回这里。只跑单条 stack 就不用管它。
 
 > **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
 > 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。
@@ -231,10 +277,9 @@ preset / target / target_pool / 桌上物体,对不上就是没生效。
 ### 5. GR00T 微调 venv(要训练/评测 VLA 就必需)
 
 ```bash
-cd third_party/Isaac-GR00T
-# 按上游 README 建 .venv(uv sync / pip install -e .)
-cd ../..
-bash scripts/link_gr00t_src.sh     # 把 `import gr00t` 指到 src/gr00t
+(cd third_party && git clone https://github.com/NVIDIA/Isaac-GR00T.git)
+# 然后按上游 README 在 third_party/Isaac-GR00T/ 下建 .venv(uv sync / pip install -e .)
+bash scripts/link_gr00t_src.sh     # 回到仓库根跑;把 `import gr00t` 指到 src/gr00t
 ```
 
 最后一步不可省:**训练代码是 `src/gr00t/`**(vendored、入 git、二次开发改这里,
@@ -251,9 +296,12 @@ VIRTUAL_ENV=third_party/Isaac-GR00T/.venv uv pip install onnxruntime
 ### 6. conda 训练环境(可选,SONIC 自身的 RL 训练用,与上面无关)
 
 ```bash
-bash scripts/setup_sonic.sh    # gear_sonic + Isaac-GR00T
+bash scripts/setup_sonic.sh    # gear_sonic + Isaac-GR00T(IsaacLab 它自己会 clone)
 bash scripts/setup_sonic2.sh   # IsaacLab 固定到 v2.3.2 并装 gear_sonic[training]
 ```
+
+EmbodiedGen 要自己拿:
+`(cd third_party && git clone https://github.com/HorizonRobotics/EmbodiedGen.git)`。
 
 > EmbodiedGen 的 4 个安装脚本(`install_embodiedgen.sh`、
 > `install_affordance_noflash.sh`、`eg_env.sh`、`setup_sonic*.sh`)同样改成了这套
