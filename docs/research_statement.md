@@ -1,9 +1,13 @@
 # Research Statement — Scripted Expert 何以替代人类 Teleop（草稿 v1）
 
 > 2026-08-26。基于 scoop check（docs/../step1–6.md、papers/）与三轮实验。
-> 标 ⏳ 的槽位等 round 3 闭环数字（预计当日）落地后填入。
+> v2（2026-08-26 午后）：round 3 闭环数字已落地并填入，判决实验通过。
 
 ## Thesis（一句话）
+
+> 升级中：讨论记录（scripted_expert_innovation_discussion.md）已把 thesis 从
+> "cadence 是数据质量轴" 重构为 "**imitability 是 teacher design 的对象，
+> cadence 是它的时间面**"，待 imitation-gap 线二次查重后定稿。
 
 LEGS (arXiv:2606.01458) 证明了 scripted 数据**可以**替代人类 teleop 微调
 humanoid loco-manip VLA；本工作回答它**何以成立、何时失败、代价几何** ——
@@ -31,10 +35,11 @@ approach 零失败）。LEGS 占了"能不能"的旗；我们的信封宽 4 倍
 - 治理只能在源头：廉价 idle 过滤分不开到位停顿与闭合前精调保持
   （0.11 vs 0.06 rad/s，故 --drop-idle 被 park）；源头行为工程把停顿
   4.6→3.0 s、episode 35→21 s（信号密度 ≈2×）。
-- **判决实验（round 3）**：同 200 episodes、仅治理 cadence 重训。
-  闭环成功率：round 1 = 6/101，round 2 (+DAgger) = 14/102，
-  round 3 = **⏳ __/100**。若显著超过 round 2，则以同等数据量隔离出
-  cadence 变量。
+- **判决实验（round 3）—— 已通过**：同 200 episodes、仅治理 cadence 重训。
+  闭环成功率：round 1 = 6/101 (5.9%)，round 2 (+DAgger) = 14/102 (13.7%)，
+  **round 3 = 28/100 (28.0%，Wilson 20–37%)** —— 同等数据量下翻倍，
+  cadence 变量被隔离证实。失败构成迁移为 reach 67 / close 5（到桌前
+  不闭合），零摔倒（C3 的刻画继续成立）。
 
 **C3（实证刻画，非机制主张）— latent-WBC-token 动作空间把失败压缩为意图错误。**
 三轮闭环失败分类学中**零摔倒**（失败全为 reach 停滞 / close 失误）：任何
@@ -55,8 +60,9 @@ token 解码出的都是 SONIC 稳定的全身运动，探索空间从"既要对
 
 ## 证伪条件（诚实清单）
 
-- round 3 ≤ round 2 → C2 的"cadence 是主要残余瓶颈"被削弱，
-  回到 coverage 叙事（DAgger 加码 / spawn 课程）。⏳
+- ~~round 3 ≤ round 2 → C2 被削弱~~ **已解除**：round 3 = 28.0% ≫ 13.7%。
+  剩余 67 个 reach 失败是下一层问题（到桌前不闭合），归因待查 ——
+  它可能属于 imitability 的另一个面（见讨论记录的 teacher-design 重构）。
 - 命令线对照训练若与 token 线同等成功率 → C3 的动作空间优势不成立。
 - 人类 teleop 上界对照（同信封 200 条 teleop 数据）缺失 —— 目前只能
   引 NVIDIA 参考数据的 0.2 s 停顿统计，不能引其成功率。写作时须声明。
@@ -65,7 +71,7 @@ token 解码出的都是 SONIC 稳定的全身运动，探索空间从"既要对
 
 已完成：round 1 (6/101) → round 2 (+50 DAgger, 14/102) → round 3 数据
 （200 eps，cadence 治理后）→ 训练中。
-进行中：round 3 open-loop sweep + closed-loop 100 rounds ⏳。
+已完成：round 3 open-loop sweep（10 个 checkpoint）+ closed-loop 100 rounds = 28.0%。
 计划：18 维命令线对照（C3 升格）；failure-state fork + privileged-progress
 advantage weighting（sim 免 V-JEPA 的 SRPO 变体，见讨论文档）；
 3DGS/UE 重渲染（根位姿通道已在 99 处排队）；真机（LEGS 已验通

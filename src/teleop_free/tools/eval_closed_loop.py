@@ -74,6 +74,25 @@ def main():
     ap.add_argument("--target", default="water_bottle")
     ap.add_argument("--out", default=None)
     ap.add_argument("--trace-dir", default=None)
+    ap.add_argument("--stall-abort", type=float, default=0.0, metavar="SEC",
+                    help="END a round early once the pelvis has moved less "
+                         "than 3 cm for SEC seconds with no close commanded. "
+                         "OFF by default and it must stay off for anything "
+                         "published: measured on round 3's 100 traces, a 30 s "
+                         "window fires on 70 rounds, saves ~33%% of wall clock, "
+                         "and scores 1 of 28 successes as a failure -- the "
+                         "error is always in that direction. 5.9/13.7/28.0 "
+                         "were all measured on the full 90 s budget. Use it "
+                         "for diagnostic sweeps, never for a headline number.")
+    ap.add_argument("--resume", action="store_true",
+                    help="keep the existing manifest and top it up to --fresh "
+                         "rounds instead of starting over. The rounds are NOT "
+                         "reproduced bit for bit -- grasp_gym consumes one RNG "
+                         "stream, so skipping rounds shifts every later draw. "
+                         "They do not need to be: a success rate is a Monte "
+                         "Carlo estimate, so what has to match is the "
+                         "DISTRIBUTION, and the top-up draws from the same one "
+                         "with a seed offset by the rounds already done.")
     ap.add_argument("--seed", type=int, default=1000,
                     help="round-sampling seed; deliberately disjoint from the "
                          "collection's seeds")
@@ -131,15 +150,39 @@ def main():
             "--spawn-edge", "0.7", "--face-object",
             "--spawn-yaw-err", "20", "--spawn-lateral", "0.20",
             "--edge-jitter", "0.20"]
+    done = 0
+    if args.resume and manifest.exists():
+        done = sum(1 for l in manifest.read_text().splitlines() if l.strip())
+    todo = max(0, args.fresh - done)
+    if args.resume and done:
+        # Offset so the top-up cannot redraw the rounds already measured. The
+        # sample is still i.i.d. from the same distribution, which is all a
+        # rate estimate needs.
+        argv[argv.index("--seed") + 1] = str(args.seed + done)
+        argv[argv.index("--rounds") + 1] = str(todo)
+        print(f"[closed-loop] resuming: {done} rounds already in the manifest, "
+              f"{todo} to go (seed {args.seed}+{done})")
+        if todo == 0:
+            print("[closed-loop] nothing to do; aggregating what is there")
+    else:
+        manifest.unlink(missing_ok=True)
+
+    if args.stall_abort > 0:
+        vla_round.STALL_ABORT_S = args.stall_abort
+        print(f"[closed-loop] STALL-ABORT {args.stall_abort:.0f}s IS ON -- this "
+              f"run is NOT comparable with the 5.9/13.7/28.0 ladder (measured "
+              f"on the full {vla_round.TIMEOUT_S:.0f}s budget). Diagnostic use "
+              f"only.")
+
     print(f"[closed-loop] {args.fresh} rounds, horizon {args.execution_horizon}, "
           f"seed {args.seed}\n[closed-loop] manifest -> {manifest}")
-    manifest.unlink(missing_ok=True)
-    old_argv = sys.argv
-    sys.argv = argv
-    try:
-        grasp_gym.main()
-    finally:
-        sys.argv = old_argv
+    if todo > 0:
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            grasp_gym.main()
+        finally:
+            sys.argv = old_argv
 
     # --- aggregate ----------------------------------------------------------
     rows = [json.loads(l) for l in manifest.read_text().splitlines() if l.strip()]
@@ -159,7 +202,10 @@ def main():
         wilson95=[lo, hi],
         scripted_reference=dict(successes=200, attempts=210, rate=200 / 210),
         execution_horizon=args.execution_horizon, client=args.client,
-        failure_stages=stages, seed=args.seed, manifest=str(manifest))
+        failure_stages=stages, seed=args.seed, manifest=str(manifest),
+        stall_abort_s=args.stall_abort,
+        full_budget=(args.stall_abort <= 0),
+        resumed_from=done if args.resume else 0)
     out.write_text(json.dumps(results, indent=2))
 
     print(f"\n=== closed loop: {k}/{n} = {100 * k / max(n, 1):.0f}% "
