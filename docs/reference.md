@@ -131,6 +131,16 @@
 > 的 sim** —— 它和第一个 deploy 一起往同一个 sim 发 lowcmd,而它自己的 sim 一条指令
 > 都收不到。排查时第一反应会是"第二个 stack 起坏了",而不是 DDS domain。
 
+> **Python 侧的端口以前也分不开,现在由 `paths.sh` 统一派生。**
+> 六个端口(相机 5555 / 命令 5556 / debug 5557 / 键盘 5580 / 特权 5581 /
+> episode 5582)在 `agent_server.py`、`vla_round.py`、`privileged_pub.py` 里是
+> `os.environ.get("TF_...", <instance-0 默认值>)`。而 `collect_pilot.sh` /
+> `collect.sh` 从来不提 `INSTANCE` —— 于是即使 stack 用 `INSTANCE=1` 起来了,
+> 它们启动的 `grasp_gym` 还是去连 5556,**连到 instance 0 的那个 stack 上**。
+> 和 DDS domain 那个坑同一个形状,只是在 Python 侧:全都连上了,没有任何报错,
+> 只是连错了 stack。现在这六个端口和 `SONIC_DDS_DOMAIN` 都由 `scripts/paths.sh`
+> 一处派生,凡是 source 它的脚本(包括两个采集脚本)都自动一致。
+
 > **`INSTANCE=1` 的 5590 和闭环评测的 `serve_policy` 撞端口。**
 > `TF_KEYBOARD_PORT = 5580 + 10*INSTANCE`,所以 `INSTANCE=1` 占住 5590,而
 > `serve_policy.py` 的默认端口正是 5590(`run_round3.sh`、

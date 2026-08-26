@@ -43,3 +43,29 @@ locomani_session_root() {
     if [ "$_lm_i" = "0" ]; then echo "$LOCOMANI_TMP/p03"
     else echo "$LOCOMANI_TMP/p03_i$_lm_i"; fi
 }
+
+# --- ZMQ ports and the DDS domain, derived from INSTANCE, in ONE place -------
+#
+# Every one of these used to be re-derived by whoever needed it: start_stack.sh
+# had all six, restart_deploy.sh two, par_batch.sh three, and the Python side
+# read them from the environment with instance-0 defaults baked in. Which meant
+# a launcher that did not export them -- collect_pilot.sh and collect.sh
+# mention INSTANCE nowhere -- silently handed grasp_gym port 5556, i.e. THE
+# STACK BELONGING TO INSTANCE 0, however the stack itself had been started.
+# Same shape as the DDS-domain trap, one layer up: everything connects and
+# nothing complains, it is just the wrong stack.
+#
+# Derived here so `INSTANCE=k` means one thing everywhere. Assignments are
+# unconditional on purpose: an inherited TF_SONIC_PORT from a different
+# instance is exactly the bug being closed, so it must not win.
+export INSTANCE="${INSTANCE:-0}"
+export SONIC_DDS_DOMAIN="$INSTANCE"
+export TF_CAMERA_PORT=$((5555 + 10 * INSTANCE))      # sim  -> exporter/agent
+export TF_SONIC_PORT=$((5556 + 10 * INSTANCE))       # agent -> deploy
+export TF_OUT_PORT=$((5557 + 10 * INSTANCE))         # deploy -> exporter/agent
+export TF_KEYBOARD_PORT=$((5580 + 10 * INSTANCE))    # agent -> exporter
+export TF_PRIVILEGED_PORT=$((5581 + 10 * INSTANCE))  # sim  -> agent
+export TF_EPISODE_PORT=$((5582 + 10 * INSTANCE))     # agent -> sim
+# NOTE: TF_KEYBOARD_PORT for INSTANCE=1 is 5590, which is serve_policy.py's
+# default port. Parallel collection and closed-loop evaluation cannot run at
+# the same time without moving one of them (docs/reference.md#端口).
