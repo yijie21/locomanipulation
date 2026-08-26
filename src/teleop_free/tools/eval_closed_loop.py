@@ -84,6 +84,10 @@ def main():
                          "error is always in that direction. 5.9/13.7/28.0 "
                          "were all measured on the full 90 s budget. Use it "
                          "for diagnostic sweeps, never for a headline number.")
+    ap.add_argument("--force-resume", action="store_true",
+                    help="allow --resume across a change of --seed. Off by "
+                         "default: the blended sample is still valid but "
+                         "nothing downstream records that it is a blend.")
     ap.add_argument("--resume", action="store_true",
                     help="keep the existing manifest and top it up to --fresh "
                          "rounds instead of starting over. The rounds are NOT "
@@ -153,6 +157,22 @@ def main():
     done = 0
     if args.resume and manifest.exists():
         done = sum(1 for l in manifest.read_text().splitlines() if l.strip())
+        # Refuse to top up a manifest that came from a different seed. The
+        # rounds would still be same-distribution and the arithmetic would
+        # still work, which is exactly why this has to be an error rather than
+        # a warning: nothing downstream would ever show that the sample is a
+        # blend of two seed lineages.
+        if done and out.exists():
+            try:
+                prev = json.loads(out.read_text()).get("seed")
+            except Exception:
+                prev = None
+            if prev is not None and prev != args.seed and not args.force_resume:
+                sys.exit(
+                    f"--resume: the {done} rounds already in\n  {manifest}\n"
+                    f"were run with --seed {prev}, not {args.seed}. Re-run with "
+                    f"--seed {prev}, point --out somewhere else, or pass "
+                    f"--force-resume if mixing them is genuinely what you want.")
     todo = max(0, args.fresh - done)
     if args.resume and done:
         # Offset so the top-up cannot redraw the rounds already measured. The

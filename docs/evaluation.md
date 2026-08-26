@@ -238,6 +238,16 @@ frozen-DiT),不用于 headline。
 `seed + 已完成轮数` 从同一分布再抽,统计上完全有效。(上次 ENOSPC 在第 69 轮把整场
 丢掉,这条就是那次的保险。)
 
+**换了种子再 resume 会被拒绝**,而不是警告:混出来的样本仍然合法、算术仍然正确,
+正因如此下游没有任何地方会显示它是两个种子谱系的混合 —— 所以必须是硬错误。
+确实要混就 `--force-resume`。
+
+冒烟验收(`--fresh 5 --seed 6000`,与 round 3 的 manifest 前 5 行逐行比对):
+appearance / obj_xy / robot_xy / stand_xy / yaw **五个字段五轮全部一致**,
+默认路径行为未变。开关本身也实跑过:`--resume` 从 5 补到 7 行、`--stall-abort 30`
+让两局在 42 s 和 77 s 收局(否则各 90 s),结果 JSON 记下
+`stall_abort_s` / `full_budget` / `resumed_from`。
+
 ### 处方:靶向 DAgger(`scripts/collect_dagger.sh`)
 
 让**专家出生在学生卡住的位置**(离桌沿 0.35–0.55 m;臂垂就是自然站姿,无需在线
