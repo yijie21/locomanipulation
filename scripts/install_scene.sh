@@ -45,13 +45,21 @@ else
       | xargs -r sed -i "s#$BAKED#$ROOT#g"
 fi
 
-# Rebuild the simulation scene from the unpacked source assets rather than
-# shipping a built one. The tarball carries mjcf/ and layout/ -- the parts
-# EmbodiedGen is slow to produce -- while the arrangement, the surface
-# heights and the primitive target objects all live in scene_lib.py and
-# change often. A prebuilt scene_locomani.xml in the tarball goes stale the
-# first time anyone edits that file, and the failure is quiet: the sim runs,
-# the new target objects are simply absent. The rebuild costs ~1 s.
+# Rebuild the simulation scene from the unpacked source assets, unconditionally.
+#
+# The tarball DOES carry a built scene/sim/ (scene_locomani.xml +
+# scene_meta.json) alongside the mjcf/ and layout/ sources -- but it is a
+# snapshot of whatever scene_lib.py looked like when the tarball was packed,
+# and the arrangement, surface heights and primitive targets all live in
+# scene_lib.py and change often. So the shipped one is treated as disposable
+# and overwritten every time. The rebuild costs ~1 s.
+#
+# Right now the two happen to agree: a default rebuild produces exactly the
+# baked scene (target_object=can, target_pool=[can, bottle, cup, jar], and the
+# 8 objects bottle/can/cup/fork/jar/napkin/orange/plate). That coincidence is
+# why the skip branch below has never bitten anyone -- and why it will, quietly,
+# the first time scene_lib.py changes. Do not read it as "the baked scene is
+# fine".
 PY="$SONIC_ROOT/.venv_sim/bin/python"
 if [ -x "$PY" ]; then
     "$PY" "$LOCOMANI_SRC/build_sim_scene.py" \
