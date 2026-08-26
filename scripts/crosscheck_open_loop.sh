@@ -86,6 +86,18 @@ print(json.load(open('$VAL_DS/meta/info.json'))['total_episodes'])" 2>/dev/null)
 if [ -z "$n_val" ]; then echo "cannot read $VAL_DS/meta/info.json"; exit 1; fi
 TRAJ_IDS=$(seq 0 $((n_val - 1)) | tr '\n' ' ')
 
+# --steps, and why it has to be set. The official client defaults to 200 and
+# caps at the trajectory length (open_loop_eval.py:149), so on this dataset it
+# scores only the first 200 of a 546-832 frame episode -- the walk, and none of
+# the grasp, which happens around frame 327. The first cross-check run
+# disagreed with ours about the best checkpoint for exactly that reason: the
+# two were scoring different parts of the episode. Derived from the longest
+# episode so it can never silently truncate again.
+STEPS=$("$GR00T_PY" -c "
+import json
+print(max(json.loads(l)['length'] for l in open('$VAL_DS/meta/episodes.jsonl')))" 2>/dev/null) || STEPS=""
+[ -z "$STEPS" ] && { echo "cannot read episode lengths from $VAL_DS"; exit 1; }
+
 wait_for_driver
 
 mapfile -t CKPTS < <(ls -d "$CKPT_DIR"/checkpoint-* 2>/dev/null | sort -t- -k2 -n)
@@ -96,7 +108,7 @@ fi
 echo "cross-check: NVIDIA open_loop_eval vs ours"
 echo "  checkpoints  ${#CKPTS[@]}"
 echo "  val set      $VAL_DS ($n_val episodes)"
-echo "  horizon      $HORIZON   port $PORT   gpu $GPU"
+echo "  horizon      $HORIZON   steps $STEPS   port $PORT   gpu $GPU"
 echo
 
 : > "$LOG_DIR/results.tsv"
@@ -126,6 +138,7 @@ for c in "${CKPTS[@]}"; do
         --embodiment-tag UNITREE_G1_SONIC \
         --host 127.0.0.1 --port "$PORT" \
         --traj-ids $TRAJ_IDS \
+        --steps "$STEPS" \
         --execution-horizon "$HORIZON" > "$clog" 2>&1
     kill_server
 
