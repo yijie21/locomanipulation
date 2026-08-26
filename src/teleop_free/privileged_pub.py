@@ -598,3 +598,84 @@ class PrivilegedSubscriber:
     def close(self) -> None:
         self.sock.close()
         self.ctx.term()
+
+
+class PoseSidecar:
+    """Per-round world-pose recorder, for offline re-rendering.
+
+    The raw exporter session records NO world-frame robot position (32 columns,
+    checked 2026-08-26: root_orientation is orientation only, object poses are
+    robot-frame) -- so nothing collected before this class existed can be
+    re-rendered by a mirror renderer (UE/3DGS): placing the scene needs the
+    robot's pose relative to the furniture. The data was always computed --
+    this same module publishes pelvis pos/quat every frame on :5581 -- it was
+    just never persisted. This subscribes on its own socket (PUB/SUB, no
+    interference with the gym's poll) and appends one jsonl row per message:
+
+        {"t": <sim s>, "wall": <unix s>, "pelvis": [x,y,z,qw,qx,qy,qz],
+         "objects": {key: [x,y,z,qw,qx,qy,qz]}}
+
+    Both clocks on purpose: the exporter's parquet timestamps live on a
+    different clock, and alignment is an offline problem (docs/ROADMAP.md).
+    Fail-safe by design -- every entry point swallows its own errors, because
+    a broken sidecar must cost a warning, never an episode.
+    """
+
+    def __init__(self, out_dir, host: str = "localhost", port: int | None = None):
+        import os as _os, threading as _th
+        self.dir = out_dir
+        self._lock = _th.Lock()
+        self._fh = None
+        self._alive = True
+        try:
+            _os.makedirs(out_dir, exist_ok=True)
+            ctx = zmq.Context.instance()
+            self.sock = ctx.socket(zmq.SUB)
+            self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
+            self.sock.RCVTIMEO = 500
+            self.sock.connect(f"tcp://{host}:{port or PRIVILEGED_PORT}")
+            t = _th.Thread(target=self._loop, daemon=True)
+            t.start()
+        except Exception as e:                                # noqa: BLE001
+            print(f"[sidecar] disabled: {e}")
+            self._alive = False
+
+    def _loop(self):
+        while self._alive:
+            try:
+                msg = json.loads(self.sock.recv_string())
+            except Exception:
+                continue
+            with self._lock:
+                if self._fh is None:
+                    continue
+                try:
+                    pel = msg["pelvis"]
+                    row = {"t": msg.get("t"), "wall": msg.get("wall"),
+                           "pelvis": list(pel["pos"]) + list(pel["quat"]),
+                           "objects": {k: list(o["pos"]) + list(o["quat"])
+                                       for k, o in msg.get("objects", {}).items()}}
+                    self._fh.write(json.dumps(row) + "\n")
+                except Exception:
+                    pass
+
+    def start(self, round_i: int, attempt: int):
+        import os as _os
+        with self._lock:
+            try:
+                if self._fh:
+                    self._fh.close()
+                self._fh = open(_os.path.join(
+                    self.dir, f"round_{round_i:03d}_attempt_{attempt}.jsonl"), "w")
+            except Exception as e:                            # noqa: BLE001
+                print(f"[sidecar] start failed: {e}")
+                self._fh = None
+
+    def stop(self):
+        with self._lock:
+            try:
+                if self._fh:
+                    self._fh.close()
+            except Exception:
+                pass
+            self._fh = None
