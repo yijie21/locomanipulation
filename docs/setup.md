@@ -273,9 +273,16 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 > **`patches/` 里有两样东西,只有一样属于这条流程。**
 > `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。
 > `sonic_dds_domain.md` 不是补丁,是一份手改 `g1_deploy_onnx_ref.cpp` 再重编的
-> 说明,**只有要同时跑多条并行采集 stack 时才需要**:不打的话单条 stack 完全
-> 正常,但两条会在 DDS domain 0 上串扰,lowstate/lowcmd 互相污染 —— 那个症状
-> 几乎不可能反推回这里。只跑单条 stack 就不用管它。
+> 说明。**照本文装出来的 deploy 没打它,因此无法参与任何多实例场景** ——
+> 而 [collection.md](collection.md) 的并行采集就是多实例。这不是"高级用法才需要",
+> 是本文装出来的东西不满足那份文档的前提。
+>
+> 只跑单条 stack 就不用管它(单条完全正常)。要跑多条就得先打上再重编,
+> 因为库存二进制把 DDS domain 硬编码成 0、根本不读 `SONIC_DDS_DOMAIN`,而
+> `INSTANCE` 只管得住 Python 侧和端口。失败模式很隐蔽:第二个 stack 的 sim 在
+> domain 1、它自己的 deploy 却在 domain 0,于是**那个 deploy 跑去接管第一个 stack
+> 的 sim**,自己的 sim 一条指令都收不到。三方状态表见
+> [reference.md 端口](reference.md#端口)。
 
 > **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
 > 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。

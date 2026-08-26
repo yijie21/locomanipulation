@@ -96,8 +96,30 @@
 
 ### 端口
 
-`INSTANCE=i` 时全部加 `10*i`,DDS domain 也用 `i`,多实例互不干扰;只有 instance 0
-挂 exporter 落盘。
+`INSTANCE=i` 时全部加 `10*i`,DDS domain 也用 `i`;只有 instance 0 挂 exporter 落盘。
+
+> **端口分得开,DDS domain 分不开 —— 除非 deploy 打过补丁。**
+> `INSTANCE` 只对 Python 侧和端口有效。**库存的 `g1_deploy_onnx_ref` 把 DDS domain
+> 硬编码成 0**,根本不读 `SONIC_DDS_DOMAIN`(要读得先打
+> [`patches/sonic_dds_domain.md`](../patches/sonic_dds_domain.md) 再重编)。照
+> [setup.md](setup.md) 从零装出来的 deploy **没打这个补丁**,所以它不能参与任何
+> 多实例场景。用没打补丁的二进制起第二个 stack,三方状态是:
+>
+> | 进程 | domain | 为什么 |
+> |---|---|---|
+> | 第二个 stack 的 sim(`INSTANCE=1`) | 1 | `run_sim_locomani.py` 认 `SONIC_DDS_DOMAIN` |
+> | 第二个 stack 的 deploy | **0** | 硬编码,环境变量不读 |
+> | 第一个 stack(sim + deploy) | 0 | — |
+>
+> 后果不是"两个 stack 互相干扰",而是**第二个 stack 的 deploy 静默接管第一个 stack
+> 的 sim** —— 它和第一个 deploy 一起往同一个 sim 发 lowcmd,而它自己的 sim 一条指令
+> 都收不到。排查时第一反应会是"第二个 stack 起坏了",而不是 DDS domain。
+
+> **`INSTANCE=1` 的 5590 和闭环评测的 `serve_policy` 撞端口。**
+> `TF_KEYBOARD_PORT = 5580 + 10*INSTANCE`,所以 `INSTANCE=1` 占住 5590,而
+> `serve_policy.py` 的默认端口正是 5590(`run_round3.sh`、
+> [evaluation.md](evaluation.md) 都用它)。**多实例采集和闭环评测不能同时跑**,
+> 或者给 `serve_policy` 换个端口。
 
 | 端口 | 方向 | 内容 |
 |---|---|---|
