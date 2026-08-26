@@ -382,6 +382,46 @@ Agent 进程和 Sim 进程虽然都用同一个 `.venv_sim`,但是**两个独立
    所以下蹲**在 token 里**,不需要额外通道。(实测:命令的腰部前倾只交付 2–10%,
    基本等于没有,这条路是死的 —— 见 `diag_lean.py`。)
 
+### k-planner 的完整输入
+
+`k-planner`(`planner_sonic.onnx`,V2,TensorRT 后端)对外声明了 11 个具名输入
+tensor,但 grasp_gym.py 只摸得到其中 5 个 —— 其余由 deploy 自己维护,agent 从不写:
+
+| tensor 名 | dim | dtype | 谁写它 |
+|---|---|---|---|
+| `mode` | 1 | int64 | **grasp_gym.py 驱动**(经 `agent_server.frame()`) |
+| `movement_direction` | 3 | float32 | **grasp_gym.py 驱动** |
+| `facing_direction` | 3 | float32 | **grasp_gym.py 驱动** |
+| `target_vel`(agent 侧叫 `speed`) | 1 | float32 | **grasp_gym.py 驱动** |
+| `height` | 1 | float32 | **grasp_gym.py 驱动** |
+| `context_mujoco_qpos` | 4×36=144(4 帧 ×(7 根位姿+29 关节)) | float32 | deploy 内部自回归维护(上一次推理输出),agent 不碰 |
+| `random_seed` | 1 | int64 | deploy 内部维护 |
+| `has_specific_target` | 1 | int64 | 恒为 0(waypoint 功能,这条 pipeline 没用上) |
+| `specific_target_positions` | 12(4 个路点 × xyz) | float32 | 恒为 0 |
+| `specific_target_headings` | 4 | float32 | 恒为 0 |
+| `allowed_pred_num_tokens` | 11 | int64 | 恒为构造时的默认 mask |
+
+即 agent 真正驱动的只是 9 个标量,对应 `agent_server.py` 的
+`AgentCommander.frame(mode, movement, facing, speed, height)`,一路映射到
+`localmotion_kplanner_tensorrt.hpp` 的 `UpdateInputTensors()`(字段名字都对得上,
+`speed` ↔ `target_vel`)。**`upper_body_position[17]` 和 `hand_joints` 完全不进
+k-planner** —— 前者是 k-planner 出完 29 维参考动作之后才逐字替换进去的
+(`g1_deploy_onnx_ref.cpp:781`),后者直接下发给执行器,连 encoder/policy 都不经过。
+
+Navigation(走路)和 grasp(下蹲/伺服)两个阶段共享同一组 5 字段接口,只是喂的值不同:
+
+| 字段 | Navigation(`primitives.walk_to` / `grasp_gym.do_approach`) | Grasp(`stream_reach.PlannerArm._push`) |
+|---|---|---|
+| `mode` | `SLOW_WALK`(1) | `IDEL_SQUAT`(4) |
+| `movement_direction` | 朝目标/站位的单位向量 `(dx, dy, 0)` | `(0, 0, 0)`(默认值,不传,原地不走) |
+| `facing_direction` | 朝目标/接近航向的单位向量,逐 tick 更新 | 进入抓取前锁定的朝向,伺服全程不变 |
+| `target_vel`(speed) | `walk_to`:`clip(0.45·gain, 0.35, 0.45)`;`do_approach`:三档 `0.20/0.215/0.30` 按剩余距离切换 | -1(默认,静态模式下无意义,不传) |
+| `height` | -1(默认,不覆盖,站立高度用 mode 默认值) | 目标骨盆绝对高度(米),clip 到 `[0.40, 0.78]` —— 这一阶段唯一"活"的输入 |
+
+一句话:navigation 阶段靠 `movement_direction` + `target_vel` 让 k-planner 生成走路
+参考动作;grasp 阶段把 `mode` 切到静态的 `IDEL_SQUAT`,只靠 `height` 这一个标量让
+k-planner 生成弯腿下蹲的参考动作。
+
 ### ② 一局 episode 分几步
 
 ```mermaid
