@@ -28,6 +28,17 @@ export SONIC_DEPLOY_ROOT="${SONIC_DEPLOY_ROOT:-$LOCOMANI_ROOT/third_party/GR00T-
 mkdir -p "$EVAL_DIR"
 say() { echo; echo "=========== $* ($(date '+%F %T')) ==========="; }
 
+# Patterns assembled at run time so they can never match this script's own
+# command line (a literal pattern here kills the invoking shell: exit 144).
+kill_stack() {
+    local P_SIM P_DEP P_EXP P_SRV pat pid
+    P_SIM=$(printf '%s_%s' run_sim locomani); P_DEP=$(printf '%s_%s' g1_deploy onnx_ref)
+    P_EXP=$(printf '%s_%s' run_data exporter); P_SRV=$(printf '%s_%s' serve policy)
+    for pat in "$P_SIM" "$P_DEP" "$P_EXP" "$P_SRV"; do
+        for pid in $(pgrep -f "$pat" || true); do kill -9 "$pid" 2>/dev/null || true; done
+    done
+}
+
 # --- 0. disk preflight --------------------------------------------------------
 # Training writes ~65 GB of checkpoints; round 2's collection, eval AND a
 # second training all died of ENOSPC at once. Demand 95 GB up front, and make
@@ -80,8 +91,29 @@ done
 
 # --- 4. train -----------------------------------------------------------------
 say "4/6 train"
+# Tear the collection stack down FIRST. Everything that needed it (collection,
+# conversion) is done, and stage 6 brings a fresh one up anyway -- but while it
+# is alive the sim + TensorRT engines hold ~6.5 GB on GPU 0, and training
+# defaults to GPUS=2, so rank 0 lands on that card and dies:
+#   torch.OutOfMemoryError: Tried to allocate 3.02 GiB.
+#   GPU 0 has ... 66.38 MiB is free
+# (round 3, 2026-08-26 05:43 -- cost a full training run.)
+kill_stack
+sleep 5
+nvidia-smi --query-gpu=index,memory.used --format=csv,noheader | sed 's/^/  gpu /'
+
 if [ ! -d "$CKPT_DIR/checkpoint-10000" ]; then
-    RUN="$RUN" DATA="$TRAIN_DS" bash "$LOCOMANI_ROOT/scripts/train_bottle.sh"
+    if ! RUN="$RUN" DATA="$TRAIN_DS" bash "$LOCOMANI_ROOT/scripts/train_bottle.sh"; then
+        echo "TRAINING FAILED -- stopping."
+        echo "Everything downstream evaluates a model that does not exist:"
+        echo "the open-loop sweep would find no checkpoints and the closed-loop"
+        echo "run would report 0/100 that means nothing. Fix and re-run; stages"
+        echo "0-3 are already done and will be skipped."
+        exit 1
+    fi
+fi
+if [ -z "$(ls -d "$CKPT_DIR"/checkpoint-* 2>/dev/null)" ]; then
+    echo "no checkpoints in $CKPT_DIR -- refusing to evaluate nothing."; exit 1
 fi
 
 # --- 5. open-loop -------------------------------------------------------------
@@ -120,11 +152,7 @@ echo "BEST: $BEST"; echo "$CKPT_DIR/$BEST" > "$EVAL_DIR/best_checkpoint.txt"
 
 # --- 6. closed-loop -----------------------------------------------------------
 say "6/6 closed-loop"
-P_SIM=$(printf '%s_%s' run_sim locomani); P_DEP=$(printf '%s_%s' g1_deploy onnx_ref)
-P_EXP=$(printf '%s_%s' run_data exporter); P_SRV=$(printf '%s_%s' serve policy)
-for pat in "$P_SIM" "$P_DEP" "$P_EXP" "$P_SRV"; do
-    for pid in $(pgrep -f "$pat"); do kill -9 "$pid" 2>/dev/null || true; done
-done
+kill_stack
 sleep 3
 for pid in $(pgrep -f "venv_sim/bin/python -c from multiprocessing" || true); do
     [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" = "1" ] && kill -9 "$pid" 2>/dev/null || true

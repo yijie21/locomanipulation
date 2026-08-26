@@ -164,6 +164,12 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 #   .venv_sim 里没有,裸 python 里更没有,两者都会直接退出
 ```
 
+> **上游不钉 MuJoCo 版本,`uv` 会解析到最新的。**本仓库的结果是在 **3.11.0** 上测
+> 的;3.12.0 改了 `spec.to_xml()` 的属性发射顺序,曾经因此让 ego 相机静默停在原厂
+> 朝向、成功率全局归零(已修:`build_sim_scene.py` 改用 spec API 并在编译后自检)。
+> 如果采集时每局都是 `FAILED [view] object outside ego view`,先查
+> `.venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)"`,再重建场景。
+
 `.venv_sim` 装完之后还缺一个包:`src/teleop_free/navigator.py` 用 `skfmm`(路径规划的
 快速行进法)算距离场,但它是这个仓库自己的依赖,上游安装脚本不装,**必须**手动补上,
 否则跑 `grasp_gym.py` 等脚本会在 import 阶段就报 `ModuleNotFoundError: No module named
@@ -273,9 +279,16 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 > **`patches/` 里有两样东西,只有一样属于这条流程。**
 > `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。
 > `sonic_dds_domain.md` 不是补丁,是一份手改 `g1_deploy_onnx_ref.cpp` 再重编的
-> 说明,**只有要同时跑多条并行采集 stack 时才需要**:不打的话单条 stack 完全
-> 正常,但两条会在 DDS domain 0 上串扰,lowstate/lowcmd 互相污染 —— 那个症状
-> 几乎不可能反推回这里。只跑单条 stack 就不用管它。
+> 说明。**照本文装出来的 deploy 没打它,因此无法参与任何多实例场景** ——
+> 而 [collection.md](collection.md) 的并行采集就是多实例。这不是"高级用法才需要",
+> 是本文装出来的东西不满足那份文档的前提。
+>
+> 只跑单条 stack 就不用管它(单条完全正常)。要跑多条就得先打上再重编,
+> 因为库存二进制把 DDS domain 硬编码成 0、根本不读 `SONIC_DDS_DOMAIN`,而
+> `INSTANCE` 只管得住 Python 侧和端口。失败模式很隐蔽:第二个 stack 的 sim 在
+> domain 1、它自己的 deploy 却在 domain 0,于是**那个 deploy 跑去接管第一个 stack
+> 的 sim**,自己的 sim 一条指令都收不到。三方状态表见
+> [reference.md 端口](reference.md#端口)。
 
 > **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
 > 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。

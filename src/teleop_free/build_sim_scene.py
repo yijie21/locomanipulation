@@ -137,6 +137,78 @@ def _local_box(model, data, body_id: int):
             "centre": (0.5 * (hi + lo)).tolist()}
 
 
+# Ego camera: the stock mount (44-deg depression, default fovy 45) leaves the
+# grasp workspace outside the frame — at the actual stand the object sits ~76
+# deg below horizontal, past the bottom edge, so the RGB never shows the task
+# and the episodes are worthless to a VLA. Pitch 52 deg + fovy 70 covers 17-87
+# deg vertically (object at fy~0.68 with margin, in frame from ~1.3 m out
+# through the whole grasp).
+EGO_CAM_NAME = "head_camera"
+EGO_CAM_QUAT = (0.668835, 0.230083, -0.230336, -0.668332)
+EGO_CAM_FOVY = 70.0
+
+
+def _aim_ego_camera(spec) -> None:
+    """Re-aim the robot's ego camera on the SPEC, not on the emitted XML.
+
+    This used to be a str.replace over spec.to_xml() whose pattern spelled the
+    camera element out attribute by attribute, pos before quat. MuJoCo 3.12
+    changed the order to_xml() emits those attributes in (quat before pos, same
+    values), so the pattern stopped matching and replace returned the string
+    untouched — no error, no warning, exit 0, and an ego camera left at the
+    stock 44-deg depression with the default fovy 45. Every episode collected
+    that way has the task outside the frame: measured 0/2 successes on a fresh
+    install against 90.5% here, and the scene self-check still passed, because
+    it verifies which objects are on the table, not where the camera points.
+    (Found 2026-08-26 by installing from scratch; upstream's
+    install_mujoco_sim.sh does not pin MuJoCo, so any new install gets 3.12.)
+
+    Setting it on the spec is order-independent by construction. It is also how
+    the wrist cameras were always done (scene_lib.py, add_camera + c.fovy).
+    """
+    for cam in spec.cameras:
+        if cam.name == EGO_CAM_NAME:
+            # The stock model orients this camera with EULER, and whichever
+            # alternative `alt.type` names is the one that wins when the spec
+            # is compiled -- assigning cam.quat while alt.type is EULER is
+            # silently ignored. Switch the representation first.
+            cam.alt.type = mujoco.mjtOrientation.mjORIENTATION_QUAT
+            cam.quat = list(EGO_CAM_QUAT)
+            cam.fovy = EGO_CAM_FOVY
+            return
+    raise SystemExit(
+        f"[scene] no camera named {EGO_CAM_NAME!r} in the compiled spec. "
+        f"The ego view is the whole point of this dataset, so this is fatal "
+        f"rather than a warning: without it every episode records the stock "
+        f"downward-staring view and the task is out of frame. "
+        f"Cameras present: {sorted(c.name for c in spec.cameras)}")
+
+
+def _check_ego_camera(model) -> None:
+    """Verify the aim on the COMPILED model. Cheap, and it is the whole dataset.
+
+    Checked against the model rather than the XML text on purpose: the bug this
+    guards against was a string match that stopped matching. Anything that reads
+    the emitted text can go quiet the same way.
+    """
+    cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, EGO_CAM_NAME)
+    if cid < 0:
+        raise SystemExit(f"[scene] {EGO_CAM_NAME} missing from the compiled model")
+    fovy = float(model.cam_fovy[cid])
+    quat = [float(v) for v in model.cam_quat[cid]]
+    bad = abs(fovy - EGO_CAM_FOVY) > 1e-6 or any(
+        abs(a - b) > 1e-4 for a, b in zip(quat, EGO_CAM_QUAT))
+    if bad:
+        raise SystemExit(
+            f"[scene] ego camera did not take the intended aim.\n"
+            f"  want fovy {EGO_CAM_FOVY} quat {list(EGO_CAM_QUAT)}\n"
+            f"  got  fovy {fovy} quat {quat}\n"
+            f"Refusing to write the scene: every episode recorded through the "
+            f"stock aim has the task outside the frame, and nothing downstream "
+            f"notices (the collection succeeds, the videos record, the dataset "
+            f"converts -- the policy just never sees the object).")
+
+
 def main() -> None:
     # Absolute: run_sim_locomani.py resolves ROBOT_SCENE against GEAR_SONIC_ROOT,
     # so a relative path in the metadata would point inside the SONIC tree.
@@ -158,18 +230,10 @@ def main() -> None:
     mujoco.mj_forward(model, data)
 
     xml_path = os.path.join(out_dir, "scene_locomani.xml")
+    _aim_ego_camera(spec)           # BEFORE to_xml(): see the note in there
+    model = spec.compile()          # re-compile so the check below sees the aim
+    _check_ego_camera(model)
     xml_text = spec.to_xml()
-    # Ego camera: the stock mount (44-deg depression, default fovy 45) leaves
-    # the grasp workspace outside the frame — at the actual stand the object
-    # sits ~76 deg below horizontal, past the bottom edge, so the RGB never
-    # shows the task and the episodes are worthless to a VLA. Pitch 52 deg +
-    # fovy 70 covers 17-87 deg vertically (object at fy~0.68 with margin,
-    # in frame from ~1.3 m out through the whole grasp).
-    xml_text = xml_text.replace(
-        '<camera name="head_camera" pos="0.06 0 0.45" '
-        'quat="0.651548 0.275251 -0.27547 -0.651029"',
-        '<camera name="head_camera" fovy="70" pos="0.06 0 0.45" '
-        'quat="0.668835 0.230083 -0.230336 -0.668332"')
     with open(xml_path, "w") as f:
         f.write(xml_text)
 
