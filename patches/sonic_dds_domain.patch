@@ -1,0 +1,32 @@
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
+index a35f0b3..3ba3965 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
+@@ -46,6 +46,7 @@
+  *   --policy-fp16         | Use FP16 for policy TensorRT engine
+  */
+ #include <cmath>
++#include <cstdlib>
+ #include <cuda_runtime_api.h>
+ #include <memory>
+ #include <mutex>
+@@ -2181,8 +2182,17 @@ class G1Deploy {
+         model_path(model_file_path),
+         planner_path(planner_file_path) {
+       
+-      // Initialize ChannelFactory
+-      ChannelFactory::Instance()->Init(0, networkInterface);
++      // Initialize ChannelFactory. Domain from SONIC_DDS_DOMAIN (default 0)
++      // so several sim+deploy pairs can share this host without their DDS
++      // traffic crossing — the only hardcoded value that blocked running
++      // parallel data-collection stacks.
++      {
++        int dds_domain = 0;
++        if (const char* d = std::getenv("SONIC_DDS_DOMAIN")) {
++          dds_domain = std::atoi(d);
++        }
++        ChannelFactory::Instance()->Init(dds_domain, networkInterface);
++      }
+ 
+       // Initialize Dex3 hands (ChannelFactory already initialized above)
+       dex3_hands_.initialize("");

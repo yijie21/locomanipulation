@@ -127,19 +127,28 @@ videos/                 最新一批演示视频(每次推送整体替换)
 | 查参数、找模块、跑诊断、翻 FAQ | [docs/reference.md](docs/reference.md) |
 | 下一步做什么 | [docs/ROADMAP.md](docs/ROADMAP.md) |
 
-## 当前状态(2026-08-25)
+## 当前状态(2026-08-26)
 
-两轮微调已闭环,方向已验证:
+三轮微调已闭环,**成功率 5.9% → 13.7% → 28.0%**:
 
 - **Round 1**(200 局采集数据):开环贴测量噪声底(关节角差 1.05°),**闭环 6/101**,
   失败塌缩在 walk→reach 停滞 —— 训练数据没有"到桌边臂还垂着"这个状态。
 - **Round 2**(+50 局靶向 DAgger 恢复数据,bottle250):同款开环质量,
   **闭环 14/102 = 13.7%(Wilson 8–22%)**,round 1 的 2.3 倍 —— 靶向 DAgger
   方向确认。诊断与两轮数字在 [docs/evaluation.md](docs/evaluation.md)。
-- 训练支持 **`SINGLE_GPU=1`**(8-bit 优化器,一张 5090 跑满血 1.62B 微调),
-  以及冻结 DiT 消融(初步:DiT 贡献 ~12% 开环精度、约 2 倍步数效率)。
+- **Round 3**(fast200,200 局,**零 DAgger**):把脚本专家的停顿削掉(到位→伸手
+  中位 4.6 s → 3.0 s,episode 35 s → 20–22 s),**闭环 28/100 = 28.0%
+  (Wilson 20–37%)**,round 1 的 4.7 倍。用的还是 200 局 —— 证实病在**数据形状**
+  不在数据量。失败结构整个变了:**walk / approach 零失败**,67 次失败全是
+  "已到桌边(0.23–0.29 m)却不下闭合指令"。开环闭合帧误差只有 1.75 帧,说明模型
+  离线知道该何时闭合、闭环下不发 —— 典型 covariate shift,下一轮 DAgger 该补
+  "临近闭合"而非恢复轨迹。
+- 开环指标经 **NVIDIA 官方 `gr00t/eval/open_loop_eval.py` 交叉验证**:同一批
+  checkpoint 排序一致(Spearman **+0.988**),best 同为 checkpoint-9000。
+- 训练按硬件自选优化器(< 40 GB 的卡走 8-bit,否则 fp32),并在启动前预检显存
+  占用;冻结 DiT 消融(初步:DiT 贡献 ~12% 开环精度,闭环等价性未测)。
 
-wandb: locomani-bottle / bottle200 · bottle250 · bottle250_frozen_dit。
+wandb: locomani-bottle / bottle200 · bottle250 · bottle250_frozen_dit · fast200。
 
 > **这些成功率只在上面快速开始第 3 步那套窄 spawn 分布下成立**
 > (0.7 m 起步、`--face-object`、朝向偏差 ±20°、横偏 ±0.20 m)。换成 `grasp_gym`

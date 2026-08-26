@@ -107,6 +107,82 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
   96% 超过一个 chunk 的覆盖能力 —— policy 在正确模仿"站着"。
   见 fast-reach 分支的 settle 削减与重采。
 
+### Round 3(fast200 = 200 局,停顿修好,**零 DAgger**):28/100
+
+**闭环 28/100 = 28.0%(Wilson 20.1–37.5%)**。round 1 的 4.7 倍、round 2 的 2.0 倍,
+区间与 round 1 完全不重叠。脚本专家参考 200/210 = 95.2%。
+
+最要紧的一点:**round 3 没有用任何 DAgger 数据。**round 2 靠额外采 50 局恢复轨迹
+换来 2.3 倍;round 3 只是把脚本专家的停顿削掉(到位→伸手中位 4.6 s → 3.0 s,
+episode 从约 35 s 压到 20–22 s),用**同样 200 局**又翻了一倍。这直接证实了
+round 2 末尾那个诊断:病在**数据形状**,不在数据量 —— "只采 200 条"这个目标本身
+没有错。
+
+**失败结构整个变了**,比成功率更有信息量:
+
+| | round 1 | round 3 |
+|---|---|---|
+| walk / approach 失败 | 主导(walk→reach 停滞) | **0 / 0** |
+| reach(到桌边但不下闭合指令) | — | **67** |
+| close(下了指令但没抬起来) | — | 5 |
+
+67 次 reach 失败全部发生在**机器人已经站在桌边、距离 0.23–0.29 m、在可抓范围内**
+的位置。走路那段的病治好了,瓶颈整体后移到"到位之后不扣扳机"。
+
+而这里有个直接矛盾值得记下:**开环测出的夹爪闭合帧误差只有 1.75 帧**
+(真值 326.9 / 预测 328.65),也就是说模型**离线完全知道**该什么时候闭合,闭环下
+却不发。这是 covariate shift 的典型形状 —— 闭环观测落进了训练集没覆盖的状态。
+
+**所以下一轮 DAgger 该补的不是恢复轨迹(round 2 那套),而是"站在桌边、手已伸出、
+临近闭合"这个片段的多样性。**
+
+开环(best = checkpoint-9000,20 局 val,noise floor 1.361°):
+
+| horizon | nMSE token | persistence | deg_mean | persistence |
+|---|---|---|---|---|
+| 1 | 0.1272 | 0.0000 | 1.136 | 0.000 |
+| 8 | 0.1434 | 0.1555 | 1.199 | 1.164 |
+| 16 | 0.1592 | 0.3439 | 1.277 | 2.025 |
+| 40 | 0.1794 | 0.8791 | 1.365 | 4.336 |
+
+h=1 时 persistence 恒为 0(单步上"重复上一个动作"就是真值),从 h=8 起才有对照
+意义。模型误差随 horizon 增长极慢(40 步只涨 41%),persistence 涨 5.6 倍 ——
+模型在**预测轨迹**而不是复读。整条 chunk(h=40,1.33 s)的关节误差 1.365°
+正好压在噪声底 1.361° 上,所以整个 chunk 可以信任。
+
+**FSQ 吸附有反面证据**:同一 checkpoint 同一 horizon,`nmse_token` 0.1592(吸附后)
+vs `nmse_token_unsnapped` 0.1369 —— **吸附让指标恶化约 16%**。官方
+`run_vla_inference.py` 发的是原始浮点、不做吸附。开环已说明它有害,闭环对照待做
+(ROADMAP 待办总表)。
+
+### 交叉验证:官方 open-loop eval 说了什么
+
+`scripts/crosscheck_open_loop.sh` 用 NVIDIA 自己的
+`gr00t/eval/open_loop_eval.py`(朴素 unnormalized MSE)对同一批 checkpoint 打分,
+比的是**排序**不是数值:
+
+```
+best by NVIDIA's MSE : checkpoint-9000
+best by our nMSE     : checkpoint-9000
+Spearman rho         : +0.988  (10 个 checkpoint)
+```
+
+**AGREE。**逐点排序几乎完全对齐,两者在 4000/5000 和 6000/7000 出现同样的局部
+回摆,同样在 9000 见底、10000 略回升。所以确实属于我们自己的那层 —— 轨迹迭代、
+execution-horizon 索引、指标算术 —— 与官方实现一致。
+
+范围要说清楚:`serve_policy.py` 是官方 `Gr00tPolicy` + `PolicyServer` 的 71 行
+封装,连 `parse_action_gr00t` 都从官方 eval import。**模型加载、归一化、
+embodiment projection 若有错会同时骗过两边**,这次没有检验到那一层。
+
+> **官方 eval 的 `--steps` 默认 200,会静默截断。**第一次跑给的是 DISAGREE
+> (官方选 10000、我们选 9000,rho +0.952)。原因不是任何一方有 bug:
+> `open_loop_eval.py:149` 是 `actual_steps = min(steps, traj_length)`,而我们的
+> val episode 长 546–832 帧、**夹爪闭合在第 327 帧** —— 官方那一跑只评了前 200 帧
+> 的走路段,根本没到抓取。改成按最长 episode 推导(832)后即 AGREE,rho 升到
+> +0.988。这个默认值对 DROID 那种短 demo 合适,对 20 s @30Hz 的 episode 就是
+> 静默截断,任何拿官方 eval 评长 episode 的人都会踩到。
+
 ### async 客户端(默认,官方部署同款)
 
 `eval_closed_loop.py --client async`(默认)。结构照抄 NVIDIA 自己的

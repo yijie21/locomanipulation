@@ -96,14 +96,18 @@
 
 ### 一条通则:找不到就要吵
 
-今天同一类 bug 出现了三次,都是**操作失败但退出码是成功**,都在几十行之后以完全
-无关的面貌爆出来:
+同一类 bug 一天之内出现了六次,都是**操作失败但退出码是成功**,都在几十行之后以
+完全无关的面貌爆出来。最后两条尤其值得看:一条是前一条的**修复过程本身**,另一条
+发生在**检查器**里 —— 检查失败时也会静默地报告"没问题":
 
 | 操作 | 失败时 | 后果 |
 |---|---|---|
 | `cd "$EMPTY"` | 返回 0,原地不动 | 几个 GB 装进上游 clone(gitignored,`git status` 不提醒) |
 | `. scripts/paths.sh` 从错误目录 | 短路,变量保持未设置 | 同上 |
 | `str.replace(pattern, ...)` 模式不匹配 | 原样返回 | ego 相机停在原厂朝向,全局 0% 成功率,而采集/录像/转换全部"正常" |
+| `cam.quat = [...]` 而 `alt.type` 是 EULER | 赋值被忽略 | 上一行那个 bug 的**修复本身**同样静默失败:fovy 生效了、朝向没有 |
+| zsh 里 `set -- $var` | 不做单词分割 | 拼出来的 pgrep 模式变成 `run_.sh`,匹配不到 —— **检查器报告的不是世界的状态**,误判流水线已死 |
+| 官方 `open_loop_eval.py` 的 `--steps` 默认 200 | `min(steps, len)` 静默截断 | 只评了 546–832 帧 episode 的前 200 帧(走路段),抓取根本没评到,却给出一个看起来正常的 MSE |
 
 所以:**任何"找到就替换 / 进入 / 读取"的操作,失败路径必须响亮。**改完检查改没改,
 `cd` 之后确认到了哪,读完确认读到了东西。这个仓库里凡是这类操作后面都该有一道断言
@@ -130,6 +134,16 @@
 > 后果不是"两个 stack 互相干扰",而是**第二个 stack 的 deploy 静默接管第一个 stack
 > 的 sim** —— 它和第一个 deploy 一起往同一个 sim 发 lowcmd,而它自己的 sim 一条指令
 > 都收不到。排查时第一反应会是"第二个 stack 起坏了",而不是 DDS domain。
+
+> **Python 侧的端口以前也分不开,现在由 `paths.sh` 统一派生。**
+> 六个端口(相机 5555 / 命令 5556 / debug 5557 / 键盘 5580 / 特权 5581 /
+> episode 5582)在 `agent_server.py`、`vla_round.py`、`privileged_pub.py` 里是
+> `os.environ.get("TF_...", <instance-0 默认值>)`。而 `collect_pilot.sh` /
+> `collect.sh` 从来不提 `INSTANCE` —— 于是即使 stack 用 `INSTANCE=1` 起来了,
+> 它们启动的 `grasp_gym` 还是去连 5556,**连到 instance 0 的那个 stack 上**。
+> 和 DDS domain 那个坑同一个形状,只是在 Python 侧:全都连上了,没有任何报错,
+> 只是连错了 stack。现在这六个端口和 `SONIC_DDS_DOMAIN` 都由 `scripts/paths.sh`
+> 一处派生,凡是 source 它的脚本(包括两个采集脚本)都自动一致。
 
 > **`INSTANCE=1` 的 5590 和闭环评测的 `serve_policy` 撞端口。**
 > `TF_KEYBOARD_PORT = 5580 + 10*INSTANCE`,所以 `INSTANCE=1` 占住 5590,而

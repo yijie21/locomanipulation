@@ -65,10 +65,70 @@ GRAD_ACCUM="${GRAD_ACCUM:-1}"
 # still sees the same effective 64 -- lr stays valid, the experiment stays the
 # same experiment, only slower (~2x: half the FLOPs/step throughput, plus no
 # fused optimizer).
+# --- picking the optimizer from the hardware ---------------------------------
+# fp32 Adam keeps m+v for 1.62B trainable params = 13 GB. ZeRO-2 shards that
+# across ranks, which is the only reason 2x32 GB ever fit: rounds 1 and 2
+# trained exactly that way. But "fit" and "fit with room" are different things
+# -- round 3's training died of OOM because the collection stack was still
+# holding 6.5 GB on GPU 0, and 6.5 GB was all it took.
+#
+# So on 32 GB-class cards, quantise the states (adamw_bnb_8bit, 13 -> 3.2 GB).
+# It is a memory choice, not an optimization one: the effective batch, the lr
+# and the step count are untouched, so the run stays the same experiment. On
+# cards with real headroom (40 GB+: A100/H100 class) there is nothing to buy,
+# so stay on fused fp32 Adam, which is faster.
+#
+# Overrides: set OPTIM=... explicitly to pin it, or OPTIM_AUTO=0 to keep the
+# old unconditional adamw_torch.
+gpu_probe() {   # -> "<count> <smallest total MiB> <smallest free MiB>"
+    nvidia-smi --query-gpu=memory.total,memory.free \
+        --format=csv,noheader,nounits 2>/dev/null | tr -d ',' | awk '
+        NR==1 {mt=$1; mf=$2}
+        $1 < mt {mt=$1}
+        $2 < mf {mf=$2}
+        END {print NR+0, mt+0, mf+0}'
+}
+read -r NGPU VRAM_MIN FREE_MIN <<EOF
+$(gpu_probe)
+EOF
+VRAM_MIN=${VRAM_MIN:-0}; FREE_MIN=${FREE_MIN:-0}; NGPU=${NGPU:-0}
+
+OPTIM_WHY=""
+if [ -n "${OPTIM+x}" ]; then
+    OPTIM_WHY="pinned by OPTIM="
+elif [ "${OPTIM_AUTO:-1}" != "1" ]; then
+    OPTIM="adamw_torch"; OPTIM_WHY="OPTIM_AUTO=0"
+elif [ "$VRAM_MIN" -le 0 ]; then
+    OPTIM="adamw_torch"; OPTIM_WHY="could not read nvidia-smi, assuming headroom"
+elif [ "$VRAM_MIN" -lt 40000 ]; then
+    OPTIM="adamw_bnb_8bit"
+    OPTIM_WHY="auto: smallest card ${VRAM_MIN} MiB < 40 GB"
+    # Long run close to the ceiling; costs nothing when there is room to spare.
+    export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+else
+    OPTIM="adamw_torch"
+    OPTIM_WHY="auto: smallest card ${VRAM_MIN} MiB >= 40 GB"
+fi
 OPTIM="${OPTIM:-adamw_torch}"
+
+# Preflight the FREE memory, not just the total. This is the failure that cost
+# round 3 a training run: a healthy-looking box, both cards present, and 6.5 GB
+# of somebody else's process on GPU 0. Better to refuse here than to OOM twenty
+# minutes into model loading.
+SQUAT_MAX="${SQUAT_MAX:-2048}"
+if [ "$VRAM_MIN" -gt 0 ] && [ "$((VRAM_MIN - FREE_MIN))" -gt "$SQUAT_MAX" ]; then
+    echo "REFUSING TO START: a GPU already has $((VRAM_MIN - FREE_MIN)) MiB in use"
+    echo "  (smallest card: $FREE_MIN of $VRAM_MIN MiB free; limit is $SQUAT_MAX)"
+    nvidia-smi --query-compute-apps=pid,used_memory --format=csv 2>/dev/null | sed 's/^/  /'
+    echo "  Training wants essentially the whole card. Stop whatever is holding it"
+    echo "  (the collection stack? src/teleop_free/stop_stack.sh) and re-run, or"
+    echo "  raise SQUAT_MAX=<MiB> if you know the residue is harmless."
+    exit 1
+fi
+
 if [ "${SINGLE_GPU:-0}" = "1" ]; then
     GPUS=1
-    OPTIM="adamw_bnb_8bit"
+    OPTIM="adamw_bnb_8bit"; OPTIM_WHY="SINGLE_GPU=1"
     # Per-device 8, and every number here is measured, not derived. At 32 the
     # dual-camera VLM forward OOMed at a 32.1 GB peak; at 16 it RAN but peaked
     # at 31.66/32.6 GB -- 950 MiB of headroom, which a 10k-step run would eat
@@ -131,9 +191,9 @@ if [ "$WANDB" = "1" ]; then
 else
     echo "wandb        off"
 fi
-echo "gpus         $GPUS"
+echo "gpus         $GPUS of $NGPU visible ($VRAM_MIN MiB/card, $FREE_MIN MiB free)"
 echo "batch        $GLOBAL_BATCH x $GRAD_ACCUM accum = $((GLOBAL_BATCH * GRAD_ACCUM)) effective"
-echo "optim        $OPTIM${SINGLE_GPU:+ (SINGLE_GPU=$SINGLE_GPU)}"
+echo "optim        $OPTIM${OPTIM_WHY:+  [$OPTIM_WHY]}"
 echo "steps        $MAX_STEPS, checkpoint every $SAVE_STEPS (keep $SAVE_LIMIT)"
 echo
 
