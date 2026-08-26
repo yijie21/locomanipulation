@@ -94,6 +94,22 @@
 **采数据时真正会去动的只有四个**:`SIM_VIDEO_DIR`、`SIM_VIS`、`WRIST_CAMS`、
 `SCENE_SEED`。其余是排查问题或换配置才碰。
 
+### 一条通则:找不到就要吵
+
+今天同一类 bug 出现了三次,都是**操作失败但退出码是成功**,都在几十行之后以完全
+无关的面貌爆出来:
+
+| 操作 | 失败时 | 后果 |
+|---|---|---|
+| `cd "$EMPTY"` | 返回 0,原地不动 | 几个 GB 装进上游 clone(gitignored,`git status` 不提醒) |
+| `. scripts/paths.sh` 从错误目录 | 短路,变量保持未设置 | 同上 |
+| `str.replace(pattern, ...)` 模式不匹配 | 原样返回 | ego 相机停在原厂朝向,全局 0% 成功率,而采集/录像/转换全部"正常" |
+
+所以:**任何"找到就替换 / 进入 / 读取"的操作,失败路径必须响亮。**改完检查改没改,
+`cd` 之后确认到了哪,读完确认读到了东西。这个仓库里凡是这类操作后面都该有一道断言
+—— `build_sim_scene.py` 的 `_check_ego_camera` 就是模板:它验的是**编译后的模型**,
+不是发射出来的文本,因为凡是读文本的检查都会跟着文本格式一起失效。
+
 ### 端口
 
 `INSTANCE=i` 时全部加 `10*i`,DDS domain 也用 `i`;只有 instance 0 挂 exporter 落盘。
@@ -204,6 +220,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gy
 | `check_dataset.py` 报 `action: MISSING ['left_hand_joints', ...]` | modality 的 action key 被改过名。GR00T 只 warn 不报错,照训但两只手会被静默丢掉 —— 必须修完再训 |
 | `check_dataset.py` 报 `lag distribution {3: ...}` 之类的非零 | 视频和表差了那么多帧。先查 exporter 的时间戳,再查转换时的 50→30 Hz 重采样 |
 | `check_dataset.py` 报 `body trails the token by -N frames` | action 和 state 在时间上被搞反了,是最严重的一类,**不要拿去训** |
+| `EPISODE FAILED [view] object outside ego view at stand` 每局都这样 | ego 相机没被重新瞄准,停在原厂的下视 + fovy 45。重建一次场景:`build_sim_scene.py` 现在会在编译后自检瞄准、不对就拒绝写盘。历史成因是它曾用 `str.replace` 改 `to_xml()` 的输出,而 MuJoCo 3.12 改了属性发射顺序,replace 静默失配 —— 用 3.12 装出来的旧版本会全局 0% 成功率 |
 | `[gym] targets not in the scene` | 场景不是你以为的那套。报错会列出场景里**实际**有什么 —— 按那份清单对照下面[「场景装成了哪一套」](#场景装成了哪一套)判断是哪种病 |
 | 采完之后场景尺寸不对了 | `collect.sh` 就地重建场景。`SCENE_PRESET=<你那套> bash scripts/install_scene.sh` 恢复 —— 漏掉 `SCENE_PRESET` 会顺带把桌上的物体换成默认那套 |
 | 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
