@@ -12,7 +12,8 @@ exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`。转成 LeRobot v2.
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
     src/teleop_free/tools/convert_to_hf_format.py \
     --sessions "$LOCOMANI_TMP"/p03/outputs/<session1> <session2> ... \
-    --manifest outputs/logs/collect/manifest_1.jsonl manifest_2.jsonl ... \
+    --manifest outputs/logs/collect/manifest_1.jsonl \
+                outputs/logs/collect/manifest_2.jsonl ... \
     --out datasets/g1_locomani_lerobot
 ```
 
@@ -84,7 +85,7 @@ action vs state: body trails the token by a median +3 frames (100 ms)
 训练好的模型输出 78 维,**不经过 encoder**,用 protocol v4 直接喂进 :5556:
 
 ```bash
-NO_ENCODER=1 bash src/teleop_free/start_stack.sh     # 关键:必须不加载 encoder
+NO_ENCODER=1 bash src/teleop_free/start_stack.sh "pick up the water bottle"   # 关键:必须不加载 encoder
 ```
 
 `NO_ENCODER=1` 不是省显存。deploy 只要加载了 encoder,`initial_encoder_mode_` 就是 0,

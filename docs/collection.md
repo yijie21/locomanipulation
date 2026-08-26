@@ -54,7 +54,7 @@ python -c "import json;m=json.load(open('outputs/scene/sim/scene_meta.json'));pr
 | **`grasp_gym.py`** | `.venv_sim` | 脚本化 agent:决定机器人做什么 |
 
 ```bash
-SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the can"
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the water bottle"
 ```
 
 它按 `[1/3] [2/3] [3/3]` 打印,每一步等到真的起来了才继续(等端口、等日志关键字,
@@ -72,7 +72,7 @@ TensorRT engine,属正常;之后走缓存,20–40 s。
 MuJoCo 窗口,需要真的 `$DISPLAY`;`grasp_gym.py` 只是连过去的客户端,不管渲染)。
 
 ```bash
-SIM_ONSCREEN=1 bash src/teleop_free/start_stack.sh "pick up the can"
+SIM_ONSCREEN=1 bash src/teleop_free/start_stack.sh "pick up the water bottle"
 ```
 
 **已知限制**:`SIM_ONSCREEN=1` 偶尔会拖垮走路控制(sim 单线程被窗口刷新阻塞,
@@ -115,7 +115,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 
 ```bash
 # 三个都配好的完整例子(注意 SIM_VIDEO_DIR 是绝对路径):
-SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the can"
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the water bottle"
 
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
     src/teleop_free/grasp_gym.py --rounds 12 --record \
@@ -163,9 +163,17 @@ bash src/teleop_free/stop_stack.sh
 ```bash
 bash scripts/collect.sh <批数> <每批局数> [起始 seed]
 
-# 目标 200 条,按 10 批 × 20 局:
+# 目标 200 条,按 10 批 × 20 局(spawn 用 grasp_gym 的宽默认):
 bash scripts/collect.sh 10 20 1
+
+# 复现本仓库实验的那套窄分布 —— 四个变量缺一不可,SCENE_PRESET 也要给,
+# 因为这个脚本每批都重建一次场景,preset 是在重建那一刻读的
+SCENE_PRESET=bottle_only TARGETS=water_bottle JITTER=0.20 \
+SPAWN_ARGS="--spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20" \
+    bash scripts/collect.sh 10 20 1
 ```
+
+脚本开头会把它实际用的 preset / targets / jitter / spawn 打印出来,对不上就是没传进去。
 
 ### 为什么要分批:两类随机化轴
 
@@ -225,7 +233,7 @@ tail -3 outputs/logs/collect/gym_*.log | tail -20         # 现在跑到哪
 ```bash
 export SCENE_RANDOM=0 SIM_VIS=bbox,readout       # 外观钉死,去掉可达域点云
 SCENE_PRESET=bottle_only bash scripts/install_scene.sh   # 本仓库实验用的那张桌子
-SIM_VIDEO_DIR=outputs/sim_video \
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" \
     bash src/teleop_free/start_stack.sh "pick up the water bottle"
 
 # SPAWN_ARGS 默认是空的 —— 不给就吃 grasp_gym 的宽默认(3 m 外、背对物体、
@@ -244,15 +252,29 @@ JITTER=0.20 PROMPT="pick up the water bottle" \
 去掉出生点,200 条就是同一条轨迹的 200 次重放,模型可以纯按时间索引拟合;去掉物体
 位置,伸手那一段同理。留着它们,"能 work"才说明了点什么。
 
-`collect_pilot.sh` 和 `collect.sh` 的关键区别:**它不起 stack**。所有 chunk 必须落进
-**同一个 exporter session**(session 是 exporter 启动时创建的),所以 stack 自己起一次、
-一直不动。分 chunk 只为可续 —— 崩了再跑一次,它会数已经落盘的成功条数接着补。
+`collect_pilot.sh` 和 `collect.sh` 有两个关键区别:
 
-跑完直接转:
+**一、它不起 stack。**stack 自己起一次、一直不动,脚本只管跑局。
 
-```bash
---sessions <那一个 session>  --manifest outputs/logs/pilot/manifest_all.jsonl
+**二、只有它能复现本仓库的实验分布。**`collect.sh` 调 `grasp_gym` 时不传任何 spawn
+参数,也不透传 `SPAWN_ARGS` —— 拿它采出来的是宽默认分布,不是上面那套。要复现实验
+就用 `collect_pilot.sh`。
+
+**每个 chunk 一个 session,不是所有 chunk 共用一个。**exporter 每 episode 泄漏约 93
+个线程,顶着容器的 `pids.max` 跑到第 33 个 episode 左右整个 session 会楔死,所以每个
+chunk 结束都重启 exporter、滚一个新 session,顺序记进 `sessions.txt`。分 chunk 同时也
+带来可续:崩了再跑一次,它会数已经落盘的成功条数接着补。
+
+**转换命令不要自己拼**,脚本跑完会把配对好的那条打印出来,直接抄:
+
 ```
+convert with (sessions and manifests pair up in this order):
+  --sessions  <session1> <session2> ...
+  --manifest  outputs/logs/pilot/manifest_01.jsonl outputs/logs/pilot/manifest_02.jsonl ...
+```
+
+一个 chunk = 一个 session = 一个 manifest,三者同序 —— 转换器就是按这个配对的,
+错位会被硬校验拦下(见 [dataset.md](dataset.md#导出-lerobot-v21-并对接-gr00t))。
 
 ### 两个坑
 
