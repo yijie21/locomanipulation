@@ -182,9 +182,28 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gy
 | `check_dataset.py` 报 `action: MISSING ['left_hand_joints', ...]` | modality 的 action key 被改过名。GR00T 只 warn 不报错,照训但两只手会被静默丢掉 —— 必须修完再训 |
 | `check_dataset.py` 报 `lag distribution {3: ...}` 之类的非零 | 视频和表差了那么多帧。先查 exporter 的时间戳,再查转换时的 50→30 Hz 重采样 |
 | `check_dataset.py` 报 `body trails the token by -N frames` | action 和 state 在时间上被搞反了,是最严重的一类,**不要拿去训** |
-| `[gym] targets not in the scene` | 场景不是你以为的那套。报错会列出场景里**实际**有什么:列出 `bottle, can, cup, fork, jar` 说明建场景时漏了 `SCENE_PRESET=bottle_only`(它在重建那一刻生效,不是起 stack 时)。`SCENE_PRESET=bottle_only bash scripts/install_scene.sh` 重建,脚本会回显它建出来的 target_pool |
+| `[gym] targets not in the scene` | 场景不是你以为的那套。报错会列出场景里**实际**有什么 —— 按那份清单对照下面[「场景装成了哪一套」](#场景装成了哪一套)判断是哪种病 |
 | 采完之后场景尺寸不对了 | `collect.sh` 就地重建场景。`SCENE_PRESET=<你那套> bash scripts/install_scene.sh` 恢复 —— 漏掉 `SCENE_PRESET` 会顺带把桌上的物体换成默认那套 |
 | 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
 | 场景 MJCF 找不到 mesh | 重跑 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh`;它会探测并改写 tarball 里烘死的路径 |
 | `ValueError: ... Error opening file ... scene_31dof.xml` | 新 clone 的 `third_party` 里没有 dex1 生成文件。先跑 `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/make_dex1_model.py`,再 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh` |
 | `ModuleNotFoundError: No module named 'skfmm'` | `.venv_sim` 里没装 `scikit-fmm`(上游安装脚本不带,这个仓库自己的依赖)。`uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm` |
+
+## 场景装成了哪一套
+
+`[gym] targets not in the scene` 的报错尾巴会列出场景里实际有的物体。拿它对照:
+
+| 报错列出的物体 | 场景是 | 怎么办 |
+|---|---|---|
+| 只有 `water_bottle` | `SCENE_PRESET=bottle_only`,正确 | 报错另有原因:检查 `--targets` 拼写 |
+| 8 个:`bottle, can, cup, fork, jar, napkin, orange, plate` | 默认多物体桌面 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh` |
+| 其它任何组合 | 解包出来的素材不完整或过时 | 重新解包:删掉 `outputs/scene`,再跑 `SCENE_PRESET=... bash scripts/install_scene.sh` |
+
+**那 8 个物体分不出两种病。**tarball 里烘焙的现成场景(`scene/sim/`)和一次默认重建
+产出的**完全一样** —— 都是 `target_object=can`、`target_pool=[can, bottle, cup, jar]`、
+那 8 个物体。所以「重建了但没给 SCENE_PRESET」和「压根没重建」在物体清单上不可区分。
+
+这也是为什么 `install_scene.sh` 跳过重建这件事至今没人踩到:今天两者恰好重合。
+但 tarball 是很久以前打的,`scene_lib.py` 一改两者就分家 —— 那是个潜伏的坑,不是
+不存在的坑。真正的判据是重建到底跑没跑,所以脚本现在两件事都做:重建成功时回显
+preset / target / target_pool / 桌上物体,跳过重建时响亮报错并以非零退出。
