@@ -257,7 +257,8 @@ JITTER=0.20 PROMPT="pick up the water bottle" \
 ### 两个坑
 
 - `collect.sh` **就地重建 `outputs/scene/sim`**,跑完场景停在最后一批的尺寸上。
-  要回到出厂尺寸:`bash scripts/install_scene.sh`。
+  要回到出厂尺寸:`SCENE_PRESET=<你那套> bash scripts/install_scene.sh`(漏掉
+  `SCENE_PRESET` 会连桌上的物体一起换回默认那套)。
 - 采完之前不要动 `scene_lib.py`。改了它,后面的批和前面的批就不是一个物体集合了,
   而这件事在数据里是看不出来的。
 

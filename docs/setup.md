@@ -138,7 +138,22 @@ gitignored 的生成产物,新 clone 的 `third_party/GR00T-WholeBodyControl` �
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/make_dex1_model.py
 ```
 
-然后见[下一节](collection.md#场景直接用现成的推荐)。一行 `bash scripts/install_scene.sh`。
+然后装场景。**`SCENE_PRESET` 必须给在这一行上**:
+
+```bash
+SCENE_PRESET=bottle_only bash scripts/install_scene.sh
+```
+
+`bottle_only` 是复现本仓库两轮 VLA 实验的那张桌子(一张空桌 + 一个 RoboCasa 水瓶)。
+**不加这个变量得到的是默认的多物体桌面**:桌上有 `bottle / can / cup / jar / fork`,
+而 `grasp_gym --targets` 默认是 `pool`,于是每局目标在四种物体之间轮换,还多一个
+`fork` 当遮挡物 —— 和本仓库所有实验数字都不是同一个任务。
+
+变量在**重建场景那一刻**被读(`scene_lib.py`),不是起 stack 时,所以补在
+`start_stack.sh` 上没用,只能重跑本脚本。脚本跑完会回显它实际建出来的
+preset / target / target_pool / 桌上物体,对不上就是没生效。
+
+细节见[下一节](collection.md#场景直接用现成的推荐)。
 
 ### 5. GR00T 微调 venv(要训练/评测 VLA 就必需)
 
