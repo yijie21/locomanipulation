@@ -158,15 +158,30 @@ ln -sfn usr/include/x86_64-linux-gnu include
 ln -sfn usr/lib/x86_64-linux-gnu lib
 cd "$LOCOMANI_ROOT"
 
-# 3) ONNX Runtime 1.16.3:官方 release tarball 解包成 $DEPS_DIR/onnxruntime
-#    https://github.com/microsoft/onnxruntime/releases/tag/v1.16.3
-#    (onnxruntime-linux-x64-gpu-1.16.3.tgz)
+# 3) ONNX Runtime 1.16.3 —— tarball 的布局本来就对(include/ lib/ 直接在根下),
+#    但解出来的目录名带版本号,而 env_deploy.sh:15 认死了 $DEPS_DIR/onnxruntime,
+#    所以必须改名(或者自己 export onnxruntime_ROOT=<解出来的那个目录>)
+cd "$DEPS_DIR"
+curl -L -o ort.tgz \
+  https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-gpu-1.16.3.tgz
+tar -xzf ort.tgz && mv onnxruntime-linux-x64-gpu-1.16.3 onnxruntime && rm ort.tgz
+cd "$LOCOMANI_ROOT"
 
 # 编译
 source scripts/env_deploy.sh      # 把上面两个前缀喂给 cmake,并配好 LD_LIBRARY_PATH
 cmake -S "$SONIC_DEPLOY_ROOT" -B "$SONIC_DEPLOY_ROOT/build" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 ```
+
+**两个依赖的适配手法不一样,别拿一个去套另一个:**
+
+| | 来源 | 目录名 | 怎么让 cmake 找到 |
+|---|---|---|---|
+| TensorRT | `dpkg -x` 解出来的 deb 树,东西在 `usr/...` 底下 | **保留**版本号(`TensorRT-10.13.3.9`) | 加两条软链 `include`/`lib`,把 `/usr` 树伪装成官方 TAR 布局 |
+| ONNX Runtime | 官方 TAR,`include/` `lib/` 本来就在根下 | **必须改成** `onnxruntime` | 布局无需动,只是目录名要对上 |
+
+两个 root 都是 `env_deploy.sh` 里的 `${VAR:-默认}`,所以不想改名也可以直接
+`export onnxruntime_ROOT=...` / `export TensorRT_ROOT=...` 覆盖。
 
 **三个无害的输出,不要去追**(都已诊断过):
 
