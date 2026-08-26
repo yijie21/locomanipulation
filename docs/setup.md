@@ -93,7 +93,7 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch
 ```
 
-原因见 [`patches/vla_action_space.md`](patches/vla_action_space.md)。
+原因见 [`patches/vla_action_space.md`](../patches/vla_action_space.md)。
 
 **验证**:
 

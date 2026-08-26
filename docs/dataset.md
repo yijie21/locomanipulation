@@ -25,6 +25,17 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 - manifest 里 `produced` 的行数 == session 里的 episode 数
 - 每一行的 `ok` == 该 episode 在 disk 上是否被 discarded
 
+> **`--manifest` 名义上可选,实际上必给。**数据集里的语言标注(`task_index` →
+> `meta/tasks.jsonl`)**只**来自 manifest 的逐局 `task` 字段。省掉 `--manifest`
+> 不会报错,而是让每一条 episode 都退回转换器里那个硬编码常量
+> `TASK = "pick up the red can"`(`convert_to_hf_format.py:43`)—— 于是一整个
+> 水瓶数据集会被标成"拿起红罐子",画面和语言对不上,而且这在训练日志里完全看不出来。
+>
+> 注意 exporter 的 `--task-prompt`(`start_stack.sh` 的那个字符串、
+> `collect_pilot.sh` 的 `PROMPT`)**不参与**这条链路:它对整个 session 是固定的,
+> 只影响录像叠字和 session 元数据。它写错不会污染数据集,但会让你在排查时看错地方
+> —— 所以还是让它和场景里的目标物体保持一致。
+
 得到的数据集可直接喂给 `third_party/Isaac-GR00T` 做 GR00T 微调。上层/底层的详细
 数据流见 `docs/architecture.drawio`。
 
@@ -90,7 +101,7 @@ the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。�
 ## 数据 schema
 
 一条 episode 的 parquet 里列很多,但**训练用的只有下面这些**。完整推导见
-[`patches/vla_action_space.md`](patches/vla_action_space.md)。
+[`patches/vla_action_space.md`](../patches/vla_action_space.md)。
 
 ### action:78 维
 

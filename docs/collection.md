@@ -224,12 +224,21 @@ tail -3 outputs/logs/collect/gym_*.log | tail -20         # 现在跑到哪
 
 ```bash
 export SCENE_RANDOM=0 SIM_VIS=bbox,readout       # 外观钉死,去掉可达域点云
-bash scripts/install_scene.sh                    # 回到出厂尺寸
+SCENE_PRESET=bottle_only bash scripts/install_scene.sh   # 本仓库实验用的那张桌子
 SIM_VIDEO_DIR=outputs/sim_video \
-    bash src/teleop_free/start_stack.sh "pick up the red can"
+    bash src/teleop_free/start_stack.sh "pick up the water bottle"
 
-bash scripts/collect_pilot.sh 200 can            # 200 条成功为止
+# SPAWN_ARGS 默认是空的 —— 不给就吃 grasp_gym 的宽默认(3 m 外、背对物体、
+# 朝向偏差 ±90°),脚本专家成功率 30% 出头。本仓库两轮实验的全部数字都是在
+# 下面这套窄分布上测的,复现必须带上
+SPAWN_ARGS="--spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20" \
+JITTER=0.20 PROMPT="pick up the water bottle" \
+    bash scripts/collect_pilot.sh 200 water_bottle       # 200 条成功为止
 ```
+
+四个 spawn 参数的含义和取值理由见 [README 快速开始第 3 步](../README.md#快速开始)
+那张表;`--spawn-edge` / `--face-object` 的完整语义见
+[grasp_gym.py 的命令行参数](reference.md#grasp_gympy-的命令行参数)。
 
 只有两样东西变:**机器人出生点**和**物体在桌沿上的位置**。这两个是有理由留下的 ——
 去掉出生点,200 条就是同一条轨迹的 200 次重放,模型可以纯按时间索引拟合;去掉物体
@@ -501,6 +510,24 @@ manifest 是**每次尝试一行**而不是每局一行:`[stand]` 类失败会�
 --spawn-lateral 0.35    # 最多偏离接近线这么远
 --spawn-yaw-err 90      # 初始朝向最多偏这么多度,走之前在出生点转出来
 ```
+
+上面是**默认**分布,也是最难的一档。本仓库两轮 VLA 实验实际用的是另外两个参数
+钉出来的窄分布,它们没有默认值、不给就不生效:
+
+```bash
+--spawn-edge 0.7        # 距【桌子】0.7 m 起步,而不是距【站位】1-3 m。
+                        # 站位本身离桌沿 0.17-0.32 m 且随目标移动,所以同一个
+                        # --spawn-off 每局对应的桌距都不一样;--spawn-edge 是
+                        # 人真正会去量的那个量,逐局用二分法解出来
+--face-object           # 醒来正对【物体】,而不是正对【接近线】,并把
+                        # --spawn-yaw-err 当成绕这个朝向的抖动。两者只在正好
+                        # 落在接近线上时才重合 —— 有横偏、尤其 --spawn-edge 很近
+                        # 时,朝着接近线醒来会让物体明显偏出画面中心
+```
+
+**这两个开关决定任务有多难。**0.7 m + `--face-object` 基本把走路段送掉了(实测
+walk / approach 零失败),脚本专家成功率 85%;退回默认分布是 30% 出头。任何跨批次
+比较成功率之前,先确认两边的 spawn 分布是同一套。
 
 **转身发生在出生点**,离桌子 1–3 m。近距离转身是记录在案的坑:靠近物体时的
 `face_target` 会让机器人原地转 110–160°,骨盆直接怼上桌沿。
