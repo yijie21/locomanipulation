@@ -931,7 +931,14 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # band the robot only slowed at x 0.43 and an 11 cm coarse stride was
     # still in flight when the gate fired: measured carry 0.08-0.24 m, and
     # every round whose carry passed ~0.15 m ended inside the edge floor.
-    APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.26, 0.215, 0.20
+    # COARSE at 0.30, not 0.26 (2026-08-25). At 0.26 the gait initiation
+    # minces: the first seconds of every episode showed a step taken and taken
+    # back before the walk committed -- recorded hesitation a VLA then learns
+    # as "dither first". 0.30 is not a guess: diag_shuffle measured the
+    # release policy at speed 0.30 delivering a committed 17 cm/step natural
+    # stride. Only the far band changes; the MID/SHUFFLE deceleration bands
+    # that give the arrival its braking accuracy are untouched.
+    APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.30, 0.215, 0.20
     MID_BAND, SHUFFLE_BAND = 0.30, 0.10
 
     def do_approach(seconds: float, ramp: bool) -> str:
@@ -980,13 +987,19 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             # Finish whatever is left of the arm ramp smoothly: the stop can
             # fire before the ramp completes, and the deploy substitutes the
             # 17 joints verbatim, so a snap to READY would be a step.
+            # SKIP when the ramp already finished during the walk (short
+            # spawns reach READY well before arrival): walking the ramp's 40
+            # frames from READY to READY was 0.8 s of recorded standing.
             q_now = upper_body_from_mj(p.obs()["joints"])
-            for k in range(1, 41):
-                u = k / 40.0
-                p.cmd.set_upper_body(q_now + (3 * u * u - 2 * u ** 3)
-                                     * (READY_UPPER - q_now))
-                p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
-                time.sleep(0.02)
+            if float(np.max(np.abs(READY_UPPER - q_now))) < 0.06:
+                p.cmd.set_upper_body(READY_UPPER)
+            else:
+              for k in range(1, 41):
+                  u = k / 40.0
+                  p.cmd.set_upper_body(q_now + (3 * u * u - 2 * u ** 3)
+                                       * (READY_UPPER - q_now))
+                  p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
+                  time.sleep(0.02)
         # 0.2 s, not 1.0. The full second waited out momentum creep so a
         # STATIC aim would be taken from a settled base -- but the grasp that
         # follows is a 50 Hz servo that re-aims on the measured object pose

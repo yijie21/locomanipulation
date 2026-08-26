@@ -37,13 +37,32 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 #    首次约 10 min(编 TensorRT engine),之后 40 s。SIM_VIDEO_DIR 必须在这里给,
 #    而且必须是绝对路径 —— sim 进程的 cwd 是 third_party/GR00T-WholeBodyControl/,
 #    不是仓库根,相对路径会悄悄写到那边去
-SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the can"
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the water bottle"
 
 # 3. 跑 12 局,通过全部判据的落盘,失败的自动丢弃
+#    后四个 spawn 参数不是可选装饰:它们定义了任务有多难,而本仓库两轮实验的
+#    全部数字都是在这套窄分布上测的。照 grasp_gym 的默认跑(3 m 外、背对物体、
+#    朝向偏差可达 90°)成功率会掉到 30% 出头 —— 那不是 bug,是另一个任务
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
     src/teleop_free/grasp_gym.py --rounds 12 --record \
+    --targets water_bottle --edge-jitter 0.20 \
+    --spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20 \
     --manifest outputs/logs/manifest.jsonl
 ```
+
+四个 spawn 参数各自干什么、为什么是这些值:
+
+| 参数 | grasp_gym 默认 | 本仓库实验用 | 差别 |
+|---|---|---|---|
+| `--spawn-edge` | 无(退回 `--spawn-off`,站位后方 1–3 m) | `0.7` | 距**桌子** 0.7 m 起步,走路段基本被送掉 |
+| `--face-object` | 关(朝接近线) | 开 | 醒来就正对物体,而不是正对接近线 |
+| `--spawn-yaw-err` | `90` | `20` | 初始朝向偏差上限,从 ±90° 收到 ±20° |
+| `--spawn-lateral` | `0.35` | `0.20` | 横向偏移上限 |
+| `--edge-jitter` | `0.10` | `0.20` | **这一项我们更难**:物体沿桌沿的散布放宽一倍 |
+
+除 `--edge-jitter` 外每一项都是把任务调容易。这是刻意的 —— 第一批数据要验证的是
+「转换 → 微调 → 78 维喂回 deploy」这条链路通不通,不是模型能泛化到哪。代价是
+**在 0.7 m / face-object 数据上训出来的 VLA,不应期待它能泛化到 3 m / ±90° 起步**。
 
 跑起来长这样,一行一局:
 
@@ -115,6 +134,11 @@ videos/                 最新一批演示视频(每次推送整体替换)
   以及冻结 DiT 消融(初步:DiT 贡献 ~12% 开环精度、约 2 倍步数效率)。
 
 wandb: locomani-bottle / bottle200 · bottle250 · bottle250_frozen_dit。
+
+> **这些成功率只在上面快速开始第 3 步那套窄 spawn 分布下成立**
+> (0.7 m 起步、`--face-object`、朝向偏差 ±20°、横偏 ±0.20 m)。换成 `grasp_gym`
+> 的默认分布(3 m 外、背对物体、±90°)是另一个更难的任务,连脚本专家自己的
+> 成功率都会从 85% 掉到 30% 出头。复现这些数字必须带上那四个参数。
 
 ---
 

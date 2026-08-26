@@ -28,7 +28,9 @@
 # episode (measured: 3061 exporter threads, pids.current 3707/3840, gym and
 # exporter both frozen in a futex while sim and deploy kept running). Each
 # chunk therefore ends by restarting ONLY the exporter, which frees the
-# threads and rolls to a fresh session. Keep CHUNK well under 30.
+# threads and rolls to a fresh session. MAX_ATTEMPTS (24) is what actually
+# keeps a chunk clear of that ceiling -- CHUNK only sets the success target,
+# and a chunk that misses it simply hands the shortfall to the next one.
 #
 # One session per chunk, one manifest per chunk, same order -- which is
 # exactly the pairing convert_to_hf_format.py --sessions/--manifest wants.
@@ -45,6 +47,18 @@ CHUNK="${CHUNK:-20}"          # successes per SESSION -- see the note above
 JITTER="${JITTER:-0.20}"      # along-edge scatter, metres either way
 SPARE="${SPARE:-20}"          # attempts a chunk may spend above its target
 MAX_CHUNKS="${MAX_CHUNKS:-12}"
+# Hard ceiling on ATTEMPTS per chunk, and the reason it is 24 and not 30.
+# The exporter leaks ~93 threads per episode against pids.max = 3840, so a
+# session wedges around its 33rd (see the header). A cap of 30 sat right on
+# that cliff and duly fell off it: 2026-08-25, chunk 01 froze on round 30
+# with the gym in a futex while sim and deploy kept running -- eight hours
+# of silence before anyone noticed. 24 attempts is ~2900/3840, a quarter of
+# the budget in hand. Fewer successes per chunk, so raise MAX_CHUNKS to match.
+MAX_ATTEMPTS="${MAX_ATTEMPTS:-24}"
+# How long the gym may log nothing before it is presumed wedged. A round logs
+# continuously; the longest legitimate gap is the per-round deploy restart
+# (20-40 s), so this is ~9x the real worst case.
+STALL="${STALL:-360}"
 PROMPT="${PROMPT:-pick up the red can}"
 # Where the robot wakes up. Empty keeps grasp_gym's own defaults (spawn 1-3 m
 # behind the STAND, jitter around the approach line), which is what the first
@@ -91,16 +105,32 @@ while :; do
     # episode in the session -- successes and discards alike -- so the cap,
     # not the success target, is what has to stay under the thread ceiling.
     cap=$((need + SPARE))
-    [ "$cap" -gt 30 ] && cap=30
+    [ "$cap" -gt "$MAX_ATTEMPTS" ] && cap=$MAX_ATTEMPTS
     sess=$(ls -dt "$(locomani_session_root)"/outputs/*/ 2>/dev/null | head -1)
     echo "===== chunk $tag: $have/$TARGET_OK kept, asking for $need more ====="
     echo "$sess" >> "$OUT/sessions.txt"
+    # Run supervised, not blocking. A wedged gym never exits (it sits in a
+    # futex), and this loop would wait on it for as long as the machine is
+    # up. Killing it is safe and self-healing: the chunk below tolerates any
+    # exit status, rolls the exporter to a fresh session, and takes a new tag,
+    # and every episode already in the manifest stays kept.
     "$VENV_SIM_PY" -u src/teleop_free/grasp_gym.py \
         --rounds "$cap" --until-ok "$need" \
         --targets "$OBJ" --edge-jitter "$JITTER" --record \
         $SPAWN_ARGS \
         --manifest "$OUT/manifest_$tag.jsonl" \
-        > "$OUT/gym_$tag.log" 2>&1
+        > "$OUT/gym_$tag.log" 2>&1 &
+    gym_pid=$!
+    while kill -0 "$gym_pid" 2>/dev/null; do
+        sleep 30
+        silent=$(( $(date +%s) - $(stat -c %Y "$OUT/gym_$tag.log" 2>/dev/null || date +%s) ))
+        if [ "$silent" -gt "$STALL" ]; then
+            echo "  STALL: gym silent ${silent}s after round $(grep -c '^\[gym\] round' "$OUT/gym_$tag.log"), killing it"
+            kill -9 "$gym_pid" 2>/dev/null
+            break
+        fi
+    done
+    wait "$gym_pid" 2>/dev/null || true
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$tag.log" || echo "  (no result line)"
     # Roll to a fresh session before the next chunk fills this one's quota.
     if new=$(TASK_PROMPT="$PROMPT" bash "$(dirname "$0")/restart_exporter.sh"); then
