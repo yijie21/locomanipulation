@@ -67,6 +67,60 @@ TOKEN_DIM = 64
 LIFT_M = 0.06            # the gym's own success threshold
 NEAR_M = 0.60            # "got to the table" for failure classification
 TIMEOUT_S = 90.0
+
+# --- optional early abort for rounds that are going nowhere -------------------
+# OFF by default, and it must stay that way for any number that gets published.
+#
+# A failing round burns the whole 90 s budget (measured over round 3's 100
+# rounds: failures 89.5-90.0 s, successes a median of 19.6 s), and the robot in
+# those rounds is not idle -- it shuffles. Over the last 30 s of a failed round
+# the pelvis walks 0.25 m of path for 0.013 m of net displacement, 19x. So the
+# usable predicate is NET displacement over a window, not speed.
+#
+# Measured on round 3's 100 traces, aborting the first time a window of
+# STALL_ABORT_S carries less than STALL_ABORT_M of net pelvis motion with no
+# close yet commanded:
+#
+#   window   fires   successes lost   wall clock saved
+#     15 s   76/100        6              ~44%
+#     20 s   73/100        4              ~40%
+#     25 s   71/100        2              ~37%
+#     30 s   70/100        1              ~33%
+#
+# Those are this function's OWN numbers, produced by replaying it frame by
+# frame over the 100 saved traces -- not an offline approximation of it. The
+# calibration and the implementation are the same code.
+#
+# The cost is small but real and one-directional: every round it gets wrong is
+# a success scored as a failure, so the bias is always downward. 5.9 / 13.7 /
+# 28.0 were all measured on the full budget, and a number measured with this on
+# is not on that ladder. Use it for diagnostic sweeps -- checkpoint scans,
+# ablations, frozen-DiT -- never for a headline.
+STALL_ABORT_S = 0.0        # 0 disables; 30.0 is the measured sweet spot
+STALL_ABORT_M = 0.03       # net pelvis displacement over the window, metres
+
+
+def _stalled(trace, commanded_close) -> bool:
+    """True when the pelvis has gone nowhere for STALL_ABORT_S with no close.
+
+    Reads the trace that is already being recorded rather than keeping its own
+    history: one source of truth, and the offline pass that calibrated the
+    thresholds ran over exactly these rows.
+    """
+    if STALL_ABORT_S <= 0.0 or commanded_close or not trace:
+        return False
+    now = trace[-1]["t"]
+    if now < STALL_ABORT_S:
+        return False
+    ref = None
+    for row in trace:                    # oldest row still inside the window
+        if now - row["t"] <= STALL_ABORT_S:
+            ref = row
+            break
+    if ref is None or now - ref["t"] < STALL_ABORT_S * 0.9:
+        return False
+    a, b = ref["pelvis_xy"], trace[-1]["pelvis_xy"]
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 < STALL_ABORT_M
 REPLAN_HZ = 30.0         # the chunk's native frame rate
 
 
@@ -286,6 +340,9 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                         break
                 else:
                     lifted_at = None
+                if _stalled(trace, commanded_close):
+                    why = "[vla] reach: stalled (--stall-abort)"
+                    break
         finally:
             p.cmd.exit_streamed()
             p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
@@ -464,6 +521,9 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                             break
                     else:
                         lifted_at = None
+                    if _stalled(trace, commanded_close):
+                        why = "[vla] reach: stalled (--stall-abort)"
+                        break
 
                 rest = 1.0 / RATE - (time.time() - tick)
                 if rest > 0:
