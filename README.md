@@ -82,8 +82,14 @@ EPISODE FAILED [grasp] can toppled in the up phase in 64s
 
 三条各自怎么配、有什么坑,见[跑一局 → 保存的数据在哪、怎么配路径](docs/collection.md#保存的数据在哪怎么配路径)。
 
-**要采一整个数据集不要手跑这几步**,用 `scripts/collect.sh`,见
-[大规模采集](docs/collection.md#大规模采集)。转成 LeRobot 见[导出](docs/dataset.md#导出-lerobot-v21-并对接-gr00t)。
+**要采一整个数据集不要手跑这几步**,用两个批量脚本之一 —— 选哪个取决于你要什么:
+
+- **复现本仓库的实验** → `scripts/collect_pilot.sh`。场景尺寸固定,只变出生点和物体
+  位置,`SPAWN_ARGS` 钉住上面那套窄分布。见
+  [只想先测通 pipeline](docs/collection.md#只想先测通-pipelinecollect_pilotsh)。
+- **摊开随机化轴采更泛化的数据** → `scripts/collect.sh`。每批重建场景换桌高和物体
+  尺寸。**它的 spawn 默认是宽的**,要窄分布得自己传 `SPAWN_ARGS`/`TARGETS`/`JITTER`
+  (脚本头部有现成的一行)。见[大规模采集](docs/collection.md#大规模采集)。转成 LeRobot 见[导出](docs/dataset.md#导出-lerobot-v21-并对接-gr00t)。
 
 ---
 

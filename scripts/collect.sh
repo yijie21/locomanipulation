@@ -12,6 +12,20 @@
 # Everything else varies per episode inside the batch and needs none of this:
 # target identity, spawn scatter, and appearance (scene_random.py).
 #
+# The spawn envelope is NOT baked in here. It used to be missing entirely --
+# this script called grasp_gym with only --rounds/--record/--manifest, so it
+# could not reproduce the distribution every experiment in this repo was run
+# on, while README pointed people here for exactly that. SPAWN_ARGS, TARGETS
+# and JITTER now pass through, with grasp_gym's own (wide) defaults unchanged
+# so old invocations behave as before. To reproduce the experiments:
+#
+#   SCENE_PRESET=bottle_only TARGETS=water_bottle JITTER=0.20 \
+#   SPAWN_ARGS="--spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20" \
+#       bash scripts/collect.sh 10 20 1
+#
+# SCENE_PRESET matters here and not only at install time: this script rebuilds
+# the scene once per batch, and the preset is read at that moment.
+#
 # Each batch fills its own exporter session and writes its own manifest, in
 # step, which is what convert_to_hf_format.py --manifest expects.
 # NOTE: this rebuilds outputs/scene/sim in place, so the working scene is left
@@ -25,10 +39,18 @@ cd "$LOCOMANI_ROOT" || exit 1
 BATCHES="${1:-5}"
 ROUNDS="${2:-20}"
 SEED0="${3:-1}"
+# Passed straight to grasp_gym. Defaults match grasp_gym's own, so leaving them
+# unset is exactly the old behaviour -- and exactly the wide distribution.
+SPAWN_ARGS="${SPAWN_ARGS:-}"
+TARGETS="${TARGETS:-pool}"
+JITTER="${JITTER:-0.10}"
 OUT="$LOCOMANI_OUTPUTS/logs/collect"
 mkdir -p "$OUT"
 
 echo "collect: $BATCHES batches x $ROUNDS rounds, scene seeds from $SEED0"
+echo "  preset  ${SCENE_PRESET:-<none> (default multi-object table)}"
+echo "  targets $TARGETS   edge-jitter $JITTER"
+echo "  spawn   ${SPAWN_ARGS:-<grasp_gym defaults: 1-3 m out, off the approach line, +-90 deg>}"
 for b in $(seq 0 $((BATCHES - 1))); do
     seed=$((SEED0 + b))
     echo "===== batch $((b + 1))/$BATCHES  scene seed $seed ====="
@@ -55,6 +77,8 @@ for b in $(seq 0 $((BATCHES - 1))); do
 
     "$VENV_SIM_PY" -u src/teleop_free/grasp_gym.py \
         --rounds "$ROUNDS" --record \
+        --targets "$TARGETS" --edge-jitter "$JITTER" \
+        $SPAWN_ARGS \
         --manifest "$OUT/manifest_$seed.jsonl" \
         > "$OUT/gym_$seed.log" 2>&1
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$seed.log" || echo "  (no result line)"
