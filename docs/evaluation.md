@@ -24,15 +24,22 @@ third_party/Isaac-GR00T/.venv/bin/python src/teleop_free/tools/eval_open_loop.py
     --wandb-run <run>          # val 曲线写回训练 run,同一根 x 轴
 ```
 
-四个指标,每个都配 persistence 基线(块首真值动作保持整块 —— 数据 30.6% 的帧
+全部指标都配 persistence 基线(块首真值动作保持整块 —— 数据 30.6% 的帧
 token 与前帧相同,不摆这条线任何 MSE 都读不懂):
 
-| 指标 | 为什么是它 |
-|---|---|
-| nMSE,token 与 gripper **分开** | nMSE = MSE/var = 1−R²,尺度无关;不分开的话决定成败的 1 维 gripper 被 64 维淹没 |
-| 吸附后命中率(逐维 + 整帧) | FSQ 空间每维实际只用 2–5 个格点,离散空间里命中率可读、MSE 不可读 |
-| **关节指令差(度)** | 头条数字。经 SONIC decoder 换算,有物理单位;脚本自测噪声底(数据 30 Hz vs decoder 50 Hz 历史,~1.1°),低于它的差异不作数 |
-| 闭合时刻误差(帧) | 抓取成败系于闭爪时机,任何 MSE 都看不见它 |
+| 指标 | 定义 | 体现的性能 |
+|---|---|---|
+| `nmse_token` | 对 snap(量化吸附)后的 64 维 token 预测算 nMSE = MSE/var(gt),逐维归一化后再平均 | token(身体动作)预测的整体准确度,1.0 = 不如预测均值;归一化消除了量纲问题 |
+| `nmse_token_unsnapped` | 同上但用 snap 前的原始连续预测 | 衡量量化吸附本身修正了多少误差 —— 对比 `nmse_token` 可看出模型输出偏离最近码字多远 |
+| `nmse_gripper` | 单独对 gripper 1 维算 nMSE | 抓取相关的关键维度单独评估,避免被 64 维 token 稀释(不分开的话决定成败的这 1 维会被 64 维淹没) |
+| `hit_rate_per_dim` | 预测(snap 后)token 索引与真值 token 索引相同的逐维命中率均值 | FSQ 空间每维实际只用 2–5 个格点,离散空间里命中率可读、MSE 不可读 |
+| `hit_rate_all64` | 要求同一帧 64 维**全部**命中的比例 | 更严格的整体正确率 —— 一帧动作是否被完整无误地复现 |
+| `gripper_mae` | 预测与真值 gripper 值的平均绝对误差 | gripper 连续值(开合程度)的平均绝对误差 |
+| `close_frame_gt` / `close_frame_pred` | 真值/预测 gripper 信号第一次穿过(真值的)5%–95% 分位数中点的帧号 | 夹爪开始闭合的时间点,两侧都用真值量程判定,避免预测用自己的中点"讨巧" |
+| `close_frame_err`(及 `close_frame_err_abs`) | 预测闭合帧号 − 真值闭合帧号;聚合时再取绝对值均值 | 抓取时机的提前/滞后帧数 —— 抓取成败系于闭爪时机,任何 MSE 都看不见它 |
+| **`deg_mean` / `deg_p95` / `deg_max`** | 把真值 token 和 snap 后的预测 token 分别喂给 SONIC decoder(观测固定),取关节指令差的均值/95 分位/最大值,单位为度 | **头条数字**。经 SONIC decoder 换算,有物理单位;可与"token 直接重放已有 0.2–0.9° 误差"对比 |
+| `degrees_noise_floor` | decoder 对真值 token 的重建输出,与实际记录的关节指令之间的误差均值(数据 30 Hz vs decoder 50 Hz 历史) | 误差的最低可信线:脚本自测噪声底(~1.1°),低于它的 `deg_mean` 差异不作数,只是解码重建噪声 |
+| persistence 基线(对以上每个指标都各算一份) | 块首真值动作原样冻结、复制到区间所有帧,作为"什么都没学"的参照 | 判断模型是否只学到了数据的强自相关(30.6% 帧 token 与前帧相同)而非真实动力学;不优于此基线即视为未学到东西 |
 
 跨 `execution_horizon ∈ {1,8,16,40}` 各报一遍 —— 误差随 horizon 的增长曲线
 就是"一个 chunk 敢信多少步"的直接证据(选 checkpoint 只跑 h16 即可,全 horizon
