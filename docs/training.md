@@ -46,6 +46,83 @@ RUN=bottle250 DATA=datasets/..._train bash scripts/train_bottle.sh
 nohup bash scripts/run_pipeline.sh > outputs/logs/pipeline.log 2>&1 &
 ```
 
+## `launch_finetune` 完整超参数表
+
+`train_bottle.sh` 的环境变量(上面「启动」表格)只覆盖了其中一个子集。完整超参数
+来自 `tyro.cli(FinetuneConfig, ...)`
+([`src/gr00t/configs/finetune_config.py`](../src/gr00t/configs/finetune_config.py))
+——这个 dataclass 的每个字段就是一个 CLI flag(tyro 把 `snake_case` 转成
+`--kebab-case`;`bool` 字段同时生成 `--flag`/`--no-flag` 两个开关,`train_bottle.sh`
+里的 `--tune-projector`/`--no-tune-visual` 就是这么来的)。**脚本末尾的 `"$@"`
+会把额外参数原样透传**,覆盖任意一项不用改脚本,直接追加即可,例如
+`bash scripts/train_bottle.sh --learning-rate 5e-5`。
+
+### 数据 / 模型路径(必填,无默认值)
+
+| flag | 说明 |
+|---|---|
+| `--base-model-path` | 预训练权重路径(HF hub 或本地目录) |
+| `--dataset-path` | 数据集根目录,多个数据集用 `os.pathsep` 分隔 |
+| `--embodiment-tag` | embodiment 标签(大小写不敏感) |
+| `--modality-config-path` | modality config `.py` 路径;不给就用 `embodiment_configs.py` 里预注册的(见下节) |
+
+### 模型微调开关
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--tune-llm` | False | 是否微调 LLM 骨干 |
+| `--tune-visual` | False | 是否微调视觉编码器 |
+| `--tune-projector` | **True** | 是否微调 vision/language → 共享空间的 projector |
+| `--tune-diffusion-model` | **True** | 是否微调 diffusion action decoder |
+| `--state-dropout-prob` | 0.2 | state 输入的 dropout 概率 |
+
+### 数据增强
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--random-rotation-angle` | None | 图像随机旋转最大角度(度) |
+| `--color-jitter-params` | None | dict:`brightness`/`contrast`/`saturation`/`hue`;不给用预训练模型自带的默认增强 |
+| `--use-percentiles` | True | state/action 归一化用 q01/q99 百分位,而非 min/max |
+| `--shortest-image-edge` / `--crop-fraction` | None / None | 缩放最短边 + 裁剪比例,必须成对设置,否则报错 |
+| `--extra-augmentation-config` | None | JSON 字符串,配置 mask 相关的额外增强(`background_noise_transforms`/`masked_region_transforms`) |
+
+### 训练超参数
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--global-batch-size` | 64 | 梯度累积**之前**的总 batch |
+| `--gradient-accumulation-steps` | 1 | 累积步数;有效 batch = 两者乘积(`__post_init__` 在 >1 时会打印提醒,防止把累积前的值当成真实 batch) |
+| `--learning-rate` | 1e-4 | 初始学习率 |
+| `--warmup-ratio` | 0.05 | warmup 占总步数比例 |
+| `--weight-decay` | 1e-5 | AdamW weight decay |
+| `--optim` | `adamw_torch` | 可选 `adamw_bnb_8bit`(需 bitsandbytes,量化 Adam m/v,单卡塞得下的关键,见下面「单卡训练」) |
+| `--max-steps` | 10000 | 总训练步数 |
+| `--dataloader-num-workers` | 2 | dataloader worker 进程数 |
+| `--num-gpus` | 1 | 参与训练的 GPU 数 |
+
+### 输出 / checkpoint / 日志
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--output-dir` | `./outputs` | checkpoint/日志输出目录 |
+| `--experiment-name` | None | wandb run 名;不给用 `output_dir` 的 basename |
+| `--save-steps` | 1000 | 每多少步存一次 checkpoint |
+| `--save-total-limit` | 5 | 最多保留几个 checkpoint,超了删旧的 |
+| `--save-only-model` | False | 只存模型权重,不存 optimizer/scheduler/RNG 状态(省盘,但不能 resume) |
+| `--resume-from-checkpoint` | False | 从 `output_dir` 里最新的 `checkpoint-*` 续训;和 `save-only-model=True` 不兼容(`experiment.run` 里强制检查) |
+| `--skip-weight-loading` | False | 跳过加载 `base_model_path` 的权重(架构照建,只为调试/CI 提速) |
+| `--use-wandb` | False | 是否记录到 wandb |
+| `--wandb-project` | `finetune-gr00t-n1d7` | wandb 项目名 |
+
+### 数据集分片 / 采样
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--shard-size` | 1024 | 数据集预加载分片大小 |
+| `--episode-sampling-rate` | 0.1 | episode 采样率 |
+| `--num-shards-per-epoch` | 100000 | 每 epoch 用多少 shard,显存紧张就调小 |
+| `--ds-weights-alpha` | None | 多数据集混合的幂律权重指数;设了就用 `len(dataset)^alpha` 覆盖各数据集的 `mix_ratio` |
+
 ## `--modality-config-path`:训练脚本怎么读 LeRobot 数据集
 
 `--modality-config-path` 指向的 [`configs/gr00t_sonic_2cam.py`](../configs/gr00t_sonic_2cam.py)
