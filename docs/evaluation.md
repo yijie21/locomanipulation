@@ -321,3 +321,46 @@ ROUNDS=100 BUDGET=60 SEED=6000 bash scripts/seq_ab.sh \
 
 已用 2 轮 smoke 端到端验证:双 stack 共存、配对校验、序贯 look、判定后自动
 清场(含 exporter —— 它不监听端口,端口扫杀漏掉它,par_batch 先踩过)。
+
+### 2026-08-27 更新:并行罚项、配对规则、观测流审计
+
+seq_ab 首次实战(时序集成 A/B)撞出四件事,全部已落地:
+
+- **配对按 appearance,不按行号**(`seq_mcnemar.py`,756827d)。stand 阶段摔跤
+  会以同一 appearance 重试,两次 attempt 都进 manifest,逐行配对在有重试碎片的
+  场次直接错位(第一场 dye-swap 就死在这)。同 appearance 取**最后一次** attempt
+  为该局结果;共享率 <90% 视为跨 seed,拒测。
+- **并行罚项是真的,且不是帧率**:与 round4 完全同配置的对照臂在双实例并行下
+  从 ~38% 塌到 ~17%(配对 p≈0.004),换实例(dye-swap)方向不变,剔除帧率
+  degraded 的局(frame_rate_guard 标记)量级不变。而**时序集成臂在并行下完全
+  不掉**(vs round4@60s 配对 +11/−12)。机制候选:CPU 调度抖动 → chunk 陈旧化。
+  推论:**时序敏感的配置只能在单实例上做最终裁决**;run_meta 带 `parallel: true`
+  (c7456a3),并行数字永不入梯。
+- **观测流可审计了**:`tools/frame_rate_guard.py`(878dc0b/b1f89cd,逐局
+  obs_hz 中位/degraded 标记,标记不作废)+ `tools/instance_watchdog.py`
+  (30fa1fe,process/port/stream/progress 四轴,只报不动)+ seq_ab 结束时归档
+  逐实例 sim.log(83975fb)。背景:一个泄漏的 chrome 曾吃掉 9 核 8 小时,把
+  观测流饿到 13-15 Hz 而没有任何东西报警。
+- **start_stack 的 image-publish 守卫**(9bd0148):孤儿 publisher 占住 :5555
+  时,旧脚本会在零帧状态下报 "stack up"。
+
+### 2026-08-27 发现:闭环大多数局没考走路(stand-start gap)
+
+**~2/3 的闭环局在 VLA 接管时机器人已经站在抓取站位上**(首帧骨盆→物体距离中位
+0.27-0.32 m ≈ 规划站位,而出生点是 0.78 m;R2 62% / R3 76% / R4 69% / ens90 84%)。
+settle 漂移检查通过后到首个流式帧之间的 ~5 s 窗口(2 s IDLE hold + 客户端前奏)
+里,机器人被向桌漂移 ~0.35 m,segment 未定位。旁证:`[gym] pre-walk` 日志与
+trace 首帧互相印证到 8 mm(locomanipulation-04 复核)。
+
+后果与边界:
+
+- 闭环数字描述的是**混合任务**(~2/3 站位伸手 + ~1/3 完整走过去抓),与 95.2%
+  脚本专家(全程走)的对比偏袒 VLA;"R2 后 walk 失败归零"是没考,不是学会了。
+- **梯子的相对比较活着**:R3→R4 按走/没走分层,同卷对子(n=64)独立 +16/−5
+  (p=0.027),三层方向一致。
+- trace 现在逐局记录 `entry_pelvis` / `tstart_pelvis` / `prelude_s`,fork 处打
+  `[gym] fork->vla` 日志(6e79896)——下一场直接分解缺口。修复(让 VLA 真正从
+  出生点接管)排在 blocking90 之后;修复后梯子绝对值全部需要重新表述。
+
+另:episode 保存后的三处无 facing 的 `hold(IDLE)` 曾把机器人转回世界 +x(视频里
+"抓完后退再转身"的来源,5500759 修复,已录数据从未被污染——save 在转身之前)。

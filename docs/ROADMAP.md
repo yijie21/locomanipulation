@@ -390,3 +390,14 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 - **质量 / 摩擦 / 重心**:RGB 看不见却改变结果,进训练集会造成别名化。**只做评测集**。
 - **完整任务**(抓起 → 搬运 → 放下):在 `collect_episode.py` 的 `FULL_TASK=1` 里,
   那条路径还没迁移到新控制逻辑。只有抓取的数据集上限比较低。
+
+## 2026-08-27 追加
+
+- **stand-start gap 修复**(最高优先级,blocking90 之后):定位并消除 settle 检查
+  → VLA 接管之间的 ~0.35 m 向桌漂移(instrument 已埋,6e79896),然后用 round4
+  模型重测一场干净的全任务基线 —— 梯子绝对值在此之前一律按"混合任务"表述。
+- **特权消息加单调 seq 序号**(下一轮采集之前):publisher → PoseSidecar → exporter
+  episode 级 sidecar 记 per-row priv_seq。pose↔parquet 对齐没有共享键,七种离线
+  对齐全部失败(docs/pose_parquet_alignment.md);seq 落地后顺带量 parquet 的真实
+  行速率(声称 50 Hz 未经验证,cadence 的帧数换算依赖它)。
+- **round driver 的 run_meta 补 parallel 字段**(seq_ab 已带,c7456a3)。
