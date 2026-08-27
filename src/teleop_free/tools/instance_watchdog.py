@@ -57,25 +57,56 @@ STALL_S = float(os.environ.get("WATCHDOG_STALL_S", "600"))
 POLL_S = float(os.environ.get("WATCHDOG_POLL_S", "10"))
 
 
-def sim_alive(instance: int) -> bool:
-    """The sim for this instance, identified by its own cmdline. The pattern is
-    assembled at run time: written as a literal it would appear in this
-    process's own /proc/*/cmdline and match itself."""
-    pat = "%s_%s.py" % ("run_sim", "locomani")
-    try:
-        out = subprocess.run(["pgrep", "-af", pat], capture_output=True,
-                             text=True, timeout=10).stdout
-    except Exception:                                          # noqa: BLE001
-        return False
-    for line in out.splitlines():
-        if str(os.getpid()) in line.split()[:1]:
+def sim_alive(instance: int) -> tuple[bool, bool]:
+    """-> (alive, precise).
+
+    `start_stack.sh` passes `--instance N` to the sim purely so its cmdline
+    names which stack it belongs to (the sim strips it before tyro). When the
+    running sim carries that flag the answer is exact. A sim started before
+    that landed does not carry it, and there is no other way to tell two of
+    them apart -- the instance lives in the DDS domain and the log path, not
+    on the cmdline -- so the check falls back to "is any sim running", says so
+    via `precise=False`, and does NOT report a healthy old-cmdline sim as
+    down. A watchdog that cries wolf gets turned off.
+
+    Matches on argv ELEMENTS, not on a substring of the joined cmdline. The
+    substring version is wrong in a way that is easy to miss and was caught
+    here only because it fired: a shell running
+
+        cp src/teleop_free/run_sim_locomani.py /tmp/x && ... --instance 7
+
+    carries both needles inside its single `-c` argument, so a substring test
+    counts that shell as a tagged sim and every real sim then looks absent.
+    The same class of bug has cost this project hours before (a `pkill -f`
+    whose pattern matched the shell that invoked it). Scanning /proc instead
+    of shelling out to pgrep does NOT fix it -- the string is in an ancestor's
+    cmdline either way. Requiring `run_sim_locomani.py` to BE an argument, and
+    `--instance` to be an argument immediately followed by the number, does:
+    a shell has the whole command in one element and cannot match.
+    """
+    script = "%s_%s.py" % ("run_sim", "locomani")
+    flag = "--%s" % "instance"
+    me = os.getpid()
+    found_any = found_tagged = tagged_exists = False
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == me:
             continue
-        # One sim per instance; the instance shows up in its log path or in
-        # SONIC_DDS_DOMAIN, neither of which is on the cmdline. With a single
-        # stack this is unambiguous; with two, presence of ANY sim is the
-        # weaker claim this check can honestly make, so it is what it claims.
-        return True
-    return False
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as fh:
+                argv = fh.read().decode("utf-8", "replace").split("\0")
+        except OSError:
+            continue
+        if not any(a == script or a.endswith("/" + script) for a in argv):
+            continue
+        found_any = True
+        if flag in argv:
+            tagged_exists = True
+            k = argv.index(flag)
+            if k + 1 < len(argv) and argv[k + 1] == str(instance):
+                found_tagged = True
+    if tagged_exists:
+        return found_tagged, True
+    return found_any, False
 
 
 def port_listening(port: int) -> bool:
@@ -125,10 +156,16 @@ def main() -> None:
 
     try:
         while True:
-            transition("process", sim_alive(i),
-                       "" if sim_alive(i) else "sim process is gone")
-            transition("port", port_listening(port),
-                       "" if port_listening(port) else f":{port} not listening")
+            alive, precise = sim_alive(i)
+            transition("process", alive,
+                       ("" if alive else "sim process is gone")
+                       + ("" if precise else
+                          "  (no --instance on the cmdline: this is 'any sim',"
+                          " not 'this instance' -- restart the stack to get"
+                          " the precise check)"))
+            listening = port_listening(port)
+            transition("port", listening,
+                       "" if listening else f":{port} not listening")
 
             # stream: read whatever is new since last poll
             if fh is None and os.path.exists(sim_log):
