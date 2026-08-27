@@ -99,6 +99,88 @@ the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。�
 
 ---
 
+## LeRobot 数据集结构
+
+`convert_to_hf_format.py` 吐出的是标准 LeRobot v2.1 目录布局,三块内容各管各的,
+靠帧号隐式对齐,不存交叉引用:
+
+```
+<dataset_root>/
+├── meta/                                          # 元信息,JSON/JSONL,不含大数据
+│   ├── info.json                                  # 全局配置 + 完整 feature schema
+│   ├── tasks.jsonl                                # task_index → 任务文本
+│   ├── episodes.jsonl                             # 每个 episode 的 task_index 和帧数
+│   ├── episodes_stats.jsonl                       # 每个 episode、每个字段的统计量
+│   ├── modality.json / modality_gr00t_sonic.json  # GR00T/sonic 用的字段命名映射(同内容)
+│   └── modality_psi0.json                         # psi0 用的字段命名映射
+├── data/
+│   └── chunk-000/
+│       └── episode_{000000..NNNNNN}.parquet       # 每帧数值数据,不含图像
+└── videos/
+    └── chunk-000/
+        ├── observation.images.ego_view/episode_*.mp4
+        ├── observation.images.left_wrist/episode_*.mp4
+        └── observation.images.right_wrist/episode_*.mp4
+```
+
+(`chunk-000` 是分片目录,一个 chunk 装 `info.json.chunks_size` 条 episode;单个
+session 批量不大的话通常只有这一个 chunk。)
+
+### meta/info.json
+
+数据集级配置:`total_episodes`/`total_frames`/`fps`/`splits`、`data_path`/
+`video_path` 命名模板,以及 `features` —— 每个字段的 `dtype`/`shape`/关节名。
+`script_config` 额外记了转换脚本和原始 session 路径,出问题先看这里对得上哪次导出。
+
+### meta/tasks.jsonl
+
+`{"task_index": N, "task": "..."}`。语言标注只有这一条链路,来源和坑见上文
+『导出 LeRobot v2.1 并对接 GR00T』里 `--manifest` 那段。
+
+### meta/episodes.jsonl
+
+每个 episode 一行:`{"episode_index", "tasks", "length"}`。不用打开 parquet
+就能拿到 episode 边界,structure 审计的行数校验就是拿这份和 parquet 实际行数对。
+
+### meta/episodes_stats.jsonl
+
+每个 episode 一行,对 `info.json` 里除视频外的**每个字段**都存了逐维
+`min`/`max`/`mean`/`std`/`count`,训练前的归一化统计从这里出,不用重新扫 parquet。
+
+### meta/modality*.json
+
+不存数据,是 dataloader 用的**切片表**:`{组名: {start, end, original_key}}`,
+把 parquet 里零散的列按名字拼成策略要的 `state`/`action`/`video` 命名空间。
+`modality.json` 和 `modality_gr00t_sonic.json` 内容相同(GR00T/sonic 用),
+`modality_psi0.json` 是 psi0 简化动作空间用的。哪个策略实际吃多少维、为什么
+这么切,见下文「数据 schema」。
+
+### data/chunk-000/episode_*.parquet
+
+一个 episode 一个文件,**一行一帧**。列很多,按用途分四组:
+
+| 分组 | 代表字段(维度) | 说明 |
+|---|---|---|
+| 机器人本体状态 | `observation.state`(43)、`observation.eef_state`(14)、`observation.root_orientation`(4)、`observation.projected_gravity`(3)、`observation.cpp_rotation_offset`(4)、`observation.init_base_quat`(4) | 关节角、末端位姿、朝向/重力 |
+| 动作/标签 | `action.wbc`(43)、`action.motion_token`(64)、`observation.state_psi0`(15)、`action.psi0_18`(18) | WBC 关节目标、SONIC latent、psi0 坐标系简化 state/action |
+| 遥操作/动捕溯源(`teleop.*`) | `smpl_joints`/`smpl_pose`/`smpl_frame_index`、`body_quat_w`/`target_body_orientation`、`left`/`right_hand_joints`、`left`/`right_wrist_joints`、`vr_3pt_position`/`vr_3pt_orientation`、`delta_heading`、`stream_mode`/`planner_mode`、`planner_movement`/`facing`/`speed`/`height` | SMPL 动捕原始量、VR 三点追踪、locomotion planner 指令;大部分不进训练,留着做分析/辅助监督 |
+| 索引/标注 | `timestamp`、`frame_index`、`episode_index`、`index`(全局帧号)、`task_index` | 定位用,不是物理量 |
+
+物体位姿(`observation.can_pose` / `plate_pose` / `water_bottle_pose`,按 session
+里的物体命名;9 维 = pos3 + rot6d6,机器人骨盆系)只在该 session 跑了物体位姿
+跟踪时才存在,是特权量,不进 modality——用它写判据时的坑见上文「一个反直觉的坑」。
+
+`observation.images.*` 在 `info.json` 里声明成 `dtype: video`,但**不出现在
+parquet 列里**——像素在 mp4 里,靠帧号对齐,parquet 不存引用。
+
+### videos/chunk-000/observation.images.{cam}/episode_*.mp4
+
+三路 RGB(`ego_view` 头显视角、`left_wrist`/`right_wrist` 手腕相机),和
+`info.json.fps` 一致(转换器统一重采样到 30fps)。每个视频的帧数必须等于对应
+parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parquet 行数"要测的。
+
+---
+
 ## 数据 schema
 
 一条 episode 的 parquet 里列很多,但**训练用的只有下面这些**。完整推导见
