@@ -66,16 +66,31 @@ def main():
     args = ap.parse_args()
 
     a, b_rows = load(args.manifest_a), load(args.manifest_b)
-    n = min(len(a), len(b_rows))
-    pairs = []
-    for i in range(n):
-        ra, rb = a[i], b_rows[i]
-        if ra.get("appearance") != rb.get("appearance"):
-            sys.exit(f"NOT PAIRED: round {i} has appearance "
-                     f"{ra.get('appearance')} in A but {rb.get('appearance')} "
-                     f"in B -- the arms are not running the same initial "
-                     f"conditions. Refusing to test.")
-        pairs.append((ra["ok"], rb["ok"]))
+
+    # Pair by APPEARANCE, not by row index. A stand-stage failure re-attempts
+    # the same round under the same appearance and BOTH attempts land in the
+    # manifest (round 0 attempt 0 "[stand] walked off" + attempt 1), so row i
+    # of one arm can be attempt debris the other arm never produced. Same
+    # appearance = same initial conditions, which is the thing pairing is
+    # actually about; the LAST attempt is the round's outcome (earlier
+    # attempts died before the VLA was measured).
+    def by_app(rows):
+        d = {}
+        for r in rows:                      # later rows overwrite: last attempt wins
+            d[r["appearance"]] = r["ok"]
+        return d
+
+    ma, mb = by_app(a), by_app(b_rows)
+    shared = [k for k in ma if k in mb]
+    n = len(shared)
+    # A same-seed pair of arms shares almost every appearance (only a round
+    # still in flight on one side is missing). A different seed shares ~none.
+    floor = min(len(ma), len(mb))
+    if floor and n < 0.9 * floor:
+        sys.exit(f"NOT PAIRED: only {n} of {floor} appearances are shared "
+                 f"between the arms -- these runs were not drawn from the "
+                 f"same seed/sequence. Refusing to test.")
+    pairs = [(ma[k], mb[k]) for k in shared]
 
     ka = sum(1 for x, _ in pairs if x)
     kb = sum(1 for _, y in pairs if y)
