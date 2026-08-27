@@ -80,6 +80,12 @@ cleanup() {
     for p in $EVAL_PIDS $SRV_PIDS; do kill "$p" 2>/dev/null; done
     sleep 2
     for p in $EVAL_PIDS $SRV_PIDS; do kill -9 "$p" 2>/dev/null; done
+    # belt and braces: the stored PIDs can miss a re-exec'd child (an aborted
+    # run left both arms alive once); match by OUR out dir so a concurrent
+    # unrelated eval is never touched
+    for p in $(pgrep -f "eval_closed_loop.*$OUT_DIR" || true); do
+        kill -9 "$p" 2>/dev/null
+    done
     kill_instance 0; kill_instance 1
 }
 trap cleanup EXIT INT TERM
@@ -196,6 +202,12 @@ done
 
 cleanup
 trap - EXIT
+
+# Archive the sim logs with the results: frame_rate_guard.py needs the log
+# that was live DURING the run, and stack restarts overwrite it -- round 4's
+# obs-rate can never be audited for exactly this reason. A few hundred KB.
+cp "$(locomani_session_root 0)/sim.log" "$OUT_DIR/sim_i0.log" 2>/dev/null
+cp "$(locomani_session_root 1)/sim.log" "$OUT_DIR/sim_i1.log" 2>/dev/null
 
 echo
 echo "===== seq_ab result ====="

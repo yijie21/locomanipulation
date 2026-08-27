@@ -7,12 +7,15 @@ echo "== $(date +%H:%M:%S) =="
 
 # round-4 driver stage
 R4LOG=outputs/logs/round4.log
-ENS=/workspace/tmp/ens.log
-[ -f "$ENS" ] && grep -E "^=====" "$ENS" | tail -1 | sed "s/^/  ens: /"
+SEQ=/workspace/tmp/seq_swap1.log
+[ -f "$SEQ" ] && tail -1 "$SEQ" | sed "s/^/  seq_ab: /"
+[ -f outputs/eval/seq_ens_swap1/seq_verdict.json ] && \
+    python3 -c "import json;d=json.load(open('outputs/eval/seq_ens_swap1/seq_verdict.json'));print(f\"  上次look: n={d['pairs']}  A {d['a_ok']} vs B {d['b_ok']}  +B{d['only_b']}/+A{d['only_a']}  p={d['p']:.3f} -> {d['verdict']}\")"
 [ -f "$R4LOG" ] && grep "^===========" "$R4LOG" | tail -1 | sed 's/^=*/  stage:/;s/=*$//'
 
 # closed-loop runs, live round count from their manifests
-for m in outputs/eval/ens/*.manifest.jsonl \
+for m in outputs/eval/seq_ens_swap1/a.manifest.jsonl \
+         outputs/eval/seq_ens_swap1/b.manifest.jsonl \
          outputs/eval/fast250/closed_loop.manifest.jsonl; do
     [ -f "$m" ] || continue
     python3 - "$m" <<'PY'
