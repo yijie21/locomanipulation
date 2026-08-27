@@ -76,6 +76,33 @@ nohup bash scripts/run_pipeline.sh > outputs/logs/pipeline.log 2>&1 &
 | `--tune-diffusion-model` | **True** | 是否微调 diffusion action decoder |
 | `--state-dropout-prob` | 0.2 | state 输入的 dropout 概率 |
 
+上面这张表只是 `FinetuneConfig` 暴露给 CLI 的部分。`Gr00tN1d7Config`
+([`src/gr00t/configs/model/gr00t_n1d7.py`](../src/gr00t/configs/model/gr00t_n1d7.py))
+里实际控制"哪部分网络参与训练/长什么样"的开关不止这 4 个,分两类。
+
+#### A. 训练开关(`tune_*`):模型配置里共 6 个,CLI 只暴露 4 个
+
+| flag | 默认值 | CLI 能设吗 | 对应网络部分 |
+|---|---|---|---|
+| `tune_llm` | False | ✅ `--tune-llm` | Qwen3-VL 骨干的 **LLM**(`self.model.language_model`) |
+| `tune_visual` | False | ✅ `--tune-visual` | Qwen3-VL 骨干的 **视觉编码器**(`self.model.visual`) |
+| `tune_top_llm_layers` | 0 | ❌ 固定 0 | LLM 最后 N 层单独解冻,不用整个解冻 LLM;默认 0 = 不启用(`qwen3_backbone.py:259-262`) |
+| `tune_projector` | True | ✅ `--tune-projector` | action head 的 `state_encoder`+`action_encoder`+`action_decoder`+`position_embedding`(即"projector bank",32 个 embodiment 槽) |
+| `tune_diffusion_model` | True | ✅ `--tune-diffusion-model` | action head 的 **DiT / AlternateVLDiT**(去噪 transformer 本体) |
+| `tune_vlln` | True | ❌ 固定 True | `vlln`(LayerNorm)+ `vl_self_attention`(backbone 输出上加的适配自注意力层)——**永远参与训练**,不受任何 CLI flag 影响,对应下文「可训练参数」表里的"vl_self_attention + vlln 201.4 M" |
+
+`tune_top_llm_layers`/`tune_vlln` 不在 `FinetuneConfig` 里,`launch_finetune`
+命令行改不了,要动只能直接编辑 `configs/model/gr00t_n1d7.py` 的默认值。
+
+#### B. 架构选择开关:不是"训不训",是"要不要这个模块/用哪个实现",同样不在 CLI 里
+
+| flag | 默认值 | 决定什么 |
+|---|---|---|
+| `select_layer` | 12 | LLM 只保留前 12 层,多的直接 `pop` 掉(`qwen3_backbone.py:194`)——砍模型大小,不是冻结 |
+| `use_vlln` | True | `vlln` 这个 LayerNorm 模块是否存在;False 时是 `nn.Identity()`,没有可训练参数可言 |
+| `use_alternate_vl_dit` | True | 用 `AlternateVLDiT` 还是普通 `DiT` 做 diffusion action decoder |
+| `add_pos_embed` | True | action head 要不要给 state+action 序列加可学习位置编码 |
+
 ### 数据增强
 
 | flag | 默认 | 说明 |
