@@ -46,6 +46,57 @@ RUN=bottle250 DATA=datasets/..._train bash scripts/train_bottle.sh
 nohup bash scripts/run_pipeline.sh > outputs/logs/pipeline.log 2>&1 &
 ```
 
+## `--modality-config-path`:训练脚本怎么读 LeRobot 数据集
+
+`--modality-config-path` 指向的 [`configs/gr00t_sonic_2cam.py`](../configs/gr00t_sonic_2cam.py)
+是关键——它 `import` 时会原地覆写 `MODALITY_CONFIGS["unitree_g1_sonic"]`
+(NVIDIA 官方 slot 11 配置),声明这次训练实际要读哪些字段:
+
+| modality | modality_keys | 维度 |
+|---|---|---|
+| `video` | `ego_view`、`right_wrist`(丢弃 `left_wrist`) | 2 路 |
+| `state` | `left_leg`、`right_leg`、`waist`、`left_arm`、`right_arm`、`left_hand`、`right_hand`、`projected_gravity`、`right_wrist_pos`、`right_wrist_abs_quat` | 53 |
+| `action` | `motion_token`、`right_gripper`,`delta_indices=range(40)`(预测 40 步的 action chunk) | 65 |
+
+这些 `modality_keys` 名字必须能在数据集的 `meta/modality.json` 里按名字找到
+(`lerobot_episode_loader.py:328` 的 `_extract_joint_groups`);找不到**不会
+报错**,只打一句 `Warning: Joint group '...' not found` 然后静默丢掉那个字段
+(`lerobot_episode_loader.py:339-342`)。**换一个新数据集训练前,先拿这张表的
+`modality_keys` 逐项核对它的 `meta/modality.json`**:state 的 10 个分组名、
+action 的 `motion_token`/`right_gripper`、video 的 `ego_view`/`right_wrist`
+是否都在。少一个,训练照样收敛,只是悄悄瘸了一路输入或监督,不核对根本看不出来。
+
+(视频键还有个位置回退:config 里的键一个都不在数据集 `modality.json.video`
+里时,loader 会按位置顺序对应,但要求两边数量相等,否则直接 assert 报错——
+`lerobot_episode_loader.py:281-297`。上表用的都是数据集里的原名,不会走到这条
+分支。)
+
+### `meta/stats.json` 是另一个硬依赖,但会自愈
+
+别跟 `meta/episodes_stats.jsonl` 搞混,这是两个不同的东西:后者是导出脚本
+(`convert_to_hf_format.py`)按 episode 算的逐集统计,数据集自带;`meta/stats.json`
+是 GR00T 自己要的、**跨全部 episode 合并**的归一化统计,字段不带 `episodes_`
+前缀,数据集里天生没有,得单独生成一次。
+
+`LeRobotEpisodeLoader._load_metadata()` 对 `meta/stats.json` 是硬 `assert`,
+不存在直接抛异常(`lerobot_episode_loader.py:180`);但 `DatasetFactory.build()`
+会先在 rank-0 上调用 `generate_stats()`/`generate_rel_stats()`
+(`factory.py:56-59`)——**缺失时自动生成,不是人工步骤**。`train_bottle.sh`
+在启动前另做了一次同款存在性检查(上面「启动」表格 `DATA` 那行),但它不会替你
+等生成,缺失时直接报错退出,并打印生成命令:
+
+```bash
+third_party/Isaac-GR00T/.venv/bin/python -m gr00t.data.stats \
+    --dataset-path "$DATA" \
+    --embodiment-tag UNITREE_G1_SONIC \
+    --modality-config-path configs/gr00t_sonic_2cam.py
+```
+
+这道预检查纯粹是为了几秒内报错而不是等模型加载完才发现;绕开 shell 脚本直接
+调用 Python 训练入口(比如 `launch_finetune`),`DatasetFactory.build()` 那一步
+照样会自动生成,只是不再提前告诉你。归一化统计量按同一套 `{start,end}` 切片
+表分给每个 `modality_key`,和字段切片用的是同一份 `meta/modality.json`。
+
 ## 训练设置(bottle200 实测配置)
 
 ### 模型与输入输出
