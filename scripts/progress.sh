@@ -7,11 +7,16 @@ echo "== $(date +%H:%M:%S) =="
 
 # round-4 driver stage
 R4LOG=outputs/logs/round4.log
+SEQ=/workspace/tmp/ens90.log
+BLK=/workspace/tmp/blocking90.log
+[ -f "$SEQ" ] && grep -E "^===== " "$SEQ" | tail -1 | sed "s/^/  ens90: /"
+[ -f "$BLK" ] && grep -E "^===== " "$BLK" | tail -1 | sed "s/^/  blocking90: /"
 [ -f "$R4LOG" ] && grep "^===========" "$R4LOG" | tail -1 | sed 's/^=*/  stage:/;s/=*$//'
 
 # closed-loop runs, live round count from their manifests
-for m in outputs/eval/fast250/closed_loop.manifest.jsonl \
-         outputs/eval/fast250/confirm_traces/../confirm_config.manifest.jsonl; do
+for m in outputs/eval/ens90/n3m03.manifest.jsonl \
+         outputs/eval/blocking90/blocking.manifest.jsonl \
+         outputs/eval/fast250/closed_loop.manifest.jsonl; do
     [ -f "$m" ] || continue
     python3 - "$m" <<'PY'
 import json, sys, collections
@@ -27,7 +32,7 @@ name=sys.argv[1].split('/')[-1].replace('.manifest.jsonl','')
 print(f"  {name:<14} [{bar}] {n}/100  ok {ok} ({100*ok/max(n,1):.0f}%)  失败 {dict(st)}")
 PY
 done
-echo "  参照: round3=28/100  确认跑(配置)=31/101  基线前50=13/50"
+echo "  参照: round4(无集成)=48/101=47.5%  round3=28/100"
 
 # training, if any
 t=$(grep -oE "[0-9]+/10000 \[[0-9:]+<[0-9:]+" "$R4LOG" 2>/dev/null | tail -1)
