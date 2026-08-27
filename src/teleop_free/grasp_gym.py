@@ -717,11 +717,16 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.reset_pose()
     reset.pin_arms()
     reset.set_ghost()
-    reset.reset(objects={obj_key: {"dxy": [float(d_can[0]), float(d_can[1])],
-                                   "yaw": float(np.random.uniform(-np.pi,
-                                                                  np.pi))}},
-                robot={"dxy": [float(d_robot[0]), float(d_robot[1])],
-                       "yaw": psi_spawn},
+    # Captured, not inline: the VLA replace() below re-sends the IDENTICAL
+    # reset (same drawn object yaw, same appearance) as a mid-prelude
+    # re-teleport. A redraw here would both re-orient the object and shift
+    # the RNG stream, breaking cross-run pairing.
+    reset_objects = {obj_key: {"dxy": [float(d_can[0]), float(d_can[1])],
+                               "yaw": float(np.random.uniform(-np.pi,
+                                                              np.pi))}}
+    reset_robot = {"dxy": [float(d_robot[0]), float(d_robot[1])],
+                   "yaw": psi_spawn}
+    reset.reset(objects=reset_objects, robot=reset_robot,
                 appearance=appearance)
     time.sleep(0.3)
     landed_xy = np.asarray(p.pelvis_xy(p.obs()))
@@ -769,7 +774,14 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # of stand drift, over the 0.35 m budget, before the deliberate turn
     # even started.
     p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
-    p.cmd.hold(4.0, mode=LocomotionMode.IDLE, facing=fv_spawn)
+    # VLA rounds settle SHORT: in the drift-prone spawn configs the gait
+    # limit cycle walks ~0.15 m/s through any planner hold (IDLE, squat
+    # brake, even walk_to back -- all measured), so the only working lever
+    # is窗口长度: every second of settle is up to 15 cm of unwanted
+    # approach. 1.5 s is enough for the fallen-check; the scripted branch
+    # keeps the full 4 s (its distribution is the training data's).
+    p.cmd.hold(1.5 if VLA_POLICY is not None else 4.0,
+               mode=LocomotionMode.IDLE, facing=fv_spawn)
     s = p.obs()
     if s["fallen"]:
         return False, ("[stand] robot did not stabilise after reset "
@@ -831,7 +843,9 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         if VLA_POLICY is not None:
             try:
                 sw = p.obs()
-                p.log(f"[gym] win {tag}: pelvis {np.round(p.pelvis_xy(sw), 3)}")
+                p.log(f"[gym] win {tag}: pelvis {np.round(p.pelvis_xy(sw), 3)} "
+                      f"yaw {np.degrees(p.pelvis_yaw(sw)):.1f} "
+                      f"anchor_off {np.degrees(p.cmd.heading_offset):.1f}")
             except Exception:
                 pass
 
@@ -840,7 +854,17 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.upper_body = None
     reset.pin_arms()
     _wmark("pinned")
-    p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
+    if VLA_POLICY is None:
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
+    if VLA_POLICY is not None:
+        # No quiesce hold and NO corrective walking for VLA rounds. In the
+        # drift-prone spawn configs the gait limit cycle walks ~0.15 m/s
+        # through every planner countermeasure tried (IDLE hold, IDEL_SQUAT
+        # brake, walk_to back -- the last one IGNITES the runaway: 0.14 m
+        # off after the short settle, 0.6 m off after "walking back").
+        # The only lever that works is window length: settle cut to 1.5 s
+        # above, nothing else commanded here, hand over to the VLA at once.
+        pass
     _wmark("held")
     reset.start_video(f"gym_{int(time.time())}")
     _wmark("video")
@@ -884,8 +908,22 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             np.asarray(p.object_pos(obj_key, s_fork)[:2]) - p.pelvis_xy(s_fork)))
         p.log(f"[gym] fork->vla: pelvis {np.round(p.pelvis_xy(s_fork), 3)} "
               f"obj-dist {d_fork:.3f} m")
+
+        def replace():
+            # Mid-prelude re-teleport: the gait limit cycle walks drift-prone
+            # spawn configs ~0.15 m/s through every planner countermeasure
+            # (hold/squat/walk_to -- all measured), so the position is
+            # RESTORED physically instead. Identical args -> identical
+            # scene; label "replace" so frame_rate_guard's marker rule can
+            # exclude it. qvel is zeroed by the reset, which also kills the
+            # cycle's momentum.
+            reset.reset(objects=reset_objects, robot=reset_robot,
+                        appearance=appearance, label="replace")
+            time.sleep(0.8)   # stance settle; deploys tolerate teleports
+
         return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
-                          psi=psi, fv=fv, grip_za=grip_za, record=record)
+                          psi=psi, fv=fv, grip_za=grip_za, record=record,
+                          replace=replace)
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)

@@ -322,7 +322,8 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
     """
     counter = {"n": 0}
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
+                  replace=None):
         from primitives import LocomotionMode
 
         obs_src = ObsBuilder(task)
@@ -342,6 +343,8 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # across it -- streamed mode over an empty buffer stops control
         # (g1_deploy_onnx_ref.cpp:618), and the first v4 frame is also what
         # flips is_using_encoder_ off. Same order diag_token_replay validated.
+        if replace is not None:
+            replace()   # see the async client: physical spawn restore
         obs = obs_src.build()
         tok0, grip0 = link.get_chunk(obs)
         l0, r0 = expand_hands(grip0[0])
@@ -488,7 +491,8 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     counter = {"n": 0}
     RATE = 30.0
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
+                  replace=None):
         from primitives import LocomotionMode
 
         obs_src = ObsBuilder(task)
@@ -548,6 +552,23 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             stop.set()
             obs_src.close()
             return False, "[vla] first inference never returned"
+
+        if replace is not None:
+            # Re-teleport to the spawn now that the slow prelude work
+            # (stream connect + first inference) is done -- the gait limit
+            # cycle walked drift-prone configs 0.2-0.35 m during exactly
+            # this window. Then wait for a chunk computed AFTER the
+            # teleport: priming from a pre-teleport observation would
+            # execute a stale intent.
+            t_rep = time.time()
+            replace()
+            while True:
+                with lock:
+                    fresh = (latest["t0"] is not None
+                             and latest["t0"] > t_rep)
+                if fresh or time.time() - t_rep > 10:
+                    break
+                time.sleep(0.05)
 
         with lock:
             tok0, grip0 = latest["chunk"]
