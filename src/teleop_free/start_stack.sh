@@ -192,5 +192,37 @@ echo "  ok"
 fi
 
 echo
+# The sim's image publisher is a SUBPROCESS. If its port is still held -- by
+# an orphaned publisher from a previous stack, which outlives stop_stack --
+# it dies with "Address already in use (tcp://*:5555)" while the sim's main
+# process carries on, and this script would print "stack up" over a stack that
+# never emits a single frame. Every VLA round then fails with "camera/state
+# streams never became ready", which names the symptom and not the cause.
+# (Cost three rounds of an eval on 2026-08-27 before anyone read sim.log.)
+if [ "${SKIP_IMAGE_CHECK:-0}" != "1" ]; then
+    _img=0
+    for _ in $(seq 1 20); do
+        if grep -q "Image publish frequency" "$LOGS/sim.log" 2>/dev/null; then
+            _img=1; break
+        fi
+        sleep 2
+    done
+    if [ "$_img" != "1" ]; then
+        echo
+        echo "STACK IS NOT USABLE: the sim has not published a single image."
+        if grep -q "Address already in use" "$LOGS/sim.log" 2>/dev/null; then
+            grep -m1 "Address already in use" "$LOGS/sim.log" | sed 's/^/  /'
+            echo "  An orphaned image publisher still holds the port. Kill the"
+            echo "  parentless multiprocessing children and start again:"
+            echo "    pgrep -f 'venv_sim/bin/python -c from multi''processing'"
+        else
+            echo "  Last lines of $LOGS/sim.log:"
+            tail -5 "$LOGS/sim.log" | sed 's/^/  /'
+        fi
+        echo "  (SKIP_IMAGE_CHECK=1 bypasses this if you know it is fine.)"
+        exit 1
+    fi
+fi
+
 echo "stack up. logs in $LOGS/{sim,deploy,exporter}.log"
 echo "next:  $VENV_SIM_PY $LOCOMANI_SRC/grasp_gym.py --rounds 12 --record --manifest outputs/logs/manifest.jsonl"
