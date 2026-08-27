@@ -853,9 +853,23 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     rel_dbg("pre-walk ", p.obs())
 
     # ---- policy fork: everything above is shared, everything below is the
-    # scripted policy. A VLA round hands over here, with the robot standing
-    # settled at its spawn, facing the object, recording already started.
+    # scripted policy. A VLA round hands over here facing the object.
+    #
+    # NOT "settled at its spawn": measured on every eval round set (R2 62%,
+    # R3 76%, R4 69%, ens90 84%), by the time the VLA's stream starts the
+    # robot is ALREADY AT THE STAND POSE in ~2/3 of rounds -- something
+    # moves it ~0.35 m table-ward between the settle drift-check and the
+    # first streamed frame (the 2 s IDLE hold below the drift check plus
+    # the VLA client's prelude). The fork log line and the trace's
+    # entry_pelvis/tstart_pelvis fields exist to pin down which segment;
+    # until that is fixed, closed-loop numbers describe a mixed task
+    # (~1/3 walk+reach, ~2/3 stand-start reach).
     if VLA_POLICY is not None:
+        s_fork = p.obs()
+        d_fork = float(np.linalg.norm(
+            np.asarray(p.object_pos(obj_key, s_fork)[:2]) - p.pelvis_xy(s_fork)))
+        p.log(f"[gym] fork->vla: pelvis {np.round(p.pelvis_xy(s_fork), 3)} "
+              f"obj-dist {d_fork:.3f} m")
         return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
                           psi=psi, fv=fv, grip_za=grip_za, record=record)
 

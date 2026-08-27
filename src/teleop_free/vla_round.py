@@ -331,6 +331,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             return False, "[vla] camera/state streams never became ready"
 
         s0 = p.obs()
+        t_entry = time.time()
         obj0 = np.asarray(p.object_pos(obj_key, s0))
         trace = []
         ok, why = False, "[vla] timeout"
@@ -353,6 +354,16 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             time.sleep(0.02)
 
         t_start = time.time()
+        s_ts = p.obs()
+        # Where the robot ACTUALLY is when the VLA starts being measured.
+        # Added after the stand-start finding: in ~2/3 of rounds something
+        # moves the robot from its settled spawn to the stand pose during
+        # the prelude, so t=0 of the trace is NOT the settled spawn. These
+        # three fields make that drift measurable per round.
+        prelude = dict(
+            entry_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s0)],
+            tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
+            prelude_s=round(t_start - t_entry, 2))
         frame_index = 0
         lifted_at = None
         try:
@@ -424,7 +435,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         if trace_dir:
             os.makedirs(trace_dir, exist_ok=True)
             with open(os.path.join(trace_dir, f"round_{counter['n']:03d}.json"), "w") as f:
-                json.dump(dict(ok=ok, why=why, trace=trace), f)
+                json.dump(dict(ok=ok, why=why, **prelude, trace=trace), f)
         counter["n"] += 1
         return ok, why
 
@@ -473,6 +484,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             return False, "[vla] camera/state streams never became ready"
 
         s0 = p.obs()
+        t_entry = time.time()
         obj0 = np.asarray(p.object_pos(obj_key, s0))
         trace = []
         ok, why = False, "[vla] timeout"
@@ -536,6 +548,13 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             time.sleep(0.02)
 
         t_start = time.time()
+        s_ts = p.obs()
+        # See the blocking client's comment: t=0 of the trace is not the
+        # settled spawn in ~2/3 of rounds; these fields measure the gap.
+        prelude = dict(
+            entry_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s0)],
+            tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
+            prelude_s=round(t_start - t_entry, 2))
         frame_index = 0
         lifted_at = None
         chunk_t0, idx = None, 0
@@ -635,7 +654,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         if trace_dir:
             os.makedirs(trace_dir, exist_ok=True)
             with open(os.path.join(trace_dir, f"round_{counter['n']:03d}.json"), "w") as f:
-                json.dump(dict(ok=ok, why=why, trace=trace), f)
+                json.dump(dict(ok=ok, why=why, **prelude, trace=trace), f)
         counter["n"] += 1
         return ok, why
 
