@@ -45,7 +45,28 @@ token 与前帧相同,不摆这条线任何 MSE 都读不懂):
 就是"一个 chunk 敢信多少步"的直接证据(选 checkpoint 只跑 h16 即可,全 horizon
 留给选出的最优者,省 3 小时)。
 
-### bottle200 基线(checkpoint-10000,20 局 val)
+## GR00T Open-loop:`src/gr00t/eval/open_loop_eval.py`
+
+```bash
+bash scripts/gr00t_open_loop.sh \
+    --model-path outputs/train/<run>/checkpoint-N \
+    --dataset-path datasets/..._val \
+    --out-dir outputs/eval/<run>/checkpoint-N
+```
+
+跑的是 NVIDIA 自己的 `gr00t/eval/open_loop_eval.py`,不是上面这套自研 nMSE.
+
+官方脚本对每条轨迹的图用**同一个**文件路径,多条轨迹会互相覆盖 —— 所以这个脚本
+不透传 `--save-plot-path`,让官方脚本走它自带的按 `traj_id` 命名的默认路径,
+跑完后再统一挪到 `<out-dir>/plots/`。产出:每条轨迹一张对比图、
+`<out-dir>/metrics.json`(逐轨迹 + 平均 MSE/MAE)、`<out-dir>/run.log`。
+
+参数是 named flag(`--model-path` / `--dataset-path` / `--out-dir`,可选
+`--horizon` / `--embodiment-tag`),顺序无关;`--model-path` 和 `--dataset-path`
+若传反,脚本会在加载模型前就报错(用 `meta/info.json` 是否存在做判据),不用等
+模型加载完才发现传错。
+
+<!-- ### bottle200 基线(checkpoint-10000,20 局 val)
 
 | horizon | nMSE token(persistence) | 关节角差(persist.) | 闭合误差(persist.) |
 |---|---|---|---|
@@ -53,7 +74,7 @@ token 与前帧相同,不摆这条线任何 MSE 都读不懂):
 | 16 | 0.142(0.323) | 0.93° | ~3 帧 |
 | 40 | 0.176(0.895) | 1.30°(4.21°) | 4.9 帧(23.4) |
 
-误差随 horizon 增长很缓,整块 1.33 s 可信;关节角差已到噪声底(1.16°)。
+误差随 horizon 增长很缓,整块 1.33 s 可信;关节角差已到噪声底(1.16°)。 -->
 
 ## Closed-loop:`src/teleop_free/tools/eval_closed_loop.py`
 
