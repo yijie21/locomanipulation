@@ -825,11 +825,25 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # and is where the stiff, un-human walk came from. Nothing is pinned
     # either -- the hands only need to be up by the time the reach starts,
     # and that is what the RAISE_LEAD ramp below does.
+    def _wmark(tag):
+        # settled->fork forensics: 0.34 m (median) lands somewhere in this
+        # window (blocking90, 85 rounds); these marks name the segment.
+        if VLA_POLICY is not None:
+            try:
+                sw = p.obs()
+                p.log(f"[gym] win {tag}: pelvis {np.round(p.pelvis_xy(sw), 3)}")
+            except Exception:
+                pass
+
+    _wmark("pre-switch")
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
     p.cmd.upper_body = None
     reset.pin_arms()
+    _wmark("pinned")
     p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
+    _wmark("held")
     reset.start_video(f"gym_{int(time.time())}")
+    _wmark("video")
     if record:
         # 'c' toggles the exporter IDLE -> RECORDING; a second 'c' saves and
         # 'x' discards (zmq_driver.SonicCommander.key). Recording starts HERE,
