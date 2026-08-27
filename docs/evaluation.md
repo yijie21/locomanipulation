@@ -291,3 +291,33 @@ appearance / obj_xy / robot_xy / stand_xy / yaw **五个字段五轮全部一致
 接管 —— 也绕开了"专家标签要 encoder、学生驱动要 NO_ENCODER"的硬冲突),录它
 抬臂→伸手→抓的恢复轨迹。`PROBE=1` 先 10 局探站立净空(实测 9/10 通过)。采完与
 原数据合并转换(`--strip-pose-columns` 统一混代际 schema)重训。
+
+## 加速评测:`scripts/seq_ab.sh`(A+C+B 筛选 harness)
+
+一场 100 轮全预算闭环 ≈ 3.1 小时(失败轮 ~138 s = 90 s 预算烧满 + ~48 s
+出生/站立/走位开销),两臂 A/B ≈ 6 小时。三个正交的杠杆把筛选压到 ~1 小时:
+
+- **A 并行实例**:两臂各占一个 stack(`INSTANCE=0/1`,DDS domain + 端口块隔离,
+  与 `par_batch.sh` 采集用的同一套机制),policy server 各占一张 GPU,端口
+  **6590/6591** —— 不是 5590,因为 INSTANCE=1 的 keyboard 端口恰好是 5590
+  (`scripts/paths.sh` 里有警告的那个冲突)。
+- **B 筛选预算**:`eval_closed_loop.py --budget 60`(梯子是 90)。偏差两臂共享
+  且**永远朝下**(round 4 实测 7/48 的成功落在 60 s 之后)。结果 JSON 记
+  `budget_s`,`full_budget` 只在 90 s 且无 stall-abort 时为 true。
+- **C 序贯停止**:`tools/seq_mcnemar.py` 按轮配对(同 seed → 同初始条件;
+  `appearance` 不一致直接拒测),每 20 配对轮一次 look:interim p<0.01 判
+  DIFFERENT,final(n=100)p<0.05,**追不上显著性就 FUTILE 提前收**。
+  Pocock 风格的筛选阈值,不是精确的 STEP —— 所以:
+
+**筛选出的赢家必须再过一次 90 s 全预算确认才算数**(round 4 的教训:50 轮
+A/B 报出的 +12 点在全预算配对下是 p=0.755 的噪声)。FUTILE 则是真实的
+"不值得再烧 6 小时"。
+
+```bash
+# 对照(A 臂) vs 时序集成(B 臂),60 s 预算,最多 100 轮,提前停
+ROUNDS=100 BUDGET=60 SEED=6000 bash scripts/seq_ab.sh \
+    outputs/eval/seq_ens "" "--ensemble 3 --ensemble-m 0.3"
+```
+
+已用 2 轮 smoke 端到端验证:双 stack 共存、配对校验、序贯 look、判定后自动
+清场(含 exporter —— 它不监听端口,端口扫杀漏掉它,par_batch 先踩过)。
