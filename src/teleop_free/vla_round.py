@@ -345,13 +345,26 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         obs = obs_src.build()
         tok0, grip0 = link.get_chunk(obs)
         l0, r0 = expand_hands(grip0[0])
+
+        def _mark(tag):   # see the async client's comment: prelude forensics
+            try:
+                sm = p.obs()
+                p.log(f"[vla] prelude {tag}: pelvis "
+                      f"{np.round(p.pelvis_xy(sm), 3)} "
+                      f"grip0 {float(grip0[0]):+.4f}")
+            except Exception:
+                pass
+
+        _mark("chunk-ready")
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("primed")
         p.cmd.enter_streamed()
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("streamed")
 
         t_start = time.time()
         s_ts = p.obs()
@@ -539,13 +552,32 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         with lock:
             tok0, grip0 = latest["chunk"]
         l0, r0 = expand_hands(grip0[0])
+
+        # Prelude segmentation marks. The stand-start gap (~0.35 m of
+        # table-ward motion before t_start) has two candidates: (a) a creep
+        # smeared over the whole prelude, (b) the 1.2 s priming below
+        # executing the held first token (the pre-trace jaw close/open seen
+        # in every eval video says priming DOES execute poses). One pelvis
+        # fix per segment decides it.
+        def _mark(tag):
+            try:
+                sm = p.obs()
+                p.log(f"[vla] prelude {tag}: pelvis "
+                      f"{np.round(p.pelvis_xy(sm), 3)} "
+                      f"grip0 {float(grip0[0]):+.4f}")
+            except Exception:
+                pass
+
+        _mark("chunk-ready")
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("primed")
         p.cmd.enter_streamed()
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("streamed")
 
         t_start = time.time()
         s_ts = p.obs()
