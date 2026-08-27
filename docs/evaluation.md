@@ -56,7 +56,7 @@ bash scripts/gr00t_open_loop.sh \
 
 跑的是 NVIDIA 自己的 `gr00t/eval/open_loop_eval.py`,不是上面这套自研 nMSE。
 只有两个原始(未归一化)标量指标,64 维 token + 1 维 gripper 一起求平均,不拆分、
-不归一化、没有 persistence 基线——弱,但这正是交叉验证要它弱的原因(见下节):
+不归一化:
 
 | 指标 | 定义 | 体现的性能 |
 |---|---|---|
@@ -66,13 +66,27 @@ bash scripts/gr00t_open_loop.sh \
 | 平均 MAE(跨轨迹) | 每条轨迹的 MAE 再取算术平均 | 模型在整个评测集上的整体预测精度(MAE 口径) |
 | 轨迹曲线图(非标量) | 每个动作维度画 state joints / gt action / pred action 三条曲线,每次重规划处标红点 | 定性排查预测是否跟踪真值、是否在重规划点附近漂移,不产出可比较的数字 |
 
-图上的红点("inference point")标的不是每一帧,而是**每隔 `execution_horizon`
-步、真正重新调用一次策略的时刻**(`open_loop_eval.py:171` 的主循环只在这些点上
-取真实观测重新推理)。两个红点之间的预测曲线来自同一次推理的 chunk,原样开环
-回放,不看任何新观测;下一个红点才会用轨迹在那一刻的真实观测重新预测。看图时,
-红点间预测线相对真值线的漂移幅度,就是"一个 chunk 内误差怎么累积"的直接证据——
-在红点处被拉回还是跨红点持续发散,决定这个 `execution_horizon` 选大了还是选
-合适。
+每张图对应**一条轨迹**,标题写明 traj_id、state/action modality key
+(`plot_trajectory_results`,`open_loop_eval.py:49-128`);图里纵向堆叠
+`action_dim` 个 subplot,每个 subplot 对应动作向量拉平后的**一个标量维度**
+(标题只有 `Action {idx}` 这个数字索引,不带语义名字)。G1 SONIC 是 64 维
+token + 1 维 gripper,一条轨迹的图就有 65 个纵向子图。
+
+每个 subplot 的横纵坐标与曲线:
+
+| 元素 | 定义 | 说明 |
+|---|---|---|
+| 横轴 | 帧序号,`0 ~ actual_steps-1` | 30 Hz 重采样,图上不标秒数 |
+| 纵轴 | 该动作维度的原始数值 | 未归一化、未换算单位;token 维是量化空间的原始浮点值,gripper 维是原始开合数值 |
+| `gt action` | 真值动作该维度随时间的取值 | 数据集里的真实值 |
+| `pred action` | 预测动作该维度随时间的取值 | 由多段 `execution_horizon` 长度的 chunk 拼接而成 |
+| `state joints` | 状态关节该维度随时间的取值 | 只在 state 与 action 维度形状**完全相等**时才画(动作直接是关节指令的情形);SONIC token 空间维度不对齐,这条曲线不出现 |
+| 红点 `inference point` | 每隔 `execution_horizon` 步、真正重新调用一次策略的时刻 | `open_loop_eval.py:171` 的主循环只在这些点上取真实观测重新推理;两个红点之间的预测曲线来自同一次推理的 chunk,原样开环回放,不看任何新观测 |
+
+看图时,红点间预测线相对真值线的漂移幅度,就是"一个 chunk 内误差怎么累积"的
+直接证据——在红点处被拉回还是跨红点持续发散,决定这个 `execution_horizon`
+选大了还是选合适。同维度内的曲线才能比较,不同 subplot 之间数值大小没有意义
+(每维物理含义、量程都不同)。
 
 官方脚本对每条轨迹的图用**同一个**文件路径,多条轨迹会互相覆盖 —— 所以这个脚本
 不透传 `--save-plot-path`,让官方脚本走它自带的按 `traj_id` 命名的默认路径,
