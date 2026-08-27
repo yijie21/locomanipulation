@@ -153,7 +153,7 @@ MAN_A="$OUT_DIR/a.manifest.jsonl"
 MAN_B="$OUT_DIR/b.manifest.jsonl"
 
 cat > "$OUT_DIR/run_meta.json" <<EOF
-{"rounds": $ROUNDS, "budget_s": $BUDGET, "seed": $SEED,
+{"parallel": true, "rounds": $ROUNDS, "budget_s": $BUDGET, "seed": $SEED,
  "check_every": $CHECK_EVERY, "ckpt": "$CKPT",
  "common": "$COMMON", "flags_a": "$FLAGS_A", "flags_b": "$FLAGS_B"}
 EOF
