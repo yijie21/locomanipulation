@@ -665,8 +665,14 @@ class PoseSidecar:
             try:
                 if self._fh:
                     self._fh.close()
+                # PID in the name: chunked collection restarts the gym per
+                # chunk and each restart numbers rounds from 0 again, so a
+                # shared directory overwrote earlier chunks' files (round 4's
+                # DAgger kept 22 of 53). The pid disambiguates the chunk.
                 self._fh = open(_os.path.join(
-                    self.dir, f"round_{round_i:03d}_attempt_{attempt}.jsonl"), "w")
+                    self.dir,
+                    f"p{_os.getpid()}_round_{round_i:03d}_attempt_{attempt}.jsonl"),
+                    "w")
             except Exception as e:                            # noqa: BLE001
                 print(f"[sidecar] start failed: {e}")
                 self._fh = None
