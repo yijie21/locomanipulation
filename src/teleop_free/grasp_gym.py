@@ -546,7 +546,16 @@ def main() -> None:
                 # any more: run_round discards them itself, before the retry
                 # below can toggle the exporter out of phase.
                 p.cmd.key("c")
-                p.cmd.hold(4.0, mode=LocomotionMode.IDLE)  # let the write finish
+                # facing MATTERS here: an IDLE hold without one commands the
+                # default world +x, which pirouetted the robot away from the
+                # approach heading right after the back-off -- the "grasp,
+                # retreat, then spin round" seen in every stream video. The
+                # episode itself was never contaminated (the 'c' above ends
+                # it first; fast250 tails hold yaw to 7-16 deg), but the spin
+                # wastes 2-4 s of settling and reads as part of the task.
+                p.cmd.hold(4.0, mode=LocomotionMode.IDLE,
+                           facing=(float(np.cos(psi)), float(np.sin(psi)),
+                                   0.0))  # let the write finish
             if sidecar:
                 sidecar.stop()
             if args.manifest:
@@ -649,7 +658,10 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                          record, rec)
     if record and rec["on"] and not ok:
         p.cmd.key("x")
-        p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
+        # Same default-facing trap as the post-save hold: keep the approach
+        # heading instead of letting IDLE spin the robot to world +x.
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE,
+                   facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
     return ok, why, rec["on"]
 
 
@@ -695,8 +707,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.upper_body = None
     if getattr(p, "_gym_started", False):
         # Quiesce only a RUNNING deploy (holding frames before the first
-        # start_control broke every fresh-deploy round).
-        p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
+        # start_control broke every fresh-deploy round). Hold the heading the
+        # robot currently HAS -- the facing-less default (world +x) was the
+        # third contributor to the end-of-round pirouette.
+        yaw_now = float(p.pelvis_yaw(p.obs()))
+        p.cmd.hold(1.0, mode=LocomotionMode.IDLE,
+                   facing=(float(np.cos(yaw_now)), float(np.sin(yaw_now)),
+                           0.0))
     p.cmd.reset_pose()
     reset.pin_arms()
     reset.set_ghost()
