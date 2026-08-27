@@ -376,4 +376,13 @@ def main(config: SimLoopConfig) -> None:
 
 
 if __name__ == "__main__":
+    # `--instance N` is accepted and DISCARDED before tyro sees it. The value
+    # already reaches the sim via SONIC_DDS_DOMAIN / TF_* env; the flag exists
+    # only so the instance is visible on the cmdline (/proc/pid/cmdline),
+    # which is the one place tools/instance_watchdog.py can otherwise not
+    # tell two sims apart.
+    import sys
+    if "--instance" in sys.argv:
+        k = sys.argv.index("--instance")
+        del sys.argv[k:k + 2]
     main(tyro.cli(SimLoopConfig))

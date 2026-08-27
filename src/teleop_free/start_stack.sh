@@ -83,7 +83,13 @@ fi
 ONSCREEN_ARG=--no-enable-onscreen
 if [ "${SIM_ONSCREEN:-0}" = "1" ]; then ONSCREEN_ARG=--enable-onscreen; fi
 echo "[1/3] MuJoCo sim (headless, EGL, camera -> :5555, scene=$SCENE, onscreen=${SIM_ONSCREEN:-0})"
-nohup "$REPO/.venv_sim/bin/python" "$SIM_SCRIPT" \
+# --instance is stripped by run_sim_locomani.py before tyro; it only puts the
+# instance on the cmdline so instance_watchdog.py can tell two sims apart.
+# The stock run_sim_loop.py would reject it, so only pass it to our wrapper.
+INSTANCE_ARG=""
+[ "$SCENE" = "locomani" ] && INSTANCE_ARG="--instance $INSTANCE"
+# shellcheck disable=SC2086
+nohup "$REPO/.venv_sim/bin/python" "$SIM_SCRIPT" $INSTANCE_ARG \
     --interface lo "$ONSCREEN_ARG" --enable-offscreen --enable-image-publish \
     > "$LOGS/sim.log" 2>&1 &
 wait_for_port "$TF_CAMERA_PORT" 90 || { echo "  FAILED: camera port never opened"; tail -20 "$LOGS/sim.log"; exit 1; }
