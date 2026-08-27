@@ -84,7 +84,9 @@ if [ "${PROBE:-0}" = "1" ]; then
     exit 0
 fi
 
-OUT="$LOCOMANI_OUTPUTS/logs/dagger$N" \
+# DAGGER_OUT: a rerun with the same N would otherwise count the PREVIOUS
+# round's kept episodes in the same directory and collect nothing.
+OUT="${DAGGER_OUT:-$LOCOMANI_OUTPUTS/logs/dagger$N}" \
 SPAWN_ARGS="$SPAWN_ARGS" \
 OBJ=water_bottle PROMPT="pick up the water bottle" JITTER=0.20 \
 CHUNK=20 SPARE=10 \

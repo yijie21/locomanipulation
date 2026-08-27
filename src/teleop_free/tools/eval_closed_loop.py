@@ -74,6 +74,18 @@ def main():
     ap.add_argument("--target", default="water_bottle")
     ap.add_argument("--out", default=None)
     ap.add_argument("--trace-dir", default=None)
+    ap.add_argument("--no-snap", action="store_true",
+                    help="send the predicted token RAW instead of snapping it "
+                         "to the FSQ grid -- what NVIDIA's own client does. "
+                         "Round 3 open-loop measured the snap costing ~16%% "
+                         "nmse_token; this runs the closed-loop half of that "
+                         "ablation. Default stays snapped: the 5.9/13.7/28.0 "
+                         "ladder was measured with the snap on.")
+    ap.add_argument("--replan-interval", type=float, default=0.4, metavar="SEC",
+                    help="async client only: seconds between chunk requests. "
+                         "0.4 (~12 frames) is the ladder's setting; 1.33 "
+                         "executes a whole 40-frame chunk per plan, which "
+                         "open-loop says is still at the noise floor.")
     ap.add_argument("--stall-abort", type=float, default=0.0, metavar="SEC",
                     help="END a round early once the pelvis has moved less "
                          "than 3 cm for SEC seconds with no close commanded. "
@@ -137,7 +149,8 @@ def main():
 
     if args.client == "async":
         grasp_gym.VLA_POLICY = vla_round.make_vla_policy_async(
-            link, args.task, trace_dir=trace_dir)
+            link, args.task, inference_interval=args.replan_interval,
+            trace_dir=trace_dir)
     else:
         grasp_gym.VLA_POLICY = vla_round.make_vla_policy(
             link, args.task, execution_horizon=args.execution_horizon,
@@ -187,6 +200,13 @@ def main():
     else:
         manifest.unlink(missing_ok=True)
 
+    if args.no_snap:
+        vla_round.SNAP = False
+        print("[closed-loop] FSQ SNAP OFF -- raw floats on the wire (NVIDIA's "
+              "own behaviour). Not comparable with the snapped ladder.")
+    if args.replan_interval != 0.4:
+        print(f"[closed-loop] replan interval {args.replan_interval}s (ladder "
+              f"ran 0.4s) -- diagnostic setting.")
     if args.stall_abort > 0:
         vla_round.STALL_ABORT_S = args.stall_abort
         print(f"[closed-loop] STALL-ABORT {args.stall_abort:.0f}s IS ON -- this "
@@ -223,7 +243,8 @@ def main():
         scripted_reference=dict(successes=200, attempts=210, rate=200 / 210),
         execution_horizon=args.execution_horizon, client=args.client,
         failure_stages=stages, seed=args.seed, manifest=str(manifest),
-        stall_abort_s=args.stall_abort,
+        stall_abort_s=args.stall_abort, snap=not args.no_snap,
+        replan_interval=args.replan_interval,
         full_budget=(args.stall_abort <= 0),
         resumed_from=done if args.resume else 0)
     out.write_text(json.dumps(results, indent=2))

@@ -299,6 +299,16 @@ def main() -> None:
                              f"pelvis-to-edge floor EDGE_MIN={EDGE_MIN}")
     if off_lo > off_hi:
         off_lo, off_hi = off_hi, off_lo
+    # World-pose sidecar: one jsonl per attempt, next to the manifest. Only
+    # when recording -- an eval round has its own trace. LOCOMANI_POSE_SIDECAR=0
+    # opts out. Fail-safe: a dead sidecar prints and costs nothing.
+    sidecar = None
+    if (args.record and args.manifest
+            and os.environ.get("LOCOMANI_POSE_SIDECAR", "1") == "1"):
+        from privileged_pub import PoseSidecar
+        sidecar = PoseSidecar(os.path.join(
+            os.path.dirname(os.path.abspath(args.manifest)), "pose_sidecar"))
+
     rng = np.random.default_rng(args.seed if args.seed is not None
                                 else (os.getpid() * 7919) % 2 ** 31)
 
@@ -522,6 +532,8 @@ def main() -> None:
                                stand=list(map(float, stand)),
                                robot_nom=list(map(float, robot_nom))),
                           open(args.dump_sample, "w"), indent=1)
+            if sidecar:
+                sidecar.start(rnd, attempt)
             ok, why, produced = run_round(
                 p, reset, meta, obj_key, surf_a, edge_dist,
                 can_xy - can_nom, stand - robot_nom, psi,
@@ -535,6 +547,8 @@ def main() -> None:
                 # below can toggle the exporter out of phase.
                 p.cmd.key("c")
                 p.cmd.hold(4.0, mode=LocomotionMode.IDLE)  # let the write finish
+            if sidecar:
+                sidecar.stop()
             if args.manifest:
                 # One line per ATTEMPT, not per round: a stand retry that got
                 # as far as recording leaves an episode in the session, so

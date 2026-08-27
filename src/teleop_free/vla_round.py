@@ -97,6 +97,14 @@ TIMEOUT_S = 90.0
 # is not on that ladder. Use it for diagnostic sweeps -- checkpoint scans,
 # ablations, frozen-DiT -- never for a headline.
 STALL_ABORT_S = 0.0        # 0 disables; 30.0 is the measured sweet spot
+
+# FSQ snap on the predicted token before it goes on the wire. Ours has always
+# snapped; NVIDIA's own client sends raw floats (run_vla_inference.py, only a
+# whole-chunk |x|>1.25 rejection). Round 3's open-loop measured the snap
+# COSTING ~16% nmse_token (0.1592 snapped vs 0.1369 raw, checkpoint-9000 h16).
+# This switch exists to run the closed-loop half of that ablation; the default
+# stays on because 5.9/13.7/28.0 were measured with it on.
+SNAP = True
 STALL_ABORT_M = 0.03       # net pelvis displacement over the window, metres
 
 
@@ -249,11 +257,11 @@ class PolicyLink:
             return False
 
     def get_chunk(self, obs) -> tuple[np.ndarray, np.ndarray]:
-        """-> (token [40,64] snapped, gripper [40])."""
+        """-> (token [40,64], gripper [40]). Snapped unless SNAP is off."""
         out = self._call("get_action_raw", {"obs": obs})
         tok = np.asarray(out["action.motion_token"], dtype=np.float64)
         grip = np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
-        return snap(tok), grip
+        return (snap(tok) if SNAP else tok), grip
 
 
 def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
@@ -320,9 +328,12 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                 pel = np.asarray(p.pelvis_xy(st))
                 rise = float(obj[2] - obj0[2])
                 dist = float(np.linalg.norm(obj[:2] - pel))
+                palm = np.asarray(st["palms"]["right"]["pos"], dtype=float)
                 trace.append(dict(t=time.time() - t_start, rise=rise, dist=dist,
                                   fallen=bool(st["fallen"]),
                                   grip=float(grip[:n].min()),
+                                  palm_z=float(palm[2]),
+                                  palm_obj=float(np.linalg.norm(palm - obj)),
                                   # the stall poses are the whole point of the
                                   # trace: they are what a targeted recovery
                                   # collection spawns the expert at
@@ -503,13 +514,19 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     obj = np.asarray(p.object_pos(obj_key, st))
                     pel = np.asarray(p.pelvis_xy(st))
                     rise = float(obj[2] - obj0[2])
+                    # palm state answers the question round 3's traces could
+                    # not: of the "at the table, never closed" failures, did
+                    # the arm ever come up, and how near did the hand get?
+                    palm = np.asarray(st["palms"]["right"]["pos"], dtype=float)
                     trace.append(dict(t=tick - t_start, rise=rise,
                                       dist=float(np.linalg.norm(obj[:2] - pel)),
                                       fallen=bool(st["fallen"]),
                                       grip=float(grip[j]),
                                       pelvis_xy=[float(v) for v in pel],
                                       pelvis_yaw=float(p.pelvis_yaw(st)),
-                                      obj_xy=[float(v) for v in obj[:2]]))
+                                      obj_xy=[float(v) for v in obj[:2]],
+                                      palm_z=float(palm[2]),
+                                      palm_obj=float(np.linalg.norm(palm - obj))))
                     if st["fallen"]:
                         why = "[vla] fell"
                         break
