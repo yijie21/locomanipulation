@@ -81,6 +81,21 @@ def main():
                          "nmse_token; this runs the closed-loop half of that "
                          "ablation. Default stays snapped: the 5.9/13.7/28.0 "
                          "ladder was measured with the snap on.")
+    ap.add_argument("--ensemble", type=int, default=1, metavar="N",
+                    help="blend the N most recent overlapping action chunks "
+                         "for the current instant (ACT-style temporal "
+                         "ensembling). 1 = off, the behaviour the "
+                         "5.9/13.7/28.0/47.5 ladder was measured with. Chunks "
+                         "are 40 frames and arrive every 0.4 s, so ~3 overlap; "
+                         "N=3 is the natural setting. Aimed at this round's "
+                         "dominant failure -- 44 of 52 reach failures are "
+                         "'arm up, palm never converges', which is what "
+                         "accumulated error looks like.")
+    ap.add_argument("--ensemble-m", type=float, default=0.3, metavar="M",
+                    help="ensemble weight decay per chunk of age (0 = newest). "
+                         "M>0 favours the freshest observation, M=0 is a "
+                         "uniform mean, M<0 favours older predictions the way "
+                         "ACT's paper does. Ignored unless --ensemble > 1.")
     ap.add_argument("--replan-interval", type=float, default=0.4, metavar="SEC",
                     help="async client only: seconds between chunk requests. "
                          "0.4 (~12 frames) is the ladder's setting; 1.33 "
@@ -200,6 +215,12 @@ def main():
     else:
         manifest.unlink(missing_ok=True)
 
+    if args.ensemble > 1:
+        vla_round.ENSEMBLE_N = args.ensemble
+        vla_round.ENSEMBLE_M = args.ensemble_m
+        print(f"[closed-loop] TEMPORAL ENSEMBLING on: N={args.ensemble} "
+              f"M={args.ensemble_m} -- not comparable with the ladder, which "
+              f"ran without it.")
     if args.no_snap:
         vla_round.SNAP = False
         print("[closed-loop] FSQ SNAP OFF -- raw floats on the wire (NVIDIA's "
@@ -244,6 +265,7 @@ def main():
         execution_horizon=args.execution_horizon, client=args.client,
         failure_stages=stages, seed=args.seed, manifest=str(manifest),
         stall_abort_s=args.stall_abort, snap=not args.no_snap,
+        ensemble_n=args.ensemble, ensemble_m=args.ensemble_m,
         replan_interval=args.replan_interval,
         full_budget=(args.stall_abort <= 0),
         resumed_from=done if args.resume else 0)

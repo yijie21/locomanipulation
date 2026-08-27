@@ -105,6 +105,55 @@ STALL_ABORT_S = 0.0        # 0 disables; 30.0 is the measured sweet spot
 # This switch exists to run the closed-loop half of that ablation; the default
 # stays on because 5.9/13.7/28.0 were measured with it on.
 SNAP = True
+
+# --- temporal ensembling (ACT-style), OFF by default -------------------------
+# The async client replaces the cached chunk wholesale: a fresh 40-step
+# prediction lands, the old one is dropped, and execution jumps to a
+# latency-compensated index. Consecutive predictions overlap by ~28 of 40
+# frames and never see each other, so every adoption is a small discontinuity
+# in the commanded intent.
+#
+# Ensembling averages, for the CURRENT wall-clock instant, every buffered
+# chunk's prediction of that same instant. Chunk c predicted absolute time
+# c.t0 + i/RATE at index i, so index i_c = (now - c.t0) * RATE aligns them.
+# This is the standard fix from ACT / Diffusion Policy and it targets exactly
+# this round's dominant failure: 44 of 52 reach failures are "arm up, palm
+# never converges on the object", which is what accumulated error looks like.
+#
+# ENSEMBLE_M weights by chunk AGE, 0 = newest:
+#     m > 0  favour the freshest observation (we already latency-compensate)
+#     m = 0  uniform mean
+#     m < 0  favour older predictions, the direction ACT's paper uses
+#
+# Averaging snapped tokens lands off-grid, which is fine and probably helps:
+# NVIDIA's own client sends raw floats, and averaging quantised values
+# recovers sub-grid precision.
+#
+# Default OFF (N=1) so the 5.9/13.7/28.0/47.5 ladder stays byte-comparable.
+ENSEMBLE_N = 1        # chunks to blend; 1 = off, current behaviour
+ENSEMBLE_M = 0.3      # exponential weight decay per chunk of age
+
+
+def _ensemble(buf, now, rate):
+    """Blend every buffered chunk's prediction of `now`. -> (tok, grip) or None.
+
+    buf is newest-last: [(tok, grip, t0), ...]. A chunk whose aligned index
+    has run past its end is exhausted and contributes nothing.
+    """
+    picks, ws = [], []
+    for age, (tok, grip, t0) in enumerate(reversed(buf)):     # age 0 = newest
+        i = int((now - t0) * rate)
+        if i < 0 or i >= len(tok):
+            continue
+        picks.append((tok[i], grip[i]))
+        ws.append(np.exp(-ENSEMBLE_M * age))
+    if not picks:
+        return None
+    w = np.asarray(ws, dtype=np.float64)
+    w /= w.sum()
+    tok = np.sum([p[0] * wi for p, wi in zip(picks, w)], axis=0)
+    grip = float(np.sum([p[1] * wi for p, wi in zip(picks, w)]))
+    return tok, grip
 STALL_ABORT_M = 0.03       # net pelvis displacement over the window, metres
 
 
@@ -434,6 +483,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # main thread owns the commander and the privileged predicates. ZMQ
         # sockets are not thread-safe, so the split is load-bearing.
         latest = {"chunk": None, "t0": None}
+        buf = []                      # [(tok, grip, t0)], newest last
         lock = threading.Lock()
         stop = threading.Event()
 
@@ -450,6 +500,9 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     with lock:
                         latest["chunk"] = (tok, grip)
                         latest["t0"] = t0
+                        if ENSEMBLE_N > 1:
+                            buf.append((tok, grip, t0))
+                            del buf[:-ENSEMBLE_N]
                 rest = inference_interval - (time.time() - t0)
                 if rest > 0:
                     time.sleep(rest)
@@ -491,21 +544,35 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         try:
             while time.time() - t_start < TIMEOUT_S:
                 tick = time.time()
-                # adopt a fresh chunk at a latency-compensated index
-                with lock:
-                    if latest["t0"] is not None and latest["t0"] != chunk_t0:
-                        tok, grip = latest["chunk"]
-                        chunk_t0 = latest["t0"]
-                        idx = min(int((time.time() - chunk_t0) * RATE),
-                                  len(tok) - 1)
-                j = min(idx, len(tok) - 1)
-                lhj, rhj = expand_hands(grip[j])
-                if grip[j] < 0.005:
+                if ENSEMBLE_N > 1:
+                    # Blend every overlapping prediction of THIS instant.
+                    # Indexing is by absolute time, which also removes the
+                    # drift the incrementing idx below accumulates when the
+                    # loop does not land exactly on 1/RATE.
+                    with lock:
+                        blended = _ensemble(buf, tick, RATE)
+                        if blended is None and latest["chunk"] is not None:
+                            blended = (latest["chunk"][0][-1],
+                                       float(latest["chunk"][1][-1]))
+                    tok_j, grip_j = blended
+                else:
+                    # adopt a fresh chunk at a latency-compensated index
+                    with lock:
+                        if latest["t0"] is not None and latest["t0"] != chunk_t0:
+                            tok, grip = latest["chunk"]
+                            chunk_t0 = latest["t0"]
+                            idx = min(int((time.time() - chunk_t0) * RATE),
+                                      len(tok) - 1)
+                    j = min(idx, len(tok) - 1)
+                    tok_j, grip_j = tok[j], float(grip[j])
+                    idx = min(idx + 1, len(tok) - 1)
+
+                lhj, rhj = expand_hands(grip_j)
+                if grip_j < 0.005:
                     commanded_close = True
-                p.cmd.token_frame(tok[j], right_hand=rhj, left_hand=lhj,
+                p.cmd.token_frame(tok_j, right_hand=rhj, left_hand=lhj,
                                   frame_index=frame_index)
                 frame_index += 1
-                idx = min(idx + 1, len(tok) - 1)
 
                 # predicates at ~2 Hz, off the hot path
                 if tick - last_status > 0.5:
@@ -521,7 +588,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     trace.append(dict(t=tick - t_start, rise=rise,
                                       dist=float(np.linalg.norm(obj[:2] - pel)),
                                       fallen=bool(st["fallen"]),
-                                      grip=float(grip[j]),
+                                      grip=float(grip_j),
                                       pelvis_xy=[float(v) for v in pel],
                                       pelvis_yaw=float(p.pelvis_yaw(st)),
                                       obj_xy=[float(v) for v in obj[:2]],
