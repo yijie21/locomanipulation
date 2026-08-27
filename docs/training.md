@@ -46,6 +46,161 @@ RUN=bottle250 DATA=datasets/..._train bash scripts/train_bottle.sh
 nohup bash scripts/run_pipeline.sh > outputs/logs/pipeline.log 2>&1 &
 ```
 
+## `launch_finetune` 完整超参数表
+
+`train_bottle.sh` 的环境变量(上面「启动」表格)只覆盖了其中一个子集。完整超参数
+来自 `tyro.cli(FinetuneConfig, ...)`
+([`src/gr00t/configs/finetune_config.py`](../src/gr00t/configs/finetune_config.py))
+——这个 dataclass 的每个字段就是一个 CLI flag(tyro 把 `snake_case` 转成
+`--kebab-case`;`bool` 字段同时生成 `--flag`/`--no-flag` 两个开关,`train_bottle.sh`
+里的 `--tune-projector`/`--no-tune-visual` 就是这么来的)。**脚本末尾的 `"$@"`
+会把额外参数原样透传**,覆盖任意一项不用改脚本,直接追加即可,例如
+`bash scripts/train_bottle.sh --learning-rate 5e-5`。
+
+### 数据 / 模型路径(必填,无默认值)
+
+| flag | 说明 |
+|---|---|
+| `--base-model-path` | 预训练权重路径(HF hub 或本地目录) |
+| `--dataset-path` | 数据集根目录,多个数据集用 `os.pathsep` 分隔 |
+| `--embodiment-tag` | embodiment 标签(大小写不敏感) |
+| `--modality-config-path` | modality config `.py` 路径;不给就用 `embodiment_configs.py` 里预注册的(见下节) |
+
+### 模型微调开关
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--tune-llm` | False | 是否微调 LLM 骨干 |
+| `--tune-visual` | False | 是否微调视觉编码器 |
+| `--tune-projector` | **True** | 是否微调 vision/language → 共享空间的 projector |
+| `--tune-diffusion-model` | **True** | 是否微调 diffusion action decoder |
+| `--state-dropout-prob` | 0.2 | state 输入的 dropout 概率 |
+
+上面这张表只是 `FinetuneConfig` 暴露给 CLI 的部分。`Gr00tN1d7Config`
+([`src/gr00t/configs/model/gr00t_n1d7.py`](../src/gr00t/configs/model/gr00t_n1d7.py))
+里实际控制"哪部分网络参与训练/长什么样"的开关不止这 4 个,分两类。
+
+#### A. 训练开关(`tune_*`):模型配置里共 6 个,CLI 只暴露 4 个
+
+| flag | 默认值 | CLI 能设吗 | 对应网络部分 |
+|---|---|---|---|
+| `tune_llm` | False | ✅ `--tune-llm` | Qwen3-VL 骨干的 **LLM**(`self.model.language_model`) |
+| `tune_visual` | False | ✅ `--tune-visual` | Qwen3-VL 骨干的 **视觉编码器**(`self.model.visual`) |
+| `tune_top_llm_layers` | 0 | ❌ 固定 0 | LLM 最后 N 层单独解冻,不用整个解冻 LLM;默认 0 = 不启用(`qwen3_backbone.py:259-262`) |
+| `tune_projector` | True | ✅ `--tune-projector` | action head 的 `state_encoder`+`action_encoder`+`action_decoder`+`position_embedding`(即"projector bank",32 个 embodiment 槽) |
+| `tune_diffusion_model` | True | ✅ `--tune-diffusion-model` | action head 的 **DiT / AlternateVLDiT**(去噪 transformer 本体) |
+| `tune_vlln` | True | ❌ 固定 True | `vlln`(LayerNorm)+ `vl_self_attention`(backbone 输出上加的适配自注意力层)——**永远参与训练**,不受任何 CLI flag 影响,对应下文「可训练参数」表里的"vl_self_attention + vlln 201.4 M" |
+
+`tune_top_llm_layers`/`tune_vlln` 不在 `FinetuneConfig` 里,`launch_finetune`
+命令行改不了,要动只能直接编辑 `configs/model/gr00t_n1d7.py` 的默认值。
+
+#### B. 架构选择开关:不是"训不训",是"要不要这个模块/用哪个实现",同样不在 CLI 里
+
+| flag | 默认值 | 决定什么 |
+|---|---|---|
+| `select_layer` | 12 | LLM 只保留前 12 层,多的直接 `pop` 掉(`qwen3_backbone.py:194`)——砍模型大小,不是冻结 |
+| `use_vlln` | True | `vlln` 这个 LayerNorm 模块是否存在;False 时是 `nn.Identity()`,没有可训练参数可言 |
+| `use_alternate_vl_dit` | True | 用 `AlternateVLDiT` 还是普通 `DiT` 做 diffusion action decoder |
+| `add_pos_embed` | True | action head 要不要给 state+action 序列加可学习位置编码 |
+
+### 数据增强
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--random-rotation-angle` | None | 图像随机旋转最大角度(度) |
+| `--color-jitter-params` | None | dict:`brightness`/`contrast`/`saturation`/`hue`;不给用预训练模型自带的默认增强 |
+| `--use-percentiles` | True | state/action 归一化用 q01/q99 百分位,而非 min/max |
+| `--shortest-image-edge` / `--crop-fraction` | None / None | 缩放最短边 + 裁剪比例,必须成对设置,否则报错 |
+| `--extra-augmentation-config` | None | JSON 字符串,配置 mask 相关的额外增强(`background_noise_transforms`/`masked_region_transforms`) |
+
+### 训练超参数
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--global-batch-size` | 64 | 梯度累积**之前**的总 batch |
+| `--gradient-accumulation-steps` | 1 | 累积步数;有效 batch = 两者乘积(`__post_init__` 在 >1 时会打印提醒,防止把累积前的值当成真实 batch) |
+| `--learning-rate` | 1e-4 | 初始学习率 |
+| `--warmup-ratio` | 0.05 | warmup 占总步数比例 |
+| `--weight-decay` | 1e-5 | AdamW weight decay |
+| `--optim` | `adamw_torch` | 可选 `adamw_bnb_8bit`(需 bitsandbytes,量化 Adam m/v,单卡塞得下的关键,见下面「单卡训练」) |
+| `--max-steps` | 10000 | 总训练步数 |
+| `--dataloader-num-workers` | 2 | dataloader worker 进程数 |
+| `--num-gpus` | 1 | 参与训练的 GPU 数 |
+
+### 输出 / checkpoint / 日志
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--output-dir` | `./outputs` | checkpoint/日志输出目录 |
+| `--experiment-name` | None | wandb run 名;不给用 `output_dir` 的 basename |
+| `--save-steps` | 1000 | 每多少步存一次 checkpoint |
+| `--save-total-limit` | 5 | 最多保留几个 checkpoint,超了删旧的 |
+| `--save-only-model` | False | 只存模型权重,不存 optimizer/scheduler/RNG 状态(省盘,但不能 resume) |
+| `--resume-from-checkpoint` | False | 从 `output_dir` 里最新的 `checkpoint-*` 续训;和 `save-only-model=True` 不兼容(`experiment.run` 里强制检查) |
+| `--skip-weight-loading` | False | 跳过加载 `base_model_path` 的权重(架构照建,只为调试/CI 提速) |
+| `--use-wandb` | False | 是否记录到 wandb |
+| `--wandb-project` | `finetune-gr00t-n1d7` | wandb 项目名 |
+
+### 数据集分片 / 采样
+
+| flag | 默认 | 说明 |
+|---|---|---|
+| `--shard-size` | 1024 | 数据集预加载分片大小 |
+| `--episode-sampling-rate` | 0.1 | episode 采样率 |
+| `--num-shards-per-epoch` | 100000 | 每 epoch 用多少 shard,显存紧张就调小 |
+| `--ds-weights-alpha` | None | 多数据集混合的幂律权重指数;设了就用 `len(dataset)^alpha` 覆盖各数据集的 `mix_ratio` |
+
+## `--modality-config-path`:训练脚本怎么读 LeRobot 数据集
+
+`--modality-config-path` 指向的 [`configs/gr00t_sonic_2cam.py`](../configs/gr00t_sonic_2cam.py)
+是关键——它 `import` 时会原地覆写 `MODALITY_CONFIGS["unitree_g1_sonic"]`
+(NVIDIA 官方 slot 11 配置),声明这次训练实际要读哪些字段:
+
+| modality | modality_keys | 维度 |
+|---|---|---|
+| `video` | `ego_view`、`right_wrist`(丢弃 `left_wrist`) | 2 路 |
+| `state` | `left_leg`、`right_leg`、`waist`、`left_arm`、`right_arm`、`left_hand`、`right_hand`、`projected_gravity`、`right_wrist_pos`、`right_wrist_abs_quat` | 53 |
+| `action` | `motion_token`、`right_gripper`,`delta_indices=range(40)`(预测 40 步的 action chunk) | 65 |
+
+这些 `modality_keys` 名字必须能在数据集的 `meta/modality.json` 里按名字找到
+(`lerobot_episode_loader.py:328` 的 `_extract_joint_groups`);找不到**不会
+报错**,只打一句 `Warning: Joint group '...' not found` 然后静默丢掉那个字段
+(`lerobot_episode_loader.py:339-342`)。**换一个新数据集训练前,先拿这张表的
+`modality_keys` 逐项核对它的 `meta/modality.json`**:state 的 10 个分组名、
+action 的 `motion_token`/`right_gripper`、video 的 `ego_view`/`right_wrist`
+是否都在。少一个,训练照样收敛,只是悄悄瘸了一路输入或监督,不核对根本看不出来。
+
+(视频键还有个位置回退:config 里的键一个都不在数据集 `modality.json.video`
+里时,loader 会按位置顺序对应,但要求两边数量相等,否则直接 assert 报错——
+`lerobot_episode_loader.py:281-297`。上表用的都是数据集里的原名,不会走到这条
+分支。)
+
+### `meta/stats.json` 是另一个硬依赖,但会自愈
+
+别跟 `meta/episodes_stats.jsonl` 搞混,这是两个不同的东西:后者是导出脚本
+(`convert_to_hf_format.py`)按 episode 算的逐集统计,数据集自带;`meta/stats.json`
+是 GR00T 自己要的、**跨全部 episode 合并**的归一化统计,字段不带 `episodes_`
+前缀,数据集里天生没有,得单独生成一次。
+
+`LeRobotEpisodeLoader._load_metadata()` 对 `meta/stats.json` 是硬 `assert`,
+不存在直接抛异常(`lerobot_episode_loader.py:180`);但 `DatasetFactory.build()`
+会先在 rank-0 上调用 `generate_stats()`/`generate_rel_stats()`
+(`factory.py:56-59`)——**缺失时自动生成,不是人工步骤**。`train_bottle.sh`
+在启动前另做了一次同款存在性检查(上面「启动」表格 `DATA` 那行),但它不会替你
+等生成,缺失时直接报错退出,并打印生成命令:
+
+```bash
+third_party/Isaac-GR00T/.venv/bin/python -m gr00t.data.stats \
+    --dataset-path "$DATA" \
+    --embodiment-tag UNITREE_G1_SONIC \
+    --modality-config-path configs/gr00t_sonic_2cam.py
+```
+
+这道预检查纯粹是为了几秒内报错而不是等模型加载完才发现;绕开 shell 脚本直接
+调用 Python 训练入口(比如 `launch_finetune`),`DatasetFactory.build()` 那一步
+照样会自动生成,只是不再提前告诉你。归一化统计量按同一套 `{start,end}` 切片
+表分给每个 `modality_key`,和字段切片用的是同一份 `meta/modality.json`。
+
 ## 训练设置(bottle200 实测配置)
 
 ### 模型与输入输出
