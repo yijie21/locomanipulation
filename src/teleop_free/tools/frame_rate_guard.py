@@ -49,10 +49,11 @@ import sys
 import time
 
 FREQ_RE = re.compile(r"Image publish frequency:\s+([0-9.]+)")
-# The gym resets the scene through :5582 once per round. When these are
-# present they are exact round boundaries; see _segment for what happens when
-# they are not.
-RESET_RE = re.compile(r"^\[episode\].*reset")
+# The gym resets the scene through :5582 once per ATTEMPT, plus one calibration
+# reset at start-up. Matched narrowly on purpose: "[episode] :5582 can reset
+# ['water_bottle']" also contains the word "reset" and is not a boundary, so a
+# loose `.*reset` match silently gains a phantom round.
+RESET_RE = re.compile(r"^\[episode\] reset applied")
 
 DEFAULT_THRESHOLD = 25.0     # Hz, median over a round. Target is 30.
 
@@ -74,13 +75,20 @@ def parse_log(path: str) -> tuple[list[float], list[int]]:
 
 
 def _segment(samples: list[float], resets: list[int],
-             durations: list[float]) -> tuple[list[list[float]], str]:
+             durations: list[float],
+             attempts: list[int] | None = None) -> tuple[list[list[float]], str]:
     """Cut the sample stream into one bucket per round.
 
     Two ways, and the tool reports which one it used because they are not
     equally trustworthy:
 
-    `marker` -- one reset per round, so the boundaries are exact.
+    `marker` -- exact boundaries, but the bookkeeping is not one-per-round.
+    The sim emits one reset at start-up (calibration, no round behind it) and
+    one per ATTEMPT thereafter, and the gym retries: a manifest row carrying
+    `attempt: 1` had two attempts and therefore consumed two markers. So the
+    first marker is dropped and each row then eats `attempt + 1` of them. Get
+    this wrong and every round after the first retry is scored against a
+    neighbour's samples.
 
     `proportional` -- no usable markers, so samples are handed out in
     proportion to each round's wall-clock `seconds`. This assumes the rate
@@ -92,8 +100,18 @@ def _segment(samples: list[float], resets: list[int],
     `proportional` pass as weak evidence and a `proportional` flag as strong.
     """
     n = len(durations)
-    if len(resets) >= n >= 1:
-        bounds = resets[:n] + [len(samples)]
+    att = list(attempts or [0] * n)
+    # Drop the calibration reset, then walk the markers a round at a time,
+    # spending attempt+1 on each. A round's samples run from its FIRST marker
+    # to the next round's first -- retries are part of the round's wall time
+    # and starved the same stream, so they belong in its bucket.
+    need = sum(a + 1 for a in att)
+    if len(resets) >= need + 1 >= 2:
+        starts, k = [], 1
+        for a in att:
+            starts.append(resets[k])
+            k += a + 1
+        bounds = starts + [len(samples)]
         buckets = [samples[bounds[i]:bounds[i + 1]] for i in range(n)]
         if all(buckets):
             return buckets, "marker"
@@ -110,8 +128,9 @@ def _segment(samples: list[float], resets: list[int],
 def analyse(sim_log: str, manifest: str, threshold: float) -> dict:
     rows = [json.loads(l) for l in open(manifest) if l.strip()]
     durations = [float(r.get("seconds") or 0.0) for r in rows]
+    attempts = [int(r.get("attempt") or 0) for r in rows]
     samples, resets = parse_log(sim_log)
-    buckets, method = _segment(samples, resets, durations)
+    buckets, method = _segment(samples, resets, durations, attempts)
 
     rounds = []
     for r, b in zip(rows, buckets):
