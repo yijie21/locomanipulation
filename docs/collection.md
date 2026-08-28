@@ -896,9 +896,9 @@ cap = GRIP_CEILING - tallest + GRIP_BELOW_RIM
 
 **URDF 里没有腕上相机。**`assets/dex1/...urdf` 唯一的相机是 `d435_link`,挂在
 `torso_link` —— 那就是 `head_camera`,而且那个 link **不带 mesh**。挂载点是我们自己
-加的;相机实体用的是 Intel 自己 ROS description 包里的 D435 mesh(Apache-2.0),
-出处、许可与转换命令见 [`assets/realsense/README.md`](../assets/realsense/README.md)。
-纯视觉:无接触、无质量,不碰控制路径。
+加的,而且**只有一个 `<camera>`,没有实体**:Intel 官方那个 D435 mesh 挂上去试过
+(commit `9dca405`),挂在腕上像块黑板砖,又摘掉了。要找那个资产和它的转换步骤:
+`git show 9dca405 -- assets/realsense`。
 
 **但对接方式是官方的、统一的**,所以接进去只有几行:
 

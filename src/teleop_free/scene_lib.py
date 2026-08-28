@@ -686,56 +686,11 @@ WRIST_CAM_QUAT = (0.635149, 0.310782, -0.310782, -0.635149)  # 37.9 deg down
 WRIST_CAM_FOVY = 80.0
 WRIST_CAM_AIM = (0.1515, 0.0, 0.010)   # what the quat above looks at
 
-# The camera had no body: nothing on the arm showed that a camera was there,
-# in the ego view or in a third-person render. The `d435_link` named above is a
-# URDF LINK in the Unitree description and carries no mesh, and nothing in this
-# tree or the upstream one ships one. So the mesh is vendored from Intel's own
-# description package -- see assets/realsense/README.md for the source, the
-# licence and the exact conversion commands.
-#
-# Its frame is already the convenient one: +z is the lens direction and z = 0
-# IS the lens plane, +y is up, x is the 90 mm width. A MuJoCo camera looks
-# along its own -z, so the geom is the camera's orientation turned 180 deg
-# about y, at the camera's own position -- which puts the lens plane on the
-# camera origin and the whole body BEHIND it. Geometry behind the eye is never
-# rendered, which is a stronger guarantee than clearing the near plane; the
-# 1 mm nudge only keeps the lens face off the eye plane exactly.
-#
-# VISUAL ONLY: contype/conaffinity 0 and density 0, so it adds no contact and
-# no mass (the wrist body carries an explicit <inertial> anyway). A camera that
-# collides would change the control path, and this is a rendering fix.
-WRIST_CAM_MESH = _os.path.join(paths.REPO, "assets", "realsense", "d435.obj")
-WRIST_CAM_MESH_QUAT = (0.310782, 0.635149, 0.635149, 0.310782)
-WRIST_CAM_MESH_BACK = 0.001            # along the camera's +z (backwards)
-WRIST_CAM_BODY_RGBA = (0.10, 0.10, 0.11, 1.0)
-
-
-def _add_wrist_cam_body(spec, body) -> None:
-    """The visible, non-colliding D435 sitting behind the wrist camera."""
-    if not _os.path.exists(WRIST_CAM_MESH):
-        print(f"  wrist camera body: {WRIST_CAM_MESH} missing, skipped")
-        return
-    if not any(m.name == "d435" for m in spec.meshes):
-        mesh = spec.add_mesh()
-        mesh.name = "d435"
-        mesh.file = WRIST_CAM_MESH
-    q = np.asarray(WRIST_CAM_QUAT, dtype=float)
-    # The camera's own +z is its BACKWARD axis: column 2 of the quat's matrix.
-    w, x, y, z = q
-    back = np.array([2 * (x * z + w * y),
-                     2 * (y * z - w * x),
-                     1 - 2 * (x * x + y * y)])
-    g = body.add_geom()
-    g.name = f"{body.name}_cam_body"
-    g.type = mujoco.mjtGeom.mjGEOM_MESH
-    g.meshname = "d435"
-    g.pos = list(np.asarray(WRIST_CAM_POS) + back * WRIST_CAM_MESH_BACK)
-    g.quat = list(WRIST_CAM_MESH_QUAT)
-    g.rgba = list(WRIST_CAM_BODY_RGBA)
-    g.contype = 0
-    g.conaffinity = 0
-    g.density = 0.0
-    g.group = 1
+# There is deliberately no visible camera body. Intel's D435 mesh was vendored
+# and mounted here (commit 9dca405) and taken out again: it read as an ugly
+# black slab bolted to the wrist. `git show 9dca405 -- assets/realsense` has
+# the asset, its provenance and the conversion recipe if it is ever wanted
+# back. The mount below is a bare <camera>, as it always was.
 
 
 def add_wrist_cameras(spec, verbose: bool = True) -> int:
@@ -755,11 +710,10 @@ def add_wrist_cameras(spec, verbose: bool = True) -> int:
         c.pos = list(WRIST_CAM_POS)
         c.quat = list(WRIST_CAM_QUAT)
         c.fovy = WRIST_CAM_FOVY
-        _add_wrist_cam_body(spec, body)
         n += 1
     if verbose and n:
         print(f"  wrist cameras: {n} (fovy {WRIST_CAM_FOVY:.0f}, "
-              f"at {WRIST_CAM_POS} aimed at {WRIST_CAM_AIM}, with a body)")
+              f"at {WRIST_CAM_POS} aimed at {WRIST_CAM_AIM})")
     return n
 
 
