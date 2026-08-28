@@ -215,6 +215,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gy
 | `diag_shuffle.py` | 每个 speed 命令实际走多快、一步多长 |
 | `diag_turn.py` | 原地转身:每个模式、每个角度要多久,以及控制器的朝向死区 |
 | `diag_reach_probe.py` | reach map 的实测校验 |
+| `diag_wrist_cam.py --dataset DS [--sweep]` | 腕相机挂载位置:从数据集里的真实抓取帧离线重建场景并**渲染**,报告物体离近平面多近、被裁掉多少。不需要 stack(它自己建模型) |
 | `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
 
 数据集本身的检查不在这里,在 [`tools/check_dataset.py`](dataset.md#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。

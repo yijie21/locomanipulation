@@ -659,11 +659,83 @@ def attach(spec, mjcf_path: str, name: str, pos, quat_wxyz, scale=1.0, freeze=Tr
 # about the body frame that the mount did. Self-consistent and wrong. Only
 # rendering the actual compiled model showed it.
 #
-# So: mounted at the housing's front-top, aimed at the grasp centre. The sight
-# line passes z 0.039 at the housing's front edge, clear of the 0.031 top.
-WRIST_CAM_POS = (0.095, 0.0, 0.055)
-WRIST_CAM_QUAT = (0.651447, 0.274986, -0.274986, -0.651447)  # 44 deg down
+# So: aimed over the housing's front edge at the grasp region. The sight line
+# passes z 0.042 at the front edge (x 0.1108), clear of the 0.031 top.
+#
+# MOVED BACK 2026-08-28, from (0.095, 0, 0.055) aimed at the grasp centre.
+# The compiled scene has `statistic extent="2"` and MuJoCo's default
+# `map.znear = 0.01`, so the NEAR PLANE SITS AT 2 cm. The old mount was 7.9 cm
+# from the grasp centre, which is fine for an upright bottle -- but a grasped
+# bottle tips back over the wrist and swings inside 2 cm, gets clipped, and
+# the frame then shows the inside of the mesh. Measured over 14 episodes
+# (diag_wrist_cam.py, last 5 s of each): the object came within 1.41 cm of the
+# lens (median), and 10 of the 14 clipped, up to 14.6% of the object's surface
+# at once. From here it is 6.73 cm (median), worst 3.45 cm, and 0 of 14 clip.
+#
+# Moving back alone does not work: the camera sits inside the housing's x span
+# (-0.018..0.111), so the further back it goes the more the sight line to the
+# grasp centre grazes the housing's top. Two changes together --
+#   * back and UP: (0.055, 0, 0.085), and
+#   * aim 1 cm ABOVE the grasp centre rather than at it,
+# which lifts the whole sight line and costs nothing (the grasp sits 8 deg off
+# the optical axis, inside a 80 deg fovy).
+#
+# Rendered, not projected -- see diag_wrist_cam.py for why that matters here.
+WRIST_CAM_POS = (0.055, 0.0, 0.085)
+WRIST_CAM_QUAT = (0.635149, 0.310782, -0.310782, -0.635149)  # 37.9 deg down
 WRIST_CAM_FOVY = 80.0
+WRIST_CAM_AIM = (0.1515, 0.0, 0.010)   # what the quat above looks at
+
+# The camera had no body: nothing on the arm showed that a camera was there,
+# in the ego view or in a third-person render. The `d435_link` named above is a
+# URDF LINK in the Unitree description and carries no mesh, and nothing in this
+# tree or the upstream one ships one. So the mesh is vendored from Intel's own
+# description package -- see assets/realsense/README.md for the source, the
+# licence and the exact conversion commands.
+#
+# Its frame is already the convenient one: +z is the lens direction and z = 0
+# IS the lens plane, +y is up, x is the 90 mm width. A MuJoCo camera looks
+# along its own -z, so the geom is the camera's orientation turned 180 deg
+# about y, at the camera's own position -- which puts the lens plane on the
+# camera origin and the whole body BEHIND it. Geometry behind the eye is never
+# rendered, which is a stronger guarantee than clearing the near plane; the
+# 1 mm nudge only keeps the lens face off the eye plane exactly.
+#
+# VISUAL ONLY: contype/conaffinity 0 and density 0, so it adds no contact and
+# no mass (the wrist body carries an explicit <inertial> anyway). A camera that
+# collides would change the control path, and this is a rendering fix.
+WRIST_CAM_MESH = _os.path.join(paths.REPO, "assets", "realsense", "d435.obj")
+WRIST_CAM_MESH_QUAT = (0.310782, 0.635149, 0.635149, 0.310782)
+WRIST_CAM_MESH_BACK = 0.001            # along the camera's +z (backwards)
+WRIST_CAM_BODY_RGBA = (0.10, 0.10, 0.11, 1.0)
+
+
+def _add_wrist_cam_body(spec, body) -> None:
+    """The visible, non-colliding D435 sitting behind the wrist camera."""
+    if not _os.path.exists(WRIST_CAM_MESH):
+        print(f"  wrist camera body: {WRIST_CAM_MESH} missing, skipped")
+        return
+    if not any(m.name == "d435" for m in spec.meshes):
+        mesh = spec.add_mesh()
+        mesh.name = "d435"
+        mesh.file = WRIST_CAM_MESH
+    q = np.asarray(WRIST_CAM_QUAT, dtype=float)
+    # The camera's own +z is its BACKWARD axis: column 2 of the quat's matrix.
+    w, x, y, z = q
+    back = np.array([2 * (x * z + w * y),
+                     2 * (y * z - w * x),
+                     1 - 2 * (x * x + y * y)])
+    g = body.add_geom()
+    g.name = f"{body.name}_cam_body"
+    g.type = mujoco.mjtGeom.mjGEOM_MESH
+    g.meshname = "d435"
+    g.pos = list(np.asarray(WRIST_CAM_POS) + back * WRIST_CAM_MESH_BACK)
+    g.quat = list(WRIST_CAM_MESH_QUAT)
+    g.rgba = list(WRIST_CAM_BODY_RGBA)
+    g.contype = 0
+    g.conaffinity = 0
+    g.density = 0.0
+    g.group = 1
 
 
 def add_wrist_cameras(spec, verbose: bool = True) -> int:
@@ -683,10 +755,11 @@ def add_wrist_cameras(spec, verbose: bool = True) -> int:
         c.pos = list(WRIST_CAM_POS)
         c.quat = list(WRIST_CAM_QUAT)
         c.fovy = WRIST_CAM_FOVY
+        _add_wrist_cam_body(spec, body)
         n += 1
     if verbose and n:
         print(f"  wrist cameras: {n} (fovy {WRIST_CAM_FOVY:.0f}, "
-              f"aimed at the grasp centre from the housing's front-top)")
+              f"at {WRIST_CAM_POS} aimed at {WRIST_CAM_AIM}, with a body)")
     return n
 
 
