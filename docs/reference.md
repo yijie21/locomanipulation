@@ -108,6 +108,7 @@
 | `cam.quat = [...]` 而 `alt.type` 是 EULER | 赋值被忽略 | 上一行那个 bug 的**修复本身**同样静默失败:fovy 生效了、朝向没有 |
 | zsh 里 `set -- $var` | 不做单词分割 | 拼出来的 pgrep 模式变成 `run_.sh`,匹配不到 —— **检查器报告的不是世界的状态**,误判流水线已死 |
 | 官方 `open_loop_eval.py` 的 `--steps` 默认 200 | `min(steps, len)` 静默截断 | 只评了 546–832 帧 episode 的前 200 帧(走路段),抓取根本没评到,却给出一个看起来正常的 MSE |
+| `ISAACLAB_TO_MUJOCO` / `MUJOCO_TO_ISAACLAB` 取反了 | 图照跑,照样返回 64/29 个数 | 两个数组的**名字与内容是反的**(`ISAACLAB_TO_MUJOCO[mujoco_index] → isaaclab index`),所以"把 MuJoCo 序转成 IsaacLab 序"要用**名字读起来相反的那个**。`sonic_decoder.py` 已经写了这条警告,`sonic_encoder.py` 第一版还是踩了 —— 唯一露馅的地方是:把参考里的肘抬 20°,解码端回答的是**膝盖**。改对之后 top-2 响应落回同一条手臂 |
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
 
 所以:**任何"找到就替换 / 进入 / 读取"的操作,失败路径必须响亮。**改完检查改没改,
@@ -214,6 +215,16 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gy
 | `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
 
 数据集本身的检查不在这里,在 [`tools/check_dataset.py`](dataset.md#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。
+
+**不需要 stack 的离线工具**(`src/teleop_free/tools/`,同样用 `.venv_sim` 的
+python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
+`third_party/GR00T-WholeBodyControl/gear_sonic_deploy`):
+
+| 工具 | 回答什么 |
+|---|---|
+| `motion_smoothness.py A B --n 60 --events` | 两个数据集的运动质量逐项对比(jerk / 高频占比 / SPARC / cadence / token 台阶),外加"剧烈段来自哪里"的归因。结论见 [collection.md](collection.md#动作质量和人类-teleop-逐项量过一遍2026-08-28) |
+| `sonic_encoder.py --selfcheck --dataset DS` | 离线跑 SONIC 的 motion encoder:任意 29 维参考动作 → 64 维 token,不用起 stack。`--selfcheck` 校验 1762 维的分块偏移、FSQ 码本、灵敏度与解码端一致性 |
+| `sonic_decoder.py` | 反过来:token 差异 → 关节度数,给 open-loop 指标一个单位 |
 
 ---
 

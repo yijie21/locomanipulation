@@ -194,6 +194,19 @@ parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parqu
 | `left_hand_joints` | 7 | 本仓库的任务全程用右手,这一列恒定 |
 | `right_hand_joints` | 7 | dex1 是平行夹爪:分量 0 和 1 同步开合(−0.020..0.024),2–6 恒定 |
 
+**量化的死区有多大(2026-08-28 实测,`tools/sonic_encoder.py`)。**把一个 29 维参考
+姿态送进 encoder,只改一个关节,看 64 维 token 里有几维发生变化:
+
+| 关节 | 0.25° | 0.5° | 1° | 2° | 5° | 10° | 20° |
+|---|---|---|---|---|---|---|---|
+| right_elbow | 0 | 0 | 1 | 4 | 8 | 14 | 27 |
+| right_shoulder_pitch | 0 | 1 | 2 | 7 | 15 | 30 | 47 |
+| waist_pitch | 1 | 1 | 2 | 2 | 8 | 16 | 29 |
+| left_knee | 0 | 0 | 0 | 2 | 10 | 19 | 40 |
+
+即**亚度级的动作打磨在 label 里根本不存在**;要让 VLA 看得见,改动得是度级的。
+这条数是"把动作做得更丝滑"这类提案的天花板。
+
 **这三个名字和 7 这个宽度都不能改。** Isaac-GR00T 的 `unitree_g1_sonic` 配置
 (`gr00t/configs/data/embodiment_configs.py`)是**按名字**挑 action group 的,挑不到只打
 一句 `Warning: Joint group 'left_hand_joints' not found` 就继续跑 —— 训练照常收敛,只是
@@ -208,6 +221,19 @@ parquet(将来可以当辅助监督),但不是 action。
 
 官方配置只取 8 个 group:`left_leg` 6 + `right_leg` 6 + `waist` 3 + `left_arm` 7 +
 `right_arm` 7 + `left_hand` 7 + `right_hand` 7 + `projected_gravity` 3。
+
+**43 维里的实际切片顺序是按左右分组的,两只手夹在两条胳膊中间**,不是"先两条
+胳膊再两只手"——照后者切会静默地把左手当成右臂:
+
+| 切片 | 0:6 | 6:12 | 12:15 | 15:22 | **22:29** | **29:36** | 36:43 |
+|---|---|---|---|---|---|---|---|
+| 内容 | left_leg | right_leg | waist | left_arm | **left_hand** | **right_arm** | right_hand |
+
+`meta/modality.json` 一直是对的,是本文档上一版的组名罗列顺序把人带偏了。三条独立
+佐证:`tools/sonic_decoder.py` 的 `BODY_IDX`(= `0:22` + `29:36`)正是从 43 里挑出
+29 个身体关节;22:29 和 36:43 两块的取值范围是夹爪量级(0.002 / 0.034),15:22 和
+29:36 是弧度量级的手臂运动;用 `state[BODY_IDX]` 做 FK,右掌离被抓住的瓶子 0.14 m,
+按错误切法则是 0.24 m。
 
 `meta/modality.json` 是**菜单**,embodiment 配置才是**点单** —— 菜单里多列的条目
 (腕位姿、root 四元数、`can_pose`/`plate_pose` 等特权信息)一个都不会进模型,所以多列
