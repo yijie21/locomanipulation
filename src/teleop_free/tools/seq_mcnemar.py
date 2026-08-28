@@ -35,7 +35,7 @@ import sys
 
 INTERIM_P = 0.01      # stop-for-difference at any interim look
 FINAL_P = 0.05        # the final look
-N_MAX = 100
+N_MAX = 20            # matches eval_closed_loop.py --fresh (2026-08-28)
 
 
 def load(path):

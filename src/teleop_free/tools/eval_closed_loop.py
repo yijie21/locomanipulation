@@ -1,13 +1,16 @@
 """Closed-loop evaluation: the finetuned VLA drives the real stack, N rounds.
 
-    .venv_sim $ python eval_closed_loop.py --fresh 100 \
+    .venv_sim $ python eval_closed_loop.py [--fresh 20] \
                     [--policy-port 5590] [--execution-horizon 16] \
                     [--out outputs/eval/bottle200/closed_loop.json]
 
 PREREQUISITES (this script checks, it does not arrange):
-  * the stack is up with NO_ENCODER=1 -- the token-only deployment mode. With
-    an encoder loaded the deploy keeps flipping its token source back
-    (g1_deploy_onnx_ref.cpp:3096) and an external stream never holds.
+  * the stack is up with NO_ENCODER=1 -- the token-only deployment mode.
+    (This used to claim an encoder-loaded deploy makes the token stream
+    "never hold"; that was wrong -- see the corrected note in start_stack.sh
+    and docs/official_parity_audit.md C5. NO_ENCODER is kept because the gym
+    restarts the deploy every round and skipping a second TensorRT engine
+    keeps that restart shorter, not because the stream needs it.)
   * serve_policy.py is running on --policy-port with the checkpoint to test.
 
 WHAT IT RUNS
@@ -23,6 +26,14 @@ manifest recording initial conditions -- and same-distribution fresh draws
 against 95.2% is the stronger comparison anyway.)
 
 WHAT COMES OUT
+
+HOW MANY ROUNDS
+
+--fresh defaults to 20 (2026-08-28). A 20-round PERCENTAGE is not a result:
+its Wilson interval is 30-40 points wide. 20 rounds exist to support PAIRED
+comparison against a same-seed run, where they resolve large effects only
+(6-0 or 8-1 discordant reaches p<0.05 -- roughly a doubling). Numbers that
+go into the ladder, or into any document, still need --fresh 100.
 
 Success rate with a Wilson 95% interval, and the per-stage failure breakdown
 (walk / reach / close / fell / timeout) from vla_round's classifier. The
@@ -59,9 +70,19 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--fresh", type=int, default=100,
+    ap.add_argument("--fresh", type=int, default=20,
                     help="rounds to run, sampled fresh from the collection "
-                         "distribution")
+                         "distribution. 20 is the standing default (set "
+                         "2026-08-28) because a 100-round run costs 4.5 h. "
+                         "KNOW WHAT 20 BUYS: a rate estimate at 20 rounds "
+                         "carries a Wilson 95%% interval ~30-40 points wide "
+                         "(4/20 = 20%% means 8-42%%), so a bare 20-round "
+                         "PERCENTAGE is not a result. What 20 rounds CAN do "
+                         "is PAIRED comparison against a run with the same "
+                         "seed: 6-0 or 8-1 in discordant pairs reaches "
+                         "p<0.05, i.e. it resolves large effects only "
+                         "(roughly a doubling). Anything smaller, or "
+                         "anything going into the ladder, still needs 100.")
     ap.add_argument("--execution-horizon", type=int, default=16,
                     help="blocking client only: chunk steps per replan")
     ap.add_argument("--client", choices=("async", "blocking"), default="async",

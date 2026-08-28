@@ -33,7 +33,10 @@ cd "$LOCOMANI_ROOT" || exit 1
 OUT_DIR="${1:?usage: seq_ab.sh <out_dir> <flags_a> <flags_b>}"
 FLAGS_A="${2-}"
 FLAGS_B="${3-}"
-ROUNDS="${ROUNDS:-100}"
+# 20 matches eval_closed_loop.py's standing default (2026-08-28). It only
+# resolves large effects -- see that file's --fresh help. ROUNDS=100 for
+# anything that will be quoted.
+ROUNDS="${ROUNDS:-20}"
 BUDGET="${BUDGET:-60}"
 SEED="${SEED:-6000}"
 CHECK_EVERY="${CHECK_EVERY:-20}"
