@@ -39,6 +39,7 @@ drift 的正解,由此怀疑"官方已经设好、我们自己另造或漏掉"�
 | C7 | C | cadence(削减停顿) | 维持(**官方明文背书**) |
 | C8 | C | `--set-compliance` / compliance 惰性 | 维持(**已定性证明惰性**) |
 | C9 | C | 四元数序 wxyz | 维持(**已逐环节证明一致**) |
+| C10 | C | 29-DoF 关节序换算表 | 维持(**与官方常量逐元素相等**) |
 | D1 | D | third_party 落后上游 8 个提交 | 无需升级(纯文档) |
 | E1 | — | 官方**没有** VLA 训练超参指引可对照 | 记录空白 |
 
@@ -333,6 +334,40 @@ CLI 与按键均无效。
 
 审计过程中我曾从 parquet 数据看到"xyzw 解释的 yaw 曲线略平滑",一度怀疑序搞反;
 上表的权威代码证明那是噪声。**这条记录下来正是为了防止将来有人重复这个误判。**
+
+### C10 关节序换算 —— 与官方常量逐元素相等
+
+`references/conventions.html` 规定:motion PKL 的 `dof`/`pose_aa` 是 **MuJoCo order**,
+Isaac Lab 仿真用 **IsaacLab order**,两者由 `G1_ISAACLAB_TO_MUJOCO_DOF` /
+`G1_MUJOCO_TO_ISAACLAB_DOF` 互换(页面本身不列索引表)。
+
+我们两侧都在用这个换算(`agent_server.pose_chunk` 收 IsaacLab 序、
+`privileged_pub` 按 `MUJOCO_JOINT_NAMES` 读 MuJoCo 序),而 `g1_joints.py:39/44`
+的两张表是**我们自己写的**。关节序错位属于最凶的一类静默失败(数值全在合理范围,
+动作却是别人的),所以做了逐元素比对:
+
+```
+src/teleop_free/g1_joints.py     vs  gear_sonic/envs/manager_env/robots/g1.py:61/93
+ISAACLAB_TO_MUJOCO == 官方 G1_ISAACLAB_TO_MUJOCO_DOF   -> True (29/29)
+MUJOCO_TO_ISAACLAB == 官方 G1_MUJOCO_TO_ISAACLAB_DOF   -> True (29/29)
+```
+
+**完全一致**。另注:`g1_joints.py:48` 本来就有一条自洽断言
+(`MUJOCO_TO_ISAACLAB[ISAACLAB_TO_MUJOCO] == arange(29)`),现在再加一条与官方的
+外部一致性证明。
+
+其余 conventions 页要点,逐条核对均一致或不适用:
+- **quaternion**:SONIC/Isaac Lab/**MuJoCo** = wxyz;SciPy/ROS = xyzw。原文加粗
+  "**Always use `w_last=False`**"。我们全线 wxyz(见 C9),且不调用带 `w_last` 的
+  Isaac 工具函数。
+- **坐标系**:Isaac Lab 与 MuJoCo 同为 **Z-up、右手系、X 前 / Y 左**,重力 -Z。
+  SMPL/BVH 是 Y-up(由 `smpl_y_up` 自动转)。我们只在 MuJoCo 侧工作,不涉及 SMPL。
+- **观测命名** `{base}_{N}frame_step{S}`,S 以 **50 Hz** control tick 计 ——
+  与 C2/deployment 页的 50 Hz 控制环互证。
+- `observation_config.yaml` 只有 `observations`(按列出顺序拼接)与可选 `encoder`
+  (`dimension` / `use_fp16` / `encoder_observations` / `encoder_modes`)。**schema 里
+  没有 normalization / clipping / scaling 键**,也没有 `encode_mode` 标识符 ——
+  后者只存在于 C++ 侧(见 C5),文档不覆盖。
 
 ---
 
