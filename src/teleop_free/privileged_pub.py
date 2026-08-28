@@ -75,8 +75,11 @@ def _body_pose(model, data, bid: int):
 class PrivilegedPublisher:
     """Binds :5581 and publishes ground truth at whatever rate it is stepped."""
 
+    _seq = 0   # per-instance below; class default keeps old pickles honest
+
     def __init__(self, model, data, object_bodies: dict[str, str],
                  port: int = PRIVILEGED_PORT, surfaces: list[str] | None = None):
+        self._seq = 0
         import mujoco
 
         self._mj = mujoco
@@ -277,7 +280,17 @@ class PrivilegedPublisher:
         }
 
     def publish(self) -> None:
-        self.sock.send_string(json.dumps(self.state()))
+        # Monotonic per-process sequence number: the ONE shared key between
+        # this stream and everything that samples it. The exporter CONFLATEs
+        # this stream and records nothing about which message it used, which
+        # is why pose<->parquet alignment was structurally impossible
+        # (docs/pose_parquet_alignment.md: seven offline methods, no
+        # diagonal). Restarts restart it at 0 -- consumers must treat a
+        # backwards jump as a new lineage, not wraparound.
+        d = self.state()
+        d["seq"] = self._seq
+        self._seq += 1
+        self.sock.send_string(json.dumps(d))
 
     def close(self) -> None:
         self.sock.close()
@@ -651,7 +664,8 @@ class PoseSidecar:
                     continue
                 try:
                     pel = msg["pelvis"]
-                    row = {"t": msg.get("t"), "wall": msg.get("wall"),
+                    row = {"seq": msg.get("seq"),
+                           "t": msg.get("t"), "wall": msg.get("wall"),
                            "pelvis": list(pel["pos"]) + list(pel["quat"]),
                            "objects": {k: list(o["pos"]) + list(o["quat"])
                                        for k, o in msg.get("objects", {}).items()}}

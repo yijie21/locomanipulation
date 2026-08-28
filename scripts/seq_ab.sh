@@ -135,7 +135,7 @@ echo "[seq_ab] stacks up"
 launch_arm() {   # $1 instance  $2 name  $3 arm flags
     local i=$1 name=$2 flags=$3
     # shellcheck disable=SC2086
-    env INSTANCE=$i SONIC_DDS_DOMAIN=$i NO_ENCODER=1 \
+    env INSTANCE=$i SONIC_DDS_DOMAIN=$i NO_ENCODER=1 EVAL_PARALLEL=1 \
         TF_CAMERA_PORT=$((5555 + 10 * i)) TF_SONIC_PORT=$((5556 + 10 * i)) \
         TF_OUT_PORT=$((5557 + 10 * i)) TF_KEYBOARD_PORT=$((5580 + 10 * i)) \
         TF_PRIVILEGED_PORT=$((5581 + 10 * i)) TF_EPISODE_PORT=$((5582 + 10 * i)) \
