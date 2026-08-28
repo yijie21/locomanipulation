@@ -343,8 +343,9 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # across it -- streamed mode over an empty buffer stops control
         # (g1_deploy_onnx_ref.cpp:618), and the first v4 frame is also what
         # flips is_using_encoder_ off. Same order diag_token_replay validated.
-        if replace is not None:
-            replace()   # see the async client: physical spawn restore
+        if replace is not None and os.environ.get(
+                "LOCOMANI_REPLACE", "0") == "1":
+            replace()   # legacy sim-only re-teleport, off by default
         obs = obs_src.build()
         tok0, grip0 = link.get_chunk(obs)
         l0, r0 = expand_hands(grip0[0])
@@ -506,9 +507,45 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
                   replace=None, spawn_xy=None):
         from primitives import LocomotionMode
+        from gear_sonic.utils.inference.initial_poses import (
+            LATENT_INITIAL_MOTION_TOKEN as INIT_TOK)
+        from sonic_token import GRIPPER_MAX as _G_OPEN
+
+        # FIRST act: get off the planner channel. The stand-start drift is a
+        # planner-mode disease (IDLE limit cycle, ~0.15 m/s in drift-prone
+        # spawn configs); the token channel measures rock-stable
+        # (0.013 m net / 30 s). NVIDIA's initial-pose mechanism, adapted:
+        # prime the deploy with the predefined standing token (no inference
+        # needed), enter streamed mode, and keep that token flowing from a
+        # keepalive thread while the slow setup below runs. Works unchanged
+        # on real hardware -- no sim reset involved. The commander socket
+        # belongs to the keepalive until _teardown(); the main thread must
+        # not touch p.cmd before then.
+        l_open, r_open = expand_hands(_G_OPEN)
+        for _ in range(30):
+            p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open,
+                              frame_index=0)
+            time.sleep(0.02)
+        p.cmd.enter_streamed()
+        t_hold = time.time()
+        keep_stop = threading.Event()
+
+        def _keepalive():
+            while not keep_stop.is_set():
+                p.cmd.token_frame(INIT_TOK, right_hand=r_open,
+                                  left_hand=l_open, frame_index=0)
+                time.sleep(1.0 / RATE)
+
+        keep_th = threading.Thread(target=_keepalive, daemon=True)
+        keep_th.start()
+
+        def _teardown():
+            keep_stop.set()
+            keep_th.join(timeout=1.0)
 
         obs_src = ObsBuilder(task)
         if not obs_src.wait_ready():
+            _teardown()
             obs_src.close()
             return False, "[vla] camera/state streams never became ready"
 
@@ -551,51 +588,44 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         th = threading.Thread(target=worker, daemon=True)
         th.start()
 
-        # wait for the first chunk, prime, switch -- same order the replay
-        # diag validated (buffer before mode switch, cpp:618)
+        # Wait for a chunk computed from an observation of the HELD robot
+        # (t0 > t_hold): a chunk from the planner era would encode a stale
+        # intent. The keepalive keeps the standing token flowing meanwhile.
+        ready = False
         t_wait = time.time()
-        while True:
+        while time.time() - t_wait < 15:
             with lock:
-                ready = latest["chunk"] is not None
-            if ready or time.time() - t_wait > 15:
+                ready = latest["t0"] is not None and latest["t0"] > t_hold
+            if ready:
                 break
             time.sleep(0.05)
         if not ready:
+            _teardown()
             stop.set()
             obs_src.close()
-            return False, "[vla] first inference never returned"
+            return False, ("[vla] initial-pose hold: no fresh chunk within "
+                           "15 s -- policy worker stalled; round aborted")
 
-        if replace is not None:
-            # Re-teleport to the spawn now that the slow prelude work
-            # (stream connect + first inference) is done -- the gait limit
-            # cycle walked drift-prone configs 0.2-0.35 m during exactly
-            # this window. Then wait for a chunk computed AFTER the
-            # teleport: priming from a pre-teleport observation would
-            # execute a stale intent.
-            t_rep = time.time()
-            replace()
-            fresh = False
-            while time.time() - t_rep < 10:
-                with lock:
-                    fresh = (latest["t0"] is not None
-                             and latest["t0"] > t_rep)
-                if fresh:
-                    break
-                time.sleep(0.05)
-            if not fresh:
-                # LOUD abort, not a silent fallback: priming from the
-                # pre-teleport chunk would execute a stale intent -- the
-                # exact failure the re-teleport exists to prevent. 10 s is
-                # 25 inference intervals; missing all of them means the
-                # worker or the policy server is gone, not a slow round.
-                stop.set()
-                obs_src.close()
-                return False, ("[vla] replace: no post-teleport chunk within "
-                               "10 s -- policy worker stalled; round aborted")
+        if replace is not None and os.environ.get(
+                "LOCOMANI_REPLACE", "0") == "1":
+            replace()   # legacy sim-only re-teleport, off by default
 
         with lock:
             tok0, grip0 = latest["chunk"]
         l0, r0 = expand_hands(grip0[0])
+
+        # Hand the commander socket back to this thread, then BLEND from the
+        # standing token into the first chunk frame (1 s linear, the
+        # official client's default) so the handover has no step in it.
+        _teardown()
+        BLEND_S = 1.0
+        n_bl = max(1, int(BLEND_S * RATE))
+        for i in range(n_bl):
+            a = (i + 1) / n_bl
+            tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])
+            p.cmd.token_frame(tk, right_hand=r_open, left_hand=l_open,
+                              frame_index=0)
+            time.sleep(1.0 / RATE)
 
         # Prelude segmentation marks. The stand-start gap (~0.35 m of
         # table-ward motion before t_start) has two candidates: (a) a creep
@@ -613,15 +643,6 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                 p.log(f"[vla] prelude {tag}: MARK FAILED ({e}) -- do not "
                       f"read this segment as drift-free")
 
-        _mark("chunk-ready")
-        for _ in range(30):
-            p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
-            time.sleep(0.02)
-        _mark("primed")
-        p.cmd.enter_streamed()
-        for _ in range(30):
-            p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
-            time.sleep(0.02)
         _mark("streamed")
 
         t_start = time.time()
