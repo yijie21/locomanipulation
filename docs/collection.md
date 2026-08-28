@@ -491,6 +491,36 @@ stateDiagram-v2
 
 ---
 
+## 演示的"形状":官方要求与我们做到的部分
+
+**这一节是采集前必读。**round 3 用实验换来的结论 —— 同样 200 局,只把脚本专家的
+停顿削掉(到位→伸手中位 4.6 s → 3.0 s),闭环成功率从 13.7% 翻到 28.0% —— 官方其实
+早就写下来了,在一个我们直到 2026-08-28 才读到的页面
+(`user_guide/teleoperation.html`,原文):
+
+> **"Try to be as natural as possible.** The GEAR-SONIC policy is trained on
+> natural human motion, so moving naturally gives the best results.
+> **Hesitating when moving actually lead to more stumbling!**"
+>
+> - ✅ **Walk naturally** — 正常步态、自然摆臂,别夸张也别试图"帮"机器人
+> - ✅ **Transfer weight smoothly** — 像平时那样重心转移,"Be confident!"
+> - ✅ **Use moderate speeds** — 从舒适步速起步,熟练后可以加快
+> - ❌ **Overtly slow movements** — 别慢过头
+> - ❌ **Trying to match the robot's movement** — 你去追机器人,机器人反过来追你,
+>   于是开始踉跄
+> - **Reaching** — 手臂要**平滑地**伸出去抓
+
+**我们已经做到的**:只有"别停顿"这一维(cadence,见上文的 settle 削减)。
+
+**从没检查过的**:运动剖面的其余部分 —— 加减速曲线、转身方式、伸手轨迹的形状,
+是否满足"自然"。脚本专家是按几何规划写的,不是按人类运动写的,所以这些维度上它
+**先验地不自然**,而官方明说这会让底层控制器更容易踉跄。这是一条有官方背书、
+尚未开采的改进方向(`docs/official_parity_audit.md` C7)。
+
+下次采集前值得先做的一件小事:把一局脚本专家的骨盆速度/加速度曲线与
+`user_guide/teleoperation.html` 的描述对一遍,看有没有明显违反的段落(例如伸手前
+的急停、转身时的原地旋转)。
+
 ## 随机化:五个轴
 
 一条 episode 里下面五样东西每次都不同。前三个逐局变,后两个按批变(要重建场景)。

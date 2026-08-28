@@ -28,9 +28,11 @@ SONIC_POLICY="${SONIC_POLICY:-policy/release}"
 # must be honoured HERE and not only at stack boot: grasp_gym restarts the
 # deploy through this script every round, so a closed-loop VLA run that booted
 # the stack token-only got its deploy silently swapped for an encoder-loaded
-# one at the first round-2/stand-retry -- and with an encoder loaded,
-# initial_encoder_mode_ is 0 and the external token stream never holds
-# (g1_deploy_onnx_ref.cpp:3096).
+# one at the first round-2/stand-retry, which changes the deployment config
+# mid-run. (The older claim here -- that an encoder-loaded deploy makes the
+# token stream "never hold" -- was wrong; see the corrected note in
+# start_stack.sh and docs/official_parity_audit.md C5. Honouring NO_ENCODER
+# per round still matters: the run must not silently change form halfway.)
 ENC_ARG=(--encoder-file "$SONIC_POLICY/model_encoder.onnx")
 if [ "${NO_ENCODER:-0}" = "1" ]; then
     ENC_ARG=()

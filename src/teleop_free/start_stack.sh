@@ -134,13 +134,26 @@ cd "$SONIC_DEPLOY_ROOT" || exit 1
 # Set SONIC_POLICY=policy/sonic_v1_1 to run it.
 SONIC_POLICY="${SONIC_POLICY:-policy/release}"
 echo "  policy: $SONIC_POLICY"
-# NO_ENCODER=1 launches the deploy WITHOUT the encoder, which is the
-# token-only (VLA) configuration. It is not just a saving: with an encoder
-# loaded, initial_encoder_mode_ is 0, and the deploy's token path then keeps
-# flipping back ("if encoder mode is not -1, we need to turn on the encoder",
-# g1_deploy_onnx_ref.cpp:3096) so an external token stream never holds. Drop
-# the file and the mode becomes -1, "Encoder config found but no encoder file
-# provided - tokens can be set externally".
+# NO_ENCODER=1 launches the deploy WITHOUT the encoder: initial_encoder_mode_
+# becomes -1, "Encoder config found but no encoder file provided - tokens can
+# be set externally", and the token path is the only source.
+#
+# CORRECTED 2026-08-28 (docs/official_parity_audit.md C5). This comment used to
+# claim an encoder-loaded deploy "keeps flipping back so an external token
+# stream never holds". The source does not support that, and NVIDIA's own VLA
+# flow runs WITH the encoder (deploy.sh always passes --encoder-file):
+#   * cpp:3022  the first external token sets is_using_encoder_ = false, for good
+#   * cpp:3054  the flip-back needs has_ext_token_data FALSE, and that comes
+#               from a LATCHING DataBuffer (input_interface.hpp:149,
+#               utils.hpp:59). has_external_token_state_ is cleared only on a
+#               protocol error, an interface-manager safety reset, or a return
+#               to pre-loaded motion (zmq_endpoint_interface.hpp:253/291/341)
+#               -- never by an ordinary gap between publishes.
+# So NO_ENCODER is NOT required for the token stream to hold. It is kept because
+# it is free here and cheaper: the gym restarts the deploy EVERY round, and not
+# loading a second TensorRT engine keeps that restart (already 20-40 s) shorter.
+# Running with the encoder is untested by us; it would be one deviation fewer
+# from the official deployment form if real-robot transfer ever needs it.
 ENC_ARG=(--encoder-file "$SONIC_POLICY/model_encoder.onnx")
 if [ "${NO_ENCODER:-0}" = "1" ]; then
     ENC_ARG=()

@@ -435,3 +435,9 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 
 协作方(locomanipulation-04)等待项:三方终表 + prelude 分解(它更新报告
 §4.6/4.7);seq 落地后它接重放验证。
+
+- **脚本专家的"自然运动"审视**(有官方背书,`docs/official_parity_audit.md` C7):
+  官方 `user_guide/teleoperation.html` 要求演示"as natural as possible",并明说
+  hesitation 与 overtly slow movements 会让 SONIC 更容易踉跄。我们只优化过停顿
+  (cadence),加减速/转身/伸手轨迹的形状从未检查。下次采集前先把一局的骨盆速度与
+  加速度曲线对着那份指引看一遍。详见 docs/collection.md 的"演示的形状"一节。
