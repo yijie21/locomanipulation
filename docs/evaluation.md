@@ -469,3 +469,17 @@ prelude 两个候选**双双出局**:entry→t_start 位移中位 0.015 m,primin
   replan 0.2s、mid-reach DAgger)的配对基准(seed 6000,逐局可配)。
 - 值得注意:walk 失败仅 2/100 —— VLA 的走路段本身几乎不挂;瓶颈与混合任务
   时代诊断一致,仍是 mid-reach(81/88),处方不变,基线换真。
+
+### 2026-08-28:stand-start 修复升级为官方 initial-pose 机制
+
+用户从官方教程(vla_inference: Customizing the Initial Pose)找到了正确原语:
+**等待期不站在 planner 通道里,而是持续流式发送预置的站姿 latent token**
+(`LATENT_INITIAL_MOTION_TOKEN`)。这正好命中我们量到的机制——drift 是
+planner 通道的病,token 通道实测稳如磐石——所以 async 局现在的第一件事就是
+灌站姿 token + enter_streamed,keepalive 线程在整个慢启动期间(连流+首推理)
+保持它,最后 1 秒线性 blend 进首个 chunk(官方 client 同款)。
+
+对比二次瞬移:spawn_off 中位 0.065→0.107(残余=1.5s settle,唯一还在 planner
+里的窗口),但尾部 0.33→0.18 且有界,8/8 从出生点起步,blend 零摔倒。
+**默认路径不再依赖任何 sim 特权——与真机部署同构**;二次瞬移降级为
+LOCOMANI_REPLACE=1 应急开关。
