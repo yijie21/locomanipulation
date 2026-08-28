@@ -43,11 +43,18 @@ GHOST_PARK = (0.0, 0.0, -5.0)
 # data collection); instance i uses base + 10*i via start_stack.sh.
 PRIVILEGED_PORT = int(os.environ.get("TF_PRIVILEGED_PORT", "5581"))
 EPISODE_PORT = int(os.environ.get("TF_EPISODE_PORT", "5582"))
-# SCENE_RANDOM=0 pins the appearance, which is what a controlled comparison
-# wants (two runs differing only in the thing under test) and what a replay of
-# an old capture needs. On by default: a dataset where every frame shares one
-# lighting rig and one table colour teaches the model to rely on both.
-SCENE_RANDOM = os.environ.get("SCENE_RANDOM", "1") != "0"
+# OFF by default (user's call, 2026-08-28). SCENE_RANDOM=1 turns it back on.
+#
+# The trade is real in both directions. Pinned appearance is what a controlled
+# comparison wants (two runs differing only in the thing under test), what a
+# replay of an old capture needs, and what makes a reel readable -- the ground
+# hue and the light direction are the two largest per-frame changes in the ego
+# view (34.3 and 20.5 mean abs pixel, scene_random.py), so with them on, two
+# consecutive rounds do not look like the same task. Against that: a dataset
+# where every frame shares one lighting rig and one table colour gives the
+# model no reason to learn "the red can" rather than that exact RGB under that
+# exact light, and nothing in the dataset would reveal the difference.
+SCENE_RANDOM = os.environ.get("SCENE_RANDOM", "0") != "0"
 
 # Palm frame. The G1's three-finger hand hangs off the wrist yaw link, so this
 # is the frame a pre-grasp offset is naturally expressed in.

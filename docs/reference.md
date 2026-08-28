@@ -79,7 +79,7 @@
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `start_stack.sh` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
-| `SCENE_RANDOM` | `1` | sim | `0` 固定外观,见[外观](collection.md#4-外观每局重掷) |
+| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](collection.md#4-外观每局重掷默认关) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](collection.md#相机) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行 |
