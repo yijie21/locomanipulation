@@ -79,6 +79,7 @@
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `start_stack.sh` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
+| `TF_DATASET_FPS` | `30` | vla_round | 闭环回放的发布帧率,**必须等于 checkpoint 训练数据的 fps**。转换器 2026-08-28 起写 25,所以用重转数据训出来的 checkpoint 要 `TF_DATASET_FPS=25`;不匹配不会报错,只是动作按错速度回放 |
 | `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](collection.md#4-外观每局重掷默认关) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](collection.md#相机) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
@@ -112,6 +113,7 @@
 | `ISAACLAB_TO_MUJOCO` / `MUJOCO_TO_ISAACLAB` 取反了 | 图照跑,照样返回 64/29 个数 | 两个数组的**名字与内容是反的**(`ISAACLAB_TO_MUJOCO[mujoco_index] → isaaclab index`),所以"把 MuJoCo 序转成 IsaacLab 序"要用**名字读起来相反的那个**。`sonic_decoder.py` 已经写了这条警告,`sonic_encoder.py` 第一版还是踩了 —— 唯一露馅的地方是:把参考里的肘抬 20°,解码端回答的是**膝盖**。改对之后 top-2 响应落回同一条手臂 |
 | 不发 `upper_body_velocity` | 上一次发过的值**永远**留在 reference 里 | `input_interface.hpp:381-390` 读 buffer 没有过期判定,`g1_deploy_onnx_ref.cpp:2985` 又把有效位 `std::ignore` 掉:只要还在发 position,速度就一直用最后收到的那一组。从来没发过则是硬 0 —— 位置在扫、参考速度读 0,而 encoder 的 mode-0 活输入里 290/644 是速度。收尾必须**显式发零**,不能靠省略 |
 | frozen 接管时拿**实测**关节当种子 | 看着连续,参考跳 123°(单帧) | 被替换的是 k-planner 自己的手臂参考(`cpp:781` 逐字写进 `current_motion_` 的 10 个 lookahead 帧),不是实测姿态;两者相差整个 decoder 的跟踪误差(平均 15.5°,wrist pitch 上 61–65°)。种子要取 `body_q_target`(g1_debug key 22)—— 它就是那个量,**不带 default-angle 偏移**(`output_interface.hpp:192`,和 `body_q` 不同),而且替换只写进 observation buffer、从不写回 motion,所以覆盖期间它照样报 k-planner 的手臂。见 [collection.md](collection.md#上身接管两个台阶和它们的修法2026-08-28) |
+| 部署帧率和训练数据的 fps 不一致 | 不报错,动作按 1.2× / 0.83× 速度回放 | chunk 是一串**帧**,发布速率必须等于训练数据的 fps。转换器 2026-08-28 起写 25(`DST_FPS`),而 `TF_DATASET_FPS` 默认仍是 30(现有 checkpoint 都是 30 训的)—— **第一个用重转数据训的 checkpoint 必须显式带 `TF_DATASET_FPS=25`**。两边都是常数,谁都不知道对方,所以只能靠这条记着 |
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
 
 所以:**任何"找到就替换 / 进入 / 读取"的操作,失败路径必须响亮。**改完检查改没改,

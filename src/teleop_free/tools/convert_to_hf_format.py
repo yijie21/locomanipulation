@@ -94,7 +94,30 @@ def check_manifest(rows, src_eps, discarded, sess_name):
                 f"{'discarded' if ep in discarded else 'kept'} on disk but "
                 f"the manifest says ok={r['ok']} (target {r['target']}). The "
                 f"join is out of phase; do not convert this session.")
-SRC_FPS, DST_FPS = 50, 30
+# 25, not 30, since 2026-08-28. The video frames are discrete 50 Hz renders and
+# the state has to stay aligned with them, so a stored sample time can only be
+# PICKED from {k/50} -- never interpolated. A uniform stored stream therefore
+# needs a target rate that DIVIDES 50, and 30 does not: the picks come out
+# spaced 2,1,2,2,1,2 while meta/info.json claims a uniform 1/30. That mismatch
+# is a periodic timing error of period 3 frames = a 10 Hz line, a vibration the
+# robot never performed. Measured: it carried about half of our excess >3 Hz
+# power against the human teleop session, and after the upper-body ramp landed
+# it became the largest single term (st_r_arm_10hz_ratio 2.41 -> 4.33).
+#
+# The cost is a lower Nyquist, 12.5 Hz against 30 fps's 15. Measured on real
+# 50 Hz source data (task arm joint velocity, 3 episodes), the band only 25
+# folds -- 12.5 to 15 Hz -- carries 0.75% of the power, while 6.07% sits above
+# 15 Hz and was already folding at 30 fps. So this trades 0.75 points of extra
+# aliasing for a measured artefact.
+#
+# 50 fps is the option that dominates on signal fidelity (no resampling at all,
+# and NVIDIA's own client is 50 on both sides) but it is a different change:
+# 1.67x the frames, and an action chunk of 16 frames stops meaning 533 ms and
+# starts meaning 320 ms, so the horizon has to be re-tuned.
+#
+# CHANGING THIS IS A TWO-PLACE EDIT: the deploy has to publish at the same rate
+# or motions replay at the wrong speed. See TF_DATASET_FPS in vla_round.py.
+SRC_FPS, DST_FPS = 50, 25
 W, H = 640, 480
 
 MODALITY = {
@@ -670,8 +693,8 @@ def main():
         sink.ep_stats.append({"episode_index": new_ep, "stats": stats})
         sink.episodes.append({"episode_index": new_ep, "tasks": [ep_task], "length": n30})
         tag = "val " if sink is val else "train"
-        print(f"[{tag} {new_ep:3d}] {sess.name}/ep{src_ep}: {n50} rows @50Hz -> "
-              f"{n30} @30Hz  task[{ti}] \"{ep_task}\"")
+        print(f"[{tag} {new_ep:3d}] {sess.name}/ep{src_ep}: {n50} rows "
+              f"@{SRC_FPS}Hz -> {n30} @{DST_FPS}Hz  task[{ti}] \"{ep_task}\"")
         sink.new_ep += 1
         sink.global_index += n30
         sink.total_videos += 1

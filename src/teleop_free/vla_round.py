@@ -188,7 +188,19 @@ def _stalled(trace, commanded_close) -> bool:
         return False
     a, b = ref["pelvis_xy"], trace[-1]["pelvis_xy"]
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 < STALL_ABORT_M
-REPLAN_HZ = 30.0         # the chunk's native frame rate
+# The chunk's native frame rate. It MUST equal the fps of the dataset the
+# checkpoint was trained on -- the chunk is a sequence of frames, and publishing
+# it at a different rate replays the motion at the wrong speed.
+#
+# Default 30 because every checkpoint that exists today was trained on 30 fps
+# data. `convert_to_hf_format.py` now writes 25 (see the DST_FPS comment there
+# for why), so the FIRST checkpoint trained on re-converted data has to run with
+# TF_DATASET_FPS=25. Kept as an env var rather than flipped now, because the
+# wrong value is silent -- the robot just moves at 1.2x or 0.83x speed -- and a
+# default that silently becomes wrong on the next retrain is exactly the class
+# of failure docs/reference.md is a list of.
+DATASET_FPS = float(os.environ.get("TF_DATASET_FPS", "30"))
+REPLAN_HZ = DATASET_FPS
 
 
 class ObsBuilder:
@@ -503,8 +515,9 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     difference; the A/B against the blocking client is the measurement.
 
     Differences from NVIDIA's client kept ON PURPOSE:
-      - 30 Hz publish, because OUR dataset is 30 fps (theirs is 50 both sides;
-        each is self-consistent, mixing them would replay motions fast).
+      - publish at DATASET_FPS, because OUR dataset is not 50 fps (theirs is
+        50 on both sides; each is self-consistent, mixing them would replay
+        motions fast).
       - FSQ snap stays (sonic_token.snap): NVIDIA sends raw floats with only a
         |x| > 1.25 sanity bound. Snapping to the codebook cannot hurt a
         near-grid prediction; dropping it is a separate ablation.
@@ -512,7 +525,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     import threading
 
     counter = {"n": 0}
-    RATE = 30.0
+    RATE = DATASET_FPS
 
     def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
                   replace=None, spawn_xy=None):

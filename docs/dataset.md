@@ -6,7 +6,7 @@
 
 exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`。转成 LeRobot v2.1
 (格式对齐 `hojjunekim/g1_sonic_orange_to_plate_locomani`,含 29-DoF 关节状态 +
-64 维 SONIC motion latent + 三路 30fps 视频):
+64 维 SONIC motion latent + 三路 25fps 视频):
 
 ```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
@@ -176,7 +176,9 @@ parquet 列里**——像素在 mp4 里,靠帧号对齐,parquet 不存引用。
 ### videos/chunk-000/observation.images.{cam}/episode_*.mp4
 
 三路 RGB(`ego_view` 头显视角、`left_wrist`/`right_wrist` 手腕相机),和
-`info.json.fps` 一致(转换器统一重采样到 30fps)。每个视频的帧数必须等于对应
+`info.json.fps` 一致(转换器统一重采样到 `DST_FPS`,**2026-08-28 起是 25fps**,
+理由见 [ROADMAP](ROADMAP.md#已做dst_fps--25消掉重采样的-10-hz-伪影2026-08-28);
+更早转出来的数据集是 30fps)。每个视频的帧数必须等于对应
 parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parquet 行数"要测的。
 
 ---
