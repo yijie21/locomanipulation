@@ -846,8 +846,8 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                 p.log(f"[gym] win {tag}: pelvis {np.round(p.pelvis_xy(sw), 3)} "
                       f"yaw {np.degrees(p.pelvis_yaw(sw)):.1f} "
                       f"anchor_off {np.degrees(p.cmd.heading_offset):.1f}")
-            except Exception:
-                pass
+            except Exception as e:  # a missing mark must LOOK missing
+                p.log(f"[gym] win {tag}: MARK FAILED ({e})")
 
     _wmark("pre-switch")
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
@@ -856,7 +856,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     _wmark("pinned")
     if VLA_POLICY is None:
         p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
-    if VLA_POLICY is not None:
+    else:
         # No quiesce hold and NO corrective walking for VLA rounds. In the
         # drift-prone spawn configs the gait limit cycle walks ~0.15 m/s
         # through every planner countermeasure tried (IDLE hold, IDEL_SQUAT
@@ -923,7 +923,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
 
         return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
                           psi=psi, fv=fv, grip_za=grip_za, record=record,
-                          replace=replace)
+                          replace=replace, spawn_xy=list(landed_xy))
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)

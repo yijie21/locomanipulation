@@ -75,8 +75,6 @@ def _body_pose(model, data, bid: int):
 class PrivilegedPublisher:
     """Binds :5581 and publishes ground truth at whatever rate it is stepped."""
 
-    _seq = 0   # per-instance below; class default keeps old pickles honest
-
     def __init__(self, model, data, object_bodies: dict[str, str],
                  port: int = PRIVILEGED_PORT, surfaces: list[str] | None = None):
         self._seq = 0
@@ -664,6 +662,12 @@ class PoseSidecar:
                     continue
                 try:
                     pel = msg["pelvis"]
+                    if msg.get("seq") is None and not getattr(
+                            self, "_warned_no_seq", False):
+                        self._warned_no_seq = True
+                        print("[sidecar] privileged messages carry no seq "
+                              "(old publisher?) -- pose<->parquet alignment "
+                              "will not be possible for this session")
                     row = {"seq": msg.get("seq"),
                            "t": msg.get("t"), "wall": msg.get("wall"),
                            "pelvis": list(pel["pos"]) + list(pel["quat"]),

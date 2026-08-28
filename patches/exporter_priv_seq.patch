@@ -1,5 +1,5 @@
 diff --git a/gear_sonic/scripts/run_data_exporter.py b/gear_sonic/scripts/run_data_exporter.py
-index 4737bcb..d31367d 100644
+index 4737bcb..5978f50 100644
 --- a/gear_sonic/scripts/run_data_exporter.py
 +++ b/gear_sonic/scripts/run_data_exporter.py
 @@ -23,6 +23,7 @@ from collections import deque
@@ -54,7 +54,7 @@ index 4737bcb..d31367d 100644
                  self.data_exporter.save_episode_as_discarded()
                  self._episode_state.reset_state()
                  self._initial_yaw = None
-@@ -523,6 +540,89 @@ class GrootDataCollector:
+@@ -523,6 +540,92 @@ class GrootDataCollector:
              if parts:
                  print(f"[Latency] {', '.join(parts)}")
  
@@ -79,9 +79,12 @@ index 4737bcb..d31367d 100644
 +            with open(_os.path.join(d, f"episode_{idx:06d}.json"), "w") as f:
 +                _json.dump({"episode_index": idx, "discarded": bool(discarded),
 +                            "n_rows": len(rows), "priv_seq": rows}, f)
-+            self._row_priv_seqs = []
 +        except Exception as e:  # noqa: BLE001 -- a sidecar must never cost an episode
 +            print(f"[priv-seq] sidecar write failed (episode unaffected): {e}")
++        finally:
++            # Clear even on failure: leftover rows would silently leak into
++            # the NEXT episode's sidecar and misalign it by a whole episode.
++            self._row_priv_seqs = []
 +
 +    def _add_object_poses(self, frame_data: dict) -> None:
 +        """teleop_free: pelvis-frame 6D poses (pos3 + rot6d) of task objects.
@@ -144,7 +147,7 @@ index 4737bcb..d31367d 100644
      def _add_images_to_frame_data(self, frame_data: dict) -> None:
          if self.latest_image_msg is None:
              return
-@@ -545,6 +645,7 @@ class GrootDataCollector:
+@@ -545,6 +648,7 @@ class GrootDataCollector:
          if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
              buffer_size = self.data_exporter.episode_buffer.get("size", 0)
              if buffer_size > 0:
@@ -152,7 +155,7 @@ index 4737bcb..d31367d 100644
                  self.data_exporter.save_episode()
                  self.sonic_timing_monitor.reset()
                  self._initial_yaw = None
-@@ -664,6 +765,8 @@ class GrootDataCollector:
+@@ -664,6 +768,8 @@ class GrootDataCollector:
          else:
              frame_data["action.motion_token"] = np.zeros(64, dtype=np.float64)
  
@@ -161,7 +164,7 @@ index 4737bcb..d31367d 100644
      def _add_sonic_pose_features(self, frame_data: dict) -> float | None:
          """Add teleop features based on current stream mode."""
          sonic_latency_ms = None
-@@ -690,7 +793,14 @@ class GrootDataCollector:
+@@ -690,7 +796,14 @@ class GrootDataCollector:
  
          planner_msg = self.latest_planner_msg
          use_planner = False
@@ -177,7 +180,7 @@ index 4737bcb..d31367d 100644
              receive_ts = planner_msg.get("receive_timestamp")
              if receive_ts is not None:
                  age_sec = time.time() - receive_ts
-@@ -833,6 +943,7 @@ class GrootDataCollector:
+@@ -833,6 +946,7 @@ class GrootDataCollector:
              self._print_and_say("saving episode done", blocking=False)
              buffer_size = self.data_exporter.episode_buffer.get("size", 0)
              if buffer_size > 0:
@@ -185,7 +188,7 @@ index 4737bcb..d31367d 100644
                  self.data_exporter.save_episode()
              self._print_and_say(
                  f"Recording complete: {self.data_exporter.meta.root}", say=False, blocking=True
-@@ -897,6 +1008,7 @@ class GrootDataCollector:
+@@ -897,6 +1011,7 @@ class GrootDataCollector:
              print("Data exporter terminated by user")
              buffer_size = self.data_exporter.episode_buffer.get("size", 0)
              if buffer_size > 0:

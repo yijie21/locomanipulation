@@ -5,7 +5,10 @@
 
 1. 早先的 pose 列支持(`_add_object_poses`、`TF_POSE_OBJECTS`、:5581 订阅)——
    与 `vla_action_space.patch` 中的 exporter hunks 有重叠,以本文件为准(更新)。
-2. 本次新增:**per-row priv_seq 旁路**。exporter 对 :5581 特权流做 CONFLATE 采样
+2. 早先的 stream_mode 门控放宽:planner_mode/height 的记录条件从 `==5` 改为
+   `in (3, 5)`(frozen-upper 模式下也记录 planner 帧)——属于此前采集工作的
+   working-tree 改动,被累积快照裹挟,在此显式声明。
+3. 本次新增:**per-row priv_seq 旁路**。exporter 对 :5581 特权流做 CONFLATE 采样
    且从不记录用了哪条消息——这是 pose↔parquet 对齐结构性不可行的根因
    (docs/pose_parquet_alignment.md,七种离线对齐全败)。现在每行记下所用消息的
    `seq`,在所有 save/discard 路径 flush 成

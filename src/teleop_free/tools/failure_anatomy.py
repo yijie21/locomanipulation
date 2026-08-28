@@ -32,6 +32,10 @@ import os
 import sys
 
 
+# The gym's own close criterion (vla_round commands close below this).
+GRIP_CLOSED = 0.005
+
+
 def q(xs, f):
     xs = sorted(xs)
     return xs[max(0, min(len(xs) - 1, int(f * len(xs))))]
@@ -67,7 +71,7 @@ def main():
     # Calibrate from this set's own successes at their close moment.
     close_z, close_po = [], []
     for r in succ:
-        rows = [x for x in r["trace"] if x.get("grip", 1.0) < 0.005]
+        rows = [x for x in r["trace"] if x.get("grip", 1.0) < GRIP_CLOSED]
         if rows:
             close_z.append(rows[0]["palm_z"])
             close_po.append(rows[0]["palm_obj"])
@@ -84,7 +88,7 @@ def main():
     # measured 3/100). Counted and listed, not reclassified: the online
     # judge must stay comparable with the recorded ladder.
     first_closed = [r for r in succ + fail
-                    if r["trace"][0].get("grip", 1.0) < 0.005]
+                    if r["trace"][0].get("grip", 1.0) < GRIP_CLOSED]
 
     never_up, up_no_fire, staged_no_fire, other = [], [], [], []
     for r in fail:
@@ -126,7 +130,7 @@ def main():
     if other:
         print(f"  non-reach           {len(other):3d}")
     if first_closed:
-        print(f"[anatomy] {len(first_closed)} rounds open with grip<0.005 at "
+        print(f"[anatomy] {len(first_closed)} rounds open with grip<GRIP_CLOSED at "
               f"frame 0 -- their commanded_close flag is untrustworthy")
 
     out = args.out or os.path.join(args.trace_dirs[0], "..", "anatomy.json")
