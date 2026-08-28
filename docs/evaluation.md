@@ -24,21 +24,81 @@ third_party/Isaac-GR00T/.venv/bin/python src/teleop_free/tools/eval_open_loop.py
     --wandb-run <run>          # val 曲线写回训练 run,同一根 x 轴
 ```
 
-四个指标,每个都配 persistence 基线(块首真值动作保持整块 —— 数据 30.6% 的帧
+全部指标都配 persistence 基线(块首真值动作保持整块 —— 数据 30.6% 的帧
 token 与前帧相同,不摆这条线任何 MSE 都读不懂):
 
-| 指标 | 为什么是它 |
-|---|---|
-| nMSE,token 与 gripper **分开** | nMSE = MSE/var = 1−R²,尺度无关;不分开的话决定成败的 1 维 gripper 被 64 维淹没 |
-| 吸附后命中率(逐维 + 整帧) | FSQ 空间每维实际只用 2–5 个格点,离散空间里命中率可读、MSE 不可读 |
-| **关节指令差(度)** | 头条数字。经 SONIC decoder 换算,有物理单位;脚本自测噪声底(数据 30 Hz vs decoder 50 Hz 历史,~1.1°),低于它的差异不作数 |
-| 闭合时刻误差(帧) | 抓取成败系于闭爪时机,任何 MSE 都看不见它 |
+| 指标 | 定义 | 体现的性能 |
+|---|---|---|
+| `nmse_token` | 对 snap(量化吸附)后的 64 维 token 预测算 nMSE = MSE/var(gt),逐维归一化后再平均 | token(身体动作)预测的整体准确度,1.0 = 不如预测均值;归一化消除了量纲问题 |
+| `nmse_token_unsnapped` | 同上但用 snap 前的原始连续预测 | 衡量量化吸附本身修正了多少误差 —— 对比 `nmse_token` 可看出模型输出偏离最近码字多远 |
+| `nmse_gripper` | 单独对 gripper 1 维算 nMSE | 抓取相关的关键维度单独评估,避免被 64 维 token 稀释(不分开的话决定成败的这 1 维会被 64 维淹没) |
+| `hit_rate_per_dim` | 预测(snap 后)token 索引与真值 token 索引相同的逐维命中率均值 | FSQ 空间每维实际只用 2–5 个格点,离散空间里命中率可读、MSE 不可读 |
+| `hit_rate_all64` | 要求同一帧 64 维**全部**命中的比例 | 更严格的整体正确率 —— 一帧动作是否被完整无误地复现 |
+| `gripper_mae` | 预测与真值 gripper 值的平均绝对误差 | gripper 连续值(开合程度)的平均绝对误差 |
+| `close_frame_gt` / `close_frame_pred` | 真值/预测 gripper 信号第一次穿过(真值的)5%–95% 分位数中点的帧号 | 夹爪开始闭合的时间点,两侧都用真值量程判定,避免预测用自己的中点"讨巧" |
+| `close_frame_err`(及 `close_frame_err_abs`) | 预测闭合帧号 − 真值闭合帧号;聚合时再取绝对值均值 | 抓取时机的提前/滞后帧数 —— 抓取成败系于闭爪时机,任何 MSE 都看不见它 |
+| **`deg_mean` / `deg_p95` / `deg_max`** | 把真值 token 和 snap 后的预测 token 分别喂给 SONIC decoder(观测固定),取关节指令差的均值/95 分位/最大值,单位为度 | **头条数字**。经 SONIC decoder 换算,有物理单位;可与"token 直接重放已有 0.2–0.9° 误差"对比 |
+| `degrees_noise_floor` | decoder 对真值 token 的重建输出,与实际记录的关节指令之间的误差均值(数据 30 Hz vs decoder 50 Hz 历史) | 误差的最低可信线:脚本自测噪声底(~1.1°),低于它的 `deg_mean` 差异不作数,只是解码重建噪声 |
+| persistence 基线(对以上每个指标都各算一份) | 块首真值动作原样冻结、复制到区间所有帧,作为"什么都没学"的参照 | 判断模型是否只学到了数据的强自相关(30.6% 帧 token 与前帧相同)而非真实动力学;不优于此基线即视为未学到东西 |
 
 跨 `execution_horizon ∈ {1,8,16,40}` 各报一遍 —— 误差随 horizon 的增长曲线
 就是"一个 chunk 敢信多少步"的直接证据(选 checkpoint 只跑 h16 即可,全 horizon
 留给选出的最优者,省 3 小时)。
 
-### bottle200 基线(checkpoint-10000,20 局 val)
+## GR00T Open-loop:`src/gr00t/eval/open_loop_eval.py`
+
+```bash
+bash scripts/gr00t_open_loop.sh \
+    --model-path outputs/train/<run>/checkpoint-N \
+    --dataset-path datasets/..._val \
+    --out-dir outputs/eval/<run>/checkpoint-N
+```
+
+跑的是 NVIDIA 自己的 `gr00t/eval/open_loop_eval.py`,不是上面这套自研 nMSE。
+只有两个原始(未归一化)标量指标,64 维 token + 1 维 gripper 一起求平均,不拆分、
+不归一化:
+
+| 指标 | 定义 | 体现的性能 |
+|---|---|---|
+| MSE(单轨迹) | `mean((gt_action - pred_action)²)`,对整条轨迹所有时间步、所有动作维度一起求均值 | 预测动作与真值的均方误差,对大误差更敏感,但未归一化——不同动作维度的量纲/方差差异被直接混在一起 |
+| MAE(单轨迹) | `mean(\|gt_action - pred_action\|)`,同样对所有维度求均值 | 预测动作与真值的平均绝对误差,比 MSE 更贴近"平均差多少"的直觉,对离群点不那么敏感 |
+| 平均 MSE(跨轨迹) | 每条轨迹的 MSE 再取算术平均 | 模型在整个评测集上的整体预测精度(MSE 口径) |
+| 平均 MAE(跨轨迹) | 每条轨迹的 MAE 再取算术平均 | 模型在整个评测集上的整体预测精度(MAE 口径) |
+| 轨迹曲线图(非标量) | 每个动作维度画 state joints / gt action / pred action 三条曲线,每次重规划处标红点 | 定性排查预测是否跟踪真值、是否在重规划点附近漂移,不产出可比较的数字 |
+
+每张图对应**一条轨迹**,标题写明 traj_id、state/action modality key
+(`plot_trajectory_results`,`open_loop_eval.py:49-128`);图里纵向堆叠
+`action_dim` 个 subplot,每个 subplot 对应动作向量拉平后的**一个标量维度**
+(标题只有 `Action {idx}` 这个数字索引,不带语义名字)。G1 SONIC 是 64 维
+token + 1 维 gripper,一条轨迹的图就有 65 个纵向子图。
+
+每个 subplot 的横纵坐标与曲线:
+
+| 元素 | 定义 | 说明 |
+|---|---|---|
+| 横轴 | 帧序号,`0 ~ actual_steps-1` | 30 Hz 重采样,图上不标秒数 |
+| 纵轴 | 该动作维度的原始数值 | 未归一化、未换算单位;token 维是量化空间的原始浮点值,gripper 维是原始开合数值 |
+| `gt action` | 真值动作该维度随时间的取值 | 数据集里的真实值 |
+| `pred action` | 预测动作该维度随时间的取值 | 由多段 `execution_horizon` 长度的 chunk 拼接而成 |
+| `state joints` | 状态关节该维度随时间的取值 | 只在 state 与 action 维度形状**完全相等**时才画(动作直接是关节指令的情形);SONIC token 空间维度不对齐,这条曲线不出现 |
+| 红点 `inference point` | 每隔 `execution_horizon` 步、真正重新调用一次策略的时刻 | `open_loop_eval.py:171` 的主循环只在这些点上取真实观测重新推理;两个红点之间的预测曲线来自同一次推理的 chunk,原样开环回放,不看任何新观测 |
+
+看图时,红点间预测线相对真值线的漂移幅度,就是"一个 chunk 内误差怎么累积"的
+直接证据——在红点处被拉回还是跨红点持续发散,决定这个 `execution_horizon`
+选大了还是选合适。同维度内的曲线才能比较,不同 subplot 之间数值大小没有意义
+(每维物理含义、量程都不同)。
+
+官方脚本对每条轨迹的图用**同一个**文件路径,多条轨迹会互相覆盖 —— 所以这个脚本
+不透传 `--save-plot-path`,让官方脚本走它自带的按 `traj_id` 命名的默认路径,
+跑完后再统一挪到 `<out-dir>/plots/`。产出:每条轨迹一张对比图、
+`<out-dir>/metrics.json`(逐轨迹 + 平均 MSE/MAE)、`<out-dir>/run.log`。
+
+参数是 named flag(`--model-path` / `--dataset-path` / `--out-dir`,可选
+`--horizon` / `--embodiment-tag`),顺序无关;`--model-path` 和 `--dataset-path`
+若传反,脚本会在加载模型前就报错(用 `meta/info.json` 是否存在做判据),不用等
+模型加载完才发现传错。
+
+<!-- ### bottle200 基线(checkpoint-10000,20 局 val)
 
 | horizon | nMSE token(persistence) | 关节角差(persist.) | 闭合误差(persist.) |
 |---|---|---|---|
@@ -46,7 +106,7 @@ token 与前帧相同,不摆这条线任何 MSE 都读不懂):
 | 16 | 0.142(0.323) | 0.93° | ~3 帧 |
 | 40 | 0.176(0.895) | 1.30°(4.21°) | 4.9 帧(23.4) |
 
-误差随 horizon 增长很缓,整块 1.33 s 可信;关节角差已到噪声底(1.16°)。
+误差随 horizon 增长很缓,整块 1.33 s 可信;关节角差已到噪声底(1.16°)。 -->
 
 ## Closed-loop:`src/teleop_free/tools/eval_closed_loop.py`
 
