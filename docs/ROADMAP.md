@@ -416,13 +416,13 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 4. [ ] **干净全任务基线重测**:round4 模型、单实例、90s、seed 6000、100 轮——
    修复后的这场才是可发表的绝对值;之后把梯子的绝对数字全部改口为
    "混合任务",干净基线单列。README / evaluation.md / 记忆文件同步。
-5. [ ] **anatomy 补"首帧即闭合"计数**(commanded_close 首帧偏差,R4 3/100),
+5. [x] **anatomy 补"首帧即闭合"计数**(commanded_close 首帧偏差,R4 3/100),
    不动 vla_round 在线判据。
-6. [ ] **特权消息 seq 序号**(下一轮采集前的硬前提):publisher → PoseSidecar →
+6. [x] **特权消息 seq 序号**(2026-08-28 落地,冒烟 2 集验证:sidecar/priv_seq/parquet 三方行数逐集一致;实测 parquet 行以 50Hz **墙钟**滴答,但 38-40% 是重复内容行(CONFLATE 复用),sim 仅以 ~0.65×墙钟推进——"50Hz 数据集"实际含 ~33Hz 的独立 sim 帧;cadence 换算待按此重标)(下一轮采集前的硬前提):publisher → PoseSidecar →
    exporter episode 级 sidecar 记 per-row priv_seq;落地后量 parquet 真实行速率,
    重标定 cadence 的帧数换算(4.6 s 停顿、40 帧 chunk 覆盖)。
-7. [ ] round driver 的 run_meta 补 parallel:false 字段(seq_ab 已带)。
-8. [ ] **恢复原 tier-1 队列**(全部排在 3/4 之后,让新数据与新评测分布对齐):
+7. [x] parallel 字段:eval 结果记 parallel(EVAL_PARALLEL 环境变量,seq_ab 双臂导出)。
+8. [-] ~~恢复原 tier-1 队列~~(用户 2026-08-28 决定:重新采集与重训不做)(全部排在 3/4 之后,让新数据与新评测分布对齐):
    20000 步训练(round4 开环曲线 10000 步仍在降)→ replan 0.2 s A/B(seq_ab
    粗筛 + 单实例确认)→ mid-reach 靶向 DAgger 100-150 集(采集时转身修复
    5500759 与 stand-start 修复已生效)。
