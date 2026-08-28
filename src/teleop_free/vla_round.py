@@ -63,12 +63,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "too
 
 from sonic_token import expand_hands, snap  # noqa: E402
 
-# NVIDIA's own latency compensation, used verbatim so this tracks their
-# semantics rather than a lookalike of ours (docs/official_parity_audit.md A2).
-from gear_sonic.utils.inference.vla_utils import (  # noqa: E402
-    calculate_latency_compensated_index as latency_index,
-)
-
 TOKEN_DIM = 64
 LIFT_M = 0.06            # the gym's own success threshold
 NEAR_M = 0.60            # "got to the table" for failure classification
@@ -148,11 +142,7 @@ def _ensemble(buf, now, rate):
     """
     picks, ws = [], []
     for age, (tok, grip, t0) in enumerate(reversed(buf)):     # age 0 = newest
-        # round, not truncate (same half-frame bias the main path had) -- but
-        # NOT the official latency_index here: it CLAMPS to the last frame,
-        # which would silently drag exhausted chunks back into the blend
-        # instead of dropping them. Dropping is the ensemble's semantics.
-        i = int(round((now - t0) * rate))
+        i = int((now - t0) * rate)
         if i < 0 or i >= len(tok):
             continue
         picks.append((tok[i], grip[i]))
@@ -695,17 +685,13 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                                        float(latest["chunk"][1][-1]))
                     tok_j, grip_j = blended
                 else:
-                    # adopt a fresh chunk at a latency-compensated index,
-                    # using NVIDIA's own function. Ours was semantically
-                    # identical except it TRUNCATED where the official rounds
-                    # -- a systematic half-frame (~17 ms at 30 Hz) lag, always
-                    # in the same direction. docs/official_parity_audit.md A2.
+                    # adopt a fresh chunk at a latency-compensated index
                     with lock:
                         if latest["t0"] is not None and latest["t0"] != chunk_t0:
                             tok, grip = latest["chunk"]
                             chunk_t0 = latest["t0"]
-                            idx = latency_index(time.time() - chunk_t0,
-                                                RATE, len(tok))
+                            idx = min(int((time.time() - chunk_t0) * RATE),
+                                      len(tok) - 1)
                     j = min(idx, len(tok) - 1)
                     tok_j, grip_j = tok[j], float(grip[j])
                     idx = min(idx + 1, len(tok) - 1)

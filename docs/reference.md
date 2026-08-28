@@ -261,3 +261,43 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gy
 但 tarball 是很久以前打的,`scene_lib.py` 一改两者就分家 —— 那是个潜伏的坑,不是
 不存在的坑。真正的判据是重建到底跑没跑,所以脚本现在两件事都做:重建成功时回显
 preset / target / target_pool / 桌上物体,跳过重建时响亮报错并以非零退出。
+
+## 共享机器上的 CPU 抢占(2026-08-28,与两个同容器 session 联合定位)
+
+这台机器 32 核,uid 1002 下有 ~90 个进程,**其他 session 与我们是同一个用户**。
+闭环评测对时序极其敏感:CPU 饥饿会静默改变结果(实测同一份代码 ~38% → ~17%),
+比崩溃危险,因为它照样产出一个看起来正常的数字。两次事故都是别的 session 的
+**playwright-mcp 拉起的 headless chrome**,分别吃掉 9.3 核和 8.7 核、持续数小时到一天。
+
+**根因,反直觉的那一层**(由 hand-rl session 逐进程量出):headless chrome **没有 GPU**,
+WebGL/Canvas 因此落到 **SwiftShader 软件光栅化**,而它是**多线程**的 —— 所以不是烧
+1 个核,是能吃满 8 个。叠加页面里无节制的 `requestAnimationFrame` + 自动播放
+(标签页开着就永远满速重绘),就是我们看到的量级。
+
+推论:**"headless" 不等于 "轻量"**。对纯 DOM 页面成立,对 WebGL 页面恰恰相反 ——
+没有 GPU 反而把渲染压力全丢给 CPU。而"越需要用浏览器验收的东西(3D/WebGL),
+代价越高",因为纯 DOM 看快照就够、3D 必须真渲染。
+
+**一眼分类的判据**(按 `--type` 看,不是看进程数):
+
+```bash
+for p in $(pgrep -f "/opt/google/chrome/chrome"); do
+  tr '\0' ' ' < /proc/$p/cmdline | grep -o -- "--type=[a-z-]*"
+done | sort | uniq -c
+```
+
+高占用集中在 `--type=gpu-process` → SwiftShader 软光栅,页面有持续重绘的
+WebGL/Canvas;集中在 `--type=renderer` → JS/DOM 的问题。**两类修法不同。**
+
+**这台机器上已确立的规矩**(两个 session 独立得出同一结论):
+
+- **只处置烧核的 chrome,不碰常驻的 MCP server**。实测有 10 个
+  `node playwright-mcp --headless` 常驻(最老 2 天 4 小时,合计 612 MB,CPU 全 0%)
+  —— 从外面分不清"泄漏"与"待命",误杀会让别人的工具凭空失效,而它们本身不构成压力。
+  危害在 chrome,不在 server。
+- 处置顺序:**先 `renice +19`,只有降权后仍抢不过来才 kill**(同 uid 可行;
+  `cap_sys_nice` 被剥夺,我们**无法**提高自身优先级,cgroup 只读)。降权最坏让对方
+  慢几秒,杀掉可能让对方白跑一次。
+- **动手前必须重读进程归属**。归属会在决策窗口内变化 —— 本次就差点拿几分钟前的
+  快照去杀一棵已经易主的进程树,是对方 session 提醒才没误伤。这是本表的老主题
+  (检查器报告的必须是世界**当前**的状态)在多 session 环境下的新形态。
