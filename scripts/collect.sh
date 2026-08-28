@@ -44,7 +44,10 @@ SEED0="${3:-1}"
 SPAWN_ARGS="${SPAWN_ARGS:-}"
 TARGETS="${TARGETS:-pool}"
 JITTER="${JITTER:-0.10}"
-OUT="$LOCOMANI_OUTPUTS/logs/collect"
+# Overridable so a run can keep its manifests in their own directory: the
+# converter pairs sessions with manifests POSITIONALLY, so a shared
+# directory holding an older run's manifests silently shifts that join.
+OUT="${OUT:-$LOCOMANI_OUTPUTS/logs/collect}"
 mkdir -p "$OUT"
 
 echo "collect: $BATCHES batches x $ROUNDS rounds, scene seeds from $SEED0"
