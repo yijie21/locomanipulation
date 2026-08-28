@@ -589,12 +589,96 @@ jerk 7.4),这是**重尾**的签名,不是普遍粗糙。三件具体的事:
 
 - **不该做**:为"普遍更丝滑"重采 200 局。中位数已经比人类慢,亚度级的打磨还低于
   label 的量化死区(见 [dataset.md](dataset.md#action78-维) 的死区表:0.5° 改动动 0–1 维)。
-- **该做(便宜)**:给 `upper_body_position[17]` 的接管加 ramp,消掉那个 30° 阶跃。
+- **该做(便宜)**:给 `upper_body_position[17]` 的接管加 ramp。**已做**,见下一节 ——
+  实测那个"30°"是 0.33 s 窗口口径,真正的单帧跳变是 **123°**。
 - **该做(便宜,但要重转+重训)**:换掉最近邻重采样。`DST_FPS = 25` 正好整除 50,
   抽帧均匀、图像与状态仍然逐帧对齐,伪影直接消失;代价是每局少 17% 的帧。
 - **要权衡**:`_servo_continuous` 里由特权量触发的离散事件(接触闪避退 5 cm、6 s 卡死
   解锁)同时是不丝滑和不可模仿的,但当初正是它们让"悬停不闭合"消失。去掉会掉脚本
   成功率,得先跑 12 局看崩没崩。
+
+## 上身接管:两个台阶,和它们的修法(2026-08-28)
+
+### 机制
+
+`g1_deploy_onnx_ref.cpp:781`:planner 消息里**只要带** `upper_body_position` 这个 key
+(`zmq_manager.hpp:259` 只看 key 在不在),deploy 就把参考动作的 17 个上身关节逐字
+替换掉 —— 而且是 10 个 lookahead 帧**全部**替换成同一组当前值。encoder 读的是参考,
+不是实测,所以接管那一刻参考里的任何跳变都直接进 token。
+
+原来的接管是这样写的:
+
+```python
+q_free = upper_body_from_mj(p.obs()["joints"])   # 实测关节
+p.cmd.set_upper_body(q_free)
+p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+```
+
+两个缺陷,都在**参考**里而不在动作里:
+
+1. **锚错了量。** 被替换掉的是 k-planner 自己的手臂参考,不是实测姿态,两者相差整个
+   frozen decoder 的跟踪误差。实测(15 局):17 个关节平均差 **15.5°**,最大差
+   **61–65°,永远落在 wrist pitch 上**(远端轻关节,全身 decoder 跟得最松)。
+2. **ramp 的参数是"剩余距离",不是速率。** `--spawn-edge 0.7` 下 leg 1 几乎每局都被
+   跳过,接近一开始就已经在 `RAISE_LEAD` 以内,smoothstep 第一 tick 就取到 u=0.3–0.6,
+   于是三分之一的抬手在 20 ms 里发完。
+
+### 修法:`upper_ref.py`
+
+- **`RefTap`** 订阅 g1_debug 的 `body_q_target`(key 22,29 维,MuJoCo 序)。它就是被
+  替换的那个量:`output_interface.hpp:192` 直接读 `current_motion_->JointPositions`,
+  **不加 default-angle 偏移**(和 `body_q` 不同,已用腿部逐关节比对确认:腿的
+  `|target - body_q|` 最大 0.12 rad,而减去/加上 default 都是 0.65–0.79)。而且替换只
+  写进 observation buffer、**从不写回 `current_motion_`**,所以覆盖期间它照样报
+  k-planner 的手臂 —— 释放方向的 ramp 也因此可做。
+- **`UpperRamp`** 做两件 `set_upper_body` 本身做不到的事:每 tick 最多走
+  `MAX_STEP`(默认 2.0°,`GYM_UPPER_SLEW_DEG` 可调;人类 teleop 任务臂 p99 是
+  1.07°/tick),以及**每 tick 显式发 `upper_body_velocity`**。
+- 抬手结束时 `settle()` 显式发零速度,不靠"不发"。
+
+### 实测(同一套 spawn 分布,各 14 局)
+
+接管那一刻,任务臂:
+
+| | 旧(fast200,40 次接管) | 新(12 次) |
+|---|---|---|
+| **单帧**指令台阶 `action.wbc` | 中位 **123.5°**(max 219.6) | 中位 **14.1°**(max 23.1) |
+| **单帧**实测台阶 `observation.state` | 中位 **35.8°**(max 49.7) | 中位 **6.0°**(max 8.0) |
+| 0.33 s 窗口(`--events` 的口径) | 29.6°,p90 **61.5** | 26.8°,p90 **28.1** |
+
+窗口口径几乎没动是对的:抬手总行程本来就有 ~27°,ramp 只是把它摊开而不是取消。
+p90 从 61.5 掉到 28.1 说明尾巴没了 —— 现在每局都以同一个速率上限走完。
+
+整局的运动质量(比人类 teleop 的倍数,越接近 1 越好):
+
+| 指标 | 旧 | 新 |
+|---|---|---|
+| `st_r_arm_jerk_rms` | 6.74 | **4.34** |
+| `st_r_arm_vel_rms` | 1.96 | **1.33** |
+| `st_r_arm_hf_frac` | 4.31 | **3.15** |
+| `st_waist_jerk_rms` | 4.14 | **2.38** |
+| `wrist_sparc` | 3.53 | **2.42** |
+| `tok_change_frac` | 1.80 | **1.57** |
+| `still_frac` | 2.65 | 2.57(没变 —— ramp 没有换来"站着不动") |
+| `st_r_arm_10hz_ratio` | 2.41 | 4.33 ← **变差** |
+
+最后一行不是新的能量:绝对高频占比是**下降**的(0.343 → 0.251),10 Hz 那条线是
+重采样伪影、幅度没变,底噪降下去之后它相对更突出。它加强而不是削弱了
+[ROADMAP](ROADMAP.md) 里 `DST_FPS = 25` 那一条。
+
+脚本成功率 12/12,`[gym] arm rise finished at the table` 一次都没打印 —— 抬手全部在
+走路途中完成,没有换来任何一帧站着不动。
+
+### 还剩下的
+
+- **单帧 14° 不是 ramp 造成的**(2°/tick × 30 fps 的一帧只有 3.3°)。剩下的来自
+  lookahead 被拍平:接管前那 10 帧是 k-planner 未来 1 s 的摆臂,接管后全部变成同一个
+  当前值。`upper_body_position` 只有一组 17 个数,给不了未来,所以这一段**结构上无法
+  用锚点消掉**。
+- **释放方向**(`upper_body = None`)现在没加 ramp。录制窗口内没有释放 —— 录制从
+  `key("c")` 开始、到 run_round 返回后结束,而唯一的释放在下一局开头 —— 所以先不动。
+- **`carry_pose` / `stand_up`** 在 frozen 模式下一次性写 `READY_UPPER`,是同一类台阶,
+  发生在抱稳那一段(**在**录制窗口内)。还没量,量了再说。
 
 ## 随机化:五个轴
 

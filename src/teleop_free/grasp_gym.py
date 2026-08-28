@@ -41,6 +41,7 @@ import adaptive_grasp  # noqa: E402
 import grasping  # noqa: E402
 import reach_map  # noqa: E402
 import stream_reach  # noqa: E402
+import upper_ref  # noqa: E402
 from collect_episode import (  # noqa: E402
     PALM_DRIFT_MAX,
     STAND_SETTLE,
@@ -51,6 +52,7 @@ from primitives import (  # noqa: E402
     READY_ARM,
     READY_UPPER,
     STANDING_PELVIS_Z,
+    UPPER_BODY_NAMES,
     LocomotionMode,
     Primitives,
     StreamMode,
@@ -73,6 +75,11 @@ EDGE_MIN = 0.17            # pelvis-to-edge HARD floor, enforced at arrival.
 # sampler needs it too: the walk is two legs, spawn -> lead point -> stand,
 # and both have to clear the furniture.
 RAISE_LEAD = 1.00
+# Ceiling on the arm rise finishing AT the table. The slew (2 deg/tick,
+# upper_ref.MAX_STEP) needs ~0.6 s for the largest residual a skipped leg 1
+# can leave; anything past that is recorded standing, so it is bounded and
+# logged rather than waited out.
+RAISE_FINISH_MAX_S = 1.50
 EDGE_MAX = 0.32            # sampling ring upper bound: core-aim stands sit
                            # at rel depth 0.18-0.36 (the sweet slice), so
                            # they clear the edge by more than the old 0.20
@@ -743,6 +750,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     p.cmd.upper_body = None
     p.cmd.start_control()
     p._gym_started = True
+    # Warm the reference tap here, not at the takeover: the deploy publishes
+    # g1_debug only once control is running (nothing at all arrives before
+    # start_control), so a tap started at the moment it is first read is
+    # always cold and would silently fall back to the measured pose.
+    if not upper_ref.shared().wait(3.0):
+        p.log("[gym] WARNING: no body_q_target 3 s after start_control -- "
+              "the upper-body takeover will fall back to the measured pose")
     # Every IDLE frame carries a facing, and the default is the ABSOLUTE
     # world +x — the settle was quietly rotating the freshly-teleported
     # robot 50-70 deg off its sampled yaw (pre-walk yaw_err telemetry).
@@ -943,11 +957,26 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # momentum, closed 50 Hz on the LIVE can depth — stop the tick it
     # enters the plan band.
     # The reach begins ON THE WAY IN, not after arriving. Leg 1 walks with
-    # the arms swinging; leg 2 hands the 17 upper-body joints over -- seeded
-    # from the arm's CURRENT angles, so the takeover has no step in it (the
-    # deploy substitutes them into the reference verbatim, with no ramp of
-    # its own, g1_deploy_onnx_ref.cpp:781) -- and drives them to READY by
-    # distance remaining, so the arm is up exactly when the body arrives.
+    # the arms swinging; leg 2 hands the 17 upper-body joints over and drives
+    # them to READY by distance remaining, so the arm is up exactly when the
+    # body arrives.
+    #
+    # The handover used to be seeded from the arm's CURRENT MEASURED angles
+    # and was believed to have no step in it. It has two, both of them in the
+    # REFERENCE the encoder observes rather than in the motion:
+    #
+    #  1. the measured pose is not the quantity the deploy replaces. It
+    #     substitutes the 17 values into `current_motion_`'s joints verbatim
+    #     (g1_deploy_onnx_ref.cpp:781), so what is being displaced is the
+    #     k-planner's own arm reference -- and the two differ by the whole
+    #     tracking error of the frozen decoder. Seed from `body_q_target`,
+    #     which IS that quantity (upper_ref.RefTap).
+    #  2. the rise is parameterised by DISTANCE REMAINING, which is not a
+    #     rate. A round that skips leg 1 starts its approach already inside
+    #     RAISE_LEAD, evaluates the smoothstep at u=0.3-0.6 on the first tick
+    #     and commands a third of the whole rise in 20 ms. UpperRamp caps the
+    #     per-tick change and sends the matching `upper_body_velocity`, which
+    #     nothing on this path used to send at all.
     lead_tgt = np.asarray(spawn_xy) - (0.30 + RAISE_LEAD) * np.array(fv[:2])
     # ALONG-TRACK, not distance. The lead point is fixed 1.30 m behind the
     # stand while the spawn is now sampled anywhere from 1.0 to 3.0 m back,
@@ -972,14 +1001,28 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             return False, "[stand] fell during the walk-up"
     else:
         p.log(f"[gym] leg 1 skipped (lead point {along:+.2f} m along track)")
-    q_free = upper_body_from_mj(p.obs()["joints"])
-    p.cmd.set_upper_body(q_free)
+    q_meas = upper_body_from_mj(p.obs()["joints"])
+    q_free = upper_ref.shared().upper17()
+    if q_free is None:                    # stale, not merely un-started
+        # A cold tap must LOOK cold -- seeding from the measurement silently
+        # is exactly the bug this replaced.
+        q_free = q_meas
+        p.log("[gym] upper takeover: no body_q_target (tap cold) -- seeded "
+              "from the measured pose, the reference step is back")
+    else:
+        gap = np.abs(q_free - q_meas)
+        worst = int(np.argmax(gap))
+        p.log(f"[gym] upper takeover: reference-vs-measured "
+              f"{np.degrees(gap[worst]):.1f} deg on "
+              f"{UPPER_BODY_NAMES[worst]} (mean {np.degrees(gap.mean()):.1f})")
+    arm_ramp = upper_ref.UpperRamp(p.cmd, q_free)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
 
     def raise_arm(_s, dist):
         u = float(np.clip(1.0 - (dist - 0.06) / RAISE_LEAD, 0.0, 1.0))
         sm = 3 * u * u - 2 * u ** 3
-        p.cmd.set_upper_body(q_free + sm * (READY_UPPER - q_free))
+
+        return arm_ramp.push(q_free + sm * (READY_UPPER - q_free))
 
     # ONE monotone approach, stopped by a measurement instead of a plan.
     #
@@ -1081,22 +1124,24 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                else APPR_COARSE))
             time.sleep(0.02)
         if ramp:
-            # Finish whatever is left of the arm ramp smoothly: the stop can
-            # fire before the ramp completes, and the deploy substitutes the
-            # 17 joints verbatim, so a snap to READY would be a step.
-            # SKIP when the ramp already finished during the walk (short
-            # spawns reach READY well before arrival): walking the ramp's 40
-            # frames from READY to READY was 0.8 s of recorded standing.
-            q_now = upper_body_from_mj(p.obs()["joints"])
-            if float(np.max(np.abs(READY_UPPER - q_now))) < 0.06:
-                p.cmd.set_upper_body(READY_UPPER)
-            else:
-              for k in range(1, 41):
-                  u = k / 40.0
-                  p.cmd.set_upper_body(q_now + (3 * u * u - 2 * u ** 3)
-                                       * (READY_UPPER - q_now))
-                  p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
-                  time.sleep(0.02)
+            # Finish whatever is left of the rise: the stop can fire before
+            # the slew reaches READY, and a snap there would be a step in the
+            # reference. The origin is the RAMP's own commanded state, not the
+            # measured pose -- re-anchoring on the measurement here (which is
+            # what this used to do) put a step of the whole tracking error
+            # back in, every time it ran. Costs nothing when the rise already
+            # finished during the walk: the first push returns converged and
+            # no frame is sent, so no standing is recorded.
+            t0 = time.time()
+            while time.time() - t0 < RAISE_FINISH_MAX_S:
+                if arm_ramp.push(READY_UPPER) < 1e-3:
+                    break
+                p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
+                time.sleep(0.02)
+            arm_ramp.settle()
+            if time.time() - t0 > 0.10:
+                p.log(f"[gym] arm rise finished at the table: "
+                      f"{time.time() - t0:.2f} s of standing")
         # 0.2 s, not 1.0. The full second waited out momentum creep so a
         # STATIC aim would be taken from a settled base -- but the grasp that
         # follows is a 50 Hz servo that re-aims on the measured object pose

@@ -402,6 +402,14 @@ def upper_body_17(left7, right7, waist=(0.0, 0.0, 0.0)) -> np.ndarray:
     return np.array(v, dtype=np.float32)
 
 
+# Names for that order, so a diagnostic can say WHICH joint it means.
+UPPER_BODY_NAMES = (["waist_y", "waist_r", "waist_p"]
+                    + [f"{side}_{j}"
+                       for j in ("sh_p", "sh_r", "sh_y", "elbow",
+                                 "wr_r", "wr_p", "wr_y")
+                       for side in ("L", "R")])
+
+
 def upper_body_from_mj(q29) -> np.ndarray:
     """Snapshot a MuJoCo-ordered 29-joint state into the 17-value target."""
     q = np.asarray(q29, dtype=np.float32)

@@ -420,8 +420,13 @@ class PlannerArm(StreamedArm):
         self._face = self.p._facing(s)
         self.p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
         self.p.cmd.set_upper_body(upper_body_from_mj(self.q))
-        self.p.cmd.set_upper_body_vel(
-            np.zeros(17, dtype=np.float32) if self.send_vel else None)
+        # Zeros, not None, even when send_vel is off. The deploy substitutes
+        # the LAST upper_body_velocity it received for as long as position
+        # data keeps arriving (input_interface.hpp:381-390 has no staleness
+        # cutoff, g1_deploy_onnx_ref.cpp:2985 drops the validity flag), so
+        # omitting the key leaves whatever the approach ramp last sent
+        # standing in the reference.
+        self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
         self.next_t = time.time()
         self.hold(0.6)
 
@@ -432,7 +437,10 @@ class PlannerArm(StreamedArm):
             self.stand()
         s = self.p.obs()
         self.p.cmd.set_upper_body(upper_body_from_mj(s["joints"]))
-        self.p.cmd.set_upper_body_vel(None)
+        # Zeros, not None -- see start(). Handing back with None left the
+        # servo's last non-zero velocity in the reference for the whole
+        # carry/stand tail of the episode, with the arm standing still.
+        self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
 
     def _push(self, q_mj29) -> None:
         from primitives import upper_body_from_mj
