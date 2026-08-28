@@ -86,7 +86,10 @@ def main():
     # A same-seed pair of arms shares almost every appearance (only a round
     # still in flight on one side is missing). A different seed shares ~none.
     floor = min(len(ma), len(mb))
-    if floor and n < 0.9 * floor:
+    if floor == 0:
+        sys.exit("NOT PAIRED: at least one manifest is empty -- nothing to "
+                 "test. Refusing rather than printing p=1.0 over zero pairs.")
+    if n < 0.9 * floor:
         sys.exit(f"NOT PAIRED: only {n} of {floor} appearances are shared "
                  f"between the arms -- these runs were not drawn from the "
                  f"same seed/sequence. Refusing to test.")

@@ -322,7 +322,8 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
     """
     counter = {"n": 0}
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
+                  replace=None, spawn_xy=None):
         from primitives import LocomotionMode
 
         obs_src = ObsBuilder(task)
@@ -342,16 +343,31 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # across it -- streamed mode over an empty buffer stops control
         # (g1_deploy_onnx_ref.cpp:618), and the first v4 frame is also what
         # flips is_using_encoder_ off. Same order diag_token_replay validated.
+        if replace is not None:
+            replace()   # see the async client: physical spawn restore
         obs = obs_src.build()
         tok0, grip0 = link.get_chunk(obs)
         l0, r0 = expand_hands(grip0[0])
+
+        def _mark(tag):   # see the async client's comment: prelude forensics
+            try:
+                sm = p.obs()
+                p.log(f"[vla] prelude {tag}: pelvis "
+                      f"{np.round(p.pelvis_xy(sm), 3)} "
+                      f"grip0 {float(grip0[0]):+.4f}")
+            except Exception:
+                pass
+
+        _mark("chunk-ready")
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("primed")
         p.cmd.enter_streamed()
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("streamed")
 
         t_start = time.time()
         s_ts = p.obs()
@@ -364,6 +380,18 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             entry_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s0)],
             tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
             prelude_s=round(t_start - t_entry, 2))
+        if spawn_xy is not None:
+            # The fix's acceptance criterion, IN the data: pelvis-to-spawn
+            # distance at the moment measurement starts. docs promise
+            # "within 0.1 m of the spawn"; record it every round and say so
+            # loudly when it does not hold, so a regression of the
+            # re-teleport can never hide behind a proxy metric again.
+            off0 = float(np.linalg.norm(
+                np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
+            prelude["tstart_spawn_off"] = round(off0, 4)
+            if off0 > 0.12:
+                p.log(f"[vla] WARNING tstart {off0:.2f} m off the spawn "
+                      f"(acceptance is 0.1) -- stand-start drift is back?")
         frame_index = 0
         lifted_at = None
         try:
@@ -475,7 +503,8 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     counter = {"n": 0}
     RATE = 30.0
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
+                  replace=None, spawn_xy=None):
         from primitives import LocomotionMode
 
         obs_src = ObsBuilder(task)
@@ -536,16 +565,64 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             obs_src.close()
             return False, "[vla] first inference never returned"
 
+        if replace is not None:
+            # Re-teleport to the spawn now that the slow prelude work
+            # (stream connect + first inference) is done -- the gait limit
+            # cycle walked drift-prone configs 0.2-0.35 m during exactly
+            # this window. Then wait for a chunk computed AFTER the
+            # teleport: priming from a pre-teleport observation would
+            # execute a stale intent.
+            t_rep = time.time()
+            replace()
+            fresh = False
+            while time.time() - t_rep < 10:
+                with lock:
+                    fresh = (latest["t0"] is not None
+                             and latest["t0"] > t_rep)
+                if fresh:
+                    break
+                time.sleep(0.05)
+            if not fresh:
+                # LOUD abort, not a silent fallback: priming from the
+                # pre-teleport chunk would execute a stale intent -- the
+                # exact failure the re-teleport exists to prevent. 10 s is
+                # 25 inference intervals; missing all of them means the
+                # worker or the policy server is gone, not a slow round.
+                stop.set()
+                obs_src.close()
+                return False, ("[vla] replace: no post-teleport chunk within "
+                               "10 s -- policy worker stalled; round aborted")
+
         with lock:
             tok0, grip0 = latest["chunk"]
         l0, r0 = expand_hands(grip0[0])
+
+        # Prelude segmentation marks. The stand-start gap (~0.35 m of
+        # table-ward motion before t_start) has two candidates: (a) a creep
+        # smeared over the whole prelude, (b) the 1.2 s priming below
+        # executing the held first token (the pre-trace jaw close/open seen
+        # in every eval video says priming DOES execute poses). One pelvis
+        # fix per segment decides it.
+        def _mark(tag):
+            try:
+                sm = p.obs()
+                p.log(f"[vla] prelude {tag}: pelvis "
+                      f"{np.round(p.pelvis_xy(sm), 3)} "
+                      f"grip0 {float(grip0[0]):+.4f}")
+            except Exception as e:  # a missing mark must LOOK missing:
+                p.log(f"[vla] prelude {tag}: MARK FAILED ({e}) -- do not "
+                      f"read this segment as drift-free")
+
+        _mark("chunk-ready")
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("primed")
         p.cmd.enter_streamed()
         for _ in range(30):
             p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
             time.sleep(0.02)
+        _mark("streamed")
 
         t_start = time.time()
         s_ts = p.obs()
@@ -555,6 +632,18 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             entry_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s0)],
             tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
             prelude_s=round(t_start - t_entry, 2))
+        if spawn_xy is not None:
+            # The fix's acceptance criterion, IN the data: pelvis-to-spawn
+            # distance at the moment measurement starts. docs promise
+            # "within 0.1 m of the spawn"; record it every round and say so
+            # loudly when it does not hold, so a regression of the
+            # re-teleport can never hide behind a proxy metric again.
+            off0 = float(np.linalg.norm(
+                np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
+            prelude["tstart_spawn_off"] = round(off0, 4)
+            if off0 > 0.12:
+                p.log(f"[vla] WARNING tstart {off0:.2f} m off the spawn "
+                      f"(acceptance is 0.1) -- stand-start drift is back?")
         frame_index = 0
         lifted_at = None
         chunk_t0, idx = None, 0

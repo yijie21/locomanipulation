@@ -8,9 +8,9 @@ echo "== $(date +%H:%M:%S) =="
 # round-4 driver stage
 R4LOG=outputs/logs/round4.log
 SEQ=/workspace/tmp/ens90.log
-BLK=/workspace/tmp/blocking90.log
+BLK=/workspace/tmp/blocking90_eval.log
 [ -f "$SEQ" ] && grep -E "^===== " "$SEQ" | tail -1 | sed "s/^/  ens90: /"
-[ -f "$BLK" ] && grep -E "^===== " "$BLK" | tail -1 | sed "s/^/  blocking90: /"
+[ -f "$BLK" ] && grep -E "closed-loop\] [0-9]+ rounds" "$BLK" | tail -1 | sed "s/^/  blocking90: /"
 [ -f "$R4LOG" ] && grep "^===========" "$R4LOG" | tail -1 | sed 's/^=*/  stage:/;s/=*$//'
 
 # closed-loop runs, live round count from their manifests

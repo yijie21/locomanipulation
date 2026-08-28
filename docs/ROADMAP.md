@@ -401,3 +401,37 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
   对齐全部失败(docs/pose_parquet_alignment.md);seq 落地后顺带量 parquet 的真实
   行速率(声称 50 Hz 未经验证,cadence 的帧数换算依赖它)。
 - **round driver 的 run_meta 补 parallel 字段**(seq_ab 已带,c7456a3)。
+
+## blocking90 之后的执行队列(2026-08-27 排定,按序)
+
+1. [x] **三方终表**:round4(async) / ens90(async+集成) / blocking90,逐局配对 +
+   McNemar,写进 docs/evaluation.md。副产品:async 贡献定量 → 修订 round2→3
+   翻倍的归因表述(当时全归了数据形状,client 也同时换了)。
+2. [x] **prelude 分解裁决**:blocking90 全场 100 局的三标记(chunk-ready/primed/
+   streamed)+ trace 的 entry/tstart 字段,判定 stand-start 漂移是 (a) 全程蠕移
+   还是 (b) priming 执行首 token。
+3. [x] **修 stand-start gap**:按机制修(候选:priming 的"填缓冲"与"发姿态"
+   两个职责拆开;prelude 全程锁位置)。验收 = fork 时与 t_start 时骨盆都在
+   出生点 ±0.1 m。
+4. [x] **干净全任务基线重测**:round4 模型、单实例、90s、seed 6000、100 轮——
+   修复后的这场才是可发表的绝对值;之后把梯子的绝对数字全部改口为
+   "混合任务",干净基线单列。README / evaluation.md / 记忆文件同步。
+5. [x] **anatomy 补"首帧即闭合"计数**(commanded_close 首帧偏差,R4 3/100),
+   不动 vla_round 在线判据。
+6. [x] **特权消息 seq 序号**(2026-08-28 落地,冒烟 2 集验证:sidecar/priv_seq/parquet 三方行数逐集一致;实测 parquet 行以 50Hz **墙钟**滴答,但 38-40% 是重复内容行(CONFLATE 复用),sim 仅以 ~0.65×墙钟推进——"50Hz 数据集"实际含 ~33Hz 的独立 sim 帧;cadence 换算待按此重标)(下一轮采集前的硬前提):publisher → PoseSidecar →
+   exporter episode 级 sidecar 记 per-row priv_seq;落地后量 parquet 真实行速率,
+   重标定 cadence 的帧数换算(4.6 s 停顿、40 帧 chunk 覆盖)。
+7. [x] parallel 字段:eval 结果记 parallel(EVAL_PARALLEL 环境变量,seq_ab 双臂导出)。
+   覆盖说明:被序贯判定 kill 的臂写不出 results JSON——**目录级的
+   run_meta.json(parallel: true)是权威来源**,results JSON 里的字段是便利副本;
+   读数脚本应先看 run_meta。
+8. [-] ~~恢复原 tier-1 队列~~(用户 2026-08-28 决定:重新采集与重训不做)(全部排在 3/4 之后,让新数据与新评测分布对齐):
+   20000 步训练(round4 开环曲线 10000 步仍在降)→ replan 0.2 s A/B(seq_ab
+   粗筛 + 单实例确认)→ mid-reach 靶向 DAgger 100-150 集(采集时转身修复
+   5500759 与 stand-start 修复已生效)。
+9. [x] 时序集成处置定稿:不转正,保留为部署开关(--ensemble,并行 +20pt p=0.012 /
+   梯子 −13pt p=0.060 两组数写进文档)。
+10. [ ] 全部落地后合并 push main(用户确认后)。
+
+协作方(locomanipulation-04)等待项:三方终表 + prelude 分解(它更新报告
+§4.6/4.7);seq 落地后它接重放验证。

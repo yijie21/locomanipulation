@@ -281,7 +281,11 @@ def main():
         replan_interval=args.replan_interval,
         budget_s=args.budget,
         full_budget=(args.stall_abort <= 0 and args.budget >= 90.0),
-        resumed_from=done if args.resume else 0)
+        resumed_from=done if args.resume else 0,
+        # Parallel-measured numbers are not ladder numbers (docs/evaluation).
+        # seq_ab exports EVAL_PARALLEL=1 for its arms; anything else is a
+        # single-instance run and records False by default.
+        parallel=os.environ.get("EVAL_PARALLEL", "0") == "1")
     out.write_text(json.dumps(results, indent=2))
 
     print(f"\n=== closed loop: {k}/{n} = {100 * k / max(n, 1):.0f}% "

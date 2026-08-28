@@ -32,6 +32,10 @@ import os
 import sys
 
 
+# The gym's own close criterion (vla_round commands close below this).
+GRIP_CLOSED = 0.005
+
+
 def q(xs, f):
     xs = sorted(xs)
     return xs[max(0, min(len(xs) - 1, int(f * len(xs))))]
@@ -67,7 +71,7 @@ def main():
     # Calibrate from this set's own successes at their close moment.
     close_z, close_po = [], []
     for r in succ:
-        rows = [x for x in r["trace"] if x.get("grip", 1.0) < 0.005]
+        rows = [x for x in r["trace"] if x.get("grip", 1.0) < GRIP_CLOSED]
         if rows:
             close_z.append(rows[0]["palm_z"])
             close_po.append(rows[0]["palm_obj"])
@@ -76,6 +80,15 @@ def main():
     print(f"[anatomy] calibrated on {len(close_z)} successes: "
           f"arm-up when palm_z > {z_up:.3f} m, "
           f"staged when palm_obj < {po_near:.3f} m")
+
+    # Rounds whose FIRST trace frame already reads grip < 0.005: priming
+    # residue can leak into frame 0, and such a round is then marked
+    # commanded_close at t=0 and can never land in "never commanded a
+    # close" -- a systematic hole in the reach-class denominators (R4
+    # measured 3/100). Counted and listed, not reclassified: the online
+    # judge must stay comparable with the recorded ladder.
+    first_closed = [r for r in succ + fail
+                    if r["trace"][0].get("grip", 1.0) < GRIP_CLOSED]
 
     never_up, up_no_fire, staged_no_fire, other = [], [], [], []
     for r in fail:
@@ -100,6 +113,8 @@ def main():
         up_but_never_near=len(up_no_fire),
         staged_but_no_fire=len(staged_no_fire),
         non_reach=len(other),
+        first_frame_closed=len(first_closed),
+        first_frame_closed_files=[r["file"] for r in first_closed],
         examples=dict(
             arm_never_up=[r["file"] for r in never_up[:5]],
             up_but_never_near=[r["file"] for r in up_no_fire[:5]],
@@ -114,6 +129,9 @@ def main():
           f"staged near object -> close; the last centimetre")
     if other:
         print(f"  non-reach           {len(other):3d}")
+    if first_closed:
+        print(f"[anatomy] {len(first_closed)} rounds open with grip<GRIP_CLOSED at "
+              f"frame 0 -- their commanded_close flag is untrustworthy")
 
     out = args.out or os.path.join(args.trace_dirs[0], "..", "anatomy.json")
     json.dump(res, open(out, "w"), indent=2)

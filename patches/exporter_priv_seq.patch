@@ -1,0 +1,198 @@
+diff --git a/gear_sonic/scripts/run_data_exporter.py b/gear_sonic/scripts/run_data_exporter.py
+index 4737bcb..5978f50 100644
+--- a/gear_sonic/scripts/run_data_exporter.py
++++ b/gear_sonic/scripts/run_data_exporter.py
+@@ -23,6 +23,7 @@ from collections import deque
+ from dataclasses import dataclass
+ from datetime import datetime
+ import json
++import os
+ import time
+ 
+ import numpy as np
+@@ -32,6 +33,7 @@ import zmq
+ 
+ from gear_sonic.data.exporter import Gr00tDataExporter
+ from gear_sonic.data.features_sonic_vla import (
++    _pose_objects,
+     get_features_sonic_vla,
+     get_g1_robot_model,
+     get_modality_config_sonic_vla,
+@@ -268,6 +270,19 @@ class GrootDataCollector:
+             self._sonic_zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "planner")
+             self._sonic_zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "manager_state")
+             time.sleep(0.5)
++
++            # teleop_free: privileged simulator truth (:5581, JSON) supplies
++            # pelvis-frame 6D object poses for observation.<key>_pose.
++            self._priv_socket = None
++            self._latest_priv = None
++            try:
++                priv_port = int(os.environ.get("TF_PRIVILEGED_PORT", "5581"))
++                self._priv_socket = self._sonic_zmq_ctx.socket(zmq.SUB)
++                self._priv_socket.setsockopt(zmq.CONFLATE, 1)
++                self._priv_socket.setsockopt_string(zmq.SUBSCRIBE, "")
++                self._priv_socket.connect(f"tcp://localhost:{priv_port}")
++            except Exception as exc:  # noqa: BLE001
++                print(f"[object-pose] privileged subscriber disabled: {exc}")
+             print(f"[Sonic] Connected to ZMQ at {sonic_data_zmq_host}:{sonic_data_zmq_port}")
+             print("[Sonic] Subscribed to: pose, planner, manager_state")
+         except Exception as e:
+@@ -320,6 +335,7 @@ class GrootDataCollector:
+             self._episode_state.change_state()
+             if self._episode_state.get_state() == self._episode_state.RECORDING:
+                 self._initial_yaw = None
++                self._row_priv_seqs = []   # teleop_free: fresh episode
+                 self._print_and_say(
+                     f"Started recording {self.current_episode_index}", blocking=False
+                 )
+@@ -329,6 +345,7 @@ class GrootDataCollector:
+                 self._print_and_say("Saved episode and back to idle state", blocking=False)
+         elif key == "x":
+             if self._episode_state.get_state() == self._episode_state.RECORDING:
++                self._flush_priv_seqs(discarded=True)
+                 self.data_exporter.save_episode_as_discarded()
+                 self._episode_state.reset_state()
+                 self._initial_yaw = None
+@@ -523,6 +540,92 @@ class GrootDataCollector:
+             if parts:
+                 print(f"[Latency] {', '.join(parts)}")
+ 
++    def _flush_priv_seqs(self, discarded: bool) -> None:
++        """teleop_free: write this episode's per-row privileged seq numbers.
++
++        One JSON per episode under <save_root>/priv_seq/, keyed by the
++        episode index the buffer holds RIGHT NOW (save_episode advances it),
++        plus the discard flag so downstream joins can skip discarded ones
++        the same way they already skip discarded episodes.
++        """
++        import json as _json
++        import os as _os
++        try:
++            rows = getattr(self, "_row_priv_seqs", None)
++            if rows is None:
++                return
++            root = str(getattr(self.data_exporter.meta, "root", "."))
++            d = _os.path.join(root, "priv_seq")
++            _os.makedirs(d, exist_ok=True)
++            idx = int(self.current_episode_index)
++            with open(_os.path.join(d, f"episode_{idx:06d}.json"), "w") as f:
++                _json.dump({"episode_index": idx, "discarded": bool(discarded),
++                            "n_rows": len(rows), "priv_seq": rows}, f)
++        except Exception as e:  # noqa: BLE001 -- a sidecar must never cost an episode
++            print(f"[priv-seq] sidecar write failed (episode unaffected): {e}")
++        finally:
++            # Clear even on failure: leftover rows would silently leak into
++            # the NEXT episode's sidecar and misalign it by a whole episode.
++            self._row_priv_seqs = []
++
++    def _add_object_poses(self, frame_data: dict) -> None:
++        """teleop_free: pelvis-frame 6D poses (pos3 + rot6d) of task objects.
++
++        Pose of object o in the pelvis frame: p = R_pelvis^T (p_o - p_pelvis),
++        q = q_pelvis^-1 * q_o, stored as pos3 + quat_to_rot6d(q) so the rot6d
++        convention matches every other rotation in this dataset.  Zeros until
++        the first privileged message arrives.
++        """
++        if getattr(self, "_priv_socket", None) is not None:
++            try:
++                while True:
++                    self._latest_priv = json.loads(
++                        self._priv_socket.recv_string(zmq.NOBLOCK))
++            except zmq.Again:
++                pass
++        s = self._latest_priv
++        # teleop_free: remember WHICH privileged message this row used. The
++        # stream is CONFLATEd, so without this there is no shared key between
++        # parquet rows and the sim-side pose record -- alignment was proven
++        # structurally impossible without it. One int per row, flushed as an
++        # episode-level sidecar (LeRobot schema untouched).
++        if not hasattr(self, "_row_priv_seqs"):
++            self._row_priv_seqs = []
++        self._row_priv_seqs.append(None if s is None else s.get("seq"))
++        for key in _pose_objects():
++            out = np.zeros(9, dtype=np.float32)
++            if s is not None and key not in s.get("objects", {}):
++                # Say so ONCE per key. Silence here is how a bottle_only scene
++                # recorded 1008 rows of can_pose = 0.0: the writer asked the
++                # privileged stream for an object the scene no longer had, got
++                # nothing, and wrote zeros -- which every downstream check then
++                # reads as "the object never moved".
++                seen = self.__dict__.setdefault("_pose_missing_warned", set())
++                if key not in seen:
++                    seen.add(key)
++                    print(f"[object-pose] {key!r} is not in the privileged "
++                          f"stream (it has {sorted(s.get('objects', {}))}); "
++                          f"observation.{key}_pose will be all zeros. Set "
++                          f"TF_POSE_OBJECTS to the scene's own objects.")
++            if s is not None and key in s.get("objects", {}):
++                pw, xw, yw, zw = s["pelvis"]["quat"]
++                Rp = np.array([
++                    [1 - 2 * (yw * yw + zw * zw), 2 * (xw * yw - pw * zw), 2 * (xw * zw + pw * yw)],
++                    [2 * (xw * yw + pw * zw), 1 - 2 * (xw * xw + zw * zw), 2 * (yw * zw - pw * xw)],
++                    [2 * (xw * zw - pw * yw), 2 * (yw * zw + pw * xw), 1 - 2 * (xw * xw + yw * yw)],
++                ])
++                dp = np.asarray(s["objects"][key]["pos"]) - np.asarray(s["pelvis"]["pos"])
++                out[0:3] = Rp.T @ dp
++                ow, ox, oy, oz = s["objects"][key]["quat"]
++                q_rel = np.array([
++                    pw * ow + xw * ox + yw * oy + zw * oz,
++                    pw * ox - xw * ow - yw * oz + zw * oy,
++                    pw * oy + xw * oz - yw * ow - zw * ox,
++                    pw * oz - xw * oy + yw * ox - zw * ow,
++                ])
++                out[3:9] = np.asarray(quat_to_rot6d(q_rel), dtype=np.float32).reshape(-1)
++            frame_data[f"observation.{key}_pose"] = out
++
+     def _add_images_to_frame_data(self, frame_data: dict) -> None:
+         if self.latest_image_msg is None:
+             return
+@@ -545,6 +648,7 @@ class GrootDataCollector:
+         if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
+             buffer_size = self.data_exporter.episode_buffer.get("size", 0)
+             if buffer_size > 0:
++                self._flush_priv_seqs(discarded=False)
+                 self.data_exporter.save_episode()
+                 self.sonic_timing_monitor.reset()
+                 self._initial_yaw = None
+@@ -664,6 +768,8 @@ class GrootDataCollector:
+         else:
+             frame_data["action.motion_token"] = np.zeros(64, dtype=np.float64)
+ 
++        self._add_object_poses(frame_data)
++
+     def _add_sonic_pose_features(self, frame_data: dict) -> float | None:
+         """Add teleop features based on current stream mode."""
+         sonic_latency_ms = None
+@@ -690,7 +796,14 @@ class GrootDataCollector:
+ 
+         planner_msg = self.latest_planner_msg
+         use_planner = False
+-        if self.current_stream_mode == 5 and planner_msg is not None:
++        # Mode 3 (PLANNER_FROZEN_UPPER_BODY) is a planner sub-mode too, and
++        # it is the one the teleop-free pipeline now runs the WHOLE grasp in.
++        # Gating on 5 alone was written for the pico manager, where 5 was the
++        # only planner mode in use; leaving it would have zeroed planner_mode
++        # and planner_height for every grasp frame -- and the crouch is
++        # commanded exactly there (mode=IDEL_SQUAT, height=<pelvis target>),
++        # so the squat would have vanished from the recorded action.
++        if self.current_stream_mode in (3, 5) and planner_msg is not None:
+             receive_ts = planner_msg.get("receive_timestamp")
+             if receive_ts is not None:
+                 age_sec = time.time() - receive_ts
+@@ -833,6 +946,7 @@ class GrootDataCollector:
+             self._print_and_say("saving episode done", blocking=False)
+             buffer_size = self.data_exporter.episode_buffer.get("size", 0)
+             if buffer_size > 0:
++                self._flush_priv_seqs(discarded=False)
+                 self.data_exporter.save_episode()
+             self._print_and_say(
+                 f"Recording complete: {self.data_exporter.meta.root}", say=False, blocking=True
+@@ -897,6 +1011,7 @@ class GrootDataCollector:
+             print("Data exporter terminated by user")
+             buffer_size = self.data_exporter.episode_buffer.get("size", 0)
+             if buffer_size > 0:
++                self._flush_priv_seqs(discarded=True)
+                 self.data_exporter.save_episode_as_discarded()
+ 
+         finally:
