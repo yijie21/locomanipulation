@@ -126,6 +126,17 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
     --out outputs/eval/<run>/closed_loop.json
 ```
 
+动作下发相关的几个参数互相有隐式生效前提(完整 help 文本见
+`eval_closed_loop.py:86-124`):
+
+| 参数 | 默认值 | 生效条件 | 作用 |
+|---|---|---|---|
+| `--client` | `async` | 始终生效,决定下面三个参数哪些真正起作用 | `async` = 官方部署同款流式(worker 线程持续推理,主循环不间断发布,延迟补偿索引接入,见下文"async 客户端");`blocking` = execute-N-then-replan,round-1/2 基线,仅作 A/B 对照保留 |
+| `--execution-horizon` | `8` | 仅 `--client blocking` | 一个 chunk 执行几帧再重新请求推理;`async` 下解析但不使用——传了不影响行为,只是原样记进结果 JSON,容易误读 |
+| `--replan-interval` | `0.4`(秒) | 仅 `--client async` | worker 多久请求一次新 chunk,不是发布频率(发布固定 `DATASET_FPS`)。`0.4` 是梯子(5.9/13.7/28.0/47.5)的设置;`1.33`(=40/30)等于一整个 chunk 播完才重规划,chunk 间重叠归零 |
+| `--ensemble` | `1`(关) | 仅 `--client async`;实际重叠的 chunk 数还受 `--replan-interval` 制约,间隔拉到 `1.33` 时重叠归零,`--ensemble` 设多大都没有意义 | 混合最近 N 个仍覆盖"现在"的 chunk 预测(ACT 式时序集成)。`N=1` 是梯子测量时的状态,打开后的数字**不进梯子**;实测(见下文"终表")梯子上 −13 点(p=0.060)、并行/时序退化下反而 +20 点(p=0.012)——已定性为部署开关,不转正 |
+| `--ensemble-m` | `0.3` | 仅 `--ensemble>1` 且 `--client async` | 集成权重按 chunk 年龄衰减:`m>0` 偏新(默认,在延迟补偿之上再叠一层保守)、`m=0` 均匀、`m<0` 偏旧——ACT 论文自己用的是负值方向 |
+
 设计要点,每条都有伤疤背书:
 
 - **复用 grasp_gym 自己的采样器**(`VLA_POLICY` 钩子,fork 点在 settle 之后)——
@@ -143,6 +154,8 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
   walk = 没学会,触发加历史的消融。
 - 每局 trace 落盘(含停滞位姿),它就是下一轮靶向补数据的靶单。
 
+
+## Experimental Results:
 ### bottle200 基线(101 局 fresh)
 
 ```
@@ -252,7 +265,7 @@ DAgger 精准命中了"最后一厘米",但**中段 reach 覆盖仍是瓶颈**�
 开环(best = checkpoint-10000,曲线到 10000 仍在降,没有 round 3 那种回升 ——
 多了 25k 帧,同样 10k 步还没到过拟合拐点)。
 
-### 交叉验证:官方 open-loop eval 说了什么
+### 交叉验证:官方 open-loop eval
 
 `scripts/crosscheck_open_loop.sh` 用 NVIDIA 自己的
 `gr00t/eval/open_loop_eval.py`(朴素 unnormalized MSE)对同一批 checkpoint 打分,
@@ -268,6 +281,8 @@ Spearman rho         : +0.988  (10 个 checkpoint)
 回摆,同样在 9000 见底、10000 略回升。所以确实属于我们自己的那层 —— 轨迹迭代、
 execution-horizon 索引、指标算术 —— 与官方实现一致。
 
+
+### 对比官方: closed-loop eval
 范围要说清楚:`serve_policy.py` 是官方 `Gr00tPolicy` + `PolicyServer` 的 71 行
 封装,连 `parse_action_gr00t` 都从官方 eval import。**模型加载、归一化、
 embodiment projection 若有错会同时骗过两边**,这次没有检验到那一层。
