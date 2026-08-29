@@ -102,7 +102,7 @@ def main():
                          "nmse_token; this runs the closed-loop half of that "
                          "ablation. Default stays snapped: the 5.9/13.7/28.0 "
                          "ladder was measured with the snap on.")
-    ap.add_argument("--ensemble", type=int, default=1, metavar="N",
+    ap.add_argument("--ensemble", type=int, default=3, metavar="N",
                     help="blend the N most recent overlapping action chunks "
                          "for the current instant (ACT-style temporal "
                          "ensembling). 1 = off, the behaviour the "
@@ -153,7 +153,7 @@ def main():
                          "Carlo estimate, so what has to match is the "
                          "DISTRIBUTION, and the top-up draws from the same one "
                          "with a seed offset by the rounds already done.")
-    ap.add_argument("--spawn-edge", type=float, nargs="+", default=[0.7],
+    ap.add_argument("--spawn-edge", type=float, nargs="+", default=[1.0],
                     metavar="M",
                     help="spawn this far from the table; one value fixes it, "
                          "two give a range. Default 0.7 -- the whole closed-"
