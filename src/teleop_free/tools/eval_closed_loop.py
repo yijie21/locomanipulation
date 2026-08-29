@@ -102,7 +102,7 @@ def main():
                          "nmse_token; this runs the closed-loop half of that "
                          "ablation. Default stays snapped: the 5.9/13.7/28.0 "
                          "ladder was measured with the snap on.")
-    ap.add_argument("--ensemble", type=int, default=1, metavar="N",
+    ap.add_argument("--ensemble", type=int, default=3, metavar="N",
                     help="blend the N most recent overlapping action chunks "
                          "for the current instant (ACT-style temporal "
                          "ensembling). 1 = off, the behaviour the "
