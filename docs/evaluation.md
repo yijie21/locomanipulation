@@ -352,6 +352,37 @@ appearance / obj_xy / robot_xy / stand_xy / yaw **五个字段五轮全部一致
 抬臂→伸手→抓的恢复轨迹。`PROBE=1` 先 10 局探站立净空(实测 9/10 通过)。采完与
 原数据合并转换(`--strip-pose-columns` 统一混代际 schema)重训。
 
+### 初始姿态：换掉 NVIDIA 的托管 token（2026-08-29）
+
+VLA 回合开场先用一个站立 token 托管机器人，等第一个 chunk 算出来，再 1 s blend 过去
+（`vla_round.py`，NVIDIA 的 initial-pose 机制）。托管用的常量原本是官方的
+`LATENT_INITIAL_MOTION_TOKEN`，而官方 docstring 自己就写了它是 checkpoint-specific 的。
+
+问题不是它无效，是**它的姿态不在我们的训练分布里**：官方那个托管的是「双臂前伸屈肘、
+躯干前俯」，我们 200 局里每一帧站立都是「手臂自然下垂、直立」。于是交接前机器人先摆
+一个数据里不存在的姿势，blend 时再跳回数据里的姿势——第三人称录像里那个「先往前倾、
+又突然挺起来」就是这个。
+
+量的方法要注意：`sonic_decoder.joint_targets` 的**绝对值未经验证**（docstring 明写），
+只有 `joint_delta_deg` 可信。用它量（12 个抽样站立 token，30 帧平均）：
+
+| token | 到我们数据站立 token 的平均关节差 |
+|---|---|
+| **我们的 medoid** | **3.38°** |
+| NVIDIA `LATENT_INITIAL_MOTION_TOKEN` | 23.02°（远 6.8 倍）|
+
+两者互比：平均 23.75°、最大 133.8°，肩 pitch 和肘主导——和肉眼看到的「手往内扣」一致。
+
+**为什么是 medoid 不是合成。** 先试过三种合成，解码出来**全都比官方更远**：逐维中位数
+（latent 非线性，token 的中位数不是姿态的中位数，解出 161° 的肩）、`sonic_encoder` 的
+`_stand_window()` 编 `DEFAULT_ANGLES`、以及同一个窗口编我们数据的实测平均站姿。
+encoder→decoder **不是恒等**，所以合成在这里不可信。medoid 不需要往返：它是我们自己的
+stack 在静止站立时**真实发出过**的 token，取到其余 193 个 L1 距离和最小的那个。
+
+落在 `src/teleop_free/initial_pose.py`，默认生效；`TF_INIT_TOKEN=official` 可退回官方。
+实测录像里托管段已经变成手臂下垂直立，前倾和「挺一下」消失；3 局冒烟 2/3 成功。
+
+
 ## 加速评测:`scripts/seq_ab.sh`(A+C+B 筛选 harness)
 
 一场 100 轮全预算闭环 ≈ 3.1 小时(失败轮 ~138 s = 90 s 预算烧满 + ~48 s

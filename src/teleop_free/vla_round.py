@@ -530,8 +530,13 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
                   replace=None, spawn_xy=None):
         from primitives import LocomotionMode
-        from gear_sonic.utils.inference.initial_poses import (
-            LATENT_INITIAL_MOTION_TOKEN as INIT_TOK)
+        # OURS, not NVIDIA's: theirs holds the arms forward and bent with the
+        # torso pitched, which is outside the distribution every episode was
+        # trained in, so the handover used to lean forward and then snap
+        # upright over the blend. TF_INIT_TOKEN=official restores it.
+        # See initial_pose.py for the measurement and why a medoid.
+        from initial_pose import initial_token
+        INIT_TOK = initial_token()
         from sonic_token import GRIPPER_MAX as _G_OPEN
 
         # FIRST act: get off the planner channel. The stand-start drift is a
