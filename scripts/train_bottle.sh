@@ -157,7 +157,14 @@ MAX_STEPS="${MAX_STEPS:-10000}"
 # --save-only-model, which is a hard requirement here, not a tidiness choice.
 # The cost is that these checkpoints cannot resume training.
 SAVE_STEPS="${SAVE_STEPS:-1000}"
-SAVE_LIMIT="${SAVE_LIMIT:-10}"
+# 3, not 10, since 2026-08-29. Ten existed so the open-loop sweep could pick a
+# stopping point after the fact (GR00T asserts eval_strategy == "no", so there
+# is no validation loss). That selector was dropped -- closed-loop now always
+# evaluates the longest-trained checkpoint -- and ten checkpoints at ~6.5 GB
+# are 65 GB held for a choice nobody makes any more, which is what left
+# /workspace at 115 GB and would have failed the next run's disk gate AFTER
+# its 6 hours of collection. Three keeps a fallback either side of the last.
+SAVE_LIMIT="${SAVE_LIMIT:-3}"
 
 WANDB_ARGS=()
 if [ "$WANDB" = "1" ]; then
