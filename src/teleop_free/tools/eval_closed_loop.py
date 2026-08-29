@@ -153,7 +153,7 @@ def main():
                          "Carlo estimate, so what has to match is the "
                          "DISTRIBUTION, and the top-up draws from the same one "
                          "with a seed offset by the rounds already done.")
-    ap.add_argument("--spawn-edge", type=float, nargs="+", default=[1.0],
+    ap.add_argument("--spawn-edge", type=float, nargs="+", default=[0.7],
                     metavar="M",
                     help="spawn this far from the table; one value fixes it, "
                          "two give a range. Default 0.7 -- the whole closed-"
