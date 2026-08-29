@@ -51,7 +51,12 @@ SESS_ROOT="$(locomani_session_root)/outputs"
 export SCENE_PRESET=bottle_only
 export TARGETS=water_bottle
 export JITTER=0.20
-export SPAWN_ARGS="--spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20"
+# The spawn distance is the one axis worth stating twice, because it decides
+# whether the closed-loop number is on the ladder. 0.7 is where 5.9/13.7/28.0/
+# 47.5% were all measured. Anything else has to be evaluated at the SAME
+# distance it was trained at, and the report says so.
+SPAWN_EDGE="${SPAWN_EDGE:-0.7}"
+export SPAWN_ARGS="${SPAWN_ARGS:---spawn-edge $SPAWN_EDGE --face-object --spawn-yaw-err 20 --spawn-lateral 0.20}"
 
 mkdir -p "$EVAL_DIR" "$COLLECT_OUT" "$(dirname "$REPORT")"
 say() { echo; echo "=========== $* ($(date '+%F %T')) ==========="; }
@@ -96,7 +101,12 @@ die() { say "STOPPED: $*"; note ""; note "**停在这里**: $* ($(date '+%F %T')
 : > "$REPORT"
 note "# $RUN — 无人值守跑（$(date '+%F %T') 开始）"
 note ""
-note "对标 **round 3 = fast200 = 28.0%**（200 局纯脚本、零 DAgger，seed 6000）。"
+if [ "$SPAWN_EDGE" = "0.7" ]; then
+    note "对标 **round 3 = fast200 = 28.0%**（200 局纯脚本、零 DAgger，seed 6000）。"
+else
+    note "出生距桌沿 **$SPAWN_EDGE m**，不是阶梯的 0.7 m —— 训练和评测都在这个距离上，"
+    note "所以这个闭环数字 **不在 5.9/13.7/28.0/47.5% 那条阶梯上**，不能和 28.0% 直接比。"
+fi
 note "round 4 的 47.5% 含 50 局靶向 DAgger，不是同构对象。"
 note ""
 note "本批相对 fast200 变了四件事，**无法单独归因**：上身接管 ramp、"
@@ -224,6 +234,7 @@ note "评的是 **$(basename "$BEST_CKPT")**（训练最久的那个，不跑开
 # --- 6. closed-loop -----------------------------------------------------------
 say "6/6 closed-loop"
 RUN="$RUN" CKPT="$BEST_CKPT" EVAL_DIR="$EVAL_DIR" EVAL_SEED="$EVAL_SEED" \
+    SPAWN_EDGE="$SPAWN_EDGE" \
     REPORT="$REPORT" DATASET_FPS=25 \
     bash "$LOCOMANI_ROOT/scripts/run_closed_loop.sh"
 

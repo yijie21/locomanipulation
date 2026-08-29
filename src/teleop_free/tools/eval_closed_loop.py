@@ -153,6 +153,14 @@ def main():
                          "Carlo estimate, so what has to match is the "
                          "DISTRIBUTION, and the top-up draws from the same one "
                          "with a seed offset by the rounds already done.")
+    ap.add_argument("--spawn-edge", type=float, nargs="+", default=[0.7],
+                    metavar="M",
+                    help="spawn this far from the table; one value fixes it, "
+                         "two give a range. Default 0.7 -- the whole closed-"
+                         "loop ladder (5.9/13.7/28.0/47.5%) was measured "
+                         "there, so changing it makes the number incomparable "
+                         "to the ladder. Match it to what the checkpoint was "
+                         "TRAINED on, and say which in the report.")
     ap.add_argument("--seed", type=int, default=1000,
                     help="round-sampling seed; deliberately disjoint from the "
                          "collection's seeds")
@@ -208,7 +216,8 @@ def main():
             "--targets", args.target,
             "--seed", str(args.seed),
             "--manifest", str(manifest),
-            "--spawn-edge", "0.7", "--face-object",
+            *(["--spawn-edge"] + [str(v) for v in args.spawn_edge]),
+            "--face-object",
             "--spawn-yaw-err", "20", "--spawn-lateral", "0.20",
             "--edge-jitter", "0.20"]
     done = 0

@@ -880,6 +880,24 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         # above, nothing else commanded here, hand over to the VLA at once.
         pass
     _wmark("held")
+    # FIRST-FRAME VISIBILITY GATE. The student only ever sees ego_view, so a
+    # spawn where the bottle is not in that frame teaches an approach that
+    # nothing in the image explains. It matters at the spawn distances this
+    # batch uses and not at 0.7 m: the head camera is pitched 52 deg down, so
+    # a tabletop object leaves the TOP of the frame past a stand-off, and the
+    # forward-lean budget before it does shrinks fast (diag_ego_geom.py, this
+    # scene, gate |u_y| <= 0.9):
+    #
+    #     spawn 0.70 m -> u_y 0.26, 28.6 deg of lean to spare
+    #     spawn 1.20 m -> u_y 0.67,  7.9 deg
+    #     spawn 1.50 m -> u_y 0.83,  2.3 deg   <- luck, not sampling
+    #
+    # Same signal and same thresholds as the arrival gate further down, so a
+    # round that passes here is being judged by the rule that judges it later.
+    cam0 = p.obs()["objects"][obj_key].get("cam")
+    if cam0 is not None and (abs(cam0[0]) > 0.8 or abs(cam0[1]) > 0.9):
+        return False, (f"[view] object not in ego view at spawn "
+                       f"(cam=[{cam0[0]:+.2f} {cam0[1]:+.2f}])")
     reset.start_video(f"gym_{int(time.time())}")
     _wmark("video")
     if record:

@@ -31,6 +31,10 @@ CKPT_DIR="$LOCOMANI_OUTPUTS/train/$RUN"
 CKPT="${CKPT:-$(ls -d "$CKPT_DIR"/checkpoint-* 2>/dev/null | sort -t- -k2 -n | tail -1)}"
 EVAL_DIR="${EVAL_DIR:-$LOCOMANI_OUTPUTS/eval/$RUN}"
 EVAL_SEED="${EVAL_SEED:-6000}"
+# Match what the checkpoint was TRAINED on. 0.7 is the ladder's distance
+# (5.9/13.7/28.0/47.5% were all measured there); a run at any other value is
+# not on the ladder and the report has to say so.
+SPAWN_EDGE="${SPAWN_EDGE:-0.7}"
 DATASET_FPS="${DATASET_FPS:-25}"
 ROUNDS="${ROUNDS:-20 100}"
 # Third-person video, one mp4 per round, into a directory of this run's own --
@@ -96,7 +100,7 @@ serve() {  # policy server on :5590, GPU 1
     echo "policy server never came up"; tail -5 "$log"; return 1
 }
 
-say "closed-loop $RUN: $(basename "$CKPT"), fps $DATASET_FPS, seed $EVAL_SEED, SIM_VIS=$SIM_VIS"
+say "closed-loop $RUN: $(basename "$CKPT"), fps $DATASET_FPS, seed $EVAL_SEED, spawn-edge $SPAWN_EDGE, SIM_VIS=$SIM_VIS"
 echo "video -> $VIDEO_DIR"
 kill_stack
 sleep 2
@@ -119,6 +123,7 @@ for N in $ROUNDS; do
     # shellcheck disable=SC2086
     ( cd "$LOCOMANI_SRC" && TF_DATASET_FPS="$DATASET_FPS" "$VENV_SIM_PY" -u \
         tools/eval_closed_loop.py --fresh "$N" --seed "$EVAL_SEED" \
+        --spawn-edge $SPAWN_EDGE \
         --client async --execution-horizon 16 $RESUME \
         --out "$CL_OUT" --trace-dir "$EVAL_DIR/traces" ) \
         > "$EVAL_DIR/eval_fresh${N}.log" 2>&1
