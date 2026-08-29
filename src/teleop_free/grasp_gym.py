@@ -88,6 +88,12 @@ CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
                             # reaches it, far enough that it cannot roll off
 FACING_MAX = np.deg2rad(30.0)
 
+# Ego-frame visibility gate: (u_x, u_y) is the object's position in the ego
+# camera frame, normalised so the frame EDGE is 1.0 (diag_ego_geom.frame_pos).
+# A camera-geometry constant (fovy, mount pitch), not spawn distance --
+# --view-gate-x/-y (defaults below) thread as view_gate_x/view_gate_y through
+# run_round/_run_round to the spawn check and the arrival check.
+
 # Per-round deploy restart (GYM_RESTART_DEPLOY=0 disables). The deploy keeps
 # locomotion/heading state across sim resets; round 1 of a fresh deploy is
 # always clean, rounds 2+ wander, fall on the walk-up, or land metres off.
@@ -288,6 +294,14 @@ def main() -> None:
                          "convert_to_hf_format.py joins on this to give each "
                          "episode its own task string, which the exporter "
                          "cannot do -- its --task-prompt is per SESSION.")
+    ap.add_argument("--view-gate-x", type=float, default=0.90,
+                    metavar="U", help="ego-frame visibility gate, horizontal "
+                         "(|u_x| must stay under this; frame edge is 1.0). "
+                         "Camera geometry, not spawn distance.")
+    ap.add_argument("--view-gate-y", type=float, default=0.95,
+                    metavar="U", help="ego-frame visibility gate, vertical "
+                         "(|u_y| must stay under this; frame edge is 1.0). "
+                         "Camera geometry, not spawn distance.")
     args = ap.parse_args()
     if args.manifest:
         # collect.sh mkdir -p's its own $OUT before this, but a bare
@@ -546,7 +560,8 @@ def main() -> None:
                 can_xy - can_nom, stand - robot_nom, psi,
                 side, rel, rm, stand, squat_hint,
                 spawn_off=spawn_off, spawn_lat=spawn_lat, dpsi=dpsi,
-                appearance=appearance, record=args.record)
+                appearance=appearance, record=args.record,
+                view_gate_x=args.view_gate_x, view_gate_y=args.view_gate_y)
             if args.record and produced and ok:
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
@@ -642,7 +657,9 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
               spawn_xy, squat_hint=None,
               spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
-              record: bool = False) -> tuple[bool, str, bool]:
+              record: bool = False,
+              view_gate_x: float = 0.90,
+              view_gate_y: float = 0.95) -> tuple[bool, str, bool]:
     """One round, and the exporter left in a clean state whatever happens.
 
     Returns (ok, why, produced_episode). The third value is what the
@@ -662,7 +679,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                          d_can, d_robot, psi, side, rel, rm, spawn_xy,
                          squat_hint, spawn_off, spawn_lat, dpsi, appearance,
-                         record, rec)
+                         record, rec, view_gate_x, view_gate_y)
     if record and rec["on"] and not ok:
         p.cmd.key("x")
         # Same default-facing trap as the post-save hold: keep the approach
@@ -677,7 +694,9 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                spawn_xy, squat_hint=None,
                spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
                record: bool = False,
-               rec: dict | None = None) -> tuple[bool, str]:
+               rec: dict | None = None,
+               view_gate_x: float = 0.90,
+               view_gate_y: float = 0.95) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -886,16 +905,20 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # batch uses and not at 0.7 m: the head camera is pitched 52 deg down, so
     # a tabletop object leaves the TOP of the frame past a stand-off, and the
     # forward-lean budget before it does shrinks fast (diag_ego_geom.py, this
-    # scene, gate |u_y| <= 0.9):
+    # scene, gate |u_y| <= view_gate_y):
     #
     #     spawn 0.70 m -> u_y 0.26, 28.6 deg of lean to spare
     #     spawn 1.20 m -> u_y 0.67,  7.9 deg
     #     spawn 1.50 m -> u_y 0.83,  2.3 deg   <- luck, not sampling
     #
-    # Same signal and same thresholds as the arrival gate further down, so a
-    # round that passes here is being judged by the rule that judges it later.
+    # The gate itself is camera geometry (fovy, mount pitch), NOT a function
+    # of spawn distance -- widening it to "compensate" for a farther spawn
+    # would just let an invisible object through. Same signal and same
+    # thresholds as the arrival gate further down, so a round that passes
+    # here is being judged by the rule that judges it later.
     cam0 = p.obs()["objects"][obj_key].get("cam")
-    if cam0 is not None and (abs(cam0[0]) > 0.8 or abs(cam0[1]) > 0.9):
+    if cam0 is not None and (abs(cam0[0]) > view_gate_x
+                              or abs(cam0[1]) > view_gate_y):
         return False, (f"[view] object not in ego view at spawn "
                        f"(cam=[{cam0[0]:+.2f} {cam0[1]:+.2f}])")
     reset.start_video(f"gym_{int(time.time())}")
@@ -1214,13 +1237,15 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     if stream_reach.toppled(st, obj_key):
         return False, "[gym] object toppled during the settle"
     cam = st["objects"][obj_key].get("cam")
-    # Vertical bound 0.9, horizontal 0.8: the 52-deg-pitched camera puts a
-    # close can low in the frame (fy -0.82..-0.94 killed 4 otherwise-good
-    # rounds/batch). fy 0.9 is still inside the physical image (edge 1.0),
-    # so on real hardware the object stays detectable — the horizontal
-    # bound keeps the stricter margin because yaw scatter moves it fast.
+    # Vertical bound view_gate_y, horizontal view_gate_x: the 52-deg-pitched
+    # camera puts a close can low in the frame (fy -0.82..-0.94 killed 4
+    # otherwise-good rounds/batch). fy 0.9 is still inside the physical image
+    # (edge 1.0), so on real hardware the object stays detectable -- the
+    # horizontal bound keeps the stricter margin because yaw scatter moves it
+    # fast.
     if "cam" in st["objects"][obj_key] and (
-            cam is None or abs(cam[0]) > 0.8 or abs(cam[1]) > 0.9):
+            cam is None or abs(cam[0]) > view_gate_x
+            or abs(cam[1]) > view_gate_y):
         return False, f"[view] object outside ego view at stand (cam={cam})"
 
     grip = np.array([p.object_pos(obj_key, st)[0],
