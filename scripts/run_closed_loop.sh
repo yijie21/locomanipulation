@@ -71,6 +71,16 @@ kill_stack() {
         for pid in $(pgrep -f "$pat" || true); do kill -9 "$pid" 2>/dev/null || true; done
     done
     sleep 3
+    # Second pass, and it is not optional: the sim's image publisher is a
+    # multiprocessing CHILD, so kill -9 on the parent orphans it holding :5555,
+    # and the next start_stack dies with "Address already in use". start_stack
+    # detects this and refuses rather than serving a stack with no images --
+    # which is how it was found. Only parentless ones, so a live stack's
+    # publisher is never touched.
+    for pid in $(pgrep -f "venv_sim/bin/python -c from multi""processing" || true); do
+        [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" = "1" ] && kill -9 "$pid" 2>/dev/null || true
+    done
+    sleep 1
 }
 
 serve() {  # policy server on :5590, GPU 1
