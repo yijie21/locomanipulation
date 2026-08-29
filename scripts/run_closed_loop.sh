@@ -77,12 +77,18 @@ serve "$CKPT" || exit 1
 CL_OUT="$EVAL_DIR/closed_loop.json"
 for N in $ROUNDS; do
     RESUME=""; [ -f "${CL_OUT%.json}.manifest.jsonl" ] && RESUME="--resume"
-    say "--fresh $N"
+    say "--fresh $N  (live: $EVAL_DIR/eval_fresh${N}.log)"
+    # Redirect to a file rather than piping to tail: a pipe to `tail` shows
+    # NOTHING until the command exits, which for a 2.5 h eval means no way to
+    # see progress. The per-round manifest is written live either way, but the
+    # log is what says WHY a round failed.
     # shellcheck disable=SC2086
-    ( cd "$LOCOMANI_SRC" && TF_DATASET_FPS="$DATASET_FPS" "$VENV_SIM_PY" \
+    ( cd "$LOCOMANI_SRC" && TF_DATASET_FPS="$DATASET_FPS" "$VENV_SIM_PY" -u \
         tools/eval_closed_loop.py --fresh "$N" --seed "$EVAL_SEED" \
         --client async --execution-horizon 16 $RESUME \
-        --out "$CL_OUT" --trace-dir "$EVAL_DIR/traces" ) 2>&1 | tail -25
+        --out "$CL_OUT" --trace-dir "$EVAL_DIR/traces" ) \
+        > "$EVAL_DIR/eval_fresh${N}.log" 2>&1
+    tail -25 "$EVAL_DIR/eval_fresh${N}.log"
     [ -f "$CL_OUT" ] || { note "- $N 轮没有产出 JSON"; continue; }
     cp "$CL_OUT" "$EVAL_DIR/closed_loop_at_${N}.json"
     "$VENV_SIM_PY" - "$CL_OUT" "$REPORT" "$(basename "$CKPT")" <<'PY'

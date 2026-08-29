@@ -186,7 +186,11 @@ note "开始前空闲磁盘 ${FREE_GB} GB。"
 [ "$FREE_GB" -ge "$DISK_MIN_GB" ] || die "only ${FREE_GB} GB free, need $DISK_MIN_GB -- 10 checkpoints are ~65 GB"
 say "4/6 training"
 T2=$(date +%s)
-RUN="$RUN" DATA="$TRAIN_DS" bash scripts/train_bottle.sh 2>&1 | tail -40
+# To a file, not a pipe to tail: a 2 h stage with no visible progress is a
+# 2 h stage nobody can tell from a hung one.
+RUN="$RUN" DATA="$TRAIN_DS" bash scripts/train_bottle.sh \
+    > "$COLLECT_OUT/train.log" 2>&1
+tail -40 "$COLLECT_OUT/train.log"
 T3=$(date +%s)
 ls -d "$CKPT_DIR"/checkpoint-* > /dev/null 2>&1 || die "train: no checkpoints in $CKPT_DIR"
 note "训完，耗时 $(( (T3-T2)/60 )) 分钟，$(ls -d "$CKPT_DIR"/checkpoint-* | wc -l) 个 checkpoint。"
