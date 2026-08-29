@@ -33,6 +33,28 @@ EVAL_DIR="${EVAL_DIR:-$LOCOMANI_OUTPUTS/eval/$RUN}"
 EVAL_SEED="${EVAL_SEED:-6000}"
 DATASET_FPS="${DATASET_FPS:-25}"
 ROUNDS="${ROUNDS:-20 100}"
+# Third-person video, one mp4 per round, into a directory of this run's own --
+# outputs/sim_video is a shared bin with 1400 files in it and "the video for
+# round 7" is not findable there.
+VIDEO_DIR="${VIDEO_DIR:-$LOCOMANI_OUTPUTS/videos/cl_$RUN}"
+# Debug overlays OFF for closed-loop reels (standing decision, 2026-08-29):
+#   reach  the reachable-envelope point cloud, pale green with a dark green
+#          comfort core -- also ~5800 box geoms of compile and render cost
+#   ghost  the magenta ghost gripper parked at the planned grasp pose
+#   bbox   the 6D wireframe boxes on the object and the distractors
+# `readout` (the pelvis-frame coordinates burned into the mp4) is kept; set
+# SIM_VIS=none to drop that too.
+#
+# None of these ever reached the model: reach/ghost sit in geom group 4, which
+# MuJoCo's default visualisation options hide, and the three cameras and the
+# exporter use exactly those defaults; bbox/readout are drawn only into the
+# third-person mp4. So this is about legible reels, not clean data.
+#
+# It has to be EXPORTED, not passed: `reach` is read once when the sim boots
+# and cannot be changed afterwards, and `ghost` is baked into the scene XML --
+# the switch only stops the gym from moving it out from under the floor. So
+# the stack and the gym both need to see it.
+export SIM_VIS="${SIM_VIS:-readout}"
 REPORT="${REPORT:-$LOCOMANI_OUTPUTS/logs/${RUN}_report.md}"
 GR00T_PY="$LOCOMANI_ROOT/third_party/Isaac-GR00T/.venv/bin/python"
 
@@ -64,10 +86,12 @@ serve() {  # policy server on :5590, GPU 1
     echo "policy server never came up"; tail -5 "$log"; return 1
 }
 
-say "closed-loop $RUN: $(basename "$CKPT"), fps $DATASET_FPS, seed $EVAL_SEED"
+say "closed-loop $RUN: $(basename "$CKPT"), fps $DATASET_FPS, seed $EVAL_SEED, SIM_VIS=$SIM_VIS"
+echo "video -> $VIDEO_DIR"
 kill_stack
 sleep 2
-NO_ENCODER=1 SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
+mkdir -p "$VIDEO_DIR"
+NO_ENCODER=1 SIM_VIDEO_DIR="$VIDEO_DIR" \
     bash "$LOCOMANI_SRC/start_stack.sh" "pick up the water bottle" \
     > "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" 2>&1
 grep -qi "stack up" "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" \
@@ -107,3 +131,4 @@ PY
 done
 kill_stack
 say "done -- $CL_OUT"
+echo "video: $(ls "$VIDEO_DIR"/*.mp4 2>/dev/null | wc -l) mp4 in $VIDEO_DIR"
