@@ -191,92 +191,27 @@ T3=$(date +%s)
 ls -d "$CKPT_DIR"/checkpoint-* > /dev/null 2>&1 || die "train: no checkpoints in $CKPT_DIR"
 note "训完，耗时 $(( (T3-T2)/60 )) 分钟，$(ls -d "$CKPT_DIR"/checkpoint-* | wc -l) 个 checkpoint。"
 
-# --- 5. open-loop: SELECTOR ONLY ----------------------------------------------
-# Not reported and no conclusion drawn from it. GR00T asserts eval_strategy
-# == "no", so there is no validation loss and the stopping point can only be
-# chosen after the fact -- that is the whole job this stage does here.
-say "5/6 open-loop (selector only)"
-for c in $(ls -d "$CKPT_DIR"/checkpoint-* | sort -t- -k2 -n); do
-    n=$(basename "$c")
-    "$GR00T_PY" "$LOCOMANI_SRC/tools/eval_open_loop.py" \
-        --model-path "$c" --dataset "$VAL_DS" --modality-config "$MODALITY" \
-        --out "$EVAL_DIR/open_loop_$n.json" >/dev/null 2>&1 \
-        || echo "  (open-loop failed on $n, continuing)"
-done
-BEST=$("$GR00T_PY" - "$EVAL_DIR" 16 <<'PY'
-import json, re, sys
-from pathlib import Path
-d, h = Path(sys.argv[1]), sys.argv[2]
-rows = []
-for f in sorted(d.glob("open_loop_checkpoint-*.json")):
-    step = int(re.search(r"checkpoint-(\d+)", f.name).group(1))
-    try:
-        rows.append((step, json.loads(f.read_text())["horizons"][h]["model"]["nmse_token"]))
-    except Exception:
-        pass
-if rows:
-    print(min(rows, key=lambda r: (round(r[1], 4), r[0]))[0])
-PY
-)
-BEST_CKPT="$CKPT_DIR/checkpoint-${BEST:-$(ls -d "$CKPT_DIR"/checkpoint-* | sort -t- -k2 -n | tail -1 | grep -oE '[0-9]+$')}"
+# --- 5. pick the checkpoint --------------------------------------------------
+# The LONGEST-TRAINED one, by the user's standing decision (2026-08-29).
+#
+# What that gives up: GR00T asserts eval_strategy == "no", so there is no
+# validation loss and nothing stops training early. An open-loop sweep over the
+# held-out split used to choose the stopping point after the fact, and it did
+# change the answer -- fast200's picked checkpoint-9000 over 10000. What it
+# cost was ~2 h, because eval_open_loop's default --horizons is `1 8 16 40`
+# while the selector only ever read h16; passing --horizons 16 would have made
+# it ~13 min. The decision was taken with that number on the table.
+say "5/6 checkpoint"
+BEST_CKPT=$(ls -d "$CKPT_DIR"/checkpoint-* | sort -t- -k2 -n | tail -1)
+[ -n "$BEST_CKPT" ] || die "no checkpoints in $CKPT_DIR"
 echo "$BEST_CKPT" > "$EVAL_DIR/best_checkpoint.txt"
-note "选中 $(basename "$BEST_CKPT")（开环只用来选，不当结论）。"
+note "评的是 **$(basename "$BEST_CKPT")**（训练最久的那个，不跑开环选择器）。"
 
-# --- 6. closed-loop: 20, then resume to 100 -----------------------------------
-# eval_closed_loop ARRANGES NOTHING -- it checks. It needs the stack up with
-# NO_ENCODER=1 and serve_policy.py already listening on :5590, and it runs on
-# the SIM venv, not the GR00T one. It also takes no --model-path: the model is
-# whatever the policy server is serving.
-#
-# Both passes write to the SAME --out, because --resume derives its manifest
-# from it (eval_closed_loop.py:181 `out.with_suffix(".manifest.jsonl")`). A
-# different name for the 100 would silently start over instead of continuing.
-#
-# TF_DATASET_FPS=25 must match the training data or every motion replays 1.2x
-# fast, and nothing raises. --seed 6000 is what round 3 and round 4 used, so
-# the spawns are the same draws and the comparison is PAIRED.
+# --- 6. closed-loop -----------------------------------------------------------
 say "6/6 closed-loop"
-CL_OUT="$EVAL_DIR/closed_loop.json"
-note ""
-note "## 3. 闭环（TF_DATASET_FPS=25，seed $EVAL_SEED，与 round 3 配对）"
-note ""
-kill_stack
-sleep 2
-NO_ENCODER=1 SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-    bash "$LOCOMANI_SRC/start_stack.sh" "pick up the water bottle" \
-    > "$COLLECT_OUT/stack_eval.log" 2>&1
-# start_stack exits 0 even when a stage is only half up, so judge the log.
-grep -qi "stack up" "$COLLECT_OUT/stack_eval.log" \
-    || die "closed-loop: stack did not come up (see $COLLECT_OUT/stack_eval.log)"
-serve "$BEST_CKPT" || die "closed-loop: policy server did not come up"
-
-for N in 20 100; do
-    RESUME=""; [ "$N" = 100 ] && RESUME="--resume"
-    say "closed-loop --fresh $N"
-    # shellcheck disable=SC2086
-    ( cd "$LOCOMANI_SRC" && TF_DATASET_FPS=25 "$VENV_SIM_PY" tools/eval_closed_loop.py \
-        --fresh "$N" --seed "$EVAL_SEED" --client async --execution-horizon 16 \
-        $RESUME --out "$CL_OUT" --trace-dir "$EVAL_DIR/traces" ) 2>&1 | tail -25
-    if [ -f "$CL_OUT" ]; then
-        cp "$CL_OUT" "$EVAL_DIR/closed_loop_at_${N}.json"
-        "$VENV_SIM_PY" - "$CL_OUT" "$REPORT" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-w = d.get("wilson95") or [float("nan")] * 2
-out = open(sys.argv[2], "a")
-out.write(f"- **{d['successes']}/{d['rounds']} = {d['success_rate']*100:.1f}%**"
-          f"  Wilson95 [{w[0]*100:.1f}, {w[1]*100:.1f}]"
-          f"  — round 3 (fast200) 是 28.0%\n")
-fs = d.get("failure_stages") or {}
-if fs:
-    out.write("  - 失败分布: " + ", ".join(f"{k} {v}" for k, v in
-              sorted(fs.items(), key=lambda x: -x[1])) + "\n")
-PY
-    else
-        note "- $N 轮没有产出 JSON，看 $EVAL_DIR"
-    fi
-done
-kill_stack
+RUN="$RUN" CKPT="$BEST_CKPT" EVAL_DIR="$EVAL_DIR" EVAL_SEED="$EVAL_SEED" \
+    REPORT="$REPORT" DATASET_FPS=25 \
+    bash "$LOCOMANI_ROOT/scripts/run_closed_loop.sh"
 
 say "done"
 note ""
