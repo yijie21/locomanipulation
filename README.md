@@ -124,6 +124,7 @@ videos/                 最新一批演示视频(每次推送整体替换)
 | 转 LeRobot、查数据(schema / 四段审计) | [docs/dataset.md](docs/dataset.md) |
 | 微调 GR00T(设置全表 / 启动 / vendored 代码怎么回事) | [docs/training.md](docs/training.md) |
 | 评测(open-loop / closed-loop / 第一轮基线 / DAgger) | [docs/evaluation.md](docs/evaluation.md) |
+| 搞懂 async client(实时动作分块 / 异步推理 / 时序集成) | [docs/realtime-action-streaming.md](docs/realtime-action-streaming.md) |
 | 查参数、找模块、跑诊断、翻 FAQ | [docs/reference.md](docs/reference.md) |
 | 下一步做什么 | [docs/ROADMAP.md](docs/ROADMAP.md) |
 
