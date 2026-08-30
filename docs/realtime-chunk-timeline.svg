@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 260" role="img"
+     aria-label="时间线图:t=0秒发出推理请求,t=0.4秒收到40帧的chunk。chunk的第0帧对应t=0,第12帧对应t=0.4。由于此刻已经是t=0.4秒,主循环计算idx=round(0.4×30)=12,跳过前12帧(已过期),直接从第12帧开始播放。">
+  <defs>
+    <style>
+      text{ font-family: -apple-system, "Segoe UI", sans-serif; fill:#172420; }
+      .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    </style>
+    <pattern id="ticks" width="23.33" height="24" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="0" y2="24" stroke="#C2CCC3" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="1080" height="260" fill="#FBFCFB"/>
+
+  <!-- step markers -->
+  <circle cx="80" cy="46" r="10" fill="#7C8880"/>
+  <text x="80" y="50" text-anchor="middle" class="mono" font-size="10" font-weight="700" fill="#FBFCFB">1</text>
+  <text x="80" y="30" text-anchor="middle" class="mono" font-size="10.5" fill="#4E5B55">t=0.00s 发出请求</text>
+
+  <circle cx="360" cy="46" r="10" fill="#C1571F"/>
+  <text x="360" y="50" text-anchor="middle" class="mono" font-size="10" font-weight="700" fill="#fff">2</text>
+  <text x="360" y="30" text-anchor="middle" class="mono" font-size="10.5" fill="#7A3510">t=0.40s chunk 到达</text>
+
+  <!-- inference duration bracket -->
+  <line x1="80" y1="70" x2="360" y2="70" stroke="#7C8880" stroke-width="1.3"/>
+  <line x1="80" y1="64" x2="80" y2="76" stroke="#7C8880" stroke-width="1.3"/>
+  <line x1="360" y1="64" x2="360" y2="76" stroke="#7C8880" stroke-width="1.3"/>
+  <text x="220" y="90" text-anchor="middle" font-size="11" fill="#4E5B55">推理耗时 0.4s(实测区间 0.3–0.6s)</text>
+
+  <!-- ruler bar: 40 frames, 0..1.333s -->
+  <rect x="80" y="140" width="910" height="26" fill="url(#ticks)" stroke="#C2CCC3" stroke-width="1"/>
+  <!-- stale overlay: frames 0-11 -->
+  <rect x="80" y="140" width="280" height="26" fill="#7C8880" opacity="0.28"/>
+  <text x="220" y="157" text-anchor="middle" font-size="10" fill="#FBFCFB" font-weight="600">已过期 · 跳过</text>
+
+  <!-- NOW line -->
+  <line x1="360" y1="118" x2="360" y2="230" stroke="#C1571F" stroke-width="2"/>
+  <polygon points="360,118 353,108 367,108" fill="#C1571F"/>
+  <rect x="366" y="106" width="200" height="16" fill="#FBFCFB"/>
+  <text x="368" y="118" class="mono" font-size="10.5" fill="#7A3510">此刻 · 主循环采用这个 chunk</text>
+
+  <!-- frame index labels -->
+  <text x="80" y="188" text-anchor="middle" class="mono" font-size="11" fill="#7C8880">0</text>
+  <text x="360" y="188" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#7A3510">12</text>
+  <text x="547" y="188" text-anchor="middle" class="mono" font-size="11" fill="#7C8880">20</text>
+  <text x="990" y="188" text-anchor="middle" class="mono" font-size="11" fill="#7C8880">39</text>
+  <text x="80" y="205" text-anchor="middle" font-size="9.5" fill="#7C8880">帧号</text>
+
+  <!-- formula -->
+  <rect x="368" y="204" width="420" height="26" rx="5" fill="#EFD9C4"/>
+  <text x="378" y="221" class="mono" font-size="12.5" fill="#7A3510">idx = round(0.40 × 30) = 12 → 从第 12 帧开始播</text>
+</svg>
