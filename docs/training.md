@@ -40,11 +40,23 @@ RUN=bottle250 DATA=datasets/..._train bash scripts/train_bottle.sh
 | `WANDB` | 1 | 凭据预检:没登录会**立即报错**而不是在 torchrun 下挂死 |
 | `DRY` | 0 | 1 = 打印最终命令行 |
 
-端到端流水线(等转换 → stats → 审计 → 训练 → 逐 checkpoint 开环评测):
+端到端流水线(12 局闸门 → 采集 → 转换 → stats → 审计 → 训练 → 闭环评测):
 
 ```bash
-nohup bash scripts/run_pipeline.sh > outputs/logs/pipeline.log 2>&1 &
+RUN=<name> SPAWN_EDGE=0.7 nohup bash scripts/run_overnight.sh \
+    > outputs/logs/overnight_<name>.log 2>&1 &
 ```
+
+只想评一个已有 checkpoint(自己起 stack、起策略服务器、跑 20 轮再续到 100):
+
+```bash
+RUN=<name> nohup bash scripts/run_closed_loop.sh > outputs/logs/cl_<name>.log 2>&1 &
+```
+
+> 旧的 `scripts/run_pipeline.sh` 已移到 `scripts/archive/`。它的 stage 6 调用的
+> `eval_closed_loop.py --model-path/--val-dataset/--matched-manifest-dir` 这几个
+> 参数都已经不存在,跑到那一步必崩;`run_overnight.sh` 取代了它,并且多了采集段和
+> 12 局闸门。
 
 ## `launch_finetune` 完整超参数表
 

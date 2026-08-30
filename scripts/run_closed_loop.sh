@@ -67,25 +67,13 @@ mkdir -p "$EVAL_DIR"
 say() { echo; echo "=========== $* ($(date '+%F %T')) ==========="; }
 note() { echo "$*" >> "$REPORT"; }
 
-kill_stack() {
-    local P_SIM P_DEP P_EXP P_SRV pat pid
-    P_SIM=$(printf '%s_%s' run_sim locomani); P_DEP=$(printf '%s_%s' g1_deploy onnx_ref)
-    P_EXP=$(printf '%s_%s' run_data exporter); P_SRV=$(printf '%s_%s' serve policy)
-    for pat in "$P_SIM" "$P_DEP" "$P_EXP" "$P_SRV"; do
-        for pid in $(pgrep -f "$pat" || true); do kill -9 "$pid" 2>/dev/null || true; done
-    done
-    sleep 3
-    # Second pass, and it is not optional: the sim's image publisher is a
-    # multiprocessing CHILD, so kill -9 on the parent orphans it holding :5555,
-    # and the next start_stack dies with "Address already in use". start_stack
-    # detects this and refuses rather than serving a stack with no images --
-    # which is how it was found. Only parentless ones, so a live stack's
-    # publisher is never touched.
-    for pid in $(pgrep -f "venv_sim/bin/python -c from multi""processing" || true); do
-        [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" = "1" ] && kill -9 "$pid" 2>/dev/null || true
-    done
-    sleep 1
-}
+# One implementation, and it is stop_stack.sh -- not a copy here. Four scripts
+# used to hand-roll this, and the copy in run_closed_loop.sh was made without
+# stop_stack's `pkill -f spawn_main`, so a kill orphaned the sim's
+# multiprocessing image publisher holding :5555 and the next start_stack
+# refused to hand back a stack that published no images. stop_stack also waits
+# for the ports to actually free and says what survived, which no copy did.
+kill_stack() { bash "$LOCOMANI_SRC/stop_stack.sh" > /dev/null 2>&1; }
 
 serve() {  # policy server on :5590, GPU 1
     local log="$LOCOMANI_TMP/serve_$RUN.log"

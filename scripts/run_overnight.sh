@@ -63,38 +63,7 @@ say() { echo; echo "=========== $* ($(date '+%F %T')) ==========="; }
 
 # Lifted from run_round4.sh, which is the only orchestration in the repo that
 # has actually driven a full closed-loop run.
-kill_stack() {
-    local P_SIM P_DEP P_EXP P_SRV pat pid
-    P_SIM=$(printf '%s_%s' run_sim locomani); P_DEP=$(printf '%s_%s' g1_deploy onnx_ref)
-    P_EXP=$(printf '%s_%s' run_data exporter); P_SRV=$(printf '%s_%s' serve policy)
-    for pat in "$P_SIM" "$P_DEP" "$P_EXP" "$P_SRV"; do
-        for pid in $(pgrep -f "$pat" || true); do kill -9 "$pid" 2>/dev/null || true; done
-    done
-    sleep 3
-    # Second pass, and it is not optional: the sim's image publisher is a
-    # multiprocessing CHILD, so kill -9 on the parent orphans it holding :5555,
-    # and the next start_stack dies with "Address already in use". start_stack
-    # detects this and refuses rather than serving a stack with no images --
-    # which is how it was found. Only parentless ones, so a live stack's
-    # publisher is never touched.
-    for pid in $(pgrep -f "venv_sim/bin/python -c from multi""processing" || true); do
-        [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" = "1" ] && kill -9 "$pid" 2>/dev/null || true
-    done
-    sleep 1
-}
 
-serve() {  # serve <model_dir> -- policy server on :5590, GPU 1
-    local log="$LOCOMANI_TMP/serve_$RUN.log"
-    for pid in $(pgrep -f "$(printf '%s_%s' serve policy)" || true); do
-        kill -9 "$pid" 2>/dev/null || true; done
-    sleep 2
-    CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/tools/serve_policy.py" \
-        --model-path "$1" --port 5590 > "$log" 2>&1 &
-    for _ in $(seq 1 60); do
-        grep -q "listening" "$log" 2>/dev/null && return 0; sleep 5
-    done
-    echo "policy server never came up"; tail -5 "$log"; return 1
-}
 note() { echo "$*" >> "$REPORT"; }
 die() { say "STOPPED: $*"; note ""; note "**停在这里**: $* ($(date '+%F %T'))"; exit 1; }
 

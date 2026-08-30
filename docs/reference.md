@@ -32,7 +32,10 @@
 
 | 脚本 | 干什么 |
 |---|---|
-| `src/teleop_free/start_stack.sh` / `stop_stack.sh` | 起 / 停三进程 stack |
+| `src/teleop_free/start_stack.sh` / `stop_stack.sh` | 起 / 停三进程 stack。**停是 `stop_stack.sh`,不要自己手写 kill** —— 它多杀 `spawn_main`(sim 的图像发布子进程,孤儿化后占着 :5555,下一次启动会被 start_stack 拒绝)和 `serve_policy.py`,还会等端口真正释放并回显剩余进程 |
+| `scripts/run_overnight.sh` | **跑一次完整实验**:12 局闸门 → 采集 → 转换 → 审计 → 训练 → 闭环。`RUN=` 命名,`SPAWN_EDGE=` 定出生距离 |
+| `scripts/run_closed_loop.sh` | **只评一个 checkpoint**:起 stack + 策略服务器,20 轮再续到 100。`CKPT=` 默认取训练最久的那个 |
+| `scripts/archive/` | round 2/3/4 和旧 pipeline 的编排脚本。**历史记录,不维护,已知跑不起来**(调用的 `eval_closed_loop` 参数已不存在),留着是因为阶梯上那几个数的确切配置只写在里面 |
 | `scripts/collect.sh` | **大规模采集**:按批换场景尺寸,批内逐局换目标/出生/外观 |
 | `scripts/collect_pilot.sh` | **先导批**:单目标、外观钉死,只变出生点和物体位置,采到 N 条成功为止 |
 | `scripts/export_rerun.py` | 把 episode 导成 Rerun `.rrd`,本地 `pip install rerun-sdk && rerun <file>` 看视频+曲线+3D |
@@ -154,7 +157,7 @@
 
 > **`INSTANCE=1` 的 5590 和闭环评测的 `serve_policy` 撞端口。**
 > `TF_KEYBOARD_PORT = 5580 + 10*INSTANCE`,所以 `INSTANCE=1` 占住 5590,而
-> `serve_policy.py` 的默认端口正是 5590(`run_round3.sh`、
+> `serve_policy.py` 的默认端口正是 5590(`scripts/archive/run_round3.sh`、
 > [evaluation.md](evaluation.md) 都用它)。**多实例采集和闭环评测不能同时跑**,
 > 或者给 `serve_policy` 换个端口。
 

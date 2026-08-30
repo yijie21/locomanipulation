@@ -20,19 +20,23 @@ pkill -9 -f "diag_walk.py" 2>/dev/null
 # script reports everything stopped.
 pkill -9 -f "grasp_gym.py" 2>/dev/null
 pkill -9 -f "spawn_main" 2>/dev/null            # MuJoCo image-publish subprocess
+# The closed-loop evaluation's policy server. It holds :5590 and a GPU;
+# left running it makes the next serve() bind-fail, and the orchestrators
+# that used to hand-roll their own kill_stack all had to remember it.
+pkill -9 -f "serve_policy.py" 2>/dev/null
 
 # The sim binds :5555 and :5581; a survivor makes the next start fail with
 # "Address already in use" *after* it has already printed its startup banner,
 # which reads like a working stack until the deploy times out waiting for
 # LowState. So wait for the ports, do not just wait a fixed time.
 for _ in $(seq 1 15); do
-    ss -lnt 2>/dev/null | grep -qE ":5555 |:5556 |:5557 |:5580 |:5581 " || break
+    ss -lnt 2>/dev/null | grep -qE ":5555 |:5556 |:5557 |:5580 |:5581 |:5590 " || break
     sleep 1
 done
 
 echo "remaining:"
-pgrep -a -f "g1_deploy_onnx_ref|run_sim_loop|run_sim_locomani|run_data_exporter|zmq_driver|collect_episode|grasp_gym" \
+pgrep -a -f "g1_deploy_onnx_ref|run_sim_loop|run_sim_locomani|run_data_exporter|zmq_driver|collect_episode|grasp_gym|serve_policy" \
   | grep -v stop_stack || echo "  (none)"
 
 echo "ports:"
-ss -lnt 2>/dev/null | grep -E ":5555 |:5556 |:5557 |:5580 |:5581 " || echo "  (all free)"
+ss -lnt 2>/dev/null | grep -E ":5555 |:5556 |:5557 |:5580 |:5581 |:5590 " || echo "  (all free)"

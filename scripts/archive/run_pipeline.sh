@@ -1,4 +1,19 @@
 #!/bin/bash
+#
+# ARCHIVED -- HISTORICAL RECORD, NOT MAINTAINED, KNOWN NOT TO RUN.
+#
+# This is the original convert->train->open-loop->closed-loop chain. It is kept because it is the
+# only place the exact configuration behind that number is written down, and
+# docs/evaluation.md's ladder is only reproducible if it survives. It is NOT
+# kept as something to run: it calls tools whose interfaces have since moved
+# (eval_closed_loop.py no longer has --model-path, --val-dataset,
+# --matched-manifest-dir or --wandb-run, so any stage that reaches the
+# closed-loop call dies there), and it carries its own copy of kill_stack that
+# predates stop_stack.sh becoming the single implementation.
+#
+# For a new experiment use scripts/run_overnight.sh (the full chain) or
+# scripts/run_closed_loop.sh (evaluation only).
+#
 # End-to-end: wait for the conversion, audit, train, then both evaluations.
 #
 #   nohup bash scripts/run_pipeline.sh > outputs/logs/pipeline.log 2>&1 &
