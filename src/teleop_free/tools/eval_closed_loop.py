@@ -102,7 +102,12 @@ def main():
                          "nmse_token; this runs the closed-loop half of that "
                          "ablation. Default stays snapped: the 5.9/13.7/28.0 "
                          "ladder was measured with the snap on.")
-    ap.add_argument("--ensemble", type=int, default=3, metavar="N",
+    # 1 = off. N=3 M=0.3 is a measured configuration, not an untried one:
+    # docs/evaluation.md's three-way paired table has it at 35/100 against
+    # 48/101 for the same model without it (+14/-27, p=0.060). The parameter
+    # table in that same document calls it a deployment switch that is not
+    # promoted -- so it stays off by default and is asked for explicitly.
+    ap.add_argument("--ensemble", type=int, default=1, metavar="N",
                     help="blend the N most recent overlapping action chunks "
                          "for the current instant (ACT-style temporal "
                          "ensembling). 1 = off, the behaviour the "

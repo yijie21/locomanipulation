@@ -127,12 +127,14 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
 ```
 
 动作下发相关的几个参数互相有隐式生效前提(完整 help 文本见
-`eval_closed_loop.py:86-124`):
+`eval_closed_loop.py:86-124`)。**这张表的默认值就是代码里的默认值**——两者
+分家过一次(表写 `--execution-horizon` 8 而代码是 16;表写 `--ensemble` 1 而
+代码被改成了 3),所以改任何一个默认值时,这张表要一起改:
 
 | 参数 | 默认值 | 生效条件 | 作用 |
 |---|---|---|---|
 | `--client` | `async` | 始终生效,决定下面三个参数哪些真正起作用 | `async` = 官方部署同款流式(worker 线程持续推理,主循环不间断发布,延迟补偿索引接入,见下文"async 客户端");`blocking` = execute-N-then-replan,round-1/2 基线,仅作 A/B 对照保留 |
-| `--execution-horizon` | `8` | 仅 `--client blocking` | 一个 chunk 执行几帧再重新请求推理;`async` 下解析但不使用——传了不影响行为,只是原样记进结果 JSON,容易误读 |
+| `--execution-horizon` | `16` | 仅 `--client blocking` | 一个 chunk 执行几帧再重新请求推理;`async` 下解析但不使用——传了不影响行为,只是原样记进结果 JSON,容易误读 |
 | `--replan-interval` | `0.4`(秒) | 仅 `--client async` | worker 多久请求一次新 chunk,不是发布频率(发布固定 `DATASET_FPS`)。`0.4` 是梯子(5.9/13.7/28.0/47.5)的设置;`1.33`(=40/30)等于一整个 chunk 播完才重规划,chunk 间重叠归零 |
 | `--ensemble` | `1`(关) | 仅 `--client async`;实际重叠的 chunk 数还受 `--replan-interval` 制约,间隔拉到 `1.33` 时重叠归零,`--ensemble` 设多大都没有意义 | 混合最近 N 个仍覆盖"现在"的 chunk 预测(ACT 式时序集成)。`N=1` 是梯子测量时的状态,打开后的数字**不进梯子**;实测(见下文"终表")梯子上 −13 点(p=0.060)、并行/时序退化下反而 +20 点(p=0.012)——已定性为部署开关,不转正 |
 | `--ensemble-m` | `0.3` | 仅 `--ensemble>1` 且 `--client async` | 集成权重按 chunk 年龄衰减:`m>0` 偏新(默认,在延迟补偿之上再叠一层保守)、`m=0` 均匀、`m<0` 偏旧——ACT 论文自己用的是负值方向 |

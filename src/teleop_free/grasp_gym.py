@@ -294,11 +294,17 @@ def main() -> None:
                          "convert_to_hf_format.py joins on this to give each "
                          "episode its own task string, which the exporter "
                          "cannot do -- its --task-prompt is per SESSION.")
-    ap.add_argument("--view-gate-x", type=float, default=0.90,
+    # 0.8 / 0.9, the values both gates were hardcoded to before they became
+    # parameters. Making them settable is right; moving the DEFAULT is a
+    # different change: it decides which rounds enter the dataset, so the
+    # 191-episode walk200 batch and the next one would be selected by
+    # different rules. The horizontal bound is the stricter of the two on
+    # purpose -- yaw scatter moves the object across the frame fast.
+    ap.add_argument("--view-gate-x", type=float, default=0.80,
                     metavar="U", help="ego-frame visibility gate, horizontal "
                          "(|u_x| must stay under this; frame edge is 1.0). "
                          "Camera geometry, not spawn distance.")
-    ap.add_argument("--view-gate-y", type=float, default=0.95,
+    ap.add_argument("--view-gate-y", type=float, default=0.90,
                     metavar="U", help="ego-frame visibility gate, vertical "
                          "(|u_y| must stay under this; frame edge is 1.0). "
                          "Camera geometry, not spawn distance.")
@@ -658,8 +664,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               spawn_xy, squat_hint=None,
               spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
               record: bool = False,
-              view_gate_x: float = 0.90,
-              view_gate_y: float = 0.95) -> tuple[bool, str, bool]:
+              view_gate_x: float = 0.80,
+              view_gate_y: float = 0.90) -> tuple[bool, str, bool]:
     """One round, and the exporter left in a clean state whatever happens.
 
     Returns (ok, why, produced_episode). The third value is what the
@@ -695,8 +701,8 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
                record: bool = False,
                rec: dict | None = None,
-               view_gate_x: float = 0.90,
-               view_gate_y: float = 0.95) -> tuple[bool, str]:
+               view_gate_x: float = 0.80,
+               view_gate_y: float = 0.90) -> tuple[bool, str]:
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
