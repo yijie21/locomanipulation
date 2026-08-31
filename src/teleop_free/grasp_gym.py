@@ -308,6 +308,31 @@ def main() -> None:
                     metavar="U", help="ego-frame visibility gate, vertical "
                          "(|u_y| must stay under this; frame edge is 1.0). "
                          "Camera geometry, not spawn distance.")
+    # DART-style collection noise (Laskey et al., CoRL 2017). The policy's
+    # measured failure mode is TERMINAL: park >= 0.50 m -> 5% success, and the
+    # expert's own park distribution (median 0.42, IQR 0.07) never shows how
+    # to recover from a far stop. With --dart-frac > 0, that fraction of
+    # rounds stops the FIRST approach early, at a scalar pelvis-object
+    # distance drawn from --dart-far, and lets the existing forward-only
+    # repair loop walk the rest in on its normal measurement gate. The
+    # perturbation is a STATE perturbation: every recorded command is still
+    # the planner's own corrective output, so the labels stay clean -- which
+    # matters because action.motion_token is encoded live from the streamed
+    # reference (inject noise into the stream and you record the noise).
+    # The RANGE is a draw for the brake trigger, not the realized stop: the
+    # deceleration carries a committed stride past the break (smoke test
+    # 2026-08-31: draws 0.51/0.55/0.61 realized first-stops 0.40/0.40/0.52,
+    # carry 0.06-0.16 m). 0.58-0.80 realizes ~0.45-0.70, covering the
+    # policy's measured park tail (p95 0.569, 19% of rounds >= 0.50), per
+    # DART: match the novice's error, then re-measure and re-tune.
+    ap.add_argument("--dart-frac", type=float, default=0.0, metavar="P",
+                    help="fraction of rounds that get a DART far-stop "
+                         "(default 0 = off; eval and old collections "
+                         "unchanged)")
+    ap.add_argument("--dart-far", type=float, nargs=2, default=[0.58, 0.80],
+                    metavar=("LO", "HI"),
+                    help="scalar pelvis-object distance range the first "
+                         "approach stops in on a DART round")
     args = ap.parse_args()
     if args.manifest:
         # collect.sh mkdir -p's its own $OUT before this, but a bare
@@ -561,13 +586,20 @@ def main() -> None:
                           open(args.dump_sample, "w"), indent=1)
             if sidecar:
                 sidecar.start(rnd, attempt)
+            # Drawn from the run rng ONLY when DART is on: a draw here
+            # shifts every later sample in the stream, so a --dart-frac 0
+            # run stays bit-identical to (and pairable with) an old one.
+            dart_stop = None
+            if args.dart_frac > 0 and rng.uniform() < args.dart_frac:
+                dart_stop = float(rng.uniform(*args.dart_far))
             ok, why, produced = run_round(
                 p, reset, meta, obj_key, surf_a, edge_dist,
                 can_xy - can_nom, stand - robot_nom, psi,
                 side, rel, rm, stand, squat_hint,
                 spawn_off=spawn_off, spawn_lat=spawn_lat, dpsi=dpsi,
                 appearance=appearance, record=args.record,
-                view_gate_x=args.view_gate_x, view_gate_y=args.view_gate_y)
+                view_gate_x=args.view_gate_x, view_gate_y=args.view_gate_y,
+                dart_stop=dart_stop)
             if args.record and produced and ok:
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
@@ -629,6 +661,13 @@ def main() -> None:
                                     obj_diameter=round(
                                         float(o["box"]["half_extent"][0]) * 2, 4),
                                     produced=bool(args.record and produced),
+                                    # The park distances this dataset was
+                                    # missing: without them the next DART
+                                    # calibration (and the cliff analysis)
+                                    # has to be re-mined from pose sidecars.
+                                    dart=ROUND_STATS.get("dart_stop"),
+                                    park_first=ROUND_STATS.get("first_stop"),
+                                    park=ROUND_STATS.get("park"),
                                     seconds=round(time.time() - t0, 1))
                     f.write(json.dumps(rec_line) + chr(10))
             if ok or not why.startswith("[stand]"):
@@ -658,6 +697,10 @@ def main() -> None:
 # invalidate the comparison.
 VLA_POLICY = None
 
+# Written by _run_round, read by run_gym's manifest writer. See the clear in
+# _run_round for why it lives at module scope.
+ROUND_STATS: dict = {}
+
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               d_can, d_robot, psi, side, rel, rm,
@@ -665,7 +708,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               spawn_off=0.30, spawn_lat=0.0, dpsi=0.0, appearance=None,
               record: bool = False,
               view_gate_x: float = 0.80,
-              view_gate_y: float = 0.90) -> tuple[bool, str, bool]:
+              view_gate_y: float = 0.90,
+              dart_stop: float | None = None) -> tuple[bool, str, bool]:
     """One round, and the exporter left in a clean state whatever happens.
 
     Returns (ok, why, produced_episode). The third value is what the
@@ -685,7 +729,7 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                          d_can, d_robot, psi, side, rel, rm, spawn_xy,
                          squat_hint, spawn_off, spawn_lat, dpsi, appearance,
-                         record, rec, view_gate_x, view_gate_y)
+                         record, rec, view_gate_x, view_gate_y, dart_stop)
     if record and rec["on"] and not ok:
         p.cmd.key("x")
         # Same default-facing trap as the post-save hold: keep the approach
@@ -702,7 +746,15 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                record: bool = False,
                rec: dict | None = None,
                view_gate_x: float = 0.80,
-               view_gate_y: float = 0.90) -> tuple[bool, str]:
+               view_gate_y: float = 0.90,
+               dart_stop: float | None = None) -> tuple[bool, str]:
+    # Per-round measurements the manifest wants but the return value cannot
+    # carry (module global, same pattern as VLA_POLICY). Cleared HERE, before
+    # the VLA fork, so a VLA round never inherits the previous scripted
+    # round's numbers.
+    ROUND_STATS.clear()
+    if dart_stop is not None:
+        ROUND_STATS["dart_stop"] = round(float(dart_stop), 3)
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -910,12 +962,36 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # nothing in the image explains. It matters at the spawn distances this
     # batch uses and not at 0.7 m: the head camera is pitched 52 deg down, so
     # a tabletop object leaves the TOP of the frame past a stand-off, and the
-    # forward-lean budget before it does shrinks fast (diag_ego_geom.py, this
-    # scene, gate |u_y| <= view_gate_y):
+    # forward-lean budget before it does shrinks fast.
     #
-    #     spawn 0.70 m -> u_y 0.26, 28.6 deg of lean to spare
-    #     spawn 1.20 m -> u_y 0.67,  7.9 deg
-    #     spawn 1.50 m -> u_y 0.83,  2.3 deg   <- luck, not sampling
+    # THE UNITS BELOW ARE --spawn-edge (pelvis to TABLE EDGE), because that is
+    # the knob a caller actually sets. The table here used to be in
+    # pelvis-to-BOTTLE metres, which reads 0.128 m (the bottle's inset from
+    # the near edge) more generous than reality: it said --spawn-edge 1.50
+    # still had 2.3 deg of lean to spare when the true figure is 0.66 deg.
+    # Recomputed with privileged_pub.py's own normalisation (ty = tan(fovy/2),
+    # u_y divided by ty), upright, against gate |u_y| <= 0.90:
+    #
+    #     --spawn-edge 0.70 -> u_y 0.379,  21.18 deg of lean to spare
+    #     --spawn-edge 1.20 -> u_y 0.738,   5.35 deg
+    #     --spawn-edge 1.50 -> u_y 0.878,   0.66 deg   <- luck, not sampling
+    #     --spawn-edge 1.55 -> u_y 0.900              <- THE GATE CUTS HERE
+    #     --spawn-edge 1.60 -> u_y 0.918,  gated while perfectly upright
+    #     --spawn-edge 1.87 -> u_y 1.010,  off the frame entirely
+    #
+    # THOSE ROWS ARE AN UPRIGHT-POSE UPPER BOUND, NOT WHAT YOU WILL SEE. They
+    # are computed from the scene's keyframe 0; the real robot has settled
+    # under SONIC by the time this gate runs and carries extra torso pitch.
+    # Measured against live rejections at --spawn-edge 1.1 1.3, where the
+    # table above predicts u_y 0.72-0.79: actual u_y came in at 0.91, 1.02,
+    # 1.06 and 1.17. The empirical rejection rate at that envelope is the
+    # number to plan with -- walk200's 101-round eval logged pre-vla 12/101
+    # (~12%) -- not the 1.55 m cutoff, which the settled posture never reaches.
+    #
+    # A gated round is NOT retried -- the retry loop at the bottom of run_gym
+    # fires only on '[stand]'. It is written to the manifest as a failed round
+    # and aggregates under the 'pre-vla' stage. So --spawn-edge much past 1.5
+    # does not sample a harder distribution, it manufactures failures.
     #
     # The gate itself is camera geometry (fovy, mount pitch), NOT a function
     # of spawn distance -- widening it to "compensate" for a farther spawn
@@ -982,9 +1058,17 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                         appearance=appearance, label="replace")
             time.sleep(0.8)   # stance settle; deploys tolerate teleports
 
+        # spawn_xy is the ACCEPTANCE REFERENCE for tstart_spawn_off. It
+        # used to be landed_xy (the raw teleport landing), which folded the
+        # planner-mode settle (~0.13 m median, walk200) into the metric --
+        # a segment collection rounds share, so the 0.1 m acceptance
+        # complained every round about a displacement training also saw.
+        # s_fork is the post-settle pose at handover: from here the metric
+        # measures only what the VLA prelude itself adds (hold + blend).
         return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
                           psi=psi, fv=fv, grip_za=grip_za, record=record,
-                          replace=replace, spawn_xy=list(landed_xy))
+                          replace=replace,
+                          spawn_xy=[float(v) for v in p.pelvis_xy(s_fork)])
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)
@@ -1140,6 +1224,17 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             if ramp:
                 raise_arm(s, float(np.linalg.norm(
                     np.asarray(spawn_xy) - p.pelvis_xy(s))))
+            if (dart_stop is not None and ramp
+                    and float(np.hypot(r[0], r[1])) <= dart_stop):
+                # DART far-stop: FIRST approach only (ramp=True). The state
+                # is perturbed -- parked short of the gate -- but every
+                # command around it is the planner's own, so the recorded
+                # labels stay clean. The forward-only repair below then
+                # demonstrates exactly the recovery the policy's park tail
+                # (>= 0.50 m -> 5% success) has no training data for.
+                why = "dart stop"
+                brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
+                break
             if rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP:
                 why = "can reachable"
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
@@ -1207,6 +1302,8 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
 
     if do_approach(45.0, ramp=True) == "fell":
         return False, "[stand] fell during the approach"
+    _r0 = rel_now(p.obs())
+    ROUND_STATS["first_stop"] = round(float(np.hypot(_r0[0], _r0[1])), 3)
 
     # FORWARD-ONLY repair. Too far -> walk in again on the same gate. Too
     # close, or laterally off -> ACCEPT: 12 rounds that stopped anywhere
@@ -1227,6 +1324,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             return False, "[stand] fell walking in again"
     s = p.obs()
     rel_a = rel_now(s)
+    ROUND_STATS["park"] = round(float(np.hypot(rel_a[0], rel_a[1])), 3)
     # A real safety floor, not the planning floor. EDGE_MIN (0.17) is where
     # the PLANNER aims; rounds that actually stopped at edge 0.09-0.17 went
     # 12/12 with zero furniture contacts in the whole batch, so failing them

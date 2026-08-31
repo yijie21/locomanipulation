@@ -122,6 +122,21 @@ def main():
                          "M>0 favours the freshest observation, M=0 is a "
                          "uniform mean, M<0 favours older predictions the way "
                          "ACT's paper does. Ignored unless --ensemble > 1.")
+    ap.add_argument("--grip-gain", type=float, default=1.0, metavar="K",
+                    help="amplify the predicted gripper's deviation from "
+                         "fully-open: g' = MAX - K*(MAX - g), clipped. 1.0 = "
+                         "off, what every number on record was measured with. "
+                         "Aimed at the one discriminator that reproduces "
+                         "across every batch: successes drive the gripper to "
+                         "the clip floor, `reach` failures park it at "
+                         "+0.0115..+0.0195 and 0%% ever cross 0.010, inside a "
+                         "band the training data occupies 3.3%% of the time. "
+                         "A hard threshold does not work -- the model does not "
+                         "separate near from at (measured: +0.0189 with the "
+                         "palm still 0.195 m out, +0.0178 at 0.136 m) -- so "
+                         "this scales instead, preserving the model's own "
+                         "ordering. K=3 puts the effective trigger at 0.0178, "
+                         "the p75 of the failure band.")
     ap.add_argument("--replan-interval", type=float, default=0.4, metavar="SEC",
                     help="async client only: seconds between chunk requests. "
                          "0.4 (~12 frames) is the ladder's setting; 1.33 "
@@ -258,6 +273,15 @@ def main():
     else:
         manifest.unlink(missing_ok=True)
 
+    # NOT inside the ensemble branch: caught 2026-08-30 with an arm already
+    # running, where --grip-gain 3.0 was silently a no-op because --ensemble
+    # defaults to 1. Every vla_round toggle gets its own guard.
+    vla_round.GRIP_GAIN = args.grip_gain
+    if args.grip_gain != 1.0:
+        print(f"[closed-loop] GRIPPER GAIN {args.grip_gain} -- effective close "
+              f"trigger at raw g < "
+              f"{0.0245 - (0.0245 - 0.005) / args.grip_gain:.4f} "
+              f"(failure band measured p25 0.0159 / p50 0.0168 / p75 0.0178)")
     if args.ensemble > 1:
         vla_round.ENSEMBLE_N = args.ensemble
         vla_round.ENSEMBLE_M = args.ensemble_m
@@ -313,7 +337,7 @@ def main():
         failure_stages=stages, seed=args.seed, manifest=str(manifest),
         stall_abort_s=args.stall_abort, snap=not args.no_snap,
         ensemble_n=args.ensemble, ensemble_m=args.ensemble_m,
-        replan_interval=args.replan_interval,
+        replan_interval=args.replan_interval, grip_gain=args.grip_gain,
         budget_s=args.budget,
         full_budget=(args.stall_abort <= 0 and args.budget >= 90.0),
         resumed_from=done if args.resume else 0,

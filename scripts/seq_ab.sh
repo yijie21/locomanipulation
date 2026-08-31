@@ -42,6 +42,17 @@ SEED="${SEED:-6000}"
 CHECK_EVERY="${CHECK_EVERY:-20}"
 CKPT="${CKPT:-$LOCOMANI_OUTPUTS/train/fast250/checkpoint-10000}"
 COMMON="${COMMON:---client async --no-snap}"
+# Must equal the fps of the data the checkpoint was trained on. Every dataset
+# converted since DST_FPS=25 landed is 25; vla_round's own default is still 30
+# and would replay every motion 1.2x fast. The bias would be shared by both
+# arms, so the A/B would still be internally valid -- but the arms would not
+# be comparable to any headline number, and the failure is silent.
+DATASET_FPS="${DATASET_FPS:-25}"
+# The distribution the checkpoint was TRAINED on. seq_ab used to pass nothing,
+# which means eval_closed_loop's default 0.7 -- wrong for any checkpoint
+# collected at another stand-off, and wrong silently.
+SPAWN_EDGE="${SPAWN_EDGE:-1.2}"
+TASK="${TASK:-pick up the water bottle}"
 GR00T_PY="${GR00T_PY:-$LOCOMANI_ROOT/third_party/Isaac-GR00T/.venv/bin/python}"
 PY="$VENV_SIM_PY"
 LOGS="$LOCOMANI_TMP/seq_ab"
@@ -121,7 +132,7 @@ boot_stack() {
     local i=$1
     kill_instance "$i"; sleep 2
     env INSTANCE=$i NO_ENCODER=1 SIM_VIDEO_DIR="$PWD/outputs/videos/seq_ab_i$i" \
-        nohup bash src/teleop_free/start_stack.sh > "$LOGS/stack_$i.log" 2>&1 &
+        nohup bash src/teleop_free/start_stack.sh "$TASK" > "$LOGS/stack_$i.log" 2>&1 &
     for _ in $(seq 1 90); do
         grep -q "stack up" "$LOGS/stack_$i.log" 2>/dev/null && return 0
         sleep 5
@@ -142,8 +153,10 @@ launch_arm() {   # $1 instance  $2 name  $3 arm flags
         TF_CAMERA_PORT=$((5555 + 10 * i)) TF_SONIC_PORT=$((5556 + 10 * i)) \
         TF_OUT_PORT=$((5557 + 10 * i)) TF_KEYBOARD_PORT=$((5580 + 10 * i)) \
         TF_PRIVILEGED_PORT=$((5581 + 10 * i)) TF_EPISODE_PORT=$((5582 + 10 * i)) \
+        TF_DATASET_FPS="$DATASET_FPS" \
         nohup "$PY" src/teleop_free/tools/eval_closed_loop.py \
         --fresh "$ROUNDS" --seed "$SEED" --budget "$BUDGET" \
+        --spawn-edge $SPAWN_EDGE --task "$TASK" \
         --policy-port $((6590 + i)) $COMMON $flags \
         --out "$OUT_DIR/$name.json" --trace-dir "$OUT_DIR/${name}_traces" \
         > "$LOGS/eval_$name.log" 2>&1 &
@@ -158,6 +171,7 @@ MAN_B="$OUT_DIR/b.manifest.jsonl"
 cat > "$OUT_DIR/run_meta.json" <<EOF
 {"parallel": true, "rounds": $ROUNDS, "budget_s": $BUDGET, "seed": $SEED,
  "check_every": $CHECK_EVERY, "ckpt": "$CKPT",
+ "dataset_fps": $DATASET_FPS, "spawn_edge": "$SPAWN_EDGE", "task": "$TASK",
  "common": "$COMMON", "flags_a": "$FLAGS_A", "flags_b": "$FLAGS_B"}
 EOF
 echo "[seq_ab] arms launched: A(inst0) pid $PID_A [$FLAGS_A]  B(inst1) pid $PID_B [$FLAGS_B]"

@@ -169,6 +169,32 @@ def score(gt, pred, dec, pre, tag):
         "gripper_mae": float(np.abs(p_grip - g_grip).mean()),
     }
 
+    # --- MAGNITUDE SHRINKAGE ------------------------------------------------
+    # Under-integrated flow matching does not just add error, it pulls the
+    # sample toward the prior mean -- an output that is systematically SMALLER
+    # than the target. nMSE cannot see that (it is symmetric in the sign of
+    # the residual); a std ratio can. Ratio < 1 = the model is hedging.
+    #
+    # This is the offline judge for the closed-loop signature measured on
+    # walk200's traces: in every `reach` failure the commanded gripper sat at
+    # +0.0168, inside a band the training data occupies 3.3% of the time,
+    # while the two real modes are >0.020 (53.3%) and <0.005 (43.5%). If the
+    # ratio is < 1 at 4 denoising steps and climbs toward 1 with more steps,
+    # the standing attractor is a sampler artefact and --denoising-steps is
+    # the lever. If it is already ~1 at 4, it is not, and the lever is
+    # elsewhere.
+    eps = 1e-12
+    r_tok = p_tok.std(axis=0) / (g_tok.std(axis=0) + eps)
+    out["std_ratio_token"] = float(np.median(r_tok))
+    out["std_ratio_token_mean"] = float(np.mean(r_tok))
+    out["std_ratio_gripper"] = float(p_grip.std() / (g_grip.std() + eps))
+    # the dead band itself, both sides, in the dataset's own units
+    G_OPEN, G_SHUT = 0.020, 0.005
+    for tagn, v in (("pred", p_grip), ("gt", g_grip)):
+        out[f"grip_open_{tagn}"] = float((v > G_OPEN).mean())
+        out[f"grip_shut_{tagn}"] = float((v < G_SHUT).mean())
+        out[f"grip_deadband_{tagn}"] = float(((v >= G_SHUT) & (v <= G_OPEN)).mean())
+
     # close-frame timing, both sides judged against the GROUND TRUTH range so a
     # prediction that never opens/closes properly cannot flatter itself with a
     # midpoint of its own.
@@ -288,8 +314,11 @@ def main():
         }
         m, b = results["horizons"][str(h)]["model"], results["horizons"][str(h)]["persistence"]
         print(f"\nhorizon {h:2d}   {'model':>12s} {'persistence':>12s}")
-        for k in ("nmse_token", "nmse_gripper", "hit_rate_per_dim",
-                  "hit_rate_all64", "deg_mean", "close_frame_err_abs"):
+        for k in ("nmse_token", "nmse_token_unsnapped", "nmse_gripper",
+                  "hit_rate_per_dim", "hit_rate_all64", "deg_mean",
+                  "close_frame_err_abs", "std_ratio_token",
+                  "std_ratio_gripper", "grip_deadband_pred",
+                  "grip_deadband_gt"):
             if k in m:
                 print(f"  {k:22s} {m[k]:12.4f} {b.get(k, float('nan')):12.4f}")
 

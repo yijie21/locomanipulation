@@ -61,7 +61,9 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
 
-from sonic_token import expand_hands, snap  # noqa: E402
+from sonic_token import (  # noqa: E402
+    GRIPPER_MAX, GRIPPER_MIN, expand_hands, snap,
+)
 
 # NVIDIA's own latency compensation, used verbatim so this tracks their
 # semantics rather than a lookalike of ours (docs/official_parity_audit.md A2).
@@ -111,6 +113,47 @@ STALL_ABORT_S = 0.0        # 0 disables; 30.0 is the measured sweet spot
 # This switch exists to run the closed-loop half of that ablation; the default
 # stays on because 5.9/13.7/28.0 were measured with it on.
 SNAP = True
+
+# --- gripper gain, OFF by default (1.0 = passthrough) ------------------------
+# The one discriminator that reproduces across every batch measured so far:
+# a successful round drives the commanded gripper to GRIPPER_MIN (-0.0200,
+# the clip floor); a `reach` failure parks it at +0.0115..+0.0195 and 0% of
+# them ever cross 0.010. The training gripper is hard bimodal -- open >0.020
+# is 53.3% of frames, shut <0.005 is 43.5%, and the band between them is
+# 3.3%. Failing rounds sit in that hole for the whole episode.
+#
+# A hard threshold is the obvious fix and it is WRONG here: the model does not
+# separate "near" from "at". Measured on one failed round, the gripper was
+# already down at +0.0189 while the palm was still 0.195 m from the bottle, and
+# only reached +0.0178 when the palm got to 0.136 m. A threshold placed to
+# catch the second fires on the first too, and closes the jaw on air 20 cm out.
+#
+# This instead applies a GAIN to the deviation from fully-open, which preserves
+# the model's own ordering and only amplifies it:
+#
+#     g' = clip(GRIPPER_MAX - k * (GRIPPER_MAX - g), GRIPPER_MIN, GRIPPER_MAX)
+#
+# At k = 3, against the measured failure band (p25 0.0159 / p50 0.0168 /
+# p75 0.0178) and the far-field value 0.0245:
+#
+#     0.0245 (far)              -> 0.0245   unchanged, stays open
+#     0.0189 (palm 0.195 m out) -> 0.0077   still open   <- correctly no fire
+#     0.0178 (p75)              -> 0.0044   CLOSES
+#     0.0168 (median)           -> 0.0014   CLOSES
+#
+# so k = 3 puts the effective trigger at 0.0178 -- the p75 of the failure band
+# -- and in the round above it fires at palm 0.136 m and not at 0.195 m.
+#
+# Default 1.0: every number on record was measured without it.
+GRIP_GAIN = 1.0
+
+
+def _grip_gain(g: float) -> float:
+    """Amplify the predicted gripper's deviation from fully-open."""
+    if GRIP_GAIN == 1.0:
+        return g
+    return float(np.clip(GRIPPER_MAX - GRIP_GAIN * (GRIPPER_MAX - g),
+                         GRIPPER_MIN, GRIPPER_MAX))
 
 # --- temporal ensembling (ACT-style), OFF by default -------------------------
 # The async client replaces the cached chunk wholesale: a fresh 40-step
@@ -404,17 +447,20 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
             prelude_s=round(t_start - t_entry, 2))
         if spawn_xy is not None:
-            # The fix's acceptance criterion, IN the data: pelvis-to-spawn
-            # distance at the moment measurement starts. docs promise
-            # "within 0.1 m of the spawn"; record it every round and say so
-            # loudly when it does not hold, so a regression of the
-            # re-teleport can never hide behind a proxy metric again.
+            # The acceptance criterion, IN the data: pelvis distance from
+            # the HANDOVER pose (grasp_gym's s_fork, post-settle -- since
+            # 2026-08-31; earlier runs measured from the raw teleport
+            # landing, so their recorded values sit ~0.13 m higher and are
+            # not comparable across the change). What this bounds is the
+            # VLA prelude itself: the token hold plus the 1 s blend, during
+            # which chunk-0 is already partially executing. > 0.12 m means
+            # the prelude is again moving the robot before trace t=0.
             off0 = float(np.linalg.norm(
                 np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
             prelude["tstart_spawn_off"] = round(off0, 4)
             if off0 > 0.12:
-                p.log(f"[vla] WARNING tstart {off0:.2f} m off the spawn "
-                      f"(acceptance is 0.1) -- stand-start drift is back?")
+                p.log(f"[vla] WARNING tstart {off0:.2f} m off the handover "
+                      f"pose (acceptance is 0.1) -- prelude drift is back?")
         frame_index = 0
         lifted_at = None
         try:
@@ -646,6 +692,10 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # standing token into the first chunk frame (1 s linear, the
         # official client's default) so the handover has no step in it.
         _teardown()
+        s_blend = p.obs()   # where the HOLD left the robot; the blend's own
+        #                     displacement is chunk-0 already executing, not
+        #                     drift (diag_token_hold: both tokens <= 0.016 m
+        #                     over 30 s of pure hold)
         BLEND_S = 1.0
         n_bl = max(1, int(BLEND_S * RATE))
         for i in range(n_bl):
@@ -682,17 +732,35 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
             prelude_s=round(t_start - t_entry, 2))
         if spawn_xy is not None:
-            # The fix's acceptance criterion, IN the data: pelvis-to-spawn
-            # distance at the moment measurement starts. docs promise
-            # "within 0.1 m of the spawn"; record it every round and say so
-            # loudly when it does not hold, so a regression of the
-            # re-teleport can never hide behind a proxy metric again.
+            # Split accounting (2026-08-31). Reference is the HANDOVER pose
+            # (grasp_gym's s_fork, post-settle); earlier runs measured from
+            # the raw teleport landing and sit ~0.13 m higher -- not
+            # comparable. hold_off is the only segment that can DRIFT (the
+            # keepalive holding INIT_TOK; diag_token_hold measured 0.010 m
+            # median over 30 s of PURE hold), so the acceptance warning
+            # watches it alone -- but hold_off also contains the
+            # planner->streamed mode-entry step (the reference snaps from
+            # the planner stance to INIT_TOK's pose and the robot takes a
+            # small physical step: probe 2026-08-31 median 0.084, max
+            # 0.183, every round, both tokens). The threshold sits above
+            # that floor so it is quiet when healthy and loud only when
+            # something genuinely walks off. blend_off is chunk-0 already
+            # executing through the 1 s blend (probe median 0.033) -- the
+            # policy's own first action, recorded, not warned about.
+            # tstart_spawn_off stays as the total for continuity.
+            hold_off = float(np.linalg.norm(
+                np.asarray(p.pelvis_xy(s_blend)) - np.asarray(spawn_xy)))
+            blend_off = float(np.linalg.norm(
+                np.asarray(p.pelvis_xy(s_ts)) - p.pelvis_xy(s_blend)))
             off0 = float(np.linalg.norm(
                 np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
+            prelude["hold_off"] = round(hold_off, 4)
+            prelude["blend_off"] = round(blend_off, 4)
             prelude["tstart_spawn_off"] = round(off0, 4)
-            if off0 > 0.12:
-                p.log(f"[vla] WARNING tstart {off0:.2f} m off the spawn "
-                      f"(acceptance is 0.1) -- stand-start drift is back?")
+            if hold_off > 0.25:
+                p.log(f"[vla] WARNING hold drifted {hold_off:.2f} m off the "
+                      f"handover pose (entry-step floor is ~0.18) -- "
+                      f"prelude drift is back?")
         frame_index = 0
         lifted_at = None
         chunk_t0, idx = None, 0
@@ -728,6 +796,8 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     tok_j, grip_j = tok[j], float(grip[j])
                     idx = min(idx + 1, len(tok) - 1)
 
+                grip_raw_j = grip_j
+                grip_j = _grip_gain(grip_j)
                 lhj, rhj = expand_hands(grip_j)
                 if grip_j < 0.005:
                     commanded_close = True
@@ -746,14 +816,56 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     # not: of the "at the table, never closed" failures, did
                     # the arm ever come up, and how near did the hand get?
                     palm = np.asarray(st["palms"]["right"]["pos"], dtype=float)
+                    # pelvis_z and torso_pitch, added 2026-08-30 for the
+                    # deployment parameter study. Without them a trace cannot
+                    # tell "raised the arm but never lowered the body" from
+                    # "did the whole reach": palm_z alone is useless, because
+                    # in a SUCCESS its maximum is the height the bottle gets
+                    # LIFTED to (median 1.080 m) and not the grasp (0.718 m),
+                    # so comparing max palm_z across outcomes just restates
+                    # the outcome. The descent is the slow, sustained,
+                    # position-like half of the reach and is the half the
+                    # chunk-fragmentation hypothesis predicts should die.
+                    # Palm ORIENTATION, and the object expressed IN the palm
+                    # frame. palm_obj is a scalar distance and cannot tell a
+                    # grasp pose from a palm the same distance away but
+                    # rotated: measured 2026-08-30, a FAILED round reached
+                    # palm_obj 0.135 m and dwelt there 5 s while two SUCCESSES
+                    # only managed 0.148 and 0.137 -- so distance is provably
+                    # not the discriminator and orientation is the next gross
+                    # variable to rule in or out.
+                    pquat = st["palms"]["right"].get("quat")
+                    pquat = None if pquat is None else [float(v) for v in pquat]
+                    obj_in_palm = None
+                    if pquat is not None:
+                        w_, x_, y_, z_ = pquat
+                        R = np.array([
+                            [1-2*(y_*y_+z_*z_), 2*(x_*y_-z_*w_), 2*(x_*z_+y_*w_)],
+                            [2*(x_*y_+z_*w_), 1-2*(x_*x_+z_*z_), 2*(y_*z_-x_*w_)],
+                            [2*(x_*z_-y_*w_), 2*(y_*z_+x_*w_), 1-2*(x_*x_+y_*y_)]])
+                        obj_in_palm = [float(v) for v in R.T @ (obj - palm)]
+                    pp = st.get("pelvis", {}).get("pos")
+                    pq = st.get("pelvis", {}).get("quat")
+                    pitch = None
+                    if pq is not None:
+                        w_, x_, y_, z_ = (float(v) for v in pq)
+                        # pitch about the body y axis, +ve = leaning forward
+                        sp = 2.0 * (w_ * y_ - z_ * x_)
+                        pitch = float(np.arcsin(float(np.clip(sp, -1.0, 1.0))))
                     trace.append(dict(t=tick - t_start, rise=rise,
                                       dist=float(np.linalg.norm(obj[:2] - pel)),
                                       fallen=bool(st["fallen"]),
                                       grip=float(grip_j),
+                                      grip_raw=float(grip_raw_j),
                                       pelvis_xy=[float(v) for v in pel],
                                       pelvis_yaw=float(p.pelvis_yaw(st)),
+                                      pelvis_z=(None if pp is None
+                                                else float(pp[2])),
+                                      torso_pitch=pitch,
                                       obj_xy=[float(v) for v in obj[:2]],
                                       palm_z=float(palm[2]),
+                                      palm_quat=pquat,
+                                      obj_in_palm=obj_in_palm,
                                       palm_obj=float(np.linalg.norm(palm - obj))))
                     if st["fallen"]:
                         why = "[vla] fell"
