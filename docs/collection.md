@@ -949,3 +949,45 @@ monkey-patch `DefaultEnv.__init__`(`run_sim_locomani.install_camera_configs`)。
 
 顺带查清一件事:腕相机画面底部那片灰色麻点**不是穿模,是 shadow acne**(关掉
 阴影就干净了),和挂载位置无关,没动它。
+
+## 2026-08-31:DART 采集噪声(恢复演示)——`grasp_gym --dart-frac`
+
+部署侧普查(见 evaluation.md 2026-08-30/31)把失败质量钉在**终止位置**上:
+停位 < 0.50 m 成功 55%(83 局),≥ 0.50 m 成功 5%(20 局);而专家自己的停位
+分布(中位 0.42、IQR 0.07)从不演示"停远了怎么办"。300+ 轮里 ~2/3 的失败是
+reach,且强迫提前合爪(grip-gain 3.0)只把 reach 换名成 close,一个成功都不多
+—— 瓶颈不在手,在"身体到没到位"。
+
+**方案是 DART(Laskey et al., CoRL 2017)的状态扰动变体**:`--dart-frac P` 让
+P 比例的回合在 `--dart-far LO HI`(默认 0.58–0.80 m)里抽一个刹车触发距离,第一段 approach
+走到那儿就提前刹车。**抽值是触发点不是实际停位**:减速动量再带 0.06–0.16 m
+(smoke test 实测),实际首停 ~0.45–0.70 m,正好覆盖实测策略停位尾部
+(p95=0.569、19% ≥ 0.50);
+**已有的 forward-only repair loop**("still far — walking in again")随后用正常
+的测量门控把剩下的路走完。于是每个 DART 回合都录下一段"停远了 → 短暂站定 →
+再走进来 → 抓"的连续恢复演示。
+
+为什么是扰动状态而不是扰动动作(DART 原文的形式):我们的
+`action.motion_token` 是采集时 encoder 对**流出去的 reference 实时编码**记录的
+——标签 = 执行的命令。往 stream 里注噪会把噪声写进标签;提前刹车只改变身体所处
+的状态,之后的每一条命令都仍是规划器自己的干净纠正输出,标签零污染。
+
+配套改动:
+
+- manifest 每行新增 `dart`(该局抽到的停止距离,非 DART 局为 null)、
+  `park_first`(第一段 approach 结束时 pelvis→object 标量距离)、`park`
+  (repair 之后、抓取开始时的距离)——之前的分析要从 pose sidecar 里重挖这
+  两个数,现在直接落盘。
+- `collect.sh` 增加 `DART_ARGS` 透传,示例见其头注。
+- 默认 `--dart-frac 0`:eval 与旧采集**逐位不变**(dart 抽样只在开启时才消耗
+  rng,不移动 spawn 采样流)。
+- 预算:远停会损失一些成功局,按目标条数多排 ~20% 回合。
+
+Smoke test(2026-08-31,3 轮 --dart-frac 1.0):机制逐环节验证——日志序列
+`exit=dart stop → still far, walking in again → exit=can reachable`;样本局
+dart 0.606 → park_first 0.520 → park 0.274 抓取成功,完整恢复演示;pre-walk
+失败局的 park 字段正确为 null。
+
+训完一版后的迭代(DART 的本体):闭环重测停位分布与 0.50 m 悬崖;尾巴仍超出
+注噪范围 → 加大 `--dart-far`;悬崖消失但总成功率不涨 → 瓶颈已移到抓取先验,
+转向数据规模而非继续加噪。
