@@ -411,28 +411,44 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         if replace is not None and os.environ.get(
                 "LOCOMANI_REPLACE", "0") == "1":
             replace()   # legacy sim-only re-teleport, off by default
-        obs = obs_src.build()
-        tok0, grip0 = link.get_chunk(obs)
-        l0, r0 = expand_hands(grip0[0])
 
         def _mark(tag):   # see the async client's comment: prelude forensics
             try:
                 sm = p.obs()
                 p.log(f"[vla] prelude {tag}: pelvis "
-                      f"{np.round(p.pelvis_xy(sm), 3)} "
-                      f"grip0 {float(grip0[0]):+.4f}")
+                      f"{np.round(p.pelvis_xy(sm), 3)}")
             except Exception:
                 pass
 
-        _mark("chunk-ready")
+        # Entry on the STANDING token, not chunk-0 (port of the async
+        # client's bbc207d fix; blocking kept the old sequence and paid for
+        # it with ~1.2 s of "start walking" executed before t_start). The
+        # sequential client needs NO keepalive thread: during the first
+        # obs+inference below the deploy starves and clamps -- on a STANDING
+        # frame, which is stable. Clamp-on-walking is what used to pitch the
+        # robot over; clamp-on-standing is just standing.
+        from initial_pose import initial_token
+        INIT_TOK = initial_token()
+        l_open, r_open = expand_hands(GRIPPER_MAX)
         for _ in range(30):
-            p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
+            p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open,
+                              frame_index=0)
             time.sleep(0.02)
         _mark("primed")
         p.cmd.enter_streamed()
-        for _ in range(30):
-            p.cmd.token_frame(tok0[0], right_hand=r0, left_hand=l0, frame_index=0)
-            time.sleep(0.02)
+        t_obs0 = time.time()
+        obs = obs_src.build()
+        tok0, grip0 = link.get_chunk(obs)
+        _mark("chunk-ready")
+        l0, r0 = expand_hands(grip0[0])
+        # 1 s linear blend from the standing token into chunk-0's first
+        # frame (the official client's handover, same as async).
+        n_bl = max(1, int(1.0 * REPLAN_HZ))
+        for i in range(n_bl):
+            a = (i + 1) / n_bl
+            tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])
+            p.cmd.token_frame(tk, right_hand=r0, left_hand=l0, frame_index=0)
+            time.sleep(dt)
         _mark("streamed")
 
         t_start = time.time()
@@ -463,15 +479,78 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                       f"pose (acceptance is 0.1) -- prelude drift is back?")
         frame_index = 0
         lifted_at = None
+
+        # GAP FEEDER (2026-08-31). The blocking loop stops publishing for the
+        # whole [trace bookkeeping + obs build + inference] span (~0.4-1.0 s).
+        # The deploy consumes streamed frames at its 50 Hz control tick and,
+        # on starvation, CLAMPS the reference to the last received frame
+        # (zmq_endpoint_interface.hpp "Clamping to last frame") -- a frozen
+        # mid-stride pose with non-zero reference velocities that the RL
+        # controller keeps leaning into. At spawn 1.1-1.3 the first chunk
+        # commands a vigorous walk, so the first gap pitched the robot onto
+        # its face. The fix is the async client's core idea in one thread:
+        # keep feeding the REMAINDER of the current chunk (frames n..40)
+        # during the gap, and hand frame_index continuity back on join.
+        # Socket ownership stays partitioned: the feeder owns p.cmd for
+        # exactly the span where the main thread only touches obs/policy
+        # sockets.
+        import threading as _th
+        _feed = {"fi": 0}
+
+        def _start_feeder(ftok, fgrip, j0, fi0):
+            stop = _th.Event()
+
+            def _run():
+                j, fi = j0, fi0
+                while not stop.is_set():
+                    jj = min(j, len(ftok) - 1)  # exhausted -> explicit hold
+                    lhj, rhj = expand_hands(fgrip[jj])
+                    p.cmd.token_frame(ftok[jj], right_hand=rhj, left_hand=lhj,
+                                      frame_index=fi)
+                    _feed["fi"] = fi
+                    j += 1
+                    fi += 1
+                    time.sleep(dt)
+
+            th = _th.Thread(target=_run, daemon=True)
+            th.start()
+            return stop, th
+
+        # Seed the first in-loop gap with chunk-0: the blend above ended on
+        # tok0[0], so the feeder continues tok0 from frame 0 while the loop's
+        # first obs+inference runs -- continuous motion from the handover on.
+        cur = (tok0, grip0, 0)   # (tok, grip, next frame) of the running chunk
+        feeder = None
+
+        def _stop_feeder():
+            nonlocal feeder, frame_index
+            if feeder is not None:
+                feeder[0].set()
+                feeder[1].join(timeout=1.0)
+                frame_index = _feed["fi"] + 1
+                feeder = None
+
         try:
             while time.time() - t_start < TIMEOUT_S:
+                if cur is not None:
+                    feeder = _start_feeder(cur[0], cur[1], cur[2], frame_index)
+                t_obs = time.time()
                 obs = obs_src.build()
                 if obs is None:
+                    _stop_feeder()
                     why = "[vla] observation stream dropped"
                     break
                 tok, grip = link.get_chunk(obs)
-                n = min(execution_horizon, len(tok))
-                for j in range(n):
+                _stop_feeder()
+                # Latency-compensated start (the async client's adoption
+                # rule, missing here since day one): the chunk was planned
+                # from the state at t_obs, and the feeder has meanwhile
+                # executed the gap on the OLD chunk. Starting at frame 0
+                # re-executes ~T_inf of the past every cycle -- the visible
+                # per-chunk stagger. Start where the plan says "now" is.
+                skip = latency_index(time.time() - t_obs, REPLAN_HZ, len(tok))
+                n = max(1, min(execution_horizon, len(tok) - skip))
+                for j in range(skip, skip + n):
                     lhj, rhj = expand_hands(grip[j])
                     if grip[j] < 0.005:
                         commanded_close = True
@@ -479,6 +558,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                                       frame_index=frame_index)
                     frame_index += 1
                     time.sleep(dt)
+                cur = (tok, grip, skip + n)
 
                 st = p.obs()
                 obj = np.asarray(p.object_pos(obj_key, st))
@@ -488,7 +568,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                 palm = np.asarray(st["palms"]["right"]["pos"], dtype=float)
                 trace.append(dict(t=time.time() - t_start, rise=rise, dist=dist,
                                   fallen=bool(st["fallen"]),
-                                  grip=float(grip[:n].min()),
+                                  grip=float(grip[skip:skip + n].min()),
                                   palm_z=float(palm[2]),
                                   palm_obj=float(np.linalg.norm(palm - obj)),
                                   # the stall poses are the whole point of the
@@ -512,6 +592,8 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                     why = "[vla] reach: stalled (--stall-abort)"
                     break
         finally:
+            _stop_feeder()   # an exception mid-gap must not leave a thread
+            #                  publishing token frames after exit_streamed
             p.cmd.exit_streamed()
             p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
             obs_src.close()

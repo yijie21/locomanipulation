@@ -136,7 +136,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
 | `--client` | `async` | 始终生效,决定下面三个参数哪些真正起作用 | `async` = 官方部署同款流式(worker 线程持续推理,主循环不间断发布,延迟补偿索引接入,见下文"async 客户端");`blocking` = execute-N-then-replan,round-1/2 基线,仅作 A/B 对照保留 |
 | `--execution-horizon` | `16` | 仅 `--client blocking` | 一个 chunk 执行几帧再重新请求推理;`async` 下解析但不使用——传了不影响行为,只是原样记进结果 JSON,容易误读 |
 | `--replan-interval` | `0.4`(秒) | 仅 `--client async` | worker 多久请求一次新 chunk,不是发布频率(发布固定 `DATASET_FPS`)。`0.4` 是梯子(5.9/13.7/28.0/47.5)的设置;`1.33`(=40/30)等于一整个 chunk 播完才重规划,chunk 间重叠归零 |
-| `--ensemble` | `1`(关) | 仅 `--client async`;实际重叠的 chunk 数还受 `--replan-interval` 制约,间隔拉到 `1.33` 时重叠归零,`--ensemble` 设多大都没有意义 | 混合最近 N 个仍覆盖"现在"的 chunk 预测(ACT 式时序集成)。`N=1` 是梯子测量时的状态,打开后的数字**不进梯子**;实测(见下文"终表")梯子上 −13 点(p=0.060)、并行/时序退化下反而 +20 点(p=0.012)——已定性为部署开关,不转正 |
+| `--ensemble` | `1`(关) | 仅 `--client async`;实际重叠的 chunk 数还受 `--replan-interval` 制约,间隔拉到 `1.33` 时重叠归零,`--ensemble` 设多大都没有意义 | 混合最近 N 个仍覆盖"现在"的 chunk 预测(ACT 式时序集成)。`N=1` 是梯子测量时的状态,打开后的数字**不进梯子**;实测(见下文"终表")梯子上 −13 点(p=0.060)、并行/时序退化下反而 +20 点(p=0.012)——已定性为部署开关,不转正。**2026-08-31 翻案(dart200)**:失败形态换成停顿重抽样后,N=3 M=0.3 配对 16/20 vs 6/20(不一致对 12:2,p=0.013)——**结论是 checkpoint 条件化的,换 checkpoint 必须复筛** |
 | `--ensemble-m` | `0.3` | 仅 `--ensemble>1` 且 `--client async` | 集成权重按 chunk 年龄衰减:`m>0` 偏新(默认,在延迟补偿之上再叠一层保守)、`m=0` 均匀、`m<0` 偏旧——ACT 论文自己用的是负值方向 |
 
 设计要点,每条都有伤疤背书:
@@ -797,3 +797,62 @@ walk200 主评测 73/100 轮 WARNING),但**与成败无关**(成功局 0.189 vs 
 
 方法论教训:验收指标混装了四段位移(settle / hold / blend / chunk-0 执行),
 其中只有一段是它想守护的;警报每轮都响之后就没人看了。指标要一段量一件事。
+
+## 2026-08-31:dart200 部署筛查全集——停顿死循环、ensemble 翻案、blocking 三修复
+
+dart200(208 局,146 条 DART 恢复演示)训练 10000 步(loss 0.047)后,基线闭环
+出现新的主失败形态:**桌前停顿**(到桌后停滞 >30 s 占 38%,walk200 是 15%;
+停滞中位 9.2 s vs 1.0 s)。机制:DART 数据里"远停 + 爬行走入"的帧量大,叠加
+Markov 单帧观测,0.4 s 重规划每次都从静止画面重抽样"停顿的开头"——死循环,
+靠采样随机性逃逸(所以"停一分钟后才开始抓")。
+
+### 20 轮筛查全集(全部 ckpt-10000、seed 6000、spawn 1.1–1.3,逐轮配对)
+
+| 配置 | 成功 | 对基线不一致对 / p | 停滞>30s |
+|---|---|---|---|
+| 基线 async 0.4s | 6/20 | — | 38% |
+| h40(--replan-interval 1.6,整 chunk 执行) | 11/20 | 8:3 / 0.23 | 20% |
+| **ensemble N3 M+0.3** ⭐ | **16/20** | **12:2 / 0.013** | 10% |
+| h40+ensemble | 12/20 | —(≈h40,重叠归零,参数表早有预言) | — |
+| ensemble N4 | 6/20 | 11:1 / 0.006(负) | — |
+| ensemble M0 | 8/20 | 10:2 / 0.039(负) | — |
+| ensemble M−0.3 | 10/20 | 8:2 / 0.109(负) | — |
+
+- **ensemble 的机制**:三个重叠 chunk 都对"当前瞬间"做过预测;停顿时最新 chunk
+  说"站着",0.8/1.2 s 前的 chunk 说"此刻早该动了",加权平均把动作拽出不动点,
+  同时保留 0.4 s 闭环纠正——优于放弃纠正的整段执行。
+- **N=4 有毒**:第 4 个 chunk 只贡献自己 horizon 的第 30–40 帧,误差沿 horizon
+  单调涨,尾帧毒化平均。**M 轴**:+0.3 > 0 > −0.3——ACT 的偏旧方向在 FSQ token
+  经 frozen RL 控制器的语义下是双重滞后。
+- **两项 walk200 时代结论在 dart200 上翻案**(replan-1.6:1/20→11/20;
+  ensemble:−13→+50)。教训已写入参数表和持久记忆:**部署旋钮的结论是
+  checkpoint 条件化的,换 checkpoint 必须复筛**;引用旧实验要引 docs 裁定,
+  不要引中途重挖的原始 json(本日误判"ensemble 实测有害"即源于此)。
+
+### blocking 客户端三修复(vla_round.py,2026-08-31)
+
+blocking 模式起步即前扑的根因:推理间隙(0.4–1 s)一帧不发,deploy 饥饿时把
+参考**钳在最后一帧**(zmq_endpoint_interface.hpp "Clamping to last frame")——
+一个带前向速度的迈步中段姿态,50 Hz 控制器追着冻结参考把机器人按倒。修复:
+
+1. **gap feeder**:推理间隙由后台线程继续按 25 fps 喂当前 chunk 的剩余帧
+   (第 17–40 帧),chunk 耗尽则显式保持末帧;
+2. **站立 token prelude**(async bbc207d 修复的移植):INIT_TOK prime →
+   首次推理期间钳在站立帧(稳定,顺序客户端无需 keepalive 线程)→ 1 s blend
+   交接 chunk-0。原实现用 chunk-0(走路意图)prime 1.2 s,就是入场 drift;
+   修后站立段位移 0.02 m;
+3. **latency-compensated 起点**:新 chunk 从 `latency_index(now−t_obs)` 帧开始
+   执行而非第 0 帧——原实现每周期倒带重演 ~0.5 s 的过去(async 早有的补偿,
+   blocking 从未有过)。
+
+验证:10 局(H=40)**5 OK、0 摔倒**,水位 ≈ async-h40(blocking 税 ≈ 0)。
+注意 blocking 下 ensemble 结构性不可用(单 chunk 无重叠)。
+
+残余的入场前倾(enter_streamed 瞬间参考从 planner 跳到 medoid 站姿,SONIC
+挪一小步接管,~0.08–0.18 m):结构性地板,与成败零相关,两种 init token 都有,
+在线编码不存在(NO_ENCODER)而离线合成 token 有解码劣化前科——接受现状。
+
+### 进行中
+
+ensemble 赢家与基线各续到 100 轮(同 seed 三方链:walk200 38/101 →dart200
+基线→dart200+ensemble,分解数据效应与部署效应);悬崖复测随赢家 run 出。
