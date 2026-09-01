@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>闭环客户端图解</title>
+<style>
+  :root{
+    --bg:#f7f6f2; --ink:#22262b; --muted:#6b7280; --line:#d8d5cc;
+    --card:#ffffff; --card-line:#e5e2d9;
+    --ck-c:#0f766e; --ck-c-soft:#99d5ce;
+    --ck-b:#b45309; --ck-b-soft:#ecc489;
+    --ck-a:#9f1239; --ck-a-soft:#e7a4b4;
+    --ck-z:#6b7280; --ck-z-soft:#c9ccd2;
+    --bad:#b91c1c; --bad-soft:#f3c7c7;
+    --good:#166534;
+    --accent:#0f766e;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16181d; --ink:#e8e6e1; --muted:#9aa1ab; --line:#33373f;
+      --card:#1e2127; --card-line:#2c3038;
+      --ck-c:#2dd4bf; --ck-c-soft:#134e4a;
+      --ck-b:#fbbf24; --ck-b-soft:#57400e;
+      --ck-a:#fb7185; --ck-a-soft:#5c1a29;
+      --ck-z:#9aa1ab; --ck-z-soft:#3a3f47;
+      --bad:#f87171; --bad-soft:#4c1d1d;
+      --good:#4ade80;
+      --accent:#2dd4bf;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16181d; --ink:#e8e6e1; --muted:#9aa1ab; --line:#33373f;
+    --card:#1e2127; --card-line:#2c3038;
+    --ck-c:#2dd4bf; --ck-c-soft:#134e4a;
+    --ck-b:#fbbf24; --ck-b-soft:#57400e;
+    --ck-a:#fb7185; --ck-a-soft:#5c1a29;
+    --ck-z:#9aa1ab; --ck-z-soft:#3a3f47;
+    --bad:#f87171; --bad-soft:#4c1d1d;
+    --good:#4ade80;
+    --accent:#2dd4bf;
+  }
+  body{background:var(--bg);color:var(--ink);
+    font:15px/1.8 'IBM Plex Sans','Noto Sans SC',system-ui,sans-serif;
+    margin:0;padding:0 20px 80px}
+  main{max-width:880px;margin:0 auto}
+  header{padding:56px 0 8px}
+  h1{font-size:34px;line-height:1.2;margin:0 0 10px;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);max-width:60ch;margin:0}
+  h2{font-size:21px;margin:56px 0 6px;letter-spacing:-.01em}
+  h2 .no{color:var(--accent);font-family:var(--mono);font-size:15px;margin-right:8px}
+  p{max-width:70ch}
+  .fig{background:var(--card);border:1px solid var(--card-line);border-radius:10px;
+    padding:18px 16px 10px;margin:18px 0;overflow-x:auto}
+  .fig svg{display:block;min-width:760px}
+  .cap{color:var(--muted);font-size:13.5px;margin:6px 4px 8px;max-width:74ch}
+  svg text{font-family:'IBM Plex Sans','Noto Sans SC',sans-serif;font-size:12.5px;fill:var(--ink)}
+  svg .mono{font-family:var(--mono);font-size:11.5px}
+  svg .mut{fill:var(--muted)}
+  svg .axis{stroke:var(--line);stroke-width:1}
+  table{border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--card-line);padding:7px 12px;text-align:left}
+  th{background:var(--card);font-weight:600}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  code{font-family:var(--mono);font-size:.92em;background:var(--card);
+    border:1px solid var(--card-line);border-radius:4px;padding:1px 5px}
+  .warn{border-left:3px solid var(--bad);padding:2px 0 2px 14px;margin:16px 0;max-width:68ch}
+  .note{border-left:3px solid var(--accent);padding:2px 0 2px 14px;margin:16px 0;max-width:68ch}
+  .formula{font-family:var(--mono);font-size:14px;background:var(--card);
+    border:1px solid var(--card-line);border-radius:8px;padding:10px 16px;margin:12px 0;
+    overflow-x:auto;white-space:nowrap}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>机器人是怎么"边想边动"的</h1>
+  <p class="sub">给完全没接触过部署机制的读者:模型每次思考要半秒,机器人却每 0.04 秒
+  就要一条新指令——这中间的时间差怎么填,就是 blocking 和 async 两种方案的全部区别,
+  也是成功率从 31% 到 73% 的关键。</p>
+</header>
+
+<h2><span class="no">0</span>先认识三个角色</h2>
+<div class="fig"><svg viewBox="0 0 800 130">
+  <rect x="8" y="24" width="230" height="76" rx="8" fill="var(--card)" stroke="var(--line)"/>
+  <text x="123" y="48" text-anchor="middle" font-weight="600">大脑(VLA 模型)</text>
+  <text x="123" y="68" text-anchor="middle" class="mut">看一张照片,思考 ~0.5 秒,</text>
+  <text x="123" y="86" text-anchor="middle" class="mut">写出一份 1.6 秒的 action chunk</text>
+  <rect x="285" y="24" width="230" height="76" rx="8" fill="var(--card)" stroke="var(--line)"/>
+  <text x="400" y="48" text-anchor="middle" font-weight="600">传令员(客户端程序)</text>
+  <text x="400" y="68" text-anchor="middle" class="mut">把 chunk 一帧一帧递给身体,</text>
+  <text x="400" y="86" text-anchor="middle" class="mut">每秒递 25 帧</text>
+  <rect x="562" y="24" width="230" height="76" rx="8" fill="var(--card)" stroke="var(--line)"/>
+  <text x="677" y="48" text-anchor="middle" font-weight="600">身体(SONIC 控制器)</text>
+  <text x="677" y="68" text-anchor="middle" class="mut">每 0.02 秒要一个目标姿势,</text>
+  <text x="677" y="86" text-anchor="middle" class="mut">拼命把自己贴到目标上</text>
+  <g stroke="var(--muted)"><line x1="240" y1="62" x2="283" y2="62"/><line x1="517" y1="62" x2="560" y2="62"/></g>
+</svg>
+<p class="cap">action chunk(动作块)= 40 帧连续动作,每帧含 64 个数字的全身指令 + 1 个手爪开合值。
+40 帧 ÷ 每秒 25 帧 = 1.6 秒的动作。</p></div>
+<div class="warn"><strong>身体有个致命脾气:</strong>如果传令员断了供,身体不会停下来,
+而是<strong>死死摆住最后收到的那个姿势</strong>。摆住"站立"没事;摆住"迈步迈到一半、身体前倾"
+——身体会拼命保持那个前倾,加上惯性,半秒就脸朝下栽倒。后面所有设计都在跟这个脾气斗争。</p>
+
+<h2><span class="no">1</span>Blocking:一个人轮流干两件事(旧版为什么摔)</h2>
+<p>blocking 的意思是"阻塞":传令员和大脑是<strong>同一个人</strong>。
+他递完一段 chunk,就放下手里的活去拍照、思考——思考的半秒里,<strong>没人递指令</strong>。</p>
+<div class="fig"><svg viewBox="0 0 820 168">
+  <line x1="30" y1="120" x2="800" y2="120" class="axis"/>
+  <g class="mono mut">
+    <text x="30" y="138">0</text><text x="190" y="138">0.64s</text>
+    <text x="325" y="138">1.14s</text><text x="485" y="138">1.78s</text>
+  </g>
+  <text x="30" y="30" font-weight="600">递给身体的指令</text>
+  <rect x="30" y="44" width="160" height="34" rx="5" fill="var(--ck-c)"/>
+  <text x="110" y="66" text-anchor="middle" fill="#fff">递 chunk k 的 16 帧</text>
+  <rect x="190" y="44" width="135" height="34" rx="5" fill="var(--bad-soft)" stroke="var(--bad)" stroke-dasharray="5 3"/>
+  <text x="257" y="60" text-anchor="middle" fill="var(--bad)">断供!</text>
+  <text x="257" y="74" text-anchor="middle" class="mono" fill="var(--bad)">拍照+思考 ~0.5s</text>
+  <rect x="325" y="44" width="160" height="34" rx="5" fill="var(--ck-b)"/>
+  <text x="405" y="66" text-anchor="middle" fill="#fff">递 chunk k+1(从第 1 帧)</text>
+  <rect x="485" y="44" width="135" height="34" rx="5" fill="var(--bad-soft)" stroke="var(--bad)" stroke-dasharray="5 3"/>
+  <text x="552" y="66" text-anchor="middle" fill="var(--bad)">又断供</text>
+  <path d="M257 92 v14" stroke="var(--bad)"/>
+  <text x="257" y="160" text-anchor="middle" fill="var(--bad)">身体僵在"迈步中"的姿势半秒 → 前扑摔倒</text>
+</svg>
+<p class="cap">还有第二个更隐蔽的 bug:新 chunk 从第 1 帧开始递。但照片是半秒前拍的,
+chunk 的前几帧描述的是<strong>已经过去的那半秒</strong>该做什么——从头递等于让机器人倒带重演过去,
+走起路来一顿一顿。</p></div>
+
+<h2><span class="no">2</span>Blocking 修好后:思考时不冷场</h2>
+<div class="fig"><svg viewBox="0 0 820 210">
+  <line x1="30" y1="150" x2="800" y2="150" class="axis"/>
+  <text x="30" y="30" font-weight="600">递给身体的指令</text>
+  <rect x="30" y="44" width="160" height="34" rx="5" fill="var(--ck-c)"/>
+  <text x="110" y="66" text-anchor="middle" fill="#fff">递 chunk k 的一段</text>
+  <rect x="190" y="44" width="135" height="34" rx="5" fill="var(--ck-c-soft)" stroke="var(--ck-c)" stroke-dasharray="4 3"/>
+  <text x="257" y="60" text-anchor="middle" fill="var(--ck-c)">① 思考时,帮手接着递</text>
+  <text x="257" y="74" text-anchor="middle" class="mono" fill="var(--ck-c)">chunk k 没用完的后半段</text>
+  <rect x="325" y="44" width="46" height="34" rx="5" fill="var(--ck-b-soft)" stroke="var(--ck-b)" stroke-dasharray="4 3"/>
+  <text x="348" y="60" text-anchor="middle" class="mono" fill="var(--ck-b)">前~13帧</text>
+  <text x="348" y="74" text-anchor="middle" class="mono" fill="var(--ck-b)">不递</text>
+  <rect x="371" y="44" width="144" height="34" rx="5" fill="var(--ck-b)"/>
+  <text x="443" y="66" text-anchor="middle" fill="#fff">chunk k+1 从第~13 帧递起</text>
+  <path d="M325 40 h46" stroke="var(--ck-b)"/>
+  <path d="M325 40 h190" stroke="var(--ck-b)" fill="none"/>
+  <text x="420" y="34" text-anchor="middle" class="mono" fill="var(--ck-b)">—— 这两段同属 chunk k+1 ——</text>
+  <rect x="515" y="44" width="135" height="34" rx="5" fill="var(--ck-b-soft)" stroke="var(--ck-b)" stroke-dasharray="4 3"/>
+  <text x="582" y="66" text-anchor="middle" fill="var(--ck-b)">① 帮手接着递</text>
+  <path d="M348 92 v10" stroke="var(--ck-b)"/>
+  <text x="348" y="118" text-anchor="middle" class="mut">③ 跳过的是 chunk k+1 自己的开头:照片是 ~0.5 秒前拍的,这几帧</text>
+  <text x="348" y="134" text-anchor="middle" class="mut">描述的动作对应的时间已经过去了(思考时帮手已代为执行),从"现在"对应的帧接入(算法见第 4 节)</text>
+  <text x="30" y="178" font-weight="600">② 开机时:</text>
+  <text x="100" y="178">第一次思考特别慢(1–2 秒),这期间先递一个<tspan font-weight="600">"标准站立姿势"</tspan>撑着——</text>
+  <text x="100" y="198">就算断供,僵在"站立"上是安全的。想完后用 1 秒钟从站立平滑过渡到第一份 chunk。</text>
+</svg>
+<p class="cap">三个补丁的实测:修复前起步即摔;修复后 10 局 0 次摔倒。
+"每段递多少帧再去思考"是个可调参数(<code>--execution-horizon</code>,1–40)。</p></div>
+
+<h2><span class="no">3</span>Async:两个人分工,永不断供</h2>
+<p>async 的意思是"异步":<strong>大脑和传令员是两个人,各干各的</strong>。
+大脑每 0.4 秒拍照思考一次,把写好的新 chunk 放到桌上;传令员从不停手,
+每 0.04 秒递一帧,发现桌上有新 chunk 就立刻换新的递。</p>
+<div class="fig"><svg viewBox="0 0 820 240">
+  <text x="30" y="26" font-weight="600">大脑(独立线程,每 0.4 s 出一份新 chunk)</text>
+  <g>
+    <rect x="30" y="38" width="100" height="26" rx="4" fill="var(--card)" stroke="var(--ck-a)"/>
+    <text x="80" y="55" text-anchor="middle" class="mono" fill="var(--ck-a)">思考→A</text>
+    <rect x="180" y="38" width="100" height="26" rx="4" fill="var(--card)" stroke="var(--ck-b)"/>
+    <text x="230" y="55" text-anchor="middle" class="mono" fill="var(--ck-b)">思考→B</text>
+    <rect x="330" y="38" width="100" height="26" rx="4" fill="var(--card)" stroke="var(--ck-c)"/>
+    <text x="380" y="55" text-anchor="middle" class="mono" fill="var(--ck-c)">思考→C</text>
+    <rect x="480" y="38" width="100" height="26" rx="4" fill="var(--card)" stroke="var(--ck-a)"/>
+    <text x="530" y="55" text-anchor="middle" class="mono" fill="var(--ck-a)">思考→D</text>
+  </g>
+  <g stroke="var(--muted)" stroke-dasharray="2 3">
+    <line x1="130" y1="66" x2="130" y2="106"/><line x1="280" y1="66" x2="280" y2="106"/>
+    <line x1="430" y1="66" x2="430" y2="106"/><line x1="580" y1="66" x2="580" y2="106"/>
+  </g>
+  <text x="30" y="96" font-weight="600">传令员(独立线程,每 0.04 s 递一帧,永不停)</text>
+  <g>
+    <rect x="30" y="106" width="100" height="30" rx="4" fill="var(--ck-z)"/>
+    <text x="80" y="126" text-anchor="middle" fill="#fff" class="mono">旧chunk</text>
+    <rect x="130" y="106" width="150" height="30" rx="4" fill="var(--ck-a)"/>
+    <text x="205" y="126" text-anchor="middle" fill="#fff" class="mono">递 A 第10,11…帧</text>
+    <rect x="280" y="106" width="150" height="30" rx="4" fill="var(--ck-b)"/>
+    <text x="355" y="126" text-anchor="middle" fill="#fff" class="mono">换 B 第10帧起</text>
+    <rect x="430" y="106" width="150" height="30" rx="4" fill="var(--ck-c)"/>
+    <text x="505" y="126" text-anchor="middle" fill="#fff" class="mono">换 C 第10帧起</text>
+    <rect x="580" y="106" width="150" height="30" rx="4" fill="var(--ck-a)"/>
+    <text x="655" y="126" text-anchor="middle" fill="#fff" class="mono">换 D…</text>
+  </g>
+  <path d="M130 146 v10" stroke="var(--ink)"/>
+  <text x="134" y="170">每次换新 chunk 也不从第 1 帧递——同样按"照片拍下后过了多久"跳帧接入(第 4 节)</text>
+  <text x="30" y="200" class="mut">身体永远有新鲜指令,blocking 要修的三个问题在这里天生不存在。</text>
+  <text x="30" y="222" class="mut">代价:每份 40 帧的 chunk 只被执行了 ~10 帧就被更新的替换 —— 剩下 30 帧看似浪费(第 6 节变废为宝)。</text>
+</svg></div>
+
+<h2><span class="no">4</span>接入点怎么算:为什么不从第 1 帧执行</h2>
+<p>关键事实:<strong>chunk 的第 i 帧,说的是"拍照那一刻之后第 i/25 秒"该做的动作</strong>。
+可是照片拍下后,传输 + 思考要花约半秒——chunk 送到手上时,它开头描述的时间已经过去了。</p>
+<div class="formula">接入帧号 = round( (现在时刻 − 拍照时刻) × 25 )  ≈ round(0.4~0.55 秒 × 25) ≈ 第 10~13 帧</div>
+<p>打个比方:朋友根据你 12:00:00 发的定位给你写了逐秒的走路指引,你 12:00:00.5 才收到——
+你应该从指引的<strong>第 0.5 秒处</strong>开始跟,而不是从头跟。从头跟 = 倒带重演过去,
+这正是 blocking 旧版一顿一顿的原因(async 从第一天起就带这个补偿)。</p>
+
+<h2><span class="no">5</span>每份 chunk 实际被用了多少帧</h2>
+<p>先定义一个只属于 blocking 的词:<strong>思考间隙</strong>——单线程的 blocking 递完一段就要
+放下活去拍照+思考(~0.5 秒),这段没人递帧的空窗就是思考间隙,由帮手线程用当前 chunk
+没用完的部分垫上。async 没有这个概念,传令员从不停手。</p>
+<p>一份 chunk 40 帧,跳过开头 ~10–13 帧后,能用多少取决于<strong>两堵墙哪堵先撞上</strong>:</p>
+<div class="formula">实际执行 = min( 墙B:被换下/停下前还能执行几帧 ,  墙A:chunk 里还剩几帧 = 40 − 接入点 )</div>
+<p class="cap" style="margin-left:0">墙 A 是供给(chunk 就这么长);墙 B 是需求窗口
+(async:0.4 s 后新 chunk 到、旧的被换下 → 最多 0.4×25=10 帧;blocking:执行满 H 帧就停下思考)。
+min 不是精妙设计,就是"帧用完了"或"执行被打断了",谁先发生听谁的。</p>
+<div class="fig"><svg viewBox="0 0 840 330">
+  <text x="20" y="24" font-weight="600">把 40 帧画成 40 个格子(每行一种配置)</text>
+  <!-- row 1: async 0.4 -->
+  <text x="20" y="58">async,每 0.4 s 思考(默认)</text>
+  <rect x="20"  y="66" width="80"  height="22" rx="3" fill="var(--ck-z-soft)" stroke="var(--ck-z)"/>
+  <rect x="100" y="66" width="80"  height="22" rx="3" fill="var(--ck-c)"/>
+  <rect x="180" y="66" width="240" height="22" rx="3" fill="var(--card)" stroke="var(--line)" stroke-dasharray="3 3"/>
+  <text x="60"  y="81" text-anchor="middle" class="mono mut">跳过0–9</text>
+  <text x="140" y="81" text-anchor="middle" class="mono" fill="#fff">执行10–19</text>
+  <text x="300" y="81" text-anchor="middle" class="mut">20–39:被换下,没执行</text>
+  <text x="440" y="74" class="mono mut">min(10, 30) = 10 帧 ← 墙B先到</text>
+  <text x="440" y="90" class="mono mut">被换下的 30 帧 = ensemble 的原料</text>
+  <!-- row 2: async 1.6 -->
+  <text x="20" y="122">async,每 1.6 s 思考(h40)</text>
+  <rect x="20"  y="130" width="80"  height="22" rx="3" fill="var(--ck-z-soft)" stroke="var(--ck-z)"/>
+  <rect x="100" y="130" width="240" height="22" rx="3" fill="var(--ck-c)"/>
+  <rect x="340" y="130" width="80"  height="22" rx="3" fill="var(--ck-c-soft)" stroke="var(--ck-c)" stroke-dasharray="4 3"/>
+  <text x="60"  y="145" text-anchor="middle" class="mono mut">跳过0–9</text>
+  <text x="220" y="145" text-anchor="middle" class="mono" fill="#fff">执行 10–39,共 30 帧</text>
+  <text x="380" y="145" text-anchor="middle" class="mono" fill="var(--ck-c)">保持末帧</text>
+  <text x="440" y="145" class="mono mut">min(40, 30) = 30 帧 ← 墙A先到,差的 0.4 s 卡在第 39 帧</text>
+  <!-- row 3: blocking H=40 -->
+  <text x="20" y="186">blocking,H = 40</text>
+  <rect x="20"  y="194" width="104" height="22" rx="3" fill="var(--ck-z-soft)" stroke="var(--ck-z)"/>
+  <rect x="124" y="194" width="216" height="22" rx="3" fill="var(--ck-b)"/>
+  <rect x="340" y="194" width="80"  height="22" rx="3" fill="var(--ck-b-soft)" stroke="var(--ck-b)" stroke-dasharray="4 3"/>
+  <text x="72"  y="209" text-anchor="middle" class="mono mut">跳过0–12</text>
+  <text x="232" y="209" text-anchor="middle" class="mono" fill="#fff">主动执行 13–39,共 27 帧</text>
+  <text x="380" y="209" text-anchor="middle" class="mono" fill="var(--ck-b)">帮手保持</text>
+  <text x="440" y="209" class="mono mut">min(40, 27) = 27 帧;思考间隙 chunk 已空,帮手只能保持末帧</text>
+  <!-- row 4: blocking H=16 -->
+  <text x="20" y="250">blocking,H = 16</text>
+  <rect x="20"  y="258" width="104" height="22" rx="3" fill="var(--ck-z-soft)" stroke="var(--ck-z)"/>
+  <rect x="124" y="258" width="128" height="22" rx="3" fill="var(--ck-b)"/>
+  <rect x="252" y="258" width="88"  height="22" rx="3" fill="var(--ck-b-soft)" stroke="var(--ck-b)" stroke-dasharray="4 3"/>
+  <rect x="340" y="258" width="40"  height="22" rx="3" fill="var(--card)" stroke="var(--line)" stroke-dasharray="3 3"/>
+  <text x="72"  y="273" text-anchor="middle" class="mono mut">跳过0–12</text>
+  <text x="188" y="273" text-anchor="middle" class="mono" fill="#fff">主动 13–28</text>
+  <text x="296" y="273" text-anchor="middle" class="mono" fill="var(--ck-b)">帮手续 ~11 帧</text>
+  <text x="440" y="273" class="mono mut">主动 min(16,27)=16;间隙帮手 min(12,11)=11 ← 剩多少递多少</text>
+  <text x="20" y="314" class="mut">共性:开头 10–13 格永远不被执行——它们描述的是被思考延迟吃掉的过去,跳过是正确代价。</text>
+  <text x="20" y="330" class="mut" font-weight="600">真正的浪费只在第一行:30 帧被直接换掉——第 6 节的 ensemble 就是把这 30 帧变成"第二意见"回收。</text>
+</svg></div>
+<p class="cap" style="margin-left:0">另外注意:"async 每 1.6 s 思考"和"blocking H=40"几乎是同一件事的两种实现——
+前者按固定墙钟拍照,后者执行完才拍照;实测成绩同水位。</p>
+
+<h2><span class="no">6</span>Ensemble:把"被扔掉的 30 帧"变成第二意见</h2>
+<p>默认 async 下,任意时刻手里其实有 <strong>3–4 份还没过期的 chunk</strong>:
+它们分别是 0.4 / 0.8 / 1.2 秒前写的,但每一份都对"现在这一瞬间"写过预测——只是写在不同的帧位上。
+ensemble(时序集成)就是:<strong>别只听最新的,把几份对"现在"的意见加权平均后再递出去。</strong></p>
+<div class="fig"><svg viewBox="0 0 820 300">
+  <line x1="80" y1="240" x2="780" y2="240" class="axis"/>
+  <g class="mono mut">
+    <text x="130" y="258">8.4</text><text x="230" y="258">8.8</text><text x="330" y="258">9.2</text>
+    <text x="430" y="258">9.6</text><text x="530" y="258">10.0</text><text x="630" y="258">10.4</text>
+    <text x="730" y="258">10.8 s</text>
+  </g>
+  <line x1="540" y1="34" x2="540" y2="240" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="6 4"/>
+  <text x="548" y="46" font-weight="600">现在 = 10.0 s</text>
+  <rect x="140" y="180" width="400" height="30" rx="4" fill="var(--ck-z-soft)" stroke="var(--ck-z)"/>
+  <text x="90" y="200" class="mono">Z</text>
+  <text x="340" y="200" text-anchor="middle" class="mut">覆盖 8.4–10.0,刚好用完 → 不参与</text>
+  <rect x="240" y="140" width="400" height="30" rx="4" fill="var(--ck-a-soft)" stroke="var(--ck-a)"/>
+  <text x="90" y="160" class="mono" fill="var(--ck-a)">A</text>
+  <text x="390" y="160" fill="var(--ck-a)">1.2 秒前写的,它的第 30 帧 = "现在"</text>
+  <rect x="340" y="100" width="400" height="30" rx="4" fill="var(--ck-b-soft)" stroke="var(--ck-b)"/>
+  <text x="90" y="120" class="mono" fill="var(--ck-b)">B</text>
+  <text x="475" y="120" fill="var(--ck-b)">0.8 秒前写的,第 20 帧 = "现在"</text>
+  <rect x="440" y="60" width="400" height="30" rx="4" fill="var(--ck-c-soft)" stroke="var(--ck-c)"/>
+  <text x="90" y="80" class="mono" fill="var(--ck-c)">C</text>
+  <text x="565" y="80" fill="var(--ck-c)">0.4 秒前写的,第 10 帧 = "现在"</text>
+  <circle cx="540" cy="75" r="5" fill="var(--ck-c)"/>
+  <circle cx="540" cy="115" r="5" fill="var(--ck-b)"/>
+  <circle cx="540" cy="155" r="5" fill="var(--ck-a)"/>
+  <text x="98" y="288">递出去的动作 = <tspan class="mono">44%·C 的意见 + 33%·B 的意见 + 24%·A 的意见</tspan></text>
+</svg>
+<p class="cap">权重按"chunk 年龄"衰减(参数 M 控制:M&gt;0 越新话语权越大;M=0 一视同仁;M&lt;0 偏信旧的)。
+参数 N 控制听几份意见(N=3 最优;N=4 会把 Z 那种"只剩误差最大的末尾几帧"的 chunk 拉进来,实测有害)。</p></div>
+<div class="note"><strong>为什么这招能治"机器人在桌前定住一分钟":</strong>
+训练数据里有"走到桌前停一两秒再伸手"的片段。机器人一停,最新的 chunk C 看到的照片就是"静止站着"
+——它多半接着写"继续站着";0.4 秒后的下一份还是如此……死循环。
+但 <strong>A 和 B 是刚停下时写的</strong>,它们的规划里写着"停一下,然后第 20、30 帧开始伸手"
+——对"现在"这个时刻,它们投的票是"该动了"。三票平均,动作被拽出静止;身体一动,
+下一张照片就变了,循环破解。实测:同样 100 局,不开 ensemble 31 局成功,开了 73 局。</div>
+
+<h2><span class="no">7</span>速查表与陷阱</h2>
+<table>
+  <tr><th></th><th>blocking(修复后)</th><th>async</th></tr>
+  <tr><td>大脑和传令员</td><td>同一个人轮流干 + 思考时帮手垫场</td><td>两个人各干各的</td></tr>
+  <tr><td>什么时候拍照</td><td>执行完一段才拍(自适应节拍)</td><td>固定每 0.4 s(或设定间隔)拍</td></tr>
+  <tr><td><code>--execution-horizon</code></td><td class="num">有效:每段执行几帧(1–40)</td><td class="num">无效(死参数)</td></tr>
+  <tr><td>想"整段执行"</td><td class="num">H=40</td><td class="num">--replan-interval 1.6</td></tr>
+  <tr><td>ensemble</td><td>不可用(同时只有一份 chunk)</td><td class="num">可用,73% 的核心</td></tr>
+  <tr><td>实测(dart200 模型)</td><td class="num">5/10,0 摔</td><td class="num">默认 31/100 → 开 ensemble 73/100</td></tr>
+</table>
+<div class="warn"><strong>两个错了不报错、但毁掉一切的设置:</strong><br>
+① <code>TF_DATASET_FPS=25</code>:递帧节奏必须等于训练数据的帧率。错设成 30,所有动作以 1.2 倍速回放,
+机器人看起来"会动但总差一点",没有任何报错。<br>
+② stack 侧 <code>NO_ENCODER=1</code>:不设的话,机器人内部的另一个模块会不停抢走指令通道,
+外部发的动作压不住——同样悄无声息。</div>
+<div class="note"><strong>最后一条经验:所有部署参数的结论都绑定当时的模型。</strong>
+"每 1.6 秒思考一次"在旧模型上 20 局只成 1 局,在新模型上 20 局成 11 局;ensemble 在旧模型上有害、
+在新模型上 +42 个百分点。换了模型,所有旋钮都要重新小规模试一遍,不能沿用旧结论。</div>
+</main>
+
+</body>
+</html>
