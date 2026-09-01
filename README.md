@@ -125,7 +125,7 @@ videos/                 最新一批演示视频(每次推送整体替换)
 | 微调 GR00T(设置全表 / 启动 / vendored 代码怎么回事) | [docs/training.md](docs/training.md) |
 | 评测(open-loop / closed-loop / 第一轮基线 / DAgger) | [docs/evaluation.md](docs/evaluation.md) |
 | 搞懂 async client(实时动作分块 / 异步推理 / 时序集成) | [docs/realtime-action-streaming.md](docs/realtime-action-streaming.md) |
-| 零基础图解 blocking / async 机制(时间线图,浏览器打开) | [docs/client-mechanisms.html](docs/client-mechanisms.html) |
+| 零基础图解 blocking / async 机制(时间线图) | [docs/client-mechanisms.md](docs/client-mechanisms.md)(GitHub 在线可看;[html 交互版](docs/client-mechanisms.html)) |
 | 查参数、找模块、跑诊断、翻 FAQ | [docs/reference.md](docs/reference.md) |
 | 下一步做什么 | [docs/ROADMAP.md](docs/ROADMAP.md) |
 

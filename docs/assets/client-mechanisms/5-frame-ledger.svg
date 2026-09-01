@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 330" width="840" height="330"><style>
+text{font-family:'IBM Plex Sans','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;font-size:12.5px;fill:#22262b}
+.mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:11.5px}
+.mut{fill:#6b7280}
+.axis{stroke:#d8d5cc;stroke-width:1}
+</style><rect x="0" y="0" width="840" height="330" fill="#ffffff"/>
+  <text x="20" y="24" font-weight="600">把 40 帧画成 40 个格子(每行一种配置)</text>
+  <!-- row 1: async 0.4 -->
+  <text x="20" y="58">async,每 0.4 s 思考(默认)</text>
+  <rect x="20"  y="66" width="80"  height="22" rx="3" fill="#c9ccd2" stroke="#6b7280"/>
+  <rect x="100" y="66" width="80"  height="22" rx="3" fill="#0f766e"/>
+  <rect x="180" y="66" width="240" height="22" rx="3" fill="#ffffff" stroke="#d8d5cc" stroke-dasharray="3 3"/>
+  <text x="60"  y="81" text-anchor="middle" class="mono mut">跳过0–9</text>
+  <text x="140" y="81" text-anchor="middle" class="mono" fill="#fff">执行10–19</text>
+  <text x="300" y="81" text-anchor="middle" class="mut">20–39:被换下,没执行</text>
+  <text x="440" y="74" class="mono mut">min(10, 30) = 10 帧 ← 墙B先到</text>
+  <text x="440" y="90" class="mono mut">被换下的 30 帧 = ensemble 的原料</text>
+  <!-- row 2: async 1.6 -->
+  <text x="20" y="122">async,每 1.6 s 思考(h40)</text>
+  <rect x="20"  y="130" width="80"  height="22" rx="3" fill="#c9ccd2" stroke="#6b7280"/>
+  <rect x="100" y="130" width="240" height="22" rx="3" fill="#0f766e"/>
+  <rect x="340" y="130" width="80"  height="22" rx="3" fill="#99d5ce" stroke="#0f766e" stroke-dasharray="4 3"/>
+  <text x="60"  y="145" text-anchor="middle" class="mono mut">跳过0–9</text>
+  <text x="220" y="145" text-anchor="middle" class="mono" fill="#fff">执行 10–39,共 30 帧</text>
+  <text x="380" y="145" text-anchor="middle" class="mono" fill="#0f766e">保持末帧</text>
+  <text x="440" y="145" class="mono mut">min(40, 30) = 30 帧 ← 墙A先到,差的 0.4 s 卡在第 39 帧</text>
+  <!-- row 3: blocking H=40 -->
+  <text x="20" y="186">blocking,H = 40</text>
+  <rect x="20"  y="194" width="104" height="22" rx="3" fill="#c9ccd2" stroke="#6b7280"/>
+  <rect x="124" y="194" width="216" height="22" rx="3" fill="#b45309"/>
+  <rect x="340" y="194" width="80"  height="22" rx="3" fill="#ecc489" stroke="#b45309" stroke-dasharray="4 3"/>
+  <text x="72"  y="209" text-anchor="middle" class="mono mut">跳过0–12</text>
+  <text x="232" y="209" text-anchor="middle" class="mono" fill="#fff">主动执行 13–39,共 27 帧</text>
+  <text x="380" y="209" text-anchor="middle" class="mono" fill="#b45309">帮手保持</text>
+  <text x="440" y="209" class="mono mut">min(40, 27) = 27 帧;思考间隙 chunk 已空,帮手只能保持末帧</text>
+  <!-- row 4: blocking H=16 -->
+  <text x="20" y="250">blocking,H = 16</text>
+  <rect x="20"  y="258" width="104" height="22" rx="3" fill="#c9ccd2" stroke="#6b7280"/>
+  <rect x="124" y="258" width="128" height="22" rx="3" fill="#b45309"/>
+  <rect x="252" y="258" width="88"  height="22" rx="3" fill="#ecc489" stroke="#b45309" stroke-dasharray="4 3"/>
+  <rect x="340" y="258" width="40"  height="22" rx="3" fill="#ffffff" stroke="#d8d5cc" stroke-dasharray="3 3"/>
+  <text x="72"  y="273" text-anchor="middle" class="mono mut">跳过0–12</text>
+  <text x="188" y="273" text-anchor="middle" class="mono" fill="#fff">主动 13–28</text>
+  <text x="296" y="273" text-anchor="middle" class="mono" fill="#b45309">帮手续 ~11 帧</text>
+  <text x="440" y="273" class="mono mut">主动 min(16,27)=16;间隙帮手 min(12,11)=11 ← 剩多少递多少</text>
+  <text x="20" y="314" class="mut">共性:开头 10–13 格永远不被执行——它们描述的是被思考延迟吃掉的过去,跳过是正确代价。</text>
+  <text x="20" y="330" class="mut" font-weight="600">真正的浪费只在第一行:30 帧被直接换掉——第 6 节的 ensemble 就是把这 30 帧变成"第二意见"回收。</text>
+</svg>
