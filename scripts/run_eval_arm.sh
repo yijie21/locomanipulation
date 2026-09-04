@@ -22,9 +22,18 @@
 #   * seed 6000 + --spawn-edge 1.1 1.3: same fresh spawns as every other arm,
 #     so arms are paired round-by-round (McNemar).
 #
-# MODE (env, default wall) = wall | planner | lock. Only `wall` is the protocol;
-# `planner` reproduces the historical degraded deploy and `lock` the simulated
-# clock, both for diagnosis.
+# MODE (env, default wall) = wall | planner | lock | a18. Only `wall` is the
+# token protocol; `planner` reproduces the historical degraded deploy and
+# `lock` the simulated clock, both for diagnosis.
+#
+# MODE=a18 is the 18-D action space and deliberately breaks three of the rules
+# above, because that action space needs the opposite of each: the deploy runs
+# WITH its encoder (the planner message's upper body is only read there), the
+# process stays in planner mode start to finish (so no CLEAN_DEPLOY and no
+# --clean-deploy, whose shim drops planner commands), and the policy server
+# loads the 18-D modality config. Comparisons between an a18 arm and a wall
+# arm therefore differ in deploy interface as well as in action space; that is
+# unavoidable and is stated in the write-up.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
@@ -34,6 +43,7 @@ VENV_SIM_PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 GR00T_PY=third_party/Isaac-GR00T/.venv/bin/python
 NVDEF="${SONIC_DEPLOY_NVDEF:-/workspace/deps/gear_sonic_deploy_ours_lockstep_nvdef}"
 LAT="$PWD/outputs/eval/latency_flow200_wall.json"
+SERVE_EXTRA=""
 OUT=outputs/eval/$NAME
 [ -d "$OUT" ] && { echo "refusing to overwrite $OUT -- move it or pick a new NAME"; exit 1; }
 mkdir -p "$OUT" outputs/videos/cl_$NAME outputs/logs
@@ -43,14 +53,17 @@ case $MODE in
   wall)    export CLEAN_DEPLOY=1; CL="--client async --clean-deploy" ;;
   planner) export SONIC_DEPLOY_BIN=$NVDEF/target/release/g1_deploy_onnx_ref; CL="--client async" ;;
   lock)    export LOCKSTEP=1 LOCKSTEP_DEPLOY_ROOT=$NVDEF; CL="--client lockstep --latency-dist $LAT" ;;
-  *)       echo "MODE must be wall|planner|lock"; exit 1 ;;
+  a18)     export SONIC_DEPLOY_BIN=$NVDEF/target/release/g1_deploy_onnx_ref TF_ACTION18=1
+           CL="--client async"; SERVE_EXTRA="--modality-config $PWD/configs/gr00t_sonic_2cam_a18.py" ;;
+  *)       echo "MODE must be wall|planner|lock|a18"; exit 1 ;;
 esac
 
 SCENE_PRESET=bottle_only SCENE_SEED="${EVAL_SCENE_SEED:-922}" \
   "$VENV_SIM_PY" src/teleop_free/build_sim_scene.py outputs/scene outputs/scene/sim \
   | grep -E "^\[scene\]"
 
-NO_ENCODER=1 SIM_VIS=readout SIM_VIDEO_DIR="$PWD/outputs/videos/cl_$NAME" \
+ENC_ARG=("NO_ENCODER=1"); [ "$MODE" = a18 ] && ENC_ARG=()
+env "${ENC_ARG[@]}" SIM_VIS=readout SIM_VIDEO_DIR="$PWD/outputs/videos/cl_$NAME" \
   bash src/teleop_free/start_stack.sh "pick up the water bottle" \
   > outputs/logs/stack_$NAME.log 2>&1
 grep -qi "stack up" outputs/logs/stack_$NAME.log \
@@ -58,7 +71,7 @@ grep -qi "stack up" outputs/logs/stack_$NAME.log \
 echo "STACK_UP $NAME"
 
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU} nohup "$GR00T_PY" \
-  src/teleop_free/tools/serve_policy.py --model-path "$CKPT" --port "$PORT" \
+  src/teleop_free/tools/serve_policy.py --model-path "$CKPT" --port "$PORT" ${SERVE_EXTRA:-} \
   > /workspace/tmp/serve_$NAME.log 2>&1 &
 for _ in $(seq 1 90); do
   grep -q "listening" /workspace/tmp/serve_$NAME.log 2>/dev/null && break; sleep 5

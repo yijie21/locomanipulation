@@ -216,7 +216,7 @@ if [ "${DRY:-0}" = "1" ]; then RUNNER=(echo); fi
     --base-model-path nvidia/GR00T-N1.7-3B \
     --dataset-path "$DATA" \
     --embodiment-tag UNITREE_G1_SONIC \
-    --modality-config-path "$LOCOMANI_ROOT/configs/gr00t_sonic_2cam.py" \
+    --modality-config-path "${MODALITY:-$LOCOMANI_ROOT/configs/gr00t_sonic_2cam.py}" \
     --num-gpus "$GPUS" \
     --output-dir "$OUT_ROOT" \
     --max-steps "$MAX_STEPS" \

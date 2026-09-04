@@ -220,10 +220,21 @@ def main():
     if not dep.strip():
         sys.exit("deploy is not running -- bring the stack up with "
                  "NO_ENCODER=1 bash src/teleop_free/start_stack.sh")
-    if "--encoder-file" in dep:
+    a18 = os.environ.get("TF_ACTION18", "0") == "1"
+    if "--encoder-file" in dep and not a18:
         sys.exit("deploy is running WITH its encoder. Token streaming will "
                  "not hold (initial_encoder_mode_ 0 keeps re-enabling it). "
                  "Restart the stack with NO_ENCODER=1.")
+    if a18 and "--encoder-file" not in dep:
+        # The mirror image: the 18-D action drives the PLANNER channel, whose
+        # upper body is only read on the encoder path (2026-09-03: a stack
+        # started with NO_ENCODER silently drops the arm and crouch reference
+        # and every round stalls in the up phase).
+        sys.exit("TF_ACTION18=1 needs the deploy's encoder. Restart the stack "
+                 "WITHOUT NO_ENCODER=1.")
+    if a18 and args.clean_deploy:
+        sys.exit("TF_ACTION18=1 is incompatible with --clean-deploy: the shim "
+                 "drops planner commands, which is the whole 18-D channel.")
 
     out = Path(args.out or REPO / "outputs/eval/bottle200/closed_loop.json")
     out.parent.mkdir(parents=True, exist_ok=True)

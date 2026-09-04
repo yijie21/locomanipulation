@@ -82,6 +82,23 @@ for b in $(seq 0 $((BATCHES - 1))); do
         outputs/scene outputs/scene/sim | grep -E '^\[scene\]' || {
         echo "  scene rebuild FAILED"; continue; }
 
+    # Snapshot the scene this batch was collected in. build_sim_scene.py
+    # rewrites outputs/scene/sim IN PLACE, so without this the XML an episode
+    # was recorded against is gone the moment the next batch starts, and an
+    # offline re-render (Isaac / 3DGS) can only regenerate it from the seed --
+    # which stops being exact the first time build_sim_scene.py or scene_lib.py
+    # changes. Table height varies 0.62-0.65 m across seeds, so a wrong scene
+    # is a table at the wrong height under a correct trajectory, not a subtle
+    # error. One cp and the two hashes that make it reproducible.
+    SNAP="$OUT/scene_$seed"; mkdir -p "$SNAP"
+    cp outputs/scene/sim/scene_locomani.xml outputs/scene/sim/scene_meta.json \
+       "$SNAP/" 2>/dev/null || echo "  scene snapshot failed (non-fatal)"
+    printf '{"scene_seed":%s,"preset":"%s","built":"%s","git":{"build_sim_scene.py":"%s","scene_lib.py":"%s"}}\n' \
+        "$seed" "${SCENE_PRESET:-}" "$(date -Is)" \
+        "$(git log -1 --format=%h -- src/teleop_free/build_sim_scene.py 2>/dev/null)" \
+        "$(git log -1 --format=%h -- src/teleop_free/scene_lib.py 2>/dev/null)" \
+        > "$SNAP/provenance.json"
+
     nohup env SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
         bash src/teleop_free/start_stack.sh "pick up the object" \
         > "$OUT/stack_$seed.log" 2>&1 &

@@ -144,6 +144,9 @@ def main():
     ap.add_argument("--fps", type=float, default=25.0)
     ap.add_argument("--out", default=None)
     ap.add_argument("--ok-only", action="store_true", default=True)
+    ap.add_argument("--seq-out", default=None, metavar="NPZ",
+                    help="also write a seq -> 18-D table (no resampling) for "
+                         "convert_to_hf_format.py --a18 to join on")
     a = ap.parse_args()
 
     man = {}
@@ -160,12 +163,18 @@ def main():
     from arm_ik import ArmIK
     IK = ArmIK()
     eps, names, kept, skipped = [], [], 0, 0
+    seq_all, a18_all = [], []
     for f in sorted(glob.glob(os.path.join(a.collect_dir, "pose_sidecar/*.jsonl"))):
         rows = [json.loads(l) for l in open(f)]
         if len(rows) < 50 or "u17" not in rows[len(rows) // 2]:
             skipped += 1
             continue
         A, T = episode_actions(rows, IK)
+        if a.seq_out:
+            for rr, aa in zip(rows, A):
+                sq = rr.get("seq")
+                if sq is not None:
+                    seq_all.append(int(sq)); a18_all.append(aa)
         A, T = resample(A, T, a.fps)
         eps.append(A)
         names.append(os.path.basename(f))
@@ -173,6 +182,14 @@ def main():
     if not eps:
         raise SystemExit("no usable sidecar files (are the cmd/ik columns present?)")
 
+    if a.seq_out:
+        sq = np.asarray(seq_all, dtype=np.int64)
+        aa = np.asarray(a18_all, dtype=np.float32)
+        order = np.argsort(sq, kind="stable")
+        sq, aa = sq[order], aa[order]
+        keep = np.concatenate([[True], np.diff(sq) != 0])   # first row wins per seq
+        np.savez_compressed(a.seq_out, seq=sq[keep], a18=aa[keep])
+        print(f"seq table: {int(keep.sum())} unique seq -> {a.seq_out}")
     out = a.out or os.path.join(a.collect_dir, "action18.npz")
     np.savez_compressed(out, **{n: e for n, e in zip(names, eps)})
     allA = np.concatenate(eps, 0)
