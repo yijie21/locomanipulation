@@ -71,7 +71,13 @@ for b in $(seq 0 $((BATCHES - 1))); do
     seed=$((SEED0 + b))
     echo "===== batch $((b + 1))/$BATCHES  scene seed $seed ====="
 
-    bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+    # COLLECT_NO_STOP=1: another instance's stack is running (an eval);
+    # stop only THIS instance instead of every stack on the machine.
+    if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
+        bash src/teleop_free/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+    else
+        bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+    fi
     SCENE_SEED="$seed" "$VENV_SIM_PY" src/teleop_free/build_sim_scene.py \
         outputs/scene outputs/scene/sim | grep -E '^\[scene\]' || {
         echo "  scene rebuild FAILED"; continue; }
@@ -100,7 +106,11 @@ for b in $(seq 0 $((BATCHES - 1))); do
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$seed.log" || echo "  (no result line)"
 done
 
-bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
+    bash src/teleop_free/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+else
+    bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+fi
 echo
 echo "===== totals ====="
 grep -h -oE "^EPISODE (OK|FAILED \[[a-z]+\])" "$OUT"/gym_*.log | sort | uniq -c

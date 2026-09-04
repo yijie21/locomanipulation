@@ -71,7 +71,7 @@ else:
 PREGRASP_ABOVE = 0.22      # height of the staging point above the object
 PREGRASP_BACK = 0.16       # how far short of the object that staging point sits
 GRASP_ABOVE = 0.02         # palm this far above the object centre when closing
-LIFT_HEIGHT = 0.20         # how far to raise it after the fingers close
+LIFT_HEIGHT = 0.10         # how far to raise it after the fingers close
 
 # Where the hand actually grips, in the wrist frame the privileged stream
 # reports as "palm". Driving the wrist itself onto the object closes the

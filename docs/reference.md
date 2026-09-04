@@ -89,7 +89,7 @@
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行 |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
 | `SONIC_POLICY` | `policy/release` | deploy | 换 checkpoint(`policy/sonic_v1_1` 可用,但步长与时序要重测) |
-| `NO_ENCODER` | `0` | deploy | `1` = **不加载 encoder**,token-only / VLA 部署配置 |
+| `NO_ENCODER` | `0` | deploy | `1` = **不加载 encoder**,token-only / VLA 部署配置。**采集(planner 模式)禁用**:没有 encoder 时上肢/下蹲参考被静默丢弃,抬臂阶段停滞(2026-09-03) |
 | `HAND` | `dex1` | 全部 | `dex1` 平行夹爪 / `dex3` 三指手 |
 | `GYM_ARM_PIN` | `0` | gym | `1` 恢复 sim 侧关节 pin(动作更准,但录下的 latent 不再是产生该动作的 latent) |
 | `GYM_ARM_CHANNEL` | `planner` | gym | `streamed` 切回旧的流式手臂通道 |

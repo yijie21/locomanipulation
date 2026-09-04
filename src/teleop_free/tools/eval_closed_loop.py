@@ -85,7 +85,11 @@ def main():
                          "anything going into the ladder, still needs 100.")
     ap.add_argument("--execution-horizon", type=int, default=16,
                     help="blocking client only: chunk steps per replan")
-    ap.add_argument("--client", choices=("async", "blocking"), default="async",
+    ap.add_argument("--clean-deploy", action="store_true",
+                    help="wall-clock clients: deploy engaged by SONIC_AUTO_START, "
+                         "never a planner command (stack started with CLEAN_DEPLOY=1); "
+                         "docs/lockstep.md '校准诊断'")
+    ap.add_argument("--client", choices=("async", "lockstep", "blocking"), default="async",
                     help="async = NVIDIA's own streaming pattern (worker-thread "
                          "inference, uninterrupted publishing, latency-"
                          "compensated chunk indexing); blocking = execute-N-"
@@ -137,6 +141,23 @@ def main():
                          "this scales instead, preserving the model's own "
                          "ordering. K=3 puts the effective trigger at 0.0178, "
                          "the p75 of the failure band.")
+    ap.add_argument("--latency-frames", type=int, default=None, metavar="K",
+                    help="lockstep client: FIXED simulated inference latency "
+                         "in 25 fps frames (for latency sweeps). Mutually "
+                         "exclusive with --latency-dist.")
+    ap.add_argument("--latency-dist", default=None, metavar="JSON",
+                    help="lockstep client: empirical latency distribution "
+                         "from tools/latency_dist.py (drawn per inference, "
+                         "seeded by round). The calibration default.")
+    ap.add_argument("--rtc", action="store_true",
+                    help="async client only: real-time chunking (test-time "
+                         "inpainting). Each inference freezes the first "
+                         "rtc.frozen frames of the new chunk to the previous "
+                         "chunk's overlapping rows (frozen = rolling p90 of "
+                         "measured obs->chunk latency) and exponentially "
+                         "ramps the rest, removing the chunk-boundary "
+                         "discontinuity. Needs a serve_policy.py new enough "
+                         "to answer rtc.* keys (2026-09-01).")
     ap.add_argument("--replan-interval", type=float, default=0.4, metavar="SEC",
                     help="async client only: seconds between chunk requests. "
                          "0.4 (~12 frames) is the ladder's setting; 1.33 "
@@ -215,11 +236,67 @@ def main():
     # stream stops holding -- the preflight above would only have caught it on
     # the NEXT invocation.
     os.environ["NO_ENCODER"] = "1"
+    if args.client == "lockstep":
+        # restart_deploy.sh (per-round fresh_deploy) reads this to relaunch
+        # the --sim-lockstep binary; a wall-clock deploy on a lockstep sim
+        # would just never tick.
+        os.environ["LOCKSTEP"] = "1"
 
     # --- install the policy and run the gym's own loop ---------------------
     import grasp_gym
 
-    if args.client == "async":
+    if args.client == "lockstep":
+        # Needs a stack started with LOCKSTEP=1 (lockstep_sim.py serving the
+        # step RPC, deploy --sim-lockstep). Ping it rather than trusting env.
+        ls = vla_round.LockstepLink()
+        if not ls.ping():
+            raise SystemExit(f"no lockstep sim on :{vla_round.LOCKSTEP_PORT} -- "
+                             "start the stack with LOCKSTEP=1")
+        latency = vla_round.load_latency_dist(args.latency_dist, args.latency_frames)
+        # The clock owns a commander of its own (a second PUB into the
+        # deploy's SUB) for the per-session prime + enter_streamed; the shim
+        # must be installed BEFORE grasp_gym builds its Primitives.
+        # publishers connect to the sim's XSUB (lockstep_sim.py) -- set before
+        # ANY AgentCommander is built (this one and grasp_gym's Primitives)
+        os.environ["TF_SONIC_PUB_CONNECT"] = os.environ.get(
+            "TF_LOCKSTEP_XSUB_PORT",
+            str(int(os.environ.get("TF_SONIC_PORT", 5556)) + 28))
+        import agent_server
+        clock = vla_round.LockstepClock(ls, agent_server.AgentCommander())
+        vla_round.install_lockstep_shim(clock)
+        clock.resume()
+        print(f"[closed-loop] LOCKSTEP client: simulation clock, K ~ "
+              f"{latency['source']} (first {sorted(set(latency['first']))[:6]}.. "
+              f"steady {sorted(set(latency['steady']))[:8]}..). Not comparable "
+              f"with wall-clock numbers until calibrated (docs/evaluation.md).")
+        grasp_gym.VLA_POLICY = vla_round.make_vla_policy_lockstep(
+            link, ls, clock, args.task, latency, seed=args.seed,
+            trace_dir=trace_dir)
+    elif args.client == "async":
+        if args.clean_deploy:
+            os.environ["CLEAN_DEPLOY"] = "1"      # restart_deploy.sh per round
+            clock = vla_round.CleanClock()
+            vla_round.install_clean_shim(clock)
+            _orig_fresh = grasp_gym.fresh_deploy
+
+            def fresh_deploy(p):
+                clock.pause()
+                ok = _orig_fresh(p)
+                if ok:
+                    clock.prime()
+                clock.resume()
+                return ok
+            grasp_gym.fresh_deploy = fresh_deploy
+            _orig_prim_init = grasp_gym.Primitives.__init__
+
+            def prim_init(self, *a, **kw):
+                _orig_prim_init(self, *a, **kw)
+                if not clock.primed:
+                    clock.prime()
+                    clock.resume()
+            grasp_gym.Primitives.__init__ = prim_init
+            print("[closed-loop] CLEAN DEPLOY: auto-start, no planner command in the "
+                  "deploy's lifetime, standing token between rounds.")
         grasp_gym.VLA_POLICY = vla_round.make_vla_policy_async(
             link, args.task, inference_interval=args.replan_interval,
             trace_dir=trace_dir)
@@ -282,6 +359,13 @@ def main():
               f"trigger at raw g < "
               f"{0.0245 - (0.0245 - 0.005) / args.grip_gain:.4f} "
               f"(failure band measured p25 0.0159 / p50 0.0168 / p75 0.0178)")
+    if args.rtc:
+        if args.client not in ("async", "lockstep"):
+            raise SystemExit("--rtc is implemented for the async/lockstep clients only")
+        vla_round.RTC_ON = True
+        print("[closed-loop] RTC on: frozen-prefix inpainting at every "
+              "replan; frozen = p90 latency, overlap = whole remainder, "
+              "ramp server-side (serve_policy --rtc-ramp-rate).")
     if args.ensemble > 1:
         vla_round.ENSEMBLE_N = args.ensemble
         vla_round.ENSEMBLE_M = args.ensemble_m

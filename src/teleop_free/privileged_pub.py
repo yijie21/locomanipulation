@@ -282,7 +282,26 @@ class PrivilegedPublisher:
             "joints": [float(d.qpos[a]) if a >= 0 else 0.0
                        for a in self.joint_qadr],
             "fallen": bool(pelvis_pos[2] < 0.4),
+            # physics diagnostics (2026-09-02 wall-vs-lockstep walk probe)
+            "ncon": int(d.ncon),
+            "xfrc": float(np.abs(d.xfrc_applied).sum()),
+            "ctrl_abs": float(np.abs(d.ctrl).sum()),
+            **self._cmd_fields(),
         }
+
+    def _cmd_fields(self) -> dict:
+        """The deploy's latest LowCmd as the sim sees it (diagnostic)."""
+        br = getattr(self, "bridge", None)
+        lc = getattr(br, "low_cmd", None) if br is not None else None
+        if not lc:
+            return {}
+        n = getattr(br, "num_body_motor", 29)
+        mc = lc.motor_cmd
+        return {"cmd_q": [float(mc[i].q) for i in range(n)],
+                "cmd_kp": [float(mc[i].kp) for i in range(n)],
+                "cmd_kd": [float(mc[i].kd) for i in range(n)],
+                "cmd_dq": [float(mc[i].dq) for i in range(n)],
+                "cmd_tau": [float(mc[i].tau) for i in range(n)]}
 
     def publish(self) -> None:
         # Monotonic per-process sequence number: the ONE shared key between
@@ -434,6 +453,25 @@ class EpisodeControlServer:
             self.data.qpos[1] += dy
             if "yaw" in robot:
                 self.data.qpos[3:7] = self._yaw_quat(float(robot["yaw"]))
+            # "dof": the 29 body joints in MuJoCo order (g1_joints.MUJOCO_JOINT_NAMES),
+            # e.g. a recorded observation.state[[0:22]+[29:36]] -- lets a token replay
+            # start from the recorded whole-body pose instead of the default stand
+            # (2026-09-04: the default stand's arms hit the bottle at 0.3 m).
+            dof = robot.get("dof")
+            if dof is not None:
+                # "dof_from": first joint index to apply (15 = arms only: a
+                # recorded LEG pose plus the seat-on-floor guess toppled the
+                # robot 20/20 in the first try; the arms are what matter)
+                if not hasattr(self, "_dof_qadr"):
+                    from g1_joints import MUJOCO_JOINT_NAMES
+                    self._dof_qadr = []
+                    for n in MUJOCO_JOINT_NAMES:
+                        jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n)
+                        self._dof_qadr.append(int(self.model.jnt_qposadr[jid]) if jid >= 0 else -1)
+                j0 = int(robot.get("dof_from", 0))
+                for i, (a, v) in enumerate(zip(self._dof_qadr, dof)):
+                    if a >= 0 and i >= j0:
+                        self.data.qpos[a] = float(v)
 
         self._seat_on_floor()
         self.data.qvel[:] = 0.0
@@ -680,6 +718,28 @@ class PoseSidecar:
                            "pelvis": list(pel["pos"]) + list(pel["quat"]),
                            "objects": {k: list(o["pos"]) + list(o["quat"])
                                        for k, o in msg.get("objects", {}).items()}}
+                    # ACTION-SIDE bookkeeping (2026-09-04): what the expert
+                    # COMMANDED on this frame -- the planner frame, the 17
+                    # upper-body joint targets, the hand targets and the IK's
+                    # wrist pose target in the pelvis frame. Purely additive:
+                    # nothing here is sent anywhere, and an import failure
+                    # leaves the row exactly as it was. Lets an 18-D action
+                    # (wrist SE(3) + grip per arm + 4-D base) be exported
+                    # offline from a normal collection run.
+                    try:
+                        import agent_server as _as, arm_ik as _ik
+                        c = _as.LAST_CMD
+                        if c.get("frame") is not None:
+                            row["cmd"] = c["frame"]
+                        if c.get("u17") is not None:
+                            row["u17"] = c["u17"]
+                        if c.get("hands") is not None:
+                            row["hands"] = c["hands"]
+                        if _ik.LAST_IK:
+                            row["ik"] = {k: {"pos": v[0], "quat": v[1]}
+                                         for k, v in _ik.LAST_IK.items()}
+                    except Exception:
+                        pass
                     self._fh.write(json.dumps(row) + "\n")
                 except Exception:
                     pass

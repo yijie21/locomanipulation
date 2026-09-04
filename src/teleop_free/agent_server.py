@@ -118,6 +118,13 @@ def rest_wrists() -> tuple[np.ndarray, np.ndarray]:
     return left, right
 
 
+
+# LAST_CMD: the last planner frame, 17 upper-body joint targets and hand
+# targets actually published. Bookkeeping only, read by PoseSidecar so an
+# 18-D action (wrist SE(3) + grip per arm + base command) can be exported
+# offline from a collection run without changing what is sent.
+LAST_CMD: dict = {}
+
 class AgentCommander:
     """Publishes everything the C++ deploy stack and the exporter need."""
 
@@ -126,11 +133,30 @@ class AgentCommander:
 
         self.sonic = self._ctx.socket(zmq.PUB)
         self.sonic.setsockopt(zmq.LINGER, 2000)  # else close() eats the last message
-        self.sonic.bind(f"tcp://*:{sonic_port}")
+        # Lockstep: the sim owns an XSUB/XPUB proxy on the deploy's port and
+        # every publisher (this commander, the sim's envelope tokens) CONNECTS
+        # to the XSUB instead of binding -- also what lets a second commander
+        # (the clock pump's) coexist with grasp_gym's.
+        relay = os.environ.get("TF_SONIC_PUB_CONNECT")
+        if relay:
+            # PUSH into the sim's PULL->PUB relay (see lockstep_sim.py); the
+            # bytes on the wire are identical, the sim's PUB does the fan-out
+            self.sonic.close()
+            self.sonic = self._ctx.socket(zmq.PUSH)
+            self.sonic.setsockopt(zmq.LINGER, 1000)
+            self.sonic.connect(f"tcp://localhost:{int(relay)}")
+        else:
+            self.sonic.bind(f"tcp://*:{sonic_port}")
 
         self.keyboard = self._ctx.socket(zmq.PUB)
         self.keyboard.setsockopt(zmq.LINGER, 2000)
-        self.keyboard.bind(f"tcp://*:{keyboard_port}")
+        try:
+            self.keyboard.bind(f"tcp://*:{keyboard_port}")
+        except zmq.ZMQError:
+            if not os.environ.get("TF_SONIC_PUB_CONNECT"):
+                raise
+            # second commander under lockstep (the clock pump): the exporter
+            # keyboard channel belongs to grasp_gym's, this one never uses it
 
         # PUB drops anything sent before a subscriber has connected.
         time.sleep(0.5)
@@ -234,9 +260,20 @@ class AgentCommander:
     def set_upper_body(self, q17) -> None:
         """17 joint targets for FROZEN_UPPER_BODY mode: waist y/r/p, then
         L/R-interleaved shoulder p, r, y, elbow, wrist r, p, y."""
+        try:
+            LAST_CMD["u17"] = (None if q17 is None else
+                               [float(v) for v in np.asarray(q17).ravel()])
+        except Exception:
+            pass
         self.upper_body = np.asarray(q17, dtype=np.float32)
 
     def set_hands(self, left=None, right=None):
+        try:
+            LAST_CMD["hands"] = {k: ([float(x) for x in np.asarray(v).ravel()]
+                                     if v is not None else None)
+                                 for k, v in (("left", left), ("right", right))}
+        except Exception:
+            pass
         if left is not None:
             self.left_hand = np.asarray(left, dtype=np.float32)
         if right is not None:
@@ -268,6 +305,14 @@ class AgentCommander:
         to be threaded through every call site.
         """
         sm = self.stream_mode if stream_mode is None else stream_mode
+        try:
+            LAST_CMD["frame"] = dict(
+                mode=int(getattr(mode, "value", mode)),
+                movement=[float(v) for v in movement],
+                facing=[float(v) for v in facing],
+                speed=float(speed), height=float(height))
+        except Exception:
+            pass
         self.manager_state(sm)
         if self.heading_offset:
             c, s = np.cos(-self.heading_offset), np.sin(-self.heading_offset)

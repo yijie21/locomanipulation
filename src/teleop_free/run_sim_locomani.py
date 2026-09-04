@@ -61,6 +61,7 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             pub = PrivilegedPublisher(self.mj_model, self.mj_data,
                                       object_bodies, surfaces=surface_bodies)
             self._privileged_pub = pub
+            pub.bridge = self.unitree_bridge   # LowCmd diagnostics (cmd_q/kp/kd)
             recorder = None
             if VIDEO_DIR:
                 from sim_video import VideoRecorder
@@ -289,6 +290,10 @@ def main(config: SimLoopConfig) -> None:
     install_camera_configs()
     install_privileged_publisher(meta, wbc_config.get("DEFAULT_DOF_ANGLES"))
     disable_fall_reset()
+    import lockstep_sim
+    if lockstep_sim.enabled():
+        from gear_sonic.utils.mujoco_sim import base_sim as _base_sim
+        lockstep_sim.install(_base_sim)
     print(f"[sim] scene   {scene_xml}")
     print(f"[sim] objects {list(meta['objects'])}")
 
@@ -366,6 +371,21 @@ def main(config: SimLoopConfig) -> None:
     DefaultEnv.compute_body_torques = compute_body_torques
     print("[sim] arm pin hook installed (compute_body_torques)")
 
+    if lockstep_sim.enabled():
+        # The 5555 publisher stays up (stack readiness checks read it); the
+        # free-running loop is replaced by the agent-driven runner.
+        if config.enable_image_publish:
+            sim_wrapper.sim.start_image_publish_subprocess(
+                start_method=config.mp_start_method,
+                camera_port=config.camera_port)
+            time.sleep(1)
+        try:
+            lockstep_sim.run(sim_wrapper.sim,
+                             int(os.environ.get("TF_SONIC_PORT", 5556)),
+                             int(os.environ.get("TF_OUT_PORT", 5557)))
+        finally:
+            sim_wrapper.sim.close()
+        return
     SimulatorFactory.start_simulator(
         sim_wrapper.sim,
         as_thread=False,

@@ -79,7 +79,7 @@ RAISE_LEAD = 1.00
 # upper_ref.MAX_STEP) needs ~0.6 s for the largest residual a skipped leg 1
 # can leave; anything past that is recorded standing, so it is bounded and
 # logged rather than waited out.
-RAISE_FINISH_MAX_S = 1.50
+RAISE_FINISH_MAX_S = 0.30
 EDGE_MAX = 0.32            # sampling ring upper bound: core-aim stands sit
                            # at rel depth 0.18-0.36 (the sweet slice), so
                            # they clear the edge by more than the old 0.20
@@ -112,6 +112,7 @@ class TargetPlan(NamedTuple):
     squat_hint: float | None
     ax: int                # 0 = x edge, 1 = y edge -- the edge it hugs
     sgn: float             # which side of that axis
+    stand3: np.ndarray = np.zeros((0, 3))   # coverage-first (x, y, drop) cells, GYM_STAND_COVER
 
 
 def resolve_pool(meta: dict, spec: str) -> list[str]:
@@ -160,8 +161,37 @@ def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap) -> TargetPlan:
         rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
         squat_hint = None
     phrase = meta.get("object_phrase", {}).get(key, f"the {key}")
+    stand3 = rm.stand_cells(float(grip_z - STANDING_PELVIS_Z))
     return TargetPlan(key, phrase, nom, grip_z, rel_cands, squat_hint,
-                      ax, sgn)
+                      ax, sgn, stand3)
+
+
+def _drop_to_hint(want_drop: float) -> float:
+    # plan_core_stand's drop is a DELIVERED pelvis drop; arm.squat's command
+    # delivers ~1.5x (cmd 5/9/13 cm -> 4.4/12/19.5 cm) -- invert for the hint
+    return float(np.interp(want_drop, [0.0, 0.044, 0.12, 0.195],
+                           [0.0, 0.05, 0.09, 0.13]))
+
+
+STAND_COVER = os.environ.get("GYM_STAND_COVER", "1") == "1"
+FACE_OBJ = os.environ.get("GYM_FACE_OBJ", "0") == "1"
+
+
+def sample_stand(pl, rng):
+    """Coverage-first stand: stratified in y over the whole core, plus a
+    +-3 cm crouch jitter (the policy's own crouch scatters that much).
+    Returns (rel_xy, squat_hint). Falls back to the classic aim cells."""
+    if not STAND_COVER or len(pl.stand3) == 0:
+        rel = pl.rel_cands[rng.integers(len(pl.rel_cands))]
+        return rel, pl.squat_hint
+    ys = pl.stand3[:, 1]
+    bins = np.arange(np.floor(ys.min() / 0.05) * 0.05, ys.max() + 0.05, 0.05)
+    live = [b for b in bins if ((ys >= b) & (ys < b + 0.05)).any()]
+    b = live[rng.integers(len(live))]
+    cells = pl.stand3[(ys >= b) & (ys < b + 0.05)]
+    x, y, dz = cells[rng.integers(len(cells))]
+    hint = float(np.clip(_drop_to_hint(dz) + rng.uniform(-0.03, 0.03), 0.0, 0.13))
+    return np.array([x, y]), hint
 
 
 def instruction(phrase: str) -> str:
@@ -283,6 +313,19 @@ def main() -> None:
                          "running all --rounds. --rounds is then the cap on "
                          "how many attempts that may take, so a run that "
                          "never reaches N still terminates.")
+    ap.add_argument("--one-shot", action="store_true",
+                    help="discard any round whose first approach parks out "
+                         "of reach instead of walking in again (flow200: "
+                         "the repair re-walk is recorded hesitation, and "
+                         "the dataset doctrine is one continuous arrival "
+                         "or nothing). Incompatible with --dart-frac, whose "
+                         "recovery episodes ARE the repair walk.")
+    ap.add_argument("--mid-band", type=float, default=0.30, metavar="M",
+                    help="distance before plan_r where the approach drops "
+                         "from COARSE to the MID deceleration speed "
+                         "(default 0.30, the calibrated brake; flow200 "
+                         "runs 0.20 for a shorter crawl-in at a small "
+                         "carry-risk cost)")
     ap.add_argument("--targets", default="pool",
                     help="which objects to draw the round's target from: "
                          "'pool' (every entry in the scene's target_pool), "
@@ -342,8 +385,14 @@ def main() -> None:
         manifest_dir = os.path.dirname(args.manifest)
         if manifest_dir:
             os.makedirs(manifest_dir, exist_ok=True)
+    if args.one_shot and args.dart_frac > 0:
+        raise SystemExit("--one-shot and --dart-frac are contradictory: "
+                         "DART episodes ARE the repair walk one-shot "
+                         "discards. Pick one.")
     off_lo, off_hi = (args.spawn_off * 2)[:2]
     edge_range = None
+    if getattr(args, "one_shot", False):
+        os.environ["GYM_ONE_SHOT"] = "1"    # stream_reach: discard instead of repair
     if args.spawn_edge is not None:
         edge_range = tuple(sorted((args.spawn_edge * 2)[:2]))
         if edge_range[0] < EDGE_MIN:
@@ -400,7 +449,9 @@ def main() -> None:
     plans = {k: plan_for_target(meta, k, rm) for k in pool}
     for k, pl in plans.items():
         print(f"[gym] {k:8s} grip_z {pl.grip_z:.3f}  {len(pl.rel_cands)} aim "
-              f"cells  squat_hint "
+              f"cells ({len(pl.stand3)} coverage cells, y "
+              f"{pl.stand3[:, 1].min() if len(pl.stand3) else float('nan'):.2f}..{pl.stand3[:, 1].max() if len(pl.stand3) else float('nan'):.2f}, "
+              f"{'ON' if STAND_COVER else 'off'})  squat_hint "
               f"{'none' if pl.squat_hint is None else f'{pl.squat_hint * 100:.1f} cm'}"
               f"  edge {'+' if pl.sgn > 0 else '-'}{'xy'[pl.ax]}")
 
@@ -472,7 +523,7 @@ def main() -> None:
                                           - rng.uniform(*CAN_INBOARD))
             can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(
                 -args.edge_jitter, args.edge_jitter)
-            rel = rel_cands[rng.integers(len(rel_cands))]
+            rel, squat_hint = sample_stand(pl, rng)
             # Face the table from outside, along the can's inward edge
             # normal, +-25 deg (a uniform world yaw almost never yields a
             # stand outside the table).
@@ -599,7 +650,8 @@ def main() -> None:
                 spawn_off=spawn_off, spawn_lat=spawn_lat, dpsi=dpsi,
                 appearance=appearance, record=args.record,
                 view_gate_x=args.view_gate_x, view_gate_y=args.view_gate_y,
-                dart_stop=dart_stop)
+                dart_stop=dart_stop,
+                one_shot=args.one_shot, mid_band=args.mid_band)
             if args.record and produced and ok:
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
@@ -709,7 +761,9 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               record: bool = False,
               view_gate_x: float = 0.80,
               view_gate_y: float = 0.90,
-              dart_stop: float | None = None) -> tuple[bool, str, bool]:
+              dart_stop: float | None = None,
+              one_shot: bool = False,
+              mid_band: float = 0.30) -> tuple[bool, str, bool]:
     """One round, and the exporter left in a clean state whatever happens.
 
     Returns (ok, why, produced_episode). The third value is what the
@@ -729,7 +783,8 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                          d_can, d_robot, psi, side, rel, rm, spawn_xy,
                          squat_hint, spawn_off, spawn_lat, dpsi, appearance,
-                         record, rec, view_gate_x, view_gate_y, dart_stop)
+                         record, rec, view_gate_x, view_gate_y, dart_stop,
+                         one_shot, mid_band)
     if record and rec["on"] and not ok:
         p.cmd.key("x")
         # Same default-facing trap as the post-save hold: keep the approach
@@ -747,7 +802,9 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                rec: dict | None = None,
                view_gate_x: float = 0.80,
                view_gate_y: float = 0.90,
-               dart_stop: float | None = None) -> tuple[bool, str]:
+               dart_stop: float | None = None,
+               one_shot: bool = False,
+               mid_band: float = 0.30) -> tuple[bool, str]:
     # Per-round measurements the manifest wants but the return value cannot
     # carry (module global, same pattern as VLA_POLICY). Cleared HERE, before
     # the VLA fork, so a VLA round never inherits the previous scripted
@@ -1191,6 +1248,15 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # corrector then backed 0.45 m out and rewalked. Stop-a-little-far ->
     # trim -> overshoot -> retreat -> stop-a-little-far IS the pacing.
     # Running this gate-stopped walk again cannot overshoot the gate.
+    # 0.075 -> 0.04 (2026-09-03): brake ~4 cm earlier so the gait's momentum
+    # slide (5-18 cm after the brake, measured with the settle loop that
+    # this replaces) lands the post-crouch grip x in the middle of the
+    # [0.22, 0.36] band instead of on its near edge (5/14 too-close discards
+    # without a settle, seed 4250).
+    # back to 0.075 (2026-09-03 pm): the last centimetres are now closed-loop
+    # (stream_reach._creep_to_band), so the brake only has to fire somewhere
+    # before the band; braking early costs a second of shuffle, braking late
+    # costs a discard.
     MARGIN_STOP = 0.075
     EDGE_LEAD = 0.06           # brake lead on the edge floor
     # Three speed bands, from the measured gait quantum (diag_shuffle.py):
@@ -1210,7 +1276,16 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # stride. Only the far band changes; the MID/SHUFFLE deceleration bands
     # that give the arrival its braking accuracy are untouched.
     APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.30, 0.215, 0.20
-    MID_BAND, SHUFFLE_BAND = 0.30, 0.10
+    MID_BAND, SHUFFLE_BAND = mid_band, 0.10
+
+    # Coverage-first (2026-09-04): steer the walk at a point offset laterally
+    # from the planned stand, so the last 0.3 m has to correct sideways --
+    # the correction the policy needs is then IN the data instead of the
+    # expert always arriving aligned. The creep closes both axes.
+    appr_lat = float(np.random.uniform(-0.15, 0.15)) if STAND_COVER else 0.0
+    aim_xy = np.asarray(spawn_xy) + appr_lat * np.array([-fv[1], fv[0]])
+    if appr_lat:
+        p.log(f"[gym] approach aim offset {appr_lat * 100:+.0f} cm lateral")
 
     def do_approach(seconds: float, ramp: bool) -> str:
         appr_end = time.time() + seconds
@@ -1256,10 +1331,21 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             # narrower there so the gate fired late, and the walk ran on to
             # the edge floor -- which is what the corrector then backed out
             # of.
-            to_stand = np.asarray(spawn_xy) - p.pelvis_xy(s)
+            to_stand = np.asarray(aim_xy) - p.pelvis_xy(s)
             n_ts = float(np.linalg.norm(to_stand))
             mv = to_stand / n_ts if n_ts > 1e-3 else np.array(fv[:2])
-            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
+            # GYM_FACE_OBJ: walk up FACING THE BOTTLE, and let the creep turn
+            # the body to the planned azimuth at the table (2026-09-04). The
+            # failure variable is the pelvis yaw at the crouch: the policy
+            # arrives 14 deg over-rotated and the expert never demonstrates
+            # turning back, because it walks in already aligned. Facing the
+            # object on the way in puts a 0 -> 30 deg alignment turn, with the
+            # bottle in view the whole time, into every episode.
+            fv_now = fv
+            if FACE_OBJ:
+                b = p.pelvis_yaw(s) + float(np.arctan2(r[1], r[0]))
+                fv_now = (float(np.cos(b)), float(np.sin(b)), 0.0)
+            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv_now,
                         movement=(float(mv[0]), float(mv[1]), 0.0),
                         speed=(APPR_SHUFFLE if r[0] - plan_r <= SHUFFLE_BAND
                                else APPR_MID if r[0] - plan_r <= MID_BAND
@@ -1284,13 +1370,11 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             if time.time() - t0 > 0.10:
                 p.log(f"[gym] arm rise finished at the table: "
                       f"{time.time() - t0:.2f} s of standing")
-        # 0.2 s, not 1.0. The full second waited out momentum creep so a
-        # STATIC aim would be taken from a settled base -- but the grasp that
-        # follows is a 50 Hz servo that re-aims on the measured object pose
-        # every tick, so the settled base buys nothing, and the second of
-        # recorded standing teaches a VLA that standing is what one does at
-        # the table (the round-1/2 stall).
-        p.cmd.hold(0.2, mode=LocomotionMode.IDLE, facing=fv)
+        # No settle hold at all any more (was 1.0 s, then 0.2 s). The grasp
+        # is a 50 Hz servo that re-aims on the measured object pose every
+        # tick, so a settled base buys nothing -- and every recorded standing
+        # frame here teaches a VLA that standing is what one does at the
+        # table (the round-1/2 stall).
         x_end = rel_now(p.obs())[0]
         p.log(f"[gym] approach: exit={why} braked at x {brake_x:.2f} "
               f"edge {brake_e:.2f} -> stopped x {x_end:.2f} "
@@ -1311,7 +1395,11 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # furniture contacts, so the arm absorbs the arrival scatter, which is
     # where that precision belongs. Nothing in an episode walks backwards
     # any more except the deliberate post-grasp back-off.
-    for _ in range(2):
+    # --one-shot (flow200): no repair walk at all. The round either parked
+    # inside the graspable envelope on its single approach or it is
+    # discarded by the gates below; the re-walk's brake/stand/re-accelerate
+    # is exactly the recorded hesitation this dataset exists to exclude.
+    for _ in range(0 if one_shot else 2):
         s = p.obs()
         rel_a = rel_now(s)
         too_far = (rel_a[0] > plan_r + 0.06
@@ -1429,7 +1517,8 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         replan=replan, ghost=show_ghost, nudge=False,
         pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "0") == "1"
              else None),
-        squat_hint=squat_hint, plan_r=float(np.hypot(rel[0], rel[1])))
+        squat_hint=squat_hint, plan_r=float(np.hypot(rel[0], rel[1])),
+        stand_rel=(np.asarray(rel, dtype=float) if STAND_COVER else None))
     if not ok:
         return False, f"[grasp] {why}"
 

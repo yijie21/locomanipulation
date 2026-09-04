@@ -22,6 +22,33 @@ SCENE_XML = f"{paths.REPO}/outputs/scene/sim/scene_locomani.xml"
 PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
 
 
+
+LAST_IK: dict = {}
+
+
+def _mat2quat(R):
+    """3x3 -> (w, x, y, z)."""
+    t = float(R[0, 0] + R[1, 1] + R[2, 2])
+    if t > 0:
+        sq = np.sqrt(t + 1.0) * 2
+        w = 0.25 * sq
+        x = (R[2, 1] - R[1, 2]) / sq
+        y = (R[0, 2] - R[2, 0]) / sq
+        z = (R[1, 0] - R[0, 1]) / sq
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        sq = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
+        w = (R[2, 1] - R[1, 2]) / sq; x = 0.25 * sq
+        y = (R[0, 1] + R[1, 0]) / sq; z = (R[0, 2] + R[2, 0]) / sq
+    elif R[1, 1] > R[2, 2]:
+        sq = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
+        w = (R[0, 2] - R[2, 0]) / sq; x = (R[0, 1] + R[1, 0]) / sq
+        y = 0.25 * sq; z = (R[1, 2] + R[2, 1]) / sq
+    else:
+        sq = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
+        w = (R[1, 0] - R[0, 1]) / sq; x = (R[0, 2] + R[2, 0]) / sq
+        y = (R[1, 2] + R[2, 1]) / sq; z = 0.25 * sq
+    return [float(w), float(x), float(y), float(z)]
+
 class ArmIK:
     def __init__(self, xml: str = SCENE_XML):
         import mujoco
@@ -86,6 +113,16 @@ class ArmIK:
         waist joints with `waist_cost`-times the damping — the solver leans
         only as much as the target requires.
         """
+        # LAST_IK: the COMMANDED wrist pose (pelvis frame) that produced the
+        # joint targets we stream. Recorded by PoseSidecar so an 18-D action
+        # (wrist SE(3) + grip per arm + base command) can be exported offline
+        # from a collection run. Read-only bookkeeping, no control effect.
+        try:
+            LAST_IK[side] = (list(map(float, np.asarray(target_pos).ravel()[:3])),
+                             (None if target_rot is None else
+                              _mat2quat(np.asarray(target_rot, dtype=float))))
+        except Exception:
+            pass
         mj = self._mj
         q = np.array(q_mj29, dtype=float).copy()
         arm = list(ARM_MJ[side]) + ([12, 13, 14] if use_waist else [])

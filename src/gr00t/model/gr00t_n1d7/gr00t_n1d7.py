@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+import os
 from typing import Any, Tuple
 
 import torch
@@ -234,6 +235,29 @@ class Gr00tN1d7ActionHead(nn.Module):
         noisy_trajectory = (1 - t) * noise + t * actions
         velocity = actions - noise
 
+        # RTC-train (2026-09-01, LOCAL PATCH -- not upstream): prefix-
+        # conditioned flow matching, the training-side counterpart of the
+        # test-time RTC primitive in get_action_with_features. For a random
+        # RTC_TRAIN_P share of samples, a prefix of random length
+        # K ~ U{1..RTC_TRAIN_KMAX} is presented CLEAN (as the frozen rows are
+        # at inference: vel_strength 0 pins them to the provided old chunk)
+        # and excluded from the loss, so the denoiser learns to continue from
+        # a locked prefix instead of meeting one for the first time at
+        # deployment. Both env vars default to off -> bit-identical training.
+        _rtc_prefix_mask = None
+        if self.training and float(os.environ.get("RTC_TRAIN_P", "0")) > 0:
+            _p = float(os.environ["RTC_TRAIN_P"])
+            _kmax = int(os.environ.get("RTC_TRAIN_KMAX", "20"))
+            _B, _H = actions.shape[0], actions.shape[1]
+            _sel = torch.rand(_B, device=actions.device) < _p
+            if bool(_sel.any()):
+                _K = torch.randint(1, _kmax + 1, (_B,), device=actions.device)
+                _ar = torch.arange(_H, device=actions.device)[None, :]
+                _rtc_prefix_mask = ((_ar < _K[:, None])
+                                    & _sel[:, None])[:, :, None]
+                noisy_trajectory = torch.where(
+                    _rtc_prefix_mask, actions, noisy_trajectory)
+
         # Convert (continuous) t -> discrete if needed
         t_discretized = (t[:, 0, 0] * self.num_timestep_buckets).long()
         action_features = self.action_encoder(noisy_trajectory, t_discretized, embodiment_id)
@@ -274,6 +298,11 @@ class Gr00tN1d7ActionHead(nn.Module):
 
         # Slice out only the action portion of pred and target.
         action_mask = action_input.action_mask
+        if _rtc_prefix_mask is not None:
+            # The frozen rows are inputs, not targets: grade only the free
+            # region, exactly the rows the inference-time denoiser may move.
+            action_mask = action_mask * (~_rtc_prefix_mask).to(
+                action_mask.dtype)
         action_loss = F.mse_loss(pred_actions, velocity, reduction="none") * action_mask
         loss = action_loss.sum() / (action_mask.sum() + 1e-6)
 

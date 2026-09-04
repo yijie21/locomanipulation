@@ -321,6 +321,30 @@ rel 是骨盆系**方位**,9° 读作 0.48 m 的横向偏移,deadband 接近段�
 场景尺寸。每个目标只有 50 条。如果第一批模型的失败是"多样性不够",那不是再采
 200 条能解决的 —— 按第 0 节的结论,**等模型告诉我们缺什么**。
 
+## 评测队列(2026-09-02 晚定,clean100 之后按序接)
+
+前提:2026-09-02 确诊 deploy 经过 planner 模式后 token 行走幅度剩 ~1/3
+(docs/lockstep.md 校准诊断)。**此后所有评测一律用干净协议**
+(`CLEAN_DEPLOY=1` 栈 + `--clean-deploy` 客户端,nvdef 二进制);此前的
+wall-clock 数字(ladder、2×2、flow200 早期臂)统一标注为"退化 deploy 上量的"。
+wall-clock 臂串行跑(GPU/CPU 争抢会改推理延迟);lockstep 臂只和 lockstep 臂并行。
+
+| # | 任务 | 条件 | 估时 | 依赖 / 备注 |
+|---|---|---|---|---|
+| 0 | **clean100**:flow200 ckpt-10000,async + ens N3 M0.3,100 局 | 完成 **46/100** | 2.5 h | 干净协议下的正式基线 |
+| 1 | base100:同上但不带 ensemble | 完成 **50/100**(vs ens p=0.67) | 2.5 h | 昨晚计划的三臂之一(ens / base / base+RTC) |
+| 2 | rtc100:async + `--rtc`(test-time inpainting,同一 ckpt) | 完成 **14/64**(22%,提前停) | 2.5 h | 负收益;渲染 session 也在等这个结果 |
+| 3 | lockstep 校准:`--client lockstep --latency-dist` 100 局,与 #0 配对 | 完成 **32/100**,p=0.049,Δ14 → 未通过 | 2 h | 停远签名仍在(50/68 >0.35 m);残余因素待定位 |
+| 4 | "有 planner"对照:nvdef 二进制 + planner settle,base/ens 各 50 局 | 完成 base **29/43**、ens **12/43**(p<0.001) | 2.5 h | 退化 deploy 上 ensemble 有害;退化+base 高于干净+base(p=0.15) |
+| 5 | rtc-train:`RTC_TRAIN_P/KMAX` 在 flow200 上训练 → 再跑 #2 同款 RTC 评测 | 完成:rtctrain200_rtc **1/50** | 4 h 训 + 2.5 h 评 | 负收益;RTC 两变体在 flow200 上都不成立 |
+| 6 | 延迟扫描:lockstep `--latency-frames 8/11/14/20` 各 50 局 | #3 通过后 | 4×1 h | robustness 曲线,lockstep 独有的能力 |
+| 7 | 2×2 复核:dart200 在干净协议下 base / ens 各 100 局 | 完成:**24/100 / 56/100**(vs flow200 50 / 46) | 2.5 h ×2 | DART 数据不涨基线(−26,p=0.0002);ensemble 增益是 DART 数据特有的 |
+| 7b | rtc_ens100:async + `--rtc` + ens N3 M0.3 | 完成 **16/72**(22%,叫停) | 2.5 h | 负收益;RTC 三变体全部关闭 |
+| 8 | 提交:flow200 / RTC / lockstep / 干净协议全部改动;docs/evaluation.md 加"退化 deploy"裁定 | 用户点头后 | 0.5 h | 工作树目前全部未提交 |
+| 9 | 采集侧决策:行走是否也走 token/streamed 通道(数据与部署一致) | 看 #0/#4 | — | 见 docs/lockstep.md 末段三选项;与 agentic 分支协调 |
+
+顺序建议:0 → 1 → 2 → 3(3 可与 1/2 并行,放 GPU1)→ 4(条件)→ 5 → 6 → 7。
+
 ### 待办总表(2026-08-26 round 3 期间积累,按"什么时候必须做"分组)
 
 对话里达成的结论会随 session 消失,所以落在这里。已完成的划掉但保留,免得重提。

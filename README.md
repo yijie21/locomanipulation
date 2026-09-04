@@ -119,6 +119,8 @@ videos/                 最新一批演示视频(每次推送整体替换)
 
 | 你要 | 看 |
 |---|---|
+| **当前默认的采集 / 训练 / 评测配方(先看这个)** | **[docs/runbook.md](docs/runbook.md)** |
+| 全部实验的总表与结论(60+ 臂、配对检验、失败细分) | [docs/experiments.md](docs/experiments.md) |
 | 从零装环境 | [docs/setup.md](docs/setup.md) |
 | 采数据(场景 / 单局 / 批量 / 随机化 / 相机 / 控制逻辑) | [docs/collection.md](docs/collection.md) |
 | 转 LeRobot、查数据(schema / 四段审计) | [docs/dataset.md](docs/dataset.md) |
@@ -126,6 +128,7 @@ videos/                 最新一批演示视频(每次推送整体替换)
 | 评测(open-loop / closed-loop / 第一轮基线 / DAgger) | [docs/evaluation.md](docs/evaluation.md) |
 | 搞懂 async client(实时动作分块 / 异步推理 / 时序集成) | [docs/realtime-action-streaming.md](docs/realtime-action-streaming.md) |
 | 零基础图解 blocking / async 机制(时间线图) | [docs/client-mechanisms.md](docs/client-mechanisms.md)(GitHub 在线可看;[html 交互版](docs/client-mechanisms.html)) |
+| lockstep 评测(仿真时钟 + 模拟延迟,确定性/可并行;校准中) | [docs/lockstep.md](docs/lockstep.md) |
 | 查参数、找模块、跑诊断、翻 FAQ | [docs/reference.md](docs/reference.md) |
 | 下一步做什么 | [docs/ROADMAP.md](docs/ROADMAP.md) |
 

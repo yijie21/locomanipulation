@@ -991,3 +991,57 @@ dart 0.606 → park_first 0.520 → park 0.274 抓取成功,完整恢复演示;p
 训完一版后的迭代(DART 的本体):闭环重测停位分布与 0.50 m 悬崖;尾巴仍超出
 注噪范围 → 加大 `--dart-far`;悬崖消失但总成功率不涨 → 瓶颈已移到抓取先验,
 转向数据规模而非继续加噪。
+
+
+## 2026-09-03 抓取阶段质量修正(scripted expert)
+
+批量遥测(`[servo-dbg]`,每局按相位打印手掌-参考跟踪误差、骨盆 dz/pitch/漂移)得到的事实和相应改动:
+
+| 现象 | 量到的原因 | 改动 |
+|---|---|---|
+| 右手把瓶子碰倒(flow200 中 94 局碰倒里 77 局记录为右手接触,左手仅 2) | WBC 手臂落后上肢参考约 0.2 s × 速度:行进段 0.30 m/s 时 5–6 cm(最大 7.8),staging 点只比瓶顶高 ~5 cm | `V_TRAVEL` 0.30→0.15、`V_DESCEND` 0.18→0.10、`STAGE_UP` 0.10→0.15;碰倒从 3/7 降到 0/7 |
+| 抬起太高 | `LIFT_HEIGHT` 0.20 | 0.10(评测判据 0.06 m 之上留 4 cm;实测抬 11–12 cm) |
+| "stand is wrong"(抓取目标落到身体处) | 不是 IK 过期(躯干在 in/close 只动 1–2 cm、2–3°,IK 每帧重解);是接近结束到下蹲之间 IDLE hold 前漂 ~9 cm、planner 下蹲又把骨盆**后**移 4–16 cm,二者方差叠加,下蹲后 grip 的骨盆系 x 分布 0.19–0.44 m,带宽只有 [0.22, 0.36] | 下蹲后复测 grip x,出带则 stand → 按本局实测的下蹲后移量对虚拟 grip 做 nudge → 再蹲(最多两次);两批 23 局零 stand-wrong |
+| 左手转身时碰瓶(用户观察) | 日志里极少(≤2/94) | 仍加了左手 guard(`_guard_left`,`GYM_LEFT_GUARD=0` 关),很少触发 |
+| 容器 pid 上限 3840 | exporter 三个进程各 ~800 线程 | `start_stack.sh` 给 exporter 设 `EXPORTER_THREADS`(默认 4),一个栈 ~50 个 pid |
+
+采集流水线本身从头到尾在 planner 模式(`GYM_ARM_CHANNEL=planner`,`PlannerArm` 从不切模式),
+deploy 二进制统一为 nvdef(与干净评测协议相同)。最近一批(seed 4249)12 局 10 OK,失败为 1 局
+view gate、1 局 hold 阶段滑落;每局 66–87 s(纠正循环触发时更长)。
+
+### 站位纠正循环取消(one-shot),改为"停稳再量"(2026-09-03 下午)
+
+用户不要数据里出现"站起-挪步-再蹲"的修复段,也不要修复期间越抬越高的右手。改为:
+
+1. **停稳再量**:接近刹车是在步态还带着动量时量的,之后骨盆继续前滑 5–18 cm。抓取开始前先等
+   骨盆速度 < 0.04 m/s 持续 0.3 s(最长 2 s,实际 1.3–2.0 s),再量 grip x、再 nudge、再蹲。
+   停稳后 planner 下蹲的后移变得一致:+6–10 cm(没停稳时 3–16 cm)。
+2. **蹲前带下移**:蹲前 nudge 目标 [0.18, 0.27] m(`_nudge_closer(x_max=0.27, x_min=0.18)`),
+   加上 ~8 cm 后移正好落在蹲后带 [0.22, 0.36] 的中央。
+3. **one-shot 丢局**:`--one-shot`(`GYM_ONE_SHOT=1`)下蹲后出带直接判 FAILED
+   `[stand] band correction needed`,不再修复;非 one-shot 仍走修复循环。
+
+| 批次 | 局数 | OK | 丢局 | 备注 |
+|---|---|---|---|---|
+| seed 4250(带中心 [0.26,0.32],无 settle) | 14 | 9 | 5 全"太近" | 滑移没被量到,nudge 从未触发 |
+| seed 4251(+settle) | 12 | 10 | 2 全"太远"(0.38/0.39) | 蹲前带没减去后移 |
+| seed 4252(+蹲前带 [0.18,0.27]) | 12 | 10 | 1"太近"(后移只有 3 cm) | 另 1 局 view gate |
+
+reel:`outputs/videos/still_demo.mp4`、`outputs/videos/shift_demo.mp4`。
+
+### 去掉停顿(2026-09-03,用户原则:动作可以慢,但中间不能有明显停顿)
+
+pose sidecar 量到 settle-until-still 让"步态结束 → 开始下蹲"从 flow200 的 0.9 s 变成 2.4 s,而蹲后
+grip x 的分布有没有 settle 都一样(0.20–0.38 vs 0.19–0.37),所以它只是纯停顿。改为:
+
+- 刹车后立即 arm.start + 下蹲,底盘在下蹲中自己停下;one-shot 下不再调用蹲前 nudge;
+- `grasp_gym.MARGIN_STOP` 0.075 → 0.04,刹车提前 ~4 cm(braked at x 0.37–0.42 → 0.42–0.46)吸收滑移;
+- 伸手速度保持慢速(`V_TRAVEL` 0.15 / `V_DESCEND` 0.10)。
+
+| 中位数 | flow200 | seed 4252(settle) | seed 4253(去 settle) |
+|---|---|---|---|
+| 步态结束 → 下蹲 | 0.9 s | 2.4 s | 1.1 s |
+| 步态结束 → 抬起 | 6.0 s | 10.1 s | 8.2 s |
+
+seed 4253:11 局 10 OK,1 局"太远"丢(0.40 m,带上限 0.38);蹲后 grip x 0.24–0.40,居中。
+剩下比 flow200 多的 ~2 s 是有意放慢的 reach。reel:`outputs/videos/nopause_demo.mp4`。
