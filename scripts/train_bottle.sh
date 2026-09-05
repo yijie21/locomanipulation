@@ -81,7 +81,14 @@ GRAD_ACCUM="${GRAD_ACCUM:-1}"
 # Overrides: set OPTIM=... explicitly to pin it, or OPTIM_AUTO=0 to keep the
 # old unconditional adamw_torch.
 gpu_probe() {   # -> "<count> <smallest total MiB> <smallest free MiB>"
-    nvidia-smi --query-gpu=memory.total,memory.free \
+    # Scope to the cards this run will actually use. nvidia-smi does NOT honour
+    # CUDA_VISIBLE_DEVICES, so without -i a run pinned to a free GPU 0 is
+    # refused because somebody else's job sits on GPU 1 -- which is exactly
+    # what happened to the cover400 pair (a video_grasp job on GPU 1 blocked
+    # both). The guard is about the cards we are taking, not the machine.
+    local sel=()
+    [ -n "${CUDA_VISIBLE_DEVICES:-}" ] && sel=(-i "$CUDA_VISIBLE_DEVICES")
+    nvidia-smi "${sel[@]}" --query-gpu=memory.total,memory.free \
         --format=csv,noheader,nounits 2>/dev/null | tr -d ',' | awk '
         NR==1 {mt=$1; mf=$2}
         $1 < mt {mt=$1}
@@ -126,7 +133,12 @@ if [ "$VRAM_MIN" -gt 0 ] && [ "$((VRAM_MIN - FREE_MIN))" -gt "$SQUAT_MAX" ]; the
     exit 1
 fi
 
-if [ "${SINGLE_GPU:-0}" = "1" ]; then
+# Fires on SINGLE_GPU=1 OR on any run that ends up with one card -- GPUS=1,
+# CUDA_VISIBLE_DEVICES pinned to one device, or a box with one GPU. Passing
+# GPUS=1 alone used to keep the two-card GLOBAL_BATCH of 64 and OOM at step 1
+# after ~18 s of model loading (cover400_tok, 2026-09-05); the memory settings
+# below are a property of having one card, not of the flag that said so.
+if [ "${SINGLE_GPU:-0}" = "1" ] || [ "${GPUS:-$NGPU}" = "1" ] || [ "$NGPU" = "1" ]; then
     GPUS=1
     OPTIM="adamw_bnb_8bit"; OPTIM_WHY="SINGLE_GPU=1"
     # Per-device 8, and every number here is measured, not derived. At 32 the
