@@ -319,6 +319,17 @@ def convert_video(src, dst, sel_idx):
     return frames
 
 
+def _video_job(job):
+    """One (source, destination, frame selection) video, done in a worker.
+
+    Returns only the STATS. convert_video hands back every decoded frame --
+    ~550 MB for a 600-frame episode -- so the stats must be computed here;
+    shipping frames back through the pool would cost more than the encode.
+    """
+    vsrc, vdst, sel = job
+    return video_stats(convert_video(Path(vsrc), Path(vdst), np.asarray(sel)))
+
+
 def feat_stats(arr):
     a = np.asarray(arr, dtype=np.float64)
     if a.ndim == 1:
@@ -551,6 +562,11 @@ def main():
                          "what machinery remains. 1.0 is a sensible value: "
                          "pauses stay sub-chunk, and the kept tail still "
                          "teaches a beat of settling.")
+    ap.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
+                    help="parallel video encoders (default 1). Only the "
+                         "decode+encode is parallelised; every table decision "
+                         "stays serial and in order, so any N produces "
+                         "byte-identical parquet and meta.")
     ap.add_argument("--strip-pose-columns", action="store_true",
                     help="drop every observation.*_pose column while "
                          "converting. The pose channel is privileged analysis "
@@ -642,6 +658,14 @@ def main():
               f"(seed {args.holdout_seed}), per session "
               f"{[per_sess.get(i, 0) for i in range(len(args.sessions))]}")
 
+    # Video decode+x264 encode is ~95% of the wall clock (2.5 GB of video vs
+    # 231 MB of parquet on cover400) and the serial pipe keeps one core busy on
+    # a 32-core box. Only the videos are parallelised: every table decision --
+    # episode order, `index`, task ids, the idle filter -- stays in this loop,
+    # in this order, so the parquet output is bit-identical to --jobs 1.
+    jobs = max(1, int(args.jobs))
+    pending = []          # (stats_dict, stream_name, src, dst, sel)
+
     a18_lut = None
     if args.a18:
         z = np.load(args.a18)
@@ -716,17 +740,19 @@ def main():
         sub = sub.add_column(ts_pos + 1, pa.field("action.psi0_18", pa.list_(pa.float32(), 18)), fsl(psi0_18, 18))
         pq_mod.write_table(sub, sink.out / f"data/chunk-000/episode_{new_ep:06d}.parquet")
 
-        vid_frames = {}
-        for st in streams:
-            vsrc = sess / f"videos/chunk-000/{st}/episode_{src_ep:06d}.mp4"
-            vdst = sink.out / f"videos/chunk-000/{st}/episode_{new_ep:06d}.mp4"
-            vid_frames[st] = convert_video(vsrc, vdst, sel)
-
         stats = {}
         for name in sub.schema.names:
             stats[name] = feat_stats(np.asarray(sub[name].to_pylist()))
-        for st, fr in vid_frames.items():
-            stats[st] = video_stats(fr)
+        for st in streams:
+            vsrc = sess / f"videos/chunk-000/{st}/episode_{src_ep:06d}.mp4"
+            vdst = sink.out / f"videos/chunk-000/{st}/episode_{new_ep:06d}.mp4"
+            if jobs > 1:
+                # `stats` is appended to ep_stats below and filled in after the
+                # pool runs -- same dict object, so order of ep_stats is
+                # unaffected by which video finishes first.
+                pending.append((stats, st, str(vsrc), str(vdst), sel))
+            else:
+                stats[st] = video_stats(convert_video(vsrc, vdst, sel))
         sink.ep_stats.append({"episode_index": new_ep, "stats": stats})
         sink.episodes.append({"episode_index": new_ep, "tasks": [ep_task], "length": n30})
         tag = "val " if sink is val else "train"
@@ -735,6 +761,15 @@ def main():
         sink.new_ep += 1
         sink.global_index += n30
         sink.total_videos += 1
+
+    if pending:
+        import multiprocessing as mp
+        print(f"videos: {len(pending)} clips on {jobs} workers")
+        with mp.get_context("fork").Pool(jobs) as pool:
+            out = pool.map(_video_job, [(p[2], p[3], p[4]) for p in pending],
+                           chunksize=1)
+        for (st_dict, st, _, _, _), vs in zip(pending, out):
+            st_dict[st] = vs
 
     finalize(train, src_info, args)
     if val is not None:
