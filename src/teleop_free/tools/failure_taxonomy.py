@@ -5,6 +5,7 @@
 
 One leaf per round (2026-09-03 scheme, agreed with the user):
   A1 stopped far        A2 walked past / off      A3 fell walking      A4 view gate (pre-VLA)
+  A5 blind start: the target was off the ego frame at trace t=0 (prelude drift, not a policy failure)
   B1 stand too far      B2 arm never reached      B3 hover, no close   B4 knocked over on reach
   B5 dither             B6 stalled at table       B? other no-close
   C1 closed on air      C2 slipped after close    C3 knocked over at close  C4 close height off
@@ -34,6 +35,17 @@ def classify(rec):
         return "OK", ""
     if "[view]" in why or "[vla]" not in why and not tr:
         return "A4 view gate / pre-VLA", why[:60]
+    # Blind start: the gym's ego gate runs at the spawn, BEFORE the prelude,
+    # so a prelude that drifts the target off frame produces a round the
+    # policy could never have solved. Recorded since 2026-09-04 as
+    # `tstart_cam` (vla_round._tstart_view); older traces lack it and fall
+    # through. In a paired comparison these are dropped from BOTH arms.
+    cam0 = rec.get("tstart_cam", "absent")
+    if cam0 != "absent" and (cam0 is None
+                             or abs(cam0[0]) > 0.80 or abs(cam0[1]) > 0.90):
+        return "A5 blind start (target off frame at t=0)", (
+            "behind camera" if cam0 is None
+            else f"cam [{cam0[0]:+.2f} {cam0[1]:+.2f}]")
     if not tr:
         return "F other", why[:60]
     t = _arr(tr, "t"); dist = _arr(tr, "dist"); grip = _arr(tr, "grip", 1.0)

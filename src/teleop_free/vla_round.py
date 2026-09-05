@@ -150,6 +150,43 @@ GRIP_GAIN = 1.0
 
 
 
+def _tstart_view(p, st, obj_key, prelude, gx=0.80, gy=0.90):
+    """Is the target still in the ego frame when the trace starts?
+
+    The gym gates ego visibility at the SPAWN -- after the settle, before the
+    VLA fork (`[view] object not in ego view at spawn`, ~12% of rounds at
+    --spawn-edge 1.1 1.3). Nothing re-checked it AFTER the prelude, and the
+    prelude is where the 18-D path holds its pose open-loop, so a round could
+    start blind and then be scored as a policy failure. This records where the
+    target actually sits in the frame at t=0 (normalised, frame edge 1.0, live
+    from the privileged publisher's camera) so such a round is identifiable
+    offline instead of assumed away.
+
+    Warned, not aborted: aborting here would have to unwind the feeder threads
+    and the running recorder, and the honest treatment of a blind round in a
+    PAIRED comparison is to drop it from both arms, which is an offline
+    decision. tools/failure_taxonomy.py buckets it.
+
+    Margin, measured on the pinned eval scene over 62 cover400 spawns
+    (src/teleop_free/diag_spawn_view.py, 2026-09-04): the bottle leaves the image at a
+    pelvis->object range of ~1.95 m and the conservative central-90% gate
+    breaks at 1.68 m, while real spawns sit at 1.17-1.47 m (u_y 0.61-0.81).
+    Sideways there is 78-105 cm of slack (|u_x| <= 0.40 against a 0.80 gate),
+    so only BACKWARD drift can lose the target -- and the settle's measured
+    direction is table-ward, which gains margin rather than spending it.
+    """
+    cam = ((st.get("objects") or {}).get(obj_key) or {}).get("cam")
+    prelude["tstart_cam"] = (None if cam is None
+                             else [round(float(v), 3) for v in cam])
+    if cam is None:
+        p.log("[vla] WARNING target is BEHIND the ego camera at trace t=0 -- "
+              "this round is blind and is not a policy test")
+    elif abs(cam[0]) > gx or abs(cam[1]) > gy:
+        p.log(f"[vla] WARNING target outside the ego gate at trace t=0 "
+              f"(cam=[{cam[0]:+.2f} {cam[1]:+.2f}], gate {gx}/{gy}) -- the "
+              f"prelude drifted it off frame; not a policy test")
+
+
 def _obj_extra(st, obj_key):
     """Per-tick object facts for the failure taxonomy (2026-09-03): tilt from
     upright in degrees, which robot links touch the object, and its height.
@@ -530,6 +567,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             if off0 > 0.12:
                 p.log(f"[vla] WARNING tstart {off0:.2f} m off the handover "
                       f"pose (acceptance is 0.1) -- prelude drift is back?")
+        _tstart_view(p, s_ts, obj_key, prelude)
         frame_index = 0
         lifted_at = None
 
@@ -739,11 +777,12 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             from action18_client import Action18Sender
             from primitives import LocomotionMode as _LM, upper_body_from_mj as _u17
             sender18 = Action18Sender(p)
-            _fv0 = p._facing(p.obs())
+            _s0 = p.obs()
+            _fv0 = p._facing(_s0)
+            _anchor = (np.asarray(p.pelvis_xy(_s0), dtype=float).copy(),
+                       float(p.pelvis_yaw(_s0)))
             for _ in range(30):
-                p.cmd.set_upper_body(_u17(sender18.q))
-                p.cmd.set_hands(left=l_open, right=r_open)
-                p.cmd.frame(mode=_LM.IDLE, facing=_fv0)
+                sender18.hold(_anchor[0], _anchor[1], l_open, r_open)
                 time.sleep(0.02)
         else:
             for _ in range(30):
@@ -757,8 +796,10 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         def _keepalive():
             while not keep_stop.is_set():
                 if ACTION18:
-                    p.cmd.set_hands(left=l_open, right=r_open)
-                    p.cmd.frame(mode=_LM.IDLE, facing=_fv0)
+                    # closed on BOTH heading and position against the handover
+                    # pose; measured 3.5 cm vs 12.7 cm for planner IDLE alone
+                    # (diag_station_keep.py). See action18_client.hold.
+                    sender18.hold(_anchor[0], _anchor[1], l_open, r_open)
                 else:
                     p.cmd.token_frame(INIT_TOK, right_hand=r_open,
                                       left_hand=l_open, frame_index=0)
@@ -960,6 +1001,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                 p.log(f"[vla] WARNING hold drifted {hold_off:.2f} m off the "
                       f"handover pose (entry-step floor is ~0.18) -- "
                       f"prelude drift is back?")
+        _tstart_view(p, s_ts, obj_key, prelude)
         frame_index = 0
         grip_hist = deque(maxlen=GRIP_DELAY + 1)
         lifted_at = None

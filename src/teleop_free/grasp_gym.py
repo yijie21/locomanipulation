@@ -1055,11 +1055,17 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # would just let an invisible object through. Same signal and same
     # thresholds as the arrival gate further down, so a round that passes
     # here is being judged by the rule that judges it later.
-    cam0 = p.obs()["objects"][obj_key].get("cam")
-    if cam0 is not None and (abs(cam0[0]) > view_gate_x
-                              or abs(cam0[1]) > view_gate_y):
-        return False, (f"[view] object not in ego view at spawn "
-                       f"(cam=[{cam0[0]:+.2f} {cam0[1]:+.2f}])")
+    _o0 = p.obs()["objects"][obj_key]
+    cam0 = _o0.get("cam")
+    # `cam is None` means BEHIND the camera and must fail too -- the arrival
+    # gate below always treated it that way, this one used to let it through.
+    # Guarded on the key's presence, not its value, so a publisher built
+    # without a camera still runs (the key is absent then, not None).
+    if "cam" in _o0 and (cam0 is None or abs(cam0[0]) > view_gate_x
+                         or abs(cam0[1]) > view_gate_y):
+        return False, (f"[view] object not in ego view at spawn (cam="
+                       + ("behind camera)" if cam0 is None else
+                          f"[{cam0[0]:+.2f} {cam0[1]:+.2f}])"))
     reset.start_video(f"gym_{int(time.time())}")
     _wmark("video")
     if record:
