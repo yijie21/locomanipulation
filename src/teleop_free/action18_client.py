@@ -73,6 +73,7 @@ class Action18Sender:
         self.q = np.asarray(p.obs()["joints"], dtype=float).copy()
         self.res = {s: 0.0 for s in sides}
         self.n_bad = 0
+        self._holding = False      # hold()'s hysteresis latch
 
     def send(self, a18, frame_index: int | None = None) -> None:
         a = np.asarray(a18, dtype=float).ravel()
@@ -124,6 +125,75 @@ class Action18Sender:
                              speed=float(np.clip(spd, 0.0, 0.5)))
         else:
             self.p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
+
+    def hold(self, anchor_xy, anchor_yaw, left_hand, right_hand,
+             band_in: float = 0.08, band_out: float = 0.20,
+             speed: float = 0.215) -> float:
+        """Hold the prelude pose. -> current xy error from the anchor (m).
+
+        Heading is held closed against `anchor_yaw`; position is held closed
+        against `anchor_xy` with hysteresis -- the loop starts walking only
+        past `band_out` and stops inside `band_in`, because a walking gait
+        cannot servo a 3 cm error and a tight band just makes it hunt.
+
+        MEASURED (diag_station_keep.py, outputs/diag/station_keep_final.txt,
+        2026-09-04, 20 s per arm, anchor calibrated and the teleport transient
+        waited out):
+
+            planner IDLE, nothing else    0.7 cm
+            this hold                     1.2 cm
+            turn-and-walk back            2.0 cm
+
+        So the position loop is NOT what makes this work -- planner IDLE does
+        not drift. It is kept only as a bound: its band does not engage below
+        20 cm, so in a healthy round it never fires, and if something ever does
+        walk the robot off it walks it back instead of starting the policy
+        somewhere else. Straight back, never turn-and-walk: turning is what a
+        prelude must not do.
+
+        WHAT ACTUALLY MATTERS HERE is the heading anchor. `frame()` subtracts
+        `heading_offset` from facing AND movement (one shared frame), and in a
+        PURE-PLANNER process -- which this client is, start to finish -- psi0
+        is neither 0 nor the landing yaw; it measured -106 deg. grasp_gym.py:924
+        stores the post-settle yaw and gets away with it only because a
+        collection round runs a streamed grasp segment that re-anchors psi0
+        every round. This path has no such segment. Calibrate: command a known
+        facing with zero compensation, let it settle, and the yaw it settles at
+        is psi0.
+
+        HISTORY, because this took three wrong measurements to get right and
+        each wrong one was briefly written down as fact: (1) "planner IDLE
+        settles 23 cm off" -- that was the teleport landing transient, the
+        robot dropping ~10 cm out of model.qpos0 and catching itself in 0.2 s;
+        (2) "closing the loop diverges to 207 cm because movement is not
+        frame-compensated" -- both halves false, the probe had left
+        `heading_offset` unset after its reset so the robot chased a phantom
+        heading; (3) "the heading channel cannot hold, 60-90 deg per 20 s" --
+        the same probe anchoring itself inside the landing transient. With the
+        transient waited out and psi0 calibrated the base holds to 0.7 cm and
+        1.5 deg. Any probe that resets must do BOTH before it measures.
+        """
+        from primitives import LocomotionMode
+        s = self.p.obs()
+        xy = np.asarray(self.p.pelvis_xy(s), dtype=float)
+        yaw = float(self.p.pelvis_yaw(s))
+        d = float(anchor_yaw) - yaw
+        d = (d + math.pi) % (2 * math.pi) - math.pi
+        face = yaw + float(np.clip(d, -0.3, 0.3))
+        fv = (math.cos(face), math.sin(face), 0.0)
+        self.p.cmd.set_upper_body(upper_body_from_mj(self.q))
+        self.p.cmd.set_hands(left=left_hand, right=right_hand)
+
+        e = np.asarray(anchor_xy, dtype=float) - xy
+        r = float(np.linalg.norm(e))
+        self._holding = r > band_out if not getattr(self, "_holding", False) \
+            else r > band_in
+        if self._holding:
+            self.p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
+                             movement=(e[0] / r, e[1] / r, 0.0), speed=speed)
+        else:
+            self.p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
+        return r
 
     def stats(self) -> str:
         return (f"ik res right {self.res.get('right', 0):.3f} "
