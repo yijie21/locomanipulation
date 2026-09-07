@@ -395,7 +395,7 @@ class AgentCommander:
         self.sonic.send(pack_pose_message(data, topic="pose", version=1))
 
     def token_frame(self, token, right_hand=None, left_hand=None,
-                    frame_index: int | None = None) -> None:
+                    frame_index: int | None = None, trace_source=None) -> None:
         """One protocol-v4 `pose` message: a SONIC latent, no motion data.
 
         This is the interface a VLA deploys through. v4 is token-only
@@ -407,6 +407,7 @@ class AgentCommander:
         (g1_deploy_onnx_ref.cpp:3038), so the encoder is bypassed without
         relaunching anything.
         """
+        # trace_source is local diagnostic metadata, never a wire/control field.
         data = {"token_state": np.asarray(token, dtype=np.float32).ravel()}
         if frame_index is not None:
             data["frame_index"] = np.array([frame_index], dtype=np.int64)

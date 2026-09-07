@@ -1,5 +1,9 @@
 """The token the deploy holds while the VLA's first chunk is computed.
 
+The rationale below describes the historical arms-down datasets. Ready-hand
+collection uses an explicit TF_INIT_TOKEN_FILE, measured and held separately;
+it does not replace the legacy default for older checkpoints.
+
 NVIDIA ships one (`gear_sonic/utils/inference/initial_poses.py`,
 LATENT_INITIAL_MOTION_TOKEN) and its own docstring says what the problem is:
 
@@ -43,6 +47,9 @@ Regenerate (194 settled-stand frames, planner mode IDLE, whole body below
 """
 
 import os
+import json
+import time
+from pathlib import Path
 
 import numpy as np
 
@@ -62,8 +69,22 @@ OURS_INITIAL_MOTION_TOKEN = np.array([
 ], dtype=np.float32)
 
 
+def load_token_file(filename) -> np.ndarray:
+    token = np.asarray(json.loads(Path(filename).read_text()), dtype=np.float32)
+    if token.shape != (64,) or not np.isfinite(token).all() or np.max(abs(token)) > 1.25:
+        raise ValueError('Initial token file must contain 64 finite values within [-1.25, 1.25]')
+    return token
+
+
 def initial_token() -> np.ndarray:
-    """Ours by default; TF_INIT_TOKEN=official falls back to NVIDIA's."""
+    """Legacy default, official token, or an explicitly validated pose file.
+
+    A file is opt-in: a new collection posture must not silently change the
+    initialization used by checkpoints trained on the old arms-down data.
+    """
+    filename = os.environ.get('TF_INIT_TOKEN_FILE')
+    if filename:
+        return load_token_file(filename)
     if os.environ.get("TF_INIT_TOKEN", "ours") == "official":
         from gear_sonic.utils.inference.initial_poses import (
             LATENT_INITIAL_MOTION_TOKEN)
@@ -71,3 +92,37 @@ def initial_token() -> np.ndarray:
         return np.asarray(LATENT_INITIAL_MOTION_TOKEN, dtype=np.float32)
 
     return OURS_INITIAL_MOTION_TOKEN
+
+
+def prepare_token_pose(p, expected_arm_q, hold_seconds=3.0) -> bool:
+    """Initialize a token-only ready posture before recording/visibility checks.
+
+    Sends one fixed token with open hands. No target pose, arm IK or navigation
+    enters the action. The existing ready-arm tolerance is checked afterwards.
+    Deployment continues holding this same token during its usual prelude.
+    """
+    from tools.sonic_token import expand_hands, GRIPPER_MAX
+    if not os.environ.get('TF_INIT_TOKEN_FILE'):
+        raise ValueError('Token-pose preparation requires an explicit initial token file')
+    expected = np.asarray(expected_arm_q, dtype=float)
+    if expected.shape != (14,) or not np.isfinite(expected).all():
+        raise ValueError('Expected ready pose must contain 14 finite arm joint values')
+    if not np.isfinite(hold_seconds) or hold_seconds <= 0:
+        raise ValueError('Initial pose hold must be positive and finite')
+    token = initial_token()
+    left, right = expand_hands(GRIPPER_MAX)
+    # Match the deploy's normal prime-before-enter ordering.
+    for _ in range(30):
+        p.cmd.token_frame(token, right_hand=right, left_hand=left, frame_index=0)
+        time.sleep(.02)
+    p.cmd.enter_streamed()
+    end = time.monotonic()+hold_seconds
+    while time.monotonic() < end:
+        p.cmd.token_frame(token, right_hand=right, left_hand=left, frame_index=0)
+        if p.obs()['fallen']:
+            return False
+        time.sleep(.04)
+    state = p.obs()
+    actual = np.asarray(state['joints'], dtype=float)[15:29]
+    return (not state['fallen'] and actual.shape == expected.shape
+            and bool(np.max(abs(actual-expected)) < .30))

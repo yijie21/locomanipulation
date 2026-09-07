@@ -38,12 +38,19 @@ carries it as `action.a18`):
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
 from arm_ik import ArmIK
 from g1_joints import ARM_MJ
 from primitives import upper_body_from_mj
+
+# Prelude station-keeping bands, read ONCE at import (set them in the
+# environment before launching, not mid-run). See Action18Sender.hold.
+HOLD_IN = float(os.environ.get("TF_HOLD_IN", "0.02"))      # stop walking below
+HOLD_OUT = float(os.environ.get("TF_HOLD_OUT", "0.06"))    # start walking above
+HOLD_SPEED = float(os.environ.get("TF_HOLD_SPEED", "0.215"))
 
 SQUAT_DZ = -0.02          # below this the base command becomes IDEL_SQUAT
 WALK_V = 0.03             # below this speed the base command becomes IDLE
@@ -127,8 +134,8 @@ class Action18Sender:
             self.p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
 
     def hold(self, anchor_xy, anchor_yaw, left_hand, right_hand,
-             band_in: float = 0.08, band_out: float = 0.20,
-             speed: float = 0.215) -> float:
+             band_in: float = HOLD_IN, band_out: float = HOLD_OUT,
+             speed: float = HOLD_SPEED) -> float:
         """Hold the prelude pose. -> current xy error from the anchor (m).
 
         Heading is held closed against `anchor_yaw`; position is held closed
@@ -136,20 +143,24 @@ class Action18Sender:
         past `band_out` and stops inside `band_in`, because a walking gait
         cannot servo a 3 cm error and a tight band just makes it hunt.
 
-        MEASURED (diag_station_keep.py, outputs/diag/station_keep_final.txt,
-        2026-09-04, 20 s per arm, anchor calibrated and the teleport transient
-        waited out):
+        TWO MEASUREMENTS, AND THE SECOND IS THE ONE THAT COUNTS.
 
-            planner IDLE, nothing else    0.7 cm
-            this hold                     1.2 cm
-            turn-and-walk back            2.0 cm
+        diag_station_keep.py (2026-09-04, 20 s per arm) reported planner IDLE
+        holding to 0.7 cm and this loop to 1.2 cm -- but it reset to the SCENE
+        DEFAULT pose: yaw 0, x -1.5, far from the table. That is not an eval
+        spawn. In the real thing (outputs/eval/a18_smoke5, 2026-09-05, 4
+        rounds, the eval's own spawn distribution) the prelude's hold segment
+        moved the robot 0.27-0.46 m table-ward in ~1.2 s, EVERY round --
+        exactly the "~0.15 m/s through any planner hold" that grasp_gym
+        documents for drift-prone spawn configs. Do not quote the 0.7 cm as
+        this path's drift: it was measured in a configuration the eval never
+        visits.
 
-        So the position loop is NOT what makes this work -- planner IDLE does
-        not drift. It is kept only as a bound: its band does not engage below
-        20 cm, so in a healthy round it never fires, and if something ever does
-        walk the robot off it walks it back instead of starting the policy
-        somewhere else. Straight back, never turn-and-walk: turning is what a
-        prelude must not do.
+        Hence tight bands (0.06 engage / 0.02 stop), overridable via
+        TF_HOLD_OUT / TF_HOLD_IN / TF_HOLD_SPEED: with ~1.2 s of prelude and
+        a drift of that rate, the original 0.20 m dead band spent the entire
+        budget before doing anything. Straight back, never turn-and-walk:
+        turning is what a prelude must not do.
 
         WHAT ACTUALLY MATTERS HERE is the heading anchor. `frame()` subtracts
         `heading_offset` from facing AND movement (one shared frame), and in a

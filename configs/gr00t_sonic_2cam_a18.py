@@ -46,6 +46,18 @@ _cfg["video"] = ModalityConfig(
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
     modality_keys=[
+        # The comments are positions in the CONCATENATED state this config
+        # builds, NOT columns of the raw observation.state. They differ:
+        # meta/modality.json lays the raw vector out as left_hand 22:29 and
+        # right_arm 29:36, i.e. the opposite order to the one listed here.
+        # GR00T resolves each key by name, so the permutation is applied
+        # identically at train and deploy and is harmless -- but reading these
+        # numbers as raw columns is not. In the RAW vector the dex1 grippers
+        # are at 26/27 (left) and 40/41 (right); 22/23 and 36/37 are
+        # identically zero in every frame (verified on cover400: exactly 33 of
+        # 43 columns are ever non-zero, and col 40 tracks the commanded right
+        # grip at r=0.997). Anything that indexes observation.state directly
+        # must use the raw layout, not this list.
         "left_leg",             # 0:6
         "right_leg",            # 6:12
         "waist",                # 12:15

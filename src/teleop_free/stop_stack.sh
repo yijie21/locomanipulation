@@ -10,6 +10,7 @@ pkill -9 -x "g1_deploy_onnx_" 2>/dev/null      # comm is truncated to 15 chars
 pkill -9 -f "run_sim_loop.py" 2>/dev/null
 pkill -9 -f "run_sim_locomani.py" 2>/dev/null
 pkill -9 -f "run_data_exporter.py" 2>/dev/null
+pkill -9 -f "run_instance_exporter.py" 2>/dev/null
 pkill -9 -f "zmq_driver.py" 2>/dev/null
 pkill -9 -f "collect_episode.py" 2>/dev/null
 pkill -9 -f "diag_walk.py" 2>/dev/null

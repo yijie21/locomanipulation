@@ -153,7 +153,7 @@ def _quat_ang_vel(q, dt):
 class SonicDecoder:
     """The SONIC decoder as a callable, plus the obs assembly it needs."""
 
-    def __init__(self, onnx_path: str | None = None):
+    def __init__(self, onnx_path: str | None = None, *, num_threads: int | None = None):
         import onnxruntime as ort
 
         path = onnx_path or _DEFAULT_DECODER
@@ -161,7 +161,12 @@ class SonicDecoder:
             raise FileNotFoundError(
                 f"decoder ONNX not found at {path}; pass onnx_path or set "
                 f"SONIC_DEPLOY_ROOT")
-        self.sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        options = ort.SessionOptions()
+        if num_threads is not None:
+            if num_threads < 1:
+                raise ValueError('num_threads must be positive')
+            options.intra_op_num_threads = options.inter_op_num_threads = num_threads
+        self.sess = ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
         self.iname = self.sess.get_inputs()[0].name
         dim = self.sess.get_inputs()[0].shape[-1]
         if dim != OBS_DIM:

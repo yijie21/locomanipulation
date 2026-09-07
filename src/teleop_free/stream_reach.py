@@ -22,10 +22,14 @@ from __future__ import annotations
 import os
 import time
 from collections import deque
+from dataclasses import dataclass
+from enum import Enum
 
 import numpy as np
 
 from arm_ik import ArmIK
+from execution_record import ExecutionRecord, GraspResult
+from reach_config import DEFAULT_REACH, ReachConfig
 from g1_joints import ARM_MJ, mujoco_to_isaac
 from primitives import (
     DT,
@@ -41,6 +45,42 @@ from primitives import (
 )
 
 LIFT_MIN = 0.06           # the object must actually leave the table
+
+
+class ApproachStatus(str, Enum):
+    READY = 'ready'
+    TIMEOUT = 'timeout'
+    FALLEN = 'fallen'
+    BLOCKED = 'blocked'
+
+
+@dataclass(frozen=True)
+class ApproachResult:
+    status: ApproachStatus
+    depth: float
+    elapsed: float
+    azimuth: float
+
+
+# Compatibility snapshot for legacy grasp_streamed callers only. The normal
+# collector owns its ExecutionRecord; depth gates use yaw-only coordinates.
+LAST_TRANSITION = {}
+# Shared depth limit, independent of the sampled navigation waypoint. The
+# bottle pilot physically grasped at yaw-frame depths 0.294..0.381 m. This
+# 0.40 m gate is a screening bound, not a collision-free IK certificate;
+# post-crouch replanning and actual grasp verification remain mandatory.
+TRANSITION_POST_MAX = DEFAULT_REACH.post_max
+
+
+def approach_depth_band(post_max, backshift=.08, margin=.01):
+    """Invert an estimated crouch backshift, not a reachability certificate.
+
+    8 cm is the existing measured prior, not a guaranteed displacement.
+    Actual post-crouch geometry remains the mandatory acceptance gate.
+    """
+    return ReachConfig(post_max=post_max, backshift=backshift,
+                       depth_margin=margin).approach_band()
+
 
 CHUNK = 5                 # pose frames per message, like the pico manager
 JOINT_SPEED = 0.8         # rad/s for large repositioning moves
@@ -69,8 +109,8 @@ SAFE_GAP = 0.17 if _HAND == "dex1" else 0.13
 DEPTH_TOL = 0.03
 
 # Fraction of servo ticks with the object inside the ego camera's central 90%
-# (set by _servo_continuous; None until a servo has run). The episode gate
-# reads it: RGB frames that never show the task are worthless to a VLA.
+# (legacy callers only). New task code reads GraspResult.visibility so a
+# failed or camera-less attempt cannot inherit a preceding episode's value.
 LAST_EGO_VIS = None
 # Looser than servo_grasp's 6 mm: that loop nudged a 50 Hz drifting command,
 # this one hops between IK solutions with a ~1 cm delivery floor, so an 8 mm
@@ -256,7 +296,7 @@ class StreamedArm:
         for _ in range(int(round(seconds / DT))):
             self._push(self.q)
 
-    def _guard_left(self, q: np.ndarray) -> np.ndarray:
+    def _guard_left(self, q: np.ndarray, observed=None) -> np.ndarray:
         """Keep the off (left) palm outside LEFT_SAFE_M of the object.
 
         Reads the live state (palm + object, world), retreats the palm
@@ -270,7 +310,9 @@ class StreamedArm:
         L = ARM_MJ["left"]
         if self._left_now is not None:
             q[L] = self._left_now
-        s = self.p.obs()
+        if observed is not None and time.time()-observed['wall']>.2:
+            raise ValueError('stale observation for offhand guard')
+        s = self.p.obs() if observed is None else observed
         obj = np.asarray(self.p.object_pos(self.guard, s), dtype=float)
         palm = np.asarray(s["palms"]["left"]["pos"], dtype=float)
         d = float(np.linalg.norm(palm - obj))
@@ -469,10 +511,24 @@ class PlannerArm(StreamedArm):
         self._q_prev = None
         self._face = (1.0, 0.0, 0.0)
 
-    def start(self) -> None:
+    def start(self, *, upper_reference=None) -> None:
+        """Take over, optionally preserving an already owned frozen reference.
+
+        The explicit 17-value reference is the caller's last commanded upper
+        body, not the deploy's unmodified planner motion or measured joints.
+        Default entry keeps the historical measured seed for existing callers.
+        """
         from primitives import upper_body_from_mj
+        if upper_reference is not None:
+            upper_reference = np.asarray(upper_reference, dtype=float)
+            if upper_reference.shape != (17,) or not np.isfinite(upper_reference).all():
+                raise ValueError('upper_reference must contain 17 finite joint targets')
         s = self.p.obs()
         self.q = np.array(s["joints"])
+        if upper_reference is not None:
+            self.q[12:15] = upper_reference[:3]
+            self.q[15:22] = upper_reference[3::2]
+            self.q[22:29] = upper_reference[4::2]
         self._q_prev = self.q.copy()
         self.root_quat = yaw_only(s["pelvis"]["quat"])
         self._face = self.p._facing(s)
@@ -517,9 +573,9 @@ class PlannerArm(StreamedArm):
         # carry/stand tail of the episode, with the arm standing still.
         self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
 
-    def _push(self, q_mj29) -> None:
+    def _push(self, q_mj29, observed=None) -> None:
         from primitives import upper_body_from_mj
-        q = self._guard_left(np.asarray(q_mj29, dtype=float).copy())
+        q = self._guard_left(np.asarray(q_mj29, dtype=float).copy(), observed=observed)
         u = upper_body_from_mj(q)
         self.p.cmd.set_upper_body(u)
         if self.send_vel:
@@ -610,7 +666,7 @@ def reanchor(p: Primitives, side: str = "right") -> None:
 GRIP_X_MAX = 0.30         # the reach map's outer band: [0.22, 0.30] is the
                           # only overlap of the graspable region with stands
                           # whose hip does not press the table edge
-GRIP_X_MIN = 0.22         # closer, and the hip leans on the table edge
+GRIP_X_MIN = DEFAULT_REACH.post_min         # closer, and the hip leans on the table edge
                           # and shoves it (FURN[R.hip_roll] forensics)
 
 RAISE_CLEAR = 0.10        # palm above the tabletop while walking the last bit
@@ -744,102 +800,84 @@ def _nudge_pass(p: Primitives, grip_world, side: str,
 
 def _creep_to_band(p, grip_world, side: str, x_min: float = 0.18,
                    x_max: float = 0.27, max_s: float = 8.0,
-                   target_rel=None) -> float:
-    """Closed-loop, pause-free final approach: keep shuffling until the grip's
-    pelvis-frame x is inside [x_min, x_max], then return at once (no settle).
+                   target_rel=None, envelope=None, update_upper=None, target_lateral=None) -> ApproachResult:
+    """Reach an observable depth/cone gate; timeout and falling are failures.
 
-    Replaces the open-loop brake pre-compensation (2026-09-03). The gait's
-    post-brake slide is load-dependent -- 11 cm mean on an idle instance,
-    6 cm with the exporter recording -- so a fixed MARGIN_STOP offset put
-    16/27 recorded rounds outside the band. At the shuffle speeds (0.215 ->
-    ~5 cm/step, 0.20 -> 1-2 cm/step) the gait carries almost no momentum,
-    so measuring while moving and stopping on the measurement is accurate
-    to a few cm, and the robot never stands still: it walks slower, which
-    is the one kind of slow the data is allowed to contain.
+    target_rel is accepted for old callers but never controls termination.
+    Random approach waypoints may vary; identical live geometry has the same
+    transition rule. Both this depth and the post-crouch depth are yaw-only.
     """
-    from agent_server import LocomotionMode
-    t0 = time.time(); x0 = None; steps = 0; hold = 0.0
+    t0 = time.time()
+    ready_since = None
+    status = ApproachStatus.TIMEOUT
+    aim_max = float(envelope[2]) if envelope is not None else np.deg2rad(36.5)
     while time.time() - t0 < max_s:
         s = p.obs()
-        if s["fallen"]:
+        if s['fallen']:
+            status = ApproachStatus.FALLEN
             break
-        gx = float(p.world_to_root_full(grip_world, s)[0])
-        if x0 is None:
-            x0 = gx
+        if update_upper is not None and not update_upper(s):
+            status = ApproachStatus.BLOCKED
+            break
+        grip = np.asarray(p.world_to_root(grip_world, s))
+        gx = float(grip[0])
+        az = float(np.arctan2(grip[1], grip[0]))
+        in_band = x_min <= gx <= x_max
+        in_cone = abs(az) <= aim_max
+        if target_lateral is not None:
+            in_cone = in_cone and abs(grip[1]-target_lateral) <= .025
         yaw = p.pelvis_yaw(s)
-        d = np.asarray(grip_world[:2]) - p.pelvis_xy(s)
-        bearing_can = float(np.arctan2(d[1], d[0]))
-        bearing = (float(p.hold_yaw) if p.hold_yaw is not None
-                   and abs(wrap(float(p.hold_yaw) - bearing_can)) < 0.8 else bearing_can)
-        face = yaw + float(np.clip(wrap(bearing - yaw), -0.4, 0.4))
-        fv = (np.cos(face), np.sin(face), 0.0)
-        if target_rel is not None:
-            # AZIMUTH + RANGE, not strafe (2026-09-04). A stand cell's
-            # pelvis-frame y is set by HEADING, not by lateral translation:
-            # walking while facing the bottle drives y -> 0, so a strafe
-            # command cannot reach y = -0.21 (cover20: 7/24 creeps sat out
-            # the full 10 s at 13-16 cm lateral error without moving). The
-            # facing channel is also the frame-compensated one; a world
-            # movement vector is not (see _nudge_pass). So: turn until the
-            # bottle sits at the cell's azimuth, walk along the facing until
-            # the range matches. The turn IS the alignment demonstration.
-            gxy = p.world_to_root_full(grip_world, s)[:2]
-            tx = float(target_rel[0]) - 0.08     # the crouch moves the pelvis ~8 cm back
-            ty = float(target_rel[1])
-            da = wrap(float(np.arctan2(gxy[1], gxy[0]))
-                      - float(np.arctan2(ty, tx)))
-            dr = float(np.hypot(*gxy)) - float(np.hypot(tx, ty))
-            # Tolerances, not guesses: the controller has a ~7-8 deg heading
-            # DEAD ZONE (primitives.turn_to), so an azimuth tolerance inside
-            # it can never be met and the loop just shuffles. And the break
-            # must HOLD: an instantaneous test fires while the base is still
-            # coasting through the target. The old velocity gate that guarded
-            # against that sent IDLE whenever the pelvis moved >0.10 m/s --
-            # which a walking gait does on nearly every frame, so it chopped
-            # the walk into fragments (cover21: 65 cm of path for 24 cm of
-            # travel, path/net 2.6 vs 1.4 without the creep -- the visible
-            # shuffling at the table). Continuous command, held break.
-            if abs(da) < np.deg2rad(10.0) and abs(dr) < 0.05:
-                hold += DT
-                if hold >= 0.4:
-                    break
-            else:
-                hold = 0.0
-            face = yaw + float(np.clip(da, -0.5, 0.5))
-            fv = (np.cos(face), np.sin(face), 0.0)
-            if abs(dr) < 0.05:
-                # range is fine: turn on the spot (turn_to's own recipe --
-                # SLOW_WALK with zero movement converged on 12/12 probes)
-                speed = 0.215
-                mv = (0.0, 0.0, 0.0)
-            else:
-                speed = 0.20 if abs(dr) < 0.09 else 0.215
-                mv = fv if dr > 0 else (-fv[0], -fv[1], 0.0)
-        else:
-            if x_min <= gx <= x_max:
+        # Stop translating while validating the band. The old branch kept
+        # walking forward even while accumulating its ready counter.
+        if in_band and in_cone:
+            if ready_since is None:
+                ready_since = time.time()
+            if time.time() - ready_since >= .2:
+                status = ApproachStatus.READY
                 break
-            backing = gx < x_min
-            err = (x_min - gx) if backing else (gx - x_max)
-            speed = 0.20 if err < 0.05 else 0.215
-            mv = (-fv[0], -fv[1], 0.0) if backing else fv
+            face = yaw
+            mv = (0., 0., 0.)
+            speed = .20
+        else:
+            ready_since = None
+            face = yaw + float(np.clip(az, -.5, .5)) if not in_cone else yaw
+            fv = (np.cos(face), np.sin(face), 0.)
+            if target_lateral is not None:
+                # Align the body to put the object ahead of the active hand.
+                # The released gait tracks forward/turn commands more reliably
+                # than tiny lateral shuffles with the arms held in front.
+                desired_az = float(np.arctan2(target_lateral, max(gx, .10)))
+                face = yaw + float(np.clip(az-desired_az, -.35, .35))
+                direction = 0. if in_band else (-1. if gx < x_min else 1.)
+                mv = (direction*np.cos(face), direction*np.sin(face), 0.)
+                speed = .215
+            elif not in_cone:
+                mv, speed = (0., 0., 0.), .215
+            else:
+                backing = gx < x_min
+                err = x_min - gx if backing else gx - x_max
+                mv = (-fv[0], -fv[1], 0.) if backing else fv
+                speed = .20 if err < .05 else .215
         p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=speed,
-                    movement=mv, facing=fv)
-        steps += 1
+                    movement=mv, facing=(np.cos(face), np.sin(face), 0.))
         time.sleep(DT)
-    s = p.obs(); gx = float(p.world_to_root_full(grip_world, s)[0])
-    if target_rel is not None:
-        gxy = p.world_to_root_full(grip_world, s)[:2]
-        tx = float(target_rel[0]) - 0.08; ty = float(target_rel[1])
-        p.log(f"  stream: creep2d grip ({gxy[0]:.2f}, {gxy[1]:.2f}) vs target "
-              f"({tx:.2f}, {ty:.2f}); azimuth "
-              f"{np.degrees(np.arctan2(gxy[1], gxy[0])):+.0f} -> want "
-              f"{np.degrees(np.arctan2(ty, tx)):+.0f} deg, range "
-              f"{np.hypot(*gxy):.2f} -> want {np.hypot(tx, ty):.2f} m "
-              f"after {time.time() - t0:.1f} s ({steps} frames)")
-    p.log(f"  stream: creep {x0 if x0 is None else round(x0, 2)} -> {gx:.2f} m "
-          f"in {time.time() - t0:.1f} s ({steps} shuffle frames, v_end "
-          f"{float(np.hypot(*s['pelvis']['vel'][:2])):.2f} m/s), band [{x_min:.2f}, {x_max:.2f}]")
-    return gx
+    s = p.obs()
+    if s['fallen']:
+        status = ApproachStatus.FALLEN
+    grip = np.asarray(p.world_to_root(grip_world, s))
+    az = float(np.arctan2(grip[1], grip[0]))
+    if status == ApproachStatus.READY and not (x_min <= grip[0] <= x_max and abs(az) <= aim_max
+            and (target_lateral is None or abs(grip[1]-target_lateral) <= .025)):
+        status = ApproachStatus.TIMEOUT
+    result = ApproachResult(status, float(grip[0]), time.time() - t0, az)
+    # Never leave a walking command active on failure.
+    if status != ApproachStatus.READY:
+        p.cmd.frame(mode=LocomotionMode.IDLE, speed=0., movement=(0., 0., 0.),
+                    facing=(np.cos(p.pelvis_yaw(s)), np.sin(p.pelvis_yaw(s)), 0.))
+    p.log(f'  stream: approach {status.value}, depth {result.depth:.3f} m '
+          f'in [{x_min:.3f}, {x_max:.3f}], az {np.degrees(az):+.1f} deg, '
+          f'{result.elapsed:.2f} s')
+    return result
 
 
 def toppled(s, obj_key: str) -> bool:
@@ -1256,7 +1294,11 @@ PRE_XY_MAX = 0.46         # horizontal reach from the pelvis
 
 def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                       side: str, replan=None, ghost=None,
-                      pin=None, surface_top=None) -> tuple[bool, str]:
+                      pin=None, surface_top=None, execution=None, transport_guard=None,
+                      start_at_pregrasp=False, rotation_bias=None, reference_guard=None, pregrasp_gap=None,
+                      close_from_current=False, grip_target=None,
+                      require_bilateral=False, capture_feedback=None,
+                      grasp_point_control=False, preserve_capture_reference=False) -> tuple[bool, str]:
     """Travel, align, slide in, close, lift — one uninterrupted 50 Hz loop.
 
     `replan(wrist_now, palm_rot) -> Grasp` re-derives the candidate pose from
@@ -1266,6 +1308,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     point a moving target only feeds the push-away chatter. `ghost` mirrors
     every accepted replan into the video's translucent hand.
     """
+    gap = SAFE_GAP if pregrasp_gap is None else float(pregrasp_gap)
+    if preserve_capture_reference and (not close_from_current or grasp_point_control
+                                       or capture_feedback is not None):
+        raise ValueError('Reference handover requires guarded measured wrist closure')
+    if grasp_point_control and (not close_from_current or capture_feedback is not None):
+        raise ValueError('Grasp-point servo requires measured closure without legacy wrist feedback')
+    if not np.isfinite(gap) or not .07 <= gap <= .25:
+        raise ValueError("pregrasp gap must be between .07 and .25 m")
     rot_t = np.asarray(plan.rot)
     # Entry axis: dex3 slides along palm +y (the finger cage sweeps the can
     # in sideways); dex1 is a parallel jaw and MUST come in along palm +x,
@@ -1273,7 +1323,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     # the can (TOUCH[dex1_finger_2] on every approach).
     ENTRY_COL = 0 if _HAND == "dex1" else 1
     entry = rot_t[:, ENTRY_COL]
-    pre_w = np.asarray(plan.wrist) - entry * SAFE_GAP
+    pre_w = np.asarray(plan.wrist) - entry * gap
     above_w = pre_w + np.array([0.0, 0.0, STAGE_UP])
     frozen = replan is None
     last_replan = 0.0
@@ -1285,10 +1335,45 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     obj0 = p.object_pos(obj_key, s)
     z0 = float(obj0[2])
     ref = np.array(s["palms"][side]["pos"], dtype=float)
-    phase, ok_ticks, alpha, contact_alpha = "up", 0, 0.0, None
+    if start_at_pregrasp:
+        # Diagnostic joint transport may hand over here only after actual
+        # pregrasp delivery. Never skip transport based on a planned pose.
+        rot_now = Primitives._rot(s['palms'][side]['quat'])
+        angle = float(np.arccos(np.clip((np.trace(rot_t @ rot_now.T)-1)/2, -1., 1.)))
+        if np.linalg.norm(ref-pre_w) >= .045 or angle >= .25:
+            return False, 'pregrasp handover geometry not delivered'
+    phase, ok_ticks, alpha, contact_alpha = ("in" if start_at_pregrasp else "up"), 0, 0.0, None
+    capture_bias = np.zeros(3)
+    if close_from_current:
+        from measured_grasp import closure_geometry
+        if start_at_pregrasp or _HAND != 'dex1' or reference_guard is None:
+            raise ValueError('measured closure requires guarded Dex1 control')
+        if grip_target is None:
+            raise ValueError('measured closure requires the shared live grasp target')
+        if not closure_geometry(s, side, grip_target(s))['ready']:
+            return False, 'measured closure handover geometry not delivered'
+        phase = 'close'
+        if preserve_capture_reference:
+            # The measured hand and its command differ under WBC tracking.
+            # Re-solving the measured pose here discards that compensation
+            # and moves a seated hand as closure starts. Preserve the last
+            # FK command while anchoring feedback at the actual wrist.
+            command_palm, command_rotation = arm.ik.fk(arm.q, side)
+            root_rotation = Primitives._rot(s['pelvis']['quat'])
+            command_world = np.asarray(s['pelvis']['pos']) + root_rotation @ command_palm
+            capture_bias = command_world-ref
+            rot_t = root_rotation @ command_rotation
+            if execution is not None:
+                execution.metrics['capture_reference_handover'] = dict(
+                    wrist_tracking_bias_world_m=capture_bias.tolist(),
+                    preserved_rotation_world=rot_t.tolist())
+        if grasp_point_control:
+            ref += Primitives._rot(s['palms'][side]['quat']) @ offset
     full_f = None            # low-passed palm-frame error (the servo's eyes)
     obj_f = None             # low-passed can position
-    close_tgt = None
+    close_tgt = ref.copy() if close_from_current else None
+    if close_from_current:
+        obj_f = obj0.copy()
     obj_in0 = None           # can position when the slide-in began
     backoff_until = 0.0
     touch_ticks = 0
@@ -1309,7 +1394,12 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
     dbg_z = ""               # z-chain telemetry (line/cmd/palm/floor)
     touch_seen: set = set()  # object-contact links since the last status line
 
+    recorded_phase = None
     while time.time() < deadline:
+        transport_phase = phase if phase in ("up", "down") else None
+        if execution is not None and phase != recorded_phase:
+            execution.enter("grasp." + phase)
+            recorded_phase = phase
         s = p.state.latest(5) or s
         now = time.time()
         dt = float(np.clip(now - t_prev, 0.005, 0.06))
@@ -1320,13 +1410,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             return False, f"{obj_key} toppled in the {phase} phase"
         palm = np.array(s["palms"][side]["pos"])
         rot_p = Primitives._rot(s["palms"][side]["quat"])
+        controlled = palm + rot_p @ offset if grasp_point_control else palm
         obj = p.object_pos(obj_key, s)
         # servo telemetry (2026-09-03 topple study): palm-vs-reference
         # tracking error and torso motion per phase, printed by arm.stop()
         _d = arm.__dict__.setdefault("servo_dbg", {})
         _ph = _d.setdefault(phase, {"n": 0, "err": 0.0, "errmax": 0.0,
                                     "z": [], "pitch": []})
-        _e = float(np.linalg.norm(palm - ref))
+        _e = float(np.linalg.norm(controlled - ref))
         _ph["n"] += 1; _ph["err"] += _e; _ph["errmax"] = max(_ph["errmax"], _e)
         _pq = s["pelvis"]["quat"]
         _ph["z"].append(float(s["pelvis"]["pos"][2]))
@@ -1350,7 +1441,10 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             tot_n += 1
             if cam is not None and abs(cam[0]) < 0.9 and abs(cam[1]) < 0.9:
                 vis_n += 1
-            LAST_EGO_VIS = vis_n / tot_n
+            if execution is None:
+                LAST_EGO_VIS = vis_n / tot_n  # legacy direct servo callers
+            else:
+                execution.metrics["ego_visibility"] = vis_n / tot_n
 
         if not frozen and phase in ("up", "down") and now - last_replan > 0.2:
             last_replan = now
@@ -1358,7 +1452,7 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             if npl.ok and npl.travel > FREEZE_TRAVEL:
                 cand_rot = np.asarray(npl.rot)
                 cand_pre = (np.asarray(npl.wrist)
-                            - cand_rot[:, ENTRY_COL] * SAFE_GAP)
+                            - cand_rot[:, ENTRY_COL] * gap)
                 pre_pf = p.world_to_root_full(cand_pre, s)
                 if (float(np.hypot(pre_pf[0], pre_pf[1])) <= PRE_XY_MAX
                         and PRE_X_MIN <= pre_pf[0] <= PRE_X_MAX
@@ -1608,22 +1702,40 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             if close_tgt is None:
                 close_tgt = obj_f - rot_t @ offset + trim_w
             tgt, v = close_tgt, 0.03
-            alpha = min(1.0, alpha + dt / CLOSE_RAMP_S)
+            advance = True
+            if capture_feedback is not None:
+                tgt, advance, lost = capture_feedback.update(s,dt)
+                if execution is not None:
+                    stats = execution.metrics.setdefault('feedback_close',dict(active_ticks=0,paused_ticks=0))
+                    stats['active_ticks'] += 1
+                    stats['paused_ticks'] += int(not advance)
+                    counts = stats.setdefault('pause_reasons', {})
+                    for reason in capture_feedback.blocked_reasons:
+                        counts[reason] = counts.get(reason,0)+1
+                if lost:return False,'capture geometry or relative motion lost during closure'
+            if advance:
+                alpha = min(1.0, alpha + dt / CLOSE_RAMP_S)
             arm.hands[side] = HAND_OPEN + alpha * (closed - HAND_OPEN)
             # Latch contact only when SUSTAINED: a single-tick graze latched
             # contact_alpha early, capped the squeeze low, and the under-
             # gripped can dropped out during the lift.
-            touch_ticks = (touch_ticks + 1
-                           if side in s["objects"][obj_key]["touching"] else 0)
+            from grasp_capture import bilateral_dex1_contact
+            paired = require_bilateral and _HAND == 'dex1'
+            contact = (bilateral_dex1_contact(s['objects'][obj_key], side) if paired
+                       else side in s['objects'][obj_key]['touching'])
+            touch_ticks = touch_ticks+1 if contact else 0
             if contact_alpha is None and touch_ticks >= 3:
                 contact_alpha = alpha
             # Past contact, squeeze another half — the travel grip that
             # survives 2.4 m of gait bounce (the tighten-for-the-road step,
             # folded into the same ramp).
-            if contact_alpha is not None and alpha >= min(
-                    1.0, contact_alpha + 0.6):
+            lift_ready = (alpha >= 1. and touch_ticks >= 3 if paired else
+                          contact_alpha is not None and alpha >= min(1., contact_alpha+.6))
+            if lift_ready:
                 phase = "lift"
-                lift_target = palm + np.array([0.0, 0.0, LIFT_HEIGHT])
+                lift_target = controlled + np.array([0.0, 0.0, LIFT_HEIGHT])
+            elif paired and alpha >= 1. and touch_ticks < 3:
+                return False, 'no sustained bilateral finger contact after closing'
             elif alpha >= 1.0 and contact_alpha is None:
                 return False, "no contact after closing"
         else:                                          # lift
@@ -1639,13 +1751,13 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     return True, ""
 
         ref = ref + _clipn(np.asarray(tgt, dtype=float) - ref, v * dt)
-        lead = ref - palm
+        lead = ref - controlled
         if float(np.linalg.norm(lead)) > LEAD_MAX:
             # The policy is behind; wait for it instead of running away.
-            ref = palm + _clipn(lead, LEAD_MAX)
-            lead = ref - palm
-        cmd = ref + np.clip(KP_TRACK * lead, -0.05, 0.05)
-        if phase in ("down", "in", "close"):
+            ref = controlled + _clipn(lead, LEAD_MAX)
+            lead = ref - controlled
+        cmd = ref + np.clip(KP_TRACK * lead, -0.05, 0.05) + capture_bias
+        if phase in ("down", "in", "close") and not (close_from_current and phase == "close"):
             # The policy arm SAGS ~2 cm below its reference; geometry that
             # clears the table on paper drags the middle fingertip across it
             # in the flesh (FURN[R:middle_1] wedged, lat/ent frozen for a
@@ -1663,6 +1775,14 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             low_c = float((_ag.hand_points() @ rot_t.T)[:, 2].min())
             z_floor = (surface_top + (0.030 if _HAND == 'dex1' else 0.012) - low_c
                        - float((rot_t @ _ag.OFFSET)[2]))
+            if grasp_point_control:
+                z_floor += float((rot_t @ _ag.OFFSET)[2])
+            if rotation_bias is not None:
+                from scipy.spatial.transform import Rotation
+                biased_rot = Rotation.from_rotvec(rotation_bias).as_matrix() @ rot_t
+                biased_low = float((_ag.hand_points() @ biased_rot.T)[:, 2].min())
+                z_floor = max(z_floor, surface_top + .030 - biased_low
+                              - float((biased_rot @ _ag.OFFSET)[2]))
             if cmd[2] < z_floor:
                 cmd = cmd.copy()
                 cmd[2] = z_floor
@@ -1681,7 +1801,11 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
             # while far from the pregrasp and blend flat over the last
             # 12 cm of the flight — the rotation then happens ~17 cm out,
             # where the arc is clear of the object.
-            d_pre = float(np.linalg.norm(np.asarray(cmd) - palm))
+            # Remaining travel, not command tracking error. A well-tracked
+            # short reference step can be millimetres from the hand while
+            # the pregrasp is still far away; flattening there sweeps the
+            # fingers through the object during transport.
+            d_pre = float(np.linalg.norm(np.asarray(pre_w) - palm))
             k_up = float(np.clip((d_pre - 0.02) / 0.12, 0.0, 1.0))
             th = np.deg2rad(55.0) * k_up
             if th > 1e-3:
@@ -1694,9 +1818,35 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                     if (cand @ np.array([1.0, 0.0, 0.0]))[2] > 0:
                         rot_use = cand
                         break
+        if rotation_bias is not None:
+            from scipy.spatial.transform import Rotation
+            rot_use = Rotation.from_rotvec(rotation_bias).as_matrix() @ rot_use
         rot_pf = Primitives._rot(s["pelvis"]["quat"]).T @ rot_use
         q_sol, res, _ = arm.ik.solve(side, aim_pf, rot_pf, q_mj29=arm.q,
-                                     use_waist=True, iters=10)
+                                     use_waist=True, iters=10,
+                                     **(dict(point_offset=offset, rot_weight=.1)
+                                        if grasp_point_control else {}))
+        if rotation_bias is not None or reference_guard is not None:
+            q_sol = arm.q + np.clip(q_sol-arm.q, -np.deg2rad(2.), np.deg2rad(2.))
+        if transport_guard is not None and transport_phase is not None:
+            candidate = q_sol if res < .10 else arm.q
+            checked = np.asarray(candidate).copy()
+            checked[:12] = np.asarray(s['joints'])[:12]  # legs are controlled by WBC
+            guard_start = time.perf_counter()
+            swept = transport_guard.check(s, checked, side)
+            if execution is not None:
+                stats = execution.metrics.setdefault('transport_guard',
+                    dict(checks=0, max_ms=0., rejected=None))
+                stats['checks'] += 1
+                stats['max_ms'] = max(stats['max_ms'], (time.perf_counter()-guard_start)*1000)
+                if not swept.clear: stats['rejected'] = swept.to_dict()
+            if not swept.clear:
+                return False, (f'transport clearance in {transport_phase}: {swept.link} vs '
+                               f'{swept.obstacle}, {swept.distance:.4f} m')
+        if reference_guard is not None:
+            rejection = reference_guard(s, q_sol if res < .10 else arm.q, phase)
+            if rejection:
+                return False, rejection
         if res < 0.10:
             arm.q = q_sol
         arm._push(arm.q)
@@ -1748,7 +1898,8 @@ def _servo_continuous(p: Primitives, arm: StreamedArm, obj_key: str, plan,
                 if hq:
                     extra += "  hq[" + ",".join(f"{v:+.3f}" for v in hq) + "]"
             tpf = p.world_to_root_full(np.asarray(tgt, dtype=float), s)
-            p.log(f"    stream cont[{phase}] palm->ref "
+            point_name = 'grasp_center' if grasp_point_control else 'palm'
+            p.log(f"    stream cont[{phase}] {point_name}->ref "
                   f"{float(np.linalg.norm(lead)) * 100:.1f} cm  res {res:.3f}"
                   f"  tgt_pf [{tpf[0]:+.2f} {tpf[1]:+.2f} {tpf[2]:+.2f}]{extra}")
             last_log = now
@@ -1760,8 +1911,49 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                    replan=None, ghost=None,
                    nudge: bool = True, pin=None,
                    squat_hint: float | None = None,
-                   stand_rel=None,
+                   stand_rel=None, envelope=None,
                    plan_r: float | None = None) -> tuple[bool, str]:
+    """Legacy tuple interface; new task code consumes execute_grasp's result."""
+    global LAST_EGO_VIS
+    LAST_TRANSITION.clear()
+    LAST_EGO_VIS = None
+    result = execute_grasp(
+        p, obj_key, grip_world, plan, side=side, surface_top=surface_top,
+        replan=replan, ghost=ghost, nudge=nudge, pin=pin, squat_hint=squat_hint,
+        stand_rel=stand_rel, envelope=envelope, plan_r=plan_r)
+    LAST_TRANSITION.update(result.execution['transition'])
+    LAST_EGO_VIS = result.visibility
+    return result.ok, result.why
+
+
+def execute_grasp(p, obj_key, grip_world, plan, *, execution=None, **options):
+    """Approach, posture delivery, measured replan, servo; return owned results.
+
+    Optional execution joins a containing task's journal. No caller reads globals.
+    Failure stage is the first control failure, not a post-hoc physical taxonomy.
+    """
+    execution = execution if execution is not None else ExecutionRecord()
+    execution.transition.clear()
+    execution.metrics.pop('ego_visibility', None)
+    try:
+        ok, why = _execute_grasp(p, obj_key, grip_world, plan,
+                                execution=execution, **options)
+    except Exception as exc:
+        execution.fail(f'{type(exc).__name__}: {exc}')
+        raise
+    if not ok:
+        execution.fail(why)
+    return GraspResult(ok, why, execution.snapshot())
+
+
+def _execute_grasp(p: Primitives, obj_key: str, grip_world, plan,
+                   side: str = "right", surface_top: float | None = None,
+                   replan=None, ghost=None,
+                   nudge: bool = True, pin=None,
+                   squat_hint: float | None = None,
+                   stand_rel=None, envelope=None,
+                   plan_r: float | None = None, *, execution, config=DEFAULT_REACH,
+                   transport_guard_factory=None, coordinated=None) -> tuple[bool, str]:
     """The whole grasp: raise, walk in, servo, close, lift. -> (ok, why)."""
     # Raise BEFORE walking in: from here on the hand is above the tabletop
     # and the approach can only ever come down onto the can, never up through
@@ -1772,10 +1964,10 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     # up-phase then hooked the fingers on the table (FURN[R:middle_*],
     # palm pinned at the lead cap for 8 s). The servo's first target is
     # above the pregrasp at ~the same height the hands already are.
-    # Deep-squat plans stand deliberately FAR (plan_core_stand's farthest
-    # overlap): the walk-in band's upper edge follows the plan instead of
-    # the shallow-squat-era 0.30 constant.
-    x_band = max(GRIP_X_MAX, plan_r + 0.03) if plan_r else GRIP_X_MAX
+    # plan_r is retained for old callers, but cannot set a transition gate:
+    # it is sampled per episode and is not observable to the student.
+    x_band = config.post_max - .02
+    execution.metrics["reach_config"] = config.to_dict()
     # NO settle hold here (2026-09-03, user rule: the sequence may be slow,
     # but it must never visibly pause). A settle-until-still loop (<= 2 s,
     # nearly always hitting the cap) was measured at +1.5 s of standing
@@ -1795,10 +1987,33 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
     # Not gated on `nudge`: grasp_gym passes nudge=False (that flag covered the
     # old walk-in shuffles), and the first creep batch silently ran without it
     # (12/29, every discard a stand outside the band).
-    _creep_to_band(p, grip_world, side, x_min=0.18, x_max=0.27,
-                   target_rel=stand_rel, max_s=10.0)
+    execution.enter("approach")
+    post_max = x_band + .02
+    pre_min, pre_max = config.approach_band()
+    aim_max = float(envelope[2]) if envelope is not None else np.deg2rad(config.azimuth_deg)
+    effective_envelope = (None, 0., aim_max)
+    if config.ready_grasp_recovery:
+        if coordinated is None or not hasattr(coordinated, "execute"):
+            return False, "recovery configuration requires a recovery controller"
+        return coordinated.execute(grip_world=grip_world, squat_hint=squat_hint, ghost=ghost)
+    approach = _creep_to_band(p, grip_world, side, x_min=pre_min, x_max=pre_max,
+                             target_rel=stand_rel, envelope=effective_envelope, max_s=config.approach_timeout,
+                             update_upper=coordinated.walk_tick if coordinated is not None else None,
+                             target_lateral=getattr(coordinated, "approach_lateral", None))
+    execution.transition.update(approach_status=approach.status.value,
+                           approach_seconds=approach.elapsed,
+                           pre_depth=approach.depth, pre_azimuth=approach.azimuth,
+                           pre_band=[pre_min, pre_max], post_band=[config.post_min, post_max],
+                           expected_backshift=config.backshift, depth_frame='pelvis_yaw')
+    if approach.status != ApproachStatus.READY:
+        return False, f'[approach] {approach.status.value}: depth {approach.depth:.3f} m'
+    if coordinated is not None:
+        return coordinated.finish(grip_world=grip_world, squat_hint=squat_hint, ghost=ghost)
+    execution.enter("arm_control")
     arm = make_arm(p, side)
     arm.guard = obj_key          # off-hand guard (see _guard_left)
+    guard = transport_guard_factory(arm.ik) if config.transport_guard and transport_guard_factory else None
+    execution.metrics["transport_guard_enabled"] = guard is not None
     arm.start()
     # NOTE: the sim-side pin must already be RELEASED before this call.
     # Holding it through start() and releasing here removes the visible
@@ -1840,21 +2055,29 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
         # waist only fine-tunes instead of folding to bridge the gap. The
         # wrist rides ~7.5 cm above the grip point, so the drop is the
         # palm's current height minus (grip + that margin).
+        execution.enter("posture")
         s0 = p.obs()
         p.log(f"  stream: grip x {p.world_to_root(grip_world, s0)[0]:.2f} m before the crouch")
         palm_z = float(s0["palms"][side]["pos"][2])
         drop = float(np.clip(palm_z - (float(grip_world[2]) + 0.06),
-                             0.0, 0.13))
+                             0.0, config.max_drop))
         if squat_hint is not None:
             # Navigation planned this crouch so the sweet core's THICK band
             # lands on the object — never crouch less than the plan.
-            drop = float(np.clip(max(drop, squat_hint), 0.0, 0.13))
+            drop = float(np.clip(max(drop, squat_hint), 0.0, config.max_drop))
         if drop > 0.03:
             _sb = p.obs(); _pb = np.array(_sb["pelvis"]["pos"][:2]); _yb = float(_sb["pelvis"]["yaw"])
             _gb = p.world_to_root(grip_world, _sb)
             got = arm.squat(drop, track=True)
             _sa = p.obs(); _pa = np.array(_sa["pelvis"]["pos"][:2])
             _ga = p.world_to_root(grip_world, _sa)
+            execution.transition.update(squat_requested=drop, squat_delivered=got,
+                                   pre_squat_depth=float(_gb[0]),
+                                   post_depth=float(_ga[0]),
+                                   actual_depth_shift=float(_ga[0] - _gb[0]),
+                                   post_full_grip=list(map(float, p.world_to_root_full(grip_world, _sa))))
+            if _sa['fallen'] or got < min(.06, .6 * drop):
+                return False, '[transition] crouch not delivered'
             _fwd = float(np.dot(_pa - _pb, [np.cos(_yb), np.sin(_yb)]))
             p.log(f"  stream: crouch moved the pelvis {_fwd * 100:+.0f} cm forward "
                   f"({float(np.linalg.norm(_pa - _pb)) * 100:.0f} cm total, yaw "
@@ -1870,16 +2093,17 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
             # back-shift, and crouch again (at most twice).
             for _fix in range(2):
                 _sa = p.obs(); _gx = float(p.world_to_root(grip_world, _sa)[0])
-                if GRIP_X_MIN <= _gx <= (x_band + 0.02):
+                if config.post_min <= _gx <= post_max:
                     break
                 if os.environ.get("GYM_ONE_SHOT", "0") == "1":
                     # flow200 rule: no repair segments in the data -- a stand
                     # that needs correcting is a discarded round, not a
                     # stand-up/shuffle/crouch-again sequence for the VLA to learn
                     return False, (f"[stand] band correction needed: grip x {_gx:.2f} m "
-                                   f"after the crouch, band [{GRIP_X_MIN:.2f}, {x_band + 0.02:.2f}]")
+                                   f"after the crouch, band [{config.post_min:.2f}, {x_band + 0.02:.2f}]")
                 p.log(f"  stream: grip x {_gx:.2f} m after the crouch is outside "
-                      f"[{GRIP_X_MIN:.2f}, {x_band + 0.02:.2f}] -- stand, nudge, crouch again")
+                      f"[{config.post_min:.2f}, {x_band + 0.02:.2f}] -- stand, nudge, crouch again")
+                execution.enter("posture_correction", attempt=_fix + 1)
                 arm.stand()
                 _s = p.obs(); _yaw = p.pelvis_yaw(_s)
                 _fwd = np.array([np.cos(_yaw), np.sin(_yaw), 0.0])
@@ -1892,33 +2116,56 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
                             + max(_back - 0.04, -0.05) * _fwd)
                 p.log(f"  stream: nudging against a grip shifted "
                       f"{max(_back - 0.04, -0.05) * 100:+.0f} cm (crouch back-shift {_back * 100:+.0f} cm)")
-                _nudge_pass(p, _virtual, side, x_max=x_band)
+                _nudge_pass(p, _virtual, side, x_min=config.post_min, x_max=x_band)
                 arm.q = np.array(p.obs()["joints"]); arm._q_prev = arm.q.copy()
                 _gb = p.world_to_root(grip_world, p.obs())
                 got = arm.squat(drop, track=True)
                 _ga = p.world_to_root(grip_world, p.obs())
             p.log(f"  stream: planned crouch {drop * 100:.0f} cm "
                   f"wanted, {got * 100:.0f} cm delivered")
+        # Replan against the measured pose after crouching, before any reach.
+        execution.enter("reach_validation")
+        measured = p.obs()
+        if measured['fallen'] or (drop > .03 and got < min(.06, .6 * drop)):
+            return False, '[transition] crouch not delivered after correction'
+        if toppled(measured, obj_key):
+            return False, '[transition] object toppled before reach'
+        live_grip = np.asarray(grip_world, dtype=float).copy()
+        live_grip[:2] = measured['objects'][obj_key]['pos'][:2]
+        actual_grip = p.world_to_root(live_grip, measured)
+        execution.transition['reach_check_depth'] = float(actual_grip[0])
+        execution.transition['reach_check_azimuth'] = float(np.arctan2(actual_grip[1], actual_grip[0]))
+        if not (config.post_min <= actual_grip[0] <= post_max
+                and abs(np.arctan2(actual_grip[1], actual_grip[0])) <= aim_max):
+            return False, '[transition] post-crouch geometry outside depth/cone'
+        if replan is not None:
+            plan = replan(measured['palms'][side]['pos'],
+                          Primitives._rot(measured['palms'][side]['quat']))
+            if not plan.ok:
+                return False, f'[transition] post-crouch replan: {plan.why}'
+        execution.transition['reach_started'] = True
         # One continuous 50 Hz servo does everything: down the live
         # replanned line to the pregrasp, jaw-gated slide onto the can,
         # close, lift — no stop-and-settle anywhere.
         ok, why = _servo_continuous(p, arm, obj_key, plan, side,
                                     replan=replan, ghost=ghost, pin=pin,
-                                    surface_top=surface_top)
-        if not ok and ("timed out" in why or "not tracking" in why):
+                                    surface_top=surface_top, execution=execution, transport_guard=guard)
+        if (not ok and os.environ.get('GYM_ONE_SHOT', '0') != '1'
+                and ("timed out" in why or "not tracking" in why)):
             # Diagnose before medicating: "cannot reach" is usually the grip
             # sitting outside the depth band (a nudge overshoot), and walking
             # back fixes that; the squat only helps when the grip is LOW, and
             # squatting at the wrong depth just adds a knee into the table.
+            execution.enter("reach_retry")
             s = p.obs()
-            grip_pf = p.world_to_root_full(grip_world, s)
-            if not (GRIP_X_MIN <= grip_pf[0] <= x_band):
+            grip_pf = p.world_to_root(grip_world, s)
+            if not (config.post_min <= grip_pf[0] <= x_band):
                 arm.stop()
-                _nudge_closer(p, grip_world, side, x_max=x_band)
+                _nudge_closer(p, grip_world, side, x_min=config.post_min, x_max=x_band)
                 arm = make_arm(p, side)
                 arm.start()
                 s = p.obs()
-                grip_pf = p.world_to_root_full(grip_world, s)
+                grip_pf = p.world_to_root(grip_world, s)
             # No squat here. It was tried as the can't-reach fallback and made
             # things strictly worse: a 13 cm drop leaves the palm targets
             # ABOVE the pelvis, which is the policy's worst delivery zone,
@@ -1928,7 +2175,7 @@ def grasp_streamed(p: Primitives, obj_key: str, grip_world, plan,
             p.log("  stream: retrying the servo after re-nudging")
             ok, why = _servo_continuous(p, arm, obj_key, plan, side,
                                         replan=replan, ghost=ghost, pin=pin,
-                                        surface_top=surface_top)
+                                        surface_top=surface_top, execution=execution, transport_guard=guard)
         return ok, why
     finally:
         if pin is not None:

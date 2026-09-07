@@ -24,3 +24,4 @@ __pycache__/
 
 # converted Isaac USD assets (rebuilt by scripts/build_isaac_assets.sh)
 assets/isaac/
+MUJOCO_LOG.TXT

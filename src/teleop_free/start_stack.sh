@@ -266,12 +266,13 @@ if [ "${WRIST_CAMS:-1}" = "0" ]; then WRIST_ARG=(); fi
 # 1008 rows of can_pose = 0.0 with nothing logged, and every downstream check
 # read that as "the object never moved". It warns now, but not needing the
 # warning is better.
-if [ -z "${TF_POSE_OBJECTS:-}" ] && [ -f "$LOCOMANI_ROOT/outputs/scene/sim/scene_meta.json" ]; then
+STACK_SCENE_META="${LOCOMANI_SIM_DIR:-$LOCOMANI_ROOT/outputs/scene/sim}/scene_meta.json"
+if [ -z "${TF_POSE_OBJECTS:-}" ] && [ -f "$STACK_SCENE_META" ]; then
     TF_POSE_OBJECTS="$("$REPO/.venv_sim/bin/python" -c "
 import json, sys
 m = json.load(open(sys.argv[1]))
 print(','.join(m.get('objects', {})))
-" "$LOCOMANI_ROOT/outputs/scene/sim/scene_meta.json" 2>/dev/null)"
+" "$STACK_SCENE_META" 2>/dev/null)"
     export TF_POSE_OBJECTS
     echo "  pose columns: ${TF_POSE_OBJECTS:-<none found>}"
 fi
@@ -280,7 +281,7 @@ fi
 # limit -- a second stack then hangs at thread creation (2026-09-03).
 nohup env OMP_NUM_THREADS="${EXPORTER_THREADS:-4}" MKL_NUM_THREADS="${EXPORTER_THREADS:-4}" \
     OPENBLAS_NUM_THREADS="${EXPORTER_THREADS:-4}" NUMEXPR_NUM_THREADS="${EXPORTER_THREADS:-4}" \
-    "$REPO/.venv_data_collection/bin/python" gear_sonic/scripts/run_data_exporter.py \
+    "$REPO/.venv_data_collection/bin/python" "${TF_EXPORTER_SCRIPT:-gear_sonic/scripts/run_data_exporter.py}" \
     --task-prompt "$TASK_PROMPT" \
     --root-output-dir "$LOGS/outputs" \
     "${WRIST_ARG[@]}" \

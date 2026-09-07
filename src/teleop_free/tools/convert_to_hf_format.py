@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq_mod
+from verification_tail import training_prefix_length
 
 # Fallback only. It is what every episode gets when no --manifest is given,
 # i.e. when the whole run had one target. It used to read "place the orange
@@ -185,6 +186,10 @@ MODALITY = {
         # stay declared, so going back to the 78-dim action is a config edit
         # and needs no re-conversion.
         "right_gripper": {"start": 0, "end": 1, "original_key": "teleop.right_hand_joints"},
+        # Same slice of the left column, for the two-handed crate task
+        # (configs/gr00t_sonic_3cam_bimanual.py). On right-handed datasets it
+        # is a constant 0 like left_hand_joints above -- declared, not selected.
+        "left_gripper": {"start": 0, "end": 1, "original_key": "teleop.left_hand_joints"},
         "a18": {"start": 0, "end": 18, "original_key": "action.a18"},
     },
     # Filled from the session's own features -- see video_streams(). Fixing it
@@ -522,6 +527,8 @@ def main():
     ap.add_argument("--include-discarded", action="store_true")
     ap.add_argument("--only", type=int, nargs="*", default=None,
                     help="keep only these source episode indices")
+    ap.add_argument('--trim-verification-tail', action='store_true',
+                    help='Use manifest training_tail sequence boundaries; keep raw episodes intact')
     ap.add_argument("--manifest", nargs="+", default=None,
                     help="grasp_gym --manifest files, one per --sessions "
                          "entry and in the same order. Gives each episode "
@@ -580,6 +587,8 @@ def main():
 
     if args.holdout and not args.holdout_out:
         raise SystemExit("--holdout needs --holdout-out")
+    if args.trim_verification_tail and (not args.manifest or args.drop_idle or args.include_discarded):
+        ap.error('--trim-verification-tail requires manifests, successful episodes, and no --drop-idle')
     if args.manifest and len(args.manifest) != len(args.sessions):
         raise SystemExit(f"--manifest takes one file per --sessions entry "
                          f"({len(args.manifest)} vs {len(args.sessions)})")
@@ -700,6 +709,16 @@ def main():
             col = a18_lut[1][idx]
             table = table.append_column(
                 pa.field("action.a18", pa.list_(pa.float32(), 18)), fsl(col, 18))
+        if args.trim_verification_tail:
+            ps = json.loads((sess / f'priv_seq/episode_{src_ep:06d}.json').read_text())
+            original_rows = table.num_rows
+            end = training_prefix_length(ps['priv_seq'], original_rows, man[src_ep])
+            table = table.slice(0, end)
+            with (sink.out/'meta/verification_trims.jsonl').open('a') as receipt:
+                receipt.write(json.dumps(dict(source_session=str(sess), source_episode=src_ep,
+                    episode=sink.new_ep, source_rows=original_rows, kept_source_rows=end,
+                    boundary=man[src_ep]['execution']['metrics']['training_tail']))+'\n')
+            print(f'    verification tail: kept {end}/{original_rows} source frames')
         if args.strip_pose_columns:
             table = table.drop(
                 [c for c in table.column_names if _is_pose(c)])

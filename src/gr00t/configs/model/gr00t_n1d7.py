@@ -74,6 +74,9 @@ class Gr00tN1d7Config(PretrainedConfig):
     max_state_dim: int = 132  # Default from state_shape
     max_action_dim: int = 132  # Default from action_shape
     action_horizon: int = 40
+    # Training only; defaults preserve the original loss and inference.
+    action_prefix_loss_frames: int = 10
+    action_prefix_loss_weight: float = 1.0
     hidden_size: int = 1024
     input_embedding_dim: int = 1536
 

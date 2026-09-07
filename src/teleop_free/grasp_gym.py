@@ -62,8 +62,11 @@ from primitives import (  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
 import paths
 import sim_vis
+from execution_record import ExecutionRecord, RoundResult
+from tabletop_grasp import TabletopTarget, TabletopGrasp
+from reach_config import DEFAULT_REACH, ReachConfig
 
-SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+SCENE_META = paths.SCENE_META
 
 EDGE_MIN = 0.17            # pelvis-to-edge HARD floor, enforced at arrival.
                            # 0.10 -> 17 hip contacts, 0.12 -> 22: the crouch
@@ -131,7 +134,7 @@ def resolve_pool(meta: dict, spec: str) -> list[str]:
     return want
 
 
-def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap) -> TargetPlan:
+def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap, config=DEFAULT_REACH) -> TargetPlan:
     """Solve the stand plan for one target.
 
     Split out of main() when the target stopped being fixed. The edge the
@@ -144,6 +147,9 @@ def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap) -> TargetPlan:
     half = np.asarray(surf.get("half_extent", [0.6, 0.6])[:2], dtype=float)
     nom = np.asarray(meta["objects"][key]["init_pos"][:2], dtype=float)
     grip_z = obj_top(meta, key) - grasping.GRIP_BELOW_RIM
+    if config.ready_grasp_recovery:
+        obj = meta['objects'][key]
+        grip_z = obj['init_pos'][2] + obj['box'].get('center', [0., 0., 0.])[2] - config.grip_below_center
 
     e0 = nom - cxy
     ax = 0 if abs(abs(e0[0]) - half[0]) < abs(abs(e0[1]) - half[1]) else 1
@@ -174,6 +180,11 @@ def _drop_to_hint(want_drop: float) -> float:
 
 
 STAND_COVER = os.environ.get("GYM_STAND_COVER", "1") == "1"
+# Legacy argument plumbing: stream_reach now always uses an observable
+# depth/cone stop gate. GYM_CREEP_OBS=0 no longer restores hidden-target
+# termination. The geometric gate is a proxy, not a full reach-map check;
+# actual crouch delivery and post-crouch geometry are checked separately.
+CREEP_OBS = os.environ.get("GYM_CREEP_OBS", "1") == "1"
 FACE_OBJ = os.environ.get("GYM_FACE_OBJ", "0") == "1"
 
 
@@ -308,6 +319,8 @@ def main() -> None:
                          "sampler validates the stand and both walk legs "
                          "against the table, so a value too large costs "
                          "retries, not bad samples.")
+    ap.add_argument("--stand-retries", type=int, choices=(0, 1), default=1,
+                    help="reset retries after a stand-stage failure; use 0 for fixed-case acceptance")
     ap.add_argument("--until-ok", type=int, default=None, metavar="N",
                     help="stop as soon as N rounds have SUCCEEDED instead of "
                          "running all --rounds. --rounds is then the cap on "
@@ -376,7 +389,21 @@ def main() -> None:
                     metavar=("LO", "HI"),
                     help="scalar pelvis-object distance range the first "
                          "approach stops in on a DART round")
+    ap.add_argument("--reach-config", help="versioned JSON tabletop reach calibration")
+    ap.add_argument("--cases", help="fixed JSON case bank; bypass random sampling")
+    ap.add_argument("--write-cases", help="write exact sampled conditions as JSON (exclusive output)")
+    ap.add_argument("--sample-only", action="store_true", help="generate cases without starting the robot")
     args = ap.parse_args()
+    if args.sample_only and not args.write_cases:
+        ap.error("--sample-only requires --write-cases")
+    if args.cases and (args.dart_frac or args.until_ok):
+        ap.error("fixed cases cannot be combined with DART or success-count stopping")
+    from experiment_cases import load_cases, save_cases
+    fixed_cases = load_cases(args.cases, SCENE_META) if args.cases else None
+    if fixed_cases is not None and args.rounds > len(fixed_cases):
+        ap.error("requested more rounds than fixed cases")
+    sampled_cases = []
+    reach_config = ReachConfig.load(args.reach_config) if args.reach_config else DEFAULT_REACH
     if args.manifest:
         # collect.sh mkdir -p's its own $OUT before this, but a bare
         # `--manifest outputs/logs/x.jsonl` run (the README quickstart) would
@@ -446,7 +473,7 @@ def main() -> None:
     # own grip height, so every target has its own squat and its own set of
     # aim cells -- this used to be a single plan because there was a single
     # target.
-    plans = {k: plan_for_target(meta, k, rm) for k in pool}
+    plans = {k: plan_for_target(meta, k, rm, reach_config) for k in pool}
     for k, pl in plans.items():
         print(f"[gym] {k:8s} grip_z {pl.grip_z:.3f}  {len(pl.rel_cands)} aim "
               f"cells ({len(pl.stand3)} coverage cells, y "
@@ -455,28 +482,29 @@ def main() -> None:
               f"{'none' if pl.squat_hint is None else f'{pl.squat_hint * 100:.1f} cm'}"
               f"  edge {'+' if pl.sgn > 0 else '-'}{'xy'[pl.ax]}")
 
-    p = Primitives(meta=meta)
-    reset = EpisodeControlClient()
+    if not args.sample_only:
+        p = Primitives(meta=meta)
+        reset = EpisodeControlClient()
 
-    # Nominal robot spawn: one clean reset, read where the pelvis lands.
-    p.cmd.reset_pose()
-    reset.pin_arms()
-    reset.reset()
-    time.sleep(0.3)
-    # Read the nominal from the TELEPORT LANDING, before standing up. The
-    # sim's reset is `qpos[:] = qpos0` then `+= dxy` (privileged_pub:386),
-    # so every per-round teleport lands at qpos0 + dxy -- and the round's
-    # dxy is built as `stand - robot_nom`, which is only correct if
-    # robot_nom IS qpos0. Reading it after start_control + a 2.5 s stand
-    # instead (what this used to do) folds the stand-up drift into the
-    # nominal, and that drift is not repeatable: measured 0.12 m on a fresh
-    # stack and 0.91 m once the deploy carried a stale intent, which then
-    # biased EVERY teleport in that process by the same amount and showed
-    # up as "teleport did not land" for the rest of the run.
-    robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
-    print(f"[gym] nominal robot xy {np.round(robot_nom, 3)} (teleport landing)")
-    p.cmd.start_control()
-    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
+        # Nominal robot spawn: one clean reset, read where the pelvis lands.
+        p.cmd.reset_pose()
+        reset.pin_arms()
+        reset.reset()
+        time.sleep(0.3)
+        # Read the nominal from the TELEPORT LANDING, before standing up. The
+        # sim's reset is `qpos[:] = qpos0` then `+= dxy` (privileged_pub:386),
+        # so every per-round teleport lands at qpos0 + dxy -- and the round's
+        # dxy is built as `stand - robot_nom`, which is only correct if
+        # robot_nom IS qpos0. Reading it after start_control + a 2.5 s stand
+        # instead (what this used to do) folds the stand-up drift into the
+        # nominal, and that drift is not repeatable: measured 0.12 m on a fresh
+        # stack and 0.91 m once the deploy carried a stale intent, which then
+        # biased EVERY teleport in that process by the same amount and showed
+        # up as "teleport did not land" for the rest of the run.
+        robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
+        print(f"[gym] nominal robot xy {np.round(robot_nom, 3)} (teleport landing)")
+        p.cmd.start_control()
+        p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
 
     wins = 0
     played = 0
@@ -501,99 +529,122 @@ def main() -> None:
         # class the model gets much less of for no reason anyone chose. The
         # deck guarantees every target appears once per cycle and still
         # randomises the order within it.
-        if not deck:
-            deck = list(pool)
-            rng.shuffle(deck)
-        obj_key = deck.pop()
-        pl = plans[obj_key]
-        can_nom, rel_cands, squat_hint = pl.nom, pl.rel_cands, pl.squat_hint
-        ax, sgn = pl.ax, pl.sgn
-        task = instruction(pl.phrase)
-        # One integer per episode decides the whole look of the scene, so the
-        # manifest can record it and a replay can reproduce the exact frame.
-        appearance = int(rng.integers(0, 2 ** 31 - 1))
-        # The target lives in a band hugging its nominal edge (radial 5-10 cm
-        # inboard, +-args.edge_jitter along it): a pelvis 10 cm OUTSIDE the edge
-        # then reaches it at rel depth 0.15-0.24 — comfortably inside the
-        # map instead of at its rim, which is what lets the no-contact
-        # stand-off exist at all.
-        for try_i in range(500):
-            can_xy = can_nom.copy()
-            can_xy[ax] = cxy[ax] + sgn * (half[ax]
-                                          - rng.uniform(*CAN_INBOARD))
-            can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(
-                -args.edge_jitter, args.edge_jitter)
-            rel, squat_hint = sample_stand(pl, rng)
-            # Face the table from outside, along the can's inward edge
-            # normal, +-25 deg (a uniform world yaw almost never yields a
-            # stand outside the table).
-            normal = np.zeros(2)
-            normal[ax] = -sgn
-            psi = float(np.arctan2(normal[1], normal[0])
-                        + rng.uniform(-0.44, 0.44))
-            c, s = np.cos(psi), np.sin(psi)
-            stand = can_xy - np.array([c * rel[0] - s * rel[1],
-                                       s * rel[0] + c * rel[1]])
-            # Prefer slack over the bare floor: a stand SAMPLED at edge
-            # 0.17 exactly leaves the +-4 cm execution scatter nowhere to
-            # land (the edge-hold retry loop — a yaw -90 draw spent six
-            # re-approaches hovering at 0.11-0.15). First 300 tries demand
-            # 3 cm of headroom; only then fall back to the bare band.
-            edge_lo = EDGE_MIN + (0.03 if try_i < 300 else 0.0)
-            if not (edge_lo <= edge_dist(stand) <= EDGE_MAX):
-                continue
-            # Where the robot starts. Sampled INSIDE the rejection loop
-            # because the clearance check below depends on all three: a
-            # spawn 3 m out with 0.35 m of lateral offset crosses different
-            # furniture than one 1 m out dead on the line.
-            spawn_lat = float(rng.uniform(-args.spawn_lateral,
-                                          args.spawn_lateral))
-            fv2 = np.array([np.cos(psi), np.sin(psi)])
-            perp = np.array([-fv2[1], fv2[0]])
-            if edge_range is None:
-                spawn_off = float(rng.uniform(off_lo, off_hi))
-            else:
-                # Bisect for the offset that lands the spawn the requested
-                # distance from the table. edge_dist grows monotonically as
-                # the robot backs off along -fv2, so 60 halvings of [0, 6]
-                # resolve it far below any distance that matters.
-                want = float(rng.uniform(*edge_range))
-                lo_off, hi_off = 0.0, 6.0
-                for _ in range(60):
-                    mid = 0.5 * (lo_off + hi_off)
-                    if edge_dist(stand - mid * fv2 + spawn_lat * perp) < want:
-                        lo_off = mid
-                    else:
-                        hi_off = mid
-                spawn_off = 0.5 * (lo_off + hi_off)
-            spawn_pt = stand - spawn_off * fv2 + spawn_lat * perp
-            jitter = float(np.deg2rad(rng.uniform(-args.spawn_yaw_err,
-                                                  args.spawn_yaw_err)))
-            if args.face_object:
-                # Face the object FROM THE SPAWN, then jitter. dpsi stays the
-                # quantity the episode turns out at the spawn, so everything
-                # downstream (the turn, its guards, the manifest) is unchanged.
-                to_obj = can_xy - spawn_pt
-                dpsi = float(wrap(np.arctan2(to_obj[1], to_obj[0]) - psi)
-                             + jitter)
-            else:
-                dpsi = jitter
-            # The WALK must clear the table too: the batch's "fell during
-            # the walk-up" class was the robot brushing the table edge on
-            # the way in (video: hip catches the rim, robot tips backwards
-            # onto the tabletop). Check the ACTUAL two legs, not one
-            # straight line: with a lateral offset the robot goes
-            # spawn -> lead_tgt (a diagonal) -> stand (on the line), and
-            # the diagonal is the segment that swings widest.
-            lead_pt = stand - (0.30 + RAISE_LEAD) * fv2
-            legs = [(spawn_pt, lead_pt), (lead_pt, stand)]
-            n_chk = max(2, int(np.ceil(spawn_off / 0.25)) + 1)
-            pts = [q for a, b in legs
-                   for q in np.linspace(a, b, n_chk, endpoint=False)]
-            if all(edge_dist(q) >= EDGE_MIN for q in pts):
-                break
+        if fixed_cases is not None:
+            case = fixed_cases[rnd]
+            obj_key = case["target"]
+            pl = plans[obj_key]
+            can_nom = pl.nom
+            task = instruction(pl.phrase)
+            can_xy, stand, rel = (np.asarray(case[k], dtype=float) for k in ("can_xy", "stand", "rel"))
+            psi, spawn_off, spawn_lat, dpsi = (case[k] for k in ("psi", "spawn_off", "spawn_lat", "dpsi"))
+            squat_hint, appearance = case["squat_hint"], case["appearance"]
         else:
-            print("EPISODE FAILED [gym] no feasible sample found")
+            if not deck:
+                deck = list(pool)
+                rng.shuffle(deck)
+            obj_key = deck.pop()
+            pl = plans[obj_key]
+            can_nom, rel_cands, squat_hint = pl.nom, pl.rel_cands, pl.squat_hint
+            ax, sgn = pl.ax, pl.sgn
+            task = instruction(pl.phrase)
+            # One integer per episode decides the whole look of the scene, so the
+            # manifest can record it and a replay can reproduce the exact frame.
+            appearance = int(rng.integers(0, 2 ** 31 - 1))
+            # The target lives in a band hugging its nominal edge (radial 5-10 cm
+            # inboard, +-args.edge_jitter along it): a pelvis 10 cm OUTSIDE the edge
+            # then reaches it at rel depth 0.15-0.24 — comfortably inside the
+            # map instead of at its rim, which is what lets the no-contact
+            # stand-off exist at all.
+            for try_i in range(500):
+                can_xy = can_nom.copy()
+                can_xy[ax] = cxy[ax] + sgn * (half[ax]
+                                              - rng.uniform(*CAN_INBOARD))
+                can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(
+                    -args.edge_jitter, args.edge_jitter)
+                if reach_config.ready_grasp_baseline:
+                    from ready_grasp_policy import sample_stand as sample_comfortable_stand
+                    rel, squat_hint = sample_comfortable_stand(pl, rng, reach_config)
+                else:
+                    rel, squat_hint = sample_stand(pl, rng)
+                # Face the table from outside, along the can's inward edge
+                # normal, +-25 deg (a uniform world yaw almost never yields a
+                # stand outside the table).
+                normal = np.zeros(2)
+                normal[ax] = -sgn
+                psi = float(np.arctan2(normal[1], normal[0])
+                            + rng.uniform(*((-.14, .14) if reach_config.ready_grasp_baseline else (-.44, .44))))
+                c, s = np.cos(psi), np.sin(psi)
+                stand = can_xy - np.array([c * rel[0] - s * rel[1],
+                                           s * rel[0] + c * rel[1]])
+                # Prefer slack over the bare floor: a stand SAMPLED at edge
+                # 0.17 exactly leaves the +-4 cm execution scatter nowhere to
+                # land (the edge-hold retry loop — a yaw -90 draw spent six
+                # re-approaches hovering at 0.11-0.15). First 300 tries demand
+                # 3 cm of headroom; only then fall back to the bare band.
+                edge_lo = EDGE_MIN + (0.03 if try_i < 300 else 0.0)
+                if not (edge_lo <= edge_dist(stand) <= EDGE_MAX):
+                    continue
+                # Where the robot starts. Sampled INSIDE the rejection loop
+                # because the clearance check below depends on all three: a
+                # spawn 3 m out with 0.35 m of lateral offset crosses different
+                # furniture than one 1 m out dead on the line.
+                spawn_lat = float(rng.uniform(-args.spawn_lateral,
+                                              args.spawn_lateral))
+                fv2 = np.array([np.cos(psi), np.sin(psi)])
+                perp = np.array([-fv2[1], fv2[0]])
+                if edge_range is None:
+                    spawn_off = float(rng.uniform(off_lo, off_hi))
+                else:
+                    # Bisect for the offset that lands the spawn the requested
+                    # distance from the table. edge_dist grows monotonically as
+                    # the robot backs off along -fv2, so 60 halvings of [0, 6]
+                    # resolve it far below any distance that matters.
+                    want = float(rng.uniform(*edge_range))
+                    lo_off, hi_off = 0.0, 6.0
+                    for _ in range(60):
+                        mid = 0.5 * (lo_off + hi_off)
+                        if edge_dist(stand - mid * fv2 + spawn_lat * perp) < want:
+                            lo_off = mid
+                        else:
+                            hi_off = mid
+                    spawn_off = 0.5 * (lo_off + hi_off)
+                spawn_pt = stand - spawn_off * fv2 + spawn_lat * perp
+                jitter = float(np.deg2rad(rng.uniform(-args.spawn_yaw_err,
+                                                      args.spawn_yaw_err)))
+                if args.face_object:
+                    # Face the object FROM THE SPAWN, then jitter. dpsi stays the
+                    # quantity the episode turns out at the spawn, so everything
+                    # downstream (the turn, its guards, the manifest) is unchanged.
+                    to_obj = can_xy - spawn_pt
+                    dpsi = float(wrap(np.arctan2(to_obj[1], to_obj[0]) - psi)
+                                 + jitter)
+                else:
+                    dpsi = jitter
+                # The WALK must clear the table too: the batch's "fell during
+                # the walk-up" class was the robot brushing the table edge on
+                # the way in (video: hip catches the rim, robot tips backwards
+                # onto the tabletop). Check the ACTUAL two legs, not one
+                # straight line: with a lateral offset the robot goes
+                # spawn -> lead_tgt (a diagonal) -> stand (on the line), and
+                # the diagonal is the segment that swings widest.
+                lead_pt = stand - (0.30 + RAISE_LEAD) * fv2
+                legs = [(spawn_pt, lead_pt), (lead_pt, stand)]
+                n_chk = max(2, int(np.ceil(spawn_off / 0.25)) + 1)
+                pts = [q for a, b in legs
+                       for q in np.linspace(a, b, n_chk, endpoint=False)]
+                if all(edge_dist(q) >= EDGE_MIN for q in pts):
+                    break
+            else:
+                print("EPISODE FAILED [gym] no feasible sample found")
+                continue
+        case_id = fixed_cases[rnd]["case_id"] if fixed_cases is not None else f"{args.seed}:{rnd}"
+        sampled_cases.append(dict(case_id=case_id, target=obj_key, appearance=int(appearance),
+                                  can_xy=can_xy.tolist(), stand=stand.tolist(), rel=rel.tolist(),
+                                  psi=float(psi), spawn_off=float(spawn_off), spawn_lat=float(spawn_lat),
+                                  dpsi=float(dpsi), squat_hint=None if squat_hint is None else float(squat_hint)))
+        if fixed_cases is not None and 'object_yaw' in case:
+            sampled_cases[-1]['object_yaw'] = case['object_yaw']
+        if args.sample_only:
             continue
         side = "right"
         goal = (f"{args.until_ok} ok" if args.until_ok is not None
@@ -605,11 +656,10 @@ def main() -> None:
               f"yaw_err {np.degrees(dpsi):+.0f}deg | \"{task}\"")
 
         # -- reset + settle -----------------------------------------------
-        # Stand-stage failures (fell on the walk-up / never stabilised) are
-        # deploy-state contamination from the PREVIOUS round, not properties
-        # of this sample — round 1 of every fresh deploy stands clean, and a
-        # plain reset recovers (OK streaks follow falls). Retry those once.
-        for attempt in range(2):
+        # A stand-stage failure may reflect navigation or initialization.
+        # Keep legacy retries available, but fixed-case acceptance can disable
+        # them rather than hide a failed first attempt behind reset success.
+        for attempt in range(1+args.stand_retries):
             if RESTART_DEPLOY and (rnd > 0 or attempt > 0):
                 # A fresh deploy per round (and per stand retry): the
                 # nominal-spawn calibration already ran on this one, so
@@ -643,7 +693,7 @@ def main() -> None:
             dart_stop = None
             if args.dart_frac > 0 and rng.uniform() < args.dart_frac:
                 dart_stop = float(rng.uniform(*args.dart_far))
-            ok, why, produced = run_round(
+            round_result = run_round(
                 p, reset, meta, obj_key, surf_a, edge_dist,
                 can_xy - can_nom, stand - robot_nom, psi,
                 side, rel, rm, stand, squat_hint,
@@ -651,7 +701,10 @@ def main() -> None:
                 appearance=appearance, record=args.record,
                 view_gate_x=args.view_gate_x, view_gate_y=args.view_gate_y,
                 dart_stop=dart_stop,
-                one_shot=args.one_shot, mid_band=args.mid_band)
+                one_shot=args.one_shot, mid_band=args.mid_band,
+                reach_config=reach_config,
+                object_yaw=(case.get('object_yaw') if fixed_cases is not None else None))
+            ok, why, produced = round_result
             if args.record and produced and ok:
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
@@ -696,7 +749,7 @@ def main() -> None:
                     fv2 = np.array([np.cos(psi), np.sin(psi)])
                     spawn_xy = (stand - spawn_off * fv2
                                 + spawn_lat * np.array([-fv2[1], fv2[0]]))
-                    rec_line = dict(round=rnd, attempt=attempt,
+                    rec_line = dict(case_id=case_id, round=rnd, attempt=attempt,
                                     target=obj_key, task=task, ok=bool(ok),
                                     why=why, appearance=appearance,
                                     init=dict(
@@ -717,12 +770,14 @@ def main() -> None:
                                     # missing: without them the next DART
                                     # calibration (and the cliff analysis)
                                     # has to be re-mined from pose sidecars.
-                                    dart=ROUND_STATS.get("dart_stop"),
-                                    park_first=ROUND_STATS.get("first_stop"),
-                                    park=ROUND_STATS.get("park"),
+                                    dart=round_result.execution["metrics"].get("dart_stop"),
+                                    park_first=round_result.execution["metrics"].get("first_stop"),
+                                    park=round_result.execution["metrics"].get("park"),
+                                    transition=round_result.execution["transition"],
+                                    execution=round_result.execution,
                                     seconds=round(time.time() - t0, 1))
                     f.write(json.dumps(rec_line) + chr(10))
-            if ok or not why.startswith("[stand]"):
+            if ok or not why.startswith("[stand]") or attempt >= args.stand_retries:
                 break
             p.log(f"[gym] stand-stage retry ({why})")
         dt = time.time() - t0
@@ -732,6 +787,9 @@ def main() -> None:
         else:
             print(f"EPISODE FAILED {why} in {dt:.0f}s")
         reset.end_video()
+    if args.write_cases:
+        save_cases(args.write_cases, sampled_cases, SCENE_META)
+
     print(f"[gym] {wins}/{played} OK")
 
 
@@ -749,9 +807,14 @@ def main() -> None:
 # invalidate the comparison.
 VLA_POLICY = None
 
-# Written by _run_round, read by run_gym's manifest writer. See the clear in
-# _run_round for why it lives at module scope.
-ROUND_STATS: dict = {}
+
+def sample_object_yaw(fixed=None):
+    """Optional exact-case yaw; historical callers retain random orientation."""
+    if fixed is not None:
+        if type(fixed) not in (int, float) or not np.isfinite(fixed):
+            raise ValueError('object_yaw must be finite')
+        return float(fixed)
+    return float(np.random.uniform(-np.pi, np.pi))
 
 
 def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
@@ -763,10 +826,11 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               view_gate_y: float = 0.90,
               dart_stop: float | None = None,
               one_shot: bool = False,
-              mid_band: float = 0.30) -> tuple[bool, str, bool]:
+              mid_band: float = 0.30, *, reach_config=DEFAULT_REACH, object_yaw=None) -> RoundResult:
     """One round, and the exporter left in a clean state whatever happens.
 
-    Returns (ok, why, produced_episode). The third value is what the
+    Returns a RoundResult (also unpacks as ok, why, produced_episode).
+    The produced flag is what the
     dataset's per-episode instruction manifest is keyed on: an attempt that
     started recording produced an episode even if it then failed, because
     the exporter's 'x' path is save_episode_as_discarded(), not "forget it".
@@ -780,18 +844,39 @@ def run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     a stand retry; at collection scale it certainly would.
     """
     rec = {"on": False}
-    ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
-                         d_can, d_robot, psi, side, rel, rm, spawn_xy,
-                         squat_hint, spawn_off, spawn_lat, dpsi, appearance,
-                         record, rec, view_gate_x, view_gate_y, dart_stop,
-                         one_shot, mid_band)
-    if record and rec["on"] and not ok:
-        p.cmd.key("x")
-        # Same default-facing trap as the post-save hold: keep the approach
-        # heading instead of letting IDLE spin the robot to world +x.
-        p.cmd.hold(2.0, mode=LocomotionMode.IDLE,
-                   facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
-    return ok, why, rec["on"]
+    execution = ExecutionRecord()
+    execution.enter("initialize")
+    ok, why = False, ""
+    try:
+        ok, why = _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
+                             d_can, d_robot, psi, side, rel, rm, spawn_xy,
+                             squat_hint, spawn_off, spawn_lat, dpsi, appearance,
+                             record, rec, view_gate_x, view_gate_y, dart_stop,
+                             one_shot, mid_band, execution=execution,
+                             reach_config=reach_config, object_yaw=object_yaw)
+        if not ok:
+            execution.fail(why)
+    except Exception as exc:
+        execution.fail(f"{type(exc).__name__}: {exc}")
+        raise
+    finally:
+        recovery_hold = execution.metrics.get('terminal_hold') if reach_config.ready_grasp_recovery else None
+        if recovery_hold is not None and not ok:
+            p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
+            p.cmd.frame(**recovery_hold)
+        elif (reach_config.coordinated_arrival or reach_config.ready_grasp_baseline) and not ok:
+            p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
+            p.cmd.frame(mode=LocomotionMode.IDLE, speed=0., movement=(0., 0., 0.),
+                        height=-1., facing=(float(np.cos(psi)), float(np.sin(psi)), 0.))
+        if record and rec["on"] and not ok:
+            p.cmd.key("x")
+            if recovery_hold is not None:
+                p.cmd.hold(2.0, **recovery_hold)
+            else:
+                p.cmd.hold(2.0, mode=LocomotionMode.IDLE,
+                           facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
+    execution.enter("complete" if ok else "failed", ok=ok, why=why)
+    return RoundResult(ok, why, rec["on"], execution.snapshot())
 
 
 def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
@@ -804,14 +889,12 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                view_gate_y: float = 0.90,
                dart_stop: float | None = None,
                one_shot: bool = False,
-               mid_band: float = 0.30) -> tuple[bool, str]:
-    # Per-round measurements the manifest wants but the return value cannot
-    # carry (module global, same pattern as VLA_POLICY). Cleared HERE, before
-    # the VLA fork, so a VLA round never inherits the previous scripted
-    # round's numbers.
-    ROUND_STATS.clear()
+               mid_band: float = 0.30, *, execution=None,
+               reach_config=DEFAULT_REACH, object_yaw=None) -> tuple[bool, str]:
+    # Owned by run_round; direct diagnostic callers may use a local record.
+    execution = execution if execution is not None else ExecutionRecord()
     if dart_stop is not None:
-        ROUND_STATS["dart_stop"] = round(float(dart_stop), 3)
+        execution.metrics["dart_stop"] = round(float(dart_stop), 3)
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -862,9 +945,10 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # reset (same drawn object yaw, same appearance) as a mid-prelude
     # re-teleport. A redraw here would both re-orient the object and shift
     # the RNG stream, breaking cross-run pairing.
+    object_yaw = sample_object_yaw(object_yaw)
+    execution.metrics['object_yaw'] = object_yaw
     reset_objects = {obj_key: {"dxy": [float(d_can[0]), float(d_can[1])],
-                               "yaw": float(np.random.uniform(-np.pi,
-                                                              np.pi))}}
+                               "yaw": object_yaw}}
     reset_robot = {"dxy": [float(d_robot[0]), float(d_robot[1])],
                    "yaw": psi_spawn}
     reset.reset(objects=reset_objects, robot=reset_robot,
@@ -1055,6 +1139,26 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # would just let an invisible object through. Same signal and same
     # thresholds as the arrival gate further down, so a round that passes
     # here is being judged by the rule that judges it later.
+    # Diagnostic video can include readiness/visibility failures without
+    # changing the training recorder's acceptance window.
+    include_init_video = os.environ.get('SIM_VIDEO_INCLUDE_INIT') == '1'
+    if include_init_video:
+        stamp = time.time()
+        reset.start_video(f"gym_{int(stamp)}")
+        execution.metrics['video_start_wall'] = stamp
+    if reach_config.ready_grasp_baseline and VLA_POLICY is None:
+        from ready_grasp_policy import prepare_ready
+        # This drives the expert encoder's upper-body reference. Token-only
+        # deployment initializes through its own VLA prelude; asking it to
+        # execute this reference can time out before the first model request.
+        if not prepare_ready(p):
+            return False, "[stand] baseline ready posture not delivered"
+    elif (reach_config.ready_grasp_baseline and VLA_POLICY is not None
+          and os.environ.get('TF_INIT_TOKEN_FILE')):
+        from initial_pose import prepare_token_pose
+        from ready_grasp_policy import ready_q
+        if not prepare_token_pose(p, ready_q()[15:]):
+            return False, "[stand] token-only ready posture not delivered"
     _o0 = p.obs()["objects"][obj_key]
     cam0 = _o0.get("cam")
     # `cam is None` means BEHIND the camera and must fail too -- the arrival
@@ -1066,7 +1170,10 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         return False, (f"[view] object not in ego view at spawn (cam="
                        + ("behind camera)" if cam0 is None else
                           f"[{cam0[0]:+.2f} {cam0[1]:+.2f}])"))
-    reset.start_video(f"gym_{int(time.time())}")
+    if not include_init_video:
+        stamp = time.time()
+        reset.start_video(f"gym_{int(stamp)}")
+        execution.metrics['video_start_wall'] = stamp
     _wmark("video")
     if record:
         # 'c' toggles the exporter IDLE -> RECORDING; a second 'c' saves and
@@ -1076,7 +1183,14 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         p.cmd.key("c")
         if rec is not None:
             rec["on"] = True
-    grip_za = obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM
+    task_grasp = TabletopGrasp(p, TabletopTarget(
+        key=obj_key, side=side,
+        below_center=reach_config.grip_below_center if reach_config.ready_grasp_recovery else None,
+        grip_z=obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM,
+        surface_top=surf_a["top"], box=meta["objects"][obj_key]["box"],
+        body=meta["objects"][obj_key]["body"],
+        surface_bodies=tuple(s["body"] for s in meta["surfaces"].values())))
+    grip_za = float(task_grasp.grip(p.obs())[2])
 
     def rel_dbg(tag, s2):
         y2 = p.pelvis_yaw(s2)
@@ -1128,17 +1242,20 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         # complained every round about a displacement training also saw.
         # s_fork is the post-settle pose at handover: from here the metric
         # measures only what the VLA prelude itself adds (hold + blend).
+        execution.enter("vla")
         return VLA_POLICY(p=p, reset=reset, meta=meta, obj_key=obj_key,
                           psi=psi, fv=fv, grip_za=grip_za, record=record,
                           replace=replace,
                           spawn_xy=[float(v) for v in p.pelvis_xy(s_fork)])
+
+    execution.enter("navigate")
 
     def rel_now(s2):
         y2 = p.pelvis_yaw(s2)
         c2, s2n = np.cos(y2), np.sin(y2)
         dv2 = p.object_pos(obj_key, s2)[:2] - p.pelvis_xy(s2)
         return [c2 * dv2[0] + s2n * dv2[1], -s2n * dv2[0] + c2 * dv2[1],
-                grip_za - float(s2["pelvis"]["pos"][2])]
+                float(task_grasp.grip(s2)[2]) - float(s2["pelvis"]["pos"][2])]
 
     plan_r = float(np.hypot(rel[0], rel[1]))
     # Two-stage arrival. The WALK is precise (telemetry: walk_to returns
@@ -1209,10 +1326,33 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         p.log(f"[gym] upper takeover: reference-vs-measured "
               f"{np.degrees(gap[worst]):.1f} deg on "
               f"{UPPER_BODY_NAMES[worst]} (mean {np.degrees(gap.mean()):.1f})")
+    if reach_config.ready_grasp_baseline:
+        from ready_grasp_policy import ready_q
+        q_free = upper_body_from_mj(ready_q())
     arm_ramp = upper_ref.UpperRamp(p.cmd, q_free)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
 
+    coordinated = None
+    if reach_config.coordinated_arrival or reach_config.ready_grasp_baseline:
+        from coordinated_arrival import CoordinatedArrival
+        from ready_grasp_policy import ReadyGraspPolicy
+        arrival_task = task_grasp
+        controller = ReadyGraspPolicy if reach_config.ready_grasp_baseline else CoordinatedArrival
+        if reach_config.ready_grasp_recovery:
+            from recoverable_grasp_policy import RecoverableGraspPolicy
+            controller = RecoverableGraspPolicy
+        if reach_config.coupled_squat:
+            from coupled_grasp_policy import CoupledGraspPolicy
+            controller = CoupledGraspPolicy
+        if reach_config.continuous_capture:
+            from continuous_grasp_policy import ContinuousGraspPolicy
+            controller = ContinuousGraspPolicy
+        coordinated = controller(p, arrival_task, reach_config, arm_ramp, execution)
+
     def raise_arm(_s, dist):
+        if coordinated is not None:
+            coordinated.walk_tick(_s)
+            return
         u = float(np.clip(1.0 - (dist - 0.06) / RAISE_LEAD, 0.0, 1.0))
         sm = 3 * u * u - 2 * u ** 3
 
@@ -1282,14 +1422,22 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # stride. Only the far band changes; the MID/SHUFFLE deceleration bands
     # that give the arrival its braking accuracy are untouched.
     APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.30, 0.215, 0.20
-    MID_BAND, SHUFFLE_BAND = mid_band, 0.10
+    # GYM_SHUFFLE_BAND (2026-09-07): the learned policy imitates the 1-2 cm/s
+    # shuffle as a crawl that starts at 0.5 m and sets its own stop point,
+    # independent of where the expert stops (ready07 vs ready07b: expert
+    # first_stop moved 4 cm, policy closest approach moved 7 mm). 0 disables
+    # the shuffle: MID speed is held until the brake, including after the
+    # arrival gate's first reachable stop. Default 0.10 is the calibrated brake.
+    MID_BAND = mid_band
+    SHUFFLE_BAND = float(os.environ.get("GYM_SHUFFLE_BAND", "0.10"))
 
     # Coverage-first (2026-09-04): steer the walk at a point offset laterally
     # from the planned stand, so the last 0.3 m has to correct sideways --
     # the correction the policy needs is then IN the data instead of the
     # expert always arriving aligned. The creep closes both axes.
-    appr_lat = float(np.random.uniform(-0.15, 0.15)) if STAND_COVER else 0.0
+    appr_lat = float(np.random.uniform(-0.15, 0.15)) if STAND_COVER and coordinated is None else 0.0
     aim_xy = np.asarray(spawn_xy) + appr_lat * np.array([-fv[1], fv[0]])
+    aim_xy = aim_xy + reach_config.arrival_advance * np.asarray(fv[:2])
     if appr_lat:
         p.log(f"[gym] approach aim offset {appr_lat * 100:+.0f} cm lateral")
 
@@ -1297,14 +1445,18 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         appr_end = time.time() + seconds
         why, stall_x, stall_t = "timeout", None, time.time()
         brake_x, brake_e = float("nan"), float("nan")
+        from arrival_validation import ArrivalAdvance
+        advance_gate = ArrivalAdvance(reach_config.arrival_advance)
         while time.time() < appr_end:
             s = p.obs()
             if s["fallen"]:
                 return "fell"
             r = rel_now(s)
-            if ramp:
+            if ramp or coordinated is not None:
                 raise_arm(s, float(np.linalg.norm(
                     np.asarray(spawn_xy) - p.pelvis_xy(s))))
+            if coordinated is not None and coordinated.error:
+                return coordinated.error
             if (dart_stop is not None and ramp
                     and float(np.hypot(r[0], r[1])) <= dart_stop):
                 # DART far-stop: FIRST approach only (ramp=True). The state
@@ -1316,8 +1468,10 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                 why = "dart stop"
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
                 break
-            if rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP:
-                why = "can reachable"
+            reachable = rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
+            stop_here = (advance_gate.stop(r[0], reachable) if reach_config.arrival_advance else reachable)
+            if stop_here:
+                why = "advanced reachable stop" if reach_config.arrival_advance else "can reachable"
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
                 break
             if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN + EDGE_LEAD:
@@ -1351,13 +1505,18 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             if FACE_OBJ:
                 b = p.pelvis_yaw(s) + float(np.arctan2(r[1], r[0]))
                 fv_now = (float(np.cos(b)), float(np.sin(b)), 0.0)
+            shuffle_now = SHUFFLE_BAND > 0 and (advance_gate.first_reachable is not None
+                                                or r[0]-plan_r <= SHUFFLE_BAND)
+            speed = (APPR_SHUFFLE if shuffle_now
+                     else APPR_MID if r[0]-plan_r <= MID_BAND else APPR_COARSE)
+            if reach_config.continuous_capture:
+                # Decelerate before the stop gate while the arm prepares.
+                speed = min(speed, .12+.18*float(np.clip((r[0]-plan_r)/.25,0.,1.)))
             p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv_now,
                         movement=(float(mv[0]), float(mv[1]), 0.0),
-                        speed=(APPR_SHUFFLE if r[0] - plan_r <= SHUFFLE_BAND
-                               else APPR_MID if r[0] - plan_r <= MID_BAND
-                               else APPR_COARSE))
+                        speed=speed)
             time.sleep(0.02)
-        if ramp:
+        if ramp and coordinated is None:
             # Finish whatever is left of the rise: the stop can fire before
             # the slew reaches READY, and a snap there would be a step in the
             # reference. The origin is the RAMP's own commanded state, not the
@@ -1386,14 +1545,22 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"edge {brake_e:.2f} -> stopped x {x_end:.2f} "
               f"edge {edge_dist(p.pelvis_xy(p.obs())):.2f} "
               f"(carry {brake_x - x_end:+.2f}, plan_r {plan_r:.2f})")
+        execution.metrics.setdefault('arrival_measurements', []).append(dict(
+            requested_advance_m=reach_config.arrival_advance,
+            first_reachable_depth_m=advance_gate.first_reachable,
+            brake_depth_m=brake_x, brake_edge_m=brake_e,
+            end_depth_m=x_end, end_edge_m=edge_dist(p.pelvis_xy(p.obs())), reason=why))
         rel_dbg("post-approach", p.obs())
 
         return why
 
-    if do_approach(45.0, ramp=True) == "fell":
+    approach_result = do_approach(45.0, ramp=True)
+    if coordinated is not None and coordinated.error:
+        return False, coordinated.error
+    if approach_result == "fell":
         return False, "[stand] fell during the approach"
     _r0 = rel_now(p.obs())
-    ROUND_STATS["first_stop"] = round(float(np.hypot(_r0[0], _r0[1])), 3)
+    execution.metrics["first_stop"] = round(float(np.hypot(_r0[0], _r0[1])), 3)
 
     # FORWARD-ONLY repair. Too far -> walk in again on the same gate. Too
     # close, or laterally off -> ACCEPT: 12 rounds that stopped anywhere
@@ -1405,7 +1572,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # inside the graspable envelope on its single approach or it is
     # discarded by the gates below; the re-walk's brake/stand/re-accelerate
     # is exactly the recorded hesitation this dataset exists to exclude.
-    for _ in range(0 if one_shot else 2):
+    for _ in range(0 if one_shot or coordinated is not None else 2):
         s = p.obs()
         rel_a = rel_now(s)
         too_far = (rel_a[0] > plan_r + 0.06
@@ -1418,7 +1585,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             return False, "[stand] fell walking in again"
     s = p.obs()
     rel_a = rel_now(s)
-    ROUND_STATS["park"] = round(float(np.hypot(rel_a[0], rel_a[1])), 3)
+    execution.metrics["park"] = round(float(np.hypot(rel_a[0], rel_a[1])), 3)
     # A real safety floor, not the planning floor. EDGE_MIN (0.17) is where
     # the PLANNER aims; rounds that actually stopped at edge 0.09-0.17 went
     # 12/12 with zero furniture contacts in the whole batch, so failing them
@@ -1446,27 +1613,8 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
             or abs(cam[1]) > view_gate_y):
         return False, f"[view] object outside ego view at stand (cam={cam})"
 
-    grip = np.array([p.object_pos(obj_key, st)[0],
-                     p.object_pos(obj_key, st)[1],
-                     obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
-    _d = grip[:2] - p.pelvis_xy(st)
-    _d = _d / max(np.linalg.norm(_d), 1e-6)
-    virtual_start = grip - 0.25 * np.array([_d[0], _d[1], 0.0]) + [0, 0, 0.08]
-    obj_box = meta["objects"][obj_key]["box"]
-
-    def azimuth_anchor(st2):
-        yaw2 = p.pelvis_yaw(st2)
-        lat = -0.31 if side == "right" else 0.31
-        c2, s2 = np.cos(yaw2), np.sin(yaw2)
-        pz = st2["pelvis"]["pos"]
-        return np.array([pz[0] - s2 * lat, pz[1] + c2 * lat, pz[2] + 0.44])
-
-    def bearing_h(st2, grip_pt):
-        d2 = np.asarray(grip_pt[:2]) - p.pelvis_xy(st2)
-        n2 = max(float(np.linalg.norm(d2)), 1e-6)
-        return np.array([d2[0] / n2, d2[1] / n2, 0.0])
-
-    avoid_sign = 1.0 if side == "right" else -1.0
+    execution.enter("grasp_plan")
+    grip = task_grasp.grip(st)
 
     def show_ghost(pl):
         # The ghost is baked into the scene at build time and shares geom
@@ -1480,31 +1628,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         reset.set_ghost(pos=np.asarray(pl.wrist, dtype=float).tolist(),
                         quat=q.tolist())
 
-    plan = adaptive_grasp.plan(grip, virtual_start,
-                               Primitives._rot(st["palms"][side]["quat"]),
-                               surf_a["top"], box=obj_box,
-                               obj_rot=Primitives._rot(
-                                   st["objects"][obj_key]["quat"]),
-                               azimuth_from=azimuth_anchor(st),
-                               avoid_dir=bearing_h(st, grip),
-                               avoid_sign=avoid_sign)
-    p.log(adaptive_grasp.describe(plan))
-    if not plan.ok:
-        return False, f"[grasp] {plan.why}"
-    show_ghost(plan)
-
-    def replan(wrist_now, palm_rot):
-        st2 = p.obs()
-        c = p.object_pos(obj_key, st2)
-        grip_live = np.array([c[0], c[1],
-                              obj_top(meta, obj_key)
-                              - grasping.GRIP_BELOW_RIM])
-        return adaptive_grasp.plan(
-            grip_live, wrist_now, palm_rot, surf_a["top"], box=obj_box,
-            obj_rot=Primitives._rot(st2["objects"][obj_key]["quat"]),
-            azimuth_from=azimuth_anchor(st2),
-            avoid_dir=bearing_h(st2, grip_live),
-            avoid_sign=avoid_sign)
+    plan = None
+    if not reach_config.ready_grasp_baseline:
+        plan = task_grasp.initial(st)
+        p.log(adaptive_grasp.describe(plan))
+        if not plan.ok:
+            return False, f"[grasp] {plan.why}"
+        show_ghost(plan)
 
     # Nothing to set up for the arm here any more. The wrist targets this
     # used to write are only read in PLANNER_VR_3PT, and PlannerArm.start()
@@ -1518,23 +1648,29 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # pin delivers 4.1 cm / 16 deg (diag_channel.py, 216 samples). For VLA
     # data the label has to match the outcome, and on the planner channel
     # the policy alone now grasps 12/12, so the pin is gone.
-    ok, why = stream_reach.grasp_streamed(
+    grasp_result = stream_reach.execute_grasp(
         p, obj_key, grip, plan, side=side, surface_top=surf_a["top"],
-        replan=replan, ghost=show_ghost, nudge=False,
+        replan=task_grasp.replan, ghost=show_ghost, nudge=False,
+        execution=execution, config=reach_config, coordinated=coordinated,
+        transport_guard_factory=lambda ik: task_grasp.transport_guard(ik, reach_config),
         pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "0") == "1"
              else None),
         squat_hint=squat_hint, plan_r=float(np.hypot(rel[0], rel[1])),
-        stand_rel=(np.asarray(rel, dtype=float) if STAND_COVER else None))
-    if not ok:
-        return False, f"[grasp] {why}"
+        stand_rel=(np.asarray(rel, dtype=float)
+                   if (STAND_COVER and not CREEP_OBS) else None),
+        envelope=None)
+    if not grasp_result.ok:
+        return False, f"[grasp] {grasp_result.why}"
 
-    vis = stream_reach.LAST_EGO_VIS
+    execution.enter("verify_visibility")
+    vis = grasp_result.visibility
     if vis is not None:
         p.log(f"  ego visibility through servo: {vis * 100:.0f}%")
         if vis < 0.7:
             return False, (f"[view] object in ego view only "
                            f"{vis * 100:.0f}% of the servo")
 
+    execution.enter("carry_and_verify")
     s = p.obs()
     hold_ref = palm_frame_offset(s, obj_key, side)
     hold_side = "left" if side == "right" else "right"
@@ -1550,6 +1686,11 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     if not p.walk_to(back_tgt, stop_dist=0.08, timeout=8.0,
                      face_target=False):
         return False, "[hold] fell while backing away from the table"
+    # Keep validation in raw data; conversion can take a contiguous prefix
+    # using the same sequence key as the exporter, without wall-clock guesses.
+    execution.metrics['training_tail'] = dict(
+        end_seq=int(p.obs()['seq']), reason='post_transport_hold_verification')
+    execution.enter('verify_terminal_hold')
     p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=fv)
     s = p.obs()
     drift = float(np.linalg.norm(palm_frame_offset(s, obj_key, side)

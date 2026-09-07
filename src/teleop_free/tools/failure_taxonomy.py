@@ -13,6 +13,7 @@ One leaf per round (2026-09-03 scheme, agreed with the user):
 Old traces have no obj_tilt / touch / obj_z: B4 / C3 fall back to xy displacement, C4 is skipped.
 """
 import argparse, collections, json, os, sys
+from pathlib import Path
 import numpy as np
 
 CLOSE = 0.005      # grip command below this = close
@@ -113,6 +114,23 @@ def classify(rec):
     if np.nanmax(rise[ic:]) >= 0.02:
         return "C2 slipped after close", f"peak rise {np.nanmax(rise[ic:]) * 100:.0f} cm"
     return "C2 slipped after close", "no rise after close"
+
+
+def summarize_traces(trace_dir, *, max_rounds=None):
+    """Return trace-level diagnoses separately from coarse timeout reasons.
+
+    Pre-VLA failures have no trace; report coverage rather than inventing
+    episode mappings for them. max_rounds excludes stale higher indices.
+    """
+    files=sorted(Path(trace_dir).glob('round_*.json'))
+    if max_rounds is not None:
+        files=[f for f in files if int(f.stem.split('_')[-1])<max_rounds]
+    counts=collections.Counter();rows={}
+    for f in files:
+        rec=json.loads(f.read_text());leaf,note=classify(rec)
+        counts[leaf]+=1
+        rows[f.stem]=dict(leaf=leaf,note=note,why=rec.get('why',''))
+    return dict(trace_count=len(files),counts=dict(counts),traces=rows)
 
 
 def main():

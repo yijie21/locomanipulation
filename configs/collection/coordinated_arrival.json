@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "coordinated_arrival": true,
+  "transport_guard": true
+}

@@ -52,6 +52,7 @@ second is Q5's missing-history ablation trigger.
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections import deque
 import sys
@@ -241,6 +242,8 @@ ENSEMBLE_M = 0.3      # exponential weight decay per chunk of age
 # p90 of measured latency); the server freezes that prefix of the new chunk to
 # the old chunk's overlapping rows and ramps the rest. Async client only.
 RTC_ON = False
+TRANSITION_COMMIT = False
+TRANSITION_DECODER = None
 # TF_ACTION18=1: the policy emits the 18-D command (wrist SE(3) + grip per arm
 # + base) instead of a 64-D SONIC token, and this round drives the robot the
 # way the scripted expert does -- IK to 17 upper-body joint targets on the
@@ -770,7 +773,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # belongs to the keepalive until _teardown(); the main thread must
         # not touch p.cmd before then.
         l_open, r_open = expand_hands(_G_OPEN)
-        sender18, _fv0 = None, None
+        sender18, _fv0, _anchor = None, None, None
         if ACTION18:
             # 18-D drives the PLANNER channel, so there is nothing to get off
             # and nothing to prime: hold the arm where it is and the base IDLE.
@@ -829,7 +832,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # The worker owns the camera/state sockets and the policy link; the
         # main thread owns the commander and the privileged predicates. ZMQ
         # sockets are not thread-safe, so the split is load-bearing.
-        latest = {"chunk": None, "t0": None}
+        latest = {"chunk": None, "t0": None, "capture_chunk_id": None}
         buf = []                      # [(tok, grip, t0)], newest last
         lock = threading.Lock()
         stop = threading.Event()
@@ -837,6 +840,12 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # latency_dist.py): per-inference obs->chunk seconds and the spacing
         # between consecutive obs (the K the sim advances per cycle).
         lat_rec = {"infer_s": [], "cycle_s": []}
+        commitment = None
+        if TRANSITION_COMMIT:
+            from transition_execution import TransitionCommitment
+            commitment = TransitionCommitment(RATE, TRANSITION_DECODER)
+            lat_rec['transition_commit_events'] = commitment.events
+            lat_rec['transition_commit_errors'] = commitment.errors
 
         def worker():
             rtc_prev_t0 = None    # obs time of the last SUCCESSFUL inference
@@ -859,12 +868,20 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                         obs["rtc.elapsed"] = e
                         obs["rtc.frozen"] = max(1, min(20, int(np.ceil(
                             p90 * RATE)) + 1))
+                        if commitment is not None:
+                            obs['rtc.frozen'] = commitment.window.frozen(t0, obs['rtc.frozen'])
+                            obs['rtc.commit'] = int(t0 < commitment.window.until)
                     try:
                         tok, grip = link.get_chunk(obs)
                     except Exception:
                         time.sleep(0.1)
                         continue
                     lat_rec["infer_s"].append(time.time() - t0)
+                    if commitment is not None:
+                        try:
+                            commitment.consider(t0, tok)
+                        except Exception as exc:
+                            commitment.errors.append(repr(exc))
                     if latest["t0"] is not None:
                         lat_rec["cycle_s"].append(t0 - latest["t0"])
                     lat_rec.setdefault("chunk_grip_min", []).append(float(np.min(grip)))
@@ -876,11 +893,16 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                         rtc_lat.append(time.time() - t0)
                         del rtc_lat[:-20]
                         applied = getattr(link, "last_rtc", None)
+                        lat_rec.setdefault('rtc_requests', []).append(dict(
+                            wall=t0, elapsed=e, frozen=int(obs['rtc.frozen']),
+                            commit=bool(obs.get('rtc.commit', False)),
+                            applied=None if applied is None else np.asarray(applied).tolist()))
                         if applied is not None:
                             counter.setdefault("rtc_applied", 0)
                             counter["rtc_applied"] += 1
                     with lock:
                         latest["chunk"] = (tok, grip)
+                        latest["capture_chunk_id"] = getattr(getattr(link, "capture_context", None), "chunk_id", None)
                         latest["t0"] = t0
                         if ENSEMBLE_N > 1:
                             buf.append((tok, grip, t0))
@@ -906,6 +928,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         if not ready:
             _teardown()
             stop.set()
+            if commitment is not None: commitment.close()
             obs_src.close()
             return False, ("[vla] initial-pose hold: no fresh chunk within "
                            "15 s -- policy worker stalled; round aborted")
@@ -1002,15 +1025,31 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                       f"handover pose (entry-step floor is ~0.18) -- "
                       f"prelude drift is back?")
         _tstart_view(p, s_ts, obj_key, prelude)
+        if ACTION18 and _anchor is not None:
+            # Did the prelude actually HOLD the heading it was given? This is
+            # the in-situ test of the planner anchor convention. grasp_gym
+            # restarts the deploy every round and then sets heading_offset to
+            # the post-settle yaw (grasp_gym.py:924), and its own measurement
+            # of that convention is +1.9 deg. A separate probe on a process
+            # with NO per-round restart read psi0 = -106 deg -- a different
+            # regime, which is why the convention is measured here rather
+            # than "fixed" from that number. Tens of degrees here means the
+            # anchor is wrong for the pure-planner path and the arm's
+            # headings are not what they claim.
+            _e = float(p.pelvis_yaw(s_ts)) - float(_anchor[1])
+            prelude["tstart_yaw_err_deg"] = round(
+                math.degrees((_e + math.pi) % (2 * math.pi) - math.pi), 2)
         frame_index = 0
         grip_hist = deque(maxlen=GRIP_DELAY + 1)
         lifted_at = None
         chunk_t0, idx = None, 0
+        capture_chunk_id = None
         tok, grip = tok0, grip0
         last_status = 0.0
         try:
             while time.time() - t_start < TIMEOUT_S:
                 tick = time.time()
+                trace_source = dict(kind="ensemble", chunk_id=None, action_index=None)
                 if ENSEMBLE_N > 1:
                     # Blend every overlapping prediction of THIS instant.
                     # Indexing is by absolute time, which also removes the
@@ -1032,10 +1071,14 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                         if latest["t0"] is not None and latest["t0"] != chunk_t0:
                             tok, grip = latest["chunk"]
                             chunk_t0 = latest["t0"]
+                            capture_chunk_id = latest["capture_chunk_id"]
                             idx = latency_index(time.time() - chunk_t0,
                                                 RATE, len(tok))
                     j = min(idx, len(tok) - 1)
                     tok_j, grip_j = tok[j], float(grip[j])
+                    trace_source = dict(kind="chunk", chunk_id=capture_chunk_id,
+                                        action_index=j, observation_wall=chunk_t0,
+                                        grip_delay_frames=GRIP_DELAY)
                     idx = min(idx + 1, len(tok) - 1)
 
                 grip_raw_j = grip_j
@@ -1052,7 +1095,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     sender18.send(a_j, frame_index=frame_index)
                 else:
                     p.cmd.token_frame(tok_j, right_hand=rhj, left_hand=lhj,
-                                      frame_index=frame_index)
+                                      frame_index=frame_index, trace_source=trace_source)
                 frame_index += 1
 
                 # predicates at ~2 Hz, off the hot path
@@ -1141,6 +1184,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             p.cmd.exit_streamed()
             p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
             th.join(timeout=1.0)
+            if commitment is not None: commitment.close()
             obs_src.close()
 
         if not ok and why == "[vla] timeout" and trace:

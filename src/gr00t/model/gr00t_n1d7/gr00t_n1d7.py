@@ -26,6 +26,7 @@ from transformers.feature_extraction_utils import BatchFeature
 import tree
 
 from gr00t.configs.model.gr00t_n1d7 import Gr00tN1d7Config
+from gr00t.model.modules.action_loss import masked_action_loss
 from gr00t.model.modules.dit import AlternateVLDiT, DiT, SelfAttentionTransformer
 from gr00t.model.modules.embodiment_conditioned_mlp import (
     CategorySpecificMLP,
@@ -303,8 +304,11 @@ class Gr00tN1d7ActionHead(nn.Module):
             # region, exactly the rows the inference-time denoiser may move.
             action_mask = action_mask * (~_rtc_prefix_mask).to(
                 action_mask.dtype)
-        action_loss = F.mse_loss(pred_actions, velocity, reduction="none") * action_mask
-        loss = action_loss.sum() / (action_mask.sum() + 1e-6)
+        loss, action_loss, action_mask = masked_action_loss(
+            pred_actions, velocity, action_mask,
+            prefix_frames=self.config.action_prefix_loss_frames,
+            prefix_weight=self.config.action_prefix_loss_weight,
+        )
 
         return {
             "loss": loss,

@@ -104,7 +104,8 @@ def main():
                 e = int(meta["elapsed"])
                 if 0 < e < H - 1:
                     overlap = H - e
-                    frozen = max(0, min(int(meta["frozen"]), overlap - 1))
+                    frozen = max(0, min(int(meta["frozen"]),
+                                        overlap if meta.get('commit') else overlap - 1))
                     inner = (collated_inputs["inputs"]
                              if "inputs" in collated_inputs else collated_inputs)
                     inner["action"] = self._rtc_prev
@@ -151,7 +152,8 @@ def main():
             policy._rtc_prev = None
         if "rtc.elapsed" in obs:
             policy._rtc_meta = {"elapsed": int(obs.pop("rtc.elapsed")),
-                                "frozen": int(obs.pop("rtc.frozen", 0))}
+                                "frozen": int(obs.pop("rtc.frozen", 0)),
+                                "commit": bool(obs.pop('rtc.commit', 0))}
         chunk, _ = policy.get_action(parse_observation_gr00t(obs, cfg))
         out = {k: np.asarray(v) for k, v in parse_action_gr00t(chunk).items()}
         if policy._rtc_applied is not None:
