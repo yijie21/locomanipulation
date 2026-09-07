@@ -133,7 +133,10 @@ ON_SURFACE_B = ["plate"]
 #   +90 x  puts the y-up mesh z-up;  +90 z  then maps mesh (x, y, z) -> (z, x, y)
 BG_ROTATE = (90.0, 0.0, 90.0)
 BG_SCALE = 1.15
-BG_SHIFT_XY = (0.65, 0.25)   # centre the footprint on the layout, not the origin
+BG_SHIFT_XY = (-0.05, 0.25)  # centre the footprint on the layout, not the origin;
+                             # x was 0.65: the back wall then sat at x -1.85, inside
+                             # the crate pilots' 1.0-1.3 m walk-in spawn (pilot 21
+                             # renders showed the robot walking out of the wall)
 
 # Room lighting. Placed over the two work areas so both surfaces are lit; the
 # ceiling is at ~3.19 m after BG_SCALE, so 2.7 m keeps the lamps clear of it.
@@ -241,6 +244,9 @@ def floor_height_field(v, cell: float = FLOOR_CELL):
     return field[ix, iy]
 
 
+FLOOR_SNAP = 0.08      # after the warp, |z| below this is floor: snap to the plane
+
+
 def flatten_floor(v):
     """Warp the bowl flat, keeping the mesh connected to its walls.
 
@@ -256,7 +262,14 @@ def flatten_floor(v):
     t = np.clip((FLOOR_BLEND_TOP - (v[:, 2] - f)) / FLOOR_BLEND_TOP, 0.0, 1.0)
     out = v.copy()
     out[:, 2] -= f * (t * t * (3 - 2 * t))          # smoothstep
-
+    # The 8th-percentile field leaves the floor's own scatter above z=0: on
+    # the crate scene the median under the robot's path was +2..+3.5 cm, p95
+    # +7.5 cm, so the G1's feet (soles at z=0 in MuJoCo) rendered buried. The
+    # real floor is a plane: press everything within FLOOR_SNAP of it onto it.
+    floor = np.abs(out[:, 2]) < FLOOR_SNAP
+    out[floor, 2] = 0.0
+    print(f"  floor snap: {int(floor.sum())} of {len(out)} vertices within "
+          f"{FLOOR_SNAP:.2f} m pressed to z=0")
     return out
 
 
@@ -489,6 +502,11 @@ def _bind_mjcf_textures(top_usd: str, name: str, parts, xml: str) -> None:
         tx = UsdShade.Shader.Define(st, mp.AppendChild("tex"))
         tx.CreateIdAttr("UsdUVTexture")
         tx.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(os.path.abspath(tex))
+        # MuJoCo repeats textures; USD's default wrap ("useMetadata") falls
+        # back to BLACK outside [0, 1] when the image carries no wrap metadata.
+        # The crate's UVs run to 1.57, so it rendered black (2026-09-07).
+        tx.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
+        tx.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
         tx.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
             uv.ConnectableAPI(), "result")
         sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(
@@ -557,10 +575,27 @@ def convert_target_objects(meta: dict, scene_xml: str, out_dir: str) -> None:
         # geometry aligned, appearance wrong, which for a VLA dataset is the
         # part that matters. Caught 2026-09-06 by the ticket-05 side-by-side.
         _bind_mjcf_textures(top, name, parts, xml)
-        scale = float(parts[0][2].split()[0])
-        _json.dump({"scale": scale, "parts": len(refs)},
-                   open(os.path.join(dst_dir, f"{name}.json"), "w"))
-        log(f"  object {name}: {len(refs)} part(s), scale {scale} -> {top}")
+        # Full scale vector (the crate is 0.667 in x/y and 1.0 in z) and the
+        # body->geom offset the MJCF applies to the visual mesh (the crate's
+        # mesh sits at pos "0 0 -0.085" under its body). The renderer composes
+        # them under the object's world pose. A scalar "scale" is still
+        # accepted downstream for the older bottle json.
+        scale = [float(v) for v in parts[0][2].split()]
+        if len(scale) == 1:
+            scale = scale * 3
+        offset_pos, offset_quat = [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]
+        mg = re.search(r'<geom([^>]*)mesh="' + re.escape(parts[0][0]) + r'_vis"', xml)
+        if mg is not None:
+            attrs = mg.group(1)
+            mp_ = re.search(r'pos="([^"]+)"', attrs)
+            mq_ = re.search(r'quat="([^"]+)"', attrs)
+            if mp_:
+                offset_pos = [float(v) for v in mp_.group(1).split()]
+            if mq_:
+                offset_quat = [float(v) for v in mq_.group(1).split()]
+        _json.dump({"scale": scale, "offset_pos": offset_pos, "offset_quat": offset_quat,
+                    "parts": len(refs)}, open(os.path.join(dst_dir, f"{name}.json"), "w"))
+        log(f"  object {name}: {len(refs)} part(s), scale {scale}, offset {offset_pos} -> {top}")
 
 
 def main() -> None:

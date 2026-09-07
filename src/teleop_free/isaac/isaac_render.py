@@ -24,7 +24,18 @@ import numpy as np
 
 from .. import paths
 
-OBJECT_KEYS = ("water_bottle",)
+OBJECT_KEYS = ("water_bottle",)     # fallback when no scene_meta.json sits next to the scene xml
+
+
+def object_keys(scene_xml: str):
+    """Manipulable objects of the scene: from scene_meta.json next to the xml."""
+    import json as _json
+    meta = os.path.join(os.path.dirname(os.path.abspath(scene_xml)), "scene_meta.json")
+    if os.path.exists(meta):
+        keys = tuple(_json.load(open(meta)).get("objects") or ())
+        if keys:
+            return keys
+    return OBJECT_KEYS
 from . import frames as F
 from . import stage as S
 
@@ -85,6 +96,13 @@ def main(argv=None) -> None:
     if not (args.state_trace or args.sidecar):
         raise SystemExit("give --state-trace (preferred) or --sidecar")
     cam_spec = F.head_camera_spec(args.scene_xml)
+    if args.cam_traj:
+        # a world camera trajectory (e.g. mujoco_render's tracking shot) may
+        # carry its own vertical fov; the ego spec's pos/quat are then unused
+        npz = np.load(args.cam_traj)
+        if "fovy" in npz.files:
+            cam_spec = (cam_spec[0], cam_spec[1], float(npz["fovy"]))
+            log(f"cam-traj fovy {cam_spec[2]}")
     log(f"scene_xml={args.scene_xml}")
     log(f"head_camera pos={cam_spec[0]} quat={cam_spec[1]} fovy={cam_spec[2]}")
     joint_map = F.build_joint_map()
@@ -106,6 +124,9 @@ def main(argv=None) -> None:
                      robot_usd=args.robot_usd, robot_mjcf=args.scene_xml,
                      width=args.width, height=args.height,
                      torso_prim=args.torso_prim,
+                     # The head mesh is hidden only because the EGO camera sits
+                     # inside it; a world-camera (tracking) shot must show it.
+                     hidden_visuals=() if args.cam_traj else S.StageCfg.hidden_visuals,
                      # A per-frame WORLD camera pose requires a top-level
                      # camera. Parented under torso_link, set_world_pose
                      # back-computes a local offset against the parent's
@@ -148,7 +169,8 @@ def _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log,
     replay = dof_idx = None
     if qpos is not None:
         from .replay import MujocoReplay
-        replay = MujocoReplay(args.scene_xml, OBJECT_KEYS)
+        replay = MujocoReplay(args.scene_xml, object_keys(args.scene_xml))
+        log(f"replay objects: {list(replay._obj)}")
         names = [n for n, _ in joint_map]
         dof_names = list(robot.dof_names)
         keep = [i for i, n in enumerate(names) if n in dof_names]
@@ -187,21 +209,25 @@ def _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log,
                          cv2.VideoWriter_fourcc(*"mp4v"),
                          args.fps / args.stride, (args.width, args.height))
 
-    cam_traj = None
-    if args.cam_traj and replay is None:
-        npz = np.load(args.cam_traj)
-        cam_traj = (npz["cam_pos"], npz["cam_quat"])
-        log(f"cam-traj loaded: {len(cam_traj[0])} frames (MuJoCo FK truth)")
 
     T = len(qpos) if replay is not None else len(joints)
     if args.end_frame:
         T = min(T, args.end_frame)
 
+    cam_traj = None
+    if args.cam_traj:
+        npz = np.load(args.cam_traj)
+        cam_traj = (npz["cam_pos"], npz["cam_quat"])
+        log(f"cam-traj loaded: {len(cam_traj[0])} frames")
+
     def push(t):
         """One frame into the stage. Returns the camera pose actually used."""
         if replay is not None:
             replay.set(qpos[t], None if qvel is None else qvel[t])
-            cpos, cquat = replay.camera_pose("head_camera")
+            if cam_traj is not None:                 # a world camera (tracking shot)
+                cpos, cquat = cam_traj[0][t], cam_traj[1][t]
+            else:
+                cpos, cquat = replay.camera_pose("head_camera")
             S.sync_replay(stg, robot, dof_idx,
                           replay.dof_positions(replay_names),
                           replay.body_pose(root_name), replay.object_poses(),
@@ -222,6 +248,28 @@ def _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log,
             break
     else:
         log("WARNING sensor still empty after 8 warm-up steps")
+    # A non-empty sensor is not a finished picture: RTX streams the robot's
+    # meshes in over the first ~10 rendered frames (pilot 21 r00: 0.8 s of
+    # video with only two finger tips visible), and deactivating /World/G1
+    # forces a Hydra resync on top. Hold frame 0 until the picture stops
+    # changing.
+    prev, calm = None, 0
+    for _i in range(80):
+        push(0)
+        cur = S.step_and_grab(world, sensor)
+        if cur is None:
+            continue
+        cur = cur[..., :3].astype(np.float32)
+        if prev is not None and float(np.abs(cur - prev).mean()) < 0.5:
+            calm += 1
+            if calm >= 3:
+                log(f"picture settled after {_i + 1} extra warm-up steps")
+                break
+        else:
+            calm = 0
+        prev = cur
+    else:
+        log("WARNING picture still changing after 80 extra warm-up steps")
 
     written = 0
     for t in range(0, T, args.stride):

@@ -181,6 +181,15 @@ def assemble_stage(cfg: StageCfg, log=print):
         if prim.IsValid():
             UsdGeom.Imageable(prim).MakeInvisible()
             log(f"hid /World/{name}")
+    # The scene builder's /World/G1 placeholder (the SONIC G1 USD at the start
+    # pose, for the overview snapshots) is a live, undriven PhysX articulation.
+    # Out of the ego camera's view it went unnoticed; a tracking shot showed a
+    # second robot which the floor contact then launched (gravity is off).
+    # Deactivate: gone from the render AND from physics.
+    g1 = stage.GetPrimAtPath("/World/G1")
+    if g1.IsValid():
+        g1.SetActive(False)
+        log("deactivated /World/G1 placeholder")
 
     # Robot (MJCF-imported articulation).  Sublayer, not reference: the
     # importer puts the mesh payloads in ROOT-level /meshes /visuals
@@ -308,32 +317,62 @@ def assemble_stage(cfg: StageCfg, log=print):
 
     configure_renderer(log)
 
-    # Bottle: reference the converted USD.
-    bottle_usd = os.path.join(scene_dir(cfg), "usd", "water_bottle",
-                              "water_bottle.usd")
-    if os.path.exists(bottle_usd):
-        b = stage.DefinePrim("/World/water_bottle", "Xform")
-        b.GetReferences().AddReference(bottle_usd)
-        # The MJCF applies a mesh scale the raw OBJ does not carry, so it has to
-        # be reapplied here. It is per-asset (0.16 for bottled_water_1), so it
-        # comes from the build's sidecar json rather than a literal.
-        scale = 0.16
-        meta_json = os.path.join(os.path.dirname(bottle_usd), "water_bottle.json")
+    # Manipulable objects: every converted USD under the scene's usd/ dir is
+    # referenced at /World/<name>/geom, with the MJCF's mesh scale and the
+    # body->geom offset from the build's sidecar json, so that sync_replay can
+    # set /World/<name> to the BODY pose straight from the replay. (Was a
+    # bottle-only block with a scalar scale; generalised 2026-09-07 for the
+    # crate, whose mesh is scaled 0.667/0.667/1.0 and offset -0.085 in z.)
+    import json as _json
+    usd_root = os.path.join(scene_dir(cfg), "usd")
+    names = sorted(os.listdir(usd_root)) if os.path.isdir(usd_root) else []
+    # usd/ also holds the STATIC props the scene layer already places (table,
+    # fork, plate...); only the manipulable objects named by scene_meta.json
+    # (next to the scene xml) get a pose-driven /World/<name> prim.
+    meta_path = os.path.join(os.path.dirname(os.path.abspath(cfg.robot_mjcf)), "scene_meta.json")
+    if os.path.exists(meta_path):
+        movable = set(_json.load(open(meta_path)).get("objects") or [])
+        names = [n for n in names if n in movable]
+    referenced = 0
+    for name in names:
+        top = os.path.join(usd_root, name, f"{name}.usd")
+        if not os.path.exists(top):
+            continue
+        meta = {}
+        meta_json = os.path.join(usd_root, name, f"{name}.json")
         if os.path.exists(meta_json):
-            import json as _json
-            scale = float(_json.load(open(meta_json)).get("scale", scale))
-        UsdGeom.Xformable(b).AddScaleOp().Set(Gf.Vec3f(scale))
-        bb = UsdGeom.Imageable(b).ComputeWorldBound(
+            meta = _json.load(open(meta_json))
+        scale = meta.get("scale", 1.0)
+        scale = [float(scale)] * 3 if not isinstance(scale, list) else [float(v) for v in scale]
+        opos = meta.get("offset_pos", [0.0, 0.0, 0.0])
+        oq = meta.get("offset_quat", [1.0, 0.0, 0.0, 0.0])
+        stage.DefinePrim(f"/World/{name}", "Xform")
+        g = stage.DefinePrim(f"/World/{name}/geom", "Xform")
+        g.GetReferences().AddReference(top)
+        # The converted asset already authors [translate, orient, scale] on its
+        # default prim, and the reference brings that op order with it, so
+        # AddTranslateOp() raises "already exists": set the existing ops.
+        xf = UsdGeom.Xformable(g)
+        ops = {op.GetOpType(): op for op in xf.GetOrderedXformOps()}
+        (ops.get(UsdGeom.XformOp.TypeTranslate) or xf.AddTranslateOp()).Set(Gf.Vec3d(*opos))
+        oop = ops.get(UsdGeom.XformOp.TypeOrient) or xf.AddOrientOp(UsdGeom.XformOp.PrecisionDouble)
+        if oop.GetPrecision() == UsdGeom.XformOp.PrecisionDouble:
+            oop.Set(Gf.Quatd(oq[0], Gf.Vec3d(*oq[1:])))
+        else:
+            oop.Set(Gf.Quatf(oq[0], Gf.Vec3f(*oq[1:])))
+        (ops.get(UsdGeom.XformOp.TypeScale) or xf.AddScaleOp()).Set(Gf.Vec3f(*scale))
+        bb = UsdGeom.Imageable(g).ComputeWorldBound(
             0, UsdGeom.Tokens.default_).ComputeAlignedBox()
         if bb.IsEmpty():
             raise SystemExit(
-                f"bottle prim composed EMPTY from {bottle_usd}. The reference "
+                f"object {name} composed EMPTY from {top}. The reference "
                 f"resolved to nothing -- almost always a relative path, which "
                 f"USD resolves against the layer's directory, not the cwd.")
-        log(f"bottle referenced (scale {scale}, bbox "
+        referenced += 1
+        log(f"object {name} referenced (scale {scale}, offset {opos}, bbox "
             f"{[round(v, 3) for v in bb.GetMin()]}..{[round(v, 3) for v in bb.GetMax()]})")
-    else:
-        log(f"WARNING no bottle usd at {bottle_usd} -- rendering without it")
+    if not referenced:
+        log(f"WARNING no object usd under {usd_root} -- rendering without objects")
     return stage
 
 
