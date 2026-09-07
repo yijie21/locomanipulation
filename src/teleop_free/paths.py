@@ -5,7 +5,9 @@ Two rules, and the split between them is the whole point:
 * **Inside the repo** — scenes, reach maps, logs, models — nothing is
   configurable, because nothing needs to be. The repo root is *derived* from
   this file's own location, so a fresh clone at any path just works, with no
-  environment variable to set and no sed pass to run. (``scripts/install_scene.sh``
+  environment variable to set and no sed pass to run. An explicit absolute
+  ``LOCOMANI_SIM_DIR`` isolates the sim, IK and stance diagnostics when
+  concurrent experiments need separate composed scenes. (``scripts/install_scene.sh``
   has done this since the beginning; the rest of the tree had drifted into
   hard-coded ``/workspace/code/locomanipulation`` strings.)
 * **Outside the repo** — TensorRT/ONNX Runtime under ``deps``, the conda
@@ -41,7 +43,7 @@ VENV_SIM_PY = os.path.join(SONIC, ".venv_sim", "bin", "python")
 
 OUTPUTS = os.path.join(REPO, "outputs")
 SCENE_DIR = os.path.join(OUTPUTS, "scene")          # MJCF + caches
-SIM_DIR = os.path.join(SCENE_DIR, "sim")            # the composed scene
+SIM_DIR = os.path.abspath(os.environ.get("LOCOMANI_SIM_DIR", os.path.join(SCENE_DIR, "sim")))
 SCENE_META = os.path.join(SIM_DIR, "scene_meta.json")
 SCENE_XML = os.path.join(SIM_DIR, "scene_locomani.xml")
 DIAG_DIR = os.path.join(OUTPUTS, "diag")            # diag_*.py results
@@ -49,6 +51,29 @@ LOGS_DIR = os.path.join(OUTPUTS, "logs")            # episode jsonl
 MODELS_DIR = os.path.join(OUTPUTS, "models")        # exported grasp models
 VIDEOS_DIR = os.path.join(OUTPUTS, "videos")        # diagnostic renders
 RENDERS_ISAAC = os.path.join(OUTPUTS, "renders_isaac")
+
+# --- Isaac rendering ---------------------------------------------------------
+# Mirrors scripts/paths.sh. SIMPLE is a pinned checkout, not a vendored
+# dependency: the working copy is ~35 GB and the render path never imports the
+# `simple` package (it converts our own scene_locomani.xml through Isaac's MJCF
+# importer). See patches/simple.md.
+SIMPLE_ROOT = os.environ.get("SIMPLE_ROOT", os.path.join(WORKSPACE, "code", "SIMPLE"))
+SIMPLE_PIN = os.environ.get(
+    "SIMPLE_PIN", "6d10628794d9c7de4596b4f2afb2c054a637c2bc")
+# The python carrying isaacsim. Deliberately separate from SIMPLE_ROOT: SIMPLE
+# pins isaacsim==4.5.0 while 3DGS/NuRec needs 5.0+, so the render runtime has to
+# be able to move without waiting for SIMPLE.
+RENDER_PY = os.environ.get(
+    "RENDER_PY", os.path.join(SIMPLE_ROOT, ".venv", "bin", "python"))
+# Converted USD assets. Ticket 03 moves the build under assets/isaac/; until
+# then the first-light assets still live where they were generated.
+ISAAC_ASSETS = os.environ.get("ISAAC_ASSETS", os.path.join(REPO, "assets", "isaac"))
+# The robot-only MJCF the render articulation is imported from. NOT the scene
+# XML: the scene changes per batch, the robot does not, so they are built and
+# cached separately (scripts/build_isaac_assets.sh).
+ROBOT_MJCF = os.path.join(
+    SONIC, "gear_sonic", "data", "robot_model", "model_data", "g1",
+    "g1_29dof_with_dex1.xml")
 
 RESTART_DEPLOY = os.path.join(SCRIPTS, "restart_deploy.sh")
 

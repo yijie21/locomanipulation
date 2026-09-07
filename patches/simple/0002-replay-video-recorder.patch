@@ -1,0 +1,84 @@
+diff --git a/src/simple/cli/replay.py b/src/simple/cli/replay.py
+index ac0f51f..3f5f78b 100644
+--- a/src/simple/cli/replay.py
++++ b/src/simple/cli/replay.py
+@@ -116,34 +116,39 @@ def main(
+         replay_agent = ReplayAgent(episode, task.robot, data_format=data_format, upsample_factor=upsample_factor,is_postprocess=is_postprocess)
+ 
+         pad_last_action = 2 # NOTE repeat the last action for 2 steps to make the env settle
+-        with tqdm(total=0, bar_format='{desc}', ncols=80, file=sys.stdout) as t:
+-            # Run the episode
+-            episode_over = False
+-            last_action = None
+-            while not episode_over:
+-                try:
+-                    action = replay_agent.get_action(observation, info=info, instruction=instruction)
+-                    observation, reward, terminated, truncated, info = env.step(action)
+-                    last_action = action
+-                    j += 1
+-                except StopIteration:
+-                    episode_over = True
+-                    for _ in range(pad_last_action): # hack for env to settle down
+-                        observation, reward, terminated, truncated, info = env.step(last_action)
+-                    print(f"Episode completed: all actions executed.")
+-        
+-                except IndexError:
+-                    episode_over = True
+-                    print("Episode finished.")
++        # NOTE(local): try/finally added -- an exception escaping this loop
++        # used to skip env.release(), leaving every mp4 without a moov atom
++        # (unplayable) when the subsequent Isaac teardown segfaulted.
++        try:
++            with tqdm(total=0, bar_format='{desc}', ncols=80, file=sys.stdout) as t:
++                # Run the episode
++                episode_over = False
++                last_action = None
++                while not episode_over:
++                    try:
++                        action = replay_agent.get_action(observation, info=info, instruction=instruction)
++                        observation, reward, terminated, truncated, info = env.step(action)
++                        last_action = action
++                        j += 1
++                    except StopIteration:
++                        episode_over = True
++                        for _ in range(pad_last_action): # hack for env to settle down
++                            observation, reward, terminated, truncated, info = env.step(last_action)
++                        print(f"Episode completed: all actions executed.")
++
++                    except IndexError:
++                        episode_over = True
++                        print("Episode finished.")
++
++                    t.set_description_str(f"Replaying {next(spinner)}")
++                    sys.stdout.flush()
++        finally:
++            # Save per-episode video even if the episode loop blew up.
++            if isinstance(env, VideoRecorder):
++                env.release()
+ 
+-                t.set_description_str(f"Replaying {next(spinner)}")
+-                sys.stdout.flush()
+-            
+         is_success = grasp_env.unwrapped._success # type: ignore
+         stats[task_id] = is_success
+-        # Save per-episode video
+-        if isinstance(env, VideoRecorder):
+-            env.release()
+ 
+         """ # write the dict into a pickle file
+         import pickle
+diff --git a/src/simple/cli/replay_decoupled_wbc.py b/src/simple/cli/replay_decoupled_wbc.py
+index db5d66f..cd5f34b 100644
+--- a/src/simple/cli/replay_decoupled_wbc.py
++++ b/src/simple/cli/replay_decoupled_wbc.py
+@@ -278,8 +278,8 @@ def main(
+     robot = task.robot
+     assert isinstance(robot, G1Sonic)
+ 
+-    if replay_dir:
+-        env = VideoRecorder(env, video_folder=replay_dir, framerate=render_hz)
++    # NOTE(local): duplicate VideoRecorder wrap removed -- wrapping twice
++    # opens two cv2 writers on the same mp4 path and corrupts the file.
+     # Use provided success_criteria or fall back to task's metadata
+     if success_criteria is not None:
+         task.success_criteria = success_criteria

@@ -1,0 +1,158 @@
+diff --git a/src/simple/robots/g1_sonic_dex1.py b/src/simple/robots/g1_sonic_dex1.py
+new file mode 100644
+index 0000000..6891ff3
+--- /dev/null
++++ b/src/simple/robots/g1_sonic_dex1.py
+@@ -0,0 +1,112 @@
++# Copyright (c) 2025-2026 The SIMPLE Authors + locomanipulation project
++# SPDX-License-Identifier: MIT
++"""G1 with the dex1 parallel gripper and the locomanipulation project's
++wrist/head cameras -- a local variant of G1Sonic for cross-stack work
++(MuJoCo physics here, Isaac rendering via the locomanipulation mirror).
++
++Assets come from the locomanipulation tree, not SIMPLE's data dir:
++  * MJCF: g1_29dof_with_dex1_cams.xml -- the battle-tested dex1 model that
++    collected the dart200 dataset, plus head_camera / left_wrist /
++    right_wrist cameras (same mounts as scene_lib.add_wrist_cameras).
++  * USD : g1_dex1.usda -- converted from the same MJCF by isaac_convert.py,
++    joint names 1:1 (so no mujoco->isaac name mapping table is needed).
++"""
++
++from __future__ import annotations
++
++from simple.core.controller import ControllerCfg
++from simple.robots.controllers.combo import WholeBodyEEFControllerCfg
++from simple.robots.controllers.qpos import PDJointPosControllerCfg
++from simple.robots.controllers.eef import DexHandEEFControllerCfg
++from simple.robots.registry import RobotRegistry
++from simple.robots.g1_sonic import (
++    G1Sonic,
++    LEFT_LEG_JOINTS, RIGHT_LEFT_JOINTS, WAIST_JOINTS,
++    LEFT_ARM_JOINTS, RIGHT_ARM_JOINTS,
++)
++
++_LOCO = "/workspace/code/locomanipulation"
++
++LEFT_GRIPPER_JOINTS = ["left_hand_gripper_1_joint", "left_hand_gripper_2_joint"]
++RIGHT_GRIPPER_JOINTS = ["right_hand_gripper_1_joint", "right_hand_gripper_2_joint"]
++
++DEX1_WHOLE_BODY_JOINTS = (
++    LEFT_LEG_JOINTS + RIGHT_LEFT_JOINTS + WAIST_JOINTS
++    + LEFT_ARM_JOINTS + RIGHT_ARM_JOINTS
++    + LEFT_GRIPPER_JOINTS + RIGHT_GRIPPER_JOINTS
++)
++
++
++@RobotRegistry.register("g1_sonic_dex1")
++class G1SonicDex1(G1Sonic):
++    uid: str = "g1_sonic_dex1"
++    label: str = "Unitree G1 Wholebody (dex1 gripper, wrist cams)"
++
++    wholebody_dof: int = 33          # 29 body + 2x2 gripper prismatic
++    dof: int = 29
++    hand_dof: int = 2
++
++    mjcf_path: str = (f"{_LOCO}/third_party/GR00T-WholeBodyControl/gear_sonic/"
++                      "data/robot_model/model_data/g1/g1_29dof_with_dex1_cams.xml")
++    usd_path: str = f"{_LOCO}/outputs/renders_isaac/g1_dex1_flat.usda"
++    # The flat export's defaultPrim is /World; the articulation root inside it
++    # is the child "scene", which is what the isaac engine appends to .../Robot.
++    robot_ns: str = "scene"
++
++    init_joint_states: dict[str, float] = dict(
++        zip(DEX1_WHOLE_BODY_JOINTS, [0.0] * len(DEX1_WHOLE_BODY_JOINTS)))
++    joint_names = DEX1_WHOLE_BODY_JOINTS
++    hand_names = LEFT_GRIPPER_JOINTS + RIGHT_GRIPPER_JOINTS
++
++    # dex1 has no palm/hand-base links; the wrist yaw link is the EEF anchor
++    # (same convention as the locomanipulation stack).
++    hand_prim_path = "right_wrist_yaw_link"
++
++    @property
++    def head_cam_link(self) -> str:
++        # Our flat USD carries a d435_link baked under the torso at the exact
++        # camera frame the mujoco engine hardcodes for eye_in_head mounts, so
++        # the two engines see the same view.
++        return "pelvis/torso_link/d435_link"
++
++    eef_prim_path: str = "right_wrist_yaw_link"
++    wrist_cam_link: str = "right_wrist_yaw_link"
++    LEFT_ARM_EE_LINK: str = "left_wrist_yaw_link"
++    RIGHT_ARM_EE_LINK: str = "right_wrist_yaw_link"
++
++    # Same body groups as the parent; only the end-effectors change.
++    # Gripper joint range is [-0.02, 0.0245]: positive = fingers apart (open).
++    controller_cfg: ControllerCfg = WholeBodyEEFControllerCfg(
++        left_leg=PDJointPosControllerCfg(
++            joint_names=LEFT_LEG_JOINTS, init_qpos=[0.0] * 6),
++        right_leg=PDJointPosControllerCfg(
++            joint_names=RIGHT_LEFT_JOINTS, init_qpos=[0.0] * 6),
++        waist=PDJointPosControllerCfg(
++            joint_names=WAIST_JOINTS, init_qpos=[0.0] * 3),
++        left_arm=PDJointPosControllerCfg(
++            joint_names=LEFT_ARM_JOINTS,
++            init_qpos=[0.5, 0., 0.2, 0.55, 0., 0., 0.]),
++        right_arm=PDJointPosControllerCfg(
++            joint_names=RIGHT_ARM_JOINTS,
++            init_qpos=[0.5, 0., -0.2, 0.55, 0., 0., 0.]),
++        left_eef=DexHandEEFControllerCfg(
++            joint_names=LEFT_GRIPPER_JOINTS,
++            init_qpos=[0.0245, 0.0245],
++            close_qpos=[-0.02, -0.02]),
++        right_eef=DexHandEEFControllerCfg(
++            joint_names=RIGHT_GRIPPER_JOINTS,
++            init_qpos=[0.0245, 0.0245],
++            close_qpos=[-0.02, -0.02]),
++    )
++
++    def __init__(self, sonic_config: dict, **kwargs) -> None:
++        # NUM_HAND_JOINTS comes from the WBC yaml (7 for dex3); the hand
++        # index scan and torque loop are otherwise fully generic, so a
++        # config copy with 2 is the only change dex1 needs.
++        sonic_config = dict(sonic_config)
++        sonic_config["NUM_HAND_JOINTS"] = 2
++        super().__init__(sonic_config, **kwargs)
++
++    def jname_mujoco_to_isaac(self, jname: str) -> str:
++        # Our USD was imported from the same MJCF: names are identical.
++        return jname
+diff --git a/src/simple/tasks/g1_wholebody_pick_and_place_and_hug_container_dex1.py b/src/simple/tasks/g1_wholebody_pick_and_place_and_hug_container_dex1.py
+new file mode 100644
+index 0000000..013013c
+--- /dev/null
++++ b/src/simple/tasks/g1_wholebody_pick_and_place_and_hug_container_dex1.py
+@@ -0,0 +1,34 @@
++# Copyright (c) 2025-2026 The SIMPLE Authors + locomanipulation project
++# SPDX-License-Identifier: MIT
++"""HugContainer task variant on the dex1-gripper G1 (locomanipulation robot).
++
++Identical scene/DR/success logic to the teleop original -- the only change is
++the robot: dex1 parallel gripper + head/wrist cameras, assets from the
++locomanipulation tree (see robots/g1_sonic_dex1.py)."""
++
++from __future__ import annotations
++
++from typing import Any
++
++from simple.tasks.registry import TaskRegistry
++from simple.tasks.g1_wholebody_pick_and_place_and_hug_container_teleop import (
++    G1WholebodyPickAndPlaceAndHugContainerTaskTeleop,
++)
++import simple.robots.g1_sonic_dex1  # noqa: F401  (registers the robot uid)
++
++
++@TaskRegistry.register("g1_wholebody_pick_and_place_and_hug_container_dex1")
++class G1WholebodyPickAndPlaceAndHugContainerTaskDex1(
++        G1WholebodyPickAndPlaceAndHugContainerTaskTeleop):
++    uid: str = "g1_wholebody_pick_and_place_and_hug_container_dex1"
++    label: str = "G1 TELEOP PickPlace+HugContainer (dex1)"
++
++    robot_cfg: dict[str, Any] = dict(
++        uid="g1_sonic_dex1",
++    )
++
++    def __init__(self, *args, robot_uid: str = "g1_sonic_dex1", **kwargs):
++        # The parent __init__ force-updates robot_cfg from its robot_uid
++        # parameter (default "g1_sonic"), so the class attribute alone is
++        # not enough -- the default has to change here.
++        super().__init__(*args, robot_uid=robot_uid, **kwargs)

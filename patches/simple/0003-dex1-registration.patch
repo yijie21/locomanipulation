@@ -1,0 +1,27 @@
+diff --git a/src/simple/envs/__init__.py b/src/simple/envs/__init__.py
+index 400fed2..f889f17 100644
+--- a/src/simple/envs/__init__.py
++++ b/src/simple/envs/__init__.py
+@@ -203,3 +203,10 @@ register(
+     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+     kwargs={"task": "g1_wholebody_xmove_bend_carry_box_sonic"},
+ )
++
++# --- local additions (locomanipulation project) -----------------------------
++register(
++    id="simple/G1WholebodyPickAndPlaceAndHugContainerDex1-v0",
++    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
++    kwargs={"task": "g1_wholebody_pick_and_place_and_hug_container_dex1"},
++)
+diff --git a/src/simple/tasks/__init__.py b/src/simple/tasks/__init__.py
+index d9b4699..8ece908 100644
+--- a/src/simple/tasks/__init__.py
++++ b/src/simple/tasks/__init__.py
+@@ -41,6 +41,7 @@ from .g1_wholebody_tabletop_handover_mp import G1WholebodyTabletopHandoverMP
+ from .g1_wholebody_locomotion_pick_between_tables_teleop import G1WholebodyLocomotionPickBetweenTablesTaskTeleop
+ from .g1_wholebody_handover_teleop import G1WholebodyHandoverTeleop
+ from .g1_wholebody_pick_and_place_and_hug_container_teleop import G1WholebodyPickAndPlaceAndHugContainerTaskTeleop
++from .g1_wholebody_pick_and_place_and_hug_container_dex1 import G1WholebodyPickAndPlaceAndHugContainerTaskDex1  # local addition
+ from .g1_wholebody_xmove_pick_teleop import G1WholebodyXMovePickTaskTeleop
+ from .g1_wholebody_close_door_teleop import G1WholebodyCloseDoorTaskTeleop
+ from .g1_wholebody_open_oven_teleop import G1WholebodyOpenOvenTaskTeleop

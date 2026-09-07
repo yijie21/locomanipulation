@@ -62,11 +62,26 @@ JITTER="${JITTER:-0.10}"
 OUT="${OUT:-$LOCOMANI_OUTPUTS/logs/collect}"
 mkdir -p "$OUT"
 
+# Visual backend, NOT physics. `mujoco` (the default) is the status quo to the
+# byte: nothing below the loop runs. `isaac` appends a per-episode offline
+# re-render stage after the batch, reading the pose sidecar and this batch's
+# scene snapshot -- the physics loop, the stack and the ZMQ timing are
+# untouched either way. Unknown values are refused rather than silently
+# falling back, because a typo that quietly collected 400 episodes without
+# pixels is exactly the failure this flag has to not have.
+RENDER_BACKEND="${RENDER_BACKEND:-mujoco}"
+case "$RENDER_BACKEND" in
+    mujoco|isaac) ;;
+    *) echo "collect: RENDER_BACKEND must be mujoco or isaac, got '$RENDER_BACKEND'" >&2
+       exit 2 ;;
+esac
+
 echo "collect: $BATCHES batches x $ROUNDS rounds, scene seeds from $SEED0"
 echo "  preset  ${SCENE_PRESET:-<none> (default multi-object table)}"
 echo "  targets $TARGETS   edge-jitter $JITTER"
 echo "  spawn   ${SPAWN_ARGS:-<grasp_gym defaults: 1-3 m out, off the approach line, +-90 deg>}"
 echo "  dart    ${DART_ARGS:-<off>}"
+echo "  render  $RENDER_BACKEND"
 for b in $(seq 0 $((BATCHES - 1))); do
     seed=$((SEED0 + b))
     echo "===== batch $((b + 1))/$BATCHES  scene seed $seed ====="
@@ -121,6 +136,18 @@ for b in $(seq 0 $((BATCHES - 1))); do
         --manifest "$OUT/manifest_$seed.jsonl" \
         > "$OUT/gym_$seed.log" 2>&1
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$seed.log" || echo "  (no result line)"
+
+    # Isaac re-render stage. Ticket 06 wires the flag only: this prints the
+    # plan and starts nothing, so the mujoco path stays provably unchanged
+    # while the stage itself is built in ticket 07.
+    if [ "$RENDER_BACKEND" = "isaac" ]; then
+        echo "  [isaac] would re-render batch $seed:"
+        echo "  [isaac]   scene    $OUT/scene_$seed/scene_locomani.xml"
+        echo "  [isaac]   sidecar  $(locomani_session_root)/pose_sidecar/"
+        echo "  [isaac]   cam traj $RENDER_PY src/teleop_free/isaac/compute_cam_traj.py"
+        echo "  [isaac]   render   $RENDER_PY src/teleop_free/isaac/isaac_render.py"
+        echo "  [isaac] not implemented yet (ticket 07); nothing started"
+    fi
 done
 
 if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then

@@ -36,6 +36,25 @@ export LOCOMANI_CACHE="${LOCOMANI_CACHE:-$LOCOMANI_WORKSPACE/.cache}"
 export LOCOMANI_TMP="${LOCOMANI_TMP:-$LOCOMANI_WORKSPACE/tmp}"
 export LOCOMANI_SECRETS="${LOCOMANI_SECRETS:-$LOCOMANI_WORKSPACE/.secrets}"
 
+# --- Isaac rendering runtime -------------------------------------------------
+#
+# SIMPLE is a checkout we pin, not vendor: the working copy is ~35 GB, almost
+# all of it data/. See patches/simple.md for the pin and the
+# patches. It is NOT a code dependency of the render path -- the offline
+# re-renderer never imports `simple`; it converts our own scene_locomani.xml
+# through Isaac's MJCF importer and drives the camera from MuJoCo FK.
+export SIMPLE_ROOT="${SIMPLE_ROOT:-$LOCOMANI_WORKSPACE/code/SIMPLE}"
+export SIMPLE_PIN="${SIMPLE_PIN:-6d10628794d9c7de4596b4f2afb2c054a637c2bc}"
+#
+# The python that carries isaacsim. Today that is SIMPLE's venv, which pins
+# isaacsim[all,extscache]==4.5.0 in its pyproject.toml. Deliberately a separate
+# variable from SIMPLE_ROOT: 3DGS/NuRec needs Isaac Sim 5.0+, so the render
+# runtime must be able to move to a newer isaacsim WITHOUT waiting for SIMPLE
+# to lift its pin. Point RENDER_PY at another venv and nothing else changes.
+export RENDER_PY="${RENDER_PY:-$SIMPLE_ROOT/.venv/bin/python}"
+export ISAAC_ASSETS="${ISAAC_ASSETS:-$LOCOMANI_ROOT/assets/isaac}"
+export ROBOT_MJCF="${ROBOT_MJCF:-$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1.xml}"
+
 # Logs + exporter sessions for instance $1 (default $INSTANCE, default 0).
 # Mirrors paths.session_root() so multi-instance runs never collide.
 locomani_session_root() {

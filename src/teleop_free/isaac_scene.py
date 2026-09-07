@@ -68,9 +68,56 @@ G1_USD = (
 )
 
 # Same arrangement as teleop_free/compose_scene.py — keep these in sync.
+# Fallbacks only. The scene MuJoCo actually runs is rebuilt per batch from
+# SCENE_SEED, and its surface tops move with it (0.62-0.65 m across seeds), so
+# the render must take them from that batch's scene_meta.json or it puts the
+# table at a different height from the physics. These constants are what gets
+# used when no meta is available -- and they are already stale: the meta at the
+# time of writing says 0.6277, this says 0.62, an 8 mm discrepancy that was
+# silently in every render before 2026-09-05.
 SURFACE_A_XY = (0.0, 0.0)
 SURFACE_B_XY = (2.5, 0.0)
 SURFACE_TARGET_TOP = {"dining_table": 0.62, "counter": 0.74}
+
+
+def load_scene_meta(path: str = "", emit=print) -> dict:
+    """Per-seed surface geometry from a scene_meta.json, {} if unavailable.
+
+    Accepts either the meta file itself or a batch snapshot directory
+    ($OUT/scene_<seed>/). Empty dict means "fall back to the constants", which
+    is correct for the very first build and wrong for anything reproducible.
+    """
+    import json
+    cand = path or os.environ.get("SCENE_META") or paths.SCENE_META
+    if os.path.isdir(cand):
+        cand = os.path.join(cand, "scene_meta.json")
+    if not os.path.exists(cand):
+        emit(f"  scene_meta: NOT FOUND at {cand} -- using built-in constants")
+        return {}
+    meta = json.load(open(cand))
+    emit(f"  scene_meta: {cand}")
+    return meta
+
+
+def surface_plan(meta: dict):
+    """-> ((key, name, xy), ...) and {name: top}, meta first, constants after."""
+    tops = dict(SURFACE_TARGET_TOP)
+    plan = [("A", "dining_table", SURFACE_A_XY), ("B", "counter", SURFACE_B_XY)]
+    surf = meta.get("surfaces") or {}
+    if not surf:
+        return tuple(plan), tops
+    out = []
+    for key, name, xy in plan:
+        spec = surf.get(key)
+        if not spec:
+            out.append((key, name, xy))
+            continue
+        name = spec.get("name", name)
+        xy = tuple(spec.get("xy", xy))
+        if spec.get("top") is not None:
+            tops[name] = float(spec["top"])
+        out.append((key, name, xy))
+    return tuple(out), tops
 ROBOT_START_XY = (-1.5, 0.0)
 ROBOT_PELVIS_Z = 0.793
 ON_SURFACE_A = ["orange", "fork", "napkin"]
@@ -401,6 +448,121 @@ def obj_and_height(scene_root: str, name: str):
     return None, 0.0, None
 
 
+def _mjcf_texture_for(mesh_name: str, xml: str):
+    """<geom mesh=..> -> material -> texture -> file, as MuJoCo resolves it."""
+    import re
+    g = re.search(r'<geom[^>]*material="([^"]+)"[^>]*mesh="' + re.escape(mesh_name)
+                  + r'"', xml) or \
+        re.search(r'<geom[^>]*mesh="' + re.escape(mesh_name)
+                  + r'"[^>]*material="([^"]+)"', xml)
+    if not g:
+        return None
+    m = re.search(r'<material[^>]*name="' + re.escape(g.group(1))
+                  + r'"[^>]*texture="([^"]+)"', xml)
+    if not m:
+        return None
+    t = re.search(r'<texture[^>]*name="' + re.escape(m.group(1))
+                  + r'"[^>]*file="([^"]+)"', xml)
+    return t.group(1) if t else None
+
+
+def _bind_mjcf_textures(top_usd: str, name: str, parts, xml: str) -> None:
+    """Override each referenced part's material with the MJCF's own texture."""
+    from pxr import Sdf, UsdShade
+    st = Usd.Stage.Open(top_usd)
+    if st is None:
+        log(f"  object {name}: cannot reopen {top_usd} to bind textures")
+        return
+    for i, (mesh_name, _obj, _sc) in enumerate(parts):
+        tex = _mjcf_texture_for(mesh_name + "_vis", xml)
+        prim = st.GetPrimAtPath(f"/{name}/part_{i}")
+        if tex is None or not os.path.exists(tex) or not prim.IsValid():
+            log(f"  object {name} part {i}: no MJCF texture ({tex})")
+            continue
+        mp = Sdf.Path(f"/{name}/Looks/part_{i}_mat")
+        mat = UsdShade.Material.Define(st, mp)
+        sh = UsdShade.Shader.Define(st, mp.AppendChild("shader"))
+        sh.CreateIdAttr("UsdPreviewSurface")
+        uv = UsdShade.Shader.Define(st, mp.AppendChild("uv"))
+        uv.CreateIdAttr("UsdPrimvarReader_float2")
+        uv.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        tx = UsdShade.Shader.Define(st, mp.AppendChild("tex"))
+        tx.CreateIdAttr("UsdUVTexture")
+        tx.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(os.path.abspath(tex))
+        tx.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
+            uv.ConnectableAPI(), "result")
+        sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(
+            tx.ConnectableAPI(), "rgb")
+        sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
+        mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+            mat, UsdShade.Tokens.strongerThanDescendants)
+        log(f"  object {name} part {i}: bound {os.path.basename(tex)}")
+    st.GetRootLayer().Save()
+
+
+def convert_target_objects(meta: dict, scene_xml: str, out_dir: str) -> None:
+    """Convert the MANIPULABLE objects (the ones MuJoCo moves) to USD.
+
+    They are not placed here: the renderer references them and sets a world
+    pose per frame from the sidecar. All this does is make the asset exist --
+    which it previously did not. Everything rendered before 2026-09-05 carried
+    a "WARNING no bottle usd" line and simply had no target object in frame.
+
+    The mesh scale is read from the scene XML rather than assumed: the MJCF
+    applies it (0.16 for bottled_water_1) and the raw OBJ is unscaled, so the
+    renderer has to reapply it. It is written next to the USD so the render
+    side does not have to hard-code a number that is per-asset.
+    """
+    import json as _json
+    import re
+    xml = open(scene_xml).read()
+    meshes = re.findall(r'<mesh name="([^"]+)_vis"[^>]*file="([^"]+)"'
+                        r'[^>]*scale="([^"]+)"', xml)
+    for name in (meta.get("objects") or {}):
+        parts = [(n, f, sc) for n, f, sc in meshes if n.startswith(name + "_")]
+        if not parts:
+            log(f"  object {name}: no _vis mesh in the scene XML, skipped")
+            continue
+        dst_dir = os.path.join(out_dir, "usd", name)
+        os.makedirs(dst_dir, exist_ok=True)
+        top = os.path.join(dst_dir, f"{name}.usd")
+        refs = []
+        for i, (_, obj_path, _sc) in enumerate(parts):
+            if not os.path.exists(obj_path):
+                log(f"  object {name}: missing OBJ {obj_path}")
+                continue
+            part = os.path.join(dst_dir, f"part_{i}.usd")
+            if convert_obj_to_usd(obj_path, part):
+                refs.append(part)
+        if not refs:
+            log(f"  object {name}: nothing converted")
+            continue
+        if os.path.exists(top):
+            os.remove(top)
+        st = Usd.Stage.CreateNew(top)
+        UsdGeom.SetStageUpAxis(st, UsdGeom.Tokens.z)
+        UsdGeom.SetStageMetersPerUnit(st, 1.0)
+        root = st.DefinePrim(f"/{name}", "Xform")
+        st.SetDefaultPrim(root)
+        for i, r in enumerate(refs):
+            pp = st.DefinePrim(f"/{name}/part_{i}", "Xform")
+            pp.GetReferences().AddReference("./" + os.path.basename(r))
+        st.GetRootLayer().Save()
+        # Per-part texture from the MJCF, NOT from the OBJ's material.mtl.
+        # bottled_water_1 ships one MTL shared by both OBJs pointing at
+        # material_0.png, which is byte-identical to image0.png (the cap). The
+        # MJCF instead binds the body to image1.png and the cap to image0.png.
+        # Trusting the MTL renders the whole bottle in the cap's flat green --
+        # geometry aligned, appearance wrong, which for a VLA dataset is the
+        # part that matters. Caught 2026-09-06 by the ticket-05 side-by-side.
+        _bind_mjcf_textures(top, name, parts, xml)
+        scale = float(parts[0][2].split()[0])
+        _json.dump({"scale": scale, "parts": len(refs)},
+                   open(os.path.join(dst_dir, f"{name}.json"), "w"))
+        log(f"  object {name}: {len(refs)} part(s), scale {scale} -> {top}")
+
+
 def main() -> None:
     import json
 
@@ -474,8 +636,9 @@ def main() -> None:
 
     # --- surfaces -----------------------------------------------------------
     surfaces = {}
-    for key, name, xy in (("A", "dining_table", SURFACE_A_XY),
-                          ("B", "counter", SURFACE_B_XY)):
+    meta = load_scene_meta(emit=log)
+    plan, tops = surface_plan(meta)
+    for key, name, xy in plan:
         obj, h, bounds = obj_and_height(SCENE_ROOT, name)
         if obj is None:
             print(f"  MISSING surface {key}: {name}")
@@ -483,12 +646,12 @@ def main() -> None:
         usd = asset_usd_path(OUT_DIR, name)
         if not convert_obj_to_usd(obj, usd):
             continue
-        target = SURFACE_TARGET_TOP[name]
+        target = tops[name]
         _, size, actual = place_asset(stage, f"/World/{name}", usd, bounds, xy,
                                       0.0, target_height=target)
         surfaces[key] = dict(xy=xy, top=target)
-        print(f"  surface {key}: {name:13s} top={target:.3f} "
-              f"planned size={size} usd bbox={actual}")
+        log(f"  surface {key}: {name:13s} top={target:.3f} "
+            f"planned size={size} usd bbox={actual}")
 
     # --- objects ------------------------------------------------------------
     for obj_name, pose in layout["position"].items():
@@ -512,6 +675,13 @@ def main() -> None:
                                       (x, y), surf["top"], target_height=h)
         print(f"  {obj_name:12s} -> {key} at ({x:.3f}, {y:.3f}) on {surf['top']:.3f} "
               f"planned size={size} usd bbox={actual}")
+
+    # --- manipulable objects (converted, not placed) -------------------------
+    sx = os.environ.get("SCENE_XML") or paths.SCENE_XML
+    if meta and os.path.exists(sx):
+        convert_target_objects(meta, sx, OUT_DIR)
+    else:
+        log(f"  target objects: skipped (meta={bool(meta)} scene_xml={sx})")
 
     # --- robot --------------------------------------------------------------
     if os.path.exists(G1_USD):

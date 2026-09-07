@@ -21,3 +21,6 @@ __pycache__/
 
 # agent ticket scratch (to-tickets)
 .scratch/
+
+# converted Isaac USD assets (rebuilt by scripts/build_isaac_assets.sh)
+assets/isaac/

@@ -1,0 +1,15 @@
+diff --git a/src/simple/engines/mujoco.py b/src/simple/engines/mujoco.py
+index 4c9cd12..843e135 100644
+--- a/src/simple/engines/mujoco.py
++++ b/src/simple/engines/mujoco.py
+@@ -748,7 +748,9 @@ class MujocoSimulator(Simulator):
+ 
+         robot_geom_ids = self._robot_mask_geom_ids() if mask_camera_name is not None else set()
+         for mjCamera in self.mj_worldbody.find_all('camera'):
+-            renderer = self.renderers[mjCamera.name]
++            # NOTE(local): .get -- MJCF-authored cameras without a
++            # configured sensor renderer must be skipped, not KeyError.
++            renderer = self.renderers.get(mjCamera.name)
+             if renderer is None:
+                 continue
+             
