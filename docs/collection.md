@@ -10,6 +10,13 @@
 SCENE_PRESET=bottle_only bash scripts/install_scene.sh   # VLA 实验的瓶子场景
 # 不带 SCENE_PRESET = 老的多物体桌面。预设定义在 scene_lib.SCENE_PRESETS;
 # bottle_only = 一个 RoboCasa 水瓶(assets/robocasa/,已入 git),其余全空。
+# crate_bimanual = 一个 NVIDIA 蓝色 600x400 周转箱(assets/crates/blue_crate/),
+#   长边横放、两端把手在 y=±0.30,近侧箱壁与桌沿齐平,给双手搬运任务用;箱体碰撞
+#   是 11 个 box 拼的,把手上方的箱沿(3 cm 高、2.4 cm 厚)是夹爪该夹的地方,
+#   site grip_px/grip_nx。可达性(2026-09-07 IK 扫描):脚/膝比骨盆前伸 0.22 m,
+#   骨盆最近只能站到桌沿外 0.27 m,箱沿在前方 0.47 m——单靠手臂差 12-15 cm,
+#   要腰前倾 33°、手掌下俯 60° 才能双手同时到位且无穿透;箱子每往桌里挪 1 cm
+#   都要多弯腰,放桌子中央够不到。扫描脚本 outputs/scene/crate_bimanual/reach_pitch.py。
 ```
 
 解包 `assets/scene_locomani_v1.tar.gz` 到 `outputs/scene/`(双桌面 + 目标/干扰物体的

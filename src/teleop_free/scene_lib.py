@@ -363,6 +363,34 @@ MESH_TARGETS = {
         phrase="the water bottle",
         mass=0.30,
     ),
+    "blue_crate": dict(
+        # NVIDIA's SM_Crate_A08_Blue_01, a 605 x 405 x 170 mm Euro crate with
+        # a handle slot in each end wall; assets/crates/blue_crate/model.xml
+        # carries the box collision and the measured grip bars. Native size:
+        # scaling it would move the handles off a two-handed span for nothing.
+        mjcf=f"{paths.REPO}/assets/crates/blue_crate/model.xml",
+        height=0.170,
+        surface="A",
+        # Long axis ACROSS the robot's forward (+x) so the two handles sit at
+        # y = +-0.30, one per hand, and the near wall FLUSH with the table's
+        # near edge. The edge is where the reach budget is spent: the feet
+        # and knees reach 0.22 m past the pelvis, so the pelvis stands at
+        # least 0.27 m outside the edge, and the rim bars are then 0.47 m
+        # ahead -- the arm alone falls 12-15 cm short of that (matches the
+        # 0.50 m palm envelope) and it takes a 33 deg waist pitch with the
+        # palms pitched 60 deg down to close both hands on the bars with no
+        # penetration (reach_pitch.py sweep, 2026-09-07). Every centimetre
+        # further onto the table costs more lean; centred it is unreachable.
+        xy=(0.0, 0.0),
+        near_edge=True,
+        footprint=(0.605, 0.405),   # asset-frame x, y, before yaw
+        yaw_deg=90.0,
+        phrase="the blue crate",
+        mass=1.5,
+        # Two hands on two rim bars; the single-jaw barrel check does not
+        # apply, and no single-hand grasp plan should be derived for it.
+        bimanual=True,
+    ),
 }
 
 # Scene presets. The default is every object the pipeline has always had; a
@@ -375,6 +403,11 @@ SCENE_PRESETS = {
     "bottle_only": dict(on_surface_a=[], on_surface_b=[], primitives=[],
                         mesh_targets=["water_bottle"],
                         target_object="water_bottle"),
+    # SCENE_PRESET=crate_bimanual  the blue crate alone on the table, handles
+    #                              left and right, for the two-handed carry
+    "crate_bimanual": dict(on_surface_a=[], on_surface_b=[], primitives=[],
+                           mesh_targets=["blue_crate"],
+                           target_object="blue_crate"),
 }
 
 
@@ -1014,8 +1047,11 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
         raw_h = upright_extent(spec_m["mjcf"])
         scale = spec_m["height"] / raw_h
         # A target the jaw cannot close on is not a target. Checked here rather
-        # than discovered as a grasp that never converges.
-        barrel = barrel_span(spec_m["mjcf"]) * scale
+        # than discovered as a grasp that never converges. A bimanual target is
+        # gripped by its handles, not around its body, so its width is not a
+        # jaw span and the check does not apply.
+        barrel = (0.0 if spec_m.get("bimanual")
+                  else barrel_span(spec_m["mjcf"]) * scale)
         if barrel > JAW_SPAN_MAX:
             raise SystemExit(
                 f"{name}: barrel is {barrel * 100:.1f} cm after scaling, over "
@@ -1023,23 +1059,35 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
                 f"(HAND_APERTURE - PINCH_MARGIN). Lower its height.")
         px = surf["xy"][0] + spec_m["xy"][0]
         py = surf["xy"][1] + spec_m["xy"][1]
+        yaw_deg = spec_m.get("yaw_deg", 0.0)
+        if spec_m.get("near_edge"):
+            # Near wall flush with the table's -x edge, whatever this seed's
+            # table size is: the half-extent along robot-x after the yaw.
+            fx, fy = spec_m["footprint"]
+            c, s = abs(np.cos(np.deg2rad(yaw_deg))), abs(np.sin(np.deg2rad(yaw_deg)))
+            half_x = 0.5 * (fx * c + fy * s)
+            px = surf["xy"][0] - surf["flat_half_extent"][0] + half_x
         # attach() places the asset's ORIGIN, and these are modelled centred,
         # so seat the centre half a height up like the primitives do. The 2 mm
         # is the same clearance the surface objects get: a mesh already
         # interpenetrating the table launches on the first physics step.
         pz = surf["top"] + spec_m["height"] / 2 + (0.0 if freeze_objects else 0.002)
+        half_yaw = np.deg2rad(yaw_deg) / 2
+        quat = [float(np.cos(half_yaw)), 0.0, 0.0, float(np.sin(half_yaw))]
         body = attach(spec, spec_m["mjcf"], name, (px, py, pz),
-                      UPRIGHT_QUAT, scale=scale, freeze=freeze_objects)
+                      quat, scale=scale, freeze=freeze_objects)
         meta["objects"][name] = dict(
             body=body, surface=spec_m["surface"], init_pos=[px, py, pz],
-            init_quat=list(UPRIGHT_QUAT), height=spec_m["height"],
+            init_quat=quat, height=spec_m["height"],
             scale=scale, mesh=spec_m["mjcf"],
+            bimanual=bool(spec_m.get("bimanual", False)),
         )
         if verbose:
             print(f"  {name:12s} -> surface {spec_m['surface']} at "
                   f"({px:.3f}, {py:.3f}, {pz:.3f})  mesh x{scale:.3f} "
                   f"(h {raw_h * 100:.1f} -> {spec_m['height'] * 100:.1f} cm, "
-                  f"barrel {barrel * 100:.1f} cm, jaw {JAW_SPAN_MAX * 100:.2f})")
+                  f"barrel {barrel * 100:.1f} cm, jaw {JAW_SPAN_MAX * 100:.2f}"
+                  f"{', bimanual' if spec_m.get('bimanual') else ''})")
 
     # --- robot start pose --------------------------------------------------
     # qpos0 of a free joint comes from its body's pos/quat, so moving the
