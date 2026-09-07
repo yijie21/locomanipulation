@@ -169,3 +169,48 @@ for i in range(n_bl):                          # n_bl = 1.0s × 30Hz = 30 步
 默认走单 chunk 路径、时序集成要显式 `--ensemble N>1` 才开,是实验设计取舍,不是技术做不到
 叠加——实测效果依场景反转(阶梯基准上 −13 点 p=0.060,并行/时序退化场景下反而 +20 点
 p=0.012,见 [evaluation.md](evaluation.md) 终表一节),所以没有转正当默认。
+
+## 生成后处理 vs 生成时引导:两条 RTC 实现路线
+
+以上三个机制,连同 Physical Intelligence "Real-Time Chunking"(RTC,
+[arXiv:2506.07339](https://arxiv.org/abs/2506.07339))论文提出的做法,本质上都是在解决
+同一个问题——但走的是两条完全不同的路线。这个项目走的是**生成后处理**:先让模型各自独立
+吐出完整 chunk,再在动作数值空间里做事后缝合。GR00T 官方模型(`gr00t_n1d7`)的去噪循环里
+其实已经原生实现了**生成时引导**这条更接近 RTC 论文本意的路线,只是这个项目的调用链目前
+没有接通它。两条路线对照如下。
+
+### 实现原理对比
+
+| 维度 | 生成后处理路线(这个项目实际用的) | 生成时引导路线(GR00T 官方模型自带,未接通) |
+|---|---|---|
+| **核心思路** | 模型各自独立生成完整 chunk,生成完之后在**动作数值空间**里做时间对齐 + 加权平均/插值缝合 | 把"必须跟上一个 chunk 衔接"当成**生成过程本身的约束**,冻结区不参与更新、自由区在**每一步去噪**里都能通过注意力"看见"冻结区 |
+| **混合发生在哪个阶段** | 模型推理**结束之后**(post-hoc) | 模型推理**进行之中**(每个 denoising timestep 内部) |
+| **对模型的要求** | 模型是黑盒,只要吐出 `(token, gripper)` chunk 即可 | 模型必须原生支持——去噪循环要接受"上一个 chunk 尾部"和几个超参作为同一次生成调用的输入 |
+| **谁能实现** | 客户端(拿到 chunk 之后的任何一方)都能做 | 只有模型/推理服务端能做,客户端伸不进去 |
+| **连续性怎么保证** | 加权平均抹平台阶,或线性插值过渡——数值层面缝合 | 冻结值锁定 + 指数斜坡权重,自由区从生成第一步起就知道前面是什么 |
+| **越界/边界处理** | 官方 `latency_index` 越界夹到最后一帧;`_ensemble()` 自己重写的取整越界直接丢弃——两种语义因用途不同分裂成两条代码路径 | 冻结区恒定不变(`vel_strength=0`);冻结区与自由区之间用指数斜坡渐变,没有硬边界 |
+| **分布内/外风险** | 多个独立结果做算术平均,预测差异大时平均值可能落在分布之外 | 结果全程由模型自己的去噪轨迹产出,理论上始终落在动作流形上 |
+| **训练要不要配合** | 不需要,纯推理期后处理 | 理想情况需要——模型若训练时没见过"被冻结前缀锁住",推理时第一次遇到会打折扣 |
+| **这个项目里的状态** | ✅ 实际在跑(`--client async` 路径) | ⚪️ 模型原生支持,调用链在 `Gr00tPolicy._get_action()` 这层被切断,结构上不可达 |
+
+### 实现代码位置对比
+
+| 机制 | 所属路线 | 文件:行号 | 关键代码 |
+|---|---|---|---|
+| 延迟补偿索引 | 生成后处理 | [vla_round.py:721-729](../src/teleop_free/vla_round.py#L721-L729) | `idx = latency_index(time.time() - chunk_t0, RATE, len(tok))` |
+| ACT 式时序集成 | 生成后处理 | [vla_round.py:143-166](../src/teleop_free/vla_round.py#L143-L166) | `_ensemble()`——`i = round((now - t0) * rate)`,多 chunk 加权平均 |
+| 开局 1 秒线性插值 | 生成后处理 | [vla_round.py:648-656](../src/teleop_free/vla_round.py#L648-L656) | `tk = (1-a) * INIT_TOK + a * tok0[0]` |
+| Worker/主线程异步骨架(承载以上三者) | 生成后处理 | [vla_round.py:596-617](../src/teleop_free/vla_round.py#L596-L617) | `def worker(): ... latest["chunk"] = (tok, grip)` |
+| 单次 chunk 获取(黑盒调用点) | 生成后处理 | [vla_round.py:330-335](../src/teleop_free/vla_round.py#L330-L335) | `PolicyLink.get_chunk()` → ZMQ 请求,拿回一个完整 chunk |
+| 冻结前缀 + 指数斜坡 + 联合去噪 | 生成时引导 | [gr00t_n1d7.py:358-394](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L358-L394) | `Gr00tN1d7ActionHead.get_action_with_features`——`vel_strength[:, :frozen_steps]=0`,指数 `ramp` |
+| 模型层入口(RTC 开关) | 生成时引导 | [gr00t_n1d7.py:446-475](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L446-L475) | `get_action(backbone_output, action_input, options)`——`options` 里的 `rtc_*` 四个 key |
+| 训练侧配套(本地新加,默认关) | 生成时引导(训练侧) | [gr00t_n1d7.py:239-261](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L239-L261) | `RTC_TRAIN_P`/`RTC_TRAIN_KMAX`——随机冻结前缀、不计入 loss |
+| **调用链断点**(RTC 因此走不到) | — | [gr00t_policy.py:380-417](../src/gr00t/policy/gr00t_policy.py#L380-L417) | `_get_action()` 文档写"options currently unused",实际调用 `self.model.get_action(**collated_inputs)` 时压根不传 `options` |
+
+两条路线的分界线正好是**客户端(vla_round.py)vs 模型/服务端(gr00t_n1d7.py)**这个进程边界:
+`serve_policy.py` 把模型包成一个只接受"当前观测"的黑盒端点,`vla_round.py` 因此天生够不到
+生成过程内部,只能在拿到成品之后做数值层面的缝合;而 GR00T 官方模型的去噪循环里其实已经
+预留好了接口,只是从 `Gr00tPolicy` 这一层开始就没人把线接过去。真要接通,`gr00t_policy.py`
+(转发 `options` + 传入上一个 chunk)、`serve_policy.py`(新增接收上一个 chunk + rtc 超参的
+能力)、`vla_round.py`(worker 已经在追踪 `chunk_t0`,可以据此换算 `rtc_frozen_steps`)三处
+都要动。
