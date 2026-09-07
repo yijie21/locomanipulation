@@ -223,6 +223,12 @@ def main() -> None:
     seed = os.environ.get("SCENE_SEED")
     if seed:
         print(f"[scene] dimensions: {scene_lib.apply_scene_seed(int(seed))}")
+    # SCENE_TABLE_TOP pins surface A's height after any seed (bimanual crate
+    # scene: 0.45 so the walking arms clear the table edge, 2026-09-07).
+    top = os.environ.get("SCENE_TABLE_TOP")
+    if top:
+        scene_lib.SURFACE_TARGET_TOP["dining_table"] = float(top)
+        print(f"[scene] table top pinned to {float(top):.3f} m by SCENE_TABLE_TOP")
 
     spec, meta = scene_lib.build(scene_root, freeze_objects=False)
     model = spec.compile()          # fail here rather than at sim start-up

@@ -366,8 +366,8 @@ MESH_TARGETS = {
     "blue_crate": dict(
         # NVIDIA's SM_Crate_A08_Blue_01, a 605 x 405 x 170 mm Euro crate with
         # a handle slot in each end wall; assets/crates/blue_crate/model.xml
-        # carries the box collision and the measured grip bars. Native size:
-        # scaling it would move the handles off a two-handed span for nothing.
+        # carries the box collision and the measured grip bars, shrunk to 2/3
+        # in x and y inside the MJCF (the height stays 0.170).
         mjcf=f"{paths.REPO}/assets/crates/blue_crate/model.xml",
         height=0.170,
         surface="A",
@@ -383,10 +383,12 @@ MESH_TARGETS = {
         # further onto the table costs more lean; centred it is unreachable.
         xy=(0.0, 0.0),
         near_edge=True,
-        footprint=(0.605, 0.405),   # asset-frame x, y, before yaw
+        footprint=(0.403, 0.270),   # asset-frame x, y, before yaw (2/3 of the native
+                                    # 605 x 405 since 2026-09-07: handles 0.39 m apart,
+                                    # rim bars 0.135 m onto the table)
         yaw_deg=90.0,
         phrase="the blue crate",
-        mass=1.5,
+        mass=0.65,                  # 1.44 kg native x (2/3)^2; the MJCF boxes carry it
         # Two hands on two rim bars; the single-jaw barrel check does not
         # apply, and no single-hand grasp plan should be derived for it.
         bimanual=True,
@@ -1067,6 +1069,10 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True):
             c, s = abs(np.cos(np.deg2rad(yaw_deg))), abs(np.sin(np.deg2rad(yaw_deg)))
             half_x = 0.5 * (fx * c + fy * s)
             px = surf["xy"][0] - surf["flat_half_extent"][0] + half_x
+            # CRATE_SETBACK moves the near wall that far in from the edge, so
+            # the walking hands pass over the table edge before they could
+            # reach the wall (bimanual crate scene, 2026-09-07).
+            px += float(os.environ.get("CRATE_SETBACK", "0") or 0)
         # attach() places the asset's ORIGIN, and these are modelled centred,
         # so seat the centre half a height up like the primitives do. The 2 mm
         # is the same clearance the surface objects get: a mesh already

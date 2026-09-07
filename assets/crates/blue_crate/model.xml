@@ -1,4 +1,10 @@
-<!-- Blue 600x400 Euro crate, the bimanual carry target.
+<!-- Blue Euro crate, the bimanual carry target, SHRUNK to 2/3 in x and y
+     (403 x 270 x 170 mm; 2026-09-07): the native 605 x 405 put the two
+     handles 0.58 m apart and the rim bars 0.20 m onto the table, past what
+     the arms deliver without the (undeliverable) waist lean. Numbers below
+     describe the native asset; the geoms carry the scaled values.
+
+     Native: Blue 600x400 Euro crate.
 
      Visual: NVIDIA's SM_Crate_A08_Blue_01 (Isaac Sim 4.5 asset bucket,
      Isaac/Props/PackingTable/props/), 605 x 405 x 170 mm, exported from the
@@ -6,6 +12,11 @@
      original USD sits beside this file so the Isaac render can reference it
      directly instead of round-tripping the MJCF through the importer.
 
+     2026-09-07 (bimanual wall pilots): the four handle-slot POSTS are removed, in
+     the visual mesh (blue_crate_noposts.obj, faces inside the post box cut) and
+     in collision, so each rim bar is a 30 mm wall with an open slot under its
+     whole length: the jaw can take it anywhere along the bar instead of only in
+     the 73 mm slot. Original mesh: visual/blue_crate.obj.
      Collision: the mesh is a hollow, latticed basket, so a convex hull would
      be a solid block -- nothing could go in, no hand could get through the
      handle slots. Eleven boxes instead: floor, two long walls, and each end
@@ -21,7 +32,7 @@
   <asset>
     <texture type="2d" name="crate_albedo" file="visual/albedo.png"/>
     <material name="crate_blue" texture="crate_albedo" specular="0.3" shininess="0.3"/>
-    <mesh name="blue_crate_vis" file="visual/blue_crate.obj"/>
+    <mesh name="blue_crate_vis" file="visual/blue_crate_noposts.obj" scale="0.66667 0.66667 1"/>
   </asset>
   <default>
     <default class="crate_col">
@@ -31,27 +42,23 @@
   </default>
   <worldbody>
     <body name="object">
-      <!-- 1.5 kg empty crate; inertia from the boxes below, not the mesh. -->
+      <!-- 0.64 kg empty crate (1.44 kg native x (2/3)^2 with the footprint); inertia from the boxes below. -->
       <geom type="mesh" mesh="blue_crate_vis" material="crate_blue" pos="0 0 -0.085"
             contype="0" conaffinity="0" group="1" mass="0"/>
       <!-- floor -->
-      <geom class="crate_col" pos="0 0 -0.080" size="0.290 0.190 0.005" mass="0.50"/>
+      <geom class="crate_col" pos="0 0 -0.080" size="0.1933 0.1267 0.005" mass="0.222"/>
       <!-- long walls (+-y) -->
-      <geom class="crate_col" pos="0  0.190 0" size="0.302 0.012 0.085" mass="0.25"/>
+      <geom class="crate_col" pos="0 0.1267 0" size="0.2013 0.008 0.085" mass="0.111"/>
       <!-- long walls (+-y) -->
-      <geom class="crate_col" pos="0 -0.190 0" size="0.302 0.012 0.085" mass="0.25"/>
+      <geom class="crate_col" pos="0 -0.1267 0" size="0.2013 0.008 0.085" mass="0.111"/>
       <!-- end walls (+-x): below the slot, rim bar above it, posts beside it -->
-      <geom class="crate_col" pos=" 0.290 0 -0.0325" size="0.012 0.202 0.0525" mass="0.14"/>
-      <geom class="crate_col" pos="-0.290 0 -0.0325" size="0.012 0.202 0.0525" mass="0.14"/>
-      <geom name="handle_px" class="crate_col" pos=" 0.290 0 0.070" size="0.012 0.202 0.015" mass="0.04"/>
-      <geom name="handle_nx" class="crate_col" pos="-0.290 0 0.070" size="0.012 0.202 0.015" mass="0.04"/>
-      <geom class="crate_col" pos=" 0.290  0.1285 0.0375" size="0.012 0.0735 0.0175" mass="0.02"/>
-      <geom class="crate_col" pos=" 0.290 -0.1285 0.0375" size="0.012 0.0735 0.0175" mass="0.02"/>
-      <geom class="crate_col" pos="-0.290  0.1285 0.0375" size="0.012 0.0735 0.0175" mass="0.02"/>
-      <geom class="crate_col" pos="-0.290 -0.1285 0.0375" size="0.012 0.0735 0.0175" mass="0.02"/>
+      <geom class="crate_col" pos="0.1933 0 -0.0325" size="0.008 0.1347 0.0525" mass="0.062"/>
+      <geom class="crate_col" pos="-0.1933 0 -0.0325" size="0.008 0.1347 0.0525" mass="0.062"/>
+      <geom name="handle_px" class="crate_col" pos="0.1933 0 0.070" size="0.008 0.1347 0.015" mass="0.018"/>
+      <geom name="handle_nx" class="crate_col" pos="-0.1933 0 0.070" size="0.008 0.1347 0.015" mass="0.018"/>
       <!-- grip sites: centre of each rim bar, where a jaw should close -->
-      <site name="grip_px" pos=" 0.290 0 0.070" size="0.005" rgba="1 0 0 0"/>
-      <site name="grip_nx" pos="-0.290 0 0.070" size="0.005" rgba="1 0 0 0"/>
+      <site name="grip_px" pos="0.1933 0 0.070" size="0.005" rgba="1 0 0 0"/>
+      <site name="grip_nx" pos="-0.1933 0 0.070" size="0.005" rgba="1 0 0 0"/>
     </body>
   </worldbody>
 </mujoco>
