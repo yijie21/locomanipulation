@@ -75,25 +75,19 @@ try:
 
     stage = omni.usd.get_context().get_stage()
 
-    # KNOWN ISSUE, unfixed: a body with several visual meshes is imported as
-    # ONE prim carrying several references, and every prototype names its
-    # geometry `mesh`. The composed children collide by name, so only the
-    # strongest reference survives. On this robot that costs the wrist cylinder
-    # (`right_wrist_yaw_link` keeps `Dex1_base_link` and loses its own mesh),
-    # which is why the arm renders with a gap before the gripper. Affected
-    # bodies: pelvis, torso_link, left/right_wrist_yaw_link.
-    #
-    # Three fixes were tried and all rejected, so do not repeat them:
-    #   * move every reference onto its own child -> displaces the robot
-    #     (robot-only silhouette IoU 0.49-0.62 vs the unsplit build, centroid
-    #     23-31 px out);
-    #   * keep reference[0] and re-home only the extras -> same displacement,
-    #     so ClearReferences itself is what moves things, not the child depth;
-    #   * Sdf.BatchNamespaceEdit to rename the prototypes' `mesh` children ->
-    #     Apply() returns False and the children keep their names, a no-op.
-    # The next thing to try is avoiding the merge upstream: give each visual
-    # geom of a multi-mesh body its own massless child body in the MJCF, so the
-    # importer never composes two prototypes onto one prim.
+    # The importer composes a body's several visual meshes onto ONE prim as a
+    # reference list, and every prototype names its geometry `mesh`, so the
+    # composed prim keeps exactly one of them (pelvis shell, wrist cylinders,
+    # three of the four torso meshes: gone). This script leaves that as
+    # imported; scripts/build_isaac_assets.sh runs split_visual_refs.py on the
+    # exported layer afterwards, which gives each reference its own child
+    # prim. Doing it on the text of the layer is deliberate: the same edit
+    # through a live stage (ClearReferences + re-home) was what displaced the
+    # robot on 2026-09-06 -- with the articulation root still taken from the
+    # wrong prim at the time -- and the Sdf.BatchNamespaceEdit rename never
+    # applied. The layer edit moves nothing: link transforms identical to the
+    # unsplit build to the printed digit, pixel diff confined to the meshes
+    # that appeared.
 
     n_prims = 0
     for prim in stage.Traverse():

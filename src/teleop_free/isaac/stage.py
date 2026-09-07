@@ -49,6 +49,16 @@ class StageCfg:
     # local offset against the parent's pre-step (stale) transform and the view
     # ends up ~1 m off the head.
     absolute_camera: bool = False
+    # Visual prims (under /visuals) to hide before rendering. The head camera
+    # sits INSIDE head_link -- 1.5 cm behind its front face, inside its bbox
+    # on every axis -- so the only thing that mesh can contribute to the ego
+    # image is its own interior. MuJoCo never shows it because its renderer
+    # culls back faces; RTX does not cull (the /rtx/hydra/faceCulling flag is
+    # ignored, tried before and after stage load), and from inside a closed
+    # mesh every face is a back face, so hiding the mesh is exactly MuJoCo's
+    # result. Left visible it covered the lower right quarter of the frame as
+    # a grey dome (2026-09-07, once the reference split let it compose at all).
+    hidden_visuals: tuple = ("torso_link/head_link_visual",)
 
 
 def start_app(cfg: StageCfg, headless: bool = True):
@@ -210,20 +220,15 @@ def assemble_stage(cfg: StageCfg, log=print):
             mats[key] = mt
         return mats[key]
 
-    # Bind on the referenced PROTOTYPES first. The importer composes several
-    # meshes onto one link prim with one binding, so a link carrying both the
-    # wrist and the 0.25-grey dex1 housing can only have one colour there. The
-    # prototypes under /meshes are distinct prims, and a binding on them
-    # inherits through the reference -- per-mesh colour with no structural
-    # change. Splitting the references into children also works visually and
-    # MOVES THE GEOMETRY (silhouette IoU 0.49 against the unsplit robot), so it
-    # must not be done.
-    # The importer writes a direct `material:binding` on each link prim. That
-    # is a LOCAL opinion and beats anything inherited through a reference, so a
-    # link that composes two meshes forces both to one colour and the prototype
-    # bindings below never show. Clearing it on the multi-reference links is
-    # what lets the dex1 housing keep its own 0.25 grey while the wrist stays
-    # 0.7 -- without splitting the references, which moves geometry.
+    # Bind on the referenced PROTOTYPES first. A link with several visual
+    # meshes is one prim under /visuals with one child per mesh (the build's
+    # split_visual_refs step), each child referencing its /meshes prototype;
+    # a binding on the prototype inherits through the reference, so each mesh
+    # keeps its own colour -- the wrist 0.7, the dex1 housing 0.25.
+    # The importer writes a direct `material:binding` on the link prim itself.
+    # That is a LOCAL opinion and beats anything inherited through a reference,
+    # so it has to be cleared on the multi-mesh links or every child would show
+    # the link's single (unresolvable /Tmp/Looks) binding.
     multi = _mjcf_multi_mesh_bodies(cfg.robot_mjcf or paths.SCENE_XML)
     merged, n_unbound = set(), 0
     for prim in stage.Traverse():
@@ -289,6 +294,17 @@ def assemble_stage(cfg: StageCfg, log=print):
         UsdGeom.Xformable(sun.GetPrim()).AddRotateXYZOp().Set(
             Gf.Vec3f(-40.0, 20.0, 0.0))
         log("added dome + distant lights")
+
+    # Meshes the ego camera must not see; see StageCfg.hidden_visuals.
+    for rel in cfg.hidden_visuals:
+        prim = stage.GetPrimAtPath(f"/visuals/{rel}")
+        if not prim.IsValid():
+            raise SystemExit(
+                f"hidden_visuals: /visuals/{rel} does not exist -- the robot "
+                f"USD predates the reference split? rebuild it: "
+                f"bash scripts/build_isaac_assets.sh --robot-only --force")
+        UsdGeom.Imageable(prim).MakeInvisible()
+        log(f"hid /visuals/{rel}")
 
     configure_renderer(log)
 

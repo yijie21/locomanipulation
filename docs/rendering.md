@@ -184,20 +184,35 @@ SIMPLE 不会遇到:它把相机挂在机器人下面,位姿和关节体在同�
 0.00 mm,因为子链接就在关节原点上,要看下游;`get_link_transforms` 返回的四元数是
 **xyzw**,按 wxyz 读会让位置精确的链接报出 180° 的假误差。
 
-## 未解决:多可视网格的 body 会丢掉一个网格
+## 已解决:多可视网格的 body 丢网格,和手腕"断开"的两个原因
 
-带多个可视网格的 body 被 importer 合成到**一个 prim、多个 reference** 上,而每个原型
-内部的几何都叫 `mesh`,同名子节点相撞,只有最强的那个 reference 存活。受影响的四个
-body 是 `pelvis`、`torso_link`、左右 `wrist_yaw_link`。手腕保留了 `Dex1_base_link`
-的托板、丢掉了自己的圆柱,画面上表现为前臂和钳口之间空一段。
+用户看到的症状是一个:Isaac 里前臂和钳口之间空一段。原因是两个,互相掩盖。
 
-这不影响位姿正确性,只影响外观完整性。**四种改法都试过,都不成立**,不要重复:
+**1. importer 的合成丢网格。** 每个 mesh 资产各自导成 `/meshes/<asset>` 原型(一个带
+geom pos/quat 的 Xform,里面一个叫 `mesh` 的几何);带多个可视 geom 的 body 被写成
+**一个** `/visuals/<body>` prim 上的 reference **列表**。USD 合成时同名子节点合并,每个原型的
+几何都叫 `mesh`,所以合成结果里只剩一个 `mesh`,其余原型的几何**不是被遮住、不是放错,
+是不存在**。受影响的四个 body:`pelvis`(丢轮廓壳)、`torso_link`(四个网格丢三个:logo、
+head、waist_support)、左右 `wrist_yaw_link`(丢自己的圆柱,只剩 Dex1 托板)。
 
-| 改法 | 结果 |
-|---|---|
-| 每个 reference 移到各自子节点 | 机器人整体位移,剪影 IoU 0.49-0.62,质心偏 23-31 px |
-| 保留 reference[0],只移多余的 | 同样位移,说明是 `ClearReferences` 本身改变合成 |
-| `Sdf.BatchNamespaceEdit` 给原型内的 `mesh` 改名 | `Apply()` 返回 False,完全没生效 |
-| 上游改 MJCF,多余 geom 拆进无质量子 body | 变体本身正确(41 body、同样 34 关节 77 geom、运动学 0.0000 mm),但 Isaac 4.5 的 MJCF importer 直接 SIGABRT,带不带 inertial 都崩 |
+修法是 `teleop_free/isaac/split_visual_refs.py`:在导出的 `.usda` **文本**上把 reference
+列表改成每个 reference 一个子 prim(`<asset>_visual`),原型、变换、其余 prim 一字不动;
+`scripts/build_isaac_assets.sh` 在 convert 之后自动跑,缓存 key 同时含 MJCF 和这个脚本的
+hash。验证(2026-09-07,ep05 第 1050/1100 帧):合成后手腕 1→2、躯干 1→4、骨盆 1→2 个
+Mesh prim;34 个链接的 PhysX 位姿与未拆分构建**逐位相同**;像素差只在新出现的网格上。
 
-预处理器留在 `teleop_free/isaac/mjcf_split.py`,没有接进构建,换新版 Isaac 后值得重试。
+之前记的"拆 reference 会让机器人整体位移(IoU 0.49)"是当时 articulation root 还取错
+prim(见上一节)时的现象,不是拆分本身的问题;那时三种试法都是在**活 stage** 上改
+(`ClearReferences` / `BatchNamespaceEdit`),后者根本没生效。在 layer 文本上改绕开了
+这两条。`mjcf_split.py`(上游改 MJCF)仍留着没接,Isaac 4.5 的 importer 对它 SIGABRT。
+
+**2. 头部网格从内部被看见。** 拆分之后 `head_link` 终于合成出来,结果画面右下角出现一个
+大灰色圆顶。`head_camera` 在 torso 系的位置是 (0.06, 0, 0.45),而 head_link 的包围盒是
+x∈[-0.064, 0.075]、z∈[0.269, 0.476]:**相机在头的网格内部**,离前表面 1.5 cm。MuJoCo 看不到
+它只是因为 MuJoCo 剔除背面(把 `mjRND_CULL_FACE` 关掉,MuJoCo 里同一个圆顶盖住大半画面);
+RTX 不剔除背面(`/rtx/hydra/faceCulling/enabled` 在 stage 加载前后设都无效),而从封闭网格
+内部看到的每个面都是背面,所以**隐藏这个网格就等于 MuJoCo 的剔除结果**。
+`StageCfg.hidden_visuals` 默认隐藏 `torso_link/head_link_visual`,prim 不存在时直接报错
+(意味着机器人 USD 是拆分前的旧构建)。
+
+最终对照在 `outputs/renders_isaac/ep05/wrist_fix_vs_mujoco.png`:MuJoCo | 修前 | 修后。

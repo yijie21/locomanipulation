@@ -48,7 +48,10 @@ secs() { date +%s; }
 ROBOT_DIR="$ISAAC_ASSETS/robot"
 ROBOT_USD="$ROBOT_DIR/g1_dex1.usda"
 [ -f "$ROBOT_MJCF" ] || fail "robot MJCF not found: $ROBOT_MJCF"
-want=$(sha "$ROBOT_MJCF")
+# The key covers the post-processor too: a change to split_visual_refs.py
+# changes the artifact without touching the MJCF.
+SPLITTER="$LOCOMANI_ROOT/src/teleop_free/isaac/split_visual_refs.py"
+want="$(sha "$ROBOT_MJCF")-$(sha "$SPLITTER")"
 if [ "$FORCE" = 0 ] && [ -f "$ROBOT_USD" ] && [ "$(cat "$ROBOT_DIR/.stamp" 2>/dev/null)" = "$want" ]; then
     echo "robot  = cached  $ROBOT_USD  (mjcf $want)"
 else
@@ -73,6 +76,14 @@ else
     [ -s "$ROBOT_USD" ] || fail "robot import produced no USD; see $ROBOT_DIR/convert.log"
     grep -q "^FAILED" "$ROBOT_DIR/convert.log" 2>/dev/null && \
         fail "robot import logged a failure; see $ROBOT_DIR/convert.log"
+    # The importer composes every visual mesh of a multi-mesh body onto ONE
+    # prim, and USD keeps only one of the same-named `mesh` children -- the
+    # wrist cylinders, the pelvis shell and three torso meshes were simply
+    # absent. Rewrite the layer so each mesh has its own child prim. Plain
+    # python on the .usda text; no Kit, no pxr.
+    python3 "$SPLITTER" "$ROBOT_USD" "$ROBOT_USD" | tee -a "$ROBOT_DIR/convert.log" \
+        | grep -E '^split [0-9]+ multi' \
+        || fail "split_visual_refs failed; see $ROBOT_DIR/convert.log"
     echo "$want" > "$ROBOT_DIR/.stamp"
     echo "robot  + done in $(( $(secs) - t0 ))s  $(du -h "$ROBOT_USD" | cut -f1)"
 fi
