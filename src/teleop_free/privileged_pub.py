@@ -303,7 +303,7 @@ class PrivilegedPublisher:
                 "cmd_dq": [float(mc[i].dq) for i in range(n)],
                 "cmd_tau": [float(mc[i].tau) for i in range(n)]}
 
-    def publish(self) -> None:
+    def publish(self) -> int:
         # Monotonic per-process sequence number: the ONE shared key between
         # this stream and everything that samples it. The exporter CONFLATEs
         # this stream and records nothing about which message it used, which
@@ -315,6 +315,7 @@ class PrivilegedPublisher:
         d["seq"] = self._seq
         self._seq += 1
         self.sock.send_string(json.dumps(d))
+        return d["seq"]
 
     def close(self) -> None:
         self.sock.close()
@@ -335,7 +336,7 @@ class EpisodeControlServer:
     """
 
     def __init__(self, model, data, meta: dict, default_dof_angles=None,
-                 port: int = EPISODE_PORT, recorder=None):
+                 port: int = EPISODE_PORT, recorder=None, trace=None):
         import mujoco
 
         # The ghost hand is a mocap body: no joints, no collision, teleported
@@ -381,6 +382,7 @@ class EpisodeControlServer:
         # A reset is also the natural episode boundary for video: one file per
         # episode, started by whoever asked for the reset, named by its label.
         self.recorder = recorder
+        self.trace = trace
         self.qpos0 = model.qpos0.copy()
         self.root_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
         print(f"[episode] :{port} can reset {sorted(self.obj_qadr)}")
@@ -477,6 +479,19 @@ class EpisodeControlServer:
         self.data.qvel[:] = 0.0
         mujoco.mj_forward(self.model, self.data)
 
+    def _align_robot_xy(self, xy) -> None:
+        """One-time diagnostic placement; preserve settled posture/momentum.
+
+        This is not a task controller or an exact full-system snapshot.
+        Only use before policy observation; no repeated pinning in rollout.
+        """
+        xy = np.asarray(xy, dtype=float)
+        if xy.shape != (2,) or not np.isfinite(xy).all():
+            raise ValueError('align_robot_xy requires two finite coordinates')
+        self.data.qpos[:2] = xy
+        self.data.qacc_warmstart[:] = 0.
+        self._mj.mj_forward(self.model, self.data)
+
     def poll(self) -> None:
         """Non-blocking; call once per sim step."""
         if OBJ_PIN:
@@ -491,6 +506,11 @@ class EpisodeControlServer:
                 self._apply(req)
                 self._place_ghost(None, None)      # a new episode has no plan yet
                 print(f"[episode] reset applied: {req.get('label', '')}")
+            elif req.get("cmd") == "align_robot_xy":
+                try:
+                    self._align_robot_xy(req.get('xy'))
+                except (TypeError, ValueError) as exc:
+                    print(f'[episode] invalid initial alignment: {exc}')
             elif req.get("cmd") == "startvideo":
                 # Deliberately *not* on reset. The agent stands still for
                 # STAND_SETTLE seconds after every reset while the controller
@@ -501,6 +521,10 @@ class EpisodeControlServer:
                 # one is already the task.
                 if self.recorder is not None:
                     self.recorder.start(req.get("video") or "episode")
+                # Same boundary as the video: one trace per episode, or the
+                # trace and the frames it explains would not be the same span.
+                if self.trace is not None:
+                    self.trace.start(req.get("video") or "episode")
             elif req.get("cmd") == "ghost":
                 # Park the ghost when no pose is given, so a stale plan from
                 # the last episode is never left hanging in the shot.
@@ -535,6 +559,10 @@ class EpisodeControlServer:
                 # and precisely the episode most worth watching.
                 if self.recorder is not None:
                     self.recorder.stop()
+                if self.trace is not None:
+                    p = self.trace.stop()
+                    if p:
+                        print(f"[trace] wrote {p}")
 
     def _apply_obj_pin(self) -> None:
         """Hold every pinned object at its commanded pose, velocity zero."""
@@ -582,6 +610,13 @@ class EpisodeControlClient:
         self.sock.send_string(json.dumps(
             {"cmd": "reset", "objects": objects or {}, "robot": robot or {},
              "label": label, "appearance": appearance}))
+
+    def align_robot_xy(self, xy) -> None:
+        """Simulation diagnostic only: place settled robot before rollout."""
+        xy = np.asarray(xy, dtype=float)
+        if xy.shape != (2,) or not np.isfinite(xy).all():
+            raise ValueError('align_robot_xy requires two finite coordinates')
+        self.sock.send_string(json.dumps({'cmd': 'align_robot_xy', 'xy': xy.tolist()}))
 
     def pin_arms(self, left=None, right=None, waist=None) -> None:
         """Pin (or with None release) the sim-side arm position loops."""
@@ -654,6 +689,87 @@ class PrivilegedSubscriber:
     def close(self) -> None:
         self.sock.close()
         self.ctx.term()
+
+
+class StateTrace:
+    """Per-episode qpos/qvel trace, written from inside the sim process.
+
+    This is SIMPLE's replay/render contract (docs/source/sonic-wbc/
+    replay_render.md): phase 1 saves the MuJoCo state trace, phase 2 pushes
+    each state back in and renders. It exists because RECONSTRUCTING the state
+    afterwards does not work. The reconstruction we tried joined joints from
+    the exporter's parquet (deploy proprioception, resampled to 25 fps) with
+    the pelvis and object poses from the pose sidecar (MuJoCo truth, published
+    on its own cadence). Two provenances, two time bases: the result is not any
+    real instant. Proof, 2026-09-06: re-rendering that reconstruction with
+    MuJoCo itself -- same model, same camera, no Isaac involved -- does not
+    reproduce the recorded video. The robot is roughly right and the world is
+    displaced, which is exactly what a wrong base pose looks like through a
+    camera bolted to the robot.
+
+    One row per control frame:
+
+        seq  [N]        the publisher's sequence number for that frame
+        qpos [N, nq]    the complete MuJoCo configuration
+        qvel [N, nv]
+
+    `seq` is what makes a dataset row selectable: the exporter records which
+    privileged message each parquet row used (priv_seq), so parquet row i maps
+    to the trace row with that seq, exactly, with nothing to interpolate.
+
+    Fail-safe like PoseSidecar: a broken trace costs a warning, never an
+    episode.
+    """
+
+    def __init__(self, out_dir: str):
+        import os as _os
+        self.dir = out_dir
+        self._rows: list = []
+        self._label = None
+        self._alive = True
+        try:
+            _os.makedirs(out_dir, exist_ok=True)
+        except Exception as e:                                 # noqa: BLE001
+            print(f"[trace] disabled: {e}")
+            self._alive = False
+
+    def start(self, label: str) -> None:
+        if not self._alive:
+            return
+        # Match VideoRecorder.start: a reset retry may start a new video
+        # without an explicit stop. Preserve the failed attempt's trace.
+        self.stop()
+        self._rows = []
+        self._label = str(label)
+
+    def frame(self, data, seq: int) -> None:
+        if not self._alive or self._label is None:
+            return
+        try:
+            self._rows.append((int(seq), data.qpos.copy(), data.qvel.copy()))
+        except Exception as e:                                 # noqa: BLE001
+            print(f"[trace] frame dropped: {e}")
+
+    def stop(self) -> str | None:
+        if not self._alive or self._label is None:
+            return None
+        import os as _os
+        rows, label = self._rows, self._label
+        self._rows, self._label = [], None
+        if not rows:
+            return None
+        try:
+            import numpy as _np
+            path = _os.path.join(self.dir, f"{label}_state_trace.npz")
+            _np.savez_compressed(
+                path,
+                seq=_np.asarray([r[0] for r in rows], dtype=_np.int64),
+                qpos=_np.stack([r[1] for r in rows]),
+                qvel=_np.stack([r[2] for r in rows]))
+            return path
+        except Exception as e:                                 # noqa: BLE001
+            print(f"[trace] save failed: {e}")
+            return None
 
 
 class PoseSidecar:

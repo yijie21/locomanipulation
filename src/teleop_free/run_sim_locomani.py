@@ -45,8 +45,9 @@ import sim_vis
 # Set SIM_VIDEO_DIR to record a tracking-camera mp4 per episode. Off by default
 # because rendering costs sim time.
 VIDEO_DIR = os.environ.get("SIM_VIDEO_DIR")
+STATE_TRACE_DIR = os.environ.get("SIM_STATE_TRACE_DIR", "")
 
-SCENE_DIR = f"{paths.REPO}/outputs/scene/sim"
+SCENE_DIR = paths.SIM_DIR
 
 
 def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
@@ -67,9 +68,17 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
                 from sim_video import VideoRecorder
                 recorder = VideoRecorder(self.mj_model, VIDEO_DIR)
                 self._recorder = recorder
+            # SIM_STATE_TRACE_DIR: write SIMPLE's qpos/qvel trace per episode,
+            # which is what an offline Isaac re-render replays. Off by default,
+            # so nothing changes for a run that does not ask for it.
+            trace = None
+            if STATE_TRACE_DIR:
+                from privileged_pub import StateTrace
+                trace = StateTrace(STATE_TRACE_DIR)
+                self._state_trace = trace
             self._episode_ctl = EpisodeControlServer(
                 self.mj_model, self.mj_data, meta, default_dof_angles,
-                recorder=recorder)
+                recorder=recorder, trace=trace)
             self._live_overlay = None
             if self.viewer is not None and (sim_vis.enabled("bbox")
                                             or sim_vis.enabled("readout")):
@@ -80,7 +89,12 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             self._recorder.frame(self.mj_data)
         if getattr(self, "_live_overlay", None) is not None:
             self._live_overlay.update(self.viewer, self.mj_data)
-        pub.publish()
+        seq = pub.publish()
+        # After publish, with the seq it actually used: that integer is the only
+        # key the exporter records (priv_seq), so it is what lets a parquet row
+        # select its exact state later.
+        if getattr(self, "_state_trace", None) is not None:
+            self._state_trace.frame(self.mj_data, seq)
 
     DefaultEnv.update_reward = update_reward
 
@@ -234,7 +248,7 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
 
 def main(config: SimLoopConfig) -> None:
     meta = json.load(open(f"{SCENE_DIR}/scene_meta.json"))
-    scene_xml = meta["scene_xml"]
+    scene_xml = paths.SCENE_XML if os.environ.get("LOCOMANI_SIM_DIR") else meta["scene_xml"]
     if not os.path.isabs(scene_xml):
         scene_xml = os.path.abspath(scene_xml)
     if not os.path.exists(scene_xml):
