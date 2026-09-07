@@ -193,19 +193,24 @@ p=0.012,见 [evaluation.md](evaluation.md) 终表一节),所以没有转正当�
 | **训练要不要配合** | 不需要,纯推理期后处理 | 理想情况需要——模型若训练时没见过"被冻结前缀锁住",推理时第一次遇到会打折扣 |
 | **这个项目里的状态** | ✅ 实际在跑(`--client async` 路径) | ⚪️ 模型原生支持,调用链在 `Gr00tPolicy._get_action()` 这层被切断,结构上不可达 |
 
-### 实现代码位置对比
+### 实现代码位置对比:生成后处理路线(`vla_round.py`,客户端)
 
-| 机制 | 所属路线 | 文件:行号 | 关键代码 |
-|---|---|---|---|
-| 延迟补偿索引 | 生成后处理 | [vla_round.py:721-729](../src/teleop_free/vla_round.py#L721-L729) | `idx = latency_index(time.time() - chunk_t0, RATE, len(tok))` |
-| ACT 式时序集成 | 生成后处理 | [vla_round.py:143-166](../src/teleop_free/vla_round.py#L143-L166) | `_ensemble()`——`i = round((now - t0) * rate)`,多 chunk 加权平均 |
-| 开局 1 秒线性插值 | 生成后处理 | [vla_round.py:648-656](../src/teleop_free/vla_round.py#L648-L656) | `tk = (1-a) * INIT_TOK + a * tok0[0]` |
-| Worker/主线程异步骨架(承载以上三者) | 生成后处理 | [vla_round.py:596-617](../src/teleop_free/vla_round.py#L596-L617) | `def worker(): ... latest["chunk"] = (tok, grip)` |
-| 单次 chunk 获取(黑盒调用点) | 生成后处理 | [vla_round.py:330-335](../src/teleop_free/vla_round.py#L330-L335) | `PolicyLink.get_chunk()` → ZMQ 请求,拿回一个完整 chunk |
-| 冻结前缀 + 指数斜坡 + 联合去噪 | 生成时引导 | [gr00t_n1d7.py:358-394](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L358-L394) | `Gr00tN1d7ActionHead.get_action_with_features`——`vel_strength[:, :frozen_steps]=0`,指数 `ramp` |
-| 模型层入口(RTC 开关) | 生成时引导 | [gr00t_n1d7.py:446-475](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L446-L475) | `get_action(backbone_output, action_input, options)`——`options` 里的 `rtc_*` 四个 key |
-| 训练侧配套(本地新加,默认关) | 生成时引导(训练侧) | [gr00t_n1d7.py:239-261](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L239-L261) | `RTC_TRAIN_P`/`RTC_TRAIN_KMAX`——随机冻结前缀、不计入 loss |
-| **调用链断点**(RTC 因此走不到) | — | [gr00t_policy.py:380-417](../src/gr00t/policy/gr00t_policy.py#L380-L417) | `_get_action()` 文档写"options currently unused",实际调用 `self.model.get_action(**collated_inputs)` 时压根不传 `options` |
+| 机制 | 文件:行号 | 关键代码 |
+|---|---|---|
+| 延迟补偿索引 | [vla_round.py:721-729](../src/teleop_free/vla_round.py#L721-L729) | `idx = latency_index(time.time() - chunk_t0, RATE, len(tok))` |
+| ACT 式时序集成 | [vla_round.py:143-166](../src/teleop_free/vla_round.py#L143-L166) | `_ensemble()`——`i = round((now - t0) * rate)`,多 chunk 加权平均 |
+| 开局 1 秒线性插值 | [vla_round.py:648-656](../src/teleop_free/vla_round.py#L648-L656) | `tk = (1-a) * INIT_TOK + a * tok0[0]` |
+| Worker/主线程异步骨架(承载以上三者) | [vla_round.py:596-617](../src/teleop_free/vla_round.py#L596-L617) | `def worker(): ... latest["chunk"] = (tok, grip)` |
+| 单次 chunk 获取(黑盒调用点) | [vla_round.py:330-335](../src/teleop_free/vla_round.py#L330-L335) | `PolicyLink.get_chunk()` → ZMQ 请求,拿回一个完整 chunk |
+
+### 实现代码位置对比:生成时引导路线(`gr00t_n1d7.py`,模型/服务端)
+
+| 机制 | 文件:行号 | 关键代码 |
+|---|---|---|
+| 冻结前缀 + 指数斜坡 + 联合去噪 | [gr00t_n1d7.py:358-394](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L358-L394) | `Gr00tN1d7ActionHead.get_action_with_features`——`vel_strength[:, :frozen_steps]=0`,指数 `ramp` |
+| 模型层入口(RTC 开关) | [gr00t_n1d7.py:446-475](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L446-L475) | `get_action(backbone_output, action_input, options)`——`options` 里的 `rtc_*` 四个 key |
+| 训练侧配套(本地新加,默认关) | [gr00t_n1d7.py:239-261](../src/gr00t/model/gr00t_n1d7/gr00t_n1d7.py#L239-L261) | `RTC_TRAIN_P`/`RTC_TRAIN_KMAX`——随机冻结前缀、不计入 loss |
+| **调用链断点**(RTC 因此走不到) | [gr00t_policy.py:380-417](../src/gr00t/policy/gr00t_policy.py#L380-L417) | `_get_action()` 文档写"options currently unused",实际调用 `self.model.get_action(**collated_inputs)` 时压根不传 `options` |
 
 两条路线的分界线正好是**客户端(vla_round.py)vs 模型/服务端(gr00t_n1d7.py)**这个进程边界:
 `serve_policy.py` 把模型包成一个只接受"当前观测"的黑盒端点,`vla_round.py` 因此天生够不到
