@@ -18,7 +18,7 @@ import numpy as np
 from g1_joints import ARM_MJ, MUJOCO_JOINT_NAMES
 import paths
 
-SCENE_XML = f"{paths.REPO}/outputs/scene/sim/scene_locomani.xml"
+SCENE_XML = paths.SCENE_XML
 PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
 
 
@@ -103,7 +103,8 @@ class ArmIK:
     def solve(self, side: str, target_pos, target_rot=None,
               q_mj29=None, iters: int = 120, damping: float = 5e-3,
               rot_weight: float = 0.5, use_waist: bool = False,
-              waist_cost: float = 10.0):
+              waist_cost: float = 10.0, point_offset=None,
+              posture=None, posture_weight: float = 0.0):
         """Joints putting the palm at `target_pos` (pelvis frame).
 
         Returns (q_mj29_solved, pos_err_m, rot_err_rad) — the FULL joint
@@ -112,13 +113,30 @@ class ArmIK:
         band; table grasps need the torso lean, so `use_waist` adds the three
         waist joints with `waist_cost`-times the damping — the solver leans
         only as much as the target requires.
+
+        `posture` (a 29-vector) with `posture_weight` > 0 adds a soft pull
+        of the solved joints toward that configuration -- a nullspace prior.
+        Without it the damped least squares picks whatever branch the warm
+        start drifts into: tracking a Cartesian reach path from a hanging
+        arm to the crate hover landed the wrist 90-110 deg twisted, and
+        solving chest-height targets from zero put the hand behind the back
+        (bimanual crate pilots, 2026-09-07). Off by default; no caller
+        changes behaviour unless it passes a posture.
+        `point_offset` optionally selects a tool point in the palm frame.
+        Both the position residual and Jacobian then refer to that point,
+        so an allowed orientation residual cannot move a long tool lever
+        away from its position target. The default remains the palm origin.
         """
+        offset = None if point_offset is None else np.asarray(point_offset, dtype=float)
+        if offset is not None and (offset.shape != (3,) or not np.isfinite(offset).all()):
+            raise ValueError('point_offset must be a finite palm-frame 3-vector')
         # LAST_IK: the COMMANDED wrist pose (pelvis frame) that produced the
         # joint targets we stream. Recorded by PoseSidecar so an 18-D action
         # (wrist SE(3) + grip per arm + base command) can be exported offline
         # from a collection run. Read-only bookkeeping, no control effect.
         try:
-            LAST_IK[side] = (list(map(float, np.asarray(target_pos).ravel()[:3])),
+            if offset is None:
+                LAST_IK[side] = (list(map(float, np.asarray(target_pos).ravel()[:3])),
                              (None if target_rot is None else
                               _mat2quat(np.asarray(target_rot, dtype=float))))
         except Exception:
@@ -145,6 +163,8 @@ class ArmIK:
 
             pos = self.data.xpos[b]
             rot = self.data.xmat[b].reshape(3, 3)
+            if offset is not None:
+                pos = pos + rot @ offset
             e_pos = target_pos - pos
             if target_rot is not None:
                 # axis-angle of R_t @ R^T, the world-frame rotation still needed
@@ -162,9 +182,16 @@ class ArmIK:
             if np.linalg.norm(e_pos) < 5e-4 and np.linalg.norm(e_rot) < 1e-3:
                 break
 
-            mj.mj_jacBody(self.model, self.data, jacp, jacr, b)
+            if offset is None:
+                mj.mj_jacBody(self.model, self.data, jacp, jacr, b)
+            else:
+                mj.mj_jac(self.model, self.data, jacp, jacr, pos, b)
             J = np.vstack([jacp[:, cols], rot_weight * jacr[:, cols]])
             e = np.concatenate([e_pos, rot_weight * e_rot])
+            if posture is not None and posture_weight > 0.0:
+                # extra rows: posture_weight * (q_ref - q) for every solved joint
+                J = np.vstack([J, posture_weight * np.eye(len(arm))])
+                e = np.concatenate([e, posture_weight * (np.asarray(posture, dtype=float)[arm] - q[arm])])
             dq = np.linalg.solve(J.T @ J + np.diag(d_diag), J.T @ e)
             step = np.linalg.norm(dq)
             if step > 0.5:
@@ -172,6 +199,11 @@ class ArmIK:
             q[arm] = np.clip(q[arm] + dq, self.lo[arm], self.hi[arm])
 
         pos, rot = self.fk(q, side)
+        if offset is not None:
+            # Preserve the existing sidecar's wrist-pose meaning. A tool
+            # center must never be exported under a wrist-position key.
+            LAST_IK[side] = (pos.tolist(), _mat2quat(rot))
+            pos = pos + rot @ offset
         pos_err = float(np.linalg.norm(pos - target_pos))
         if target_rot is not None:
             dR = np.asarray(target_rot) @ rot.T
