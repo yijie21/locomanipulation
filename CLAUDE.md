@@ -17,3 +17,7 @@ GitHub Issues(`gh` CLI,仓库 yijie21/locomanipulation)。See `docs/agents/issue
 ### Domain docs
 
 单上下文布局:根目录 `CONTEXT.md` + `docs/adr/`(按需惰性创建)。See `docs/agents/domain.md`.
+
+### Session workflow
+
+每个 session 从 `docs/STATE.md` 开始,结束前更新它,然后 `/clear`。See `docs/agents/session-workflow.md`.

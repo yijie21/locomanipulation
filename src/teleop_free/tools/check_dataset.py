@@ -296,9 +296,26 @@ def pass_grasp(root, info, eps, r):
     rises, dists = [], []
     for e in eps:
         p, _ = ep_paths(root, info, e["episode_index"])
-        t = pq.read_table(p, columns=[pose_col, "observation.eef_state",
-                                      "teleop.right_hand_joints"])
+        cols = [pose_col, "observation.eef_state", "teleop.right_hand_joints"]
+        root_cols = ["observation.root_position", "observation.root_orientation"]
+        schema = pq.read_schema(p).names
+        has_root = all(c in schema for c in root_cols)
+        t = pq.read_table(p, columns=cols + (root_cols if has_root else []))
         can = np.stack(t[pose_col].to_pylist())[:, :3]
+        if has_root:
+            # The pose column is in the PELVIS frame (same convention as the
+            # SONIC exporter). The lift happens while the pelvis itself rises,
+            # lowers and pitches (squat, carry), so a pelvis-frame z delta
+            # under-reads the lift by several cm. Rebuild the world z from the
+            # recorded root pose before judging the rise.
+            rp = np.stack(t["observation.root_position"].to_pylist())
+            rq = np.stack(t["observation.root_orientation"].to_pylist())  # wxyz
+            w, x, y, z = rq.T
+            # third row of R(root): world z of a pelvis-frame vector
+            r2 = np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], 1)
+            can_z_world = rp[:, 2] + (r2 * can).sum(1)
+        else:
+            can_z_world = can[:, 2]
         wrist = np.stack(t["observation.eef_state"].to_pylist())[:, 7:10]
         grip = np.stack(t["teleop.right_hand_joints"].to_pylist())[:, 0]
         thr = (np.percentile(grip, 95) + np.percentile(grip, 5)) / 2
@@ -308,7 +325,7 @@ def pass_grasp(root, info, eps, r):
             continue
         fc = int(np.argmax(closed))
         d = np.linalg.norm(can - wrist, axis=1)
-        rise = float(can[fc:, 2].max() - can[fc, 2])
+        rise = float(can_z_world[fc:].max() - can_z_world[fc])
         at_hand += d[fc] < 0.30
         rose_after += rise > 0.03
         held += float(np.std(d[-30:])) < 0.02
