@@ -133,15 +133,15 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
 
 | 阶段 | 判据 | 常量(`bimanual_wall.py`) |
 |---|---|---|
-| 出生 | 站位后 1.0–1.3 m,横向 ±0.15,朝向 ±10° | `WALK_SPAWN_BACK`,`WALK_SPAWN_LAT` |
+| 出生 | 站位后 1.0–1.3 m,横向 ±0.15,朝向 ±10°(朝向抖动是代码里写死的 ±0.17 rad,没有常量) | `WALK_SPAWN_BACK`,`WALK_SPAWN_LAT` |
 | 走入 | 经 waypoint(站位后 0.35 m)直线到站位;**手垂体侧** | `WALK_SIDE_LEFT_DEG`,`STAND_OFF_WALK = 0.24` |
 | 停站 | 骨盆速度 < 0.06 m/s 持续 0.25 s | |
 | 站位门 | yaw ≤ 10°,stand-off 0.13–0.32,横向 ≤ 8 cm;出带则退回 waypoint 再走,≤ 3 次,**整段录下** | `WALK_ATTEMPTS`,`WALK_STAND_OFF_BAND`,`WALK_LAT_TOL` |
 | reach | 一条 Bezier:体侧 → 上提外张 → 越沿 → hover,2.5 s,IK 带姿态先验,**无停顿** | `REACH_S`,`REACH_UP/OUT/OVER`,`REACH_POSTURE_W` |
-| 下探 | 参考点 0.04 m/s 下降到篮沿顶下 5 cm | `DESCEND_SPEED`,`GRIP_BELOW` |
+| 下探 | 参考点 0.04 m/s 下降到篮沿顶下 5 cm(rail;full wall 是 8 cm,按 `WALL_FEATURE` 取值) | `DESCEND_SPEED`,`GRIP_BELOW` |
 | 闭合 | **contact**:参考仍在下降、实测高度 0.3 s 不变、横向在容差内、手垫到篮沿顶;兜底 seated / floor | `CONTACT_STALL_S/MM`,`ACROSS_TOL`,`FLOOR_DWELL` |
-| 抬起 | IK 目标上升 12 cm,找平 + 俯仰跟随 | `LIFT_HEIGHT`,`PITCH_FOLLOW_*` |
-| 判定 | 上升 ≥ 6 cm、倾斜 ≤ 20°、双手接触 | `LIFT_MIN`,`TILT_OK_DEG` |
+| 抬起 | IK 目标上升 10 cm,找平 + 俯仰跟随 | `LIFT_HEIGHT`(在 `bimanual_carry.py`,wall 从那里 import),`PITCH_FOLLOW_*` |
+| 判定 | 上升 ≥ 6 cm、倾斜 ≤ 20°、双手接触 | `LIFT_MIN`(`bimanual_carry.py`),`TILT_OK_DEG` |
 
 三条原则(各对应一次失败):阶段切换只用画面/本体感知里可见的量;导航阶段不预备抓取姿势(前伸扫篮沿、端在胸前挡 ego);停偏了不丢弃,退回重走并录下。
 
