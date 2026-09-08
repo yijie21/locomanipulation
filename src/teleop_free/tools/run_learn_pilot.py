@@ -174,7 +174,10 @@ def main():
             run('train', ['bash', ROOT / 'scripts/train_bottle.sh'],
                 dict(DATA=str(train_ds), RUN='model', OUT_ROOT=str(out), MAX_STEPS=str(args.steps),
                      SAVE_STEPS=str(args.steps), SAVE_LIMIT='1', WANDB='0', WORKERS='2',  # one checkpoint (disk)
-                     GPUS='1', SINGLE_GPU='1', CUDA_VISIBLE_DEVICES=args.train_gpu))
+                     GPUS='1', SINGLE_GPU='1', CUDA_VISIBLE_DEVICES=args.train_gpu,
+                     # Another instance's MuJoCo EGL context sits on device 0 (~1.6-2.1 GB)
+                     # whatever CUDA_VISIBLE_DEVICES says; the default 2048 MiB guard trips on it.
+                     SQUAT_MAX=os.environ.get('SQUAT_MAX', '4096')))
             if not ckpt.exists(): raise RuntimeError('no checkpoint after training')
             mark('train')
         if args.through == 'train': return

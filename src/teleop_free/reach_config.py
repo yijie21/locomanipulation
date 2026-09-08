@@ -49,6 +49,7 @@ class ReachConfig:
     pregrasp_lateral_jitter: float = 0.   # +-uniform lateral offset of safe_pregrasp; demonstrates the lateral correction
     local_reach_limit: float = .20        # local alignment aborts beyond this wrist error
     pregrasp_min_forward: float = 0.      # clamp safe_pregrasp to >= this far ahead of the pelvis (0 = off); a large gap at a close stand otherwise puts the palm inside the torso
+    arrival_advance_jitter: float = 0.    # per-episode uniform +-jitter on arrival_advance: spreads the expert's stand so the squat label covers the policy's own stop spread (ready07d: P(squat)=0.12 at 0.38-0.43 m)
 
     def __post_init__(self):
         values = asdict(self)
@@ -110,7 +111,8 @@ class ReachConfig:
             raise ValueError('Arrival experiment requires recovery strategy')
         if not (.05 <= self.pregrasp_rise <= .20 and .03 <= self.pregrasp_gap <= .15
                 and 0 <= self.pregrasp_lateral_jitter <= .05 and .15 <= self.local_reach_limit <= .35
-                and 0 <= self.pregrasp_min_forward <= .25):
+                and 0 <= self.pregrasp_min_forward <= .25 and 0 <= self.arrival_advance_jitter <= .05
+                and 0 <= self.arrival_advance-self.arrival_advance_jitter and self.arrival_advance+self.arrival_advance_jitter <= .10):
             raise ValueError('approach geometry outside supported bounds')
         self.approach_band()
 

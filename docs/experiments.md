@@ -227,3 +227,10 @@
 
 **裁定:闭环评测用 Isaac 观测不需要 hybrid clock,纯 async 即可。** 详细条件、
 四条限制和复现命令见 `docs/rendering.md`。
+
+## 13. ready-grasp 采集协议的可学性实验(2026-09-07/08)
+
+六臂配对(07 / 站近 / 横向 jitter / 站近+去 shuffle / seed 对照 / 站近+去 shuffle+放宽停靠带),同 seed 6000 逐局配对、60 局自动停。
+**07d(站近 5 cm + `GYM_SHUFFLE_BAND=0`)30% → 48%,McNemar p = 0.052**;机制是策略停位由模仿 shuffle 的"蹭"决定,
+不由专家停位决定;"没蹲"类别是训练 seed 方差。完整表、机制分析、方差底线与下一步见
+[ready_grasp_arms_20260907.md](ready_grasp_arms_20260907.md);起点(creep 隐变量)也在那里。

@@ -122,6 +122,10 @@ if __name__ == "__main__":
     config.data.episode_sampling_rate = ft_config.episode_sampling_rate
     config.data.num_shards_per_epoch = ft_config.num_shards_per_epoch
     config.data.ds_weights_alpha = ft_config.ds_weights_alpha
+    # GR00T_DATA_SEED (2026-09-07): tyro exposes no seed; this lets a variance-control
+    # run retrain identical data under a different shuffle/init seed. Unset = 42 as before.
+    if os.environ.get("GR00T_DATA_SEED"):
+        config.data.seed = int(os.environ["GR00T_DATA_SEED"])
 
     config.training.save_only_model = ft_config.save_only_model
     config.training.resume_from_checkpoint = ft_config.resume_from_checkpoint

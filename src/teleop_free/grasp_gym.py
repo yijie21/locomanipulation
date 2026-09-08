@@ -1437,7 +1437,12 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # expert always arriving aligned. The creep closes both axes.
     appr_lat = float(np.random.uniform(-0.15, 0.15)) if STAND_COVER and coordinated is None else 0.0
     aim_xy = np.asarray(spawn_xy) + appr_lat * np.array([-fv[1], fv[0]])
-    aim_xy = aim_xy + reach_config.arrival_advance * np.asarray(fv[:2])
+    # Per-round advance: arrival_advance +- arrival_advance_jitter (2026-09-08).
+    # A fixed advance gave the expert a 0.28-0.39 m stand band while the policy's
+    # own stops spread to 0.43; the squat label then had no coverage out there.
+    _jit = float(getattr(reach_config, 'arrival_advance_jitter', 0.))
+    advance = float(np.clip(reach_config.arrival_advance + (np.random.uniform(-_jit, _jit) if _jit > 0 else 0.), 0., .10))
+    aim_xy = aim_xy + advance * np.asarray(fv[:2])
     if appr_lat:
         p.log(f"[gym] approach aim offset {appr_lat * 100:+.0f} cm lateral")
 
@@ -1446,7 +1451,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
         why, stall_x, stall_t = "timeout", None, time.time()
         brake_x, brake_e = float("nan"), float("nan")
         from arrival_validation import ArrivalAdvance
-        advance_gate = ArrivalAdvance(reach_config.arrival_advance)
+        advance_gate = ArrivalAdvance(advance)
         while time.time() < appr_end:
             s = p.obs()
             if s["fallen"]:
@@ -1469,9 +1474,9 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
                 break
             reachable = rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
-            stop_here = (advance_gate.stop(r[0], reachable) if reach_config.arrival_advance else reachable)
+            stop_here = (advance_gate.stop(r[0], reachable) if advance else reachable)
             if stop_here:
-                why = "advanced reachable stop" if reach_config.arrival_advance else "can reachable"
+                why = "advanced reachable stop" if advance else "can reachable"
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
                 break
             if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN + EDGE_LEAD:
@@ -1546,7 +1551,7 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
               f"edge {edge_dist(p.pelvis_xy(p.obs())):.2f} "
               f"(carry {brake_x - x_end:+.2f}, plan_r {plan_r:.2f})")
         execution.metrics.setdefault('arrival_measurements', []).append(dict(
-            requested_advance_m=reach_config.arrival_advance,
+            requested_advance_m=advance,
             first_reachable_depth_m=advance_gate.first_reachable,
             brake_depth_m=brake_x, brake_edge_m=brake_e,
             end_depth_m=x_end, end_edge_m=edge_dist(p.pelvis_xy(p.obs())), reason=why))
