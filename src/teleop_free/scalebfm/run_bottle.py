@@ -69,7 +69,7 @@ GRIP_CLIP = float(os.environ.get("GRIP_CLIP", 0.6))   # x 250 N clamp on the gri
 EGO_EVERY = 25
 
 
-def run_round(sim: Sim, pol: Policy, rnd: int, rng, out_dir, video, ego, wrist):
+def run_round(sim: Sim, pol: Policy, rnd: int, rng, out_dir, video, ego, wrist, recorder=None):
     m = dict(round=rnd, ok=False, why="", close_trigger=None, stand_attempts=[])
     # --- scene sample ---------------------------------------------------------------------
     bottle = sim.crate0.copy()
@@ -113,6 +113,9 @@ def run_round(sim: Sim, pol: Policy, rnd: int, rng, out_dir, video, ego, wrist):
 
     def tick(ref):
         st = sim.state()
+        if recorder is not None:
+            # obs at t -> the command applied at t (ref(t) is the first future frame)
+            recorder.tick(sim, st, ref(T[0]), T[0], phase[0])
         sim.step(pol(st, refs.futures(ref, T[0])))
         T[0] += DT; k = len(trace); trace.append(sim.d.qpos.copy())
         bp, bq = sim.crate()

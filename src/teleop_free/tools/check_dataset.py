@@ -215,11 +215,18 @@ def pass_modality(root, r):
     t = pq.read_table(ep_paths(root, info, 0)[0])
     defaults = {"state": "observation.state", "action": "action.wbc"}
 
-    for label, grp, want, want_dim in (
-            ("stock", "state", SONIC_STATE, SONIC_STATE_DIM),
-            ("stock", "action", SONIC_ACTION, SONIC_ACTION_DIM),
-            ("2cam", "state", LOCAL_STATE, LOCAL_STATE_DIM),
-            ("2cam", "action", LOCAL_ACTION, LOCAL_ACTION_DIM)):
+    if "action.bfm" in t.column_names:
+        # ScaleBFM datasets (scalebfm/record_bottle.py): same 53-d state, 19-d action
+        # (configs/gr00t_bfm_2cam.py). The SONIC token profiles do not apply.
+        profiles = (("bfm", "state", LOCAL_STATE, LOCAL_STATE_DIM),
+                    ("bfm", "action", ["bfm", "right_gripper"], 19))
+        r.note("action.bfm present: auditing the bfm_2cam profile instead of stock/2cam")
+    else:
+        profiles = (("stock", "state", SONIC_STATE, SONIC_STATE_DIM),
+                    ("stock", "action", SONIC_ACTION, SONIC_ACTION_DIM),
+                    ("2cam", "state", LOCAL_STATE, LOCAL_STATE_DIM),
+                    ("2cam", "action", LOCAL_ACTION, LOCAL_ACTION_DIM))
+    for label, grp, want, want_dim in profiles:
         missing = [k for k in want if k not in mod.get(grp, {})]
         r.check(not missing,
                 f"[{label}] {grp}: all {len(want)} groups the config selects are present"
@@ -413,7 +420,9 @@ def pass_alignment(root, info, eps, r, n_eps):
     act_lags = []
     for ep in picks:
         p, vids = ep_paths(root, info, ep)
-        t = pq.read_table(p, columns=["observation.state", "action.motion_token"])
+        schema_names = pq.read_schema(p).names
+        act_col = "action.motion_token" if "action.motion_token" in schema_names else "action.bfm"
+        t = pq.read_table(p, columns=["observation.state", act_col])
         st = np.stack(t["observation.state"].to_pylist())
         body = np.linalg.norm(np.diff(st[:, ARM_STATE], axis=0, prepend=st[:1, ARM_STATE]), axis=1)
 
@@ -427,7 +436,7 @@ def pass_alignment(root, info, eps, r, n_eps):
             if prof[peak] < 0.25:
                 weak.append((ep, name, round(prof[peak], 2)))
 
-        tok = np.stack(t["action.motion_token"].to_pylist())
+        tok = np.stack(t[act_col].to_pylist())
         # body first: _profile's positive lag means the FIRST argument trails
         # the second, and what we want to read out is how far the body trails
         # the token.

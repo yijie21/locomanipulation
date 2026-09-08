@@ -54,6 +54,11 @@ PALM_PITCH_DEG = 60.0
 REACH_SUM = 0.38
 OFF = np.array([0.1515, 0.0, 0.0])          # wrist frame -> pad centre (dex1)
 GRIP_OPEN, GRIP_CLOSED = 0.0245, -0.023
+# gripper PD (ctrl units x gear 250 N). The joint clamps actuator force at +-20 N (actuatorfrcrange), so
+# the default kp 40 saturates beyond 2 mm error and the 87 g finger limit-cycles (+-8 mm); GRIP_KP=8 GRIP_KD=0.15
+# is the clamp-matched, near-critically-damped setting (A/B 2026-09-08, see docs/handoff/scalebfm_handoff.md).
+GRIP_KP = float(os.environ.get("GRIP_KP", 40.0))
+GRIP_KD = float(os.environ.get("GRIP_KD", 1.0))
 
 # --- episode script (pilot 23 numbers) ------------------------------------------
 DT = 0.02
@@ -200,7 +205,7 @@ class Sim:
         for _ in range(self.decim):
             tau = self.kp * (tgt - d.qpos[self.qadr]) - self.kd * d.qvel[self.vadr]
             d.ctrl[self.act] = np.clip(tau, -self.tlim, self.tlim)
-            d.ctrl[self.gact] = np.clip(40.0 * (self.grip_target - d.qpos[self.gq]) - 1.0 * d.qvel[self.gv], -self.grip_clip, self.grip_clip)
+            d.ctrl[self.gact] = np.clip(GRIP_KP * (self.grip_target - d.qpos[self.gq]) - GRIP_KD * d.qvel[self.gv], -self.grip_clip, self.grip_clip)
             mujoco.mj_step(self.m, d)
 
     def frame(self):
