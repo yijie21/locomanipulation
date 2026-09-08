@@ -54,9 +54,11 @@ PALM_PITCH_DEG = 60.0
 REACH_SUM = 0.38
 OFF = np.array([0.1515, 0.0, 0.0])          # wrist frame -> pad centre (dex1)
 GRIP_OPEN, GRIP_CLOSED = 0.0245, -0.023
-# gripper PD (ctrl units x gear 250 N). The joint clamps actuator force at +-20 N (actuatorfrcrange), so
-# the default kp 40 saturates beyond 2 mm error and the 87 g finger limit-cycles (+-8 mm); GRIP_KP=8 GRIP_KD=0.15
-# is the clamp-matched, near-critically-damped setting (A/B 2026-09-08, see docs/handoff/scalebfm_handoff.md).
+# gripper PD (ctrl units x gear 250 N). The joint itself clamps actuator force at +-20 N (actuatorfrcrange),
+# so GRIP_CLIP above 0.08 is inert and kp 40 saturates beyond 2 mm error: the 87 g finger limit-cycles
+# (+-6.5 mm sd at rest with kd 1.0) and the asymmetric close flicks the bottle out. A/B on run_bottle.py,
+# seed 2, 10 rounds each (2026-09-08): kp40/kd1.0 6/10, kp40/kd0.5 10/10, kp8/kd0.15 9/10 (least chatter,
+# 3.4 mm sd, lowest carry tilt). Collection uses GRIP_KD=0.5; kp 8 / kd 0.15 is the clamp-matched setting.
 GRIP_KP = float(os.environ.get("GRIP_KP", 40.0))
 GRIP_KD = float(os.environ.get("GRIP_KD", 1.0))
 
