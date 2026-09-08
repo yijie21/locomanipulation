@@ -123,6 +123,9 @@ videos/                 最新一批演示视频(每次推送整体替换)
 | 全部实验的总表与结论(60+ 臂、配对检验、失败细分) | [docs/experiments.md](docs/experiments.md) |
 | 从零装环境 | [docs/setup.md](docs/setup.md) |
 | 采数据(场景 / 单局 / 批量 / 随机化 / 相机 / 控制逻辑) | [docs/collection.md](docs/collection.md) |
+| **双臂搬箱采集,从零到 MuJoCo/Isaac 并排视频(复现教程,直接照做)** | **[docs/bimanual_collection_tutorial.md](docs/bimanual_collection_tutorial.md)** |
+| 双臂 expert 为什么长这样(设计原则、每条对应的失败) | [docs/bimanual_grasp_design.md](docs/bimanual_grasp_design.md) |
+| Isaac 渲染(MuJoCo 物理 + Isaac 画面,离线回放,已知缺陷) | [docs/rendering.md](docs/rendering.md) |
 | 转 LeRobot、查数据(schema / 四段审计) | [docs/dataset.md](docs/dataset.md) |
 | 微调 GR00T(设置全表 / 启动 / vendored 代码怎么回事) | [docs/training.md](docs/training.md) |
 | 评测(open-loop / closed-loop / 第一轮基线 / DAgger) | [docs/evaluation.md](docs/evaluation.md) |
