@@ -10,7 +10,7 @@ exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`。转成 LeRobot v2.
 
 ```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
-    src/teleop_free/tools/convert_to_hf_format.py \
+    src/locomani/pipeline/convert_to_hf_format.py \
     --sessions "$LOCOMANI_TMP"/p03/outputs/<session1> <session2> ... \
     --manifest outputs/logs/collect/manifest_1.jsonl \
                 outputs/logs/collect/manifest_2.jsonl ... \
@@ -44,7 +44,7 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 
 ```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
-    src/teleop_free/tools/check_dataset.py datasets/g1_locomani_lerobot
+    src/locomani/pipeline/check_dataset.py datasets/g1_locomani_lerobot
 ```
 
 **通过全部检查才去烧 GPU。** 有问题就退出码 1,能直接挂在 CI 或训练前的 gate 上。
@@ -85,7 +85,7 @@ action vs state: body trails the token by a median +3 frames (100 ms)
 训练好的模型输出 78 维,**不经过 encoder**,用 protocol v4 直接喂进 :5556:
 
 ```bash
-NO_ENCODER=1 bash src/teleop_free/start_stack.sh "pick up the water bottle"   # 关键:必须不加载 encoder
+NO_ENCODER=1 bash scripts/stack/start_stack.sh "pick up the water bottle"   # 关键:必须不加载 encoder
 ```
 
 `NO_ENCODER=1` 不是省显存。deploy 只要加载了 encoder,`initial_encoder_mode_` 就是 0,

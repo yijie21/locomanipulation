@@ -37,7 +37,7 @@ git lfs install          # 只需一次;不做的话下面 clone 出来的是空
 
 ### 0. 路径约定
 
-**仓库可以放在任何路径,不需要改任何代码。**仓库内的路径由 `src/teleop_free/paths.py`
+**仓库可以放在任何路径,不需要改任何代码。**仓库内的路径由 `src/locomani/paths.py`
 和 `scripts/paths.sh` 从文件自身位置推导出来。
 
 仓库**外**的东西(依赖、conda、日志、缓存)默认挂在 `/workspace` 下。如果你的机器
@@ -69,7 +69,7 @@ export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
 **验证** —— 这一步永远先做,后面每一步的路径都从它来:
 
 ```console
-$ python3 src/teleop_free/paths.py
+$ python3 src/locomani/paths.py
   REPO         /workspace/code/locomanipulation
   WORKSPACE    /workspace
   SONIC        /workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl
@@ -77,7 +77,7 @@ $ python3 src/teleop_free/paths.py
   OUTPUTS      /workspace/code/locomanipulation/outputs
   LOGS_DIR     /workspace/code/locomanipulation/outputs/logs
   session_root() /workspace/tmp/p03
-  derived from /workspace/code/locomanipulation/src/teleop_free/paths.py
+  derived from /workspace/code/locomanipulation/src/locomani/paths.py
 ```
 
 **你看到的路径会是你自己的**,上面是作者机器上的值。要核的是形状:`REPO` 指着你
@@ -157,7 +157,7 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
  && bash install_scripts/install_mujoco_sim.sh \
  && bash install_scripts/install_data_collection.sh \
  && .venv_data_collection/bin/python download_from_hf.py)
-# install_mujoco_sim.sh      -> .venv_sim(跑 MuJoCo sim 与所有 src/teleop_free 脚本)
+# install_mujoco_sim.sh      -> .venv_sim(跑 MuJoCo sim 与所有 src/locomani 脚本)
 # install_data_collection.sh -> .venv_data_collection(跑 data exporter)
 # download_from_hf.py        -> SONIC policy 权重落到 gear_sonic_deploy/policy/release/
 #   它要 huggingface_hub,而这个包只随 install_data_collection.sh 那条依赖链进来:
@@ -170,7 +170,7 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 > 如果采集时每局都是 `FAILED [view] object outside ego view`,先查
 > `.venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)"`,再重建场景。
 
-`.venv_sim` 装完之后还缺一个包:`src/teleop_free/navigator.py` 用 `skfmm`(路径规划的
+`.venv_sim` 装完之后还缺一个包:`src/locomani/primitives/navigator.py` 用 `skfmm`(路径规划的
 快速行进法)算距离场,但它是这个仓库自己的依赖,上游安装脚本不装,**必须**手动补上,
 否则跑 `grasp_gym.py` 等脚本会在 import 阶段就报 `ModuleNotFoundError: No module named
 'skfmm'`:
@@ -313,7 +313,7 @@ gitignored 的生成产物,新 clone 的 `third_party/GR00T-WholeBodyControl` �
 会导致 `MjSpec.from_file` 报 `Error opening file ... scene_31dof.xml`:
 
 ```bash
-third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/make_dex1_model.py
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/sim/make_dex1_model.py
 ```
 
 然后装场景。**`SCENE_PRESET` 必须给在这一行上**:

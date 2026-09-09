@@ -39,7 +39,7 @@
 
 ```bash
 . scripts/paths.sh
-$VENV_SIM_PY src/teleop_free/bimanual_scene.py outputs/scene/crate_bimanual
+$VENV_SIM_PY src/locomani/tasks/crate/bimanual_scene.py outputs/scene/crate_bimanual
 python3 -c "import json;m=json.load(open('outputs/scene/crate_bimanual/scene_meta.json'));\
 print(m['surfaces']['A']['top'], m['objects']['blue_crate']['init_pos'])"
 # 期望: 0.62 [-0.368, 0.0, 0.707]
@@ -78,17 +78,17 @@ print(m['surfaces']['A']['top'], m['objects']['blue_crate']['init_pos'])"
 
 ```bash
 # a) 抓取可达:站位 × 深度 × 垫深 × 掌俯仰,IK 残差 < 1 cm 且无穿透
-$VENV_SIM_PY src/teleop_free/tools/reach_wall_sweep.py | tail -30
+$VENV_SIM_PY src/locomani/tasks/crate/reach_wall_sweep.py | tail -30
 #    期望:stand-off + depth ≤ 0.40 的组合全部 OK(掌俯仰 60);expert 用 REACH_SUM = 0.38
 
 # b) 走路姿势:指尖到桌沿 / 篮壁的余量、ego 画面里篮子被手遮挡的比例
-POSE_LEFT_DEG=10,10,0,60,0,30,0 MUJOCO_GL=egl $RENDER_PY src/teleop_free/tools/walk_pose_preflight.py
+POSE_LEFT_DEG=10,10,0,60,0,30,0 MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/walk_pose_preflight.py
 #    期望:四个站位 contacts 都是 '-';指尖在平面后 ≥ 0.12 m;遮挡 0%
 
 # c) reach 曲线 + 预览视频
 PW=0.02 OUT=0.15 UP=0.25 OVER=0.10 WARM=prev SAVE=outputs/reach/reach_preview/traj \
-  MUJOCO_GL=egl $RENDER_PY src/teleop_free/tools/reach_preflight.py
-MUJOCO_GL=egl $RENDER_PY src/teleop_free/tools/reach_preview.py
+  MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preflight.py
+MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preview.py
 #    期望:contacts '-';越沿时指尖离篮沿顶 ≥ +2.5 cm;终点关节解 = hover 解
 #    看 outputs/reach/reach_preview/reach_preview.mp4:上排跟踪相机、下排 ego,四列 = 0.13/0.18/0.24/0.31 m 站位
 ```
@@ -173,7 +173,7 @@ image-publisher 子进程,活得比父进程久且占着相机端口,所以先�
 ### 中途停止 / 清理
 
 ```bash
-bash src/teleop_free/stop_instance.sh 2        # 只杀 instance 2 的 sim / deploy(按 --instance 与端口匹配)
+bash scripts/stack/stop_instance.sh 2        # 只杀 instance 2 的 sim / deploy(按 --instance 与端口匹配)
 for p in $(pgrep -f "[b]imanual_wall.py"); do kill -9 $p; done   # expert 本身;[b] 让模式不匹配这行自己
 ```
 
@@ -202,7 +202,7 @@ INSTANCE=2 WALL_FEATURE=rail WALL_WALK=1 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_
 ### 验收
 
 ```bash
-python3 src/teleop_free/tools/summarize_wall_pilot.py $V
+python3 src/locomani/tasks/crate/summarize_wall_pilot.py $V
 ```
 
 每集一行:`ok`、走位次数 `att`、闭合触发 `trig`、篮子首次移动时刻 `move_s`、集长 `len_s`、静止帧比例 `static`、
@@ -418,7 +418,7 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
    (转换器按行和 session 里的 episode **按顺序**一一对应——这个对齐看不出残段,见 §12 最后一条)。
 2. 在 **INSTANCE=0** 的栈上跑(默认 `--record-wrist-cameras`);录之前确认 instance 0 没有别人的采集或评测,并像
    单手线一样每 10 集重启栈(exporter 线程增长,pid 上限)。
-3. 转换:`$VENV_DATA_PY src/teleop_free/tools/convert_to_hf_format.py --sessions <session> --manifest <manifest.jsonl>
+3. 转换:`$VENV_DATA_PY src/locomani/pipeline/convert_to_hf_format.py --sessions <session> --manifest <manifest.jsonl>
    --out <ds> --holdout N --holdout-out <ds>_val --jobs 4`(视频流从 session 自动发现;`left_gripper` 键已在转换器里),
    然后 `check_dataset.py <ds>`——它的 grasp-causality 检查(合爪后物体上升 > 3 cm、末端物-腕距离稳定)对双臂同样
    适用,是唯一能抓出残段 episode 的地方。
