@@ -139,3 +139,70 @@ Totals for the 7 completed/partial families: 56 files touched, +108 / -1687 line
 
 Both skips are candidates for the group-B reconciliation step (refactor-plan.md execution step 4, "抽骨架"),
 not for a group-A follow-up commit on this branch.
+
+## Executed (B/D)
+
+User ruling 2026-09-09: keep the whole RTC cluster (inference-side `RTCPolicy`, transition-commit,
+prefix-sampling tools, and the `src/gr00t` training patch) and keep `--client blocking`; delete everything
+else below, one commit per family, on `refactor/step1-tooling` (worktree `.claude/worktrees/refactor-step1`).
+
+| # | family | commit | files | lines (+/-) | status |
+|---|---|---|---|---|---|
+| 1 | a18 / 18-D action space + planner-degraded eval mode | `63f30d5` | 7 | +47 / -722 | done |
+| 2 | legacy episode collection line (`collect_episode.py`, `run_batch.py`, the `_execute_grasp` non-recovery tail, `GYM_STAND_COVER`/`stand3`/`sample_stand`/`stand_cells`, `ready_grasp_baseline=False` flow200 branches) | `0b801d8` | 11 | +127 / -1800 | done |
+| 3 | unimported `diag_*.py` + unimported `tools/*.py` | `ec0eb1c` | 54 | +108 / -8011 | done |
+
+Totals for the 3 families: 72 files touched, +282 / -10533 lines (net -10251).
+
+**Family 1 detail.** Both halves (a18 and the historical degraded-deploy eval mode) went in one commit, since
+`eval_closed_loop.py` reconciled them at the same guard. `--clean-deploy` is no longer an optional flag on the
+async client -- it is now unconditional (the only remaining async-client caller, `MODE=wall`, always passed it
+anyway). `scripts/restart_deploy.sh` needed no edit: its `CLEAN_DEPLOY`/`LOCKSTEP`/default branches are shared
+infrastructure collection also depends on, so there was no code there unique to the deleted planner-degraded
+*eval* mode -- it is simply unreachable from eval now that the async client always sets `CLEAN_DEPLOY=1`.
+Nothing skipped.
+
+**Family 2 detail.** This is the group-B reconciliation the two family-A skips above were waiting on:
+`GYM_STAND_COVER` / `TargetPlan.stand3` / `grasp_gym.sample_stand` / `reach_map.stand_cells` (skip 7b) and
+`GYM_IDLE_SWEEP` (skip 9) are both deleted here, along with the rest of the `_execute_grasp` non-recovery tail
+(`_creep_to_band` call site, `GYM_ONE_SHOT`, `_nudge_pass`/`_nudge_closer`, reach retry) and the now-orphaned
+`final_approach`/`place_streamed`/`grasp_streamed` helpers. `_creep_to_band` and `_servo_continuous` themselves
+are unchanged (still directly unit-tested / still the live recovery-controller primitive).
+
+One item in this family's own instructions conflicted with the codebase and was resolved in the ruling's favor
+rather than followed literally: the task said to delete `tools/diag_transition_cross.py` here ("since diag_* is
+deleted in step 3"), but that file is one of the named members of the RTC/transition-commit cluster this same
+ruling says to KEEP, and deleting it broke 3 live tests (`test_continuous_handover.py`, `test_planner_handover.py`,
+`test_standing_settle.py`, transitively via `diag_crouched_handover.py` -> `diag_transition_cross.suffix`).
+Restored unmodified; not part of family 2's commit. Its own `sr.grasp_streamed()` call site is now stale (that
+function was deleted here) -- left alone, out of this family's scope, owned by the RTC-cluster ruling.
+
+Fixed in passing (required for the test suite to stay green, not itself a diag_* family item):
+`tools/diag_crouched_handover.py`'s `from collect_episode import obj_top` now reads `from grasp_gym import
+obj_top` -- this tool turned out NOT to be unimported despite the candidates doc's classification (3 live tests
+depend on it via `tools/diag_stance_grid.py`). `tools/probe_handover_geometry.py` has the same stale import and
+IS genuinely unimported; deleted in family 3 rather than fixed.
+
+**Family 3 detail.** Every one of the 47 names this row originally flagged (24 named + "the other 23") was
+re-verified from scratch against the current tree -- real `import X` / `from X import` statements and `.sh`
+process references only, never a prose mention of a filename in a comment or doc -- rather than trusting this
+table's own classification, which turned out to be stale for six modules (see `docs/archive/diag_catalogue.md`'s
+"still live" table for the full list and each one's real importer). 43 `diag_*.py` + 10 `tools/*.py` were deleted;
+the 4 named crate-tutorial exceptions (`reach_preflight`, `reach_preview`, `reach_wall_sweep`, `walk_pose_preflight`)
+and the 6 rediscovered-live modules were left untouched. `docs/archive/diag_catalogue.md` records the one-line
+docstring description and doc citation for every deleted module. `stop_stack.sh` and `docs/reference.md` both
+still name a few of the deleted files (a stale `pkill` pattern and a reference-catalogue table respectively);
+neither is fixed here, consistent with family 2 already leaving the same kind of stale `collect_episode.py`
+mention in `stop_stack.sh` -- both harmless, both out of scope for a code-deletion family, noted for a future
+docs pass.
+
+**lint_sizes / lint_env, after each family** (`scripts/lint_sizes.py` / `scripts/lint_env.py`, tail -1):
+
+| after | lint_sizes | lint_env |
+|---|---|---|
+| family 1 | 12 files > 600 lines, 85 functions > 80 | 70 non-whitelisted vars, 95 reads |
+| family 2 | 11 files > 600 lines, 80 functions > 80 | 66 non-whitelisted vars, 89 reads |
+| family 3 | 11 files > 600 lines, 66 functions > 80 | 64 non-whitelisted vars, 86 reads |
+
+Remaining D-row candidates (RTC/transition-commit/prefix-sampling cluster, `--client blocking`) are KEPT per the
+2026-09-09 ruling at the top of this section, not pending -- there is nothing left in Group D to resolve.
