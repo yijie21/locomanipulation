@@ -22,6 +22,11 @@ only `reach` has a real cost, because ~5800 geoms are paid at model-compile and
 render time whether or not they are visible.  That is why `reach` is honoured
 by *not injecting* the cloud rather than by hiding it, which in turn means it is
 read once at sim start-up and cannot be changed for a running sim.
+
+Receiving end of the shell boundary (decision 8): this module runs inside the
+sim's own OS process, launched by start_stack.sh with no channel to receive
+SonicBackendConfig.sim_vis other than inherited env -- stack.py is the sole
+writer of SIM_VIS (whitelisted, scripts/lint_env.py).
 """
 
 from __future__ import annotations

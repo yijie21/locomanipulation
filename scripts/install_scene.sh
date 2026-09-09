@@ -64,15 +64,17 @@ PY="$SONIC_ROOT/.venv_sim/bin/python"
 if [ -x "$PY" ]; then
     "$PY" "$LOCOMANI_SRC/sim/build_sim_scene.py" \
         "$ROOT/outputs/scene" "$ROOT/outputs/scene/sim" \
+        --preset "${SCENE_PRESET:-}" \
         | tail -n 3
     # Echo the result. A scene built with the wrong SCENE_PRESET is otherwise
     # indistinguishable from a right one until grasp_gym says "targets not in
     # the scene" -- or worse, does not, and quietly collects a whole dataset
     # against four rotating targets and a fork.
-    "$PY" - "$ROOT/outputs/scene/sim/scene_meta.json" <<'EOF'
-import json, sys, os
+    "$PY" - "$ROOT/outputs/scene/sim/scene_meta.json" "${SCENE_PRESET:-}" <<'EOF'
+import json, sys
 m = json.load(open(sys.argv[1]))
-print(f"  preset      {os.environ.get('SCENE_PRESET') or '<none> (default multi-object table)'}")
+preset = sys.argv[2] if len(sys.argv) > 2 else ""
+print(f"  preset      {preset or '<none> (default multi-object table)'}")
 print(f"  target      {m.get('target_object')}")
 print(f"  target_pool {m.get('target_pool') or [m.get('target_object')]}")
 print(f"  on the table {sorted(m.get('objects', {}))}")

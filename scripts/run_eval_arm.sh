@@ -46,8 +46,8 @@ case $MODE in
   *)    echo "MODE must be wall|lock"; exit 1 ;;
 esac
 
-SCENE_PRESET=bottle_only SCENE_SEED="${EVAL_SCENE_SEED:-922}" \
-  "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim \
+"$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim \
+  --preset bottle_only --seed "${EVAL_SCENE_SEED:-922}" \
   | grep -E "^\[scene\]"
 
 env NO_ENCODER=1 SIM_VIS=readout SIM_VIDEO_DIR="$PWD/outputs/videos/cl_$NAME" \

@@ -26,7 +26,6 @@ world-frame heading vector, planner loop line 1826-1830).
 from __future__ import annotations
 
 import collections
-import os
 import time
 
 import numpy as np
@@ -37,6 +36,7 @@ from locomani.backends.sonic.agent_server import (
     LocomotionMode,
     StreamMode,
 )
+from locomani.backends.sonic.config import DEFAULT_BACKEND
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST
 from locomani.primitives import navigator as nav
 from locomani.primitives import wrist_map
@@ -46,12 +46,15 @@ from locomani.tasks.bottle import grasping
 CONTROL_HZ = 50.0
 DT = 1.0 / CONTROL_HZ
 
-# Hand close/open poses per hand type (HAND env, default dex1).
+# Hand close/open poses per hand type (SonicBackendConfig.hand, default dex1).
 # dex3: G1 three-finger hand, joint order per privileged_pub.HAND_JOINTS;
 # signs mirrored between hands (left middle_0 range [-1.5708,0], right
 # [0,1.5708]). dex1: two prismatic fingers, both commanded identically —
 # +0.0245 = 9.5 cm open, -0.02 = 0.6 cm closed; NOT mirrored.
-HAND_TYPE = os.environ.get("HAND", "dex1")
+#
+# Module-level default, not an env read (decision 8): never actually overridden
+# in any script today, so this constant IS that default.
+HAND_TYPE = DEFAULT_BACKEND.hand
 if HAND_TYPE == "dex1":
     HAND_CLOSED_LEFT = np.array([-0.02, -0.02, 0, 0, 0, 0, 0], dtype=np.float32)
     HAND_CLOSED_RIGHT = HAND_CLOSED_LEFT.copy()

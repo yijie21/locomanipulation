@@ -167,7 +167,12 @@ def disable_fall_reset() -> None:
 # what a run that does not need the wrist streams should use: three 640x480
 # renders cost roughly three times one, and the episode's video grows from
 # ~4.7 MB to ~12 MB.
-WRIST_CAMS = os.environ.get("WRIST_CAMS", "1") != "0"
+#
+# Module-level default, not an env read (decision 8): SonicBackendConfig.wrist_cams
+# is never actually overridden in any script today, so this constant IS that
+# default. (Threading a live override into this file would mean extending
+# upstream's tyro-parsed SimLoopConfig, which is out of scope here.)
+WRIST_CAMS = True
 
 # The stream names are the contract with the exporter. It resolves an image by
 # the LAST SEGMENT of the feature name -- observation.images.left_wrist looks
@@ -282,7 +287,10 @@ def main(config: SimLoopConfig) -> None:
         wbc_config["motor_effort_limit_list"] = e[:22] + [20.0, 20.0] + e[29:36] + [20.0, 20.0]
     # Parallel instances: each sim+deploy pair gets its own DDS domain so
     # their unitree channels never cross on lo. Pairs with the deploy's
-    # SONIC_DDS_DOMAIN patch.
+    # SONIC_DDS_DOMAIN patch. Receiving end of the shell boundary (decision 8):
+    # scripts/paths.sh / start_stack.sh derive and export this from INSTANCE
+    # before the sim process is launched; whitelisted in scripts/lint_env.py
+    # the same way the TF_*_PORT vars are.
     wbc_config["DOMAIN_ID"] = int(os.environ.get("SONIC_DDS_DOMAIN", wbc_config.get("DOMAIN_ID", 0)))
 
     # viewer.sync() costs a fixed ~9-10ms per call on this box, independent of

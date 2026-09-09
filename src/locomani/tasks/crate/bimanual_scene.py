@@ -122,27 +122,28 @@ def main() -> None:
     if not args or args[0].startswith("-"):
         raise SystemExit(__doc__)
     out = os.path.abspath(args[0])
-    env = dict(os.environ, SCENE_PRESET="crate_bimanual")
-    # SCENE_TABLE_TOP / CRATE_SETBACK are knobs for the walk-in geometry. A
-    # 0.45 m table with the crate 10 cm in from the edge was tried on
-    # 2026-09-07 so the policy's default walking pose (finger tips 0.56 m
-    # high, 0.19 m ahead) would clear the edge: the wall grasp is then out of
-    # standing reach (IK 5-15 cm short at every stand; needs a 17 cm squat,
-    # whose knees meet the set-back table). Shipped values stay 0.62 / 0.
-    env.setdefault("SCENE_TABLE_TOP", "0.62")
-    env.setdefault("CRATE_SETBACK", "0")
+    # SCENE_TABLE_TOP / CRATE_SETBACK (scene_lib.CRATE_SETBACK) are knobs for
+    # the walk-in geometry. A 0.45 m table with the crate 10 cm in from the
+    # edge was tried on 2026-09-07 so the policy's default walking pose
+    # (finger tips 0.56 m high, 0.19 m ahead) would clear the edge: the wall
+    # grasp is then out of standing reach (IK 5-15 cm short at every stand;
+    # needs a 17 cm squat, whose knees meet the set-back table). Shipped
+    # values stay 0.62 / 0 -- crate_setback's own default (scene_lib.py), so
+    # only --table-top needs passing here (decision 8: build_sim_scene.py's
+    # CLI, not env).
+    build_argv = [
+        sys.executable,
+        os.path.join(paths.SRC, "sim", "build_sim_scene.py"),
+        os.path.join(paths.OUTPUTS, "scene"),
+        out,
+        "--preset",
+        "crate_bimanual",
+        "--table-top",
+        "0.62",
+    ]
     if "--seed" in args:
-        env["SCENE_SEED"] = args[args.index("--seed") + 1]
-    subprocess.run(
-        [
-            sys.executable,
-            os.path.join(paths.SRC, "sim", "build_sim_scene.py"),
-            os.path.join(paths.OUTPUTS, "scene"),
-            out,
-        ],
-        check=True,
-        env=env,
-    )
+        build_argv += ["--seed", args[args.index("--seed") + 1]]
+    subprocess.run(build_argv, check=True)
     xml = os.path.join(out, "scene_locomani.xml")
     print(
         f"[bimanual_scene] finger pads hardened: {harden_pads(xml)} geoms, gripper gear {GRIPPER_GEAR:.0f}, fingers coupled {COUPLE_FINGERS}, range {FINGER_RANGE} -> {xml}"

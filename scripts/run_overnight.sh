@@ -87,8 +87,9 @@ note ""
 # this batch changes four at once.
 say "0/6 gate: $GATE_N rounds, need >= $GATE_MIN"
 bash "$LOCOMANI_STACK/stop_stack.sh" > /dev/null 2>&1
-SCENE_SEED="$SEED0" "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
-    outputs/scene outputs/scene/sim | grep -E '^\[scene\]' \
+"$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
+    outputs/scene outputs/scene/sim --seed "$SEED0" --preset "${SCENE_PRESET:-}" \
+    | grep -E '^\[scene\]' \
     || die "gate: scene rebuild failed"
 nohup env SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
     bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle" \

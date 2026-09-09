@@ -52,7 +52,10 @@ DT = 0.02
 # walk or it turns into recorded standing at the table, and 2 deg moves 4 of
 # the token's 64 dims where the 20 deg step it replaces moved 27
 # (sonic_encoder.py --selfcheck).
-MAX_STEP = np.radians(float(os.environ.get("GYM_UPPER_SLEW_DEG", "2.0")))
+# Module-level default, not an env read (decision 8): SonicBackendConfig.upper_slew_deg
+# is never actually overridden in any script today, so this constant IS that default.
+UPPER_SLEW_DEG = 2.0
+MAX_STEP = np.radians(UPPER_SLEW_DEG)
 
 
 class RefTap:

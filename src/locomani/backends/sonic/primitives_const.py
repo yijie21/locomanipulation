@@ -6,9 +6,11 @@ on where the hand grips, or the ghost marker lands somewhere the servo is not
 aiming.
 """
 
-import os as _os
+from locomani.backends.sonic.config import DEFAULT_BACKEND
 
-HAND = _os.environ.get("HAND", "dex1")
+# Module-level default, not an env read (decision 8): SonicBackendConfig.hand is
+# never actually overridden in any script today, so this constant IS that default.
+HAND = DEFAULT_BACKEND.hand
 
 # Palm(wrist)-frame vector to the point the jaw closes on.
 # dex3: measured on the three-finger hand. dex1: centre of the finger pads

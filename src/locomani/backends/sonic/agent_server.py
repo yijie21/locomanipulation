@@ -42,6 +42,8 @@ from gear_sonic.utils.teleop.zmq.zmq_planner_sender import (
     pack_pose_message,
 )
 
+from locomani.backends.sonic.config import DEFAULT_BACKEND
+
 SONIC_PORT = int(os.environ.get("TF_SONIC_PORT", "5556"))
 KEYBOARD_PORT = int(os.environ.get("TF_KEYBOARD_PORT", "5580"))
 
@@ -55,15 +57,24 @@ DEFAULT_COMPLIANCE = (0.5, 0.5, 0.0)
 
 N_HAND_JOINTS = 7  # WIRE width (deploy pass-through) — dex1 uses
 # only the first 2 entries (two prismatic fingers)
-HAND_TYPE = os.environ.get("HAND", "dex1")
-if HAND_TYPE == "dex1":
-    # Dex1 zero pose leaves a 4.58 cm jaw gap — SMALLER than the can.
-    # "Open" must be commanded explicitly (+0.0245 -> 9.5 cm).
-    HAND_OPEN = np.array([0.0245, 0.0245] + [0.0] * 5, dtype=np.float32)
-    HAND_CLOSED = np.array([-0.02, -0.02] + [0.0] * 5, dtype=np.float32)
-else:
-    HAND_OPEN = np.zeros(N_HAND_JOINTS, dtype=np.float32)
-    HAND_CLOSED = np.full(N_HAND_JOINTS, 1.0, dtype=np.float32)
+
+
+def _hand_poses(hand: str) -> tuple[np.ndarray, np.ndarray]:
+    if hand == "dex1":
+        # Dex1 zero pose leaves a 4.58 cm jaw gap — SMALLER than the can.
+        # "Open" must be commanded explicitly (+0.0245 -> 9.5 cm).
+        return (
+            np.array([0.0245, 0.0245] + [0.0] * 5, dtype=np.float32),
+            np.array([-0.02, -0.02] + [0.0] * 5, dtype=np.float32),
+        )
+    return np.zeros(N_HAND_JOINTS, dtype=np.float32), np.full(N_HAND_JOINTS, 1.0, dtype=np.float32)
+
+
+# Module-level default matching SonicBackendConfig.hand; no caller today
+# constructs an AgentCommander with a different hand, so this stays byte-for-byte
+# identical to the old env-var fallback of "dex1" (decision 8).
+HAND_TYPE = DEFAULT_BACKEND.hand
+HAND_OPEN, HAND_CLOSED = _hand_poses(HAND_TYPE)
 
 
 class LocomotionMode(IntEnum):
@@ -125,7 +136,8 @@ LAST_CMD: dict = {}
 class AgentCommander:
     """Publishes everything the C++ deploy stack and the exporter need."""
 
-    def __init__(self, sonic_port: int = SONIC_PORT, keyboard_port: int = KEYBOARD_PORT):
+    def __init__(self, sonic_port: int = SONIC_PORT, keyboard_port: int = KEYBOARD_PORT, hand: str = HAND_TYPE):
+        self._hand_open, self._hand_closed = _hand_poses(hand) if hand != HAND_TYPE else (HAND_OPEN, HAND_CLOSED)
         self._ctx = zmq.Context()
 
         self.sonic = self._ctx.socket(zmq.PUB)
@@ -184,8 +196,8 @@ class AgentCommander:
         self.left_wrist_pos, self.right_wrist_pos = rest_wrists()
         self.left_wrist_quat = np.array([1, 0, 0, 0], dtype=np.float32)
         self.right_wrist_quat = np.array([1, 0, 0, 0], dtype=np.float32)
-        self.left_hand = HAND_OPEN.copy()
-        self.right_hand = HAND_OPEN.copy()
+        self.left_hand = self._hand_open.copy()
+        self.right_hand = self._hand_open.copy()
         self.upper_body = None
         # Which planner sub-mode `frame()` runs in. PLANNER_VR_3PT tracks the
         # wrist position targets above but ONLY while standing — the walking

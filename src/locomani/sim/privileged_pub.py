@@ -24,6 +24,8 @@ import time
 import numpy as np
 import zmq
 
+from locomani.backends.sonic.config import DEFAULT_BACKEND
+
 GHOST_BODY = "ghost_hand"
 
 # Arm-pin state shared between the episode-control server (which sets it over
@@ -54,6 +56,11 @@ EPISODE_PORT = int(os.environ.get("TF_EPISODE_PORT", "5582"))
 # where every frame shares one lighting rig and one table colour gives the
 # model no reason to learn "the red can" rather than that exact RGB under that
 # exact light, and nothing in the dataset would reveal the difference.
+#
+# Receiving end of the shell boundary (decision 8): this module runs inside the
+# sim's own OS process, launched by start_stack.sh with no channel to receive
+# SonicBackendConfig.scene_random other than inherited env -- stack.py is the
+# sole writer of SCENE_RANDOM (whitelisted, scripts/lint_env.py).
 SCENE_RANDOM = os.environ.get("SCENE_RANDOM", "0") != "0"
 
 # Palm frame. The G1's three-finger hand hangs off the wrist yaw link, so this
@@ -65,9 +72,11 @@ PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
 HAND_LINK_PREFIX = ("left_hand_", "right_hand_", "left_dex1_", "right_dex1_")
 
 # Order matters: it is the order the values in a `planner` message's
-# left/right_hand_joints field are interpreted in. Per hand type (HAND env):
-# dex3 = 7 finger joints; dex1 = the two prismatic gripper fingers.
-if os.environ.get("HAND", "dex1") == "dex1":
+# left/right_hand_joints field are interpreted in. Per hand type
+# (SonicBackendConfig.hand, decision 8; never overridden in any script today,
+# so this reads the default directly rather than os.environ): dex3 = 7 finger
+# joints; dex1 = the two prismatic gripper fingers.
+if DEFAULT_BACKEND.hand == "dex1":
     HAND_JOINTS = ["gripper_1", "gripper_2"]
 else:
     HAND_JOINTS = ["thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1"]

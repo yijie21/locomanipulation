@@ -80,8 +80,9 @@ for b in $(seq 0 $((BATCHES - 1))); do
     else
         bash scripts/stack/stop_stack.sh > /dev/null 2>&1
     fi
-    SCENE_SEED="$seed" "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
-        outputs/scene outputs/scene/sim | grep -E '^\[scene\]' || {
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
+        outputs/scene outputs/scene/sim --seed "$seed" --preset "${SCENE_PRESET:-}" \
+        | grep -E '^\[scene\]' || {
         echo "  scene rebuild FAILED"; continue; }
 
     # Snapshot the scene this batch was collected in. build_sim_scene.py

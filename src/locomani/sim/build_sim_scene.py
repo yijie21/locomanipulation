@@ -12,6 +12,7 @@ sim at the XML with `ROBOT_SCENE` (base_sim.py:146) and the agent at the JSON.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -203,28 +204,51 @@ def _check_ego_camera(model) -> None:
         )
 
 
+def parse_args(argv=None):
+    """Argparse flags, same names/defaults as the old SCENE_SEED/SCENE_TABLE_TOP/
+    SCENE_PRESET env vars (decision 8: the scene builder is a one-shot tool, not a
+    runtime knob, so this is a CLI rather than a SonicBackendConfig/CrateTaskConfig
+    field)."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("scene_root")
+    ap.add_argument("out_dir")
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="re-roll table height and object sizes (was SCENE_SEED). Unset means "
+        "the shipped dimensions, which keeps a rebuild reproducible by default.",
+    )
+    ap.add_argument(
+        "--table-top",
+        type=float,
+        default=None,
+        help="pin surface A's height after any seed (was SCENE_TABLE_TOP; bimanual "
+        "crate scene: 0.45 so the walking arms clear the table edge, 2026-09-07)",
+    )
+    ap.add_argument(
+        "--preset",
+        default="",
+        help="narrow what goes on the table (was SCENE_PRESET); see scene_lib.SCENE_PRESETS",
+    )
+    return ap.parse_args(argv)
+
+
 def main() -> None:
+    args = parse_args()
     # Absolute: run_sim_locomani.py resolves ROBOT_SCENE against GEAR_SONIC_ROOT,
     # so a relative path in the metadata would point inside the SONIC tree.
-    scene_root = os.path.abspath(sys.argv[1])
-    out_dir = os.path.abspath(sys.argv[2])
+    scene_root = os.path.abspath(args.scene_root)
+    out_dir = os.path.abspath(args.out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    # SCENE_SEED re-rolls table height and object sizes. These are baked into
-    # the compiled model, so they change here rather than at reset -- once per
-    # batch, since the sim reads the XML at boot. Unset means the shipped
-    # dimensions, which keeps a rebuild reproducible by default.
-    seed = os.environ.get("SCENE_SEED")
-    if seed:
-        print(f"[scene] dimensions: {scene_lib.apply_scene_seed(int(seed))}")
-    # SCENE_TABLE_TOP pins surface A's height after any seed (bimanual crate
-    # scene: 0.45 so the walking arms clear the table edge, 2026-09-07).
-    top = os.environ.get("SCENE_TABLE_TOP")
-    if top:
-        scene_lib.SURFACE_TARGET_TOP["dining_table"] = float(top)
-        print(f"[scene] table top pinned to {float(top):.3f} m by SCENE_TABLE_TOP")
+    if args.seed is not None:
+        print(f"[scene] dimensions: {scene_lib.apply_scene_seed(args.seed)}")
+    if args.table_top is not None:
+        scene_lib.SURFACE_TARGET_TOP["dining_table"] = args.table_top
+        print(f"[scene] table top pinned to {args.table_top:.3f} m by --table-top")
 
-    spec, meta = scene_lib.build(scene_root, freeze_objects=False)
+    spec, meta = scene_lib.build(scene_root, freeze_objects=False, preset=args.preset)
     model = spec.compile()  # fail here rather than at sim start-up
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)

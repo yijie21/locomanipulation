@@ -257,7 +257,10 @@ TRANSITION_DECODER = None
 # the hand PD with no lag -- so the policy closes on time onto a hand that is
 # not there yet, and the jaw clips the bottle (obj_in_palm y = -4 cm in 42/44
 # base100 knock-overs). Delaying only the gripper channel re-aligns the two.
-GRIP_DELAY = int(os.environ.get("TF_GRIP_DELAY", "0"))
+# Module-level toggle (decision 8), same pattern as GRIP_GAIN/ENSEMBLE_N below:
+# SonicBackendConfig.grip_delay's default; a caller assigns vla_round.GRIP_DELAY
+# to override, instead of TF_GRIP_DELAY.
+GRIP_DELAY = 0
 
 
 def _ensemble(buf, now, rate):
@@ -323,7 +326,10 @@ def _stalled(trace, commanded_close) -> bool:
 # wrong value is silent -- the robot just moves at 1.2x or 0.83x speed -- and a
 # default that silently becomes wrong on the next retrain is exactly the class
 # of failure docs/reference.md is a list of.
-DATASET_FPS = float(os.environ.get("TF_DATASET_FPS", "30"))
+#
+# Module-level default (decision 8): SonicBackendConfig.dataset_fps; a caller
+# assigns vla_round.DATASET_FPS to override, instead of TF_DATASET_FPS.
+DATASET_FPS = 30.0
 REPLAN_HZ = DATASET_FPS
 
 
@@ -418,6 +424,17 @@ class ObsBuilder:
             pass
 
 
+# TF_OBS_DUMP's replacement (decision 8): SonicBackendConfig.obs_dump's default is
+# None (off); a caller assigns vla_round.OBS_DUMP = "<path>" for the diagnostic dump.
+OBS_DUMP = None
+# LOCOMANI_REPLACE's replacement (decision 8): SonicBackendConfig.replace; legacy
+# sim-only re-teleport, off by default.
+REPLACE = False
+# LOCKSTEP_NO_SEED's replacement (decision 8): SonicBackendConfig.lockstep.no_seed;
+# never overridden in any script today, so this constant IS that default.
+LOCKSTEP_NO_SEED = False
+
+
 class PolicyLink:
     """Tiny msgpack/zmq client for serve_policy.py -- no gr00t imports."""
 
@@ -454,7 +471,7 @@ class PolicyLink:
         """-> (token [40,64], gripper [40]). Snapped unless SNAP is off."""
         out = self._call("get_action_raw", {"obs": obs})
         self.last_rtc = out.get("rtc.applied")  # [overlap, frozen] | None
-        dump = os.environ.get("TF_OBS_DUMP")
+        dump = OBS_DUMP
         if dump:  # diagnostic: what the policy saw + what it answered
             os.makedirs(dump, exist_ok=True)
             n = getattr(self, "_dump_n", 0)
@@ -499,7 +516,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16, tr
         # across it -- streamed mode over an empty buffer stops control
         # (g1_deploy_onnx_ref.cpp:618), and the first v4 frame is also what
         # flips is_using_encoder_ off. Same order diag_token_replay validated.
-        if replace is not None and os.environ.get("LOCOMANI_REPLACE", "0") == "1":
+        if replace is not None and REPLACE:
             replace()  # legacy sim-only re-teleport, off by default
 
         def _mark(tag):  # see the async client's comment: prelude forensics
@@ -916,7 +933,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                 "[vla] initial-pose hold: no fresh chunk within 15 s -- policy worker stalled; round aborted"
             )
 
-        if replace is not None and os.environ.get("LOCOMANI_REPLACE", "0") == "1":
+        if replace is not None and REPLACE:
             replace()  # legacy sim-only re-teleport, off by default
 
         with lock:
@@ -1632,7 +1649,7 @@ def make_vla_policy_lockstep(
             def infer(obs, f, elapsed, frozen):
                 # LOCKSTEP_NO_SEED=1: leave the server's torch RNG alone (A/B
                 # against the deterministic per-inference seed)
-                if os.environ.get("LOCKSTEP_NO_SEED", "0") != "1":
+                if not LOCKSTEP_NO_SEED:
                     obs["policy.seed"] = int(rng.integers(0, 2**31 - 1))
                 if RTC_ON:
                     obs["rtc.reset"] = 1 if f == 0 else 0

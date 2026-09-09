@@ -54,6 +54,10 @@ CONTROL_DT = 0.02
 
 
 def enabled() -> bool:
+    # Receiving end of the shell boundary (decision 8): this runs inside the
+    # sim's own OS process, launched by start_stack.sh with no channel to
+    # receive SonicBackendConfig.lockstep.enabled other than inherited env --
+    # stack.py is the sole writer of LOCKSTEP (whitelisted, scripts/lint_env.py).
     return os.environ.get("LOCKSTEP", "0") == "1"
 
 
@@ -131,7 +135,9 @@ class LockstepRunner:
             self._send_token,
             physics_dt=float(self.sim.sim_dt),
             control_dt=CONTROL_DT,
-            ack_timeout=float(os.environ.get("LOCKSTEP_ACK_TIMEOUT", "5.0")),
+            # SonicBackendConfig.lockstep.ack_timeout's default (decision 8); never
+            # overridden in any script today, so this constant IS that default.
+            ack_timeout=5.0,
         )
         self._last_time = None
         self._ticks = 0
@@ -144,8 +150,10 @@ class LockstepRunner:
         # session opens, physics runs but the robot is restored to its held
         # pose after every substep, so the deploy fills its history with a
         # static, self-consistent robot before it is allowed to move.
-        self._warmup = int(os.environ.get("LOCKSTEP_WARMUP_TICKS", "60"))
-        self._cmd_delay = int(os.environ.get("LOCKSTEP_CMD_DELAY", "0"))
+        # SonicBackendConfig.lockstep.{warmup_ticks,cmd_delay}'s defaults
+        # (decision 8); neither is overridden in any script today.
+        self._warmup = 60
+        self._cmd_delay = 0
         self._cmd_hist = []
         self._hold_qpos = None
         self._hold_left = 0
@@ -157,8 +165,10 @@ class LockstepRunner:
         # loop sleeps with jitter, so a frame is occasionally held 1 or 3
         # ticks. Both are mean-preserving. Seeded per session so a round
         # replays exactly.
-        self._jitter = os.environ.get("LOCKSTEP_JITTER", "0") == "1"
-        self._jseed = int(os.environ.get("LOCKSTEP_JITTER_SEED", "0"))
+        # SonicBackendConfig.lockstep.{jitter,jitter_seed}'s defaults (decision 8);
+        # neither is overridden in any script today.
+        self._jitter = False
+        self._jseed = 0
         self._jrng = np.random.default_rng(self._jseed)
         self._img_every = max(1, int(round(self.sim.image_dt / CONTROL_DT)))
 
