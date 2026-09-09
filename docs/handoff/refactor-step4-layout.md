@@ -555,3 +555,86 @@ one is a single control loop or a linear setup block with no natural sub-boundar
 
 **Not attempted this session** (JOB 2's conditional family 4, gated on 2/3/5 all green -- they are):
 `primitives.py`.
+
+**Commit (family 4, next session) -- refactor step 4b, family 4: primitives.py mixin split (pure
+extraction).** `class Primitives` (1810 lines total, the class itself ~1300 lines / ~40 methods) split
+into a leaf constants/helpers module plus four mixins, mirroring the shape families 2/3 used (a leaf every
+satellite imports from, so nothing needs a deferred import here -- unlike 2/3/5, nothing on `Primitives`
+is EVER monkeypatched except `__init__`, which stays on the base class untouched by the split; see the
+monkeypatch audit below):
+
+- **`primitives_tuning.py`** (489 lines, leaf, zero back-dependency) -- every `ALL_CAPS` tuning constant
+  (`CONTROL_HZ`/`DT`, hand/grasp geometry, all `REACH_*`/`SERVO_*`/`TRACK_*`/`NAV_*`/`CROUCH_*` knobs) and
+  every free kinematic helper (`walking_arm_pose`, `upper_body_17`, `UPPER_BODY_NAMES`,
+  `upper_body_from_mj`, `READY_UPPER`, `_opposed`, `yaw_of`, `_axis_angle`, `_from_axis_angle`,
+  `_rot_scale`, `_rot_lerp`, `_quat_of`, `wrap`), moved verbatim. Both `primitives.py` and all four mixins
+  import from here; nothing here imports any of them.
+- **`primitives_observation.py`** (79 lines) -- `PrimitivesObservationMixin`: `obs`, `pelvis_xy`,
+  `pelvis_yaw`, `object_pos`, `world_to_root`, `_rot`, `world_to_root_full`, `log`, `_facing`. No
+  `primitives_tuning` dependency at all -- imports only `numpy`.
+- **`primitives_walk.py`** (433 lines) -- `PrimitivesWalkMixin`: `walk_to`, `turn_to`, `navigate`,
+  `goto_object`, `face_for_grasp`, `approach`.
+- **`primitives_arms.py`** (486 lines) -- `PrimitivesArmsMixin`: `_legacy_seed`, `reach`, `servo_grasp`,
+  `grasp`, `release`.
+- **`primitives_crouch.py`** (386 lines) -- `PrimitivesCrouchMixin`: `crouch`, `stand_up`, `track`,
+  `crouch_needed`, `_hold_pelvis`, `_maintain_crouch`, `tuck_arms`, `carry_pose`.
+- **`primitives.py`** itself drops to 146 lines: module docstring (extended with the split map), the
+  trimmed import block, `class Primitives(PrimitivesObservationMixin, PrimitivesWalkMixin,
+  PrimitivesArmsMixin, PrimitivesCrouchMixin)` with `__init__`/`close` verbatim, and the original
+  `__all__`. Every name that used to live here and moved is re-exported (plain top-level imports from
+  `primitives_tuning.py` plus the four mixin classes), so `from locomani.backends.sonic.primitives import
+  X` is unchanged for every external caller; verified against an explicit audit of every
+  `from locomani.backends.sonic.primitives import ...` across `src/`+`tests/` (excluding the file itself):
+  `DT, GRASP_CENTRE_OFFSET, HAND_CLOSED_LEFT, HAND_CLOSED_RIGHT, HAND_OPEN, LIFT_HEIGHT, LocomotionMode,
+  Primitives, READY_UPPER, READY_WRISTS, STANDING_PELVIS_Z, STAND_OFF, StreamMode, UPPER_BODY_NAMES,
+  upper_body_from_mj, wrap` are all still resolvable from this module.
+- **Dropped, deliberately:** `from locomani.tasks.bottle import grasping`, present in the original file's
+  import block but never referenced as `grasping.<anything>` anywhere in the class body (only in
+  comments, e.g. "grasping.PREGRASP_GAP is..." -- prose, not code) -- confirmed by grepping the original
+  file and every new mixin file for `grasping\.` outside comments; `grasping.py` itself has no
+  import-time side effects that any behaviour here depends on (pure constants + a dataclass + pose math).
+  Not re-exported either, since no external `from ...primitives import grasping` reference exists in the
+  audit above.
+
+**Monkeypatch audit for `Primitives`** (`grep -rn "Primitives\.[A-Za-z_]*\s*="` across `src/`+`tests/`):
+only `__init__` is ever patched, in three diagnostic tools (`diag_transition_cross.py:310`,
+`diag_crouched_handover.py:246`, `eval_closed_loop.py:190`, each `old_init = gym.Primitives.__init__` /
+`grasp_gym.Primitives.__init__ = ...`). Safe regardless of the mixin split: `__init__` stays defined
+directly on the `Primitives` class itself (not promoted into a mixin), and a class-attribute patch mutates
+the one shared class object no matter which of its bases originally defined which OTHER method. No method
+moved into a mixin is ever monkeypatched by anything in the repo.
+
+**Checks (all green):** `ruff format . && ruff check .` (two files needed only an import-order autofix,
+`ruff check --fix`, no logic touched); full pytest suite, 177 passed / 9 skipped / 11 subtests
+(unchanged); `lint_env.py --strict`; `gen_config_reference.py --check`; the import smoke-check (all nine
+modules, plus `primitives` itself: `Primitives`, `DT`, `CONTROL_HZ` all resolve); `bash -n` over every
+`scripts/*.sh` + `scripts/stack/*.sh`; `eval_closed_loop.py`/`bimanual_carry.py`/`bimanual_wall.py --help`
+as real subprocesses (unchanged from family 5). An AST-based unresolved-name checker (collects
+imports/assignments/params/class names as "known", flags any `Name` read outside that set) was run
+against all four new mixin files and found nothing missing -- two real bugs it would NOT have caught were
+found by manual re-read instead: `servo_grasp`'s default argument had been rewritten from
+`offset=GRASP_CENTRE_OFFSET` (evaluated once, original semantics) to `offset=None` plus a runtime
+`if offset is None` check, and `primitives_crouch.py` had gained a duplicate, independently-drifting
+`CROUCH_HOLD_X, CROUCH_HOLD_Y = 0.12, 0.26` instead of importing the one definition in
+`primitives_tuning.py` -- both fixed before running any checks above.
+
+**`lint_sizes.py`:** 6 files / 79 functions over cap (after family 5) -> 5 files / 79 functions over cap.
+`primitives.py` drops out of the file list (1810 -> 146 lines); none of the five new files entered it.
+Function count is unchanged on purpose -- family 4's mandate is "zero method-body changes", so the four
+methods that were already over 80 lines in the original monolithic class are still over 80 lines in their
+new mixin files, just relocated rather than split:
+- `primitives_arms.py:reach` (201) / `primitives_arms.py:servo_grasp` (153) -- each is one IK-refinement
+  or align-then-advance control loop already shaped like family 2/5's documented control-loop exceptions.
+- `primitives_walk.py:navigate` (150) / `primitives_crouch.py:track` (150) -- a distance-field-following
+  loop and a pelvis-relative tracking loop, same shape.
+None of these were split further, per the family-4 spec (extraction only, no method-body changes) --
+splitting them would be family-2/5-style phase extraction, out of scope here.
+
+The 5 files still over the 600-line cap (`scene_lib.py` 1150, `privileged_pub.py` 923,
+`convert_to_hf_format.py` 869, `isaac_scene.py` 806, `isaac/stage.py` 619) are untouched by JOB 2 --
+outside all four families' scope, not attempted this session.
+
+**All four JOB 2 families now done.** Full lint_sizes trajectory across the whole effort: 12 files / 66
+functions over cap (before family 1) -> 10/72 (after family 1) -> 9/74 (after family 2, stream_reach.py)
+-> 8/74 (after family 3, vla_round.py) -> 6/79 (after family 5, crate) -> 5/79 (after family 4,
+primitives.py, this commit).
