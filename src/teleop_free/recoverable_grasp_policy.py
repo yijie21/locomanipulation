@@ -323,7 +323,6 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
         self.execution.metrics["recovery"].setdefault("motions", []).append(motion)
         end = time.monotonic() + 12.0
         stable = None
-        last_region_probe = -float("inf")
         try:
             while time.monotonic() < end and not self.expired():
                 state = self.p.obs()
@@ -333,19 +332,6 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
                 if state["fallen"] or not self.floor_clear(base, margin=0.06) or not self.walk_tick(state):
                     return False
                 dyaw = wrap(yaw - self.p.pelvis_yaw(state))
-                if getattr(self.config, "recovery_region_stop", False) and time.monotonic() - last_region_probe >= 0.25:
-                    # The goal only guides motion. Actual IK/capture and
-                    # collision feasibility decide whether to stop, even
-                    # away from the nominal point/heading. Braking and live
-                    # candidate revalidation still precede descent.
-                    probe_start = time.monotonic()
-                    selected = self.select_drop(state, goal[2])
-                    last_region_probe = time.monotonic()
-                    motion["region_probe_count"] = motion.get("region_probe_count", 0) + 1
-                    motion["region_probe_s"] = motion.get("region_probe_s", 0.0) + last_region_probe - probe_start
-                    if selected is not None:
-                        motion.update(stop_reason="feasible_grasp_region", remaining_goal_distance_m=float(distance))
-                        return True
                 if distance < 0.025 and abs(dyaw) < 0.12:
                     self.hold()
                     stable = stable or time.monotonic()

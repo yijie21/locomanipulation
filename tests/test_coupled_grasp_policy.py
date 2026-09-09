@@ -79,17 +79,9 @@ class CoupledTests(unittest.TestCase):
             self.assertEqual(p.select_drop(state, 0.1), 0.1)
             fallback.assert_not_called()
 
-    def test_region_candidate_survives_braking_for_fresh_geometry_revalidation(self):
-        p, _ = self.cached_policy()
-        p.config = SimpleNamespace(recovery_region_stop=True)
-        prepared = p._prepared
-        with patch.object(RecoverableGraspPolicy, "brake", return_value=True):
-            self.assertTrue(p.brake())
-        self.assertIs(p._prepared, prepared)
-
     def test_legacy_braking_still_starts_without_a_cached_candidate(self):
         p, _ = self.cached_policy()
-        p.config = SimpleNamespace(recovery_region_stop=False)
+        p.config = SimpleNamespace()
         with patch.object(RecoverableGraspPolicy, "brake", return_value=True):
             p.brake()
         self.assertIsNone(p._prepared)

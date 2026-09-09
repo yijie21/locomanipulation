@@ -37,7 +37,6 @@ class VisibleConfigTests(unittest.TestCase):
         for kw in (
             dict(arrival_advance_jitter=0.02, arrival_advance=0.05),
             dict(pregrasp_lateral_jitter=0.02),
-            dict(recovery_region_stop=True),
             dict(brake_preplan=True),
             dict(visible_brake_depth=0.10),
         ):

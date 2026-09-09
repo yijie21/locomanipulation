@@ -82,12 +82,7 @@ def project_squat(state, drop, config):
 
 class CoupledGraspPolicy(RecoverableGraspPolicy):
     def brake(self):
-        # A region probe has already found a candidate at the live pose.
-        # Keep it across braking; select_drop rechecks CURRENT geometry and
-        # collisions before use. Discarding it forces a potentially different
-        # nearest-template solve and can loop without any actual correction.
-        if not getattr(self.config, "recovery_region_stop", False):
-            self._prepared = None
+        self._prepared = None
         self._prepared_once = False
         return super().brake()
 

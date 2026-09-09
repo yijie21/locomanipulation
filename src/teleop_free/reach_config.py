@@ -22,7 +22,6 @@ class ReachConfig:
     transport_guard: bool = True
     ready_grasp_baseline: bool = False
     ready_grasp_recovery: bool = False
-    recovery_region_stop: bool = False
     grip_below_center: float = 0.01
     arrival_advance: float = 0.0
     measured_squat_handover: bool = False
@@ -65,7 +64,6 @@ class ReachConfig:
                 self.coupled_squat,
                 self.timely_capture,
                 self.brake_preplan,
-                self.recovery_region_stop,
                 self.visible_expert,
             )
         ):
@@ -79,7 +77,6 @@ class ReachConfig:
                 "coupled_squat",
                 "timely_capture",
                 "brake_preplan",
-                "recovery_region_stop",
                 "visible_expert",
             ) and (type(value) not in (int, float) or not math.isfinite(value)):
                 raise ValueError(f"{name} must be a finite number")
@@ -97,8 +94,6 @@ class ReachConfig:
             raise ValueError("Reach calibration outside supported controller bounds")
         if self.coupled_hand_lead and (not self.coupled_squat or not 0.005 <= self.coupled_hand_lead <= 0.05):
             raise ValueError("Coupled hand lead requires coupled squat and a 5–50 mm bound")
-        if self.recovery_region_stop and not self.ready_grasp_recovery:
-            raise ValueError("Region stopping requires recovery policy")
         if not (
             0 <= self.squat_prediction_backshift_ratio <= 1.2 and 0 <= self.squat_prediction_drop_shortfall <= 0.02
         ):
@@ -142,12 +137,7 @@ class ReachConfig:
         if self.visible_expert:
             if not (self.ready_grasp_baseline and self.ready_grasp_recovery):
                 raise ValueError("visible_expert requires the ready baseline with the recovery controller")
-            if (
-                self.arrival_advance_jitter
-                or self.pregrasp_lateral_jitter
-                or self.recovery_region_stop
-                or self.brake_preplan
-            ):
+            if self.arrival_advance_jitter or self.pregrasp_lateral_jitter or self.brake_preplan:
                 raise ValueError("visible_expert excludes per-episode jitter, region stopping and brake preplanning")
             if not (0.20 <= self.visible_brake_depth <= 0.45 and 0 <= self.visible_decel_band <= 0.30):
                 raise ValueError("visible brake geometry outside supported bounds")
