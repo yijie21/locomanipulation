@@ -87,7 +87,7 @@ if [ ! -f "$VAL_DS/meta/info.json" ]; then
     SESS=$(tr '\n' ' ' < "$LOCOMANI_OUTPUTS/logs/fastreach200/sessions.txt")
     MAN=$(ls -1 "$LOCOMANI_OUTPUTS"/logs/fastreach200/manifest_*.jsonl | sort | tr '\n' ' ')
     # shellcheck disable=SC2086
-    "$VENV_DATA_PY" "$LOCOMANI_SRC/tools/convert_to_hf_format.py" \
+    "$VENV_DATA_PY" "$LOCOMANI_SRC/pipeline/convert_to_hf_format.py" \
         --sessions $SESS --manifest $MAN \
         --holdout 20 --holdout-seed 0 \
         --out "$TRAIN_DS" --holdout-out "$VAL_DS"
@@ -101,7 +101,7 @@ for ds in "$TRAIN_DS" "$VAL_DS"; do
     [ -f "$ds/meta/stats.json" ] || \
     "$GR00T_PY" -m gr00t.data.stats --dataset-path "$ds" \
         --embodiment-tag UNITREE_G1_SONIC --modality-config-path "$MODALITY" | tail -1
-    "$VENV_DATA_PY" "$LOCOMANI_SRC/tools/check_dataset.py" "$ds"
+    "$VENV_DATA_PY" "$LOCOMANI_SRC/pipeline/check_dataset.py" "$ds"
 done
 
 # --- 4. train -----------------------------------------------------------------
@@ -137,7 +137,7 @@ for c in $(ls -d "$CKPT_DIR"/checkpoint-* | sort -t- -k2 -n); do
     n=$(basename "$c")
     [ -f "$EVAL_DIR/open_loop_$n.json" ] && continue
     echo "--- $n"
-    "$GR00T_PY" "$LOCOMANI_SRC/tools/eval_open_loop.py" \
+    "$GR00T_PY" "$LOCOMANI_SRC/pipeline/eval_open_loop.py" \
         --model-path "$c" --dataset "$VAL_DS" --horizons 16 \
         --out "$EVAL_DIR/open_loop_$n.json" --wandb-run "$RUN" \
         || echo "  (failed on $n)"
@@ -160,7 +160,7 @@ PYEOF
 )
 echo "BEST: $BEST"; echo "$CKPT_DIR/$BEST" > "$EVAL_DIR/best_checkpoint.txt"
 [ -f "$EVAL_DIR/open_loop_best_full.json" ] || \
-"$GR00T_PY" "$LOCOMANI_SRC/tools/eval_open_loop.py" \
+"$GR00T_PY" "$LOCOMANI_SRC/pipeline/eval_open_loop.py" \
     --model-path "$CKPT_DIR/$BEST" --dataset "$VAL_DS" --horizons 1 8 16 40 \
     --out "$EVAL_DIR/open_loop_best_full.json" --wandb-run "$RUN" \
     || echo "  (full-horizon pass failed)"
@@ -174,8 +174,8 @@ for pid in $(pgrep -f "venv_sim/bin/python -c from multiprocessing" || true); do
 done
 sleep 1
 NO_ENCODER=1 SCENE_RANDOM=0 SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-    bash "$LOCOMANI_SRC/start_stack.sh" "pick up the water bottle"
-CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/tools/serve_policy.py" \
+    bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle"
+CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/pipeline/serve_policy.py" \
     --model-path "$CKPT_DIR/$BEST" --port 5590 \
     > "$LOCOMANI_TMP/serve_policy_$RUN.log" 2>&1 &
 for _ in $(seq 1 60); do
@@ -183,9 +183,9 @@ for _ in $(seq 1 60); do
     sleep 5
 done
 grep -q "listening" "$LOCOMANI_TMP/serve_policy_$RUN.log" || { echo "server never up"; exit 1; }
-cd "$LOCOMANI_SRC"
+cd "$LOCOMANI_SRC/pipeline"
 "$LOCOMANI_ROOT/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python" \
-    tools/eval_closed_loop.py --fresh 100 --seed 6000 --client async \
+    eval_closed_loop.py --fresh 100 --seed 6000 --client async \
     --out "$EVAL_DIR/closed_loop.json" \
     --trace-dir "$EVAL_DIR/closed_loop_traces"
 

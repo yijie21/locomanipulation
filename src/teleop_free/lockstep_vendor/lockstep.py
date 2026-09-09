@@ -19,7 +19,6 @@ from typing import Any, Callable, Protocol
 
 import numpy as np
 
-
 LOCKSTEP_MAGIC = 0x534C4B31
 NO_ACTION_SEQ = 0xFFFFFFFF
 DEFAULT_ACK_TIMEOUT = 2.0
@@ -100,9 +99,7 @@ class LockstepBarrier:
         ratio = control_dt / physics_dt
         rounded = round(ratio)
         if not math.isfinite(ratio) or rounded <= 0 or abs(ratio - rounded) > 1e-12:
-            raise ValueError(
-                f"control_dt/physics_dt must be a positive integer, got {control_dt}/{physics_dt}={ratio}"
-            )
+            raise ValueError(f"control_dt/physics_dt must be a positive integer, got {control_dt}/{physics_dt}={ratio}")
         if rounded != 4:
             raise ValueError(f"current SONIC lockstep requires exactly four substeps, got {rounded}")
         if ack_timeout <= 0 or retry_period <= 0 or retry_period >= ack_timeout:
@@ -223,9 +220,7 @@ class LockstepBarrier:
             raise LockstepProtocolError("simulator advanced past an uncommitted control boundary")
 
         last_action = self.action_seq if self.action_seq >= 0 else NO_ACTION_SEQ
-        duplicate = LockstepAck(
-            LOCKSTEP_MAGIC, self.session_id, self.sim_step_seq, last_action
-        )
+        duplicate = LockstepAck(LOCKSTEP_MAGIC, self.session_id, self.sim_step_seq, last_action)
         self.bridge.publish_low_state(proprio, duplicate)
         self._substeps_since_boundary += 1
         self._emit(
@@ -315,9 +310,7 @@ class LockstepBarrier:
                 }
                 self._emit("timeout", **diagnostics)
                 raise LockstepTimeout(diagnostics)
-            snapshot = self.bridge.wait_for_ack(
-                expected, timeout=min(self.retry_period, remaining)
-            )
+            snapshot = self.bridge.wait_for_ack(expected, timeout=min(self.retry_period, remaining))
             if snapshot is not None:
                 if self._event_sink is not None:
                     self._emit(

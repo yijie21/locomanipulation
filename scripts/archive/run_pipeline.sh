@@ -91,7 +91,7 @@ say "3/6 dataset audit"
 # surviving evidence is the gym's own per-episode predicate. Drop this flag as
 # soon as a re-collected set has the channel back.
 for ds in "$TRAIN_DS" "$VAL_DS"; do
-    "$DATA_PY" "$LOCOMANI_SRC/tools/check_dataset.py" "$ds" \
+    "$DATA_PY" "$LOCOMANI_SRC/pipeline/check_dataset.py" "$ds" \
         ${ALLOW_NO_POSE:+--allow-missing-object-pose}
 done
 
@@ -109,7 +109,7 @@ CKPTS=$(ls -d "$CKPT_DIR"/checkpoint-* 2>/dev/null | sort -t- -k2 -n || true)
 for c in $CKPTS; do
     n=$(basename "$c")
     echo "--- $n"
-    "$GR00T_PY" "$LOCOMANI_SRC/tools/eval_open_loop.py" \
+    "$GR00T_PY" "$LOCOMANI_SRC/pipeline/eval_open_loop.py" \
         --model-path "$c" --dataset "$VAL_DS" \
         --modality-config "$MODALITY" \
         --out "$EVAL_DIR/open_loop_$n.json" \
@@ -150,7 +150,7 @@ echo "$BEST_CKPT" > "$EVAL_DIR/best_checkpoint.txt"
 # loop still drifts 0.77 m (diag_token_replay.py), so a good nMSE is necessary
 # and nowhere near sufficient.
 say "6/6 closed-loop evaluation"
-CL="$LOCOMANI_SRC/tools/eval_closed_loop.py"
+CL="$LOCOMANI_SRC/pipeline/eval_closed_loop.py"
 if [ ! -f "$CL" ]; then
     echo "$CL does not exist yet -- stopping here."
     echo "Checkpoints and open-loop results are complete; run stage 6 with:"

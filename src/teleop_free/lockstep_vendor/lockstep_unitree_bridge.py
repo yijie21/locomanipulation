@@ -98,11 +98,7 @@ class LockstepUnitreeBridge(UnitreeSdk2Bridge):
 
     def cmd_received(self) -> bool:
         with self._command_lock:
-            return bool(
-                self.low_cmd_received
-                or self.left_hand_cmd_received
-                or self.right_hand_cmd_received
-            )
+            return bool(self.low_cmd_received or self.left_hand_cmd_received or self.right_hand_cmd_received)
 
     def publish_low_state(self, proprio: dict[str, Any], envelope: LockstepAck) -> None:
         with self._publish_lock:
@@ -113,11 +109,7 @@ class LockstepUnitreeBridge(UnitreeSdk2Bridge):
                 self._publishing_envelope = None
 
     def _matching_snapshot(self, expected: LockstepAck) -> CommandSnapshot | None:
-        if not (
-            self.low_cmd_received
-            and self.left_hand_cmd_received
-            and self.right_hand_cmd_received
-        ):
+        if not (self.low_cmd_received and self.left_hand_cmd_received and self.right_hand_cmd_received):
             return None
         acks = (
             self._ack_from_message(self.low_cmd),
@@ -138,9 +130,7 @@ class LockstepUnitreeBridge(UnitreeSdk2Bridge):
             ),
         )
 
-    def wait_for_ack(
-        self, expected: LockstepAck, timeout: float
-    ) -> CommandSnapshot | None:
+    def wait_for_ack(self, expected: LockstepAck, timeout: float) -> CommandSnapshot | None:
         deadline = time.monotonic() + max(0.0, timeout)
         with self._command_condition:
             while True:

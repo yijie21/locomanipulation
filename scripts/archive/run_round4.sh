@@ -67,7 +67,7 @@ serve() {  # serve <model_dir> ; leaves server on :5590 GPU1
     for pid in $(pgrep -f "$(printf '%s_%s' serve policy)" || true); do
         kill -9 "$pid" 2>/dev/null || true; done
     sleep 2
-    CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/tools/serve_policy.py" \
+    CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/pipeline/serve_policy.py" \
         --model-path "$1" --port 5590 > "$log" 2>&1 &
     for _ in $(seq 1 60); do
         grep -q "listening" "$log" 2>/dev/null && return 0; sleep 5
@@ -88,7 +88,7 @@ echo "  tier-1 finished"
 
 # --- 1. anatomy ---------------------------------------------------------------
 say "1/8 failure anatomy"
-"$VENV_SIM_PY" "$LOCOMANI_SRC/tools/failure_anatomy.py" \
+"$VENV_SIM_PY" "$LOCOMANI_SRC/tasks/bottle/failure_anatomy.py" \
     "$T1/nosnap_traces" "$T1/h40_traces" --out "$T1/anatomy.json"
 
 # --- 2. config decision + full-budget confirm ---------------------------------
@@ -121,7 +121,7 @@ if [ "$FLAGS" = "COMBO" ]; then
     say "2b/8 combo tiebreak (both variants won their A/B)"
     if [ ! -f "$T1/combo.json" ]; then
         serve "$LOCOMANI_OUTPUTS/train/fast200/checkpoint-9000" || exit 1
-        (cd "$LOCOMANI_SRC" && "$VENV_SIM_PY" tools/eval_closed_loop.py \
+        (cd "$LOCOMANI_SRC/pipeline" && "$VENV_SIM_PY" eval_closed_loop.py \
             --fresh 50 --seed 6000 --client async --stall-abort 30 \
             --no-snap --replan-interval 1.33 \
             --out "$T1/combo.json" --trace-dir "$T1/combo_traces")
@@ -146,7 +146,7 @@ if [ -n "$FLAGS" ] && [ ! -f "$R4/confirm_config.json" ]; then
     say "2c/8 full-budget confirm of '$FLAGS' on the ROUND-3 model"
     serve "$LOCOMANI_OUTPUTS/train/fast200/checkpoint-9000" || exit 1
     # shellcheck disable=SC2086
-    (cd "$LOCOMANI_SRC" && "$VENV_SIM_PY" tools/eval_closed_loop.py \
+    (cd "$LOCOMANI_SRC/pipeline" && "$VENV_SIM_PY" eval_closed_loop.py \
         --fresh 100 --seed 6000 --client async $FLAGS \
         --out "$R4/confirm_config.json" \
         --trace-dir "$R4/confirm_traces")
@@ -168,7 +168,7 @@ if [ "$(kept_dagger)" -lt 50 ]; then
     # the round-3 collection (randomization at its default). NO_ENCODER may
     # linger in the environment from an eval stage -- strip it explicitly.
     env -u NO_ENCODER SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-        bash "$LOCOMANI_SRC/start_stack.sh" "pick up the water bottle"
+        bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle"
     DAGGER_OUT="$DAGGER_OUT" bash "$LOCOMANI_ROOT/scripts/collect_dagger.sh" 50
     echo "  kept: $(kept_dagger)/50"
     [ "$(kept_dagger)" -ge 45 ] || { echo "DAgger collection fell short -- stopping."; exit 1; }
@@ -182,7 +182,7 @@ if [ ! -f "$VAL_DS/meta/info.json" ]; then
     SESS="$(tr '\n' ' ' < "$LOCOMANI_OUTPUTS/logs/fastreach200/sessions.txt") $(tr '\n' ' ' < "$DAGGER_OUT/sessions.txt")"
     MAN="$(ls -1 "$LOCOMANI_OUTPUTS"/logs/fastreach200/manifest_*.jsonl | sort | tr '\n' ' ') $(ls -1 "$DAGGER_OUT"/manifest_*.jsonl | sort | tr '\n' ' ')"
     # shellcheck disable=SC2086
-    "$VENV_DATA_PY" "$LOCOMANI_SRC/tools/convert_to_hf_format.py" \
+    "$VENV_DATA_PY" "$LOCOMANI_SRC/pipeline/convert_to_hf_format.py" \
         --sessions $SESS --manifest $MAN \
         --holdout 20 --holdout-seed 0 \
         --out "$TRAIN_DS" --holdout-out "$VAL_DS"
@@ -196,7 +196,7 @@ for ds in "$TRAIN_DS" "$VAL_DS"; do
     [ -f "$ds/meta/stats.json" ] || \
     "$GR00T_PY" -m gr00t.data.stats --dataset-path "$ds" \
         --embodiment-tag UNITREE_G1_SONIC --modality-config-path "$MODALITY" | tail -1
-    "$VENV_DATA_PY" "$LOCOMANI_SRC/tools/check_dataset.py" "$ds"
+    "$VENV_DATA_PY" "$LOCOMANI_SRC/pipeline/check_dataset.py" "$ds"
 done
 
 kill_stack
@@ -216,7 +216,7 @@ for c in $(ls -d "$CKPT_DIR"/checkpoint-* | sort -t- -k2 -n); do
     n=$(basename "$c")
     [ -f "$R4/open_loop_$n.json" ] && continue
     echo "--- $n"
-    "$GR00T_PY" "$LOCOMANI_SRC/tools/eval_open_loop.py" \
+    "$GR00T_PY" "$LOCOMANI_SRC/pipeline/eval_open_loop.py" \
         --model-path "$c" --dataset "$VAL_DS" --horizons 16 \
         --out "$R4/open_loop_$n.json" --wandb-run "$RUN" \
         || echo "  (failed on $n)"
@@ -239,7 +239,7 @@ PYEOF
 )
 echo "BEST: $BEST"; echo "$CKPT_DIR/$BEST" > "$R4/best_checkpoint.txt"
 [ -f "$R4/open_loop_best_full.json" ] || \
-"$GR00T_PY" "$LOCOMANI_SRC/tools/eval_open_loop.py" \
+"$GR00T_PY" "$LOCOMANI_SRC/pipeline/eval_open_loop.py" \
     --model-path "$CKPT_DIR/$BEST" --dataset "$VAL_DS" --horizons 1 8 16 40 \
     --out "$R4/open_loop_best_full.json" --wandb-run "$RUN" \
     || echo "  (full-horizon pass failed)"
@@ -250,10 +250,10 @@ if [ ! -f "$R4/closed_loop.json" ]; then
     kill_stack
     sleep 2
     NO_ENCODER=1 SCENE_RANDOM=0 SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-        bash "$LOCOMANI_SRC/start_stack.sh" "pick up the water bottle"
+        bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle"
     serve "$CKPT_DIR/$BEST" || exit 1
     # shellcheck disable=SC2086
-    (cd "$LOCOMANI_SRC" && "$VENV_SIM_PY" tools/eval_closed_loop.py \
+    (cd "$LOCOMANI_SRC/pipeline" && "$VENV_SIM_PY" eval_closed_loop.py \
         --fresh 100 --seed 6000 --client async $FLAGS \
         --out "$R4/closed_loop.json" \
         --trace-dir "$R4/closed_loop_traces")

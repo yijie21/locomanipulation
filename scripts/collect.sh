@@ -23,17 +23,6 @@
 #   SPAWN_ARGS="--spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20" \
 #       bash scripts/collect.sh 10 20 1
 #
-# DART collection noise (recovery demonstrations; see grasp_gym --dart-frac):
-#
-#   DART_ARGS="--dart-frac 0.7" ... bash scripts/collect.sh 12 20 1
-#
-# 0.7 of rounds first-stop at ~0.45-0.70 m from the object (see --dart-far:
-# the draw is the brake trigger; deceleration carry lands the realized stop
-# 0.06-0.16 m short of it) and the repair loop
-# walks the rest in -- calibrated to the measured policy park tail (19% of
-# closed-loop rounds park >= 0.50 m, where success is 5%). Budget ~20% more
-# rounds than the target episode count: the far stop costs some successes.
-#
 # SCENE_PRESET matters here and not only at install time: this script rebuilds
 # the scene once per batch, and the preset is read at that moment.
 #
@@ -53,7 +42,6 @@ SEED0="${3:-1}"
 # Passed straight to grasp_gym. Defaults match grasp_gym's own, so leaving them
 # unset is exactly the old behaviour -- and exactly the wide distribution.
 SPAWN_ARGS="${SPAWN_ARGS:-}"
-DART_ARGS="${DART_ARGS:-}"
 TARGETS="${TARGETS:-pool}"
 JITTER="${JITTER:-0.10}"
 # Overridable so a run can keep its manifests in their own directory: the
@@ -80,7 +68,6 @@ echo "collect: $BATCHES batches x $ROUNDS rounds, scene seeds from $SEED0"
 echo "  preset  ${SCENE_PRESET:-<none> (default multi-object table)}"
 echo "  targets $TARGETS   edge-jitter $JITTER"
 echo "  spawn   ${SPAWN_ARGS:-<grasp_gym defaults: 1-3 m out, off the approach line, +-90 deg>}"
-echo "  dart    ${DART_ARGS:-<off>}"
 echo "  render  $RENDER_BACKEND"
 for b in $(seq 0 $((BATCHES - 1))); do
     seed=$((SEED0 + b))
@@ -89,11 +76,11 @@ for b in $(seq 0 $((BATCHES - 1))); do
     # COLLECT_NO_STOP=1: another instance's stack is running (an eval);
     # stop only THIS instance instead of every stack on the machine.
     if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
-        bash src/teleop_free/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+        bash scripts/stack/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
     else
-        bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+        bash scripts/stack/stop_stack.sh > /dev/null 2>&1
     fi
-    SCENE_SEED="$seed" "$VENV_SIM_PY" src/teleop_free/build_sim_scene.py \
+    SCENE_SEED="$seed" "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
         outputs/scene outputs/scene/sim | grep -E '^\[scene\]' || {
         echo "  scene rebuild FAILED"; continue; }
 
@@ -110,12 +97,12 @@ for b in $(seq 0 $((BATCHES - 1))); do
        "$SNAP/" 2>/dev/null || echo "  scene snapshot failed (non-fatal)"
     printf '{"scene_seed":%s,"preset":"%s","built":"%s","git":{"build_sim_scene.py":"%s","scene_lib.py":"%s"}}\n' \
         "$seed" "${SCENE_PRESET:-}" "$(date -Is)" \
-        "$(git log -1 --format=%h -- src/teleop_free/build_sim_scene.py 2>/dev/null)" \
-        "$(git log -1 --format=%h -- src/teleop_free/scene_lib.py 2>/dev/null)" \
+        "$(git log -1 --format=%h -- src/locomani/sim/build_sim_scene.py 2>/dev/null)" \
+        "$(git log -1 --format=%h -- src/locomani/sim/scene_lib.py 2>/dev/null)" \
         > "$SNAP/provenance.json"
 
     nohup env SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-        bash src/teleop_free/start_stack.sh "pick up the object" \
+        bash scripts/stack/start_stack.sh "pick up the object" \
         > "$OUT/stack_$seed.log" 2>&1 &
     # Wait for the stack rather than sleeping: the deploy's first boot after a
     # scene change still loads cached TensorRT engines, but "still booting" and
@@ -129,10 +116,10 @@ for b in $(seq 0 $((BATCHES - 1))); do
         continue
     fi
 
-    "$VENV_SIM_PY" -u src/teleop_free/grasp_gym.py \
+    "$VENV_SIM_PY" -u src/locomani/tasks/bottle/grasp_gym.py \
         --rounds "$ROUNDS" --record \
         --targets "$TARGETS" --edge-jitter "$JITTER" \
-        $SPAWN_ARGS $DART_ARGS \
+        $SPAWN_ARGS \
         --manifest "$OUT/manifest_$seed.jsonl" \
         > "$OUT/gym_$seed.log" 2>&1
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$seed.log" || echo "  (no result line)"
@@ -144,16 +131,16 @@ for b in $(seq 0 $((BATCHES - 1))); do
         echo "  [isaac] would re-render batch $seed:"
         echo "  [isaac]   scene    $OUT/scene_$seed/scene_locomani.xml"
         echo "  [isaac]   sidecar  $(locomani_session_root)/pose_sidecar/"
-        echo "  [isaac]   cam traj $RENDER_PY src/teleop_free/isaac/compute_cam_traj.py"
-        echo "  [isaac]   render   $RENDER_PY src/teleop_free/isaac/isaac_render.py"
+        echo "  [isaac]   cam traj $RENDER_PY src/locomani/sim/isaac/compute_cam_traj.py"
+        echo "  [isaac]   render   $RENDER_PY src/locomani/sim/isaac/isaac_render.py"
         echo "  [isaac] not implemented yet (ticket 07); nothing started"
     fi
 done
 
 if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
-    bash src/teleop_free/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+    bash scripts/stack/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
 else
-    bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+    bash scripts/stack/stop_stack.sh > /dev/null 2>&1
 fi
 echo
 echo "===== totals ====="

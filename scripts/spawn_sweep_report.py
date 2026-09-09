@@ -18,6 +18,7 @@ Two denominators, and the difference matters:
 Quote the gross number for "where should the robot start", the net one for
 "is the policy better or worse further out".
 """
+
 import json
 import sys
 from pathlib import Path
@@ -53,27 +54,30 @@ def main():
             init = r.get("init") or {}
             if "robot_xy" not in init:
                 continue
-            rows.append(dict(
-                edge=edge_dist(init["robot_xy"]),
-                obj=float(np.linalg.norm(np.asarray(init["robot_xy"])
-                                         - np.asarray(init["obj_xy"]))),
-                ok=bool(r.get("ok")),
-                gated="[view]" in (r.get("why") or ""),
-                why=r.get("why") or "",
-                half=m.stem))
+            rows.append(
+                dict(
+                    edge=edge_dist(init["robot_xy"]),
+                    obj=float(np.linalg.norm(np.asarray(init["robot_xy"]) - np.asarray(init["obj_xy"]))),
+                    ok=bool(r.get("ok")),
+                    gated="[view]" in (r.get("why") or ""),
+                    why=r.get("why") or "",
+                    half=m.stem,
+                )
+            )
     if not rows:
         sys.exit(f"no manifest rows under {out}")
 
     k = sum(r["ok"] for r in rows)
-    print(f"{out}  n={len(rows)}  overall {k}/{len(rows)} = "
-          f"{k/len(rows)*100:.1f}%   gate-rejected {sum(r['gated'] for r in rows)}")
+    print(
+        f"{out}  n={len(rows)}  overall {k}/{len(rows)} = "
+        f"{k / len(rows) * 100:.1f}%   gate-rejected {sum(r['gated'] for r in rows)}"
+    )
     for half in sorted({r["half"] for r in rows}):
         h = [r for r in rows if r["half"] == half]
         print(f"   {half}: {sum(x['ok'] for x in h)}/{len(h)}")
 
     edges = np.arange(0.7, 1.45, 0.1)
-    print(f"\n{'spawn-edge':>14} {'n':>4} {'gated':>6} "
-          f"{'gross':>16} {'net (gate removed)':>22}")
+    print(f"\n{'spawn-edge':>14} {'n':>4} {'gated':>6} {'gross':>16} {'net (gate removed)':>22}")
     for lo, hi in zip(edges[:-1], edges[1:]):
         sel = [r for r in rows if lo <= r["edge"] < hi]
         if not sel:
@@ -82,13 +86,14 @@ def main():
         ok = sum(r["ok"] for r in sel)
         n_net = len(sel) - g
         a, b = wilson(ok, len(sel))
-        line = (f"  [{lo:.1f},{hi:.1f})  {len(sel):4d} {g:6d} "
-                f"  {ok:3d}/{len(sel):-3d} {ok/len(sel)*100:5.1f}% "
-                f"[{a*100:4.0f},{b*100:4.0f}]")
+        line = (
+            f"  [{lo:.1f},{hi:.1f})  {len(sel):4d} {g:6d} "
+            f"  {ok:3d}/{len(sel):-3d} {ok / len(sel) * 100:5.1f}% "
+            f"[{a * 100:4.0f},{b * 100:4.0f}]"
+        )
         if n_net:
             c, d = wilson(ok, n_net)
-            line += (f"   {ok:3d}/{n_net:-3d} {ok/n_net*100:5.1f}% "
-                     f"[{c*100:4.0f},{d*100:4.0f}]")
+            line += f"   {ok:3d}/{n_net:-3d} {ok / n_net * 100:5.1f}% [{c * 100:4.0f},{d * 100:4.0f}]"
         print(line)
 
     # failure mix by distance -- a curve that falls for two different reasons
@@ -103,11 +108,12 @@ def main():
             if r["ok"]:
                 continue
             w = r["why"]
-            stage = (w.split(":")[0].replace("[vla] ", "") if "[vla]" in w
-                     else "pre-vla")
+            stage = w.split(":")[0].replace("[vla] ", "") if "[vla]" in w else "pre-vla"
             c[stage] = c.get(stage, 0) + 1
-        print(f"  [{lo:.1f},{hi:.1f})  n={len(sel):3d}  " +
-              ", ".join(f"{s} {v}" for s, v in sorted(c.items(), key=lambda x: -x[1])))
+        print(
+            f"  [{lo:.1f},{hi:.1f})  n={len(sel):3d}  "
+            + ", ".join(f"{s} {v}" for s, v in sorted(c.items(), key=lambda x: -x[1]))
+        )
 
 
 if __name__ == "__main__":

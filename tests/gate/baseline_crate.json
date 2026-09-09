@@ -1,0 +1,26 @@
+{
+ "arm": "crate",
+ "source": "outputs/videos/wall_pilot/manifest.jsonl",
+ "metrics": {
+  "rounds": 10,
+  "ok": 8,
+  "yield_": 0.8,
+  "exit_majority": "at the stand",
+  "close_triggers": {
+   "contact": 8
+  },
+  "stand_off_m": 0.2149,
+  "yaw_err_deg": 1.3042,
+  "depth_m": 0.11,
+  "stage_s": {
+   "reach": 3.7,
+   "descend": 2.6
+  },
+  "failure_reasons": [
+   "[grasp] closed without bilateral contact: ['right']",
+   "[lift] rose N cm (< N)"
+  ],
+  "seconds": 24.35,
+  "deploy_restarts": 0
+ }
+}

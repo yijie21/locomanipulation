@@ -63,7 +63,7 @@ if pgrep -f "g1_deploy""_onnx_ref" >/dev/null; then
             | grep -q "encoder-file"; then
         echo "the running deploy has NO ENCODER -- its token labels would be"
         echo "zeros. Restart the collection stack first:"
-        echo "  SCENE_RANDOM=0 bash src/teleop_free/start_stack.sh \"pick up the water bottle\""
+        echo "  SCENE_RANDOM=0 bash scripts/stack/start_stack.sh \"pick up the water bottle\""
         exit 1
     fi
 else
@@ -75,7 +75,7 @@ SPAWN_ARGS="--spawn-edge $LO $HI --face-object --spawn-yaw-err 10 --spawn-latera
 if [ "${PROBE:-0}" = "1" ]; then
     echo "probe: 10 rounds at edge $LO-$HI m, recording nothing --"
     echo "       read the [stand] failure rate before the real run"
-    "$VENV_SIM_PY" "$LOCOMANI_SRC/grasp_gym.py" \
+    "$VENV_SIM_PY" "$LOCOMANI_SRC/tasks/bottle/grasp_gym.py" \
         --rounds 10 --targets water_bottle \
         --manifest "$LOCOMANI_OUTPUTS/logs/dagger_probe.jsonl" \
         $SPAWN_ARGS --edge-jitter 0.20

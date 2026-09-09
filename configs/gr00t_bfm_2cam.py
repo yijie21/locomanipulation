@@ -46,9 +46,16 @@ _cfg["video"] = ModalityConfig(
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
     modality_keys=[
-        "left_leg", "right_leg", "waist", "left_arm", "right_arm",
-        "left_hand", "right_hand", "projected_gravity",
-        "right_wrist_pos", "right_wrist_abs_quat",
+        "left_leg",
+        "right_leg",
+        "waist",
+        "left_arm",
+        "right_arm",
+        "left_hand",
+        "right_hand",
+        "projected_gravity",
+        "right_wrist_pos",
+        "right_wrist_abs_quat",
     ],
 )
 
@@ -66,5 +73,7 @@ _cfg["action"] = ModalityConfig(
 MODALITY_CONFIGS[_TAG] = _cfg
 
 _dims = {"state": 53, "action": 19}
-print(f"[bfm_2cam] {_TAG}: video={_cfg['video'].modality_keys} "
-      f"state={_dims['state']} action={_dims['action']} ({_cfg['action'].modality_keys})")
+print(
+    f"[bfm_2cam] {_TAG}: video={_cfg['video'].modality_keys} "
+    f"state={_dims['state']} action={_dims['action']} ({_cfg['action'].modality_keys})"
+)
