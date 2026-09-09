@@ -328,9 +328,11 @@ def _stalled(trace, commanded_close) -> bool:
 # of failure docs/reference.md is a list of.
 #
 # Module-level default (decision 8): SonicBackendConfig.dataset_fps; a caller
-# assigns vla_round.DATASET_FPS to override, instead of TF_DATASET_FPS.
+# assigns vla_round.DATASET_FPS to override, instead of TF_DATASET_FPS (must be
+# a single name -- REPLAN_HZ used to be a second copy of the same value,
+# snapshotted at import time, which silently went stale if only one of the two
+# was reassigned; every REPLAN_HZ use below is DATASET_FPS itself now).
 DATASET_FPS = 30.0
-REPLAN_HZ = DATASET_FPS
 
 
 class ObsBuilder:
@@ -509,7 +511,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16, tr
         obj0 = np.asarray(p.object_pos(obj_key, s0))
         trace = []
         ok, why = False, "[vla] timeout"
-        dt = 1.0 / REPLAN_HZ
+        dt = 1.0 / DATASET_FPS
         commanded_close = False
 
         # Prime the buffer BEFORE the mode switch, then hold the first token
@@ -549,7 +551,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16, tr
         l0, r0 = expand_hands(grip0[0])
         # 1 s linear blend from the standing token into chunk-0's first
         # frame (the official client's handover, same as async).
-        n_bl = max(1, int(1.0 * REPLAN_HZ))
+        n_bl = max(1, int(1.0 * DATASET_FPS))
         for i in range(n_bl):
             a = (i + 1) / n_bl
             tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])
@@ -657,7 +659,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16, tr
                 # executed the gap on the OLD chunk. Starting at frame 0
                 # re-executes ~T_inf of the past every cycle -- the visible
                 # per-chunk stagger. Start where the plan says "now" is.
-                skip = latency_index(time.time() - t_obs, REPLAN_HZ, len(tok))
+                skip = latency_index(time.time() - t_obs, DATASET_FPS, len(tok))
                 n = max(1, min(execution_horizon, len(tok) - skip))
                 for j in range(skip, skip + n):
                     lhj, rhj = expand_hands(grip[j])

@@ -133,7 +133,6 @@ def main():
         LOCOMANI_SIM_DIR=str(scene),
         SIM_VIS="none",
         SCENE_RANDOM="0",
-        SIM_VIDEO_INCLUDE_INIT="1",
         HF_HOME="/workspace/huggingface_cache",
         PYTHONUNBUFFERED="1",
         WANDB="0",
@@ -244,6 +243,7 @@ def main():
                         "--stand-retries",
                         "0",
                         "--record",
+                        "--video-include-init",
                         *SPAWN,
                         "--manifest",
                         manifest,
@@ -367,36 +367,38 @@ def main():
                 if server.poll() is not None or time.monotonic() > t_end:
                     raise RuntimeError("policy server did not come up")
                 time.sleep(3)
+            # configs/eval/closed_loop_100.json already encodes this stage's
+            # protocol (seed 6000, async, 100 rounds, budget 90, replan 0.4,
+            # ensemble 1, spawn 1.1-1.3); --set only for what this run
+            # genuinely varies (round/seed CLI flags above) or that the
+            # canonical file does not carry (stand_retries=0 here vs its
+            # default 1; dataset_fps=25 for checkpoints trained on
+            # re-converted data, vla_round.py's DATASET_FPS comment).
             run(
                 "eval",
                 [
                     SIM,
                     SRC / "pipeline/eval_closed_loop.py",
-                    "--fresh",
-                    str(args.eval_rounds),
-                    "--stand-retries",
-                    "0",
+                    "--config",
+                    ROOT / "configs/eval/closed_loop_100.json",
+                    "--set",
+                    f"rounds={args.eval_rounds}",
+                    "--set",
+                    f"seed={args.eval_seed}",
+                    "--set",
+                    "stand_retries=0",
+                    "--set",
+                    "backend.dataset_fps=25",
                     "--reach-config",
                     cfg,
                     "--initial-token-file",
                     token,
-                    "--client",
-                    "async",
-                    "--budget",
-                    "90",
-                    "--replan-interval",
-                    "0.4",
-                    "--spawn-edge",
-                    "1.1",
-                    "1.3",
-                    "--seed",
-                    str(args.eval_seed),
                     "--out",
                     ev / "closed_loop.json",
                     "--trace-dir",
                     ev / "traces",
                 ],
-                dict(NO_ENCODER="1", TF_DATASET_FPS="25", SIM_VIDEO_DIR=str(ev / "videos")),
+                dict(NO_ENCODER="1", SIM_VIDEO_DIR=str(ev / "videos")),
             )
             mark("eval")
     finally:

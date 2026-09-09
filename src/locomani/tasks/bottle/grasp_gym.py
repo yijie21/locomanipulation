@@ -265,6 +265,7 @@ def build_rel_candidates(rm: reach_map.ReachMap, z_pf: float) -> np.ndarray:
 
 
 def main() -> None:
+    global VIDEO_INCLUDE_INIT
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=5)
     ap.add_argument(
@@ -439,11 +440,22 @@ def main() -> None:
     ap.add_argument("--cases", help="fixed JSON case bank; bypass random sampling")
     ap.add_argument("--write-cases", help="write exact sampled conditions as JSON (exclusive output)")
     ap.add_argument("--sample-only", action="store_true", help="generate cases without starting the robot")
+    ap.add_argument(
+        "--video-include-init",
+        action=argparse.BooleanOptionalAction,
+        default=VIDEO_INCLUDE_INIT,
+        help="include the ready-posture prelude in diagnostic video "
+        "(BottleTaskConfig.video_include_init, was SIM_VIDEO_INCLUDE_INIT; "
+        "grasp_gym runs as its own subprocess from run_learn_pilot.py's "
+        "collect stage, so this is a CLI flag rather than only a "
+        "module-level override)",
+    )
     args = ap.parse_args()
     if args.sample_only and not args.write_cases:
         ap.error("--sample-only requires --write-cases")
     if args.cases and args.until_ok:
         ap.error("fixed cases cannot be combined with success-count stopping")
+    VIDEO_INCLUDE_INIT = args.video_include_init
     from locomani.pipeline.experiment_cases import load_cases, save_cases
 
     fixed_cases = load_cases(args.cases, SCENE_META) if args.cases else None
