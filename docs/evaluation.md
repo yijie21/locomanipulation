@@ -14,10 +14,10 @@
 bottle200 第一轮把这条原则演成了实例:开环关节角差 1.05°(贴测量噪声底),
 闭环 6%。两个数字都对,测的不是一件事。
 
-## Open-loop:`src/teleop_free/tools/eval_open_loop.py`
+## Open-loop:`src/locomani/pipeline/eval_open_loop.py`
 
 ```bash
-third_party/Isaac-GR00T/.venv/bin/python src/teleop_free/tools/eval_open_loop.py \
+third_party/Isaac-GR00T/.venv/bin/python src/locomani/pipeline/eval_open_loop.py \
     --model-path outputs/train/<run>/checkpoint-N \
     --dataset datasets/..._val \
     --out outputs/eval/<run>/open_loop_checkpoint-N.json \
@@ -108,21 +108,21 @@ token + 1 维 gripper,一条轨迹的图就有 65 个纵向子图。
 
 误差随 horizon 增长很缓,整块 1.33 s 可信;关节角差已到噪声底(1.16°)。 -->
 
-## Closed-loop:`src/teleop_free/tools/eval_closed_loop.py`
+## Closed-loop:`src/locomani/pipeline/eval_closed_loop.py`
 
 三个进程,两条硬前提:
 
 ```bash
 # 1. stack 必须 token-only(带 encoder 时外部 token 流压不住,cpp:3096)
-NO_ENCODER=1 SCENE_RANDOM=0 bash src/teleop_free/start_stack.sh "pick up the water bottle"
+NO_ENCODER=1 SCENE_RANDOM=0 bash scripts/stack/start_stack.sh "pick up the water bottle"
 
 # 2. policy server,第二张卡
 CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
-    src/teleop_free/tools/serve_policy.py --model-path <ckpt> --port 5590
+    src/locomani/pipeline/serve_policy.py --model-path <ckpt> --port 5590
 
 # 3. 评测本体(.venv_sim —— 它要 gear_sonic 的相机客户端和 pinocchio FK)
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-    src/teleop_free/tools/eval_closed_loop.py --fresh 100 \
+    src/locomani/pipeline/eval_closed_loop.py --fresh 100 \
     --out outputs/eval/<run>/closed_loop.json
 ```
 
@@ -396,7 +396,7 @@ VLA 回合开场先用一个站立 token 托管机器人，等第一个 chunk �
 encoder→decoder **不是恒等**，所以合成在这里不可信。medoid 不需要往返：它是我们自己的
 stack 在静止站立时**真实发出过**的 token，取到其余 193 个 L1 距离和最小的那个。
 
-落在 `src/teleop_free/initial_pose.py`，默认生效；`TF_INIT_TOKEN=official` 可退回官方。
+落在 `src/locomani/backends/sonic/initial_pose.py`，默认生效；`TF_INIT_TOKEN=official` 可退回官方。
 实测录像里托管段已经变成手臂下垂直立，前倾和「挺一下」消失；3 局冒烟 2/3 成功。
 
 

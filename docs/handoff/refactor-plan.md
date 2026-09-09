@@ -9,7 +9,7 @@
 | 1 | 重构结束时什么必须不变 | **(b)** 单臂正式线(07d / visible expert 的 run_learn_pilot 全流程)+ bimanual pilot 流程都可复现。历史 eval 变体不保证。 |
 | 2 | 怎么锁行为 | **(c)** 先录 GPU 闸门基线 JSON(单臂 1 batch + bimanual 若干局,固定 seed;yield、走近退出原因、刹车深度、drop、阶段时长、失败原因集合,容差按 seed 方差:刹车深度 ±1 cm、yield ±15%),再抽纯函数 expert 做离线回放闸门(逐字节);之后离线为主,GPU 每周一次。在线部分只做容差比对。 |
 | 3 | 目标结构 | **(a)** Pipeline 骨架 + Task 插件。骨架拥有 stack 生命周期、gym 主循环、录制、manifest、convert、stats/audit、train、eval、配对统计。Task 五件套:场景采样、expert 决策函数、验收判据、数据集 schema、失败分类。expert 签名 `decide(obs_snapshot, task_config) -> command`,不持 wall-clock,不持跨 tick 隐藏状态。 |
-| 4 | 淘汰的实验代码 | **(a)** 删代码留裁定。docs 里已有裁定的分支删代码与 config,裁定表加"删除于 commit X"。ReachConfig 收缩到当前协议字段。例外:`--ensemble` 推理开关和 lockstep 评测保留;RTC 训练侧和 planner 退化模式删。 |
+| 4 | 淘汰的实验代码 | **(a)** 删代码留裁定。docs 里已有裁定的分支删代码与 config,裁定表加"删除于 commit X"。ReachConfig 收缩到当前协议字段。例外:`--ensemble` 推理开关和 lockstep 评测保留;planner 退化模式删。**2026-09-09 补充裁定(D 组)**:RTC 整条(推理侧 + 训练 patch)和 `--client blocking` 保留,之后还要用;47 个无人 import 的 `diag_*.py`、无人 import 的 `tools/`(留 crate 教程的 4 个预检)、旧 `collect_episode` 采集线 + `run_batch` 及其解锁的 stream_reach 死尾巴删。证据表 `docs/handoff/refactor-step2-candidates.md`。 |
 | 5 | legacy/ 规则 | 不适用(4 选了 a)。 |
 | 6 | ScaleBFM | **(a)** 划出范围,`src/teleop_free/scalebfm/` 原地冻结到其 Goal 结束;骨架预留 `Backend` 维度(stack 启动、动作空间、执行器),SONIC 是第一个实现,ScaleBFM 日后作为第二个后端接入。 |
 | 7 | 文档分类 | 只允许四类,四类之外不新建:**教程**(每个 pipeline 阶段一篇,collection.md 的章节结构)、**台账**(每条产品线一个 append-only 文件,一个结论只记一处)、**参考**(静默失败表 + 从 dataclass 注释生成的配置字段表)、**状态**(STATE.md、ROADMAP.md)。其余移 `docs/archive/` 加索引。带日期的诊断不再单独建文件。 |

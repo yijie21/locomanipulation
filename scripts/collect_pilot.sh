@@ -20,7 +20,7 @@
 #
 #   export SCENE_RANDOM=0 SIM_VIS=bbox,readout
 #   SIM_VIDEO_DIR=outputs/sim_video \
-#       bash src/teleop_free/start_stack.sh "pick up the red can"
+#       bash scripts/stack/start_stack.sh "pick up the red can"
 #
 # CHUNK is not a tuning knob -- it is a hard ceiling. The exporter leaks
 # about 93 threads per episode and this container's cgroup caps the instance
@@ -114,7 +114,7 @@ while :; do
     # up. Killing it is safe and self-healing: the chunk below tolerates any
     # exit status, rolls the exporter to a fresh session, and takes a new tag,
     # and every episode already in the manifest stays kept.
-    "$VENV_SIM_PY" -u src/teleop_free/grasp_gym.py \
+    "$VENV_SIM_PY" -u src/locomani/tasks/bottle/grasp_gym.py \
         --rounds "$cap" --until-ok "$need" \
         --targets "$OBJ" --edge-jitter "$JITTER" --record \
         $SPAWN_ARGS \

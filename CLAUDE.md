@@ -1,8 +1,9 @@
 # locomanipulation
 
-GR00T VLA + SONIC 全身控制的 G1 loco-manipulation finetune 项目。项目文档在
-`docs/`(setup / collection / dataset / training / evaluation / reference /
-ROADMAP);仓库级坑与规范在 `docs/reference.md`(静默失败表必读)。
+GR00T VLA + SONIC 全身控制的 G1 loco-manipulation finetune 项目。项目文档只分四类,见
+`docs/README.md`:教程(setup / collection / dataset / training / evaluation / rendering /
+crate_collection)、台账(`docs/ledger/`)、参考(`docs/reference/`)、状态(STATE / ROADMAP);
+仓库级坑与规范在 `docs/reference/silent_failures.md`(静默失败表必读)。
 
 ## Agent skills
 
@@ -21,6 +22,11 @@ GitHub Issues(`gh` CLI,仓库 yijie21/locomanipulation)。See `docs/agents/issue
 ### Session workflow
 
 每个 session 从 `docs/STATE.md` 开始,结束前更新它,然后 `/clear`。See `docs/agents/session-workflow.md`.
+
+### Code and doc standards
+
+`docs/reference/standards.md` 是唯一的规范。`make check` = ruff + 尺寸/环境变量 lint + unit 测试;改主代码的 PR 附
+`scripts/gate.py compare` 输出。
 
 ### Refactor freeze (2026-09-09 to 2026-09-23)
 

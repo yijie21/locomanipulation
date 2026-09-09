@@ -1,4 +1,4 @@
-# Shell half of src/teleop_free/paths.py — source this, never hard-code a path.
+# Shell half of src/locomani/paths.py — source this, never hard-code a path.
 #
 #   . "$(dirname "$0")/../scripts/paths.sh"
 #
@@ -26,7 +26,8 @@ export SONIC_ROOT="$LOCOMANI_ROOT/third_party/GR00T-WholeBodyControl"
 export VENV_SIM_PY="$SONIC_ROOT/.venv_sim/bin/python"
 export VENV_DATA_PY="$SONIC_ROOT/.venv_data_collection/bin/python"
 export SONIC_DEPLOY_ROOT="${SONIC_DEPLOY_ROOT:-$SONIC_ROOT/gear_sonic_deploy}"
-export LOCOMANI_SRC="$LOCOMANI_ROOT/src/teleop_free"
+export LOCOMANI_SRC="$LOCOMANI_ROOT/src/locomani"
+export LOCOMANI_STACK="$LOCOMANI_ROOT/scripts/stack"
 export LOCOMANI_OUTPUTS="$LOCOMANI_ROOT/outputs"
 
 # Outside the repo — per-machine, each independently overridable.

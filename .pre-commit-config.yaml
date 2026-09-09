@@ -1,0 +1,43 @@
+# All hooks are local and use the tools already on this box (no network at commit time).
+#   ~/.local/bin/pre-commit install        # once per clone
+#   make check                              # the same checks by hand
+# Size lint runs in report mode until 2026-09-16, then --strict (standards.md).
+# Env lint flipped to --strict early, as refactor step 3's own last step
+# (docs/handoff/refactor-step3-config.md order item 6).
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: /venv/main/bin/ruff format --force-exclude
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: ruff check
+        entry: /venv/main/bin/ruff check --fix --force-exclude
+        language: system
+        types: [python]
+      - id: lint-sizes
+        name: file/function size caps (report)
+        entry: python3 scripts/lint_sizes.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: lint-env
+        name: os.environ whitelist (strict)
+        entry: python3 scripts/lint_env.py --strict
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: config-doc-fresh
+        name: config field reference is up to date
+        entry: python3 scripts/gen_config_reference.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: unit-tests
+        name: unit tests (no sim, no torch)
+        entry: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m pytest -x -q tests
+        language: system
+        pass_filenames: false
+        always_run: true

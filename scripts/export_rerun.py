@@ -13,6 +13,7 @@ encoded bytes rather than decoded frames and stays small.
 Usage:
     python scripts/export_rerun.py <dataset_dir> <out.rrd> [--episodes 0 1 2]
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -42,8 +43,7 @@ def main():
 
     root = Path(args.dataset)
     info = json.loads((root / "meta/info.json").read_text())
-    tasks = {json.loads(l)["task_index"]: json.loads(l)["task"]
-             for l in (root / "meta/tasks.jsonl").open()}
+    tasks = {json.loads(l)["task_index"]: json.loads(l)["task"] for l in (root / "meta/tasks.jsonl").open()}
     vid_keys = [k for k, v in info["features"].items() if v["dtype"] == "video"]
     chunk, fps = info["chunks_size"], info["fps"]
 
@@ -52,15 +52,13 @@ def main():
 
     for ep in args.episodes:
         base = f"episode_{ep:03d}"
-        t = pq.read_table(root / info["data_path"].format(
-            episode_chunk=ep // chunk, episode_index=ep))
+        t = pq.read_table(root / info["data_path"].format(episode_chunk=ep // chunk, episode_index=ep))
         n = t.num_rows
         times = np.arange(n) / fps
 
         # Cameras: log the mp4 once, then one frame reference per timestamp.
         for vk in vid_keys:
-            vp = root / info["video_path"].format(
-                episode_chunk=ep // chunk, video_key=vk, episode_index=ep)
+            vp = root / info["video_path"].format(episode_chunk=ep // chunk, video_key=vk, episode_index=ep)
             path = f"{base}/{vk.split('.')[-1]}"
             rr.log(path, rr.AssetVideo(path=vp), static=True)
             stamps = rr.AssetVideo(path=vp).read_frame_timestamps_nanos()
@@ -70,10 +68,16 @@ def main():
                 columns=rr.VideoFrameReference.columns_nanos(stamps),
             )
 
-        col = {c: np.stack(t[c].to_pylist()) for c in
-               ["observation.can_pose", "observation.eef_state",
-                "teleop.right_hand_joints", "teleop.left_hand_joints",
-                "action.motion_token"]}
+        col = {
+            c: np.stack(t[c].to_pylist())
+            for c in [
+                "observation.can_pose",
+                "observation.eef_state",
+                "teleop.right_hand_joints",
+                "teleop.left_hand_joints",
+                "action.motion_token",
+            ]
+        }
 
         for name, idx, path in SCALARS:
             rr.send_columns(
@@ -101,17 +105,18 @@ def main():
         # 3D, robot frame: can_pose and both wrists are all pelvis-relative.
         for i in range(0, n, 2):
             rr.set_time("time", duration=times[i])
-            rr.log(f"{base}/scene/can", rr.Points3D(
-                can[i:i + 1], colors=[[220, 60, 50]], radii=0.033))
-            rr.log(f"{base}/scene/wrist_right", rr.Points3D(
-                wrist_r[i:i + 1], colors=[[60, 140, 220]], radii=0.02))
-            rr.log(f"{base}/scene/wrist_left", rr.Points3D(
-                col["observation.eef_state"][i:i + 1, 0:3],
-                colors=[[120, 120, 120]], radii=0.02))
+            rr.log(f"{base}/scene/can", rr.Points3D(can[i : i + 1], colors=[[220, 60, 50]], radii=0.033))
+            rr.log(f"{base}/scene/wrist_right", rr.Points3D(wrist_r[i : i + 1], colors=[[60, 140, 220]], radii=0.02))
+            rr.log(
+                f"{base}/scene/wrist_left",
+                rr.Points3D(col["observation.eef_state"][i : i + 1, 0:3], colors=[[120, 120, 120]], radii=0.02),
+            )
 
-        rr.log(f"{base}/task", rr.TextDocument(
-            f"{tasks[int(t['task_index'][0].as_py())]}\n"
-            f"{n} frames / {n / fps:.1f} s @ {fps} fps"), static=True)
+        rr.log(
+            f"{base}/task",
+            rr.TextDocument(f"{tasks[int(t['task_index'][0].as_py())]}\n{n} frames / {n / fps:.1f} s @ {fps} fps"),
+            static=True,
+        )
         print(f"  episode {ep}: {n} frames, {len(vid_keys)} cameras")
 
     print(f"wrote {args.out}")

@@ -1,0 +1,17 @@
+{
+ "schema_version": 1,
+ "successes": 200,
+ "batch_rounds": 10,
+ "max_batches": 40,
+ "holdout": 10,
+ "steps": 3000,
+ "save_steps": 3000,
+ "train_gpu": "1",
+ "eval_rounds": 100,
+ "eval_seed": 6000,
+ "seed0": 30000,
+ "through": "eval",
+ "squat_max": 4096,
+ "gym_env": [],
+ "stack_env": []
+}

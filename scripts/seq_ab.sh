@@ -112,7 +112,7 @@ done
 sleep 1
 for i in 0 1; do
     port=$((6590 + i)); slog="$LOGS/serve_$i.log"
-    CUDA_VISIBLE_DEVICES=$i nohup "$GR00T_PY" "$LOCOMANI_SRC/tools/serve_policy.py" \
+    CUDA_VISIBLE_DEVICES=$i nohup "$GR00T_PY" "$LOCOMANI_SRC/pipeline/serve_policy.py" \
         --model-path "$CKPT" --port "$port" > "$slog" 2>&1 &
     SRV_PIDS="$SRV_PIDS $!"
 done
@@ -132,7 +132,7 @@ boot_stack() {
     local i=$1
     kill_instance "$i"; sleep 2
     env INSTANCE=$i NO_ENCODER=1 SIM_VIDEO_DIR="$PWD/outputs/videos/seq_ab_i$i" \
-        nohup bash src/teleop_free/start_stack.sh "$TASK" > "$LOGS/stack_$i.log" 2>&1 &
+        nohup bash scripts/stack/start_stack.sh "$TASK" > "$LOGS/stack_$i.log" 2>&1 &
     for _ in $(seq 1 90); do
         grep -q "stack up" "$LOGS/stack_$i.log" 2>/dev/null && return 0
         sleep 5
@@ -154,7 +154,7 @@ launch_arm() {   # $1 instance  $2 name  $3 arm flags
         TF_OUT_PORT=$((5557 + 10 * i)) TF_KEYBOARD_PORT=$((5580 + 10 * i)) \
         TF_PRIVILEGED_PORT=$((5581 + 10 * i)) TF_EPISODE_PORT=$((5582 + 10 * i)) \
         TF_DATASET_FPS="$DATASET_FPS" \
-        nohup "$PY" src/teleop_free/tools/eval_closed_loop.py \
+        nohup "$PY" src/locomani/pipeline/eval_closed_loop.py \
         --fresh "$ROUNDS" --seed "$SEED" --budget "$BUDGET" \
         --spawn-edge $SPAWN_EDGE --task "$TASK" \
         --policy-port $((6590 + i)) $COMMON $flags \
@@ -191,7 +191,7 @@ while :; do
 
     if [ "$n" -ge "$next_look" ] || { [ "$a_alive" = 0 ] && [ "$b_alive" = 0 ] && [ "$n" -gt 0 ]; }; then
         echo "[seq_ab] look at n=$n ($(date +%T))"
-        look=$("$PY" src/teleop_free/tools/seq_mcnemar.py "$MAN_A" "$MAN_B" \
+        look=$("$PY" src/locomani/pipeline/seq_mcnemar.py "$MAN_A" "$MAN_B" \
                --n-max "$ROUNDS" --json "$OUT_DIR/seq_verdict.json") || {
             echo "$look"; echo "[seq_ab] PAIRING BROKEN -- aborting"; exit 1; }
         echo "  $look" | head -1

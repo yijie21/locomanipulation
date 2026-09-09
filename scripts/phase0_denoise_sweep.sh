@@ -50,7 +50,7 @@ for n in $STEPS; do
     echo
     echo "=========== denoising $n  ($(date '+%F %T')) ==========="
     CUDA_VISIBLE_DEVICES="$GPU" "$PY" -u \
-        "$LOCOMANI_SRC/tools/eval_open_loop.py" \
+        "$LOCOMANI_SRC/pipeline/eval_open_loop.py" \
         --model-path "$CKPT" --dataset "$VAL" \
         --horizons "$HORIZON" --denoising-steps "$n" \
         --out "$OUT/dn${n}_h${HORIZON}.json" \

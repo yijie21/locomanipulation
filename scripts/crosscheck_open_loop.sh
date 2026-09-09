@@ -5,7 +5,7 @@
 #
 # WHY THIS EXISTS
 #
-# src/teleop_free/tools/eval_open_loop.py reports nMSE split by group, a
+# src/locomani/pipeline/eval_open_loop.py reports nMSE split by group, a
 # snapped hit rate, joint-command degrees and a persistence baseline, because
 # a pooled MSE over this action space is close to unreadable: 64 of the 65 dims
 # are an FSQ-quantised latent, so the one dim that decides whether the bottle
@@ -118,7 +118,7 @@ for c in "${CKPTS[@]}"; do
 
     kill_server
     CUDA_VISIBLE_DEVICES="$GPU" nohup "$GR00T_PY" \
-        "$LOCOMANI_SRC/tools/serve_policy.py" \
+        "$LOCOMANI_SRC/pipeline/serve_policy.py" \
         --model-path "$c" --port "$PORT" > "$slog" 2>&1 &
     # serve_policy prints its banner only after Gr00tPolicy is constructed, so
     # the banner IS the ready signal -- no sleep-and-hope.
