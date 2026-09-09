@@ -2,7 +2,7 @@
 
 这一页是"照着做就能复现最好结果"的唯一入口,截至 2026-09-04。任何与本页冲突的
 旧说明以本页为准;每条设置后面都注明了它为什么是这个值,以及改动它会破坏什么。
-背景与实验证据在 `docs/collection.md`、`docs/evaluation.md`、`docs/experiments.md`。
+背景与实验证据在 `docs/collection.md`、`docs/evaluation.md`、`docs/ledger/bottle.md`。
 
 当前正式基线:**flow200 checkpoint-10000,干净协议,无 ensemble,50/100**。
 
@@ -17,7 +17,7 @@
    (桌高 0.620–0.647 m),评测栈读的是磁盘上当时的场景。`scripts/run_eval_arm.sh`
    会在起栈前用 `EVAL_SCENE_SEED=922`(桌高 0.6214 m)重建,不要绕过它。
 3. **`stop_stack.sh` 会杀掉机器上所有实例**。多实例并行时用
-   `src/teleop_free/stop_instance.sh <INSTANCE> [policy_port]`。
+   `scripts/stack/stop_instance.sh <INSTANCE> [policy_port]`。
 
 ---
 
@@ -71,7 +71,7 @@ SPAWN_ARGS="--spawn-edge 1.1 1.3 --face-object --spawn-yaw-err 20 --spawn-latera
 . scripts/paths.sh
 SESSIONS=$(find "$(locomani_session_root)/outputs" -maxdepth 1 -mindepth 1 -type d -newer <批次开始时的标记文件> | sort)
 MANIFESTS=$(ls outputs/logs/collect_<name>/manifest_*.jsonl | sort -V)
-"$VENV_DATA_PY" src/teleop_free/tools/convert_to_hf_format.py \
+"$VENV_DATA_PY" src/locomani/pipeline/convert_to_hf_format.py \
     --sessions $SESSIONS --manifest $MANIFESTS \
     --out datasets/g1_locomani_<name>_train \
     --holdout 20 --holdout-out datasets/g1_locomani_<name>_val
@@ -85,7 +85,7 @@ session 数必须等于 manifest 数,否则配对错位(转换器会自检并报
 ```bash
 "$GR00T_PY" -m gr00t.data.stats --dataset-path datasets/g1_locomani_<name>_train \
     --embodiment-tag UNITREE_G1_SONIC --modality-config-path configs/gr00t_sonic_2cam.py
-"$VENV_DATA_PY" src/teleop_free/tools/check_dataset.py datasets/g1_locomani_<name>_train
+"$VENV_DATA_PY" src/locomani/pipeline/check_dataset.py datasets/g1_locomani_<name>_train
 ```
 
 **18 维动作(可选)**:同一批采集不用重采就能导出 wrist SE(3) + 夹爪 + 底盘的 18 维
@@ -155,7 +155,7 @@ watch -n 30 bash scripts/eval_progress.sh <臂名> [<臂名> ...]
 **结果分析**:
 
 ```bash
-python3 src/teleop_free/tools/failure_taxonomy.py outputs/eval/<臂名> --json
+python3 src/locomani/tasks/bottle/failure_taxonomy.py outputs/eval/<臂名> --json
 ```
 
 按阶段给出 16 类失败叶子(A 导航 / B 到位未合爪 / C 合爪未抬起 / D 抬起后丢 / E 摔),
