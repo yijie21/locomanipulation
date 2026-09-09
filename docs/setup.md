@@ -294,7 +294,7 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 > `INSTANCE` 只管得住 Python 侧和端口。失败模式很隐蔽:第二个 stack 的 sim 在
 > domain 1、它自己的 deploy 却在 domain 0,于是**那个 deploy 跑去接管第一个 stack
 > 的 sim**,自己的 sim 一条指令都收不到。三方状态表见
-> [reference.md 端口](reference.md#端口)。
+> [reference.md 端口](reference/silent_failures.md#端口)。
 
 > **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
 > 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。
