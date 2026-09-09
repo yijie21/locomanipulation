@@ -10,10 +10,15 @@ Differs from run_ready_pilot.py on purpose:
   * evaluation is the standard fresh-round benchmark (seed 6000, same spawn
     args as base100), not a case bank, so the number sits next to 50/100.
 Stage receipts make a rerun resume at the first incomplete stage.
+
+Every semantic knob lives in `PilotConfig` (locomani/pipeline/pilot_config.py)
+and `BottleTaskConfig` (locomani/tasks/bottle/config.py); see
+`configs/pilot/learn_200.json` and `configs/tasks/bottle_visible.json` for the
+canonical ready-visible protocol. `--set key=value` overrides one PilotConfig
+field at a time.
 """
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -23,6 +28,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # reach src/ for `python run_learn_pilot.py`
+from locomani.pipeline.pilot_config import PilotConfig  # noqa: E402
+from locomani.pipeline.provenance import write_config_snapshot  # noqa: E402
 from locomani.tasks.bottle.config import BottleTaskConfig  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -32,102 +39,57 @@ TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 SRC = ROOT / "src/locomani"
 STACK = ROOT / "scripts/stack"
 SESSIONS = Path("/workspace/tmp/p03/outputs")
-# The official ready-visible protocol's spawn distribution, now BottleTaskConfig's
-# default (decision 8) rather than a separately hand-maintained list: edge
-# 1.1-1.3 m, facing the object, yaw jitter 20 deg, lateral 0.20 m, edge jitter
-# 0.20 m -- the closed-loop eval distribution, not a frozen case bank (see the
-# module docstring).
-_SPAWN_CFG = BottleTaskConfig().spawn
-SPAWN = [
-    "--spawn-edge",
-    *[str(v) for v in _SPAWN_CFG.edge_range],
-    *(["--face-object"] if _SPAWN_CFG.face_object else []),
-    "--spawn-yaw-err",
-    str(_SPAWN_CFG.yaw_err_deg),
-    "--spawn-lateral",
-    str(_SPAWN_CFG.lateral),
-    "--edge-jitter",
-    str(_SPAWN_CFG.edge_jitter),
-]
 
 
-def digest(p):
-    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def spawn_argv(spawn) -> list[str]:
+    """grasp_gym's --spawn-* flags for a BottleTaskConfig.spawn (SpawnConfig)."""
+    return [
+        "--spawn-edge",
+        *[str(v) for v in spawn.edge_range],
+        *(["--face-object"] if spawn.face_object else []),
+        "--spawn-yaw-err",
+        str(spawn.yaw_err_deg),
+        "--spawn-lateral",
+        str(spawn.lateral),
+        "--edge-jitter",
+        str(spawn.edge_jitter),
+    ]
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(__doc__)
+    ap.add_argument("--config", type=Path, help="PilotConfig JSON; defaults if omitted")
+    ap.add_argument("--task", type=Path, help="BottleTaskConfig JSON; defaults if omitted")
+    ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--reach-config", type=Path, required=True)
     ap.add_argument("--scene", type=Path, required=True, help="frozen scene dir (LOCOMANI_SIM_DIR)")
     ap.add_argument(
         "--initial-token-file", type=Path, default=ROOT / "configs/deployment/ready_grasp_initial_token.json"
     )
-    ap.add_argument("--successes", type=int, default=60)
-    ap.add_argument("--batch-rounds", type=int, default=10)
-    ap.add_argument("--max-batches", type=int, default=12)
-    ap.add_argument("--holdout", type=int, default=6)
-    ap.add_argument("--steps", type=int, default=3000)
-    ap.add_argument("--save-steps", type=int, default=1500)
-    ap.add_argument("--train-gpu", default="1")
-    ap.add_argument("--eval-rounds", type=int, default=100)
-    ap.add_argument("--eval-seed", type=int, default=6000)
-    ap.add_argument("--seed0", type=int, default=27000)
-    ap.add_argument("--through", choices=("collect", "convert", "train", "eval"), default="eval")
-    ap.add_argument(
-        "--gym-env",
-        action="append",
-        default=[],
-        metavar="KEY=VAL",
-        help="extra environment for the collection gym only (e.g. GYM_SHUFFLE_BAND=0)",
-    )
-    ap.add_argument(
-        "--stack-env",
-        action="append",
-        default=[],
-        metavar="KEY=VAL",
-        help="extra environment for BOTH stacks (collection and eval), e.g. "
-        "CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=1 to keep the sim/deploy off GPU0",
-    )
-    args = ap.parse_args()
+    return ap.parse_args(argv)
+
+
+def main():
+    args = parse_args()
+    cfg = PilotConfig.load(args.config) if args.config else PilotConfig()
+    if args.set_:
+        cfg = cfg.with_overrides(args.set_)
+    task_cfg = BottleTaskConfig.load(args.task) if args.task else BottleTaskConfig()
+    SPAWN = spawn_argv(task_cfg.spawn)
 
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    cfg = out / "reach_config.json"
-    if not cfg.exists():
-        shutil.copy2(args.reach_config, cfg)
+    reach_cfg_path = out / "reach_config.json"
+    if not reach_cfg_path.exists():
+        task_cfg.reach.dump(reach_cfg_path)
     scene = out / "scene"
     if not scene.exists():
         shutil.copytree(args.scene, scene)
     token = args.initial_token_file.resolve()
-    src_files = sorted(
-        p
-        for b in ("src/locomani", "configs", "scripts")
-        for p in (ROOT / b).rglob("*")
-        if p.suffix in (".py", ".json", ".sh")
-    )
-    prov = out / "provenance.json"
-    if not prov.exists():
-        prov.write_text(
-            json.dumps(
-                dict(
-                    git=subprocess.run(
-                        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
-                    ).stdout.strip(),
-                    reach_config=digest(cfg),
-                    initial_token=digest(token),
-                    scene={p.name: digest(p) for p in scene.iterdir() if p.is_file()},
-                    spawn=SPAWN,
-                    gym_env=args.gym_env,
-                    stack_env=args.stack_env,
-                    started=time.time(),
-                    sources={str(p.relative_to(ROOT)): digest(p) for p in src_files},
-                ),
-                indent=1,
-            )
-        )
+    if not (out / "config_snapshot.json").exists():
+        write_config_snapshot(out, task_cfg=task_cfg, pilot_cfg=cfg, started=time.time())
 
-    stack_env = dict(kv.split("=", 1) for kv in args.stack_env)
+    stack_env = dict(kv.split("=", 1) for kv in cfg.stack_env)
     base_env = dict(
         os.environ,
         LOCOMANI_SIM_DIR=str(scene),
@@ -192,7 +154,7 @@ def main():
         state = (
             json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
         )
-        while not done("collect") and state["kept"] < args.successes and state["batches"] < args.max_batches:
+        while not done("collect") and state["kept"] < cfg.successes and state["batches"] < cfg.max_batches:
             b = state["batches"]
             tag = f"{b:02d}"
             manifest = collect / f"manifest_{tag}.jsonl"
@@ -205,7 +167,7 @@ def main():
                 TF_EXPORTER_SCRIPT=str(SRC / "pipeline/run_instance_exporter.py"),
             )
             env.update(stack_env)
-            env.update(dict(kv.split("=", 1) for kv in args.gym_env))
+            env.update(dict(kv.split("=", 1) for kv in cfg.gym_env))
             stack_up = True
             before = set(SESSIONS.iterdir())
             run(f"start_stack_{tag}", ["bash", STACK / "start_stack.sh", "pick up the water bottle"], env)
@@ -231,15 +193,15 @@ def main():
                         SIM,
                         SRC / "tasks/bottle/grasp_gym.py",
                         "--reach-config",
-                        cfg,
+                        reach_cfg_path,
                         "--targets",
                         "water_bottle",
                         "--rounds",
-                        str(args.batch_rounds),
+                        str(cfg.batch_rounds),
                         "--until-ok",
-                        str(args.successes - state["kept"]),
+                        str(cfg.successes - state["kept"]),
                         "--seed",
-                        str(args.seed0 + 100 * b),
+                        str(cfg.seed0 + 100 * b),
                         "--stand-retries",
                         "0",
                         "--record",
@@ -257,14 +219,14 @@ def main():
             state["kept"] += got
             state["batches"] += 1
             inputs.write_text(json.dumps(state, indent=1))
-            print(f"collect: batch {tag} {got}/{len(rows)} ok, total kept {state['kept']}/{args.successes}", flush=True)
+            print(f"collect: batch {tag} {got}/{len(rows)} ok, total kept {state['kept']}/{cfg.successes}", flush=True)
         if not done("collect"):
-            if state["kept"] < args.successes:
+            if state["kept"] < cfg.successes:
                 raise RuntimeError(
-                    f"collection stopped at {state['kept']}/{args.successes} after {state['batches']} batches"
+                    f"collection stopped at {state['kept']}/{cfg.successes} after {state['batches']} batches"
                 )
             mark("collect")
-        if args.through == "collect":
+        if cfg.through == "collect":
             return
 
         # ---------------- convert ----------------
@@ -286,7 +248,7 @@ def main():
                     "--out",
                     train_ds,
                     "--holdout",
-                    str(args.holdout),
+                    str(cfg.holdout),
                     "--holdout-out",
                     val_ds,
                     "--jobs",
@@ -310,11 +272,11 @@ def main():
                 )
                 run(f"audit_{label}", [DATA, SRC / "pipeline/check_dataset.py", ds])
             mark("convert")
-        if args.through == "convert":
+        if cfg.through == "convert":
             return
 
         # ---------------- train ----------------
-        ckpt = out / "model" / f"checkpoint-{args.steps}"
+        ckpt = out / "model" / f"checkpoint-{cfg.steps}"
         if not done("train"):
             if (out / "model").exists():
                 shutil.rmtree(out / "model")
@@ -325,23 +287,27 @@ def main():
                     DATA=str(train_ds),
                     RUN="model",
                     OUT_ROOT=str(out),
-                    MAX_STEPS=str(args.steps),
-                    SAVE_STEPS=str(args.steps),
+                    MAX_STEPS=str(cfg.steps),
+                    # SAVE_STEPS deliberately mirrors `steps`, not `save_steps`: the
+                    # original argparse never wired --save-steps to this env var
+                    # either (pre-existing, left unchanged -- decision 8 does not
+                    # fix unrelated bugs).
+                    SAVE_STEPS=str(cfg.steps),
                     SAVE_LIMIT="1",
                     WANDB="0",
                     WORKERS="2",  # one checkpoint (disk)
                     GPUS="1",
                     SINGLE_GPU="1",
-                    CUDA_VISIBLE_DEVICES=args.train_gpu,
+                    CUDA_VISIBLE_DEVICES=cfg.train_gpu,
                     # Another instance's MuJoCo EGL context sits on device 0 (~1.6-2.1 GB)
                     # whatever CUDA_VISIBLE_DEVICES says; the default 2048 MiB guard trips on it.
-                    SQUAT_MAX=os.environ.get("SQUAT_MAX", "4096"),
+                    SQUAT_MAX=str(cfg.squat_max),
                 ),
             )
             if not ckpt.exists():
                 raise RuntimeError("no checkpoint after training")
             mark("train")
-        if args.through == "train":
+        if cfg.through == "train":
             return
 
         # ---------------- eval ----------------
@@ -358,7 +324,7 @@ def main():
             server = subprocess.Popen(
                 [str(TRAIN), str(SRC / "pipeline/serve_policy.py"), "--model-path", str(ckpt), "--port", "5590"],
                 cwd=ROOT,
-                env=dict(base_env, CUDA_VISIBLE_DEVICES=args.train_gpu),
+                env=dict(base_env, CUDA_VISIBLE_DEVICES=cfg.train_gpu),
                 stdout=slog,
                 stderr=subprocess.STDOUT,
             )
@@ -382,15 +348,15 @@ def main():
                     "--config",
                     ROOT / "configs/eval/closed_loop_100.json",
                     "--set",
-                    f"rounds={args.eval_rounds}",
+                    f"rounds={cfg.eval_rounds}",
                     "--set",
-                    f"seed={args.eval_seed}",
+                    f"seed={cfg.eval_seed}",
                     "--set",
                     "stand_retries=0",
                     "--set",
                     "backend.dataset_fps=25",
                     "--reach-config",
-                    cfg,
+                    reach_cfg_path,
                     "--initial-token-file",
                     token,
                     "--out",

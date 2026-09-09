@@ -172,5 +172,8 @@ class ReachConfig:
     def load(cls, path):
         return cls.from_dict(json.loads(Path(path).read_text()), source=str(path))
 
+    def dump(self, path) -> None:
+        Path(path).write_text(json.dumps(self.to_dict(), indent=1) + "\n")
+
 
 DEFAULT_REACH = ReachConfig()

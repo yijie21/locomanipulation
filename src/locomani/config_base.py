@@ -82,8 +82,13 @@ def config_dump(obj, path) -> None:
     Path(path).write_text(json.dumps(obj.to_dict(), indent=1) + "\n")
 
 
-def _cast(current: Any, raw: str) -> Any:
-    """Type a `--set key=value` RHS from the current (default) value's type."""
+def _cast(current: Any, raw: str, tp: Any = None) -> Any:
+    """Type a `--set key=value` RHS from the current (default) value's type.
+
+    `tp` is the field's resolved static type (e.g. `tuple[str, ...]`), used to
+    pick the element type for a tuple/list field whose *current* value is
+    empty -- `type(current[0])` has nothing to look at then.
+    """
     if isinstance(current, bool):
         low = raw.strip().lower()
         if low in ("1", "true", "yes", "on"):
@@ -96,7 +101,11 @@ def _cast(current: Any, raw: str) -> Any:
     if isinstance(current, float):
         return float(raw)
     if isinstance(current, (tuple, list)):
-        inner = type(current[0]) if current else float
+        if current:
+            inner = type(current[0])
+        else:
+            args = typing.get_args(tp) if tp is not None else ()
+            inner = args[0] if args else str
         return type(current)(inner(v) for v in raw.split(","))
     if current is None:
         return raw
@@ -108,6 +117,7 @@ def apply_overrides(obj: T, overrides: list[str]) -> T:
 
     Returns a new instance (the dataclasses are frozen); `obj` is unchanged.
     """
+    hints = _resolved_field_types(type(obj))
     values = {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}
     for kv in overrides:
         if "=" not in kv:
@@ -117,16 +127,17 @@ def apply_overrides(obj: T, overrides: list[str]) -> T:
         if len(parts) == 1:
             if parts[0] not in values:
                 raise ValueError(f"unknown field {parts[0]!r} on {type(obj).__name__}")
-            values[parts[0]] = _cast(values[parts[0]], raw)
+            values[parts[0]] = _cast(values[parts[0]], raw, hints.get(parts[0]))
         elif len(parts) == 2:
             top, sub = parts
             if top not in values:
                 raise ValueError(f"unknown field {top!r} on {type(obj).__name__}")
             nested = values[top]
+            nested_hints = _resolved_field_types(type(nested))
             nested_values = {f.name: getattr(nested, f.name) for f in dataclasses.fields(nested)}
             if sub not in nested_values:
                 raise ValueError(f"unknown field {top}.{sub!r}")
-            nested_values[sub] = _cast(nested_values[sub], raw)
+            nested_values[sub] = _cast(nested_values[sub], raw, nested_hints.get(sub))
             values[top] = type(nested)(**nested_values)
         else:
             raise ValueError(f"--set keys nest at most one level deep, got {key!r}")
