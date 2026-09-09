@@ -1534,10 +1534,6 @@ def _run_round(
             from coupled_grasp_policy import CoupledGraspPolicy
 
             controller = CoupledGraspPolicy
-        if reach_config.continuous_capture:
-            from continuous_grasp_policy import ContinuousGraspPolicy
-
-            controller = ContinuousGraspPolicy
         coordinated = controller(p, arrival_task, reach_config, arm_ramp, execution)
 
     def raise_arm(_s, dist):
@@ -1724,9 +1720,6 @@ def _run_round(
                     np.clip((r[0] - reach_config.visible_brake_depth) / reach_config.visible_decel_band, 0.0, 1.0)
                 )
                 speed = min(speed, APPR_SHUFFLE + (speed - APPR_SHUFFLE) * u)
-            if reach_config.continuous_capture:
-                # Decelerate before the stop gate while the arm prepares.
-                speed = min(speed, 0.12 + 0.18 * float(np.clip((r[0] - plan_r) / 0.25, 0.0, 1.0)))
             p.cmd.frame(
                 mode=LocomotionMode.SLOW_WALK, facing=fv_now, movement=(float(mv[0]), float(mv[1]), 0.0), speed=speed
             )

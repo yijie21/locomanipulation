@@ -294,11 +294,6 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             delivered = start_z - z
             phase = float(np.clip(delivered / max(drop - 0.02, 0.001), 0.0, 1.0))
             phase = phase * phase * (3.0 - 2.0 * phase)
-            if self.config.continuous_capture:
-                # A bounded arm lead covers the gait's squat response delay;
-                # each increment still passes the shared swept-volume guard.
-                lead = float(np.clip((now - start) / 0.4, 0.0, 1.0))
-                phase = max(phase, 0.2 * lead * lead * (3.0 - 2.0 * lead))
             aim = start_palm + phase * (safe_pregrasp - start_palm)
             aim_error = float(np.linalg.norm(aim - palm))
             if geometry["ready"] or (

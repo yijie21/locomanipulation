@@ -30,7 +30,6 @@ class ReachConfig:
     timely_capture: bool = False
     capture_reference_handover: bool = False
     brake_preplan: bool = False
-    continuous_capture: bool = False
     tool_point_grasp: bool = False
     horizontal_entry: bool = False
     grasp_depth_preference: float = 0.0
@@ -72,7 +71,6 @@ class ReachConfig:
                 self.coupled_squat,
                 self.timely_capture,
                 self.brake_preplan,
-                self.continuous_capture,
                 self.tool_point_grasp,
                 self.horizontal_entry,
                 self.recovery_region_stop,
@@ -90,7 +88,6 @@ class ReachConfig:
                 "coupled_squat",
                 "timely_capture",
                 "brake_preplan",
-                "continuous_capture",
                 "tool_point_grasp",
                 "horizontal_entry",
                 "recovery_region_stop",
@@ -111,19 +108,15 @@ class ReachConfig:
         ):
             raise ValueError("Reach calibration outside supported controller bounds")
         if self.capture_reference_handover and (
-            not (self.coupled_squat and self.timely_capture) or self.tool_point_grasp or self.continuous_capture
+            not (self.coupled_squat and self.timely_capture) or self.tool_point_grasp
         ):
             raise ValueError("Capture reference handover requires the timely coupled wrist controller")
         if self.coupled_hand_lead and (not self.coupled_squat or not 0.005 <= self.coupled_hand_lead <= 0.05):
             raise ValueError("Coupled hand lead requires coupled squat and a 5–50 mm bound")
         if self.recovery_region_stop and not self.ready_grasp_recovery:
             raise ValueError("Region stopping requires recovery policy")
-        if self.continuous_capture and not (self.coupled_squat and self.timely_capture):
-            raise ValueError("Continuous capture requires coupled squat and timely capture")
         if self.tool_point_grasp and not (self.coupled_squat and self.timely_capture):
             raise ValueError("Tool-point grasp requires coupled squat and timely capture")
-        if self.tool_point_grasp and self.continuous_capture:
-            raise ValueError("Tool-point control and legacy continuous wrist feedback are separate experiments")
         if self.horizontal_entry and not self.tool_point_grasp:
             raise ValueError("Horizontal entry requires tool-point control")
         if not (

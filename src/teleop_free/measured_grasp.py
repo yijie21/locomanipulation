@@ -77,14 +77,11 @@ def run(policy, ghost):
     ref = np.asarray(state["palms"][side]["pos"]).copy()
     trim = np.zeros(3)
     timely = getattr(getattr(policy, "config", None), "timely_capture", False)
-    continuous = getattr(getattr(policy, "config", None), "continuous_capture", False)
     point_control = getattr(getattr(policy, "config", None), "tool_point_grasp", False)
     if point_control:
         ref += Primitives._rot(state["palms"][side]["quat"]) @ OFFSET
     capture_anchor = None
     capture_rotation = None
-    feedback = None
-    ready_ticks = 0
     stable = CaptureStability(hysteresis=timely)
     previous = None
     touched = False
@@ -99,7 +96,6 @@ def run(policy, ghost):
         first_safe_elapsed_s=None,
     )
     stats["active_stabilization_ticks"] = 0
-    stats["active_reacquire_count"] = 0
     stats["controlled_point"] = "grasp_center" if point_control else "wrist"
     ex.metrics.setdefault("measured_grasp", []).append(stats)
     ex.enter("grasp.local_align")
@@ -147,13 +143,6 @@ def run(policy, ghost):
             elif not safe:
                 capture_anchor = capture_rotation = None
         close_now = stable.update(now, safe, relative_speed)
-        ready_ticks = ready_ticks + 1 if safe and relative_speed < 0.035 else 0
-        if continuous:
-            close_now = ready_ticks >= 3
-            if safe and feedback is None:
-                from capture_feedback import CaptureFeedback
-
-                feedback = CaptureFeedback(state, side, policy.task.grip)
         if safe and stats["first_safe_elapsed_s"] is None:
             stats["first_safe_elapsed_s"] = now - start
         if now - last_log >= 0.2:
@@ -202,51 +191,14 @@ def run(policy, ghost):
                 close_from_current=True,
                 grip_target=policy.task.grip,
                 require_bilateral=timely,
-                capture_feedback=feedback,
+                capture_feedback=None,
                 grasp_point_control=point_control,
                 preserve_capture_reference=getattr(policy.config, "capture_reference_handover", False),
             )
-        if (safe or (capture_candidate and not timely)) and not continuous and not point_control:
+        if (safe or (capture_candidate and not timely)) and not point_control:
             # Already seated: stabilize without chasing a nominal waypoint.
             stats["seated_hold_ticks"] += 1
             arm._push(arm.q)
-            continue
-        if continuous and feedback is not None:
-            desired, _, lost = feedback.update(state, obs_dt)
-            if lost:
-                # Before any closure, a drifting hand may resume the same
-                # short alignment. A displaced object must never be chased.
-                if (
-                    np.linalg.norm(policy.task.grip(state) - feedback.origin) >= 0.02
-                    or stats["active_reacquire_count"] >= 2
-                ):
-                    return False, "active capture could not stabilize without chasing the object"
-                feedback = None
-                ready_ticks = 0
-                stats["active_reacquire_count"] += 1
-                continue
-            ref += (desired - ref) * min(1.0, 0.0008 / max(np.linalg.norm(desired - ref), 1e-9))
-            ref = palm + (ref - palm) * min(1.0, 0.015 / max(np.linalg.norm(ref - palm), 1e-9))
-            command = ref + np.clip(0.25 * (ref - palm), -0.004, 0.004)
-            seed = arm.q.copy()
-            seed[:12] = state["joints"][:12]
-            q, pe, re = arm.ik.solve(
-                side,
-                p.world_to_root_full(command, state),
-                Primitives._rot(state["pelvis"]["quat"]).T @ feedback.rot,
-                q_mj29=seed,
-                use_waist=False,
-                iters=30,
-            )
-            if pe > 0.02 or re > 0.15:
-                return False, "active capture outside comfortable IK"
-            q = seed + np.clip(q - seed, -0.02, 0.02)
-            rejection = policy.reference_check(state, q, "in")
-            if rejection:
-                return False, rejection
-            arm.q = q
-            arm._push(q)
-            stats["active_stabilization_ticks"] += 1
             continue
         preferred = target - getattr(getattr(policy, "config", None), "grasp_depth_preference", 0.0) * rot[:, 0]
         desired = preferred if point_control else preferred - rot @ OFFSET
