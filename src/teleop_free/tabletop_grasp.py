@@ -88,5 +88,5 @@ class TabletopGrasp:
             margin=config.transport_margin,
             joint_step=config.sweep_joint_step,
             include_body=config.ready_grasp_recovery,
-            finger_only_target_contact=getattr(config, "tool_point_grasp", False),
+            finger_only_target_contact=False,
         )

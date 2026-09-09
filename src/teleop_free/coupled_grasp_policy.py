@@ -155,16 +155,13 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             local_rot = world_rot.T @ rot
             q = ready_q()
             q[:12] = np.asarray(state["joints"])[:12]
-            point_control = self.config.tool_point_grasp
-            aim = point - self.config.grasp_depth_preference * rot[:, 0]
             candidate, pe, re = self.arm.ik.solve(
                 self.side,
-                self.p.world_to_root_full(aim if point_control else aim - rot @ OFFSET, projected),
+                self.p.world_to_root_full(point - rot @ OFFSET, projected),
                 local_rot,
                 q_mj29=q,
                 use_waist=False,
                 iters=80,
-                **(dict(point_offset=OFFSET, rot_weight=0.1) if point_control else {}),
             )
             # Planning may land anywhere inside the same capture region the
             # executor accepts.  The measured closure geometry and terminal

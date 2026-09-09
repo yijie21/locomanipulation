@@ -10,7 +10,7 @@ from copy import deepcopy
 
 import adaptive_grasp
 import numpy as np
-from grasp_capture import IK_POSITION_TOL, IK_ROTATION_TOL, closure_geometry, height_correction
+from grasp_capture import IK_POSITION_TOL, closure_geometry, height_correction
 from primitives import HAND_CLOSED_RIGHT, Primitives
 from ready_grasp_policy import OFFSET, templates, terminal_rotation
 
@@ -77,11 +77,6 @@ def run(policy, ghost):
     ref = np.asarray(state["palms"][side]["pos"]).copy()
     trim = np.zeros(3)
     timely = getattr(getattr(policy, "config", None), "timely_capture", False)
-    point_control = getattr(getattr(policy, "config", None), "tool_point_grasp", False)
-    if point_control:
-        ref += Primitives._rot(state["palms"][side]["quat"]) @ OFFSET
-    capture_anchor = None
-    capture_rotation = None
     stable = CaptureStability(hysteresis=timely)
     previous = None
     touched = False
@@ -96,7 +91,7 @@ def run(policy, ghost):
         first_safe_elapsed_s=None,
     )
     stats["active_stabilization_ticks"] = 0
-    stats["controlled_point"] = "grasp_center" if point_control else "wrist"
+    stats["controlled_point"] = "wrist"
     ex.metrics.setdefault("measured_grasp", []).append(stats)
     ex.enter("grasp.local_align")
     policy.ramp.settle()
@@ -110,7 +105,7 @@ def run(policy, ghost):
         target = policy.task.grip(state)
         palm = np.asarray(state["palms"][side]["pos"])
         measured_rot = Primitives._rot(state["palms"][side]["quat"])
-        controlled = palm + measured_rot @ OFFSET if point_control else palm
+        controlled = palm
         relative = measured_rot.T @ (target - palm)
         touching_now = side in state["objects"][key].get("touching", [])
         touched |= touching_now
@@ -126,7 +121,6 @@ def run(policy, ghost):
         capture_candidate = (
             geometry["ready"] if timely else precision_ready or (geometry["ready"] and now - start >= 5.0)
         )
-        obs_dt = 0.02 if previous is None else max(now - previous[0], 0.001)
         relative_speed = (
             float("inf")
             if previous is None
@@ -135,13 +129,6 @@ def run(policy, ghost):
         previous = (now, relative.copy())
         clear = closure_clear(policy, state) if capture_candidate else None
         safe = capture_candidate and clear is None
-        if point_control:
-            if safe and capture_anchor is None:
-                capture_anchor = controlled.copy()
-                capture_rotation = measured_rot.copy()
-                ref = controlled.copy()
-            elif not safe:
-                capture_anchor = capture_rotation = None
         close_now = stable.update(now, safe, relative_speed)
         if safe and stats["first_safe_elapsed_s"] is None:
             stats["first_safe_elapsed_s"] = now - start
@@ -192,22 +179,16 @@ def run(policy, ghost):
                 grip_target=policy.task.grip,
                 require_bilateral=timely,
                 capture_feedback=None,
-                grasp_point_control=point_control,
+                grasp_point_control=False,
                 preserve_capture_reference=getattr(policy.config, "capture_reference_handover", False),
             )
-        if (safe or (capture_candidate and not timely)) and not point_control:
+        if safe or (capture_candidate and not timely):
             # Already seated: stabilize without chasing a nominal waypoint.
             stats["seated_hold_ticks"] += 1
             arm._push(arm.q)
             continue
-        preferred = target - getattr(getattr(policy, "config", None), "grasp_depth_preference", 0.0) * rot[:, 0]
-        desired = preferred if point_control else preferred - rot @ OFFSET
-        rotation_goal = bounded_rotation(measured_rot, rot) if point_control else rot
-        if point_control and capture_anchor is not None:
-            # Hold the measured grasp point while the body settles, without
-            # freezing joints or chasing a more precise nominal waypoint.
-            desired, rotation_goal = capture_anchor, capture_rotation
-            stats["active_stabilization_ticks"] += 1
+        desired = target - rot @ OFFSET
+        rotation_goal = rot
         error = desired - controlled
         entry = rot[:, 0]
         depth = float(error @ entry)
@@ -218,13 +199,13 @@ def run(policy, ghost):
             stats["can_reposition"] = not touched
             return False, "local target outside short reach"
         # Measured tracking trim; do not integrate against a moving object.
-        if not touching_now and capture_anchor is None:
+        if not touching_now:
             trim += 0.01 * lateral_error
             trim = np.clip(trim, [-0.04, -0.04, -0.04], [0.04, 0.04, 0.04])
-        aim = desired if capture_anchor is not None else desired + trim
+        aim = desired + trim
         delta = aim - ref
-        step = getattr(policy.config, "local_point_speed", 0.125) * min(obs_dt, 0.04) if point_control else 0.0025
-        lead_limit = getattr(policy.config, "local_point_lead", 0.035) if point_control else 0.035
+        step = 0.0025
+        lead_limit = 0.035
         ref += delta * min(1.0, step / max(np.linalg.norm(delta), 1e-6))
         ref = controlled + (ref - controlled) * min(1.0, lead_limit / max(np.linalg.norm(ref - controlled), 1e-6))
         q, pe, re = arm.ik.solve(
@@ -234,11 +215,8 @@ def run(policy, ghost):
             q_mj29=arm.q,
             use_waist=False,
             iters=30,
-            **(dict(point_offset=OFFSET, rot_weight=0.1) if point_control else {}),
         )
-        rotation_tolerance = (
-            IK_ROTATION_TOL if getattr(getattr(policy, "config", None), "tool_point_grasp", False) else 0.15
-        )
+        rotation_tolerance = 0.15
         if pe > IK_POSITION_TOL or re > rotation_tolerance:
             stats["ik_rejection"] = dict(
                 position_error_m=float(pe), rotation_error_rad=float(re), rotation_tolerance_rad=rotation_tolerance

@@ -26,20 +26,9 @@ PRE_GAP = 0.07
 def terminal_rotation(root_rotation, local_rotation, config):
     """An upright bottle needs clearance above the fingers, including its neck.
 
-    The opt-in level entry keeps a crouching torso's pitch out of the grasp
-    attitude. The complete arm/target collision screen remains authoritative.
+    The complete arm/target collision screen remains authoritative.
     """
-    rotation = root_rotation @ local_rotation
-    if not (getattr(config, "tool_point_grasp", False) and getattr(config, "horizontal_entry", False)):
-        return rotation
-    forward = rotation[:, 0].copy()
-    forward[2] = 0.0
-    length = np.linalg.norm(forward)
-    if length < 1e-6:
-        raise ValueError("Bottle entry has no horizontal bearing")
-    forward /= length
-    up = np.array([0.0, 0.0, 1.0])
-    return np.column_stack((forward, np.cross(up, forward), up))
+    return root_rotation @ local_rotation
 
 
 def ready_q():
