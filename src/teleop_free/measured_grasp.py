@@ -180,7 +180,7 @@ def run(policy, ghost):
                 require_bilateral=timely,
                 capture_feedback=None,
                 grasp_point_control=False,
-                preserve_capture_reference=getattr(policy.config, "capture_reference_handover", False),
+                preserve_capture_reference=False,
             )
         if safe or (capture_candidate and not timely):
             # Already seated: stabilize without chasing a nominal waypoint.

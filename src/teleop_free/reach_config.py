@@ -28,7 +28,6 @@ class ReachConfig:
     measured_squat_handover: bool = False
     coupled_squat: bool = False
     timely_capture: bool = False
-    capture_reference_handover: bool = False
     brake_preplan: bool = False
     coupled_hand_lead: float = 0.0  # shorter IK retry only when the full target is infeasible
     squat_prediction_backshift_ratio: float = 0.0
@@ -67,7 +66,6 @@ class ReachConfig:
                 self.timely_capture,
                 self.brake_preplan,
                 self.recovery_region_stop,
-                self.capture_reference_handover,
                 self.visible_expert,
             )
         ):
@@ -82,7 +80,6 @@ class ReachConfig:
                 "timely_capture",
                 "brake_preplan",
                 "recovery_region_stop",
-                "capture_reference_handover",
                 "visible_expert",
             ) and (type(value) not in (int, float) or not math.isfinite(value)):
                 raise ValueError(f"{name} must be a finite number")
@@ -98,8 +95,6 @@ class ReachConfig:
             and 0 < self.sweep_joint_step <= 0.10
         ):
             raise ValueError("Reach calibration outside supported controller bounds")
-        if self.capture_reference_handover and not (self.coupled_squat and self.timely_capture):
-            raise ValueError("Capture reference handover requires the timely coupled wrist controller")
         if self.coupled_hand_lead and (not self.coupled_squat or not 0.005 <= self.coupled_hand_lead <= 0.05):
             raise ValueError("Coupled hand lead requires coupled squat and a 5–50 mm bound")
         if self.recovery_region_stop and not self.ready_grasp_recovery:

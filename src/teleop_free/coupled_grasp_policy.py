@@ -204,11 +204,9 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
 
     def finish(self, *, grip_world, squat_hint, ghost):
         ok = False
-        local_before = len(self.execution.metrics.get("measured_grasp", []))
         try:
             ok, why = self.coupled_transport(float(squat_hint), ghost)
-            local_reported = len(self.execution.metrics.get("measured_grasp", [])) > local_before
-            if not ok and not (getattr(self.config, "capture_reference_handover", False) and local_reported):
+            if not ok:
                 # A tracking/sweep failure is not evidence that standing up
                 # through the same obstruction would help.
                 self.execution.metrics.setdefault("measured_grasp", []).append(

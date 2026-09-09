@@ -94,24 +94,9 @@ class CoupledTests(unittest.TestCase):
             p.brake()
         self.assertIsNone(p._prepared)
 
-    def test_local_recovery_verdict_survives_continuity_handover(self):
-        p = object.__new__(CoupledGraspPolicy)
-        p.config = SimpleNamespace(capture_reference_handover=True)
-        p.execution = ExecutionRecord()
-        p.finish_cleanup = Mock()
-
-        def local_failure(*args):
-            p.execution.metrics.setdefault("measured_grasp", []).append(dict(can_reposition=True, samples=[]))
-            return False, "local target outside short reach"
-
-        p.coupled_transport = local_failure
-        self.assertFalse(p.finish(grip_world=None, squat_hint=0.1, ghost=None)[0])
-        self.assertEqual(len(p.execution.metrics["measured_grasp"]), 1)
-        self.assertTrue(p.execution.metrics["measured_grasp"][-1]["can_reposition"])
-
     def test_pre_alignment_failure_still_forbids_blind_stand_retry(self):
         p = object.__new__(CoupledGraspPolicy)
-        p.config = SimpleNamespace(capture_reference_handover=True)
+        p.config = SimpleNamespace()
         p.execution = ExecutionRecord()
         p.finish_cleanup = Mock()
         p.coupled_transport = Mock(return_value=(False, "wrist path blocked"))

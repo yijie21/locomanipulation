@@ -1379,20 +1379,6 @@ def _servo_continuous(
         if not closure_geometry(s, side, grip_target(s))["ready"]:
             return False, "measured closure handover geometry not delivered"
         phase = "close"
-        if preserve_capture_reference:
-            # The measured hand and its command differ under WBC tracking.
-            # Re-solving the measured pose here discards that compensation
-            # and moves a seated hand as closure starts. Preserve the last
-            # FK command while anchoring feedback at the actual wrist.
-            command_palm, command_rotation = arm.ik.fk(arm.q, side)
-            root_rotation = Primitives._rot(s["pelvis"]["quat"])
-            command_world = np.asarray(s["pelvis"]["pos"]) + root_rotation @ command_palm
-            capture_bias = command_world - ref
-            rot_t = root_rotation @ command_rotation
-            if execution is not None:
-                execution.metrics["capture_reference_handover"] = dict(
-                    wrist_tracking_bias_world_m=capture_bias.tolist(), preserved_rotation_world=rot_t.tolist()
-                )
         if grasp_point_control:
             ref += Primitives._rot(s["palms"][side]["quat"]) @ offset
     full_f = None  # low-passed palm-frame error (the servo's eyes)
