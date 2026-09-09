@@ -20,7 +20,6 @@ class ReachConfig:
     transport_margin: float = 0.004
     sweep_joint_step: float = 0.04
     transport_guard: bool = True
-    coordinated_arrival: bool = False
     ready_grasp_baseline: bool = False
     ready_grasp_recovery: bool = False
     recovery_region_stop: bool = False
@@ -67,7 +66,6 @@ class ReachConfig:
             type(v) is not bool
             for v in (
                 self.transport_guard,
-                self.coordinated_arrival,
                 self.ready_grasp_baseline,
                 self.ready_grasp_recovery,
                 self.measured_squat_handover,
@@ -86,7 +84,6 @@ class ReachConfig:
         for name, value in values.items():
             if name not in (
                 "transport_guard",
-                "coordinated_arrival",
                 "ready_grasp_baseline",
                 "ready_grasp_recovery",
                 "measured_squat_handover",
@@ -121,8 +118,6 @@ class ReachConfig:
             raise ValueError("Coupled hand lead requires coupled squat and a 5–50 mm bound")
         if self.recovery_region_stop and not self.ready_grasp_recovery:
             raise ValueError("Region stopping requires recovery policy")
-        if self.coordinated_arrival and self.ready_grasp_baseline:
-            raise ValueError("Choose one collection policy")
         if self.continuous_capture and not (self.coupled_squat and self.timely_capture):
             raise ValueError("Continuous capture requires coupled squat and timely capture")
         if self.tool_point_grasp and not (self.coupled_squat and self.timely_capture):

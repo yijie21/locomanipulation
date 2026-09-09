@@ -21,8 +21,6 @@ class ReadyBaselineTests(unittest.TestCase):
         cfg = ReachConfig.load(path)
         self.assertTrue(cfg.ready_grasp_baseline)
         with self.assertRaises(ValueError):
-            ReachConfig(ready_grasp_baseline=True, coordinated_arrival=True)
-        with self.assertRaises(ValueError):
             ReachConfig(ready_grasp_baseline="true")
 
     def test_ready_hands_are_in_front_with_neutral_wrists(self):

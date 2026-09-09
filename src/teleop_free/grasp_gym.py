@@ -1018,7 +1018,7 @@ def run_round(
         if recovery_hold is not None and not ok:
             p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
             p.cmd.frame(**recovery_hold)
-        elif (reach_config.coordinated_arrival or reach_config.ready_grasp_baseline) and not ok:
+        elif reach_config.ready_grasp_baseline and not ok:
             p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
             p.cmd.frame(
                 mode=LocomotionMode.IDLE,
@@ -1521,12 +1521,11 @@ def _run_round(
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
 
     coordinated = None
-    if reach_config.coordinated_arrival or reach_config.ready_grasp_baseline:
-        from coordinated_arrival import CoordinatedArrival
+    if reach_config.ready_grasp_baseline:
         from ready_grasp_policy import ReadyGraspPolicy
 
         arrival_task = task_grasp
-        controller = ReadyGraspPolicy if reach_config.ready_grasp_baseline else CoordinatedArrival
+        controller = ReadyGraspPolicy
         if reach_config.ready_grasp_recovery:
             from recoverable_grasp_policy import RecoverableGraspPolicy
 
