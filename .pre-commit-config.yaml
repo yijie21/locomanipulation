@@ -9,12 +9,12 @@ repos:
     hooks:
       - id: ruff-format
         name: ruff format
-        entry: /venv/main/bin/ruff format
+        entry: /venv/main/bin/ruff format --force-exclude
         language: system
         types: [python]
       - id: ruff-check
         name: ruff check
-        entry: /venv/main/bin/ruff check --fix
+        entry: /venv/main/bin/ruff check --fix --force-exclude
         language: system
         types: [python]
       - id: lint-sizes
