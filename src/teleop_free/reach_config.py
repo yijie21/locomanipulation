@@ -50,13 +50,20 @@ class ReachConfig:
     local_reach_limit: float = .20        # local alignment aborts beyond this wrist error
     pregrasp_min_forward: float = 0.      # clamp safe_pregrasp to >= this far ahead of the pelvis (0 = off); a large gap at a close stand otherwise puts the palm inside the torso
     arrival_advance_jitter: float = 0.    # per-episode uniform +-jitter on arrival_advance: spreads the expert's stand so the squat label covers the policy's own stop spread (ready07d: P(squat)=0.12 at 0.38-0.43 m)
+    # Visible expert (2026-09-09): every action must be a function of what the
+    # image policy observes. Removes the per-episode RNG stand cell, the
+    # arrival_advance latch (brake at a fixed measured depth instead), and the
+    # recovery reposition branch (an infeasible stand discards the episode).
+    visible_expert: bool = False
+    visible_brake_depth: float = .31      # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
+    visible_decel_band: float = .12       # speed ramps down over this depth band above the brake depth
 
     def __post_init__(self):
         values = asdict(self)
-        if any(type(v) is not bool for v in (self.transport_guard, self.coordinated_arrival, self.ready_grasp_baseline, self.ready_grasp_recovery, self.measured_squat_handover, self.coupled_squat, self.timely_capture, self.brake_preplan, self.continuous_capture, self.tool_point_grasp, self.horizontal_entry, self.recovery_region_stop, self.capture_reference_handover)):
+        if any(type(v) is not bool for v in (self.transport_guard, self.coordinated_arrival, self.ready_grasp_baseline, self.ready_grasp_recovery, self.measured_squat_handover, self.coupled_squat, self.timely_capture, self.brake_preplan, self.continuous_capture, self.tool_point_grasp, self.horizontal_entry, self.recovery_region_stop, self.capture_reference_handover, self.visible_expert)):
             raise ValueError('strategy and guard switches must be boolean')
         for name, value in values.items():
-            if name not in ('transport_guard', 'coordinated_arrival', 'ready_grasp_baseline', 'ready_grasp_recovery', 'measured_squat_handover', 'coupled_squat', 'timely_capture', 'brake_preplan', 'continuous_capture', 'tool_point_grasp', 'horizontal_entry', 'recovery_region_stop', 'capture_reference_handover') and (type(value) not in (int, float) or not math.isfinite(value)):
+            if name not in ('transport_guard', 'coordinated_arrival', 'ready_grasp_baseline', 'ready_grasp_recovery', 'measured_squat_handover', 'coupled_squat', 'timely_capture', 'brake_preplan', 'continuous_capture', 'tool_point_grasp', 'horizontal_entry', 'recovery_region_stop', 'capture_reference_handover', 'visible_expert') and (type(value) not in (int, float) or not math.isfinite(value)):
                 raise ValueError(f'{name} must be a finite number')
         if not (0 < self.post_min < self.post_max and 0 < self.pre_min < self.pre_max):
             raise ValueError('Depth bounds must be positive and ordered')
@@ -114,6 +121,13 @@ class ReachConfig:
                 and 0 <= self.pregrasp_min_forward <= .25 and 0 <= self.arrival_advance_jitter <= .05
                 and 0 <= self.arrival_advance-self.arrival_advance_jitter and self.arrival_advance+self.arrival_advance_jitter <= .10):
             raise ValueError('approach geometry outside supported bounds')
+        if self.visible_expert:
+            if not (self.ready_grasp_baseline and self.ready_grasp_recovery):
+                raise ValueError('visible_expert requires the ready baseline with the recovery controller')
+            if self.arrival_advance_jitter or self.pregrasp_lateral_jitter or self.recovery_region_stop or self.brake_preplan:
+                raise ValueError('visible_expert excludes per-episode jitter, region stopping and brake preplanning')
+            if not (.20 <= self.visible_brake_depth <= .45 and 0 <= self.visible_decel_band <= .30):
+                raise ValueError('visible brake geometry outside supported bounds')
         self.approach_band()
 
     def approach_band(self):

@@ -21,3 +21,9 @@ GitHub Issues(`gh` CLI,仓库 yijie21/locomanipulation)。See `docs/agents/issue
 ### Session workflow
 
 每个 session 从 `docs/STATE.md` 开始,结束前更新它,然后 `/clear`。See `docs/agents/session-workflow.md`.
+
+### Refactor freeze (2026-09-09 to 2026-09-23)
+
+仓库重构进行中,计划与 13 条决定见 `docs/handoff/refactor-plan.md`。冻结期内 main 上只跑实验、只修 bug,不加新功能;
+`src/teleop_free/scalebfm/` 归 Codex 线程,其余主代码的移动/删除由重构 PR 完成。删除 `outputs/` 目录或权重前先在
+`docs/STATE.md` 登记 24 小时。每个重构 PR 必须附 `scripts/gate.py compare` 的输出。

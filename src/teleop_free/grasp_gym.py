@@ -1442,6 +1442,14 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
     # own stops spread to 0.43; the squat label then had no coverage out there.
     _jit = float(getattr(reach_config, 'arrival_advance_jitter', 0.))
     advance = float(np.clip(reach_config.arrival_advance + (np.random.uniform(-_jit, _jit) if _jit > 0 else 0.), 0., .10))
+    VISIBLE = bool(getattr(reach_config, 'visible_expert', False))
+    if VISIBLE:
+        # Visible expert: no latch, no advance, no shuffle band. The walk stops
+        # the tick the MEASURED object depth reaches visible_brake_depth and
+        # decelerates over visible_decel_band above it -- both functions of
+        # the relative pose the cameras see, nothing per-episode.
+        advance = 0.
+        SHUFFLE_BAND = 0.
     aim_xy = aim_xy + advance * np.asarray(fv[:2])
     if appr_lat:
         p.log(f"[gym] approach aim offset {appr_lat * 100:+.0f} cm lateral")
@@ -1474,9 +1482,13 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
                 break
             reachable = rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
-            stop_here = (advance_gate.stop(r[0], reachable) if advance else reachable)
+            if VISIBLE:
+                stop_here = r[0] <= reach_config.visible_brake_depth
+            else:
+                stop_here = (advance_gate.stop(r[0], reachable) if advance else reachable)
             if stop_here:
-                why = "advanced reachable stop" if advance else "can reachable"
+                why = ("visible brake depth" if VISIBLE
+                       else "advanced reachable stop" if advance else "can reachable")
                 brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
                 break
             if edge_dist(p.pelvis_xy(s)) <= EDGE_MIN + EDGE_LEAD:
@@ -1514,6 +1526,12 @@ def _run_round(p, reset, meta, obj_key, surf_a, edge_dist,
                                                 or r[0]-plan_r <= SHUFFLE_BAND)
             speed = (APPR_SHUFFLE if shuffle_now
                      else APPR_MID if r[0]-plan_r <= MID_BAND else APPR_COARSE)
+            if VISIBLE and reach_config.visible_decel_band > 0:
+                # Monotone in the measured depth: full speed above the band,
+                # ramping to the gait's slow floor at the brake depth.
+                u = float(np.clip((r[0] - reach_config.visible_brake_depth)
+                                  / reach_config.visible_decel_band, 0., 1.))
+                speed = min(speed, APPR_SHUFFLE + (speed - APPR_SHUFFLE) * u)
             if reach_config.continuous_capture:
                 # Decelerate before the stop gate while the arm prepares.
                 speed = min(speed, .12+.18*float(np.clip((r[0]-plan_r)/.25,0.,1.)))

@@ -106,6 +106,14 @@ def sample_stand(plan, rng, config):
         choices = list(lower_grip_samples(float(plan.grip_z), config.max_drop))
     if not choices:
         raise ValueError('target height has no comfortable baseline grasp; do not broaden IK')
+    if getattr(config, 'visible_expert', False):
+        # One stand per object height, no draw and no noise: the stand is a
+        # function of the (visible) grip height alone, so the same measured
+        # pose never carries two different stop labels. Diversity comes from
+        # the spawn. The median-drop template is the most comfortable middle.
+        ordered = sorted(choices, key=lambda cd: (cd[1], cd[0][0]))
+        centre, drop = ordered[len(ordered) // 2]
+        return centre[:2] - [config.backshift, 0.], float(drop)
     centre, drop = choices[int(rng.integers(len(choices)))]
     # Small perturbations within a comfortable FK neighbourhood. Account for
     # the expected squat backshift; live post-squat checks remain authoritative.

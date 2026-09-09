@@ -317,17 +317,27 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
         self._drop_hint = drop
         journal=self.execution.metrics['recovery']['attempts']
         succeeded=False
+        visible=bool(getattr(self.config,'visible_expert',False))
         try:
             self.hold()
             if not self.brake():return False,'recovery base did not stop before planning'
             self.standing_z=float(self.p.obs()['pelvis']['pos'][2])
-            for correction in range(self.config.recovery_attempts+1):
+            # Visible expert: the squat depth is the deterministic stand's own
+            # drop and the stand is never corrected. assess() only screens it
+            # (and prepares the grasp rotation); an infeasible stand discards
+            # the episode instead of walking to a stand no image explains.
+            attempts=0 if visible else self.config.recovery_attempts
+            for correction in range(attempts+1):
                 if self.expired():return False,'recovery time budget exhausted'
                 state=self.p.obs()
                 from stream_reach import toppled
                 if state['fallen'] or toppled(state,self.task.target.key):return False,'recovery target or base disturbed'
                 start=len(self.execution.events)
-                selected=self.select_drop(state,drop)
+                if visible:
+                    fixed=float(np.clip(drop,.03,self.config.max_drop))
+                    selected=fixed if self.assess(state,fixed) else None
+                else:
+                    selected=self.select_drop(state,drop)
                 if selected is not None:
                     drop=selected
                     self.retracted=False
@@ -347,7 +357,7 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
                 else:
                     why='current stand lacks a clear squat and short grasp path'
                     journal.append(dict(correction=correction,ok=False,reason=why))
-                if correction==self.config.recovery_attempts:break
+                if correction==attempts:break
                 state=self.p.obs()
                 if state['fallen'] or toppled(state,self.task.target.key):return False,'recovery target or base disturbed'
                 self.execution.enter('recovery_needed',reason=why)
@@ -362,7 +372,8 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
                 self._drop_hint = goal[2]
                 if not self.brake():return False,'recovery base did not stop after positioning'
                 drop=goal[2]  # Recheck ACTUAL state next iteration, never trust arrival alone.
-            return False,f'recovery attempts exhausted: {why}'
+            return False,(f'visible expert: stand infeasible, no reposition ({why})' if visible
+                          else f'recovery attempts exhausted: {why}')
         finally:
             self.p.cmd.set_upper_body_vel(np.zeros(17))
             if not succeeded:

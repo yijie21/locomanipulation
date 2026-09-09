@@ -1,23 +1,54 @@
-# STATE (updated 2026-09-08 18:50 UTC by 9d; main line = session 9d, instance 0; branch = 65)
+# STATE (updated 2026-09-09 by 9d; main line = session 9d, instance 0; branch = 65)
 
 ## Now
-- ScaleBFM visual-expert Goal (this Codex thread): ACTIVE. GPU0 reserved for this
-  Goal after 9d's explicit 18:50 release (claimed 18:56 UTC); GPU1 currently has
-  another live workload and is left alone. No recording stack/ports are used.
-  Plan/checkpoint: docs/scalebfm_goal_plan.md and docs/scalebfm_goal_state.md.
-  Review correction: a15 cohort retired (145 attempts counted); a16 passed30/30
-  qualification,11/12recovery. Formal v2 comparison driver active onGPU0, currently
-  allABCdata/export/stats complete200train+20val each. AttemptcostA225/880,
-  B367/880includingretired,C225/880includingreuse. C5A17trainingLIVE,
-  2841/3000updates at2026-09-09 01:13UTC; finiteinitialloss/gradients,GPU0~26GB.
-  DriverPID1081396/session17266; trainerPID1081656. Firstinitializationfailure
-  repaired/archivedwith0updates; sixconfigsrefrozen. Checkpoint2500auditPASS
-  (optimizer/scheduler/RNG/model/processor; latest-onlyretentionverified). Ledger:pipeline_v2_state.json.
-  User authorized staged implementation and fixed-budget VLA comparison (2026-09-08);
-  supersedes the ScaleBFM choice in Next item 2; resource release is the 9d entry below.
-- DONE 18:45 (9d): 07d-200 closed-loop eval 57/100 (docs/ready_grasp_arms_20260907.md §8). Paired first 60:
-  37/60 vs ready07d_decisive 29/60, discordant 22:14, McNemar p 0.24 -- not significant; needs a second seed.
-  Instance 0 / GPU0 / GPU1 are FREE (stack stopped by the runner). Model: ready07d_200_20260908/model (24 GB).
+- yplus200 update: collection COMPLETE200/200 attempts accepted (67high/67low-near/66deep),
+  export/statistics complete. Training startup offline-tokenizer failure repaired by removing driver-only
+  HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE; no training configuration or expert change,0 updates lost.
+  GPU0 training now verified at12/3000 steps; driver2458090,trainer2458112.100-case evaluation pending.
+  Logs/recovery:outputs/experiments/scalebfm_yplus200_s17_20260909/{pipeline_v2_state.json,RECOVERY.md}.
+- NEW user-authorized experiment2026-09-09: current expert200 accepted episodes -> VLA seed17/3000steps
+  ->100 ordinary closed-loop cases on GPU0, yplus_center_v1. Existing information gaps recorded,
+  intentionally not changed. GPU0 checked idle at08:30UTC; GPU1 belongs to another task.
+  Root:outputs/experiments/scalebfm_yplus200_s17_20260909/. Read PLAN.md and pipeline_v2_state.json
+  before doing anything; per-stage PID/logs survive context loss. This is separate from cancelled ABC Goal.
+- Current ScaleBFM policy audit (2026-09-09, bounded user request): initial HEAD-camera visibility
+  enforced at reset,1.60s,and actual first recorded frame; invalid episodes retained/rejected.
+  Fixed eligible-camera selection, entry wrist/root heading mismatch, fixed-bottle-height lift test.
+  49 visual tests passed; CPU three normal scenes3/3 task+audit, two injected hidden starts2/2 rejected.
+  Remaining major limitation: proxy still reads exact object/table geometry; bottle visibility does
+  not establish table-edge visibility. Full audit:docs/scalebfm_policy_audit_20260909.md.
+  Evidence:outputs/diagnostics/scalebfm_policy_audit_20260909/. No Goal/training restart.
+- User-requested bounded video inspection: trigger "检查采集视频" -> bash scripts/scalebfm_video_check.sh.
+  CPU only,10 current-expert coverage cases, right-front full-body follow videos; no Goal/training restart.
+  Contract:docs/scalebfm_video_check.md. Current export:outputs/videos/scalebfm_check10_yplus_center_v1_26cc7ae54f7a/.
+  COMPLETE:10/10 videos,10/10 expert task+audit passes;40 decoded representative frames visually reviewed.
+  No repeated physical cases, no Goal restart. This is a coverage demo, not random success-rate evaluation.
+- ScaleBFM follow-up (2026-09-09, separately authorized): new collection defaults to yplus_center_v1,
+  bottle x centred on table +/-8cm, near inboard12-18cm, deep18-24cm; robot approaches only y+.
+  CPU three-case smoke3/3 and42visual tests passed. No batch collection/training or Goal restart.
+  Details:docs/scalebfm_yplus_collection_20260909.md. Old frozen three-edge results remain historical.
+- ScaleBFM visual-expert Goal (this Codex thread): USER CANCELLED at2026-09-09 07:07UTC.
+  Driver1470213, A29trainer2378682 and watcher2145035 stopped; all Goal GPU processes absent.
+  Goal releases its GPU0 reservation; an external SONIC deployment still uses GPU0.
+  Other workloads/stacks untouched. Do not restart Goal without new explicit human authorization.
+  A17/B17/C17 complete3000steps and60selectioncases each, successes13/17/11.
+  A29cancelled after40logged updates, no saved500step checkpoint. No winner lock or confirmation.
+  All artifacts preserved. Cancellation/recovery:docs/scalebfm_goal_state.md and
+  outputs/experiments/scalebfm_visual_goal_20260908/user_cancel_checkpoint_20260909.json.
+  Platform Goal now blocked: three automatic continuations lacked renewed human authorization.
+  This is not objective completion; no experiments resumed. Platform cancellation remains a UI action.
+- 9d: RUNNING since 09:25 UTC -- ready_visible200_20260909 (visible-expert collection, 200 ep, instance 0
+  stack on GPU1; training/eval intended for GPU0 once the Codex training there ends). DO NOT delete
+  outputs/experiments/ready_visible200_20260909 or ready_visible_smoke_* (a cleanup at ~09:00 removed the
+  smoke dir while it was being written). Code: visible_expert flag in reach_config/ready_grasp_policy/
+  grasp_gym/recoverable_grasp_policy, config configs/collection/ready_grasp_visible.json, tests/test_visible_expert.py.
+  Smoke 8/10 (1 spawn-turn, 1 infeasible discard), 9/9 brakes at depth 0.30-0.31, no recovery stage.
+  Previous: seed-7 pilot torn down 07:55 UTC; instance 0 / port 5590 free; the 20 GB on GPU1 is
+  not ours -- check nvidia-smi before claiming it). Next item 1 DONE: ready07d_200_seed7_20260909 = 46/100
+  (same 176 ep, GR00T_DATA_SEED=7) vs seed 42's 57/100, paired 21:32 p 0.17; vs decisive first 60: 27 vs 29,
+  p 0.87. The +8 of 07d-200 over decisive is seed variance, not data; failure mix flips with seed alone
+  (static 15 -> 39, knock 19 -> 7). docs/ready_grasp_arms_20260907.md §9. Model kept (24 GB).
+  Earlier today: ensemble N3 M0.3 screen 3/20 vs 9/20, harmful (§8.1). Last result before that: 07d-200 57/100
 - ScaleBFM: nothing running. Three pilots today (v3 18-d, v3 26-d offline velocity, v4 23-d native
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
@@ -25,7 +56,19 @@
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
-## Changed today (all UNCOMMITTED; commit is the user's call)
+## Changed (2026-09-08 session, COMMITTED as 343d9f9 and pushed)
+- Commit 343d9f9 holds everything below. ~50 untracked files from the Codex "ScaleBFM visual-expert" thread
+  (docs/scalebfm_goal_*, scalebfm_visual_*, src/teleop_free/scalebfm/*visual*.py, tests/test_bfm_visual_*,
+  configs/gr00t_bfm_visual_2cam.py) are NOT committed -- that thread owns them.
+- docs/bimanual_collection_tutorial.md rewritten (160 -> 463 lines) in collection.md's structure: scene, one
+  episode with log reading, pilot + acceptance, control logic with the episode flowchart and per-phase
+  criteria table, demo shape, randomisation, cameras, render, path to a dataset, dated pitfalls.
+- Disk cleanup (user-approved tiers A/B/C, /workspace 97% -> 77%): DELETED the bfm_trainsmoke, bfm_pilot_v3
+  (model + model_vel) and bfm_pilot_v4 checkpoints (their datasets, evals, pilot.log stay), the v3 partial
+  evals/probes, outputs/train/{transition_pilot20,prefix_*}, outputs/diag/{transition_*,grasp_handover,
+  prefix_target_audit,transport_dynamic}, outputs/videos/{cl_cover400_tok100,wall_pilot_try*},
+  outputs/sim_video, /workspace/tmp/{gr00t_val,gso_probe,robocasa,*.zip} and exporter sessions before
+  2026-09-08. Kept: ready07d_decisive, ready07_learn, ready07d_200 models; all datasets; HF cache (tier D).
 - src/teleop_free/scalebfm/eval_bfm_bottle.py: (1) the settle-hold fallback during the 4 latency ticks
   after each replan is gone (a `live` chunk keeps executing) -- it was 20% of ticks; (2) `--anchor live`
   re-anchors chunk rows on the live pelvis and builds ScaleBFM's futures from velocity columns (4 or 7);
@@ -53,9 +96,19 @@
   Their exporter episodes were 1-6 s stubs after deploy self-heal restarts caused by ScaleBFM sim probes on
   the same GPU; the ordered manifest join cannot see that, only check_dataset's grasp-causality pass did.
 
+## Refactor in progress (docs/handoff/refactor-plan.md, confirmed 2026-09-09)
+- Two-week feature freeze on main from 2026-09-09: experiments only, no new features outside scalebfm/.
+- Step 0 DONE (no main-code change): scripts/gate.py + tests/gate/baseline_{bottle,crate}.json. bottle baseline is
+  from the first 30 rounds of ready_visible200 (re-record when the run completes); crate from outputs/videos/wall_pilot.
+  Self-compare PASS 19/19 and 8/8; 07d-200 manifests FAIL against it on exit reason / recovery stages / failure set only.
+- Paths being moved: none yet. Steps 1-6 (tooling, delete retired, knobs->config, skeleton, crate, docs) not started.
+- Cleanup rule: deleting outputs/ dirs or weights needs a 24 h notice here first (a cleanup removed a running smoke dir today).
+- Codex thread: please commit the ~50 untracked scalebfm/visual files as-is before step 2 starts.
+
 ## Next
-1. 07d-200 second seed: same train_dataset (176 ep), GR00T_DATA_SEED=7 (see run_learn_pilot / launch_finetune),
-   100 rounds seed 6000 -> the data-vs-seed question of docs/ready_grasp_arms §5/§8 (n=1 cannot carry 8 points).
+1. Ready-grasp line: data volume is flat at 176 ep (seed 7 = decisive level). Attack the failure both seeds
+   share -- standing at the table with the arm never leaving rest (s7 39/54, s42 15/43): DAgger with near-table
+   spawns covering the stand -> raise transition (failure_anatomy ARM-NEVER-UP prescription), 2 seeds per arm.
 2. ScaleBFM decision (user): (a) record 200 episodes on the edge geometry as-is (STAND_D 0.45-0.55, reach
    overlapping the walk -- the best-scoring expert combination, 5/6) and run the v4 pipeline (~2.5 h), or
    (b) first a mode-6 spike (pelvis + shoulder + elbow + wrist targets) to remove the ~20 deg waist twist,
@@ -66,7 +119,7 @@
 4. Progress-parameterised expert (replace time u with path progress) before the DAgger stage.
 
 ## Blocked / waiting on
-- nothing: instance 0 and both GPUs are free as of 18:45.
+- nothing.
 
 ## Open questions
 - ScaleBFM twist: waist yaw/roll ~20 deg peaks 1 s after the reach starts, at every STAND_D from 0.25 to
@@ -78,16 +131,30 @@
   stays +0.02 because no training frame shows a stopped robot that must keep walking.
 - check_dataset's rise check needs root_position to be frame-correct; SONIC datasets lack it, so their
   "min rise" numbers under-read (the 07d-200 audit passed 32/32 after the stub sessions were removed).
-- Ready-grasp line (docs/ready_grasp_arms_20260907.md): closer stand + no shuffle 29/60 is the best arm;
-  "never squatted" is training-seed variance. Needs 200+ episodes and 2 seeds per config -- the 07d-200
-  run is the first of those.
+- Ready-grasp line: 07d-200 (176 ep) 57/100 vs 07d (60 ep) 29/60 paired 37 vs 29, p 0.24. Data helped the
+  stand (reach-fail min dist 0.24 m vs 0.37 m) but 'at the table, never closes' is still 34/43 of the
+  failures; a second training seed on the same dataset is the cheapest next fact.
+- failure_anatomy.py's arm-up threshold is inverted for the ready-grasp line (rest 0.90 m > close 0.72 m): its
+  'arm never up = 0' is wrong there; use palm_z min vs the successes' close height instead.
+- The v3/v4 ScaleBFM checkpoints are gone (cleanup); their numbers live in pilot.log/STATE/memory only.
+  Re-deriving them means re-running bfm_pilot.sh on the kept datasets (~80 min each).
 
 ## Parked (do not forget)
 - SONIC lockstep collection: docs/handoff/sonic_lockstep_collection_plan.md
 - Isaac render + MuJoCo physics: memory isaac-render-mujoco-physics-plan
 - v4 clockless expert (0/3, abandoned; lessons in memory scalebfm-interface-facts)
 
+- Disk cleanup 2026-09-09 (branch 65, user-approved): outputs/experiments 195G -> 101G. Removed the checkpoint-3000
+  safetensors + optimizer.pt in all 7 model dirs (byte-identical to the top-level weights, verified with cmp;
+  WEIGHTS_REMOVED.txt left in each), collect/ + train_dataset/ of 07b/07c/07e/07s2 (eval traces kept), and the
+  bfm_trainsmoke / ready_visible_smoke dirs. policy_goal kept. Resuming those trainings is no longer possible.
+
+- 2026-09-09 (65): SIMPLE moved physically from /workspace/code/SIMPLE to third_party/SIMPLE (paths.sh/paths.py
+  defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
+
 ## Recent results (last 3)
+- 2026-09-09 07d-200 seed 7: 46/100 vs seed 42 57/100 (21:32, p 0.17); vs decisive 27 vs 29 (p 0.87) -- data gain was seed noise
+- 2026-09-09 07d-200 + ensemble N3 M0.3: 3/20 vs 9/20 paired (3:9, p 0.15); ensemble delays/blocks the arm drop, negative
 - 2026-09-08 ready07d_200 (176 ep): 57/100; paired first 60 37 vs 29 (p 0.24); reach-fail stops closer (0.24 m) but still no close
 - 2026-09-08 ScaleBFM edge geometry: expert 2/2 on x-, y-, y+ edges after the BIAS fix; STAND_D sweep
   (6 rounds each) 0.25-0.30 3/6, 0.30-0.35 4/6, 0.35-0.40 3/6, 0.40-0.45 2/6, 0.45-0.55 5/6; twist ~20 deg
