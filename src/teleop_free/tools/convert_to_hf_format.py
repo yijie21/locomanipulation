@@ -222,7 +222,6 @@ MODALITY = {
         # (configs/gr00t_sonic_3cam_bimanual.py). On right-handed datasets it
         # is a constant 0 like left_hand_joints above -- declared, not selected.
         "left_gripper": {"start": 0, "end": 1, "original_key": "teleop.left_hand_joints"},
-        "a18": {"start": 0, "end": 18, "original_key": "action.a18"},
     },
     # Filled from the session's own features -- see video_streams(). Fixing it
     # to ego_view here is what made the wrist cameras invisible to this
@@ -527,8 +526,6 @@ def finalize(sink, src_info, args, feats_extra=True):
         if k == "timestamp":
             feats["observation.state_psi0"] = {"dtype": "float32", "shape": [15], "names": None}
             feats["action.psi0_18"] = {"dtype": "float32", "shape": [18], "names": None}
-            if getattr(args, "a18", None):
-                feats["action.a18"] = {"dtype": "float32", "shape": [18], "names": None}
         feats[k] = v
     for st in sink.streams:
         vi = feats.get(st, {})
@@ -598,17 +595,6 @@ def main():
         "entry and in the same order. Gives each episode "
         "its own instruction, which the exporter cannot: "
         "its --task-prompt is fixed for a whole session.",
-    )
-    ap.add_argument(
-        "--a18",
-        default=None,
-        metavar="NPZ",
-        help="seq -> 18-D commanded action table from "
-        "tools/export_action18.py --seq-out. Adds an "
-        "action.a18 column (wrist SE(3) + grip per arm + "
-        "4-D base), joined on the privileged `seq` each "
-        "source frame carries. Additive: the 65-D "
-        "motion_token action is unchanged.",
     )
     ap.add_argument(
         "--holdout",
@@ -765,12 +751,6 @@ def main():
     jobs = max(1, int(args.jobs))
     pending = []  # (stats_dict, stream_name, src, dst, sel)
 
-    a18_lut = None
-    if args.a18:
-        z = np.load(args.a18)
-        a18_lut = (z["seq"].astype(np.int64), z["a18"].astype(np.float32))
-        print(f"a18: {len(a18_lut[0])} seq rows from {args.a18}")
-
     # Pass 2 -- convert, routing each episode to its sink.
     for it in items:
         si, sess, src_ep, pq = it["si"], it["sess"], it["src_ep"], it["pq"]
@@ -778,24 +758,6 @@ def main():
         man = mans.get(si)
 
         table = pq_mod.read_table(pq)
-        if a18_lut is not None:
-            # Join on the privileged `seq` the sim stamps on every frame:
-            # priv_seq/episode_XXXXXX.json lists one seq per SOURCE row, and
-            # the sidecar rows carry the same counter. Attaching here (before
-            # the idle filter and the 50->25 take) means every later row
-            # selection carries the action with it, so no separate resample
-            # can drift.
-            ps = json.load(open(sess / f"priv_seq/episode_{src_ep:06d}.json"))
-            seqs = np.asarray(ps["priv_seq"], dtype=np.int64)
-            if len(seqs) != table.num_rows:
-                raise SystemExit(f"a18: {sess.name}/ep{src_ep} has {len(seqs)} priv_seq for {table.num_rows} rows")
-            idx = np.searchsorted(a18_lut[0], seqs)
-            idx = np.clip(idx, 0, len(a18_lut[0]) - 1)
-            miss = int((a18_lut[0][idx] != seqs).sum())
-            if miss > len(seqs) * 0.02:
-                raise SystemExit(f"a18: {sess.name}/ep{src_ep} misses {miss}/{len(seqs)} seq -- wrong --a18 file?")
-            col = a18_lut[1][idx]
-            table = table.append_column(pa.field("action.a18", pa.list_(pa.float32(), 18)), fsl(col, 18))
         if args.trim_verification_tail:
             ps = json.loads((sess / f"priv_seq/episode_{src_ep:06d}.json").read_text())
             original_rows = table.num_rows

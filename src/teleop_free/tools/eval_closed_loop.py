@@ -94,13 +94,6 @@ def main():
     )
     ap.add_argument("--execution-horizon", type=int, default=16, help="blocking client only: chunk steps per replan")
     ap.add_argument(
-        "--clean-deploy",
-        action="store_true",
-        help="wall-clock clients: deploy engaged by SONIC_AUTO_START, "
-        "never a planner command (stack started with CLEAN_DEPLOY=1); "
-        "docs/lockstep.md '校准诊断'",
-    )
-    ap.add_argument(
         "--client",
         choices=("async", "lockstep", "blocking"),
         default="async",
@@ -303,23 +296,11 @@ def main():
     dep = subprocess.run(["pgrep", "-af", "g1_deploy" + "_onnx_ref"], capture_output=True, text=True).stdout
     if not dep.strip():
         sys.exit("deploy is not running -- bring the stack up with NO_ENCODER=1 bash src/teleop_free/start_stack.sh")
-    a18 = os.environ.get("TF_ACTION18", "0") == "1"
-    if "--encoder-file" in dep and not a18:
+    if "--encoder-file" in dep:
         sys.exit(
             "deploy is running WITH its encoder. Token streaming will "
             "not hold (initial_encoder_mode_ 0 keeps re-enabling it). "
             "Restart the stack with NO_ENCODER=1."
-        )
-    if a18 and "--encoder-file" not in dep:
-        # The mirror image: the 18-D action drives the PLANNER channel, whose
-        # upper body is only read on the encoder path (2026-09-03: a stack
-        # started with NO_ENCODER silently drops the arm and crouch reference
-        # and every round stalls in the up phase).
-        sys.exit("TF_ACTION18=1 needs the deploy's encoder. Restart the stack WITHOUT NO_ENCODER=1.")
-    if a18 and args.clean_deploy:
-        sys.exit(
-            "TF_ACTION18=1 is incompatible with --clean-deploy: the shim "
-            "drops planner commands, which is the whole 18-D channel."
         )
 
     out = Path(args.out or REPO / "outputs/eval/bottle200/closed_loop.json")
@@ -372,34 +353,33 @@ def main():
             link, ls, clock, args.task, latency, seed=args.seed, trace_dir=trace_dir
         )
     elif args.client == "async":
-        if args.clean_deploy:
-            os.environ["CLEAN_DEPLOY"] = "1"  # restart_deploy.sh per round
-            clock = vla_round.CleanClock()
-            vla_round.install_clean_shim(clock)
-            _orig_fresh = grasp_gym.fresh_deploy
+        os.environ["CLEAN_DEPLOY"] = "1"  # restart_deploy.sh per round
+        clock = vla_round.CleanClock()
+        vla_round.install_clean_shim(clock)
+        _orig_fresh = grasp_gym.fresh_deploy
 
-            def fresh_deploy(p):
-                clock.pause()
-                ok = _orig_fresh(p)
-                if ok:
-                    clock.prime()
+        def fresh_deploy(p):
+            clock.pause()
+            ok = _orig_fresh(p)
+            if ok:
+                clock.prime()
+            clock.resume()
+            return ok
+
+        grasp_gym.fresh_deploy = fresh_deploy
+        _orig_prim_init = grasp_gym.Primitives.__init__
+
+        def prim_init(self, *a, **kw):
+            _orig_prim_init(self, *a, **kw)
+            if not clock.primed:
+                clock.prime()
                 clock.resume()
-                return ok
 
-            grasp_gym.fresh_deploy = fresh_deploy
-            _orig_prim_init = grasp_gym.Primitives.__init__
-
-            def prim_init(self, *a, **kw):
-                _orig_prim_init(self, *a, **kw)
-                if not clock.primed:
-                    clock.prime()
-                    clock.resume()
-
-            grasp_gym.Primitives.__init__ = prim_init
-            print(
-                "[closed-loop] CLEAN DEPLOY: auto-start, no planner command in the "
-                "deploy's lifetime, standing token between rounds."
-            )
+        grasp_gym.Primitives.__init__ = prim_init
+        print(
+            "[closed-loop] CLEAN DEPLOY: auto-start, no planner command in the "
+            "deploy's lifetime, standing token between rounds."
+        )
         grasp_gym.VLA_POLICY = vla_round.make_vla_policy_async(
             link, args.task, inference_interval=args.replan_interval, trace_dir=trace_dir
         )
@@ -492,7 +472,7 @@ def main():
             "ramp server-side (serve_policy --rtc-ramp-rate)."
         )
     if args.transition_commit:
-        if a18 or not args.rtc or args.client != "async" or args.ensemble != 1 or not args.transition_decoder:
+        if not args.rtc or args.client != "async" or args.ensemble != 1 or not args.transition_decoder:
             raise SystemExit("--transition-commit requires --rtc --client async --ensemble 1 --transition-decoder PATH")
         vla_round.TRANSITION_COMMIT = True
         vla_round.TRANSITION_DECODER = args.transition_decoder

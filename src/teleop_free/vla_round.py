@@ -252,13 +252,6 @@ ENSEMBLE_M = 0.3  # exponential weight decay per chunk of age
 RTC_ON = False
 TRANSITION_COMMIT = False
 TRANSITION_DECODER = None
-# TF_ACTION18=1: the policy emits the 18-D command (wrist SE(3) + grip per arm
-# + base) instead of a 64-D SONIC token, and this round drives the robot the
-# way the scripted expert does -- IK to 17 upper-body joint targets on the
-# PLANNER channel, never streamed mode. Incompatible with --clean-deploy (that
-# shim drops planner commands) and needs the deploy's encoder loaded, i.e. the
-# stack must start WITHOUT NO_ENCODER. See action18_client.py.
-ACTION18 = os.environ.get("TF_ACTION18", "0") == "1"
 # TF_GRIP_DELAY (frames at DATASET_FPS): send the gripper command from N frames
 # ago. Diagnosis 2026-09-04 (replay_reach): the token path executes the ARM
 # ~0.2 s behind the recorded motion (palm 0.5-5 cm short at the recorded close
@@ -475,11 +468,6 @@ class PolicyLink:
                 grip=np.asarray(out["action.right_gripper"]),
                 **{k: (np.asarray(v) if not isinstance(v, str) else np.array(v)) for k, v in obs.items()},
             )
-        if ACTION18:
-            a = np.asarray(out["action.a18"], dtype=np.float64)
-            # the right grip rides along as the second return so every
-            # predicate downstream (commanded_close, grip traces) is unchanged
-            return a, a[:, 6].reshape(-1)
         tok = np.asarray(out["action.motion_token"], dtype=np.float64)
         grip = np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
         return (snap(tok) if SNAP else tok), grip
@@ -786,38 +774,16 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
         # belongs to the keepalive until _teardown(); the main thread must
         # not touch p.cmd before then.
         l_open, r_open = expand_hands(_G_OPEN)
-        sender18, _fv0, _anchor = None, None, None
-        if ACTION18:
-            # 18-D drives the PLANNER channel, so there is nothing to get off
-            # and nothing to prime: hold the arm where it is and the base IDLE.
-            from action18_client import Action18Sender
-            from primitives import LocomotionMode as _LM
-            from primitives import upper_body_from_mj as _u17
-
-            sender18 = Action18Sender(p)
-            _s0 = p.obs()
-            _fv0 = p._facing(_s0)
-            _anchor = (np.asarray(p.pelvis_xy(_s0), dtype=float).copy(), float(p.pelvis_yaw(_s0)))
-            for _ in range(30):
-                sender18.hold(_anchor[0], _anchor[1], l_open, r_open)
-                time.sleep(0.02)
-        else:
-            for _ in range(30):
-                p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
-                time.sleep(0.02)
-            p.cmd.enter_streamed()
+        for _ in range(30):
+            p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
+            time.sleep(0.02)
+        p.cmd.enter_streamed()
         t_hold = time.time()
         keep_stop = threading.Event()
 
         def _keepalive():
             while not keep_stop.is_set():
-                if ACTION18:
-                    # closed on BOTH heading and position against the handover
-                    # pose; measured 3.5 cm vs 12.7 cm for planner IDLE alone
-                    # (diag_station_keep.py). See action18_client.hold.
-                    sender18.hold(_anchor[0], _anchor[1], l_open, r_open)
-                else:
-                    p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
+                p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
                 time.sleep(1.0 / RATE)
 
         keep_th = threading.Thread(target=_keepalive, daemon=True)
@@ -971,18 +937,8 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
         n_bl = max(1, int(BLEND_S * RATE))
         for i in range(n_bl):
             a = (i + 1) / n_bl
-            if ACTION18:
-                # nothing to interpolate FROM in token space: the 18-D action
-                # is a pose command, so the blend is a ramp of the wrist target
-                # from where the hold left the arm to the policy's first target.
-                a18_0 = np.asarray(tok0[0], dtype=float).copy()
-                cur = sender18.ik.fk(sender18.q, "right")[0]
-                a18_0[0:3] = (1.0 - a) * np.asarray(cur) + a * a18_0[0:3]
-                a18_0[14:18] = a * a18_0[14:18]  # ease the base command in
-                sender18.send(a18_0, frame_index=0)
-            else:
-                tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])
-                p.cmd.token_frame(tk, right_hand=r_open, left_hand=l_open, frame_index=0)
+            tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])
+            p.cmd.token_frame(tk, right_hand=r_open, left_hand=l_open, frame_index=0)
             time.sleep(1.0 / RATE)
 
         # Prelude segmentation marks. The stand-start gap (~0.35 m of
@@ -1039,19 +995,6 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                     f"prelude drift is back?"
                 )
         _tstart_view(p, s_ts, obj_key, prelude)
-        if ACTION18 and _anchor is not None:
-            # Did the prelude actually HOLD the heading it was given? This is
-            # the in-situ test of the planner anchor convention. grasp_gym
-            # restarts the deploy every round and then sets heading_offset to
-            # the post-settle yaw (grasp_gym.py:924), and its own measurement
-            # of that convention is +1.9 deg. A separate probe on a process
-            # with NO per-round restart read psi0 = -106 deg -- a different
-            # regime, which is why the convention is measured here rather
-            # than "fixed" from that number. Tens of degrees here means the
-            # anchor is wrong for the pure-planner path and the arm's
-            # headings are not what they claim.
-            _e = float(p.pelvis_yaw(s_ts)) - float(_anchor[1])
-            prelude["tstart_yaw_err_deg"] = round(math.degrees((_e + math.pi) % (2 * math.pi) - math.pi), 2)
         frame_index = 0
         grip_hist = deque(maxlen=GRIP_DELAY + 1)
         lifted_at = None
@@ -1104,14 +1047,9 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                 lhj, rhj = expand_hands(grip_j)
                 if grip_j < 0.005:
                     commanded_close = True
-                if ACTION18:
-                    a_j = np.asarray(tok_j, dtype=float).copy()
-                    a_j[6] = grip_j  # honour --grip-gain / TF_GRIP_DELAY
-                    sender18.send(a_j, frame_index=frame_index)
-                else:
-                    p.cmd.token_frame(
-                        tok_j, right_hand=rhj, left_hand=lhj, frame_index=frame_index, trace_source=trace_source
-                    )
+                p.cmd.token_frame(
+                    tok_j, right_hand=rhj, left_hand=lhj, frame_index=frame_index, trace_source=trace_source
+                )
                 frame_index += 1
 
                 # predicates at ~2 Hz, off the hot path
