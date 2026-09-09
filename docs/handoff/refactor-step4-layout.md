@@ -261,3 +261,95 @@ it does not scan for one -- so these are just listed here):
 crate's `bimanual_wall.py`/`bimanual_carry.py`, and the conditional family 6 list). Stopped here on budget;
 family 1 alone required three genuine correctness fixes only the test suite / a real subprocess run caught
 (see above), which argues for doing the remaining families with the same care rather than rushing them.
+
+**Commit (family 2, next session) -- refactor step 4b, family 2: `stream_reach.py` (pure extraction).**
+`stream_reach.py` (1576 lines) split into three new files plus what stays behind:
+
+- `streamed_arm.py` -- `StreamedArm` + `PlannerArm` + `yaw_only`, and every constant only they use (`CHUNK`,
+  `JOINT_SPEED`, `FINE_SPEED`, `SETTLE`, `REFINE_TOL`, `REFINE_MAX`, `NUDGE_MAX`, `LEFT_GUARD`,
+  `LEFT_SAFE_M`, `LEFT_RETREAT_M`, `LEFT_GUARD_RATE`, `SQUAT_DROP_MAX`, `SQUAT_HEIGHT_BIAS`,
+  `SQUAT_SETTLE`, `SQUAT_GAIN`, `SQUAT_MAX`) -- as specified.
+- `_servo_continuous` (631 lines) did not fit the task's single `servo.py` as one file once its `ServoState`
+  dataclass and phase functions were written out (a 989-line first draft), so it became three files instead,
+  a strict one-way dependency chain to avoid a circular import (each arrow is "imports from"):
+  `servo_ticks.py` -> `servo_phases.py` -> `servo.py`, and `servo_ticks.py` -> `servo.py` directly.
+  - `servo.py` (229 lines) -- the leaf: the continuous-servo tuning constants (`LIFT_MIN`, `LAST_EGO_VIS`,
+    `V_TRAVEL`..`PRE_XY_MAX`, `SAFE_GAP`, `CLOSE_ENT_MAX`, `CLOSE_SEATED`, `FREEZE_TRAVEL`, `STAGE_UP`,
+    `PRE_X_MIN`/`MAX`, `PRE_Z_MIN`/`MAX`), `_clipn`, and the `ServoState` dataclass (every local the
+    original loop closed over -- ~45 fields, each with a one-line comment naming what it replaces).
+    `stream_reach.py` re-exports the tuning constants from here.
+  - `servo_phases.py` (302 lines) -- the six phase functions (`_phase_up`, `_phase_down`,
+    `_phase_in_backoff`, `_phase_in`, `_phase_close`, `_phase_lift`), each now `f(state) -> str |
+    tuple[bool, str] | None` instead of a branch of the original `if phase == ...` chain.
+  - `servo_ticks.py` (398 lines) -- `_servo_setup` (the pre-`while` setup), `_tick_prelude` (telemetry +
+    replan + the moved-too-much guard), `_dispatch_phase` (routes to a `servo_phases.py` function by
+    `state.phase`), `_tick_advance` (the common ref/IK-solve/guards/push/pin/stall/logging tail), and
+    `_servo_continuous` itself (now a ~40-line loop calling the three of these in order). `stream_reach.py`
+    imports `_servo_continuous` from here.
+  - Return-value convention (documented in `servo.py`'s module docstring, since all three files share it):
+    a phase/prelude/tail function returns `None` to fall through to whatever runs next, `"retick"` to skip
+    the rest of the tick (the original branch's bare `continue`), or `(ok, why)` to end `_servo_continuous`
+    now (the original branch's `return`). `state.tgt`/`state.v` are how a phase function hands its computed
+    target/speed to `_tick_advance`, replacing the original's `tgt, v = ...`.
+- `stream_reach.py` (229 lines, down from 1576) keeps `make_arm`, `_raise_hand`, `_creep_to_band`,
+  `toppled`, `reanchor`, `execute_grasp`/`_execute_grasp`, `ApproachStatus`/`ApproachResult`, `ARM_CHANNEL`/
+  `ARM_VEL`, `TRANSITION_POST_MAX`, and the handful of already-dead constants left untouched in place
+  (`DEPTH_TOL`, `ALIGN_TOL`, `GATE_TOL`, `GRASP_TOL`, `STEP_MAX`, `CROUCH_BACK`, `SQUAT_TRIGGER` -- confirmed
+  unused anywhere in the repo before moving anything, so left exactly where they were rather than moved or
+  deleted). Every name that used to live here and moved is re-exported (imported at module top level), so
+  `from locomani.backends.sonic.stream_reach import X` is unchanged for every caller.
+
+**Monkeypatch hazard found and fixed (the task's specific ask to check for this):** grepping `patch(` /
+`patch.object(` against `stream_reach`/`sr` across `tests/` and `src/` turned up five patched names
+(`toppled`, `_servo_continuous`, `make_arm`, `PlannerArm`, `_creep_to_band`) plus, from a second grep for
+every bare `sr.X` / `stream_reach.X` attribute read (not just `patch(...)`), three more that had to stay
+readable off the module even though nothing patches them (`SAFE_GAP`, `_HAND`, `SQUAT_SETTLE`, read by
+`diagnostic_transport.py` and its test, `test_transport_guard.py`, `test_transport_rotation.py`,
+`diag_crouched_handover.py`). All eight are satisfied by re-export except one real hazard:
+`_servo_continuous`'s OWN internal `toppled(...)` call (now living in `servo_ticks.py`, a different module
+than `stream_reach.py`) would no longer see `patch("locomani.backends.sonic.stream_reach.toppled", ...)` if
+written as a plain `from ... import toppled` -- that binds to the real function once, at import time, in
+`servo_ticks.py`'s own namespace, which patching `stream_reach.toppled` never touches. Confirmed this is a
+real (not theoretical) risk: `test_measured_grasp.py::test_near_target_commands_arm_retraction_...` and two
+similar tests in `test_recoverable_grasp_policy.py`/`test_visible_expert.py` patch exactly this and DO reach
+`_servo_continuous`'s real tick loop with a fabricated state missing the object's `quat` key -- the real
+`toppled()` would `KeyError` on it if the patch didn't take. Fixed by keeping `toppled` defined in
+`stream_reach.py` (never moved) and having `_tick_prelude` call it via a deferred, module-qualified
+`from locomani.backends.sonic import stream_reach; stream_reach.toppled(...)` instead of an imported name --
+same fix applied to the (dead, unread-by-anything-external, but principle-of-least-surprise) `LAST_EGO_VIS`
+global write, which now goes through `servo.LAST_EGO_VIS = ...` so it keeps landing on the one module stream_
+reach.py's re-export points at, instead of silently forking into a second copy on `servo_ticks.py`.
+
+**Checks (all green):** `ruff format . && ruff check .` (needed one `ruff check --fix` for import order in
+`servo_ticks.py`); full pytest suite, 177 passed / 9 skipped / 11 subtests (unchanged from before this
+commit -- pure extraction, no behaviour change); re-ran the 11 tests that patch/read `stream_reach`
+attributes individually (`test_measured_grasp.py`, `test_recoverable_grasp_policy.py`,
+`test_visible_expert.py`, `test_diagnostic_transport.py`, `test_transport_guard.py`,
+`test_transport_rotation.py`, `test_ready_grasp_policy.py`, `test_grasp_point_ik.py`,
+`test_execution_record.py`, `test_reach_config.py`, `test_planner_reference_takeover.py` -- 84 passed);
+`lint_env.py --strict`; `gen_config_reference.py --check`; the import smoke-check; `bash -n` over
+`scripts/*.sh` + `scripts/stack/*.sh`; `eval_closed_loop.py --help`, `bimanual_carry.py --help`,
+`bimanual_wall.py --help` as real subprocesses.
+
+**`lint_sizes.py`:** 10 files / 72 functions over cap (session start) -> 9 files / 74 functions over cap.
+`stream_reach.py` dropped out of the file list (1576 -> 229 lines); `streamed_arm.py`, `servo.py` never
+entered it. Left over cap, with reasons:
+- `servo_phases.py:_phase_in` (197) -- one continuous alignment/gate computation (trim integration, z-floor
+  feasibility, the align/entry gate, the close-gate hysteresis) where every intermediate value depends on
+  the one before it in the same palm-frame geometry; splitting it means threading `full`/`e_ent`/`lat`/
+  `gate` through an extra function boundary for a single-use handful of local floats -- the same "linear
+  live-control-loop math with no natural sub-boundary" case as family 1's `do_approach`.
+- `servo_ticks.py:_tick_advance` (169) -- the common tail already reads as three logical steps (build `cmd`
+  from the phase's target, solve IK against it, then guard/push/pin/log the result), but every step reads
+  state the previous one just wrote (`cmd`, `aim_pf`, `rot_use`, `q_sol`) and the guards
+  (`transport_guard`/`reference_guard`/stall) all need the SAME `q_sol`/`res` right after the solve --
+  splitting would mean passing 4-5 fresh locals through another function call for a 50 Hz loop already
+  proven against recorded field behaviour.
+- `servo_ticks.py:_tick_prelude` (105) -- similarly linear (telemetry bookkeeping, then the replan check,
+  then the moved-too-much guard), each block short but the whole thing is "everything that has to happen
+  once before the phase dispatch," not something with an obvious mid-cut.
+- `stream_reach.py:_creep_to_band` (97) -- pre-existing, untouched by this family, already noted as
+  `# noqa: size`-shaped in the family-1 report's spirit (a single approach/align loop like `do_approach`).
+
+**Not attempted this session** (JOB 2's remaining families 3, 5, 4): `vla_round.py`, crate's
+`bimanual_wall.py`/`bimanual_carry.py`, `primitives.py`.
