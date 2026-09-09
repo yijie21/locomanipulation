@@ -25,3 +25,7 @@ __pycache__/
 # converted Isaac USD assets (rebuilt by scripts/build_isaac_assets.sh)
 assets/isaac/
 MUJOCO_LOG.TXT
+
+# never track these paths, symlink or directory (2026-09-09 incident: a worktree symlink named outputs was committed and the merge replaced the data directory)
+/outputs
+/third_party
