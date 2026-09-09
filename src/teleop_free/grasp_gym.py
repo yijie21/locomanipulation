@@ -369,8 +369,7 @@ def main() -> None:
         "of reach instead of walking in again (flow200: "
         "the repair re-walk is recorded hesitation, and "
         "the dataset doctrine is one continuous arrival "
-        "or nothing). Incompatible with --dart-frac, whose "
-        "recovery episodes ARE the repair walk.",
+        "or nothing).",
     )
     ap.add_argument(
         "--mid-band",
@@ -424,38 +423,6 @@ def main() -> None:
         "(|u_y| must stay under this; frame edge is 1.0). "
         "Camera geometry, not spawn distance.",
     )
-    # DART-style collection noise (Laskey et al., CoRL 2017). The policy's
-    # measured failure mode is TERMINAL: park >= 0.50 m -> 5% success, and the
-    # expert's own park distribution (median 0.42, IQR 0.07) never shows how
-    # to recover from a far stop. With --dart-frac > 0, that fraction of
-    # rounds stops the FIRST approach early, at a scalar pelvis-object
-    # distance drawn from --dart-far, and lets the existing forward-only
-    # repair loop walk the rest in on its normal measurement gate. The
-    # perturbation is a STATE perturbation: every recorded command is still
-    # the planner's own corrective output, so the labels stay clean -- which
-    # matters because action.motion_token is encoded live from the streamed
-    # reference (inject noise into the stream and you record the noise).
-    # The RANGE is a draw for the brake trigger, not the realized stop: the
-    # deceleration carries a committed stride past the break (smoke test
-    # 2026-08-31: draws 0.51/0.55/0.61 realized first-stops 0.40/0.40/0.52,
-    # carry 0.06-0.16 m). 0.58-0.80 realizes ~0.45-0.70, covering the
-    # policy's measured park tail (p95 0.569, 19% of rounds >= 0.50), per
-    # DART: match the novice's error, then re-measure and re-tune.
-    ap.add_argument(
-        "--dart-frac",
-        type=float,
-        default=0.0,
-        metavar="P",
-        help="fraction of rounds that get a DART far-stop (default 0 = off; eval and old collections unchanged)",
-    )
-    ap.add_argument(
-        "--dart-far",
-        type=float,
-        nargs=2,
-        default=[0.58, 0.80],
-        metavar=("LO", "HI"),
-        help="scalar pelvis-object distance range the first approach stops in on a DART round",
-    )
     ap.add_argument("--reach-config", help="versioned JSON tabletop reach calibration")
     ap.add_argument("--cases", help="fixed JSON case bank; bypass random sampling")
     ap.add_argument("--write-cases", help="write exact sampled conditions as JSON (exclusive output)")
@@ -463,8 +430,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.sample_only and not args.write_cases:
         ap.error("--sample-only requires --write-cases")
-    if args.cases and (args.dart_frac or args.until_ok):
-        ap.error("fixed cases cannot be combined with DART or success-count stopping")
+    if args.cases and args.until_ok:
+        ap.error("fixed cases cannot be combined with success-count stopping")
     from experiment_cases import load_cases, save_cases
 
     fixed_cases = load_cases(args.cases, SCENE_META) if args.cases else None
@@ -480,12 +447,6 @@ def main() -> None:
         manifest_dir = os.path.dirname(args.manifest)
         if manifest_dir:
             os.makedirs(manifest_dir, exist_ok=True)
-    if args.one_shot and args.dart_frac > 0:
-        raise SystemExit(
-            "--one-shot and --dart-frac are contradictory: "
-            "DART episodes ARE the repair walk one-shot "
-            "discards. Pick one."
-        )
     off_lo, off_hi = (args.spawn_off * 2)[:2]
     edge_range = None
     if getattr(args, "one_shot", False):
@@ -769,12 +730,6 @@ def main() -> None:
                 )
             if sidecar:
                 sidecar.start(rnd, attempt)
-            # Drawn from the run rng ONLY when DART is on: a draw here
-            # shifts every later sample in the stream, so a --dart-frac 0
-            # run stays bit-identical to (and pairable with) an old one.
-            dart_stop = None
-            if args.dart_frac > 0 and rng.uniform() < args.dart_frac:
-                dart_stop = float(rng.uniform(*args.dart_far))
             round_result = run_round(
                 p,
                 reset,
@@ -797,7 +752,6 @@ def main() -> None:
                 record=args.record,
                 view_gate_x=args.view_gate_x,
                 view_gate_y=args.view_gate_y,
-                dart_stop=dart_stop,
                 one_shot=args.one_shot,
                 mid_band=args.mid_band,
                 reach_config=reach_config,
@@ -870,11 +824,9 @@ def main() -> None:
                         obj_height=round(float(o["height"]), 4),
                         obj_diameter=round(float(o["box"]["half_extent"][0]) * 2, 4),
                         produced=bool(args.record and produced),
-                        # The park distances this dataset was
-                        # missing: without them the next DART
-                        # calibration (and the cliff analysis)
-                        # has to be re-mined from pose sidecars.
-                        dart=round_result.execution["metrics"].get("dart_stop"),
+                        # The park distances this dataset was missing: without
+                        # them the cliff analysis has to be re-mined from pose
+                        # sidecars.
                         park_first=round_result.execution["metrics"].get("first_stop"),
                         park=round_result.execution["metrics"].get("park"),
                         transition=round_result.execution["transition"],
@@ -944,7 +896,6 @@ def run_round(
     record: bool = False,
     view_gate_x: float = 0.80,
     view_gate_y: float = 0.90,
-    dart_stop: float | None = None,
     one_shot: bool = False,
     mid_band: float = 0.30,
     *,
@@ -995,7 +946,6 @@ def run_round(
             rec,
             view_gate_x,
             view_gate_y,
-            dart_stop,
             one_shot,
             mid_band,
             execution=execution,
@@ -1054,7 +1004,6 @@ def _run_round(
     rec: dict | None = None,
     view_gate_x: float = 0.80,
     view_gate_y: float = 0.90,
-    dart_stop: float | None = None,
     one_shot: bool = False,
     mid_band: float = 0.30,
     *,
@@ -1064,8 +1013,6 @@ def _run_round(
 ) -> tuple[bool, str]:
     # Owned by run_round; direct diagnostic callers may use a local record.
     execution = execution if execution is not None else ExecutionRecord()
-    if dart_stop is not None:
-        execution.metrics["dart_stop"] = round(float(dart_stop), 3)
     # Spawn 0.30 m behind the stand. Directly ON the stand the STAND-UP
     # fails (13/24 never rose): the nominal pose is a deep crouch whose
     # knees ride ~0.25 m forward, and the rise needs more clearance than
@@ -1643,16 +1590,6 @@ def _run_round(
                 raise_arm(s, float(np.linalg.norm(np.asarray(spawn_xy) - p.pelvis_xy(s))))
             if coordinated is not None and coordinated.error:
                 return coordinated.error
-            if dart_stop is not None and ramp and float(np.hypot(r[0], r[1])) <= dart_stop:
-                # DART far-stop: FIRST approach only (ramp=True). The state
-                # is perturbed -- parked short of the gate -- but every
-                # command around it is the planner's own, so the recorded
-                # labels stay clean. The forward-only repair below then
-                # demonstrates exactly the recovery the policy's park tail
-                # (>= 0.50 m -> 5% success) has no training data for.
-                why = "dart stop"
-                brake_x, brake_e = r[0], edge_dist(p.pelvis_xy(s))
-                break
             reachable = rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
             if VISIBLE:
                 stop_here = r[0] <= reach_config.visible_brake_depth
