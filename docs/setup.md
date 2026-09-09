@@ -119,6 +119,7 @@ mkdir -p third_party
 #   Isaac-GR00T   -> 第 5 步(要训练/评测 VLA 才需要)
 #   EmbodiedGen   -> 第 6 步(只有重新生成场景才需要)
 #   IsaacLab      -> 第 6 步(只有 SONIC 自身 RL 训练才需要)
+#   SIMPLE        -> 第 7 步(只有 Isaac 离线重渲才需要;venv 约 20 GB)
 ```
 
 **验证** —— 查的是**大小**不是存在性,因为缺 git-lfs 时文件照样在,只是变成了
@@ -377,3 +378,67 @@ EmbodiedGen 要自己拿:
 > `install_affordance_noflash.sh`、`eg_env.sh`、`setup_sonic*.sh`)同样改成了这套
 > 路径变量,但**没有在别的机器上实测过** —— 它们只在重新生成场景时才用得到,
 > 而重新生成场景需要几十 GB 下载。用现成场景的话完全不碰它们。
+
+### 7. Isaac 渲染 runtime:SIMPLE(可选,只有离线重渲 / Isaac 像素才需要)
+
+渲染线(`docs/rendering.md`)从 SIMPLE 只拿**一样东西:一个装了 `isaacsim` 4.5 的 venv**。
+它不 import `simple` 包,不读 SIMPLE 的 `data/`。所以 SIMPLE 和第 1 步的仓库一样 clone 到
+`third_party/`,固定到 `scripts/paths.sh` 里的 `SIMPLE_PIN`,**不下载它的资产**。
+
+```bash
+# 1) clone 并固定 commit(源码本身不到 1 GB)
+(cd third_party && git clone https://github.com/physical-superintelligence-lab/SIMPLE.git)
+(cd third_party/SIMPLE && git checkout 6d10628794d9c7de4596b4f2afb2c054a637c2bc)
+
+# 2) submodule。SIMPLE 的 .gitmodules 里有四个写的是 git@github.com: 的 SSH 地址,
+#    没配 GitHub SSH key 会在这里卡住 —— 先把 SSH 改写成 https(只影响这一个 clone;
+#    六个 path 依赖都在 GitHub 上公开,已用 ls-remote 核过)。
+#    只拉 uv sync 的 pyproject path 依赖要的五个;curobo / gsnet / AMO 是 SIMPLE 自己的
+#    规划与抓取用的,渲染线不需要,不要 --init 全部(几 GB)。
+(cd third_party/SIMPLE \
+  && git config url."https://github.com/".insteadOf git@github.com: \
+  && git submodule update --init --recursive \
+       third_party/openpi-client third_party/gear_sonic third_party/unitree_sdk2_python \
+       third_party/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64 third_party/decoupled_wbc)
+
+# 3) 系统依赖 + uv sync。和第 2 步同一套 TMPDIR / UV_CACHE_DIR 约定 —— venv 约 20 GB,
+#    isaacsim 的 wheel 从 pypi.nvidia.com 拉,根分区小的机器不设这两个变量必爆。
+sudo apt-get install -y curl cmake python3-dev ffmpeg gstreamer1.0-libav git-lfs
+(cd third_party/SIMPLE && git lfs install && git lfs pull)
+(cd third_party/SIMPLE \
+  && UV_HTTP_TIMEOUT=3000 GIT_LFS_SKIP_SMUDGE=1 uv sync --all-groups --index-strategy unsafe-best-match)
+#    上游 README 记录的坑:sync 若报 "Unable to uninstall lerobot==0.3.3",
+#    rm -f third_party/SIMPLE/.venv/lib/python3.10/site-packages/lerobot-*.egg-info 后重跑。
+#    上游的 scripts/install_curobo.sh【不要】跑,渲染线用不到。
+
+# 4) 打补丁 + 验证。脚本检查 pin、应用 patches/simple/0001(必需),解析 isaacsim 但不 import。
+bash scripts/setup_render_runtime.sh
+#    第一次真正 import 会启动 Kit、拉 extension cache,数分钟;脚本已带 OMNI_KIT_ACCEPT_EULA=YES:
+bash scripts/setup_render_runtime.sh --deep
+
+# 5) 把机器人 MJCF 和场景转成 USD(-> assets/isaac/,gitignored 的生成产物)
+bash scripts/build_isaac_assets.sh
+```
+
+**验证**:
+
+```console
+$ . scripts/paths.sh; "$RENDER_PY" -c "import importlib.metadata as m; print(m.version('isaacsim'))"
+4.5.0.0
+$ ls assets/isaac/robot/g1_dex1.usda
+```
+
+> **不需要下载的东西**:SIMPLE 的 `data/_download.sh` 会从 HF `USC-PSI-Lab/SIMPLE` 拉
+> robots / assets / objaverse / hssd scenes / vMaterials,十几 GB。主线渲染走我们自己的
+> `scene_locomani.xml` 经 Isaac 的 MJCF importer,一个字节都不读它们。只有跑 SIMPLE 自己
+> 的 replay CLI 或 MuJoCo/Isaac 对照 harness(`setup_render_runtime.sh --with-replay` /
+> `--with-alignment`,见 `patches/simple.md`)才需要,届时先 `bash data/_download.sh --list`
+> 看大小再按 `--only` 挑组。
+
+> 机器上已有一份 SIMPLE 检出在别处?不用搬:
+> `ln -s <那个目录> third_party/SIMPLE`,或者 `export SIMPLE_ROOT=<那个目录>`。
+> `RENDER_PY` 默认跟着 `SIMPLE_ROOT/.venv` 走,指向别的装了 isaacsim 的 venv 也行
+> (`docs/rendering.md` 解释了为什么这是两个变量)。
+
+> 第 2、3 步未在干净机器上验证过 —— 作者机器上的 venv 是按上游 README 装的;第 4、5 步
+> 的脚本是可重复执行的,在作者机器上跑过。

@@ -38,12 +38,12 @@ export LOCOMANI_SECRETS="${LOCOMANI_SECRETS:-$LOCOMANI_WORKSPACE/.secrets}"
 
 # --- Isaac rendering runtime -------------------------------------------------
 #
-# SIMPLE is a checkout we pin, not vendor: the working copy is ~35 GB, almost
-# all of it data/. See patches/simple.md for the pin and the
-# patches. It is NOT a code dependency of the render path -- the offline
+# SIMPLE is a checkout we pin, not vendor: it lives under the gitignored
+# third_party/ like the other upstream clones (docs/setup.md step 7). See
+# patches/simple.md for the pin and the patches. It is NOT a code dependency of the render path -- the offline
 # re-renderer never imports `simple`; it converts our own scene_locomani.xml
 # through Isaac's MJCF importer and drives the camera from MuJoCo FK.
-export SIMPLE_ROOT="${SIMPLE_ROOT:-$LOCOMANI_WORKSPACE/code/SIMPLE}"
+export SIMPLE_ROOT="${SIMPLE_ROOT:-$LOCOMANI_ROOT/third_party/SIMPLE}"
 export SIMPLE_PIN="${SIMPLE_PIN:-6d10628794d9c7de4596b4f2afb2c054a637c2bc}"
 #
 # The python that carries isaacsim. Today that is SIMPLE's venv, which pins

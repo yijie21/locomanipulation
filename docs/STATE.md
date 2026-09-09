@@ -1,6 +1,34 @@
 # STATE (updated 2026-09-09 by 9d; main line = session 9d, instance 0; branch = 65)
 
 ## Now
+- Pelvis ABCD protocol v2 ACTIVE: old EGL baseline not repeatable (identical own state,1-level RGB differences).
+ OSMesa+deterministic math produced bit-identical full24s original/diagnosticA forseed31001.
+ Fresh30 A +90 B/C/D =120 formal cases, same30 seeds/interventions; VLA+ScaleBFM inferenceGPU0,
+ renderingCPU. Do not compare with oldEGL25/100 as paired baseline. PROTOCOL_REVISION.md documents
+ change before B/C/D outcomes; run_v2.log and progress.json track execution. Old failure_v1.json is archived evidence.
+ Root:outputs/experiments/scalebfm_pelvis_abcd_20260909/. No retraining or cancelledGoal restart.
+- NEW user-authorized pelvis ABCD diagnostic on GPU0:30paired existing scenes (10/stratum),
+ A original;B smooth76cm height hold;C restore after<72cm for0.1s;D right-wrist1s hold then0.5s release
+ at same trigger.3baseline reproducibility probes then90 B/C/D cases. No training/oldGoal restart.
+ Root:outputs/experiments/scalebfm_pelvis_abcd_20260909/. Read PLAN.md,plan.json,progress.json first.
+ GPU0 checked idle16:07UTC;GPU1 other workload untouched. All interventions and outputs auditable.
+- Failure analysis2026-09-09:docs/scalebfm_failure_analysis_20260909.md. Third-person export has
+ missing mj_camlight: light runtime direction remainszero; same-frame luma42.28->65.95 after update.
+ This is an export bug, not training RGB lighting change; current ZIP not rerendered yet.
+ 38VLA cases descend below0.60m;29fall labels are solelyrootz<0.45 with0physics warnings.
+ Relative pelvis-z action is clamped bycheckpoint q99 to+1.836cm, restricting recovery from low poses.
+ 7cases have>=3gripper switches;55never command near-full closure. No strategy or formal experiment changes.
+ Evidence:outputs/diagnostics/scalebfm_failure_analysis_20260909/. Read report before proposing fixes.
+- User-requested300-video compact export COMPLETE:200 collection +100 evaluation (including75failures),
+  right-front full-body follow, saved-qpos rendering only,480x400/12.5fps. ZIP53,748,107bytes;
+  videos86-375KB, median163KB. All300 frame counts and ZIPintegrity checked;14decoded sample frames reviewed.
+  Download:outputs/videos/scalebfm_yplus200_eval100_small/scalebfm_200_collection_100_evaluation.zip.
+  Export script/manifest/verification saved alongside; do not repeat physics or inference for these videos.
+- yplus200 experiment COMPLETE2026-09-09 12:39:49UTC:200 accepted new demos, seed17/3000steps,
+ 100 ordinary y+ closed-loop cases,25/100 success (high10/34,low-near10/33,deep5/33).
+ Failures29timeout/17pre-close bottle knock/29physics warning or fall. All stages exited0 after
+ documented startup recovery. Evidence:outputs/experiments/scalebfm_yplus200_s17_20260909/RESULTS.md.
+ No further training/evaluation queued by this experiment; older running progress below is historical.
 - yplus200 update: collection COMPLETE200/200 attempts accepted (67high/67low-near/66deep),
   export/statistics complete. Training startup offline-tokenizer failure repaired by removing driver-only
   HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE; no training configuration or expert change,0 updates lost.

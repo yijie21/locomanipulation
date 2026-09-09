@@ -24,7 +24,7 @@ bash scripts/setup_render_runtime.sh --deep   # 外加一次真正的 import(会
 
 | 变量 | 默认 | 含义 |
 |---|---|---|
-| `SIMPLE_ROOT` | `$LOCOMANI_WORKSPACE/code/SIMPLE` | SIMPLE 检出位置 |
+| `SIMPLE_ROOT` | `$LOCOMANI_ROOT/third_party/SIMPLE` | SIMPLE 检出位置(安装见 `docs/setup.md` 第 7 步)|
 | `SIMPLE_PIN` | `6d10628…` | 期望的 commit |
 | `RENDER_PY` | `$SIMPLE_ROOT/.venv/bin/python` | 装了 `isaacsim` 的 python |
 
@@ -35,8 +35,9 @@ venv 即可,其它什么都不用改。
 
 ## SIMPLE 是被 pin 的检出,不是 vendor 进来的依赖
 
-工作副本约 35 GB,几乎全是 `data/`,所以不进本仓库。补丁与 pin 见
-`patches/simple.md`。
+和其它上游仓库一样放在 gitignored 的 `third_party/` 下,固定到一个 commit;clone、submodule、
+venv 的步骤在 `docs/setup.md` 第 7 步,补丁与 pin 见 `patches/simple.md`。它的 `data/`
+(HF 上十几 GB 的资产)主线渲染一个字节都不读,不用下载。
 
 更要紧的是**离线重渲不 import `simple` 包**。它把我们自己的
 `scene_locomani.xml` 走 Isaac 的 MJCF importer,关节名 1:1,状态同步就是一次

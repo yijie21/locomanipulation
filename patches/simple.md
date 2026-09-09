@@ -4,12 +4,12 @@
 robocasa 物体 USD。**离线重渲不 import `simple` 包**,场景走我们自己的
 `scene_locomani.xml` 经 Isaac 的 MJCF importer,相机由 MuJoCo FK 驱动。
 
-SIMPLE 工作副本约 35 GB(绝大部分是 `data/`),所以不把它 vendor 进本仓库,
-改为**固定 commit 加补丁文件**。
+SIMPLE 不 vendor 进本仓库,和其它上游仓库一样 clone 到 gitignored 的 `third_party/`,
+**固定 commit 加补丁文件**。安装步骤(clone、submodule、venv)见 `docs/setup.md` 第 7 步。
 
 - remote: `https://github.com/physical-superintelligence-lab/SIMPLE.git`
 - pinned commit: `6d10628794d9c7de4596b4f2afb2c054a637c2bc`
-- 默认位置: `$LOCOMANI_WORKSPACE/code/SIMPLE`,用 `SIMPLE_ROOT` 覆盖
+- 默认位置: `$LOCOMANI_ROOT/third_party/SIMPLE`,用 `SIMPLE_ROOT` 覆盖
 
 用 `bash scripts/setup_render_runtime.sh` 应用,可重复执行。
 

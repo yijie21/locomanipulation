@@ -53,11 +53,11 @@ VIDEOS_DIR = os.path.join(OUTPUTS, "videos")        # diagnostic renders
 RENDERS_ISAAC = os.path.join(OUTPUTS, "renders_isaac")
 
 # --- Isaac rendering ---------------------------------------------------------
-# Mirrors scripts/paths.sh. SIMPLE is a pinned checkout, not a vendored
-# dependency: the working copy is ~35 GB and the render path never imports the
+# Mirrors scripts/paths.sh. SIMPLE is a pinned checkout under third_party/
+# (docs/setup.md step 7), not a vendored dependency: the render path never imports the
 # `simple` package (it converts our own scene_locomani.xml through Isaac's MJCF
 # importer). See patches/simple.md.
-SIMPLE_ROOT = os.environ.get("SIMPLE_ROOT", os.path.join(WORKSPACE, "code", "SIMPLE"))
+SIMPLE_ROOT = os.environ.get("SIMPLE_ROOT", os.path.join(REPO, "third_party", "SIMPLE"))
 SIMPLE_PIN = os.environ.get(
     "SIMPLE_PIN", "6d10628794d9c7de4596b4f2afb2c054a637c2bc")
 # The python carrying isaacsim. Deliberately separate from SIMPLE_ROOT: SIMPLE
