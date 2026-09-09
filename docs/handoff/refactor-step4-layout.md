@@ -150,3 +150,114 @@ commit (this section). Ran all 7 checks after the combined commit, from the repo
   qualified string target still resolves at call time.
 - No module's placement differed from the doc's target-package table; all 111 files (105 Python + 6 shell)
   landed exactly where listed.
+
+## Executed (4b/5)
+
+Session on branch `refactor/step1-tooling`, worktree `.claude/worktrees/refactor-step1`, off `98a565e`.
+Two commits, JOB order per the task (step 5 first, then step 4b family 1).
+
+**Commit `28b0a49` -- refactor step 5: task seam + CLI + contract tests.**
+`locomani/tasks/base.py` (`Task`, `TaskSchema`, `bracket_label`), `tasks/bottle/__init__.py` /
+`tasks/crate/__init__.py` (`TASK` built from existing functions, lazily imported -- see judgment call
+below), `tasks/registry.py` (`TASKS` + `get_task`), `locomani/cli.py` (thin verb+task argv dispatch onto
+run_learn_pilot.py / eval_closed_loop.py / bimanual_carry.py / scripts/gate.py; not every (verb, task) is
+wired, only what already exists -- crate has no convert/train/eval entry point), `tests/test_task_contract.py`
+(parametrised over the registry), `Makefile` `cli` target.
+
+*Judgment call, documented in both `tasks/{bottle,crate}/__init__.py` docstrings:* `classify_failure` /
+`failure_reasons` use the `[tag] message` prefix convention (`tasks/base.bracket_label`) rather than
+reusing `failure_taxonomy.py` as the spec's parenthetical listed. `failure_taxonomy.classify()` classifies
+CLOSED-LOOP EVAL traces and needs a full per-timestep `trace`; fed a bare `why` string with no trace, its
+own first branch (`"[vla]" not in why and not tr`) swallows nearly everything into one bucket ("A4 view
+gate / pre-VLA"), which isn't a usable "why-string -> label" classifier for the scripted expert's own
+failures. The bracket-tag convention is already how `grasp_gym.py`/`bimanual_carry.py` write `why` and how
+`scripts/gate.py`'s own `_norm_reason` already treats it, so this is the smallest, most consistent fix.
+
+*Bug found and fixed along the way:* eagerly importing `grasp_gym`/`bimanual_carry`/`bimanual_scene` at
+`tasks/{bottle,crate}/__init__.py` module level breaks `scripts/gen_config_reference.py --check`, which
+loads `BottleTaskConfig`/`CrateTaskConfig` with plain `python3` (no mujoco) -- importing anything under a
+package always runs its `__init__.py` first. Fixed with a deferred (in-function) import inside each
+`Task` field's wrapper closure.
+
+Checks: ruff format/check, full pytest (168 passed at that point, 9 skipped, 8 subtests), lint_env
+--strict, gen_config_reference --check, the import smoke-check, `bash -n` over scripts/ -- all green.
+
+**Commit `32018a7` -- refactor step 4b, family 1: grasp_gym.py (pure extraction).**
+Full account in the commit message; summary: `grasp_gym.py` (1846 lines: `main` 599, `_run_round` 843)
+split into `plan.py` (per-target planner + sampling), `cli_args.py` (argparse), `round_loop.py` (per-round
+sampling + execution loop), `round_phases.py` + `round_phases_approach.py` (`_run_round`'s five phases --
+`spawn_and_settle`, `handover_to_vla`, `navigate`, `approach`, `grasp_and_verify` -- behind a
+`RoundContext` dataclass), with `main`/`_build_scene_and_plan`/`run_round`/`_run_round` staying in
+`grasp_gym.py`. Every moved name is re-exported so `from locomani.tasks.bottle.grasp_gym import X` still
+works.
+
+**Where extraction touched the official protocol path (point the GPU gate here):**
+- `grasp_gym._run_round`'s control flow and every `execution.enter(...)` stage name/order are byte-for-byte
+  unchanged (`vla`/`navigate`/`grasp_plan`/`verify_visibility`/`carry_and_verify`/`verify_terminal_hold`,
+  reached in the same sequence) -- only WHERE the statements live changed, not their order or content.
+- `grasp_gym.VLA_POLICY` / `ARM_PIN` / `RESTART_DEPLOY` / `fresh_deploy` / `_run_round` remain monkeypatchable
+  exactly as before (`eval_closed_loop.py`, `diag_transition_live.py`, `diag_transition_cross.py`,
+  `diag_crouched_handover.py` all still assign these directly on the `grasp_gym` module and are unchanged);
+  `_run_round`'s body now reads them once per round into a `RoundContext` snapshot instead of as bare names,
+  but the snapshot is taken at call time so a monkeypatch made before a round still lands.
+  `grasp_gym.TabletopGrasp` gained the same treatment (a new `RoundContext.tabletop_grasp_cls` field) after
+  the existing test suite caught it (see below) -- a test replaces the class wholesale via
+  `patch.object(grasp_gym, "TabletopGrasp")`, which only reaches code that constructs it through that same
+  name.
+- One CLI-only behaviour change, not a protocol path: `main()`'s `--cases`+`--rounds` mismatch check used
+  `ap.error(...)` (the argparse parser, in scope only inside the old single `main()`); split into
+  `_build_scene_and_plan`, it no longer has `ap`, so it now does `raise SystemExit(...)` -- same refusal,
+  message unchanged, but exit code 1 instead of argparse's 2 and no usage-string preamble.
+
+**Bugs the existing test suite caught (not found by design, by `pytest` actually failing) --
+this is exactly why decision 13's contract/regression tests matter for this kind of move:**
+1. `tests/test_ready_vla_handover.py` patches `gym.initial_pose`, `gym.upper_ref`, `gym.TabletopGrasp`
+   directly on the `grasp_gym` module object. `initial_pose`/`upper_ref` are shared singleton modules (like
+   `time`/`np`), so re-importing them into `grasp_gym.py` (even though the code that uses them moved to
+   `round_phases.py`, which imports them independently) is sufficient -- any reference to the same module
+   object sees the same patched attribute. `TabletopGrasp` is a class, not a module: patching
+   `grasp_gym.TabletopGrasp` only affects code that constructs it via `grasp_gym.TabletopGrasp(...)` /
+   `ctx.tabletop_grasp_cls(...)`, not code with its own independent `from ... import TabletopGrasp` -- fixed
+   with the `RoundContext.tabletop_grasp_cls` field above.
+2. A duplicate-definition bug from a bad `sed` range during assembly (`obj_top`/`palm_frame_offset` appeared
+   twice in the first draft of `grasp_gym.py`) -- caught by `ruff check` (F811), not a test, fixed before
+   the test run.
+3. The `if __name__ == "__main__": main()` guard at the very end of the original file was dropped during
+   reassembly (missed because the original file's last 5 lines were never read in isolation) -- caught by
+   deliberately running `python grasp_gym.py --help` as a real subprocess (not just `import`) after the
+   pytest suite passed, specifically because the pytest suite alone cannot catch this class of bug.
+
+**Checks (all green):** `ruff format . && ruff check .`; full pytest suite, 177 passed / 9 skipped / 11
+subtests (up from 172 passed before this commit's five fixes); `lint_env.py --strict`;
+`gen_config_reference.py --check`; the import smoke-check; `bash -n` over `scripts/*.sh` +
+`scripts/stack/*.sh`; and, beyond the required list, `python src/locomani/tasks/bottle/grasp_gym.py --help`
+as a real subprocess.
+
+**`lint_sizes.py`:** 11 files / 66 functions over cap -> 10 files / 72 functions over cap. `grasp_gym.py`
+dropped out of the file list entirely (1846 -> 567 lines). The function count rose even though the worst
+single function shrank from 843 to ~250 lines: splitting exposed several already-oversized pieces (e.g.
+`do_approach` at 102 lines, `run_round` at 105) that were previously invisible, folded inside the two
+mega-functions. Left over cap, with reasons (no `# noqa: size` marker exists in `lint_sizes.py` --
+it does not scan for one -- so these are just listed here):
+- `cli_args.py:parse_args` (198) -- ~230 lines of it are `ap.add_argument(...)` calls with long, deliberate
+  `help=` prose (decision 8's provenance principle: the CLI is the documentation). Splitting into
+  `_add_spawn_args(ap)` / `_add_gate_args(ap)` etc. is possible but each sub-function would just be a
+  differently-shaped pile of the same boilerplate; not attempted this session.
+- `grasp_gym.py:_build_scene_and_plan` (130) and `round_phases.py:_phase_navigate` (102) -- linear
+  setup code with no natural sub-boundary that doesn't require threading MORE state across an ADDITIONAL
+  function call for a single-use helper.
+- `grasp_gym.py:run_round` (105), `grasp_gym.py:_run_round` (89) -- both already thin wrappers; further
+  splitting `run_round`'s try/except/finally would separate the failure path from the recovery-hold logic
+  it depends on.
+- `round_phases_approach.py:do_approach` (104), `round_phases_approach.py:_phase_grasp_and_verify` (97) --
+  `do_approach` is one `while` loop with tightly-coupled exit conditions (stall/edge/reachable/visible-brake
+  checks all read/write the same locals every tick); splitting it means passing most of its local state
+  through an extra function boundary every iteration, for a live control loop already verified against
+  recorded field behaviour (docs/handoff/refactor-plan.md decision 2's GPU gate) -- exactly the case
+  the task's `# noqa: size` escape hatch describes, even though this repo's lint script has no such marker
+  to attach it to.
+
+**Not attempted this session** (JOB 2's families 2-6: `stream_reach.py`, `vla_round.py`, `primitives.py`,
+crate's `bimanual_wall.py`/`bimanual_carry.py`, and the conditional family 6 list). Stopped here on budget;
+family 1 alone required three genuine correctness fixes only the test suite / a real subprocess run caught
+(see above), which argues for doing the remaining families with the same care rather than rushing them.
