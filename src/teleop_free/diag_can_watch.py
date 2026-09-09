@@ -42,8 +42,7 @@ def main() -> None:
         moved = float(np.linalg.norm(pos - p0))
         key = (round(moved, 2), round(up, 1), tuple(tl), tuple(ft))
         if key != last:
-            print(f"t={s['t']:.2f} moved={moved*100:5.1f}cm up={up:+.2f} "
-                  f"touch={tl} furn={ft}", flush=True)
+            print(f"t={s['t']:.2f} moved={moved * 100:5.1f}cm up={up:+.2f} touch={tl} furn={ft}", flush=True)
             last = key
         time.sleep(0.1)
 

@@ -27,8 +27,8 @@ from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
 
-LEG = 4.0          # seconds of walking per setting
-WARMUP = 1.5       # ignore the first stretch: the gait takes a moment to build
+LEG = 4.0  # seconds of walking per setting
+WARMUP = 1.5  # ignore the first stretch: the gait takes a moment to build
 
 
 def leg(p, mode, speed, heading, seconds=LEG):
@@ -44,9 +44,12 @@ def leg(p, mode, speed, heading, seconds=LEG):
             if start is None:
                 start = (p.pelvis_xy(s).copy(), time.time())
             samples.append(np.linalg.norm(s["pelvis"]["vel"][:2]))
-        p.cmd.frame(mode=mode, speed=speed,
-                    movement=(np.cos(heading), np.sin(heading), 0.0),
-                    facing=(np.cos(heading), np.sin(heading), 0.0))
+        p.cmd.frame(
+            mode=mode,
+            speed=speed,
+            movement=(np.cos(heading), np.sin(heading), 0.0),
+            facing=(np.cos(heading), np.sin(heading), 0.0),
+        )
         time.sleep(DT)
     end = p.pelvis_xy()
     dist = float(np.linalg.norm(end - start[0]))

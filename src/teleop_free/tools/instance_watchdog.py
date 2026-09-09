@@ -37,6 +37,7 @@ Output lines:
 
 Exit status is 0 on Ctrl-C. Nothing here fails a build.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -111,9 +112,8 @@ def sim_alive(instance: int) -> tuple[bool, bool]:
 
 def port_listening(port: int) -> bool:
     try:
-        out = subprocess.run(["ss", "-lnt"], capture_output=True,
-                             text=True, timeout=10).stdout
-    except Exception:                                          # noqa: BLE001
+        out = subprocess.run(["ss", "-lnt"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:  # noqa: BLE001
         return False
     return f":{port} " in out
 
@@ -123,29 +123,24 @@ def main() -> None:
     ap.add_argument("--instance", type=int, default=0)
     ap.add_argument("--sim-log", help="default: $LOCOMANI_TMP/p03[_i<N>]/sim.log")
     ap.add_argument("--manifest", help="growth is the liveness signal")
-    ap.add_argument("--camera-port", type=int,
-                    help="default: 5555 + 10 * instance")
+    ap.add_argument("--camera-port", type=int, help="default: 5555 + 10 * instance")
     args = ap.parse_args()
 
     i = args.instance
-    tmp = os.environ.get("LOCOMANI_TMP") or os.path.join(
-        os.environ.get("LOCOMANI_WORKSPACE", "/workspace"), "tmp")
-    sim_log = args.sim_log or os.path.join(
-        tmp, "p03" if i == 0 else f"p03_i{i}", "sim.log")
+    tmp = os.environ.get("LOCOMANI_TMP") or os.path.join(os.environ.get("LOCOMANI_WORKSPACE", "/workspace"), "tmp")
+    sim_log = args.sim_log or os.path.join(tmp, "p03" if i == 0 else f"p03_i{i}", "sim.log")
     port = args.camera_port if args.camera_port is not None else 5555 + 10 * i
     tag = f"[wd i{i}]"
 
     def say(state: str, what: str, detail: str = "") -> None:
         print(f"{tag} {state:4s} {what:9s} {detail}".rstrip(), flush=True)
 
-    say("OK", "start", f"log={sim_log} port={port} "
-        f"stream<{STREAM_HZ}Hz stall>{STALL_S:.0f}s")
+    say("OK", "start", f"log={sim_log} port={port} stream<{STREAM_HZ}Hz stall>{STALL_S:.0f}s")
 
     fh = None
     recent: list[float] = []
     # None = not yet determined, so the first observation always prints.
-    health: dict[str, bool | None] = {
-        "process": None, "port": None, "stream": None, "progress": None}
+    health: dict[str, bool | None] = {"process": None, "port": None, "stream": None, "progress": None}
     last_size, last_change = None, time.time()
 
     def transition(key: str, ok: bool, detail: str = "") -> None:
@@ -157,15 +152,20 @@ def main() -> None:
     try:
         while True:
             alive, precise = sim_alive(i)
-            transition("process", alive,
-                       ("" if alive else "sim process is gone")
-                       + ("" if precise else
-                          "  (no --instance on the cmdline: this is 'any sim',"
-                          " not 'this instance' -- restart the stack to get"
-                          " the precise check)"))
+            transition(
+                "process",
+                alive,
+                ("" if alive else "sim process is gone")
+                + (
+                    ""
+                    if precise
+                    else "  (no --instance on the cmdline: this is 'any sim',"
+                    " not 'this instance' -- restart the stack to get"
+                    " the precise check)"
+                ),
+            )
             listening = port_listening(port)
-            transition("port", listening,
-                       "" if listening else f":{port} not listening")
+            transition("port", listening, "" if listening else f":{port} not listening")
 
             # stream: read whatever is new since last poll
             if fh is None and os.path.exists(sim_log):
@@ -179,9 +179,11 @@ def main() -> None:
                         del recent[:-STREAM_WINDOW]
                 if len(recent) >= STREAM_WINDOW:
                     med = statistics.median(recent)
-                    transition("stream", med >= STREAM_HZ,
-                               f"median {med:.1f} Hz over last {STREAM_WINDOW} "
-                               f"(threshold {STREAM_HZ})")
+                    transition(
+                        "stream",
+                        med >= STREAM_HZ,
+                        f"median {med:.1f} Hz over last {STREAM_WINDOW} (threshold {STREAM_HZ})",
+                    )
 
             # progress: the manifest is the only thing that only grows when
             # rounds actually complete
@@ -194,9 +196,9 @@ def main() -> None:
                     if size != last_size:
                         last_size, last_change = size, time.time()
                     quiet = time.time() - last_change
-                    transition("progress", quiet <= STALL_S,
-                               f"manifest unchanged for {quiet:.0f} s "
-                               f"(threshold {STALL_S:.0f})")
+                    transition(
+                        "progress", quiet <= STALL_S, f"manifest unchanged for {quiet:.0f} s (threshold {STALL_S:.0f})"
+                    )
             time.sleep(POLL_S)
     except KeyboardInterrupt:
         say("OK", "stop")

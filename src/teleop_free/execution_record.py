@@ -3,11 +3,12 @@
 Times describe entry into control code, not sensor exposure or physical arrival.
 The journal never drives a transition. Sensor/action traces retain their own clocks.
 """
+
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 from dataclasses import dataclass, field
-import time
 from typing import Callable
 
 
@@ -18,7 +19,7 @@ class ExecutionRecord:
     metrics: dict = field(default_factory=dict)
     transition: dict = field(default_factory=dict)
     events: list = field(default_factory=list)
-    stage: str = 'created'
+    stage: str = "created"
     first_failure: dict | None = None
 
     def __post_init__(self):
@@ -27,20 +28,28 @@ class ExecutionRecord:
 
     def enter(self, stage: str, **details):
         self.stage = stage
-        self.events.append(dict(stage=stage, elapsed_s=self.clock()-self._started,
-                                wall_time=self.wall_clock(), **deepcopy(details)))
+        self.events.append(
+            dict(stage=stage, elapsed_s=self.clock() - self._started, wall_time=self.wall_clock(), **deepcopy(details))
+        )
 
     def fail(self, reason: str):
         if self.first_failure is None:
-            self.first_failure = dict(stage=self.stage, reason=reason,
-                                      elapsed_s=self.clock()-self._started)
+            self.first_failure = dict(stage=self.stage, reason=reason, elapsed_s=self.clock() - self._started)
 
     def snapshot(self):
-        return deepcopy(dict(schema_version=1, clock='monotonic_elapsed+unix_wall',
-                             timestamp_semantics='control_stage_entry',
-                             started_wall=self.started_wall, stage=self.stage,
-                             first_failure=self.first_failure, events=self.events,
-                             metrics=self.metrics, transition=self.transition))
+        return deepcopy(
+            dict(
+                schema_version=1,
+                clock="monotonic_elapsed+unix_wall",
+                timestamp_semantics="control_stage_entry",
+                started_wall=self.started_wall,
+                stage=self.stage,
+                first_failure=self.first_failure,
+                events=self.events,
+                metrics=self.metrics,
+                transition=self.transition,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -51,7 +60,7 @@ class GraspResult:
 
     @property
     def visibility(self):
-        return self.execution['metrics'].get('ego_visibility')
+        return self.execution["metrics"].get("ego_visibility")
 
 
 @dataclass(frozen=True)

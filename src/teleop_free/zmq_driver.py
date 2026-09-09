@@ -20,10 +20,8 @@ import argparse
 import time
 from enum import IntEnum
 
-import zmq
-
 import numpy as np
-
+import zmq
 from gear_sonic.utils.teleop.zmq.zmq_planner_sender import (
     build_command_message,
     build_planner_message,
@@ -92,9 +90,7 @@ class SonicCommander:
         speed: float = -1.0,
         height: float = -1.0,
     ) -> None:
-        self.sonic.send(
-            build_planner_message(int(mode), list(movement), list(facing), speed, height)
-        )
+        self.sonic.send(build_planner_message(int(mode), list(movement), list(facing), speed, height))
 
     def manager_state(
         self,
@@ -199,7 +195,7 @@ def main() -> None:
             # here would start recording a new episode instead of finishing this one.
             print("[commander] record stop -> save")
             c.key("c")
-            c.hold(LocomotionMode.IDLE, 5.0)   # keep streaming while the episode is written
+            c.hold(LocomotionMode.IDLE, 5.0)  # keep streaming while the episode is written
 
         print("[commander] pausing control (deploy stays up)")
         c.pause_control()

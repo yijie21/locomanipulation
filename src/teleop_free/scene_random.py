@@ -67,30 +67,35 @@ import numpy as np
 # Hue in degrees (a range may wrap through 0), saturation and value in [0, 1].
 # The families are the colour words in OBJECT_PHRASE; keep them in step.
 FAMILY = {
-    "can":    dict(h=(350.0, 15.0), s=(0.55, 0.85), v=(0.55, 0.85)),   # red
+    "can": dict(h=(350.0, 15.0), s=(0.55, 0.85), v=(0.55, 0.85)),  # red
     "bottle": dict(h=(205.0, 240.0), s=(0.45, 0.80), v=(0.45, 0.80)),  # blue
-    "cup":    dict(h=(30.0, 45.0), s=(0.05, 0.20), v=(0.80, 0.96)),    # cream
-    "jar":    dict(h=(100.0, 140.0), s=(0.40, 0.75), v=(0.40, 0.75)),  # green
+    "cup": dict(h=(30.0, 45.0), s=(0.05, 0.20), v=(0.80, 0.96)),  # cream
+    "jar": dict(h=(100.0, 140.0), s=(0.40, 0.75), v=(0.40, 0.75)),  # green
 }
 # OKLab distance (x100) below which two targets read as the same colour. 20 is
 # comfortably above the ~8 that separates "adjacent steps of one ramp".
 MIN_TARGET_SEPARATION = 20.0
 MAX_COLOUR_TRIES = 60
 
-MESH_MATERIALS = ("dining_table_material_0", "counter_material_0",
-                  "plate_material_0", "fork_material_0",
-                  "napkin_material_0", "orange_material_0")
+MESH_MATERIALS = (
+    "dining_table_material_0",
+    "counter_material_0",
+    "plate_material_0",
+    "fork_material_0",
+    "napkin_material_0",
+    "orange_material_0",
+)
 # Textured, so this multiplies: brightness and saturation only. Kept narrow
 # because a strong tint on wood just makes mud.
 TINT_S = (0.00, 0.30)
 TINT_V = (0.55, 1.05)
 
 GROUND_TEXREPEAT = (3.0, 14.0)
-GROUND_S = (0.05, 0.75)     # the checker carries all three channels, so a
-GROUND_V = (0.45, 1.15)     # saturated tint here genuinely re-hues the floor
+GROUND_S = (0.05, 0.75)  # the checker carries all three channels, so a
+GROUND_V = (0.45, 1.15)  # saturated tint here genuinely re-hues the floor
 GROUND_REFLECT = (0.05, 0.35)
 
-LIGHT_TILT_MAX = np.deg2rad(50.0)   # from straight down
+LIGHT_TILT_MAX = np.deg2rad(50.0)  # from straight down
 LIGHT_DIFFUSE = (0.40, 1.00)
 LIGHT_AMBIENT = (0.05, 0.35)
 
@@ -99,22 +104,23 @@ def _hsv(rng, h_range, s_range, v_range):
     lo, hi = h_range
     span = (hi - lo) % 360.0 or 360.0
     h = (lo + rng.uniform(0.0, span)) % 360.0
-    return colorsys.hsv_to_rgb(h / 360.0,
-                               rng.uniform(*s_range),
-                               rng.uniform(*v_range))
+    return colorsys.hsv_to_rgb(h / 360.0, rng.uniform(*s_range), rng.uniform(*v_range))
 
 
 def _oklab(rgb):
     """sRGB (0-1) -> OKLab. Only used for the "are these two the same colour"
     test, where a perceptually uniform space is the whole point."""
-    r, g, b = [(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
-               for c in rgb]
+    r, g, b = [(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) for c in rgb]
     l = np.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
     m = np.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
     s = np.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
-    return np.array([0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
-                     1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
-                     0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s])
+    return np.array(
+        [
+            0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+            1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+            0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+        ]
+    )
 
 
 def _separated(colours):
@@ -131,21 +137,22 @@ def sample(seed: int) -> dict:
     rng = np.random.default_rng(int(seed) & 0x7FFFFFFF)
 
     for _ in range(MAX_COLOUR_TRIES):
-        targets = {k: _hsv(rng, f["h"], f["s"], f["v"])
-                   for k, f in FAMILY.items()}
+        targets = {k: _hsv(rng, f["h"], f["s"], f["v"]) for k, f in FAMILY.items()}
         if _separated(list(targets.values())):
             break
     else:
         # Never block an episode on this: the families are far apart enough
         # that failing 60 times means the ranges were edited into overlap,
         # which is a bug to notice rather than a round to lose.
-        print("[scene_random] WARNING: could not separate target colours in "
-              f"{MAX_COLOUR_TRIES} tries -- check FAMILY ranges")
+        print(
+            "[scene_random] WARNING: could not separate target colours in "
+            f"{MAX_COLOUR_TRIES} tries -- check FAMILY ranges"
+        )
 
-    mats = {name: list(colorsys.hsv_to_rgb(rng.uniform(0.0, 1.0),
-                                           rng.uniform(*TINT_S),
-                                           rng.uniform(*TINT_V)))
-            for name in MESH_MATERIALS}
+    mats = {
+        name: list(colorsys.hsv_to_rgb(rng.uniform(0.0, 1.0), rng.uniform(*TINT_S), rng.uniform(*TINT_V)))
+        for name in MESH_MATERIALS
+    }
 
     tilt = rng.uniform(0.0, LIGHT_TILT_MAX)
     az = rng.uniform(0.0, 2.0 * np.pi)
@@ -153,16 +160,16 @@ def sample(seed: int) -> dict:
         seed=int(seed),
         targets={k: list(v) for k, v in targets.items()},
         mats=mats,
-        ground=dict(rgb=list(colorsys.hsv_to_rgb(rng.uniform(0.0, 1.0),
-                                                 rng.uniform(*GROUND_S),
-                                                 rng.uniform(*GROUND_V))),
-                    texrepeat=float(rng.uniform(*GROUND_TEXREPEAT)),
-                    reflectance=float(rng.uniform(*GROUND_REFLECT))),
-        light=dict(dir=[float(np.sin(tilt) * np.cos(az)),
-                        float(np.sin(tilt) * np.sin(az)),
-                        float(-np.cos(tilt))],
-                   diffuse=float(rng.uniform(*LIGHT_DIFFUSE)),
-                   ambient=float(rng.uniform(*LIGHT_AMBIENT))),
+        ground=dict(
+            rgb=list(colorsys.hsv_to_rgb(rng.uniform(0.0, 1.0), rng.uniform(*GROUND_S), rng.uniform(*GROUND_V))),
+            texrepeat=float(rng.uniform(*GROUND_TEXREPEAT)),
+            reflectance=float(rng.uniform(*GROUND_REFLECT)),
+        ),
+        light=dict(
+            dir=[float(np.sin(tilt) * np.cos(az)), float(np.sin(tilt) * np.sin(az)), float(-np.cos(tilt))],
+            diffuse=float(rng.uniform(*LIGHT_DIFFUSE)),
+            ambient=float(rng.uniform(*LIGHT_AMBIENT)),
+        ),
     )
 
 
@@ -185,14 +192,15 @@ class SceneRandomizer:
         for name in MESH_MATERIALS + ("groundplane",):
             i = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MATERIAL, name)
             if i >= 0:
-                self.mat[name] = (i, model.mat_rgba[i].copy(),
-                                  model.mat_texrepeat[i].copy(),
-                                  float(model.mat_reflectance[i]))
+                self.mat[name] = (
+                    i,
+                    model.mat_rgba[i].copy(),
+                    model.mat_texrepeat[i].copy(),
+                    float(model.mat_reflectance[i]),
+                )
         self.light = None
         if model.nlight:
-            self.light = (model.light_dir[0].copy(),
-                          model.light_diffuse[0].copy(),
-                          model.light_ambient[0].copy())
+            self.light = (model.light_dir[0].copy(), model.light_diffuse[0].copy(), model.light_ambient[0].copy())
 
     def restore(self) -> None:
         m = self.model
@@ -226,7 +234,9 @@ class SceneRandomizer:
             m.light_diffuse[0] = [L["diffuse"]] * 3
             m.light_ambient[0] = [L["ambient"]] * 3
         L = spec["light"]
-        return (f"seed {spec['seed']} light "
-                f"[{L['dir'][0]:+.2f} {L['dir'][1]:+.2f} {L['dir'][2]:+.2f}] "
-                f"diff {L['diffuse']:.2f} amb {L['ambient']:.2f} "
-                f"ground rep {spec['ground']['texrepeat']:.1f}")
+        return (
+            f"seed {spec['seed']} light "
+            f"[{L['dir'][0]:+.2f} {L['dir'][1]:+.2f} {L['dir'][2]:+.2f}] "
+            f"diff {L['diffuse']:.2f} amb {L['ambient']:.2f} "
+            f"ground rep {spec['ground']['texrepeat']:.1f}"
+        )

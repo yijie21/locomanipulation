@@ -41,8 +41,8 @@ import numpy as np
 import skfmm
 from scipy.ndimage import distance_transform_edt
 
-RESOLUTION = 0.05           # metres per cell
-ROOM_XLIM = (-3.0, 4.0)     # the scene spans -1.5 (robot start) to 2.5 (counter)
+RESOLUTION = 0.05  # metres per cell
+ROOM_XLIM = (-3.0, 4.0)  # the scene spans -1.5 (robot start) to 2.5 (counter)
 ROOM_YLIM = (-3.0, 3.0)
 
 # Radius the robot's *body* sweeps while navigating, measured from the pelvis.
@@ -56,18 +56,23 @@ ROOM_YLIM = (-3.0, 3.0)
 # picks up turning, it landed at 0.39-0.58 and approach_A failed 9 times in 10.
 BODY_RADIUS = 0.26
 
-STEP_SIZE = 0.45            # how far ahead the follower looks, in metres
-CLEARANCE_W = 0.35          # weight on hugging the middle of free space
-CLEARANCE_CAP = 0.50        # beyond this much clearance, more does not help
-UNREACHABLE = 1e5           # fill value for cells the wavefront never reached
+STEP_SIZE = 0.45  # how far ahead the follower looks, in metres
+CLEARANCE_W = 0.35  # weight on hugging the middle of free space
+CLEARANCE_CAP = 0.50  # beyond this much clearance, more does not help
+UNREACHABLE = 1e5  # fill value for cells the wavefront never reached
 
 
 class OccupancyMap:
     """Static top-down map of the scene, plus its C-space inflation."""
 
-    def __init__(self, meta: dict, resolution: float = RESOLUTION,
-                 xlim=ROOM_XLIM, ylim=ROOM_YLIM,
-                 body_radius: float = BODY_RADIUS):
+    def __init__(
+        self,
+        meta: dict,
+        resolution: float = RESOLUTION,
+        xlim=ROOM_XLIM,
+        ylim=ROOM_YLIM,
+        body_radius: float = BODY_RADIUS,
+    ):
         self.res = resolution
         self.origin = np.array([xlim[0], ylim[0]], dtype=float)
         self.nx = int(np.ceil((xlim[1] - xlim[0]) / resolution))
@@ -92,8 +97,7 @@ class OccupancyMap:
         # One transform gives both answers: the hard C-space (anything nearer
         # than the body radius is illegal) and the soft clearance field the
         # follower uses to prefer the middle of a gap over grazing an edge.
-        self.clearance = distance_transform_edt(
-            ~self.occupied, sampling=self.res).astype(float)
+        self.clearance = distance_transform_edt(~self.occupied, sampling=self.res).astype(float)
         self.free = self.clearance >= self.body_radius
 
     # -- geometry ----------------------------------------------------------
@@ -109,15 +113,13 @@ class OccupancyMap:
         h = np.asarray(half_extent, dtype=float)[:2] + self.res * 0.5
         lo = self.clip_cell(self.cell_of(c - h))
         hi = self.clip_cell(self.cell_of(c + h))
-        self.occupied[lo[0]:hi[0] + 1, lo[1]:hi[1] + 1] = True
+        self.occupied[lo[0] : hi[0] + 1, lo[1] : hi[1] + 1] = True
 
     def cell_of(self, xy) -> np.ndarray:
-        return np.floor((np.asarray(xy, dtype=float)[:2] - self.origin)
-                        / self.res).astype(int)
+        return np.floor((np.asarray(xy, dtype=float)[:2] - self.origin) / self.res).astype(int)
 
     def clip_cell(self, cell) -> np.ndarray:
-        return np.clip(np.asarray(cell, dtype=int), [0, 0],
-                       [self.nx - 1, self.ny - 1])
+        return np.clip(np.asarray(cell, dtype=int), [0, 0], [self.nx - 1, self.ny - 1])
 
     def xy_of(self, cell) -> np.ndarray:
         return self.origin + (np.asarray(cell, dtype=float) + 0.5) * self.res
@@ -134,8 +136,7 @@ class OccupancyMap:
 
     def ring_mask(self, centre, r_lo: float, r_hi: float) -> np.ndarray:
         """Free cells whose distance from `centre` is in [r_lo, r_hi]."""
-        gx, gy = np.meshgrid(np.arange(self.nx), np.arange(self.ny),
-                             indexing="ij")
+        gx, gy = np.meshgrid(np.arange(self.nx), np.arange(self.ny), indexing="ij")
         wx = self.origin[0] + (gx + 0.5) * self.res
         wy = self.origin[1] + (gy + 0.5) * self.res
         d = np.hypot(wx - centre[0], wy - centre[1])
@@ -146,8 +147,7 @@ class OccupancyMap:
         """Cell of the closest free cell to `xy`. Used to snap an illegal goal."""
         gx, gy = np.nonzero(self.free)
         w = self.xy_of(np.stack([gx, gy], axis=1))
-        i = int(np.argmin(np.linalg.norm(w - np.asarray(xy, dtype=float)[:2],
-                                         axis=1)))
+        i = int(np.argmin(np.linalg.norm(w - np.asarray(xy, dtype=float)[:2], axis=1)))
 
         return np.array([gx[i], gy[i]])
 
@@ -196,8 +196,7 @@ class Navigator:
         if not self.occ.free[c[0], c[1]]:
             tgt = self.occ.nearest_free(here_xy)
             n = int(max(np.abs(tgt - c).max(), 1))
-            cells = [np.round(c + (tgt - c) * k / n).astype(int)
-                     for k in range(n + 1)]
+            cells = [np.round(c + (tgt - c) * k / n).astype(int) for k in range(n + 1)]
         for p in cells:
             lo = np.maximum(p - 1, 0)
             hi = np.minimum(p + 1, hi_lim)
@@ -225,13 +224,11 @@ class Navigator:
 
         phi = np.ma.masked_array(np.ones(trav.shape, dtype=float), ~trav)
         phi[mask] = 0.0
-        self.dist = np.ma.filled(skfmm.distance(phi, dx=self.occ.res),
-                                 UNREACHABLE)
+        self.dist = np.ma.filled(skfmm.distance(phi, dx=self.occ.res), UNREACHABLE)
 
         return True
 
-    def set_goal_ring(self, centre, r_lo: float, r_hi: float,
-                      here_xy=None) -> bool:
+    def set_goal_ring(self, centre, r_lo: float, r_hi: float, here_xy=None) -> bool:
         """Stand somewhere in an annulus around `centre`, e.g. beside a table.
 
         A ring rather than a point, because the exact spot does not matter and
@@ -244,8 +241,7 @@ class Navigator:
         self.goal_xy = centre
         self.snap = 0.0
         for grow in (0.0, 0.10, 0.20, 0.35, 0.50):
-            mask = self.occ.ring_mask(centre, max(r_lo - grow * 0.5, 0.0),
-                                      r_hi + grow)
+            mask = self.occ.ring_mask(centre, max(r_lo - grow * 0.5, 0.0), r_hi + grow)
             if mask.any():
                 self.snap = grow
                 return self.set_goal_mask(mask, here_xy)
@@ -342,5 +338,4 @@ def ascii_map(occ: OccupancyMap, marks: dict | None = None) -> str:
     return "\n".join("".join(grid[:, j]) for j in range(occ.ny - 1, -1, -1))
 
 
-__all__ = ["OccupancyMap", "Navigator", "build", "ascii_map",
-           "RESOLUTION", "BODY_RADIUS", "STEP_SIZE", "UNREACHABLE"]
+__all__ = ["OccupancyMap", "Navigator", "build", "ascii_map", "RESOLUTION", "BODY_RADIUS", "STEP_SIZE", "UNREACHABLE"]

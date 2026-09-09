@@ -31,34 +31,31 @@ from __future__ import annotations
 import os
 
 import numpy as np
-
+import paths
 from arm_ik import ArmIK
 from g1_joints import ARM_MJ
 from primitives_const import GRASP_CENTRE_OFFSET_CONST
-
 from primitives_const import HAND as _HAND
-import paths
-MAP_PATH = (f"{paths.REPO}/outputs/scene/"
-            + ("reach_map_dex1.npz" if _HAND == "dex1" else "reach_map.npz"))
 
-OFFSET_DIR = (np.asarray(GRASP_CENTRE_OFFSET_CONST)
-              / np.linalg.norm(GRASP_CENTRE_OFFSET_CONST))
+MAP_PATH = f"{paths.REPO}/outputs/scene/" + ("reach_map_dex1.npz" if _HAND == "dex1" else "reach_map.npz")
+
+OFFSET_DIR = np.asarray(GRASP_CENTRE_OFFSET_CONST) / np.linalg.norm(GRASP_CENTRE_OFFSET_CONST)
 
 MAX_DESCEND = np.deg2rad(25.0)
 JAW_TILT_MAX = np.deg2rad(25.0)
 
 # Delivered torso capability (measured on this stack, not commanded):
-PELVIS_MAX = 0.793            # standing pelvis height
-PELVIS_MIN = 0.598            # deepest DELIVERED squat: stepped commands to
-                              # 13 cm measured pelvis drops of 19.5-19.9 cm
-                              # (diag_reach_volume / diag_reach_sweep) — the
-                              # earlier 0.660 assumed the single-shot 13 cm
-WAIST_PITCH = (0.0, 0.05)     # DELIVERED lean while standing: commanding
-                              # 0.25 measures 0.03-0.06, and the policy also
-                              # wanders waist yaw ~0.2 rad in response to
-                              # unusual arm poses — the map keeps the waist
-                              # nearly neutral and the navigator erodes the
-                              # lookup by 5 cm instead of trusting lean
+PELVIS_MAX = 0.793  # standing pelvis height
+PELVIS_MIN = 0.598  # deepest DELIVERED squat: stepped commands to
+# 13 cm measured pelvis drops of 19.5-19.9 cm
+# (diag_reach_volume / diag_reach_sweep) — the
+# earlier 0.660 assumed the single-shot 13 cm
+WAIST_PITCH = (0.0, 0.05)  # DELIVERED lean while standing: commanding
+# 0.25 measures 0.03-0.06, and the policy also
+# wanders waist yaw ~0.2 rad in response to
+# unusual arm poses — the map keeps the waist
+# nearly neutral and the navigator erodes the
+# lookup by 5 cm instead of trusting lean
 
 # Voxel grid, pelvis frame.
 VOX = 0.025
@@ -66,33 +63,45 @@ X0, X1 = 0.12, 0.75
 Y0, Y1 = -0.75, 0.75
 Z0, Z1 = -0.55, 0.45
 
-N_SAMPLES = 600_000           # per arm per waist config: at 120k each voxel
-                              # averaged 1.6 hits, so the erosion and the
-                              # azimuth-coverage statistics were pure noise
+N_SAMPLES = 600_000  # per arm per waist config: at 120k each voxel
+# averaged 1.6 hits, so the erosion and the
+# azimuth-coverage statistics were pure noise
 
 # Sweet-zone ("core") criteria: the envelope is where a grasp is POSSIBLE;
 # the core is where it is COMFORTABLE — room left for servo corrections.
-AZ_BINS = 9                   # approach-azimuth bins over the front sector
+AZ_BINS = 9  # approach-azimuth bins over the front sector
 AZ_SECTOR = np.deg2rad(60.0)  # matches the front-sector sample filter
-CORE_JMARGIN = np.deg2rad(15.0)   # min distance of any arm joint to a limit
-CORE_AZBINS = 3               # distinct approach azimuths seen at the voxel
-CORE_X_MIN = 0.16             # inboard cut: closer voxels put the pregrasp
-                              # against the torso (self-collision entries)
+CORE_JMARGIN = np.deg2rad(15.0)  # min distance of any arm joint to a limit
+CORE_AZBINS = 3  # distinct approach azimuths seen at the voxel
+CORE_X_MIN = 0.16  # inboard cut: closer voxels put the pregrasp
+# against the torso (self-collision entries)
 
 
 def _erode6(o: np.ndarray) -> np.ndarray:
     """Keep a voxel only if all 6 face-neighbours are also occupied."""
     p = np.pad(o, 1)
-    return (o & p[2:, 1:-1, 1:-1] & p[:-2, 1:-1, 1:-1]
-            & p[1:-1, 2:, 1:-1] & p[1:-1, :-2, 1:-1]
-            & p[1:-1, 1:-1, 2:] & p[1:-1, 1:-1, :-2])
+    return (
+        o
+        & p[2:, 1:-1, 1:-1]
+        & p[:-2, 1:-1, 1:-1]
+        & p[1:-1, 2:, 1:-1]
+        & p[1:-1, :-2, 1:-1]
+        & p[1:-1, 1:-1, 2:]
+        & p[1:-1, 1:-1, :-2]
+    )
 
 
 def _dilate6(o: np.ndarray) -> np.ndarray:
     p = np.pad(o, 1)
-    return (o | p[2:, 1:-1, 1:-1] | p[:-2, 1:-1, 1:-1]
-            | p[1:-1, 2:, 1:-1] | p[1:-1, :-2, 1:-1]
-            | p[1:-1, 1:-1, 2:] | p[1:-1, 1:-1, :-2])
+    return (
+        o
+        | p[2:, 1:-1, 1:-1]
+        | p[:-2, 1:-1, 1:-1]
+        | p[1:-1, 2:, 1:-1]
+        | p[1:-1, :-2, 1:-1]
+        | p[1:-1, 1:-1, 2:]
+        | p[1:-1, 1:-1, :-2]
+    )
 
 
 def _close6(o: np.ndarray) -> np.ndarray:
@@ -111,6 +120,7 @@ def _grid_shape():
 
 def build(seed: int = 0) -> dict:
     import mujoco
+
     ik = ArmIK()
     rng = np.random.default_rng(seed)
     # Self-collision filter. mj_kinematics alone accepted configurations
@@ -121,8 +131,7 @@ def build(seed: int = 0) -> dict:
     robot_geoms = set()
     for g in range(m.ngeom):
         nm = m.body(m.geom_bodyid[g]).name
-        if nm.startswith(("left_", "right_", "pelvis", "torso", "waist",
-                          "logo", "head", "imu")):
+        if nm.startswith(("left_", "right_", "pelvis", "torso", "waist", "logo", "head", "imu")):
             robot_geoms.add(g)
 
     def self_collides() -> bool:
@@ -137,27 +146,21 @@ def build(seed: int = 0) -> dict:
                 continue
             return True
         return False
+
     nx, ny, nz = _grid_shape()
-    occ = {"left": np.zeros((nx, ny, nz), dtype=bool),
-           "right": np.zeros((nx, ny, nz), dtype=bool)}
+    occ = {"left": np.zeros((nx, ny, nz), dtype=bool), "right": np.zeros((nx, ny, nz), dtype=bool)}
     # Exemplar evidence per voxel: the joint solution that made it feasible.
     # The verification probe replays exactly this — the promise, not a
     # re-derivation of it.
-    ex_q = {s2: np.zeros((nx, ny, nz, 7), dtype=np.float32)
-            for s2 in ("left", "right")}
-    ex_wp = {s2: np.full((nx, ny, nz), np.nan, dtype=np.float32)
-             for s2 in ("left", "right")}
-    ex_pos = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32)
-              for s2 in ("left", "right")}
-    ex_appr = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32)
-               for s2 in ("left", "right")}
+    ex_q = {s2: np.zeros((nx, ny, nz, 7), dtype=np.float32) for s2 in ("left", "right")}
+    ex_wp = {s2: np.full((nx, ny, nz), np.nan, dtype=np.float32) for s2 in ("left", "right")}
+    ex_pos = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32) for s2 in ("left", "right")}
+    ex_appr = {s2: np.zeros((nx, ny, nz, 3), dtype=np.float32) for s2 in ("left", "right")}
     # Comfort evidence per voxel: the BEST joint-limit margin any sample
     # achieved there, and a bitmask of which approach-azimuth bins produced
     # a hit — forward-MC's version of "how many directions work here".
-    jmargin = {s2: np.zeros((nx, ny, nz), dtype=np.float32)
-               for s2 in ("left", "right")}
-    azmask = {s2: np.zeros((nx, ny, nz), dtype=np.uint16)
-              for s2 in ("left", "right")}
+    jmargin = {s2: np.zeros((nx, ny, nz), dtype=np.float32) for s2 in ("left", "right")}
+    azmask = {s2: np.zeros((nx, ny, nz), dtype=np.uint16) for s2 in ("left", "right")}
 
     for side in ("left", "right"):
         arm = ARM_MJ[side]
@@ -165,7 +168,7 @@ def build(seed: int = 0) -> dict:
         for wp in WAIST_PITCH:
             qs = rng.uniform(lo, hi, size=(N_SAMPLES, 7))
             q29 = np.zeros(29)
-            q29[14] = wp                       # waist_pitch
+            q29[14] = wp  # waist_pitch
             kept = 0
             for row in qs:
                 q29[arm] = row
@@ -173,7 +176,7 @@ def build(seed: int = 0) -> dict:
                 appr = rot @ OFFSET_DIR
                 dh = float(np.hypot(appr[0], appr[1]))
                 if -appr[2] > np.tan(MAX_DESCEND) * max(dh, 1e-9):
-                    continue                   # diving too steeply
+                    continue  # diving too steeply
                 if appr[0] < dh * 0.5:
                     # Approach must come from the FRONT sector (within ~60
                     # deg of pelvis +x): the executed pipeline plans its
@@ -184,7 +187,7 @@ def build(seed: int = 0) -> dict:
                     # "a direction this object cannot be gripped from".
                     continue
                 if appr[2] > 0.5:
-                    continue                   # grasping upward: not a table
+                    continue  # grasping upward: not a table
                 jaw_tilt = abs(float(np.arcsin(np.clip(rot[2, 1], -1, 1))))
                 if jaw_tilt > JAW_TILT_MAX:
                     continue
@@ -234,23 +237,32 @@ def build(seed: int = 0) -> dict:
         # Erode the CLOSED occupancy (sampling holes are noise), but keep
         # only genuinely sampled voxels — the comfort criteria are only
         # defined where a sample landed.
-        sweet[s2] = (_erode6(_close6(occ[s2])) & occ[s2]
-                     & (jmargin[s2] >= CORE_JMARGIN)
-                     & (nb >= CORE_AZBINS) & x_ok)
+        sweet[s2] = _erode6(_close6(occ[s2])) & occ[s2] & (jmargin[s2] >= CORE_JMARGIN) & (nb >= CORE_AZBINS) & x_ok
         print(f"  {s2}: envelope {occ[s2].sum()} -> core {sweet[s2].sum()}")
     np.savez_compressed(
-        MAP_PATH, left=occ["left"], right=occ["right"], both=both,
-        sweet_left=sweet["left"], sweet_right=sweet["right"],
-        jmargin_left=jmargin["left"], jmargin_right=jmargin["right"],
-        azmask_left=azmask["left"], azmask_right=azmask["right"],
-        vox=VOX, origin=np.array([X0, Y0, Z0]),
+        MAP_PATH,
+        left=occ["left"],
+        right=occ["right"],
+        both=both,
+        sweet_left=sweet["left"],
+        sweet_right=sweet["right"],
+        jmargin_left=jmargin["left"],
+        jmargin_right=jmargin["right"],
+        azmask_left=azmask["left"],
+        azmask_right=azmask["right"],
+        vox=VOX,
+        origin=np.array([X0, Y0, Z0]),
         pelvis_range=np.array([PELVIS_MIN, PELVIS_MAX]),
-        ex_q_left=ex_q["left"], ex_q_right=ex_q["right"],
-        ex_wp_left=ex_wp["left"], ex_wp_right=ex_wp["right"],
-        ex_pos_left=ex_pos["left"], ex_pos_right=ex_pos["right"],
-        ex_appr_left=ex_appr["left"], ex_appr_right=ex_appr["right"])
-    print(f"saved {MAP_PATH}: both {both.sum()} voxels "
-          f"({both.sum() * VOX**3 * 1e3:.1f} litres)")
+        ex_q_left=ex_q["left"],
+        ex_q_right=ex_q["right"],
+        ex_wp_left=ex_wp["left"],
+        ex_wp_right=ex_wp["right"],
+        ex_pos_left=ex_pos["left"],
+        ex_pos_right=ex_pos["right"],
+        ex_appr_left=ex_appr["left"],
+        ex_appr_right=ex_appr["right"],
+    )
+    print(f"saved {MAP_PATH}: both {both.sum()} voxels ({both.sum() * VOX**3 * 1e3:.1f} litres)")
     return {"left": occ["left"], "right": occ["right"], "both": both}
 
 
@@ -263,26 +275,23 @@ class ReachMap:
         # Sweet zone (comfortable core) — present on maps built after the
         # comfort-metrics rebuild; fall back to the envelope on old files.
         self.sweet_left = z["sweet_left"] if "sweet_left" in z else self.left
-        self.sweet_right = (z["sweet_right"] if "sweet_right" in z
-                            else self.right)
+        self.sweet_right = z["sweet_right"] if "sweet_right" in z else self.right
         self.vox = float(z["vox"])
         self.origin = z["origin"]
         self.pelvis_min, self.pelvis_max = z["pelvis_range"]
 
     def _grid(self, arm: str, core: bool):
         if core:
-            return {"left": self.sweet_left, "right": self.sweet_right,
-                    "both": self.sweet_left | self.sweet_right}[arm]
+            return {"left": self.sweet_left, "right": self.sweet_right, "both": self.sweet_left | self.sweet_right}[arm]
         return {"left": self.left, "right": self.right, "both": self.both}[arm]
 
     def _at(self, grid, p) -> bool:
         idx = ((np.asarray(p) - self.origin) / self.vox).astype(int)
-        if ((idx < 0).any() or (idx >= np.array(grid.shape)).any()):
+        if (idx < 0).any() or (idx >= np.array(grid.shape)).any():
             return False
         return bool(grid[tuple(idx)])
 
-    def graspable(self, p_pelvis, arm: str = "both",
-                  core: bool = False) -> bool:
+    def graspable(self, p_pelvis, arm: str = "both", core: bool = False) -> bool:
         """p in the pelvis frame at STANDING height. The squat extends reach
         DOWNWARD: a point below the map is re-tested as if the pelvis had
         come down by up to (PELVIS_MAX - PELVIS_MIN). core=True tests the
@@ -295,9 +304,9 @@ class ReachMap:
                 return True
         return False
 
-    def plan_core_stand(self, obj_z_pf, arm: str = "right",
-                        aim_ang_max: float = np.deg2rad(33.0),
-                        min_margin: float = 0.05):
+    def plan_core_stand(
+        self, obj_z_pf, arm: str = "right", aim_ang_max: float = np.deg2rad(33.0), min_margin: float = 0.05
+    ):
         """Joint (aim, squat) stand plan against the sweet core.
 
         The core narrows below the elbow band, so forcing the object into
@@ -330,8 +339,7 @@ class ReachMap:
             # that lands 1-2 cells off a core aim still only needs the grasp
             # to be POSSIBLE there — the core slice itself is too ragged
             # (~30 cells/layer) to have an interior.
-            occ_set = {(int(i), int(j))
-                       for i, j in np.argwhere(grid_env[:, :, k])}
+            occ_set = {(int(i), int(j)) for i, j in np.argwhere(grid_env[:, :, k])}
 
             def cheb_margin(i, j):
                 # Chebyshev distance to the nearest non-core cell (off-grid
@@ -339,8 +347,7 @@ class ReachMap:
                 for r in range(1, 7):
                     for di in range(-r, r + 1):
                         for dj in range(-r, r + 1):
-                            if (max(abs(di), abs(dj)) == r
-                                    and (i + di, j + dj) not in occ_set):
+                            if max(abs(di), abs(dj)) == r and (i + di, j + dj) not in occ_set:
                                 return (r - 1) * self.vox
                 return 6 * self.vox
 
@@ -353,8 +360,7 @@ class ReachMap:
                 pts.append((x, y))
                 margs.append(cheb_margin(int(i), int(j)))
             if pts:
-                layers.append((float(dz), np.asarray(pts),
-                               np.asarray(margs)))
+                layers.append((float(dz), np.asarray(pts), np.asarray(margs)))
         if not layers:
             return None
         # Selection: the FARTHEST overlap, not the least squat. Squatting is
@@ -363,10 +369,11 @@ class ReachMap:
         # horizontal distance, and aim at that layer's far band. R_CAP keeps
         # the aim under the servo's walk-in depth band (GRIP_X_MAX 0.30) and
         # the pregrasp staging limit (~0.32).
-        R_CAP = 0.34            # execution-side staging limit, deep-squat
-                                # era: the servo's depth band now follows
-                                # the plan (plan_r), so only the hard
-                                # pregrasp-staging wall (~0.36) remains
+        R_CAP = 0.34  # execution-side staging limit, deep-squat
+
+        # era: the servo's depth band now follows
+        # the plan (plan_r), so only the hard
+        # pregrasp-staging wall (~0.36) remains
         # Hand-side bias: a can on the torso centreline forces the arm to
         # reach ACROSS the chest (wrist yaw at its limit — the "twisted"
         # pregrasp), while a can in front of the shoulder is a short
@@ -380,8 +387,7 @@ class ReachMap:
                 r = np.hypot(pts[:, 0], pts[:, 1])
                 use = (margs >= min_margin) & (r <= R_CAP)
                 if side_only:
-                    use &= (pts[:, 1] <= -0.06 if arm == "right"
-                            else pts[:, 1] >= 0.06)
+                    use &= pts[:, 1] <= -0.06 if arm == "right" else pts[:, 1] >= 0.06
                 if not use.any():
                     continue
                 r_max = float(r[use].max())
@@ -396,11 +402,17 @@ class ReachMap:
             return pts[margs >= margs.max()], dz, float(margs.max())
         return best[1], best[2], best[3]
 
-    def stand_cells(self, obj_z_pf, arm: str = "right",
-                    aim_ang_max: float = np.deg2rad(36.5),   # the ego view gate is ~36.7 deg
-                    min_margin: float = 0.02, r_cap: float = 0.40,
-                    y_min: float = -0.40, y_max: float = -0.03,
-                    core: bool = False):
+    def stand_cells(
+        self,
+        obj_z_pf,
+        arm: str = "right",
+        aim_ang_max: float = np.deg2rad(36.5),  # the ego view gate is ~36.7 deg
+        min_margin: float = 0.02,
+        r_cap: float = 0.40,
+        y_min: float = -0.40,
+        y_max: float = -0.03,
+        core: bool = False,
+    ):
         """Coverage-first stand distribution (2026-09-04): EVERY core cell
         across all squat layers that a grasp can be executed from, as
         (x, y, drop) triples. plan_core_stand picks the single farthest
@@ -437,16 +449,18 @@ class ReachMap:
                     for di in range(-r, r + 1):
                         for dj in range(-r, r + 1):
                             if max(abs(di), abs(dj)) == r and (int(i) + di, int(j) + dj) not in occ_set:
-                                hit = True; break
-                        if hit: break
+                                hit = True
+                                break
+                        if hit:
+                            break
                     if hit:
-                        m = (r - 1) * self.vox; break
+                        m = (r - 1) * self.vox
+                        break
                 if m >= min_margin:
                     out.append((x, y, float(dz)))
         return np.asarray(out, dtype=float).reshape(-1, 3)
 
-    def margin(self, p_pelvis, arm: str = "both", core: bool = False,
-               cap: float = 0.15) -> float:
+    def margin(self, p_pelvis, arm: str = "both", core: bool = False, cap: float = 0.15) -> float:
         """Distance (m) to the nearest non-graspable voxel, xy-plane, at the
         best squat level — the stand-quality score the navigator maximises.
 
@@ -471,9 +485,17 @@ if __name__ == "__main__":
     build()
 
 
-def best_stand(rm: "ReachMap", obj_w, obj_z_pf: float, pelvis_xy, yaw_now: float,
-               edge_dist_fn, arm: str = "both",
-               margin_floor: float = 0.05, edge_floor: float = 0.10):
+def best_stand(
+    rm: "ReachMap",
+    obj_w,
+    obj_z_pf: float,
+    pelvis_xy,
+    yaw_now: float,
+    edge_dist_fn,
+    arm: str = "both",
+    margin_floor: float = 0.05,
+    edge_floor: float = 0.10,
+):
     """Pick (stand_xy, yaw) near the current stand that puts the object deep
     inside the reach map.
 
@@ -500,8 +522,7 @@ def best_stand(rm: "ReachMap", obj_w, obj_z_pf: float, pelvis_xy, yaw_now: float
             for delta in np.arange(-0.7, 0.71, 0.1):
                 psi = bearing + delta
                 c, sn = np.cos(psi), np.sin(psi)
-                rel = np.array([c * d[0] + sn * d[1],
-                                -sn * d[0] + c * d[1], obj_z_pf])
+                rel = np.array([c * d[0] + sn * d[1], -sn * d[0] + c * d[1], obj_z_pf])
                 m = rm.margin(rel, arm)
                 if m < margin_floor:
                     continue

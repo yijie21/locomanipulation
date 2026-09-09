@@ -37,10 +37,11 @@ class StageCfg:
     ``scene_dir`` picks which scene; the label is normally the batch's seed, so
     re-rendering an episode means pointing this at that batch's build.
     """
+
     assets: str = paths.ISAAC_ASSETS
-    scene_dir: str = ""          # default: <assets>/scene/work
-    robot_usd: str = ""          # default: <assets>/robot/g1_dex1.usda
-    robot_mjcf: str = ""         # colours come from here; default paths.SCENE_XML
+    scene_dir: str = ""  # default: <assets>/scene/work
+    robot_usd: str = ""  # default: <assets>/robot/g1_dex1.usda
+    robot_mjcf: str = ""  # colours come from here; default paths.SCENE_XML
     width: int = 640
     height: int = 480
     torso_prim: str = "/World/scene/torso_link"
@@ -65,8 +66,8 @@ def start_app(cfg: StageCfg, headless: bool = True):
     """Boot Kit. Minutes on a cold TensorRT/shader cache."""
     os.environ.setdefault("OMNI_KIT_ACCEPT_EULA", "YES")
     from isaacsim import SimulationApp
-    return SimulationApp({"headless": headless,
-                          "width": cfg.width, "height": cfg.height})
+
+    return SimulationApp({"headless": headless, "width": cfg.width, "height": cfg.height})
 
 
 # abspath is not cosmetic, and this is the second time it has bitten this repo
@@ -77,13 +78,11 @@ def start_app(cfg: StageCfg, headless: bool = True):
 # the object simply is not in the picture. Caught 2026-09-06 after a full
 # episode rendered with no bottle while the log said "bottle referenced".
 def scene_dir(cfg: StageCfg) -> str:
-    return os.path.abspath(cfg.scene_dir
-                           or os.path.join(cfg.assets, "scene", "work"))
+    return os.path.abspath(cfg.scene_dir or os.path.join(cfg.assets, "scene", "work"))
 
 
 def robot_usd(cfg: StageCfg) -> str:
-    return os.path.abspath(cfg.robot_usd
-                           or os.path.join(cfg.assets, "robot", "g1_dex1.usda"))
+    return os.path.abspath(cfg.robot_usd or os.path.join(cfg.assets, "robot", "g1_dex1.usda"))
 
 
 def _mjcf_multi_mesh_bodies(mjcf_path: str) -> set:
@@ -115,7 +114,7 @@ def xml_text(path: str) -> str:
     if path not in _XML_CACHE:
         try:
             _XML_CACHE[path] = open(path).read()
-        except Exception:                                      # noqa: BLE001
+        except Exception:  # noqa: BLE001
             _XML_CACHE[path] = ""
     return _XML_CACHE[path]
 
@@ -133,7 +132,7 @@ def _mjcf_mesh_colours(mjcf_path: str, log=print) -> dict:
     out: dict = {}
     try:
         xml = open(mjcf_path).read()
-    except Exception as e:                                     # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         log(f"WARNING no MJCF colours ({mjcf_path}): {e}")
         return out
     for g in re.finditer(r"<geom[^>]*>", xml):
@@ -164,7 +163,8 @@ def assemble_stage(cfg: StageCfg, log=print):
             raise SystemExit(
                 f"missing {what} USD: {path}\n"
                 f"  build it: bash scripts/build_isaac_assets.sh "
-                f"[--snapshot <batch scene dir>]")
+                f"[--snapshot <batch scene dir>]"
+            )
     ctx = omni.usd.get_context()
     ctx.open_stage(base)
     stage = ctx.get_stage()
@@ -215,17 +215,14 @@ def assemble_stage(cfg: StageCfg, log=print):
     def material_for(rgb):
         key = tuple(round(c, 4) for c in rgb)
         if key not in mats:
-            mp = Sdf.Path("/World/Looks/g1_%s" % "_".join(
-                f"{int(c * 255):03d}" for c in key))
+            mp = Sdf.Path("/World/Looks/g1_%s" % "_".join(f"{int(c * 255):03d}" for c in key))
             mt = UsdShade.Material.Define(stage, mp)
             sh = UsdShade.Shader.Define(stage, mp.AppendChild("shader"))
             sh.CreateIdAttr("UsdPreviewSurface")
-            sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
-                Gf.Vec3f(*key))
+            sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*key))
             sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.55)
             sh.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.1)
-            mt.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(),
-                                                     "surface")
+            mt.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
             mats[key] = mt
         return mats[key]
 
@@ -251,7 +248,7 @@ def assemble_stage(cfg: StageCfg, log=print):
             if prim.HasRelationship("material:binding"):
                 UsdShade.MaterialBindingAPI(prim).UnbindDirectBinding()
                 n_unbound += 1
-        except Exception as e:                                 # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             log(f"  could not unbind {prim.GetPath()}: {e}")
     log(f"multi-mesh bodies {sorted(multi)}; cleared {n_unbound} link bindings")
 
@@ -264,15 +261,13 @@ def assemble_stage(cfg: StageCfg, log=print):
             rgb = colours.get(proto.GetName())
             if rgb is None:
                 continue
-            UsdShade.MaterialBindingAPI.Apply(proto).Bind(
-                material_for(rgb), UsdShade.Tokens.strongerThanDescendants)
+            UsdShade.MaterialBindingAPI.Apply(proto).Bind(material_for(rgb), UsdShade.Tokens.strongerThanDescendants)
             n_proto += 1
     log(f"bound {n_proto} mesh prototypes from the MJCF's geom rgba")
 
     DEFAULT_RGB = (0.82, 0.82, 0.85)
     for p in stage.Traverse():
-        if p.GetTypeName() != "Mesh" or not str(p.GetPath()).startswith(
-                ("/World/scene", "/meshes", "/visuals")):
+        if p.GetTypeName() != "Mesh" or not str(p.GetPath()).startswith(("/World/scene", "/meshes", "/visuals")):
             continue
         # Leave the merged links to their prototype bindings: binding here would
         # paint both of their meshes with the link's single colour again.
@@ -292,16 +287,13 @@ def assemble_stage(cfg: StageCfg, log=print):
         UsdShade.MaterialBindingAPI.Apply(p).Bind(material_for(rgb))
         UsdGeom.Mesh(p).GetDoubleSidedAttr().Set(True)
         n_bound += 1
-    log(f"bound {len(mats)} MJCF colours to {n_bound} robot meshes "
-        f"({n_default} fell back to neutral)")
-    if not any(p.GetTypeName() in ("DomeLight", "DistantLight")
-               for p in stage.Traverse()):
+    log(f"bound {len(mats)} MJCF colours to {n_bound} robot meshes ({n_default} fell back to neutral)")
+    if not any(p.GetTypeName() in ("DomeLight", "DistantLight") for p in stage.Traverse()):
         dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/dome_light"))
         dome.CreateIntensityAttr(1000.0)
         sun = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/sun_light"))
         sun.CreateIntensityAttr(2500.0)
-        UsdGeom.Xformable(sun.GetPrim()).AddRotateXYZOp().Set(
-            Gf.Vec3f(-40.0, 20.0, 0.0))
+        UsdGeom.Xformable(sun.GetPrim()).AddRotateXYZOp().Set(Gf.Vec3f(-40.0, 20.0, 0.0))
         log("added dome + distant lights")
 
     # Meshes the ego camera must not see; see StageCfg.hidden_visuals.
@@ -311,7 +303,8 @@ def assemble_stage(cfg: StageCfg, log=print):
             raise SystemExit(
                 f"hidden_visuals: /visuals/{rel} does not exist -- the robot "
                 f"USD predates the reference split? rebuild it: "
-                f"bash scripts/build_isaac_assets.sh --robot-only --force")
+                f"bash scripts/build_isaac_assets.sh --robot-only --force"
+            )
         UsdGeom.Imageable(prim).MakeInvisible()
         log(f"hid /visuals/{rel}")
 
@@ -324,6 +317,7 @@ def assemble_stage(cfg: StageCfg, log=print):
     # bottle-only block with a scalar scale; generalised 2026-09-07 for the
     # crate, whose mesh is scaled 0.667/0.667/1.0 and offset -0.085 in z.)
     import json as _json
+
     usd_root = os.path.join(scene_dir(cfg), "usd")
     names = sorted(os.listdir(usd_root)) if os.path.isdir(usd_root) else []
     # usd/ also holds the STATIC props the scene layer already places (table,
@@ -361,16 +355,18 @@ def assemble_stage(cfg: StageCfg, log=print):
         else:
             oop.Set(Gf.Quatf(oq[0], Gf.Vec3f(*oq[1:])))
         (ops.get(UsdGeom.XformOp.TypeScale) or xf.AddScaleOp()).Set(Gf.Vec3f(*scale))
-        bb = UsdGeom.Imageable(g).ComputeWorldBound(
-            0, UsdGeom.Tokens.default_).ComputeAlignedBox()
+        bb = UsdGeom.Imageable(g).ComputeWorldBound(0, UsdGeom.Tokens.default_).ComputeAlignedBox()
         if bb.IsEmpty():
             raise SystemExit(
                 f"object {name} composed EMPTY from {top}. The reference "
                 f"resolved to nothing -- almost always a relative path, which "
-                f"USD resolves against the layer's directory, not the cwd.")
+                f"USD resolves against the layer's directory, not the cwd."
+            )
         referenced += 1
-        log(f"object {name} referenced (scale {scale}, offset {opos}, bbox "
-            f"{[round(v, 3) for v in bb.GetMin()]}..{[round(v, 3) for v in bb.GetMax()]})")
+        log(
+            f"object {name} referenced (scale {scale}, offset {opos}, bbox "
+            f"{[round(v, 3) for v in bb.GetMin()]}..{[round(v, 3) for v in bb.GetMax()]})"
+        )
     if not referenced:
         log(f"WARNING no object usd under {usd_root} -- rendering without objects")
     return stage
@@ -401,8 +397,8 @@ def configure_renderer(log=print) -> None:
     import omni.replicator.core as rep
 
     ok, res = omni.kit.commands.execute(
-        "ChangeSetting",
-        path="/rtx/directLighting/sampledLighting/autoEnable", value=False)
+        "ChangeSetting", path="/rtx/directLighting/sampledLighting/autoEnable", value=False
+    )
     if not ok:
         log(f"WARNING could not disable sampled lighting: {res}")
     st = carb.settings.get_settings()
@@ -422,6 +418,7 @@ ROBOT_ROOT = "/World/scene"
 def make_world():
     """A kinematic mirror, not a physics world: gravity off."""
     from isaacsim.core.api import World
+
     world = World(stage_units_in_meters=1.0)
     world.reset()
     world.get_physics_context().set_gravity(0.0)
@@ -444,7 +441,7 @@ def root_body(robot) -> str:
     """
     try:
         return str(robot._articulation_view.body_names[0])
-    except Exception:                                          # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return "torso_link"
 
 
@@ -480,13 +477,11 @@ def mount_camera(stage, cfg: StageCfg, cam_spec, log=print):
                 torso = p
                 break
     log(f"torso prim: {torso.GetPath() if torso.IsValid() else 'NOT FOUND'}")
-    cam_path = ("/World/ego_cam" if cfg.absolute_camera
-                else str(torso.GetPath()) + "/ego_cam")
+    cam_path = "/World/ego_cam" if cfg.absolute_camera else str(torso.GetPath()) + "/ego_cam"
     cam_prim = UsdGeom.Camera.Define(stage, Sdf.Path(cam_path))
     xf = UsdGeom.Xformable(cam_prim.GetPrim())
     xf.AddTranslateOp().Set(Gf.Vec3d(*cam_pos))
-    xf.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(
-        Gf.Quatd(cam_quat[0], Gf.Vec3d(*cam_quat[1:])))
+    xf.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(cam_quat[0], Gf.Vec3d(*cam_quat[1:])))
     # fovy -> USD vertical aperture at an arbitrary focal length.
     focal = 18.0
     # USD default clippingRange starts at 1 m -- the robot's own arms
@@ -498,8 +493,7 @@ def mount_camera(stage, cfg: StageCfg, cam_spec, log=print):
     cam_prim.GetVerticalApertureAttr().Set(ap_v)
     cam_prim.GetHorizontalApertureAttr().Set(ap_v * cfg.width / cfg.height)
 
-    sensor = SensorCamera(prim_path=cam_path,
-                          resolution=(cfg.width, cfg.height))
+    sensor = SensorCamera(prim_path=cam_path, resolution=(cfg.width, cfg.height))
     sensor.initialize()
     return sensor, cam_path
 
@@ -520,11 +514,11 @@ def _freeze_root(robot) -> None:
     try:
         robot.set_linear_velocity(_np.zeros(3))
         robot.set_angular_velocity(_np.zeros(3))
-    except Exception:                                          # noqa: BLE001
+    except Exception:  # noqa: BLE001
         pass
 
 
-def sync_dofs(robot, dof_idx, dof_values, _zeros=[None]):
+def sync_dofs(robot, dof_idx, dof_values, _zeros=[None]):  # noqa: B006  (intentional per-function cache)
     """Push explicit per-DOF positions -- the replay path, where the values come
     straight out of a recorded qpos by joint name and there is no 43-vector."""
     robot.set_joint_positions(np.asarray(dof_values), joint_indices=dof_idx)
@@ -533,8 +527,7 @@ def sync_dofs(robot, dof_idx, dof_values, _zeros=[None]):
     robot.set_joint_velocities(_zeros[0])
 
 
-def sync_replay(stage, robot, dof_idx, dof_values, root_pose, objects_t,
-                sensor=None, cam_pose=None):
+def sync_replay(stage, robot, dof_idx, dof_values, root_pose, objects_t, sensor=None, cam_pose=None):
     """One recorded MuJoCo state -> the mirror stage. SIMPLE's isaac.step().
 
     `root_pose` must be the pose of the ARTICULATION ROOT LINK (see
@@ -543,20 +536,17 @@ def sync_replay(stage, robot, dof_idx, dof_values, root_pose, objects_t,
     from isaacsim.core.prims import SingleXFormPrim
 
     if cam_pose is not None and sensor is not None:
-        sensor.set_world_pose(position=cam_pose[0], orientation=cam_pose[1],
-                              camera_axes="usd")
+        sensor.set_world_pose(position=cam_pose[0], orientation=cam_pose[1], camera_axes="usd")
     robot.set_world_pose(position=root_pose[:3], orientation=root_pose[3:])
     _freeze_root(robot)
     sync_dofs(robot, dof_idx, dof_values)
     for key, pose in objects_t.items():
         prim_path = f"/World/{key}"
         if stage.GetPrimAtPath(prim_path).IsValid():
-            SingleXFormPrim(prim_path).set_world_pose(
-                position=pose[:3], orientation=pose[3:])
+            SingleXFormPrim(prim_path).set_world_pose(position=pose[:3], orientation=pose[3:])
 
 
-def sync_frame(stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t,
-               sensor=None, cam_pose=None, _zeros=[None]):
+def sync_frame(stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t, sensor=None, cam_pose=None, _zeros=[None]):  # noqa: B006, E501
     """Push one kinematic state into the stage. The live mirror calls exactly
     this, which is what keeps online and offline pixels the same function of
     the same state.
@@ -569,8 +559,7 @@ def sync_frame(stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t,
     from isaacsim.core.prims import SingleXFormPrim
 
     if cam_pose is not None and sensor is not None:
-        sensor.set_world_pose(position=cam_pose[0], orientation=cam_pose[1],
-                              camera_axes="usd")
+        sensor.set_world_pose(position=cam_pose[0], orientation=cam_pose[1], camera_axes="usd")
     robot.set_world_pose(position=pelvis_t[:3], orientation=pelvis_t[3:])
     _freeze_root(robot)
     robot.set_joint_positions(joints_t[jsrc], joint_indices=jidx)
@@ -580,12 +569,12 @@ def sync_frame(stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t,
     for key, pose in objects_t.items():
         prim_path = f"/World/{key}"
         if stage.GetPrimAtPath(prim_path).IsValid():
-            SingleXFormPrim(prim_path).set_world_pose(
-                position=pose[:3], orientation=pose[3:])
+            SingleXFormPrim(prim_path).set_world_pose(position=pose[:3], orientation=pose[3:])
 
 
-def warm_up(world, sensor, stage, robot, jidx, jsrc, joints_t, pelvis_t,
-            objects_t, cam_pose=None, max_steps: int = 8, log=print) -> int:
+def warm_up(
+    world, sensor, stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t, cam_pose=None, max_steps: int = 8, log=print
+) -> int:
     """Step until the sensor actually returns pixels, discarding the output.
 
     The first one or two `get_rgba()` calls after a stage is built come back
@@ -596,8 +585,7 @@ def warm_up(world, sensor, stage, robot, jidx, jsrc, joints_t, pelvis_t,
     of frame 0 rather than missing frames.
     """
     for i in range(max_steps):
-        sync_frame(stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t,
-                   sensor=sensor, cam_pose=cam_pose)
+        sync_frame(stage, robot, jidx, jsrc, joints_t, pelvis_t, objects_t, sensor=sensor, cam_pose=cam_pose)
         if step_and_grab(world, sensor) is not None:
             if i:
                 log(f"sensor warm-up: {i} discarded step(s)")

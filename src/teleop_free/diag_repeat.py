@@ -77,39 +77,36 @@ def main() -> None:
 
         return p.obs()
 
-    print(f"\nsettling {args.settle:.1f} s per probe, {len(STARTS)} starts per "
-          f"target\n")
+    print(f"\nsettling {args.settle:.1f} s per probe, {len(STARTS)} starts per target\n")
     all_spread = []
     for target in TARGETS:
         print(f"command {np.round(target, 2)}")
         landed = []
         for label, start in STARTS:
-            hold(start, args.settle)                     # establish the history
-            s = hold(target, args.settle)                # then the probe
+            hold(start, args.settle)  # establish the history
+            s = hold(target, args.settle)  # then the probe
             palm = p.world_to_root_full(s["palms"][args.side]["pos"], s)
             landed.append(palm)
-            print(f"   from {label:8s} -> palm {np.round(palm, 3)}  "
-                  f"pelvis_z {s['pelvis']['pos'][2]:.3f}")
+            print(f"   from {label:8s} -> palm {np.round(palm, 3)}  pelvis_z {s['pelvis']['pos'][2]:.3f}")
         landed = np.array(landed)
         spread = float(np.linalg.norm(landed - landed.mean(0), axis=1).max())
         rng = landed.max(0) - landed.min(0)
         all_spread.append(spread)
-        print(f"   spread {spread * 100:.1f} cm   per-axis range "
-              f"{np.round(rng * 100, 1)} cm")
-        print(f"   mean offset from the command "
-              f"{np.round((landed.mean(0) - target) * 100, 1)} cm\n")
+        print(f"   spread {spread * 100:.1f} cm   per-axis range {np.round(rng * 100, 1)} cm")
+        print(f"   mean offset from the command {np.round((landed.mean(0) - target) * 100, 1)} cm\n")
 
     worst = max(all_spread)
     print(f"worst spread across all targets: {worst * 100:.1f} cm")
     if worst < 0.01:
         print("  -> the mapping is a function; fit a static inverse model")
     elif worst < 0.03:
-        print("  -> borderline; a model would help but will not close the gap "
-              "alone")
+        print("  -> borderline; a model would help but will not close the gap alone")
     else:
-        print("  -> NOT a function of the command alone. A static inverse "
-              "cannot fix this; the effort belongs in the closed loop "
-              "(lower gain, shorter dead time) rather than a better seed.")
+        print(
+            "  -> NOT a function of the command alone. A static inverse "
+            "cannot fix this; the effort belongs in the closed loop "
+            "(lower gain, shorter dead time) rather than a better seed."
+        )
 
     p.cmd.pause_control()
     p.close()

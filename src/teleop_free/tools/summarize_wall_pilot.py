@@ -7,7 +7,14 @@ episode length, static-frame fraction (50 Hz frames where every joint moved
 < 1e-3 rad AND the pelvis < 0.5 mm AND the crate < 0.5 mm -- the frames a
 single-frame policy cannot tell apart, i.e. the absorbing-state budget).
 """
-import sys, json, glob, re, os, numpy as np
+
+import glob
+import json
+import os
+import re
+import sys
+
+import numpy as np
 
 d = sys.argv[1]
 rows = [json.loads(l) for l in open(os.path.join(d, "manifest.jsonl")) if l.strip()]
@@ -21,7 +28,8 @@ for r in rows:
         q = np.load(f)["qpos"]
         c = q[:, -7:]
         w, x, y, z = c[:, 3], c[:, 4], c[:, 5], c[:, 6]
-        cy = np.degrees(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))); cy -= cy[0]
+        cy = np.degrees(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+        cy -= cy[0]
         dxy = np.linalg.norm(c[:, :2] - c[0, :2], axis=1)
         mv = np.where((dxy > 0.005) | (np.abs(cy) > 1.0))[0]
         move = mv[0] / 50 if len(mv) else float("nan")
@@ -32,6 +40,13 @@ for r in rows:
         static = float(np.mean((dq < 1e-3) & (dp < 5e-4) & (dc < 5e-4)))
         stat.append(static)
     att = len(r.get("stand_attempts", [])) or 1
-    so = r.get("stand_off_meas", float("nan")); yaw = r.get("yaw_err_deg", float("nan"))
-    print(f"{rd:2d} {'OK' if r['ok'] else '--':>3} {att:3d} {str(r.get('close_trigger')):>8} {move:6.1f} {length:5.1f} {static:6.2f} {so:5.2f} {yaw:5.1f}  {r.get('why', '')[:60]}")
-print(f"\nOK {sum(r['ok'] for r in rows)}/{len(rows)}; static-frame fraction median {np.median(stat):.2f} max {max(stat):.2f}" if stat else "")
+    so = r.get("stand_off_meas", float("nan"))
+    yaw = r.get("yaw_err_deg", float("nan"))
+    print(
+        f"{rd:2d} {'OK' if r['ok'] else '--':>3} {att:3d} {str(r.get('close_trigger')):>8} {move:6.1f} {length:5.1f} {static:6.2f} {so:5.2f} {yaw:5.1f}  {r.get('why', '')[:60]}"
+    )
+print(
+    f"\nOK {sum(r['ok'] for r in rows)}/{len(rows)}; static-frame fraction median {np.median(stat):.2f} max {max(stat):.2f}"
+    if stat
+    else ""
+)

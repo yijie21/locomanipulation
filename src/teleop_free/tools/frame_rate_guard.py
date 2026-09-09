@@ -38,6 +38,7 @@ touches neither the manifest nor any file the evaluation harness owns.
 Exit status is 0 whether or not rounds were flagged: this is an instrument,
 and an instrument that fails the build is an instrument people stop running.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,7 +56,7 @@ FREQ_RE = re.compile(r"Image publish frequency:\s+([0-9.]+)")
 # loose `.*reset` match silently gains a phantom round.
 RESET_RE = re.compile(r"^\[episode\] reset applied")
 
-DEFAULT_THRESHOLD = 25.0     # Hz, median over a round. Target is 30.
+DEFAULT_THRESHOLD = 25.0  # Hz, median over a round. Target is 30.
 
 
 def parse_log(path: str) -> tuple[list[float], list[int]]:
@@ -74,9 +75,9 @@ def parse_log(path: str) -> tuple[list[float], list[int]]:
     return samples, resets
 
 
-def _segment(samples: list[float], resets: list[int],
-             durations: list[float],
-             attempts: list[int] | None = None) -> tuple[list[list[float]], str]:
+def _segment(
+    samples: list[float], resets: list[int], durations: list[float], attempts: list[int] | None = None
+) -> tuple[list[list[float]], str]:
     """Cut the sample stream into one bucket per round.
 
     Two ways, and the tool reports which one it used because they are not
@@ -112,7 +113,7 @@ def _segment(samples: list[float], resets: list[int],
             starts.append(resets[k])
             k += a + 1
         bounds = starts + [len(samples)]
-        buckets = [samples[bounds[i]:bounds[i + 1]] for i in range(n)]
+        buckets = [samples[bounds[i] : bounds[i + 1]] for i in range(n)]
         if all(buckets):
             return buckets, "marker"
 
@@ -120,7 +121,7 @@ def _segment(samples: list[float], resets: list[int],
     buckets, cursor = [], 0.0
     for d in durations:
         nxt = cursor + (d / total) * len(samples)
-        buckets.append(samples[int(round(cursor)):int(round(nxt))])
+        buckets.append(samples[int(round(cursor)) : int(round(nxt))])
         cursor = nxt
     return buckets, "proportional"
 
@@ -142,13 +143,18 @@ def analyse(sim_log: str, manifest: str, threshold: float) -> dict:
             med = lo = None
             n = 0
             degraded = False
-        rounds.append({
-            "round": r.get("round"), "attempt": r.get("attempt"),
-            "ok": r.get("ok"), "seconds": r.get("seconds"),
-            "obs_hz_med": None if med is None else round(med, 2),
-            "obs_hz_min": None if lo is None else round(lo, 2),
-            "n_samples": n, "degraded": degraded,
-        })
+        rounds.append(
+            {
+                "round": r.get("round"),
+                "attempt": r.get("attempt"),
+                "ok": r.get("ok"),
+                "seconds": r.get("seconds"),
+                "obs_hz_med": None if med is None else round(med, 2),
+                "obs_hz_min": None if lo is None else round(lo, 2),
+                "n_samples": n,
+                "degraded": degraded,
+            }
+        )
 
     covered = [x for x in rounds if x["n_samples"]]
     flagged = [x for x in covered if x["degraded"]]
@@ -168,25 +174,25 @@ def analyse(sim_log: str, manifest: str, threshold: float) -> dict:
 
 
 def cmd_summary(paths: list[str]) -> None:
-    print(f"{'run':34s} {'seg':13s} {'rounds':>6s} {'cov':>5s} "
-          f"{'degr':>5s} {'frac':>6s} {'med Hz':>7s}")
+    print(f"{'run':34s} {'seg':13s} {'rounds':>6s} {'cov':>5s} {'degr':>5s} {'frac':>6s} {'med Hz':>7s}")
     for p in paths:
         try:
             d = json.load(open(p))
-        except Exception as e:                                # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"{p}: unreadable ({e})")
             continue
         name = os.path.basename(os.path.dirname(os.path.abspath(p))) or p
         frac = d.get("degraded_frac")
-        print(f"{name[:34]:34s} {d.get('segmentation',''):13s} "
-              f"{d.get('n_rounds',0):6d} {d.get('n_covered',0):5d} "
-              f"{d.get('n_degraded',0):5d} "
-              f"{'-' if frac is None else format(frac, '6.1%')} "
-              f"{d.get('obs_hz_med_overall') or '-':>7}")
+        print(
+            f"{name[:34]:34s} {d.get('segmentation', ''):13s} "
+            f"{d.get('n_rounds', 0):6d} {d.get('n_covered', 0):5d} "
+            f"{d.get('n_degraded', 0):5d} "
+            f"{'-' if frac is None else format(frac, '6.1%')} "
+            f"{d.get('obs_hz_med_overall') or '-':>7}"
+        )
 
 
-def cmd_watch(logs: list[str], threshold: float, window: int,
-              poll: float) -> None:
+def cmd_watch(logs: list[str], threshold: float, window: int, poll: float) -> None:
     """Tail the logs; shout when `window` consecutive samples sit below the
     threshold. Prints one line per state change, not per sample, so it can be
     left running inside another loop without drowning it."""
@@ -197,8 +203,7 @@ def cmd_watch(logs: list[str], threshold: float, window: int,
         fhs[p] = fh
     recent: dict[str, list[float]] = {p: [] for p in logs}
     starving: dict[str, bool] = {p: False for p in logs}
-    print(f"[guard] watching {len(logs)} log(s), threshold {threshold} Hz, "
-          f"window {window}", flush=True)
+    print(f"[guard] watching {len(logs)} log(s), threshold {threshold} Hz, window {window}", flush=True)
     while True:
         for p, fh in fhs.items():
             for line in fh:
@@ -215,28 +220,29 @@ def cmd_watch(logs: list[str], threshold: float, window: int,
                 if bad != starving[p]:
                     starving[p] = bad
                     tag = "STARVED" if bad else "recovered"
-                    print(f"[guard] {tag}: {os.path.basename(os.path.dirname(p))}"
-                          f"/{os.path.basename(p)} median {med:.1f} Hz "
-                          f"over last {window}", flush=True)
+                    print(
+                        f"[guard] {tag}: {os.path.basename(os.path.dirname(p))}"
+                        f"/{os.path.basename(p)} median {med:.1f} Hz "
+                        f"over last {window}",
+                        flush=True,
+                    )
         time.sleep(poll)
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Flag rounds whose observation stream starved.")
-    ap.add_argument("--sim-log", action="append", default=[],
-                    help="sim.log to read; repeat for multiple instances")
+    ap = argparse.ArgumentParser(description="Flag rounds whose observation stream starved.")
+    ap.add_argument("--sim-log", action="append", default=[], help="sim.log to read; repeat for multiple instances")
     ap.add_argument("--manifest", help="the run's manifest jsonl")
     ap.add_argument("--out", help="where to write the sidecar json")
-    ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                    help=f"median Hz below which a round is degraded "
-                         f"(default {DEFAULT_THRESHOLD}; target rate is 30)")
-    ap.add_argument("--summary", nargs="+", metavar="JSON",
-                    help="print the degraded fraction for these sidecars")
-    ap.add_argument("--watch", action="store_true",
-                    help="tail --sim-log(s) and shout on starvation")
-    ap.add_argument("--window", type=int, default=10,
-                    help="--watch: consecutive samples in the median")
+    ap.add_argument(
+        "--threshold",
+        type=float,
+        default=DEFAULT_THRESHOLD,
+        help=f"median Hz below which a round is degraded (default {DEFAULT_THRESHOLD}; target rate is 30)",
+    )
+    ap.add_argument("--summary", nargs="+", metavar="JSON", help="print the degraded fraction for these sidecars")
+    ap.add_argument("--watch", action="store_true", help="tail --sim-log(s) and shout on starvation")
+    ap.add_argument("--window", type=int, default=10, help="--watch: consecutive samples in the median")
     ap.add_argument("--poll", type=float, default=2.0)
     args = ap.parse_args()
 
@@ -253,23 +259,27 @@ def main() -> None:
 
     report = analyse(args.sim_log[0], args.manifest, args.threshold)
     if len(args.sim_log) > 1:
-        report["other_instances"] = [
-            analyse(p, args.manifest, args.threshold) for p in args.sim_log[1:]]
+        report["other_instances"] = [analyse(p, args.manifest, args.threshold) for p in args.sim_log[1:]]
     if args.out:
         with open(args.out, "w") as fh:
             json.dump(report, fh, indent=2)
         print(f"wrote {args.out}")
     frac = report["degraded_frac"]
-    print(f"segmentation={report['segmentation']}  "
-          f"covered={report['n_covered']}/{report['n_rounds']}  "
-          f"degraded={report['n_degraded']}"
-          f"{'' if frac is None else f' ({frac:.1%})'}  "
-          f"median={report['obs_hz_med_overall']} Hz "
-          f"(threshold {report['threshold_hz']})")
+    print(
+        f"segmentation={report['segmentation']}  "
+        f"covered={report['n_covered']}/{report['n_rounds']}  "
+        f"degraded={report['n_degraded']}"
+        f"{'' if frac is None else f' ({frac:.1%})'}  "
+        f"median={report['obs_hz_med_overall']} Hz "
+        f"(threshold {report['threshold_hz']})"
+    )
     if report["segmentation"] == "proportional":
-        print("  note: no per-round markers in the log, so boundaries are "
-              "estimated from round durations -- flags are trustworthy, "
-              "passes are weak (see _segment).", file=sys.stderr)
+        print(
+            "  note: no per-round markers in the log, so boundaries are "
+            "estimated from round durations -- flags are trustworthy, "
+            "passes are weak (see _segment).",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ import re
 import sys
 
 _DEF = re.compile(r'^(?P<ind>\s*)def Xform "(?P<name>[^"]+)" \($')
-_REF = re.compile(r'^\s*</(?P<path>[^>]+)>,?\s*$')
+_REF = re.compile(r"^\s*</(?P<path>[^>]+)>,?\s*$")
 
 
 def _split_block(lines: list[str]) -> tuple[list[str], list[str]] | None:
@@ -63,13 +63,12 @@ def _split_block(lines: list[str]) -> tuple[list[str], list[str]] | None:
     """
     ind = _DEF.match(lines[0]).group("ind")
     try:
-        i0 = next(i for i, l in enumerate(lines)
-                  if l.strip() == "prepend references = [")
+        i0 = next(i for i, l in enumerate(lines) if l.strip() == "prepend references = [")
     except StopIteration:
         return None
     i1 = next(i for i in range(i0 + 1, len(lines)) if lines[i].strip() == "]")
     refs = []
-    for l in lines[i0 + 1:i1]:
+    for l in lines[i0 + 1 : i1]:
         m = _REF.match(l)
         if not m:
             raise ValueError(f"unexpected reference line: {l!r}")
@@ -77,13 +76,13 @@ def _split_block(lines: list[str]) -> tuple[list[str], list[str]] | None:
     if len(refs) < 2:
         return None
     # metadata without the reference list
-    head = lines[:i0] + lines[i1 + 1:]
+    head = lines[:i0] + lines[i1 + 1 :]
     # body: everything between the `{` line and the closing `}` line
     ib = next(i for i, l in enumerate(head) if l.rstrip() == ind + "{")
     close = head[-1]
     assert close.rstrip() == ind + "}", close
-    body = head[ib + 1:-1]
-    new = head[:ib + 1] + body
+    body = head[ib + 1 : -1]
+    new = head[: ib + 1] + body
     if body and body[-1].strip():
         new.append("")
     cind = ind + "    "
@@ -112,9 +111,10 @@ def split_visual_refs(text: str) -> tuple[str, dict[str, list[str]]]:
         s0 = next(i for i, l in enumerate(lines) if l == 'def Scope "visuals"')
     except StopIteration:
         raise SystemExit("no top-level /visuals scope in this layer")
-    s1 = next((i for i in range(s0 + 1, len(lines))
-               if lines[i].startswith("def ") or lines[i].startswith("over ")),
-              len(lines))
+    s1 = next(
+        (i for i in range(s0 + 1, len(lines)) if lines[i].startswith("def ") or lines[i].startswith("over ")),
+        len(lines),
+    )
     out, done = lines[:s0], {}
     i = s0
     while i < s1:
@@ -125,7 +125,7 @@ def split_visual_refs(text: str) -> tuple[str, dict[str, list[str]]]:
             continue
         ind = m.group("ind")
         j = next(k for k in range(i + 1, s1) if lines[k].rstrip() == ind + "}")
-        block = lines[i:j + 1]
+        block = lines[i : j + 1]
         r = _split_block(block)
         if r is None:
             out += block
@@ -149,8 +149,7 @@ def main(argv=None) -> int:
     new, done = split_visual_refs(text)
     for body, meshes in done.items():
         print(f"split {body}: {' + '.join(meshes)}")
-    print(f"split {len(done)} multi-mesh bodies, "
-          f"{sum(len(v) for v in done.values())} meshes")
+    print(f"split {len(done)} multi-mesh bodies, {sum(len(v) for v in done.values())} meshes")
     if not check:
         open(dst, "w").write(new)
         print(f"wrote {dst}")

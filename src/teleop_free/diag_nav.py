@@ -22,14 +22,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navigator as nav  # noqa: E402
 import paths
 
-SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
-              "scene_meta.json")
-WANT = 0.45          # pelvis-to-object distance the grasp needs
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+WANT = 0.45  # pelvis-to-object distance the grasp needs
 BAND = 0.08
 
 
-def rollout(planner: nav.Navigator, start, step=nav.STEP_SIZE, limit=80,
-            stop=0.08):
+def rollout(planner: nav.Navigator, start, step=nav.STEP_SIZE, limit=80, stop=0.08):
     """Walk the field greedily, as the live follower will. Returns the path.
 
     The step shrinks as the goal nears, so the path actually arrives instead of
@@ -52,11 +50,9 @@ def rollout(planner: nav.Navigator, start, step=nav.STEP_SIZE, limit=80,
 def report(label, planner, occ, start, goal_xy) -> bool:
     ok = planner.reachable(start)
     print(f"\n--- {label} ---")
-    print(f"  goal {np.round(goal_xy, 2)}  snap {planner.snap:.2f} m  "
-          f"reachable {ok}")
+    print(f"  goal {np.round(goal_xy, 2)}  snap {planner.snap:.2f} m  reachable {ok}")
     if not ok:
-        print("  FAIL: field is flat at the start cell — the follower would "
-              "walk off in a straight line")
+        print("  FAIL: field is flat at the start cell — the follower would walk off in a straight line")
         return False
 
     path = rollout(planner, start)
@@ -66,10 +62,11 @@ def report(label, planner, occ, start, goal_xy) -> bool:
     # path[0] is where the robot already is — if that is illegal it is a fact
     # about the reset, not about the plan.
     hits = sum(occ.occupied[c] for c in cells[1:])
-    print(f"  geodesic {planner.distance_at(start):.2f} m, path {len(path)} "
-          f"waypoints / {seg:.2f} m, min clearance {min(clear):.2f} m")
-    print(f"  end {np.round(path[-1], 2)}, "
-          f"{np.linalg.norm(path[-1] - goal_xy):.2f} m from the goal centre")
+    print(
+        f"  geodesic {planner.distance_at(start):.2f} m, path {len(path)} "
+        f"waypoints / {seg:.2f} m, min clearance {min(clear):.2f} m"
+    )
+    print(f"  end {np.round(path[-1], 2)}, {np.linalg.norm(path[-1] - goal_xy):.2f} m from the goal centre")
     # Clearance below the body radius is legal only while escaping: a robot
     # that starts at a table is inside the inflation by definition, so the
     # hard property to assert is that no waypoint is inside an actual
@@ -92,10 +89,10 @@ def main() -> None:
 
     meta = json.load(open(SCENE_META))
     occ, planner = nav.build(meta, body_radius=args.radius)
-    print(f"map {occ.nx}x{occ.ny} cells @ {occ.res} m, body radius "
-          f"{occ.body_radius} m")
-    print(f"  occupied {occ.occupied.sum()} cells, free after inflation "
-          f"{occ.free.sum()} ({100 * occ.free.mean():.0f}%)")
+    print(f"map {occ.nx}x{occ.ny} cells @ {occ.res} m, body radius {occ.body_radius} m")
+    print(
+        f"  occupied {occ.occupied.sum()} cells, free after inflation {occ.free.sum()} ({100 * occ.free.mean():.0f}%)"
+    )
 
     start = np.array(meta["robot_start"]["xy"], dtype=float)
     orange = np.array(meta["objects"][meta["target_object"]]["init_pos"][:2])
@@ -104,28 +101,27 @@ def main() -> None:
     ok = True
     # 1. the approach that has been failing 40% of the time
     planner.set_goal_ring(orange, WANT - BAND, WANT + BAND, here_xy=start)
-    ok &= report("approach A (start -> beside the orange)", planner, occ,
-                 start, orange)
+    ok &= report("approach A (start -> beside the orange)", planner, occ, start, orange)
     stand_a = rollout(planner, start)[-1]
 
     # 2. the carry leg, starting from wherever leg 1 ended
     planner.set_goal_ring(plate, WANT - BAND, WANT + BAND, here_xy=stand_a)
-    ok &= report("approach B (beside the orange -> beside the plate)", planner,
-                 occ, stand_a, plate)
+    ok &= report("approach B (beside the orange -> beside the plate)", planner, occ, stand_a, plate)
 
     # 3. the case the orbit had no answer for: standing inside the inflation
     # Pressed against table A but not inside it — 0.09 m of clearance against
     # a 0.30 m inflation, i.e. exactly where every manipulation stage ends.
     inside = np.array([0.62, 0.62])
     planner.set_goal_ring(plate, WANT - BAND, WANT + BAND, here_xy=inside)
-    ok &= report("recovery (pressed against table A -> beside the plate)",
-                 planner, occ, inside, plate)
+    ok &= report("recovery (pressed against table A -> beside the plate)", planner, occ, inside, plate)
 
     # 4. a goal that genuinely cannot be stood at, to prove it is detected
     planner.set_goal_ring(np.array([0.0, 0.0]), 0.05, 0.10, here_xy=start)
-    print(f"\n--- unreachable goal (table centre) ---")
-    print(f"  snap {planner.snap:.2f} m, reachable {planner.reachable(start)} "
-          f"(the snap is the point: it widens until something is legal)")
+    print("\n--- unreachable goal (table centre) ---")
+    print(
+        f"  snap {planner.snap:.2f} m, reachable {planner.reachable(start)} "
+        f"(the snap is the point: it widens until something is legal)"
+    )
 
     if args.ascii:
         planner.set_goal_ring(orange, WANT - BAND, WANT + BAND, here_xy=start)

@@ -23,15 +23,15 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import adaptive_grasp as ag  # noqa: E402
+import paths
 import stream_reach  # noqa: E402
+from g1_joints import ARM_MJ  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
-from g1_joints import ARM_MJ  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
-GRIP_Z = 0.894              # same absolute height as the green carpet
-                            # (the READY/elbow level, where the carried arm lives)
+GRIP_Z = 0.894  # same absolute height as the green carpet
+# (the READY/elbow level, where the carried arm lives)
 RADII = (0.50, 0.42, 0.34, 0.26, 0.20)
 AZ_MAX = np.deg2rad(70.0)
 
@@ -43,13 +43,14 @@ def main() -> None:
 
     p.cmd.reset_pose()
     reset.pin_arms()
-    reset.reset()          # nominal spawn: ~0.9 m clear of the table
+    reset.reset()  # nominal spawn: ~0.9 m clear of the table
     time.sleep(0.3)
     p.cmd.start_control()
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     s = p.obs()
     if s["fallen"]:
-        print("robot did not stand"); return
+        print("robot did not stand")
+        return
     stream_reach.reanchor(p, side="right")
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
@@ -66,22 +67,19 @@ def main() -> None:
         for r in RADII:
             azs = np.arange(-AZ_MAX, AZ_MAX + 1e-6, np.deg2rad(6.0))
             if r in (RADII[1], RADII[3]):
-                azs = azs[::-1]          # serpentine: smooth camera motion
+                azs = azs[::-1]  # serpentine: smooth camera motion
             for az in azs:
                 # pelvis-frame target -> world
                 tx, ty = r * np.cos(az), r * np.sin(az)
                 wx, wy = px + c * tx - sn * ty, py + sn * tx + c * ty
-                aim_pf = p.world_to_root_full(
-                    np.array([wx, wy, GRIP_Z]), p.obs())
+                aim_pf = p.world_to_root_full(np.array([wx, wy, GRIP_Z]), p.obs())
                 # CONSTRAINED orientation: a level grasp pose whose approach
                 # axis points outward along the sweep azimuth — the same
                 # semantics as the reach map. rot=None showed the position-
                 # only envelope with the wrist flipping freely at the rim.
                 dir_pf = np.array([np.cos(az), np.sin(az), 0.0])
                 rot_pf = ag._align(ag.OFFSET_DIR, dir_pf)
-                q_sol, res, _ = arm.ik.solve("right", aim_pf, rot_pf,
-                                             q_mj29=arm.q, use_waist=True,
-                                             iters=20)
+                q_sol, res, _ = arm.ik.solve("right", aim_pf, rot_pf, q_mj29=arm.q, use_waist=True, iters=20)
                 if res > 0.02:
                     skipped += 1
                     continue
@@ -90,8 +88,7 @@ def main() -> None:
                 reset.pin_arms(right=[float(v) for v in q_sol[ARM_MJ["right"]]])
                 arm.hold(0.12)
                 reached += 1
-            print(f"radius {r:.2f}: cumulative reached {reached}, "
-                  f"skipped {skipped}")
+            print(f"radius {r:.2f}: cumulative reached {reached}, skipped {skipped}")
         arm.hold(1.0)
     finally:
         reset.pin_arms()

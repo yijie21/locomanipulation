@@ -36,9 +36,9 @@ from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives, wrap  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
 
-STEP = 0.5          # rad, the cap turn_to uses on the commanded facing
-TOL = 0.12          # rad, "arrived"
-BUDGET = 25.0       # s per attempt
+STEP = 0.5  # rad, the cap turn_to uses on the commanded facing
+TOL = 0.12  # rad, "arrived"
+BUDGET = 25.0  # s per attempt
 OUT = f"{paths.DIAG_DIR}/turn.json"
 
 
@@ -51,8 +51,7 @@ def turn_probe(p, mode, target_err, settle_first=True):
         y = p.pelvis_yaw(p.obs())
         end = time.time() + 1.5
         while time.time() < end:
-            p.cmd.frame(mode=LocomotionMode.IDLE,
-                        facing=(np.cos(y), np.sin(y), 0.0))
+            p.cmd.frame(mode=LocomotionMode.IDLE, facing=(np.cos(y), np.sin(y), 0.0))
             time.sleep(DT)
     yaw0 = p.pelvis_yaw(p.obs())
     goal = wrap(yaw0 + target_err)
@@ -69,8 +68,7 @@ def turn_probe(p, mode, target_err, settle_first=True):
         # Identical to turn_to: never command more than STEP away from where
         # the robot actually is.
         cmd = p.pelvis_yaw(s) + np.clip(err, -STEP, STEP)
-        p.cmd.frame(mode=mode, facing=(np.cos(cmd), np.sin(cmd), 0.0),
-                    movement=(0.0, 0.0, 0.0))
+        p.cmd.frame(mode=mode, facing=(np.cos(cmd), np.sin(cmd), 0.0), movement=(0.0, 0.0, 0.0))
         time.sleep(DT)
     return False, time.time() - t0, trace
 
@@ -103,26 +101,30 @@ def main() -> None:
         sys.exit("did not stand")
 
     import stream_reach
+
     stream_reach.reanchor(p)
 
     angles = [a for a in (15, 30, 45, 60, 90, 120) if a <= args.max_deg]
-    modes = [("IDLE", LocomotionMode.IDLE),
-             ("SLOW_WALK", LocomotionMode.SLOW_WALK)]
+    modes = [("IDLE", LocomotionMode.IDLE), ("SLOW_WALK", LocomotionMode.SLOW_WALK)]
     results = []
-    print(f"{'mode':10s} {'cmd':>6} {'converged':>10} {'seconds':>8} "
-          f"{'rate deg/s':>11} {'residual':>9}")
+    print(f"{'mode':10s} {'cmd':>6} {'converged':>10} {'seconds':>8} {'rate deg/s':>11} {'residual':>9}")
     for name, mode in modes:
         for a in angles:
             for sign in (+1, -1):
                 ok, secs, tr = turn_probe(p, mode, np.deg2rad(sign * a))
                 res = np.degrees(tr[-1][1]) if tr else float("nan")
                 r = rate_of(tr)
-                print(f"{name:10s} {sign * a:+6.0f} {str(ok):>10} "
-                      f"{secs:8.1f} {r:11.1f} {res:+8.1f}")
-                results.append(dict(mode=name, cmd_deg=sign * a, ok=bool(ok),
-                                    seconds=round(secs, 2),
-                                    rate_deg_s=None if np.isnan(r) else round(r, 2),
-                                    residual_deg=round(float(res), 1)))
+                print(f"{name:10s} {sign * a:+6.0f} {str(ok):>10} {secs:8.1f} {r:11.1f} {res:+8.1f}")
+                results.append(
+                    dict(
+                        mode=name,
+                        cmd_deg=sign * a,
+                        ok=bool(ok),
+                        seconds=round(secs, 2),
+                        rate_deg_s=None if np.isnan(r) else round(r, 2),
+                        residual_deg=round(float(res), 1),
+                    )
+                )
                 if p.obs()["fallen"]:
                     print("  fell — resetting")
                     p.cmd.reset_pose()
@@ -134,6 +136,7 @@ def main() -> None:
 
     os.makedirs(paths.DIAG_DIR, exist_ok=True)
     import json
+
     json.dump(results, open(OUT, "w"), indent=1)
     print(f"\nwrote {OUT}")
 

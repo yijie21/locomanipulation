@@ -91,47 +91,91 @@ import os
 
 import numpy as np
 
-ISAACLAB_TO_MUJOCO = np.array([
-    0, 3, 6, 9, 13, 17, 1, 4, 7, 10, 14, 18, 2, 5, 8, 11, 15, 19, 21, 23,
-    25, 27, 12, 16, 20, 22, 24, 26, 28
-])
+ISAACLAB_TO_MUJOCO = np.array(
+    [0, 3, 6, 9, 13, 17, 1, 4, 7, 10, 14, 18, 2, 5, 8, 11, 15, 19, 21, 23, 25, 27, 12, 16, 20, 22, 24, 26, 28]
+)
 
-MUJOCO_TO_ISAACLAB = np.array([
-    0, 6, 12, 1, 7, 13, 2, 8, 14, 3, 9, 15, 22, 4, 10, 16, 23, 5, 11, 17,
-    24, 18, 25, 19, 26, 20, 27, 21, 28
-])
+MUJOCO_TO_ISAACLAB = np.array(
+    [0, 6, 12, 1, 7, 13, 2, 8, 14, 3, 9, 15, 22, 4, 10, 16, 23, 5, 11, 17, 24, 18, 25, 19, 26, 20, 27, 21, 28]
+)
 
-ACTION_SCALE = np.array([
-    0.35066146637882428, 0.35066146637882428, 0.54754646521423045,
-    0.35066146637882428, 0.43857731392336724, 0.43857731392336724,
-    0.35066146637882428, 0.35066146637882428, 0.54754646521423045,
-    0.35066146637882428, 0.43857731392336724, 0.43857731392336724,
-    0.54754646521423045, 0.43857731392336724, 0.43857731392336724,
-    0.43857731392336724, 0.43857731392336724, 0.43857731392336724,
-    0.43857731392336724, 0.43857731392336724, 0.074500870329507141,
-    0.074500870329507141, 0.43857731392336724, 0.43857731392336724,
-    0.43857731392336724, 0.43857731392336724, 0.43857731392336724,
-    0.074500870329507141, 0.074500870329507141
-])
+ACTION_SCALE = np.array(
+    [
+        0.35066146637882428,
+        0.35066146637882428,
+        0.54754646521423045,
+        0.35066146637882428,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.35066146637882428,
+        0.35066146637882428,
+        0.54754646521423045,
+        0.35066146637882428,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.54754646521423045,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.074500870329507141,
+        0.074500870329507141,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.43857731392336724,
+        0.074500870329507141,
+        0.074500870329507141,
+    ]
+)
 
-DEFAULT_ANGLES = np.array([
-    -0.312, 0, 0, 0.66900000000000004, -0.36299999999999999, 0, -0.312, 0,
-    0, 0.66900000000000004, -0.36299999999999999, 0, 0, 0, 0,
-    0.20000000000000001, 0.20000000000000001, 0, 0.59999999999999998, 0, 0,
-    0, 0.20000000000000001, -0.20000000000000001, 0, 0.59999999999999998,
-    0, 0, 0
-])
+DEFAULT_ANGLES = np.array(
+    [
+        -0.312,
+        0,
+        0,
+        0.66900000000000004,
+        -0.36299999999999999,
+        0,
+        -0.312,
+        0,
+        0,
+        0.66900000000000004,
+        -0.36299999999999999,
+        0,
+        0,
+        0,
+        0,
+        0.20000000000000001,
+        0.20000000000000001,
+        0,
+        0.59999999999999998,
+        0,
+        0,
+        0,
+        0.20000000000000001,
+        -0.20000000000000001,
+        0,
+        0.59999999999999998,
+        0,
+        0,
+        0,
+    ]
+)
 
 # Body-joint indices inside the exporter's 43-wide configuration vector: the
 # 29 actuated body joints, dropping the two 7-wide hand blocks.
 BODY_IDX = np.array(list(range(0, 22)) + list(range(29, 36)))
 N_BODY = 29
-HIST = 10          # frames, step 1
-SRC_HZ = 50.0      # the exporter's rate, and the deploy's control rate
+HIST = 10  # frames, step 1
+SRC_HZ = 50.0  # the exporter's rate, and the deploy's control rate
 OBS_DIM = 994
 
-_DEFAULT_DECODER = os.path.join(
-    os.environ.get("SONIC_DEPLOY_ROOT", ""), "policy/release/model_decoder.onnx")
+_DEFAULT_DECODER = os.path.join(os.environ.get("SONIC_DEPLOY_ROOT", ""), "policy/release/model_decoder.onnx")
 
 
 def _quat_ang_vel(q, dt):
@@ -158,13 +202,11 @@ class SonicDecoder:
 
         path = onnx_path or _DEFAULT_DECODER
         if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"decoder ONNX not found at {path}; pass onnx_path or set "
-                f"SONIC_DEPLOY_ROOT")
+            raise FileNotFoundError(f"decoder ONNX not found at {path}; pass onnx_path or set SONIC_DEPLOY_ROOT")
         options = ort.SessionOptions()
         if num_threads is not None:
             if num_threads < 1:
-                raise ValueError('num_threads must be positive')
+                raise ValueError("num_threads must be positive")
             options.intra_op_num_threads = options.inter_op_num_threads = num_threads
         self.sess = ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
         self.iname = self.sess.get_inputs()[0].name
@@ -210,14 +252,16 @@ class SonicDecoder:
         which is what a real buffer holds during the first nine control ticks.
         """
         idx = np.clip(np.arange(t - HIST + 1, t + 1), 0, len(pre["q"]) - 1)
-        return np.concatenate([
-            np.asarray(token, dtype=np.float64).ravel(),   # 64
-            pre["omega"][idx].ravel(),                     # 30
-            pre["q"][idx].ravel(),                         # 290
-            pre["dq"][idx].ravel(),                        # 290
-            pre["a"][idx].ravel(),                         # 290
-            pre["g"][idx].ravel(),                         # 30
-        ]).astype(np.float32)
+        return np.concatenate(
+            [
+                np.asarray(token, dtype=np.float64).ravel(),  # 64
+                pre["omega"][idx].ravel(),  # 30
+                pre["q"][idx].ravel(),  # 290
+                pre["dq"][idx].ravel(),  # 290
+                pre["a"][idx].ravel(),  # 290
+                pre["g"][idx].ravel(),  # 30
+            ]
+        ).astype(np.float32)
 
     # -- decoding -------------------------------------------------------------
 
@@ -229,8 +273,7 @@ class SonicDecoder:
         rather than broadcasting. The loop is cheap: the decoder is 7 MatMuls.
         """
         obs = np.atleast_2d(np.asarray(obs, dtype=np.float32))
-        return np.concatenate(
-            [self.sess.run(None, {self.iname: row[None]})[0] for row in obs], axis=0)
+        return np.concatenate([self.sess.run(None, {self.iname: row[None]})[0] for row in obs], axis=0)
 
     def joint_targets(self, obs):
         """[N, 29] commanded joint angles in radians, MuJoCo order.

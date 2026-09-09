@@ -44,7 +44,7 @@ import paths  # noqa: E402
 
 SCENE = f"{paths.REPO}/outputs/scene/sim/scene_locomani.xml"
 META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
-CENTRAL = 0.90                    # the servo's gate: central 90% of the frame
+CENTRAL = 0.90  # the servo's gate: central 90% of the frame
 WAIST_PITCH = [0.0, 0.20, 0.35, 0.52]
 
 
@@ -78,19 +78,19 @@ def height_sweep() -> None:
     pel = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
     rm = reach_map.ReachMap()
 
-    print(f"[ego] object height {obj_h * 100:.0f} cm, fovy "
-          f"{float(m.cam_fovy[cam]):.0f} deg. Gate at the stand: "
-          f"|u_x| <= 0.80, |u_y| <= 0.90.")
-    print(f"{'table':>6} {'obj top':>8} {'squat':>7}   worst stand/squat "
-          f"position in frame")
+    print(
+        f"[ego] object height {obj_h * 100:.0f} cm, fovy "
+        f"{float(m.cam_fovy[cam]):.0f} deg. Gate at the stand: "
+        f"|u_x| <= 0.80, |u_y| <= 0.90."
+    )
+    print(f"{'table':>6} {'obj top':>8} {'squat':>7}   worst stand/squat position in frame")
     for top in np.arange(0.50, 0.95001, 0.02):
         obj_top = top + obj_h
         z_obj = top + obj_h / 2.0
         grip_z = obj_top - grasping.GRIP_BELOW_RIM
         plan = rm.plan_core_stand(float(grip_z - STANDING_PELVIS_Z))
         if plan is None:
-            print(f"{top:6.2f} {obj_top:8.3f}      --         --         --  "
-                  f"no stand plan")
+            print(f"{top:6.2f} {obj_top:8.3f}      --         --         --  no stand plan")
             continue
         rel_cands, drop, _ = plan
         # EVERY stand candidate, at its own (x, y). The first version of this
@@ -114,14 +114,15 @@ def height_sweep() -> None:
                 if worst is None or score > worst[0]:
                     worst = (score, tag, p_)
         if worst is None:
-            print(f"{top:6.2f} {obj_top:8.3f} {drop * 100:6.1f}cm "
-                  f"    behind the camera")
+            print(f"{top:6.2f} {obj_top:8.3f} {drop * 100:6.1f}cm     behind the camera")
             continue
         score, tag, (ux, uy) = worst
-        print(f"{top:6.2f} {obj_top:8.3f} {drop * 100:6.1f}cm "
-              f"  u_x {ux:+.2f}  u_y {uy:+.2f}  ({tag}, worst of "
-              f"{len(rel_cands)} stands)  "
-              f"{'ok' if score <= 1.0 else 'OUT OF FRAME'}")
+        print(
+            f"{top:6.2f} {obj_top:8.3f} {drop * 100:6.1f}cm "
+            f"  u_x {ux:+.2f}  u_y {uy:+.2f}  ({tag}, worst of "
+            f"{len(rel_cands)} stands)  "
+            f"{'ok' if score <= 1.0 else 'OUT OF FRAME'}"
+        )
 
 
 def main() -> None:
@@ -140,8 +141,9 @@ def main() -> None:
     jid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "waist_pitch_joint")
     adr = m.jnt_qposadr[jid]
     fovy = float(m.cam_fovy[cam])
-    print(f"[ego] head_camera fovy {fovy:.0f} deg, can centre z {z_can:.3f} m "
-          f"(table {top:.3f} + {can['height'] / 2:.3f})")
+    print(
+        f"[ego] head_camera fovy {fovy:.0f} deg, can centre z {z_can:.3f} m (table {top:.3f} + {can['height'] / 2:.3f})"
+    )
 
     # ground grid in the pelvis frame
     xs = np.arange(0.15, 2.01, 0.01)
@@ -164,7 +166,7 @@ def main() -> None:
             seen_any = False
             for y in ys:
                 w = P + pel_yaw_R @ np.array([x, y, z_can - P[2]])
-                v = R.T @ (w - C)              # camera frame
+                v = R.T @ (w - C)  # camera frame
                 if -v[2] <= 0.05:
                     continue
                 u_x, u_y = v[0] / -v[2], v[1] / -v[2]
@@ -177,15 +179,19 @@ def main() -> None:
             print(f"[ego] waist_pitch {wp:+.2f}: nothing visible at can height")
             continue
         near, far = float(vis_x.min()), float(vis_x.max())
+
         # lateral half-width at the far edge and at 0.6 m
         def halfw(xq):
             yy = [y for (x, y) in cols if abs(x - xq) < 0.006]
             return (max(yy) - min(yy)) / 2 if yy else 0.0
-        print(f"[ego] waist_pitch {wp:+.2f} rad ({np.degrees(wp):4.0f} deg): "
-              f"can visible x {near:.2f}..{far:.2f} m   "
-              f"half-width {halfw(0.60) * 100:4.0f} cm @0.60 m, "
-              f"{halfw(round(far, 2)) * 100:4.0f} cm @far  "
-              f"(cam z {C[2]:.2f})")
+
+        print(
+            f"[ego] waist_pitch {wp:+.2f} rad ({np.degrees(wp):4.0f} deg): "
+            f"can visible x {near:.2f}..{far:.2f} m   "
+            f"half-width {halfw(0.60) * 100:4.0f} cm @0.60 m, "
+            f"{halfw(round(far, 2)) * 100:4.0f} cm @far  "
+            f"(cam z {C[2]:.2f})"
+        )
 
 
 if __name__ == "__main__":

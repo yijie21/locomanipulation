@@ -31,8 +31,7 @@ def settle_facing(p, phi, seconds=6.0):
         s = p.obs()
         if s["fallen"]:
             return None
-        p.cmd.frame(mode=LocomotionMode.IDLE,
-                    facing=(np.cos(phi), np.sin(phi), 0.0))
+        p.cmd.frame(mode=LocomotionMode.IDLE, facing=(np.cos(phi), np.sin(phi), 0.0))
         time.sleep(DT)
 
     return p.pelvis_yaw(p.obs())
@@ -49,8 +48,7 @@ def probe(p, label):
             return
         off = np.rad2deg(wrap(got - phi))
         offs.append(off)
-        print(f"  {label}: commanded {np.rad2deg(phi):7.1f}  settled "
-              f"{np.rad2deg(got):7.1f}  offset {off:+6.1f} deg")
+        print(f"  {label}: commanded {np.rad2deg(phi):7.1f}  settled {np.rad2deg(got):7.1f}  offset {off:+6.1f} deg")
 
     return offs
 
@@ -85,8 +83,7 @@ def main() -> None:
     p.cmd.hold(1.5, mode=LocomotionMode.IDLE)
 
     probe(p, "after toggle ")
-    print(f"(hypothesis predicts offset ~ {np.rad2deg(wrap(psi0)):+.1f} deg "
-          f"or its negative)")
+    print(f"(hypothesis predicts offset ~ {np.rad2deg(wrap(psi0)):+.1f} deg or its negative)")
 
     p.cmd.pause_control()
     reset.close()

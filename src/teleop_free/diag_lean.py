@@ -30,6 +30,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 import stream_reach  # noqa: E402
 from arm_ik import ArmIK  # noqa: E402
 from primitives import (  # noqa: E402
@@ -38,7 +39,6 @@ from primitives import (  # noqa: E402
     StreamMode,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 OUT = f"{paths.REPO}/outputs/diag/lean.json"
@@ -68,16 +68,19 @@ def restand(p, reset, label):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arm", choices=("reach", "neutral"), default="reach",
-                    help="reach: hold a far-extended arm pose (balance-expensive); "
-                         "neutral: leave the arm where standing left it")
+    ap.add_argument(
+        "--arm",
+        choices=("reach", "neutral"),
+        default="reach",
+        help="reach: hold a far-extended arm pose (balance-expensive); neutral: leave the arm where standing left it",
+    )
     ap.add_argument("--out", default=OUT)
     args = ap.parse_args()
     meta = json.load(open(SCENE_META))
     p = Primitives(meta=meta, verbose=False)
     reset = EpisodeControlClient()
     ik = ArmIK()
-    ik.lo[14], ik.hi[14] = -0.05, 0.52          # let the solver use the range
+    ik.lo[14], ik.hi[14] = -0.05, 0.52  # let the solver use the range
     s = restand(p, reset, "lean")
     if s["fallen"]:
         sys.exit("robot did not stand")
@@ -85,10 +88,11 @@ def main() -> None:
     # one forward-reach arm pose, solved once with the waist locked at 0
     aim_pf = np.array([0.42, -0.20, -0.08])
     if args.arm == "reach":
-        q_arm, res, _ = ik.solve(SIDE, aim_pf, None, q_mj29=np.array(s["joints"]),
-                                 use_waist=False)
-        print(f"[lean] extended arm pose solved, IK res {res * 100:.1f} cm "
-              f"(the aim is outside the arm's reach on purpose)")
+        q_arm, res, _ = ik.solve(SIDE, aim_pf, None, q_mj29=np.array(s["joints"]), use_waist=False)
+        print(
+            f"[lean] extended arm pose solved, IK res {res * 100:.1f} cm "
+            f"(the aim is outside the arm's reach on purpose)"
+        )
     else:
         q_arm = np.array(s["joints"])
         print("[lean] arm left at the standing pose")
@@ -99,8 +103,7 @@ def main() -> None:
         if s["fallen"]:
             s = restand(p, reset, "restand")
         reset.pin_arms()
-        arm = (stream_reach.PlannerArm(p, SIDE) if kind == "planner"
-               else stream_reach.StreamedArm(p, SIDE))
+        arm = stream_reach.PlannerArm(p, SIDE) if kind == "planner" else stream_reach.StreamedArm(p, SIDE)
         arm.start()
         q0 = arm.q.copy()
         if args.arm == "reach":
@@ -122,7 +125,9 @@ def main() -> None:
             pel = np.array(st["pelvis"]["pos"])
             R = Primitives._rot(st["pelvis"]["quat"])
             rec = dict(
-                channel=kind, arm=args.arm, cmd=wp,
+                channel=kind,
+                arm=args.arm,
+                cmd=wp,
                 delivered=float(st["joints"][14]),
                 pelvis_pitch=pitch_of(st["pelvis"]["quat"]),
                 pelvis_z=float(pel[2]),
@@ -131,17 +136,21 @@ def main() -> None:
                 d_fwd=float(np.linalg.norm((palm - base_palm)[:2])),
                 d_z=float(palm[2] - base_palm[2]),
                 pelvis_drift=float(np.linalg.norm((pel - base_pel)[:2])),
-                fallen=bool(st["fallen"]))
+                fallen=bool(st["fallen"]),
+            )
             out.append(rec)
-            print(f"[lean] {kind:9} cmd {wp:.2f} -> {rec['delivered']:+.3f} "
-                  f"({rec['delivered'] / wp * 100 if wp > 0.01 else 0:4.0f}%)  "
-                  f"pelvis pitch {np.degrees(rec['pelvis_pitch']):+5.1f}d  "
-                  f"palm fwd {rec['palm_fwd'] * 100:5.1f}cm z {rec['palm_z']:.3f}"
-                  f"  drift {rec['pelvis_drift'] * 100:4.1f}cm"
-                  f"{'  FELL' if rec['fallen'] else ''}")
+            print(
+                f"[lean] {kind:9} cmd {wp:.2f} -> {rec['delivered']:+.3f} "
+                f"({rec['delivered'] / wp * 100 if wp > 0.01 else 0:4.0f}%)  "
+                f"pelvis pitch {np.degrees(rec['pelvis_pitch']):+5.1f}d  "
+                f"palm fwd {rec['palm_fwd'] * 100:5.1f}cm z {rec['palm_z']:.3f}"
+                f"  drift {rec['pelvis_drift'] * 100:4.1f}cm"
+                f"{'  FELL' if rec['fallen'] else ''}"
+            )
             if rec["fallen"]:
                 break
-        q = arm.q.copy(); q[14] = 0.0
+        q = arm.q.copy()
+        q[14] = 0.0
         arm.move_to(q, speed=0.5)
         arm.stop()
 
@@ -149,15 +158,16 @@ def main() -> None:
     json.dump(out, open(args.out, "w"), indent=1)
     print(f"[lean] wrote {args.out}")
     for kind in ("planner", "streamed"):
-        v = [r for r in out if r["channel"] == kind and r["cmd"] > 0.01
-             and not r["fallen"]]
+        v = [r for r in out if r["channel"] == kind and r["cmd"] > 0.01 and not r["fallen"]]
         if not v:
             continue
         ratio = np.median([r["delivered"] / r["cmd"] for r in v])
         top = max(v, key=lambda r: r["cmd"])
-        print(f"    {kind:9} delivery ratio {ratio:.2f}; at cmd {top['cmd']:.2f} "
-              f"the palm moved {top['d_fwd'] * 100:.1f} cm forward, "
-              f"{top['d_z'] * 100:+.1f} cm in z")
+        print(
+            f"    {kind:9} delivery ratio {ratio:.2f}; at cmd {top['cmd']:.2f} "
+            f"the palm moved {top['d_fwd'] * 100:.1f} cm forward, "
+            f"{top['d_z'] * 100:+.1f} cm in z"
+        )
 
 
 if __name__ == "__main__":

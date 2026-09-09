@@ -46,8 +46,8 @@ Regenerate (194 settled-stand frames, planner mode IDLE, whole body below
     see docs/evaluation.md, "初始姿态"
 """
 
-import os
 import json
+import os
 import time
 from pathlib import Path
 
@@ -55,24 +55,81 @@ import numpy as np
 
 # Medoid of 194 settled-stand tokens in datasets/g1_locomani_ramp200_train.
 # Mean L1 to the other 193: 1.11 (the worst member scores 11.46).
-OURS_INITIAL_MOTION_TOKEN = np.array([
-    -0.2500,  0.0625, -0.1250,  0.3125,  0.1250, -0.3750,  0.3750,
-    -0.0625,  0.1875, -0.1250,  0.1875, -0.1250, -0.4375, -0.2500,
-    -0.3125, -0.1250, -0.1875, -0.1875, -0.1875, -0.2500,  0.3750,
-     0.3125,  0.0625, -0.1875,  0.0000,  0.1250,  0.1875, -0.4375,
-     0.2500,  0.2500,  0.1875, -0.1875,  0.3750, -0.0625, -0.0625,
-    -0.1250,  0.0625, -0.3750,  0.2500, -0.0625,  0.0000, -0.4375,
-     0.0000,  0.0000, -0.2500, -0.0625,  0.3125,  0.0000,  0.0625,
-     0.4375,  0.2500,  0.2500,  0.0000,  0.3750,  0.3125,  0.0000,
-    -0.1250,  0.5625,  0.0000, -0.4375,  0.1250,  0.0000,  0.0000,
-     0.0000,
-], dtype=np.float32)
+OURS_INITIAL_MOTION_TOKEN = np.array(
+    [
+        -0.2500,
+        0.0625,
+        -0.1250,
+        0.3125,
+        0.1250,
+        -0.3750,
+        0.3750,
+        -0.0625,
+        0.1875,
+        -0.1250,
+        0.1875,
+        -0.1250,
+        -0.4375,
+        -0.2500,
+        -0.3125,
+        -0.1250,
+        -0.1875,
+        -0.1875,
+        -0.1875,
+        -0.2500,
+        0.3750,
+        0.3125,
+        0.0625,
+        -0.1875,
+        0.0000,
+        0.1250,
+        0.1875,
+        -0.4375,
+        0.2500,
+        0.2500,
+        0.1875,
+        -0.1875,
+        0.3750,
+        -0.0625,
+        -0.0625,
+        -0.1250,
+        0.0625,
+        -0.3750,
+        0.2500,
+        -0.0625,
+        0.0000,
+        -0.4375,
+        0.0000,
+        0.0000,
+        -0.2500,
+        -0.0625,
+        0.3125,
+        0.0000,
+        0.0625,
+        0.4375,
+        0.2500,
+        0.2500,
+        0.0000,
+        0.3750,
+        0.3125,
+        0.0000,
+        -0.1250,
+        0.5625,
+        0.0000,
+        -0.4375,
+        0.1250,
+        0.0000,
+        0.0000,
+        0.0000,
+    ],
+    dtype=np.float32,
+)
 
 
 def load_token_file(filename) -> np.ndarray:
     token = np.asarray(json.loads(Path(filename).read_text()), dtype=np.float32)
     if token.shape != (64,) or not np.isfinite(token).all() or np.max(abs(token)) > 1.25:
-        raise ValueError('Initial token file must contain 64 finite values within [-1.25, 1.25]')
+        raise ValueError("Initial token file must contain 64 finite values within [-1.25, 1.25]")
     return token
 
 
@@ -82,12 +139,11 @@ def initial_token() -> np.ndarray:
     A file is opt-in: a new collection posture must not silently change the
     initialization used by checkpoints trained on the old arms-down data.
     """
-    filename = os.environ.get('TF_INIT_TOKEN_FILE')
+    filename = os.environ.get("TF_INIT_TOKEN_FILE")
     if filename:
         return load_token_file(filename)
     if os.environ.get("TF_INIT_TOKEN", "ours") == "official":
-        from gear_sonic.utils.inference.initial_poses import (
-            LATENT_INITIAL_MOTION_TOKEN)
+        from gear_sonic.utils.inference.initial_poses import LATENT_INITIAL_MOTION_TOKEN
 
         return np.asarray(LATENT_INITIAL_MOTION_TOKEN, dtype=np.float32)
 
@@ -101,28 +157,28 @@ def prepare_token_pose(p, expected_arm_q, hold_seconds=3.0) -> bool:
     enters the action. The existing ready-arm tolerance is checked afterwards.
     Deployment continues holding this same token during its usual prelude.
     """
-    from tools.sonic_token import expand_hands, GRIPPER_MAX
-    if not os.environ.get('TF_INIT_TOKEN_FILE'):
-        raise ValueError('Token-pose preparation requires an explicit initial token file')
+    from tools.sonic_token import GRIPPER_MAX, expand_hands
+
+    if not os.environ.get("TF_INIT_TOKEN_FILE"):
+        raise ValueError("Token-pose preparation requires an explicit initial token file")
     expected = np.asarray(expected_arm_q, dtype=float)
     if expected.shape != (14,) or not np.isfinite(expected).all():
-        raise ValueError('Expected ready pose must contain 14 finite arm joint values')
+        raise ValueError("Expected ready pose must contain 14 finite arm joint values")
     if not np.isfinite(hold_seconds) or hold_seconds <= 0:
-        raise ValueError('Initial pose hold must be positive and finite')
+        raise ValueError("Initial pose hold must be positive and finite")
     token = initial_token()
     left, right = expand_hands(GRIPPER_MAX)
     # Match the deploy's normal prime-before-enter ordering.
     for _ in range(30):
         p.cmd.token_frame(token, right_hand=right, left_hand=left, frame_index=0)
-        time.sleep(.02)
+        time.sleep(0.02)
     p.cmd.enter_streamed()
-    end = time.monotonic()+hold_seconds
+    end = time.monotonic() + hold_seconds
     while time.monotonic() < end:
         p.cmd.token_frame(token, right_hand=right, left_hand=left, frame_index=0)
-        if p.obs()['fallen']:
+        if p.obs()["fallen"]:
             return False
-        time.sleep(.04)
+        time.sleep(0.04)
     state = p.obs()
-    actual = np.asarray(state['joints'], dtype=float)[15:29]
-    return (not state['fallen'] and actual.shape == expected.shape
-            and bool(np.max(abs(actual-expected)) < .30))
+    actual = np.asarray(state["joints"], dtype=float)[15:29]
+    return not state["fallen"] and actual.shape == expected.shape and bool(np.max(abs(actual - expected)) < 0.30)

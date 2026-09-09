@@ -9,14 +9,21 @@ robot's own measured yaw, once with no facing at all.
 
     python src/teleop_free/diag_idle_drift.py [--secs 5] [--reps 3]
 """
+
 from __future__ import annotations
-import argparse, os, sys, time
+
+import argparse
+import os
+import sys
+import time
+
 import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agent_server import LocomotionMode          # noqa: E402
-from primitives import DT, Primitives            # noqa: E402
-from privileged_pub import EpisodeControlClient  # noqa: E402
 import stream_reach  # noqa: E402
+from agent_server import LocomotionMode  # noqa: E402
+from primitives import DT, Primitives  # noqa: E402
+from privileged_pub import EpisodeControlClient  # noqa: E402
 
 
 def trial(p, reset, mode: str, secs: float):
@@ -33,8 +40,9 @@ def trial(p, reset, mode: str, secs: float):
         # policy will keep turning to close.
         p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
         stream_reach.reanchor(p, side="right")
-        p.cmd.stream_mode = stream_reach.StreamMode.PLANNER_VR_3PT \
-            if hasattr(stream_reach, "StreamMode") else p.cmd.stream_mode
+        p.cmd.stream_mode = (
+            stream_reach.StreamMode.PLANNER_VR_3PT if hasattr(stream_reach, "StreamMode") else p.cmd.stream_mode
+        )
     s = p.obs()
     yaw0 = float(p.pelvis_yaw(s))
     xy0 = p.pelvis_xy(s).copy()
@@ -45,12 +53,12 @@ def trial(p, reset, mode: str, secs: float):
             p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
         elif mode.startswith("worldx"):
             p.cmd.frame(mode=LocomotionMode.IDLE, facing=(1.0, 0.0, 0.0))
-        else:                                    # no facing argument at all
+        else:  # no facing argument at all
             p.cmd.frame(mode=LocomotionMode.IDLE)
         time.sleep(DT)
     s = p.obs()
     d = float(np.linalg.norm(p.pelvis_xy(s) - xy0))
-    dyaw = np.degrees((float(p.pelvis_yaw(s)) - yaw0 + np.pi) % (2*np.pi) - np.pi)
+    dyaw = np.degrees((float(p.pelvis_yaw(s)) - yaw0 + np.pi) % (2 * np.pi) - np.pi)
     return d, dyaw, bool(s["fallen"])
 
 
@@ -65,7 +73,7 @@ def main() -> None:
     for mode in ("measured", "measured+reanchor", "worldx+reanchor"):
         for r in range(a.reps):
             d, dy, f = trial(p, reset, mode, a.secs)
-            print(f"{mode:>10} {r+1:>4} {d:>8.3f} {dy:>9.1f} {str(f):>7}")
+            print(f"{mode:>10} {r + 1:>4} {d:>8.3f} {dy:>9.1f} {str(f):>7}")
 
 
 if __name__ == "__main__":

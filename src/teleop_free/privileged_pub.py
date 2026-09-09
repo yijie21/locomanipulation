@@ -62,8 +62,7 @@ PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
 
 # Everything distal of the wrist — used for the "is it actually grasped"
 # contact test.
-HAND_LINK_PREFIX = ("left_hand_", "right_hand_",
-                    "left_dex1_", "right_dex1_")
+HAND_LINK_PREFIX = ("left_hand_", "right_hand_", "left_dex1_", "right_dex1_")
 
 # Order matters: it is the order the values in a `planner` message's
 # left/right_hand_joints field are interpreted in. Per hand type (HAND env):
@@ -71,8 +70,7 @@ HAND_LINK_PREFIX = ("left_hand_", "right_hand_",
 if os.environ.get("HAND", "dex1") == "dex1":
     HAND_JOINTS = ["gripper_1", "gripper_2"]
 else:
-    HAND_JOINTS = ["thumb_0", "thumb_1", "thumb_2",
-                   "middle_0", "middle_1", "index_0", "index_1"]
+    HAND_JOINTS = ["thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1"]
 
 
 def _body_pose(model, data, bid: int):
@@ -82,8 +80,9 @@ def _body_pose(model, data, bid: int):
 class PrivilegedPublisher:
     """Binds :5581 and publishes ground truth at whatever rate it is stepped."""
 
-    def __init__(self, model, data, object_bodies: dict[str, str],
-                 port: int = PRIVILEGED_PORT, surfaces: list[str] | None = None):
+    def __init__(
+        self, model, data, object_bodies: dict[str, str], port: int = PRIVILEGED_PORT, surfaces: list[str] | None = None
+    ):
         self._seq = 0
         import mujoco
 
@@ -110,8 +109,7 @@ class PrivilegedPublisher:
         # Ego camera, for the VLA data-quality predicate: an episode whose RGB
         # never shows the object teaches a policy to act blind. The exporter
         # renders "head_camera" at 640x480.
-        self.cam_id = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
+        self.cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
         self.cam_aspect = 640.0 / 480.0
 
         # The reach-zone carpet (debug visual injected by run_sim_locomani)
@@ -124,8 +122,7 @@ class PrivilegedPublisher:
         # geom -> True for every geom on a surface (table/counter) body, so
         # the state can report robot-vs-furniture contacts — the arm swinging
         # into the table edge is otherwise invisible in the logs.
-        self.surf_geoms = {g for g in range(model.ngeom)
-                           if model.geom_bodyid[g] in surface_bodies}
+        self.surf_geoms = {g for g in range(model.ngeom) if model.geom_bodyid[g] in surface_bodies}
 
         # geom -> "left" / "right" for every geom on a hand link.
         self.hand_geom_side = {}
@@ -137,9 +134,9 @@ class PrivilegedPublisher:
             for prefix in HAND_LINK_PREFIX:
                 if name.startswith(prefix):
                     self.hand_geom_side[g] = prefix.split("_")[0]
-                    self.hand_geom_link[g] = (name.replace("_link", "")
-                                              .replace("left_hand_", "L:")
-                                              .replace("right_hand_", "R:"))
+                    self.hand_geom_link[g] = (
+                        name.replace("_link", "").replace("left_hand_", "L:").replace("right_hand_", "R:")
+                    )
         # geom -> short body name for EVERY robot geom, not just the hand's.
         # `touching` stays hand-only, because that is what confirms a grasp,
         # but the *diagnostic* must not be: a can that topples with "nothing"
@@ -155,11 +152,13 @@ class PrivilegedPublisher:
             if b in obj_bodies or b == 0 or b in surface_bodies:
                 continue
             nm = model.body(b).name
-            self.robot_geom_link[g] = (nm.replace("_link", "")
-                                       .replace("left_hand_", "L:")
-                                       .replace("right_hand_", "R:")
-                                       .replace("left_", "L.")
-                                       .replace("right_", "R."))
+            self.robot_geom_link[g] = (
+                nm.replace("_link", "")
+                .replace("left_hand_", "L:")
+                .replace("right_hand_", "R:")
+                .replace("left_", "L.")
+                .replace("right_", "R.")
+            )
 
         # geom -> object key, for the contact test on the other side.
         self.obj_geom_key = {}
@@ -174,8 +173,7 @@ class PrivilegedPublisher:
         for side in ("left", "right"):
             adrs = []
             for j in HAND_JOINTS:
-                jid = mujoco.mj_name2id(
-                    model, mujoco.mjtObj.mjOBJ_JOINT, f"{side}_hand_{j}_joint")
+                jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"{side}_hand_{j}_joint")
                 adrs.append(int(model.jnt_qposadr[jid]) if jid >= 0 else -1)
             self.hand_qadr[side] = adrs
 
@@ -184,16 +182,18 @@ class PrivilegedPublisher:
         # joints at their current angles.
         try:
             from g1_joints import MUJOCO_JOINT_NAMES
+
             self.joint_qadr = []
             for n in MUJOCO_JOINT_NAMES:
                 jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)
-                self.joint_qadr.append(int(model.jnt_qposadr[jid]) if jid >= 0
-                                       else -1)
+                self.joint_qadr.append(int(model.jnt_qposadr[jid]) if jid >= 0 else -1)
         except ImportError:
             self.joint_qadr = []
 
-        print(f"[privileged] :{port} tracking {list(self.objects)}"
-              + (f" (MISSING {self.missing})" if self.missing else ""))
+        print(
+            f"[privileged] :{port} tracking {list(self.objects)}"
+            + (f" (MISSING {self.missing})" if self.missing else "")
+        )
 
     def _contacts(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
         """Which hand, and which of its links, is touching each object.
@@ -218,8 +218,7 @@ class PrivilegedPublisher:
                 if link is not None:
                     links[key].add(link)
 
-        return ({k: sorted(v) for k, v in touching.items()},
-                {k: sorted(v) for k, v in links.items()})
+        return ({k: sorted(v) for k, v in touching.items()}, {k: sorted(v) for k, v in links.items()})
 
     def state(self) -> dict:
         d = self.data
@@ -229,17 +228,17 @@ class PrivilegedPublisher:
         yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
         if self.zone_mocap >= 0:
             # Full 3D pose incl. HEIGHT: the volume rides down with a squat.
-            d.mocap_pos[self.zone_mocap] = [pelvis_pos[0], pelvis_pos[1],
-                                            pelvis_pos[2]]
-            d.mocap_quat[self.zone_mocap] = [np.cos(yaw / 2), 0.0, 0.0,
-                                             np.sin(yaw / 2)]
+            d.mocap_pos[self.zone_mocap] = [pelvis_pos[0], pelvis_pos[1], pelvis_pos[2]]
+            d.mocap_quat[self.zone_mocap] = [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]
 
         contacts, contact_links = self._contacts()
         objects = {}
         for key, b in self.objects.items():
             pos, quat = _body_pose(self.model, d, b)
             objects[key] = {
-                "pos": pos, "quat": quat, "touching": contacts.get(key, []),
+                "pos": pos,
+                "quat": quat,
+                "touching": contacts.get(key, []),
                 "touch_links": contact_links.get(key, []),
             }
             if self.cam_id >= 0:
@@ -249,38 +248,35 @@ class PrivilegedPublisher:
                 cm = d.cam_xmat[self.cam_id].reshape(3, 3)
                 v = cm.T @ (np.asarray(pos) - cp)
                 if v[2] < -1e-6:
-                    ty = float(np.tan(0.5 * np.deg2rad(
-                        self.model.cam_fovy[self.cam_id])))
-                    objects[key]["cam"] = [
-                        float(v[0] / -v[2] / (ty * self.cam_aspect)),
-                        float(v[1] / -v[2] / ty)]
+                    ty = float(np.tan(0.5 * np.deg2rad(self.model.cam_fovy[self.cam_id])))
+                    objects[key]["cam"] = [float(v[0] / -v[2] / (ty * self.cam_aspect)), float(v[1] / -v[2] / ty)]
                 else:
-                    objects[key]["cam"] = None    # behind the camera
+                    objects[key]["cam"] = None  # behind the camera
 
         palms = {}
         for side, b in self.palms.items():
             pos, quat = _body_pose(self.model, d, b)
             palms[side] = {
-                "pos": pos, "quat": quat,
-                "hand_q": [float(d.qpos[a]) if a >= 0 else 0.0
-                           for a in self.hand_qadr[side]],
+                "pos": pos,
+                "quat": quat,
+                "hand_q": [float(d.qpos[a]) if a >= 0 else 0.0 for a in self.hand_qadr[side]],
             }
 
         return {
             "t": float(d.time),
             "wall": time.time(),
-            "pelvis": {"pos": pelvis_pos, "quat": pelvis_quat, "yaw": yaw,
-                       "vel": d.qvel[:3].tolist()},
+            "pelvis": {"pos": pelvis_pos, "quat": pelvis_quat, "yaw": yaw, "vel": d.qvel[:3].tolist()},
             "palms": palms,
             "objects": objects,
-            "furniture_touch": sorted({
-                self.robot_geom_link[b]
-                for i in range(d.ncon)
-                for a, b in ((d.contact[i].geom1, d.contact[i].geom2),
-                             (d.contact[i].geom2, d.contact[i].geom1))
-                if a in self.surf_geoms and b in self.robot_geom_link}),
-            "joints": [float(d.qpos[a]) if a >= 0 else 0.0
-                       for a in self.joint_qadr],
+            "furniture_touch": sorted(
+                {
+                    self.robot_geom_link[b]
+                    for i in range(d.ncon)
+                    for a, b in ((d.contact[i].geom1, d.contact[i].geom2), (d.contact[i].geom2, d.contact[i].geom1))
+                    if a in self.surf_geoms and b in self.robot_geom_link
+                }
+            ),
+            "joints": [float(d.qpos[a]) if a >= 0 else 0.0 for a in self.joint_qadr],
             "fallen": bool(pelvis_pos[2] < 0.4),
             # physics diagnostics (2026-09-02 wall-vs-lockstep walk probe)
             "ncon": int(d.ncon),
@@ -297,11 +293,13 @@ class PrivilegedPublisher:
             return {}
         n = getattr(br, "num_body_motor", 29)
         mc = lc.motor_cmd
-        return {"cmd_q": [float(mc[i].q) for i in range(n)],
-                "cmd_kp": [float(mc[i].kp) for i in range(n)],
-                "cmd_kd": [float(mc[i].kd) for i in range(n)],
-                "cmd_dq": [float(mc[i].dq) for i in range(n)],
-                "cmd_tau": [float(mc[i].tau) for i in range(n)]}
+        return {
+            "cmd_q": [float(mc[i].q) for i in range(n)],
+            "cmd_kp": [float(mc[i].kp) for i in range(n)],
+            "cmd_kd": [float(mc[i].kd) for i in range(n)],
+            "cmd_dq": [float(mc[i].dq) for i in range(n)],
+            "cmd_tau": [float(mc[i].tau) for i in range(n)],
+        }
 
     def publish(self) -> int:
         # Monotonic per-process sequence number: the ONE shared key between
@@ -335,8 +333,9 @@ class EpisodeControlServer:
     and REP would deadlock the sim loop if the agent died mid-request.
     """
 
-    def __init__(self, model, data, meta: dict, default_dof_angles=None,
-                 port: int = EPISODE_PORT, recorder=None, trace=None):
+    def __init__(
+        self, model, data, meta: dict, default_dof_angles=None, port: int = EPISODE_PORT, recorder=None, trace=None
+    ):
         import mujoco
 
         # The ghost hand is a mocap body: no joints, no collision, teleported
@@ -361,8 +360,8 @@ class EpisodeControlServer:
         # positional, the same convention the sim's PD loop uses
         # (base_sim.py indexes qpos[qpos_offset : qpos_offset + num_body_dof]).
         self.default_dof_angles = (
-            np.asarray(default_dof_angles, dtype=float)
-            if default_dof_angles is not None else None)
+            np.asarray(default_dof_angles, dtype=float) if default_dof_angles is not None else None
+        )
 
         self.ctx = zmq.Context()
         self.sock = self.ctx.socket(zmq.PULL)
@@ -401,9 +400,11 @@ class EpisodeControlServer:
         mujoco = self._mj
         mujoco.mj_forward(self.model, self.data)
         lowest = min(
-            (float(self.data.geom_xpos[g][2] - self.model.geom_rbound[g])
-             for g in range(self.model.ngeom)
-             if self.model.body_rootid[self.model.geom_bodyid[g]] == self.root_id),
+            (
+                float(self.data.geom_xpos[g][2] - self.model.geom_rbound[g])
+                for g in range(self.model.ngeom)
+                if self.model.body_rootid[self.model.geom_bodyid[g]] == self.root_id
+            ),
             default=0.0,
         )
         self.data.qpos[2] -= lowest
@@ -421,10 +422,10 @@ class EpisodeControlServer:
             return
         if self._rand is None:
             import scene_random
+
             self._rand = scene_random.SceneRandomizer(self.model, self._mj)
             self._rand_mod = scene_random
-        print(f"[episode] appearance: "
-              f"{self._rand.apply(self._rand_mod.sample(int(seed)))}")
+        print(f"[episode] appearance: {self._rand.apply(self._rand_mod.sample(int(seed)))}")
 
     def _apply(self, req: dict) -> None:
         mujoco = self._mj
@@ -434,7 +435,7 @@ class EpisodeControlServer:
 
         if self.default_dof_angles is not None:
             n = len(self.default_dof_angles)
-            self.data.qpos[7: 7 + n] = self.default_dof_angles
+            self.data.qpos[7 : 7 + n] = self.default_dof_angles
 
         for name, delta in (req.get("objects") or {}).items():
             adr = self.obj_qadr.get(name)
@@ -446,7 +447,7 @@ class EpisodeControlServer:
             self.data.qpos[adr + 0] += dx
             self.data.qpos[adr + 1] += dy
             if "yaw" in delta:
-                self.data.qpos[adr + 3: adr + 7] = self._yaw_quat(float(delta["yaw"]))
+                self.data.qpos[adr + 3 : adr + 7] = self._yaw_quat(float(delta["yaw"]))
 
         robot = req.get("robot") or {}
         if robot:
@@ -466,6 +467,7 @@ class EpisodeControlServer:
                 # robot 20/20 in the first try; the arms are what matter)
                 if not hasattr(self, "_dof_qadr"):
                     from g1_joints import MUJOCO_JOINT_NAMES
+
                     self._dof_qadr = []
                     for n in MUJOCO_JOINT_NAMES:
                         jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n)
@@ -487,9 +489,9 @@ class EpisodeControlServer:
         """
         xy = np.asarray(xy, dtype=float)
         if xy.shape != (2,) or not np.isfinite(xy).all():
-            raise ValueError('align_robot_xy requires two finite coordinates')
+            raise ValueError("align_robot_xy requires two finite coordinates")
         self.data.qpos[:2] = xy
-        self.data.qacc_warmstart[:] = 0.
+        self.data.qacc_warmstart[:] = 0.0
         self._mj.mj_forward(self.model, self.data)
 
     def poll(self) -> None:
@@ -504,13 +506,13 @@ class EpisodeControlServer:
                 continue
             if req.get("cmd") == "reset":
                 self._apply(req)
-                self._place_ghost(None, None)      # a new episode has no plan yet
+                self._place_ghost(None, None)  # a new episode has no plan yet
                 print(f"[episode] reset applied: {req.get('label', '')}")
             elif req.get("cmd") == "align_robot_xy":
                 try:
-                    self._align_robot_xy(req.get('xy'))
+                    self._align_robot_xy(req.get("xy"))
                 except (TypeError, ValueError) as exc:
-                    print(f'[episode] invalid initial alignment: {exc}')
+                    print(f"[episode] invalid initial alignment: {exc}")
             elif req.get("cmd") == "startvideo":
                 # Deliberately *not* on reset. The agent stands still for
                 # STAND_SETTLE seconds after every reset while the controller
@@ -542,9 +544,9 @@ class EpisodeControlServer:
                 ARM_PIN["left"] = req.get("left")
                 ARM_PIN["right"] = req.get("right")
                 ARM_PIN["waist"] = req.get("waist")
-                print(f"[episode] arm pin: "
-                      f"L={'on' if ARM_PIN['left'] else 'off'} "
-                      f"R={'on' if ARM_PIN['right'] else 'off'}")
+                print(
+                    f"[episode] arm pin: L={'on' if ARM_PIN['left'] else 'off'} R={'on' if ARM_PIN['right'] else 'off'}"
+                )
             elif req.get("cmd") == "pin_object":
                 name, pose = req.get("name"), req.get("pose")
                 if pose is None:
@@ -570,22 +572,19 @@ class EpisodeControlServer:
             adr = self.obj_qadr.get(name)
             if adr is None:
                 continue
-            self.data.qpos[adr:adr + 7] = pose
-            dadr = adr - 7 if adr >= 7 else adr      # free joint: 6 dof
-            bid = self._mj.mj_name2id(self.model, self._mj.mjtObj.mjOBJ_BODY,
-                                      self.meta["objects"][name]["body"])
+            self.data.qpos[adr : adr + 7] = pose
+            dadr = adr - 7 if adr >= 7 else adr  # free joint: 6 dof
+            bid = self._mj.mj_name2id(self.model, self._mj.mjtObj.mjOBJ_BODY, self.meta["objects"][name]["body"])
             jadr = self.model.body_jntadr[bid]
             if jadr >= 0:
                 v0 = int(self.model.jnt_dofadr[jadr])
-                self.data.qvel[v0:v0 + 6] = 0.0
+                self.data.qvel[v0 : v0 + 6] = 0.0
 
     def _place_ghost(self, pos, quat) -> None:
         if self.ghost_mocap < 0:
             return
-        self.data.mocap_pos[self.ghost_mocap] = (
-            pos if pos is not None else GHOST_PARK)
-        self.data.mocap_quat[self.ghost_mocap] = (
-            quat if quat is not None else [1.0, 0.0, 0.0, 0.0])
+        self.data.mocap_pos[self.ghost_mocap] = pos if pos is not None else GHOST_PARK
+        self.data.mocap_quat[self.ghost_mocap] = quat if quat is not None else [1.0, 0.0, 0.0, 0.0]
 
     def close(self) -> None:
         self.sock.close()
@@ -600,32 +599,45 @@ class EpisodeControlClient:
         self.sock = self.ctx.socket(zmq.PUSH)
         self.sock.setsockopt(zmq.LINGER, 1000)
         self.sock.connect(f"tcp://{host}:{port}")
-        time.sleep(0.3)          # PUSH drops until the connection is up
+        time.sleep(0.3)  # PUSH drops until the connection is up
 
-    def reset(self, objects: dict | None = None, robot: dict | None = None,
-              label: str = "", appearance: int | None = None) -> None:
+    def reset(
+        self, objects: dict | None = None, robot: dict | None = None, label: str = "", appearance: int | None = None
+    ) -> None:
         """`appearance` re-rolls materials, lighting and the sky for this
         episode. One integer, so the manifest can record it and a replay can
         reproduce the exact frame."""
-        self.sock.send_string(json.dumps(
-            {"cmd": "reset", "objects": objects or {}, "robot": robot or {},
-             "label": label, "appearance": appearance}))
+        self.sock.send_string(
+            json.dumps(
+                {
+                    "cmd": "reset",
+                    "objects": objects or {},
+                    "robot": robot or {},
+                    "label": label,
+                    "appearance": appearance,
+                }
+            )
+        )
 
     def align_robot_xy(self, xy) -> None:
         """Simulation diagnostic only: place settled robot before rollout."""
         xy = np.asarray(xy, dtype=float)
         if xy.shape != (2,) or not np.isfinite(xy).all():
-            raise ValueError('align_robot_xy requires two finite coordinates')
-        self.sock.send_string(json.dumps({'cmd': 'align_robot_xy', 'xy': xy.tolist()}))
+            raise ValueError("align_robot_xy requires two finite coordinates")
+        self.sock.send_string(json.dumps({"cmd": "align_robot_xy", "xy": xy.tolist()}))
 
     def pin_arms(self, left=None, right=None, waist=None) -> None:
         """Pin (or with None release) the sim-side arm position loops."""
-        self.sock.send_string(json.dumps({
-            "cmd": "pin_arms",
-            "waist": list(map(float, waist)) if waist is not None else None,
-            "left": list(map(float, left)) if left is not None else None,
-            "right": list(map(float, right)) if right is not None else None,
-        }))
+        self.sock.send_string(
+            json.dumps(
+                {
+                    "cmd": "pin_arms",
+                    "waist": list(map(float, waist)) if waist is not None else None,
+                    "left": list(map(float, left)) if left is not None else None,
+                    "right": list(map(float, right)) if right is not None else None,
+                }
+            )
+        )
 
     def pin_object(self, name: str, pos=None, quat=None) -> None:
         """Hold `name` at (pos, quat) every sim step; no args releases it."""
@@ -633,15 +645,19 @@ class EpisodeControlClient:
         if pos is not None:
             q = [1.0, 0.0, 0.0, 0.0] if quat is None else list(map(float, quat))
             pose = list(map(float, pos)) + q
-        self.sock.send_string(json.dumps({
-            "cmd": "pin_object", "name": name, "pose": pose}))
+        self.sock.send_string(json.dumps({"cmd": "pin_object", "name": name, "pose": pose}))
 
     def set_ghost(self, pos=None, quat=None) -> None:
         """Show the planned grasp pose in the render; no args parks it."""
-        self.sock.send_string(json.dumps({
-            "cmd": "ghost",
-            "pos": list(pos) if pos is not None else None,
-            "quat": list(quat) if quat is not None else None}))
+        self.sock.send_string(
+            json.dumps(
+                {
+                    "cmd": "ghost",
+                    "pos": list(pos) if pos is not None else None,
+                    "quat": list(quat) if quat is not None else None,
+                }
+            )
+        )
 
     def start_video(self, name: str) -> None:
         """Begin a recording. Call once the robot is standing, not at reset."""
@@ -650,7 +666,7 @@ class EpisodeControlClient:
     def end_video(self) -> None:
         """Finalise the recording in progress, so the file is playable."""
         self.sock.send_string(json.dumps({"cmd": "endvideo"}))
-        time.sleep(0.5)          # let the sim close the writer before we exit
+        time.sleep(0.5)  # let the sim close the writer before we exit
 
     def close(self) -> None:
         self.sock.close()
@@ -682,8 +698,7 @@ class PrivilegedSubscriber:
             if s is not None:
                 return s
         raise TimeoutError(
-            f"no privileged state on :{PRIVILEGED_PORT} after {timeout_s:.0f}s "
-            "— is run_sim_locomani.py running?"
+            f"no privileged state on :{PRIVILEGED_PORT} after {timeout_s:.0f}s — is run_sim_locomani.py running?"
         )
 
     def close(self) -> None:
@@ -723,13 +738,14 @@ class StateTrace:
 
     def __init__(self, out_dir: str):
         import os as _os
+
         self.dir = out_dir
         self._rows: list = []
         self._label = None
         self._alive = True
         try:
             _os.makedirs(out_dir, exist_ok=True)
-        except Exception as e:                                 # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"[trace] disabled: {e}")
             self._alive = False
 
@@ -747,27 +763,30 @@ class StateTrace:
             return
         try:
             self._rows.append((int(seq), data.qpos.copy(), data.qvel.copy()))
-        except Exception as e:                                 # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"[trace] frame dropped: {e}")
 
     def stop(self) -> str | None:
         if not self._alive or self._label is None:
             return None
         import os as _os
+
         rows, label = self._rows, self._label
         self._rows, self._label = [], None
         if not rows:
             return None
         try:
             import numpy as _np
+
             path = _os.path.join(self.dir, f"{label}_state_trace.npz")
             _np.savez_compressed(
                 path,
                 seq=_np.asarray([r[0] for r in rows], dtype=_np.int64),
                 qpos=_np.stack([r[1] for r in rows]),
-                qvel=_np.stack([r[2] for r in rows]))
+                qvel=_np.stack([r[2] for r in rows]),
+            )
             return path
-        except Exception as e:                                 # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"[trace] save failed: {e}")
             return None
 
@@ -794,7 +813,9 @@ class PoseSidecar:
     """
 
     def __init__(self, out_dir, host: str = "localhost", port: int | None = None):
-        import os as _os, threading as _th
+        import os as _os
+        import threading as _th
+
         self.dir = out_dir
         self._lock = _th.Lock()
         self._fh = None
@@ -808,7 +829,7 @@ class PoseSidecar:
             self.sock.connect(f"tcp://{host}:{port or PRIVILEGED_PORT}")
             t = _th.Thread(target=self._loop, daemon=True)
             t.start()
-        except Exception as e:                                # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"[sidecar] disabled: {e}")
             self._alive = False
 
@@ -823,17 +844,20 @@ class PoseSidecar:
                     continue
                 try:
                     pel = msg["pelvis"]
-                    if msg.get("seq") is None and not getattr(
-                            self, "_warned_no_seq", False):
+                    if msg.get("seq") is None and not getattr(self, "_warned_no_seq", False):
                         self._warned_no_seq = True
-                        print("[sidecar] privileged messages carry no seq "
-                              "(old publisher?) -- pose<->parquet alignment "
-                              "will not be possible for this session")
-                    row = {"seq": msg.get("seq"),
-                           "t": msg.get("t"), "wall": msg.get("wall"),
-                           "pelvis": list(pel["pos"]) + list(pel["quat"]),
-                           "objects": {k: list(o["pos"]) + list(o["quat"])
-                                       for k, o in msg.get("objects", {}).items()}}
+                        print(
+                            "[sidecar] privileged messages carry no seq "
+                            "(old publisher?) -- pose<->parquet alignment "
+                            "will not be possible for this session"
+                        )
+                    row = {
+                        "seq": msg.get("seq"),
+                        "t": msg.get("t"),
+                        "wall": msg.get("wall"),
+                        "pelvis": list(pel["pos"]) + list(pel["quat"]),
+                        "objects": {k: list(o["pos"]) + list(o["quat"]) for k, o in msg.get("objects", {}).items()},
+                    }
                     # ACTION-SIDE bookkeeping (2026-09-04): what the expert
                     # COMMANDED on this frame -- the planner frame, the 17
                     # upper-body joint targets, the hand targets and the IK's
@@ -843,7 +867,9 @@ class PoseSidecar:
                     # (wrist SE(3) + grip per arm + 4-D base) be exported
                     # offline from a normal collection run.
                     try:
-                        import agent_server as _as, arm_ik as _ik
+                        import agent_server as _as
+                        import arm_ik as _ik
+
                         c = _as.LAST_CMD
                         if c.get("frame") is not None:
                             row["cmd"] = c["frame"]
@@ -852,8 +878,7 @@ class PoseSidecar:
                         if c.get("hands") is not None:
                             row["hands"] = c["hands"]
                         if _ik.LAST_IK:
-                            row["ik"] = {k: {"pos": v[0], "quat": v[1]}
-                                         for k, v in _ik.LAST_IK.items()}
+                            row["ik"] = {k: {"pos": v[0], "quat": v[1]} for k, v in _ik.LAST_IK.items()}
                     except Exception:
                         pass
                     self._fh.write(json.dumps(row) + "\n")
@@ -862,6 +887,7 @@ class PoseSidecar:
 
     def start(self, round_i: int, attempt: int):
         import os as _os
+
         with self._lock:
             try:
                 if self._fh:
@@ -870,11 +896,10 @@ class PoseSidecar:
                 # chunk and each restart numbers rounds from 0 again, so a
                 # shared directory overwrote earlier chunks' files (round 4's
                 # DAgger kept 22 of 53). The pid disambiguates the chunk.
-                self._fh = open(_os.path.join(
-                    self.dir,
-                    f"p{_os.getpid()}_round_{round_i:03d}_attempt_{attempt}.jsonl"),
-                    "w")
-            except Exception as e:                            # noqa: BLE001
+                self._fh = open(
+                    _os.path.join(self.dir, f"p{_os.getpid()}_round_{round_i:03d}_attempt_{attempt}.jsonl"), "w"
+                )
+            except Exception as e:  # noqa: BLE001
                 print(f"[sidecar] start failed: {e}")
                 self._fh = None
 

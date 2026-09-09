@@ -22,8 +22,7 @@ import sys
 from .. import paths
 
 SCENE_XML = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.SCENE_XML)
-OUT_USD = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else
-                          os.path.join(paths.ISAAC_ASSETS, "scene_locomani.usda"))
+OUT_USD = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else os.path.join(paths.ISAAC_ASSETS, "scene_locomani.usda"))
 os.makedirs(os.path.dirname(OUT_USD), exist_ok=True)
 LOG = os.path.join(os.path.dirname(OUT_USD), "convert.log")
 open(LOG, "w").close()
@@ -46,8 +45,8 @@ app = SimulationApp({"headless": True})
 try:
     import omni.kit.commands
     import omni.usd
-    from pxr import Sdf
     from omni.isaac.core.utils.extensions import enable_extension
+    from pxr import Sdf
 
     enable_extension("isaacsim.asset.importer.mjcf")
     app.update()
@@ -101,6 +100,7 @@ try:
     log(f"exported {OUT_USD}")
 except Exception:  # noqa: BLE001
     import traceback
+
     log("FAILED:\n" + traceback.format_exc())
     raise
 finally:

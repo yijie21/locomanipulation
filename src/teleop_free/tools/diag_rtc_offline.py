@@ -45,13 +45,10 @@ def synth_obs(seed: int = 0) -> dict:
         "state.right_hand": f32(7),
         "state.projected_gravity": np.asarray([[0, 0, -1]], dtype=np.float32),
         "state.right_wrist_pos": f32(3),
-        "state.right_wrist_abs_quat": np.asarray([[1, 0, 0, 0]],
-                                                 dtype=np.float32),
+        "state.right_wrist_abs_quat": np.asarray([[1, 0, 0, 0]], dtype=np.float32),
         "annotation.human.task_description": "pick up the water bottle",
-        "video.ego_view": r.integers(0, 255, (1, 256, 256, 3),
-                                     dtype=np.uint8),
-        "video.right_wrist": r.integers(0, 255, (1, 256, 256, 3),
-                                        dtype=np.uint8),
+        "video.ego_view": r.integers(0, 255, (1, 256, 256, 3), dtype=np.uint8),
+        "video.right_wrist": r.integers(0, 255, (1, 256, 256, 3), dtype=np.uint8),
     }
     return obs
 
@@ -64,6 +61,7 @@ def main():
     args = ap.parse_args()
 
     import zmq
+
     ctx = zmq.Context()
     sock = ctx.socket(zmq.REQ)
     sock.setsockopt(zmq.RCVTIMEO, 120000)
@@ -72,8 +70,7 @@ def main():
     def call(extra):
         obs = synth_obs()
         obs.update(extra)
-        sock.send(msgpack.packb({"endpoint": "get_action_raw",
-                                 "data": {"obs": obs}}, default=mnp.encode))
+        sock.send(msgpack.packb({"endpoint": "get_action_raw", "data": {"obs": obs}}, default=mnp.encode))
         rep = msgpack.unpackb(sock.recv(), object_hook=mnp.decode)
         if isinstance(rep, dict) and "error" in rep:
             raise SystemExit(f"server error: {rep['error']}")
@@ -87,8 +84,7 @@ def main():
         fails.append("request 1 (elapsed 0) must not apply RTC")
     ta = np.asarray(a["action.motion_token"])
     ga = np.asarray(a["action.right_gripper"]).reshape(-1)
-    print(f"[1] chunk A: token {ta.shape}, no rtc.applied "
-          f"{'OK' if 'rtc.applied' not in a else 'FAIL'}")
+    print(f"[1] chunk A: token {ta.shape}, no rtc.applied {'OK' if 'rtc.applied' not in a else 'FAIL'}")
 
     b = call({"rtc.elapsed": E, "rtc.frozen": F})
     app = b.get("rtc.applied")
@@ -97,24 +93,22 @@ def main():
         print("[2] FAIL: no rtc.applied")
     else:
         ov, fr = int(app[0]), int(app[1])
-        print(f"[2] rtc.applied = overlap {ov}, frozen {fr} "
-              f"(expected {ta.shape[0] - E}, {F})")
+        print(f"[2] rtc.applied = overlap {ov}, frozen {fr} (expected {ta.shape[0] - E}, {F})")
         if ov != ta.shape[0] - E or fr != F:
-            fails.append(f"applied ({ov},{fr}) != expected "
-                         f"({ta.shape[0] - E},{F})")
+            fails.append(f"applied ({ov},{fr}) != expected ({ta.shape[0] - E},{F})")
         tb = np.asarray(b["action.motion_token"])
         gb = np.asarray(b["action.right_gripper"]).reshape(-1)
-        d_frozen = float(np.abs(tb[:F] - ta[E:E + F]).max())
-        d_frozen_g = float(np.abs(gb[:F] - ga[E:E + F]).max())
-        d_ramp = float(np.abs(tb[F:ov] - ta[E + F:E + ov]).max())
-        d_free = float(np.abs(tb[ov:] - ta[E + ov:E + ov + tb.shape[0] - ov]
-                              ).max()) if ta.shape[0] > E + ov else float("nan")
-        print(f"    frozen  max|B[0:{F}] - A[{E}:{E + F}]|   = "
-              f"{d_frozen:.2e} (token) {d_frozen_g:.2e} (grip)")
-        print(f"    ramp    max|B[{F}:{ov}] - A[...]|  = {d_ramp:.3f} "
-              f"(soft blend, should be small but nonzero)")
-        print(f"    tail    max diff beyond overlap = {d_free:.3f} "
-              f"(free, should be the largest)")
+        d_frozen = float(np.abs(tb[:F] - ta[E : E + F]).max())
+        d_frozen_g = float(np.abs(gb[:F] - ga[E : E + F]).max())
+        d_ramp = float(np.abs(tb[F:ov] - ta[E + F : E + ov]).max())
+        d_free = (
+            float(np.abs(tb[ov:] - ta[E + ov : E + ov + tb.shape[0] - ov]).max())
+            if ta.shape[0] > E + ov
+            else float("nan")
+        )
+        print(f"    frozen  max|B[0:{F}] - A[{E}:{E + F}]|   = {d_frozen:.2e} (token) {d_frozen_g:.2e} (grip)")
+        print(f"    ramp    max|B[{F}:{ov}] - A[...]|  = {d_ramp:.3f} (soft blend, should be small but nonzero)")
+        print(f"    tail    max diff beyond overlap = {d_free:.3f} (free, should be the largest)")
         if d_frozen > 1e-3 or d_frozen_g > 1e-3:
             fails.append(f"frozen prefix moved: {d_frozen:.3e}")
 
@@ -123,10 +117,8 @@ def main():
         fails.append("plain request must not apply RTC")
     d = call({"rtc.elapsed": E, "rtc.frozen": F})
     if "rtc.applied" in d:
-        fails.append("plain request must DROP the cache; the follow-up "
-                     "elapsed>0 request still got rtc.applied")
-    print(f"[3] plain request clears cache: "
-          f"{'OK' if 'rtc.applied' not in c and 'rtc.applied' not in d else 'FAIL'}")
+        fails.append("plain request must DROP the cache; the follow-up elapsed>0 request still got rtc.applied")
+    print(f"[3] plain request clears cache: {'OK' if 'rtc.applied' not in c and 'rtc.applied' not in d else 'FAIL'}")
 
     if fails:
         print("\nFAILED:")

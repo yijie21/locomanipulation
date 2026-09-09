@@ -80,6 +80,7 @@ published nowhere. Closing that gap is a one-line addition of a
 `body_dq_target` key to the ZMQ output handler plus a rebuild; until then,
 treat this module as spec-faithful but not bit-verified.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -113,12 +114,15 @@ OFFSETS, _o = {}, 0
 for _n, _d in BLOCKS:
     OFFSETS[_n] = (_o, _d)
     _o += _d
-OBS_DIM = _o                                    # 1762
+OBS_DIM = _o  # 1762
 
 MODE_REQUIRED = {
-    0: ("encoder_mode_4", "motion_joint_positions_10frame_step5",
+    0: (
+        "encoder_mode_4",
+        "motion_joint_positions_10frame_step5",
         "motion_joint_velocities_10frame_step5",
-        "motion_anchor_orientation_10frame_step5"),
+        "motion_anchor_orientation_10frame_step5",
+    ),
 }
 
 N_JOINTS, N_FRAMES, STEP = 29, 10, 5
@@ -127,8 +131,7 @@ FSQ_STEP = 1.0 / 16.0
 CONTROL_HZ = 50.0
 
 # g1_deploy_onnx_ref policy_parameters.hpp:80
-UPPER_BODY_ISAACLAB = np.array(
-    [2, 5, 8, 11, 12, 15, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28])
+UPPER_BODY_ISAACLAB = np.array([2, 5, 8, 11, 12, 15, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28])
 
 # Both arrays are named BACKWARDS relative to their contents -- sonic_decoder.py
 # documents this and the deploy's own usage is the definition:
@@ -139,22 +142,52 @@ UPPER_BODY_ISAACLAB = np.array(
 # backwards is silent -- the graph still runs and still returns 64 numbers; it
 # showed up here only because the decoder then answered a 20 deg elbow change
 # by moving the knee.
-ISAACLAB_TO_MUJOCO = np.array([
-    0, 3, 6, 9, 13, 17, 1, 4, 7, 10, 14, 18, 2, 5, 8, 11, 15, 19, 21, 23,
-    25, 27, 12, 16, 20, 22, 24, 26, 28])
-MUJOCO_TO_ISAACLAB = np.array([
-    0, 6, 12, 1, 7, 13, 2, 8, 14, 3, 9, 15, 22, 4, 10, 16, 23, 5, 11, 17,
-    24, 18, 25, 19, 26, 20, 27, 21, 28])
+ISAACLAB_TO_MUJOCO = np.array(
+    [0, 3, 6, 9, 13, 17, 1, 4, 7, 10, 14, 18, 2, 5, 8, 11, 15, 19, 21, 23, 25, 27, 12, 16, 20, 22, 24, 26, 28]
+)
+MUJOCO_TO_ISAACLAB = np.array(
+    [0, 6, 12, 1, 7, 13, 2, 8, 14, 3, 9, 15, 22, 4, 10, 16, 23, 5, 11, 17, 24, 18, 25, 19, 26, 20, 27, 21, 28]
+)
 assert np.array_equal(ISAACLAB_TO_MUJOCO[MUJOCO_TO_ISAACLAB], np.arange(29))
 
-DEFAULT_ANGLES_MJ = np.array([
-    -0.312, 0, 0, 0.669, -0.363, 0, -0.312, 0, 0, 0.669, -0.363, 0,
-    0, 0, 0, 0.2, 0.2, 0, 0.6, 0, 0, 0, 0.2, -0.2, 0, 0.6, 0, 0, 0])
+DEFAULT_ANGLES_MJ = np.array(
+    [
+        -0.312,
+        0,
+        0,
+        0.669,
+        -0.363,
+        0,
+        -0.312,
+        0,
+        0,
+        0.669,
+        -0.363,
+        0,
+        0,
+        0,
+        0,
+        0.2,
+        0.2,
+        0,
+        0.6,
+        0,
+        0,
+        0,
+        0.2,
+        -0.2,
+        0,
+        0.6,
+        0,
+        0,
+        0,
+    ]
+)
 
 _DEFAULT_ENCODER = os.path.join(
-    os.environ.get("SONIC_DEPLOY_ROOT",
-                   "third_party/GR00T-WholeBodyControl/gear_sonic_deploy"),
-    "policy/release/model_encoder.onnx")
+    os.environ.get("SONIC_DEPLOY_ROOT", "third_party/GR00T-WholeBodyControl/gear_sonic_deploy"),
+    "policy/release/model_encoder.onnx",
+)
 
 
 def mj_to_isaaclab(q_mj: np.ndarray) -> np.ndarray:
@@ -170,10 +203,14 @@ def isaaclab_to_mj(q_il: np.ndarray) -> np.ndarray:
 def quat_mul(a, b):
     aw, ax, ay, az = a
     bw, bx, by, bz = b
-    return np.array([aw * bw - ax * bx - ay * by - az * bz,
-                     aw * bx + ax * bw + ay * bz - az * by,
-                     aw * by - ax * bz + ay * bw + az * bx,
-                     aw * bz + ax * by - ay * bx + az * bw])
+    return np.array(
+        [
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+        ]
+    )
 
 
 def quat_conj(q):
@@ -182,10 +219,13 @@ def quat_conj(q):
 
 def quat_to_mat(q):
     w, x, y, z = q / np.linalg.norm(q)
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def anchor_6d(base_quat_meas, ref_root_quat, delta_heading=None) -> np.ndarray:
@@ -210,15 +250,13 @@ class SonicEncoder:
     def __init__(self, onnx_path: str | None = None):
         try:
             import onnxruntime as ort
-        except ImportError as e:                      # pragma: no cover
+        except ImportError as e:  # pragma: no cover
             raise RuntimeError(
-                "onnxruntime is required; install it into the venv that runs "
-                "the stack (.venv_sim)") from e
+                "onnxruntime is required; install it into the venv that runs the stack (.venv_sim)"
+            ) from e
         path = onnx_path or _DEFAULT_ENCODER
         if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"encoder ONNX not found at {path}; pass onnx_path or set "
-                f"SONIC_DEPLOY_ROOT")
+            raise FileNotFoundError(f"encoder ONNX not found at {path}; pass onnx_path or set SONIC_DEPLOY_ROOT")
         self.sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
         self.in_name = self.sess.get_inputs()[0].name
         dim = self.sess.get_inputs()[0].shape[-1]
@@ -227,7 +265,8 @@ class SonicEncoder:
                 f"this encoder wants {dim} inputs but the block table sums to "
                 f"{OBS_DIM}. The deploy is running a different "
                 f"observation_config.yaml -- rebuild the table from the one it "
-                f"actually loads before trusting anything here.")
+                f"actually loads before trusting anything here."
+            )
 
     # -- low level ----------------------------------------------------------
     def pack(self, q_win_il, dq_win_il, anchor_win, mode: int = 0) -> np.ndarray:
@@ -240,33 +279,33 @@ class SonicEncoder:
         q = np.asarray(q_win_il, dtype=np.float64)
         dq = np.asarray(dq_win_il, dtype=np.float64)
         a = np.asarray(anchor_win, dtype=np.float64)
-        for name, arr, shape in (("positions", q, (N_FRAMES, N_JOINTS)),
-                                 ("velocities", dq, (N_FRAMES, N_JOINTS)),
-                                 ("anchor", a, (N_FRAMES, 6))):
+        for name, arr, shape in (
+            ("positions", q, (N_FRAMES, N_JOINTS)),
+            ("velocities", dq, (N_FRAMES, N_JOINTS)),
+            ("anchor", a, (N_FRAMES, 6)),
+        ):
             if arr.shape != shape:
                 raise ValueError(f"{name} must be {shape}, got {arr.shape}")
         buf = np.zeros(OBS_DIM, dtype=np.float64)
         o, _ = OFFSETS["encoder_mode_4"]
-        buf[o] = float(mode)                          # [mode, 0, 0, 0]
+        buf[o] = float(mode)  # [mode, 0, 0, 0]
         o, d = OFFSETS["motion_joint_positions_10frame_step5"]
-        buf[o:o + d] = q.reshape(-1)                  # frame-major
+        buf[o : o + d] = q.reshape(-1)  # frame-major
         o, d = OFFSETS["motion_joint_velocities_10frame_step5"]
-        buf[o:o + d] = dq.reshape(-1)
+        buf[o : o + d] = dq.reshape(-1)
         o, d = OFFSETS["motion_anchor_orientation_10frame_step5"]
-        buf[o:o + d] = a.reshape(-1)
+        buf[o : o + d] = a.reshape(-1)
         return buf
 
-    def encode_window(self, q_win_il, dq_win_il, anchor_win,
-                      mode: int = 0) -> np.ndarray:
+    def encode_window(self, q_win_il, dq_win_il, anchor_win, mode: int = 0) -> np.ndarray:
         buf = self.pack(q_win_il, dq_win_il, anchor_win, mode)
-        out = self.sess.run(None, {self.in_name:
-                                   buf[None, :].astype(np.float32)})[0]
+        out = self.sess.run(None, {self.in_name: buf[None, :].astype(np.float32)})[0]
         return out.reshape(-1)
 
     # -- trajectory ---------------------------------------------------------
-    def encode_trajectory(self, q_mj, base_quat, ref_root_quat, dq_mj=None,
-                          hz: float = CONTROL_HZ, mode: int = 0,
-                          upper_body_mj=None) -> np.ndarray:
+    def encode_trajectory(
+        self, q_mj, base_quat, ref_root_quat, dq_mj=None, hz: float = CONTROL_HZ, mode: int = 0, upper_body_mj=None
+    ) -> np.ndarray:
         """Token per tick for a whole reference trajectory.
 
         q_mj          : (T, 29) reference joints, MuJoCo order, raw radians.
@@ -302,8 +341,7 @@ class SonicEncoder:
                 # the deploy freezes the streamed upper body across the window
                 qw[:, UPPER_BODY_ISAACLAB] = ub[None, :]
                 dqw[:, UPPER_BODY_ISAACLAB] = 0.0
-            aw = np.stack([anchor_6d(base_quat[t], ref_root_quat[i])
-                           for i in idx])
+            aw = np.stack([anchor_6d(base_quat[t], ref_root_quat[i]) for i in idx])
             toks[t] = self.encode_window(qw, dqw, aw, mode)
         return toks
 
@@ -314,8 +352,7 @@ def _stand_window(offset_mj=None):
     if offset_mj is not None:
         q = q + offset_mj
     ident = np.array([1.0, 0.0, 0.0, 0.0])
-    return (mj_to_isaaclab(q), np.zeros((N_FRAMES, N_JOINTS)),
-            np.stack([anchor_6d(ident, ident)] * N_FRAMES))
+    return (mj_to_isaaclab(q), np.zeros((N_FRAMES, N_JOINTS)), np.stack([anchor_6d(ident, ident)] * N_FRAMES))
 
 
 def selfcheck(enc: SonicEncoder, dataset: str | None) -> int:
@@ -323,8 +360,7 @@ def selfcheck(enc: SonicEncoder, dataset: str | None) -> int:
 
     def ok(label, cond, detail=""):
         nonlocal bad
-        print(f"  [{'PASS' if cond else 'FAIL'}] {label}" +
-              (f"  -- {detail}" if detail else ""))
+        print(f"  [{'PASS' if cond else 'FAIL'}] {label}" + (f"  -- {detail}" if detail else ""))
         if not cond:
             bad += 1
 
@@ -334,24 +370,30 @@ def selfcheck(enc: SonicEncoder, dataset: str | None) -> int:
     ok("mode 0 fills 644 of them", live == 644, f"{live}")
     q, dq, a = _stand_window()
     buf = enc.pack(q, dq, a, 0)
-    ok("everything outside the mode-0 blocks stays zero",
-       np.count_nonzero(buf) <= live,
-       f"{np.count_nonzero(buf)} non-zero of {live} live slots")
+    ok(
+        "everything outside the mode-0 blocks stays zero",
+        np.count_nonzero(buf) <= live,
+        f"{np.count_nonzero(buf)} non-zero of {live} live slots",
+    )
 
     print("2. codebook")
     tok = enc.encode_window(q, dq, a, 0)
     idx = tok / FSQ_STEP
-    ok("output lands on the 1/16 grid (the FSQ is inside the graph)",
-       np.allclose(idx, np.round(idx), atol=1e-4),
-       f"max off-grid {np.abs(idx - np.round(idx)).max():.2e}")
-    ok("indices inside the 32-level range [-16, 15]",
-       idx.min() >= -16.5 and idx.max() <= 15.5,
-       f"[{np.round(idx.min())}, {np.round(idx.max())}]")
+    ok(
+        "output lands on the 1/16 grid (the FSQ is inside the graph)",
+        np.allclose(idx, np.round(idx), atol=1e-4),
+        f"max off-grid {np.abs(idx - np.round(idx)).max():.2e}",
+    )
+    ok(
+        "indices inside the 32-level range [-16, 15]",
+        idx.min() >= -16.5 and idx.max() <= 15.5,
+        f"[{np.round(idx.min())}, {np.round(idx.max())}]",
+    )
     ok("deterministic", np.array_equal(tok, enc.encode_window(q, dq, a, 0)))
 
     print("3. sensitivity")
     off = np.zeros(N_JOINTS)
-    off[25] = np.deg2rad(20.0)                     # right elbow, MuJoCo order
+    off[25] = np.deg2rad(20.0)  # right elbow, MuJoCo order
     q2, dq2, a2 = _stand_window(off)
     tok2 = enc.encode_window(q2, dq2, a2, 0)
     nd = int((np.round(tok2 / FSQ_STEP) != np.round(tok / FSQ_STEP)).sum())
@@ -360,27 +402,28 @@ def selfcheck(enc: SonicEncoder, dataset: str | None) -> int:
     off_s[25] = np.deg2rad(0.5)
     tok3 = enc.encode_window(*_stand_window(off_s), mode=0)
     ns = int((np.round(tok3 / FSQ_STEP) != np.round(tok / FSQ_STEP)).sum())
-    print(f"       (for scale: 0.5 deg moves {ns}/64 dims -- below this the "
-          f"label cannot represent the change)")
+    print(f"       (for scale: 0.5 deg moves {ns}/64 dims -- below this the label cannot represent the change)")
 
     print("4. against recorded labels")
     if not dataset:
         print("       skipped (pass --dataset to run it)")
     else:
         import pyarrow.parquet as pq
+
         p = os.path.join(dataset, "data", "chunk-000", "episode_000000.parquet")
-        rec = np.stack(pq.read_table(p)["action.motion_token"]
-                       .to_numpy(zero_copy_only=False))
+        rec = np.stack(pq.read_table(p)["action.motion_token"].to_numpy(zero_copy_only=False))
         ridx = rec / FSQ_STEP
-        ok("recorded tokens sit on the same grid",
-           np.allclose(ridx, np.round(ridx), atol=1e-4))
-        ok("recorded tokens sit in the same range",
-           rec.min() >= -1.0 - 1e-6 and rec.max() <= 1.0 - FSQ_STEP + 1e-6,
-           f"[{rec.min():.4f}, {rec.max():.4f}]")
-        ok("our synthetic token is in the recorded per-dim range",
-           bool(((tok >= rec.min(0) - 4 * FSQ_STEP) &
-                 (tok <= rec.max(0) + 4 * FSQ_STEP)).mean() > 0.9),
-           f"{((tok >= rec.min(0) - 4*FSQ_STEP) & (tok <= rec.max(0) + 4*FSQ_STEP)).mean():.0%} of dims")
+        ok("recorded tokens sit on the same grid", np.allclose(ridx, np.round(ridx), atol=1e-4))
+        ok(
+            "recorded tokens sit in the same range",
+            rec.min() >= -1.0 - 1e-6 and rec.max() <= 1.0 - FSQ_STEP + 1e-6,
+            f"[{rec.min():.4f}, {rec.max():.4f}]",
+        )
+        ok(
+            "our synthetic token is in the recorded per-dim range",
+            bool(((tok >= rec.min(0) - 4 * FSQ_STEP) & (tok <= rec.max(0) + 4 * FSQ_STEP)).mean() > 0.9),
+            f"{((tok >= rec.min(0) - 4 * FSQ_STEP) & (tok <= rec.max(0) + 4 * FSQ_STEP)).mean():.0%} of dims",
+        )
 
     print("5. end-to-end through the decoder")
     if not dataset:
@@ -389,6 +432,7 @@ def selfcheck(enc: SonicEncoder, dataset: str | None) -> int:
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             from sonic_decoder import SonicDecoder
+
             dec = SonicDecoder()
         except Exception as e:
             print(f"       skipped: {e}")
@@ -398,30 +442,31 @@ def selfcheck(enc: SonicEncoder, dataset: str | None) -> int:
             # response to a token swap means nothing, so the observation comes
             # from a real episode and only the token is swapped.
             import pyarrow.parquet as pq
-            t = pq.read_table(os.path.join(dataset, "data", "chunk-000",
-                                           "episode_000000.parquet"))
+
+            t = pq.read_table(os.path.join(dataset, "data", "chunk-000", "episode_000000.parquet"))
             g = lambda k: np.stack(t[k].to_numpy(zero_copy_only=False))
-            pre = SonicDecoder.prepare(g("observation.state"), g("action.wbc"),
-                                       g("observation.root_orientation"),
-                                       g("observation.projected_gravity"))
+            pre = SonicDecoder.prepare(
+                g("observation.state"),
+                g("action.wbc"),
+                g("observation.root_orientation"),
+                g("observation.projected_gravity"),
+            )
             frames = list(range(60, len(pre["q"]) - 60, 20))
             n = len(frames)
-            d = dec.joint_delta_deg(pre, frames,
-                                    np.tile(tok, (n, 1)), np.tile(tok2, (n, 1)))
+            d = dec.joint_delta_deg(pre, frames, np.tile(tok, (n, 1)), np.tile(tok2, (n, 1)))
             d = np.abs(np.asarray(d)).reshape(n, -1).mean(0)
             # NOT "joint 25 must rank first": SONIC is a whole-body tracker,
             # so lifting the elbow 20 deg moves the palm and the shoulder
             # answers too -- the honest claim is that the response stays in
             # the arm that was perturbed.
-            groups = {"r_arm": range(22, 29), "l_arm": range(15, 22),
-                      "waist": range(12, 15), "legs": range(0, 12)}
+            groups = {"r_arm": range(22, 29), "l_arm": range(15, 22), "waist": range(12, 15), "legs": range(0, 12)}
             gm = {k: float(d[list(v)].mean()) for k, v in groups.items()}
             top2 = set(np.argsort(-d)[:2].tolist())
-            ok("the decoder's response stays in the perturbed arm",
-               top2 <= set(range(22, 29)) and
-               gm["r_arm"] == max(gm.values()),
-               "per group deg: " + ", ".join(f"{k} {v:.1f}" for k, v in gm.items())
-               + f"; top-2 joints {sorted(top2)}")
+            ok(
+                "the decoder's response stays in the perturbed arm",
+                top2 <= set(range(22, 29)) and gm["r_arm"] == max(gm.values()),
+                "per group deg: " + ", ".join(f"{k} {v:.1f}" for k, v in gm.items()) + f"; top-2 joints {sorted(top2)}",
+            )
 
     print(f"\n{'ALL CHECKS PASSED' if bad == 0 else f'{bad} CHECK(S) FAILED'}")
     return bad
@@ -431,9 +476,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--onnx", default=None)
     ap.add_argument("--selfcheck", action="store_true")
-    ap.add_argument("--dataset", default=None,
-                    help="a LeRobot dataset root, to compare against its "
-                         "recorded action.motion_token")
+    ap.add_argument(
+        "--dataset", default=None, help="a LeRobot dataset root, to compare against its recorded action.motion_token"
+    )
     args = ap.parse_args()
     enc = SonicEncoder(args.onnx)
     if args.selfcheck:

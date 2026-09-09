@@ -29,11 +29,10 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from privileged_pub import HAND_JOINTS, PALM_BODY  # noqa: E402
 import paths
+from privileged_pub import HAND_JOINTS, PALM_BODY  # noqa: E402
 
-SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
-              "scene_meta.json")
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 
 def hand_geoms(model, side: str):
@@ -53,9 +52,7 @@ def geom_points(model, data, g):
     mi = model.geom_dataid[g]
     if model.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH or mi < 0:
         return data.geom_xpos[g][None, :]
-    v = model.mesh_vert[
-        model.mesh_vertadr[mi]: model.mesh_vertadr[mi] + model.mesh_vertnum[mi]
-    ]
+    v = model.mesh_vert[model.mesh_vertadr[mi] : model.mesh_vertadr[mi] + model.mesh_vertnum[mi]]
 
     return v @ data.geom_xmat[g].reshape(3, 3).T + data.geom_xpos[g]
 
@@ -72,14 +69,13 @@ def aperture(model, data, side: str, geoms) -> dict:
     number that matters is the separation along the palm's y — the pinch axis,
     since the thumb sits at +y and the fingers at -y.
     """
-    palm_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY,
-                                 PALM_BODY[side])
+    palm_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, PALM_BODY[side])
     origin = data.xpos[palm_bid]
     rot = data.xmat[palm_bid].reshape(3, 3)
 
     thumb, fingers = [], []
     for g, name in geoms:
-        p = (geom_points(model, data, g) - origin) @ rot     # -> palm frame
+        p = (geom_points(model, data, g) - origin) @ rot  # -> palm frame
         (thumb if "thumb" in name else fingers).append(p)
     if not thumb or not fingers:
         return {}
@@ -112,11 +108,17 @@ def aperture(model, data, side: str, geoms) -> dict:
     fwd = allpts[allpts[:, 0] >= pinch[0] - 0.02] - pinch
     lo_fwd = fwd.min(0) if len(fwd) else lo
 
-    return {"gap_y": gap, "min_sep": float(d[i, j]),
-            "thumb_tip": thumb[thumb[:, 0].argmax()],
-            "finger_tip": fingers[fingers[:, 0].argmax()],
-            "pinch_at": pinch, "below": lo, "above": hi, "below_fwd": lo_fwd,
-            "finger_spread": fingers.max(0) - fingers.min(0)}
+    return {
+        "gap_y": gap,
+        "min_sep": float(d[i, j]),
+        "thumb_tip": thumb[thumb[:, 0].argmax()],
+        "finger_tip": fingers[fingers[:, 0].argmax()],
+        "pinch_at": pinch,
+        "below": lo,
+        "above": hi,
+        "below_fwd": lo_fwd,
+        "finger_spread": fingers.max(0) - fingers.min(0),
+    }
 
 
 def main() -> None:
@@ -129,13 +131,11 @@ def main() -> None:
     data = mujoco.MjData(model)
 
     geoms = hand_geoms(model, args.side)
-    print(f"{args.side} hand: {len(geoms)} geoms across "
-          f"{len({n for _, n in geoms})} links")
+    print(f"{args.side} hand: {len(geoms)} geoms across {len({n for _, n in geoms})} links")
 
     adr = {}
     for j in HAND_JOINTS:
-        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
-                                f"{args.side}_hand_{j}_joint")
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"{args.side}_hand_{j}_joint")
         if jid < 0:
             continue
         adr[j] = int(model.jnt_qposadr[jid])
@@ -143,29 +143,28 @@ def main() -> None:
     if not adr:
         sys.exit("no hand joints — check the naming in HAND_JOINTS")
 
-    lo = {j: float(model.jnt_range[
-        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
-                          f"{args.side}_hand_{j}_joint")][0]) for j in adr}
-    hi = {j: float(model.jnt_range[
-        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
-                          f"{args.side}_hand_{j}_joint")][1]) for j in adr}
+    lo = {
+        j: float(model.jnt_range[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"{args.side}_hand_{j}_joint")][0])
+        for j in adr
+    }
+    hi = {
+        j: float(model.jnt_range[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"{args.side}_hand_{j}_joint")][1])
+        for j in adr
+    }
 
     print(f"\n{'pose':28s} {'gap_y':>8} {'min_sep':>8}  pinch point (palm frame)")
     best = None
     # Sweep each joint to both limits and a few blends; the widest opening over
     # the whole set is the honest answer to "does a 9.3 cm ball fit".
-    poses = {"all zero": {j: 0.0 for j in adr},
-             "all at low limit": dict(lo),
-             "all at high limit": dict(hi)}
-    for j in adr:                       # one joint at a time, both extremes
+    poses = {"all zero": {j: 0.0 for j in adr}, "all at low limit": dict(lo), "all at high limit": dict(hi)}
+    for j in adr:  # one joint at a time, both extremes
         for tag, tbl in (("lo", lo), ("hi", hi)):
-            poses[f"{j} -> {tag}"] = {k: (tbl[k] if k == j else 0.0)
-                                      for k in adr}
+            poses[f"{j} -> {tag}"] = {k: (tbl[k] if k == j else 0.0) for k in adr}
     # Thumb one way, fingers the other — how a hand actually opens.
     for ts, fs in itertools.product((lo, hi), (lo, hi)):
-        poses[f"thumb {'lo' if ts is lo else 'hi'} / fingers "
-              f"{'lo' if fs is lo else 'hi'}"] = {
-            k: (ts[k] if "thumb" in k else fs[k]) for k in adr}
+        poses[f"thumb {'lo' if ts is lo else 'hi'} / fingers {'lo' if fs is lo else 'hi'}"] = {
+            k: (ts[k] if "thumb" in k else fs[k]) for k in adr
+        }
 
     for label, q in poses.items():
         mujoco.mj_resetData(model, data)
@@ -175,8 +174,7 @@ def main() -> None:
         a = aperture(model, data, args.side, geoms)
         if not a:
             continue
-        print(f"{label:28s} {a['gap_y']:8.4f} {a['min_sep']:8.4f}  "
-              f"{np.round(a['pinch_at'], 3)}")
+        print(f"{label:28s} {a['gap_y']:8.4f} {a['min_sep']:8.4f}  {np.round(a['pinch_at'], 3)}")
         if best is None or a["min_sep"] > best[1]["min_sep"]:
             best = (label, a)
 
@@ -191,20 +189,26 @@ def main() -> None:
         verdict = "fits" if short < a["min_sep"] else "TOO BIG"
         print(f"  {name:8s} shortest axis {short * 100:5.1f} cm  -> {verdict}")
     from primitives import GRASP_CENTRE_OFFSET
-    print(f"\ngrip point sits at palm {np.round(a['pinch_at'], 3)}; "
-          f"GRASP_CENTRE_OFFSET is {np.round(GRASP_CENTRE_OFFSET, 3)}")
-    print(f"hand extent around the grip centre (palm frame):")
-    print(f"  lower corner {np.round(a['below'], 3)}  "
-          f"upper corner {np.round(a['above'], 3)}")
+
+    print(
+        f"\ngrip point sits at palm {np.round(a['pinch_at'], 3)}; "
+        f"GRASP_CENTRE_OFFSET is {np.round(GRASP_CENTRE_OFFSET, 3)}"
+    )
+    print("hand extent around the grip centre (palm frame):")
+    print(f"  lower corner {np.round(a['below'], 3)}  upper corner {np.round(a['above'], 3)}")
     print(f"  finger pair spans {np.round(a['finger_spread'], 3)}")
     print(f"  ahead of the grip centre, lowest point {np.round(a['below_fwd'], 3)}")
     need = -a["below_fwd"][2]
-    print(f"\nfor a horizontal approach the grip point must sit at least "
-          f"{need * 100:.1f} cm above the table top "
-          f"(whole hand incl. wrist: {-a['below'][2] * 100:.1f} cm)")
-    print(f"  -> a sphere of diameter D on a table has its centre at D/2, so a "
-          f"horizontal pinch needs D >= {2 * need * 100:.1f} cm, while the "
-          f"aperture caps it at {a['min_sep'] * 100:.1f} cm")
+    print(
+        f"\nfor a horizontal approach the grip point must sit at least "
+        f"{need * 100:.1f} cm above the table top "
+        f"(whole hand incl. wrist: {-a['below'][2] * 100:.1f} cm)"
+    )
+    print(
+        f"  -> a sphere of diameter D on a table has its centre at D/2, so a "
+        f"horizontal pinch needs D >= {2 * need * 100:.1f} cm, while the "
+        f"aperture caps it at {a['min_sep'] * 100:.1f} cm"
+    )
 
 
 if __name__ == "__main__":

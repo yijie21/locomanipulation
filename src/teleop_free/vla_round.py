@@ -54,28 +54,30 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections import deque
 import sys
 import time
+from collections import deque
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
 
-from sonic_token import (  # noqa: E402
-    GRIPPER_MAX, GRIPPER_MIN, expand_hands, snap,
-)
-
 # NVIDIA's own latency compensation, used verbatim so this tracks their
 # semantics rather than a lookalike of ours (docs/official_parity_audit.md A2).
 from gear_sonic.utils.inference.vla_utils import (  # noqa: E402
     calculate_latency_compensated_index as latency_index,
 )
+from sonic_token import (  # noqa: E402
+    GRIPPER_MAX,
+    GRIPPER_MIN,
+    expand_hands,
+    snap,
+)
 
 TOKEN_DIM = 64
-LIFT_M = 0.06            # the gym's own success threshold
-NEAR_M = 0.60            # "got to the table" for failure classification
+LIFT_M = 0.06  # the gym's own success threshold
+NEAR_M = 0.60  # "got to the table" for failure classification
 TIMEOUT_S = 90.0
 
 # --- optional early abort for rounds that are going nowhere -------------------
@@ -106,7 +108,7 @@ TIMEOUT_S = 90.0
 # 28.0 were all measured on the full budget, and a number measured with this on
 # is not on that ladder. Use it for diagnostic sweeps -- checkpoint scans,
 # ablations, frozen-DiT -- never for a headline.
-STALL_ABORT_S = 0.0        # 0 disables; 30.0 is the measured sweet spot
+STALL_ABORT_S = 0.0  # 0 disables; 30.0 is the measured sweet spot
 
 # FSQ snap on the predicted token before it goes on the wire. Ours has always
 # snapped; NVIDIA's own client sends raw floats (run_vla_inference.py, only a
@@ -150,7 +152,6 @@ SNAP = True
 GRIP_GAIN = 1.0
 
 
-
 def _tstart_view(p, st, obj_key, prelude, gx=0.80, gy=0.90):
     """Is the target still in the ego frame when the trace starts?
 
@@ -177,15 +178,17 @@ def _tstart_view(p, st, obj_key, prelude, gx=0.80, gy=0.90):
     direction is table-ward, which gains margin rather than spending it.
     """
     cam = ((st.get("objects") or {}).get(obj_key) or {}).get("cam")
-    prelude["tstart_cam"] = (None if cam is None
-                             else [round(float(v), 3) for v in cam])
+    prelude["tstart_cam"] = None if cam is None else [round(float(v), 3) for v in cam]
     if cam is None:
-        p.log("[vla] WARNING target is BEHIND the ego camera at trace t=0 -- "
-              "this round is blind and is not a policy test")
+        p.log(
+            "[vla] WARNING target is BEHIND the ego camera at trace t=0 -- this round is blind and is not a policy test"
+        )
     elif abs(cam[0]) > gx or abs(cam[1]) > gy:
-        p.log(f"[vla] WARNING target outside the ego gate at trace t=0 "
-              f"(cam=[{cam[0]:+.2f} {cam[1]:+.2f}], gate {gx}/{gy}) -- the "
-              f"prelude drifted it off frame; not a policy test")
+        p.log(
+            f"[vla] WARNING target outside the ego gate at trace t=0 "
+            f"(cam=[{cam[0]:+.2f} {cam[1]:+.2f}], gate {gx}/{gy}) -- the "
+            f"prelude drifted it off frame; not a policy test"
+        )
 
 
 def _obj_extra(st, obj_key):
@@ -193,22 +196,27 @@ def _obj_extra(st, obj_key):
     upright in degrees, which robot links touch the object, and its height.
     Old traces lack these; tools/failure_taxonomy.py degrades to xy displacement."""
     o = (st.get("objects") or {}).get(obj_key) or {}
-    q = o.get("quat"); tilt = None
+    q = o.get("quat")
+    tilt = None
     if q is not None:
         w_, x_, y_, z_ = (float(v) for v in q)
         r22 = 1.0 - 2.0 * (x_ * x_ + y_ * y_)
         tilt = float(np.degrees(np.arccos(float(np.clip(r22, -1.0, 1.0)))))
     pos = o.get("pos")
-    return dict(obj_tilt=tilt, touch=list(o.get("touching") or []),
-                touch_links=list(o.get("touch_links") or []),   # every robot link, not just the hands
-                obj_z=(None if pos is None else float(pos[2])))
+    return dict(
+        obj_tilt=tilt,
+        touch=list(o.get("touching") or []),
+        touch_links=list(o.get("touch_links") or []),  # every robot link, not just the hands
+        obj_z=(None if pos is None else float(pos[2])),
+    )
+
 
 def _grip_gain(g: float) -> float:
     """Amplify the predicted gripper's deviation from fully-open."""
     if GRIP_GAIN == 1.0:
         return g
-    return float(np.clip(GRIPPER_MAX - GRIP_GAIN * (GRIPPER_MAX - g),
-                         GRIPPER_MIN, GRIPPER_MAX))
+    return float(np.clip(GRIPPER_MAX - GRIP_GAIN * (GRIPPER_MAX - g), GRIPPER_MIN, GRIPPER_MAX))
+
 
 # --- temporal ensembling (ACT-style), OFF by default -------------------------
 # The async client replaces the cached chunk wholesale: a fresh 40-step
@@ -234,8 +242,8 @@ def _grip_gain(g: float) -> float:
 # recovers sub-grid precision.
 #
 # Default OFF (N=1) so the 5.9/13.7/28.0/47.5 ladder stays byte-comparable.
-ENSEMBLE_N = 1        # chunks to blend; 1 = off, current behaviour
-ENSEMBLE_M = 0.3      # exponential weight decay per chunk of age
+ENSEMBLE_N = 1  # chunks to blend; 1 = off, current behaviour
+ENSEMBLE_M = 0.3  # exponential weight decay per chunk of age
 # RTC (real-time chunking, test-time inpainting variant). When on, the async
 # worker tells serve_policy how many frames of the previous chunk have elapsed
 # (rtc.elapsed) and how many the NEXT inference will eat (rtc.frozen, rolling
@@ -268,7 +276,7 @@ def _ensemble(buf, now, rate):
     has run past its end is exhausted and contributes nothing.
     """
     picks, ws = [], []
-    for age, (tok, grip, t0) in enumerate(reversed(buf)):     # age 0 = newest
+    for age, (tok, grip, t0) in enumerate(reversed(buf)):  # age 0 = newest
         # round, not truncate (same half-frame bias the main path had) -- but
         # NOT the official latency_index here: it CLAMPS to the last frame,
         # which would silently drag exhausted chunks back into the blend
@@ -285,7 +293,9 @@ def _ensemble(buf, now, rate):
     tok = np.sum([p[0] * wi for p, wi in zip(picks, w)], axis=0)
     grip = float(np.sum([p[1] * wi for p, wi in zip(picks, w)]))
     return tok, grip
-STALL_ABORT_M = 0.03       # net pelvis displacement over the window, metres
+
+
+STALL_ABORT_M = 0.03  # net pelvis displacement over the window, metres
 
 
 def _stalled(trace, commanded_close) -> bool:
@@ -301,7 +311,7 @@ def _stalled(trace, commanded_close) -> bool:
     if now < STALL_ABORT_S:
         return False
     ref = None
-    for row in trace:                    # oldest row still inside the window
+    for row in trace:  # oldest row still inside the window
         if now - row["t"] <= STALL_ABORT_S:
             ref = row
             break
@@ -309,6 +319,8 @@ def _stalled(trace, commanded_close) -> bool:
         return False
     a, b = ref["pelvis_xy"], trace[-1]["pelvis_xy"]
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 < STALL_ABORT_M
+
+
 # The chunk's native frame rate. It MUST equal the fps of the dataset the
 # checkpoint was trained on -- the chunk is a sequence of frames, and publishing
 # it at a different rate replays the motion at the wrong speed.
@@ -378,9 +390,8 @@ class ObsBuilder:
         base_quat = np.asarray(pr["base_quat"], dtype=np.float64)
 
         whole = self.rm.get_configuration_from_actuated_joints(
-            body_actuated_joint_values=body,
-            left_hand_actuated_joint_values=lh,
-            right_hand_actuated_joint_values=rh)
+            body_actuated_joint_values=body, left_hand_actuated_joint_values=lh, right_hand_actuated_joint_values=rh
+        )
         self.rm.cache_forward_kinematics(whole)
         pl = self.rm.frame_placement(self.rm.supplemental_info.hand_frame_names["right"])
         rw_pos = pl.translation[:3]
@@ -453,14 +464,17 @@ class PolicyLink:
         out = self._call("get_action_raw", {"obs": obs})
         self.last_rtc = out.get("rtc.applied")  # [overlap, frozen] | None
         dump = os.environ.get("TF_OBS_DUMP")
-        if dump:   # diagnostic: what the policy saw + what it answered
+        if dump:  # diagnostic: what the policy saw + what it answered
             os.makedirs(dump, exist_ok=True)
-            n = getattr(self, "_dump_n", 0); self._dump_n = n + 1
-            np.savez_compressed(os.path.join(dump, f"obs_{n:05d}.npz"),
-                                wall=time.time(), tok=np.asarray(out["action.motion_token"]),
-                                grip=np.asarray(out["action.right_gripper"]),
-                                **{k: (np.asarray(v) if not isinstance(v, str) else np.array(v))
-                                   for k, v in obs.items()})
+            n = getattr(self, "_dump_n", 0)
+            self._dump_n = n + 1
+            np.savez_compressed(
+                os.path.join(dump, f"obs_{n:05d}.npz"),
+                wall=time.time(),
+                tok=np.asarray(out["action.motion_token"]),
+                grip=np.asarray(out["action.right_gripper"]),
+                **{k: (np.asarray(v) if not isinstance(v, str) else np.array(v)) for k, v in obs.items()},
+            )
         if ACTION18:
             a = np.asarray(out["action.a18"], dtype=np.float64)
             # the right grip rides along as the second return so every
@@ -471,8 +485,7 @@ class PolicyLink:
         return (snap(tok) if SNAP else tok), grip
 
 
-def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
-                    trace_dir: str | None = None):
+def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16, trace_dir: str | None = None):
     """Build the callable grasp_gym.VLA_POLICY expects.
 
     Called with the robot settled at its spawn, facing the object, video and
@@ -480,8 +493,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
     """
     counter = {"n": 0}
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
-                  replace=None, spawn_xy=None):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None):
         from primitives import LocomotionMode
 
         obs_src = ObsBuilder(task)
@@ -501,15 +513,13 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # across it -- streamed mode over an empty buffer stops control
         # (g1_deploy_onnx_ref.cpp:618), and the first v4 frame is also what
         # flips is_using_encoder_ off. Same order diag_token_replay validated.
-        if replace is not None and os.environ.get(
-                "LOCOMANI_REPLACE", "0") == "1":
-            replace()   # legacy sim-only re-teleport, off by default
+        if replace is not None and os.environ.get("LOCOMANI_REPLACE", "0") == "1":
+            replace()  # legacy sim-only re-teleport, off by default
 
-        def _mark(tag):   # see the async client's comment: prelude forensics
+        def _mark(tag):  # see the async client's comment: prelude forensics
             try:
                 sm = p.obs()
-                p.log(f"[vla] prelude {tag}: pelvis "
-                      f"{np.round(p.pelvis_xy(sm), 3)}")
+                p.log(f"[vla] prelude {tag}: pelvis {np.round(p.pelvis_xy(sm), 3)}")
             except Exception:
                 pass
 
@@ -521,11 +531,11 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # frame, which is stable. Clamp-on-walking is what used to pitch the
         # robot over; clamp-on-standing is just standing.
         from initial_pose import initial_token
+
         INIT_TOK = initial_token()
         l_open, r_open = expand_hands(GRIPPER_MAX)
         for _ in range(30):
-            p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open,
-                              frame_index=0)
+            p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
             time.sleep(0.02)
         _mark("primed")
         p.cmd.enter_streamed()
@@ -554,7 +564,8 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         prelude = dict(
             entry_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s0)],
             tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
-            prelude_s=round(t_start - t_entry, 2))
+            prelude_s=round(t_start - t_entry, 2),
+        )
         if spawn_xy is not None:
             # The acceptance criterion, IN the data: pelvis distance from
             # the HANDOVER pose (grasp_gym's s_fork, post-settle -- since
@@ -564,12 +575,13 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             # VLA prelude itself: the token hold plus the 1 s blend, during
             # which chunk-0 is already partially executing. > 0.12 m means
             # the prelude is again moving the robot before trace t=0.
-            off0 = float(np.linalg.norm(
-                np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
+            off0 = float(np.linalg.norm(np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
             prelude["tstart_spawn_off"] = round(off0, 4)
             if off0 > 0.12:
-                p.log(f"[vla] WARNING tstart {off0:.2f} m off the handover "
-                      f"pose (acceptance is 0.1) -- prelude drift is back?")
+                p.log(
+                    f"[vla] WARNING tstart {off0:.2f} m off the handover "
+                    f"pose (acceptance is 0.1) -- prelude drift is back?"
+                )
         _tstart_view(p, s_ts, obj_key, prelude)
         frame_index = 0
         lifted_at = None
@@ -589,6 +601,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # exactly the span where the main thread only touches obs/policy
         # sockets.
         import threading as _th
+
         _feed = {"fi": 0}
 
         def _start_feeder(ftok, fgrip, j0, fi0):
@@ -599,8 +612,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                 while not stop.is_set():
                     jj = min(j, len(ftok) - 1)  # exhausted -> explicit hold
                     lhj, rhj = expand_hands(fgrip[jj])
-                    p.cmd.token_frame(ftok[jj], right_hand=rhj, left_hand=lhj,
-                                      frame_index=fi)
+                    p.cmd.token_frame(ftok[jj], right_hand=rhj, left_hand=lhj, frame_index=fi)
                     _feed["fi"] = fi
                     j += 1
                     fi += 1
@@ -613,7 +625,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
         # Seed the first in-loop gap with chunk-0: the blend above ended on
         # tok0[0], so the feeder continues tok0 from frame 0 while the loop's
         # first obs+inference runs -- continuous motion from the handover on.
-        cur = (tok0, grip0, 0)   # (tok, grip, next frame) of the running chunk
+        cur = (tok0, grip0, 0)  # (tok, grip, next frame) of the running chunk
         feeder = None
 
         def _stop_feeder():
@@ -648,8 +660,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                     lhj, rhj = expand_hands(grip[j])
                     if grip[j] < 0.005:
                         commanded_close = True
-                    p.cmd.token_frame(tok[j], right_hand=rhj, left_hand=lhj,
-                                      frame_index=frame_index)
+                    p.cmd.token_frame(tok[j], right_hand=rhj, left_hand=lhj, frame_index=frame_index)
                     frame_index += 1
                     time.sleep(dt)
                 cur = (tok, grip, skip + n)
@@ -660,25 +671,31 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                 rise = float(obj[2] - obj0[2])
                 dist = float(np.linalg.norm(obj[:2] - pel))
                 palm = np.asarray(st["palms"]["right"]["pos"], dtype=float)
-                trace.append(dict(t=time.time() - t_start, rise=rise, dist=dist,
-                                  fallen=bool(st["fallen"]),
-                                  grip=float(grip[skip:skip + n].min()),
-                                  palm_z=float(palm[2]),
-                                  palm_obj=float(np.linalg.norm(palm - obj)),
-                                      **_obj_extra(st, obj_key),
-                                  # the stall poses are the whole point of the
-                                  # trace: they are what a targeted recovery
-                                  # collection spawns the expert at
-                                  pelvis_xy=[float(v) for v in pel],
-                                  pelvis_yaw=float(p.pelvis_yaw(st)),
-                                  obj_xy=[float(v) for v in obj[:2]]))
+                trace.append(
+                    dict(
+                        t=time.time() - t_start,
+                        rise=rise,
+                        dist=dist,
+                        fallen=bool(st["fallen"]),
+                        grip=float(grip[skip : skip + n].min()),
+                        palm_z=float(palm[2]),
+                        palm_obj=float(np.linalg.norm(palm - obj)),
+                        **_obj_extra(st, obj_key),
+                        # the stall poses are the whole point of the
+                        # trace: they are what a targeted recovery
+                        # collection spawns the expert at
+                        pelvis_xy=[float(v) for v in pel],
+                        pelvis_yaw=float(p.pelvis_yaw(st)),
+                        obj_xy=[float(v) for v in obj[:2]],
+                    )
+                )
                 if st["fallen"]:
                     why = "[vla] fell"
                     break
                 if rise > LIFT_M:
                     if lifted_at is None:
                         lifted_at = time.time()
-                    elif time.time() - lifted_at > 2.0:   # held, not a bounce
+                    elif time.time() - lifted_at > 2.0:  # held, not a bounce
                         ok, why = True, "ok"
                         break
                 else:
@@ -687,7 +704,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
                     why = "[vla] reach: stalled (--stall-abort)"
                     break
         finally:
-            _stop_feeder()   # an exception mid-gap must not leave a thread
+            _stop_feeder()  # an exception mid-gap must not leave a thread
             #                  publishing token frames after exit_streamed
             p.cmd.exit_streamed()
             p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
@@ -701,10 +718,8 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
             elif not commanded_close:
                 why = f"[vla] reach: at the table (min {min_dist:.2f} m) but never commanded a close"
             else:
-                moved = float(np.linalg.norm(
-                    np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
-                why = (f"[vla] close: commanded a grasp but no lift "
-                       f"(object moved {moved * 100:.0f} cm laterally)")
+                moved = float(np.linalg.norm(np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
+                why = f"[vla] close: commanded a grasp but no lift (object moved {moved * 100:.0f} cm laterally)"
 
         if trace_dir:
             os.makedirs(trace_dir, exist_ok=True)
@@ -716,9 +731,7 @@ def make_vla_policy(link: PolicyLink, task: str, execution_horizon: int = 16,
     return vla_round
 
 
-def make_vla_policy_async(link: PolicyLink, task: str,
-                          inference_interval: float = 0.4,
-                          trace_dir: str | None = None):
+def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float = 0.4, trace_dir: str | None = None):
     """The official streaming pattern: never stop publishing.
 
     NVIDIA's own client (gear_sonic/scripts/run_vla_inference.py) does not
@@ -750,15 +763,15 @@ def make_vla_policy_async(link: PolicyLink, task: str,
     counter = {"n": 0}
     RATE = DATASET_FPS
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
-                  replace=None, spawn_xy=None):
-        from primitives import LocomotionMode
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None):
         # OURS, not NVIDIA's: theirs holds the arms forward and bent with the
         # torso pitched, which is outside the distribution every episode was
         # trained in, so the handover used to lean forward and then snap
         # upright over the blend. TF_INIT_TOKEN=official restores it.
         # See initial_pose.py for the measurement and why a medoid.
         from initial_pose import initial_token
+        from primitives import LocomotionMode
+
         INIT_TOK = initial_token()
         from sonic_token import GRIPPER_MAX as _G_OPEN
 
@@ -778,19 +791,19 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             # 18-D drives the PLANNER channel, so there is nothing to get off
             # and nothing to prime: hold the arm where it is and the base IDLE.
             from action18_client import Action18Sender
-            from primitives import LocomotionMode as _LM, upper_body_from_mj as _u17
+            from primitives import LocomotionMode as _LM
+            from primitives import upper_body_from_mj as _u17
+
             sender18 = Action18Sender(p)
             _s0 = p.obs()
             _fv0 = p._facing(_s0)
-            _anchor = (np.asarray(p.pelvis_xy(_s0), dtype=float).copy(),
-                       float(p.pelvis_yaw(_s0)))
+            _anchor = (np.asarray(p.pelvis_xy(_s0), dtype=float).copy(), float(p.pelvis_yaw(_s0)))
             for _ in range(30):
                 sender18.hold(_anchor[0], _anchor[1], l_open, r_open)
                 time.sleep(0.02)
         else:
             for _ in range(30):
-                p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open,
-                                  frame_index=0)
+                p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
                 time.sleep(0.02)
             p.cmd.enter_streamed()
         t_hold = time.time()
@@ -804,8 +817,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     # (diag_station_keep.py). See action18_client.hold.
                     sender18.hold(_anchor[0], _anchor[1], l_open, r_open)
                 else:
-                    p.cmd.token_frame(INIT_TOK, right_hand=r_open,
-                                      left_hand=l_open, frame_index=0)
+                    p.cmd.token_frame(INIT_TOK, right_hand=r_open, left_hand=l_open, frame_index=0)
                 time.sleep(1.0 / RATE)
 
         keep_th = threading.Thread(target=_keepalive, daemon=True)
@@ -833,7 +845,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # main thread owns the commander and the privileged predicates. ZMQ
         # sockets are not thread-safe, so the split is load-bearing.
         latest = {"chunk": None, "t0": None, "capture_chunk_id": None}
-        buf = []                      # [(tok, grip, t0)], newest last
+        buf = []  # [(tok, grip, t0)], newest last
         lock = threading.Lock()
         stop = threading.Event()
         # Empirical latency record for the lockstep client (tools/
@@ -843,13 +855,14 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         commitment = None
         if TRANSITION_COMMIT:
             from transition_execution import TransitionCommitment
+
             commitment = TransitionCommitment(RATE, TRANSITION_DECODER)
-            lat_rec['transition_commit_events'] = commitment.events
-            lat_rec['transition_commit_errors'] = commitment.errors
+            lat_rec["transition_commit_events"] = commitment.events
+            lat_rec["transition_commit_errors"] = commitment.errors
 
         def worker():
-            rtc_prev_t0 = None    # obs time of the last SUCCESSFUL inference
-            rtc_lat = []          # last 20 measured obs->chunk latencies (s)
+            rtc_prev_t0 = None  # obs time of the last SUCCESSFUL inference
+            rtc_lat = []  # last 20 measured obs->chunk latencies (s)
             rtc_first = True
             while not stop.is_set():
                 t0 = time.time()
@@ -861,16 +874,14 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                         # elapsed 0 on the first request: no injection server-
                         # side, but the meta's presence makes it CACHE the
                         # chunk, so request 2 has a prefix to freeze.
-                        e = (0 if rtc_prev_t0 is None
-                             else int(round((t0 - rtc_prev_t0) * RATE)))
+                        e = 0 if rtc_prev_t0 is None else int(round((t0 - rtc_prev_t0) * RATE))
                         lat = sorted(rtc_lat)
                         p90 = lat[int(0.9 * (len(lat) - 1))] if lat else 0.5
                         obs["rtc.elapsed"] = e
-                        obs["rtc.frozen"] = max(1, min(20, int(np.ceil(
-                            p90 * RATE)) + 1))
+                        obs["rtc.frozen"] = max(1, min(20, int(np.ceil(p90 * RATE)) + 1))
                         if commitment is not None:
-                            obs['rtc.frozen'] = commitment.window.frozen(t0, obs['rtc.frozen'])
-                            obs['rtc.commit'] = int(t0 < commitment.window.until)
+                            obs["rtc.frozen"] = commitment.window.frozen(t0, obs["rtc.frozen"])
+                            obs["rtc.commit"] = int(t0 < commitment.window.until)
                     try:
                         tok, grip = link.get_chunk(obs)
                     except Exception:
@@ -886,17 +897,23 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                         lat_rec["cycle_s"].append(t0 - latest["t0"])
                     lat_rec.setdefault("chunk_grip_min", []).append(float(np.min(grip)))
                     lat_rec.setdefault("chunk_tok_span", []).append(
-                        float(np.abs(np.asarray(tok)[-1] - np.asarray(tok)[0]).mean()))
+                        float(np.abs(np.asarray(tok)[-1] - np.asarray(tok)[0]).mean())
+                    )
                     if RTC_ON:
                         rtc_first = False
                         rtc_prev_t0 = t0
                         rtc_lat.append(time.time() - t0)
                         del rtc_lat[:-20]
                         applied = getattr(link, "last_rtc", None)
-                        lat_rec.setdefault('rtc_requests', []).append(dict(
-                            wall=t0, elapsed=e, frozen=int(obs['rtc.frozen']),
-                            commit=bool(obs.get('rtc.commit', False)),
-                            applied=None if applied is None else np.asarray(applied).tolist()))
+                        lat_rec.setdefault("rtc_requests", []).append(
+                            dict(
+                                wall=t0,
+                                elapsed=e,
+                                frozen=int(obs["rtc.frozen"]),
+                                commit=bool(obs.get("rtc.commit", False)),
+                                applied=None if applied is None else np.asarray(applied).tolist(),
+                            )
+                        )
                         if applied is not None:
                             counter.setdefault("rtc_applied", 0)
                             counter["rtc_applied"] += 1
@@ -928,14 +945,15 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         if not ready:
             _teardown()
             stop.set()
-            if commitment is not None: commitment.close()
+            if commitment is not None:
+                commitment.close()
             obs_src.close()
-            return False, ("[vla] initial-pose hold: no fresh chunk within "
-                           "15 s -- policy worker stalled; round aborted")
+            return False, (
+                "[vla] initial-pose hold: no fresh chunk within 15 s -- policy worker stalled; round aborted"
+            )
 
-        if replace is not None and os.environ.get(
-                "LOCOMANI_REPLACE", "0") == "1":
-            replace()   # legacy sim-only re-teleport, off by default
+        if replace is not None and os.environ.get("LOCOMANI_REPLACE", "0") == "1":
+            replace()  # legacy sim-only re-teleport, off by default
 
         with lock:
             tok0, grip0 = latest["chunk"]
@@ -945,7 +963,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         # standing token into the first chunk frame (1 s linear, the
         # official client's default) so the handover has no step in it.
         _teardown()
-        s_blend = p.obs()   # where the HOLD left the robot; the blend's own
+        s_blend = p.obs()  # where the HOLD left the robot; the blend's own
         #                     displacement is chunk-0 already executing, not
         #                     drift (diag_token_hold: both tokens <= 0.016 m
         #                     over 30 s of pure hold)
@@ -960,12 +978,11 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                 a18_0 = np.asarray(tok0[0], dtype=float).copy()
                 cur = sender18.ik.fk(sender18.q, "right")[0]
                 a18_0[0:3] = (1.0 - a) * np.asarray(cur) + a * a18_0[0:3]
-                a18_0[14:18] = a * a18_0[14:18]      # ease the base command in
+                a18_0[14:18] = a * a18_0[14:18]  # ease the base command in
                 sender18.send(a18_0, frame_index=0)
             else:
                 tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])
-                p.cmd.token_frame(tk, right_hand=r_open, left_hand=l_open,
-                                  frame_index=0)
+                p.cmd.token_frame(tk, right_hand=r_open, left_hand=l_open, frame_index=0)
             time.sleep(1.0 / RATE)
 
         # Prelude segmentation marks. The stand-start gap (~0.35 m of
@@ -977,12 +994,9 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         def _mark(tag):
             try:
                 sm = p.obs()
-                p.log(f"[vla] prelude {tag}: pelvis "
-                      f"{np.round(p.pelvis_xy(sm), 3)} "
-                      f"grip0 {float(grip0[0]):+.4f}")
+                p.log(f"[vla] prelude {tag}: pelvis {np.round(p.pelvis_xy(sm), 3)} grip0 {float(grip0[0]):+.4f}")
             except Exception as e:  # a missing mark must LOOK missing:
-                p.log(f"[vla] prelude {tag}: MARK FAILED ({e}) -- do not "
-                      f"read this segment as drift-free")
+                p.log(f"[vla] prelude {tag}: MARK FAILED ({e}) -- do not read this segment as drift-free")
 
         _mark("streamed")
 
@@ -993,7 +1007,8 @@ def make_vla_policy_async(link: PolicyLink, task: str,
         prelude = dict(
             entry_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s0)],
             tstart_pelvis=[round(float(v), 4) for v in p.pelvis_xy(s_ts)],
-            prelude_s=round(t_start - t_entry, 2))
+            prelude_s=round(t_start - t_entry, 2),
+        )
         if spawn_xy is not None:
             # Split accounting (2026-08-31). Reference is the HANDOVER pose
             # (grasp_gym's s_fork, post-settle); earlier runs measured from
@@ -1011,19 +1026,18 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             # executing through the 1 s blend (probe median 0.033) -- the
             # policy's own first action, recorded, not warned about.
             # tstart_spawn_off stays as the total for continuity.
-            hold_off = float(np.linalg.norm(
-                np.asarray(p.pelvis_xy(s_blend)) - np.asarray(spawn_xy)))
-            blend_off = float(np.linalg.norm(
-                np.asarray(p.pelvis_xy(s_ts)) - p.pelvis_xy(s_blend)))
-            off0 = float(np.linalg.norm(
-                np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
+            hold_off = float(np.linalg.norm(np.asarray(p.pelvis_xy(s_blend)) - np.asarray(spawn_xy)))
+            blend_off = float(np.linalg.norm(np.asarray(p.pelvis_xy(s_ts)) - p.pelvis_xy(s_blend)))
+            off0 = float(np.linalg.norm(np.asarray(p.pelvis_xy(s_ts)) - np.asarray(spawn_xy)))
             prelude["hold_off"] = round(hold_off, 4)
             prelude["blend_off"] = round(blend_off, 4)
             prelude["tstart_spawn_off"] = round(off0, 4)
             if hold_off > 0.25:
-                p.log(f"[vla] WARNING hold drifted {hold_off:.2f} m off the "
-                      f"handover pose (entry-step floor is ~0.18) -- "
-                      f"prelude drift is back?")
+                p.log(
+                    f"[vla] WARNING hold drifted {hold_off:.2f} m off the "
+                    f"handover pose (entry-step floor is ~0.18) -- "
+                    f"prelude drift is back?"
+                )
         _tstart_view(p, s_ts, obj_key, prelude)
         if ACTION18 and _anchor is not None:
             # Did the prelude actually HOLD the heading it was given? This is
@@ -1037,8 +1051,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             # anchor is wrong for the pure-planner path and the arm's
             # headings are not what they claim.
             _e = float(p.pelvis_yaw(s_ts)) - float(_anchor[1])
-            prelude["tstart_yaw_err_deg"] = round(
-                math.degrees((_e + math.pi) % (2 * math.pi) - math.pi), 2)
+            prelude["tstart_yaw_err_deg"] = round(math.degrees((_e + math.pi) % (2 * math.pi) - math.pi), 2)
         frame_index = 0
         grip_hist = deque(maxlen=GRIP_DELAY + 1)
         lifted_at = None
@@ -1058,8 +1071,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     with lock:
                         blended = _ensemble(buf, tick, RATE)
                         if blended is None and latest["chunk"] is not None:
-                            blended = (latest["chunk"][0][-1],
-                                       float(latest["chunk"][1][-1]))
+                            blended = (latest["chunk"][0][-1], float(latest["chunk"][1][-1]))
                     tok_j, grip_j = blended
                 else:
                     # adopt a fresh chunk at a latency-compensated index,
@@ -1072,30 +1084,34 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                             tok, grip = latest["chunk"]
                             chunk_t0 = latest["t0"]
                             capture_chunk_id = latest["capture_chunk_id"]
-                            idx = latency_index(time.time() - chunk_t0,
-                                                RATE, len(tok))
+                            idx = latency_index(time.time() - chunk_t0, RATE, len(tok))
                     j = min(idx, len(tok) - 1)
                     tok_j, grip_j = tok[j], float(grip[j])
-                    trace_source = dict(kind="chunk", chunk_id=capture_chunk_id,
-                                        action_index=j, observation_wall=chunk_t0,
-                                        grip_delay_frames=GRIP_DELAY)
+                    trace_source = dict(
+                        kind="chunk",
+                        chunk_id=capture_chunk_id,
+                        action_index=j,
+                        observation_wall=chunk_t0,
+                        grip_delay_frames=GRIP_DELAY,
+                    )
                     idx = min(idx + 1, len(tok) - 1)
 
                 grip_raw_j = grip_j
                 grip_j = _grip_gain(grip_j)
                 if GRIP_DELAY > 0:
                     grip_hist.append(grip_j)
-                    grip_j = grip_hist[0]          # value from GRIP_DELAY frames ago (deque is full after warm-up)
+                    grip_j = grip_hist[0]  # value from GRIP_DELAY frames ago (deque is full after warm-up)
                 lhj, rhj = expand_hands(grip_j)
                 if grip_j < 0.005:
                     commanded_close = True
                 if ACTION18:
                     a_j = np.asarray(tok_j, dtype=float).copy()
-                    a_j[6] = grip_j        # honour --grip-gain / TF_GRIP_DELAY
+                    a_j[6] = grip_j  # honour --grip-gain / TF_GRIP_DELAY
                     sender18.send(a_j, frame_index=frame_index)
                 else:
-                    p.cmd.token_frame(tok_j, right_hand=rhj, left_hand=lhj,
-                                      frame_index=frame_index, trace_source=trace_source)
+                    p.cmd.token_frame(
+                        tok_j, right_hand=rhj, left_hand=lhj, frame_index=frame_index, trace_source=trace_source
+                    )
                 frame_index += 1
 
                 # predicates at ~2 Hz, off the hot path
@@ -1132,10 +1148,13 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                     obj_in_palm = None
                     if pquat is not None:
                         w_, x_, y_, z_ = pquat
-                        R = np.array([
-                            [1-2*(y_*y_+z_*z_), 2*(x_*y_-z_*w_), 2*(x_*z_+y_*w_)],
-                            [2*(x_*y_+z_*w_), 1-2*(x_*x_+z_*z_), 2*(y_*z_-x_*w_)],
-                            [2*(x_*z_-y_*w_), 2*(y_*z_+x_*w_), 1-2*(x_*x_+y_*y_)]])
+                        R = np.array(
+                            [
+                                [1 - 2 * (y_ * y_ + z_ * z_), 2 * (x_ * y_ - z_ * w_), 2 * (x_ * z_ + y_ * w_)],
+                                [2 * (x_ * y_ + z_ * w_), 1 - 2 * (x_ * x_ + z_ * z_), 2 * (y_ * z_ - x_ * w_)],
+                                [2 * (x_ * z_ - y_ * w_), 2 * (y_ * z_ + x_ * w_), 1 - 2 * (x_ * x_ + y_ * y_)],
+                            ]
+                        )
                         obj_in_palm = [float(v) for v in R.T @ (obj - palm)]
                     pp = st.get("pelvis", {}).get("pos")
                     pq = st.get("pelvis", {}).get("quat")
@@ -1145,22 +1164,26 @@ def make_vla_policy_async(link: PolicyLink, task: str,
                         # pitch about the body y axis, +ve = leaning forward
                         sp = 2.0 * (w_ * y_ - z_ * x_)
                         pitch = float(np.arcsin(float(np.clip(sp, -1.0, 1.0))))
-                    trace.append(dict(t=tick - t_start, rise=rise,
-                                      dist=float(np.linalg.norm(obj[:2] - pel)),
-                                      fallen=bool(st["fallen"]),
-                                      grip=float(grip_j),
-                                      grip_raw=float(grip_raw_j),
-                                      pelvis_xy=[float(v) for v in pel],
-                                      pelvis_yaw=float(p.pelvis_yaw(st)),
-                                      pelvis_z=(None if pp is None
-                                                else float(pp[2])),
-                                      torso_pitch=pitch,
-                                      obj_xy=[float(v) for v in obj[:2]],
-                                      palm_z=float(palm[2]),
-                                      palm_quat=pquat,
-                                      obj_in_palm=obj_in_palm,
-                                      palm_obj=float(np.linalg.norm(palm - obj)),
-                                      **_obj_extra(st, obj_key)))
+                    trace.append(
+                        dict(
+                            t=tick - t_start,
+                            rise=rise,
+                            dist=float(np.linalg.norm(obj[:2] - pel)),
+                            fallen=bool(st["fallen"]),
+                            grip=float(grip_j),
+                            grip_raw=float(grip_raw_j),
+                            pelvis_xy=[float(v) for v in pel],
+                            pelvis_yaw=float(p.pelvis_yaw(st)),
+                            pelvis_z=(None if pp is None else float(pp[2])),
+                            torso_pitch=pitch,
+                            obj_xy=[float(v) for v in obj[:2]],
+                            palm_z=float(palm[2]),
+                            palm_quat=pquat,
+                            obj_in_palm=obj_in_palm,
+                            palm_obj=float(np.linalg.norm(palm - obj)),
+                            **_obj_extra(st, obj_key),
+                        )
+                    )
                     if st["fallen"]:
                         why = "[vla] fell"
                         break
@@ -1184,7 +1207,8 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             p.cmd.exit_streamed()
             p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
             th.join(timeout=1.0)
-            if commitment is not None: commitment.close()
+            if commitment is not None:
+                commitment.close()
             obs_src.close()
 
         if not ok and why == "[vla] timeout" and trace:
@@ -1192,19 +1216,15 @@ def make_vla_policy_async(link: PolicyLink, task: str,
             if min_dist > NEAR_M:
                 why = f"[vla] walk: never closer than {min_dist:.2f} m"
             elif not commanded_close:
-                why = (f"[vla] reach: at the table (min {min_dist:.2f} m) "
-                       f"but never commanded a close")
+                why = f"[vla] reach: at the table (min {min_dist:.2f} m) but never commanded a close"
             else:
-                moved = float(np.linalg.norm(
-                    np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
-                why = (f"[vla] close: commanded a grasp but no lift "
-                       f"(object moved {moved * 100:.0f} cm laterally)")
+                moved = float(np.linalg.norm(np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
+                why = f"[vla] close: commanded a grasp but no lift (object moved {moved * 100:.0f} cm laterally)"
 
         if trace_dir:
             os.makedirs(trace_dir, exist_ok=True)
             with open(os.path.join(trace_dir, f"round_{counter['n']:03d}.json"), "w") as f:
-                json.dump(dict(ok=ok, why=why, **prelude, latency=lat_rec,
-                               trace=trace), f)
+                json.dump(dict(ok=ok, why=why, **prelude, latency=lat_rec, trace=trace), f)
         counter["n"] += 1
         return ok, why
 
@@ -1226,8 +1246,7 @@ def make_vla_policy_async(link: PolicyLink, task: str,
 # Same obs -> same chunk (policy.seed) -> same physics: a round replays
 # bit-for-bit, and a GPU shared with three other servers changes nothing but
 # the wall time.
-LOCKSTEP_PORT = int(os.environ.get(
-    "TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
+LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
 
 
 class LockstepLink:
@@ -1236,9 +1255,11 @@ class LockstepLink:
 
     def __init__(self, host="localhost", port=LOCKSTEP_PORT, timeout_ms=60000):
         import threading
+
         import msgpack
         import msgpack_numpy as mnp
         import zmq
+
         self._msgpack, self._mnp = msgpack, mnp
         self.ctx = zmq.Context.instance()
         self.sock = self.ctx.socket(zmq.REQ)
@@ -1254,6 +1275,7 @@ class LockstepLink:
         next send ("Operation cannot be accomplished in current state");
         rebuild it so the round fails cleanly and the next one can run."""
         import zmq
+
         try:
             self.sock.close(linger=0)
         except Exception:
@@ -1268,8 +1290,7 @@ class LockstepLink:
         with self.lock:
             try:
                 self.sock.send(self._msgpack.packb(req, default=self._mnp.encode))
-                return self._msgpack.unpackb(self.sock.recv(),
-                                             object_hook=self._mnp.decode, raw=False)
+                return self._msgpack.unpackb(self.sock.recv(), object_hook=self._mnp.decode, raw=False)
             except Exception:
                 self._reconnect()
                 raise
@@ -1287,12 +1308,16 @@ class LockstepLink:
         """frames: [(token|None, left|None, right|None), ...]"""
         fr = []
         for tok, l, r in frames:
-            fr.append({"token": None if tok is None else np.asarray(tok, dtype=np.float32),
-                       "left": None if l is None else np.asarray(l, dtype=np.float32),
-                       "right": None if r is None else np.asarray(r, dtype=np.float32)})
-        rep = self._call({"cmd": "step", "frames": fr,
-                          "ticks_per_frame": int(ticks_per_frame),
-                          "want_obs": bool(want_obs)})
+            fr.append(
+                {
+                    "token": None if tok is None else np.asarray(tok, dtype=np.float32),
+                    "left": None if l is None else np.asarray(l, dtype=np.float32),
+                    "right": None if r is None else np.asarray(r, dtype=np.float32),
+                }
+            )
+        rep = self._call(
+            {"cmd": "step", "frames": fr, "ticks_per_frame": int(ticks_per_frame), "want_obs": bool(want_obs)}
+        )
         if not rep.get("ok"):
             raise RuntimeError(f"lockstep step: {rep.get('error')}")
         return rep
@@ -1318,8 +1343,10 @@ class LockstepClock:
 
     def __init__(self, link: LockstepLink, cmd, hz: float = 50.0):
         import threading
+
         from initial_pose import initial_token
         from sonic_token import GRIPPER_MAX as _G_OPEN
+
         self.link = link
         self.cmd = cmd
         self.init_tok = initial_token()
@@ -1330,7 +1357,7 @@ class LockstepClock:
         self._idle = threading.Event()
         self._idle.set()
         self._err_last = 0.0
-        self.session = None          # session the deploy is primed for
+        self.session = None  # session the deploy is primed for
         self.primed = False
         self.th = threading.Thread(target=self._loop, daemon=True)
         self.th.start()
@@ -1346,8 +1373,7 @@ class LockstepClock:
     def _prime(self):
         """Bring the fresh session into streamed mode on the standing token."""
         for _ in range(3):
-            self.cmd.token_frame(self.init_tok, right_hand=self.r_open,
-                                 left_hand=self.l_open, frame_index=0)
+            self.cmd.token_frame(self.init_tok, right_hand=self.r_open, left_hand=self.l_open, frame_index=0)
             self._tick([(None, None, None)])
         self.cmd.enter_streamed()
         self._tick([(None, None, None)] * 2)
@@ -1431,12 +1457,13 @@ def install_lockstep_shim(clock: LockstepClock) -> None:
     commands) become no-ops, hold() becomes hold_frames(), planner frame()
     is dropped. enter_streamed and token_frame pass through."""
     import agent_server
+
     C = agent_server.AgentCommander
     orig_command = C.command
 
     def command(self, *, start: bool, stop: bool, planner: bool) -> None:
         if planner and not stop:
-            return                      # no planner under lockstep
+            return  # no planner under lockstep
         orig_command(self, start=start, stop=stop, planner=planner)
 
     def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
@@ -1448,8 +1475,7 @@ def install_lockstep_shim(clock: LockstepClock) -> None:
     C.command = command
     C.hold = hold
     C.frame = frame
-    print("[lockstep] commander shim installed: planner commands dropped, "
-          "hold() = N standing-token ticks")
+    print("[lockstep] commander shim installed: planner commands dropped, hold() = N standing-token ticks")
 
 
 class CleanClock:
@@ -1465,8 +1491,10 @@ class CleanClock:
 
     def __init__(self):
         import threading
+
         from initial_pose import initial_token
         from sonic_token import GRIPPER_MAX
+
         self.init_tok = initial_token()
         self.l_open, self.r_open = expand_hands(GRIPPER_MAX)
         self.cmd = None
@@ -1484,8 +1512,7 @@ class CleanClock:
 
     def _send_init(self) -> None:
         with self.lock:
-            self.cmd.token_frame(self.init_tok, right_hand=self.r_open,
-                                 left_hand=self.l_open, frame_index=0)
+            self.cmd.token_frame(self.init_tok, right_hand=self.r_open, left_hand=self.l_open, frame_index=0)
 
     def prime(self) -> None:
         """Fresh CONTROL-state deploy -> streamed mode on the standing token
@@ -1525,7 +1552,7 @@ class CleanClock:
 
     def pause(self) -> None:
         self._run.clear()
-        time.sleep(self.dt * 1.5)      # let an in-flight publish finish
+        time.sleep(self.dt * 1.5)  # let an in-flight publish finish
 
     def hold(self, seconds: float) -> None:
         self.resume()
@@ -1543,6 +1570,7 @@ def install_clean_shim(clock: CleanClock) -> None:
     back (never back to planner mode). Every publish goes through the clock's
     lock. Installed at the class before grasp_gym builds its Primitives."""
     import agent_server
+
     C = agent_server.AgentCommander
     orig_init, orig_command = C.__init__, C.command
     orig_enter, orig_token = C.enter_streamed, C.token_frame
@@ -1554,7 +1582,7 @@ def install_clean_shim(clock: CleanClock) -> None:
 
     def command(self, *, start: bool, stop: bool, planner: bool) -> None:
         if planner and not stop:
-            return                      # never a planner command
+            return  # never a planner command
         with clock.lock:
             orig_command(self, start=start, stop=stop, planner=planner)
 
@@ -1562,10 +1590,10 @@ def install_clean_shim(clock: CleanClock) -> None:
         if clock._priming:
             orig_enter(self)
             return
-        clock.pause()                   # the round publishes from here on
+        clock.pause()  # the round publishes from here on
 
     def exit_streamed(self) -> None:
-        clock.resume()                  # the round is over; keep standing
+        clock.resume()  # the round is over; keep standing
 
     def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
         clock.hold(seconds)
@@ -1579,8 +1607,10 @@ def install_clean_shim(clock: CleanClock) -> None:
 
     C.__init__, C.command, C.enter_streamed, C.exit_streamed = __init__, command, enter_streamed, exit_streamed
     C.hold, C.frame, C.token_frame = hold, frame, token_frame
-    print("[clean-deploy] commander shim installed: planner commands dropped, "
-          "hold() = standing token, streamed mode kept for the process lifetime")
+    print(
+        "[clean-deploy] commander shim installed: planner commands dropped, "
+        "hold() = standing token, streamed mode kept for the process lifetime"
+    )
 
 
 def load_latency_dist(path: str | None, fixed: int | None) -> dict:
@@ -1588,17 +1618,22 @@ def load_latency_dist(path: str | None, fixed: int | None) -> dict:
     if fixed is not None:
         return {"first": [int(fixed)], "steady": [int(fixed)], "source": f"fixed {fixed}"}
     if not path:
-        raise SystemExit("lockstep client needs --latency-frames K or "
-                         "--latency-dist <json from tools/latency_dist.py>")
+        raise SystemExit("lockstep client needs --latency-frames K or --latency-dist <json from tools/latency_dist.py>")
     d = json.load(open(path))
     assert d.get("first") and d.get("steady"), f"{path}: empty distribution"
     d["source"] = path
     return d
 
 
-def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: LockstepClock,
-                             task: str, latency: dict, seed: int = 0,
-                             trace_dir: str | None = None):
+def make_vla_policy_lockstep(
+    link: PolicyLink,
+    ls: LockstepLink,
+    clock: LockstepClock,
+    task: str,
+    latency: dict,
+    seed: int = 0,
+    trace_dir: str | None = None,
+):
     """Simulation-clock round with simulated inference latency.
 
     Cycle (all in 25 fps frames, f = frames since the round started):
@@ -1617,12 +1652,12 @@ def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: Lockstep
     counter = {"n": 0}
     RATE = int(round(DATASET_FPS))
     TIMEOUT_F = int(TIMEOUT_S * RATE)
-    LIFT_HOLD_F = 2 * RATE                  # 2 s of sustained lift, as async
-    STATUS_EVERY_F = max(1, RATE // 2)      # ~2 Hz predicates, as async
+    LIFT_HOLD_F = 2 * RATE  # 2 s of sustained lift, as async
+    STATUS_EVERY_F = max(1, RATE // 2)  # ~2 Hz predicates, as async
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record,
-                  replace=None, spawn_xy=None):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None):
         from primitives import LocomotionMode
+
         INIT_TOK = initial_token()
         l_open, r_open = expand_hands(_G_OPEN)
         rng = np.random.default_rng([int(seed), counter["n"]])
@@ -1645,7 +1680,7 @@ def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: Lockstep
             ls.step([(INIT_TOK, l_open, r_open)] * 5, ticks_per_frame=2)
 
             def observe(rep):
-                for _ in range(20):          # deploy state from the out port
+                for _ in range(20):  # deploy state from the out port
                     obs_src._poll()
                     if obs_src._last_proprio is not None:
                         break
@@ -1728,13 +1763,14 @@ def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: Lockstep
                 # stall: does the chunk itself contain a reach/close?)
                 lat_rec.setdefault("chunk_grip_min", []).append(float(np.min(grip)))
                 lat_rec.setdefault("chunk_tok_span", []).append(
-                    float(np.abs(np.asarray(tok)[-1] - np.asarray(tok)[0]).mean()))
+                    float(np.abs(np.asarray(tok)[-1] - np.asarray(tok)[0]).mean())
+                )
                 frames = []
                 grips = []
                 for i in range(K):
                     if i == A:
                         buf.append((tok, grip, t_obs))
-                        del buf[:-max(ENSEMBLE_N, 1)]
+                        del buf[: -max(ENSEMBLE_N, 1)]
                         latest = (tok, grip, t_obs)
                     tok_j, grip_raw = frame_cmd(f + i)
                     g = _grip_gain(grip_raw)
@@ -1745,7 +1781,7 @@ def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: Lockstep
                     grips.append((g, grip_raw))
                 if A >= K:
                     buf.append((tok, grip, t_obs))
-                    del buf[:-max(ENSEMBLE_N, 1)]
+                    del buf[: -max(ENSEMBLE_N, 1)]
                     latest = (tok, grip, t_obs)
                 rep = ls.step(frames, 2, want_obs=True)
                 f += K
@@ -1765,18 +1801,26 @@ def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: Lockstep
                     if pq is not None:
                         w_, x_, y_, z_ = (float(v) for v in pq)
                         pitch = float(np.arcsin(float(np.clip(2.0 * (w_ * y_ - z_ * x_), -1.0, 1.0))))
-                    trace.append(dict(t=f / RATE, frame=f, K=K, rise=rise,
-                                      dist=float(np.linalg.norm(obj[:2] - pel)),
-                                      fallen=bool(st["fallen"]),
-                                      grip=float(g), grip_raw=float(graw),
-                                      pelvis_xy=[float(v) for v in pel],
-                                      pelvis_yaw=float(p.pelvis_yaw(st)),
-                                      pelvis_z=float(st["pelvis"]["pos"][2]),
-                                      torso_pitch=pitch,
-                                      obj_xy=[float(v) for v in obj[:2]],
-                                      palm_z=float(palm[2]),
-                                      palm_obj=float(np.linalg.norm(palm - obj)),
-                                      **_obj_extra(st, obj_key)))
+                    trace.append(
+                        dict(
+                            t=f / RATE,
+                            frame=f,
+                            K=K,
+                            rise=rise,
+                            dist=float(np.linalg.norm(obj[:2] - pel)),
+                            fallen=bool(st["fallen"]),
+                            grip=float(g),
+                            grip_raw=float(graw),
+                            pelvis_xy=[float(v) for v in pel],
+                            pelvis_yaw=float(p.pelvis_yaw(st)),
+                            pelvis_z=float(st["pelvis"]["pos"][2]),
+                            torso_pitch=pitch,
+                            obj_xy=[float(v) for v in obj[:2]],
+                            palm_z=float(palm[2]),
+                            palm_obj=float(np.linalg.norm(palm - obj)),
+                            **_obj_extra(st, obj_key),
+                        )
+                    )
                     if st["fallen"]:
                         why = "[vla] fell"
                         break
@@ -1807,20 +1851,26 @@ def make_vla_policy_lockstep(link: PolicyLink, ls: LockstepLink, clock: Lockstep
             if min_dist > NEAR_M:
                 why = f"[vla] walk: never closer than {min_dist:.2f} m"
             elif not commanded_close:
-                why = (f"[vla] reach: at the table (min {min_dist:.2f} m) "
-                       f"but never commanded a close")
+                why = f"[vla] reach: at the table (min {min_dist:.2f} m) but never commanded a close"
             else:
-                moved = float(np.linalg.norm(
-                    np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
-                why = (f"[vla] close: commanded a grasp but no lift "
-                       f"(object moved {moved * 100:.0f} cm laterally)")
+                moved = float(np.linalg.norm(np.asarray(p.object_pos(obj_key, p.obs()))[:2] - obj0[:2]))
+                why = f"[vla] close: commanded a grasp but no lift (object moved {moved * 100:.0f} cm laterally)"
 
         if trace_dir:
             os.makedirs(trace_dir, exist_ok=True)
             with open(os.path.join(trace_dir, f"round_{counter['n']:03d}.json"), "w") as fh:
-                json.dump(dict(ok=ok, why=why, clock="lockstep",
-                               latency_source=latency.get("source"),
-                               **prelude, latency=lat_rec, trace=trace), fh)
+                json.dump(
+                    dict(
+                        ok=ok,
+                        why=why,
+                        clock="lockstep",
+                        latency_source=latency.get("source"),
+                        **prelude,
+                        latency=lat_rec,
+                        trace=trace,
+                    ),
+                    fh,
+                )
         counter["n"] += 1
         return ok, why
 

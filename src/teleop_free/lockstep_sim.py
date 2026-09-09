@@ -49,8 +49,7 @@ import time
 
 import numpy as np
 
-LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT",
-                                   5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
+LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
 CONTROL_DT = 0.02
 
 
@@ -66,14 +65,15 @@ def install(sim_module) -> None:
     (`proprio["time"]` must be the exact mjData.time).
     """
     from lockstep_vendor.lockstep_unitree_bridge import LockstepUnitreeBridge
+
     base_sim = sim_module
 
     def init_unitree_bridge(self):
         self.unitree_bridge = LockstepUnitreeBridge(self.config)
         if self.config["USE_JOYSTICK"]:
             self.unitree_bridge.SetupJoystick(
-                device_id=self.config["JOYSTICK_DEVICE"],
-                js_type=self.config["JOYSTICK_TYPE"])
+                device_id=self.config["JOYSTICK_DEVICE"], js_type=self.config["JOYSTICK_TYPE"]
+            )
 
     base_sim.BaseSimulator.init_unitree_bridge = init_unitree_bridge
 
@@ -85,8 +85,7 @@ def install(sim_module) -> None:
         return obs
 
     base_sim.DefaultEnv.prepare_obs = prepare_obs
-    print(f"[lockstep] installed: bridge swapped, obs carries mjData.time; "
-          f"RPC on :{LOCKSTEP_PORT}")
+    print(f"[lockstep] installed: bridge swapped, obs carries mjData.time; RPC on :{LOCKSTEP_PORT}")
 
 
 class LockstepRunner:
@@ -115,6 +114,7 @@ class LockstepRunner:
         # under wall-clock. The sim starts before the deploy, so the SUBs
         # find the PUB bound.
         import threading
+
         push_port = int(os.environ.get("TF_LOCKSTEP_XSUB_PORT", zmq_port + 28))
         pull = self.ctx.socket(zmq.PULL)
         pull.bind(f"tcp://*:{push_port}")
@@ -127,9 +127,12 @@ class LockstepRunner:
         self.rep = self.ctx.socket(zmq.REP)
         self.rep.bind(f"tcp://*:{LOCKSTEP_PORT}")
         self.barrier = LockstepBarrier(
-            self.bridge, self._send_token,
-            physics_dt=float(self.sim.sim_dt), control_dt=CONTROL_DT,
-            ack_timeout=float(os.environ.get("LOCKSTEP_ACK_TIMEOUT", "5.0")))
+            self.bridge,
+            self._send_token,
+            physics_dt=float(self.sim.sim_dt),
+            control_dt=CONTROL_DT,
+            ack_timeout=float(os.environ.get("LOCKSTEP_ACK_TIMEOUT", "5.0")),
+        )
         self._last_time = None
         self._ticks = 0
         self._err_last = 0.0
@@ -180,13 +183,14 @@ class LockstepRunner:
         PublishLowState (the barrier publishes, with the envelope) and minus
         the elastic band (disabled in run_sim_locomani)."""
         import mujoco
+
         env = self.env
         body_torques = env.compute_body_torques()
         hand_torques = env.compute_hand_torques()
         env.torques[env.body_joint_index - 1] = body_torques
         if env.num_hand_dof > 0:
             env.torques[env.left_hand_index - 1] = hand_torques[: env.num_hand_dof]
-            env.torques[env.right_hand_index - 1] = hand_torques[env.num_hand_dof:]
+            env.torques[env.right_hand_index - 1] = hand_torques[env.num_hand_dof :]
         env.torques = np.clip(env.torques, -env.torque_limit, env.torque_limit)
         if env.config["FREE_BASE"]:
             env.mj_data.ctrl = np.concatenate((np.zeros(6), env.torques))
@@ -202,14 +206,12 @@ class LockstepRunner:
         self._hold_qpos = self.env.mj_data.qpos.copy()
         self._hold_left = self._warmup
         self._jrng = np.random.default_rng([self._jseed, int(self.barrier.session_id or 0)])
-        print(f"[lockstep] session {self.barrier.session_id} active at "
-              f"t={self._last_time:.3f}")
+        print(f"[lockstep] session {self.barrier.session_id} active at t={self._last_time:.3f}")
 
     def _tick(self, token, left, right) -> None:
         """One 20 ms control tick: boundary -> ack -> 4 substeps -> hooks."""
         t = float(self.env.mj_data.time)
-        if (self.barrier.state != "ACTIVE" or self._last_time is None
-                or t < self._last_time - 1e-9):
+        if self.barrier.state != "ACTIVE" or self._last_time is None or t < self._last_time - 1e-9:
             # first tick, a failed session, or a reset wound the clock back
             self._begin()
         self.barrier.commit_boundary(token, left, right)
@@ -219,8 +221,9 @@ class LockstepRunner:
         br = self.env.unitree_bridge
         if self._cmd_delay > 0:
             import copy
+
             self._cmd_hist.append(copy.deepcopy(br.low_cmd))
-            del self._cmd_hist[:-(self._cmd_delay + 1)]
+            del self._cmd_hist[: -(self._cmd_delay + 1)]
             live_cmd = br.low_cmd
             br.low_cmd = self._cmd_hist[0] if len(self._cmd_hist) > self._cmd_delay else br.low_cmd
         if self._jitter:
@@ -231,11 +234,11 @@ class LockstepRunner:
             self._substep()
             if self._hold_left > 0:
                 import mujoco
+
                 self.env.mj_data.qpos[:] = self._hold_qpos
                 self.env.mj_data.qvel[:] = 0.0
                 mujoco.mj_forward(self.env.mj_model, self.env.mj_data)
-            self.barrier.cache_substep(self.env.prepare_obs(),
-                                       mj_time=float(self.env.mj_data.time))
+            self.barrier.cache_substep(self.env.prepare_obs(), mj_time=float(self.env.mj_data.time))
         if self._cmd_delay > 0:
             br.low_cmd = live_cmd
         if self._hold_left > 0:
@@ -251,15 +254,18 @@ class LockstepRunner:
 
     def _render(self) -> dict:
         caches = self.env.update_render_caches()
-        return {k[:-len("_image")]: np.ascontiguousarray(v, dtype=np.uint8)
-                for k, v in caches.items() if k.endswith("_image")}
+        return {
+            k[: -len("_image")]: np.ascontiguousarray(v, dtype=np.uint8)
+            for k, v in caches.items()
+            if k.endswith("_image")
+        }
 
     # -- server -------------------------------------------------------------
     def run(self) -> None:
         import msgpack
         import msgpack_numpy as mnp
-        print(f"[lockstep] serving on :{LOCKSTEP_PORT} (deploy must be "
-              f"--sim-lockstep); waiting for the first request")
+
+        print(f"[lockstep] serving on :{LOCKSTEP_PORT} (deploy must be --sim-lockstep); waiting for the first request")
         # start_stack's readiness check wants frames on :5555 before any
         # client ticks; render the resting scene a few times so it has some
         # (the publisher logs "Image publish frequency" every 50 frames, and
@@ -268,8 +274,7 @@ class LockstepRunner:
             self.env.update_render_caches()
             time.sleep(0.03)
         while True:
-            req = msgpack.unpackb(self.rep.recv(), object_hook=mnp.decode,
-                                 raw=False)
+            req = msgpack.unpackb(self.rep.recv(), object_hook=mnp.decode, raw=False)
             try:
                 rep = self._handle(req)
             except self._Timeout as e:
@@ -281,6 +286,7 @@ class LockstepRunner:
                 # opened on the next tick automatically
             except Exception as e:  # noqa: BLE001 - reply, never die silently
                 import traceback
+
                 traceback.print_exc()
                 rep = {"ok": False, "error": repr(e)}
             self.rep.send(msgpack.packb(rep, default=mnp.encode))
@@ -298,18 +304,21 @@ class LockstepRunner:
             if not lc:
                 return {"ok": True, "have": False}
             n = self.bridge.num_body_motor
-            return {"ok": True, "have": True,
-                    "kp": [float(lc.motor_cmd[i].kp) for i in range(n)],
-                    "kd": [float(lc.motor_cmd[i].kd) for i in range(n)],
-                    "q": [float(lc.motor_cmd[i].q) for i in range(n)],
-                    "tau": [float(lc.motor_cmd[i].tau) for i in range(n)],
-                    "qpos": [float(v) for v in self.env.mj_data.qpos[7:7 + n]],
-                    "qvel": [float(v) for v in self.env.mj_data.qvel[6:6 + n]],
-                    "dq": [float(lc.motor_cmd[i].dq) for i in range(n)],
-                    "ctrl": [float(v) for v in self.env.mj_data.ctrl],
-                    "use_sensor": bool(self.bridge.use_sensor),
-                    "body_joint_index": [int(v) for v in self.env.body_joint_index],
-                    "reserve": [int(v) for v in lc.reserve]}
+            return {
+                "ok": True,
+                "have": True,
+                "kp": [float(lc.motor_cmd[i].kp) for i in range(n)],
+                "kd": [float(lc.motor_cmd[i].kd) for i in range(n)],
+                "q": [float(lc.motor_cmd[i].q) for i in range(n)],
+                "tau": [float(lc.motor_cmd[i].tau) for i in range(n)],
+                "qpos": [float(v) for v in self.env.mj_data.qpos[7 : 7 + n]],
+                "qvel": [float(v) for v in self.env.mj_data.qvel[6 : 6 + n]],
+                "dq": [float(lc.motor_cmd[i].dq) for i in range(n)],
+                "ctrl": [float(v) for v in self.env.mj_data.ctrl],
+                "use_sensor": bool(self.bridge.use_sensor),
+                "body_joint_index": [int(v) for v in self.env.body_joint_index],
+                "reserve": [int(v) for v in lc.reserve],
+            }
         if cmd != "step":
             return {"ok": False, "error": f"unknown cmd {cmd!r}"}
         tpf = int(req.get("ticks_per_frame", 2))
@@ -334,10 +343,14 @@ class LockstepRunner:
                 n += 1
                 if bool(getattr(self.env, "fall", False)):
                     break
-        rep = {"ok": True, "ticks": n, "time": float(self.env.mj_data.time),
-               "sim_step": int(self.barrier.sim_step_seq),
-               "session": int(self.barrier.session_id or 0),
-               "fallen": bool(getattr(self.env, "fall", False))}
+        rep = {
+            "ok": True,
+            "ticks": n,
+            "time": float(self.env.mj_data.time),
+            "sim_step": int(self.barrier.sim_step_seq),
+            "session": int(self.barrier.session_id or 0),
+            "fallen": bool(getattr(self.env, "fall", False)),
+        }
         if req.get("want_obs"):
             rep["images"] = self._render()
         return rep

@@ -31,20 +31,37 @@ SCENE_XML = paths.SCENE_XML
 # two slots of each dex3 hand block, the rest are zero-padding.
 # Body 29 follow the WBC order [legs 12, waist 3, arms 14]; the two dex1
 # gripper prismatic joints per hand live inside the 7-slot dex3 hand blocks.
-JOINT_MAP: list[tuple[str, int]] = []          # filled by build_joint_map()
+JOINT_MAP: list[tuple[str, int]] = []  # filled by build_joint_map()
 
 WBC_BODY_ORDER = [
-    "left_hip_pitch_joint", "left_hip_roll_joint", "left_hip_yaw_joint",
-    "left_knee_joint", "left_ankle_pitch_joint", "left_ankle_roll_joint",
-    "right_hip_pitch_joint", "right_hip_roll_joint", "right_hip_yaw_joint",
-    "right_knee_joint", "right_ankle_pitch_joint", "right_ankle_roll_joint",
-    "waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint",
-    "left_shoulder_pitch_joint", "left_shoulder_roll_joint",
-    "left_shoulder_yaw_joint", "left_elbow_joint",
-    "left_wrist_roll_joint", "left_wrist_pitch_joint", "left_wrist_yaw_joint",
-    "right_shoulder_pitch_joint", "right_shoulder_roll_joint",
-    "right_shoulder_yaw_joint", "right_elbow_joint",
-    "right_wrist_roll_joint", "right_wrist_pitch_joint",
+    "left_hip_pitch_joint",
+    "left_hip_roll_joint",
+    "left_hip_yaw_joint",
+    "left_knee_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_hip_pitch_joint",
+    "right_hip_roll_joint",
+    "right_hip_yaw_joint",
+    "right_knee_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+    "waist_yaw_joint",
+    "waist_roll_joint",
+    "waist_pitch_joint",
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+    "right_wrist_pitch_joint",
     "right_wrist_yaw_joint",
 ]
 # 43-layout: [left leg 6 | right leg 6 | waist 3 | left arm 7 + left hand 7 |
@@ -72,11 +89,11 @@ def build_joint_map() -> list[tuple[str, int]]:
     right arm 29..35, right hand 36..42 (indices asserted, not assumed --
     update GRIPPER_SLOTS from the exporter recon before trusting output)."""
     m: list[tuple[str, int]] = []
-    for i, name in enumerate(WBC_BODY_ORDER[:15]):          # legs + waist
+    for i, name in enumerate(WBC_BODY_ORDER[:15]):  # legs + waist
         m.append((name, i))
-    for k, name in enumerate(WBC_BODY_ORDER[15:22]):        # left arm 7
+    for k, name in enumerate(WBC_BODY_ORDER[15:22]):  # left arm 7
         m.append((name, 15 + k))
-    for k, name in enumerate(WBC_BODY_ORDER[22:29]):        # right arm 7
+    for k, name in enumerate(WBC_BODY_ORDER[22:29]):  # right arm 7
         m.append((name, 29 + k))
     for name, idx in GRIPPER_SLOTS.items():
         m.append((name, idx))
@@ -97,7 +114,7 @@ def load_frames(session: str, episode: int, sidecar_glob: str):
 
     pq = os.path.join(session, "data/chunk-000", f"episode_{episode:06d}.parquet")
     df = pd.read_parquet(pq, columns=["observation.state"])
-    joints = np.stack(df["observation.state"].to_numpy())        # [T, 43]
+    joints = np.stack(df["observation.state"].to_numpy())  # [T, 43]
 
     seq_file = os.path.join(session, "priv_seq", f"episode_{episode:06d}.json")
     priv = json.load(open(seq_file))
@@ -121,6 +138,7 @@ def load_frames(session: str, episode: int, sidecar_glob: str):
     for key in first.get("objects", {}):
         objs[key] = np.zeros((len(joints), 7))
     import bisect
+
     for i, s in enumerate(priv_seq):
         if s is None or s not in by_seq:
             # dropped sidecar row (ZMQ SUB): take nearest recorded seq
@@ -134,21 +152,24 @@ def load_frames(session: str, episode: int, sidecar_glob: str):
         for key in objs:
             objs[key][i] = row["objects"].get(key, objs[key][i])
     if log_miss:
-        print(f"NOTE: {log_miss}/{len(joints)} frames used nearest-seq "
-              f"fallback (sidecar drops)")
+        print(f"NOTE: {log_miss}/{len(joints)} frames used nearest-seq fallback (sidecar drops)")
     return joints, pel, objs
 
 
 def head_camera_spec(scene_xml: str = ""):
     """Read the MJCF-authored ego camera verbatim from the scene XML."""
     import re
+
     xml = open(scene_xml or SCENE_XML).read()
-    mcam = re.search(r'<camera name="head_camera" pos="([^"]+)" '
-                     r'quat="([^"]+)" fovy="([^"]+)"', xml)
+    mcam = re.search(
+        r'<camera name="head_camera" pos="([^"]+)" '
+        r'quat="([^"]+)" fovy="([^"]+)"',
+        xml,
+    )
     if mcam is None:
         raise SystemExit(f"no head_camera in {scene_xml or SCENE_XML}")
     pos = [float(v) for v in mcam.group(1).split()]
-    quat = [float(v) for v in mcam.group(2).split()]   # wxyz
+    quat = [float(v) for v in mcam.group(2).split()]  # wxyz
     return pos, quat, float(mcam.group(3))
 
 
@@ -186,6 +207,7 @@ def load_state_trace(trace_path: str, session: str = "", episode: int = 0):
         raise SystemExit(
             f"{missing}/{len(priv)} parquet rows have no state in {trace_path}. "
             f"The trace and the episode are not the same run -- rendering a "
-            f"held-over state would silently misalign the whole episode.")
+            f"held-over state would silently misalign the whole episode."
+        )
     r = np.asarray(rows)
     return seq[r], qpos[r], qvel[r]

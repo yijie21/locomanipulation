@@ -35,25 +35,25 @@ carries it as `action.a18`):
     16    dyaw (rad, relative to the current heading)
     17    dz  (pelvis height relative to standing; 0 = stand, <0 = squat)
 """
+
 from __future__ import annotations
 
 import math
 import os
 
 import numpy as np
-
 from arm_ik import ArmIK
 from g1_joints import ARM_MJ
 from primitives import upper_body_from_mj
 
 # Prelude station-keeping bands, read ONCE at import (set them in the
 # environment before launching, not mid-run). See Action18Sender.hold.
-HOLD_IN = float(os.environ.get("TF_HOLD_IN", "0.02"))      # stop walking below
-HOLD_OUT = float(os.environ.get("TF_HOLD_OUT", "0.06"))    # start walking above
+HOLD_IN = float(os.environ.get("TF_HOLD_IN", "0.02"))  # stop walking below
+HOLD_OUT = float(os.environ.get("TF_HOLD_OUT", "0.06"))  # start walking above
 HOLD_SPEED = float(os.environ.get("TF_HOLD_SPEED", "0.215"))
 
-SQUAT_DZ = -0.02          # below this the base command becomes IDEL_SQUAT
-WALK_V = 0.03             # below this speed the base command becomes IDLE
+SQUAT_DZ = -0.02  # below this the base command becomes IDEL_SQUAT
+WALK_V = 0.03  # below this speed the base command becomes IDLE
 PELVIS_STAND = 0.793
 IK_RES_WARN = 0.06
 
@@ -80,7 +80,7 @@ class Action18Sender:
         self.q = np.asarray(p.obs()["joints"], dtype=float).copy()
         self.res = {s: 0.0 for s in sides}
         self.n_bad = 0
-        self._holding = False      # hold()'s hysteresis latch
+        self._holding = False  # hold()'s hysteresis latch
 
     def send(self, a18, frame_index: int | None = None) -> None:
         a = np.asarray(a18, dtype=float).ravel()
@@ -92,27 +92,29 @@ class Action18Sender:
         for k, side in (("right", 0), ("left", 7)):
             if k not in self.sides:
                 continue
-            pos = a[side:side + 3]
-            rot = rotvec_to_mat(a[side + 3:side + 6])
-            q_sol, res, _ = self.ik.solve(k, pos, rot, q_mj29=q,
-                                          use_waist=(k == "right"))
+            pos = a[side : side + 3]
+            rot = rotvec_to_mat(a[side + 3 : side + 6])
+            q_sol, res, _ = self.ik.solve(k, pos, rot, q_mj29=q, use_waist=(k == "right"))
             self.res[k] = float(res)
             if res < IK_RES_WARN:
                 q[ARM_MJ[k]] = q_sol[ARM_MJ[k]]
                 if k == "right":
-                    q[12:15] = q_sol[12:15]        # the waist lean the servo needs
+                    q[12:15] = q_sol[12:15]  # the waist lean the servo needs
             else:
                 self.n_bad += 1
         self.q = q
 
         # upper body + hands
         self.p.cmd.set_upper_body(upper_body_from_mj(q))
-        rh = np.zeros(7, dtype=np.float32); rh[0] = rh[1] = float(a[6])
-        lh = np.zeros(7, dtype=np.float32); lh[0] = lh[1] = float(a[13])
+        rh = np.zeros(7, dtype=np.float32)
+        rh[0] = rh[1] = float(a[6])
+        lh = np.zeros(7, dtype=np.float32)
+        lh[0] = lh[1] = float(a[13])
         self.p.cmd.set_hands(left=lh, right=rh)
 
         # base: pelvis-frame velocity and a heading offset -> world planner frame
         from primitives import LocomotionMode
+
         yaw = float(self.p.pelvis_yaw(s))
         vx, vy, dyaw, dz = (float(a[14]), float(a[15]), float(a[16]), float(a[17]))
         face = yaw + float(np.clip(dyaw, -0.6, 0.6))
@@ -121,21 +123,32 @@ class Action18Sender:
         if dz < SQUAT_DZ:
             # height is an ABSOLUTE pelvis height and is honoured only in
             # IDEL_SQUAT (docs memory: sonic-planner-depth-channel)
-            self.p.cmd.frame(mode=LocomotionMode.IDEL_SQUAT, facing=fv,
-                             height=PELVIS_STAND + float(np.clip(dz, -0.20, 0.0)))
+            self.p.cmd.frame(
+                mode=LocomotionMode.IDEL_SQUAT, facing=fv, height=PELVIS_STAND + float(np.clip(dz, -0.20, 0.0))
+            )
         elif spd >= WALK_V:
             c, sn = math.cos(yaw), math.sin(yaw)
             mv = (c * vx - sn * vy, sn * vx + c * vy, 0.0)
             n = math.hypot(mv[0], mv[1]) or 1.0
-            self.p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
-                             movement=(mv[0] / n, mv[1] / n, 0.0),
-                             speed=float(np.clip(spd, 0.0, 0.5)))
+            self.p.cmd.frame(
+                mode=LocomotionMode.SLOW_WALK,
+                facing=fv,
+                movement=(mv[0] / n, mv[1] / n, 0.0),
+                speed=float(np.clip(spd, 0.0, 0.5)),
+            )
         else:
             self.p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
 
-    def hold(self, anchor_xy, anchor_yaw, left_hand, right_hand,
-             band_in: float = HOLD_IN, band_out: float = HOLD_OUT,
-             speed: float = HOLD_SPEED) -> float:
+    def hold(
+        self,
+        anchor_xy,
+        anchor_yaw,
+        left_hand,
+        right_hand,
+        band_in: float = HOLD_IN,
+        band_out: float = HOLD_OUT,
+        speed: float = HOLD_SPEED,
+    ) -> float:
         """Hold the prelude pose. -> current xy error from the anchor (m).
 
         Heading is held closed against `anchor_yaw`; position is held closed
@@ -185,6 +198,7 @@ class Action18Sender:
         1.5 deg. Any probe that resets must do BOTH before it measures.
         """
         from primitives import LocomotionMode
+
         s = self.p.obs()
         xy = np.asarray(self.p.pelvis_xy(s), dtype=float)
         yaw = float(self.p.pelvis_yaw(s))
@@ -197,15 +211,12 @@ class Action18Sender:
 
         e = np.asarray(anchor_xy, dtype=float) - xy
         r = float(np.linalg.norm(e))
-        self._holding = r > band_out if not getattr(self, "_holding", False) \
-            else r > band_in
+        self._holding = r > band_out if not getattr(self, "_holding", False) else r > band_in
         if self._holding:
-            self.p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv,
-                             movement=(e[0] / r, e[1] / r, 0.0), speed=speed)
+            self.p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=fv, movement=(e[0] / r, e[1] / r, 0.0), speed=speed)
         else:
             self.p.cmd.frame(mode=LocomotionMode.IDLE, facing=fv)
         return r
 
     def stats(self) -> str:
-        return (f"ik res right {self.res.get('right', 0):.3f} "
-                f"left {self.res.get('left', 0):.3f}, {self.n_bad} rejected")
+        return f"ik res right {self.res.get('right', 0):.3f} left {self.res.get('left', 0):.3f}, {self.n_bad} rejected"

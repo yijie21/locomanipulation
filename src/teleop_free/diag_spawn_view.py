@@ -18,10 +18,11 @@ trace t=0, after the VLA prelude. What this script answers is the geometric
 question those gates cannot: how much slack the spawn envelope has to begin
 with, and in which direction it runs out.
 """
+
 import glob
 import json
-import os
 import math
+import os
 import sys
 
 import mujoco
@@ -39,8 +40,10 @@ cam = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
 pel = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
 mujoco.mj_resetDataKeyframe(m, d, 0) if m.nkey else mujoco.mj_resetData(m, d)
 mujoco.mj_forward(m, d)
-C = np.array(d.cam_xpos[cam]); R = np.array(d.cam_xmat[cam]).reshape(3, 3)
-P = np.array(d.xpos[pel]);     Rp = np.array(d.xmat[pel]).reshape(3, 3)
+C = np.array(d.cam_xpos[cam])
+R = np.array(d.cam_xmat[cam]).reshape(3, 3)
+P = np.array(d.xpos[pel])
+Rp = np.array(d.xmat[pel]).reshape(3, 3)
 half = np.tan(np.radians(float(m.cam_fovy[cam]) / 2.0))
 ASPECT = 640.0 / 480.0
 
@@ -53,8 +56,8 @@ def uv(x, y):
     return v[0] / (-v[2]) / (half * ASPECT), v[1] / (-v[2]) / half
 
 
-VLIM = float(os.environ.get("VLIM", 0.9))   # gym --view-gate-y
-ULIM = float(os.environ.get("ULIM", 0.8))   # gym --view-gate-x
+VLIM = float(os.environ.get("VLIM", 0.9))  # gym --view-gate-y
+ULIM = float(os.environ.get("ULIM", 0.8))  # gym --view-gate-x
 
 
 def back_slack(x, y, vlim=VLIM, ulim=ULIM):
@@ -76,15 +79,15 @@ for f in sorted(glob.glob(sys.argv[1])):
         i = r.get("init") or {}
         if not i.get("robot_xy"):
             continue
-        o = np.array(i["obj_xy"], float); p = np.array(i["robot_xy"], float)
+        o = np.array(i["obj_xy"], float)
+        p = np.array(i["robot_xy"], float)
         yaw = float(i["yaw"])
         dxy = o - p
         c, s = math.cos(-yaw), math.sin(-yaw)
         x = c * dxy[0] - s * dxy[1]
         y = s * dxy[0] + c * dxy[1]
         ux, uy = uv(x, y)
-        rows.append((r.get("produced", False), math.hypot(*dxy), x, y, ux, uy,
-                     back_slack(x, y)))
+        rows.append((r.get("produced", False), math.hypot(*dxy), x, y, ux, uy, back_slack(x, y)))
 
 A = np.array([[r[1], r[2], r[3], r[4], r[5], r[6]] for r in rows])
 ok = np.array([r[0] for r in rows])
@@ -93,13 +96,16 @@ for tag, sel in (("all attempts", np.ones(len(A), bool)), ("produced", ok)):
         continue
     B = A[sel]
     print(f"\n{tag}: n={sel.sum()}")
-    for j, nm in enumerate(["dist  ", "x_rel ", "y_rel ", "u_x   ", "u_y   ",
-                            "backslack"]):
+    for j, nm in enumerate(["dist  ", "x_rel ", "y_rel ", "u_x   ", "u_y   ", "backslack"]):
         v = B[:, j]
-        print(f"  {nm} min {v.min():+.3f}  p10 {np.percentile(v,10):+.3f}  "
-              f"med {np.median(v):+.3f}  p90 {np.percentile(v,90):+.3f}  "
-              f"max {v.max():+.3f}")
+        print(
+            f"  {nm} min {v.min():+.3f}  p10 {np.percentile(v, 10):+.3f}  "
+            f"med {np.median(v):+.3f}  p90 {np.percentile(v, 90):+.3f}  "
+            f"max {v.max():+.3f}"
+        )
     bs = B[:, 5]
     for thr in (0.20, 0.30):
-        print(f"  spawns with < {thr*100:.0f} cm of backward slack: "
-              f"{(bs < thr).sum()}/{len(bs)} ({100*(bs<thr).mean():.0f}%)")
+        print(
+            f"  spawns with < {thr * 100:.0f} cm of backward slack: "
+            f"{(bs < thr).sum()}/{len(bs)} ({100 * (bs < thr).mean():.0f}%)"
+        )

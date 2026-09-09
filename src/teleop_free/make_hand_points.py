@@ -31,10 +31,10 @@ from export_grasp_model import mesh_triangles  # noqa: E402
 from primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 
 GHOST_BODY = "ghost_hand"
-from primitives_const import HAND as _HAND
 import paths
-OUT = (f"{paths.REPO}/outputs/scene/"
-       + ("hand_points_dex1.npy" if _HAND == "dex1" else "hand_points.npy"))
+from primitives_const import HAND as _HAND
+
+OUT = f"{paths.REPO}/outputs/scene/" + ("hand_points_dex1.npy" if _HAND == "dex1" else "hand_points.npy")
 
 
 def main() -> None:
@@ -67,7 +67,7 @@ def main() -> None:
     # fingertips that hit the table and the jaw faces that hit the object — and
     # uniform random sampling of a dense mesh spends nearly every point on the
     # palm, which is the one part that never decides anything.
-    keep = [int(np.argmin(pts[:, 2]))]          # start from the lowest point
+    keep = [int(np.argmin(pts[:, 2]))]  # start from the lowest point
     d = np.linalg.norm(pts - pts[keep[0]], axis=1)
     for _ in range(args.n - 1):
         i = int(np.argmax(d))
@@ -78,8 +78,7 @@ def main() -> None:
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     np.save(args.out, out.astype(np.float32))
     print(f"{len(pts)} vertices -> {len(out)} points")
-    print(f"  extent about the grasp centre "
-          f"{np.round(out.min(0), 3)} .. {np.round(out.max(0), 3)} m")
+    print(f"  extent about the grasp centre {np.round(out.min(0), 3)} .. {np.round(out.max(0), 3)} m")
     print(f"  lowest point sits {-out[:, 2].min() * 100:.1f} cm below it")
     print(f"wrote {args.out}")
 

@@ -32,9 +32,7 @@ def _footprint(model, data, body_id: int):
         mi = model.geom_dataid[g]
         if mi < 0:
             continue
-        v = model.mesh_vert[
-            model.mesh_vertadr[mi]: model.mesh_vertadr[mi] + model.mesh_vertnum[mi]
-        ]
+        v = model.mesh_vert[model.mesh_vertadr[mi] : model.mesh_vertadr[mi] + model.mesh_vertnum[mi]]
         w = v @ data.geom_xmat[g].reshape(3, 3).T + data.geom_xpos[g]
         lo.append(w.min(0))
         hi.append(w.max(0))
@@ -55,9 +53,7 @@ def _geom_corners(model, data, g):
     mi = model.geom_dataid[g]
     rot, pos = data.geom_xmat[g].reshape(3, 3), data.geom_xpos[g]
     if model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH and mi >= 0:
-        v = model.mesh_vert[
-            model.mesh_vertadr[mi]: model.mesh_vertadr[mi] + model.mesh_vertnum[mi]
-        ]
+        v = model.mesh_vert[model.mesh_vertadr[mi] : model.mesh_vertadr[mi] + model.mesh_vertnum[mi]]
 
         return v @ rot.T + pos
 
@@ -70,14 +66,12 @@ def _geom_corners(model, data, g):
     if t == mujoco.mjtGeom.mjGEOM_SPHERE:
         h = np.array([s[0], s[0], s[0]])
     elif t in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
-        h = np.array([s[0], s[0], s[1] + (s[0] if t ==
-                      mujoco.mjtGeom.mjGEOM_CAPSULE else 0.0)])
+        h = np.array([s[0], s[0], s[1] + (s[0] if t == mujoco.mjtGeom.mjGEOM_CAPSULE else 0.0)])
     elif t == mujoco.mjtGeom.mjGEOM_BOX:
         h = np.array(s[:3])
     else:
         return None
-    corners = np.array([[sx, sy, sz] for sx in (-1, 1)
-                        for sy in (-1, 1) for sz in (-1, 1)]) * h
+    corners = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) * h
 
     return corners @ rot.T + pos
 
@@ -95,9 +89,7 @@ def _is_marker(model, g: int) -> bool:
     Left in, it becomes the object's box, and obj_top() then aims the grasp
     4 cm above the bottle's actual cap.
     """
-    return (model.geom_contype[g] == 0
-            and model.geom_conaffinity[g] == 0
-            and float(model.geom_rgba[g][3]) == 0.0)
+    return model.geom_contype[g] == 0 and model.geom_conaffinity[g] == 0 and float(model.geom_rgba[g][3]) == 0.0
 
 
 def _local_box(model, data, body_id: int):
@@ -126,15 +118,14 @@ def _local_box(model, data, body_id: int):
         w = _geom_corners(model, data, g)
         if w is None:
             continue
-        b = (w - bpos) @ bmat            # world -> body frame
+        b = (w - bpos) @ bmat  # world -> body frame
         lo.append(b.min(0))
         hi.append(b.max(0))
     if not lo:
         return None
     lo, hi = np.min(lo, 0), np.max(hi, 0)
 
-    return {"half_extent": (0.5 * (hi - lo)).tolist(),
-            "centre": (0.5 * (hi + lo)).tolist()}
+    return {"half_extent": (0.5 * (hi - lo)).tolist(), "centre": (0.5 * (hi + lo)).tolist()}
 
 
 # Ego camera: the stock mount (44-deg depression, default fovy 45) leaves the
@@ -181,7 +172,8 @@ def _aim_ego_camera(spec) -> None:
         f"The ego view is the whole point of this dataset, so this is fatal "
         f"rather than a warning: without it every episode records the stock "
         f"downward-staring view and the task is out of frame. "
-        f"Cameras present: {sorted(c.name for c in spec.cameras)}")
+        f"Cameras present: {sorted(c.name for c in spec.cameras)}"
+    )
 
 
 def _check_ego_camera(model) -> None:
@@ -196,8 +188,7 @@ def _check_ego_camera(model) -> None:
         raise SystemExit(f"[scene] {EGO_CAM_NAME} missing from the compiled model")
     fovy = float(model.cam_fovy[cid])
     quat = [float(v) for v in model.cam_quat[cid]]
-    bad = abs(fovy - EGO_CAM_FOVY) > 1e-6 or any(
-        abs(a - b) > 1e-4 for a, b in zip(quat, EGO_CAM_QUAT))
+    bad = abs(fovy - EGO_CAM_FOVY) > 1e-6 or any(abs(a - b) > 1e-4 for a, b in zip(quat, EGO_CAM_QUAT))
     if bad:
         raise SystemExit(
             f"[scene] ego camera did not take the intended aim.\n"
@@ -206,7 +197,8 @@ def _check_ego_camera(model) -> None:
             f"Refusing to write the scene: every episode recorded through the "
             f"stock aim has the task outside the frame, and nothing downstream "
             f"notices (the collection succeeds, the videos record, the dataset "
-            f"converts -- the policy just never sees the object).")
+            f"converts -- the policy just never sees the object)."
+        )
 
 
 def main() -> None:
@@ -231,13 +223,13 @@ def main() -> None:
         print(f"[scene] table top pinned to {float(top):.3f} m by SCENE_TABLE_TOP")
 
     spec, meta = scene_lib.build(scene_root, freeze_objects=False)
-    model = spec.compile()          # fail here rather than at sim start-up
+    model = spec.compile()  # fail here rather than at sim start-up
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
 
     xml_path = os.path.join(out_dir, "scene_locomani.xml")
-    _aim_ego_camera(spec)           # BEFORE to_xml(): see the note in there
-    model = spec.compile()          # re-compile so the check below sees the aim
+    _aim_ego_camera(spec)  # BEFORE to_xml(): see the note in there
+    model = spec.compile()  # re-compile so the check below sees the aim
     _check_ego_camera(model)
     xml_text = spec.to_xml()
     with open(xml_path, "w") as f:
@@ -274,8 +266,7 @@ def main() -> None:
 
     print(f"\ncompiled: {model.nbody} bodies, {model.ngeom} geoms, nq={model.nq}")
     for name, info in meta["objects"].items():
-        print(f"  {name:14s} body_id={info['body_id']:3d} "
-              f"qpos_adr={info['qpos_adr']:3d} free={info['free']}")
+        print(f"  {name:14s} body_id={info['body_id']:3d} qpos_adr={info['qpos_adr']:3d} free={info['free']}")
     print(f"wrote {xml_path}")
     print(f"wrote {meta_path}")
 

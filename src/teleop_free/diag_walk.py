@@ -58,13 +58,14 @@ def main() -> None:
     next_sample = time.time()
     print("\n  t     pelvis xy            yaw")
     while time.time() < deadline:
-        cmd.frame(mode=LocomotionMode(args.mode), movement=facing,
-                  facing=facing, speed=args.speed)
+        cmd.frame(mode=LocomotionMode(args.mode), movement=facing, facing=facing, speed=args.speed)
         if time.time() >= next_sample:
             s = state.latest(0) or s0
-            print(f"  {time.time() - (deadline - args.seconds):4.1f}  "
-                  f"{np.round(s['pelvis']['pos'][:2], 3)}  "
-                  f"{np.rad2deg(s['pelvis']['yaw']):+7.1f}  z={s['pelvis']['pos'][2]:.3f}")
+            print(
+                f"  {time.time() - (deadline - args.seconds):4.1f}  "
+                f"{np.round(s['pelvis']['pos'][:2], 3)}  "
+                f"{np.rad2deg(s['pelvis']['yaw']):+7.1f}  z={s['pelvis']['pos'][2]:.3f}"
+            )
             next_sample += 0.5
         time.sleep(0.02)
     cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=facing)
@@ -85,8 +86,7 @@ def main() -> None:
     print(f"actual travel dir   {moved_deg:+7.1f} deg")
     if dist > 0.05:
         print(f"OFFSET (travel - commanded) {moved_deg - args.heading_deg:+7.1f} deg")
-        print(f"OFFSET (yaw    - commanded) "
-              f"{np.rad2deg(y1) - args.heading_deg:+7.1f} deg")
+        print(f"OFFSET (yaw    - commanded) {np.rad2deg(y1) - args.heading_deg:+7.1f} deg")
     print("fallen:", s1["fallen"])
 
     cmd.pause_control()

@@ -32,10 +32,8 @@ import paths  # noqa: E402
 # in scene.usda, which USD then resolves against the layer's own directory, so
 # every asset silently fails to load and only the background renders. It also
 # sends replicator's output to ~/omni.replicator_out/<relative path>.
-SCENE_ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else (
-    f"{paths.REPO}/outputs/scene"))
-OUT_DIR = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else (
-    f"{paths.REPO}/outputs/renders_isaac"))
+SCENE_ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else (f"{paths.REPO}/outputs/scene"))
+OUT_DIR = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else (f"{paths.REPO}/outputs/renders_isaac"))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 BUILD_LOG = os.path.join(OUT_DIR, "build.log")
@@ -62,10 +60,7 @@ import omni.replicator.core as rep  # noqa: E402
 import trimesh  # noqa: E402
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade, Vt  # noqa: E402
 
-G1_USD = (
-    f"{paths.REPO}/third_party/GR00T-WholeBodyControl/"
-    "gear_sonic/data/robots/g1/g1_29dof_with_hand_rev_1_0.usd"
-)
+G1_USD = f"{paths.REPO}/third_party/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_29dof_with_hand_rev_1_0.usd"
 
 # Same arrangement as teleop_free/compose_scene.py — keep these in sync.
 # Fallbacks only. The scene MuJoCo actually runs is rebuilt per batch from
@@ -88,6 +83,7 @@ def load_scene_meta(path: str = "", emit=print) -> dict:
     is correct for the very first build and wrong for anything reproducible.
     """
     import json
+
     cand = path or os.environ.get("SCENE_META") or paths.SCENE_META
     if os.path.isdir(cand):
         cand = os.path.join(cand, "scene_meta.json")
@@ -118,6 +114,8 @@ def surface_plan(meta: dict):
             tops[name] = float(spec["top"])
         out.append((key, name, xy))
     return tuple(out), tops
+
+
 ROBOT_START_XY = (-1.5, 0.0)
 ROBOT_PELVIS_Z = 0.793
 ON_SURFACE_A = ["orange", "fork", "napkin"]
@@ -134,9 +132,9 @@ ON_SURFACE_B = ["plate"]
 BG_ROTATE = (90.0, 0.0, 90.0)
 BG_SCALE = 1.15
 BG_SHIFT_XY = (-0.05, 0.25)  # centre the footprint on the layout, not the origin;
-                             # x was 0.65: the back wall then sat at x -1.85, inside
-                             # the crate pilots' 1.0-1.3 m walk-in spawn (pilot 21
-                             # renders showed the robot walking out of the wall)
+# x was 0.65: the back wall then sat at x -1.85, inside
+# the crate pilots' 1.0-1.3 m walk-in spawn (pilot 21
+# renders showed the robot walking out of the wall)
 
 # Room lighting. Placed over the two work areas so both surfaces are lit; the
 # ceiling is at ~3.19 m after BG_SCALE, so 2.7 m keeps the lamps clear of it.
@@ -149,14 +147,13 @@ CEILING_LIGHT_INTENSITY = 40000.0
 # follow a half-metre rise over two metres.
 FLOOR_CELL = 0.25
 FLOOR_MIN_PTS = 40
-FLOOR_BLEND_TOP = 1.20         # height over which the correction fades to zero
+FLOOR_BLEND_TOP = 1.20  # height over which the correction fades to zero
 
 
 def _rotate_xyz_matrix(deg) -> "np.ndarray":
     """R = Rz @ Ry @ Rx — the order UsdGeom's RotateXYZ op composes in."""
     rx, ry, rz = np.deg2rad(deg)
-    cx, sx, cy, sy, cz, sz = (np.cos(rx), np.sin(rx), np.cos(ry),
-                              np.sin(ry), np.cos(rz), np.sin(rz))
+    cx, sx, cy, sy, cz, sz = (np.cos(rx), np.sin(rx), np.cos(ry), np.sin(ry), np.cos(rz), np.sin(rz))
     Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
     Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
     Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
@@ -186,9 +183,7 @@ def convert_obj_to_usd(obj_path: str, usd_path: str) -> bool:
         ctx = asset_converter.AssetConverterContext()
         ctx.ignore_materials = False
         ctx.ignore_animations = True
-        task = asset_converter.get_instance().create_converter_task(
-            obj_path, usd_path, None, ctx
-        )
+        task = asset_converter.get_instance().create_converter_task(obj_path, usd_path, None, ctx)
         return await task.wait_until_finished()
 
     ok = asyncio.get_event_loop().run_until_complete(run())
@@ -214,7 +209,7 @@ def floor_height_field(v, cell: float = FLOOR_CELL):
     Cells with too few points inherit from their neighbours by nearest lookup.
     """
     lo, hi = v.min(0)[:2], v.max(0)[:2]
-    nx, ny = (np.ceil((hi - lo) / cell).astype(int) + 1)
+    nx, ny = np.ceil((hi - lo) / cell).astype(int) + 1
     ix = np.clip(((v[:, 0] - lo[0]) / cell).astype(int), 0, nx - 1)
     iy = np.clip(((v[:, 1] - lo[1]) / cell).astype(int), 0, ny - 1)
     flat = ix * ny + iy
@@ -244,7 +239,7 @@ def floor_height_field(v, cell: float = FLOOR_CELL):
     return field[ix, iy]
 
 
-FLOOR_SNAP = 0.08      # after the warp, |z| below this is floor: snap to the plane
+FLOOR_SNAP = 0.08  # after the warp, |z| below this is floor: snap to the plane
 
 
 def flatten_floor(v):
@@ -261,20 +256,18 @@ def flatten_floor(v):
     # 1 at floor level, 0 well up the wall, smooth in between.
     t = np.clip((FLOOR_BLEND_TOP - (v[:, 2] - f)) / FLOOR_BLEND_TOP, 0.0, 1.0)
     out = v.copy()
-    out[:, 2] -= f * (t * t * (3 - 2 * t))          # smoothstep
+    out[:, 2] -= f * (t * t * (3 - 2 * t))  # smoothstep
     # The 8th-percentile field leaves the floor's own scatter above z=0: on
     # the crate scene the median under the robot's path was +2..+3.5 cm, p95
     # +7.5 cm, so the G1's feet (soles at z=0 in MuJoCo) rendered buried. The
     # real floor is a plane: press everything within FLOOR_SNAP of it onto it.
     floor = np.abs(out[:, 2]) < FLOOR_SNAP
     out[floor, 2] = 0.0
-    print(f"  floor snap: {int(floor.sum())} of {len(out)} vertices within "
-          f"{FLOOR_SNAP:.2f} m pressed to z=0")
+    print(f"  floor snap: {int(floor.sum())} of {len(out)} vertices within {FLOOR_SNAP:.2f} m pressed to z=0")
     return out
 
 
-def add_vertex_coloured_mesh(stage, prim_path: str, ply_path: str,
-                             translate, rotate_xyz, scale=1.0, flatten=True):
+def add_vertex_coloured_mesh(stage, prim_path: str, ply_path: str, translate, rotate_xyz, scale=1.0, flatten=True):
     """The generated room carries colour on vertices, so it becomes displayColor.
 
     The rotate/scale/shift is baked into the point array rather than left to
@@ -294,17 +287,15 @@ def add_vertex_coloured_mesh(stage, prim_path: str, ply_path: str,
     # vertices, and Gf.Vec3f rejects numpy scalars anyway, so building Python
     # objects per vertex would be both wrong and unusably slow.
     prim.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(world.astype(np.float32)))
-    prim.CreateFaceVertexCountsAttr(
-        Vt.IntArray.FromNumpy(np.full(len(mesh.faces), 3, dtype=np.int32)))
-    prim.CreateFaceVertexIndicesAttr(
-        Vt.IntArray.FromNumpy(mesh.faces.astype(np.int32).ravel()))
+    prim.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(len(mesh.faces), 3, dtype=np.int32)))
+    prim.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(mesh.faces.astype(np.int32).ravel()))
 
     colours = getattr(mesh.visual, "vertex_colors", None)
     if colours is not None and len(colours):
         rgb = (np.asarray(colours)[:, :3] / 255.0).astype(np.float32)
         pv = UsdGeom.PrimvarsAPI(prim).CreatePrimvar(
-            "displayColor", Sdf.ValueTypeNames.Color3fArray,
-            UsdGeom.Tokens.vertex)
+            "displayColor", Sdf.ValueTypeNames.Color3fArray, UsdGeom.Tokens.vertex
+        )
         pv.Set(Vt.Vec3fArray.FromNumpy(rgb))
         bind_unlit_vertex_colour_material(stage, prim, f"{prim_path}_Mat")
         print(f"  background: {len(mesh.vertices)} verts, unlit vertex colours")
@@ -333,22 +324,18 @@ def bind_unlit_vertex_colour_material(stage, mesh_prim, mat_path: str) -> None:
 
     shader = UsdShade.Shader.Define(stage, f"{mat_path}/Shader")
     shader.CreateIdAttr("UsdPreviewSurface")
-    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
-        Gf.Vec3f(0.0, 0.0, 0.0))
-    shader.CreateInput("emissiveColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(
-        reader.ConnectableAPI(), "result")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    shader.CreateInput("emissiveColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(reader.ConnectableAPI(), "result")
     shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(1.0)
     shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
     shader.CreateOutput("surface", Sdf.ValueTypeNames.Token)
 
-    material.CreateSurfaceOutput().ConnectToSource(
-        shader.ConnectableAPI(), "surface")
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
     UsdShade.MaterialBindingAPI.Apply(mesh_prim.GetPrim())
     UsdShade.MaterialBindingAPI(mesh_prim.GetPrim()).Bind(material)
 
 
-def add_reference(stage, prim_path: str, usd_path: str, translate,
-                  rotate_xyz=(0.0, 0.0, 0.0), scale=1.0):
+def add_reference(stage, prim_path: str, usd_path: str, translate, rotate_xyz=(0.0, 0.0, 0.0), scale=1.0):
     """Place a referenced USD under a clean wrapper Xform.
 
     The converted assets already carry [xformOp:translate, orient, scale], so
@@ -388,9 +375,16 @@ def rotated_bounds(mesh_bounds, rotate_xyz):
     return w.min(0), w.max(0)
 
 
-def place_asset(stage, prim_path: str, usd_path: str, mesh_bounds, xy,
-                bottom_z: float, rotate_xyz=(90.0, 0.0, 0.0),
-                target_height: float | None = None):
+def place_asset(
+    stage,
+    prim_path: str,
+    usd_path: str,
+    mesh_bounds,
+    xy,
+    bottom_z: float,
+    rotate_xyz=(90.0, 0.0, 0.0),
+    target_height: float | None = None,
+):
     """Reference an asset, then size and seat it from its *source mesh* bounds.
 
     The size comes from the OBJ rather than the stage because the OBJ is also
@@ -409,21 +403,21 @@ def place_asset(stage, prim_path: str, usd_path: str, mesh_bounds, xy,
     size = hi - lo
     s = 1.0 if not target_height or size[2] <= 0 else target_height / size[2]
 
-    prim, ops = add_reference(stage, prim_path, usd_path, (0.0, 0.0, 0.0),
-                              rotate_xyz, s)
-    ops[0].Set(Gf.Vec3d(
-        float(xy[0] - s * 0.5 * (lo[0] + hi[0])),
-        float(xy[1] - s * 0.5 * (lo[1] + hi[1])),
-        float(bottom_z - s * lo[2]),
-    ))
+    prim, ops = add_reference(stage, prim_path, usd_path, (0.0, 0.0, 0.0), rotate_xyz, s)
+    ops[0].Set(
+        Gf.Vec3d(
+            float(xy[0] - s * 0.5 * (lo[0] + hi[0])),
+            float(xy[1] - s * 0.5 * (lo[1] + hi[1])),
+            float(bottom_z - s * lo[2]),
+        )
+    )
 
     make_double_sided(stage, prim)
-    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(),
-                              [UsdGeom.Tokens.default_, UsdGeom.Tokens.render],
-                              useExtentsHint=False)
+    cache = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render], useExtentsHint=False
+    )
     rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
-    actual = ([round(float(v), 3) for v in rng.GetMin()],
-              [round(float(v), 3) for v in rng.GetMax()])
+    actual = ([round(float(v), 3) for v in rng.GetMin()], [round(float(v), 3) for v in rng.GetMax()])
 
     return prim, [round(float(v) * s, 3) for v in size], actual
 
@@ -464,24 +458,23 @@ def obj_and_height(scene_root: str, name: str):
 def _mjcf_texture_for(mesh_name: str, xml: str):
     """<geom mesh=..> -> material -> texture -> file, as MuJoCo resolves it."""
     import re
-    g = re.search(r'<geom[^>]*material="([^"]+)"[^>]*mesh="' + re.escape(mesh_name)
-                  + r'"', xml) or \
-        re.search(r'<geom[^>]*mesh="' + re.escape(mesh_name)
-                  + r'"[^>]*material="([^"]+)"', xml)
+
+    g = re.search(r'<geom[^>]*material="([^"]+)"[^>]*mesh="' + re.escape(mesh_name) + r'"', xml) or re.search(
+        r'<geom[^>]*mesh="' + re.escape(mesh_name) + r'"[^>]*material="([^"]+)"', xml
+    )
     if not g:
         return None
-    m = re.search(r'<material[^>]*name="' + re.escape(g.group(1))
-                  + r'"[^>]*texture="([^"]+)"', xml)
+    m = re.search(r'<material[^>]*name="' + re.escape(g.group(1)) + r'"[^>]*texture="([^"]+)"', xml)
     if not m:
         return None
-    t = re.search(r'<texture[^>]*name="' + re.escape(m.group(1))
-                  + r'"[^>]*file="([^"]+)"', xml)
+    t = re.search(r'<texture[^>]*name="' + re.escape(m.group(1)) + r'"[^>]*file="([^"]+)"', xml)
     return t.group(1) if t else None
 
 
 def _bind_mjcf_textures(top_usd: str, name: str, parts, xml: str) -> None:
     """Override each referenced part's material with the MJCF's own texture."""
     from pxr import Sdf, UsdShade
+
     st = Usd.Stage.Open(top_usd)
     if st is None:
         log(f"  object {name}: cannot reopen {top_usd} to bind textures")
@@ -507,14 +500,11 @@ def _bind_mjcf_textures(top_usd: str, name: str, parts, xml: str) -> None:
         # The crate's UVs run to 1.57, so it rendered black (2026-09-07).
         tx.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
         tx.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
-        tx.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
-            uv.ConnectableAPI(), "result")
-        sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(
-            tx.ConnectableAPI(), "rgb")
+        tx.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(uv.ConnectableAPI(), "result")
+        sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(tx.ConnectableAPI(), "rgb")
         sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
         mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
-        UsdShade.MaterialBindingAPI.Apply(prim).Bind(
-            mat, UsdShade.Tokens.strongerThanDescendants)
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat, UsdShade.Tokens.strongerThanDescendants)
         log(f"  object {name} part {i}: bound {os.path.basename(tex)}")
     st.GetRootLayer().Save()
 
@@ -534,10 +524,14 @@ def convert_target_objects(meta: dict, scene_xml: str, out_dir: str) -> None:
     """
     import json as _json
     import re
+
     xml = open(scene_xml).read()
-    meshes = re.findall(r'<mesh name="([^"]+)_vis"[^>]*file="([^"]+)"'
-                        r'[^>]*scale="([^"]+)"', xml)
-    for name in (meta.get("objects") or {}):
+    meshes = re.findall(
+        r'<mesh name="([^"]+)_vis"[^>]*file="([^"]+)"'
+        r'[^>]*scale="([^"]+)"',
+        xml,
+    )
+    for name in meta.get("objects") or {}:
         parts = [(n, f, sc) for n, f, sc in meshes if n.startswith(name + "_")]
         if not parts:
             log(f"  object {name}: no _vis mesh in the scene XML, skipped")
@@ -593,8 +587,10 @@ def convert_target_objects(meta: dict, scene_xml: str, out_dir: str) -> None:
                 offset_pos = [float(v) for v in mp_.group(1).split()]
             if mq_:
                 offset_quat = [float(v) for v in mq_.group(1).split()]
-        _json.dump({"scale": scale, "offset_pos": offset_pos, "offset_quat": offset_quat,
-                    "parts": len(refs)}, open(os.path.join(dst_dir, f"{name}.json"), "w"))
+        _json.dump(
+            {"scale": scale, "offset_pos": offset_pos, "offset_quat": offset_quat, "parts": len(refs)},
+            open(os.path.join(dst_dir, f"{name}.json"), "w"),
+        )
         log(f"  object {name}: {len(refs)} part(s), scale {scale}, offset {offset_pos} -> {top}")
 
 
@@ -604,7 +600,7 @@ def main() -> None:
     layout = json.load(open(f"{SCENE_ROOT}/layout/layout.json"))
     usda = f"{OUT_DIR}/scene.usda"
     if os.path.exists(usda):
-        os.remove(usda)          # CreateNew refuses to overwrite
+        os.remove(usda)  # CreateNew refuses to overwrite
     stage = Usd.Stage.CreateNew(usda)
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -623,8 +619,7 @@ def main() -> None:
         lamp.CreateRadiusAttr(0.25)
         lamp.CreateIntensityAttr(CEILING_LIGHT_INTENSITY)
         lamp.CreateColorAttr(Gf.Vec3f(1.0, 0.97, 0.92))
-        UsdGeom.Xformable(lamp).AddTranslateOp().Set(
-            Gf.Vec3d(float(lx), float(ly), CEILING_LIGHT_Z))
+        UsdGeom.Xformable(lamp).AddTranslateOp().Set(Gf.Vec3d(float(lx), float(ly), CEILING_LIGHT_Z))
 
     # --- background ---------------------------------------------------------
     # Prefer the purpose-generated empty room. The room that came with the
@@ -648,8 +643,8 @@ def main() -> None:
         translate = (BG_SHIFT_XY[0], BG_SHIFT_XY[1], -float(rotated.min(0)[2]))
 
         room = add_vertex_coloured_mesh(
-            stage, "/World/Background", ply, translate=translate,
-            rotate_xyz=BG_ROTATE, scale=BG_SCALE)
+            stage, "/World/Background", ply, translate=translate, rotate_xyz=BG_ROTATE, scale=BG_SCALE
+        )
 
         # Measured from the warped vertices, not predicted from the raw bounds:
         # flattening the floor moves geometry, so anything derived beforehand
@@ -658,15 +653,17 @@ def main() -> None:
 
         # Cameras must sit inside this box — the room is a single-sided shell
         # and any viewpoint outside it sees straight through the backfaces.
-        room_box = dict(x=(float(wlo[0]), float(whi[0])),
-                        y=(float(wlo[1]), float(whi[1])),
-                        z=(float(wlo[2]), float(whi[2])))
+        room_box = dict(
+            x=(float(wlo[0]), float(whi[0])), y=(float(wlo[1]), float(whi[1])), z=(float(wlo[2]), float(whi[2]))
+        )
         print(f"  room world box: x={room_box['x']} y={room_box['y']} z={room_box['z']}")
 
         span_needed = (ROBOT_START_XY[0] - 0.4, SURFACE_B_XY[0] + 0.4)
         if wlo[0] > span_needed[0] or whi[0] < span_needed[1]:
-            print(f"  WARNING: room x {room_box['x']} does not cover the layout "
-                  f"span {span_needed} — raise BG_SCALE or retune BG_SHIFT_XY")
+            print(
+                f"  WARNING: room x {room_box['x']} does not cover the layout "
+                f"span {span_needed} — raise BG_SCALE or retune BG_SHIFT_XY"
+            )
         globals()["ROOM_BOX"] = room_box
 
     # --- surfaces -----------------------------------------------------------
@@ -682,11 +679,9 @@ def main() -> None:
         if not convert_obj_to_usd(obj, usd):
             continue
         target = tops[name]
-        _, size, actual = place_asset(stage, f"/World/{name}", usd, bounds, xy,
-                                      0.0, target_height=target)
+        _, size, actual = place_asset(stage, f"/World/{name}", usd, bounds, xy, 0.0, target_height=target)
         surfaces[key] = dict(xy=xy, top=target)
-        log(f"  surface {key}: {name:13s} top={target:.3f} "
-            f"planned size={size} usd bbox={actual}")
+        log(f"  surface {key}: {name:13s} top={target:.3f} planned size={size} usd bbox={actual}")
 
     # --- objects ------------------------------------------------------------
     for obj_name, pose in layout["position"].items():
@@ -706,10 +701,11 @@ def main() -> None:
         x, y = (pose[0] + surf["xy"][0], pose[1] + surf["xy"][1]) if key == "A" else surf["xy"]
         # target_height keeps the render honest against MuJoCo, where the same
         # asset is scaled to the same measured extent.
-        _, size, actual = place_asset(stage, f"/World/{name}", usd, bounds,
-                                      (x, y), surf["top"], target_height=h)
-        print(f"  {obj_name:12s} -> {key} at ({x:.3f}, {y:.3f}) on {surf['top']:.3f} "
-              f"planned size={size} usd bbox={actual}")
+        _, size, actual = place_asset(stage, f"/World/{name}", usd, bounds, (x, y), surf["top"], target_height=h)
+        print(
+            f"  {obj_name:12s} -> {key} at ({x:.3f}, {y:.3f}) on {surf['top']:.3f} "
+            f"planned size={size} usd bbox={actual}"
+        )
 
     # --- manipulable objects (converted, not placed) -------------------------
     sx = os.environ.get("SCENE_XML") or paths.SCENE_XML
@@ -723,14 +719,16 @@ def main() -> None:
         # The G1 USD is authored in metres at the right scale already, so it is
         # positioned rather than fitted: pelvis at the episode start height.
         g1, _ = add_reference(
-            stage, "/World/G1", G1_USD,
+            stage,
+            "/World/G1",
+            G1_USD,
             (ROBOT_START_XY[0], ROBOT_START_XY[1], ROBOT_PELVIS_Z),
-            rotate_xyz=(0.0, 0.0, 0.0))
+            rotate_xyz=(0.0, 0.0, 0.0),
+        )
         make_double_sided(stage, g1)
         cache = UsdGeom.BBoxCache(
-            Usd.TimeCode.Default(),
-            [UsdGeom.Tokens.default_, UsdGeom.Tokens.render],
-            useExtentsHint=False)
+            Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render], useExtentsHint=False
+        )
         rng = cache.ComputeWorldBound(g1).ComputeAlignedRange()
         # An empty range means the reference composed to nothing — the usual
         # cause is a layer whose defaultPrim is missing or is not the geometry
@@ -738,9 +736,11 @@ def main() -> None:
         if rng.IsEmpty():
             print(f"  WARNING: G1 reference composed to nothing: {G1_USD}")
         else:
-            print(f"  G1 at {ROBOT_START_XY} z={ROBOT_PELVIS_Z} bbox="
-                  f"{[round(float(v), 3) for v in rng.GetMin()]}.."
-                  f"{[round(float(v), 3) for v in rng.GetMax()]}")
+            print(
+                f"  G1 at {ROBOT_START_XY} z={ROBOT_PELVIS_Z} bbox="
+                f"{[round(float(v), 3) for v in rng.GetMin()]}.."
+                f"{[round(float(v), 3) for v in rng.GetMax()]}"
+            )
     else:
         print(f"  WARNING: G1 USD not found: {G1_USD}")
 
@@ -749,6 +749,7 @@ def main() -> None:
 
     # --- render -------------------------------------------------------------
     import omni.usd
+
     omni.usd.get_context().open_stage(f"{OUT_DIR}/scene.usda")
     for _ in range(60):
         app.update()
@@ -757,6 +758,7 @@ def main() -> None:
     # actively wrong: the emissive background dominates the histogram, so the
     # lit objects get crushed to black. Fix the exposure instead.
     import carb
+
     carb.settings.get_settings().set("/rtx/post/histogram/enabled", False)
 
     # The room is a panorama reconstruction: a single-sided shell. A camera
@@ -765,7 +767,7 @@ def main() -> None:
     box = globals().get("ROOM_BOX")
     if box:
         cy = 0.5 * (box["y"][0] + box["y"][1])
-        y_near = box["y"][0] + 0.35          # a clear margin off the near wall
+        y_near = box["y"][0] + 0.35  # a clear margin off the near wall
         x_near = box["x"][0] + 0.25
     else:
         cy, y_near, x_near = 0.0, -2.0, -1.7
@@ -797,6 +799,7 @@ try:
     log("=== build OK ===")
 except BaseException:
     import traceback
+
     log("=== build FAILED ===")
     log(traceback.format_exc())
 finally:

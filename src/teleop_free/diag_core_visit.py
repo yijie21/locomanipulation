@@ -21,19 +21,20 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 import stream_reach  # noqa: E402
 from g1_joints import ARM_MJ  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 STEPS = (0.05, 0.04, 0.04)
-DWELL = 0.16                        # s per voxel (interpolated transit)
+DWELL = 0.16  # s per voxel (interpolated transit)
 
 
 def main() -> None:
     import reach_map
+
     meta = json.load(open(SCENE_META))
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
@@ -61,7 +62,8 @@ def main() -> None:
     p.cmd.start_control()
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     if p.obs()["fallen"]:
-        print("robot did not stand"); return
+        print("robot did not stand")
+        return
     stream_reach.reanchor(p, side="right")
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
@@ -75,7 +77,7 @@ def main() -> None:
         n = 0
         DT = 0.02
         steps = max(2, int(round(DWELL / DT)))
-        for (i, j, k) in targets:
+        for i, j, k in targets:
             q_t = arm.q.copy()
             q_t[14] = float(ex_wp[i, j, k])
             q_t[ARM_MJ["right"]] = ex_q[i, j, k]

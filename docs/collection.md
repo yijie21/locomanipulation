@@ -619,7 +619,7 @@ jerk 7.4),这是**重尾**的签名,不是普遍粗糙。三件具体的事:
 原来的接管是这样写的:
 
 ```python
-q_free = upper_body_from_mj(p.obs()["joints"])   # 实测关节
+q_free = upper_body_from_mj(p.obs()["joints"])  # 实测关节
 p.cmd.set_upper_body(q_free)
 p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
 ```

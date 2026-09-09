@@ -28,21 +28,20 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 from collect_episode import SCENE_META, EpisodeFailed, run_episode  # noqa: E402
 from primitives import Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 # Perturbation ranges for P2. Modest on purpose: the aim is a policy that
 # generalises over where things are, not one that has seen the object fall off
 # the table.
-OBJECT_DXY = 0.06          # metres, uniform in a square
-OBJECT_DYAW = np.pi        # any heading — an orange has no meaningful one
+OBJECT_DXY = 0.06  # metres, uniform in a square
+OBJECT_DYAW = np.pi  # any heading — an orange has no meaningful one
 ROBOT_DXY = 0.25
 ROBOT_DYAW = np.deg2rad(20.0)
 
-STAGES = ["stand", "approach_A", "grasp", "transport", "approach_B",
-          "place", "retreat"]
+STAGES = ["stand", "approach_A", "grasp", "transport", "approach_B", "place", "retreat"]
 
 
 def sample_perturbation(rng: np.random.Generator, meta: dict) -> dict:
@@ -51,11 +50,15 @@ def sample_perturbation(rng: np.random.Generator, meta: dict) -> dict:
     return {
         "label": "p2",
         "objects": {
-            obj: {"dxy": rng.uniform(-OBJECT_DXY, OBJECT_DXY, 2).tolist(),
-                  "yaw": float(rng.uniform(-OBJECT_DYAW, OBJECT_DYAW))},
+            obj: {
+                "dxy": rng.uniform(-OBJECT_DXY, OBJECT_DXY, 2).tolist(),
+                "yaw": float(rng.uniform(-OBJECT_DYAW, OBJECT_DYAW)),
+            },
         },
-        "robot": {"dxy": rng.uniform(-ROBOT_DXY, ROBOT_DXY, 2).tolist(),
-                  "yaw": float(rng.uniform(-ROBOT_DYAW, ROBOT_DYAW))},
+        "robot": {
+            "dxy": rng.uniform(-ROBOT_DXY, ROBOT_DXY, 2).tolist(),
+            "yaw": float(rng.uniform(-ROBOT_DYAW, ROBOT_DYAW)),
+        },
     }
 
 
@@ -89,8 +92,7 @@ def main() -> None:
         print(f"\n=== episode {i + 1}/{args.n} ===")
         t0 = time.time()
         try:
-            r = run_episode(p, meta, side=args.side, record=args.record,
-                            reset=reset, perturb=perturb)
+            r = run_episode(p, meta, side=args.side, record=args.record, reset=reset, perturb=perturb)
             print(f"  OK in {time.time() - t0:.0f}s")
         except EpisodeFailed as e:
             r = {"ok": False, "stage": e.stage, "why": e.why}
@@ -101,8 +103,7 @@ def main() -> None:
             r = {"ok": False, "stage": "exception", "why": traceback.format_exc(-1)}
             print(f"  EXCEPTION\n{r['why']}")
 
-        r.update(index=i, duration_s=time.time() - t0,
-                 perturb=perturb, aborted=p.aborted)
+        r.update(index=i, duration_s=time.time() - t0, perturb=perturb, aborted=p.aborted)
         p.aborted = None
         results.append(r)
         failed_at[r.get("stage") if not r.get("ok") else "ok"] += 1
@@ -116,8 +117,10 @@ def main() -> None:
     # --- report ---------------------------------------------------------
     n_ok = failed_at.get("ok", 0)
     print(f"\n{'=' * 56}")
-    print(f"{args.n} episodes in {(time.time() - t_batch) / 60:.1f} min — "
-          f"{n_ok} succeeded ({100 * n_ok / max(args.n, 1):.0f}%)")
+    print(
+        f"{args.n} episodes in {(time.time() - t_batch) / 60:.1f} min — "
+        f"{n_ok} succeeded ({100 * n_ok / max(args.n, 1):.0f}%)"
+    )
     print(f"\n{'stage':>12}  {'reached':>8} {'failed here':>12}")
     # "Reached" counts episodes that got at least as far as each stage, so the
     # table reads as a funnel rather than as isolated counts.
@@ -130,16 +133,14 @@ def main() -> None:
     for other in set(failed_at) - set(order):
         print(f"{other:>12}  {'-':>8} {failed_at[other]:>12}")
 
-    reasons = collections.Counter(
-        r["why"].split("(")[0].strip() for r in results if not r.get("ok"))
+    reasons = collections.Counter(r["why"].split("(")[0].strip() for r in results if not r.get("ok"))
     print("\nfailure reasons:")
     for why, n in reasons.most_common(8):
         print(f"  {n:>3}x  {why[:90]}")
 
     path = os.path.join(args.out, f"batch_{int(t_batch)}.json")
     with open(path, "w") as f:
-        json.dump({"n": args.n, "perturb": args.perturb, "seed": args.seed,
-                   "results": results}, f, indent=2)
+        json.dump({"n": args.n, "perturb": args.perturb, "seed": args.seed, "results": results}, f, indent=2)
     print(f"\nwrote {path}")
 
     reset.end_video()

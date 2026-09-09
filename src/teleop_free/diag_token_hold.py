@@ -22,6 +22,7 @@ Needs the stack up with NO_ENCODER=1 (same as any VLA eval).
     python src/teleop_free/diag_token_hold.py [--secs 30] [--reps 3] \
         [--tokens ours official]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,11 +33,10 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "tools"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
 
 from agent_server import LocomotionMode, StreamMode  # noqa: E402
-from primitives import Primitives                # noqa: E402
+from primitives import Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
 from sonic_token import GRIPPER_MAX, expand_hands  # noqa: E402
 
@@ -48,6 +48,7 @@ def get_token(name: str) -> np.ndarray:
     import importlib
 
     import initial_pose
+
     importlib.reload(initial_pose)
     return np.asarray(initial_pose.initial_token(), dtype=np.float32)
 
@@ -73,8 +74,7 @@ def trial(p, reset, tok: np.ndarray, secs: float) -> dict:
     # Prime BEFORE the mode switch (streamed over an empty buffer stops
     # control), then hold: the exact prelude sequence from vla_round.
     for _ in range(30):
-        p.cmd.token_frame(tok, right_hand=r_open, left_hand=l_open,
-                          frame_index=0)
+        p.cmd.token_frame(tok, right_hand=r_open, left_hand=l_open, frame_index=0)
         time.sleep(0.02)
     p.cmd.enter_streamed()
 
@@ -85,18 +85,15 @@ def trial(p, reset, tok: np.ndarray, secs: float) -> dict:
     t0 = time.time()
     next_mark = 5.0
     while time.time() - t0 < secs:
-        p.cmd.token_frame(tok, right_hand=r_open, left_hand=l_open,
-                          frame_index=0)
+        p.cmd.token_frame(tok, right_hand=r_open, left_hand=l_open, frame_index=0)
         if time.time() - t0 >= next_mark:
             sm = p.obs()
-            marks.append((next_mark,
-                          float(np.linalg.norm(p.pelvis_xy(sm) - xy0))))
+            marks.append((next_mark, float(np.linalg.norm(p.pelvis_xy(sm) - xy0))))
             next_mark += 5.0
         time.sleep(1.0 / RATE)
     s1 = p.obs()
     d = float(np.linalg.norm(p.pelvis_xy(s1) - xy0))
-    dyaw = float(np.degrees(
-        (float(p.pelvis_yaw(s1)) - yaw_a + np.pi) % (2 * np.pi) - np.pi))
+    dyaw = float(np.degrees((float(p.pelvis_yaw(s1)) - yaw_a + np.pi) % (2 * np.pi) - np.pi))
     # Hand the deploy back to the planner so the next trial's reset is clean.
     p.cmd.exit_streamed()
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=fv)
@@ -119,12 +116,16 @@ def main() -> None:
             out = trial(p, reset, tok, args.secs)
             ds.append(out["drift"])
             prog = " ".join(f"{t:.0f}s:{v:.3f}" for t, v in out["marks"])
-            print(f"[{name}] rep {r + 1}/{args.reps}: net {out['drift']:.3f} m "
-                  f"dyaw {out['dyaw']:+.1f} deg fell={out['fell']}  ({prog})",
-                  flush=True)
+            print(
+                f"[{name}] rep {r + 1}/{args.reps}: net {out['drift']:.3f} m "
+                f"dyaw {out['dyaw']:+.1f} deg fell={out['fell']}  ({prog})",
+                flush=True,
+            )
         ds = np.array(ds)
-        print(f"[{name}] {args.secs:.0f} s hold: median {np.median(ds):.3f} m "
-              f"max {ds.max():.3f} m over {args.reps} reps", flush=True)
+        print(
+            f"[{name}] {args.secs:.0f} s hold: median {np.median(ds):.3f} m max {ds.max():.3f} m over {args.reps} reps",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

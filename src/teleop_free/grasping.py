@@ -28,10 +28,11 @@ import numpy as np
 
 # Measured, teleop_free/diag_hand.py.
 from primitives_const import HAND as _HAND
+
 # widest opening: dex3 thumb-to-finger 6.1 cm; dex1 parallel jaw 9.48 cm
 HAND_APERTURE = 0.0948 if _HAND == "dex1" else 0.061
-FINGER_DROP = 0.056            # how far the fingers hang below the grip centre
-FINGER_LEAD = 0.110            # how far the fingertips reach past the grip centre
+FINGER_DROP = 0.056  # how far the fingers hang below the grip centre
+FINGER_LEAD = 0.110  # how far the fingertips reach past the grip centre
 
 # --- the tilted grasp -------------------------------------------------------
 #
@@ -87,11 +88,13 @@ GRIP_BELOW_RIM = 0.060 if _HAND == "dex1" else 0.035
 # tries to correct a 40 deg frame error inside its own palm frame, sweeps the
 # command 0.57 m across, and knocks the can over on the way — which is what
 # "can shoved 5 cm while closing in (touched R:index_1)" was.
-PALM_PITCHED_ROT = np.array([
-    [0.9197, -0.2905, 0.2641],
-    [0.0184, 0.7039, 0.7101],
-    [-0.3922, -0.6482, 0.6527],
-])
+PALM_PITCHED_ROT = np.array(
+    [
+        [0.9197, -0.2905, 0.2641],
+        [0.0184, 0.7039, 0.7101],
+        [-0.3922, -0.6482, 0.6527],
+    ]
+)
 
 # Margins on top of the measurements. The pinch one matters most: closing on
 # something the exact width of the aperture jams rather than grips.
@@ -119,11 +122,11 @@ CLEARANCE_MARGIN = 0.015
 PREGRASP_GAP = 0.11
 # An object axis counts as horizontal if it tilts less than this from the
 # ground plane; the pinch has to straddle a horizontal span.
-HORIZONTAL_TOL = 0.5           # |axis . z|
+HORIZONTAL_TOL = 0.5  # |axis . z|
 # Two spans within this of each other count as equal, so a symmetric object is
 # approached head-on rather than from an arbitrary side.
 SPAN_TIE = 0.005
-GRIP_LIFT = 0.010              # keep the grip this far off its lower limit
+GRIP_LIFT = 0.010  # keep the grip this far off its lower limit
 
 
 @dataclass
@@ -132,28 +135,29 @@ class GraspPose:
 
     ok: bool
     why: str = ""
-    grip: np.ndarray | None = None        # world point for the grip centre
-    pregrasp: np.ndarray | None = None    # world point to stage at
-    approach: np.ndarray | None = None    # unit horizontal, robot -> object
-    entry: np.ndarray | None = None       # unit world, how the hand slides in
+    grip: np.ndarray | None = None  # world point for the grip centre
+    pregrasp: np.ndarray | None = None  # world point to stage at
+    approach: np.ndarray | None = None  # unit horizontal, robot -> object
+    entry: np.ndarray | None = None  # unit world, how the hand slides in
     wrist_quat: np.ndarray | None = None  # pelvis-frame wrist orientation
-    width: float = 0.0                    # the span being pinched
-    grip_height: float = 0.0              # above the supporting surface
+    width: float = 0.0  # the span being pinched
+    grip_height: float = 0.0  # above the supporting surface
 
 
 def _rot(quat) -> np.ndarray:
     w, x, y, z = quat
 
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
-    ])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def _yaw_quat(yaw: float) -> np.ndarray:
-    return np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)],
-                    dtype=np.float32)
+    return np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)], dtype=np.float32)
 
 
 def _pitch_quat(deg: float) -> np.ndarray:
@@ -167,15 +171,27 @@ def _qmul(a, b) -> np.ndarray:
     w1, x1, y1, z1 = a
     w2, x2, y2, z2 = b
 
-    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-                     w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-                     w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2], dtype=np.float32)
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ],
+        dtype=np.float32,
+    )
 
 
-def grasp_pose(obj_pos, obj_quat, box: dict, surface_top: float,
-               pelvis_xy, pelvis_yaw: float,
-               approach_dir=None, pitched: bool = False) -> GraspPose:
+def grasp_pose(
+    obj_pos,
+    obj_quat,
+    box: dict,
+    surface_top: float,
+    pelvis_xy,
+    pelvis_yaw: float,
+    approach_dir=None,
+    pitched: bool = False,
+) -> GraspPose:
     """Plan a horizontal pinch of `box` at `obj_pos`/`obj_quat`.
 
     `box` is the body-frame bounding box from scene_meta — half extents and
@@ -204,20 +220,20 @@ def grasp_pose(obj_pos, obj_quat, box: dict, surface_top: float,
     if approach_dir is not None:
         towards = np.array([approach_dir[0], approach_dir[1], 0.0], dtype=float)
     else:
-        towards = np.array([centre[0] - pelvis_xy[0],
-                            centre[1] - pelvis_xy[1], 0.0])
+        towards = np.array([centre[0] - pelvis_xy[0], centre[1] - pelvis_xy[1], 0.0])
     n = float(np.linalg.norm(towards))
     towards = towards / n if n > 1e-6 else np.array([1.0, 0.0, 0.0])
 
-    cands = [(rot[:, i] / np.linalg.norm(rot[:, i]), 2 * half[i])
-             for i in range(3)
-             if abs(rot[2, i]) <= HORIZONTAL_TOL
-             and 2 * half[i] <= HAND_APERTURE - PINCH_MARGIN]
+    cands = [
+        (rot[:, i] / np.linalg.norm(rot[:, i]), 2 * half[i])
+        for i in range(3)
+        if abs(rot[2, i]) <= HORIZONTAL_TOL and 2 * half[i] <= HAND_APERTURE - PINCH_MARGIN
+    ]
     if not cands:
         spans = ", ".join(f"{2 * h * 100:.1f}" for h in half)
-        return GraspPose(False, why=(
-            f"no horizontal span fits the {HAND_APERTURE * 100:.1f} cm hand "
-            f"(object spans {spans} cm)"))
+        return GraspPose(
+            False, why=(f"no horizontal span fits the {HAND_APERTURE * 100:.1f} cm hand (object spans {spans} cm)")
+        )
 
     # Among spans that fit, prefer the narrowest — but treat near-ties as ties.
     # A cylinder's two horizontal spans are exactly equal, and picking whichever
@@ -237,10 +253,14 @@ def grasp_pose(obj_pos, obj_quat, box: dict, surface_top: float,
     floor = surface_top + drop + CLEARANCE_MARGIN
     top = centre[2] + float(np.abs(rot[2, :] * half).sum())
     if floor > top - 0.01:
-        return GraspPose(False, why=(
-            f"too short to grip: the fingers need the grip point at "
-            f"{floor - surface_top:.3f} m above the surface but the object "
-            f"only reaches {top - surface_top:.3f} m"))
+        return GraspPose(
+            False,
+            why=(
+                f"too short to grip: the fingers need the grip point at "
+                f"{floor - surface_top:.3f} m above the surface but the object "
+                f"only reaches {top - surface_top:.3f} m"
+            ),
+        )
     if pitched:
         # High on the barrel, deliberately. The level grasp takes the object's
         # mid-height because a level hand is equally happy anywhere up the
@@ -276,15 +296,15 @@ def grasp_pose(obj_pos, obj_quat, box: dict, surface_top: float,
         elif abs(float(pinch_axis @ jaw)) < 0.8:
             better = [a for a, w in tied if abs(float(a @ jaw)) >= 0.8]
             if not better:
-                return GraspPose(False, why=(
-                    "no graspable span lies across the jaw at this heading — "
-                    "stand at a different bearing"))
+                return GraspPose(
+                    False, why=("no graspable span lies across the jaw at this heading — stand at a different bearing")
+                )
             pinch_axis = better[0]
     else:
         perp = np.cross([0.0, 0.0, 1.0], pinch_axis)
         perp[2] = 0.0
         n = float(np.linalg.norm(perp))
-        if n < 1e-6:                   # pinch axis was vertical after all
+        if n < 1e-6:  # pinch axis was vertical after all
             return GraspPose(False, why="pinch axis is not horizontal")
         perp = perp / n
         approach = perp if float(perp @ towards) > 0 else -perp
@@ -334,24 +354,30 @@ def grasp_pose(obj_pos, obj_quat, box: dict, surface_top: float,
     # the nose-down is being asked for deliberately, so mixing the two would
     # make the achieved pitch depend on the heading. The body already faces
     # where the palm should face; this quaternion only carries the tilt.
-    quat = (_pitch_quat(PALM_PITCH_CMD) if pitched
-            else _yaw_quat(heading - pelvis_yaw))
+    quat = _pitch_quat(PALM_PITCH_CMD) if pitched else _yaw_quat(heading - pelvis_yaw)
 
     return GraspPose(
-        True, grip=grip, pregrasp=pregrasp, approach=approach, entry=entry,
-        wrist_quat=quat, width=float(width),
-        grip_height=float(grip_z - surface_top))
+        True,
+        grip=grip,
+        pregrasp=pregrasp,
+        approach=approach,
+        entry=entry,
+        wrist_quat=quat,
+        width=float(width),
+        grip_height=float(grip_z - surface_top),
+    )
 
 
 def describe(g: GraspPose) -> str:
     if not g.ok:
         return f"no grasp: {g.why}"
 
-    return (f"grip {np.round(g.grip, 3)} ({g.grip_height * 100:.1f} cm above "
-            f"the surface), face {np.round(g.approach, 2)}, slide in along "
-            f"{np.round(g.entry, 2)}, pinch {g.width * 100:.1f} cm, stage "
-            f"{np.linalg.norm(g.grip - g.pregrasp) * 100:.0f} cm to the side")
+    return (
+        f"grip {np.round(g.grip, 3)} ({g.grip_height * 100:.1f} cm above "
+        f"the surface), face {np.round(g.approach, 2)}, slide in along "
+        f"{np.round(g.entry, 2)}, pinch {g.width * 100:.1f} cm, stage "
+        f"{np.linalg.norm(g.grip - g.pregrasp) * 100:.0f} cm to the side"
+    )
 
 
-__all__ = ["GraspPose", "grasp_pose", "describe", "HAND_APERTURE",
-           "FINGER_DROP"]
+__all__ = ["GraspPose", "grasp_pose", "describe", "HAND_APERTURE", "FINGER_DROP"]

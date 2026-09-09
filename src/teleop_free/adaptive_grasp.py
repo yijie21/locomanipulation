@@ -38,14 +38,11 @@ import os
 from dataclasses import dataclass
 
 import numpy as np
-
-from primitives_const import GRASP_CENTRE_OFFSET_CONST
-
-from primitives_const import HAND as _HAND
 import paths
-HAND_POINTS_PATH = (f"{paths.REPO}/outputs/scene/"
-                    + ("hand_points_dex1.npy" if _HAND == "dex1"
-                       else "hand_points.npy"))
+from primitives_const import GRASP_CENTRE_OFFSET_CONST
+from primitives_const import HAND as _HAND
+
+HAND_POINTS_PATH = f"{paths.REPO}/outputs/scene/" + ("hand_points_dex1.npy" if _HAND == "dex1" else "hand_points.npy")
 
 OFFSET = np.asarray(GRASP_CENTRE_OFFSET_CONST, dtype=float)
 OFFSET_DIR = OFFSET / np.linalg.norm(OFFSET)
@@ -61,16 +58,16 @@ TABLE_CLEARANCE = 0.012
 # How far off horizontal the pinch axis may sit. A vertical cylinder can be
 # gripped across any horizontal chord, and a tilted jaw still catches the
 # barrel, but past this the grip is riding up the side rather than around it.
-JAW_TILT_MAX = np.deg2rad(12.0)   # was 45, then 25; tilt drops a fingertip
-                                  # into the can before the jaw arrived
-MAX_DESCEND = np.deg2rad(8.0)     # steepest allowed approach dive. 25 deg
-                                  # let the fingertips lead ~10 cm below the
-                                  # palm: with the grip 8.5 cm over the table
-                                  # the plan required fingertips BELOW the
-                                  # tabletop — the z-floor held the palm 2.4 cm
-                                  # above the grasp line (v-24..-28 telemetry)
-                                  # while the fingertips still scraped, and
-                                  # every entry ended in a wedge/flinch loop
+JAW_TILT_MAX = np.deg2rad(12.0)  # was 45, then 25; tilt drops a fingertip
+# into the can before the jaw arrived
+MAX_DESCEND = np.deg2rad(8.0)  # steepest allowed approach dive. 25 deg
+# let the fingertips lead ~10 cm below the
+# palm: with the grip 8.5 cm over the table
+# the plan required fingertips BELOW the
+# tabletop — the z-floor held the palm 2.4 cm
+# above the grasp line (v-24..-28 telemetry)
+# while the fingertips still scraped, and
+# every entry ended in a wedge/flinch loop
 # Weights for the spin score. Closeness to the current palm dominates, because
 # every degree of it is arm travel; clearance is a hard gate rather than a cost.
 W_CLOSENESS = 1.0
@@ -86,14 +83,14 @@ APERTURE_MAX = (0.0948 - 0.010) if _HAND == "dex1" else (0.061 - 0.010)
 class Grasp:
     ok: bool = False
     why: str = ""
-    rot: np.ndarray | None = None        # palm rotation, world
-    wrist: np.ndarray | None = None      # where the wrist ends up
-    grip: np.ndarray | None = None       # where the grasp centre ends up
-    approach: np.ndarray | None = None   # unit, the straight line it travels
-    travel: float = 0.0                  # metres from the current wrist
-    jaw_tilt: float = 0.0                # radians off horizontal
-    turn: float = 0.0                    # radians the palm has to rotate
-    clearance: float = 0.0               # fingers above the surface at the end
+    rot: np.ndarray | None = None  # palm rotation, world
+    wrist: np.ndarray | None = None  # where the wrist ends up
+    grip: np.ndarray | None = None  # where the grasp centre ends up
+    approach: np.ndarray | None = None  # unit, the straight line it travels
+    travel: float = 0.0  # metres from the current wrist
+    jaw_tilt: float = 0.0  # radians off horizontal
+    turn: float = 0.0  # radians the palm has to rotate
+    clearance: float = 0.0  # fingers above the surface at the end
 
 
 _POINTS: np.ndarray | None = None
@@ -104,8 +101,7 @@ def hand_points() -> np.ndarray:
     global _POINTS
     if _POINTS is None:
         if not os.path.exists(HAND_POINTS_PATH):
-            raise FileNotFoundError(
-                f"{HAND_POINTS_PATH} missing — run teleop_free/make_hand_points.py")
+            raise FileNotFoundError(f"{HAND_POINTS_PATH} missing — run teleop_free/make_hand_points.py")
         _POINTS = np.load(HAND_POINTS_PATH).astype(float)
 
     return _POINTS
@@ -115,7 +111,7 @@ def _align(a, b) -> np.ndarray:
     """Minimal rotation taking unit a onto unit b (Rodrigues, no trig)."""
     v = np.cross(a, b)
     c = float(a @ b)
-    if c < -1.0 + 1e-9:                      # antiparallel: any perpendicular
+    if c < -1.0 + 1e-9:  # antiparallel: any perpendicular
         axis = np.cross(a, [1.0, 0.0, 0.0])
         if np.linalg.norm(axis) < 1e-6:
             axis = np.cross(a, [0.0, 1.0, 0.0])
@@ -127,18 +123,26 @@ def _align(a, b) -> np.ndarray:
 
 
 def _spin(axis, angle) -> np.ndarray:
-    k = np.array([[0.0, -axis[2], axis[1]], [axis[2], 0.0, -axis[0]],
-                  [-axis[1], axis[0], 0.0]])
+    k = np.array([[0.0, -axis[2], axis[1]], [axis[2], 0.0, -axis[0]], [-axis[1], axis[0], 0.0]])
 
-    return (np.eye(3) + np.sin(angle) * k + (1.0 - np.cos(angle)) * (k @ k))
+    return np.eye(3) + np.sin(angle) * k + (1.0 - np.cos(angle)) * (k @ k)
 
 
 MIN_SIDE_ANGLE = np.deg2rad(25.0)
 
 
-def plan(grip, wrist_now, palm_now, surface_top: float,
-         obj_axis=(0.0, 0.0, 1.0), box=None, obj_rot=None,
-         azimuth_from=None, avoid_dir=None, avoid_sign: float = 1.0) -> Grasp:
+def plan(
+    grip,
+    wrist_now,
+    palm_now,
+    surface_top: float,
+    obj_axis=(0.0, 0.0, 1.0),
+    box=None,
+    obj_rot=None,
+    azimuth_from=None,
+    avoid_dir=None,
+    avoid_sign: float = 1.0,
+) -> Grasp:
     """Orient the palm so the grip offset points along the line to the object.
 
     `grip` is where the grasp centre must end up — on the object's own axis, and
@@ -155,9 +159,13 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
     to_grip = grip - wrist_now
     travel = float(np.linalg.norm(to_grip))
     if travel < OFFSET_LEN + 1e-3:
-        return Grasp(False, why=(
-            f"already inside the grasp offset: the grip point is {travel:.3f} m "
-            f"from the wrist and the offset alone is {OFFSET_LEN:.3f} m"))
+        return Grasp(
+            False,
+            why=(
+                f"already inside the grasp offset: the grip point is {travel:.3f} m "
+                f"from the wrist and the offset alone is {OFFSET_LEN:.3f} m"
+            ),
+        )
     # The approach AZIMUTH may come from a separate anchor (the shoulder
     # pushed outboard) rather than the live wrist: with the object dead
     # ahead the wrist starts at the chest, and a wrist-anchored azimuth
@@ -181,12 +189,10 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
         b = b / max(float(np.linalg.norm(b[:2])), 1e-9)
         # Signed horizontal offset of the entry from the bearing
         # (positive = counter-clockwise of it, seen from above).
-        theta = float(np.arctan2(b[0] * direction[1] - b[1] * direction[0],
-                                 b[0] * direction[0] + b[1] * direction[1]))
+        theta = float(np.arctan2(b[0] * direction[1] - b[1] * direction[0], b[0] * direction[0] + b[1] * direction[1]))
         want = avoid_sign * MIN_SIDE_ANGLE
         if abs(theta) < MIN_SIDE_ANGLE:
-            direction = _spin(np.array([0.0, 0.0, 1.0]),
-                              want - theta) @ direction
+            direction = _spin(np.array([0.0, 0.0, 1.0]), want - theta) @ direction
 
     # Cap the dive. The azimuth follows the real wrist — that is the whole
     # point of planning from where the hand is — but a hand that happens to
@@ -196,11 +202,8 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
     dh = float(np.hypot(direction[0], direction[1]))
     if -direction[2] > np.tan(MAX_DESCEND) * dh:
         if dh < 1e-6:
-            return Grasp(False, why=(
-                "directly above the grip — no approach azimuth to flatten "
-                "the dive along"))
-        direction = np.array([direction[0], direction[1],
-                              -np.tan(MAX_DESCEND) * dh])
+            return Grasp(False, why=("directly above the grip — no approach azimuth to flatten the dive along"))
+        direction = np.array([direction[0], direction[1], -np.tan(MAX_DESCEND) * dh])
         direction /= np.linalg.norm(direction)
 
     # Base rotation: the smallest turn from the CURRENT palm that puts its grip
@@ -246,14 +249,12 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
                 half = np.asarray(box["half_extent"], dtype=float)
                 ax = np.abs(np.asarray(obj_rot, dtype=float).T @ j_in)
                 pairs = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
-                i, j, k = min(pairs,
-                              key=lambda t: abs(half[t[0]] - half[t[1]]))
+                i, j, k = min(pairs, key=lambda t: abs(half[t[0]] - half[t[1]]))
                 if abs(half[i] - half[j]) < 0.005:
                     # Symmetric footprint: the cross-section is a circle and
                     # the box's diagonal would overestimate it by sqrt(2).
                     r = 0.5 * (half[i] + half[j])
-                    width = 2.0 * (r * float(np.hypot(ax[i], ax[j]))
-                                   + half[k] * float(ax[k]))
+                    width = 2.0 * (r * float(np.hypot(ax[i], ax[j])) + half[k] * float(ax[k]))
                 else:
                     width = 2.0 * float(ax @ half)
                 if width > APERTURE_MAX:
@@ -266,34 +267,47 @@ def plan(grip, wrist_now, palm_now, surface_top: float,
             continue
 
         # How far the palm has to turn to get here, as an angle.
-        turn = float(np.arccos(np.clip(
-            (np.trace(rot @ palm_now.T) - 1.0) / 2.0, -1.0, 1.0)))
+        turn = float(np.arccos(np.clip((np.trace(rot @ palm_now.T) - 1.0) / 2.0, -1.0, 1.0)))
         cost = W_CLOSENESS * turn + W_JAW * tilt
         if best is None or cost < best[0]:
             best = (cost, rot, tilt, turn, clear)
 
     if best is None:
-        return Grasp(False, why=(
-            "no spin about the approach line both clears the surface and puts "
-            "the jaw across the object — the hand is coming from a direction "
-            "this object cannot be gripped from"))
+        return Grasp(
+            False,
+            why=(
+                "no spin about the approach line both clears the surface and puts "
+                "the jaw across the object — the hand is coming from a direction "
+                "this object cannot be gripped from"
+            ),
+        )
 
     _, rot, tilt, turn, clear = best
 
-    return Grasp(True, rot=rot, wrist=grip - rot @ OFFSET, grip=grip,
-                 approach=direction, travel=travel - OFFSET_LEN,
-                 jaw_tilt=tilt, turn=turn, clearance=clear)
+    return Grasp(
+        True,
+        rot=rot,
+        wrist=grip - rot @ OFFSET,
+        grip=grip,
+        approach=direction,
+        travel=travel - OFFSET_LEN,
+        jaw_tilt=tilt,
+        turn=turn,
+        clearance=clear,
+    )
 
 
 def describe(g: Grasp) -> str:
     if not g.ok:
         return f"no grasp: {g.why}"
 
-    return (f"grip {np.round(g.grip, 3)}, straight in along "
-            f"{np.round(g.approach, 2)} for {g.travel * 100:.0f} cm, palm turns "
-            f"{np.rad2deg(g.turn):.0f} deg, jaw {np.rad2deg(g.jaw_tilt):.0f} deg "
-            f"off horizontal, fingers clear the surface by "
-            f"{g.clearance * 100:.1f} cm")
+    return (
+        f"grip {np.round(g.grip, 3)}, straight in along "
+        f"{np.round(g.approach, 2)} for {g.travel * 100:.0f} cm, palm turns "
+        f"{np.rad2deg(g.turn):.0f} deg, jaw {np.rad2deg(g.jaw_tilt):.0f} deg "
+        f"off horizontal, fingers clear the surface by "
+        f"{g.clearance * 100:.1f} cm"
+    )
 
 
 __all__ = ["Grasp", "plan", "describe", "hand_points", "OFFSET", "OFFSET_LEN"]

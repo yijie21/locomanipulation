@@ -59,15 +59,14 @@ WAIST_TARGETS = [
 ]
 
 JOINT_SPEED = 0.8  # rad/s, max joint rate for the streamed trajectory
-CHUNK = 5          # frames per pose message, like the pico manager
+CHUNK = 5  # frames per pose message, like the pico manager
 
 
 def yaw_only(quat_wxyz):
     w, x, y, z = quat_wxyz
     yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
-    return np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)],
-                    dtype=np.float32)
+    return np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)], dtype=np.float32)
 
 
 class PoseStreamer:
@@ -99,7 +98,7 @@ class PoseStreamer:
         n = int(round(dur / DT))
         for k in range(1, n + 1):
             u = k / n
-            s = 3 * u * u - 2 * u ** 3
+            s = 3 * u * u - 2 * u**3
             self.push(q_from + s * (q_to - q_from))
 
 
@@ -107,13 +106,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--settle", type=float, default=4.0)
     ap.add_argument("--side", default="right")
-    ap.add_argument("--waist", action="store_true",
-                    help="grasp-band targets, torso lean in the IK chain")
-    ap.add_argument("--squat", type=float, default=0.0,
-                    help="squat angle a in rad (hip -a, knee +2a, ankle -a; "
-                         "a=0.45 drops the pelvis ~6 cm, 0.6 ~11 cm); targets "
-                         "are treated as world-fixed and shifted up in the "
-                         "pelvis frame by the measured drop")
+    ap.add_argument("--waist", action="store_true", help="grasp-band targets, torso lean in the IK chain")
+    ap.add_argument(
+        "--squat",
+        type=float,
+        default=0.0,
+        help="squat angle a in rad (hip -a, knee +2a, ankle -a; "
+        "a=0.45 drops the pelvis ~6 cm, 0.6 ~11 cm); targets "
+        "are treated as world-fixed and shifted up in the "
+        "pelvis frame by the measured drop",
+    )
     args = ap.parse_args()
     side = args.side
     targets = WAIST_TARGETS if args.waist else TARGETS
@@ -145,8 +147,7 @@ def main() -> None:
         return
     root_quat = yaw_only(s["pelvis"]["quat"])
     palm0 = p.world_to_root_full(s["palms"][side]["pos"], s)
-    print(f"standing: pelvis_z {s['pelvis']['pos'][2]:.3f}  "
-          f"palm {np.round(palm0, 3)}")
+    print(f"standing: pelvis_z {s['pelvis']['pos'][2]:.3f}  palm {np.round(palm0, 3)}")
 
     # Prime the pose buffer BEFORE the mode switch (deploy stops control if
     # streamed mode goes active with an empty motion buffer), then switch.
@@ -176,8 +177,10 @@ def main() -> None:
         streamer.hold(q_squat, 2.5)
         s = p.obs()
         dz = z_stand - s["pelvis"]["pos"][2]
-        print(f"  squat x{args.squat}: pelvis_z {s['pelvis']['pos'][2]:.3f} "
-              f"(dropped {dz * 100:.1f} cm)  fallen={s['fallen']}")
+        print(
+            f"  squat x{args.squat}: pelvis_z {s['pelvis']['pos'][2]:.3f} "
+            f"(dropped {dz * 100:.1f} cm)  fallen={s['fallen']}"
+        )
         if s["fallen"]:
             p.cmd.exit_streamed()
             p.cmd.pause_control()
@@ -191,10 +194,8 @@ def main() -> None:
     results = []
     for t_i, tgt in enumerate(targets):
         want = np.array(tgt["pos"]) + np.array([0.0, 0.0, dz])
-        q_next, ik_pos_err, ik_rot_err = ik.solve(
-            side, want, tgt.get("rot"), q_mj29=q, use_waist=use_waist)
-        print(f"\ntarget {t_i}: {np.round(want, 3)}  "
-              f"(IK residual {ik_pos_err * 100:.2f} cm)")
+        q_next, ik_pos_err, ik_rot_err = ik.solve(side, want, tgt.get("rot"), q_mj29=q, use_waist=use_waist)
+        print(f"\ntarget {t_i}: {np.round(want, 3)}  (IK residual {ik_pos_err * 100:.2f} cm)")
 
         streamer.move(q, q_next)
         streamer.hold(q_next, args.settle)
@@ -208,13 +209,16 @@ def main() -> None:
             jerr = np.abs(meas[track_j] - q_next[track_j])
             worst = np.argsort(jerr)[::-1][:3]
             from g1_joints import MUJOCO_JOINT_NAMES
+
             wstr = "  ".join(
-                f"{MUJOCO_JOINT_NAMES[track_j[w]].replace('_joint', '')}"
-                f" {np.degrees(jerr[w]):.0f}deg" for w in worst)
+                f"{MUJOCO_JOINT_NAMES[track_j[w]].replace('_joint', '')} {np.degrees(jerr[w]):.0f}deg" for w in worst
+            )
             err = np.linalg.norm(palm - want)
-            print(f"  it{it}: palm {np.round(palm, 3)}  err {err * 100:.2f} cm  "
-                  f"worst joints: {wstr}  "
-                  f"pelvis_z {s['pelvis']['pos'][2]:.3f}  fallen={s['fallen']}")
+            print(
+                f"  it{it}: palm {np.round(palm, 3)}  err {err * 100:.2f} cm  "
+                f"worst joints: {wstr}  "
+                f"pelvis_z {s['pelvis']['pos'][2]:.3f}  fallen={s['fallen']}"
+            )
             if err < 0.010 or s["fallen"]:
                 break
             # Re-aim by the CURRENT residual only. Accumulating corrections
@@ -223,11 +227,9 @@ def main() -> None:
             # forward after the transient dies overshoots by its full size
             # (target 3 in the first run: 1.0 cm -> 13.3 cm).
             adj = want + (want - palm)
-            q_sol, res2, _ = ik.solve(side, adj, tgt.get("rot"), q_mj29=q_next,
-                                      use_waist=use_waist)
+            q_sol, res2, _ = ik.solve(side, adj, tgt.get("rot"), q_mj29=q_next, use_waist=use_waist)
             if res2 > 0.02:
-                print(f"    correction target unreachable (residual "
-                      f"{res2 * 100:.1f} cm); keeping current")
+                print(f"    correction target unreachable (residual {res2 * 100:.1f} cm); keeping current")
                 break
             q_prev = q_next
             q_next = q_sol
@@ -250,8 +252,7 @@ def main() -> None:
 
     if results:
         r = np.array(results) * 100
-        print(f"\npalm error over {len(r)} targets: "
-              f"mean {r.mean():.2f} cm  max {r.max():.2f} cm")
+        print(f"\npalm error over {len(r)} targets: mean {r.mean():.2f} cm  max {r.max():.2f} cm")
         print("planner-mode closed loop was ~3.7 cm; feed-forward 24.6 cm")
 
 

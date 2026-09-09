@@ -73,8 +73,7 @@ def main() -> None:
     cmd.start_control()
     cmd.hold(4.0, mode=LocomotionMode.IDLE)
 
-    print(f"\n{'height':>7} {'cmd (pelvis frame)':>22} {'palm (pelvis frame)':>26} "
-          f"{'pelvis z':>9}")
+    print(f"\n{'height':>7} {'cmd (pelvis frame)':>22} {'palm (pelvis frame)':>26} {'pelvis z':>9}")
     for comp in [HEIGHTS[0]] and HEIGHTS:
         for tgt in TARGETS:
             # The target is already in root frame, which is the frame the wire
@@ -96,8 +95,7 @@ def main() -> None:
             c, sn = np.cos(-yaw), np.sin(-yaw)
             d = palm_world - root
             palm_local = np.array([c * d[0] - sn * d[1], sn * d[0] + c * d[1], d[2]])
-            print(f"{comp:>7.2f} {str(np.round(tgt, 2)):>22} "
-                  f"{str(np.round(palm_local, 3)):>26} {root[2]:>9.3f}")
+            print(f"{comp:>7.2f} {str(np.round(tgt, 2)):>22} {str(np.round(palm_local, 3)):>26} {root[2]:>9.3f}")
 
     cmd.pause_control()
     cmd.close()

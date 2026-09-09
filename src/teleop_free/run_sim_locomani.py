@@ -21,26 +21,25 @@ Usage (same flags as run_sim_loop.py):
 from __future__ import annotations
 
 import json
-import numpy as np
 import os
 import sys
 import time
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
+import sim_vis
 import tyro  # noqa: E402
-
-from gear_sonic.utils.mujoco_sim.base_sim import DefaultEnv  # noqa: E402
-from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig  # noqa: E402
-from gear_sonic.scripts.run_sim_loop import SimWrapper  # noqa: E402
-from gear_sonic.utils.mujoco_sim.simulator_factory import SimulatorFactory  # noqa: E402
 from gear_sonic.data.robot_model.instantiation.g1 import (  # noqa: E402
     instantiate_g1_robot_model,
 )
-
+from gear_sonic.scripts.run_sim_loop import SimWrapper  # noqa: E402
+from gear_sonic.utils.mujoco_sim.base_sim import DefaultEnv  # noqa: E402
+from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig  # noqa: E402
+from gear_sonic.utils.mujoco_sim.simulator_factory import SimulatorFactory  # noqa: E402
 from privileged_pub import EpisodeControlServer, PrivilegedPublisher  # noqa: E402
-import paths
-import sim_vis
 
 # Set SIM_VIDEO_DIR to record a tracking-camera mp4 per episode. Off by default
 # because rendering costs sim time.
@@ -59,13 +58,13 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
         original(self)
         pub = getattr(self, "_privileged_pub", None)
         if pub is None:
-            pub = PrivilegedPublisher(self.mj_model, self.mj_data,
-                                      object_bodies, surfaces=surface_bodies)
+            pub = PrivilegedPublisher(self.mj_model, self.mj_data, object_bodies, surfaces=surface_bodies)
             self._privileged_pub = pub
-            pub.bridge = self.unitree_bridge   # LowCmd diagnostics (cmd_q/kp/kd)
+            pub.bridge = self.unitree_bridge  # LowCmd diagnostics (cmd_q/kp/kd)
             recorder = None
             if VIDEO_DIR:
                 from sim_video import VideoRecorder
+
                 recorder = VideoRecorder(self.mj_model, VIDEO_DIR)
                 self._recorder = recorder
             # SIM_STATE_TRACE_DIR: write SIMPLE's qpos/qvel trace per episode,
@@ -74,15 +73,16 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             trace = None
             if STATE_TRACE_DIR:
                 from privileged_pub import StateTrace
+
                 trace = StateTrace(STATE_TRACE_DIR)
                 self._state_trace = trace
             self._episode_ctl = EpisodeControlServer(
-                self.mj_model, self.mj_data, meta, default_dof_angles,
-                recorder=recorder, trace=trace)
+                self.mj_model, self.mj_data, meta, default_dof_angles, recorder=recorder, trace=trace
+            )
             self._live_overlay = None
-            if self.viewer is not None and (sim_vis.enabled("bbox")
-                                            or sim_vis.enabled("readout")):
+            if self.viewer is not None and (sim_vis.enabled("bbox") or sim_vis.enabled("readout")):
                 from sim_video import LiveOverlay
+
                 self._live_overlay = LiveOverlay(self.mj_model)
         self._episode_ctl.poll()
         if getattr(self, "_recorder", None) is not None:
@@ -118,11 +118,13 @@ def _install_loop_timing_probe(report_every: int = 100) -> None:
             xs.append(time.perf_counter() - t0)
             if len(xs) >= report_every:
                 xs.sort()
-                print(f"[timing] {name}: n={len(xs)} "
-                      f"mean={sum(xs) / len(xs) * 1000:.2f}ms "
-                      f"p50={xs[len(xs) // 2] * 1000:.2f}ms "
-                      f"p90={xs[int(len(xs) * 0.9)] * 1000:.2f}ms "
-                      f"max={xs[-1] * 1000:.2f}ms")
+                print(
+                    f"[timing] {name}: n={len(xs)} "
+                    f"mean={sum(xs) / len(xs) * 1000:.2f}ms "
+                    f"p50={xs[len(xs) // 2] * 1000:.2f}ms "
+                    f"p90={xs[int(len(xs) * 0.9)] * 1000:.2f}ms "
+                    f"max={xs[-1] * 1000:.2f}ms"
+                )
                 stats[name] = []
             return r
 
@@ -143,11 +145,14 @@ def disable_fall_reset() -> None:
     episode that ends in a fall should end, not be rescued mid-flight; resets
     happen deliberately, between episodes, over :5582.
     """
+
     def check_fall(self):
         self.fall = bool(self.mj_data.qpos[2] < 0.2)
         if self.fall and not getattr(self, "_fall_reported", False):
-            print(f"Warning: Robot has fallen, height: {self.mj_data.qpos[2]:.3f} m "
-                  "(not resetting; waiting for an episode reset)")
+            print(
+                f"Warning: Robot has fallen, height: {self.mj_data.qpos[2]:.3f} m "
+                "(not resetting; waiting for an episode reset)"
+            )
             self._fall_reported = True
         elif not self.fall:
             self._fall_reported = False
@@ -185,6 +190,7 @@ def install_camera_configs() -> None:
     if not WRIST_CAMS:
         return
     from gear_sonic.utils.mujoco_sim.base_sim import DefaultEnv
+
     orig = DefaultEnv.__init__
 
     def patched(self, *args, **kwargs):
@@ -212,6 +218,7 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
         return scene_xml
     try:
         import reach_map
+
         z = np.load(reach_map.MAP_PATH)
     except Exception as e:  # a missing map must not kill the sim
         print(f"[sim] reach zone skipped ({e})")
@@ -225,24 +232,23 @@ def inject_reach_zone(scene_xml: str, meta: dict) -> str:
     # sweet zone (grasp comfortable, servo has correction room).
     parts = []
     for tag, grid, size, rgba in (
-            ("env", occ & ~sweet, 0.0100, "0.2 0.9 0.35 0.10"),
-            ("core", sweet, 0.0115, "0.02 0.45 0.12 0.55")):
+        ("env", occ & ~sweet, 0.0100, "0.2 0.9 0.35 0.10"),
+        ("core", sweet, 0.0115, "0.02 0.45 0.12 0.55"),
+    ):
         pts = np.argwhere(grid) * vox + org + vox / 2.0
         parts += [
             f'<geom name="reach_{tag}_{k}" type="box" '
             f'size="{size:.4f} {size:.4f} {size:.4f}" '
             f'pos="{x:.4f} {y:.4f} {zz:.4f}" contype="0" conaffinity="0" '
             f'mass="0" group="4" rgba="{rgba}"/>'
-            for k, (x, y, zz) in enumerate(pts)]
-    body = ('<body name="reach_zone" mocap="true" pos="0 0 0">'
-            + "".join(parts) + "</body>")
-    xml = open(scene_xml).read().replace("</worldbody>",
-                                         body + "</worldbody>")
+            for k, (x, y, zz) in enumerate(pts)
+        ]
+    body = '<body name="reach_zone" mocap="true" pos="0 0 0">' + "".join(parts) + "</body>"
+    xml = open(scene_xml).read().replace("</worldbody>", body + "</worldbody>")
     out = os.path.join(SCENE_DIR, "scene_locomani_zone.xml")
     with open(out, "w") as f:
         f.write(xml)
-    print(f"[sim] reach volume: {int(occ.sum())} voxels, "
-          f"core {int(sweet.sum())} (pelvis frame)")
+    print(f"[sim] reach volume: {int(occ.sum())} voxels, core {int(sweet.sum())} (pelvis frame)")
     return out
 
 
@@ -252,9 +258,7 @@ def main(config: SimLoopConfig) -> None:
     if not os.path.isabs(scene_xml):
         scene_xml = os.path.abspath(scene_xml)
     if not os.path.exists(scene_xml):
-        raise FileNotFoundError(
-            f"{scene_xml} missing — run teleop_free/build_sim_scene.py first"
-        )
+        raise FileNotFoundError(f"{scene_xml} missing — run teleop_free/build_sim_scene.py first")
     scene_xml = inject_reach_zone(scene_xml, meta)
 
     wbc_config = config.load_wbc_yaml()
@@ -263,6 +267,7 @@ def main(config: SimLoopConfig) -> None:
     # Hand type follows the composed scene (scene_lib.HAND): the dex1
     # gripper has 2 actuated prismatic joints per hand instead of dex3's 7.
     import scene_lib as _sl
+
     wbc_config["NUM_HAND_MOTORS"] = _sl.NUM_HAND_MOTORS
     wbc_config["NUM_HAND_JOINTS"] = _sl.NUM_HAND_MOTORS
     if _sl.NUM_HAND_MOTORS == 2:
@@ -271,13 +276,11 @@ def main(config: SimLoopConfig) -> None:
         # dex1 has 2 prismatic fingers per hand (URDF effort 20 N).
         e = wbc_config["motor_effort_limit_list"]
         assert len(e) == 43, len(e)
-        wbc_config["motor_effort_limit_list"] = (
-            e[:22] + [20.0, 20.0] + e[29:36] + [20.0, 20.0])
+        wbc_config["motor_effort_limit_list"] = e[:22] + [20.0, 20.0] + e[29:36] + [20.0, 20.0]
     # Parallel instances: each sim+deploy pair gets its own DDS domain so
     # their unitree channels never cross on lo. Pairs with the deploy's
     # SONIC_DDS_DOMAIN patch.
-    wbc_config["DOMAIN_ID"] = int(os.environ.get(
-        "SONIC_DDS_DOMAIN", wbc_config.get("DOMAIN_ID", 0)))
+    wbc_config["DOMAIN_ID"] = int(os.environ.get("SONIC_DDS_DOMAIN", wbc_config.get("DOMAIN_ID", 0)))
 
     # viewer.sync() costs a fixed ~9-10ms per call on this box, independent of
     # scene complexity (measured: 103 geoms and 5889 geoms both ~8.7-9.1ms
@@ -297,16 +300,16 @@ def main(config: SimLoopConfig) -> None:
         _install_loop_timing_probe()
 
     if config.enable_image_publish:
-        assert config.enable_offscreen, (
-            "enable_offscreen must be True when enable_image_publish is True"
-        )
+        assert config.enable_offscreen, "enable_offscreen must be True when enable_image_publish is True"
 
     install_camera_configs()
     install_privileged_publisher(meta, wbc_config.get("DEFAULT_DOF_ANGLES"))
     disable_fall_reset()
     import lockstep_sim
+
     if lockstep_sim.enabled():
         from gear_sonic.utils.mujoco_sim import base_sim as _base_sim
+
         lockstep_sim.install(_base_sim)
     print(f"[sim] scene   {scene_xml}")
     print(f"[sim] objects {list(meta['objects'])}")
@@ -327,8 +330,7 @@ def main(config: SimLoopConfig) -> None:
         # readout are handled separately, per-frame, in install_privileged_pub-
         # lisher's update_reward -- they are injected geoms/labels, not part of
         # the model, so there is no static group to flip for them.)
-        sim_wrapper.sim.sim_env.viewer.opt.geomgroup[4] = int(
-            sim_vis.enabled("ghost") or sim_vis.enabled("reach"))
+        sim_wrapper.sim.sim_env.viewer.opt.geomgroup[4] = int(sim_vis.enabled("ghost") or sim_vis.enabled("reach"))
 
     # The elastic band hauls the pelvis towards a fixed anchor at (0, 0, 1) with
     # kp 10000 (unitree_sdk2py_bridge.py:371-387) — a constant sideways yank on a
@@ -353,12 +355,15 @@ def main(config: SimLoopConfig) -> None:
 
     _orig_cbt = DefaultEnv.compute_body_torques
     PIN_KP, PIN_KD, PIN_TAU_MAX = 120.0, 3.0, 30.0
-    ARM_MOTORS = {"left": list(range(15, 22)), "right": list(range(22, 29)),
-                  # Waist trio: frozen-upper mode pins these through the
-                  # deploy during walking anyway; during the streamed grasp
-                  # the pin makes the IK's (limit-clamped) lean deliver
-                  # exactly instead of at the policy's ~1/3.
-                  "waist": [12, 13, 14]}
+    ARM_MOTORS = {
+        "left": list(range(15, 22)),
+        "right": list(range(22, 29)),
+        # Waist trio: frozen-upper mode pins these through the
+        # deploy during walking anyway; during the streamed grasp
+        # the pin makes the IK's (limit-clamped) lean deliver
+        # exactly instead of at the policy's ~1/3.
+        "waist": [12, 13, 14],
+    }
 
     def compute_body_torques(self):
         tau = _orig_cbt(self)
@@ -374,10 +379,8 @@ def main(config: SimLoopConfig) -> None:
                     q = self.mj_data.sensordata[i]
                     dq = self.mj_data.sensordata[i + br.num_body_motor]
                 else:
-                    q = self.mj_data.qpos[self.body_joint_index[i]
-                                          + self.qpos_offset - 1]
-                    dq = self.mj_data.qvel[self.body_joint_index[i]
-                                           + self.qvel_offset - 1]
+                    q = self.mj_data.qpos[self.body_joint_index[i] + self.qpos_offset - 1]
+                    dq = self.mj_data.qvel[self.body_joint_index[i] + self.qvel_offset - 1]
                 t = PIN_KP * (pin[k] - q) - PIN_KD * dq
                 tau[i] = max(-PIN_TAU_MAX, min(PIN_TAU_MAX, t))
         return tau
@@ -390,13 +393,13 @@ def main(config: SimLoopConfig) -> None:
         # free-running loop is replaced by the agent-driven runner.
         if config.enable_image_publish:
             sim_wrapper.sim.start_image_publish_subprocess(
-                start_method=config.mp_start_method,
-                camera_port=config.camera_port)
+                start_method=config.mp_start_method, camera_port=config.camera_port
+            )
             time.sleep(1)
         try:
-            lockstep_sim.run(sim_wrapper.sim,
-                             int(os.environ.get("TF_SONIC_PORT", 5556)),
-                             int(os.environ.get("TF_OUT_PORT", 5557)))
+            lockstep_sim.run(
+                sim_wrapper.sim, int(os.environ.get("TF_SONIC_PORT", 5556)), int(os.environ.get("TF_OUT_PORT", 5557))
+            )
         finally:
             sim_wrapper.sim.close()
         return
@@ -416,7 +419,8 @@ if __name__ == "__main__":
     # which is the one place tools/instance_watchdog.py can otherwise not
     # tell two sims apart.
     import sys
+
     if "--instance" in sys.argv:
         k = sys.argv.index("--instance")
-        del sys.argv[k:k + 2]
+        del sys.argv[k : k + 2]
     main(tyro.cli(SimLoopConfig))

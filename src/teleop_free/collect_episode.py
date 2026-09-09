@@ -38,33 +38,32 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import adaptive_grasp  # noqa: E402
-import reach_map  # noqa: E402
 import grasping  # noqa: E402
+import paths
+import reach_map  # noqa: E402
 import stream_reach  # noqa: E402
-
 from primitives import (  # noqa: E402
     ARM_REACH_LIMIT,
     CROUCH_MARGIN,
     CROUCH_SKIP,
-    PALM_PITCH_ACHIEVED,
-    STANDING_PELVIS_Z,
-    GRASP_BEARING,
-    SHOULDER_OFFSET,
     GRASP_ABOVE,
+    GRASP_BEARING,
     GRASP_CENTRE_OFFSET,
-    PREGRASP_BACK,
     LIFT_HEIGHT,
+    PALM_PITCH_ACHIEVED,
     PREGRASP_ABOVE,
-    LocomotionMode,
-    StreamMode,
-    Primitives,
-    STAND_OFF,
-    TRACK_STOP_SHORT,
+    PREGRASP_BACK,
     READY_WRISTS,
+    SHOULDER_OFFSET,
+    STAND_OFF,
+    STANDING_PELVIS_Z,
+    TRACK_STOP_SHORT,
+    LocomotionMode,
+    Primitives,
+    StreamMode,
     wrap,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
@@ -96,14 +95,14 @@ REACH_XY_TOL = 0.90
 # ~0.50 m out no matter how many times the approach re-plans. Dropping from
 # above is tolerant, so let the place stages accept what the geometry allows.
 PLACE_XY_REACH = 0.58
-LIFT_MIN = 0.06            # the orange must actually leave the table
-PALM_DRIFT_MAX = 0.03      # 3 cm of slip in the palm frame before it counts as dropped
-PLACE_XY_TOL = 0.09        # orange centre within this of the plate centre
-PLACE_Z_TOL = 0.06         # and resting at plate-top height
-RETREAT_MIN = 0.30         # how far the pelvis must back off at the end
-STAND_SETTLE = 4.0         # seconds of IDLE after a reset before any walking
-OBJECT_NUDGE_MAX = 0.10    # how far the arm may shove the object before grasping
-AIM_TURN_W = 0.05          # metres of reach a radian of in-place turn is worth
+LIFT_MIN = 0.06  # the orange must actually leave the table
+PALM_DRIFT_MAX = 0.03  # 3 cm of slip in the palm frame before it counts as dropped
+PLACE_XY_TOL = 0.09  # orange centre within this of the plate centre
+PLACE_Z_TOL = 0.06  # and resting at plate-top height
+RETREAT_MIN = 0.30  # how far the pelvis must back off at the end
+STAND_SETTLE = 4.0  # seconds of IDLE after a reset before any walking
+OBJECT_NUDGE_MAX = 0.10  # how far the arm may shove the object before grasping
+AIM_TURN_W = 0.05  # metres of reach a radian of in-place turn is worth
 # Full task = grasp + transport + place + retreat. Off by default while the
 # grasp is under iteration: a grasp-only episode is the same data at half the
 # wall-clock. Turn the rest back on with FULL_TASK=1.
@@ -129,18 +128,25 @@ def palm_frame_offset(s: dict, obj_key: str, side: str) -> np.ndarray:
     palm = np.array(s["palms"][side]["pos"])
     w, x, y, z = s["palms"][side]["quat"]
     # Rotation matrix from a scalar-first quaternion.
-    R = np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
-    ])
+    R = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
     return R.T @ (np.array(s["objects"][obj_key]["pos"]) - palm)
 
 
-def run_episode(p: Primitives, meta: dict, side: str = "right",
-                record: bool = True, reset: EpisodeControlClient | None = None,
-                perturb: dict | None = None) -> dict:
+def run_episode(
+    p: Primitives,
+    meta: dict,
+    side: str = "right",
+    record: bool = True,
+    reset: EpisodeControlClient | None = None,
+    perturb: dict | None = None,
+) -> dict:
     obj_key = meta["target_object"]
     goal_key = meta["goal_object"]
     surf_a = meta["surfaces"]["A"]
@@ -168,15 +174,17 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # Before the reset, not after: the deploy is still streaming, and the first
     # frames it sees once control starts should already carry the rest pose.
     p.cmd.reset_pose()
-    p.hold_yaw = None            # a failed episode must not leak its anchor
+    p.hold_yaw = None  # a failed episode must not leak its anchor
     p.crouch_hold = None
     if reset is not None:
         # Close whatever the previous episode left recording before this one's
         # reset teleports the robot into the frame.
         reset.end_video()
-        reset.reset(objects=perturb.get("objects") if perturb else None,
-                    robot=perturb.get("robot") if perturb else None,
-                    label=perturb.get("label", "") if perturb else "")
+        reset.reset(
+            objects=perturb.get("objects") if perturb else None,
+            robot=perturb.get("robot") if perturb else None,
+            label=perturb.get("label", "") if perturb else "",
+        )
         time.sleep(0.2)
 
     p.cmd.start_control()
@@ -185,8 +193,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # what tips it over.
     p.cmd.hold(STAND_SETTLE, mode=LocomotionMode.IDLE)
     s = p.obs()
-    require("stand", not s["fallen"],
-            f"robot did not stabilise after reset (pelvis z {s['pelvis']['pos'][2]:.3f})")
+    require("stand", not s["fallen"], f"robot did not stabilise after reset (pelvis z {s['pelvis']['pos'][2]:.3f})")
     # The deploy's planner heading anchor may be stale from a previous
     # process (any streamed-mode exit re-anchors it at whatever yaw the robot
     # had — diag_heading.py). Re-anchor it HERE at a yaw this process knows,
@@ -205,6 +212,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         # and reactive (stage 2 backs off on any disturbance) — no altitude
         # assumptions about the world.
         from primitives import READY_ARM
+
         reset.pin_arms(left=READY_ARM["left"], right=READY_ARM["right"])
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
 
@@ -212,10 +220,9 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # first frame of the task rather than four seconds of a robot standing
     # still. The exporter was already wired this way; the video was not.
     if reset is not None:
-        reset.start_video(perturb["video"] if perturb and perturb.get("video")
-                          else f"adhoc_{int(time.time())}")
+        reset.start_video(perturb["video"] if perturb and perturb.get("video") else f"adhoc_{int(time.time())}")
     if record:
-        p.cmd.key("c")           # IDLE -> RECORDING; a second 'c' saves
+        p.cmd.key("c")  # IDLE -> RECORDING; a second 'c' saves
         print("  recording started")
 
     start_xy = p.pelvis_xy()
@@ -235,8 +242,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         q = np.empty(4)
         mujoco.mju_mat2Quat(q, np.asarray(pl.rot, dtype=float).flatten())
         q = q.tolist()
-        reset.set_ghost(pos=np.asarray(pl.wrist, dtype=float).tolist(),
-                        quat=q)
+        reset.set_ghost(pos=np.asarray(pl.wrist, dtype=float).tolist(), quat=q)
 
     def plan_for(pelvis_xy, yaw, state=None):
         state = state or p.obs()
@@ -244,9 +250,13 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         return grasping.grasp_pose(
             obj_pos=p.object_pos(obj_key, state),
             obj_quat=state["objects"][obj_key]["quat"],
-            box=meta["objects"][obj_key]["box"], surface_top=surf_a["top"],
-            pelvis_xy=pelvis_xy, pelvis_yaw=yaw,
-            approach_dir=(np.cos(yaw), np.sin(yaw)), pitched=True)
+            box=meta["objects"][obj_key]["box"],
+            surface_top=surf_a["top"],
+            pelvis_xy=pelvis_xy,
+            pelvis_yaw=yaw,
+            approach_dir=(np.cos(yaw), np.sin(yaw)),
+            pitched=True,
+        )
 
     # Show the target from frame one, from a PREDICTED stand pose. The grip
     # point itself is a fact about the object and does not wait on the robot,
@@ -262,31 +272,40 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     _head = float(np.arctan2(*(p.object_pos(obj_key)[:2] - _stand)[::-1]))
     _head += GRASP_BEARING if side == "right" else -GRASP_BEARING
     _yawrot = Primitives._rot([np.cos(_head / 2), 0.0, 0.0, np.sin(_head / 2)])
-    _wrist = (np.array([_stand[0], _stand[1], STANDING_PELVIS_Z])
-              + _yawrot @ np.asarray(READY_WRISTS[side], dtype=float))
-    show_ghost(adaptive_grasp.plan(
-        np.array([p.object_pos(obj_key)[0], p.object_pos(obj_key)[1],
-                  obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM]),
-        _wrist, _yawrot, surf_a["top"]))
+    _wrist = np.array([_stand[0], _stand[1], STANDING_PELVIS_Z]) + _yawrot @ np.asarray(READY_WRISTS[side], dtype=float)
+    show_ghost(
+        adaptive_grasp.plan(
+            np.array(
+                [p.object_pos(obj_key)[0], p.object_pos(obj_key)[1], obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM]
+            ),
+            _wrist,
+            _yawrot,
+            surf_a["top"],
+        )
+    )
 
     # --- 1. approach surface A ------------------------------------------
     stage("approach_A")
     obj_xy = p.object_pos(obj_key)[:2]
-    if not p.approach(obj_xy, surf_a["xy"], REACH_XY_TOL, attempts=5, side=side,
-                      circumradius=surf_a.get("circumradius", 0.0),
-                      half_extent=surf_a.get("half_extent")):
+    if not p.approach(
+        obj_xy,
+        surf_a["xy"],
+        REACH_XY_TOL,
+        attempts=5,
+        side=side,
+        circumradius=surf_a.get("circumradius", 0.0),
+        half_extent=surf_a.get("half_extent"),
+    ):
         raise EpisodeFailed("approach_A", p.aborted or "walk failed")
     s = p.obs()
     d = float(np.linalg.norm(p.object_pos(obj_key, s)[:2] - p.pelvis_xy(s)))
-    require("approach_A", d < REACH_XY_TOL,
-            f"orange {d:.2f} m from pelvis, need < {REACH_XY_TOL}")
+    require("approach_A", d < REACH_XY_TOL, f"orange {d:.2f} m from pelvis, need < {REACH_XY_TOL}")
 
     # --- 2. grasp --------------------------------------------------------
     stage("grasp")
     obj = p.object_pos(obj_key)
     z0 = float(obj[2])
-    grip_z = (surf_a["top"] + grasping.FINGER_DROP + grasping.CLEARANCE_MARGIN
-              + grasping.GRIP_LIFT)
+    grip_z = surf_a["top"] + grasping.FINGER_DROP + grasping.CLEARANCE_MARGIN + grasping.GRIP_LIFT
     hold_side = "left" if side == "right" else "right"
 
     # Stand-pose selection from the reach map: put the GRIP POINT deep
@@ -296,16 +315,16 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # already encodes handedness, self-collision, grasp-quality orientation
     # and the delivered torso envelope, so the side bearing and the stand
     # depth fall out of one lookup instead of three tuned thresholds.
-    grip_pre = np.array([p.object_pos(obj_key)[0], p.object_pos(obj_key)[1],
-                         obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
+    grip_pre = np.array(
+        [p.object_pos(obj_key)[0], p.object_pos(obj_key)[1], obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM]
+    )
     _half = np.asarray(surf_a.get("half_extent", [0.6, 0.6])[:2], dtype=float)
     _cxy = np.asarray(surf_a["xy"], dtype=float)
 
     def edge_dist(xy):
         dxy = np.abs(np.asarray(xy) - _cxy) - _half
         out = np.maximum(dxy, 0.0)
-        return float(np.hypot(out[0], out[1])) if (dxy > 0).any() else \
-            -float(max(dxy))
+        return float(np.hypot(out[0], out[1])) if (dxy > 0).any() else -float(max(dxy))
 
     # Stage-2 navigation: careful facing-the-object advance from the safe
     # ring, reactive back-off on any disturbance, stop at grasping depth or
@@ -314,8 +333,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # past the hip-contact line, so this is "as centred as possible").
     rm = reach_map.ReachMap()
     z_pf_std = float(grip_pre[2] - STANDING_PELVIS_Z)
-    ok2, side, why2 = stream_reach.final_approach(
-        p, obj_key, rm, edge_dist, z_pf_std, side_pref=side)
+    ok2, side, why2 = stream_reach.final_approach(p, obj_key, rm, edge_dist, z_pf_std, side_pref=side)
     require("grasp", ok2, why2)
     hold_side = "left" if side == "right" else "right"
 
@@ -328,9 +346,11 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         # Vertical 0.9 / horizontal 0.8 — matches the gym gate: the pitched
         # camera puts a close can low in the frame; fy 0.9 is still inside
         # the physical image, so the object stays detectable on real RGB.
-        require("view", cam is not None
-                and abs(cam[0]) <= 0.8 and abs(cam[1]) <= 0.9,
-                f"object outside ego view at stand (cam={cam})")
+        require(
+            "view",
+            cam is not None and abs(cam[0]) <= 0.8 and abs(cam[1]) <= 0.9,
+            f"object outside ego view at stand (cam={cam})",
+        )
 
     # Plan first, then crouch only as far as THIS plan needs. The order used to
     # be the other way round because the grip height was a constant of the
@@ -343,8 +363,9 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # the hand actually IS, so the approach comes out as a straight line rather
     # than a pose the arm has to contort its way into.
     st = p.obs()
-    grip = np.array([p.object_pos(obj_key, st)[0], p.object_pos(obj_key, st)[1],
-                     obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
+    grip = np.array(
+        [p.object_pos(obj_key, st)[0], p.object_pos(obj_key, st)[1], obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM]
+    )
     # Plan from a VIRTUAL hand start, not the actual palm. The adaptive
     # planner points its travel from the given start to the grip, which made
     # sense when the planner-mode reach had to fly straight from wherever the
@@ -375,15 +396,17 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         return np.array([d2[0] / n2, d2[1] / n2, 0.0])
 
     avoid_sign = 1.0 if side == "right" else -1.0
-    plan = adaptive_grasp.plan(grip, virtual_start,
-                               Primitives._rot(st["palms"][side]["quat"]),
-                               surf_a["top"],
-                               box=obj_box,
-                               obj_rot=Primitives._rot(
-                                   st["objects"][obj_key]["quat"]),
-                               azimuth_from=azimuth_anchor(st),
-                               avoid_dir=bearing_h(st, grip),
-                               avoid_sign=avoid_sign)
+    plan = adaptive_grasp.plan(
+        grip,
+        virtual_start,
+        Primitives._rot(st["palms"][side]["quat"]),
+        surf_a["top"],
+        box=obj_box,
+        obj_rot=Primitives._rot(st["objects"][obj_key]["quat"]),
+        azimuth_from=azimuth_anchor(st),
+        avoid_dir=bearing_h(st, grip),
+        avoid_sign=avoid_sign,
+    )
     p.log(adaptive_grasp.describe(plan))
     require("grasp", plan.ok, plan.why)
     show_ghost(plan)
@@ -400,14 +423,18 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         """
         st2 = p.obs()
         c = p.object_pos(obj_key, st2)
-        grip_live = np.array([c[0], c[1],
-                              obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
+        grip_live = np.array([c[0], c[1], obj_top(meta, obj_key) - grasping.GRIP_BELOW_RIM])
         return adaptive_grasp.plan(
-            grip_live, wrist_now, palm_rot, surf_a["top"], box=obj_box,
+            grip_live,
+            wrist_now,
+            palm_rot,
+            surf_a["top"],
+            box=obj_box,
             obj_rot=Primitives._rot(st2["objects"][obj_key]["quat"]),
             azimuth_from=azimuth_anchor(st2),
             avoid_dir=bearing_h(st2, grip_live),
-            avoid_sign=avoid_sign)
+            avoid_sign=avoid_sign,
+        )
 
     # Streamed motion from here to the lift: full joint references on the
     # `pose` topic — the channel Pico teleop actually drives — with IK on the
@@ -426,13 +453,20 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         # at the READY positions first so the 0.4 s latch-clear window in
         # StreamedArm.start (planner frames without upper_body) does not
         # let the arms sag below the tabletop.
-        p.cmd.set_wrists(left_pos=READY_WRISTS["left"],
-                         right_pos=READY_WRISTS["right"])
+        p.cmd.set_wrists(left_pos=READY_WRISTS["left"], right_pos=READY_WRISTS["right"])
         reset.pin_arms()
-    ok, why = stream_reach.grasp_streamed(p, obj_key, grip, plan, side=side,
-                                          surface_top=surf_a["top"],
-                                          replan=replan, ghost=show_ghost,
-                                          nudge=False, pin=reset.pin_arms)
+    ok, why = stream_reach.grasp_streamed(
+        p,
+        obj_key,
+        grip,
+        plan,
+        side=side,
+        surface_top=surf_a["top"],
+        replan=replan,
+        ghost=show_ghost,
+        nudge=False,
+        pin=reset.pin_arms,
+    )
     # pin=pin_arms: the policy delivers the streamed WRIST ORIENTATION with a
     # heavy droop — z-chain telemetry showed the palm 2.6 cm above its own
     # command while the fingertips pressed the tabletop (the table was
@@ -449,8 +483,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     vis = stream_reach.LAST_EGO_VIS
     if vis is not None:
         p.log(f"  ego visibility through servo: {vis * 100:.0f}%")
-        require("view", vis >= 0.7,
-                f"object in ego view only {vis * 100:.0f}% of the servo")
+        require("view", vis >= 0.7, f"object in ego view only {vis * 100:.0f}% of the servo")
 
     s = p.obs()
     hold_ref = palm_frame_offset(s, obj_key, side)
@@ -468,35 +501,41 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
         p.carry_pose(side)
         p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
         s = p.obs()
-        drift = float(np.linalg.norm(
-            palm_frame_offset(s, obj_key, side) - hold_ref))
-        require("hold", drift < PALM_DRIFT_MAX,
-                f"orange slipped {drift * 100:.1f} cm in the palm frame "
-                f"during the hold")
-        require("hold", float(p.object_pos(obj_key, s)[2]) > surf_a["top"] + 0.03,
-                "orange is back on the table after the hold")
+        drift = float(np.linalg.norm(palm_frame_offset(s, obj_key, side) - hold_ref))
+        require(
+            "hold", drift < PALM_DRIFT_MAX, f"orange slipped {drift * 100:.1f} cm in the palm frame during the hold"
+        )
+        require(
+            "hold",
+            float(p.object_pos(obj_key, s)[2]) > surf_a["top"] + 0.03,
+            "orange is back on the table after the hold",
+        )
         result["ok"] = True
         return result
 
     # --- 3. transport ----------------------------------------------------
     stage("transport")
     p.carry_pose(side)
-    walked = p.approach(p.object_pos(goal_key)[:2], surf_b["xy"],
-                        PLACE_XY_REACH, attempts=5, side=side,
-                        circumradius=surf_b.get("circumradius", 0.0),
-                        half_extent=surf_b.get("half_extent"), hold=side)
+    walked = p.approach(
+        p.object_pos(goal_key)[:2],
+        surf_b["xy"],
+        PLACE_XY_REACH,
+        attempts=5,
+        side=side,
+        circumradius=surf_b.get("circumradius", 0.0),
+        half_extent=surf_b.get("half_extent"),
+        hold=side,
+    )
     s = p.obs()
     drift = float(np.linalg.norm(palm_frame_offset(s, obj_key, side) - hold_ref))
     require("transport", walked, p.aborted or "walk to B failed")
-    require("transport", drift < PALM_DRIFT_MAX,
-            f"orange slipped {drift * 100:.1f} cm in the palm frame (dropped)")
+    require("transport", drift < PALM_DRIFT_MAX, f"orange slipped {drift * 100:.1f} cm in the palm frame (dropped)")
 
     # --- 4. approach surface B -------------------------------------------
     stage("approach_B")
     s = p.obs()
     d = float(np.linalg.norm(p.object_pos(goal_key, s)[:2] - p.pelvis_xy(s)))
-    require("approach_B", d < PLACE_XY_REACH,
-            f"plate {d:.2f} m from pelvis, need < {PLACE_XY_REACH}")
+    require("approach_B", d < PLACE_XY_REACH, f"plate {d:.2f} m from pelvis, need < {PLACE_XY_REACH}")
 
     # --- 5. place --------------------------------------------------------
     stage("place")
@@ -510,8 +549,7 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     # total clearance an OPEN jaw has around it. From 6 cm the upright can
     # falls clear the instant the fingers open and lands standing (verified:
     # a dragged-then-dropped can still landed upright on the counter).
-    drop_at = plate + [0, 0, meta["objects"][goal_key]["height"] / 2
-                       + meta["objects"][obj_key]["height"] / 2 + 0.035]
+    drop_at = plate + [0, 0, meta["objects"][goal_key]["height"] / 2 + meta["objects"][obj_key]["height"] / 2 + 0.035]
     ok, why = stream_reach.place_streamed(p, obj_key, drop_at, side=side)
     require("place", ok, why)
     # Let it settle before judging where it landed.
@@ -521,10 +559,12 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     plate_now = p.object_pos(goal_key, s)
     dxy = float(np.linalg.norm(obj_now[:2] - plate_now[:2]))
     dz = float(obj_now[2] - plate_now[2])
-    require("place", dxy < PLACE_XY_TOL and abs(dz) < PLACE_Z_TOL + LIFT_HEIGHT,
-            f"orange landed {dxy * 100:.1f} cm from the plate centre, dz {dz:.3f}")
-    require("place", side not in s["objects"][obj_key]["touching"],
-            "hand is still touching the orange after release")
+    require(
+        "place",
+        dxy < PLACE_XY_TOL and abs(dz) < PLACE_Z_TOL + LIFT_HEIGHT,
+        f"orange landed {dxy * 100:.1f} cm from the plate centre, dz {dz:.3f}",
+    )
+    require("place", side not in s["objects"][obj_key]["touching"], "hand is still touching the orange after release")
 
     # --- 6. retreat ------------------------------------------------------
     stage("retreat")
@@ -542,24 +582,22 @@ def run_episode(p: Primitives, meta: dict, side: str = "right",
     s = p.obs()
     _moved = float(np.linalg.norm(p.object_pos(obj_key, s) - _can0))
     if _moved > 0.02:
-        print(f"    RETREAT idle moved the can {_moved * 100:.1f} cm "
-              f"(touch {s['objects'][obj_key].get('touch_links')})")
+        print(
+            f"    RETREAT idle moved the can {_moved * 100:.1f} cm (touch {s['objects'][obj_key].get('touch_links')})"
+        )
     back = p.pelvis_xy() - np.array([RETREAT_MIN + 0.2, 0.0])
     p.walk_to(back, stop_dist=0.15, timeout=20.0, face_target=False)
     s = p.obs()
     moved = float(np.linalg.norm(p.pelvis_xy(s) - plate_now[:2]))
-    still_there = float(np.linalg.norm(
-        p.object_pos(obj_key, s)[:2] - p.object_pos(goal_key, s)[:2]))
-    require("retreat", still_there < PLACE_XY_TOL,
-            f"orange left the plate during retreat ({still_there * 100:.1f} cm)")
+    still_there = float(np.linalg.norm(p.object_pos(obj_key, s)[:2] - p.object_pos(goal_key, s)[:2]))
+    require("retreat", still_there < PLACE_XY_TOL, f"orange left the plate during retreat ({still_there * 100:.1f} cm)")
     # XY alone let knocked-over cans through: tipped during the walk-away but
     # still inside the plate radius -> "OK" with a lying can in the last
     # frames (batch recbatch1 eps 2/5/13). Re-check uprightness at the very
     # end too.
     w, x, y, z = p.obs()["objects"][obj_key]["quat"]
     up_z = 1 - 2 * (x * x + y * y)
-    require("retreat", up_z > 0.8,
-            f"orange tipped over during retreat (up.z {up_z:.2f})")
+    require("retreat", up_z > 0.8, f"orange tipped over during retreat (up.z {up_z:.2f})")
     result["retreat_distance"] = moved
 
     result["ok"] = True

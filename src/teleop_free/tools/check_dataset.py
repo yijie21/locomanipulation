@@ -33,7 +33,7 @@ import pyarrow.parquet as pq
 
 try:
     import cv2
-except ImportError:                                   # structure pass still runs
+except ImportError:  # structure pass still runs
     cv2 = None
 
 # The eight state groups and three action groups Isaac-GR00T's unitree_g1_sonic
@@ -41,8 +41,16 @@ except ImportError:                                   # structure pass still run
 # picks BY NAME and a name it cannot find is only a warning, so a rename here
 # is a silent 64-dim action with both hands dropped -- hence checking the names
 # rather than trusting them.
-SONIC_STATE = ["left_leg", "right_leg", "waist", "left_arm", "right_arm",
-               "left_hand", "right_hand", "projected_gravity"]
+SONIC_STATE = [
+    "left_leg",
+    "right_leg",
+    "waist",
+    "left_arm",
+    "right_arm",
+    "left_hand",
+    "right_hand",
+    "projected_gravity",
+]
 SONIC_ACTION = ["motion_token", "left_hand_joints", "right_hand_joints"]
 SONIC_STATE_DIM, SONIC_ACTION_DIM = 46, 78
 
@@ -56,10 +64,10 @@ LOCAL_ACTION = ["motion_token", "right_gripper"]
 LOCAL_STATE_DIM, LOCAL_ACTION_DIM = 53, 65
 LOCAL_VIDEO = ["ego_view", "right_wrist"]
 
-ALLOW_NO_POSE = False        # set from --allow-missing-object-pose
+ALLOW_NO_POSE = False  # set from --allow-missing-object-pose
 
-ARM_STATE = slice(15, 43)     # both arms + hands: the joints a wrist cam sees
-MAX_LAG = 15                  # frames searched either side of zero
+ARM_STATE = slice(15, 43)  # both arms + hands: the joints a wrist cam sees
+MAX_LAG = 15  # frames searched either side of zero
 
 
 class Report:
@@ -82,8 +90,7 @@ def load_meta(root: Path):
     meta = root / "meta"
     info = json.loads((meta / "info.json").read_text())
     eps = [json.loads(l) for l in (meta / "episodes.jsonl").open()]
-    tasks = {json.loads(l)["task_index"]: json.loads(l)["task"]
-             for l in (meta / "tasks.jsonl").open()}
+    tasks = {json.loads(l)["task_index"]: json.loads(l)["task"] for l in (meta / "tasks.jsonl").open()}
     stats = [json.loads(l) for l in (meta / "episodes_stats.jsonl").open()]
     return info, eps, tasks, stats
 
@@ -91,9 +98,11 @@ def load_meta(root: Path):
 def ep_paths(root: Path, info: dict, ep: int):
     chunk = ep // info["chunks_size"]
     data = root / info["data_path"].format(episode_chunk=chunk, episode_index=ep)
-    vids = {k.split(".")[-1]: root / info["video_path"].format(
-                episode_chunk=chunk, video_key=k, episode_index=ep)
-            for k, v in info["features"].items() if v["dtype"] == "video"}
+    vids = {
+        k.split(".")[-1]: root / info["video_path"].format(episode_chunk=chunk, video_key=k, episode_index=ep)
+        for k, v in info["features"].items()
+        if v["dtype"] == "video"
+    }
     return data, vids
 
 
@@ -103,20 +112,19 @@ def pass_structure(root, info, eps, tasks, stats, r, n_videos):
     vid_keys = [k for k, v in info["features"].items() if v["dtype"] == "video"]
     fps = info["fps"]
 
-    r.check(info["codebase_version"] == "v2.1",
-            f"codebase_version = {info['codebase_version']}")
-    r.check(len(eps) == info["total_episodes"],
-            f"episodes.jsonl {len(eps)} == info.total_episodes {info['total_episodes']}")
-    r.check(len(stats) == len(eps),
-            f"episodes_stats.jsonl {len(stats)} == episodes {len(eps)}")
-    r.check(len(tasks) == info["total_tasks"],
-            f"tasks {len(tasks)} == info.total_tasks {info['total_tasks']}")
-    r.check(len(vid_keys) * len(eps) == info["total_videos"],
-            f"{len(vid_keys)} streams x {len(eps)} episodes == "
-            f"info.total_videos {info['total_videos']}")
+    r.check(info["codebase_version"] == "v2.1", f"codebase_version = {info['codebase_version']}")
+    r.check(
+        len(eps) == info["total_episodes"], f"episodes.jsonl {len(eps)} == info.total_episodes {info['total_episodes']}"
+    )
+    r.check(len(stats) == len(eps), f"episodes_stats.jsonl {len(stats)} == episodes {len(eps)}")
+    r.check(len(tasks) == info["total_tasks"], f"tasks {len(tasks)} == info.total_tasks {info['total_tasks']}")
+    r.check(
+        len(vid_keys) * len(eps) == info["total_videos"],
+        f"{len(vid_keys)} streams x {len(eps)} episodes == info.total_videos {info['total_videos']}",
+    )
 
     idx = [e["episode_index"] for e in eps]
-    r.check(idx == list(range(len(idx))), f"episode_index contiguous 0..{len(idx)-1}")
+    r.check(idx == list(range(len(idx))), f"episode_index contiguous 0..{len(idx) - 1}")
 
     total, gindex = 0, 0
     bad_len, bad_book, bad_num, missing, bad_width = [], [], [], [], []
@@ -132,18 +140,18 @@ def pass_structure(root, info, eps, tasks, stats, r, n_videos):
         if n != e["length"]:
             bad_len.append((i, e["length"], n))
 
-        cols = {c: t[c].to_numpy(zero_copy_only=False) for c in
-                ("index", "frame_index", "episode_index", "timestamp", "task_index")
-                if c in t.column_names}
+        cols = {
+            c: t[c].to_numpy(zero_copy_only=False)
+            for c in ("index", "frame_index", "episode_index", "timestamp", "task_index")
+            if c in t.column_names
+        }
         if "frame_index" in cols and not np.array_equal(cols["frame_index"], np.arange(n)):
             bad_book.append((i, "frame_index != 0..n-1"))
         if "episode_index" in cols and not (cols["episode_index"] == i).all():
             bad_book.append((i, "episode_index column != meta"))
-        if "index" in cols and not np.array_equal(
-                cols["index"], np.arange(gindex, gindex + n)):
+        if "index" in cols and not np.array_equal(cols["index"], np.arange(gindex, gindex + n)):
             bad_book.append((i, f"global index not continuing from {gindex}"))
-        if "timestamp" in cols and not np.allclose(
-                cols["timestamp"].astype(float), np.arange(n) / fps, atol=1e-4):
+        if "timestamp" in cols and not np.allclose(cols["timestamp"].astype(float), np.arange(n) / fps, atol=1e-4):
             bad_book.append((i, "timestamp != frame_index / fps"))
         if "task_index" in cols and int(cols["task_index"][0]) not in tasks:
             bad_book.append((i, f"task_index {cols['task_index'][0]} not in tasks.jsonl"))
@@ -160,18 +168,15 @@ def pass_structure(root, info, eps, tasks, stats, r, n_videos):
             if arr.dtype.kind == "f" and not np.isfinite(arr).all():
                 bad_num.append((i, c, int((~np.isfinite(arr)).sum())))
 
-    r.check(not missing, f"all {len(eps)} parquet files present"
-            + (f" -- missing {missing[:3]}" if missing else ""))
-    r.check(not bad_len, "parquet rows == episodes.jsonl length"
-            + (f" -- {bad_len[:5]}" if bad_len else ""))
-    r.check(not bad_book, "index/frame_index/episode_index/timestamp/task_index consistent"
-            + (f" -- {bad_book[:5]}" if bad_book else ""))
-    r.check(not bad_width, "column widths == info.json shapes"
-            + (f" -- {bad_width[:5]}" if bad_width else ""))
-    r.check(not bad_num, "no NaN/Inf in any float column"
-            + (f" -- {bad_num[:5]}" if bad_num else ""))
-    r.check(total == info["total_frames"],
-            f"summed frames {total} == info.total_frames {total}")
+    r.check(not missing, f"all {len(eps)} parquet files present" + (f" -- missing {missing[:3]}" if missing else ""))
+    r.check(not bad_len, "parquet rows == episodes.jsonl length" + (f" -- {bad_len[:5]}" if bad_len else ""))
+    r.check(
+        not bad_book,
+        "index/frame_index/episode_index/timestamp/task_index consistent" + (f" -- {bad_book[:5]}" if bad_book else ""),
+    )
+    r.check(not bad_width, "column widths == info.json shapes" + (f" -- {bad_width[:5]}" if bad_width else ""))
+    r.check(not bad_num, "no NaN/Inf in any float column" + (f" -- {bad_num[:5]}" if bad_num else ""))
+    r.check(total == info["total_frames"], f"summed frames {total} == info.total_frames {total}")
 
     # A video shorter than its table is the classic silent truncation: training
     # reads the last frame over and over for the tail of the episode.
@@ -186,10 +191,22 @@ def pass_structure(root, info, eps, tasks, stats, r, n_videos):
                     bad_vid.append((i, name, "missing"))
                     continue
                 out = subprocess.run(
-                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                     "-count_frames", "-show_entries",
-                     "stream=nb_read_frames,r_frame_rate", "-of", "json", str(vp)],
-                    capture_output=True, text=True)
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-count_frames",
+                        "-show_entries",
+                        "stream=nb_read_frames,r_frame_rate",
+                        "-of",
+                        "json",
+                        str(vp),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
                 s = json.loads(out.stdout)["streams"][0]
                 nf, rate = int(s["nb_read_frames"]), s["r_frame_rate"]
                 if nf != e["length"]:
@@ -198,11 +215,12 @@ def pass_structure(root, info, eps, tasks, stats, r, n_videos):
                     bad_vid.append((i, name, f"fps {rate} != {fps}"))
                 else:
                     ok_vid += 1
-        r.check(not bad_vid,
-                f"sampled {ok_vid} videos: frame count == rows, fps == {fps}"
-                + (f" -- {bad_vid[:5]}" if bad_vid else ""))
+        r.check(
+            not bad_vid,
+            f"sampled {ok_vid} videos: frame count == rows, fps == {fps}" + (f" -- {bad_vid[:5]}" if bad_vid else ""),
+        )
 
-    r.note(f"{len(eps)} episodes, {total} frames, {total/fps/60:.1f} min @ {fps} fps")
+    r.note(f"{len(eps)} episodes, {total} frames, {total / fps / 60:.1f} min @ {fps} fps")
     r.note(f"tasks: {list(tasks.values())}")
 
 
@@ -218,20 +236,22 @@ def pass_modality(root, r):
     if "action.bfm" in t.column_names:
         # ScaleBFM datasets (scalebfm/record_bottle.py): same 53-d state, 19-d action
         # (configs/gr00t_bfm_2cam.py). The SONIC token profiles do not apply.
-        profiles = (("bfm", "state", LOCAL_STATE, LOCAL_STATE_DIM),
-                    ("bfm", "action", ["bfm", "right_gripper"], 19))
+        profiles = (("bfm", "state", LOCAL_STATE, LOCAL_STATE_DIM), ("bfm", "action", ["bfm", "right_gripper"], 19))
         r.note("action.bfm present: auditing the bfm_2cam profile instead of stock/2cam")
     else:
-        profiles = (("stock", "state", SONIC_STATE, SONIC_STATE_DIM),
-                    ("stock", "action", SONIC_ACTION, SONIC_ACTION_DIM),
-                    ("2cam", "state", LOCAL_STATE, LOCAL_STATE_DIM),
-                    ("2cam", "action", LOCAL_ACTION, LOCAL_ACTION_DIM))
+        profiles = (
+            ("stock", "state", SONIC_STATE, SONIC_STATE_DIM),
+            ("stock", "action", SONIC_ACTION, SONIC_ACTION_DIM),
+            ("2cam", "state", LOCAL_STATE, LOCAL_STATE_DIM),
+            ("2cam", "action", LOCAL_ACTION, LOCAL_ACTION_DIM),
+        )
     for label, grp, want, want_dim in profiles:
         missing = [k for k in want if k not in mod.get(grp, {})]
-        r.check(not missing,
-                f"[{label}] {grp}: all {len(want)} groups the config selects are present"
-                + (f" -- MISSING {missing} (GR00T only WARNS about these, "
-                   f"then trains without them)" if missing else ""))
+        r.check(
+            not missing,
+            f"[{label}] {grp}: all {len(want)} groups the config selects are present"
+            + (f" -- MISSING {missing} (GR00T only WARNS about these, then trains without them)" if missing else ""),
+        )
         total, oor = 0, []
         for k in want:
             e = mod.get(grp, {}).get(k)
@@ -241,21 +261,23 @@ def pass_modality(root, r):
             col = e.get("original_key", defaults[grp])
             if col in t.column_names and e["end"] > len(t[col].to_pylist()[0]):
                 oor.append((k, col, e["end"], len(t[col].to_pylist()[0])))
-        r.check(not oor, f"[{label}] {grp}: every slice is in range of its source column"
-                + (f" -- {oor}" if oor else ""))
-        r.check(total == want_dim,
-                f"[{label}] {grp} totals {total} (expected {want_dim})")
+        r.check(
+            not oor, f"[{label}] {grp}: every slice is in range of its source column" + (f" -- {oor}" if oor else "")
+        )
+        r.check(total == want_dim, f"[{label}] {grp} totals {total} (expected {want_dim})")
 
     have = set(mod.get("video", {}))
-    r.check(set(LOCAL_VIDEO) <= have,
-            f"video: both streams gr00t_sonic_2cam.py reads are present "
-            f"{sorted(have)}"
-            + (f" -- MISSING {sorted(set(LOCAL_VIDEO) - have)}"
-               if not set(LOCAL_VIDEO) <= have else ""))
+    r.check(
+        set(LOCAL_VIDEO) <= have,
+        f"video: both streams gr00t_sonic_2cam.py reads are present "
+        f"{sorted(have)}" + (f" -- MISSING {sorted(set(LOCAL_VIDEO) - have)}" if not set(LOCAL_VIDEO) <= have else ""),
+    )
     if "left_wrist" in have:
-        r.note("left_wrist is recorded but NOT trained on: over this dataset the "
-               "left arm never moves, so its camera shows the table and an idle "
-               "gripper for the whole episode. Kept for the 3cam ablation.")
+        r.note(
+            "left_wrist is recorded but NOT trained on: over this dataset the "
+            "left arm never moves, so its camera shows the table and an idle "
+            "gripper for the whole episode. Kept for the 3cam ablation."
+        )
 
 
 def pass_grasp(root, info, eps, r):
@@ -272,22 +294,30 @@ def pass_grasp(root, info, eps, r):
     # target is (water_bottle here, can in the older sets). Hardcoding one name
     # is the same mistake that once recorded 1008 rows of zeros without a word
     # -- so discover it, and say which one was used.
-    pose_cols = [c for c in pq.read_schema(ep_paths(root, info, eps[0]["episode_index"])[0]).names
-                 if c.startswith("observation.") and c.endswith("_pose")]
+    pose_cols = [
+        c
+        for c in pq.read_schema(ep_paths(root, info, eps[0]["episode_index"])[0]).names
+        if c.startswith("observation.") and c.endswith("_pose")
+    ]
     if len(pose_cols) != 1:
         # A hard failure by default, and only skippable with an explicit flag.
         # This pass is the ONLY independent evidence that the episodes contain
         # real grasps rather than plausible-looking numbers, so losing it has
         # to be a recorded decision, never a quiet no-op.
         if ALLOW_NO_POSE:
-            r.note(f"SKIPPED: no single object-pose column ({pose_cols or 'none'}). "
-                   f"Grasp causality is UNVERIFIED here; the surviving evidence "
-                   f"is the gym's own per-episode predicate (manifest ok=true).")
+            r.note(
+                f"SKIPPED: no single object-pose column ({pose_cols or 'none'}). "
+                f"Grasp causality is UNVERIFIED here; the surviving evidence "
+                f"is the gym's own per-episode predicate (manifest ok=true)."
+            )
             return
-        r.check(False, f"exactly one observation.*_pose column "
-                       f"(found {pose_cols or 'none'}) -- pass "
-                       f"--allow-missing-object-pose to skip this pass on "
-                       f"purpose")
+        r.check(
+            False,
+            f"exactly one observation.*_pose column "
+            f"(found {pose_cols or 'none'}) -- pass "
+            f"--allow-missing-object-pose to skip this pass on "
+            f"purpose",
+        )
         return
     pose_col = pose_cols[0]
     r.note(f"object pose column: {pose_col}")
@@ -333,16 +363,16 @@ def pass_grasp(root, info, eps, r):
         dists.append(float(d[-30:].mean()))
 
     n = len(eps) - no_event
-    r.check(no_event == 0, f"every episode has a gripper-close event "
-                           f"({n}/{len(eps)})")
+    r.check(no_event == 0, f"every episode has a gripper-close event ({n}/{len(eps)})")
     r.check(at_hand == n, f"wrist within 30 cm of the object at close ({at_hand}/{n})")
     r.check(rose_after == n, f"object rose >3 cm AFTER the close ({rose_after}/{n})")
-    r.check(held == n, f"object-to-wrist distance holds steady at the end "
-                       f"({held}/{n}) -- rigid attachment, not a knock-over")
+    r.check(
+        held == n,
+        f"object-to-wrist distance holds steady at the end ({held}/{n}) -- rigid attachment, not a knock-over",
+    )
     if rises:
-        r.note(f"rise after close: median {np.median(rises)*100:.1f} cm, "
-               f"min {min(rises)*100:.1f} cm")
-        r.note(f"final object-to-wrist offset: median {np.median(dists)*100:.1f} cm")
+        r.note(f"rise after close: median {np.median(rises) * 100:.1f} cm, min {min(rises) * 100:.1f} cm")
+        r.note(f"final object-to-wrist offset: median {np.median(dists) * 100:.1f} cm")
 
 
 def video_motion(path: Path, n: int) -> np.ndarray:
@@ -371,7 +401,7 @@ def _profile(a, b, max_lag=MAX_LAG):
     a, b = _unit(a[:m]), _unit(b[:m])
     out = {}
     for lag in range(-max_lag, max_lag + 1):
-        x, y = (a[lag:], b[:m - lag] if lag else b) if lag >= 0 else (a[:m + lag], b[-lag:])
+        x, y = (a[lag:], b[: m - lag] if lag else b) if lag >= 0 else (a[: m + lag], b[-lag:])
         out[lag] = float(np.dot(_unit(x), _unit(y)))
     return out
 
@@ -417,10 +447,10 @@ def _is_resample_ripple(prof: dict, peak: int) -> bool:
         return False
     p0, p1, pm1 = prof.get(0, 0.0), prof.get(1, 0.0), prof.get(-1, 0.0)
     if not (p0 >= p1 and p0 >= pm1):
-        return False                      # profile climbs toward the peak: real
+        return False  # profile climbs toward the peak: real
     mirror = prof.get(-peak, 0.0)
     if mirror <= 0:
-        return False                      # nothing on the other side: real
+        return False  # nothing on the other side: real
     return prof[peak] / mirror < RIPPLE_ASYMMETRY
 
 
@@ -445,7 +475,7 @@ def pass_alignment(root, info, eps, r, n_eps):
 
         for name, vp in vids.items():
             if "wrist" not in name or not vp.exists():
-                continue           # the head camera sees the scene, not the arm
+                continue  # the head camera sees the scene, not the arm
             prof = _profile(video_motion(vp, t.num_rows), body)
             peak = max(prof, key=prof.get)
             lags.append(0 if _is_resample_ripple(prof, peak) else peak)
@@ -457,8 +487,9 @@ def pass_alignment(root, info, eps, r, n_eps):
         # body first: _profile's positive lag means the FIRST argument trails
         # the second, and what we want to read out is how far the body trails
         # the token.
-        prof = _profile(np.linalg.norm(np.diff(st, axis=0), axis=1),
-                        np.linalg.norm(np.diff(tok, axis=0), axis=1), max_lag=10)
+        prof = _profile(
+            np.linalg.norm(np.diff(st, axis=0), axis=1), np.linalg.norm(np.diff(tok, axis=0), axis=1), max_lag=10
+        )
         act_lags.append(max(prof, key=prof.get))
 
     uniq, counts = np.unique(lags, return_counts=True)
@@ -485,48 +516,53 @@ def pass_alignment(root, info, eps, r, n_eps):
     # constant offset for its whole length. That is a property worth seeing in
     # the report, which is why the outliers are listed rather than summarised
     # into a pass.
-    r.check(bool(med == 0 and at_zero > 0.5),
-            f"video vs table: {len(lags)} wrist-camera measurements, "
-            f"{at_zero * 100:.0f}% at lag 0 (median {med:+.0f}), "
-            f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}")
+    r.check(
+        bool(med == 0 and at_zero > 0.5),
+        f"video vs table: {len(lags)} wrist-camera measurements, "
+        f"{at_zero * 100:.0f}% at lag 0 (median {med:+.0f}), "
+        f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}",
+    )
     off = [(ep, cam, lag) for (ep, cam), lag in zip(pairs, lags) if lag != 0]
     if off:
-        r.note(f"{len(off)}/{len(lags)} measurements off zero (camera-latency "
-               f"jitter, up to {max(abs(l) for _, _, l in off)} frames "
-               f"= {max(abs(l) for _, _, l in off) / info['fps'] * 1000:.0f} ms): "
-               f"{off}")
+        r.note(
+            f"{len(off)}/{len(lags)} measurements off zero (camera-latency "
+            f"jitter, up to {max(abs(l) for _, _, l in off)} frames "
+            f"= {max(abs(l) for _, _, l in off) / info['fps'] * 1000:.0f} ms): "
+            f"{off}"
+        )
     if weak:
         r.note(f"weak correlation (lag unreliable) on {weak}")
 
     med = float(np.median(act_lags))
-    r.check(med > 0,
-            f"action vs state: body trails the token by a median {med:+.0f} frames "
-            f"({med/info['fps']*1000:.0f} ms)")
-    r.note("a token is a command and the body is its consequence, so the body "
-           "must TRAIL. Zero or negative means the columns are swapped in time.")
+    r.check(
+        med > 0,
+        f"action vs state: body trails the token by a median {med:+.0f} frames ({med / info['fps'] * 1000:.0f} ms)",
+    )
+    r.note(
+        "a token is a command and the body is its consequence, so the body "
+        "must TRAIL. Zero or negative means the columns are swapped in time."
+    )
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("dataset")
-    ap.add_argument("--videos", type=int, default=10,
-                    help="episodes to ffprobe for frame-count agreement (0 = skip)")
-    ap.add_argument("--align-episodes", type=int, default=12,
-                    help="episodes to measure the video/table lag on")
-    ap.add_argument("--quick", action="store_true",
-                    help="structure and modality only -- no video decode")
-    ap.add_argument("--allow-missing-object-pose", action="store_true",
-                    help="downgrade the grasp-causality pass to a loud note "
-                         "when the privileged object-pose column is absent or "
-                         "ambiguous, instead of failing")
+    ap.add_argument("--videos", type=int, default=10, help="episodes to ffprobe for frame-count agreement (0 = skip)")
+    ap.add_argument("--align-episodes", type=int, default=12, help="episodes to measure the video/table lag on")
+    ap.add_argument("--quick", action="store_true", help="structure and modality only -- no video decode")
+    ap.add_argument(
+        "--allow-missing-object-pose",
+        action="store_true",
+        help="downgrade the grasp-causality pass to a loud note "
+        "when the privileged object-pose column is absent or "
+        "ambiguous, instead of failing",
+    )
     args = ap.parse_args()
     globals()["ALLOW_NO_POSE"] = args.allow_missing_object_pose
 
     root = Path(args.dataset)
     if not (root / "meta/info.json").exists():
-        raise SystemExit(f"{root} does not look like a LeRobot dataset "
-                         f"(no meta/info.json)")
+        raise SystemExit(f"{root} does not look like a LeRobot dataset (no meta/info.json)")
     info, eps, tasks, stats = load_meta(root)
     r = Report()
     print(f"auditing {root}")

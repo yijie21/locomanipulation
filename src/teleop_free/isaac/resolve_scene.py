@@ -47,12 +47,10 @@ import numpy as np
 from .. import paths
 
 
-
 def _sidecar_groups(collect_dir: str) -> dict:
     """{pid: [files]} -- one gym process per batch, so one pid per batch."""
     out: dict[str, list[str]] = {}
-    for f in glob.glob(os.path.join(collect_dir, "pose_sidecar",
-                                    "p*_round_*.jsonl")):
+    for f in glob.glob(os.path.join(collect_dir, "pose_sidecar", "p*_round_*.jsonl")):
         out.setdefault(os.path.basename(f).split("_round")[0], []).append(f)
     return out
 
@@ -60,15 +58,13 @@ def _sidecar_groups(collect_dir: str) -> dict:
 def _pid_for_seed(collect_dir: str) -> dict:
     """Seed -> pid, by which gym log sits next to that group's last write."""
     groups = _sidecar_groups(collect_dir)
-    gym = {os.path.basename(g)[4:-4]: os.path.getmtime(g)
-           for g in glob.glob(os.path.join(collect_dir, "gym_*.log"))}
+    gym = {os.path.basename(g)[4:-4]: os.path.getmtime(g) for g in glob.glob(os.path.join(collect_dir, "gym_*.log"))}
     if not groups or not gym:
         return {}
     seed_of = {}
     for pid, files in groups.items():
         last = max(os.path.getmtime(f) for f in files)
-        seed, _ = min(((s, abs(t - last)) for s, t in gym.items()),
-                      key=lambda r: r[1])
+        seed, _ = min(((s, abs(t - last)) for s, t in gym.items()), key=lambda r: r[1])
         seed_of[seed] = pid
     return seed_of
 
@@ -77,14 +73,13 @@ def _fingerprint(session: str, episode: int, files: list) -> tuple:
     """-> (mean pelvis-quaternion error, seq hit rate) for one batch's files."""
     import pandas as pd
 
-    pq = os.path.join(session, "data", "chunk-000",
-                      f"episode_{episode:06d}.parquet")
+    pq = os.path.join(session, "data", "chunk-000", f"episode_{episode:06d}.parquet")
     sq = os.path.join(session, "priv_seq", f"episode_{episode:06d}.json")
     if not (os.path.exists(pq) and os.path.exists(sq)):
         return 9.9, 0.0
-    ro = np.stack(pd.read_parquet(
-        pq, columns=["observation.root_orientation"]
-    )["observation.root_orientation"].to_numpy())
+    ro = np.stack(
+        pd.read_parquet(pq, columns=["observation.root_orientation"])["observation.root_orientation"].to_numpy()
+    )
     priv = json.load(open(sq))["priv_seq"]
     by = {}
     for f in files:
@@ -99,15 +94,14 @@ def _fingerprint(session: str, episode: int, files: list) -> tuple:
             continue
         q = np.asarray(r["pelvis"][3:7], dtype=float)
         # q and -q are the same rotation
-        errs.append(min(float(np.linalg.norm(q - ro[i])),
-                        float(np.linalg.norm(q + ro[i]))))
+        errs.append(min(float(np.linalg.norm(q - ro[i])), float(np.linalg.norm(q + ro[i]))))
     if not errs:
         return 9.9, 0.0
     return float(np.mean(errs)), len(errs) / max(1, len(priv))
 
 
-QUAT_MATCH_TOL = 5e-3      # right batch ~8e-4, next best ~4e-2
-QUAT_MARGIN = 5.0          # winner must beat the runner-up by this factor
+QUAT_MATCH_TOL = 5e-3  # right batch ~8e-4, next best ~4e-2
+QUAT_MARGIN = 5.0  # winner must beat the runner-up by this factor
 
 
 def resolve(session: str, collect_dir: str = "", episode: int = 0) -> dict:
@@ -127,15 +121,16 @@ def resolve(session: str, collect_dir: str = "", episode: int = 0) -> dict:
     if best[0] > QUAT_MATCH_TOL:
         raise SystemExit(
             f"no batch matches {session}: best is seed {best[1]} at pelvis-quat "
-            f"error {best[0]:.5f}, tolerance {QUAT_MATCH_TOL}")
+            f"error {best[0]:.5f}, tolerance {QUAT_MATCH_TOL}"
+        )
     if runner is not None and runner[0] < best[0] * QUAT_MARGIN:
         raise SystemExit(
             f"ambiguous: seed {best[1]} at {best[0]:.5f} and seed {runner[1]} "
-            f"at {runner[0]:.5f} are within {QUAT_MARGIN}x")
+            f"at {runner[0]:.5f} are within {QUAT_MARGIN}x"
+        )
 
     err, seed, pid, hit = best
-    sidecar_glob = os.path.join(collect_dir, "pose_sidecar",
-                                f"{pid}_round_*.jsonl")
+    sidecar_glob = os.path.join(collect_dir, "pose_sidecar", f"{pid}_round_*.jsonl")
     scene_dir = os.path.join(collect_dir, f"scene_{seed}")
     meta_p = os.path.join(scene_dir, "scene_meta.json")
     man_p = os.path.join(collect_dir, f"manifest_{seed}.jsonl")
@@ -148,21 +143,23 @@ def resolve(session: str, collect_dir: str = "", episode: int = 0) -> dict:
                 break
     if os.path.exists(meta_p):
         table_meta = float(json.load(open(meta_p))["surfaces"]["A"]["top"])
-    if table_manifest is not None and table_meta is not None \
-            and abs(table_manifest - table_meta) > 1e-3:
+    if table_manifest is not None and table_meta is not None and abs(table_manifest - table_meta) > 1e-3:
         raise SystemExit(
             f"seed {seed}: manifest table_top {table_manifest} disagrees with "
-            f"scene_meta {table_meta} -- the snapshot is not this batch's")
+            f"scene_meta {table_meta} -- the snapshot is not this batch's"
+        )
     return {
-        "session": session, "seed": seed, "pid": pid,
+        "session": session,
+        "seed": seed,
+        "pid": pid,
         "snapshot_dir": scene_dir,
         "scene_xml": os.path.join(scene_dir, "scene_locomani.xml"),
         "scene_meta": meta_p,
         "sidecar_glob": sidecar_glob,
         "table_top": table_meta if table_meta is not None else table_manifest,
-        "quat_err": err, "seq_hit_rate": hit,
-        "runner_up": None if runner is None else
-                     {"seed": runner[1], "quat_err": runner[0]},
+        "quat_err": err,
+        "seq_hit_rate": hit,
+        "runner_up": None if runner is None else {"seed": runner[1], "quat_err": runner[0]},
     }
 
 

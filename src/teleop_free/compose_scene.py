@@ -33,11 +33,9 @@ def render_views(model, data, out_dir: str, width=1280, height=960):
     cam = mujoco.MjvCamera()
     mujoco.mjv_defaultCamera(cam)
     # Centre on the middle of the walk, not on surface A.
-    cam.lookat[:] = [0.5 * (scene_lib.ROBOT_START_XY[0] + scene_lib.SURFACE_B_XY[0]),
-                     0.0, 0.75]
+    cam.lookat[:] = [0.5 * (scene_lib.ROBOT_START_XY[0] + scene_lib.SURFACE_B_XY[0]), 0.0, 0.75]
     for name, params in views.items():
-        cam.azimuth, cam.elevation, cam.distance = (
-            params["azimuth"], params["elevation"], params["distance"])
+        cam.azimuth, cam.elevation, cam.distance = (params["azimuth"], params["elevation"], params["distance"])
         renderer.update_scene(data, camera=cam)
         path = os.path.join(out_dir, f"scene_{name}.png")
         Image.fromarray(renderer.render()).save(path)

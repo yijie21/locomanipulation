@@ -3,15 +3,16 @@
 All disk work runs outside the policy/control threads. Times are wall-clock
 and sim time/seq are retained where available. A dropped capture is reported.
 """
+
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import queue
 import threading
 import time
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -80,6 +81,7 @@ class Capture:
     def _read(self):
         import zmq
         from gear_sonic.utils.data_collection.zmq_state_subscriber import ZMQStateSubscriber
+
         ctx = zmq.Context()
         sock = ctx.socket(zmq.SUB)
         sock.setsockopt_string(zmq.SUBSCRIBE, "")
@@ -98,7 +100,7 @@ class Capture:
                 if row is not None:
                     self.latest_debug = row
                     self.put("debug", state=row)
-                self.stop.wait(.002)
+                self.stop.wait(0.002)
         except Exception as exc:
             self.errors.append(repr(exc))
         finally:
@@ -109,6 +111,7 @@ class Capture:
     def instrument(self):
         import agent_server
         import vla_round
+
         original_send = agent_server.AgentCommander.token_frame
         original_get = vla_round.PolicyLink.get_chunk
         capture = self
@@ -116,12 +119,16 @@ class Capture:
         def send(commander, token, *args, **kwargs):
             started = time.time()
             result = original_send(commander, token, *args, **kwargs)
-            capture.put("sent", started=started, token=np.asarray(token).copy(),
-                        right_hand=kwargs.get("right_hand"),
-                        left_hand=kwargs.get("left_hand"),
-                        frame_index=kwargs.get("frame_index"),
-                        source=kwargs.get("trace_source"),
-                        receipt_status="unconfirmed")
+            capture.put(
+                "sent",
+                started=started,
+                token=np.asarray(token).copy(),
+                right_hand=kwargs.get("right_hand"),
+                left_hand=kwargs.get("left_hand"),
+                frame_index=kwargs.get("frame_index"),
+                source=kwargs.get("trace_source"),
+                receipt_status="unconfirmed",
+            )
             return result
 
         def get(link, obs):
@@ -133,11 +140,16 @@ class Capture:
                 capture.chunk_id += 1
             capture.inference_context.chunk_id = cid
             link.capture_context = capture.inference_context
-            capture.put("chunk", id=cid, started=started, ended=ended,
-                        token=np.asarray(token).copy(), grip=np.asarray(grip).copy(),
-                        **{k: np.asarray(v).copy() for k, v in obs.items()})
-            capture.put("inference", id=cid, started=started, ended=ended,
-                        rtc_applied=getattr(link, 'last_rtc', None))
+            capture.put(
+                "chunk",
+                id=cid,
+                started=started,
+                ended=ended,
+                token=np.asarray(token).copy(),
+                grip=np.asarray(grip).copy(),
+                **{k: np.asarray(v).copy() for k, v in obs.items()},
+            )
+            capture.put("inference", id=cid, started=started, ended=ended, rtc_applied=getattr(link, "last_rtc", None))
             return token, grip
 
         agent_server.AgentCommander.token_frame = send
@@ -148,8 +160,9 @@ class Capture:
         self.reader.join(timeout=3)
         self.queue.put(None)
         self.writer.join(timeout=60)
-        result = dict(dropped=self.dropped, errors=self.errors,
-                      writer_alive=self.writer.is_alive(), chunks=self.chunk_id)
+        result = dict(
+            dropped=self.dropped, errors=self.errors, writer_alive=self.writer.is_alive(), chunks=self.chunk_id
+        )
         (self.root / "capture_status.json").write_text(json.dumps(result, indent=2))
         if self.dropped or self.errors or self.writer.is_alive():
             raise RuntimeError(f"Incomplete diagnostic capture: {result}")

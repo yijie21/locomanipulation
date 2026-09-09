@@ -36,7 +36,7 @@ with lock:
         idx = latency_index(time.time() - chunk_t0, RATE, len(tok))  # ← 这里算 12
 j = min(idx, len(tok) - 1)
 tok_j, grip_j = tok[j], float(grip[j])
-idx = min(idx + 1, len(tok) - 1)   # 下一轮循环, idx 变 13
+idx = min(idx + 1, len(tok) - 1)  # 下一轮循环, idx 变 13
 ```
 `vla_round.py:721-729`——`latency_index` 就是 NVIDIA 官方的 `calculate_latency_compensated_index`
 (`vla_round.py:68-70`,verbatim import,不是照猫画虎重写的一份)。
@@ -70,18 +70,19 @@ idx = min(idx + 1, len(tok) - 1)   # 下一轮循环, idx 变 13
 def worker():
     while not stop.is_set():
         t0 = time.time()
-        obs = obs_src.build()                    # worker 专属:相机/状态 socket
+        obs = obs_src.build()  # worker 专属:相机/状态 socket
         if obs is not None:
-            tok, grip = link.get_chunk(obs)       # worker 专属:policy socket
+            tok, grip = link.get_chunk(obs)  # worker 专属:policy socket
             with lock:
                 latest["chunk"] = (tok, grip)
                 latest["t0"] = t0
         rest = inference_interval - (time.time() - t0)
         if rest > 0:
-            time.sleep(rest)                      # 歇一下,没歇够就直接下一轮
+            time.sleep(rest)  # 歇一下,没歇够就直接下一轮
+
 
 th = threading.Thread(target=worker, daemon=True)
-th.start()                                        # 主线程接着往下走,不等它
+th.start()  # 主线程接着往下走,不等它
 ```
 `vla_round.py:596-617`
 
@@ -114,12 +115,12 @@ C 最新、权重最高,但 A、B 仍然参与投票,边界处的跳变被这样
 ```python
 def _ensemble(buf, now, rate):
     picks, ws = [], []
-    for age, (tok, grip, t0) in enumerate(reversed(buf)):   # age 0 = 最新
+    for age, (tok, grip, t0) in enumerate(reversed(buf)):  # age 0 = 最新
         i = int(round((now - t0) * rate))
         if i < 0 or i >= len(tok):
-            continue                              # 这个 chunk 已经放完了,不投票
+            continue  # 这个 chunk 已经放完了,不投票
         picks.append((tok[i], grip[i]))
-        ws.append(np.exp(-ENSEMBLE_M * age))          # 越老权重越小
+        ws.append(np.exp(-ENSEMBLE_M * age))  # 越老权重越小
     w = np.asarray(ws) / sum(ws)
     tok = np.sum([p[0] * wi for p, wi in zip(picks, w)], axis=0)
     grip = float(np.sum([p[1] * wi for p, wi in zip(picks, w)]))
@@ -135,9 +136,9 @@ def _ensemble(buf, now, rate):
 第一帧,像淡入淡出一样,避免交接瞬间的硬跳变。
 
 ```python
-for i in range(n_bl):                          # n_bl = 1.0s × 30Hz = 30 步
+for i in range(n_bl):  # n_bl = 1.0s × 30Hz = 30 步
     a = (i + 1) / n_bl
-    tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])   # 线性插值
+    tk = (1.0 - a) * INIT_TOK + a * np.asarray(tok0[0])  # 线性插值
     p.cmd.token_frame(tk, ...)
 ```
 `vla_round.py:648-656`——只要走 async 路径就一定执行,不受 `--ensemble` 控制。

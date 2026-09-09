@@ -34,8 +34,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives  # noqa: E402
 
-SETTLE = 3.5           # the arm needs a couple of seconds to reach a new target
-HOLD_POS = np.array([0.35, -0.22, -0.05])   # a plausible pre-grasp wrist point
+SETTLE = 3.5  # the arm needs a couple of seconds to reach a new target
+HOLD_POS = np.array([0.35, -0.22, -0.05])  # a plausible pre-grasp wrist point
 
 
 def quat_of_axis_angle(axis, angle) -> np.ndarray:
@@ -87,20 +87,21 @@ def main() -> None:
         axes = rot_pelvis.T @ rot_palm
         axis_x, axis_y, axis_z = axes[:, 0], axes[:, 1], axes[:, 2]
         local = p.world_to_root_full(palm["pos"], s)
-        print(f"{label:38s} x {str(np.round(axis_x, 2)):20s} "
-              f"y {str(np.round(axis_y, 2)):20s} z {str(np.round(axis_z, 2)):20s} "
-              f"pos {np.round(local, 3)}")
+        print(
+            f"{label:38s} x {str(np.round(axis_x, 2)):20s} "
+            f"y {str(np.round(axis_y, 2)):20s} z {str(np.round(axis_z, 2)):20s} "
+            f"pos {np.round(local, 3)}"
+        )
         results.append(axis_x)
 
-    spread = float(np.max(np.linalg.norm(
-        np.array(results) - np.array(results)[0], axis=1)))
-    print(f"\nlargest change in the palm's +x axis across all commands: "
-          f"{spread:.3f}")
-    print("  < 0.05  -> the quaternion field is inert, like compliance and "
-          "height; the offset has to be calibrated from the measured pose "
-          "instead")
-    print("  > 0.30  -> it is live and the grasp should command a palm-down "
-          "orientation")
+    spread = float(np.max(np.linalg.norm(np.array(results) - np.array(results)[0], axis=1)))
+    print(f"\nlargest change in the palm's +x axis across all commands: {spread:.3f}")
+    print(
+        "  < 0.05  -> the quaternion field is inert, like compliance and "
+        "height; the offset has to be calibrated from the measured pose "
+        "instead"
+    )
+    print("  > 0.30  -> it is live and the grasp should command a palm-down orientation")
 
     p.cmd.pause_control()
     p.close()

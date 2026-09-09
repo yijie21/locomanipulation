@@ -5,37 +5,42 @@ reference are chosen together. Rejected descent proposals retain the current
 arm reference and stop further requested descent. This sampled kinematic screen
 is not a whole-body dynamics guarantee.
 """
-from copy import deepcopy
+
 import time
+from copy import deepcopy
+
 import numpy as np
+from agent_server import LocomotionMode
+from grasp_capture import IK_POSITION_TOL, IK_ROTATION_TOL, closure_geometry, planning_points
+from primitives import Primitives
+from ready_grasp_policy import OFFSET, PRE_GAP, ready_q, templates, terminal_rotation
+from recoverable_grasp_policy import RecoverableGraspPolicy
 from scipy.spatial.transform import Rotation
 
-from recoverable_grasp_policy import RecoverableGraspPolicy
-from ready_grasp_policy import ready_q, templates, OFFSET, PRE_GAP, terminal_rotation
-from grasp_capture import closure_geometry, planning_points, IK_POSITION_TOL, IK_ROTATION_TOL
-from primitives import Primitives
-from agent_server import LocomotionMode
 
 def screen_motion(guard, state, q, dz, forward):
     """Screen joint sweep and small base-motion uncertainty together."""
-    for u in (0., .5, 1.):
+    for u in (0.0, 0.5, 1.0):
         trial = deepcopy(state)
         # A 5mm squat/backshift lookahead leaves space for delivery lag.
-        uncertainty = .005 if dz < -1e-6 else 0.
-        trial['pelvis']['pos'] = (np.asarray(state['pelvis']['pos'])
-            + [0., 0., u*(dz-uncertainty)] - u*uncertainty*np.asarray(forward)).tolist()
+        uncertainty = 0.005 if dz < -1e-6 else 0.0
+        trial["pelvis"]["pos"] = (
+            np.asarray(state["pelvis"]["pos"])
+            + [0.0, 0.0, u * (dz - uncertainty)]
+            - u * uncertainty * np.asarray(forward)
+        ).tolist()
         # Upper-joint references do not move the body.  Base/body clearance
         # belongs to stand selection and the terminal squat projection; an
         # existing hip/table near-contact must not veto every arm command.
-        for side in (side for side in guard.hands if side != 'body'):
+        for side in (side for side in guard.hands if side != "body"):
             hit = guard.check(trial, q, side, allow_target_contact=False)
             if not hit.clear:
-                return f'{side}:{hit.link}:{hit.obstacle}'
+                return f"{side}:{hit.link}:{hit.obstacle}"
     return None
 
 
-TRANSPORT_POSITION_TOL = .08
-TRANSPORT_ROTATION_TOL = .20
+TRANSPORT_POSITION_TOL = 0.08
+TRANSPORT_ROTATION_TOL = 0.20
 
 
 def solve_transport_ik(ik, side, aim, rotation, seed, palm, lead_limit):
@@ -44,14 +49,15 @@ def solve_transport_ik(ik, side, aim, rotation, seed, palm, lead_limit):
     The caller still bounds joint increments and screens their swept motion.
     Always shortening a valid goal can delay the arm while the body descends.
     """
-    q, pe, re = ik.solve(side, aim, rotation, q_mj29=seed,
-                         use_waist=False, iters=50)
-    delta = np.asarray(aim)-palm
-    if (lead_limit and np.linalg.norm(delta)>lead_limit
-            and (pe>TRANSPORT_POSITION_TOL or re>TRANSPORT_ROTATION_TOL)):
-        bounded = np.asarray(palm)+delta*lead_limit/np.linalg.norm(delta)
-        q, pe, re = ik.solve(side, bounded, rotation, q_mj29=seed,
-                             use_waist=False, iters=50)
+    q, pe, re = ik.solve(side, aim, rotation, q_mj29=seed, use_waist=False, iters=50)
+    delta = np.asarray(aim) - palm
+    if (
+        lead_limit
+        and np.linalg.norm(delta) > lead_limit
+        and (pe > TRANSPORT_POSITION_TOL or re > TRANSPORT_ROTATION_TOL)
+    ):
+        bounded = np.asarray(palm) + delta * lead_limit / np.linalg.norm(delta)
+        q, pe, re = ik.solve(side, bounded, rotation, q_mj29=seed, use_waist=False, iters=50)
         return q, pe, re, True
     return q, pe, re, False
 
@@ -63,13 +69,14 @@ def project_squat(state, drop, config):
     Zero defaults retain the original purely vertical prediction.
     """
     projected = deepcopy(state)
-    delivered = max(0., drop-getattr(config, 'squat_prediction_drop_shortfall', 0.))
-    rotation = Primitives._rot(state['pelvis']['quat'])
+    delivered = max(0.0, drop - getattr(config, "squat_prediction_drop_shortfall", 0.0))
+    rotation = Primitives._rot(state["pelvis"]["quat"])
     forward = rotation[:2, 0].copy()
     forward /= max(float(np.linalg.norm(forward)), 1e-9)
-    backshift = delivered*getattr(config, 'squat_prediction_backshift_ratio', 0.)
-    projected['pelvis']['pos'] = (np.asarray(state['pelvis']['pos'])
-        -np.array([*(backshift*forward), delivered])).tolist()
+    backshift = delivered * getattr(config, "squat_prediction_backshift_ratio", 0.0)
+    projected["pelvis"]["pos"] = (
+        np.asarray(state["pelvis"]["pos"]) - np.array([*(backshift * forward), delivered])
+    ).tolist()
     return projected
 
 
@@ -79,7 +86,7 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
         # Keep it across braking; select_drop rechecks CURRENT geometry and
         # collisions before use. Discarding it forces a potentially different
         # nearest-template solve and can loop without any actual correction.
-        if not getattr(self.config, 'recovery_region_stop', False):
+        if not getattr(self.config, "recovery_region_stop", False):
             self._prepared = None
         self._prepared_once = False
         return super().brake()
@@ -90,38 +97,41 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
         self._prepared_once = True
         start = time.monotonic()
         drop = super().select_drop(state, self._drop_hint)
-        self.execution.metrics.setdefault('brake_planning', []).append(dict(
-            planning_s=time.monotonic()-start, candidate_drop=drop, reused=False))
+        self.execution.metrics.setdefault("brake_planning", []).append(
+            dict(planning_s=time.monotonic() - start, candidate_drop=drop, reused=False)
+        )
 
     def select_drop(self, state, hint):
-        cached = getattr(self, '_prepared', None)
+        cached = getattr(self, "_prepared", None)
         self._prepared = None
         if cached is not None:
             drop, candidate, rot = cached
             # Re-evaluate the CURRENT geometry. Cached IK is only a candidate:
             # base drift, target motion and all terminal obstacles still veto it.
-            if self.floor_clear(state['pelvis']['pos'][:2], margin=.06) and all(
-                    self.guard.check(state, np.asarray(state['joints']), sd).clear
-                    for sd in ('left', 'right')):
-                trial = project_squat(state, drop, getattr(self, 'config', None))
+            if self.floor_clear(state["pelvis"]["pos"][:2], margin=0.06) and all(
+                self.guard.check(state, np.asarray(state["joints"]), sd).clear for sd in ("left", "right")
+            ):
+                trial = project_squat(state, drop, getattr(self, "config", None))
                 candidate = candidate.copy()
-                candidate[:12] = np.asarray(state['joints'])[:12]
+                candidate[:12] = np.asarray(state["joints"])[:12]
                 palm, local_rot = self.arm.ik.fk(candidate, self.side)
-                world_rot = Primitives._rot(trial['pelvis']['quat'])
-                trial['palms'][self.side]['pos'] = (
-                    np.asarray(trial['pelvis']['pos'])+world_rot@palm).tolist()
-                trial['palms'][self.side]['quat'] = Rotation.from_matrix(
-                    world_rot@local_rot).as_quat()[[3,0,1,2]].tolist()
-                trial['joints'] = candidate
-                if closure_geometry(trial, self.side, self.task.grip(state))['ready'] and all(
-                        self.guard.check(trial, candidate, sd,
-                            allow_target_contact=sd==self.side).clear for sd in self.guard.hands):
-                    self.coupled_rotation = world_rot@rot
-                    records = self.execution.metrics.get('brake_planning', [])
-                    if records and self.execution.stage != 'recovery_reposition':
-                        records[-1]['reused'] = True
-                    self.execution.metrics.setdefault('cached_plan_reuses', []).append(
-                        dict(stage=self.execution.stage, drop_m=float(drop)))
+                world_rot = Primitives._rot(trial["pelvis"]["quat"])
+                trial["palms"][self.side]["pos"] = (np.asarray(trial["pelvis"]["pos"]) + world_rot @ palm).tolist()
+                trial["palms"][self.side]["quat"] = (
+                    Rotation.from_matrix(world_rot @ local_rot).as_quat()[[3, 0, 1, 2]].tolist()
+                )
+                trial["joints"] = candidate
+                if closure_geometry(trial, self.side, self.task.grip(state))["ready"] and all(
+                    self.guard.check(trial, candidate, sd, allow_target_contact=sd == self.side).clear
+                    for sd in self.guard.hands
+                ):
+                    self.coupled_rotation = world_rot @ rot
+                    records = self.execution.metrics.get("brake_planning", [])
+                    if records and self.execution.stage != "recovery_reposition":
+                        records[-1]["reused"] = True
+                    self.execution.metrics.setdefault("cached_plan_reuses", []).append(
+                        dict(stage=self.execution.stage, drop_m=float(drop))
+                    )
                     return drop
         return super().select_drop(state, hint)
 
@@ -129,52 +139,67 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
         # Do not reject a stand because FIXED ready arms would hit the bottle
         # during descent. Only screen current geometry and a feasible goal;
         # the coupled controller screens each executed approach increment.
-        if not .03 <= drop <= self.config.max_drop:
-            return self.reject_prediction('coupled_squat_out_of_bounds')
-        if not self.floor_clear(state['pelvis']['pos'][:2], margin=.06):
-            return self.reject_prediction('coupled_base_floor')
-        if not all(self.guard.check(state,np.asarray(state['joints']),sd).clear
-                   for sd in ('left','right')):
-            return self.reject_prediction('coupled_initial_clearance')
+        if not 0.03 <= drop <= self.config.max_drop:
+            return self.reject_prediction("coupled_squat_out_of_bounds")
+        if not self.floor_clear(state["pelvis"]["pos"][:2], margin=0.06):
+            return self.reject_prediction("coupled_base_floor")
+        if not all(self.guard.check(state, np.asarray(state["joints"]), sd).clear for sd in ("left", "right")):
+            return self.reject_prediction("coupled_initial_clearance")
         projected = project_squat(state, drop, self.config)
         preferred = self.task.grip(state)
-        world_rot = Primitives._rot(projected['pelvis']['quat'])
+        world_rot = Primitives._rot(projected["pelvis"]["quat"])
         for point in planning_points(preferred):
             rel = self.p.world_to_root_full(point, projected)
-            _,_,local_rot = min(templates(), key=lambda row:np.linalg.norm(row[1]-rel))
+            _, _, local_rot = min(templates(), key=lambda row: np.linalg.norm(row[1] - rel))
             rot = terminal_rotation(world_rot, local_rot, self.config)
             local_rot = world_rot.T @ rot
-            q = ready_q();q[:12] = np.asarray(state['joints'])[:12]
+            q = ready_q()
+            q[:12] = np.asarray(state["joints"])[:12]
             point_control = self.config.tool_point_grasp
-            aim = point-self.config.grasp_depth_preference*rot[:, 0]
-            candidate, pe, re = self.arm.ik.solve(self.side,
-                self.p.world_to_root_full(aim if point_control else aim-rot@OFFSET, projected), local_rot,
-                q_mj29=q, use_waist=False, iters=80,
-                **(dict(point_offset=OFFSET, rot_weight=.1) if point_control else {}))
+            aim = point - self.config.grasp_depth_preference * rot[:, 0]
+            candidate, pe, re = self.arm.ik.solve(
+                self.side,
+                self.p.world_to_root_full(aim if point_control else aim - rot @ OFFSET, projected),
+                local_rot,
+                q_mj29=q,
+                use_waist=False,
+                iters=80,
+                **(dict(point_offset=OFFSET, rot_weight=0.1) if point_control else {}),
+            )
             # Planning may land anywhere inside the same capture region the
             # executor accepts.  The measured closure geometry and terminal
             # collision checks below remain authoritative.
-            if pe>IK_POSITION_TOL or re>IK_ROTATION_TOL:
-                diagnostics = self.execution.metrics.setdefault(
-                    'coupled_prediction_ik_errors', [])
+            if pe > IK_POSITION_TOL or re > IK_ROTATION_TOL:
+                diagnostics = self.execution.metrics.setdefault("coupled_prediction_ik_errors", [])
                 if len(diagnostics) < 40:
-                    diagnostics.append(dict(drop_m=float(drop),
-                        position_error_m=float(pe),rotation_error_rad=float(re),
-                        target_root=list(map(float,self.p.world_to_root_full(
-                            point-rot@OFFSET,projected)))))
-                self.reject_prediction('coupled_terminal_ik');continue
-            palm, actual_rot = self.arm.ik.fk(candidate,self.side)
+                    diagnostics.append(
+                        dict(
+                            drop_m=float(drop),
+                            position_error_m=float(pe),
+                            rotation_error_rad=float(re),
+                            target_root=list(map(float, self.p.world_to_root_full(point - rot @ OFFSET, projected))),
+                        )
+                    )
+                self.reject_prediction("coupled_terminal_ik")
+                continue
+            palm, actual_rot = self.arm.ik.fk(candidate, self.side)
             trial = deepcopy(projected)
-            trial['palms'][self.side]['pos'] = (np.asarray(projected['pelvis']['pos'])+world_rot@palm).tolist()
-            trial['palms'][self.side]['quat'] = Rotation.from_matrix(world_rot@actual_rot).as_quat()[[3,0,1,2]].tolist()
-            if not closure_geometry(trial,self.side,preferred)['ready']:
-                self.reject_prediction('coupled_terminal_capture');continue
+            trial["palms"][self.side]["pos"] = (np.asarray(projected["pelvis"]["pos"]) + world_rot @ palm).tolist()
+            trial["palms"][self.side]["quat"] = (
+                Rotation.from_matrix(world_rot @ actual_rot).as_quat()[[3, 0, 1, 2]].tolist()
+            )
+            if not closure_geometry(trial, self.side, preferred)["ready"]:
+                self.reject_prediction("coupled_terminal_capture")
+                continue
             # Terminal collision check, not a sweep from fixed ready arms at
             # the bottom of the squat (which is not our approach path).
-            trial['joints'] = candidate
-            if not all(self.guard.check(trial,candidate,sd,
-                       allow_target_contact=(sd==self.side)).clear for sd in self.guard.hands):
-                self.reject_prediction('coupled_terminal_clearance');continue
+            trial["joints"] = candidate
+            if not all(
+                self.guard.check(trial, candidate, sd, allow_target_contact=(sd == self.side)).clear
+                for sd in self.guard.hands
+            ):
+                self.reject_prediction("coupled_terminal_clearance")
+                continue
             self.coupled_rotation = rot
             self._prepared = (drop, candidate.copy(), local_rot.copy())
             return True
@@ -182,130 +207,172 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
 
     def finish(self, *, grip_world, squat_hint, ghost):
         ok = False
-        local_before = len(self.execution.metrics.get('measured_grasp', []))
+        local_before = len(self.execution.metrics.get("measured_grasp", []))
         try:
-            ok, why = self.coupled_transport(float(squat_hint),ghost)
-            local_reported = len(self.execution.metrics.get('measured_grasp', [])) > local_before
-            if not ok and not (getattr(self.config,'capture_reference_handover',False) and local_reported):
+            ok, why = self.coupled_transport(float(squat_hint), ghost)
+            local_reported = len(self.execution.metrics.get("measured_grasp", [])) > local_before
+            if not ok and not (getattr(self.config, "capture_reference_handover", False) and local_reported):
                 # A tracking/sweep failure is not evidence that standing up
                 # through the same obstruction would help.
-                self.execution.metrics.setdefault('measured_grasp',[]).append(
-                    dict(samples=[],can_reposition=False,coupled_failure=why))
-            return ok,why
+                self.execution.metrics.setdefault("measured_grasp", []).append(
+                    dict(samples=[], can_reposition=False, coupled_failure=why)
+                )
+            return ok, why
         finally:
             self.finish_cleanup(ok)
 
     def coupled_transport(self, drop, ghost):
-        from stream_reach import SQUAT_HEIGHT_BIAS, toppled
         from measured_grasp import run
-        p, arm, ex = self.p,self.arm,self.execution
+        from stream_reach import SQUAT_HEIGHT_BIAS, toppled
+
+        p, arm, ex = self.p, self.arm, self.execution
         state = p.obs()
-        start_z = float(state['pelvis']['pos'][2])
-        target_z = start_z-drop
-        start_palm = np.asarray(state['palms'][self.side]['pos']).copy()
+        start_z = float(state["pelvis"]["pos"][2])
+        target_z = start_z - drop
+        start_palm = np.asarray(state["palms"][self.side]["pos"]).copy()
         # Keep the already-clear wrist attitude while leaving the bottle.
         # Rotating toward the terminal grasp at a close stop can sweep a long
         # Dex1 finger through the object even when the palm path moves away.
-        target_rotation = Primitives._rot(state['palms'][self.side]['quat'])
+        target_rotation = Primitives._rot(state["palms"][self.side]["quat"])
         grasp_rotation = self.coupled_rotation
         preferred0 = self.task.grip(state)
-        gap = getattr(self.config,'pregrasp_gap',PRE_GAP)
-        safe_pregrasp = preferred0-grasp_rotation@OFFSET-gap*grasp_rotation[:,0]
-        safe_pregrasp[2] += getattr(self.config,'pregrasp_rise',.08)
+        gap = getattr(self.config, "pregrasp_gap", PRE_GAP)
+        safe_pregrasp = preferred0 - grasp_rotation @ OFFSET - gap * grasp_rotation[:, 0]
+        safe_pregrasp[2] += getattr(self.config, "pregrasp_rise", 0.08)
         # Optional lateral offset so the local servo's align-before-advance
         # correction is demonstrated, not always already satisfied.
-        jitter = float(getattr(self.config,'pregrasp_lateral_jitter',0.))
-        lateral_offset = float(np.random.uniform(-jitter,jitter)) if jitter>0 else 0.
-        safe_pregrasp = safe_pregrasp+lateral_offset*grasp_rotation[:,1]
-        min_fwd = float(getattr(self.config,'pregrasp_min_forward',0.))
-        if min_fwd>0:
+        jitter = float(getattr(self.config, "pregrasp_lateral_jitter", 0.0))
+        lateral_offset = float(np.random.uniform(-jitter, jitter)) if jitter > 0 else 0.0
+        safe_pregrasp = safe_pregrasp + lateral_offset * grasp_rotation[:, 1]
+        min_fwd = float(getattr(self.config, "pregrasp_min_forward", 0.0))
+        if min_fwd > 0:
             # Shorten the set-back rather than tuck the palm into the torso.
-            fwd = np.array([np.cos(p.pelvis_yaw(state)),np.sin(p.pelvis_yaw(state)),0.])
-            ahead = float((safe_pregrasp-np.asarray(state['pelvis']['pos']))@fwd)
-            if ahead<min_fwd:
-                along = float(grasp_rotation[:,0]@fwd)
-                if along>.3:
-                    safe_pregrasp = safe_pregrasp+((min_fwd-ahead)/along)*grasp_rotation[:,0]
+            fwd = np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
+            ahead = float((safe_pregrasp - np.asarray(state["pelvis"]["pos"])) @ fwd)
+            if ahead < min_fwd:
+                along = float(grasp_rotation[:, 0] @ fwd)
+                if along > 0.3:
+                    safe_pregrasp = safe_pregrasp + ((min_fwd - ahead) / along) * grasp_rotation[:, 0]
         arm.mode = LocomotionMode.IDEL_SQUAT
-        arm.height = target_z-SQUAT_HEIGHT_BIAS
+        arm.height = target_z - SQUAT_HEIGHT_BIAS
         arm._face = p._facing(state)
         self.ramp.settle()
-        arm._q_prev = arm.q.copy();arm.next_t = time.time()
-        stats = dict(samples=[],descent_ticks=0,arm_ticks=0,blocked_ticks=0,
-            requested_drop_m=drop,strategy='coupled_squat_to_high_pregrasp',
-            safe_pregrasp_world=safe_pregrasp.tolist(),pregrasp_gap_m=gap,
+        arm._q_prev = arm.q.copy()
+        arm.next_t = time.time()
+        stats = dict(
+            samples=[],
+            descent_ticks=0,
+            arm_ticks=0,
+            blocked_ticks=0,
+            requested_drop_m=drop,
+            strategy="coupled_squat_to_high_pregrasp",
+            safe_pregrasp_world=safe_pregrasp.tolist(),
+            pregrasp_gap_m=gap,
             pregrasp_lateral_offset_m=lateral_offset,
-            pregrasp_ahead_of_pelvis_m=float((safe_pregrasp-np.asarray(state['pelvis']['pos']))@np.array([np.cos(p.pelvis_yaw(state)),np.sin(p.pelvis_yaw(state)),0.])))
-        ex.metrics.setdefault('coupled_transport',[]).append(stats)
-        ex.enter('grasp.coupled_squat')
+            pregrasp_ahead_of_pelvis_m=float(
+                (safe_pregrasp - np.asarray(state["pelvis"]["pos"]))
+                @ np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
+            ),
+        )
+        ex.metrics.setdefault("coupled_transport", []).append(stats)
+        ex.enter("grasp.coupled_squat")
         self.hold()
-        start = time.monotonic();last_log = 0.;last_z = start_z
-        while time.monotonic()-start < 4. and not self.expired():
-            state = p.obs();now = time.monotonic()
-            if state['fallen'] or toppled(state,self.task.target.key):
-                return False,'coupled transport disturbed target or base'
-            palm = np.asarray(state['palms'][self.side]['pos'])
-            br = Primitives._rot(state['pelvis']['quat'])
-            base = np.asarray(state['pelvis']['pos']);z = float(base[2])
+        start = time.monotonic()
+        last_log = 0.0
+        last_z = start_z
+        while time.monotonic() - start < 4.0 and not self.expired():
+            state = p.obs()
+            now = time.monotonic()
+            if state["fallen"] or toppled(state, self.task.target.key):
+                return False, "coupled transport disturbed target or base"
+            palm = np.asarray(state["palms"][self.side]["pos"])
+            br = Primitives._rot(state["pelvis"]["quat"])
+            base = np.asarray(state["pelvis"]["pos"])
+            z = float(base[2])
             preferred = self.task.grip(state)
-            geometry = closure_geometry(state,self.side,preferred)
-            delivered = start_z-z
-            phase = float(np.clip(delivered/max(drop-.02,.001),0.,1.))
-            phase = phase*phase*(3.-2.*phase)
+            geometry = closure_geometry(state, self.side, preferred)
+            delivered = start_z - z
+            phase = float(np.clip(delivered / max(drop - 0.02, 0.001), 0.0, 1.0))
+            phase = phase * phase * (3.0 - 2.0 * phase)
             if self.config.continuous_capture:
                 # A bounded arm lead covers the gait's squat response delay;
                 # each increment still passes the shared swept-volume guard.
-                lead = float(np.clip((now-start)/.4,0.,1.))
-                phase = max(phase,.2*lead*lead*(3.-2.*lead))
-            aim = start_palm+phase*(safe_pregrasp-start_palm)
-            aim_error = float(np.linalg.norm(aim-palm))
-            if geometry['ready'] or (now-start>.8 and delivered>=drop-.02
-                                     and np.linalg.norm(safe_pregrasp-palm)<.06):
-                arm.height = z-SQUAT_HEIGHT_BIAS
+                lead = float(np.clip((now - start) / 0.4, 0.0, 1.0))
+                phase = max(phase, 0.2 * lead * lead * (3.0 - 2.0 * lead))
+            aim = start_palm + phase * (safe_pregrasp - start_palm)
+            aim_error = float(np.linalg.norm(aim - palm))
+            if geometry["ready"] or (
+                now - start > 0.8 and delivered >= drop - 0.02 and np.linalg.norm(safe_pregrasp - palm) < 0.06
+            ):
+                arm.height = z - SQUAT_HEIGHT_BIAS
                 self.hold()
-                stats.update(delivered_drop_m=start_z-z,transport_s=now-start,
-                             handover='capture' if geometry['ready'] else 'squat_delivered')
-                ex.transition.update(squat_requested=drop,squat_delivered=start_z-z,
-                    reach_started=True,pregrasp_delivered=False)
-                return run(self,ghost)
-            forward=np.array([np.cos(p.pelvis_yaw(state)),np.sin(p.pelvis_yaw(state)),0.])
-            seed=arm.q.copy();seed[:12]=np.asarray(state['joints'])[:12]
-            q,pe,re,retried=solve_transport_ik(arm.ik,self.side,
-                p.world_to_root_full(aim,state),br.T@target_rotation,seed,
-                p.world_to_root_full(palm,state),getattr(self.config,'coupled_hand_lead',0.))
-            stats['ik_short_step_retries'] = stats.get('ik_short_step_retries',0)+int(retried)
-            if pe>TRANSPORT_POSITION_TOL or re>TRANSPORT_ROTATION_TOL:
-                stats['blocked_ticks']+=1
-                arm.height=z-SQUAT_HEIGHT_BIAS;self.hold()
-                if stats['blocked_ticks']>10:
-                    return False,'coupled safe-hand IK did not track'
+                stats.update(
+                    delivered_drop_m=start_z - z,
+                    transport_s=now - start,
+                    handover="capture" if geometry["ready"] else "squat_delivered",
+                )
+                ex.transition.update(
+                    squat_requested=drop, squat_delivered=start_z - z, reach_started=True, pregrasp_delivered=False
+                )
+                return run(self, ghost)
+            forward = np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
+            seed = arm.q.copy()
+            seed[:12] = np.asarray(state["joints"])[:12]
+            q, pe, re, retried = solve_transport_ik(
+                arm.ik,
+                self.side,
+                p.world_to_root_full(aim, state),
+                br.T @ target_rotation,
+                seed,
+                p.world_to_root_full(palm, state),
+                getattr(self.config, "coupled_hand_lead", 0.0),
+            )
+            stats["ik_short_step_retries"] = stats.get("ik_short_step_retries", 0) + int(retried)
+            if pe > TRANSPORT_POSITION_TOL or re > TRANSPORT_ROTATION_TOL:
+                stats["blocked_ticks"] += 1
+                arm.height = z - SQUAT_HEIGHT_BIAS
+                self.hold()
+                if stats["blocked_ticks"] > 10:
+                    return False, "coupled safe-hand IK did not track"
                 continue
-            q=seed+np.clip(q-seed,-.025,.025)
+            q = seed + np.clip(q - seed, -0.025, 0.025)
             # The arm is re-solved every control tick.  Screen the local leg
             # advance it can experience before the next correction, rather
             # than pairing today's arm joints with the full final squat.
-            preview_dz=max(target_z-z,-.008)
-            rejection=screen_motion(self.guard,state,q,preview_dz,forward)
+            preview_dz = max(target_z - z, -0.008)
+            rejection = screen_motion(self.guard, state, q, preview_dz, forward)
             if rejection:
-                stats['blocked_ticks']+=1
-                arm.height=z-SQUAT_HEIGHT_BIAS;self.hold()
-                if stats['blocked_ticks']>10:
-                    stats['last_rejection']=rejection
-                    return False,f'coupled safe-hand path blocked: {rejection}'
+                stats["blocked_ticks"] += 1
+                arm.height = z - SQUAT_HEIGHT_BIAS
+                self.hold()
+                if stats["blocked_ticks"] > 10:
+                    stats["last_rejection"] = rejection
+                    return False, f"coupled safe-hand path blocked: {rejection}"
                 continue
-            rejection=self.reference_check(state,q,'prepare')
-            if rejection:return False,rejection
-            if now-last_log>=.2:
-                stats['samples'].append(dict(elapsed_s=now-start,pelvis_world=base.tolist(),
-                    palm_world=palm.tolist(),grip_world=preferred.tolist(),
-                    command_height=target_z-SQUAT_HEIGHT_BIAS,
-                    phase=phase,aim_world=aim.tolist(),aim_error_m=aim_error,**geometry))
-                last_log=now
-            stats['descent_ticks']+=int(z<last_z-1e-5)
-            stats['arm_ticks']+=int(np.max(np.abs(q-arm.q))>1e-6)
-            last_z=z
-            arm.height=target_z-SQUAT_HEIGHT_BIAS;arm.q=q
-            arm._push(q,observed=state)
+            rejection = self.reference_check(state, q, "prepare")
+            if rejection:
+                return False, rejection
+            if now - last_log >= 0.2:
+                stats["samples"].append(
+                    dict(
+                        elapsed_s=now - start,
+                        pelvis_world=base.tolist(),
+                        palm_world=palm.tolist(),
+                        grip_world=preferred.tolist(),
+                        command_height=target_z - SQUAT_HEIGHT_BIAS,
+                        phase=phase,
+                        aim_world=aim.tolist(),
+                        aim_error_m=aim_error,
+                        **geometry,
+                    )
+                )
+                last_log = now
+            stats["descent_ticks"] += int(z < last_z - 1e-5)
+            stats["arm_ticks"] += int(np.max(np.abs(q - arm.q)) > 1e-6)
+            last_z = z
+            arm.height = target_z - SQUAT_HEIGHT_BIAS
+            arm.q = q
+            arm._push(q, observed=state)
         self.hold()
-        stats['delivered_drop_m']=start_z-float(p.obs()['pelvis']['pos'][2])
-        return False,'coupled squat was not delivered'
+        stats["delivered_drop_m"] = start_z - float(p.obs()["pelvis"]["pos"][2])
+        return False, "coupled squat was not delivered"

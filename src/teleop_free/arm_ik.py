@@ -14,13 +14,11 @@ makes body frames pelvis-frame poses directly — no world involved.
 from __future__ import annotations
 
 import numpy as np
-
-from g1_joints import ARM_MJ, MUJOCO_JOINT_NAMES
 import paths
+from g1_joints import ARM_MJ, MUJOCO_JOINT_NAMES
 
 SCENE_XML = paths.SCENE_XML
 PALM_BODY = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
-
 
 
 LAST_IK: dict = {}
@@ -37,17 +35,24 @@ def _mat2quat(R):
         z = (R[1, 0] - R[0, 1]) / sq
     elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
         sq = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
-        w = (R[2, 1] - R[1, 2]) / sq; x = 0.25 * sq
-        y = (R[0, 1] + R[1, 0]) / sq; z = (R[0, 2] + R[2, 0]) / sq
+        w = (R[2, 1] - R[1, 2]) / sq
+        x = 0.25 * sq
+        y = (R[0, 1] + R[1, 0]) / sq
+        z = (R[0, 2] + R[2, 0]) / sq
     elif R[1, 1] > R[2, 2]:
         sq = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
-        w = (R[0, 2] - R[2, 0]) / sq; x = (R[0, 1] + R[1, 0]) / sq
-        y = 0.25 * sq; z = (R[1, 2] + R[2, 1]) / sq
+        w = (R[0, 2] - R[2, 0]) / sq
+        x = (R[0, 1] + R[1, 0]) / sq
+        y = 0.25 * sq
+        z = (R[1, 2] + R[2, 1]) / sq
     else:
         sq = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
-        w = (R[1, 0] - R[0, 1]) / sq; x = (R[0, 2] + R[2, 0]) / sq
-        y = (R[1, 2] + R[2, 1]) / sq; z = 0.25 * sq
+        w = (R[1, 0] - R[0, 1]) / sq
+        x = (R[0, 2] + R[2, 0]) / sq
+        y = (R[1, 2] + R[2, 1]) / sq
+        z = 0.25 * sq
     return [float(w), float(x), float(y), float(z)]
+
 
 class ArmIK:
     def __init__(self, xml: str = SCENE_XML):
@@ -97,14 +102,23 @@ class ArmIK:
         mj.mj_kinematics(self.model, self.data)
         b = self.palm_bid[side]
 
-        return (self.data.xpos[b].copy(),
-                self.data.xmat[b].reshape(3, 3).copy())
+        return (self.data.xpos[b].copy(), self.data.xmat[b].reshape(3, 3).copy())
 
-    def solve(self, side: str, target_pos, target_rot=None,
-              q_mj29=None, iters: int = 120, damping: float = 5e-3,
-              rot_weight: float = 0.5, use_waist: bool = False,
-              waist_cost: float = 10.0, point_offset=None,
-              posture=None, posture_weight: float = 0.0):
+    def solve(
+        self,
+        side: str,
+        target_pos,
+        target_rot=None,
+        q_mj29=None,
+        iters: int = 120,
+        damping: float = 5e-3,
+        rot_weight: float = 0.5,
+        use_waist: bool = False,
+        waist_cost: float = 10.0,
+        point_offset=None,
+        posture=None,
+        posture_weight: float = 0.0,
+    ):
         """Joints putting the palm at `target_pos` (pelvis frame).
 
         Returns (q_mj29_solved, pos_err_m, rot_err_rad) — the FULL joint
@@ -129,16 +143,17 @@ class ArmIK:
         """
         offset = None if point_offset is None else np.asarray(point_offset, dtype=float)
         if offset is not None and (offset.shape != (3,) or not np.isfinite(offset).all()):
-            raise ValueError('point_offset must be a finite palm-frame 3-vector')
+            raise ValueError("point_offset must be a finite palm-frame 3-vector")
         # LAST_IK: the COMMANDED wrist pose (pelvis frame) that produced the
         # joint targets we stream. Recorded by PoseSidecar so an 18-D action
         # (wrist SE(3) + grip per arm + base command) can be exported offline
         # from a collection run. Read-only bookkeeping, no control effect.
         try:
             if offset is None:
-                LAST_IK[side] = (list(map(float, np.asarray(target_pos).ravel()[:3])),
-                             (None if target_rot is None else
-                              _mat2quat(np.asarray(target_rot, dtype=float))))
+                LAST_IK[side] = (
+                    list(map(float, np.asarray(target_pos).ravel()[:3])),
+                    (None if target_rot is None else _mat2quat(np.asarray(target_rot, dtype=float))),
+                )
         except Exception:
             pass
         mj = self._mj
@@ -169,13 +184,11 @@ class ArmIK:
             if target_rot is not None:
                 # axis-angle of R_t @ R^T, the world-frame rotation still needed
                 dR = np.asarray(target_rot) @ rot.T
-                aa = np.array([dR[2, 1] - dR[1, 2], dR[0, 2] - dR[2, 0],
-                               dR[1, 0] - dR[0, 1]])
+                aa = np.array([dR[2, 1] - dR[1, 2], dR[0, 2] - dR[2, 0], dR[1, 0] - dR[0, 1]])
                 s = np.linalg.norm(aa) / 2.0
                 c = (np.trace(dR) - 1.0) / 2.0
                 ang = np.arctan2(s, c)
-                e_rot = (aa / (2.0 * max(s / max(ang, 1e-9), 1e-9))
-                         if s > 1e-9 else np.zeros(3))
+                e_rot = aa / (2.0 * max(s / max(ang, 1e-9), 1e-9)) if s > 1e-9 else np.zeros(3)
             else:
                 e_rot = np.zeros(3)
 

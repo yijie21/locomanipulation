@@ -26,6 +26,7 @@ possible, and in a form where "unsolvable" would be a MEASUREMENT:
 
     INSTANCE=3 python src/teleop_free/diag_station_keep.py [--secs 20]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -47,7 +48,7 @@ def _fv(yaw):
     return (math.cos(yaw), math.sin(yaw), 0.0)
 
 
-OFFSET_MODE = "yaw"          # see main(): which anchor convention to test
+OFFSET_MODE = "yaw"  # see main(): which anchor convention to test
 
 
 def _anchor(p, reset, label, settle=2.5):
@@ -71,7 +72,7 @@ def _anchor(p, reset, label, settle=2.5):
     reset.reset(robot={"dxy": (0.0, 0.0), "yaw": 0.0}, label=label)
     p.cmd.heading_offset = 0.0
     p.cmd.hold(settle, mode=LocomotionMode.IDLE, facing=(1.0, 0.0, 0.0))
-    psi0 = float(p.pelvis_yaw(p.obs()))          # commanded 0 -> settles at psi0
+    psi0 = float(p.pelvis_yaw(p.obs()))  # commanded 0 -> settles at psi0
     p.cmd.heading_offset = psi0
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=_fv(psi0))
     s = p.obs()
@@ -87,8 +88,7 @@ def trial_idle(p, reset, secs):
         time.sleep(DT)
         d.append(np.linalg.norm(p.pelvis_xy(p.obs()) - a_xy))
     s = p.obs()
-    return dict(net=d[-1], mx=max(d),
-                dyaw=math.degrees(wrap(p.pelvis_yaw(s) - a_yaw)))
+    return dict(net=d[-1], mx=max(d), dyaw=math.degrees(wrap(p.pelvis_yaw(s) - a_yaw)))
 
 
 def trial_stop(p, reset, walk_s=2.0):
@@ -97,17 +97,15 @@ def trial_stop(p, reset, walk_s=2.0):
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=_fv(a_yaw))
     t_end = time.time() + walk_s
     while time.time() < t_end:
-        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=_fv(a_yaw),
-                    movement=_fv(a_yaw), speed=0.215)
+        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=_fv(a_yaw), movement=_fv(a_yaw), speed=0.215)
         time.sleep(DT)
-    xy_cmd = np.asarray(p.pelvis_xy(p.obs()), float)      # at the stop command
+    xy_cmd = np.asarray(p.pelvis_xy(p.obs()), float)  # at the stop command
     t_end = time.time() + 3.0
     while time.time() < t_end:
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=_fv(a_yaw))
         time.sleep(DT)
     xy_end = np.asarray(p.pelvis_xy(p.obs()), float)
-    return dict(walked=float(np.linalg.norm(xy_cmd - a_xy)),
-                coast=float(np.linalg.norm(xy_end - xy_cmd)))
+    return dict(walked=float(np.linalg.norm(xy_cmd - a_xy)), coast=float(np.linalg.norm(xy_end - xy_cmd)))
 
 
 def trial_hold(p, reset, secs, band_in=0.08, band_out=0.20, strafe=False):
@@ -129,20 +127,23 @@ def trial_hold(p, reset, secs, band_in=0.08, band_out=0.20, strafe=False):
         if not walking:
             p.cmd.frame(mode=LocomotionMode.IDLE, facing=_fv(a_yaw))
         elif strafe:
-            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=_fv(a_yaw),
-                        movement=(e[0] / r, e[1] / r, 0.0), speed=0.215)
+            p.cmd.frame(
+                mode=LocomotionMode.SLOW_WALK, facing=_fv(a_yaw), movement=(e[0] / r, e[1] / r, 0.0), speed=0.215
+            )
         else:
             b = math.atan2(e[1], e[0])
             face = yaw + float(np.clip(wrap(b - yaw), -0.4, 0.4))
-            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=_fv(face),
-                        movement=_fv(face), speed=0.215)
+            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=_fv(face), movement=_fv(face), speed=0.215)
         time.sleep(DT)
     # give the heading back
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=_fv(a_yaw))
     s = p.obs()
-    return dict(net=float(np.linalg.norm(p.pelvis_xy(s) - a_xy)),
-                mx=max(d), mean=float(np.mean(d)),
-                dyaw=math.degrees(wrap(p.pelvis_yaw(s) - a_yaw)))
+    return dict(
+        net=float(np.linalg.norm(p.pelvis_xy(s) - a_xy)),
+        mx=max(d),
+        mean=float(np.mean(d)),
+        dyaw=math.degrees(wrap(p.pelvis_yaw(s) - a_yaw)),
+    )
 
 
 def trial_anchor_sweep(p, reset, secs=10.0):
@@ -161,6 +162,7 @@ def trial_anchor_sweep(p, reset, secs=10.0):
       reanchor  force the anchor with a streamed toggle (stream_reach.reanchor)
     """
     import stream_reach
+
     out = []
     for mode in ("zero", "landing", "settled", "reanchor"):
         reset.reset(label=f"sk_anchor_{mode}")
@@ -185,8 +187,11 @@ def trial_anchor_sweep(p, reset, secs=10.0):
         dy = math.degrees(wrap(p.pelvis_yaw(s) - a_yaw))
         d = float(np.linalg.norm(p.pelvis_xy(s) - a_xy))
         out.append((mode, dy, d, math.degrees(p.cmd.heading_offset)))
-        print(f"  anchor {mode:9s}: offset {math.degrees(p.cmd.heading_offset):+7.1f} deg"
-              f" -> dyaw {dy:+6.1f} deg, moved {d * 100:5.1f} cm", flush=True)
+        print(
+            f"  anchor {mode:9s}: offset {math.degrees(p.cmd.heading_offset):+7.1f} deg"
+            f" -> dyaw {dy:+6.1f} deg, moved {d * 100:5.1f} cm",
+            flush=True,
+        )
     return out
 
 
@@ -209,8 +214,11 @@ def trial_watch(p, reset, secs=20.0):
     t_r = time.time()
     while time.time() - t_r < 2.0:
         st = p.obs()
-        print(f"  +{time.time() - t_r:4.2f}s  yaw {math.degrees(p.pelvis_yaw(st)):+7.1f}  "
-              f"z {st['pelvis']['pos'][2]:.3f}  simt {st['t']:.2f}", flush=True)
+        print(
+            f"  +{time.time() - t_r:4.2f}s  yaw {math.degrees(p.pelvis_yaw(st)):+7.1f}  "
+            f"z {st['pelvis']['pos'][2]:.3f}  simt {st['t']:.2f}",
+            flush=True,
+        )
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=(1.0, 0.0, 0.0))
         time.sleep(0.1)
     t0 = time.time()
@@ -221,9 +229,12 @@ def trial_watch(p, reset, secs=20.0):
         if time.time() - t0 >= nxt:
             s = p.obs()
             xy = p.pelvis_xy(s)
-            print(f"  t {time.time() - t0:5.1f}s  yaw {math.degrees(p.pelvis_yaw(s)):+7.1f}  "
-                  f"xy [{xy[0]:+.3f} {xy[1]:+.3f}]  pelvis_z {s['pelvis']['pos'][2]:.3f}  "
-                  f"fallen {bool(s['fallen'])}", flush=True)
+            print(
+                f"  t {time.time() - t0:5.1f}s  yaw {math.degrees(p.pelvis_yaw(s)):+7.1f}  "
+                f"xy [{xy[0]:+.3f} {xy[1]:+.3f}]  pelvis_z {s['pelvis']['pos'][2]:.3f}  "
+                f"fallen {bool(s['fallen'])}",
+                flush=True,
+            )
             nxt += 1.0
 
 
@@ -244,23 +255,40 @@ def main():
     if a.offset == "watch":
         print("raw yaw trace, start pinned at yaw 0, heading_offset 0", flush=True)
         trial_watch(p, reset)
-        p.cmd.pause_control(); reset.close(); p.close(); return
+        p.cmd.pause_control()
+        reset.close()
+        p.close()
+        return
     if a.offset == "sweep":
         print("anchor convention sweep (which yaw is the deploy's psi0?)", flush=True)
         trial_anchor_sweep(p, reset)
-        p.cmd.pause_control(); reset.close(); p.close(); return
+        p.cmd.pause_control()
+        reset.close()
+        p.close()
+        return
     r = trial_stop(p, reset)
-    print(f"B stop distance : walked {r['walked']*100:5.1f} cm, then coasted "
-          f"{r['coast']*100:5.1f} cm after the stop command", flush=True)
+    print(
+        f"B stop distance : walked {r['walked'] * 100:5.1f} cm, then coasted "
+        f"{r['coast'] * 100:5.1f} cm after the stop command",
+        flush=True,
+    )
     r = trial_idle(p, reset, a.secs)
-    print(f"A idle          : net {r['net']*100:5.1f} cm  max {r['mx']*100:5.1f} cm  "
-          f"dyaw {r['dyaw']:+5.1f} deg", flush=True)
+    print(
+        f"A idle          : net {r['net'] * 100:5.1f} cm  max {r['mx'] * 100:5.1f} cm  dyaw {r['dyaw']:+5.1f} deg",
+        flush=True,
+    )
     r = trial_hold(p, reset, a.secs, strafe=True)
-    print(f"C strafe hold   : net {r['net']*100:5.1f} cm  max {r['mx']*100:5.1f} cm  "
-          f"mean {r['mean']*100:5.1f}  dyaw {r['dyaw']:+5.1f} deg", flush=True)
+    print(
+        f"C strafe hold   : net {r['net'] * 100:5.1f} cm  max {r['mx'] * 100:5.1f} cm  "
+        f"mean {r['mean'] * 100:5.1f}  dyaw {r['dyaw']:+5.1f} deg",
+        flush=True,
+    )
     r = trial_hold(p, reset, a.secs, strafe=False)
-    print(f"D turn-and-walk : net {r['net']*100:5.1f} cm  max {r['mx']*100:5.1f} cm  "
-          f"mean {r['mean']*100:5.1f}  dyaw {r['dyaw']:+5.1f} deg", flush=True)
+    print(
+        f"D turn-and-walk : net {r['net'] * 100:5.1f} cm  max {r['mx'] * 100:5.1f} cm  "
+        f"mean {r['mean'] * 100:5.1f}  dyaw {r['dyaw']:+5.1f} deg",
+        flush=True,
+    )
     p.cmd.pause_control()
     reset.close()
     p.close()

@@ -21,8 +21,8 @@ keyboard, privileged, episode control).
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import numpy as np
 
@@ -34,9 +34,12 @@ def main():
     ap.add_argument("--modality-config", default=None)
     ap.add_argument("--embodiment-tag", default="UNITREE_G1_SONIC")
     ap.add_argument("--denoising-steps", type=int, default=4)
-    ap.add_argument("--rtc-ramp-rate", type=float, default=3.0,
-                    help="RTC exponential ramp rate for the overlap window "
-                         "(only used when a client sends rtc.* keys)")
+    ap.add_argument(
+        "--rtc-ramp-rate",
+        type=float,
+        default=3.0,
+        help="RTC exponential ramp rate for the overlap window (only used when a client sends rtc.* keys)",
+    )
     args = ap.parse_args()
 
     repo = Path(__file__).resolve().parents[3]
@@ -47,16 +50,15 @@ def main():
     sys.path.insert(0, str(cfg_path.parent))
     __import__(cfg_path.stem)
 
+    import torch
+
     from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS
     from gr00t.data.embodiment_tags import EmbodimentTag
+    from gr00t.data.types import MessageType
     from gr00t.data.utils import parse_observation_gr00t
     from gr00t.eval.open_loop_eval import parse_action_gr00t
-    from gr00t.policy.gr00t_policy import Gr00tPolicy
+    from gr00t.policy.gr00t_policy import Gr00tPolicy, _rec_to_dtype
     from gr00t.policy.server_client import PolicyServer
-
-    import torch
-    from gr00t.data.types import MessageType
-    from gr00t.policy.gr00t_policy import _rec_to_dtype
 
     class RTCPolicy(Gr00tPolicy):
         """Gr00tPolicy + test-time RTC (frozen-prefix inpainting).
@@ -75,12 +77,13 @@ def main():
         bit-identical to Gr00tPolicy (the cache stays empty). Single-client
         server, so one cache slot, no locking.
         """
+
         rtc_ramp_rate = 3.0
 
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
-            self._rtc_prev = None    # torch [1, H, D] normalized action_pred
-            self._rtc_meta = None    # {"elapsed": int, "frozen": int} | None
+            self._rtc_prev = None  # torch [1, H, D] normalized action_pred
+            self._rtc_meta = None  # {"elapsed": int, "frozen": int} | None
             self._rtc_applied = None
 
         def _get_action(self, observation, options=None):
@@ -90,8 +93,7 @@ def main():
             for obs in unbatched_observations:
                 vla_step_data = self._to_vla_step_data(obs)
                 states.append(vla_step_data.states)
-                messages = [{"type": MessageType.EPISODE_STEP.value,
-                             "content": vla_step_data}]
+                messages = [{"type": MessageType.EPISODE_STEP.value, "content": vla_step_data}]
                 processed_inputs.append(self.processor(messages))
             collated_inputs = self.collate_fn(processed_inputs)
             collated_inputs = _rec_to_dtype(collated_inputs, dtype=torch.bfloat16)
@@ -104,15 +106,15 @@ def main():
                 e = int(meta["elapsed"])
                 if 0 < e < H - 1:
                     overlap = H - e
-                    frozen = max(0, min(int(meta["frozen"]),
-                                        overlap if meta.get('commit') else overlap - 1))
-                    inner = (collated_inputs["inputs"]
-                             if "inputs" in collated_inputs else collated_inputs)
+                    frozen = max(0, min(int(meta["frozen"]), overlap if meta.get("commit") else overlap - 1))
+                    inner = collated_inputs["inputs"] if "inputs" in collated_inputs else collated_inputs
                     inner["action"] = self._rtc_prev
-                    opts = {"action_horizon": H,
-                            "rtc_overlap_steps": overlap,
-                            "rtc_frozen_steps": frozen,
-                            "rtc_ramp_rate": self.rtc_ramp_rate}
+                    opts = {
+                        "action_horizon": H,
+                        "rtc_overlap_steps": overlap,
+                        "rtc_frozen_steps": frozen,
+                        "rtc_ramp_rate": self.rtc_ramp_rate,
+                    }
                     self._rtc_applied = opts
 
             with torch.inference_mode():
@@ -120,17 +122,15 @@ def main():
             normalized_action = model_pred["action_pred"].float()
             # Cache only for RTC-mode clients: a plain client keeps the slot
             # empty and this class stays behaviour-identical to Gr00tPolicy.
-            self._rtc_prev = (normalized_action.detach().clone()
-                              if meta is not None else None)
+            self._rtc_prev = normalized_action.detach().clone() if meta is not None else None
 
             batched_states = {}
             for k in self.modality_configs["state"].modality_keys:
                 batched_states[k] = np.stack([s[k] for s in states], axis=0)
             unnormalized_action = self.processor.decode_action(
-                normalized_action.cpu().numpy(), self.embodiment_tag,
-                batched_states)
-            casted_action = {key: value.astype(np.float32)
-                             for key, value in unnormalized_action.items()}
+                normalized_action.cpu().numpy(), self.embodiment_tag, batched_states
+            )
+            casted_action = {key: value.astype(np.float32) for key, value in unnormalized_action.items()}
             return casted_action, {}
 
     tag = EmbodimentTag[args.embodiment_tag.upper()]
@@ -151,21 +151,22 @@ def main():
         if obs.pop("rtc.reset", 0):
             policy._rtc_prev = None
         if "rtc.elapsed" in obs:
-            policy._rtc_meta = {"elapsed": int(obs.pop("rtc.elapsed")),
-                                "frozen": int(obs.pop("rtc.frozen", 0)),
-                                "commit": bool(obs.pop('rtc.commit', 0))}
+            policy._rtc_meta = {
+                "elapsed": int(obs.pop("rtc.elapsed")),
+                "frozen": int(obs.pop("rtc.frozen", 0)),
+                "commit": bool(obs.pop("rtc.commit", 0)),
+            }
         chunk, _ = policy.get_action(parse_observation_gr00t(obs, cfg))
         out = {k: np.asarray(v) for k, v in parse_action_gr00t(chunk).items()}
         if policy._rtc_applied is not None:
             out["rtc.applied"] = np.array(
-                [policy._rtc_applied["rtc_overlap_steps"],
-                 policy._rtc_applied["rtc_frozen_steps"]], dtype=np.int64)
+                [policy._rtc_applied["rtc_overlap_steps"], policy._rtc_applied["rtc_frozen_steps"]], dtype=np.int64
+            )
         return out
 
     server = PolicyServer(policy, port=args.port)
     server.register_endpoint("get_action_raw", get_action_raw)
-    print(f"[serve_policy] {args.model_path} on :{args.port} "
-          f"(denoising {args.denoising_steps})")
+    print(f"[serve_policy] {args.model_path} on :{args.port} (denoising {args.denoising_steps})")
     server.run()
 
 

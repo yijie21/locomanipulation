@@ -18,10 +18,10 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 import stream_reach  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 STEPS = (0.05, 0.04, 0.04)
@@ -39,7 +39,8 @@ def main() -> None:
     p.cmd.start_control()
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     if p.obs()["fallen"]:
-        print("robot did not stand"); return
+        print("robot did not stand")
+        return
     stream_reach.reanchor(p, side="right")
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
@@ -57,8 +58,7 @@ def main() -> None:
             arm.squat(d)
             arm.hold(4.0)
             zz = p.obs()["pelvis"]["pos"][2]
-            print(f"squat cmd {total * 100:.0f} cm: "
-                  f"pelvis -{(z0 - zz) * 100:.1f} cm")
+            print(f"squat cmd {total * 100:.0f} cm: pelvis -{(z0 - zz) * 100:.1f} cm")
         arm.hold(2.0)
     finally:
         reset.pin_arms()

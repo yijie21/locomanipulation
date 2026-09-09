@@ -48,21 +48,30 @@ def main():
             # the ensemble starts using a chunk then, before the next obs
             adopt += [max(1, int(math.ceil(v * args.fps))) for v in rec["infer_s"][1:]]
     if not steady:
-        raise SystemExit("no latency records found -- traces must come from the "
-                         "async client after 2026-09-02 (they carry `latency`)")
+        raise SystemExit(
+            "no latency records found -- traces must come from the async client after 2026-09-02 (they carry `latency`)"
+        )
 
     def desc(x):
         xs = sorted(x)
         q = lambda p: xs[min(len(xs) - 1, int(p * (len(xs) - 1)))]  # noqa: E731
-        return f"n={len(xs)} p10={q(.1)} p50={q(.5)} p90={q(.9)} max={xs[-1]}"
+        return f"n={len(xs)} p10={q(0.1)} p50={q(0.5)} p90={q(0.9)} max={xs[-1]}"
 
     print(f"rounds {rounds}")
     print(f"first  frames: {desc(first)}")
     print(f"steady frames: {desc(steady)}")
     print(f"adopt  frames: {desc(adopt) if adopt else 'n=0'}")
-    json.dump({"first": first, "steady": steady, "adopt": adopt or steady, "fps": args.fps,
-               "rounds": rounds, "sources": args.trace_dirs},
-              open(args.out, "w"))
+    json.dump(
+        {
+            "first": first,
+            "steady": steady,
+            "adopt": adopt or steady,
+            "fps": args.fps,
+            "rounds": rounds,
+            "sources": args.trace_dirs,
+        },
+        open(args.out, "w"),
+    )
     print(f"-> {args.out}")
 
 

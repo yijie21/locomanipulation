@@ -22,23 +22,24 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import adaptive_grasp as ag  # noqa: E402
+import paths
 import stream_reach  # noqa: E402
 from g1_joints import ARM_MJ  # noqa: E402
 from primitives import LocomotionMode, Primitives, StreamMode  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
-STEPS = (0.05, 0.04, 0.04)          # incremental drops -> ~5/9/13 cm cmd
-STRIDE_XY = 2                       # visit every 2nd voxel in x and y
-                                    # (all z layers): 402 of 1446 targets
-                                    # per depth — the full set at 4 depths
-                                    # would be a 40-minute, 300 MB video
-DWELL = 0.16                        # s per voxel (interpolated transit)
+STEPS = (0.05, 0.04, 0.04)  # incremental drops -> ~5/9/13 cm cmd
+STRIDE_XY = 2  # visit every 2nd voxel in x and y
+# (all z layers): 402 of 1446 targets
+# per depth — the full set at 4 depths
+# would be a 40-minute, 300 MB video
+DWELL = 0.16  # s per voxel (interpolated transit)
 
 
 def main() -> None:
     import reach_map
+
     meta = json.load(open(SCENE_META))
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
@@ -59,8 +60,7 @@ def main() -> None:
             for i in xs:
                 if occ[i, j, k]:
                     targets.append((i, j, k))
-    print(f"[vol] visiting {len(targets)} of {int(occ.sum())} voxels "
-          f"per depth")
+    print(f"[vol] visiting {len(targets)} of {int(occ.sum())} voxels per depth")
 
     p.cmd.reset_pose()
     reset.pin_arms()
@@ -70,7 +70,8 @@ def main() -> None:
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     s0 = p.obs()
     if s0["fallen"]:
-        print("robot did not stand"); return
+        print("robot did not stand")
+        return
     stream_reach.reanchor(p, side="right")
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     p.tuck_arms()
@@ -86,7 +87,7 @@ def main() -> None:
         n = 0
         DT = 0.02
         steps = max(2, int(round(DWELL / DT)))
-        for (i, j, k) in targets:
+        for i, j, k in targets:
             q_t = arm.q.copy()
             q_t[14] = float(ex_wp[i, j, k])
             q_t[ARM_MJ["right"]] = ex_q[i, j, k]
@@ -112,8 +113,7 @@ def main() -> None:
             arm.hold(1.5)
             zz = p.obs()["pelvis"]["pos"][2]
             n = visit_all()
-            print(f"squat cmd {total * 100:.0f} cm "
-                  f"(pelvis -{(z0 - zz) * 100:.1f} cm): visited {n}")
+            print(f"squat cmd {total * 100:.0f} cm (pelvis -{(z0 - zz) * 100:.1f} cm): visited {n}")
         arm.hold(1.5)
     finally:
         reset.pin_arms()

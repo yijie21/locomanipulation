@@ -24,6 +24,7 @@ trains both variants.
     RUN=<name>_a18 DATA=... MODALITY=configs/gr00t_sonic_2cam_a18.py \
         bash scripts/train_bottle.sh
 """
+
 from copy import deepcopy
 
 from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS
@@ -58,15 +59,15 @@ _cfg["state"] = ModalityConfig(
         # 43 columns are ever non-zero, and col 40 tracks the commanded right
         # grip at r=0.997). Anything that indexes observation.state directly
         # must use the raw layout, not this list.
-        "left_leg",             # 0:6
-        "right_leg",            # 6:12
-        "waist",                # 12:15
-        "left_arm",             # 15:22
-        "right_arm",            # 22:29
-        "left_hand",            # 29:36
-        "right_hand",           # 36:43
-        "projected_gravity",    # 43:46
-        "right_wrist_pos",      # 46:49
+        "left_leg",  # 0:6
+        "right_leg",  # 6:12
+        "waist",  # 12:15
+        "left_arm",  # 15:22
+        "right_arm",  # 22:29
+        "left_hand",  # 29:36
+        "right_hand",  # 36:43
+        "projected_gravity",  # 43:46
+        "right_wrist_pos",  # 46:49
         "right_wrist_abs_quat",  # 49:53
     ],
 )
@@ -86,5 +87,6 @@ _cfg["action"] = ModalityConfig(
 )
 
 MODALITY_CONFIGS[_TAG] = _cfg
-print(f"[sonic_2cam_a18] {_TAG}: video={_cfg['video'].modality_keys} "
-      f"state=53 action=18 ({_cfg['action'].modality_keys})")
+print(
+    f"[sonic_2cam_a18] {_TAG}: video={_cfg['video'].modality_keys} state=53 action=18 ({_cfg['action'].modality_keys})"
+)

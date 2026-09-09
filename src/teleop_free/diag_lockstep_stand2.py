@@ -9,6 +9,7 @@
                                                  -> wall-clock's fresh_deploy order
 Pelvis z every 25 ticks. Assumes the stack is up and the deploy is fresh.
 """
+
 from __future__ import annotations
 
 import os
@@ -20,8 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCKSTEP", "1")
 os.environ.setdefault("TF_SONIC_PUB_CONNECT", str(int(os.environ.get("TF_SONIC_PORT", 5556)) + 28))
 
-import vla_round  # noqa: E402
 import agent_server  # noqa: E402
+import vla_round  # noqa: E402
 from privileged_pub import EpisodeControlClient, PrivilegedSubscriber  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -40,15 +41,16 @@ def z(tag):
 
 def restart_deploy():
     env = dict(os.environ, LOCKSTEP="1", NO_ENCODER="1", INSTANCE="0")
-    r = subprocess.run(["bash", f"{REPO}/scripts/restart_deploy.sh"], env=env,
-                       capture_output=True, text=True, timeout=360)
+    r = subprocess.run(
+        ["bash", f"{REPO}/scripts/restart_deploy.sh"], env=env, capture_output=True, text=True, timeout=360
+    )
     print("  restart:", r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-200:])
 
 
 def watch(n_blocks=12):
     for i in range(n_blocks):
         clock.hold_frames(25)
-        z(f"t={(i+1)*25}")
+        z(f"t={(i + 1) * 25}")
 
 
 print("X: reset before first session, then prime + 300 ticks", flush=True)

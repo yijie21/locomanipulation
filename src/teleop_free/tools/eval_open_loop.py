@@ -68,11 +68,11 @@ are not meaningful.
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
 import json
 import os
-from pathlib import Path
 import sys
+from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 
@@ -83,6 +83,7 @@ HORIZONS = (1, 8, 16, 40)
 
 
 # ---------------------------------------------------------------- rollout ----
+
 
 def rollout(policy, loader, traj_id, embodiment_tag, horizon, parse_action):
     """Open-loop roll: re-plan every `horizon` steps from a ground-truth obs.
@@ -109,12 +110,10 @@ def rollout(policy, loader, traj_id, embodiment_tag, horizon, parse_action):
         chunk, _ = policy.get_action(parse_observation_gr00t(obs, loader.modality_configs))
         chunk = parse_action(chunk)
         for j in range(horizon):
-            pred.append(np.concatenate(
-                [np.atleast_1d(np.atleast_1d(chunk[f"action.{k}"])[j]) for k in action_keys]))
+            pred.append(np.concatenate([np.atleast_1d(np.atleast_1d(chunk[f"action.{k}"])[j]) for k in action_keys]))
     pred = np.asarray(pred)[:T]
 
-    gt = np.concatenate(
-        [np.vstack([a for a in traj[f"action.{k}"]]) for k in action_keys], axis=-1)[:T]
+    gt = np.concatenate([np.vstack([a for a in traj[f"action.{k}"]]) for k in action_keys], axis=-1)[:T]
     return gt, pred, traj
 
 
@@ -132,10 +131,11 @@ def persistence(gt, horizon):
 
 # ---------------------------------------------------------------- metrics ----
 
+
 def nmse(gt, pred):
     """MSE / var(gt), averaged over dims. 1.0 == predicting the mean."""
     var = gt.var(axis=0)
-    ok = var > 1e-12                       # constant dims carry no information
+    ok = var > 1e-12  # constant dims carry no information
     if not ok.any():
         return float("nan")
     return float((((pred - gt) ** 2).mean(axis=0)[ok] / var[ok]).mean())
@@ -171,12 +171,14 @@ def score(gt, pred, dec, pre, tag):
     if sonic:
         p_snap = snap(p_tok)
         hit = token_index(p_tok) == token_index(g_tok)
-        out.update({
-            "nmse_token": nmse(g_tok, p_snap),
-            "nmse_token_unsnapped": nmse(g_tok, p_tok),
-            "hit_rate_per_dim": float(hit.mean()),
-            "hit_rate_all64": float(hit.all(axis=1).mean()),
-        })
+        out.update(
+            {
+                "nmse_token": nmse(g_tok, p_snap),
+                "nmse_token_unsnapped": nmse(g_tok, p_tok),
+                "hit_rate_per_dim": float(hit.mean()),
+                "hit_rate_all64": float(hit.all(axis=1).mean()),
+            }
+        )
     else:
         p_snap = p_tok
         out["nmse_body"] = nmse(g_tok, p_tok)
@@ -243,27 +245,32 @@ def aggregate(rows):
 
 # ------------------------------------------------------------------- main ----
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-path", required=True)
     ap.add_argument("--dataset", required=True)
-    ap.add_argument("--modality-config", default=None,
-                    help="defaults to configs/gr00t_sonic_2cam.py next to the repo")
+    ap.add_argument("--modality-config", default=None, help="defaults to configs/gr00t_sonic_2cam.py next to the repo")
     ap.add_argument("--embodiment-tag", default="UNITREE_G1_SONIC")
-    ap.add_argument("--traj-ids", type=int, nargs="*", default=None,
-                    help="default: every episode in the dataset")
+    ap.add_argument("--traj-ids", type=int, nargs="*", default=None, help="default: every episode in the dataset")
     ap.add_argument("--horizons", type=int, nargs="+", default=list(HORIZONS))
     ap.add_argument("--denoising-steps", type=int, default=4)
     ap.add_argument("--out", default=None)
-    ap.add_argument("--no-decoder", action="store_true",
-                    help="skip the degrees metric (no onnxruntime / no deploy tree)")
-    ap.add_argument("--wandb-run", default=None,
-                    help="wandb run NAME to append these metrics to, so the val "
-                         "curve lands on the same axes as the train loss")
+    ap.add_argument(
+        "--no-decoder", action="store_true", help="skip the degrees metric (no onnxruntime / no deploy tree)"
+    )
+    ap.add_argument(
+        "--wandb-run",
+        default=None,
+        help="wandb run NAME to append these metrics to, so the val curve lands on the same axes as the train loss",
+    )
     ap.add_argument("--wandb-project", default="locomani-bottle")
-    ap.add_argument("--step", type=int, default=None,
-                    help="training step these metrics belong to; inferred from a "
-                         "checkpoint-N path when not given")
+    ap.add_argument(
+        "--step",
+        type=int,
+        default=None,
+        help="training step these metrics belong to; inferred from a checkpoint-N path when not given",
+    )
     args = ap.parse_args()
 
     repo = Path(__file__).resolve().parents[3]
@@ -272,11 +279,12 @@ def main():
     sys.path.insert(0, str(repo / "src"))
     cfg_path = Path(args.modality_config or repo / "configs/gr00t_sonic_2cam.py")
     sys.path.insert(0, str(cfg_path.parent))
-    __import__(cfg_path.stem)          # rewrites MODALITY_CONFIGS in place
+    __import__(cfg_path.stem)  # rewrites MODALITY_CONFIGS in place
 
     from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS
     from gr00t.data.dataset.lerobot_episode_loader import LeRobotEpisodeLoader
     from gr00t.data.embodiment_tags import EmbodimentTag
+
     # parse_action_gr00t lives in the eval module itself, not data.utils
     from gr00t.eval.open_loop_eval import parse_action_gr00t
     from gr00t.policy.gr00t_policy import Gr00tPolicy
@@ -296,13 +304,19 @@ def main():
     if not args.no_decoder:
         try:
             from sonic_decoder import SonicDecoder
-            dec = SonicDecoder(str(repo / "third_party/GR00T-WholeBodyControl/"
-                                    "gear_sonic_deploy/policy/release/model_decoder.onnx"))
-        except Exception as e:                      # noqa: BLE001
+
+            dec = SonicDecoder(
+                str(repo / "third_party/GR00T-WholeBodyControl/gear_sonic_deploy/policy/release/model_decoder.onnx")
+            )
+        except Exception as e:  # noqa: BLE001
             print(f"  (degrees metric off: {e})")
 
-    results = {"model_path": args.model_path, "dataset": args.dataset,
-               "denoising_steps": args.denoising_steps, "horizons": {}}
+    results = {
+        "model_path": args.model_path,
+        "dataset": args.dataset,
+        "denoising_steps": args.denoising_steps,
+        "horizons": {},
+    }
     floors = []
 
     for h in args.horizons:
@@ -313,6 +327,7 @@ def main():
             pre = None
             if dec is not None:
                 import pandas as pd  # noqa: F401  (traj is a DataFrame)
+
                 pre, floor = _decoder_context(dec, loader, tid, gt)
                 if floor is not None:
                     floors.append(floor)
@@ -327,19 +342,31 @@ def main():
         }
         m, b = results["horizons"][str(h)]["model"], results["horizons"][str(h)]["persistence"]
         print(f"\nhorizon {h:2d}   {'model':>12s} {'persistence':>12s}")
-        for k in ("nmse_token", "nmse_token_unsnapped", "nmse_body", "body_mae", "nmse_gripper",
-                  "hit_rate_per_dim", "hit_rate_all64", "deg_mean",
-                  "close_frame_err_abs", "std_ratio_token",
-                  "std_ratio_gripper", "grip_deadband_pred",
-                  "grip_deadband_gt"):
+        for k in (
+            "nmse_token",
+            "nmse_token_unsnapped",
+            "nmse_body",
+            "body_mae",
+            "nmse_gripper",
+            "hit_rate_per_dim",
+            "hit_rate_all64",
+            "deg_mean",
+            "close_frame_err_abs",
+            "std_ratio_token",
+            "std_ratio_gripper",
+            "grip_deadband_pred",
+            "grip_deadband_gt",
+        ):
             if k in m:
                 print(f"  {k:22s} {m[k]:12.4f} {b.get(k, float('nan')):12.4f}")
 
     if floors:
         results["degrees_noise_floor"] = float(np.mean(floors))
-        print(f"\ndegrees noise floor: {results['degrees_noise_floor']:.3f} deg "
-              f"(decoder on GT tokens vs the recorded command; differences "
-              f"below this are not meaningful)")
+        print(
+            f"\ndegrees noise floor: {results['degrees_noise_floor']:.3f} deg "
+            f"(decoder on GT tokens vs the recorded command; differences "
+            f"below this are not meaningful)"
+        )
 
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
@@ -362,20 +389,25 @@ def _decoder_context(dec, loader, tid, gt):
     """
     import numpy as np
     import pyarrow.parquet as pq
-
     from sonic_decoder import BODY_IDX, SonicDecoder
 
     info = json.loads((Path(loader.dataset_path) / "meta/info.json").read_text())
     ep = loader.episode_ids[tid] if hasattr(loader, "episode_ids") else tid
-    p = (Path(loader.dataset_path) / "data/chunk-000" / f"episode_{ep:06d}.parquet")
+    p = Path(loader.dataset_path) / "data/chunk-000" / f"episode_{ep:06d}.parquet"
     if not p.exists():
         return None, None
     if not {"action.wbc", "action.motion_token"} <= set(pq.read_schema(p).names):
-        return None, None                       # not a SONIC dataset (e.g. ScaleBFM)
-    t = pq.read_table(p, columns=["observation.state", "action.wbc",
-                                  "observation.root_orientation",
-                                  "observation.projected_gravity",
-                                  "action.motion_token"])
+        return None, None  # not a SONIC dataset (e.g. ScaleBFM)
+    t = pq.read_table(
+        p,
+        columns=[
+            "observation.state",
+            "action.wbc",
+            "observation.root_orientation",
+            "observation.projected_gravity",
+            "action.motion_token",
+        ],
+    )
     S = np.stack(t["observation.state"].to_pylist())
     A = np.stack(t["action.wbc"].to_pylist())
     Q = np.stack(t["observation.root_orientation"].to_pylist())
@@ -417,14 +449,12 @@ def _log_wandb(args, results):
         for r in api.runs(args.wandb_project, filters={"display_name": args.wandb_run}):
             api_run = r.id
             break
-    except Exception as e:                          # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"  (wandb lookup failed: {e})")
-    run = wandb.init(project=args.wandb_project, name=args.wandb_run,
-                     id=api_run, resume="allow")
+    run = wandb.init(project=args.wandb_project, name=args.wandb_run, id=api_run, resume="allow")
     run.log(flat, step=step)
     run.finish()
-    print(f"logged {len(flat)} metrics to wandb {args.wandb_project}/{args.wandb_run} "
-          f"at step {step}")
+    print(f"logged {len(flat)} metrics to wandb {args.wandb_project}/{args.wandb_run} at step {step}")
 
 
 if __name__ == "__main__":

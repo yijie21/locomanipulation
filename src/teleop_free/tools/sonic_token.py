@@ -59,8 +59,8 @@ import numpy as np
 # L = 32 levels, so the integer index runs -L/2 .. L/2-1).
 FSQ_LEVELS = 32
 FSQ_STEP = 1.0 / 16.0
-FSQ_MIN_INDEX = -FSQ_LEVELS // 2      # -16  -> -1.0
-FSQ_MAX_INDEX = FSQ_LEVELS // 2 - 1   #  15  ->  0.9375
+FSQ_MIN_INDEX = -FSQ_LEVELS // 2  # -16  -> -1.0
+FSQ_MAX_INDEX = FSQ_LEVELS // 2 - 1  #  15  ->  0.9375
 TOKEN_DIM = 64
 
 # The left hand's frozen pose, read off the dataset (float32 0.0245 in the two
@@ -104,7 +104,8 @@ def token_index(token):
     """
     return np.clip(
         np.rint(np.asarray(token, dtype=np.float64) / FSQ_STEP),
-        FSQ_MIN_INDEX, FSQ_MAX_INDEX,
+        FSQ_MIN_INDEX,
+        FSQ_MAX_INDEX,
     ).astype(np.int16)
 
 

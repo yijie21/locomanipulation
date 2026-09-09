@@ -68,17 +68,19 @@ planner=False)` 逐字等价 —— 命名不同(我们叫 STREAMED,官方叫 PO
 
 ```python
 def calculate_latency_compensated_index(inference_delay, control_freq, action_horizon):
-    raw_index = np.round(inference_delay * control_freq)      # 四舍五入
+    raw_index = np.round(inference_delay * control_freq)  # 四舍五入
     return int(np.clip(raw_index, 0, action_horizon - 1))
 
-def should_trigger_new_inference(cached_chunk_exists, inference_thread_running,
-                                 time_since_last_inference, inference_interval): ...
+
+def should_trigger_new_inference(
+    cached_chunk_exists, inference_thread_running, time_since_last_inference, inference_interval
+): ...
 ```
 
 我们的等价实现(`vla_round.py:566` 附近):
 
 ```python
-idx = min(int((time.time() - chunk_t0) * RATE), len(tok) - 1)   # 截断
+idx = min(int((time.time() - chunk_t0) * RATE), len(tok) - 1)  # 截断
 ```
 
 **差异是真的**:官方 `np.round`,我们 `int()` 截断 —— 系统性落后半帧,30 Hz 下约

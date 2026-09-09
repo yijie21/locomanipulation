@@ -31,6 +31,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 import stream_reach  # noqa: E402
 from primitives import (  # noqa: E402
     LocomotionMode,
@@ -39,13 +40,12 @@ from primitives import (  # noqa: E402
     upper_body_from_mj,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 OUT = f"{paths.REPO}/outputs/diag/height.json"
 HEIGHTS = [-1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.3, 0.0]
 HOLD_S = 5.0
-KNEE_MJ = (3, 9)                 # left / right knee in MuJoCo joint order
+KNEE_MJ = (3, 9)  # left / right knee in MuJoCo joint order
 
 
 def restand(p, reset, label):
@@ -89,8 +89,7 @@ def main() -> None:
                 t_end = time.time() + HOLD_S
                 zs, ks, ps = [], [], []
                 while time.time() < t_end:
-                    p.cmd.frame(mode=loco, facing=face, height=h,
-                                movement=(0.0, 0.0, 0.0))
+                    p.cmd.frame(mode=loco, facing=face, height=h, movement=(0.0, 0.0, 0.0))
                     time.sleep(0.02)
                     if t_end - time.time() < 1.0:
                         st = p.obs()
@@ -98,17 +97,23 @@ def main() -> None:
                         ks.append([st["joints"][i] for i in KNEE_MJ])
                         ps.append(st["palms"]["right"]["pos"][2])
                 st = p.obs()
-                rec = dict(stream_mode=sm.name, loco=loco.name, height=h,
-                           pelvis_z=float(np.mean(zs)) if zs else None,
-                           knee=list(map(float, np.mean(ks, axis=0))) if ks else None,
-                           palm_z=float(np.mean(ps)) if ps else None,
-                           fallen=bool(st["fallen"]))
+                rec = dict(
+                    stream_mode=sm.name,
+                    loco=loco.name,
+                    height=h,
+                    pelvis_z=float(np.mean(zs)) if zs else None,
+                    knee=list(map(float, np.mean(ks, axis=0))) if ks else None,
+                    palm_z=float(np.mean(ps)) if ps else None,
+                    fallen=bool(st["fallen"]),
+                )
                 out.append(rec)
-                print(f"[h] {sm.name:26} {loco.name:9} h={h:5.2f}  "
-                      f"pelvis {rec['pelvis_z']:.3f}  "
-                      f"knee {rec['knee'][0]:+.2f}/{rec['knee'][1]:+.2f}  "
-                      f"palm {rec['palm_z']:.3f}"
-                      f"{'  FELL' if rec['fallen'] else ''}")
+                print(
+                    f"[h] {sm.name:26} {loco.name:9} h={h:5.2f}  "
+                    f"pelvis {rec['pelvis_z']:.3f}  "
+                    f"knee {rec['knee'][0]:+.2f}/{rec['knee'][1]:+.2f}  "
+                    f"palm {rec['palm_z']:.3f}"
+                    f"{'  FELL' if rec['fallen'] else ''}"
+                )
             # back to default before changing regime
             s = p.obs()
             p.cmd.hold(2.0, mode=LocomotionMode.IDLE, height=-1.0)
@@ -118,15 +123,13 @@ def main() -> None:
     base = [r for r in out if r["height"] == -1.0]
     print(f"[h] wrote {OUT}")
     for r in base:
-        print(f"    default ({r['stream_mode']}, {r['loco']}): "
-              f"pelvis {r['pelvis_z']:.3f}")
+        print(f"    default ({r['stream_mode']}, {r['loco']}): pelvis {r['pelvis_z']:.3f}")
     span = {}
     for r in out:
         key = (r["stream_mode"], r["loco"])
         span.setdefault(key, []).append(r["pelvis_z"])
     for key, v in span.items():
-        print(f"    {key}: pelvis range {min(v):.3f}..{max(v):.3f} "
-              f"({(max(v) - min(v)) * 100:.1f} cm of authority)")
+        print(f"    {key}: pelvis range {min(v):.3f}..{max(v):.3f} ({(max(v) - min(v)) * 100:.1f} cm of authority)")
 
 
 if __name__ == "__main__":

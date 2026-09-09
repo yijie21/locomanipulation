@@ -33,6 +33,7 @@ them to a pelvis-frame velocity and a yaw rate:
 
 `--fps` resamples nearest, matching convert_to_hf_format's 50 -> 25.
 """
+
 import argparse
 import glob
 import json
@@ -63,8 +64,7 @@ def rotmat2rotvec(R):
     if ang < 1e-8:
         return [0.0, 0.0, 0.0]
     k = ang / (2 * math.sin(ang))
-    return [k * float(R[2, 1] - R[1, 2]), k * float(R[0, 2] - R[2, 0]),
-            k * float(R[1, 0] - R[0, 1])]
+    return [k * float(R[2, 1] - R[1, 2]), k * float(R[0, 2] - R[2, 0]), k * float(R[1, 0] - R[0, 1])]
 
 
 def quat2rotvec(q):
@@ -103,7 +103,7 @@ def episode_actions(rows, ik, dt=0.02):
         c, s = math.cos(yaw), math.sin(yaw)
         mv = cmd.get("movement") or [0.0, 0.0, 0.0]
         sp = float(cmd.get("speed", -1.0))
-        if sp < 0:                       # no walk command on this frame
+        if sp < 0:  # no walk command on this frame
             vx = vy = 0.0
         else:
             vx = sp * (c * mv[0] + s * mv[1])
@@ -111,13 +111,12 @@ def episode_actions(rows, ik, dt=0.02):
         fac = cmd.get("facing") or [1.0, 0.0, 0.0]
         wz = float(wrap(math.atan2(fac[1], fac[0]) - yaw))
         h = float(cmd.get("height", -1.0))
-        h = (h - PELVIS_STAND) if (int(cmd.get("mode", 0)) == MODE_SQUAT
-                                   and h > 0) else 0.0
+        h = (h - PELVIS_STAND) if (int(cmd.get("mode", 0)) == MODE_SQUAT and h > 0) else 0.0
         row = []
         for side in ("right", "left"):
             p_r = last[side]
-            row += (p_r[0] if p_r else [0.0, 0.0, 0.0])
-            row += (p_r[1] if p_r else [0.0, 0.0, 0.0])
+            row += p_r[0] if p_r else [0.0, 0.0, 0.0]
+            row += p_r[1] if p_r else [0.0, 0.0, 0.0]
             hj = hands.get(side)
             row.append(float(hj[0]) if hj else 0.0)
         row += [vx, vy, wz, h]
@@ -144,9 +143,12 @@ def main():
     ap.add_argument("--fps", type=float, default=25.0)
     ap.add_argument("--out", default=None)
     ap.add_argument("--ok-only", action="store_true", default=True)
-    ap.add_argument("--seq-out", default=None, metavar="NPZ",
-                    help="also write a seq -> 18-D table (no resampling) for "
-                         "convert_to_hf_format.py --a18 to join on")
+    ap.add_argument(
+        "--seq-out",
+        default=None,
+        metavar="NPZ",
+        help="also write a seq -> 18-D table (no resampling) for convert_to_hf_format.py --a18 to join on",
+    )
     a = ap.parse_args()
 
     man = {}
@@ -155,12 +157,13 @@ def main():
             r = json.loads(line)
             if r.get("produced"):
                 man.setdefault(f, []).append(r)
-    ok_rounds = {(os.path.basename(k), i): r["ok"]
-                 for k, v in man.items() for i, r in enumerate(v)}
+    ok_rounds = {(os.path.basename(k), i): r["ok"] for k, v in man.items() for i, r in enumerate(v)}
 
     import sys as _sys
+
     _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
     from arm_ik import ArmIK
+
     IK = ArmIK()
     eps, names, kept, skipped = [], [], 0, 0
     seq_all, a18_all = [], []
@@ -174,7 +177,8 @@ def main():
             for rr, aa in zip(rows, A):
                 sq = rr.get("seq")
                 if sq is not None:
-                    seq_all.append(int(sq)); a18_all.append(aa)
+                    seq_all.append(int(sq))
+                    a18_all.append(aa)
         A, T = resample(A, T, a.fps)
         eps.append(A)
         names.append(os.path.basename(f))
@@ -187,21 +191,37 @@ def main():
         aa = np.asarray(a18_all, dtype=np.float32)
         order = np.argsort(sq, kind="stable")
         sq, aa = sq[order], aa[order]
-        keep = np.concatenate([[True], np.diff(sq) != 0])   # first row wins per seq
+        keep = np.concatenate([[True], np.diff(sq) != 0])  # first row wins per seq
         np.savez_compressed(a.seq_out, seq=sq[keep], a18=aa[keep])
         print(f"seq table: {int(keep.sum())} unique seq -> {a.seq_out}")
     out = a.out or os.path.join(a.collect_dir, "action18.npz")
     np.savez_compressed(out, **{n: e for n, e in zip(names, eps)})
     allA = np.concatenate(eps, 0)
-    lab = ["r_px", "r_py", "r_pz", "r_rx", "r_ry", "r_rz", "r_grip",
-           "l_px", "l_py", "l_pz", "l_rx", "l_ry", "l_rz", "l_grip",
-           "vx", "vy", "dyaw", "dz"]
+    lab = [
+        "r_px",
+        "r_py",
+        "r_pz",
+        "r_rx",
+        "r_ry",
+        "r_rz",
+        "r_grip",
+        "l_px",
+        "l_py",
+        "l_pz",
+        "l_rx",
+        "l_ry",
+        "l_rz",
+        "l_grip",
+        "vx",
+        "vy",
+        "dyaw",
+        "dz",
+    ]
     print(f"{kept} episodes ({skipped} skipped), {len(allA)} frames @ {a.fps} fps -> {out}")
     print(f"{'dim':>6} {'min':>8} {'p50':>8} {'max':>8} {'std':>8}")
     for i, n in enumerate(lab):
         col = allA[:, i]
-        print(f"{n:>6} {col.min():8.3f} {np.median(col):8.3f} "
-              f"{col.max():8.3f} {col.std():8.3f}")
+        print(f"{n:>6} {col.min():8.3f} {np.median(col):8.3f} {col.max():8.3f} {col.std():8.3f}")
 
 
 if __name__ == "__main__":

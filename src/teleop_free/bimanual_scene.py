@@ -43,7 +43,7 @@ PAD_SOLIMP = (0.995, 0.9999, 0.001, 0.5, 2.0)
 # FINGER_RANGE below instead: with the pad faces able to meet, the closed
 # target sits 8 mm past a 16 mm bar, 3 N per finger, 6 N per coupled jaw,
 # 28 N of friction for two hands against the 0.64 kg crate's 6.3 N.
-GRIPPER_GEAR = float(os.environ.get("GRIPPER_GEAR", "250"))   # env override for A/B runs
+GRIPPER_GEAR = float(os.environ.get("GRIPPER_GEAR", "250"))  # env override for A/B runs
 # The two dex1 fingers are INDEPENDENT slide joints in the MJCF; the real
 # Dex1 is a single-motor parallel jaw. Independent fingers cannot clamp a bar
 # that is off the jaw centre: the near finger stops on the bar, the far one
@@ -76,7 +76,7 @@ def harden_pads(xml_path: str) -> int:
             eq.name = f"{side}_gripper_couple"
             eq.name1 = f"{side}_hand_gripper_1_joint"
             eq.name2 = f"{side}_hand_gripper_2_joint"
-            eq.data[:5] = [0.0, 1.0, 0.0, 0.0, 0.0]      # q1 = q2 (axes are mirrored, so this is symmetric closing)
+            eq.data[:5] = [0.0, 1.0, 0.0, 0.0, 0.0]  # q1 = q2 (axes are mirrored, so this is symmetric closing)
     nj = 0
     for j in spec.joints:
         if "hand_gripper" in j.name:
@@ -90,16 +90,26 @@ def harden_pads(xml_path: str) -> int:
             act.gear = [GRIPPER_GEAR, 0, 0, 0, 0, 0]
             ng += 1
     model = spec.compile()
-    gears = [float(model.actuator_gear[a][0]) for a in range(model.nu)
-             if "hand_gripper" in mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, a)]
+    gears = [
+        float(model.actuator_gear[a][0])
+        for a in range(model.nu)
+        if "hand_gripper" in mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, a)
+    ]
     if ng != 4 or any(abs(g - GRIPPER_GEAR) > 1e-6 for g in gears):
         raise SystemExit(f"gripper gear did not take: {ng} actuators patched, gears {gears}")
-    if COUPLE_FINGERS and sum(1 for e in range(model.neq) if "gripper_couple" in mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_EQUALITY, e)) != 2:
+    if (
+        COUPLE_FINGERS
+        and sum(
+            1 for e in range(model.neq) if "gripper_couple" in mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_EQUALITY, e)
+        )
+        != 2
+    ):
         raise SystemExit("finger coupling equality did not take")
     ids = [g for g in range(model.ngeom) if model.geom_priority[g] == PAD_PRIORITY]
     if len(ids) < 4 or any(model.geom_condim[g] != PAD_CONDIM for g in ids):
-        raise SystemExit(f"pad hardening did not take: priority-{PAD_PRIORITY} "
-                         f"geoms {ids} (want >= 4 with condim {PAD_CONDIM})")
+        raise SystemExit(
+            f"pad hardening did not take: priority-{PAD_PRIORITY} geoms {ids} (want >= 4 with condim {PAD_CONDIM})"
+        )
     with open(xml_path, "w") as f:
         f.write(spec.to_xml())
     return n
@@ -121,10 +131,15 @@ def main() -> None:
     env.setdefault("CRATE_SETBACK", "0")
     if "--seed" in args:
         env["SCENE_SEED"] = args[args.index("--seed") + 1]
-    subprocess.run([sys.executable, os.path.join(paths.SRC, "build_sim_scene.py"),
-                    os.path.join(paths.OUTPUTS, "scene"), out], check=True, env=env)
+    subprocess.run(
+        [sys.executable, os.path.join(paths.SRC, "build_sim_scene.py"), os.path.join(paths.OUTPUTS, "scene"), out],
+        check=True,
+        env=env,
+    )
     xml = os.path.join(out, "scene_locomani.xml")
-    print(f"[bimanual_scene] finger pads hardened: {harden_pads(xml)} geoms, gripper gear {GRIPPER_GEAR:.0f}, fingers coupled {COUPLE_FINGERS}, range {FINGER_RANGE} -> {xml}")
+    print(
+        f"[bimanual_scene] finger pads hardened: {harden_pads(xml)} geoms, gripper gear {GRIPPER_GEAR:.0f}, fingers coupled {COUPLE_FINGERS}, range {FINGER_RANGE} -> {xml}"
+    )
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ camera is sim_video's: tracking the pelvis at 2.5 m, azimuth 135, elevation
 -20 -- MuJoCo's own mjv_updateScene decides the pose, and the pose is read
 back from the scene's GL camera, so the two renderers agree by construction.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,12 +31,16 @@ TRACK = dict(distance=2.5, azimuth=135.0, elevation=-20.0)
 def gl_camera_pose(scene):
     """World pose of the scene's (monocular average of the two) GL cameras."""
     from scipy.spatial.transform import Rotation as R
+
     cams = [scene.camera[i] for i in range(2)]
     pos = np.mean([np.asarray(c.pos) for c in cams], axis=0)
-    fwd = np.asarray(cams[0].forward, dtype=float); fwd /= np.linalg.norm(fwd)
-    up = np.asarray(cams[0].up, dtype=float); up -= fwd * (up @ fwd); up /= np.linalg.norm(up)
+    fwd = np.asarray(cams[0].forward, dtype=float)
+    fwd /= np.linalg.norm(fwd)
+    up = np.asarray(cams[0].up, dtype=float)
+    up -= fwd * (up @ fwd)
+    up /= np.linalg.norm(up)
     right = np.cross(fwd, up)
-    m = np.stack([right, up, -fwd], axis=1)          # columns = camera x, y, z (USD: -Z looks)
+    m = np.stack([right, up, -fwd], axis=1)  # columns = camera x, y, z (USD: -Z looks)
     qx, qy, qz, qw = R.from_matrix(m).as_quat()
     return pos, np.array([qw, qx, qy, qz])
 
@@ -67,13 +72,17 @@ def main(argv=None) -> None:
     cam.distance, cam.azimuth, cam.elevation = TRACK["distance"], TRACK["azimuth"], TRACK["elevation"]
     vopt = mujoco.MjvOption()
     mujoco.mjv_defaultOption(vopt)
-    vopt.geomgroup[4] = 0                            # no debug/ghost geoms
+    vopt.geomgroup[4] = 0  # no debug/ghost geoms
 
     T = len(qpos)
-    vw = cv2.VideoWriter(os.path.join(args.out, "tracking_mujoco.mp4"),
-                         cv2.VideoWriter_fourcc(*"mp4v"), args.fps / args.stride,
-                         (args.width, args.height))
-    cam_pos = np.zeros((T, 3)); cam_quat = np.zeros((T, 4))
+    vw = cv2.VideoWriter(
+        os.path.join(args.out, "tracking_mujoco.mp4"),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        args.fps / args.stride,
+        (args.width, args.height),
+    )
+    cam_pos = np.zeros((T, 3))
+    cam_quat = np.zeros((T, 4))
     written = 0
     for t in range(T):
         replay.set(qpos[t], qvel[t] if len(qvel) == T else None)
@@ -83,10 +92,12 @@ def main(argv=None) -> None:
             vw.write(cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR))
             written += 1
     vw.release()
-    np.savez(os.path.join(args.out, "cam_traj.npz"), cam_pos=cam_pos, cam_quat=cam_quat,
-             fovy=float(model.vis.global_.fovy))
-    print(f"wrote {written} frames ({T} states, stride {args.stride}) -> {args.out}; "
-          f"fovy {float(model.vis.global_.fovy)}")
+    np.savez(
+        os.path.join(args.out, "cam_traj.npz"), cam_pos=cam_pos, cam_quat=cam_quat, fovy=float(model.vis.global_.fovy)
+    )
+    print(
+        f"wrote {written} frames ({T} states, stride {args.stride}) -> {args.out}; fovy {float(model.vis.global_.fovy)}"
+    )
 
 
 if __name__ == "__main__":

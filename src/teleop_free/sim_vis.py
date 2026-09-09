@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 
 ITEMS = ("reach", "ghost", "bbox", "readout")
-_ALL = {"full", "all", "1", ""}      # "" = exported but empty; treat as unset
+_ALL = {"full", "all", "1", ""}  # "" = exported but empty; treat as unset
 _NONE = {"none", "off", "0"}
 
 
@@ -44,8 +44,7 @@ def _selected() -> frozenset:
     if unknown:
         # Loud, because the failure mode is silent: a typo would otherwise
         # just quietly drop a visual the user asked to keep.
-        print(f"[sim_vis] ignoring unknown SIM_VIS item(s) {sorted(unknown)}; "
-              f"valid items are {list(ITEMS)}")
+        print(f"[sim_vis] ignoring unknown SIM_VIS item(s) {sorted(unknown)}; valid items are {list(ITEMS)}")
     return frozenset(want & set(ITEMS))
 
 

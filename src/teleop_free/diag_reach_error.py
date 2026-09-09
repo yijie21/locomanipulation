@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import adaptive_grasp  # noqa: E402
 import grasping  # noqa: E402
+import paths
 import reach_map as rmm  # noqa: E402
 import stream_reach  # noqa: E402
 from arm_ik import ArmIK  # noqa: E402
@@ -48,28 +49,28 @@ from primitives import (  # noqa: E402
     StreamMode,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 OUT_DIR = f"{paths.REPO}/outputs/diag"
 SIDE = "right"
-ORIENTS = {                      # (name, axis-angle applied to the upright can)
-    "up_yaw0":  (0.0, 0.0),
+ORIENTS = {  # (name, axis-angle applied to the upright can)
+    "up_yaw0": (0.0, 0.0),
     "up_yaw90": (0.0, np.pi / 2),
-    "tilt45":   (np.pi / 4, 0.0),
-    "lying90":  (np.pi / 2, 0.0),
+    "tilt45": (np.pi / 4, 0.0),
+    "lying90": (np.pi / 2, 0.0),
 }
-SETTLE_OPEN = 1.5                # s of holding the open-loop command
-CLOSED_S = 8.0                   # s cap on the closed-loop convergence
-STAND_DRIFT_MAX = 0.25           # m of pelvis drift before we re-stand. The
-                                 # object is placed from the CURRENT pelvis
-                                 # pose every sample, so drift does not
-                                 # invalidate a sample — only a fall or a
-                                 # walk-away does.
+SETTLE_OPEN = 1.5  # s of holding the open-loop command
+CLOSED_S = 8.0  # s cap on the closed-loop convergence
+STAND_DRIFT_MAX = 0.25  # m of pelvis drift before we re-stand. The
+# object is placed from the CURRENT pelvis
+# pose every sample, so drift does not
+# invalidate a sample — only a fall or a
+# walk-away does.
 
 
 def quat_of(rot: np.ndarray) -> np.ndarray:
     import mujoco
+
     q = np.empty(4)
     mujoco.mju_mat2Quat(q, np.asarray(rot, dtype=float).flatten())
     return q
@@ -83,14 +84,18 @@ def can_quat(tilt: float, yaw: float) -> np.ndarray:
     """Upright can rotated by `tilt` about x, then `yaw` about world z."""
     ct, st = np.cos(tilt / 2), np.sin(tilt / 2)
     cy, sy = np.cos(yaw / 2), np.sin(yaw / 2)
-    qt = np.array([ct, st, 0.0, 0.0])          # tilt about +x
-    qy = np.array([cy, 0.0, 0.0, sy])          # yaw about +z
+    qt = np.array([ct, st, 0.0, 0.0])  # tilt about +x
+    qy = np.array([cy, 0.0, 0.0, sy])  # yaw about +z
     w1, x1, y1, z1 = qy
     w2, x2, y2, z2 = qt
-    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-                     w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-                     w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ]
+    )
 
 
 def strata(rm) -> list:
@@ -101,9 +106,11 @@ def strata(rm) -> list:
     az = np.arctan2(pts[:, 1], pts[:, 0])
     z = pts[:, 2]
     out, rng = [], np.random.default_rng(0)
+
     def band(v, k):
         qs = np.quantile(v, [0.0, 1 / 3, 2 / 3, 1.0])
         return (v >= qs[k]) & (v <= qs[k + 1])
+
     for i in range(3):
         for j in range(3):
             for k in range(3):
@@ -129,16 +136,17 @@ def main() -> None:
     rm = rmm.ReachMap()
     cells = strata(rm)
 
-    plan_cs = rm.plan_core_stand(0.0)          # only for the crouch magnitude
-    squat_cmd = 0.09 if plan_cs is None else float(np.interp(
-        plan_cs[1], [0.0, 0.044, 0.12, 0.195], [0.0, 0.05, 0.09, 0.13]))
+    plan_cs = rm.plan_core_stand(0.0)  # only for the crouch magnitude
+    squat_cmd = (
+        0.09 if plan_cs is None else float(np.interp(plan_cs[1], [0.0, 0.044, 0.12, 0.195], [0.0, 0.05, 0.09, 0.13]))
+    )
 
-    samples = [(c, o, sq, pin)
-               for c in cells for o in ORIENTS
-               for sq in (0.0, squat_cmd) for pin in (True, False)]
+    samples = [(c, o, sq, pin) for c in cells for o in ORIENTS for sq in (0.0, squat_cmd) for pin in (True, False)]
     mine = samples[si::sn]
-    print(f"[err] {len(cells)} strata x {len(ORIENTS)} orientations x 2 squats"
-          f" x 2 pins = {len(samples)} samples; shard {si}/{sn} -> {len(mine)}")
+    print(
+        f"[err] {len(cells)} strata x {len(ORIENTS)} orientations x 2 squats"
+        f" x 2 pins = {len(samples)} samples; shard {si}/{sn} -> {len(mine)}"
+    )
     if args.dry:
         return
 
@@ -172,11 +180,15 @@ def main() -> None:
         # -- keep the robot on its stand ---------------------------------
         if s["fallen"] or float(np.linalg.norm(p.pelvis_xy(s) - home_xy)) > STAND_DRIFT_MAX:
             if arm is not None:
-                arm.stop(); arm = None
+                arm.stop()
+                arm = None
             p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
             p.cmd.upper_body = None
-            p.cmd.reset_pose(); reset.pin_arms(); reset.reset(label="restand")
-            time.sleep(0.3); p.cmd.start_control()
+            p.cmd.reset_pose()
+            reset.pin_arms()
+            reset.reset(label="restand")
+            time.sleep(0.3)
+            p.cmd.start_control()
             p.cmd.hold(3.0, mode=LocomotionMode.IDLE)
             stream_reach.reanchor(p, side=SIDE)
             s = p.obs()
@@ -187,7 +199,8 @@ def main() -> None:
             if sq > 0.03:
                 arm.squat(sq, track=False)
         # -- place and PIN the object ------------------------------------
-        P = np.array(s["pelvis"]["pos"]); R = rot_of(s["pelvis"]["quat"])
+        P = np.array(s["pelvis"]["pos"])
+        R = rot_of(s["pelvis"]["quat"])
         grip_w = P + R @ cell_pf
         tilt, yaw = ORIENTS[oname]
         q_can = can_quat(tilt, yaw + yaw0)
@@ -207,29 +220,35 @@ def main() -> None:
         pz = s["pelvis"]["pos"]
         shoulder = np.array([pz[0] - s2 * lat, pz[1] + c2 * lat, pz[2] + 0.44])
         plan = adaptive_grasp.plan(
-            grip_w, v_start, palm_R, surf_top, box=can["box"],
-            obj_axis=axis_w, obj_rot=rot_of(s["objects"][obj_key]["quat"]),
+            grip_w,
+            v_start,
+            palm_R,
+            surf_top,
+            box=can["box"],
+            obj_axis=axis_w,
+            obj_rot=rot_of(s["objects"][obj_key]["quat"]),
             azimuth_from=shoulder,
             avoid_dir=np.array([d_h[0], d_h[1], 0.0]),
-            avoid_sign=1.0 if SIDE == "right" else -1.0)
+            avoid_sign=1.0 if SIDE == "right" else -1.0,
+        )
         if not plan.ok:
-            rows.append(dict(i=i, j=j, k=k, cell=cell_pf, orient=oname, squat=sq,
-                             pin=pin_on, ok=False, why=plan.why))
+            rows.append(dict(i=i, j=j, k=k, cell=cell_pf, orient=oname, squat=sq, pin=pin_on, ok=False, why=plan.why))
             reset.pin_object(obj_key)
             continue
         want_w = np.asarray(plan.wrist, float)
         want_R = np.asarray(plan.rot, float)
         # -- OPEN LOOP: stream the IK solution, settle, measure ------------
-        reset.pin_arms(**({SIDE: [float(v) for v in arm.q[ARM_MJ[SIDE]]]}
-                          if pin_on else {}))
+        reset.pin_arms(**({SIDE: [float(v) for v in arm.q[ARM_MJ[SIDE]]]} if pin_on else {}))
         entry = want_R[:, 0]
-        for tgt in (want_w - entry * stream_reach.SAFE_GAP + [0, 0, 0.10],
-                    want_w - entry * stream_reach.SAFE_GAP, want_w):
+        for tgt in (
+            want_w - entry * stream_reach.SAFE_GAP + [0, 0, 0.10],
+            want_w - entry * stream_reach.SAFE_GAP,
+            want_w,
+        ):
             s = p.obs()
             aim_pf = p.world_to_root_full(tgt, s)
             rot_pf = rot_of(s["pelvis"]["quat"]).T @ want_R
-            q_sol, res, _ = ik.solve(SIDE, aim_pf, rot_pf, q_mj29=arm.q,
-                                     use_waist=True)
+            q_sol, res, _ = ik.solve(SIDE, aim_pf, rot_pf, q_mj29=arm.q, use_waist=True)
             arm.move_to(q_sol, speed=0.8)
             if pin_on:
                 reset.pin_arms(**{SIDE: [float(v) for v in q_sol[ARM_MJ[SIDE]]]})
@@ -245,8 +264,7 @@ def main() -> None:
         # applies; calling the servo itself would close the gripper and
         # lift, and the measured palm would then be a carry pose, not a
         # converged reach (first smoke: 21-231 cm "residuals").
-        cl_err = arm.goto(want_w, want_R, refine=3, tol=0.015,
-                          speed=stream_reach.FINE_SPEED)
+        cl_err = arm.goto(want_w, want_R, refine=3, tol=0.015, speed=stream_reach.FINE_SPEED)
         if pin_on:
             reset.pin_arms(**{SIDE: [float(v) for v in arm.q[ARM_MJ[SIDE]]]})
         arm.hold(0.6)
@@ -254,28 +272,44 @@ def main() -> None:
         s = p.obs()
         cl_pos = np.array(s["palms"][SIDE]["pos"])
         cl_R = rot_of(s["palms"][SIDE]["quat"])
-        rows.append(dict(
-            i=i, j=j, k=k, cell=cell_pf, orient=oname, squat=sq, pin=pin_on,
-            ok=True, why="", ik_res=float(res),
-            want_pos=want_w, want_quat=quat_of(want_R),
-            open_pos=open_pos, open_quat=quat_of(open_R),
-            closed_pos=cl_pos, closed_quat=quat_of(cl_R),
-            pelvis=open_pelvis, joints=open_q,
-            grip_w=grip_w, obj_axis=axis_w))
+        rows.append(
+            dict(
+                i=i,
+                j=j,
+                k=k,
+                cell=cell_pf,
+                orient=oname,
+                squat=sq,
+                pin=pin_on,
+                ok=True,
+                why="",
+                ik_res=float(res),
+                want_pos=want_w,
+                want_quat=quat_of(want_R),
+                open_pos=open_pos,
+                open_quat=quat_of(open_R),
+                closed_pos=cl_pos,
+                closed_quat=quat_of(cl_R),
+                pelvis=open_pelvis,
+                joints=open_q,
+                grip_w=grip_w,
+                obj_axis=axis_w,
+            )
+        )
         reset.pin_object(obj_key)
         e = float(np.linalg.norm(open_pos + open_R @ GRASP_CENTRE_OFFSET - grip_w))
         e2 = float(np.linalg.norm(cl_pos + cl_R @ GRASP_CENTRE_OFFSET - grip_w))
-        print(f"[err] {n + 1}/{len(mine)} r{i}a{j}z{k} {oname:8} "
-              f"sq{sq * 100:.0f} pin{'+' if pin_on else '-'}  "
-              f"open {e * 100:5.1f}cm  closed {e2 * 100:5.1f}cm  "
-              f"({(time.time() - t_start) / 60:.0f} min)")
+        print(
+            f"[err] {n + 1}/{len(mine)} r{i}a{j}z{k} {oname:8} "
+            f"sq{sq * 100:.0f} pin{'+' if pin_on else '-'}  "
+            f"open {e * 100:5.1f}cm  closed {e2 * 100:5.1f}cm  "
+            f"({(time.time() - t_start) / 60:.0f} min)"
+        )
         if (n + 1) % 10 == 0:
-            np.savez_compressed(f"{OUT_DIR}/reach_error_{si}.npz",
-                                rows=np.array(rows, dtype=object))
+            np.savez_compressed(f"{OUT_DIR}/reach_error_{si}.npz", rows=np.array(rows, dtype=object))
     if arm is not None:
         arm.stop()
-    np.savez_compressed(f"{OUT_DIR}/reach_error_{si}.npz",
-                        rows=np.array(rows, dtype=object))
+    np.savez_compressed(f"{OUT_DIR}/reach_error_{si}.npz", rows=np.array(rows, dtype=object))
     print(f"[err] wrote {OUT_DIR}/reach_error_{si}.npz  ({len(rows)} rows)")
 
 

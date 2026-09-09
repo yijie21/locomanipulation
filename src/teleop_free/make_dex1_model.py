@@ -26,31 +26,39 @@ from __future__ import annotations
 import os
 import shutil
 import xml.etree.ElementTree as ET
+
 import paths
 
 REPO = paths.REPO
 SRC_DIR = f"{REPO}/assets/dex1"
-G1 = (f"{REPO}/third_party/GR00T-WholeBodyControl/gear_sonic/data/"
-      "robot_model/model_data/g1")
+G1 = f"{REPO}/third_party/GR00T-WholeBodyControl/gear_sonic/data/robot_model/model_data/g1"
 
 # Dex1-1 numbers from the official URDF (see assets/dex1/*.urdf):
-BASE_POS = "0.0415 0 0"          # fixed base joint at the wrist yaw link
-JOINT_RANGE = "-0.02 0.0245"     # per-finger prismatic travel
+BASE_POS = "0.0415 0 0"  # fixed base joint at the wrist yaw link
+JOINT_RANGE = "-0.02 0.0245"  # per-finger prismatic travel
 FINGER = {
-    1: dict(axis="0 -1 0", mesh="Dex1_finger_link_1", col="dex1_col_1",
-            ipos="0.073453 -0.011173 0.0086355",
-            fullinertia=("2.5583E-05 1.4549E-05 3.6013E-05 "
-                         "5.1557E-07 -6.3178E-07 7.8542E-08")),
-    2: dict(axis="0 1 0", mesh="Dex1_finger_link_2", col="dex1_col_2",
-            ipos="0.073453 0.011173 -0.0086355",
-            fullinertia=("2.5583E-05 1.4549E-05 3.6013E-05 "
-                         "-5.1557E-07 6.3178E-07 7.8542E-08")),
+    1: dict(
+        axis="0 -1 0",
+        mesh="Dex1_finger_link_1",
+        col="dex1_col_1",
+        ipos="0.073453 -0.011173 0.0086355",
+        fullinertia=("2.5583E-05 1.4549E-05 3.6013E-05 5.1557E-07 -6.3178E-07 7.8542E-08"),
+    ),
+    2: dict(
+        axis="0 1 0",
+        mesh="Dex1_finger_link_2",
+        col="dex1_col_2",
+        ipos="0.073453 0.011173 -0.0086355",
+        fullinertia=("2.5583E-05 1.4549E-05 3.6013E-05 -5.1557E-07 6.3178E-07 7.8542E-08"),
+    ),
 }
 MASS = "0.086783"
-BASE_INERTIAL = dict(pos="0.043853 -0.0001306 1.4003E-05", mass="0.19138",
-                     fullinertia=("7.4842E-05 5.861E-05 3.9364E-05 "
-                                  "1.6252E-07 -8.0516E-09 -3.5931E-08"))
-GEAR = "250"   # 150 gave ~4.7 N/finger: cans slipped out mid-carry (2/6)
+BASE_INERTIAL = dict(
+    pos="0.043853 -0.0001306 1.4003E-05",
+    mass="0.19138",
+    fullinertia=("7.4842E-05 5.861E-05 3.9364E-05 1.6252E-07 -8.0516E-09 -3.5931E-08"),
+)
+GEAR = "250"  # 150 gave ~4.7 N/finger: cans slipped out mid-carry (2/6)
 CTRL = "-20 20"
 
 
@@ -60,45 +68,54 @@ def gripper_joint(side: str, i: int) -> str:
 
 def build_hand(side: str) -> list[ET.Element]:
     els = []
-    for group, extra in (("1", {"contype": "0", "conaffinity": "0",
-                                "density": "0"}), (None, {})):
-        g = ET.Element("geom", dict(
-            pos=BASE_POS, type="mesh", mesh="Dex1_base_link",
-            rgba="0.25 0.25 0.25 1", **extra))
+    for group, extra in (("1", {"contype": "0", "conaffinity": "0", "density": "0"}), (None, {})):
+        g = ET.Element("geom", dict(pos=BASE_POS, type="mesh", mesh="Dex1_base_link", rgba="0.25 0.25 0.25 1", **extra))
         if group:
             g.set("group", group)
         els.append(g)
     for i in (1, 2):
         f = FINGER[i]
-        b = ET.Element("body", dict(name=f"{side}_dex1_finger_{i}_link",
-                                    pos=BASE_POS))
-        ET.SubElement(b, "inertial", dict(pos=f["ipos"], mass=MASS,
-                                          fullinertia=f["fullinertia"]))
-        ET.SubElement(b, "joint", dict(
-            name=gripper_joint(side, i), type="slide", pos="0 0 0",
-            axis=f["axis"], range=JOINT_RANGE,
-            actuatorfrcrange="-20 20"))
-        ET.SubElement(b, "geom", dict(
-            type="mesh", contype="0", conaffinity="0", group="1",
-            density="0", rgba="0.3 0.3 0.3 1", mesh=f["mesh"]))
-        ET.SubElement(b, "geom", dict(type="mesh", rgba="0.3 0.3 0.3 1",
-                                      mesh=f["col"],
-                                      friction="1.2 0.02 0.001"))
+        b = ET.Element("body", dict(name=f"{side}_dex1_finger_{i}_link", pos=BASE_POS))
+        ET.SubElement(b, "inertial", dict(pos=f["ipos"], mass=MASS, fullinertia=f["fullinertia"]))
+        ET.SubElement(
+            b,
+            "joint",
+            dict(
+                name=gripper_joint(side, i),
+                type="slide",
+                pos="0 0 0",
+                axis=f["axis"],
+                range=JOINT_RANGE,
+                actuatorfrcrange="-20 20",
+            ),
+        )
+        ET.SubElement(
+            b,
+            "geom",
+            dict(
+                type="mesh", contype="0", conaffinity="0", group="1", density="0", rgba="0.3 0.3 0.3 1", mesh=f["mesh"]
+            ),
+        )
+        ET.SubElement(b, "geom", dict(type="mesh", rgba="0.3 0.3 0.3 1", mesh=f["col"], friction="1.2 0.02 0.001"))
         els.append(b)
     return els
 
 
 def main() -> None:
-    for m in ("Dex1_base_link.STL", "Dex1_finger_link_1.STL",
-              "Dex1_finger_link_2.STL", "dex1_col_1.stl", "dex1_col_2.stl"):
+    for m in (
+        "Dex1_base_link.STL",
+        "Dex1_finger_link_1.STL",
+        "Dex1_finger_link_2.STL",
+        "dex1_col_1.stl",
+        "dex1_col_2.stl",
+    ):
         shutil.copy(f"{SRC_DIR}/meshes/{m}", f"{G1}/meshes/{m}")
 
     tree = ET.parse(f"{G1}/g1_29dof_with_hand.xml")
     root = tree.getroot()
 
     asset = root.find("asset")
-    for m in ("Dex1_base_link", "Dex1_finger_link_1", "Dex1_finger_link_2",
-              "dex1_col_1", "dex1_col_2"):
+    for m in ("Dex1_base_link", "Dex1_finger_link_1", "Dex1_finger_link_2", "dex1_col_1", "dex1_col_2"):
         ext = "STL" if m.startswith("Dex1") else "stl"
         ET.SubElement(asset, "mesh", dict(name=m, file=f"{m}.{ext}"))
 
@@ -132,10 +149,14 @@ def main() -> None:
             side = "left" if j.startswith("left") else "right"
             if not inserted[side]:
                 for i in (1, 2):
-                    out.append(ET.Element("motor", dict(
-                        name=f"{side}_hand_gripper_{i}",
-                        joint=gripper_joint(side, i), gear=GEAR,
-                        ctrlrange=CTRL)))
+                    out.append(
+                        ET.Element(
+                            "motor",
+                            dict(
+                                name=f"{side}_hand_gripper_{i}", joint=gripper_joint(side, i), gear=GEAR, ctrlrange=CTRL
+                            ),
+                        )
+                    )
                 inserted[side] = True
             continue
         out.append(m)
@@ -155,13 +176,13 @@ def main() -> None:
                 side = "left" if j.startswith("left") else "right"
                 if not ins[side]:
                     for i in (1, 2):
-                        for tag, suf in (("jointpos", "pos"),
-                                         ("jointvel", "vel"),
-                                         ("jointactuatorfrc", "torque")):
+                        for tag, suf in (("jointpos", "pos"), ("jointvel", "vel"), ("jointactuatorfrc", "torque")):
                             if any(k.tag == tag for k in kids):
-                                out.append(ET.Element(tag, dict(
-                                    name=f"{side}_hand_gripper_{i}_{suf}",
-                                    joint=gripper_joint(side, i))))
+                                out.append(
+                                    ET.Element(
+                                        tag, dict(name=f"{side}_hand_gripper_{i}_{suf}", joint=gripper_joint(side, i))
+                                    )
+                                )
                     ins[side] = True
                 continue
             out.append(s)
@@ -174,8 +195,7 @@ def main() -> None:
     out_xml = f"{G1}/g1_29dof_with_dex1.xml"
     tree.write(out_xml)
 
-    scene = open(f"{G1}/scene_43dof.xml").read().replace(
-        "g1_29dof_with_hand.xml", "g1_29dof_with_dex1.xml")
+    scene = open(f"{G1}/scene_43dof.xml").read().replace("g1_29dof_with_hand.xml", "g1_29dof_with_dex1.xml")
     with open(f"{G1}/scene_31dof.xml", "w") as f:
         f.write(scene)
     print(f"wrote {out_xml} and scene_31dof.xml")

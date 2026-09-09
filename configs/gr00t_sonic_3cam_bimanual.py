@@ -61,17 +61,17 @@ _cfg["video"] = ModalityConfig(
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
     modality_keys=[
-        "left_leg",             # 0:6
-        "right_leg",            # 6:12
-        "waist",                # 12:15
-        "left_arm",             # 15:22
-        "right_arm",            # 22:29
-        "left_hand",            # 29:36
-        "right_hand",           # 36:43
-        "projected_gravity",    # 43:46
-        "right_wrist_pos",      # 46:49
+        "left_leg",  # 0:6
+        "right_leg",  # 6:12
+        "waist",  # 12:15
+        "left_arm",  # 15:22
+        "right_arm",  # 22:29
+        "left_hand",  # 29:36
+        "right_hand",  # 36:43
+        "projected_gravity",  # 43:46
+        "right_wrist_pos",  # 46:49
         "right_wrist_abs_quat",  # 49:53
-        "left_wrist_pos",       # 53:56
+        "left_wrist_pos",  # 53:56
         "left_wrist_abs_quat",  # 56:60
     ],
 )
@@ -90,6 +90,8 @@ _cfg["action"] = ModalityConfig(
 MODALITY_CONFIGS[_TAG] = _cfg
 
 _dims = {"state": 60, "action": 66}
-print(f"[sonic_3cam_bimanual] {_TAG}: video={_cfg['video'].modality_keys} "
-      f"state={_dims['state']} action={_dims['action']} "
-      f"({_cfg['action'].modality_keys})")
+print(
+    f"[sonic_3cam_bimanual] {_TAG}: video={_cfg['video'].modality_keys} "
+    f"state={_dims['state']} action={_dims['action']} "
+    f"({_cfg['action'].modality_keys})"
+)

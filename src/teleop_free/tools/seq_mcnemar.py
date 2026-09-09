@@ -26,6 +26,7 @@ boundary. This is a SCREENING instrument -- a stopped-early "DIFFERENT" still
 gets a full-budget confirmation before anything is concluded (the round-4
 lesson: config gains that skipped that step did not survive it).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,9 +34,9 @@ import json
 import math
 import sys
 
-INTERIM_P = 0.01      # stop-for-difference at any interim look
-FINAL_P = 0.05        # the final look
-N_MAX = 20            # matches eval_closed_loop.py --fresh (2026-08-28)
+INTERIM_P = 0.01  # stop-for-difference at any interim look
+FINAL_P = 0.05  # the final look
+N_MAX = 20  # matches eval_closed_loop.py --fresh (2026-08-28)
 
 
 def load(path):
@@ -53,7 +54,7 @@ def exact_mcnemar(b: int, c: int) -> float:
     if n == 0:
         return 1.0
     k = min(b, c)
-    p = sum(math.comb(n, i) for i in range(0, k + 1)) / 2 ** n * 2
+    p = sum(math.comb(n, i) for i in range(0, k + 1)) / 2**n * 2
     return min(1.0, p)
 
 
@@ -76,7 +77,7 @@ def main():
     # attempts died before the VLA was measured).
     def by_app(rows):
         d = {}
-        for r in rows:                      # later rows overwrite: last attempt wins
+        for r in rows:  # later rows overwrite: last attempt wins
             d[r["appearance"]] = r["ok"]
         return d
 
@@ -87,18 +88,22 @@ def main():
     # still in flight on one side is missing). A different seed shares ~none.
     floor = min(len(ma), len(mb))
     if floor == 0:
-        sys.exit("NOT PAIRED: at least one manifest is empty -- nothing to "
-                 "test. Refusing rather than printing p=1.0 over zero pairs.")
+        sys.exit(
+            "NOT PAIRED: at least one manifest is empty -- nothing to "
+            "test. Refusing rather than printing p=1.0 over zero pairs."
+        )
     if n < 0.9 * floor:
-        sys.exit(f"NOT PAIRED: only {n} of {floor} appearances are shared "
-                 f"between the arms -- these runs were not drawn from the "
-                 f"same seed/sequence. Refusing to test.")
+        sys.exit(
+            f"NOT PAIRED: only {n} of {floor} appearances are shared "
+            f"between the arms -- these runs were not drawn from the "
+            f"same seed/sequence. Refusing to test."
+        )
     pairs = [(ma[k], mb[k]) for k in shared]
 
     ka = sum(1 for x, _ in pairs if x)
     kb = sum(1 for _, y in pairs if y)
-    only_b = sum(1 for x, y in pairs if y and not x)   # B wins the pair
-    only_a = sum(1 for x, y in pairs if x and not y)   # A wins the pair
+    only_b = sum(1 for x, y in pairs if y and not x)  # B wins the pair
+    only_a = sum(1 for x, y in pairs if x and not y)  # A wins the pair
     p = exact_mcnemar(only_a, only_b)
 
     # Futility: even if B won EVERY remaining pair, could the final look
@@ -117,13 +122,21 @@ def main():
     else:
         verdict = "CONTINUE"
 
-    res = dict(pairs=n, a_ok=ka, b_ok=kb, only_a=only_a, only_b=only_b,
-               p=p, verdict=verdict, n_max=args.n_max,
-               interim_p=INTERIM_P, final_p=FINAL_P)
+    res = dict(
+        pairs=n,
+        a_ok=ka,
+        b_ok=kb,
+        only_a=only_a,
+        only_b=only_b,
+        p=p,
+        verdict=verdict,
+        n_max=args.n_max,
+        interim_p=INTERIM_P,
+        final_p=FINAL_P,
+    )
     if args.json:
         json.dump(res, open(args.json, "w"), indent=2)
-    print(f"pairs {n}  A {ka}/{n}  B {kb}/{n}  "
-          f"discordant +B {only_b} / +A {only_a}  p={p:.4f}  -> {verdict}")
+    print(f"pairs {n}  A {ka}/{n}  B {kb}/{n}  discordant +B {only_b} / +A {only_a}  p={p:.4f}  -> {verdict}")
     # Machine-readable last line for the driver.
     print(f"VERDICT {verdict}")
 

@@ -69,9 +69,7 @@ def inject(mjcf_path: Path, physics: dict) -> str:
         notes.append(f"mass={physics['mass']}")
 
     if physics["mu1"] is not None:
-        friction = (
-            f"{physics['mu1']} {DEFAULT_SPIN_FRICTION} {DEFAULT_ROLL_FRICTION}"
-        )
+        friction = f"{physics['mu1']} {DEFAULT_SPIN_FRICTION} {DEFAULT_ROLL_FRICTION}"
         for g in collision_geoms:
             g.set("friction", friction)
         notes.append(f"friction={physics['mu1']}")

@@ -65,8 +65,7 @@ class RefTap:
     """
 
     def __init__(self, port: int | None = None):
-        self.port = (int(os.environ.get("TF_OUT_PORT", 5557))
-                     if port is None else int(port))
+        self.port = int(os.environ.get("TF_OUT_PORT", 5557)) if port is None else int(port)
         self._q: np.ndarray | None = None
         self._t = 0.0
         self._lock = threading.Lock()
@@ -78,15 +77,14 @@ class RefTap:
         if self._run:
             return self
         try:
-            from gear_sonic.utils.data_collection.zmq_state_subscriber import (
-                ZMQStateSubscriber)
-        except ImportError:                     # not on the sim venv's path
+            from gear_sonic.utils.data_collection.zmq_state_subscriber import ZMQStateSubscriber
+        except ImportError:  # not on the sim venv's path
             import sys
 
             import paths
+
             sys.path.insert(0, paths.SONIC)
-            from gear_sonic.utils.data_collection.zmq_state_subscriber import (
-                ZMQStateSubscriber)
+            from gear_sonic.utils.data_collection.zmq_state_subscriber import ZMQStateSubscriber
         self._sub = ZMQStateSubscriber(host="localhost", port=self.port)
         self._run = True
         self._th = threading.Thread(target=self._loop, daemon=True)
@@ -122,6 +120,7 @@ class RefTap:
     def upper17(self, max_age: float = 0.5) -> np.ndarray | None:
         """The same reference as a 17-value upper-body command."""
         from primitives import upper_body_from_mj
+
         q = self.q29(max_age)
 
         return None if q is None else upper_body_from_mj(q)
@@ -238,8 +237,7 @@ def _selfcheck() -> None:
     assert n == 30, f"60 deg at 2 deg/tick should take 30 ticks, took {n}"
 
     steps = np.max(np.abs(np.diff(np.stack(c.q), axis=0)), axis=1)
-    assert steps.max() <= np.radians(2.0) + 1e-9, (
-        f"slew breached: {np.degrees(steps.max()):.3f} deg")
+    assert steps.max() <= np.radians(2.0) + 1e-9, f"slew breached: {np.degrees(steps.max()):.3f} deg"
 
     # The velocity must be the derivative of what was actually sent, and the
     # settle must write a real zero (omitting the key does not clear it).
@@ -258,8 +256,7 @@ def _selfcheck() -> None:
     small = np.full(17, np.radians(0.5))
     assert r2.push(small) < 1e-9, "a sub-cap move must land in one tick"
 
-    print(f"[PASS] UpperRamp: {n} ticks for 60 deg, "
-          f"max step {np.degrees(steps.max()):.3f} deg, velocity consistent")
+    print(f"[PASS] UpperRamp: {n} ticks for 60 deg, max step {np.degrees(steps.max()):.3f} deg, velocity consistent")
 
 
 if __name__ == "__main__":
@@ -273,6 +270,7 @@ if __name__ == "__main__":
         if not tap.wait(5.0):
             raise SystemExit("no body_q_target -- is the deploy up and started?")
         from primitives import upper_body_from_mj  # noqa: F401
+
         q = tap.q29(max_age=1e9)
         print("body_q_target (MuJoCo order, deg):")
         print(f"  waist {np.round(np.degrees(q[12:15]), 1)}")

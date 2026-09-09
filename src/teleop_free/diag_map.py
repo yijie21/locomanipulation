@@ -35,9 +35,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives  # noqa: E402
-import paths
 
 OUT = f"{paths.REPO}/outputs/scene/wrist_map.npz"
 # The region the grasp actually commands, not the whole REACH_BOX. Fitting
@@ -74,8 +74,7 @@ def main() -> None:
     order = np.lexsort((targets[:, 2], targets[:, 1], targets[:, 0]))
     targets = targets[order]
 
-    print(f"{len(targets)} commands, {args.settle:.1f} s each "
-          f"-> about {len(targets) * args.settle / 60:.1f} min\n")
+    print(f"{len(targets)} commands, {args.settle:.1f} s each -> about {len(targets) * args.settle / 60:.1f} min\n")
 
     p = Primitives()
     p.cmd.start_control()
@@ -101,8 +100,7 @@ def main() -> None:
             palms.append(p.world_to_root_full(s["palms"][args.side]["pos"], s))
             pelvis.append(float(s["pelvis"]["pos"][2]))
             if (i + 1) % 10 == 0:
-                print(f"  {i + 1}/{len(targets)}  "
-                      f"({time.time() - t0:.0f} s elapsed)")
+                print(f"  {i + 1}/{len(targets)}  ({time.time() - t0:.0f} s elapsed)")
             continue
         break
 
@@ -111,26 +109,24 @@ def main() -> None:
 
     cmds, palms = np.array(cmds), np.array(palms)
     pelvis = np.array(pelvis)
-    print(f"\ncollected {len(cmds)} samples, pelvis "
-          f"{pelvis.min():.3f}-{pelvis.max():.3f} m")
+    print(f"\ncollected {len(cmds)} samples, pelvis {pelvis.min():.3f}-{pelvis.max():.3f} m")
 
     a, b, res = fit(cmds, palms)
-    print(f"\naffine fit  palm = A cmd + b")
+    print("\naffine fit  palm = A cmd + b")
     for i, row in enumerate(a):
         print(f"   {'xyz'[i]}: {np.round(row, 3)}  + {b[i]:+.3f}")
-    print(f"   residual  mean {res.mean() * 100:.2f} cm  "
-          f"p95 {np.percentile(res, 95) * 100:.2f} cm  max {res.max() * 100:.2f} cm")
+    print(
+        f"   residual  mean {res.mean() * 100:.2f} cm  "
+        f"p95 {np.percentile(res, 95) * 100:.2f} cm  max {res.max() * 100:.2f} cm"
+    )
 
     # What the constants in use today would have predicted, for comparison.
-    old = np.stack([0.55 * cmds[:, 0] - 0.02, cmds[:, 1],
-                    0.50 * cmds[:, 2] - 0.07], axis=1)
+    old = np.stack([0.55 * cmds[:, 0] - 0.02, cmds[:, 1], 0.50 * cmds[:, 2] - 0.07], axis=1)
     old_res = np.linalg.norm(old - palms, axis=1)
-    print(f"   the constants in use today: mean {old_res.mean() * 100:.2f} cm  "
-          f"max {old_res.max() * 100:.2f} cm")
+    print(f"   the constants in use today: mean {old_res.mean() * 100:.2f} cm  max {old_res.max() * 100:.2f} cm")
 
     a_inv = np.linalg.inv(a)
-    np.savez(args.out, A=a, b=b, A_inv=a_inv, cmds=cmds, palms=palms,
-             pelvis=pelvis, residual=res)
+    np.savez(args.out, A=a, b=b, A_inv=a_inv, cmds=cmds, palms=palms, pelvis=pelvis, residual=res)
     print(f"\nwrote {args.out}")
     print("  invert with:  cmd = A_inv @ (palm_wanted - b)")
 

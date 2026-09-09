@@ -53,19 +53,22 @@ def pct(xs, q):
 def machine_snapshot() -> dict:
     """Proof that nothing else was competing. A number measured next to an eval
     arm is a number about GPU contention, not about rendering."""
+
     def run(cmd):
         try:
-            return subprocess.run(cmd, shell=True, capture_output=True,
-                                  text=True, timeout=20).stdout.strip()
+            return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=20).stdout.strip()
         except Exception as e:  # noqa: BLE001
             return f"<{e}>"
-    procs = [l for l in run("ps -eo pid,pcpu,args --sort=-pcpu | head -25").splitlines()
-             if any(k in l for k in ("eval_closed_loop", "grasp_gym",
-                                     "run_data_exporter", "serve_policy",
-                                     "g1_deploy", "isaac"))]
+
+    procs = [
+        l
+        for l in run("ps -eo pid,pcpu,args --sort=-pcpu | head -25").splitlines()
+        if any(
+            k in l for k in ("eval_closed_loop", "grasp_gym", "run_data_exporter", "serve_policy", "g1_deploy", "isaac")
+        )
+    ]
     return {
-        "gpus": run("nvidia-smi --query-gpu=index,name,utilization.gpu,"
-                    "memory.used --format=csv,noheader"),
+        "gpus": run("nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used --format=csv,noheader"),
         "competing_processes": procs,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"),
         "loadavg": run("uptime"),
@@ -80,12 +83,11 @@ def main(argv=None) -> None:
     ap.add_argument("--scene-dir", default="")
     ap.add_argument("--robot-usd", default="")
     ap.add_argument("--scene-xml", default=paths.SCENE_XML)
-    ap.add_argument("--width", type=int, default=640)     # dataset resolution
+    ap.add_argument("--width", type=int, default=640)  # dataset resolution
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--warmup", type=int, default=40)
     ap.add_argument("--n", type=int, default=300, help="timed frames per cadence")
-    ap.add_argument("--gap", type=float, default=0.20,
-                    help="cadenced gap in seconds, ~ one VLA inference")
+    ap.add_argument("--gap", type=float, default=0.20, help="cadenced gap in seconds, ~ one VLA inference")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -93,8 +95,9 @@ def main(argv=None) -> None:
     joints, pel, objs = F.load_frames(args.session, args.episode, args.sidecar)
     cam_spec = F.head_camera_spec(args.scene_xml)
     joint_map = F.build_joint_map()
-    cfg = S.StageCfg(scene_dir=args.scene_dir, robot_usd=args.robot_usd,
-                     width=args.width, height=args.height, absolute_camera=False)
+    cfg = S.StageCfg(
+        scene_dir=args.scene_dir, robot_usd=args.robot_usd, width=args.width, height=args.height, absolute_camera=False
+    )
 
     app = S.start_app(cfg)
     try:
@@ -107,8 +110,7 @@ def main(argv=None) -> None:
 
         def one(t):
             t0 = time.perf_counter()
-            S.sync_frame(stg, robot, jidx, jsrc, joints[t], pel[t],
-                         {k: v[t] for k, v in objs.items()})
+            S.sync_frame(stg, robot, jidx, jsrc, joints[t], pel[t], {k: v[t] for k, v in objs.items()})
             t1 = time.perf_counter()
             rgba = S.step_and_grab(world, sensor)
             t2 = time.perf_counter()
@@ -131,28 +133,40 @@ def main(argv=None) -> None:
                 render_ms.append(r * 1e3)
             total = [a + b for a, b in zip(sync_ms, render_ms)]
             result[cadence] = {
-                "n": len(total), "empty_frames": empty,
+                "n": len(total),
+                "empty_frames": empty,
                 "sync_ms": {"p50": pct(sync_ms, 50), "p90": pct(sync_ms, 90)},
                 "render_ms": {"p50": pct(render_ms, 50), "p90": pct(render_ms, 90)},
-                "total_ms": {"p50": pct(total, 50), "p90": pct(total, 90),
-                             "p99": pct(total, 99), "mean": float(np.mean(total)),
-                             "max": float(np.max(total))},
+                "total_ms": {
+                    "p50": pct(total, 50),
+                    "p90": pct(total, 90),
+                    "p99": pct(total, 99),
+                    "mean": float(np.mean(total)),
+                    "max": float(np.max(total)),
+                },
                 "stale_frames_at_action_rate": {
                     "p50": pct(total, 50) / 1e3 * CONTROL_HZ,
-                    "p90": pct(total, 90) / 1e3 * CONTROL_HZ},
+                    "p90": pct(total, 90) / 1e3 * CONTROL_HZ,
+                },
             }
-        out = {"resolution": [args.width, args.height],
-               "action_rate_hz": CONTROL_HZ,
-               "scene_dir": S.scene_dir(cfg), "robot_usd": S.robot_usd(cfg),
-               "warmup": args.warmup, "gap_s": args.gap,
-               "machine_before": before, "machine_after": machine_snapshot(),
-               "results": result}
+        out = {
+            "resolution": [args.width, args.height],
+            "action_rate_hz": CONTROL_HZ,
+            "scene_dir": S.scene_dir(cfg),
+            "robot_usd": S.robot_usd(cfg),
+            "warmup": args.warmup,
+            "gap_s": args.gap,
+            "machine_before": before,
+            "machine_after": machine_snapshot(),
+            "results": result,
+        }
         # written BEFORE app.close(): close() terminates the process itself.
         with open(args.out, "w") as f:
             json.dump(out, f, indent=2)
         sys.stderr.write(f"wrote {args.out}\n")
     except BaseException:
         import traceback
+
         traceback.print_exc()
         os._exit(1)
     app.close()

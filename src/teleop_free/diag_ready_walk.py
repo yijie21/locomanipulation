@@ -17,6 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 import stream_reach  # noqa: E402
 from primitives import (  # noqa: E402
     READY_UPPER,
@@ -25,7 +26,6 @@ from primitives import (  # noqa: E402
     StreamMode,
 )
 from privileged_pub import EpisodeControlClient
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
@@ -53,9 +53,11 @@ def main() -> None:
     # Every earlier attempt commanded 1.5-2.09 believing bigger = more fold,
     # i.e. commanded the arms DOWN and then fought the result.
     from primitives import READY_ARM
-    PIN = READY_ARM          # the exact pose collect_episode pins
+
+    PIN = READY_ARM  # the exact pose collect_episode pins
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     from primitives import upper_body_17
+
     p.cmd.set_upper_body(upper_body_17(PIN["left"], PIN["right"]))
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
     reset.pin_arms(left=PIN["left"], right=PIN["right"])
@@ -63,11 +65,9 @@ def main() -> None:
 
     reset.start_video(f"readywalk_{int(time.time())}")
     home = p.pelvis_xy().copy()
-    legs = [home + np.array([-1.6, 0.0]),
-            home + np.array([-1.6, 1.2]),
-            home + np.array([0.0, 1.2]),
-            home]
+    legs = [home + np.array([-1.6, 0.0]), home + np.array([-1.6, 1.2]), home + np.array([0.0, 1.2]), home]
     from primitives import wrap
+
     for i, wp in enumerate(legs):
         end = time.time() + 25.0
         while time.time() < end:
@@ -79,8 +79,7 @@ def main() -> None:
             b = float(np.arctan2(d[1], d[0]))
             face = yaw + float(np.clip(wrap(b - yaw), -0.5, 0.5))
             fv = (np.cos(face), np.sin(face), 0.0)
-            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=0.6,
-                        movement=fv, facing=fv)
+            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=0.6, movement=fv, facing=fv)
             time.sleep(0.02)
         print(f"leg {i}: at {np.round(p.pelvis_xy(), 2)}")
         p.cmd.hold(0.5, mode=LocomotionMode.IDLE)
@@ -89,8 +88,10 @@ def main() -> None:
     s = p.obs()
     q = np.array(s["joints"])
     for side, base in (("left", 15), ("right", 22)):
-        print(f"{side}: sh_pitch {q[base]:+.2f} sh_roll {q[base + 1]:+.2f} "
-              f"elbow {q[base + 3]:+.2f} (cmd -0.05/±0.20/2.05)")
+        print(
+            f"{side}: sh_pitch {q[base]:+.2f} sh_roll {q[base + 1]:+.2f} "
+            f"elbow {q[base + 3]:+.2f} (cmd -0.05/±0.20/2.05)"
+        )
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
     reset.end_video()
     print("done")

@@ -8,8 +8,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
 import paths
+from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
 
 NPZ = f"{paths.REPO}/outputs/diag/channel.npz"
 ORDER = ["streamed", "planner", "planner_vel", "planner_pin"]
@@ -17,10 +17,13 @@ ORDER = ["streamed", "planner", "planner_vel", "planner_pin"]
 
 def rot_of(q):
     w, x, y, z = q
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def ang(Ra, Rb):
@@ -49,20 +52,24 @@ def main() -> None:
 
     for phase in ("open", "closed"):
         print(f"=== {phase} loop ===")
-        print(f"{'config':12} {'n':>4} {'pos med':>8} {'p90':>7} {'orn med':>8} "
-              f"{'entry':>7} {'lat':>7} {'vert':>7} {'v-bias':>7}")
+        print(
+            f"{'config':12} {'n':>4} {'pos med':>8} {'p90':>7} {'orn med':>8} "
+            f"{'entry':>7} {'lat':>7} {'vert':>7} {'v-bias':>7}"
+        )
         for cfg in ORDER:
             pos, orn, dec = stats(cfg, phase)
             if not len(pos):
                 continue
             a = np.abs(dec)
-            print(f"{cfg:12} {len(pos):4d} {np.median(pos) * 100:7.1f}cm "
-                  f"{np.percentile(pos, 90) * 100:6.1f}cm "
-                  f"{np.median(orn):7.1f}d "
-                  f"{np.median(a[:, 0]) * 100:6.1f}cm "
-                  f"{np.median(a[:, 1]) * 100:6.1f}cm "
-                  f"{np.median(a[:, 2]) * 100:6.1f}cm "
-                  f"{np.median(dec[:, 2]) * 100:+6.1f}cm")
+            print(
+                f"{cfg:12} {len(pos):4d} {np.median(pos) * 100:7.1f}cm "
+                f"{np.percentile(pos, 90) * 100:6.1f}cm "
+                f"{np.median(orn):7.1f}d "
+                f"{np.median(a[:, 0]) * 100:6.1f}cm "
+                f"{np.median(a[:, 1]) * 100:6.1f}cm "
+                f"{np.median(a[:, 2]) * 100:6.1f}cm "
+                f"{np.median(dec[:, 2]) * 100:+6.1f}cm"
+            )
         print()
 
     # per-height-stratum closed-loop, to see if any channel is height-sensitive
@@ -96,8 +103,10 @@ def main() -> None:
         c, d = np.array(c), np.array(d)
         use = np.abs(c) > 0.02
         ratio = float(np.median(d[use] / c[use])) if use.any() else float("nan")
-        print(f"{cfg:12} cmd med {np.median(c):+.3f}  delivered med {np.median(d):+.3f}"
-              f"  ratio(|cmd|>0.02, n={int(use.sum())}) {ratio:.2f}")
+        print(
+            f"{cfg:12} cmd med {np.median(c):+.3f}  delivered med {np.median(d):+.3f}"
+            f"  ratio(|cmd|>0.02, n={int(use.sum())}) {ratio:.2f}"
+        )
 
 
 if __name__ == "__main__":

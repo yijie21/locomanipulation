@@ -25,8 +25,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--reset", action="store_true")
     ap.add_argument("--seconds", type=float, default=8.0)
-    ap.add_argument("--gap", type=float, default=0.2,
-                    help="seconds between the reset and start_control")
+    ap.add_argument("--gap", type=float, default=0.2, help="seconds between the reset and start_control")
     args = ap.parse_args()
 
     cmd = AgentCommander()
@@ -48,8 +47,7 @@ def main() -> None:
             s = state.latest(0)
             if s:
                 p = s["pelvis"]["pos"]
-                print(f"  {time.time() - t0:4.1f}  "
-                      f"[{p[0]:+.3f} {p[1]:+.3f} {p[2]:+.3f}]   {s['fallen']}")
+                print(f"  {time.time() - t0:4.1f}  [{p[0]:+.3f} {p[1]:+.3f} {p[2]:+.3f}]   {s['fallen']}")
             next_sample += 0.5
         time.sleep(0.02)
 

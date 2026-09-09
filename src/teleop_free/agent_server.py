@@ -36,7 +36,6 @@ from enum import IntEnum
 
 import numpy as np
 import zmq
-
 from gear_sonic.utils.teleop.zmq.zmq_planner_sender import (
     build_command_message,
     build_planner_message,
@@ -54,8 +53,8 @@ NECK_LINK_LENGTH = 0.35
 # pico_manager prints this as its startup value.
 DEFAULT_COMPLIANCE = (0.5, 0.5, 0.0)
 
-N_HAND_JOINTS = 7          # WIRE width (deploy pass-through) — dex1 uses
-                           # only the first 2 entries (two prismatic fingers)
+N_HAND_JOINTS = 7  # WIRE width (deploy pass-through) — dex1 uses
+# only the first 2 entries (two prismatic fingers)
 HAND_TYPE = os.environ.get("HAND", "dex1")
 if HAND_TYPE == "dex1":
     # Dex1 zero pose leaves a 4.58 cm jaw gap — SMALLER than the can.
@@ -103,9 +102,7 @@ class StreamMode(IntEnum):
 def nominal_neck() -> tuple[np.ndarray, np.ndarray]:
     """Neck point of an upright robot, in root frame."""
     quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    pos = np.array(
-        [0.0, 0.0, TORSO_LINK_OFFSET_Z + NECK_LINK_LENGTH], dtype=np.float32
-    )
+    pos = np.array([0.0, 0.0, TORSO_LINK_OFFSET_Z + NECK_LINK_LENGTH], dtype=np.float32)
 
     return pos, quat
 
@@ -118,12 +115,12 @@ def rest_wrists() -> tuple[np.ndarray, np.ndarray]:
     return left, right
 
 
-
 # LAST_CMD: the last planner frame, 17 upper-body joint targets and hand
 # targets actually published. Bookkeeping only, read by PoseSidecar so an
 # 18-D action (wrist SE(3) + grip per arm + base command) can be exported
 # offline from a collection run without changing what is sent.
 LAST_CMD: dict = {}
+
 
 class AgentCommander:
     """Publishes everything the C++ deploy stack and the exporter need."""
@@ -254,24 +251,23 @@ class AgentCommander:
 
     def set_upper_body_vel(self, v17) -> None:
         """17 joint velocities, same order as set_upper_body. None to omit."""
-        self.upper_body_vel = (None if v17 is None
-                               else np.asarray(v17, dtype=np.float32))
+        self.upper_body_vel = None if v17 is None else np.asarray(v17, dtype=np.float32)
 
     def set_upper_body(self, q17) -> None:
         """17 joint targets for FROZEN_UPPER_BODY mode: waist y/r/p, then
         L/R-interleaved shoulder p, r, y, elbow, wrist r, p, y."""
         try:
-            LAST_CMD["u17"] = (None if q17 is None else
-                               [float(v) for v in np.asarray(q17).ravel()])
+            LAST_CMD["u17"] = None if q17 is None else [float(v) for v in np.asarray(q17).ravel()]
         except Exception:
             pass
         self.upper_body = np.asarray(q17, dtype=np.float32)
 
     def set_hands(self, left=None, right=None):
         try:
-            LAST_CMD["hands"] = {k: ([float(x) for x in np.asarray(v).ravel()]
-                                     if v is not None else None)
-                                 for k, v in (("left", left), ("right", right))}
+            LAST_CMD["hands"] = {
+                k: ([float(x) for x in np.asarray(v).ravel()] if v is not None else None)
+                for k, v in (("left", left), ("right", right))
+            }
         except Exception:
             pass
         if left is not None:
@@ -310,19 +306,18 @@ class AgentCommander:
                 mode=int(getattr(mode, "value", mode)),
                 movement=[float(v) for v in movement],
                 facing=[float(v) for v in facing],
-                speed=float(speed), height=float(height))
+                speed=float(speed),
+                height=float(height),
+            )
         except Exception:
             pass
         self.manager_state(sm)
         if self.heading_offset:
             c, s = np.cos(-self.heading_offset), np.sin(-self.heading_offset)
-            facing = (c * facing[0] - s * facing[1],
-                      s * facing[0] + c * facing[1], facing[2])
-            movement = (c * movement[0] - s * movement[1],
-                        s * movement[0] + c * movement[1], movement[2])
+            facing = (c * facing[0] - s * facing[1], s * facing[0] + c * facing[1], facing[2])
+            movement = (c * movement[0] - s * movement[1], s * movement[0] + c * movement[1], movement[2])
         kw = {}
-        if (sm == StreamMode.PLANNER_FROZEN_UPPER_BODY
-                and self.upper_body is not None):
+        if sm == StreamMode.PLANNER_FROZEN_UPPER_BODY and self.upper_body is not None:
             # Mirror the pico manager (pico_manager_thread_server.py:1832-38):
             # frozen mode carries explicit upper-body joint targets and no
             # VR fields.
@@ -331,8 +326,7 @@ class AgentCommander:
                 kw["upper_body_velocity"] = self.upper_body_vel.tolist()
         else:
             vr_pos, vr_quat = self._vr_3pt()
-            kw.update(vr_3pt_position=vr_pos, vr_3pt_orientation=vr_quat,
-                      vr_3pt_compliance=list(compliance))
+            kw.update(vr_3pt_position=vr_pos, vr_3pt_orientation=vr_quat, vr_3pt_compliance=list(compliance))
         self.sonic.send(
             build_planner_message(
                 int(mode),
@@ -365,9 +359,9 @@ class AgentCommander:
     def exit_streamed(self) -> None:
         self.command(start=True, stop=False, planner=True)
 
-    def pose_chunk(self, joint_pos_isaac: np.ndarray, root_quat_wxyz,
-                   frame_index_start: int, left_hand=None,
-                   right_hand=None) -> None:
+    def pose_chunk(
+        self, joint_pos_isaac: np.ndarray, root_quat_wxyz, frame_index_start: int, left_hand=None, right_hand=None
+    ) -> None:
         """One `pose` message: an [N,29] IsaacLab-order joint chunk.
 
         Mirrors pico_manager_thread_server.py:1510-1542 (protocol v1: only
@@ -385,8 +379,7 @@ class AgentCommander:
             "joint_pos": jp,
             "joint_vel": np.zeros((n, 29), dtype=np.float32),
             "body_quat": quat.reshape(n, 1, 4),
-            "frame_index": np.arange(
-                frame_index_start, frame_index_start + n, dtype=np.int64),
+            "frame_index": np.arange(frame_index_start, frame_index_start + n, dtype=np.int64),
         }
         if left_hand is not None:
             data["left_hand_joints"] = np.asarray(left_hand, dtype=np.float32)
@@ -394,8 +387,9 @@ class AgentCommander:
             data["right_hand_joints"] = np.asarray(right_hand, dtype=np.float32)
         self.sonic.send(pack_pose_message(data, topic="pose", version=1))
 
-    def token_frame(self, token, right_hand=None, left_hand=None,
-                    frame_index: int | None = None, trace_source=None) -> None:
+    def token_frame(
+        self, token, right_hand=None, left_hand=None, frame_index: int | None = None, trace_source=None
+    ) -> None:
         """One protocol-v4 `pose` message: a SONIC latent, no motion data.
 
         This is the interface a VLA deploys through. v4 is token-only

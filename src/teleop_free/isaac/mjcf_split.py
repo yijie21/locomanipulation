@@ -46,16 +46,16 @@ def split_multi_mesh_bodies(src: str, dst: str, log=print) -> str:
     pos = 0
     # Walk bodies by their opening tags; a body's own geoms are the ones before
     # its first nested <body.
-    for m in re.finditer(r'<body\b[^>]*>', xml):
+    for m in re.finditer(r"<body\b[^>]*>", xml):
         pass
     # Simpler and safe: operate per body block delimited by consecutive <body>
-    starts = [m.start() for m in re.finditer(r'<body\b', xml)] + [len(xml)]
-    out.append(xml[:starts[0]])
+    starts = [m.start() for m in re.finditer(r"<body\b", xml)] + [len(xml)]
+    out.append(xml[: starts[0]])
     for i in range(len(starts) - 1):
-        blk = xml[starts[i]:starts[i + 1]]
+        blk = xml[starts[i] : starts[i + 1]]
         head_end = blk.find(">") + 1
         head, body = blk[:head_end], blk[head_end:]
-        geoms = [g for g in re.finditer(r'<geom\b[^>]*/?>', body)]
+        geoms = [g for g in re.finditer(r"<geom\b[^>]*/?>", body)]
         vis = [g for g in geoms if VISUAL in g.group(0) and 'mesh="' in g.group(0)]
         if len(vis) < 2:
             out.append(blk)
@@ -73,9 +73,7 @@ def split_multi_mesh_bodies(src: str, dst: str, log=print) -> str:
             inner = re.sub(r'\spos="[^"]*"', "", tag)
             inner = re.sub(r'\squat="[^"]*"', "", inner)
             q = f' quat="{gquat}"' if gquat else ""
-            extra.append(
-                f'\n<body name="{parent}_{mesh}_vis" pos="{gpos}"{q}>'
-                f'{inner}</body>')
+            extra.append(f'\n<body name="{parent}_{mesh}_vis" pos="{gpos}"{q}>{inner}</body>')
             newbody = newbody.replace(tag, "", 1)
             moved += 1
         # insert the new child bodies just before this block's own closing tail
@@ -90,27 +88,28 @@ def split_multi_mesh_bodies(src: str, dst: str, log=print) -> str:
     # written anywhere else loses its assets. Absolutise meshdir (adding a
     # compiler tag if there is none) rather than copying a few hundred MB.
     src_dir = os.path.dirname(os.path.abspath(src))
-    mc = re.search(r'<compiler\b[^>]*>', text)
+    mc = re.search(r"<compiler\b[^>]*>", text)
     if mc:
         tag = mc.group(0)
         md = _attr(tag, "meshdir") or "."
-        newtag = (re.sub(r'meshdir="[^"]*"',
-                         f'meshdir="{os.path.join(src_dir, md)}"', tag)
-                  if 'meshdir="' in tag else
-                  tag[:-1] + f' meshdir="{src_dir}"' + tag[-1:])
+        newtag = (
+            re.sub(r'meshdir="[^"]*"', f'meshdir="{os.path.join(src_dir, md)}"', tag)
+            if 'meshdir="' in tag
+            else tag[:-1] + f' meshdir="{src_dir}"' + tag[-1:]
+        )
         text = text.replace(tag, newtag, 1)
     else:
-        text = text.replace("<mujoco", f'<mujoco', 1)
+        text = text.replace("<mujoco", "<mujoco", 1)
         k = text.find(">") + 1
         text = text[:k] + f'\n<compiler meshdir="{src_dir}"/>' + text[k:]
     os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
     with open(dst, "w") as f:
         f.write(text)
-    log(f"render MJCF: moved {moved} extra visual geoms into their own bodies "
-        f"-> {dst}")
+    log(f"render MJCF: moved {moved} extra visual geoms into their own bodies -> {dst}")
     return dst
 
 
 if __name__ == "__main__":
     import sys
+
     split_multi_mesh_bodies(sys.argv[1], sys.argv[2])

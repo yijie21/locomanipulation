@@ -48,20 +48,17 @@ def _quad(v: np.ndarray) -> np.ndarray:
     v = np.atleast_2d(np.asarray(v, dtype=float))
     x, y, z = v[:, 0], v[:, 1], v[:, 2]
 
-    return np.stack([x, y, z, x * x, y * y, z * z, x * y, x * z, y * z,
-                     np.ones(len(v))], axis=1)
+    return np.stack([x, y, z, x * x, y * y, z * z, x * y, x * z, y * z, np.ones(len(v))], axis=1)
 
 
 def _load():
     global _WG, _WF
     if _WG is None:
         if not os.path.exists(MAP_PATH):
-            raise FileNotFoundError(
-                f"{MAP_PATH} missing — run teleop_free/diag_map.py")
+            raise FileNotFoundError(f"{MAP_PATH} missing — run teleop_free/diag_map.py")
         d = np.load(MAP_PATH)
         if "Wg" not in d:
-            raise KeyError(f"{MAP_PATH} predates the quadratic fit — re-run "
-                           f"teleop_free/diag_map.py")
+            raise KeyError(f"{MAP_PATH} predates the quadratic fit — re-run teleop_free/diag_map.py")
         _WG, _WF = d["Wg"], d["Wf"]
 
     return _WG, _WF
@@ -79,17 +76,18 @@ def available() -> bool:
 def _jacobian(c: np.ndarray, wf: np.ndarray) -> np.ndarray:
     """d(palm)/d(command) for the quadratic forward model."""
     x, y, z = c
-    d = np.array([
-        [1.0, 0.0, 0.0, 2 * x, 0.0, 0.0, y, z, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0, 2 * y, 0.0, x, 0.0, z, 0.0],
-        [0.0, 0.0, 1.0, 0.0, 0.0, 2 * z, 0.0, x, y, 0.0],
-    ])
+    d = np.array(
+        [
+            [1.0, 0.0, 0.0, 2 * x, 0.0, 0.0, y, z, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0, 2 * y, 0.0, x, 0.0, z, 0.0],
+            [0.0, 0.0, 1.0, 0.0, 0.0, 2 * z, 0.0, x, y, 0.0],
+        ]
+    )
 
-    return (d @ wf).T                 # rows: palm axes, cols: command axes
+    return (d @ wf).T  # rows: palm axes, cols: command axes
 
 
-def command_for(palm_wanted, box_lo=None, box_hi=None,
-                iters: int = 12) -> np.ndarray:
+def command_for(palm_wanted, box_lo=None, box_hi=None, iters: int = 12) -> np.ndarray:
     """The wrist command whose settled palm position is `palm_wanted`.
 
     Both are in the pelvis frame, which is the frame the wire format uses.

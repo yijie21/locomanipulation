@@ -40,11 +40,10 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import grasping  # noqa: E402
-from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
 import paths
+from primitives import GRASP_CENTRE_OFFSET  # noqa: E402
 
-SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
-              "scene_meta.json")
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
 # What the controller was measured to deliver, in the pelvis frame, across the
 # reach traces in outputs/logs: the palm never got past x = 0.36, and never
@@ -54,13 +53,13 @@ SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
 EFFECTIVE_X_MAX = 0.36
 EFFECTIVE_Z_MIN = -0.09
 
-ARM_LINKS = ("shoulder", "elbow", "wrist")     # not hip / knee / ankle
+ARM_LINKS = ("shoulder", "elbow", "wrist")  # not hip / knee / ankle
 IK_STEPS = 120
 IK_RESTARTS = 5
 IK_DAMPING = 0.05
-IK_POS_TOL = 0.015                  # metres
+IK_POS_TOL = 0.015  # metres
 IK_AXIS_TOL = np.deg2rad(30.0)
-AXIS_WEIGHT = 0.25                  # palm-axis task vs position task
+AXIS_WEIGHT = 0.25  # palm-axis task vs position task
 
 
 def arm_joints(model, side: str) -> list[int]:
@@ -79,8 +78,7 @@ def arm_joints(model, side: str) -> list[int]:
     return out
 
 
-def solve_ik(model, data, palm, target_world, axis_world,
-             qadr, dofadr, lo, hi, rng):
+def solve_ik(model, data, palm, target_world, axis_world, qadr, dofadr, lo, hi, rng):
     """Damped least squares onto a point, palm +x roughly along `axis_world`.
 
     Random sampling was the first attempt and it does not work: a
@@ -118,7 +116,7 @@ def solve_ik(model, data, palm, target_world, axis_world,
             mujoco.mj_jac(model, data, jacp, jacr, grip, palm)
             j = np.vstack([jacp[:, dofadr], AXIS_WEIGHT * jacr[:, dofadr]])
             e = np.concatenate([e_pos, AXIS_WEIGHT * e_ax])
-            jjt = j @ j.T + IK_DAMPING ** 2 * np.eye(6)
+            jjt = j @ j.T + IK_DAMPING**2 * np.eye(6)
             q = np.clip(q + j.T @ np.linalg.solve(jjt, e), lo, hi)
 
     return best
@@ -141,44 +139,48 @@ def main() -> None:
     dofadr = np.array([model.jnt_dofadr[j] for j in joints])
     lo = np.array([model.jnt_range[j][0] for j in joints])
     hi = np.array([model.jnt_range[j][1] for j in joints])
-    print(f"{args.side} arm: {len(joints)} joints — "
-          + ", ".join(mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j)
-                      .replace(f"{args.side}_", "").replace("_joint", "")
-                      for j in joints))
+    print(
+        f"{args.side} arm: {len(joints)} joints — "
+        + ", ".join(
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j).replace(f"{args.side}_", "").replace("_joint", "")
+            for j in joints
+        )
+    )
 
-    palm = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY,
-                             f"{args.side}_wrist_yaw_link")
+    palm = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"{args.side}_wrist_yaw_link")
     pelvis = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
     p_pos = data.xpos[pelvis].copy()
     p_rot = data.xmat[pelvis].reshape(3, 3).copy()
 
     def query(local_pt, local_axis, effective: bool) -> bool:
         """Ask the arm for a point expressed in the pelvis frame."""
-        if effective and (local_pt[0] > EFFECTIVE_X_MAX
-                          or local_pt[2] < EFFECTIVE_Z_MIN):
+        if effective and (local_pt[0] > EFFECTIVE_X_MAX or local_pt[2] < EFFECTIVE_Z_MIN):
             return False
-        ok, _, _ = solve_ik(model, data, palm, p_pos + p_rot @ local_pt,
-                            p_rot @ local_axis, qadr, dofadr, lo, hi, rng)
+        ok, _, _ = solve_ik(model, data, palm, p_pos + p_rot @ local_pt, p_rot @ local_axis, qadr, dofadr, lo, hi, rng)
 
         return bool(ok)
 
     obj = meta["objects"][meta["target_object"]]
     surf = meta["surfaces"][obj["surface"]]
     pelvis_z = 0.78
-    gz = (surf["top"] + grasping.FINGER_DROP + grasping.CLEARANCE_MARGIN
-          + grasping.GRIP_LIFT)
-    print(f"\ntarget {meta['target_object']} on a {surf['top']:.2f} m surface; "
-          f"grip point {gz:.3f} m ({(gz - pelvis_z) * 100:+.0f} cm relative to "
-          f"a {pelvis_z:.2f} m pelvis), pregrasp "
-          f"{grasping.PREGRASP_GAP * 100:.0f} cm back")
+    gz = surf["top"] + grasping.FINGER_DROP + grasping.CLEARANCE_MARGIN + grasping.GRIP_LIFT
+    print(
+        f"\ntarget {meta['target_object']} on a {surf['top']:.2f} m surface; "
+        f"grip point {gz:.3f} m ({(gz - pelvis_z) * 100:+.0f} cm relative to "
+        f"a {pelvis_z:.2f} m pelvis), pregrasp "
+        f"{grasping.PREGRASP_GAP * 100:.0f} cm back"
+    )
 
     dists = np.arange(0.32, 0.62, 0.04)
     bearings = np.deg2rad(np.arange(-40, 41, 10))
-    for label, effective in (("kinematic (arm limits only)", False),
-                             ("effective (what the controller delivers)", True)):
+    for label, effective in (
+        ("kinematic (arm limits only)", False),
+        ("effective (what the controller delivers)", True),
+    ):
         print(f"\n--- {label} ---")
-        print("        " + "".join(f"{np.rad2deg(b):>6.0f}" for b in bearings)
-              + "    <- object bearing off the nose, deg")
+        print(
+            "        " + "".join(f"{np.rad2deg(b):>6.0f}" for b in bearings) + "    <- object bearing off the nose, deg"
+        )
         any_ok = False
         for d in dists:
             row = []
@@ -189,20 +191,19 @@ def main() -> None:
                 # fixed guess.
                 grip = np.array([d * np.cos(b), d * np.sin(b), gz - pelvis_z])
                 ah = np.array([np.cos(b), np.sin(b), 0.0])
-                pre = grip - ah * (obj.get("radius", 0.02)
-                                   + grasping.PREGRASP_GAP)
+                pre = grip - ah * (obj.get("radius", 0.02) + grasping.PREGRASP_GAP)
                 g_ok = query(grip, ah, effective)
                 p_ok = query(pre, ah, effective)
-                row.append("  OK  " if (g_ok and p_ok) else
-                           "  g   " if g_ok else "   p  " if p_ok else "  --  ")
+                row.append("  OK  " if (g_ok and p_ok) else "  g   " if g_ok else "   p  " if p_ok else "  --  ")
                 any_ok |= g_ok and p_ok
             print(f"  {d:.2f}m" + "".join(row))
-        print("        OK = both reachable    g = grip only    "
-              "p = pregrasp only    -- = neither")
+        print("        OK = both reachable    g = grip only    p = pregrasp only    -- = neither")
         if not any_ok:
-            print("        >>> NO standing pose satisfies both. Horizontal "
-                  "straight-in cannot work as specified; change the shape of "
-                  "the approach, not the numbers.")
+            print(
+                "        >>> NO standing pose satisfies both. Horizontal "
+                "straight-in cannot work as specified; change the shape of "
+                "the approach, not the numbers."
+            )
 
 
 if __name__ == "__main__":

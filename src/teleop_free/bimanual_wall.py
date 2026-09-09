@@ -18,6 +18,7 @@ Phases (each observable, no integrators):
   D lift     10 cm with bar-end levelling, 2 s hold; success = rise >= 6 cm,
              both hands touching, tilt < TILT_OK_DEG
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,16 +31,34 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from agent_server import HAND_OPEN, LocomotionMode, StreamMode  # noqa: E402
-from primitives import DT, Primitives, upper_body_from_mj, wrap  # noqa: E402
-from privileged_pub import EpisodeControlClient  # noqa: E402
 import paths  # noqa: E402
 import upper_ref  # noqa: E402
+from agent_server import HAND_OPEN, LocomotionMode, StreamMode  # noqa: E402
+from bimanual_carry import (
+    APPR_SPEED,
+    CLOSE_RAMP,
+    EDGE_FLOOR,
+    HOLD_S,
+    LEVEL_CAP,
+    LEVEL_GAIN,
+    LEVEL_LP,
+    LIFT_HEIGHT,
+    LIFT_MIN,
+    OBJ,
+    OVERDRIVE,
+    OVERDRIVE_CAP,
+    STAND_TOL,
+    WAYPOINT_BACK,
+    WAYPOINT_TOL,
+    BimanualArms,
+    crate_tilt_deg,
+    hand_txt,
+    rot_y,
+    rot_z,  # noqa: E402
+)
+from primitives import DT, Primitives, upper_body_from_mj, wrap  # noqa: E402
+from privileged_pub import EpisodeControlClient  # noqa: E402
 from stream_reach import reanchor  # noqa: E402
-from bimanual_carry import (OBJ, BimanualArms, hand_txt, crate_tilt_deg, rot_y, rot_z,  # noqa: E402
-                            APPR_SPEED, EDGE_FLOOR, STAND_TOL, WAYPOINT_BACK, WAYPOINT_TOL,
-                            CLOSE_RAMP, HOLD_S, LIFT_HEIGHT, LIFT_MIN, LEVEL_GAIN, LEVEL_CAP, LEVEL_LP,
-                            OVERDRIVE, OVERDRIVE_CAP)
 
 # --- crate geometry (assets/crates/blue_crate/model.xml, 2/3 crate) ----------
 # Two grasp features, chosen with WALL_FEATURE:
@@ -55,50 +74,50 @@ if FEATURE == "wall":
     DEPTH_AXIS, WALL_AXIS = 0, 1
     WALL_Y, NEAR_X = 0.1267, 0.2093
     CRATE_YAW_DELTA = -np.pi / 2
-    GRIP_BELOW = 0.080    # descend floor: pad centre this far below the top (full wall)
+    GRIP_BELOW = 0.080  # descend floor: pad centre this far below the top (full wall)
 else:
     DEPTH_AXIS, WALL_AXIS = 1, 0
     WALL_Y, NEAR_X = 0.1933, 0.1347
     CRATE_YAW_DELTA = 0.0
-    GRIP_BELOW = 0.050    # the bar is 30 mm tall: pad centre 5 cm under its top still
-                          # spans it (pad +-33 mm) and clears the low wall 65 mm down
-TOP_Z = 0.085             # wall / bar top above the crate body origin
+    GRIP_BELOW = 0.050  # the bar is 30 mm tall: pad centre 5 cm under its top still
+    # spans it (pad +-33 mm) and clears the low wall 65 mm down
+TOP_Z = 0.085  # wall / bar top above the crate body origin
 # --- grasp design (outputs/reach/wall_grasp_sweep.txt) -----------------------
 PALM_PITCH_DEG = 60
-REACH_SUM = 0.38          # stand-off + depth budget; IK limit 0.40, 2 cm margin
-DEPTH_MIN, DEPTH_MAX = 0.06, 0.11   # 0.04 puts the finger root on the near rail; the hands land
-                                    # +2.5 cm deeper than the target (rail pilot 13), so 0.11 puts the
-                                    # grasp line on the crate's centre line (0.135); deeper than the
-                                    # crate's centre line (0.135) the crate pitches on the lift
-                                    # (rail pilot 11: every 0.20 m grasp tilted > 20 deg, 0.09-0.15 gave 2-13)
-HOVER_ABOVE = 0.06        # pad centre above the wall top at the hover
+REACH_SUM = 0.38  # stand-off + depth budget; IK limit 0.40, 2 cm margin
+DEPTH_MIN, DEPTH_MAX = 0.06, 0.11  # 0.04 puts the finger root on the near rail; the hands land
+# +2.5 cm deeper than the target (rail pilot 13), so 0.11 puts the
+# grasp line on the crate's centre line (0.135); deeper than the
+# crate's centre line (0.135) the crate pitches on the lift
+# (rail pilot 11: every 0.20 m grasp tilted > 20 deg, 0.09-0.15 gave 2-13)
+HOVER_ABOVE = 0.06  # pad centre above the wall top at the hover
 # (GRIP_BELOW per feature above; 0.03 was eaten whole by the policy's 3-5 cm height bias)
-SEAT_BELOW = 0.015        # seated when the pad centre is at least this far below the top
-ACROSS_TOL = 0.015        # wall centred between the pads (47 mm jaw, 16 mm wall)
+SEAT_BELOW = 0.015  # seated when the pad centre is at least this far below the top
+ACROSS_TOL = 0.015  # wall centred between the pads (47 mm jaw, 16 mm wall)
 # Feed-forward for the policy's systematic 2-3 cm outward hand bias (wall pilot 9:
 # 14/20 stands ended with both jaws outside their walls, L +13..+26 / R -20..-36 mm,
 # the inner pad landing on the wall top). Hover/descend targets sit this far INSIDE
 # the wall centre plane; errors are still measured against the true wall.
-ACROSS_BIAS = 0.012       # 0.020 overshot: hands 0.6-1.4 cm inside the bar (rail pilot 11)
+ACROSS_BIAS = 0.012  # 0.020 overshot: hands 0.6-1.4 cm inside the bar (rail pilot 11)
 # The policy holds both hands 3-4 cm OUTSIDE their walls (wall pilots 2/3: across
 # +40/-30 mm, inner finger riding the wall top). The across axis gets its own
 # overdrive; along and height keep bimanual_carry's 0.7 / 4 cm.
 ACROSS_OD, ACROSS_OD_CAP = 1.0, 0.04
-LEAD_CAP = 0.06           # the commanded point never runs further than this ahead of the
-                          # measured one (bimanual_carry's cap): an unbounded jump to the
-                          # hover point swung the hands +-10 cm (wall pilot 4)
-DESCEND_SPEED = 0.04      # m/s reference descent
+LEAD_CAP = 0.06  # the commanded point never runs further than this ahead of the
+# measured one (bimanual_carry's cap): an unbounded jump to the
+# hover point swung the hands +-10 cm (wall pilot 4)
+DESCEND_SPEED = 0.04  # m/s reference descent
 HOVER_S, HOVER_TOL = 2.5, 0.03  # cap only: the hover ends when the hands stop moving (was a 5 s open-loop wait)
-SHOULDER_PITCH_MIN_DEG = -80.0   # hover/grasp solutions sit at -40..-55
+SHOULDER_PITCH_MIN_DEG = -80.0  # hover/grasp solutions sit at -40..-55
 DESCEND_TIMEOUT = 12.0
-FLOOR_DWELL = 0.5         # at the floor without seating: close anyway after this (was 2.0)
+FLOOR_DWELL = 0.5  # at the floor without seating: close anyway after this (was 2.0)
 # Contact close: the descent reference keeps going down but the measured
 # height stops -- the hand is resting on the bar. Visible in the image and in
 # proprioception, unlike the millimetre seat test, which stays as a secondary.
 CONTACT_STALL_S = 0.3
 CONTACT_STALL_MM = 3.0
-SEAT_DWELL = 0.3          # both seated continuously this long before the close (full-episode
-                          # pilot 17 r0: a one-tick seat during a 3 cm/0.5 s overshoot closed on air)
+SEAT_DWELL = 0.3  # both seated continuously this long before the close (full-episode
+# pilot 17 r0: a one-tick seat during a 3 cm/0.5 s overshoot closed on air)
 TILT_OK_DEG = 20.0
 # Pitch follow on the lift: the rectangular bar is clamped rigidly in the flat
 # jaw, so the crate pitches with the hand (rail pilot 14: 4 -> 14 -> 20 deg as it
@@ -108,19 +127,19 @@ PITCH_FOLLOW_GAIN = 1.5
 PITCH_FOLLOW_CAP_DEG = 25.0
 PITCH_FOLLOW_LP = 0.2
 # --- ready-stand distribution (walk-in scatter measured in pilots 34-37) ------
-STAND_OFF_RANGE = (0.14, 0.28)     # pelvis to the crate's near face
+STAND_OFF_RANGE = (0.14, 0.28)  # pelvis to the crate's near face
 STAND_LAT_RANGE = (-0.05, 0.05)
 STAND_YAW_DEG = 5.0
 STAND_YAW_MAX_DEG = 10.0  # fail fast: nothing downstream survives a bigger heading error
 CRATE_DY_RANGE = (-0.08, 0.08)
-SPAWN_BACK = 0.45         # reset this far behind the stand, teleport in with the arms up
+SPAWN_BACK = 0.45  # reset this far behind the stand, teleport in with the arms up
 # --- walk-in (WALL_WALK=1): bimanual_carry's approach in front of this grasp ---
 WALK = os.environ.get("WALL_WALK", "0") == "1"
-STAND_OFF_WALK = 0.24     # 0.21 (pilots 18/19) parked 0.30-0.39 with yaw +-10 deg; back to pilot 17's value for the A/B
-WALK_LAT_BIAS = -0.04     # the gait parks ~4 cm left of its target (pilots 36/37)
+STAND_OFF_WALK = 0.24  # 0.21 (pilots 18/19) parked 0.30-0.39 with yaw +-10 deg; back to pilot 17's value for the A/B
+WALK_LAT_BIAS = -0.04  # the gait parks ~4 cm left of its target (pilots 36/37)
 WALK_SPAWN_BACK = (1.0, 1.3)
 WALK_SPAWN_LAT = 0.15
-WALK_STAND_OFF_BAND = (0.13, 0.32)   # depth = 0.38 - stand-off must stay in [0.06, 0.25]
+WALK_STAND_OFF_BAND = (0.13, 0.32)  # depth = 0.38 - stand-off must stay in [0.06, 0.25]
 WALK_LAT_TOL = 0.08
 # Carry pose while walking: pilot 18 traces replayed in MuJoCo showed the open
 # jaws hitting the near wall's top in 20/20 rounds at 2.5-4 s, pelvis still
@@ -150,10 +169,10 @@ WALK_SIDE_LEFT_DEG = (10.0, 10.0, 0.0, 60.0, 0.0, 30.0, 0.0)
 # with a small posture prior toward the hover solution so the wrist does not
 # drift into a twisted branch (arm_ik posture term).
 REACH_S = 2.5
-REACH_UP = 0.25           # first control point: this far above the side pad ...
-REACH_OUT = 0.15          # ... and this far outward (elbows out)
-REACH_OVER = 0.10         # second control point: this far above the hover point
-REACH_PITCH0_DEG = 90.0   # palm pitch at the start (fingers hanging), blends to PALM_PITCH_DEG
+REACH_UP = 0.25  # first control point: this far above the side pad ...
+REACH_OUT = 0.15  # ... and this far outward (elbows out)
+REACH_OVER = 0.10  # second control point: this far above the hover point
+REACH_PITCH0_DEG = 90.0  # palm pitch at the start (fingers hanging), blends to PALM_PITCH_DEG
 REACH_POSTURE_W = 0.02
 # Re-approach instead of rejecting an out-of-band stand: back up to the
 # waypoint and walk in again, so the data holds "stopped wrong -> corrected"
@@ -181,7 +200,8 @@ def wall_point(s, side, depth, dz, inset=0.0):
     the top, `inset` toward the crate centre (feed-forward for the outward hand bias)."""
     c, n, y_hat, psi, sign, R = wall_frame(s)
     # which local wall is the robot's left
-    e_wall = np.zeros(3); e_wall[WALL_AXIS] = WALL_Y
+    e_wall = np.zeros(3)
+    e_wall[WALL_AXIS] = WALL_Y
     yl = WALL_Y if np.dot((R @ e_wall)[:2], y_hat) > 0 else -WALL_Y
     if side == "right":
         yl = -yl
@@ -201,8 +221,9 @@ def errs_of(s, arms, side, depth):
     return np.array([float(e[:2] @ n), float(e[:2] @ y_hat), float(e[2])])
 
 
-def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
-              rng: np.random.Generator, log, video_label: str) -> dict:
+def run_round(
+    p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int, rng: np.random.Generator, log, video_label: str
+) -> dict:
     m = {"round": rnd, "ok": False, "why": ""}
     surf = meta["surfaces"]["A"]
     hx = float(surf["flat_half_extent"][0])
@@ -236,8 +257,10 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
         m.update(spawn_back=spawn_back, spawn_lat=spawn_lat, spawn_yaw_deg=float(np.degrees(yaw)))
     else:
         spawn_xy = stand_xy - np.array([SPAWN_BACK, 0.0])
-    reset.reset(objects={OBJ: {"dxy": [float(crate_x - crate0[0]), crate_dy], "yaw": crate_yaw0 + CRATE_YAW_DELTA}},
-                robot={"dxy": [float(v) for v in (spawn_xy - robot_nom)], "yaw": yaw})
+    reset.reset(
+        objects={OBJ: {"dxy": [float(crate_x - crate0[0]), crate_dy], "yaw": crate_yaw0 + CRATE_YAW_DELTA}},
+        robot={"dxy": [float(v) for v in (spawn_xy - robot_nom)], "yaw": yaw},
+    )
     time.sleep(0.3)
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
     p.cmd.upper_body = None
@@ -265,7 +288,7 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
     ramp = upper_ref.UpperRamp(p.cmd, q_free)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     arms = BimanualArms(p)
-    for sd in ("left", "right"):                 # no overhead branch (wall pilot 5: +65 cm)
+    for sd in ("left", "right"):  # no overhead branch (wall pilot 5: +65 cm)
         a = ARM_IDX[sd]
         arms.arm.ik.lo[a[0]] = np.radians(SHOULDER_PITCH_MIN_DEG)
 
@@ -274,8 +297,11 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
         rot = {sd: rot_z(psi) @ rot_y(np.radians(pitch_deg)) for sd in ("left", "right")}
         tg = {sd: wall_point(s, sd, depth_, dz, ACROSS_BIAS) for sd in ("left", "right")}
         s_stand = dict(s)
-        s_stand["pelvis"] = dict(s["pelvis"], pos=[float(stand[0]), float(stand[1]), float(s["pelvis"]["pos"][2])],
-                                 quat=[float(np.cos(psi / 2)), 0.0, 0.0, float(np.sin(psi / 2))])
+        s_stand["pelvis"] = dict(
+            s["pelvis"],
+            pos=[float(stand[0]), float(stand[1]), float(s["pelvis"]["pos"][2])],
+            quat=[float(np.cos(psi / 2)), 0.0, 0.0, float(np.sin(psi / 2))],
+        )
         arms.arm.q = np.zeros(29)
         return arms.solve(s_stand, tg, rot, iters=200)
 
@@ -328,8 +354,10 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
                     to_way = way_xy - pel
                     if float(np.dot(to_way, n)) <= 0.03 or float(np.linalg.norm(to_way)) < WAYPOINT_TOL:
                         leg = "in"
-                        log(f"[walk] waypoint reached: lateral {float(np.dot(pel - stand_xy, y_hat)) * 100:+.1f} cm, "
-                            f"{along * 100:.0f} cm to the stand")
+                        log(
+                            f"[walk] waypoint reached: lateral {float(np.dot(pel - stand_xy, y_hat)) * 100:+.1f} cm, "
+                            f"{along * 100:.0f} cm to the stand"
+                        )
                 edge_clear = edge_x - float(pel[0])
                 if along <= 0.04 or dist < STAND_TOL:
                     why = "at the stand"
@@ -351,10 +379,16 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
                     mv = to_stand / max(dist, 1e-3)
                     b = psi
                 if int((time.time() - t0) / 2.0) != int((time.time() - t0 - DT) / 2.0):
-                    log(f"[walk] t={time.time() - t0:4.1f} pelvis {np.round(pel, 2).tolist()} dist {dist:.2f} along {along:+.2f} "
-                        f"edge {edge_clear:.2f} speed {speed} facing_err {np.degrees(wrap(b - p.pelvis_yaw(s))):+.0f} deg  {hand_txt(p, s)}")
-                p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=(float(np.cos(b)), float(np.sin(b)), 0.0),
-                            movement=(float(mv[0]), float(mv[1]), 0.0), speed=speed)
+                    log(
+                        f"[walk] t={time.time() - t0:4.1f} pelvis {np.round(pel, 2).tolist()} dist {dist:.2f} along {along:+.2f} "
+                        f"edge {edge_clear:.2f} speed {speed} facing_err {np.degrees(wrap(b - p.pelvis_yaw(s))):+.0f} deg  {hand_txt(p, s)}"
+                    )
+                p.cmd.frame(
+                    mode=LocomotionMode.SLOW_WALK,
+                    facing=(float(np.cos(b)), float(np.sin(b)), 0.0),
+                    movement=(float(mv[0]), float(mv[1]), 0.0),
+                    speed=speed,
+                )
                 time.sleep(DT)
             m["approach_exit"] = why
             if why == "timeout":
@@ -383,7 +417,9 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
             m["stand_attempts"].append(dict(stand_off=so_a, lateral=lat_a, yaw_deg=yaw_a, fault=fault))
             if not fault:
                 break
-            log(f"[stand] attempt {attempt + 1}: {fault} (stand-off {so_a:.3f}, lateral {lat_a:+.3f}, yaw {yaw_a:+.1f})")
+            log(
+                f"[stand] attempt {attempt + 1}: {fault} (stand-off {so_a:.3f}, lateral {lat_a:+.3f}, yaw {yaw_a:+.1f})"
+            )
             if attempt == WALK_ATTEMPTS - 1:
                 m["why"] = f"[stand] {fault} after {WALK_ATTEMPTS} walk-ins"
                 return m
@@ -398,19 +434,25 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
                 if float(np.dot(stand_xy - pel, n)) >= WAYPOINT_BACK:
                     break
                 ramp.push(q_walk17)
-                p.cmd.frame(mode=LocomotionMode.SLOW_WALK, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0),
-                            movement=(float(-n[0]), float(-n[1]), 0.0), speed=APPR_SPEED[2])
+                p.cmd.frame(
+                    mode=LocomotionMode.SLOW_WALK,
+                    facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0),
+                    movement=(float(-n[0]), float(-n[1]), 0.0),
+                    speed=APPR_SPEED[2],
+                )
                 time.sleep(DT)
-            log(f"[walk] backed up to {float(np.dot(stand_xy - np.asarray(p.pelvis_xy(p.obs())), n)):.2f} m for attempt {attempt + 2}")
+            log(
+                f"[walk] backed up to {float(np.dot(stand_xy - np.asarray(p.pelvis_xy(p.obs())), n)):.2f} m for attempt {attempt + 2}"
+            )
         m["stand_attempt_n"] = len(m["stand_attempts"])
     else:
-        depth = float(np.clip(REACH_SUM - so, DEPTH_MIN, DEPTH_MAX))     # from the sampled stand; re-measured below
+        depth = float(np.clip(REACH_SUM - so, DEPTH_MIN, DEPTH_MAX))  # from the sampled stand; re-measured below
         q_hover = solve_for(stand_xy, HOVER_ABOVE, PALM_PITCH_DEG, depth)
         q_h17 = upper_body_from_mj(q_hover)
         n_ramp = int(2.0 / DT)
         for k in range(1, n_ramp + 1):
             u = k / n_ramp
-            ramp.push(q_free + (3 * u * u - 2 * u ** 3) * (q_h17 - q_free))
+            ramp.push(q_free + (3 * u * u - 2 * u**3) * (q_h17 - q_free))
             p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
             time.sleep(DT)
         ramp.settle()
@@ -437,7 +479,9 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
     yaw_err = float(np.degrees(wrap(psi - p.pelvis_yaw(s))))
     depth = float(np.clip(REACH_SUM - so_meas, DEPTH_MIN, DEPTH_MAX))
     m.update(stand_off_meas=so_meas, stand_lat_meas=lat_meas, yaw_err_deg=yaw_err, depth=depth)
-    log(f"[stand] stand-off {so_meas:.3f} m, lateral {lat_meas:+.3f} m, yaw {yaw_err:+.1f} deg -> depth {depth:.2f}  {hand_txt(p, s)}")
+    log(
+        f"[stand] stand-off {so_meas:.3f} m, lateral {lat_meas:+.3f} m, yaw {yaw_err:+.1f} deg -> depth {depth:.2f}  {hand_txt(p, s)}"
+    )
     if abs(yaw_err) > STAND_YAW_MAX_DEG:
         m["why"] = f"[stand] yaw residual {yaw_err:+.1f} deg after the {'walk-in' if WALK else 'teleport'}"
         return m
@@ -446,8 +490,10 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
     for sd in ("left", "right"):
         pos, Rk = arms.arm.ik.fk(q_hover, sd)
         g = np.asarray(s["pelvis"]["pos"]) + Primitives._rot(s["pelvis"]["quat"]) @ (pos + Rk @ arms_offset())
-        log(f"[hover] {sd}: ik residual {np.linalg.norm(g - wall_point(s, sd, depth, HOVER_ABOVE, ACROSS_BIAS)) * 100:.1f} cm, "
-            f"arm q {np.round(np.degrees(q_hover[ARM_IDX[sd]]), 0).tolist()}")
+        log(
+            f"[hover] {sd}: ik residual {np.linalg.norm(g - wall_point(s, sd, depth, HOVER_ABOVE, ACROSS_BIAS)) * 100:.1f} cm, "
+            f"arm q {np.round(np.degrees(q_hover[ARM_IDX[sd]]), 0).tolist()}"
+        )
     rot_w = {sd: rot_z(psi) @ rot_y(np.radians(PALM_PITCH_DEG)) for sd in ("left", "right")}
     if not WALK:
         # teleport path keeps the old joint ramp onto the hover pose
@@ -456,7 +502,7 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
         n_ramp = int(1.0 / DT)
         for k in range(1, n_ramp + 1):
             u = k / n_ramp
-            ramp.push(q_from + (3 * u * u - 2 * u ** 3) * (q_h17 - q_from))
+            ramp.push(q_from + (3 * u * u - 2 * u**3) * (q_h17 - q_from))
             p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
             time.sleep(DT)
         ramp.settle()
@@ -484,16 +530,20 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
                 m["why"] = "[reach] fell"
                 arms.stop()
                 return m
-            tg = {sd: (1 - u) ** 3 * p0[sd] + 3 * (1 - u) ** 2 * u * p1[sd] + 3 * (1 - u) * u * u * p2[sd] + u ** 3 * p3[sd]
-                  for sd in p0}
+            tg = {
+                sd: (1 - u) ** 3 * p0[sd] + 3 * (1 - u) ** 2 * u * p1[sd] + 3 * (1 - u) * u * u * p2[sd] + u**3 * p3[sd]
+                for sd in p0
+            }
             pitch = REACH_PITCH0_DEG + (PALM_PITCH_DEG - REACH_PITCH0_DEG) * u
             rot_u = {sd: rot_z(psi) @ rot_y(np.radians(pitch)) for sd in ("left", "right")}
             arms.push(arms.solve(s, tg, rot_u, iters=60, posture=q_hover, posture_weight=REACH_POSTURE_W))
             if time.time() - last_log > 0.5:
                 last_log = time.time()
                 res = {sd: float(np.linalg.norm(arms.grip_point(s, sd)[0] - tg[sd])) for sd in tg}
-                log(f"[reach] u={u:.2f} lag L {res['left'] * 100:.1f} R {res['right'] * 100:.1f} cm  "
-                    f"arm q L {np.round(np.degrees(arms.arm.q[ARM_IDX['left']]), 0).tolist()}")
+                log(
+                    f"[reach] u={u:.2f} lag L {res['left'] * 100:.1f} R {res['right'] * 100:.1f} cm  "
+                    f"arm q L {np.round(np.degrees(arms.arm.q[ARM_IDX['left']]), 0).tolist()}"
+                )
             time.sleep(DT)
         m["reach_s"] = round(time.time() - t0, 1)
 
@@ -505,7 +555,7 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
             g, _ = arms.grip_point(s, sd)
             e = ref[sd] - g
             ld = float(np.linalg.norm(e))
-            if ld > LEAD_CAP:                        # rate-limit: lead capped, not the target
+            if ld > LEAD_CAP:  # rate-limit: lead capped, not the target
                 e = e * (LEAD_CAP / ld)
             e_across = float(e @ yh)
             corr = np.clip(OVERDRIVE * (e - e_across * yh), -OVERDRIVE_CAP, OVERDRIVE_CAP)
@@ -526,8 +576,10 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
             arms.push(q_hover)
             time.sleep(DT)
     res = {sd: float(np.linalg.norm(arms.grip_point(s, sd)[0] - ref[sd])) for sd in ref}
-    log(f"[hover] residual L {res['left'] * 100:.1f} R {res['right'] * 100:.1f} cm "
-        f"errs L {np.round(errs_of(s, arms, 'left', depth) * 1000, 0).tolist()} R {np.round(errs_of(s, arms, 'right', depth) * 1000, 0).tolist()}")
+    log(
+        f"[hover] residual L {res['left'] * 100:.1f} R {res['right'] * 100:.1f} cm "
+        f"errs L {np.round(errs_of(s, arms, 'left', depth) * 1000, 0).tolist()} R {np.round(errs_of(s, arms, 'right', depth) * 1000, 0).tolist()}"
+    )
     m["hover_residual_mm"] = {sd: round(v * 1000, 1) for sd, v in res.items()}
 
     # --- B: descend until seated ----------------------------------------------
@@ -538,7 +590,7 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
     floor_since = None
     last_log = 0.0
     close_trigger = None
-    hz_hist = []                                  # (t, mean measured pad height error)
+    hz_hist = []  # (t, mean measured pad height error)
     while time.time() - t0 < DESCEND_TIMEOUT:
         s = p.obs()
         if s["fallen"]:
@@ -558,17 +610,22 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
             seated[sd] = bool(abs(e[sd][1]) <= ACROSS_TOL and e[sd][2] <= -SEAT_BELOW)
         if time.time() - last_log > 0.5:
             last_log = time.time()
-            log(f"[descend] t={time.time() - t0:.1f} ref dz {dz * 100:+.1f} cm errs L {np.round(e['left'] * 1000, 0).tolist()} "
-                f"R {np.round(e['right'] * 1000, 0).tolist()} seated {seated} touch {s['objects'][OBJ].get('touch_links')}  {hand_txt(p, s)}")
+            log(
+                f"[descend] t={time.time() - t0:.1f} ref dz {dz * 100:+.1f} cm errs L {np.round(e['left'] * 1000, 0).tolist()} "
+                f"R {np.round(e['right'] * 1000, 0).tolist()} seated {seated} touch {s['objects'][OBJ].get('touch_links')}  {hand_txt(p, s)}"
+            )
         # primary: the reference is still descending but the hands are not --
         # they are resting on the bar (contact), and across is within tolerance
         hz_hist.append((time.time(), float(np.mean([e[sd][2] for sd in e]))))
         hz_hist = [(tt, h) for tt, h in hz_hist if time.time() - tt <= CONTACT_STALL_S]
         descending = dz > -GRIP_BELOW + 1e-6
-        if (descending and hz_hist[0][0] <= time.time() - CONTACT_STALL_S + DT
-                and abs(hz_hist[-1][1] - hz_hist[0][1]) * 1000 < CONTACT_STALL_MM
-                and all(abs(e[sd][1]) <= ACROSS_TOL + 0.005 for sd in e)
-                and all(e[sd][2] <= 0.0 for sd in e)):
+        if (
+            descending
+            and hz_hist[0][0] <= time.time() - CONTACT_STALL_S + DT
+            and abs(hz_hist[-1][1] - hz_hist[0][1]) * 1000 < CONTACT_STALL_MM
+            and all(abs(e[sd][1]) <= ACROSS_TOL + 0.005 for sd in e)
+            and all(e[sd][2] <= 0.0 for sd in e)
+        ):
             close_trigger = "contact"
             break
         if seated["left"] and seated["right"]:
@@ -592,9 +649,20 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
     m["descend_s"] = round(time.time() - t0, 1)
     if DUMP_DIR:
         with open(os.path.join(DUMP_DIR, f"wall_end_round{rnd}.json"), "w") as f:
-            json.dump({"round": rnd, "joints_meas": [float(v) for v in s["joints"]], "q_cmd": [float(v) for v in arms.arm.q],
-                       "pelvis": s["pelvis"], "palms": s["palms"], "crate": s["objects"][OBJ], "depth": depth,
-                       "errs_mm": m["capture_err_mm"]}, f, indent=1)
+            json.dump(
+                {
+                    "round": rnd,
+                    "joints_meas": [float(v) for v in s["joints"]],
+                    "q_cmd": [float(v) for v in arms.arm.q],
+                    "pelvis": s["pelvis"],
+                    "palms": s["palms"],
+                    "crate": s["objects"][OBJ],
+                    "depth": depth,
+                    "errs_mm": m["capture_err_mm"],
+                },
+                f,
+                indent=1,
+            )
     if close_trigger is None:
         m["why"] = f"[descend] never seated: {m['capture_err_mm']}"
         arms.stop()
@@ -631,26 +699,33 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
         # crate pitch about the bar axis: + when the far end is low (nose down),
         # the same sense as the palm pitching its fingers down
         _, _, _, _, sgn, Rc = wall_frame(s)
-        e_depth = np.zeros(3); e_depth[DEPTH_AXIS] = sgn
+        e_depth = np.zeros(3)
+        e_depth[DEPTH_AXIS] = sgn
         d_far = Rc @ e_depth
         pitch_down = float(np.degrees(np.arcsin(np.clip(-d_far[2], -1.0, 1.0))))
         max_pitch = max(max_pitch, abs(pitch_down))
-        pitch_cmd += PITCH_FOLLOW_LP * (float(np.clip(PITCH_FOLLOW_GAIN * pitch_down, -PITCH_FOLLOW_CAP_DEG, PITCH_FOLLOW_CAP_DEG)) - pitch_cmd)
+        pitch_cmd += PITCH_FOLLOW_LP * (
+            float(np.clip(PITCH_FOLLOW_GAIN * pitch_down, -PITCH_FOLLOW_CAP_DEG, PITCH_FOLLOW_CAP_DEG)) - pitch_cmd
+        )
         rot_w = {sd: rot_z(psi) @ rot_y(np.radians(PALM_PITCH_DEG - pitch_cmd)) for sd in ("left", "right")}
         max_dz = max(max_dz, abs(dzb))
         level += LEVEL_LP * (float(np.clip(LEVEL_GAIN * dzb, -LEVEL_CAP, LEVEL_CAP)) - level)
-        z_lift = LIFT_HEIGHT * (3 * u * u - 2 * u ** 3)
-        tgt = {"left": lift_ref["left"] + np.array([0.0, 0.0, z_lift - 0.5 * level]),
-               "right": lift_ref["right"] + np.array([0.0, 0.0, z_lift + 0.5 * level])}
+        z_lift = LIFT_HEIGHT * (3 * u * u - 2 * u**3)
+        tgt = {
+            "left": lift_ref["left"] + np.array([0.0, 0.0, z_lift - 0.5 * level]),
+            "right": lift_ref["right"] + np.array([0.0, 0.0, z_lift + 0.5 * level]),
+        }
         # Open IK target on purpose: the closed-loop lift (servo_tick) capped
         # the rise at ~6.5 cm (lead cap + the policy's height bias, rail pilot
         # 15), while the open target rises 9-14 cm. The pitch follow above is
         # what keeps the crate level from a close stand.
         arms.push(arms.solve(s, tgt, rot_w))
         if k % int(round(0.5 / DT)) == 0:
-            log(f"[lift] t={k * DT:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m tilt {crate_tilt_deg(s):.1f} deg "
+            log(
+                f"[lift] t={k * DT:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m tilt {crate_tilt_deg(s):.1f} deg "
                 f"pitch_down {pitch_down:+.1f} palm {PALM_PITCH_DEG - pitch_cmd:.0f} "
-                f"wall dz {dzb * 1000:+.0f} mm level {level * 1000:+.0f} mm touch {list(s['objects'][OBJ]['touching'])}")
+                f"wall dz {dzb * 1000:+.0f} mm level {level * 1000:+.0f} mm touch {list(s['objects'][OBJ]['touching'])}"
+            )
         if crate_tilt_deg(s) > TILT_OK_DEG:
             m["why"] = f"[{'lift' if k <= nl else 'hold'}] crate tilted {crate_tilt_deg(s):.1f} deg"
             m.update(rise=float(s["objects"][OBJ]["pos"][2]) - z0, max_wall_dz=max_dz)
@@ -660,8 +735,14 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
     rise = float(s["objects"][OBJ]["pos"][2]) - z0
     tilt = crate_tilt_deg(s)
     touching = list(s["objects"][OBJ]["touching"])
-    m.update(rise=rise, tilt_deg=tilt, touching_after=touching, max_wall_dz=max_dz, max_pitch_deg=max_pitch,
-             video_s=time.time() - t_video)
+    m.update(
+        rise=rise,
+        tilt_deg=tilt,
+        touching_after=touching,
+        max_wall_dz=max_dz,
+        max_pitch_deg=max_pitch,
+        video_s=time.time() - t_video,
+    )
     if rise < LIFT_MIN:
         m["why"] = f"[lift] rose {rise * 100:.1f} cm (< {LIFT_MIN * 100:.0f})"
     elif not ("left" in touching and "right" in touching):
@@ -674,6 +755,7 @@ def run_round(p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int,
 
 def arms_offset():
     from bimanual_carry import OFFSET
+
     return OFFSET
 
 
@@ -688,8 +770,13 @@ def main() -> None:
     ap.add_argument("--label", default="wall")
     args = ap.parse_args()
     inst = int(os.environ.get("INSTANCE", "0"))
-    for k, base in (("TF_SONIC_PORT", 5556), ("TF_OUT_PORT", 5557), ("TF_KEYBOARD_PORT", 5580),
-                    ("TF_PRIVILEGED_PORT", 5581), ("TF_EPISODE_PORT", 5582)):
+    for k, base in (
+        ("TF_SONIC_PORT", 5556),
+        ("TF_OUT_PORT", 5557),
+        ("TF_KEYBOARD_PORT", 5580),
+        ("TF_PRIVILEGED_PORT", 5581),
+        ("TF_EPISODE_PORT", 5582),
+    ):
         os.environ.setdefault(k, str(base + 10 * inst))
     global DUMP_DIR
     DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
@@ -707,7 +794,7 @@ def main() -> None:
     p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
     rng = np.random.default_rng(args.seed)
     wins = 0
-    dead_rounds = 0          # consecutive "did not stabilise": the deploy is gone
+    dead_rounds = 0  # consecutive "did not stabilise": the deploy is gone
     restarts = 0
     for rnd in range(args.rounds):
         t0 = time.time()
@@ -730,9 +817,13 @@ def main() -> None:
         dead_rounds = dead_rounds + 1 if m["why"].startswith("[stand] did not stabilise") else 0
         if dead_rounds >= 2:
             import subprocess
+
             print(f"[wall] deploy looks dead ({dead_rounds} rounds); restarting instance {inst} deploy")
-            r = subprocess.run(["bash", os.path.join(paths.REPO, "scripts", "restart_deploy.sh")],
-                               env=dict(os.environ, INSTANCE=str(inst)), cwd=paths.REPO)
+            r = subprocess.run(
+                ["bash", os.path.join(paths.REPO, "scripts", "restart_deploy.sh")],
+                env=dict(os.environ, INSTANCE=str(inst)),
+                cwd=paths.REPO,
+            )
             print(f"[wall] restart_deploy.sh exit {r.returncode}")
             restarts += 1
             dead_rounds = 0

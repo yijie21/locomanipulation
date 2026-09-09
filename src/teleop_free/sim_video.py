@@ -17,7 +17,6 @@ import os
 import cv2
 import mujoco
 import numpy as np
-
 import sim_vis
 
 WIDTH, HEIGHT = 720, 540
@@ -40,12 +39,11 @@ INSET_W, INSET_H = 288, 216
 # did the gripper see when it missed", which does not need to be large.
 WRIST_W, WRIST_H = 240, 180
 INSETS = (
-    ("head_camera", "ego", INSET_W, INSET_H,
-     WIDTH - INSET_W - 8, HEIGHT - INSET_H - 8),
+    ("head_camera", "ego", INSET_W, INSET_H, WIDTH - INSET_W - 8, HEIGHT - INSET_H - 8),
     ("left_wrist", "L wrist", WRIST_W, WRIST_H, 8, 8),
     ("right_wrist", "R wrist", WRIST_W, WRIST_H, 8, HEIGHT - WRIST_H - 8),
 )
-EVERY_NTH = 4          # publishes are 50 Hz, so this records at 12.5 fps
+EVERY_NTH = 4  # publishes are 50 Hz, so this records at 12.5 fps
 FPS = 50.0 / EVERY_NTH
 
 # 6D-pose overlay: an oriented wireframe bounding box on the bodies whose
@@ -53,14 +51,14 @@ FPS = 50.0 / EVERY_NTH
 # frame), plus a numeric readout of their pelvis-frame positions. A box shows
 # both position and orientation without hiding the object under an axis triad.
 POSE_BODIES = ("can", "plate")
-POSE_RGBA = {"can": (1.0, 0.3, 0.3, 1.0),      # red box
-             "plate": (0.3, 0.85, 1.0, 1.0)}   # cyan box
+POSE_RGBA = {
+    "can": (1.0, 0.3, 0.3, 1.0),  # red box
+    "plate": (0.3, 0.85, 1.0, 1.0),
+}  # cyan box
 BOX_MARGIN = 0.008
 BOX_EDGE_W = 0.004
 # The 12 edges of a unit box, as index pairs into the 8 corner list.
-_EDGES = ((0, 1), (0, 2), (1, 3), (2, 3),
-          (4, 5), (4, 6), (5, 7), (6, 7),
-          (0, 4), (1, 5), (2, 6), (3, 7))
+_EDGES = ((0, 1), (0, 2), (1, 3), (2, 3), (4, 5), (4, 6), (5, 7), (6, 7), (0, 4), (1, 5), (2, 6), (3, 7))
 
 
 def _body_aabb(model, bid):
@@ -94,20 +92,22 @@ def _draw_boxes(scn, data, boxes):
     for bid, lo, hi, rgba in boxes:
         pos = data.xpos[bid]
         rot = data.xmat[bid].reshape(3, 3)
-        corners = [pos + rot @ np.array([x, y, z])
-                   for x in (lo[0], hi[0])
-                   for y in (lo[1], hi[1])
-                   for z in (lo[2], hi[2])]
+        corners = [
+            pos + rot @ np.array([x, y, z]) for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])
+        ]
         for a, b in _EDGES:
             if scn.ngeom >= scn.maxgeom:
                 return
             g = scn.geoms[scn.ngeom]
             mujoco.mjv_initGeom(
-                g, mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3), np.zeros(3),
-                np.zeros(9), np.asarray(rgba, dtype=np.float32))
-            mujoco.mjv_connector(
-                g, mujoco.mjtGeom.mjGEOM_CAPSULE, BOX_EDGE_W,
-                corners[a], corners[b])
+                g,
+                mujoco.mjtGeom.mjGEOM_CAPSULE,
+                np.zeros(3),
+                np.zeros(3),
+                np.zeros(9),
+                np.asarray(rgba, dtype=np.float32),
+            )
+            mujoco.mjv_connector(g, mujoco.mjtGeom.mjGEOM_CAPSULE, BOX_EDGE_W, corners[a], corners[b])
             scn.ngeom += 1
 
 
@@ -120,9 +120,13 @@ def _draw_label(scn, pos, text: str, rgba) -> None:
         return
     g = scn.geoms[scn.ngeom]
     mujoco.mjv_initGeom(
-        g, mujoco.mjtGeom.mjGEOM_SPHERE, np.array([1e-6, 0, 0]),
-        np.asarray(pos, dtype=float), np.eye(3).flatten(),
-        np.asarray(rgba, dtype=np.float32))
+        g,
+        mujoco.mjtGeom.mjGEOM_SPHERE,
+        np.array([1e-6, 0, 0]),
+        np.asarray(pos, dtype=float),
+        np.eye(3).flatten(),
+        np.asarray(rgba, dtype=np.float32),
+    )
     # mjvGeom.label's setter only accepts numpy.bytes_ -- a plain str or
     # bytes both raise "TypeError: string argument without an encoding"
     # (mujoco 3.12.0's pybind11 binding), confirmed empirically.
@@ -158,8 +162,7 @@ class VideoRecorder:
         # (grasp_gym.show_ghost), which leaves it parked below the floor.
         self.vopt = mujoco.MjvOption()
         mujoco.mjv_defaultOption(self.vopt)
-        self.vopt.geomgroup[4] = int(sim_vis.enabled("ghost")
-                                     or sim_vis.enabled("reach"))
+        self.vopt.geomgroup[4] = int(sim_vis.enabled("ghost") or sim_vis.enabled("reach"))
 
         # One renderer per inset. A camera the scene does not have is simply
         # skipped: an older scene, or a run with WRIST_CAMS=0, still records
@@ -173,13 +176,10 @@ class VideoRecorder:
             mujoco.mjv_defaultCamera(cam)
             cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
             cam.fixedcamid = cid
-            self.insets.append(
-                (mujoco.Renderer(model, height=h, width=w), cam, label,
-                 w, h, x, y))
+            self.insets.append((mujoco.Renderer(model, height=h, width=w), cam, label, w, h, x, y))
 
         self.pose_names, self.pose_bids, self.pose_boxes = [], [], []
-        for n in (POSE_BODIES if sim_vis.enabled("bbox")
-                  or sim_vis.enabled("readout") else ()):
+        for n in POSE_BODIES if sim_vis.enabled("bbox") or sim_vis.enabled("readout") else ():
             b = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n)
             if b < 0:
                 continue
@@ -187,8 +187,7 @@ class VideoRecorder:
             self.pose_names.append(n)
             self.pose_bids.append(b)
             self.pose_boxes.append((b, lo, hi, POSE_RGBA[n]))
-        self.pelvis_bid = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
+        self.pelvis_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
 
         self.writer = None
         self.path = None
@@ -198,8 +197,7 @@ class VideoRecorder:
     def start(self, name: str) -> None:
         self.stop()
         self.path = os.path.join(self.out_dir, f"{name}.mp4")
-        self.writer = cv2.VideoWriter(
-            self.path, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (WIDTH, HEIGHT))
+        self.writer = cv2.VideoWriter(self.path, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (WIDTH, HEIGHT))
         self.n = self.frames = 0
         print(f"[video] recording {self.path} ({sim_vis.describe()})")
 
@@ -209,8 +207,7 @@ class VideoRecorder:
         self.n += 1
         if self.n % EVERY_NTH:
             return
-        self.renderer.update_scene(data, camera=self.cam,
-                                   scene_option=self.vopt)
+        self.renderer.update_scene(data, camera=self.cam, scene_option=self.vopt)
         if sim_vis.enabled("bbox"):
             scn = getattr(self.renderer, "scene", None) or self.renderer._scene
             _draw_boxes(scn, data, self.pose_boxes)
@@ -221,30 +218,24 @@ class VideoRecorder:
             # what the VLA will actually see, and debug art stays in the
             # tracking view behind them.
             rend.update_scene(data, camera=cam)
-            frame[y:y + h, x:x + w] = rend.render()[:, :, ::-1]
+            frame[y : y + h, x : x + w] = rend.render()[:, :, ::-1]
             # Hairline so it reads as a separate view, and a label because
             # three insets are no longer self-evident.
-            cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h),
-                          (255, 255, 255), 1)
+            cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h), (255, 255, 255), 1)
             for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
-                cv2.putText(frame, label, (x + 6, y + 18),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick,
-                            cv2.LINE_AA)
+                cv2.putText(frame, label, (x + 6, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick, cv2.LINE_AA)
         # Pelvis-frame position readout — the numbers the dataset records.
         if self.pelvis_bid >= 0 and sim_vis.enabled("readout"):
             rp = data.xmat[self.pelvis_bid].reshape(3, 3)
             pp = data.xpos[self.pelvis_bid]
-            for i, (name, bid) in enumerate(zip(self.pose_names,
-                                                self.pose_bids)):
+            for i, (name, bid) in enumerate(zip(self.pose_names, self.pose_bids)):
                 rel = rp.T @ (data.xpos[bid] - pp)
                 # Top strip, right of the left-hand insets. It used to sit
                 # bottom-left, which the right-wrist inset now occupies.
-                txt = (f"{name}@pelvis "
-                       f"[{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]")
+                txt = f"{name}@pelvis [{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]"
                 org = (WRIST_W + 20, 22 + 20 * i)
                 for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
-                    cv2.putText(frame, txt, org, cv2.FONT_HERSHEY_SIMPLEX,
-                                0.45, colour, thick, cv2.LINE_AA)
+                    cv2.putText(frame, txt, org, cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, thick, cv2.LINE_AA)
         self.writer.write(np.ascontiguousarray(frame))
         self.frames += 1
 
@@ -252,8 +243,7 @@ class VideoRecorder:
         if self.writer is None:
             return
         self.writer.release()
-        print(f"[video] wrote {self.path} ({self.frames} frames, "
-              f"{self.frames / FPS:.1f}s)")
+        print(f"[video] wrote {self.path} ({self.frames} frames, {self.frames / FPS:.1f}s)")
         self.writer = None
 
 
@@ -279,8 +269,7 @@ class LiveOverlay:
             self.pose_names.append(n)
             self.pose_bids.append(b)
             self.pose_boxes.append((b, lo, hi, POSE_RGBA[n]))
-        self.pelvis_bid = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
+        self.pelvis_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
 
     def update(self, viewer, data) -> None:
         with viewer.lock():
@@ -293,7 +282,6 @@ class LiveOverlay:
                 pp = data.xpos[self.pelvis_bid]
                 for name, bid in zip(self.pose_names, self.pose_bids):
                     rel = rp.T @ (data.xpos[bid] - pp)
-                    txt = (f"{name}@pelvis "
-                           f"[{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]")
+                    txt = f"{name}@pelvis [{rel[0]:+.2f} {rel[1]:+.2f} {rel[2]:+.2f}]"
                     label_pos = data.xpos[bid] + np.array([0.0, 0.0, 0.12])
                     _draw_label(scn, label_pos, txt, POSE_RGBA[name])

@@ -67,6 +67,7 @@ WHAT IS MEASURED, AND WHY EACH ONE
 Everything is reported as median [IQR] over episodes; per-episode rows go to
 --json for a paired test if one is ever wanted.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -88,11 +89,17 @@ BODY_IDX = np.array(list(range(0, 22)) + list(range(29, 36)))
 # scale ranges (0.002 and 0.034) while 15:22 and 29:36 carry radian-scale arm
 # motion; and FK on state[BODY_IDX] puts the RIGHT palm 0.14 m from the held
 # bottle where the old slicing put it 0.24 m away.
-GROUPS = {"legs": (0, 12), "waist": (12, 15), "l_arm": (15, 22),
-          "l_hand": (22, 29), "r_arm": (29, 36), "r_hand": (36, 43)}
-TASK_ARM = (29, 36)          # the arm that does the grasping
+GROUPS = {
+    "legs": (0, 12),
+    "waist": (12, 15),
+    "l_arm": (15, 22),
+    "l_hand": (22, 29),
+    "r_arm": (29, 36),
+    "r_hand": (36, 43),
+}
+TASK_ARM = (29, 36)  # the arm that does the grasping
 
-STILL_RAD_S = 0.05      # arm joint speed below this = "not reaching"
+STILL_RAD_S = 0.05  # arm joint speed below this = "not reaching"
 HF_CUT_HZ = 3.0
 
 
@@ -104,8 +111,7 @@ def eps_paths(root: str, limit: int | None):
     return [os.path.join(d, f) for f in fs]
 
 
-def sparc(speed: np.ndarray, fs: float, padlevel: int = 4,
-          fc: float = 10.0, amp_th: float = 0.05) -> float:
+def sparc(speed: np.ndarray, fs: float, padlevel: int = 4, fc: float = 10.0, amp_th: float = 0.05) -> float:
     """Spectral arc length. Reference implementation, Balasubramanian 2015."""
     if len(speed) < 8 or speed.max() <= 0:
         return float("nan")
@@ -118,9 +124,9 @@ def sparc(speed: np.ndarray, fs: float, padlevel: int = 4,
     inx = np.flatnonzero(m_sel >= amp_th)
     if len(inx) < 2:
         return float("nan")
-    f_sel, m_sel = f_sel[inx[0]:inx[-1] + 1], m_sel[inx[0]:inx[-1] + 1]
+    f_sel, m_sel = f_sel[inx[0] : inx[-1] + 1], m_sel[inx[0] : inx[-1] + 1]
     df = np.diff(f_sel) / (f_sel[-1] - f_sel[0])
-    return float(-np.sum(np.sqrt(df ** 2 + np.diff(m_sel) ** 2)))
+    return float(-np.sum(np.sqrt(df**2 + np.diff(m_sel) ** 2)))
 
 
 def ldlj(speed: np.ndarray, fs: float) -> float:
@@ -128,9 +134,9 @@ def ldlj(speed: np.ndarray, fs: float) -> float:
     if len(speed) < 8 or speed.max() <= 0:
         return float("nan")
     dt = 1.0 / fs
-    jerk = np.diff(speed, 2) / dt ** 2
+    jerk = np.diff(speed, 2) / dt**2
     T = len(speed) * dt
-    dlj = (T ** 3 / speed.max() ** 2) * np.sum(jerk ** 2) * dt
+    dlj = (T**3 / speed.max() ** 2) * np.sum(jerk**2) * dt
     return float(-np.log(dlj)) if dlj > 0 else float("nan")
 
 
@@ -142,15 +148,14 @@ def hf_fraction(vel: np.ndarray, fs: float, cut: float = HF_CUT_HZ) -> float:
     win = np.hanning(n)[:, None]
     P = np.abs(np.fft.rfft(vel * win, axis=0)) ** 2
     f = np.fft.rfftfreq(n, 1.0 / fs)
-    P[0] = 0.0                                    # drop DC
+    P[0] = 0.0  # drop DC
     tot = P.sum(0)
     hi = P[f > cut].sum(0)
     ok = tot > 0
     return float(np.mean(hi[ok] / tot[ok])) if ok.any() else float("nan")
 
 
-def band_ratio(vel: np.ndarray, fs: float, lo: float, hi: float,
-               ref: tuple[float, float]) -> float:
+def band_ratio(vel: np.ndarray, fs: float, lo: float, hi: float, ref: tuple[float, float]) -> float:
     """Power in [lo,hi] over the mean density of a wider reference band."""
     n = len(vel)
     if n < 16:
@@ -182,7 +187,7 @@ def wrist_speed_fk(q29: np.ndarray, side: str = "right") -> np.ndarray | None:
         return None
     global _IK
     try:
-        _IK
+        _IK  # noqa: B018  (probe: has the module-level cache been created yet?)
     except NameError:
         _IK = ArmIK()
     pos = np.stack([_IK.fk(q, side)[0] for q in q29])
@@ -195,9 +200,9 @@ def _group_metrics(q: np.ndarray, fps: float, prefix: str) -> dict:
     for g, (a, b) in GROUPS.items():
         x = q[:, a:b]
         v = np.diff(x, axis=0) / dt
-        j = np.diff(x, n=3, axis=0) / dt ** 3
-        out[f"{prefix}{g}_jerk_rms"] = float(np.sqrt((j ** 2).mean()))
-        out[f"{prefix}{g}_vel_rms"] = float(np.sqrt((v ** 2).mean()))
+        j = np.diff(x, n=3, axis=0) / dt**3
+        out[f"{prefix}{g}_jerk_rms"] = float(np.sqrt((j**2).mean()))
+        out[f"{prefix}{g}_vel_rms"] = float(np.sqrt((v**2).mean()))
         out[f"{prefix}{g}_vel_p99"] = float(np.percentile(np.abs(v), 99))
         # median of the per-frame fastest joint: says what the motion does
         # TYPICALLY, where the RMS above is dominated by the rare excursions
@@ -208,10 +213,9 @@ def _group_metrics(q: np.ndarray, fps: float, prefix: str) -> dict:
             if len(v) > 4:
                 d = v - v.mean(0)
                 num = (d[:-1] * d[1:]).sum(0)
-                den = (d ** 2).sum(0)
+                den = (d**2).sum(0)
                 ok = den > 0
-                out[f"{prefix}{g}_vel_ac1"] = (float(np.mean(num[ok] / den[ok]))
-                                               if ok.any() else float("nan"))
+                out[f"{prefix}{g}_vel_ac1"] = float(np.mean(num[ok] / den[ok])) if ok.any() else float("nan")
     return out
 
 
@@ -223,8 +227,12 @@ def episode_stats(path: str, fps: float, want_fk: bool) -> dict:
     tok = col("action.motion_token").astype(float)
     n = len(state)
     dt = 1.0 / fps
-    out = {"path": os.path.basename(path), "frames": n, "dur_s": n * dt,
-           "cmd_equals_state": float(np.abs(wbc - state).max())}
+    out = {
+        "path": os.path.basename(path),
+        "frames": n,
+        "dur_s": n * dt,
+        "cmd_equals_state": float(np.abs(wbc - state).max()),
+    }
 
     out.update(_group_metrics(state, fps, "st_"))
     out.update(_group_metrics(wbc, fps, "cmd_"))
@@ -247,12 +255,10 @@ def episode_stats(path: str, fps: float, want_fk: bool) -> dict:
     out["tok_change_frac"] = float((d > 0).mean())
     out["tok_jump_p99"] = float(np.percentile(d.max(1), 99))
     out["tok_levels"] = int(len(np.unique(idx)))
-    out["tok_10hz_ratio"] = band_ratio(np.diff(tok, axis=0), fps, 9.0, 11.0,
-                                       (4.0, 14.0))
+    out["tok_10hz_ratio"] = band_ratio(np.diff(tok, axis=0), fps, 9.0, 11.0, (4.0, 14.0))
 
     # discrete events from the planner channel
-    for k, name in (("teleop.planner_mode", "mode_switches"),
-                    ("teleop.stream_mode", "stream_switches")):
+    for k, name in (("teleop.planner_mode", "mode_switches"), ("teleop.stream_mode", "stream_switches")):
         if k in t.column_names:
             a = np.asarray(t[k].to_numpy(zero_copy_only=False))
             out[name] = int((np.diff(a) != 0).sum())
@@ -267,9 +273,8 @@ def episode_stats(path: str, fps: float, want_fk: bool) -> dict:
             sp = np.linalg.norm(np.diff(pos, axis=0), axis=1) / dt
             out["wrist_sparc"] = sparc(sp, fps)
             out["wrist_ldlj"] = ldlj(sp, fps)
-            out["wrist_sparc_tail5s"] = sparc(sp[-int(5 * fps):], fps)
-            out["wrist_path_m"] = float(np.linalg.norm(np.diff(pos, axis=0),
-                                                       axis=1).sum())
+            out["wrist_sparc_tail5s"] = sparc(sp[-int(5 * fps) :], fps)
+            out["wrist_path_m"] = float(np.linalg.norm(np.diff(pos, axis=0), axis=1).sum())
     return out
 
 
@@ -285,6 +290,7 @@ def excursions(root: str, limit: int, fps: float) -> dict:
     GROUPS for how that slicing was established).
     """
     from collections import Counter
+
     near = tot = 0
     by_mode, mode_frames, lead = Counter(), Counter(), Counter()
     steps = []
@@ -302,38 +308,40 @@ def excursions(root: str, limit: int, fps: float) -> dict:
             if len(sw) and np.abs(sw - h).min() <= int(0.5 * fps):
                 near += 1
             by_mode[int(pm[h])] += 1
-            lead[int(np.argmax(np.abs(st[h + 1, slice(*TASK_ARM)]
-                                      - st[h, slice(*TASK_ARM)])))] += 1
+            lead[int(np.argmax(np.abs(st[h + 1, slice(*TASK_ARM)] - st[h, slice(*TASK_ARM)])))] += 1
         for m, c in Counter(pm.tolist()).items():
             mode_frames[int(m)] += c
-        for k in sw:                       # size of the commanded step at a switch
+        for k in sw:  # size of the commanded step at a switch
             a, b = max(0, k - 2), min(len(cmd) - 1, k + 8)
-            steps.append((int(pm[a]), int(pm[b]), int(sm[a]), int(sm[b]),
-                          float(np.rad2deg(np.abs(cmd[b, slice(*TASK_ARM)]
-                                                  - cmd[a, slice(*TASK_ARM)]).max()))))
+            steps.append(
+                (
+                    int(pm[a]),
+                    int(pm[b]),
+                    int(sm[a]),
+                    int(sm[b]),
+                    float(np.rad2deg(np.abs(cmd[b, slice(*TASK_ARM)] - cmd[a, slice(*TASK_ARM)]).max())),
+                )
+            )
     allf = sum(mode_frames.values()) or 1
-    out = {"n_excursions": tot,
-           "within_0.5s_of_a_switch": near / max(tot, 1),
-           "by_planner_mode": {m: (by_mode[m] / max(tot, 1), mode_frames[m] / allf)
-                               for m in sorted(by_mode)},
-           "leading_joint_in_block": {i: c / max(tot, 1)
-                                      for i, c in lead.most_common(4)},
-           "switch_steps_deg": {}}
+    out = {
+        "n_excursions": tot,
+        "within_0.5s_of_a_switch": near / max(tot, 1),
+        "by_planner_mode": {m: (by_mode[m] / max(tot, 1), mode_frames[m] / allf) for m in sorted(by_mode)},
+        "leading_joint_in_block": {i: c / max(tot, 1) for i, c in lead.most_common(4)},
+        "switch_steps_deg": {},
+    }
     for key in sorted({s[:4] for s in steps}):
         sel = [s[4] for s in steps if s[:4] == key]
-        out["switch_steps_deg"][str(key)] = (len(sel), float(np.median(sel)),
-                                             float(np.percentile(sel, 90)))
+        out["switch_steps_deg"][str(key)] = (len(sel), float(np.median(sel)), float(np.percentile(sel, 90)))
     return out
 
 
 def summarise(rows: list[dict], keys: list[str]) -> dict:
     s = {}
     for k in keys:
-        v = np.array([r[k] for r in rows if k in r and np.isfinite(r[k])],
-                     dtype=float)
+        v = np.array([r[k] for r in rows if k in r and np.isfinite(r[k])], dtype=float)
         if len(v):
-            s[k] = (float(np.median(v)), float(np.percentile(v, 25)),
-                    float(np.percentile(v, 75)), len(v))
+            s[k] = (float(np.median(v)), float(np.percentile(v, 25)), float(np.percentile(v, 75)), len(v))
     return s
 
 
@@ -345,31 +353,30 @@ def main():
     ap.add_argument("--fps", type=float, default=None, help="override meta fps")
     ap.add_argument("--no-fk", action="store_true", help="skip the FK wrist path")
     ap.add_argument("--json", default=None)
-    ap.add_argument("--events", action="store_true",
-                    help="also attribute the top-1%% arm excursions in ds_b")
+    ap.add_argument("--events", action="store_true", help="also attribute the top-1%% arm excursions in ds_b")
     args = ap.parse_args()
 
     res = {}
     for tag, root in (("A", args.ds_a), ("B", args.ds_b)):
-        fps = args.fps or json.load(
-            open(os.path.join(root, "meta", "info.json")))["fps"]
+        fps = args.fps or json.load(open(os.path.join(root, "meta", "info.json")))["fps"]
         paths = eps_paths(root, args.n)
         rows = []
         for i, p in enumerate(paths):
             rows.append(episode_stats(p, float(fps), not args.no_fk))
             if (i + 1) % 20 == 0:
-                print(f"  [{tag}] {i+1}/{len(paths)}", file=sys.stderr)
+                print(f"  [{tag}] {i + 1}/{len(paths)}", file=sys.stderr)
         res[tag] = {"root": root, "fps": float(fps), "rows": rows}
         degen = max(r["cmd_equals_state"] for r in rows)
         print(f"[{tag}] {root}  {len(rows)} episodes @ {fps} fps", file=sys.stderr)
         if degen == 0.0:
-            print(f"[{tag}] WARNING: action.wbc == observation.state exactly -- "
-                  f"this dataset has NO independent command channel, so every "
-                  f"cmd_* row below is a duplicate of st_*. Compare st_* only.",
-                  file=sys.stderr)
+            print(
+                f"[{tag}] WARNING: action.wbc == observation.state exactly -- "
+                f"this dataset has NO independent command channel, so every "
+                f"cmd_* row below is a duplicate of st_*. Compare st_* only.",
+                file=sys.stderr,
+            )
 
-    keys = [k for k in res["A"]["rows"][0]
-            if k not in ("path",) and isinstance(res["A"]["rows"][0][k], (int, float))]
+    keys = [k for k in res["A"]["rows"][0] if k not in ("path",) and isinstance(res["A"]["rows"][0][k], (int, float))]
     sa = summarise(res["A"]["rows"], keys)
     sb = summarise(res["B"]["rows"], keys)
 
@@ -381,22 +388,26 @@ def main():
         ma, la, ha, _ = sa[k]
         mb, lb, hb, _ = sb[k]
         ratio = (mb / ma) if ma not in (0.0,) else float("nan")
-        print(f"{k:24s} {ma:9.4f} [{la:7.3f},{ha:7.3f}] "
-              f"{mb:9.4f} [{lb:7.3f},{hb:7.3f}] {ratio:8.2f}")
+        print(f"{k:24s} {ma:9.4f} [{la:7.3f},{ha:7.3f}] {mb:9.4f} [{lb:7.3f},{hb:7.3f}] {ratio:8.2f}")
 
     if args.events:
         ev = excursions(args.ds_b, args.n, res["B"]["fps"])
         print("\n--- where the tail comes from (ds_b) ---")
-        print(f"top-1% arm excursions: n={ev['n_excursions']}, "
-              f"{ev['within_0.5s_of_a_switch']:.1%} within 0.5 s of a "
-              f"planner/stream mode switch")
+        print(
+            f"top-1% arm excursions: n={ev['n_excursions']}, "
+            f"{ev['within_0.5s_of_a_switch']:.1%} within 0.5 s of a "
+            f"planner/stream mode switch"
+        )
         for m, (share, frames) in ev["by_planner_mode"].items():
-            print(f"  planner mode {m}: {share:6.1%} of excursions vs "
-                  f"{frames:6.1%} of frames  (x{share/max(frames,1e-9):.2f})")
-        print("  leading joint within the task arm: " + ", ".join(
-            f"#{i} {p:.0%}" for i, p in ev["leading_joint_in_block"].items()))
-        print("  commanded step at a switch, task arm, deg "
-              "(pm_before,pm_after,sm_before,sm_after) -> n, median, p90:")
+            print(
+                f"  planner mode {m}: {share:6.1%} of excursions vs "
+                f"{frames:6.1%} of frames  (x{share / max(frames, 1e-9):.2f})"
+            )
+        print(
+            "  leading joint within the task arm: "
+            + ", ".join(f"#{i} {p:.0%}" for i, p in ev["leading_joint_in_block"].items())
+        )
+        print("  commanded step at a switch, task arm, deg (pm_before,pm_after,sm_before,sm_after) -> n, median, p90:")
         for k, (n, med, p90) in ev["switch_steps_deg"].items():
             print(f"    {k:20s} n={n:4d}  {med:6.1f}  {p90:6.1f}")
         res["events_b"] = ev

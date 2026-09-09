@@ -30,6 +30,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 import stream_reach  # noqa: E402
 from primitives import (  # noqa: E402
     LocomotionMode,
@@ -38,11 +39,10 @@ from primitives import (  # noqa: E402
     upper_body_from_mj,
 )
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 OUT = f"{paths.REPO}/outputs/diag/squatmode.json"
-SQUAT = 4                        # LocomotionMode::IDEL_SQUAT in the deploy enum
+SQUAT = 4  # LocomotionMode::IDEL_SQUAT in the deploy enum
 PHASE_S = 6.0
 
 
@@ -67,21 +67,25 @@ def run_phase(p, mode_val, face, seconds, upper=None, height=-1.0):
     while time.time() < end:
         if upper is not None:
             p.cmd.set_upper_body(upper)
-        p.cmd.frame(mode=mode_val, facing=face, height=height,
-                    movement=(0.0, 0.0, 0.0))
+        p.cmd.frame(mode=mode_val, facing=face, height=height, movement=(0.0, 0.0, 0.0))
         time.sleep(0.02)
         st = p.obs()
-        trace.append(dict(t=time.time(), z=float(st["pelvis"]["pos"][2]),
-                          palm_z=float(st["palms"]["right"]["pos"][2]),
-                          knee=[float(st["joints"][3]), float(st["joints"][9])],
-                          fallen=bool(st["fallen"])))
+        trace.append(
+            dict(
+                t=time.time(),
+                z=float(st["pelvis"]["pos"][2]),
+                palm_z=float(st["palms"]["right"]["pos"][2]),
+                knee=[float(st["joints"][3]), float(st["joints"][9])],
+                fallen=bool(st["fallen"]),
+            )
+        )
     return trace
 
 
 def summarise(tag, trace, z0):
     z = np.array([t["z"] for t in trace])
     lo = float(z.min())
-    settled = float(np.median(z[-int(len(z) * 0.3):]))
+    settled = float(np.median(z[-int(len(z) * 0.3) :]))
     # time to reach 90% of the final excursion
     tt = None
     if abs(settled - z0) > 0.01:
@@ -91,10 +95,12 @@ def summarise(tag, trace, z0):
                 tt = t["t"] - trace[0]["t"]
                 break
     fell = any(t["fallen"] for t in trace)
-    print(f"[sq] {tag:22} pelvis {z0:.3f} -> {settled:.3f} "
-          f"(drop {(z0 - settled) * 100:5.1f} cm, min {lo:.3f})  "
-          f"t90 {('%.1f s' % tt) if tt else '  -  '}"
-          f"{'  FELL' if fell else ''}")
+    print(
+        f"[sq] {tag:22} pelvis {z0:.3f} -> {settled:.3f} "
+        f"(drop {(z0 - settled) * 100:5.1f} cm, min {lo:.3f})  "
+        f"t90 {('%.1f s' % tt) if tt else '  -  '}"
+        f"{'  FELL' if fell else ''}"
+    )
     return dict(tag=tag, z0=z0, settled=settled, min=lo, t90=tt, fell=fell)
 
 
@@ -104,7 +110,8 @@ def sweep(p, reset, face, z_stand):
     for h in (-1.0, 0.75, 0.70, 0.65, 0.60, 0.55, 0.50, 0.40, 0.20):
         st = p.obs()
         if st["fallen"]:
-            st = restand(p, reset, "restand"); face = p._facing(st)
+            st = restand(p, reset, "restand")
+            face = p._facing(st)
         p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
         upper = upper_body_from_mj(st["joints"])
         tr = run_phase(p, SQUAT, face, 5.0, upper=upper, height=h)
@@ -131,8 +138,7 @@ def main() -> None:
         json.dump(rows, open(OUT.replace(".json", "_sweep.json"), "w"), indent=1)
         print("[sq] target: 0.10 m of drop -> pelvis 0.686")
         for r in rows:
-            print(f"    height {r['height']:+.2f} -> drop "
-                  f"{(r['z0'] - r['settled']) * 100:5.1f} cm")
+            print(f"    height {r['height']:+.2f} -> drop {(r['z0'] - r['settled']) * 100:5.1f} cm")
         return
 
     out = []
@@ -147,14 +153,14 @@ def main() -> None:
     # 2. squat mode WITH the frozen 17-joint upper-body target held
     s = p.obs()
     if s["fallen"]:
-        s = restand(p, reset, "restand"); face = p._facing(s)
+        s = restand(p, reset, "restand")
+        face = p._facing(s)
     z0 = float(s["pelvis"]["pos"][2])
     upper = upper_from = upper_body_from_mj(s["joints"])
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     tr = run_phase(p, SQUAT, face, PHASE_S, upper=upper)
     out.append(summarise("squat + frozen upper", tr, z0))
-    arm_drift = float(np.max(np.abs(
-        np.array(p.obs()["joints"])[15:29] - np.array(upper_from)[3:] * 0)) * 0)
+    arm_drift = float(np.max(np.abs(np.array(p.obs()["joints"])[15:29] - np.array(upper_from)[3:] * 0)) * 0)
     # how far did the arm joints move from their held target?
     st = p.obs()
     held = upper_body_from_mj(st["joints"])
@@ -167,7 +173,8 @@ def main() -> None:
     # 3. squat with height also asked for, in case the two interact
     s = p.obs()
     if s["fallen"]:
-        s = restand(p, reset, "restand"); face = p._facing(s)
+        s = restand(p, reset, "restand")
+        face = p._facing(s)
     z0 = float(s["pelvis"]["pos"][2])
     tr = run_phase(p, SQUAT, face, PHASE_S, upper=upper, height=0.60)
     out.append(summarise("squat + height 0.60", tr, z0))

@@ -53,8 +53,7 @@ def main() -> None:
     p.cmd.reset_pose()
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
 
-    print(f"\n{'cmd pitch':>10} {'palm +x elevation':>18} {'yaw drift':>10} "
-          f"{'roll':>8}   palm +x in the pelvis frame")
+    print(f"\n{'cmd pitch':>10} {'palm +x elevation':>18} {'yaw drift':>10} {'roll':>8}   palm +x in the pelvis frame")
     rows = []
     for deg in PITCHES:
         kw = {f"{args.side}_pos": HOLD_POS, f"{args.side}_quat": pitch_quat(deg)}
@@ -65,28 +64,31 @@ def main() -> None:
             time.sleep(DT)
 
         s = p.obs()
-        axes = (Primitives._rot(s["pelvis"]["quat"]).T
-                @ Primitives._rot(s["palms"][args.side]["quat"]))
+        axes = Primitives._rot(s["pelvis"]["quat"]).T @ Primitives._rot(s["palms"][args.side]["quat"])
         ax, ay = axes[:, 0], axes[:, 1]
         # Nose-down elevation: how far the fingers point below horizontal.
         elev = float(np.rad2deg(np.arcsin(np.clip(-ax[2], -1.0, 1.0))))
         yaw = float(np.rad2deg(np.arctan2(ax[1], ax[0])))
         roll = float(np.rad2deg(np.arcsin(np.clip(ay[2], -1.0, 1.0))))
-        print(f"{deg:9.0f}d {elev:17.1f}d {yaw:9.1f}d {roll:7.1f}d   "
-              f"{np.round(ax, 3)}")
+        print(f"{deg:9.0f}d {elev:17.1f}d {yaw:9.1f}d {roll:7.1f}d   {np.round(ax, 3)}")
         rows.append((deg, elev))
-        np.save(f"/tmp/claude-1002/-workspace-code-locomanipulation/6b8c31c0-160b-43ad-9116-8d471dbde4c1/scratchpad/palm_{int(deg)}.npy", axes)
+        np.save(
+            f"/tmp/claude-1002/-workspace-code-locomanipulation/6b8c31c0-160b-43ad-9116-8d471dbde4c1/scratchpad/palm_{int(deg)}.npy",
+            axes,
+        )
 
     got = np.array([r[1] for r in rows])
-    print(f"\nrange of achieved pitch: {got.min():.1f}d .. {got.max():.1f}d "
-          f"({got.max() - got.min():.1f}d of authority)")
-    print("  < 10d of authority -> the channel cannot hold a tilt; the angled "
-          "grasp has to come from the arm pose, not the orientation command")
+    print(
+        f"\nrange of achieved pitch: {got.min():.1f}d .. {got.max():.1f}d ({got.max() - got.min():.1f}d of authority)"
+    )
+    print(
+        "  < 10d of authority -> the channel cannot hold a tilt; the angled "
+        "grasp has to come from the arm pose, not the orientation command"
+    )
     want = 35.0
     if got.max() - got.min() > 10.0:
         i = int(np.argmin(np.abs(got - want)))
-        print(f"  closest to the {want:.0f}d target: command "
-              f"{rows[i][0]:.0f}d -> {rows[i][1]:.1f}d")
+        print(f"  closest to the {want:.0f}d target: command {rows[i][0]:.0f}d -> {rows[i][1]:.1f}d")
 
     p.cmd.pause_control()
     p.close()

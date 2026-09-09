@@ -50,11 +50,9 @@ def main() -> None:
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
     p.turn_to(wrap(p.pelvis_yaw() + np.deg2rad(60)), timeout=20.0)
     yaw = p.pelvis_yaw()
-    print(f"anchored offset {np.rad2deg(p.cmd.heading_offset):.1f} deg, "
-          f"now facing {np.rad2deg(yaw):.1f} deg")
+    print(f"anchored offset {np.rad2deg(p.cmd.heading_offset):.1f} deg, now facing {np.rad2deg(yaw):.1f} deg")
 
-    for label, ang in (("world +x", 0.0), ("world +y", np.pi / 2),
-                       ("own heading", yaw)):
+    for label, ang in (("world +x", 0.0), ("world +y", np.pi / 2), ("own heading", yaw)):
         s = p.obs()
         start = p.pelvis_xy(s)
         yaw_now = p.pelvis_yaw(s)
@@ -65,21 +63,22 @@ def main() -> None:
             if s["fallen"]:
                 print("fell")
                 return
-            p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=0.35,
-                        movement=mv,
-                        facing=(np.cos(yaw_now), np.sin(yaw_now), 0.0))
+            p.cmd.frame(
+                mode=LocomotionMode.SLOW_WALK, speed=0.35, movement=mv, facing=(np.cos(yaw_now), np.sin(yaw_now), 0.0)
+            )
             time.sleep(DT)
         stop = time.time() + 1.5
         while time.time() < stop:
-            p.cmd.frame(mode=LocomotionMode.IDLE,
-                        facing=(np.cos(yaw_now), np.sin(yaw_now), 0.0))
+            p.cmd.frame(mode=LocomotionMode.IDLE, facing=(np.cos(yaw_now), np.sin(yaw_now), 0.0))
             time.sleep(DT)
         s = p.obs()
         d = p.pelvis_xy(s) - start
         got = np.rad2deg(np.arctan2(d[1], d[0]))
-        print(f"  {label:12s}: asked {np.rad2deg(ang):7.1f}  moved "
-              f"{np.linalg.norm(d) * 100:5.1f} cm at {got:7.1f} deg  "
-              f"(err {np.rad2deg(wrap(np.deg2rad(got) - ang)):+6.1f})")
+        print(
+            f"  {label:12s}: asked {np.rad2deg(ang):7.1f}  moved "
+            f"{np.linalg.norm(d) * 100:5.1f} cm at {got:7.1f} deg  "
+            f"(err {np.rad2deg(wrap(np.deg2rad(got) - ang)):+6.1f})"
+        )
 
     p.cmd.pause_control()
     reset.close()

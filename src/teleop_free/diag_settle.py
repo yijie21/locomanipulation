@@ -23,9 +23,8 @@ import mujoco
 import numpy as np
 import paths
 
-SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
-              "scene_meta.json")
-TOL = 0.01          # a millimetre or two of settling is fine; a centimetre is not
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
+TOL = 0.01  # a millimetre or two of settling is fine; a centimetre is not
 
 
 def main() -> None:
@@ -39,8 +38,7 @@ def main() -> None:
     mujoco.mj_forward(model, data)
 
     tracked = {k: v for k, v in meta["objects"].items() if v.get("qpos_adr", -1) >= 0}
-    start = {k: data.qpos[v["qpos_adr"]: v["qpos_adr"] + 3].copy()
-             for k, v in tracked.items()}
+    start = {k: data.qpos[v["qpos_adr"] : v["qpos_adr"] + 3].copy() for k, v in tracked.items()}
     print(f"timestep {model.opt.timestep}, {len(tracked)} free objects")
 
     n = int(args.seconds / model.opt.timestep)
@@ -50,8 +48,8 @@ def main() -> None:
             row = []
             for k, v in tracked.items():
                 a = v["qpos_adr"]
-                moved = float(np.linalg.norm(data.qpos[a:a + 3] - start[k]))
-                _, x, y, _ = data.qpos[a + 3: a + 7]
+                moved = float(np.linalg.norm(data.qpos[a : a + 3] - start[k]))
+                _, x, y, _ = data.qpos[a + 3 : a + 7]
                 up = 1 - 2 * (x * x + y * y)
                 row.append(f"{k} {moved * 100:5.2f}cm up{up:+.2f}")
             print(f"t={step * model.opt.timestep:5.1f}  " + "  ".join(row))
@@ -61,15 +59,21 @@ def main() -> None:
     bad = False
     for k, v in tracked.items():
         a = v["qpos_adr"]
-        moved = float(np.linalg.norm(data.qpos[a:a + 3] - start[k]))
-        _, x, y, _ = data.qpos[a + 3: a + 7]
+        moved = float(np.linalg.norm(data.qpos[a : a + 3] - start[k]))
+        _, x, y, _ = data.qpos[a + 3 : a + 7]
         up = 1 - 2 * (x * x + y * y)
         verdict = "ok" if moved < TOL and up > 0.9 else "UNSTABLE"
         if verdict != "ok":
             bad = True
         print(f"  {k:8s} drifted {moved * 100:5.2f} cm, up {up:+.3f}  {verdict}")
-    print("\n" + ("FAIL: something moves on its own — fix the scene, not the grasp"
-                  if bad else "PASS: every object holds still"))
+    print(
+        "\n"
+        + (
+            "FAIL: something moves on its own — fix the scene, not the grasp"
+            if bad
+            else "PASS: every object holds still"
+        )
+    )
     sys.exit(1 if bad else 0)
 
 

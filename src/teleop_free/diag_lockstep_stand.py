@@ -9,6 +9,7 @@ Against a running lockstep stack (no eval). Phases, pelvis z printed:
   C  send command(start=True, planner=False) explicitly, 200 more ticks
 The answer decides what the lockstep bring-up must do after every reset.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,9 +20,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("LOCKSTEP", "1")
 os.environ.setdefault("TF_SONIC_PUB_CONNECT", str(int(os.environ.get("TF_SONIC_PORT", 5556)) + 28))
 
-import vla_round  # noqa: E402
 import agent_server  # noqa: E402
-from privileged_pub import EpisodeControlClient, PrivilegedSubscriber as PrivilegedClient  # noqa: E402
+import vla_round  # noqa: E402
+from privileged_pub import EpisodeControlClient  # noqa: E402
+from privileged_pub import PrivilegedSubscriber as PrivilegedClient
 
 ls = vla_round.LockstepLink()
 assert ls.ping(), "no lockstep sim"
@@ -40,7 +42,7 @@ print("A: prime + hold 100 ticks")
 assert clock.ensure_primed(60), "prime failed"
 for i in range(4):
     clock.hold_frames(25)
-    z(f"A t={(i+1)*25}")
+    z(f"A t={(i + 1) * 25}")
 
 print("B: reset (crouched keyframe), pump re-primes, 300 ticks")
 reset.reset()
@@ -48,12 +50,12 @@ time.sleep(0.3)
 clock.resume()
 for i in range(12):
     time.sleep(0.5)
-    z(f"B ~{(i+1)*25} ticks  primed={clock.primed} session={clock.session}")
+    z(f"B ~{(i + 1) * 25} ticks  primed={clock.primed} session={clock.session}")
 clock.pause()
 
 print("C: explicit start (planner=False) then 200 ticks")
 cmd.command(start=True, stop=False, planner=False)
 for i in range(8):
     clock.hold_frames(25)
-    z(f"C t={(i+1)*25}")
+    z(f"C t={(i + 1) * 25}")
 clock.stop()

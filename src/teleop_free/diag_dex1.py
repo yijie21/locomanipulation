@@ -18,10 +18,10 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import paths
 from agent_server import HAND_CLOSED, HAND_OPEN  # noqa: E402
 from primitives import LocomotionMode, Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
-import paths
 
 SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 
@@ -38,10 +38,10 @@ def main() -> None:
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     s = p.obs()
     if s["fallen"]:
-        print("robot did not stand"); return
+        print("robot did not stand")
+        return
 
-    for label, cmd in (("OPEN", HAND_OPEN), ("CLOSED", HAND_CLOSED),
-                       ("OPEN", HAND_OPEN)):
+    for label, cmd in (("OPEN", HAND_OPEN), ("CLOSED", HAND_CLOSED), ("OPEN", HAND_OPEN)):
         p.cmd.set_hands(left=cmd, right=cmd)
         p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
         s2 = p.obs()

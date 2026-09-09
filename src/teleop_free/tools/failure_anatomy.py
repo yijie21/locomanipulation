@@ -23,6 +23,7 @@ Thresholds are taken from the successes IN THE SAME TRACE SET (their palm_z at
 close, their palm_obj at close), not hardcoded: the same tool then works on any
 future round without recalibration.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,7 +31,6 @@ import glob
 import json
 import os
 import sys
-
 
 # The gym's own close criterion (vla_round commands close below this).
 GRIP_CLOSED = 0.005
@@ -61,12 +61,16 @@ def main():
             (succ if t["ok"] else fail).append(rec)
 
     if legacy:
-        print(f"[anatomy] {legacy} traces predate the palm fields -- skipped "
-              f"(round 3's own traces cannot be decomposed; that is why the "
-              f"fields were added)")
+        print(
+            f"[anatomy] {legacy} traces predate the palm fields -- skipped "
+            f"(round 3's own traces cannot be decomposed; that is why the "
+            f"fields were added)"
+        )
     if not succ:
-        sys.exit("[anatomy] no successes with palm fields: cannot calibrate "
-                 "thresholds. Run at least one sweep with the new tracer first.")
+        sys.exit(
+            "[anatomy] no successes with palm fields: cannot calibrate "
+            "thresholds. Run at least one sweep with the new tracer first."
+        )
 
     # Calibrate from this set's own successes at their close moment.
     close_z, close_po = [], []
@@ -75,11 +79,13 @@ def main():
         if rows:
             close_z.append(rows[0]["palm_z"])
             close_po.append(rows[0]["palm_obj"])
-    z_up = q(close_z, 0.10)          # palm height successes close at (p10)
-    po_near = q(close_po, 0.90)      # palm-object distance at close (p90)
-    print(f"[anatomy] calibrated on {len(close_z)} successes: "
-          f"arm-up when palm_z > {z_up:.3f} m, "
-          f"staged when palm_obj < {po_near:.3f} m")
+    z_up = q(close_z, 0.10)  # palm height successes close at (p10)
+    po_near = q(close_po, 0.90)  # palm-object distance at close (p90)
+    print(
+        f"[anatomy] calibrated on {len(close_z)} successes: "
+        f"arm-up when palm_z > {z_up:.3f} m, "
+        f"staged when palm_obj < {po_near:.3f} m"
+    )
 
     # Rounds whose FIRST trace frame already reads grip < 0.005: priming
     # residue can leak into frame 0, and such a round is then marked
@@ -87,8 +93,7 @@ def main():
     # close" -- a systematic hole in the reach-class denominators (R4
     # measured 3/100). Counted and listed, not reclassified: the online
     # judge must stay comparable with the recorded ladder.
-    first_closed = [r for r in succ + fail
-                    if r["trace"][0].get("grip", 1.0) < GRIP_CLOSED]
+    first_closed = [r for r in succ + fail if r["trace"][0].get("grip", 1.0) < GRIP_CLOSED]
 
     never_up, up_no_fire, staged_no_fire, other = [], [], [], []
     for r in fail:
@@ -100,15 +105,16 @@ def main():
         if zmax <= z_up:
             never_up.append(r)
         elif pomin <= po_near:
-            staged_no_fire.append(r)   # hand got where successes close from
+            staged_no_fire.append(r)  # hand got where successes close from
         else:
-            up_no_fire.append(r)       # raised, never got near
+            up_no_fire.append(r)  # raised, never got near
 
     n = len(fail)
     res = dict(
-        thresholds=dict(palm_z_up=z_up, palm_obj_near=po_near,
-                        calibrated_on=len(close_z)),
-        successes=len(succ), failures=n, legacy_skipped=legacy,
+        thresholds=dict(palm_z_up=z_up, palm_obj_near=po_near, calibrated_on=len(close_z)),
+        successes=len(succ),
+        failures=n,
+        legacy_skipped=legacy,
         arm_never_up=len(never_up),
         up_but_never_near=len(up_no_fire),
         staged_but_no_fire=len(staged_no_fire),
@@ -118,20 +124,23 @@ def main():
         examples=dict(
             arm_never_up=[r["file"] for r in never_up[:5]],
             up_but_never_near=[r["file"] for r in up_no_fire[:5]],
-            staged_but_no_fire=[r["file"] for r in staged_no_fire[:5]]),
+            staged_but_no_fire=[r["file"] for r in staged_no_fire[:5]],
+        ),
     )
     print(f"\n[anatomy] {n} reach-class failures decompose as:")
-    print(f"  arm never up        {len(never_up):3d}  -> DAgger: near-table "
-          f"spawns, cover the stand->raise transition")
-    print(f"  up but never near   {len(up_no_fire):3d}  -> DAgger: reach "
-          f"trajectory coverage (mid-reach states)")
-    print(f"  staged, no fire     {len(staged_no_fire):3d}  -> DAgger: hand "
-          f"staged near object -> close; the last centimetre")
+    print(f"  arm never up        {len(never_up):3d}  -> DAgger: near-table spawns, cover the stand->raise transition")
+    print(f"  up but never near   {len(up_no_fire):3d}  -> DAgger: reach trajectory coverage (mid-reach states)")
+    print(
+        f"  staged, no fire     {len(staged_no_fire):3d}  -> DAgger: hand "
+        f"staged near object -> close; the last centimetre"
+    )
     if other:
         print(f"  non-reach           {len(other):3d}")
     if first_closed:
-        print(f"[anatomy] {len(first_closed)} rounds open with grip<GRIP_CLOSED at "
-              f"frame 0 -- their commanded_close flag is untrustworthy")
+        print(
+            f"[anatomy] {len(first_closed)} rounds open with grip<GRIP_CLOSED at "
+            f"frame 0 -- their commanded_close flag is untrustworthy"
+        )
 
     out = args.out or os.path.join(args.trace_dirs[0], "..", "anatomy.json")
     json.dump(res, open(out, "w"), indent=2)

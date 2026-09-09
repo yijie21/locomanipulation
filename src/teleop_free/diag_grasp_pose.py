@@ -31,6 +31,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import grasping  # noqa: E402
+import paths
 from diag_reach_map import arm_joints, solve_ik  # noqa: E402
 from primitives import (  # noqa: E402
     GRASP_BEARING,
@@ -40,19 +41,15 @@ from primitives import (  # noqa: E402
     STAND_OFF,
 )
 from privileged_pub import HAND_JOINTS  # noqa: E402
-import paths
 
-SCENE_META = (f"{paths.REPO}/outputs/scene/sim/"
-              "scene_meta.json")
+SCENE_META = f"{paths.REPO}/outputs/scene/sim/scene_meta.json"
 PELVIS_Z = 0.78
 WIDTH, HEIGHT = 900, 700
 
 # Views chosen to show the three things that can be wrong: whether the jaw
 # straddles the object, whether the fingers clear the table, and whether the
 # approach is square to it.
-VIEWS = [("side", 180.0, -10.0, 0.55),
-         ("above", 210.0, -55.0, 0.60),
-         ("along_approach", 90.0, -8.0, 0.50)]
+VIEWS = [("side", 180.0, -10.0, 0.55), ("above", 210.0, -55.0, 0.60), ("along_approach", 90.0, -8.0, 0.50)]
 
 
 def stand_pose(meta, obj_key: str):
@@ -78,8 +75,7 @@ def place_robot(model, data, stand_xy, yaw) -> None:
 def hand_qadr(model, side: str):
     out = []
     for j in HAND_JOINTS:
-        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
-                                f"{side}_hand_{j}_joint")
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"{side}_hand_{j}_joint")
         out.append(int(model.jnt_qposadr[jid]) if jid >= 0 else -1)
 
     return out
@@ -126,8 +122,7 @@ def render(model, data, out_dir, tag, lookat) -> list[str]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--side", default="right", choices=["left", "right"])
-    ap.add_argument("--out", default=f"{paths.REPO}/outputs/"
-                                     "renders/grasp_check")
+    ap.add_argument("--out", default=f"{paths.REPO}/outputs/renders/grasp_check")
     args = ap.parse_args()
 
     meta = json.load(open(SCENE_META))
@@ -145,12 +140,18 @@ def main() -> None:
     mujoco.mj_forward(model, data)
 
     plan = grasping.grasp_pose(
-        obj_pos=np.array(obj["init_pos"]), obj_quat=obj["init_quat"],
-        box=obj["box"], surface_top=surf["top"], pelvis_xy=stand,
-        pelvis_yaw=yaw)
-    print(f"standing at {np.round(stand, 3)} yaw {np.rad2deg(yaw):+.0f}deg, "
-          f"{np.linalg.norm(np.array(obj['init_pos'][:2]) - stand):.3f} m from "
-          f"the {obj_key}")
+        obj_pos=np.array(obj["init_pos"]),
+        obj_quat=obj["init_quat"],
+        box=obj["box"],
+        surface_top=surf["top"],
+        pelvis_xy=stand,
+        pelvis_yaw=yaw,
+    )
+    print(
+        f"standing at {np.round(stand, 3)} yaw {np.rad2deg(yaw):+.0f}deg, "
+        f"{np.linalg.norm(np.array(obj['init_pos'][:2]) - stand):.3f} m from "
+        f"the {obj_key}"
+    )
     print(grasping.describe(plan))
     if not plan.ok:
         sys.exit(1)
@@ -160,14 +161,14 @@ def main() -> None:
     dofadr = np.array([model.jnt_dofadr[j] for j in joints])
     lo = np.array([model.jnt_range[j][0] for j in joints])
     hi = np.array([model.jnt_range[j][1] for j in joints])
-    palm = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY,
-                             f"{args.side}_wrist_yaw_link")
+    palm = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"{args.side}_wrist_yaw_link")
 
-    ok, pos_err, ax_err = solve_ik(model, data, palm, plan.grip, plan.approach,
-                                   qadr, dofadr, lo, hi, rng)
-    print(f"\nIK onto the grip point: {'solved' if ok else 'DID NOT SOLVE'} "
-          f"(position error {pos_err * 1000:.0f} mm, palm axis off by "
-          f"{np.rad2deg(ax_err):.0f} deg)")
+    ok, pos_err, ax_err = solve_ik(model, data, palm, plan.grip, plan.approach, qadr, dofadr, lo, hi, rng)
+    print(
+        f"\nIK onto the grip point: {'solved' if ok else 'DID NOT SOLVE'} "
+        f"(position error {pos_err * 1000:.0f} mm, palm axis off by "
+        f"{np.rad2deg(ax_err):.0f} deg)"
+    )
     if not ok:
         print("  the pose is unreachable, so nothing below is meaningful")
 
@@ -179,8 +180,7 @@ def main() -> None:
     grip = data.xpos[palm] + rot @ GRASP_CENTRE_OFFSET
     q_palm = rot.T @ (data.xpos[obj_body] - data.xpos[palm])
     print(f"  grip centre at {np.round(grip, 3)}, target {np.round(plan.grip, 3)}")
-    print(f"  object in the palm frame {np.round(q_palm, 3)}, "
-          f"want {np.round(GRASP_CENTRE_OFFSET, 3)}")
+    print(f"  object in the palm frame {np.round(q_palm, 3)}, want {np.round(GRASP_CENTRE_OFFSET, 3)}")
 
     lookat = grip.copy()
     open_paths = render(model, data, args.out, "1_open", lookat)
@@ -194,16 +194,13 @@ def main() -> None:
 
     print(f"\nfingers closed — {len(con['rows'])} contacts on the {obj_key}:")
     for name, dist, pos in con["rows"]:
-        print(f"    {name:28s} dist {dist * 1000:+7.1f} mm  at "
-              f"{np.round(pos, 3)}")
+        print(f"    {name:28s} dist {dist * 1000:+7.1f} mm  at {np.round(pos, 3)}")
     thumb, fingers = len(con["thumb"]), len(con["fingers"])
     print(f"\n  thumb side {thumb} contact(s), finger side {fingers}")
     if thumb and fingers:
-        print("  VERDICT: opposed — the object is between the thumb and the "
-              "fingers, which is what a grasp is")
+        print("  VERDICT: opposed — the object is between the thumb and the fingers, which is what a grasp is")
     elif thumb or fingers:
-        print("  VERDICT: one-sided — closing will push the object away, not "
-              "hold it")
+        print("  VERDICT: one-sided — closing will push the object away, not hold it")
     else:
         print("  VERDICT: no contact at all — the jaw closed on air")
 
@@ -219,7 +216,7 @@ def main() -> None:
     # than the arm keeps this to one forward-kinematics call per candidate.
     print("\n--- where does a closed hand actually hold something? ---")
     adr = obj["qpos_adr"]
-    keep = data.qpos[adr:adr + 7].copy()
+    keep = data.qpos[adr : adr + 7].copy()
     rot = data.xmat[palm].reshape(3, 3)
     origin = data.xpos[palm].copy()
     xs = np.arange(0.04, 0.20, 0.01)
@@ -229,44 +226,50 @@ def main() -> None:
     for px in xs:
         for py in ys:
             for pz in zs:
-                data.qpos[adr:adr + 3] = origin + rot @ np.array([px, py, pz])
-                data.qpos[adr + 3:adr + 7] = [1, 0, 0, 0]
+                data.qpos[adr : adr + 3] = origin + rot @ np.array([px, py, pz])
+                data.qpos[adr + 3 : adr + 7] = [1, 0, 0, 0]
                 mujoco.mj_forward(model, data)
                 c = report_contacts(model, data, obj_body, args.side)
                 if c["thumb"] and c["fingers"]:
                     hits.append((px, py, pz))
     if not hits:
-        print("  NO position gives opposed contact — this hand cannot pinch "
-              "this object at all")
+        print("  NO position gives opposed contact — this hand cannot pinch this object at all")
     else:
         h = np.array(hits)
         centre = h.mean(0)
         span = h.max(0) - h.min(0)
-        print(f"  {len(hits)} of {len(xs) * len(ys) * len(zs)} positions give "
-              f"a real pinch (thumb and fingers on opposite sides)")
-        print(f"  region centre {np.round(centre, 3)}   "
-              f"span {np.round(span, 3)} m")
-        print(f"  half-widths   x +-{span[0] / 2 * 1000:.0f} mm   "
-              f"y +-{span[1] / 2 * 1000:.0f} mm   "
-              f"z +-{span[2] / 2 * 1000:.0f} mm   "
-              f"<- the accuracy the servo has to hit")
-        print(f"  GRASP_CENTRE_OFFSET is currently "
-              f"{np.round(GRASP_CENTRE_OFFSET, 3)}; "
-              f"{'inside' if np.all(np.abs(GRASP_CENTRE_OFFSET - centre) <= span / 2) else 'OUTSIDE'} "
-              f"the region")
+        print(
+            f"  {len(hits)} of {len(xs) * len(ys) * len(zs)} positions give "
+            f"a real pinch (thumb and fingers on opposite sides)"
+        )
+        print(f"  region centre {np.round(centre, 3)}   span {np.round(span, 3)} m")
+        print(
+            f"  half-widths   x +-{span[0] / 2 * 1000:.0f} mm   "
+            f"y +-{span[1] / 2 * 1000:.0f} mm   "
+            f"z +-{span[2] / 2 * 1000:.0f} mm   "
+            f"<- the accuracy the servo has to hit"
+        )
+        print(
+            f"  GRASP_CENTRE_OFFSET is currently "
+            f"{np.round(GRASP_CENTRE_OFFSET, 3)}; "
+            f"{'inside' if np.all(np.abs(GRASP_CENTRE_OFFSET - centre) <= span / 2) else 'OUTSIDE'} "
+            f"the region"
+        )
         # A slice through the region at its own centre height, for eyeballing.
         zc = zs[np.argmin(np.abs(zs - centre[2]))]
         print(f"\n  slice at z = {zc:+.2f}:")
         for px in xs[::2]:
             row = []
             for py in ys[::2]:
-                row.append("##" if any(abs(a - px) < 1e-6 and abs(b - py) < 1e-6
-                                       and abs(c2 - zc) < 1e-6
-                                       for a, b, c2 in hits) else " .")
+                row.append(
+                    "##"
+                    if any(abs(a - px) < 1e-6 and abs(b - py) < 1e-6 and abs(c2 - zc) < 1e-6 for a, b, c2 in hits)
+                    else " ."
+                )
             print(f"    x={px:.2f}  " + " ".join(row))
         print("           y = " + " ".join(f"{v:+.2f}" for v in ys[::2]))
 
-    data.qpos[adr:adr + 7] = keep
+    data.qpos[adr : adr + 7] = keep
     mujoco.mj_forward(model, data)
 
     # --- is there a way IN? -----------------------------------------------
@@ -278,32 +281,32 @@ def main() -> None:
     print("\n--- approaching with the hand open: where does it first touch? ---")
     for a2 in hand_qadr(model, args.side):
         if a2 >= 0:
-            data.qpos[a2] = 0.0                  # HAND_OPEN
+            data.qpos[a2] = 0.0  # HAND_OPEN
     mujoco.mj_forward(model, data)
     rot = data.xmat[palm].reshape(3, 3)
     origin = data.xpos[palm].copy()
     adr = obj["qpos_adr"]
-    keep = data.qpos[adr:adr + 7].copy()
+    keep = data.qpos[adr : adr + 7].copy()
     first = None
     for px in np.arange(0.34, 0.09, -0.005):
-        data.qpos[adr:adr + 3] = (origin + rot @ np.array(
-            [px, GRASP_CENTRE_OFFSET[1], GRASP_CENTRE_OFFSET[2]]))
-        data.qpos[adr + 3:adr + 7] = [1, 0, 0, 0]
+        data.qpos[adr : adr + 3] = origin + rot @ np.array([px, GRASP_CENTRE_OFFSET[1], GRASP_CENTRE_OFFSET[2]])
+        data.qpos[adr + 3 : adr + 7] = [1, 0, 0, 0]
         mujoco.mj_forward(model, data)
         c = report_contacts(model, data, obj_body, args.side)
         if c["rows"] and first is None:
             first = px
-            names = sorted({r[0].replace("right_hand_", "").replace("_link", "")
-                            for r in c["rows"]})
+            names = sorted({r[0].replace("right_hand_", "").replace("_link", "") for r in c["rows"]})
             print(f"  first contact at palm x = {px:.3f}, on {', '.join(names)}")
     if first is None:
         print("  never touches — the approach is clear all the way in")
     else:
-        print(f"  the grip centre needs palm x = {GRASP_CENTRE_OFFSET[0]:.3f}, "
-              f"so the object is in contact for the last "
-              f"{(first - GRASP_CENTRE_OFFSET[0]) * 100:.1f} cm of the "
-              f"approach — it is pushed, not enclosed")
-    data.qpos[adr:adr + 7] = keep
+        print(
+            f"  the grip centre needs palm x = {GRASP_CENTRE_OFFSET[0]:.3f}, "
+            f"so the object is in contact for the last "
+            f"{(first - GRASP_CENTRE_OFFSET[0]) * 100:.1f} cm of the "
+            f"approach — it is pushed, not enclosed"
+        )
+    data.qpos[adr : adr + 7] = keep
     mujoco.mj_forward(model, data)
 
     # --- how far should the hand close? -----------------------------------
@@ -313,7 +316,7 @@ def main() -> None:
     # out and ends up on the floor, which the episode then reports as "no
     # contact after closing". Find the smallest closure that still opposes.
     print("\n--- how far to close ---")
-    data.qpos[adr:adr + 7] = keep
+    data.qpos[adr : adr + 7] = keep
     best_a = None
     for alpha in np.arange(0.3, 1.05, 0.05):
         for a2, v in zip(hand_qadr(model, args.side), closed):
@@ -324,13 +327,14 @@ def main() -> None:
         t, f = len(c["thumb"]), len(c["fingers"])
         deep = min([r[1] for r in c["rows"]], default=0.0)
         tag = "opposed" if (t and f) else "one-sided" if (t or f) else "no contact"
-        print(f"  alpha {alpha:.2f}  thumb {t}  fingers {f}  "
-              f"deepest {deep * 1000:+6.1f} mm   {tag}")
+        print(f"  alpha {alpha:.2f}  thumb {t}  fingers {f}  deepest {deep * 1000:+6.1f} mm   {tag}")
         if t and f and best_a is None:
             best_a = alpha
     if best_a is not None:
-        print(f"\n  first closure that opposes: alpha {best_a:.2f} — use that "
-              f"rather than 1.0, which buries the fingers in the object")
+        print(
+            f"\n  first closure that opposes: alpha {best_a:.2f} — use that "
+            f"rather than 1.0, which buries the fingers in the object"
+        )
     for a2, v in zip(hand_qadr(model, args.side), closed):
         if a2 >= 0:
             data.qpos[a2] = float(v) * (best_a or 1.0)

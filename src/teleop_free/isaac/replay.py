@@ -35,8 +35,7 @@ class MujocoReplay:
         self.scene_xml = scene_xml
         self._obj = {}
         for k in object_keys:
-            bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY,
-                                    f"{k}_object")
+            bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"{k}_object")
             if bid >= 0:
                 self._obj[k] = bid
 
@@ -47,7 +46,8 @@ class MujocoReplay:
                 f"trace qpos has {len(qpos)} entries, the scene has nq="
                 f"{self.model.nq}. The trace was recorded against a different "
                 f"scene -- rendering it would place a correct trajectory in the "
-                f"wrong world. Check the batch's scene snapshot.")
+                f"wrong world. Check the batch's scene snapshot."
+            )
         self.data.qpos[:] = qpos
         if qvel is not None and len(qvel) == self.model.nv:
             self.data.qvel[:] = qvel
@@ -69,8 +69,7 @@ class MujocoReplay:
         return np.concatenate([self.data.xpos[bid], self.data.xquat[bid]])
 
     def object_poses(self) -> dict:
-        return {k: np.concatenate([self.data.xpos[b], self.data.xquat[b]])
-                for k, b in self._obj.items()}
+        return {k: np.concatenate([self.data.xpos[b], self.data.xquat[b]]) for k, b in self._obj.items()}
 
     def camera_pose(self, name: str):
         """(pos, wxyz quat). MuJoCo's camera frame is -Z forward / +Y up, the

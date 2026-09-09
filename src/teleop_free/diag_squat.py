@@ -32,8 +32,8 @@ from agent_server import LocomotionMode  # noqa: E402
 from primitives import DT, Primitives  # noqa: E402
 from privileged_pub import EpisodeControlClient  # noqa: E402
 
-SETTLE = 5.0        # the squat is slow; earlier sweeps used 2.5 and saw little
-FORWARD = 0.30      # keep the target near the body, where the arm has travel
+SETTLE = 5.0  # the squat is slow; earlier sweeps used 2.5 and saw little
+FORWARD = 0.30  # keep the target near the body, where the arm has travel
 
 
 def main() -> None:
@@ -61,20 +61,23 @@ def main() -> None:
     p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
     base = p.obs()["pelvis"]["pos"][2]
     if base < 0.5:
-        sys.exit(f"robot is not standing (pelvis {base:.3f} m) — nothing below "
-                 f"would mean anything")
+        sys.exit(f"robot is not standing (pelvis {base:.3f} m) — nothing below would mean anything")
     print(f"pelvis at rest: {base:.3f} m\n")
-    print(f"{'cmd z':>7} {'height':>8} {'pelvis':>8} {'palm z':>8} "
-          f"{'palm world':>11}  (all metres)")
+    print(f"{'cmd z':>7} {'height':>8} {'pelvis':>8} {'palm z':>8} {'palm world':>11}  (all metres)")
 
     # Both levers at once: the wrist target the controller bends for, and the
     # planner's `height` field, which an earlier sweep found inert — worth
     # re-testing here because it was only ever tried with the arm at rest.
-    for cmd_z, height in [(-0.10, -1.0), (-0.25, -1.0), (-0.40, -1.0),
-                          (-0.55, -1.0), (-0.55, 0.70), (-0.55, 0.60),
-                          (-0.55, 0.50)]:
-        target = np.array([FORWARD, -0.20 if args.side == "right" else 0.20,
-                           cmd_z])
+    for cmd_z, height in [
+        (-0.10, -1.0),
+        (-0.25, -1.0),
+        (-0.40, -1.0),
+        (-0.55, -1.0),
+        (-0.55, 0.70),
+        (-0.55, 0.60),
+        (-0.55, 0.50),
+    ]:
+        target = np.array([FORWARD, -0.20 if args.side == "right" else 0.20, cmd_z])
         end = time.time() + SETTLE
         while time.time() < end:
             p.cmd.set_wrists(**{f"{args.side}_pos": target})
@@ -84,14 +87,17 @@ def main() -> None:
         pelvis = s["pelvis"]["pos"][2]
         palm = np.array(s["palms"][args.side]["pos"])
         local = p.world_to_root_full(palm, s)
-        print(f"{cmd_z:7.2f} {height:8.2f} {pelvis:8.3f} {local[2]:8.3f} "
-              f"{palm[2]:11.3f}")
+        print(f"{cmd_z:7.2f} {height:8.2f} {pelvis:8.3f} {local[2]:8.3f} {palm[2]:11.3f}")
 
     s = p.obs()
-    print(f"\nlowest pelvis seen: {s['pelvis']['pos'][2]:.3f} m "
-          f"({(s['pelvis']['pos'][2] - base) * 100:+.1f} cm from rest)")
-    print("A pelvis at 0.70 would make a 0.62 m table as reachable as a 0.70 m "
-          "one is now; at 0.76 it stays out of range whatever the arm does.")
+    print(
+        f"\nlowest pelvis seen: {s['pelvis']['pos'][2]:.3f} m "
+        f"({(s['pelvis']['pos'][2] - base) * 100:+.1f} cm from rest)"
+    )
+    print(
+        "A pelvis at 0.70 would make a 0.62 m table as reachable as a 0.70 m "
+        "one is now; at 0.76 it stays out of range whatever the arm does."
+    )
     p.cmd.pause_control()
     reset.close()
     p.close()
