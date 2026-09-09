@@ -180,12 +180,6 @@ def _drop_to_hint(want_drop: float) -> float:
 
 
 STAND_COVER = os.environ.get("GYM_STAND_COVER", "1") == "1"
-# Legacy argument plumbing: stream_reach now always uses an observable
-# depth/cone stop gate. GYM_CREEP_OBS=0 no longer restores hidden-target
-# termination. The geometric gate is a proxy, not a full reach-map check;
-# actual crouch delivery and post-crouch geometry are checked separately.
-CREEP_OBS = os.environ.get("GYM_CREEP_OBS", "1") == "1"
-FACE_OBJ = os.environ.get("GYM_FACE_OBJ", "0") == "1"
 
 
 def sample_stand(pl, rng):
@@ -1609,14 +1603,11 @@ def _run_round(
     # stride. Only the far band changes; the MID/SHUFFLE deceleration bands
     # that give the arrival its braking accuracy are untouched.
     APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.30, 0.215, 0.20
-    # GYM_SHUFFLE_BAND (2026-09-07): the learned policy imitates the 1-2 cm/s
-    # shuffle as a crawl that starts at 0.5 m and sets its own stop point,
-    # independent of where the expert stops (ready07 vs ready07b: expert
-    # first_stop moved 4 cm, policy closest approach moved 7 mm). 0 disables
-    # the shuffle: MID speed is held until the brake, including after the
-    # arrival gate's first reachable stop. Default 0.10 is the calibrated brake.
+    # The expert's own 1-2 cm/s shuffle-imitating crawl let the learned policy
+    # set its own stop point independent of where the expert stopped; removing
+    # it (formerly GYM_SHUFFLE_BAND=0) moved 07d 30% -> 48%, McNemar p=0.052
+    # (docs/experiments.md:234). MID speed now holds all the way to the brake.
     MID_BAND = mid_band
-    SHUFFLE_BAND = float(os.environ.get("GYM_SHUFFLE_BAND", "0.10"))
 
     # Coverage-first (2026-09-04): steer the walk at a point offset laterally
     # from the planned stand, so the last 0.3 m has to correct sideways --
@@ -1627,12 +1618,11 @@ def _run_round(
     advance = float(np.clip(reach_config.arrival_advance, 0.0, 0.10))
     VISIBLE = bool(getattr(reach_config, "visible_expert", False))
     if VISIBLE:
-        # Visible expert: no latch, no advance, no shuffle band. The walk stops
-        # the tick the MEASURED object depth reaches visible_brake_depth and
-        # decelerates over visible_decel_band above it -- both functions of
-        # the relative pose the cameras see, nothing per-episode.
+        # Visible expert: no latch, no advance. The walk stops the tick the
+        # MEASURED object depth reaches visible_brake_depth and decelerates
+        # over visible_decel_band above it -- both functions of the relative
+        # pose the cameras see, nothing per-episode.
         advance = 0.0
-        SHUFFLE_BAND = 0.0
     aim_xy = aim_xy + advance * np.asarray(fv[:2])
     if appr_lat:
         p.log(f"[gym] approach aim offset {appr_lat * 100:+.0f} cm lateral")
@@ -1692,21 +1682,8 @@ def _run_round(
             to_stand = np.asarray(aim_xy) - p.pelvis_xy(s)
             n_ts = float(np.linalg.norm(to_stand))
             mv = to_stand / n_ts if n_ts > 1e-3 else np.array(fv[:2])
-            # GYM_FACE_OBJ: walk up FACING THE BOTTLE, and let the creep turn
-            # the body to the planned azimuth at the table (2026-09-04). The
-            # failure variable is the pelvis yaw at the crouch: the policy
-            # arrives 14 deg over-rotated and the expert never demonstrates
-            # turning back, because it walks in already aligned. Facing the
-            # object on the way in puts a 0 -> 30 deg alignment turn, with the
-            # bottle in view the whole time, into every episode.
             fv_now = fv
-            if FACE_OBJ:
-                b = p.pelvis_yaw(s) + float(np.arctan2(r[1], r[0]))
-                fv_now = (float(np.cos(b)), float(np.sin(b)), 0.0)
-            shuffle_now = SHUFFLE_BAND > 0 and (
-                advance_gate.first_reachable is not None or r[0] - plan_r <= SHUFFLE_BAND
-            )
-            speed = APPR_SHUFFLE if shuffle_now else APPR_MID if r[0] - plan_r <= MID_BAND else APPR_COARSE
+            speed = APPR_MID if r[0] - plan_r <= MID_BAND else APPR_COARSE
             if VISIBLE and reach_config.visible_decel_band > 0:
                 # Monotone in the measured depth: full speed above the band,
                 # ramping to the gait's slow floor at the brake depth.
@@ -1868,7 +1845,7 @@ def _run_round(
         pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "0") == "1" else None),
         squat_hint=squat_hint,
         plan_r=float(np.hypot(rel[0], rel[1])),
-        stand_rel=(np.asarray(rel, dtype=float) if (STAND_COVER and not CREEP_OBS) else None),
+        stand_rel=None,
         envelope=None,
     )
     if not grasp_result.ok:
