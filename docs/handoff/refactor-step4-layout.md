@@ -353,3 +353,94 @@ entered it. Left over cap, with reasons:
 
 **Not attempted this session** (JOB 2's remaining families 3, 5, 4): `vla_round.py`, crate's
 `bimanual_wall.py`/`bimanual_carry.py`, `primitives.py`.
+
+**Commit (family 3, next session) -- refactor step 4b, family 3: `vla_round.py` (pure extraction).**
+`vla_round.py` (1832 lines) split into four new files plus what stays behind. As with family 2 this grew
+past the task's named targets because the size cap forced it, not because the shape changed:
+
+- `vla_obs.py` -- `ObsBuilder`, `PolicyLink`, `_tstart_view`, `_obj_extra` (229 lines).
+- `vla_client.py` -- `_grip_gain`, `_ensemble`, `_stalled`, `make_vla_policy_async` (550 lines). The task
+  named this file for "observation assembly, chunk selection/ensemble, send loop" helpers; observation
+  assembly (`ObsBuilder`) ended up in `vla_obs.py` instead because `make_vla_policy` (staying in
+  `vla_round.py`) also needs it, and `vla_obs.py` has zero dependency on anything that reads live
+  `vla_round` globals, which keeps the dependency graph a clean one-way chain (see below).
+- `lockstep_client.py` -- `LOCKSTEP_PORT`, `LockstepLink`, `LockstepClock`, `install_lockstep_shim`,
+  `load_latency_dist`, `make_vla_policy_lockstep` (536 lines), exactly the cluster the task named.
+- `clean_clock.py` -- `CleanClock`, `install_clean_shim` (158 lines), exactly as named.
+- `vla_round.py` (520 lines, down from 1832) keeps `make_vla_policy` (the blocking client) and every
+  module-level knob (`TOKEN_DIM`, `LIFT_M`, `NEAR_M`, `TIMEOUT_S`, `STALL_ABORT_S`, `SNAP`, `GRIP_GAIN`,
+  `ENSEMBLE_N`, `ENSEMBLE_M`, `RTC_ON`, `TRANSITION_COMMIT`, `TRANSITION_DECODER`, `GRIP_DELAY`,
+  `STALL_ABORT_M`, `DATASET_FPS`, `OBS_DUMP`, `REPLACE`, `LOCKSTEP_NO_SEED`), plus the two dead imports
+  (`math`, `sys` -- confirmed unused anywhere in the file before touching anything, left in place). Every
+  name that used to live here and moved is re-exported (plain top-level import), so
+  `from locomani.backends.sonic.vla_round import X` is unchanged for every caller.
+
+Dependency graph, to avoid a circular import while still letting every satellite read `vla_round`'s knobs
+live: `vla_round.py` imports FROM all four satellites at the top level (for re-export); `vla_client.py` and
+`lockstep_client.py` import FROM `vla_obs.py` at the top level (no cycle, `vla_obs.py` needs nothing from
+them); `lockstep_client.py` also imports `_ensemble`/`_grip_gain`/`_stalled` FROM `vla_client.py` at the top
+level. None of the four satellites import `vla_round.py` at their own top level -- every read of a
+`vla_round` constant from inside a satellite is a **deferred** `from locomani.backends.sonic import
+vla_round as vr` done inside the specific function that needs it (not at module scope), so by the time it
+actually runs both modules are already fully loaded.
+
+**Monkeypatch hazard, much larger than family 2's single `toppled` case:** `eval_closed_loop.py` overrides
+nearly every module-level knob by assignment before building a round (`vla_round.DATASET_FPS = ...`,
+`.GRIP_GAIN`, `.RTC_ON`, `.TRANSITION_COMMIT`, `.TRANSITION_DECODER`, `.ENSEMBLE_N`, `.ENSEMBLE_M`,
+`.TIMEOUT_S`, `.SNAP`, `.STALL_ABORT_S`), constructs `vla_round.PolicyLink`/`.LockstepLink`/`.LockstepClock`/
+`.CleanClock` and calls `.install_lockstep_shim`/`.install_clean_shim`/`.load_latency_dist`/
+`.make_vla_policy_lockstep`/`.make_vla_policy_async`/`.make_vla_policy` directly off the module, and the RTC
+tools (`transition_capture.py`, `diag_transition_live.py`) replace `vla_round.PolicyLink.get_chunk` and
+`vla_round.make_vla_policy_async` wholesale. Checked which of these are read from CODE THAT MOVED (as
+opposed to just called by an external qualified reference, which any re-export already satisfies): every
+constant read inside `_grip_gain`, `_ensemble`, `_stalled`, `make_vla_policy_async` (and its nested `worker`
+closure), `make_vla_policy_lockstep` (and its nested `vla_round`/`infer`/`frame_cmd` closures), `PolicyLink.
+get_chunk`, and `CleanClock.__init__` needed the deferred-`vr` fix above; `PolicyLink.get_chunk`'s class-
+level monkeypatch (`vla_round.PolicyLink.get_chunk = get`) needed no fix at all, since it mutates the shared
+class object itself and every instance method call re-resolves through that same class regardless of which
+module holds a name pointing at it. The deferred alias is `vr`, not `vla_round`, in every closure-building
+factory: each builds a nested function itself named `vla_round` (matching the established
+`vla_round(p, reset, meta, ...)` convention every channel uses), which would shadow a same-named module
+import inside that scope.
+
+Verified the fix, not just asserted it: a standalone script imported `vla_round`, set
+`vla_round.ENSEMBLE_N/GRIP_GAIN/DATASET_FPS/STALL_ABORT_S/SNAP` the way `eval_closed_loop.py` does, then
+called the moved `_grip_gain`/`_stalled` directly and confirmed both read the overridden values (not the
+file's own import-time defaults), and confirmed `vla_round.PolicyLink is vla_obs.PolicyLink` (same object,
+so a class-level patch reaches every holder of a reference).
+
+**Checks (all green):** `ruff format . && ruff check .`; full pytest suite, 177 passed / 9 skipped / 11
+subtests (unchanged); `lint_env.py --strict`; `gen_config_reference.py --check`; the import smoke-check;
+`bash -n` over `scripts/*.sh` + `scripts/stack/*.sh`; `eval_closed_loop.py`/`bimanual_carry.py`/
+`bimanual_wall.py --help` as real subprocesses; the standalone monkeypatch-live-read smoke script above.
+Noted: only one test file (`test_prefix_capture.py`) references `vla_round` at all, and it fails when run
+in complete isolation (`patch.object(sonic_pkg, "agent_server"/"vla_round", ...)` needs those submodules
+already registered as attributes of the `locomani.backends.sonic` package, which only happens once some
+other, earlier-collected test has imported something that imports `primitives.py` -- `agent_server` -- or
+`vla_round.py` first) -- confirmed this is a **pre-existing** test-order fragility unrelated to this
+family's split, not a regression: the file passes 3/3 inside the full suite, both before and after this
+commit, and `agent_server`'s registration comes from `primitives.py` (untouched by this family).
+
+**`lint_sizes.py`:** 9 files / 74 functions over cap (after family 2) -> 8 files / 74 functions over cap.
+`vla_round.py` drops out of the file list; `vla_obs.py`, `vla_client.py`, `lockstep_client.py`,
+`clean_clock.py` never entered it. Left over cap, with reasons -- every one is a nested nonlocal-state
+nested factory (`make_vla_policy`/`make_vla_policy_async`/`make_vla_policy_lockstep` each return a closure
+literally named `vla_round`, which is what grasp_gym.VLA_POLICY gets set to) built around a worker thread,
+a lock, and a handful of mutable dicts (`latest`, `buf`, `lat_rec`) that every phase of the loop reads and
+writes; unlike family 2's flat `_servo_continuous`, splitting these further means either passing 6-8
+threading primitives through new function boundaries or promoting them to a shared context object the way
+`ServoState` did for the streamed servo -- attempted a first pass at this and stopped: the worker thread
+closure captures `obs_src`/`link`/`lock`/`latest`/`buf`/`stop`/`commitment` by reference already, and turning
+those into object attributes changes nothing about the coupling, only where the names live, for a live
+control/threading path with no offline test coverage to catch a mistake (see the `test_prefix_capture.py`
+note above) -- the single existing regression backstop for this whole family is the full pytest suite plus
+the GPU gate, neither of which exercises the threaded VLA clients at all. Listed rather than split further:
+- `vla_client.py:make_vla_policy_async` (450) / `vla_client.py:vla_round` (414, the nested closure it
+  returns) -- worker thread + lock + keepalive + main loop, as above.
+- `lockstep_client.py:make_vla_policy_lockstep` (251) / `lockstep_client.py:vla_round` (218) -- the
+  simulation-clock equivalent of the same shape (`observe`/`infer`/`frame_cmd` closures instead of a thread).
+- `vla_round.py:make_vla_policy` (244) / `vla_round.py:vla_round` (234) -- the blocking client's own nested
+  closure (feeder thread instead of a worker), pre-existing shape, unchanged by this family.
+
+**Not attempted this session** (JOB 2's remaining families 5, 4): crate's `bimanual_wall.py`/
+`bimanual_carry.py`, `primitives.py`.
