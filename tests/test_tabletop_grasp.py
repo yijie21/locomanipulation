@@ -8,10 +8,9 @@ from types import SimpleNamespace
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-import adaptive_grasp
-from primitives import Primitives
-from tabletop_grasp import TabletopGrasp, TabletopTarget
+from locomani.backends.sonic.primitives import Primitives
+from locomani.tasks.bottle import adaptive_grasp
+from locomani.tasks.bottle.tabletop_grasp import TabletopGrasp, TabletopTarget
 
 
 class TabletopTests(unittest.TestCase):

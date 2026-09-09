@@ -8,8 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-import diag_stance_grid as diag
+from locomani.tasks.bottle.diag import diag_stance_grid as diag
 
 
 class StandingSettleTests(unittest.TestCase):

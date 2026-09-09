@@ -8,11 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-import grasp_gym as gym
-import stream_reach as sr
 from _sim_stubs import Clock, Robot
-from execution_record import ExecutionRecord
+
+from locomani.backends.sonic import stream_reach as sr
+from locomani.pipeline.execution_record import ExecutionRecord
+from locomani.tasks.bottle import grasp_gym as gym
 
 
 class ExecutionTests(unittest.TestCase):

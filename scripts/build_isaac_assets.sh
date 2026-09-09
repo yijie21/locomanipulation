@@ -50,7 +50,7 @@ ROBOT_USD="$ROBOT_DIR/g1_dex1.usda"
 [ -f "$ROBOT_MJCF" ] || fail "robot MJCF not found: $ROBOT_MJCF"
 # The key covers the post-processor too: a change to split_visual_refs.py
 # changes the artifact without touching the MJCF.
-SPLITTER="$LOCOMANI_ROOT/src/teleop_free/isaac/split_visual_refs.py"
+SPLITTER="$LOCOMANI_ROOT/src/locomani/sim/isaac/split_visual_refs.py"
 want="$(sha "$ROBOT_MJCF")-$(sha "$SPLITTER")"
 if [ "$FORCE" = 0 ] && [ -f "$ROBOT_USD" ] && [ "$(cat "$ROBOT_DIR/.stamp" 2>/dev/null)" = "$want" ]; then
     echo "robot  = cached  $ROBOT_USD  (mjcf $want)"
@@ -63,14 +63,14 @@ else
     # went unnoticed on 2026-09-06.
     rm -f "$ROBOT_USD" "$ROBOT_DIR/.stamp"
     t0=$(secs)
-    # NOTE: teleop_free.isaac.mjcf_split writes a render-only variant that would
+    # NOTE: locomani.sim.isaac.mjcf_split writes a render-only variant that would
     # avoid the importer's mesh-merge problem (see isaac_convert). It is NOT
     # used: Isaac 4.5's MJCF importer aborts (SIGABRT) on the jointless child
     # bodies it introduces, with and without an explicit inertial. Kept because
     # the variant itself is correct -- 41 bodies, same 34 joints, same 77 geoms,
     # kinematics identical to 0.0000 mm -- and a newer importer may accept it.
     OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH="$LOCOMANI_ROOT/src" \
-        "$RENDER_PY" -m teleop_free.isaac.isaac_convert \
+        "$RENDER_PY" -m locomani.sim.isaac.isaac_convert \
         "$ROBOT_MJCF" "$ROBOT_USD" >/dev/null 2>&1 \
         || fail "robot import failed; see $ROBOT_DIR/convert.log"
     [ -s "$ROBOT_USD" ] || fail "robot import produced no USD; see $ROBOT_DIR/convert.log"
@@ -115,7 +115,7 @@ mkdir -p "$SCENE_DIR"
 echo "scene  + building '$LABEL' from $META ..."
 t0=$(secs)
 SCENE_META="$META" SCENE_XML="$SCENE_SRC_XML" OMNI_KIT_ACCEPT_EULA=YES \
-    "$RENDER_PY" src/teleop_free/isaac_scene.py \
+    "$RENDER_PY" src/locomani/sim/isaac_scene.py \
     "$LOCOMANI_OUTPUTS/scene" "$SCENE_DIR" > "$SCENE_DIR/kit.log" 2>&1 \
     || fail "scene build failed; see $SCENE_DIR/kit.log and build.log"
 [ -s "$SCENE_DIR/scene.usda" ] || fail "scene build produced no scene.usda; see $SCENE_DIR/kit.log"

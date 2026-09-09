@@ -62,7 +62,7 @@ fi
 # fine".
 PY="$SONIC_ROOT/.venv_sim/bin/python"
 if [ -x "$PY" ]; then
-    "$PY" "$LOCOMANI_SRC/build_sim_scene.py" \
+    "$PY" "$LOCOMANI_SRC/sim/build_sim_scene.py" \
         "$ROOT/outputs/scene" "$ROOT/outputs/scene/sim" \
         | tail -n 3
     # Echo the result. A scene built with the wrong SCENE_PRESET is otherwise

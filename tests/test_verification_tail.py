@@ -2,8 +2,7 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-from verification_tail import training_prefix_length
+from locomani.pipeline.verification_tail import training_prefix_length
 
 
 class VerificationTailTests(unittest.TestCase):

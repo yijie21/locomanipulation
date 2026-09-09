@@ -4,8 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from experiment_cases import load_cases, save_cases
+from locomani.pipeline.experiment_cases import load_cases, save_cases
 
 
 class CaseBankTests(unittest.TestCase):
@@ -36,7 +35,7 @@ class CaseBankTests(unittest.TestCase):
                 load_cases(bank, scene)
 
     def test_duplicate_and_nonfinite_rejected(self):
-        from experiment_cases import validate
+        from locomani.pipeline.experiment_cases import validate
 
         c = dict(
             case_id="a",

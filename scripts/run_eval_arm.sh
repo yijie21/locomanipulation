@@ -47,18 +47,18 @@ case $MODE in
 esac
 
 SCENE_PRESET=bottle_only SCENE_SEED="${EVAL_SCENE_SEED:-922}" \
-  "$VENV_SIM_PY" src/teleop_free/build_sim_scene.py outputs/scene outputs/scene/sim \
+  "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim \
   | grep -E "^\[scene\]"
 
 env NO_ENCODER=1 SIM_VIS=readout SIM_VIDEO_DIR="$PWD/outputs/videos/cl_$NAME" \
-  bash src/teleop_free/start_stack.sh "pick up the water bottle" \
+  bash scripts/stack/start_stack.sh "pick up the water bottle" \
   > outputs/logs/stack_$NAME.log 2>&1
 grep -qi "stack up" outputs/logs/stack_$NAME.log \
   || { echo "STACK_FAILED $NAME"; tail -8 outputs/logs/stack_$NAME.log; exit 1; }
 echo "STACK_UP $NAME"
 
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU} nohup "$GR00T_PY" \
-  src/teleop_free/tools/serve_policy.py --model-path "$CKPT" --port "$PORT" ${SERVE_EXTRA:-} \
+  src/locomani/pipeline/serve_policy.py --model-path "$CKPT" --port "$PORT" ${SERVE_EXTRA:-} \
   > /workspace/tmp/serve_$NAME.log 2>&1 &
 for _ in $(seq 1 90); do
   grep -q "listening" /workspace/tmp/serve_$NAME.log 2>/dev/null && break; sleep 5
@@ -66,14 +66,14 @@ done
 grep -q "listening" /workspace/tmp/serve_$NAME.log || { echo "SERVE_FAILED $NAME"; exit 1; }
 echo "SERVE_UP $NAME"
 
-( . scripts/paths.sh; cd src/teleop_free \
-  && TF_DATASET_FPS=25 "$VENV_SIM_PY" -u tools/eval_closed_loop.py \
+( . scripts/paths.sh; cd src/locomani/pipeline \
+  && TF_DATASET_FPS=25 "$VENV_SIM_PY" -u eval_closed_loop.py \
        --fresh "$N" --seed 6000 --spawn-edge 1.1 1.3 $CL $EXTRA \
        --policy-port "$PORT" \
-       --out "$PWD/../../$OUT/closed_loop.json" \
-       --trace-dir "$PWD/../../$OUT/traces" ) > "$OUT/eval.log" 2>&1
+       --out "$PWD/../../../$OUT/closed_loop.json" \
+       --trace-dir "$PWD/../../../$OUT/traces" ) > "$OUT/eval.log" 2>&1
 
 ok=$(grep -c '"ok": true' "$OUT/closed_loop.manifest.jsonl" 2>/dev/null || echo 0)
 tr=$(ls "$OUT"/traces/round_*.json 2>/dev/null | wc -l)
 echo "ARM_DONE $NAME ok=$ok rounds=$tr"
-bash src/teleop_free/stop_instance.sh "$INSTANCE" "$PORT" > /dev/null 2>&1
+bash scripts/stack/stop_instance.sh "$INSTANCE" "$PORT" > /dev/null 2>&1

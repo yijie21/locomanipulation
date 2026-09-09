@@ -5,17 +5,18 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path[:0] = [str(Path(__file__).resolve().parents[1] / "src/teleop_free"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(Path(__file__).resolve().parent)]
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from coupled_grasp_policy import CoupledGraspPolicy, screen_motion
-from execution_record import ExecutionRecord
-from reach_config import ReachConfig
-from ready_grasp_policy import OFFSET
-from recoverable_grasp_policy import RecoverableGraspPolicy
 from test_transport_guard import TransportGuardTests
-from transport_guard import TransportGuard
+
+from locomani.pipeline.execution_record import ExecutionRecord
+from locomani.tasks.bottle.coupled_grasp_policy import CoupledGraspPolicy, screen_motion
+from locomani.tasks.bottle.reach_config import ReachConfig
+from locomani.tasks.bottle.ready_grasp_policy import OFFSET
+from locomani.tasks.bottle.recoverable_grasp_policy import RecoverableGraspPolicy
+from locomani.tasks.bottle.transport_guard import TransportGuard
 
 
 class CoupledTests(unittest.TestCase):

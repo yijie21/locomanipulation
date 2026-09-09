@@ -128,7 +128,7 @@ if [ "$VRAM_MIN" -gt 0 ] && [ "$((VRAM_MIN - FREE_MIN))" -gt "$SQUAT_MAX" ]; the
     echo "  (smallest card: $FREE_MIN of $VRAM_MIN MiB free; limit is $SQUAT_MAX)"
     nvidia-smi --query-compute-apps=pid,used_memory --format=csv 2>/dev/null | sed 's/^/  /'
     echo "  Training wants essentially the whole card. Stop whatever is holding it"
-    echo "  (the collection stack? src/teleop_free/stop_stack.sh) and re-run, or"
+    echo "  (the collection stack? scripts/stack/stop_stack.sh) and re-run, or"
     echo "  raise SQUAT_MAX=<MiB> if you know the residue is harmless."
     exit 1
 fi

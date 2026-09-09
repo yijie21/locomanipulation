@@ -8,8 +8,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-import initial_pose
+from locomani.backends.sonic import initial_pose
 
 
 class Clock:

@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-from audit_prefix_execution import audit, candidates
-from transition_capture import Capture
+from locomani.backends import sonic as sonic_pkg
+from locomani.rtc.audit_prefix_execution import audit, candidates
+from locomani.rtc.transition_capture import Capture
 
 
 class CaptureTests(unittest.TestCase):
@@ -35,9 +35,9 @@ class CaptureTests(unittest.TestCase):
         cap.chunk_lock = threading.Lock()
         cap.inference_context = threading.local()
         cap.put = lambda kind, **kw: records.append((kind, kw))
-        with patch.dict(
-            sys.modules,
-            {"agent_server": SimpleNamespace(AgentCommander=Commander), "vla_round": SimpleNamespace(PolicyLink=Link)},
+        with (
+            patch.object(sonic_pkg, "agent_server", SimpleNamespace(AgentCommander=Commander)),
+            patch.object(sonic_pkg, "vla_round", SimpleNamespace(PolicyLink=Link)),
         ):
             cap.instrument()
             link = Link()

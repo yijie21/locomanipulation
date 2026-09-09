@@ -5,8 +5,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from measured_grasp import bounded_rotation
+from locomani.tasks.bottle.measured_grasp import bounded_rotation
 
 
 class RotationHandoverTests(unittest.TestCase):

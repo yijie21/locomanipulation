@@ -11,9 +11,8 @@ from unittest.mock import Mock
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from arm_ik import ArmIK
-from pose_feedback import PoseFeedback
+from locomani.primitives.arm_ik import ArmIK
+from locomani.tasks.bottle.pose_feedback import PoseFeedback
 
 
 class PoseFeedbackTests(unittest.TestCase):
@@ -45,9 +44,8 @@ class PoseFeedbackTests(unittest.TestCase):
             controller.step(q, np.zeros(3), np.eye(3), np.array([np.nan, 0, 0]), np.eye(3), 0.02)
 
     def test_live_guard_rejects_before_publishing(self):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-        from diagnostic_pose_servo import execute_pose_feedback
-        from transport_guard import SweepResult
+        from locomani.tasks.bottle.diag.diagnostic_pose_servo import execute_pose_feedback
+        from locomani.tasks.bottle.transport_guard import SweepResult
 
         state = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         state["wall"] = time.time()
@@ -62,14 +60,13 @@ class PoseFeedbackTests(unittest.TestCase):
         arm._push.assert_not_called()
 
     def test_rotation_error_at_pi_does_not_vanish(self):
-        from pose_feedback import rotation_vector
+        from locomani.tasks.bottle.pose_feedback import rotation_vector
 
         error = rotation_vector(np.diag([1.0, -1.0, -1.0]), np.eye(3))
         self.assertAlmostEqual(np.linalg.norm(error), np.pi)
 
     def test_transport_handover_preserves_original_drift_anchor(self):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-        from diagnostic_pose_servo import execute_pose_feedback
+        from locomani.tasks.bottle.diag.diagnostic_pose_servo import execute_pose_feedback
 
         origin = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         state = deepcopy(origin)
@@ -85,7 +82,7 @@ class PoseFeedbackTests(unittest.TestCase):
         guard.check.assert_not_called()
 
     def test_offhand_guard_reuses_current_observation(self):
-        import stream_reach as sr
+        from locomani.backends.sonic import stream_reach as sr
 
         state = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         state["wall"] = time.time()

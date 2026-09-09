@@ -82,7 +82,7 @@ trap cleanup EXIT INT TERM
 for pid in $(pgrep -f "$P_SRV" || true); do kill -9 "$pid" 2>/dev/null; done
 sleep 1
 for i in 0 1; do
-    CUDA_VISIBLE_DEVICES=$i nohup "$GR00T_PY" "$LOCOMANI_SRC/tools/serve_policy.py" \
+    CUDA_VISIBLE_DEVICES=$i nohup "$GR00T_PY" "$LOCOMANI_SRC/pipeline/serve_policy.py" \
         --model-path "$CKPT" --port $((6590+i)) > "$LOGS/serve_$i.log" 2>&1 &
     PIDS="$PIDS $!"
 done
@@ -99,7 +99,7 @@ echo "[sweep] servers up"
 for i in 0 1; do
     kill_instance $i; sleep 2
     env INSTANCE=$i NO_ENCODER=1 SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/videos/sweep_i$i" \
-        nohup bash src/teleop_free/start_stack.sh "$TASK" > "$LOGS/stack_$i.log" 2>&1 &
+        nohup bash scripts/stack/start_stack.sh "$TASK" > "$LOGS/stack_$i.log" 2>&1 &
     ok=0
     for _ in $(seq 1 90); do
         grep -q "stack up" "$LOGS/stack_$i.log" 2>/dev/null && { ok=1; break; }; sleep 5
@@ -116,7 +116,7 @@ for i in 0 1; do
         TF_OUT_PORT=$((5557+10*i)) TF_KEYBOARD_PORT=$((5580+10*i)) \
         TF_PRIVILEGED_PORT=$((5581+10*i)) TF_EPISODE_PORT=$((5582+10*i)) \
         TF_DATASET_FPS="$DATASET_FPS" \
-        nohup "$PY" -u src/teleop_free/tools/eval_closed_loop.py \
+        nohup "$PY" -u src/locomani/pipeline/eval_closed_loop.py \
         --fresh "$ROUNDS" --seed "$seed" --budget "$BUDGET" \
         --spawn-edge $EDGE --task "$TASK" --policy-port $((6590+i)) $COMMON \
         --out "$OUT_DIR/half$i.json" --trace-dir "$OUT_DIR/half${i}_traces" \

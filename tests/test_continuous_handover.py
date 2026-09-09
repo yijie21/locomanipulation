@@ -9,13 +9,12 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-import diag_crouched_handover as diag
+from locomani.tasks.bottle.diag import diag_crouched_handover as diag
 
 
 class ContinuousHandoverTests(unittest.TestCase):
     def test_rejected_plan_does_not_restart_or_stop_borrowed_arm(self):
-        import adaptive_grasp
+        from locomani.tasks.bottle import adaptive_grasp
 
         st = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         st["objects"]["water_bottle"]["quat"] = [1.0, 0.0, 0.0, 0.0]

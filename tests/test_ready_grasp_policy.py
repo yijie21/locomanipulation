@@ -7,11 +7,18 @@ from types import SimpleNamespace
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from arm_ik import ArmIK
-from primitives import STANDING_PELVIS_Z
-from reach_config import DEFAULT_REACH, ReachConfig
-from ready_grasp_policy import OFFSET, PRE_GAP, WRIST_LIMIT, ReadyGraspPolicy, ready_q, sample_stand, templates
+from locomani.backends.sonic.primitives import STANDING_PELVIS_Z
+from locomani.primitives.arm_ik import ArmIK
+from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
+from locomani.tasks.bottle.ready_grasp_policy import (
+    OFFSET,
+    PRE_GAP,
+    WRIST_LIMIT,
+    ReadyGraspPolicy,
+    ready_q,
+    sample_stand,
+    templates,
+)
 
 
 class ReadyBaselineTests(unittest.TestCase):
@@ -69,7 +76,8 @@ class ReadyBaselineTests(unittest.TestCase):
     def test_intended_target_contact_does_not_disable_table_guard(self):
         import mujoco
         from test_transport_guard import XML, TransportGuardTests
-        from transport_guard import TransportGuard
+
+        from locomani.tasks.bottle.transport_guard import TransportGuard
 
         helper = TransportGuardTests()
         ik, state = helper.setup_scene(q=0.0)
@@ -87,8 +95,9 @@ class ReadyBaselineTests(unittest.TestCase):
     def test_close_but_laterally_misaligned_cannot_enter_grasp(self):
         from unittest.mock import patch
 
-        import stream_reach as sr
         from _sim_stubs import Clock, Robot
+
+        from locomani.backends.sonic import stream_reach as sr
 
         robot = Robot(x=0.26)
         robot.world_to_root = lambda point, state: np.array([0.26, -0.10, 0.0])
@@ -101,7 +110,7 @@ class ReadyBaselineTests(unittest.TestCase):
         self.assertGreater(robot.frames[0]["facing"][1], 0.0)
 
     def test_pregrasp_gap_is_shared_with_actual_servo_handover(self):
-        import stream_reach as sr
+        from locomani.backends.sonic import stream_reach as sr
 
         class EnteredServo(Exception):
             pass

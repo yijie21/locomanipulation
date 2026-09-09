@@ -2,9 +2,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from arrival_validation import ArrivalAdvance, squat_handover
-from reach_config import ReachConfig
+from locomani.tasks.bottle.arrival_validation import ArrivalAdvance, squat_handover
+from locomani.tasks.bottle.reach_config import ReachConfig
 
 
 class ArrivalTests(unittest.TestCase):

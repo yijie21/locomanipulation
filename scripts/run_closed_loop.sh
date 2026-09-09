@@ -73,14 +73,14 @@ note() { echo "$*" >> "$REPORT"; }
 # multiprocessing image publisher holding :5555 and the next start_stack
 # refused to hand back a stack that published no images. stop_stack also waits
 # for the ports to actually free and says what survived, which no copy did.
-kill_stack() { bash "$LOCOMANI_SRC/stop_stack.sh" > /dev/null 2>&1; }
+kill_stack() { bash "$LOCOMANI_STACK/stop_stack.sh" > /dev/null 2>&1; }
 
 serve() {  # policy server on :5590, GPU 1
     local log="$LOCOMANI_TMP/serve_$RUN.log"
     for pid in $(pgrep -f "$(printf '%s_%s' serve policy)" || true); do
         kill -9 "$pid" 2>/dev/null || true; done
     sleep 2
-    CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/tools/serve_policy.py" \
+    CUDA_VISIBLE_DEVICES=1 nohup "$GR00T_PY" "$LOCOMANI_SRC/pipeline/serve_policy.py" \
         --model-path "$1" --port 5590 > "$log" 2>&1 &
     for _ in $(seq 1 60); do
         grep -q "listening" "$log" 2>/dev/null && return 0; sleep 5
@@ -94,7 +94,7 @@ kill_stack
 sleep 2
 mkdir -p "$VIDEO_DIR"
 NO_ENCODER=1 SIM_VIDEO_DIR="$VIDEO_DIR" \
-    bash "$LOCOMANI_SRC/start_stack.sh" "pick up the water bottle" \
+    bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle" \
     > "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" 2>&1
 grep -qi "stack up" "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" \
     || { echo "stack did not come up"; tail -5 "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log"; exit 1; }
@@ -109,8 +109,8 @@ for N in $ROUNDS; do
     # see progress. The per-round manifest is written live either way, but the
     # log is what says WHY a round failed.
     # shellcheck disable=SC2086
-    ( cd "$LOCOMANI_SRC" && TF_DATASET_FPS="$DATASET_FPS" "$VENV_SIM_PY" -u \
-        tools/eval_closed_loop.py --fresh "$N" --seed "$EVAL_SEED" \
+    ( cd "$LOCOMANI_SRC/pipeline" && TF_DATASET_FPS="$DATASET_FPS" "$VENV_SIM_PY" -u \
+        eval_closed_loop.py --fresh "$N" --seed "$EVAL_SEED" \
         --spawn-edge $SPAWN_EDGE \
         --client async --execution-horizon 16 $RESUME \
         --out "$CL_OUT" --trace-dir "$EVAL_DIR/traces" ) \

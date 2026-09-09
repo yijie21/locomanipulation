@@ -5,12 +5,11 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from arm_ik import LAST_IK, ArmIK
-from g1_joints import ARM_MJ
-from grasp_capture import OFFSET
-from primitives import Primitives
-from ready_grasp_policy import ready_q
+from locomani.backends.sonic.primitives import Primitives
+from locomani.primitives.arm_ik import LAST_IK, ArmIK
+from locomani.primitives.g1_joints import ARM_MJ
+from locomani.tasks.bottle.grasp_capture import OFFSET
+from locomani.tasks.bottle.ready_grasp_policy import ready_q
 
 
 class GraspPointIKTests(unittest.TestCase):
@@ -18,9 +17,9 @@ class GraspPointIKTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        from execution_record import ExecutionRecord
-        from primitives import HAND_OPEN
-        from stream_reach import _servo_continuous
+        from locomani.backends.sonic.primitives import HAND_OPEN
+        from locomani.backends.sonic.stream_reach import _servo_continuous
+        from locomani.pipeline.execution_record import ExecutionRecord
 
         palm = np.array([0.0, 0.0, 0.7])
         target = palm + OFFSET

@@ -4,8 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-from prefix_sampling import boundary_starts, repeat_indices
+from locomani.rtc.prefix_sampling import boundary_starts, repeat_indices
 
 
 class PrefixSamplingTests(unittest.TestCase):

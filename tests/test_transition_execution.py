@@ -2,8 +2,7 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from transition_execution import CommitWindow
+from locomani.backends.sonic.transition_execution import CommitWindow
 
 
 class CommitTests(unittest.TestCase):

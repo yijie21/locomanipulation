@@ -13,16 +13,15 @@ select = ["E4", "E7", "E9", "F", "I", "B006", "B008", "B015", "B018"]
 ignore = ["E731", "E741", "F401", "F841"]
 
 [tool.ruff.lint.per-file-ignores]
-# tests insert src/teleop_free into sys.path before importing it
+# tests insert src into sys.path before importing locomani
 "tests/*.py" = ["E402"]
 "scripts/*.py" = ["E402"]
-"src/teleop_free/tools/*.py" = ["E402"]
 # environment must be configured before the Isaac / MuJoCo imports
-"src/teleop_free/isaac/*.py" = ["E402"]
-"src/teleop_free/make_hand_points.py" = ["E402"]
+"src/locomani/sim/isaac/*.py" = ["E402"]
+"src/locomani/sim/make_hand_points.py" = ["E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["teleop_free", "locomani"]
+known-first-party = ["locomani"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

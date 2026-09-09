@@ -6,9 +6,8 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from coupled_grasp_policy import project_squat
-from reach_config import ReachConfig
+from locomani.tasks.bottle.coupled_grasp_policy import project_squat
+from locomani.tasks.bottle.reach_config import ReachConfig
 
 
 class SquatPredictionTests(unittest.TestCase):

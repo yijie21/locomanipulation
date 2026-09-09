@@ -6,9 +6,8 @@ from unittest.mock import Mock
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from measured_grasp import CaptureStability, closure_clear, closure_geometry
-from ready_grasp_policy import OFFSET, PRE_GAP
+from locomani.tasks.bottle.measured_grasp import CaptureStability, closure_clear, closure_geometry
+from locomani.tasks.bottle.ready_grasp_policy import OFFSET, PRE_GAP
 
 
 class CaptureGeometryTests(unittest.TestCase):
@@ -61,7 +60,7 @@ class CaptureGeometryTests(unittest.TestCase):
         self.assertEqual(state["palms"]["right"]["hand_q"], [0.0245, 0.0245])
 
     def test_close_handover_rejects_unseated_object(self):
-        from stream_reach import _servo_continuous
+        from locomani.backends.sonic.stream_reach import _servo_continuous
 
         state = self.state()
         p = SimpleNamespace(obs=lambda: state, object_pos=lambda *_: np.array([0.3, 0.0, 0.7]))
@@ -88,8 +87,8 @@ class CaptureGeometryTests(unittest.TestCase):
     def assert_seated_capture(self, delta):
         from unittest.mock import patch
 
-        from execution_record import ExecutionRecord
-        from measured_grasp import run
+        from locomani.pipeline.execution_record import ExecutionRecord
+        from locomani.tasks.bottle.measured_grasp import run
 
         state = self.state()
         state["fallen"] = False
@@ -117,11 +116,11 @@ class CaptureGeometryTests(unittest.TestCase):
             guard=Mock(),
         )
         with (
-            patch("measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
-            patch("measured_grasp.closure_clear", return_value=None),
-            patch("measured_grasp.time.monotonic", side_effect=lambda: clock[0]),
-            patch("stream_reach.toppled", return_value=False),
-            patch("stream_reach._servo_continuous", return_value=(True, "")) as servo,
+            patch("locomani.tasks.bottle.measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
+            patch("locomani.tasks.bottle.measured_grasp.closure_clear", return_value=None),
+            patch("locomani.tasks.bottle.measured_grasp.time.monotonic", side_effect=lambda: clock[0]),
+            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
+            patch("locomani.backends.sonic.stream_reach._servo_continuous", return_value=(True, "")) as servo,
         ):
             self.assertTrue(run(policy, None)[0])
         arm.ik.solve.assert_not_called()
@@ -132,7 +131,7 @@ class CaptureGeometryTests(unittest.TestCase):
 
 class CaptureStabilityTests(unittest.TestCase):
     def test_one_finger_or_wrist_touch_is_not_a_bilateral_grasp(self):
-        from grasp_capture import bilateral_dex1_contact
+        from locomani.tasks.bottle.grasp_capture import bilateral_dex1_contact
 
         for links in ([], ["R.wrist_yaw"], ["R.dex1_finger_1"], ["R.dex1_finger_1", "L.dex1_finger_2"]):
             self.assertFalse(bilateral_dex1_contact(dict(touch_links=links), "right"))
@@ -167,8 +166,8 @@ class SharedTargetExecutionTests(unittest.TestCase):
     def check_level_alignment_candidate(self, rejection, should_push):
         from unittest.mock import patch
 
-        from execution_record import ExecutionRecord
-        from measured_grasp import run
+        from locomani.pipeline.execution_record import ExecutionRecord
+        from locomani.tasks.bottle.measured_grasp import run
 
         state = CaptureGeometryTests().state()
         state.update(fallen=False, pelvis={"pos": [0.0, 0.0, 0.8], "quat": [1.0, 0.0, 0.0, 0.0]})
@@ -197,15 +196,15 @@ class SharedTargetExecutionTests(unittest.TestCase):
             reference_check=Mock(return_value=rejection),
         )
         with (
-            patch("measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
-            patch("stream_reach.toppled", return_value=False),
+            patch("locomani.tasks.bottle.measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
+            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
         ):
             run(policy, None)
         self.assertEqual(bool(pushed), should_push)
         policy.reference_check.assert_called_once()
 
     def test_handover_uses_live_grip_even_if_body_center_is_seated(self):
-        from stream_reach import _servo_continuous
+        from locomani.backends.sonic.stream_reach import _servo_continuous
 
         state = CaptureGeometryTests().state()
         center = np.asarray(state["palms"]["right"]["pos"]) + OFFSET
@@ -222,8 +221,8 @@ class SharedTargetExecutionTests(unittest.TestCase):
     def test_near_target_commands_arm_retraction_without_base_movement(self):
         from unittest.mock import patch
 
-        from execution_record import ExecutionRecord
-        from measured_grasp import run
+        from locomani.pipeline.execution_record import ExecutionRecord
+        from locomani.tasks.bottle.measured_grasp import run
 
         state = CaptureGeometryTests().state()
         state.update(fallen=False, pelvis={"pos": [0.0, 0.0, 0.8], "quat": [1.0, 0.0, 0.0, 0.0]})
@@ -251,8 +250,8 @@ class SharedTargetExecutionTests(unittest.TestCase):
             reference_check=lambda *args: None,
         )
         with (
-            patch("measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
-            patch("stream_reach.toppled", return_value=False),
+            patch("locomani.tasks.bottle.measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
+            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
         ):
             run(policy, None)
         commanded = arm.ik.solve.call_args.args[1]

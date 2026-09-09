@@ -33,7 +33,7 @@ boot_stack() {
   kill_instance $i
   sleep 2
   env INSTANCE=$i SIM_VIDEO_DIR=$PWD/outputs/videos/stream_i$i \
-    nohup bash src/teleop_free/start_stack.sh > $OUT/stack_$i.log 2>&1 &
+    nohup bash scripts/stack/start_stack.sh > $OUT/stack_$i.log 2>&1 &
   for _ in $(seq 1 90); do
     grep -q "stack up" $OUT/stack_$i.log 2>/dev/null && return 0
     sleep 5
@@ -57,7 +57,7 @@ run_instance() {
     # gym died mid-run) — a fallen robot just resets and continues.
     local remaining=$EPN chunk=1
     while [ "$remaining" -gt 0 ] && [ "$chunk" -le 4 ]; do
-      ( cd src/teleop_free && eval env $envs OMP_NUM_THREADS=1 \
+      ( cd src/locomani/tasks/bottle && eval env $envs OMP_NUM_THREADS=1 \
           $PY grasp_gym.py --rounds "$remaining" ) > $OUT/ep_${i}_c$chunk.log 2>&1
       local done_n
       done_n=$(grep -c "^EPISODE" $OUT/ep_${i}_c$chunk.log 2>/dev/null || true)
@@ -70,7 +70,7 @@ run_instance() {
     done
   else
     for e in $(seq 1 "$EPN"); do
-      ( cd src/teleop_free && eval env $envs OMP_NUM_THREADS=1 \
+      ( cd src/locomani/tasks/bottle && eval env $envs OMP_NUM_THREADS=1 \
           $PY collect_episode.py --no-record ) > $OUT/ep_${i}_$e.log 2>&1
       if grep -qE "fell|did not stabilise|ZMQError|Address already in use" $OUT/ep_${i}_$e.log; then
         boot_stack $i

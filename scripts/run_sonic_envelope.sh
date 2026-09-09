@@ -30,7 +30,7 @@ export SIM_VIS="${SIM_VIS:-none}"
 MANIFEST="$SIM_VIDEO_DIR/manifest.jsonl"
 [ -f "$LOCOMANI_SIM_DIR/scene_meta.json" ] || {
     echo "no crate scene at $LOCOMANI_SIM_DIR; build it:"
-    echo "  $SONIC_ROOT/.venv_sim/bin/python src/teleop_free/bimanual_scene.py $LOCOMANI_SIM_DIR"; exit 1; }
+    echo "  $SONIC_ROOT/.venv_sim/bin/python src/locomani/tasks/crate/bimanual_scene.py $LOCOMANI_SIM_DIR"; exit 1; }
 mkdir -p "$SIM_VIDEO_DIR"
 LOGS=$(locomani_session_root "$INSTANCE")
 SIM_PORT=$((5556 + 10 * INSTANCE))
@@ -55,7 +55,7 @@ stop_mine() {
 trap stop_mine EXIT
 
 echo "[pilot] instance $INSTANCE  scene $LOCOMANI_SIM_DIR  video -> $SIM_VIDEO_DIR  logs $LOGS"
-bash "$LOCOMANI_SRC/start_stack.sh" || { echo "[pilot] stack failed to start; see $LOGS"; exit 1; }
+bash "$LOCOMANI_STACK/start_stack.sh" || { echo "[pilot] stack failed to start; see $LOGS"; exit 1; }
 
 cd "$LOCOMANI_ROOT"
 "$SONIC_ROOT/.venv_sim/bin/python" src/teleop_free/scalebfm/sonic_envelope.py \

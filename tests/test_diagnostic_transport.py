@@ -9,12 +9,11 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
+from locomani.primitives.g1_joints import ARM_MJ
+from locomani.tasks.bottle.diag import diagnostic_transport as dt
+from locomani.tasks.bottle.transport_guard import SweepResult
+
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src/teleop_free"))
-sys.path.insert(0, str(ROOT / "src/teleop_free/tools"))
-import diagnostic_transport as dt
-from g1_joints import ARM_MJ
-from transport_guard import SweepResult
 
 
 class TransportExecutionTests(unittest.TestCase):

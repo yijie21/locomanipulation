@@ -2,7 +2,14 @@
 `sim` tests need a live stack, `torch` tests need the GR00T venv. Both are skipped
 unless asked for, so pre-commit and `make check` stay fast."""
 
+import sys
+from pathlib import Path
+
 import pytest
+
+# Every test imports `locomani.*` by its qualified package path (refactor step 4a);
+# this is the one place "src" goes on sys.path instead of each test file doing it.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 SIM_TEST_FILES = {"test_ready_pilot.py"}
 TORCH_TEST_FILES = {"test_action_prefix_loss.py"}

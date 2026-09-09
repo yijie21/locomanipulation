@@ -25,7 +25,7 @@ if [ ! -f "$OUT/collect.done" ]; then
   CUDA_VISIBLE_DEVICES=$COLLECT_GPU MUJOCO_EGL_DEVICE_ID=$COLLECT_GPU GRIP_KD=${GRIP_KD:-1.0} $SIM_PY -u src/teleop_free/scalebfm/record_bottle.py \
     --successes $((N + HOLD)) --holdout "$HOLD" --seed "${SEED:-1}" --out "$OUT/train_dataset" > "$OUT/collect.log" 2>&1
   for d in train_dataset train_dataset_val; do
-    third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python src/teleop_free/tools/check_dataset.py "$OUT/$d" > "$OUT/audit_$d.log" 2>&1 || { log "audit FAILED on $d"; exit 1; }
+    third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python src/locomani/pipeline/check_dataset.py "$OUT/$d" > "$OUT/audit_$d.log" 2>&1 || { log "audit FAILED on $d"; exit 1; }
     $GR_PY -m gr00t.data.stats --dataset-path "$OUT/$d" --embodiment-tag UNITREE_G1_SONIC --modality-config-path $MODALITY > "$OUT/stats_$d.log" 2>&1
   done
   tail -1 "$OUT/collect.log" | tee -a "$OUT/pilot.log"; touch "$OUT/collect.done"
@@ -43,7 +43,7 @@ fi
 
 if [ ! -f "$OUT/openloop.done" ]; then
   log "open-loop on val"
-  CUDA_VISIBLE_DEVICES=$EVAL_GPU $GR_PY -u src/teleop_free/tools/eval_open_loop.py --model-path "$OUT/model/checkpoint-$STEPS" \
+  CUDA_VISIBLE_DEVICES=$EVAL_GPU $GR_PY -u src/locomani/pipeline/eval_open_loop.py --model-path "$OUT/model/checkpoint-$STEPS" \
     --dataset "$OUT/train_dataset_val" --modality-config $MODALITY --horizons 8 16 --out "$OUT/open_loop_val.json" > "$OUT/open_loop_val.log" 2>&1 || log "open-loop failed (non-fatal)"
   touch "$OUT/openloop.done"
 fi

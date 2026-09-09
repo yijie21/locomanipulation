@@ -4,8 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-from collection_frame_audit import install
+from locomani.pipeline.collection_frame_audit import install
 
 
 class FrameReceiptTest(unittest.TestCase):

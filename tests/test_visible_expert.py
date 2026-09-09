@@ -7,11 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from reach_config import ReachConfig
-from ready_grasp_policy import STANDING_PELVIS_Z, sample_stand, templates
 from test_recoverable_grasp_policy import Harness
+
+from locomani.tasks.bottle.reach_config import ReachConfig
+from locomani.tasks.bottle.ready_grasp_policy import STANDING_PELVIS_Z, sample_stand, templates
 
 
 def visible(**kw):
@@ -70,7 +69,7 @@ class VisibleHarness(Harness):
 
 class VisibleRecoveryTests(unittest.TestCase):
     def run_policy(self, p):
-        with patch("stream_reach.toppled", return_value=False):
+        with patch("locomani.backends.sonic.stream_reach.toppled", return_value=False):
             return p.execute(grip_world=np.zeros(3), squat_hint=0.1, ghost=None)
 
     def test_feasible_stand_grasps_at_its_own_drop(self):

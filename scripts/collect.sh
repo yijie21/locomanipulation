@@ -76,11 +76,11 @@ for b in $(seq 0 $((BATCHES - 1))); do
     # COLLECT_NO_STOP=1: another instance's stack is running (an eval);
     # stop only THIS instance instead of every stack on the machine.
     if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
-        bash src/teleop_free/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+        bash scripts/stack/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
     else
-        bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+        bash scripts/stack/stop_stack.sh > /dev/null 2>&1
     fi
-    SCENE_SEED="$seed" "$VENV_SIM_PY" src/teleop_free/build_sim_scene.py \
+    SCENE_SEED="$seed" "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
         outputs/scene outputs/scene/sim | grep -E '^\[scene\]' || {
         echo "  scene rebuild FAILED"; continue; }
 
@@ -97,12 +97,12 @@ for b in $(seq 0 $((BATCHES - 1))); do
        "$SNAP/" 2>/dev/null || echo "  scene snapshot failed (non-fatal)"
     printf '{"scene_seed":%s,"preset":"%s","built":"%s","git":{"build_sim_scene.py":"%s","scene_lib.py":"%s"}}\n' \
         "$seed" "${SCENE_PRESET:-}" "$(date -Is)" \
-        "$(git log -1 --format=%h -- src/teleop_free/build_sim_scene.py 2>/dev/null)" \
-        "$(git log -1 --format=%h -- src/teleop_free/scene_lib.py 2>/dev/null)" \
+        "$(git log -1 --format=%h -- src/locomani/sim/build_sim_scene.py 2>/dev/null)" \
+        "$(git log -1 --format=%h -- src/locomani/sim/scene_lib.py 2>/dev/null)" \
         > "$SNAP/provenance.json"
 
     nohup env SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-        bash src/teleop_free/start_stack.sh "pick up the object" \
+        bash scripts/stack/start_stack.sh "pick up the object" \
         > "$OUT/stack_$seed.log" 2>&1 &
     # Wait for the stack rather than sleeping: the deploy's first boot after a
     # scene change still loads cached TensorRT engines, but "still booting" and
@@ -116,7 +116,7 @@ for b in $(seq 0 $((BATCHES - 1))); do
         continue
     fi
 
-    "$VENV_SIM_PY" -u src/teleop_free/grasp_gym.py \
+    "$VENV_SIM_PY" -u src/locomani/tasks/bottle/grasp_gym.py \
         --rounds "$ROUNDS" --record \
         --targets "$TARGETS" --edge-jitter "$JITTER" \
         $SPAWN_ARGS \
@@ -131,16 +131,16 @@ for b in $(seq 0 $((BATCHES - 1))); do
         echo "  [isaac] would re-render batch $seed:"
         echo "  [isaac]   scene    $OUT/scene_$seed/scene_locomani.xml"
         echo "  [isaac]   sidecar  $(locomani_session_root)/pose_sidecar/"
-        echo "  [isaac]   cam traj $RENDER_PY src/teleop_free/isaac/compute_cam_traj.py"
-        echo "  [isaac]   render   $RENDER_PY src/teleop_free/isaac/isaac_render.py"
+        echo "  [isaac]   cam traj $RENDER_PY src/locomani/sim/isaac/compute_cam_traj.py"
+        echo "  [isaac]   render   $RENDER_PY src/locomani/sim/isaac/isaac_render.py"
         echo "  [isaac] not implemented yet (ticket 07); nothing started"
     fi
 done
 
 if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
-    bash src/teleop_free/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+    bash scripts/stack/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
 else
-    bash src/teleop_free/stop_stack.sh > /dev/null 2>&1
+    bash scripts/stack/stop_stack.sh > /dev/null 2>&1
 fi
 echo
 echo "===== totals ====="

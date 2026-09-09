@@ -6,8 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free/tools"))
-from analyze_posture_stages import analyze
+from locomani.tasks.bottle.diag.analyze_posture_stages import analyze
 
 
 def state(x):

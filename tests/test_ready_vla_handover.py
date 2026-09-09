@@ -8,9 +8,8 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-import grasp_gym as gym
-from reach_config import ReachConfig
+from locomani.tasks.bottle import grasp_gym as gym
+from locomani.tasks.bottle.reach_config import ReachConfig
 
 
 class ReadyVLAHandoverTests(unittest.TestCase):
@@ -30,8 +29,8 @@ class ReadyVLAHandoverTests(unittest.TestCase):
             patch.object(gym.upper_ref, "shared"),
             patch.object(gym, "obj_top", return_value=0.8),
             patch.object(gym, "TabletopGrasp") as target,
-            patch("ready_grasp_policy.prepare_ready", return_value=False) as ready,
-            patch("initial_pose.prepare_token_pose", return_value=token_ready) as token_pose,
+            patch("locomani.tasks.bottle.ready_grasp_policy.prepare_ready", return_value=False) as ready,
+            patch("locomani.backends.sonic.initial_pose.prepare_token_pose", return_value=token_ready) as token_pose,
         ):
             target.return_value.grip.return_value = [1.0, 0.0, 0.7]
             result = gym._run_round(

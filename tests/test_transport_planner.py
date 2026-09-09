@@ -9,9 +9,8 @@ from types import SimpleNamespace
 import mujoco
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-from transport_guard import TransportGuard
-from transport_planner import JointTransportPlanner
+from locomani.tasks.bottle.transport_guard import TransportGuard
+from locomani.tasks.bottle.transport_planner import JointTransportPlanner
 
 XML = """<mujoco><worldbody>
 <body name="pelvis"><freejoint/><geom size=".01" mass="1" contype="0" conaffinity="0"/>

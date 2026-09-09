@@ -5,10 +5,10 @@ import warnings
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-import stream_reach as sr
 from _sim_stubs import Clock, Robot
-from reach_config import DEFAULT_REACH, ReachConfig
+
+from locomani.backends.sonic import stream_reach as sr
+from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
 
 
 class ReachConfigTests(unittest.TestCase):

@@ -15,14 +15,15 @@ class SceneIsolationTests(unittest.TestCase):
             env = dict(
                 os.environ,
                 LOCOMANI_SIM_DIR=folder,
-                PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src/teleop_free"),
+                PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"),
             )
             data = json.loads(
                 subprocess.check_output(
                     [
                         sys.executable,
                         "-c",
-                        "import json,paths,arm_ik;print(json.dumps([paths.SCENE_META,paths.SCENE_XML,arm_ik.ArmIK.__init__.__defaults__[0]]))",
+                        "import json\nfrom locomani import paths\nfrom locomani.primitives import arm_ik\n"
+                        "print(json.dumps([paths.SCENE_META,paths.SCENE_XML,arm_ik.ArmIK.__init__.__defaults__[0]]))",
                     ],
                     env=env,
                     text=True,

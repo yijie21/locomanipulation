@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-path = Path(__file__).resolve().parents[1] / "src/teleop_free/tools/run_ready_pilot.py"
+path = Path(__file__).resolve().parents[1] / "src/locomani/pipeline/run_ready_pilot.py"
 spec = importlib.util.spec_from_file_location("run_ready_pilot", path)
 pilot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pilot)

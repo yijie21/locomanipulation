@@ -8,9 +8,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
-import stream_reach as sr
-from primitives import Primitives
+from locomani.backends.sonic import stream_reach as sr
+from locomani.backends.sonic.primitives import Primitives
 
 
 class FirstCommand(Exception):
