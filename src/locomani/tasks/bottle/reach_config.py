@@ -154,14 +154,23 @@ class ReachConfig:
         return dict(schema_version=1, **asdict(self))
 
     @classmethod
-    def load(cls, path):
-        data = json.loads(Path(path).read_text())
+    def from_dict(cls, data: dict, *, source: str = "<dict>") -> "ReachConfig":
+        """Reconstruct from a `to_dict()`-shaped mapping, dropping RETIRED_KEYS.
+
+        Used both by `load` (a JSON file) and by BottleTaskConfig's nested
+        `reach` field (an in-memory dict already parsed from the task's JSON).
+        """
+        data = dict(data)
         if data.pop("schema_version", None) != 1:
             raise ValueError("reach config requires schema_version=1")
         for key in RETIRED_KEYS.intersection(data):
-            warnings.warn(f"reach config {path}: ignoring retired key {key!r}", stacklevel=2)
+            warnings.warn(f"reach config {source}: ignoring retired key {key!r}", stacklevel=2)
             del data[key]
         return cls(**data)
+
+    @classmethod
+    def load(cls, path):
+        return cls.from_dict(json.loads(Path(path).read_text()), source=str(path))
 
 
 DEFAULT_REACH = ReachConfig()

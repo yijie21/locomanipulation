@@ -1,6 +1,5 @@
 """The real gym prelude must reach token-only deployment without expert IK."""
 
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -24,7 +23,7 @@ class ReadyVLAHandoverTests(unittest.TestCase):
         meta = {"objects": {"water_bottle": {"box": {}, "body": "bottle"}}, "surfaces": {"table": {"body": "table"}}}
         with (
             patch.object(gym, "VLA_POLICY", policy),
-            patch.dict(os.environ, {"TF_INIT_TOKEN_FILE": token_file or ""}),
+            patch.object(gym.initial_pose, "INIT_TOKEN_FILE", token_file or None),
             patch.object(gym.time, "sleep"),
             patch.object(gym.upper_ref, "shared"),
             patch.object(gym, "obj_top", return_value=0.8),

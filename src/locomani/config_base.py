@@ -15,17 +15,22 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import typing
 from pathlib import Path
 from typing import Any, TypeVar
 
 T = TypeVar("T")
 
 
-def _field_type(cls, name: str):
-    for f in dataclasses.fields(cls):
-        if f.name == name:
-            return f.type
-    raise KeyError(name)
+def _resolved_field_types(cls) -> dict:
+    """Field name -> real type object.
+
+    Every config module uses `from __future__ import annotations`, so
+    `dataclasses.fields(cls)[i].type` is a STRING ("ReachConfig",
+    "tuple[float, float]", ...), not the type itself; `get_type_hints`
+    resolves those against the class's defining module.
+    """
+    return typing.get_type_hints(cls)
 
 
 def _to_plain(value: Any) -> Any:
@@ -34,9 +39,7 @@ def _to_plain(value: Any) -> Any:
         if hasattr(value, "to_dict"):
             return value.to_dict()
         return {f.name: _to_plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
-    if isinstance(value, tuple):
-        return [_to_plain(v) for v in value]
-    if isinstance(value, list):
+    if isinstance(value, (tuple, list)):
         return [_to_plain(v) for v in value]
     return value
 
@@ -46,7 +49,10 @@ def _from_plain(tp, value: Any) -> Any:
     if dataclasses.is_dataclass(tp) and isinstance(value, dict):
         if hasattr(tp, "from_dict"):
             return tp.from_dict(value)
-        return tp(**{k: _from_plain(_field_type(tp, k), v) for k, v in value.items()})
+        hints = _resolved_field_types(tp)
+        return tp(**{k: _from_plain(hints.get(k), v) for k, v in value.items()})
+    if typing.get_origin(tp) is tuple and isinstance(value, list):
+        return tuple(value)
     return value
 
 
@@ -60,10 +66,11 @@ def config_to_dict(obj, schema_version: int) -> dict:
 def config_from_dict(cls: type[T], data: dict) -> T:
     data = dict(data)
     data.pop("schema_version", None)
+    hints = _resolved_field_types(cls)
     kwargs = {}
     for f in dataclasses.fields(cls):
         if f.name in data:
-            kwargs[f.name] = _from_plain(f.type, data[f.name])
+            kwargs[f.name] = _from_plain(hints.get(f.name), data[f.name])
     return cls(**kwargs)
 
 

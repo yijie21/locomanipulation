@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -28,9 +27,12 @@ class InitialTokenPoseTests(unittest.TestCase):
             p = Path(tmp) / "token.json"
             token = np.linspace(-0.5, 0.5, 64, dtype=np.float32)
             p.write_text(json.dumps(token.tolist()))
-            with patch.dict(os.environ, {"TF_INIT_TOKEN_FILE": str(p)}):
+            with patch.object(initial_pose, "INIT_TOKEN_FILE", str(p)):
                 np.testing.assert_array_equal(initial_pose.initial_token(), token)
-            with patch.dict(os.environ, {"TF_INIT_TOKEN_FILE": "", "TF_INIT_TOKEN": "ours"}):
+            with (
+                patch.object(initial_pose, "INIT_TOKEN_FILE", None),
+                patch.object(initial_pose, "INIT_TOKEN_OFFICIAL", False),
+            ):
                 np.testing.assert_array_equal(initial_pose.initial_token(), initial_pose.OURS_INITIAL_MOTION_TOKEN)
 
     def test_invalid_file_is_rejected(self):
@@ -50,7 +52,7 @@ class InitialTokenPoseTests(unittest.TestCase):
         p.cmd.enter_streamed.side_effect = lambda: events.append(("enter",))
         token = np.arange(64, dtype=np.float32) / 128
         with (
-            patch.dict(os.environ, {"TF_INIT_TOKEN_FILE": "explicit.json"}),
+            patch.object(initial_pose, "INIT_TOKEN_FILE", "explicit.json"),
             patch.object(initial_pose, "initial_token", return_value=token),
             patch.object(initial_pose, "time", Clock()),
         ):

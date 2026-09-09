@@ -41,6 +41,7 @@ sys.path.insert(
 
 from locomani import paths
 from locomani.backends.sonic import (
+    initial_pose,  # noqa: E402
     stream_reach,  # noqa: E402
     upper_ref,  # noqa: E402
 )
@@ -62,6 +63,7 @@ from locomani.tasks.bottle import (
     grasping,  # noqa: E402
     reach_map,  # noqa: E402
 )
+from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
 from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
 from locomani.tasks.bottle.tabletop_grasp import TabletopGrasp, TabletopTarget
 
@@ -126,12 +128,21 @@ FACING_MAX = np.deg2rad(30.0)
 # --view-gate-x/-y (defaults below) thread as view_gate_x/view_gate_y through
 # run_round/_run_round to the spawn check and the arrival check.
 
-# Per-round deploy restart (GYM_RESTART_DEPLOY=0 disables). The deploy keeps
-# locomotion/heading state across sim resets; round 1 of a fresh deploy is
-# always clean, rounds 2+ wander, fall on the walk-up, or land metres off.
-# ~30 s a round buys back the dominant failure class.
-RESTART_DEPLOY = os.environ.get("GYM_RESTART_DEPLOY", "1") == "1"
+# Per-round deploy restart (BottleTaskConfig.restart_deploy, was
+# GYM_RESTART_DEPLOY=0 to disable). The deploy keeps locomotion/heading state
+# across sim resets; round 1 of a fresh deploy is always clean, rounds 2+
+# wander, fall on the walk-up, or land metres off. ~30 s a round buys back the
+# dominant failure class. Module-level default (decision 8), same pattern as
+# vla_round.GRIP_GAIN: a caller assigns grasp_gym.RESTART_DEPLOY to override.
+RESTART_DEPLOY = DEFAULT_BOTTLE_TASK.restart_deploy
 RESTART_SCRIPT = f"{paths.REPO}/scripts/restart_deploy.sh"
+
+# BottleTaskConfig.{pose_sidecar,video_include_init,arm_pin} defaults (decision 8,
+# were LOCOMANI_POSE_SIDECAR / SIM_VIDEO_INCLUDE_INIT / GYM_ARM_PIN); module-level
+# so a caller can override by assignment, same pattern as RESTART_DEPLOY above.
+POSE_SIDECAR = DEFAULT_BOTTLE_TASK.pose_sidecar
+VIDEO_INCLUDE_INIT = DEFAULT_BOTTLE_TASK.video_include_init
+ARM_PIN = DEFAULT_BOTTLE_TASK.arm_pin
 
 
 class TargetPlan(NamedTuple):
@@ -457,10 +468,11 @@ def main() -> None:
     if off_lo > off_hi:
         off_lo, off_hi = off_hi, off_lo
     # World-pose sidecar: one jsonl per attempt, next to the manifest. Only
-    # when recording -- an eval round has its own trace. LOCOMANI_POSE_SIDECAR=0
-    # opts out. Fail-safe: a dead sidecar prints and costs nothing.
+    # when recording -- an eval round has its own trace.
+    # BottleTaskConfig.pose_sidecar=False (was LOCOMANI_POSE_SIDECAR=0) opts
+    # out. Fail-safe: a dead sidecar prints and costs nothing.
     sidecar = None
-    if args.record and args.manifest and os.environ.get("LOCOMANI_POSE_SIDECAR", "1") == "1":
+    if args.record and args.manifest and POSE_SIDECAR:
         from locomani.sim.privileged_pub import PoseSidecar
 
         sidecar = PoseSidecar(os.path.join(os.path.dirname(os.path.abspath(args.manifest)), "pose_sidecar"))
@@ -1245,7 +1257,7 @@ def _run_round(
     # here is being judged by the rule that judges it later.
     # Diagnostic video can include readiness/visibility failures without
     # changing the training recorder's acceptance window.
-    include_init_video = os.environ.get("SIM_VIDEO_INCLUDE_INIT") == "1"
+    include_init_video = VIDEO_INCLUDE_INIT
     if include_init_video:
         stamp = time.time()
         reset.start_video(f"gym_{int(stamp)}")
@@ -1258,7 +1270,7 @@ def _run_round(
         # execute this reference can time out before the first model request.
         if not prepare_ready(p):
             return False, "[stand] baseline ready posture not delivered"
-    elif reach_config.ready_grasp_baseline and VLA_POLICY is not None and os.environ.get("TF_INIT_TOKEN_FILE"):
+    elif reach_config.ready_grasp_baseline and VLA_POLICY is not None and initial_pose.INIT_TOKEN_FILE:
         from locomani.backends.sonic.initial_pose import prepare_token_pose
         from locomani.tasks.bottle.ready_grasp_policy import ready_q
 
@@ -1772,7 +1784,7 @@ def _run_round(
         config=reach_config,
         coordinated=coordinated,
         transport_guard_factory=lambda ik: task_grasp.transport_guard(ik, reach_config),
-        pin=(reset.pin_arms if os.environ.get("GYM_ARM_PIN", "0") == "1" else None),
+        pin=(reset.pin_arms if ARM_PIN else None),
         squat_hint=squat_hint,
         plan_r=float(np.hypot(rel[0], rel[1])),
         stand_rel=None,

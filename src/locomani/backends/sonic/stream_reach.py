@@ -19,7 +19,6 @@ nudged through the planner.
 
 from __future__ import annotations
 
-import os
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -42,9 +41,17 @@ from locomani.backends.sonic.primitives import (
 from locomani.pipeline.execution_record import ExecutionRecord, GraspResult
 from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.g1_joints import ARM_MJ, mujoco_to_isaac
+from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
 from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
 
 LIFT_MIN = 0.06  # the object must actually leave the table
+
+# BottleTaskConfig.{arm_channel,arm_vel,left_guard} defaults (decision 8, were
+# GYM_ARM_CHANNEL/GYM_ARM_VEL/GYM_LEFT_GUARD); module-level so a caller can
+# override by assignment, same pattern as grasp_gym.RESTART_DEPLOY.
+ARM_CHANNEL = DEFAULT_BOTTLE_TASK.arm_channel
+ARM_VEL = DEFAULT_BOTTLE_TASK.arm_vel
+LEFT_GUARD = DEFAULT_BOTTLE_TASK.left_guard
 
 
 class ApproachStatus(str, Enum):
@@ -139,10 +146,10 @@ def make_arm(p: Primitives, side: str):
     the whole grasp, so there is no mode switch, no latch-clear window and
     no stand twitch. Measured 12/12 with the sim pin OFF against 2/12 for
     the streamed channel with its pin ON, same seed (see the Phase 0
-    commit). GYM_ARM_CHANNEL=streamed restores the old path.
+    commit). BottleTaskConfig.arm_channel="streamed" restores the old path.
     """
-    if os.environ.get("GYM_ARM_CHANNEL", "planner") == "planner":
-        return PlannerArm(p, side, send_vel=os.environ.get("GYM_ARM_VEL", "1") == "1")
+    if ARM_CHANNEL == "planner":
+        return PlannerArm(p, side, send_vel=ARM_VEL)
 
     return StreamedArm(p, side)
 
@@ -295,7 +302,7 @@ class StreamedArm:
         in the pelvis frame and rate-limits the joints. The retreated pose
         persists (no return to the frozen snapshot) and is carried into
         every later reference via _left_now."""
-        if self.guard is None or self.side != "right" or os.environ.get("GYM_LEFT_GUARD", "1") != "1":
+        if self.guard is None or self.side != "right" or not LEFT_GUARD:
             return q
         L = ARM_MJ["left"]
         if self._left_now is not None:

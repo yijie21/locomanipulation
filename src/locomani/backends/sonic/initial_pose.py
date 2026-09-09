@@ -47,11 +47,17 @@ Regenerate (194 settled-stand frames, planner mode IDLE, whole body below
 """
 
 import json
-import os
 import time
 from pathlib import Path
 
 import numpy as np
+
+# BottleTaskConfig.{init_token_file,init_token_official} (decision 8; were
+# TF_INIT_TOKEN_FILE / TF_INIT_TOKEN). A caller assigns these module globals
+# before calling initial_token()/prepare_token_pose(), instead of exporting env
+# -- the same pattern vla_round.py uses for its runtime-tunable constants.
+INIT_TOKEN_FILE: str | None = None
+INIT_TOKEN_OFFICIAL = False
 
 # Medoid of 194 settled-stand tokens in datasets/g1_locomani_ramp200_train.
 # Mean L1 to the other 193: 1.11 (the worst member scores 11.46).
@@ -136,13 +142,13 @@ def load_token_file(filename) -> np.ndarray:
 def initial_token() -> np.ndarray:
     """Legacy default, official token, or an explicitly validated pose file.
 
-    A file is opt-in: a new collection posture must not silently change the
-    initialization used by checkpoints trained on the old arms-down data.
+    A file (INIT_TOKEN_FILE) is opt-in: a new collection posture must not
+    silently change the initialization used by checkpoints trained on the old
+    arms-down data.
     """
-    filename = os.environ.get("TF_INIT_TOKEN_FILE")
-    if filename:
-        return load_token_file(filename)
-    if os.environ.get("TF_INIT_TOKEN", "ours") == "official":
+    if INIT_TOKEN_FILE:
+        return load_token_file(INIT_TOKEN_FILE)
+    if INIT_TOKEN_OFFICIAL:
         from gear_sonic.utils.inference.initial_poses import LATENT_INITIAL_MOTION_TOKEN
 
         return np.asarray(LATENT_INITIAL_MOTION_TOKEN, dtype=np.float32)
@@ -159,7 +165,7 @@ def prepare_token_pose(p, expected_arm_q, hold_seconds=3.0) -> bool:
     """
     from locomani.backends.sonic.sonic_token import GRIPPER_MAX, expand_hands
 
-    if not os.environ.get("TF_INIT_TOKEN_FILE"):
+    if not INIT_TOKEN_FILE:
         raise ValueError("Token-pose preparation requires an explicit initial token file")
     expected = np.asarray(expected_arm_q, dtype=float)
     if expected.shape != (14,) or not np.isfinite(expected).all():

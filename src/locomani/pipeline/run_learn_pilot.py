@@ -22,6 +22,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # reach src/ for `python run_learn_pilot.py`
+from locomani.tasks.bottle.config import BottleTaskConfig  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[3]
 SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 DATA = ROOT / "third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python"
@@ -29,17 +32,22 @@ TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 SRC = ROOT / "src/locomani"
 STACK = ROOT / "scripts/stack"
 SESSIONS = Path("/workspace/tmp/p03/outputs")
+# The official ready-visible protocol's spawn distribution, now BottleTaskConfig's
+# default (decision 8) rather than a separately hand-maintained list: edge
+# 1.1-1.3 m, facing the object, yaw jitter 20 deg, lateral 0.20 m, edge jitter
+# 0.20 m -- the closed-loop eval distribution, not a frozen case bank (see the
+# module docstring).
+_SPAWN_CFG = BottleTaskConfig().spawn
 SPAWN = [
     "--spawn-edge",
-    "1.1",
-    "1.3",
-    "--face-object",
+    *[str(v) for v in _SPAWN_CFG.edge_range],
+    *(["--face-object"] if _SPAWN_CFG.face_object else []),
     "--spawn-yaw-err",
-    "20",
+    str(_SPAWN_CFG.yaw_err_deg),
     "--spawn-lateral",
-    "0.20",
+    str(_SPAWN_CFG.lateral),
     "--edge-jitter",
-    "0.20",
+    str(_SPAWN_CFG.edge_jitter),
 ]
 
 
