@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
 import stream_reach as sr
+from _sim_stubs import Clock, Robot
 from reach_config import DEFAULT_REACH, ReachConfig
-from test_grasp_transition import Clock, Robot
 
 
 class ReachConfigTests(unittest.TestCase):
@@ -47,11 +47,16 @@ class ReachConfigTests(unittest.TestCase):
                 warnings.simplefilter("ignore")
                 self.assertTrue(ReachConfig.load(path).ready_grasp_baseline)
 
-    def test_real_approach_uses_explicit_bounds(self):
+    def test_recovery_false_is_retired_before_any_actuation(self):
+        # ready_grasp_recovery=False (the old non-recovery approach/crouch/
+        # servo tail) was retired in refactor step 2, family 2 (2026-09-09):
+        # _execute_grasp now fails fast instead of ever building an approach
+        # band from pre_min/pre_max, but it still records the config snapshot
+        # and never touches the arm.
         config = ReachConfig(pre_min=0.20, pre_max=0.24, azimuth_deg=25.0, approach_timeout=0.1)
         with patch.object(sr, "time", Clock()), patch.object(sr, "make_arm") as factory:
             result = sr.execute_grasp(Robot(), "water_bottle", [0.6, 0.0, 0.7], None, config=config)
-        self.assertEqual(result.execution["transition"]["pre_band"], [0.20, 0.24])
+        self.assertFalse(result.ok)
         self.assertEqual(result.execution["metrics"]["reach_config"]["azimuth_deg"], 25.0)
         factory.assert_not_called()
 

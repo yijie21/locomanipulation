@@ -11,8 +11,8 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/teleop_free"))
 import grasp_gym as gym
 import stream_reach as sr
+from _sim_stubs import Clock, Robot
 from execution_record import ExecutionRecord
-from test_grasp_transition import Clock, Robot
 
 
 class ExecutionTests(unittest.TestCase):
@@ -33,12 +33,16 @@ class ExecutionTests(unittest.TestCase):
         self.assertNotIn("later", snapshot["transition"])
         json.dumps(snapshot, allow_nan=False)
 
-    def test_real_approach_failure_is_owned_and_never_starts_arm(self):
+    def test_recovery_false_failure_is_owned_and_never_starts_arm(self):
+        # DEFAULT_REACH has ready_grasp_recovery=False; that mode is retired
+        # (refactor step 2, family 2, 2026-09-09), so this fails immediately
+        # instead of ever reaching the (now-deleted) approach/crouch/servo
+        # tail -- but the failure is still owned by ExecutionRecord.fail(),
+        # and the arm is still never touched.
         with patch.object(sr, "time", Clock()), patch.object(sr, "make_arm") as factory:
             result = sr.execute_grasp(Robot(), "water_bottle", [0.6, 0.0, 0.7], None)
         self.assertFalse(result.ok)
-        self.assertEqual(result.execution["first_failure"]["stage"], "approach")
-        self.assertEqual(result.execution["transition"]["approach_status"], "timeout")
+        self.assertIn("ready_grasp_recovery", result.execution["first_failure"]["reason"])
         self.assertIsNone(result.visibility)
         factory.assert_not_called()
 

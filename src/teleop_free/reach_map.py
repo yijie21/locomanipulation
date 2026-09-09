@@ -402,64 +402,6 @@ class ReachMap:
             return pts[margs >= margs.max()], dz, float(margs.max())
         return best[1], best[2], best[3]
 
-    def stand_cells(
-        self,
-        obj_z_pf,
-        arm: str = "right",
-        aim_ang_max: float = np.deg2rad(36.5),  # the ego view gate is ~36.7 deg
-        min_margin: float = 0.02,
-        r_cap: float = 0.40,
-        y_min: float = -0.40,
-        y_max: float = -0.03,
-        core: bool = False,
-    ):
-        """Coverage-first stand distribution (2026-09-04): EVERY core cell
-        across all squat layers that a grasp can be executed from, as
-        (x, y, drop) triples. plan_core_stand picks the single farthest
-        band (2 cells for the bottle) -- the policy then stands 13 cm
-        further to the side than any demonstration and knocks the bottle
-        over (docs/evaluation.md 2026-09-04). aim_ang_max follows the ego
-        camera's horizontal half-FOV minus a margin, not the 33 deg comfort
-        cone."""
-        # core=False: the whole graspable ENVELOPE (with margin), not the
-        # comfort core -- the core spans y -0.21..-0.04 at bottle height
-        # (18 cells) while the policy stands at -0.28..-0.33; the expert's
-        # closed-loop IK servo copes anywhere the grasp is feasible.
-        grid = self._grid(arm, core=core)
-        grid_env = _close6(self._grid(arm, core=False))
-        nz = grid.shape[2]
-        drop_max = float(self.pelvis_max - self.pelvis_min)
-        out = []
-        for dz in np.arange(0.0, drop_max + 1e-9, self.vox):
-            k = int((float(obj_z_pf) + dz - self.origin[2]) / self.vox)
-            if not (0 <= k < nz):
-                continue
-            sl = grid[:, :, k]
-            occ_set = {(int(i), int(j)) for i, j in np.argwhere(grid_env[:, :, k])}
-            for i, j in np.argwhere(sl):
-                x = self.origin[0] + (i + 0.5) * self.vox
-                y = self.origin[1] + (j + 0.5) * self.vox
-                if not (y_min <= y <= y_max) or abs(np.arctan2(y, x)) > aim_ang_max:
-                    continue
-                if np.hypot(x, y) > r_cap:
-                    continue
-                m = 6 * self.vox
-                for r in range(1, 7):
-                    hit = False
-                    for di in range(-r, r + 1):
-                        for dj in range(-r, r + 1):
-                            if max(abs(di), abs(dj)) == r and (int(i) + di, int(j) + dj) not in occ_set:
-                                hit = True
-                                break
-                        if hit:
-                            break
-                    if hit:
-                        m = (r - 1) * self.vox
-                        break
-                if m >= min_margin:
-                    out.append((x, y, float(dz)))
-        return np.asarray(out, dtype=float).reshape(-1, 3)
-
     def margin(self, p_pelvis, arm: str = "both", core: bool = False, cap: float = 0.15) -> float:
         """Distance (m) to the nearest non-graspable voxel, xy-plane, at the
         best squat level — the stand-quality score the navigator maximises.

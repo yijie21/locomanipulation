@@ -37,19 +37,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import adaptive_grasp  # noqa: E402
 import grasping  # noqa: E402
 import paths
 import reach_map  # noqa: E402
 import sim_vis
 import stream_reach  # noqa: E402
 import upper_ref  # noqa: E402
-from collect_episode import (  # noqa: E402
-    PALM_DRIFT_MAX,
-    STAND_SETTLE,
-    obj_top,
-    palm_frame_offset,
-)
 from execution_record import ExecutionRecord, RoundResult
 from primitives import (  # noqa: E402
     READY_ARM,
@@ -67,6 +60,36 @@ from reach_config import DEFAULT_REACH, ReachConfig
 from tabletop_grasp import TabletopGrasp, TabletopTarget
 
 SCENE_META = paths.SCENE_META
+
+# Moved verbatim from the retired src/teleop_free/collect_episode.py
+# (refactor step 2, family 2, 2026-09-09) -- grasp_gym was the last live
+# importer of these four names.
+PALM_DRIFT_MAX = 0.03  # 3 cm of slip in the palm frame before it counts as dropped
+STAND_SETTLE = 4.0  # seconds of IDLE after a reset before any walking
+
+
+def obj_top(meta: dict, obj_key: str) -> float:
+    """World z of the object's top, from its bounding box."""
+    o = meta["objects"][obj_key]
+
+    return float(o["init_pos"][2] + np.asarray(o["box"]["half_extent"])[2])
+
+
+def palm_frame_offset(s: dict, obj_key: str, side: str) -> np.ndarray:
+    """Object position expressed in the palm's frame."""
+    palm = np.array(s["palms"][side]["pos"])
+    w, x, y, z = s["palms"][side]["quat"]
+    # Rotation matrix from a scalar-first quaternion.
+    R = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+
+    return R.T @ (np.array(s["objects"][obj_key]["pos"]) - palm)
+
 
 EDGE_MIN = 0.17  # pelvis-to-edge HARD floor, enforced at arrival.
 # 0.10 -> 17 hip contacts, 0.12 -> 22: the crouch
@@ -116,7 +139,6 @@ class TargetPlan(NamedTuple):
     squat_hint: float | None
     ax: int  # 0 = x edge, 1 = y edge -- the edge it hugs
     sgn: float  # which side of that axis
-    stand3: np.ndarray = np.zeros((0, 3))  # coverage-first (x, y, drop) cells, GYM_STAND_COVER
 
 
 def resolve_pool(meta: dict, spec: str) -> list[str]:
@@ -169,34 +191,7 @@ def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap, config=DEFAULT
         rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
         squat_hint = None
     phrase = meta.get("object_phrase", {}).get(key, f"the {key}")
-    stand3 = rm.stand_cells(float(grip_z - STANDING_PELVIS_Z))
-    return TargetPlan(key, phrase, nom, grip_z, rel_cands, squat_hint, ax, sgn, stand3)
-
-
-def _drop_to_hint(want_drop: float) -> float:
-    # plan_core_stand's drop is a DELIVERED pelvis drop; arm.squat's command
-    # delivers ~1.5x (cmd 5/9/13 cm -> 4.4/12/19.5 cm) -- invert for the hint
-    return float(np.interp(want_drop, [0.0, 0.044, 0.12, 0.195], [0.0, 0.05, 0.09, 0.13]))
-
-
-STAND_COVER = os.environ.get("GYM_STAND_COVER", "1") == "1"
-
-
-def sample_stand(pl, rng):
-    """Coverage-first stand: stratified in y over the whole core, plus a
-    +-3 cm crouch jitter (the policy's own crouch scatters that much).
-    Returns (rel_xy, squat_hint). Falls back to the classic aim cells."""
-    if not STAND_COVER or len(pl.stand3) == 0:
-        rel = pl.rel_cands[rng.integers(len(pl.rel_cands))]
-        return rel, pl.squat_hint
-    ys = pl.stand3[:, 1]
-    bins = np.arange(np.floor(ys.min() / 0.05) * 0.05, ys.max() + 0.05, 0.05)
-    live = [b for b in bins if ((ys >= b) & (ys < b + 0.05)).any()]
-    b = live[rng.integers(len(live))]
-    cells = pl.stand3[(ys >= b) & (ys < b + 0.05)]
-    x, y, dz = cells[rng.integers(len(cells))]
-    hint = float(np.clip(_drop_to_hint(dz) + rng.uniform(-0.03, 0.03), 0.0, 0.13))
-    return np.array([x, y]), hint
+    return TargetPlan(key, phrase, nom, grip_z, rel_cands, squat_hint, ax, sgn)
 
 
 def instruction(phrase: str) -> str:
@@ -449,8 +444,6 @@ def main() -> None:
             os.makedirs(manifest_dir, exist_ok=True)
     off_lo, off_hi = (args.spawn_off * 2)[:2]
     edge_range = None
-    if getattr(args, "one_shot", False):
-        os.environ["GYM_ONE_SHOT"] = "1"  # stream_reach: discard instead of repair
     if args.spawn_edge is not None:
         edge_range = tuple(sorted((args.spawn_edge * 2)[:2]))
         if edge_range[0] < EDGE_MIN:
@@ -504,9 +497,7 @@ def main() -> None:
     for k, pl in plans.items():
         print(
             f"[gym] {k:8s} grip_z {pl.grip_z:.3f}  {len(pl.rel_cands)} aim "
-            f"cells ({len(pl.stand3)} coverage cells, y "
-            f"{pl.stand3[:, 1].min() if len(pl.stand3) else float('nan'):.2f}..{pl.stand3[:, 1].max() if len(pl.stand3) else float('nan'):.2f}, "
-            f"{'ON' if STAND_COVER else 'off'})  squat_hint "
+            f"cells  squat_hint "
             f"{'none' if pl.squat_hint is None else f'{pl.squat_hint * 100:.1f} cm'}"
             f"  edge {'+' if pl.sgn > 0 else '-'}{'xy'[pl.ax]}"
         )
@@ -588,21 +579,15 @@ def main() -> None:
                 can_xy = can_nom.copy()
                 can_xy[ax] = cxy[ax] + sgn * (half[ax] - rng.uniform(*CAN_INBOARD))
                 can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(-args.edge_jitter, args.edge_jitter)
-                if reach_config.ready_grasp_baseline:
-                    from ready_grasp_policy import sample_stand as sample_comfortable_stand
+                from ready_grasp_policy import sample_stand as sample_comfortable_stand
 
-                    rel, squat_hint = sample_comfortable_stand(pl, rng, reach_config)
-                else:
-                    rel, squat_hint = sample_stand(pl, rng)
+                rel, squat_hint = sample_comfortable_stand(pl, rng, reach_config)
                 # Face the table from outside, along the can's inward edge
                 # normal, +-25 deg (a uniform world yaw almost never yields a
                 # stand outside the table).
                 normal = np.zeros(2)
                 normal[ax] = -sgn
-                psi = float(
-                    np.arctan2(normal[1], normal[0])
-                    + rng.uniform(*((-0.14, 0.14) if reach_config.ready_grasp_baseline else (-0.44, 0.44)))
-                )
+                psi = float(np.arctan2(normal[1], normal[0]) + rng.uniform(-0.14, 0.14))
                 c, s = np.cos(psi), np.sin(psi)
                 stand = can_xy - np.array([c * rel[0] - s * rel[1], s * rel[0] + c * rel[1]])
                 # Prefer slack over the bare floor: a stand SAMPLED at edge
@@ -1560,7 +1545,10 @@ def _run_round(
     # from the planned stand, so the last 0.3 m has to correct sideways --
     # the correction the policy needs is then IN the data instead of the
     # expert always arriving aligned. The creep closes both axes.
-    appr_lat = float(np.random.uniform(-0.15, 0.15)) if STAND_COVER and coordinated is None else 0.0
+    # GYM_STAND_COVER retired (refactor step 2, family 2, 2026-09-09): it only
+    # applied to the flow200 sampler (coordinated is None), which is gone --
+    # every surviving profile builds a coordinated controller, so this is 0.0.
+    appr_lat = 0.0
     aim_xy = np.asarray(spawn_xy) + appr_lat * np.array([-fv[1], fv[0]])
     advance = float(np.clip(reach_config.arrival_advance, 0.0, 0.10))
     VISIBLE = bool(getattr(reach_config, "visible_expert", False))
@@ -1745,13 +1733,12 @@ def _run_round(
         mujoco.mju_mat2Quat(q, np.asarray(pl.rot, dtype=float).flatten())
         reset.set_ghost(pos=np.asarray(pl.wrist, dtype=float).tolist(), quat=q.tolist())
 
+    # The flow200-style plan (adaptive_grasp initial()/replan(), used only
+    # when ready_grasp_baseline was False) is retired -- refactor step 2,
+    # family 2 (2026-09-09). Every surviving profile is baseline=True, so
+    # plan is always None here; show_ghost still travels into execute_grasp
+    # as the `ghost` callback below.
     plan = None
-    if not reach_config.ready_grasp_baseline:
-        plan = task_grasp.initial(st)
-        p.log(adaptive_grasp.describe(plan))
-        if not plan.ok:
-            return False, f"[grasp] {plan.why}"
-        show_ghost(plan)
 
     # Nothing to set up for the arm here any more. The wrist targets this
     # used to write are only read in PLANNER_VR_3PT, and PlannerArm.start()

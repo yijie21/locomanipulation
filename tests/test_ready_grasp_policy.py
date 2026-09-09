@@ -88,7 +88,7 @@ class ReadyBaselineTests(unittest.TestCase):
         from unittest.mock import patch
 
         import stream_reach as sr
-        from test_grasp_transition import Clock, Robot
+        from _sim_stubs import Clock, Robot
 
         robot = Robot(x=0.26)
         robot.world_to_root = lambda point, state: np.array([0.26, -0.10, 0.0])

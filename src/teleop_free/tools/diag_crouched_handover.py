@@ -47,7 +47,7 @@ def in_place_expert(
     """
     import adaptive_grasp
     import grasping
-    from collect_episode import obj_top
+    from grasp_gym import obj_top  # moved from collect_episode.py, refactor step 2 family 2
     from primitives import Primitives, upper_body_from_mj
 
     owns_arm = active_arm is None
