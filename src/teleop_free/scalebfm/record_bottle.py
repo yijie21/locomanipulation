@@ -48,12 +48,13 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 import run_spike as R  # noqa: E402
 import run_bottle as B  # noqa: E402
-from run_spike import mat, quat_wxyz, Sim, Policy  # noqa: E402
+from run_spike import DT, mat, quat_wxyz, yaw_of, wrap, Sim, Policy  # noqa: E402
 from g1_joints import MUJOCO_JOINT_NAMES  # noqa: E402
 
 FPS, TICK_HZ = 25, 50
 W, H = 640, 480
 TASK = "pick up the water bottle"
+SKIP_SETTLE = os.environ.get("BFM_RECORD_SETTLE", "0") != "1"   # BFM_RECORD_SETTLE=1 restores the v3 behaviour
 STREAMS = ("observation.images.ego_view", "observation.images.right_wrist")
 CAMS = {"observation.images.ego_view": "head_camera", "observation.images.right_wrist": "right_wrist"}
 
@@ -92,6 +93,7 @@ COLS = [  # (name, width, dtype)
     ("observation.water_bottle_pose", 9, "float32"), ("observation.root_orientation", 4, "float64"),
     ("observation.projected_gravity", 3, "float64"), ("observation.root_position", 3, "float64"),
     ("action.bfm", 18, "float32"),
+    ("action.bfm_vel", 4, "float32"),   # plan velocity: pelvis target linear v (3, row's pelvis frame) + yaw rate, from ref(t+DT)-ref(t)
     ("teleop.left_hand_joints", 7, "float32"), ("teleop.right_hand_joints", 7, "float32"),
 ]
 MODALITY = {
@@ -108,6 +110,7 @@ MODALITY = {
     },
     "action": {
         "bfm": {"start": 0, "end": 18, "original_key": "action.bfm"},
+        "bfm_vel": {"start": 0, "end": 4, "original_key": "action.bfm_vel"},
         "left_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.left_hand_joints"},
         "right_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.right_hand_joints"},
         "right_gripper": {"start": 0, "end": 1, "original_key": "teleop.right_hand_joints"},
@@ -179,9 +182,13 @@ class Recorder:
         self.sample_frames = {st: [] for st in STREAMS}
         self.k = 0
 
-    def tick(self, sim: Sim, st, cmd, t, phase):
+    def tick(self, sim: Sim, st, cmd, t, phase, cmd_next=None):
         k = self.k; self.k += 1
         if k % (TICK_HZ // FPS):
+            return
+        if phase == "settle" and SKIP_SETTLE:
+            # the 1.5 s settle is 46 identical frames per episode labelled "stand still" (15% of the
+            # frames): an absorbing state in closed loop. The VLA is engaged right after the settle.
             return
         d = sim.d
         root_pos = d.qpos[:3].copy(); root_q = d.qpos[3:7].copy(); Rp = mat(root_q)
@@ -209,12 +216,21 @@ class Recorder:
         # --- action: the command sent this tick, in this tick's pelvis frame ---
         pp, pqw = cmd["pelvis"]; wp, wqw = cmd["right_wrist_yaw_link"]
         act = np.concatenate([to_pelvis(pp), mat_to_rot6d(Rp.T @ mat(pqw)), to_pelvis(wp), mat_to_rot6d(Rp.T @ mat(wqw))])
+        # plan velocity of the pelvis target: the spacing ScaleBFM reads its speed from (bfm_action.py).
+        # From the reference itself (ref(t+DT) - ref(t)), so it is as smooth as the plan, unlike a
+        # finite difference of the recorded rows (bfm_pilot_v3: spikes to 2.5 m/s cost position accuracy).
+        vel = np.zeros(4, np.float32)
+        if cmd_next is not None:
+            pp2, pqw2 = cmd_next["pelvis"]
+            vel[0:3] = Rp.T @ ((np.asarray(pp2) - np.asarray(pp)) / DT)
+            vel[3] = wrap(yaw_of(pqw2) - yaw_of(pqw)) / DT
         grip = float(sim.grip_target[2])
         rhj = np.zeros(7, np.float32); rhj[0] = rhj[1] = grip
         rows = self.rows
         rows["observation.state"].append(state43); rows["observation.eef_state"].append(np.array(eef))
         rows["observation.water_bottle_pose"].append(bottle9); rows["observation.root_orientation"].append(root_q)
         rows["observation.projected_gravity"].append(gravity); rows["observation.root_position"].append(root_pos); rows["action.bfm"].append(act)
+        rows["action.bfm_vel"].append(vel)
         rows["teleop.left_hand_joints"].append(np.zeros(7, np.float32)); rows["teleop.right_hand_joints"].append(rhj)
 
     def finish(self, ok: bool):

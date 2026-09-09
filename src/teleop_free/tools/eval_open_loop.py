@@ -155,19 +155,32 @@ def score(gt, pred, dec, pre, tag):
     """All four metric families for one (gt, pred) pair."""
     from sonic_token import snap, token_index
 
-    g_tok, g_grip = gt[:, :TOKEN_DIM], gt[:, TOKEN_DIM]
-    p_tok, p_grip = pred[:, :TOKEN_DIM], pred[:, TOKEN_DIM]
-    p_snap = snap(p_tok)
-
-    hit = token_index(p_tok) == token_index(g_tok)
+    # Two action layouts share this scorer. SONIC: [64 token dims | gripper],
+    # judged on the 1/16-quantised grid (snap + hit rate). Anything else (the
+    # 19-d ScaleBFM `bfm` action: 18 continuous body dims | gripper) has no
+    # grid, so the body block gets a plain nMSE and the token metrics are
+    # omitted; the gripper and close-frame metrics below are layout-agnostic.
+    sonic = gt.shape[1] == TOKEN_DIM + 1
+    body = TOKEN_DIM if sonic else gt.shape[1] - 1
+    g_tok, g_grip = gt[:, :body], gt[:, body]
+    p_tok, p_grip = pred[:, :body], pred[:, body]
     out = {
-        "nmse_token": nmse(g_tok, p_snap),
-        "nmse_token_unsnapped": nmse(g_tok, p_tok),
         "nmse_gripper": nmse(g_grip[:, None], p_grip[:, None]),
-        "hit_rate_per_dim": float(hit.mean()),
-        "hit_rate_all64": float(hit.all(axis=1).mean()),
         "gripper_mae": float(np.abs(p_grip - g_grip).mean()),
     }
+    if sonic:
+        p_snap = snap(p_tok)
+        hit = token_index(p_tok) == token_index(g_tok)
+        out.update({
+            "nmse_token": nmse(g_tok, p_snap),
+            "nmse_token_unsnapped": nmse(g_tok, p_tok),
+            "hit_rate_per_dim": float(hit.mean()),
+            "hit_rate_all64": float(hit.all(axis=1).mean()),
+        })
+    else:
+        p_snap = p_tok
+        out["nmse_body"] = nmse(g_tok, p_tok)
+        out["body_mae"] = float(np.abs(p_tok - g_tok).mean())
 
     # --- MAGNITUDE SHRINKAGE ------------------------------------------------
     # Under-integrated flow matching does not just add error, it pulls the
@@ -204,7 +217,7 @@ def score(gt, pred, dec, pre, tag):
     out["close_frame_pred"] = cp
     out["close_frame_err"] = None if (cg is None or cp is None) else int(cp - cg)
 
-    if dec is not None and pre is not None:
+    if sonic and dec is not None and pre is not None:
         n = min(len(g_tok), len(pre["q"]))
         fr = np.arange(n)
         d = dec.joint_delta_deg(pre, fr, g_tok[:n], p_snap[:n])
@@ -314,7 +327,7 @@ def main():
         }
         m, b = results["horizons"][str(h)]["model"], results["horizons"][str(h)]["persistence"]
         print(f"\nhorizon {h:2d}   {'model':>12s} {'persistence':>12s}")
-        for k in ("nmse_token", "nmse_token_unsnapped", "nmse_gripper",
+        for k in ("nmse_token", "nmse_token_unsnapped", "nmse_body", "body_mae", "nmse_gripper",
                   "hit_rate_per_dim", "hit_rate_all64", "deg_mean",
                   "close_frame_err_abs", "std_ratio_token",
                   "std_ratio_gripper", "grip_deadband_pred",
@@ -357,6 +370,8 @@ def _decoder_context(dec, loader, tid, gt):
     p = (Path(loader.dataset_path) / "data/chunk-000" / f"episode_{ep:06d}.parquet")
     if not p.exists():
         return None, None
+    if not {"action.wbc", "action.motion_token"} <= set(pq.read_schema(p).names):
+        return None, None                       # not a SONIC dataset (e.g. ScaleBFM)
     t = pq.read_table(p, columns=["observation.state", "action.wbc",
                                   "observation.root_orientation",
                                   "observation.projected_gravity",

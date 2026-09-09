@@ -38,12 +38,13 @@ sys.path.insert(0, os.path.dirname(HERE))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 import run_spike as R  # noqa: E402
 import run_bottle as B  # noqa: E402
-from run_spike import DT, GRIP_OPEN, PELVIS_Z, SETTLE_S, mat, quat_wxyz, yaw_of, wrap, Sim, Policy, Refs  # noqa: E402
+from run_spike import DT, GRIP_OPEN, PELVIS_Z, SETTLE_S, mat, quat_wxyz, rot_z, yaw_of, wrap, Sim, Policy, Refs  # noqa: E402
 from g1_joints import MUJOCO_JOINT_NAMES  # noqa: E402
 
 W, H = 640, 480
 DATASET_FPS = 25
 ROWS_PER_TICK = DATASET_FPS / 50.0          # 0.5 chunk rows per 50 Hz tick
+VEL_SCALE = np.ones(7)
 TASK = "pick up the water bottle"
 
 
@@ -87,6 +88,29 @@ class Observer:
             self.r.update_scene(d, camera=cid)
             obs[f"video.{key}"] = np.ascontiguousarray(self.r.render())[None].astype(np.uint8)
         return obs, (root_pos, Rp)
+
+
+def load_replay_body(dataset, episode):
+    """Round-trip test in the POLICY's own terms: the recorded rows in their own pelvis frame
+    plus the 7 velocity columns of bfm_action.velocity_columns, executed like a prediction
+    (no recorded root pose at execution time). Passes only if the executor can walk from
+    per-row body-frame targets, which is what a trained policy will hand it."""
+    import pyarrow.parquet as pq
+    from bfm_action import velocity_columns
+    t = pq.read_table(os.path.join(dataset, f"data/chunk-000/episode_{episode:06d}.parquet"))
+    act = np.stack(t["action.bfm"].to_pylist()).astype(np.float64)
+    grip = np.stack(t["teleop.right_hand_joints"].to_pylist())[:, 0].astype(np.float64)
+    rq = np.stack(t["observation.root_orientation"].to_pylist()); rp = np.stack(t["observation.root_position"].to_pylist())
+    rows = np.concatenate([act, velocity_columns(act, rp, rq).astype(np.float64)], axis=1)
+    n = len(act)
+    state = dict(k=0)
+
+    def predict(obs):
+        r0 = min(n - 1, state["k"] // 2)
+        idx = np.clip(np.arange(r0, r0 + 40), 0, n - 1)
+        return rows[idx], grip[idx]
+    predict.state = state
+    return predict
 
 
 def load_replay(dataset, episode):
@@ -136,23 +160,18 @@ def load_vla(model_path, modality_config, denoising_steps):
     def predict(obs):
         chunk, _ = policy.get_action(parse_observation_gr00t(obs, cfg))
         out = {k: np.asarray(v) for k, v in parse_action_gr00t(chunk).items()}
-        return np.asarray(out["action.bfm"], dtype=np.float64), np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
+        act = np.asarray(out["action.bfm"], dtype=np.float64)
+        if "action.bfm_vel" in out:      # gr00t_bfm_vel_2cam: 18 + 7 velocity columns (bfm_action.py)
+            act = np.concatenate([act, np.asarray(out["action.bfm_vel"], dtype=np.float64)], axis=1)
+        return act, np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
     return predict
 
 
 def run_round(sim, pol, refs_cls, observer, predict, rnd, rng, a, out_dir):
     m = dict(round=rnd, ok=False, why="")
-    # --- scene sample: identical to run_bottle.run_round --------------------------------------
-    bottle = sim.crate0.copy()
-    bottle[:2] += rng.uniform(-B.BOTTLE_JITTER, B.BOTTLE_JITTER, 2)
-    d = float(rng.uniform(*B.STAND_D))
-    appr0 = np.array([1.0, 0.0]); left = np.array([-appr0[1], appr0[0]])
-    stand_xy = bottle[:2] - appr0 * (d - B.STAND_BACKSTEP) + left * B.STAND_LEFT
-    spawn_back = float(rng.uniform(*B.SPAWN_BACK)); spawn_lat = float(rng.uniform(-B.SPAWN_LAT, B.SPAWN_LAT))
-    spawn_xy = stand_xy - appr0 * spawn_back + left * spawn_lat
-    yaw0 = float(np.arctan2(*(bottle[:2] - spawn_xy)[::-1])) + float(rng.uniform(-B.SPAWN_YAW_ERR, B.SPAWN_YAW_ERR))
-    m.update(stand_d=d, bottle_xy=[round(float(v), 3) for v in bottle[:2]], spawn_back=spawn_back, spawn_lat=spawn_lat,
-             spawn_yaw_deg=float(np.degrees(yaw0)))
+    # --- scene sample: the recorder's own (run_bottle.sample_scene; BFM_SCENE selects the geometry) ---
+    bottle, stand_xy, spawn_xy, yaw0, meta = B.sample_scene(sim, rng)
+    m.update(meta)
     sim.reset(spawn_xy, yaw0, 0.0)
     sim.d.qpos[sim.crate_q:sim.crate_q + 3] = bottle; mujoco.mj_forward(sim.m, sim.d)
     sim.grip_clip = B.GRIP_CLIP
@@ -164,6 +183,9 @@ def run_round(sim, pol, refs_cls, observer, predict, rnd, rng, a, out_dir):
                                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", os.path.join(out_dir, f"round_{rnd:03d}.mp4")], stdin=subprocess.PIPE)
         ego_r = mujoco.Renderer(sim.m, height=H, width=W); ego_cam = mujoco.mj_name2id(sim.m, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
     trace = []; T = 0.0; k = 0
+    plan_pose = [None]      # (world pos, yaw) of the last executed pelvis target, for --pelvis-anchor plan
+    exec_summary = [None]   # last executed world targets (frame 0 and frame 5) for pelvis / right wrist
+    pred_summary = [None]   # last prediction: pelvis-frame pelvis xy at rows 0/19/39, wrist x at 0/39, grip min -- what the policy asked for
     first_move = None; closed_once = False; max_rise = -1.0
     infer_wall = []
     # --- settle exactly like the expert (pelvis pinned, hands at the side) --------------------
@@ -178,7 +200,9 @@ def run_round(sim, pol, refs_cls, observer, predict, rnd, rng, a, out_dir):
                           fallen=bool(sim.fallen()), grip=float(sim.grip_target[2]), pelvis_xy=[float(pel[0]), float(pel[1])],
                           pelvis_yaw=float(yaw_of(d_.qpos[3:7])), pelvis_z=float(pel[2]), torso_pitch=float(np.radians(B.torso_pitch_deg(sim))),
                           obj_xy=[float(bp[0]), float(bp[1])], obj_z=float(bp[2]), palm_z=float(pad[2]),
-                          palm_obj=float(np.linalg.norm(pad - bp)), obj_tilt=tilt, touch=[], touch_links=[]))
+                          palm_obj=float(np.linalg.norm(pad - bp)), obj_tilt=tilt, touch=[], touch_links=[],
+                          pred=pred_summary[0], exec=exec_summary[0],
+                          wrist_w=[round(float(v), 3) for v in sim.body("right_wrist_yaw_link")[0]]))
 
     def step(targets, phase):
         nonlocal T, k, first_move, max_rise
@@ -201,6 +225,11 @@ def run_round(sim, pol, refs_cls, observer, predict, rnd, rng, a, out_dir):
             m["why"] = "[settle] fell"; break
     # --- VLA control ---------------------------------------------------------------------------
     chunk = None          # (k_ready, k0, act[40,18], grip[40], root_pos0, R0)
+    live = None           # the chunk being executed; a fresh prediction replaces it only once its
+                          # latency window has elapsed. Falling back to hold_targets (the settle pose:
+                          # pelvis at the spawn, hands at the side) inside that window sent the
+                          # controller 1-2 m behind the robot for 4 of every 20 ticks -- the replay
+                          # round-trip of a recorded grasp failed (bottle knocked) until this was fixed.
     k_last_obs = -10 ** 9
     replan_ticks = int(round(a.replan_s / DT))
     hold_targets = refs.futures(settle_ref, T)
@@ -208,23 +237,88 @@ def run_round(sim, pol, refs_cls, observer, predict, rnd, rng, a, out_dir):
     while not m["why"] and k < int(SETTLE_S / DT) + budget_ticks:
         if k - k_last_obs >= replan_ticks:
             obs, (root_pos0, R0) = observer()
+            if hasattr(predict, "state"):
+                predict.state["k"] = k
             if getattr(predict, "world_frame", False):
-                predict.state["k"] = k; root_pos0, R0 = np.zeros(3), np.eye(3)
+                root_pos0, R0 = np.zeros(3), np.eye(3)
             t0 = time.time(); act, grip = predict(obs); infer_wall.append(time.time() - t0)
+            if not getattr(predict, "world_frame", False):
+                pred_summary[0] = dict(pel0=[round(float(v), 3) for v in act[0, 0:2]], pel19=[round(float(v), 3) for v in act[19, 0:2]],
+                                       pel39=[round(float(v), 3) for v in act[39, 0:2]], wr0=round(float(act[0, 9]), 3),
+                                       wr39=round(float(act[39, 9]), 3), grip_min=round(float(grip.min()), 3),
+                                       row0=[round(float(v), 3) for v in act[0]])
             k_last_obs = k
             chunk = (k + a.latency_ticks, k, act, grip, root_pos0, R0)
         if chunk is not None and k >= chunk[0]:
-            k_ready, k0, act, grip, root_pos0, R0 = chunk
+            live = chunk
+        if live is not None:
+            k_ready, k0, act, grip, root_pos0, R0 = live
             targets = {}
             pel_list, rw_list = ([], []), ([], [])
+            root_pos_pred, R_pred = root_pos0, R0          # pelvis pose at prediction time
+            if a.anchor == "live" and not getattr(predict, "world_frame", False):
+                # the row is a target relative to the pelvis it will be applied from: use the
+                # pelvis NOW, not the one at prediction time (0-0.4 s stale during a walk)
+                root_pos0, R0 = sim.d.qpos[:3].copy(), mat(sim.d.qpos[3:7])
+            has_vel = act.shape[1] >= 22 and not a.no_vel and not getattr(predict, "world_frame", False)
+            if a.pelvis_anchor == "plan" and has_vel:
+                # Anchor on where the previous chunk's plan says the pelvis SHOULD be (bounded residual
+                # over the live pose), so the controller's tracking lag (~10 cm during a walk) is not
+                # re-zeroed at every replan. The training offset is plan - actual, so the policy's row
+                # offset already contains the expert's version of this residual; carrying it bounded
+                # (+-0.10 m, +-0.2 rad) trades a little overshoot for not stopping 10 cm short.
+                live_p = sim.d.qpos[:3].copy(); live_yaw = yaw_of(sim.d.qpos[3:7])
+                if plan_pose[0] is None:
+                    plan_pose[0] = (live_p.copy(), live_yaw)
+                res = np.clip(plan_pose[0][0] - live_p, -0.10, 0.10); res[2] = 0.0
+                res_yaw = float(np.clip(wrap(plan_pose[0][1] - live_yaw), -0.2, 0.2))
+                root_pos_pred = live_p + res; R_pred = rot_z(live_yaw + res_yaw)
+            if a.pelvis_anchor in ("world", "plan") and has_vel:
+                # Pelvis target as a WORLD point fixed at prediction time: integrate the chunk's plan
+                # velocity from the prediction-time pelvis, then add the row's offset. Live anchoring
+                # has zero stiffness against the backward drift ScaleBFM shows while the torso leans
+                # into the reach (v4 eval: stand 0.55 -> 0.65 m after arrival, then the bottle is out of
+                # reach); the expert's stand is a world point, which is what this reproduces.
+                cum = np.cumsum(act[:, 18:21], axis=0) / DATASET_FPS
+                cum = np.vstack([np.zeros((1, 3)), cum[:-1]])           # displacement before row r
+                cum_yaw = np.concatenate([[0.0], np.cumsum(act[:-1, 21]) / DATASET_FPS])
             for j in range(pol.F):
-                r = min(39, int((k - k0 + j) * ROWS_PER_TICK))
-                pp = root_pos0 + R0 @ act[r, 0:3]; pR = R0 @ rot6d_to_mat(act[r, 3:9])
-                wpos = root_pos0 + R0 @ act[r, 9:12]; wR = R0 @ rot6d_to_mat(act[r, 12:18])
+                rf = min(39.0, (k - k0 + (0 if has_vel else j)) * ROWS_PER_TICK)
+                if a.interp:
+                    # the chunk is 25 Hz, the controller's future frames are 50 Hz: interpolate
+                    # between rows instead of repeating each row twice (rot6d is re-orthonormalised
+                    # by rot6d_to_mat, so a linear blend of the two 6-vectors is a valid rotation)
+                    r_lo = int(rf); w = rf - r_lo; r_hi = min(39, r_lo + 1)
+                    row = (1 - w) * act[r_lo] + w * act[r_hi]
+                else:
+                    row = act[int(rf)]
+                pp = root_pos0 + R0 @ row[0:3]; pR = R0 @ rot6d_to_mat(row[3:9])
+                if a.pelvis_anchor in ("world", "plan") and has_vel:
+                    ri = int(rf)
+                    pp = root_pos_pred + R_pred @ (cum[ri] + row[0:3])
+                    pR = rot_z(float(cum_yaw[ri])) @ R_pred @ rot6d_to_mat(row[3:9])
+                if a.level_pelvis:
+                    # the expert's pelvis reference is yaw-only (Refs.pelvis); the row stores it RELATIVE to a
+                    # pelvis that was pitched forward ~0.15 rad by the reach, i.e. as "pitch back a little".
+                    # Applied to a level pelvis that is a backward lean, and it compounds every replan
+                    # (probe_vel: torso -0.4 rad, palm 20 cm above the bottle). Keep only the yaw.
+                    pR = rot_z(yaw_of(quat_wxyz(pR)))
+                wpos = root_pos0 + R0 @ row[9:12]; wR = R0 @ rot6d_to_mat(row[12:18])
+                if has_vel:
+                    # future frame j = the plan j*DT later: the expert filled it from plan(t + j*DT)
+                    # and ScaleBFM reads its speed from that spacing (bfm_action.py)
+                    tau = j * DT; vel = row[18:25] * VEL_SCALE[:len(row) - 18]
+                    Rv = R_pred if (a.pelvis_anchor in ("world", "plan")) else R0
+                    pp = pp + Rv @ vel[0:3] * tau; pR = rot_z(float(vel[3]) * tau) @ pR
+                    if len(vel) >= 7:            # offline 7-column layout carries a wrist velocity too
+                        wpos = wpos + R0 @ vel[4:7] * tau
                 pel_list[0].append(pp); pel_list[1].append(quat_wxyz(pR))
                 rw_list[0].append(wpos); rw_list[1].append(quat_wxyz(wR))
             targets["pelvis"] = (np.array(pel_list[0]), np.array(pel_list[1]))
             targets["right_wrist_yaw_link"] = (np.array(rw_list[0]), np.array(rw_list[1]))
+            plan_pose[0] = (np.array(pel_list[0][0]), yaw_of(pel_list[1][0]))   # executed frame-0 target = the plan now
+            exec_summary[0] = dict(pel_w=[round(float(v), 3) for v in pel_list[0][0]], pel_w5=[round(float(v), 3) for v in pel_list[0][-1]],
+                                   wr_w=[round(float(v), 3) for v in rw_list[0][0]], wr_w5=[round(float(v), 3) for v in rw_list[0][-1]])
             # left wrist: at the side of the PREDICTED pelvis, the expert's own rule
             lp, lq = [], []
             for pp, pq in zip(pel_list[0], pel_list[1]):
@@ -268,6 +362,22 @@ def main():
     ap.add_argument("--model-path", default=None)
     ap.add_argument("--replay-dataset", default=None, help="round-trip test: replay this dataset's recorded actions instead of a model")
     ap.add_argument("--replay-episode", type=int, default=0)
+    ap.add_argument("--replay-mode", choices=("world", "body"), default="world",
+                    help="world: rows pre-converted with the recorded root pose (tests the sim/controller only); "
+                         "body: rows in their own pelvis frame + velocity columns, executed like a prediction (tests the executor)")
+    ap.add_argument("--no-vel", action="store_true", help="ignore the velocity columns even when present (ablation)")
+    ap.add_argument("--level-pelvis", action="store_true", help="pelvis orientation target = yaw only (the expert's own convention)")
+    ap.add_argument("--pelvis-anchor", choices=("live", "world", "plan"), default="live",
+                    help="world: pelvis target = prediction-time pelvis + integrated plan velocity + row offset (a fixed world point "
+                         "per chunk, stiff against drift); plan: like world but anchored on the previous plan's pose (bounded "
+                         "residual over the live pelvis, carries the tracking lag across replans); live: row offset from the live pelvis (default)")
+    ap.add_argument("--vel-scale", default="1,1,1,1,1,1,1", help="per-column scale on the 7 velocity columns (ablation)")
+    ap.add_argument("--anchor", choices=("pred", "live"), default="pred",
+                    help="pelvis pose the chunk rows are expressed in: at prediction time (pred) or the live pose each tick (live)")
+    ap.add_argument("--replay-round", type=int, default=None,
+                    help="collection round that produced --replay-episode (train_dataset/manifest.jsonl: round of the row "
+                         "with that episode_index and split); default = the episode index, which is only right when no "
+                         "earlier round was rejected or held out")
     ap.add_argument("--modality-config", default=os.path.join(ROOT, "configs/gr00t_bfm_2cam.py"))
     ap.add_argument("--rounds", type=int, default=60)
     ap.add_argument("--seed", type=int, default=6000)
@@ -276,9 +386,12 @@ def main():
     ap.add_argument("--latency-ticks", type=int, default=4, help="ticks (20 ms) between observation and first executed row")
     ap.add_argument("--budget", type=float, default=20.0, help="sim seconds of VLA control after the settle")
     ap.add_argument("--denoising-steps", type=int, default=4)
+    ap.add_argument("--interp", action="store_true", help="interpolate the 25 Hz chunk rows to the 50 Hz future frames (default: repeat each row twice)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--video", action="store_true")
     a = ap.parse_args()
+    global VEL_SCALE
+    VEL_SCALE = np.array([float(v) for v in a.vel_scale.split(",")], float); assert VEL_SCALE.shape == (7,)
     os.makedirs(os.path.join(a.out, "traces"), exist_ok=True)
     pol = Policy(); sim = Sim(pol.meta, video=a.video)
     if os.environ.get("PAD_HARDEN", "1") == "1":
@@ -288,16 +401,15 @@ def main():
                 sim.m.geom_priority[g] = 1; sim.m.geom_condim[g] = 4
                 sim.m.geom_solref[g] = (0.002, 1.0); sim.m.geom_solimp[g] = (0.995, 0.9999, 0.001, 0.5, 2.0)
     observer = Observer(sim)
-    predict = (load_replay(a.replay_dataset, a.replay_episode) if a.replay_dataset
+    predict = ((load_replay_body if a.replay_mode == "body" else load_replay)(a.replay_dataset, a.replay_episode) if a.replay_dataset
                else load_vla(a.model_path, a.modality_config, a.denoising_steps))
     import torch
     rng = np.random.default_rng(a.seed)
     man = open(os.path.join(a.out, "closed_loop.manifest.jsonl"), "a")
     oks = 0; t0 = time.time()
     for r in range(a.rounds):
-        if a.replay_dataset and r != a.replay_episode:
-            run_round.__globals__  # scene draws must stay in step with the recorder: burn this round's draws
-            rng.uniform(-B.BOTTLE_JITTER, B.BOTTLE_JITTER, 2); rng.uniform(*B.STAND_D); rng.uniform(*B.SPAWN_BACK); rng.uniform(-B.SPAWN_LAT, B.SPAWN_LAT); rng.uniform(-B.SPAWN_YAW_ERR, B.SPAWN_YAW_ERR)
+        if a.replay_dataset and r != (a.replay_round if a.replay_round is not None else a.replay_episode):
+            B.sample_scene(sim, rng)   # scene draws must stay in step with the recorder: burn this round's draws
             continue
         if a.policy_seed:
             torch.manual_seed(a.policy_seed + r)

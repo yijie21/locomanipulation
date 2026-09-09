@@ -97,3 +97,19 @@ arrival_advance 上限 0.10);`coupled_grasp_policy.py`/`measured_grasp.py` 消�
 
 保留的权重:`ready07_learn_20260907/model`(基线)与 `ready07d_decisive_20260907/model`(最佳),各 24 G;
 07b/07c/07e/s2 的权重已删,其评测 trace、`paired_compare.txt`、`open_loop_val.json` 保留。
+
+## 8. 07d 协议 × 200 集(2026-09-08 追加)
+
+`outputs/experiments/ready07d_200_20260908/`:同一 reach_config、scene、评测分布 spawn、`GYM_SHUFFLE_BAND=0`,seed0 28000,
+28 批 281 轮接受 200 集;其中 3 个 session(10:09-10:40 UTC)因同卡跑 ScaleBFM 仿真导致 deploy 自愈重启、exporter
+episode 被切成 1-6 s 残段(convert 的顺序对齐看不出来,audit 的 grasp-causality 抓到),剔除后 **176 集训练、10 集 val**,
+3000 steps,100 轮闭环(seed 6000,与 07d decisive 逐轮配对)。
+
+| 臂 | 训练集 | 闭环 | 前 60 轮配对 | discordant(新赢 : 旧赢) | McNemar p |
+|---|---|---|---|---|---|
+| 07d decisive | 60/78 | 29/60 = 48% | 29/60 | | |
+| **07d-200** | 176 | **57/100 = 57%** | **37/60 = 62%** | 22 : 14 | 0.24 |
+
+结论:多 3 倍数据配对上涨 8 个点(前 60 轮),但 p = 0.24 仍不显著——60 轮配对分辨不了 10 个点以内的差距(memory:
+`vla-baseline-round1-results`),要 2 个 seed 或 200 轮才能定。失败结构变了:07d-200 的 reach 失败停得更近(min dist
+中位 0.24 m,decisive 0.31-0.42 m)但"到了桌边不合爪"仍是最大类(34/43),合爪没抬 9/43。第二个 seed 的训练是下一步。

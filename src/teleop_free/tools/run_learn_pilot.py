@@ -48,6 +48,9 @@ def main():
     ap.add_argument('--through', choices=('collect', 'convert', 'train', 'eval'), default='eval')
     ap.add_argument('--gym-env', action='append', default=[], metavar='KEY=VAL',
                     help='extra environment for the collection gym only (e.g. GYM_SHUFFLE_BAND=0)')
+    ap.add_argument('--stack-env', action='append', default=[], metavar='KEY=VAL',
+                    help='extra environment for BOTH stacks (collection and eval), e.g. '
+                         'CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=1 to keep the sim/deploy off GPU0')
     args = ap.parse_args()
 
     out = args.out.resolve(); out.mkdir(parents=True, exist_ok=True)
@@ -66,9 +69,10 @@ def main():
             git=subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip(),
             reach_config=digest(cfg), initial_token=digest(token),
             scene={p.name: digest(p) for p in scene.iterdir() if p.is_file()},
-            spawn=SPAWN, gym_env=args.gym_env, started=time.time(),
+            spawn=SPAWN, gym_env=args.gym_env, stack_env=args.stack_env, started=time.time(),
             sources={str(p.relative_to(ROOT)): digest(p) for p in src_files}), indent=1))
 
+    stack_env = dict(kv.split('=', 1) for kv in args.stack_env)
     base_env = dict(os.environ, LOCOMANI_SIM_DIR=str(scene), SIM_VIS='none', SCENE_RANDOM='0',
                     SIM_VIDEO_INCLUDE_INIT='1', HF_HOME='/workspace/huggingface_cache',
                     PYTHONUNBUFFERED='1', WANDB='0')
@@ -116,7 +120,7 @@ def main():
                        SIM_STATE_TRACE_DIR=str(collect / f'state_trace_{tag}'),
                        TF_FRAME_AUDIT_PATH=str(collect / f'frame_audit_{tag}.jsonl'),
                        TF_EXPORTER_SCRIPT=str(SRC / 'tools/run_instance_exporter.py'))
-            env.update(dict(kv.split('=', 1) for kv in args.gym_env))
+            env.update(stack_env); env.update(dict(kv.split('=', 1) for kv in args.gym_env))
             stack_up = True
             before = set(SESSIONS.iterdir())
             run(f'start_stack_{tag}', ['bash', SRC / 'start_stack.sh', 'pick up the water bottle'], env)
@@ -187,7 +191,7 @@ def main():
             ev = out / 'eval'; ev.mkdir(exist_ok=True)
             stack_up = True
             run('start_eval_stack', ['bash', SRC / 'start_stack.sh', 'pick up the water bottle'],
-                dict(NO_ENCODER='1', SIM_VIDEO_DIR=str(ev / 'videos')))
+                dict(stack_env, NO_ENCODER='1', SIM_VIDEO_DIR=str(ev / 'videos')))
             slog = (ev / 'serve.log').open('a')
             server = subprocess.Popen([str(TRAIN), str(SRC / 'tools/serve_policy.py'), '--model-path', str(ckpt),
                                        '--port', '5590'], cwd=ROOT,
