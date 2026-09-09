@@ -2,7 +2,15 @@
 # Pilot: a few scripted two-handed crate picks on their OWN stack instance,
 # with the third-person tracking video per episode.
 #
-#   bash scripts/run_wall_pilot.sh [rounds] [seed]
+#   bash scripts/run_wall_pilot.sh [rounds] [seed] [-- extra args to bimanual_wall.py]
+#
+# Any args after [rounds] [seed] are forwarded verbatim to bimanual_wall.py,
+# e.g. `bash scripts/run_wall_pilot.sh 10 0 --set wall_walk=true` or
+# `--config configs/tasks/crate_wall.json` (the canonical wall-pilot config:
+# wall_feature=rail, wall_walk=true -- the GPU gate's crate baseline was
+# recorded with WALL_WALK=1 WALL_FEATURE=rail, from the days those were env
+# vars; CrateTaskConfig.wall_walk now defaults to False, so reproducing that
+# baseline needs this config or an explicit --set).
 #
 # Instance 1 (ports 5566/5567/5590/5591/5592, DDS domain 1), the crate scene
 # from bimanual_scene.py via LOCOMANI_SIM_DIR, no exporter (start_stack skips
@@ -19,6 +27,7 @@ export INSTANCE="${INSTANCE:-1}"
 . /workspace/code/locomanipulation/scripts/paths.sh
 ROUNDS="${1:-3}"
 SEED="${2:-0}"
+shift $(($# < 2 ? $# : 2))  # drop [rounds] [seed]; "$@" now holds only the extra args to forward
 export LOCOMANI_SIM_DIR="${LOCOMANI_SIM_DIR:-$LOCOMANI_ROOT/outputs/scene/crate_bimanual}"
 export SIM_VIDEO_DIR="${SIM_VIDEO_DIR:-$LOCOMANI_ROOT/outputs/videos/wall_pilot}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
@@ -59,6 +68,6 @@ bash "$LOCOMANI_STACK/start_stack.sh" || { echo "[pilot] stack failed to start; 
 
 cd "$LOCOMANI_ROOT"
 "$SONIC_ROOT/.venv_sim/bin/python" src/locomani/tasks/crate/bimanual_wall.py \
-    --rounds "$ROUNDS" --seed "$SEED" --manifest "$MANIFEST" --label "wall_s${SEED}" \
+    --rounds "$ROUNDS" --seed "$SEED" --manifest "$MANIFEST" --label "wall_s${SEED}" "$@" \
     2>&1 | tee "$SIM_VIDEO_DIR/pilot_s${SEED}.log" | grep -v Warning
 echo "[pilot] manifest: $MANIFEST"; ls -l "$SIM_VIDEO_DIR"/*.mp4 2>/dev/null | tail -n +1

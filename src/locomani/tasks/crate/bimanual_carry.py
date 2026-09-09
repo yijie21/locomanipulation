@@ -26,6 +26,15 @@ state and locomotion, PlannerArm for the 17-joint upper-body channel (both
 arms ride on it; the class is per-side only in what it guards, and the
 guard is off here), ArmIK for both arms. Nothing in stream_reach /
 grasp_gym is modified.
+
+Split across three files (refactor step 4b family 5, pure extraction;
+decision 9's file-size cap): this file keeps `BimanualArms`, the module-level
+constants, `rot_z`/`rot_y`/`crate_frame`/`hand_txt`/`crate_tilt_deg`, and
+`run_round` itself (now a thin orchestrator); `carry_phases.py` has
+`run_round`'s first three phases (`_phase_reset`, `_phase_approach`,
+`_phase_grasp`) behind a `CarryRoundContext`; `carry_phases_lift.py` has the
+last two (`_phase_close`, `_phase_lift`) -- all five would not fit
+carry_phases.py's own 600-line cap.
 """
 
 from __future__ import annotations
@@ -35,6 +44,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -43,20 +53,20 @@ sys.path.insert(
 )  # reach src/ for `python src/locomani/tasks/crate/bimanual_carry.py`
 
 from locomani import paths  # noqa: E402
-from locomani.backends.sonic import upper_ref  # noqa: E402
-from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode, StreamMode  # noqa: E402
-from locomani.backends.sonic.primitives import (
-    DT,
-    HAND_CLOSED_LEFT,
-    HAND_CLOSED_RIGHT,
-    Primitives,  # noqa: E402
-    upper_body_from_mj,
-    wrap,
-)
+from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode  # noqa: E402
+from locomani.backends.sonic.primitives import Primitives  # noqa: E402
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 from locomani.backends.sonic.stream_reach import PlannerArm  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
+from locomani.tasks.crate.carry_phases import (  # noqa: E402
+    CarryRoundContext,
+    _phase_approach,
+    _phase_grasp,
+    _phase_reset,
+)
+from locomani.tasks.crate.carry_phases_lift import _phase_close, _phase_lift  # noqa: E402
+from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
 
 OBJ = "blue_crate"
 OFFSET = np.asarray(GRASP_CENTRE_OFFSET_CONST, dtype=float)  # palm -> grip centre, palm frame
@@ -298,419 +308,29 @@ class BimanualArms:
 def run_round(
     p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int, rng: np.random.Generator, log, video_label: str
 ) -> dict:
-    m = {"round": rnd, "ok": False, "why": ""}
-    surf = meta["surfaces"]["A"]
-    hx = float(surf["flat_half_extent"][0])
-    crate0 = np.asarray(meta["objects"][OBJ]["init_pos"], dtype=float)
+    """One round's five phases (carry_phases.py / carry_phases_lift.py),
+    threaded through a CarryRoundContext.
 
-    # --- reset: crate yaw jitter, robot spawn 1.0-1.3 m behind the stand ----
-    crate_dyaw = 0.0  # bars parallel to the table edge (was +-15 deg)
-    crate_dy = float(rng.uniform(-0.10, 0.10))
-    n0 = np.array([1.0, 0.0])  # crate near wall faces -x
-    stand0 = crate0[:2] - n0 * STAND_OFF
-    spawn_back = float(rng.uniform(1.0, 1.3))
-    spawn_lat = float(rng.uniform(-0.15, 0.15))
-    spawn_xy = stand0 - n0 * spawn_back + np.array([0.0, spawn_lat])
-    robot_nom = np.asarray(meta["robot_start"]["xy"], dtype=float)
-    psi0 = float(np.arctan2(*(crate0[:2] - spawn_xy)[::-1])) + float(rng.uniform(-0.17, 0.17))
-    m.update(crate_dyaw_deg=np.degrees(crate_dyaw), crate_dy=crate_dy, spawn_back=spawn_back, spawn_lat=spawn_lat)
-
-    # reset() takes an ABSOLUTE yaw (privileged_pub: qpos quat := yaw_quat),
-    # so the crate's scene yaw (90 deg, handles at +-y) is the base, not zero.
-    # The first pilot passed the jitter alone: the crate came up handles-fore,
-    # the stand point landed beside the table and every walk-in timed out.
-    w, x, y, z = meta["objects"][OBJ]["init_quat"]
-    crate_yaw0 = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
-    p.cmd.reset_pose()
-    p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)  # never carry a closed jaw into the walk-in
-    reset.pin_arms()
-    reset.set_ghost()
-    reset.reset(
-        objects={OBJ: {"dxy": [0.0, crate_dy], "yaw": crate_yaw0 + crate_dyaw}},
-        robot={"dxy": [float(v) for v in (spawn_xy - robot_nom)], "yaw": psi0},
+    Body moved there (refactor step 4b, pure extraction) -- this function
+    stays HERE, thin, so that `locomani.tasks.crate.__init__`'s
+    `bimanual_carry.run_round(*args, **kwargs)` call keeps resolving to this
+    same name.
+    """
+    ctx = CarryRoundContext(
+        p=p,
+        reset=reset,
+        meta=meta,
+        rnd=rnd,
+        rng=rng,
+        log=log,
+        video_label=video_label,
+        m={"round": rnd, "ok": False, "why": ""},
     )
-    time.sleep(0.3)
-    p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
-    p.cmd.upper_body = None
-    p.cmd.start_control()
-    p._gym_started = True
-    upper_ref.shared().wait(3.0)
-    p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
-    fv0 = (float(np.cos(psi0)), float(np.sin(psi0)), 0.0)
-    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=fv0)
-    s = p.obs()
-    if s["fallen"]:
-        m["why"] = "[stand] did not stabilise after reset"
-        return m
-    reset.start_video(video_label)
-    log(f"[reset] {hand_txt(p, p.obs())}")
-    t_video = time.time()
-
-    # --- A+B: walk in facing the crate, both arms rising to the pre-grasp ----
-    centre, bars, n, y_hat, psi = crate_frame(p, s)
-    stand_xy = centre[:2] - n * STAND_OFF + y_hat * STAND_LAT_BIAS
-    edge_x = float(surf["xy"][0]) - hx
-    m["stand_target"] = [float(v) for v in stand_xy]
-    q_meas = upper_body_from_mj(s["joints"])
-    q_free = upper_ref.shared().upper17()
-    q_free = q_meas if q_free is None else q_free
-    ramp = upper_ref.UpperRamp(p.cmd, q_free)
-    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
-    # pre-grasp: both palms at the staging points, expressed for the FINAL stand
-    arms = BimanualArms(p)
-    R_stand = rot_z(psi)
-    rot_w = {sd: R_stand for sd in ("left", "right")}  # fingers level while walking in
-    up_w = {sd: bars[sd] + np.array([*(-n * UP_SHORT), UP_ABOVE]) for sd in ("left", "right")}
-    # IK in the pelvis frame the robot WILL have at the stand: same yaw as psi,
-    # pelvis over stand_xy at the standing height it has now.
-    s_stand = dict(s)
-    s_stand["pelvis"] = dict(
-        s["pelvis"],
-        pos=[float(stand_xy[0]), float(stand_xy[1]), float(s["pelvis"]["pos"][2])],
-        quat=[float(np.cos(psi / 2)), 0.0, 0.0, float(np.sin(psi / 2))],
-    )
-    # Seed the pre-grasp IK from the zero posture, NOT the measured arms:
-    # from the hanging arms the DLS lands in a straight-elbow, wrist-rolled
-    # branch (elbow -6 deg, wrist roll 80) that the policy tracks with a 20 deg
-    # gap, and the servo inherits it (pilot 6: right hand stuck 2.3 cm out).
-    # From zero it finds the comfortable branch (elbow 43, wrist roll 7,
-    # 61 deg from the nearest limit), and every later solve warm-starts there.
-    arms.arm.q = np.zeros(29)
-    q_pre = arms.solve(s_stand, up_w, rot_w, iters=200)
-    q_pre17 = upper_body_from_mj(q_pre)
-    for sd in ("left", "right"):
-        pos, R = arms.arm.ik.fk(q_pre, sd)
-        g = np.asarray(s_stand["pelvis"]["pos"]) + Primitives._rot(s_stand["pelvis"]["quat"]) @ (pos + R @ OFFSET)
-        log(
-            f"[pre-grasp] {sd}: ik residual {np.linalg.norm(g - up_w[sd]) * 100:.1f} cm, "
-            f"arm q {np.round(np.degrees(q_pre[ARM_MJ[sd]]), 0).tolist()}"
-        )
-
-    def on_tick(_s, dist):
-        u = float(np.clip(1.0 - (dist - 0.10) / 0.90, 0.0, 1.0))
-        ramp.push(q_free + (3 * u * u - 2 * u**3) * (q_pre17 - q_free))
-
-    # Walk in facing the crate; speed by distance remaining; stop on the edge
-    # floor or at the stand. walk_to alone scattered the stand by -18..+14 cm
-    # (pilot 3): its stop_dist has no notion of the table, and the carry after
-    # the last frame put the feet under the edge.
-    t0, why = time.time(), "timeout"
-    best_along, best_t = None, time.time()
-    way_xy = stand_xy - n * WAYPOINT_BACK
-    leg = "waypoint"
-    m["waypoint"] = [float(v) for v in way_xy]
-    while time.time() - t0 < 40.0:
-        s = p.obs()
-        if s["fallen"]:
-            m["why"] = "[stand] fell during the walk-in"
-            return m
-        pel = np.asarray(p.pelvis_xy(s))
-        to_stand = stand_xy - pel
-        along = float(np.dot(to_stand, n))  # + = still short of the stand
-        dist = float(np.linalg.norm(to_stand))
-        on_tick(s, dist)
-        if leg == "waypoint":
-            to_way = way_xy - pel
-            if float(np.dot(to_way, n)) <= 0.03 or float(np.linalg.norm(to_way)) < WAYPOINT_TOL:
-                leg = "in"
-                log(
-                    f"[walk] waypoint reached: lateral {float(np.dot(pel - stand_xy, y_hat)) * 100:+.1f} cm, "
-                    f"{float(np.dot(to_stand, n)) * 100:.0f} cm to the stand"
-                )
-        edge_clear = edge_x - float(pel[0])
-        if along <= 0.04 or dist < STAND_TOL:
-            why = "at the stand"
-            break
-        if edge_clear <= EDGE_FLOOR:
-            why = "edge floor"
-            break
-        # no progress for 3 s: the gait has parked; take the stand it gives
-        # (the band check below decides whether it is usable)
-        if best_along is None or along < best_along - 0.015:
-            best_along, best_t = along, time.time()
-        elif time.time() - best_t > 3.0:
-            why = "stalled"
-            break
-        centre_now, _, n_now, _, _ = crate_frame(p, s)
-        look = centre_now[:2] - pel
-        b = float(np.arctan2(look[1], look[0]))
-        speed = APPR_SPEED[0] if along > 0.35 else APPR_SPEED[1] if along > 0.15 else APPR_SPEED[2]
-        if leg == "waypoint":
-            mv = to_way / max(float(np.linalg.norm(to_way)), 1e-3)
-        else:
-            mv = to_stand / max(dist, 1e-3)
-            b = psi  # straight in, square to the bars
-        if int((time.time() - t0) / 2.0) != int((time.time() - t0 - DT) / 2.0):
-            log(
-                f"[walk] t={time.time() - t0:4.1f} pelvis {np.round(pel, 2).tolist()} dist {dist:.2f} "
-                f"along {along:+.2f} edge {edge_clear:.2f} speed {speed} facing_err "
-                f"{np.degrees(wrap(b - p.pelvis_yaw(s))):+.0f} deg ramp_gap {np.degrees(np.abs(ramp.q - q_pre17).max()):.0f} deg  {hand_txt(p, s)}"
-            )
-        p.cmd.frame(
-            mode=LocomotionMode.SLOW_WALK,
-            facing=(float(np.cos(b)), float(np.sin(b)), 0.0),
-            movement=(float(mv[0]), float(mv[1]), 0.0),
-            speed=speed,
-        )
-        time.sleep(DT)
-    m["approach_exit"] = why
-    if why == "timeout":
-        m["why"] = "[stand] walk-in timed out"
-        return m
-
-    def brake():
-        # pelvis speed under 0.06 m/s for 0.25 s, arms finishing their rise
-        t0, still = time.time(), None
-        prev = p.pelvis_xy(p.obs())
-        while time.time() - t0 < 6.0:
-            ramp.push(q_pre17)
-            p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
-            time.sleep(DT)
-            cur = p.pelvis_xy(p.obs())
-            v = float(np.linalg.norm(cur - prev)) / DT
-            prev = cur
-            still = time.time() if v > 0.06 else (still if still is not None else time.time())
-            if still is not None and time.time() - still > 0.25 and time.time() - t0 > 1.0:
-                break
-
-    def stand_metrics(tag):
-        s = p.obs()
-        centre, bars, n, y_hat, psi = crate_frame(p, s)
-        pel = np.asarray(p.pelvis_xy(s))
-        yaw_err = float(np.degrees(wrap(psi - p.pelvis_yaw(s))))
-        stand_err = float(np.dot(pel - centre[:2], n)) + STAND_OFF
-        lateral = float(np.dot(pel - centre[:2], y_hat)) - STAND_LAT_BIAS  # + = left of the biased line
-        edge_clear = edge_x - float(pel[0])
-        log(
-            f"[stand{tag}] yaw residual {yaw_err:+.1f} deg, along-track {stand_err:+.3f} m, "
-            f"lateral {lateral:+.3f} m, pelvis {edge_clear:.2f} m outside the edge  {hand_txt(p, s)}"
-        )
-        return s, yaw_err, stand_err, lateral, edge_clear
-
-    brake()
-    s, yaw_err, stand_err, lateral, edge_clear = stand_metrics("")
-    m.update(yaw_err_deg=yaw_err, stand_err=stand_err, lateral=lateral, edge_clear=edge_clear)
-    ramp.settle()
-    s = p.obs()
-    centre, bars, n, y_hat, psi = crate_frame(p, s)
-    if abs(yaw_err) > 20 or stand_err < -0.08 or stand_err > 0.10:
-        m["why"] = "[stand] outside the reach band"
-        return m
-    if abs(lateral) > LAT_TOL:
-        m["why"] = f"[stand] lateral {lateral * 100:+.1f} cm off the centre line"
-        return m
-
-    # --- B+C: one servo: lean + reach + pitch, both hands, to the bars -------
-    arms.start(q17=ramp.q)
-    R_stand = rot_z(psi)
-    ref = {sd: bars[sd] + np.array([*(-n * UP_SHORT), UP_ABOVE]) for sd in ("left", "right")}
-
-    def pitched(sd):
-        # palm pitch follows the descent: level at the staging height, the
-        # full PALM_PITCH_DEG at the bar, so the fingertips never lead the jaw
-        # into the rim.
-        u = float(np.clip(1.0 - (ref[sd][2] - bars[sd][2]) / UP_ABOVE, 0.0, 1.0))
-        return R_stand @ rot_y(np.radians(PALM_PITCH_DEG * u))
-
-    crate_start = centre.copy()
-    t0 = time.time()
-    ready_since = None
-    err_hist = []  # (t, errs) for the stall test
-    close_trigger = None
-    q_last = None
-    across_int = {"left": 0.0, "right": 0.0}
-    phase = "servo"
-    while time.time() - t0 < SERVO_TIMEOUT:
-        s = p.obs()
-        if s["fallen"]:
-            m["why"] = "[grasp] fell during the reach"
-            arms.stop()
-            return m
-        centre, bars, n, y_hat, psi = crate_frame(p, s)
-        if float(np.linalg.norm(centre[:2] - crate_start[:2])) > 0.05:
-            m["why"] = "[grasp] crate pushed > 5 cm before closing"
-            arms.stop()
-            return m
-        errs, ready = {}, True
-        for sd in ("left", "right"):
-            g, _ = arms.grip_point(s, sd)
-            e = g - bars[sd]
-            along, across, height = float(e[:2] @ n), float(e[:2] @ y_hat), float(e[2])
-            errs[sd] = (along, across, height)  # logged as [along, across, height]
-            ready &= abs(along) <= ALONG_TOL and abs(across) <= ACROSS_TOL and -HEIGHT_TOL_BELOW <= height <= HEIGHT_TOL
-            # reference: advance toward the bar, capped ahead of the measured point
-            want = bars[sd]
-            step = want - ref[sd]
-            d = float(np.linalg.norm(step))
-            if d > ADVANCE_PER_TICK:
-                step *= ADVANCE_PER_TICK / d
-            nxt = ref[sd] + step
-            lead = nxt - g
-            ld = float(np.linalg.norm(lead))
-            if ld > LEAD_CAP:
-                nxt = g + lead * (LEAD_CAP / ld)
-            ref[sd] = nxt
-        # The planner channel tracks the reference with a 1-3 cm residual and
-        # the reference alone never closes it (pilot 3: 9-50 mm left over after
-        # 25 s). Same remedy as the single-hand servo: overdrive the command by
-        # a fraction of the CURRENT residual, from the current measurement only
-        # (accumulating corrections diverges on transients), capped.
-        cmd = {}
-        for sd in ("left", "right"):
-            g, _ = arms.grip_point(s, sd)
-            corr = np.clip(OVERDRIVE * (ref[sd] - g), -OVERDRIVE_CAP, OVERDRIVE_CAP)
-            # slow integrator across the bar: the proportional overdrive leaves the
-            # policy's constant outward offset in place, an integrator does not
-            across_int[sd] = float(
-                np.clip(across_int[sd] - ACROSS_INT_RATE * errs[sd][1], -ACROSS_INT_CAP, ACROSS_INT_CAP)
-            )
-            cmd[sd] = ref[sd] + corr + np.array([*(y_hat * across_int[sd]), 0.0])
-        rot_w = {sd: pitched(sd) for sd in ("left", "right")}
-        q = arms.solve(s, cmd, rot_w, from_measured=True, rot_weight=0.25)
-        # Joint-space compensation on the wrist pitch alone: the policy delivers
-        # the right wrist pitch 20 deg short of the command (diagnostic dump
-        # 2026-09-07: cmd 49 / meas 29, every other joint within 10), which is
-        # 5 cm at the pad and the Cartesian overdrive cannot buy it back.
-        # Pure proportional on the tracking error of the IK solution itself.
-        # Using the previous (already compensated) command as the reference
-        # made this an integrator that sat on its +-15 deg cap; pilots 25-28
-        # then showed the right wrist 50-60 deg past the command and the hand
-        # 13 cm high.
-        for sd in ("left", "right"):
-            j = ARM_MJ[sd][5]
-            gap = float(q[j] - s["joints"][j])
-            q[j] += float(np.clip(WRIST_PITCH_COMP * gap, -WRIST_PITCH_COMP_CAP, WRIST_PITCH_COMP_CAP))
-        q_last = q.copy()
-        arms.push(q)
-        if int((time.time() - t0) / 1.0) != int((time.time() - t0 - DT) / 1.0):
-            from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
-
-            dj = np.degrees(np.asarray(s["joints"])[15:29] - q[15:29])
-            worst = np.argsort(-np.abs(dj))[:3]
-            gap = float(np.abs(dj).max())
-            gap_txt = " ".join(f"{MUJOCO_JOINT_NAMES[15 + i].replace('_joint', '')}{dj[i]:+.0f}" for i in worst)
-            log(
-                f"[servo] t={time.time() - t0:4.1f} err_mm L {np.round(np.array(errs['left']) * 1000, 0).tolist()} "
-                f"R {np.round(np.array(errs['right']) * 1000, 0).tolist()} ref-lead L "
-                f"{np.linalg.norm(ref['left'] - arms.grip_point(s, 'left')[0]) * 100:.1f} R "
-                f"{np.linalg.norm(ref['right'] - arms.grip_point(s, 'right')[0]) * 100:.1f} cm  meas-cmd {gap_txt}"
-                f"  touch {s['objects'][OBJ].get('touch_links')} across_int L {across_int['left'] * 100:+.1f} R {across_int['right'] * 100:+.1f} cm  {hand_txt(p, s)}"
-            )
-        now = time.time()
-        err_hist.append((now, {sd: np.array(errs[sd]) for sd in errs}))
-        err_hist = [(tt, ee) for tt, ee in err_hist if now - tt <= STALL_S]
-        stalled = False
-        if now - err_hist[0][0] >= STALL_S - DT and all(
-            abs(errs[sd][0]) <= ALONG_TOL
-            and abs(errs[sd][1]) <= ACROSS_TOL
-            and -HEIGHT_TOL_BELOW <= errs[sd][2] <= STALL_HEIGHT_TOL
-            for sd in errs
-        ):
-            span = max(float(np.max(np.abs(ee[sd] - err_hist[-1][1][sd]))) for _, ee in err_hist for sd in errs)
-            stalled = span <= STALL_MM
-        if ready or stalled:
-            ready_since = ready_since or now
-            if now - ready_since >= 0.1:
-                phase = "close"
-                close_trigger = "region" if ready else "stall"
-                break
-        else:
-            ready_since = None
-    m["capture_err_mm"] = {sd: [round(v * 1000, 1) for v in errs[sd]] for sd in errs}
-    # diagnostic dump of the servo end state: measured joints + last command +
-    # crate pose + contact links, for an offline FK / contact reconstruction
-    if DUMP_DIR:
-        dump = {
-            "round": rnd,
-            "joints_meas": [float(v) for v in s["joints"]],
-            "q_cmd": [float(v) for v in arms.arm.q],
-            "pelvis": s["pelvis"],
-            "palms": s["palms"],
-            "crate": s["objects"][OBJ],
-            "bars": {sd: [float(v) for v in bars[sd]] for sd in bars},
-            "ref": {sd: [float(v) for v in ref[sd]] for sd in ref},
-            "n": [float(v) for v in n],
-            "y_hat": [float(v) for v in y_hat],
-            "errs_mm": m["capture_err_mm"],
-        }
-        path = os.path.join(DUMP_DIR, f"servo_end_round{rnd}.json")
-        with open(path, "w") as f:
-            json.dump(dump, f, indent=1)
-        log(f"[dump] {path}  touch_links {s['objects'][OBJ].get('touch_links')}")
-    m["waist_pitch_cmd_deg"] = float(np.degrees(arms.arm.q[14]))
-    m["waist_pitch_meas_deg"] = float(np.degrees(s["joints"][14]))
-    if phase != "close":
-        m["why"] = f"[grasp] capture regions never both satisfied: {m['capture_err_mm']}"
-        arms.stop()
-        return m
-    m["close_trigger"] = close_trigger
-    log(
-        f"[grasp] both in region ({close_trigger}) after {time.time() - t0:.1f} s: {m['capture_err_mm']} "
-        f"waist pitch cmd {m['waist_pitch_cmd_deg']:.0f} / meas {m['waist_pitch_meas_deg']:.0f} deg"
-    )
-
-    # --- C: same-frame double close ------------------------------------------
-    nq = int(round(CLOSE_RAMP / DT))
-    for k in range(nq + 1):
-        arms.set_hands(k / nq)
-        arms.push(arms.arm.q)
-    for _ in range(int(0.6 / DT)):
-        arms.push(arms.arm.q)
-    s = p.obs()
-    touching = list(s["objects"][OBJ]["touching"])
-    m["touching"] = touching
-    if not ("left" in touching and "right" in touching):
-        m["why"] = f"[grasp] closed without bilateral contact: {touching}"
-        arms.stop()
-        return m
-
-    # --- D: lift, level check, hold ------------------------------------------
-    z0 = float(s["objects"][OBJ]["pos"][2])
-    lift_ref = {sd: arms.grip_point(s, sd)[0] for sd in ("left", "right")}
-    nl = int(round(2.0 / DT))
-    nh = int(round(HOLD_S / DT))
-    level = 0.0  # + means the left hand is lowered
-    max_dz = 0.0
-    for k in range(1, nl + nh + 1):
-        s = p.obs()
-        u = min(k / nl, 1.0)
-        _, bars, _, _, _ = crate_frame(p, s)
-        dz = float(bars["left"][2] - bars["right"][2])  # left bar end higher: +
-        max_dz = max(max_dz, abs(dz))
-        level += LEVEL_LP * (float(np.clip(LEVEL_GAIN * dz, -LEVEL_CAP, LEVEL_CAP)) - level)
-        z_lift = LIFT_HEIGHT * (3 * u * u - 2 * u**3)
-        tgt = {
-            "left": lift_ref["left"] + np.array([0.0, 0.0, z_lift - 0.5 * level]),
-            "right": lift_ref["right"] + np.array([0.0, 0.0, z_lift + 0.5 * level]),
-        }
-        arms.push(arms.solve(s, tgt, rot_w))
-        if k % int(round(0.5 / DT)) == 0:
-            log(
-                f"[lift] t={k * DT:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m "
-                f"tilt {crate_tilt_deg(s):.1f} deg bar dz {dz * 1000:+.0f} mm level {level * 1000:+.0f} mm "
-                f"touch {list(s['objects'][OBJ]['touching'])}"
-            )
-        if crate_tilt_deg(s) > TILT_MAX_DEG:
-            m["why"] = f"[{'lift' if k <= nl else 'hold'}] crate tilted {crate_tilt_deg(s):.1f} deg"
-            m.update(rise=float(s["objects"][OBJ]["pos"][2]) - z0, max_bar_dz=max_dz)
-            arms.stop()
-            return m
-    m["max_bar_dz"] = max_dz
-    s = p.obs()
-    rise = float(s["objects"][OBJ]["pos"][2]) - z0
-    tilt = crate_tilt_deg(s)
-    touching = list(s["objects"][OBJ]["touching"])
-    m.update(rise=rise, tilt_deg=tilt, touching_after=touching, video_s=time.time() - t_video)
-    if rise < LIFT_MIN:
-        m["why"] = f"[lift] rose {rise * 100:.1f} cm (< {LIFT_MIN * 100:.0f})"
-    elif tilt > TILT_MAX_DEG:
-        m["why"] = f"[hold] crate tilted {tilt:.1f} deg"
-    elif not ("left" in touching and "right" in touching):
-        m["why"] = f"[hold] lost contact: {touching}"
-    else:
-        m["ok"] = True
-    arms.stop()
-    return m
+    for phase in (_phase_reset, _phase_approach, _phase_grasp, _phase_close, _phase_lift):
+        result = phase(ctx)
+        if result is not None:
+            return result
+    raise AssertionError("carry_phases: no phase returned a result")
 
 
 def main() -> None:
@@ -719,7 +339,16 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--manifest", default="")
     ap.add_argument("--label", default="bimanual")
+    ap.add_argument("--config", type=Path, help="CrateTaskConfig JSON; defaults if omitted")
+    ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
     args = ap.parse_args()
+    # Loaded and validated for consistency with bimanual_wall.py (same
+    # CrateTaskConfig, same --config/--set flags) -- this file's own round
+    # logic does not yet read any of the crate task's fields, unlike
+    # bimanual_wall.py's wall_feature/wall_walk.
+    cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
+    if args.set_:
+        cfg = cfg.with_overrides(args.set_)
     inst = int(os.environ.get("INSTANCE", "0"))
     for k, base in (
         ("TF_SONIC_PORT", 5556),
@@ -738,7 +367,7 @@ def main() -> None:
             f"{meta.get('target_object')}); build it with bimanual_scene.py "
             f"and point LOCOMANI_SIM_DIR at it"
         )
-    print(f"[bimanual] instance {inst}, scene {paths.SCENE_META}")
+    print(f"[bimanual] instance {inst}, scene {paths.SCENE_META}, task config {cfg.to_dict()}")
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
     p.cmd.reset_pose()

@@ -17,6 +17,22 @@ Phases (each observable, no integrators):
   C close    same-frame double close, bilateral contact check
   D lift     10 cm with bar-end levelling, 2 s hold; success = rise >= 6 cm,
              both hands touching, tilt < TILT_OK_DEG
+
+Split across three files (refactor step 4b family 5, pure extraction;
+decision 9's file-size cap): this file keeps `wall_frame`, `wall_point`,
+`errs_of`, `arms_offset`, the module-level constants, and `run_round` itself
+(now a thin orchestrator); `wall_phases.py` has `run_round`'s first three
+phases (`_phase_reset`, `_phase_stand`, `_phase_hover`) behind a
+`WallRoundContext`; `wall_phases_descend.py` has the last three
+(`_phase_descend`, `_phase_close`, `_phase_lift`) -- all six would not fit
+wall_phases.py's own 600-line cap. Several names imported below
+(`APPR_SPEED`, `EDGE_FLOOR`, `OVERDRIVE`, `OVERDRIVE_CAP`, `STAND_TOL`,
+`WAYPOINT_BACK`, `WAYPOINT_TOL`, `BimanualArms`, `crate_tilt_deg`,
+`hand_txt`, `rot_y`, `rot_z`) are no longer used in this file's own body --
+they stay imported here anyway because `wall_phases.py` /
+`wall_phases_descend.py` read them back through THIS module
+(`from locomani.tasks.crate.bimanual_wall import ...`), the same
+re-export-for-a-satellite-file pattern family 3 used for vla_round.py.
 """
 
 from __future__ import annotations
@@ -26,6 +42,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -34,21 +51,12 @@ sys.path.insert(
 )  # reach src/ for `python src/locomani/tasks/crate/bimanual_wall.py`
 
 from locomani import paths  # noqa: E402
-from locomani.backends.sonic import upper_ref  # noqa: E402
-from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode, StreamMode  # noqa: E402
-from locomani.backends.sonic.primitives import DT, Primitives, upper_body_from_mj, wrap  # noqa: E402
-from locomani.backends.sonic.stream_reach import reanchor  # noqa: E402
+from locomani.backends.sonic.agent_server import LocomotionMode  # noqa: E402
+from locomani.backends.sonic.primitives import Primitives  # noqa: E402
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.crate.bimanual_carry import (
     APPR_SPEED,
-    CLOSE_RAMP,
     EDGE_FLOOR,
-    HOLD_S,
-    LEVEL_CAP,
-    LEVEL_GAIN,
-    LEVEL_LP,
-    LIFT_HEIGHT,
-    LIFT_MIN,
     OBJ,
     OVERDRIVE,
     OVERDRIVE_CAP,
@@ -61,7 +69,15 @@ from locomani.tasks.crate.bimanual_carry import (
     rot_y,
     rot_z,  # noqa: E402
 )
-from locomani.tasks.crate.config import DEFAULT_CRATE_TASK  # noqa: E402
+from locomani.tasks.crate.config import DEFAULT_CRATE_TASK, CrateTaskConfig  # noqa: E402
+from locomani.tasks.crate.wall_phases import (  # noqa: E402
+    WallRoundContext,
+    _phase_hover,
+    _phase_reset,
+    _phase_stand,
+)
+from locomani.tasks.crate.wall_phases_descend import _phase_close, _phase_descend, _phase_lift  # noqa: E402
+
 
 # --- crate geometry (assets/crates/blue_crate/model.xml, 2/3 crate) ----------
 # Two grasp features, chosen with WALL_FEATURE:
@@ -72,20 +88,25 @@ from locomani.tasks.crate.config import DEFAULT_CRATE_TASK  # noqa: E402
 #         (crate-local x = +-0.1933) with the posts removed from the asset, so the
 #         slot is open under the whole bar; depth runs along crate-local y from the
 #         long wall's outer face (0.1347).
+def _wall_feature_constants(feature: str):
+    """(DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW) for
+    `feature` -- factored out of the module-level if/else below so main()'s
+    --config/--set can rederive the same six constants together after
+    overriding FEATURE, instead of duplicating the branch."""
+    if feature == "wall":
+        # descend floor: pad centre this far below the top (full wall)
+        return 0, 1, 0.1267, 0.2093, -np.pi / 2, 0.080
+    # the bar is 30 mm tall: pad centre 5 cm under its top still spans it
+    # (pad +-33 mm) and clears the low wall 65 mm down
+    return 1, 0, 0.1933, 0.1347, 0.0, 0.050
+
+
 # CrateTaskConfig.wall_feature's default (decision 8); never overridden in
-# any script today, so this constant IS that default.
+# any script today, so this constant IS that default. main() reassigns
+# FEATURE/DEPTH_AXIS/WALL_AXIS/WALL_Y/NEAR_X/CRATE_YAW_DELTA/GRIP_BELOW
+# together, via _wall_feature_constants, after --config/--set.
 FEATURE = DEFAULT_CRATE_TASK.wall_feature
-if FEATURE == "wall":
-    DEPTH_AXIS, WALL_AXIS = 0, 1
-    WALL_Y, NEAR_X = 0.1267, 0.2093
-    CRATE_YAW_DELTA = -np.pi / 2
-    GRIP_BELOW = 0.080  # descend floor: pad centre this far below the top (full wall)
-else:
-    DEPTH_AXIS, WALL_AXIS = 1, 0
-    WALL_Y, NEAR_X = 0.1933, 0.1347
-    CRATE_YAW_DELTA = 0.0
-    GRIP_BELOW = 0.050  # the bar is 30 mm tall: pad centre 5 cm under its top still
-    # spans it (pad +-33 mm) and clears the low wall 65 mm down
+DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW = _wall_feature_constants(FEATURE)
 TOP_Z = 0.085  # wall / bar top above the crate body origin
 # --- grasp design (outputs/reach/wall_grasp_sweep.txt) -----------------------
 PALM_PITCH_DEG = 60
@@ -139,8 +160,8 @@ STAND_YAW_MAX_DEG = 10.0  # fail fast: nothing downstream survives a bigger head
 CRATE_DY_RANGE = (-0.08, 0.08)
 SPAWN_BACK = 0.45  # reset this far behind the stand, teleport in with the arms up
 # --- walk-in (WALL_WALK=1): bimanual_carry's approach in front of this grasp ---
-# CrateTaskConfig.wall_walk's default (decision 8); never overridden in any
-# script today, so this constant IS that default.
+# CrateTaskConfig.wall_walk's default (decision 8); main() reassigns this
+# after --config/--set.
 WALK = DEFAULT_CRATE_TASK.wall_walk
 STAND_OFF_WALK = 0.24  # 0.21 (pilots 18/19) parked 0.30-0.39 with yaw +-10 deg; back to pilot 17's value for the A/B
 WALK_LAT_BIAS = -0.04  # the gait parks ~4 cm left of its target (pilots 36/37)
@@ -231,533 +252,28 @@ def errs_of(s, arms, side, depth):
 def run_round(
     p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int, rng: np.random.Generator, log, video_label: str
 ) -> dict:
-    m = {"round": rnd, "ok": False, "why": ""}
-    surf = meta["surfaces"]["A"]
-    hx = float(surf["flat_half_extent"][0])
-    edge_x = float(surf["xy"][0]) - hx
-    crate0 = np.asarray(meta["objects"][OBJ]["init_pos"], dtype=float)
-    w, x, y, z = meta["objects"][OBJ]["init_quat"]
-    crate_yaw0 = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+    """One round's six phases (wall_phases.py / wall_phases_descend.py),
+    threaded through a WallRoundContext.
 
-    # --- reset: crate rotated, near face on the table edge; robot on a sampled stand
-    crate_dy = float(rng.uniform(*CRATE_DY_RANGE))
-    crate_x = edge_x + NEAR_X
-    so = float(rng.uniform(*STAND_OFF_RANGE))
-    lat = float(rng.uniform(*STAND_LAT_RANGE))
-    yaw = float(np.radians(rng.uniform(-STAND_YAW_DEG, STAND_YAW_DEG)))
-    stand_xy = np.array([crate_x - NEAR_X - so, crate_dy + lat])
-    robot_nom = np.asarray(meta["robot_start"]["xy"], dtype=float)
-    m.update(crate_dy=crate_dy, stand_off=so, stand_lat=lat, stand_yaw_deg=float(np.degrees(yaw)))
-    p.cmd.reset_pose()
-    p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
-    reset.pin_arms()
-    reset.set_ghost()
-    # The robot comes up SPAWN_BACK behind the stand: spawned on the stand, the
-    # policy's start-up arm swing knocked the crate 84 deg round (wall pilot 1).
-    # It is teleported onto the stand once the arms are up at the hover pose.
-    if WALK:
-        stand_xy = np.array([crate_x - NEAR_X - STAND_OFF_WALK, crate_dy + WALK_LAT_BIAS])
-        spawn_back = float(rng.uniform(*WALK_SPAWN_BACK))
-        spawn_lat = float(rng.uniform(-WALK_SPAWN_LAT, WALK_SPAWN_LAT))
-        spawn_xy = stand_xy - np.array([spawn_back, -spawn_lat])
-        yaw = float(np.arctan2(*(np.array([crate_x, crate_dy]) - spawn_xy)[::-1])) + float(rng.uniform(-0.17, 0.17))
-        m.update(spawn_back=spawn_back, spawn_lat=spawn_lat, spawn_yaw_deg=float(np.degrees(yaw)))
-    else:
-        spawn_xy = stand_xy - np.array([SPAWN_BACK, 0.0])
-    reset.reset(
-        objects={OBJ: {"dxy": [float(crate_x - crate0[0]), crate_dy], "yaw": crate_yaw0 + CRATE_YAW_DELTA}},
-        robot={"dxy": [float(v) for v in (spawn_xy - robot_nom)], "yaw": yaw},
+    Body moved there (refactor step 4b, pure extraction) -- this function
+    stays HERE, thin, so `main()`'s `run_round(p, reset, meta, rnd, rng,
+    p.log, label)` call keeps resolving to this same name.
+    """
+    ctx = WallRoundContext(
+        p=p,
+        reset=reset,
+        meta=meta,
+        rnd=rnd,
+        rng=rng,
+        log=log,
+        video_label=video_label,
+        m={"round": rnd, "ok": False, "why": ""},
     )
-    time.sleep(0.3)
-    p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
-    p.cmd.upper_body = None
-    p.cmd.start_control()
-    p._gym_started = True
-    upper_ref.shared().wait(3.0)
-    p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
-    # The deploy keeps its heading anchor across resets; setting heading_offset
-    # from the pelvis yaw alone left a residual that the IDLE facing command
-    # then turned into a real rotation, growing ~5 deg per round with
-    # alternating sign (wall pilot 8: +2.6 -> -84 deg by round 19). A streamed
-    # toggle re-anchors the deploy at the current yaw and records it.
-    reanchor(p)
-    fv0 = (float(np.cos(yaw)), float(np.sin(yaw)), 0.0)
-    p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=fv0)
-    s = p.obs()
-    if s["fallen"]:
-        m["why"] = "[stand] did not stabilise after reset"
-        return m
-    # --- A: arms up, robot onto the stand (walk-in or teleport) ---------------
-    c, n, y_hat, psi, sign, R = wall_frame(s)
-    edge_x = float(surf["xy"][0]) - hx
-    q_free = upper_ref.shared().upper17()
-    q_free = upper_body_from_mj(s["joints"]) if q_free is None else q_free
-    ramp = upper_ref.UpperRamp(p.cmd, q_free)
-    p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
-    arms = BimanualArms(p)
-    for sd in ("left", "right"):  # no overhead branch (wall pilot 5: +65 cm)
-        a = ARM_IDX[sd]
-        arms.arm.ik.lo[a[0]] = np.radians(SHOULDER_PITCH_MIN_DEG)
-
-    def solve_for(stand, dz, pitch_deg, depth_):
-        """Arm pose for the pelvis over `stand` facing psi, pads `dz` above the bar tops."""
-        rot = {sd: rot_z(psi) @ rot_y(np.radians(pitch_deg)) for sd in ("left", "right")}
-        tg = {sd: wall_point(s, sd, depth_, dz, ACROSS_BIAS) for sd in ("left", "right")}
-        s_stand = dict(s)
-        s_stand["pelvis"] = dict(
-            s["pelvis"],
-            pos=[float(stand[0]), float(stand[1]), float(s["pelvis"]["pos"][2])],
-            quat=[float(np.cos(psi / 2)), 0.0, 0.0, float(np.sin(psi / 2))],
-        )
-        arms.arm.q = np.zeros(29)
-        return arms.solve(s_stand, tg, rot, iters=200)
-
-    def mirror29(left_deg):
-        q = np.zeros(29)
-        q[ARM_IDX["left"]] = np.radians(left_deg)
-        q[ARM_IDX["right"]] = np.radians(left_deg) * np.array([1, -1, -1, 1, -1, 1, -1], dtype=float)
-        return q
-
-    def measure_stand(s):
-        c_, n_, y_, psi_, _, _ = wall_frame(s)
-        pel_ = np.asarray(p.pelvis_xy(s))
-        near_ = wall_point(s, "left", 0.0, 0.0)
-        so_ = float(np.dot(near_[:2] - pel_, n_))
-        lat_ = float(np.dot(pel_ - c_[:2], y_))
-        yaw_ = float(np.degrees(wrap(psi_ - p.pelvis_yaw(s))))
-        return so_, lat_, yaw_
-
-    def stand_fault(so_, lat_, yaw_):
-        if abs(yaw_) > STAND_YAW_MAX_DEG:
-            return f"yaw residual {yaw_:+.1f} deg"
-        if not (WALK_STAND_OFF_BAND[0] <= so_ <= WALK_STAND_OFF_BAND[1]):
-            return f"stand-off {so_:.2f} m outside the reach band"
-        if abs(lat_) > WALK_LAT_TOL:
-            return f"lateral {lat_ * 100:+.1f} cm off the centre line"
-        return ""
-
-    if WALK:
-        reset.start_video(video_label)
-        t_video = time.time()
-        q_walk17 = upper_body_from_mj(mirror29(WALK_SIDE_LEFT_DEG))
-        way_xy = stand_xy - n * WAYPOINT_BACK
-        m["stand_target"] = [float(v) for v in stand_xy]
-        m["stand_attempts"] = []
-        for attempt in range(WALK_ATTEMPTS):
-            t0, why = time.time(), "timeout"
-            best_along, best_t = None, time.time()
-            leg = "waypoint"
-            while time.time() - t0 < 40.0:
-                s = p.obs()
-                if s["fallen"]:
-                    m["why"] = "[stand] fell during the walk-in"
-                    return m
-                pel = np.asarray(p.pelvis_xy(s))
-                to_stand = stand_xy - pel
-                along = float(np.dot(to_stand, n))
-                dist = float(np.linalg.norm(to_stand))
-                ramp.push(q_walk17)
-                if leg == "waypoint":
-                    to_way = way_xy - pel
-                    if float(np.dot(to_way, n)) <= 0.03 or float(np.linalg.norm(to_way)) < WAYPOINT_TOL:
-                        leg = "in"
-                        log(
-                            f"[walk] waypoint reached: lateral {float(np.dot(pel - stand_xy, y_hat)) * 100:+.1f} cm, "
-                            f"{along * 100:.0f} cm to the stand"
-                        )
-                edge_clear = edge_x - float(pel[0])
-                if along <= 0.04 or dist < STAND_TOL:
-                    why = "at the stand"
-                    break
-                if edge_clear <= EDGE_FLOOR:
-                    why = "edge floor"
-                    break
-                if best_along is None or along < best_along - 0.015:
-                    best_along, best_t = along, time.time()
-                elif time.time() - best_t > 3.0:
-                    why = "stalled"
-                    break
-                look = c[:2] - pel
-                b = float(np.arctan2(look[1], look[0]))
-                speed = APPR_SPEED[0] if along > 0.35 else APPR_SPEED[1] if along > 0.15 else APPR_SPEED[2]
-                if leg == "waypoint":
-                    mv = to_way / max(float(np.linalg.norm(to_way)), 1e-3)
-                else:
-                    mv = to_stand / max(dist, 1e-3)
-                    b = psi
-                if int((time.time() - t0) / 2.0) != int((time.time() - t0 - DT) / 2.0):
-                    log(
-                        f"[walk] t={time.time() - t0:4.1f} pelvis {np.round(pel, 2).tolist()} dist {dist:.2f} along {along:+.2f} "
-                        f"edge {edge_clear:.2f} speed {speed} facing_err {np.degrees(wrap(b - p.pelvis_yaw(s))):+.0f} deg  {hand_txt(p, s)}"
-                    )
-                p.cmd.frame(
-                    mode=LocomotionMode.SLOW_WALK,
-                    facing=(float(np.cos(b)), float(np.sin(b)), 0.0),
-                    movement=(float(mv[0]), float(mv[1]), 0.0),
-                    speed=speed,
-                )
-                time.sleep(DT)
-            m["approach_exit"] = why
-            if why == "timeout":
-                m["why"] = "[stand] walk-in timed out"
-                return m
-            # brake: pelvis under 0.06 m/s for 0.25 s
-            t0, still = time.time(), None
-            prev = p.pelvis_xy(p.obs())
-            while time.time() - t0 < 6.0:
-                ramp.push(q_walk17)
-                p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
-                time.sleep(DT)
-                cur = p.pelvis_xy(p.obs())
-                v = float(np.linalg.norm(cur - prev)) / DT
-                prev = cur
-                still = time.time() if v > 0.06 else (still if still is not None else time.time())
-                if still is not None and time.time() - still > 0.25 and time.time() - t0 > 1.0:
-                    break
-            ramp.settle()
-            s = p.obs()
-            if s["fallen"]:
-                m["why"] = "[stand] fell at the stand"
-                return m
-            so_a, lat_a, yaw_a = measure_stand(s)
-            fault = stand_fault(so_a, lat_a, yaw_a)
-            m["stand_attempts"].append(dict(stand_off=so_a, lateral=lat_a, yaw_deg=yaw_a, fault=fault))
-            if not fault:
-                break
-            log(
-                f"[stand] attempt {attempt + 1}: {fault} (stand-off {so_a:.3f}, lateral {lat_a:+.3f}, yaw {yaw_a:+.1f})"
-            )
-            if attempt == WALK_ATTEMPTS - 1:
-                m["why"] = f"[stand] {fault} after {WALK_ATTEMPTS} walk-ins"
-                return m
-            # back up to the waypoint, facing the crate, and walk in again
-            t0 = time.time()
-            while time.time() - t0 < 8.0:
-                s = p.obs()
-                if s["fallen"]:
-                    m["why"] = "[stand] fell backing up"
-                    return m
-                pel = np.asarray(p.pelvis_xy(s))
-                if float(np.dot(stand_xy - pel, n)) >= WAYPOINT_BACK:
-                    break
-                ramp.push(q_walk17)
-                p.cmd.frame(
-                    mode=LocomotionMode.SLOW_WALK,
-                    facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0),
-                    movement=(float(-n[0]), float(-n[1]), 0.0),
-                    speed=APPR_SPEED[2],
-                )
-                time.sleep(DT)
-            log(
-                f"[walk] backed up to {float(np.dot(stand_xy - np.asarray(p.pelvis_xy(p.obs())), n)):.2f} m for attempt {attempt + 2}"
-            )
-        m["stand_attempt_n"] = len(m["stand_attempts"])
-    else:
-        depth = float(np.clip(REACH_SUM - so, DEPTH_MIN, DEPTH_MAX))  # from the sampled stand; re-measured below
-        q_hover = solve_for(stand_xy, HOVER_ABOVE, PALM_PITCH_DEG, depth)
-        q_h17 = upper_body_from_mj(q_hover)
-        n_ramp = int(2.0 / DT)
-        for k in range(1, n_ramp + 1):
-            u = k / n_ramp
-            ramp.push(q_free + (3 * u * u - 2 * u**3) * (q_h17 - q_free))
-            p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
-            time.sleep(DT)
-        ramp.settle()
-        # teleport the standing robot onto the stand, arms already up
-        reset.align_robot_xy(stand_xy)
-        for _ in range(int(1.0 / DT)):
-            ramp.push(q_h17)
-            p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
-            time.sleep(DT)
-        ramp.settle()
-        s = p.obs()
-        if s["fallen"]:
-            m["why"] = "[stand] fell after the teleport"
-            return m
-        reset.start_video(video_label)
-        t_video = time.time()
-
-    # measured stand -> depth along the wall
-    c, n, y_hat, psi, sign, R = wall_frame(s)
-    pel = np.asarray(p.pelvis_xy(s))
-    near = wall_point(s, "left", 0.0, 0.0)
-    so_meas = float(np.dot(near[:2] - pel, n))
-    lat_meas = float(np.dot(pel - c[:2], y_hat))
-    yaw_err = float(np.degrees(wrap(psi - p.pelvis_yaw(s))))
-    depth = float(np.clip(REACH_SUM - so_meas, DEPTH_MIN, DEPTH_MAX))
-    m.update(stand_off_meas=so_meas, stand_lat_meas=lat_meas, yaw_err_deg=yaw_err, depth=depth)
-    log(
-        f"[stand] stand-off {so_meas:.3f} m, lateral {lat_meas:+.3f} m, yaw {yaw_err:+.1f} deg -> depth {depth:.2f}  {hand_txt(p, s)}"
-    )
-    if abs(yaw_err) > STAND_YAW_MAX_DEG:
-        m["why"] = f"[stand] yaw residual {yaw_err:+.1f} deg after the {'walk-in' if WALK else 'teleport'}"
-        return m
-    # hover pose for the stand we actually have (from zeros: the validated branch)
-    q_hover = solve_for(pel, HOVER_ABOVE, PALM_PITCH_DEG, depth)
-    for sd in ("left", "right"):
-        pos, Rk = arms.arm.ik.fk(q_hover, sd)
-        g = np.asarray(s["pelvis"]["pos"]) + Primitives._rot(s["pelvis"]["quat"]) @ (pos + Rk @ arms_offset())
-        log(
-            f"[hover] {sd}: ik residual {np.linalg.norm(g - wall_point(s, sd, depth, HOVER_ABOVE, ACROSS_BIAS)) * 100:.1f} cm, "
-            f"arm q {np.round(np.degrees(q_hover[ARM_IDX[sd]]), 0).tolist()}"
-        )
-    rot_w = {sd: rot_z(psi) @ rot_y(np.radians(PALM_PITCH_DEG)) for sd in ("left", "right")}
-    if not WALK:
-        # teleport path keeps the old joint ramp onto the hover pose
-        q_h17 = upper_body_from_mj(q_hover)
-        q_from = ramp.q.copy()
-        n_ramp = int(1.0 / DT)
-        for k in range(1, n_ramp + 1):
-            u = k / n_ramp
-            ramp.push(q_from + (3 * u * u - 2 * u**3) * (q_h17 - q_from))
-            p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(psi)), float(np.sin(psi)), 0.0))
-            time.sleep(DT)
-        ramp.settle()
-        arms.start(q17=ramp.q)
-        arms.arm.q = q_hover.copy()
-    else:
-        # one continuous reach: side pads -> Bezier -> hover, streamed as IK
-        # joint targets, warm-started from the previous command with the
-        # posture prior toward q_hover
-        arms.start(q17=ramp.q)
-        arms.arm.q = np.asarray(s["joints"], dtype=float).copy()
-        c, n, y_hat, psi, sign, R = wall_frame(s)
-        p0 = {sd: arms.grip_point(s, sd)[0].copy() for sd in ("left", "right")}
-        p3 = {sd: wall_point(s, sd, depth, HOVER_ABOVE, ACROSS_BIAS) for sd in ("left", "right")}
-        out_w = {"left": np.array([y_hat[0], y_hat[1], 0.0]), "right": -np.array([y_hat[0], y_hat[1], 0.0])}
-        p1 = {sd: p0[sd] + out_w[sd] * REACH_OUT + np.array([0.0, 0.0, REACH_UP]) for sd in p0}
-        p2 = {sd: p3[sd] + np.array([0.0, 0.0, REACH_OVER]) for sd in p3}
-        n_reach = int(REACH_S / DT)
-        t0 = time.time()
-        last_log = 0.0
-        for k in range(1, n_reach + 1):
-            u = k / n_reach
-            s = p.obs()
-            if s["fallen"]:
-                m["why"] = "[reach] fell"
-                arms.stop()
-                return m
-            tg = {
-                sd: (1 - u) ** 3 * p0[sd] + 3 * (1 - u) ** 2 * u * p1[sd] + 3 * (1 - u) * u * u * p2[sd] + u**3 * p3[sd]
-                for sd in p0
-            }
-            pitch = REACH_PITCH0_DEG + (PALM_PITCH_DEG - REACH_PITCH0_DEG) * u
-            rot_u = {sd: rot_z(psi) @ rot_y(np.radians(pitch)) for sd in ("left", "right")}
-            arms.push(arms.solve(s, tg, rot_u, iters=60, posture=q_hover, posture_weight=REACH_POSTURE_W))
-            if time.time() - last_log > 0.5:
-                last_log = time.time()
-                res = {sd: float(np.linalg.norm(arms.grip_point(s, sd)[0] - tg[sd])) for sd in tg}
-                log(
-                    f"[reach] u={u:.2f} lag L {res['left'] * 100:.1f} R {res['right'] * 100:.1f} cm  "
-                    f"arm q L {np.round(np.degrees(arms.arm.q[ARM_IDX['left']]), 0).tolist()}"
-                )
-            time.sleep(DT)
-        m["reach_s"] = round(time.time() - t0, 1)
-
-    def servo_tick(s, ref):
-        cmd = {}
-        _, n_, y_, _, _, _ = wall_frame(s)
-        yh = np.array([y_[0], y_[1], 0.0])
-        for sd in ("left", "right"):
-            g, _ = arms.grip_point(s, sd)
-            e = ref[sd] - g
-            ld = float(np.linalg.norm(e))
-            if ld > LEAD_CAP:  # rate-limit: lead capped, not the target
-                e = e * (LEAD_CAP / ld)
-            e_across = float(e @ yh)
-            corr = np.clip(OVERDRIVE * (e - e_across * yh), -OVERDRIVE_CAP, OVERDRIVE_CAP)
-            corr += yh * float(np.clip(ACROSS_OD * e_across, -ACROSS_OD_CAP, ACROSS_OD_CAP))
-            cmd[sd] = g + e + corr
-        arms.push(arms.solve(s, cmd, rot_w, from_measured=True))
-
-    # No hover hold: the descent starts as the reach ends (the descend servo
-    # takes up whatever lag the policy still carries). The teleport path
-    # keeps a short settle so the old A/B numbers stay comparable.
-    crate_start = c.copy()
-    s = p.obs()
-    ref = {sd: wall_point(s, sd, depth, HOVER_ABOVE, ACROSS_BIAS) for sd in ("left", "right")}
-    if not WALK:
-        t0 = time.time()
-        while time.time() - t0 < HOVER_S:
-            s = p.obs()
-            arms.push(q_hover)
-            time.sleep(DT)
-    res = {sd: float(np.linalg.norm(arms.grip_point(s, sd)[0] - ref[sd])) for sd in ref}
-    log(
-        f"[hover] residual L {res['left'] * 100:.1f} R {res['right'] * 100:.1f} cm "
-        f"errs L {np.round(errs_of(s, arms, 'left', depth) * 1000, 0).tolist()} R {np.round(errs_of(s, arms, 'right', depth) * 1000, 0).tolist()}"
-    )
-    m["hover_residual_mm"] = {sd: round(v * 1000, 1) for sd, v in res.items()}
-
-    # --- B: descend until seated ----------------------------------------------
-    t0 = time.time()
-    dz = HOVER_ABOVE
-    seated = {"left": False, "right": False}
-    seated_since = None
-    floor_since = None
-    last_log = 0.0
-    close_trigger = None
-    hz_hist = []  # (t, mean measured pad height error)
-    while time.time() - t0 < DESCEND_TIMEOUT:
-        s = p.obs()
-        if s["fallen"]:
-            m["why"] = "[descend] fell"
-            arms.stop()
-            return m
-        c, n, y_hat, psi, sign, R = wall_frame(s)
-        if float(np.linalg.norm(c[:2] - crate_start[:2])) > 0.05:
-            m["why"] = "[descend] crate pushed > 5 cm before closing"
-            arms.stop()
-            return m
-        dz = max(dz - DESCEND_SPEED * DT, -GRIP_BELOW)
-        ref = {sd: wall_point(s, sd, depth, dz, ACROSS_BIAS) for sd in ("left", "right")}
-        servo_tick(s, ref)
-        e = {sd: errs_of(s, arms, sd, depth) for sd in ("left", "right")}
-        for sd in e:
-            seated[sd] = bool(abs(e[sd][1]) <= ACROSS_TOL and e[sd][2] <= -SEAT_BELOW)
-        if time.time() - last_log > 0.5:
-            last_log = time.time()
-            log(
-                f"[descend] t={time.time() - t0:.1f} ref dz {dz * 100:+.1f} cm errs L {np.round(e['left'] * 1000, 0).tolist()} "
-                f"R {np.round(e['right'] * 1000, 0).tolist()} seated {seated} touch {s['objects'][OBJ].get('touch_links')}  {hand_txt(p, s)}"
-            )
-        # primary: the reference is still descending but the hands are not --
-        # they are resting on the bar (contact), and across is within tolerance
-        hz_hist.append((time.time(), float(np.mean([e[sd][2] for sd in e]))))
-        hz_hist = [(tt, h) for tt, h in hz_hist if time.time() - tt <= CONTACT_STALL_S]
-        descending = dz > -GRIP_BELOW + 1e-6
-        if (
-            descending
-            and hz_hist[0][0] <= time.time() - CONTACT_STALL_S + DT
-            and abs(hz_hist[-1][1] - hz_hist[0][1]) * 1000 < CONTACT_STALL_MM
-            and all(abs(e[sd][1]) <= ACROSS_TOL + 0.005 for sd in e)
-            and all(e[sd][2] <= 0.0 for sd in e)
-        ):
-            close_trigger = "contact"
-            break
-        if seated["left"] and seated["right"]:
-            seated_since = seated_since or time.time()
-            if time.time() - seated_since >= SEAT_DWELL:
-                close_trigger = "seated"
-                break
-        else:
-            seated_since = None
-        if dz <= -GRIP_BELOW + 1e-6:
-            floor_since = floor_since or time.time()
-            if time.time() - floor_since >= FLOOR_DWELL:
-                # the hands must actually be at the bar top: pilot 23 r5 closed
-                # on air with both pads 26-33 mm above it from a 0.30 m stand
-                if all(abs(e[sd][1]) <= ACROSS_TOL + 0.005 and e[sd][2] <= 0.005 for sd in e):
-                    close_trigger = "floor"
-                    break
-        time.sleep(DT)
-    m["capture_err_mm"] = {sd: [round(v * 1000, 1) for v in e[sd]] for sd in e}
-    m["close_trigger"] = close_trigger
-    m["descend_s"] = round(time.time() - t0, 1)
-    if DUMP_DIR:
-        with open(os.path.join(DUMP_DIR, f"wall_end_round{rnd}.json"), "w") as f:
-            json.dump(
-                {
-                    "round": rnd,
-                    "joints_meas": [float(v) for v in s["joints"]],
-                    "q_cmd": [float(v) for v in arms.arm.q],
-                    "pelvis": s["pelvis"],
-                    "palms": s["palms"],
-                    "crate": s["objects"][OBJ],
-                    "depth": depth,
-                    "errs_mm": m["capture_err_mm"],
-                },
-                f,
-                indent=1,
-            )
-    if close_trigger is None:
-        m["why"] = f"[descend] never seated: {m['capture_err_mm']}"
-        arms.stop()
-        return m
-    log(f"[grasp] closing ({close_trigger}) after {m['descend_s']} s: {m['capture_err_mm']}")
-
-    # --- C: close -------------------------------------------------------------
-    nq = int(round(CLOSE_RAMP / DT))
-    for k in range(nq + 1):
-        arms.set_hands(k / nq)
-        arms.push(arms.arm.q)
-    for _ in range(int(0.6 / DT)):
-        arms.push(arms.arm.q)
-    s = p.obs()
-    touching = list(s["objects"][OBJ]["touching"])
-    m["touching"] = touching
-    if not ("left" in touching and "right" in touching):
-        m["why"] = f"[grasp] closed without bilateral contact: {touching}"
-        arms.stop()
-        return m
-
-    # --- D: lift with levelling, hold -----------------------------------------
-    z0 = float(s["objects"][OBJ]["pos"][2])
-    lift_ref = {sd: arms.grip_point(s, sd)[0] for sd in ("left", "right")}
-    nl = int(round(2.0 / DT))
-    nh = int(round(HOLD_S / DT))
-    level, max_dz = 0.0, 0.0
-    pitch_cmd, max_pitch = 0.0, 0.0
-    for k in range(1, nl + nh + 1):
-        s = p.obs()
-        u = min(k / nl, 1.0)
-        gl, gr = wall_point(s, "left", depth, 0.0), wall_point(s, "right", depth, 0.0)
-        dzb = float(gl[2] - gr[2])
-        # crate pitch about the bar axis: + when the far end is low (nose down),
-        # the same sense as the palm pitching its fingers down
-        _, _, _, _, sgn, Rc = wall_frame(s)
-        e_depth = np.zeros(3)
-        e_depth[DEPTH_AXIS] = sgn
-        d_far = Rc @ e_depth
-        pitch_down = float(np.degrees(np.arcsin(np.clip(-d_far[2], -1.0, 1.0))))
-        max_pitch = max(max_pitch, abs(pitch_down))
-        pitch_cmd += PITCH_FOLLOW_LP * (
-            float(np.clip(PITCH_FOLLOW_GAIN * pitch_down, -PITCH_FOLLOW_CAP_DEG, PITCH_FOLLOW_CAP_DEG)) - pitch_cmd
-        )
-        rot_w = {sd: rot_z(psi) @ rot_y(np.radians(PALM_PITCH_DEG - pitch_cmd)) for sd in ("left", "right")}
-        max_dz = max(max_dz, abs(dzb))
-        level += LEVEL_LP * (float(np.clip(LEVEL_GAIN * dzb, -LEVEL_CAP, LEVEL_CAP)) - level)
-        z_lift = LIFT_HEIGHT * (3 * u * u - 2 * u**3)
-        tgt = {
-            "left": lift_ref["left"] + np.array([0.0, 0.0, z_lift - 0.5 * level]),
-            "right": lift_ref["right"] + np.array([0.0, 0.0, z_lift + 0.5 * level]),
-        }
-        # Open IK target on purpose: the closed-loop lift (servo_tick) capped
-        # the rise at ~6.5 cm (lead cap + the policy's height bias, rail pilot
-        # 15), while the open target rises 9-14 cm. The pitch follow above is
-        # what keeps the crate level from a close stand.
-        arms.push(arms.solve(s, tgt, rot_w))
-        if k % int(round(0.5 / DT)) == 0:
-            log(
-                f"[lift] t={k * DT:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m tilt {crate_tilt_deg(s):.1f} deg "
-                f"pitch_down {pitch_down:+.1f} palm {PALM_PITCH_DEG - pitch_cmd:.0f} "
-                f"wall dz {dzb * 1000:+.0f} mm level {level * 1000:+.0f} mm touch {list(s['objects'][OBJ]['touching'])}"
-            )
-        if crate_tilt_deg(s) > TILT_OK_DEG:
-            m["why"] = f"[{'lift' if k <= nl else 'hold'}] crate tilted {crate_tilt_deg(s):.1f} deg"
-            m.update(rise=float(s["objects"][OBJ]["pos"][2]) - z0, max_wall_dz=max_dz)
-            arms.stop()
-            return m
-    s = p.obs()
-    rise = float(s["objects"][OBJ]["pos"][2]) - z0
-    tilt = crate_tilt_deg(s)
-    touching = list(s["objects"][OBJ]["touching"])
-    m.update(
-        rise=rise,
-        tilt_deg=tilt,
-        touching_after=touching,
-        max_wall_dz=max_dz,
-        max_pitch_deg=max_pitch,
-        video_s=time.time() - t_video,
-    )
-    if rise < LIFT_MIN:
-        m["why"] = f"[lift] rose {rise * 100:.1f} cm (< {LIFT_MIN * 100:.0f})"
-    elif not ("left" in touching and "right" in touching):
-        m["why"] = f"[hold] lost contact: {touching}"
-    else:
-        m["ok"] = True
-    arms.stop()
-    return m
+    for phase in (_phase_reset, _phase_stand, _phase_hover, _phase_descend, _phase_close, _phase_lift):
+        result = phase(ctx)
+        if result is not None:
+            return result
+    raise AssertionError("wall_phases: no phase returned a result")
 
 
 def arms_offset():
@@ -775,7 +291,20 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--manifest", default="")
     ap.add_argument("--label", default="wall")
+    ap.add_argument("--config", type=Path, help="CrateTaskConfig JSON; defaults if omitted")
+    ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
     args = ap.parse_args()
+    cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
+    if args.set_:
+        cfg = cfg.with_overrides(args.set_)
+    # FEATURE/WALK (and FEATURE's derived DEPTH_AXIS/WALL_AXIS/WALL_Y/NEAR_X/
+    # CRATE_YAW_DELTA/GRIP_BELOW) default from DEFAULT_CRATE_TASK at module
+    # load; a --config/--set here overrides them the same way any other
+    # caller would (module-level assignment), so wall_phases.py's deferred
+    # `from bimanual_wall import WALK` etc. (read fresh each round) see it.
+    global FEATURE, WALK, DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW
+    FEATURE, WALK = cfg.wall_feature, cfg.wall_walk
+    DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW = _wall_feature_constants(FEATURE)
     inst = int(os.environ.get("INSTANCE", "0"))
     for k, base in (
         ("TF_SONIC_PORT", 5556),
@@ -790,7 +319,7 @@ def main() -> None:
     meta = json.load(open(paths.SCENE_META))
     if meta.get("target_object") != OBJ:
         raise SystemExit(f"{paths.SCENE_META} is not the crate scene")
-    print(f"[wall] instance {inst}, scene {paths.SCENE_META}")
+    print(f"[wall] instance {inst}, scene {paths.SCENE_META}, task config {cfg.to_dict()}")
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
     p.cmd.reset_pose()

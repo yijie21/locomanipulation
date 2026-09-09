@@ -444,3 +444,114 @@ the GPU gate, neither of which exercises the threaded VLA clients at all. Listed
 
 **Not attempted this session** (JOB 2's remaining families 5, 4): crate's `bimanual_wall.py`/
 `bimanual_carry.py`, `primitives.py`.
+
+**Commit (family 5, next session) -- refactor step 4b, family 5: crate `run_round` (pure extraction) +
+config/CLI wiring.** `bimanual_carry.py` (773 lines) and `bimanual_wall.py` (851 lines) each had one giant
+`run_round` (415 / 530 lines) with several nested closures capturing its locals -- same shape as
+grasp_gym.py's `_run_round` from family 1, so this family mirrors that split exactly: a `*RoundContext`
+dataclass, phase functions taking `ctx`, closures converted to plain functions taking `ctx` (or no `ctx` at
+all when they capture nothing -- `mirror29`, `stand_fault`), and `run_round` itself reduced to a thin
+orchestrator (`for phase in (...): result = phase(ctx); if result is not None: return result`) that still
+lives in the original file so external callers (`tasks/crate/__init__.py`'s `bimanual_carry.run_round(...)`
+wrapper, `main()`'s own call) resolve to the same name.
+
+- **`bimanual_carry.py`** -- `run_round`'s five phases (`_phase_reset`, `_phase_approach`, `_phase_grasp`,
+  `_phase_close`, `_phase_lift`) split into `carry_phases.py` (229 lines: reset/approach/grasp) and
+  `carry_phases_lift.py` (114 lines: close/lift) -- all five would not fit carry_phases.py's own 600-line
+  cap. `CarryRoundContext` has 26 fields (constructor params + `surf`/`hx`/`s`/`t_video` from reset +
+  `centre`/`bars`/`n`/`y_hat`/`psi`/`stand_xy`/`edge_x`/`q_free`/`ramp`/`q_pre17`/`arms`/`R_stand`/`rot_w`
+  from approach + `ref` from grasp). `bimanual_carry.py` itself drops to 397 lines and keeps `BimanualArms`,
+  the module constants, `rot_z`/`rot_y`/`crate_frame`/`hand_txt`/`crate_tilt_deg`, and `run_round`.
+- **`bimanual_wall.py`** -- `run_round`'s six phases (`_phase_reset`, `_phase_stand`, `_phase_hover`,
+  `_phase_descend`, `_phase_close`, `_phase_lift`) split into `wall_phases.py` (568 lines:
+  reset/stand/hover, plus `solve_for`/`mirror29`/`measure_stand`/`stand_fault`/`servo_tick`) and
+  `wall_phases_descend.py` (252 lines: descend/close/lift) -- same 600-line reason.
+  `WallRoundContext` has 27 fields, close in shape to carry's (`c`/`n`/`y_hat`/`psi`/`sign`/`R` from
+  `wall_frame`, `so`/`stand_xy` from reset, `depth`/`crate_start`/`ref`/`rot_w` from hover).
+  `bimanual_wall.py` itself drops to 360 lines (plus the CLI addition below) and keeps `wall_frame`,
+  `wall_point`, `errs_of`, `arms_offset`, the module constants, and `run_round`. Several names it still
+  imports (`APPR_SPEED`, `EDGE_FLOOR`, `OVERDRIVE`, `OVERDRIVE_CAP`, `STAND_TOL`, `WAYPOINT_BACK`,
+  `WAYPOINT_TOL`, `BimanualArms`, `crate_tilt_deg`, `hand_txt`, `rot_y`, `rot_z`) are unused in its OWN
+  surviving body -- they stay imported because `wall_phases.py`/`wall_phases_descend.py` read them back
+  through `bimanual_wall` (`from locomani.tasks.crate.bimanual_wall import ...`), the same
+  re-export-for-a-satellite-file shape family 3 used for vla_round.py's knobs; pruning them as "unused"
+  would have broken that re-export.
+
+No monkeypatch hazard here (checked): neither file's module constants are ever overridden by assignment
+anywhere in the repo (`grep "bimanual_carry\.[A-Z_]* *=\|bimanual_wall\.[A-Z_]* *="` across src/ and tests/
+is empty), unlike vla_round.py's family-3 knobs -- so every constant a phase function needs is a plain
+deferred (in-function) import, not a module-qualified `vr.`-style read. The circular-import shape is
+otherwise identical to round_phases.py/vla_client.py: each phases file must not import its parent
+(`bimanual_carry`/`bimanual_wall`) at its own top level, since the parent imports the phase functions FROM
+it for re-export -- fixed the same way, with deferred in-function imports of everything the phase functions
+need from the parent.
+
+**Verified mechanically, not just by eye:** for both `*RoundContext` classes, extracted every `ctx.<name>`
+read/write from the phases files via a small script and diffed it against the dataclass's declared field
+names -- zero mismatches in either direction (no typo'd field, no promoted-but-never-read field only by
+accident of the check missing it) for both `CarryRoundContext` and `WallRoundContext`.
+
+**Mid-task addition (from the coordinator, folded into this family's commit): `--config`/`--set` CLI on both
+files.** The crate GPU gate's baseline (`tests/gate/baseline_crate.json`) was recorded with
+`WALL_WALK=1 WALL_FEATURE=rail` back when those were env vars; after refactor step 3, `CrateTaskConfig.
+wall_walk` defaults to `False`, so reproducing that baseline needs an explicit override, and neither script
+had any way to pass one. Added, via `locomani.config_base` (the same `--config PATH` / repeatable
+`--set KEY=VALUE` shape `run_learn_pilot.py` already uses):
+- **`bimanual_wall.py`**: `main()` loads `CrateTaskConfig` (`--config` then `--set` overrides) and
+  reassigns `FEATURE`/`WALK` from it, THEN rederives `DEPTH_AXIS`/`WALL_AXIS`/`WALL_Y`/`NEAR_X`/
+  `CRATE_YAW_DELTA`/`GRIP_BELOW` from the (possibly overridden) `FEATURE` -- factored the module-level
+  `if FEATURE == "wall": ... else: ...` block that used to compute those six into a new
+  `_wall_feature_constants(feature)` helper (called once at module load for the default, once more in
+  `main()` for the override) so the override path can never drift from the default path's own branch.
+  Verified with a standalone script that loads `configs/tasks/crate_wall.json`, applies it the way `main()`
+  does, and confirms `bimanual_wall.WALK` becomes `True` and (separately, forcing `FEATURE="wall"`) the six
+  derived constants match the original `if` branch's literal values exactly (0, 1, 0.1267, 0.2093, -pi/2,
+  0.080). This is the one file where the override actually changes behaviour: `wall_phases.py`'s
+  `_phase_stand`/`_phase_hover` read `WALK`/`FEATURE`-derived constants via a plain deferred import done
+  fresh every round, so they see whatever `main()` set before the round loop started -- same "module-level
+  knob, re-read every call" shape as vla_round.py's family-3 constants, just without the monkeypatch hazard
+  since nothing else overrides these.
+- **`bimanual_carry.py`**: `main()` loads and validates the same `CrateTaskConfig` (`--config`/`--set`,
+  prints it) for CLI consistency with `bimanual_wall.py`, but does not wire it to any behaviour -- this
+  file's round logic has no field of `CrateTaskConfig` to apply (confirmed: no `CrateTaskConfig`/
+  `DEFAULT_CRATE_TASK` reference existed anywhere in it before this change). Said so explicitly in the
+  code comment and in `run_bimanual_pilot.sh`'s header rather than fabricating a hookup.
+- **`configs/tasks/crate_wall.json`** = `{"schema_version": 1, "wall_feature": "rail", "wall_walk": true}`,
+  the canonical config reproducing the recorded gate baseline; loads and validates via
+  `CrateTaskConfig.load` (checked directly). Mentioned in both scripts' header comments.
+- **`scripts/run_wall_pilot.sh`** / **`scripts/run_bimanual_pilot.sh`**: any args after `[rounds] [seed]` now
+  forward verbatim to the python call via `shift $(($# < 2 ? $# : 2)); ... "$@"`, so
+  `bash scripts/run_wall_pilot.sh 10 0 --set wall_walk=true` or
+  `--config configs/tasks/crate_wall.json` works; `--rounds`/`--seed`/`--manifest`/`--label` are
+  untouched (still positional/defaulted exactly as before). `bash -n` clean on both.
+
+**Checks (all green):** `ruff format . && ruff check .` (repo-wide, 274 files); full pytest suite, 177
+passed / 9 skipped / 11 subtests (unchanged); `lint_env.py --strict`; `gen_config_reference.py --check`;
+the import smoke-check (both crate files, plus the existing bottle/vla_round/eval_closed_loop/cli set);
+`bash -n` over every `scripts/*.sh` + `scripts/stack/*.sh`; `eval_closed_loop.py --help`,
+`bimanual_carry.py --help`, `bimanual_wall.py --help` as real subprocesses (both crate ones show the new
+`--config`/`--set` flags alongside the unchanged originals); the two standalone smoke scripts above
+(ctx-field consistency + the wall config-override chain). No test file in `tests/` exercises either
+crate file's round logic (no fixture for a live sim stack), so this family's regression backstop is the
+manual line-by-line transcription review plus the mechanical `ctx.` consistency check, same limitation
+family 3 noted for the threaded VLA clients -- the GPU gate is the real check for behavioural parity.
+
+**`lint_sizes.py`:** 8 files / 74 functions over cap (after family 3) -> 6 files / 79 functions over cap.
+`bimanual_carry.py` and `bimanual_wall.py` both drop out of the file list (773 -> 397, 851 -> 360 lines,
+plus the CLI addition); none of the four new phase files entered it. Left over cap, with reasons -- every
+one is a single control loop or a linear setup block with no natural sub-boundary, same class as family
+1/2's documented exceptions:
+- `wall_phases.py:_phase_stand` (183) -- the walk-in attempt loop (drive to a waypoint, then straight in,
+  brake, measure, retry up to `WALK_ATTEMPTS`) and the non-WALK teleport branch share the function only
+  because they are mutually exclusive halves of "get the robot onto the stand"; splitting the WALK branch
+  further means threading `q_walk17`/`way_xy`/`leg`/`best_along` through another boundary for a
+  single-shot attempt loop already gated by the retry logic itself.
+- `carry_phases.py:_phase_grasp` (178) / `wall_phases.py:_phase_hover` (133) / `carry_phases.py:
+  _phase_approach` (152) / `wall_phases_descend.py:_phase_descend` (114) / `wall_phases_descend.py:
+  _phase_lift` (88) -- each is one servo/descend/lift control loop (or, for `_phase_approach`, one
+  walk-to-stand loop) where every statement reads state the previous one just wrote in the SAME tick;
+  the same "linear live-control-loop math" case as family 1's `do_approach` and family 2's `_phase_in`/
+  `_tick_advance`.
+
+**Not attempted this session** (JOB 2's conditional family 4, gated on 2/3/5 all green -- they are):
+`primitives.py`.
