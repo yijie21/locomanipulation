@@ -42,6 +42,36 @@ WHITELIST = {
     "HOME",
     "PATH",
     "TMPDIR",
+    # -- refactor step 3, step 6 additions -----------------------------------
+    # Genuinely process-level: torchrun's own rank, not a knob of ours.
+    "RANK",
+    # Shell/process boundary (decision 8's stack.py doc): these five run
+    # inside the MuJoCo sim, a separate OS process launched by
+    # start_stack.sh with no channel to receive a SonicBackendConfig other
+    # than inherited env (upstream's SimLoopConfig/tyro CLI is not ours to
+    # extend). SonicBackendConfig.{sim_vis,scene_random,sonic_dds_domain,
+    # lockstep.enabled} (locomani/backends/sonic/config.py) is the config
+    # side; locomani/pipeline/stack.py is the sole writer.
+    "SIM_VIS",
+    "SCENE_RANDOM",
+    "SONIC_DDS_DOMAIN",
+    "LOCKSTEP",
+    # Paths in files outside this refactor's scope (locomani/paths.py /
+    # isaac_scene.py's own Isaac-render path resolution), the same category
+    # as the already-whitelisted LOCOMANI_ROOT/LOCOMANI_SIM_DIR above.
+    "SIMPLE_ROOT",
+    "SIMPLE_PIN",
+    "RENDER_PY",
+    "ISAAC_ASSETS",
+    "SCENE_META",
+    "SCENE_XML",
+    "TF_FRAME_AUDIT_PATH",
+    # Out of this refactor's file scope, both already narrow: latency_dist.py
+    # has its own --fps flag (this is just its default's fallback);
+    # diag_transition_cross.py's GYM_CREEP_OBS is written into a diagnostic
+    # event log as metadata, not read back to gate anything.
+    "TF_DATASET_FPS",
+    "GYM_CREEP_OBS",
 }
 EXCLUDE = ("third_party/", "src/gr00t/", "src/teleop_free/scalebfm/", "outputs/", ".claude/", "legacy/")
 PAT = re.compile(r"os\.environ(?:\.get)?\s*[\(\[]\s*['\"]([A-Za-z_0-9]+)['\"]")

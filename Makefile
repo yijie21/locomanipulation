@@ -2,7 +2,7 @@
 PY_SIM := third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 RUFF   := /venv/main/bin/ruff
 
-.PHONY: check format lint test test-sim gate-bottle gate-crate
+.PHONY: check format lint test test-sim gate-bottle gate-crate config-doc
 
 check: lint test
 
@@ -13,7 +13,12 @@ lint:
 	$(RUFF) format --check .
 	$(RUFF) check .
 	python3 scripts/lint_sizes.py
-	python3 scripts/lint_env.py
+	python3 scripts/lint_env.py --strict
+	python3 scripts/gen_config_reference.py --check
+
+# Regenerate docs/reference/config_fields.md from the config dataclasses.
+config-doc:
+	python3 scripts/gen_config_reference.py
 
 test:
 	$(PY_SIM) -m pytest -x -q tests
