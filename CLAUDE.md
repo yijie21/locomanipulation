@@ -22,6 +22,11 @@ GitHub Issues(`gh` CLI,仓库 yijie21/locomanipulation)。See `docs/agents/issue
 
 每个 session 从 `docs/STATE.md` 开始,结束前更新它,然后 `/clear`。See `docs/agents/session-workflow.md`.
 
+### Code and doc standards
+
+`docs/reference/standards.md` 是唯一的规范。`make check` = ruff + 尺寸/环境变量 lint + unit 测试;改主代码的 PR 附
+`scripts/gate.py compare` 输出。
+
 ### Refactor freeze (2026-09-09 to 2026-09-23)
 
 仓库重构进行中,计划与 13 条决定见 `docs/handoff/refactor-plan.md`。冻结期内 main 上只跑实验、只修 bug,不加新功能;
