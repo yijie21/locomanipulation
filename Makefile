@@ -2,7 +2,7 @@
 PY_SIM := third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 RUFF   := /venv/main/bin/ruff
 
-.PHONY: check format lint test test-sim gate-bottle gate-crate config-doc
+.PHONY: check format lint test test-sim gate-bottle gate-crate config-doc cli
 
 check: lint test
 
@@ -25,6 +25,10 @@ test:
 
 test-sim:
 	$(PY_SIM) -m pytest -x -q tests --run-sim
+
+# Task-plugin CLI (locomani/cli.py), e.g. make cli ARGS="collect --task bottle --out outputs/x --scene outputs/scene"
+cli:
+	PYTHONPATH=src $(PY_SIM) -m locomani.cli $(ARGS)
 
 # Behaviour gate: run the candidate first (see scripts/gate.py --help), then compare.
 gate-bottle:
