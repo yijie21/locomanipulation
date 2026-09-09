@@ -1,4 +1,19 @@
-# STATE (updated 2026-09-09 by 9d; main line = session 9d, instance 0; branch = 65)
+# STATE (updated 2026-09-09 17:30 UTC by 9d -- READ THE INCIDENT FIRST)
+
+## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
+- Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
+  `.gitignore` had `/outputs/` (directory-only pattern) so the symlink was not ignored. Merging refactor/step1-tooling
+  into main (3344e45) replaced the real `outputs/` directory with the symlink; git removed the ignored contents.
+  /workspace usage fell 819 GB -> 563 GB. XFS, no block-device access: NOT recoverable by undelete.
+- LOST: everything under outputs/ -- all experiments (datasets, models, evals, manifests, videos, gate dirs), scene
+  builds, eval history, renders, and the Codex thread's scalebfm_visual_goal_20260908 / scalebfm_yplus200_s17_20260909.
+- SURVIVES: git-tracked code/docs/tests (tests/gate/baseline_*.json included); raw exporter sessions in
+  /workspace/tmp/p03/outputs (82 sessions: 39 on 09-08, 43 on 09-09, 3.9 GB) and /workspace/tmp/p03_i1/outputs;
+  /workspace/huggingface_cache (143 GB, base models); the refactor worktrees.
+- Fixed: commit 4a109bf untracks the symlink, recreates outputs/, ignores `/outputs` and `/third_party` as paths.
+- Recovery paths: datasets can be re-converted from the exporter sessions WITHOUT manifests (ok/failed rounds are
+  in each session's info.json discarded_episode_indices; the verification-tail trim marker is lost) or recollected;
+  models retrain in ~77 min; evals rerun. Waiting for the user's decision before any further GPU work.
 
 ## Now
 - Pelvis ABCD protocol v2 ACTIVE: old EGL baseline not repeatable (identical own state,1-level RGB differences).
