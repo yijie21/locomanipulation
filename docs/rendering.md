@@ -71,9 +71,9 @@ bash scripts/build_isaac_assets.sh --robot-only | --force
 ## 两个步骤都用 RENDER_PY
 
 ```bash
-"$RENDER_PY" -m teleop_free.isaac.compute_cam_traj --session <dir> --episode 0 \
+"$RENDER_PY" -m locomani.sim.isaac.compute_cam_traj --session <dir> --episode 0 \
     --sidecar '<glob>' --out cam_traj.npz [--scene-xml <该批快照>]
-"$RENDER_PY" -m teleop_free.isaac.isaac_render  --session <dir> --episode 0 \
+"$RENDER_PY" -m locomani.sim.isaac.isaac_render  --session <dir> --episode 0 \
     --sidecar '<glob>' --cam-traj cam_traj.npz --out <dir> [--scene-xml <该批快照>]
 ```
 
@@ -106,7 +106,7 @@ bit-identical;判定重构或迁移是否等价,要用"同脚本跑两次"做对
 
 **结论:不需要。纯 async 就够,票 10 的 hybrid clock 不做。**
 
-复现:`"$RENDER_PY" -m teleop_free.isaac.bench_render`,原始结果在
+复现:`"$RENDER_PY" -m locomani.sim.isaac.bench_render`,原始结果在
 `outputs/renders_isaac/bench/t_render_2026-09-05.json`。
 
 分母先说清楚,搞错就会把结论放大一倍:动作流跑在 `TF_DATASET_FPS`,
@@ -195,7 +195,7 @@ geom pos/quat 的 Xform,里面一个叫 `mesh` 的几何);带多个可视 geom �
 是不存在**。受影响的四个 body:`pelvis`(丢轮廓壳)、`torso_link`(四个网格丢三个:logo、
 head、waist_support)、左右 `wrist_yaw_link`(丢自己的圆柱,只剩 Dex1 托板)。
 
-修法是 `teleop_free/isaac/split_visual_refs.py`:在导出的 `.usda` **文本**上把 reference
+修法是 `locomani/sim/isaac/split_visual_refs.py`:在导出的 `.usda` **文本**上把 reference
 列表改成每个 reference 一个子 prim(`<asset>_visual`),原型、变换、其余 prim 一字不动;
 `scripts/build_isaac_assets.sh` 在 convert 之后自动跑,缓存 key 同时含 MJCF 和这个脚本的
 hash。验证(2026-09-07,ep05 第 1050/1100 帧):合成后手腕 1→2、躯干 1→4、骨盆 1→2 个

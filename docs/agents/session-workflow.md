@@ -8,7 +8,7 @@ keep the state in files, and start fresh often.
 
 | kind | file | who updates |
 |---|---|---|
-| rules, conventions, pitfalls | `CLAUDE.md`, `docs/reference.md` | rarely, when a rule changes |
+| rules, conventions, pitfalls | `CLAUDE.md`, `docs/reference/silent_failures.md` | rarely, when a rule changes |
 | durable non-obvious facts | `~/.claude/projects/.../memory/*.md` (auto-loaded) | the agent, as it learns them |
 | what is happening NOW, next step, blockers | `docs/STATE.md` (one screen) | the agent at every checkpoint |
 | decisions handed to another session | `docs/handoff/*.md` + SendMessage | the agent, once per handoff |

@@ -4,7 +4,7 @@
 
 ### 模块地图
 
-`src/teleop_free/` 有 60 多个文件,其中 **50 个是 `diag_*.py` 一次性测量脚本**。
+`src/locomani/` 有 60 多个文件,其中 **50 个是 `diag_*.py` 一次性测量脚本**。
 真正的流水线只有下面这些:
 
 | 文件 | 角色 |
@@ -23,16 +23,16 @@
 | `scene_random.py` | 逐局重掷场景外观(颜色、光照、地面),直接改 `mjModel`,不重建场景 |
 | `sim_video.py` | 第三人称录像(ego + 双腕画中画、6D 线框盒、坐标读数) |
 | `sim_vis.py` | `SIM_VIS` 开关的解析(见[可视化开关](#可视化开关)) |
-| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](setup.md#0-路径约定)) |
+| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径约定)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
-| `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](dataset.md#转完先查一遍强烈建议)) |
+| `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](../dataset.md#转完先查一遍强烈建议)) |
 
 脚本:
 
 | 脚本 | 干什么 |
 |---|---|
-| `src/teleop_free/start_stack.sh` / `stop_stack.sh` | 起 / 停三进程 stack。**停是 `stop_stack.sh`,不要自己手写 kill** —— 它多杀 `spawn_main`(sim 的图像发布子进程,孤儿化后占着 :5555,下一次启动会被 start_stack 拒绝)和 `serve_policy.py`,还会等端口真正释放并回显剩余进程 |
+| `scripts/stack/start_stack.sh` / `stop_stack.sh` | 起 / 停三进程 stack。**停是 `stop_stack.sh`,不要自己手写 kill** —— 它多杀 `spawn_main`(sim 的图像发布子进程,孤儿化后占着 :5555,下一次启动会被 start_stack 拒绝)和 `serve_policy.py`,还会等端口真正释放并回显剩余进程 |
 | `scripts/run_overnight.sh` | **跑一次完整实验**:12 局闸门 → 采集 → 转换 → 审计 → 训练 → 闭环。`RUN=` 命名,`SPAWN_EDGE=` 定出生距离 |
 | `scripts/run_closed_loop.sh` | **只评一个 checkpoint**:起 stack + 策略服务器,20 轮再续到 100。`CKPT=` 默认取训练最久的那个 |
 | `scripts/archive/` | round 2/3/4 和旧 pipeline 的编排脚本。**历史记录,不维护,已知跑不起来**(调用的 `eval_closed_loop` 参数已不存在),留着是因为阶梯上那几个数的确切配置只写在里面 |
@@ -78,13 +78,13 @@
 
 | 变量 | 默认 | 谁读 | 作用 |
 |---|---|---|---|
-| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](setup.md#0-路径约定) |
+| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](../setup.md#0-路径约定) |
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `start_stack.sh` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `TF_DATASET_FPS` | `30` | vla_round | 闭环回放的发布帧率,**必须等于 checkpoint 训练数据的 fps**。转换器 2026-08-28 起写 25,所以用重转数据训出来的 checkpoint 要 `TF_DATASET_FPS=25`;不匹配不会报错,只是动作按错速度回放 |
-| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](collection.md#4-外观每局重掷默认关) |
-| `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](collection.md#相机) |
+| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../collection.md#4-外观每局重掷默认关) |
+| `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../collection.md#相机) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行 |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
@@ -115,7 +115,7 @@
 | 官方 `open_loop_eval.py` 的 `--steps` 默认 200 | `min(steps, len)` 静默截断 | 只评了 546–832 帧 episode 的前 200 帧(走路段),抓取根本没评到,却给出一个看起来正常的 MSE |
 | `ISAACLAB_TO_MUJOCO` / `MUJOCO_TO_ISAACLAB` 取反了 | 图照跑,照样返回 64/29 个数 | 两个数组的**名字与内容是反的**(`ISAACLAB_TO_MUJOCO[mujoco_index] → isaaclab index`),所以"把 MuJoCo 序转成 IsaacLab 序"要用**名字读起来相反的那个**。`sonic_decoder.py` 已经写了这条警告,`sonic_encoder.py` 第一版还是踩了 —— 唯一露馅的地方是:把参考里的肘抬 20°,解码端回答的是**膝盖**。改对之后 top-2 响应落回同一条手臂 |
 | 不发 `upper_body_velocity` | 上一次发过的值**永远**留在 reference 里 | `input_interface.hpp:381-390` 读 buffer 没有过期判定,`g1_deploy_onnx_ref.cpp:2985` 又把有效位 `std::ignore` 掉:只要还在发 position,速度就一直用最后收到的那一组。从来没发过则是硬 0 —— 位置在扫、参考速度读 0,而 encoder 的 mode-0 活输入里 290/644 是速度。收尾必须**显式发零**,不能靠省略 |
-| frozen 接管时拿**实测**关节当种子 | 看着连续,参考跳 123°(单帧) | 被替换的是 k-planner 自己的手臂参考(`cpp:781` 逐字写进 `current_motion_` 的 10 个 lookahead 帧),不是实测姿态;两者相差整个 decoder 的跟踪误差(平均 15.5°,wrist pitch 上 61–65°)。种子要取 `body_q_target`(g1_debug key 22)—— 它就是那个量,**不带 default-angle 偏移**(`output_interface.hpp:192`,和 `body_q` 不同),而且替换只写进 observation buffer、从不写回 motion,所以覆盖期间它照样报 k-planner 的手臂。见 [collection.md](collection.md#上身接管两个台阶和它们的修法2026-08-28) |
+| frozen 接管时拿**实测**关节当种子 | 看着连续,参考跳 123°(单帧) | 被替换的是 k-planner 自己的手臂参考(`cpp:781` 逐字写进 `current_motion_` 的 10 个 lookahead 帧),不是实测姿态;两者相差整个 decoder 的跟踪误差(平均 15.5°,wrist pitch 上 61–65°)。种子要取 `body_q_target`(g1_debug key 22)—— 它就是那个量,**不带 default-angle 偏移**(`output_interface.hpp:192`,和 `body_q` 不同),而且替换只写进 observation buffer、从不写回 motion,所以覆盖期间它照样报 k-planner 的手臂。见 [collection.md](../collection.md#上身接管两个台阶和它们的修法2026-08-28) |
 | 部署帧率和训练数据的 fps 不一致 | 不报错,动作按 1.2× / 0.83× 速度回放 | chunk 是一串**帧**,发布速率必须等于训练数据的 fps。转换器 2026-08-28 起写 25(`DST_FPS`),而 `TF_DATASET_FPS` 默认仍是 30(现有 checkpoint 都是 30 训的)—— **第一个用重转数据训的 checkpoint 必须显式带 `TF_DATASET_FPS=25`**。两边都是常数,谁都不知道对方,所以只能靠这条记着 |
 | 编排脚本自己手抄一份 stack 清理逻辑 | 三个组件都报 ok,但一张图都没发 | sim 的图像发布器是 multiprocessing **子进程**,`kill -9` 父进程会把它孤儿化、继续占着 :5555。抄漏 `pkill -f spawn_main` 的那一份就是这么坏的,而 `kill_stack()` 一度有**四份**拷贝。好在 `start_stack.sh` 检测到"组件都起来了但没有图像"会拒绝交出 stack,否则就是一个安静地渲染不出画面的 stack。**停 stack 只用 `stop_stack.sh`**,它还多杀 `serve_policy.py`、等端口真正释放、并回显剩余进程 |
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
@@ -132,8 +132,8 @@
 > **端口分得开,DDS domain 分不开 —— 除非 deploy 打过补丁。**
 > `INSTANCE` 只对 Python 侧和端口有效。**库存的 `g1_deploy_onnx_ref` 把 DDS domain
 > 硬编码成 0**,根本不读 `SONIC_DDS_DOMAIN`(要读得先打
-> [`patches/sonic_dds_domain.md`](../patches/sonic_dds_domain.md) 再重编)。照
-> [setup.md](setup.md) 从零装出来的 deploy **没打这个补丁**,所以它不能参与任何
+> [`patches/sonic_dds_domain.md`](../../patches/sonic_dds_domain.md) 再重编)。照
+> [setup.md](../setup.md) 从零装出来的 deploy **没打这个补丁**,所以它不能参与任何
 > 多实例场景。用没打补丁的二进制起第二个 stack,三方状态是:
 >
 > | 进程 | domain | 为什么 |
@@ -159,7 +159,7 @@
 > **`INSTANCE=1` 的 5590 和闭环评测的 `serve_policy` 撞端口。**
 > `TF_KEYBOARD_PORT = 5580 + 10*INSTANCE`,所以 `INSTANCE=1` 占住 5590,而
 > `serve_policy.py` 的默认端口正是 5590(`scripts/archive/run_round3.sh`、
-> [evaluation.md](evaluation.md) 都用它)。**多实例采集和闭环评测不能同时跑**,
+> [evaluation.md](../evaluation.md) 都用它)。**多实例采集和闭环评测不能同时跑**,
 > 或者给 `serve_policy` 换个端口。
 
 | 端口 | 方向 | 内容 |
@@ -199,8 +199,8 @@ mp4。所以这些开关是为了**录像干净**和**省开销**,不是为了�
 
 ```bash
 export SIM_VIS=none                                   # 对两个进程都生效
-SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh
-third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gym.py --rounds 3
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash scripts/stack/start_stack.sh
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/tasks/bottle/grasp_gym.py --rounds 3
 ```
 
 ---
@@ -224,7 +224,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/grasp_gy
 | `diag_wrist_cam.py --dataset DS [--sweep]` | 腕相机挂载位置:从数据集里的真实抓取帧离线重建场景并**渲染**,报告物体离近平面多近、被裁掉多少。不需要 stack(它自己建模型) |
 | `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
 
-数据集本身的检查不在这里,在 [`tools/check_dataset.py`](dataset.md#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。
+数据集本身的检查不在这里,在 [`tools/check_dataset.py`](../dataset.md#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。
 
 **不需要 stack 的离线工具**(`src/teleop_free/tools/`,同样用 `.venv_sim` 的
 python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
@@ -232,7 +232,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 
 | 工具 | 回答什么 |
 |---|---|
-| `motion_smoothness.py A B --n 60 --events` | 两个数据集的运动质量逐项对比(jerk / 高频占比 / SPARC / cadence / token 台阶),外加"剧烈段来自哪里"的归因。结论见 [collection.md](collection.md#动作质量和人类-teleop-逐项量过一遍2026-08-28) |
+| `motion_smoothness.py A B --n 60 --events` | 两个数据集的运动质量逐项对比(jerk / 高频占比 / SPARC / cadence / token 台阶),外加"剧烈段来自哪里"的归因。结论见 [collection.md](../collection.md#动作质量和人类-teleop-逐项量过一遍2026-08-28) |
 | `sonic_encoder.py --selfcheck --dataset DS` | 离线跑 SONIC 的 motion encoder:任意 29 维参考动作 → 64 维 token,不用起 stack。`--selfcheck` 校验 1762 维的分块偏移、FSQ 码本、灵敏度与解码端一致性 |
 | `sonic_decoder.py` | 反过来:token 差异 → 关节度数,给 open-loop 指标一个单位 |
 
@@ -259,9 +259,9 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | `EPISODE FAILED [view] object outside ego view at stand` 每局都这样 | ego 相机没被重新瞄准,停在原厂的下视 + fovy 45。重建一次场景:`build_sim_scene.py` 现在会在编译后自检瞄准、不对就拒绝写盘。历史成因是它曾用 `str.replace` 改 `to_xml()` 的输出,而 MuJoCo 3.12 改了属性发射顺序,replace 静默失配 —— 用 3.12 装出来的旧版本会全局 0% 成功率 |
 | `[gym] targets not in the scene` | 场景不是你以为的那套。报错会列出场景里**实际**有什么 —— 按那份清单对照下面[「场景装成了哪一套」](#场景装成了哪一套)判断是哪种病 |
 | 采完之后场景尺寸不对了 | `collect.sh` 就地重建场景。`SCENE_PRESET=<你那套> bash scripts/install_scene.sh` 恢复 —— 漏掉 `SCENE_PRESET` 会顺带把桌上的物体换成默认那套 |
-| 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/teleop_free/paths.py` 自查 |
+| 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/locomani/paths.py` 自查 |
 | 场景 MJCF 找不到 mesh | 重跑 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh`;它会探测并改写 tarball 里烘死的路径 |
-| `ValueError: ... Error opening file ... scene_31dof.xml` | 新 clone 的 `third_party` 里没有 dex1 生成文件。先跑 `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/teleop_free/make_dex1_model.py`,再 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh` |
+| `ValueError: ... Error opening file ... scene_31dof.xml` | 新 clone 的 `third_party` 里没有 dex1 生成文件。先跑 `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/sim/make_dex1_model.py`,再 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh` |
 | `ModuleNotFoundError: No module named 'skfmm'` | `.venv_sim` 里没装 `scikit-fmm`(上游安装脚本不带,这个仓库自己的依赖)。`uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm` |
 
 ## 场景装成了哪一套
