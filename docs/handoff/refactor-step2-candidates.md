@@ -98,3 +98,44 @@ visible_*` (43 → ~29 fields; several become task constants in step 4).
 4. Env knobs surviving A (`GYM_RESTART_DEPLOY, GYM_ARM_CHANNEL, GYM_ARM_VEL, GYM_ARM_PIN, GYM_LEFT_GUARD, GYM_UPPER_SLEW_DEG,
    LOCOMANI_POSE_SIDECAR, SIM_VIDEO_INCLUDE_INIT, TF_INIT_TOKEN_FILE, FULL_TASK, TF_ACTION18`) move into config in step 3.
 5. Blocked on: Codex committing `scalebfm/*`; a user ruling on D rows 1-5.
+
+## Executed
+
+One commit per family, on `refactor/step1-tooling` (worktree `.claude/worktrees/refactor-step1`), in the order
+above. `git show --stat <sha>` gives the file list; totals below are that same diffstat's insertions/deletions.
+
+| # | family | commit | files | lines (+/-) | status |
+|---|---|---|---|---|---|
+| 1 | `coordinated_arrival` | `4ab0c6b` | 7 | +3 / -377 | done |
+| 2 | `continuous_capture` + `capture_feedback` | `6297f03` | 9 | +3 / -382 | done |
+| 3 | `tool_point_grasp`/`horizontal_entry`/`grasp_depth_preference`/`local_point_lead`/`local_point_speed` | `0d335dd` | 10 | +26 / -223 | done |
+| 4 | `capture_reference_handover` | `d7bd223` | 11 | +3 / -265 | done |
+| 5 | `recovery_region_stop` | `432d314` | 9 | +3 / -166 | done |
+| 6 | `coupled_hand_lead` + `brake_preplan` + `pregrasp_lateral_jitter` + `arrival_advance_jitter` + `pregrasp_min_forward` | `eeff157` | 6 | +53 / -115 | done |
+| 7 | `GYM_FACE_OBJ` + `GYM_CREEP_OBS` + `GYM_SHUFFLE_BAND>0` | `7a6841f` | 1 | +10 / -33 | **partial** -- see skip below |
+| 7b | `GYM_STAND_COVER` + `TargetPlan.stand3` + `grasp_gym.sample_stand` + `reach_map.stand_cells` | -- | -- | -- | **skipped** |
+| 8 | DART `--dart-frac`/`--dart-far` (+ its `--one-shot` exclusion check) | `c9e758d` | 3 | +7 / -126 | done |
+| 9 | `GYM_IDLE_SWEEP` | -- | -- | -- | **skipped** |
+
+Totals for the 7 completed/partial families: 56 files touched, +108 / -1687 lines (net -1579).
+
+**Skipped, and why (both touch group B, out of this task's authorized scope):**
+
+- **7b. `GYM_STAND_COVER` / `TargetPlan.stand3` / `grasp_gym.sample_stand` / `reach_map.stand_cells`.**
+  `grasp_gym.sample_stand` (the module-level one, distinct from `ready_grasp_policy.sample_stand`) is the
+  *sole* stand-sampling implementation for the `else` branch of
+  `if reach_config.ready_grasp_baseline: ... else: rel, squat_hint = sample_stand(pl, rng)` (`grasp_gym.py`
+  `run_round`, ~line 635). That branch is what runs whenever `ready_grasp_baseline` is False -- the
+  flow200/legacy collection recipe, which routes into `stream_reach.py`'s group-B "legacy `_execute_grasp`
+  tail" (`stream_reach.py:2079-2312`, delete-with-care, untouched here). Deleting `sample_stand`/`STAND_COVER`/
+  `stand3` would leave that branch calling a name that no longer exists -- not a group-A-safe deletion. The
+  candidate table's own risk note already flagged this ("`docs/runbook.md:45` still lists it for flow200: fix
+  in step 6"), i.e. it anticipated needing the doc-reorg/reconciliation step before this can go. Left in place.
+- **9. `GYM_IDLE_SWEEP`.** Its only occurrence (`stream_reach.py:2110`) sits inside the exact group-B "legacy
+  `_execute_grasp` tail" range this task was told not to touch (`stream_reach.py:2079-2312` -- the code after
+  `coordinated.execute(...)`/`coordinated.finish(...)` short-circuits, dead for the official
+  `ready_grasp_recovery=True` line but still live for the group-B path). No safe group-A-only edit exists;
+  skipped entirely, no commit.
+
+Both skips are candidates for the group-B reconciliation step (refactor-plan.md execution step 4, "抽骨架"),
+not for a group-A follow-up commit on this branch.
