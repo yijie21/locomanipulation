@@ -8,6 +8,7 @@
 No policy, no physics stepping: mj_forward only.
 """
 
+import argparse
 import json
 import os as _os
 import sys
@@ -18,13 +19,20 @@ import numpy as np
 _os.chdir(
     _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
 )  # repo root: the scene/output paths below are repo-relative
-import os  # noqa: E402
 
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST as OFF  # noqa: E402
 from locomani.primitives.arm_ik import ArmIK  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 
-out = os.environ.get("SCENE_DIR", "outputs/scene/crate_bimanual")
+# Argparse flags, same names/defaults as the old env vars (decision 8: a
+# diagnostic tool's knobs are CLI flags, not config-dataclass fields).
+_ap = argparse.ArgumentParser(description=__doc__)
+_ap.add_argument("--scene-dir", default="outputs/scene/crate_bimanual")
+_ap.add_argument("--pose-left-deg", default=None, help="hand-authored walking pose, mirrored to the right")
+_ap.add_argument("--via-chain", default="-40,20,0,-30,0,-30,0")
+_args = _ap.parse_args()
+
+out = _args.scene_dir
 meta = json.load(open(f"{out}/scene_meta.json"))
 xml = f"{out}/scene_locomani.xml"
 ik = ArmIK(xml)
@@ -61,8 +69,8 @@ table_g = [g for g in range(m.ngeom) if "dining_table" in bname(m.geom_bodyid[g]
 
 trace = np.load("outputs/videos/wall_pilot/trace/wall_s0_05_state_trace.npz")["qpos"][10]
 q_default29 = trace[ik.qadr]  # policy-delivered default pose (29 dof)
-if os.environ.get("POSE_LEFT_DEG"):  # hand-authored walking pose, mirrored to the right
-    _l = np.radians([float(v) for v in os.environ["POSE_LEFT_DEG"].split(",")])
+if _args.pose_left_deg:  # hand-authored walking pose, mirrored to the right
+    _l = np.radians([float(v) for v in _args.pose_left_deg.split(",")])
     q_default29 = q_default29.copy()
     q_default29[ARM_MJ["left"]] = _l
     q_default29[ARM_MJ["right"]] = _l * np.array([1, -1, -1, 1, -1, 1, -1])
@@ -152,7 +160,7 @@ for so in (0.13, 0.18, 0.24, 0.31):
     }
     # via = the FK-authored carry pose (IK to a chest-height target picks a wrong branch); hover from zeros like the expert
     chain = [q_default29]
-    for spec in os.environ.get("VIA_CHAIN", "-40,20,0,-30,0,-30,0").split(";"):
+    for spec in _args.via_chain.split(";"):
         _v = np.radians([float(x) for x in spec.split(",")])
         qq = q_default29.copy()
         qq[ARM_MJ["left"]] = _v

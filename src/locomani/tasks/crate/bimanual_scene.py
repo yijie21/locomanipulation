@@ -31,6 +31,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )  # reach src/ for `python src/locomani/tasks/crate/bimanual_scene.py`
 from locomani import paths  # noqa: E402
+from locomani.tasks.crate.config import DEFAULT_CRATE_TASK  # noqa: E402
 
 PAD_PRIORITY = 1
 PAD_CONDIM = 4
@@ -45,7 +46,9 @@ PAD_SOLIMP = (0.995, 0.9999, 0.001, 0.5, 2.0)
 # FINGER_RANGE below instead: with the pad faces able to meet, the closed
 # target sits 8 mm past a 16 mm bar, 3 N per finger, 6 N per coupled jaw,
 # 28 N of friction for two hands against the 0.64 kg crate's 6.3 N.
-GRIPPER_GEAR = float(os.environ.get("GRIPPER_GEAR", "250"))  # env override for A/B runs
+# Module-level default, not an env read (decision 8): CrateTaskConfig.gripper_gear
+# is never actually overridden in any script today, so this constant IS that default.
+GRIPPER_GEAR = DEFAULT_CRATE_TASK.gripper_gear
 # The two dex1 fingers are INDEPENDENT slide joints in the MJCF; the real
 # Dex1 is a single-motor parallel jaw. Independent fingers cannot clamp a bar
 # that is off the jaw centre: the near finger stops on the bar, the far one
@@ -53,7 +56,9 @@ GRIPPER_GEAR = float(os.environ.get("GRIPPER_GEAR", "250"))  # env override for 
 # test from the pilot-22 dump: one pad per hand, pinch force 0, that is what
 # every "closed with contact, lift 0 cm" round was). A joint equality couples
 # them, so the jaw self-centres on the bar as a parallel gripper does.
-COUPLE_FINGERS = os.environ.get("COUPLE_FINGERS", "1") == "1"
+# CrateTaskConfig.couple_fingers's default (decision 8); never overridden in
+# any script today, so this constant IS that default.
+COUPLE_FINGERS = DEFAULT_CRATE_TASK.couple_fingers
 # Finger travel: the MJCF's closed limit (-0.020) leaves the pad faces 5.8 mm
 # apart, so a 16 mm bar more than ~3 mm off the jaw centre is met by one pad
 # only. -0.023 lets the faces meet (0.1 mm), and the open limit is widened so

@@ -24,8 +24,8 @@ frame_rate_guard's --watch so a driver can parse both with one rule.
     instance_watchdog.py --instance 0 \
         --manifest outputs/eval/seq_ens/a.manifest.jsonl
 
-    # thresholds via env, so a driver can set them once for all instances
-    WATCHDOG_STREAM_HZ=25 WATCHDOG_STALL_S=600 instance_watchdog.py --instance 1 ...
+    # thresholds via flags, so a driver can set them once for all instances
+    instance_watchdog.py --stream-hz 25 --stall-s 600 --instance 1 ...
 
 Output lines:
 
@@ -49,13 +49,6 @@ import sys
 import time
 
 FREQ_RE = re.compile(r"Image publish frequency:\s+([0-9.]+)")
-
-# Thresholds. Environment rather than flags so a driver can set them once for
-# every instance it spawns.
-STREAM_HZ = float(os.environ.get("WATCHDOG_STREAM_HZ", "25"))
-STREAM_WINDOW = int(os.environ.get("WATCHDOG_STREAM_WINDOW", "10"))
-STALL_S = float(os.environ.get("WATCHDOG_STALL_S", "600"))
-POLL_S = float(os.environ.get("WATCHDOG_POLL_S", "10"))
 
 
 def sim_alive(instance: int) -> tuple[bool, bool]:
@@ -124,10 +117,20 @@ def main() -> None:
     ap.add_argument("--sim-log", help="default: $LOCOMANI_TMP/p03[_i<N>]/sim.log")
     ap.add_argument("--manifest", help="growth is the liveness signal")
     ap.add_argument("--camera-port", type=int, help="default: 5555 + 10 * instance")
+    # Thresholds. Argparse flags, same names/defaults as the old
+    # WATCHDOG_*/LOCOMANI_TMP env vars (decision 8: a diagnostic tool's knobs
+    # are CLI flags, not config-dataclass fields) -- a driver still sets them
+    # once for every instance it spawns, just as flags instead of env.
+    ap.add_argument("--stream-hz", type=float, default=25.0)
+    ap.add_argument("--stream-window", type=int, default=10)
+    ap.add_argument("--stall-s", type=float, default=600.0)
+    ap.add_argument("--poll-s", type=float, default=10.0)
+    ap.add_argument("--tmp", help="default: $LOCOMANI_WORKSPACE/tmp")
     args = ap.parse_args()
 
     i = args.instance
-    tmp = os.environ.get("LOCOMANI_TMP") or os.path.join(os.environ.get("LOCOMANI_WORKSPACE", "/workspace"), "tmp")
+    STREAM_HZ, STREAM_WINDOW, STALL_S, POLL_S = args.stream_hz, args.stream_window, args.stall_s, args.poll_s
+    tmp = args.tmp or os.path.join(os.environ.get("LOCOMANI_WORKSPACE", "/workspace"), "tmp")
     sim_log = args.sim_log or os.path.join(tmp, "p03" if i == 0 else f"p03_i{i}", "sim.log")
     port = args.camera_port if args.camera_port is not None else 5555 + 10 * i
     tag = f"[wd i{i}]"

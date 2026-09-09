@@ -61,6 +61,7 @@ from locomani.tasks.crate.bimanual_carry import (
     rot_y,
     rot_z,  # noqa: E402
 )
+from locomani.tasks.crate.config import DEFAULT_CRATE_TASK  # noqa: E402
 
 # --- crate geometry (assets/crates/blue_crate/model.xml, 2/3 crate) ----------
 # Two grasp features, chosen with WALL_FEATURE:
@@ -71,7 +72,9 @@ from locomani.tasks.crate.bimanual_carry import (
 #         (crate-local x = +-0.1933) with the posts removed from the asset, so the
 #         slot is open under the whole bar; depth runs along crate-local y from the
 #         long wall's outer face (0.1347).
-FEATURE = os.environ.get("WALL_FEATURE", "rail")
+# CrateTaskConfig.wall_feature's default (decision 8); never overridden in
+# any script today, so this constant IS that default.
+FEATURE = DEFAULT_CRATE_TASK.wall_feature
 if FEATURE == "wall":
     DEPTH_AXIS, WALL_AXIS = 0, 1
     WALL_Y, NEAR_X = 0.1267, 0.2093
@@ -136,7 +139,9 @@ STAND_YAW_MAX_DEG = 10.0  # fail fast: nothing downstream survives a bigger head
 CRATE_DY_RANGE = (-0.08, 0.08)
 SPAWN_BACK = 0.45  # reset this far behind the stand, teleport in with the arms up
 # --- walk-in (WALL_WALK=1): bimanual_carry's approach in front of this grasp ---
-WALK = os.environ.get("WALL_WALK", "0") == "1"
+# CrateTaskConfig.wall_walk's default (decision 8); never overridden in any
+# script today, so this constant IS that default.
+WALK = DEFAULT_CRATE_TASK.wall_walk
 STAND_OFF_WALK = 0.24  # 0.21 (pilots 18/19) parked 0.30-0.39 with yaw +-10 deg; back to pilot 17's value for the A/B
 WALK_LAT_BIAS = -0.04  # the gait parks ~4 cm left of its target (pilots 36/37)
 WALK_SPAWN_BACK = (1.0, 1.3)

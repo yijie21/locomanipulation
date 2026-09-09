@@ -3,8 +3,8 @@ along a cubic Bezier (up along the body, then over the rim, into the hover),
 IK warm-started sample to sample. Reports contacts and finger clearance over
 the bar at four stand-offs, on the 0.62 m scene."""
 
+import argparse
 import json
-import os
 import os as _os
 import sys
 
@@ -20,6 +20,20 @@ from scipy.spatial.transform import Slerp  # noqa: E402
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST as OFF  # noqa: E402
 from locomani.primitives.arm_ik import ArmIK  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
+
+# Argparse flags, same names/defaults as the old env vars (decision 8: a
+# diagnostic tool's knobs are CLI flags, not config-dataclass fields).
+_ap = argparse.ArgumentParser(description=__doc__)
+_ap.add_argument("--sag", type=float, default=0.06)
+_ap.add_argument("--pw", type=float, default=0.3)
+_ap.add_argument("--up", type=float, default=0.25)
+_ap.add_argument("--over", type=float, default=0.10)
+_ap.add_argument("--out-dist", type=float, default=0.0, dest="out_dist", help="was OUT (lateral bezier control offset)")
+_ap.add_argument("--warm", default="prev")
+_ap.add_argument("--rot", default="pitch")
+_ap.add_argument("--pitch0", type=float, default=90.0)
+_ap.add_argument("--save", default=None, help="dump the joint trajectory to <SAVE>_so<stand-off>.npy")
+_args = _ap.parse_args()
 
 out = "outputs/scene/crate_bimanual"
 meta = json.load(open(f"{out}/scene_meta.json"))
@@ -43,7 +57,7 @@ BIAS = 0.012
 near_face = crate0[0] - NEAR_X
 bar_top = crate0[2] + TOP_Z
 PZ = 0.79
-SAG = float(os.environ.get("SAG", "0.06"))
+SAG = _args.sag
 cid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, meta["objects"]["blue_crate"]["body"])
 cadr = int(m.jnt_qposadr[m.body_jntadr[cid]])
 pel = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
@@ -59,12 +73,12 @@ grip_q = [
         "right_hand_gripper_2_joint",
     )
 ]
-PW = float(os.environ.get("PW", "0.3"))
-UP = float(os.environ.get("UP", "0.25"))
-OVER = float(os.environ.get("OVER", "0.10"))
+PW = _args.pw
+UP = _args.up
+OVER = _args.over
 PITCH = 60.0
-OUT = float(os.environ.get("OUT", "0.0"))
-WARM = os.environ.get("WARM", "prev")
+OUT = _args.out_dist
+WARM = _args.warm
 
 
 def mirror29(left_deg):
@@ -150,11 +164,11 @@ for so in (0.13, 0.18, 0.24, 0.31):
         for sd in ("left", "right"):
             sgn = 1 if sd == "left" else -1
             tg = bezier(p0[sd], p0[sd] + [0, sgn * OUT, UP], hov[sd] + [0, 0, OVER], hov[sd], u)
-            mode = os.environ.get("ROT", "pitch")
+            mode = _args.rot
             if mode == "slerp":
                 rt = Slerp([0, 1], Rot.from_matrix([r0[sd], Rpitch(PITCH)]))(u).as_matrix()
             elif mode == "pitch":
-                rt = Rpitch(float(os.environ.get("PITCH0", "90")) + (PITCH - float(os.environ.get("PITCH0", "90"))) * u)
+                rt = Rpitch(_args.pitch0 + (PITCH - _args.pitch0) * u)
             else:
                 rt = None if u < 0.6 else Rpitch(PITCH)
             q_prev = q.copy()
@@ -194,5 +208,5 @@ for so in (0.13, 0.18, 0.24, 0.31):
         " hover(zeros) L",
         np.degrees(q_h[ARM_MJ["left"]]).round(0).tolist(),
     )
-    if os.environ.get("SAVE"):
-        np.save(f"{os.environ['SAVE']}_so{so:.2f}.npy", np.array(traj))
+    if _args.save:
+        np.save(f"{_args.save}_so{so:.2f}.npy", np.array(traj))
