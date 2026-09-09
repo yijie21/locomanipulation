@@ -1,5 +1,7 @@
+import json
 import sys
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,6 +25,27 @@ class ReachConfigTests(unittest.TestCase):
         ]:
             with self.assertRaises(ValueError):
                 ReachConfig(**args)
+
+    def test_load_ignores_retired_keys_with_a_warning(self):
+        repo = Path(__file__).resolve().parents[1]
+        path = repo / "configs/collection/ready_grasp_visible.json"
+        data = json.loads(path.read_text())
+        self.assertIn("brake_preplan", data)  # committed historical snapshots still carry it
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cfg = ReachConfig.load(path)
+        self.assertFalse(hasattr(cfg, "brake_preplan"))
+        self.assertTrue(any("brake_preplan" in str(w.message) for w in caught))
+
+    def test_official_protocol_configs_still_load(self):
+        repo = Path(__file__).resolve().parents[1]
+        for path in (
+            repo / "configs/collection/ready_grasp_visible.json",
+            repo / "outputs/experiments/ready07d_200_20260908/reach_config.json",
+        ):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                self.assertTrue(ReachConfig.load(path).ready_grasp_baseline)
 
     def test_real_approach_uses_explicit_bounds(self):
         config = ReachConfig(pre_min=0.20, pre_max=0.24, azimuth_deg=25.0, approach_timeout=0.1)

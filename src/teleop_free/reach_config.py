@@ -2,8 +2,26 @@
 
 import json
 import math
+import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+# Fields deleted from ReachConfig that may still appear in a committed
+# outputs/experiments/*/reach_config.json snapshot. `load` drops them with a
+# warning instead of failing, so a historical run keeps loading verbatim.
+RETIRED_KEYS = frozenset(
+    {
+        # refactor step 2, family 6 (2026-09-09): coupled_hand_lead/brake_preplan/
+        # pregrasp_lateral_jitter/arrival_advance_jitter/pregrasp_min_forward.
+        # brake_preplan is false in every live config; the jitter/forward-clamp
+        # knobs were nonzero only in single-variable outputs/experiments records
+        # (ready07e_spread_20260908, ready07c_geom_20260907) that must keep loading.
+        "brake_preplan",
+        "pregrasp_lateral_jitter",
+        "pregrasp_min_forward",
+        "arrival_advance_jitter",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -27,8 +45,6 @@ class ReachConfig:
     measured_squat_handover: bool = False
     coupled_squat: bool = False
     timely_capture: bool = False
-    brake_preplan: bool = False
-    coupled_hand_lead: float = 0.0  # shorter IK retry only when the full target is infeasible
     squat_prediction_backshift_ratio: float = 0.0
     squat_prediction_drop_shortfall: float = 0.0
     recovery_attempts: int = 2
@@ -38,12 +54,7 @@ class ReachConfig:
     # 15 topples with no finger contact) motivates the non-default values.
     pregrasp_rise: float = 0.08  # safe_pregrasp height above the grasp centre
     pregrasp_gap: float = 0.07  # safe_pregrasp set-back along the entry axis (was PRE_GAP)
-    pregrasp_lateral_jitter: float = (
-        0.0  # +-uniform lateral offset of safe_pregrasp; demonstrates the lateral correction
-    )
     local_reach_limit: float = 0.20  # local alignment aborts beyond this wrist error
-    pregrasp_min_forward: float = 0.0  # clamp safe_pregrasp to >= this far ahead of the pelvis (0 = off); a large gap at a close stand otherwise puts the palm inside the torso
-    arrival_advance_jitter: float = 0.0  # per-episode uniform +-jitter on arrival_advance: spreads the expert's stand so the squat label covers the policy's own stop spread (ready07d: P(squat)=0.12 at 0.38-0.43 m)
     # Visible expert (2026-09-09): every action must be a function of what the
     # image policy observes. Removes the per-episode RNG stand cell, the
     # arrival_advance latch (brake at a fixed measured depth instead), and the
@@ -63,7 +74,6 @@ class ReachConfig:
                 self.measured_squat_handover,
                 self.coupled_squat,
                 self.timely_capture,
-                self.brake_preplan,
                 self.visible_expert,
             )
         ):
@@ -76,7 +86,6 @@ class ReachConfig:
                 "measured_squat_handover",
                 "coupled_squat",
                 "timely_capture",
-                "brake_preplan",
                 "visible_expert",
             ) and (type(value) not in (int, float) or not math.isfinite(value)):
                 raise ValueError(f"{name} must be a finite number")
@@ -92,15 +101,13 @@ class ReachConfig:
             and 0 < self.sweep_joint_step <= 0.10
         ):
             raise ValueError("Reach calibration outside supported controller bounds")
-        if self.coupled_hand_lead and (not self.coupled_squat or not 0.005 <= self.coupled_hand_lead <= 0.05):
-            raise ValueError("Coupled hand lead requires coupled squat and a 5–50 mm bound")
         if not (
             0 <= self.squat_prediction_backshift_ratio <= 1.2 and 0 <= self.squat_prediction_drop_shortfall <= 0.02
         ):
             raise ValueError("Squat prediction calibration outside supported bounds")
         if (self.squat_prediction_backshift_ratio or self.squat_prediction_drop_shortfall) and not self.coupled_squat:
             raise ValueError("Squat prediction calibration requires coupled squat")
-        if (self.timely_capture or self.brake_preplan) and not self.coupled_squat:
+        if self.timely_capture and not self.coupled_squat:
             raise ValueError("Timing experiments require coupled squat")
         if self.ready_grasp_recovery and (not self.ready_grasp_baseline or not self.transport_guard):
             raise ValueError("Recovery requires ready baseline and collision guard")
@@ -126,19 +133,12 @@ class ReachConfig:
         if not (
             0.05 <= self.pregrasp_rise <= 0.20
             and 0.03 <= self.pregrasp_gap <= 0.15
-            and 0 <= self.pregrasp_lateral_jitter <= 0.05
             and 0.15 <= self.local_reach_limit <= 0.35
-            and 0 <= self.pregrasp_min_forward <= 0.25
-            and 0 <= self.arrival_advance_jitter <= 0.05
-            and 0 <= self.arrival_advance - self.arrival_advance_jitter
-            and self.arrival_advance + self.arrival_advance_jitter <= 0.10
         ):
             raise ValueError("approach geometry outside supported bounds")
         if self.visible_expert:
             if not (self.ready_grasp_baseline and self.ready_grasp_recovery):
                 raise ValueError("visible_expert requires the ready baseline with the recovery controller")
-            if self.arrival_advance_jitter or self.pregrasp_lateral_jitter or self.brake_preplan:
-                raise ValueError("visible_expert excludes per-episode jitter, region stopping and brake preplanning")
             if not (0.20 <= self.visible_brake_depth <= 0.45 and 0 <= self.visible_decel_band <= 0.30):
                 raise ValueError("visible brake geometry outside supported bounds")
         self.approach_band()
@@ -158,6 +158,9 @@ class ReachConfig:
         data = json.loads(Path(path).read_text())
         if data.pop("schema_version", None) != 1:
             raise ValueError("reach config requires schema_version=1")
+        for key in RETIRED_KEYS.intersection(data):
+            warnings.warn(f"reach config {path}: ignoring retired key {key!r}", stacklevel=2)
+            del data[key]
         return cls(**data)
 
 

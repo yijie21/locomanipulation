@@ -43,23 +43,12 @@ TRANSPORT_POSITION_TOL = 0.08
 TRANSPORT_ROTATION_TOL = 0.20
 
 
-def solve_transport_ik(ik, side, aim, rotation, seed, palm, lead_limit):
-    """Keep a reachable waypoint; shorten only an infeasible IK request.
+def solve_transport_ik(ik, side, aim, rotation, seed):
+    """Solve the transport waypoint IK.
 
     The caller still bounds joint increments and screens their swept motion.
-    Always shortening a valid goal can delay the arm while the body descends.
     """
-    q, pe, re = ik.solve(side, aim, rotation, q_mj29=seed, use_waist=False, iters=50)
-    delta = np.asarray(aim) - palm
-    if (
-        lead_limit
-        and np.linalg.norm(delta) > lead_limit
-        and (pe > TRANSPORT_POSITION_TOL or re > TRANSPORT_ROTATION_TOL)
-    ):
-        bounded = np.asarray(palm) + delta * lead_limit / np.linalg.norm(delta)
-        q, pe, re = ik.solve(side, bounded, rotation, q_mj29=seed, use_waist=False, iters=50)
-        return q, pe, re, True
-    return q, pe, re, False
+    return ik.solve(side, aim, rotation, q_mj29=seed, use_waist=False, iters=50)
 
 
 def project_squat(state, drop, config):
@@ -83,18 +72,7 @@ def project_squat(state, drop, config):
 class CoupledGraspPolicy(RecoverableGraspPolicy):
     def brake(self):
         self._prepared = None
-        self._prepared_once = False
         return super().brake()
-
-    def prepare_brake(self, state):
-        if not self.config.brake_preplan or self._prepared_once:
-            return
-        self._prepared_once = True
-        start = time.monotonic()
-        drop = super().select_drop(state, self._drop_hint)
-        self.execution.metrics.setdefault("brake_planning", []).append(
-            dict(planning_s=time.monotonic() - start, candidate_drop=drop, reused=False)
-        )
 
     def select_drop(self, state, hint):
         cached = getattr(self, "_prepared", None)
@@ -229,20 +207,6 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
         gap = getattr(self.config, "pregrasp_gap", PRE_GAP)
         safe_pregrasp = preferred0 - grasp_rotation @ OFFSET - gap * grasp_rotation[:, 0]
         safe_pregrasp[2] += getattr(self.config, "pregrasp_rise", 0.08)
-        # Optional lateral offset so the local servo's align-before-advance
-        # correction is demonstrated, not always already satisfied.
-        jitter = float(getattr(self.config, "pregrasp_lateral_jitter", 0.0))
-        lateral_offset = float(np.random.uniform(-jitter, jitter)) if jitter > 0 else 0.0
-        safe_pregrasp = safe_pregrasp + lateral_offset * grasp_rotation[:, 1]
-        min_fwd = float(getattr(self.config, "pregrasp_min_forward", 0.0))
-        if min_fwd > 0:
-            # Shorten the set-back rather than tuck the palm into the torso.
-            fwd = np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
-            ahead = float((safe_pregrasp - np.asarray(state["pelvis"]["pos"])) @ fwd)
-            if ahead < min_fwd:
-                along = float(grasp_rotation[:, 0] @ fwd)
-                if along > 0.3:
-                    safe_pregrasp = safe_pregrasp + ((min_fwd - ahead) / along) * grasp_rotation[:, 0]
         arm.mode = LocomotionMode.IDEL_SQUAT
         arm.height = target_z - SQUAT_HEIGHT_BIAS
         arm._face = p._facing(state)
@@ -258,7 +222,7 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             strategy="coupled_squat_to_high_pregrasp",
             safe_pregrasp_world=safe_pregrasp.tolist(),
             pregrasp_gap_m=gap,
-            pregrasp_lateral_offset_m=lateral_offset,
+            pregrasp_lateral_offset_m=0.0,
             pregrasp_ahead_of_pelvis_m=float(
                 (safe_pregrasp - np.asarray(state["pelvis"]["pos"]))
                 @ np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
@@ -303,16 +267,13 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             forward = np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
             seed = arm.q.copy()
             seed[:12] = np.asarray(state["joints"])[:12]
-            q, pe, re, retried = solve_transport_ik(
+            q, pe, re = solve_transport_ik(
                 arm.ik,
                 self.side,
                 p.world_to_root_full(aim, state),
                 br.T @ target_rotation,
                 seed,
-                p.world_to_root_full(palm, state),
-                getattr(self.config, "coupled_hand_lead", 0.0),
             )
-            stats["ik_short_step_retries"] = stats.get("ik_short_step_retries", 0) + int(retried)
             if pe > TRANSPORT_POSITION_TOL or re > TRANSPORT_ROTATION_TOL:
                 stats["blocked_ticks"] += 1
                 arm.height = z - SQUAT_HEIGHT_BIAS

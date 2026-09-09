@@ -34,18 +34,13 @@ class VisibleConfigTests(unittest.TestCase):
         self.assertTrue(visible().visible_expert)
 
     def test_excludes_per_episode_draws(self):
-        for kw in (
-            dict(arrival_advance_jitter=0.02, arrival_advance=0.05),
-            dict(pregrasp_lateral_jitter=0.02),
-            dict(brake_preplan=True),
-            dict(visible_brake_depth=0.10),
-        ):
+        for kw in (dict(visible_brake_depth=0.10),):
             with self.assertRaises(ValueError):
                 visible(**kw)
 
     def test_loads_from_json(self):
         cfg = ReachConfig.load(Path(__file__).resolve().parents[1] / "configs/collection/ready_grasp_visible.json")
-        self.assertTrue(cfg.visible_expert and cfg.arrival_advance == 0 and cfg.arrival_advance_jitter == 0)
+        self.assertTrue(cfg.visible_expert and cfg.arrival_advance == 0)
 
 
 class VisibleStandTests(unittest.TestCase):

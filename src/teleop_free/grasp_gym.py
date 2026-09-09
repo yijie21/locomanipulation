@@ -1624,13 +1624,7 @@ def _run_round(
     # expert always arriving aligned. The creep closes both axes.
     appr_lat = float(np.random.uniform(-0.15, 0.15)) if STAND_COVER and coordinated is None else 0.0
     aim_xy = np.asarray(spawn_xy) + appr_lat * np.array([-fv[1], fv[0]])
-    # Per-round advance: arrival_advance +- arrival_advance_jitter (2026-09-08).
-    # A fixed advance gave the expert a 0.28-0.39 m stand band while the policy's
-    # own stops spread to 0.43; the squat label then had no coverage out there.
-    _jit = float(getattr(reach_config, "arrival_advance_jitter", 0.0))
-    advance = float(
-        np.clip(reach_config.arrival_advance + (np.random.uniform(-_jit, _jit) if _jit > 0 else 0.0), 0.0, 0.10)
-    )
+    advance = float(np.clip(reach_config.arrival_advance, 0.0, 0.10))
     VISIBLE = bool(getattr(reach_config, "visible_expert", False))
     if VISIBLE:
         # Visible expert: no latch, no advance, no shuffle band. The walk stops
