@@ -51,13 +51,13 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
-- Branch (65) 2026-09-10 05:50 UTC: restart A/B DONE, nothing running, instance 0 / GPU0 free. restart_deploy=false +
-  reanchor (b2310c8): 34 s/round vs 64 s, 18/30 vs 16/30 paired, gate 13/15 (initialize +3.6 s by design; new string
-  'local alignment disturbed target or base' 2/30; park 3 cm farther). Ledger bottle.md §11. Adopt for the next 200-ep run
-  (config-only: set restart_deploy=false in the collection config) is the user's call.
-  ENV: container cgroup CPU quota is 15.36 cores (cpu.max); /workspace/code/video_grasp benchmark saturated it 03:00-04:45
-  (sim RTF 0.18) -- every stack result in that window is void; check headroom >= 6 cores before any stack.
-  Crate: ready-stand 10 (8/10) + walk-in 10 (4/10, CPU-starved) rendered as sbs videos; WALL_WALK env dead (b07caef).
+- Branch (65) 2026-09-10 07:20 UTC: NOTHING RUNNING from this session; GPU0 / instance 2 free. The other session (cf) has a
+  10-episode visible collection queued on instance 0 / GPU0 (outputs/experiments/visible10_20260910/launch.sh) -- do not start
+  GPU0 or stack jobs without telling it. Done today: restart_deploy=false is the collection default (ebac697, ledger bottle §11);
+  SIM_VIS defaults to none (18dd6dd); scripts/cpu_headroom.sh (container quota 15.36 cores); crate hard-placement diagnosis
+  5/10 -- stand-off >= 0.26 x crate yaw makes the far hand unreachable (ledger crate.md 09-10, 166cd37), 10 sbs videos in
+  outputs/renders_isaac/crate_hard10_20260910/. Next lever there: bias the walk-in stand toward the far rail end / gate
+  [stand] on far-hand reach (not done).
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
