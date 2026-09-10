@@ -30,6 +30,17 @@
   without tail trim, or recollect). No GPU jobs running.
 
 ## Now
+- visible10 look-see collection DONE 2026-09-10 06:32-06:42 UTC (branch session cf, instance 0 / GPU0, stack stopped):
+  bottle_visible.json + learn_200.json with through=collect successes=10, seed0 31000, first run with restart_deploy=false.
+  2 batches, 18 rounds -> 10 kept (yield 0.56): batch 0 4/10 (3x "toppled in the close phase", 1 view-at-spawn, 1 IK,
+  1 stand infeasible), batch 1 6/8 (1 turn timeout, 1 stand infeasible). Exporter sessions
+  /workspace/tmp/p03/outputs/2026-09-10-06-{32-40,37-49}: discard indices match the manifests, kept episodes 853-1074 rows.
+  Runner scripts/experiments/visible10_20260910.sh (waits on GPU0 memory + cpu_headroom); reel of the 10 successes
+  outputs/videos/visible10_20260910/reel_10ok.mp4. Not converted, not trained. Open: the 3 close-phase topples in batch 0.
+- Codex sync 2026-09-10 through 092b042: Claude review fixes inspected; see docs/ledger/refactor.md latest entry.
+  Backend fingerprints, scene_dir, input hashes and causal/Task wording repaired; config file load still bypasses
+  schema_version validation; old diagnostic references remain. Thread-limited make check passed, 9 focused tests passed.
+  Observed another session's visible10 collection process active; no GPU/stack actions or implementation edits by Codex.
 - Codex review 2026-09-10: audited refactor through 1b32a48 (base 78536ae; ScaleBFM base a3e2fee). Findings in
   docs/ledger/refactor.md: missing config validation, ScaleBFM backend omitted from source hashes, ignored scene_dir,
   lost SONIC input-asset hashes, and stale/overstated documentation. No implementation fixes or GPU jobs started.
