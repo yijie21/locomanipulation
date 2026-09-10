@@ -505,4 +505,7 @@ deploy 在它的**第一次** `start_control` 处捕获朝向锚(memory `sonic-p
 **修法**(commit 见下):`grasp_gym.start_control_once(p)` = `start_control()` + `p._gym_started = True`,标定处改用它;
 `fresh_deploy` 重启后仍置 False。回归测试 `tests/test_review_2026_09_10.py::FirstRoundAnchorTests`。
 
-**验证**:采集结束后同配方跑 3 批 × 4 局,看每批第 1 局是否与其余局同分布。(结果待填)
+**验证**(`outputs/experiments/firstround_fix_20260910`,修复分支的 src,同配方 3 批 × 4 局,seed0 32000,10:45–10:53 UTC):
+每批第 1 局 **3/3 过出生阶段**(`turn_to done`、produced)——1 局 EPISODE OK(40 s),2 局在抓取阶段以普通原因失败
+(stand infeasible、coupled IK did not track),与第 2–4 局同分布;主线同日 0/34。12 局共 4 OK,样本小、失败类型正常,
+不作 yield 结论。**裁定**:合并;以后每批多出 1 局有效样本(采 200 条少跑约 34 局、约 15 分钟)。
