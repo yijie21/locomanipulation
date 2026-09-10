@@ -56,7 +56,7 @@ class SonicBackendConfig:
     obs_dump: str | None = None  # TF_OBS_DUMP: diagnostic dump path for every policy observation + action
     replace: bool = False  # LOCOMANI_REPLACE=1: legacy sim-only re-teleport, off by default
     wrist_cams: bool = True  # WRIST_CAMS=0 publishes the ego view alone, the old behaviour
-    sim_vis: str = "full"  # SIM_VIS: which debug visuals the simulator draws (full/none/bbox,readout/...)
+    sim_vis: str = "none"  # SIM_VIS: debug visuals the simulator draws (none/full/bbox,readout/...); none since 2026-09-10 (18dd6dd made the bare default none, this is the pipeline's side of the same ruling)
     scene_random: bool = False  # SCENE_RANDOM=1 turns texture/lighting randomisation back on (off since 2026-08-28)
     dataset_fps: float = 30.0  # TF_DATASET_FPS: frame rate the dataset/replan/grip-delay math is pinned to
     clean_deploy: bool = False  # CLEAN_DEPLOY=1: restart_deploy.sh's clean binary, no planner warmup between rounds

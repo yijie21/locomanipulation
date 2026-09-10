@@ -37,6 +37,8 @@ SPAWN_ARGS="--spawn-edge 1.1 1.3 --face-object --spawn-yaw-err 20 --spawn-latera
 `manifest_<seed>.jsonl` 和 `pose_sidecar/`。产出的 exporter session 在
 `$(locomani_session_root)/outputs/`,和 manifest **按顺序**配对给转换器。
 
+**2026-09-10 起的两个默认**(台账 bottle §11):采集**不再每局重启 deploy**(`BottleTaskConfig.restart_deploy=false`,复位后 `reanchor` 代替,每局 64 → 34 s,30 局配对成功率无差);闭环评测仍**固定重启**(`eval_closed_loop` 钉 `RESTART_DEPLOY=True`,评测路径没在无重启下量过)。第三人称录像默认 `SIM_VIS=none`(`SonicBackendConfig.sim_vis`),要调试图用 `--set backend.sim_vis=full`。
+
 代码里已经是默认值、不需要设的环境变量:
 
 | 变量 | 默认 | 含义 |

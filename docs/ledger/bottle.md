@@ -481,7 +481,7 @@ A 臂(默认重启)也 1/10、0/10、0/10。它留下一条有效结论:**纯关
 以及 2/30 的 "local alignment 时底盘被扰动"——都指向 deploy 跨局残留的步态相位/IDLE 漂移(memory `planner-idle-drifts`),
 reanchor 只修了朝向锚。下一步:用它采下一批 200 条(约 3.2 h 而不是 6 h),用 `check_dataset` 和闭环评测判断这 3 cm 是否
 改变训练分布;若要保守,先在 quiet 机器上再跑 30 局把不一致对的方向定下来。**采集时 CPU 配额余量 ≥ 6 核是前置条件**
-(`scripts/archive/restart_ab_runner_20260910.sh` 里的 `cpu_free` 检查),否则任何结论都是噪声。
+(`scripts/experiments/restart_ab_runner_20260910.sh` 里的 `cpu_free` 检查),否则任何结论都是噪声。
 原始数据:`outputs/experiments/restart_ab_20260910/`(manifest2_*.jsonl、gym2_*.log、cpu2.log、cases_*.json)。
 
 **2026-09-10 裁定(用户)**:采集默认改为不重启——`BottleTaskConfig.restart_deploy=False`、`configs/tasks/bottle_visible.json`
