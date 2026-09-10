@@ -1,0 +1,68 @@
+{
+ "arm": "crate",
+ "verdict": "FAIL",
+ "candidate": {
+  "rounds": 10,
+  "ok": 8,
+  "yield_": 0.8,
+  "exit_majority": "at the stand",
+  "close_triggers": {
+   "contact": 7,
+   "floor": 1
+  },
+  "stand_off_m": 0.2081,
+  "yaw_err_deg": 2.649,
+  "depth_m": 0.11,
+  "stage_s": {
+   "reach": 4.3,
+   "descend": 3.3
+  },
+  "failure_reasons": [
+   "[descend] never seated: {'left': [N, N, N], 'right': [N, N, N]}"
+  ],
+  "seconds": 27.15,
+  "deploy_restarts": 0
+ },
+ "checks": [
+  {
+   "name": "yield",
+   "ok": true,
+   "detail": "0.8 -> 0.8"
+  },
+  {
+   "name": "stand_off_m",
+   "ok": true,
+   "detail": "0.2149 -> 0.2081"
+  },
+  {
+   "name": "depth_m",
+   "ok": true,
+   "detail": "0.11 -> 0.11"
+  },
+  {
+   "name": "yaw_err_deg",
+   "ok": true,
+   "detail": "1.3042 -> 2.649"
+  },
+  {
+   "name": "exit_majority",
+   "ok": true,
+   "detail": "at the stand -> at the stand"
+  },
+  {
+   "name": "failure_reasons",
+   "ok": false,
+   "detail": "new [\"[descend] never seated: {'left': [N, N, N], 'right': [N, N, N]}\"]"
+  },
+  {
+   "name": "stage_s.reach",
+   "ok": true,
+   "detail": "3.7 -> 4.3"
+  },
+  {
+   "name": "stage_s.descend",
+   "ok": true,
+   "detail": "2.6 -> 3.3"
+  }
+ ]
+}

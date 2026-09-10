@@ -16,6 +16,11 @@
   models retrain in ~77 min; evals rerun. Waiting for the user's decision before any further GPU work.
 
 ## Now
+- ScaleBFM post-deletion audit2026-09-10: outputs is empty; ABCD process absent, NOT running.
+  Core src/tests/config/docs survive;3ablation unit tests pass. ABCD run.py/config/progress/results,
+  yplus200 checkpoint/data/evals, scene builds and runtime manifests are missing. Cannot resume.
+  Last conversational2/120 is historical, not confirmed final deletion-time progress. No recovery GPU jobs launched.
+  Details:docs/scalebfm_outputs_loss_20260910.md. ACTIVE statements below are pre-incident history.
 - Pelvis ABCD protocol v2 ACTIVE: old EGL baseline not repeatable (identical own state,1-level RGB differences).
  OSMesa+deterministic math produced bit-identical full24s original/diagnosticA forseed31001.
  Fresh30 A +90 B/C/D =120 formal cases, same30 seeds/interventions; VLA+ScaleBFM inferenceGPU0,

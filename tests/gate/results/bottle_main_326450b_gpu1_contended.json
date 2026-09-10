@@ -1,0 +1,145 @@
+{
+ "arm": "bottle",
+ "verdict": "FAIL",
+ "candidate": {
+  "rounds": 10,
+  "ok": 3,
+  "yield_": 0.3,
+  "stages": [
+   "carry_and_verify",
+   "complete",
+   "grasp.capture_ready",
+   "grasp.close",
+   "grasp.coupled_squat",
+   "grasp.lift",
+   "grasp.local_align",
+   "grasp_plan",
+   "initialize",
+   "navigate",
+   "recovery_attempt",
+   "recovery_brake",
+   "verify_terminal_hold",
+   "verify_visibility"
+  ],
+  "exit_majority": "visible brake depth",
+  "exits": {
+   "visible brake depth": 3
+  },
+  "end_depth_m": 0.3017,
+  "squat_drop_m": 0.13,
+  "stage_s": {
+   "initialize": 8.474,
+   "navigate": 4.0995,
+   "grasp_plan": 0.0586,
+   "recovery_brake": 1.2096,
+   "recovery_attempt": 0.0238,
+   "grasp.coupled_squat": 1.5504,
+   "grasp.local_align": 2.4845,
+   "grasp.capture_ready": 0.0085,
+   "grasp.close": 2.0243,
+   "grasp.lift": 2.7031,
+   "verify_visibility": 0.0001,
+   "carry_and_verify": 2.2297,
+   "verify_terminal_hold": 2.0268
+  },
+  "failure_reasons": [
+   "[grasp] coupled safe-hand IK did not track",
+   "[grasp] visible expert: stand infeasible, no reposition (current stand",
+   "[grasp] water_bottle toppled in the close phase",
+   "[stand] robot did not stabilise after reset (pelvis z N)"
+  ],
+  "seconds": 54.0
+ },
+ "checks": [
+  {
+   "name": "yield",
+   "ok": false,
+   "detail": "0.667 -> 0.3"
+  },
+  {
+   "name": "end_depth_m",
+   "ok": true,
+   "detail": "0.3016 -> 0.3017"
+  },
+  {
+   "name": "squat_drop_m",
+   "ok": true,
+   "detail": "0.13 -> 0.13"
+  },
+  {
+   "name": "exit_majority",
+   "ok": true,
+   "detail": "visible brake depth -> visible brake depth"
+  },
+  {
+   "name": "stages",
+   "ok": false,
+   "detail": "new [] missing ['approach']"
+  },
+  {
+   "name": "failure_reasons",
+   "ok": false,
+   "detail": "new ['[grasp] water_bottle toppled in the close phase', '[stand] robot did not stabilise after reset (pelvis z N)']"
+  },
+  {
+   "name": "stage_s.initialize",
+   "ok": true,
+   "detail": "7.5649 -> 8.474"
+  },
+  {
+   "name": "stage_s.navigate",
+   "ok": true,
+   "detail": "4.1258 -> 4.0995"
+  },
+  {
+   "name": "stage_s.grasp_plan",
+   "ok": false,
+   "detail": "0.0004 -> 0.0586"
+  },
+  {
+   "name": "stage_s.recovery_brake",
+   "ok": true,
+   "detail": "1.1691 -> 1.2096"
+  },
+  {
+   "name": "stage_s.recovery_attempt",
+   "ok": false,
+   "detail": "0.018 -> 0.0238"
+  },
+  {
+   "name": "stage_s.grasp.coupled_squat",
+   "ok": true,
+   "detail": "1.4391 -> 1.5504"
+  },
+  {
+   "name": "stage_s.grasp.local_align",
+   "ok": true,
+   "detail": "1.9845 -> 2.4845"
+  },
+  {
+   "name": "stage_s.grasp.capture_ready",
+   "ok": true,
+   "detail": "0.0089 -> 0.0085"
+  },
+  {
+   "name": "stage_s.grasp.close",
+   "ok": true,
+   "detail": "2.0292 -> 2.0243"
+  },
+  {
+   "name": "stage_s.grasp.lift",
+   "ok": true,
+   "detail": "2.7009 -> 2.7031"
+  },
+  {
+   "name": "stage_s.carry_and_verify",
+   "ok": true,
+   "detail": "2.8762 -> 2.2297"
+  },
+  {
+   "name": "stage_s.verify_terminal_hold",
+   "ok": true,
+   "detail": "2.0305 -> 2.0268"
+  }
+ ]
+}

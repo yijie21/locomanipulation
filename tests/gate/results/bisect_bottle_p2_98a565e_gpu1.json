@@ -1,0 +1,145 @@
+{
+ "arm": "bottle",
+ "verdict": "FAIL",
+ "candidate": {
+  "rounds": 10,
+  "ok": 6,
+  "yield_": 0.6,
+  "stages": [
+   "carry_and_verify",
+   "complete",
+   "grasp.capture_ready",
+   "grasp.close",
+   "grasp.coupled_squat",
+   "grasp.lift",
+   "grasp.local_align",
+   "grasp_plan",
+   "initialize",
+   "navigate",
+   "recovery_attempt",
+   "recovery_brake",
+   "verify_terminal_hold",
+   "verify_visibility"
+  ],
+  "exit_majority": "visible brake depth",
+  "exits": {
+   "visible brake depth": 6
+  },
+  "end_depth_m": 0.3011,
+  "squat_drop_m": 0.13,
+  "stage_s": {
+   "initialize": 8.1122,
+   "navigate": 4.1936,
+   "grasp_plan": 0.0492,
+   "recovery_brake": 1.203,
+   "recovery_attempt": 0.0242,
+   "grasp.coupled_squat": 1.5927,
+   "grasp.local_align": 2.5324,
+   "grasp.capture_ready": 0.0068,
+   "grasp.close": 2.0348,
+   "grasp.lift": 2.6968,
+   "verify_visibility": 0.0001,
+   "carry_and_verify": 3.0312,
+   "verify_terminal_hold": 2.0416
+  },
+  "failure_reasons": [
+   "[hold] fell while backing away from the table",
+   "[hold] object slipped N cm in the palm frame during the hold",
+   "[stand] arrival left the object out of reach (rel [N N])",
+   "[stand] could not turn N deg to the approach heading at the spawn (tur"
+  ],
+  "seconds": 65.25
+ },
+ "checks": [
+  {
+   "name": "yield",
+   "ok": true,
+   "detail": "0.667 -> 0.6"
+  },
+  {
+   "name": "end_depth_m",
+   "ok": true,
+   "detail": "0.3016 -> 0.3011"
+  },
+  {
+   "name": "squat_drop_m",
+   "ok": true,
+   "detail": "0.13 -> 0.13"
+  },
+  {
+   "name": "exit_majority",
+   "ok": true,
+   "detail": "visible brake depth -> visible brake depth"
+  },
+  {
+   "name": "stages",
+   "ok": false,
+   "detail": "new [] missing ['approach']"
+  },
+  {
+   "name": "failure_reasons",
+   "ok": false,
+   "detail": "new ['[hold] fell while backing away from the table', '[stand] arrival left the object out of reach (rel [N N])']"
+  },
+  {
+   "name": "stage_s.initialize",
+   "ok": true,
+   "detail": "7.5649 -> 8.1122"
+  },
+  {
+   "name": "stage_s.navigate",
+   "ok": true,
+   "detail": "4.1258 -> 4.1936"
+  },
+  {
+   "name": "stage_s.grasp_plan",
+   "ok": false,
+   "detail": "0.0004 -> 0.0492"
+  },
+  {
+   "name": "stage_s.recovery_brake",
+   "ok": true,
+   "detail": "1.1691 -> 1.203"
+  },
+  {
+   "name": "stage_s.recovery_attempt",
+   "ok": false,
+   "detail": "0.018 -> 0.0242"
+  },
+  {
+   "name": "stage_s.grasp.coupled_squat",
+   "ok": true,
+   "detail": "1.4391 -> 1.5927"
+  },
+  {
+   "name": "stage_s.grasp.local_align",
+   "ok": true,
+   "detail": "1.9845 -> 2.5324"
+  },
+  {
+   "name": "stage_s.grasp.capture_ready",
+   "ok": true,
+   "detail": "0.0089 -> 0.0068"
+  },
+  {
+   "name": "stage_s.grasp.close",
+   "ok": true,
+   "detail": "2.0292 -> 2.0348"
+  },
+  {
+   "name": "stage_s.grasp.lift",
+   "ok": true,
+   "detail": "2.7009 -> 2.6968"
+  },
+  {
+   "name": "stage_s.carry_and_verify",
+   "ok": true,
+   "detail": "2.8762 -> 3.0312"
+  },
+  {
+   "name": "stage_s.verify_terminal_hold",
+   "ok": true,
+   "detail": "2.0305 -> 2.0416"
+  }
+ ]
+}
