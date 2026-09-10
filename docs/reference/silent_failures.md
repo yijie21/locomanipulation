@@ -23,6 +23,7 @@
 | `scene_random.py` | 逐局重掷场景外观(颜色、光照、地面),直接改 `mjModel`,不重建场景 |
 | `sim_video.py` | 第三人称录像(ego + 双腕画中画、6D 线框盒、坐标读数) |
 | `sim_vis.py` | `SIM_VIS` 开关的解析(见[可视化开关](#可视化开关)) |
+| `tasks/bottle/place_phase.py` | pick-and-place 的 place 阶段(raise / turn-to-band / carry-over / descend / release / retreat / verify),由 `BottleTaskConfig.goal` 接在 lift 之后;`tasks/pick_place/` 只是注册 |
 | `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径约定)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
@@ -105,9 +106,9 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../collection.md#4-外观每局重掷默认关) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../collection.md#相机) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
-| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行 |
+| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**采集必须用 `0`**:`start_stack.sh` 在 instance≠0 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`--record` 采不出任何 session。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
-| `SONIC_POLICY` | `policy/release` | deploy | 换 checkpoint(`policy/sonic_v1_1` 可用,但步长与时序要重测) |
+| `SONIC_POLICY` | `policy/release` | deploy | 换 checkpoint(`policy/sonic_v1_1` 可用,但步长与时序要重测;`primitives_tuning.TRACK_ROT_BOOST=4.5` 是按 release 标定的)。**在 `start_stack.sh` 之前 export**;参考回放实测 v1_1 的腰跟踪远好于 release(腰 RMSE 3.9° vs 12.9°,台账 bottle §16) |
 | `NO_ENCODER` | `0` | deploy | `1` = **不加载 encoder**,token-only / VLA 部署配置。**采集(planner 模式)禁用**:没有 encoder 时上肢/下蹲参考被静默丢弃,抬臂阶段停滞(2026-09-03) |
 | `HAND` | `dex1` | 全部 | `dex1` 平行夹爪 / `dex3` 三指手 |
 | `GYM_ARM_PIN` | `0` | gym | `1` 恢复 sim 侧关节 pin(动作更准,但录下的 latent 不再是产生该动作的 latent) |
@@ -138,6 +139,9 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | 部署帧率和训练数据的 fps 不一致 | 不报错,动作按 1.2× / 0.83× 速度回放 | chunk 是一串**帧**,发布速率必须等于训练数据的 fps。转换器 2026-08-28 起写 25(`DST_FPS`),而 `SonicBackendConfig.dataset_fps` 默认仍是 30(现有 checkpoint 都是 30 训的)—— **第一个用重转数据训的 checkpoint 必须显式带 `--set backend.dataset_fps=25`**(旧文档写的 `TF_DATASET_FPS=25` 在 2026-09 重构后已无效,eval_closed_loop 只读 config)。两边都是常数,谁都不知道对方,所以只能靠这条记着 |
 | 编排脚本自己手抄一份 stack 清理逻辑 | 三个组件都报 ok,但一张图都没发 | sim 的图像发布器是 multiprocessing **子进程**,`kill -9` 父进程会把它孤儿化、继续占着 :5555。抄漏 `pkill -f spawn_main` 的那一份就是这么坏的,而 `kill_stack()` 一度有**四份**拷贝。好在 `start_stack.sh` 检测到"组件都起来了但没有图像"会拒绝交出 stack,否则就是一个安静地渲染不出画面的 stack。**停 stack 只用 `stop_stack.sh`**,它还多杀 `serve_policy.py`、等端口真正释放、并回显剩余进程 |
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
+| 两个 runner 同一秒抢同一 instance 的端口块 | 两边都打印 "stack up",rc 0 | 一边的 gym 报 `Address already in use :5556`,另一边每局 1 s 报 `teleport landed 1.85 m off`(2026-09-10,pick-place session 与 session 29)。端口检查是 TOCTOU;2026-09-10 起 `start_stack.sh` 用 `/workspace/tmp/locomani_locks/instance_<i>.lock` 上 `flock -n`,锁的 fd 被 sim/deploy/exporter 继承,任一存活就拒绝第二个栈(退出码 3,打印持有者),全部死掉自动释放;`stop_instance.sh` 只杀本 instance 的进程(按 comm=python + 环境里的 `TF_CAMERA_PORT` 匹配)。起栈前仍要读 STATE 的 RUNNING 行 |
+| `build_sim_scene.py` 不带 `--harden-pads` 重建 | 场景正常,指面回到软接触 | 持物几秒后蠕变滑脱;看 XML 里 `dex1_col_1` 有没有 `priority="1"` |
+| place 伺服按 `upper_ref.MAX_STEP`(2°/tick)限幅 | 手臂看着在动 | 冗余 IK(腰 + 臂)逐拍换姿态,持物滑脱 3–4 cm,像接触蠕变;`place_trace` 10 Hz 漂移曲线能分辨(2026-09-10) |
 
 所以:**任何"找到就替换 / 进入 / 读取"的操作,失败路径必须响亮。**改完检查改没改,
 `cd` 之后确认到了哪,读完确认读到了东西。这个仓库里凡是这类操作后面都该有一道断言
@@ -264,6 +268,11 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | 双臂 pilot 每集只有 25 s、视频 10–12 s、日志里没有 `[walk]` 行 | 跑的是 ready-stand 变体。`WALL_WALK` / `WALL_FEATURE` 环境变量 2026-09-09 起不再被读(旋钮在 `CrateTaskConfig`,`wall_walk` 默认 false);给 `run_wall_pilot.sh` 传 `--config configs/tasks/crate_wall.json` 或 `--set wall_walk=true`。runner 现在见到这两个变量会拒绝启动(2026-09-10) |
 | 所有 stack 结果同时变差:走位失控、"ready posture not delivered"、复位后摔倒,日志里没有一句提到 CPU | 容器 cgroup CPU 配额只有 15.36 核(`/sys/fs/cgroup/cpu.max`),`nproc` 的 32 和 load average 都是宿主机的数。别的任务把配额占满时 sim 实时因子掉到 0.18、gym 循环 9 Hz(2026-09-10,`/workspace/code/video_grasp` 的 benchmark)。起 stack 前 `bash scripts/cpu_headroom.sh`,余量 < 6 核或有 throttle 就别开;pose sidecar 的 `t` 对 `wall` 跨度可以事后算实时因子 |
 | 双臂并排视频里没有 ghost hands | `trace/` 里没有 `<label>_NN_ghost.npz`:采集时没设 `SIM_STATE_TRACE_DIR`、设了 `GHOST_TRACE=0`,或者是 2026-09-10 之前录的。渲染脚本只在文件存在时才画 |
+| （**2026-09-10 已修**）手写 `grasp_gym.py --task-config configs/tasks/xxx.json` 跑出来的局和采集线对不上 | 修复前 `--task-config` **只读 `goal` 和 `place` 两段**(它自己的 help 就这么写)。`reach` 段不生效 → reach config 退回 dataclass 默认值,`ready_grasp_recovery=False`,每局在 grasp 阶段被 `ready_grasp_recovery=False is retired` 直接拒绝(走近那段其实是成功的,很容易误读成控制器坏了);`spawn` 段也不生效 → 吃 grasp_gym 的宽默认(±90° 朝向偏差),机器人侧对桌子醒来,整批卡在 `[view] object not in ego view at spawn`,而且 cam **y** 出界(采集线正常的偶发失败是 cam **x** 出界)。现在 `--task-config` 携带整份 profile(reach + spawn + target + stand_retries),命令行显式给的仍然优先;`grasp_gym` 另外会在启动时拒绝跑不出结果的 reach 标定(`ready_grasp_recovery=False`),不再等走到瓶子跟前才失败。`scripts/collect_pilot.sh` 从重构 step 2 起到这次修复之前一直采不出任何一集,同因(2026-09-10,连踩三次) |
+| （**2026-09-10 已修**：`--record` 现在启动时检查 exporter，没有就拒绝）`--record` 跑完一批,`$LOCOMANI_TMP/p03*/outputs` 下没有新 session | 用了 `INSTANCE≠0`。`start_stack.sh` 只在 instance 0 起 exporter,别的实例打印 `[3/3] data exporter — skipped (instance N records no episodes)` 就跳过了,gym 照跑但什么都不落盘。采集只能用 instance 0;要避开别人换 **GPU** 而不是换 instance(`CUDA_VISIBLE_DEVICES`)(2026-09-10) |
+| （**2026-09-10 已修**：端口统一由 `locomani.sim.ports` 按 `INSTANCE` 推导）换了 `INSTANCE` 之后 gym 立刻 `no privileged state on :5581 after 10s` | 修复前 gym 不读 `INSTANCE`。stack 按 instance 挪到 5565/5566/5591,gym 仍用 instance-0 默认端口绑 :5556、等 :5581。`INSTANCE` 只在 `start_stack.sh` 自己的 shell 里展开成 `TF_*`;要让 gym 跟过去,得把 `TF_SONIC_PORT` / `TF_PRIVILEGED_PORT` / `TF_KEYBOARD_PORT` 一起 export(2026-09-10) |
+| 后台 runner 判断"机器可用"后起 stack,却和别人撞了端口 | GPU 空闲 ≠ instance 空闲:另一个 session 可能正用同一 instance 的 5555-5582 在**另一张卡**上工作。runner 的准入检查必须同时看 (1) 目标 GPU 显存 (2) `cpu_headroom.sh` (3) 有没有活着的 sim/exporter/deploy 进程。2026-09-10 的 `visible200_train_eval_20260910.sh` 只做了 (1)(2),当天靠人工约定时间窗兜住;该脚本**不补丁**——`scripts/experiments/<name>.sh` 要与实际执行的那份一致,修复放进下一个 runner |
+| 进程存活检查 `pgrep -f <name>` 命中一堆无关 shell | `pgrep -f` 匹配整条命令行,任何命令行里出现过该字符串的 `zsh -c` / `bash -c` 都会被算作"正在运行",连两天前的僵尸 shell 也算。要求 `comm` 真的是 python:`ps -eo comm,args --no-headers \| awk '$1 ~ /^python/ && /run_sim_locomani[.]py/'`。同一类坑还有 `pkill -f` 打到自己(见台账)(2026-09-10) |
 | `start_stack.sh` 卡在 `[2/3]` 十分钟 | 首次运行在编译 TensorRT engine,正常。之后走缓存,20–40 s |
 | 没打印 `stack up` | 去 `$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log` 看是哪一个没起来 |
 | deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |

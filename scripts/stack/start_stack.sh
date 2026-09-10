@@ -28,6 +28,26 @@ export TF_KEYBOARD_PORT=$((5580 + 10 * INSTANCE))
 export TF_PRIVILEGED_PORT=$((5581 + 10 * INSTANCE))
 export TF_EPISODE_PORT=$((5582 + 10 * INSTANCE))
 LOGS=$(locomani_session_root "$INSTANCE")
+# Per-instance admission lock. 2026-09-10: two runners raced for instance 0's port
+# block in the same second (both had checked GPU memory, one had just freed the
+# ports), both printed "stack up", one gym died with "Address already in use" and
+# the other's every round was "teleport landed 1.85 m off". A port check is a
+# time-of-check/time-of-use race; a lock is not. fd 9 is inherited by the
+# nohup'd sim / deploy / exporter below, so the lock is held exactly as long as
+# any of them lives and releases itself when they die -- no liveness check, no
+# stale-lock cleanup; stop_instance.sh releases it by killing them.
+LOCK_DIR=/workspace/tmp/locomani_locks
+mkdir -p "$LOCK_DIR"
+LOCK="$LOCK_DIR/instance_$INSTANCE.lock"
+exec 9>>"$LOCK"
+if ! flock -n 9; then
+    echo "REFUSED: instance $INSTANCE is held by a live stack -- $(tail -1 "$LOCK" 2>/dev/null)"
+    echo "  (a second stack on the same port block silently replaces the first; pick another INSTANCE"
+    echo "   or stop that one with scripts/stack/stop_instance.sh $INSTANCE)"
+    exit 3
+fi
+: > "$LOCK"
+echo "start_stack pid $$ at $(date -u +%FT%TZ) SIM_VIDEO_DIR=${SIM_VIDEO_DIR:-} LOCOMANI_SIM_DIR=${LOCOMANI_SIM_DIR:-}" >> "$LOCK"
 TASK_PROMPT="${1:-walk forward}"
 
 mkdir -p "$LOGS"

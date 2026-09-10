@@ -386,8 +386,9 @@ Agent 进程和 Sim 进程虽然都用同一个 `.venv_sim`,但是**两个独立
    不含任何本体状态。
 3. **下蹲不走 `upper_body`。**它是 planner 帧里的 `mode=IDEL_SQUAT` + `height=<骨盆
    目标高度,绝对米>`,由 k-planner 渲染成弯腿参考动作,再由 encoder 编码进 token。
-   所以下蹲**在 token 里**,不需要额外通道。(实测:命令的腰部前倾只交付 2–10%,
-   基本等于没有,这条路是死的 —— 见 `diag_lean.py`。)
+   所以下蹲**在 token 里**,不需要额外通道。旧 `diag_lean.py` 曾记录孤立腰 pitch
+   指令交付 2–10%;这不等于 SONIC 无法完成全身弯腰。该测试未提供髋、腿和躯干协同参考,
+   原始日志已丢失。当前 ready-grasp 还主动排除了腰部 IK;见 [弯腰诊断](ledger/bottle.md#12-sonic-弯腰能力审计2026-09-10codex)。
 
 ### k-planner 的完整输入
 

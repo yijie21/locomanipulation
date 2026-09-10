@@ -4,7 +4,7 @@
 旧说明以本页为准;每条设置后面都注明了它为什么是这个值,以及改动它会破坏什么。
 背景与实验证据在 `docs/collection.md`、`docs/evaluation.md`、`docs/ledger/bottle.md`。
 
-当前正式基线:**flow200 checkpoint-10000,干净协议,无 ensemble,50/100**。
+当前正式基线:**flow200 checkpoint-10000,干净协议,无 ensemble,50/100**。(**2026-09-10 限定**:该数字测于 2026-09-02/03,早于 `8c621fb`(09-07)引入 `ReachConfig`,因此它跑在旧的站位采样带 post_min 0.22 / azimuth 36.5 上;ready-grasp 线自 09-07 起是 0.30 / 42.0。flow200 的 2×2 内部比较不受影响,但它**不能**作为 09-07 之后任何 arm 的对标参考——那需要同带的对照。见 `docs/ledger/bottle.md` §17.7)
 
 ---
 
@@ -18,6 +18,7 @@
    会在起栈前用 `EVAL_SCENE_SEED=922`(桌高 0.6214 m)重建,不要绕过它。
 3. **`stop_stack.sh` 会杀掉机器上所有实例**。多实例并行时用
    `scripts/stack/stop_instance.sh <INSTANCE> [policy_port]`。
+4. **同一 instance 只能有一个栈**(2026-09-10 起 `start_stack.sh` 用 flock 拒绝第二个,退出码 3 并打印持有者)。被拒绝就换 INSTANCE 或先 `stop_instance.sh`,不要绕过锁;起栈前读 `docs/STATE.md` 的 RUNNING 行。
 
 ---
 
@@ -64,6 +65,20 @@ SPAWN_ARGS="--spawn-edge 1.1 1.3 --face-object --spawn-yaw-err 20 --spawn-latera
 
 **每批必看**:`grep "^EPISODE" outputs/logs/collect_<name>/gym_*.log`,以及
 `stream: creep2d ...` 一行(方位角是否收敛到 10° 内)。
+
+---
+
+## 1b. pick-and-place 采集(2026-09-10 起)
+
+```bash
+MUJOCO_GL=osmesa third_party/Isaac-GR00T/.venv/bin/python src/locomani/sim/build_sim_scene.py \
+  --preset pick_place --harden-pads outputs/scene outputs/scene/pick_place        # 一次;XML 里要有 priority="1"
+bash scripts/experiments/pick_place_pilot_20260910.sh outputs/experiments/<name> <成功数> 10 <批数> <seed0>
+```
+
+`configs/tasks/pick_place.json`(target soup_can、goal basket、`reach.grip_below_center -0.03`、`place.*`)。
+验收线:抓起的局里 place ≥ 8/10、释放 xy 中位 < 3 cm、掌系漂移 < 2 cm(`docs/pick_place_collection.md` §5)。
+起栈前读 `docs/STATE.md` 的 RUNNING 行。
 
 ---
 
