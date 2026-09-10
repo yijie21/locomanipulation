@@ -1,0 +1,58 @@
+{
+ "arm": "bottle",
+ "source": "outputs/experiments/restart_ab_20260910/manifest2_A*.jsonl",
+ "metrics": {
+  "rounds": 30,
+  "ok": 16,
+  "yield_": 0.533,
+  "stages": [
+   "approach",
+   "carry_and_verify",
+   "complete",
+   "grasp.capture_ready",
+   "grasp.close",
+   "grasp.coupled_squat",
+   "grasp.lift",
+   "grasp.local_align",
+   "grasp_plan",
+   "initialize",
+   "navigate",
+   "recovery_attempt",
+   "recovery_brake",
+   "verify_terminal_hold",
+   "verify_visibility"
+  ],
+  "exit_majority": "visible brake depth",
+  "exits": {
+   "visible brake depth": 16
+  },
+  "end_depth_m": 0.3014,
+  "squat_drop_m": 0.13,
+  "stage_s": {
+   "initialize": 7.8707,
+   "navigate": 4.0131,
+   "grasp_plan": 0.0003,
+   "approach": 0.041,
+   "recovery_brake": 1.3683,
+   "recovery_attempt": 0.0391,
+   "grasp.coupled_squat": 1.4799,
+   "grasp.local_align": 2.0539,
+   "grasp.capture_ready": 0.0104,
+   "grasp.close": 2.0292,
+   "grasp.lift": 2.7009,
+   "verify_visibility": 0.0001,
+   "carry_and_verify": 2.9093,
+   "verify_terminal_hold": 2.0304
+  },
+  "failure_reasons": [
+   "[grasp] coupled safe-hand IK did not track",
+   "[grasp] coupled safe-hand path blocked: right:right_wrist_yaw_link:wat",
+   "[grasp] local alignment outside comfortable IK",
+   "[grasp] visible expert: stand infeasible, no reposition (current stand",
+   "[grasp] water_bottle toppled in the close phase",
+   "[hold] object slipped N cm in the palm frame during the hold",
+   "[stand] could not turn N deg to the approach heading at the spawn (tur"
+  ],
+  "seconds": 62.7
+ }
+}

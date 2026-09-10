@@ -448,3 +448,38 @@ s7 几乎所有失败都是"站到桌边、手臂从不下放";s42 的模型更�
 
 **不做**:双 stack 并行(pid cgroup 3840,一个录像栈 ~2500 线程;deploy 对 80 ms 卡顿即退出,09-09 光外部 GPU1 任务就截断
 8/40 session);lockstep 采集(`docs/handoff/sonic_lockstep_collection_plan.md`,已搁置,是长期解)。
+
+## 11. 采集提速实验 1:`restart_deploy=false` + 复位 reanchor(2026-09-10,branch session)
+
+§10 杠杆 1 的实验。代码 b2310c8:`round_phases._phase_spawn_and_settle` 在 deploy 没被本局重启时(`_gym_started`)
+在 `start_control` 后加 `hold(1.5)` + `stream_reach.reanchor(p)`(双臂线每集用的那套),默认重启路径字节不变;
+`prepare_ready` 失败时打印 ramp residual / joint err / push 数。
+
+**第一轮(03:57–04:39)作废**:容器 cgroup CPU 配额 15.36 核(`cpu.max`,`nproc` 的 32 是宿主机)被
+`/workspace/code/video_grasp` 的 benchmark 占满,sim 实时因子 0.18、gym 循环 9 Hz(3 s 内只 push 24–31 次,正常约 150),
+A 臂(默认重启)也 1/10、0/10、0/10。它留下一条有效结论:**纯关重启(无 reanchor)0/10**,第 3 局起"站起来时走偏 0.5 m"、
+复位后摔倒,2026-08 加重启的那个病复现;加 reanchor 后转身漂移 0.36 m → 0–2 cm。
+
+**第二轮(04:54–05:43,CPU 余量 6–13 核、无 throttle)**:3 批 × 10 局,同一 case bank(`cases_0..2.json`,seed 29000–29002)
+配对,交错 A0 B'0 A1 B'1 A2 B'2。A = 默认(每局重启),B' = 不重启 + reanchor。
+
+| | A(重启) | B'(不重启 + reanchor) |
+|---|---|---|
+| 成功 | 16/30(7, 7, 2) | 18/30(5, 6, 7) |
+| 不一致对 | A 独胜 6 | B' 独胜 8 |
+| 每局中位(全部 / 成功) | 62.7 s / 63.9 s | **33.7 s / 34.5 s** |
+| initialize → navigate | 7.9 s | 11.5 s(+1.5 s hold + toggle) |
+| 刹车退出深度 `end_depth_m` 中位 | 0.301 | 0.301 |
+| 停站 `park` / `first_stop` 中位 | 0.301 / 0.307 | 0.332 / 0.335 |
+| 失败 | stand infeasible 3、path blocked 3、IK 不跟踪 2、转身超时 3(同一 case)、其他 3 | stand infeasible 4、**local alignment disturbed target or base 2**、转身超时 3、其他 3 |
+
+`gate.py compare`(以本轮 A 为基线,`tests/gate/results/restart_ab_*_20260910.json`):13/15 PASS;两条 FAIL 都可解释——
+`stage_s.initialize` 7.9 → 11.5 s 是设计代价,`failure_reasons` 新增 "local alignment disturbed target or base"(2/30)。
+
+**裁定**:每局 64 → 34 s(−47%),30 局配对上成功率无差(16 vs 18,不一致 6:8,分不出方向),站位阶段零失败。两个要盯的
+差异:不重启时底盘停得远 3 cm(`park` 0.332 vs 0.301,刹车退出深度不变,即刹车后的滑移少了或 IDLE 漂移方向变了),
+以及 2/30 的 "local alignment 时底盘被扰动"——都指向 deploy 跨局残留的步态相位/IDLE 漂移(memory `planner-idle-drifts`),
+reanchor 只修了朝向锚。下一步:用它采下一批 200 条(约 3.2 h 而不是 6 h),用 `check_dataset` 和闭环评测判断这 3 cm 是否
+改变训练分布;若要保守,先在 quiet 机器上再跑 30 局把不一致对的方向定下来。**采集时 CPU 配额余量 ≥ 6 核是前置条件**
+(`scripts/archive/restart_ab_runner_20260910.sh` 里的 `cpu_free` 检查),否则任何结论都是噪声。
+原始数据:`outputs/experiments/restart_ab_20260910/`(manifest2_*.jsonl、gym2_*.log、cpu2.log、cases_*.json)。

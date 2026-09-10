@@ -51,12 +51,13 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
-- Branch (65) 2026-09-10 04:00 UTC: restart A/B RUNNING on instance 0 / GPU0 (outputs/experiments/restart_ab_20260910/,
-  3 batches x (A restart_deploy=true 10 rounds --write-cases, B =false --cases), ~1 h; runner.log has progress; do NOT start
-  anything on GPU0 or instance 0 until AB_DONE). Crate: ready-stand 10 (8/10) and walk-in 10 (4/10 under host load 131-176)
-  rendered as sbs videos (outputs/renders_isaac/crate_random10_20260910/, crate_walk10_20260910/); ledger crate.md 09-10 x2.
-  WALL_WALK/WALL_FEATURE env vars are dead since step 3 -- tutorial + runner fixed (b07caef). Collection-speed plan:
-  docs/ledger/bottle.md §10 + ROADMAP tail. Host: /workspace/code/video_grasp teacher-benchmark drives load avg 130-176.
+- Branch (65) 2026-09-10 05:50 UTC: restart A/B DONE, nothing running, instance 0 / GPU0 free. restart_deploy=false +
+  reanchor (b2310c8): 34 s/round vs 64 s, 18/30 vs 16/30 paired, gate 13/15 (initialize +3.6 s by design; new string
+  'local alignment disturbed target or base' 2/30; park 3 cm farther). Ledger bottle.md §11. Adopt for the next 200-ep run
+  (config-only: set restart_deploy=false in the collection config) is the user's call.
+  ENV: container cgroup CPU quota is 15.36 cores (cpu.max); /workspace/code/video_grasp benchmark saturated it 03:00-04:45
+  (sim RTF 0.18) -- every stack result in that window is void; check headroom >= 6 cores before any stack.
+  Crate: ready-stand 10 (8/10) + walk-in 10 (4/10, CPU-starved) rendered as sbs videos; WALL_WALK env dead (b07caef).
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 

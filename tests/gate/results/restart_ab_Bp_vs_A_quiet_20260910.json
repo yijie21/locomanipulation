@@ -1,0 +1,134 @@
+{
+ "arm": "bottle",
+ "verdict": "FAIL",
+ "candidate": {
+  "rounds": 30,
+  "ok": 18,
+  "yield_": 0.6,
+  "stages": [
+   "approach",
+   "carry_and_verify",
+   "complete",
+   "grasp.capture_ready",
+   "grasp.close",
+   "grasp.coupled_squat",
+   "grasp.lift",
+   "grasp.local_align",
+   "grasp_plan",
+   "initialize",
+   "navigate",
+   "recovery_attempt",
+   "recovery_brake",
+   "verify_terminal_hold",
+   "verify_visibility"
+  ],
+  "exit_majority": "visible brake depth",
+  "exits": {
+   "visible brake depth": 18
+  },
+  "end_depth_m": 0.3011,
+  "squat_drop_m": 0.13,
+  "stage_s": {
+   "initialize": 11.5371,
+   "navigate": 4.178,
+   "grasp_plan": 0.0003,
+   "approach": 0.0509,
+   "recovery_brake": 1.2982,
+   "recovery_attempt": 0.0181,
+   "grasp.coupled_squat": 1.481,
+   "grasp.local_align": 2.0922,
+   "grasp.capture_ready": 0.0206,
+   "grasp.close": 2.0285,
+   "grasp.lift": 2.7011,
+   "verify_visibility": 0.0001,
+   "carry_and_verify": 2.8803,
+   "verify_terminal_hold": 2.0324
+  },
+  "failure_reasons": [
+   "[grasp] coupled safe-hand path blocked: right:right_wrist_yaw_link:wat",
+   "[grasp] local alignment disturbed target or base",
+   "[grasp] local alignment outside comfortable IK",
+   "[grasp] visible expert: stand infeasible, no reposition (current stand",
+   "[grasp] water_bottle toppled in the close phase",
+   "[stand] could not turn N deg to the approach heading at the spawn (tur"
+  ],
+  "seconds": 33.7
+ },
+ "checks": [
+  {
+   "name": "yield",
+   "ok": true,
+   "detail": "0.533 -> 0.6"
+  },
+  {
+   "name": "end_depth_m",
+   "ok": true,
+   "detail": "0.3014 -> 0.3011"
+  },
+  {
+   "name": "squat_drop_m",
+   "ok": true,
+   "detail": "0.13 -> 0.13"
+  },
+  {
+   "name": "exit_majority",
+   "ok": true,
+   "detail": "visible brake depth -> visible brake depth"
+  },
+  {
+   "name": "stages",
+   "ok": true,
+   "detail": "new [] missing []"
+  },
+  {
+   "name": "failure_reasons",
+   "ok": false,
+   "detail": "new ['[grasp] local alignment disturbed target or base']"
+  },
+  {
+   "name": "stage_s.initialize",
+   "ok": false,
+   "detail": "7.8707 -> 11.5371"
+  },
+  {
+   "name": "stage_s.navigate",
+   "ok": true,
+   "detail": "4.0131 -> 4.178"
+  },
+  {
+   "name": "stage_s.recovery_brake",
+   "ok": true,
+   "detail": "1.3683 -> 1.2982"
+  },
+  {
+   "name": "stage_s.grasp.coupled_squat",
+   "ok": true,
+   "detail": "1.4799 -> 1.481"
+  },
+  {
+   "name": "stage_s.grasp.local_align",
+   "ok": true,
+   "detail": "2.0539 -> 2.0922"
+  },
+  {
+   "name": "stage_s.grasp.close",
+   "ok": true,
+   "detail": "2.0292 -> 2.0285"
+  },
+  {
+   "name": "stage_s.grasp.lift",
+   "ok": true,
+   "detail": "2.7009 -> 2.7011"
+  },
+  {
+   "name": "stage_s.carry_and_verify",
+   "ok": true,
+   "detail": "2.9093 -> 2.8803"
+  },
+  {
+   "name": "stage_s.verify_terminal_hold",
+   "ok": true,
+   "detail": "2.0304 -> 2.0324"
+  }
+ ]
+}
