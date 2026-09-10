@@ -9,7 +9,12 @@ import os
 import runpy
 import sys
 
-from gear_sonic.utils.data_collection import keyboard_subscriber
+# Launched by scripts/stack/start_stack.sh with the data-collection venv and no PYTHONPATH:
+# put src/ on the path so `locomani.pipeline.collection_frame_audit` resolves (the pre-refactor
+# file imported its sibling by bare name; caught by the 2026-09-10 GPU gate, exporter never started).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from gear_sonic.utils.data_collection import keyboard_subscriber  # noqa: E402
 
 OriginalSubscriber = keyboard_subscriber.ZMQKeyboardSubscriber
 
