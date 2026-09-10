@@ -707,3 +707,293 @@ instance1已清理,没有case文件或encoder.bin。末尾CPU余量8.1/8.3/8.1�
 和"不重启 deploy 停站远 3 cm"(§11 `park` 0.332 vs 0.301)方向一致,待训练评测判断是否影响分布。
 
 **裁定**:数据可用于训练;第 1 局的 10% 浪费由 §12 的修复消除(验证见 §12)。
+
+
+**资源恢复后实际开始**:用户询问能否开始,新15秒采样总CPU0.27/0.24/0.25核,无限流,两GPU空闲。
+恢复supervisor2576211,GPU1/instance1;旧超时日志归档,无旧动作需重跑。
+legacy_waist_052第1次完成,encoder.bin实际生成并可解析:输入1762维、token64维、mode0。
+最后1s50次编码中,腰参考0.51999998rad对应请求0.52,全部10帧29关节参考最大误差2.85e-8rad;
+零dq与发送协议一致。躯干实测5.93°,腰0.315°,平均电机腰目标3.76°。
+这确认至少本条件“参考在进入encoder前丢失/被裁剪”不成立,私有build仍复现低交付。
+数据与分析:encoder_report.json;协调条件继续运行。此时ScaleBFM200已采集/转换/统计全部完成,
+200episodes/49387frames/400videos,未训练。
+
+
+**Phase2全部完成**:run.exit0,15/15case完整且未记录跌倒,instance1已清理。
+实际encoder记录23365次,1762维input/64维token,报告覆盖15个稳定保持窗口;末尾7072字节不完整记录
+被忽略(不影响已完成窗口)。summary.json、encoder_report.json保存逐次数据及组均值。
+
+|条件(各3次)|目标躯干pitch°|实测躯干pitch°|实测腰pitch°|电机腰目标°|
+|---|---:|---:|---:|---:|
+|legacy0.52|29.79|5.35|0.27|-4.06|
+|waist_only|25.17|4.90|0.32|-9.03|
+|legs_waist|25.17|7.38|1.43|-6.03|
+|legs_waist_root|34.97|13.06|1.16|-11.12|
+|full_pose|34.97|16.52|7.14|-46.92|
+
+全身组实测躯干3次16.56/16.56/16.46°,腿+root组14.07/12.60/12.51°。
+所有条件实际encoder十帧关节参考与请求最大误差<=5.89e-8rad,mode均0,保持段dq为0。
+额外验证anchor:取实际输入601:607的6D旋转,重建第三列,与最近debug的base_quat相乘得到
+世界参考根姿态;与请求root_quat比较pitch。无root条件约0°,有root条件9.83°,最大误差0.05°,
+结果encoder_root_check.json。该检查按墙钟近邻对齐,不声称完整6D旋转逐位一致。
+
+结论:在这些条件中,腰/腿/根姿态指令没有在encoder前丢失或被裁剪。
+加入协调参考让躯干前倾从4.90°逐步到16.52°,所以孤立腰测试低估了全身弯腰表现;
+但完整静态参考仍明显低于35°目标,不能宣称跟踪问题解决。反向电机目标依然存在,
+尤其完整姿态平均-46.92°,不能用简单“电机收到+35°但不动”描述整个链路。
+仍待验证:动态官方参考(当前均零dq静态)、checkpoint/训练分布、模拟PD/负载/默认姿态一致性。
+不把这个结果外推为真机G1不能弯腰或协作者做法已复现。没有改生产专家/控制器或模型。
+
+
+## 15. 官方原生动态回放与模型/PD一致性 (2026-09-10, Codex)
+
+用户授权 GPU1 验证。产物根目录 `outputs/diagnostics/sonic_native_phase3_20260910/`。
+
+事实与已完成检查:
+- 原生 C++ CSV loader 回放 `squat_001__A359`，424帧/50Hz，8.48s；包含关节速度和未来帧，绕开 Python 静态pose路径。
+- 第一次 native_release_1.json 只有1帧，开始play时骨盆已低至0.119m。模型加载期间失控、start后等待4秒是初始化混杂因素；本次不计入动态跟踪成败。
+- 修正诊断脚本在 Init Done 后reset，读取带新wall时间戳的状态，再立即start/play。原始失败产物保留；重试写入 retry_reset/，禁止覆盖。
+- 重试runner PID2600051已经启动，但最近资源检查free约0核，尚未创建仿真；门槛连续3个5秒窗口free>=6且无限流，最多等待10分钟。不得将资源排队说成动作测试已开始。
+- sim_parity.json: 29身体关节range/armature/damping/frictionloss一致，公共命名身体mass/inertia一致。
+- parity_report.json: 当前Dex1身体总质量35.864952kg，官方本地Dex3为36.1652352kg；不能声称完整机器人动力学一致。
+- 两份XML重力、solver、integrator、iterations、tolerance和XML dt=.002一致；configs.py默认sim_frequency=200覆盖成dt=.005，base_sim.py明确应用。该默认覆盖本身不是已确认bug。
+- 初次失败样本LowCmd全部29关节kp/kd与当前C++常数匹配，和6位CSV的最大误差4.55e-5/4.27e-6；腰pitch实际kp28.5012/kd1.81445。不能把未生效的YAML高增益当实际PD。
+- release和sonic_v1_1模型/配置SHA256保存在parity_report.json；私有诊断binary路径继承phase2。当前未更换生产模型/PD/专家逻辑。
+
+假设与待判别问题:
+1. 静态参考缺少动态速度/未来时序影响跟踪：有效原生回放若明显改善则支持，须先通过初始化检查。
+2. 初态/朝向对齐导致回放失败：即使修正加载后reset，默认站姿仍不等同参考首帧，需要看preplay和首段误差后单独对照，不能直接归因模型能力。
+3. 模型与观察配置搭配、手部质量/碰撞、仿真时序影响：有效基线后逐项改变；当前质量差仅事实，不是根因证据。
+4. PD与训练设置不同：只确认了LowCmd和部署源码一致，尚无训练PD或协作者真机配置，不能宣称训练/真机一致。
+
+恢复与命令:
+```bash
+cat outputs/diagnostics/sonic_native_phase3_20260910/retry_reset/runner.json
+tail outputs/diagnostics/sonic_native_phase3_20260910/retry_reset/resources.jsonl
+cat outputs/diagnostics/sonic_native_phase3_20260910/retry_reset/run.exit
+# 确认旧进程已结束且没有已完成case后才能重启；成功case禁止覆盖
+bash scripts/experiments/sonic_native_replay_20260910.sh
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/experiments/sonic_native_parity_20260910.py
+```
+
+脚本Python编译及shell语法检查通过，离线parity脚本实跑通过。下一检查点读取有效动态trace、实际encoder dq/future blocks、reference帧进度和躯干误差；初始化无效先修诊断协议。任务root<.4判倒不用于该深蹲（参考最低root约.332）；仅<.15保护中止也不是完整动态成功判据。
+
+
+Phase3状态更新（2026-09-10 12:03 UTC）：retry_reset资源gate等待10分钟后超时，run.exit=1，runner PID2600051已退出，未启动重试仿真。CPU占用溯源为Claude3265590的Playwright Chrome SwiftShader PID2598614，3秒实测14.76核/15.36核配额；未停止对方进程。完整恢复入口见项目根HANDOFF.md。
+
+## 16. Phase3 结果：有效动态回放 + release / sonic_v1_1 单因素对照 (2026-09-10, session 29)
+
+GPU1/instance1，用户已授权。产物 `outputs/diagnostics/sonic_native_phase3_20260910/{retry_reset_02,v1_1}/`。
+未改动生产模型、PD 或专家控制；只改诊断脚本与启动协议。
+
+### 16.1 让回放变成"有效"的启动协议
+
+等 `Init Done` → reset → `]` 接管 → **1 秒沉降** → 才 `t`。沉降窗口里骨盆从 0.890 m 落到 0.786 m、ncon 从 0 到 33
+（reset 是瞬移，采样在物理步进之前，机器人当时还悬空）。之前 `]t` 连发是在悬空态开始播放，这就是那条 0.119 m
+无效记录的成因，不是模型问题。两次运行各 3 遍，全部 `complete`、run.exit=0、无跌倒、**423/424 帧、正好 50.00 fps、8.46 s**。
+
+### 16.2 结果（3 次均值，取参考最深前倾帧；参考躯干 40.3°、腰 29.3°）
+
+| checkpoint | 躯干 pitch | 腰 pitch | 腰 RMSE | 躯干 RMSE | 骨盆 z RMSE |
+|---|---:|---:|---:|---:|---:|
+| policy/release | 14.5° | 8.1° | 12.9° | 12.4° | 0.055 m |
+| policy/sonic_v1_1 | 25.3° | 21.4° | **3.9°** | **5.7°** | 0.054 m |
+
+同场景、同 PD、同协议、同参考，唯一变量是 checkpoint（及其自带 observation 配置）。腰 RMSE 差 3.3 倍。
+重复性：release 腰 8.3/8.2/7.9，v1_1 腰 21.4/21.5/21.2。
+
+**动态并不能救静态弱跟踪**：release 的动态回放（8.1°）与 phase2 静态协调参考（腰 7.14°/躯干 16.5°）同量级。
+handoff 假设 1 判否。顺带确认 encoder 的 10 个参考槽位是 `k, k+5, …, k+45`，确实含未来 0.9 s。
+
+### 16.3 已用数字排除的环节
+
+- 参考 → encoder：捕获参考块与官方 CSV 最近邻匹配，最大误差 `2.1e-7 rad`。
+- 参考自洽：用官方 `g1/g1_29dof.xml` 对 CSV `joint_pos` 做 FK，躯干 pitch 与 CSV `body_quat` 逐帧吻合到 0.01°
+  （frame 0/45/79/150/330 = 2.17/38.47/40.28/9.03/16.13）。所以"腰 pitch 为正 = 前倾"在参考、官方 MJCF、本仓场景三者一致。
+- 观测 → deploy：base/torso pitch 与 privileged 真值最大差 1.2°（release）/ 2.3°（v1_1），关节 ≤1.5°。
+- 指令 → sim：`last_action` 与 sim 实收 `cmd_q` 全 29 维最大差 0.05 rad。
+- 配置维度：deploy 自身校验两边都 `Dimension match`（release 1762/994，v1_1 1751/994）。
+
+### 16.4 仍未解释、且**不是** checkpoint 差异的现象
+
+`waist_pitch` 是唯一与自身参考**反相关**的指令通道：6 次运行全部 −0.90 左右，参考要 +29.3° 时电机目标约 −60°；
+腿/臂各通道都是 +0.95…0.99（29×29 相关矩阵见各目录 `channel_audit.json`）。单通道符号翻转排除了映射错位
+（错位是成对交换）。因此实际弯腰不是这条指令驱动出来的：腰 kp = 28.5（`policy_parameters.hpp` 里
+`2.0*STIFFNESS_5020`，按 armature×ω² 算），而实测该关节的重力保持力矩就有 12–23 Nm。两个 checkpoint 同样反相，
+所以这是共有的约定/训练问题，**不要写成 release 独有的 bug**。
+
+`policy/release/observation_config.yaml` 是第三份手改配置，既不等于 `observation_config_sonic_release.yaml`
+也不等于 `_sonic_v1_1.yaml`（多 `motion_root_z_position*` 共 11 维，正好对上实测 1762 vs 官方两份写的 1751；
+anchor 用非 heading 归一化版本）。`policy/sonic_v1_1/` 是自洽的模型+配置对。
+
+### 16.5 脚本与恢复
+
+```bash
+cd /workspace/code/locomanipulation
+export PYTHONPATH=$PWD/src
+# 重跑（换目录，禁止覆盖已有 case）；可选 SONIC_NATIVE_VIDEO=1 录像
+SONIC_NATIVE_OUT=$PWD/outputs/diagnostics/sonic_native_phase3_20260910/<新目录> \
+SONIC_NATIVE_POLICY=policy/sonic_v1_1 bash scripts/experiments/sonic_native_replay_20260910.sh
+# 离线分析（不占 GPU）
+SONIC_NATIVE_OUT=<目录> third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
+  scripts/experiments/sonic_native_report_20260910.py
+SONIC_NATIVE_OUT=<目录> third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
+  scripts/experiments/sonic_native_channel_audit_20260910.py
+```
+
+`video_release/` 是 12:34 UTC 被中止的录像对照残留（pick-place session 认领 GPU1，我方在 CPU gate 内退出，
+从未创建 stack），不是结果目录；重试请换名字。
+
+### 16.6 三联对比视频（2026-09-10 12:55 UTC）
+
+`outputs/diagnostics/sonic_native_phase3_20260910/compare/`
+- `reference_vs_release_vs_v1_1.mp4`（1320×744，50 fps 实时，8.48 s）
+- `reference_vs_release_vs_v1_1_half_speed.mp4`（同帧 0.5× 播放）
+- `key_frames.png`（frame 45/79/330/400 拼版）、`frames/`（424 张 PNG，可重编码，132 MB）
+
+生成方式：`scripts/experiments/sonic_native_render_20260910.py`，**离线运动学回放**已录轨迹，不新起仿真
+（当时 GPU0 在训练、GPU1 在跑 pick_place pilot，CPU 只剩 5.9 核，起不了 stack）。参考格来自官方 CSV
+（root z + quat + joint_pos 经 isaac_to_mujoco），两个交付格来自各自的 privileged trace，按 `play_elapsed`
+重采样到参考的 50 Hz 栅格。三格共用生产场景 XML、同一相机，root 的 yaw 与 xy 被去掉（`deyaw()`），
+所以格间差异只有姿态。顶栏数字是逐帧的 torso pitch / waist pitch / pelvis z。
+渲染用 EGL on GPU1，全片 7.7 s 墙钟、约 2.5 核，对当时在跑的 pilot 影响可忽略。
+
+### 16.7 渲染脚本 bug 修正与视频 v2（2026-09-10 13:0x UTC）
+
+用户在 v1 视频里看到"下蹲时夹爪飞出去"。**是渲染脚本的 bug，不是仿真**：场景模型 free joint 之后的关节顺序是
+`腿12 | 腰3 | 左臂7 | 左夹爪2(SLIDE) | 右臂7 | 右夹爪2`，我按 `qpos[7:7+29] = joints` 平铺，于是
+`right_shoulder_pitch ≈ −2.0 rad` 被写进夹爪的**平移**关节 → 夹爪平移 2 米；右臂整体错位 2 格。
+腿(0-11)和腰(12-14)在错位之前，所以 v1 视频里的躯干/腰角度和结论不受影响。
+修法：按关节名取 `jnt_qposadr`（`body_qpos_index()`）。已记入 memory。
+
+v2 增加：
+- 两个交付格叠**橙色参考轮廓 ghost**（同相机、同去 yaw 根位姿，所以轮廓与交付之间的空隙就是没交付的部分）
+- 底部两条**实时曲线**（waist pitch / torso pitch，白=参考、粉=release、绿=v1_1）＋播放头
+- 关掉地面反射（`mat_reflectance=0`），否则镜像会让 ghost 描边翻倍
+
+渲染后端：EGL 当时瞬时失败（另一 session 的 stack 正在启动；13:20 复测 EGL 正常），改用 OSMesa 软件渲染，
+CPU 当时空闲 12 核。这是**显式的诊断例外**，不适用于正式采集。
+
+### 16.8 弯腰的物理上限
+
+`waist_pitch` 关节限位是 **±0.52 rad = ±29.79°**，仓库里每一份 G1 MJCF（官方 `g1_29dof.xml` /
+`g1_29dof_old.xml` / `g1_29dof_with_hand.xml`、AMO 各版、`assets/scalebfm/g1_29dof_fk.xml`）都一致。
+官方 13 段参考动作里，11 段的腰 pitch 峰值**正好等于 29.8°**——参考数据本身被限位削平了：
+`squat_001__A359` 有 **118/424 帧（28%）**的腰 pitch 精确等于 0.520000 rad。
+所以这台机器人"弯腰"最多 30°，参考里 40° 的躯干前倾 = 骨盆 pitch 11° + 腰 29.8°。
+要更大的前倾只能靠髋和下蹲，不是腰。
+
+## 17. release vs sonic_v1_1：干净的 20 局 A/B（2026-09-10, session 29）
+
+`outputs/experiments/v11_bottle_ab20_20260910/`。instance 0 + `CUDA_VISIBLE_DEVICES=1`（GPU0 是别的 session 的训练）。
+同一个 20 局固定 case bank（`cases20.json`，seed 7100，profile `configs/tasks/bottle_visible.json`），release 先跑。
+前 10 个 case 与 `v11_bottle_pilot_20260910/cases10_v3.json` 逐字节相同，可做可复现性核对。
+
+### 17.1 成功率
+
+| | release | sonic_v1_1 |
+|---|---:|---:|
+| 成功 | **9/20** | **0/20** |
+
+9 个不一致 case 全部是 release 赢，精确 McNemar **p=0.0039**。
+可复现性：前 10 个 case，release 4/10（上一轮 5/10），v1_1 0/10（上一轮 1/10）。
+
+### 17.2 行为差异（均值±sd，t = Welch t of v1_1 − release）
+
+| 量 | release | sonic_v1_1 | t |
+|---|---:|---:|---:|
+| 到位横向偏移 (m) | −0.214±0.052 | −0.324±0.052 | −6.38 |
+| park 距离 (m) | 0.377±0.044 | 0.498±0.092 | 5.05 |
+| 到位前向距离 (m) | 0.310±0.030 | 0.376±0.084 | 3.12 |
+| 复位沉降漂移 (m) | 0.100±0.053 | 0.179±0.123 | 2.58 |
+| 每局墙钟 (s) | 28.4±6.2 | 21.7±5.0 | −3.7 |
+
+approach 退出方式：release `visible brake depth` 17 / `stalled` 2；v1_1 `visible brake depth` 9 / **`stalled` 10**。
+`plan_r`=0.32 m，release 超出 5.7 cm，v1_1 超出 **18 cm**。
+
+失败构成：release = 8 stand-infeasible + 1 转向超时 + 1 IK + 1 碰倒；
+v1_1 = 14 stand-infeasible + **5 arrival-out-of-reach** + 1 walked-off-spawn（后两种 release 一次都没有）。
+
+**结论**：v1.1 在参考回放上腰跟踪远好于 release（§16），但在这条采集线上不可用——步长与刹车时序按 release 标定，
+机器人根本走不到位。换 checkpoint 必须连带重标 approach 时序（`visible_brake_depth`、mid-band、shuffle band）。
+
+**与仓库现有说法矛盾**：`start_stack.sh` 注释称 v1.1 几乎消除 IDLE 漂移（0.004 vs 0.03–0.12 m），
+但当前采集路径下 v1.1 的沉降漂移更大（0.179 vs 0.100）。那条是 2026-08-21 在旧 reanchor 路径上测的，已过时。
+
+脚本：`scripts/experiments/v11_bottle_ab20_20260910.sh`（跑）、`v11_ab20_report_20260910.py`（统计）、
+`v11_pilot_video_pair_20260910.py`（同 case 并排视频，按 pose_sidecar 的 wall 时间戳配对，不按顺序猜）。
+
+### 17.3 这次踩的坑与随后的修复
+
+三次配置失败各烧掉一个 stack 周期，形状相同：**配置只生效一部分，但程序照跑**。
+1. `INSTANCE=1` → exporter 被跳过（`instance N records no episodes`）且 gym 不跟随 `INSTANCE`，10 s 后 `no privileged state on :5581`。
+2. 漏 `--reach-config` → `ready_grasp_recovery=False`，走到瓶子跟前才在 grasp 阶段被拒。
+3. `--task-config` 不管 spawn → 吃 ±90° 宽默认，10/10 卡 `[view]`。
+
+已落地的修复（`make check` 通过；size lint 无新增超限）：
+- `locomani.sim.ports`：端口只有一份公式，按 `INSTANCE` 推导，导出的 `TF_*` 仍优先。收编了 `agent_server` /
+  `privileged_pub` / `transition_capture` / `run_instance_exporter` / `run_sim_locomani` 的硬编码回退，以及
+  crate 两个任务里自带的第三份拷贝。
+- `reach_config.require_runnable()`：`ready_grasp_recovery=False` 在**启动时**拒绝并指出用哪个 profile。
+- `ports.require_exporter()`：`--record` 没有活着的 exporter 就拒绝，并说明只有 instance 0 会起 exporter。
+- `--task-config` 现在携带整份 profile（reach + spawn + target + stand_retries），命令行显式给的优先；
+  验证：单独 `--task-config configs/tasks/bottle_visible.json` 生成的 case bank 与手工展开 9 个 flag 的结果逐字节相同。
+- `scripts/collect_pilot.sh` 补上 `--task-config`。**它从重构 step 2（`0b801d8`）起一直是坏的**：不传 reach 标定，
+  每局都会在 grasp 阶段被拒，照文档走的人会拿到 0 成功。
+
+### 17.4 修复的回归（2026-09-10 14:4x，session 65 在实跑中发现）
+
+`ports.require_exporter()` 第一版只匹配 cmdline 里的 `run_data_exporter`，但
+`run_learn_pilot.py:176` / `run_ready_pilot.py:120` 把 `TF_EXPORTER_SCRIPT` 指向
+`pipeline/run_instance_exporter.py`（`start_stack.sh` 的默认值才是 `run_data_exporter.py`）。
+于是 exporter 明明活着，整条 pipeline 的 collect/eval 都会被我的检查拒绝——我自己的 runner 走的是
+start_stack 默认值，所以没暴露。已改成显式的 `_EXPORTER_ENTRY_POINTS` 元组并补 `tests/test_instance_ports.py`。
+
+教训：一个"拒绝运行"的检查必须自带测试。这条检查本来是为了消灭静默失败，结果自己制造了一个响亮的假阳性。
+
+### 17.5 第二处同类回归（同日，自查发现）
+
+`require_runnable` 会拦下**所有没显式给 `--reach-config` 的闭环 eval**。原因：VLA 轮次在 `_p_handover` 里
+直接 `return ctx.vla_policy(...)`，根本走不到 `_p_approach` / `_p_grasp`，`execute_grasp` 永远不执行，
+所以 reach 标定与它无关；而 `eval_closed_loop.py` 只在被要求时才传 `--reach-config`。
+改为 `require_expert_calibration(VLA_POLICY, config, source)`，两个分支都有测试。
+
+两处回归同一个形状：**我为了消灭静默失败加的拒绝，自己变成了假阳性**，而且都出在"哪条路径真的需要这个前提"
+没有想全。第一处是别人在实跑中撞到的，第二处是我顺着同一形状自查出来的。
+新加的每一条拒绝都必须回答：哪些合法调用路径会经过它？——并为"不该触发"的那一侧也写测试。
+
+### 17.6 第三次（session cf 复审 diff 时提出）
+
+cf 担心 `--task-config` 会把采集标定悄悄塞进闭环 eval，使其与台账里所有既有数字不可比。
+**前提不成立**：今天没有任何 eval 路径传 `--task-config`（`run_learn_pilot` 的 eval 段传显式 `--reach-config`；
+`eval_closed_loop.py` 没有这个参数；`run_eval_arm.sh` 两个都不传，仍走 `DEFAULT_REACH`）。
+
+**但技术观察成立，且推翻了我的一句注释**：我写过"VLA 轮次与 reach 标定无关"，这只对 `execute_grasp` 成立。
+`ready_grasp_policy.sample_stand` 读 `max_drop` / `backshift` / `ready_grasp_recovery`（第 90 行还有一条
+`if not choices and config.ready_grasp_recovery` 的采样分支），所以标定会**移动采样出来的站位、进而改变 case 分布**；
+`round_phases` 里还有一条 `ready_grasp_baseline` 分支专门在 `vla_policy is not None` 时执行。
+
+处理：`_apply_task_config` 在 `VLA_POLICY` 非空时**不填 `reach`** 并打印 `skipped reach`，让"eval 保持自己的标定"
+成为构造上的保证而不是运气；eval 若真要用采集标定，必须显式给 `--reach-config`（在 argv 里可见）并在台账登记。
+
+三次假阳性里这次最危险：前两次是响亮的拒绝，这次会是**静默的分布改变**。
+
+### 17.7 flow200 的 50/100 不能再当作外部对标(2026-09-10, session cf 提出并两次自我更正)
+
+`ReachConfig` 与 `--reach-config` 由 `8c621fb`(2026-09-07)引入;`8c621fb^` 的 grasp_gym 里 `reach-config` 零命中。
+flow200 的 eval 在 2026-09-02/03,**早于该参数存在**,所以它必然跑在当时的站位采样带上——
+也就是 `8c621fb` 随后固化为 `DEFAULT_REACH` 的 post_min 0.22 / azimuth 36.5;
+ready-grasp 线(七个 `ready_grasp_*.json` 加两个 task config)自 09-07 起统一为 0.30 / 42.0。
+`sample_stand` 读这些字段,所以两者是不同的站位与 case 分布。
+
+划界:
+- **实验内部有效**:dart-vs-flow 的 2×2 四格同一实验同一协议,内部比较全部成立。
+- **跨实验无效**:把 flow200 的 50/100 拎出来当作 09-07 之后 arm 的参考,是拿两个分布比。
+  `docs/reference/runbook.md` 和 `docs/evaluation.md` 里"当前正式基线"的说法已加限定。
+
+过程中被否掉的两个中间结论(都记下来,免得再走一遍):
+1. "`run_learn_pilot` 的 eval 段传 `--task-config`,会被本次 diff 改掉分布"——不成立,那是 collect 段。
+2. "flow200 的 argv 随 outputs 删除丢失,分布不可判定"——不成立,**查特性引入日期比考古 argv 更有力**。
+
+一般性的坑仍然成立(只是不适用于 flow200):`run_eval_arm.sh` 的 `EXTRA=${7:-}` 会原样拼进 argv,
+所以"哪个脚本产出"不是充分溯源,要看记录下来的 argv。

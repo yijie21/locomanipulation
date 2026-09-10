@@ -37,6 +37,10 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- CONVENTION (user ruling, 2026-09-10): cross-session coordination goes in THIS FILE by default, not in
+  cross-session messages. Send a message only for a blocking resource conflict. Rationale: message volume
+  was too high today and every one costs a human approval; several expired undelivered anyway, so STATE is
+  both cheaper and more reliable. Session 29 is following this from now on.
 - 2026-09-10 15:1x (session 29): session cf flagged that `--task-config` could re-calibrate a closed-loop eval.
   VERIFIED NOT to happen today -- no eval path passes --task-config (run_learn_pilot's eval passes an explicit
   --reach-config; eval_closed_loop.py has no such flag; run_eval_arm.sh passes neither, so it stays on
@@ -91,10 +95,9 @@
   (two sims on one port block); gate.txt there is VOID, not a regression. Session 29 is landing an admission check
   that gates on the ports (not GPU memory); the gate for the pick_place changes still has to be re-run on a quiet
   instance (window: after 29's run ~13:55, before cf's eval ~15:45).
-- pick-place session: NOTHING RUNNING (14:45 UTC). Gate attempt 2 (outputs/experiments/gate_bottle_pickplace2_20260910)
-  was refused at gym start by session 29's new ports.require_exporter() (matches "run_data_exporter" only; run_learn_pilot's
-  exporter is run_instance_exporter.py) -- reported to 29; every run_learn_pilot collect refuses until it is fixed. Gate
-  still pending; instance 0 / GPU1 free, lock free.
+- RUNNING (pick-place session, 2026-09-10 15:09 UTC, ~12 min): bottle behaviour gate attempt 3 on instance 0 / GPU1,
+  outputs/experiments/gate_bottle_pickplace3_20260910 (attempt 2 was refused by the exporter-name check, since fixed by 29).
+  Instance 0 is free again when this line is gone (cf needs it ~15:45).
   (inherited fd, self-releasing) and stop_instance.sh is scoped to its own instance's exporter (comm=python + TF_CAMERA_PORT
   in the environment); agreed with session 29, who drop their runner-side port loop. Untested on a live stack yet (instance 0
   busy) -- the first start after this is the test.
