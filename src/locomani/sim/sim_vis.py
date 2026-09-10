@@ -1,8 +1,13 @@
 """Which debug visuals the simulator draws — one env var, `SIM_VIS`.
 
-    SIM_VIS=full            # default: everything, identical to the old behaviour
-    SIM_VIS=none            # a clean third-person video
+    SIM_VIS=none            # default since 2026-09-10: a clean third-person video
+    SIM_VIS=full            # everything (the default before 2026-09-10)
     SIM_VIS=bbox,readout    # only the 6-D pose boxes and the numeric readout
+
+The default is `none`: the debug art is for diagnosing a run, and a reviewer
+watching a collection or A/B video wants the robot and the object, not the
+5800-geom reach cloud over the hands. Set SIM_VIS=full (or the items you want)
+for BOTH the stack and the gym process when you need it.
 
 The four items:
 
@@ -39,7 +44,7 @@ _NONE = {"none", "off", "0"}
 
 
 def _selected() -> frozenset:
-    raw = os.environ.get("SIM_VIS", "full").strip().lower()
+    raw = os.environ.get("SIM_VIS", "none").strip().lower()
     if raw in _ALL:
         return frozenset(ITEMS)
     if raw in _NONE:
@@ -63,7 +68,7 @@ def enabled(item: str) -> bool:
 
 def describe() -> str:
     on = [i for i in ITEMS if i in SELECTED]
-    return f"SIM_VIS={os.environ.get('SIM_VIS', 'full')} -> {on or ['nothing']}"
+    return f"SIM_VIS={os.environ.get('SIM_VIS', 'none')} -> {on or ['nothing']}"
 
 
 if __name__ == "__main__":

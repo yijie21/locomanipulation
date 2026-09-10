@@ -100,7 +100,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](../setup.md#0-路径约定) |
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `start_stack.sh` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `start_stack.sh` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
-| `SIM_VIS` | `full` | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
+| `SIM_VIS` | `none`(2026-09-10 前是 `full`) | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `TF_DATASET_FPS` | `30` | vla_round | 闭环回放的发布帧率,**必须等于 checkpoint 训练数据的 fps**。转换器 2026-08-28 起写 25,所以用重转数据训出来的 checkpoint 要 `--set backend.dataset_fps=25`(2026-09 起环境变量 `TF_DATASET_FPS` 不再被读取,只有 `SonicBackendConfig.dataset_fps`);不匹配不会报错,只是动作按错速度回放 |
 | `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../collection.md#4-外观每局重掷默认关) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../collection.md#相机) |
@@ -195,8 +195,8 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 四个调试可视化由一个变量 `SIM_VIS` 控制:
 
 ```bash
-SIM_VIS=full            # 默认,全开
-SIM_VIS=none            # 录像完全干净
+SIM_VIS=none            # 默认(2026-09-10 起),录像完全干净
+SIM_VIS=full            # 全开,调试用(2026-09-10 前的默认)
 SIM_VIS=bbox,readout    # 只留 6D 线框盒 + 坐标读数
 # 可选项: reach | ghost | bbox | readout
 ```
@@ -268,7 +268,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |
 | 每局都 `teleport did not land` | 上一局的 deploy 状态没清干净。`GYM_RESTART_DEPLOY=1`(默认)每局重启 deploy 就是为这个 |
 | 没有第三人称录像 | `SIM_VIDEO_DIR` 必须在 `start_stack.sh` **之前**给,跑起来之后设无效 |
-| 录像里没有绿色点云 | `SIM_VIS` 里没有 `reach`。它在 sim 启动时读一次,跑起来之后改不了 |
+| 录像里没有绿色点云 | 默认就没有(`SIM_VIS=none`);要它就给 `SIM_VIS=full` 或含 `reach` 的列表。它在 sim 启动时读一次,跑起来之后改不了 |
 | `SIM_VIS=none` 但幽灵夹爪还在 | `SIM_VIS` 只给了 stack,没给 gym。两个进程都要设 |
 | 录下来的 `planner_height` 全是 -1 | `patches/vla_action_space.patch` 没打。整段下蹲会从 action 里消失 |
 | action 是 267 维而不是 78 维 | 同上,补丁没打 |
