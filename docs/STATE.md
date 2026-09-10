@@ -409,17 +409,23 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
-- **对比两个闭环数字前,先看各自的 argv,不是看脚本名**(2026-09-10 查证,预先存在,与今天的改动无关)。
-  `run_learn_pilot` 的评测阶段传本臂自己的 reach config(HEAD run_learn_pilot.py:364),
-  `scripts/run_eval_arm.sh` 默认不传、落到 `DEFAULT_REACH`,而两者经 `ready_grasp_policy.sample_stand`
-  是不同的站位与出生分布:post_min 0.30 vs 0.22、azimuth 42.0 vs 36.5(backshift 0.08、max_drop 0.13 两边相同,
-  所以差异只在这两个字段)。全部 7 个 `configs/collection/ready_grasp_*.json` 与 `bottle_visible.json`、
-  `pick_place.json` 在这些字段上一致,`DEFAULT_REACH` 是唯一异类。
-  **但脚本名不是 provenance**:`run_eval_arm.sh:31` 有 `EXTRA=${7:-}`,71 行原样拼进 eval 的 argv,
-  所以某次调用完全可能自己带了 `--reach-config`。要判断一个历史数字用的是哪套,只能看它记录下来的 argv。
-  推论:ready-grasp 线经 run_learn_pilot 的各臂内部可比(07d、07d-200 的 57/100、即将出的 visible200);
-  **flow200 的 50/100 的 argv 已随 2026-09-09 的 outputs/ 事故一起丢失,无法再判定**,
-  不要拿它做对照,只能当历史文字看。
+- **站位采样带在 2026-09-07 变过,所以 flow200 的 50/100 不能当 ready-grasp 线的外部对照**
+  (2026-09-10 查证,与今天的改动无关;此条是同日两次过头表述的最终版)。
+  事实链:`reach_config.py` 与全部 `configs/collection/ready_grasp_*.json` 都是 8c621fb(2026-09-07)新建的,
+  而 flow200 的 50/100 是 2026-09-02/03(台账 §5、§8),那时 `--reach-config` 这个 flag 还不存在。
+  `ReachConfig` 的 docstring 写的是"对**当前**桌面 reach 控制器的显式、带版本的标定",其默认
+  post_min 0.22 / azimuth 36.5 与改动前 `grasp_gym.py` 注释里反复出现的 0.22 带一致,
+  所以 flow200 落在旧带上;ready-grasp 系列(全部 7 个 profile 与 `bottle_visible.json`、`pick_place.json`)
+  统一是 0.30 / 42.0,经 `ready_grasp_policy.sample_stand` 改变站位与出生分布。
+  backshift 0.08、max_drop 0.13 两边相同,差异只有这两个字段。
+  **推论**:ready-grasp 线各臂内部可比(07d、07d-200 的 57/100、即将出的 visible200);
+  flow200 的 50/100 属于旧带,`docs/reference/runbook.md:7` 与 `docs/evaluation.md:941` 把它写成"当前正式基线",
+  作为**新臂的外部参照**这一用法已经失效,需要加限定。
+  **但 dart-vs-flow 的 2×2 本身完好**:四格(flow200 base 50 / ens 46,dart200 base 24 / ens 56)是同一实验、
+  同一协议一次跑出来的,组内比较全部成立,结论"DART 数据教会桌边停滞"不受影响。
+  区别是**跨实验 vs 组内**,不是有效 vs 作废。
+  一般规则(与本条独立):比较前看各自记录的 argv 而不是脚本名,因为 `run_eval_arm.sh:31` 的 `EXTRA=${7:-}`
+  会被 71 行原样拼进 eval 的 argv;这一条对 flow200 不适用,因为那时 flag 还不存在。
 - Did the GPU0 overlap cost visible200 anything? 65's crate chain shared GPU0 during batches 07-14 (43/80 vs 157/255
   elsewhere). Session integrity and both audits are clean, so nothing is provably damaged; if the trained model shows a
   stratified oddity, those 8 sessions (07-45-01 .. 08-24-52) are the first suspects. Unknowable after the fact.
