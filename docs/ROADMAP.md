@@ -457,6 +457,12 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 
   **优先级排在 DAgger 修复与闭环成功率之后**:当前瓶颈是 covariate shift,不是渲染。
 
+  **2026-09-10 更新:3DGS 这条已经做完调研,方案台账在
+  [docs/handoff/3dgs_background_plan.md](handoff/3dgs_background_plan.md)。**两条已裁定(目的是
+  appearance domain randomization、不单独验收),渲染路线四条并列未裁定。上面"UE 做多样性、
+  3DGS 做单场景保真"的判据已过时:InteriorGS 这类 1000 场景、单位米、Z-up 的批量资产让 3DGS
+  也能做多样性。另外那条"现在采的数据重渲染不了"的前置缺口**已补上**(StateTrace 逐帧 qpos)。
+
 - **【前置,且必须赶在下一轮采集之前】把机器人世界位姿记进逐帧数据。**
   上面那条重渲染方案有个地基缺口:**现在采的数据重渲染不了。**原始 exporter
   session 共 32 列,与位姿相关的只有 `observation.root_orientation[4]`(只有朝向)、
