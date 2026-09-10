@@ -349,6 +349,10 @@ def main() -> None:
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
+    # Script-vs-package double copy (see bimanual_wall.main): carry_phases*.py import this
+    # module by its package name; make that name resolve to the running module so the
+    # globals set below (DUMP_DIR) are the ones the phases read.
+    sys.modules.setdefault("locomani.tasks.crate.bimanual_carry", sys.modules[__name__])
     inst = int(os.environ.get("INSTANCE", "0"))
     for k, base in (
         ("TF_SONIC_PORT", 5556),

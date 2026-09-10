@@ -345,6 +345,11 @@ def _build_scene_and_plan(args: argparse.Namespace) -> _SceneSetup:
 
 
 def main() -> None:
+    # Run as a script this module is `__main__`; the phase modules import it by its
+    # package name. Alias so both names are the same module (module-level state such as
+    # VLA_POLICY / RESTART_DEPLOY / ARM_PIN is then read from one place). No-op when
+    # eval_closed_loop imports grasp_gym as a package and calls main() in-process.
+    sys.modules.setdefault("locomani.tasks.bottle.grasp_gym", sys.modules[__name__])
     args = cli_args.parse_args()
     setup = _build_scene_and_plan(args)
     round_loop.round_loop(args, setup)

@@ -41,7 +41,9 @@ class ReachConfigTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         for path in (
             repo / "configs/collection/ready_grasp_visible.json",
-            repo / "outputs/experiments/ready07d_200_20260908/reach_config.json",
+            # the 07d-200 collection's reach_config.json, kept as a tracked fixture: unit tests
+            # must not read outputs/ (2026-09-10, the data directory was lost)
+            repo / "tests/fixtures/reach_config_ready07d_200.json",
         ):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")

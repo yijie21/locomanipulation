@@ -13,11 +13,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 SIM_TEST_FILES = {"test_ready_pilot.py"}
 TORCH_TEST_FILES = {"test_action_prefix_loss.py"}
+# The frozen ScaleBFM line (decision 6, Codex-owned, src/teleop_free/scalebfm/) ships its own
+# tests/test_bfm_*.py; they need that line's extra packages and are not part of this tier.
+SCALEBFM_PREFIX = "test_bfm_"
 
 
 def pytest_addoption(parser):
     parser.addoption("--run-sim", action="store_true", default=False, help="run tests that need a live stack")
     parser.addoption("--run-torch", action="store_true", default=False, help="run tests that need torch")
+    parser.addoption(
+        "--run-scalebfm", action="store_true", default=False, help="collect the frozen ScaleBFM line's tests"
+    )
+
+
+def pytest_ignore_collect(collection_path, config):
+    return collection_path.name.startswith(SCALEBFM_PREFIX) and not config.getoption("--run-scalebfm")
 
 
 def pytest_collection_modifyitems(config, items):

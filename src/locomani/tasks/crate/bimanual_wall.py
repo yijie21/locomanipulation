@@ -297,6 +297,12 @@ def main() -> None:
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
+    # Run as a script this module is `__main__`; wall_phases.py's deferred
+    # `from locomani.tasks.crate.bimanual_wall import WALK, ...` would otherwise
+    # import a SECOND copy with the defaults, and the --config/--set overrides
+    # below would never reach the phases (crate GPU gate 2026-09-10: wall_walk=true
+    # ran the ready-stand variant). Alias the package name to this module first.
+    sys.modules.setdefault("locomani.tasks.crate.bimanual_wall", sys.modules[__name__])
     # FEATURE/WALK (and FEATURE's derived DEPTH_AXIS/WALL_AXIS/WALL_Y/NEAR_X/
     # CRATE_YAW_DELTA/GRIP_BELOW) default from DEFAULT_CRATE_TASK at module
     # load; a --config/--set here overrides them the same way any other
