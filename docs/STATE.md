@@ -15,6 +15,20 @@
   in each session's info.json discarded_episode_indices; the verification-tail trim marker is lost) or recollected;
   models retrain in ~77 min; evals rerun. Waiting for the user's decision before any further GPU work.
 
+## Refactor merged and verified (2026-09-10 03:00 UTC, session 9d; main 1d35aad+)
+- Steps 1-6 of docs/handoff/refactor-plan.md are on main. No functional change, evidence in tests/gate/results/:
+  (1) converter A/B (78536ae vs main, 4 exporter sessions): 34/34 parquet+stats byte-identical; meta differs only in
+  the source path string and the deleted a18 block. (2) bottle GPU gate on GPU0: 7/10, geometry / stages / durations
+  all PASS; the single red row is a pre-existing failure string missing from the 30-round baseline. Bisect p2/p4/p6:
+  6/10, 6/10, 8/9. An earlier 3/10 with four close-phase topples was the sim on GPU1 under 97 % foreign utilisation.
+  (3) crate GPU gate: 8/10 = baseline; stand-off / yaw / depth PASS; one pre-existing failure string.
+- Gate-found and fixed: exporter launcher lost its import path (never started); 'approach' stage marker dropped
+  with the legacy tail; script-vs-package double module copy made `--set wall_walk=true` a no-op in the crate CLI.
+- Not yet verified: the eval path (needs a trained model; all models were lost). Size-cap debt: 5 files / 79
+  functions (scene_lib, privileged_pub, convert_to_hf_format, isaac_scene, isaac/stage), lint stays in report mode.
+- Data recovery after the incident: waiting for the user's decision (re-convert from /workspace/tmp/p03 sessions
+  without tail trim, or recollect). No GPU jobs running.
+
 ## Now
 - ScaleBFM post-deletion audit2026-09-10: outputs is empty; ABCD process absent, NOT running.
   Core src/tests/config/docs survive;3ablation unit tests pass. ABCD run.py/config/progress/results,
