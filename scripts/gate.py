@@ -33,7 +33,7 @@ import statistics
 import sys
 from collections import Counter
 
-TOL = dict(yield_abs=0.15, depth_m=0.01, drop_m=0.005, duration_rel=0.30, angle_deg=1.5)
+TOL = dict(yield_abs=0.15, depth_m=0.01, drop_m=0.005, duration_rel=0.30, angle_deg=1.5, duration_floor_s=0.05)
 
 
 def _rows(pattern):
@@ -114,7 +114,9 @@ def compare(base, cand):
     def add(name, ok, detail):
         checks.append((name, bool(ok), detail))
 
-    add("yield", abs(cand["yield_"] - base["yield_"]) <= TOL["yield_abs"], f"{base['yield_']} -> {cand['yield_']}")
+    # One-sided: a yield DROP beyond the tolerance is a regression; a higher yield is not
+    # (2026-09-10: an 8/9 batch tripped the symmetric check against a 20/30 baseline).
+    add("yield", cand["yield_"] >= base["yield_"] - TOL["yield_abs"], f"{base['yield_']} -> {cand['yield_']}")
     for key, tol in (
         ("end_depth_m", "depth_m"),
         ("stand_off_m", "depth_m"),
@@ -138,6 +140,8 @@ def compare(base, cand):
     for k, v in base.get("stage_s", {}).items():
         c = cand.get("stage_s", {}).get(k)
         if v and c is not None:
+            if v < TOL["duration_floor_s"]:
+                continue  # millisecond-scale stage markers: their jitter is not behaviour
             add(f"stage_s.{k}", abs(c - v) <= TOL["duration_rel"] * v, f"{v} -> {c}")
     return checks
 

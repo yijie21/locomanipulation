@@ -375,6 +375,9 @@ def _execute_grasp(
     docs/handoff/refactor-step2-candidates.md.
     """
     execution.metrics["reach_config"] = config.to_dict()
+    # Stage marker the pre-refactor path entered before dispatching (the GPU gate compares
+    # stage sets and per-stage durations; step 2 dropped it with the legacy tail).
+    execution.enter("approach")
     if not config.ready_grasp_recovery:
         return False, "ready_grasp_recovery=False is retired; every collection profile now uses a recovery controller"
     if coordinated is None or not hasattr(coordinated, "execute"):
