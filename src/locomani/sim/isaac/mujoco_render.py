@@ -127,7 +127,9 @@ def main(argv=None) -> None:
                 frame[y : y + h, x : x + w] = rend.render()[:, :, ::-1]
                 cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h), (255, 255, 255), 1)
                 for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
-                    cv2.putText(frame, label, (x + 6, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick, cv2.LINE_AA)
+                    cv2.putText(
+                        frame, label, (x + 6, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick, cv2.LINE_AA
+                    )
             vw.write(frame)
             written += 1
     vw.release()

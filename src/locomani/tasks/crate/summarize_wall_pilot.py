@@ -22,7 +22,10 @@ print(f"{'rd':>2} {'ok':>3} {'att':>3} {'trig':>8} {'move_s':>6} {'len_s':>5} {'
 stat = []
 for r in rows:
     rd = r["round"]
-    f = os.path.join(d, "trace", f"wall_s0_{rd:02d}_state_trace.npz")
+    # The trace is named after the run's --label (wall_s<seed>), which the
+    # manifest carries in the video path; wall_s0 is the pre-label default.
+    label = os.path.basename(str(r.get("video", ""))).rsplit("_", 1)[0] or "wall_s0"
+    f = os.path.join(d, "trace", f"{label}_{rd:02d}_state_trace.npz")
     move = length = static = float("nan")
     if os.path.exists(f):
         q = np.load(f)["qpos"]
