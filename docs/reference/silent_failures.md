@@ -54,6 +54,25 @@
 
 ---
 
+### ScaleBFM 线(`backends/scalebfm` + `tasks/bottle_visual`,2026-09-10 起)
+
+SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scalebfm_collection.md](../scalebfm_collection.md),台账 [ledger/scalebfm.md](../ledger/scalebfm.md)。
+
+| 文件 | 角色 |
+|---|---|
+| `backends/scalebfm/runtime.py` | `Sim`(MuJoCo + ScaleBFM PD 200 Hz/decimation 4 + dex1 夹爪 PD)、`Policy`(9 tensor 观测、history 3、mode 2)、`Refs`(未来 6 帧) |
+| `backends/scalebfm/network.py` | vendored HumanoidTransformer + `load_policy()`;资产在 `assets/scalebfm/`,FK MJCF **必须**是 ScaleTrack 那份 |
+| `backends/scalebfm/config.py` | `ScaleBfmBackendConfig`:checkpoint、scene_dir、object_name、grip_kp/kd(默认 1.0/0.025) |
+| `backends/scalebfm/{action,executor,chunks,reference,state,camera}.py` | 29 维原生动作编解码、25→50 Hz 执行器、延迟 chunk、SE(3) 参考、91 维学生状态、双相机观测 |
+| **`tasks/bottle_visual/round.py`** | **唯一 expert 入口**:`run_case` 与 `python -m locomani.tasks.bottle_visual.round --config configs/tasks/bottle_visual.json` |
+| `tasks/bottle_visual/config.py` | `BottleVisualTaskConfig`(默认 = yplus200 采集 expert)+ `GraspConfig` |
+| `tasks/bottle_visual/{planner,motion,observation,sensor,visibility}.py` | 决策(walk/reach/entry/close/lift/carry)、连续参考、带延迟/遮挡/量化的场景估计、可见性门 |
+| `tasks/bottle_visual/{scene,sampling,geometry}.py` | 三个桌高/深度层、`yplus_center_v1` 重置分布、边缘几何常量 |
+| `tasks/bottle_visual/{audit,replay,recovery,harness}.py` | 离线验收、精确动作重放契约、恢复扰动、共享 harness |
+| `tasks/bottle_visual/pipeline/` | 这条线自己的 collect / export / train / eval / video_check 驱动(尚未并入 `locomani/pipeline`) |
+
+静默失败:`config.json` 里的 `source_sha256` 覆盖整条线的源码(`pipeline/provenance.line_sources`),改任何一个文件后往旧目录续跑会直接拒绝——这是设计,用新的实验 ID。
+
 ## 参数速查
 
 ### `grasp_gym.py` 的命令行参数
