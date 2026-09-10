@@ -7,7 +7,7 @@
  "obs_dump": null,
  "replace": false,
  "wrist_cams": true,
- "sim_vis": "full",
+ "sim_vis": "none",
  "scene_random": false,
  "dataset_fps": 30.0,
  "clean_deploy": false,
