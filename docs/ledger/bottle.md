@@ -487,3 +487,223 @@ reanchor 只修了朝向锚。下一步:用它采下一批 200 条(约 3.2 h 而
 **2026-09-10 裁定(用户)**:采集默认改为不重启——`BottleTaskConfig.restart_deploy=False`、`configs/tasks/bottle_visible.json`
 同步;`eval_closed_loop` 固定 `RESTART_DEPLOY=True`(评测路径没在无重启下量过)。gate 基线换成本节 B' 的 30 局
 (`tests/gate/baseline_bottle.json`,旧基线留作 `tests/gate/baseline_bottle_restart_20260909.json`)。
+
+
+## 12. SONIC 弯腰能力审计(2026-09-10,Codex)
+
+用户问题:本地 SONIC 过去几乎不交付弯腰,协作者真机 G1 可以弯腰,是否本地有问题。
+本次只读代码、检查运行参数、做 CPU 离线探针;没有改变专家行为、模型、仿真或正在执行的采集。
+GPU0 为 cf 的 SONIC visible200, GPU1 为用户授权的 ScaleBFM 200-success;不可插入物理探针。
+
+**确认的事实**:
+
+- 当前 ready-grasp 的 `ready_q()` 腰 12:15 为零;主要抓取 IK、measured/recovery/coupled
+  路径使用 `use_waist=False`。它规划的是下蹲配合手臂,未把主动腰前倾作为抓取自由度。
+  入口 `src/locomani/tasks/bottle/ready_grasp_policy.py:35,78,308,336`、`measured_grasp.py:217`。
+  `use_waist=False` 不代表物理关节被锁死,实际身体仍可能有反馈运动。
+- 通用 `StreamedArm`/`PlannerArm` 的 IK 腰 pitch 范围被设为 [-0.05,0.20] rad(最大约11.5°),
+  MJCF 物理范围是 [-0.52,0.52]。该 IK 限制不拦截直接 `move_to(q)` 的外部关节目标。
+- `upper_body_position` 是 encoder 前的17维参考动作替换,不是电机目标直通。
+  C++ `g1_deploy_onnx_ref.cpp` 约797行替换未来参考帧,约3320行由 decoder 输出计算电机目标。
+  planner 下半身由 k-planner 生成;本地 streamed 路径的根姿态参考取 yaw-only;
+  commander 的 VR 三点路径用名义 neck 点,也不等价于人的全身弯腰动作输入。
+- 从 `78536ae:src/teleop_free/diag_lean.py` 恢复阅读旧测试:腰 pitch 0..0.52 rad,每档保持2.5s,
+  默认手臂固定到伸手姿态,分别走 planner/streamed;主要测腰相对关节角,并记录骨盆姿态。
+  没有髋/腿/根 pitch 协同参考,没有以躯干世界 pitch 为主指标。因此测试不能证明
+  “SONIC/G1不支持弯腰”。直接 q14 赋值绕过上述0.20 IK限制,不能用该限制解释旧2–10%。
+  原始 `outputs/diag/lean.json` 已随 outputs 事故丢失,本次不能复核那个比例。
+- 活跃 deploy 使用 `policy/release/model_{encoder,decoder}.onnx` 和其 observation_config,
+  `--input-type zmq_manager`、V2 planner,不是本地 `policy/v1_1` 或 low-latency 版本。
+  官方区分 Planner/Pose 全身动作跟踪以及不同 checkpoint;协作者的入口/模型/增益尚未提供。
+  参考: https://github.com/NVlabs/GR00T-WholeBodyControl 和
+  https://nvlabs.github.io/GR00T-WholeBodyControl/getting_started/download_models.html 。
+- 仿真存在可选 waist pin 钩子,默认 None;未发现当前抓取调用主动 pin waist 的代码。
+  这不是读取到了活跃进程内 pin 状态,不能据此证明运行时一切正常。
+
+**离线实验及边界**:
+
+```bash
+CUDA_VISIBLE_DEVICES='' OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
+scripts/experiments/sonic_lean_audit_20260910.py \
+  --out outputs/diagnostics/sonic_lean_20260910/offline.json
+```
+
+实际 AgentCommander 序列化 → 解析二进制 payload → 读取 C++ 关节映射常量并重建参考 →
+实际 release encoder/decoder(CPU单线程)。没有 socket、物理步进或 GPU。
+0、0.1、0.2、0.3、0.4、0.52 rad 六档 wire/ref 全部等于请求;非零档 token 改变
+8、18、28、33、37/64维。0.52档合成站立观测下单步腰目标相对0档改变0.1519 rad。
+该数值**不是交付率**,合成本体历史不代表真实闭环轨迹。
+结果 JSON 含 encoder/decoder/obs config/C++映射文件 SHA256。
+负对照:在临时进程 monkeypatch `AgentCommander.set_upper_body` 把 pitch 清零,探针断言按预期失败;
+正常探针及该文件 Ruff format/check 通过。它能检测丢信号,不能检测实际 C++ 活跃模式、
+反馈稳定性、PD扭矩不足或仿真时序造成的交付差。
+
+**结论与未验证解释**:
+当前专家主动排除腰部参与是事实;历史“这条路是死的”属于过度外推,教程已收窄表述。
+未找到离线链路关节映射/序列化丢失,不能据此认定完整在线链路无 bug。
+孤立、不协调的参考被跟踪策略削弱,以及接口/模型/增益差异,都是待验证解释,
+尚未复现和锁定旧2–10%的物理根因。不能直接放开 waist IK 就宣称修好。
+
+**下一步受控验证(未执行,等采集结束并核对资源)**:
+
+1. 取得协作者的控制入口、encoder/decoder/obs config 哈希、PD增益、动作参考和幅度。
+2. 固定同一 scene/模型/初态/控制频率/参考时长/增益,比较孤立腰 pitch 与协作者的协调
+   全身参考(含髋膝踝/根姿态);每种分别使用中立手臂、伸手姿态,至少5次配对复位。
+   同轨迹可表达时再跨 Planner/Pose/VR 比较,一次只改变一个因素。
+3. 分层记录 requested → wire → 实际deploy参考/模式 → token → decoder电机目标 →
+   实际腰/髋/骨盆/躯干世界pitch,加跟踪RMSE、稳态偏差、响应时间、骨盆高度、跌倒和接触。
+   参考即消失定位输入层;参考存在但电机目标小定位学习控制映射;电机目标足但实际角小
+   再检查扭矩饱和/PD/时序/接触。不能用腰关节角代替躯干世界倾角。
+4. 若本地能复现协作者动作,再研究将视觉抓取目标变成协调参考。专家修改后先做短 gate,
+   数据训练及固定预算 VLA 闭环结果才决定是否替换当前策略。
+
+
+## 13. GPU1 物理复现启动(2026-09-10,Codex)
+
+用户明确授权开始验证、使用 GPU1。ScaleBFM 200集仍在该卡采集;资源核对后启动独立 SONIC
+instance 1(DDS=1, ports 5565/5566/5567/5590/5591/5592),无 exporter。启动后 CPU约3.6/15.36核,
+pids1500/3840,无throttle,GPU1约11GB/32GB;未停止两条采集,未修改专家或模型。
+
+**已完成先导**:中立手臂、planner/streamed 两条路径、0..0.52rad六档,每档2.5s。
+planner最高档实际腰pitch约0.008rad,streamed约0.010rad;复现了很低的孤立腰指令交付。
+时序/FK躯干世界pitch见 `outputs/diagnostics/sonic_lean_20260910/live/neutral_0.json` 及两个trace文件;
+`pilot_verdict.json` 使用最后1s均值和0档基线计算增益,50%阈值只用于诊断弱交付,不是任务成功标准。
+这个先导没有录deploy debug,不能由它判断弱指令发生在哪一层。
+
+**运行中,不是最终结果**:PID2482154,五次中立/伸手各自重复,每次都有planner/streamed且切换前reset。
+新增debug记录token_state/last_action等原始字段;`body_q_target`不含upper覆盖,不能当覆盖后的encoder参考。
+不改变两条路径的原始控制语义。参考文件/脚本hash、局限、参数保存在live/plan.json。
+reset没有重置deploy内部RNG/历史,这还不是严格同随机状态的paired实验。
+尚无协作者参考,本批只复现和分层诊断孤立腰指令;协调全身动作及模型/增益比较未执行。
+
+启动方式(需先确认instance1归本实验所有且资源可用):
+
+```bash
+INSTANCE=1 CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=0 OMP_NUM_THREADS=1 \
+OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 bash scripts/stack/start_stack.sh 'SONIC isolated waist diagnosis'
+bash scripts/experiments/sonic_lean_batch_20260910.sh
+```
+
+batch逐case检查CPU余量>=6核、无限流、pids<2800,每case180s超时,拒绝覆盖已存在结果。
+完成或错误都会停止instance1并写live/batch.exit;batch.log给出当前case。当前命令为后台执行,
+不要再次启动。下一步先读已有结果和进程状态;分辨实际电机目标与实测角,再选择下一个干预。
+
+
+**进度复核(同日09:31 UTC)**:batch已退出1,不是仍在运行。neutral_1完成后、reach_1之前,
+资源检查CPU余量4.8857核<6,无限流,pids2025,触发保护并关闭instance1。
+已完成neutral_0先导+neutral_1正式重复,各12档结果;伸手和剩余重复未做。
+ScaleBFM进程仍活跃,19/200 accepted、19次完成尝试。
+
+在线debug进一步分层:output_interface/output_interface.hpp:339–346明确把last_action转换成
+MuJoCo顺序并乘scale加default,因此读其[14]已经是腰电机目标,不能再次换序/缩放。
+neutral_1最高0.52rad档末50样本,planner电机目标均值0.00694rad、实测0.00212rad;
+streamed电机目标-0.00141rad、实测0.01120rad,躯干世界pitch分别2.26°/6.96°。
+原始与汇总在live/neutral_1.json.*.trace.json、live/online_layer_summary.json。
+这说明不能单独归因“电机收到大弯腰指令但PD/扭矩交付不了”:模型输出的腰目标本来就小。
+仍未证明小输出由参考不协调还是在线模式/编码/模型行为造成;没有覆盖后的encoder观测。
+观测age最大<3ms,但只有case前后CPU采样,不能证明case全程无资源竞争。
+下一步资源恢复后补足剩余重复,并以协调参考干预;勿重复先导或覆盖neutral_1。
+
+
+**用户要求恢复(同日)**:新5秒采样CPU余量12.34核、无限流、pids1168,GPU1显存9664/32607MiB。
+启动独立instance1恢复supervisor PID2496602。batch脚本新增严格断点恢复:已有case须12档完整,
+两条channel trace无跌倒且日志有完成标记,才跳过;部分/异常结果拒绝覆盖。neutral_1保留,
+从reach_1继续到5次重复。原batch.exit/pid带时间戳归档,日志追加,未降低资源阈值。
+恢复状态见live/resume.json、resume.log、stack.log、batch.log;启动及批次结束清理仅instance1。
+
+恢复续记:首次重启后余量4.90核再次触发退出,未执行reach。将资源检查改为最多等10分钟,
+要求连续3个5秒窗口均>=6空闲核、无限流、pids<2800,阈值未放宽。supervisor2497422
+于09:38:32 UTC开始reach_1,启动前连续余量11.44/9.50/9.68核,neutral_1验证完整后跳过。
+
+
+**本批完成**:batch.exit=0,instance1进程已关闭。neutral/reach各5次正式重复,每次两个通道、六个腰角,
+共10个case/20次通道扫角/120个角度条件;均日志正常完成,无记录到的跌倒。先导neutral_0不计入汇总。
+结果 `live/phase1_summary.json`(包括每次结果和范围)。最高请求0.52rad=29.8°时,
+末50个样本均值再跨5次平均:
+
+|姿态|通道|实际腰角°|躯干世界pitch°|debug电机腰目标°|
+|---|---|---:|---:|---:|
+|中立|planner|0.04|1.95|0.95|
+|中立|streamed|0.68|6.33|1.11|
+|伸手|planner|1.82|3.46|-9.57|
+|伸手|streamed|2.30|6.31|-11.11|
+
+新的重要区别:伸手时电机腰目标明显反向,并非所有姿态都只是输出接近零。
+符合“模型为伸手姿态做平衡补偿”的解释,但未通过协调参考或编码输入干预验证,
+不能宣称根因已锁定。这个结果进一步排除了单纯将upper_body当电机位置指令的解释。
+当前整批仅验证孤立腰参考,不等价全身弯腰能力测试。下一步应捕获覆盖后的encoder输入并
+对比协调全身参考,而不是继续重复同一扫角。原ScaleBFM采集32/200 accepted,32次完成尝试。
+
+
+## 14. 协调参考与实际encoder输入验证启动(2026-09-10,Codex)
+
+用户授权下一阶段。独立GPU1/instance1,supervisor2545023,输出
+`outputs/diagnostics/sonic_lean_phase2_20260910/`。当前启动后等待连续CPU余量检查,尚无正式结果。
+资源要求与前阶段相同,不干扰继续运行的ScaleBFM采集。
+
+参考使用本地官方`squat_001__A359`第85帧,躯干世界前倾34.97°,原轨迹骨盆高0.557663m。
+CSV关节顺序实测为IsaacLab(部分旧Python说明误写MuJoCo):以根quat+FK对比CSV torso quaternion,
+帧0/79/140按IL解释误差<0.0001°,按MJ解释误差16.7/113.4/18.8°。此次按IL读入后转换正确。
+这不是协作者真机轨迹复现,也不是完整动态蹲起回放。模式0消费joint+root orientation,
+没有额外注入root position;原轨迹骨盆高度仅供筛选幅度参考。
+
+|条件|变化|
+|---|---|
+|legacy_waist_052|与前阶段对应的0.52rad孤立腰参考,用于私有build回归检查|
+|waist_only|同一参考第85帧腰pitch0.439575rad,其余保持初态|
+|legs_waist|用参考的12个腿关节+3个腰关节;双臂与根姿态保持初态|
+|legs_waist_root|在上一项上加入参考根roll/pitch,去除参考原始yaw|
+|full_pose|再加入参考双臂,成为模式0支持的全身姿态参考|
+
+每条件3重复,3s过渡/4s保持/3s返回;奇偶重复反转顺序,每条件重置。
+各条件沿用现有pose消息的零joint_vel,因此只解释稳态最后1s,不声称动态参考一致性。
+reset不重置deploy内部历史/RNG,不能当严格同状态配对。判断依据已预登记在plan.json。
+
+**真实输入记录**:复制当前C++ translation unit到输出目录,在GatherTokenState实际Encode调用后
+写出同一个float input buffer及token,保留walltime/mode/dim字段。原始C++/生产binary未改。
+使用原CMake编译选项及库做单进程编译;发现旧state_logger archive与新头文件ABI不一致,
+在私有目录重编state_logger对象解决链接,并保留build日志/manifest,故先跑legacy对照检验行为。
+记录是实际覆盖后的buffer,不是`body_q_target`或离线重建。文件末尾可能有进程关闭时未完整写出
+的record,解析器忽略不完整尾部并报告字节数;中间格式/维度错误直接失败。
+
+命令:
+
+```bash
+python3 scripts/experiments/sonic_encoder_capture_build_20260910.py
+bash scripts/experiments/sonic_lean_phase2_20260910.sh
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/experiments/sonic_encoder_capture_report_20260910.py
+```
+
+当前已经启动,不要重复执行。launcher独立lease/拒绝已有encoder.bin,结束清理只instance1;
+监看cases.log/resources.jsonl/progress.json/run.exit。新增Python Ruff检查与shell语法检查通过。
+后续先验证legacy低交付及tensor映射,再解读协调条件;若资源等待超时,保留输出再决定续跑。
+
+
+**启动结果复核**:本次phase2没有进入动作测试。resource_gate等10分钟后超时,run.exit=1,
+instance1已清理,没有case文件或encoder.bin。末尾CPU余量8.1/8.3/8.1核仍streak=0;
+按gate实现,free>=6却失败说明该窗口throttled_usec增加(当前JSON未保存其差值,不能报具体毫秒数)。
+因此不能把此次当作协调参考失败或编码器实验结果。后续重试先检查限流与资源采样规则。
+
+## 13. visible200_20260910:第一份不重启 deploy 的 200 集数据(2026-09-10,session cf)
+
+配方 = `configs/tasks/bottle_visible.json` + `configs/pilot/learn_200.json`(seed0 30000,每批 10 局,holdout 10),
+`through=convert`,instance 0 / GPU0,07:02–10:43 UTC。runner `scripts/experiments/visible200_20260910.sh`。
+
+| 项 | 数字 |
+|---|---|
+| 批 / 局 / 留存 | 34 / 335 / **200**(yield 0.60;每批 2–8) |
+| exporter session 核对 | 34/34:manifest 成败 = `discarded_episode_indices`,留存 episode 831–1433 行(中位 922) |
+| 转换 | rc=0,1425 s;train 190 集 81,425 帧、val 10 集 4,743 帧,25 fps,910 MB + 52 MB |
+| `check_dataset` | train 32/32 PASS,val 32/32 PASS(合爪时腕距 ≤30 cm 190/190、合爪后抬升 >3 cm 190/190、末端刚性 190/190、视频-表格 lag 0) |
+| 每局(成功) | 32–39 s |
+| 第 1 局失败 | **34/34**,全部在出生阶段(转身超时 22、物体不在 ego 视野 12)→ §12 |
+| 第 2–10 局失败(101) | stand infeasible 72、合爪倒瓶 8、IK 不舒适 6、到位够不到 6、掌内滑脱 3、其他 6 |
+
+**外部干扰**:07:45–08:30 另一 session 的 crate 采集 + Isaac 渲染上了 GPU0(它的端口探针在我这边的批间重启缝隙里看到 GPU0 空),
+第 8–15 批 yield 43/80 = 0.54,其余 157/255 = 0.62;没有 deploy 自愈重启,session 核对与审计都干净,留存数据未见损伤,
+但那 8 批(session 07-45-01 … 08-24-52)在训练后若出现分层差异先查它们。stand infeasible 72/101 明显高于 09-09 的 19%,
+和"不重启 deploy 停站远 3 cm"(§11 `park` 0.332 vs 0.301)方向一致,待训练评测判断是否影响分布。
+
+**裁定**:数据可用于训练;第 1 局的 10% 浪费由 §12 的修复消除(验证见 §12)。

@@ -29,28 +29,63 @@
 - Data recovery after the incident: waiting for the user's decision (re-convert from /workspace/tmp/p03 sessions
   without tail trim, or recollect). No GPU jobs running.
 
+## 固定规则:ScaleBFM正式批量采集
+- 必须GPU EGL渲染;同时显式配置CUDA设备与EGL设备,不得将OSMesa诊断配置沿用到正式批量采集。
+- 启动或切换渲染/设备/场景前先做独立pilot:覆盖三种桌面条件、检查成功/可见性/质量/视频和墙钟吞吐。
+  当前200集runner门槛12集入选、24视频解码通过、每集墙钟中位数<=60s;CPU余量>=6核且无限流。
+- 软件渲染仅显式诊断例外;采集入口需要--allow-software-rendering。断点续采保留完整集及渲染来源历史。
+- 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
+
 ## Now
+- SONIC phase2 STOPPED before any action test: supervisor2545023 exited1 after10min resource timeout,
+  private diagnostic deploy on GPU1 instance1; no production binary/source changes, no exporter.
+  outputs/diagnostics/sonic_lean_phase2_20260910/{plan.json,runner.json,resources.jsonl,cases.log,progress.json,run.exit}.
+  Five conditions x3: legacy waist0.52, matched waist-only, +legs, +root orientation, full official static pose.
+  Official squat frame85: torso~35deg/rootz0.558m (rootz not explicitly commanded). Actual encoder input/token
+  capture in encoder.bin; report script sonic_encoder_capture_report_20260910.py. Do not command instance1.
+  No cases executed and no encoder.bin produced; instance1 automatically cleaned up. Last free CPU samples~8cores
+  still reset streak (gate also requires zero throttling). Diagnose resource timing before retry, not model results.
+- RUNNING ScaleBFM200 on GPU1 EGL (Codex,user-authorized): driver2516911/child2518813. EGL_DEVICE_ID=1,
+  CUDA_VISIBLE_DEVICES=1. 12/12 independent pilot passed all audits,24/24video decode, median5.497s/episode
+  (OSMesa prior33 median175.94s). make check passed. 37/200 accepted at last check; new train episodes5.1–5.7s.
+  Old34 complete episodes retained, interruptedseed4035preserved/skipped; frozen expert source unchanged.
+  Root outputs/experiments/scalebfm200_noretract_sonic_20260910; plan/rendering_history distinguish oldOSMesa
+  and newEGL cases. Automatic collect->convert->stats continues; RESULTS.json only after all complete.
+- DONE (Codex SONIC GPU1 isolated-waist verification): batch.exit=0, instance1 stopped. All10 formal cases
+  (neutral/reach x5 repeats, each planner/streamed x6 angles) complete:120 angle conditions, no recorded falls.
+  live/phase1_summary.json: at request29.8deg, mean actual waist neutral planner/streamed0.04/0.68deg,
+  reach1.82/2.30deg; torso1.95/6.33 and3.46/6.31deg. Reach motor waist target is opposite sign,
+  mean-9.57/-11.11deg; neutral motor target0.95/1.11deg. Confirms output is not faithful requested waist tracking;
+  cannot yet distinguish learned coordination response from online-reference/mode problem. No fix applied.
+  Next: coordinated full-body reference and encoder-input capture, not more identical waist sweeps.
+  ScaleBFM original collection still running,32/200 accepted at status check. Ledger bottle §13 final results.
 # Re-applied 2026-09-10 ~09:50 UTC by session cf from /workspace/tmp/STATE_cf_fragment_20260910.md (Codex's hunks lost in the
 # STATE truncation, see 65's notice below); Codex owns these lines and may rewrite them.
-- RUNNING (Codex, user-requested GPU1 switch): ScaleBFM 200-success collection + conversion, driver 2460752 / child
-  2460783 on GPU1. outputs/experiments/scalebfm200_noretract_sonic_20260910/progress.json now says collect.
+- HISTORICAL (superseded by EGL restart above): ScaleBFM 200-success collection + conversion, driver 2460752 / child
+  2460783 on GPU1. At 2026-09-10 09:08 UTC: 11/200 accepted, 11 completed attempts; conversion not started.
+  outputs/experiments/scalebfm200_noretract_sonic_20260910/progress.json says collect.
   Original waiting GPU0 driver 2452516 stopped before any episode; plan_gpu0_before_collection.json archived.
   GPU1 had 8977/32607 MiB occupied, five 0% utilization samples; shared GPU allowed by this user request,
   CPU headroom checked, OSMesa + single CPU threads retained. Do not schedule additional work on GPU1 without checking.
-- QUEUED (Codex, 2026-09-10): ScaleBFM 200 accepted episodes -> LeRobot conversion -> stats, GPU0 after SONIC releases
-  resources. Driver PID 2452516; outputs/experiments/scalebfm200_noretract_sonic_20260910/{progress.json,runner.log}.
-  Frozen source/scene prepared, 103 runtime assets hash-verified; no ScaleBFM simulation launched while visible200 runs.
-  Current y+ profile, carry_back=0, sonic_lift6cm_hold2s_v1, B/train-only, max 800 attempts, no training. Source runner:
-  scripts/experiments/scalebfm200_20260910.py. It waits without timeout override; errors stop with failure.json.
+- Codex SONIC bend audit 2026-09-10: current ready-grasp excludes waist IK; generic IK pitch capped at
+  0.20 rad. Historical isolated-waist 2–10% result does not establish whole-body inability, raw traces lost.
+  CPU-only real serialization/encoder/decoder audit passed (plus dropped-pitch negative control); no physical
+  reproduction while both collections run. Findings/commands/next controlled test: docs/ledger/bottle.md §12.
+  No expert/model changes. Await collaborator's interface/checkpoint/reference details.
 - Codex 2026-09-10: ScaleBFM expert/eval now share sonic_lift6cm_hold2s_v1 (>6 cm lift for >2 s; fall <40 cm).
   Removed phase/grip/tilt/hand-speed success gates and preclose-knock early abort; 24 s budget and collection quality
   audit retained. 17 focused tests + thread-limited make check passed; no GPU run. Ledger scalebfm §17 supersedes §16's hold criterion.
 - Codex 2026-09-10: user cancelled ScaleBFM post-lift retraction. GraspConfig.carry_back and the bottle_visual JSON
   default are now 0 (was 0.07 m); collection and video-check defaults inherit it. Lift/height hold remain unchanged.
   No GPU job started; SONIC visible200 collection is unaffected. See docs/ledger/scalebfm.md latest entry.
-- RUNNING (session cf): visible200 collection + convert on instance 0 / GPU0 since 2026-09-10 07:02 UTC, ends ~10:30 UTC
-  (outputs/experiments/visible200_20260910, run_learn_pilot through=convert). Do NOT start a stack on instance 0, put
-  anything on GPU0, or run sim probes on either GPU until this line is gone. Batch results in collect/manifest_*.jsonl.
+- visible200_20260910 DONE 2026-09-10 07:02-10:43 UTC (session cf, instance 0 / GPU0, stack stopped): 34 batches, 335 rounds
+  -> 200 kept (yield 0.60), convert rc=0, check_dataset 32/32 PASS on train (190 ep, 81,425 frames, 25 fps, 910 MB) and val
+  (10 ep, 4,743 frames). 34/34 exporter sessions match their manifests, kept episodes 831-1433 rows. Dataset:
+  outputs/experiments/visible200_20260910/{train_dataset,val_dataset}; sessions /workspace/tmp/p03/outputs/2026-09-10-07-02-53 ..
+  10-3x. Sample reel outputs/videos/visible200_20260910/reel_sample10.mp4. Caveats: 65's crate chain shared GPU0 07:45-08:30
+  (batches 07-14: 43/80 vs 157/255 elsewhere; no deploy trips, audits clean); round 1 of EVERY batch (34/34) failed at the
+  spawn -- root cause + fix on branch fix/first-round-anchor (ledger bottle §12), verification running on GPU0 now
+  (outputs/experiments/firstround_fix_20260910, 3 batches x 4 rounds, ~8 min). Not trained.
 - RUNNING (session cf): visible200 collection + convert on instance 0 / GPU0 since 2026-09-10 07:02 UTC, ends ~10:30 UTC
   (outputs/experiments/visible200_20260910, run_learn_pilot through=convert). Do NOT start a stack on instance 0, put
   anything on GPU0, or run sim probes on either GPU until this line is gone. Batch results in collect/manifest_*.jsonl.
@@ -97,6 +132,15 @@
   re-checks right before it starts (memory gpu0-port-gap-overlap); never open a file for writing before reading it.
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
+
+## Changed (2026-09-10 ~09:40 UTC, new pick-and-place session; UNCOMMITTED, CPU-only, no GPU touched)
+- SIMPLE's basket scene brought into MuJoCo: assets/simple/{basket,sugar_box,soup_can}/model.xml (visual OBJ +
+  CoACD convex pieces from third_party/SIMPLE/data/assets, basket rotated y-up -> z-up, origin = centre). scene_lib:
+  three MESH_TARGETS entries + SCENE_PRESET=pick_place (basket at (-0.34, 0) yaw 90, sugar box (-0.40, +0.28),
+  soup can (-0.40, -0.28); target soup_can, goal basket via a new per-preset goal_object) and a `container=True`
+  flag that skips the jaw-span check; compose_scene.py --preset. Checks: OSMesa placement renders + 2 s settle
+  (objects sink <= 0.4 cm, no launch) + soup can dropped into the basket rests inside at 0.4 cm off centre:
+  outputs/scene_checks/pick_place_20260910/. make lint green. No expert / pipeline / Task yet.
 
 ## Changed (2026-09-10 branch session 65, COMMITTED on main through b68c1f9; pushed through ebac697)
 - Collection default: no per-round deploy restart (restart_deploy=False, ebac697) with a reset-phase reanchor
