@@ -37,24 +37,34 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- RUNNING (session cf): visible200_20260910 TRAINING on GPU0 since 2026-09-10 12:01 UTC (GR00T, 10k steps, ~4.5 h), then the
+  100-round closed-loop eval (seed 6000, closed_loop_100.json) on instance 0 / GPU0 (~3 h; starts only when CPU headroom is
+  OK). Keep GPU0 and instance 0 free until this line is gone. Runner scripts/experiments/visible200_train_eval_20260910.sh;
+  logs outputs/experiments/visible200_20260910/{train.log,pilot_train.log,pilot_eval.log,runner_train_eval.log}.
+- SONIC phase3 native dynamic replay/model-PD audit (2026-09-10, Codex): initial trial invalid,
+  robot already at pelvis z=0.119m when playback began; exclude from tracking results. Original retained.
+  Retry runner PID2600051 waits for 3x5s CPU windows >=6 free cores/no throttle (10min timeout), GPU1/instance1.
+  At latest check CPU free~0 cores; no retry stack yet. Read retry_reset/{resources.jsonl,run.exit,cases.log}
+  under outputs/diagnostics/sonic_native_phase3_20260910 before restarting anything.
+  Harness now resets AFTER model readiness, checks fresh preplay state, starts control/play immediately.
+  parity_report.json: active LowCmd PD matches C++ (CSV-rounding precision); 29 body joint params match
+  official local MJCF; robot mass Dex1=35.864952 vs Dex3=36.1652352kg. Runtime default dt=.005,
+  XML .002; this is an upstream entry-point override, not established bug. No production policy changes.
+  Commands/evidence/remaining comparisons: docs/ledger/bottle.md section15.
 - MERGE PENDING (session cf): branch fix/first-round-anchor (round 1 of every batch failed at the spawn; verified 3/3,
   ledger bottle §14) waits for the uncommitted edits in main's tree (Codex: docs/collection.md, scene_lib.py, bottle_visual/*,
   ledger bottle §12 弯腰审计) to be committed -- it touches docs/collection.md too. Whoever commits those: ping cf or just
   `git merge --no-ff fix/first-round-anchor` (both-appended conflicts only, keep both).
-- SONIC phase2 STOPPED before any action test: supervisor2545023 exited1 after10min resource timeout,
-  private diagnostic deploy on GPU1 instance1; no production binary/source changes, no exporter.
-  outputs/diagnostics/sonic_lean_phase2_20260910/{plan.json,runner.json,resources.jsonl,cases.log,progress.json,run.exit}.
-  Five conditions x3: legacy waist0.52, matched waist-only, +legs, +root orientation, full official static pose.
-  Official squat frame85: torso~35deg/rootz0.558m (rootz not explicitly commanded). Actual encoder input/token
-  capture in encoder.bin; report script sonic_encoder_capture_report_20260910.py. Do not command instance1.
-  No cases executed and no encoder.bin produced; instance1 automatically cleaned up. Last free CPU samples~8cores
-  still reset streak (gate also requires zero throttling). Diagnose resource timing before retry, not model results.
-- RUNNING ScaleBFM200 on GPU1 EGL (Codex,user-authorized): driver2516911/child2518813. EGL_DEVICE_ID=1,
-  CUDA_VISIBLE_DEVICES=1. 12/12 independent pilot passed all audits,24/24video decode, median5.497s/episode
-  (OSMesa prior33 median175.94s). make check passed. 37/200 accepted at last check; new train episodes5.1–5.7s.
-  Old34 complete episodes retained, interruptedseed4035preserved/skipped; frozen expert source unchanged.
-  Root outputs/experiments/scalebfm200_noretract_sonic_20260910; plan/rendering_history distinguish oldOSMesa
-  and newEGL cases. Automatic collect->convert->stats continues; RESULTS.json only after all complete.
+- COMPLETE SONIC phase2:15/15 cases,5conditions x3,run.exit0,instance1 stopped. Results:
+  outputs/diagnostics/sonic_lean_phase2_20260910/{summary.json,encoder_report.json,encoder_root_check.json}.
+  Matched waist-only->+legs->+root->full pose actual torso means4.90/7.38/13.06/16.52deg;
+  requested25.17/25.17/34.97/34.97deg. Actual encoder joint inputs maxerr5.89e-8rad;
+  reconstructed encoder rootpitch matches request within0.05deg(all mode0). Input signal is present.
+  Coordination improves bending but still undertracks; not proof G1/SONIC cannot bend. Next: dynamic
+  official replay/model+PD parity, not more identical static tests. No production expert/model change.
+- COMPLETE ScaleBFM200 collection/conversion/stats: RESULTS.json verified200episodes,49387frames,400videos,
+  no training started. Dataset:outputs/experiments/scalebfm200_noretract_sonic_20260910/dataset.
+  OSMesa34 complete cases retained plus166 EGL cases, one interruptedseed4035 skipped; rendering_history preserved.
 - DONE (Codex SONIC GPU1 isolated-waist verification): batch.exit=0, instance1 stopped. All10 formal cases
   (neutral/reach x5 repeats, each planner/streamed x6 angles) complete:120 angle conditions, no recorded falls.
   live/phase1_summary.json: at request29.8deg, mean actual waist neutral planner/streamed0.04/0.68deg,
