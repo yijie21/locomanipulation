@@ -55,7 +55,7 @@ def _field_comments(cls) -> dict:
             name = m.group(1)
             comments[name] = ""
         # a `field(...)` default that ruff wrapped keeps its comment on the closing `)  # ...` line
-        if name and "#" in line and not comments[name]:
+        if name and "#" in line and not comments[name] and not line.strip().startswith("#"):
             comments[name] = line.split("#", 1)[1].strip()
     return comments
 
