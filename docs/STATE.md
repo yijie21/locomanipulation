@@ -65,11 +65,10 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
-- Branch (65) 2026-09-10 08:10 UTC: NOTHING RUNNING; GPU0 / instance 2 free. New rule shipped (5bc1e0d): crate renders draw
-  ghost hands (IK-aimed wrist poses) in MuJoCo + Isaac, on by default via run_wall_pilot.sh --ghost-trace; self-tested by
-  overlaying recorded wrist poses. Hard-placement 10 re-collected with ghosts: 5/10, stand-off >= 0.27 x yaw again, plus a
-  close-stand counterexample at -15 deg (ledger crate.md). Videos: outputs/renders_isaac/crate_hard10g_20260910/.
-  Earlier today: restart_deploy=false default (ledger bottle §11), SIM_VIS=none, cpu_headroom.sh (quota 15.36 cores).
+- Branch (65) 2026-09-10 09:10 UTC: NOTHING RUNNING; GPU0 / instance 2 free. Ghost hands now draw the servo's pure reference
+  (3e18990); final hard-placement videos: outputs/renders_isaac/crate_hard10r_20260910/ (7/10; three same-seed runs 5/5/7,
+  the stand-off >= 0.27 boundary held in all three; ledger crate.md). Earlier today: restart_deploy=false default,
+  SIM_VIS=none, cpu_headroom.sh, crate placement design (setback x yaw).
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
