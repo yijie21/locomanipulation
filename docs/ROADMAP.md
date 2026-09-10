@@ -563,3 +563,14 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 3. **并入通用 pipeline**:这条线的 collect/export/train/eval 是自己的驱动,`locomani/pipeline` 还没有通过 Backend seam 调用它;做之前先决定 ScaleBFM 是否继续(见台账 §0:VLA 最高 25/100,SONIC 线 57/100)。
 4. **`src/teleop_free/lockstep_vendor/`**:SONIC lockstep 的 vendored 代码,`teleop_free` 名字消失前要移到 `backends/sonic/`。
 5. 若重启这条线:先按台账 §13 重建 `outputs/scene/sim`、runtime_assets 清单与数据;实验编排脚本放 `outputs/experiments/<name>/launch.sh` 但脚本源码要进 git。
+
+## pick-and-place 线后续(2026-09-10)
+
+expert 已过 10 局验收(`docs/ledger/pick_place.md` §4),按序:
+1. **抓取侧 yield 对照**:同 seed 跑 water bottle(paired),判断 0.53 是 6 cm 罐头的形状问题还是噪声;若是形状,
+   候选是 grip 回到罐心 + 更矮的桌面组合,或换 graspnet 里更细的圆柱体。
+2. ~~bottle 行为闸门~~ 已过:2026-09-10 15:14 PASS 16/16(台账 pick_place §6)。
+3. **随机化**(plan §4):篮子位置 ±3 cm、yaw ±15°;罐头恒在右侧,间距 0.22–0.40 m;出生门加篮子可见性。
+4. **落地翻倒**:release −10 cm 仍有 ~3 成倒;看松手瞬间的倾斜(`place_trace` 前一拍),或降低张开速度。
+5. 200 局采集 → convert(`training_tail` 已写)→ 训练 → 闭环评测;评测判据用 `in_container`。
+

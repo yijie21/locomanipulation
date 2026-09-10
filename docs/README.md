@@ -6,12 +6,13 @@
 
 `setup.md`(环境安装)、`collection.md`(数据采集)、`dataset.md`(导出与审计)、
 `training.md`(训练)、`evaluation.md`(评测)、`rendering.md`(渲染)、
-`crate_collection.md`(双臂搬箱)、`scalebfm_collection.md`(ScaleBFM 视觉抓瓶线)。代码路径随主线保持更新,判据和数字不动。
+`crate_collection.md`(双臂搬箱)、`scalebfm_collection.md`(ScaleBFM 视觉抓瓶线)、`pick_place_collection.md`(pick-and-place:抓罐头放篮子)。代码路径随主线保持更新,判据和数字不动。
 
 ## 台账(`ledger/`,每条产品线一个,append-only)
 
 `ledger/bottle.md`(单臂抓取实验总表)、`ledger/crate.md`(双臂搬箱验收/结果)、
 `ledger/scalebfm.md`(ScaleBFM 线:spike → v3/v4 → 视觉 expert Goal → yplus200 → 事故与重组)。
+`ledger/pick_place.md`(pick-and-place 线:SIMPLE 篮子场景、罐头形状的选择、place 阶段 pilot)。
 一条结论只记一处;要更正,在新的日期化章节里写并链接回旧的,不要就地覆盖。
 
 ## 参考(`reference/`)
