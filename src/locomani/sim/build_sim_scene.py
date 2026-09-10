@@ -137,6 +137,26 @@ def _local_box(model, data, body_id: int):
 # and the episodes are worthless to a VLA. Pitch 52 deg + fovy 70 covers 17-87
 # deg vertically (object at fy~0.68 with margin, in frame from ~1.3 m out
 # through the whole grasp).
+PAD_MESHES = ("dex1_col_1", "dex1_col_2")  # the two finger-face collision meshes, per hand
+
+
+def _harden_finger_pads(spec) -> int:
+    """Stiffer, frictional-torque contact on the finger pads only (not global noslip,
+    which pinned the feet: memory mujoco-grip-creep). The agentic branch's L1 set,
+    which carried a bottle 24.7 s with 0.8 cm of drift (docs/handoff/agentic-plan.md §8)."""
+    n = 0
+    for g in spec.geoms:
+        if g.meshname in PAD_MESHES and (g.contype or g.conaffinity):  # skip the ghost hand's copies
+            g.priority = 1
+            g.condim = 4
+            g.solref = [0.004, 1.0]
+            g.solimp = [0.99, 0.999, 0.001, 0.5, 2.0]
+            n += 1
+    if n != 4:
+        raise SystemExit(f"expected 4 finger-pad geoms to harden, found {n}")
+    return n
+
+
 EGO_CAM_NAME = "head_camera"
 EGO_CAM_QUAT = (0.668835, 0.230083, -0.230336, -0.668332)
 EGO_CAM_FOVY = 70.0
@@ -227,6 +247,14 @@ def parse_args(argv=None):
         "crate scene: 0.45 so the walking arms clear the table edge, 2026-09-07)",
     )
     ap.add_argument(
+        "--harden-pads",
+        action="store_true",
+        help="stiffen the four dex1 finger-pad collision geoms (priority 1, condim 4, solref 0.004, "
+        "solimp 0.99/0.999): a held object creeps out of the soft default contact at 0.2-0.5 cm/s, "
+        "which any hold longer than a few seconds meets (pick_place carry; memory mujoco-grip-creep). "
+        "Off by default so the bottle/crate gate baselines keep their physics.",
+    )
+    ap.add_argument(
         "--preset",
         default="",
         help="narrow what goes on the table (was SCENE_PRESET); see scene_lib.SCENE_PRESETS",
@@ -254,6 +282,9 @@ def main() -> None:
     mujoco.mj_forward(model, data)
 
     xml_path = os.path.join(out_dir, "scene_locomani.xml")
+    if args.harden_pads:
+        n = _harden_finger_pads(spec)
+        print(f"[scene] finger pads hardened: {n} geoms (--harden-pads)")
     _aim_ego_camera(spec)  # BEFORE to_xml(): see the note in there
     model = spec.compile()  # re-compile so the check below sees the aim
     _check_ego_camera(model)

@@ -88,7 +88,10 @@ class LocalGraspPointTests(unittest.TestCase):
         state["objects"]["bottle"]["pos"][2] += 0.05
         np.testing.assert_allclose(task.grip(state), expected + [0.0, 0.0, 0.05])
 
-    def test_grip_cannot_be_below_object_bottom(self):
-        for offset in (0.08, -0.01, float("nan")):
+    def test_grip_cannot_leave_the_object(self):
+        # Below the bottom, above the top, or nan: rejected. A grip ABOVE the centre
+        # but inside the box (a tall can gripped near its top, 2026-09-10) is allowed.
+        for offset in (0.08, -0.08, float("nan")):
             with self.assertRaises(ValueError):
                 TabletopTarget("bottle", "right", 0.7, 0.6, {"half_extent": [0.02, 0.02, 0.08]}, below_center=offset)
+        TabletopTarget("bottle", "right", 0.7, 0.6, {"half_extent": [0.02, 0.02, 0.08]}, below_center=-0.03)

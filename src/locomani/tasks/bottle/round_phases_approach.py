@@ -350,6 +350,13 @@ def _phase_grasp_and_verify(ctx: RoundContext):
         if vis < 0.7:
             return False, (f"[view] object in ego view only {vis * 100:.0f}% of the servo")
 
+    if ctx.goal_key:
+        # Pick-and-place: the lifted object goes into the container instead of
+        # the back-off-and-hold tail below (place_phase.py, plan §2 steps 4-9).
+        from locomani.tasks.bottle.place_phase import _phase_place
+
+        return _phase_place(ctx)
+
     ctx.execution.enter("carry_and_verify")
     s = p.obs()
     from locomani.tasks.bottle.grasp_gym import palm_frame_offset

@@ -82,6 +82,9 @@ def main():
     reach_cfg_path = out / "reach_config.json"
     if not reach_cfg_path.exists():
         task_cfg.reach.dump(reach_cfg_path)
+    task_cfg_path = out / "task_config.json"
+    if not task_cfg_path.exists():
+        task_cfg.dump(task_cfg_path)
     scene = out / "scene"
     if not scene.exists():
         shutil.copytree(args.scene, scene)
@@ -176,7 +179,7 @@ def main():
             env.update(dict(kv.split("=", 1) for kv in cfg.gym_env))
             stack_up = True
             before = set(SESSIONS.iterdir())
-            run(f"start_stack_{tag}", ["bash", STACK / "start_stack.sh", "pick up the water bottle"], env)
+            run(f"start_stack_{tag}", ["bash", STACK / "start_stack.sh", task_cfg.prompt], env)
             # Wait for THIS stack's exporter dir. max(mtime) alone raced: a slow
             # teardown could leave the previous batch's dir newest, giving an
             # off-by-one session<->manifest join that only surfaces at convert.
@@ -201,7 +204,9 @@ def main():
                         "--reach-config",
                         reach_cfg_path,
                         "--targets",
-                        "water_bottle",
+                        task_cfg.target,
+                        "--task-config",
+                        task_cfg_path,
                         "--rounds",
                         str(cfg.batch_rounds),
                         "--until-ok",
@@ -323,7 +328,7 @@ def main():
             stack_up = True
             run(
                 "start_eval_stack",
-                ["bash", STACK / "start_stack.sh", "pick up the water bottle"],
+                ["bash", STACK / "start_stack.sh", task_cfg.prompt],
                 dict(stack_env, NO_ENCODER="1", SIM_VIDEO_DIR=str(ev / "videos")),
             )
             slog = (ev / "serve.log").open("a")

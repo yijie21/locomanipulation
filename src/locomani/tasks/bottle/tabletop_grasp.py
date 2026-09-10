@@ -29,7 +29,9 @@ class TabletopTarget:
 
         if self.below_center is not None:
             half_z = float(self.box["half_extent"][2])
-            if not np.isfinite(self.below_center) or self.below_center < 0 or self.below_center >= half_z:
+            # Negative = above the centre (a tall can gripped near its top, pick_place
+            # 2026-09-10); either way the grip point stays inside the object's box.
+            if not np.isfinite(self.below_center) or not -half_z < self.below_center < half_z:
                 raise ValueError("Grasp offset must remain inside the object")
 
 

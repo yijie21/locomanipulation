@@ -55,6 +55,18 @@ def round_loop(args, setup) -> None:
     robot_nom = setup.robot_nom
     from locomani.pipeline.experiment_cases import save_cases
 
+    goal_key, place_config, goal_prompt, goal_xy = None, None, None, None
+    if getattr(args, "task_config", None):
+        from locomani.tasks.bottle.config import BottleTaskConfig
+
+        task_cfg = BottleTaskConfig.load(args.task_config)
+        goal_key, place_config = (task_cfg.goal or None), task_cfg.place
+        goal_prompt = task_cfg.prompt
+        goal_xy = np.asarray(meta["objects"][goal_key]["init_pos"][:2], dtype=float) if goal_key else None
+        if goal_key and goal_key not in meta["objects"]:
+            raise SystemExit(f"--task-config goal {goal_key!r} is not in the scene ({sorted(meta['objects'])})")
+        print(f"[gym] goal: {goal_key or 'none (lift and hold)'}")
+
     wins = 0
     played = 0
     deck: list[str] = []
@@ -108,6 +120,8 @@ def round_loop(args, setup) -> None:
                 can_xy = can_nom.copy()
                 can_xy[ax] = cxy[ax] + sgn * (half[ax] - rng.uniform(*grasp_gym.CAN_INBOARD))
                 can_xy[1 - ax] = can_nom[1 - ax] + rng.uniform(-args.edge_jitter, args.edge_jitter)
+                if goal_key and abs(can_xy[1 - ax] - goal_xy[1 - ax]) < place_config.goal_gap:
+                    continue  # pick-and-place: the edge jitter must not put the target against the container
                 from locomani.tasks.bottle.ready_grasp_policy import sample_stand as sample_comfortable_stand
 
                 rel, squat_hint = sample_comfortable_stand(pl, rng, reach_config)
@@ -196,6 +210,9 @@ def round_loop(args, setup) -> None:
             sampled_cases[-1]["object_yaw"] = case["object_yaw"]
         if args.sample_only:
             continue
+        if goal_key:
+            # Pick-and-place: the instruction names the container too (BottleTaskConfig.prompt).
+            task = goal_prompt
         side = "right"
         goal = f"{args.until_ok} ok" if args.until_ok is not None else f"{args.rounds}"
         print(
@@ -270,6 +287,8 @@ def round_loop(args, setup) -> None:
                 mid_band=args.mid_band,
                 reach_config=reach_config,
                 object_yaw=(case.get("object_yaw") if fixed_cases is not None else None),
+                goal_key=goal_key,
+                place_config=place_config,
             )
             ok, why, produced = round_result
             if args.record and produced and ok:

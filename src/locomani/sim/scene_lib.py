@@ -392,6 +392,41 @@ MESH_TARGETS = {
         # apply, and no single-hand grasp plan should be derived for it.
         bimanual=True,
     ),
+    # --- SIMPLE pick-and-place trio (2026-09-10) ----------------------------
+    # From SIMPLE's G1WholebodyBendPickAndPlaceTeleop-v0 (basket = objects:0,
+    # pickable from GraspNet-1B): a basket in the middle of the near edge and
+    # the can beside it (the sugar box was dropped 2026-09-10 on request). Meshes copied into assets/simple/<name>/
+    # with their CoACD convex pieces as collision (scratch make_simple_assets.py).
+    # Heights are the assets' native sizes; the table is 1.0 x 1.0 m with the
+    # robot approaching from -x, so everything sits within 0.16 m of the near
+    # edge (x = -0.50) where the 0.50 m palm envelope can reach.
+    "basket": dict(
+        mjcf=f"{paths.REPO}/assets/simple/basket/model.xml",
+        height=0.152,
+        surface="A",
+        xy=(-0.34, 0.0),  # near wall 6 cm inboard of the edge (footprint 0.20 x 0.30 after yaw)
+        yaw_deg=90.0,  # long axis across the robot's forward, opening faces up
+        phrase="the basket",
+        mass=0.40,
+        # A destination, not a thing to grip: no jaw-span check, and no
+        # single-hand grasp plan should be derived for it.
+        container=True,
+    ),
+    "soup_can": dict(
+        mjcf=f"{paths.REPO}/assets/simple/soup_can/model.xml",
+        # The asset MJCF bakes its own scaling (x/y 0.848 -> 6.0 cm body, 1.2 cm
+        # dex1 jaw margin a side; z 1.321 -> 14 cm tall): a 330 ml slim can gripped
+        # 3 cm above its centre (reach.grip_below_center -0.03) at the bottle's
+        # 0.72 m grip height, with only 4 cm of can above the pitched palm.
+        # Native was 10.6 x 7.1 cm, whose grip height 0.647 sits below the
+        # ready-grasp baseline's FK templates (>= 0.70 on the 0.62 table);
+        # a 0.70 table instead broke the left-hand table clearance (2026-09-10).
+        height=0.140,
+        surface="A",
+        xy=(-0.40, -0.28),  # robot's right of the basket
+        phrase="the soup can",
+        mass=0.35,
+    ),
 }
 
 # Scene presets. The default is every object the pipeline has always had; a
@@ -408,6 +443,17 @@ SCENE_PRESETS = {
     #                              left and right, for the two-handed carry
     "crate_bimanual": dict(
         on_surface_a=[], on_surface_b=[], primitives=[], mesh_targets=["blue_crate"], target_object="blue_crate"
+    ),
+    # SCENE_PRESET=pick_place  SIMPLE's basket in the middle of the near edge,
+    #                          the soup can to the robot's right; the can is
+    #                          the target, the basket the goal
+    "pick_place": dict(
+        on_surface_a=[],
+        on_surface_b=[],
+        primitives=[],
+        mesh_targets=["basket", "soup_can"],
+        target_object="soup_can",
+        goal_object="basket",
     ),
 }
 
@@ -911,7 +957,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
         "target_object": preset.get("target_object", TARGET_OBJECT),
         "target_pool": pool or list(TARGET_POOL),
         "object_phrase": phrases,
-        "goal_object": GOAL_OBJECT,
+        "goal_object": preset.get("goal_object", GOAL_OBJECT),
         "robot_start": {
             "xy": list(ROBOT_START_XY),
             "yaw_deg": ROBOT_START_YAW_DEG,
@@ -1055,7 +1101,10 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
         # than discovered as a grasp that never converges. A bimanual target is
         # gripped by its handles, not around its body, so its width is not a
         # jaw span and the check does not apply.
-        barrel = 0.0 if spec_m.get("bimanual") else barrel_span(spec_m["mjcf"]) * scale
+        # A container is a destination, not a grip target, so the check does
+        # not apply to it either.
+        no_jaw = spec_m.get("bimanual") or spec_m.get("container")
+        barrel = 0.0 if no_jaw else barrel_span(spec_m["mjcf"]) * scale
         if barrel > JAW_SPAN_MAX:
             raise SystemExit(
                 f"{name}: barrel is {barrel * 100:.1f} cm after scaling, over "
@@ -1095,6 +1144,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
             scale=scale,
             mesh=spec_m["mjcf"],
             bimanual=bool(spec_m.get("bimanual", False)),
+            container=bool(spec_m.get("container", False)),
         )
         if verbose:
             print(

@@ -86,6 +86,8 @@ class RoundContext:
     execution: ExecutionRecord = None
     reach_config: Any = DEFAULT_REACH
     object_yaw: float | None = None
+    goal_key: str | None = None  # container to place into after the lift (BottleTaskConfig.goal); None = bottle task
+    place_config: Any = None  # BottleTaskConfig.place, read by place_phase._phase_place
 
     # -- grasp_gym.py globals, snapshotted once per round --------------
     vla_policy: Callable | None = None

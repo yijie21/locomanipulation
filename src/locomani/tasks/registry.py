@@ -6,11 +6,13 @@ from locomani.tasks.base import Task
 from locomani.tasks.bottle import TASK as _BOTTLE_TASK
 from locomani.tasks.bottle_visual import TASK as _BOTTLE_VISUAL_TASK
 from locomani.tasks.crate import TASK as _CRATE_TASK
+from locomani.tasks.pick_place import TASK as _PICK_PLACE_TASK
 
 TASKS: dict[str, Task] = {
     _BOTTLE_TASK.name: _BOTTLE_TASK,
     _CRATE_TASK.name: _CRATE_TASK,
     _BOTTLE_VISUAL_TASK.name: _BOTTLE_VISUAL_TASK,
+    _PICK_PLACE_TASK.name: _PICK_PLACE_TASK,
 }
 
 
