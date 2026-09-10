@@ -47,6 +47,10 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
+- Branch (65) 2026-09-10 05:30 UTC: crate random10 pilot DONE on GPU0 / instance 2 (8/10, static median 0.15 red), 10 sbs
+  MuJoCo|Isaac videos rendered (outputs/renders_isaac/crate_random10_20260910/); instance 2 stopped, GPU0 free.
+  Collection-speed plan recorded (docs/ledger/bottle.md §10, ROADMAP tail): 33 of 64 s per bottle round is the deploy
+  restart; next experiment = 30-round gate with --set restart_deploy=false. Ledger: docs/ledger/crate.md 2026-09-10.
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
