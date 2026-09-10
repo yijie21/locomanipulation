@@ -260,7 +260,16 @@ class BimanualArms:
         return palm + R @ OFFSET, R
 
     def solve(
-        self, s, targets_w, rots_w, iters=12, from_measured=False, rot_weight=0.5, posture=None, posture_weight=0.0
+        self,
+        s,
+        targets_w,
+        rots_w,
+        iters=12,
+        from_measured=False,
+        rot_weight=0.5,
+        posture=None,
+        posture_weight=0.0,
+        ghost_targets=None,
     ):
         """One coupled step: each arm in turn. use_waist stays on so the
         solver's structure is unchanged, but the waist bounds are zero, so it
@@ -277,8 +286,13 @@ class BimanualArms:
         if from_measured:
             q[15:29] = np.asarray(s["joints"], dtype=float)[15:29]
         ghost = getattr(self, "ghost", None)
-        if ghost is not None:  # ghost_trace.GhostTargetTrace: the aimed wrist poses, per state seq
-            ghost.row(s.get("seq"), targets_w, rots_w)
+        if ghost is not None:
+            # ghost_trace.GhostTargetTrace: the aimed wrist poses, per state seq.
+            # A servo passes `ghost_targets` = its pure reference point (where
+            # the hand should be), because `targets_w` is then the command --
+            # reference + lead cap + overdrive -- which leads the hand and
+            # jitters (user, 2026-09-10: "the ghost moves and leaves the rail").
+            ghost.row(s.get("seq"), ghost_targets if ghost_targets is not None else targets_w, rots_w)
         Rp = Primitives._rot(s["pelvis"]["quat"])
         for side in ("left", "right"):
             tgt = self.p.world_to_root_full(targets_w[side], s)

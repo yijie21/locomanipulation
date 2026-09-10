@@ -166,7 +166,7 @@ def servo_tick(ctx: WallRoundContext, s, ref):
         corr = np.clip(OVERDRIVE * (e - e_across * yh), -OVERDRIVE_CAP, OVERDRIVE_CAP)
         corr += yh * float(np.clip(ACROSS_OD * e_across, -ACROSS_OD_CAP, ACROSS_OD_CAP))
         cmd[sd] = g + e + corr
-    arms.push(arms.solve(s, cmd, rot_w, from_measured=True))
+    arms.push(arms.solve(s, cmd, rot_w, from_measured=True, ghost_targets=ref))
 
 
 def _phase_reset(ctx: WallRoundContext) -> dict | None:

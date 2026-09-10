@@ -446,7 +446,7 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             cmd[sd] = ref[sd] + corr + np.array([*(y_hat * across_int[sd]), 0.0])
         rot_w = {sd: pitched(ctx, sd) for sd in ("left", "right")}
         ctx.rot_w = rot_w
-        q = arms.solve(s, cmd, rot_w, from_measured=True, rot_weight=0.25)
+        q = arms.solve(s, cmd, rot_w, from_measured=True, rot_weight=0.25, ghost_targets=ref)
         # Joint-space compensation on the wrist pitch alone: the policy delivers
         # the right wrist pitch 20 deg short of the command (diagnostic dump
         # 2026-09-07: cmd 49 / meas 29, every other joint within 10), which is

@@ -415,6 +415,8 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
   `render_wall_pilot.sh` 发现这个文件就把它传给两个渲染器,MuJoCo 和 Isaac 都画一对洋红半透明的张开夹爪
   (`sim/isaac/ghost.py`,几何和 `scene_lib.add_ghost_hand` 同一套数学,Isaac 侧引用机器人 USD 的 `/meshes/*`)。
   走路阶段没有 IK 目标,ghost 停在地下;画中画里永远没有 ghost。看视频时:ghost 是"想去哪",实手是"到了哪"。
+  ghost 画的是**纯目标点 `ref`**(hover → 杆上 → 下探 → 抬起,随阶段移动),不是伺服真正交给 IK 的命令
+  (`ref + lead cap + overdrive`,那个会超前于目标、来回抖);两者的差就是伺服在补的跟踪滞后。
 
 ---
 
