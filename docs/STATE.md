@@ -62,13 +62,11 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
-- Branch (65) 2026-09-10 07:20 UTC: NOTHING RUNNING from this session; GPU0 / instance 2 free. The other session (cf) has a
-  10-episode visible collection queued on instance 0 / GPU0 (outputs/experiments/visible10_20260910/launch.sh) -- do not start
-  GPU0 or stack jobs without telling it. Done today: restart_deploy=false is the collection default (ebac697, ledger bottle §11);
-  SIM_VIS defaults to none (18dd6dd); scripts/cpu_headroom.sh (container quota 15.36 cores); crate hard-placement diagnosis
-  5/10 -- stand-off >= 0.26 x crate yaw makes the far hand unreachable (ledger crate.md 09-10, 166cd37), 10 sbs videos in
-  outputs/renders_isaac/crate_hard10_20260910/. Next lever there: bias the walk-in stand toward the far rail end / gate
-  [stand] on far-hand reach (not done).
+- Branch (65) 2026-09-10 08:10 UTC: NOTHING RUNNING; GPU0 / instance 2 free. New rule shipped (5bc1e0d): crate renders draw
+  ghost hands (IK-aimed wrist poses) in MuJoCo + Isaac, on by default via run_wall_pilot.sh --ghost-trace; self-tested by
+  overlaying recorded wrist poses. Hard-placement 10 re-collected with ghosts: 5/10, stand-off >= 0.27 x yaw again, plus a
+  close-stand counterexample at -15 deg (ledger crate.md). Videos: outputs/renders_isaac/crate_hard10g_20260910/.
+  Earlier today: restart_deploy=false default (ledger bottle §11), SIM_VIS=none, cpu_headroom.sh (quota 15.36 cores).
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
