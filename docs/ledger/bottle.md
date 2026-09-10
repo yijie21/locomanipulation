@@ -487,3 +487,22 @@ reanchor 只修了朝向锚。下一步:用它采下一批 200 条(约 3.2 h 而
 **2026-09-10 裁定(用户)**:采集默认改为不重启——`BottleTaskConfig.restart_deploy=False`、`configs/tasks/bottle_visible.json`
 同步;`eval_closed_loop` 固定 `RESTART_DEPLOY=True`(评测路径没在无重启下量过)。gate 基线换成本节 B' 的 30 局
 (`tests/gate/baseline_bottle.json`,旧基线留作 `tests/gate/baseline_bottle_restart_20260909.json`)。
+
+## 12. 每批第 1 局在出生阶段必败:标定时的 start_control 抢占了朝向锚(2026-09-10,session cf)
+
+**现象**:`visible10_20260910`(2/2)与 `visible200_20260910`(17/17,截至第 17 批)每批的第 1 局都在出生阶段失败:
+`[stand] could not turn N deg to the approach heading at the spawn (turn_to -88deg timed out)` 11 次、
+`[view] object not in ego view at spawn` 6 次;第 2–10 局这两种失败一次没有。代价:每批白跑 1 局(~25 s + 10% 局数),
+两条失败串混进 manifest 的 failure_reasons。
+
+**根因**:`grasp_gym` 的场景装配在 stack 起来后做一次名义出生点标定——复位到名义位姿、`start_control()`、IDLE 2.5 s。
+deploy 在它的**第一次** `start_control` 处捕获朝向锚(memory `sonic-planner-heading-anchor`),这时机器人朝向 yaw 0。
+`round_phases._phase_spawn_and_settle` 用 `p._gym_started` 判断"这台 deploy 是否已经带锚":为 True 走 hold 1.5 s + `reanchor`,
+为 False 走"锚 = 落地 yaw"。标志只在 round 阶段置 True,标定处没置,于是第 1 局 teleport 到 yaw ≈ −90° 后被当作新 deploy,
+锚差 ~90°,IDLE facing 要么转不到(超时)要么站起来面朝别处(物体出视野)。第 2 局起标志为 True,正常。
+2026-09-10 之前每局重启 deploy 时第 1 局同样跳过重启("标定已在这台 deploy 上跑过"),所以这个坑一直在,只是每批 1 局、被 yield 吞掉。
+
+**修法**(commit 见下):`grasp_gym.start_control_once(p)` = `start_control()` + `p._gym_started = True`,标定处改用它;
+`fresh_deploy` 重启后仍置 False。回归测试 `tests/test_review_2026_09_10.py::FirstRoundAnchorTests`。
+
+**验证**:采集结束后同配方跑 3 批 × 4 局,看每批第 1 局是否与其余局同分布。(结果待填)

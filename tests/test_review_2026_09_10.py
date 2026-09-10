@@ -99,3 +99,25 @@ class BottleVisualFailureLabelsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FirstRoundAnchorTests(unittest.TestCase):
+    """docs/ledger/bottle.md §12: the boot calibration's start_control must mark the deploy as anchored,
+    or round 1 of every batch skips the reanchor path and fails at the spawn."""
+
+    def test_start_control_once_sets_the_anchored_flag(self):
+        from locomani.tasks.bottle import grasp_gym
+
+        class Cmd:
+            calls = 0
+
+            def start_control(self):
+                Cmd.calls += 1
+
+        class P:
+            cmd = Cmd()
+
+        p = P()
+        grasp_gym.start_control_once(p)
+        self.assertEqual(Cmd.calls, 1)
+        self.assertTrue(p._gym_started)

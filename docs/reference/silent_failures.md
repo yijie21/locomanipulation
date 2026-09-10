@@ -264,6 +264,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | 双臂 pilot 每集只有 25 s、视频 10–12 s、日志里没有 `[walk]` 行 | 跑的是 ready-stand 变体。`WALL_WALK` / `WALL_FEATURE` 环境变量 2026-09-09 起不再被读(旋钮在 `CrateTaskConfig`,`wall_walk` 默认 false);给 `run_wall_pilot.sh` 传 `--config configs/tasks/crate_wall.json` 或 `--set wall_walk=true`。runner 现在见到这两个变量会拒绝启动(2026-09-10) |
 | 所有 stack 结果同时变差:走位失控、"ready posture not delivered"、复位后摔倒,日志里没有一句提到 CPU | 容器 cgroup CPU 配额只有 15.36 核(`/sys/fs/cgroup/cpu.max`),`nproc` 的 32 和 load average 都是宿主机的数。别的任务把配额占满时 sim 实时因子掉到 0.18、gym 循环 9 Hz(2026-09-10,`/workspace/code/video_grasp` 的 benchmark)。起 stack 前 `bash scripts/cpu_headroom.sh`,余量 < 6 核或有 throttle 就别开;pose sidecar 的 `t` 对 `wall` 跨度可以事后算实时因子 |
 | 双臂并排视频里没有 ghost hands | `trace/` 里没有 `<label>_NN_ghost.npz`:采集时没设 `SIM_STATE_TRACE_DIR`、设了 `GHOST_TRACE=0`,或者是 2026-09-10 之前录的。渲染脚本只在文件存在时才画 |
+| 每批(每次 `start_stack`)的第 1 局固定在出生阶段失败:`could not turn N deg ... timed out` 或 `object not in ego view at spawn`,第 2 局起正常 | deploy 的朝向锚在 stack 起来后的名义标定处已被捕获(yaw 0),第 1 局却按新 deploy 处理、不 reanchor。2026-09-10 修(`grasp_gym.start_control_once`,台账 bottle §12);再出现说明标定处又绕过了它 |
 | `start_stack.sh` 卡在 `[2/3]` 十分钟 | 首次运行在编译 TensorRT engine,正常。之后走缓存,20–40 s |
 | 没打印 `stack up` | 去 `$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log` 看是哪一个没起来 |
 | deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |

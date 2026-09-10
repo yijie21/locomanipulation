@@ -169,10 +169,11 @@ def _phase_spawn_and_settle(ctx: RoundContext):
     # mode makes 'standing still' the intent the reset inherits.
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
     p.cmd.upper_body = None
-    # A deploy that was NOT restarted for this round (restart_deploy=false)
-    # still carries the previous round's heading anchor; see the reanchor
-    # block after start_control below. Captured here because start_control
-    # sets the flag for the next round.
+    # A deploy that was NOT restarted for this round (restart_deploy=false,
+    # or round 1 after the boot calibration's start_control -- grasp_gym.
+    # start_control_once) still carries an older heading anchor; see the
+    # reanchor block after start_control below. Captured here because
+    # start_control sets the flag for the next round.
     stale_anchor = bool(getattr(p, "_gym_started", False))
     if stale_anchor:
         # Quiesce only a RUNNING deploy (holding frames before the first

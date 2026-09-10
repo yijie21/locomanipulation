@@ -165,6 +165,21 @@ def instruction(phrase: str) -> str:
     return f"pick up {phrase}"
 
 
+def start_control_once(p) -> None:
+    """start_control + remember that THIS deploy now holds a heading anchor.
+
+    The deploy captures its heading anchor at its first start_control and keeps it until it is
+    restarted. `p._gym_started` is the gym's record of that; round_phases reads it to decide
+    between "anchor = landing yaw" (fresh deploy) and "hold + reanchor" (anchor is stale).
+    The boot calibration below calls start_control at the NOMINAL pose (yaw 0), so without
+    setting the flag here round 1 of every batch treated its -90 deg spawn as freshly anchored:
+    17/17 first rounds of visible200_20260910 failed at the spawn (turn_to timeout / object
+    out of the ego view), rounds 2+ were fine (docs/ledger/bottle.md §12).
+    """
+    p.cmd.start_control()
+    p._gym_started = True
+
+
 def fresh_deploy(p) -> bool:
     """Kill + relaunch this instance's deploy; returns True when it's up."""
     try:
@@ -319,7 +334,7 @@ def _build_scene_and_plan(args: argparse.Namespace) -> _SceneSetup:
         # up as "teleport did not land" for the rest of the run.
         robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
         print(f"[gym] nominal robot xy {np.round(robot_nom, 3)} (teleport landing)")
-        p.cmd.start_control()
+        start_control_once(p)
         p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
     return _SceneSetup(
         fixed_cases=fixed_cases,

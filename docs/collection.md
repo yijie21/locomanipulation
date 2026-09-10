@@ -1009,3 +1009,10 @@ grip x 的分布有没有 settle 都一样(0.20–0.38 vs 0.19–0.37),所以它
 
 seed 4253:11 局 10 OK,1 局"太远"丢(0.40 m,带上限 0.38);蹲后 grip x 0.24–0.40,居中。
 剩下比 flow200 多的 ~2 s 是有意放慢的 reach。reel:`outputs/videos/nopause_demo.mp4`。
+
+## 2026-09-10 每批第 1 局必败(出生阶段 turn_to 超时 / 物体不在 ego 视野)
+
+stack 起来后的名义出生点标定已经对 deploy 调过 `start_control`,朝向锚定在 yaw 0;第 1 局 teleport 到 −90° 后
+`round_phases` 却按"新 deploy、锚 = 落地 yaw"处理,少了 hold + reanchor,转身收敛不了。visible200 的 17 批第 1 局
+17/17 失败,第 2 局起正常。修法:标定处用 `grasp_gym.start_control_once`(置 `_gym_started`)。台账 bottle §12。
+看到 manifest 里第 1 局固定是 `[stand] could not turn` / `[view] ... at spawn`,就是这个坑回来了。
