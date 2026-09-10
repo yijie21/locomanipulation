@@ -55,9 +55,15 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)  # reach src/ for `python src/locomani/pipeline/eval_closed_loop.py`
+# reach src/ for `python src/locomani/pipeline/eval_closed_loop.py`. THREE levels up, not two:
+# src/locomani/pipeline/<this> -> pipeline -> locomani -> src. Two levels reached src/locomani, so
+# `import locomani` failed with ModuleNotFoundError under every launcher that does not already have
+# src on the path -- which is both of them (run_learn_pilot's eval stage passes an env without
+# PYTHONPATH; run_eval_arm.sh cds into this directory). Broken since the 4a package move (29bdf84,
+# 2026-09-09) and invisible until 2026-09-10, because verifying the eval path needs a trained model
+# and every model was lost in the 09-09 incident -- it is the refactor follow-up STATE listed as
+# "not yet verified: the eval path".
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from locomani.backends.sonic import initial_pose  # noqa: E402
 from locomani.pipeline import stack  # noqa: E402
