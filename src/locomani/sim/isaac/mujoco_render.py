@@ -47,6 +47,29 @@ def gl_camera_pose(scene):
     return pos, np.array([qw, qx, qy, qz])
 
 
+def _make_insets(model, width: int, height: int):
+    """The live recorder's three insets (sim_video.INSETS), scaled from its
+    720x540 frame to this render's size; a camera the scene lacks is skipped."""
+    import mujoco
+
+    from locomani.pipeline import sim_video as sv
+
+    sx, sy = width / sv.WIDTH, height / sv.HEIGHT
+    out = []
+    for cam_name, label, w, h, x, y in sv.INSETS:
+        cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam_name)
+        if cid < 0:
+            continue
+        w, h = int(round(w * sx)), int(round(h * sy))
+        x, y = int(round(x * sx)), int(round(y * sy))
+        icam = mujoco.MjvCamera()
+        mujoco.mjv_defaultCamera(icam)
+        icam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+        icam.fixedcamid = cid
+        out.append((mujoco.Renderer(model, height=h, width=w), icam, label, w, h, x, y))
+    return out
+
+
 def main(argv=None) -> None:
     import cv2
     import mujoco
@@ -59,6 +82,12 @@ def main(argv=None) -> None:
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--fps", type=int, default=50, help="rate of the recorded states")
     ap.add_argument("--stride", type=int, default=4)
+    ap.add_argument(
+        "--insets",
+        action="store_true",
+        help="picture-in-picture of the dataset cameras (ego / left wrist / right wrist), "
+        "same layout as the live sim_video recorder; scaled to this frame size",
+    )
     args = ap.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
 
@@ -75,6 +104,7 @@ def main(argv=None) -> None:
     vopt = mujoco.MjvOption()
     mujoco.mjv_defaultOption(vopt)
     vopt.geomgroup[4] = 0  # no debug/ghost geoms
+    insets = _make_insets(model, args.width, args.height) if args.insets else []
 
     T = len(qpos)
     vw = cv2.VideoWriter(
@@ -91,7 +121,14 @@ def main(argv=None) -> None:
         renderer.update_scene(replay.data, camera=cam, scene_option=vopt)
         cam_pos[t], cam_quat[t] = gl_camera_pose(renderer.scene)
         if t % args.stride == 0:
-            vw.write(cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR))
+            frame = cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR)
+            for rend, icam, label, w, h, x, y in insets:
+                rend.update_scene(replay.data, camera=icam)
+                frame[y : y + h, x : x + w] = rend.render()[:, :, ::-1]
+                cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h), (255, 255, 255), 1)
+                for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+                    cv2.putText(frame, label, (x + 6, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick, cv2.LINE_AA)
+            vw.write(frame)
             written += 1
     vw.release()
     np.savez(

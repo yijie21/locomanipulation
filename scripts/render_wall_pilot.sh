@@ -6,6 +6,7 @@
 # Needs the pilot's state traces (<pilot_dir>/trace/<label>_NN_state_trace.npz,
 # recorded with SIM_STATE_TRACE_DIR) and the Isaac scene assets for the same
 # snapshot (bash scripts/build_isaac_assets.sh --snapshot outputs/scene/crate_bimanual).
+# MUJOCO_RENDER_ARGS="--insets" adds the ego / wrist picture-in-picture to the MuJoCo side.
 # Per round: MuJoCo re-render with the tracking camera (+ cam_traj.npz), the Isaac
 # replay on that camera path, then an ffmpeg hstack -> <out_dir>/sbs_roundNN.mp4.
 set -uo pipefail
@@ -19,7 +20,7 @@ for i in $(seq -f %02g 0 $((N - 1))); do
   T="$P/trace/${LABEL}_${i}_state_trace.npz"
   [ -f "$T" ] || { echo "r$i: no trace $T"; continue; }
   MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID="${MUJOCO_EGL_DEVICE_ID:-1}" PYTHONPATH=src "$RENDER_PY" -m locomani.sim.isaac.mujoco_render \
-    --state-trace "$T" --scene-xml "$SCENE/scene_locomani.xml" --out "$d" --stride 4 2>&1 | grep -v Warning | tail -1
+    --state-trace "$T" --scene-xml "$SCENE/scene_locomani.xml" --out "$d" --stride 4 ${MUJOCO_RENDER_ARGS:-} 2>&1 | grep -v Warning | tail -1
   CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}" OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src timeout 1500 "$RENDER_PY" -m locomani.sim.isaac.isaac_render \
     --session "" --episode 0 --state-trace "$T" --scene-xml "$SCENE/scene_locomani.xml" \
     --scene-dir "$ISAAC_SCENE" --cam-traj "$d/cam_traj.npz" --stride 4 --out "$d" > "$d/isaac_stdout.log" 2>&1

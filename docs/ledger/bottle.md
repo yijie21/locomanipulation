@@ -414,3 +414,37 @@ s7 几乎所有失败都是"站到桌边、手臂从不下放";s42 的模型更�
 结论与去向:数据量这根杠杆在 176 集处已经平了;下一步不是第三个 seed,而是直接打两个 seed 共有的主失败——
 到桌边后不启动伸手(s7 39/54,s42 15/43)。failure_anatomy 的 ARM-NEVER-UP 处方是对的:近桌 spawn 的 DAgger,
 覆盖 "站定 → 抬手" 这个转换。
+
+## 10. 采集耗时拆解与提速计划(2026-09-10,branch session)
+
+**问题**:200 条 visible-expert 数据估 3.5 h,实测(2026-09-09,43 个 exporter session,350 局 / 260 OK)约 6 h。
+**来源**:`tests/gate/results/bottle_*.json` 对应的 4 次 gate 跑,49 局 manifest 的 `execution.events` +
+`/workspace/tmp/p03/outputs/2026-09-09-*` 的 episode 落盘时间 + `outputs/experiments/gate_bottle_main0/collect/pose_sidecar`。
+
+每个成功 round 中位 64 s 的去向:
+
+| 段 | 时长 | 说明 |
+|---|---|---|
+| `fresh_deploy`(每局 kill + 重启 deploy) | ~33 s | 重载 3 个 TensorRT engine(planner 712 MiB)+ `time.sleep(4.0)`;`BottleTaskConfig.restart_deploy` 默认 True |
+| initialize | 7.8 s | 静默 IDLE 1 s + reset + 沉降 IDLE 4 s + 转身 + IDLE 2 s + ready 姿态 |
+| navigate → carry_and_verify(录进数据集的部分) | 18.5 s | 885 帧 @50 Hz 中位;exporter parquet + 三路 mp4 在 complete 后 1 s 内落盘 |
+| 'c' 之后 "let the write finish" 的 IDLE hold | 4 s | 实测写盘 1 s 就完 |
+
+失败局也付重启:`[grasp]/[hold]` 失败 ~50 s,`[stand]` 失败 25 s。yield 0.62 → 每个成功 episode 1.6 局 ≈ 104 s,
+加每批 43 s 起栈(9–10 局一批,≈ 4.5 s/局)≈ 110 s/条 → 200 条 ≈ 6 h。sim 本身 26.5 s 仿真时间用了 30.9 s 墙钟(0.86×)。
+
+**杠杆(按收益)**,都未执行,裁定待实验:
+
+1. **`restart_deploy=false`**(最多省一半)。重启的依据是 2026-08 的"第 2 局起漂移/摔倒/落点差几米";此后无重启路径已补了
+   `_gym_started` 静默、`heading_offset` 补偿、IDLE 帧显式 facing 三样,但 docs/ledger/archive 里找不到修复后重测过
+   `GYM_RESTART_DEPLOY=0` 的记录。实验:`--set restart_deploy=false` 30 局,`scripts/gate.py compare` 对 yield /
+   end_depth / 落点漂移 / 失败字符串。成立则每局 64 → ~31 s,200 条 ≈ 3 h。不成立则查 deploy 残留状态(planner heading
+   anchor 最可疑),用软复位替代进程重启。
+2. 保留重启时可砍 5–7 s:'c' 后 hold 4 → 1 s;`fresh_deploy` 的 `sleep(4.0)` 与 `restart_deploy.sh` 2 s 一档的轮询改成等
+   "transitioning to CONTROL"。
+3. 固定停顿 3–4 s:复位后沉降 4 s(VLA 路径 1.5 s)、转身后 IDLE 2 s;碰 stand 分布,要过 gate。
+4. 批次 10 → 20 局:每局省 2 s(exporter 线程增长与 pid 上限要先复测,`EXPORTER_THREADS=4` 之后没量过)。
+5. yield 0.62 的 19% "stand infeasible" 是 visible 协议去掉 reposition 的代价(07d 0.71),只能在刹车后判定;协议决定,不为提速改。
+
+**不做**:双 stack 并行(pid cgroup 3840,一个录像栈 ~2500 线程;deploy 对 80 ms 卡顿即退出,09-09 光外部 GPU1 任务就截断
+8/40 session);lockstep 采集(`docs/handoff/sonic_lockstep_collection_plan.md`,已搁置,是长期解)。

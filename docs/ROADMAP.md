@@ -540,3 +540,9 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
   hesitation 与 overtly slow movements 会让 SONIC 更容易踉跄。我们只优化过停顿
   (cadence),加减速/转身/伸手轨迹的形状从未检查。下次采集前先把一局的骨盆速度与
   加速度曲线对着那份指引看一遍。详见 docs/collection.md 的"演示的形状"一节。
+
+## 2026-09-10 追加:采集提速(待实验)
+
+单手采集每局 64 s 里 33 s 是每局重启 deploy,200 条实测 ≈ 6 h 不是 3.5 h。拆解与 5 条杠杆见
+`docs/ledger/bottle.md` §10;第一步是 30 局 `restart_deploy=false` 的 gate 对照(GPU0 空闲时,约 30 min),
+成立则 200 条 ≈ 3 h。数据恢复决定之后、下一次 200 条采集之前做。
