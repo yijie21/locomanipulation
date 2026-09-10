@@ -22,6 +22,7 @@
 - [动作切换进入执行前缀的对照](prefix_sampling_experiment.md) — 下蹲预测改善的边界采样实验设计和诊断框架
 - [从 5.9% 到 47.5%：G1 loco-manipulation VLA 的四轮进展报告](progress_report_2026-08.md) — 四轮闭环实验的成功率进展、失败分类和原始数据源查证 (dated 2026-08-27)
 - [桌面接近与运输可行性](reach_feasibility.md) — 接近、下蹲、运输各阶段的可达性定义和碰撞检查机制
+- [新颖性核查工作记录(scoop check)](scoop_check_2026-08-26.md) — 与 LEGS / SIMPLE 等论文的重叠度逐步核查笔记,原为根目录 step1–6.md (dated 2026-08-26)
 - [双臂准备抓取基线（实验配置）](ready_grasp_baseline.md) — 序列控制的双臂准备抓取策略与姿态先于站位的设计原则
 - [双手准备姿势的数据与部署初始化](ready_grasp_initialization.md) — 双臂采集配置与评估部署的初始化 token 对齐与验证
 - [最新策略的小规模学习实验](ready_grasp_pilot.md) — 固定预算下采集、训练、评估的小规模学习流程设计

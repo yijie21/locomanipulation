@@ -16,8 +16,6 @@ RGB + 指令(数据集里同时存了 29 维本体状态,要不要喂给模型�
 
 ---
 
----
-
 ## 快速开始
 
 仓库已经装好的话,从零到第一条落盘的成功 episode 就是下面这几行(还没装看
@@ -37,14 +35,14 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 #    首次约 10 min(编 TensorRT engine),之后 40 s。SIM_VIDEO_DIR 必须在这里给,
 #    而且必须是绝对路径 —— sim 进程的 cwd 是 third_party/GR00T-WholeBodyControl/,
 #    不是仓库根,相对路径会悄悄写到那边去
-SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash src/teleop_free/start_stack.sh "pick up the water bottle"
+SIM_VIDEO_DIR="$PWD/outputs/sim_video" bash scripts/stack/start_stack.sh "pick up the water bottle"
 
 # 3. 跑 12 局,通过全部判据的落盘,失败的自动丢弃
 #    后四个 spawn 参数不是可选装饰:它们定义了任务有多难,而本仓库两轮实验的
 #    全部数字都是在这套窄分布上测的。照 grasp_gym 的默认跑(3 m 外、背对物体、
 #    朝向偏差可达 90°)成功率会掉到 30% 出头 —— 那不是 bug,是另一个任务
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
-    src/teleop_free/grasp_gym.py --rounds 12 --record \
+    src/locomani/tasks/bottle/grasp_gym.py --rounds 12 --record \
     --targets water_bottle --edge-jitter 0.20 \
     --spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20 \
     --manifest outputs/logs/manifest.jsonl
@@ -72,7 +70,7 @@ EPISODE FAILED [grasp] can toppled in the up phase in 64s
 [gym] 11/12 OK
 ```
 
-收尾 `bash src/teleop_free/stop_stack.sh`。落盘的东西在三个地方:
+收尾 `bash scripts/stack/stop_stack.sh`(它会杀掉机器上**所有**实例;多实例并行用 `scripts/stack/stop_instance.sh <INSTANCE>`)。落盘的东西在三个地方:
 
 | 东西 | 在哪 |
 |---|---|
@@ -93,77 +91,58 @@ EPISODE FAILED [grasp] can toppled in the up phase in 64s
 
 ---
 
----
-
-## 目录结构
+## 目录结构(2026-09 重构后)
 
 ```
-src/teleop_free/        数据引擎全部代码(模块地图见 docs/reference.md)
-src/teleop_free/tools/  转换器 / 审计 / 评测 / policy server / token 工具
-src/gr00t/              GR00T 训练代码(vendored,入 git,二次开发改这里;
-                        出处与上游 diff 方法见 src/gr00t/UPSTREAM.md)
-configs/                embodiment 配置(gr00t_sonic_2cam.py = 本项目训练用的那份)
-scripts/                安装 / 启动 / 采集 / 训练 / 流水线脚本
-docs/                   分主题文档(见下)+ 架构图 + 路线图
-assets/                 预生成的仿真场景 tarball
-patches/                对上游仓库的小改动说明(third_party 不入 git)
-third_party/            clone 的上游仓库(不入 git;venv 也住在这里)
-outputs/                运行时生成(场景、日志、checkpoint、评测),不入 git
-datasets/               转换出的 LeRobot 数据集,不入 git
-videos/                 最新一批演示视频(每次推送整体替换)
+src/locomani/pipeline/      stack 生命周期、gym 主循环、录制、manifest、convert、审计、train、eval、配对统计
+src/locomani/backends/      Backend:stack 启动、动作空间、执行器。sonic/(主线)、scalebfm/(候选替代 controller)
+src/locomani/tasks/         Task 五件套(scene / expert / acceptance / schema / failures):bottle/、crate/、bottle_visual/
+src/locomani/primitives/    真正共享的底层(arm_ik、scene_lib、primitives)
+src/locomani/sim/           sim 侧:特权发布、场景随机化、Isaac 渲染
+src/locomani/cli.py         统一入口:python -m locomani.cli collect|convert|train|eval|gate --task X --config Y
+configs/{tasks,backends,eval,pilot}/*.json   所有旋钮(代码里没有 os.environ 旋钮);字段表见 docs/reference/config_fields.md
+configs/gr00t_*.py          GR00T embodiment 配置(gr00t_sonic_2cam.py = 主线训练用的那份)
+scripts/stack/              起 / 停 stack;scripts/ 其余是安装、批量采集、训练、评测、闸门(gate.py)
+src/gr00t/                  GR00T 训练代码(vendored,入 git;出处见 src/gr00t/UPSTREAM.md)
+docs/                       四类文档(见下)
+assets/                     预生成的仿真场景 tarball、ScaleBFM 资产
+third_party/                clone 的上游仓库(不入 git;venv 也住在这里)
+outputs/                    运行时生成(场景、日志、checkpoint、评测、闸门结果),不入 git
 ```
+
+代码与文档规范只有一份:[docs/reference/standards.md](docs/reference/standards.md)(`make check` = ruff + 尺寸/环境变量 lint + unit 测试;改主代码的 PR 附 `scripts/gate.py compare` 输出)。
 
 ## 文档地图
 
-按"你现在要干什么"索引:
+只有四类,索引在 [docs/README.md](docs/README.md)。按"你现在要干什么":
 
 | 你要 | 看 |
 |---|---|
-| **当前默认的采集 / 训练 / 评测配方(先看这个)** | **[docs/runbook.md](docs/runbook.md)** |
-| 全部实验的总表与结论(60+ 臂、配对检验、失败细分) | [docs/experiments.md](docs/experiments.md) |
+| **当前默认的采集 / 训练 / 评测配方(先看这个)** | **[docs/reference/runbook.md](docs/reference/runbook.md)** |
+| 现在在做什么、什么在跑、卡在哪 | [docs/STATE.md](docs/STATE.md)(每个 session 从这里开始) |
 | 从零装环境 | [docs/setup.md](docs/setup.md) |
-| 采数据(场景 / 单局 / 批量 / 随机化 / 相机 / 控制逻辑) | [docs/collection.md](docs/collection.md) |
-| **双臂搬箱采集,从零到 MuJoCo/Isaac 并排视频(复现教程,直接照做)** | **[docs/bimanual_collection_tutorial.md](docs/bimanual_collection_tutorial.md)** |
-| 双臂 expert 为什么长这样(设计原则、每条对应的失败) | [docs/bimanual_grasp_design.md](docs/bimanual_grasp_design.md) |
-| Isaac 渲染(MuJoCo 物理 + Isaac 画面,离线回放,已知缺陷) | [docs/rendering.md](docs/rendering.md) |
+| 采数据(场景 / 单局 / 批量 / 控制逻辑 / 随机化 / 相机 / 坑) | [docs/collection.md](docs/collection.md) |
+| 双臂搬箱(采集到 MuJoCo/Isaac 并排视频) | [docs/crate_collection.md](docs/crate_collection.md) |
+| ScaleBFM 视觉抓瓶线(SONIC 的候选替代 controller) | [docs/scalebfm_collection.md](docs/scalebfm_collection.md) |
 | 转 LeRobot、查数据(schema / 四段审计) | [docs/dataset.md](docs/dataset.md) |
-| 微调 GR00T(设置全表 / 启动 / vendored 代码怎么回事) | [docs/training.md](docs/training.md) |
-| 评测(open-loop / closed-loop / 第一轮基线 / DAgger) | [docs/evaluation.md](docs/evaluation.md) |
-| 搞懂 async client(实时动作分块 / 异步推理 / 时序集成) | [docs/realtime-action-streaming.md](docs/realtime-action-streaming.md) |
-| 零基础图解 blocking / async 机制(时间线图) | [docs/client-mechanisms.md](docs/client-mechanisms.md)(GitHub 在线可看;[html 交互版](docs/client-mechanisms.html)) |
-| lockstep 评测(仿真时钟 + 模拟延迟,确定性/可并行;校准中) | [docs/lockstep.md](docs/lockstep.md) |
-| 查参数、找模块、跑诊断、翻 FAQ | [docs/reference.md](docs/reference.md) |
+| 微调 GR00T | [docs/training.md](docs/training.md) |
+| 评测(open-loop / closed-loop / 配对检验) | [docs/evaluation.md](docs/evaluation.md) |
+| Isaac 渲染 | [docs/rendering.md](docs/rendering.md) |
+| 全部实验的总表与裁定(append-only 台账) | [docs/ledger/bottle.md](docs/ledger/bottle.md) · [ledger/crate.md](docs/ledger/crate.md) · [ledger/scalebfm.md](docs/ledger/scalebfm.md) |
+| 查模块、参数、端口、静默失败表、FAQ | [docs/reference/silent_failures.md](docs/reference/silent_failures.md) |
+| 配置字段(从 dataclass 注释生成) | [docs/reference/config_fields.md](docs/reference/config_fields.md) |
 | 下一步做什么 | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| 历史诊断、设计讨论、旧进展报告 | [docs/archive/INDEX.md](docs/archive/INDEX.md) |
 
-## 当前状态(2026-08-27)
+## 当前状态(2026-09-10)
 
-四轮微调已闭环,**成功率 5.9% → 13.7% → 28.0% → 47.5%**:
-
-- **Round 1**(200 局采集数据):开环贴测量噪声底(关节角差 1.05°),**闭环 6/101**,
-  失败塌缩在 walk→reach 停滞 —— 训练数据没有"到桌边臂还垂着"这个状态。
-- **Round 2**(+50 局靶向 DAgger 恢复数据,bottle250):同款开环质量,
-  **闭环 14/102 = 13.7%(Wilson 8–22%)**,round 1 的 2.3 倍 —— 靶向 DAgger
-  方向确认。诊断与两轮数字在 [docs/evaluation.md](docs/evaluation.md)。
-- **Round 3**(fast200,200 局,**零 DAgger**):把脚本专家的停顿削掉(到位→伸手
-  中位 4.6 s → 3.0 s,episode 35 s → 20–22 s),**闭环 28/100 = 28.0%
-  (Wilson 20–37%)**,round 1 的 4.7 倍。用的还是 200 局 —— 证实病在**数据形状**
-  不在数据量。失败结构整个变了:**walk / approach 零失败**,67 次失败全是
-  "已到桌边(0.23–0.29 m)却不下闭合指令"。开环闭合帧误差只有 1.75 帧,说明模型
-  离线知道该何时闭合、闭环下不发 —— 典型 covariate shift,下一轮 DAgger 该补
-  "临近闭合"而非恢复轨迹。
-- 开环指标经 **NVIDIA 官方 `gr00t/eval/open_loop_eval.py` 交叉验证**:同一批
-  checkpoint 排序一致(Spearman **+0.988**),best 同为 checkpoint-9000。
-- 训练按硬件自选优化器(< 40 GB 的卡走 8-bit,否则 fp32),并在启动前预检显存
-  占用;冻结 DiT 消融(初步:DiT 贡献 ~12% 开环精度,闭环等价性未测)。
-
-- **Round 4**(fast250 = 200 + 50 靶向 DAgger):**闭环 48/101 = 47.5%
-  (Wilson 38–57%)**。配对 McNemar(初始条件逐局相同)把增益拆开了:
-  **配置改动(FSQ 不吸附)p=0.755 不显著**,50 轮 A/B 报出的 +12 个百分点是噪声;
-  **数据增益 p=0.016 显著**。教训:50 轮闭环分辨不出 10 个百分点。
-  剩余瓶颈:52 个 reach 失败里 44 个是"手臂抬了但够不到物体",而"手到位不扣扳机"
-  已从 12 降到 3。
-
-wandb: locomani-bottle / bottle200 · bottle250 · bottle250_frozen_dit · fast200 · fast250。
+- 主线(单臂抓瓶,SONIC)最好的正式基线:**flow200 checkpoint-10000,干净协议,无 ensemble,50/100**
+  (runbook);ready-grasp 线 07d-200 在 seed 42 上 57/100、seed 7 上 46/100 —— 同数据换 seed 差 11 个点,
+  任何单 seed 的"+8"都当噪声看([docs/ledger/bottle.md](docs/ledger/bottle.md))。
+- 2026-08 的四轮进展(5.9% → 47.5%)见 [docs/archive/progress_report_2026-08.md](docs/archive/progress_report_2026-08.md)。
+- 2026-09-09 的 outputs/ 误删事故(所有数据集、模型、评测)与恢复选项在 [docs/STATE.md](docs/STATE.md) 顶部。
+- ScaleBFM 线:controller 替换成立,VLA 最高 25/100,代码已并入 `backends/scalebfm` + `tasks/bottle_visual`
+  ([docs/ledger/scalebfm.md](docs/ledger/scalebfm.md))。
 
 > **这些成功率只在上面快速开始第 3 步那套窄 spawn 分布下成立**
 > (0.7 m 起步、`--face-object`、朝向偏差 ±20°、横偏 ±0.20 m)。换成 `grasp_gym`
