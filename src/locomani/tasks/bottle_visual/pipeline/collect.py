@@ -15,8 +15,11 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 import torch
 
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.backends.scalebfm import runtime as R
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
+from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.audit import audit_case
+from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
 from locomani.tasks.bottle_visual.harness import atomic_json
 from locomani.tasks.bottle_visual.pipeline.provenance import line_sources, verify_runtime_assets
 from locomani.tasks.bottle_visual.pipeline.recording import RawEpisodeRecorder
@@ -28,21 +31,6 @@ from locomani.tasks.bottle_visual.sensor import BottleProxySensor
 
 STRATUM_ORDER = ["high_near", "low_near", "low_deep"]
 RECOVERIES = ["stop_short", "wrist_offset", "blackout", "object_shift"]
-EXPERT_RUN_OPTIONS = dict(max_s=24.0, native_codec=True, action_hz=25, integral_gain=1.0, reference_style="direct")
-
-
-def expert_config():
-    """The same current expert settings for collection and ten-video inspection."""
-    return GraspConfig(
-        stand_distance=0.375,
-        pre_tolerance=0.035,
-        lift_height=0.12,
-        carry_clearance=0.12,
-        edge_clearance=0.22,
-        high_table_front=0.20,
-        pitch_feedforward_deg=0.0,
-        facing="edge",
-    )
 
 
 def main():
@@ -99,9 +87,9 @@ def main():
     status.update(status="running", pid=os.getpid())
     atomic_json(status_path, status)
     torch.set_num_threads(1)
-    B.R.GRIP_KP, B.R.GRIP_KD = 1.0, 0.025
-    policy = B.Policy(device="cuda")
-    config = expert_config()
+    backend = ScaleBfmBackendConfig()
+    policy = R.Policy(device="cuda", backend=backend)
+    task = BottleVisualTaskConfig(scene_profile=args.scene_profile)
     environments = {}
     splits = [("pilot", 1401, 12, 12)] if args.pilot else [("train", 4001, 800, 200), ("val", 6001, 80, 20)]
     if args.arm == "C":
@@ -195,10 +183,9 @@ def main():
                     physical_count += 1
                     directory = scene_directory(out / "scene_assets", stratum)
                     if stratum not in environments:
-                        sim = make_sim(policy, directory)
+                        sim = make_sim(policy, directory, backend)
                         environments[stratum] = sim, BottleProxySensor(sim)
                     sim, sensor = environments[stratum]
-                    B.EDGE_INBOARD = STRATA[stratum][1]
                     recording = RawEpisodeRecorder(sim, case)
                     start = time.time()
                     try:
@@ -209,11 +196,9 @@ def main():
                             seed,
                             edge,
                             case,
-                            config,
-                            **EXPERT_RUN_OPTIONS,
+                            task,
                             recording=recording,
                             recovery_kind=recovery,
-                            scene_profile=args.scene_profile,
                             stratum=stratum,
                         )
                     finally:

@@ -5,20 +5,23 @@ action-executor dependency. Shared scene files and running simulations are never
 modified; taller tables are vertically scaled copies, including their legs.
 """
 
+import dataclasses
 import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import mujoco
 
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.backends.scalebfm import runtime as R
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
+from locomani.tasks.bottle_visual import geometry
 
 STRATA = {
     "low_near": (0.6211385812222395, (0.04, 0.08)),
     "high_near": (0.7611385812222395, (0.04, 0.08)),
     "low_deep": (0.6211385812222395, (0.18, 0.24)),
 }
-BASE_SCENE = Path(B.R.SCENE)
+BASE_SCENE = Path(ScaleBfmBackendConfig().scene_path())
 
 
 def scene_directory(root, stratum):
@@ -64,13 +67,10 @@ def scene_directory(root, stratum):
     return out
 
 
-def make_sim(policy, directory=None):
-    previous = B.R.SCENE
-    try:
-        B.R.SCENE = str(directory or BASE_SCENE)
-        sim = B.Sim(policy.meta, video=False)
-    finally:
-        B.R.SCENE = previous
+def make_sim(policy, directory=None, backend=None):
+    """A `Sim` on `directory` (a scene_directory() variant, default the base scene) with hardened pads."""
+    cfg = dataclasses.replace(backend or ScaleBfmBackendConfig(), scene_dir=str(directory or BASE_SCENE))
+    sim = R.Sim(policy.meta, video=False, backend=cfg)
     for g in range(sim.m.ngeom):
         name = mujoco.mj_id2name(sim.m, mujoco.mjtObj.mjOBJ_BODY, sim.m.geom_bodyid[g]) or ""
         if "dex1_finger" in name and sim.m.geom_contype[g]:

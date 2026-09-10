@@ -17,6 +17,7 @@ from collections import defaultdict
 WHITELIST = {
     "CUDA_VISIBLE_DEVICES",
     "MUJOCO_EGL_DEVICE_ID",
+    "MUJOCO_GL",  # render backend (egl/osmesa), the same device category; bottle_visual/round.py records it as provenance
     "INSTANCE",
     "HF_HOME",
     "PYTHONUNBUFFERED",

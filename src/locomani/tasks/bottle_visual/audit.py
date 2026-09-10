@@ -12,7 +12,8 @@ from types import SimpleNamespace
 import mujoco
 import numpy as np
 
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.backends.scalebfm import runtime as R
+from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.harness import atomic_json
 from locomani.tasks.bottle_visual.scene import make_sim
 from locomani.tasks.bottle_visual.visibility import initial_visibility
@@ -60,15 +61,15 @@ def audit_case(case):
     reach = [i for i, r in enumerate(commands) if r["phase"] == "reach"]
     onset_t = speed = None
     if reach:
-        sim = make_sim(SimpleNamespace(meta=json.loads(Path(B.R.META).read_text())), result.get("scene_directory"))
+        sim = make_sim(SimpleNamespace(meta=json.loads(Path(R.META).read_text())), result.get("scene_directory"))
         start = max(0, reach[0] - 1)
         reference = None
         for i in range(start, min(len(qpos), reach[-1] + 1)):
             sim.d.qpos[:] = qpos[i]
             mujoco.mj_forward(sim.m, sim.d)
             delta = sim.pad("right") - qpos[i, :3]
-            yaw = B.R.yaw_of(qpos[i, 3:7])
-            local = B.R.rot_z(yaw).T @ delta
+            yaw = R.yaw_of(qpos[i, 3:7])
+            local = R.rot_z(yaw).T @ delta
             if reference is None:
                 reference = local
             if local[0] - reference[0] >= 0.03 or local[2] - reference[2] >= 0.01:

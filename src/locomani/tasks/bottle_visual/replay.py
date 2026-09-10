@@ -18,9 +18,11 @@ import torch
 
 from locomani.backends.scalebfm import action as _action
 from locomani.backends.scalebfm import executor as _executor
+from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.action import decode_action
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.scalebfm.executor import ActionExecutor
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.harness import atomic_json
 from locomani.tasks.bottle_visual.scene import STRATA, make_sim
 
@@ -35,19 +37,19 @@ def main():
     if out.exists():
         raise SystemExit("Replay result already exists; inspect it instead of repeating")
     cfg = json.loads((root / "config.json").read_text())
-    if not cfg.get("native_codec"):
+    task, backend = cfg["task"], ScaleBfmBackendConfig.from_dict(cfg["backend"])
+    if not task["native_codec"]:
         raise SystemExit("This run did not execute the shared native decoder")
-    modules = [Path(B.__file__), Path(B.R.__file__), Path(_action.__file__)]
-    if cfg.get("action_hz"):
+    modules = [Path(geometry.__file__), Path(R.__file__), Path(_action.__file__)]
+    if task["action_hz"]:
         modules.append(Path(_executor.__file__))
     for module in modules:
         expected = cfg["source_sha256"].get(str(module.resolve()))
         if expected != hashlib.sha256(module.read_bytes()).hexdigest():
             raise SystemExit(f"Source changed since recording: {module}")
     torch.set_num_threads(1)
-    B.R.GRIP_KP, B.R.GRIP_KD = cfg["grip_kp"], cfg["grip_kd"]
-    policy = B.Policy(device=cfg.get("policy_device", "cpu"))
-    sim = B.Sim(policy.meta, video=False)
+    policy = R.Policy(device=task["policy_device"], backend=backend)
+    sim = R.Sim(policy.meta, video=False, backend=backend)
     for g in range(sim.m.ngeom):
         name = mujoco.mj_id2name(sim.m, mujoco.mjtObj.mjOBJ_BODY, sim.m.geom_bodyid[g]) or ""
         if "dex1_finger" in name and sim.m.geom_contype[g]:
@@ -67,19 +69,19 @@ def main():
                 "This exact-action replayer supports normal resets only; recovery events require the intervention-aware evaluator"
             )
         if result.get("scene_directory"):
-            sim = make_sim(policy, result["scene_directory"])
-        if result.get("stratum"):
-            B.EDGE_INBOARD = STRATA[result["stratum"]][1]
-        os.environ["BFM_EDGE"] = result["edge"]
-        B.STAND_D = (cfg["stand_distance"], cfg["stand_distance"])
-        bottle, _, spawn, yaw, _ = B.sample_scene(sim, np.random.default_rng(result["seed"]))
+            sim = make_sim(policy, result["scene_directory"], backend)
+        inboard = STRATA[result["stratum"]][1] if result.get("stratum") else geometry.EDGE_INBOARD
+        stand = task["grasp"]["stand_distance"]
+        bottle, _, spawn, yaw, _ = geometry.sample_scene(
+            sim, np.random.default_rng(result["seed"]), edge=result["edge"], stand_d=(stand, stand), inboard=inboard
+        )
         sim.reset(spawn, yaw, 0.0)
         sim.d.qpos[sim.crate_q : sim.crate_q + 3] = bottle
         mujoco.mj_forward(sim.m, sim.d)
         sim.grip_clip = 0.6
         policy.reset(sim.state())
-        refs = B.Refs(policy, sim)
-        executor = ActionExecutor(refs.hand_rel, action_hz=cfg["action_hz"]) if cfg.get("action_hz") else None
+        refs = R.Refs(policy, sim)
+        executor = ActionExecutor(refs.hand_rel, action_hz=task["action_hz"]) if task["action_hz"] else None
         actions = np.load(case / "actions.npz")["actions"]
         recorded = np.load(case / "trace.npz")["qpos"]
         commands = json.loads((case / "commands.json").read_text())

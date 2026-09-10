@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import mujoco
 
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.backends.scalebfm import runtime as R
+from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.scene import make_sim, scene_directory
 
 
@@ -15,7 +16,7 @@ class SceneTests(unittest.TestCase):
     def test_taller_table_collision_matches_metadata_and_supports_bottle(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = scene_directory(tmp, "high_near")
-            policy = SimpleNamespace(meta=json.loads(Path(B.R.META).read_text()))
+            policy = SimpleNamespace(meta=json.loads(Path(R.META).read_text()))
             sim = make_sim(policy, directory)
             sim.reset([-1.5, 0], 0, 0)
             geom = sim.m.geom("dining_table_dining_table_top").id

@@ -24,9 +24,12 @@ import mujoco
 import numpy as np
 import torch
 
+from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.action import decode_action, encode_action
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.scalebfm.executor import ActionExecutor
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.tasks.bottle_visual import geometry
+from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
 from locomani.tasks.bottle_visual.harness import AppliedPolicy, atomic_json, summarize
 from locomani.tasks.bottle_visual.motion import GraspMotion
 from locomani.tasks.bottle_visual.observation import SceneEstimate, SceneMeasurement, SceneTracker
@@ -58,27 +61,26 @@ def proprio(sim, velocity):
     )
 
 
-def run_case(
-    sim,
-    policy,
-    sensor,
-    seed,
-    edge,
-    out,
-    config,
-    max_s,
-    native_codec=False,
-    action_hz=None,
-    integral_gain=0.0,
-    reference_style="legacy",
-    recording=None,
-    recovery_kind="none",
-    scene_profile=LEGACY_PROFILE,
-    stratum="low_near",
-):
-    os.environ["BFM_EDGE"] = edge
-    B.STAND_D = (config.stand_distance, config.stand_distance)
-    bottle, stand, spawn, yaw, meta = sample_reset(B, sim, np.random.default_rng(seed), edge, stratum, scene_profile)
+def run_case(sim, policy, sensor, seed, edge, out, task, recording=None, recovery_kind="none", stratum="low_near"):
+    """One expert case on `sim` under `task` (BottleVisualTaskConfig); the body below still reads the
+    task's fields through the local names it was written against."""
+    config, max_s, native_codec = task.grasp, task.max_s, task.native_codec
+    action_hz, integral_gain, reference_style, scene_profile = (
+        task.action_hz or None,
+        task.integral_gain,
+        task.reference_style,
+        task.scene_profile,
+    )
+    bottle, stand, spawn, yaw, meta = sample_reset(
+        geometry,
+        sim,
+        np.random.default_rng(seed),
+        edge,
+        stratum,
+        scene_profile,
+        stand_d=(config.stand_distance, config.stand_distance),
+        inboard=STRATA[stratum][1],
+    )
     intervention = RecoveryIntervention(recovery_kind)
     if recovery_kind == "stop_short":
         inward = np.zeros(3)
@@ -107,7 +109,7 @@ def run_case(
     sensor.reset()
     wrapped = AppliedPolicy(policy, sim)
     wrapped.reset(sim.state())
-    refs = B.Refs(policy, sim)
+    refs = R.Refs(policy, sim)
     executor = ActionExecutor(refs.hand_rel, action_hz=action_hz) if action_hz else None
     planner, tracker = VisualGraspPlanner(config), SceneTracker()
     motion = None
@@ -128,8 +130,8 @@ def run_case(
     warnings = {}
     knock_reference = bottle[:2].copy()
     t0 = time.time()
-    for k in range(int(max_s / B.DT)):
-        t = k * B.DT
+    for k in range(int(max_s / R.DT)):
+        t = k * R.DT
         changed = intervention.update(sim, t, phase)
         if changed == "object_shift":
             knock_reference = sim.crate()[0][:2].copy()
@@ -140,7 +142,7 @@ def run_case(
             why = intervention.error
             break
         pad = sim.pad("right")
-        velocity = 0.8 * velocity + 0.2 * (pad - previous_pad) / B.DT
+        velocity = 0.8 * velocity + 0.2 * (pad - previous_pad) / R.DT
         previous_pad = pad
         if tracker.capture_due(t):
             if t < intervention.blackout_until:
@@ -172,10 +174,10 @@ def run_case(
         estimate = tracker.estimate(t)
         while queue and queue[0][0] <= t + 1e-9:
             _, captured_robot = queue.pop(0)
-            if t >= B.SETTLE_S and initial_failure is None:
+            if t >= R.SETTLE_S and initial_failure is None:
                 intent = planner.decide(estimate, captured_robot)
-        if t < B.SETTLE_S or intent is None or initial_failure is not None:
-            ref = dict(refs.pelvis(spawn, yaw), **refs.hands_at_side(np.array([*spawn, B.PELVIS_Z]), yaw))
+        if t < R.SETTLE_S or intent is None or initial_failure is not None:
+            ref = dict(refs.pelvis(spawn, yaw), **refs.hands_at_side(np.array([*spawn, R.PELVIS_Z]), yaw))
             targets = refs.futures(lambda _: ref, t)
         else:
             robot = proprio(sim, velocity)
@@ -229,7 +231,7 @@ def run_case(
             break
         bp, bq = sim.crate()
         if first_move is None and np.linalg.norm(bp[:2] - knock_reference) > 0.005:
-            first_move = [round(t + B.DT, 3), phase]
+            first_move = [round(t + R.DT, 3), phase]
         warnings = {mujoco.mjtWarning(j).name: int(w.number) for j, w in enumerate(sim.d.warning) if w.number}
         if warnings or sim.fallen() or not np.isfinite(sim.d.qpos).all():
             why = "physics warning/fall"
@@ -241,7 +243,7 @@ def run_case(
             why = "bottle knocked before close"
             break
         rise = float(bp[2] - bottle[2])
-        tilt = float(np.degrees(np.arccos(np.clip(B.mat(bq)[2, 2], -1, 1))))
+        tilt = float(np.degrees(np.arccos(np.clip(R.mat(bq)[2, 2], -1, 1))))
         good = (
             phase == "carry"
             and rise >= 0.08
@@ -249,14 +251,14 @@ def run_case(
             and np.linalg.norm(velocity) < 0.06
             and intervention.triggered
         )
-        stable_s = stable_s + B.DT if good else 0.0
+        stable_s = stable_s + R.DT if good else 0.0
         if stable_s >= 1.0:
             ok = True
             why = ""
             break
-    np.savez_compressed(out / "trace.npz", qpos=np.asarray(trace), dt=B.DT)
+    np.savez_compressed(out / "trace.npz", qpos=np.asarray(trace), dt=R.DT)
     if native_codec:
-        np.savez_compressed(out / "actions.npz", actions=np.asarray(actions), dt=B.DT)
+        np.savez_compressed(out / "actions.npz", actions=np.asarray(actions), dt=R.DT)
     atomic_json(out / "commands.json", wrapped.rows)
     atomic_json(out / "observations.json", observations)
     result = dict(
@@ -266,7 +268,7 @@ def run_case(
         ok=ok,
         why=why,
         phase=phase,
-        len_s=len(trace) * B.DT,
+        len_s=len(trace) * R.DT,
         wall_s=round(time.time() - t0, 3),
         events=events,
         scene=meta,
@@ -291,48 +293,60 @@ def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--out", required=True)
     parser.add_argument("--seeds", default="101,102,103")
-    parser.add_argument("--scene-profile", choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument(
+        "--config", help="BottleVisualTaskConfig JSON (configs/tasks/bottle_visual.json); default = the ruled expert"
+    )
+    parser.add_argument("--backend", help="ScaleBfmBackendConfig JSON (configs/backends/scalebfm.json)")
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="task config override, e.g. grasp.stand_distance=0.4",
+    )
+    parser.add_argument(
+        "--set-backend", action="append", default=[], metavar="KEY=VALUE", help="backend config override"
+    )
     parser.add_argument("--edges", help="Defaults to the selected profile edges; yplus_center_v1 only permits y+")
-    parser.add_argument("--max-s", type=float, default=24)
-    parser.add_argument("--stand-distance", type=float, default=0.375)
-    parser.add_argument("--pre-tolerance", type=float, default=0.035)
-    parser.add_argument("--grip-kp", type=float, default=40.0)
-    parser.add_argument("--grip-kd", type=float, default=1.0)
-    parser.add_argument("--native-codec", action="store_true")
-    parser.add_argument("--lift-height", type=float, default=0.10)
-    parser.add_argument("--carry-clearance", type=float)
-    parser.add_argument("--action-hz", type=int, choices=[25, 50])
-    parser.add_argument("--integral-gain", type=float, default=0.0)
-    parser.add_argument("--strata", default="low_near")
-    parser.add_argument("--edge-clearance", type=float)
-    parser.add_argument("--high-table-front", type=float)
-    parser.add_argument("--reference-style", choices=["legacy", "direct"], default="legacy")
-    parser.add_argument("--facing", choices=["bottle", "edge"], default="bottle")
     parser.add_argument("--record-observations", action="store_true")
-    parser.add_argument("--recoveries", default="none")
     parser.add_argument(
         "--case-offset", type=int, default=0, help="Original scene-plan index when resuming a disjoint seed suffix"
     )
-    parser.add_argument("--policy-device", choices=["cpu", "cuda"], default="cpu")
     args = parser.parse_args()
-    args.edges = args.edges or ",".join(profile_edges(args.scene_profile))
+    task = (BottleVisualTaskConfig.load(args.config) if args.config else BottleVisualTaskConfig()).override(args.set)
+    backend = (ScaleBfmBackendConfig.load(args.backend) if args.backend else ScaleBfmBackendConfig()).override(
+        args.set_backend
+    )
+    edges = (args.edges or ",".join(profile_edges(task.scene_profile))).split(",")
     try:
-        validate_edges(args.scene_profile, args.edges.split(","))
+        validate_edges(task.scene_profile, edges)
     except ValueError as exc:
         parser.error(str(exc))
-    if args.action_hz and not args.native_codec:
-        parser.error("--action-hz requires --native-codec")
-    if args.record_observations and (not args.native_codec or args.action_hz != 25):
+    if task.action_hz and not task.native_codec:
+        parser.error("action_hz requires native_codec")
+    if task.action_hz not in (0, 25, 50):
+        parser.error("action_hz must be 0, 25 or 50")
+    if args.record_observations and (not task.native_codec or task.action_hz != 25):
         parser.error("Student recording requires the native 25 Hz executor")
+    if not set(task.recoveries) <= set(KINDS):
+        parser.error("Unknown recovery intervention")
+    if not set(task.strata) <= STRATA.keys():
+        parser.error("Unknown scene stratum")
     torch.set_num_threads(1)
-    B.R.GRIP_KP, B.R.GRIP_KD = args.grip_kp, args.grip_kd
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    cfg = vars(args).copy()
-    cfg["render_backend"] = os.environ["MUJOCO_GL"]
-    cfg["render_device"] = os.environ.get("MUJOCO_EGL_DEVICE_ID")
     files = line_sources()
-    cfg["source_sha256"] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+    cfg = dict(
+        task=task.to_dict(),
+        backend=backend.to_dict(),
+        seeds=args.seeds,
+        edges=",".join(edges),
+        record_observations=args.record_observations,
+        case_offset=args.case_offset,
+        render_backend=os.environ["MUJOCO_GL"],
+        render_device=os.environ.get("MUJOCO_EGL_DEVICE_ID"),
+        source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in files},
+    )
     saved = out / "config.json"
     if saved.exists() and json.loads(saved.read_text()) != cfg:
         raise SystemExit("Saved config/source differs; use a new experiment ID")
@@ -348,17 +362,11 @@ def main():
     (out / "source").mkdir(exist_ok=True)
     for p in files:
         shutil.copy2(p, out / "source" / p.name)
-    policy = B.Policy(device=args.policy_device)
+    policy = R.Policy(device=task.policy_device, backend=backend)
     environments = {}
     results = []
     seeds = [int(x) for x in args.seeds.split(",")]
-    edges = args.edges.split(",")
-    strata = args.strata.split(",")
-    recoveries = args.recoveries.split(",")
-    if not set(recoveries) <= set(KINDS):
-        parser.error("Unknown recovery intervention")
-    if not set(strata) <= STRATA.keys():
-        parser.error("Unknown scene stratum")
+    strata, recoveries = task.strata, task.recoveries
     try:
         for local_i, seed in enumerate(seeds):
             i = local_i + args.case_offset
@@ -376,10 +384,9 @@ def main():
             else:
                 directory = scene_directory(out / "scene_assets", stratum)
                 if stratum not in environments:
-                    sim = make_sim(policy, directory)
+                    sim = make_sim(policy, directory, backend)
                     environments[stratum] = sim, BottleProxySensor(sim)
                 sim, sensor = environments[stratum]
-                B.EDGE_INBOARD = STRATA[stratum][1]
                 recording = RawEpisodeRecorder(sim, case) if args.record_observations else None
                 try:
                     result = run_case(
@@ -389,24 +396,9 @@ def main():
                         seed,
                         edge,
                         case,
-                        GraspConfig(
-                            stand_distance=args.stand_distance,
-                            pre_tolerance=args.pre_tolerance,
-                            lift_height=args.lift_height,
-                            carry_clearance=args.carry_clearance,
-                            edge_clearance=args.edge_clearance,
-                            high_table_front=args.high_table_front,
-                            pitch_feedforward_deg=0.0 if args.reference_style == "direct" else -13.0,
-                            facing=args.facing,
-                        ),
-                        args.max_s,
-                        native_codec=args.native_codec,
-                        action_hz=args.action_hz,
-                        integral_gain=args.integral_gain,
-                        reference_style=args.reference_style,
+                        task,
                         recording=recording,
                         recovery_kind=recovery_kind,
-                        scene_profile=args.scene_profile,
                         stratum=stratum,
                     )
                 finally:

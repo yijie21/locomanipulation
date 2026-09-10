@@ -23,18 +23,16 @@ import mujoco
 import numpy as np
 import torch
 
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.scalebfm.network import load_policy, quat_apply_inverse, quat_mul_inverse_left
 from locomani.paths import REPO as ROOT
 
 # --- assets ------------------------------------------------------------------
-CKPT = os.environ.get("SCALEBFM_CKPT", "/workspace/models/scalebfm/humanoid_transformer_m_22200.pt")
 MODE_TABLE = os.path.join(ROOT, "assets/scalebfm/mode_table.pt")
 META = os.path.join(ROOT, "assets/scalebfm/model_22200_tensorrt_metadata.json")
 FK_XML = os.path.join(ROOT, "assets/scalebfm/g1_29dof_fk.xml")
-SCENE = os.environ.get("SCENE_DIR", os.path.join(ROOT, "outputs/scene/crate_bimanual"))
 
 # --- scene object + gripper -------------------------------------------------
-OBJ = "blue_crate"
 TOP_Z = 0.085
 OFF = np.array([0.1515, 0.0, 0.0])  # wrist frame -> pad centre (dex1)
 GRIP_OPEN, GRIP_CLOSED = 0.0245, -0.023
@@ -43,8 +41,7 @@ GRIP_OPEN, GRIP_CLOSED = 0.0245, -0.023
 # (+-6.5 mm sd at rest with kd 1.0) and the asymmetric close flicks the bottle out. A/B on run_bottle.py,
 # seed 2, 10 rounds each (2026-09-08): kp40/kd1.0 6/10, kp40/kd0.5 10/10, kp8/kd0.15 9/10 (least chatter,
 # 3.4 mm sd, lowest carry tilt). Collection uses GRIP_KD=0.5; kp 8 / kd 0.15 is the clamp-matched setting.
-GRIP_KP = float(os.environ.get("GRIP_KP", 40.0))
-GRIP_KD = float(os.environ.get("GRIP_KD", 1.0))
+# GRIP_KP / GRIP_KD live in ScaleBfmBackendConfig (config.py); the A/B above is why its defaults are 1.0 / 0.025.
 
 # --- episode script (pilot 23 numbers) ------------------------------------------
 DT = 0.02
@@ -95,10 +92,12 @@ def smoothstep(u):
 class Sim:
     """Our crate scene, ScaleBFM's PD on the 29 joints, our PD on the grippers."""
 
-    def __init__(self, meta, video=False):
-        self.m = mujoco.MjModel.from_xml_path(os.path.join(SCENE, "scene_locomani.xml"))
+    def __init__(self, meta, video=False, backend: ScaleBfmBackendConfig | None = None):
+        self.cfg = backend or ScaleBfmBackendConfig()
+        scene = self.cfg.scene_path()
+        self.m = mujoco.MjModel.from_xml_path(os.path.join(scene, "scene_locomani.xml"))
         self.d = mujoco.MjData(self.m)
-        self.smeta = json.load(open(os.path.join(SCENE, "scene_meta.json")))
+        self.smeta = json.load(open(os.path.join(scene, "scene_meta.json")))
         self.low_dt = 0.005
         self.decim = 4
         self.m.opt.timestep = self.low_dt
@@ -137,10 +136,12 @@ class Sim:
                 "right_ankle_roll_link",
             )
         }
-        self.crate_b = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, self.smeta["objects"][OBJ]["body"])
+        self.crate_b = mujoco.mj_name2id(
+            self.m, mujoco.mjtObj.mjOBJ_BODY, self.smeta["objects"][self.cfg.object_name]["body"]
+        )
         self.crate_q = int(self.m.jnt_qposadr[self.m.body_jntadr[self.crate_b]])
-        self.crate0 = np.asarray(self.smeta["objects"][OBJ]["init_pos"], dtype=float)
-        self.crate_quat0 = np.asarray(self.smeta["objects"][OBJ]["init_quat"], dtype=float)
+        self.crate0 = np.asarray(self.smeta["objects"][self.cfg.object_name]["init_pos"], dtype=float)
+        self.crate_quat0 = np.asarray(self.smeta["objects"][self.cfg.object_name]["init_quat"], dtype=float)
         surf = self.smeta["surfaces"]["A"]
         self.edge_x = float(surf["xy"][0] - surf["flat_half_extent"][0])
         self.table_top = float(surf["top"])
@@ -195,7 +196,7 @@ class Sim:
             tau = self.kp * (tgt - d.qpos[self.qadr]) - self.kd * d.qvel[self.vadr]
             d.ctrl[self.act] = np.clip(tau, -self.tlim, self.tlim)
             d.ctrl[self.gact] = np.clip(
-                GRIP_KP * (self.grip_target - d.qpos[self.gq]) - GRIP_KD * d.qvel[self.gv],
+                self.cfg.grip_kp * (self.grip_target - d.qpos[self.gq]) - self.cfg.grip_kd * d.qvel[self.gv],
                 -self.grip_clip,
                 self.grip_clip,
             )
@@ -212,8 +213,9 @@ class Sim:
 
 
 class Policy:
-    def __init__(self, device="cuda"):
-        self.w, self.meta, _, _ = load_policy(CKPT, MODE_TABLE, META, FK_XML, device)
+    def __init__(self, device="cuda", backend: ScaleBfmBackendConfig | None = None):
+        self.cfg = backend or ScaleBfmBackendConfig()
+        self.w, self.meta, _, _ = load_policy(self.cfg.checkpoint, MODE_TABLE, META, FK_XML, device)
         self.dev = device
         self.H = self.meta["history_buffer_size"]
         self.fidx = list(self.meta["future_idx"])

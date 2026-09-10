@@ -5,6 +5,7 @@ never drops failures or resamples according to task outcomes.
 """
 
 import argparse
+import dataclasses
 import fcntl
 import hashlib
 import html
@@ -14,7 +15,6 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,11 +23,14 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
+from locomani.backends.scalebfm import runtime as R
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.paths import REPO
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.audit import audit_case
+from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
 from locomani.tasks.bottle_visual.harness import atomic_json
-from locomani.tasks.bottle_visual.pipeline.collect import EXPERT_RUN_OPTIONS, STRATUM_ORDER, expert_config
+from locomani.tasks.bottle_visual.pipeline.collect import STRATUM_ORDER
 from locomani.tasks.bottle_visual.pipeline.follow_video import heading, render_case
 from locomani.tasks.bottle_visual.pipeline.provenance import line_sources
 from locomani.tasks.bottle_visual.round import run_case
@@ -37,12 +40,13 @@ from locomani.tasks.bottle_visual.sensor import BottleProxySensor
 
 ROOT = Path(REPO)
 FEATURES = ("bottle_along_m", "inboard_m", "spawn_edge_m", "spawn_lat_m", "yaw_error_deg")
+TASK = BottleVisualTaskConfig()  # the ruled expert; --scene-profile only swaps its reset geometry
 PLAN_VERSION = "coverage_bins5_farthest_v1"
 
 
 def fingerprint(profile):
     files = set(line_sources())
-    files.update(Path(p) for p in (B.R.CKPT, B.R.FK_XML, B.R.MODE_TABLE, B.R.META))
+    files.update(Path(p) for p in (R.CKPT, R.FK_XML, R.MODE_TABLE, R.META))
     files.update(BASE_SCENE / n for n in ("scene_locomani.xml", "scene_meta.json"))
     tree = ET.parse(BASE_SCENE / "scene_locomani.xml")
     compiler = tree.find("compiler")
@@ -59,13 +63,12 @@ def fingerprint(profile):
     hashes = {str(p.resolve()): hashlib.file_digest(p.open("rb"), "sha256").hexdigest() for p in sorted(files)}
     spec = dict(
         scene_profile=profile,
-        expert_config=asdict(expert_config()),
-        run_options=EXPERT_RUN_OPTIONS,
+        task=TASK.to_dict(),
         source_sha256=hashes,
         torch=torch.__version__,
         strata=STRATA,
         plan_version=PLAN_VERSION,
-        scene_mode=B.SCENE_MODE,
+        scene_mode="edge",
         policy_device="cpu",
         episodes=10,
         policy_seed=17,
@@ -78,7 +81,6 @@ def choose_cases(profile, candidate_count=6000):
     """Select by reset parameters only; no model, rendering or physics calls."""
     meta = json.loads((BASE_SCENE / "scene_meta.json").read_text())
     source = np.array(meta["objects"]["water_bottle"]["init_pos"], dtype=float)
-    B.STAND_D = (expert_config().stand_distance,) * 2
     edges = profile_edges(profile)
     candidates = {}
     raws = {}
@@ -89,12 +91,19 @@ def choose_cases(profile, candidate_count=6000):
         for j in range(candidate_count):
             seed = 100000 + s * candidate_count + j
             edge = edges[j % len(edges)]
-            os.environ["BFM_EDGE"] = edge
-            B.EDGE_INBOARD = STRATA[stratum][1]
             bottle0 = source.copy()
             bottle0[2] += STRATA[stratum][0] - meta["surfaces"]["A"]["top"]
             sim = SimpleNamespace(crate0=bottle0, smeta=meta)
-            bottle, _, spawn, yaw, scene = sample_reset(B, sim, np.random.default_rng(seed), edge, stratum, profile)
+            bottle, _, spawn, yaw, scene = sample_reset(
+                geometry,
+                sim,
+                np.random.default_rng(seed),
+                edge,
+                stratum,
+                profile,
+                stand_d=(TASK.grasp.stand_distance,) * 2,
+                inboard=STRATA[stratum][1],
+            )
             n = np.zeros(2)
             axis = 0 if edge[0] == "x" else 1
             n[axis] = 1 if edge[1] == "-" else -1
@@ -319,7 +328,7 @@ def main():
             shutil.copy2(source, out / "source" / source.name)
     for source in (Path(__file__), Path(__file__).with_name("follow_video.py")):
         shutil.copy2(source, out / "source" / source.name)
-    B.R.GRIP_KP, B.R.GRIP_KD = 1.0, 0.025
+    backend = ScaleBfmBackendConfig()
     policy = None
     envs = {}
     reports = []
@@ -336,13 +345,12 @@ def main():
                         raise RuntimeError(f"Interrupted episode requires inspection, will not silently retry: {case}")
                     atomic_json(case / "attempt.json", dict(started_utc=datetime.now(timezone.utc).isoformat(), case=c))
                     if policy is None:
-                        policy = B.Policy(device="cpu")
+                        policy = R.Policy(device="cpu", backend=backend)
                     if c["stratum"] not in envs:
                         directory = scene_directory(out / "scene_assets", c["stratum"])
-                        sim = make_sim(policy, directory)
+                        sim = make_sim(policy, directory, backend)
                         envs[c["stratum"]] = (sim, BottleProxySensor(sim), directory)
                     sim, sensor, directory = envs[c["stratum"]]
-                    B.EDGE_INBOARD = STRATA[c["stratum"]][1]
                     print(f"COLLECT {i}/10 {c['stratum']} seed={c['seed']}", flush=True)
                     result = run_case(
                         sim,
@@ -351,9 +359,7 @@ def main():
                         c["seed"],
                         c["edge"],
                         case,
-                        expert_config(),
-                        **EXPERT_RUN_OPTIONS,
-                        scene_profile=args.scene_profile,
+                        dataclasses.replace(TASK, scene_profile=args.scene_profile),
                         stratum=c["stratum"],
                     )
                 result.update(stratum=c["stratum"], scene_directory=str(directory.resolve()))

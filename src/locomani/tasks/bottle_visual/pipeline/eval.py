@@ -17,12 +17,14 @@ import mujoco
 import numpy as np
 import torch
 
+from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.action import encode_action
 from locomani.backends.scalebfm.camera import RobotCameraObserver
 from locomani.backends.scalebfm.chunks import ChunkScheduler
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.scalebfm.executor import ActionExecutor
 from locomani.paths import REPO
-from locomani.tasks.bottle_visual import scene_legacy as B
+from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.harness import AppliedPolicy, atomic_json, summarize
 from locomani.tasks.bottle_visual.pipeline.provenance import line_sources, verify_runtime_assets
 from locomani.tasks.bottle_visual.recovery import RecoveryIntervention
@@ -120,10 +122,18 @@ def rollout(
     recovery_kind="none",
     scene_profile=LEGACY_PROFILE,
     stratum="low_near",
+    stand_distance=0.375,  # the ruled expert stand (BottleVisualTaskConfig().grasp.stand_distance)
 ):
-    os.environ["BFM_EDGE"] = edge
-    B.STAND_D = (0.375, 0.375)
-    bottle, _, spawn, yaw, scene = sample_reset(B, sim, np.random.default_rng(seed), edge, stratum, scene_profile)
+    bottle, _, spawn, yaw, scene = sample_reset(
+        geometry,
+        sim,
+        np.random.default_rng(seed),
+        edge,
+        stratum,
+        scene_profile,
+        stand_d=(stand_distance, stand_distance),
+        inboard=STRATA[stratum][1],
+    )
     intervention = RecoveryIntervention(recovery_kind)
     if recovery_kind == "stop_short":
         # Assessment reset only, identical geometric reset rule to recovery
@@ -142,7 +152,7 @@ def rollout(
             np.zeros(3),
             np.array([1.0, 0, 0, 0]),
             np.zeros(3),
-            B.GRIP_OPEN,
+            R.GRIP_OPEN,
         )
         reset_config = GraspConfig(stand_distance=0.375, edge_clearance=0.22, high_table_front=0.20, facing="edge")
         intent = VisualGraspPlanner(reset_config).decide(estimate, robot)
@@ -153,7 +163,7 @@ def rollout(
     sim.grip_clip = 0.6
     wrapped = AppliedPolicy(policy, sim)
     wrapped.reset(sim.state())
-    refs = B.Refs(policy, sim)
+    refs = R.Refs(policy, sim)
     executor, scheduler = ActionExecutor(refs.hand_rel), ChunkScheduler()
     observer = RobotCameraObserver(sim)
     audit_sensor = BottleProxySensor(sim)
@@ -162,7 +172,7 @@ def rollout(
         full = np.load(replay_case / "actions.npz")["actions"]
         expected = np.load(replay_case / "trace.npz")["qpos"]
         expected_commands = json.loads((replay_case / "commands.json").read_text())
-    ticks = len(full) if full is not None else int(max_s / B.DT)
+    ticks = len(full) if full is not None else int(max_s / R.DT)
     trace, actions, requests, object_trace, evidence = [], [], [], [], []
     previous_pad = sim.pad("right")
     velocity = np.zeros(3)
@@ -180,11 +190,11 @@ def rollout(
     started = time.time()
     try:
         for k in range(ticks):
-            t = k * B.DT
+            t = k * R.DT
             if k == 84:
-                initial_local_pad = B.R.rot_z(B.R.yaw_of(sim.d.qpos[3:7])).T @ (sim.pad("right") - sim.d.qpos[:3])
+                initial_local_pad = R.rot_z(R.yaw_of(sim.d.qpos[3:7])).T @ (sim.pad("right") - sim.d.qpos[:3])
             if initial_local_pad is not None:
-                local = B.R.rot_z(B.R.yaw_of(sim.d.qpos[3:7])).T @ (sim.pad("right") - sim.d.qpos[:3])
+                local = R.rot_z(R.yaw_of(sim.d.qpos[3:7])).T @ (sim.pad("right") - sim.d.qpos[:3])
                 arm_started = (
                     arm_started or local[0] - initial_local_pad[0] >= 0.03 or local[2] - initial_local_pad[2] >= 0.01
                 )
@@ -195,7 +205,7 @@ def rollout(
                 previous_pad = sim.pad("right")
                 velocity[:] = 0.0
             pad = sim.pad("right")
-            velocity = 0.8 * velocity + 0.2 * (pad - previous_pad) / B.DT
+            velocity = 0.8 * velocity + 0.2 * (pad - previous_pad) / R.DT
             previous_pad = pad
             # First prediction is captured at1.60s, available at1.68s. Pending
             # replans never interrupt the live chunk. Rows skip modeled delay.
@@ -216,7 +226,7 @@ def rollout(
             if executor.needs_action:
                 row = scheduler.row(k)
                 if row is None:
-                    ref = dict(refs.pelvis(spawn, yaw), **refs.hands_at_side(np.array([*spawn, B.PELVIS_Z]), yaw))
+                    ref = dict(refs.pelvis(spawn, yaw), **refs.hands_at_side(np.array([*spawn, R.PELVIS_Z]), yaw))
                     row = encode_action(
                         refs.futures(lambda _: ref, t), sim.d.qpos[:3], sim.d.qpos[3:7], sim.grip_target[2]
                     )
@@ -226,18 +236,18 @@ def rollout(
                 why = f"invalid decoded action: {error}"
                 break
             sim.grip_target[2:] = grip
-            if close_started is None and grip < B.GRIP_OPEN - 0.002:
+            if close_started is None and grip < R.GRIP_OPEN - 0.002:
                 close_started = t
-            closed_once = closed_once or grip < B.GRIP_OPEN - 0.002
+            closed_once = closed_once or grip < R.GRIP_OPEN - 0.002
             wrapped.phase = "settle" if k < 84 else "vla"
             sim.step(wrapped(sim.state(), targets))
             trace.append(sim.d.qpos.copy())
             actions.append(executor.row.copy())
             bp, bq = sim.crate()
             rise = float(bp[2] - bottle[2])
-            tilt = float(np.degrees(np.arccos(np.clip(B.mat(bq)[2, 2], -1, 1))))
+            tilt = float(np.degrees(np.arccos(np.clip(R.mat(bq)[2, 2], -1, 1))))
             if first_move is None and np.linalg.norm(bp[:2] - knock_reference) > 0.005:
-                first_move = dict(t=t + B.DT, before_close=not closed_once)
+                first_move = dict(t=t + R.DT, before_close=not closed_once)
             warnings = {mujoco.mjtWarning(j).name: int(w.number) for j, w in enumerate(sim.d.warning) if w.number}
             invalid = bool(warnings) or sim.fallen() or not np.isfinite(sim.d.qpos).all()
             knocked = first_move is not None and first_move["before_close"]
@@ -251,7 +261,7 @@ def rollout(
                 and intervention.triggered
                 and not intervention.error
             )
-            stable_s = stable_s + B.DT if good else 0.0
+            stable_s = stable_s + R.DT if good else 0.0
             object_trace.append(dict(t=t, rise_m=rise, tilt_deg=tilt, pad_distance_m=float(np.linalg.norm(pad - bp))))
             if full is not None:
                 state_error = max(state_error, float(np.max(abs(sim.d.qpos - expected[k]))))
@@ -273,8 +283,8 @@ def rollout(
     finally:
         observer.close()
         audit_sensor.close()
-    np.savez_compressed(out / "trace.npz", qpos=np.asarray(trace), dt=B.DT)
-    np.savez_compressed(out / "actions.npz", actions=np.asarray(actions), dt=B.DT)
+    np.savez_compressed(out / "trace.npz", qpos=np.asarray(trace), dt=R.DT)
+    np.savez_compressed(out / "actions.npz", actions=np.asarray(actions), dt=R.DT)
     atomic_json(out / "commands.json", wrapped.rows)
     atomic_json(out / "object_audit.json", object_trace)
     atomic_json(out / "requests.json", requests)
@@ -286,7 +296,7 @@ def rollout(
         if close_started is not None and close_started <= r["t"] < close_started + 0.8
     ]
     recent = np.asarray(trace[-51:])
-    base_speed = float(np.linalg.norm(recent[-1, :2] - recent[0, :2]) / max(B.DT, (len(recent) - 1) * B.DT))
+    base_speed = float(np.linalg.norm(recent[-1, :2] - recent[0, :2]) / max(R.DT, (len(recent) - 1) * R.DT))
     latencies = [r["inference_ms"] for r in requests]
     result = dict(
         seed=seed,
@@ -294,7 +304,7 @@ def rollout(
         scene=scene,
         ok=ok,
         why=why,
-        len_s=len(trace) * B.DT,
+        len_s=len(trace) * R.DT,
         wall_s=time.time() - started,
         first_move=first_move,
         closed_once=closed_once,
@@ -359,7 +369,7 @@ def main():
     if args.replay_limit and not args.replay_run:
         parser.error("--replay-limit applies only to contract probes")
     torch.set_num_threads(1)
-    B.R.GRIP_KP, B.R.GRIP_KD = 1.0, 0.025
+    backend = ScaleBfmBackendConfig()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     config = vars(args) | dict(
@@ -372,7 +382,7 @@ def main():
     if saved.exists() and json.loads(saved.read_text()) != config:
         raise ValueError("Config changed; use a new evaluation ID")
     atomic_json(saved, config)
-    policy = B.Policy(device=args.policy_device)
+    policy = R.Policy(device=args.policy_device, backend=backend)
     predict = load_vla(args.model) if args.model else None
     if args.validation_dataset and not (out / "validation.json").exists():
         validation_diagnostic(predict, args.validation_dataset, out / "validation.json")
@@ -430,8 +440,7 @@ def main():
         else:
             directory = directory or scene_directory(out / "scene_assets", stratum)
             if stratum not in environments:
-                environments[stratum] = make_sim(policy, directory)
-            B.EDGE_INBOARD = STRATA[stratum][1]
+                environments[stratum] = make_sim(policy, directory, backend)
             # Same policy-noise stream for each paired scene, independent of arm
             # and training seed; model stochasticity is not episode-order driven.
             torch.manual_seed(900000 + seed)

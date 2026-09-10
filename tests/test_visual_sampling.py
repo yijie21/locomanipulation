@@ -27,6 +27,7 @@ class SamplingTests(unittest.TestCase):
             SPAWN_EDGE=(1.1, 1.3),
             SPAWN_LAT=0.2,
             SPAWN_YAW_ERR=np.radians(20),
+            EDGE_INBOARD=(0.04, 0.08),
         )
         # An off-origin table and an off-centre old bottle expose accidental
         # reliance on world zero or the old nominal bottle coordinates.
@@ -68,7 +69,7 @@ class SamplingTests(unittest.TestCase):
             validate_edges(DEFAULT_PROFILE, [])
 
     def test_collection_and_frozen_baseline_resets_match_and_restore_on_error(self):
-        original = lambda sim, rng: "old reset"
+        original = lambda sim, rng, **kw: "old reset"
         self.runtime.sample_scene = original
         expected = sample_reset(self.runtime, self.sim, np.random.default_rng(4001), "y+", "low_near", DEFAULT_PROFILE)
         with self.assertRaisesRegex(RuntimeError, "interrupted"):
@@ -81,7 +82,7 @@ class SamplingTests(unittest.TestCase):
         self.assertIs(self.runtime.sample_scene, original)
 
     def test_legacy_delegates_without_consuming_extra_rng(self):
-        self.runtime.sample_scene = lambda sim, rng: rng.random(6)
+        self.runtime.sample_scene = lambda sim, rng, **kw: rng.random(6)
         expected = np.random.default_rng(17).random(6)
         actual = sample_reset(self.runtime, self.sim, np.random.default_rng(17), "x-", "high_near", LEGACY_PROFILE)
         np.testing.assert_array_equal(actual, expected)

@@ -14,7 +14,7 @@ from locomani.tasks.bottle_visual.sampling import DEFAULT_PROFILE
 class VideoCheckTests(unittest.TestCase):
     def test_selects_ten_distinct_reproducible_resets_without_policy(self):
         with patch(
-            "locomani.tasks.bottle_visual.pipeline.video_check.B.Policy",
+            "locomani.tasks.bottle_visual.pipeline.video_check.R.Policy",
             side_effect=AssertionError("No model during selection"),
         ):
             a = choose_cases(DEFAULT_PROFILE, candidate_count=80)

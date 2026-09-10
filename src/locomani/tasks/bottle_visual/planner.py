@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from locomani.tasks.bottle_visual.config import GraspConfig  # noqa: F401  (re-export: planner tests import it here)
 from locomani.tasks.bottle_visual.observation import SceneEstimate
 
 
@@ -33,26 +34,6 @@ class GraspIntent:
     wrist_quaternion: np.ndarray | None
     gripper: float
     pause: bool = False
-
-
-@dataclass(frozen=True)
-class GraspConfig:
-    stand_distance: float = 0.375
-    stand_backstep: float = 0.06
-    stand_left: float = 0.15
-    reach_start: float = 0.5
-    pre_back: float = 0.10
-    carry_back: float = 0.07
-    pre_tolerance: float = 0.035
-    close_along: float = 0.02
-    close_across: float = 0.018
-    close_speed: float = 0.10
-    pitch_feedforward_deg: float = -13.0
-    lift_height: float = 0.10
-    carry_clearance: float | None = None
-    edge_clearance: float | None = None
-    high_table_front: float | None = None
-    facing: str = "bottle"
 
 
 class VisualGraspPlanner:

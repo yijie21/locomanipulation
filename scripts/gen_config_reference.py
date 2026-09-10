@@ -18,11 +18,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
 from locomani.backends.sonic.config import LockstepConfig, SonicBackendConfig  # noqa: E402
 from locomani.pipeline.eval_config import EvalConfig  # noqa: E402
 from locomani.pipeline.pilot_config import PilotConfig  # noqa: E402
 from locomani.tasks.bottle.config import BottleTaskConfig, SpawnConfig  # noqa: E402
 from locomani.tasks.bottle.reach_config import ReachConfig  # noqa: E402
+from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig, GraspConfig  # noqa: E402
 from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
 
 # (heading, dataclass, source module docstring's one-line summary)
@@ -33,6 +35,9 @@ CONFIGS = [
     ("SpawnConfig", SpawnConfig, "locomani/tasks/bottle/config.py (BottleTaskConfig.spawn)"),
     ("ReachConfig", ReachConfig, "locomani/tasks/bottle/reach_config.py (BottleTaskConfig.reach)"),
     ("CrateTaskConfig", CrateTaskConfig, "locomani/tasks/crate/config.py"),
+    ("ScaleBfmBackendConfig", ScaleBfmBackendConfig, "locomani/backends/scalebfm/config.py"),
+    ("BottleVisualTaskConfig", BottleVisualTaskConfig, "locomani/tasks/bottle_visual/config.py"),
+    ("GraspConfig", GraspConfig, "locomani/tasks/bottle_visual/config.py (BottleVisualTaskConfig.grasp)"),
     ("EvalConfig", EvalConfig, "locomani/pipeline/eval_config.py"),
     ("PilotConfig", PilotConfig, "locomani/pipeline/pilot_config.py"),
 ]

@@ -1,7 +1,6 @@
 """Versioned reset geometry, never used as a student observation or action cue."""
 
 import json
-import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -33,15 +32,19 @@ def validate_reuse(cohort, profile):
         raise ValueError("Recovery reuse requires a completed B cohort")
 
 
-def sample_reset(runtime, sim, rng, edge, stratum, profile):
+def sample_reset(geometry, sim, rng, edge, stratum, profile, stand_d=None, inboard=None):
+    """`geometry` is the geometry module (constants + legacy `sample_scene`); `stand_d` / `inboard` are
+    (lo, hi) bands overriding its STAND_D / EDGE_INBOARD (the expert pins stand_d, scene.STRATA sets inboard)."""
     validate_edges(profile, [edge])
     if stratum not in ("high_near", "low_near", "low_deep"):
         raise ValueError(f"Unknown scene stratum: {stratum}")
+    runtime = geometry
+    stand_d = stand_d or runtime.STAND_D
     if profile == LEGACY_PROFILE:
-        return runtime.sample_scene(sim, rng)
+        return runtime.sample_scene(sim, rng, edge=edge, stand_d=stand_d, inboard=inboard or runtime.EDGE_INBOARD)
     # Preserve the random draw order of the original edge sampler, but
     # centre x on the table rather than the original bottle's off-centre x.
-    stand_d = float(rng.uniform(*runtime.STAND_D))
+    stand_d = float(rng.uniform(*stand_d))
     inboard = float(rng.uniform(*((0.18, 0.24) if stratum == "low_deep" else (0.12, 0.18))))
     along = float(rng.uniform(-0.08, 0.08))
     surf = sim.smeta["surfaces"]["A"]
@@ -76,19 +79,12 @@ def sample_reset(runtime, sim, rng, edge, stratum, profile):
 
 
 @contextmanager
-def reset_sampler(runtime, edge, stratum, profile):
-    """Adapt frozen legacy task reset without editing its source or task policy."""
+def reset_sampler(geometry, edge, stratum, profile, stand_d=None, inboard=None):
+    """Temporarily make `geometry.sample_scene(sim, rng)` draw this edge / stratum / profile."""
     validate_edges(profile, [edge])
-    original = runtime.sample_scene
-    old_edge = os.environ.get("BFM_EDGE")
-    os.environ["BFM_EDGE"] = edge
-    if profile != LEGACY_PROFILE:
-        runtime.sample_scene = lambda sim, rng: sample_reset(runtime, sim, rng, edge, stratum, profile)
+    original = geometry.sample_scene
+    geometry.sample_scene = lambda sim, rng: sample_reset(geometry, sim, rng, edge, stratum, profile, stand_d, inboard)
     try:
         yield
     finally:
-        runtime.sample_scene = original
-        if old_edge is None:
-            os.environ.pop("BFM_EDGE", None)
-        else:
-            os.environ["BFM_EDGE"] = old_edge
+        geometry.sample_scene = original
