@@ -31,6 +31,7 @@ from locomani.tasks.bottle_visual.recovery import RecoveryIntervention
 from locomani.tasks.bottle_visual.sampling import LEGACY_PROFILE, PROFILES, profile_edges, sample_reset
 from locomani.tasks.bottle_visual.scene import STRATA, make_sim, scene_directory
 from locomani.tasks.bottle_visual.sensor import BottleProxySensor
+from locomani.tasks.bottle_visual.success import PROTOCOL, LiftSuccess
 
 ROOT = Path(REPO)
 
@@ -176,7 +177,7 @@ def rollout(
     trace, actions, requests, object_trace, evidence = [], [], [], [], []
     previous_pad = sim.pad("right")
     velocity = np.zeros(3)
-    stable_s = 0.0
+    success = LiftSuccess()
     closed_once = False
     close_started = None
     first_move = None
@@ -250,18 +251,7 @@ def rollout(
                 first_move = dict(t=t + R.DT, before_close=not closed_once)
             warnings = {mujoco.mjtWarning(j).name: int(w.number) for j, w in enumerate(sim.d.warning) if w.number}
             invalid = bool(warnings) or sim.fallen() or not np.isfinite(sim.d.qpos).all()
-            knocked = first_move is not None and first_move["before_close"]
-            good = (
-                closed_once
-                and rise >= 0.08
-                and tilt <= 30
-                and np.linalg.norm(velocity) < 0.06
-                and not knocked
-                and not invalid
-                and intervention.triggered
-                and not intervention.error
-            )
-            stable_s = stable_s + R.DT if good else 0.0
+            lifted = success.update(t + R.DT, rise, not invalid and not intervention.error)
             object_trace.append(dict(t=t, rise_m=rise, tilt_deg=tilt, pad_distance_m=float(np.linalg.norm(pad - bp))))
             if full is not None:
                 state_error = max(state_error, float(np.max(abs(sim.d.qpos - expected[k]))))
@@ -271,14 +261,14 @@ def rollout(
                         np.linalg.norm(targets["right_wrist_yaw_link"][0][0] - expected_commands[k]["wrist_position"])
                     ),
                 )
-            if stable_s >= 1.0:
+            if lifted:
                 ok = True
                 why = ""
-            if full is None and (ok or invalid or knocked):
+            if full is None and (ok or invalid or intervention.error):
                 if invalid:
                     why = "physics warning/fall"
-                elif knocked:
-                    why = "bottle knocked before close"
+                elif intervention.error:
+                    why = intervention.error
                 break
     finally:
         observer.close()
@@ -303,6 +293,7 @@ def rollout(
         edge=edge,
         scene=scene,
         ok=ok,
+        success_protocol=PROTOCOL,
         why=why,
         len_s=len(trace) * R.DT,
         wall_s=time.time() - started,

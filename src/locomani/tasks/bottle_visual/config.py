@@ -1,6 +1,7 @@
 """bottle_visual task knobs (decision 8): the visual bottle expert, its reset geometry and run options.
 
-`BottleVisualTaskConfig()` is the ruled yplus200 expert (docs/ledger/scalebfm.md, 2026-09-09):
+`BottleVisualTaskConfig()` follows the yplus200 expert, with carry retraction disabled on
+2026-09-10 at the user's request (docs/ledger/scalebfm.md):
 `round.py`'s old argparse defaults were the exploratory values, the collection drivers overrode
 them to these. `GraspConfig` is the planner's geometry (planner.py); its own defaults stay the
 planner-test values, the task config's `grasp` field carries the ruled overrides.
@@ -22,7 +23,7 @@ class GraspConfig:
     stand_left: float = 0.15
     reach_start: float = 0.5
     pre_back: float = 0.10
-    carry_back: float = 0.07
+    carry_back: float = 0.0  # 用户 2026-09-10 取消抬起后回收；只保持抓起位置与高度
     pre_tolerance: float = 0.035
     close_along: float = 0.02
     close_across: float = 0.018
@@ -36,7 +37,7 @@ class GraspConfig:
 
 
 def ruled_grasp() -> GraspConfig:
-    """The yplus200 collection expert (collect.py's expert_config before the 2026-09-10 reorg)."""
+    """The yplus200 collection geometry; carry_back follows the current no-retraction default."""
     return GraspConfig(
         stand_distance=0.375,
         pre_tolerance=0.035,

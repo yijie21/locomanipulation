@@ -11,6 +11,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 import torch
@@ -39,6 +40,8 @@ def main():
         "--arm", choices=["B", "C"], required=True
     )  # arm A (frozen v3 expert) deleted 2026-09-10, docs/ledger/scalebfm.md
     parser.add_argument("--out", required=True)
+    parser.add_argument("--backend", help="Backend JSON, including the isolated scene directory")
+    parser.add_argument("--runtime-assets", help="Explicit runtime asset manifest for this new experiment")
     parser.add_argument("--scene-profile", choices=PROFILES, default=DEFAULT_PROFILE)
     parser.add_argument("--normal-cohort", help="Completed B cohort reused by C")
     parser.add_argument(
@@ -48,7 +51,14 @@ def main():
     parser.add_argument(
         "--prior-attempts", type=int, default=0, help="Physical attempts already spent by this arm in retired cohorts"
     )
+    parser.add_argument(
+        "--allow-software-rendering",
+        action="store_true",
+        help="Explicit opt-in for a separate reproducibility diagnostic; never the normal bulk collection path",
+    )
     args = parser.parse_args()
+    if os.environ["MUJOCO_GL"] != "egl" and not args.allow_software_rendering:
+        parser.error("Bulk collection requires MUJOCO_GL=egl; use --allow-software-rendering only for diagnostics")
     if not 0 <= args.prior_attempts <= 880:
         parser.error("Prior physical attempts must be within the880-attempt arm budget")
     if args.train_only and (args.arm != "B" or args.pilot):
@@ -60,17 +70,23 @@ def main():
     if args.arm == "C":
         validate_reuse(args.normal_cohort, args.scene_profile)
     edges = profile_edges(args.scene_profile)
+    backend = ScaleBfmBackendConfig.load(args.backend) if args.backend else ScaleBfmBackendConfig()
+    task = BottleVisualTaskConfig(scene_profile=args.scene_profile, policy_device="cuda")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     files = line_sources()
     cfg = vars(args) | dict(
         torch=torch.__version__,
         policy_device="cuda",
+        render_backend=os.environ["MUJOCO_GL"],
+        render_device=os.environ.get("MUJOCO_EGL_DEVICE_ID"),
         grip_kp=1.0,
         grip_kd=0.025,
+        backend=backend.to_dict(),
+        task=task.to_dict(),
         source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in files},
     )
-    cfg["runtime_assets"] = verify_runtime_assets()
+    cfg["runtime_assets"] = verify_runtime_assets(args.runtime_assets)
     saved = out / "config.json"
     if saved.exists() and json.loads(saved.read_text()) != cfg:
         raise ValueError("Source/config changed; use another run ID and preserve prior attempts")
@@ -85,9 +101,7 @@ def main():
     status.update(status="running", pid=os.getpid())
     atomic_json(status_path, status)
     torch.set_num_threads(1)
-    backend = ScaleBfmBackendConfig()
     policy = R.Policy(device="cuda", backend=backend)
-    task = BottleVisualTaskConfig(scene_profile=args.scene_profile)
     environments = {}
     splits = [("pilot", 1401, 12, 12)] if args.pilot else [("train", 4001, 800, 200), ("val", 6001, 80, 20)]
     if args.arm == "C":

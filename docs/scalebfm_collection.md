@@ -30,6 +30,41 @@ LeRobot v2.1 数据集 → GR00T 3000 步 checkpoint → 配对闭环评测(§6 
 
 ---
 
+## 正式采集必须遵循的渲染与吞吐规则
+
+1. **正式批量采集必须显式使用 `MUJOCO_GL=egl`。** `CUDA_VISIBLE_DEVICES` 只选择推理设备,
+   不会把 OSMesa 转成 GPU 渲染。必须同时明确 `MUJOCO_EGL_DEVICE_ID`,核对 EGL 实际设备;
+   不要因为 CUDA 只暴露一张卡就假设 EGL 的物理设备编号自动变成0。
+2. **OSMesa只用于单独的CPU诊断或明确要求逐位复现的实验。** 不得把此类环境直接沿用到200集采集。
+   `pipeline.collect` 默认EGL;非EGL须显式 `--allow-software-rendering`,并在独立实验ID记录理由。
+3. **每次新建或切换渲染/设备/场景的批量任务,先运行独立短测再放行。** 至少覆盖高桌近瓶、低桌近瓶、
+   低桌深瓶,保存实际渲染后端/设备、逐集仿真秒数/墙钟秒数、成功/可见性/质量审计及视频检查。
+   当前200集runner自动跑12集 `--pilot`(不混入训练),要求12集入选、24条视频可完整解码、
+   单集墙钟中位数<=60s。60s是此场景的防退化阈值,不是目标速度;场景改变需先实测并解释新阈值。
+4. **吞吐异常先停止扩大采集并查渲染,不能只看GPU显存或利用率。** 对比同场景GPU基线,
+   检查真实进程环境、软件渲染器、CPU配额/限流、图像分辨率和额外渲染次数。
+   不得通过降低录像帧率、分辨率或跳过可见性审计来隐式提速。
+5. **运行中切换须保留断点与来源记录。** 完整集复用,不覆盖;中断集记账并跳过。
+   记录旧/新渲染方式对应的集、配置历史、源代码和资产哈希。OSMesa/EGL可能有像素差异,
+   混合数据不得声称逐位复现;训练与评测的渲染方式也必须记录。
+6. GPU归属、CPU余量>=6核及无限流要求仍按 `docs/STATE.md` 执行;短测通过不豁免资源检查。
+
+GPU1环境示例(本机已验证EGL设备1;其他机器应重新核对):
+
+```bash
+CUDA_VISIBLE_DEVICES=1 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 \
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=src \
+third_party/Isaac-GR00T/.venv/bin/python -m locomani.tasks.bottle_visual.pipeline.collect \
+  --arm B --pilot --scene-profile yplus_center_v1 --out outputs/experiments/NEW_ID/pilot \
+  --backend PATH_TO_BACKEND_JSON --runtime-assets PATH_TO_RUNTIME_MANIFEST_JSON
+```
+
+先检查pilot再用同环境运行正式 `--train-only`。当前带自动短测和转换的固定runner:
+`scripts/experiments/scalebfm200_20260910.py`;已有实验读取自身冻结plan,不重新prepare或改写专家快照。
+事故与实测见 [台账§20](ledger/scalebfm.md#20-本次采集慢的诊断2026-09-10codex)。
+
+---
+
 ## 2. 场景与后端
 
 ### 后端:`src/locomani/backends/scalebfm/`
@@ -127,7 +162,7 @@ seed i 的分层是 `strata[i % 3]`,恢复类型 `recoveries[(i // 3) % len]`,�
 | `initial_visibility` | `reset` / `task_start` / `first_record` 三个头相机可见门(§4) |
 | `recovery_kind` / `recovery_triggered` / `recovery_events` | 恢复扰动(§5) |
 
-一集正常的 `events` 是 `walk → reach → entry → close → lift → carry` 一条线,再稳定 1 s 结束。每集 CPU 单线程
+一集正常的 `events` 是 `walk → reach → entry → close → lift → carry` 一条线,瓶子相对初始位置抬高 >6 cm 并持续 >2 s 后结束（成功不依赖阶段）。每集 CPU 单线程
 约 1–2 min 墙钟;不需要停 stack、不需要清理端口。
 
 ---
@@ -163,7 +198,7 @@ CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa PYTHONPATH=src third_party/Isaac-GR00T/
 |---|---|---|
 | `initial_visibility` | reset(t=0)、任务开始(t=1.60 s)、学生第一帧三个时刻头相机都能看见瓶子(≥ 32 像素、robot-unoccluded fraction ≥ 0.2) | 单帧策略在第一帧就要有证据;腕相机可见不能替代 |
 | `task` | `result.ok` | |
-| `physics` | 无 MuJoCo warning、qpos 有限、骨盆 z ≥ 0.45 | |
+| `physics` | 无 MuJoCo warning、qpos 有限、骨盆 z ≥ 0.40 | |
 | `wrist_position` / `wrist_rotation` | 相邻 tick 腕命令 ≤ 2 cm / ≤ 5° | 腕旋转突变会诱发腰侧弯(archive `scalebfm_sidelean_diagnosis_20260908.md`) |
 | `side_lean` | 胸部 roll 最大 ≤ 20°,> 15° 累计 ≤ 0.2 s | |
 | `twist` | 腰 yaw ≤ 25° | |
@@ -242,8 +277,8 @@ flowchart TD
   EN["<b>entry</b> 锁住此刻实际骨盆 xy 与 yaw(hold),同帧重算接近轴与腕朝向;pad 直线进到抓点(实时估计)"]
   CL["<b>close</b> 夹爪命令 0.0245 → −0.023;记下合爪时可见瓶心高度 lift_reference_z"]
   LI["<b>lift</b> 腕目标 = 合爪处 + lift_height"]
-  CA["<b>carry</b> 沿接近轴后收 carry_back;用可见抬升维持 carry_clearance(±4 cm/次)"]
-  OK(["OK:carry 中瓶子抬升 ≥ 8 cm ∧ 倾斜 ≤ 30° ∧ 手速 < 0.06 m/s ∧ 恢复扰动已触发,持续 1 s"])
+  CA["<b>carry</b> 保持抓起后的水平位置（carry_back=0，09-10 用户取消回收）；用可见抬升维持 carry_clearance(±4 cm/次)"]
+  OK(["OK:瓶子相对初始位置抬升 >6 cm、连续 >2 s、未倒下；任意阶段均可成功"])
   BAD(["FAIL:why 见 §3 表"])
   R --> G0
   G0 -- 不过 --> BAD
@@ -275,12 +310,14 @@ flowchart TD
 | 阶段 | 进入判据 | 退出判据 | 失败标签(`why`) |
 |---|---|---|---|
 | settle | 复位 | t ≥ 1.5 s 且初始可见门过 | `head camera cannot see bottle at t=0.00/1.60` |
-| walk | settle 结束 | 骨盆到站位 ≤ `reach_start`(0.5 m)且 precision_allowed | `bottle height changed before reach`、`bottle knocked before close`、`physics warning/fall` |
-| reach | walk 退出 | 剩余 ≤ 0.10 m ∧ pad 距预抓点 ≤ `pre_tolerance`(3.5 cm) | `bottle knocked before close`、`timeout` |
-| entry | reach 退出(锁 hold) | along ≤ `close_along`(2 cm)∧ across ≤ `close_across`(1.8 cm)∧ 手速 ≤ `close_speed`(0.1 m/s) | `bottle knocked before close`、`timeout` |
+| walk | settle 结束 | 骨盆到站位 ≤ `reach_start`(0.5 m)且 precision_allowed | `timeout`、`physics warning/fall` |
+| reach | walk 退出 | 剩余 ≤ 0.10 m ∧ pad 距预抓点 ≤ `pre_tolerance`(3.5 cm) | `timeout` |
+| entry | reach 退出(锁 hold) | along ≤ `close_along`(2 cm)∧ across ≤ `close_across`(1.8 cm)∧ 手速 ≤ `close_speed`(0.1 m/s) | `timeout` |
 | close | entry 退出 | 夹爪命令 ≤ −0.0225 | `timeout` |
 | lift | close 退出 | 可见瓶心抬升 ≥ 8 cm | `timeout`、`physics warning/fall` |
-| carry | lift 退出 | 抬升 ≥ 8 cm ∧ 倾斜 ≤ 30° ∧ 手静止,稳定 1 s → `ok` | `timeout`、`physics warning/fall` |
+| carry | lift 退出 | 抬升 >6 cm 持续 >2 s → `ok`（全阶段评分） | `timeout`、`physics warning/fall` |
+
+成功评分从 2026-09-10 起使用 `success.py` 的 `sonic_lift6cm_hold2s_v1`：高度跌回 ≤6 cm 会重置计时，骨盆 <40 cm 判倒地。评分使用每 20 ms 的仿真时间，SONIC async 使用约 0.5 s 间隔的墙钟检查；两者任务条件一致，采样时钟不同。24 s 单集预算保留；90 s 的 SONIC 预算未迁移。倾斜、手速、夹爪命令、carry 阶段和恢复触发不再是成功门；合爪前碰瓶仅记录、不提前终止。初始可见性与采集动作质量审计仍独立保留。
 
 参数都在 `GraspConfig`(`config.py`,`--set grasp.<字段>=` 覆盖);`ruled_grasp()` 是采集用的那组。
 

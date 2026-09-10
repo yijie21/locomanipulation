@@ -48,8 +48,12 @@ def source_sha256(files=None) -> dict[str, str]:
     return {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in (files or line_sources())}
 
 
-def verify_runtime_assets():
-    manifest = Path(REPO) / "outputs/experiments/scalebfm_visual_goal_20260908/runtime_assets.json"
+def verify_runtime_assets(manifest=None):
+    manifest = (
+        Path(manifest)
+        if manifest
+        else Path(REPO) / "outputs/experiments/scalebfm_visual_goal_20260908/runtime_assets.json"
+    )
     assets = json.loads(manifest.read_text())["files"]
     for name, expected in assets.items():
         path = Path(name)

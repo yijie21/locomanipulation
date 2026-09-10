@@ -47,3 +47,23 @@ PY
 ### 下一步
 
 先修配置 fail-fast、源码/资产指纹、场景传递，分别补有实际失败触发器的 CPU 回归测试；复核其他会话对参考文档的更改，并补台账因果限定。恢复可用模型后，按既定计划做固定 checkpoint/seed 的旧新 eval 配对闸门。之后再把配置和每 tick 状态显式传给阶段逻辑，减少全局变量和反向模块依赖；不继续单纯为行数机械拆文件。通用 Backend 集成、纯 expert seam 和 ScaleBFM 驱动 CLI 统一属于已接受的延期。
+
+## 2026-09-10：Claude 修复后的同步复核（HEAD 092b042）
+
+已读取修复提交 f1f7452（合并 9af89f8）及之后的新行为变更。上节保留为历史审核，以本节为当前修复状态；本次不改实现。
+
+| 原问题 | 当前状态与复核证据 |
+|---|---|
+| Spec 1 配置校验 | 部分修复：未知键、错误标量、client/through 枚举现在拒绝；但 `config_load()` 调用 `config_from_dict(cls, data)` 未传 schema_version，实际 `EvalConfig.load(path)` 仍接受版本 99，而 `from_dict` 拒绝。新增测试只覆盖后者，需补文件加载入口回归测试。 |
+| Spec 2 后端指纹 | 已修：line_sources 实测 35 文件，其中后端 9；补完整性检查和相对目录快照，两个 config.py 不再相互覆盖。 |
+| Spec 3 场景路径 | 已修：scene_directory 接收 backend，round 传递；make_sim 尊重配置场景。新增 mock/临时场景测试通过。 |
+| Spec 4 外部输入指纹 | 已恢复旧版哈希覆盖：采集快照 inputs 包含冻结场景、initial_token、有效 reach_config。未验证完整采集续跑和闭环。 |
+| Standards 1 旧参考命令 | 帧率建议已改为 backend.dataset_fps；模块统计与已删 diag 脚本清单仍陈旧，尚未全部清理。 |
+| Standards 2 因果结论 | 已追加 scalebfm 台账 §15 更正，明确多步恢复和初始下沉未因果验证。 |
+| Standards 3 Task 声明 | 已明确接口只是过渡描述符、确定性规则尚未测试；新增真实 why 字符串分类测试。纯 expert 与通用 Backend 仍是延期项。 |
+
+验证：`CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 make check` 退出 0；日志 `/tmp/codex-sync-check-20260910.log`。单独执行 `tests/test_review_2026_09_10.py`：9 passed。尺寸 lint 仅报告：7 文件 / 92 函数超限。版本缺口复现：临时 JSON 写 `{"schema_version":99}`，`EvalConfig.load(path)` 成功并导出版本 1；同字典传 `from_dict` 抛 ValueError。
+
+同时同步的新行为（不是纯重构）：ebac697 采集默认 restart_deploy=False，b2310c8 补不重启时 heading reanchor，eval 显式保留重启；sim_vis 默认 none；166cd37 crate 新增 setback × yaw 摆放覆盖及沿箱体方向布置站位；实验 runner 源码移入 scripts/experiments。性能/成功率证据以 bottle §11、crate 最新台账为准，本次未重跑 GPU 闸门。
+
+现场可见其他会话的 visible10 采集进程（run_learn_pilot through=collect、successes=10），不应再把旧 STATE 的“GPU0 idle / nothing running”作为实时依据。未触碰该任务或未跟踪的 scripts/experiments/visible10_20260910.sh；原 Goal 继续取消。下一步先补 load 的版本校验，再清理参考文档残留；完整 eval 配对验证仍待可用模型。

@@ -6,7 +6,7 @@
   "stand_left": 0.15,
   "reach_start": 0.5,
   "pre_back": 0.1,
-  "carry_back": 0.07,
+  "carry_back": 0.0,
   "pre_tolerance": 0.035,
   "close_along": 0.02,
   "close_across": 0.018,

@@ -47,6 +47,7 @@ from locomani.tasks.bottle_visual.sampling import (
 )
 from locomani.tasks.bottle_visual.scene import STRATA, make_sim, scene_directory
 from locomani.tasks.bottle_visual.sensor import BottleProxySensor
+from locomani.tasks.bottle_visual.success import PROTOCOL, LiftSuccess
 from locomani.tasks.bottle_visual.visibility import head_visible, initial_visibility
 
 
@@ -121,7 +122,7 @@ def run_case(sim, policy, sensor, seed, edge, out, task, recording=None, recover
     actions = []
     forecast_error = 0.0
     phase = "settle"
-    stable_s = 0.0
+    success = LiftSuccess()
     first_move = None
     why = "timeout"
     ok = False
@@ -236,23 +237,9 @@ def run_case(sim, policy, sensor, seed, edge, out, task, recording=None, recover
         if warnings or sim.fallen() or not np.isfinite(sim.d.qpos).all():
             why = "physics warning/fall"
             break
-        if phase in ("settle", "walk") and abs(bp[2] - bottle[2]) > 0.005:
-            why = "bottle height changed before reach: scene/contact setup"
-            break
-        if first_move is not None and first_move[1] in ("settle", "walk", "reach", "entry"):
-            why = "bottle knocked before close"
-            break
         rise = float(bp[2] - bottle[2])
-        tilt = float(np.degrees(np.arccos(np.clip(R.mat(bq)[2, 2], -1, 1))))
-        good = (
-            phase == "carry"
-            and rise >= 0.08
-            and tilt <= 30
-            and np.linalg.norm(velocity) < 0.06
-            and intervention.triggered
-        )
-        stable_s = stable_s + R.DT if good else 0.0
-        if stable_s >= 1.0:
+        lifted = success.update(t + R.DT, rise, True)
+        if lifted:
             ok = True
             why = ""
             break
@@ -266,6 +253,7 @@ def run_case(sim, policy, sensor, seed, edge, out, task, recording=None, recover
         edge=edge,
         scene_profile=scene_profile,
         ok=ok,
+        success_protocol=PROTOCOL,
         why=why,
         phase=phase,
         len_s=len(trace) * R.DT,

@@ -224,3 +224,86 @@ ScaleBFM(上海 AI Lab,arXiv 2607.15163,MIT)是 SONIC 的候选替代 controller
 §0 第 5 条写"学生无法从下蹲恢复",§10 也把 q99 截断当成恢复失败的机制。已知事实只有:checkpoint 的相对骨盆高度动作 q99 = +0.01836 m,单次修正最高 +1.836 cm;100 场里 38 场骨盆低于 0.60 m。**不能由此推出学生无法多步恢复**,也没有证据说明最初下沉的原因;能回答这两点的 pelvis ABCD 对照(§11)没有最终结果。正确表述:恢复幅度受单步截断限制,恢复能力与下沉成因**均未因果验证**。§0、§10 原文按 append-only 规则不改,以本节为准。
 
 (来源: docs/ledger/refactor.md「Standards 2」;§10 本身的数字)
+
+## 16. 2026-09-10 用户取消抓起后的回收动作
+
+用户明确要求先取消“向身体方向收回约 7 cm”。`GraspConfig.carry_back` 默认与 `configs/tasks/bottle_visual.json` 同步从 0.07 改为 0；正式 collect 与 video_check 使用同一默认任务配置。lift→carry 后以当时右手水平位置为目标，不再主动后收；12 cm 抬手、可见高度补偿和稳定 1 s 成功判据保留。参数仍允许显式覆盖，以便复现历史协议；新默认不再等同旧 yplus200 全配置，旧数据和结果不能冒充本次变更的验证。
+
+验证：默认/JSON 均 carry_back=0、lift_height=carry_clearance=0.12；已有 planner/motion/video_check/config 测试 21 passed，配置字段文档一致性通过。命令：`CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m pytest tests/test_visual_planner.py tests/test_visual_motion.py tests/test_visual_video_check.py tests/test_configs.py -q -o addopts=''`。未跑 GPU/动作视频；运动质量与闭环收益尚未验证。教程流程图与生成配置参考已同步。
+
+## 17. 2026-09-10 成功条件与 SONIC evaluation 对齐（用户要求）
+
+专家 round 与 VLA eval 共享 `tasks/bottle_visual/success.py`：瓶子相对本轮初始高度抬升 **>0.06 m**，从第一次超过阈值起持续 **>2 s** 才成功，回落到 ≤0.06 m 重置计时。runtime.fallen 与采集 physics audit 的骨盆阈值统一为 **<0.40 m**。不再把 carry 阶段、合爪命令、倾斜 ≤30°、手速 <0.06 m/s 或恢复触发作为成功条件。碰瓶前移仍记 first_move，不再提前判失败；专家旧的走路阶段瓶高变化终止也取消，以免隐藏额外评分门。MuJoCo 异常、非有限状态、恢复执行错误和采集首帧不可见仍会拒绝无效运行。
+
+每集 result 新增 `success_protocol=sonic_lift6cm_hold2s_v1`，避免新旧数字混用。此次只改任务评分，不改 planner 的 8 cm lift→carry 转换和 12 cm 抬手目标；上一节 carry_back=0 保留。采集动作质量 audit（侧倾、扭腰、腕连续性、可见性等）仍独立筛数据，不是 VLA success 条件。预算保留 24 s，评分每 20 ms 使用仿真时间；SONIC async 的 90 s 预算、约 0.5 s 墙钟检查未迁移，因此不宣称整个评估协议逐项相同。新旧成功率、SONIC/ScaleBFM 成功率比较需注明预算和时钟差异。
+
+验证：阈值严格边界、回落重置、无效仿真拒绝、骨盆 0.399/0.40/0.44 m 边界新增 6 项 CPU 测试；与 planner/action 测试共 **17 passed**。`CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 make check` 退出 0，日志 `/tmp/codex-scalebfm-success-check.log`。未跑 GPU 闭环，旧 25/100 不重新标记或推算。下一步在新实验 ID 下采集/评估并检查新口径结果。
+
+## 18. 2026-09-10 新 200 集成功数据采集与转换（已准备、排队）
+
+用户授权按当前 ScaleBFM 逻辑采集 200 集成功数据并转换，不包含训练。新目录 `outputs/experiments/scalebfm200_noretract_sonic_20260910`，runner 源文件 `scripts/experiments/scalebfm200_20260910.py`，后台 PID 2452516。GPU0 有 SONIC visible200 任务，遵守 STATE 的资源约束：runner 每约 33 s 检查，无相关采集进程、GPU0 显存 <500 MiB、CPU 剩余 ≥6 核且无 throttling 才启动，无超时强行启动。使用 OSMesa 和单线程 CPU 配置，ScaleBFM 网络用 GPU0；不启停任何 SONIC stack。
+
+方案：B 普通专家、yplus_center_v1、carry_back=0、sonic_lift6cm_hold2s_v1、24 s、25 Hz，seed 从 4001 递增，轮流 high_near/low_near/low_deep，最多 800 次尝试，直到 200 集同时通过任务与原动作质量审计。失败保留，不足 200 不转换、不用重复样本补数。沿用质量审计意味着抬升成功但侧倾等不合格的样本不入训练集。
+
+准备完成：独立复制当前 scene XML/meta（无 include，引用资产均存在），冻结 locomani/gr00t 源码及 configs，保存完整文件哈希；新 runtime_assets.json 验证 103 项。为避免伪造旧 Goal 资产恢复，collect 新增 --backend / --runtime-assets 指向本次独立配置和清单。已验证冻结源码导入、carry_back=0、资产清单通过且篡改哈希会拒绝；未在 SONIC 运行期间做仿真探针。当前场景为事故后重建场景，不宣称与丢失的 yplus200 场景字节一致。
+
+流水线依次运行 collect -> export -> gr00t.data.stats，产物是 `dataset/`（LeRobot v2.1，200 parquet、400 两相机视频、91D state/29D action、25 fps 与统计）。export 检查每集首帧可见性、审计、有限数值、时间步、视频尺寸/解码帧数。最终 `RESULTS.json` 才表示全部完成；`progress.json` 是实时阶段，`failure.json` 表示异常停止。当前只是排队，200 集结果与耗时尚未知。
+
+命令（仅在确认原 driver 已退出后重启，文件锁防重复）：`python3 scripts/experiments/scalebfm200_20260910.py`。检查：`cat outputs/experiments/scalebfm200_noretract_sonic_20260910/progress.json`；采集中数量见 `collect/train_inputs.json` 与 `collect/summary.json`。入口/统计 CLI 已验证，thread-limited make check 通过，日志 `/tmp/codex-scalebfm200-check.log`。原 Goal 继续取消。
+
+## 19. 2026-09-10 用户改用 GPU1：已实际开始采集
+
+用户询问并要求可用时改在 GPU1 采集。现场 GPU1 总显存 32607 MiB、驻留占用 8977 MiB，5 次间隔 1 s 利用率均为 0%；驻留的是其他 video_grasp 的 3 个 spider_run 进程，未终止或修改。CPU 余量启动前 ≥6 核，启动后采样剩余 12.56 核、无 throttling。基于用户新指示允许不同 GPU 并行，本次保留 OSMesa/单线程和独立场景。
+
+确认仍在资源等待且没有子进程后，停止自己的旧队列 PID 2452516。原 plan/runner 分别归档为 plan_gpu0_before_collection.json / runner_gpu0_before_collection.py（未发生任何物理尝试）；plan 的 gpu 改为 1、allow_shared_gpu=true，冻结代码只更新 runner 与其哈希，专家和场景未变。资源门改为共享 GPU 空闲显存 ≥8192 MiB、利用率 <20%、CPU 余量达标。
+
+新 driver PID 2460752、采集子进程 2460783；nvidia-smi 确认其位于 GPU1，显存约 682 MiB。progress.json 已为 collect，seed4001_y+ 已创建 attempt 和两路录制文件；本次核查时尚未生成首集结果，不能声称已成功收集。GPU0 的 SONIC visible200 不受本任务启停操作影响。采够 200 且通过质量审计后仍自动转换、生成 stats，不训练。
+
+
+## 20. 本次采集慢的诊断(2026-09-10,Codex)
+
+用户指出之前约半小时完成200集,当前明显慢。前33集wall中位175.94s,第一集150.2s,
+最新seed4033仿真13.32s/墙钟207.91s;33/33接受,并非失败重采或转换。慢在SONIC诊断启动前即存在。
+确认活跃2460783环境及冻结runner强制MUJOCO_GL=osmesa、LP_NUM_THREADS=1,CUDA_VISIBLE_DEVICES=1
+只将策略推理放在GPU,没有将MuJoCo渲染切到EGL。这个配置由Codex启动runner时沿用ABCD逐位
+复现诊断要求,不适合作为默认高吞吐采集配置;此前ABCD记录明确旧基线为EGL。
+
+静态同scene/head_camera320x240,3次预热+20帧计时(不运行物理/专家,不是完整episode性能对照):
+OSMesa单线程RGB345.9ms/帧、seg36.5ms;EGL_DEVICE_ID=1 RGB0.314ms、seg0.755ms。
+两路RGB按25Hz写入,感知还为每个相机渲染有/无遮挡mask,使软件渲染代价累计。
+原始脚本及结果:outputs/diagnostics/scalebfm_speed_20260910/{render_bench.py,result.json}。
+基准复跑环境:CUDA_VISIBLE_DEVICES=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 LP_NUM_THREADS=1,
+分别MUJOCO_GL=osmesa或MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1,用.venv_sim/bin/python执行脚本。
+早先EGL_DEVICE_ID=0也做了静态采样,最终报告使用明确device1结果。
+
+结论:错误沿用软件渲染是已证实的重大性能瓶颈;微基准加速比不能直接当整集加速比。
+旧数据/运行原始日志已删除,未独立复核用户所述半小时数值。未修改当前采集环境/冻结代码,
+未中断任务。下一步对EGL做短episode性能与成功/可见性/图像检查,再以明确新渲染配置断点续采,
+保留已有结果和provenance;不把本次采集冒充ABCD逐位复现数据。
+
+
+## 21. 用户授权切换EGL并固化规则(2026-09-10,Codex)
+
+停止旧driver2460752/child2460783,保留34完整集。seed4035中途停止保留partial与attempt,
+续采按既有中断记账逻辑跳过该seed,不覆盖重采。冻结专家/仿真源码不改,只更新runner环境与plan;
+旧plan/runner带时间戳归档,runner新hash入plan,rendering_history.json列出旧35个started case归OSMesa,
+之后新case归EGL。collect/config原始source不改,渲染变更由顶层历史文件显式补足。
+
+**短测完成**:同一冻结代码和Python环境,CUDA_VISIBLE_DEVICES=1,MUJOCO_GL=egl,
+PYOPENGL_PLATFORM=egl,MUJOCO_EGL_DEVICE_ID=1。独立12集pilot(高近/低近/低深各4),12/12成功且
+全部质量审计通过,24/24视频完整解码,抽看低深场景头相机RGB可见瓶子且无黑屏。
+wall中位5.497s,范围4.82–6.46s;相较旧采集175.94s中位约32倍(不同seed,不是逐帧配对速度基准)。
+证据根目录下egl_preflight/及egl_preflight_pass.json。pilot不计入200集训练配额。
+
+**续采运行中**:driver2516911/child2518813,GPU1推理+EGL设备1;已从seed4036继续。
+首3个新训练集5.74/5.63/5.11s,均入选;检查时37/200 accepted(38次attempt,其中1次切换中断)。
+之后继续collect->export->stats;当前未训练。资源约束未放宽,录像规格及审计规则未降低。
+
+**固定规则落地**:
+- docs/scalebfm_collection.md新增「正式采集必须遵循的渲染与吞吐规则」,STATE固定规则同步。
+- 通用pipeline.collect默认EGL并记录render_backend/render_device;非EGL必须显式
+  --allow-software-rendering用于独立诊断。已实际调用OSMesa不带开关,按预期在采集前拒绝。
+- 当前200runner只允许正式EGL;首次EGL续采先自动pilot,要求12入选+24video解码+median<=60s,
+  否则不放行批量采集。plan保存EGL设备;RESULTS包括rendering_history,不声称全部200集同渲染方式。
+- Ruff和线程受限make check通过(exit0,/tmp/scalebfm_egl_check.log)。冻结collect仍是启动时旧版本,
+  本次由runner强制EGL;新的通用入口默认/防误用检查适用于之后新建采集。

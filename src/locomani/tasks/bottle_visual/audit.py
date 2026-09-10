@@ -48,7 +48,7 @@ def audit_case(case):
     gates = dict(
         initial_visibility=all(initial.values()),
         task=bool(result["ok"]),
-        physics=not result["physics_warnings"] and np.isfinite(qpos).all().item() and float(qpos[:, 2].min()) >= 0.45,
+        physics=not result["physics_warnings"] and np.isfinite(qpos).all().item() and float(qpos[:, 2].min()) >= 0.40,
         wrist_position=m["wrist_step_max_cm"] <= 2.0001,
         wrist_rotation=m["wrist_step_max_deg"] <= 5.0001,
         side_lean=m["torso_roll_max_deg"] <= 20 and m["torso_roll_above15_s"] <= 0.200001,

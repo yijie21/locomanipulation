@@ -187,7 +187,7 @@ class Sim:
         return self.d.xpos[self.crate_b].copy(), self.d.xquat[self.crate_b].copy()
 
     def fallen(self):
-        return self.d.qpos[2] < 0.45
+        return self.d.qpos[2] < 0.40  # SONIC evaluation fall threshold (user alignment, 2026-09-10)
 
     # -- step -------------------------------------------------------------------
     def step(self, tgt):
