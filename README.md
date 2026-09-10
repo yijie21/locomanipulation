@@ -96,7 +96,7 @@ EPISODE FAILED [grasp] can toppled in the up phase in 64s
 ```
 src/locomani/pipeline/      stack 生命周期、gym 主循环、录制、manifest、convert、审计、train、eval、配对统计
 src/locomani/backends/      Backend:stack 启动、动作空间、执行器。sonic/(主线)、scalebfm/(候选替代 controller)
-src/locomani/tasks/         Task 五件套(scene / expert / acceptance / schema / failures):bottle/、crate/、bottle_visual/
+src/locomani/tasks/         Task 五件套(scene / expert / acceptance / schema / failures):bottle/、crate/、bottle_visual/、pick_place/
 src/locomani/primitives/    真正共享的底层(arm_ik、scene_lib、primitives)
 src/locomani/sim/           sim 侧:特权发布、场景随机化、Isaac 渲染
 src/locomani/cli.py         统一入口:python -m locomani.cli collect|convert|train|eval|gate --task X --config Y
@@ -114,7 +114,9 @@ outputs/                    运行时生成(场景、日志、checkpoint、评�
 
 ## 文档地图
 
-只有四类,索引在 [docs/README.md](docs/README.md)。按"你现在要干什么":
+只有四类。**权威索引是 [docs/README.md](docs/README.md)** —— 新增文档只需要登记在那里;
+下面这张表是按"你现在要干什么"挑出来的快捷入口,是它的子集,不是第二份清单。
+
 
 | 你要 | 看 |
 |---|---|
@@ -124,11 +126,12 @@ outputs/                    运行时生成(场景、日志、checkpoint、评�
 | 采数据(场景 / 单局 / 批量 / 控制逻辑 / 随机化 / 相机 / 坑) | [docs/collection.md](docs/collection.md) |
 | 双臂搬箱(采集到 MuJoCo/Isaac 并排视频) | [docs/crate_collection.md](docs/crate_collection.md) |
 | ScaleBFM 视觉抓瓶线(SONIC 的候选替代 controller) | [docs/scalebfm_collection.md](docs/scalebfm_collection.md) |
+| pick-and-place(抓起罐头放进篮子,bottle 线加一个 place 阶段) | [docs/pick_place_collection.md](docs/pick_place_collection.md) |
 | 转 LeRobot、查数据(schema / 四段审计) | [docs/dataset.md](docs/dataset.md) |
 | 微调 GR00T | [docs/training.md](docs/training.md) |
 | 评测(open-loop / closed-loop / 配对检验) | [docs/evaluation.md](docs/evaluation.md) |
 | Isaac 渲染 | [docs/rendering.md](docs/rendering.md) |
-| 全部实验的总表与裁定(append-only 台账) | [docs/ledger/bottle.md](docs/ledger/bottle.md) · [ledger/crate.md](docs/ledger/crate.md) · [ledger/scalebfm.md](docs/ledger/scalebfm.md) |
+| 全部实验的总表与裁定(append-only 台账) | [ledger/bottle.md](docs/ledger/bottle.md) · [crate](docs/ledger/crate.md) · [scalebfm](docs/ledger/scalebfm.md) · [pick_place](docs/ledger/pick_place.md) · [refactor](docs/ledger/refactor.md) |
 | 查模块、参数、端口、静默失败表、FAQ | [docs/reference/silent_failures.md](docs/reference/silent_failures.md) |
 | 配置字段(从 dataclass 注释生成) | [docs/reference/config_fields.md](docs/reference/config_fields.md) |
 | 下一步做什么 | [docs/ROADMAP.md](docs/ROADMAP.md) |
