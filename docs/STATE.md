@@ -37,10 +37,50 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- visible200 TRAIN + EVAL DONE (session cf, 2026-09-10 12:01-19:56 UTC, GPU0 released, instance 0 free).
+  10k steps, loss 1.2866 -> 0.0625; closed loop **2/100** (seed 6000, async, clean protocol).
+  97 of 100 failures are `[vla] at the table but never commanded a close`. Open loop on its own val is
+  EXCELLENT: nmse_gripper 0.0024, close_frame_err_abs 2.3 frames, deg_mean at the noise floor. So the model
+  learned the mapping and the closed loop puts it outside the training distribution: the never-closed stop
+  distances are p10 0.18 / median 0.27 / p90 0.35 m against the expert's 0.30-0.31 brake band, only 20/96
+  inside 0.29-0.32. Mechanism and ruling in docs/ledger/bottle.md §18. Not a seed-variance result (floor is
+  57 vs 46) and not the GPU0 overlap (0.54 vs 0.62 yield cannot move 55 points).
+  Next lever is NOT another seed: it is restoring demonstrations for a short stop, i.e. DAgger on the
+  policy's own stop distribution, or a recovery branch rewritten on observable quantities.
+  FIXED on the way (23b5436): eval_closed_loop.py's src bootstrap reached src/locomani instead of src, so
+  BOTH eval entry points had been broken since the 4a package move (29bdf84); it was the refactor follow-up
+  this file listed as "not yet verified: the eval path".
 - CONVENTION (user ruling, 2026-09-10): cross-session coordination goes in THIS FILE by default, not in
   cross-session messages. Send a message only for a blocking resource conflict. Rationale: message volume
   was too high today and every one costs a human approval; several expired undelivered anyway, so STATE is
   both cheaper and more reliable. Session 29 is following this from now on.
+- DONE (session 8b, user-asked, 2026-09-10 15:34-18:08 UTC, GPU1 only, GPU1 now FREE): ScaleBFM / bottle_visual arm
+  `scalebfm200_noretract_s17_20260910` -- GR00T seed-17 3000-step finetune on the no-retract 200-episode dataset
+  (2.8 s/it, 2 h 21) then the registered 100-case closed loop (seeds 31001:31101, yplus_center_v1, no recovery
+  perturbation, 13 min). **41/100** under the new rule: high_near 25/34, low_near 11/33, low_deep 5/33; failures are
+  34 physics/fall + 25 timeout, and "knocked before close" no longer exists as a label.
+  **The success rule changed in 2ba1a89, so 41 is not 25+16.** Re-scored from the same traces under the 2026-09-09
+  rule this arm is **<=38/100** (upper bound: object_audit has no bottle velocity, so the old |v|<0.06 term cannot be
+  reproduced and can only lower it). 24/100 knocked the bottle before closing but only 1 of them ended a success, so
+  dropping that abort was worth ~3 points, not 16. Like-for-like the gain over ledger section 9 is ~13 points and it
+  is **entirely high_near** (10/34 -> 24-25/34); low_near 10 -> 10-11 and low_deep 5 -> 4-5 did not move. Fisher
+  two-sided 41 vs 25 p=0.024, 38 vs 25 p=0.067; section 9's per-case results were deleted in the incident so this can
+  only be unpaired, and section 11 already ruled the old EGL baseline not bit-reproducible.
+  Ledger scalebfm.md section 22; RESULTS.json + RESCORE.json in the experiment dir; reel
+  outputs/videos/scalebfm200_s17_20260910/reel_10.mp4 (8 cases, 3 strata x ok/timeout/fall).
+  This line runs a standalone in-process MuJoCo sim -- no SONIC deploy, no stack, no ports -- so instance 0 and GPU0
+  were never touched. Checkpoint outputs/experiments/scalebfm200_noretract_s17_20260910/model/checkpoint-3000, 27 GB.
+  FOUR CODE FIXES, all UNCOMMITTED (the tree already carries several sessions' work; eval.py was modified by another
+  session before I touched it): (1) `pipeline/train.py` had `ROOT = parents[3]` (= src/locomani) after the package
+  move, so base snapshots, modality config and the src/gr00t hashes all pointed at a directory that does not exist --
+  now `locomani.paths.REPO`. (2) the frozen `base_model_snapshots.json` AND the default manifest for
+  `verify_runtime_assets()` both died with `scalebfm_visual_goal_20260908/`: snapshots regenerated as
+  `configs/scalebfm/base_model_snapshots.json` (same surviving HF cache, weight digests beside it, marked a rebuild)
+  and `eval.py` gained `--runtime-assets` (mirrors collect.py), pointed at the collection's surviving manifest --
+  103/103 assets verified unchanged; the eval scene is byte-identical to the collection's frozen copy.
+  (3) `follow_video.py` now calls `mj_camlight` -- ledger section 10 recorded that darkening bug on 2026-09-09 and it
+  was never fixed. Anyone restarting this line needs (1) and (2).
+  Runner source scripts/experiments/scalebfm200_train_eval_20260910.sh (+ _rescore_ and _reel_ scripts).
 - 2026-09-10 15:1x (session 29): session cf flagged that `--task-config` could re-calibrate a closed-loop eval.
   VERIFIED NOT to happen today -- no eval path passes --task-config (run_learn_pilot's eval passes an explicit
   --reach-config; eval_closed_loop.py has no such flag; run_eval_arm.sh passes neither, so it stays on
@@ -500,6 +540,7 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-10 ScaleBFM no-retract 200 ep -> seed17/3000 -> 100 closed loop: 41/100 (<=38/100 under the old rule vs ledger §9's 25/100); the whole gain is high_near, low_deep unchanged at 5/33
 - 2026-09-10 visible200 collection: 34 batches / 335 rounds -> 200 kept (yield 0.60), convert rc=0, check_dataset 32/32
   PASS on both splits; first round of EVERY batch failed at the spawn (34/34) until the anchor fix
 - 2026-09-10 first-round anchor fix verified: round 1 past the spawn 3/3 on the fix branch vs 0/34 on main

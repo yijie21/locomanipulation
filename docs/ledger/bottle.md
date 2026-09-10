@@ -997,3 +997,43 @@ ready-grasp 线(七个 `ready_grasp_*.json` 加两个 task config)自 09-07 起�
 
 一般性的坑仍然成立(只是不适用于 flow200):`run_eval_arm.sh` 的 `EXTRA=${7:-}` 会原样拼进 argv,
 所以"哪个脚本产出"不是充分溯源,要看记录下来的 argv。
+
+## 18. visible200 训练与闭环:离线优秀,闭环 2/100(2026-09-10, session cf)
+
+第 13 节那份数据(34 批 335 局 → 200 集,check_dataset 32/32)训了 10k 步再跑 100 轮闭环。
+**这是 visible_expert 协议第一次被训练**,不是 07d 的复现。
+
+| 阶段 | 数字 |
+|---|---|
+| 训练 | 10000 步,4 h 08 m,loss 1.2866 → 0.0625,checkpoint-10000 12 GB |
+| 闭环(seed 6000、async、replan 0.4、budget 90、无 ensemble、出生 1.1–1.3) | **2/100** |
+| 失败构成 | `[vla]` 97、`[stand]` 1;97 局里 96 局是"到了桌边但从不下合爪指令" |
+| 开环(自己的 val 10 集,horizon 40) | nmse_token 0.2593(persistence 0.9066)、nmse_gripper **0.0024**、close_frame_err_abs **2.3 帧**(persistence 18.9)、deg_mean 1.324° 对噪声底 1.209° |
+
+**离线与闭环彻底背离。**模型在训练分布的观测下知道何时合爪(合爪时序误差 1.3–2.3 帧,夹爪 nmse 0.0024,
+关节误差压在测量噪声底上),闭环里却几乎从不合爪。这不是没学会,是**决策时刻的观测落在训练分布之外**。
+
+**机制,有数字支撑**:96 局"从不合爪"的最小掌距分布是 p10 0.18 / 中位 **0.27** / p90 0.35 m,
+而专家的刹车带是 **0.30–0.31 m**(第 11 节;`visible_brake_depth=0.31`)。
+只有 **20/96** 停进了 0.29–0.32,**绝大多数停得比专家近**。
+visible_expert 协议按"隐变量原则"**删掉了 reposition / recovery 分支**(07d 用它救回 8% 的到位),
+代价是 19%(本次 72/101)的到位被判 stand infeasible 丢弃 —— 也就是说,
+**数据集里根本没有"我停在 0.22 m,现在该怎么办"的示范**。策略的停位由模仿接近速度曲线决定
+(memory `policy-stop-point-is-set-by-the-crawl`:专家停位移 4 cm,策略停位只移 7 mm),
+一旦停短就进入一个没有任何示范覆盖的状态。
+
+**与 cover400 的区别要说清**:cover400 的病灶是标签里的隐变量,`close_frame_err_abs` 因此退化到 10.25 帧;
+这里 close_frame_err_abs 是好的(1.3–2.3),所以**不是同一个病**。这次是纯粹的 covariate shift。
+
+**裁定**:
+1. 数字与 07d-200 的 57/100 同带可比(§17.7 的口径),所以 **visible_expert 协议在这个训练配方下不可用**。
+2. 不能归因于 seed 方差:方差底线是 57 vs 46(memory `training-seed-variance-floor`),2/100 远在其外。
+3. 也不能归因于 07:45–08:30 的 GPU0 争用:那 8 批的 yield 是 0.54 vs 0.62,而审计 32/32 全过,
+   量级上解释不了 55 个百分点。
+4. **下一步不是再训一个 seed**,是补回策略停短时的示范:要么恢复 recovery / reposition 分支
+   (代价是重新引入被隐变量原则删掉的东西,需要用可观测量重写它的触发条件),
+   要么用 DAgger 在策略自己的停位分布上补标注 —— 后者正是 ROADMAP 里排在最前面的杠杆。
+
+产物:`outputs/experiments/visible200_20260910/`(model/checkpoint-10000、eval/closed_loop.manifest.jsonl、
+open_loop/、eval_provenance/ 起止两次树快照)。评测本身在 16:10 第一次启动时因
+`eval_closed_loop.py` 的 src 引导缺一层目录而立刻失败(修复 23b5436),16:14 重跑成功。
