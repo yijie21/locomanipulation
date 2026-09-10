@@ -112,7 +112,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `HAND` | `dex1` | 全部 | `dex1` 平行夹爪 / `dex3` 三指手 |
 | `GYM_ARM_PIN` | `0` | gym | `1` 恢复 sim 侧关节 pin(动作更准,但录下的 latent 不再是产生该动作的 latent) |
 | `GYM_ARM_CHANNEL` | `planner` | gym | `streamed` 切回旧的流式手臂通道 |
-| `GYM_RESTART_DEPLOY` | `1` | gym | 每局重启 deploy。关掉会让第 2 局起漂移、摔倒 |
+| `restart_deploy`(`BottleTaskConfig`) | `false`(2026-09-10 前是每局重启) | gym | 每局重启 deploy。现在复位后用 reanchor 清朝向锚,不重启;每局 34 s 而不是 64 s(台账 bottle §11)。评测路径仍固定重启 |
 | `FULL_TASK` | `0` | `collect_episode.py` | 抓起 → 搬运 → 放下的完整任务(尚未迁移到新控制逻辑) |
 
 **采数据时真正会去动的只有四个**:`SIM_VIDEO_DIR`、`SIM_VIS`、`WRIST_CAMS`、
@@ -266,7 +266,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | `start_stack.sh` 卡在 `[2/3]` 十分钟 | 首次运行在编译 TensorRT engine,正常。之后走缓存,20–40 s |
 | 没打印 `stack up` | 去 `$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log` 看是哪一个没起来 |
 | deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |
-| 每局都 `teleport did not land` | 上一局的 deploy 状态没清干净。`GYM_RESTART_DEPLOY=1`(默认)每局重启 deploy 就是为这个 |
+| 每局都 `teleport did not land` / 第 3 局起 `walked N m off the spawn while standing up` | 上一局的 deploy 朝向锚没清干净。2026-09-10 起复位阶段用 `reanchor(p)` 清(不重启);若还出现,`--set restart_deploy=true` 回到每局重启对照 |
 | 没有第三人称录像 | `SIM_VIDEO_DIR` 必须在 `start_stack.sh` **之前**给,跑起来之后设无效 |
 | 录像里没有绿色点云 | 默认就没有(`SIM_VIS=none`);要它就给 `SIM_VIS=full` 或含 `reach` 的列表。它在 sim 启动时读一次,跑起来之后改不了 |
 | `SIM_VIS=none` 但幽灵夹爪还在 | `SIM_VIS` 只给了 stack,没给 gym。两个进程都要设 |

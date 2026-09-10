@@ -140,12 +140,14 @@ CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
 # --view-gate-x/-y (defaults below) thread as view_gate_x/view_gate_y through
 # run_round/_run_round to the spawn check and the arrival check.
 
-# Per-round deploy restart (BottleTaskConfig.restart_deploy, was
-# GYM_RESTART_DEPLOY=0 to disable). The deploy keeps locomotion/heading state
-# across sim resets; round 1 of a fresh deploy is always clean, rounds 2+
-# wander, fall on the walk-up, or land metres off. ~30 s a round buys back the
-# dominant failure class. Module-level default (decision 8), same pattern as
-# vla_round.GRIP_GAIN: a caller assigns grasp_gym.RESTART_DEPLOY to override.
+# Per-round deploy restart (BottleTaskConfig.restart_deploy). OFF by default
+# since 2026-09-10: the deploy keeps its heading anchor across sim resets, which
+# used to make rounds 2+ wander or fall; round_phases now re-anchors it after
+# every reset instead (the crate line's streamed toggle), and 30 paired rounds
+# showed no yield difference at 34 s a round instead of 64 (ledger bottle §11).
+# True restores the restart (~33 s a round); eval_closed_loop pins it True.
+# Module-level default (decision 8), same pattern as vla_round.GRIP_GAIN: a
+# caller assigns grasp_gym.RESTART_DEPLOY to override.
 RESTART_DEPLOY = DEFAULT_BOTTLE_TASK.restart_deploy
 RESTART_SCRIPT = f"{paths.REPO}/scripts/restart_deploy.sh"
 

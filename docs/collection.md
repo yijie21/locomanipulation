@@ -146,7 +146,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 `[stand]` 类失败会**重试整局**(不算一条数据),其余直接丢弃,**不重试** ——
 数据集里只留一次成功的 episode,训出来的模型才会一次成功。
 
-**当前实测**:近几批 11/12、12/12、5/5;一条成功 episode 约 **70–105 s**,
+**当前实测**:近几批 11/12、12/12、5/5;一条成功 episode 约 **34 s**(2026-09-10 起不再每局重启 deploy;之前 64–105 s),
 落盘约 **13–18 MB**(三路相机;只留 ego 时约 4.7 MB)。
 
 ### Stop and Clean 
@@ -226,11 +226,11 @@ tail -3 outputs/logs/collect/gym_*.log | tail -20         # 现在跑到哪
 
 | | |
 |---|---|
-| 一局 | 70–105 s |
+| 一局 | 约 34 s(成功局中位;失败局 20–50 s)|
 | 一条 episode 落盘 | 13–18 MB(三路相机) |
-| **200 条** | 约 200 局、**4–6 小时**、**约 3 GB** |
+| **200 条** | 约 320 局(yield 0.6)、**约 3.5 小时**(2026-09-10 前每局重启 deploy 时约 6 小时)、**约 3 GB** |
 
-按当前 11–12/12 的成功率,200 条大约要跑 210–220 局。
+visible 协议的 yield 约 0.6(19% 是刹车后判定的 stand infeasible),200 条大约要跑 320 局;每局的时间账见台账 bottle §10。
 
 ### 只想先测通 pipeline:`collect_pilot.sh`
 
@@ -435,7 +435,7 @@ k-planner 生成弯腿下蹲的参考动作。
 flowchart TD
   P0["<b>P0 进程启动一次</b><br/>载入 reach_map_dex1.npz → plan_core_stand 联合求解站位与蹲深<br/>标定名义出生点（读 teleport 落点，在 start_control 之前）"]
   P1["<b>P1 采样</b> 抽目标 + 拒绝采样物体位置 + 站位 + 出生点<br/>物体贴桌沿内侧，站位 edge ∈ 合法带，整条接近线不撞桌"]
-  P2["<b>P2 复位</b> IDLE 1s 静默 deploy → reset_pose → teleport<br/>→ start_control → 记录落点 yaw 为 heading 锚 → IDLE 4s 沉降 → 松臂 → 开录像 + 'c'"]
+  P2["<b>P2 复位</b> IDLE 1s 静默 deploy → reset_pose → teleport<br/>→ start_control → IDLE 1.5s + reanchor（清上一局的朝向锚，deploy 不重启）<br/>→ IDLE 4s 沉降 → 松臂 → 开录像 + 'c'"]
   P2T["<b>P2b 出生点转身</b> 转到接近航向<br/>SLOW_WALK，tol 0.16 rad（控制器有 7–8° 死区）"]
   P3["<b>P3 行走（腿 1）</b> walk_to 到 stand 后方 1.30 m<br/>锁向；双臂随步态自然摆动"]
   P4["<b>P4 接近（腿 2）</b> 切 FROZEN_UPPER，从当前关节角接管（无跳变）<br/>三段速 0.26 → 0.215 → 0.20 朝 stand 转向前进<br/>同时按剩余距离把 17 关节 ramp 到 READY"]
@@ -445,7 +445,7 @@ flowchart TD
   P6["<b>P6 抓取</b> adaptive_grasp 定朝向与进刀轴<br/>→ IDEL_SQUAT 下蹲（掌位由实时 IK 钉住）<br/>→ 50 Hz 伺服（见图 ③）"]
   P7["<b>P7 抱稳</b> ego 可见度 ≥ 70% → stand_up + carry_pose<br/>→ 锁向后退 0.35 m（两步）→ IDLE 2s"]
   P7G{"掌系漂移 3 cm 以内 ∧ 物体高于桌面 3 cm 以上"}
-  OK(["EPISODE OK ≈ 70–105 s"])
+  OK(["EPISODE OK ≈ 34 s"])
   BAD(["EPISODE FAILED<br/>[stand] 重试整局 · 其余直接丢弃"])
 
   P0 --> P1 --> P2 --> P2T --> P3 --> P4 --> P4G

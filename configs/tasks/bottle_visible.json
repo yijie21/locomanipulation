@@ -46,7 +46,7 @@
   "edge_jitter": 0.2
  },
  "stand_retries": 0,
- "restart_deploy": true,
+ "restart_deploy": false,
  "arm_pin": false,
  "pose_sidecar": true,
  "video_include_init": false,

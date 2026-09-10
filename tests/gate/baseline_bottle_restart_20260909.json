@@ -1,0 +1,57 @@
+{
+ "arm": "bottle",
+ "source": "outputs/experiments/ready_visible200_20260909/collect/manifest_*.jsonl",
+ "metrics": {
+  "rounds": 36,
+  "ok": 24,
+  "yield_": 0.667,
+  "stages": [
+   "approach",
+   "carry_and_verify",
+   "complete",
+   "grasp.capture_ready",
+   "grasp.close",
+   "grasp.coupled_squat",
+   "grasp.lift",
+   "grasp.local_align",
+   "grasp_plan",
+   "initialize",
+   "navigate",
+   "recovery_attempt",
+   "recovery_brake",
+   "verify_terminal_hold",
+   "verify_visibility"
+  ],
+  "exit_majority": "visible brake depth",
+  "exits": {
+   "visible brake depth": 24
+  },
+  "end_depth_m": 0.3016,
+  "squat_drop_m": 0.13,
+  "stage_s": {
+   "initialize": 7.5649,
+   "navigate": 4.1258,
+   "grasp_plan": 0.0004,
+   "approach": 0.0464,
+   "recovery_brake": 1.1691,
+   "recovery_attempt": 0.018,
+   "grasp.coupled_squat": 1.4391,
+   "grasp.local_align": 1.9845,
+   "grasp.capture_ready": 0.0089,
+   "grasp.close": 2.0292,
+   "grasp.lift": 2.7009,
+   "verify_visibility": 0.0,
+   "carry_and_verify": 2.8762,
+   "verify_terminal_hold": 2.0305
+  },
+  "failure_reasons": [
+   "[grasp] coupled safe-hand IK did not track",
+   "[grasp] local alignment disturbed target or base",
+   "[grasp] local alignment outside comfortable IK",
+   "[grasp] visible expert: stand infeasible, no reposition (current stand",
+   "[hold] object slipped N cm in the palm frame during the hold",
+   "[stand] could not turn N deg to the approach heading at the spawn (tur"
+  ],
+  "seconds": 63.05
+ }
+}

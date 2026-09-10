@@ -144,6 +144,11 @@ def main():
     # --- install the policy and run the gym's own loop ---------------------
     from locomani.tasks.bottle import grasp_gym
 
+    # Collection stopped restarting the deploy per round on 2026-09-10 (ledger
+    # bottle §11); the eval path was never measured without the restart and
+    # the clean-clock shim below pauses/primes around it, so eval keeps it.
+    grasp_gym.RESTART_DEPLOY = True
+
     if cfg.client == "lockstep":
         # Needs a stack started with LOCKSTEP=1 (lockstep_sim.py serving the
         # step RPC, deploy --sim-lockstep). Ping it rather than trusting env.

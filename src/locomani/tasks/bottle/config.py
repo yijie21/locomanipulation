@@ -43,7 +43,7 @@ class BottleTaskConfig:
     prompt: str = "pick up the water bottle"  # the episode instruction / stack.py's start_stack task prompt
     spawn: SpawnConfig = field(default_factory=SpawnConfig)
     stand_retries: int = 0  # --stand-retries: reset retries after a stand-stage failure (0 for fixed-case acceptance)
-    restart_deploy: bool = True  # GYM_RESTART_DEPLOY: restart the deploy every round (buys back the wander/fall class)
+    restart_deploy: bool = False  # restart the deploy every round (was the default until 2026-09-10; the no-restart path re-anchors the heading instead, ledger bottle §11)
     arm_pin: bool = False  # GYM_ARM_PIN=1: hold the transport pin's arm pose through the round
     pose_sidecar: bool = True  # LOCOMANI_POSE_SIDECAR=0 opts out of the 18-D pose sidecar during --record
     video_include_init: bool = False  # SIM_VIDEO_INCLUDE_INIT=1: include the ready-posture prelude in diagnostic video
