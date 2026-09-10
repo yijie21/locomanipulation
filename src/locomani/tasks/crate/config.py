@@ -24,6 +24,10 @@ class CrateTaskConfig:
     gripper_gear: float = 250.0  # GRIPPER_GEAR: dex1 finger actuator gear (env override for A/B runs)
     couple_fingers: bool = True  # COUPLE_FINGERS=0: independent dex1 fingers instead of a coupled parallel jaw
     crate_setback: float = 0.0  # CRATE_SETBACK: moves the near wall this far in from the table edge
+    crate_setback_levels_m: tuple[float, ...] = ()  # per-episode crate setback levels (m) from the edge; () = 0
+    crate_yaw_levels_deg: tuple[
+        float, ...
+    ] = ()  # per-episode crate yaw levels (deg) about its centre; () = 0. With both set, rounds walk the levels' product in a fixed shuffled order
     scene_preset: str = "crate_bimanual"  # SCENE_PRESET: build_sim_scene.py --preset for the crate scene
 
     def to_dict(self) -> dict:

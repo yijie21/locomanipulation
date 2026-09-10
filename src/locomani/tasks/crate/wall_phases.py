@@ -172,7 +172,9 @@ def servo_tick(ctx: WallRoundContext, s, ref):
 def _phase_reset(ctx: WallRoundContext) -> dict | None:
     from locomani.tasks.crate.bimanual_wall import (
         CRATE_DY_RANGE,
+        CRATE_SETBACK_LEVELS,
         CRATE_YAW_DELTA,
+        CRATE_YAW_LEVELS_DEG,
         NEAR_X,
         OBJ,
         SPAWN_BACK,
@@ -196,15 +198,36 @@ def _phase_reset(ctx: WallRoundContext) -> dict | None:
 
     # --- reset: crate rotated, near face on the table edge; robot on a sampled stand
     crate_dy = float(rng.uniform(*CRATE_DY_RANGE))
-    crate_x = edge_x + NEAR_X
+    # Placement design (2026-09-10): the crate can sit `setback` in from the
+    # edge and be yawed about its centre. The levels' product is walked in a
+    # fixed shuffled order so a short pilot covers every corner; nothing
+    # below assumes the crate is square to the table -- the stand is laid
+    # out along the crate's own normal, and the walk / hover phases already
+    # read the measured pose (wall_frame).
+    setback, crate_yaw = 0.0, 0.0
+    if CRATE_SETBACK_LEVELS or CRATE_YAW_LEVELS_DEG:
+        combos = [(sb, yw) for yw in (CRATE_YAW_LEVELS_DEG or (0.0,)) for sb in (CRATE_SETBACK_LEVELS or (0.0,))]
+        order = np.random.default_rng(1234).permutation(len(combos))
+        setback, crate_yaw = combos[int(order[ctx.rnd % len(combos)])]
+        crate_yaw = float(np.radians(crate_yaw))
+    crate_x = edge_x + NEAR_X + float(setback)
+    n_c = np.array([np.cos(crate_yaw), np.sin(crate_yaw)])  # robot -> crate, through the near face
+    y_c = np.array([-n_c[1], n_c[0]])
     ctx.so = float(rng.uniform(*STAND_OFF_RANGE))
     so = ctx.so
     lat = float(rng.uniform(*STAND_LAT_RANGE))
-    yaw = float(np.radians(rng.uniform(-STAND_YAW_DEG, STAND_YAW_DEG)))
-    ctx.stand_xy = np.array([crate_x - NEAR_X - so, crate_dy + lat])
+    yaw = crate_yaw + float(np.radians(rng.uniform(-STAND_YAW_DEG, STAND_YAW_DEG)))
+    ctx.stand_xy = np.array([crate_x, crate_dy]) - n_c * (NEAR_X + so) + y_c * lat
     stand_xy = ctx.stand_xy
     robot_nom = np.asarray(meta["robot_start"]["xy"], dtype=float)
-    ctx.m.update(crate_dy=crate_dy, stand_off=so, stand_lat=lat, stand_yaw_deg=float(np.degrees(yaw)))
+    ctx.m.update(
+        crate_dy=crate_dy,
+        crate_setback=float(setback),
+        crate_yaw_deg=float(np.degrees(crate_yaw)),
+        stand_off=so,
+        stand_lat=lat,
+        stand_yaw_deg=float(np.degrees(yaw)),
+    )
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
     reset.pin_arms()
@@ -213,17 +236,17 @@ def _phase_reset(ctx: WallRoundContext) -> dict | None:
     # policy's start-up arm swing knocked the crate 84 deg round (wall pilot 1).
     # It is teleported onto the stand once the arms are up at the hover pose.
     if WALK:
-        ctx.stand_xy = np.array([crate_x - NEAR_X - STAND_OFF_WALK, crate_dy + WALK_LAT_BIAS])
+        ctx.stand_xy = np.array([crate_x, crate_dy]) - n_c * (NEAR_X + STAND_OFF_WALK) + y_c * WALK_LAT_BIAS
         stand_xy = ctx.stand_xy
         spawn_back = float(rng.uniform(*WALK_SPAWN_BACK))
         spawn_lat = float(rng.uniform(-WALK_SPAWN_LAT, WALK_SPAWN_LAT))
-        spawn_xy = stand_xy - np.array([spawn_back, -spawn_lat])
+        spawn_xy = stand_xy - n_c * spawn_back + y_c * spawn_lat
         yaw = float(np.arctan2(*(np.array([crate_x, crate_dy]) - spawn_xy)[::-1])) + float(rng.uniform(-0.17, 0.17))
         ctx.m.update(spawn_back=spawn_back, spawn_lat=spawn_lat, spawn_yaw_deg=float(np.degrees(yaw)))
     else:
-        spawn_xy = stand_xy - np.array([SPAWN_BACK, 0.0])
+        spawn_xy = stand_xy - n_c * SPAWN_BACK
     reset.reset(
-        objects={OBJ: {"dxy": [float(crate_x - crate0[0]), crate_dy], "yaw": crate_yaw0 + CRATE_YAW_DELTA}},
+        objects={OBJ: {"dxy": [float(crate_x - crate0[0]), crate_dy], "yaw": crate_yaw0 + CRATE_YAW_DELTA + crate_yaw}},
         robot={"dxy": [float(v) for v in (spawn_xy - robot_nom)], "yaw": yaw},
     )
     time.sleep(0.3)

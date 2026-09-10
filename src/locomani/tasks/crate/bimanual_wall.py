@@ -163,6 +163,10 @@ SPAWN_BACK = 0.45  # reset this far behind the stand, teleport in with the arms 
 # CrateTaskConfig.wall_walk's default (decision 8); main() reassigns this
 # after --config/--set.
 WALK = DEFAULT_CRATE_TASK.wall_walk
+# Per-episode crate placement design (CrateTaskConfig.crate_setback_levels_m /
+# crate_yaw_levels_deg, 2026-09-10): () = the crate stays on the edge, square.
+CRATE_SETBACK_LEVELS = tuple(DEFAULT_CRATE_TASK.crate_setback_levels_m)
+CRATE_YAW_LEVELS_DEG = tuple(DEFAULT_CRATE_TASK.crate_yaw_levels_deg)
 STAND_OFF_WALK = 0.24  # 0.21 (pilots 18/19) parked 0.30-0.39 with yaw +-10 deg; back to pilot 17's value for the A/B
 WALK_LAT_BIAS = -0.04  # the gait parks ~4 cm left of its target (pilots 36/37)
 WALK_SPAWN_BACK = (1.0, 1.3)
@@ -309,7 +313,10 @@ def main() -> None:
     # caller would (module-level assignment), so wall_phases.py's deferred
     # `from bimanual_wall import WALK` etc. (read fresh each round) see it.
     global FEATURE, WALK, DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW
+    global CRATE_SETBACK_LEVELS, CRATE_YAW_LEVELS_DEG
     FEATURE, WALK = cfg.wall_feature, cfg.wall_walk
+    CRATE_SETBACK_LEVELS = tuple(cfg.crate_setback_levels_m)
+    CRATE_YAW_LEVELS_DEG = tuple(cfg.crate_yaw_levels_deg)
     DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW = _wall_feature_constants(FEATURE)
     inst = int(os.environ.get("INSTANCE", "0"))
     for k, base in (
