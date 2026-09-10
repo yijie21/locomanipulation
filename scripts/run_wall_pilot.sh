@@ -25,6 +25,12 @@ set -uo pipefail
 export INSTANCE="${INSTANCE:-1}"
 [ "$INSTANCE" != "0" ] || { echo "refusing INSTANCE=0: that is the collection/eval stack"; exit 2; }
 . /workspace/code/locomanipulation/scripts/paths.sh
+# WALL_WALK / WALL_FEATURE stopped being read on 2026-09-09 (refactor step 3:
+# CrateTaskConfig); a run that still sets them silently gets the ready-stand
+# default (2026-09-10: 10 rendered episodes without a walk). Refuse, don't warn.
+for dead in WALL_WALK WALL_FEATURE; do
+    [ -z "${!dead:-}" ] || { echo "refusing: $dead is no longer read; pass --config configs/tasks/crate_wall.json or --set wall_walk=true / wall_feature=..."; exit 2; }
+done
 ROUNDS="${1:-3}"
 SEED="${2:-0}"
 shift $(($# < 2 ? $# : 2))  # drop [rounds] [seed]; "$@" now holds only the extra args to forward

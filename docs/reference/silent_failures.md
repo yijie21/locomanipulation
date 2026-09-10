@@ -261,6 +261,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 
 | 现象 | 原因 / 处理 |
 |---|---|
+| 双臂 pilot 每集只有 25 s、视频 10–12 s、日志里没有 `[walk]` 行 | 跑的是 ready-stand 变体。`WALL_WALK` / `WALL_FEATURE` 环境变量 2026-09-09 起不再被读(旋钮在 `CrateTaskConfig`,`wall_walk` 默认 false);给 `run_wall_pilot.sh` 传 `--config configs/tasks/crate_wall.json` 或 `--set wall_walk=true`。runner 现在见到这两个变量会拒绝启动(2026-09-10) |
 | `start_stack.sh` 卡在 `[2/3]` 十分钟 | 首次运行在编译 TensorRT engine,正常。之后走缓存,20–40 s |
 | 没打印 `stack up` | 去 `$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log` 看是哪一个没起来 |
 | deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |

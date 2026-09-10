@@ -118,8 +118,8 @@ expert(`bimanual_wall.py`)是第四个进程,由 runner 在 stack 起来后启�
 
 ```bash
 V=$LOCOMANI_ROOT/outputs/videos/wall_pilot; mkdir -p $V/trace
-INSTANCE=2 WALL_FEATURE=rail WALL_WALK=1 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
-  nohup bash scripts/run_wall_pilot.sh 1 0 > $V/runner.log 2>&1 &     # 参数:集数 种子
+INSTANCE=2 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
+  nohup bash scripts/run_wall_pilot.sh 1 0 --config configs/tasks/crate_wall.json > $V/runner.log 2>&1 &   # 参数:集数 种子 [expert 参数]
 tail -f $V/pilot_s0.log | grep -E "^\[wall\] round|\[stand\]|closing|\[lift\]"
 ```
 
@@ -128,12 +128,14 @@ runner 做的事,按顺序:检查 `LOCOMANI_SIM_DIR/scene_meta.json` 存在 → 
 $V/manifest.jsonl --label wall_sS` → 结束时**只杀自己实例**的进程(按 `--instance` 与端口匹配;sim 会 fork 一个
 image-publisher 子进程,活得比父进程久且占着相机端口,所以先杀子再杀父)。每集约 40–60 s。
 
-两个环境变量决定 expert 的形态:
+`CrateTaskConfig` 的两个字段决定 expert 的形态(2026-09-09 重构 step 3 起**不再读环境变量**,`WALL_FEATURE=` /
+`WALL_WALK=` 会被静默忽略;用 `--config configs/tasks/crate_wall.json`,或 `--set wall_walk=true` 这样逐项覆盖,
+runner 把 `[rounds] [seed]` 之后的参数原样转给 `bimanual_wall.py`):
 
-| 变量 | 值 | 含义 |
+| 字段 | 值 | 含义 |
 |---|---|---|
-| `WALL_FEATURE` | `rail`(默认)/ `wall` | 夹哪个特征。`rail`:箱子不转,夹两端 30 mm 高的箱沿横杆,下探底 5 cm;`wall`:箱子转 90°,夹左右两面整高箱壁,下探底 8 cm。20/20 是在 `rail` 上做到的 |
-| `WALL_WALK` | `1` / `0`(默认) | `1`:从 1.0–1.3 m 外走进来,完整 episode;`0`:出生在站位后 0.45 m,双臂先抬到 hover 姿势再**瞬移**到抽样的站位上,只量抓取本身(ready-stand pilot) |
+| `wall_feature` | `rail`(默认)/ `wall` | 夹哪个特征。`rail`:箱子不转,夹两端 30 mm 高的箱沿横杆,下探底 5 cm;`wall`:箱子转 90°,夹左右两面整高箱壁,下探底 8 cm。20/20 是在 `rail` 上做到的 |
+| `wall_walk` | `true` / `false`(**默认 false**;`crate_wall.json` 里是 true) | `true`:从 1.0–1.3 m 外走进来,完整 episode;`false`:出生在站位后 0.45 m,双臂先抬到 hover 姿势再**瞬移**到抽样的站位上,只量抓取本身(ready-stand pilot) |
 
 ### 产出在哪
 
@@ -148,7 +150,7 @@ image-publisher 子进程,活得比父进程久且占着相机端口,所以先�
 
 ### 日志怎么读
 
-一集正常的日志长这样(节选,`WALL_WALK=1`):
+一集正常的日志长这样(节选,`wall_walk=true`):
 
 ```
 [walk] t= 2.0 pelvis [-1.61, 0.12] dist 1.05 along +1.03 edge 1.25 speed 0.3 facing_err +4 deg  L ... R ...
@@ -187,8 +189,8 @@ for p in $(pgrep -f "[b]imanual_wall.py"); do kill -9 $p; done   # expert 本身
 ### 跑 10 集
 
 ```bash
-INSTANCE=2 WALL_FEATURE=rail WALL_WALK=1 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
-  nohup bash scripts/run_wall_pilot.sh 10 0 > $V/runner.log 2>&1 &
+INSTANCE=2 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
+  nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json > $V/runner.log 2>&1 &
 ```
 
 同一个 `$V` 下换种子(第二个参数)会追加到同一个 manifest,`label` 变成 `wall_s<seed>`。**每一集都是一次
@@ -289,7 +291,7 @@ flowchart TD
   L -. 倾斜 > 20° / 上升 < 6 cm / 失去接触 .-> BAD
 ```
 
-`WALL_WALK=0` 时把"走入 → 停站 → 站位门"换成:先在出生点把双臂 2 s 平滑抬到 hover 关节解,再 `align_robot_xy`
+`wall_walk=false` 时把"走入 → 停站 → 站位门"换成:先在出生点把双臂 2 s 平滑抬到 hover 关节解,再 `align_robot_xy`
 瞬移到抽样站位(stand-off 0.14–0.28、横向 ±5 cm、yaw ±5°)。出生点在站位后 0.45 m 而不是站位上,是因为 policy
 起控时的甩臂把箱子撞转了 84°(pilot 1)。
 
@@ -304,7 +306,7 @@ flowchart TD
   掌俯仰从 90°(手指下垂)线性到 60°。每 tick 用上一 tick 的解热启动 IK,并以 hover 关节解为姿态先验
   (`REACH_POSTURE_W` 0.02)——先验是为了不让 IK 在越沿那一段跳到"手腕扭 90–110°"的分支。日志里 `lag L/R`
   是实测垫心落后曲线的距离,2–3 cm 正常。
-- **没有 hover hold。**reach 一结束下探就开始,policy 还欠着的 2–3 cm 由下探伺服吃掉。`WALL_WALK=0` 保留一段
+- **没有 hover hold。**reach 一结束下探就开始,policy 还欠着的 2–3 cm 由下探伺服吃掉。`wall_walk=false` 保留一段
   ≤ 2.5 s 的 hover(手停下就结束),只是为了旧 A/B 数字可比。
 - **下探是参考点在降,不是手在降。**参考以 0.04 m/s 匀速下降到"底"(顶下 5 cm),手跟不跟得上由三个判据看:
   `contact`(手被箱沿顶住不再下降)是主判据,`seated`(垫心确实进到顶下 1.5 cm 且横向居中)是毫米级备用,
@@ -360,7 +362,7 @@ flowchart TD
 | 维 | 范围 | 状态 |
 |---|---|---|
 | 箱子横向偏移 | ±8 cm(`CRATE_DY_RANGE`) | 每集抽样 |
-| 出生点 | 站位后 1.0–1.3 m,横向 ±0.15 m,朝向 ±10° | 每集抽样(`WALL_WALK=1`) |
+| 出生点 | 站位后 1.0–1.3 m,横向 ±0.15 m,朝向 ±10° | 每集抽样(`wall_walk=true`) |
 | 停靠距离 | 目标 0.24 m,实际由步态散布(0.13–0.32 内接受) | 自然分布,不取单点 |
 | 站位(ready-stand 模式) | stand-off 0.14–0.28,横向 ±5 cm,yaw ±5° | 按走入实测散布抽样 |
 | 箱子 yaw | — | **没打开**(设计要 ±15°,直接制造 yaw 修正样本) |
@@ -449,6 +451,10 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
   `check_dataset` 的 grasp-causality 抓到——采集时不要在同一块 GPU 上跑别的东西。
 - **Isaac**:`/World/G1` 占位机器人、ego 相机要隐藏的头部网格、地面残差埋脚——三个都已修;RTX 首帧后网格还要
   ~10 帧才加载完;出生点在后墙里就调 `isaac_scene.py` 的 `BG_SHIFT_XY`。
+- **2026-09-10 `WALL_WALK=1` 静默失效**:重构 step 3 把旋钮搬进 `CrateTaskConfig` 后环境变量不再被读,`wall_walk`
+  默认 false;按旧教程设 `WALL_WALK=1 WALL_FEATURE=rail` 跑出来的 10 集全是 ready-stand 变体(每集 25 s、视频 10–12 s、
+  日志里一行 `[walk]` 都没有),渲染完才发现没有走路段。看 `[walk]` 行有没有就是判据;runner 现在遇到这两个环境变量
+  会直接拒绝。
 - **夹爪齿比**:`GRIPPER_GEAR=1000`(pilot 24–28)让手指 PD 在 20 ms 控制保持下失稳抖动;250 是对的。
 
 ---
