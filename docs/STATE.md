@@ -37,6 +37,10 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- MERGE PENDING (session cf): branch fix/first-round-anchor (round 1 of every batch failed at the spawn; verified 3/3,
+  ledger bottle §14) waits for the uncommitted edits in main's tree (Codex: docs/collection.md, scene_lib.py, bottle_visual/*,
+  ledger bottle §12 弯腰审计) to be committed -- it touches docs/collection.md too. Whoever commits those: ping cf or just
+  `git merge --no-ff fix/first-round-anchor` (both-appended conflicts only, keep both).
 - SONIC phase2 STOPPED before any action test: supervisor2545023 exited1 after10min resource timeout,
   private diagnostic deploy on GPU1 instance1; no production binary/source changes, no exporter.
   outputs/diagnostics/sonic_lean_phase2_20260910/{plan.json,runner.json,resources.jsonl,cases.log,progress.json,run.exit}.
