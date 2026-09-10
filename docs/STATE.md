@@ -1,4 +1,4 @@
-# STATE (updated 2026-09-10 14:00 UTC by session cf; several sessions write this file, keep edits surgical)
+# STATE (updated 2026-09-10 15:10 UTC by session cf; several sessions write this file, keep edits surgical)
 
 ## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
 - Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
@@ -95,9 +95,8 @@
   (two sims on one port block); gate.txt there is VOID, not a regression. Session 29 is landing an admission check
   that gates on the ports (not GPU memory); the gate for the pick_place changes still has to be re-run on a quiet
   instance (window: after 29's run ~13:55, before cf's eval ~15:45).
-- RUNNING (pick-place session, 2026-09-10 15:09 UTC, ~12 min): bottle behaviour gate attempt 3 on instance 0 / GPU1,
-  outputs/experiments/gate_bottle_pickplace3_20260910 (attempt 2 was refused by the exporter-name check, since fixed by 29).
-  Instance 0 is free again when this line is gone (cf needs it ~15:45).
+- pick-place session: NOTHING RUNNING (15:15 UTC); instance 0 / GPU1 free, lock free. Bottle gate for the pick_place
+  changes PASSED 16/16 (7/10, outputs/experiments/gate_bottle_pickplace3_20260910; ledger pick_place §6).
   (inherited fd, self-releasing) and stop_instance.sh is scoped to its own instance's exporter (comm=python + TF_CAMERA_PORT
   in the environment); agreed with session 29, who drop their runner-side port loop. Untested on a live stack yet (instance 0
   busy) -- the first start after this is the test.
@@ -255,7 +254,7 @@
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
-## Changed (2026-09-10 session cf, 02:48-14:00 UTC, ALL COMMITTED AND PUSHED through 96184be)
+## Changed (2026-09-10 session cf, 02:48-15:10 UTC, ALL COMMITTED AND PUSHED through 27dd88a)
 
 - **ScaleBFM line reorganised and merged** (a3e2fee, f8fc71b, 51a4d25, 0ad4b3e, merge f73d4ec) -- see the Now entry.
 - **README rewritten** (b7881f1): it still pointed at src/teleop_free/start_stack.sh, docs/reference.md,
@@ -278,6 +277,20 @@
   from outputs/experiments/<name>/launch.sh and its source is committed under scripts/experiments/.
 - **visible10 + visible200 collections** (0ffbb14 and the Now entries): runners under scripts/experiments/.
 - **fix/first-round-anchor** (384381e, branch, NOT merged): see MERGE PENDING in Now.
+- **Eval provenance capture** (27dd88a, running): `run_learn_pilot` writes `config_snapshot.json` ONCE, at whichever
+  stage runs first -- for this pilot the 07:02 collect, `git_sha 56617ae`, 260 digests -- while the eval starts ~16:00
+  against a tree several commits ahead plus ~31 files modified by other sessions. The eval's number would carry a
+  nine-hour-old source stamp. `scripts/experiments/visible200_eval_provenance_20260910.sh` waits for the runner's
+  stage markers and records git sha, `git status`, a full `git diff HEAD` patch and `source_digests()` at eval START and
+  eval END, then writes a verdict line saying whether the tree moved mid-eval. Does not touch anyone's work.
+- **Eval-calibration provenance thread** (STATE open questions, 50e6068 -> 6498afb -> 88baac1; session 29 wrote it up as
+  ledger bottle §17.7 plus dated qualifiers on `docs/reference/runbook.md:7` and `docs/evaluation.md:941`, still
+  uncommitted on its side): the stand-sampling band moved on 2026-09-07 (`8c621fb`), so flow200's 50/100 cannot be the
+  external reference for a post-09-07 arm, while the dart-vs-flow 2x2's internal comparisons are untouched. Two of my
+  own intermediate conclusions were wrong and are recorded as such in §17.7.
+- **Verified session 29's uncommitted guards against my eval path** rather than trusting them: the calibration gate only
+  fires when `VLA_POLICY is None`, `main()` never rebinds `VLA_POLICY` so there is no UnboundLocalError, the eval runs
+  without `--record` so the exporter probe cannot fire, all 31 modified modules compile and `make test` is green.
 - **3DGS background plan** (96184be): docs/handoff/3dgs_background_plan.md, 430 lines -- research + grilling record,
   two decisions taken, four rendering routes left open. ROADMAP's 3DGS entry points at it and records that its
   2026-08-25 "UE for diversity, 3DGS for one-scene fidelity" criterion is superseded.
@@ -287,7 +300,7 @@
   retreat, verify) hooked after the bottle lift by BottleTaskConfig.goal; PlaceConfig; --task-config in the gym; Task
   `pick_place` registered (configs/tasks/pick_place.json); run_learn_pilot takes target/prompt from the task config;
   build_sim_scene --harden-pads; reach.grip_below_center may be negative. Acceptance pilot 10/19 (all 9 failures on the
-  grasp side, place 10/10 once lifted, release xy 1.4-2.6 cm, basket in view 100 %); shakedown 10/15 before it. Ledger
+  grasp side, place 10/10 once lifted, release xy 1.4-2.6 cm, basket in view 100 %); shakedown 10/15 before it. bottle gate PASS 16/16 (ledger §6). Ledger
   docs/ledger/pick_place.md, reels outputs/videos/pick_place_pilot{,2}_20260910/reel_10ok.mp4. Object shape lesson: the
   ready-grasp line needs grip_z 0.70-0.73 with <= 4-5 cm of object above the grip -> 6 x 14 cm can gripped 3 cm above centre.
 - SIMPLE's basket scene brought into MuJoCo: assets/simple/{basket,soup_can}/model.xml (visual OBJ +
@@ -388,6 +401,9 @@
    07d-200 57/100 -- NOT against the lost 2026-09-09 manifest. This checkpoint is also the first chance to do the
    refactor follow-up (a): the eval-path A/B, old 78536ae eval client vs new, 20 rounds, same checkpoint.
 0b. cf: merge fix/first-round-anchor as soon as Codex's uncommitted tree edits land (see MERGE PENDING).
+0c. cf, after the eval: make `run_learn_pilot` write a config snapshot per STAGE, not once per pilot
+   (memory provenance-snapshot-is-per-pilot-not-per-stage). Not done now because that file is the one the running
+   pilot executes and session 29 has uncommitted changes in it.
 0. pick_place next (this session): same-seed water-bottle control for the grasp-side yield; randomise basket/can
    (plan §4); a 200-episode collection + training once the yield question is settled.
 1. Data recovery (USER DECISION): (a) re-convert ready_visible200 from the 40 surviving exporter sessions without
