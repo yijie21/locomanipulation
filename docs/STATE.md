@@ -1,4 +1,4 @@
-# STATE (updated 2026-09-10 by the branch session: ScaleBFM reorg; incident block below still applies)
+# STATE (updated 2026-09-10 14:00 UTC by session cf; several sessions write this file, keep edits surgical)
 
 ## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
 - Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
@@ -37,19 +37,79 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
-- RUNNING (session cf): visible200_20260910 TRAINING on GPU0 since 2026-09-10 12:01 UTC (GR00T, 10k steps, ~4.5 h), then the
-  100-round closed-loop eval (seed 6000, closed_loop_100.json) on instance 0 / GPU0 (~3 h; starts only when CPU headroom is
-  OK). Keep GPU0 and instance 0 free until this line is gone. Runner scripts/experiments/visible200_train_eval_20260910.sh;
-  logs outputs/experiments/visible200_20260910/{train.log,pilot_train.log,pilot_eval.log,runner_train_eval.log}.
-- SONIC phase3 native dynamic replay/model-PD audit (2026-09-10, Codex): initial trial invalid,
-  robot already at pelvis z=0.119m when playback began; exclude from tracking results. Original retained.
-  Retry runner PID2600051 waits for 3x5s CPU windows >=6 free cores/no throttle (10min timeout), GPU1/instance1.
-  At latest check CPU free~0 cores; no retry stack yet. Read retry_reset/{resources.jsonl,run.exit,cases.log}
-  under outputs/diagnostics/sonic_native_phase3_20260910 before restarting anything.
-  Harness now resets AFTER model readiness, checks fresh preplay state, starts control/play immediately.
-  parity_report.json: active LowCmd PD matches C++ (CSV-rounding precision); 29 body joint params match
-  official local MJCF; robot mass Dex1=35.864952 vs Dex3=36.1652352kg. Runtime default dt=.005,
-  XML .002; this is an upstream entry-point override, not established bug. No production policy changes.
+- RUNNING (session 29, user-asked, since 2026-09-10 13:26 UTC): paired 10-round bottle pilot on **instance 0** with
+  CUDA_VISIBLE_DEVICES=1 / MUJOCO_EGL_DEVICE_ID=1 (all GPU work on GPU1; GPU0 stays with session cf's training).
+  policy/sonic_v1_1 THEN policy/release over the SAME fixed case bank (outputs/experiments/v11_bottle_pilot_20260910/
+  cases10.json, seed 7100, narrow spawn --spawn-edge 0.7 --face-object --spawn-yaw-err 20 --spawn-lateral 0.20,
+  --edge-jitter 0.20, --stand-retries 0, --record, videos per arm). Purpose: how much error does switching the SONIC
+  checkpoint cost on the real grasp line. Runner scripts/experiments/v11_bottle_pilot_i0_20260910.sh (scratch copy).
+  Instance 0 ports 5555-5582 and the exporter are in use; session cf notified, they need instance 0 only after
+  training (~16:30 UTC).
+  GOTCHA found doing this: **instance 1 cannot record** -- start_stack prints "[3/3] data exporter skipped (instance 1
+  records no episodes)", and the gym resolves its ports from the instance-0 defaults regardless of INSTANCE, so an
+  instance-1 run dies with "no privileged state on :5581". The first attempt is kept as
+  {sonic_v1_1,release}_portfail_i1/ -- not results.
+- pick-place session: NOTHING RUNNING (2026-09-10 13:12 UTC); instance 0 / GPU1 released after the pick_place pilots.
+- UPDATE 2026-09-10 12:03 UTC (Codex): SONIC phase3 retry CPU gate timed out after10min;
+  retry_reset/run.exit=1, runner.log="CPU gate timeout; no stack started"; PID2600051 exited.
+  No retry action test occurred. Chrome SwiftShader PID2598614 from Claude3265590/Playwright
+  measured14.76 CPU cores of15.36 quota; left untouched. Restore from HANDOFF.md, not older queued status.
+- RUNNING (session cf): visible200_20260910 TRAINING on GPU0 since 2026-09-10 12:01 UTC. GR00T 10k steps on the 190/10
+  dataset, 1.42 s/it, **ends ~16:00 UTC**; the runner then starts the 100-round closed-loop eval (seed 6000,
+  configs/eval/closed_loop_100.json) on **instance 0 / GPU0**, ~3 h. Keep GPU0 free until this line is gone; instance 0
+  is free until ~15:45 (session 29 has it until ~13:50, agreed).
+  **HAZARD, cannot be patched:** the runner's eval gate checks only GPU0 memory + cpu_headroom, NOT whether instance 0
+  is free -- another session working on GPU1 would pass that gate and get its ports taken. The executing copy is
+  outputs/experiments/visible200_20260910/launch_train_eval.sh and editing a running bash script corrupts it
+  (memory never-edit-a-running-bash-script), so the 15:45 hand-back time is the only guard today.
+  Runner source scripts/experiments/visible200_train_eval_20260910.sh; logs in the experiment dir
+  {train.log,pilot_train.log,pilot_eval.log,runner_train_eval.log}.
+- SONIC phase3 native dynamic replay DONE (2026-09-10 12:15-12:33 UTC, session 29, GPU1/instance1). Two 3-repeat
+  runs under outputs/diagnostics/sonic_native_phase3_20260910/: retry_reset_02 (policy/release) and v1_1
+  (policy/sonic_v1_1). Both 3/3 valid, run.exit=0, no falls, 423/424 frames at exactly 50.00 fps (8.46 s).
+  Startup protocol that made it valid: wait "Init Done" -> reset -> ']' -> 1 s settle (pelvis 0.890->0.786, ncon 33)
+  -> 't'. The old single-sample failure stays in native_release_1.json as recorded.
+  RESULT (mean of 3, waist/torso pitch at the reference's deepest-lean frame, ref torso 40.3 / ref waist 29.3):
+    policy/release   torso 14.5  waist  8.1  waist RMSE 12.9  torso RMSE 12.4
+    policy/sonic_v1_1 torso 25.3  waist 21.4  waist RMSE  3.9  torso RMSE  5.7
+  Same scene, same PD, same protocol -> the checkpoint is the dominant factor, 3.3x on waist RMSE. Reports:
+  native_report.json (frame index recovered by nearest-neighbour match, no assumed play rate) and
+  channel_audit.json (29x29 command-vs-reference correlation) in each dir.
+  Ruled out as causes, with numbers: reference->encoder 2.1e-7 rad; reference is self-consistent with the official
+  MJCF (FK torso pitch reproduces body_quat to 0.01 deg, so "+waist = forward" holds for reference/official/our sim);
+  deploy observations vs privileged truth <=1.2 deg (release) / <=2.3 deg (v1_1); last_action vs sim cmd_q <=0.05 rad;
+  both configs pass the deploy's own dimension check (release 1762/994, v1_1 1751/994).
+  Open, NOT a checkpoint difference: waist_pitch is the only channel whose command is anti-correlated with its own
+  reference (-0.90 in all 6 runs, both checkpoints, ~-60 deg commanded where the reference asks +29.3). Legs/arms are
+  +0.95..0.99. So the achieved lean is not driven by that command; waist kp is 28.5 (2*STIFFNESS_5020, armature*w^2
+  from policy_parameters.hpp) against a measured gravity load of 12-23 Nm. Do not call this a per-checkpoint bug.
+  Note: policy/release/observation_config.yaml is a third, hand-edited variant, equal to neither
+  observation_config_sonic_release.yaml nor _sonic_v1_1.yaml (it adds motion_root_z_position*, +11 dims, and uses the
+  non-heading-normalised anchor). policy/sonic_v1_1/ is a self-consistent model+config pair.
+  Scripts: scripts/experiments/sonic_native_{replay,report,channel_audit}_20260910.py (replay is now parameterised by
+  SONIC_NATIVE_POLICY / SONIC_NATIVE_VIDEO / SONIC_NATIVE_INIT_TIMEOUT). parity_report.json from the earlier pass still
+  stands: LowCmd PD matches the C++ at CSV-rounding precision, 29 body joint params match the official local MJCF,
+  robot mass Dex1=35.864952 vs Dex3=36.1652352 kg. No production policy, PD or expert changes.
+  GPU1 released at 12:34 UTC: the optional release-vs-v1_1 video A/B was killed inside its CPU gate (no stack was ever
+  created) when the pick-place session claimed GPU1 at 12:33. outputs/.../video_release/ is that aborted stub, not a
+  result; a retry needs a new directory name.
+- Video comparison DONE (2026-09-10 12:55 UTC, session 29, no simulation): reference vs release vs v1_1 as one
+  side-by-side clip in outputs/diagnostics/sonic_native_phase3_20260910/compare/ (mp4 real-time + half speed,
+  key_frames.png, 424 png frames). Offline kinematic replay of the recorded traces via
+  scripts/experiments/sonic_native_render_20260910.py, rendered with EGL on GPU1 in 7.7 s wall / ~2.5 cores, so it
+  did not need a stack and did not disturb the pick-place pilot. Root yaw and xy are removed so the three panels
+  differ only in posture.
+- Video v2 (2026-09-10 13:06 UTC): v1 had a RENDER bug -- the scene's 29 motor joints are not a contiguous qpos
+  slice (left-gripper SLIDE joints sit between the arms), so a flat qpos[7:36] write put a shoulder angle in metres
+  onto a gripper slide and threw the jaw 2 m off, and shifted the right arm by two slots. Legs and waist are before
+  the corruption, so no measurement or conclusion changes. Fixed by indexing jnt_qposadr by NAME. v2 also adds an
+  orange reference-outline ghost on both delivery panels and a waist/torso pitch curve strip with a playhead.
+  EGL failed transiently while another session's stack was starting, so v2 was rendered with OSMesa (explicit
+  diagnostic exception, ~4 min on free CPU); EGL was verified healthy again at 13:20. Ledger bottle.md 16.7/16.8.
+- Waist bend ceiling (measured): waist_pitch range is +-0.52 rad = +-29.79 deg in EVERY G1 MJCF in the repo, and the
+  official references are clipped to it -- squat_001__A359 sits at exactly 0.520000 rad for 118 of 424 frames (28%),
+  and 11 of the 13 official motions peak at exactly 29.8 deg. The reference's 40 deg torso lean is pelvis 11 + waist
+  29.8; a deeper lean has to come from hip and squat, not the waist.
   Commands/evidence/remaining comparisons: docs/ledger/bottle.md section15.
 - MERGE PENDING (session cf): branch fix/first-round-anchor (round 1 of every batch failed at the spawn; verified 3/3,
   ledger bottle §14) waits for the uncommitted edits in main's tree (Codex: docs/collection.md, scene_lib.py, bottle_visual/*,
@@ -100,9 +160,6 @@
   (batches 07-14: 43/80 vs 157/255 elsewhere; no deploy trips, audits clean); round 1 of EVERY batch (34/34) failed at the
   spawn -- root cause + fix on branch fix/first-round-anchor (ledger bottle §12), verification running on GPU0 now
   (outputs/experiments/firstround_fix_20260910, 3 batches x 4 rounds, ~8 min). Not trained.
-- RUNNING (session cf): visible200 collection + convert on instance 0 / GPU0 since 2026-09-10 07:02 UTC, ends ~10:30 UTC
-  (outputs/experiments/visible200_20260910, run_learn_pilot through=convert). Do NOT start a stack on instance 0, put
-  anything on GPU0, or run sim probes on either GPU until this line is gone. Batch results in collect/manifest_*.jsonl.
 - visible10 look-see collection DONE 2026-09-10 06:32-06:42 UTC (branch session cf, instance 0 / GPU0, stack stopped):
   bottle_visible.json + learn_200.json with through=collect successes=10, seed0 31000, first run with restart_deploy=false.
   2 batches, 18 rounds -> 10 kept (yield 0.56): batch 0 4/10 (3x "toppled in the close phase", 1 view-at-spawn, 1 IK,
@@ -147,14 +204,51 @@
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
-## Changed (2026-09-10 ~09:40 UTC, new pick-and-place session; UNCOMMITTED, CPU-only, no GPU touched)
-- SIMPLE's basket scene brought into MuJoCo: assets/simple/{basket,sugar_box,soup_can}/model.xml (visual OBJ +
+## Changed (2026-09-10 session cf, 02:48-14:00 UTC, ALL COMMITTED AND PUSHED through 96184be)
+
+- **ScaleBFM line reorganised and merged** (a3e2fee, f8fc71b, 51a4d25, 0ad4b3e, merge f73d4ec) -- see the Now entry.
+- **README rewritten** (b7881f1): it still pointed at src/teleop_free/start_stack.sh, docs/reference.md,
+  docs/runbook.md and a 2026-08-27 status. Now the locomani layout, the four-kind doc map and a 2026-09-10 status.
+  The five stray root step1/2/3/5/6.md (the scoop_check skill's notes, swept in by b41692a's `git add -A`) are one
+  file under docs/archive/scoop_check_2026-08-26.md.
+- **Codex's 7 review findings fixed** (f1f7452, merge 9af89f8, b26fcb0, 1bd6498; docs/ledger/refactor.md is his report):
+  config_base now rejects unknown fields, mismatched schema_version and wrong scalar types, and enum fields declare
+  metadata["choices"] so `--set client=asnyc` / `through=collec` are errors; the ScaleBFM provenance path was
+  parents[4] pointing at a directory that does not exist, so **every ScaleBFM run's source_sha256 silently omitted the
+  whole backend** (now parents[3], raises if incomplete, snapshots keep package-relative paths); scene.base_scene()
+  makes `--set-backend scene_dir=` actually take effect; run_learn_pilot's config_snapshot.json carries `inputs`
+  (frozen scene digests, initial token, reach_config) like the retired provenance.json did; silent_failures'
+  TF_DATASET_FPS row, the scalebfm ledger's over-stated "cannot recover from the crouch", and tasks/base.py's
+  over-claimed Task contract corrected. tests/test_review_2026_09_10.py reproduces each one.
+- **sim_vis default made consistent** (c122a6d, 9156e88): 18dd6dd changed sim_vis.py's bare default to none but
+  SonicBackendConfig.sim_vis stayed "full", and stack.py writes cfg.sim_vis -- so every pipeline-launched stack still
+  drew the debug art. Config, JSON and the field table now agree. runbook §1 records the 2026-09-10 defaults
+  (collection no longer restarts the deploy, eval pins the restart, SIM_VIS none). standards §1: a one-off runner runs
+  from outputs/experiments/<name>/launch.sh and its source is committed under scripts/experiments/.
+- **visible10 + visible200 collections** (0ffbb14 and the Now entries): runners under scripts/experiments/.
+- **fix/first-round-anchor** (384381e, branch, NOT merged): see MERGE PENDING in Now.
+- **3DGS background plan** (96184be): docs/handoff/3dgs_background_plan.md, 430 lines -- research + grilling record,
+  two decisions taken, four rendering routes left open. ROADMAP's 3DGS entry points at it and records that its
+  2026-08-25 "UE for diversity, 3DGS for one-scene fidelity" criterion is superseded.
+
+## Changed (2026-09-10 pick-and-place session, 09:40-13:15 UTC; UNCOMMITTED; GPU1 used with the user's authorisation)
+- pick_place task IMPLEMENTED and piloted: tasks/bottle/place_phase.py (raise, turn-to-band, carry-over, descend, release,
+  retreat, verify) hooked after the bottle lift by BottleTaskConfig.goal; PlaceConfig; --task-config in the gym; Task
+  `pick_place` registered (configs/tasks/pick_place.json); run_learn_pilot takes target/prompt from the task config;
+  build_sim_scene --harden-pads; reach.grip_below_center may be negative. Acceptance pilot 10/19 (all 9 failures on the
+  grasp side, place 10/10 once lifted, release xy 1.4-2.6 cm, basket in view 100 %); shakedown 10/15 before it. Ledger
+  docs/ledger/pick_place.md, reels outputs/videos/pick_place_pilot{,2}_20260910/reel_10ok.mp4. Object shape lesson: the
+  ready-grasp line needs grip_z 0.70-0.73 with <= 4-5 cm of object above the grip -> 6 x 14 cm can gripped 3 cm above centre.
+- SIMPLE's basket scene brought into MuJoCo: assets/simple/{basket,soup_can}/model.xml (visual OBJ +
   CoACD convex pieces from third_party/SIMPLE/data/assets, basket rotated y-up -> z-up, origin = centre). scene_lib:
-  three MESH_TARGETS entries + SCENE_PRESET=pick_place (basket at (-0.34, 0) yaw 90, sugar box (-0.40, +0.28),
-  soup can (-0.40, -0.28); target soup_can, goal basket via a new per-preset goal_object) and a `container=True`
+  two MESH_TARGETS entries + SCENE_PRESET=pick_place (basket at (-0.34, 0) yaw 90, soup can (-0.40, -0.28) scaled to 9.0 cm
+  tall / 6.0 cm body for a 1.2 cm jaw margin a side; the sugar box was removed on request; target soup_can, goal basket via a new per-preset goal_object) and a `container=True`
   flag that skips the jaw-span check; compose_scene.py --preset. Checks: OSMesa placement renders + 2 s settle
   (objects sink <= 0.4 cm, no launch) + soup can dropped into the basket rests inside at 0.4 cm off centre:
   outputs/scene_checks/pick_place_20260910/. make lint green. No expert / pipeline / Task yet.
+- Design for the pick-and-place expert (walk, right-hand grasp, turn ~30 deg, place in the basket to the left) written to
+  docs/handoff/pick_place_plan.md: 9 phases (1-4 reuse bottle verbatim), ego-frame check passed offline at spawn / stand /
+  place (both objects inside 0.80/0.90), 7 new failure leaves, 10-round pilot acceptance. Nothing implemented.
 
 ## Changed (2026-09-10 branch session 65, COMMITTED on main through b68c1f9; pushed through ebac697)
 - Collection default: no per-round deploy restart (restart_deploy=False, ebac697) with a reset-phase reanchor
@@ -238,6 +332,13 @@
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
+0a. cf, automatic: when training ends ~16:00 the eval runs itself. Then write the numbers into the next free
+   docs/ledger/bottle.md section (12/13/14/15/16 are taken) and compare against the ledger's flow200 50/100 and
+   07d-200 57/100 -- NOT against the lost 2026-09-09 manifest. This checkpoint is also the first chance to do the
+   refactor follow-up (a): the eval-path A/B, old 78536ae eval client vs new, 20 rounds, same checkpoint.
+0b. cf: merge fix/first-round-anchor as soon as Codex's uncommitted tree edits land (see MERGE PENDING).
+0. pick_place next (this session): same-seed water-bottle control for the grasp-side yield; randomise basket/can
+   (plan §4); a 200-episode collection + training once the yield question is settled.
 1. Data recovery (USER DECISION): (a) re-convert ready_visible200 from the 40 surviving exporter sessions without
    manifests (ok/failed rounds via each session's discarded_episode_indices; verification-tail trim marker lost, ~100
    extra hold frames per episode; the 8 excluded sessions are listed in this session's scratch scripts and must be
@@ -260,6 +361,17 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- Did the GPU0 overlap cost visible200 anything? 65's crate chain shared GPU0 during batches 07-14 (43/80 vs 157/255
+  elsewhere). Session integrity and both audits are clean, so nothing is provably damaged; if the trained model shows a
+  stratified oddity, those 8 sessions (07-45-01 .. 08-24-52) are the first suspects. Unknowable after the fact.
+- "stand infeasible, no reposition" was 72 of 101 in-round failures on 2026-09-10 against ~19% on 2026-09-09. The
+  no-restart default parks 3 cm farther (ledger §11 park 0.332 vs 0.301), which points the same way. If the trained
+  model's stand distribution looks different from 07d's, this is why. Not measured.
+- A background runner's admission check: gating on GPU memory alone is not enough, another session can hold the
+  instance while working on the other GPU. Today this was covered by a hand-agreed time window. Session 29 is writing
+  it up as a FAQ row together with two of its own findings (instance 1 cannot record; the gym does not follow INSTANCE).
+- 3DGS background: 8 decisions still open, listed in docs/handoff/3dgs_background_plan.md §9. The one with teeth is
+  that D2 (no separate acceptance) means the closed-loop eval can only show "no harm", never "helps".
 - Untrimmed verification tails (if recovery path (a)): does training on ~100 extra 'hold the lifted bottle' frames per
   episode change closed-loop behaviour? Unknown; 07d always trimmed. If it matters, path (b) is the clean answer.
 - Deploy self-heal restarts truncated 8/40 collection sessions on 2026-09-09; cause is host contention (foreign GPU/CPU
@@ -304,6 +416,9 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-10 visible200 collection: 34 batches / 335 rounds -> 200 kept (yield 0.60), convert rc=0, check_dataset 32/32
+  PASS on both splits; first round of EVERY batch failed at the spawn (34/34) until the anchor fix
+- 2026-09-10 first-round anchor fix verified: round 1 past the spawn 3/3 on the fix branch vs 0/34 on main
 - 2026-09-10 crate hard placement (setback x yaw) 5/5/7 of 10 same seed; stand-off >= 0.26 fails in descend; final videos with ghost hands
 - 2026-09-10 restart A/B paired 30: no-restart+reanchor 18 vs restart 16, 34 vs 64 s/round, gate 13/15 -> default flipped
 - 2026-09-10 refactor gates on main (GPU0): converter 34/34 byte-identical; bottle 7/10 all metrics PASS; crate 8/10 = baseline
