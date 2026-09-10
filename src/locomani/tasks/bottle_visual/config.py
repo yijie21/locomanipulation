@@ -32,7 +32,7 @@ class GraspConfig:
     carry_clearance: float | None = None
     edge_clearance: float | None = None
     high_table_front: float | None = None
-    facing: str = "bottle"
+    facing: str = field(default="bottle", metadata={"choices": ("bottle", "edge")})
 
 
 def ruled_grasp() -> GraspConfig:
@@ -52,9 +52,9 @@ def ruled_grasp() -> GraspConfig:
 @dataclass(frozen=True)
 class BottleVisualTaskConfig:
     grasp: GraspConfig = field(default_factory=ruled_grasp)  # planner geometry; see ruled_grasp()
-    scene_profile: str = (
-        "yplus_center_v1"  # reset geometry version (sampling.py); legacy_edges_v1 = the 2026-09-08 three-edge scenes
-    )
+    scene_profile: str = field(
+        default="yplus_center_v1", metadata={"choices": ("yplus_center_v1", "legacy_edges_v1")}
+    )  # reset geometry version (sampling.py); legacy_edges_v1 = the 2026-09-08 three-edge scenes
     strata: tuple[str, ...] = (
         "high_near",
         "low_near",
@@ -67,15 +67,19 @@ class BottleVisualTaskConfig:
     )
     action_hz: int = 25  # ActionExecutor rate (25 -> the 50 Hz sim); 0 = no executor, per-tick targets (requires native_codec when set)
     integral_gain: float = 1.0  # GraspMotion integral gain on the measured pad error (0 = pure feed-forward)
-    reference_style: str = "direct"  # direct = no hand bias; legacy = the v3 +x-measured BIAS (motion.py)
-    policy_device: str = "cpu"  # torch device for the ScaleBFM policy; collection ran cuda, replays/checks cpu
+    reference_style: str = field(
+        default="direct", metadata={"choices": ("legacy", "direct")}
+    )  # direct = no hand bias; legacy = the v3 +x-measured BIAS (motion.py)
+    policy_device: str = field(
+        default="cpu", metadata={"choices": ("cpu", "cuda")}
+    )  # torch device for the ScaleBFM policy; collection ran cuda, replays/checks cpu
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)
 
     @classmethod
     def from_dict(cls, data: dict) -> "BottleVisualTaskConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "BottleVisualTaskConfig":
@@ -84,5 +88,5 @@ class BottleVisualTaskConfig:
     def dump(self, path) -> None:
         config_dump(self, path)
 
-    def override(self, overrides: list[str]) -> "BottleVisualTaskConfig":
+    def with_overrides(self, overrides: list[str]) -> "BottleVisualTaskConfig":
         return apply_overrides(self, overrides)

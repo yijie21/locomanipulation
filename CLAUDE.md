@@ -28,8 +28,8 @@ GitHub Issues(`gh` CLI,仓库 yijie21/locomanipulation)。See `docs/agents/issue
 `docs/reference/standards.md` 是唯一的规范。`make check` = ruff + 尺寸/环境变量 lint + unit 测试;改主代码的 PR 附
 `scripts/gate.py compare` 输出。
 
-### Refactor freeze (2026-09-09 to 2026-09-23)
+### Refactor follow-ups (freeze lifted 2026-09-10)
 
-仓库重构进行中,计划与 13 条决定见 `docs/handoff/refactor-plan.md`。冻结期内 main 上只跑实验、只修 bug,不加新功能;
+重构计划与 13 条决定见 `docs/handoff/refactor-plan.md`;2026-09-10 的独立复审在 `docs/ledger/refactor.md`。冻结期已由用户解除;
 ScaleBFM 线已于 2026-09-10 并入 `src/locomani/{backends/scalebfm,tasks/bottle_visual}`(台账 `docs/ledger/scalebfm.md`);主代码的移动/删除由重构 PR 完成。删除 `outputs/` 目录或权重前先在
 `docs/STATE.md` 登记 24 小时。每个重构 PR 必须附 `scripts/gate.py compare` 的输出。

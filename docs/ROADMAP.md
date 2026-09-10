@@ -551,7 +551,7 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 
 代码已并入 `src/locomani/{backends/scalebfm,tasks/bottle_visual}`(台账 `docs/ledger/scalebfm.md` §14)。剩下的债,按顺序:
 
-1. **尺寸上限**:`backends/scalebfm/network.py` 757 行(vendored,可拆 wrapper / 网络两文件)与 12 个 >80 行函数(`round.run_case` 226、`pipeline/collect.main` 244、`pipeline/eval.rollout` 230、`pipeline/follow_video.render_case` 227 …);`lint_sizes --strict` 2026-09-16 起,纯抽取拆分。
+1. **尺寸上限,但不是机械拆文件**(Codex 复审 2026-09-10 的裁定,docs/ledger/refactor.md):`round.run_case` 226 行、`pipeline/collect.main` 244、`pipeline/eval.rollout` 230 等的正确修法是把 config 与每 tick 状态显式传给阶段逻辑,消掉全局变量与反向模块依赖;`network.py` 757 行是 vendored 代码,拆 wrapper / 网络两文件即可。`lint_sizes --strict` 推迟到这一步做完。
 2. **驱动 CLI 走 config**:只有 `round.py` 完全是 `--config/--backend/--set`;`pipeline/{collect,eval,video_check}.py` 仍带自己的 flag。
 3. **并入通用 pipeline**:这条线的 collect/export/train/eval 是自己的驱动,`locomani/pipeline` 还没有通过 Backend seam 调用它;做之前先决定 ScaleBFM 是否继续(见台账 §0:VLA 最高 25/100,SONIC 线 57/100)。
 4. **`src/teleop_free/lockstep_vendor/`**:SONIC lockstep 的 vendored 代码,`teleop_free` 名字消失前要移到 `backends/sonic/`。

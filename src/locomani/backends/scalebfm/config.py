@@ -34,7 +34,7 @@ class ScaleBfmBackendConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ScaleBfmBackendConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "ScaleBfmBackendConfig":
@@ -43,5 +43,5 @@ class ScaleBfmBackendConfig:
     def dump(self, path) -> None:
         config_dump(self, path)
 
-    def override(self, overrides: list[str]) -> "ScaleBfmBackendConfig":
+    def with_overrides(self, overrides: list[str]) -> "ScaleBfmBackendConfig":
         return apply_overrides(self, overrides)

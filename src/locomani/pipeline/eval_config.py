@@ -22,7 +22,7 @@ class EvalConfig:
     backend: SonicBackendConfig = field(default_factory=SonicBackendConfig)
     rounds: int = 20  # --fresh: rounds to run, sampled fresh from the collection distribution
     seed: int = 1000  # --seed: round-sampling seed, deliberately disjoint from the collection's seeds
-    client: str = "async"  # --client: async | lockstep | blocking
+    client: str = field(default="async", metadata={"choices": ("async", "lockstep", "blocking")})  # --client
     budget_s: float = 90.0  # --budget: per-round VLA time budget (the ladder's setting)
     replan_interval: float = 0.4  # --replan-interval: async client seconds between chunk requests
     execution_horizon: int = 16  # --execution-horizon: blocking client chunk steps per replan
@@ -49,7 +49,7 @@ class EvalConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "EvalConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "EvalConfig":

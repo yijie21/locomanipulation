@@ -63,15 +63,63 @@ def config_to_dict(obj, schema_version: int) -> dict:
     return d
 
 
-def config_from_dict(cls: type[T], data: dict) -> T:
+_SCALARS = (bool, int, float, str)
+
+
+def _scalar_ok(tp, value) -> bool:
+    """Does `value` fit the static scalar type `tp` (bool/int/float/str, optionally `| None`)?
+
+    Only scalars are checked; nested dataclasses, tuples and untyped fields pass through.
+    bool is not an int here (rtc=1 for a bool field is a typo, not a value), int is a float.
+    """
+    origin = typing.get_origin(tp)
+    if origin is typing.Union or (origin is not None and origin.__name__ == "UnionType"):
+        return any(_scalar_ok(a, value) for a in typing.get_args(tp))
+    if tp is type(None):
+        return value is None
+    if tp is float:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if tp is int:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if tp in _SCALARS:
+        return isinstance(value, tp)
+    return True
+
+
+def validate(obj: T) -> T:
+    """Reject values a config can hold but no entry point can act on (2026-09-10 review, refactor.md
+    Spec 1): wrong scalar types, and strings outside a field's declared `metadata["choices"]`.
+    Called by config_from_dict and apply_overrides; returns `obj` unchanged."""
+    hints = _resolved_field_types(type(obj))
+    for f in dataclasses.fields(obj):
+        value = getattr(obj, f.name)
+        if not _scalar_ok(hints.get(f.name), value):
+            raise ValueError(f"{type(obj).__name__}.{f.name}: {value!r} is not a {hints.get(f.name)}")
+        choices = f.metadata.get("choices")
+        if choices is not None and value not in choices:
+            raise ValueError(f"{type(obj).__name__}.{f.name}: {value!r} not in {choices}")
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            validate(value)
+    return obj
+
+
+def config_from_dict(cls: type[T], data: dict, schema_version: int | None = None) -> T:
+    """Strict: unknown keys, a mismatched schema_version and wrong scalar types all raise --
+    a config file that does not describe this code must not run (2026-09-10 review)."""
     data = dict(data)
-    data.pop("schema_version", None)
+    version = data.pop("schema_version", None)
+    if schema_version is not None and version is not None and version != schema_version:
+        raise ValueError(f"{cls.__name__}: schema_version {version} != {schema_version}")
     hints = _resolved_field_types(cls)
+    names = {f.name for f in dataclasses.fields(cls)}
+    unknown = sorted(set(data) - names)
+    if unknown:
+        raise ValueError(f"{cls.__name__}: unknown field(s) {unknown}")
     kwargs = {}
     for f in dataclasses.fields(cls):
         if f.name in data:
             kwargs[f.name] = _from_plain(hints.get(f.name), data[f.name])
-    return cls(**kwargs)
+    return validate(cls(**kwargs))
 
 
 def config_load(cls: type[T], path) -> T:
@@ -141,4 +189,4 @@ def apply_overrides(obj: T, overrides: list[str]) -> T:
             values[top] = type(nested)(**nested_values)
         else:
             raise ValueError(f"--set keys nest at most one level deep, got {key!r}")
-    return type(obj)(**values)
+    return validate(type(obj)(**values))

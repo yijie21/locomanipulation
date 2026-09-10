@@ -33,7 +33,7 @@ from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
 from locomani.tasks.bottle_visual.harness import AppliedPolicy, atomic_json, summarize
 from locomani.tasks.bottle_visual.motion import GraspMotion
 from locomani.tasks.bottle_visual.observation import SceneEstimate, SceneMeasurement, SceneTracker
-from locomani.tasks.bottle_visual.pipeline.provenance import line_sources
+from locomani.tasks.bottle_visual.pipeline.provenance import line_sources, snapshot_sources
 from locomani.tasks.bottle_visual.pipeline.recording import RawEpisodeRecorder
 from locomani.tasks.bottle_visual.planner import GraspConfig, RobotObservation, VisualGraspPlanner
 from locomani.tasks.bottle_visual.recovery import KINDS, RecoveryIntervention
@@ -313,8 +313,10 @@ def main():
         "--case-offset", type=int, default=0, help="Original scene-plan index when resuming a disjoint seed suffix"
     )
     args = parser.parse_args()
-    task = (BottleVisualTaskConfig.load(args.config) if args.config else BottleVisualTaskConfig()).override(args.set)
-    backend = (ScaleBfmBackendConfig.load(args.backend) if args.backend else ScaleBfmBackendConfig()).override(
+    task = (BottleVisualTaskConfig.load(args.config) if args.config else BottleVisualTaskConfig()).with_overrides(
+        args.set
+    )
+    backend = (ScaleBfmBackendConfig.load(args.backend) if args.backend else ScaleBfmBackendConfig()).with_overrides(
         args.set_backend
     )
     edges = (args.edges or ",".join(profile_edges(task.scene_profile))).split(",")
@@ -359,9 +361,7 @@ def main():
     )
     status["status"] = "running"
     atomic_json(run_meta, status)
-    (out / "source").mkdir(exist_ok=True)
-    for p in files:
-        shutil.copy2(p, out / "source" / p.name)
+    snapshot_sources(out, files)
     policy = R.Policy(device=task.policy_device, backend=backend)
     environments = {}
     results = []
@@ -382,7 +382,7 @@ def main():
                     )
                 result = json.loads((case / "result.json").read_text())
             else:
-                directory = scene_directory(out / "scene_assets", stratum)
+                directory = scene_directory(out / "scene_assets", stratum, backend)
                 if stratum not in environments:
                     sim = make_sim(policy, directory, backend)
                     environments[stratum] = sim, BottleProxySensor(sim)

@@ -31,7 +31,7 @@ class CrateTaskConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CrateTaskConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "CrateTaskConfig":

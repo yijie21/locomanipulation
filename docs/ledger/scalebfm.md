@@ -218,3 +218,9 @@ ScaleBFM(上海 AI Lab,arXiv 2607.15163,MIT)是 SONIC 的候选替代 controller
 **没做、留作后续**(见 docs/ROADMAP.md):network.py 757 行(vendored)与 12 个 >80 行函数的尺寸债;collect/eval/video_check 的 CLI 仍带自己的 flag(只有 round.py 完全走 config);这条线的 collect/export/train/eval 仍是自己的驱动,没有并入 `locomani/pipeline`(需要 pipeline 真正通过 Backend seam 调用);`lockstep_vendor/` 仍在 `src/teleop_free/`(SONIC lockstep 用,不属本线)。
 
 (来源: 本仓库 commit a3e2fee / f8fc71b / 51a4d25;重放对照脚本与输出在做这次重组的 session scratchpad,未入库)
+
+## 15. 2026-09-10 更正:§0 第 5 条与 §10 的"无法恢复"写过头(Codex 复审,docs/ledger/refactor.md)
+
+§0 第 5 条写"学生无法从下蹲恢复",§10 也把 q99 截断当成恢复失败的机制。已知事实只有:checkpoint 的相对骨盆高度动作 q99 = +0.01836 m,单次修正最高 +1.836 cm;100 场里 38 场骨盆低于 0.60 m。**不能由此推出学生无法多步恢复**,也没有证据说明最初下沉的原因;能回答这两点的 pelvis ABCD 对照(§11)没有最终结果。正确表述:恢复幅度受单步截断限制,恢复能力与下沉成因**均未因果验证**。§0、§10 原文按 append-only 规则不改,以本节为准。
+
+(来源: docs/ledger/refactor.md「Standards 2」;§10 本身的数字)
