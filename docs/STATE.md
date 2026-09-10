@@ -37,6 +37,40 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- 2026-09-10 15:1x (session 29): session cf flagged that `--task-config` could re-calibrate a closed-loop eval.
+  VERIFIED NOT to happen today -- no eval path passes --task-config (run_learn_pilot's eval passes an explicit
+  --reach-config; eval_closed_loop.py has no such flag; run_eval_arm.sh passes neither, so it stays on
+  DEFAULT_REACH). But cf is right that the reach block is NOT inert for a VLA round: sample_stand reads
+  max_drop / backshift / ready_grasp_recovery, so it moves the sampled stand and the case distribution.
+  _apply_task_config now withholds `reach` when VLA_POLICY is set and prints "skipped reach"; an eval that
+  wants the collection calibration must pass --reach-config explicitly and record the protocol change.
+  Test: tests/test_reach_config.py::CalibrationGateTests::test_a_task_config_never_recalibrates_a_vla_round.
+- FIXED 2026-09-10 15:0x (session 29), SECOND regression of the same class, found by self-audit before it bit:
+  `require_runnable` would have refused every CLOSED-LOOP EVAL that did not pass --reach-config (cf's
+  visible200 eval at ~15:45 included). A VLA round returns from `_p_handover` before `_p_approach`/`_p_grasp`,
+  so `execute_grasp` never runs and the calibration is irrelevant; `eval_closed_loop.py` passes --reach-config
+  only when one was asked for. Now `reach_config.require_expert_calibration(VLA_POLICY, ...)` gates it, with
+  both branches tested (tests/test_reach_config.py::CalibrationGateTests). Verified end to end: expert run
+  without a calibration still refused, VLA run proceeds. Eval and gate paths are unblocked; suite green.
+- FIXED 2026-09-10 14:5x (session 29): `ports.require_exporter()` refused every run_learn_pilot / run_ready_pilot
+  collect on a healthy stack. Those launchers set TF_EXPORTER_SCRIPT to run_instance_exporter.py while
+  start_stack.sh's default is gear_sonic's run_data_exporter.py, and the probe matched only the default name
+  (found by session 65 on a live gate run). ports.py now carries an explicit _EXPORTER_ENTRY_POINTS tuple with
+  both, plus tests/test_instance_ports.py. Gate/eval runs are unblocked; suite green.
+- FREE since 2026-09-10 14:10 UTC: **instance 0 and GPU1**, released by session 29. Verified at handback:
+  no python run_sim_locomani / run_data_exporter, no g1_deploy, 5555/5556/5580/5581 with no LISTEN, GPU1 at 2 MiB.
+  Session 65 was waiting on a direct ping for this and TWO cross-session messages expired unapproved, so this
+  line is the notice. GPU0 remains session cf's training; cf takes instance 0 from ~15:45 for the visible200 eval.
+- DONE (session 29, 2026-09-10 14:10 UTC): clean 20-round A/B, policy/release 9/20 vs policy/sonic_v1_1 0/20 on one
+  fixed case bank (exact McNemar p=0.0039). Mechanism is arrival geometry, not grasping: v1_1 arrives 11 cm further
+  sideways (t=-6.38) and parks 12 cm further out (0.498 vs 0.377, plan_r 0.32), and its approach ends "stalled" 10/20
+  against release's 2/20. Do NOT switch the production checkpoint without re-calibrating the approach timings.
+  Ledger bottle.md §17; artifacts outputs/experiments/v11_bottle_ab20_20260910/. Instance 0 handed back at 14:10.
+- DONE (session 29): the four fixes for the config-partially-applied class that cost three stack cycles today --
+  locomani.sim.ports (one port formula, INSTANCE-derived), reach_config.require_runnable, ports.require_exporter,
+  and --task-config now carrying the whole profile; scripts/collect_pilot.sh un-broken (it produced zero episodes
+  from refactor step 2 until now). make check passes except docs/handoff/3dgs_background_plan.md, which fails
+  ruff format in HEAD too and is not mine. Not committed -- the tree carries several sessions' uncommitted work.
 - RUNNING (session 29, user-asked, since 2026-09-10 13:26 UTC): paired 10-round bottle pilot on **instance 0** with
   CUDA_VISIBLE_DEVICES=1 / MUJOCO_EGL_DEVICE_ID=1 (all GPU work on GPU1; GPU0 stays with session cf's training).
   policy/sonic_v1_1 THEN policy/release over the SAME fixed case bank (outputs/experiments/v11_bottle_pilot_20260910/
@@ -49,7 +83,21 @@
   records no episodes)", and the gym resolves its ports from the instance-0 defaults regardless of INSTANCE, so an
   instance-1 run dies with "no privileged state on :5581". The first attempt is kept as
   {sonic_v1_1,release}_portfail_i1/ -- not results.
-- pick-place session: NOTHING RUNNING (2026-09-10 13:12 UTC); instance 0 / GPU1 released after the pick_place pilots.
+- INCIDENT 2026-09-10 13:40:25 UTC (pick-place session, Claude): my bottle gate runner (outputs/experiments/
+  gate_bottle_pickplace_20260910) admitted itself onto instance 0 / GPU1 on GPU-memory + CPU headroom alone, without
+  re-reading the RUNNING lines above, and raced session 29's runner for the port block in the same second (their
+  sonic_v1_1 arm had finished and its teardown freed the ports; their release arm's gym died with "Address already in
+  use :5556"). Lost: one arm of theirs (~10 min, relaunched 13:41). My 10 rounds are all "teleport landed 1.85 m off"
+  (two sims on one port block); gate.txt there is VOID, not a regression. Session 29 is landing an admission check
+  that gates on the ports (not GPU memory); the gate for the pick_place changes still has to be re-run on a quiet
+  instance (window: after 29's run ~13:55, before cf's eval ~15:45).
+- pick-place session: NOTHING RUNNING (14:45 UTC). Gate attempt 2 (outputs/experiments/gate_bottle_pickplace2_20260910)
+  was refused at gym start by session 29's new ports.require_exporter() (matches "run_data_exporter" only; run_learn_pilot's
+  exporter is run_instance_exporter.py) -- reported to 29; every run_learn_pilot collect refuses until it is fixed. Gate
+  still pending; instance 0 / GPU1 free, lock free.
+  (inherited fd, self-releasing) and stop_instance.sh is scoped to its own instance's exporter (comm=python + TF_CAMERA_PORT
+  in the environment); agreed with session 29, who drop their runner-side port loop. Untested on a live stack yet (instance 0
+  busy) -- the first start after this is the test.
 - UPDATE 2026-09-10 12:03 UTC (Codex): SONIC phase3 retry CPU gate timed out after10min;
   retry_reset/run.exit=1, runner.log="CPU gate timeout; no stack started"; PID2600051 exited.
   No retry action test occurred. Chrome SwiftShader PID2598614 from Claude3265590/Playwright
@@ -361,6 +409,13 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- **台账的闭环数字来自两种评测标定,比较前先分清是哪一种**(2026-09-10 查证,预先存在,与今天任何改动无关)。
+  `run_learn_pilot` 的评测阶段传本臂自己的 reach config(HEAD 的 run_learn_pilot.py:364),而
+  `scripts/run_eval_arm.sh` 不传任何 reach config,落到 `DEFAULT_REACH`。两者的站位采样字段不同:
+  post_min 0.30 vs 0.22、azimuth 42.0 vs 36.5,经 `ready_grasp_policy.sample_stand` 影响出生与站位分布。
+  实测:全部 `configs/collection/ready_grasp_*.json` 与 `configs/tasks/bottle_visible.json` 在这些字段上一致,
+  所以 ready-grasp 线内部彼此可比(07d、07d-200 的 57/100、即将出的 visible200);
+  **flow200 的 50/100 走的是 run_eval_arm.sh,不在同一评测分布上**,不能直接对比。
 - Did the GPU0 overlap cost visible200 anything? 65's crate chain shared GPU0 during batches 07-14 (43/80 vs 157/255
   elsewhere). Session integrity and both audits are clean, so nothing is provably damaged; if the trained model shows a
   stratified oddity, those 8 sessions (07-45-01 .. 08-24-52) are the first suspects. Unknowable after the fact.
