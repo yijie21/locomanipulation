@@ -6,7 +6,7 @@
 
 Baseline on 2026-09-09 (refactor step 1): 12 files and 70 functions over the caps; the
 skeleton extraction (step 4) is what brings them under. Excluded: third_party, src/gr00t,
-scalebfm (frozen), outputs, tests.
+outputs, tests.
 """
 
 import ast
@@ -14,7 +14,7 @@ import glob
 import sys
 
 FILE_MAX, FUNC_MAX = 600, 80
-EXCLUDE = ("third_party/", "src/gr00t/", "src/teleop_free/scalebfm/", "outputs/", ".claude/", "legacy/")
+EXCLUDE = ("third_party/", "src/gr00t/", "outputs/", ".claude/", "legacy/")
 
 
 def files():

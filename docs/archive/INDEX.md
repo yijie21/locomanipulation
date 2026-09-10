@@ -55,3 +55,16 @@
 - [Issue tracker: GitHub](../agents/issue-tracker.md) — GitHub Issues 的 CLI 操作、标签体系和 PR 作为 triage surface 的约定
 - [Session workflow (token discipline)](../agents/session-workflow.md) — 单任务会话的五步工作流（读 STATE.md、分工、检查点、交接、清空）与成本管理原则
 - [Triage Labels](../agents/triage-labels.md) — 五角色标签映射表（needs-triage、needs-info、ready-for-agent、ready-for-human、wontfix）
+
+## ScaleBFM 线(2026-09-08 → 09-10,Codex 线程;数字全部在 `docs/ledger/scalebfm.md`)
+
+- [ScaleBFM spike 交接](scalebfm_spike_handoff_20260908.md) — 分支会话写给主线:接口事实、v3 expert、资产清单、不要踩的坑 (dated 2026-09-08)
+- [视觉 expert 设计](scalebfm_visual_expert_design.md) — privileged 信息边界、连续动作逻辑、可达性与人体风格、验收四条的设计 rationale
+- [Goal 预注册协议](scalebfm_goal_plan.md) — A/B/C 固定预算比较的门槛表、池 seed 分配、恢复扰动定义、选择/确认统计规则 (dated 2026-09-08)
+- [Goal 运行史 a00–a15](scalebfm_goal_history_20260908.md) — 开发池逐版本理由与 run ledger (dated 2026-09-08)
+- [验收证据矩阵](scalebfm_acceptance_evidence.md) — 逐要求→证据→判定与最终核验顺序 (dated 2026-09-09)
+- [视觉采集操作手册](scalebfm_visual_collection.md) — 观测/动作协议表、检查点与中断恢复(命令引用已丢失的目录)
+- [yplus_center_v1 几何](scalebfm_yplus_collection_20260909.md) — 新采集分布的定义与隔离旧分布的规则 (dated 2026-09-09)
+- [policy 审计](scalebfm_policy_audit_20260909.md) — 可见性门修复、学生接口检查、仍存在的先验 (dated 2026-09-09)
+- ["检查采集视频"契约](scalebfm_video_check.md) — 固定功能的 8 条要求与复用/锁/恢复规则 (dated 2026-09-09)
+- [Codex 线程终版交接](scalebfm_handoff_20260910.md) — 决策理由表、恢复顺序、事故批注链 (dated 2026-09-10)

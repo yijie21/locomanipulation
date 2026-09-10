@@ -546,3 +546,13 @@ round 2 补的是恢复轨迹,那是针对 walk→reach 停滞的处方,而那�
 单手采集每局 64 s 里 33 s 是每局重启 deploy,200 条实测 ≈ 6 h 不是 3.5 h。拆解与 5 条杠杆见
 `docs/ledger/bottle.md` §10;第一步是 30 局 `restart_deploy=false` 的 gate 对照(GPU0 空闲时,约 30 min),
 成立则 200 条 ≈ 3 h。数据恢复决定之后、下一次 200 条采集之前做。
+
+## ScaleBFM 线重组后的后续(2026-09-10)
+
+代码已并入 `src/locomani/{backends/scalebfm,tasks/bottle_visual}`(台账 `docs/ledger/scalebfm.md` §14)。剩下的债,按顺序:
+
+1. **尺寸上限**:`backends/scalebfm/network.py` 757 行(vendored,可拆 wrapper / 网络两文件)与 12 个 >80 行函数(`round.run_case` 226、`pipeline/collect.main` 244、`pipeline/eval.rollout` 230、`pipeline/follow_video.render_case` 227 …);`lint_sizes --strict` 2026-09-16 起,纯抽取拆分。
+2. **驱动 CLI 走 config**:只有 `round.py` 完全是 `--config/--backend/--set`;`pipeline/{collect,eval,video_check}.py` 仍带自己的 flag。
+3. **并入通用 pipeline**:这条线的 collect/export/train/eval 是自己的驱动,`locomani/pipeline` 还没有通过 Backend seam 调用它;做之前先决定 ScaleBFM 是否继续(见台账 §0:VLA 最高 25/100,SONIC 线 57/100)。
+4. **`src/teleop_free/lockstep_vendor/`**:SONIC lockstep 的 vendored 代码,`teleop_free` 名字消失前要移到 `backends/sonic/`。
+5. 若重启这条线:先按台账 §13 重建 `outputs/scene/sim`、runtime_assets 清单与数据;实验编排脚本放 `outputs/experiments/<name>/launch.sh` 但脚本源码要进 git。

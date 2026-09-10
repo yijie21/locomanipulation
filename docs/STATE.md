@@ -1,4 +1,4 @@
-# STATE (updated 2026-09-09 17:30 UTC by 9d -- READ THE INCIDENT FIRST)
+# STATE (updated 2026-09-10 by the branch session: ScaleBFM reorg; incident block below still applies)
 
 ## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
 - Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
@@ -30,75 +30,15 @@
   without tail trim, or recollect). No GPU jobs running.
 
 ## Now
-- ScaleBFM post-deletion audit2026-09-10: outputs is empty; ABCD process absent, NOT running.
-  Core src/tests/config/docs survive;3ablation unit tests pass. ABCD run.py/config/progress/results,
-  yplus200 checkpoint/data/evals, scene builds and runtime manifests are missing. Cannot resume.
-  Last conversational2/120 is historical, not confirmed final deletion-time progress. No recovery GPU jobs launched.
-  Details:docs/scalebfm_outputs_loss_20260910.md. ACTIVE statements below are pre-incident history.
-- Pelvis ABCD protocol v2 ACTIVE: old EGL baseline not repeatable (identical own state,1-level RGB differences).
- OSMesa+deterministic math produced bit-identical full24s original/diagnosticA forseed31001.
- Fresh30 A +90 B/C/D =120 formal cases, same30 seeds/interventions; VLA+ScaleBFM inferenceGPU0,
- renderingCPU. Do not compare with oldEGL25/100 as paired baseline. PROTOCOL_REVISION.md documents
- change before B/C/D outcomes; run_v2.log and progress.json track execution. Old failure_v1.json is archived evidence.
- Root:outputs/experiments/scalebfm_pelvis_abcd_20260909/. No retraining or cancelledGoal restart.
-- NEW user-authorized pelvis ABCD diagnostic on GPU0:30paired existing scenes (10/stratum),
- A original;B smooth76cm height hold;C restore after<72cm for0.1s;D right-wrist1s hold then0.5s release
- at same trigger.3baseline reproducibility probes then90 B/C/D cases. No training/oldGoal restart.
- Root:outputs/experiments/scalebfm_pelvis_abcd_20260909/. Read PLAN.md,plan.json,progress.json first.
- GPU0 checked idle16:07UTC;GPU1 other workload untouched. All interventions and outputs auditable.
-- Failure analysis2026-09-09:docs/scalebfm_failure_analysis_20260909.md. Third-person export has
- missing mj_camlight: light runtime direction remainszero; same-frame luma42.28->65.95 after update.
- This is an export bug, not training RGB lighting change; current ZIP not rerendered yet.
- 38VLA cases descend below0.60m;29fall labels are solelyrootz<0.45 with0physics warnings.
- Relative pelvis-z action is clamped bycheckpoint q99 to+1.836cm, restricting recovery from low poses.
- 7cases have>=3gripper switches;55never command near-full closure. No strategy or formal experiment changes.
- Evidence:outputs/diagnostics/scalebfm_failure_analysis_20260909/. Read report before proposing fixes.
-- User-requested300-video compact export COMPLETE:200 collection +100 evaluation (including75failures),
-  right-front full-body follow, saved-qpos rendering only,480x400/12.5fps. ZIP53,748,107bytes;
-  videos86-375KB, median163KB. All300 frame counts and ZIPintegrity checked;14decoded sample frames reviewed.
-  Download:outputs/videos/scalebfm_yplus200_eval100_small/scalebfm_200_collection_100_evaluation.zip.
-  Export script/manifest/verification saved alongside; do not repeat physics or inference for these videos.
-- yplus200 experiment COMPLETE2026-09-09 12:39:49UTC:200 accepted new demos, seed17/3000steps,
- 100 ordinary y+ closed-loop cases,25/100 success (high10/34,low-near10/33,deep5/33).
- Failures29timeout/17pre-close bottle knock/29physics warning or fall. All stages exited0 after
- documented startup recovery. Evidence:outputs/experiments/scalebfm_yplus200_s17_20260909/RESULTS.md.
- No further training/evaluation queued by this experiment; older running progress below is historical.
-- yplus200 update: collection COMPLETE200/200 attempts accepted (67high/67low-near/66deep),
-  export/statistics complete. Training startup offline-tokenizer failure repaired by removing driver-only
-  HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE; no training configuration or expert change,0 updates lost.
-  GPU0 training now verified at12/3000 steps; driver2458090,trainer2458112.100-case evaluation pending.
-  Logs/recovery:outputs/experiments/scalebfm_yplus200_s17_20260909/{pipeline_v2_state.json,RECOVERY.md}.
-- NEW user-authorized experiment2026-09-09: current expert200 accepted episodes -> VLA seed17/3000steps
-  ->100 ordinary closed-loop cases on GPU0, yplus_center_v1. Existing information gaps recorded,
-  intentionally not changed. GPU0 checked idle at08:30UTC; GPU1 belongs to another task.
-  Root:outputs/experiments/scalebfm_yplus200_s17_20260909/. Read PLAN.md and pipeline_v2_state.json
-  before doing anything; per-stage PID/logs survive context loss. This is separate from cancelled ABC Goal.
-- Current ScaleBFM policy audit (2026-09-09, bounded user request): initial HEAD-camera visibility
-  enforced at reset,1.60s,and actual first recorded frame; invalid episodes retained/rejected.
-  Fixed eligible-camera selection, entry wrist/root heading mismatch, fixed-bottle-height lift test.
-  49 visual tests passed; CPU three normal scenes3/3 task+audit, two injected hidden starts2/2 rejected.
-  Remaining major limitation: proxy still reads exact object/table geometry; bottle visibility does
-  not establish table-edge visibility. Full audit:docs/scalebfm_policy_audit_20260909.md.
-  Evidence:outputs/diagnostics/scalebfm_policy_audit_20260909/. No Goal/training restart.
-- User-requested bounded video inspection: trigger "检查采集视频" -> bash scripts/scalebfm_video_check.sh.
-  CPU only,10 current-expert coverage cases, right-front full-body follow videos; no Goal/training restart.
-  Contract:docs/scalebfm_video_check.md. Current export:outputs/videos/scalebfm_check10_yplus_center_v1_26cc7ae54f7a/.
-  COMPLETE:10/10 videos,10/10 expert task+audit passes;40 decoded representative frames visually reviewed.
-  No repeated physical cases, no Goal restart. This is a coverage demo, not random success-rate evaluation.
-- ScaleBFM follow-up (2026-09-09, separately authorized): new collection defaults to yplus_center_v1,
-  bottle x centred on table +/-8cm, near inboard12-18cm, deep18-24cm; robot approaches only y+.
-  CPU three-case smoke3/3 and42visual tests passed. No batch collection/training or Goal restart.
-  Details:docs/scalebfm_yplus_collection_20260909.md. Old frozen three-edge results remain historical.
-- ScaleBFM visual-expert Goal (this Codex thread): USER CANCELLED at2026-09-09 07:07UTC.
-  Driver1470213, A29trainer2378682 and watcher2145035 stopped; all Goal GPU processes absent.
-  Goal releases its GPU0 reservation; an external SONIC deployment still uses GPU0.
-  Other workloads/stacks untouched. Do not restart Goal without new explicit human authorization.
-  A17/B17/C17 complete3000steps and60selectioncases each, successes13/17/11.
-  A29cancelled after40logged updates, no saved500step checkpoint. No winner lock or confirmation.
-  All artifacts preserved. Cancellation/recovery:docs/scalebfm_goal_state.md and
-  outputs/experiments/scalebfm_visual_goal_20260908/user_cancel_checkpoint_20260909.json.
-  Platform Goal now blocked: three automatic continuations lacked renewed human authorization.
-  This is not objective completion; no experiments resumed. Platform cancellation remains a UI action.
+- ScaleBFM line REORGANISED 2026-09-10 (branch refactor/scalebfm, worktree .claude/worktrees/refactor-scalebfm; the
+  Codex thread has finished, user-confirmed): its working tree was committed as-is (a3e2fee), then moved into
+  src/locomani/backends/scalebfm + src/locomani/tasks/bottle_visual (f8fc71b), knobs into ScaleBfmBackendConfig /
+  BottleVisualTaskConfig with no os.environ (51a4d25), docs into docs/ledger/scalebfm.md (§1-14, all numbers) +
+  docs/scalebfm_collection.md (tutorial) + docs/archive/scalebfm_*. Verified: round.py replays 3 seeds byte-identical
+  to a3e2fee after each step; make lint + make test green; bottle_visual registered as the third Task (contract test
+  passes). Nothing of this line runs; its checkpoints/data/scene builds are gone (ledger §13). Follow-ups in
+  docs/ROADMAP.md "ScaleBFM 线重组后的后续". Everything Codex reported before the incident (Goal A/B/C 13/17/11 of 60,
+  yplus200 25/100, pelvis ABCD 2/120, policy audit, video check) is in the ledger, not here any more.
 - 9d: NOTHING RUNNING (2026-09-10 03:30 UTC). GPU0 idle; GPU1 holds a foreign AnyImageNav job (~15 GB, 97 % util,
   load ~15) -- do NOT put a sim on GPU1 while it runs (that alone produced 4 close-phase topples in 10 rounds).
   Instance 0 / 1 stacks down, port 5590 free. outputs/ holds only: scene/ (reinstalled + gate_922 + crate_bimanual),

@@ -1,0 +1,8 @@
+{
+ "schema_version": 1,
+ "checkpoint": "/workspace/models/scalebfm/humanoid_transformer_m_22200.pt",
+ "scene_dir": "",
+ "object_name": "water_bottle",
+ "grip_kp": 1.0,
+ "grip_kd": 0.025
+}

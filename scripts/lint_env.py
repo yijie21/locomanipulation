@@ -17,6 +17,7 @@ from collections import defaultdict
 WHITELIST = {
     "CUDA_VISIBLE_DEVICES",
     "MUJOCO_EGL_DEVICE_ID",
+    "MUJOCO_GL",  # render backend (egl/osmesa), the same device category; bottle_visual/round.py records it as provenance
     "INSTANCE",
     "HF_HOME",
     "PYTHONUNBUFFERED",
@@ -73,7 +74,7 @@ WHITELIST = {
     "TF_DATASET_FPS",
     "GYM_CREEP_OBS",
 }
-EXCLUDE = ("third_party/", "src/gr00t/", "src/teleop_free/scalebfm/", "outputs/", ".claude/", "legacy/")
+EXCLUDE = ("third_party/", "src/gr00t/", "outputs/", ".claude/", "legacy/")
 PAT = re.compile(r"os\.environ(?:\.get)?\s*[\(\[]\s*['\"]([A-Za-z_0-9]+)['\"]")
 
 
