@@ -193,6 +193,9 @@
 4. ScaleBFM / branch 65 items unchanged (below).
 
 ## Blocked / waiting on
+- PRE-EXISTING unit failure on main (not from the ScaleBFM merge, fails on 6857fbb too, 2026-09-10):
+  tests/test_pose_feedback.py::PoseFeedbackTests::test_offhand_guard_reuses_current_observation raises
+  'stale observation for offhand guard' from backends/sonic/streamed_arm.py:235; make check is red until fixed.
 - User decision on data recovery (Next 1). Nothing runs until then.
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
