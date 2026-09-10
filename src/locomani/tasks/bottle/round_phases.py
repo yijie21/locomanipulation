@@ -169,7 +169,12 @@ def _phase_spawn_and_settle(ctx: RoundContext):
     # mode makes 'standing still' the intent the reset inherits.
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
     p.cmd.upper_body = None
-    if getattr(p, "_gym_started", False):
+    # A deploy that was NOT restarted for this round (restart_deploy=false)
+    # still carries the previous round's heading anchor; see the reanchor
+    # block after start_control below. Captured here because start_control
+    # sets the flag for the next round.
+    stale_anchor = bool(getattr(p, "_gym_started", False))
+    if stale_anchor:
         # Quiesce only a RUNNING deploy (holding frames before the first
         # start_control broke every fresh-deploy round). Hold the heading the
         # robot currently HAS -- the facing-less default (world +x) was the
@@ -244,6 +249,18 @@ def _phase_spawn_and_settle(ctx: RoundContext):
     # left the robot chasing a 40 deg phantom through the settle -- 0.55 m
     # of stand drift, over the 0.35 m budget, before the deliberate turn
     # even started.
+    if stale_anchor:
+        # No per-round restart: the deploy's anchor is the previous round's
+        # yaw, and "offset := landing yaw" below then leaves a residual the
+        # IDLE facing turns into real motion (2026-09-10 restart A/B, arm B:
+        # 0/10, "walked 0.50 m off the spawn while standing up", "did not
+        # stabilise after reset" from round 3 on). The crate line runs every
+        # episode without a restart by re-anchoring with a streamed toggle
+        # after the stand-up (wall_phases); same here, only on this path.
+        from locomani.backends.sonic.stream_reach import reanchor
+
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE)
+        reanchor(p)
     p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
     # VLA rounds settle SHORT: in the drift-prone spawn configs the gait
     # limit cycle walks ~0.15 m/s through any planner hold (IDLE, squat

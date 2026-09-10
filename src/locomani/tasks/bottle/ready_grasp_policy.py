@@ -119,18 +119,27 @@ def prepare_ready(p, timeout=3.0):
     ramp = UpperRamp(p.cmd, seed)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     end = time.monotonic() + timeout
+    residual, joint_err, pushes = float("nan"), float("nan"), 0
     while time.monotonic() < end:
         state = p.obs()
         if state["fallen"]:
             return False
         residual = ramp.push(target)
+        pushes += 1
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=p._facing(state))
         measured = upper_body_from_mj(state["joints"])
-        if residual < 0.01 and np.max(np.abs(measured[3:] - target[3:])) < 0.30:
+        joint_err = float(np.max(np.abs(measured[3:] - target[3:])))
+        if residual < 0.01 and joint_err < 0.30:
             ramp.settle()
             return True
         time.sleep(0.02)
     ramp.settle()
+    # Say WHICH gate failed: the reference ramp not finished (residual) or the
+    # deploy not tracking it (joint_err) -- the two need different fixes.
+    print(
+        f"[gym] ready posture NOT delivered in {timeout:.1f} s: ramp residual {residual:.3f}, "
+        f"max joint err {joint_err:.2f} rad, {pushes} pushes"
+    )
     return False
 
 
