@@ -30,6 +30,10 @@
   without tail trim, or recollect). No GPU jobs running.
 
 ## Now
+- Codex review 2026-09-10: audited refactor through 1b32a48 (base 78536ae; ScaleBFM base a3e2fee). Findings in
+  docs/ledger/refactor.md: missing config validation, ScaleBFM backend omitted from source hashes, ignored scene_dir,
+  lost SONIC input-asset hashes, and stale/overstated documentation. No implementation fixes or GPU jobs started.
+  make check hit the known wall-clock-sensitive offhand test; CPU thread-limited default suite passed 224, skipped 9.
 - ScaleBFM line REORGANISED 2026-09-10 (branch refactor/scalebfm, worktree .claude/worktrees/refactor-scalebfm; the
   Codex thread has finished, user-confirmed): its working tree was committed as-is (a3e2fee), then moved into
   src/locomani/backends/scalebfm + src/locomani/tasks/bottle_visual (f8fc71b), knobs into ScaleBfmBackendConfig /
@@ -47,10 +51,12 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
-- Branch (65) 2026-09-10 05:30 UTC: crate random10 pilot DONE on GPU0 / instance 2 (8/10, static median 0.15 red), 10 sbs
-  MuJoCo|Isaac videos rendered (outputs/renders_isaac/crate_random10_20260910/); instance 2 stopped, GPU0 free.
-  Collection-speed plan recorded (docs/ledger/bottle.md §10, ROADMAP tail): 33 of 64 s per bottle round is the deploy
-  restart; next experiment = 30-round gate with --set restart_deploy=false. Ledger: docs/ledger/crate.md 2026-09-10.
+- Branch (65) 2026-09-10 04:00 UTC: restart A/B RUNNING on instance 0 / GPU0 (outputs/experiments/restart_ab_20260910/,
+  3 batches x (A restart_deploy=true 10 rounds --write-cases, B =false --cases), ~1 h; runner.log has progress; do NOT start
+  anything on GPU0 or instance 0 until AB_DONE). Crate: ready-stand 10 (8/10) and walk-in 10 (4/10 under host load 131-176)
+  rendered as sbs videos (outputs/renders_isaac/crate_random10_20260910/, crate_walk10_20260910/); ledger crate.md 09-10 x2.
+  WALL_WALK/WALL_FEATURE env vars are dead since step 3 -- tutorial + runner fixed (b07caef). Collection-speed plan:
+  docs/ledger/bottle.md §10 + ROADMAP tail. Host: /workspace/code/video_grasp teacher-benchmark drives load avg 130-176.
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
