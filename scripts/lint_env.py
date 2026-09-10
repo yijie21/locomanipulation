@@ -73,7 +73,7 @@ WHITELIST = {
     "TF_DATASET_FPS",
     "GYM_CREEP_OBS",
 }
-EXCLUDE = ("third_party/", "src/gr00t/", "src/teleop_free/scalebfm/", "outputs/", ".claude/", "legacy/")
+EXCLUDE = ("third_party/", "src/gr00t/", "outputs/", ".claude/", "legacy/")
 PAT = re.compile(r"os\.environ(?:\.get)?\s*[\(\[]\s*['\"]([A-Za-z_0-9]+)['\"]")
 
 
