@@ -409,13 +409,17 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
-- **台账的闭环数字来自两种评测标定,比较前先分清是哪一种**(2026-09-10 查证,预先存在,与今天任何改动无关)。
-  `run_learn_pilot` 的评测阶段传本臂自己的 reach config(HEAD 的 run_learn_pilot.py:364),而
-  `scripts/run_eval_arm.sh` 不传任何 reach config,落到 `DEFAULT_REACH`。两者的站位采样字段不同:
-  post_min 0.30 vs 0.22、azimuth 42.0 vs 36.5,经 `ready_grasp_policy.sample_stand` 影响出生与站位分布。
-  实测:全部 `configs/collection/ready_grasp_*.json` 与 `configs/tasks/bottle_visible.json` 在这些字段上一致,
-  所以 ready-grasp 线内部彼此可比(07d、07d-200 的 57/100、即将出的 visible200);
-  **flow200 的 50/100 走的是 run_eval_arm.sh,不在同一评测分布上**,不能直接对比。
+- **对比两个闭环数字前,先看各自的 argv,不是看脚本名**(2026-09-10 查证,预先存在,与今天的改动无关)。
+  `run_learn_pilot` 的评测阶段传本臂自己的 reach config(HEAD run_learn_pilot.py:364),
+  `scripts/run_eval_arm.sh` 默认不传、落到 `DEFAULT_REACH`,而两者经 `ready_grasp_policy.sample_stand`
+  是不同的站位与出生分布:post_min 0.30 vs 0.22、azimuth 42.0 vs 36.5(backshift 0.08、max_drop 0.13 两边相同,
+  所以差异只在这两个字段)。全部 7 个 `configs/collection/ready_grasp_*.json` 与 `bottle_visible.json`、
+  `pick_place.json` 在这些字段上一致,`DEFAULT_REACH` 是唯一异类。
+  **但脚本名不是 provenance**:`run_eval_arm.sh:31` 有 `EXTRA=${7:-}`,71 行原样拼进 eval 的 argv,
+  所以某次调用完全可能自己带了 `--reach-config`。要判断一个历史数字用的是哪套,只能看它记录下来的 argv。
+  推论:ready-grasp 线经 run_learn_pilot 的各臂内部可比(07d、07d-200 的 57/100、即将出的 visible200);
+  **flow200 的 50/100 的 argv 已随 2026-09-09 的 outputs/ 事故一起丢失,无法再判定**,
+  不要拿它做对照,只能当历史文字看。
 - Did the GPU0 overlap cost visible200 anything? 65's crate chain shared GPU0 during batches 07-14 (43/80 vs 157/255
   elsewhere). Session integrity and both audits are clean, so nothing is provably damaged; if the trained model shows a
   stratified oddity, those 8 sessions (07-45-01 .. 08-24-52) are the first suspects. Unknowable after the fact.
