@@ -94,9 +94,9 @@ VLA 实际吃两路:`ego_view` 和 `right_wrist`(`configs/gr00t_sonic_2cam.py`)�
 一张顶点色网格,来自 `mesh_model.ply`。摆放常数就三个:
 
 ```python
-BG_ROTATE   = (90.0, 0.0, 90.0)   # 资产是 y-up,场景是 z-up
-BG_SCALE    = 1.15
-BG_SHIFT_XY = (-0.05, 0.25)       # 把房间的 footprint 对准 layout,而不是原点
+BG_ROTATE = (90.0, 0.0, 90.0)  # 资产是 y-up,场景是 z-up
+BG_SCALE = 1.15
+BG_SHIFT_XY = (-0.05, 0.25)  # 把房间的 footprint 对准 layout,而不是原点
 ```
 
 外加一个把重建地板的"碗形"压平的 warp(`flatten_floor`),让视觉地板和 MuJoCo 的平面地板一致。
