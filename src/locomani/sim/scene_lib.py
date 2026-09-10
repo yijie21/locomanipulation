@@ -759,7 +759,7 @@ GHOST_MARKER_R = 0.022
 GHOST_PARK = (0.0, 0.0, -5.0)  # out of sight until a plan places it
 
 
-def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
+def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA, name: str = GHOST_BODY):
     """A see-through copy of the hand, as a mocap body.
 
     The videos show where the hand ended up but not where it was *aimed*, so a
@@ -785,7 +785,7 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
     w_pos, w_rot = pd.xpos[wrist], pd.xmat[wrist].reshape(3, 3)
 
     body = spec.worldbody.add_body()
-    body.name = GHOST_BODY
+    body.name = name
     body.mocap = True
     body.pos = list(GHOST_PARK)
 
@@ -830,7 +830,7 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
         mujoco.mju_mat2Quat(quat, rel_rot.flatten())
 
         ng = body.add_geom()
-        ng.name = f"{GHOST_BODY}_{n}"
+        ng.name = f"{name}_{n}"
         ng.type = mujoco.mjtGeom.mjGEOM_MESH
         ng.meshname = mesh
         ng.pos = rel_pos.tolist()
@@ -852,7 +852,7 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA):
     from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST as _g  # noqa
 
     bead = body.add_geom()
-    bead.name = f"{GHOST_BODY}_bead"
+    bead.name = f"{name}_bead"
     bead.type = mujoco.mjtGeom.mjGEOM_SPHERE
     bead.size = [GHOST_MARKER_R, 0, 0]
     bead.pos = list(_g)

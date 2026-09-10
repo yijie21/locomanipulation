@@ -26,11 +26,13 @@ import numpy as np
 class MujocoReplay:
     """A MuJoCo model used as a state decoder, never stepped."""
 
-    def __init__(self, scene_xml: str, object_keys=()):
+    def __init__(self, scene_xml: str, object_keys=(), model=None):
         import mujoco
 
         self.mj = mujoco
-        self.model = mujoco.MjModel.from_xml_path(scene_xml)
+        # `model`: a model compiled from `scene_xml` plus render-only extras
+        # (the ghost hands); nq/nv are unchanged by mocap bodies.
+        self.model = model if model is not None else mujoco.MjModel.from_xml_path(scene_xml)
         self.data = mujoco.MjData(self.model)
         self.scene_xml = scene_xml
         self._obj = {}

@@ -408,6 +408,14 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
 `tracking_mujoco.mp4`、`cam_traj.npz`、`ego_isaac.mp4`、`render.log`。第 0 集出来先看三样:只有一个机器人、有头、
 脚在地面上(三个都曾出过问题,见 §12)。
 
+**双臂导出的两条默认规则(2026-09-10)**:
+- `MUJOCO_RENDER_ARGS="--insets"`:MuJoCo 侧叠三路画中画(ego / L wrist / R wrist),和采集时的第三人称录像同一布局。
+- **ghost hands**:专家每次解 IK 时把双手的目标手腕位姿(抓取点减去 `OFFSET`,`ghost_trace.py`)按状态 `seq` 记到
+  `trace/<label>_NN_ghost.npz`(`run_wall_pilot.sh` 只要设了 `SIM_STATE_TRACE_DIR` 就默认写,`GHOST_TRACE=0` 关);
+  `render_wall_pilot.sh` 发现这个文件就把它传给两个渲染器,MuJoCo 和 Isaac 都画一对洋红半透明的张开夹爪
+  (`sim/isaac/ghost.py`,几何和 `scene_lib.add_ghost_hand` 同一套数学,Isaac 侧引用机器人 USD 的 `/meshes/*`)。
+  走路阶段没有 IK 目标,ghost 停在地下;画中画里永远没有 ghost。看视频时:ghost 是"想去哪",实手是"到了哪"。
+
 ---
 
 ## 11. 到训练数据集还差的一步

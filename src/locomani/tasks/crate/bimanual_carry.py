@@ -276,6 +276,9 @@ class BimanualArms:
         q = self.arm.q.copy()
         if from_measured:
             q[15:29] = np.asarray(s["joints"], dtype=float)[15:29]
+        ghost = getattr(self, "ghost", None)
+        if ghost is not None:  # ghost_trace.GhostTargetTrace: the aimed wrist poses, per state seq
+            ghost.row(s.get("seq"), targets_w, rots_w)
         Rp = Primitives._rot(s["pelvis"]["quat"])
         for side in ("left", "right"):
             tgt = self.p.world_to_root_full(targets_w[side], s)

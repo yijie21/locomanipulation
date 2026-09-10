@@ -73,7 +73,11 @@ echo "[pilot] instance $INSTANCE  scene $LOCOMANI_SIM_DIR  video -> $SIM_VIDEO_D
 bash "$LOCOMANI_STACK/start_stack.sh" || { echo "[pilot] stack failed to start; see $LOGS"; exit 1; }
 
 cd "$LOCOMANI_ROOT"
+# The aimed hand poses go next to the state trace (<label>_NN_ghost.npz) so the
+# side-by-side render can draw the ghost hands; GHOST_TRACE=0 turns it off.
+GHOST_ARGS=()
+[ -n "${SIM_STATE_TRACE_DIR:-}" ] && [ "${GHOST_TRACE:-1}" != "0" ] && GHOST_ARGS=(--ghost-trace "$SIM_STATE_TRACE_DIR")
 "$SONIC_ROOT/.venv_sim/bin/python" src/locomani/tasks/crate/bimanual_wall.py \
-    --rounds "$ROUNDS" --seed "$SEED" --manifest "$MANIFEST" --label "wall_s${SEED}" "$@" \
+    --rounds "$ROUNDS" --seed "$SEED" --manifest "$MANIFEST" --label "wall_s${SEED}" "${GHOST_ARGS[@]}" "$@" \
     2>&1 | tee "$SIM_VIDEO_DIR/pilot_s${SEED}.log" | grep -v Warning
 echo "[pilot] manifest: $MANIFEST"; ls -l "$SIM_VIDEO_DIR"/*.mp4 2>/dev/null | tail -n +1

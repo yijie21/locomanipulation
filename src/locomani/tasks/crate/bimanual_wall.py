@@ -211,6 +211,10 @@ REACH_POSTURE_W = 0.02
 # rather than only clean stands. The crate-disturbed check still rejects.
 WALK_ATTEMPTS = 3
 DUMP_DIR = ""
+# --ghost-trace DIR: ghost_trace.GhostTargetTrace writing <label>_ghost.npz per
+# round (the IK's aimed wrist poses, by state seq) for the rendered videos'
+# ghost hands. wall_phases attaches it to each round's BimanualArms.
+GHOST_TRACE = None
 
 
 def wall_frame(s):
@@ -295,6 +299,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--manifest", default="")
     ap.add_argument("--label", default="wall")
+    ap.add_argument("--ghost-trace", default="", help="dir for <label>_NN_ghost.npz (the aimed hand poses, per round)")
     ap.add_argument("--config", type=Path, help="CrateTaskConfig JSON; defaults if omitted")
     ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
     args = ap.parse_args()
@@ -342,15 +347,24 @@ def main() -> None:
     p.cmd.start_control()
     p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
     rng = np.random.default_rng(args.seed)
+    global GHOST_TRACE
+    if args.ghost_trace:
+        from locomani.tasks.crate.ghost_trace import GhostTargetTrace
+
+        GHOST_TRACE = GhostTargetTrace(args.ghost_trace, arms_offset())
     wins = 0
     dead_rounds = 0  # consecutive "did not stabilise": the deploy is gone
     restarts = 0
     for rnd in range(args.rounds):
         t0 = time.time()
         label = f"{args.label}_{rnd:02d}"
+        if GHOST_TRACE is not None:
+            GHOST_TRACE.start(label)
         try:
             m = run_round(p, reset, meta, rnd, rng, p.log, label)
         finally:
+            if GHOST_TRACE is not None:
+                GHOST_TRACE.stop()
             try:
                 reset.end_video()
             except Exception:

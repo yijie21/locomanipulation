@@ -83,6 +83,11 @@ def main(argv=None) -> None:
     ap.add_argument("--fps", type=int, default=50, help="rate of the recorded states")
     ap.add_argument("--stride", type=int, default=4)
     ap.add_argument(
+        "--ghost-trace",
+        default="",
+        help="<label>_ghost.npz from the bimanual expert: draw the aimed wrist poses as translucent ghost hands",
+    )
+    ap.add_argument(
         "--insets",
         action="store_true",
         help="picture-in-picture of the dataset cameras (ego / left wrist / right wrist), "
@@ -93,7 +98,17 @@ def main(argv=None) -> None:
 
     npz = np.load(args.state_trace)
     qpos, qvel = npz["qpos"], npz["qvel"]
-    replay = MujocoReplay(args.scene_xml)
+    ghost = ghost_ids = None
+    model = None
+    if args.ghost_trace:
+        from locomani.sim.isaac import ghost as G
+        from locomani.tasks.crate.ghost_trace import ghost_poses, load_ghost_trace
+
+        model, ghost_ids = G.inject_mujoco(args.scene_xml)
+        ghost = load_ghost_trace(args.ghost_trace)
+        seqs = npz["seq"] if "seq" in npz else np.arange(len(qpos))
+        print(f"ghost trace: {len(ghost)} rows for {len(qpos)} states")
+    replay = MujocoReplay(args.scene_xml, model=model)
     model = replay.model
     renderer = mujoco.Renderer(model, height=args.height, width=args.width)
     cam = mujoco.MjvCamera()
@@ -103,7 +118,7 @@ def main(argv=None) -> None:
     cam.distance, cam.azimuth, cam.elevation = TRACK["distance"], TRACK["azimuth"], TRACK["elevation"]
     vopt = mujoco.MjvOption()
     mujoco.mjv_defaultOption(vopt)
-    vopt.geomgroup[4] = 0  # no debug/ghost geoms
+    vopt.geomgroup[4] = 1 if ghost is not None else 0  # ghost hands only when asked (the insets never show them)
     insets = _make_insets(model, args.width, args.height) if args.insets else []
 
     T = len(qpos)
@@ -118,6 +133,10 @@ def main(argv=None) -> None:
     written = 0
     for t in range(T):
         replay.set(qpos[t], qvel[t] if len(qvel) == T else None)
+        if ghost is not None:
+            gpos, gquat = ghost_poses(ghost, int(seqs[t]))
+            G.set_mujoco(replay.data, ghost_ids, gpos, gquat)
+            mujoco.mj_forward(model, replay.data)
         renderer.update_scene(replay.data, camera=cam, scene_option=vopt)
         cam_pos[t], cam_quat[t] = gl_camera_pose(renderer.scene)
         if t % args.stride == 0:

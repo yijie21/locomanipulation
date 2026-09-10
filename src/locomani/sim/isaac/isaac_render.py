@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--session", required=True)
     ap.add_argument("--episode", type=int, default=0)
+    ap.add_argument("--ghost-trace", default="", help="<label>_ghost.npz: draw the aimed wrist poses as ghost hands")
     ap.add_argument(
         "--state-trace",
         default="",
@@ -121,7 +122,7 @@ def main(argv=None) -> None:
     log(f"head_camera pos={cam_spec[0]} quat={cam_spec[1]} fovy={cam_spec[2]}")
     joint_map = F.build_joint_map()
     if args.state_trace:
-        _seq, qpos, qvel = F.load_state_trace(args.state_trace, args.session, args.episode)
+        seq, qpos, qvel = F.load_state_trace(args.state_trace, args.session, args.episode)
         log(f"replay: {len(qpos)} recorded states from {args.state_trace}")
         joints = pel = objs = None
     else:
@@ -131,7 +132,7 @@ def main(argv=None) -> None:
             "the recorded video and is only for data older than the trace."
         )
         joints, pel, objs = F.load_frames(args.session, args.episode, args.sidecar)
-        qpos = qvel = None
+        qpos = qvel = seq = None
         log(f"frames={len(joints)} objects={list(objs)}")
 
     cfg = S.StageCfg(
@@ -161,7 +162,7 @@ def main(argv=None) -> None:
     # whoever ran it. Caught 2026-09-05 when a missing scene USD exited 0.
     # Record the failure, close, then exit non-zero explicitly.
     try:
-        _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log, qpos=qpos, qvel=qvel)
+        _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log, qpos=qpos, qvel=qvel, seq=seq)
     except BaseException:
         import traceback
 
@@ -174,10 +175,19 @@ def main(argv=None) -> None:
     app.close()
 
 
-def _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log, qpos=None, qvel=None) -> None:
+def _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log, qpos=None, qvel=None, seq=None) -> None:
     import cv2
 
     stg = S.assemble_stage(cfg, log)
+    ghost = ghost_paths = None
+    if args.ghost_trace and qpos is not None:
+        from locomani.sim.isaac import ghost as G
+        from locomani.sim.isaac.replay import MujocoReplay as _MR
+        from locomani.tasks.crate.ghost_trace import ghost_poses, load_ghost_trace
+
+        ghost = load_ghost_trace(args.ghost_trace)
+        ghost_paths = G.add_isaac(stg, _MR(args.scene_xml).model, log)
+        log(f"ghost trace: {len(ghost)} rows")
     world = S.make_world()
     robot, jidx, jsrc = S.bind_robot(joint_map, log)
     sensor, cam_path = S.mount_camera(stg, cfg, cam_spec, log)
@@ -258,6 +268,9 @@ def _render(args, cfg, joint_map, joints, pel, objs, cam_spec, log, qpos=None, q
                 sensor=sensor,
                 cam_pose=(cpos, cquat),
             )
+            if ghost is not None:
+                gpos, gquat = ghost_poses(ghost, int(seq[t]))
+                G.set_isaac(ghost_paths, gpos, gquat)
             return
         cp = None if cam_traj is None else (cam_traj[0][t], cam_traj[1][t])
         S.sync_frame(
