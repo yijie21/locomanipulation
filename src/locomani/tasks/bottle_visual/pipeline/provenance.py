@@ -9,18 +9,39 @@ on when they each kept a hand-written list of sibling files.
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 from locomani.paths import REPO
 
-_BACKEND = Path(__file__).resolve().parents[4] / "backends" / "scalebfm"
-_TASK = Path(__file__).resolve().parents[1]
+_PKG = Path(__file__).resolve().parents[3]  # src/locomani
+_BACKEND = _PKG / "backends" / "scalebfm"
+_TASK = _PKG / "tasks" / "bottle_visual"
 
 
 def line_sources() -> list[Path]:
     """Every .py file of the ScaleBFM backend and the bottle_visual task (incl. pipeline/)."""
     files = [*_BACKEND.glob("*.py"), *_TASK.glob("*.py"), *(_TASK / "pipeline").glob("*.py")]
-    return sorted(p for p in files if p.name != "__init__.py")
+    files = sorted(p for p in files if p.name != "__init__.py")
+    names = {p.name for p in files}
+    # 2026-09-10 review: a wrong parents[] index silently dropped the whole backend from the
+    # fingerprint; fail loudly if either package is missing rather than hash a partial line.
+    if not {"runtime.py", "network.py", "round.py", "planner.py"} <= names:
+        raise RuntimeError(f"line_sources() is incomplete: {sorted(names)}")
+    return files
+
+
+def source_relpath(p: Path) -> Path:
+    """`backends/scalebfm/config.py`, not `config.py`: snapshot copies keep the package layout
+    (two config.py files would otherwise overwrite each other in <out>/source/)."""
+    return Path(p).resolve().relative_to(_PKG)
+
+
+def snapshot_sources(out_dir, files=None) -> None:
+    for p in files or line_sources():
+        dest = Path(out_dir) / "source" / source_relpath(p)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, dest)
 
 
 def source_sha256(files=None) -> dict[str, str]:

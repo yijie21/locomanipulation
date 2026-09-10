@@ -1,12 +1,19 @@
 """The Task plugin seam (decision 3, 12): five pieces bottle and crate both fill in.
 
 `Task` is a thin descriptor -- it holds references to functions and constants
-that already exist elsewhere; nothing here re-implements them. The pipeline
-skeleton (stack lifecycle, gym loop, recording, convert, train, eval) stays
-generic by only ever calling through a `Task`, never importing a task module
-directly.
+that already exist elsewhere; nothing here re-implements them. The intent
+(decision 12) is that the pipeline skeleton (stack lifecycle, gym loop,
+recording, convert, train, eval) calls tasks only through a `Task`. Today
+(2026-09-10) that is only true of `locomani.cli`; run_learn_pilot.py /
+eval_closed_loop.py / bimanual_carry.py still call their task scripts directly,
+and the ScaleBFM line has its own drivers under tasks/bottle_visual/pipeline/.
 
-Contract (docs/reference/standards.md), enforced by tests/test_task_contract.py:
+Contract (docs/reference/standards.md). What tests/test_task_contract.py
+actually enforces: config round-trip, the four callables, the schema file,
+and classify_failure labelling every failure_reasons entry. The determinism /
+no-wall-clock rule below is a design requirement, NOT yet tested -- the pure
+`decide(snapshot, cfg)` seam and the replay gate are deferred (step 4c,
+docs/ROADMAP.md).
   * `config_cls` round-trips through to_dict/from_dict/dump/load
     (locomani/config_base.py gives every config dataclass these for free).
   * `run_round` is the scripted expert's round entry: a function of the

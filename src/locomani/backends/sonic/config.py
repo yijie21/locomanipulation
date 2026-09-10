@@ -42,13 +42,15 @@ class LockstepConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "LockstepConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
 
 @dataclass(frozen=True)
 class SonicBackendConfig:
     no_encoder: bool = True  # NO_ENCODER: deploy launches/restarts without its encoder, token-only streaming
-    hand: str = "dex1"  # HAND: end-effector model -- dex1 (2-finger) vs dex3 (3-finger); selects grip poses
+    hand: str = field(
+        default="dex1", metadata={"choices": ("dex1", "dex3")}
+    )  # HAND: end-effector model -- dex1 (2-finger) vs dex3 (3-finger); selects grip poses
     upper_slew_deg: float = 2.0  # GYM_UPPER_SLEW_DEG: max degrees/tick the upper-body reference may move
     grip_delay: int = 0  # TF_GRIP_DELAY: frames (at dataset_fps) to delay the gripper command by
     obs_dump: str | None = None  # TF_OBS_DUMP: diagnostic dump path for every policy observation + action
@@ -67,7 +69,7 @@ class SonicBackendConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "SonicBackendConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "SonicBackendConfig":

@@ -7,7 +7,7 @@ See `configs/pilot/learn_200.json` for the canonical ready-visible protocol.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
 
@@ -26,7 +26,9 @@ class PilotConfig:
     eval_rounds: int = 100  # --eval-rounds: closed-loop eval rounds
     eval_seed: int = 6000  # --eval-seed: closed-loop eval seed
     seed0: int = 27000  # --seed0: first collection batch's scene/round seed (batch b uses seed0 + 100*b)
-    through: str = "eval"  # --through: collect | convert | train | eval -- stop after this stage
+    through: str = field(
+        default="eval", metadata={"choices": ("collect", "convert", "train", "eval")}
+    )  # --through: stop after this stage
     squat_max: int = 4096  # SQUAT_MAX: train stage's MuJoCo-EGL VRAM guard (MiB); shared with another instance
     gym_env: tuple[str, ...] = ()  # --gym-env KEY=VAL: extra environment for the collection gym only
     stack_env: tuple[str, ...] = ()  # --stack-env KEY=VAL: extra environment for both stacks (collection and eval)
@@ -36,7 +38,7 @@ class PilotConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PilotConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "PilotConfig":

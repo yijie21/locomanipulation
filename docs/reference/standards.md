@@ -58,7 +58,7 @@ scripts/                    只放 GPU 闸门与 stack 的 shell;一次性 runne
 
 ## 4. 协作
 
-- 冻结期(2026-09-09 到 09-23):main 上只跑实验、只修 bug。ScaleBFM 线 2026-09-10 起是 `backends/scalebfm` + `tasks/bottle_visual`,同规则。
+- 冻结期(2026-09-09 到 09-23)已于 2026-09-10 由用户解除;重构后续按 docs/ROADMAP.md 排。ScaleBFM 线 2026-09-10 起是 `backends/scalebfm` + `tasks/bottle_visual`,同规则。
 - 重构在 git worktree 里做,每步一个 PR,过闸门合 main,不开长期分支。
 - 删 `outputs/` 目录或权重前,先在 STATE.md 登记 24 小时。
 - 每个 session 从 STATE.md 开始,结束前更新它。

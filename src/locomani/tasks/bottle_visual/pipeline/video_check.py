@@ -35,7 +35,7 @@ from locomani.tasks.bottle_visual.pipeline.follow_video import heading, render_c
 from locomani.tasks.bottle_visual.pipeline.provenance import line_sources
 from locomani.tasks.bottle_visual.round import run_case
 from locomani.tasks.bottle_visual.sampling import DEFAULT_PROFILE, PROFILES, profile_edges, sample_reset
-from locomani.tasks.bottle_visual.scene import BASE_SCENE, STRATA, make_sim, scene_directory
+from locomani.tasks.bottle_visual.scene import STRATA, base_scene, make_sim, scene_directory
 from locomani.tasks.bottle_visual.sensor import BottleProxySensor
 
 ROOT = Path(REPO)
@@ -44,7 +44,8 @@ TASK = BottleVisualTaskConfig()  # the ruled expert; --scene-profile only swaps 
 PLAN_VERSION = "coverage_bins5_farthest_v1"
 
 
-def fingerprint(profile):
+def fingerprint(profile, backend=None):
+    BASE_SCENE = base_scene(backend)
     files = set(line_sources())
     files.update(Path(p) for p in (R.CKPT, R.FK_XML, R.MODE_TABLE, R.META))
     files.update(BASE_SCENE / n for n in ("scene_locomani.xml", "scene_meta.json"))
@@ -77,9 +78,9 @@ def fingerprint(profile):
     return digest, spec
 
 
-def choose_cases(profile, candidate_count=6000):
+def choose_cases(profile, candidate_count=6000, backend=None):
     """Select by reset parameters only; no model, rendering or physics calls."""
-    meta = json.loads((BASE_SCENE / "scene_meta.json").read_text())
+    meta = json.loads((base_scene(backend) / "scene_meta.json").read_text())
     source = np.array(meta["objects"]["water_bottle"]["init_pos"], dtype=float)
     edges = profile_edges(profile)
     candidates = {}
@@ -296,7 +297,8 @@ def main():
     args = p.parse_args()
     torch.set_num_threads(1)
     torch.manual_seed(17)
-    digest, spec = fingerprint(args.scene_profile)
+    backend = ScaleBfmBackendConfig()
+    digest, spec = fingerprint(args.scene_profile, backend)
     out = args.out or ROOT / "outputs/videos" / f"scalebfm_check10_{args.scene_profile}_{digest}"
     out = out.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -312,7 +314,7 @@ def main():
     if (out / "plan.json").exists():
         plan = json.loads((out / "plan.json").read_text())
     else:
-        plan = choose_cases(args.scene_profile)
+        plan = choose_cases(args.scene_profile, backend=backend)
         atomic_json(out / "plan.json", plan)
     print(f"OUTPUT {out}", flush=True)
     print(
@@ -328,7 +330,6 @@ def main():
             shutil.copy2(source, out / "source" / source.name)
     for source in (Path(__file__), Path(__file__).with_name("follow_video.py")):
         shutil.copy2(source, out / "source" / source.name)
-    backend = ScaleBfmBackendConfig()
     policy = None
     envs = {}
     reports = []
@@ -339,7 +340,7 @@ def main():
             if not (case / "result.json").exists():
                 if (case / "simulation_result.json").exists():
                     result = json.loads((case / "simulation_result.json").read_text())
-                    directory = scene_directory(out / "scene_assets", c["stratum"])
+                    directory = scene_directory(out / "scene_assets", c["stratum"], backend)
                 else:
                     if any(case.iterdir()):
                         raise RuntimeError(f"Interrupted episode requires inspection, will not silently retry: {case}")
@@ -347,7 +348,7 @@ def main():
                     if policy is None:
                         policy = R.Policy(device="cpu", backend=backend)
                     if c["stratum"] not in envs:
-                        directory = scene_directory(out / "scene_assets", c["stratum"])
+                        directory = scene_directory(out / "scene_assets", c["stratum"], backend)
                         sim = make_sim(policy, directory, backend)
                         envs[c["stratum"]] = (sim, BottleProxySensor(sim), directory)
                     sim, sensor, directory = envs[c["stratum"]]

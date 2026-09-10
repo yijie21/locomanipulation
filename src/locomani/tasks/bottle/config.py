@@ -33,7 +33,7 @@ class SpawnConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "SpawnConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ class BottleTaskConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "BottleTaskConfig":
-        return config_from_dict(cls, data)
+        return config_from_dict(cls, data, SCHEMA_VERSION)
 
     @classmethod
     def load(cls, path) -> "BottleTaskConfig":

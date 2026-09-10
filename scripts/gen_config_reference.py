@@ -48,12 +48,15 @@ FIELD_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:")
 def _field_comments(cls) -> dict:
     """field name -> its trailing `# comment` (from the class source), or ""."""
     comments = {}
+    name = None
     for line in inspect.getsource(cls).splitlines():
         m = FIELD_RE.match(line)
-        if not m:
-            continue
-        name = m.group(1)
-        comments[name] = line.split("#", 1)[1].strip() if "#" in line else ""
+        if m:
+            name = m.group(1)
+            comments[name] = ""
+        # a `field(...)` default that ruff wrapped keeps its comment on the closing `)  # ...` line
+        if name and "#" in line and not comments[name]:
+            comments[name] = line.split("#", 1)[1].strip()
     return comments
 
 
@@ -71,6 +74,8 @@ def render_table(cls) -> str:
     for f in dataclasses.fields(cls):
         default = _default_repr(f).replace("|", "\\|")
         comment = comments.get(f.name, "").replace("|", "\\|")
+        if f.metadata.get("choices"):
+            comment = (comment + " " if comment else "") + "choices: " + " / ".join(map(str, f.metadata["choices"]))
         rows.append(f"| `{f.name}` | `{default}` | {comment} |")
     return "\n".join(rows)
 

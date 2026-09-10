@@ -21,7 +21,7 @@ from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.audit import audit_case
 from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
 from locomani.tasks.bottle_visual.harness import atomic_json
-from locomani.tasks.bottle_visual.pipeline.provenance import line_sources, verify_runtime_assets
+from locomani.tasks.bottle_visual.pipeline.provenance import line_sources, snapshot_sources, verify_runtime_assets
 from locomani.tasks.bottle_visual.pipeline.recording import RawEpisodeRecorder
 from locomani.tasks.bottle_visual.planner import GraspConfig
 from locomani.tasks.bottle_visual.round import run_case
@@ -75,9 +75,7 @@ def main():
     if saved.exists() and json.loads(saved.read_text()) != cfg:
         raise ValueError("Source/config changed; use another run ID and preserve prior attempts")
     atomic_json(saved, cfg)
-    (out / "source").mkdir(exist_ok=True)
-    for path in files:
-        shutil.copy2(path, out / "source" / path.name)
+    snapshot_sources(out, files)
     status_path = out / "run.json"
     status = (
         json.loads(status_path.read_text())
@@ -124,7 +122,7 @@ def main():
                     and all((case / name).exists() for name in ("student.npz", "ego_view.mp4", "right_wrist.mp4"))
                 ):
                     result = json.loads((case / "simulation_result.json").read_text())
-                    directory = scene_directory(out / "scene_assets", stratum)
+                    directory = scene_directory(out / "scene_assets", stratum, backend)
                     result.update(stratum=stratum, scene_directory=str(directory.resolve()))
                     attempt = json.loads(attempt_path.read_text())
                     result.setdefault(
@@ -181,7 +179,7 @@ def main():
                         ),
                     )
                     physical_count += 1
-                    directory = scene_directory(out / "scene_assets", stratum)
+                    directory = scene_directory(out / "scene_assets", stratum, backend)
                     if stratum not in environments:
                         sim = make_sim(policy, directory, backend)
                         environments[stratum] = sim, BottleProxySensor(sim)

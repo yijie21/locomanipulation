@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # reach src/ for `python run_learn_pilot.py`
 from locomani.pipeline.pilot_config import PilotConfig  # noqa: E402
-from locomani.pipeline.provenance import write_config_snapshot  # noqa: E402
+from locomani.pipeline.provenance import digest, file_digests, write_config_snapshot  # noqa: E402
 from locomani.tasks.bottle.config import BottleTaskConfig  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -87,7 +87,13 @@ def main():
         shutil.copytree(args.scene, scene)
     token = args.initial_token_file.resolve()
     if not (out / "config_snapshot.json").exists():
-        write_config_snapshot(out, task_cfg=task_cfg, pilot_cfg=cfg, started=time.time())
+        write_config_snapshot(
+            out,
+            task_cfg=task_cfg,
+            pilot_cfg=cfg,
+            started=time.time(),
+            inputs=dict(scene=file_digests(scene), initial_token=digest(token), reach_config=digest(reach_cfg_path)),
+        )
 
     stack_env = dict(kv.split("=", 1) for kv in cfg.stack_env)
     base_env = dict(

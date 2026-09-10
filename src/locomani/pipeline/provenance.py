@@ -32,6 +32,16 @@ def source_digests(root: Path | None = None) -> dict[str, str]:
     return {str(p.relative_to(root)): _digest(p) for p in files}
 
 
+def file_digests(directory) -> dict[str, str]:
+    """{file name: sha256} of every regular file directly under `directory` (a frozen scene dir)."""
+    d = Path(directory)
+    return {p.name: _digest(p) for p in sorted(d.iterdir()) if p.is_file()} if d.is_dir() else {}
+
+
+def digest(path) -> str:
+    return _digest(Path(path))
+
+
 def git_sha(root: Path | None = None) -> str:
     root = Path(root or paths.REPO)
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
@@ -45,8 +55,14 @@ def write_config_snapshot(
     eval_cfg=None,
     pilot_cfg=None,
     started: float | None = None,
+    inputs: dict | None = None,
 ) -> Path:
-    """Write `<out_dir>/config_snapshot.json`; returns the path written."""
+    """Write `<out_dir>/config_snapshot.json`; returns the path written.
+
+    `inputs`: identity of external inputs the source digests cannot cover -- the frozen scene
+    files, the initial token, a reach calibration -- as {name: sha256 or {file: sha256}}
+    (2026-09-10 review: the retired provenance.json hashed these; the snapshot had dropped them).
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     snap = out_dir / "config_snapshot.json"
@@ -60,6 +76,7 @@ def write_config_snapshot(
                 git_sha=git_sha(),
                 started=started if started is not None else time.time(),
                 sources=source_digests(),
+                inputs=inputs or {},
             ),
             indent=1,
         )

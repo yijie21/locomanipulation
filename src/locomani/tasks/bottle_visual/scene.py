@@ -21,17 +21,26 @@ STRATA = {
     "high_near": (0.7611385812222395, (0.04, 0.08)),
     "low_deep": (0.6211385812222395, (0.18, 0.24)),
 }
-BASE_SCENE = Path(ScaleBfmBackendConfig().scene_path())
 
 
-def scene_directory(root, stratum):
+def base_scene(backend=None) -> Path:
+    """The scene the effective backend config names (2026-09-10 review: a module constant here
+    silently ignored `--set-backend scene_dir=...`)."""
+    return Path((backend or ScaleBfmBackendConfig()).scene_path())
+
+
+BASE_SCENE = base_scene()  # default only; every caller that has a backend config passes it
+
+
+def scene_directory(root, stratum, backend=None):
+    base = base_scene(backend)
     height, _ = STRATA[stratum]
-    meta = json.loads((BASE_SCENE / "scene_meta.json").read_text())
+    meta = json.loads((base / "scene_meta.json").read_text())
     old_height = meta["surfaces"]["A"]["top"]
     if abs(height - old_height) < 1e-8:
-        return BASE_SCENE
+        return base
     out = Path(root) / f"table_{height:.6f}"
-    tree = ET.parse(BASE_SCENE / "scene_locomani.xml")
+    tree = ET.parse(base / "scene_locomani.xml")
     scale = height / old_height
     for mesh in tree.findall("./asset/mesh"):
         if mesh.get("name", "").startswith("dining_table_"):
@@ -69,7 +78,8 @@ def scene_directory(root, stratum):
 
 def make_sim(policy, directory=None, backend=None):
     """A `Sim` on `directory` (a scene_directory() variant, default the base scene) with hardened pads."""
-    cfg = dataclasses.replace(backend or ScaleBfmBackendConfig(), scene_dir=str(directory or BASE_SCENE))
+    backend = backend or ScaleBfmBackendConfig()
+    cfg = dataclasses.replace(backend, scene_dir=str(directory or backend.scene_path()))
     sim = R.Sim(policy.meta, video=False, backend=cfg)
     for g in range(sim.m.ngeom):
         name = mujoco.mj_id2name(sim.m, mujoco.mjtObj.mjOBJ_BODY, sim.m.geom_bodyid[g]) or ""

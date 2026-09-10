@@ -438,7 +438,7 @@ def main():
         if (dest / "result.json").exists():
             result = json.loads((dest / "result.json").read_text())
         else:
-            directory = directory or scene_directory(out / "scene_assets", stratum)
+            directory = directory or scene_directory(out / "scene_assets", stratum, backend)
             if stratum not in environments:
                 environments[stratum] = make_sim(policy, directory, backend)
             # Same policy-noise stream for each paired scene, independent of arm
