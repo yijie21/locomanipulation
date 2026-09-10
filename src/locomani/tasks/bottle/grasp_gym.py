@@ -57,6 +57,7 @@ from locomani.backends.sonic.primitives import (  # noqa: E402
     wrap,
 )
 from locomani.pipeline.execution_record import ExecutionRecord, RoundResult
+from locomani.sim.ports import require_exporter
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.bottle import (  # noqa: E402
     cli_args,
@@ -71,7 +72,7 @@ from locomani.tasks.bottle.plan import (
     resolve_pool,
     sample_object_yaw,  # noqa: F401
 )
-from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
+from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig, require_expert_calibration
 from locomani.tasks.bottle.round_phases import RoundContext
 from locomani.tasks.bottle.round_phases import _phase_handover_to_vla as _p_handover
 from locomani.tasks.bottle.round_phases import _phase_navigate as _p_navigate
@@ -227,7 +228,15 @@ def _build_scene_and_plan(args: argparse.Namespace) -> _SceneSetup:
         # run with a clear message on stderr.
         raise SystemExit("requested more rounds than fixed cases")
     sampled_cases = []
-    reach_config = ReachConfig.load(args.reach_config) if args.reach_config else DEFAULT_REACH
+    # --reach-config wins, then --task-config's `reach` block (cli_args), then the default.
+    reach_config = (
+        ReachConfig.load(args.reach_config)
+        if args.reach_config
+        else getattr(args, "reach_config_obj", None) or DEFAULT_REACH
+    )
+    require_expert_calibration(VLA_POLICY, reach_config, args.reach_config)
+    if args.record:
+        require_exporter("--record")
     if args.manifest:
         # collect.sh mkdir -p's its own $OUT before this, but a bare
         # `--manifest outputs/logs/x.jsonl` run (the README quickstart) would
@@ -399,6 +408,8 @@ def run_round(
     *,
     reach_config=DEFAULT_REACH,
     object_yaw=None,
+    goal_key=None,
+    place_config=None,
 ) -> RoundResult:
     """One round, and the exporter left in a clean state whatever happens.
 
@@ -449,6 +460,8 @@ def run_round(
             execution=execution,
             reach_config=reach_config,
             object_yaw=object_yaw,
+            goal_key=goal_key,
+            place_config=place_config,
         )
         if not ok:
             execution.fail(why)
@@ -508,6 +521,8 @@ def _run_round(
     execution=None,
     reach_config=DEFAULT_REACH,
     object_yaw=None,
+    goal_key=None,
+    place_config=None,
 ) -> tuple[bool, str]:
     """One round's five phases (round_phases.py / round_phases_approach.py),
     threaded through a RoundContext.
@@ -554,6 +569,8 @@ def _run_round(
         execution=execution,
         reach_config=reach_config,
         object_yaw=object_yaw,
+        goal_key=goal_key,
+        place_config=place_config,
         vla_policy=VLA_POLICY,
         arm_pin=ARM_PIN,
         video_include_init=VIDEO_INCLUDE_INIT,

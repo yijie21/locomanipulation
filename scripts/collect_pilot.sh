@@ -65,6 +65,13 @@ PROMPT="${PROMPT:-pick up the red can}"
 # pilot used. SPAWN_ARGS lets a batch pin the near, object-facing start
 # without this script growing a flag per knob.
 SPAWN_ARGS="${SPAWN_ARGS:-}"
+# The collection profile. Without it the reach calibration falls back to
+# ReachConfig(), whose ready_grasp_recovery=False was retired in refactor step 2
+# -- so from that commit until 2026-09-10 this script could not produce a single
+# episode: every round walked to the object and then failed with "is retired".
+# grasp_gym refuses at startup on that now, and --task-config carries the whole
+# profile (reach + spawn + target), so this is one line rather than nine flags.
+TASK_CONFIG="${TASK_CONFIG:-configs/tasks/bottle_visible.json}"
 OUT="${OUT:-$LOCOMANI_OUTPUTS/logs/pilot}"
 mkdir -p "$OUT"
 
@@ -115,6 +122,7 @@ while :; do
     # exit status, rolls the exporter to a fresh session, and takes a new tag,
     # and every episode already in the manifest stays kept.
     "$VENV_SIM_PY" -u src/locomani/tasks/bottle/grasp_gym.py \
+        --task-config "$TASK_CONFIG" \
         --rounds "$cap" --until-ok "$need" \
         --targets "$OBJ" --edge-jitter "$JITTER" --record \
         $SPAWN_ARGS \

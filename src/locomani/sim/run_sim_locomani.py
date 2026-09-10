@@ -41,7 +41,7 @@ from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig  # noqa: E402
 from gear_sonic.utils.mujoco_sim.simulator_factory import SimulatorFactory  # noqa: E402
 
 from locomani import paths
-from locomani.sim import sim_vis
+from locomani.sim import ports, sim_vis
 from locomani.sim.privileged_pub import EpisodeControlServer, PrivilegedPublisher  # noqa: E402
 
 # Set SIM_VIDEO_DIR to record a tracking-camera mp4 per episode. Off by default
@@ -408,9 +408,7 @@ def main(config: SimLoopConfig) -> None:
             )
             time.sleep(1)
         try:
-            lockstep_sim.run(
-                sim_wrapper.sim, int(os.environ.get("TF_SONIC_PORT", 5556)), int(os.environ.get("TF_OUT_PORT", 5557))
-            )
+            lockstep_sim.run(sim_wrapper.sim, ports.sonic(), ports.out())
         finally:
             sim_wrapper.sim.close()
         return

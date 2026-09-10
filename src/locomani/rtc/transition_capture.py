@@ -16,6 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
+from locomani.sim import ports
+
 
 def serial(value):
     if is_dataclass(value):
@@ -86,8 +88,8 @@ class Capture:
         sock = ctx.socket(zmq.SUB)
         sock.setsockopt_string(zmq.SUBSCRIBE, "")
         sock.setsockopt(zmq.CONFLATE, 1)
-        sock.connect(f"tcp://localhost:{os.environ.get('TF_PRIVILEGED_PORT', '5581')}")
-        debug = ZMQStateSubscriber(port=int(os.environ.get("TF_OUT_PORT", "5557")))
+        sock.connect(f"tcp://localhost:{ports.privileged()}")
+        debug = ZMQStateSubscriber(port=ports.out())
         try:
             while not self.stop.is_set():
                 try:

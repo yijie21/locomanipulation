@@ -58,6 +58,7 @@ from locomani.backends.sonic.primitives import Primitives  # noqa: E402
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 from locomani.backends.sonic.stream_reach import PlannerArm  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
+from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.crate.carry_phases import (  # noqa: E402
     CarryRoundContext,
@@ -370,15 +371,11 @@ def main() -> None:
     # module by its package name; make that name resolve to the running module so the
     # globals set below (DUMP_DIR) are the ones the phases read.
     sys.modules.setdefault("locomani.tasks.crate.bimanual_carry", sys.modules[__name__])
-    inst = int(os.environ.get("INSTANCE", "0"))
-    for k, base in (
-        ("TF_SONIC_PORT", 5556),
-        ("TF_OUT_PORT", 5557),
-        ("TF_KEYBOARD_PORT", 5580),
-        ("TF_PRIVILEGED_PORT", 5581),
-        ("TF_EPISODE_PORT", 5582),
-    ):
-        os.environ.setdefault(k, str(base + 10 * inst))
+    inst = ports.instance()
+    # One formula, in locomani.sim.ports: this used to carry its own copy of the
+    # bases, a third one after start_stack.sh's and every module-level fallback's.
+    for k in ("TF_SONIC_PORT", "TF_OUT_PORT", "TF_KEYBOARD_PORT", "TF_PRIVILEGED_PORT", "TF_EPISODE_PORT"):
+        os.environ.setdefault(k, str(ports.port(k)))
     global DUMP_DIR
     DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
     meta = json.load(open(paths.SCENE_META))

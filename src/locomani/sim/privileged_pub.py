@@ -25,6 +25,7 @@ import numpy as np
 import zmq
 
 from locomani.backends.sonic.config import DEFAULT_BACKEND
+from locomani.sim import ports
 
 GHOST_BODY = "ghost_hand"
 
@@ -43,8 +44,8 @@ GHOST_PARK = (0.0, 0.0, -5.0)
 
 # Per-instance overrides so several stacks can share the host (parallel
 # data collection); instance i uses base + 10*i via start_stack.sh.
-PRIVILEGED_PORT = int(os.environ.get("TF_PRIVILEGED_PORT", "5581"))
-EPISODE_PORT = int(os.environ.get("TF_EPISODE_PORT", "5582"))
+PRIVILEGED_PORT = ports.privileged()
+EPISODE_PORT = ports.episode()
 # OFF by default (user's call, 2026-08-28). SCENE_RANDOM=1 turns it back on.
 #
 # The trade is real in both directions. Pinned appearance is what a controlled

@@ -16,23 +16,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from gear_sonic.utils.data_collection import keyboard_subscriber  # noqa: E402
 
+from locomani.sim import ports
+
 OriginalSubscriber = keyboard_subscriber.ZMQKeyboardSubscriber
 
 
 class InstanceKeyboardSubscriber(OriginalSubscriber):
     def __init__(self, port=None, host="localhost"):
-        super().__init__(port=int(os.environ.get("TF_KEYBOARD_PORT", "5580")) if port is None else port, host=host)
+        super().__init__(port=ports.keyboard() if port is None else port, host=host)
 
 
 if __name__ == "__main__":
     keyboard_subscriber.ZMQKeyboardSubscriber = InstanceKeyboardSubscriber
-    for flag, variable, default in [
-        ("--camera-port", "TF_CAMERA_PORT", 5555),
-        ("--sonic-zmq-port", "TF_SONIC_PORT", 5556),
-        ("--state-zmq-port", "TF_OUT_PORT", 5557),
+    for flag, variable in [
+        ("--camera-port", "TF_CAMERA_PORT"),
+        ("--sonic-zmq-port", "TF_SONIC_PORT"),
+        ("--state-zmq-port", "TF_OUT_PORT"),
     ]:
         if flag not in sys.argv:
-            sys.argv.extend([flag, os.environ.get(variable, str(default))])
+            sys.argv.extend([flag, str(ports.port(variable))])
     if not os.environ.get("TF_FRAME_AUDIT_PATH"):
         runpy.run_module("gear_sonic.scripts.run_data_exporter", run_name="__main__")
     else:

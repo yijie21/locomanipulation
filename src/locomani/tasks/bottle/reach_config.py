@@ -117,8 +117,10 @@ class ReachConfig:
             or not 5 <= self.recovery_timeout <= 90
         ):
             raise ValueError("Recovery budget outside supported bounds")
-        if not 0 <= self.grip_below_center <= 0.03:
-            raise ValueError("grip_below_center must be between 0 and .03 m")
+        # Negative = grip ABOVE the box centre: a tall can (pick_place, 2026-09-10) is
+        # gripped near its top so the pitched palm clears the body above the grip.
+        if not -0.05 <= self.grip_below_center <= 0.03:
+            raise ValueError("grip_below_center must be between -0.05 and .03 m")
         # 0..5 cm was the calibration range of the 07 measured-prediction runs.
         # Raised to 10 cm on 2026-09-07: the learned policy inherits the
         # expert's stop distribution (first_stop median 0.36 m) and succeeds
@@ -177,3 +179,54 @@ class ReachConfig:
 
 
 DEFAULT_REACH = ReachConfig()
+
+
+def require_runnable(config: "ReachConfig", source: str | None = None) -> None:
+    """Refuse a calibration that cannot produce an episode, before any actuation.
+
+    `ready_grasp_recovery=False` is the old non-recovery approach/crouch/servo
+    tail, deleted in refactor step 2. `execute_grasp` fails fast on it, but only
+    after the round has paid for a reset, a walk and an arrival -- and since the
+    approach itself succeeds, the log reads like a broken controller rather than
+    a configuration that was never applied (2026-09-10, cost a stack cycle).
+    A calibration is not loaded from anywhere by default, so this also catches
+    the commonest cause: no calibration was passed at all and the dataclass
+    default came through.
+    """
+    if config.ready_grasp_recovery:
+        return
+    where = (
+        f"--reach-config {source} sets it False"
+        if source
+        else ("no reach calibration was passed, so this is ReachConfig()'s default")
+    )
+    raise SystemExit(
+        "reach calibration has ready_grasp_recovery=False, which the removal of the "
+        "non-recovery path made unrunnable: every round would walk to the object and then "
+        f"fail in the grasp stage.\n  {where}\n"
+        "  pass the collection profile's calibration -- --task-config "
+        "configs/tasks/bottle_visible.json applies its `reach` block, or give --reach-config <file>."
+    )
+
+
+def require_expert_calibration(vla_policy, config: "ReachConfig", source: str | None = None) -> None:
+    """`require_runnable`, but only where the expert grasp actually runs.
+
+    A closed-loop evaluation sets grasp_gym.VLA_POLICY, and `_p_handover`
+    returns the model's round before `_p_approach` or `_p_grasp` execute, so
+    `execute_grasp` -- the only thing `ready_grasp_recovery` gates -- is never
+    reached. `eval_closed_loop.py` passes --reach-config only when one was asked
+    for, so refusing there would block every eval that did not name one: the
+    same shape of false positive as the exporter probe that matched one entry
+    point of two (both 2026-09-10).
+
+    Do NOT read this as "the calibration does not matter to a VLA round". It
+    still does: `ready_grasp_policy.sample_stand` reads `max_drop`, `backshift`
+    and `ready_grasp_recovery`, so the calibration moves the sampled stand and
+    therefore the case distribution, and `round_phases` has a
+    `ready_grasp_baseline` branch that runs specifically when vla_policy is not
+    None. What is safe is not refusing; silently SUBSTITUTING one calibration
+    for another in an eval is not (see cli_args._apply_task_config).
+    """
+    if vla_policy is None:
+        require_runnable(config, source)

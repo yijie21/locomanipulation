@@ -43,9 +43,10 @@ from gear_sonic.utils.teleop.zmq.zmq_planner_sender import (
 )
 
 from locomani.backends.sonic.config import DEFAULT_BACKEND
+from locomani.sim import ports
 
-SONIC_PORT = int(os.environ.get("TF_SONIC_PORT", "5556"))
-KEYBOARD_PORT = int(os.environ.get("TF_KEYBOARD_PORT", "5580"))
+SONIC_PORT = ports.sonic()
+KEYBOARD_PORT = ports.keyboard()
 
 # From pico_manager_thread_server.py:957-958 — used to place the neck point in
 # the robot's root frame.

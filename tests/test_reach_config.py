@@ -8,7 +8,7 @@ from unittest.mock import patch
 from _sim_stubs import Clock, Robot
 
 from locomani.backends.sonic import stream_reach as sr
-from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
+from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig, require_expert_calibration
 
 
 class ReachConfigTests(unittest.TestCase):
@@ -61,6 +61,74 @@ class ReachConfigTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.execution["metrics"]["reach_config"]["azimuth_deg"], 25.0)
         factory.assert_not_called()
+
+
+class CalibrationGateTests(unittest.TestCase):
+    """The startup refusal, and where it must NOT fire (2026-09-10)."""
+
+    def test_expert_run_without_a_calibration_is_refused_at_startup(self):
+        with self.assertRaises(SystemExit) as caught:
+            require_expert_calibration(None, ReachConfig())
+        self.assertIn("ready_grasp_recovery=False", str(caught.exception))
+        self.assertIn("--task-config", str(caught.exception))
+
+    def test_the_message_names_the_file_when_one_was_given(self):
+        with self.assertRaises(SystemExit) as caught:
+            require_expert_calibration(None, ReachConfig(), "configs/collection/ready_grasp_baseline.json")
+        self.assertIn("ready_grasp_baseline.json", str(caught.exception))
+
+    def test_a_runnable_calibration_passes(self):
+        require_expert_calibration(None, ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True))
+
+    def test_a_task_config_never_recalibrates_a_vla_round(self):
+        # The reach block moves the sampled stand (sample_stand reads max_drop /
+        # backshift / ready_grasp_recovery), so substituting the collection
+        # calibration into an eval would silently make it a different arm from
+        # every closed-loop number in the ledger (session cf, 2026-09-10).
+        import argparse
+
+        from locomani.tasks.bottle import cli_args, grasp_gym
+
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--spawn-edge", default=None)
+        ap.add_argument("--spawn-yaw-err", type=float, default=90.0)
+        ap.add_argument("--spawn-lateral", type=float, default=0.35)
+        ap.add_argument("--edge-jitter", type=float, default=0.10)
+        ap.add_argument("--targets", default="pool")
+        ap.add_argument("--stand-retries", type=int, default=1)
+        ap.add_argument("--face-object", action="store_true")
+        repo = Path(__file__).resolve().parents[1]
+        base = dict(
+            task_config=str(repo / "configs/tasks/bottle_visible.json"),
+            reach_config=None,
+            spawn_edge=None,
+            spawn_yaw_err=90.0,
+            spawn_lateral=0.35,
+            edge_jitter=0.10,
+            targets="pool",
+            stand_retries=1,
+            face_object=False,
+        )
+        previous = grasp_gym.VLA_POLICY
+        try:
+            grasp_gym.VLA_POLICY = object()
+            args = argparse.Namespace(**base)
+            cli_args._apply_task_config(ap, args)
+            self.assertIsNone(getattr(args, "reach_config_obj", None))
+            self.assertEqual(args.spawn_yaw_err, 20.0)  # the spawn block still applies
+
+            grasp_gym.VLA_POLICY = None
+            args = argparse.Namespace(**base)
+            cli_args._apply_task_config(ap, args)
+            self.assertTrue(args.reach_config_obj.ready_grasp_recovery)
+        finally:
+            grasp_gym.VLA_POLICY = previous
+
+    def test_a_vla_round_is_never_refused(self):
+        # Closed-loop eval returns from _p_handover before execute_grasp, and
+        # eval_closed_loop.py passes --reach-config only when asked; refusing
+        # here would block every eval that did not name a calibration.
+        require_expert_calibration(object(), ReachConfig())
 
 
 if __name__ == "__main__":

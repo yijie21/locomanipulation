@@ -53,6 +53,7 @@ sys.path.insert(
 from locomani import paths  # noqa: E402
 from locomani.backends.sonic.agent_server import LocomotionMode  # noqa: E402
 from locomani.backends.sonic.primitives import Primitives  # noqa: E402
+from locomani.sim import ports  # noqa: E402
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.crate.bimanual_carry import (
     APPR_SPEED,
@@ -323,15 +324,11 @@ def main() -> None:
     CRATE_SETBACK_LEVELS = tuple(cfg.crate_setback_levels_m)
     CRATE_YAW_LEVELS_DEG = tuple(cfg.crate_yaw_levels_deg)
     DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW = _wall_feature_constants(FEATURE)
-    inst = int(os.environ.get("INSTANCE", "0"))
-    for k, base in (
-        ("TF_SONIC_PORT", 5556),
-        ("TF_OUT_PORT", 5557),
-        ("TF_KEYBOARD_PORT", 5580),
-        ("TF_PRIVILEGED_PORT", 5581),
-        ("TF_EPISODE_PORT", 5582),
-    ):
-        os.environ.setdefault(k, str(base + 10 * inst))
+    inst = ports.instance()
+    # One formula, in locomani.sim.ports: this used to carry its own copy of the
+    # bases, a third one after start_stack.sh's and every module-level fallback's.
+    for k in ("TF_SONIC_PORT", "TF_OUT_PORT", "TF_KEYBOARD_PORT", "TF_PRIVILEGED_PORT", "TF_EPISODE_PORT"):
+        os.environ.setdefault(k, str(ports.port(k)))
     global DUMP_DIR
     DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
     meta = json.load(open(paths.SCENE_META))
