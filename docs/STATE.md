@@ -30,6 +30,9 @@
   without tail trim, or recollect). No GPU jobs running.
 
 ## Now
+- RUNNING (session cf): visible200 collection + convert on instance 0 / GPU0 since 2026-09-10 07:02 UTC, ends ~10:30 UTC
+  (outputs/experiments/visible200_20260910, run_learn_pilot through=convert). Do NOT start a stack on instance 0, put
+  anything on GPU0, or run sim probes on either GPU until this line is gone. Batch results in collect/manifest_*.jsonl.
 - visible10 look-see collection DONE 2026-09-10 06:32-06:42 UTC (branch session cf, instance 0 / GPU0, stack stopped):
   bottle_visible.json + learn_200.json with through=collect successes=10, seed0 31000, first run with restart_deploy=false.
   2 batches, 18 rounds -> 10 kept (yield 0.56): batch 0 4/10 (3x "toppled in the close phase", 1 view-at-spawn, 1 IK,
