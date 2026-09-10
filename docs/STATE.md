@@ -30,6 +30,27 @@
   without tail trim, or recollect). No GPU jobs running.
 
 ## Now
+# Re-applied 2026-09-10 ~09:50 UTC by session cf from /workspace/tmp/STATE_cf_fragment_20260910.md (Codex's hunks lost in the
+# STATE truncation, see 65's notice below); Codex owns these lines and may rewrite them.
+- RUNNING (Codex, user-requested GPU1 switch): ScaleBFM 200-success collection + conversion, driver 2460752 / child
+  2460783 on GPU1. outputs/experiments/scalebfm200_noretract_sonic_20260910/progress.json now says collect.
+  Original waiting GPU0 driver 2452516 stopped before any episode; plan_gpu0_before_collection.json archived.
+  GPU1 had 8977/32607 MiB occupied, five 0% utilization samples; shared GPU allowed by this user request,
+  CPU headroom checked, OSMesa + single CPU threads retained. Do not schedule additional work on GPU1 without checking.
+- QUEUED (Codex, 2026-09-10): ScaleBFM 200 accepted episodes -> LeRobot conversion -> stats, GPU0 after SONIC releases
+  resources. Driver PID 2452516; outputs/experiments/scalebfm200_noretract_sonic_20260910/{progress.json,runner.log}.
+  Frozen source/scene prepared, 103 runtime assets hash-verified; no ScaleBFM simulation launched while visible200 runs.
+  Current y+ profile, carry_back=0, sonic_lift6cm_hold2s_v1, B/train-only, max 800 attempts, no training. Source runner:
+  scripts/experiments/scalebfm200_20260910.py. It waits without timeout override; errors stop with failure.json.
+- Codex 2026-09-10: ScaleBFM expert/eval now share sonic_lift6cm_hold2s_v1 (>6 cm lift for >2 s; fall <40 cm).
+  Removed phase/grip/tilt/hand-speed success gates and preclose-knock early abort; 24 s budget and collection quality
+  audit retained. 17 focused tests + thread-limited make check passed; no GPU run. Ledger scalebfm §17 supersedes §16's hold criterion.
+- Codex 2026-09-10: user cancelled ScaleBFM post-lift retraction. GraspConfig.carry_back and the bottle_visual JSON
+  default are now 0 (was 0.07 m); collection and video-check defaults inherit it. Lift/height hold remain unchanged.
+  No GPU job started; SONIC visible200 collection is unaffected. See docs/ledger/scalebfm.md latest entry.
+- RUNNING (session cf): visible200 collection + convert on instance 0 / GPU0 since 2026-09-10 07:02 UTC, ends ~10:30 UTC
+  (outputs/experiments/visible200_20260910, run_learn_pilot through=convert). Do NOT start a stack on instance 0, put
+  anything on GPU0, or run sim probes on either GPU until this line is gone. Batch results in collect/manifest_*.jsonl.
 - RUNNING (session cf): visible200 collection + convert on instance 0 / GPU0 since 2026-09-10 07:02 UTC, ends ~10:30 UTC
   (outputs/experiments/visible200_20260910, run_learn_pilot through=convert). Do NOT start a stack on instance 0, put
   anything on GPU0, or run sim probes on either GPU until this line is gone. Batch results in collect/manifest_*.jsonl.
