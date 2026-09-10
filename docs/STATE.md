@@ -99,24 +99,39 @@
   outputs/experiments/scalebfm_visual_goal_20260908/user_cancel_checkpoint_20260909.json.
   Platform Goal now blocked: three automatic continuations lacked renewed human authorization.
   This is not objective completion; no experiments resumed. Platform cancellation remains a UI action.
-- 9d: RUNNING since 09:25 UTC -- ready_visible200_20260909 (visible-expert collection, 200 ep, instance 0
-  stack on GPU1; training/eval intended for GPU0 once the Codex training there ends). DO NOT delete
-  outputs/experiments/ready_visible200_20260909 or ready_visible_smoke_* (a cleanup at ~09:00 removed the
-  smoke dir while it was being written). Code: visible_expert flag in reach_config/ready_grasp_policy/
-  grasp_gym/recoverable_grasp_policy, config configs/collection/ready_grasp_visible.json, tests/test_visible_expert.py.
-  Smoke 8/10 (1 spawn-turn, 1 infeasible discard), 9/9 brakes at depth 0.30-0.31, no recovery stage.
-  Previous: seed-7 pilot torn down 07:55 UTC; instance 0 / port 5590 free; the 20 GB on GPU1 is
-  not ours -- check nvidia-smi before claiming it). Next item 1 DONE: ready07d_200_seed7_20260909 = 46/100
-  (same 176 ep, GR00T_DATA_SEED=7) vs seed 42's 57/100, paired 21:32 p 0.17; vs decisive first 60: 27 vs 29,
-  p 0.87. The +8 of 07d-200 over decisive is seed variance, not data; failure mix flips with seed alone
-  (static 15 -> 39, knock 19 -> 7). docs/ready_grasp_arms_20260907.md §9. Model kept (24 GB).
-  Earlier today: ensemble N3 M0.3 screen 3/20 vs 9/20, harmful (§8.1). Last result before that: 07d-200 57/100
+- 9d: NOTHING RUNNING (2026-09-10 03:30 UTC). GPU0 idle; GPU1 holds a foreign AnyImageNav job (~15 GB, 97 % util,
+  load ~15) -- do NOT put a sim on GPU1 while it runs (that alone produced 4 close-phase topples in 10 rounds).
+  Instance 0 / 1 stacks down, port 5590 free. outputs/ holds only: scene/ (reinstalled + gate_922 + crate_bimanual),
+  experiments/gate_bottle_* and gate_crate_*, gate/. Raw exporter sessions: /workspace/tmp/p03/outputs (82).
 - ScaleBFM: nothing running. Three pilots today (v3 18-d, v3 26-d offline velocity, v4 23-d native
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
+
+## Changed (2026-09-09/10 session 9d, COMMITTED on main through 507be6a; NOT pushed)
+- Refactor steps 1-6 merged (docs/handoff/refactor-plan.md, 13 decisions + D-group ruling; execution ledgers in
+  docs/handoff/refactor-step2-candidates.md, refactor-step3-config.md, refactor-step4-layout.md):
+  1 tooling (ruff, pre-commit local hooks, scripts/lint_sizes.py + lint_env.py, test tiers, Makefile, docs/reference/standards.md);
+  2 ~12k lines of retired branches deleted (A/B/D groups; RTC cluster + --client blocking KEPT by ruling);
+  3 knobs -> config dataclasses (BottleTaskConfig / CrateTaskConfig / SonicBackendConfig / EvalConfig / PilotConfig,
+  configs/{tasks,backends,eval,pilot}/*.json, --config/--set CLIs, config_snapshot.json replaces provenance.json,
+  docs/reference/config_fields.md generated, lint_env --strict = 0);
+  4a package move src/teleop_free -> src/locomani/{pipeline,backends/sonic,sim,tasks/bottle,tasks/crate,primitives,rtc},
+  stack shell in scripts/stack/, 8 alias stubs under src/teleop_free/ for the frozen scalebfm/;
+  4b pure-extraction splits of grasp_gym, stream_reach, vla_round, crate run_round, Primitives (13 -> 5 files over 600);
+  5 Task seam (tasks/base.py, registry, locomani.cli, tests/test_task_contract.py);
+  6 docs into four kinds (tutorials / ledger / reference / state) + docs/archive/INDEX.md; CLAUDE.md updated.
+- Verification (no functional change): see 'Refactor merged and verified' above; tests/gate/results/.
+- Gate-found fixes after the merge: run_instance_exporter bootstrap (326450b), 'approach' stage marker + gate.py rules
+  (a88c5f5), script-vs-package module alias in bimanual_wall / bimanual_carry / grasp_gym + Codex tests scoped out of the
+  unit tier + reach_config test fixture (1d35aad).
+- Visible-expert collection ready_visible200_20260909: 200 episodes over 39 batches + 3 top-ups; 8 sessions excluded
+  for deploy-restart stubs/truncation; convert + audit passed 32/32 -- then the dataset, manifests and everything else
+  under outputs/ were deleted by the merge incident. The 40 exporter sessions survive.
+- Incident fixes: outputs symlink untracked, /outputs and /third_party ignored as paths (4a109bf); memory
+  never-git-add-all-with-symlinks.
 
 ## Changed (2026-09-08 session, COMMITTED as 343d9f9 and pushed)
 - Commit 343d9f9 holds everything below. ~50 untracked files from the Codex "ScaleBFM visual-expert" thread
@@ -158,32 +173,37 @@
   Their exporter episodes were 1-6 s stubs after deploy self-heal restarts caused by ScaleBFM sim probes on
   the same GPU; the ordered manifest join cannot see that, only check_dataset's grasp-causality pass did.
 
-## Refactor in progress (docs/handoff/refactor-plan.md, confirmed 2026-09-09)
-- Two-week feature freeze on main from 2026-09-09: experiments only, no new features outside scalebfm/.
-- Step 0 DONE (no main-code change): scripts/gate.py + tests/gate/baseline_{bottle,crate}.json. bottle baseline is
-  from the first 30 rounds of ready_visible200 (re-record when the run completes); crate from outputs/videos/wall_pilot.
-  Self-compare PASS 19/19 and 8/8; 07d-200 manifests FAIL against it on exit reason / recovery stages / failure set only.
-- Paths being moved: none yet. Steps 1-6 (tooling, delete retired, knobs->config, skeleton, crate, docs) not started.
-- Cleanup rule: deleting outputs/ dirs or weights needs a 24 h notice here first (a cleanup removed a running smoke dir today).
-- Codex thread: please commit the ~50 untracked scalebfm/visual files as-is before step 2 starts.
+## Refactor status
+- Steps 1-6 DONE and merged (see Changed above). Freeze stays until 2026-09-23 for the follow-ups below.
+- Follow-ups: (a) eval-path A/B once a model exists (20 rounds seed 6000, old vs new eval client on the same checkpoint);
+  (b) size caps: 5 files / 79 functions left, lint_sizes --strict not yet flipped; (c) step 4c (pure `decide(snapshot,
+  cfg)` expert + offline replay gate) deferred to the DAgger stage; (d) delete the stale worktrees under .claude/worktrees
+  (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
-1. Ready-grasp line: data volume is flat at 176 ep (seed 7 = decisive level). Attack the failure both seeds
-   share -- standing at the table with the arm never leaving rest (s7 39/54, s42 15/43): DAgger with near-table
-   spawns covering the stand -> raise transition (failure_anatomy ARM-NEVER-UP prescription), 2 seeds per arm.
-2. ScaleBFM decision (user): (a) record 200 episodes on the edge geometry as-is (STAND_D 0.45-0.55, reach
-   overlapping the walk -- the best-scoring expert combination, 5/6) and run the v4 pipeline (~2.5 h), or
-   (b) first a mode-6 spike (pelvis + shoulder + elbow + wrist targets) to remove the ~20 deg waist twist,
-   which needs an arm IK for the elbow target. The 10-cm stop-short of v4 is a policy stop-rule problem
-   (gait-state keyed) that a cleaner expert does not fix by itself; DAgger from stopped-short states or a
-   STAND_D curriculum remain the candidates for that.
-3. Branch (65): symmetric jaw command (drive q1-q2 to 0) against close-time ejection.
-4. Progress-parameterised expert (replace time u with path progress) before the DAgger stage.
+1. Data recovery (USER DECISION): (a) re-convert ready_visible200 from the 40 surviving exporter sessions without
+   manifests (ok/failed rounds via each session's discarded_episode_indices; verification-tail trim marker lost, ~100
+   extra hold frames per episode; the 8 excluded sessions are listed in this session's scratch scripts and must be
+   left out), ~20 min CPU; or (b) recollect 200 episodes with the refactored code on GPU0, ~3.5 h.
+2. Train the visible-expert model (3000 steps, ~77 min, GPU0) and eval 100 rounds seed 6000. No paired baseline
+   survives (57/100 manifest lost): compare against the numbers in docs/ledger/bottle.md, and run the eval-path A/B
+   (old 78536ae eval client vs new, 20 rounds) on that checkpoint first.
+3. Then the plan's next lever: DAgger with near-table spawns for the 'arm never leaves rest at the table' failure,
+   built on tasks/bottle (step 4c seam), 2 seeds per arm.
+4. ScaleBFM / branch 65 items unchanged (below).
 
 ## Blocked / waiting on
-- nothing.
+- User decision on data recovery (Next 1). Nothing runs until then.
+- GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- Untrimmed verification tails (if recovery path (a)): does training on ~100 extra 'hold the lifted bottle' frames per
+  episode change closed-loop behaviour? Unknown; 07d always trimmed. If it matters, path (b) is the clean answer.
+- Deploy self-heal restarts truncated 8/40 collection sessions on 2026-09-09; cause is host contention (foreign GPU/CPU
+  load), the stubs are caught only by check_dataset's grasp-causality audit + the manifest/episode count check.
+  A per-session sanity check right after each batch would save the re-convert loops.
+- Gate baselines are 30 rounds (bottle) / 10 rounds (crate): rare failure strings show as 'new'; widen the baselines to
+  100 / 30 rounds once the machine is quiet.
 - ScaleBFM twist: waist yaw/roll ~20 deg peaks 1 s after the reach starts, at every STAND_D from 0.25 to
   0.55; reach-after-arrival trims yaw 23->14-18 deg, roll unchanged, success drops (3/6). It is mode 2's
   reaching strategy (no torso constraint), not the stand distance. Closer stands (0.25-0.40) fail in the
@@ -215,6 +235,8 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-10 refactor gates on main (GPU0): converter 34/34 byte-identical; bottle 7/10 all metrics PASS; crate 8/10 = baseline
+- 2026-09-09 visible expert collection: 200 ep in 297+ rounds, yield ~0.62, 9/9 brakes at 0.30-0.31 m, no recovery stage (dataset lost)
 - 2026-09-09 07d-200 seed 7: 46/100 vs seed 42 57/100 (21:32, p 0.17); vs decisive 27 vs 29 (p 0.87) -- data gain was seed noise
 - 2026-09-09 07d-200 + ensemble N3 M0.3: 3/20 vs 9/20 paired (3:9, p 0.15); ensemble delays/blocks the arm drop, negative
 - 2026-09-08 ready07d_200 (176 ep): 57/100; paired first 60 37 vs 29 (p 0.24); reach-fail stops closer (0.24 m) but still no close
