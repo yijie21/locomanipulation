@@ -174,7 +174,7 @@ def start_control_once(p) -> None:
     The boot calibration below calls start_control at the NOMINAL pose (yaw 0), so without
     setting the flag here round 1 of every batch treated its -90 deg spawn as freshly anchored:
     17/17 first rounds of visible200_20260910 failed at the spawn (turn_to timeout / object
-    out of the ego view), rounds 2+ were fine (docs/ledger/bottle.md §12).
+    out of the ego view), rounds 2+ were fine (docs/ledger/bottle.md §14).
     """
     p.cmd.start_control()
     p._gym_started = True

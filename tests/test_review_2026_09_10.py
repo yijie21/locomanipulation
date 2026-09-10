@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
 
 class FirstRoundAnchorTests(unittest.TestCase):
-    """docs/ledger/bottle.md §12: the boot calibration's start_control must mark the deploy as anchored,
+    """docs/ledger/bottle.md §14: the boot calibration's start_control must mark the deploy as anchored,
     or round 1 of every batch skips the reanchor path and fails at the spawn."""
 
     def test_start_control_once_sets_the_anchored_flag(self):

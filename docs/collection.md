@@ -1014,5 +1014,5 @@ seed 4253:11 局 10 OK,1 局"太远"丢(0.40 m,带上限 0.38);蹲后 grip x 0.2
 
 stack 起来后的名义出生点标定已经对 deploy 调过 `start_control`,朝向锚定在 yaw 0;第 1 局 teleport 到 −90° 后
 `round_phases` 却按"新 deploy、锚 = 落地 yaw"处理,少了 hold + reanchor,转身收敛不了。visible200 的 17 批第 1 局
-17/17 失败,第 2 局起正常。修法:标定处用 `grasp_gym.start_control_once`(置 `_gym_started`)。台账 bottle §12。
+17/17 失败,第 2 局起正常。修法:标定处用 `grasp_gym.start_control_once`(置 `_gym_started`)。台账 bottle §14。
 看到 manifest 里第 1 局固定是 `[stand] could not turn` / `[view] ... at spawn`,就是这个坑回来了。

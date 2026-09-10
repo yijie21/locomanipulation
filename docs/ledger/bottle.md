@@ -488,7 +488,7 @@ reanchor 只修了朝向锚。下一步:用它采下一批 200 条(约 3.2 h 而
 同步;`eval_closed_loop` 固定 `RESTART_DEPLOY=True`(评测路径没在无重启下量过)。gate 基线换成本节 B' 的 30 局
 (`tests/gate/baseline_bottle.json`,旧基线留作 `tests/gate/baseline_bottle_restart_20260909.json`)。
 
-## 12. 每批第 1 局在出生阶段必败:标定时的 start_control 抢占了朝向锚(2026-09-10,session cf)
+## 14. 每批第 1 局在出生阶段必败:标定时的 start_control 抢占了朝向锚(2026-09-10,session cf)
 
 **现象**:`visible10_20260910`(2/2)与 `visible200_20260910`(17/17,截至第 17 批)每批的第 1 局都在出生阶段失败:
 `[stand] could not turn N deg to the approach heading at the spawn (turn_to -88deg timed out)` 11 次、
