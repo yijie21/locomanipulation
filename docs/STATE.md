@@ -65,12 +65,28 @@
   velocity) all 0/60; the failure moved from "never leaves the spawn" to "stops 10 cm short of the stand".
   The scene geometry was then found to be wrong (corner approach, 0.45-0.49 m reach) and replaced by the
   SONIC edge geometry; the expert works there (x-/y-/y+ edges 2/2 each). No dataset recorded on it yet.
-- Branch (65) 2026-09-10 09:10 UTC: NOTHING RUNNING; GPU0 / instance 2 free. Ghost hands now draw the servo's pure reference
-  (3e18990); final hard-placement videos: outputs/renders_isaac/crate_hard10r_20260910/ (7/10; three same-seed runs 5/5/7,
-  the stand-off >= 0.27 boundary held in all three; ledger crate.md). Earlier today: restart_deploy=false default,
-  SIM_VIS=none, cpu_headroom.sh, crate placement design (setback x yaw).
+- Branch (65) 2026-09-10 09:40 UTC: NOTHING RUNNING from this session; instance 2 free. TWO NOTICES. (1) OVERLAP: my queued
+  crate chain (pilot 07:45-07:55 on instance 2, Isaac renders 07:55-08:30, both GPU0) started inside session cf's visible200
+  per-batch stack restart -- its port poll saw the gap. cf's batches 07-14 in that window yielded 43/80 vs 66/100 outside,
+  no deploy trips; within batch noise but not excluded as my contention. (2) STATE.md CLOBBER at ~09:40 UTC: a branch-session
+  script truncated docs/STATE.md before reading it; the file was restored from HEAD b68c1f9, but cf/Codex's UNCOMMITTED
+  STATE hunks were lost from disk -- the first 60 diff lines (Codex ScaleBFM RUNNING/QUEUED lines, cf visible200 RUNNING
+  line) are saved verbatim in /workspace/tmp/STATE_cf_fragment_20260910.md; anything beyond them must be re-entered by
+  its author. Rule from now: read the RUNNING lines here + nvidia-smi compute apps before any GPU0 job; a queued runner
+  re-checks right before it starts (memory gpu0-port-gap-overlap); never open a file for writing before reading it.
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
+
+## Changed (2026-09-10 branch session 65, COMMITTED on main through b68c1f9; pushed through ebac697)
+- Collection default: no per-round deploy restart (restart_deploy=False, ebac697) with a reset-phase reanchor
+  (b2310c8); paired A/B 18/30 vs 16/30 at 34 vs 64 s a round (ledger bottle §11); gate baseline re-recorded;
+  eval_closed_loop pins the restart. SIM_VIS default none (18dd6dd). scripts/cpu_headroom.sh (container quota 15.36
+  cores, 55cb77c). Crate: WALL_WALK/WALL_FEATURE env vars documented dead (b07caef); placement design
+  crate_setback_levels_m x crate_yaw_levels_deg with the walk-in stand along the crate normal (166cd37); ghost hands
+  (IK reference pose) in MuJoCo + Isaac sbs renders, on by default (5bc1e0d, 3e18990); mujoco_render --insets;
+  summarize_wall_pilot label fix. Ledger crate.md: ready-stand 8/10, walk-in 4/10 (CPU-starved), hard placement
+  5/5/7 of 10 with the stand-off >= 0.26 boundary. Videos: outputs/renders_isaac/crate_hard10r_20260910/ (final),
+  outputs/videos/restart_ab_20260910/ (A vs B' pairs).
 
 ## Changed (2026-09-09/10 session 9d, COMMITTED on main through 507be6a; NOT pushed)
 - Refactor steps 1-6 merged (docs/handoff/refactor-plan.md, 13 decisions + D-group ruling; execution ledgers in
@@ -153,6 +169,9 @@
 3. Then the plan's next lever: DAgger with near-table spawns for the 'arm never leaves rest at the table' failure,
    built on tasks/bottle (step 4c seam), 2 seeds per arm.
 4. ScaleBFM / branch 65 items unchanged (below).
+5. Branch 65 next: (a) crate walk-in stand biased toward the far rail end or a [stand] far-hand reach gate, then re-run the
+   hard-placement 10 (memory crate-standoff-times-yaw-boundary); (b) speed levers 2-4 from ledger bottle §10 (post-'c'
+   hold 4 -> 1 s, restart-script polling, 20-round batches) -- each a gate run; (c) a GPU0 lock file both sessions honour.
 
 ## Blocked / waiting on
 - PRE-EXISTING unit failure on main (not from the ScaleBFM merge, fails on 6857fbb too, 2026-09-10):
@@ -183,6 +202,12 @@
   failures; a second training seed on the same dataset is the cheapest next fact.
 - failure_anatomy.py's arm-up threshold is inverted for the ready-grasp line (rest 0.90 m > close 0.72 m): its
   'arm never up = 0' is wrong there; use palm_z min vs the successes' close height instead.
+- No-restart collection parks the base 3 cm farther (park 0.332 vs 0.301) and adds 'local alignment disturbed base' 2/30:
+  does it change the trained policy's stand? Only the next 200-episode dataset + closed loop can answer (ledger bottle §11).
+- Crate hard placement: is the fix the stand bias, the reach gate, or a lower STAND_OFF_WALK? Untested; the boundary is
+  clean (stand-off >= 0.26 fails), the gait scatter 0.15-0.30 is the variable.
+- Did my GPU0 renders cost cf's visible200 batches 07-14 their yield (0.54 vs 0.66)? Unknowable after the fact; the
+  dataset audit (check_dataset) on those batches is the only check.
 - The v3/v4 ScaleBFM checkpoints are gone (cleanup); their numbers live in pilot.log/STATE/memory only.
   Re-deriving them means re-running bfm_pilot.sh on the kept datasets (~80 min each).
 
@@ -200,6 +225,8 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-10 crate hard placement (setback x yaw) 5/5/7 of 10 same seed; stand-off >= 0.26 fails in descend; final videos with ghost hands
+- 2026-09-10 restart A/B paired 30: no-restart+reanchor 18 vs restart 16, 34 vs 64 s/round, gate 13/15 -> default flipped
 - 2026-09-10 refactor gates on main (GPU0): converter 34/34 byte-identical; bottle 7/10 all metrics PASS; crate 8/10 = baseline
 - 2026-09-09 visible expert collection: 200 ep in 297+ rounds, yield ~0.62, 9/9 brakes at 0.30-0.31 m, no recovery stage (dataset lost)
 - 2026-09-09 07d-200 seed 7: 46/100 vs seed 42 57/100 (21:32, p 0.17); vs decisive 27 vs 29 (p 0.87) -- data gain was seed noise
