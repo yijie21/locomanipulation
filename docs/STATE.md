@@ -37,6 +37,33 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **MECHANISM COMPLETE 2026-09-11 04:0x-05:0x UTC (session cf). Ledger bottle.md §18.4.** GPU1 held ~20 min for an
+  inference server only (no sim, no stack); released, both GPUs at 2 MiB, 5590 free.
+  **The policy walks to the table, adopts the expert's approach posture to within ~2 deg / 5 mm, and then FREEZES
+  there for 85 s.** Corrects §18.3's "stops 6-8 cm short": the palm gap is almost entirely VERTICAL -- successes sit
+  +0.029 m above the bottle, failures +0.191 m, and the failures are HORIZONTALLY CLOSER (0.108 vs 0.134). palm_z min
+  0.729 (success) vs 0.875 (failure) against a 0.905 rest; 94/97 failures never bring the palm below 0.85 m.
+  The cleanest discriminator is WRIST ROLL: the expert goes 0.03 -> 0.24 rad at the wind-up (close-60) and holds it
+  through the grasp; live stays at 0.018 for the whole round. The plateau is frozen -- over 85 s, sh_pitch std
+  0.012 rad, wrist x std 2.3 mm, wrist z std 2.1 mm.
+  **Prediction, not execution** (token nearest-neighbour against a 17,440-frame training token bank, keyed on
+  eef_state[9] wrist height): live tokens' neighbours sit at the approach pose and go UP (+1.6 s -> 0.130); with the
+  wrist image swapped for a pre-descent expert frame they go DOWN (0.104-0.110). The right wrist camera is the
+  trigger for the descent.
+  **The trigger was learned** -- fed the expert's own observations the model holds at close-150/-120/-90, fires the
+  descent at close-60 (0.148 -> 0.075) and closes at close-40/-20, and its 1.6 s chunks track ground truth. So it is
+  a good open-loop predictor that can never reach the state that fires it.
+  **Closed-loop absorbing state**: the wind-up out of the approach pose is SCRIPTED in the expert, not
+  observation-triggered; the observation that would trigger the descent (bottle ahead of the jaws in the wrist cam)
+  only exists after the wind-up. Needs to descend to see it, needs to see it to descend. Same class as memory
+  creep-hidden-stop-target. This is also why open-loop nmse 0.0024 and closed-loop 2/100 are not contradictory: the
+  approach is a long plateau where "hold" is right, and the wind-up is a handful of frames that the frame-average
+  washes out.
+  NOT a bug hunt any more -- it is data/representation. Options in §18.4, cheapest first: (a) a phase/progress
+  signal, (b) oversample the wind-up frames, (c) DAgger on "at the table, approach pose, stationary", which is
+  exactly the state the policy sticks in and which the expert data only ever passes through.
+  Artifacts: outputs/experiments/visible200_obsdump_20260911/{reach_trigger.json,wrist_live_vs_dataset.png},
+  runner scripts/experiments/visible200_reach_trigger_20260911.py. The 580 MB obs/ dump can now be deleted.
 - **DIAGNOSIS STEP 1 DONE 2026-09-11 02:5x-04:0x UTC -- THE 2/100 IS LOCALISED** (session cf; instance 0 + GPU0 taken
   and released, ports free, stack down). Ledger bottle.md §18.3.
   **The model's gripper decision is CORRECT. The arm never reaches the bottle.** Three independent lines:
