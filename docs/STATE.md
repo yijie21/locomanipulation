@@ -37,6 +37,32 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **session cf 2026-09-11 10:1x-11:0x: privileged-teacher + per-frame learnability audit. Ledger §19.9.**
+  NOTHING RUNNING; GPUs 2 MiB, ports free. New flag `reach.image_servo_truth_control` (default False, Codex's
+  original path untouched): the expert CONTROLS from object truth, while the same `decide()` is evaluated a second
+  time on the RGB fit every frame and `intent_rgb` / `agree` / `aim_delta_m` / `rgb_usable` are recorded. Truth
+  never enters the recorded observation; it picks the action, the audit says whether that action was reproducible
+  from images.
+  **PERCEPTION BUDGET (1562 fused fits audited against truth):** 0.25-0.40 m -> 0.009 median / 0.015 p90;
+  0.40-0.60 -> 0.005/0.016; 0.60-0.90 -> 0.013/0.041; 0.90-1.40 -> 0.028/0.084. Near field is sharp, far field is
+  not. So a switch is admissible only where its tolerance greatly exceeds the p90 at the range it fires: "when to
+  close" (fires at 0.25-0.40 m) can be a switch; **"when to raise the arm" (0.6-1.2 m, p90 41-84 mm) cannot** and
+  must be a continuous function.
+  **AGREEMENT RATE (attempt12_truth, 143 frames, seed 31000): 80.4% overall; 82.5% of frames had a usable RGB fit;
+  97.5% agreement when usable.** By range: 0.25-0.40 m **100%**, 0.40-0.60 93%, 0.60-0.90 97%, **0.90-1.50 49%**
+  (perception error 0.102 there). Of the 28 disagreements, 25 are "RGB not usable at all" and only 3 are a genuinely
+  different intent -- all 3 sitting on the `prealign_depth=0.44` boundary, the textbook boundary-inside-noise.
+  **READ:** the near-field grasp decisions are reproducible; everything unlearnable is far field, and mostly
+  "the student could not see", not "the student chose differently". Far field only needs to walk toward the bottle,
+  and bearing is well determined even when depth is not -- so the far field should stop requiring a precise fit.
+  The 0.44 hard boundary should become a continuous blend; it is also what makes the arm a passenger (§19.8).
+  Expert reliability is fixed: no reacquire loop, `align` error converges monotonically 0.210 -> 0.091. **Still 0/4**
+  -- all three rounds die on `right_dex1_finger_1_link vs water_bottle_object`. The dex1 long-finger geometry is now
+  the ONLY blocker; perception and far-field facing are both eliminated as confounds.
+  CAVEAT: the near-field 100% rests on 16 frames (episodes are cut at 18-21 s by the finger problem); re-measure
+  once a full round can run.
+  Also fixed two pre-existing size-cap violations in §19's code (`_tick` 94 lines, `reach_config.__post_init__` 89)
+  -- `make lint` was already red on them at HEAD, not introduced here.
 - **session cf 2026-09-11 09:1x-10:0x: image-servo far-field line. Two real bugs found and fixed, still 0/4.**
   NOTHING RUNNING; GPUs 2 MiB, ports free. Ledger bottle.md §19.8. Codex's design is intact; its tests are now 12.
   **§19.7's guess was partly WRONG.** Ego is not the weak camera -- it detects the cap in ~100% of frames at every

@@ -26,6 +26,19 @@ RETIRED_KEYS = frozenset(
 )
 
 
+BOOL_FIELDS = (
+    "transport_guard",
+    "ready_grasp_baseline",
+    "ready_grasp_recovery",
+    "measured_squat_handover",
+    "coupled_squat",
+    "timely_capture",
+    "visible_expert",
+    "image_servo",
+    "image_servo_truth_control",
+)
+
+
 @dataclass(frozen=True)
 class ReachConfig:
     post_min: float = 0.22
@@ -65,24 +78,19 @@ class ReachConfig:
     visible_brake_depth: float = 0.31  # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
     visible_decel_band: float = 0.12  # speed ramps down over this depth band above the brake depth
     image_servo: bool = False  # RGB cap feedback and re-entrant arm control (ledger bottle §19).
+    # Privileged-teacher variant (ledger bottle §19.9): the expert CONTROLS from
+    # object truth so it is reliable, while the RGB fit is still computed every
+    # tick and the SAME decide() is evaluated on it, recording per frame whether
+    # an image-only student would have chosen the same intent. Truth never enters
+    # the recorded observation; it selects the action, and the audit says whether
+    # that action was reproducible from the images.
+    image_servo_truth_control: bool = False
     image_calibration: BottleCalibration = field(default_factory=BottleCalibration)  # RGB feature calibration.
     image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
     def __post_init__(self):
         values = asdict(self)
-        if any(
-            type(v) is not bool
-            for v in (
-                self.transport_guard,
-                self.ready_grasp_baseline,
-                self.ready_grasp_recovery,
-                self.measured_squat_handover,
-                self.coupled_squat,
-                self.timely_capture,
-                self.visible_expert,
-                self.image_servo,
-            )
-        ):
+        if any(type(v) is not bool for v in (getattr(self, name) for name in BOOL_FIELDS)):
             raise ValueError("strategy and guard switches must be boolean")
         for name, value in values.items():
             if name not in (
@@ -94,6 +102,7 @@ class ReachConfig:
                 "timely_capture",
                 "visible_expert",
                 "image_servo",
+                "image_servo_truth_control",
                 "image_calibration",
                 "image_control",
             ) and (type(value) not in (int, float) or not math.isfinite(value)):

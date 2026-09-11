@@ -31,7 +31,8 @@
     "visible_expert": true,
     "visible_brake_depth": 0.31,
     "visible_decel_band": 0.12,
-    "image_servo": true
+    "image_servo": true,
+    "image_servo_truth_control": true
   },
   "target": "water_bottle",
   "prompt": "pick up the water bottle",

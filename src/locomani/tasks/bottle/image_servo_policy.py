@@ -27,6 +27,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
             raise ValueError("RGB cap calibration only supports water_bottle")
         self.observer = BottleImageObserver(self.arm.ik, self.config.image_calibration)
         self.limits = self.config.image_control
+        self.truth_control = bool(self.config.image_servo_truth_control)
         self.stats = dict(
             samples=[],
             calibration=asdict(self.observer.calibration),
@@ -152,12 +153,76 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         q[25] = -self.limits.view_elbow
         return q
 
+    def _audit(self, state, fit, usable, up, palm, rotation, command, truth_root):
+        """Would an image-only student have chosen the same thing here?
+
+        The whole point of controlling from truth (§19.9): the expert stays
+        reliable, and this runs the SAME decide() on the RGB estimate to record,
+        per frame, whether the action it just demonstrated was reproducible from
+        the images. A frame where these disagree is a label the student cannot
+        learn, whatever the robot did. An unusable fit counts as a disagreement,
+        because "the student could not even see the target" is exactly that.
+        """
+        row = dict(rgb_usable=bool(usable), intent_rgb=None, agree=False, aim_delta_m=None, perception_error_m=None)
+        if fit is not None:
+            row["perception_error_m"] = float(np.linalg.norm(fit["centre"] - truth_root))
+            row["uncertainty_m"] = float(fit["uncertainty_m"])
+            row["views"] = list(fit["selected"])
+            row["precise_rgb"] = bool(fit["precise"])
+        if not usable:
+            return row
+        target_rgb = fit["centre"] - self.config.grip_below_center * up
+        command_rgb, _ = self._goal(state, target_rgb, up, palm, rotation)
+        row.update(
+            intent_rgb=command_rgb.intent,
+            agree=bool(command_rgb.intent == command.intent),
+            aim_delta_m=float(np.linalg.norm(command_rgb.aim - command.aim)),
+            needs_walk_rgb=bool(self._needs_walk(target_rgb, state)),
+        )
+        return row
+
+    def _log_sample(self, state, fit, audit, command, target, palm, rotation, base, delta, height):
+        """One diagnostic row per 0.1 s; never on the control path."""
+        now = time.monotonic()
+        if now - self._last_log >= 0.10:
+            truth = np.asarray(state["objects"][self.task.target.key]["pos"])
+            row = dict(
+                wall=time.time(),
+                seq=state.get("seq"),
+                intent=command.intent,
+                control="truth" if self.truth_control else "rgb",
+                **audit,
+                target_root=target.tolist(),
+                palm_root=palm.tolist(),
+                aim_root=command.aim.tolist(),
+                wrist_rotation=rotation.tolist(),
+                target_world=self._grip_world.tolist(),
+                base_world=base.tolist(),
+                palm_world=state["palms"][self.side]["pos"],
+                command_height=height,
+                close_candidate=command.close,
+                detection=[
+                    dict(camera=v["camera"], pixels=v["pixels"], box=v["box"].tolist())
+                    for v in (fit["views"] if fit is not None else [])
+                ],
+                object_truth_world=truth.tolist(),
+            )
+            self.stats["samples"].append(row)
+            self._last_log = now
+            agree = "=" if audit["agree"] else ("?" if audit["rgb_usable"] else "x")
+            err = audit["perception_error_m"]
+            self.p.log(
+                f"[image-servo] {command.intent} depth={target[0]:.3f} error={np.linalg.norm(delta):.3f} "
+                f"rgb{agree}{audit['intent_rgb'] or 'none'} audit={err if err is None else round(err, 3)}"
+            )
+
     def _tick(self, state):
         if state["fallen"]:
             self.error = "RGB servo: base fell"
             return None
         fit = self.observer.observe(state)
-        if fit is None or fit["uncertainty_m"] > self.observer.calibration.approach_uncertainty_m:
+        usable = fit is not None and fit["uncertainty_m"] <= self.observer.calibration.approach_uncertainty_m
+        if not usable and not self.truth_control:
             # The known occluder is the hand itself. Retracting it is a bounded,
             # proprioception-defined view action, never a blind target approach.
             self.stats["reacquire_ticks"] = self.stats.get("reacquire_ticks", 0) + 1
@@ -166,11 +231,14 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         br = Primitives._rot(state["pelvis"]["quat"])
         base = np.asarray(state["pelvis"]["pos"])
         up = br.T @ np.array([0.0, 0.0, 1.0])
-        target = fit["centre"] - self.config.grip_below_center * up
+        truth_root = br.T @ (np.asarray(state["objects"][self.task.target.key]["pos"]) - base)
+        centre = truth_root if self.truth_control else fit["centre"]
+        target = centre - self.config.grip_below_center * up
         self._grip_world = base + br @ target
         palm = br.T @ (np.asarray(state["palms"][self.side]["pos"]) - base)
         rotation = br.T @ Primitives._rot(state["palms"][self.side]["quat"])
         command, comfortable = self._goal(state, target, up, palm, rotation)
+        audit = self._audit(state, fit, usable, up, palm, rotation, command, truth_root)
         delta = command.aim - palm
         aim = palm + delta * min(
             1.0 + self.limits.tracking_gain, self.limits.cartesian_lead / max(np.linalg.norm(delta), 1e-9)
@@ -218,33 +286,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
             contact=command.intent in ("enter", "capture"),
         ):
             return None
-        now = time.monotonic()
-        if now - self._last_log >= 0.10:
-            truth = np.asarray(state["objects"][self.task.target.key]["pos"])
-            row = dict(
-                wall=time.time(),
-                seq=state.get("seq"),
-                intent=command.intent,
-                target_root=target.tolist(),
-                palm_root=palm.tolist(),
-                aim_root=command.aim.tolist(),
-                wrist_rotation=rotation.tolist(),
-                target_world=self._grip_world.tolist(),
-                base_world=base.tolist(),
-                palm_world=state["palms"][self.side]["pos"],
-                command_height=height,
-                close_candidate=command.close,
-                views=fit["selected"],
-                uncertainty_m=fit["uncertainty_m"],
-                detection=[dict(camera=v["camera"], pixels=v["pixels"], box=v["box"].tolist()) for v in fit["views"]],
-                object_truth_world=truth.tolist(),
-                perception_error_m=float(np.linalg.norm(base + br @ fit["centre"] - truth)),
-            )
-            self.stats["samples"].append(row)
-            self._last_log = now
-            self.p.log(
-                f"[image-servo] {command.intent} depth={target[0]:.3f} error={np.linalg.norm(delta):.3f} vision={','.join(fit['selected'])} audit={row['perception_error_m']:.3f}"
-            )
+        self._log_sample(state, fit, audit, command, target, palm, rotation, base, delta, height)
         return command, target, palm, rotation
 
     def approach(self):
@@ -263,6 +305,10 @@ class ImageServoPolicy(RecoverableGraspPolicy):
     def _capture_ready(self, result, state):
         # CLOSE is a current-observation intent. Mechanical closure/contact
         # verification belongs to the existing low-level gripper primitive.
+        if self.truth_control:
+            # Truth drives the close; whether RGB would also have authorised it is
+            # recorded per frame as precise_rgb, not required here.
+            return result[0].close and closure_clear(self, state) is None
         return result[0].close and self.observer.latest["precise"] and closure_clear(self, state) is None
 
     def execute(self, *, grip_world, squat_hint, ghost):
