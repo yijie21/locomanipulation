@@ -37,6 +37,34 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **session cf 2026-09-11 09:1x-10:0x: image-servo far-field line. Two real bugs found and fixed, still 0/4.**
+  NOTHING RUNNING; GPUs 2 MiB, ports free. Ledger bottle.md §19.8. Codex's design is intact; its tests are now 12.
+  **§19.7's guess was partly WRONG.** Ego is not the weak camera -- it detects the cap in ~100% of frames at every
+  range. Auditing 622 accepted fits against object truth: the fused pair is calibrated (uncertainty 0.017 m, true
+  error 0.018 m), but **wrist-ONLY fits reported 0.076 m and were off by 0.545 m, 98% of it pure depth, placing the
+  bottle 0.53 m NEARER than it is** -- and they passed the 0.15 gate.
+  ROOT CAUSE: on a disagreeing pair `fit_bottle` fell back to `min(observations, key=conditioning)`, which picks the
+  larger silhouette = the wrist, the camera its own comment blames for the disagreement. FIXED: keep the head view.
+  (A width-sensitivity uncertainty term was tried and REVERTED -- a confidently wrong monocular depth is
+  self-consistent, so it still let 98% of the bad fits through. Only cross-view agreement separates them.)
+  **THAT FIX EXPOSED A LATENT PIROUETTE.** The far-field facing used `atan2(target[1], target[0])` toward the
+  BOTTLE, but the stand is deliberately offset `approach_lateral=0.195`, so that bearing converges to -0.195 and
+  never to zero: a permanent ~10 deg right turn every tick. attempt08 never hit it because the wrong-near depth kept
+  it in the other branch. Measured in attempt10: heading swept 2738 deg inside a 3-8 cm box, 0.6 m walked for 0.03 m
+  net. FIXED: aim at the approach goal (`target - relative_goal`), the same vector `movement` uses.
+  **FOUR ARMS, same seed 31000, 4 rounds each:**
+  | attempt | change | >0.2 m bad fits | wrist-only | net/travel | heading sweep | min depth |
+  | 08 Codex | - | 20% | 22% | 0.80 | 180d | 0.31 |
+  | 09 | prealign 0.44->1.30 | 4% | 6% | 0.38 | 1734d | 0.50 |
+  | 10 | + keep head view | 0% | 0% | 0.07 | 2738d | 0.88 |
+  | 11 | + aim at the goal | 1% | 1% | 0.54 | 729d | 0.43 |
+  **STILL 0/4**, and attempt11 fails back at the ORIGINAL problem: `RGB servo sweep / baseline clearance:
+  right_dex1_finger_*_link vs water_bottle_object` -- the dex1 long fingers sweeping the bottle, which §19.3 itself
+  flagged. Two confounds are now removed, so that is a clean near-field geometry problem: the long fingers foul the
+  bottle on the way in. §19.3 already says not to require a monotone wrist height and to allow a safe detour --
+  that is the design to do next, not more far-field tuning.
+  RESIDUAL, not chased: 729 deg of heading sweep still (08 was 180) -- suspect the `depth <= 0.65` branch, where the
+  facing is still the default `_facing(state)`.
 - **session cf 2026-09-11 08:1x-09:0x: picked up Codex's image-servo line, ran attempt09, machine released.**
   NOTHING RUNNING; GPUs 2 MiB, ports free, stack down. Ledger bottle.md §19.7. No Codex source was changed; its
   11 tests still pass. The `reach.image_control` override I used is REVERTED -- the config is back at Codex's

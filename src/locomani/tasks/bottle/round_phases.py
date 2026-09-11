@@ -613,6 +613,10 @@ def _phase_navigate(ctx: RoundContext):
             from locomani.tasks.bottle.coupled_grasp_policy import CoupledGraspPolicy
 
             controller = CoupledGraspPolicy
+        if ctx.reach_config.image_servo:
+            from locomani.tasks.bottle.image_servo_policy import ImageServoPolicy
+
+            controller = ImageServoPolicy
         coordinated = controller(p, arrival_task, ctx.reach_config, ctx.arm_ramp, ctx.execution)
     ctx.coordinated = coordinated
     return None

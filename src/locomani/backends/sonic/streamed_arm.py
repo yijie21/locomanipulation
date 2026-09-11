@@ -498,7 +498,7 @@ class PlannerArm(StreamedArm):
         # carry/stand tail of the episode, with the arm standing still.
         self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
 
-    def _push(self, q_mj29, observed=None) -> None:
+    def _push(self, q_mj29, observed=None, *, movement=(0.0, 0.0, 0.0), speed=-1.0) -> None:
         from locomani.backends.sonic.primitives import upper_body_from_mj
 
         q = self._guard_left(np.asarray(q_mj29, dtype=float).copy(), observed=observed)
@@ -508,7 +508,7 @@ class PlannerArm(StreamedArm):
             self.p.cmd.set_upper_body_vel((u - upper_body_from_mj(self._q_prev)) / DT)
         self._q_prev = q.copy()
         self.p.cmd.set_hands(left=self.hands["left"], right=self.hands["right"])
-        self.p.cmd.frame(mode=self.mode, facing=self._face, height=self.height)
+        self.p.cmd.frame(mode=self.mode, facing=self._face, height=self.height, movement=movement, speed=speed)
         self.i += 1
         self.next_t += DT
         lag = self.next_t - time.time()

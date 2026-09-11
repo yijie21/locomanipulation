@@ -20,6 +20,8 @@ from locomani.tasks.bottle.round_phases import RoundContext, _rel_dbg, _rel_now
 
 def _phase_approach(ctx: RoundContext):
     p, rm = ctx.p, ctx.rm
+    if ctx.reach_config.image_servo:
+        return ctx.coordinated.approach()
 
     def raise_arm(_s, dist):
         if ctx.coordinated is not None:

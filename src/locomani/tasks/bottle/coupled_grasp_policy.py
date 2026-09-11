@@ -19,7 +19,7 @@ from locomani.tasks.bottle.ready_grasp_policy import OFFSET, PRE_GAP, ready_q, t
 from locomani.tasks.bottle.recoverable_grasp_policy import RecoverableGraspPolicy
 
 
-def screen_motion(guard, state, q, dz, forward):
+def screen_motion(guard, state, q, dz, forward, *, contact_side=None):
     """Screen joint sweep and small base-motion uncertainty together."""
     for u in (0.0, 0.5, 1.0):
         trial = deepcopy(state)
@@ -34,7 +34,7 @@ def screen_motion(guard, state, q, dz, forward):
         # belongs to stand selection and the terminal squat projection; an
         # existing hip/table near-contact must not veto every arm command.
         for side in (side for side in guard.hands if side != "body"):
-            hit = guard.check(trial, q, side, allow_target_contact=False)
+            hit = guard.check(trial, q, side, allow_target_contact=side == contact_side)
             if not hit.clear:
                 return f"{side}:{hit.link}:{hit.obstacle}"
     return None

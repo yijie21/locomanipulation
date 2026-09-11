@@ -3,8 +3,10 @@
 import json
 import math
 import warnings
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from locomani.tasks.bottle.image_servo_config import BottleCalibration, ServoLimits
 
 # Fields deleted from ReachConfig that may still appear in a committed
 # outputs/experiments/*/reach_config.json snapshot. `load` drops them with a
@@ -62,6 +64,9 @@ class ReachConfig:
     visible_expert: bool = False
     visible_brake_depth: float = 0.31  # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
     visible_decel_band: float = 0.12  # speed ramps down over this depth band above the brake depth
+    image_servo: bool = False  # RGB cap feedback and re-entrant arm control (ledger bottle §19).
+    image_calibration: BottleCalibration = field(default_factory=BottleCalibration)  # RGB feature calibration.
+    image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
     def __post_init__(self):
         values = asdict(self)
@@ -75,6 +80,7 @@ class ReachConfig:
                 self.coupled_squat,
                 self.timely_capture,
                 self.visible_expert,
+                self.image_servo,
             )
         ):
             raise ValueError("strategy and guard switches must be boolean")
@@ -87,6 +93,9 @@ class ReachConfig:
                 "coupled_squat",
                 "timely_capture",
                 "visible_expert",
+                "image_servo",
+                "image_calibration",
+                "image_control",
             ) and (type(value) not in (int, float) or not math.isfinite(value)):
                 raise ValueError(f"{name} must be a finite number")
         if not (0 < self.post_min < self.post_max and 0 < self.pre_min < self.pre_max):
@@ -143,6 +152,10 @@ class ReachConfig:
                 raise ValueError("visible_expert requires the ready baseline with the recovery controller")
             if not (0.20 <= self.visible_brake_depth <= 0.45 and 0 <= self.visible_decel_band <= 0.30):
                 raise ValueError("visible brake geometry outside supported bounds")
+        if self.image_servo and not (self.visible_expert and self.coupled_squat and self.timely_capture):
+            raise ValueError("image_servo requires visible_expert, coupled_squat and timely_capture")
+        if not isinstance(self.image_calibration, BottleCalibration) or not isinstance(self.image_control, ServoLimits):
+            raise ValueError("image calibration/control must be typed configurations")
         self.approach_band()
 
     def approach_band(self):
@@ -168,6 +181,9 @@ class ReachConfig:
         for key in RETIRED_KEYS.intersection(data):
             warnings.warn(f"reach config {source}: ignoring retired key {key!r}", stacklevel=2)
             del data[key]
+        for key, factory in (("image_calibration", BottleCalibration), ("image_control", ServoLimits)):
+            if key in data and isinstance(data[key], dict):
+                data[key] = factory(**data[key])
         return cls(**data)
 
     @classmethod

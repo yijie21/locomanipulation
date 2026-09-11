@@ -584,11 +584,15 @@ def _run_round(
         palm_drift_max=PALM_DRIFT_MAX,
         tabletop_grasp_cls=TabletopGrasp,
     )
-    for phase in (_p_spawn, _p_handover, _p_navigate, _p_approach, _p_grasp):
-        result = phase(ctx)
-        if result is not None:
-            return result
-    raise AssertionError("round_phases: no phase returned a result")
+    try:
+        for phase in (_p_spawn, _p_handover, _p_navigate, _p_approach, _p_grasp):
+            result = phase(ctx)
+            if result is not None:
+                return result
+        raise AssertionError("round_phases: no phase returned a result")
+    finally:
+        if reach_config.image_servo and ctx.coordinated is not None:
+            ctx.coordinated.close()
 
 
 if __name__ == "__main__":
