@@ -37,6 +37,22 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **CORRECTION 2026-09-11 (session cf, after the user asked what the proposed training would prove):
+  §18.8's "the policy cannot tell walking from parked" is WRONG -- it has that information.** Ledger §18.9.
+  A LINEAR probe on the 12 leg-joint angles the policy already receives predicts smoothed leg motion at
+  held-out R^2 0.665 and classifies moving vs still at 90% (chance 50%), from a SINGLE frame. So the
+  delta_indices=[-10,0] retrain §18.8 proposed has no premise left; do not run it for that reason.
+  §18.8's measurements stand (stuck state in-distribution and nearer than training frames are to each other,
+  100% matched to the approach phase, base parked at 0.79 cm/s, gr00t_sonic_2cam.py is single-frame). Only the
+  causal inference was wrong.
+  WHAT IS LEFT, after ruling out observation encoding, the gripper, the execution chain, stop position/azimuth,
+  distribution shift and missing velocity -- and given the model predicts correctly on the expert's own
+  observations at every phase: **the learned policy has a fixed point in a fully in-distribution state.** That is
+  textbook behaviour cloning, and it is the case for DAgger, which does not require knowing why. The value of
+  this whole elimination chain is that it kills the cheaper "it is a bug / one input is missing" explanations,
+  so DAgger is now justified rather than assumed.
+  METHOD RULE (second one): before claiming some information is ABSENT from the observation, spend the few
+  minutes on a linear probe. I proposed a training run on an unprobed claim.
 - **CORRECTION 2026-09-11 05:3x UTC (session cf, after the user asked for controls): §18.4's "the right wrist camera
   is the trigger for the descent" is RETRACTED -- I read sampling noise.** Ledger bottle.md §18.5. GPU released.
   The action head is a diffusion model. Repeating ONE observation 10x, the nearest-neighbour wrist-height statistic
