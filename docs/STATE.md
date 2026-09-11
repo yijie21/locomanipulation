@@ -37,6 +37,25 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **CORRECTION 2026-09-11 05:3x UTC (session cf, after the user asked for controls): §18.4's "the right wrist camera
+  is the trigger for the descent" is RETRACTED -- I read sampling noise.** Ledger bottle.md §18.5. GPU released.
+  The action head is a diffusion model. Repeating ONE observation 10x, the nearest-neighbour wrist-height statistic
+  §18.4 relied on has sd 0.002-0.017, while the single-shot differences it called a descent were 0.005-0.007.
+  Re-done with 8 repeats and a 3-sigma rule (scripts/experiments/visible200_trigger_controls_20260911.py):
+  (a) NO wrist image significantly fires the descent on either base -- not the approach-pose donors with no bottle
+  in frame, not the wind-up donor with the bottle between the jaws, not that donor with the bottle inpainted out,
+  not the descent donor. (b) the per-key sweep on the descent picks `video.ego_view`, significant on 1 of 2 bases,
+  and `video.right_wrist` on NEITHER -- the opposite of §18.4.
+  STILL STANDS (big-margin measurements, not noise): the GRIPPER does follow the wrist camera (grip sd 0.0002-0.0005;
+  a grasp-moment donor takes it +0.024 -> -0.013, ~30-70 sigma, 4/4 bases; a pre-close donor correctly does NOT
+  close); every descriptive measurement in §18.4 (19 cm vertical gap, arm frozen to 0.7 deg / 2 mm over 85 s, wrist
+  roll 0.018 vs the expert's 0.24, palm separation, 0 of 912 closes); and the model DOES descend on the expert's own
+  complete observation (-0.0718 +-0.0020 vs live +0.0207 +-0.0026, ~25 sigma).
+  REVISED CONCLUSION: the model descends on the expert's COMPLETE observation, but no SINGLE key transplanted from
+  it into the stuck live observation reproduces that. The difference is distributed, not one input. The absorbing
+  state stands; WHAT FIRES THE TRANSITION IS UNLOCALISED.
+  METHOD RULE for this line: any conclusion from a token nearest-neighbour difference needs repeated sampling and an
+  sd. Single-shot differences at the 0.005 level carry no information. The gripper is exempt (sd is 100x smaller).
 - **MECHANISM COMPLETE 2026-09-11 04:0x-05:0x UTC (session cf). Ledger bottle.md §18.4.** GPU1 held ~20 min for an
   inference server only (no sim, no stack); released, both GPUs at 2 MiB, 5590 free.
   **The policy walks to the table, adopts the expert's approach posture to within ~2 deg / 5 mm, and then FREEZES
