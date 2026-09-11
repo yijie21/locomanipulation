@@ -28,6 +28,10 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         self.observer = BottleImageObserver(self.arm.ik, self.config.image_calibration)
         self.limits = self.config.image_control
         self.truth_control = bool(self.config.image_servo_truth_control)
+        radius = float(np.asarray(self.meta["objects"][self.task.target.key]["box"]["half_extent"])[0])
+        self.clearance = max(
+            self.limits.finger_reach_past_grip + radius + self.limits.entry_margin, self.limits.entry_gap
+        )
         self.stats = dict(
             samples=[],
             calibration=asdict(self.observer.calibration),
@@ -47,7 +51,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         self.p.cmd.set_upper_body_vel(np.zeros(17))
         self.observer.close()
 
-    def _send(self, state, q, *, depth=None, target=None, height=None, contact=False):
+    def _send(self, state, q, *, depth=None, target=None, height=None, contact=False, advance=1.0):
         """Preserve reference continuity and publish finite-difference velocities."""
         q = self.arm.q + np.clip(q - self.arm.q, -self.limits.joint_step, self.limits.joint_step)
         error = self.reference_check(state, q, "enter" if contact else "prepare")
@@ -85,6 +89,15 @@ class ImageServoPolicy(RecoverableGraspPolicy):
                 np.clip((depth - self.config.visible_brake_depth) / max(self.config.visible_decel_band, 0.001), 0, 1)
             )
             speed = self.limits.walking_floor + (self.limits.walking_speed - self.limits.walking_floor) * u
+            # Do not let the BASE carry the fingers into the object. The arm
+            # descends at 0.06-0.10 m/s (ledger §19.8) while the base closes at
+            # ~0.17 m/s, so an arm that is still high loses its finger clearance
+            # to the base's own advance -- measured as the grip point arriving
+            # 0.060 m behind the bottle where 0.065 m is needed, which is exactly
+            # the margin by which the fingers clipped. `advance` is 1 while the
+            # arm is aligned or still far, and ramps to 0 as the stand-off is
+            # spent, so the base waits for the arm instead of overrunning it.
+            speed *= float(advance)
             if depth <= self.limits.walking_mid_depth:
                 speed = min(speed, self.limits.walking_mid)
             else:
@@ -125,7 +138,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         # This is a fixed comfortable grasp attitude, not an episode-selected pose.
         _, centre, terminal = templates()[4]
         observation = ServoObservation(target, palm, rotation, terminal, up)
-        command = decide(observation, self.limits)
+        command = decide(observation, self.limits, self.clearance)
         if depth <= self.limits.prealign_depth:
             return command, centre
         prep = self._view_q()
@@ -201,6 +214,8 @@ class ImageServoPolicy(RecoverableGraspPolicy):
                 palm_world=state["palms"][self.side]["pos"],
                 command_height=height,
                 close_candidate=command.close,
+                grip_standoff_m=float((target - (palm + rotation @ OFFSET)) @ rotation[:, 0]),
+                clearance_m=self.clearance,
                 detection=[
                     dict(camera=v["camera"], pixels=v["pixels"], box=v["box"].tolist())
                     for v in (fit["views"] if fit is not None else [])
@@ -215,6 +230,21 @@ class ImageServoPolicy(RecoverableGraspPolicy):
                 f"[image-servo] {command.intent} depth={target[0]:.3f} error={np.linalg.norm(delta):.3f} "
                 f"rgb{agree}{audit['intent_rgb'] or 'none'} audit={err if err is None else round(err, 3)}"
             )
+
+    def _advance_scale(self, target, palm, rotation, command):
+        """How much of the walk speed the arm's readiness still permits.
+
+        1 while the grip point is further back than its required stand-off, or
+        once the servo is committed to entering; ramping to 0 as that stand-off
+        is spent. Both inputs -- the grip point from proprioception and the object
+        from vision -- are things the student also sees, so this coupling is as
+        learnable as the rest of decide().
+        """
+        if command.intent in ("enter", "capture"):
+            return 1.0
+        standoff = float((target - (palm + rotation @ OFFSET)) @ rotation[:, 0])
+        band = max(self.limits.base_hold_band, 1e-6)
+        return float(np.clip((standoff - self.clearance) / band, 0.0, 1.0))
 
     def _tick(self, state):
         if state["fallen"]:
@@ -277,6 +307,8 @@ class ImageServoPolicy(RecoverableGraspPolicy):
             if rejection:
                 self.error = f"RGB servo sweep: {rejection}"
                 return None
+        advance = self._advance_scale(target, palm, rotation, command)
+        self.stats["advance_min"] = min(self.stats.get("advance_min", 1.0), advance)
         if not self._send(
             state,
             q,
@@ -284,6 +316,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
             target=target,
             height=height,
             contact=command.intent in ("enter", "capture"),
+            advance=advance,
         ):
             return None
         self._log_sample(state, fit, audit, command, target, palm, rotation, base, delta, height)

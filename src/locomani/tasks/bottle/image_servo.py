@@ -28,8 +28,13 @@ class ServoCommand:
     close: bool = False
 
 
-def decide(obs: ServoObservation, limits=DEFAULT_LIMITS):
-    """Align outside the bottle, then enter; a parked input needs no warm-up."""
+def decide(obs: ServoObservation, limits=DEFAULT_LIMITS, clearance=None):
+    """Align outside the bottle, then enter; a parked input needs no warm-up.
+
+    `clearance` is the stand-off the grip point keeps while not aligned. It is
+    computed from the finger geometry and the object radius; entry_gap is only
+    the floor. See image_servo_config.ServoLimits.
+    """
     measured_error = obs.rotation.T @ (obs.target - obs.palm) - OFFSET
     height_error = float((obs.target - obs.palm - obs.rotation @ OFFSET) @ obs.up)
     if (
@@ -46,13 +51,14 @@ def decide(obs: ServoObservation, limits=DEFAULT_LIMITS):
     cross = error - depth * entry
     angle = float(np.arccos(np.clip((np.trace(obs.rotation.T @ obs.grasp_rotation) - 1) / 2, -1.0, 1.0)))
     aligned = np.linalg.norm(cross) < limits.alignment_tolerance and angle < 0.16
-    if not aligned and depth < limits.entry_gap - 0.015:
+    gap = limits.entry_gap if clearance is None else max(clearance, limits.entry_gap)
+    if not aligned and depth < gap - 0.015:
         # Dex1 fingers extend past the grasp centre: clear them before descending.
-        aim = obs.palm + (depth - limits.entry_gap) * entry
+        aim = obs.palm + (depth - gap) * entry
         return ServoCommand(aim, obs.rotation.copy(), "clear_entry")
     if not aligned:
         # Hold the current depth while correcting height/sideways error;
         # moving forward to a pregrasp waypoint would consume finger clearance.
-        aim = obs.palm + cross + min(depth - limits.entry_gap, 0.0) * entry
+        aim = obs.palm + cross + min(depth - gap, 0.0) * entry
         return ServoCommand(aim, obs.grasp_rotation.copy(), "align")
     return ServoCommand(desired, obs.grasp_rotation.copy(), "enter")

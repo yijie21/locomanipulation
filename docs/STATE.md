@@ -37,6 +37,32 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **session cf 2026-09-11 11:1x-12:0x: implemented the finger-clearance plan, ran 4 rounds, and the data REFUTED
+  my own mechanism.** NOTHING RUNNING; GPUs 2 MiB, ports free. Ledger §19.10.
+  Measured off the MJCF: the dex1 fingers reach 0.1941 m from the wrist while the grip point (OFFSET) sits at
+  0.1515 m, so they extend 0.0426 m PAST the grip; with a 0.0226 m bottle radius plus margin the required stand-off
+  is 0.100 m against the fixed entry_gap of 0.075. Implemented: clearance now DERIVED from finger geometry + object
+  radius (adapts to a different object), `decide(obs, limits, clearance)`, and `_advance_scale()` ramping base speed
+  to zero as the stand-off is spent. Per-frame `grip_standoff_m` / `clearance_m` logged so acceptance is direct.
+  **attempt13_clearance: still 0/4.** One round did convert from a finger sweep to "RGB grasp feedback timed out",
+  so the constraint bit there -- at the cost of the deadlock I had flagged (base held, arm backing off in
+  clear_entry, never aligning). The other two still swept.
+  **THE REFUTATION:** grip stand-off came out NEGATIVE -- median -0.024 m, min -0.065 m, 62% of frames below the
+  0.0653 m geometric limit. The grip point is PAST the bottle along the entry axis. Checking that axis
+  (wrist_rotation[:,0], pelvis frame): near field it is fwd +0.180, **up -0.860** -- 75 deg off forward, i.e.
+  **pointing almost straight DOWN. The grasp descends onto the bottle from above.** So the clearance is spent by the
+  ARM's own descent, not by the base's advance, and scaling base speed cannot enforce it. That is why two rounds
+  still swept. (§19.8's "the base outruns the arm" is still true, but it explains "too late to descend", not
+  "fingers sweep the bottle" -- two different things.)
+  `clear_entry` fired on 335 of 522 frames trying to lift and the stand-off stayed negative: a reactive back-off
+  loses to the descent.
+  **NEXT, clearly:** enforce the clearance as a hard constraint on the commanded aim -- project the aim along the
+  entry axis into the safe set (grip point never below clearance while unaligned) so entering the bottle's column is
+  geometrically impossible. Keep decide()'s L-shape; make it projective instead of reactive. The base coupling is
+  harmless and can stay, but it is not the fix.
+  Side finding: agree fell to 40% and rgb_usable to 42% (was 80%/83%) because the arm dwells in a pose that hoods
+  the bottle and blocks its own wrist view -- that pose is itself unlearnable, another reason the clearance must be
+  guaranteed geometrically rather than recovered after the fact.
 - **session cf 2026-09-11 10:1x-11:0x: privileged-teacher + per-frame learnability audit. Ledger §19.9.**
   NOTHING RUNNING; GPUs 2 MiB, ports free. New flag `reach.image_servo_truth_control` (default False, Codex's
   original path untouched): the expert CONTROLS from object truth, while the same `decide()` is evaluated a second

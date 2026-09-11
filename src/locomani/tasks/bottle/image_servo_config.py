@@ -35,7 +35,17 @@ class BottleCalibration:
 
 @dataclass(frozen=True)
 class ServoLimits:
-    entry_gap: float = 0.075  # clear long fingers before lowering.
+    entry_gap: float = 0.075  # floor for the computed clearance below.
+    # Measured off the MJCF (2026-09-11): the dex1 fingers reach 0.1941 m from
+    # the wrist frame while the grip point sits at OFFSET 0.1515 m, so they
+    # extend this far PAST the grip. The stand-off the grip point must keep
+    # behind the object is therefore this + the object radius + a margin for
+    # perception (0.015 m p90 near field) and for how far the base closes
+    # before the arm reacts. With a 0.0226 m bottle that is ~0.100 m, against
+    # the 0.075 m the fixed entry_gap gave -- which is why it clipped.
+    finger_reach_past_grip: float = 0.0426
+    entry_margin: float = 0.035
+    base_hold_band: float = 0.040  # the base's speed ramps to zero over this band
     alignment_tolerance: float = 0.018  # cross-axis tolerance before entry.
     close_depth: float = 0.015  # capture-region depth tolerance.
     close_lateral: float = 0.019  # capture-region lateral tolerance.
