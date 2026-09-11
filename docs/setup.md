@@ -70,14 +70,14 @@ export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
 
 ```console
 $ python3 src/locomani/paths.py
-  REPO         /workspace/code/locomanipulation
+  REPO         /workspace/locomanipulation
   WORKSPACE    /workspace
-  SONIC        /workspace/code/locomanipulation/third_party/GR00T-WholeBodyControl
-  SCENE_META   /workspace/code/locomanipulation/outputs/scene/sim/scene_meta.json
-  OUTPUTS      /workspace/code/locomanipulation/outputs
-  LOGS_DIR     /workspace/code/locomanipulation/outputs/logs
+  SONIC        /workspace/locomanipulation/third_party/GR00T-WholeBodyControl
+  SCENE_META   /workspace/locomanipulation/outputs/scene/sim/scene_meta.json
+  OUTPUTS      /workspace/locomanipulation/outputs
+  LOGS_DIR     /workspace/locomanipulation/outputs/logs
   session_root() /workspace/tmp/p03
-  derived from /workspace/code/locomanipulation/src/locomani/paths.py
+  derived from /workspace/locomanipulation/src/locomani/paths.py
 ```
 
 **你看到的路径会是你自己的**,上面是作者机器上的值。要核的是形状:`REPO` 指着你
