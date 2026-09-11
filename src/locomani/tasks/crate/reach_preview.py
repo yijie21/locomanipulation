@@ -11,9 +11,9 @@ import cv2
 import mujoco
 import numpy as np
 
-_os.chdir(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
-)  # repo root: the scene/output paths below are repo-relative
+_SRC = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+sys.path.insert(0, _SRC)  # reach src/ for `python src/locomani/tasks/crate/reach_preview.py`
+_os.chdir(_os.path.dirname(_SRC))  # repo root: the scene/output paths below are repo-relative
 from locomani.primitives.arm_ik import ArmIK  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 

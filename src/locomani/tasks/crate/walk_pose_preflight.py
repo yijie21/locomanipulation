@@ -16,9 +16,9 @@ import sys
 import mujoco
 import numpy as np
 
-_os.chdir(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
-)  # repo root: the scene/output paths below are repo-relative
+_SRC = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+sys.path.insert(0, _SRC)  # reach src/ for `python src/locomani/tasks/crate/walk_pose_preflight.py`
+_os.chdir(_os.path.dirname(_SRC))  # repo root: the scene/output paths below are repo-relative
 
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST as OFF  # noqa: E402
 from locomani.primitives.arm_ik import ArmIK  # noqa: E402
@@ -30,7 +30,17 @@ _ap = argparse.ArgumentParser(description=__doc__)
 _ap.add_argument("--scene-dir", default="outputs/scene/crate_bimanual")
 _ap.add_argument("--pose-left-deg", default=None, help="hand-authored walking pose, mirrored to the right")
 _ap.add_argument("--via-chain", default="-40,20,0,-30,0,-30,0")
+_ap.add_argument(
+    "--trace",
+    default="outputs/videos/wall_pilot/trace/wall_s0_05_state_trace.npz",
+    help="pilot state trace whose frame 10 supplies the policy-delivered body pose; "
+    "'none' uses the scene's qpos0 (pelvis 0.793 m) instead",
+)
 _args = _ap.parse_args()
+# POSE_LEFT_DEG stopped being read with the argparse conversion (refactor step 3);
+# a run that still sets it silently checks the pilot-21 pose. Refuse, don't warn.
+if _os.environ.get("POSE_LEFT_DEG"):
+    sys.exit("refusing: POSE_LEFT_DEG is no longer read; pass --pose-left-deg 10,10,0,60,0,30,0")
 
 out = _args.scene_dir
 meta = json.load(open(f"{out}/scene_meta.json"))
@@ -67,8 +77,19 @@ arm_g = [
 crate_g = [g for g in range(m.ngeom) if m.geom_bodyid[g] == cid]
 table_g = [g for g in range(m.ngeom) if "dining_table" in bname(m.geom_bodyid[g])]
 
-trace = np.load("outputs/videos/wall_pilot/trace/wall_s0_05_state_trace.npz")["qpos"][10]
-q_default29 = trace[ik.qadr]  # policy-delivered default pose (29 dof)
+if _args.trace == "none":
+    # scene default; only the legs/waist come from here once --pose-left-deg is set
+    q_default29 = m.qpos0[ik.qadr].copy()
+    print("[body pose] --trace none: using the scene's qpos0, not a policy-delivered stand")
+elif not _os.path.exists(_args.trace):
+    sys.exit(
+        f"missing pilot trace {_args.trace}: it is written by a wall pilot (scripts/run_crate_pilot.sh, "
+        "$SIM_VIDEO_DIR/trace/wall_s0_NN_state_trace.npz). Copy one from the collection machine, "
+        "point --trace at it, or pass --trace none to use the scene's qpos0."
+    )
+else:
+    trace = np.load(_args.trace)["qpos"][10]
+    q_default29 = trace[ik.qadr]  # policy-delivered default pose (29 dof)
 if _args.pose_left_deg:  # hand-authored walking pose, mirrored to the right
     _l = np.radians([float(v) for v in _args.pose_left_deg.split(",")])
     q_default29 = q_default29.copy()

@@ -82,18 +82,25 @@ $VENV_SIM_PY src/locomani/tasks/crate/reach_wall_sweep.py | tail -30
 #    期望:stand-off + depth ≤ 0.40 的组合全部 OK(掌俯仰 60);expert 用 REACH_SUM = 0.38
 
 # b) 走路姿势:指尖到桌沿 / 篮壁的余量、ego 画面里篮子被手遮挡的比例
-POSE_LEFT_DEG=10,10,0,60,0,30,0 MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/walk_pose_preflight.py
+MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/walk_pose_preflight.py --pose-left-deg 10,10,0,60,0,30,0
+#    默认读 outputs/videos/wall_pilot/trace/wall_s0_05_state_trace.npz;没有 pilot 产物的机器加 --trace none(见下)
 #    期望:四个站位 contacts 都是 '-';指尖在平面后 ≥ 0.12 m;遮挡 0%
 
 # c) reach 曲线 + 预览视频
-PW=0.02 OUT=0.15 UP=0.25 OVER=0.10 WARM=prev SAVE=outputs/reach/reach_preview/traj \
-  MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preflight.py
+MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preflight.py \
+  --pw 0.02 --out-dist 0.15 --up 0.25 --over 0.10 --warm prev --save outputs/reach/reach_preview/traj
 MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preview.py
 #    期望:contacts '-';越沿时指尖离篮沿顶 ≥ +2.5 cm;终点关节解 = hover 解
 #    看 outputs/reach/reach_preview/reach_preview.mp4:上排跟踪相机、下排 ego,四列 = 0.13/0.18/0.24/0.31 m 站位
 ```
 
-`POSE_LEFT_DEG` 就是 expert 的 `WALK_SIDE_LEFT_DEG`(走路时左臂七个关节角,右臂按 (+,−,−,+,−,+,−) 镜像);改了走路
+三个脚本的旋钮都是 CLI flag(`--help` 看全部)。b) c) 在 2026-09-09 argparse 化之前用环境变量(`POSE_LEFT_DEG=…`、
+`PW=… OUT=… UP=… OVER=… WARM=… SAVE=…`),那些变量现在**不再被读**;为了不静默跑成默认姿势,脚本见到它们会直接
+拒绝启动(退出码 1,提示对应的 flag)。b) 的身体姿态默认取 pilot trace 第 10 帧(policy 交付的站立姿势);没有
+`outputs/videos/wall_pilot/` 的机器用 `--trace none`(场景 qpos0,骨盆 0.793 m,输出第一行会标明),腿 / 腰姿态与 pilot
+不完全一致,要严格对齐就从采集机拷一份 trace 用 `--trace <path>`。
+
+`--pose-left-deg` 就是 expert 的 `WALK_SIDE_LEFT_DEG`(走路时左臂七个关节角,右臂按 (+,−,−,+,−,+,−) 镜像);改了走路
 姿势就把新值传给 b)。这类姿势要**用 FK 搜索来写**,不要用 IK 从 q = 0 解:IK 解到胸前高度的目标会落到"手甩到身后
 / 身侧"的分支(pilot 21 的教训)。
 
@@ -465,6 +472,13 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
   默认 false;按旧教程设 `WALL_WALK=1 WALL_FEATURE=rail` 跑出来的 10 集全是 ready-stand 变体(每集 25 s、视频 10–12 s、
   日志里一行 `[walk]` 都没有),渲染完才发现没有走路段。看 `[walk]` 行有没有就是判据;runner 现在遇到这两个环境变量
   会直接拒绝。
+- **2026-09-11 预检的 `POSE_LEFT_DEG=` / `PW=…` 静默失效,以及 `ModuleNotFoundError`**:同一次 argparse 化让
+  `walk_pose_preflight.py` / `reach_preflight.py` 不再读环境变量,按旧教程跑出来的是默认姿势的检查结果,看不出异常;
+  两个脚本现在见到旧变量会拒绝启动。另外 `tasks/crate/` 下四个预检脚本(`reach_wall_sweep` / `walk_pose_preflight` /
+  `reach_preflight` / `reach_preview`)之前只 `chdir` 到仓库根、没把 `src/` 放进 `sys.path`,在任何 venv 里直接跑都是
+  `No module named 'locomani'`(`locomani` 没有 pip 安装);已统一改成和 `bimanual_wall.py` 一样先 `sys.path.insert`。
+  `walk_pose_preflight` 还依赖 pilot trace,缺文件时报错并提示 `--trace none`;`reach_wall_sweep` / `reach_preflight`
+  写结果前会自己建 `outputs/reach/…` 目录。
 - **夹爪齿比**:`GRIPPER_GEAR=1000`(pilot 24–28)让手指 PD 在 20 ms 控制保持下失稳抖动;250 是对的。
 
 ---

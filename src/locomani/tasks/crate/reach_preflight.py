@@ -11,9 +11,9 @@ import sys
 import mujoco
 import numpy as np
 
-_os.chdir(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
-)  # repo root: the scene/output paths below are repo-relative
+_SRC = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+sys.path.insert(0, _SRC)  # reach src/ for `python src/locomani/tasks/crate/reach_preflight.py`
+_os.chdir(_os.path.dirname(_SRC))  # repo root: the scene/output paths below are repo-relative
 from scipy.spatial.transform import Rotation as Rot  # noqa: E402
 from scipy.spatial.transform import Slerp  # noqa: E402
 
@@ -34,6 +34,12 @@ _ap.add_argument("--rot", default="pitch")
 _ap.add_argument("--pitch0", type=float, default=90.0)
 _ap.add_argument("--save", default=None, help="dump the joint trajectory to <SAVE>_so<stand-off>.npy")
 _args = _ap.parse_args()
+# PW/OUT/UP/OVER/WARM/SAVE/SAG/ROT/PITCH0 stopped being read with the argparse
+# conversion (refactor step 3); a run that still sets them silently gets the
+# defaults. Refuse, don't warn.
+_dead = [k for k in ("PW", "OUT", "UP", "OVER", "WARM", "SAVE", "SAG", "ROT", "PITCH0") if _os.environ.get(k)]
+if _dead:
+    sys.exit(f"refusing: {' '.join(_dead)} no longer read; pass --pw/--out-dist/--up/--over/--warm/--save (see --help)")
 
 out = "outputs/scene/crate_bimanual"
 meta = json.load(open(f"{out}/scene_meta.json"))
@@ -209,4 +215,5 @@ for so in (0.13, 0.18, 0.24, 0.31):
         np.degrees(q_h[ARM_MJ["left"]]).round(0).tolist(),
     )
     if _args.save:
+        _os.makedirs(_os.path.dirname(_args.save) or ".", exist_ok=True)
         np.save(f"{_args.save}_so{so:.2f}.npy", np.array(traj))
