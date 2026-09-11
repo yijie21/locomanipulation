@@ -70,18 +70,28 @@ export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
 
 ```console
 $ python3 src/locomani/paths.py
-  REPO         /workspace/locomanipulation
-  WORKSPACE    /workspace
-  SONIC        /workspace/locomanipulation/third_party/GR00T-WholeBodyControl
-  SCENE_META   /workspace/locomanipulation/outputs/scene/sim/scene_meta.json
-  OUTPUTS      /workspace/locomanipulation/outputs
-  LOGS_DIR     /workspace/locomanipulation/outputs/logs
-  session_root() /workspace/tmp/p03
-  derived from /workspace/locomanipulation/src/locomani/paths.py
+  REPO              <repo>
+  WORKSPACE         <workspace>
+  SONIC             <repo>/third_party/GR00T-WholeBodyControl
+  SONIC_POLICY_DIR  <repo>/third_party/GR00T-WholeBodyControl/gear_sonic_deploy/policy/sonic_v1_1
+  SCENE_META        <repo>/outputs/scene/sim/scene_meta.json
+  OUTPUTS           <repo>/outputs
+  LOGS_DIR          <repo>/outputs/logs
+  session_root()    <workspace>/tmp/p03
+  derived from      <repo>/src/locomani/paths.py
 ```
 
-**你看到的路径会是你自己的**,上面是作者机器上的值。要核的是形状:`REPO` 指着你
-clone 的位置、`WORKSPACE` 指着你 `LOCOMANI_WORKSPACE` 设的地方,而不是逐字对上。
+这里**刻意不写任何机器上的真实路径**:`<repo>` 是你 clone 的位置,`<workspace>` 是你
+`LOCOMANI_WORKSPACE` 设的地方,两者都不需要与别人一致。曾经这段贴的是作者机器的绝对路径,
+于是每换一台机器就要改一次文档(2026-09-11 就发生过一次,而那次改完与另一台机器又不符)。
+**要核的是不变量,不是字符串**:
+
+* `REPO` 是你 clone 的目录,`derived from` 在它下面 —— 这两条说明仓库根是**推导**出来的,没有被某个环境变量覆盖成别处;
+* `WORKSPACE` 等于你 export 的 `LOCOMANI_WORKSPACE`(没设就是 `/workspace`);
+* `SONIC` / `SCENE_META` / `OUTPUTS` / `LOGS_DIR` 全部以 `REPO` 开头 —— 仓库内的东西不可配置;
+* `session_root()` 在 `WORKSPACE` 下而不是 `REPO` 下 —— stack 日志与 exporter 原始 session 属于仓库外;
+* `SONIC_POLICY_DIR` 末段是**当前生效的 checkpoint**,默认 `policy/sonic_v1_1`(2026-09-11 起);
+  被 `SONIC_POLICY` 覆盖时这一行会跟着变,所以它也是"我现在跑的是哪个模型"的快速答案。
 
 shell 一侧是 `. scripts/paths.sh; echo "$LOCOMANI_ROOT $VENV_SIM_PY"`。
 
