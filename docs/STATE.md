@@ -1,4 +1,4 @@
-# STATE (updated 2026-09-10 15:10 UTC by session cf; several sessions write this file, keep edits surgical)
+# STATE (updated 2026-09-11 00:50 UTC by session cf; several sessions write this file, keep edits surgical)
 
 ## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
 - Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
@@ -300,7 +300,7 @@
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
-## Changed (2026-09-10 session cf, 02:48-15:10 UTC, ALL COMMITTED AND PUSHED through 27dd88a)
+## Changed (session cf, 2026-09-10 02:48 - 09-11 00:50 UTC, ALL COMMITTED AND PUSHED through 12554b2)
 
 - **ScaleBFM line reorganised and merged** (a3e2fee, f8fc71b, 51a4d25, 0ad4b3e, merge f73d4ec) -- see the Now entry.
 - **README rewritten** (b7881f1): it still pointed at src/teleop_free/start_stack.sh, docs/reference.md,
@@ -323,6 +323,19 @@
   from outputs/experiments/<name>/launch.sh and its source is committed under scripts/experiments/.
 - **visible10 + visible200 collections** (0ffbb14 and the Now entries): runners under scripts/experiments/.
 - **fix/first-round-anchor** (384381e, branch, NOT merged): see MERGE PENDING in Now.
+- **Everything uncommitted in the shared tree committed** (2dd6d9c pick-and-place line, 2ba1a89 ScaleBFM line,
+  2a67ea1 session 29's stack lock + SONIC runners + doc corrections, 4934d4c my two missed visible200 runners and
+  the doc map, d73c194 a lint fix of my own): 61 paths, split by line, each commit naming whose work it is and that
+  the 15:07 bottle gate (PASS 16/16, yield 0.60) covered them -- every one of those files was already in the tree
+  when that gate ran. Tree clean, make check green.
+- **README pick-and-place entries** (87bcef6): the line registered its docs in docs/README.md and CLAUDE.md but the
+  root README carried a SECOND doc map that missed them. Added the rows, and stated that docs/README.md is the
+  authoritative index and the root table a curated subset, so a new doc is registered in one place.
+- **eval_closed_loop.py's src bootstrap fixed** (23b5436): it reached src/locomani instead of src, so BOTH eval
+  entry points had been unlaunchable since the 4a package move (29bdf84). Found by the first eval attempt crashing.
+  Audited all 267 files under src/ for the same off-by-N; it was the only one.
+- **EvalConfig.restart_deploy** (83adaa4, default True so no historical protocol changes): added to test whether the
+  collection/eval heading-anchor mismatch explains §18's 2/100. The test failed to run (see Open questions).
 - **Eval provenance capture** (27dd88a, running): `run_learn_pilot` writes `config_snapshot.json` ONCE, at whichever
   stage runs first -- for this pilot the 07:02 collect, `git_sha 56617ae`, 260 digests -- while the eval starts ~16:00
   against a tree several commits ahead plus ~31 files modified by other sessions. The eval's number would carry a
@@ -442,10 +455,15 @@
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
-0a. cf, automatic: when training ends ~16:00 the eval runs itself. Then write the numbers into the next free
-   docs/ledger/bottle.md section (12/13/14/15/16 are taken) and compare against the ledger's flow200 50/100 and
-   07d-200 57/100 -- NOT against the lost 2026-09-09 manifest. This checkpoint is also the first chance to do the
-   refactor follow-up (a): the eval-path A/B, old 78536ae eval client vs new, 20 rounds, same checkpoint.
+0a. cf, THE open item: localise why the policy never commands a close in closed loop while predicting it
+   perfectly offline (ledger §18.1). Cheapest next experiment: re-run 2-3 failing cases with EvalConfig.obs_dump
+   set, then feed those exact observations to the model offline and ask whether it closes there. If it does, the
+   defect is in how the closed-loop observation is built or timed; if it does not, nearest-neighbour that
+   observation against the training set to find what differs. Until this lands, do NOT read 2/100 as a verdict on
+   the visible_expert protocol -- a model at the open-loop noise floor does not collapse below random from data
+   narrowness alone.
+0d. cf: the refactor follow-up (a) is still undone -- the eval-path A/B (old 78536ae eval client vs new, 20 rounds,
+   same checkpoint). A checkpoint now exists, so it is finally possible.
 0b. cf: merge fix/first-round-anchor as soon as Codex's uncommitted tree edits land (see MERGE PENDING).
 0c. cf, after the eval: make `run_learn_pilot` write a config snapshot per STAGE, not once per pilot
    (memory provenance-snapshot-is-per-pilot-not-per-stage). Not done now because that file is the one the running
@@ -474,6 +492,17 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- **Why does the policy never command a close in closed loop?** 94/99 rounds the model never predicts one
+  (chunk_grip_min >= 0); the 2 that predict and execute both succeed. Offline on its own val the same checkpoint
+  scores nmse_gripper 0.0024 and close timing 2.3 frames. Azimuth and distance do NOT discriminate (successes sit
+  inside the failures' spread). Ledger §18.1. Unlocalised -- this is the most important open question on the line.
+- **Does the collection/eval heading-anchor mismatch matter?** Collection (restart_deploy=false) re-anchors with
+  hold+reanchor after each reset; the eval restarts the deploy and takes "anchor = landing yaw". 65 measured the two
+  8.5 deg apart. UNTESTED, not excluded: the A/B scored 0/17, every round a [stand] failure, degrading from "did not
+  stabilise (pelvis z 0.094)" to "teleport landed 0.81-0.92 m off" -- without the per-round restart the eval path
+  cannot even stand the robot up, which is itself a finding about how much that restart is carrying.
+- **3 rounds of 99 predicted a close that never reached the executed stream** (round 027 chunk -0.0175 vs executed
+  0.0048, also 052 and 065). Small, but it is an execution gap in the async client and nobody has looked at it.
 - **站位采样带在 2026-09-07 变过,所以 flow200 的 50/100 不能当 ready-grasp 线的外部对照**
   (2026-09-10 查证,与今天的改动无关;此条是同日两次过头表述的最终版)。
   事实链:`reach_config.py` 与全部 `configs/collection/ready_grasp_*.json` 都是 8c621fb(2026-09-07)新建的,
@@ -546,6 +575,9 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-10 visible200 10k steps -> closed loop 2/100; open loop on its own val is at the noise floor
+  (nmse_gripper 0.0024, close timing 2.3 frames). Mechanism unlocalised, ledger bottle §18 + §18.1
+- 2026-09-11 restart_deploy=false eval arm: 0/17, every round [stand], degrading -- the eval needs the per-round restart
 - 2026-09-10 ScaleBFM no-retract 200 ep -> seed17/3000 -> 100 closed loop: 41/100 (<=38/100 under the old rule vs ledger §9's 25/100); the whole gain is high_near, low_deep unchanged at 5/33
 - 2026-09-10 visible200 collection: 34 batches / 335 rounds -> 200 kept (yield 0.60), convert rc=0, check_dataset 32/32
   PASS on both splits; first round of EVERY batch failed at the spawn (34/34) until the anchor fix
