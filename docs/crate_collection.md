@@ -24,7 +24,7 @@
 | 项 | 要求 |
 |---|---|
 | 环境 | 按 `docs/setup.md` 装好;`. scripts/paths.sh` 后有 `$VENV_SIM_PY`(sim + expert)、`$VENV_DATA_PY`(exporter / 转换)、`$RENDER_PY`(SIMPLE venv,mujoco + EGL;预检、预览和渲染用,可选) |
-| SONIC deploy | 已编译(`$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref`),同单手线 |
+| SONIC deploy | 已编译(`$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref`),**且打了 `patches/sonic_dds_domain.patch`**:库存二进制把 DDS domain 写死为 0,pilot 用 instance 2 时 sim 在 domain 2 发、deploy 在 domain 0 听,deploy 永远 "LowState is not available"。`docs/setup.md` 第 3 步末尾有打补丁 + 重编的两条命令(重编约 20 s) |
 | SONIC checkpoint | `$SONIC_DEPLOY_ROOT/policy/sonic_v1_1/`(2026-09-11 起的默认,`SONIC_POLICY`)。缺了 `start_stack.sh` 会直接失败;下载见下面步骤 3 |
 | **INSTANCE** | 决定端口(`5555 + 10·INSTANCE` 一组)和 DDS domain。**0 是采集/评测栈,pilot 永远用非 0**(runner 默认 1,本文用 2)。`INSTANCE` 必须在 `paths.sh` 之前设置——`paths.sh` 把它默认成 0;runner 本身会拒绝 0 |
 | GPU | runner 默认 `CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=1`(双卡机器上让 GPU 0 给采集/评测)。**只有一块 GPU 的机器要显式设成 0**,否则起栈失败 |
@@ -47,7 +47,20 @@
    ls -la "$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref"
    ```
 
-3. checkpoint 在:
+3. deploy 读 `SONIC_DDS_DOMAIN`(多实例补丁已打):
+
+   ```bash
+   strings "$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref" | grep -c SONIC_DDS_DOMAIN    # 期望 ≥ 1
+   ```
+
+   是 0 就打补丁重编(`git apply --check` 先干跑;已打过会报 "patch does not apply"):
+
+   ```bash
+   (cd third_party/GR00T-WholeBodyControl && git apply ../../patches/sonic_dds_domain.patch)
+   cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
+   ```
+
+4. checkpoint 在:
 
    ```bash
    ls "$SONIC_DEPLOY_ROOT/policy/"
@@ -62,7 +75,7 @@
 
    只想先把流程跑通,可以临时用旧 checkpoint:后面每条起栈命令前加 `SONIC_POLICY=policy/release`。
 
-4. GPU 编号对得上、卡是空的:
+5. GPU 编号对得上、卡是空的:
 
    ```bash
    nvidia-smi --query-gpu=index,name,memory.used --format=csv
@@ -70,7 +83,7 @@
 
    只有 `index 0` 一块卡的机器,§4 步骤 2 里的两个 GPU 变量必须设。
 
-5. instance 2 没被别的栈占着:
+6. instance 2 没被别的栈占着:
 
    ```bash
    pgrep -af "run_sim_locomani.py --instance 2|bimanual_wall.py"    # 期望没有输出
@@ -240,7 +253,8 @@ expert(`bimanual_wall.py`)是第四个进程,由 runner 在 stack 起来后启�
    tail -f "$V/pilot_s0.log" | grep -E "^\[wall\] round|\[stand\]|closing|\[lift\]"
    ```
 
-   一集约 40–60 s,末尾一行 `[wall] round 0: OK (…s)`。
+   一集约 25–60 s,末尾一行 `[wall] round 0: OK (…s)`。走入版的判据是日志里有 `[walk]` 行(阶段行都带 4 个空格缩进,
+   grep 不要用 `^` 锚定);ready-stand 版没有。
 
 runner 做的事,按顺序:检查 `LOCOMANI_SIM_DIR/scene_meta.json` 存在 → 起 instance 2 的栈(`SIM_VIS=none`:默认
 的位姿框叠加层会把 60 cm 的箱子画成一团点云,把机器人全遮住)→ 跑 `bimanual_wall.py --rounds N --seed S --manifest
@@ -313,7 +327,10 @@ for p in $(pgrep -f "[b]imanual_wall.py"); do kill -9 $p; done   # expert 本身
 nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json > "$V/runner.log" 2>&1 &
 ```
 
-同一个 `$V` 下换种子(第二个参数)会追加到同一个 manifest,`label` 变成 `wall_s<seed>`。**每一集都是一次
+同一个 `$V` 下换种子(第二个参数)会追加到同一个 manifest,`label` 变成 `wall_s<seed>`。**同一个 `$V`、同一个种子再跑一次
+也会追加**,但视频和 trace 按 `wall_s<seed>_NN` 命名、会被覆盖:跑过 6 次 `1 0` 再跑 `10 0`,manifest 里就有 7 行 round 0,
+其中 6 行的视频 / trace 已经不是它们自己的了(§5 验收脚本会对重复的 round 报 warning)。调试时反复起单集,每次换个
+`$V` 或换种子。**每一集都是一次
 `reset.reset(...)`**:箱子被摆回桌沿(横向按 seed 抽样),机器人被摆到出生点,arms pin 住,IDLE 沉降 2 s。
 
 ### 为什么不用分批
@@ -324,8 +341,11 @@ nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json
 ### 验收
 
 ```bash
-python3 src/locomani/tasks/crate/summarize_wall_pilot.py $V
+$VENV_SIM_PY src/locomani/tasks/crate/summarize_wall_pilot.py "$V"
 ```
+
+用 `$VENV_SIM_PY`,不是系统 `python3`:脚本要 numpy 读状态轨迹,系统解释器里没有(`ModuleNotFoundError: No module
+named 'numpy'`)。本文里只有 §2 那条纯 json 的一行命令可以用裸 `python3`。
 
 每集一行:`ok`、走位次数 `att`、闭合触发 `trig`、篮子首次移动时刻 `move_s`、集长 `len_s`、静止帧比例 `static`、
 实测站位 `so`、`yaw`、失败原因。`static` 的定义:50 Hz 帧里所有关节 < 1e-3 rad、骨盆 < 0.5 mm、箱子 < 0.5 mm 都没动
@@ -607,6 +627,20 @@ flowchart TD
   写结果前会自己建 `outputs/reach/…` 目录。同日发现 `run_wall_pilot.sh` 写死了一台机器的绝对路径
   `/workspace/code/locomanipulation/scripts/paths.sh`,别的机器上第一行就退出;改成和 `run_bimanual_pilot.sh` 一样按
   自身位置找 `paths.sh`。
+- **2026-09-11 在一台新机器(单卡、无 `/workspace`、无全局 `PYTHONUNBUFFERED`)上起 pilot 栈,四个静默失败叠在一起**,
+  每个都把真实原因藏在别的提示后面:
+  1. `start_stack.sh` 的实例锁目录写死 `/workspace/tmp/locomani_locks`;`mkdir` 无权限、`exec 9>>` 失败,`flock` 拿到坏描述符
+     却报成 "REFUSED: instance 2 is held by a live stack"。→ 锁目录改用 `$LOCOMANI_TMP`,建不了就报真实原因。
+  2. `run_sim_locomani.py` 从未把 `TF_CAMERA_PORT` 写进上游 `SimLoopConfig.camera_port`,图像子进程在任何实例上都绑 5555,
+     `start_stack.sh` 等的却是 5555 + 10·INSTANCE → "camera port never opened"。→ `config.camera_port = ports.camera()`,
+     sim.log 现在会打 `[sim] camera publisher -> :5575 (instance 2)`。
+  3. deploy 二进制没打 `sonic_dds_domain.patch`(`strings` 里没有 `SONIC_DDS_DOMAIN`),sim 在 domain 2、deploy 在 domain 0,
+     deploy 一直 "LowState is not available"。→ 按 `docs/setup.md` 打补丁重编;§1 自检第 3 步。
+  4. 就绪检查读 sim.log 里子进程的 "Image publish frequency",子进程 stdout 进文件后是 8 KB 块缓冲,第一行约 5 min 后才落盘,
+     40 s 窗口必超时 → "STACK IS NOT USABLE: the sim has not published a single image",其实 33 Hz 发得好好的。
+     → `start_stack.sh` 现在 `export PYTHONUNBUFFERED=1`。
+  另外 sim.log 里那条 `[ChannelFactory] create domain error` 是上游 `simulator_factory.py` 和 `base_sim.py` 各初始化一次
+  DDS、第二次必报的良性错误,不是链路问题;判断 DDS 通不通看 deploy.log 有没有 `Init Done`。
 - **夹爪齿比**:`GRIPPER_GEAR=1000`(pilot 24–28)让手指 PD 在 20 ms 控制保持下失稳抖动;250 是对的。
 
 ---

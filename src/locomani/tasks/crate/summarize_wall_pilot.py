@@ -1,6 +1,6 @@
 """Per-round summary of a wall pilot from its manifest + state traces.
 
-    python summarize_pilot.py <pilot_dir>
+    $VENV_SIM_PY src/locomani/tasks/crate/summarize_wall_pilot.py <pilot_dir>   # needs numpy: not the system python3
 
 Columns: ok, why, stand attempts, close trigger, crate first move (s) vs
 episode length, static-frame fraction (50 Hz frames where every joint moved
@@ -18,16 +18,29 @@ import numpy as np
 
 d = sys.argv[1]
 rows = [json.loads(l) for l in open(os.path.join(d, "manifest.jsonl")) if l.strip()]
-print(f"{'rd':>2} {'ok':>3} {'att':>3} {'trig':>8} {'move_s':>6} {'len_s':>5} {'static':>6} {'so':>5} {'yaw':>5}  why")
-stat = []
-for r in rows:
-    rd = r["round"]
+
+
+def _key(r):
     # The trace is named after the run's --label (wall_s<seed>), which the
     # manifest carries in the video path; wall_s0 is the pre-label default.
     label = os.path.basename(str(r.get("video", ""))).rsplit("_", 1)[0] or "wall_s0"
+    return label, r["round"]
+
+
+# Re-running the same seed into the same directory appends another round-N row
+# but OVERWRITES wall_s<seed>_NN.{mp4,npz}: only the LAST row of a (label, round)
+# still owns the files on disk. Earlier duplicates get '*' and no trace stats,
+# otherwise six stale round-0 rows all read the newest trace (2026-09-11).
+last_owner = {_key(r): i for i, r in enumerate(rows)}
+dups = sorted({k for k, i in last_owner.items()} & {_key(r) for i, r in enumerate(rows) if last_owner[_key(r)] != i})
+print(f"{'rd':>2} {'ok':>3} {'att':>3} {'trig':>8} {'move_s':>6} {'len_s':>5} {'static':>6} {'so':>5} {'yaw':>5}  why")
+stat = []
+for i, r in enumerate(rows):
+    label, rd = _key(r)
+    stale = last_owner[(label, rd)] != i
     f = os.path.join(d, "trace", f"{label}_{rd:02d}_state_trace.npz")
     move = length = static = float("nan")
-    if os.path.exists(f):
+    if os.path.exists(f) and not stale:
         q = np.load(f)["qpos"]
         c = q[:, -7:]
         w, x, y, z = c[:, 3], c[:, 4], c[:, 5], c[:, 6]
@@ -46,10 +59,16 @@ for r in rows:
     so = r.get("stand_off_meas", float("nan"))
     yaw = r.get("yaw_err_deg", float("nan"))
     print(
-        f"{rd:2d} {'OK' if r['ok'] else '--':>3} {att:3d} {str(r.get('close_trigger')):>8} {move:6.1f} {length:5.1f} {static:6.2f} {so:5.2f} {yaw:5.1f}  {r.get('why', '')[:60]}"
+        f"{rd:2d}{'*' if stale else ' '}{'OK' if r['ok'] else '--':>3} {att:3d} {str(r.get('close_trigger')):>8} {move:6.1f} {length:5.1f} {static:6.2f} {so:5.2f} {yaw:5.1f}  {r.get('why', '')[:60]}"
     )
 print(
     f"\nOK {sum(r['ok'] for r in rows)}/{len(rows)}; static-frame fraction median {np.median(stat):.2f} max {max(stat):.2f}"
     if stat
     else ""
 )
+if dups:
+    print(
+        f"WARNING: {len(dups)} (label, round) repeated in the manifest {sorted(f'{l}_{n:02d}' for l, n in dups)}: "
+        "the same seed was run again into this directory, so the video/trace of the earlier rows "
+        "(marked *) were overwritten and their trace columns are blank. Use a fresh directory or seed per run."
+    )
