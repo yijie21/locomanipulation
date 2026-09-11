@@ -89,6 +89,32 @@
   Now `--harden-pads` (store_true) + a separate `--pad-level {object,crate}`; the documented form is
   restored verbatim and the crate XML is unchanged. Rule worth keeping: grep the docs for a flag's
   existing spelling before changing its arity.
+- **STAGES A-E CLOSED OUT (session cf, 2026-09-11 15:40-16:08 UTC). NOTHING RUNNING on instance 0; GPU0 2 MiB.**
+  Ledger bottle.md §28-29. Branch `v11-recalibration-20260911`, 8 commits, main untouched.
+  **(D) The wrist delivery ratio is NOT measured and TRACK_ROT_BOOST stays 4.5.** Two runs of the restored
+  diag_wrist disagree, and the second reports the channel INERT on policy/release -- where the 22% the constant
+  inverts was measured. Reproducing a known-true prior is what identifies which run is wrong, and it says both
+  are: the first had the robot fall (sim log, height 0.199 m) while still printing ratios; the second shows all
+  four cases at the same palm position, so `set_wrists` took no effect at all. The tool now resets per case,
+  checks `fallen` while holding, and prints the per-axis ratio spread -- the next step is to establish which
+  stream mode consumes set_wrists (agent_server.py:293; default PLANNER_VR_3PT) and enter it after the reset.
+  Do not poke this constant on an unreproducible measurement: its failure mode is an integrator limit cycle.
+  **(E) The bottle gate baseline is re-recorded on v1.1**, 30 rounds, collection-style (sampled cases, repo
+  profile). The release one is kept as tests/gate/baseline_bottle_release_20260910.json. A first 10-round attempt
+  was discarded -- the gate's yield tolerance is +-0.15 and the binomial sd at n=10, p=0.3 is 0.145. Self-compare
+  PASS 15/15.
+      metric        release(30)  v1.1(30)        yield 0.600 -> 0.233, end_depth 0.3011 -> 0.2998,
+      squat_drop 0.13 both, seconds 33.7 -> 19.95, exit_majority identical
+  **The two baselines are NOT comparable** (different sampling era, different profile): 0.600 vs 0.233 is not a
+  checkpoint comparison. The paired one is §27: 7/20 vs release's 9/20, p=0.754.
+  **PREREQUISITE LANDED:** `stand_azimuth_deg: 29.0` is now in `configs/collection/ready_grasp_visible.json` and
+  `configs/tasks/bottle_visible.json`; the other six ready_grasp profiles stay at 0.0 (only the visible line was
+  measured). Recording the baseline before this would have enshrined the 0/20 configuration.
+  **OPEN (§29.1):** the sampled batch produced failure kinds the fixed-bank batch never did -- fingers against the
+  dining table, `coupled safe-hand path blocked`, `coupled transport disturbed`. Either the 29 deg stand faces the
+  object more squarely and spends table clearance, or the sampled distribution simply covers harder placements.
+  Discriminate by fixing the offending cases into a bank and running plan 37.5 vs plan 29 paired. Until then
+  0.233 must NOT be attributed to the azimuth.
 - **CONFIRMED ON 20 PAIRED ROUNDS: v1.1 is back at release's level (session cf, 2026-09-11 15:30-15:39 UTC).**
   Ledger bottle.md §27. Same 20 cases, bank differing only in `rel`/`stand`:
       release, plan 37.5          9/20   azimuth 31.1 [13,45]  depth 0.307  lateral 0.204  park 0.369
@@ -1069,6 +1095,9 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 stages A-E closed: gate baseline re-recorded on v1.1 (30 rounds, yield 0.233, self-compare 15/15,
+  release's kept separately and NOT comparable); TRACK_ROT_BOOST left at 4.5 because the wrist measurement could
+  not reproduce a known-true prior on release. Ledger §28-29
 - 2026-09-11 20 paired rounds: v1.1 with all four fixes 7/20 vs the unfixed v1.1 arm 0/20 (McNemar 7:0, p=0.0156)
   and vs release 9/20 (4:6, p=0.754, indistinguishable). lateral 0.207 vs release's 0.204, park 0.363 vs 0.369.
   The "v1.1 cannot drop into the collection line" verdict is lifted. Ledger §27
