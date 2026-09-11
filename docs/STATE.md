@@ -37,114 +37,58 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
-- **session cf 2026-09-11 11:1x-12:0x: implemented the finger-clearance plan, ran 4 rounds, and the data REFUTED
-  my own mechanism.** NOTHING RUNNING; GPUs 2 MiB, ports free. Ledger §19.10.
-  Measured off the MJCF: the dex1 fingers reach 0.1941 m from the wrist while the grip point (OFFSET) sits at
-  0.1515 m, so they extend 0.0426 m PAST the grip; with a 0.0226 m bottle radius plus margin the required stand-off
-  is 0.100 m against the fixed entry_gap of 0.075. Implemented: clearance now DERIVED from finger geometry + object
-  radius (adapts to a different object), `decide(obs, limits, clearance)`, and `_advance_scale()` ramping base speed
-  to zero as the stand-off is spent. Per-frame `grip_standoff_m` / `clearance_m` logged so acceptance is direct.
-  **attempt13_clearance: still 0/4.** One round did convert from a finger sweep to "RGB grasp feedback timed out",
-  so the constraint bit there -- at the cost of the deadlock I had flagged (base held, arm backing off in
-  clear_entry, never aligning). The other two still swept.
-  **THE REFUTATION:** grip stand-off came out NEGATIVE -- median -0.024 m, min -0.065 m, 62% of frames below the
-  0.0653 m geometric limit. The grip point is PAST the bottle along the entry axis. Checking that axis
-  (wrist_rotation[:,0], pelvis frame): near field it is fwd +0.180, **up -0.860** -- 75 deg off forward, i.e.
-  **pointing almost straight DOWN. The grasp descends onto the bottle from above.** So the clearance is spent by the
-  ARM's own descent, not by the base's advance, and scaling base speed cannot enforce it. That is why two rounds
-  still swept. (§19.8's "the base outruns the arm" is still true, but it explains "too late to descend", not
-  "fingers sweep the bottle" -- two different things.)
-  `clear_entry` fired on 335 of 522 frames trying to lift and the stand-off stayed negative: a reactive back-off
-  loses to the descent.
-  **NEXT, clearly:** enforce the clearance as a hard constraint on the commanded aim -- project the aim along the
-  entry axis into the safe set (grip point never below clearance while unaligned) so entering the bottle's column is
-  geometrically impossible. Keep decide()'s L-shape; make it projective instead of reactive. The base coupling is
-  harmless and can stay, but it is not the fix.
-  Side finding: agree fell to 40% and rgb_usable to 42% (was 80%/83%) because the arm dwells in a pose that hoods
-  the bottle and blocks its own wrist view -- that pose is itself unlearnable, another reason the clearance must be
-  guaranteed geometrically rather than recovered after the fact.
-- **session cf 2026-09-11 10:1x-11:0x: privileged-teacher + per-frame learnability audit. Ledger §19.9.**
-  NOTHING RUNNING; GPUs 2 MiB, ports free. New flag `reach.image_servo_truth_control` (default False, Codex's
-  original path untouched): the expert CONTROLS from object truth, while the same `decide()` is evaluated a second
-  time on the RGB fit every frame and `intent_rgb` / `agree` / `aim_delta_m` / `rgb_usable` are recorded. Truth
-  never enters the recorded observation; it picks the action, the audit says whether that action was reproducible
-  from images.
-  **PERCEPTION BUDGET (1562 fused fits audited against truth):** 0.25-0.40 m -> 0.009 median / 0.015 p90;
-  0.40-0.60 -> 0.005/0.016; 0.60-0.90 -> 0.013/0.041; 0.90-1.40 -> 0.028/0.084. Near field is sharp, far field is
-  not. So a switch is admissible only where its tolerance greatly exceeds the p90 at the range it fires: "when to
-  close" (fires at 0.25-0.40 m) can be a switch; **"when to raise the arm" (0.6-1.2 m, p90 41-84 mm) cannot** and
-  must be a continuous function.
-  **AGREEMENT RATE (attempt12_truth, 143 frames, seed 31000): 80.4% overall; 82.5% of frames had a usable RGB fit;
-  97.5% agreement when usable.** By range: 0.25-0.40 m **100%**, 0.40-0.60 93%, 0.60-0.90 97%, **0.90-1.50 49%**
-  (perception error 0.102 there). Of the 28 disagreements, 25 are "RGB not usable at all" and only 3 are a genuinely
-  different intent -- all 3 sitting on the `prealign_depth=0.44` boundary, the textbook boundary-inside-noise.
-  **READ:** the near-field grasp decisions are reproducible; everything unlearnable is far field, and mostly
-  "the student could not see", not "the student chose differently". Far field only needs to walk toward the bottle,
-  and bearing is well determined even when depth is not -- so the far field should stop requiring a precise fit.
-  The 0.44 hard boundary should become a continuous blend; it is also what makes the arm a passenger (§19.8).
-  Expert reliability is fixed: no reacquire loop, `align` error converges monotonically 0.210 -> 0.091. **Still 0/4**
-  -- all three rounds die on `right_dex1_finger_1_link vs water_bottle_object`. The dex1 long-finger geometry is now
-  the ONLY blocker; perception and far-field facing are both eliminated as confounds.
-  CAVEAT: the near-field 100% rests on 16 frames (episodes are cut at 18-21 s by the finger problem); re-measure
-  once a full round can run.
-  Also fixed two pre-existing size-cap violations in §19's code (`_tick` 94 lines, `reach_config.__post_init__` 89)
-  -- `make lint` was already red on them at HEAD, not introduced here.
-- **session cf 2026-09-11 09:1x-10:0x: image-servo far-field line. Two real bugs found and fixed, still 0/4.**
-  NOTHING RUNNING; GPUs 2 MiB, ports free. Ledger bottle.md §19.8. Codex's design is intact; its tests are now 12.
-  **§19.7's guess was partly WRONG.** Ego is not the weak camera -- it detects the cap in ~100% of frames at every
-  range. Auditing 622 accepted fits against object truth: the fused pair is calibrated (uncertainty 0.017 m, true
-  error 0.018 m), but **wrist-ONLY fits reported 0.076 m and were off by 0.545 m, 98% of it pure depth, placing the
-  bottle 0.53 m NEARER than it is** -- and they passed the 0.15 gate.
-  ROOT CAUSE: on a disagreeing pair `fit_bottle` fell back to `min(observations, key=conditioning)`, which picks the
-  larger silhouette = the wrist, the camera its own comment blames for the disagreement. FIXED: keep the head view.
-  (A width-sensitivity uncertainty term was tried and REVERTED -- a confidently wrong monocular depth is
-  self-consistent, so it still let 98% of the bad fits through. Only cross-view agreement separates them.)
-  **THAT FIX EXPOSED A LATENT PIROUETTE.** The far-field facing used `atan2(target[1], target[0])` toward the
-  BOTTLE, but the stand is deliberately offset `approach_lateral=0.195`, so that bearing converges to -0.195 and
-  never to zero: a permanent ~10 deg right turn every tick. attempt08 never hit it because the wrong-near depth kept
-  it in the other branch. Measured in attempt10: heading swept 2738 deg inside a 3-8 cm box, 0.6 m walked for 0.03 m
-  net. FIXED: aim at the approach goal (`target - relative_goal`), the same vector `movement` uses.
-  **FOUR ARMS, same seed 31000, 4 rounds each:**
-  | attempt | change | >0.2 m bad fits | wrist-only | net/travel | heading sweep | min depth |
-  | 08 Codex | - | 20% | 22% | 0.80 | 180d | 0.31 |
-  | 09 | prealign 0.44->1.30 | 4% | 6% | 0.38 | 1734d | 0.50 |
-  | 10 | + keep head view | 0% | 0% | 0.07 | 2738d | 0.88 |
-  | 11 | + aim at the goal | 1% | 1% | 0.54 | 729d | 0.43 |
-  **STILL 0/4**, and attempt11 fails back at the ORIGINAL problem: `RGB servo sweep / baseline clearance:
-  right_dex1_finger_*_link vs water_bottle_object` -- the dex1 long fingers sweeping the bottle, which §19.3 itself
-  flagged. Two confounds are now removed, so that is a clean near-field geometry problem: the long fingers foul the
-  bottle on the way in. §19.3 already says not to require a monotone wrist height and to allow a safe detour --
-  that is the design to do next, not more far-field tuning.
-  RESIDUAL, not chased: 729 deg of heading sweep still (08 was 180) -- suspect the `depth <= 0.65` branch, where the
-  facing is still the default `_facing(state)`.
-- **session cf 2026-09-11 08:1x-09:0x: picked up Codex's image-servo line, ran attempt09, machine released.**
-  NOTHING RUNNING; GPUs 2 MiB, ports free, stack down. Ledger bottle.md §19.7. No Codex source was changed; its
-  11 tests still pass. The `reach.image_control` override I used is REVERTED -- the config is back at Codex's
-  `prealign_depth=0.44`.
-  **Codex's state:** §19 design implemented (image_servo{,_config,_policy}.py, image_bottle.py,
-  configs/tasks/bottle_image_servo.json), attempts 01-08 run, **0 successes of 4 rounds each**. The death mode
-  converged on the dex1 long fingers sweeping the bottle -- the risk §19.3 itself flagged.
-  **FINDING 1: the passenger structure survived into the implementation.** In attempt08, `visual_prepare` is 170 of
-  190 samples (89% of the episode) and palm height during it has sd 0.0073 m; the palm-to-target height gap stays
-  0.18-0.26 m the whole way in. Same structure as visible200, compressed into the last 11%.
-  **ARITHMETIC:** the arm descends at 0.06-0.10 m/s and must cover 0.21 m (~2.3 s); `prealign_depth=0.44` gives it
-  a 0.5-0.8 s window and it dies with 0.13-0.20 m left. The approach lasts 4-9 s, so starting earlier should fit.
-  **FINDING 2 (attempt09, prealign_depth 0.44 -> 1.30, same seed 31000): it does not, and the reason is the real
-  constraint.** The passenger phase went away (align 421 vs visual_prepare 8, `enter` reached twice) but it was
-  still 0/4 and approach got WORSE (2 rounds timed out at 44 s vs 0 before). `reacquire_ticks` went 4/3/19 ->
-  686/144/709: the arm pose that closes the height error is the arm pose that loses the bottle from the wrist
-  camera, so `_tick` falls back to `_view_q()` and undoes the descent, hundreds of times. One round walked
-  backwards (depth 0.66 -> 1.21).
-  **THE CONSTRAINT, now measured rather than assumed:** hold the view pose and the arm is a passenger that cannot
-  descend in time (fingers sweep the bottle); descend early and the wrist view is lost (reacquire loop). Neither
-  works, so the descent must be COUPLED to keeping the target in the wrist frame -- pitch the wrist to track the
-  bottle while descending (80 deg FOV has room), instead of holding a fixed view pose and then descending. This is
-  exactly what the user asked for originally ("keep the wrist camera on the bottle whether walking or stopped");
-  this round turned it from an intuition into a hard constraint.
-  **ALTERNATIVE WORTH TRYING FIRST (cheaper):** make far-field localisation not depend on the wrist camera. Ego
-  sees the bottle in 91% of stuck frames (§18.6), but at 1.2 m the monocular cap fit cannot pass the
-  `approach_uncertainty_m=0.15` gate, so the far field is currently carried by the wrist camera. Widening that gate
-  for the far field, or strengthening the ego-side fit, dissolves the either/or without new control design.
+- **IMAGE-SERVO LINE, session cf 2026-09-11 08:1x-12:3x. NOTHING RUNNING; GPUs 2 MiB, ports free, stack down.**
+  Commits c02354c -> f330238. Ledger bottle.md §19.7-19.11. Codex's design (§19.1-19.6) is intact and now committed;
+  its tests are at 12 and green. Picked up its work after it stopped at attempt08 (8 attempts x 4 rounds, 0 success).
+  **STILL 0 SUCCESSES**, but four confounds are gone and the remaining blocker is one measured geometry problem.
+  **WHAT WAS FIXED**
+  1. **A 0.545 m perception error.** Auditing 622 accepted fits against truth: fused ego+wrist is calibrated
+     (0.017 reported / 0.018 true), but wrist-ONLY fits reported 0.076 and were off by 0.545 m, 98% pure depth,
+     and passed the 0.15 gate. Cause: on a disagreeing pair `fit_bottle` fell back to the best-CONDITIONED single
+     view = the larger silhouette = the wrist, the camera its own comment blames. Now keeps the head view.
+     (A width-sensitivity uncertainty term was tried and REVERTED: a confidently wrong monocular depth is
+     self-consistent and it still admitted 98% of them. Only cross-view agreement separates them.)
+  2. **A latent pirouette that perception fix exposed.** Far-field facing aimed at `atan2(target[1], target[0])`,
+     the bearing to the BOTTLE, but the stand is deliberately offset `approach_lateral=0.195`, so that bearing
+     converges to -0.195 and never to zero -- a standing ~10 deg right turn every tick. attempt08 never reached it
+     because the wrong-near depth kept it in the other branch. attempt10 swept 2738 deg of heading inside a 3-8 cm
+     box. Now aims at the approach goal, whose bearing does converge.
+  3. **The geometry-derived finger clearance.** Measured off the MJCF: fingers reach 0.1941 m from the wrist, the
+     grip point (OFFSET) is at 0.1515 m, so they extend **0.0426 m past the grip**; required stand-off =
+     finger reach past grip + object radius + margin = 0.100 m for this bottle, against the fixed entry_gap 0.075.
+     Now derived from geometry + the object's own radius; `grip_standoff_m` logged per frame.
+  **THE PRIVILEGED-TEACHER PATTERN (user's idea, §19.9), implemented behind `reach.image_servo_truth_control`
+  (default False, Codex's RGB-controlled path untouched):** the expert CONTROLS from object truth so it is reliable,
+  and the SAME `decide()` is evaluated a second time on the RGB fit every frame, recording `intent_rgb` / `agree` /
+  `aim_delta_m` / `rgb_usable`. Truth never enters the recorded observation; it selects the action and the audit
+  certifies reproducibility. **Criterion: Var(action | observation) ~ 0, not "no privileged info".**
+  **PERCEPTION BUDGET (1562 fused fits vs truth):** 0.25-0.40 m -> 0.009 median / 0.015 p90; 0.40-0.60 ->
+  0.005/0.016; 0.60-0.90 -> 0.013/0.041; 0.90-1.40 -> 0.028/0.084. A switch is only admissible where its tolerance
+  greatly exceeds the p90 at the range it fires: "when to close" (0.25-0.40 m) can be one, **"when to raise the arm"
+  (0.6-1.2 m, p90 41-84 mm) cannot** and must be continuous.
+  **AGREEMENT RATE (attempt12_truth, 143 frames): 80.4% overall, 82.5% of frames had a usable fit, 97.5% agreement
+  when usable. By range: 0.25-0.40 m 100%, 0.90-1.50 m 49%.** Of 28 disagreements, 25 are "RGB not usable at all"
+  and only 3 are a different intent -- all 3 on the `prealign_depth=0.44` boundary. So the near-field grasp
+  decisions ARE reproducible; everything unlearnable is far field and is mostly "could not see".
+  **WHAT IS STILL BROKEN -- one thing.** The dex1 long fingers foul the bottle. Per-round minimum grip stand-off:
+  r1 +0.050, r2 +0.057 (both swept; the geometric limit is 0.0653, and with fingers 0.0426 past the grip that puts
+  the tips 0.007 and 0.014 m from the bottle centre, inside its 0.0226 m radius -- exactly what the model predicts),
+  r3 -0.065 (the 62 s timeout, arm hooded over the bottle).
+  **Base-speed coupling is NOT the lever**: the entry axis is near vertical (near field fwd +0.180, **up -0.860**),
+  so the clearance is spent by the ARM's own descent. `clear_entry` fired on 335 of 522 frames trying to lift and
+  still lost. The fix is to make the clearance a PROJECTION on the commanded aim rather than a reactive back-off.
+  **Acceptance is already instrumented**: per-frame minimum `grip_standoff_m` must stop falling below 0.0653 m --
+  no need to wait for a success rate.
+  **TWO CORRECTIONS I OWE**, both caught by the user asking: §19.10 claimed the stand-off was negative and the
+  geometry model refuted -- that was an aggregate weighted by r3's 62 s dwell; per round the model predicts the
+  fouling correctly (§19.11). Only the lever was refuted, not the model.
+  **ARTIFACTS:** attempt09/10/11/12_truth/13_clearance under outputs/experiments/image_servo_20260911/;
+  captioned videos with the failure string and each round's minimum stand-off in
+  outputs/videos/image_servo_attempt13_clearance/{r0..r3,reel}.mp4 (r3 shows the hooded pose that blocks its own
+  wrist camera). Exporter scripts/experiments/image_servo_export_videos_20260911.py.
+- [STALE, left for Codex to rewrite -- its RUNNING line below refers to attempt08, which finished at 08:08 UTC;
+  the machine has been free since, and session cf continued the line through attempt13. See the IMAGE-SERVO
+  entry at the top.]
 - **Codex 2026-09-11: 单臂视觉反馈专家正在实现;用户已授权采集 1 集成功视频。**
   RUNNING GPU0 / instance 0: outputs/experiments/image_servo_20260911/attempt08/launch.sh。
   新 RGB cap 定位 + 无阶段历史的纠偏控制正在烟测,最多 4 轮、1 集成功即停,退出按实例锁归属清理。
@@ -623,6 +567,17 @@
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
+0-IMG. IMAGE-SERVO (the active line). Make the finger clearance a PROJECTION on the commanded aim instead of a
+   reactive back-off: while unaligned, clamp the aim along the entry axis so the grip point can never sit closer
+   than `clearance` to the object, making entry into its column geometrically impossible. Keep decide()'s L-shape.
+   ACCEPTANCE, already instrumented and not needing a success rate: per-frame minimum `grip_standoff_m` must stop
+   falling below 0.0653 m (the geometric limit), and the agreement rate must not fall (attempt12 was 80% overall /
+   97.5% when the fit is usable).
+   THEN, in order: (a) the far field should stop requiring a precise fit -- bearing survives poor depth and 21% of
+   far-field frames have no usable fit at all; (b) `prealign_depth=0.44` should become a continuous blend, which
+   removes both the 3 ambiguous labels and the passenger phase (§19.8); (c) re-measure the near-field agreement
+   rate, whose 100% currently rests on 16 frames because episodes are cut short at 18-21 s.
+   DO NOT re-tune the far field further, and do not add a new discrete stage -- the L-shape already exists.
 0a. DONE 2026-09-11 -- the 2/100 is diagnosed (ledger §18.2-18.9, and the SESSION cf entry in Now).
    THE NEXT PIECE OF WORK, in order:
    (i) BUILD AND VALIDATE THE GATE. A "no-progress plateau" detector: per frame, the commanded change for each
@@ -672,6 +627,16 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- **Will a projected clearance actually stop the sweep?** The finger-extent model predicts the two swept rounds
+  correctly (minima +0.050 and +0.057 against a 0.0653 m limit), so enforcing it geometrically should work. Untested.
+- **Why does the expert approach from almost straight above?** The entry axis measures fwd +0.180 / up -0.860 in the
+  near field, i.e. the grasp descends onto the bottle. Nobody chose that deliberately -- it falls out of
+  `templates()[4]`'s terminal attitude. A more horizontal approach would need far less vertical clearance and might
+  remove the whole problem. Not investigated.
+- **The far field has no usable RGB fit on 21% of frames.** Those are unlearnable labels. Is the fix a wider
+  uncertainty gate for coarse motion, a better ego-side fit, or simply not demonstrating there?
+- **Does the base-speed coupling do any harm?** It is kept because §19.8's "the base outruns the arm" is real, but
+  it caused one deadlock (r3's 62 s timeout). It may need a floor so the base never fully stops.
 - **ANSWERED 2026-09-11 (was: why does the policy never command a close?)** Because nothing is between the jaws.
   The arm never leaves the approach posture; the gripper decision was always correct. Ledger §18.2-18.9, and the
   SESSION cf entry in Now. What replaced it is the question below.
