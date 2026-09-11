@@ -36,6 +36,10 @@ class EvalConfig:
     latency_dist: str | None = None  # --latency-dist: empirical latency distribution JSON (lockstep client)
     latency_frames: int | None = None  # --latency-frames: fixed simulated inference latency, frames (lockstep client)
     grip_gain: float = 1.0  # --grip-gain K: amplify the predicted gripper's deviation from fully-open
+    restart_deploy: bool = True  # --set restart_deploy=false: skip the per-round deploy restart, as collection
+    # does since 2026-09-10 (ledger bottle §11). Default True keeps every historical eval's protocol; the two
+    # paths establish the deploy heading anchor differently (fresh start_control vs hold+reanchor), which is
+    # the suspect in ledger bottle §18's 2/100.
     snap: bool = True  # not --no-snap: send the predicted token snapped to the FSQ grid
     stall_abort_s: float = 0.0  # --stall-abort: end a round early after this many stalled seconds (0 = off)
     resume: bool = False  # --resume: top up the existing manifest to `rounds` instead of starting over

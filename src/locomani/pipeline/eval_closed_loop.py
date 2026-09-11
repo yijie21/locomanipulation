@@ -152,8 +152,10 @@ def main():
 
     # Collection stopped restarting the deploy per round on 2026-09-10 (ledger
     # bottle §11); the eval path was never measured without the restart and
-    # the clean-clock shim below pauses/primes around it, so eval keeps it.
-    grasp_gym.RESTART_DEPLOY = True
+    # the clean-clock shim below pauses/primes around it, so eval KEEPS it by
+    # default. Now a config field, because the two paths establish the deploy's
+    # heading anchor differently and that is the suspect in §18's 2/100.
+    grasp_gym.RESTART_DEPLOY = cfg.restart_deploy
 
     if cfg.client == "lockstep":
         # Needs a stack started with LOCKSTEP=1 (lockstep_sim.py serving the

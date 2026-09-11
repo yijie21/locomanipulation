@@ -45,8 +45,14 @@
   distances are p10 0.18 / median 0.27 / p90 0.35 m against the expert's 0.30-0.31 brake band, only 20/96
   inside 0.29-0.32. Mechanism and ruling in docs/ledger/bottle.md §18. Not a seed-variance result (floor is
   57 vs 46) and not the GPU0 overlap (0.54 vs 0.62 yield cannot move 55 points).
-  Next lever is NOT another seed: it is restoring demonstrations for a short stop, i.e. DAgger on the
-  policy's own stop distribution, or a recovery branch rewritten on observable quantities.
+  CORRECTION (ledger §18.1, after the user challenged the number): the mechanism in §18 is WRONG. Per-round
+  traces show azimuth and distance do NOT separate success from failure (successes sit at 0.25 m / -39 deg,
+  inside the failures' spread). The only discriminator is the gripper: 94/99 rounds the model never predicts a
+  close at all (chunk_grip_min >= 0), 2 predict+execute and both succeed, 3 predict but it never reaches the
+  executed stream. So it is not an execution bug and not a stop-position problem -- offline it predicts the
+  close perfectly, in closed loop it almost never decides to. Not yet localised. The restart_deploy A/B meant
+  to test the anchor mismatch scored 0/20, ALL [stand] collapses, so that suspect is untested, not excluded.
+  Next: dump the observation at a failing decision moment and ask the model offline whether it closes there.
   FIXED on the way (23b5436): eval_closed_loop.py's src bootstrap reached src/locomani instead of src, so
   BOTH eval entry points had been broken since the 4a package move (29bdf84); it was the refactor follow-up
   this file listed as "not yet verified: the eval path".
