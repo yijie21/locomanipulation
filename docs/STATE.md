@@ -37,134 +37,57 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
-- **CORRECTION 2026-09-11 (session cf, after the user asked what the proposed training would prove):
-  §18.8's "the policy cannot tell walking from parked" is WRONG -- it has that information.** Ledger §18.9.
-  A LINEAR probe on the 12 leg-joint angles the policy already receives predicts smoothed leg motion at
-  held-out R^2 0.665 and classifies moving vs still at 90% (chance 50%), from a SINGLE frame. So the
-  delta_indices=[-10,0] retrain §18.8 proposed has no premise left; do not run it for that reason.
-  §18.8's measurements stand (stuck state in-distribution and nearer than training frames are to each other,
-  100% matched to the approach phase, base parked at 0.79 cm/s, gr00t_sonic_2cam.py is single-frame). Only the
-  causal inference was wrong.
-  WHAT IS LEFT, after ruling out observation encoding, the gripper, the execution chain, stop position/azimuth,
-  distribution shift and missing velocity -- and given the model predicts correctly on the expert's own
-  observations at every phase: **the learned policy has a fixed point in a fully in-distribution state.** That is
-  textbook behaviour cloning, and it is the case for DAgger, which does not require knowing why. The value of
-  this whole elimination chain is that it kills the cheaper "it is a bug / one input is missing" explanations,
-  so DAgger is now justified rather than assumed.
-  METHOD RULE (second one): before claiming some information is ABSENT from the observation, spend the few
-  minutes on a linear probe. I proposed a training run on an unprobed claim.
-- **CORRECTION 2026-09-11 05:3x UTC (session cf, after the user asked for controls): §18.4's "the right wrist camera
-  is the trigger for the descent" is RETRACTED -- I read sampling noise.** Ledger bottle.md §18.5. GPU released.
-  The action head is a diffusion model. Repeating ONE observation 10x, the nearest-neighbour wrist-height statistic
-  §18.4 relied on has sd 0.002-0.017, while the single-shot differences it called a descent were 0.005-0.007.
-  Re-done with 8 repeats and a 3-sigma rule (scripts/experiments/visible200_trigger_controls_20260911.py):
-  (a) NO wrist image significantly fires the descent on either base -- not the approach-pose donors with no bottle
-  in frame, not the wind-up donor with the bottle between the jaws, not that donor with the bottle inpainted out,
-  not the descent donor. (b) the per-key sweep on the descent picks `video.ego_view`, significant on 1 of 2 bases,
-  and `video.right_wrist` on NEITHER -- the opposite of §18.4.
-  STILL STANDS (big-margin measurements, not noise): the GRIPPER does follow the wrist camera (grip sd 0.0002-0.0005;
-  a grasp-moment donor takes it +0.024 -> -0.013, ~30-70 sigma, 4/4 bases; a pre-close donor correctly does NOT
-  close); every descriptive measurement in §18.4 (19 cm vertical gap, arm frozen to 0.7 deg / 2 mm over 85 s, wrist
-  roll 0.018 vs the expert's 0.24, palm separation, 0 of 912 closes); and the model DOES descend on the expert's own
-  complete observation (-0.0718 +-0.0020 vs live +0.0207 +-0.0026, ~25 sigma).
-  REVISED CONCLUSION: the model descends on the expert's COMPLETE observation, but no SINGLE key transplanted from
-  it into the stuck live observation reproduces that. The difference is distributed, not one input. The absorbing
-  state stands; WHAT FIRES THE TRANSITION IS UNLOCALISED.
-  METHOD RULE for this line: any conclusion from a token nearest-neighbour difference needs repeated sampling and an
-  sd. Single-shot differences at the 0.005 level carry no information. The gripper is exempt (sd is 100x smaller).
-- **MECHANISM COMPLETE 2026-09-11 04:0x-05:0x UTC (session cf). Ledger bottle.md §18.4.** GPU1 held ~20 min for an
-  inference server only (no sim, no stack); released, both GPUs at 2 MiB, 5590 free.
-  **The policy walks to the table, adopts the expert's approach posture to within ~2 deg / 5 mm, and then FREEZES
-  there for 85 s.** Corrects §18.3's "stops 6-8 cm short": the palm gap is almost entirely VERTICAL -- successes sit
-  +0.029 m above the bottle, failures +0.191 m, and the failures are HORIZONTALLY CLOSER (0.108 vs 0.134). palm_z min
-  0.729 (success) vs 0.875 (failure) against a 0.905 rest; 94/97 failures never bring the palm below 0.85 m.
-  The cleanest discriminator is WRIST ROLL: the expert goes 0.03 -> 0.24 rad at the wind-up (close-60) and holds it
-  through the grasp; live stays at 0.018 for the whole round. The plateau is frozen -- over 85 s, sh_pitch std
-  0.012 rad, wrist x std 2.3 mm, wrist z std 2.1 mm.
-  **Prediction, not execution** (token nearest-neighbour against a 17,440-frame training token bank, keyed on
-  eef_state[9] wrist height): live tokens' neighbours sit at the approach pose and go UP (+1.6 s -> 0.130); with the
-  wrist image swapped for a pre-descent expert frame they go DOWN (0.104-0.110). The right wrist camera is the
-  trigger for the descent.
-  **The trigger was learned** -- fed the expert's own observations the model holds at close-150/-120/-90, fires the
-  descent at close-60 (0.148 -> 0.075) and closes at close-40/-20, and its 1.6 s chunks track ground truth. So it is
-  a good open-loop predictor that can never reach the state that fires it.
-  **Closed-loop absorbing state**: the wind-up out of the approach pose is SCRIPTED in the expert, not
-  observation-triggered; the observation that would trigger the descent (bottle ahead of the jaws in the wrist cam)
-  only exists after the wind-up. Needs to descend to see it, needs to see it to descend. Same class as memory
-  creep-hidden-stop-target. This is also why open-loop nmse 0.0024 and closed-loop 2/100 are not contradictory: the
-  approach is a long plateau where "hold" is right, and the wind-up is a handful of frames that the frame-average
-  washes out.
-  NOT a bug hunt any more -- it is data/representation. Options in §18.4, cheapest first: (a) a phase/progress
-  signal, (b) oversample the wind-up frames, (c) DAgger on "at the table, approach pose, stationary", which is
-  exactly the state the policy sticks in and which the expert data only ever passes through.
-  Artifacts: outputs/experiments/visible200_obsdump_20260911/{reach_trigger.json,wrist_live_vs_dataset.png},
-  runner scripts/experiments/visible200_reach_trigger_20260911.py. The 580 MB obs/ dump can now be deleted.
-- **DIAGNOSIS STEP 1 DONE 2026-09-11 02:5x-04:0x UTC -- THE 2/100 IS LOCALISED** (session cf; instance 0 + GPU0 taken
-  and released, ports free, stack down). Ledger bottle.md §18.3.
-  **The model's gripper decision is CORRECT. The arm never reaches the bottle.** Three independent lines:
-  (1) per-key substitution on live observations -- of all 13 obs keys ONLY `video.right_wrist` flips the close
-  (+0.0242 -> -0.0129); all ten `state.*` and the prompt do nothing, `video.ego_view` never crosses the threshold.
-  Same on 4 different rounds' base observations (-0.0069..-0.0143).
-  (2) the image itself: outputs/experiments/visible200_obsdump_20260911/wrist_live_vs_dataset.png -- training frame
-  has the bottle squarely between the jaws, the live frame has the jaws over empty table with the bottle low and
-  outside them. It does not close because there is nothing in the gripper.
-  (3) palm-to-bottle separates PERFECTLY on the original 99 rounds (correct join): successes <= 0.138 m, all 97
-  failures >= 0.156 m, ZERO overlap -- while base-to-bottle overlaps completely. §18.1 measured the BASE stop; the
-  stop problem is real but it is in the PALM.
-  NOT the cause, ruled out with numbers: observation encoding, the model refusing, the execution chain (912 live
-  queries never left the +0.0245 open rail; the failure reproduces offline).
-  **SILENT FAILURE FIXED on the way: `--set backend.obs_dump=DIR` did nothing at all.** Its only consumer was
-  stack.py exporting TF_OBS_DUMP into the STACK's env; the dump is gated by `vla_round.OBS_DUMP`, a module global in
-  the eval-client process that nothing assigned. Same defect on `grip_delay`, `replace`, `lockstep.no_seed` (their
-  config defaults equal the module defaults, so NO past result is affected). All four wired in eval_closed_loop.py;
-  tests/test_eval_config_reaches_the_client.py holds the rule and names all four on the pre-fix HEAD. A
-  "is the field name referenced" check does NOT catch this -- obs_dump was referenced, in the wrong process.
-  Also verified §18.2's fix on live data: the new traces carry `round` and the trace/manifest offset is now 0.
-  Artifacts: outputs/experiments/visible200_obsdump_20260911/ (912 npz / 580 MB in obs/, 4 traces, 5 videos).
-  NEXT: the question is now "why does the arm stop 6-8 cm short". Compare the policy's palm trajectory against the
-  expert's on the same stand -- is it stalling mid-reach or reaching to the wrong place? The 580 MB obs/ dump can be
-  deleted once that is answered.
-- DIAGNOSIS STEP 0 + 2 DONE 2026-09-11 02:1x-02:5x UTC (session cf; GPU1 held ~6 min for an inference server only --
-  no sim, no stack, ports 5555-5582 untouched; released).
-  **STEP 0 -- the trace/manifest join was off by one.** `eval/traces/round_NNN.json` describes manifest round NNN+1:
-  the three VLA clients named traces from their own call counter, and a round that dies before the VLA stage
-  (manifest round 0, `[stand]`) never increments it. Proof: offset +1 matches 99/99 `why` strings exactly, offset 0
-  matches 6/99. FIXED -- `round_id` threaded round_loop -> run_round -> _run_round -> RoundContext -> the three
-  clients; traces are named by it AND carry `round` as a field. Regression test tests/test_trace_round_join.py
-  (12 assertions, all red on the pre-fix HEAD). Re-derivation script
-  scripts/experiments/visible200_trace_join_20260911.py, per-round output eval/trace_join_20260911.json.
-  Ledger bottle.md §18.2. **§18.1 survives on claims 1 and 4** (94/99 rounds never predicted a close, 0 of them
-  succeeded; stop distance and azimuth still do not separate success from failure). **Claim 2/3 was wrong**: the
-  round ids are 028/053/066 not 027/052/065, and only TWO predicted a close that never reached the executed stream --
-  round 028 did execute one, at +0.0048, just inside the 0.005 threshold, and knocked the bottle 12 cm.
-  NEW: the gripper channel is SATURATED, not noisy -- 94 never-close rounds sit at +0.020..+0.023 against
-  GRIPPER_MAX +0.0245, the 5 closing rounds at -0.020..-0.002 against GRIPPER_MIN -0.020. A binary decision that
-  never flips, which rules out the whole "undertrained / imprecise" class of explanation.
-  **STEP 2 -- the offline feedback loop exists and is verified both ways.** src/locomani/pipeline/replay_obs.py asks
-  the policy what it would have done, with no sim and no stack: `--dump DIR` replays the npz files vla_obs's
-  OBS_DUMP writes (obs + the live answer, so it also checks inference is reproducible); `--dataset DS --near-close`
-  rebuilds observations from a LeRobot episode in the EVAL's obs format. `--substitute KEY --donor-dump` swaps one
-  key between the two -- that is the seam bisection. `--expect-close` makes the exit code the verdict.
-  Runs in the Isaac-GR00T venv (needs serve_policy on :5590, ~15 s to start, 6.6 GB).
-  FIRST RESULT (H4, the null hypothesis): on val frames around the expert's own close the model closes
-  **9/9 (ep0) and 7/7 (ep3)**, grip_min -0.019..-0.020; on mid-approach frames it correctly refuses (4/5, and the
-  5th at f240 is right too -- the close is inside its 40-frame horizon by then). So the checkpoint's gripper
-  decision is a correct, sharp function of "is the close within my 1.6 s horizon" ON DATASET OBSERVATIONS.
-  The defect is therefore in what the closed loop puts into those keys, or in the states it visits -- NOT the model.
-  Tests tests/test_replay_obs.py. make test green (sim venv); make lint red only on another session's untracked
-  scripts/experiments/scalebfm200_reel_20260910.py (4x E702), not on anything of mine.
-  NEXT (step 1): one short stack session, 3 failing cases with `--set backend.obs_dump=<dir>`, then
-  replay_obs --dump on it, then the per-key substitution bisect.
-- VIDEOS EXPORTED 2026-09-11 00:56 UTC (session cf, no GPU, no sim): 10 collection + 10 eval third-person clips for
-  the visible200 arm in outputs/videos/visible200_export_20260911/ ({collect,eval}/ + reel_collect_10.mp4 208 s /
-  reel_eval_10.mp4 717 s + INDEX.json). Source is the sim composite already on disk (main view + L/R wrist + ego
-  insets, 720x540 @ 12.5 fps): collect/videos_<batch>/gym_<ts>.mp4 and eval/videos/gym_<ts>.mp4. Clip-to-round
-  mapping is by wall clock -- the recorder starts ~10 s into a round, so a video belongs to the last round whose
-  execution.started_wall is <= its timestamp; round 0 of a batch (and eval round 0) has no video. Collection picks
-  are 10 KEPT episodes spread over the 34 batches; eval picks are BOTH successes (rounds 14, 62) plus 8 failures
-  sampled along the stop distance (0.15 -> 0.56 m), because 97 of 98 failures carry the same string and a uniform
-  sample would be 10 identical clips. 22/22 decode clean. Runner scripts/experiments/visible200_export_videos_20260911.py.
+- **SESSION cf 2026-09-11: the visible200 2/100 is DIAGNOSED. NOTHING RUNNING; both GPUs at 2 MiB, ports free,
+  no stack, instance 0 free.** Commits bf5bfd6 -> ee70bcc. Full record in ledger bottle.md §18.2-18.9.
+  **THE ANSWER.** The policy walks to the table, adopts the expert's approach posture to within ~2 deg and ~5 mm,
+  and then FREEZES for 85 s (shoulder pitch varies 0.7 deg, wrist ~2 mm). The gripper never closes because there is
+  nothing between the jaws -- that decision was always correct. The miss is almost entirely VERTICAL: successes sit
+  +0.029 m above the bottle, failures +0.191 m, and failures are horizontally CLOSER (0.108 vs 0.134 m). Min
+  palm-to-bottle separates the 99 rounds PERFECTLY (successes <= 0.138 m, all 97 failures >= 0.156 m, zero overlap)
+  while base-to-bottle overlaps completely -- measure the PALM, not the base. Cleanest discriminator: WRIST ROLL,
+  expert 0.03 -> 0.24 rad at the wind-up, live 0.018 all round.
+  **RULED OUT, each with numbers, not argument:** observation encoding (§18.3); the model refusing to close (912
+  live queries never left the +0.0245 open rail); the execution chain (the arm DOES track the token, r +0.54..+0.72
+  zero-lag, and commanded/achieved motion scale together, §18.7); stop position and azimuth (§18.2); distribution
+  shift (the stuck state is nearer to training than training frames are to each other, and 100% matches the
+  approach phase, §18.8); missing velocity (a LINEAR probe on the leg angles the policy already gets predicts
+  motion at R^2 0.665 and moving-vs-still at 90%, §18.9).
+  **WHAT IT IS.** A behaviour-cloning fixed point in a fully in-distribution state, created by the expert's
+  STRUCTURE: through the whole approach the ARM IS A PASSENGER (wrist z flat at 0.111 for 100+ frames, roll flat at
+  0.03) and all task progress comes from the BASE; then a sharp switch at close-60. When the policy parks the base
+  (measured 0.79 cm/s), the only source of progress is gone, "hold" is the correct action on the plateau, the
+  observation stops changing, and the same action repeats for 85 s.
+  **RETRACTED along the way (both after the user challenged them):** "the right wrist camera triggers the descent"
+  (§18.5 -- single-shot reads of a statistic whose sampling sd is 0.002-0.017); "the policy cannot tell walking from
+  parked" (§18.9 -- probe says it can). Two method rules now in the ledger: repeated sampling + an sd before
+  believing any token-nearest-neighbour difference; and a linear probe before claiming information is ABSENT.
+  **CODE FIXED (all committed, make test green):**
+  (1) trace files were named from the VLA client's own call counter, so `traces/round_NNN.json` described manifest
+      round NNN+1 and every analysis joining them by round number was reading mismatched pairs. `round_id` now
+      travels round_loop -> run_round -> _run_round -> RoundContext -> the three clients, and `round` is a field in
+      the JSON. tests/test_trace_round_join.py (12 assertions, all red pre-fix). Verified on live data: offset 0.
+  (2) `--set backend.obs_dump=DIR` wrote NOTHING -- its only consumer was stack.py exporting TF_OBS_DUMP into the
+      STACK's env, while the dump is gated by `vla_round.OBS_DUMP`, a module global in the eval-client process that
+      nothing assigned. `grip_delay`, `replace`, `lockstep.no_seed` were inert the same way (their config defaults
+      equal the module defaults, so NO past result is affected). All four wired;
+      tests/test_eval_config_reaches_the_client.py names all four on the pre-fix HEAD. NOTE: a "is the field name
+      referenced" check does NOT catch this class -- obs_dump was referenced, in the wrong process.
+  **NEW TOOLS:** `src/locomani/pipeline/replay_obs.py` -- ask the policy offline what it would have done, no sim, no
+  stack, seconds not hours (`--dump` replays OBS_DUMP npz, `--dataset --near-close` rebuilds observations from a
+  LeRobot episode in the eval's obs format, `--substitute KEY --donor-dump` bisects the train/deploy seam,
+  `--expect-close` makes the exit code the verdict). Needs serve_policy on :5590 and the Isaac-GR00T venv.
+  `src/locomani/pipeline/dataset_ambiguity.py` -- written as a design gate but it FAILED its own acceptance test
+  (the wind-up scores the LOWEST ambiguity), so it is UNFIT for this failure and must not gate anything.
+  **ARTIFACTS:** outputs/experiments/visible200_obsdump_20260911/ (912 npz / 580 MB in obs/, 4 traces, 5 videos,
+  wrist_live_vs_dataset.png, wrist_series_live_vs_expert.png, trigger_controls.json, reach_trigger.json);
+  outputs/experiments/visible200_20260910/eval/trace_join_20260911.json; ambiguity_train.json.
+  The 580 MB obs/ dump can be deleted once the new expert design is settled.
+- **USER RULING 2026-09-11: NO DAgger.** The goal is that natively collected data trains a good VLA on its own.
+  The fix is therefore the EXPERT REDESIGN (see Next), not an iterative rollout-label-retrain loop.
 - visible200 TRAIN + EVAL DONE (session cf, 2026-09-10 12:01-19:56 UTC, GPU0 released, instance 0 free).
+  **[MECHANISM SUPERSEDED 2026-09-11 -- see the SESSION cf entry at the top and ledger §18.2-18.9. The 2/100
+  and the failure strings below are correct; every causal claim in this entry and in §18/§18.1 has been
+  re-derived or retracted.]**
   10k steps, loss 1.2866 -> 0.0625; closed loop **2/100** (seed 6000, async, clean protocol).
   97 of 100 failures are `[vla] at the table but never commanded a close`. Open loop on its own val is
   EXCELLENT: nmse_gripper 0.0024, close_frame_err_abs 2.3 frames, deg_mean at the noise floor. So the model
@@ -582,13 +505,25 @@
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
-0a. cf, THE open item: localise why the policy never commands a close in closed loop while predicting it
-   perfectly offline (ledger §18.1). Cheapest next experiment: re-run 2-3 failing cases with EvalConfig.obs_dump
-   set, then feed those exact observations to the model offline and ask whether it closes there. If it does, the
-   defect is in how the closed-loop observation is built or timed; if it does not, nearest-neighbour that
-   observation against the training set to find what differs. Until this lands, do NOT read 2/100 as a verdict on
-   the visible_expert protocol -- a model at the open-loop noise floor does not collapse below random from data
-   narrowness alone.
+0a. DONE 2026-09-11 -- the 2/100 is diagnosed (ledger §18.2-18.9, and the SESSION cf entry in Now).
+   THE NEXT PIECE OF WORK, in order:
+   (i) BUILD AND VALIDATE THE GATE. A "no-progress plateau" detector: per frame, the commanded change for each
+       subsystem (base / arm / gripper), reporting the longest run where the ARM is near-static while the task is
+       unfinished, and its share of the dataset. It MUST go red on visible200's existing data first (wrist z is
+       flat at 0.111 for 100+ frames of every episode) -- that is the acceptance test the ambiguity metric failed.
+       No GPU. This is the ruler the new expert design is scored with.
+   (ii) REDESIGN THE EXPERT so the arm is never a passenger: arm pose a continuous function of what is visible
+       (bottle size/position -- ego far field, wrist near field), monotone from the first frame, so there is no
+       phase whose only source of progress is the base. Keep the gripper DISCRETE (it is the one component that
+       is provably correct, and its plateau is not absorbing because the arm is moving through it).
+   (iii) Spawn distance 0.5-1.5 m + speed jitter (today: --spawn-edge 1.1 1.3, a +-10% band). Close spawns start
+       the episode STATIONARY near the table -- exactly the state the policy sticks in -- labelled with the
+       correct continuation.
+   (iv) Stand azimuth stays 42 deg (bottle to the robot's right); nothing this session touched it.
+   (v) 20-episode pilot -> gate (i) -> only then 200 episodes. There is NO validated offline gate for a
+       behaviour-cloning fixed point, so the real check is still train + a short closed loop (77 min + ~40 min).
+   NOT DOING: DAgger (user ruling 2026-09-11). NOT DOING: the delta_indices=[-10,0] retrain -- its premise died
+   in §18.9. NOT DOING: a continuous gripper -- it would change the only part that works.
 0d. cf: the refactor follow-up (a) is still undone -- the eval-path A/B (old 78536ae eval client vs new, 20 rounds,
    same checkpoint). A checkpoint now exists, so it is finally possible.
 0b. cf: merge fix/first-round-anchor as soon as Codex's uncommitted tree edits land (see MERGE PENDING).
@@ -619,10 +554,28 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
-- **Why does the policy never command a close in closed loop?** 94/99 rounds the model never predicts one
-  (chunk_grip_min >= 0); the 2 that predict and execute both succeed. Offline on its own val the same checkpoint
-  scores nmse_gripper 0.0024 and close timing 2.3 frames. Azimuth and distance do NOT discriminate (successes sit
-  inside the failures' spread). Ledger §18.1. Unlocalised -- this is the most important open question on the line.
+- **ANSWERED 2026-09-11 (was: why does the policy never command a close?)** Because nothing is between the jaws.
+  The arm never leaves the approach posture; the gripper decision was always correct. Ledger §18.2-18.9, and the
+  SESSION cf entry in Now. What replaced it is the question below.
+- **OPEN, and now the main one: will an expert with no passenger phase actually remove the fixed point?**
+  The diagnosis says the policy parks in a fully in-distribution state where "hold" is the correct action and the
+  base was the only source of progress. Making the arm advance continuously with what it sees removes that
+  structure. That is a well-motivated bet, NOT a proven fix -- a fixed point is a property of the learned function,
+  not of the data, so no offline gate can settle it. Only collect + train + closed loop can.
+- **OPEN: is there any offline gate that predicts a behaviour-cloning fixed point?** The ambiguity metric
+  (dataset_ambiguity.py) failed its acceptance test. The plateau detector in Next 0a(i) at least measures the
+  structure we intend to change, but "no plateau" has not been shown to imply "no fixed point". Treat it as a
+  necessary condition, never a sufficient one.
+- **OPEN: 2 of 99 rounds predicted a close that never reached the executed stream** (rounds 053, 066; §18.2). Small,
+  real, and nobody has looked at the async client's chunk handling for it.
+- **OPEN: what does `video.ego_view` do to the arm command?** It was the only key to move the descent statistic
+  significantly, and only on 1 of 2 bases (§18.5). Under-powered; would need the repeated-sampling protocol to say
+  anything. Possibly nothing.
+- **OPEN: `state.right_hand` / `state.left_hand` layout mismatch.** Live puts the two jaw components at indices
+  0,1; the dataset's observation vector has them at 4,5 (same values, different slots; per-index std confirms).
+  So at eval the model reads zeros in the slots it learned from. PROVEN NOT to be the cause of the 2/100 (§18.3:
+  substituting the live hand vector into a closing observation still closes 5/5), but it is a real defect and
+  should be fixed before it matters for something else.
 - **Does the collection/eval heading-anchor mismatch matter?** Collection (restart_deploy=false) re-anchors with
   hold+reanchor after each reset; the eval restarts the deploy and takes "anchor = landing yaw". 65 measured the two
   8.5 deg apart. UNTESTED, not excluded: the A/B scored 0/17, every round a [stand] failure, degrading from "did not
@@ -702,6 +655,12 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 visible200 2/100 DIAGNOSED: the arm freezes in the expert's own approach posture for 85 s; the gripper
+  was never at fault. Palm-to-bottle separates perfectly (<=0.138 vs >=0.156 m), the miss is vertical (+0.029 vs
+  +0.191 m), wrist roll 0.24 vs 0.018. A behaviour-cloning fixed point in an in-distribution state, caused by the
+  arm being a passenger through the whole approach. Ledger §18.2-18.9
+- 2026-09-11 two claims of mine RETRACTED after the user asked for controls: "the wrist camera triggers the descent"
+  (sampling noise) and "the policy cannot tell walking from parked" (a linear probe says it can, R^2 0.665 / 90%)
 - 2026-09-10 visible200 10k steps -> closed loop 2/100; open loop on its own val is at the noise floor
   (nmse_gripper 0.0024, close timing 2.3 frames). Mechanism unlocalised, ledger bottle §18 + §18.1
 - 2026-09-11 restart_deploy=false eval arm: 0/17, every round [stand], degrading -- the eval needs the per-round restart
