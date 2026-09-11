@@ -15,6 +15,13 @@ set -u
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/../../scripts/paths.sh"
+# The readiness checks below read the sim's stdout (sim.log) for "Image publish
+# frequency", printed by the image-publisher SUBPROCESS with plain print(). With
+# stdout redirected to a file Python block-buffers 8 KB, so on a host without a
+# global PYTHONUNBUFFERED the first line lands ~5 min later than the 40 s
+# window and the stack is declared unusable although it streams fine
+# (2026-09-11, SRA0889). Unbuffer every Python this script launches.
+export PYTHONUNBUFFERED=1
 REPO="$SONIC_ROOT"
 # INSTANCE selects a port block and DDS domain so several stacks can share
 # the host: instance i uses ports base+10*i and DDS domain i. Instance 0 is
@@ -36,10 +43,13 @@ LOGS=$(locomani_session_root "$INSTANCE")
 # nohup'd sim / deploy / exporter below, so the lock is held exactly as long as
 # any of them lives and releases itself when they die -- no liveness check, no
 # stale-lock cleanup; stop_instance.sh releases it by killing them.
-LOCK_DIR=/workspace/tmp/locomani_locks
-mkdir -p "$LOCK_DIR"
+# Under $LOCOMANI_TMP (paths.sh), not a hard-coded /workspace: on a machine
+# without /workspace the mkdir failed, `exec 9>>` failed, and flock's "bad
+# file descriptor" was reported as "instance held by a live stack" (2026-09-11).
+LOCK_DIR="$LOCOMANI_TMP/locomani_locks"
+mkdir -p "$LOCK_DIR" || { echo "cannot create lock dir $LOCK_DIR (set LOCOMANI_WORKSPACE / LOCOMANI_TMP, see scripts/paths.sh)"; exit 3; }
 LOCK="$LOCK_DIR/instance_$INSTANCE.lock"
-exec 9>>"$LOCK"
+exec 9>>"$LOCK" || { echo "cannot open lock file $LOCK"; exit 3; }
 if ! flock -n 9; then
     echo "REFUSED: instance $INSTANCE is held by a live stack -- $(tail -1 "$LOCK" 2>/dev/null)"
     echo "  (a second stack on the same port block silently replaces the first; pick another INSTANCE"
@@ -213,7 +223,7 @@ if [ "${CLEAN_DEPLOY:-0}" = "1" ] && [ "${LOCKSTEP:-0}" != "1" ]; then
     # build with NVIDIA's default_angles, engaged by SONIC_AUTO_START, never
     # sent a planner command. One planner hold before enter_streamed leaves
     # the deploy executing walking tokens at ~1/3 amplitude.
-    CD_ROOT="${CLEAN_DEPLOY_ROOT:-/workspace/deps/gear_sonic_deploy_ours_lockstep_nvdef}"
+    CD_ROOT="${CLEAN_DEPLOY_ROOT:-$DEPS_DIR/gear_sonic_deploy_ours_lockstep_nvdef}"
     DEPLOY_BIN="$CD_ROOT/target/release/g1_deploy_onnx_ref"
     LOCKSTEP_ARG=(--default-motion neutral_kick_R_001__A543)
     export SONIC_AUTO_START=1
@@ -226,7 +236,7 @@ if [ "${LOCKSTEP:-0}" = "1" ]; then
     # behaviourally the production deploy. LOCKSTEP_DEPLOY_ROOT=/workspace/
     # deps/gear_sonic_deploy_lockstep (+ LOCKSTEP_DEPLOY_LIBS=simple) selects
     # the copy of SIMPLE's own tree instead.
-    LS_ROOT="${LOCKSTEP_DEPLOY_ROOT:-/workspace/deps/gear_sonic_deploy_ours_lockstep}"
+    LS_ROOT="${LOCKSTEP_DEPLOY_ROOT:-$DEPS_DIR/gear_sonic_deploy_ours_lockstep}"
     DEPLOY_BIN="$LS_ROOT/target/release/g1_deploy_onnx_ref"
     # --default-motion: under lockstep there is no planner thread, so the
     # reference-motion features in the policy observation come from
