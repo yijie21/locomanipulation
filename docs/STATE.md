@@ -1,4 +1,4 @@
-# STATE (updated 2026-09-11 00:50 UTC by session cf; several sessions write this file, keep edits surgical)
+# STATE (updated 2026-09-11 16:0x UTC by the crate/entry-point session; several sessions write this file, keep edits surgical)
 
 ## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
 - Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
@@ -89,6 +89,32 @@
   Now `--harden-pads` (store_true) + a separate `--pad-level {object,crate}`; the documented form is
   restored verbatim and the crate XML is unchanged. Rule worth keeping: grep the docs for a flag's
   existing spelling before changing its arity.
+- **THE 29 deg AZIMUTH IS REVERTED -- its own control refutes it, and §27's attribution was mine to correct
+  (session cf, 2026-09-11 16:35-17:00 UTC). NOTHING RUNNING; GPU0 2 MiB.** Ledger bottle.md §30, pushed.
+  The control §29.1 asked for, same 30 cases rebuilt from the gate batch's manifest, two banks differing only in
+  `rel`/`stand`, 37.4 run FIRST so a degrading machine would penalise the arm being defended:
+      plan 37.4   7/30   achieved az 38.3   clearance 0/30   hold-slipped 0
+      plan 29.0   3/30   achieved az 35.2   clearance 3/30   hold-slipped 4
+  Discordant **1:5, p=0.2188** -- pointing the wrong way. The telemetry still follows the plan (azimuth, lateral,
+  park all move with it), so execution is fine; the angle is simply not better. §29.1's clearance worry holds in
+  direction: 29 faces the object more squarely and spends table clearance.
+  **ATTRIBUTION CORRECTED:** §27's 7/20 vs 0/20 (p=0.0156) compared "all four fixes + plan 29" against "NO fixes
+  + plan 37.5" -- it bundled the gait map, the seating fix and the rotation tolerance with the azimuth. It proves
+  the four together rescued the line from 0/20; it never isolated the azimuth, and I wrote it up as the azimuth's
+  result. The two genuinely single-variable tests pool to nothing: §26 discordant 4:0 (p=0.125), §30 1:5
+  (p=0.219), **pooled 5:5, p=1.0**. §23.3 already said ten rounds cannot resolve this line and I leaned on a
+  ten-round result anyway.
+  `stand_azimuth_deg` is back to 0.0 in ready_grasp_visible.json and bottle_visible.json. The KNOB stays (it is
+  what made both experiments single-variable, it is test-covered, and it changes no profile by default).
+  **STILL STANDING, all single-variable and telemetry-based:** APPR_COARSE 0.40 (§22, stalled 5/10 -> 0/10, park
+  0.467 -> 0.393), the reset seating fix (§24, first-second displacement median 0.099 -> 0.034 m, max 0.489 ->
+  0.083, no [stand]-stage failures), the rotation tolerance's mechanism (§23, effect still n=2). **"v1.1 cannot
+  drop into the collection line" stays LIFTED** -- §27's result is real, the credit belongs to the whole set.
+  **NEW OPEN (§30.2):** the same achieved azimuth (35.2 deg) scored 7/20 on one case set and 3/30 on another, so
+  azimuth alone does not predict across placements. Find the placement variable that does (table-edge margin,
+  the object's jitter along the edge) instead of tuning the angle further.
+  NOTE the gate baseline in tests/gate/baseline_bottle.json was recorded WITH the 29 deg profile; it is now one
+  config-change behind. Re-record it before using it as a regression judge.
 - **STAGES A-E CLOSED OUT (session cf, 2026-09-11 15:40-16:08 UTC). NOTHING RUNNING on instance 0; GPU0 2 MiB.**
   Ledger bottle.md §28-29. Branch `v11-recalibration-20260911`, 8 commits, main untouched.
   **(D) The wrist delivery ratio is NOT measured and TRACK_ROT_BOOST stays 4.5.** Two runs of the restored
@@ -728,6 +754,39 @@
 - Branch (65): idle. Do not start a recording stack and never run stop_stack.sh (kills every instance)
   until 9d says instance 0 / GPU1 are free (after the 07d eval).
 
+## Changed (2026-09-11 crate/entry-point session, 14:45-16:0x UTC; **UNCOMMITTED**; instance 1 / GPU1 only)
+Nothing here touches the bottle line's behaviour except `grasp_gym.fresh_deploy`, which now calls the shared
+restart primitive instead of its own copy (same script, same timeout, same success check).
+- NEW `src/locomani/pipeline/run_crate_pilot.py` (328) -- the crate line's driver: stack lifecycle through
+  `pipeline/stack.py`, one run per directory, per-batch manifests with run_learn_pilot's exists-guard, scene copy
+  keeping its basename (render_wall_pilot resolves Isaac assets by basename), config snapshot, `--resume`,
+  `--batch-rounds` (seed0 + 100*b per batch), `--record`, `--instance`/`--gpu`, `--no-state-trace`.
+- NEW `scripts/run_crate_pilot.sh` (51) -- the only shell left. `scripts/run_wall_pilot.sh` (83 -> 9) and
+  `scripts/run_bimanual_pilot.sh` (72 -> 7) are shims over it, CLI unchanged.
+- NEW `src/locomani/tasks/crate/round_runner.py` (117) -- the round loop, manifest, self-heal and exporter keys
+  both crate experts now share; NEW `src/locomani/backends/sonic/deploy.py` (90) -- `restart()` + `SelfHeal`,
+  the one implementation of restart_deploy.sh's subprocess/timeout/success check.
+- `pipeline/stack.py`: `start_stack` also sets `MUJOCO_EGL_DEVICE_ID` from `gpu` (CUDA_VISIBLE_DEVICES does not
+  remap the EGL device, so setting only the latter renders on GPU0 while computing on GPU1).
+- `tasks/crate/config.py`: `prompt` ("pick up the crate"; stack.py reads it, the crate stack had been falling back
+  to "walk forward") and `deploy_self_heal_rounds` (was a bare `>= 2` in bimanual_wall.main).
+- `sim/build_sim_scene.py`: `_harden_finger_pads` -> public `harden_finger_pads(spec, level)` + `PAD_LEVELS`
+  {object, crate}; `bimanual_scene.py` calls it instead of carrying a second implementation with its own
+  constants. `--harden-pads` stays `store_true`; the level is a SEPARATE `--pad-level` flag (an optional value
+  swallowed the first positional of the documented build command -- see the doc sweep below).
+- `tasks/crate/bimanual_{wall,carry}.py`: `run_round(..., record=False)`, `--record` + `ports.require_exporter()`,
+  main() loops replaced by `round_runner.run_rounds`. `bimanual_carry` gains the self-heal it never had.
+- `cli.py`: dispatch table matches the registry -- pick_place collect/convert/train (it IS run_learn_pilot's task
+  and had no row at all), crate collect -> the new driver. Removed the stale refusal claiming bimanual_carry has
+  no --config/--set (false since refactor step 3).
+- NEW `tests/test_crate_pilot.py` (13) + `tests/test_crate_round_runner.py` (11).
+- Docs: `crate_collection.md` §4/§5/§10 and §11 rewritten ("到训练数据集", the record protocol);
+  `silent_failures.md` +2 rows and 1 correction; `pick_place_collection.md` + `ledger/pick_place.md` (pad level);
+  `reference/standards.md` task list; `handoff/refactor-step4-layout.md` two dated *(Superseded)* notes;
+  `reference/config_fields.md` regenerated; `ledger/crate.md` full entry.
+- Verified: unit suite green (exit 0), ruff/lint_env/lint_sizes add no debt, config-doc fresh. Three 10-round
+  crate gates, `SONIC_POLICY=policy/release` -- see Now.
+
 ## Changed (session cf, 2026-09-10 02:48 - 09-11 00:50 UTC, ALL COMMITTED AND PUSHED through 12554b2)
 
 - **ScaleBFM line reorganised and merged** (a3e2fee, f8fc71b, 51a4d25, 0ad4b3e, merge f73d4ec) -- see the Now entry.
@@ -883,6 +942,13 @@
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
+0-CRATE. **Commit the 2026-09-11 crate/entry-point work.** Stage BY NAME -- the tree also holds session cf's and
+   the pick_place session's uncommitted edits (`docs/ledger/scalebfm.md`, `tasks/bottle/reach_config.py`,
+   `ready_grasp_policy.py`, `tasks/bottle_visual/pipeline/*`, `scripts/experiments/*`). NEVER `git add -A`
+   (memory never-git-add-all-with-symlinks). File list in the Changed section above.
+0-CRATE-b. The crate `--record` path is IMPLEMENTED BUT NEVER RUN: it needs instance 0, which was held by another
+   session all day. First real use should be a 10-round `--record` pilot, then `convert_to_hf_format.py` +
+   `check_dataset.py` on the result, before anyone collects at scale. docs/crate_collection.md §11 has the command.
 0-SONIC. RE-CALIBRATE THE GRASP LINE ON v1.1 (new 2026-09-11, user ruling made v1.1 the default).
    **(i) AND (ii) ARE DONE -- ledger §21 (the gait map) and §22 (COARSE 0.40, arrival fixed: stalled 5/10 -> 0/10,
    park 0.467 -> 0.393). Stage C does NOT need `visible_brake_depth`: brake/stop now match release to 2 mm.
@@ -967,6 +1033,16 @@
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- **Does the crate `--record` path actually produce a valid episode?** The key protocol is the bottle line's
+  verbatim and the unit tests cover the key SEQUENCE (`c` after the settle, `c`/`x` on the outcome, nothing at
+  all for a round that fails before the settle), but no episode has been written: instance 0 was busy. The
+  failure it is built to avoid is the exporter going out of phase, which shows up only in the converted dataset.
+- **Should `run_learn_pilot.py` also go through `pipeline/stack.py`?** It is now the ONLY caller that builds the
+  stack env inline, which is what let decision 8's seam rot into dead code in the first place. Not touched today
+  because it is the actively-running collection driver; doing it means re-gating the bottle arm.
+- **Is `stand_off_m` the wrong thing for the crate gate to measure at all?** The quantity a refactor could really
+  break is the DELIVERY ERROR (|achieved - planned|, sd 5.7 cm today), not the achieved median. Parked with the
+  walk-in issue, see Parked.
 - **Will a projected clearance actually stop the sweep?** The finger-extent model predicts the two swept rounds
   correctly (minima +0.050 and +0.057 against a 0.0653 m limit), so enforcing it geometrically should work. Untested.
 - **Why does the expert approach from almost straight above?** The entry axis measures fwd +0.180 / up -0.860 in the
@@ -1095,6 +1171,16 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 the 29 deg azimuth is REVERTED: paired on the same 30 cases it scored 3/30 against 37.4's 7/30
+  (discordant 1:5, p=0.219) and added 3 clearance and 4 hold-slip failures. §27's 7/20-vs-0/20 bundled four
+  changes, so it never isolated the azimuth; the two single-variable tests pool to 5:5, p=1.0. Ledger §30
+- 2026-09-11 crate entry points: driver/expert split done; 3 x 10-round gates on policy/release --
+  10/10 PASS 8/8 (runner refactor only), then 8/10 and 8/10 on IDENTICAL code with `stand_off_m` 0.1889 vs
+  0.2065, i.e. the same code moves that metric 1.8x its tolerance. Both gate FAILs are resolution, not
+  regression. Pad-hardening unification proven physics-neutral: 0 of 47 collidable geoms differ. Ledger crate.md
+- 2026-09-11 crate walk-in delivery MEASURED and PARKED: achieved stand-off separates 29 rounds perfectly
+  (26 successes 0.148-0.265, 3 `[descend] never seated` 0.282-0.301) and the walk-in delivers the planned stand
+  with sd 5.7 cm over a planned spread of only 8.7 cm -- scatter, not the plan, picks the winners. Ledger crate.md
 - 2026-09-11 stages A-E closed: gate baseline re-recorded on v1.1 (30 rounds, yield 0.233, self-compare 15/15,
   release's kept separately and NOT comparable); TRACK_ROT_BOOST left at 4.5 because the wrist measurement could
   not reproduce a known-true prior on release. Ledger §28-29
