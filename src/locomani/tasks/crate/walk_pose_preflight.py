@@ -83,7 +83,7 @@ if _args.trace == "none":
     print("[body pose] --trace none: using the scene's qpos0, not a policy-delivered stand")
 elif not _os.path.exists(_args.trace):
     sys.exit(
-        f"missing pilot trace {_args.trace}: it is written by a wall pilot (scripts/run_crate_pilot.sh, "
+        f"missing pilot trace {_args.trace}: it is written by a wall pilot (scripts/run_wall_pilot.sh, "
         "$SIM_VIDEO_DIR/trace/wall_s0_NN_state_trace.npz). Copy one from the collection machine, "
         "point --trace at it, or pass --trace none to use the scene's qpos0."
     )

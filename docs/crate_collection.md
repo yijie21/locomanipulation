@@ -2,7 +2,8 @@
 
 > 场景、单集流程、多集 pilot 与验收、渲染,以及控制逻辑 / 随机化 / 相机的工作原理,和离训练数据集还差的
 > 一步。结构对齐 `docs/collection.md`(单手采集),设计原因见 `docs/bimanual_grasp_design.md`,渲染原理见
-> `docs/rendering.md`。所有路径相对仓库根目录;命令前先 `. scripts/paths.sh`。
+> `docs/rendering.md`。所有路径相对仓库根目录;每个新 shell 先做 §1 的两行(`export INSTANCE=2`,再
+> `. scripts/paths.sh`),本文后面的命令都假定这两步已做。
 
 ## 0. 这条流水线现在能给什么
 
@@ -23,12 +24,57 @@
 | 项 | 要求 |
 |---|---|
 | 环境 | 按 `docs/setup.md` 装好;`. scripts/paths.sh` 后有 `$VENV_SIM_PY`(sim + expert)、`$VENV_DATA_PY`(exporter / 转换)、`$RENDER_PY`(SIMPLE venv,mujoco + EGL;预检、预览和渲染用,可选) |
-| SONIC deploy | 已编译(`$SONIC_DEPLOY_ROOT`),同单手线 |
+| SONIC deploy | 已编译(`$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref`),同单手线 |
+| SONIC checkpoint | `$SONIC_DEPLOY_ROOT/policy/sonic_v1_1/`(2026-09-11 起的默认,`SONIC_POLICY`)。缺了 `start_stack.sh` 会直接失败;下载见下面步骤 3 |
 | **INSTANCE** | 决定端口(`5555 + 10·INSTANCE` 一组)和 DDS domain。**0 是采集/评测栈,pilot 永远用非 0**(runner 默认 1,本文用 2)。`INSTANCE` 必须在 `paths.sh` 之前设置——`paths.sh` 把它默认成 0;runner 本身会拒绝 0 |
-| GPU | pilot:`CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=1`(runner 默认);Isaac 渲染也在 GPU 1 |
+| GPU | runner 默认 `CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=1`(双卡机器上让 GPU 0 给采集/评测)。**只有一块 GPU 的机器要显式设成 0**,否则起栈失败 |
 | 资源 | 容器 pid 上限 3840(一个栈约 700,带 exporter 的采集栈约 2500);磁盘 ≥ 20 GB(轨迹 3 MB/集,Isaac 渲染 100 MB/集) |
 | 别人的栈 | **不要用 `stop_stack.sh`**,它的 pkill 不分实例。停自己的用 §4 |
 | 同机负载 | 别在同一块 GPU 上并行跑别的仿真:deploy 的 LowState 保护一次 80–100 ms 卡顿就退出(§12) |
+
+开工前逐条自检:
+
+1. 先定实例号,再加载路径。顺序不能反,`paths.sh` 会把没设的 `INSTANCE` 默认成 0:
+
+   ```bash
+   export INSTANCE=2
+   . scripts/paths.sh
+   ```
+
+2. deploy 二进制在:
+
+   ```bash
+   ls -la "$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref"
+   ```
+
+3. checkpoint 在:
+
+   ```bash
+   ls "$SONIC_DEPLOY_ROOT/policy/"
+   # 期望:sonic_v1_1  release  low_latency ...
+   ```
+
+   没有 `sonic_v1_1` 就下载(一次性,要网络;首次起栈会重建 TensorRT engine,约 10 min):
+
+   ```bash
+   (cd "$SONIC_ROOT" && .venv_data_collection/bin/python download_from_hf.py --sonic-v1-1)
+   ```
+
+   只想先把流程跑通,可以临时用旧 checkpoint:后面每条起栈命令前加 `SONIC_POLICY=policy/release`。
+
+4. GPU 编号对得上、卡是空的:
+
+   ```bash
+   nvidia-smi --query-gpu=index,name,memory.used --format=csv
+   ```
+
+   只有 `index 0` 一块卡的机器,§4 步骤 2 里的两个 GPU 变量必须设。
+
+5. instance 2 没被别的栈占着:
+
+   ```bash
+   pgrep -af "run_sim_locomani.py --instance 2|bimanual_wall.py"    # 期望没有输出
+   ```
 
 ---
 
@@ -37,13 +83,19 @@
 单手线的场景由 `install_scene.sh` 解包再重建;双臂线的场景**不共用** `outputs/scene/sim`,而是单独构建到自己的目录,
 用 `LOCOMANI_SIM_DIR` 指给 sim,所以单手采集随时可以在 instance 0 上跑而互不影响。
 
-```bash
-. scripts/paths.sh
-$VENV_SIM_PY src/locomani/tasks/crate/bimanual_scene.py outputs/scene/crate_bimanual
-python3 -c "import json;m=json.load(open('outputs/scene/crate_bimanual/scene_meta.json'));\
-print(m['surfaces']['A']['top'], m['objects']['blue_crate']['init_pos'])"
-# 期望: 0.62 [-0.368, 0.0, 0.707]
-```
+1. 构建场景(几秒):
+
+   ```bash
+   $VENV_SIM_PY src/locomani/tasks/crate/bimanual_scene.py outputs/scene/crate_bimanual
+   ```
+
+2. 核对桌面高度和箱子初始位置:
+
+   ```bash
+   python3 -c "import json;m=json.load(open('outputs/scene/crate_bimanual/scene_meta.json'));\
+   print(m['surfaces']['A']['top'], m['objects']['blue_crate']['init_pos'])"
+   # 期望: 0.62 [-0.368, 0.0, 0.707]
+   ```
 
 `bimanual_scene.py` 在 `build_sim_scene.py` 之上只做两件事,都还不适合放进共用文件:
 
@@ -75,34 +127,64 @@ print(m['surfaces']['A']['top'], m['objects']['blue_crate']['init_pos'])"
 ## 3. 预检:改几何或手臂姿势之后必跑
 
 三个纯运动学检查,几十秒,不起 stack。**动作像不像人,在 c) 的视频里判断,不要用 10 集 pilot 去发现。**
+三个脚本的旋钮都是 CLI flag(`--help` 看全部);2026-09-09 之前的环境变量写法(`POSE_LEFT_DEG=…`、
+`PW=… OUT=…`)现在**不再被读**,脚本见到会拒绝启动并提示对应的 flag,不会静默跑成默认值。
+
+### a) 抓取可达
+
+站位 × 深度 × 垫深 × 掌俯仰的网格,每格解一次双手 IK:
 
 ```bash
-# a) 抓取可达:站位 × 深度 × 垫深 × 掌俯仰,IK 残差 < 1 cm 且无穿透
 $VENV_SIM_PY src/locomani/tasks/crate/reach_wall_sweep.py | tail -30
-#    期望:stand-off + depth ≤ 0.40 的组合全部 OK(掌俯仰 60);expert 用 REACH_SUM = 0.38
-
-# b) 走路姿势:指尖到桌沿 / 篮壁的余量、ego 画面里篮子被手遮挡的比例
-MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/walk_pose_preflight.py --pose-left-deg 10,10,0,60,0,30,0
-#    默认读 outputs/videos/wall_pilot/trace/wall_s0_05_state_trace.npz;没有 pilot 产物的机器加 --trace none(见下)
-#    期望:四个站位 contacts 都是 '-';指尖在平面后 ≥ 0.12 m;遮挡 0%
-
-# c) reach 曲线 + 预览视频
-MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preflight.py \
-  --pw 0.02 --out-dist 0.15 --up 0.25 --over 0.10 --warm prev --save outputs/reach/reach_preview/traj
-MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preview.py
-#    期望:contacts '-';越沿时指尖离篮沿顶 ≥ +2.5 cm;终点关节解 = hover 解
-#    看 outputs/reach/reach_preview/reach_preview.mp4:上排跟踪相机、下排 ego,四列 = 0.13/0.18/0.24/0.31 m 站位
 ```
 
-三个脚本的旋钮都是 CLI flag(`--help` 看全部)。b) c) 在 2026-09-09 argparse 化之前用环境变量(`POSE_LEFT_DEG=…`、
-`PW=… OUT=… UP=… OVER=… WARM=… SAVE=…`),那些变量现在**不再被读**;为了不静默跑成默认姿势,脚本见到它们会直接
-拒绝启动(退出码 1,提示对应的 flag)。b) 的身体姿态默认取 pilot trace 第 10 帧(policy 交付的站立姿势);没有
-`outputs/videos/wall_pilot/` 的机器用 `--trace none`(场景 qpos0,骨盆 0.793 m,输出第一行会标明),腿 / 腰姿态与 pilot
-不完全一致,要严格对齐就从采集机拷一份 trace 用 `--trace <path>`。
+期望:stand-off + depth ≤ 0.40 的组合全部 OK(IK 残差 < 1 cm、无穿透,掌俯仰 60);expert 用 `REACH_SUM = 0.38`。
+结果存到 `outputs/reach/wall_grasp_sweep.json`。
+
+### b) 走路姿势
+
+指尖到桌沿 / 篮壁的余量,以及 ego 画面里篮子被手遮挡的比例。身体姿态默认取 pilot trace 第 10 帧(policy 交付的
+站立姿势),所以分两种机器:
+
+- 有 pilot 产物(`outputs/videos/wall_pilot/trace/`)的机器:
+
+  ```bash
+  MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/walk_pose_preflight.py --pose-left-deg 10,10,0,60,0,30,0
+  ```
+
+  默认读 `wall_s0_05_state_trace.npz`(第 5 集);只跑过 1 集就 `--trace $V/trace/wall_s0_00_state_trace.npz`。
+
+- 没有 pilot 产物的机器,用场景 qpos0 代替(骨盆同样 0.793 m,输出第一行会标明;腿 / 腰姿态与 pilot 不完全一致):
+
+  ```bash
+  MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/walk_pose_preflight.py --pose-left-deg 10,10,0,60,0,30,0 --trace none
+  ```
+
+期望:四个站位 contacts 都是 `-`;指尖在平面后 ≥ 0.12 m;遮挡 0%。
 
 `--pose-left-deg` 就是 expert 的 `WALK_SIDE_LEFT_DEG`(走路时左臂七个关节角,右臂按 (+,−,−,+,−,+,−) 镜像);改了走路
 姿势就把新值传给 b)。这类姿势要**用 FK 搜索来写**,不要用 IK 从 q = 0 解:IK 解到胸前高度的目标会落到"手甩到身后
 / 身侧"的分支(pilot 21 的教训)。
+
+### c) reach 曲线 + 预览视频
+
+1. 解四个站位的 reach 轨迹并保存:
+
+   ```bash
+   MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preflight.py \
+     --pw 0.02 --out-dist 0.15 --up 0.25 --over 0.10 --warm prev \
+     --save outputs/reach/reach_preview/traj
+   ```
+
+   期望:contacts `-`;越沿时指尖离篮沿顶 ≥ +2.5 cm;终点关节解 = hover 解。
+
+2. 用保存的轨迹渲染预览视频:
+
+   ```bash
+   MUJOCO_GL=egl $RENDER_PY src/locomani/tasks/crate/reach_preview.py
+   ```
+
+   看 `outputs/reach/reach_preview/reach_preview.mp4`:上排跟踪相机、下排 ego,四列 = 0.13/0.18/0.24/0.31 m 站位。
 
 ---
 
@@ -123,21 +205,51 @@ expert(`bimanual_wall.py`)是第四个进程,由 runner 在 stack 起来后启�
 
 ### 先跑一集看流程
 
-```bash
-V=$LOCOMANI_ROOT/outputs/videos/wall_pilot; mkdir -p $V/trace
-INSTANCE=2 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
-  nohup bash scripts/run_wall_pilot.sh 1 0 --config configs/tasks/crate_wall.json > $V/runner.log 2>&1 &   # 参数:集数 种子 [expert 参数]
-tail -f $V/pilot_s0.log | grep -E "^\[wall\] round|\[stand\]|closing|\[lift\]"
-```
+`$V` 是这次 pilot 的产出目录,§5、§10 都用它。前提:§1 步骤 1 的 `INSTANCE=2` 和 `paths.sh` 已在当前 shell 生效。
+
+1. 建产出目录:
+
+   ```bash
+   V=$LOCOMANI_ROOT/outputs/videos/wall_pilot
+   mkdir -p "$V/trace"
+   ```
+
+2. 导出 runner 要读的变量。第二行只有单卡机器需要(双卡机器省略,默认 GPU 1):
+
+   ```bash
+   export SIM_VIDEO_DIR=$V SIM_STATE_TRACE_DIR=$V/trace
+   export CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0
+   ```
+
+3. 后台起 runner。位置参数是 **集数、种子**,之后的参数原样转给 `bimanual_wall.py`:
+
+   ```bash
+   nohup bash scripts/run_wall_pilot.sh 1 0 --config configs/tasks/crate_wall.json > "$V/runner.log" 2>&1 &
+   ```
+
+4. 先看起栈(约 40 s;首次用新 checkpoint 会多等 TensorRT 重建):
+
+   ```bash
+   tail -f "$V/runner.log"
+   # 开头一行 [pilot] instance 2  scene ...;起栈里有 policy: policy/sonic_v1_1 一行
+   ```
+
+5. 栈起来、expert 启动后才有 `pilot_s0.log`,切过去只看阶段行:
+
+   ```bash
+   tail -f "$V/pilot_s0.log" | grep -E "^\[wall\] round|\[stand\]|closing|\[lift\]"
+   ```
+
+   一集约 40–60 s,末尾一行 `[wall] round 0: OK (…s)`。
 
 runner 做的事,按顺序:检查 `LOCOMANI_SIM_DIR/scene_meta.json` 存在 → 起 instance 2 的栈(`SIM_VIS=none`:默认
 的位姿框叠加层会把 60 cm 的箱子画成一团点云,把机器人全遮住)→ 跑 `bimanual_wall.py --rounds N --seed S --manifest
 $V/manifest.jsonl --label wall_sS` → 结束时**只杀自己实例**的进程(按 `--instance` 与端口匹配;sim 会 fork 一个
-image-publisher 子进程,活得比父进程久且占着相机端口,所以先杀子再杀父)。每集约 40–60 s。
+image-publisher 子进程,活得比父进程久且占着相机端口,所以先杀子再杀父)。
 
-`CrateTaskConfig` 的两个字段决定 expert 的形态(2026-09-09 重构 step 3 起**不再读环境变量**,`WALL_FEATURE=` /
-`WALL_WALK=` 会被静默忽略;用 `--config configs/tasks/crate_wall.json`,或 `--set wall_walk=true` 这样逐项覆盖,
-runner 把 `[rounds] [seed]` 之后的参数原样转给 `bimanual_wall.py`):
+`CrateTaskConfig` 的两个字段决定 expert 的形态。2026-09-09 重构 step 3 起**不再读环境变量**,runner 见到
+`WALL_FEATURE=` / `WALL_WALK=` 会拒绝启动(§12);用 `--config configs/tasks/crate_wall.json`,或 `--set wall_walk=true`
+这样逐项覆盖,runner 把 `[rounds] [seed]` 之后的参数原样转给 `bimanual_wall.py`:
 
 | 字段 | 值 | 含义 |
 |---|---|---|
@@ -148,7 +260,7 @@ runner 把 `[rounds] [seed]` 之后的参数原样转给 `bimanual_wall.py`):
 
 | 产物 | 路径 |
 |---|---|
-| 第三人称视频 | `$V/wall_s0_NN.mp4` |
+| 第三人称视频 | `$V/wall_s0_NN.mp4`(`NN` 从 `00` 起编号;`s0` 是种子) |
 | 状态轨迹(50 Hz `qpos`/`qvel`,nq = 47:自由基 7 + 关节 29 + 4 指 + 箱子 7) | `$V/trace/wall_s0_NN_state_trace.npz` |
 | manifest(每集一行 json) | `$V/manifest.jsonl` |
 | expert 日志(每 0.5 s 一行) | `$V/pilot_s0.log` |
@@ -195,9 +307,10 @@ for p in $(pgrep -f "[b]imanual_wall.py"); do kill -9 $p; done   # expert 本身
 
 ### 跑 10 集
 
+和 §4 完全一样,只是第一个位置参数改成 10(§4 步骤 1–2 的变量要还在当前 shell 里):
+
 ```bash
-INSTANCE=2 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
-  nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json > $V/runner.log 2>&1 &
+nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json > "$V/runner.log" 2>&1 &
 ```
 
 同一个 `$V` 下换种子(第二个参数)会追加到同一个 manifest,`label` 变成 `wall_s<seed>`。**每一集都是一次
@@ -404,14 +517,27 @@ flowchart TD
 
 ## 10. 渲染并排视频(可选)
 
-```bash
-bash scripts/build_isaac_assets.sh --snapshot outputs/scene/crate_bimanual        # 场景变了才需要;rm .stamp 可强制
-mkdir -p outputs/renders_isaac/my_run
-bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > outputs/renders_isaac/my_run/render_all.log 2>&1
-```
+1. 把 MuJoCo 场景转成 Isaac 资产。有缓存(`$ISAAC_ASSETS/{robot,scene/<label>}/.stamp`),场景变了才会重做;加 `--force` 可强制:
+
+   ```bash
+   bash scripts/build_isaac_assets.sh --snapshot outputs/scene/crate_bimanual
+   ```
+
+2. 建输出目录:
+
+   ```bash
+   R=outputs/renders_isaac/my_run
+   mkdir -p "$R"
+   ```
+
+3. 渲染。位置参数是 **pilot 目录、输出目录、集数、label**(label = `wall_s<seed>`):
+
+   ```bash
+   bash scripts/render_wall_pilot.sh "$V" "$R" 10 wall_s0 > "$R/render_all.log" 2>&1
+   ```
 
 每集约 3 min:MuJoCo 用跟踪相机重放状态轨迹(`--stride 4`,并写出 `cam_traj.npz`)→ Isaac 沿同一条相机轨迹重放
-→ ffmpeg hstack。产出 `outputs/renders_isaac/my_run/sbs_roundNN.mp4`(左 MuJoCo、右 Isaac);每集目录 `rNN/` 有
+→ ffmpeg hstack。产出 `$R/sbs_roundNN.mp4`(左 MuJoCo、右 Isaac);每集目录 `$R/rNN/` 有
 `tracking_mujoco.mp4`、`cam_traj.npz`、`ego_isaac.mp4`、`render.log`。第 0 集出来先看三样:只有一个机器人、有头、
 脚在地面上(三个都曾出过问题,见 §12)。
 
@@ -478,7 +604,9 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
   `reach_preflight` / `reach_preview`)之前只 `chdir` 到仓库根、没把 `src/` 放进 `sys.path`,在任何 venv 里直接跑都是
   `No module named 'locomani'`(`locomani` 没有 pip 安装);已统一改成和 `bimanual_wall.py` 一样先 `sys.path.insert`。
   `walk_pose_preflight` 还依赖 pilot trace,缺文件时报错并提示 `--trace none`;`reach_wall_sweep` / `reach_preflight`
-  写结果前会自己建 `outputs/reach/…` 目录。
+  写结果前会自己建 `outputs/reach/…` 目录。同日发现 `run_wall_pilot.sh` 写死了一台机器的绝对路径
+  `/workspace/code/locomanipulation/scripts/paths.sh`,别的机器上第一行就退出;改成和 `run_bimanual_pilot.sh` 一样按
+  自身位置找 `paths.sh`。
 - **夹爪齿比**:`GRIPPER_GEAR=1000`(pilot 24–28)让手指 PD 在 20 ms 控制保持下失稳抖动;250 是对的。
 
 ---

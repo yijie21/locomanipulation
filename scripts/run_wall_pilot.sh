@@ -24,7 +24,7 @@ set -uo pipefail
 # tried to start a second stack on the live one (2026-09-07 06:00).
 export INSTANCE="${INSTANCE:-1}"
 [ "$INSTANCE" != "0" ] || { echo "refusing INSTANCE=0: that is the collection/eval stack"; exit 2; }
-. /workspace/code/locomanipulation/scripts/paths.sh
+. "$(dirname "$0")/paths.sh"
 # WALL_WALK / WALL_FEATURE stopped being read on 2026-09-09 (refactor step 3:
 # CrateTaskConfig); a run that still sets them silently gets the ready-stand
 # default (2026-09-10: 10 rendered episodes without a walk). Refuse, don't warn.
