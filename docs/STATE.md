@@ -78,10 +78,38 @@
   'new'"). `yield` passed all three (0.8/1.0/0.8 vs baseline 0.8), as did depth_m, exit_majority, stage_s.*
   and yaw_err_deg. Scene XML md5-identical across runs and the planned stands identical, so the divergence is
   downstream of anything that was edited. **I did not widen any tolerance to make the change pass.**
-  To actually fix the gate (user's call): re-record the crate baseline at 30 rounds while the machine is
-  quiet, or give `stand_off_m` its own measured tolerance (three medians 0.189-0.223, so >= 0.02).
+  **The root cause is the walk-in's stand delivery, and the user parked it on 2026-09-11 ("先放一放"),
+  so the gate is parked with it -- see Parked below. No tolerance was widened.**
   Artifacts outputs/experiments/{crate_runner_refactor_20260911_release,crate_tasks_defg_20260911,
   crate_variance_run3_20260911}/ (each with gate_crate.json). Instance 1 released, GPU1 2 MiB.
+  **Doc sweep afterwards caught a real break of my own:** C had changed `--harden-pads` to an
+  optional-value flag, and the command recorded in `docs/reference/runbook.md:75` /
+  `docs/pick_place_collection.md:26` is `--harden-pads outputs/scene outputs/scene/pick_place` --
+  the optional value swallows the first positional (`invalid choice: 'outputs/scene'`, exit 2).
+  Now `--harden-pads` (store_true) + a separate `--pad-level {object,crate}`; the documented form is
+  restored verbatim and the crate XML is unchanged. Rule worth keeping: grep the docs for a flag's
+  existing spelling before changing its arity.
+- **CONFIRMED ON 20 PAIRED ROUNDS: v1.1 is back at release's level (session cf, 2026-09-11 15:30-15:39 UTC).**
+  Ledger bottle.md §27. Same 20 cases, bank differing only in `rel`/`stand`:
+      release, plan 37.5          9/20   azimuth 31.1 [13,45]  depth 0.307  lateral 0.204  park 0.369
+      v1.1 old, no fixes          0/20   azimuth 40.9 [30,49]  depth 0.332  lateral 0.305  park 0.467
+      v1.1 all fixes, plan 29     7/20   azimuth 35.2 [25,40]  depth 0.298  lateral 0.207  park 0.363
+  Paired McNemar: **7:0 vs the old v1.1 arm, exact p=0.0156**; 4:6 vs release, **p=0.754 -- statistically
+  indistinguishable**. lateral and park land on release's values and the azimuth spread narrows from [30,49] to
+  [25,40]. "All fixes" = APPR_COARSE 0.40 (§22) + the reset seating fix (§24) + TRANSPORT_ROTATION_TOL 0.35 (§23)
+  + planned azimuth 29 (§26).
+  **So STATE's long-standing "v1.1 cannot drop into the collection line" is LIFTED.** It was true (0/20) but the
+  cause was four things calibrated on -- or hidden by -- release, and two of them (the reset seating, the planned
+  azimuth) were checkpoint-independent defects that release's own execution defect was masking.
+  Remaining failures on the new arm: `stand infeasible` 6/20 (release 8/20, fewer), `local alignment disturbed
+  target or base` **5/20 -- NEW**, release had 0; it fires in the last alignment before the grasp. Read it as
+  stage progress, not regression: far more rounds now reach alignment at all.
+  **RETRACTED from §26.3:** "apply backshift radially" is wrong. `project_squat` models the squat retreat as
+  `backshift * forward` -- a pure DEPTH retreat -- so compensating it with a depth shift is dimensionally right;
+  radial would inject backshift*sin(az) ~ 4 cm of lateral error. The real structure: the planned azimuth is a
+  PRE-squat quantity while arm comfort is POST-squat. Adding the measured 0.089 m retreat: release 28.5 -> 22.9,
+  v1.1 plan 37.5 42.8 -> 35.2, v1.1 plan 29 32.0 -> 26.0 deg; successes sit at 23-26 post-squat, the failure at 35.
+  Expressing the plan in post-squat coordinates is the better next step than a radial backshift.
 - **PLANNED STAND AZIMUTH 37.5 -> 29 deg: 5/10 on v1.1, and the failure modes it predicted are gone (session cf,
   2026-09-11 15:12-15:24 UTC). NOTHING RUNNING on instance 0; GPU0 2 MiB. Another session holds instance 1 / GPU1.**
   Ledger bottle.md §26. New knob `ReachConfig.stand_azimuth_deg` (default 0 = unchanged, so all 7 repo profiles are
@@ -1011,6 +1039,23 @@
   Re-deriving them means re-running bfm_pilot.sh on the kept datasets (~80 min each).
 
 ## Parked (do not forget)
+- **Crate walk-in stand delivery (user ruling 2026-09-11: "先放一放,之后再调整").** The walk-in delivers
+  the planned stand with sd 5.7 cm (range -9.8..+12.0), while success needs the ACHIEVED stand-off under
+  ~0.27 m: 29 rounds separate perfectly, 26 successes 0.148-0.265, 3 `[descend] never seated` at
+  0.282/0.285/0.301. Planned stands span 8.7 cm and are deterministic; achieved span 15.3 cm -- the gait
+  noise is larger than the whole planned distribution, so scatter, not the plan, picks the winners.
+  Consequence for collection (worse than for the gate): every kept episode is one where the scatter landed
+  near, so a crate dataset would be biased to near stands and hold no correct behaviour for the far ones --
+  the shape of memory policy-stop-point-is-set-by-the-crawl. Cheapest first step when it is picked up:
+  does the walk-in's retry criterion cover the DEPTH axis or only the lateral one (`[stand] lateral
+  -14.1 cm after 3 walk-ins` was one of the 30 rounds)? The single-arm line has
+  tasks/bottle/arrival_validation.py for this; the crate line has no equivalent.
+  Ledger crate.md 2026-09-11; memory crate-standoff-times-yaw-boundary. NOT to be tuned unasked.
+- **Crate gate `stand_off_m` tolerance, parked with the above** because it is the same root cause: it gates
+  an ACHIEVED, gait-noisy quantity at `TOL["depth_m"]=0.01` and the same code twice moves it 1.8x that.
+  Do NOT widen it to make a change pass -- that hides the defect above. Honest fixes when the line is
+  picked up: re-record the baseline at 30 rounds, or gate the DELIVERY ERROR (|achieved - planned| sd)
+  instead of the median. Memory crate-gate-stand-off-tolerance.
 - SONIC lockstep collection: docs/handoff/sonic_lockstep_collection_plan.md
 - Isaac render + MuJoCo physics: memory isaac-render-mujoco-physics-plan
 - v4 clockless expert (0/3, abandoned; lessons in memory scalebfm-interface-facts)
@@ -1024,6 +1069,9 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 20 paired rounds: v1.1 with all four fixes 7/20 vs the unfixed v1.1 arm 0/20 (McNemar 7:0, p=0.0156)
+  and vs release 9/20 (4:6, p=0.754, indistinguishable). lateral 0.207 vs release's 0.204, park 0.363 vs 0.369.
+  The "v1.1 cannot drop into the collection line" verdict is lifted. Ledger §27
 - 2026-09-11 planned stand azimuth 37.5 -> 29 deg on v1.1: achieved 42.8 -> 32.0 deg, lateral 0.272 -> 0.189, park
   0.400 -> 0.350 (release 0.349), depth unchanged; `stand infeasible` 4->2, `local alignment outside comfortable
   IK` 2->0; 5/10 against 1/10 twice at plan 37.5 and release's 4/10 (paired 4:0, p=0.125). The plan was distorted
