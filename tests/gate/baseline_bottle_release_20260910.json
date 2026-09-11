@@ -1,0 +1,57 @@
+{
+ "arm": "bottle",
+ "source": "outputs/experiments/restart_ab_20260910/manifest2_Bp*.jsonl",
+ "metrics": {
+  "rounds": 30,
+  "ok": 18,
+  "yield_": 0.6,
+  "stages": [
+   "approach",
+   "carry_and_verify",
+   "complete",
+   "grasp.capture_ready",
+   "grasp.close",
+   "grasp.coupled_squat",
+   "grasp.lift",
+   "grasp.local_align",
+   "grasp_plan",
+   "initialize",
+   "navigate",
+   "recovery_attempt",
+   "recovery_brake",
+   "verify_terminal_hold",
+   "verify_visibility"
+  ],
+  "exit_majority": "visible brake depth",
+  "exits": {
+   "visible brake depth": 18
+  },
+  "end_depth_m": 0.3011,
+  "squat_drop_m": 0.13,
+  "stage_s": {
+   "initialize": 11.5371,
+   "navigate": 4.178,
+   "grasp_plan": 0.0003,
+   "approach": 0.0509,
+   "recovery_brake": 1.2982,
+   "recovery_attempt": 0.0181,
+   "grasp.coupled_squat": 1.481,
+   "grasp.local_align": 2.0922,
+   "grasp.capture_ready": 0.0206,
+   "grasp.close": 2.0285,
+   "grasp.lift": 2.7011,
+   "verify_visibility": 0.0001,
+   "carry_and_verify": 2.8803,
+   "verify_terminal_hold": 2.0324
+  },
+  "failure_reasons": [
+   "[grasp] coupled safe-hand path blocked: right:right_wrist_yaw_link:wat",
+   "[grasp] local alignment disturbed target or base",
+   "[grasp] local alignment outside comfortable IK",
+   "[grasp] visible expert: stand infeasible, no reposition (current stand",
+   "[grasp] water_bottle toppled in the close phase",
+   "[stand] could not turn N deg to the approach heading at the spawn (tur"
+  ],
+  "seconds": 33.7
+ }
+}

@@ -2426,3 +2426,46 @@ sim 日志证实 `Robot has fallen, height: 0.199 m`。**release 那臂无效**,
 方法上值得记一笔:这是今天第三次"检查器报告的不是世界的状态"(前两次是 §25.1 的模长掩盖方向、
 `ports.require_exporter` 式的过窄探针)。这次是**同一工具的两次运行互相矛盾**,而能判定谁错
 只因为 release 上有一个**已知为真的先验值**可以对表 —— 没有那个先验,两轮都会被当成测量结果。
+
+## 29. Stage E:在 v1.1 上重录 bottle gate 的 baseline(2026-09-11, session cf)
+
+`tests/gate/baseline_bottle.json` 原本的 source 是 `restart_ab_20260910` —— release 时代的一次采集,
+里面每个量(站位中位、各阶段时长、失败原因集合)都是 release 的。v1.1 成为默认之后它已不能当回归判据,
+而 gate 的规则里"失败原因集合不得新增成员"会让每次候选运行都因为新串直接 FAIL。
+
+**前提**:先把 §26/§27 的结论落进仓库 profile(`ready_grasp_visible.json` 与 `bottle_visible.json` 的
+reach 块加 `stand_azimuth_deg: 29.0`;其余 6 个 ready_grasp profile 保持 0.0 —— 未测过的线不跟着动)。
+**在这之前录 baseline 会把 0/20 的配置固化成基准。**
+
+**录法**:刻意用**采集式批次**(采样 case、不用固定 bank、用仓库 profile),30 局 ——
+与 release 那份同样大小。先录了一份 10 局的,随即作废重录:gate 的 yield 容差是 ±0.15 绝对值,
+而 n=10 时 p≈0.3 的二项标准差就有 0.145,候选运行靠随机就能越界。
+旧 baseline 另存为 `tests/gate/baseline_bottle_release_20260910.json`。
+
+| | release baseline(30) | v1.1 baseline(30) |
+|---|---|---|
+| yield | **0.600** | **0.233** |
+| end_depth_m | 0.3011 | 0.2998 |
+| squat_drop_m | 0.13 | 0.13 |
+| seconds | 33.7 | 19.95 |
+| exit_majority | visible brake depth | 同 |
+
+自比较 `gate.py compare` **PASS 15/15**(记录/比较路径本身正常)。
+
+**两份 baseline 不可互比**:采样分布与 profile 都不同(记忆 `two-eval-calibrations-in-the-ledger`、
+`站位采样带在 2026-09-07 变过` 是同一类陷阱)。0.600 vs 0.233 **不是** checkpoint 的对照;
+可比的对照是 §27 的同 case bank 配对(7/20 vs release 9/20,p=0.754)。
+可比的是两边都稳定的几何量:`end_depth_m` 0.3011 vs 0.2998、`squat_drop_m` 两边都是 0.13、
+`exit_majority` 相同 —— 与 §22/§24 的测量吻合。
+
+### 29.1 一条 OPEN:采样批次出现了固定 bank 批次没有的失败
+
+v1.1 采样批次独有:`[grasp] baseline clearance: right_dexN_finger_N_link vs dining_table_*`(手指对**桌子**)、
+`coupled safe-hand path blocked: ...finger...`、`coupled transport disturbed target or base`、
+`coupled safe-hand IK did not track`、`local alignment timed out`。
+而 §27 那 20 局固定 bank(同样 plan 29)**一次都没出现桌面净空类失败**。
+
+两种解释未分辨:① 29° 的站位更"正对"物体,手臂越过桌沿更多,净空变紧;
+② 采样分布(`--edge-jitter 0.20`、随机 spawn)比固定 bank 更宽,只是覆盖到了更难的配置。
+**区分方法**:把这 30 局里触发净空失败的 case 固定成 bank,在 plan 37.5 与 plan 29 下各跑一次配对。
+在分辨之前,不要把 0.233 归因于 plan 29。

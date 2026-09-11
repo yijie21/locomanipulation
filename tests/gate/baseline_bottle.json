@@ -1,10 +1,10 @@
 {
  "arm": "bottle",
- "source": "outputs/experiments/restart_ab_20260910/manifest2_Bp*.jsonl",
+ "source": "outputs/experiments/gate_v11_baseline30_20260911/manifest.jsonl",
  "metrics": {
   "rounds": 30,
-  "ok": 18,
-  "yield_": 0.6,
+  "ok": 7,
+  "yield_": 0.233,
   "stages": [
    "approach",
    "carry_and_verify",
@@ -24,34 +24,37 @@
   ],
   "exit_majority": "visible brake depth",
   "exits": {
-   "visible brake depth": 18
+   "visible brake depth": 7
   },
-  "end_depth_m": 0.3011,
+  "end_depth_m": 0.2998,
   "squat_drop_m": 0.13,
   "stage_s": {
-   "initialize": 11.5371,
-   "navigate": 4.178,
-   "grasp_plan": 0.0003,
-   "approach": 0.0509,
-   "recovery_brake": 1.2982,
-   "recovery_attempt": 0.0181,
-   "grasp.coupled_squat": 1.481,
-   "grasp.local_align": 2.0922,
-   "grasp.capture_ready": 0.0206,
-   "grasp.close": 2.0285,
-   "grasp.lift": 2.7011,
+   "initialize": 11.5167,
+   "navigate": 3.29,
+   "grasp_plan": 0.0005,
+   "approach": 0.041,
+   "recovery_brake": 1.1382,
+   "recovery_attempt": 0.0093,
+   "grasp.coupled_squat": 1.5008,
+   "grasp.local_align": 2.3211,
+   "grasp.capture_ready": 0.0104,
+   "grasp.close": 2.0276,
+   "grasp.lift": 2.7219,
    "verify_visibility": 0.0001,
-   "carry_and_verify": 2.8803,
-   "verify_terminal_hold": 2.0324
+   "carry_and_verify": 2.175,
+   "verify_terminal_hold": 2.0355
   },
   "failure_reasons": [
-   "[grasp] coupled safe-hand path blocked: right:right_wrist_yaw_link:wat",
+   "[grasp] baseline clearance: right_dexN_finger_N_link vs dining_table_d",
+   "[grasp] coupled safe-hand IK did not track",
+   "[grasp] coupled safe-hand path blocked: right:right_dexN_finger_N_link",
+   "[grasp] coupled transport disturbed target or base",
    "[grasp] local alignment disturbed target or base",
    "[grasp] local alignment outside comfortable IK",
+   "[grasp] local alignment timed out without a justified stand correction",
    "[grasp] visible expert: stand infeasible, no reposition (current stand",
-   "[grasp] water_bottle toppled in the close phase",
    "[stand] could not turn N deg to the approach heading at the spawn (tur"
   ],
-  "seconds": 33.7
+  "seconds": 19.95
  }
 }
