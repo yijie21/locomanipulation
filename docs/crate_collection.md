@@ -344,9 +344,6 @@ nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json
 $VENV_SIM_PY src/locomani/tasks/crate/summarize_wall_pilot.py "$V"
 ```
 
-用 `$VENV_SIM_PY`,不是系统 `python3`:脚本要 numpy 读状态轨迹,系统解释器里没有(`ModuleNotFoundError: No module
-named 'numpy'`)。本文里只有 §2 那条纯 json 的一行命令可以用裸 `python3`。
-
 每集一行:`ok`、走位次数 `att`、闭合触发 `trig`、篮子首次移动时刻 `move_s`、集长 `len_s`、静止帧比例 `static`、
 实测站位 `so`、`yaw`、失败原因。`static` 的定义:50 Hz 帧里所有关节 < 1e-3 rad、骨盆 < 0.5 mm、箱子 < 0.5 mm 都没动
 的帧的比例——单帧策略分不开的帧,即吸收态预算。
@@ -537,7 +534,8 @@ flowchart TD
 
 ## 10. 渲染并排视频(可选)
 
-1. 把 MuJoCo 场景转成 Isaac 资产。有缓存(`$ISAAC_ASSETS/{robot,scene/<label>}/.stamp`),场景变了才会重做;加 `--force` 可强制:
+1. 把 MuJoCo 场景转成 Isaac 资产(约 30 s,`scene/<label>/{from_robot,surfaces,overview}/` 下有预览图,先看一眼)。有缓存
+   (`$ISAAC_ASSETS/{robot,scene/<label>}/.stamp`),场景变了才会重做;加 `--force` 可强制:
 
    ```bash
    bash scripts/build_isaac_assets.sh --snapshot outputs/scene/crate_bimanual
@@ -550,11 +548,26 @@ flowchart TD
    mkdir -p "$R"
    ```
 
-3. 渲染。位置参数是 **pilot 目录、输出目录、集数、label**(label = `wall_s<seed>`):
+3. 渲染。位置参数是 **pilot 目录、输出目录、集数、label**(label = `wall_s<seed>`)。脚本默认 GPU 1,单卡机器和 §4 一样
+   显式指到 0:
 
    ```bash
-   bash scripts/render_wall_pilot.sh "$V" "$R" 10 wall_s0 > "$R/render_all.log" 2>&1
+   CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 \
+     bash scripts/render_wall_pilot.sh "$V" "$R" 10 wall_s0 > "$R/render_all.log" 2>&1
    ```
+
+   只要 MuJoCo 这一半(不装 Isaac 也能跑,4 s 一集,带 ghost hands 和三路画中画):
+
+   ```bash
+   MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 PYTHONPATH=src $RENDER_PY -m locomani.sim.isaac.mujoco_render \
+     --state-trace "$V/trace/wall_s0_00_state_trace.npz" --scene-xml outputs/scene/crate_bimanual/scene_locomani.xml \
+     --ghost-trace "$V/trace/wall_s0_00_ghost.npz" --insets --stride 4 --out "$R/r00"
+   ```
+
+**显卡限制**:Isaac Sim 4.5(`RENDER_PY` 当前的 SIMPLE venv)在 RTX 50 系(Blackwell,compute 12.0)上建不起光追加速结构,
+渲出来只有天光底色、没有任何几何体:三张预览图是纯灰,kit.log 里有 `TLAS limit : valid false`,而脚本以前照样打 `build OK`
+(2026-09-11 起脚本会量预览图并打 WARN,构建照常完成)。USD 本身没问题,换一块 40 系及以前的卡、或把 `RENDER_PY` 指向装了 Isaac Sim ≥ 5.0
+的 venv(`docs/rendering.md` 开头说 `RENDER_PY` 独立成变量就是为了这个)就能渲。MuJoCo 这一半不受影响。
 
 每集约 3 min:MuJoCo 用跟踪相机重放状态轨迹(`--stride 4`,并写出 `cam_traj.npz`)→ Isaac 沿同一条相机轨迹重放
 → ffmpeg hstack。产出 `$R/sbs_roundNN.mp4`(左 MuJoCo、右 Isaac);每集目录 `$R/rNN/` 有
@@ -641,6 +654,10 @@ flowchart TD
      → `start_stack.sh` 现在 `export PYTHONUNBUFFERED=1`。
   另外 sim.log 里那条 `[ChannelFactory] create domain error` 是上游 `simulator_factory.py` 和 `base_sim.py` 各初始化一次
   DDS、第二次必报的良性错误,不是链路问题;判断 DDS 通不通看 deploy.log 有没有 `Init Done`。
+- **2026-09-11 Isaac 资产构建 "FAIL: scene build failed",kit.log 里是 `No module named 'locomani'`**:`build_isaac_assets.sh`
+  的 scene 步骤漏了 `PYTHONPATH=src`(robot 步骤有)。已补。**同日,补上之后 "build OK" 但三张预览全是纯灰**:Isaac Sim 4.5 的
+  RTX 在 RTX 5090 上不出几何体(见 §10 显卡限制);用只有一个立方体加一盏灯的空 stage 复现,45 s、5000 帧后仍是纯色,
+  与 Intel 核显无关(`VK_ICD_FILENAMES` 只留 NVIDIA 结果相同)。脚本现在量预览图的 std,纯色打 WARN 并指向 `RENDER_PY` 换 venv;USD 照常写出,只是这台机器上后续的 Isaac 重渲会是空白。
 - **夹爪齿比**:`GRIPPER_GEAR=1000`(pilot 24–28)让手指 PD 在 20 ms 控制保持下失稳抖动;250 是对的。
 
 ---
