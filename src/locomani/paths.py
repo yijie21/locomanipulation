@@ -9,7 +9,7 @@ Two rules, and the split between them is the whole point:
   ``LOCOMANI_SIM_DIR`` isolates the sim, IK and stance diagnostics when
   concurrent experiments need separate composed scenes. (``scripts/install_scene.sh``
   has done this since the beginning; the rest of the tree had drifted into
-  hard-coded ``/workspace/code/locomanipulation`` strings.)
+  hard-coded ``/workspace/locomanipulation`` strings.)
 * **Outside the repo** — TensorRT/ONNX Runtime under ``deps``, the conda
   install, the deploy's session output — genuinely varies per machine, so it
   comes from ``$LOCOMANI_WORKSPACE`` (default ``/workspace``). A collaborator
@@ -17,7 +17,7 @@ Two rules, and the split between them is the whole point:
 
 A boolean "am I on the other machine" flag was the obvious alternative and is
 worse: it only ever describes two machines, and it still breaks if the clone
-does not sit at exactly ``<base>/code/locomanipulation``. Deriving the repo
+does not sit at exactly ``<base>/locomanipulation``. Deriving the repo
 root has neither failure mode.
 
 The shell half of this lives in ``scripts/paths.sh`` and exports the same
