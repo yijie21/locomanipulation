@@ -37,6 +37,79 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **CRATE/BIMANUAL ENTRY POINTS REFACTORED: driver and expert are separate now, like the single-arm line
+  (branch session, 2026-09-11 14:45-15:2x UTC). NOTHING RUNNING of mine; instance 1 released, GPU1 2 MiB.
+  Another session holds instance 0 / GPU0 (stagee_az29b_20260911), untouched by this work.** Ledger crate.md, entry 2026-09-11. NOT COMMITTED YET.
+  User asked for it: the double-arm and pick-and-place lines called their scripts differently from the
+  single-arm one. `scripts/run_wall_pilot.sh` (83 lines) and `run_bimanual_pilot.sh` (72) were the same text
+  twice over (33 of 155 lines differed, 10 of them comments) and each did four jobs at once -- pin
+  instance/GPU, start the stack, run the expert, stop it with a hand-rolled `pgrep -f`. Now
+  `src/locomani/pipeline/run_crate_pilot.py` is the driver (stack lifecycle, run dir, manifests, provenance)
+  and the experts are launched the way `grasp_gym.py` is, from a 50-line shell + two 3-line shims.
+  **Four latent defects fell out of it:** (1) `pipeline/stack.py`'s `start_stack`/`stop_instance` were DEAD
+  CODE -- decision 8's "one place a config becomes shell env" had no caller outside `export_env`;
+  (2) `SonicBackendConfig.no_encoder` defaults **True** (the EVAL protocol) while `start_stack.sh` defaults 0,
+  so routing the crate stack through that seam naively sets NO_ENCODER=1 and silently drops the planner's arm
+  and crouch references; (3) the experts open the manifest in APPEND mode and both runners pointed every run
+  at `outputs/videos/wall_pilot/manifest.jsonl` -- which is what `gate.py record crate` reads, so two pilots
+  became one population; (4) the experts resolve ports with `os.environ.setdefault`, so an inherited
+  instance-0 `TF_*` block (paths.sh exports one whenever INSTANCE is unset) beats `locomani.sim.ports`.
+  **Four more asymmetries fixed on the user's instruction:** pad hardening had two implementations with two
+  constant sets (`build_sim_scene` opt-in solref 0.004 / `bimanual_scene` unconditional 0.002, applied on top)
+  -> one implementation + named `PAD_LEVELS{object,crate}`, and it is PROVEN physics-neutral (new vs old crate
+  XML differ only in two `contype=0` ghost geoms the old prefix match caught; **0 of 47 collidable geoms differ
+  in priority/condim/solref/solimp**, so no baseline needs re-recording); `CrateTaskConfig` gained `prompt`
+  (stack.py reads it; the crate stack had been falling back to "walk forward") and `deploy_self_heal_rounds`;
+  the deploy self-heal was three private copies (grasp_gym had a success check, bimanual_wall had none,
+  bimanual_carry had no self-heal at all) -> `backends/sonic/deploy.{restart,SelfHeal}`; and **`--record` is
+  wired**, so the crate line can produce a LeRobot dataset for the first time (crate_collection.md §11 was
+  "the missing step"): same key protocol as the bottle line, `produced` in the manifest, forced to instance 0
+  with `ports.require_exporter()` refusing an empty record. `cli.py`'s dispatch table now matches the registry
+  (pick_place had no row at all despite being run_learn_pilot's task).
+  **GATE: three 10-round runs, all `SONIC_POLICY=policy/release` (baseline_crate.json is 2026-09-09 and the
+  default flipped to v1.1 today), seed 0, instance 1/GPU1.** runner-refactor-only 10/10 **PASS 8/8**;
+  +C/D/E/F 8/10 FAIL 6/8 (`stand_off_m` 0.2149 -> 0.1889, `failure_reasons`); **the SAME code again** 8/10
+  FAIL 7/8 (`stand_off_m` 0.2065 -> PASS, `failure_reasons`).
+  **Both failing checks are gate resolution, not a regression, and it is now measured, not argued:** the same
+  code twice moves `stand_off_m` by **0.0176 m = 1.8x its 0.010 tolerance**, and that tolerance is
+  `TOL["depth_m"]` borrowed for a quantity that is the ACHIEVED stand-off after a walk-in (per round, same
+  seed, up to 11 cm apart between runs). `failure_reasons` reported DIFFERENT new strings in the two
+  same-code runs -- this file's own open item ("crate baselines are 10 rounds: rare failure strings show as
+  'new'"). `yield` passed all three (0.8/1.0/0.8 vs baseline 0.8), as did depth_m, exit_majority, stage_s.*
+  and yaw_err_deg. Scene XML md5-identical across runs and the planned stands identical, so the divergence is
+  downstream of anything that was edited. **I did not widen any tolerance to make the change pass.**
+  To actually fix the gate (user's call): re-record the crate baseline at 30 rounds while the machine is
+  quiet, or give `stand_off_m` its own measured tolerance (three medians 0.189-0.223, so >= 0.02).
+  Artifacts outputs/experiments/{crate_runner_refactor_20260911_release,crate_tasks_defg_20260911,
+  crate_variance_run3_20260911}/ (each with gate_crate.json). Instance 1 released, GPU1 2 MiB.
+- **PLANNED STAND AZIMUTH 37.5 -> 29 deg: 5/10 on v1.1, and the failure modes it predicted are gone (session cf,
+  2026-09-11 15:12-15:24 UTC). NOTHING RUNNING on instance 0; GPU0 2 MiB. Another session holds instance 1 / GPU1.**
+  Ledger bottle.md §26. New knob `ReachConfig.stand_azimuth_deg` (default 0 = unchanged, so all 7 repo profiles are
+  untouched) rotates the planned stand at constant plan_r. NOT reusing the dead `azimuth_deg`: every profile sets
+  it to 42.0, which is inside the failure band.
+  **The first run was VOID, and the reason is worth keeping:** with `--cases` the planned stand comes from the BANK
+  (round_loop.py:99 reads can_xy/stand/rel straight out of it), so `sample_stand` -- and the new field -- is never
+  called. Config written, loaded, validated, not read on that path. The corrected run derives a bank from the SAME
+  ten cases with only `rel` rotated and `stand` recomputed (every other field byte-identical, checked); the planned
+  stand moves 4.8 cm.
+      arm                  plan   achieved az   depth   lateral   park    ok
+      release              37.5      28.5       0.306    0.167    0.349   4/10
+      v1.1 + seat fix      37.5      42.8       0.297    0.272    0.400   1/10
+      v1.1 (the void run)  37.5      41.4       0.298    0.257    0.388   1/10
+      v1.1 plan 29         29.0      32.0       0.299    0.189    0.350   5/10
+  The achieved azimuth follows the plan (-10.8 deg for -8.5 of plan, the same +3 bias §25 measured); lateral and
+  park land on release's values while DEPTH does not move (the control); `stand infeasible` 4 -> 2, `local
+  alignment outside comfortable IK` 2 -> 0, `coupled safe-hand IK did not track` 1 -> 0. The one new failure is
+  downstream progress (`[hold] object slipped ...` -- it had already grasped). Paired McNemar 4:0 vs the seat-fix
+  run (p=0.125), 4:0 vs the void run, 2:1 vs release (p=1.000). Ten rounds still cannot measure a RATE (§23.3):
+  the evidence is the telemetry, which moved exactly as §25 predicted.
+  **WHY RELEASE ALWAYS WORKED:** the FK template's comfortable centre is at 30.3 deg; `backshift = 0.08` is applied
+  along DEPTH ONLY, which rotates the plan to 37.5; release's dead lateral channel never executed that rotation and
+  it landed at 28.5. v1.1 executes it. So this is a long-standing PLAN-geometry error that release's execution
+  defect was hiding -- not a v1.1 defect.
+  **Cleaner long-term fix, NOT done (one variable at a time):** apply `backshift` RADIALLY, which returns the plan
+  to the template's own 30.3 deg with no extra knob, at the cost of plan_r 0.324 -> 0.310.
+  Artifacts outputs/experiments/stagee_az29{,b}_20260911/. Branch `v11-recalibration-20260911`.
 - **THE LATERAL RESIDUAL IS SOLVED, AND IT IS A PLAN problem, not an execution one (session cf, 2026-09-11
   14:19-15:04 UTC). NOTHING RUNNING on instance 0; GPU0 2 MiB. NOTE another session took instance 1 / GPU1 at
   15:00 (deploy on port 5566, GPU1 2948 MiB) -- not mine, and my sweeps ran on instance 0 / GPU0.**
@@ -951,6 +1024,10 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 planned stand azimuth 37.5 -> 29 deg on v1.1: achieved 42.8 -> 32.0 deg, lateral 0.272 -> 0.189, park
+  0.400 -> 0.350 (release 0.349), depth unchanged; `stand infeasible` 4->2, `local alignment outside comfortable
+  IK` 2->0; 5/10 against 1/10 twice at plan 37.5 and release's 4/10 (paired 4:0, p=0.125). The plan was distorted
+  by applying `backshift` along depth only, and release never executed it. Ledger §26
 - 2026-09-11 the v1.1 lateral residual is a PLAN problem: both checkpoints crab identically at the same speed
   command (0.17-0.29 m/s at 0.40, ~0.01 at 0.30), so v1.1 at COARSE 0.40 executes the planned 37.4 deg stand
   azimuth (+5 deg) while release undershoots it by 9 deg and lands at 29 -- and the downstream is tuned to

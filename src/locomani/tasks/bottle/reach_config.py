@@ -75,6 +75,17 @@ class ReachConfig:
     # arrival_advance latch (brake at a fixed measured depth instead), and the
     # recovery reposition branch (an infeasible stand discards the episode).
     visible_expert: bool = False
+    # Rotate the PLANNED stand to this azimuth (deg, object to the robot's
+    # right), keeping plan_r. 0 = leave the template's own geometry alone.
+    # Why this exists (ledger bottle.md 25/26): the FK template's comfortable
+    # grasp centre sits at 30.3 deg, but `backshift` is applied along DEPTH
+    # ONLY, which rotates the plan to 37.5 -- and on release's dead lateral
+    # channel that rotation was never executed, so the line has always run at
+    # the ~29 deg the arm is actually comfortable at (successes median 28.5 deg,
+    # failures 35.5; [0,30) 5/7 ok vs [38,50) 1/6). v1.1 executes the plan, so
+    # the distortion became visible. NOT to be confused with `azimuth_deg`,
+    # which is declared, validated and read by nothing.
+    stand_azimuth_deg: float = 0.0
     visible_brake_depth: float = 0.31  # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
     visible_decel_band: float = 0.12  # speed ramps down over this depth band above the brake depth
     image_servo: bool = False  # RGB cap feedback and re-entrant arm control (ledger bottle §19).
@@ -113,6 +124,7 @@ class ReachConfig:
             0 <= self.backshift
             and 0 <= self.depth_margin
             and 0 < self.azimuth_deg < 90
+            and 0 <= self.stand_azimuth_deg < 90
             and self.approach_timeout > 0
             and 0 <= self.max_drop <= 0.13
             and 0 <= self.transport_margin <= 0.03

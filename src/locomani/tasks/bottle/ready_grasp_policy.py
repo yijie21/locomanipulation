@@ -81,6 +81,29 @@ def lower_grip_samples(grip_z, max_drop):
     return tuple(choices)
 
 
+def _at_azimuth(rel, config):
+    """Rotate a planned stand to `config.stand_azimuth_deg`, keeping plan_r.
+
+    `backshift` retreats along DEPTH only, which rotates the plan away from the
+    azimuth the FK template chose: the comfortable centre sits at 30.3 deg and
+    the 0.08 m retreat turns it into 37.5. That was invisible while the release
+    checkpoint's lateral channel could not execute it (ledger bottle.md 25), and
+    it is the azimuth -- not the distance -- that predicts whether the grasp
+    works. 0 leaves the geometry untouched, so every existing profile is
+    unaffected.
+    """
+    target = float(getattr(config, "stand_azimuth_deg", 0.0) or 0.0)
+    if not target:
+        return rel
+    rel = np.asarray(rel, dtype=float)
+    radius = float(np.linalg.norm(rel))
+    az = np.deg2rad(target)
+    # The object sits to the robot's RIGHT on this line, i.e. rel_y < 0; keep
+    # whichever side the template used rather than assuming it.
+    side = -1.0 if rel[1] <= 0 else 1.0
+    return np.array([radius * np.cos(az), side * radius * np.sin(az)])
+
+
 def sample_stand(plan, rng, config):
     choices = []
     for _, centre, _ in templates():
@@ -101,7 +124,8 @@ def sample_stand(plan, rng, config):
         # the spawn. The median-drop template is the most comfortable middle.
         ordered = sorted(choices, key=lambda cd: (cd[1], cd[0][0]))
         centre, drop = ordered[len(ordered) // 2]
-        return centre[:2] - [config.backshift, 0.0], float(drop)
+        rel = centre[:2] - [config.backshift, 0.0]
+        return _at_azimuth(rel, config), float(drop)
     centre, drop = choices[int(rng.integers(len(choices)))]
     # Small perturbations within a comfortable FK neighbourhood. Account for
     # the expected squat backshift; live post-squat checks remain authoritative.
