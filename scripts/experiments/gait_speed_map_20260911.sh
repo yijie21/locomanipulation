@@ -17,6 +17,10 @@ mkdir -p "$O"
 SPEEDS="${GAIT_SPEEDS:-0.185,0.20,0.215,0.26,0.30,0.40,0.45}"
 REPEATS="${GAIT_REPEATS:-3}"
 ARMS="${GAIT_ARMS:-sonic_v1_1 release}"
+# 0 = forward. The tabletop approach steers at the planned stand while the
+# facing stays on the approach heading, so its movement vector is at an ANGLE
+# to the facing and forward delivery does not imply lateral (ledger 24.5).
+CRAB="${GAIT_CRAB:-0}"
 
 export INSTANCE=0 CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0
 export SCENE_RANDOM=0 SIM_VIS=none
@@ -53,7 +57,7 @@ for arm in $ARMS; do
     grep -q "stack up" "$out/stack.log" || { echo "  stack failed, see $out/stack.log"; clean; exit 1; }
     grep -m1 "policy:" "$out/stack.log"
     timeout 2400 "$PY" -u -m locomani.backends.sonic.diag_shuffle \
-        --speeds "$SPEEDS" --repeats "$REPEATS" --json "$out/legs.json" \
+        --speeds "$SPEEDS" --repeats "$REPEATS" --crab "$CRAB" --json "$out/legs.json" \
         > "$out/sweep.log" 2>&1
     echo "  sweep exit $? $(date -u +%H:%M:%S)"
     tail -32 "$out/sweep.log"

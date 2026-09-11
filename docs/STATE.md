@@ -37,6 +37,38 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **THE LATERAL RESIDUAL IS SOLVED, AND IT IS A PLAN problem, not an execution one (session cf, 2026-09-11
+  14:19-15:04 UTC). NOTHING RUNNING on instance 0; GPU0 2 MiB. NOTE another session took instance 1 / GPU1 at
+  15:00 (deploy on port 5566, GPU1 2948 MiB) -- not mine, and my sweeps ran on instance 0 / GPU0.**
+  Ledger bottle.md §25. Committed work is on branch `v11-recalibration-20260911` (789f696 seat fix, aae3d72 the
+  v1.1 line); main is untouched, merge with `git merge --ff-only` when you want it.
+  **(1) The crab measurement refutes "v1.1's lateral channel is weak".** diag_shuffle gained `--crab` (the angle
+  between the movement vector and the FACING; the robot still travels along the cleared heading, so a crab leg
+  keeps a forward leg's obstacle clearance) plus fwd/lat/travel_err/yaw_turned -- the first pass recorded only the
+  displacement MAGNITUDE and read 90 deg as FASTER than forward, which is only possible if the robot reorients.
+  It does not: at 0.40 both checkpoints move sideways 0.17-0.29 m/s within 9-18 deg of the commanded direction
+  while turning only 11-15 deg. **Lateral capability is a function of the SPEED COMMAND, not the checkpoint**:
+  at 0.30 both deliver 0.002-0.046 m/s, at 0.40 both deliver ~0.25. Stage B moved v1.1's COARSE to 0.40, which is
+  where that channel switches on.
+  **(2) So release never executed the planned stand.** The visible expert's stand is a function of grip height
+  alone (sample_stand's visible branch does not draw), so all ten cases plan the SAME azimuth: **37.4 deg**,
+  plan_r 0.324. Achieved minus planned: release **-8.9 deg** (lands at 31.1), v1.1 coarse 0.30 +5.2, coarse 0.40
+  +2.5, +seat fix **+5.4** (lands at 42.8, spread 36-46). v1.1 executes the plan; release undershoots it by 9 deg
+  because at COARSE 0.30 its lateral channel delivers ~0.01 m/s and the steering's lateral component is simply
+  not executed.
+  **(3) And the downstream is tuned to what release DELIVERED, not to the plan.** On release's own 20 rounds the
+  achieved azimuth predicts the outcome: [0,30) **5/7 ok**, [30,38) 3/6, [38,50) **1/6**; successes median 28.5
+  deg, failures 35.5. The v1.1 arms agree ([30,38) 2/2, [38,50) 1/6 and 1/7). **The planned 37.4 deg sits on the
+  edge of the failure band** -- the line works because release drags it back to ~29.
+  **RETRACTED mid-diagnosis:** I said "the config asks for 42 deg". `ReachConfig.azimuth_deg` (42.0 in the
+  profile) has NO consumer -- declared and validated in reach_config.py, read nowhere in src/locomani. The stand
+  azimuth comes from `templates()`. A declared-validated-unread field is a hole lint_env cannot see.
+  **NEXT is a DESIGN DECISION, not a calibration, so it is not done:** move the PLANNED stand azimuth to the
+  line's real operating point (~29 deg = about 5.5 cm of lateral at depth 0.257). There is no knob today --
+  sample_stand's visible branch subtracts `backshift` along DEPTH only, and raising it pushes plan_r past
+  post_max 0.40; the approach's `appr_lat` is exactly the lever but was retired to 0.0 in refactor step 2.
+  It changes the collected arrival distribution, so it wants your call.
+  Artifacts outputs/diagnostics/gait_lateral{,2}_20260911/.
 - **RESET SEATING BUG FOUND AND FIXED -- REPO-WIDE, NOT v1.1 (session cf, 2026-09-11 14:00-14:11 UTC). NOTHING
   RUNNING; GPUs 2 MiB, ports free.** Ledger bottle.md §24.
   `privileged_pub._seat_on_floor()` used `geom_rbound` -- the bounding-SPHERE radius -- as each geom's downward
@@ -919,6 +951,10 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 the v1.1 lateral residual is a PLAN problem: both checkpoints crab identically at the same speed
+  command (0.17-0.29 m/s at 0.40, ~0.01 at 0.30), so v1.1 at COARSE 0.40 executes the planned 37.4 deg stand
+  azimuth (+5 deg) while release undershoots it by 9 deg and lands at 29 -- and the downstream is tuned to
+  release's 29: achieved azimuth [0,30) 5/7 ok, [38,50) 1/6 on release's own rounds. Ledger §25
 - 2026-09-11 reset seating bug (repo-wide): `_seat_on_floor` read the bounding-SPHERE radius as the foot's extent,
   so every reset seated the pelvis at 0.892 instead of 0.785 and dropped the robot 10.8 cm. Fixed; first-second
   displacement median 0.099 -> 0.034 m, max 0.489 -> 0.083, no falls. It changes every episode's initial

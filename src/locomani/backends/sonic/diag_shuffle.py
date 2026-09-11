@@ -94,10 +94,16 @@ def free_heading(meta, xy):
     return best, best_d
 
 
-def reset_and_face(p, reset, meta):
+def reset_and_face(p, reset, meta, crab_deg: float = 0.0):
     """One clean start per leg: quiesce, teleport home, stand, turn to open
     floor. Without the quiesce the deploy carries the previous leg's intent
-    through the reset."""
+    through the reset.
+
+    `crab_deg` is the angle between the movement vector and the FACING. The
+    robot travels along the CLEARED heading either way -- the facing is turned
+    back by that angle -- so a crab leg keeps a forward leg's obstacle
+    clearance. Returns (travel heading, facing), both radians.
+    """
     p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
     p.cmd.reset_pose()
     reset.pin_arms()
@@ -109,15 +115,20 @@ def reset_and_face(p, reset, meta):
     if s["fallen"]:
         return None
     th, clear = free_heading(meta, p.pelvis_xy(s))
-    p.turn_to(th, tol=0.12, timeout=12.0)
-    p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=(np.cos(th), np.sin(th), 0.0))
-    return th
+    face = float(th - np.deg2rad(crab_deg))
+    p.turn_to(face, tol=0.12, timeout=12.0)
+    p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=(np.cos(face), np.sin(face), 0.0))
+    return th, face
 
 
-def leg(p, mode, speed, heading, move=True):
-    fv = (float(np.cos(heading)), float(np.sin(heading)), 0.0)
-    mv = fv if move else (0.0, 0.0, 0.0)
+def leg(p, mode, speed, heading, move=True, face=None):
+    """One 5 s leg. `heading` is where the robot is asked to TRAVEL, `face`
+    where it is asked to look; they differ by the crab angle."""
+    face = heading if face is None else face
+    fv = (float(np.cos(face)), float(np.sin(face)), 0.0)
+    mv = (float(np.cos(heading)), float(np.sin(heading)), 0.0) if move else (0.0, 0.0, 0.0)
     t0 = time.time()
+    yaw_start = float(p.pelvis_yaw(p.obs()))
     start_xy, start_t, trace = None, None, []
     while time.time() - t0 < LEG:
         s = p.obs()
@@ -133,6 +144,19 @@ def leg(p, mode, speed, heading, move=True):
     walk_end_xy, walk_end_t = p.pelvis_xy(s).copy(), time.time()
     net = float(np.linalg.norm(walk_end_xy - start_xy)) / (walk_end_t - start_t)
     steps = count_steps(trace) / (walk_end_t - start_t)
+    # WHERE it went, not just how fast. `net` is a magnitude, so on a crab leg
+    # it cannot tell "moved sideways" from "turned to face the movement vector
+    # and walked forward" -- the first pass (2026-09-11) read 90 deg as FASTER
+    # than forward, which is only possible if the robot reoriented. Resolve the
+    # displacement in the frame the robot was FACING when the leg started, and
+    # record how far the yaw travelled.
+    disp = walk_end_xy - start_xy
+    face_vec = np.array([np.cos(face), np.sin(face)])
+    perp_vec = np.array([-np.sin(face), np.cos(face)])
+    want = np.array([np.cos(heading), np.sin(heading)])
+    travel = float(np.degrees(np.arctan2(disp[1], disp[0]) - np.arctan2(want[1], want[0])))
+    travel = (travel + 180.0) % 360.0 - 180.0
+    yaw_end = float(p.pelvis_yaw(s))
 
     # -- the carry: command IDLE and watch how far it keeps going ---------
     c_trace, t1 = [], time.time()
@@ -144,6 +168,10 @@ def leg(p, mode, speed, heading, move=True):
     carry = float(np.linalg.norm(p.pelvis_xy(p.obs()) - walk_end_xy))
     return dict(
         net=net,
+        fwd=float(disp @ face_vec) / (walk_end_t - start_t),
+        lat=float(disp @ perp_vec) / (walk_end_t - start_t),
+        travel_err_deg=travel,
+        yaw_turned_deg=float(np.degrees((yaw_end - yaw_start + np.pi) % (2 * np.pi) - np.pi)),
         steps=steps,
         per_step=(net / steps * 100 if steps > 0.05 else float("nan")),
         carry=carry * 100,
@@ -157,6 +185,15 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--speeds", type=str, default="")
     ap.add_argument("--repeats", type=int, default=1)
+    ap.add_argument(
+        "--crab",
+        type=str,
+        default="0",
+        help="angles (deg) between the movement vector and the facing. The tabletop approach's last "
+        "0.3 m is a crab walk -- it steers at the planned stand while the facing stays on the "
+        "approach heading -- and the deploy normalises the movement vector's magnitude away, so "
+        "forward delivery does not imply lateral delivery (ledger bottle.md 24.5).",
+    )
     ap.add_argument("--json", default=None, help="write every leg's numbers here")
     a = ap.parse_args()
     p = Primitives(verbose=False)
@@ -171,22 +208,23 @@ def main() -> None:
         sys.exit("robot is not standing")
 
     meta = json.load(open(META))
+    crabs = [float(x) for x in a.crab.split(",")]
     if a.speeds:
         sps = [float(x) for x in a.speeds.split(",")]
-        grid = [(LocomotionMode.SLOW_WALK, sp, True) for sp in sps for _ in range(a.repeats)]
+        grid = [(LocomotionMode.SLOW_WALK, sp, True, cd) for cd in crabs for sp in sps for _ in range(a.repeats)]
     else:
-        grid = [(LocomotionMode.SLOW_WALK, sp, True) for sp in (0.18, 0.22, 0.26, 0.30, 0.40)]
-        grid += [(LocomotionMode.SLOW_WALK, 0.30, False), (LocomotionMode.WALK, 0.35, True)]
+        grid = [(LocomotionMode.SLOW_WALK, sp, True, 0.0) for sp in (0.18, 0.22, 0.26, 0.30, 0.40)]
+        grid += [(LocomotionMode.SLOW_WALK, 0.30, False, 0.0), (LocomotionMode.WALK, 0.35, True, 0.0)]
     # The control: commanded IDLE from a standstill. Its `net` is the drift
     # rate the carry column has to be read against, not zero.
-    grid += [(LocomotionMode.IDLE, 0.0, False) for _ in range(max(1, a.repeats))]
+    grid += [(LocomotionMode.IDLE, 0.0, False, 0.0) for _ in range(max(1, a.repeats))]
     rows, consecutive_falls = [], 0
     print(f"\npolicy {paths.SONIC_POLICY}")
     print(
-        f"\n{'mode':>10} {'speed':>6} {'move':>5} {'net m/s':>8} "
-        f"{'steps/s':>8} {'cm/step':>8} {'carry cm':>9} {'carry steps':>11}"
+        f"\n{'mode':>10} {'speed':>6} {'crab':>5} {'move':>5} {'net m/s':>8} {'fwd':>8} {'lat':>8} "
+        f"{'off deg':>7} {'turned':>7} {'steps/s':>7} {'cm/step':>8} {'carry cm':>9}"
     )
-    for mode, sp, mv in grid:
+    for mode, sp, mv, crab in grid:
         # A fall costs its own leg, not the rest of the grid: every leg starts
         # from a full reset, so the next one is independent. Three in a row is
         # a broken stack, not a data point (the deleted version broke out of
@@ -194,25 +232,26 @@ def main() -> None:
         if consecutive_falls >= 3:
             print("three consecutive falls -- stopping, the stack is not standing the robot up")
             break
-        heading = reset_and_face(p, reset, meta)
-        if heading is None:
-            print(f"{mode.name:>10} {sp:>6.2f} {str(mv):>5}   FELL during the reset")
-            rows.append(dict(mode=mode.name, speed=sp, move=mv, fell="reset"))
+        placed = reset_and_face(p, reset, meta, crab_deg=crab)
+        tag = f"{mode.name:>10} {sp:>6.2f} {crab:>5.0f} {str(mv):>5}"
+        if placed is None:
+            print(f"{tag}   FELL during the reset")
+            rows.append(dict(mode=mode.name, speed=sp, crab_deg=crab, move=mv, fell="reset"))
             consecutive_falls += 1
             continue
-        r = leg(p, mode, sp, heading, move=mv)
+        heading, face = placed
+        r = leg(p, mode, sp, heading, move=mv, face=face)
         if r is None:
-            print(f"{mode.name:>10} {sp:>6.2f} {str(mv):>5}   FELL")
-            rows.append(dict(mode=mode.name, speed=sp, move=mv, fell=True))
+            print(f"{tag}   FELL")
+            rows.append(dict(mode=mode.name, speed=sp, crab_deg=crab, move=mv, fell=True))
             consecutive_falls += 1
             continue
         consecutive_falls = 0
         print(
-            f"{mode.name:>10} {sp:>6.2f} {str(mv):>5} {r['net']:>8.3f} "
-            f"{r['steps']:>8.2f} {r['per_step']:>8.1f} {r['carry']:>9.1f} "
-            f"{r['carry_steps']:>11.1f}"
+            f"{tag} {r['net']:>8.3f} {r['fwd']:>+8.3f} {r['lat']:>+8.3f} {r['travel_err_deg']:>+7.0f} "
+            f"{r['yaw_turned_deg']:>+7.0f} {r['steps']:>7.2f} {r['per_step']:>8.1f} {r['carry']:>9.1f}"
         )
-        rows.append(dict(mode=mode.name, speed=sp, move=mv, fell=False, **r))
+        rows.append(dict(mode=mode.name, speed=sp, crab_deg=crab, move=mv, fell=False, **r))
     if a.json:
         with open(a.json, "w") as fh:
             json.dump(dict(policy=paths.SONIC_POLICY, leg_s=LEG, warmup_s=WARMUP, rows=rows), fh, indent=1)
