@@ -37,6 +37,37 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- DIAGNOSIS STEP 0 + 2 DONE 2026-09-11 02:1x-02:5x UTC (session cf; GPU1 held ~6 min for an inference server only --
+  no sim, no stack, ports 5555-5582 untouched; released).
+  **STEP 0 -- the trace/manifest join was off by one.** `eval/traces/round_NNN.json` describes manifest round NNN+1:
+  the three VLA clients named traces from their own call counter, and a round that dies before the VLA stage
+  (manifest round 0, `[stand]`) never increments it. Proof: offset +1 matches 99/99 `why` strings exactly, offset 0
+  matches 6/99. FIXED -- `round_id` threaded round_loop -> run_round -> _run_round -> RoundContext -> the three
+  clients; traces are named by it AND carry `round` as a field. Regression test tests/test_trace_round_join.py
+  (12 assertions, all red on the pre-fix HEAD). Re-derivation script
+  scripts/experiments/visible200_trace_join_20260911.py, per-round output eval/trace_join_20260911.json.
+  Ledger bottle.md §18.2. **§18.1 survives on claims 1 and 4** (94/99 rounds never predicted a close, 0 of them
+  succeeded; stop distance and azimuth still do not separate success from failure). **Claim 2/3 was wrong**: the
+  round ids are 028/053/066 not 027/052/065, and only TWO predicted a close that never reached the executed stream --
+  round 028 did execute one, at +0.0048, just inside the 0.005 threshold, and knocked the bottle 12 cm.
+  NEW: the gripper channel is SATURATED, not noisy -- 94 never-close rounds sit at +0.020..+0.023 against
+  GRIPPER_MAX +0.0245, the 5 closing rounds at -0.020..-0.002 against GRIPPER_MIN -0.020. A binary decision that
+  never flips, which rules out the whole "undertrained / imprecise" class of explanation.
+  **STEP 2 -- the offline feedback loop exists and is verified both ways.** src/locomani/pipeline/replay_obs.py asks
+  the policy what it would have done, with no sim and no stack: `--dump DIR` replays the npz files vla_obs's
+  OBS_DUMP writes (obs + the live answer, so it also checks inference is reproducible); `--dataset DS --near-close`
+  rebuilds observations from a LeRobot episode in the EVAL's obs format. `--substitute KEY --donor-dump` swaps one
+  key between the two -- that is the seam bisection. `--expect-close` makes the exit code the verdict.
+  Runs in the Isaac-GR00T venv (needs serve_policy on :5590, ~15 s to start, 6.6 GB).
+  FIRST RESULT (H4, the null hypothesis): on val frames around the expert's own close the model closes
+  **9/9 (ep0) and 7/7 (ep3)**, grip_min -0.019..-0.020; on mid-approach frames it correctly refuses (4/5, and the
+  5th at f240 is right too -- the close is inside its 40-frame horizon by then). So the checkpoint's gripper
+  decision is a correct, sharp function of "is the close within my 1.6 s horizon" ON DATASET OBSERVATIONS.
+  The defect is therefore in what the closed loop puts into those keys, or in the states it visits -- NOT the model.
+  Tests tests/test_replay_obs.py. make test green (sim venv); make lint red only on another session's untracked
+  scripts/experiments/scalebfm200_reel_20260910.py (4x E702), not on anything of mine.
+  NEXT (step 1): one short stack session, 3 failing cases with `--set backend.obs_dump=<dir>`, then
+  replay_obs --dump on it, then the per-key substitution bisect.
 - VIDEOS EXPORTED 2026-09-11 00:56 UTC (session cf, no GPU, no sim): 10 collection + 10 eval third-person clips for
   the visible200 arm in outputs/videos/visible200_export_20260911/ ({collect,eval}/ + reel_collect_10.mp4 208 s /
   reel_eval_10.mp4 717 s + INDEX.json). Source is the sim composite already on disk (main view + L/R wrist + ego

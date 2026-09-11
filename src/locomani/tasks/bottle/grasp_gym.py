@@ -410,6 +410,7 @@ def run_round(
     object_yaw=None,
     goal_key=None,
     place_config=None,
+    round_id: int | None = None,
 ) -> RoundResult:
     """One round, and the exporter left in a clean state whatever happens.
 
@@ -462,6 +463,7 @@ def run_round(
             object_yaw=object_yaw,
             goal_key=goal_key,
             place_config=place_config,
+            round_id=round_id,
         )
         if not ok:
             execution.fail(why)
@@ -523,6 +525,7 @@ def _run_round(
     object_yaw=None,
     goal_key=None,
     place_config=None,
+    round_id: int | None = None,
 ) -> tuple[bool, str]:
     """One round's five phases (round_phases.py / round_phases_approach.py),
     threaded through a RoundContext.
@@ -571,6 +574,7 @@ def _run_round(
         object_yaw=object_yaw,
         goal_key=goal_key,
         place_config=place_config,
+        round_id=round_id,
         vla_policy=VLA_POLICY,
         arm_pin=ARM_PIN,
         video_include_init=VIDEO_INCLUDE_INIT,

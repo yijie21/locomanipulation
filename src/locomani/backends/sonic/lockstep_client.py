@@ -314,7 +314,7 @@ def make_vla_policy_lockstep(
     LIFT_HOLD_F = 2 * RATE  # 2 s of sustained lift, as async
     STATUS_EVERY_F = max(1, RATE // 2)  # ~2 Hz predicates, as async
 
-    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None):
+    def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None, round_id=None):
         from locomani.backends.sonic.primitives import LocomotionMode
 
         INIT_TOK = initial_token()
@@ -517,9 +517,19 @@ def make_vla_policy_lockstep(
 
         if trace_dir:
             os.makedirs(trace_dir, exist_ok=True)
-            with open(os.path.join(trace_dir, f"round_{counter['n']:03d}.json"), "w") as fh:
+            # Name the trace by the CALLER's round number, not by this closure's
+            # own call count: a round that fails before the VLA stage (a [stand]
+            # collapse, say) never reaches here, so the private counter silently
+            # drifts from the manifest -- the visible200 eval's traces were all
+            # off by one against closed_loop.manifest.jsonl, and every analysis
+            # that joined the two by round number was reading mismatched pairs.
+            # `round` is written into the file too, so a join never has to trust
+            # the filename.
+            rid = counter["n"] if round_id is None else int(round_id)
+            with open(os.path.join(trace_dir, f"round_{rid:03d}.json"), "w") as fh:
                 json.dump(
                     dict(
+                        round=rid,
                         ok=ok,
                         why=why,
                         clock="lockstep",

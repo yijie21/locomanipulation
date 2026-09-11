@@ -88,6 +88,7 @@ class RoundContext:
     object_yaw: float | None = None
     goal_key: str | None = None  # container to place into after the lift (BottleTaskConfig.goal); None = bottle task
     place_config: Any = None  # BottleTaskConfig.place, read by place_phase._phase_place
+    round_id: int | None = None  # the manifest's own round number, so a trace file joins to it by name
 
     # -- grasp_gym.py globals, snapshotted once per round --------------
     vla_policy: Callable | None = None
@@ -508,6 +509,7 @@ def _phase_handover_to_vla(ctx: RoundContext):
             record=ctx.record,
             replace=replace,
             spawn_xy=[float(v) for v in p.pelvis_xy(s_fork)],
+            round_id=ctx.round_id,
         )
     return None
 

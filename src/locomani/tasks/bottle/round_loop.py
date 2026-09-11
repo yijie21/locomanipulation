@@ -289,6 +289,7 @@ def round_loop(args, setup) -> None:
                 object_yaw=(case.get("object_yaw") if fixed_cases is not None else None),
                 goal_key=goal_key,
                 place_config=place_config,
+                round_id=rnd,
             )
             ok, why, produced = round_result
             if args.record and produced and ok:
