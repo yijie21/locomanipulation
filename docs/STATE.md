@@ -37,6 +37,44 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **session cf 2026-09-11 08:1x-09:0x: picked up Codex's image-servo line, ran attempt09, machine released.**
+  NOTHING RUNNING; GPUs 2 MiB, ports free, stack down. Ledger bottle.md §19.7. No Codex source was changed; its
+  11 tests still pass. The `reach.image_control` override I used is REVERTED -- the config is back at Codex's
+  `prealign_depth=0.44`.
+  **Codex's state:** §19 design implemented (image_servo{,_config,_policy}.py, image_bottle.py,
+  configs/tasks/bottle_image_servo.json), attempts 01-08 run, **0 successes of 4 rounds each**. The death mode
+  converged on the dex1 long fingers sweeping the bottle -- the risk §19.3 itself flagged.
+  **FINDING 1: the passenger structure survived into the implementation.** In attempt08, `visual_prepare` is 170 of
+  190 samples (89% of the episode) and palm height during it has sd 0.0073 m; the palm-to-target height gap stays
+  0.18-0.26 m the whole way in. Same structure as visible200, compressed into the last 11%.
+  **ARITHMETIC:** the arm descends at 0.06-0.10 m/s and must cover 0.21 m (~2.3 s); `prealign_depth=0.44` gives it
+  a 0.5-0.8 s window and it dies with 0.13-0.20 m left. The approach lasts 4-9 s, so starting earlier should fit.
+  **FINDING 2 (attempt09, prealign_depth 0.44 -> 1.30, same seed 31000): it does not, and the reason is the real
+  constraint.** The passenger phase went away (align 421 vs visual_prepare 8, `enter` reached twice) but it was
+  still 0/4 and approach got WORSE (2 rounds timed out at 44 s vs 0 before). `reacquire_ticks` went 4/3/19 ->
+  686/144/709: the arm pose that closes the height error is the arm pose that loses the bottle from the wrist
+  camera, so `_tick` falls back to `_view_q()` and undoes the descent, hundreds of times. One round walked
+  backwards (depth 0.66 -> 1.21).
+  **THE CONSTRAINT, now measured rather than assumed:** hold the view pose and the arm is a passenger that cannot
+  descend in time (fingers sweep the bottle); descend early and the wrist view is lost (reacquire loop). Neither
+  works, so the descent must be COUPLED to keeping the target in the wrist frame -- pitch the wrist to track the
+  bottle while descending (80 deg FOV has room), instead of holding a fixed view pose and then descending. This is
+  exactly what the user asked for originally ("keep the wrist camera on the bottle whether walking or stopped");
+  this round turned it from an intuition into a hard constraint.
+  **ALTERNATIVE WORTH TRYING FIRST (cheaper):** make far-field localisation not depend on the wrist camera. Ego
+  sees the bottle in 91% of stuck frames (§18.6), but at 1.2 m the monocular cap fit cannot pass the
+  `approach_uncertainty_m=0.15` gate, so the far field is currently carried by the wrist camera. Widening that gate
+  for the far field, or strengthening the ego-side fit, dissolves the either/or without new control design.
+- **Codex 2026-09-11: 单臂视觉反馈专家正在实现;用户已授权采集 1 集成功视频。**
+  RUNNING GPU0 / instance 0: outputs/experiments/image_servo_20260911/attempt08/launch.sh。
+  新 RGB cap 定位 + 无阶段历史的纠偏控制正在烟测,最多 4 轮、1 集成功即停,退出按实例锁归属清理。
+  本次不训练 VLA、不做 DAgger;保留其他会话的 ScaleBFM 未提交修改。
+- **Codex 2026-09-11: 单臂专家设计建议已记录于 docs/ledger/bottle.md §19;实施与烟测见上一条。**
+  用户询问如何按视觉线索重设计;只审阅代码与历史实验,本轮未启动 GPU/stack/采集/训练。
+  建议以当前视觉夹取误差驱动局部纠偏,直接覆盖桌边静止/部分伸手的原生初始状态,遵守 NO DAgger。
+  对 Next 0a 的补充:仅令 arm_pose=f(base_distance) 仍可能卡住;“从第一帧手臂一直动/腕高单调”
+  不能代替安全的任务进展。检测器须区分恒定目标下的实际收敛、无效抖动、远场保持与近场死锁;
+  无平台期不保证训练后无固定点。§19 含具体观测接口、四类 pilot 覆盖、反例与双 seed 闭环验收。
 - **SESSION cf 2026-09-11: the visible200 2/100 is DIAGNOSED. NOTHING RUNNING; both GPUs at 2 MiB, ports free,
   no stack, instance 0 free.** Commits bf5bfd6 -> ee70bcc. Full record in ledger bottle.md §18.2-18.9.
   **THE ANSWER.** The policy walks to the table, adopts the expert's approach posture to within ~2 deg and ~5 mm,
