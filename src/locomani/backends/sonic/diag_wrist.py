@@ -29,6 +29,7 @@ import numpy as np
 
 from locomani import paths
 from locomani.backends.sonic.primitives import DT, LocomotionMode, Primitives
+from locomani.sim.privileged_pub import EpisodeControlClient
 
 SETTLE = 3.5  # the arm needs a couple of seconds to reach a new target
 HOLD_POS = np.array([0.35, -0.22, -0.05])  # a plausible pre-grasp wrist point
@@ -58,13 +59,36 @@ def main() -> None:
     args = ap.parse_args()
 
     p = Primitives()
-    p.cmd.start_control()
-    p.cmd.hold(4.0, mode=LocomotionMode.IDLE)
+    reset = EpisodeControlClient()
+
+    def fresh():
+        """One clean standing start per case.
+
+        Without it the first extreme quaternion leaves the arm (and on
+        policy/release the whole robot) somewhere the next case inherits: the
+        2026-09-11 first pass fell at pelvis z 0.199 and then reported three
+        different commands 'delivering' the same 131.7 deg from the same palm
+        point 0.40 m away -- numbers that look like a measurement and are not.
+        """
+        p.cmd.hold(0.5, mode=LocomotionMode.IDLE)
+        p.cmd.reset_pose()
+        reset.reset(label="wrist")
+        time.sleep(0.3)
+        p.cmd.start_control()
+        p.cmd.hold(3.0, mode=LocomotionMode.IDLE)
+        return not p.obs()["fallen"]
+
+    if not fresh():
+        raise SystemExit("robot is not standing after the first reset")
 
     print(f"\npolicy {paths.SONIC_POLICY}")
     print(f"\n{'case':38s} asked / delivered / ratio, then the palm axes in the pelvis frame")
     results, rows, measured_frames, base = [], [], [], None
     for label, quat in CASES:
+        if not fresh():
+            print(f"{label:38s} FELL during the reset -- stopping, the rest would be garbage")
+            rows.append(dict(case=label, fell="reset"))
+            break
         kw = {f"{args.side}_pos": HOLD_POS, f"{args.side}_quat": quat}
         p.cmd.set_wrists(**kw)
         end = time.time() + SETTLE
@@ -73,6 +97,10 @@ def main() -> None:
             time.sleep(DT)
 
         s = p.obs()
+        if s["fallen"]:
+            print(f"{label:38s} FELL while holding the command -- not a delivery measurement")
+            rows.append(dict(case=label, asked_deg=None, delivered_deg=None, ratio=None, fell=True))
+            continue
         palm = s["palms"][args.side]
         # The palm's +x axis expressed in the pelvis frame: the direction
         # GRASP_CENTRE_OFFSET actually points once it is applied.
@@ -121,9 +149,14 @@ def main() -> None:
     )
     print("  > 0.30  -> it is live and the grasp should command a palm-down orientation")
 
-    live = [r for r in rows if r["asked_deg"] > 1e-6]
-    if live:
+    live = [r for r in rows if r.get("asked_deg") and not r.get("fell")]
+    fell = [r for r in rows if r.get("fell")]
+    if fell:
+        print(f"\n{len(fell)} case(s) fell -- this run is NOT a delivery measurement")
+    if live and not fell:
         med = float(np.median([r["ratio"] for r in live]))
+        lo, hi = min(r["ratio"] for r in live), max(r["ratio"] for r in live)
+        print(f"per-axis spread {lo:.2f}..{hi:.2f} -- a single scalar pre-scale only makes sense if this is narrow")
         print(
             f"\nmedian delivery ratio {med:.2f}  ->  a pre-scale that inverts it would be {1 / med:.1f}"
             f"   (primitives_tuning.TRACK_ROT_BOOST is 4.5, measured on policy/release)"
