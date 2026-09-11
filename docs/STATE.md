@@ -37,6 +37,163 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **RESET SEATING BUG FOUND AND FIXED -- REPO-WIDE, NOT v1.1 (session cf, 2026-09-11 14:00-14:11 UTC). NOTHING
+  RUNNING; GPUs 2 MiB, ports free.** Ledger bottle.md §24.
+  `privileged_pub._seat_on_floor()` used `geom_rbound` -- the bounding-SPHERE radius -- as each geom's downward
+  extent. Measured on the composed scene at the controller's nominal stance: the estimate puts the lowest point at
+  -0.0994 m so it lifts the robot by that, seating the pelvis at **0.8924**, while the TRUE lowest surface point is
+  +0.0084 (seated 0.7846). The deciding foot mesh has rbound 0.1291 against a real downward extent of 0.0213.
+  0.8924 matches the z0 = 0.892 recorded in ALL 62 rounds; 0.7846 matches the observed settled 0.785. So **every
+  reset in every task line was a 10.8 cm free fall**, and the "walked 0.5 m off the spawn while standing up"
+  failures are its LANDING TRANSIENT, not walking: the whole displacement happens in the first second while the
+  command is IDLE with a zero movement vector (sidecars record the command per tick).
+  FIXED: true lowest point per geom type (mesh vertices; analytic for sphere/capsule/box/cylinder; rbound as a
+  conservative fallback), seated with a 2 mm clearance. tests/test_seat_on_floor.py, 4 cases.
+  **ACCEPTANCE on its own statistic (not a success rate, §23.3): first-second displacement after the reset** --
+  before: release median 0.071 / max 0.211 (0/20 over the 0.35 m budget), v1.1 pooled over 42 rounds median 0.099
+  / max 0.489 (4/42 over, 1 fall). After, 10 rounds: **teleport z 0.787, median 0.034, p90 0.071, max 0.083, 0/10
+  over budget, no falls, and zero `[stand]`-stage failures** -- tighter than release was BEFORE the fix.
+  **THIS CHANGES THE INITIAL CONDITION OF EVERY EPISODE IN EVERY LINE.** Every dataset collected before today
+  started from a 10.8 cm drop. The crate and pick_place lines share this reset path; adopting it there is the
+  user's call, the code is already shared.
+  **WITH THE LANDING NOISE GONE, THE RESIDUAL IS 100% LATERAL:** park decomposed as park^2 = depth^2 + lateral^2
+  (medians) -- release 0.349 = 0.306 depth + 0.167 lateral; v1.1 coarse 0.30: 0.467 = 0.332 + 0.350; v1.1 coarse
+  0.40: 0.393 = 0.300 + 0.250; v1.1 + seat fix: 0.400 = 0.297 + **0.272**. Depth is SOLVED (0.297 vs 0.306);
+  the lateral error is **+10.5 cm** against release with barely overlapping distributions (v1.1 min 0.219 vs
+  release max 0.250). This is §17's "11 cm further sideways", untouched by both fixes -- the seat fix only made it
+  deterministic. **So "Stage C is not needed" (§22/§23) is CORRECTED**: the brake DEPTH needs nothing, but the
+  10.5 cm lateral is now the direct source of `stand infeasible` x4 and `local alignment outside comfortable IK`
+  x2 of 10.
+  **NEXT: measure the LATERAL gait delivery.** The approach's last 0.3 m is a crab walk (`mv` aims at the planned
+  stand while `facing` stays on the approach heading, and the deploy normalises the movement vector's magnitude
+  away), and §21's speed map measured FORWARD walking only. Same protocol with a pure-lateral movement vector,
+  both checkpoints -- if v1.1 delivers less lateral per command than forward, that is the 10.5 cm.
+  Artifacts outputs/experiments/staged_seat_20260911/. NOT COMMITTED YET.
+- **GRASP-PHASE DIAGNOSIS (session cf, 2026-09-11 13:45-13:56 UTC). NOTHING RUNNING; GPUs 2 MiB, ports free.**
+  Ledger bottle.md §23. `coupled safe-hand IK did not track` is a ROTATION residual, not reach: instrumented the
+  block (it recorded only a tick count before) and got pos_err 0.0088-0.0106 m against a 0.08 tolerance -- 9x
+  INSIDE -- while rot_err ran 0.2013/0.2208/0.2323 rad against a 0.20 tolerance, at phase 0.94-0.99, the bottom of
+  the descent. **Mechanism:** the transport holds the palm's WORLD attitude while the pelvis pitches through the
+  crouch (the target is recomputed each tick as `br.T @ target_rotation` against the live pelvis rotation), so the
+  pelvis's own pitch becomes a rotation demand on the arm. Measured from the pose sidecars at the deepest squat:
+  release +9.8/+11.1/+11.8/+11.4 deg (peaks to +14.5), v1.1 +12.1/+12.5 (peak +14.4) -- i.e.
+  `TRANSPORT_ROTATION_TOL = 0.20 rad = 11.5 deg` is SMALLER THAN THE PITCH THE SQUAT DELIVERS, both checkpoints sit
+  on it and v1.1's extra ~1 deg crosses it. Both TOLs were bare literals with no provenance.
+  **RETRACTED mid-diagnosis:** `pregrasp_ahead_of_pelvis_m` separates the §22 rounds perfectly (OK <= -0.044,
+  blocked >= -0.080) and I read it as "the target folds behind the shoulder, out of reach" -- the position residual
+  refutes that; it is a proxy correlated with wrist extremity, not the cause.
+  **CHANGED:** TRANSPORT_ROTATION_TOL 0.20 -> 0.35 rad (covers the measured 14.4 deg peak with margin), derivation
+  in the comment. Chosen over holding the attitude in the pelvis frame because the tolerance only decides whether
+  to GIVE UP -- it changes no command when the IK succeeds, while a pelvis-frame attitude would change the palm's
+  motion and therefore the recorded data. `screen_motion` + `reference_check` still guard the object, and the
+  alignment stage servos the attitude to ~0.03 rad anyway.
+  **THE VERIFICATION DOES NOT STAND, and this is the bigger finding:** the same ten cases scored 0/10, but all 8
+  failures were UPSTREAM of the tolerance (4 `stand infeasible`, 4 `[stand]`: teleport 0.10 m off, did not
+  stabilise at pelvis z 0.085, walked 0.55 m off the spawn, could not turn -24 deg). Rounds REACHING the coupled
+  squat across three identical-config runs: **6/10, 2/3, 2/10**. So a 10-round pilot cannot measure this line's
+  success rate on v1.1 at all -- §22's "3/10 vs 4/10 is unresolvable" must be strengthened to "two runs of the
+  SAME config are unresolvable", and neither 3/10 nor 0/10 should be quoted as a rate. The tolerance's intended
+  effect IS visible per round (tol 0.20: blocked_ticks [0,0,0,5,11,11]+[2,5], two 11-tick aborts; tol 0.35: [2,3],
+  no abort, no topple and no `path blocked`) but n=2 -- keep the change, marked unverified.
+  **NEXT, in this order:** (1) fix the UPSTREAM stand variance first -- it is now the dominant term and "walked
+  0.5 m off the spawn while standing up" is v1.1-specific; nothing downstream is measurable until it settles;
+  (2) then settle the tolerance with a POOLED blocked_ticks distribution (n>=10 rounds that reach the squat, ~30
+  rounds or only the cases that reach it), not a success rate. Unverified protocol suspicion worth controlling
+  for: three stacks inside 20 minutes with `restart_deploy: false`, and the 0/10 run opened with teleport/stabilise
+  failures -- leave a cooldown between runs or restart the deploy per round, and log a CPU gate.
+  Artifacts outputs/experiments/{stageb_ikblock,stagec_rottol}_20260911/. NOT COMMITTED YET.
+- **STAGE B DONE: APPR_COARSE 0.30 -> 0.40 on v1.1, and the arrival is fixed (session cf, 2026-09-11 13:36-13:41
+  UTC). NOTHING RUNNING; GPUs 2 MiB, ports free, instance 0 free.** Ledger bottle.md §22.
+  New module `src/locomani/backends/sonic/gait_speeds.py`: the approach's (coarse, mid, shuffle) commands now come
+  from §21.1's MEASURED table keyed by checkpoint -- release keeps (0.30, 0.215, 0.20) byte-for-byte so every
+  pre-switch dataset stays reproducible, v1.1 gets (0.40, 0.215, 0.20). 0.40 not the inverse lookup's 0.41: 0.40
+  is a measured point (0.187 m/s, +-8%, 92% of release's 0.203). An unmeasured checkpoint RAISES with the
+  diag_shuffle command instead of falling back. MID/SHUFFLE deliberately untouched (v1.1's step jumps over the
+  0.016-0.018 m/s they deliver on release) so the pilot reads one variable. The two dormant sites that carried the
+  same literals now read the same table (`_creep_to_band`, no production caller; `recoverable_grasp_policy`,
+  recovery_attempts 0) -- dormant is exactly why they would otherwise keep release-era numbers until someone
+  turned them on. NAV_SPEED/NAV_SPEED_MIN and place_phase's 0.20 left alone, unmeasured targets.
+  **PILOT, same ten cases as the 2026-09-10 A/B, three arms paired per case_id:**
+  release (coarse 0.203 m/s) 4/10, v1.1 old (0.044) 0/10, **v1.1 new (0.187) 3/10**. Every telemetry acceptance
+  from §21.4 passed: `stalled` approach exits **5/10 -> 0/10** (release 1/10); `arrival left the object out of
+  reach` **x3 -> x0**; park median **0.467 -> 0.393** (release 0.349) with the spread down from [0.43,0.68] to
+  [0.36,0.43]; brake/stop geometry now matches release (0.307/0.300 vs 0.309/0.306), **so Stage C does not need to
+  move `visible_brake_depth`**; 10 rounds in 4 min 03 (24 s/round) with the far field back from ~13 s to ~3 s.
+  Paired McNemar: 3:0 vs the old arm (p=0.250), 2:3 vs release (p=1.000) -- ten rounds cannot resolve 3 vs 4, so
+  "matches release" rests on the telemetry, not on the rate. NOTE release's own brake->stop carry is 0.003 m; the
+  old "5-18 cm of momentum slide" comments are from the superseded settle-loop design.
+  **THE BINDING CONSTRAINT MOVED TO THE GRASP PHASE:** the new arm's 7 failures are coupled safe-hand IK did not
+  track x2, stand infeasible x2, local alignment timed out x1, "could not turn -24 deg" x1 (release fails the SAME
+  case with the SAME string -- a case property, not the checkpoint), and "walked 0.54 m off the spawn while
+  standing up" x1, which IS v1.1-specific and is a stand-up/heading-anchor behaviour, not a gait speed.
+  Artifacts outputs/experiments/stageb_coarse_pilot_20260911/ + captioned reel
+  outputs/videos/stageb_coarse_pilot_20260911/reel.mp4; scripts stageb_{coarse_pilot,report,reel}_20260911.*.
+  Suite green, ruff/lint clean. NOT COMMITTED YET.
+- **STAGE A OF THE v1.1 RE-CALIBRATION IS DONE (session cf, 2026-09-11 12:50-13:27 UTC). NOTHING RUNNING;
+  GPUs 2 MiB, ports free, instance 0 free.** Ledger bottle.md §21. Measurement only -- no control constant changed.
+  Restored `diag_shuffle.py` (deleted by refactor step 2 ec0eb1c) as `src/locomani/backends/sonic/diag_shuffle.py`,
+  ported the imports, added an IDLE control leg (without it the carry column cannot be read) and made a fall cost
+  one leg instead of the whole grid. Both checkpoints swept in one session, 11 speeds x 3 repeats + IDLE controls.
+  **THE RESULT: both curves are STEPS, and the step is displaced by +0.065 of command.** release jumps
+  0.016 -> 0.123 m/s between 0.215 and 0.26 (7.9x); v1.1 jumps 0.007 -> 0.044 between 0.28 and 0.30 (6.6x).
+  Below the step the two are the same order (release 0.013-0.018, v1.1 0.007-0.014); above it v1.1 is 28-68% of
+  release. So `APPR_COARSE=0.30` sits above release's step (0.203 m/s) and barely above v1.1's (0.044) -- 4.6x
+  slower -- which is the one badly wrong constant. release's own 0.215 does NOT reproduce its documented 0.040
+  (measured 0.016, three legs 0.007/0.016/0.039): it is sitting ON release's step edge, which is why the
+  documented MID band was never stable.
+  **IN-PATH BUDGET (depth 1.2 -> brake 0.31; do_approach has 45 s):** release 2.9+12.2+7.2 = 22.2 s; v1.1 as-is
+  13.1+14.0+10.8 = **37.8 s** of pure depth-closing, leaving 7 s for the 11 cm lateral correction, the arm rise
+  and any hesitation, with only 4.5x / 2.9x margin on the stall rule (1.5 cm in 5 s = 0.003 m/s) in the mid and
+  decel phases. With COARSE re-picked to 0.41 it is 27.6 s. That is the mechanism of §17's 0/20, and it produces
+  exactly the failure string §17 recorded ("arrival left the object out of reach", x5) because the visible profile
+  runs ZERO forward-only repair walks.
+  **TWO MECHANISMS I GAVE EARLIER TODAY ARE RETRACTED** (both in §21.3): (1) "the creep's 8 s budget times out" --
+  `stream_reach._creep_to_band` has NO caller in the production path (tests call it directly; the comment at
+  round_phases_approach.py:77 points at dead code); (2) "open-floor net speed refutes the stall rule" -- net speed
+  and the approach's progress are not the same quantity, the loop scores only the DEPTH component.
+  **RE-PICK for Stage B:** `APPR_COARSE` 0.30 -> 0.41 (delivers 0.187, +-8% over repeats). `APPR_MID` /
+  `APPR_SHUFFLE` CANNOT be matched -- v1.1's step skips 0.016-0.044 entirely, so keep them or set both 0.215;
+  never interpolate into 0.28-0.30, that is the bistable step interior. Consequence to carry into Stage E:
+  v1.1's approach dynamic range is 3x (0.067-0.203) against release's 11x, i.e. it has no equivalent slow crawl,
+  and memory policy-stop-point-is-set-by-the-crawl says that crawl is what sets the learned stop point -- this is
+  a DATA-SHAPE change, not only a control change. carry is 1.9-3.5 cm on v1.1 in the bands that matter
+  (release 12-17 cm at 0.40/0.45), so Stage C's `visible_brake_depth` should need only a small correction.
+  Artifacts outputs/diagnostics/gait_speed_v11_20260911{,_knee}/ (legs.json per arm + report.json); scripts
+  gait_speed_map_20260911.sh / gait_speed_report_20260911.py. Provenance bug found and fixed in §21.5: the first
+  runner passed SONIC_POLICY as a command prefix, so the release arm's legs.json labelled itself sonic_v1_1 --
+  the MEASUREMENT is unaffected (stack.log and deploy.log both show policy/release) and the report now takes
+  stack.log as authoritative and prints the disagreement. NOT COMMITTED YET.
+- **SONIC DEFAULT CHECKPOINT IS NOW policy/sonic_v1_1 (user ruling 2026-09-11, session cf). NOTHING RUNNING;
+  GPUs 2 MiB, ports free, stack down. No GPU work was needed for this and none was done.**
+  One default, two halves: `scripts/paths.sh` exports `SONIC_POLICY` (default `policy/sonic_v1_1`) and
+  `locomani.paths.SONIC_POLICY` / `SONIC_POLICY_DIR` / `sonic_policy_file()` is the python side;
+  start_stack.sh and restart_deploy.sh carry the same value as a fallback and now FAIL LOUDLY if that policy
+  directory is missing from the deploy tree they run in (SIMPLE's own lockstep tree has policy/release only).
+  `sonic_encoder.py` no longer hard-codes release's block table: `EncoderLayout.from_config()` reads the
+  checkpoint's own observation_config.yaml, so v1.1 is 1751 inputs with the anchor block
+  `motion_anchor_orientation_heading_10frame_step5` @584 computed in **orientation_mode 1** (left-multiply by
+  the robot's HEADING quaternion, not its full base quat) against release's 1762 / @601 / mode 0. The decoder
+  side needed no branch -- the 994-dim policy observation is block-for-block identical between the two.
+  Offline decoders (`sonic_decoder`, `eval_open_loop`, `rtc/analyze_transition_capture`, `rtc/probe_prefix_models`)
+  follow SONIC_POLICY. `config_snapshot.json` now records `sonic_policy` (name, dir, obs-config sha256, ONNX sizes).
+  **WHAT THIS INVALIDATES, and it is not small:** a token is a CHECKPOINT-PRIVATE latent. Both encoders share the
+  codebook exactly (1/16 grid, saturating at [-1.0, 0.9375], measured 2026-09-11), so every "is this token legal"
+  check passes across checkpoints -- only the MEANING changes. Every dataset collected before today and every
+  GR00T checkpoint trained on one is release-space: deploying those on a v1.1 deploy is silently meaningless, and
+  so is decoding their tokens with v1.1's decoder. Reproducing an old number means `SONIC_POLICY=policy/release`
+  for the whole chain.
+  **NOT RE-CALIBRATED, so no v1.1 grasp number means anything yet:** release walks 17 cm/step at speed 0.30, v1.1
+  4.3 cm -- and on one fixed case bank v1.1 scored 0/20 against release's 9/20 (McNemar p=0.0039, ledger §17),
+  mechanism arrival geometry (parks 12 cm further out, 11 cm further sideways, approach "stalled" 10/20). The
+  approach/brake timings, `primitives_tuning.TRACK_ROT_BOOST=4.5` (kept, NOT blind-reset to 1.0) and the
+  reach_config stand calibration are all release-era. Re-measure the timings FIRST. The reason to switch is real
+  too: v1.1 tracks the waist 3.3x better (waist RMSE 3.9 vs 12.9 deg, §16) and is a self-consistent model+config
+  pair, while policy/release/observation_config.yaml is a hand-edited third variant.
+  Verified: `sonic_encoder --selfcheck` PASSES on BOTH checkpoints; unit suite green (exit 0, no failures --
+  note test_pose_feedback, listed below as a pre-existing failure, passes now); ruff/lint_env/lint_sizes add no
+  new debt. `make check` is still red ONLY on `scripts/experiments/scalebfm200_reel_20260910.py` (untracked,
+  another session's, ruff-format, red before this work). Ledger bottle.md §20 has the full record and the
+  re-calibration list; HANDOFF.md §1b is marked superseded. NOT COMMITTED YET.
 - **IMAGE-SERVO LINE, session cf 2026-09-11 08:1x-12:3x. NOTHING RUNNING; GPUs 2 MiB, ports free, stack down.**
   Commits c02354c -> f330238. Ledger bottle.md §19.7-19.11. Codex's design (§19.1-19.6) is intact and now committed;
   its tests are at 12 and green. Picked up its work after it stopped at attempt08 (8 attempts x 4 rounds, 0 success).
@@ -567,6 +724,27 @@
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
+0-SONIC. RE-CALIBRATE THE GRASP LINE ON v1.1 (new 2026-09-11, user ruling made v1.1 the default).
+   **(i) AND (ii) ARE DONE -- ledger §21 (the gait map) and §22 (COARSE 0.40, arrival fixed: stalled 5/10 -> 0/10,
+   park 0.467 -> 0.393). Stage C does NOT need `visible_brake_depth`: brake/stop now match release to 2 mm.
+   NEXT is the grasp phase, which is where the failures moved: "coupled safe-hand IK did not track" x2 and
+   "local alignment timed out" x1 of 10, plus one v1.1-specific "walked 0.54 m off the spawn while standing up"
+   (a stand-up/heading-anchor behaviour, not a speed). Then (iv) TRACK_ROT_BOOST with diag_wrist.**
+   The other sites of the same hardcoded constants, all to be handled together or the config is half-applied:
+   stream_reach.py:250-267 (_creep_to_band, dead in production but test-covered),
+   recoverable_grasp_policy.py:356 (recovery, off in the visible profile), primitives_tuning.py:306-317
+   (NAV_SPEED 0.45 -> 0.273 m/s on v1.1, NAV_SPEED_MIN 0.35 -> 0.083; both far above the stall rule, not blocking),
+   place_phase.py:68 (pick_place's turn_command(speed=0.20)).
+   Order matters: (i) re-measure the speed->velocity map -- v1.1 delivers 4.3 cm/step at speed 0.30 against
+   release's 17, and that single fact explains §17's 0/20. NOTE the tool for it, diag_shuffle.py, was DELETED by
+   refactor step 2 (ec0eb1c) and survives only in .claude/worktrees/old-78536ae/src/teleop_free/ -- restoring it
+   is an import port (agent_server/primitives/privileged_pub/paths -> locomani.*). diag_speed / diag_wrist /
+   diag_squat / diag_idle_drift are in the same boat and stage (iv) needs diag_wrist; (ii) then the brake band and
+   arrival_advance, then reach_config's stand (0.30/42.0 are release-era); (iii) `TRACK_ROT_BOOST=4.5` is kept
+   and marked pending -- the 2026-08 sweep that called the boost "meaningless on v1.1" was an orientation sweep,
+   not the grasp line. Until (i) lands, a v1.1 grasp success rate is not a property of the checkpoint.
+   Also note for every training/eval decision: release-era datasets and checkpoints are a DIFFERENT token space
+   (ledger §20.3) -- to reproduce an old number, set SONIC_POLICY=policy/release for the whole chain.
 0-IMG. IMAGE-SERVO (the active line). Make the finger clearance a PROJECTION on the commanded aim instead of a
    reactive back-off: while unaligned, clamp the aim along the entry axis so the grip point can never sit closer
    than `clearance` to the object, making entry into its column geometrically impossible. Keep decide()'s L-shape.
@@ -620,9 +798,12 @@
    hold 4 -> 1 s, restart-script polling, 20-round batches) -- each a gate run; (c) a GPU0 lock file both sessions honour.
 
 ## Blocked / waiting on
-- PRE-EXISTING unit failure on main (not from the ScaleBFM merge, fails on 6857fbb too, 2026-09-10):
-  tests/test_pose_feedback.py::PoseFeedbackTests::test_offhand_guard_reuses_current_observation raises
-  'stale observation for offhand guard' from backends/sonic/streamed_arm.py:235; make check is red until fixed.
+- [RESOLVED? 2026-09-11, session cf] PRE-EXISTING unit failure on main (not from the ScaleBFM merge, failed on
+  6857fbb too, 2026-09-10): tests/test_pose_feedback.py::PoseFeedbackTests::test_offhand_guard_reuses_current_observation
+  raised 'stale observation for offhand guard' from backends/sonic/streamed_arm.py:235. It PASSES now, 3 runs out of 3,
+  and the whole suite is green -- either someone's uncommitted fix landed in the tree or it was order/timing dependent.
+  Whoever owns it: confirm and delete this line. `make check` is red only on another session's untracked
+  scripts/experiments/scalebfm200_reel_20260910.py (ruff format).
 - User decision on data recovery (Next 1). Nothing runs until then.
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
@@ -738,6 +919,27 @@
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-11 reset seating bug (repo-wide): `_seat_on_floor` read the bounding-SPHERE radius as the foot's extent,
+  so every reset seated the pelvis at 0.892 instead of 0.785 and dropped the robot 10.8 cm. Fixed; first-second
+  displacement median 0.099 -> 0.034 m, max 0.489 -> 0.083, no falls. It changes every episode's initial
+  condition. With that noise gone the v1.1 arrival residual is 100% LATERAL: +10.5 cm vs release, depth solved.
+  Ledger §24
+- 2026-09-11 grasp phase: `coupled safe-hand IK did not track` is a ROTATION residual (pos_err 9x inside its
+  tolerance) caused by holding the palm's world attitude while the pelvis pitches +12 deg through the squat --
+  against a 0.20 rad = 11.5 deg tolerance. Raised to 0.35 (derived from the measured pitch), but the 10-round
+  verification does NOT stand: 8 of 10 failures were upstream, and rounds reaching the squat are 6/10, 2/3, 2/10
+  across identical configs. Ledger §23
+- 2026-09-11 Stage B: APPR_COARSE 0.30 -> 0.40 on v1.1 (from the measured map, per-checkpoint table in
+  gait_speeds.py). Same ten cases, paired: release 4/10, v1.1-old 0/10, v1.1-new 3/10; `stalled` 5/10 -> 0/10,
+  park median 0.467 -> 0.393 m, brake geometry now release-like. Failures moved to the grasp phase. Ledger §22
+- 2026-09-11 Stage A gait map, both checkpoints in one session: the speed command -> velocity curve is a STEP, and
+  the step is displaced +0.065 by the checkpoint (release 0.215->0.26 = 0.016->0.123 m/s; v1.1 0.28->0.30 =
+  0.007->0.044). APPR_COARSE=0.30 therefore delivers 0.044 on v1.1 against release's 0.203, spending 37.8 s of a
+  45 s approach budget. Two of my own mechanisms retracted with it. Ledger bottle.md §21
+- 2026-09-11 DEFAULT SONIC CHECKPOINT -> policy/sonic_v1_1 (user ruling; config change, no GPU). Encoder layout is
+  now read from the checkpoint's own config (1751 / heading anchor @584 vs release 1762 / @601); the codebook is
+  identical across checkpoints but the latent is not, so every pre-2026-09-11 dataset and model is release-space.
+  Grasp timings still release-calibrated (§17 0/20 vs 9/20). Ledger bottle.md §20
 - 2026-09-11 visible200 2/100 DIAGNOSED: the arm freezes in the expert's own approach posture for 85 s; the gripper
   was never at fault. Palm-to-bottle separates perfectly (<=0.138 vs >=0.156 m), the miss is vertical (+0.029 vs
   +0.191 m), wrist roll 0.24 vs 0.018. A behaviour-cloning fixed point in an in-distribution state, caused by the

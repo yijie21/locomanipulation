@@ -42,6 +42,28 @@ def digest(path) -> str:
     return _digest(Path(path))
 
 
+def sonic_policy_identity() -> dict:
+    """Which SONIC checkpoint this run used -- name, directory, and an identity.
+
+    Added 2026-09-11, when v1.1 replaced release as the default. It belongs in
+    the provenance because the encoder token IS the dataset's action label and
+    the latent is private to the checkpoint: without this field, a dataset's
+    actions cannot be attributed to a decoder afterwards, and mixing two
+    checkpoints' episodes is undetectable. The ONNX files are 50-150 MB, so the
+    identity is the config hash plus the weight sizes, not a full digest.
+    """
+    d = Path(paths.SONIC_POLICY_DIR)
+    cfg = d / "observation_config.yaml"
+    out = {"policy": paths.SONIC_POLICY, "dir": str(d), "exists": d.is_dir()}
+    if cfg.is_file():
+        out["observation_config_sha256"] = _digest(cfg)
+    for name in ("model_encoder.onnx", "model_decoder.onnx"):
+        f = d / name
+        if f.is_file():
+            out[f"{name}_bytes"] = f.stat().st_size
+    return out
+
+
 def git_sha(root: Path | None = None) -> str:
     root = Path(root or paths.REPO)
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
@@ -73,6 +95,7 @@ def write_config_snapshot(
                 backend=backend_cfg.to_dict() if backend_cfg is not None else None,
                 eval=eval_cfg.to_dict() if eval_cfg is not None else None,
                 pilot=pilot_cfg.to_dict() if pilot_cfg is not None else None,
+                sonic_policy=sonic_policy_identity(),
                 git_sha=git_sha(),
                 started=started if started is not None else time.time(),
                 sources=source_digests(),

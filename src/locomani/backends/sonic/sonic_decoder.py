@@ -10,8 +10,12 @@ stronger version of this, that replaying the GROUND TRUTH token open loop still
 drifts 0.77 m (diag_token_replay.py), so token accuracy and task success are
 only loosely coupled.
 
-The decoder is what gives token error a unit. policy/release/model_decoder.onnx
-maps obs_dict[994] -> action[29], and the token is 64 of those 994 inputs. Hold
+The decoder is what gives token error a unit. The ACTIVE checkpoint's
+model_decoder.onnx (locomani.paths.SONIC_POLICY, default policy/sonic_v1_1 since
+2026-09-11) maps obs_dict[994] -> action[29], and the token is 64 of those 994
+inputs. Which checkpoint MATTERS: a token is a checkpoint-private latent, so
+tokens recorded before the switch (every dataset collected under policy/release)
+must be decoded with `SonicDecoder(<release path>)`, not with the default. Hold
 the observation fixed, swap the ground-truth token for the predicted one, and
 the difference between the two joint commands is "how many degrees does this
 prediction move the robot". That is comparable with numbers this project
@@ -52,9 +56,11 @@ DEFAULT_ANGLES joint for joint (ankle pitch -0.354 measured vs -0.363 default).
 
 THE 994-DIM LAYOUT
 
-From policy/release/observation_config.yaml -- the order of `observations:` IS
+From the checkpoint's observation_config.yaml -- the order of `observations:` IS
 the buffer order, the deploy fills at increasing offsets -- confirmed against
-the ONNX input shape:
+the ONNX input shape. This half is the one thing release and v1.1 share
+BYTE FOR BYTE: same six blocks, same order, same 994 (only the ENCODER side
+differs, sonic_encoder.py), so this table needs no per-checkpoint variant:
 
     token_state                              64
     his_base_angular_velocity_10frame_step1  30   = 10 frames x 3
@@ -90,6 +96,8 @@ from __future__ import annotations
 import os
 
 import numpy as np
+
+from locomani import paths
 
 ISAACLAB_TO_MUJOCO = np.array(
     [0, 3, 6, 9, 13, 17, 1, 4, 7, 10, 14, 18, 2, 5, 8, 11, 15, 19, 21, 23, 25, 27, 12, 16, 20, 22, 24, 26, 28]
@@ -175,7 +183,7 @@ HIST = 10  # frames, step 1
 SRC_HZ = 50.0  # the exporter's rate, and the deploy's control rate
 OBS_DIM = 994
 
-_DEFAULT_DECODER = os.path.join(os.environ.get("SONIC_DEPLOY_ROOT", ""), "policy/release/model_decoder.onnx")
+_DEFAULT_DECODER = paths.sonic_policy_file("model_decoder.onnx")
 
 
 def _quat_ang_vel(q, dt):
@@ -202,7 +210,7 @@ class SonicDecoder:
 
         path = onnx_path or _DEFAULT_DECODER
         if not os.path.exists(path):
-            raise FileNotFoundError(f"decoder ONNX not found at {path}; pass onnx_path or set SONIC_DEPLOY_ROOT")
+            raise FileNotFoundError(f"decoder ONNX not found at {path}; pass onnx_path or set SONIC_POLICY")
         options = ort.SessionOptions()
         if num_threads is not None:
             if num_threads < 1:

@@ -1,5 +1,10 @@
 # 官方 tutorials 逐步对照审计(2026-08-28)
 
+> **过期提示(2026-09-11)**:本文多处写"我们用 `policy/release`"。**默认 checkpoint 已改为
+> `policy/sonic_v1_1`**(用户裁定),唯一默认值在 `scripts/paths.sh` 与 `locomani.paths`。
+> 本文第 9 节对"只换评测端会造成 token 空间不匹配"的担忧是**对的**,现在的处理是整条链
+> 一起切、并把 checkpoint 写进 `config_snapshot.json`;记录见台账 `docs/ledger/bottle.md` §20。
+
 起因:用户从 `vla_inference.html` 的 *Customizing the Initial Pose* 找到了 stand-start
 drift 的正解,由此怀疑"官方已经设好、我们自己另造或漏掉"的细节还有更多。本次把
 **全部 10 篇 tutorial + 1 篇 user guide** 与仓库代码逐步对照。

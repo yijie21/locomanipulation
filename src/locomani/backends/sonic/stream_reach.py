@@ -47,6 +47,7 @@ from enum import Enum
 
 import numpy as np
 
+from locomani.backends.sonic import gait_speeds
 from locomani.backends.sonic.primitives import DT, LocomotionMode, Primitives
 from locomani.backends.sonic.primitives_const import HAND as _HAND
 from locomani.backends.sonic.servo import (
@@ -217,6 +218,12 @@ def _creep_to_band(
     ready_since = None
     status = ApproachStatus.TIMEOUT
     aim_max = float(envelope[2]) if envelope is not None else np.deg2rad(36.5)
+    # NOTE this function has no caller in a round (the coordinated controllers
+    # replaced it; tests/test_recoverable_grasp_policy.py asserts it is not
+    # called, and tests/test_ready_grasp_policy.py exercises it directly). The
+    # speeds come from the measured per-checkpoint map anyway, so re-enabling it
+    # cannot resurrect release-era command values (gait_speeds.py, ledger 21).
+    _, mid, shuffle = gait_speeds.approach_bands()
     while time.time() - t0 < max_s:
         s = p.obs()
         if s["fallen"]:
@@ -243,7 +250,7 @@ def _creep_to_band(
                 break
             face = yaw
             mv = (0.0, 0.0, 0.0)
-            speed = 0.20
+            speed = shuffle
         else:
             ready_since = None
             face = yaw + float(np.clip(az, -0.5, 0.5)) if not in_cone else yaw
@@ -256,14 +263,14 @@ def _creep_to_band(
                 face = yaw + float(np.clip(az - desired_az, -0.35, 0.35))
                 direction = 0.0 if in_band else (-1.0 if gx < x_min else 1.0)
                 mv = (direction * np.cos(face), direction * np.sin(face), 0.0)
-                speed = 0.215
+                speed = mid
             elif not in_cone:
-                mv, speed = (0.0, 0.0, 0.0), 0.215
+                mv, speed = (0.0, 0.0, 0.0), mid
             else:
                 backing = gx < x_min
                 err = x_min - gx if backing else gx - x_max
                 mv = (-fv[0], -fv[1], 0.0) if backing else fv
-                speed = 0.20 if err < 0.05 else 0.215
+                speed = shuffle if err < 0.05 else mid
         p.cmd.frame(mode=LocomotionMode.SLOW_WALK, speed=speed, movement=mv, facing=(np.cos(face), np.sin(face), 0.0))
         time.sleep(DT)
     s = p.obs()

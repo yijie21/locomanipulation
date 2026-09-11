@@ -192,7 +192,7 @@ parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parqu
 
 | 分量 | 维度 | 说明 |
 |---|---|---|
-| `motion_token` | 64 | SONIC latent。**1/16 量化**(整条 episode 只有 31 个取值,约 5 bit/维)→ VLA 输出头应该做**分类**而不是回归 |
+| `motion_token` | 64 | SONIC latent。**1/16 量化**(整条 episode 只有 31 个取值,约 5 bit/维)→ VLA 输出头应该做**分类**而不是回归。**latent 属于 checkpoint**:2026-09-11 起默认 encoder 是 `policy/sonic_v1_1`,此前所有数据集/模型是 `policy/release` 的 token 空间,两者不能混用也不能互相解码(码本本身两边相同:都是 1/16 网格、范围 [−1.0, 0.9375]) |
 | `left_hand_joints` | 7 | 本仓库的任务全程用右手,这一列恒定 |
 | `right_hand_joints` | 7 | dex1 是平行夹爪:分量 0 和 1 同步开合(−0.020..0.024),2–6 恒定 |
 

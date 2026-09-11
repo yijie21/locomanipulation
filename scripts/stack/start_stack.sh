@@ -121,38 +121,44 @@ echo "  ok"
 #   zmq_manager  'command' + 'planner' + 'pose'     -> what pico_manager_thread_server talks to
 echo "[2/3] C++ deploy (--input-type zmq_manager)"
 cd "$SONIC_DEPLOY_ROOT" || exit 1
-# SONIC_POLICY picks the checkpoint. v1.1 is "robot-heading-normalized,
+# SONIC_POLICY picks the checkpoint, and since 2026-09-11 the DEFAULT IS v1.1
+# (user ruling; the default itself lives in scripts/paths.sh, this is only the
+# fallback for a shell that never sourced it). v1.1 is "robot-heading-normalized,
 # trained with wrist-pose augmentation for heading-stable 3-point teleoperation"
-# — i.e. trained against the two things this pipeline fights hardest: wrist pose
+# -- i.e. trained against the two things this pipeline fights hardest: wrist pose
 # accuracy and heading drift. Its observation space differs from the release
-# model (heading-normalized anchor orientations, no motion_root_z_position), so
-# the obs-config has to travel with it; the deploy binary already knows the
-# names. First run rebuilds the TensorRT engines, which takes ~10 min.
+# model (heading-normalized anchor orientations, no motion_root_z_position, so
+# 1751 encoder inputs against release's 1762), so the obs-config has to travel
+# with it; the deploy binary already knows the names.
 #
-# RETESTED 2026-08-21 and now WORKING. The earlier note here blamed the
-# facing convention ("v1.1 expects reference orientations relative to the
-# robot's heading, every `facing` we send is world-frame") — wrong on the
-# mechanism: the heading-normalized observations are computed inside the
-# deploy from the robot's own pelvis quaternion
-# (g1_deploy_onnx_ref.cpp:1720, mode=1), so the wire format needs nothing.
-# The real blocker was the heading ANCHOR: the deploy captures it at
-# start_control, i.e. before the gym teleports the robot to the round's
-# yaw. The release model tolerates a stale anchor (absolute reference
-# orientations); v1.1 normalizes by the robot heading, so a stale anchor
-# is a standing heading error it keeps turning to close — 0.134 m of
-# drift and up to 60 deg of yaw during a 5 s IDLE hold, which failed
-# every round at "teleport did not land". grasp_gym now re-anchors before
-# the settle and the drift falls to 0.004 m, better than release's
-# 0.03-0.12 m (diag_idle_drift.py).
+# The heading ANCHOR was the blocker that made v1.1 look broken: the deploy
+# captures it at start_control, i.e. before the gym teleports the robot to the
+# round's yaw. The release model tolerates a stale anchor (absolute reference
+# orientations); v1.1 normalizes by the robot heading, so a stale anchor is a
+# standing heading error it keeps turning to close -- 0.134 m of drift and up to
+# 60 deg of yaw during a 5 s IDLE hold, which failed every round at "teleport did
+# not land". grasp_gym re-anchors before the settle, which is what makes v1.1
+# runnable at all. Do NOT repeat the old "0.004 m, better than release" line
+# from 2026-08-21: it was measured on the pre-reanchor path, and on the current
+# one v1.1's SETTLE drift is worse, 0.179 m against release's 0.100 (ledger §17).
 #
-# What v1.1 changes once it runs: the stand stage gets better (six rounds,
-# zero stand corrections, yaw_err within 4 deg) and the stride gets much
-# shorter (speed 0.30 delivers 4.3 cm/step against release's 17), so the
-# walk timings want re-measuring with diag_shuffle.py before adopting it.
-# Grasp success was 2/6 against release's 4/6 on the same seed — the same
-# close-phase topple tail, and both samples far too small to separate.
-# Set SONIC_POLICY=policy/sonic_v1_1 to run it.
-SONIC_POLICY="${SONIC_POLICY:-policy/release}"
+# WHAT IS MEASURED AND NOT YET RE-CALIBRATED (read before trusting a number):
+#   * reference replay: v1.1 tracks the waist far better -- waist RMSE 3.9 deg
+#     against release's 12.9, torso 5.7 vs 12.4 (ledger bottle.md 16, STATE).
+#   * the bottle grasp line was CALIBRATED ON RELEASE and v1.1 scored 0/20
+#     against release's 9/20 on one fixed case bank (McNemar p=0.0039, ledger
+#     bottle.md 17): v1.1 parks 12 cm further out and 11 cm further sideways,
+#     and its approach ends "stalled" 10/20. The cause is arrival geometry, not
+#     grasping -- the stride is much shorter (speed 0.30 delivers 4.3 cm/step
+#     against release's 17), so the approach timings, the brake band and
+#     primitives_tuning.TRACK_ROT_BOOST all want re-measuring on v1.1 before any
+#     grasp number from this default is comparable to a release-era one.
+#   * a token is a CHECKPOINT-PRIVATE latent. Every dataset and GR00T checkpoint
+#     collected before this switch holds release-encoder tokens; replaying them
+#     through a v1.1 deploy is silently meaningless. docs/reference/
+#     silent_failures.md has the row.
+# SONIC_POLICY=policy/release runs the old checkpoint for a comparison arm.
+SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"
 echo "  policy: $SONIC_POLICY"
 # NO_ENCODER=1 launches the deploy WITHOUT the encoder: initial_encoder_mode_
 # becomes -1, "Encoder config found but no encoder file provided - tokens can
@@ -181,12 +187,14 @@ if [ "${NO_ENCODER:-0}" = "1" ]; then
 fi
 # LOCKSTEP=1: SIMPLE's simulation-clock patch (--sim-lockstep), built from a
 # copy of their tree plus our SONIC_DDS_DOMAIN patch (/workspace/deps/
-# gear_sonic_deploy_lockstep). Same protocol v4, same policy/release files
+# gear_sonic_deploy_lockstep). Same protocol v4, same $SONIC_POLICY files
 # (md5-identical decoder); the binary only ticks when the sim hands it an
 # envelope-stamped LowState. See lockstep_sim.py.
 # SONIC_DEPLOY_BIN: run a different build of the deploy WITHOUT lockstep
 # (e.g. the patched SIMPLE build in wall-clock mode, so a lockstep-vs-
-# wall-clock calibration compares the same binary).
+# wall-clock calibration compares the same binary). A foreign tree needs the
+# policy directory too -- the guard below says so rather than letting the deploy
+# die on a missing file.
 DEPLOY_BIN="${SONIC_DEPLOY_BIN:-./target/release/g1_deploy_onnx_ref}"
 if [ -n "${SONIC_DEPLOY_BIN:-}" ]; then
     # SONIC_DEPLOY_LIBS=simple: SIMPLE's TRT 10.9 libs (its own tree only);
@@ -238,7 +246,7 @@ if [ "${LOCKSTEP:-0}" = "1" ]; then
     echo "  LOCKSTEP: $DEPLOY_BIN --sim-lockstep"
 fi
 # A foreign build runs from ITS tree: the TensorRT engine caches next to the
-# policy (policy/release/*.trt) are serialized by the TensorRT the binary was
+# policy ($SONIC_POLICY/*.trt) are serialized by the TensorRT the binary was
 # linked against (10.9 there, 10.13 here) and do not cross over; planner and
 # reference clips resolve relative to cwd as well. The policy files that
 # matter (observation_config.yaml, model_decoder.onnx) are md5-identical.
@@ -246,6 +254,20 @@ case "$DEPLOY_BIN" in
     /*) cd "$(dirname "$DEPLOY_BIN")/../.." || exit 1
         echo "  deploy cwd: $PWD" ;;
 esac
+# $SONIC_POLICY is resolved relative to the deploy's cwd, which the case above
+# may have just moved into a foreign tree -- and those trees were populated
+# before v1.1 became the default, so SIMPLE's own copy
+# (/workspace/deps/gear_sonic_deploy_lockstep) has policy/release only. Without
+# this check the deploy exits inside ONNX Runtime with a path error 200 lines
+# into deploy.log and the stack looks like a timeout.
+if [ ! -f "$SONIC_POLICY/model_decoder.onnx" ]; then
+    echo "  FAILED: $PWD/$SONIC_POLICY/model_decoder.onnx does not exist."
+    echo "          This deploy tree has: $(ls -d policy/*/ 2>/dev/null | tr -d / | tr '\n' ' ')"
+    echo "          Copy the checkpoint in (model_{encoder,decoder}.onnx +"
+    echo "          observation_config.yaml; the .trt engines rebuild on first run,"
+    echo "          ~10 min) or set SONIC_POLICY to one this tree has."
+    exit 1
+fi
 nohup "$DEPLOY_BIN" lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \
     --obs-config "$SONIC_POLICY/observation_config.yaml" \
     "${ENC_ARG[@]}" \

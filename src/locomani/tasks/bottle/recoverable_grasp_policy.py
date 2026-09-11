@@ -13,6 +13,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from locomani import paths
+from locomani.backends.sonic import gait_speeds
 from locomani.backends.sonic.agent_server import LocomotionMode
 from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj, wrap
 from locomani.tasks.bottle.ready_grasp_policy import OFFSET, ReadyGraspPolicy, ready_q, templates
@@ -314,6 +315,13 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
 
     def move_to_region(self, goal):
         xy, yaw, _ = goal
+        # The recovery walk's two speeds come from the same measured
+        # per-checkpoint map as the approach's (gait_speeds.py, ledger 21): a
+        # command carried across checkpoints changes speed by up to 13x. This
+        # path is dormant in the collection profiles (recovery_attempts: 0) --
+        # which is exactly why it would otherwise keep release-era numbers
+        # unnoticed until someone turned recovery back on.
+        _, _MID, _SHUFFLE = gait_speeds.approach_bands()
         self.execution.enter("recovery_reposition", xy=list(map(float, xy)), yaw=yaw)
         initial = self.p.obs()
         motion = dict(
@@ -353,7 +361,7 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
                     motion["commanded_turn_ticks"] += int(abs(dyaw) >= 0.12)
                     self.p.cmd.frame(
                         mode=LocomotionMode.SLOW_WALK,
-                        speed=0.20 if distance < 0.12 else 0.215,
+                        speed=_SHUFFLE if distance < 0.12 else _MID,
                         movement=tuple(movement),
                         facing=(np.cos(yaw), np.sin(yaw), 0.0),
                     )

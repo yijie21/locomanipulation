@@ -45,6 +45,24 @@ THIRD_PARTY = os.path.join(REPO, "third_party")
 SONIC = os.path.join(THIRD_PARTY, "GR00T-WholeBodyControl")
 VENV_SIM_PY = os.path.join(SONIC, ".venv_sim", "bin", "python")
 
+# --- the SONIC deploy and the checkpoint it runs -----------------------------
+# SONIC_DEPLOY_ROOT is the one thing here that may live outside the repo (a
+# lockstep or NVIDIA-default build under $DEPS_DIR), so it keeps an override,
+# exactly like scripts/paths.sh.
+SONIC_DEPLOY = os.environ.get("SONIC_DEPLOY_ROOT") or os.path.join(SONIC, "gear_sonic_deploy")
+# Which checkpoint. DEFAULT v1.1 since 2026-09-11 (user ruling) -- the same
+# default as scripts/paths.sh, and that is the point: the encoder token is a
+# checkpoint-private latent, so an offline tool reading a different policy
+# directory than the running deploy produces numbers that mean nothing.
+SONIC_POLICY = os.environ.get("SONIC_POLICY", "policy/sonic_v1_1")
+SONIC_POLICY_DIR = os.path.join(SONIC_DEPLOY, SONIC_POLICY)
+
+
+def sonic_policy_file(name: str) -> str:
+    """One file of the ACTIVE SONIC checkpoint, e.g. ``model_encoder.onnx``."""
+    return os.path.join(SONIC_POLICY_DIR, name)
+
+
 OUTPUTS = os.path.join(REPO, "outputs")
 SCENE_DIR = os.path.join(OUTPUTS, "scene")  # MJCF + caches
 SIM_DIR = os.path.abspath(os.environ.get("LOCOMANI_SIM_DIR", os.path.join(SCENE_DIR, "sim")))
@@ -90,9 +108,9 @@ def session_root(instance: int = 0) -> str:
 
 def describe() -> str:
     """One-line-per-path dump — what `python paths.py` prints."""
-    keys = ("REPO", "WORKSPACE", "SONIC", "SCENE_META", "OUTPUTS", "LOGS_DIR")
-    body = "\n".join(f"  {k:<12} {globals()[k]}" for k in keys)
-    return f"{body}\n  {'session_root()':<12} {session_root()}\n  {'derived from':<12} {os.path.abspath(__file__)}"
+    keys = ("REPO", "WORKSPACE", "SONIC", "SONIC_POLICY_DIR", "SCENE_META", "OUTPUTS", "LOGS_DIR")
+    body = "\n".join(f"  {k:<17} {globals()[k]}" for k in keys)
+    return f"{body}\n  {'session_root()':<17} {session_root()}\n  {'derived from':<17} {os.path.abspath(__file__)}"
 
 
 if __name__ == "__main__":

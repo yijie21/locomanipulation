@@ -12,7 +12,7 @@ import time
 import mujoco
 import numpy as np
 
-from locomani.backends.sonic import stream_reach
+from locomani.backends.sonic import gait_speeds, stream_reach
 from locomani.backends.sonic.primitives import READY_UPPER, LocomotionMode
 from locomani.sim import sim_vis
 from locomani.tasks.bottle.round_phases import RoundContext, _rel_dbg, _rel_now
@@ -79,23 +79,26 @@ def _phase_approach(ctx: RoundContext):
     # costs a discard.
     MARGIN_STOP = 0.075
     EDGE_LEAD = 0.06  # brake lead on the edge floor
-    # Three speed bands, from the measured gait quantum (diag_shuffle.py):
-    #   0.26  -> 0.155 m/s, 11 cm per step
-    #   0.215 -> 0.040 m/s,  5 cm per step
-    #   0.20  -> 0.013 m/s,  1-2 cm per step
+    # Three speed bands. The COMMAND is not m/s and its meaning belongs to the
+    # checkpoint, so the triple comes from the measured map in gait_speeds.py
+    # (ledger bottle.md 21) instead of being written here:
+    #   release   0.30 / 0.215 / 0.20  -> 0.203 / 0.016 / 0.018 m/s
+    #   v1.1      0.40 / 0.215 / 0.20  -> 0.187 / 0.014 / 0.009 m/s
     # The gate fires at x 0.37-0.42 (matching the offline margin profile),
     # so the braking has to be DONE by then. With a single 0.12 m shuffle
     # band the robot only slowed at x 0.43 and an 11 cm coarse stride was
     # still in flight when the gate fired: measured carry 0.08-0.24 m, and
     # every round whose carry passed ~0.15 m ended inside the edge floor.
-    # COARSE at 0.30, not 0.26 (2026-08-25). At 0.26 the gait initiation
-    # minces: the first seconds of every episode showed a step taken and taken
-    # back before the walk committed -- recorded hesitation a VLA then learns
-    # as "dither first". 0.30 is not a guess: diag_shuffle measured the
-    # release policy at speed 0.30 delivering a committed 17 cm/step natural
-    # stride. Only the far band changes; the MID/SHUFFLE deceleration bands
-    # that give the arrival its braking accuracy are untouched.
-    APPR_COARSE, APPR_MID, APPR_SHUFFLE = 0.30, 0.215, 0.20
+    # COARSE is above the checkpoint's own gait STEP, not at 0.26 (2026-08-25):
+    # below the step the gait initiation minces -- the first seconds of every
+    # episode showed a step taken and taken back before the walk committed,
+    # recorded hesitation a VLA then learns as "dither first". On release that
+    # meant 0.30 (17 cm/step); on v1.1 the step sits 0.065 higher, so 0.30
+    # delivers 0.044 m/s and 0.40 is the equivalent choice (ledger 21.2).
+    # Only the far band changes per checkpoint; the MID/SHUFFLE deceleration
+    # bands keep release's commands because v1.1's step jumps straight over the
+    # 0.016-0.018 m/s they deliver there (gait_speeds.py says why).
+    APPR_COARSE, APPR_MID, APPR_SHUFFLE = gait_speeds.approach_bands()
     # The expert's own 1-2 cm/s shuffle-imitating crawl let the learned policy
     # set its own stop point independent of where the expert stopped; removing
     # it (formerly GYM_SHUFFLE_BAND=0) moved 07d 30% -> 48%, McNemar p=0.052

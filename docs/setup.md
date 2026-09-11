@@ -132,8 +132,9 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 #   然后 cd 进去 git lfs pull,不用重新 clone
 ```
 
-**第 2 步那条 `ls ... model_decoder.onnx` 查不出这个问题** —— `policy/release/`
-下的权重是 `download_from_hf.py` 下载的,不走 LFS,所以它存在并不说明 LFS 正常。
+**第 2 步那条 `ls ... model_decoder.onnx` 查不出这个问题** —— `policy/` 下的权重
+(`release/` 与 `sonic_v1_1/`)是 `download_from_hf.py` 下载的,不走 LFS,所以它们
+存在并不说明 LFS 正常。
 
 ### 2. 两个 venv + 权重 + 补丁(必需)
 
@@ -157,12 +158,16 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 (cd third_party/GR00T-WholeBodyControl \
  && bash install_scripts/install_mujoco_sim.sh \
  && bash install_scripts/install_data_collection.sh \
- && .venv_data_collection/bin/python download_from_hf.py)
+ && .venv_data_collection/bin/python download_from_hf.py \
+ && .venv_data_collection/bin/python download_from_hf.py --sonic-v1-1)
 # install_mujoco_sim.sh      -> .venv_sim(跑 MuJoCo sim 与所有 src/locomani 脚本)
 # install_data_collection.sh -> .venv_data_collection(跑 data exporter)
 # download_from_hf.py        -> SONIC policy 权重落到 gear_sonic_deploy/policy/release/
 #   它要 huggingface_hub,而这个包只随 install_data_collection.sh 那条依赖链进来:
 #   .venv_sim 里没有,裸 python 里更没有,两者都会直接退出
+# --sonic-v1-1               -> gear_sonic_deploy/policy/sonic_v1_1/,**这是本仓库
+#   2026-09-11 起的默认 checkpoint**(`SONIC_POLICY`,见 scripts/paths.sh)。两份都要:
+#   release 仍是对照臂,而 2026-09-11 之前采的所有数据集/模型都是 release 的 token 空间
 ```
 
 > **上游不钉 MuJoCo 版本,`uv` 会解析到最新的。**本仓库的结果是在 **3.11.0** 上测
@@ -195,9 +200,16 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 (cd third_party/GR00T-WholeBodyControl \
  && .venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)" \
  && .venv_sim/bin/python -c "import skfmm; print(skfmm.__version__)" \
+ && ls gear_sonic_deploy/policy/sonic_v1_1/model_decoder.onnx \
  && ls gear_sonic_deploy/policy/release/model_decoder.onnx \
  && git apply --check --reverse ../../patches/vla_action_space.patch && echo "补丁已打")
 ```
+
+> **默认 checkpoint 是 `policy/sonic_v1_1`**(2026-09-11 用户裁定)。`sonic_v1_1/`
+> 缺失时 `start_stack.sh` 会带着"这棵 deploy 树里有哪些 policy"直接失败退出,不会
+> 拖到超时;首次启动会重建 TensorRT engine(~10 min,之后缓存在 `policy/sonic_v1_1/*.trt`)。
+> encoder 观测维度也随之变化(v1.1 是 1751,release 是 1762),离线工具从 checkpoint
+> 自己的 `observation_config.yaml` 读布局,不再写死。
 
 
 

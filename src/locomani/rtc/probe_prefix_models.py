@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from locomani import paths
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -18,9 +20,9 @@ def main():
     ap.add_argument("--models", nargs="+", required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--no-snap", action="store_true", help="diagnose raw outputs; default matches deployed FSQ snap")
-    ap.add_argument(
-        "--onnx", default="/workspace/deps/gear_sonic_deploy_ours_lockstep_nvdef/policy/release/model_decoder.onnx"
-    )
+    # The ACTIVE checkpoint (v1.1 since 2026-09-11). A capture recorded under
+    # another one must pass --onnx for ITS decoder: the token is checkpoint-private.
+    ap.add_argument("--onnx", default=paths.sonic_policy_file("model_decoder.onnx"))
     args = ap.parse_args()
     if args.out.exists():
         ap.error("refusing to overwrite probe")

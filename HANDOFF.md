@@ -16,7 +16,14 @@
 
 ## 1b. 2026-09-10 下午：checkpoint A/B 与随后的代码修复
 
-**结论：v1.1 不能直接换进采集线。** 20 局固定 case bank，release **9/20** vs sonic_v1_1 **0/20**，
+> **2026-09-11 用户裁定推翻了本节的操作结论：以后一律用 SONIC v1.1。**
+> 仓库默认 `SONIC_POLICY` 已改成 `policy/sonic_v1_1`（唯一默认值在 `scripts/paths.sh`
+> 与 `locomani.paths`），离线 encoder/decoder、provenance、文档同步改完，记录见
+> 台账 `docs/ledger/bottle.md` §20。**下面的测量本身没有被推翻**，它现在的含义是：
+> 采集线的 approach/brake 时序、`TRACK_ROT_BOOST=4.5`、站位标定都还是 release 时代的数字，
+> 必须先在 v1.1 上重测，然后才能把任何抓取成功率当成 checkpoint 的属性。
+
+**结论（2026-09-10 当时）：v1.1 不能直接换进采集线。** 20 局固定 case bank，release **9/20** vs sonic_v1_1 **0/20**，
 9 个不一致 case 全部 release 赢，精确 McNemar p=0.0039。机制是到位几何不是抓取：
 v1_1 停在 0.498 m（release 0.377，plan_r 0.32），横向偏 −0.324 vs −0.214（t=−6.38），
 approach 有 10/20 次 `stalled`（release 2/20）。要换 checkpoint 必须连带重标 approach 时序。

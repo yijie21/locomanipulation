@@ -303,9 +303,12 @@ def main():
         try:
             from locomani.backends.sonic.sonic_decoder import SonicDecoder
 
-            dec = SonicDecoder(
-                str(repo / "third_party/GR00T-WholeBodyControl/gear_sonic_deploy/policy/release/model_decoder.onnx")
-            )
+            # No path: SonicDecoder defaults to the ACTIVE checkpoint
+            # (locomani.paths.SONIC_POLICY, v1.1 since 2026-09-11). A dataset
+            # whose tokens were recorded under another checkpoint must set
+            # SONIC_POLICY to that one -- the degrees metric is only meaningful
+            # through the decoder that owns the latent space.
+            dec = SonicDecoder()
         except Exception as e:  # noqa: BLE001
             print(f"  (degrees metric off: {e})")
 

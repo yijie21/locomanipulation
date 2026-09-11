@@ -330,9 +330,9 @@ flowchart LR
   subgraph DP["⚙️ SONIC Deploy 进程 — C++<br/>third_party/GR00T-WholeBodyControl/gear_sonic_deploy<br/>二进制: g1_deploy_onnx_ref"]
     D1["k-planner ONNX<br/>合成 29-DoF 参考动作<br/>—<br/>include/localmotion_kplanner*.hpp<br/>模型: planner/target_vel/V2/planner_sonic.onnx"]
     D2["★ 逐字替换 17 个上身关节<br/>无 ramp<br/>—<br/>g1_deploy_onnx_ref.cpp:~781"]
-    D3["encoder<br/>只读 4 个观测 / 644 个数<br/>—<br/>include/encoder.hpp<br/>模型: policy/release/model_encoder.onnx(.trt)"]
+    D3["encoder<br/>只读 4 个观测 / 644 个数<br/>—<br/>include/encoder.hpp<br/>模型: $SONIC_POLICY/model_encoder.onnx(.trt)<br/>默认 policy/sonic_v1_1(2026-09-11 起)"]
     D4["64 维 token<br/>（encoder 输出缓冲区，无独立文件）"]
-    D5["policy<br/>token + 本体感受 436 维<br/>—<br/>include/control_policy.hpp<br/>模型: policy/release/model_decoder.onnx(.trt)"]
+    D5["policy<br/>token + 本体感受 436 维<br/>—<br/>include/control_policy.hpp<br/>模型: $SONIC_POLICY/model_decoder.onnx(.trt)"]
   end
 
   subgraph SM["🌐 MuJoCo Sim 进程 — Python .venv_sim<br/>入口: run_sim_locomani.py"]

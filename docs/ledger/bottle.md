@@ -1896,3 +1896,353 @@ RGB 拟合可用     118/143 = 82.5%
 视频:`outputs/videos/image_servo_attempt13_clearance/{r0..r3,reel}.mp4`,
 字幕带失败原因与该局最小净空(`scripts/experiments/image_servo_export_videos_20260911.py`)。
 r3 的画面可以直接看到那个"罩在瓶子上方、把自己腕部视野也挡住"的姿势。
+
+## 20. 默认 SONIC checkpoint 切到 sonic_v1_1(2026-09-11, session cf,用户裁定)
+
+**这是一次配置决定,不是一次实验。** 用户指示:以后一律用 SONIC v1.1,把被牵连的代码与
+文档全部改掉。本节记录改了什么、哪些既有结论因此失效、以及在读任何新数字之前必须先重测什么。
+
+### 20.1 已知的反对证据(仍然成立,用户已裁定照切)
+
+- §17:同一 case bank、配对 20 局,`policy/release` **9/20** vs `policy/sonic_v1_1` **0/20**,
+  精确 McNemar **p=0.0039**。机制是**到位几何**不是抓取:v1.1 横向多走 11 cm(t=−6.38)、
+  停得远 12 cm(0.498 vs 0.377,plan_r 0.32),approach 段 10/20 以 "stalled" 结束。
+- 步长:同样 speed 0.30,v1.1 一步 4.3 cm,release 17 cm —— 现有 approach/brake 时序全是
+  按 release 的步长标定的。
+- 反方向的证据(也是切换的理由):§16 参考回放里 v1.1 的腰跟踪显著更好,
+  waist RMSE **3.9°** vs release **12.9°**,torso 5.7 vs 12.4;且 v1.1 是自洽的
+  model+config 对,而 `policy/release/observation_config.yaml` 是一份手改的第三变体。
+
+### 20.2 改了什么(全部已验证)
+
+| 层 | 改动 |
+|---|---|
+| 唯一默认值 | `scripts/paths.sh` 新增 `export SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"`;`locomani.paths.SONIC_POLICY` / `SONIC_POLICY_DIR` / `sonic_policy_file()` 是 python 那半边 |
+| deploy 启动 | `start_stack.sh` / `restart_deploy.sh` 兜底默认同步改成 v1_1,并在启动前检查 `$SONIC_POLICY/model_decoder.onnx` 存在(外来 deploy 树只有 release 时会明确报错,不再表现为栈超时) |
+| 离线 encoder | `sonic_encoder.py` 不再写死 release 的块表:`EncoderLayout.from_config()` 从 checkpoint 自己的 `observation_config.yaml` 推布局(跳过 `enabled: false`,cpp:1866 同款),并按 anchor 块名选 orientation_mode。v1.1 = 1751 维、anchor `..._heading_10frame_step5` @584、**heading 归一化**(左乘 `calc_heading_quat_d(base_quat)`,math_utils.hpp:300);release = 1762 维、@601、整个 base 四元数 |
+| 离线 decoder | `sonic_decoder.py` / `eval_open_loop.py` / `rtc/{analyze_transition_capture,probe_prefix_models}.py` 默认解码器跟随 `SONIC_POLICY`。994 维 policy 观测两边**逐块相同**,这半边不需要分支 |
+| provenance | `config_snapshot.json` 新增 `sonic_policy`(名字、目录、obs config 的 sha256、两个 ONNX 的字节数)—— 没有这个字段,事后无法判定一份数据集的 token 属于哪个 latent 空间 |
+| 测试 | `tests/test_sonic_policy_default.py`(9 条):三个 shell 入口默认值一致、python 与 shell 一致、env 覆盖仍有效、两个启动脚本都有存在性检查、两套布局的维度/偏移/heading、`heading_quat` 丢俯仰留偏航、两种 anchor 在俯仰下确实不同、provenance 带 checkpoint |
+| 文档 | `docs/setup.md`(下载 `--sonic-v1-1` + 验证)、`docs/collection.md`(链路图的模型路径)、`docs/dataset.md`(`motion_token` 行)、`docs/reference/silent_failures.md`(env 表 + 三条新静默失败行) |
+
+验证:`sonic_encoder --selfcheck` 在 v1.1 与 release 上**都 PASS**(结构/码本/灵敏度);
+单测全绿;`ruff` / `lint_env` / `lint_sizes` 无新增欠债。
+
+### 20.3 码本相同,含义不同(2026-09-11 实测)
+
+两个 encoder 在大量随机输入下的输出**都**落在 1/16 网格、饱和区间**都**是 `[−1.0, 0.9375]`
+(32 级)。所以 `sonic_token.py` 的量化/吸附逻辑与 checkpoint 无关,
+**而"合法 token"这类检查一个都拦不住跨 checkpoint 的误用** —— 变的是 latent 的含义。
+
+**推论(重要)**:2026-09-11 之前采的每一份数据集(`action.motion_token`)与每一个 GR00T
+checkpoint 都属于 **release 的 token 空间**。它们不能直接部署在 v1.1 的 deploy 上,
+也不能用 v1.1 的 decoder 去算"度数"指标。要复现旧数字,整条链一起
+`SONIC_POLICY=policy/release`。
+
+### 20.4 切换后仍未重测的东西(读新数字之前必须先做)
+
+1. **approach / brake 时序**:release 步长 17 cm/步 vs v1.1 4.3 cm/步。§17 的 0/20 主因就在这里。
+2. `primitives_tuning.TRACK_ROT_BOOST = 4.5`:release 的逆增益。2026-08 的腕姿态扫描说在 v1.1 上
+   "boost 无意义",但那是姿态扫描不是抓取线,所以**保留 4.5 并标注待测**,没有盲改成 1.0。
+3. **站位/刹车带**(`reach_config` 的 0.30/42.0)与 `arrival_advance`:同样是 release 标定。
+4. 期望的先后:先重测时序、再谈成功率;在 1 做完之前,任何 v1.1 的抓取成功率都不是 checkpoint 的属性。
+
+## 21. Stage A:两个 checkpoint 的速度命令 → 步态交付图(2026-09-11, session cf)
+
+§20.4 列的重标定第一步。**纯测量,没有改任何控制常量。**同一 session、同场景(`SCENE_RANDOM=0`)、
+同协议(每腿 5 s、1.5 s warmup 后开始计、每腿前一次完整 reset + 朝空地转身)、每档 3 次。
+工具 `src/locomani/backends/sonic/diag_shuffle.py` —— 它在 refactor step 2(`ec0eb1c`)被删,
+本次从 `.claude/worktrees/old-78536ae/` 取回并移植 import;测量逻辑与被删版本逐行相同。
+产物:`outputs/diagnostics/gait_speed_v11_20260911{,_knee}/{sonic_v1_1,release}/legs.json` + `report.json`,
+报告脚本 `scripts/experiments/gait_speed_report_20260911.py`,runner `scripts/experiments/gait_speed_map_20260911.sh`。
+
+### 21.1 实测表(net m/s 中位 [min,max],n=3;cm/步;carry = 命令 IDLE 后 3.5 s 的位移)
+
+| 命令 | v1.1 net | v1.1 cm/步 | v1.1 carry | release net | release cm/步 | release carry |
+|---|---|---|---|---|---|---|
+| 0.185 | 0.008 [.008,.009] | 0.9 | 2.2 | 0.013 [.013,.014] | 1.2 | 2.7 |
+| **0.20** `APPR_SHUFFLE` | 0.009 [.007,.016] | 1.0 | 2.9 | 0.018 [.014,.020] | 1.7 | 1.6 |
+| **0.215** `APPR_MID` | 0.014 [.006,.014] | 1.3 | 1.8 | 0.016 [.007,**.039**] | 1.4 | 4.2 |
+| 0.26 | 0.009 [.009,.010] | 0.6 | 1.9 | **0.123** [.118,.147] | 10.7 | 3.6 |
+| 0.28 | 0.007 [.007,.007] | 0.5 | 2.9 | 0.179 [.164,.183] | 12.8 | 9.1 |
+| **0.30** `APPR_COARSE` | **0.044** [.020,.065] | 3.1 | 2.9 | 0.203 [.151,.250] | 14.6 | 2.2 |
+| 0.32 | 0.067 [.050,.073] | 3.4 | 3.5 | 0.239 [.221,.279] | 16.8 | 3.5 |
+| **0.35** `NAV_SPEED_MIN` | 0.083 [.055,.166] | 9.7 | 4.4 | 0.245 [.240,.314] | 21.0 | 3.3 |
+| 0.37 | 0.151 [.093,.193] | 13.2 | 2.8 | 0.260 [.231,.339] | 19.8 | 7.9 |
+| 0.40 | 0.187 [.166,.195] | 10.9 | 3.7 | 0.348 [.293,.352] | 24.5 | 12.4 |
+| **0.45** `NAV_SPEED` | 0.273 [.256,.307] | 15.9 | 6.8 | 0.400 [.392,.400] | 23.3 | 17.2 |
+| IDLE 对照 | 0.0005,位移 0.1 cm(n=6) | — | — | 0.0027,0.1 cm(n=6) | — | — |
+
+release 这条与 `primitives_tuning.py:306-317` 记录的 2026-08 表在 20% 内复现(0.26 0.123 vs 0.155,
+0.30 0.203 vs 0.247,0.40 0.348 vs 0.29),**唯一不复现的是 0.215**:文档 0.040,实测中位 0.016,
+三次 0.007/0.016/0.039 —— 5 倍散度。原因见 21.2:它正骑在 release 自己的台阶上。
+
+### 21.2 两条曲线都是**台阶**,台阶位置相差 +0.065 的命令
+
+- release:**0.215 → 0.26 之间跳 0.016 → 0.123 m/s(7.9×)**
+- v1.1:**0.28 → 0.30 之间跳 0.007 → 0.044 m/s(6.6×)**
+
+台阶以下两边同量级(release 0.013–0.018,v1.1 0.007–0.014,v1.1 慢 1.3–2×);
+台阶以上 v1.1 一律更慢(0.32 处 0.067 vs 0.239 = 28%,0.40 处 54%,0.45 处 68%),步长也更短
+(同样 ~1.4 Hz 步频下 v1.1 在 0.45 走 15.9 cm/步,release 23.3)。
+**所以"v1.1 步长短"这个旧说法方向对,但可操作的事实是台阶位移** —— 按命令值写死的常量会落到台阶的另一侧。
+
+### 21.3 这解释了 §17 的 0/20,而且不需要我先前那两个错的机制
+
+先撤回两条:①"creep 8 s 预算超时"——`stream_reach._creep_to_band` 在**生产路径里没有调用者**
+(定义在那里、被 `tests/test_ready_grasp_policy.py` 直接调用、一局里谁都不调它);
+`round_phases_approach.py:77` 那句"最后几厘米现在闭环"是过期注释指向死代码。
+②"开阔地净速证明 stall 不会触发"——净速和 approach 的进展量**不是同一个量**,approach 只计深度分量。
+
+在路径内的算术(深度 1.2 → 刹车 0.31,coarse 0.58 m / mid 0.19 m / decel 0.12 m,`do_approach` 预算 45 s):
+
+| 臂 | 命令 (coarse, mid, shuffle) | coarse | mid | decel | 合计 |
+|---|---|---|---|---|---|
+| release | (0.30, 0.215, 0.20) | 2.9 s | 12.2 s | 7.2 s | **22.2 s** |
+| v1.1 现状 | (0.30, 0.215, 0.20) | **13.1 s** | 14.0 s | 10.8 s | **37.8 s** |
+| v1.1 重挑 coarse | (0.41, 0.215, 0.20) | 2.9 s | 14.0 s | 10.8 s | **27.6 s** |
+
+v1.1 现状下 37.8 s 是**纯闭合深度**的时间,45 s 预算只剩 7 s 余量,而这 7 s 还要装下横向修正
+(§17 实测到位横向偏 11 cm)、抬臂、以及任何犹豫;同时 mid/decel 两段对 stall 规则
+(5 s 内不足 1.5 cm = 0.003 m/s)的余量只有 4.5× 和 2.9×,横向一分速就压到阈值以下。
+于是要么 45 s 超时、要么判 `stalled`,都停在距刹车深度约一个 decel band(0.12 m)的位置 ——
+与 §17 实测 park 差 0.121 m 吻合,并直接产出它记录的 `[stand] arrival left the object out of reach`(×5)。
+注意 visible profile 下 `ctx.coordinated` 非空,`round_phases_approach.py` 的 forward-only repair
+**次数为 0**,所以停远一次就没有第二次机会。
+
+### 21.4 重挑结论(待 Stage B 落地)
+
+1. **`APPR_COARSE` 0.30 → 0.41**:这是唯一严重错的常量(0.044 vs release 0.203,4.6×),
+   而 0.41 交付 0.187 m/s、repeat 散度 ±8%,把预算从 37.8 s 拉回 27.6 s。
+2. **`APPR_MID` / `APPR_SHUFFLE` 匹配不了**:release 交付 0.016/0.018,而 v1.1 的台阶**跳过了这一段**
+   (0.28 给 0.007,0.30 给 0.044)。没有命令能交付 0.016。可选:保持现状(0.0136/0.0087,慢 0.85×/0.48×),
+   或两档都取 0.215(0.0136)。**不要**取 0.28–0.30 之间的插值:那是台阶内部,双稳。
+3. 因此 v1.1 在 approach 里的动态范围只有 3×(0.067–0.203),release 是 11×(0.018–0.203):
+   **v1.1 没有同等的慢爬行档**,decel 斜坡在它身上必然更平。这会改变最后一段的速度剖面,
+   而记忆 `policy-stop-point-is-set-by-the-crawl` 说学到的停位正是由这段爬行决定的 ——
+   属于**数据形状的改变**,不只是控制参数,Stage E 的配对验收必须把它当成一个真实变量。
+4. `NAV_SPEED` 0.45 交付 0.273 vs release 0.400(68%),`NAV_SPEED_MIN` 0.35 交付 0.083 vs 0.245(34%)。
+   长距离行走会慢,但都远在 stall 阈值之上(91× / 28×),不是阻塞项;>0.45 未测。
+5. **carry 是好消息**:v1.1 在 approach 用得到的速度段只滑 1.9–3.5 cm(release 在 0.40/0.45 滑 12–17 cm),
+   IDLE 对照 0.1 cm 说明这是真动量。所以 Stage C 的 `visible_brake_depth` 预期只需小修。
+
+### 21.5 一处 provenance bug(已修,数据未受影响)
+
+首次 runner 用 `SONIC_POLICY=... bash start_stack.sh` 的**前缀**写法,只传给了起栈命令,
+sweep 进程仍读到默认值,于是 release 臂的 `legs.json` 把自己标成 `sonic_v1_1`。
+**测量本身没问题** —— sweep 只通过 ZMQ 跟已起好的 deploy 对话,而 `stack.log` 的 `policy:` 行与
+`deploy.log` 的 `Using observation config: policy/release/...` 都证明跑的是 release。
+已改成 `export`,并且报告脚本改为**以 `stack.log` 为准**、与 `legs.json` 的自述不一致时显式打印警告
+(而不是悄悄采信任一方)。另加两处工具改动:一条 IDLE 对照腿(carry 列没有它读不了),
+以及"摔倒只损失当前这条腿、连续 3 次才中止"(被删版本第一次摔倒就 break 掉整个 grid)。
+
+## 22. Stage B:`APPR_COARSE` 0.30 → 0.40,10 局配对 pilot(2026-09-11, session cf)
+
+§21.4 的落地。**只动一个变量**:approach 的远场速度命令。MID/SHUFFLE 不动(§21.4 第 2 条:
+v1.1 的台阶把 release 交付的 0.016–0.018 m/s 整段跳过去了,没有命令能匹配)。
+
+### 22.1 代码:速度常量改为按 checkpoint 查实测表
+
+新模块 `src/locomani/backends/sonic/gait_speeds.py`,带 §21.1 的实测表与出处:
+
+| checkpoint | (coarse, mid, shuffle) | 交付 m/s |
+|---|---|---|
+| `release` | (0.30, 0.215, 0.20) —— **历史生产三元组,不动** | 0.203 / 0.016 / 0.018 |
+| `sonic_v1_1` | (**0.40**, 0.215, 0.20) | 0.187 / 0.014 / 0.009 |
+
+取 **0.40 而非反查的 0.41**:0.40 是实测点(0.187 m/s、repeat 散度 ±8%、release 的 92%),
+0.41 落在 0.05 的间隔里靠插值,换来的 0.1 s 预算不值得一个没测过的命令。
+未测过的 checkpoint 调 `approach_bands()` **直接抛错并给出测量命令**,不静默回退到别的 checkpoint。
+
+改到的站点:`round_phases_approach.py`(生产)、`stream_reach._creep_to_band`(生产无调用者、有测试)、
+`recoverable_grasp_policy.move_to_region`(profile 里 `recovery_attempts: 0`,休眠)。
+后两处**正因为不跑才要改** —— 否则 release 时代的字面量会一直躺在那里,等某天有人打开 recovery 才炸。
+`primitives_tuning.NAV_SPEED/NAV_SPEED_MIN` 不动:匹配 release 的 0.400 m/s 需要 >0.45 的命令(未测),
+且两者对 stall 规则有 91×/28× 余量。`place_phase.turn_command(speed=0.20)` 属 pick_place 线,未测不动。
+测试 `tests/test_sonic_policy_default.py::GaitBandTests` 5 条(release 三元组被钉住、v1.1 的 COARSE 必须
+在自己台阶之上且达 release 的 80%、未测 checkpoint 抛错且错误信息含 `diag_shuffle`、approach 无字面量、
+两处休眠站点都读表)。
+
+### 22.2 结果:同 10 个 case(`v11_bottle_ab20_20260910/cases20.json` 前十),三臂逐局配对
+
+| 臂 | ok | approach exit | brake x | stop x | carry | park |
+|---|---|---|---|---|---|---|
+| release(coarse 0.30 → 0.203 m/s) | **4/10** | brake 8,**stalled 1** | 0.309 | 0.306 | 0.003 | **0.349** [0.31,0.45] |
+| v1.1(coarse 0.30 → 0.044 m/s) | **0/10** | brake 4,**stalled 5** | 0.31(5 局 nan) | 0.332 [0.31,**0.51**] | 0.001 | **0.467** [0.43,0.68] |
+| v1.1(coarse **0.40** → 0.187 m/s) | **3/10** | brake 8,**stalled 0** | 0.307 | 0.300 | 0.007 | **0.393** [0.36,0.43] |
+
+**验收(§21.4 定的、不看成功率的那几条)全部通过**:
+- `stalled` **5/10 → 0/10**(release 是 1/10);
+- `[stand] arrival left the object out of reach` **×3 → ×0**;
+- park 中位 0.467 → **0.393**,补回 60% 的差距(release 0.349),离散也从 [0.43,0.68] 收到 [0.36,0.43];
+- brake/stop 几何与 release 几乎相同(0.307/0.300 vs 0.309/0.306),**所以 Stage C 的 `visible_brake_depth` 不用改**;
+- 墙钟:10 局 4 分 03 秒(24 s/局),远场段从每局约 13 s 回到约 3 s。
+
+配对检验:vs v1.1-0.30 是 3:0(exact McNemar p=0.250),vs release 是 2:3(p=1.000)。
+10 局配对分辨不了 3 vs 4,**所以"追平 release"这句只能由遥测支撑,不能由成功率支撑**;
+但"修好了 arrival"这句是遥测直接给的。注意 release 的 carry 只有 0.003 m —— 旧注释里
+"刹车后滑 5–18 cm"是被取代的 settle-loop 时代的数字,visible expert 不是那样停的。
+
+### 22.3 失败模式搬家了:从 arrival 搬到 grasp
+
+新臂的 7 局失败里:`[grasp] coupled safe-hand IK did not track` ×2、
+`[grasp] visible expert: stand infeasible` ×2、`[grasp] local alignment timed out` ×1、
+`[stand] could not turn -24 deg ...` ×1(**release 在同一 case 上报同一句**,属 case 属性不是 checkpoint)、
+`[stand] walked 0.54 m off the spawn while standing up` ×1(**v1.1 特有**,站起过程中底盘走掉,
+旧臂在另一 case 上是 0.64 m —— 这是起身/heading anchor 行为,不是步速,Stage C/D 要单独看)。
+
+所以 approach 修好之后,**绑定约束变成了抓取相位**(IK 跟踪、local alignment)和起身漂移。
+这与 §20.4 排的顺序一致:先时序、再刹车带、再蹲、最后腕姿态。
+
+产物:`outputs/experiments/stageb_coarse_pilot_20260911/{manifest.jsonl,gym.log,stack.log,stageb_report.json,videos/}`;
+报告脚本 `scripts/experiments/stageb_report_20260911.py`(三臂逐局配对表),runner
+`scripts/experiments/stageb_coarse_pilot_20260911.sh`;带字幕的 reel
+`outputs/videos/stageb_coarse_pilot_20260911/reel.mp4`(2 成 2 败,字幕写 case/结局/approach 退出原因/brake→stop/park),
+导出脚本 `scripts/experiments/stageb_reel_20260911.py`(按 `video_start_wall` 对齐轮次与文件,不靠 mtime 猜)。
+
+## 23. 抓取相位:`coupled safe-hand IK did not track` 的机制,以及一次不成立的验证(2026-09-11, session cf)
+
+§22 之后绑定约束搬到抓取相位。本节定位了它的机制(结论牢固),并记录**一次无法下结论的验证**(样本量与上游方差)。
+
+### 23.1 卡住的是旋转残差,不是伸不到
+
+§22 的 pilot 里这个失败**只记了一个 tick 计数**,所以先补仪表:阻塞时刻记 IK 残差 `pe/re` + 容差 +
+`aim`(骨盆系)+ phase + delivered + pelvis_z(上限 5 条),蹲下起点记 `pregrasp_root` /
+`pregrasp_azimuth_deg` / `pelvis_at_squat` / `grip_root`。然后**只重跑失败的 3 个 case**。
+
+case `7100:5` 连续三拍(产物 `outputs/experiments/stageb_ikblock_20260911/manifest.jsonl`):
+
+| pos_err | tol | rot_err | tol | phase | delivered |
+|---|---|---|---|---|---|
+| 0.0088 m | 0.08 | **0.2013 rad** | **0.20** | 0.938 | 0.093 m |
+| 0.0098 | 0.08 | **0.2208** | 0.20 | 0.965 | 0.098 |
+| 0.0106 | 0.08 | **0.2323** | 0.20 | 0.986 | 0.102 |
+
+**位置残差在容差内 9 倍 —— 手臂够得到。**超限的是腕姿态,只超 0.7%,且发生在 phase 0.94–0.99(下蹲末段)。
+
+**机制**:transport 锁的是手掌的**世界系**姿态(`target_rotation` 取蹲下起点的世界掌姿,每拍按活的骨盆
+旋转重算 `br.T @ target_rotation`),而骨盆在下蹲时前俯 —— 骨盆自己的俯仰就变成手臂的旋转需求。
+从 pose sidecar 量最深蹲位的骨盆俯仰:release **+9.8 / +11.1 / +11.8 / +11.4°**(峰值到 +14.5),
+v1.1 **+12.1 / +12.5°**(峰值 +14.4)。而 `TRANSPORT_ROTATION_TOL = 0.20 rad = 11.5°`:
+**这个容差比下蹲自己产生的俯仰还小**,两个 checkpoint 都骑在阈值上,v1.1 多约 1° 就压过去。
+两个 TOL 原本都是**没有注释、没有出处的裸字面量**。
+
+**撤回我自己在诊断中途给的读法**:`pregrasp_ahead_of_pelvis_m`(pregrasp 点在骨盆前向的投影)
+在 §22 的数据上把成败完全分开(OK ≤ −0.044,阻塞 ≥ −0.080),我据此说过"目标折到肩后、伸不到" ——
+**位置残差证明伸得到**,`ahead` 是与腕姿态极端程度相关的**代理量,不是原因**。
+
+### 23.2 改动:容差按实测推导,0.20 → 0.35 rad
+
+0.35 rad = 20° 覆盖实测峰值 14.4° 加余量,仍能拒掉离谱的腕解。选它而不是"把锁姿态改到骨盆系"是因为:
+容差只决定**要不要放弃**,IK 成功时的指令一个字都不变;改成骨盆系会真的改变手掌运动、从而改变录进
+数据集的动作。护栏仍在:`screen_motion` 扫掠碰撞筛查与 `reference_check` 照跑,随后的 alignment
+阶段会把姿态误差伺服到 ~0.03 rad(§22 的 r3 实测 0.50 → 0.035)。
+
+### 23.3 验证不成立:上游方差压过了要测的效应
+
+同 10 个 case 重跑(`outputs/experiments/stagec_rottol_20260911/`),**0/10**。但**不能读成容差改坏了**:
+
+| 运行 | 轮次 | 进到下蹲 | IK-block 失败 | 见到的 blocked_ticks | stand infeasible | `[stand]` 阶段失败 |
+|---|---|---|---|---|---|---|
+| §22 pilot,tol 0.20 | 10 | **6** | **2** | [0,0,0,5,**11**,**11**] | 2 | 2 |
+| 3 局重跑,tol 0.20 | 3 | 2 | 0 | [2,5] | 0 | 1 |
+| tol 0.35 | 10 | **2** | **0** | [2,3] | **4** | **4** |
+
+tol 0.35 那一轮的 8 局失败**全部发生在 coupled transport 之前**(4 局 `stand infeasible` + 4 局 `[stand]`
+阶段:`teleport landed 0.10 m off`、`did not stabilise (pelvis z 0.085)`、`walked 0.55 m off the spawn`、
+`could not turn -24 deg`),这些阶段**根本到不了那个容差**。所以:
+
+- 容差的预期效应**方向正确**:tol 0.20 下 8 局进到下蹲、2 局 11-tick 中止;tol 0.35 下进到下蹲的 2 局
+  blocked_ticks 只有 2 和 3、0 中止,且**没有出现**说明松容差放进坏解的新失败(无扫倒、无 `path blocked`)。
+  但 **n=2,不成立**。
+- 真正暴露出来的是**上游方差**:同一配置、同一批 case,"进到下蹲"的比例是 6/10、2/3、2/10。
+  **所以 10 局 pilot 根本测不出这条线在 v1.1 上的成功率**,3/10 与 0/10 之间没有可比性 ——
+  §22 里"3/10 vs 4/10 分辨不了"的说法要加强成:**连同一配置的两次 10 局之间都分辨不了**。
+- 一个协议层面的疑点(未验证):这三次栈在 20 分钟内连开三个,而 `restart_deploy: false` 让 deploy
+  跨轮复用;tol 0.35 那轮开局就 `teleport landed off` 与 `did not stabilise`,像是起栈状态更差。
+  下次测这条线要么每轮重启 deploy,要么两次运行之间留冷却,并记 CPU gate。
+
+### 23.4 下一步(按我现在的判断排序)
+
+1. **先修上游**:`[stand]` 阶段的方差(起身走掉 0.5 m、teleport 偏、复位站不稳)已经是最大项,
+   而且"起身走掉"是 v1.1 特有的(§22.3)。在它稳定之前,任何下游改动都测不出来。
+2. 容差改动**保留**(机制牢固、方向正确、无新失败),但标注"未经足够样本验证"。
+3. 要判定它,需要**汇总统计**而不是成功率:把"进到下蹲的轮次"的 `blocked_ticks` 分布累到 n≥10,
+   约 30 局或只跑能进到下蹲的 case。
+
+## 24. 复位把机器人抬高了 10.8 cm(全仓库 bug),以及残差其实是横向的(2026-09-11, session cf)
+
+§23 定的顺序:先修上游。上游查出来的是一个**与 checkpoint 无关的复位 bug**。
+
+### 24.1 漂移不是走路,是落地瞬态
+
+pose sidecar 逐拍记着**指令**(mode/movement/facing/speed/height),所以能分清"走掉"和"被摔出去":
+失败局的位移**全部发生在复位后第一秒**,而那一秒的指令是 `mode=IDLE` + 零 movement 向量;
+之后都降到 1–4 cm/s。失败局第一秒走 0.48 m,成功局 0.07–0.145 m。
+(第一版分析我算错了 —— sidecar 跨了仿真时钟复位,`t` 非单调,把 teleport 跳变算进了位移;
+按时钟段切分后才是上面的数。)
+
+### 24.2 根因:`_seat_on_floor` 用包围球半径当脚底
+
+`privileged_pub._seat_on_floor()` 原来取 `min(geom_xpos[z] - geom_rbound)` 当最低点,
+而 `geom_rbound` 是**包围球半径**。实测(`outputs/scene/sim/scene_locomani.xml`,控制器标称站姿
+hip −0.1 / knee +0.3 / ankle −0.2):
+
+| 量 | 值 |
+|---|---|
+| 标称站姿的骨盆 z(落座前) | 0.7930 |
+| 代码估计的最低点 | **−0.0994** → 抬高 0.0994 → 落座 **0.8924** |
+| **真实**最低表面点 | **+0.0084** → 应再降 8 mm → 落座 **0.7846** |
+| 决定估计的那块脚底 mesh | `rbound = 0.1291`,真实向下延伸 **0.0213** |
+
+**0.8924 与全部 62 局实测的 z0 = 0.892 完全一致;0.7846 与实测稳定高度 0.785 完全一致。**
+所以**每一次复位、每一条任务线,都是一次 10.8 cm 自由落体**,落地瞬态就是 stand-drift 预算抓到的东西。
+记忆条目 `sim-reset-teleports-into-the-air`("复位后骨盆比落点低 10 cm、ncon=0")到此有了原因。
+
+### 24.3 修复与验收(验收统计不是成功率)
+
+改为按 geom 类型算真实最低表面点(mesh 走顶点,sphere/capsule/box/cylinder 走解析式,
+未知类型退回 rbound 并注明保守),落座留 `SEAT_CLEARANCE_M = 2 mm`。
+测试 `tests/test_seat_on_floor.py` 4 条(五种 geom 的解析最低点、"包围球必须更悲观"、
+落座间隙 = 2 mm、真实场景落座高度 <0.80 且 >0.77)。
+
+验收用**复位后第一秒的位移**(下游任何改动都碰不到这个量,所以树里那个 0.35 rad 容差不构成混淆):
+
+| | teleport z | 第 1 秒中位 | p90 | 最大 | 2 s 超 0.35 m | 摔倒 |
+|---|---|---|---|---|---|---|
+| 修复前 release(20) | 0.892 | 0.071 | 0.112 | 0.211 | 0/20 | 0 |
+| 修复前 v1.1(42 局汇总) | 0.892 | 0.099 | 0.319 | **0.489** | **4/42** | **1** |
+| **修复后 v1.1(10)** | **0.787** | **0.034** | **0.071** | **0.083** | **0/10** | **0** |
+
+中位降 3 倍、最大降 6 倍,而且修复后的整条分布**比修复前 release 的还紧**(0.083 vs 0.211);
+这一轮 10 局里 `[stand]` 阶段失败为 0。**这条改动改变了每一集的初始条件** ——
+2026-09-11 之前的所有数据集都是从 10.8 cm 落体开始的,新旧数据在这一点上不同源。
+
+### 24.4 噪声拿掉之后:残差是**横向**的,不是深度
+
+修复后成功率 1/10(按 §23,10 局测不出率,不作为结论),但失败分布变了:
+`stand infeasible` ×4、`local alignment outside comfortable IK` ×2、IK-block ×1、`disturbed` ×1。
+把 park 拆成深度与横向(park² = depth² + lateral²,逐局中位):
+
+| 臂 | park | depth | **lateral** |
+|---|---|---|---|
+| release | 0.349 | 0.306 | **0.167** |
+| v1.1 coarse 0.30 | 0.467 | 0.332 | **0.350** |
+| v1.1 coarse 0.40(§22) | 0.393 | 0.300 | **0.250** |
+| v1.1 + 落座修复 | 0.400 | 0.297 | **0.272** |
+
+**深度已经解决**(0.297 vs release 0.306),**残差 100% 在横向**:0.272 vs 0.167,**+10.5 cm**,
+而且两边分布几乎不重叠(v1.1 最小 0.219 vs release 最大 0.250)。这正是 §17 记录的
+"横向多走 11 cm",**速度修复没动它,落座修复也没动它** —— 落座修复只是把它从带噪声变成了确定性
+(横向离散从 [0.19,0.309] 收到 [0.219,0.306])。
+
+**因此要更正 §22/§23 里"Stage C 不需要"的说法**:brake **深度**确实不用改(depth 已对),
+但 park 里还有 10.5 cm 的横向误差,它是现在 `stand infeasible` 与
+`local alignment outside comfortable IK` 的直接来源。
+
+### 24.5 下一步
+
+approach 的最后 0.3 m 是**横走**:`mv = (aim_xy − pelvis_xy)` 朝规划站位,而 `facing` 固定在接近朝向,
+所以 movement 向量相对朝向有横向分量,而 deploy 会把它的**模长归一化掉**,只留一个速度标量。
+**§21 的速度表只量了直行**。所以下一件事是把同样的协议用**纯横向** movement 向量再量一次
+(两 checkpoint,几个 band 速度),看 v1.1 的横向交付是不是显著低于前向 —— 那将直接解释这 10.5 cm。

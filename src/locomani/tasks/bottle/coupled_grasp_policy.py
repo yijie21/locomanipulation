@@ -41,7 +41,23 @@ def screen_motion(guard, state, q, dz, forward, *, contact_side=None):
 
 
 TRANSPORT_POSITION_TOL = 0.08
-TRANSPORT_ROTATION_TOL = 0.20
+# 0.20 rad = 11.5 deg was a bare literal, and it is SMALLER THAN THE PITCH THE
+# SQUAT ITSELF DELIVERS. The transport holds the palm's WORLD attitude while the
+# pelvis pitches forward through the crouch (the target is recomputed every tick
+# as `br.T @ target_rotation` against the live pelvis rotation), so the pelvis's
+# own pitch appears as a rotation residual on the arm. Measured from the pose
+# sidecars at the deepest squat (2026-09-11, ledger bottle.md 23): release
+# pitches +9.8 to +11.8 deg, v1.1 +12.1 to +12.5, with per-round peaks to
+# +14.4 -- i.e. both checkpoints sit ON the old tolerance and v1.1 crosses it.
+# The instrumented rounds show exactly that: pos_err 0.009 m against a 0.08
+# tolerance (9x inside -- reach was never the problem) while rot_err ran
+# 0.2013 / 0.2208 / 0.2323 rad at phase 0.94-0.99, the bottom of the descent.
+# 0.35 rad = 20 deg covers the measured peak with margin and still refuses a
+# grossly wrong wrist solution; the swept-motion screen (`screen_motion`) and
+# `reference_check` below are what actually protect the object, and the
+# alignment stage that follows servos the attitude error down to ~0.03 rad
+# regardless. Re-derive this from the sidecars if the squat depth changes.
+TRANSPORT_ROTATION_TOL = 0.35
 
 
 def solve_transport_ik(ik, side, aim, rotation, seed):
@@ -214,11 +230,13 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
         self.ramp.settle()
         arm._q_prev = arm.q.copy()
         arm.next_t = time.time()
+        _pre_root = np.asarray(p.world_to_root(safe_pregrasp, state))
         stats = dict(
             samples=[],
             descent_ticks=0,
             arm_ticks=0,
             blocked_ticks=0,
+            blocked_samples=[],
             requested_drop_m=drop,
             strategy="coupled_squat_to_high_pregrasp",
             safe_pregrasp_world=safe_pregrasp.tolist(),
@@ -228,6 +246,19 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
                 (safe_pregrasp - np.asarray(state["pelvis"]["pos"]))
                 @ np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
             ),
+            # 2026-09-11: `pregrasp_ahead_of_pelvis_m` separated the v1.1 rounds
+            # that blocked here from the ones that did not (OK <= -0.044, blocked
+            # >= -0.080, ledger 23) -- but one projection cannot say whether the
+            # stand was too far out or turned too far, and the failure recorded
+            # nothing but a tick count. These decompose it: the pregrasp point in
+            # the PELVIS frame, plus the azimuth the arm is asked to fold to.
+            pregrasp_root=_pre_root.tolist(),
+            pregrasp_azimuth_deg=float(np.degrees(np.arctan2(_pre_root[1], _pre_root[0]))),
+            pelvis_at_squat=dict(
+                pos=[float(x) for x in state["pelvis"]["pos"]],
+                yaw_deg=float(np.degrees(p.pelvis_yaw(state))),
+            ),
+            grip_root=p.world_to_root(preferred0, state).tolist(),
         )
         ex.metrics.setdefault("coupled_transport", []).append(stats)
         ex.enter("grasp.coupled_squat")
@@ -277,6 +308,21 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             )
             if pe > TRANSPORT_POSITION_TOL or re > TRANSPORT_ROTATION_TOL:
                 stats["blocked_ticks"] += 1
+                # The residual is the whole diagnosis and it used to be thrown
+                # away: this failure recorded a tick count only. Bounded to the
+                # first few so a 4 s loop cannot bloat the manifest.
+                if len(stats["blocked_samples"]) < 5:
+                    stats["blocked_samples"].append(
+                        dict(
+                            pos_err_m=round(float(pe), 4),
+                            rot_err_rad=round(float(re), 4),
+                            tol=[TRANSPORT_POSITION_TOL, TRANSPORT_ROTATION_TOL],
+                            aim_root=[round(float(x), 4) for x in p.world_to_root(aim, state)],
+                            phase=round(float(phase), 3),
+                            delivered_m=round(float(delivered), 4),
+                            pelvis_z=round(z, 4),
+                        )
+                    )
                 arm.height = z - SQUAT_HEIGHT_BIAS
                 self.hold()
                 if stats["blocked_ticks"] > 10:

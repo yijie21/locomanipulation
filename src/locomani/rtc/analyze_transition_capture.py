@@ -15,6 +15,7 @@ import numpy as np
 import onnxruntime as ort
 from scipy.spatial.transform import Rotation
 
+from locomani import paths
 from locomani.backends.sonic.sonic_decoder import ACTION_SCALE, DEFAULT_ANGLES, SonicDecoder
 from locomani.backends.sonic.sonic_decoder import MUJOCO_TO_ISAACLAB as ORDER
 
@@ -23,9 +24,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("capture")
     ap.add_argument("--replan", type=float, default=0.4)
-    ap.add_argument(
-        "--onnx", default="/workspace/deps/gear_sonic_deploy_ours_lockstep_nvdef/policy/release/model_decoder.onnx"
-    )
+    # The ACTIVE checkpoint (v1.1 since 2026-09-11); pass --onnx for a capture
+    # recorded under another one -- tokens do not cross checkpoints.
+    ap.add_argument("--onnx", default=paths.sonic_policy_file("model_decoder.onnx"))
     args = ap.parse_args()
     p = Path(args.capture)
     records = [json.loads(l) for l in (p / "debug.jsonl").open()]

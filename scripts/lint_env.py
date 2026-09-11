@@ -28,6 +28,11 @@ WHITELIST = {
     "SONIC_ROOT",
     "SONIC_DEPLOY_ROOT",
     "SONIC_DEPLOY_BIN",
+    # Which SONIC checkpoint the deploy runs (scripts/paths.sh is the default,
+    # locomani.paths the Python half). A path, in the same category as the two
+    # above -- and it MUST be readable here, because the offline encoder/decoder
+    # have to resolve the same checkpoint as the running deploy.
+    "SONIC_POLICY",
     "SIM_VIDEO_DIR",
     "SIM_STATE_TRACE_DIR",
     "TF_CAMERA_PORT",

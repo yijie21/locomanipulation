@@ -26,6 +26,13 @@ export SONIC_ROOT="$LOCOMANI_ROOT/third_party/GR00T-WholeBodyControl"
 export VENV_SIM_PY="$SONIC_ROOT/.venv_sim/bin/python"
 export VENV_DATA_PY="$SONIC_ROOT/.venv_data_collection/bin/python"
 export SONIC_DEPLOY_ROOT="${SONIC_DEPLOY_ROOT:-$SONIC_ROOT/gear_sonic_deploy}"
+# Which SONIC checkpoint the deploy runs, relative to $SONIC_DEPLOY_ROOT. The
+# DEFAULT IS v1.1 since 2026-09-11 (user ruling); policy/release is the older
+# NVIDIA release checkpoint and is now only a comparison arm. One definition for
+# the whole repo: start_stack.sh, restart_deploy.sh and locomani.paths all read
+# it, so the offline encoder/decoder can never disagree with the running deploy.
+# A token is a checkpoint-private latent -- see docs/reference/silent_failures.md.
+export SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"
 export LOCOMANI_SRC="$LOCOMANI_ROOT/src/locomani"
 export LOCOMANI_STACK="$LOCOMANI_ROOT/scripts/stack"
 export LOCOMANI_OUTPUTS="$LOCOMANI_ROOT/outputs"

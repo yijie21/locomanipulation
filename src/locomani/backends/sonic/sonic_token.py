@@ -10,8 +10,14 @@ THE CODEBOOK
 `action.motion_token` is not a continuous latent. It is the output of a Finite
 Scalar Quantizer inside the SONIC encoder, and the quantizer is part of the
 trained graph, sitting BEFORE the decoder's input. Read straight off
-policy/release/model_encoder.onnx, whose nodes are literally named
-/quantizer, /quantizer_1, /quantizer_2 (3 groups x 32 dims = our 64):
+the checkpoint's model_encoder.onnx, whose nodes are literally named
+/quantizer, /quantizer_1, /quantizer_2 (3 groups x 32 dims = our 64). The
+codebook is the SAME for policy/release and policy/sonic_v1_1 -- both saturate
+at exactly [-1.0, 0.9375] on a 1/16 grid, verified 2026-09-11 by running each
+encoder on large random inputs -- so the snap below is checkpoint-independent.
+WHAT IS NOT: the MEANING of a code. The latent is private to the checkpoint
+that produced it, so tokens from a release-era dataset decode to nonsense
+through v1.1's decoder, and the reverse:
 
     z   = tanh(x) * 15.5155      # Constant_2, = (L-1)/2 for L=32
     z   = z - 0.5                # Constant_3

@@ -23,7 +23,11 @@ pkill -f "g1_deploy_onnx_ref lo .*zmq-port $TF_SONIC_PORT " 2>/dev/null
 sleep 1
 pkill -9 -f "g1_deploy_onnx_ref lo .*zmq-port $TF_SONIC_PORT " 2>/dev/null
 
-SONIC_POLICY="${SONIC_POLICY:-policy/release}"
+# Default v1.1 since 2026-09-11 (user ruling). scripts/paths.sh, sourced by
+# env_deploy.sh above, already exports it; this is the fallback and it MUST stay
+# equal to start_stack.sh's -- the gym restarts the deploy through this script
+# every round, so a disagreement would swap the checkpoint mid-run.
+SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"
 # NO_ENCODER=1 relaunches WITHOUT the encoder, mirroring start_stack.sh. This
 # must be honoured HERE and not only at stack boot: grasp_gym restarts the
 # deploy through this script every round, so a closed-loop VLA run that booted
@@ -43,7 +47,7 @@ echo "----- deploy restart $(date +%T) -----" >> "$LOGS/deploy.log"
 mark=$(wc -l < "$LOGS/deploy.log")
 # LOCKSTEP=1: SIMPLE's simulation-clock patch (--sim-lockstep), built from a
 # copy of their tree plus our SONIC_DDS_DOMAIN patch (/workspace/deps/
-# gear_sonic_deploy_lockstep). Same protocol v4, same policy/release files
+# gear_sonic_deploy_lockstep). Same protocol v4, same $SONIC_POLICY files
 # (md5-identical decoder); the binary only ticks when the sim hands it an
 # envelope-stamped LowState. See lockstep_sim.py.
 # SONIC_DEPLOY_BIN: run a different build of the deploy WITHOUT lockstep
@@ -98,7 +102,7 @@ if [ "${LOCKSTEP:-0}" = "1" ]; then
     echo "  LOCKSTEP: $DEPLOY_BIN --sim-lockstep"
 fi
 # A foreign build runs from ITS tree: the TensorRT engine caches next to the
-# policy (policy/release/*.trt) are serialized by the TensorRT the binary was
+# policy ($SONIC_POLICY/*.trt) are serialized by the TensorRT the binary was
 # linked against (10.9 there, 10.13 here) and do not cross over; planner and
 # reference clips resolve relative to cwd as well. The policy files that
 # matter (observation_config.yaml, model_decoder.onnx) are md5-identical.
@@ -106,6 +110,15 @@ case "$DEPLOY_BIN" in
     /*) cd "$(dirname "$DEPLOY_BIN")/../.." || exit 1
         echo "  deploy cwd: $PWD" ;;
 esac
+# Same guard as start_stack.sh: $SONIC_POLICY is relative to the cwd the case
+# above may have just changed, and the foreign trees were populated before v1.1
+# became the default. Here it matters per ROUND -- the gym only greps for
+# "deploy restarted", so a missing checkpoint would read as a stand failure.
+if [ ! -f "$SONIC_POLICY/model_decoder.onnx" ]; then
+    echo "FAILED: $PWD/$SONIC_POLICY/model_decoder.onnx does not exist" \
+         "(this tree has: $(ls -d policy/*/ 2>/dev/null | tr -d / | tr '\n' ' '))"
+    exit 1
+fi
 nohup "$DEPLOY_BIN" lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \
     --obs-config "$SONIC_POLICY/observation_config.yaml" \
     "${ENC_ARG[@]}" \

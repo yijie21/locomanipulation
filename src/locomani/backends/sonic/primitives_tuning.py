@@ -158,14 +158,21 @@ TRACK_BIAS_MAX = 0.60  # metres; the mapping needs ~0.3, this is a rail
 # sweep now returns 35-47 deg of nose-down whatever is asked, with two
 # identical 0 deg commands landing 25 deg apart. The palm's tilt there is set
 # by the arm configuration that reaches the wrist point, not by the quaternion.
-# So on v1.1 boosting is meaningless. But v1.1 was reverted (see
-# start_stack.sh), and dropping the boost to 1.0 on the RELEASE model is a
-# regression, measured: the palm never reaches plan.rot, the whole-body
-# controller settles on a different arm solution for the same wrist point, the
-# position response changes underneath the bias seed, and the integrator enters
-# a limit cycle — one trace converged to 4.1 cm at u=0.68 and then diverged to
-# 27 cm with the palm swinging half a metre. 4.5 is the release model's number
-# and stays until the checkpoint changes.
+# So on v1.1 boosting is meaningless. Dropping the boost to 1.0 on the RELEASE
+# model is a regression, measured: the palm never reaches plan.rot, the
+# whole-body controller settles on a different arm solution for the same wrist
+# point, the position response changes underneath the bias seed, and the
+# integrator enters a limit cycle — one trace converged to 4.1 cm at u=0.68 and
+# then diverged to 27 cm with the palm swinging half a metre.
+#
+# 2026-09-11: v1.1 IS now the default checkpoint (user ruling, start_stack.sh),
+# so 4.5 is a release-era number running on a model it was not measured against.
+# It is KEPT rather than reset to 1.0 because "meaningless" came from an
+# orientation sweep, not from the grasp line: the boost still multiplies the
+# rotation error that seeds the IK, and changing it blind would move the one
+# stage whose failure mode (limit cycle) is the hardest to read. Re-measure it
+# on v1.1 — it is on the re-calibration list in docs/ledger/bottle.md §20 —
+# before reading any grasp number as a property of the checkpoint.
 TRACK_ROT_BOOST = 4.5
 TRACK_ROT_GAIN = 0.5  # per second, on the orientation trim
 # Stop this far short of the grip point, along the approach line. The plan ends
