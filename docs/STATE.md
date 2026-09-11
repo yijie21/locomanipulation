@@ -37,6 +37,15 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- VIDEOS EXPORTED 2026-09-11 00:56 UTC (session cf, no GPU, no sim): 10 collection + 10 eval third-person clips for
+  the visible200 arm in outputs/videos/visible200_export_20260911/ ({collect,eval}/ + reel_collect_10.mp4 208 s /
+  reel_eval_10.mp4 717 s + INDEX.json). Source is the sim composite already on disk (main view + L/R wrist + ego
+  insets, 720x540 @ 12.5 fps): collect/videos_<batch>/gym_<ts>.mp4 and eval/videos/gym_<ts>.mp4. Clip-to-round
+  mapping is by wall clock -- the recorder starts ~10 s into a round, so a video belongs to the last round whose
+  execution.started_wall is <= its timestamp; round 0 of a batch (and eval round 0) has no video. Collection picks
+  are 10 KEPT episodes spread over the 34 batches; eval picks are BOTH successes (rounds 14, 62) plus 8 failures
+  sampled along the stop distance (0.15 -> 0.56 m), because 97 of 98 failures carry the same string and a uniform
+  sample would be 10 identical clips. 22/22 decode clean. Runner scripts/experiments/visible200_export_videos_20260911.py.
 - visible200 TRAIN + EVAL DONE (session cf, 2026-09-10 12:01-19:56 UTC, GPU0 released, instance 0 free).
   10k steps, loss 1.2866 -> 0.0625; closed loop **2/100** (seed 6000, async, clean protocol).
   97 of 100 failures are `[vla] at the table but never commanded a close`. Open loop on its own val is
