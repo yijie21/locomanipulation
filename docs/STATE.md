@@ -37,6 +37,31 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **DIAGNOSIS STEP 1 DONE 2026-09-11 02:5x-04:0x UTC -- THE 2/100 IS LOCALISED** (session cf; instance 0 + GPU0 taken
+  and released, ports free, stack down). Ledger bottle.md §18.3.
+  **The model's gripper decision is CORRECT. The arm never reaches the bottle.** Three independent lines:
+  (1) per-key substitution on live observations -- of all 13 obs keys ONLY `video.right_wrist` flips the close
+  (+0.0242 -> -0.0129); all ten `state.*` and the prompt do nothing, `video.ego_view` never crosses the threshold.
+  Same on 4 different rounds' base observations (-0.0069..-0.0143).
+  (2) the image itself: outputs/experiments/visible200_obsdump_20260911/wrist_live_vs_dataset.png -- training frame
+  has the bottle squarely between the jaws, the live frame has the jaws over empty table with the bottle low and
+  outside them. It does not close because there is nothing in the gripper.
+  (3) palm-to-bottle separates PERFECTLY on the original 99 rounds (correct join): successes <= 0.138 m, all 97
+  failures >= 0.156 m, ZERO overlap -- while base-to-bottle overlaps completely. §18.1 measured the BASE stop; the
+  stop problem is real but it is in the PALM.
+  NOT the cause, ruled out with numbers: observation encoding, the model refusing, the execution chain (912 live
+  queries never left the +0.0245 open rail; the failure reproduces offline).
+  **SILENT FAILURE FIXED on the way: `--set backend.obs_dump=DIR` did nothing at all.** Its only consumer was
+  stack.py exporting TF_OBS_DUMP into the STACK's env; the dump is gated by `vla_round.OBS_DUMP`, a module global in
+  the eval-client process that nothing assigned. Same defect on `grip_delay`, `replace`, `lockstep.no_seed` (their
+  config defaults equal the module defaults, so NO past result is affected). All four wired in eval_closed_loop.py;
+  tests/test_eval_config_reaches_the_client.py holds the rule and names all four on the pre-fix HEAD. A
+  "is the field name referenced" check does NOT catch this -- obs_dump was referenced, in the wrong process.
+  Also verified §18.2's fix on live data: the new traces carry `round` and the trace/manifest offset is now 0.
+  Artifacts: outputs/experiments/visible200_obsdump_20260911/ (912 npz / 580 MB in obs/, 4 traces, 5 videos).
+  NEXT: the question is now "why does the arm stop 6-8 cm short". Compare the policy's palm trajectory against the
+  expert's on the same stand -- is it stalling mid-reach or reaching to the wrong place? The 580 MB obs/ dump can be
+  deleted once that is answered.
 - DIAGNOSIS STEP 0 + 2 DONE 2026-09-11 02:1x-02:5x UTC (session cf; GPU1 held ~6 min for an inference server only --
   no sim, no stack, ports 5555-5582 untouched; released).
   **STEP 0 -- the trace/manifest join was off by one.** `eval/traces/round_NNN.json` describes manifest round NNN+1:

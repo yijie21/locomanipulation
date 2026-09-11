@@ -180,9 +180,12 @@ def substitute(base: dict, donor: dict, keys: list[str]) -> dict:
 def collect_items(args) -> list[tuple[str, dict, dict]]:
     """(name, observation, extras) triples from whichever source was asked for."""
     if args.dump:
-        paths = sorted(Path(args.dump).glob("obs_*.npz"))
+        dump = Path(args.dump)
+        paths = [dump] if dump.is_file() else sorted(dump.glob("obs_*.npz"))
         if not paths:
             raise SystemExit(f"no obs_*.npz under {args.dump}")
+        if args.stride > 1:
+            paths = paths[:: args.stride]
         items = []
         for path in paths:
             obs, rec = load_dump(path)
@@ -196,7 +199,19 @@ def collect_items(args) -> list[tuple[str, dict, dict]]:
         else:
             raise SystemExit("--dataset needs --near-close or --frames")
         items = dataset_observations(ds, args.episode, frames, args.task)
-    return items[: args.limit] if args.limit else items
+    items = items[: args.limit] if args.limit else items
+    if args.save_donor:
+        name, obs, _ = items[0]
+        Path(args.save_donor).parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            args.save_donor,
+            wall=0.0,
+            tok=np.zeros((40, 64), np.float32),
+            grip=np.zeros((40, 1), np.float32),
+            **{k: (np.array(v) if isinstance(v, str) else v) for k, v in obs.items()},
+        )
+        print(f"donor written from {name} -> {args.save_donor}")
+    return items
 
 
 def get_chunk(link, obs: dict, do_snap: bool) -> tuple[np.ndarray, np.ndarray]:
@@ -231,9 +246,16 @@ def ask(link, name: str, obs: dict, extra: dict, sub_keys: list[str], donor: dic
     )
     note = ""
     if "recorded_grip_min" in extra:
+        # The action head is a diffusion model, so a replay is close but not
+        # bit-identical to the recorded answer. What matters is whether the
+        # difference could change the verdict, not whether it is zero.
         row["recorded_grip_min"] = extra["recorded_grip_min"]
-        row["reproduces_live"] = bool(np.allclose(grip, extra["_rec"]["grip"], atol=1e-6))
-        note = "  reproduces=" + ("yes" if row["reproduces_live"] else "NO  <-- inference is not deterministic")
+        delta = float(np.max(np.abs(grip - np.asarray(extra["_rec"]["grip"]).reshape(-1))))
+        row["replay_delta"] = delta
+        row["verdict_stable"] = bool(delta < CLOSE_THRESHOLD)
+        note = f"  live={extra['recorded_grip_min']:+.4f} delta={delta:.4f}"
+        if not row["verdict_stable"]:
+            note += "  <-- larger than the close threshold; the replay may not answer the same question"
     if "expert_grip" in extra:
         row["expert_grip"] = extra["expert_grip"]
         note = f"  expert={extra['expert_grip']:+.4f}"
@@ -251,6 +273,8 @@ def main(argv=None) -> int:
     ap.add_argument("--radius", type=int, default=4, help="frames either side of the close (--near-close)")
     ap.add_argument("--frames", help="explicit frame indices, e.g. 100,120,140")
     ap.add_argument("--limit", type=int, default=0, help="at most N observations (0 = all)")
+    ap.add_argument("--stride", type=int, default=1, help="--dump: take every Nth file")
+    ap.add_argument("--save-donor", help="write the first built observation as an npz, to use as a --donor-dump")
     ap.add_argument("--task", default="pick up the water bottle")
     ap.add_argument("--substitute", default="", help="comma-separated keys to take from --donor-dump instead")
     ap.add_argument("--donor-dump", help="npz whose keys --substitute pulls in")

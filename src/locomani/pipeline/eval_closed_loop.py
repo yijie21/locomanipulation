@@ -294,6 +294,23 @@ def main():
     # comment on DATASET_FPS explains why the wrong value is silent).
     vla_round.DATASET_FPS = cfg.backend.dataset_fps
     vla_round.GRIP_GAIN = cfg.grip_gain
+    # OBS_DUMP the same way, and for the same reason it was missed: the only
+    # other consumer of `backend.obs_dump` is stack.py, which exports it as
+    # TF_OBS_DUMP into the STACK's environment -- a different process from this
+    # one. The dump itself is gated by `vla_round.OBS_DUMP` here in the eval
+    # client, so until this line `--set backend.obs_dump=...` was accepted,
+    # printed in the config snapshot, and wrote nothing at all.
+    vla_round.OBS_DUMP = cfg.backend.obs_dump
+    if cfg.backend.obs_dump:
+        print(f"[closed-loop] OBS_DUMP on -> {cfg.backend.obs_dump} (one npz per policy query)")
+    # Same defect, same three fields, found in the same breath: GRIP_DELAY,
+    # REPLACE and LOCKSTEP_NO_SEED are module defaults that nothing assigned
+    # either. Their config defaults happen to equal the module defaults (0 /
+    # False / False), so no past result is wrong -- but setting them did
+    # nothing. tests/test_eval_config_reaches_the_client.py holds the rule.
+    vla_round.GRIP_DELAY = cfg.backend.grip_delay
+    vla_round.REPLACE = cfg.backend.replace
+    vla_round.LOCKSTEP_NO_SEED = cfg.backend.lockstep.no_seed
     if cfg.grip_gain != 1.0:
         print(
             f"[closed-loop] GRIPPER GAIN {cfg.grip_gain} -- effective close "

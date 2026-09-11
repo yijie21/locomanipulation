@@ -1128,3 +1128,67 @@ join 从此不必相信文件名。回归测试 `tests/test_trace_round_join.py`
 **这是一个二元决策从不翻转,不是一个连续量落偏。**这把"训练不足 / 精度不够"整类解释排掉了。
 
 产物:`outputs/experiments/visible200_20260910/eval/trace_join_20260911.json`(逐局记录)。
+
+### 18.3 定位了:模型的闭合决策是对的,手根本没够到瓶子(2026-09-11, session cf,诊断第 1 步)
+
+**方法**:开 `OBS_DUMP` 重跑 seed 6000 的前 5 局(`scripts/experiments/visible200_obsdump_20260911.sh`,
+协议逐字抄自 `run_learn_pilot.py` 的 eval stage),拿到 **912 份 npz**(每次 policy query 一份,含完整
+observation + 当时的回答),再用 `src/locomani/pipeline/replay_obs.py` 离线重放和逐 key 替换。
+复现忠实:r0 仍是 `[stand] pelvis z 0.094`,r1–r4 全是「at the table but never commanded a close」。
+
+**先修了一个静默失败**:`--set backend.obs_dump=DIR` **过去完全无效**。`SonicBackendConfig.obs_dump` 的
+唯一消费者是 `stack.py`,它把 `TF_OBS_DUMP` 导进 **stack 进程**的环境;而真正落盘的是
+`vla_obs.PolicyLink.get_chunk` 里读的 `vla_round.OBS_DUMP` —— eval client **进程内的模块全局变量**,
+从来没人赋值。配置被接受、被写进 config snapshot、一个文件都不写。同批发现 `grip_delay`、`replace`、
+`lockstep.no_seed` 三个 knob 同病(它们的 config 默认值恰好等于模块默认值,所以**没有历史结果受影响**)。
+四个都已在 `eval_closed_loop.py` 里接上;`tests/test_eval_config_reaches_the_client.py` 把规则钉死
+(修复前 HEAD 上会点名这四个)。注意:「字段名有没有被引用」这种检查**抓不到**它——`obs_dump` 是被引用了,
+只是在另一个进程里。
+
+**三条独立证据指向同一个结论**:
+
+1. **逐 key 替换**。以「机器人已在桌前」的 live dump 为底,把 dataset 的 key 一个一个换进去(donor 是
+   val ep0 f273,一个模型 9/9 会闭合的帧):
+
+   | 替换的 key | grip_min | 闭合? |
+   |---|---|---|
+   | 不替换(原始 live) | +0.0242 | no |
+   | 10 个 `state.*` 全部,逐个 | +0.0237 … +0.0243 | **全部 no** |
+   | `annotation.human.task_description` | +0.0238 | no |
+   | `video.ego_view` | +0.0142 | no |
+   | **`video.right_wrist`** | **−0.0129** | **YES** |
+
+   四个不同 round 的底样本(obs_00130/00249/00468/00700)结论一致:只有换腕部相机会翻转,
+   `−0.0069 … −0.0143`;换 ego 永远翻不过来。**闭合决策几乎完全由右腕相机驱动。**
+
+2. **看图就明白了**(`outputs/experiments/visible200_obsdump_20260911/wrist_live_vs_dataset.png`):
+   训练帧里瓶子**正正夹在两片夹爪中间**、竖直占满画面;live 帧里夹爪悬在**空桌面**上方,
+   瓶子掉在左下角、在夹爪**外面且更低**。模型没闭合,是因为**爪子里没有东西**。
+
+3. **掌心距离完美分离**(用 §18.2 的正确 join,重算原来那 99 局):
+
+   | | n | 整局最小 palm-to-bottle |
+   |---|---|---|
+   | 成功 | 2 | p10 0.137 / 中位 **0.138** / max 0.138 m |
+   | 失败 | 97 | min **0.156** / p10 0.201 / 中位 0.220 / p90 0.256 m |
+
+   **97 局失败里,0 局曾经够到成功局的距离。**完全不重叠。而同一批数据的
+   **base-to-bottle 距离完全重叠**(成功 0.246–0.290,失败 p10 0.183 / p90 0.350)。
+
+**结论,并更正 §18/§18.1 的走向**:这**不是**观测编码 bug(没有 layout / 色彩 / 编解码问题),
+**不是**模型拒绝闭合,**不是**执行链路吃掉闭合(912 次 live query 的回答最小值 +0.0215,
+从没离开过 +0.0245 的张开端;离线重放同样不闭合,失败可离线复现)。
+**模型的夹爪决策是正确的——它看着空爪子,正确地不闭合。**
+真正的失败在上游:**策略的手臂/手掌停在离瓶子约 6–8 cm 远的地方,从来没伸到**。
+
+§18.1 说「不是停位问题」是因为它量的是**底盘**停位。停位问题是有的,只是在**手掌**,不在底盘。
+这也解释了为什么方位角和底盘距离都不分成败。
+
+**顺带发现的真 bug(但不是本案主因)**:`state.right_hand` / `state.left_hand` 的 7 维向量,
+**live 把两个 jaw 分量放在 index 0,1,而训练数据放在 index 4,5**(数值相同,槽位不同;
+整段 run 的 per-index std:live 只有 0,1 非零,dataset 只有 4,5 非零)。
+所以评测时模型在它学过的那两个槽位上读到的恒为 0。**但替换实验证明它不是主因**——
+把 live 的 `state.right_hand` 换进一个会闭合的 dataset 观测,仍然 5/5 闭合。需要修,别归因。
+
+**下一步**:问题变成「为什么手臂伸不到」。先看 §18.2 的 5 局视频和 palm 轨迹,
+再对比专家的 palm 轨迹——失败局的 palm 是停在半路,还是伸向了错误的位置。
