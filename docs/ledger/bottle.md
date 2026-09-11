@@ -1073,7 +1073,7 @@ open_loop/、eval_provenance/ 起止两次树快照)。评测本身在 16:10 第
 **未能排除**:采集(`restart_deploy=false`,每局 `hold+reanchor`)与评测(钉死每局重启 deploy,
 "锚 = 落地 yaw")建立朝向锚的机制不同,65 量过两者差约 8.5°。为此把 `restart_deploy` 做成
 `EvalConfig` 字段(默认不变)并跑同 seed 前 20 局的配对对照,
-**结果 0/20,全部 `[stand] 复位后没站稳(pelvis z 0.094)`** —— 不重启时评测路径的机器人直接瘫倒,
+**结果 0/17(跑到 17 局手动停掉,已无信息),全部 `[stand]`:前 14 局「复位后没站稳(pelvis z 0.094)」,之后 3 局变成「teleport 落点偏 0.81–0.92 m」—— deploy 跨局残留在累积,越跑越坏** —— 不重启时评测路径的机器人直接瘫倒,
 这条臂测不了它想测的东西,只证明评测确实需要那次重启。锚不一致**仍是未排除的嫌疑**。
 产物 `outputs/experiments/visible200_norestart_ab_20260910/`。
 
