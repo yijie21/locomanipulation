@@ -400,24 +400,70 @@ class EpisodeControlServer:
     def _yaw_quat(yaw: float):
         return [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]
 
+    # Seat with a hair of clearance rather than exactly on z = 0: resting a
+    # contact-bearing geom exactly on the floor starts the episode inside the
+    # contact solver's tolerance and the first step pushes back.
+    SEAT_CLEARANCE_M = 0.002
+
+    def _geom_lowest_z(self, g: int) -> float:
+        """The lowest point of one geom's SURFACE, in world z.
+
+        `geom_rbound` is the bounding-SPHERE radius, which for a flat foot mesh
+        overestimates the downward extent by most of the foot's length -- see
+        `_seat_on_floor`.
+        """
+        mujoco = self._mj
+        pos = self.data.geom_xpos[g]
+        rot = self.data.geom_xmat[g].reshape(3, 3)
+        size = self.model.geom_size[g]
+        kind = self.model.geom_type[g]
+        if kind == mujoco.mjtGeom.mjGEOM_MESH:
+            mesh = self.model.geom_dataid[g]
+            first, count = self.model.mesh_vertadr[mesh], self.model.mesh_vertnum[mesh]
+            verts = self.model.mesh_vert[first : first + count]
+            return float((pos + verts @ rot.T)[:, 2].min())
+        if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
+            return float(pos[2] - size[0])
+        if kind == mujoco.mjtGeom.mjGEOM_CAPSULE:
+            return float(pos[2] - (abs(rot[2, 2]) * size[1] + size[0]))
+        if kind == mujoco.mjtGeom.mjGEOM_BOX:
+            return float(pos[2] - abs(rot[2]) @ size[:3])
+        if kind == mujoco.mjtGeom.mjGEOM_CYLINDER:
+            return float(pos[2] - (abs(rot[2, 2]) * size[1] + float(np.hypot(*(rot[2, :2] * size[0])))))
+        # Anything else: the bounding sphere, which is conservative (too high).
+        return float(pos[2] - self.model.geom_rbound[g])
+
     def _seat_on_floor(self) -> None:
-        """Drop the robot so its lowest foot geom rests on z = 0.
+        """Drop the robot so its lowest geom rests just above z = 0.
 
         Bending the knees raises the feet relative to the pelvis, so keeping the
-        pelvis at its nominal 0.793 would leave the robot hanging a few
-        centimetres in the air and drop it the moment physics resumes.
+        pelvis at its nominal 0.793 would leave the robot hanging in the air and
+        drop it the moment physics resumes.
+
+        FIXED 2026-09-11: this used `geom_rbound` -- the bounding-SPHERE radius --
+        as each geom's downward extent. For the deciding foot mesh that radius is
+        0.1291 m against a true extent below its centre of 0.0213, so the
+        estimate put the lowest point at -0.0994 and the robot was seated
+        +0.1078 m TOO HIGH: pelvis z 0.8924 where the stance stands at 0.7846.
+        Measured consequence: every reset in every task line was a 10.8 cm free
+        fall (z0 = 0.892 in all 62 recorded rounds, settling to ~0.785), and the
+        landing transient is what the stand-drift budget catches -- release's
+        worst round moved 0.21 m in the first second, v1.1 up to 0.49 m, with one
+        round falling outright (ledger bottle.md 24). NOTE this changes the
+        initial condition of every episode: datasets collected before this fix
+        started from a 10.8 cm drop.
         """
         mujoco = self._mj
         mujoco.mj_forward(self.model, self.data)
         lowest = min(
             (
-                float(self.data.geom_xpos[g][2] - self.model.geom_rbound[g])
+                self._geom_lowest_z(g)
                 for g in range(self.model.ngeom)
                 if self.model.body_rootid[self.model.geom_bodyid[g]] == self.root_id
             ),
             default=0.0,
         )
-        self.data.qpos[2] -= lowest
+        self.data.qpos[2] -= lowest - self.SEAT_CLEARANCE_M
 
     def _appearance(self, seed) -> None:
         """Re-roll what the ego camera sees, from one integer.
