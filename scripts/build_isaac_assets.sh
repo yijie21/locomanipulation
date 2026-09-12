@@ -15,7 +15,7 @@
 #   scene  : room + surfaces + objects. collect.sh rebuilds outputs/scene/sim
 #            per batch from SCENE_SEED and the surface tops move with it
 #            (0.620-0.646 m for surface A across the cover400 snapshots, 0.647
-#            to 0.855 for surface B), so this is cached per scene_meta.json
+#            to 0.855 for surface B), so this is cached per source geometry, builder and scene_meta.json
 #            hash and keyed by a label, normally the batch's seed.
 #
 # Both steps boot Kit, which is minutes each. A cache hit costs nothing, so
@@ -43,6 +43,31 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 sha() { sha256sum "$1" 2>/dev/null | cut -c1-16; }
 secs() { date +%s; }
+
+if [ "$ROBOT_ONLY" = 0 ]; then
+    # --- scene -------------------------------------------------------------------
+    # The meta is the per-seed truth; the asset library it draws OBJs from
+    # (outputs/scene) is seed-independent.
+    if [ -n "$SNAPSHOT" ]; then
+        [ -d "$SNAPSHOT" ] || fail "no such snapshot dir: $SNAPSHOT"
+        META="$SNAPSHOT/scene_meta.json"
+        [ -n "$LABEL" ] || LABEL="$(basename "$SNAPSHOT")"
+    else
+        META="$LOCOMANI_OUTPUTS/scene/sim/scene_meta.json"
+        [ -n "$LABEL" ] || LABEL="work"
+    fi
+    [ -f "$META" ] || fail "no scene_meta.json at $META"
+    SCENE_SRC_XML="$(dirname "$META")/scene_locomani.xml"
+    [ -f "$SCENE_SRC_XML" ] || fail "no scene_locomani.xml next to $META"
+
+    SCENE_DIR="$ISAAC_ASSETS/scene/$LABEL"
+
+    # Refuse an incomplete source tree BEFORE Kit startup or cache acceptance.
+    SCENE_KEY=$(PYTHONPATH="$LOCOMANI_ROOT/src" python3 -m locomani.sim.isaac.scene_assets \
+        --scene-root "$LOCOMANI_OUTPUTS/scene" --repo "$LOCOMANI_ROOT" \
+        --meta "$META" --scene-xml "$SCENE_SRC_XML" --destination "$SCENE_DIR") || fail "scene source validation failed"
+
+fi
 
 # --- robot -------------------------------------------------------------------
 ROBOT_DIR="$ISAAC_ASSETS/robot"
@@ -89,27 +114,16 @@ else
 fi
 [ "$ROBOT_ONLY" = 1 ] && { echo "robot only, done"; exit 0; }
 
-# --- scene -------------------------------------------------------------------
-# The meta is the per-seed truth; the asset library it draws OBJs from
-# (outputs/scene) is seed-independent.
-if [ -n "$SNAPSHOT" ]; then
-    [ -d "$SNAPSHOT" ] || fail "no such snapshot dir: $SNAPSHOT"
-    META="$SNAPSHOT/scene_meta.json"
-    [ -n "$LABEL" ] || LABEL="$(basename "$SNAPSHOT" | sed 's/^scene_//')"
-else
-    META="$LOCOMANI_OUTPUTS/scene/sim/scene_meta.json"
-    [ -n "$LABEL" ] || LABEL="work"
-fi
-[ -f "$META" ] || fail "no scene_meta.json at $META"
-SCENE_SRC_XML="$(dirname "$META")/scene_locomani.xml"
-[ -f "$SCENE_SRC_XML" ] || fail "no scene_locomani.xml next to $META"
-
 SCENE_DIR="$ISAAC_ASSETS/scene/$LABEL"
-want=$(sha "$META")
+want="$SCENE_KEY"
 if [ "$FORCE" = 0 ] && [ -f "$SCENE_DIR/scene.usda" ] && \
    [ "$(cat "$SCENE_DIR/.stamp" 2>/dev/null)" = "$want" ]; then
     echo "scene  = cached  $SCENE_DIR/scene.usda  (meta $want)"
     exit 0
+fi
+# Preserve previous caches for diagnosis, but never reuse stale converted meshes.
+if [ -d "$SCENE_DIR" ]; then
+    mv "$SCENE_DIR" "${SCENE_DIR}.previous.$(date +%s%N)" || fail "cannot preserve previous scene cache"
 fi
 mkdir -p "$SCENE_DIR"
 echo "scene  + building '$LABEL' from $META ..."
@@ -121,29 +135,8 @@ SCENE_META="$META" SCENE_XML="$SCENE_SRC_XML" OMNI_KIT_ACCEPT_EULA=YES PYTHONPAT
     "$RENDER_PY" src/locomani/sim/isaac_scene.py \
     "$LOCOMANI_OUTPUTS/scene" "$SCENE_DIR" > "$SCENE_DIR/kit.log" 2>&1 \
     || fail "scene build failed; see $SCENE_DIR/kit.log and build.log"
+grep -q "^=== build OK ===$" "$SCENE_DIR/build.log" || fail "incomplete scene; see $SCENE_DIR/build.log"
 [ -s "$SCENE_DIR/scene.usda" ] || fail "scene build produced no scene.usda; see $SCENE_DIR/kit.log"
-# The previews are a sanity check on the SCENE CONTENT, not on the USD file.
-# isaac_scene.py keeps going when the generated layout assets are absent
-# (outputs/scene/{layout,surface_b}/asset3d/*, layout/background/mesh_model.ply):
-# it logs "MISSING surface A: dining_table" to build.log and writes a stage with
-# lights + robot only, so every preview is the dome light's flat colour and
-# the Isaac half of render_wall_pilot shows the robot floating in grey
-# (2026-09-11, SRA0889 -- a machine that never ran the layout pipeline; the
-# RTX renderer itself was fine). Surface the MISSING lines and warn.
-grep -E "MISSING|background source" "$SCENE_DIR/build.log" | sed 's/^/  /'
-"$RENDER_PY" - "$SCENE_DIR" <<'PY' || echo "WARN: previews are flat -- the scene has no room/table geometry. Check the MISSING lines above: the generated layout assets under $LOCOMANI_OUTPUTS/scene/{layout,surface_b} are not on this machine (copy them from the collection machine). The robot and objects still render; only the background is empty."
-import glob, sys
-import numpy as np
-from PIL import Image
-flat = []
-for f in sorted(glob.glob(sys.argv[1] + "/*/rgb_0000.png")):
-    a = np.asarray(Image.open(f).convert("RGB")).astype(float)
-    if a.std() < 2.0:
-        flat.append(f"{f.split('/')[-2]} (std {a.std():.1f})")
-if flat:
-    print("  flat previews:", ", ".join(flat))
-    sys.exit(1)
-PY
 echo "$want" > "$SCENE_DIR/.stamp"
 echo "scene  + done in $(( $(secs) - t0 ))s  $(du -sh "$SCENE_DIR" | cut -f1)"
 # isaac_scene.py writes its own build.log (Isaac swallows print into its

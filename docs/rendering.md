@@ -84,13 +84,27 @@ bash scripts/build_isaac_assets.sh --snapshot <批次的 scene_<seed> 目录>
 bash scripts/build_isaac_assets.sh --robot-only | --force
 ```
 
+首次安装先执行 `bash scripts/install_scene.sh`。桌子、台面及贴图来自仓库中的
+`assets/scene_locomani_v1.tar.gz`；空房间来自已跟踪的
+[`assets/scene/empty_room_world.ply.gz`](../assets/scene/README.md)，约 41 MB。
+不需要从另一台机器拷贝 EmbodiedGen 输出，也不需要 Git LFS。
+
+旧版本只读取被忽略的 `outputs/scene/{layout,surface_b}/asset3d` 和背景目录，
+源文件缺失时仍写出缺少桌子/房间的 USD。现在构建前检查必需源资产；缺失就报错，
+转换失败也不会写入成功缓存。升级后重新执行上面的构建命令即可；旧缓存会被保留
+为 `.previous.<时间>`，新的源文件、贴图、场景 XML、构建器、检出位置和 USD 输出目录参与缓存校验。
+`--snapshot` 的默认 label 是目录完整 basename，与 `render_wall_pilot.sh` 一致；
+只有显式 `--label` 才改变它。旧的 `scene_<seed>` 去前缀命名不再作为默认。
+
+[2026-09-12 新安装验证和已知限制](handoff/isaac-asset-portability-20260912.md)。
+
 产物在 `assets/isaac/`,已 gitignore,约 650 MB 起,随时可重建。分两层,因为两者
 变化频率不同:
 
 | 层 | 位置 | 缓存键 | 耗时 |
 |---|---|---|---|
 | 机器人 | `robot/g1_dex1.usda` | 机器人 MJCF 的哈希 | 10 s,92 MB |
-| 场景 | `scene/<label>/` | 该 seed `scene_meta.json` 的哈希 | 20 s,280 MB |
+| 场景 | `scene/<label>/` | 元数据、XML、网格/贴图、背景、构建器及检出路径的哈希 | 20 s,280 MB |
 
 机器人与场景无关,桌子多高都是同一具关节体,所以只建一次。场景按 batch 变,
 `collect.sh` 每批用 `SCENE_SEED` 重建,桌面高度随之改变,所以按 seed 分别建、

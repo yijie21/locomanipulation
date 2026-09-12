@@ -22,7 +22,8 @@ __pycache__/
 # agent ticket scratch (to-tickets)
 .scratch/
 
-# converted Isaac USD assets (rebuilt by scripts/build_isaac_assets.sh)
+# Converted Isaac USD caches only; shared source assets live in tracked assets/scene/.
+# Rebuilt by scripts/build_isaac_assets.sh from the installed scene and tracked sources.
 assets/isaac/
 MUJOCO_LOG.TXT
 
