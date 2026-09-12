@@ -68,6 +68,11 @@ def solve_transport_ik(ik, side, aim, rotation, seed):
     return ik.solve(side, aim, rotation, q_mj29=seed, use_waist=False, iters=50)
 
 
+def _pelvis_pitch_deg(state):
+    """Pelvis lean, positive nose-down. `project_squat` predicts no pitch at all."""
+    return float(np.degrees(np.arcsin(-np.clip(Primitives._rot(state["pelvis"]["quat"])[2, 0], -1.0, 1.0))))
+
+
 def project_squat(state, drop, config):
     """Predict the delivered squat pose, including calibrated passive retreat.
 
@@ -145,13 +150,10 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             local_rot = world_rot.T @ rot
             q = ready_q()
             q[:12] = np.asarray(state["joints"])[:12]
+            seed_snapshot = q.copy()
+            target_root = self.p.world_to_root_full(point - rot @ OFFSET, projected)
             candidate, pe, re = self.arm.ik.solve(
-                self.side,
-                self.p.world_to_root_full(point - rot @ OFFSET, projected),
-                local_rot,
-                q_mj29=q,
-                use_waist=False,
-                iters=80,
+                self.side, target_root, local_rot, q_mj29=q, use_waist=False, iters=80
             )
             # Planning may land anywhere inside the same capture region the
             # executor accepts.  The measured closure geometry and terminal
@@ -159,12 +161,40 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             if pe > IK_POSITION_TOL or re > IK_ROTATION_TOL:
                 diagnostics = self.execution.metrics.setdefault("coupled_prediction_ik_errors", [])
                 if len(diagnostics) < 40:
+                    # SHADOW SOLVE, recorded and never used: the same target,
+                    # seed and rotation with the waist free. Re-solving these
+                    # rejections OFFLINE does not reproduce the live residual
+                    # even from the recorded seed (0.013 against 0.047, and the
+                    # rotation residual 0.002 against 0.103 -- no template
+                    # rotation reproduces it, ledger 32), so the only way to
+                    # compare the two solves is to run both here.
+                    _, waist_pe, waist_re = self.arm.ik.solve(
+                        self.side, target_root, local_rot, q_mj29=q, use_waist=True, iters=80
+                    )
+                    # THE SAME CALL AGAIN, byte-identical arguments. Offline the
+                    # recorded (target, rotation, seed) re-solve to 0.068/0.010
+                    # while the live call reported 0.115/0.299 -- strictly worse
+                    # on BOTH objectives, which a converged damped-least-squares
+                    # solve cannot be. Either an input is not what it is recorded
+                    # as, or the solver's state is shared: this repeat decides
+                    # which, inside the process where it happens.
+                    _, repeat_pe, repeat_re = self.arm.ik.solve(
+                        self.side, target_root, local_rot, q_mj29=seed_snapshot, use_waist=False, iters=80
+                    )
                     diagnostics.append(
                         dict(
+                            repeat_position_error_m=float(repeat_pe),
+                            repeat_rotation_error_rad=float(repeat_re),
+                            seed_mutated=float(np.max(np.abs(q - seed_snapshot))),
+                            waist_position_error_m=float(waist_pe),
+                            waist_rotation_error_rad=float(waist_re),
+                            # The rotation target itself, which nothing recorded:
+                            # without it an offline re-solve cannot even be set up.
+                            target_rot_local=[float(v) for v in np.asarray(local_rot).ravel()],
                             drop_m=float(drop),
                             position_error_m=float(pe),
                             rotation_error_rad=float(re),
-                            target_root=list(map(float, self.p.world_to_root_full(point - rot @ OFFSET, projected))),
+                            target_root=[float(v) for v in target_root],
                             # The SEED, without which this cannot be re-solved
                             # offline: the live solve carries the MEASURED leg
                             # geometry (q[:12]) while `use_waist=False` pins the
@@ -174,8 +204,16 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
                             # live solve reported (2026-09-12, ledger 31), so the
                             # difficulty lives in the seed and the target alone
                             # does not reproduce it.
-                            seed_q=[float(v) for v in np.asarray(q).ravel()],
+                            seed_q=[float(v) for v in np.asarray(seed_snapshot).ravel()],
                             use_waist=False,
+                            # The prediction is the only thing between the real
+                            # stand and this target, so record both frames: the
+                            # target can then be re-derived offline for any
+                            # backshift ratio without another run (ledger 32).
+                            target_world=[float(v) for v in (point - rot @ OFFSET)],
+                            pelvis_pre=[float(v) for v in state["pelvis"]["pos"]],
+                            pelvis_pred=[float(v) for v in projected["pelvis"]["pos"]],
+                            pelvis_quat=[float(v) for v in state["pelvis"]["quat"]],
                         )
                     )
                 self.reject_prediction("coupled_terminal_ik")
@@ -242,6 +280,35 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
         arm._q_prev = arm.q.copy()
         arm.next_t = time.time()
         _pre_root = np.asarray(p.world_to_root(safe_pregrasp, state))
+        # The squat's PASSIVE retreat, against what `project_squat` PREDICTED.
+        # Nothing ever compared the two: the loop logged `pelvis_world` but no
+        # round recorded the retreat itself, so the ratio (0.8, release-era)
+        # could only be checked by reconstructing it from the samples. Measured
+        # that way over 111 rounds it is 1.15x on release and 1.43x on v1.1
+        # (ledger 32) -- i.e. the prediction is OPTIMISTIC, the delivered squat
+        # ends 3.6 / 6.6 cm further from the object than the plan it approved.
+        _p0 = np.asarray(state["pelvis"]["pos"]).copy()
+        _yaw0 = float(p.pelvis_yaw(state))
+        _fwd0 = np.array([np.cos(_yaw0), np.sin(_yaw0)])
+        _pitch0 = _pelvis_pitch_deg(state)
+        _predicted_retreat = float(
+            getattr(self.config, "squat_prediction_backshift_ratio", 0.0)
+            * max(0.0, drop - getattr(self.config, "squat_prediction_drop_shortfall", 0.0))
+        )
+
+        def _pose_delta(st):
+            """Delivered base motion in the PRE-SQUAT frame; +retreat is backwards."""
+            d = np.asarray(st["pelvis"]["pos"]) - _p0
+            dyaw = float(p.pelvis_yaw(st)) - _yaw0
+            return dict(
+                drop_m=round(float(-d[2]), 4),
+                retreat_m=round(float(-(d[0] * _fwd0[0] + d[1] * _fwd0[1])), 4),
+                lateral_m=round(float(-d[0] * _fwd0[1] + d[1] * _fwd0[0]), 4),
+                pitch_deg=round(_pelvis_pitch_deg(st) - _pitch0, 2),
+                yaw_deg=round(float(np.degrees(np.arctan2(np.sin(dyaw), np.cos(dyaw)))), 2),
+                predicted_retreat_m=round(_predicted_retreat, 4),
+            )
+
         stats = dict(
             samples=[],
             descent_ticks=0,
@@ -286,6 +353,7 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             br = Primitives._rot(state["pelvis"]["quat"])
             base = np.asarray(state["pelvis"]["pos"])
             z = float(base[2])
+            stats["squat_delivered_pose"] = _pose_delta(state)
             preferred = self.task.grip(state)
             geometry = closure_geometry(state, self.side, preferred)
             delivered = start_z - z
@@ -304,7 +372,12 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
                     handover="capture" if geometry["ready"] else "squat_delivered",
                 )
                 ex.transition.update(
-                    squat_requested=drop, squat_delivered=start_z - z, reach_started=True, pregrasp_delivered=False
+                    squat_requested=drop,
+                    squat_delivered=start_z - z,
+                    squat_retreat_m=stats["squat_delivered_pose"]["retreat_m"],
+                    squat_retreat_predicted_m=round(_predicted_retreat, 4),
+                    reach_started=True,
+                    pregrasp_delivered=False,
                 )
                 return run(self, ghost)
             forward = np.array([np.cos(p.pelvis_yaw(state)), np.sin(p.pelvis_yaw(state)), 0.0])
