@@ -70,6 +70,14 @@ def start_stack(
     env["INSTANCE"] = str(instance)
     if gpu is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+        # MUJOCO_EGL_DEVICE_ID is a PHYSICAL device index -- CUDA_VISIBLE_DEVICES
+        # does not remap it, so setting only the latter leaves the sim rendering
+        # on GPU 0 while its tensors run on GPU 1. Every hand-written runner in
+        # scripts/ sets the two to the same single value; this does the same,
+        # and only for a single device (a list is a CUDA-side choice with no
+        # single EGL answer). An explicit extra_env entry still wins.
+        if str(gpu).isdigit():
+            env["MUJOCO_EGL_DEVICE_ID"] = str(gpu)
     if video_dir is not None:
         env["SIM_VIDEO_DIR"] = str(video_dir)
     init_token_file = getattr(task_cfg, "init_token_file", None)

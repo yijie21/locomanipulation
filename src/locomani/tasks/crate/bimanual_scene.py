@@ -7,12 +7,16 @@ shared file yet:
 
 * SCENE_PRESET is forced to crate_bimanual, so the output is always the crate
   alone on the table with its near wall at the table edge (scene_lib).
-* The four dex1 pad geoms get the agentic branch's contact hardening
-  (priority 1, condim 4, solref 0.002, solimp 0.995/0.9999). With MuJoCo's
-  default soft contacts a held 0.30 kg bottle creeps out of the closed jaw at
-  ~0.5 cm/s; the 1.44 kg crate hangs on two pads by friction and would not
-  survive a lift at all. Applied to the WRITTEN xml and verified on the
-  compiled model, because a pattern that misses is silent.
+* The four dex1 pad geoms get the CRATE contact calibration
+  (`build_sim_scene.harden_finger_pads(spec, "crate")`: priority 1, condim 4,
+  solref 0.002, solimp 0.995/0.9999). With MuJoCo's default soft contacts a
+  held 0.30 kg bottle creeps out of the closed jaw at ~0.5 cm/s; the 1.44 kg
+  crate hangs on two pads by friction and would not survive a lift at all.
+  Applied to the WRITTEN xml and verified on the compiled model, because a
+  pattern that misses is silent. The hardening itself is no longer this file's
+  own code -- it was a second implementation with its own constants until
+  2026-09-11; the gripper work below (coupling, finger range, actuator gear)
+  still is, and is why this pass re-opens the emitted XML at all.
 
 Point the sim at the result with LOCOMANI_SIM_DIR=<out_dir> (run_sim_locomani
 reads scene_meta.json / scene_locomani.xml from there), so the shared
@@ -31,12 +35,9 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )  # reach src/ for `python src/locomani/tasks/crate/bimanual_scene.py`
 from locomani import paths  # noqa: E402
+from locomani.sim.build_sim_scene import PAD_CONDIM, PAD_PRIORITY, harden_finger_pads  # noqa: E402
 from locomani.tasks.crate.config import DEFAULT_CRATE_TASK  # noqa: E402
 
-PAD_PRIORITY = 1
-PAD_CONDIM = 4
-PAD_SOLREF = (0.002, 1.0)
-PAD_SOLIMP = (0.995, 0.9999, 0.001, 0.5, 2.0)
 # The deploy drives the dex1 fingers with kp 1.5 / kd 0.1 at 50 Hz; the sim's
 # actuator gear turns that into 375 N/m at gear 250. Gear 1000 (pilots
 # 24-28) made the finger PD unstable under the 20 ms control hold (1500 N/m
@@ -68,14 +69,12 @@ FINGER_RANGE = (-0.023, 0.030)
 
 def harden_pads(xml_path: str) -> int:
     spec = mujoco.MjSpec.from_file(xml_path)
-    n = 0
-    for g in spec.geoms:
-        if str(getattr(g, "meshname", "")).startswith("dex1_col"):
-            g.priority = PAD_PRIORITY
-            g.condim = PAD_CONDIM
-            g.solref = PAD_SOLREF
-            g.solimp = PAD_SOLIMP
-            n += 1
+    # One implementation, in build_sim_scene.py, with the crate's calibration
+    # (2026-09-11): this file used to carry a second copy with its own constants,
+    # applied on top of the shared one. It also matched `dex1_col*` by prefix,
+    # which would have caught a ghost hand's collision copies too; the shared
+    # one requires contype/conaffinity, so it cannot.
+    n = harden_finger_pads(spec, "crate")
     if COUPLE_FINGERS:
         for side in ("left", "right"):
             eq = spec.add_equality()

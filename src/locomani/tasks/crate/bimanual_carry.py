@@ -60,6 +60,7 @@ from locomani.backends.sonic.stream_reach import PlannerArm  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
+from locomani.tasks.crate import round_runner  # noqa: E402
 from locomani.tasks.crate.carry_phases import (  # noqa: E402
     CarryRoundContext,
     _phase_approach,
@@ -324,7 +325,14 @@ class BimanualArms:
 
 
 def run_round(
-    p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int, rng: np.random.Generator, log, video_label: str
+    p: Primitives,
+    reset: EpisodeControlClient,
+    meta: dict,
+    rnd: int,
+    rng: np.random.Generator,
+    log,
+    video_label: str,
+    record: bool = False,
 ) -> dict:
     """One round's five phases (carry_phases.py / carry_phases_lift.py),
     threaded through a CarryRoundContext.
@@ -342,12 +350,15 @@ def run_round(
         rng=rng,
         log=log,
         video_label=video_label,
-        m={"round": rnd, "ok": False, "why": ""},
+        m={"round": rnd, "ok": False, "why": "", "produced": False},
     )
     for phase in (_phase_reset, _phase_approach, _phase_grasp, _phase_close, _phase_lift):
         result = phase(ctx)
         if result is not None:
             return result
+        if phase is _phase_reset and record:
+            # See bimanual_wall.run_round: after the settle, before the task.
+            round_runner.start_recording(p, ctx.m)
     raise AssertionError("carry_phases: no phase returned a result")
 
 
@@ -359,11 +370,17 @@ def main() -> None:
     ap.add_argument("--label", default="bimanual")
     ap.add_argument("--config", type=Path, help="CrateTaskConfig JSON; defaults if omitted")
     ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
+    ap.add_argument(
+        "--record",
+        action="store_true",
+        help="drive the data exporter too, keeping only the rounds that succeed (grasp_gym.py's flag, same "
+        "protocol). Needs INSTANCE=0: start_stack.sh runs the exporter only there",
+    )
     args = ap.parse_args()
-    # Loaded and validated for consistency with bimanual_wall.py (same
-    # CrateTaskConfig, same --config/--set flags) -- this file's own round
-    # logic does not yet read any of the crate task's fields, unlike
-    # bimanual_wall.py's wall_feature/wall_walk.
+    # Same CrateTaskConfig and the same --config/--set flags as bimanual_wall.py.
+    # This file's ROUND logic still reads none of the task's geometry fields
+    # (unlike the wall expert's wall_feature/wall_walk); deploy_self_heal_rounds
+    # below is the first field it does read.
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
@@ -386,34 +403,30 @@ def main() -> None:
             f"and point LOCOMANI_SIM_DIR at it"
         )
     print(f"[bimanual] instance {inst}, scene {paths.SCENE_META}, task config {cfg.to_dict()}")
+    if args.record:
+        # The same refusal grasp_gym makes: the exporter only exists on instance 0,
+        # so a --record run anywhere else finishes every round and writes nothing.
+        ports.require_exporter("--record")
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
-    p.cmd.reset_pose()
-    reset.pin_arms()
-    reset.reset()
-    time.sleep(0.3)
-    p.cmd.start_control()
-    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
-    rng = np.random.default_rng(args.seed)
-    wins = 0
-    for rnd in range(args.rounds):
-        t0 = time.time()
-        label = f"{args.label}_{rnd:02d}"
-        try:
-            m = run_round(p, reset, meta, rnd, rng, p.log, label)
-        finally:
-            try:
-                reset.end_video()
-            except Exception:
-                pass
-        m["seconds"] = round(time.time() - t0, 1)
-        m["video"] = label
-        wins += int(m["ok"])
-        print(f"[bimanual] round {rnd}: {'OK' if m['ok'] else 'FAIL'} {m['why']} ({m['seconds']} s)")
-        if args.manifest:
-            with open(args.manifest, "a") as f:
-                f.write(json.dumps(m, default=float) + "\n")
-    print(f"[bimanual] {wins}/{args.rounds} OK")
+    round_runner.prime(p, reset)
+    # Shared with bimanual_wall.py (round_runner.py). This loop used to be a
+    # copy that had drifted: no deploy self-heal, so one LowState trip turned
+    # every remaining round into "[stand] did not stabilise".
+    round_runner.run_rounds(
+        p,
+        reset,
+        meta,
+        run_round=run_round,
+        rng=np.random.default_rng(args.seed),
+        rounds=args.rounds,
+        label=args.label,
+        tag="bimanual",
+        manifest=args.manifest,
+        record=args.record,
+        self_heal_rounds=cfg.deploy_self_heal_rounds,
+        instance=inst,
+    )
 
 
 if __name__ == "__main__":

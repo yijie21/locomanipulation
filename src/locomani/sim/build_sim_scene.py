@@ -140,17 +140,39 @@ def _local_box(model, data, body_id: int):
 PAD_MESHES = ("dex1_col_1", "dex1_col_2")  # the two finger-face collision meshes, per hand
 
 
-def _harden_finger_pads(spec) -> int:
+PAD_PRIORITY = 1
+PAD_CONDIM = 4
+# Two calibrations, one per payload, because a 0.3 kg bottle and a 1.44 kg crate
+# hanging off two pads are not the same contact problem. Until 2026-09-11 they
+# lived in two files with two implementations: this one (opt-in, default off)
+# and bimanual_scene.py's, which re-opened the emitted XML and hardened it again
+# unconditionally with the stiffer numbers -- so the crate scene was hardened
+# twice and the single-arm scene usually not at all.
+PAD_LEVELS = {
+    # The agentic branch's L1 set, which carried a bottle 24.7 s with 0.8 cm of
+    # drift (docs/handoff/agentic-plan.md §8).
+    "object": dict(solref=[0.004, 1.0], solimp=[0.99, 0.999, 0.001, 0.5, 2.0]),
+    # Stiffer, for the crate: it hangs on two pads by friction and does not
+    # survive a lift under the softer set (bimanual_scene.py's own numbers).
+    "crate": dict(solref=[0.002, 1.0], solimp=[0.995, 0.9999, 0.001, 0.5, 2.0]),
+}
+
+
+def harden_finger_pads(spec, level: str = "object") -> int:
     """Stiffer, frictional-torque contact on the finger pads only (not global noslip,
-    which pinned the feet: memory mujoco-grip-creep). The agentic branch's L1 set,
-    which carried a bottle 24.7 s with 0.8 cm of drift (docs/handoff/agentic-plan.md §8)."""
+    which pinned the feet: memory mujoco-grip-creep). One implementation for both
+    task lines; `level` picks the payload's calibration from PAD_LEVELS."""
+    try:
+        tune = PAD_LEVELS[level]
+    except KeyError:
+        raise SystemExit(f"unknown pad level {level!r}; choices are {sorted(PAD_LEVELS)}") from None
     n = 0
     for g in spec.geoms:
         if g.meshname in PAD_MESHES and (g.contype or g.conaffinity):  # skip the ghost hand's copies
-            g.priority = 1
-            g.condim = 4
-            g.solref = [0.004, 1.0]
-            g.solimp = [0.99, 0.999, 0.001, 0.5, 2.0]
+            g.priority = PAD_PRIORITY
+            g.condim = PAD_CONDIM
+            g.solref = list(tune["solref"])
+            g.solimp = list(tune["solimp"])
             n += 1
     if n != 4:
         raise SystemExit(f"expected 4 finger-pad geoms to harden, found {n}")
@@ -249,10 +271,23 @@ def parse_args(argv=None):
     ap.add_argument(
         "--harden-pads",
         action="store_true",
-        help="stiffen the four dex1 finger-pad collision geoms (priority 1, condim 4, solref 0.004, "
-        "solimp 0.99/0.999): a held object creeps out of the soft default contact at 0.2-0.5 cm/s, "
-        "which any hold longer than a few seconds meets (pick_place carry; memory mujoco-grip-creep). "
-        "Off by default so the bottle/crate gate baselines keep their physics.",
+        help="stiffen the four dex1 finger-pad collision geoms (priority 1, condim 4, and --pad-level's "
+        "solref/solimp): a held object creeps out of the soft default contact at 0.2-0.5 cm/s, which any "
+        "hold longer than a few seconds meets (pick_place carry; memory mujoco-grip-creep). Off by default "
+        "so the bottle/crate gate baselines keep their physics.",
+    )
+    ap.add_argument(
+        "--pad-level",
+        default="object",
+        choices=tuple(PAD_LEVELS),
+        # A SEPARATE flag, not a value on --harden-pads: the documented build command is
+        # `--harden-pads outputs/scene outputs/scene/pick_place` (docs/reference/runbook.md,
+        # docs/pick_place_collection.md), and an optional-value flag swallows the first
+        # positional -- "invalid choice: 'outputs/scene'". Caught by grepping the docs for
+        # every identifier this change touched (2026-09-11).
+        help="which calibration --harden-pads applies: `object` (a bottle or can, the default) or "
+        "`crate` (stiffer; what the bimanual line needs). bimanual_scene.py picks `crate` in code, "
+        "so this flag only matters when building a crate scene through this CLI directly.",
     )
     ap.add_argument(
         "--preset",
@@ -283,8 +318,8 @@ def main() -> None:
 
     xml_path = os.path.join(out_dir, "scene_locomani.xml")
     if args.harden_pads:
-        n = _harden_finger_pads(spec)
-        print(f"[scene] finger pads hardened: {n} geoms (--harden-pads)")
+        n = harden_finger_pads(spec, args.pad_level)
+        print(f"[scene] finger pads hardened: {n} geoms (--harden-pads, level {args.pad_level})")
     _aim_ego_camera(spec)  # BEFORE to_xml(): see the note in there
     model = spec.compile()  # re-compile so the check below sees the aim
     _check_ego_camera(model)

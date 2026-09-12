@@ -18,10 +18,17 @@ this wrapper does not recognise (run_learn_pilot's required `--scene`, gate's
 Not every (verb, task) is wired: only what already exists today.
   * bottle: collect/convert/train (run_learn_pilot.py's `through=` stage
     gate), eval (eval_closed_loop.py), gate.
-  * crate: collect (bimanual_carry.py), gate. convert/train/eval have no
-    entry point yet -- bimanual_carry.py's CrateTaskConfig is not wired to a
-    convert/train/eval pipeline (refactor step 3 left it that way; see
-    docs/handoff/refactor-step3-config.md's "Ambiguous defaults" section).
+  * pick_place: collect/convert/train, the same run_learn_pilot.py stages as
+    bottle (the task is the bottle expert with another config). eval is not
+    wired: eval_closed_loop.py's --config is an EvalConfig, not this task's
+    config_cls, so the wrapper's --config would mean two different things.
+  * crate: collect (run_crate_pilot.py -- the wall expert; pass
+    `-- --expert carry` for the carry one), gate. convert/train/eval have no
+    entry point: the crate expert does not drive the data exporter yet, so
+    there is no dataset to convert or train on (docs/crate_collection.md §11).
+  * bottle_visual (ScaleBFM): nothing here. That line has no SONIC stack at
+    all -- its policy and its MuJoCo both run in-process -- and its own
+    drivers live under tasks/bottle_visual/pipeline/.
 """
 
 from __future__ import annotations
@@ -70,20 +77,26 @@ def _eval_closed_loop(cfg, out, set_, extra):
     eval_closed_loop.main()
 
 
-def _bimanual_carry_collect(cfg, out, set_, extra):
-    from locomani.tasks.crate import bimanual_carry
+def _run_crate_pilot(expert: str) -> Dispatch:
+    """crate collect: the pilot driver, which owns the stack the way
+    run_learn_pilot.py does for bottle. Until 2026-09-11 this dispatched
+    straight into `bimanual_carry.main()` and refused --config/--set with
+    "bimanual_carry.py has no --config/--set yet" -- wrong since refactor
+    step 3 gave both experts those flags (bimanual_carry.py:360)."""
 
-    if cfg is not None or set_:
-        raise SystemExit(
-            "locomani cli collect --task crate: bimanual_carry.py has no --config/--set yet "
-            "(refactor step 3 left CrateTaskConfig unwired there; see "
-            "docs/handoff/refactor-step3-config.md's 'Ambiguous defaults' section)"
-        )
-    argv = list(extra)
-    if out is not None:
-        argv += ["--manifest", str(out)]
-    sys.argv = ["bimanual_carry.py", *argv]
-    bimanual_carry.main()
+    def dispatch(cfg, out, set_, extra):
+        from locomani.pipeline import run_crate_pilot
+
+        argv = ["--expert", expert, *extra]
+        if cfg is not None:
+            argv += ["--config", cfg]
+        if out is not None:
+            argv += ["--out", out]
+        for kv in set_:
+            argv += ["--set", kv]
+        run_crate_pilot.main(argv)
+
+    return dispatch
 
 
 def _gate(cfg, out, set_, extra, *, task_name):
@@ -101,7 +114,14 @@ _DISPATCH: dict[tuple[str, str], Dispatch] = {
     ("convert", "bottle"): _run_learn_pilot_stage("convert"),
     ("train", "bottle"): _run_learn_pilot_stage("train"),
     ("eval", "bottle"): _eval_closed_loop,
-    ("collect", "crate"): _bimanual_carry_collect,
+    # pick_place IS the bottle task with another config (tasks/pick_place/__init__.py
+    # wraps grasp_gym's own entries), so run_learn_pilot drives it unchanged --
+    # scripts/experiments/pick_place_pilot_20260910.sh has been calling it that way
+    # since 2026-09-10 while this table still had no row for the task at all.
+    ("collect", "pick_place"): _run_learn_pilot_stage("collect"),
+    ("convert", "pick_place"): _run_learn_pilot_stage("convert"),
+    ("train", "pick_place"): _run_learn_pilot_stage("train"),
+    ("collect", "crate"): _run_crate_pilot("wall"),
 }
 
 

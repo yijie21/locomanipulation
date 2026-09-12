@@ -37,7 +37,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -49,7 +48,7 @@ sys.path.insert(
 )  # reach src/ for `python src/locomani/tasks/bottle/grasp_gym.py`
 
 from locomani import paths
-from locomani.backends.sonic import initial_pose, upper_ref  # noqa: E402, F401 -- re-exported, see docstring
+from locomani.backends.sonic import deploy, initial_pose, upper_ref  # noqa: E402, F401 -- re-exported, see docstring
 from locomani.backends.sonic.primitives import (  # noqa: E402
     LocomotionMode,
     Primitives,
@@ -150,7 +149,7 @@ CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
 # Module-level default (decision 8), same pattern as vla_round.GRIP_GAIN: a
 # caller assigns grasp_gym.RESTART_DEPLOY to override.
 RESTART_DEPLOY = DEFAULT_BOTTLE_TASK.restart_deploy
-RESTART_SCRIPT = f"{paths.REPO}/scripts/restart_deploy.sh"
+# The restart script itself is backends/sonic/deploy.restart's (paths.RESTART_DEPLOY).
 
 # BottleTaskConfig.{pose_sidecar,video_include_init,arm_pin} defaults (decision 8,
 # were LOCOMANI_POSE_SIDECAR / SIM_VIDEO_INCLUDE_INIT / GYM_ARM_PIN); module-level
@@ -167,14 +166,13 @@ def instruction(phrase: str) -> str:
 
 
 def fresh_deploy(p) -> bool:
-    """Kill + relaunch this instance's deploy; returns True when it's up."""
-    try:
-        r = subprocess.run(["bash", RESTART_SCRIPT], capture_output=True, text=True, timeout=360)
-    except subprocess.TimeoutExpired:
-        print("[gym] deploy restart timed out")
-        return False
-    if "deploy restarted" not in r.stdout:
-        print(f"[gym] deploy restart failed: {r.stdout[-300:]}")
+    """Kill + relaunch this instance's deploy; returns True when it's up.
+
+    The subprocess, the timeout and the "deploy restarted" check are
+    `backends/sonic/deploy.restart` -- shared with the crate line, which had
+    its own copy with no success check at all. What stays here is the BOTTLE
+    line's re-priming, which is genuinely its own (see below)."""
+    if not deploy.restart():
         return False
     p._gym_started = False  # fresh process: nothing to quiesce
     # The heading compensation pairs with the DEAD deploy's anchor: the

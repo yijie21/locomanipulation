@@ -55,6 +55,7 @@ from locomani.backends.sonic.agent_server import LocomotionMode  # noqa: E402
 from locomani.backends.sonic.primitives import Primitives  # noqa: E402
 from locomani.sim import ports  # noqa: E402
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
+from locomani.tasks.crate import round_runner  # noqa: E402
 from locomani.tasks.crate.bimanual_carry import (
     APPR_SPEED,
     EDGE_FLOOR,
@@ -259,7 +260,14 @@ def errs_of(s, arms, side, depth):
 
 
 def run_round(
-    p: Primitives, reset: EpisodeControlClient, meta: dict, rnd: int, rng: np.random.Generator, log, video_label: str
+    p: Primitives,
+    reset: EpisodeControlClient,
+    meta: dict,
+    rnd: int,
+    rng: np.random.Generator,
+    log,
+    video_label: str,
+    record: bool = False,
 ) -> dict:
     """One round's six phases (wall_phases.py / wall_phases_descend.py),
     threaded through a WallRoundContext.
@@ -276,12 +284,19 @@ def run_round(
         rng=rng,
         log=log,
         video_label=video_label,
-        m={"round": rnd, "ok": False, "why": ""},
+        m={"round": rnd, "ok": False, "why": "", "produced": False},
     )
     for phase in (_phase_reset, _phase_stand, _phase_hover, _phase_descend, _phase_close, _phase_lift):
         result = phase(ctx)
         if result is not None:
             return result
+        if phase is _phase_reset and record:
+            # Start the exporter HERE: the reset phase has settled the robot and
+            # cleared the fallen check, so frame 0 of the episode is the first
+            # frame of the task, not a robot standing still. Same placement as
+            # grasp_gym's (round_phases.py). The phases themselves stay unaware
+            # of recording; the matching save/discard key is in round_runner.
+            round_runner.start_recording(p, ctx.m)
     raise AssertionError("wall_phases: no phase returned a result")
 
 
@@ -301,6 +316,12 @@ def main() -> None:
     ap.add_argument("--manifest", default="")
     ap.add_argument("--label", default="wall")
     ap.add_argument("--ghost-trace", default="", help="dir for <label>_NN_ghost.npz (the aimed hand poses, per round)")
+    ap.add_argument(
+        "--record",
+        action="store_true",
+        help="drive the data exporter too, keeping only the rounds that succeed (grasp_gym.py's flag, same "
+        "protocol). Needs INSTANCE=0: start_stack.sh runs the exporter only there",
+    )
     ap.add_argument("--config", type=Path, help="CrateTaskConfig JSON; defaults if omitted")
     ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
     args = ap.parse_args()
@@ -335,69 +356,36 @@ def main() -> None:
     if meta.get("target_object") != OBJ:
         raise SystemExit(f"{paths.SCENE_META} is not the crate scene")
     print(f"[wall] instance {inst}, scene {paths.SCENE_META}, task config {cfg.to_dict()}")
+    if args.record:
+        # The same refusal grasp_gym makes: the exporter only exists on instance 0,
+        # so a --record run anywhere else finishes every round and writes nothing.
+        ports.require_exporter("--record")
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
-    p.cmd.reset_pose()
-    reset.pin_arms()
-    reset.reset()
-    time.sleep(0.3)
-    p.cmd.start_control()
-    p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
-    rng = np.random.default_rng(args.seed)
+    round_runner.prime(p, reset)
     global GHOST_TRACE
     if args.ghost_trace:
         from locomani.tasks.crate.ghost_trace import GhostTargetTrace
 
         GHOST_TRACE = GhostTargetTrace(args.ghost_trace, arms_offset())
-    wins = 0
-    dead_rounds = 0  # consecutive "did not stabilise": the deploy is gone
-    restarts = 0
-    for rnd in range(args.rounds):
-        t0 = time.time()
-        label = f"{args.label}_{rnd:02d}"
-        if GHOST_TRACE is not None:
-            GHOST_TRACE.start(label)
-        try:
-            m = run_round(p, reset, meta, rnd, rng, p.log, label)
-        finally:
-            if GHOST_TRACE is not None:
-                GHOST_TRACE.stop()
-            try:
-                reset.end_video()
-            except Exception:
-                pass
-        m["seconds"] = round(time.time() - t0, 1)
-        m["video"] = label
-        m["deploy_restarts"] = restarts
-        wins += int(m["ok"])
-        # Self-heal: the SONIC deploy stops itself on a one-loop LowState
-        # timeout (rail pilot 12: another session's per-round deploy restarts
-        # blip the sim clock), after which every reset "does not stabilise".
-        # Two in a row -> restart our own deploy (port-scoped) and go on.
-        dead_rounds = dead_rounds + 1 if m["why"].startswith("[stand] did not stabilise") else 0
-        if dead_rounds >= 2:
-            import subprocess
-
-            print(f"[wall] deploy looks dead ({dead_rounds} rounds); restarting instance {inst} deploy")
-            r = subprocess.run(
-                ["bash", os.path.join(paths.REPO, "scripts", "restart_deploy.sh")],
-                env=dict(os.environ, INSTANCE=str(inst)),
-                cwd=paths.REPO,
-            )
-            print(f"[wall] restart_deploy.sh exit {r.returncode}")
-            restarts += 1
-            dead_rounds = 0
-            p.cmd.reset_pose()
-            reset.pin_arms()
-            reset.reset()
-            time.sleep(0.3)
-            p.cmd.start_control()
-            p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
-        print(f"[wall] round {rnd}: {'OK' if m['ok'] else 'FAIL'} {m['why']} ({m['seconds']} s)")
-        if args.manifest:
-            with open(args.manifest, "a") as f:
-                f.write(json.dumps(m, default=float) + "\n")
-    print(f"[wall] {wins}/{args.rounds} OK")
+    # The round loop, the manifest, the deploy self-heal and the exporter keys
+    # live in round_runner.py -- bimanual_carry.py had a near-identical copy of
+    # the first two, no copy of the third, and neither had the fourth.
+    round_runner.run_rounds(
+        p,
+        reset,
+        meta,
+        run_round=run_round,
+        rng=np.random.default_rng(args.seed),
+        rounds=args.rounds,
+        label=args.label,
+        tag="wall",
+        manifest=args.manifest,
+        record=args.record,
+        self_heal_rounds=cfg.deploy_self_heal_rounds,
+        instance=inst,
+        ghost=GHOST_TRACE,
+    )
 
 
 if __name__ == "__main__":

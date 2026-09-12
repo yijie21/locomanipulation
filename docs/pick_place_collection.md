@@ -27,7 +27,7 @@ MUJOCO_GL=osmesa third_party/Isaac-GR00T/.venv/bin/python src/locomani/sim/build
 # 期望三行:
 #   basket    -> surface A at (-0.370, 0.000, 0.698)  mesh x1.001 (h 15.2 -> 15.2 cm, barrel 0.0 cm, jaw 8.48)
 #   soup_can  -> surface A at (-0.400, -0.280, 0.692)  mesh x0.998 (h 14.0 -> 14.0 cm, barrel 5.6 cm, jaw 8.48)
-#   [scene] finger pads hardened: 4 geoms (--harden-pads)
+#   [scene] finger pads hardened: 4 geoms (--harden-pads, level object)
 ```
 
 | 物体 | 来源 | 尺寸 / 位置 | 为什么是这样 |
@@ -35,7 +35,7 @@ MUJOCO_GL=osmesa third_party/Isaac-GR00T/.venv/bin/python src/locomani/sim/build
 | 篮子 `basket` | SIMPLE `objects:0`,`assets/simple/basket/model.xml`(视觉 mesh + 23 片 CoACD 凸包做碰撞,空心) | 0.30 × 0.20 × 0.15 m,中心 (-0.37, 0),yaw 90°,近壁离近边 3 cm | 骨盆停在桌边外 ~0.25 m 就不能再近,篮心在骨盆系 x 0.38–0.43,是右手能放到的极限(台账 §3.2) |
 | 罐头 `soup_can` | SIMPLE graspnet id 2 的 mesh,`assets/simple/soup_can/model.xml`,x/y 缩 0.848、z 拉 1.321 | 6 × 14 cm,(-0.40, -0.28),机器人右手边 | grip_z 必须 0.70–0.73、grip 上方 ≤ 5 cm、直径 ≤ 6.5 cm(台账 §2 四次 smoke) |
 | 桌子 | 沿用 bottle 的 dining table | 桌面 0.62 | ready-grasp baseline 的标定高度;抬到 0.70 左手 ready 姿态碰桌 |
-| 指面 | dex1 的 4 个碰撞 geom | priority 1、condim 4、solref 0.004、solimp 0.99/0.999 | 持物超过几秒的默认软接触会蠕变(memory `mujoco-grip-creep`);只对 `--harden-pads` 的场景生效,bottle/crate 的 gate 场景不变 |
+| 指面 | dex1 的 4 个碰撞 geom | priority 1、condim 4、solref 0.004、solimp 0.99/0.999(`build_sim_scene.PAD_LEVELS["object"]`,即 `--pad-level` 的默认值;`crate` 那一档更硬,是双臂线用的) | 持物超过几秒的默认软接触会蠕变(memory `mujoco-grip-creep`);只对 `--harden-pads` 的场景生效,bottle/crate 的 gate 场景不变 |
 
 `scene_meta.json` 里 `target_object=soup_can`、`goal_object=basket`;`privileged_pub` 对两者都发位姿和 ego 归一化坐标。
 渲染检查:`python src/locomani/sim/compose_scene.py --preset pick_place outputs/scene <out>`。

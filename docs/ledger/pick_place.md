@@ -15,6 +15,8 @@
   grip_z 0.722 = water bottle 的 0.723。
 - 桌面 0.62 m(和 bottle 线一致)。dex1 指面 4 个碰撞 geom 硬化(priority 1, condim 4, solref 0.004,
   solimp 0.99/0.999;agentic 分支 §8 的 L1 参数),只在 `--harden-pads` 构建时生效,bottle/crate 的 gate 场景不变。
+  2026-09-11 起这组常数是 `build_sim_scene.PAD_LEVELS["object"]`,与双臂线的 `"crate"` 档共用同一个实现
+  (`harden_finger_pads(spec, level)`);`bimanual_scene.py` 原本有第二份实现和第二套常数。
 
 ## §2 为什么是这个罐头(四次 smoke,每次 2–4 局,seed 32000)
 

@@ -119,3 +119,97 @@ ghost hands,洋红 = IK 想去的手腕位姿;r1 没有 ghost,它没进抓取阶
 r7(3 cm,+7.5°,so 0.29),全是 `never seated`,全在 so ≥ 0.26;成功集 so 0.16–0.24。三轮同 seed 分别 5、5、7/10:10 集的
 成功数本身有 ±2 的噪声,分界(站位 ≥ 0.26 m 必败,≤ 0.25 m 成功)三轮一致。视频:`outputs/renders_isaac/crate_hard10r_20260910/sbs_roundNN.mp4`
 ——**这一批是最终版**(ghost 画的是纯目标点,hover → 杆上 → 下探,不再随伺服 overdrive 抖动);前两批留作对照。
+
+## 2026-09-11 双臂线的入口重构:driver 与 expert 分家,四处不对称一并修掉
+
+**起因**(用户):双臂和 pick-and-place 的脚本调用逻辑和单臂线不一样,先把 `start_stack.sh` 和 `bimanual_wall.py`
+分开,再查还有哪些设计不对称。
+
+**改前**:`scripts/run_wall_pilot.sh`(83 行)和 `run_bimanual_pilot.sh`(72 行)是同一份文本的两份拷贝
+(155 行里 33 行不同,10 行是注释),每份同时做四件事:钉 instance/GPU、起栈、跑 expert、用自己手写的 `pgrep -f`
+收尾。而单臂线早就分开了:`run_learn_pilot.py` 管栈,`grasp_gym.py` 假设栈已起。两份拷贝还**已经漂移**——
+`WALL_WALK`/`WALL_FEATURE` 的拒绝守卫只有 wall 那份有。
+
+**改后**:`src/locomani/pipeline/run_crate_pilot.py`(driver)+ `scripts/run_crate_pilot.sh`(唯一的壳)+
+两个 3 行同名 shim。同时修掉的:
+
+1. `pipeline/stack.py` 的 `start_stack()`/`stop_instance()` **原本是死代码**(自称 decision 8 的唯一 seam,却只有
+   `export_env` 有调用者);现在 crate 线真的走它,顺带补上 `MUJOCO_EGL_DEVICE_ID`(`CUDA_VISIBLE_DEVICES` 不会
+   重映射 EGL 设备号,只设后者等于渲染在 GPU0、算在 GPU1)。
+2. `SonicBackendConfig.no_encoder` 默认是 **True**(eval 的协议),而 `start_stack.sh` 默认 0。crate 走 planner 通道,
+   `NO_ENCODER=1` 会静默丢掉手臂和下蹲参考。driver 显式写 False,并有测试盯着。
+3. **manifest 是 append 的**,而两个 runner 都指向同一个 `outputs/videos/wall_pilot/manifest.jsonl`,
+   `gate.py record crate` 读的正是它 → 两次 pilot 混成一个总体。现在一个 run 一个目录,重复跑要 `--resume`。
+4. expert 用 `os.environ.setdefault` 取端口,**继承来的 `TF_*` 会压过 `locomani.sim.ports`**;driver 起 expert 前
+   把整块端口从 env 里删掉,只留 `INSTANCE`。
+5. ghost trace 过去取决于一个 runner 自己不设的环境变量(所以默认是**关**的,`render_wall_pilot.sh` 注释写反了);
+   现在 driver 默认写 `<out>/trace`。
+
+**同批修掉的另外四条不对称**(用户点名):
+
+| | 改动 |
+|---|---|
+| C pad 硬化 | 两套实现两套常数(`build_sim_scene` opt-in solref 0.004 / `bimanual_scene` 无条件 solref 0.002,后者再改一遍写出的 XML)→ 一份实现 + 命名标定 `PAD_LEVELS{object,crate}`。**证明物理中性**:新旧 XML 只差两个 `contype=0 conaffinity=0` 的 ghost geom(旧代码按 `dex1_col*` 前缀匹配,把装饰也硬化了),编译后 **47 个可碰撞 geom 的 priority/condim/solref/solimp 零差异**,baseline 不用重录 |
+| D 配置 | `CrateTaskConfig` 补 `prompt`(`stack.py` 读的字段,之前 crate 栈退回 "walk forward")和 `deploy_self_heal_rounds` |
+| E deploy 自愈 | 三处各写各的 → `backends/sonic/deploy.py` 的 `restart()` + `SelfHeal`。原来:grasp_gym 有超时和成功判定;`bimanual_wall` 内联、**没有成功判定**(只打印退出码);`bimanual_carry` **完全没有**,一次 LowState trip 就让剩下每一集都是 "did not stabilise" |
+| F exporter | `--record` 接好了,协议与单手线逐字相同(`c` 沉降后开录 / `c` 存 / `x` 弃),manifest 带 `produced`;`--record` 强制 instance 0 并设 `--batch-rounds 10`,expert 侧另有 `ports.require_exporter()` 拒绝空录。双臂线第一次**能**出 LeRobot 数据集(§11 从"还差的一步"改写) |
+
+两个 `main()` 的重复(端口块、场景检查、priming、计时、manifest、打印)收进 `tasks/crate/round_runner.py`。
+
+**验收**:`gate.py compare crate` 两次,`SONIC_POLICY=policy/release` 固定(baseline 是 2026-09-09 录的,
+今天默认已翻到 v1.1,不钉就会把 checkpoint 的差异算到重构头上)。
+
+**门闸结果,以及一个 gate 自身的缺陷**(三轮,全部 `SONIC_POLICY=policy/release`、seed 0、
+`configs/tasks/crate_wall.json`、instance 1 / GPU1):
+
+| run | 代码 | ok | `stand_off_m` | verdict | 失败项 |
+|---|---|---|---|---|---|
+| `crate_runner_refactor_20260911_release` | 只有 runner 重构 | 10/10 | 0.2225 | **PASS 8/8** | — |
+| `crate_tasks_defg_20260911` | + C/D/E/F | 8/10 | 0.1889 | FAIL 6/8 | `stand_off_m`、`failure_reasons` |
+| `crate_variance_run3_20260911` | + C/D/E/F(**与上一行完全相同的代码**) | 8/10 | 0.2065 | FAIL 7/8 | `failure_reasons` |
+
+baseline(2026-09-09)ok 8/10、`stand_off_m` 0.2149、容差 ±0.010。
+
+**结论:两处失败都是 gate 的分辨率问题,不是回归。** 证据:
+
+1. **同一份代码跑两轮,`stand_off_m` 差 0.0176 m = 容差的 1.8 倍**(run2 0.1889 vs run3 0.2065)。
+   `stand_off_m` 是走入之后**实测**的站位距离,却用着 `TOL["depth_m"]=0.01` —— 那个容差是为 `depth_m` 定的,
+   而 `depth` 是 `0.38 − stand-off` 再夹到 [0.06, 0.11] 的量,本来就稳定。逐集看,同 seed 的实测站位在两轮之间
+   最大差 **11 cm**(run1 vs run2),与本文件 2026-09-10 那条"同 seed 的步态散布本身不可复现"一致。
+2. **`failure_reasons` 在 run2 和 run3 报的是不同的新字符串**(run2 只有 `[descend] never seated`,
+   run3 多一个 `[stand] lateral ... off the centre line`)——这正是 `docs/STATE.md` 自己列的未决项
+   "gate baselines are 10 rounds (crate): rare failure strings show as 'new'"。
+3. **`yield` 三轮 0.8 / 1.0 / 0.8,对 baseline 的 0.8 全部 PASS**;`depth_m`、`exit_majority`、
+   `stage_s.*`、`yaw_err_deg` 三轮全 PASS。
+4. run1 与 run2 用的场景 XML **md5 相同**,逐集**计划**站位(`stand_off`)完全一致 —— 分叉发生在计划之后,
+   即走入与下探的时序,不在被改动的代码里。
+
+**没有**为了让改动通过而放宽容差。要真正修这个 gate,两条路(留给用户裁):
+(a) 机器空的时候按 STATE 的既有计划把 crate baseline 重录到 30 集;
+(b) 给 `stand_off_m` 一个自己实测的容差(三轮中位数 0.189–0.223,±0.02 是下限),不要再借 `depth_m` 的。
+
+**文档巡查补记(同日,用户追问"相应的文档更新了吗")**:按改动涉及的每个标识符 grep 了一遍 `docs/`,
+查出一个**真 bug**:C 把 `--harden-pads` 从 `store_true` 改成了 `nargs="?"` 带 choices,而
+`docs/reference/runbook.md:75` 与 `docs/pick_place_collection.md:26` 里记录的命令是
+`--harden-pads outputs/scene outputs/scene/pick_place` —— 可选值会**吞掉第一个位置参数**,
+实测报 `invalid choice: 'outputs/scene'` 后 exit 2,即 pick_place 的建场景命令被改坏。
+已改成 `--harden-pads`(仍是 store_true)+ 独立的 `--pad-level {object,crate}`(默认 object):
+文档里的写法逐字复原,两套标定仍然都能从 CLI 选到。crate 场景 XML 不受影响(重建后与修复前逐字相同)。
+这条值得记:**改一个 flag 的 arity 之前,先 grep 文档里它的既有写法**。
+
+**根因与裁决(同日)**:把 gate 的失败追到底,发现它不是 gate 自己的毛病,而是走入的**站位交付**问题。
+三轮 30 局里 29 局有实测站位,成功 26 局落在 0.148–0.265 m,3 局 `[descend] never seated` 落在
+0.282 / 0.285 / 0.301 —— **零重叠**,与 2026-09-10 难度场景那条界(≥0.26 败)一致,但这次是**普通场景**,
+说明界是这条线本身的,不是 yaw/内缩设计带来的。交付误差(实测 − 计划)均值 ≈ 0、**sd 5.7 cm、跨度 −9.8…+12.0 cm**;
+计划站位跨度只有 8.7 cm 且三轮逐字相同(由 seed 决定),实测跨度 15.3 cm ——
+**步态噪声比整个计划分布还大,是散布而不是计划在挑哪局成功。** 横向同理:有一局
+`[stand] lateral -14.1 cm off the centre line after 3 walk-ins`,重试了三次没收敛。
+
+对**采集**的影响比对 gate 严重:每一集被留下都是因为散布碰巧落在近侧,数据集会只有近站位,
+没有远站位的正确行为 —— 和 memory `policy-stop-point-is-set-by-the-crawl` 同形。
+
+**用户裁决 2026-09-11:"如果这个是数据采集的策略调整问题的话先放一放,之后再调整。"**
+因此本条搁置,gate 的 `stand_off_m` 容差一并搁置(同一个根因),**没有**为让改动通过而放宽任何容差。
+之后接手时最便宜的第一步:查走入的重试/收敛判据覆不覆盖深度轴(单臂线有
+`tasks/bottle/arrival_validation.py`,双臂线没有对应层)。
+

@@ -9,7 +9,7 @@
 ```
 src/locomani/pipeline/      stack 生命周期、gym 主循环、录制、manifest、convert、stats/audit、train、eval、配对统计
 src/locomani/backends/<x>/  Backend:stack 启动、动作空间、执行器。sonic 是第一个
-src/locomani/tasks/<x>/     Task 五件套:scene、expert、acceptance、schema、failures。bottle、crate
+src/locomani/tasks/<x>/     Task 五件套:scene、expert、acceptance、schema、failures。bottle、crate、bottle_visual、pick_place
 src/locomani/primitives/    真正共享的底层(arm_ik、scene_lib、primitives)
 src/locomani/cli.py         唯一入口:locomani collect|convert|train|eval|gate --config X --out Y
 scripts/                    只放 GPU 闸门与 stack 的 shell;一次性 runner 放 outputs/experiments/<name>/launch.sh 跑,

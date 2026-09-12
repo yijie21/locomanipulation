@@ -117,20 +117,31 @@ expert(`bimanual_wall.py`)是第四个进程,由 runner 在 stack 起来后启�
 ### 先跑一集看流程
 
 ```bash
-V=$LOCOMANI_ROOT/outputs/videos/wall_pilot; mkdir -p $V/trace
-INSTANCE=2 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
-  nohup bash scripts/run_wall_pilot.sh 1 0 --config configs/tasks/crate_wall.json > $V/runner.log 2>&1 &   # 参数:集数 种子 [expert 参数]
-tail -f $V/pilot_s0.log | grep -E "^\[wall\] round|\[stand\]|closing|\[lift\]"
+V=$LOCOMANI_ROOT/outputs/videos/wall_pilot/one_round
+OUT=$V INSTANCE=2 \
+  nohup bash scripts/run_wall_pilot.sh 1 0 --config configs/tasks/crate_wall.json > $V.runner.log 2>&1 &   # 参数:集数 种子 [driver 参数]
+tail -f $V/wall_00.log | grep -E "^\[wall\] round|\[stand\]|closing|\[lift\]"
 ```
 
-runner 做的事,按顺序:检查 `LOCOMANI_SIM_DIR/scene_meta.json` 存在 → 起 instance 2 的栈(`SIM_VIS=none`:默认
-的位姿框叠加层会把 60 cm 的箱子画成一团点云,把机器人全遮住)→ 跑 `bimanual_wall.py --rounds N --seed S --manifest
-$V/manifest.jsonl --label wall_sS` → 结束时**只杀自己实例**的进程(按 `--instance` 与端口匹配;sim 会 fork 一个
-image-publisher 子进程,活得比父进程久且占着相机端口,所以先杀子再杀父)。每集约 40–60 s。
+`run_wall_pilot.sh` 现在(2026-09-11 起)只是 `scripts/run_crate_pilot.sh` 的三行壳,真正的 driver 是
+`src/locomani/pipeline/run_crate_pilot.py` —— 和单手线一样:**driver 管栈的生命周期与 run 目录,expert 是一个
+假设栈已经起好的独立进程**(`run_learn_pilot.py` / `grasp_gym.py` 就是这个分工)。在此之前这两件事写在同一个
+80 行 bash 里,而且 `run_wall_pilot.sh` 和 `run_bimanual_pilot.sh` 是同一份文本的两份拷贝。
+
+driver 做的事,按顺序:检查 `--scene` 下有 `scene_meta.json` → 把场景**复制进 run 目录**(保留 basename,
+`render_wall_pilot.sh` 按 basename 找 Isaac assets)→ 写 `task_config.json` 和 `config_snapshot.json` →
+经 `pipeline/stack.py` 起 instance 2 的栈(`SIM_VIS=none`:默认的位姿框叠加层会把 60 cm 的箱子画成一团点云,
+把机器人全遮住;`NO_ENCODER=0`,planner 通道要 encoder)→ 跑 `bimanual_wall.py --rounds N --seed S --manifest
+<out>/manifest_00.jsonl --label wall_sS --config <out>/task_config.json --ghost-trace <out>/trace` →
+用 `scripts/stack/stop_instance.sh` **只杀自己实例**的进程。每集约 40–60 s。
+
+`OUT` 一个 run 一个目录,不给就按 UTC 时间戳新建一个。同一个目录跑第二次会被拒(要续跑加 `--resume`):
+expert 是以 **append** 方式写 manifest 的,共用目录就是两次 pilot 混成一份 manifest,而 `scripts/gate.py` 读的
+正是这份。
 
 `CrateTaskConfig` 的两个字段决定 expert 的形态(2026-09-09 重构 step 3 起**不再读环境变量**,`WALL_FEATURE=` /
 `WALL_WALK=` 会被静默忽略;用 `--config configs/tasks/crate_wall.json`,或 `--set wall_walk=true` 这样逐项覆盖,
-runner 把 `[rounds] [seed]` 之后的参数原样转给 `bimanual_wall.py`):
+`[rounds] [seed]` 之后的参数转给 driver,driver 再把 `--config`/`--set` 的**快照**交给 `bimanual_wall.py`):
 
 | 字段 | 值 | 含义 |
 |---|---|---|
@@ -141,12 +152,15 @@ runner 把 `[rounds] [seed]` 之后的参数原样转给 `bimanual_wall.py`):
 
 | 产物 | 路径 |
 |---|---|
-| 第三人称视频 | `$V/wall_s0_NN.mp4` |
+| 第三人称视频 | `$V/videos_00/wall_s0_NN.mp4` |
 | 状态轨迹(50 Hz `qpos`/`qvel`,nq = 47:自由基 7 + 关节 29 + 4 指 + 箱子 7) | `$V/trace/wall_s0_NN_state_trace.npz` |
-| manifest(每集一行 json) | `$V/manifest.jsonl` |
-| expert 日志(每 0.5 s 一行) | `$V/pilot_s0.log` |
+| ghost(IK 瞄的纯参考手位姿) | `$V/trace/wall_s0_NN_ghost.npz` |
+| manifest(每集一行 json) | `$V/manifest_00.jsonl` |
+| expert 日志(每 0.5 s 一行) | `$V/wall_00.log` |
+| 每批用时 | `$V/timings.jsonl` |
+| 配置与来源快照 | `$V/task_config.json`、`$V/config_snapshot.json`、`$V/crate_bimanual/` |
 | 栈日志(sim / deploy / agent) | `$(locomani_session_root 2)/{sim,deploy,agent}.log` |
-| 每集结束时的关节/位姿快照(调参用) | `$V/wall_end_roundN.json` |
+| 每集结束时的关节/位姿快照(调参用) | `$V/wall_end_roundN.json`(expert 按 manifest 所在目录写) |
 
 ### 日志怎么读
 
@@ -189,11 +203,14 @@ for p in $(pgrep -f "[b]imanual_wall.py"); do kill -9 $p; done   # expert 本身
 ### 跑 10 集
 
 ```bash
-INSTANCE=2 SIM_STATE_TRACE_DIR=$V/trace SIM_VIDEO_DIR=$V \
-  nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json > $V/runner.log 2>&1 &
+V=$LOCOMANI_ROOT/outputs/videos/wall_pilot/$(date -u +%Y%m%d_%H%M%S)
+OUT=$V INSTANCE=2 \
+  nohup bash scripts/run_wall_pilot.sh 10 0 --config configs/tasks/crate_wall.json > $V.runner.log 2>&1 &
 ```
 
-同一个 `$V` 下换种子(第二个参数)会追加到同一个 manifest,`label` 变成 `wall_s<seed>`。**每一集都是一次
+换种子(第二个参数)就换一个 `OUT`:`label` 是 `wall_s<seed>`,manifest 是 `manifest_00.jsonl`,
+两次 pilot 不再共用一份。(`--batch-rounds N` 可以每 N 集重起一次栈,第 b 批的种子是 `seed + 100*b`——
+单手线的规则;默认 0 = 全程一个栈,就是过去的行为。)**每一集都是一次
 `reset.reset(...)`**:箱子被摆回桌沿(横向按 seed 抽样),机器人被摆到出生点,arms pin 住,IDLE 沉降 2 s。
 
 ### 为什么不用分批
@@ -411,7 +428,7 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
 **双臂导出的两条默认规则(2026-09-10)**:
 - `MUJOCO_RENDER_ARGS="--insets"`:MuJoCo 侧叠三路画中画(ego / L wrist / R wrist),和采集时的第三人称录像同一布局。
 - **ghost hands**:专家每次解 IK 时把双手的目标手腕位姿(抓取点减去 `OFFSET`,`ghost_trace.py`)按状态 `seq` 记到
-  `trace/<label>_NN_ghost.npz`(`run_wall_pilot.sh` 只要设了 `SIM_STATE_TRACE_DIR` 就默认写,`GHOST_TRACE=0` 关);
+  `trace/<label>_NN_ghost.npz`(driver 默认开,`--no-state-trace` 关——过去它取决于一个 runner 自己不设的环境变量,所以默认其实是关的);
   `render_wall_pilot.sh` 发现这个文件就把它传给两个渲染器,MuJoCo 和 Isaac 都画一对洋红半透明的张开夹爪
   (`sim/isaac/ghost.py`,几何和 `scene_lib.add_ghost_hand` 同一套数学,Isaac 侧引用机器人 USD 的 `/meshes/*`)。
   走路阶段没有 IK 目标,ghost 停在地下;画中画里永远没有 ghost。看视频时:ghost 是"想去哪",实手是"到了哪"。
@@ -420,22 +437,37 @@ bash scripts/render_wall_pilot.sh $V outputs/renders_isaac/my_run 10 wall_s0 > o
 
 ---
 
-## 11. 到训练数据集还差的一步
+## 11. 到训练数据集
 
-现状:`bimanual_wall.py` 只写视频 / 轨迹 / manifest,**不控制 exporter**,而 exporter 只在 `INSTANCE=0` 的栈里启动。
-要出 LeRobot 数据集:
+`--record` 2026-09-11 接好了(在此之前这一节叫"还差的一步":expert 只写视频 / 轨迹 / manifest,不控制 exporter)。
+协议和单手线逐字相同(`zmq_driver.SonicCommander.key`):
 
-1. 在 `bimanual_wall.py` 每集里接 exporter 开关,和单手 `grasp_gym.py` 一样:任务开始(复位沉降之后)
-   `p.cmd.key("c")` 开始录,成功再 `key("c")` 保存,失败 `key("x")` 丢弃;manifest 每行带 `ok` / `produced`
-   (转换器按行和 session 里的 episode **按顺序**一一对应——这个对齐看不出残段,见 §12 最后一条)。
-2. 在 **INSTANCE=0** 的栈上跑(默认 `--record-wrist-cameras`);录之前确认 instance 0 没有别人的采集或评测,并像
-   单手线一样每 10 集重启栈(exporter 线程增长,pid 上限)。
-3. 转换:`$VENV_DATA_PY src/locomani/pipeline/convert_to_hf_format.py --sessions <session> --manifest <manifest.jsonl>
+| 键 | 时机 | 在哪 |
+|---|---|---|
+| `c` IDLE → RECORDING | 复位沉降之后、任务开始之前(所以第 0 帧是任务,不是站着不动的机器人) | `run_round` 在 `_phase_reset` 返回 None 之后调 `round_runner.start_recording` |
+| `c` RECORDING → SAVE | 这一集成功 | `round_runner.run_rounds` |
+| `x` RECORDING → DISCARD | 这一集失败 | 同上 |
+
+manifest 每行带 `ok` / `produced`(转换器按行和 session 里的 episode **按顺序**一一对应——这个对齐看不出残段,
+见 §12 最后一条)。在复位阶段就失败的一集 `produced=False`,两个键都不发——否则 exporter 会错一拍。
+
+```bash
+OUT=$LOCOMANI_ROOT/outputs/experiments/crate_ds_$(date -u +%Y%m%d) \
+  nohup bash scripts/run_wall_pilot.sh 60 0 --record --config configs/tasks/crate_wall.json > ...
+```
+
+`--record` 会**强制 instance 0**(`start_stack.sh` 只在那里起 exporter)并把 `--batch-rounds` 设成 10
+(exporter 每集泄 ~93 线程,容器 pid 上限 3840)。expert 侧另有一道 `ports.require_exporter()`:没有 exporter
+就拒绝启动,不会跑完一整批再发现什么都没落盘。**录之前确认 instance 0 没有别人的采集或评测。**
+
+剩下的步骤:
+
+1. 转换:`$VENV_DATA_PY src/locomani/pipeline/convert_to_hf_format.py --sessions <session> --manifest <manifest.jsonl>
    --out <ds> --holdout N --holdout-out <ds>_val --jobs 4`(视频流从 session 自动发现;`left_gripper` 键已在转换器里),
    然后 `check_dataset.py <ds>`——它的 grasp-causality 检查(合爪后物体上升 > 3 cm、末端物-腕距离稳定)对双臂同样
    适用,是唯一能抓出残段 episode 的地方。
-4. 训练用 `configs/gr00t_sonic_3cam_bimanual.py`。
-5. 恢复分支的数据(单侧未进区、松开重来、站位重定位)按 `docs/bimanual_grasp_design.md` D 显式采一批;没有它们
+2. 训练用 `configs/gr00t_sonic_3cam_bimanual.py`。
+3. 恢复分支的数据(单侧未进区、松开重来、站位重定位)按 `docs/bimanual_grasp_design.md` D 显式采一批;没有它们
    策略只见过 (开,开) 和 (闭,闭)。
 
 ---

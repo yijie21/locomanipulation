@@ -516,6 +516,8 @@ had any way to pass one. Added, via `locomani.config_base` (the same `--config P
   file's round logic has no field of `CrateTaskConfig` to apply (confirmed: no `CrateTaskConfig`/
   `DEFAULT_CRATE_TASK` reference existed anywhere in it before this change). Said so explicitly in the
   code comment and in `run_bimanual_pilot.sh`'s header rather than fabricating a hookup.
+  *(Superseded 2026-09-11: `bimanual_carry.py` now reads `CrateTaskConfig.deploy_self_heal_rounds`,
+  the first field of the task config its round loop applies. Ledger crate.md, 2026-09-11.)*
 - **`configs/tasks/crate_wall.json`** = `{"schema_version": 1, "wall_feature": "rail", "wall_walk": true}`,
   the canonical config reproducing the recorded gate baseline; loads and validates via
   `CrateTaskConfig.load` (checked directly). Mentioned in both scripts' header comments.
@@ -524,6 +526,10 @@ had any way to pass one. Added, via `locomani.config_base` (the same `--config P
   `bash scripts/run_wall_pilot.sh 10 0 --set wall_walk=true` or
   `--config configs/tasks/crate_wall.json` works; `--rounds`/`--seed`/`--manifest`/`--label` are
   untouched (still positional/defaulted exactly as before). `bash -n` clean on both.
+  *(Superseded 2026-09-11: both files are now 3-line shims over `scripts/run_crate_pilot.sh` ->
+  `src/locomani/pipeline/run_crate_pilot.py`. The `[rounds] [seed]` positionals and the verbatim
+  forwarding survive, but the extra args now reach the DRIVER, which snapshots `--config`/`--set`
+  into `<out>/task_config.json` and hands the expert that. Ledger crate.md, 2026-09-11.)*
 
 **Checks (all green):** `ruff format . && ruff check .` (repo-wide, 274 files); full pytest suite, 177
 passed / 9 skipped / 11 subtests (unchanged); `lint_env.py --strict`; `gen_config_reference.py --check`;
