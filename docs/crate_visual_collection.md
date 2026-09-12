@@ -48,6 +48,10 @@ provenance, instance cleanup and the attempt manifests.
 
 ## Outputs and limits
 
+Before sharing or packaging these videos, follow the mandatory
+[video export procedure](rendering.md#video-export). Recorded originals below are
+audit inputs; viewing/download links must use the verified compressed previews.
+
 - `videos_00/*.mp4`: simulator overview with the camera insets, one per completed video attempt.
 - `observations/<label>/*.mp4`: the RGB frames actually consumed by the expert.
 - `observations/<label>/observations.jsonl`: matching frame indices, timestamps,

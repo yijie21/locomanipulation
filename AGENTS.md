@@ -29,6 +29,11 @@ a task needs historical evidence. Historical experiments are not startup reading
 
 ## Shared resources and artifacts
 
+- Every video exported, linked for viewing or packaged for download MUST be a
+  compressed preview: target 300–500 KB per video, hard cap **500,000 bytes**.
+  Verify each file's actual size before delivery; ZIPs must contain these previews.
+  Preserve source recordings. Follow [video export](docs/rendering.md#video-export)
+  for compression, full-duration playback and verification; report download sizes.
 - Before GPU/stack work, check live GPU use, instance locks and STATE. Acquire
   resources through the existing launcher. Stop only the owned instance.
 - Formal ScaleBFM collection uses GPU EGL and pilot admission checks; read the

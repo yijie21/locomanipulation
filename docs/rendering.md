@@ -1,5 +1,32 @@
 # 渲染:MuJoCo 物理 + Isaac 像素
 
+## Video export
+
+导出任何任务的视频、提供播放链接或打包 ZIP 前，必须满足
+[AGENTS 的视频大小规则](../AGENTS.md#shared-resources-and-artifacts)。
+这是面向查看和下载的交付步骤；原始采集、训练和审计视频保留在原位置。
+
+1. 在新的预览目录中压缩；保持完整时长、正常播放速度和画面比例。
+   可以降低分辨率、帧率和码率。声音有信息时保留，不能通过裁掉任务阶段或加速来达标。
+2. 从以下命令开始，再按实测大小调整 CRF、分辨率和帧率。固定 CRF 不保证文件大小。
+
+   ```bash
+   ffmpeg -v error -nostdin -n -i input.mp4 \
+     -map 0:v:0 -map '0:a?' -vf 'scale=640:-2,fps=10' \
+     -c:v libx264 -preset medium -crf 32 -pix_fmt yuv420p \
+     -c:a aac -b:a 24k -movflags +faststart preview.mp4
+   wc -c preview.mp4
+   ffmpeg -v error -xerror -i preview.mp4 -f null -
+   ```
+
+3. 每个文件都要检查实际字节数、完整解码、起止画面，以及与原片的时长差
+   （只允许重采样到输出帧率时的一帧舍入差）。超限就继续压缩。
+   长视频若无法兼顾上限和可辨识性，拆成编号连续片段，覆盖原片完整时间范围并明确标注。
+4. 播放页面和回复链接指向合格预览。ZIP 仅包含这些预览和必要的小型说明文件；
+   打包后再次核对成员和总体积，并报告单片范围及 ZIP 大小。历史原片和旧大包保留作审计。
+
+## 渲染与物理
+
 物理永远是 MuJoCo,wall-clock,SONIC 的 ZMQ 时序一行不改。Isaac 只负责像素,
 按已录轨迹**事后重渲**,不进采集回路。这与 SIMPLE 自己的 SONIC 路线一致
 (`docs/source/sonic-wbc/replay_render.md`:把 Isaac 放进实时回路会饿死

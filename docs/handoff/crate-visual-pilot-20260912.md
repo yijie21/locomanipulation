@@ -35,6 +35,16 @@ never met its observed stability conditions for an uninterrupted two seconds.
 No external interventions or runtime errors occurred in this batch.
 [Play all ten videos](../../outputs/crate_visual_expert_20260912/collection_10_v2/index.html).
 
+For quick review, this index now serves compressed full-duration previews:
+**238–492 KB each**, 640×480, 10 FPS, H.264. The
+[ten-video ZIP](../../outputs/crate_visual_expert_20260912/collection_10_v2/download_preview/videos_10_small.zip)
+is **3.40 MB**, reduced from the original 71.7 MB package. All files pass the
+[mandatory video export procedure](../rendering.md#video-export): byte limits,
+full decoding, start/end inspection and duration within one output frame of the source.
+`download_preview/export.py`, `export_manifest.json` and `validation.json` preserve
+the commands, hashes and checks. Original recordings, the original index and the
+large package remain retained; the previews do not replace scientific evidence.
+
 GPU-tested control revision: `3ac447a616914a8bf4f20471785a95a6162000cd`.
 SONIC policy: `policy/sonic_v1_1`, encoder enabled, GPU 0 / instance 1.
 Fixed marked scene: `scene_marked_v3`, metadata marker version 2; placement jitter
