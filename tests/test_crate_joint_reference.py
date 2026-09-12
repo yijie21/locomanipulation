@@ -29,7 +29,7 @@ def test_acceleration_bound_uses_the_actual_irregular_camera_intervals():
     reference = JointReference(q, solver, speed=0.7, acceleration=2.0)
     previous, velocity, last_dt = q.copy(), 0.0, None
     for tick in range(90):
-        dt = (0.02, 0.05, 0.03)[tick % 3]
+        dt = (0.02, 0.05, 0.2, 0.03, 0.3)[tick % 5]
         target = q.copy()
         target[15] += 0.6 if tick < 30 else -0.6
         current = reference.step(target, dt)

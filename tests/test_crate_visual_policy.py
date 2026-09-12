@@ -90,8 +90,10 @@ def closed_policy():
     """Reach the closed state through observable perfect tracking, without simulator truth."""
     policy = VisualCratePolicy(GRIPS, CrateVisualConfig())
     tools = np.array([[0.27, 0.2, 0.1], [0.27, -0.2, 0.1]])
+    rotations = [np.eye(3)] * 2
     for now in np.arange(0, 10, 0.05):
-        command = policy.step(now, estimate(now), tools, [np.eye(3)] * 2, [0.02, 0.02])
+        command = policy.step(now, estimate(now), tools, rotations, [0.02, 0.02])
+        rotations = command.rotations.copy()
         tools = command.positions.copy()
         if command.phase == "probe":
             return policy, float(now), tools
@@ -109,8 +111,10 @@ def test_loaded_motion_waits_for_lagging_hand():
 def test_occlusion_during_closure_does_not_cause_catchup_jump():
     policy = VisualCratePolicy(GRIPS, CrateVisualConfig())
     tools = np.array([[0.27, 0.2, 0.1], [0.27, -0.2, 0.1]])
+    rotations = [np.eye(3)] * 2
     for now in np.arange(0, 10, 0.05):
-        command = policy.step(now, estimate(now), tools, [np.eye(3)] * 2, [0.02, 0.02])
+        command = policy.step(now, estimate(now), tools, rotations, [0.02, 0.02])
+        rotations = command.rotations.copy()
         tools = command.positions
         if 0.1 < command.closure < 0.9:
             break
@@ -150,3 +154,13 @@ def test_hold_requires_uninterrupted_tracking_and_attachment():
         if stamp < resumed + 2:
             assert not command.finished
     assert command.finished and command.reason == "completed"
+
+
+def test_untracked_wrist_orientation_prevents_closure():
+    policy = VisualCratePolicy(GRIPS, CrateVisualConfig())
+    tools = np.array([[0.27, 0.2, 0.1], [0.27, -0.2, 0.1]])
+    for now in np.arange(0, 15, 0.05):
+        command = policy.step(now, estimate(now), tools, [np.eye(3)] * 2, [0.09, 0.09])
+        tools = command.positions.copy()
+        assert command.closure == 0.0
+    assert command.phase == "align"

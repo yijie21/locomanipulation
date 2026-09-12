@@ -99,7 +99,10 @@ class VisualCratePolicy:
                 max(Rotation.from_matrix(desired_rotation @ rotation.T).magnitude() for rotation in self.rotations)
                 < 0.03
             )
-            if np.max(errors) < tolerance and orientation_ready:
+            measured_orientation_ready = max(
+                Rotation.from_matrix(desired_rotation @ rotation.T).magnitude() for rotation in measured_rotations
+            ) < np.radians(cfg.palm_align_tolerance_deg)
+            if np.max(errors) < tolerance and orientation_ready and measured_orientation_ready:
                 self.ready_since = now if self.ready_since is None else self.ready_since
                 if now - self.ready_since > 0.3:
                     self._enter("align" if self.phase == "pregrasp" else "close", now)

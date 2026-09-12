@@ -12,7 +12,7 @@ class JointReference:
         self.last_dt = None
 
     def step(self, target, dt):
-        dt = float(np.clip(dt, 0, 0.1))
+        dt = max(float(dt), 0.0)
         if dt == 0:
             return self.joints.copy()
         indices = self.indices

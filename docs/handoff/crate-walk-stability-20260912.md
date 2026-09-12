@@ -64,8 +64,18 @@ identity for each pilot. No original video is replaced by a compressed preview.
 
 ## Final batch and checks
 
-A fixed-version ten-episode batch is pending. Full-batch outcomes, compressed
-video links and final review results will be recorded here after verification.
+The first fixed batch `collection_10_v1` at `1445f98` completed 6/10 successes.
+Independent Standards review found no material issues. Spec review found two:
+intervals above 0.1 s were truncated by the acceleration limiter, and the closure
+gate tested commanded orientation without checking measured wrist orientation.
+Both regressions were reproduced by failing CPU tests, then fixed. Actual elapsed
+time is retained; both measured wrists must be within 10° of the desired rotation
+and the reference rotation must finish blending. At first closure in the old batch,
+measured wrist errors ranged from 1.92° to 8.06°; this informs the tolerance but
+does not validate physical contact. Tests cover 0.2/0.3 s gaps and nontracking wrists.
+
+A corrected ten-episode batch is pending. Its outcomes, compressed video links and
+final review results will be recorded here after verification.
 
 The current scope is a frontal, obstacle-free approach to the marked basket.
 The top-pair method is a coarse navigation estimate, not a six-DoF grasp pose.

@@ -22,6 +22,7 @@ class CrateVisualConfig:
     joint_speed: float = 0.7  # maximum reference joint speed, radians/second
     joint_acceleration: float = 2.0  # maximum reference velocity change, radians/second squared
     palm_rotation_speed: float = 0.6  # maximum palm reference rotation speed, radians/second
+    palm_align_tolerance_deg: float = 10.0  # both measured wrists must align before closing
     tracking_gain: float = 0.5  # proportional correction from observed tool-point error
     tracking_cap: float = 0.025  # maximum Cartesian tracking correction, metres
     align_tolerance: float = 0.018  # both measured grasp points must align within this distance
@@ -57,6 +58,7 @@ class CrateVisualConfig:
             "joint_speed",
             "joint_acceleration",
             "palm_rotation_speed",
+            "palm_align_tolerance_deg",
             "approach_speed",
             "close_seconds",
             "timeout_seconds",
