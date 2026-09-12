@@ -185,7 +185,7 @@ watch -n 30 bash scripts/eval_progress.sh <臂名> [<臂名> ...]
 **结果分析**:
 
 ```bash
-python3 src/locomani/tasks/bottle/failure_taxonomy.py outputs/eval/<臂名> --json
+$VENV_SIM_PY src/locomani/tasks/bottle/failure_taxonomy.py outputs/eval/<臂名> --json   # 要 numpy,系统 python3 没有
 ```
 
 按阶段给出 16 类失败叶子(A 导航 / B 到位未合爪 / C 合爪未抬起 / D 抬起后丢 / E 摔),

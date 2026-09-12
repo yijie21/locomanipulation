@@ -12,9 +12,9 @@ import sys
 import mujoco
 import numpy as np
 
-_os.chdir(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
-)  # repo root: the scene/output paths below are repo-relative
+_SRC = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+sys.path.insert(0, _SRC)  # reach src/ for `python src/locomani/tasks/crate/reach_wall_sweep.py`
+_os.chdir(_os.path.dirname(_SRC))  # repo root: the scene/output paths below are repo-relative
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST as OFF  # noqa: E402
 from locomani.primitives.arm_ik import ArmIK  # noqa: E402
 
@@ -134,6 +134,7 @@ for so, depth, h, pdeg in itertools.product(
         f"{so:5.2f} {depth:5.2f} {h:5.3f} {pdeg:5d} | {e['left'] * 100:5.1f} {e['right'] * 100:5.1f} | {np.degrees(q[20]):4.0f} {np.degrees(q[27]):4.0f} | {np.degrees(q[18]):4.0f} {np.degrees(q[25]):4.0f} | {sorted(bad) if bad else '-'}{'  <== OK' if ok else ''}",
         flush=True,
     )
+_os.makedirs("outputs/reach", exist_ok=True)
 json.dump(rows, open("outputs/reach/wall_grasp_sweep.json", "w"), indent=0)
 print("\n=== OK configs (IK < 1 cm both hands, no penetration) ===")
 for r in rows:

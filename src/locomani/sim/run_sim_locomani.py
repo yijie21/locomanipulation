@@ -292,6 +292,20 @@ def main(config: SimLoopConfig) -> None:
     # before the sim process is launched; whitelisted in scripts/lint_env.py
     # the same way the TF_*_PORT vars are.
     wbc_config["DOMAIN_ID"] = int(os.environ.get("SONIC_DDS_DOMAIN", wbc_config.get("DOMAIN_ID", 0)))
+    # Same boundary for the camera publisher: upstream's SimLoopConfig.camera_port
+    # defaults to 5555 (instance 0) and nothing else here set it, so on any other
+    # instance the image subprocess bound 5555 while start_stack.sh waited on
+    # 5555 + 10*INSTANCE ("camera port never opened", 2026-09-11). ports.camera()
+    # is the one formula (TF_CAMERA_PORT wins, else base + 10*INSTANCE); an
+    # explicit --camera-port that disagrees is refused rather than half-applied.
+    _cam = ports.camera()
+    if config.camera_port not in (5555, _cam):
+        raise SystemExit(
+            f"--camera-port {config.camera_port} disagrees with TF_CAMERA_PORT/INSTANCE -> {_cam}; "
+            "set TF_CAMERA_PORT (or INSTANCE) instead, see locomani/sim/ports.py"
+        )
+    config.camera_port = _cam
+    print(f"[sim] camera publisher -> :{_cam} (instance {ports.instance()})")
 
     # viewer.sync() costs a fixed ~9-10ms per call on this box, independent of
     # scene complexity (measured: 103 geoms and 5889 geoms both ~8.7-9.1ms

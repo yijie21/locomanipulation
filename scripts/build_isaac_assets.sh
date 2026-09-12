@@ -114,11 +114,36 @@ fi
 mkdir -p "$SCENE_DIR"
 echo "scene  + building '$LABEL' from $META ..."
 t0=$(secs)
-SCENE_META="$META" SCENE_XML="$SCENE_SRC_XML" OMNI_KIT_ACCEPT_EULA=YES \
+# PYTHONPATH like the robot step above: isaac_scene.py imports locomani and
+# nothing installs it into the render venv (2026-09-11: "No module named
+# 'locomani'" in kit.log, reported as "scene build failed").
+SCENE_META="$META" SCENE_XML="$SCENE_SRC_XML" OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH="$LOCOMANI_ROOT/src" \
     "$RENDER_PY" src/locomani/sim/isaac_scene.py \
     "$LOCOMANI_OUTPUTS/scene" "$SCENE_DIR" > "$SCENE_DIR/kit.log" 2>&1 \
     || fail "scene build failed; see $SCENE_DIR/kit.log and build.log"
 [ -s "$SCENE_DIR/scene.usda" ] || fail "scene build produced no scene.usda; see $SCENE_DIR/kit.log"
+# The previews are a sanity check on the SCENE CONTENT, not on the USD file.
+# isaac_scene.py keeps going when the generated layout assets are absent
+# (outputs/scene/{layout,surface_b}/asset3d/*, layout/background/mesh_model.ply):
+# it logs "MISSING surface A: dining_table" to build.log and writes a stage with
+# lights + robot only, so every preview is the dome light's flat colour and
+# the Isaac half of render_wall_pilot shows the robot floating in grey
+# (2026-09-11, SRA0889 -- a machine that never ran the layout pipeline; the
+# RTX renderer itself was fine). Surface the MISSING lines and warn.
+grep -E "MISSING|background source" "$SCENE_DIR/build.log" | sed 's/^/  /'
+"$RENDER_PY" - "$SCENE_DIR" <<'PY' || echo "WARN: previews are flat -- the scene has no room/table geometry. Check the MISSING lines above: the generated layout assets under $LOCOMANI_OUTPUTS/scene/{layout,surface_b} are not on this machine (copy them from the collection machine). The robot and objects still render; only the background is empty."
+import glob, sys
+import numpy as np
+from PIL import Image
+flat = []
+for f in sorted(glob.glob(sys.argv[1] + "/*/rgb_0000.png")):
+    a = np.asarray(Image.open(f).convert("RGB")).astype(float)
+    if a.std() < 2.0:
+        flat.append(f"{f.split('/')[-2]} (std {a.std():.1f})")
+if flat:
+    print("  flat previews:", ", ".join(flat))
+    sys.exit(1)
+PY
 echo "$want" > "$SCENE_DIR/.stamp"
 echo "scene  + done in $(( $(secs) - t0 ))s  $(du -sh "$SCENE_DIR" | cut -f1)"
 # isaac_scene.py writes its own build.log (Isaac swallows print into its

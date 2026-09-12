@@ -78,6 +78,21 @@ WHITELIST = {
     # event log as metadata, not read back to gate anything.
     "TF_DATASET_FPS",
     "GYM_CREEP_OBS",
+    # Dead-variable guards (2026-09-11): the two crate preflights read these
+    # ONLY to refuse to start when a caller still sets them (they were the
+    # knobs before the refactor-step-3 argparse conversion; now --pose-left-deg,
+    # --pw/--out-dist/--up/--over/--warm/--save/--sag/--rot/--pitch0). Never
+    # used as a value -- same pattern as run_wall_pilot.sh's WALL_WALK check.
+    "POSE_LEFT_DEG",
+    "PW",
+    "OUT",
+    "UP",
+    "OVER",
+    "WARM",
+    "SAVE",
+    "SAG",
+    "ROT",
+    "PITCH0",
 }
 EXCLUDE = ("third_party/", "src/gr00t/", "outputs/", ".claude/", "legacy/")
 PAT = re.compile(r"os\.environ(?:\.get)?\s*[\(\[]\s*['\"]([A-Za-z_0-9]+)['\"]")
