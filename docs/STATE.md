@@ -106,6 +106,26 @@
   session on disk, that batch must NOT be converted. One batch = one session = one manifest.
   Steps 6-9 now have TWO implementations (coupled = default, teleop_arm = new); everything else
   is shared. Pipeline tail unchanged: `convert_to_hf_format.py` -> `check_dataset.py` (always).
+  **REPO STATE AT THE END OF THIS SESSION (2026-09-12 ~05:0x UTC). NOTHING RUNNING; GPUs 2 MiB, instance 0
+  and 1 free, working tree CLEAN, local main == origin/main == `ae728ff`, `make check` exits 0.**
+  Four more commits after the teleop work, all pushed:
+  * `9054819` the ScaleBFM session's finished work, committed ON ITS BEHALF at the user's request (that session
+    is gone). Ledger scalebfm.md §22: no-retract 200 -> seed 17/3000 -> 41/100. Its three blockers were real
+    and are fixed here: `train.py`'s `parents[3]` resolved to `src/locomani` after the refactor move (now
+    `locomani.paths.REPO`), the frozen `base_model_snapshots.json` died with outputs/ on 09-09 (REBUILT as
+    `configs/scalebfm/base_model_snapshots.json`, overridable with `--base-snapshots`, sha256 into provenance),
+    and `eval.py` gained `--runtime-assets` for the same reason. `follow_video.py` also picks up the
+    export-darkening fix ledger §10 recorded and nobody applied (`mj_camlight` after `mj_kinematics`).
+    I changed NO logic -- only ruff formatting on two of its scripts.
+  * `3455b61` main's `make check` had been RED since d43ce48/999c035 landed (ruff format on
+    `scripts/experiments/{resolve_rejections,retreat_reel}_20260912.py`). Formatting only. Now green.
+  * `ae728ff` **merged `fix/first-round-anchor`, which had been stranded on a branch since 09-10** and was
+    NOT in main (`start_control_once` did not exist here). It fixes round 1 of EVERY batch dying at the spawn
+    -- 34/34 batches of visible200_20260910 -- worth ~34 rounds per 200-episode collection. Code auto-merged;
+    the two doc conflicts were append-style and resolved by keeping main whole and moving the branch's ledger
+    section to the end as §36 (§14 was long taken). `FirstRoundAnchorTests` passes.
+  * Branch cleanup: **all 13 remote branches except `main` are gone.** Each was verified at
+    `git rev-list --count origin/main..<branch>` == 0 immediately before deletion, so no commit was lost.
 - **v1.1 SWAP: THE GRASP PHASE MEASURED END TO END (session cf, 2026-09-12 01:43-02:42 UTC).
   NOTHING RUNNING; GPUs 2 MiB, instance 0 released, ports free.** Ledger bottle.md §32/§33/§34.
   Five commits on `reach-diagnosis-20260912` (2eda5e6, d43ce48, b28564d, 999c035, 870e669), NOT on main --
@@ -182,7 +202,7 @@
         --arm reach --json outputs/diag/<run>/lean_v1_1.json      # then scripts/stack/stop_instance.sh 1
   SONIC_POLICY must be set for BOTH the stack (it picks the deploy's checkpoint) and the diag (it only records
   the name); a diag run whose json says one checkpoint while the stack ran another is the failure to watch for.
-- **MERGE PENDING (updated 2026-09-12 by this session, REPLACES the older entry):
+- **[CLOSED 2026-09-12] MERGE PENDING (kept as the record of how it was resolved):
   `origin/main` has SEVEN commits from henry-zhao (09-11) that local main does not.
   The merge is PROVEN CLEAN at the commit level (`git merge-tree --write-tree main origin/main` -> a tree, no
   conflicts, working tree never touched). It is blocked ONLY by the working tree: two files the incoming commits
@@ -190,11 +210,9 @@
   the 7) and **`scripts/run_wall_pilot.sh`** (touched by 0252687). `git merge` refuses before changing anything.
   **USER RULING 2026-09-12: wait for the crate session to commit those two files, then merge.** Do NOT stash
   them, do NOT merge around them.
-  **PUSHED 2026-09-12 as branch `teleop-channel-20260912`** (= local main, 9 commits: this session's
-  dd36fd8/e8353c5/6bfea4e plus the six reach-diagnosis ones). `main` itself could NOT be pushed -- the
-  branches have diverged (local 9 ahead, 7 behind) and a force-push would have deleted henry's seven.
-  `main`'s upstream is still `origin/main`. When the two files land: `git merge origin/main` on local main,
-  re-run `make config-doc` (both sides touched that generated file), then push main normally.
+  **SETTLED 2026-09-12: all of it is on `origin/main`.** The crate session committed those two files and
+  merged origin/main itself (`378527b`), so henry's seven and this session's work are all in. The interim
+  branch `teleop-channel-20260912` was deleted once main contained it. Nothing here is pending any more.
   What is incoming, and why it is worth taking:
   * `e41b965` stack on a host without /workspace, on any instance -- `PYTHONUNBUFFERED=1` for the readiness
     check, lock dir under `$LOCOMANI_TMP` and deploys under `$DEPS_DIR` instead of hard-coded paths (BOTH
@@ -835,7 +853,7 @@
   and 11 of the 13 official motions peak at exactly 29.8 deg. The reference's 40 deg torso lean is pelvis 11 + waist
   29.8; a deeper lean has to come from hip and squat, not the waist.
   Commands/evidence/remaining comparisons: docs/ledger/bottle.md section15.
-- MERGE PENDING (session cf): branch fix/first-round-anchor (round 1 of every batch failed at the spawn; verified 3/3,
+- [DONE 2026-09-12, merged as `ae728ff`, branch deleted] MERGE PENDING (session cf): branch fix/first-round-anchor (round 1 of every batch failed at the spawn; verified 3/3,
   ledger bottle §14) waits for the uncommitted edits in main's tree (Codex: docs/collection.md, scene_lib.py, bottle_visual/*,
   ledger bottle §12 弯腰审计) to be committed -- it touches docs/collection.md too. Whoever commits those: ping cf or just
   `git merge --no-ff fix/first-round-anchor` (both-appended conflicts only, keep both).
@@ -983,7 +1001,7 @@ restart primitive instead of its own copy (same script, same timeout, same succe
   (collection no longer restarts the deploy, eval pins the restart, SIM_VIS none). standards §1: a one-off runner runs
   from outputs/experiments/<name>/launch.sh and its source is committed under scripts/experiments/.
 - **visible10 + visible200 collections** (0ffbb14 and the Now entries): runners under scripts/experiments/.
-- **fix/first-round-anchor** (384381e, branch, NOT merged): see MERGE PENDING in Now.
+- **fix/first-round-anchor** (384381e): MERGED into main 2026-09-12 as `ae728ff`; branch deleted.
 - **Everything uncommitted in the shared tree committed** (2dd6d9c pick-and-place line, 2ba1a89 ScaleBFM line,
   2a67ea1 session 29's stack lock + SONIC runners + doc corrections, 4934d4c my two missed visible200 runners and
   the doc map, d73c194 a lint fix of my own): 61 paths, split by line, each commit naming whose work it is and that
@@ -1116,7 +1134,23 @@ restart primitive instead of its own copy (same script, same timeout, same succe
   (refactor-step1, old-78536ae, agent-*) after the user's review; (e) push main.
 
 ## Next
-0-CRATE. **Commit the 2026-09-11 crate/entry-point work.** Stage BY NAME -- the tree also holds session cf's and
+0-TELEOP (this session's line, in order; NOTHING of it is running):
+   (i) **Re-run the bottle GPU gate.** `scripts/gate.py compare` is required for a main-code PR and was NOT run
+       for `dd36fd8`. §35.7 argues the coupled line is untouched (the deploy sat in encoder mode `g1` either
+       way, and the arm goes through `upper_body_position[17]`, which I did not change) -- but that is
+       reasoning, not a gate. NOTE the standing caveat: `tests/gate/baseline_bottle.json` is still the
+       29-deg-profile recording, so read the gate against that, not as an absolute.
+   (ii) **Prove the teleop channel can actually produce a dataset.** 6-7 episodes per run are recorded and the
+       `vr_3pt_*` columns carry real wrist commands, but `convert_to_hf_format.py` + `check_dataset.py` have
+       never been run on them. Do this BEFORE any scale collection on that profile.
+   (iii) The descent that knocks the bottle over: align starts 8 cm above the grasp and `STEP_M` allows
+       0.2 m/s, so it descends in 0.45 s and the fingers can clip the bottle while 1-3 cm of lateral error
+       remains (run7 lost 2 rounds to it). Scale the descent rate by the lateral residual, or finish aligning
+       before descending. Do NOT just slow everything down -- that lengthens every episode.
+   (iv) Only after (i)-(iii): decide whether `teleop_arm` becomes the default for collection. Today it is NOT;
+       `configs/tasks/bottle_visible.json` is untouched and every historical dataset came from the coupled one.
+0-CRATE. DONE 2026-09-12 (the crate session committed it, then merged origin/main as `378527b`).
+   Original note: **Commit the 2026-09-11 crate/entry-point work.** Stage BY NAME -- the tree also holds session cf's and
    the pick_place session's uncommitted edits (`docs/ledger/scalebfm.md`, `tasks/bottle/reach_config.py`,
    `ready_grasp_policy.py`, `tasks/bottle_visual/pipeline/*`, `scripts/experiments/*`). NEVER `git add -A`
    (memory never-git-add-all-with-symlinks). File list in the Changed section above.
@@ -1176,7 +1210,7 @@ restart primitive instead of its own copy (same script, same timeout, same succe
    in §18.9. NOT DOING: a continuous gripper -- it would change the only part that works.
 0d. cf: the refactor follow-up (a) is still undone -- the eval-path A/B (old 78536ae eval client vs new, 20 rounds,
    same checkpoint). A checkpoint now exists, so it is finally possible.
-0b. cf: merge fix/first-round-anchor as soon as Codex's uncommitted tree edits land (see MERGE PENDING).
+0b. DONE 2026-09-12 (`ae728ff`): fix/first-round-anchor merged; the branch is deleted.
 0c. cf, after the eval: make `run_learn_pilot` write a config snapshot per STAGE, not once per pilot
    (memory provenance-snapshot-is-per-pilot-not-per-stage). Not done now because that file is the one the running
    pilot executes and session 29 has uncommitted changes in it.
@@ -1201,12 +1235,27 @@ restart primitive instead of its own copy (same script, same timeout, same succe
   6857fbb too, 2026-09-10): tests/test_pose_feedback.py::PoseFeedbackTests::test_offhand_guard_reuses_current_observation
   raised 'stale observation for offhand guard' from backends/sonic/streamed_arm.py:235. It PASSES now, 3 runs out of 3,
   and the whole suite is green -- either someone's uncommitted fix landed in the tree or it was order/timing dependent.
-  Whoever owns it: confirm and delete this line. `make check` is red only on another session's untracked
-  scripts/experiments/scalebfm200_reel_20260910.py (ruff format).
+  Whoever owns it: confirm and delete this line.
+  [RESOLVED 2026-09-12] `make check` is GREEN (exit 0). The red was never the ScaleBFM script alone -- two
+  scripts already ON main (`resolve_rejections`/`retreat_reel_20260912.py`) also failed `ruff format --check`;
+  both fixed in `3455b61`, the ScaleBFM files in `9054819`.
 - User decision on data recovery (Next 1). Nothing runs until then.
 - GPU1 is unusable for sims while the foreign AnyImageNav job holds it at 97 %.
 
 ## Open questions
+- **Is the teleop channel's success rate actually different from the coupled one's, on a bank the coupled
+  line can do?** All the 20/30-vs-0/30 evidence is on `cases10_az374.json`, where the coupled expert scores
+  0/30 with v1.1. Nobody has run the teleop channel on a bank where coupled v1.1 works, so "better" is
+  established only where the alternative was zero.
+- **Why does case `az30:0` fail `[stand] could not turn -19 deg` on BOTH v1.1 legs and NEITHER release leg?**
+  It is upstream of the grasp, so it is not the channel. §21's step-shaped speed map says v1.1 turns slower;
+  that is a hypothesis, not a measurement.
+- **Does anything else in the repo depend on the VR fields being sent on every frame?** `AgentCommander.frame()`
+  now gates them behind `vr_targets`. I checked that the deploy sat in encoder mode `g1` either way and that
+  the exporter writes those columns only at `stream_mode == 5` (so every historical recording already had
+  zeros there) -- but that is an argument from two places, not a sweep of all callers.
+- **`action.psi0_18` is dead data in every dataset written before 2026-09-12** (ledger §35.8, documented in
+  dataset.md). Nobody has decided whether the psi0 modality should be repaired, retired, or left alone.
 - **Does the crate `--record` path actually produce a valid episode?** The key protocol is the bottle line's
   verbatim and the unit tests cover the key SEQUENCE (`c` after the settle, `c`/`x` on the outcome, nothing at
   all for a round that fails before the settle), but no episode has been written: instance 0 was busy. The
@@ -1345,6 +1394,12 @@ restart primitive instead of its own copy (same script, same timeout, same succe
   defaults, docs/setup.md step 7, venv .pth + shebangs, locomanipulation-render's two hard-coded paths all updated).
 
 ## Recent results (last 3)
+- 2026-09-12 the v1.1 swap is SOLVED and it was our own timing bug: the deploy picks its encoder mode from the
+  PRESENCE of `vr_position`, we sent it from boot, the rising edge burned before planner init, and every
+  measurement this repo ever made of that channel was taken in mode `g1`. On the VR 3-point channel with the
+  edge placed correctly, v1.1 goes **0/30 -> 20/30** on §33's bank (Fisher p = 1.4e-08). v1.1 vs release on
+  that channel is **indistinguishable** (7/10 each) -- an earlier 7-vs-3 was my own two executor gates.
+  Ledger §35.1-§35.11
 - 2026-09-11 the 29 deg azimuth is REVERTED: paired on the same 30 cases it scored 3/30 against 37.4's 7/30
   (discordant 1:5, p=0.219) and added 3 clearance and 4 hold-slip failures. §27's 7/20-vs-0/20 bundled four
   changes, so it never isolated the azimuth; the two single-variable tests pool to 5:5, p=1.0. Ledger §30
