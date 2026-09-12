@@ -1,38 +1,42 @@
 # STATE — 2026-09-12
 
-## Current delivery
+## Delivery
 
-- First repository maintenance delivery complete: short agent entry, checked change
-  map, architecture constraints and bottle configuration migration. CPU checks pass.
-- Branch: `refactor/agent-maintenance`; worktree:
-  `/workspace/code/locomanipulation-maintenance-20260912`.
-- [Scope and validation](handoff/agent-maintenance-plan.md).
-- GPU regression finished: baseline `4cc52ba` → candidate `3eca6bb`; paired bottle
-  gates PASS (coupled 15/15, teleop 16/16). Crate wall FAIL (4/7): successes 4/10 →
-  2/10, new tilt failure categories and changed descent timing. Cause unresolved.
-- Owned stacks stopped; GPU 0 released; instance 0/1 locks free at completion.
-  GPU 1 has another task. Check live occupancy and locks before reuse.
-- [GPU regression protocol and results](handoff/maintenance-gpu-regression-20260912.md).
+- Structural maintenance completed at source commits `bac6492` and `ec7ca1d`,
+  against baseline `2e9af84`. Full CPU checks and independent Standards/Spec reviews pass.
+- Short agent entry, shared runtime/configuration seams, task/backend separation,
+  typed results, portable test assets and schema/provenance checks are implemented.
+- [Delivery, checks and measured limits](handoff/maintenance-completion.md).
+  [Change map](reference/change-map.md) is the entry for new code changes.
 
-## Next
+## Runtime evidence and remaining uncertainty
 
-- Resolve crate wall regression evidence before claiming full behavior acceptance;
-  the GPU handoff records protocol corrections and the next discriminating test.
-- Next migration: unify runner/environment resolution; use its ROADMAP acceptance
-  condition.
-- Follow-up migrations and completion conditions: [ROADMAP](ROADMAP.md).
+- Final bottle A/B: coupled 2/30 -> 3/30; teleop 10/10 -> 9/10. Both gates FAIL
+  on newly observed failure categories. Coupled stage-time coverage is insufficient.
+- Same-revision A/A: coupled 2/30 -> 2/30; teleop 10/10 -> 9/10. Both gates also
+  FAIL on new categories. Physical equivalence remains UNVERIFIED; no causal
+  attribution is established and no failure is relabeled PASS.
+- Real policy-server replay PASS: three fixed observations/seeds yield exactly
+  equal action arrays; checkpoint identities verified. Crate pilot flow PASS, 2/2.
+- User excludes crate success/reproducibility as a blocker; scene redesign is
+  separate. No physical control or gate thresholds were tuned in this maintenance.
+- Future bottle behavior work needs a discriminating protocol for these failures.
+  Raw evidence and repeated comparisons: [delivery report](handoff/maintenance-completion.md).
 
-## Evidence
+## Shared resources
 
-- Historical experimental conclusions, including their retractions, have not been
-  independently verified by this maintenance session. Apply the
+- Owned runs ended 2026-09-12 13:31 UTC. GPU 0 was at 2 MiB / 0%; instance 0/1
+  locks were free. GPU 1 has an unrelated job. Check live state before reuse.
+- No maintenance GPU task remains running. Runtime artifacts and weights are preserved.
+
+## Evidence and preserved constraints
+
+- Historical conclusions and retractions remain unverified; use the
   [evidence rules](reference/standards.md#evidence) before relying on them.
-- The previous 1473-line STATE is preserved verbatim in
-  [the archive](archive/state_20260912.md), sourced from commit `4cc52ba`.
-  Its RUNNING lines describe old observations, not current resource availability.
-
-## Parked constraints carried from the previous record
-
-- The historical record attributes NO DAgger and parking crate stand tuning to the
-  user. This maintenance task does not change either policy or physical tuning.
-- Resource/artifact rules: [AGENTS](../AGENTS.md).
+- [Earlier GPU handoff](handoff/maintenance-gpu-regression-20260912.md) retains
+  the first delivery's comparisons and protocol corrections.
+- The original 1473-line [STATE archive](archive/state_20260912.md) is verbatim
+  from `4cc52ba`; its RUNNING claims do not describe current resource availability.
+- The historical record attributes NO DAgger and parked crate stand tuning to the
+  user; this maintenance task does not change either policy.
+- Resource/artifact rules: [AGENTS](../AGENTS.md). [Maintenance status](ROADMAP.md).

@@ -1,21 +1,23 @@
 # Repository maintenance roadmap
 
-Current task: [first migration](handoff/agent-maintenance-plan.md).
-Earlier research plans remain verbatim in [the archive](archive/roadmap_20260912.md);
-claims and priorities there require review before reuse.
+Delivery and evidence: [maintenance completion](handoff/maintenance-completion.md).
+Earlier research plans remain in [the archive](archive/roadmap_20260912.md); their
+claims and priorities require evidence before reuse.
 
-| Work | Completion condition |
+| Work | Status and acceptance evidence |
 |---|---|
-| Short entry and navigation — delivered | Shared AGENTS; checked paths/tests and reading budgets; historical material is reached on demand |
-| Bottle configuration path — delivered | Explicit strategy, tested legacy migration, pure argument resolution and actual consumer tests; paired bottle GPU gates pass, crate wall fails ([results](handoff/maintenance-gpu-regression-20260912.md)) |
-| Runner/environment convergence | Bottle and crate launch through the same environment/lifecycle seam; resolved child settings verified |
-| Backend/task separation | Remove every listed backend-to-task edge; task geometry stays with tasks and backend interfaces receive explicit inputs |
-| Runtime/acceptance contracts | Real typed entry contracts exercised by tests; acceptance can inspect results without executing another round |
-| Test assets | Unit geometry fixtures have explicit inputs; a fresh worktree does not need implicit reads from generated `outputs/scene` assets |
-| Schema and provenance | Conversion and eval agree on field layout/checkpoint identity; stage-specific resolved snapshots verify consumer delivery |
-| Experiment evidence | Recompute decision-relevant observations; distinguish observations, interpretations and design choices |
-| Agent navigation evaluation | Fresh-context representative edits record context read, correct file selection, verification and rework |
+| Short entry/navigation | Delivered: checked AGENTS → change map → owner/tests; history loaded on demand |
+| Configuration path | Delivered: explicit bottle strategy and precedence; immutable runtime choices; real client and subprocess delivery tests |
+| Runner/environment convergence | Delivered: bottle/crate share stack resolution and stage records; actual-shell admission and failed-start cleanup tests |
+| Backend/task separation | Delivered: backend-to-task exception list empty; bottle execution stays with bottle; generic arm dependencies explicit |
+| Runtime/acceptance | Delivered: typed completed RoundResult and pure acceptance; task-specific phase inputs remain local |
+| Test assets | Delivered: explicit portable geometry fixture; full CPU checks pass without generated outputs/scene |
+| Schema/provenance | Delivered: shared stored/model field order; server identity checked; final deployment cwd/model/binary hashes recorded per launch |
+| Evidence discipline | Delivered for this maintenance: pinned comparisons/raw logs and claim scopes; historical conclusions/retractions remain unverified |
+| Agent navigation | Delivered: two fresh-context probe edits with read logs, patches and passing tests; no inferred token-reduction percentage |
+| Runtime validation | Executed and audited: inference equality PASS; crate pilot flow PASS; bottle A/B and A/A gates FAIL, physical equivalence unverified |
 
-Choose one complete path at a time. Validate compatibility against a pinned revision
-and separate intentional behavior changes from structural migration. Keep useful
-existing tests, helpers and formats until their replacements are exercised.
+The user excluded crate physical success/reproducibility as a blocker on 2026-09-12.
+Crate scene redesign remains separate future work; this delivery does not tune its
+control or acceptance thresholds. Size advisories locate remaining complex control
+routines; they are not a claim that every function has been rewritten.

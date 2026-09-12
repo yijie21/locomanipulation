@@ -130,3 +130,8 @@ Next: investigate crate wall with a predeclared same-revision repeat and matched
 A/B schedule to distinguish run variance from a revision effect; inspect tilt
 traces at the failed stages. Keep this FAIL until new discriminating evidence exists.
 Do not change acceptance tolerances or tune control parameters to obtain a pass.
+
+Later scope/evidence update: the user excluded crate physical reproducibility as a
+maintenance blocker. The ABBA control and final migration validation are recorded
+in [maintenance completion](maintenance-completion.md). The results above remain
+observations of the original pinned revisions; this update does not turn a FAIL into a PASS.

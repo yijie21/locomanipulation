@@ -7,7 +7,7 @@
 - [Standards](reference/standards.md): architecture, checks and evidence rules.
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): implemented command entry points.
-- [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): remaining migrations.
+- [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Task and pipeline detail — read when needed
 
@@ -26,7 +26,7 @@ this index does not validate their measurements or causal conclusions.
 - [Silent-failure notes](reference/silent_failures.md): historical troubleshooting
   leads; check referenced code and evidence before applying a recommendation.
 - [Archive index](archive/INDEX.md): original reports and superseded entry documents.
-- [First migration](handoff/agent-maintenance-plan.md); [remaining maintenance](handoff/maintenance-completion.md).
+- [First migration](handoff/agent-maintenance-plan.md); [maintenance delivery and validation](handoff/maintenance-completion.md).
 
 A newer claim or a retraction has no automatic evidentiary priority. Follow
 [the evidence rules](reference/standards.md#evidence). Retain original records,

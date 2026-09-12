@@ -27,6 +27,15 @@ that task argument to `--config`. Use a fresh output directory. The stage verbs
 `convert` and `train` use the same driver; read its `--help` before resuming a run.
 After conversion run `src/locomani/pipeline/check_dataset.py` on the dataset.
 
+## Read a run's evidence
+
+`config_snapshot.json` records the pre-launch configuration and input identities.
+`commands.jsonl` / `timings.jsonl` record actual stage settings and exit status.
+`deploy_receipts.jsonl` appends the launcher's final cwd, executable and checkpoint
+hashes on start/restart, including alternate deployment trees. Closed-loop evaluation
+also records the serving process's checkpoint hashes and checks its model field order.
+An older policy server must be restarted to supply the identity endpoint.
+
 ## Other entries
 
 | Operation | Driver / guide |
