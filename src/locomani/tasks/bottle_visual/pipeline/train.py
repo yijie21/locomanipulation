@@ -16,13 +16,18 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+from locomani.paths import REPO
+
+# 2026-09-10: parents[3] resolved to src/locomani after the refactor move, so every
+# ROOT-relative path here (snapshots, modality config, src/gr00t) pointed at a directory
+# that does not exist. The repo root comes from locomani.paths, like the rest of the line.
+ROOT = Path(REPO)
+DEFAULT_BASE_SNAPSHOTS = ROOT / "configs/scalebfm/base_model_snapshots.json"
 
 
-def build_config(dataset, output, seed, resume=None):
-    snapshots = json.loads(
-        (ROOT / "outputs/experiments/scalebfm_visual_goal_20260908/base_model_snapshots.json").read_text()
-    )
+def build_config(dataset, output, seed, resume=None, snapshots_path=None):
+    snapshots_path = Path(snapshots_path or DEFAULT_BASE_SNAPSHOTS)
+    snapshots = json.loads(snapshots_path.read_text())
     for path in snapshots.values():
         if not Path(path).is_dir():
             raise FileNotFoundError(f"Frozen base-model snapshot missing: {path}")
@@ -95,6 +100,11 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--seed", type=int, choices=[17, 29], required=True)
     parser.add_argument("--resume")
+    parser.add_argument(
+        "--base-snapshots",
+        default=str(DEFAULT_BASE_SNAPSHOTS),
+        help="Frozen base-model snapshot map; the 2026-09-08 original was lost with outputs/ on 2026-09-09",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     dataset, out = Path(args.dataset), Path(args.out)
@@ -107,7 +117,8 @@ def main():
     info = json.loads((dataset / "meta/info.json").read_text())
     if not args.dry_run and info["total_episodes"] != 200:
         raise ValueError("Formal arms require exactly200 accepted training episodes")
-    config = build_config(dataset, out, args.seed, args.resume)
+    snapshots_path = Path(args.base_snapshots)
+    config = build_config(dataset, out, args.seed, args.resume, snapshots_path)
     # Exercise the same serialization boundary as experiment.run in dry runs too.
     from omegaconf import OmegaConf
 
@@ -120,6 +131,7 @@ def main():
         dataset_manifest_sha256=hashlib.sha256((dataset / "input_manifest.json").read_bytes()).hexdigest(),
         modality_sha256=hashlib.sha256((ROOT / "configs/gr00t_bfm_visual_2cam.py").read_bytes()).hexdigest(),
         launcher_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        base_snapshots_sha256=hashlib.sha256(snapshots_path.read_bytes()).hexdigest(),
         gr00t_source_sha256={
             str(p.relative_to(ROOT / "src")): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted((ROOT / "src/gr00t").rglob("*.py"))
@@ -138,10 +150,7 @@ def main():
         shutil.copy2(ROOT / "src" / relative, destination)
     shutil.copy2(__file__, source_dir / Path(__file__).name)
     shutil.copy2(ROOT / "configs/gr00t_bfm_visual_2cam.py", source_dir / "gr00t_bfm_visual_2cam.py")
-    shutil.copy2(
-        ROOT / "outputs/experiments/scalebfm_visual_goal_20260908/base_model_snapshots.json",
-        source_dir / "base_model_snapshots.json",
-    )
+    shutil.copy2(snapshots_path, source_dir / "base_model_snapshots.json")
     config.save(out / "resolved_config.yaml")
     print(
         json.dumps(

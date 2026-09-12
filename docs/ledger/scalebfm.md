@@ -307,3 +307,57 @@ wall中位5.497s,范围4.82–6.46s;相较旧采集175.94s中位约32倍(不同s
   否则不放行批量采集。plan保存EGL设备;RESULTS包括rendering_history,不声称全部200集同渲染方式。
 - Ruff和线程受限make check通过(exit0,/tmp/scalebfm_egl_check.log)。冻结collect仍是启动时旧版本,
   本次由runner强制EGL;新的通用入口默认/防误用检查适用于之后新建采集。
+
+## 22. 2026-09-10 无回撤 200 集 → seed 17/3000 步 → 100 场闭环 = 41/100(旧判据下 ≤38/100)
+
+**为什么跑**:用户要求在第 19–21 节采集的 `scalebfm200_noretract_sonic_20260910`(200 集 / 49,387 帧 /
+400 视频,EGL)上训练并做 100 场闭环。目录 `outputs/experiments/scalebfm200_noretract_s17_20260910/`,
+GPU1 独占,全程不占 instance/端口(这条线是进程内独立 MuJoCo,无 SONIC deploy)。
+
+**启动前修的两个阻塞**(重构搬家 + 09-09 outputs 事故的后遗症,这条线搬家后从未跑过):
+
+| 症状 | 原因 | 修法 |
+|---|---|---|
+| `pipeline/train.py` 所有 ROOT 相对路径指向不存在的目录 | 搬进 `tasks/bottle_visual/pipeline/` 后 `parents[3]` = `src/locomani` | 改用 `locomani.paths.REPO`(与 eval.py 一致) |
+| 冻结的 `base_model_snapshots.json` 不存在 | 随 `scalebfm_visual_goal_20260908/` 一起被删 | 重建为 `configs/scalebfm/base_model_snapshots.json`,指向幸存 HF cache 的同两个快照(Cosmos-Reason2-2B@9ce19a1、GR00T-N1.7-3B@2fc962b),权重 sha256 记在 `_digests.json`;**是重建件,不是原件** |
+| `verify_runtime_assets()` 默认清单不存在 | 同上 | `eval.py` 加 `--runtime-assets`(照抄 collect.py),指向采集目录幸存的清单;**103/103 资产哈希未变** |
+
+场景核对:eval 默认场景 `outputs/scene/sim/` 与采集冻结副本 `scene_locomani.xml` / `scene_meta.json` **逐字节相同**。
+
+| 变量 | 数字 |
+|---|---|
+| 训练 | seed 17,3000 步,GPU1,15:34–17:55 UTC,2.8 s/it;batch 4×accum 16 = 64,LR 1e-4,AdamW8bit,冻结 vision/LLM |
+| 闭环 | 100 普通 reset,seeds 31001:31101,`yplus_center_v1`,`--recovery-episodes 0`,17:55–18:08 UTC(745 s 推理墙钟,推理中位 66 ms/次) |
+| **结果(新判据 sonic_lift6cm_hold2s_v1)** | **41/100**:高桌近瓶 **25/34**、低桌近瓶 **11/33**、低桌深瓶 **5/33** |
+| 失败 | physics warning/fall 34、timeout 25;**"闭合前碰瓶"这一类已不存在**(判据里被删掉了) |
+| 其他 | 95/100 至少合过一次爪;0 场 MuJoCo 警告;0 场原地不动不合爪;可见度中位 1.00、最低 0.52 |
+
+**判据变了,所以 41 不能直接和 §9 的 25 相减。** 提交 `2ba1a89` 同时改了两处:删掉"闭合前碰瓶 / 伸手前瓶
+高度变化"两个提前中止,并把成功从「carry 阶段 rise ≥ 0.08 m、tilt ≤ 30°、|v| < 0.06,持续 1.0 s」换成
+「任意阶段 rise > 0.06 m 持续 > 2.0 s」。用同一批保存的 trace 按旧判据重算(脚本
+`scripts/experiments/scalebfm200_rescore_20260910.py`,结果 `RESCORE.json`):
+
+| 打分方式 | 总数 | 高 / 低近 / 低深 |
+|---|---|---|
+| 新判据(本次正式数) | 41/100 | 25/34, 11/33, 5/33 |
+| **旧判据重算(上界)** | **38/100** | 24/34, 10/33, 4/33 |
+| 只换升举阈值、不加碰瓶中止 | 39/100 | 24/34, 11/33, 4/33 |
+| §9 参照(旧判据) | 25/100 | 10/34, 10/33, 5/33 |
+
+旧判据重算是**上界**:object_audit 没存瓶速,`|v| < 0.06` 这一项没法复现,而它只会让数变小。
+100 场里 24 场"合爪前碰到瓶",但其中只有 1 场最终算成功——**删掉碰瓶中止几乎没有送分**,
+16 分的差距里判据只占 3 分。
+
+**裁定**:同 seed、同步数、同 100 场池,像素对像素地比,这个臂比 §9 高约 **13 分,几乎全部来自高桌近瓶
+(10/34 → 24–25/34)**;低桌近瓶(10 → 10–11)和低桌深瓶(5 → 4–5)**没动**。Fisher 精确检验双侧:
+41 vs 25 p = 0.024,像素对齐的 38 vs 25 p = 0.067。§9 的每场结果已在事故中删除,所以只能做非配对比较;
+§11 也早就写过旧 EGL 基线不可逐比特复现。因此这是"高桌那一层明显变好、深瓶完全没变"的一次跨实验观测,
+不是一个配对显著结果。
+
+**视频**:`outputs/videos/scalebfm200_s17_20260910/reel_10.mp4`(8 场,三层 × 成功/超时/摔倒,130 s)。
+顺带修了 §10 记录但一直没修的导出变暗 bug:`follow_video.py` 对新 MjData 只调 `mj_kinematics`,
+现补 `mj_camlight`(本片中位亮度 90.2)。`export.py` 没有这个调用点,数据集视频不受影响。
+
+**开放问题**:低桌深瓶 5/33 与 §9 完全一致,两次训练、两套数据、两个判据都没动过它——深瓶层的失败
+不像是数据量或判据问题;34 场 physics warning/fall 里 21 场在低深层,与 §10"屈膝持续下沉"的描述一致,
+但本次没做骨盆干预对照(ABCD 在事故中丢失)。

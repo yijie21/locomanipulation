@@ -1,0 +1,9 @@
+{
+  "nvidia/Cosmos-Reason2-2B": {
+    "model.safetensors": "fa5a6e6ef4fce40216b185cc48a3b24d31637ac3e2ba69c107ed1f389c1e6ede"
+  },
+  "nvidia/GR00T-N1.7-3B": {
+    "model-00001-of-00002.safetensors": "8a1a1d8a33c99103c7c80c136073c5bb8bfe9ca8f7a970c93c033ea89742906d",
+    "model-00002-of-00002.safetensors": "c3f61940deb2007ba1ad7743013b57f0f8462356151db9655175d7aca2d40661"
+  }
+}

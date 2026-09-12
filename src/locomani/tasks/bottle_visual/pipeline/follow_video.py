@@ -128,6 +128,9 @@ def render_case(case, video, ordinal, parameters, preview_only=False):
         for f, i in enumerate(indices):
             data.qpos[:] = qpos[i]
             mujoco.mj_kinematics(model, data)
+            # Ledger section 10 (2026-09-09): kinematics alone leaves light_xdir at (0,0,0) on a
+            # fresh MjData, which darkened every exported third-person frame (mean 42.28 vs 65.95).
+            mujoco.mj_camlight(model, data)
             yaw = heading(qpos[i, 3:7])
             camera_state = camera_values(qpos[i, :3], yaw, camera_state)
             cam.lookat[:] = camera_state[0]

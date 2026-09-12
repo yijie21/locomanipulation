@@ -344,6 +344,10 @@ def main():
     parser.add_argument("--policy-device", choices=["cpu", "cuda"], default="cuda")
     parser.add_argument("--validation-dataset")
     parser.add_argument(
+        "--runtime-assets",
+        help="Explicit runtime asset manifest; the 2026-09-08 default was lost with outputs/ on 2026-09-09",
+    )
+    parser.add_argument(
         "--recovery-episodes",
         type=int,
         choices=[0, 12],
@@ -368,7 +372,7 @@ def main():
         mujoco=mujoco.__version__,
         source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in line_sources()},
     )
-    config["runtime_assets"] = verify_runtime_assets()
+    config["runtime_assets"] = verify_runtime_assets(args.runtime_assets)
     saved = out / "config.json"
     if saved.exists() and json.loads(saved.read_text()) != config:
         raise ValueError("Config changed; use a new evaluation ID")
