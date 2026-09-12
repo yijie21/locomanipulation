@@ -72,7 +72,7 @@ def background_source(scene_root: Path, repo: Path) -> tuple[Path, bool]:
     return shipped, True
 
 
-def build_key(scene_root: Path, repo: Path, meta_path: Path, scene_xml: Path) -> str:
+def build_key(scene_root: Path, repo: Path, meta_path: Path, scene_xml: Path, destination: Path) -> str:
     """Validate required geometry and hash sources, builder and destination root.
 
     Including paths invalidates USD caches copied from another checkout: generated
@@ -90,6 +90,7 @@ def build_key(scene_root: Path, repo: Path, meta_path: Path, scene_xml: Path) ->
     for sub in ("mjcf", "layout/asset3d", "surface_b/asset3d"):
         sources.update(path for path in (scene_root / sub).rglob("*") if path.is_file())
     digest = hashlib.sha256(str(repo.resolve()).encode())
+    digest.update(str(destination.resolve()).encode())
     for path in sorted(sources):
         digest.update(str(path.resolve()).encode())
         with path.open("rb") as stream:
@@ -102,7 +103,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("scene-root", "repo", "meta", "scene-xml"):
+    for name in ("scene-root", "repo", "meta", "scene-xml", "destination"):
         parser.add_argument(f"--{name}", type=Path, required=True)
     args = parser.parse_args()
-    print(build_key(args.scene_root, args.repo, args.meta, args.scene_xml))
+    print(build_key(args.scene_root, args.repo, args.meta, args.scene_xml, args.destination))

@@ -92,7 +92,7 @@ bash scripts/build_isaac_assets.sh --robot-only | --force
 旧版本只读取被忽略的 `outputs/scene/{layout,surface_b}/asset3d` 和背景目录，
 源文件缺失时仍写出缺少桌子/房间的 USD。现在构建前检查必需源资产；缺失就报错，
 转换失败也不会写入成功缓存。升级后重新执行上面的构建命令即可；旧缓存会被保留
-为 `.previous.<时间>`，新的源文件、贴图、场景 XML、构建器和检出位置参与缓存校验。
+为 `.previous.<时间>`，新的源文件、贴图、场景 XML、构建器、检出位置和 USD 输出目录参与缓存校验。
 `--snapshot` 的默认 label 是目录完整 basename，与 `render_wall_pilot.sh` 一致；
 只有显式 `--label` 才改变它。旧的 `scene_<seed>` 去前缀命名不再作为默认。
 

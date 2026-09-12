@@ -60,10 +60,12 @@ if [ "$ROBOT_ONLY" = 0 ]; then
     SCENE_SRC_XML="$(dirname "$META")/scene_locomani.xml"
     [ -f "$SCENE_SRC_XML" ] || fail "no scene_locomani.xml next to $META"
 
+    SCENE_DIR="$ISAAC_ASSETS/scene/$LABEL"
+
     # Refuse an incomplete source tree BEFORE Kit startup or cache acceptance.
     SCENE_KEY=$(PYTHONPATH="$LOCOMANI_ROOT/src" python3 -m locomani.sim.isaac.scene_assets \
         --scene-root "$LOCOMANI_OUTPUTS/scene" --repo "$LOCOMANI_ROOT" \
-        --meta "$META" --scene-xml "$SCENE_SRC_XML") || fail "scene source validation failed"
+        --meta "$META" --scene-xml "$SCENE_SRC_XML" --destination "$SCENE_DIR") || fail "scene source validation failed"
 
 fi
 

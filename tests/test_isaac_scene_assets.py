@@ -67,13 +67,14 @@ def test_cache_checks_missing_geometry_and_texture_content(installed, tmp_path):
     xml = tmp_path / "scene.xml"
     meta.write_text('{"surfaces": {}}')
     xml.write_text("<mujoco/>")
-    key = build_key(installed, REPO, meta, xml)
+    key = build_key(installed, REPO, meta, xml, tmp_path / "cache")
+    assert build_key(installed, REPO, meta, xml, tmp_path / "moved_cache") != key
     texture = mesh_source(installed, "dining_table").texture
     texture.write_bytes(texture.read_bytes() + b"changed")
-    assert build_key(installed, REPO, meta, xml) != key
+    assert build_key(installed, REPO, meta, xml, tmp_path / "cache") != key
     mesh_source(installed, "dining_table").path.unlink()
     with pytest.raises(FileNotFoundError, match="Missing surface A"):
-        build_key(installed, REPO, meta, xml)
+        build_key(installed, REPO, meta, xml, tmp_path / "cache")
 
 
 def test_missing_shipped_room_is_an_error(installed, tmp_path):
