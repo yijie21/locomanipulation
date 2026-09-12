@@ -6,7 +6,10 @@ the gate compares DISTRIBUTIONS of a short fixed-seed run against a recorded
 baseline, with tolerances set by the measured seed variance. Two arms:
 
   bottle  single-arm ready-grasp collection (grasp_gym manifests, 1 batch of 10)
-  crate   bimanual carry pilot (bimanual_carry manifests, 10 rounds)
+  crate   bimanual wall pilot (bimanual_wall manifests, 10 rounds)
+
+The crate geometry/timing fields are emitted by wall_phases*.py. Carry manifests
+do not provide them; missing metrics must not be interpreted as verified checks.
 
 Record a baseline (once, before touching main code):
     python scripts/gate.py record bottle "outputs/experiments/<run>/collect/manifest_*.jsonl" tests/gate/baseline_bottle.json

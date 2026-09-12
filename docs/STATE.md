@@ -7,12 +7,19 @@
 - Branch: `refactor/agent-maintenance`; worktree:
   `/workspace/code/locomanipulation-maintenance-20260912`.
 - [Scope and validation](handoff/agent-maintenance-plan.md).
-- This session has not started a GPU job. Recheck live occupancy before GPU work.
+- GPU regression finished: baseline `4cc52ba` → candidate `3eca6bb`; paired bottle
+  gates PASS (coupled 15/15, teleop 16/16). Crate wall FAIL (4/7): successes 4/10 →
+  2/10, new tilt failure categories and changed descent timing. Cause unresolved.
+- Owned stacks stopped; GPU 0 released; instance 0/1 locks free at completion.
+  GPU 1 has another task. Check live occupancy and locks before reuse.
+- [GPU regression protocol and results](handoff/maintenance-gpu-regression-20260912.md).
 
 ## Next
 
+- Resolve crate wall regression evidence before claiming full behavior acceptance;
+  the GPU handoff records protocol corrections and the next discriminating test.
 - Next migration: unify runner/environment resolution; use its ROADMAP acceptance
-  condition. Live bottle/crate behavior comparisons are still unverified.
+  condition.
 - Follow-up migrations and completion conditions: [ROADMAP](ROADMAP.md).
 
 ## Evidence

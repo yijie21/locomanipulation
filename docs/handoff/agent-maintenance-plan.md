@@ -51,8 +51,10 @@ Candidate CPU validation:
   and >2 spawn distances are rejected. The resolver is pure; its entry loads once.
 - Root guide 39 lines; change map 44. These are reading-size measurements,
   not a measured reduction in task-completion token cost.
-- Live GPU bottle/crate gates have not been run. No physical commands or thresholds
-  were tuned. Historical experiment conclusions remain independently unverified.
+- At this CPU handoff, live GPU gates had not run. The subsequent
+  [GPU comparison](maintenance-gpu-regression-20260912.md) passes both bottle gates
+  and fails crate wall. No physical commands or thresholds were tuned.
+  Historical experiment conclusions remain independently unverified.
 - Standards review found missing capture/compare evidence, supplied below. Spec
   review found two precedence omissions, fixed with actual scene-setup and expert/VLA
   boolean tests; independent re-review found neither issue remaining.
