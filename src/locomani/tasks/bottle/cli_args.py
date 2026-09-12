@@ -73,7 +73,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--edge-jitter", type=float, help="object jitter along the table edge, metres")
     ap.add_argument("--stand-retries", type=int, choices=(0, 1))
     ap.add_argument("--until-ok", type=int, help="stop after this many successful episodes")
-    ap.add_argument("--one-shot", action="store_true")
+    ap.add_argument("--one-shot", action=argparse.BooleanOptionalAction)
     ap.add_argument("--mid-band", type=float, help="approach deceleration band, metres")
     ap.add_argument("--targets", help="pool, default, or comma-separated object names")
     ap.add_argument("--manifest", help="append one result per attempted round")
@@ -119,11 +119,17 @@ def resolve_options(
             "face_object": profile.spawn.face_object,
             "targets": profile.target,
             "stand_retries": profile.stand_retries,
+            "one_shot": profile.one_shot,
+            "video_include_init": profile.video_include_init,
         }
         values.update(profile_options)
         sources.update({name: f"task:{profile_path}" for name in profile_options})
     values.update(explicit)
     sources.update({name: "cli" for name in explicit})
+    if "spawn_off" in explicit and "spawn_edge" not in explicit:
+        # The runtime chooses edge sampling whenever an edge range is present.
+        values["spawn_edge"] = None
+        sources["spawn_edge"] = "cli (--spawn-off selects offset sampling)"
     for name in ("spawn_off", "spawn_edge"):
         if values[name] is not None:
             values[name] = tuple(values[name])

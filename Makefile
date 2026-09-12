@@ -27,7 +27,7 @@ test:
 test-sim:
 	$(PY_SIM) -m pytest -x -q tests --run-sim
 
-# Task-plugin CLI (locomani/cli.py), e.g. make cli ARGS="collect --task bottle --out outputs/x --scene outputs/scene"
+# Task-plugin CLI (locomani/cli.py), e.g. make cli ARGS="collect --task bottle --out outputs/x --scene outputs/scene/sim"
 cli:
 	PYTHONPATH=src $(PY_SIM) -m locomani.cli $(ARGS)
 

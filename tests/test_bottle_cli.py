@@ -72,6 +72,38 @@ def test_explicit_reach_is_loaded_once_and_overrides_profile_even_for_vla():
     assert parse_args(["--task-config", PROFILE], vla=True).reach_config_obj == DEFAULT_REACH
 
 
+def test_explicit_offset_selects_offset_sampling_in_scene_setup(tmp_path):
+    from locomani.tasks.bottle import grasp_gym
+
+    args = parse_args(
+        ["--task-config", PROFILE, "--spawn-off", "3", "--sample-only", "--write-cases", str(tmp_path / "cases.json")]
+    )
+    with (
+        patch.object(grasp_gym, "Primitives") as robot,
+        patch.object(grasp_gym, "EpisodeControlClient") as control,
+    ):
+        setup = grasp_gym._build_scene_and_plan(args)
+    robot.assert_not_called()
+    control.assert_not_called()
+    assert setup.edge_range is None
+    assert (setup.off_lo, setup.off_hi) == (3.0, 3.0)
+    assert args.sources["spawn_edge"] == "cli (--spawn-off selects offset sampling)"
+
+
+@pytest.mark.parametrize("vla", [False, True])
+def test_profile_boolean_options_and_explicit_negative_overrides(tmp_path, vla):
+    path = tmp_path / "task.json"
+    data = json.loads(Path(PROFILE).read_text())
+    data.update(one_shot=True, video_include_init=True)
+    path.write_text(json.dumps(data))
+    args = parse_args(["--task-config", str(path)], vla=vla, video_include_init=False)
+    assert args.one_shot and args.video_include_init
+    assert args.sources["one_shot"] == args.sources["video_include_init"] == f"task:{path}"
+    override = parse_args(["--task-config", str(path), "--no-one-shot", "--no-video-include-init"], vla=vla)
+    assert not override.one_shot and not override.video_include_init
+    assert override.sources["one_shot"] == override.sources["video_include_init"] == "cli"
+
+
 def test_profile_is_loaded_once_and_kept_for_place_consumer(tmp_path):
     path = tmp_path / "task.json"
     data = json.loads(Path(PROFILE).read_text())

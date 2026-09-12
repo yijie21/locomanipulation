@@ -18,7 +18,7 @@ explicitly; newly written reach snapshots use version 2.
 ## Bottle collection, conversion and training
 
 ```bash
-make cli ARGS="collect --task bottle --config configs/tasks/bottle_visible.json --out outputs/experiments/<name> --scene outputs/scene"
+make cli ARGS="collect --task bottle --config configs/tasks/bottle_visible.json --out outputs/experiments/<name> --scene outputs/scene/sim"
 ```
 
 This dispatches to `pipeline/run_learn_pilot.py`. Its direct `--config` selects
@@ -32,7 +32,7 @@ After conversion run `src/locomani/pipeline/check_dataset.py` on the dataset.
 | Operation | Driver / guide |
 |---|---|
 | Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../evaluation.md) |
-| Crate collection | `scripts/run_crate_pilot.sh --help`; [crate collection](../crate_collection.md) |
+| Crate collection | `src/locomani/pipeline/run_crate_pilot.py --help`; [crate collection](../crate_collection.md) |
 | ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm_collection.md) |
 | Pick and place | Bottle driver with `configs/tasks/pick_place.json`; [task guide](../pick_place_collection.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |

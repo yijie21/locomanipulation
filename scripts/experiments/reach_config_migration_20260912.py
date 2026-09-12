@@ -2,7 +2,8 @@
 
 Run with the simulation Python and the same LOCOMANI_SIM_DIR for both revisions:
     python <script> --repo <worktree> --out <capture.json>
-Compare the `profiles` mappings. This checks configuration/sampling compatibility,
+Compare captures with --compare <baseline.json> <candidate.json>.
+This checks configuration/sampling compatibility,
 not physical success rates or asynchronous controller behavior.
 """
 
@@ -16,11 +17,40 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
+def compare_captures(baseline_path: Path, candidate_path: Path) -> None:
+    baseline, candidate = (json.loads(path.read_text()) for path in (baseline_path, candidate_path))
+    profiles = candidate["profiles"]
+    samples = [sample for profile in profiles.values() for sample in profile["samples"]]
+    accepted = sum("rejected" not in sample for sample in samples)
+    result = dict(
+        baseline_revision=baseline["revision"],
+        candidate_revision=candidate["revision"],
+        scene_sha256=candidate["scene_sha256"],
+        scene_equal=baseline["scene_sha256"] == candidate["scene_sha256"],
+        profiles_equal=baseline["profiles"] == profiles,
+        profile_count=len(profiles),
+        sample_count=len(samples),
+        accepted=accepted,
+        rejected=len(samples) - accepted,
+    )
+    print(json.dumps(result, indent=2))
+    if not result["scene_equal"] or not result["profiles_equal"]:
+        raise SystemExit(1)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--repo", type=Path, required=True)
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--repo", type=Path)
+    ap.add_argument("--out", type=Path)
+    ap.add_argument("--compare", type=Path, nargs=2, metavar=("BASELINE", "CANDIDATE"))
     args = ap.parse_args()
+    if args.compare:
+        if args.repo or args.out:
+            ap.error("--compare cannot be combined with capture arguments")
+        compare_captures(*args.compare)
+        return
+    if not args.repo or not args.out:
+        ap.error("capturing requires --repo and --out")
     root = args.repo.resolve()
     sys.path.insert(0, str(root / "src"))
     import numpy as np

@@ -34,7 +34,6 @@ to live here and moved is re-exported below, so
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
@@ -228,7 +227,7 @@ class _SceneSetup:
     robot_nom: np.ndarray | None
 
 
-def _build_scene_and_plan(args: argparse.Namespace) -> _SceneSetup:
+def _build_scene_and_plan(args: cli_args.GymOptions) -> _SceneSetup:
     """Scene/target/sampling setup, split out of main() (refactor step 4b)."""
     from locomani.pipeline.experiment_cases import load_cases, save_cases
 
