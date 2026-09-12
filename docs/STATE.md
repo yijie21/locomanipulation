@@ -25,6 +25,10 @@
 
 ## Shared resources
 
+- ACTIVE: crate visual expert implementation and 10-video pilot on branch
+  `feat/crate-visual-expert-20260912`; GPU 0 / instance 1, admitted through the stack lock.
+  Outputs: `outputs/crate_visual_expert_20260912/`. Recheck live state before reuse.
+
 - Owned runs ended 2026-09-12 13:31 UTC. GPU 0 was at 2 MiB / 0%; instance 0/1
   locks were free. GPU 1 has an unrelated job. Check live state before reuse.
 - No maintenance GPU task remains running. Runtime artifacts and weights are preserved.

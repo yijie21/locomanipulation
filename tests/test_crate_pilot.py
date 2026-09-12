@@ -91,6 +91,10 @@ if __name__ == "__main__":
 
 
 class RecordTests(unittest.TestCase):
+    def test_visual_video_pilot_refuses_unvalidated_training_export(self):
+        with self.assertRaises(SystemExit):
+            R.parse_args(["--out", "/tmp/x", "--expert", "visual", "--record"])
+
     def test_record_forces_instance_0_and_a_batch_size(self):
         """A --record run on any other instance finishes every round and writes
         nothing: start_stack.sh runs the exporter only on instance 0 (memory

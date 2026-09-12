@@ -41,6 +41,7 @@ contributors can find them without conversation history or an agent's private me
 [pick and place](pick_place_collection.md).
 Crate expert redesign: [visual guidance and privileged-information contract](handoff/crate-visual-expert-design.md)
 (proposal; read when implementing the new expert or reviewing its training data).
+[Crate RGB video pilots](crate_visual_collection.md): implemented entry, painted scene and artifact meanings.
 These tutorials include historical experiments and explanations. Their presence in
 this index does not validate their measurements or causal conclusions.
 

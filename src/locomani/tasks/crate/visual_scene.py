@@ -1,0 +1,74 @@
+"""Add visible paint patches to an existing crate scene without changing its contacts."""
+
+import argparse
+import json
+import shutil
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+MARKERS = {
+    "cyan": {"position": [0.075, -0.1178, 0.065], "rgba": [0.03, 1, 1, 1]},
+    "green": {"position": [0.075, -0.1178, -0.035], "rgba": [0.03, 1, 0.03, 1]},
+    "magenta": {"position": [-0.075, -0.1178, 0.065], "rgba": [1, 0.03, 1, 1]},
+    "yellow": {"position": [-0.075, -0.1178, -0.035], "rgba": [1, 1, 0.03, 1]},
+}
+
+
+def build(source: Path, destination: Path):
+    """Create a distinct scene; patches have zero mass and no collision response."""
+    if destination.exists():
+        raise FileExistsError(f"scene already exists: {destination}")
+    shutil.copytree(source, destination)
+    xml = destination / "scene_locomani.xml"
+    tree = ET.parse(xml)
+    body = tree.find('.//body[@name="blue_crate_object"]')
+    if body is None:
+        raise ValueError("source scene has no blue_crate_object")
+    # A label on the already solid inner far wall stays visible when grippers
+    # cover the rim. It changes appearance only, not mass or contacts.
+    ET.SubElement(
+        body,
+        "geom",
+        name="crate_visual_label",
+        type="box",
+        size="0.10 0.0002 0.065",
+        pos="0 -0.1183 0.015",
+        rgba="0.025 0.04 0.06 1",
+        contype="0",
+        conaffinity="0",
+        group="1",
+        mass="0",
+    )
+    for name, marker in MARKERS.items():
+        ET.SubElement(
+            body,
+            "geom",
+            name=f"crate_visual_{name}",
+            type="cylinder",
+            size="0.009 0.0003",
+            quat="0.707106781 -0.707106781 0 0",
+            pos=" ".join(map(str, marker["position"])),
+            rgba=" ".join(map(str, marker["rgba"])),
+            contype="0",
+            conaffinity="0",
+            group="1",
+            mass="0",
+        )
+    tree.write(xml)
+    meta_path = destination / "scene_meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["scene_xml"] = str(xml.resolve())
+    meta["crate_visual"] = {"version": 2, "markers": MARKERS, "grasp_points": [[0.1933, 0, 0.060], [-0.1933, 0, 0.060]]}
+    meta_path.write_text(json.dumps(meta, indent=2))
+
+
+def main():
+    parser = argparse.ArgumentParser(__doc__)
+    parser.add_argument("source", type=Path)
+    parser.add_argument("destination", type=Path)
+    args = parser.parse_args()
+    build(args.source, args.destination)
+
+
+if __name__ == "__main__":
+    main()

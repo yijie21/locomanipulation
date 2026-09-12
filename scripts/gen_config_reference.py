@@ -27,6 +27,7 @@ from locomani.tasks.bottle.image_servo_config import BottleCalibration, ServoLim
 from locomani.tasks.bottle.reach_config import ReachConfig  # noqa: E402
 from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig, GraspConfig  # noqa: E402
 from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
+from locomani.tasks.crate.visual_config import CrateVisualConfig  # noqa: E402
 
 # (heading, dataclass, source module docstring's one-line summary)
 CONFIGS = [
@@ -42,6 +43,7 @@ CONFIGS = [
     ),
     ("ServoLimits", ServoLimits, "locomani/tasks/bottle/image_servo_config.py (ReachConfig.image_control)"),
     ("CrateTaskConfig", CrateTaskConfig, "locomani/tasks/crate/config.py"),
+    ("CrateVisualConfig", CrateVisualConfig, "locomani/tasks/crate/visual_config.py (CrateTaskConfig.visual)"),
     ("ScaleBfmBackendConfig", ScaleBfmBackendConfig, "locomani/backends/scalebfm/config.py"),
     ("BottleVisualTaskConfig", BottleVisualTaskConfig, "locomani/tasks/bottle_visual/config.py"),
     ("GraspConfig", GraspConfig, "locomani/tasks/bottle_visual/config.py (BottleVisualTaskConfig.grasp)"),

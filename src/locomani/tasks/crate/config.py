@@ -10,15 +10,19 @@ case, not a task default).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
+from locomani.tasks.crate.visual_config import CrateVisualConfig
 
 SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
 class CrateTaskConfig:
+    visual: CrateVisualConfig = field(
+        default_factory=CrateVisualConfig
+    )  # RGB expert controls; legacy experts ignore these
     wall_feature: str = "rail"  # WALL_FEATURE: rail (rim bars) or wall (full-height long walls) grasp geometry
     wall_walk: bool = False  # WALL_WALK=1: bimanual_carry's walk-in approach instead of a ready stand
     gripper_gear: float = 250.0  # GRIPPER_GEAR: dex1 finger actuator gear (env override for A/B runs)

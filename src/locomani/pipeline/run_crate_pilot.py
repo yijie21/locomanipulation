@@ -53,6 +53,7 @@ from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
 # label (`wall_s0` / `bimanual_s0`): scripts/render_wall_pilot.sh and
 # scripts/gate.py both address rounds by that prefix.
 EXPERTS = {
+    "visual": ("tasks/crate/expert.py", "visual_crate"),
     "wall": ("tasks/crate/bimanual_wall.py", "wall"),
     "carry": ("tasks/crate/bimanual_carry.py", "bimanual"),
 }
@@ -114,6 +115,8 @@ def parse_args(argv=None):
         "(memory no-encoder-breaks-planner-arms)",
     )
     args = ap.parse_args(argv)
+    if args.expert == "visual" and args.record:
+        ap.error("visual currently records RGB/history video pilots; formal LeRobot export is not yet validated")
     if args.record:
         # Not a warning: a --record run on another instance completes every round
         # and produces no session at all (memory only-instance-0-can-record).
@@ -194,6 +197,10 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
             f"no crate scene at {args.scene}; build it:\n"
             f"  {paths.VENV_SIM_PY} {Path(paths.SRC) / 'tasks/crate/bimanual_scene.py'} {args.scene}"
         )
+    if args.expert == "visual":
+        metadata = json.loads((args.scene / "scene_meta.json").read_text())
+        if "crate_visual" not in metadata:
+            raise SystemExit("visual expert requires a scene built by locomani.tasks.crate.visual_scene")
     # Keep the source directory's BASENAME: scripts/render_wall_pilot.sh resolves
     # the Isaac assets as assets/isaac/scene/$(basename $LOCOMANI_SIM_DIR), so a
     # copy named `scene` (run_learn_pilot.py's name) would break that lookup.
