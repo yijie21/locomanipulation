@@ -8,12 +8,20 @@ from dataclasses import dataclass
 class CrateVisualConfig:
     waist_pitch_max: float = 0.40  # radians; additionally bounded by the robot model
     palm_pitch_deg: float = 60.0  # downward grasp orientation relative to the observed basket
-    stand_off: float = 0.36  # initial pelvis distance from the nominal basket centre, metres
+    start_edge_min: float = 1.2  # initial pelvis distance from the near table edge, metres
+    start_edge_max: float = 1.5  # upper end of initial table-edge distance sampling
+    walk_speed: float = 0.35  # maximum SONIC approach speed command, metres/second
+    walk_brake_margin: float = 0.07  # stop commanding steps before the final basket distance
+    walk_timeout: float = 30.0  # maximum walking and stance-settling duration
+    settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
+    stand_off: float = 0.36  # final pelvis distance from the visible basket centre, metres
     position_jitter: float = 0.02  # visible basket x/y randomisation at reset, metres
     yaw_jitter_deg: float = 5.0  # visible basket yaw randomisation at reset
     pregrasp_above: float = 0.09  # metres above each grasp point
     approach_speed: float = 0.055  # maximum Cartesian reference speed, metres/second
     joint_speed: float = 0.7  # maximum reference joint speed, radians/second
+    joint_acceleration: float = 2.0  # maximum reference velocity change, radians/second squared
+    palm_rotation_speed: float = 0.6  # maximum palm reference rotation speed, radians/second
     tracking_gain: float = 0.5  # proportional correction from observed tool-point error
     tracking_cap: float = 0.025  # maximum Cartesian tracking correction, metres
     align_tolerance: float = 0.018  # both measured grasp points must align within this distance
@@ -34,14 +42,21 @@ class CrateVisualConfig:
             raise ValueError("visual.waist_pitch_max must be in [0, 0.52]")
         if not 0 < self.probe_height < self.lift_height:
             raise ValueError("visual.probe_height must be smaller than lift_height")
+        if not 1.2 <= self.start_edge_min <= self.start_edge_max <= 1.5:
+            raise ValueError("visual.start_edge_min/max must define an interval within [1.2, 1.5] metres")
         for name in (
             "stand_off",
+            "walk_speed",
+            "walk_timeout",
+            "settle_seconds",
             "pregrasp_above",
             "align_tolerance",
             "reprojection_px",
             "hold_seconds",
             "max_tilt_deg",
             "joint_speed",
+            "joint_acceleration",
+            "palm_rotation_speed",
             "approach_speed",
             "close_seconds",
             "timeout_seconds",

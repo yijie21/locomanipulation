@@ -48,7 +48,7 @@ def test_external_abort_remains_marked_when_finalization_fails(tmp_path, monkeyp
         raise RuntimeError("finalization failed")
 
     stopped = []
-    arm = SimpleNamespace(stop=lambda: stopped.append(True))
+    arm = SimpleNamespace(stop=lambda: stopped.append(True), q=[0.0] * 29)
     reset = SimpleNamespace(start_video=lambda label: None, end_video=broken if failure == "cleanup" else lambda: None)
     observation = {
         "fallen": True,

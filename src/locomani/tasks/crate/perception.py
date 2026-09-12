@@ -34,6 +34,13 @@ class CrateEstimate:
         return np.asarray(points) @ self.rotation.T + self.position
 
 
+@dataclass(frozen=True)
+class ApproachTarget:
+    position: np.ndarray
+    timestamp: float
+    source: str
+
+
 def detect_markers(image):
     """Centroids of four physical colour patches; accepts only the actual RGB image."""
     hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
@@ -147,3 +154,28 @@ class CratePerception:
             {key: {name: uv.tolist() for stream, name, uv in inliers if stream == key} for key in cameras},
         )
         return self.last
+
+    def approach_target(self, images, joints, timestamp):
+        """Coarse range/bearing from the visible top pair; never a grasp pose.
+
+        The fixed upright basket and roughly frontal approach are shared scene
+        priors. Occluded lower markers are not filled in from simulator state.
+        """
+        if "ego_view" not in images:
+            return None
+        points = detect_markers(images["ego_view"])
+        if not {"cyan", "magenta"} <= points.keys():
+            return None
+        camera = self.cameras(joints, {"ego_view": images["ego_view"]})["ego_view"]
+        rays = [camera.rotation @ np.linalg.solve(camera.intrinsic, [*points[name], 1]) for name in ("cyan", "magenta")]
+        span = np.linalg.norm(self.markers["cyan"] - self.markers["magenta"])
+        matrix = np.column_stack((rays[0], -rays[1]))
+        scales = np.linalg.lstsq(matrix, [0, span, 0], rcond=None)[0]
+        if min(scales) <= 0 or np.linalg.norm(matrix @ scales - [0, span, 0]) > 0.025:
+            return None
+        midpoint = camera.position + (rays[0] * scales[0] + rays[1] * scales[1]) / 2
+        local_midpoint = (self.markers["cyan"] + self.markers["magenta"]) / 2
+        position = midpoint - Rotation.from_euler("z", 90, degrees=True).apply(local_midpoint)
+        if not 0.45 < position[0] < 3.0 or abs(position[1]) > 0.6:
+            return None
+        return ApproachTarget(position, timestamp, "visible_top_pair")

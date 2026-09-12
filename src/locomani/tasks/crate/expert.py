@@ -23,21 +23,27 @@ from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.evaluation import evaluate
-from locomani.tasks.crate.perception import CratePerception
+from locomani.tasks.crate.joint_reference import JointReference
+from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.round_runner import prime
-from locomani.tasks.crate.visual_policy import VisualCratePolicy
+from locomani.tasks.crate.visual_approach import VisualApproach, initial_robot_xy
+from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
 
 
 def reset_ready(p, reset, meta, cfg, rng, solver):
-    """Fixed initial stand and neutral arm preparation; all placement ends before recording."""
-    nominal = np.array(meta["objects"]["blue_crate"]["init_pos"])
+    """Place at the sampled table-edge distance; all initialization ends before recording."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
     yaw = np.pi / 2 + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
+    start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
+    start_xy = initial_robot_xy(meta, start_distance)
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
     reset.pin_arms()
-    reset.reset(objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}})
+    reset.reset(
+        objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
+        robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
+    )
     time.sleep(0.4)
     p.cmd.start_control()
     p.hold_yaw = 0.0
@@ -54,9 +60,13 @@ def reset_ready(p, reset, meta, cfg, rng, solver):
         u = k / 125
         arm.q = q0 + (3 * u * u - 2 * u * u * u) * (ready.joints - q0)
         arm._push(arm.q)
-    reset.align_robot_xy(nominal[:2] - [cfg.stand_off, 0])
     arm.hold(1.2)
-    return arm, {"object_dxy": jitter.tolist(), "object_yaw": float(yaw)}
+    return arm, {
+        "object_dxy": jitter.tolist(),
+        "object_yaw": float(yaw),
+        "start_edge_distance": start_distance,
+        "start_xy": start_xy.tolist(),
+    }
 
 
 def run_attempt(p, reset, camera, meta, config, directory, label, rng):
@@ -65,16 +75,19 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     solver = BimanualIK(model, waist_pitch_max=cfg.waist_pitch_max)
     perception = CratePerception(ArmIK(paths.SCENE_XML), meta["crate_visual"], max_reprojection_px=cfg.reprojection_px)
     policy = VisualCratePolicy(meta["crate_visual"]["grasp_points"], cfg)
+    approach = VisualApproach(cfg)
     arm, placement = reset_ready(p, reset, meta, cfg, rng, solver)
+    reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
     initial = p.obs()
     recorder = VisualRecording(directory / label)
     reset.start_video(label)
     started = time.time()
     estimate, last_image_time = None, 0.0
     last_camera_received = last_command_time = started
+    last_motion = {"movement": np.zeros(3), "speed": -1.0}
     last_phase, reason, error = None, "no_camera_frames", None
     try:
-        while time.time() - started < cfg.timeout_seconds + 2:
+        while time.time() - started < cfg.walk_timeout + cfg.timeout_seconds + 2:
             now = time.time()
             raw = p.obs()
             if raw["fallen"]:
@@ -82,6 +95,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                 break
             message = camera.read()
             if message is None or not {"ego_view", "left_wrist", "right_wrist"} <= set(message["images"]):
+                arm.mode = LocomotionMode.IDLE
+                last_motion = {"movement": np.zeros(3), "speed": -1.0}
                 if now - last_camera_received > cfg.vision_timeout:
                     reason = "camera_unavailable"
                     break
@@ -93,7 +108,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                 reason = "stale_camera_abort"
                 break
             if stamp == last_image_time:
-                arm._push(arm.q)
+                arm._push(arm.q, **last_motion)
                 continue
             last_image_time = stamp
             images = message["images"]
@@ -102,26 +117,52 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
             new_estimate = perception.update(images, joints, stamp)
             estimate = new_estimate  # an occluded frame cannot refresh a true-state target
             openings = np.array([2 * (np.mean(raw["palms"][side]["hand_q"][:2]) + 0.023) for side in ("left", "right")])
-            command = policy.step(now, estimate, measured, rotations, openings)
+            navigation = None
+            if approach is not None:
+                target = (
+                    ApproachTarget(estimate.position, stamp, "full_rgb_pose")
+                    if estimate is not None
+                    else perception.approach_target(images, joints, stamp)
+                )
+                nav = approach.step(now, target, raw["pelvis"]["quat"], grasp_pose_available=estimate is not None)
+                arm.mode = LocomotionMode.SLOW_WALK if nav.speed > 0 else LocomotionMode.IDLE
+                yaw = p.pelvis_yaw(raw)
+                direction = nav.direction.copy()
+                direction[:2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]] @ direction[:2]
+                q = arm.q.copy()
+                last_motion = {"movement": direction, "speed": nav.speed if nav.speed > 0 else -1.0}
+                arm._push(q, **last_motion)
+                positions, reference_rotations = solver.tool_poses(q)
+                command = ExpertCommand(positions, reference_rotations, 0.0, nav.phase, nav.reason, bool(nav.reason))
+                navigation = {
+                    "target": None if target is None else target.position,
+                    "source": None if target is None else target.source,
+                    "movement": direction,
+                    "speed": nav.speed,
+                    "relative_speed": approach.relative_speed,
+                    "angular_speed": approach.angular_speed,
+                    "ready": nav.ready,
+                }
+                if nav.ready:
+                    approach = None
+            else:
+                command = policy.step(now, estimate, measured, rotations, openings)
+                correction = np.clip(
+                    cfg.tracking_gain * (command.positions - measured), -cfg.tracking_cap, cfg.tracking_cap
+                )
+                solution = solver.solve(
+                    joints, command.positions + correction, command.rotations, iterations=18, posture=arm.q
+                )
+                q = reference.step(solution.joints, now - last_command_time)
+                closed = np.zeros_like(HAND_OPEN)
+                closed[:2] = -0.023
+                arm.hands = {side: HAND_OPEN + command.closure * (closed - HAND_OPEN) for side in ("left", "right")}
+                arm.q = q
+                arm._push(q)
+            last_command_time = now
             if command.phase != last_phase:
                 print(f"[{label}] {command.phase} at {now - started:.2f}s", flush=True)
                 last_phase = command.phase
-            correction = np.clip(
-                cfg.tracking_gain * (command.positions - measured), -cfg.tracking_cap, cfg.tracking_cap
-            )
-            solution = solver.solve(
-                joints, command.positions + correction, command.rotations, iterations=18, posture=arm.q
-            )
-            q = arm.q.copy()
-            joint_step = cfg.joint_speed * float(np.clip(now - last_command_time, 0.0, 0.1))
-            last_command_time = now
-            q[solver.indices] += np.clip(solution.joints[solver.indices] - q[solver.indices], -joint_step, joint_step)
-            q[12:14] = 0
-            closed = np.zeros_like(HAND_OPEN)
-            closed[:2] = -0.023
-            arm.hands = {side: HAND_OPEN + command.closure * (closed - HAND_OPEN) for side in ("left", "right")}
-            arm.q = q
-            arm._push(q)
             recorder.append(
                 images,
                 {
@@ -131,6 +172,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "state_wall_time": raw.get("wall"),
                     "simulation_time": raw.get("t"),
                     "joints": joints,
+                    "base_quaternion": raw["pelvis"]["quat"],
+                    "navigation": navigation,
                     "hand_openings": openings,
                     "reference_joints": q,
                     "tool_reference": command.positions,
@@ -170,11 +213,13 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         seconds=time.time() - started,
         frames=recorder.frames,
         placement=placement,
-        dataset_kind="painted_crate_rgb_video_pilot",
+        dataset_kind="painted_crate_rgb_walk_video_pilot",
         produced=False,
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),
     )
+    if "pelvis" in initial:
+        result["initial_edge_distance"] = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])
     if error is not None:
         result["error"] = error
     print(f"[{label}] {result}", flush=True)

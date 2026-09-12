@@ -34,6 +34,17 @@ def test_expired_estimate_does_not_count_as_a_new_visual_observation():
     assert stopped.reason == "vision_lost"
 
 
+def test_first_visual_target_does_not_snap_the_palm_orientation():
+    policy = VisualCratePolicy(GRIPS, CrateVisualConfig())
+    tools = np.array([[0.27, 0.2, 0.1], [0.27, -0.2, 0.1]])
+    rotations = np.array([Rotation.from_euler("y", 35, degrees=True).as_matrix()] * 2)
+    first = policy.step(0.0, estimate(0.0), tools, rotations, [0.09, 0.09])
+    np.testing.assert_allclose(first.rotations, rotations)
+    second = policy.step(0.05, estimate(0.05), tools, rotations, [0.09, 0.09])
+    for previous, current in zip(first.rotations, second.rotations, strict=True):
+        assert Rotation.from_matrix(current @ previous.T).magnitude() <= 0.6 * 0.05 + 1e-9
+
+
 def test_visual_limits_validate_before_starting_resources():
     from locomani.tasks.crate.config import CrateTaskConfig
 

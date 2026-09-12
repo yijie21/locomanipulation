@@ -28,6 +28,9 @@
 
 ## Shared resources
 
+- ACTIVE: crate walking/stability work on `fix/crate-walk-stability-20260912`;
+  GPU 0 / instance 1 through the stack lock; outputs `outputs/crate_walk_stability_20260912/`.
+
 - Crate pilot instance 1 stopped. At 2026-09-12 16:22 UTC, its lock was free and
   GPU 0 was at 2 MiB / 0%; GPU 1 retained an unrelated job. Recheck live state.
 - Outputs: `outputs/crate_visual_expert_20260912/`; all trials and weights preserved.

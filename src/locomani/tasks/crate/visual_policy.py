@@ -83,7 +83,11 @@ class VisualCratePolicy:
                 pitch = cfg.palm_pitch_deg * np.clip(
                     1 - np.mean(self.reference[:, 2] - grips[:, 2]) / cfg.pregrasp_above, 0, 1
                 )
-            self.rotations[:] = base_rotation @ Rotation.from_euler("y", pitch, degrees=True).as_matrix()
+            desired_rotation = base_rotation @ Rotation.from_euler("y", pitch, degrees=True).as_matrix()
+            for side in range(2):
+                change = Rotation.from_matrix(desired_rotation @ self.rotations[side].T).as_rotvec()
+                change *= min(1.0, cfg.palm_rotation_speed * dt / max(np.linalg.norm(change), 1e-9))
+                self.rotations[side] = Rotation.from_rotvec(change).as_matrix() @ self.rotations[side]
             # Shared progress: neither hand gets ahead while its partner is still tracking.
             if np.max(np.linalg.norm(self.reference - tools, axis=1)) < 0.065:
                 delta = target - self.reference
@@ -91,7 +95,11 @@ class VisualCratePolicy:
                 self.reference += delta
             errors = np.linalg.norm(target - tools, axis=1)
             tolerance = 0.028 if self.phase == "pregrasp" else cfg.align_tolerance
-            if np.max(errors) < tolerance:
+            orientation_ready = (
+                max(Rotation.from_matrix(desired_rotation @ rotation.T).magnitude() for rotation in self.rotations)
+                < 0.03
+            )
+            if np.max(errors) < tolerance and orientation_ready:
                 self.ready_since = now if self.ready_since is None else self.ready_since
                 if now - self.ready_since > 0.3:
                     self._enter("align" if self.phase == "pregrasp" else "close", now)
