@@ -83,7 +83,7 @@ def main():
         if not line.strip():
             continue
         r = json.loads(line)
-        for d in (((r.get("execution") or {}).get("metrics") or {}).get("coupled_prediction_ik_errors") or []):
+        for d in ((r.get("execution") or {}).get("metrics") or {}).get("coupled_prediction_ik_errors") or []:
             if "seed_q" in d and "target_world" in d:
                 d["round"] = r.get("round")
                 recs.append(d)
@@ -148,8 +148,10 @@ def main():
     print(line("live position error", col("live_pe"), 1))
     print(line("re-solved, use_waist=False", col("pe_nowaist"), 1))
     d = [abs(a - b) for a, b in zip(col("live_pe"), col("pe_nowaist"))]
-    print(f"{'|reproduction error|':>30} median {st.median(d):.5f}  max {max(d):.5f}"
-          f"   within 1 mm: {sum(1 for x in d if x < 0.001)}/{len(d)}")
+    print(
+        f"{'|reproduction error|':>30} median {st.median(d):.5f}  max {max(d):.5f}"
+        f"   within 1 mm: {sum(1 for x in d if x < 0.001)}/{len(d)}"
+    )
     print()
     print(line("re-solved, use_waist=True", col("pe_waist"), 1))
     print(line("measured retreat, no waist", col("pe_true_nowaist"), 1))

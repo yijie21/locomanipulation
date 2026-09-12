@@ -61,8 +61,24 @@ def main():
             f"drawtext=fontfile={FONT}:text='{esc(l2)}':x=8:y=30:fontsize=13:fontcolor=#ffd479"
         )
         subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", draw,
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", "-an", str(dst)],
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(src),
+                "-vf",
+                draw,
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-crf",
+                "23",
+                "-an",
+                str(dst),
+            ],
             check=True,
         )
         parts.append(dst)
@@ -72,8 +88,23 @@ def main():
         listing.write_text("".join(f"file '{p}'\n" for p in parts))
         reel = OUT / "reel.mp4"
         subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-             "-c", "copy", "-movflags", "+faststart", str(reel)],
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(listing),
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(reel),
+            ],
             check=True,
         )
         print(f"\nreel {reel}  ({reel.stat().st_size / 1e6:.1f} MB)")
