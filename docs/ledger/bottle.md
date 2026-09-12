@@ -2764,3 +2764,66 @@ pitch 的差与记忆 `sonic-waist-lean-is-checkpoint-bound`(v1.1 真的交付�
    所以先离线算"改对之后有多少计划被拒",再决定补偿方式。
 4. 一个新的事实可以直接用:**这条 bank 上 release 仍然明显强于 v1.1**。在腰的修法落地之前,
    要产量就用 release 采集;要推进 v1.1 就继续按 §32/§33 修伸展,不要再调方位角。
+
+## 34. 修好 §28 的仪器之后:planner 模式下腕通道不是伺服目标,两个 checkpoint 都一样(2026-09-12, session cf)
+
+`scripts/experiments/wrist_channel_20260912.sh`,两臂各一次,instance 0,
+`outputs/diagnostics/wrist_channel_20260912/`。
+
+### 34.1 §28 为什么测不出来:它没有"已知会动"的那一条腿
+
+旧版每个 case 命令**同一个腕位置**,并且把"交付的旋转"定义为**相对第一个 case**。
+通道若是死的,这个参照系就是静止的 rest 姿态本身,于是每个 case 都报 ~0 交付、ratio 0.01 ——
+正是第二轮在两个 checkpoint 上打印出来的东西(包括那个**先验已知为 22%** 的 release)。
+**仪器分不清"字段是死的"和"旋转被忽略",因为它没有任何一条腿是已知会动的。**
+
+新版加了三段,每段是下一段的前提:
+
+1. **位置(闸门)**:`rest` 与 `reach` 两条腿,**旋转都是 identity**。掌心若不动,通道就是死的,
+   后面的旋转数字没有意义 —— 脚本直接打印判决并停止,不再输出 ratio。
+2. **deploy 自己的参考**:`RefTap` 读 g1_debug 的 `body_q_target`,把"控制器从没让手臂动"
+   与"让了但手臂没跟上"分开 —— §28 也分不开这两件事。
+3. **旋转**,参照系是 `reach` 腿(同位置、identity 旋转),这才是旋转问题唯一正确的对照。
+
+### 34.2 结果:命令 0.206 m,掌心动 0.002–0.003 m,两个 checkpoint 一样
+
+| | 命令位移 | 掌心位移 | ratio | 到命令点残差 | deploy 参考变化 |
+|---|---|---|---|---|---|
+| sonic_v1_1 | 0.206 m | **0.003 m** | **0.017** | 0.28 m | **0.0000 rad** |
+| release | 0.206 m | **0.002 m** | **0.011** | 0.28 m | **0.0000 rad** |
+
+**而 deploy 确实收到了。**`deploy.log` 三处独立证据:
+编码器观测表里 `10. vr_3point_local_target (9D) [offset: 901]`、`11. vr_3point_local_orn_target (12D) [offset: 910]`;
+`[ZMQManager] VR 3-point control enabled`;以及 `[INFO] Initial VR 3-point compliance: [0.5, 0.5, 0]` 紧跟着
+`Policy does not observe 'vr_3point_compliance'`(**顺带确证 compliance 是惰性的**,而且两个
+checkpoint 的 `observation_config.yaml` 里 VR 块完全相同 —— 差异只在 heading 归一化)。
+我们发的值也在分布内:head (0,0,0.40) 对 deploy 默认 (0.024,-0.008,0.403);腕比默认高 14 cm。
+
+**结论:在 planner 模式下,VR 3-point 腕位姿是给编码器的一个*线索*,不是伺服目标。
+这不是 v1.1 的退化,两个 checkpoint 一模一样。**手臂实际跟的是参考动作里的
+`motion_joint_positions_wrists_10frame_step1` 等块(来自 `current_motion_`),不是我们这 21 个数。
+deploy 源码也对得上:`zmq_manager.hpp:406` 只在 `active_mode_ == STREAMED_MOTION`
+(或 planner 未就绪的切换窗口)才让 `pose_interface_` 提供 VR 3-point;planner 模式走基类,
+也就是我们发的值 —— 它进观测,但不驱动手臂。
+
+### 34.3 Stage D 不是"未测",是**不适用**:`TRACK_ROT_BOOST` 在死代码上
+
+`TRACK_ROT_BOOST = 4.5` 的唯一消费者是 `primitives_crouch.track()`(第 230 行,
+`set_wrists` + `frame()` 走的正是上面测到 ratio 0.01 的那条通道)。
+而 **`Primitives.track()` 在 `src/locomani` 里没有任何调用者**(grep 全仓库:只有
+`primitives_tuning.py:140` 的注释和 mixin 的装配)。生产抓取走的是 `streamed_arm._push` 的 29 关节流。
+
+所以 Stage D **关闭为"不适用"**:这个常量无法影响生产,§28 两次测量互相矛盾的根因也在这里 ——
+我们一直在量一条既不被生产使用、在 planner 模式下也不是伺服的通道。
+(这是本线第三个"声明了、校验了/标定了、没人调用"的东西:`ReachConfig.azimuth_deg`、
+`_creep_to_band`、现在是 `track()`。值得当成一类检查项。)
+
+### 34.4 方向修正:v1.1 的 wrist-pose augmentation 受益的是**流式姿态**通道
+
+v1.1 的 model card 说它为 "heading-stable 3-point teleoperation" 训练、带 wrist-pose augmentation;
+但官方 PICO 的"弯腰抓东西"那条流程是 **POSE / STREAMED_MOTION**(文档原文:streaming the SMPL pose
+to the C++ deployment side, "your motion will directly map to the robot"),而不是 planner 的 VR-3PT 子模式。
+记忆 `sonic-streamed-motion-channel` 已经量过那条通道能给 ~1 cm 的掌心精度。
+**所以下一步应该在 STREAMED_MOTION 上做,而不是继续推 planner 的腕通道** ——
+`enter_streamed()` / `pose_chunk()` 已经实现。这也是为什么协作者用 Pico 一次就顺:
+他用的是这条通道,而我们的 expert 在 planner 模式下自己做 IK。
