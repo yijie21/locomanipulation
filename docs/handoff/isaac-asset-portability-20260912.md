@@ -39,6 +39,11 @@ Artifacts: `outputs/isaac_asset_portability_20260912/`.
 with `SCENE_PRESET=crate_bimanual`; code, tracked assets and third-party runtime
 were shared by symlink for this run. No local EmbodiedGen-generated source folders
 were copied. Isaac Sim 4.5 built and rendered that installation successfully.
+A subsequent real local Git clone (`git_clone/`, without hardlinks) checked the
+tracked room checksum, started without `outputs/`, installed the archive, and
+passed source preflight plus all five asset tests from the cloned source. Only
+the third-party runtime was shared in that check; code and scene assets were
+actual Git checkout files. This closes the source-symlink gap in the render trial.
 
 ```bash
 LOCOMANI_ROOT=<fresh_checkout> ISAAC_ASSETS=<new_usd_directory> \

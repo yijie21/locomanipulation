@@ -36,7 +36,7 @@
 ## Shared resources
 
 - Crate walking batches and Isaac asset validation have stopped. At 2026-09-12
-  17:37 UTC GPU 0 was free; GPU 1 retained an unrelated job. Recheck live state.
+  17:40 UTC GPU 0 was free; GPU 1 retained an unrelated job. Recheck live state.
 - Outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
   All trials, original videos and weights preserved; no owned GPU job remains.
