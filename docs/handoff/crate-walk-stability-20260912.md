@@ -74,8 +74,51 @@ and the reference rotation must finish blending. At first closure in the old bat
 measured wrist errors ranged from 1.92° to 8.06°; this informs the tolerance but
 does not validate physical contact. Tests cover 0.2/0.3 s gaps and nontracking wrists.
 
-A corrected ten-episode batch is pending. Its outcomes, compressed video links and
-final review results will be recorded here after verification.
+The corrected fixed batch `collection_10_v2` at `958f5f9`, seed 20260912,
+completed all ten attempts: **3 success, 3 approach timeout, 3 reach/hold timeout,
+1 visual-tilt exit**. Measured initial edge distances were 1.278–1.479 m.
+Seven episodes entered reaching after walking and a quiet interval; three remained
+in approach until its timeout. Those approach failures showed persistent lateral
+error of roughly 5–11 cm while minimum-speed commands did not converge. This is
+an observed navigation limitation, not evidence that the basket was unreachable.
+Two of the three grasp timeouts reached hold; one remained in pregrasp.
+
+The seven episodes with pre-contact samples had torso angular-speed peaks
+17.76–25.33°/s and reference acceleration peaks 2.000 rad/s² (rounding error
+<2e-13). The original recorded-symptom gate passes for those seven; the three
+without reaching are explicitly **not evaluated**. The original grasp-only batch
+still fails the same checker. This comparison supports reduced abrupt reference
+motion, not equivalent success probabilities or fully solved loaded stability.
+Raw metrics: `collection_10_v2/shake_evaluated.log`; empty-phase handling was added
+to the diagnostic script after its original version failed on non-reaching episodes.
+The original script and traceback are retained, as is `baseline_shake_recheck.log`.
+
+Reproduce the corrected collection:
+
+```bash
+PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
+  -m locomani.pipeline.run_crate_pilot --expert visual --rounds 10 \
+  --seed 20260912 --gpu 0 --instance 1 \
+  --scene outputs/crate_visual_expert_20260912/scene_marked_v3 \
+  --out outputs/crate_walk_stability_20260912/collection_10_v2
+```
+
+Use a new output directory when rerunning. Scene/model identity, resolved config,
+source hashes, all ten outcomes, RGB observations and state traces are retained.
+The command records a fresh asynchronous trial; it does not promise identical results.
+
+All ten compressed previews retain complete duration and normal speed, with full
+FFmpeg decode checks and duration difference within one output frame. Individual
+sizes are **286,394–471,610 bytes**; ZIP size **3,679,111 bytes**. The exporter,
+checksums, codec/duration records and original-to-preview start/end contact sheet
+are in `collection_10_v2/download_preview/`. Its `index.html` links only small
+previews; `videos_10_small.zip` contains those ten and small metadata. Originals
+and both ten-episode batches remain untouched.
+
+Full CPU checks and independent Standards/Spec reviews pass. Spec findings were
+reproduced and fixed; follow-up tested 4,500 limiter updates with intervals up to
+0.69 s, reversals and starts near joint limits without bound violations. The ten
+corrected GPU trials provide live behavior evidence with the failures above.
 
 The current scope is a frontal, obstacle-free approach to the marked basket.
 The top-pair method is a coarse navigation estimate, not a six-DoF grasp pose.

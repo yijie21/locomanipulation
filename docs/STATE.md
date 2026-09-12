@@ -11,6 +11,9 @@
 
 - Crate RGB expert video pilot completed: final batch 7/10 successes, three hold
   timeouts, all ten videos retained. [Implementation and evidence](handoff/crate-visual-pilot-20260912.md).
+- Walking/stability extension: corrected full-flow batch 3/10 success; initial table-edge
+  distances 1.278–1.479 m. Seven reaching episodes pass the pre-contact shake diagnostic;
+  navigation and hold failures remain. [Results and small videos](handoff/crate-walk-stability-20260912.md).
 
 ## Runtime evidence and remaining uncertainty
 
@@ -28,13 +31,11 @@
 
 ## Shared resources
 
-- ACTIVE: crate walking/stability work on `fix/crate-walk-stability-20260912`;
-  GPU 0 / instance 1 through the stack lock; outputs `outputs/crate_walk_stability_20260912/`.
-
-- Crate pilot instance 1 stopped. At 2026-09-12 16:22 UTC, its lock was free and
-  GPU 0 was at 2 MiB / 0%; GPU 1 retained an unrelated job. Recheck live state.
-- Outputs: `outputs/crate_visual_expert_20260912/`; all trials and weights preserved.
-- No owned GPU job remains running.
+- Crate walking batches and Isaac asset validation have stopped. At 2026-09-12
+  17:37 UTC GPU 0 was free; GPU 1 retained an unrelated job. Recheck live state.
+- Outputs: `outputs/crate_visual_expert_20260912/`,
+  `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
+  All trials, original videos and weights preserved; no owned GPU job remains.
 
 ## Evidence and preserved constraints
 
