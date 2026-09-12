@@ -97,11 +97,10 @@ class ReachConfig:
     # the recorded observation; it selects the action, and the audit says whether
     # that action was reproducible from the images.
     image_servo_truth_control: bool = False
-    # Grasp on the VR 3-point channel (TeleopGraspPolicy): wrist POSE targets
-    # to the controller's "teleop" encoder mode, no arm IK, no predicted squat
-    # retreat. The channel the PICO teleop and sonic_v1_1's wrist-pose
-    # augmentation were built on (ledger bottle.md 35).
-    teleop_arm: bool = False
+    # The description below is what `make config-doc` puts in
+    # docs/reference/config_fields.md -- the generator reads the INLINE comment,
+    # not a block comment above the field.
+    teleop_arm: bool = False  # grasp on the VR 3-point channel (TeleopGraspPolicy): wrist POSE targets to the controller's 'teleop' encoder mode, no arm IK, no predicted squat retreat (ledger bottle.md 35).
     image_calibration: BottleCalibration = field(default_factory=BottleCalibration)  # RGB feature calibration.
     image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
