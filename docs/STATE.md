@@ -1,9 +1,9 @@
 # STATE — 2026-09-12
 
-## Active work
+## Current delivery
 
-- Repository maintenance authorized by the user: short agent entry, checked change
-  map, architecture constraints and bottle configuration migration.
+- First repository maintenance delivery complete: short agent entry, checked change
+  map, architecture constraints and bottle configuration migration. CPU checks pass.
 - Branch: `refactor/agent-maintenance`; worktree:
   `/workspace/code/locomanipulation-maintenance-20260912`.
 - [Scope and validation](handoff/agent-maintenance-plan.md).
@@ -11,7 +11,8 @@
 
 ## Next
 
-- Complete and review the first migration, run checks, then integrate locally.
+- Next migration: unify runner/environment resolution; use its ROADMAP acceptance
+  condition. Live bottle/crate behavior comparisons are still unverified.
 - Follow-up migrations and completion conditions: [ROADMAP](ROADMAP.md).
 
 ## Evidence

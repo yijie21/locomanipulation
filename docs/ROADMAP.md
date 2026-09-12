@@ -6,8 +6,8 @@ claims and priorities there require review before reuse.
 
 | Work | Completion condition |
 |---|---|
-| Short entry and navigation | Shared AGENTS; checked paths/tests and reading budgets; historical material is reached on demand |
-| Bottle configuration path | Explicit strategy, tested legacy migration, pure argument resolution and actual consumer tests |
+| Short entry and navigation — delivered | Shared AGENTS; checked paths/tests and reading budgets; historical material is reached on demand |
+| Bottle configuration path — delivered | Explicit strategy, tested legacy migration, pure argument resolution and actual consumer tests; live gates remain unverified |
 | Runner/environment convergence | Bottle and crate launch through the same environment/lifecycle seam; resolved child settings verified |
 | Backend/task separation | Remove every listed backend-to-task edge; task geometry stays with tasks and backend interfaces receive explicit inputs |
 | Runtime/acceptance contracts | Real typed entry contracts exercised by tests; acceptance can inspect results without executing another round |

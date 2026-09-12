@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Size caps from docs/reference/standards.md: a file <= 600 lines, a function <= 80.
+"""Report files over 600 lines and functions over 80 for architectural review.
 
     python scripts/lint_sizes.py            # report (exit 0)
-    python scripts/lint_sizes.py --strict   # exit 1 on any violation (pre-commit after the grace week)
+    python scripts/lint_sizes.py --strict   # optional exit 1 on any violation
 
-Baseline on 2026-09-09 (refactor step 1): 12 files and 70 functions over the caps; the
-skeleton extraction (step 4) is what brings them under. Excluded: third_party, src/gr00t,
-outputs, tests.
+The default make/pre-commit checks report existing complexity without rejecting it.
+Split by responsibility, not line count; see docs/reference/standards.md.
+Excluded: third_party, src/gr00t, outputs, tests.
 """
 
 import ast

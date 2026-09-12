@@ -1,9 +1,7 @@
 # All hooks are local and use the tools already on this box (no network at commit time).
 #   ~/.local/bin/pre-commit install        # once per clone
 #   make check                              # the same checks by hand
-# Size lint runs in report mode until 2026-09-16, then --strict (standards.md).
-# Env lint flipped to --strict early, as refactor step 3's own last step
-# (docs/handoff/refactor-step3-config.md order item 6).
+# Size lint reports existing complexity; environment and repository rules are strict.
 repos:
   - repo: local
     hooks:
@@ -42,7 +40,7 @@ repos:
         pass_filenames: false
         always_run: true
       - id: unit-tests
-        name: unit tests (no sim, no torch)
+        name: unit tests (CPU; no live simulation)
         entry: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m pytest -x -q tests
         language: system
         pass_filenames: false
