@@ -73,6 +73,10 @@ def test_explicit_reach_is_loaded_once_and_overrides_profile_even_for_vla():
 
 
 def test_explicit_offset_selects_offset_sampling_in_scene_setup(tmp_path):
+    from types import SimpleNamespace
+
+    from geometry_fixture import DIRECTORY
+
     from locomani.tasks.bottle import grasp_gym
 
     args = parse_args(
@@ -81,6 +85,13 @@ def test_explicit_offset_selects_offset_sampling_in_scene_setup(tmp_path):
     with (
         patch.object(grasp_gym, "Primitives") as robot,
         patch.object(grasp_gym, "EpisodeControlClient") as control,
+        patch.object(grasp_gym, "SCENE_META", str(DIRECTORY / "scene_meta.json")),
+        patch.object(grasp_gym.reach_map, "ReachMap"),
+        patch.object(
+            grasp_gym,
+            "plan_for_target",
+            return_value=SimpleNamespace(grip_z=0.72, rel_cands=[], squat_hint=None, sgn=1, ax=0),
+        ),
     ):
         setup = grasp_gym._build_scene_and_plan(args)
     robot.assert_not_called()
@@ -118,10 +129,10 @@ def test_profile_is_loaded_once_and_kept_for_place_consumer(tmp_path):
 def test_diagnostic_video_override_is_explicit_and_parsing_has_no_runtime_effect():
     from locomani.tasks.bottle import grasp_gym
 
-    before = grasp_gym.VIDEO_INCLUDE_INIT
+    before = grasp_gym.GymRuntime()
     args = parse_args(["--no-video-include-init"], video_include_init=True)
     assert not args.video_include_init
-    assert grasp_gym.VIDEO_INCLUDE_INIT == before
+    assert grasp_gym.GymRuntime() == before
     assert parse_args([], video_include_init=True).video_include_init
 
 
@@ -130,16 +141,14 @@ def test_gym_main_delivers_the_resolved_options_to_the_round_driver():
 
     with (
         patch.object(sys, "argv", ["gym", "--task-config", PROFILE, "--spawn-yaw-err", "90"]),
-        patch.object(grasp_gym, "VLA_POLICY", object()),
-        patch.object(grasp_gym, "VIDEO_INCLUDE_INIT", False),
         patch.object(grasp_gym, "_build_scene_and_plan", return_value="scene") as setup,
         patch.object(grasp_gym.round_loop, "round_loop") as run,
     ):
-        grasp_gym.main()
+        grasp_gym.main(runtime=grasp_gym.GymRuntime(policy=object()))
     options = setup.call_args.args[0]
     assert options.spawn_yaw_err == 90.0
     assert options.reach_config_obj == DEFAULT_REACH
-    run.assert_called_once_with(options, "scene")
+    run.assert_called_once_with(options, "scene", runtime=setup.call_args.kwargs["runtime"])
 
 
 def test_report_mode_does_not_start_runtime(capsys):
@@ -147,7 +156,6 @@ def test_report_mode_does_not_start_runtime(capsys):
 
     with (
         patch.object(sys, "argv", ["gym", "--task-config", PROFILE, "--print-config"]),
-        patch.object(grasp_gym, "VLA_POLICY", None),
         patch.object(grasp_gym, "_build_scene_and_plan") as setup,
     ):
         grasp_gym.main()

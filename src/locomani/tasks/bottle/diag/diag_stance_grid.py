@@ -15,13 +15,13 @@ from types import SimpleNamespace
 import numpy as np
 
 from locomani import paths
-from locomani.backends.sonic import stream_reach as sr
 from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.primitives import READY_UPPER, LocomotionMode, Primitives, StreamMode
-from locomani.backends.sonic.stream_reach import PlannerArm
 from locomani.rtc.transition_capture import Capture
 from locomani.sim.privileged_pub import EpisodeControlClient
+from locomani.tasks.bottle import execution as sr
 from locomani.tasks.bottle.diag.diag_crouched_handover import in_place_expert
+from locomani.tasks.bottle.execution import PlannerArm
 
 
 class SetupRejected(Exception):

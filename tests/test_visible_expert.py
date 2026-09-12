@@ -7,6 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import pytest
+
+pytestmark = pytest.mark.usefixtures("bottle_geometry")
 from test_recoverable_grasp_policy import Harness
 
 from locomani.tasks.bottle.reach_config import ReachConfig
@@ -67,7 +70,7 @@ class VisibleHarness(Harness):
 
 class VisibleRecoveryTests(unittest.TestCase):
     def run_policy(self, p):
-        with patch("locomani.backends.sonic.stream_reach.toppled", return_value=False):
+        with patch("locomani.tasks.bottle.execution.toppled", return_value=False):
             return p.execute(grip_world=np.zeros(3), squat_hint=0.1, ghost=None)
 
     def test_feasible_stand_grasps_at_its_own_drop(self):

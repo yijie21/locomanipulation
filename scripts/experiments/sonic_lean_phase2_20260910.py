@@ -14,11 +14,11 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from locomani.backends.sonic import stream_reach
 from locomani.backends.sonic.primitives import LocomotionMode, Primitives, StreamMode
 from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.g1_joints import isaac_to_mujoco
 from locomani.sim.privileged_pub import EpisodeControlClient
+from locomani.tasks.bottle import execution as stream_reach
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "outputs/diagnostics/sonic_lean_phase2_20260910"

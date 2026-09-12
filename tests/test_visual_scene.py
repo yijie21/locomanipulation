@@ -6,8 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import mujoco
+from geometry_fixture import DIRECTORY
 
 from locomani.backends.scalebfm import runtime as R
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.tasks.bottle_visual import geometry
 from locomani.tasks.bottle_visual.scene import make_sim, scene_directory
 
@@ -15,7 +17,7 @@ from locomani.tasks.bottle_visual.scene import make_sim, scene_directory
 class SceneTests(unittest.TestCase):
     def test_taller_table_collision_matches_metadata_and_supports_bottle(self):
         with tempfile.TemporaryDirectory() as tmp:
-            directory = scene_directory(tmp, "high_near")
+            directory = scene_directory(tmp, "high_near", ScaleBfmBackendConfig(scene_dir=str(DIRECTORY)))
             policy = SimpleNamespace(meta=json.loads(Path(R.META).read_text()))
             sim = make_sim(policy, directory)
             sim.reset([-1.5, 0], 0, 0)

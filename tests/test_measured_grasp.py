@@ -60,7 +60,7 @@ class CaptureGeometryTests(unittest.TestCase):
         self.assertEqual(state["palms"]["right"]["hand_q"], [0.0245, 0.0245])
 
     def test_close_handover_rejects_unseated_object(self):
-        from locomani.backends.sonic.stream_reach import _servo_continuous
+        from locomani.tasks.bottle.execution import _servo_continuous
 
         state = self.state()
         p = SimpleNamespace(obs=lambda: state, object_pos=lambda *_: np.array([0.3, 0.0, 0.7]))
@@ -119,8 +119,8 @@ class CaptureGeometryTests(unittest.TestCase):
             patch("locomani.tasks.bottle.measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
             patch("locomani.tasks.bottle.measured_grasp.closure_clear", return_value=None),
             patch("locomani.tasks.bottle.measured_grasp.time.monotonic", side_effect=lambda: clock[0]),
-            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
-            patch("locomani.backends.sonic.stream_reach._servo_continuous", return_value=(True, "")) as servo,
+            patch("locomani.tasks.bottle.execution.toppled", return_value=False),
+            patch("locomani.tasks.bottle.execution._servo_continuous", return_value=(True, "")) as servo,
         ):
             self.assertTrue(run(policy, None)[0])
         arm.ik.solve.assert_not_called()
@@ -131,7 +131,7 @@ class CaptureGeometryTests(unittest.TestCase):
 
 class CaptureStabilityTests(unittest.TestCase):
     def test_one_finger_or_wrist_touch_is_not_a_bilateral_grasp(self):
-        from locomani.tasks.bottle.grasp_capture import bilateral_dex1_contact
+        from locomani.primitives.contacts import bilateral_dex1_contact
 
         for links in ([], ["R.wrist_yaw"], ["R.dex1_finger_1"], ["R.dex1_finger_1", "L.dex1_finger_2"]):
             self.assertFalse(bilateral_dex1_contact(dict(touch_links=links), "right"))
@@ -197,14 +197,14 @@ class SharedTargetExecutionTests(unittest.TestCase):
         )
         with (
             patch("locomani.tasks.bottle.measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
-            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
+            patch("locomani.tasks.bottle.execution.toppled", return_value=False),
         ):
             run(policy, None)
         self.assertEqual(bool(pushed), should_push)
         policy.reference_check.assert_called_once()
 
     def test_handover_uses_live_grip_even_if_body_center_is_seated(self):
-        from locomani.backends.sonic.stream_reach import _servo_continuous
+        from locomani.tasks.bottle.execution import _servo_continuous
 
         state = CaptureGeometryTests().state()
         center = np.asarray(state["palms"]["right"]["pos"]) + OFFSET
@@ -251,7 +251,7 @@ class SharedTargetExecutionTests(unittest.TestCase):
         )
         with (
             patch("locomani.tasks.bottle.measured_grasp.templates", return_value=[(None, target, np.eye(3))]),
-            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
+            patch("locomani.tasks.bottle.execution.toppled", return_value=False),
         ):
             run(policy, None)
         commanded = arm.ik.solve.call_args.args[1]

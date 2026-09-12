@@ -6,6 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+
+pytestmark = pytest.mark.usefixtures("bottle_geometry")
 
 sys.path[:0] = [str(Path(__file__).resolve().parent)]
 

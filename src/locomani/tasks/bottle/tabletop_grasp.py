@@ -10,6 +10,7 @@ import numpy as np
 
 from locomani.backends.sonic.primitives import Primitives
 from locomani.tasks.bottle import adaptive_grasp
+from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK, BottleTaskConfig
 
 
 @dataclass(frozen=True)
@@ -36,8 +37,12 @@ class TabletopTarget:
 
 
 class TabletopGrasp:
-    def __init__(self, robot, target: TabletopTarget):
+    def __init__(
+        self, robot, target: TabletopTarget, *, meta: dict | None = None, config: BottleTaskConfig = DEFAULT_BOTTLE_TASK
+    ):
         self.robot, self.target = robot, target
+        self.meta = meta
+        self.config = config
 
     def grip(self, state):
         obj = self.robot.object_pos(self.target.key, state)

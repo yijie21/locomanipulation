@@ -1,42 +1,6 @@
-"""The grasp, on SONIC's streamed-motion channel.
+"""Bottle approach execution over generic SONIC arm drivers.
 
-Planner-mode wrist targets pass through the kinematic planner and arrive with
-a 25 cm warp and a second of lag; three weeks of tuning got the closed loop to
-3.7 cm, which is not a grasp. Pico teleop never touches that channel — it
-streams full 29-DoF joint references on the `pose` topic and the policy
-imitates them. diag_stream.py measured this channel at ~1 cm palm error with
-one or two IK refinement steps, standing rock-solid the whole time.
-
-This module replaces the planner-era crouch/track/servo_grasp/grasp/lift chain
-for the grasp stage only: walking and carrying stay in planner mode, and the
-deploy is switched back the moment the object is lifted.
-
-The servo logic is servo_grasp's (align across the jaw at a safe depth, then
-advance gated on alignment) — what changes is the actuation underneath it:
-IK on the scene model streamed as joint references, instead of wrist targets
-nudged through the planner.
-
-Split across three files (refactor step 4b family 2, pure extraction;
-decision 9's file-size cap): this file keeps `make_arm`, `_raise_hand`,
-`_creep_to_band`, `toppled`, `reanchor`, `execute_grasp`/`_execute_grasp` and
-the `ApproachStatus`/`ApproachResult` types; `streamed_arm.py` has
-`StreamedArm`/`PlannerArm`; `servo.py` has `_servo_continuous` (631 lines,
-split there into a `ServoState` dataclass plus one function per phase).
-Every name that used to live here and moved is re-exported below, so
-`from locomani.backends.sonic.stream_reach import X` still works -- this
-matters beyond the usual import compatibility: several tests
-`patch("locomani.backends.sonic.stream_reach.X", ...)` or
-`patch.object(stream_reach, "X", ...)` (`toppled`, `_servo_continuous`,
-`make_arm`, `PlannerArm`, `_creep_to_band`), and diagnostic tools read
-`sr.SAFE_GAP` / `sr._HAND` / `sr.SQUAT_SETTLE` off the module directly. Every
-one of those names is kept ON THIS MODULE OBJECT (by staying defined here, or
-by a plain top-level import that binds it into this module's own namespace),
-which is what makes `patch.object(this module, name)` and bare-attribute
-reads see the same thing a caller inside this file would. The one place that
-is not enough: `_servo_continuous`'s own internal `toppled(...)` check (in
-servo.py's `_tick_prelude`) reads `stream_reach.toppled` back through a
-deferred, module-qualified reference instead of a plain imported name --
-see the comment there for why.
+Task geometry and approach decisions live here; backend drivers own delivery.
 """
 
 from __future__ import annotations
@@ -50,7 +14,31 @@ import numpy as np
 from locomani.backends.sonic import gait_speeds
 from locomani.backends.sonic.primitives import DT, LocomotionMode, Primitives
 from locomani.backends.sonic.primitives_const import HAND as _HAND
-from locomani.backends.sonic.servo import (
+from locomani.backends.sonic.streamed_arm import (
+    CHUNK,
+    FINE_SPEED,
+    JOINT_SPEED,
+    LEFT_GUARD_RATE,
+    LEFT_RETREAT_M,
+    LEFT_SAFE_M,
+    NUDGE_MAX,
+    REFINE_MAX,
+    REFINE_TOL,
+    SETTLE,
+    SQUAT_DROP_MAX,
+    SQUAT_GAIN,
+    SQUAT_HEIGHT_BIAS,
+    SQUAT_MAX,
+    SQUAT_SETTLE,
+    PlannerArm,
+    StreamedArm,
+    reanchor,
+    yaw_only,
+)
+from locomani.pipeline.execution_record import ExecutionRecord, GraspResult
+from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
+from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
+from locomani.tasks.bottle.servo import (
     CLOSE_ENT_MAX,
     CLOSE_RAMP_S,
     CLOSE_SEATED,
@@ -73,38 +61,7 @@ from locomani.backends.sonic.servo import (
     V_LIFT,
     V_TRAVEL,
 )
-from locomani.backends.sonic.servo_ticks import _servo_continuous
-from locomani.backends.sonic.streamed_arm import (
-    CHUNK,
-    FINE_SPEED,
-    JOINT_SPEED,
-    LEFT_GUARD,
-    LEFT_GUARD_RATE,
-    LEFT_RETREAT_M,
-    LEFT_SAFE_M,
-    NUDGE_MAX,
-    REFINE_MAX,
-    REFINE_TOL,
-    SETTLE,
-    SQUAT_DROP_MAX,
-    SQUAT_GAIN,
-    SQUAT_HEIGHT_BIAS,
-    SQUAT_MAX,
-    SQUAT_SETTLE,
-    PlannerArm,
-    StreamedArm,
-    yaw_only,
-)
-from locomani.pipeline.execution_record import ExecutionRecord, GraspResult
-from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
-from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
-
-# BottleTaskConfig.{arm_channel,arm_vel} defaults (decision 8, were
-# GYM_ARM_CHANNEL/GYM_ARM_VEL); module-level so a caller can override by
-# assignment, same pattern as grasp_gym.RESTART_DEPLOY. (left_guard moved to
-# streamed_arm.py with StreamedArm/PlannerArm, and is re-exported above.)
-ARM_CHANNEL = DEFAULT_BOTTLE_TASK.arm_channel
-ARM_VEL = DEFAULT_BOTTLE_TASK.arm_vel
+from locomani.tasks.bottle.servo_ticks import _servo_continuous
 
 
 class ApproachStatus(str, Enum):
@@ -144,19 +101,13 @@ CROUCH_BACK = 0.09  # m the planner crouch moves the pelvis BACK (measured 4-13 
 SQUAT_TRIGGER = 0.03
 
 
-def make_arm(p: Primitives, side: str):
-    """Build the arm driver for the channel this run is testing.
-
-    The default is now `planner`: it keeps the deploy in planner mode for
-    the whole grasp, so there is no mode switch, no latch-clear window and
-    no stand twitch. Measured 12/12 with the sim pin OFF against 2/12 for
-    the streamed channel with its pin ON, same seed (see the Phase 0
-    commit). BottleTaskConfig.arm_channel="streamed" restores the old path.
-    """
-    if ARM_CHANNEL == "planner":
-        return PlannerArm(p, side, send_vel=ARM_VEL)
-
-    return StreamedArm(p, side)
+def make_arm(p: Primitives, side: str, *, config=DEFAULT_BOTTLE_TASK):
+    """Construct this task's arm channel with its explicit delivery settings."""
+    if config.arm_channel == "planner":
+        return PlannerArm(p, side, send_vel=config.arm_vel, left_guard=config.left_guard)
+    if config.arm_channel == "streamed":
+        return StreamedArm(p, side, left_guard=config.left_guard)
+    raise ValueError(f"unsupported arm channel: {config.arm_channel}")
 
 
 RAISE_CLEAR = 0.10  # palm above the tabletop while walking the last bit
@@ -309,27 +260,6 @@ def toppled(s, obj_key: str) -> bool:
     happened during the approach."""
     rot = Primitives._rot(s["objects"][obj_key]["quat"])
     return float(rot[2, 2]) < 0.5
-
-
-def reanchor(p: Primitives, side: str = "right") -> None:
-    """Force a planner heading re-anchor at a yaw this process knows.
-
-    The deploy may carry a stale anchor from a previous process's streamed
-    session (the anchor lives in the deploy, the compensation in the
-    commander). A two-second streamed toggle re-anchors it at the robot's
-    current yaw and records that yaw in cmd.heading_offset.
-
-    This one is ALWAYS a StreamedArm, never make_arm(): the re-anchor IS the
-    mode switch, so a PlannerArm here is a no-op and the deploy keeps the
-    stale anchor -- the robot then walks off closing a standing heading
-    error (measured 1.01 m of drift through the 4 s settle, which the gym
-    reports as "teleport did not land"). The twitch this toggle costs
-    happens before the recording starts, so it is free.
-    """
-    arm = StreamedArm(p, side)
-    arm.start()
-    arm.hold(0.3)
-    arm.stop()
 
 
 def execute_grasp(p, obj_key, grip_world, plan, *, execution=None, **options):

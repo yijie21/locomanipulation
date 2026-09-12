@@ -57,8 +57,7 @@ def _run_learn_pilot_stage(stage: str) -> Dispatch:
         for kv in set_:
             argv += ["--set", kv]
         argv += ["--set", f"through={stage}"]  # authoritative: the verb picked the stage
-        sys.argv = ["run_learn_pilot.py", *argv]
-        run_learn_pilot.main()
+        run_learn_pilot.main(argv)
 
     return dispatch
 
@@ -73,8 +72,7 @@ def _eval_closed_loop(cfg, out, set_, extra):
         argv += ["--out", out]
     for kv in set_:
         argv += ["--set", kv]
-    sys.argv = ["eval_closed_loop.py", *argv]
-    eval_closed_loop.main()
+    eval_closed_loop.main(argv)
 
 
 def _run_crate_pilot(expert: str) -> Dispatch:

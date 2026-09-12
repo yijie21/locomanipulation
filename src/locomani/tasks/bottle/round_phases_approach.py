@@ -12,9 +12,10 @@ import time
 import mujoco
 import numpy as np
 
-from locomani.backends.sonic import gait_speeds, stream_reach
+from locomani.backends.sonic import gait_speeds
 from locomani.backends.sonic.primitives import READY_UPPER, LocomotionMode
 from locomani.sim import sim_vis
+from locomani.tasks.bottle import execution as stream_reach
 from locomani.tasks.bottle.round_phases import RoundContext, _rel_dbg, _rel_now
 
 

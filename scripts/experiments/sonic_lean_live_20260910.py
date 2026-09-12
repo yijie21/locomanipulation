@@ -15,10 +15,10 @@ import time
 import numpy as np
 
 from locomani import paths
-from locomani.backends.sonic import stream_reach
 from locomani.backends.sonic.primitives import LocomotionMode, Primitives, StreamMode
 from locomani.primitives.arm_ik import ArmIK
 from locomani.sim.privileged_pub import EpisodeControlClient
+from locomani.tasks.bottle import execution as stream_reach
 
 SCENE_META = str(paths.SCENE_META)
 OUT = "outputs/diagnostics/sonic_lean_20260910/live/result.json"

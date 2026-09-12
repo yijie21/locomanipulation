@@ -1,15 +1,6 @@
-"""`ObsBuilder` / `PolicyLink` / `_tstart_view` / `_obj_extra`, split out of
-vla_round.py (refactor step 4b family 3, pure extraction; decision 9's
-file-size cap). Every statement here is unchanged from the original inline
-body -- only the packaging moved, plus `PolicyLink.get_chunk`'s reads of
-`OBS_DUMP` / `SNAP`, which have to stay LIVE against the `vla_round` module
-object the same way `stream_reach.toppled` did in family 2 (see that
-module's docstring for the general pattern, and vla_round.py's own for this
-family's full monkeypatch inventory): `eval_closed_loop.py` sets
-`vla_round.SNAP = False` for the no-snap ablation, so `get_chunk` reads it
-through a deferred, module-qualified `vla_round.SNAP` instead of an imported
-name -- a plain import would bind to the value at THIS module's import time
-and never see the override.
+"""SONIC observation assembly and policy-server transport.
+
+Runtime options are explicit immutable VlaConfig values.
 """
 
 from __future__ import annotations
@@ -20,6 +11,8 @@ import time
 import numpy as np
 
 from locomani.backends.sonic.sonic_token import snap
+from locomani.backends.sonic.vla_config import DEFAULT_VLA, LIFT_M, NEAR_M, STALL_ABORT_M, VlaConfig
+from locomani.schema import SONIC_BOTTLE
 
 
 def _tstart_view(p, st, obj_key, prelude, gx=0.80, gy=0.90):
@@ -156,9 +149,10 @@ class ObsBuilder:
             "state.right_wrist_abs_quat": f32(rw_quat),
             "annotation.human.task_description": self.task,
         }
-        for key in ("ego_view", "right_wrist"):
+        for key in SONIC_BOTTLE.video_keys:
             img = np.asarray(self._last_img[key])
             obs[f"video.{key}"] = img[None].astype(np.uint8)
+        SONIC_BOTTLE.validate_observation(obs)
         return obs
 
     def close(self):
@@ -175,7 +169,8 @@ class ObsBuilder:
 class PolicyLink:
     """Tiny msgpack/zmq client for serve_policy.py -- no gr00t imports."""
 
-    def __init__(self, host="localhost", port=5590, timeout_ms=30000):
+    def __init__(self, host="localhost", port=5590, timeout_ms=30000, *, config: VlaConfig = DEFAULT_VLA):
+        self.config = config
         import msgpack
         import msgpack_numpy as mnp
         import zmq
@@ -204,15 +199,15 @@ class PolicyLink:
         except Exception:
             return False
 
+    def identity(self) -> dict:
+        """Checkpoint content and model field order reported by the serving process."""
+        return self._call("identity")
+
     def get_chunk(self, obs) -> tuple[np.ndarray, np.ndarray]:
         """-> (token [40,64], gripper [40]). Snapped unless SNAP is off."""
-        # Deferred + module-qualified (not a plain `from vla_round import
-        # OBS_DUMP, SNAP`): see this module's own docstring.
-        from locomani.backends.sonic import vla_round as vr
-
         out = self._call("get_action_raw", {"obs": obs})
         self.last_rtc = out.get("rtc.applied")  # [overlap, frozen] | None
-        dump = vr.OBS_DUMP
+        dump = self.config.backend.obs_dump
         if dump:  # diagnostic: what the policy saw + what it answered
             os.makedirs(dump, exist_ok=True)
             n = getattr(self, "_dump_n", 0)
@@ -226,4 +221,4 @@ class PolicyLink:
             )
         tok = np.asarray(out["action.motion_token"], dtype=np.float64)
         grip = np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
-        return (snap(tok) if vr.SNAP else tok), grip
+        return (snap(tok) if self.config.snap else tok), grip

@@ -5,7 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+from geometry_fixture import DIRECTORY
 
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.tasks.bottle_visual.pipeline.follow_video import camera_values, wrapped
 from locomani.tasks.bottle_visual.pipeline.video_check import choose_cases
 from locomani.tasks.bottle_visual.sampling import DEFAULT_PROFILE
@@ -17,8 +19,12 @@ class VideoCheckTests(unittest.TestCase):
             "locomani.tasks.bottle_visual.pipeline.video_check.R.Policy",
             side_effect=AssertionError("No model during selection"),
         ):
-            a = choose_cases(DEFAULT_PROFILE, candidate_count=80)
-            b = choose_cases(DEFAULT_PROFILE, candidate_count=80)
+            a = choose_cases(
+                DEFAULT_PROFILE, candidate_count=80, backend=ScaleBfmBackendConfig(scene_dir=str(DIRECTORY))
+            )
+            b = choose_cases(
+                DEFAULT_PROFILE, candidate_count=80, backend=ScaleBfmBackendConfig(scene_dir=str(DIRECTORY))
+            )
         self.assertEqual(a, b)
         self.assertEqual(len(a["cases"]), 10)
         self.assertEqual(len({c["seed"] for c in a["cases"]}), 10)

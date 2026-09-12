@@ -41,6 +41,7 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[2])
 )  # reach src/ for `python src/locomani/pipeline/convert_to_hf_format.py`
 from locomani.pipeline.verification_tail import training_prefix_length  # noqa: E402
+from locomani.schema import SONIC_MODALITY
 
 # Fallback only. It is what every episode gets when no --manifest is given,
 # i.e. when the whole run had one target. It used to read "place the orange
@@ -133,108 +134,7 @@ def check_manifest(rows, src_eps, discarded, sess_name):
 SRC_FPS, DST_FPS = 50, 25
 W, H = 640, 480
 
-MODALITY = {
-    "state": {
-        "left_leg": {"start": 0, "end": 6},
-        "right_leg": {"start": 6, "end": 12},
-        "waist": {"start": 12, "end": 15},
-        "left_arm": {"start": 15, "end": 22},
-        "left_hand": {"start": 22, "end": 29},
-        "right_arm": {"start": 29, "end": 36},
-        "right_hand": {"start": 36, "end": 43},
-        "left_wrist_pos": {"start": 0, "end": 3, "original_key": "observation.eef_state"},
-        "left_wrist_abs_quat": {
-            "start": 3,
-            "end": 7,
-            "original_key": "observation.eef_state",
-            "rotation_type": "quaternion",
-        },
-        "right_wrist_pos": {"start": 7, "end": 10, "original_key": "observation.eef_state"},
-        "right_wrist_abs_quat": {
-            "start": 10,
-            "end": 14,
-            "original_key": "observation.eef_state",
-            "rotation_type": "quaternion",
-        },
-        "root_orientation": {
-            "start": 0,
-            "end": 4,
-            "original_key": "observation.root_orientation",
-            "rotation_type": "quaternion",
-        },
-        "projected_gravity": {"start": 0, "end": 3, "original_key": "observation.projected_gravity"},
-        "cpp_rotation_offset": {
-            "start": 0,
-            "end": 4,
-            "original_key": "observation.cpp_rotation_offset",
-            "rotation_type": "quaternion",
-        },
-        "init_base_quat": {
-            "start": 0,
-            "end": 4,
-            "original_key": "observation.init_base_quat",
-            "rotation_type": "quaternion",
-        },
-        # observation.can_pose / observation.plate_pose are NOT here on
-        # purpose. They stay in the parquet -- they are what an analysis reads
-        # and what the stage predicates were written against -- but a model
-        # that gets the object's true pose as an input is being trained on a
-        # channel that does not exist at deployment: the deploy has an ego
-        # camera and proprioception, and nothing else. Declaring them as state
-        # is the one mistake here that would still show a falling loss.
-    },
-    # The wire protocol, not taste, fixes the action. The deploy's pose
-    # protocol v4 is token-only streaming: REQUIRED token_state, OPTIONAL
-    # frame_index / left_hand_joints / right_hand_joints / body_quat_w. So a
-    # deployed VLA emits a token plus a gripper and nothing else has a channel
-    # to travel on. This mirrors the patched exporter's own declaration
-    # (features_sonic_vla.py, patches/vla_action_space.md); the columns this
-    # used to slice -- planner mode/movement/facing/speed/height, and 135
-    # SMPL slots that never change without a Pico headset -- are still WRITTEN
-    # to the parquet, so using them as auxiliary supervision later needs no
-    # re-recording. They are just not the action.
-    "action": {
-        "motion_token": {"start": 0, "end": 64, "original_key": "action.motion_token"},
-        # These names are load-bearing, and the width is too. Isaac-GR00T's
-        # unitree_g1_sonic config (gr00t/configs/data/embodiment_configs.py)
-        # selects action groups BY NAME -- exactly motion_token,
-        # left_hand_joints, right_hand_joints -- and a name it cannot find is a
-        # `Warning: Joint group 'left_hand_joints' not found`, not an error.
-        # Training then runs to completion on a 64-dim action with both hands
-        # silently dropped. Calling these left_gripper/right_gripper, or
-        # slicing them to the single component dex1 actually moves, does that.
-        # The 7 wide is what makes the total 78 = 64 + 7 + 7, the action space
-        # the SONIC inference client expects. dex1 is a parallel jaw: measured
-        # over this dataset, components 0 and 1 move together (-0.020..0.024)
-        # and 2..6 are constant, which is the same sparsity a real Dex3 shows
-        # when only part of the hand is driven. The left column never varies
-        # here at all -- the gym is right-handed throughout.
-        "left_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.left_hand_joints"},
-        "right_hand_joints": {"start": 0, "end": 7, "original_key": "teleop.right_hand_joints"},
-        # The group the 65-dim action space actually selects
-        # (configs/gr00t_sonic_2cam.py). Same column, sliced to the one
-        # component that carries information: measured over 23,103 frames,
-        # left_hand_joints has std exactly 0 in all 7 components and
-        # right_hand_joints is rank 1 -- components 0 and 1 are the same
-        # mirrored jaw value and 2..6 are identically 0. So component 0 IS the
-        # gripper, and the other 13 columns are constants that would be
-        # predicted perfectly while carrying nothing, diluting every MSE.
-        # modality.json is a menu, not a selection: the 7-wide groups above
-        # stay declared, so going back to the 78-dim action is a config edit
-        # and needs no re-conversion.
-        "right_gripper": {"start": 0, "end": 1, "original_key": "teleop.right_hand_joints"},
-        # Same slice of the left column, for the two-handed crate task
-        # (configs/gr00t_sonic_3cam_bimanual.py). On right-handed datasets it
-        # is a constant 0 like left_hand_joints above -- declared, not selected.
-        "left_gripper": {"start": 0, "end": 1, "original_key": "teleop.left_hand_joints"},
-    },
-    # Filled from the session's own features -- see video_streams(). Fixing it
-    # to ego_view here is what made the wrist cameras invisible to this
-    # converter even after the sim published them and the exporter recorded
-    # them.
-    "video": {},
-    "annotation": {"human.task_description": {"original_key": "task_index"}},
-}
+MODALITY = SONIC_MODALITY
 MODALITY_PSI0 = {
     "state": {"all": {"start": 0, "end": 15, "original_key": "observation.state_psi0"}},
     "action": {"all": {"start": 0, "end": 18, "original_key": "action.psi0_18"}},

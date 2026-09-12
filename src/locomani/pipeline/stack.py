@@ -1,20 +1,13 @@
-"""The one place a config object becomes shell environment (decision 8).
-
-`scripts/stack/start_stack.sh` and everything it launches (the MuJoCo sim, the
-C++ deploy, `restart_deploy.sh`) take their knobs as inherited environment
-variables -- that boundary is not moving. This module is the only Python that
-builds that env dict; every other caller passes a `SonicBackendConfig` (and,
-for `start_stack`, a task-ish object carrying `prompt`/`init_token_file`)
-instead of writing `os.environ` inline.
-"""
+"""Resolve SONIC child settings and start/stop one instance through the shared shell launcher."""
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 
 from locomani import paths
-from locomani.backends.sonic.config import SonicBackendConfig
+from locomani.backends.sonic.config import ENV_FIELDS, SonicBackendConfig, with_shell_overrides
 
 START_STACK = os.path.join(paths.SCRIPTS, "stack", "start_stack.sh")
 STOP_INSTANCE = os.path.join(paths.SCRIPTS, "stack", "stop_instance.sh")
@@ -22,24 +15,14 @@ STOP_INSTANCE = os.path.join(paths.SCRIPTS, "stack", "stop_instance.sh")
 
 def backend_env(cfg: SonicBackendConfig) -> dict[str, str]:
     """The env dict `start_stack.sh` (and its children) expect for `cfg`."""
-    env = {
-        "NO_ENCODER": "1" if cfg.no_encoder else "0",
-        "HAND": cfg.hand,
-        "GYM_UPPER_SLEW_DEG": str(cfg.upper_slew_deg),
-        "TF_GRIP_DELAY": str(cfg.grip_delay),
-        "LOCOMANI_REPLACE": "1" if cfg.replace else "0",
-        "WRIST_CAMS": "1" if cfg.wrist_cams else "0",
-        "SIM_VIS": cfg.sim_vis,
-        "SCENE_RANDOM": "1" if cfg.scene_random else "0",
-        "TF_DATASET_FPS": str(cfg.dataset_fps),
-        "CLEAN_DEPLOY": "1" if cfg.clean_deploy else "0",
-        "EVAL_PARALLEL": "1" if cfg.eval_parallel else "0",
-        "LOCKSTEP": "1" if cfg.lockstep.enabled else "0",
-    }
-    if cfg.obs_dump:
-        env["TF_OBS_DUMP"] = cfg.obs_dump
-    if cfg.sonic_dds_domain is not None:
-        env["SONIC_DDS_DOMAIN"] = str(cfg.sonic_dds_domain)
+    env = {}
+    for name, (field_name, kind) in ENV_FIELDS.items():
+        value = cfg
+        for part in field_name.split("."):
+            value = getattr(value, part)
+        if value is not None:
+            env[name] = str(int(value)) if kind is bool else str(value)
+    env["LOCOMANI_BACKEND_JSON"] = json.dumps(cfg.to_dict(), sort_keys=True)
     return env
 
 
@@ -49,7 +32,7 @@ def export_env(cfg: SonicBackendConfig) -> None:
     os.environ.update(backend_env(cfg))
 
 
-def start_stack(
+def resolve_env(
     backend_cfg: SonicBackendConfig,
     task_cfg=None,
     *,
@@ -57,15 +40,29 @@ def start_stack(
     gpu: str | None = None,
     video_dir: str | None = None,
     extra_env: dict | None = None,
+    inherit: dict | None = None,
 ) -> dict[str, str]:
-    """Run `scripts/stack/start_stack.sh` with `backend_cfg` as environment.
+    """Resolve once; reuse this exact environment for the stack and its expert.
 
-    `task_cfg`, if given, supplies the task prompt (`task_cfg.prompt`) and the
-    initial-token file (`task_cfg.init_token_file`) the deploy should validate
-    against. Returns the env dict actually used, so a caller that goes on to
-    invoke other subprocesses (e.g. `restart_deploy.sh` mid-round) can reuse it.
+    Host bootstrap settings are inherited. Configuration-owned optional settings
+    and instance ports are cleared before explicit values are applied.
     """
-    env = dict(os.environ)
+    if type(instance) is not int or instance < 0:
+        raise ValueError("instance must be a non-negative integer")
+    env = dict(os.environ if inherit is None else inherit)
+    for name in (
+        "TF_CAMERA_PORT",
+        "TF_SONIC_PORT",
+        "TF_OUT_PORT",
+        "TF_KEYBOARD_PORT",
+        "TF_PRIVILEGED_PORT",
+        "TF_EPISODE_PORT",
+        "SONIC_DDS_DOMAIN",
+        "TF_OBS_DUMP",
+        "TF_INIT_TOKEN_FILE",
+        "SIM_VIDEO_DIR",
+    ):
+        env.pop(name, None)
     env.update(backend_env(backend_cfg))
     env["INSTANCE"] = str(instance)
     if gpu is not None:
@@ -85,16 +82,39 @@ def start_stack(
         env["TF_INIT_TOKEN_FILE"] = str(init_token_file)
     if extra_env:
         env.update(extra_env)
-    prompt = getattr(task_cfg, "prompt", None) or "walk forward"
-    rc = subprocess.call(["bash", START_STACK, prompt], cwd=paths.REPO, env=env)
+        env.update(backend_env(with_shell_overrides(backend_cfg, extra_env)))
+    return env
+
+
+def start_stack(
+    backend_cfg: SonicBackendConfig,
+    task_cfg=None,
+    *,
+    instance: int = 0,
+    gpu: str | None = None,
+    video_dir: str | None = None,
+    extra_env: dict | None = None,
+    inherit: dict | None = None,
+    runner=None,
+    name: str = "start_stack",
+) -> dict[str, str]:
+    """Start one stack, optionally recording the launch through Stage.run."""
+    env = resolve_env(
+        backend_cfg, task_cfg, instance=instance, gpu=gpu, video_dir=video_dir, extra_env=extra_env, inherit=inherit
+    )
+    command = ["bash", START_STACK, getattr(task_cfg, "prompt", None) or "walk forward"]
+    rc = runner(name, command, cwd=paths.REPO, env=env) if runner else subprocess.call(command, cwd=paths.REPO, env=env)
     if rc:
         raise RuntimeError(f"start_stack.sh exited {rc}")
     return env
 
 
-def stop_instance(instance: int = 0, port: int | None = None) -> None:
+def stop_instance(instance: int = 0, port: int | None = None, *, runner=None) -> None:
     """Run `scripts/stack/stop_instance.sh`, scoped to one instance."""
     args = ["bash", STOP_INSTANCE, str(instance)]
     if port is not None:
         args.append(str(port))
-    subprocess.call(args, cwd=paths.REPO)
+    if runner:
+        runner("stop_stack", args, cwd=paths.REPO)
+    else:
+        subprocess.call(args, cwd=paths.REPO)

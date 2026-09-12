@@ -161,7 +161,7 @@ class TeleopGraspPolicy(CoupledGraspPolicy):
             super().hold()
 
     def teleop_transport(self, drop, ghost):
-        from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS, toppled
+        from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS, toppled
 
         p, ex, side, key = self.p, self.execution, self.side, self.task.target.key
         state = p.obs()

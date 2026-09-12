@@ -265,7 +265,7 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
             self.finish_cleanup(ok)
 
     def coupled_transport(self, drop, ghost):
-        from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS, toppled
+        from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS, toppled
         from locomani.tasks.bottle.measured_grasp import run
 
         p, arm, ex = self.p, self.arm, self.execution

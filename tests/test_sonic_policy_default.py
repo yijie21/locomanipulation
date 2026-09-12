@@ -169,7 +169,7 @@ class GaitBandTests(unittest.TestCase):
         # comes back to bite months later (creep: no production caller;
         # recovery: recovery_attempts 0 in the collection profiles).
         for rel in (
-            "src/locomani/backends/sonic/stream_reach.py",
+            "src/locomani/tasks/bottle/execution.py",
             "src/locomani/tasks/bottle/recoverable_grasp_policy.py",
         ):
             src = (REPO / rel).read_text()

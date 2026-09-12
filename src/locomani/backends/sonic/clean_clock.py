@@ -1,18 +1,6 @@
-"""`CleanClock` + `install_clean_shim`, split out of vla_round.py (refactor
-step 4b family 3, pure extraction; decision 9's file-size cap). Every
-statement here is unchanged from the original inline body -- only the
-packaging moved, plus one read that has to stay LIVE against the `vla_round`
-module object: `CleanClock.__init__` reads `DATASET_FPS`, which
-`eval_closed_loop.py` overrides by assignment (`vla_round.DATASET_FPS =
-cfg.backend.dataset_fps`) before this class is ever constructed. A plain
-`from vla_round import DATASET_FPS` here would bind to the value at THIS
-module's import time (before the override runs) and never see it; reading
-`vla_round.DATASET_FPS` through a deferred import (inside `__init__`, not at
-this module's top level -- vla_round.py imports `CleanClock` from here for
-re-export, so a top-level import in the other direction would be circular)
-gets the same live read the original bare name had when this class lived in
-vla_round.py itself. See vla_round.py's own module docstring for the rest of
-this monkeypatch inventory.
+"""Standing-token keepalive between asynchronous VLA rounds.
+
+Runtime options are explicit immutable VlaConfig values.
 """
 
 from __future__ import annotations
@@ -20,6 +8,7 @@ from __future__ import annotations
 import time
 
 from locomani.backends.sonic.sonic_token import expand_hands
+from locomani.backends.sonic.vla_config import DEFAULT_VLA, LIFT_M, NEAR_M, STALL_ABORT_M, VlaConfig
 
 
 class CleanClock:
@@ -33,10 +22,9 @@ class CleanClock:
     serialises every publish on the ONE commander socket (the wall-clock
     commander BINDS the deploy's SUB port, so there is no second socket)."""
 
-    def __init__(self):
+    def __init__(self, *, config: VlaConfig = DEFAULT_VLA):
         import threading
 
-        from locomani.backends.sonic import vla_round as vr
         from locomani.backends.sonic.initial_pose import initial_token
         from locomani.backends.sonic.sonic_token import GRIPPER_MAX
 
@@ -44,7 +32,7 @@ class CleanClock:
         self.l_open, self.r_open = expand_hands(GRIPPER_MAX)
         self.cmd = None
         self.lock = threading.RLock()
-        self.dt = 1.0 / vr.DATASET_FPS
+        self.dt = 1.0 / config.backend.dataset_fps
         self._run = threading.Event()
         self._stop = threading.Event()
         self._priming = False
@@ -108,51 +96,52 @@ class CleanClock:
         self.th.join(timeout=2.0)
 
 
-def install_clean_shim(clock: CleanClock) -> None:
-    """Wall-clock 'clean deploy' commander shim: planner commands dropped,
-    hold() = standing-token time, enter_streamed from the round = hand the
-    socket to the round (deploy is already streamed), exit_streamed = take it
-    back (never back to planner mode). Every publish goes through the clock's
-    lock. Installed at the class before grasp_gym builds its Primitives."""
+def clean_commander_class(clock: CleanClock):
+    """Return a commander class bound to one clock without changing the base class."""
     from locomani.backends.sonic import agent_server
 
     C = agent_server.AgentCommander
     orig_init, orig_command = C.__init__, C.command
     orig_enter, orig_token = C.enter_streamed, C.token_frame
 
-    def __init__(self, *a, **kw):
-        orig_init(self, *a, **kw)
-        if clock.cmd is None:
-            clock.attach(self)
+    class Commander(C):
+        def __init__(self, *a, **kw):
+            orig_init(self, *a, **kw)
+            if clock.cmd is None:
+                clock.attach(self)
 
-    def command(self, *, start: bool, stop: bool, planner: bool) -> None:
-        if planner and not stop:
-            return  # never a planner command
-        with clock.lock:
-            orig_command(self, start=start, stop=stop, planner=planner)
+        def command(self, *, start: bool, stop: bool, planner: bool) -> None:
+            if planner and not stop:
+                return  # never a planner command
+            with clock.lock:
+                orig_command(self, start=start, stop=stop, planner=planner)
 
-    def enter_streamed(self) -> None:
-        if clock._priming:
-            orig_enter(self)
+        def enter_streamed(self) -> None:
+            if clock._priming:
+                orig_enter(self)
+                return
+            clock.pause()  # the round publishes from here on
+
+        def exit_streamed(self) -> None:
+            clock.resume()  # the round is over; keep standing
+
+        def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
+            clock.hold(seconds)
+
+        def frame(self, *a, **kw) -> None:
             return
-        clock.pause()  # the round publishes from here on
 
-    def exit_streamed(self) -> None:
-        clock.resume()  # the round is over; keep standing
+        def token_frame(self, *a, **kw):
+            with clock.lock:
+                return orig_token(self, *a, **kw)
 
-    def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
-        clock.hold(seconds)
+    return Commander
 
-    def frame(self, *a, **kw) -> None:
-        return
 
-    def token_frame(self, *a, **kw):
-        with clock.lock:
-            return orig_token(self, *a, **kw)
+def install_clean_shim(clock) -> None:
+    """Legacy diagnostic hook; production evaluation uses an explicit commander."""
+    from locomani.backends.sonic.agent_server import AgentCommander
 
-    C.__init__, C.command, C.enter_streamed, C.exit_streamed = __init__, command, enter_streamed, exit_streamed
-    C.hold, C.frame, C.token_frame = hold, frame, token_frame
-    print(
-        "[clean-deploy] commander shim installed: planner commands dropped, "
-        "hold() = standing token, streamed mode kept for the process lifetime"
-    )
+    commander = clean_commander_class(clock)
+    for name in ("__init__", "command", "enter_streamed", "exit_streamed", "hold", "frame", "token_frame"):
+        setattr(AgentCommander, name, commander.__dict__[name])

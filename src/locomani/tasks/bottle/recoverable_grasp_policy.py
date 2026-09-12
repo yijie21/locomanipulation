@@ -4,15 +4,12 @@ Prospective geometry is a screening approximation; measured guards still own
 execution. Recovery never continues after intentional target contact begins.
 """
 
-import json
 import time
 from copy import deepcopy
-from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from locomani import paths
 from locomani.backends.sonic import gait_speeds
 from locomani.backends.sonic.agent_server import LocomotionMode
 from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj, wrap
@@ -29,7 +26,9 @@ def retracted_q():
 class RecoverableGraspPolicy(ReadyGraspPolicy):
     def __init__(self, *args):
         super().__init__(*args)
-        self.meta = json.loads(Path(paths.SCENE_META).read_text())
+        self.meta = self.task.meta
+        if self.meta is None:
+            raise ValueError("recovery requires the round's resolved scene metadata")
         self.retracted = False
         self.deadline = None
         self.standing_z = None
@@ -291,7 +290,7 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
         self.retracted = True
         self.execution.enter("recovery_stand")
         end = time.monotonic() + 4.0
-        from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS
+        from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS
 
         while time.monotonic() < end and not self.expired():
             state = self.p.obs()
@@ -397,7 +396,7 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
                 if self.expired():
                     return False, "recovery time budget exhausted"
                 state = self.p.obs()
-                from locomani.backends.sonic.stream_reach import toppled
+                from locomani.tasks.bottle.execution import toppled
 
                 if state["fallen"] or toppled(state, self.task.target.key):
                     return False, "recovery target or base disturbed"

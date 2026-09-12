@@ -12,7 +12,7 @@ import numpy as np
 
 from locomani.backends.sonic.primitives import HAND_OPEN, LIFT_HEIGHT, wrap
 from locomani.backends.sonic.primitives_const import HAND as _HAND
-from locomani.backends.sonic.servo import (
+from locomani.tasks.bottle.servo import (
     CLOSE_ENT_MAX,
     CLOSE_RAMP_S,
     CLOSE_SEATED,
@@ -284,7 +284,7 @@ def _phase_close(state: ServoState) -> tuple[bool, str] | None:
     # Latch contact only when SUSTAINED: a single-tick graze latched
     # contact_alpha early, capped the squeeze low, and the under-
     # gripped can dropped out during the lift.
-    from locomani.tasks.bottle.grasp_capture import bilateral_dex1_contact
+    from locomani.primitives.contacts import bilateral_dex1_contact
 
     paired = state.require_bilateral and _HAND == "dex1"
     contact = (

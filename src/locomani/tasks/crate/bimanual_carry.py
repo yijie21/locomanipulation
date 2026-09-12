@@ -56,7 +56,7 @@ from locomani import paths  # noqa: E402
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode  # noqa: E402
 from locomani.backends.sonic.primitives import Primitives  # noqa: E402
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
-from locomani.backends.sonic.stream_reach import PlannerArm  # noqa: E402
+from locomani.backends.sonic.streamed_arm import PlannerArm  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402

@@ -56,6 +56,10 @@ register_modality_config() asserts the tag is not already registered, and
 unitree_g1_sonic is, so this rewrites the entry in place.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from copy import deepcopy
 
 from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS
@@ -67,6 +71,7 @@ from gr00t.data.types import (
     ActionType,
     ModalityConfig,
 )
+from locomani.schema import SONIC_BOTTLE  # noqa: E402
 
 _TAG = EmbodimentTag.UNITREE_G1_SONIC.value
 
@@ -74,7 +79,7 @@ _cfg = deepcopy(MODALITY_CONFIGS[_TAG])
 
 _cfg["video"] = ModalityConfig(
     delta_indices=[0],
-    modality_keys=["ego_view", "right_wrist"],
+    modality_keys=list(SONIC_BOTTLE.video_keys),
 )
 
 # Order is the layout: the state vector is these groups concatenated in this
@@ -82,30 +87,7 @@ _cfg["video"] = ModalityConfig(
 # byte and the wrist pose extends it to 53.
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
-    modality_keys=[
-        # The comments are positions in the CONCATENATED state this config
-        # builds, NOT columns of the raw observation.state. They differ:
-        # meta/modality.json lays the raw vector out as left_hand 22:29 and
-        # right_arm 29:36, i.e. the opposite order to the one listed here.
-        # GR00T resolves each key by name, so the permutation is applied
-        # identically at train and deploy and is harmless -- but reading these
-        # numbers as raw columns is not. In the RAW vector the dex1 grippers
-        # are at 26/27 (left) and 40/41 (right); 22/23 and 36/37 are
-        # identically zero in every frame (verified on cover400: exactly 33 of
-        # 43 columns are ever non-zero, and col 40 tracks the commanded right
-        # grip at r=0.997). Anything that indexes observation.state directly
-        # must use the raw layout, not this list.
-        "left_leg",  # 0:6
-        "right_leg",  # 6:12
-        "waist",  # 12:15
-        "left_arm",  # 15:22
-        "right_arm",  # 22:29
-        "left_hand",  # 29:36
-        "right_hand",  # 36:43
-        "projected_gravity",  # 43:46
-        "right_wrist_pos",  # 46:49
-        "right_wrist_abs_quat",  # 49:53
-    ],
+    modality_keys=list(SONIC_BOTTLE.state_keys),
 )
 
 _ABS = ActionConfig(
@@ -116,7 +98,7 @@ _ABS = ActionConfig(
 # action_configs is positional -- one per modality_key, same order.
 _cfg["action"] = ModalityConfig(
     delta_indices=list(range(40)),
-    modality_keys=["motion_token", "right_gripper"],
+    modality_keys=list(SONIC_BOTTLE.action_keys),
     action_configs=[_ABS, _ABS],
 )
 

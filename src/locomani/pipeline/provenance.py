@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -18,7 +19,11 @@ from locomani import paths
 
 
 def _digest(p: Path) -> str:
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    sha = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
 def source_digests(root: Path | None = None) -> dict[str, str]:
@@ -42,26 +47,32 @@ def digest(path) -> str:
     return _digest(Path(path))
 
 
-def sonic_policy_identity() -> dict:
-    """Which SONIC checkpoint this run used -- name, directory, and an identity.
-
-    Added 2026-09-11, when v1.1 replaced release as the default. It belongs in
-    the provenance because the encoder token IS the dataset's action label and
-    the latent is private to the checkpoint: without this field, a dataset's
-    actions cannot be attributed to a decoder afterwards, and mixing two
-    checkpoints' episodes is undetectable. The ONNX files are 50-150 MB, so the
-    identity is the config hash plus the weight sizes, not a full digest.
-    """
-    d = Path(paths.SONIC_POLICY_DIR)
+def sonic_policy_identity(env: dict | None = None) -> dict:
+    """Content identity of the resolved checkpoint, including equal-size weight changes."""
+    env = dict(os.environ) if env is None else env
+    policy = env.get("SONIC_POLICY", paths.SONIC_POLICY)
+    d = Path(env.get("SONIC_DEPLOY_ROOT", paths.SONIC_DEPLOY)) / policy
     cfg = d / "observation_config.yaml"
-    out = {"policy": paths.SONIC_POLICY, "dir": str(d), "exists": d.is_dir()}
+    out = {"policy": policy, "dir": str(d), "exists": d.is_dir()}
     if cfg.is_file():
         out["observation_config_sha256"] = _digest(cfg)
     for name in ("model_encoder.onnx", "model_decoder.onnx"):
         f = d / name
         if f.is_file():
             out[f"{name}_bytes"] = f.stat().st_size
+            out[f"{name}_sha256"] = _digest(f)
     return out
+
+
+def checkpoint_identity(path) -> dict:
+    """Hash every checkpoint file, including sharded weights and normalization data."""
+    path = Path(path).resolve()
+    if not path.is_dir():
+        raise ValueError(f"checkpoint directory does not exist: {path}")
+    files = {p.relative_to(path).as_posix(): _digest(p) for p in sorted(path.rglob("*")) if p.is_file()}
+    if not files:
+        raise ValueError(f"checkpoint directory is empty: {path}")
+    return {"path": str(path), "files": files}
 
 
 def git_sha(root: Path | None = None) -> str:
@@ -78,6 +89,7 @@ def write_config_snapshot(
     pilot_cfg=None,
     started: float | None = None,
     inputs: dict | None = None,
+    runtime_env: dict | None = None,
 ) -> Path:
     """Write `<out_dir>/config_snapshot.json`; returns the path written.
 
@@ -85,6 +97,9 @@ def write_config_snapshot(
     files, the initial token, a reach calibration -- as {name: sha256 or {file: sha256}}
     (2026-09-10 review: the retired provenance.json hashed these; the snapshot had dropped them).
     """
+    from locomani.pipeline.stages import recorded_settings
+
+    runtime_env = dict(os.environ) if runtime_env is None else runtime_env
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     snap = out_dir / "config_snapshot.json"
@@ -95,7 +110,8 @@ def write_config_snapshot(
                 backend=backend_cfg.to_dict() if backend_cfg is not None else None,
                 eval=eval_cfg.to_dict() if eval_cfg is not None else None,
                 pilot=pilot_cfg.to_dict() if pilot_cfg is not None else None,
-                sonic_policy=sonic_policy_identity(),
+                sonic_policy=sonic_policy_identity(runtime_env),
+                runtime=recorded_settings(runtime_env or {}),
                 git_sha=git_sha(),
                 started=started if started is not None else time.time(),
                 sources=source_digests(),

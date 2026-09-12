@@ -1,20 +1,4 @@
-"""grasp_gym.py's per-round loop, split out of its main() (refactor step 4b,
-pure extraction; decision 9's file-size cap).
-
-`round_loop()` reads `grasp_gym.RESTART_DEPLOY` and calls `grasp_gym.fresh_deploy`
-/ `grasp_gym.run_round` / `grasp_gym.instruction` through a deferred import of
-grasp_gym.py (not a module-level one, since grasp_gym.py imports this
-function back -- a module-level import in the other direction would make
-the two files a load-order-sensitive circular import). `RESTART_DEPLOY` is
-one of grasp_gym.py's monkeypatchable globals (a caller can assign
-`grasp_gym.RESTART_DEPLOY = False`), so it has to be read fresh off the
-module each round, not captured once; `EDGE_MIN`/`EDGE_MAX`/`CAN_INBOARD`/
-`RAISE_LEAD` are plain constants there but get the same qualified treatment
-for consistency and to avoid a second, differently-shaped circular import.
-
-`round_loop(args, setup)` takes `setup` (a `grasp_gym._SceneSetup`) duck-typed
-rather than importing its class, for the same reason.
-"""
+"""Sample and execute bottle rounds with explicit per-invocation settings."""
 
 from __future__ import annotations
 
@@ -27,10 +11,13 @@ from locomani import paths
 from locomani.backends.sonic.primitives import LocomotionMode, wrap
 
 
-def round_loop(args, setup) -> None:
+def round_loop(args, setup, *, runtime=None) -> None:
     """The per-round loop -- unpacks `setup` back into the same local names
     the inline body used, so nothing below this line changed."""
     from locomani.tasks.bottle import grasp_gym
+    from locomani.tasks.bottle.runtime import GymRuntime
+
+    runtime = runtime or GymRuntime()
 
     fixed_cases = setup.fixed_cases
     sampled_cases = setup.sampled_cases
@@ -226,7 +213,7 @@ def round_loop(args, setup) -> None:
         # Keep legacy retries available, but fixed-case acceptance can disable
         # them rather than hide a failed first attempt behind reset success.
         for attempt in range(1 + args.stand_retries):
-            if grasp_gym.RESTART_DEPLOY and (rnd > 0 or attempt > 0):
+            if runtime.task.restart_deploy and (rnd > 0 or attempt > 0):
                 # A fresh deploy per round (and per stand retry): the
                 # nominal-spawn calibration already ran on this one, so
                 # round 1 right after a stack boot skips the restart.
@@ -236,7 +223,7 @@ def round_loop(args, setup) -> None:
                 # leaves the deploy's stand controller broken. The walk-up
                 # falls it targeted turned out to be table brushes, fixed by
                 # the walk-line clearance in the sampler.)
-                grasp_gym.fresh_deploy(p)
+                (runtime.restart or grasp_gym.fresh_deploy)(p)
             if args.dump_sample:
                 json.dump(
                     dict(
@@ -288,9 +275,10 @@ def round_loop(args, setup) -> None:
                 goal_key=goal_key,
                 place_config=place_config,
                 round_id=rnd,
+                runtime=runtime,
             )
             ok, why, produced = round_result
-            if args.record and produced and ok:
+            if args.record and round_result.accepted(require_recording=True):
                 # 'c' finishes RECORDING -> NEED_TO_SAVE and the exporter's
                 # own loop writes the episode. Failures need no branch here
                 # any more: run_round discards them itself, before the retry

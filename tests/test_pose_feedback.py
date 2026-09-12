@@ -10,14 +10,14 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
+from geometry_fixture import scene_ik
 
-from locomani.primitives.arm_ik import ArmIK
 from locomani.tasks.bottle.pose_feedback import PoseFeedback
 
 
 class PoseFeedbackTests(unittest.TestCase):
     def test_corrects_measured_pose_error_with_biased_actuator(self):
-        ik = ArmIK()
+        ik = scene_ik()
         state = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         q = np.asarray(state["joints"])
         desired_pos, desired_rot = ik.fk(q, "right")
@@ -37,7 +37,7 @@ class PoseFeedbackTests(unittest.TestCase):
         self.assertLess(metrics["rotation_error"], 0.05)
 
     def test_nonfinite_target_is_rejected(self):
-        ik = ArmIK()
+        ik = scene_ik()
         q = np.zeros(29)
         controller = PoseFeedback(ik, q, "right")
         with self.assertRaises(ValueError):
@@ -49,7 +49,7 @@ class PoseFeedbackTests(unittest.TestCase):
 
         state = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         state["wall"] = time.time()
-        arm = SimpleNamespace(ik=ArmIK(), q=np.asarray(state["joints"]), side="right", _push=Mock())
+        arm = SimpleNamespace(ik=scene_ik(), q=np.asarray(state["joints"]), side="right", _push=Mock())
         robot = SimpleNamespace(obs=lambda: {**state, "wall": time.time()})
         guard = SimpleNamespace(check=lambda *a: SweepResult(False, 0.001, "arm", "table", 0.0, 1))
         ok, reason = execute_pose_feedback(
@@ -72,7 +72,7 @@ class PoseFeedbackTests(unittest.TestCase):
         state = deepcopy(origin)
         state["wall"] = time.time()
         state["pelvis"]["pos"][0] += 0.05
-        arm = SimpleNamespace(ik=ArmIK(), q=np.asarray(state["joints"]), side="right", _push=Mock())
+        arm = SimpleNamespace(ik=scene_ik(), q=np.asarray(state["joints"]), side="right", _push=Mock())
         robot = SimpleNamespace(obs=lambda: {**state, "wall": time.time()})
         guard = SimpleNamespace(check=Mock())
         ok, reason = execute_pose_feedback(robot, arm, np.zeros(3), np.eye(3), guard, Mock(), origin_state=origin)
@@ -82,7 +82,7 @@ class PoseFeedbackTests(unittest.TestCase):
         guard.check.assert_not_called()
 
     def test_offhand_guard_reuses_current_observation(self):
-        from locomani.backends.sonic import stream_reach as sr
+        from locomani.tasks.bottle import execution as sr
 
         state = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
         state["wall"] = time.time()
@@ -92,7 +92,7 @@ class PoseFeedbackTests(unittest.TestCase):
             obs=Mock(side_effect=AssertionError("second blocking observation")),
             object_pos=lambda key, st: np.array(st["objects"][key]["pos"]),
         )
-        arm = sr.PlannerArm(robot, "right")
+        arm = sr.PlannerArm(robot, "right", ik=scene_ik())
         arm.guard = "water_bottle"
         q = np.array(state["joints"])
         np.testing.assert_array_equal(arm._guard_left(q.copy(), observed=state), q)

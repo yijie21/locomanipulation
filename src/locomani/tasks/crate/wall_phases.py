@@ -35,7 +35,7 @@ import numpy as np
 from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode, StreamMode
 from locomani.backends.sonic.primitives import DT, Primitives, upper_body_from_mj, wrap
-from locomani.backends.sonic.stream_reach import reanchor
+from locomani.backends.sonic.streamed_arm import reanchor
 from locomani.primitives.g1_joints import ARM_MJ as ARM_IDX
 from locomani.sim.privileged_pub import EpisodeControlClient
 

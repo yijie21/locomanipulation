@@ -3,10 +3,11 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+from geometry_fixture import scene_ik
 from scipy.spatial.transform import Rotation
 
 from locomani.backends.sonic.primitives import Primitives
-from locomani.primitives.arm_ik import LAST_IK, ArmIK
+from locomani.primitives.arm_ik import LAST_IK
 from locomani.primitives.g1_joints import ARM_MJ
 from locomani.tasks.bottle.grasp_capture import OFFSET
 from locomani.tasks.bottle.ready_grasp_policy import ready_q
@@ -18,8 +19,8 @@ class GraspPointIKTests(unittest.TestCase):
         from unittest.mock import Mock
 
         from locomani.backends.sonic.primitives import HAND_OPEN
-        from locomani.backends.sonic.stream_reach import _servo_continuous
         from locomani.pipeline.execution_record import ExecutionRecord
+        from locomani.tasks.bottle.execution import _servo_continuous
 
         palm = np.array([0.0, 0.0, 0.7])
         target = palm + OFFSET
@@ -63,7 +64,7 @@ class GraspPointIKTests(unittest.TestCase):
         np.testing.assert_allclose(solver.call_args.kwargs["point_offset"], OFFSET)
 
     def test_orientation_residual_does_not_become_a_lever_arm_position_error(self):
-        ik = ArmIK()
+        ik = scene_ik()
         q = ready_q()
         q[22], q[25] = 0.1, 0.15
         palm, actual_rotation = ik.fk(q, "right")
@@ -87,7 +88,7 @@ class GraspPointIKTests(unittest.TestCase):
         np.testing.assert_allclose(Primitives._rot(LAST_IK["right"][1]), rotation, atol=1e-8)
 
     def test_zero_offset_matches_the_existing_wrist_solver(self):
-        ik = ArmIK()
+        ik = scene_ik()
         q = ready_q()
         palm, rotation = ik.fk(q, "right")
         target = palm + [0.01, 0.0, -0.01]

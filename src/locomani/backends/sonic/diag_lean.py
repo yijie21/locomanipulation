@@ -47,8 +47,7 @@ import numpy as np
 from locomani import paths
 from locomani.backends.sonic.agent_server import LocomotionMode, StreamMode
 from locomani.backends.sonic.primitives import Primitives
-from locomani.backends.sonic.stream_reach import reanchor
-from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm
+from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
 from locomani.primitives.arm_ik import ArmIK
 from locomani.sim.privileged_pub import EpisodeControlClient
 

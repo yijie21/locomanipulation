@@ -37,7 +37,6 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -47,6 +46,7 @@ from locomani import paths  # noqa: E402
 from locomani.backends.sonic.config import SonicBackendConfig  # noqa: E402
 from locomani.pipeline import stack  # noqa: E402
 from locomani.pipeline.provenance import file_digests, write_config_snapshot  # noqa: E402
+from locomani.pipeline.stages import Stage  # noqa: E402
 from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
 
 # label prefix -> the expert script, keeping each expert's historical default
@@ -204,28 +204,6 @@ def expert_env(env: dict) -> dict:
     return {k: v for k, v in env.items() if k not in drop}
 
 
-class Stage:
-    """`<out>/<name>.log` + a row in `<out>/timings.jsonl`, as run_learn_pilot.py does it."""
-
-    def __init__(self, out: Path):
-        self.out = out
-
-    def run(self, name: str, cmd, env: dict | None = None, cwd=None) -> int:
-        t0 = time.time()
-        log = self.out / f"{name}.log"
-        print(f"{name}: start  log={log}", flush=True)
-        with log.open("a") as f:
-            f.write("\nCOMMAND " + json.dumps([str(x) for x in cmd]) + "\n")
-            f.flush()
-            rc = subprocess.call(
-                [str(x) for x in cmd], cwd=cwd or paths.REPO, env=env, stdout=f, stderr=subprocess.STDOUT
-            )
-        with (self.out / "timings.jsonl").open("a") as f:
-            f.write(json.dumps(dict(stage=name, start=t0, seconds=time.time() - t0, rc=rc)) + "\n")
-        print(f"{name}: rc={rc} in {time.time() - t0:.0f}s", flush=True)
-        return rc
-
-
 def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
     """Make the run directory reproducible: scene copy, task config, provenance."""
     out = args.out.resolve()
@@ -297,7 +275,14 @@ def main(argv=None) -> None:
             extra["SIM_STATE_TRACE_DIR"] = str(trace_dir)
         try:
             env = stack.start_stack(
-                backend, task_cfg, instance=args.instance, gpu=args.gpu, video_dir=str(videos), extra_env=extra
+                backend,
+                task_cfg,
+                instance=args.instance,
+                gpu=args.gpu,
+                video_dir=str(videos),
+                extra_env=extra,
+                runner=stage.run,
+                name=f"start_stack_{tag}",
             )
         except RuntimeError as e:
             raise SystemExit(f"[crate] {e}; see {paths.session_root(args.instance)}") from None
@@ -310,10 +295,10 @@ def main(argv=None) -> None:
             seed = args.seed + 100 * b
             label = f"{EXPERTS[args.expert][1]}_s{seed}"
             argv_expert = expert_argv(args, task_cfg_path, manifest, label, trace_dir, seed)
-            rc = stage.run(f"{args.expert}_{tag}", argv_expert, env=expert_env(env))
+            rc = stage.run(f"{args.expert}_{tag}", argv_expert, env=env)
             failures += bool(rc)
         finally:
-            stack.stop_instance(args.instance)
+            stack.stop_instance(args.instance, runner=stage.run)
         state["batches"] = b + 1
         state_path.write_text(json.dumps(state, indent=1))
 

@@ -6,9 +6,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+
+pytestmark = pytest.mark.usefixtures("bottle_geometry")
+
+from geometry_fixture import scene_ik
 
 from locomani.backends.sonic.primitives import STANDING_PELVIS_Z
-from locomani.primitives.arm_ik import ArmIK
 from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig
 from locomani.tasks.bottle.ready_grasp_policy import (
     OFFSET,
@@ -31,7 +35,7 @@ class ReadyBaselineTests(unittest.TestCase):
             ReachConfig.from_dict({"schema_version": 1, "ready_grasp_baseline": "true"})
 
     def test_ready_hands_are_in_front_with_neutral_wrists(self):
-        ik = ArmIK()
+        ik = scene_ik()
         q = ready_q()
         left, _ = ik.fk(q, "left")
         right, _ = ik.fk(q, "right")
@@ -52,7 +56,7 @@ class ReadyBaselineTests(unittest.TestCase):
             sample_stand(SimpleNamespace(grip_z=1.5), rng, cfg)
 
     def test_short_path_has_comfortable_ik_on_real_robot(self):
-        ik = ArmIK()
+        ik = scene_ik()
         ik.lo[26:29] = -WRIST_LIMIT
         ik.hi[26:29] = WRIST_LIMIT
         ik.lo[[22, 25]] = -0.65
@@ -97,7 +101,7 @@ class ReadyBaselineTests(unittest.TestCase):
 
         from _sim_stubs import Clock, Robot
 
-        from locomani.backends.sonic import stream_reach as sr
+        from locomani.tasks.bottle import execution as sr
 
         robot = Robot(x=0.26)
         robot.world_to_root = lambda point, state: np.array([0.26, -0.10, 0.0])
@@ -110,7 +114,7 @@ class ReadyBaselineTests(unittest.TestCase):
         self.assertGreater(robot.frames[0]["facing"][1], 0.0)
 
     def test_pregrasp_gap_is_shared_with_actual_servo_handover(self):
-        from locomani.backends.sonic import stream_reach as sr
+        from locomani.tasks.bottle import execution as sr
 
         class EnteredServo(Exception):
             pass

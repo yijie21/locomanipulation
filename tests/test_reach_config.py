@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from _sim_stubs import Clock, Robot
 
-from locomani.backends.sonic import stream_reach as sr
+from locomani.tasks.bottle import execution as sr
 from locomani.tasks.bottle.reach_config import DEFAULT_REACH, ReachConfig, require_expert_calibration
 
 

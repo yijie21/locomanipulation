@@ -7,6 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+
+pytestmark = pytest.mark.usefixtures("bottle_geometry")
 
 from locomani.backends.sonic.primitives import Primitives
 from locomani.tasks.bottle import adaptive_grasp

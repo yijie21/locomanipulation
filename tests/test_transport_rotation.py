@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from locomani.backends.sonic import stream_reach as sr
 from locomani.backends.sonic.primitives import Primitives
+from locomani.tasks.bottle import execution as sr
 
 
 class FirstCommand(Exception):

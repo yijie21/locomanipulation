@@ -1,80 +1,86 @@
-"""A config knob the eval path declares must actually reach the eval client.
+"""Resolved evaluation settings reach real consumers without shared mutable flags."""
 
-The sonic clients read their tunables as LIVE module globals on `vla_round`
-(`vr.OBS_DUMP`, `vr.SNAP`, ...) -- deliberately, so a caller can override one by
-assignment; see vla_obs.py's docstring. The consequence is that a knob is only
-live if `eval_closed_loop.py` assigns it. `backend.obs_dump` never was: its only
-other consumer is `stack.py`, which exports it as `TF_OBS_DUMP` into the STACK's
-environment, a different process from the eval client. So `--set
-backend.obs_dump=DIR` was accepted, echoed into the config snapshot, and wrote
-nothing -- found on 2026-09-11 when a diagnosis run produced zero dumps.
+from dataclasses import replace
 
-`grip_delay`, `replace` and `lockstep.no_seed` were inert the same way. Their
-config defaults equal the module defaults, so no recorded result is affected.
+import numpy as np
+import pytest
 
-A "is the field name mentioned anywhere" check does NOT catch this -- obs_dump
-was mentioned, in the wrong process. The invariant that does: every global the
-backend reads live AND that a config field exists for must be assigned by the
-eval entry point.
-"""
-
-from __future__ import annotations
-
-import re
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-SRC = Path(__file__).resolve().parents[1] / "src/locomani"
-SONIC = SRC / "backends/sonic"
-
-# Globals the backend reads live but that are NOT config-backed: physical
-# thresholds and gym constants, owned by the module and not meant to be set per
-# eval. Anything not listed here needs a config field and an assignment.
-NOT_CONFIG_BACKED = {"CONST", "LIFT_M", "NEAR_M", "STALL_ABORT_M"}
+from locomani.backends.sonic.vla_client import _ensemble, _grip_gain, _stalled
+from locomani.backends.sonic.vla_obs import PolicyLink
+from locomani.pipeline.eval_config import EvalConfig
 
 
-def live_globals() -> set[str]:
-    """Every `vr.<GLOBAL>` the sonic backend resolves at call time."""
-    found: set[str] = set()
-    for path in SONIC.glob("*.py"):
-        found |= set(re.findall(r"\bvr\.([A-Z_][A-Z0-9_]*)\b", path.read_text()))
-    return found
+def test_observation_dump_and_snap_are_independent_per_link(tmp_path, monkeypatch):
+    config = EvalConfig().with_overrides([f"backend.obs_dump={tmp_path}", "snap=false"])
+    configured = PolicyLink(config=config)
+    default = PolicyLink()
+    raw = np.full((2, 64), 0.123456)
+    answer = {"action.motion_token": raw, "action.right_gripper": np.zeros(2)}
+    monkeypatch.setattr(PolicyLink, "_call", lambda *a: answer)
+    try:
+        np.testing.assert_array_equal(configured.get_chunk({"state.test": [2]})[0], raw)
+        assert not np.array_equal(default.get_chunk({})[0], raw)
+        files = list(tmp_path.glob("*.npz"))
+        assert len(files) == 1
+        with np.load(files[0]) as saved:
+            np.testing.assert_array_equal(saved["state.test"], [2])
+            np.testing.assert_array_equal(saved["tok"], raw)
+    finally:
+        for link in (configured, default):
+            link.sock.close(0)
+            link.ctx.term()
 
 
-def assigned_by_eval() -> set[str]:
-    text = (SRC / "pipeline/eval_closed_loop.py").read_text()
-    return set(re.findall(r"\bvla_round\.([A-Z_][A-Z0-9_]*)\s*=", text))
+def test_gain_ensemble_and_stall_settings_change_decisions_without_leaking():
+    config = EvalConfig().with_overrides(["grip_gain=3.0", "ensemble_m=0.0", "stall_abort_s=10.0"])
+    assert _grip_gain(0.018, config=config) < 0.018
+    assert _grip_gain(0.018) == 0.018
+    buf = [(np.zeros((1, 64)), [0.0], 0), (np.ones((1, 64)), [1.0], 0)]
+    assert _ensemble(buf, 0, 25, config=config)[1] == pytest.approx(0.5)
+    assert _ensemble(buf, 0, 25)[1] > 0.5
+    trace = [{"t": t, "pelvis_xy": [0.0, 0.0]} for t in range(11)]
+    assert _stalled(trace, False, config=config)
+    assert not _stalled(trace, False)
+    assert not _stalled(trace, True, config=config)
 
 
-def test_every_config_backed_live_global_is_assigned_by_the_eval_entry_point():
-    unassigned = live_globals() - assigned_by_eval() - NOT_CONFIG_BACKED
-    assert not unassigned, (
-        f"{sorted(unassigned)} are read live by the sonic backend but never assigned in "
-        "eval_closed_loop.py -- a --set for them is silently inert. Either assign them from "
-        "the config, or add them to NOT_CONFIG_BACKED with a reason if they are module constants."
+def test_clean_clock_uses_the_supplied_dataset_rate(monkeypatch):
+    import threading
+
+    from locomani.backends.sonic import initial_pose
+    from locomani.backends.sonic.clean_clock import CleanClock
+
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)
+    monkeypatch.setattr(initial_pose, "initial_token", lambda: np.zeros(64))
+    config = EvalConfig().with_overrides(["backend.dataset_fps=25.0"])
+    assert CleanClock(config=config).dt == pytest.approx(1 / 25)
+    assert CleanClock(config=replace(config, backend=replace(config.backend, dataset_fps=30))).dt == pytest.approx(
+        1 / 30
     )
 
 
-def test_obs_dump_specifically_reaches_the_client():
-    """The one that was actually broken, named so a revert is unambiguous."""
-    text = (SRC / "pipeline/eval_closed_loop.py").read_text()
-    assert "vla_round.OBS_DUMP = cfg.backend.obs_dump" in text, (
-        "without this line --set backend.obs_dump=DIR writes nothing and reports no error"
-    )
+def test_clock_commanders_do_not_change_other_instances(monkeypatch):
+    import threading
+    from types import SimpleNamespace
 
+    from locomani.backends.sonic.agent_server import AgentCommander
+    from locomani.backends.sonic.clean_clock import clean_commander_class
+    from locomani.backends.sonic.lockstep_client import lockstep_commander_class
 
-def test_stack_env_alone_does_not_count_as_wiring():
-    """stack.py's TF_OBS_DUMP goes to the stack, not to this process.
-
-    Pinned so nobody 'fixes' a future occurrence by adding an env export and
-    believing the knob is live.
-    """
-    stack = (SRC / "pipeline/stack.py").read_text()
-    assert "TF_OBS_DUMP" in stack, "stack.py still exports it for the stack's own processes"
-    obs = (SONIC / "vla_obs.py").read_text()
-    assert "vr.OBS_DUMP" in obs and "os.environ" not in obs.split("def get_chunk")[1], (
-        "the dump is gated by the module global, not by the environment; if that ever changes, "
-        "this test and eval_closed_loop's assignment both need revisiting"
-    )
+    sent, first, second = [], [], []
+    monkeypatch.setattr(AgentCommander, "__init__", lambda self: None)
+    monkeypatch.setattr(AgentCommander, "command", lambda self, **kw: sent.append(kw))
+    original = AgentCommander.command
+    clock = SimpleNamespace(cmd=object(), lock=threading.RLock(), hold=first.append)
+    other = SimpleNamespace(hold_frames=second.append)
+    clean = clean_commander_class(clock)()
+    lockstep = lockstep_commander_class(other)()
+    clean.hold(0.2)
+    lockstep.hold(0.2)
+    assert first == [0.2] and second == [10]
+    clean.command(start=True, stop=False, planner=True)
+    lockstep.command(start=True, stop=False, planner=True)
+    assert sent == []
+    assert AgentCommander.command is original
+    AgentCommander().command(start=True, stop=False, planner=True)
+    assert len(sent) == 1

@@ -1,30 +1,6 @@
-"""Lockstep client: simulated-latency, simulation-clock evaluation, split out
-of vla_round.py (refactor step 4b family 3, pure extraction; decision 9's
-file-size cap). Every statement here is unchanged from the original inline
-body -- only the packaging moved, plus `make_vla_policy_lockstep`'s reads of
-`DATASET_FPS` / `TIMEOUT_S` / `RTC_ON` / `LOCKSTEP_NO_SEED` / `ENSEMBLE_N` /
-`NEAR_M` / `LIFT_M`, which have to stay LIVE against the `vla_round` module
-object the same way `stream_reach.toppled` did in family 2 (see that
-module's docstring for the general pattern, and vla_round.py's own for this
-family's full monkeypatch inventory) -- `eval_closed_loop.py` overrides
-several of these by assignment before building this round. The deferred
-import is aliased `vr`, not `vla_round`, because the nested closure this
-module builds is itself named `vla_round` (matching every other channel's
-`vla_round(p, reset, meta, ...)` factory-return convention) and would shadow
-a same-named module import.
+"""Simulation-clock token streaming and latency emulation.
 
-The sim (lockstep_sim.py) advances only on request, so wall-clock time is
-no longer part of the experiment. Every quantity the async client measured
-with a clock is re-expressed in 25 fps FRAMES:
-  - K, the frames the body keeps executing the old plan while the brain
-    "thinks", is DRAWN from the empirical wall-clock distribution (or fixed
-    with --latency-frames) instead of being whatever the GPU happened to
-    deliver;
-  - chunk t0 is a frame number; the ensemble aligns by frame; RTC's
-    elapsed == frozen == K exactly.
-Same obs -> same chunk (policy.seed) -> same physics: a round replays
-bit-for-bit, and a GPU shared with three other servers changes nothing but
-the wall time.
+Runtime options are explicit immutable VlaConfig values.
 """
 
 from __future__ import annotations
@@ -37,6 +13,7 @@ import numpy as np
 
 from locomani.backends.sonic.sonic_token import expand_hands
 from locomani.backends.sonic.vla_client import _ensemble, _grip_gain, _stalled
+from locomani.backends.sonic.vla_config import DEFAULT_VLA, LIFT_M, NEAR_M, STALL_ABORT_M, VlaConfig
 from locomani.backends.sonic.vla_obs import ObsBuilder, PolicyLink, _obj_extra
 
 LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
@@ -242,33 +219,35 @@ class LockstepClock:
         self.th.join(timeout=2.0)
 
 
-def install_lockstep_shim(clock: LockstepClock) -> None:
-    """Under lockstep the commander must never ask for PLANNER mode (the
-    deploy's planner thread deadlocks the lockstep gate) and wall-clock holds
-    must become tick counts. Patched at the class so grasp_gym's Primitives
-    pick it up: start_control / exit_streamed / pause_control (planner=True
-    commands) become no-ops, hold() becomes hold_frames(), planner frame()
-    is dropped. enter_streamed and token_frame pass through."""
+def lockstep_commander_class(clock: LockstepClock):
+    """Return a commander class bound to one clock without changing the base class."""
     from locomani.backends.sonic import agent_server
 
     C = agent_server.AgentCommander
     orig_command = C.command
 
-    def command(self, *, start: bool, stop: bool, planner: bool) -> None:
-        if planner and not stop:
-            return  # no planner under lockstep
-        orig_command(self, start=start, stop=stop, planner=planner)
+    class Commander(C):
+        def command(self, *, start: bool, stop: bool, planner: bool) -> None:
+            if planner and not stop:
+                return  # no planner under lockstep
+            orig_command(self, start=start, stop=stop, planner=planner)
 
-    def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
-        clock.hold_frames(int(round(seconds * 50.0)))
+        def hold(self, seconds: float, hz: float = 50.0, **frame_kwargs) -> None:
+            clock.hold_frames(int(round(seconds * 50.0)))
 
-    def frame(self, *a, **kw) -> None:
-        return
+        def frame(self, *a, **kw) -> None:
+            return
 
-    C.command = command
-    C.hold = hold
-    C.frame = frame
-    print("[lockstep] commander shim installed: planner commands dropped, hold() = N standing-token ticks")
+    return Commander
+
+
+def install_lockstep_shim(clock) -> None:
+    """Legacy diagnostic hook; production evaluation uses an explicit commander."""
+    from locomani.backends.sonic.agent_server import AgentCommander
+
+    commander = lockstep_commander_class(clock)
+    for name in ("command", "hold", "frame"):
+        setattr(AgentCommander, name, commander.__dict__[name])
 
 
 def load_latency_dist(path: str | None, fixed: int | None) -> dict:
@@ -291,6 +270,8 @@ def make_vla_policy_lockstep(
     latency: dict,
     seed: int = 0,
     trace_dir: str | None = None,
+    *,
+    config: VlaConfig = DEFAULT_VLA,
 ):
     """Simulation-clock round with simulated inference latency.
 
@@ -304,13 +285,12 @@ def make_vla_policy_lockstep(
     previous inference returns when inference is slower than the 0.4 s
     interval, which it is).
     """
-    from locomani.backends.sonic import vla_round as vr
     from locomani.backends.sonic.initial_pose import initial_token
     from locomani.backends.sonic.sonic_token import GRIPPER_MAX as _G_OPEN
 
     counter = {"n": 0}
-    RATE = int(round(vr.DATASET_FPS))
-    TIMEOUT_F = int(vr.TIMEOUT_S * RATE)
+    RATE = int(round(config.backend.dataset_fps))
+    TIMEOUT_F = int(config.budget_s * RATE)
     LIFT_HOLD_F = 2 * RATE  # 2 s of sustained lift, as async
     STATUS_EVERY_F = max(1, RATE // 2)  # ~2 Hz predicates, as async
 
@@ -355,9 +335,9 @@ def make_vla_policy_lockstep(
             def infer(obs, f, elapsed, frozen):
                 # LOCKSTEP_NO_SEED=1: leave the server's torch RNG alone (A/B
                 # against the deterministic per-inference seed)
-                if not vr.LOCKSTEP_NO_SEED:
+                if not config.backend.lockstep.no_seed:
                     obs["policy.seed"] = int(rng.integers(0, 2**31 - 1))
-                if vr.RTC_ON:
+                if config.rtc:
                     obs["rtc.reset"] = 1 if f == 0 else 0
                     obs["rtc.elapsed"] = int(elapsed)
                     obs["rtc.frozen"] = int(frozen)
@@ -387,8 +367,8 @@ def make_vla_policy_lockstep(
             next_status = 0
 
             def frame_cmd(fi):
-                if vr.ENSEMBLE_N > 1:
-                    b = _ensemble(buf, fi, 1.0)
+                if config.ensemble_n > 1:
+                    b = _ensemble(buf, fi, 1.0, config=config)
                     if b is None:
                         tok_j, grip_j = latest[0][-1], float(latest[1][-1])
                     else:
@@ -401,7 +381,7 @@ def make_vla_policy_lockstep(
 
             # one frame of the first chunk, and the observation for cycle 1
             tok_j, grip_raw = frame_cmd(f)
-            lh, rh = expand_hands(_grip_gain(grip_raw))
+            lh, rh = expand_hands(_grip_gain(grip_raw, config=config))
             rep = ls.step([(tok_j, lh, rh)], 2, want_obs=True)
             f += 1
             # -- main cycle ----------------------------------------------------
@@ -429,10 +409,10 @@ def make_vla_policy_lockstep(
                 for i in range(K):
                     if i == A:
                         buf.append((tok, grip, t_obs))
-                        del buf[: -max(vr.ENSEMBLE_N, 1)]
+                        del buf[: -max(config.ensemble_n, 1)]
                         latest = (tok, grip, t_obs)
                     tok_j, grip_raw = frame_cmd(f + i)
-                    g = _grip_gain(grip_raw)
+                    g = _grip_gain(grip_raw, config=config)
                     if g < 0.005:
                         commanded_close = True
                     lh, rh = expand_hands(g)
@@ -440,7 +420,7 @@ def make_vla_policy_lockstep(
                     grips.append((g, grip_raw))
                 if A >= K:
                     buf.append((tok, grip, t_obs))
-                    del buf[: -max(vr.ENSEMBLE_N, 1)]
+                    del buf[: -max(config.ensemble_n, 1)]
                     latest = (tok, grip, t_obs)
                 rep = ls.step(frames, 2, want_obs=True)
                 f += K
@@ -483,7 +463,7 @@ def make_vla_policy_lockstep(
                     if st["fallen"]:
                         why = "[vla] fell"
                         break
-                    if rise > vr.LIFT_M:
+                    if rise > LIFT_M:
                         if lifted_at is None:
                             lifted_at = f
                         elif f - lifted_at > LIFT_HOLD_F:
@@ -491,7 +471,7 @@ def make_vla_policy_lockstep(
                             break
                     else:
                         lifted_at = None
-                    if _stalled(trace, commanded_close):
+                    if _stalled(trace, commanded_close, config=config):
                         why = "[vla] reach: stalled (--stall-abort)"
                         break
         except RuntimeError as e:
@@ -507,7 +487,7 @@ def make_vla_policy_lockstep(
 
         if not ok and why == "[vla] timeout" and trace:
             min_dist = min(r["dist"] for r in trace)
-            if min_dist > vr.NEAR_M:
+            if min_dist > NEAR_M:
                 why = f"[vla] walk: never closer than {min_dist:.2f} m"
             elif not commanded_close:
                 why = f"[vla] reach: at the table (min {min_dist:.2f} m) but never commanded a close"

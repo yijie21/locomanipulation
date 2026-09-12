@@ -6,10 +6,10 @@ from copy import copy, deepcopy
 import mujoco
 import numpy as np
 
-from locomani.backends.sonic import stream_reach as sr
 from locomani.backends.sonic.primitives import Primitives
 from locomani.primitives.arm_ik import LAST_IK
 from locomani.primitives.g1_joints import ARM_MJ
+from locomani.tasks.bottle import execution as sr
 from locomani.tasks.bottle.transport_planner import JointTransportPlanner
 
 

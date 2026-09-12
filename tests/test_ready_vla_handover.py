@@ -22,7 +22,6 @@ class ReadyVLAHandoverTests(unittest.TestCase):
         p.object_pos.return_value = np.array([1.0, 0.0, 0.7])
         meta = {"objects": {"water_bottle": {"box": {}, "body": "bottle"}}, "surfaces": {"table": {"body": "table"}}}
         with (
-            patch.object(gym, "VLA_POLICY", policy),
             patch.object(gym.initial_pose, "INIT_TOKEN_FILE", token_file or None),
             patch.object(gym.time, "sleep"),
             patch.object(gym.upper_ref, "shared"),
@@ -49,6 +48,7 @@ class ReadyVLAHandoverTests(unittest.TestCase):
                 spawn_off=0.0,
                 object_yaw=0.0,
                 reach_config=ReachConfig(strategy="ready"),
+                runtime=gym.GymRuntime(policy=policy),
             )
         self.last_token_pose = token_pose
         return result, ready

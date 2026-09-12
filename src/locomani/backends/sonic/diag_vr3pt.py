@@ -50,7 +50,7 @@ from scipy.spatial.transform import Rotation
 
 from locomani import paths
 from locomani.backends.sonic.primitives import LocomotionMode, Primitives, StreamMode
-from locomani.backends.sonic.stream_reach import reanchor
+from locomani.backends.sonic.streamed_arm import reanchor
 from locomani.backends.sonic.teleop_arm import VR_OFFSET, TeleopArm
 from locomani.sim.privileged_pub import EpisodeControlClient
 

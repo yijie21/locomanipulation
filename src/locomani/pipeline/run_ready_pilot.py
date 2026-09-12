@@ -13,13 +13,18 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from locomani.backends.sonic.config import SonicBackendConfig  # noqa: E402
+from locomani.pipeline import stack  # noqa: E402
+from locomani.pipeline.stages import Stage  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 DATA = ROOT / "third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python"
 TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 SRC = ROOT / "src/locomani"
-STACK = ROOT / "scripts/stack"
 CONFIG = ROOT / "configs/collection/ready_grasp_coupled.json"
 
 
@@ -31,7 +36,7 @@ def latest_session():
     return max(Path("/workspace/tmp/p03/outputs").iterdir(), key=lambda p: p.stat().st_mtime)
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(__doc__)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--reach-config", type=Path, default=CONFIG)
@@ -50,7 +55,7 @@ def main():
     ap.add_argument("--stand-retries", type=int, choices=(0, 1), default=1)
     ap.add_argument("--through", choices=("collect", "convert", "train", "eval"), default="eval")
     ap.add_argument("--reuse-data", type=Path, help="completed pilot whose converted datasets are reused")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if args.eval_rounds <= 0 or args.steps <= 0 or not 0 < args.holdout < args.successes or args.jobs < 1:
         ap.error("invalid budgets")
     collection_cases = args.collection_cases.resolve() if args.collection_cases else None
@@ -160,30 +165,23 @@ def main():
     stack_active = False
     server = None
 
+    stages = Stage(out)
+
     def run(name, cmd, extra=None):
-        started = time.time()
-        log = out / f"{name}.log"
-        print(f"{name}: started; log={log}", flush=True)
-        rc = -1
-        try:
-            with log.open("a") as f:
-                f.write("\nCOMMAND " + json.dumps([str(x) for x in cmd]) + "\n")
-                f.flush()
-                rc = subprocess.call(
-                    [str(x) for x in cmd],
-                    cwd=ROOT,
-                    env=env if extra is None else dict(env, **extra),
-                    stdout=f,
-                    stderr=subprocess.STDOUT,
-                )
-            if rc:
-                raise RuntimeError(f"{name} exited {rc}: {log}")
-        finally:
-            with (out / "timings.jsonl").open("a") as f:
-                f.write(
-                    json.dumps(dict(stage=name, start_unix=started, seconds=time.time() - started, exit_code=rc)) + "\n"
-                )
-        print(f"{name}: completed in {time.time() - started:.1f}s", flush=True)
+        stages.check(name, cmd, env=env if extra is None else dict(env, **extra))
+
+    def start(name, *, evaluation=False):
+        nonlocal env
+        env = stack.start_stack(
+            SonicBackendConfig(no_encoder=evaluation),
+            SimpleNamespace(prompt="pick up the water bottle"),
+            instance=0,
+            gpu=env.get("CUDA_VISIBLE_DEVICES", "0"),
+            inherit=env,
+            extra_env={key: value for key, value in env.items() if key.startswith(("TF_", "SIM_"))},
+            runner=stages.run,
+            name=name,
+        )
 
     def cached(stage):
         receipt = out / f"{stage}.done.json"
@@ -203,7 +201,7 @@ def main():
     def stop():
         nonlocal stack_active
         if stack_active:
-            run("stop_stack", ["bash", STACK / "stop_stack.sh"])
+            stack.stop_instance(0, runner=stages.run)
             stack_active = False
 
     try:
@@ -212,8 +210,8 @@ def main():
             if collect.exists():
                 raise RuntimeError("partial collection exists; inspect manifests before extending in a new run")
             collect.mkdir()
+            start("start_collect_stack")
             stack_active = True
-            run("start_collect_stack", ["bash", STACK / "start_stack.sh", "pick up the water bottle"])
             sessions, manifests = [], []
             source_audits = []
             kept = 0
@@ -277,11 +275,8 @@ def main():
                     if kept < args.successes and offset + len(selected) < case_rounds:
                         stop()
                         env["TF_FRAME_AUDIT_PATH"] = str(out / f"frame_audit_{chunk + 1:02d}.jsonl")
+                        start(f"start_collect_stack_{chunk + 1:02d}")
                         stack_active = True
-                        run(
-                            f"start_collect_stack_{chunk + 1:02d}",
-                            ["bash", STACK / "start_stack.sh", "pick up the water bottle"],
-                        )
             else:
                 for chunk in range(4):
                     if kept >= args.successes:
@@ -415,10 +410,8 @@ def main():
         if not cached("eval"):
             if (out / "eval.json").exists():
                 raise RuntimeError("partial evaluation exists; refusing to mix case results")
+            start("start_eval_stack", evaluation=True)
             stack_active = True
-            run(
-                "start_eval_stack", ["bash", STACK / "start_stack.sh", "pick up the water bottle"], dict(NO_ENCODER="1")
-            )
             server_log = (out / "serve.log").open("a")
             server = subprocess.Popen(
                 [str(TRAIN), str(SRC / "pipeline/serve_policy.py"), "--model-path", str(checkpoint), "--port", "5590"],

@@ -4,7 +4,7 @@ here is unchanged from the original inline body -- only the packaging moved:
 the two classes plus `yaw_only` and the tuning constants only they use.
 `make_arm()`, `reanchor()`, `_servo_continuous` (now servo.py) and everything
 else in stream_reach.py's module docstring stay there and import `StreamedArm`
-/ `PlannerArm` from here, so `from locomani.backends.sonic.stream_reach import
+/ `PlannerArm` from here, so `from locomani.tasks.bottle.execution import
 PlannerArm` (round_phases.py, bimanual_carry.py, the diag tools, the tests
 that `patch(...)` these names on the `stream_reach` module) keeps working
 unchanged -- see stream_reach.py's own docstring for the re-export.
@@ -28,7 +28,6 @@ from locomani.backends.sonic.primitives import (
 )
 from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.g1_joints import ARM_MJ, mujoco_to_isaac
-from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
 
 CHUNK = 5  # pose frames per message, like the pico manager
 JOINT_SPEED = 0.8  # rad/s for large repositioning moves
@@ -60,7 +59,6 @@ NUDGE_MAX = 0.05
 # palm's distance to the object and, inside LEFT_SAFE_M, solves left-arm IK
 # to a retreat target radially away from the object (rate-limited, no
 # waist). GYM_LEFT_GUARD=0 disables it (A/B).
-LEFT_GUARD = DEFAULT_BOTTLE_TASK.left_guard
 LEFT_SAFE_M = 0.24  # start retreating inside this palm-object distance
 LEFT_RETREAT_M = 0.10  # retreat target sits SAFE + this from the object
 LEFT_GUARD_RATE = 1.2  # rad/s cap on the guarded left-arm joints
@@ -88,10 +86,11 @@ def yaw_only(quat_wxyz):
 class StreamedArm:
     """Owns the pose stream: joint references, hand targets, pacing."""
 
-    def __init__(self, p: Primitives, side: str):
+    def __init__(self, p: Primitives, side: str, *, ik=None, left_guard: bool = True):
         self.p = p
         self.side = side
-        self.ik = ArmIK()
+        self.ik = ArmIK() if ik is None else ik
+        self.left_guard = left_guard
         # The waist may HELP the reach but only within a human lean. With the
         # stock limits the IK bridged any height/side gap by folding the
         # torso flat onto the table (head down, palm never reaching its
@@ -226,7 +225,7 @@ class StreamedArm:
         in the pelvis frame and rate-limits the joints. The retreated pose
         persists (no return to the frozen snapshot) and is carried into
         every later reference via _left_now."""
-        if self.guard is None or self.side != "right" or not LEFT_GUARD:
+        if self.guard is None or self.side != "right" or not self.left_guard:
             return q
         L = ARM_MJ["left"]
         if self._left_now is not None:
@@ -422,8 +421,8 @@ class PlannerArm(StreamedArm):
     stationary to it.
     """
 
-    def __init__(self, p: Primitives, side: str, send_vel: bool = False):
-        super().__init__(p, side)
+    def __init__(self, p: Primitives, side: str, send_vel: bool = False, *, ik=None, left_guard: bool = True):
+        super().__init__(p, side, ik=ik, left_guard=left_guard)
         self.send_vel = send_vel
         self.height = -1.0  # planner-message height; -1 = default
         self.mode = LocomotionMode.IDLE
@@ -563,3 +562,24 @@ class PlannerArm(StreamedArm):
         self.mode = LocomotionMode.IDLE
         self.height = -1.0
         self.hold(1.5)
+
+
+def reanchor(p: Primitives, side: str = "right") -> None:
+    """Force a planner heading re-anchor at a yaw this process knows.
+
+    The deploy may carry a stale anchor from a previous process's streamed
+    session (the anchor lives in the deploy, the compensation in the
+    commander). A two-second streamed toggle re-anchors it at the robot's
+    current yaw and records that yaw in cmd.heading_offset.
+
+    This one is ALWAYS a StreamedArm, never make_arm(): the re-anchor IS the
+    mode switch, so a PlannerArm here is a no-op and the deploy keeps the
+    stale anchor -- the robot then walks off closing a standing heading
+    error (measured 1.01 m of drift through the 4 s settle, which the gym
+    reports as "teleport did not land"). The twitch this toggle costs
+    happens before the recording starts, so it is free.
+    """
+    arm = StreamedArm(p, side)
+    arm.start()
+    arm.hold(0.3)
+    arm.stop()

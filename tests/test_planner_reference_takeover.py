@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import numpy as np
 
 from locomani.backends.sonic.primitives import READY_UPPER, upper_body_from_mj
-from locomani.backends.sonic.stream_reach import PlannerArm
+from locomani.tasks.bottle.execution import PlannerArm
 
 
 class PlannerReferenceTests(unittest.TestCase):

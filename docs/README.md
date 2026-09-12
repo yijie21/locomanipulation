@@ -26,7 +26,7 @@ this index does not validate their measurements or causal conclusions.
 - [Silent-failure notes](reference/silent_failures.md): historical troubleshooting
   leads; check referenced code and evidence before applying a recommendation.
 - [Archive index](archive/INDEX.md): original reports and superseded entry documents.
-- [Current migration plan](handoff/agent-maintenance-plan.md).
+- [First migration](handoff/agent-maintenance-plan.md); [remaining maintenance](handoff/maintenance-completion.md).
 
 A newer claim or a retraction has no automatic evidentiary priority. Follow
 [the evidence rules](reference/standards.md#evidence). Retain original records,

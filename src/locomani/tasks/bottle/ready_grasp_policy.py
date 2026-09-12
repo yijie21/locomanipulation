@@ -171,14 +171,14 @@ class ReadyGraspPolicy:
     approach_lateral = -0.19
 
     def __init__(self, p, task, config, ramp, execution):
-        from locomani.backends.sonic.stream_reach import PlannerArm
+        from locomani.tasks.bottle.execution import make_arm
 
         self.p, self.task, self.config = p, task, config
         self.ramp, self.execution = ramp, execution
         self.side = task.target.side
         if self.side != "right" or HAND != "dex1":
             raise ValueError("baseline calibrated for right-hand Dex1 bottle grasp only")
-        self.arm = PlannerArm(p, self.side, send_vel=True)
+        self.arm = make_arm(p, self.side, config=task.config)
         self.arm.q = np.asarray(p.obs()["joints"], dtype=float).copy()
         self.guard = task.transport_guard(self.arm.ik, config)
         # Prevent the optimizer using wrist twists/large torso rotations to
@@ -231,7 +231,7 @@ class ReadyGraspPolicy:
         return self._push(state, ready_q())
 
     def finish(self, *, grip_world, squat_hint, ghost):
-        from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS, _servo_continuous, toppled
+        from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS, _servo_continuous, toppled
 
         p, arm, ex = self.p, self.arm, self.execution
         ok = False

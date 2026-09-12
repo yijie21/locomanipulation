@@ -35,6 +35,7 @@ import time
 
 from locomani.backends.sonic import deploy
 from locomani.backends.sonic.agent_server import LocomotionMode
+from locomani.pipeline.execution_record import RoundResult
 
 
 def start_recording(p, m: dict) -> None:
@@ -97,7 +98,8 @@ def run_rounds(
         m["video"] = video_label
         m["deploy_restarts"] = healer.restarts
         m.setdefault("produced", False)
-        wins += int(m["ok"])
+        result = RoundResult.from_mapping(m)
+        wins += int(result.accepted())
         if record and m["produced"]:
             # 'c' saves, 'x' discards -- the exporter writes the episode from
             # its own loop. A round that never reached the reset's settle never

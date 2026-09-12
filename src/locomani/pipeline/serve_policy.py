@@ -135,7 +135,17 @@ def main():
 
     tag = EmbodimentTag[args.embodiment_tag.upper()]
     cfg = MODALITY_CONFIGS[tag.value]
+    from locomani.pipeline.provenance import checkpoint_identity, digest
+
+    identity = checkpoint_identity(args.model_path)
+    identity["modality_config_sha256"] = digest(cfg_path)
+    identity["denoising_steps"] = args.denoising_steps
+    identity["rtc_ramp_rate"] = args.rtc_ramp_rate
     policy = RTCPolicy(model_path=args.model_path, embodiment_tag=tag, device="cuda")
+    identity["modalities"] = {kind: list(value.modality_keys) for kind, value in policy.modality_configs.items()}
+    for kind in ("video", "state", "action"):
+        if list(cfg[kind].modality_keys) != identity["modalities"][kind]:
+            raise ValueError(f"server {kind} configuration differs from checkpoint metadata")
     policy.model.action_head.num_inference_timesteps = args.denoising_steps
     policy.rtc_ramp_rate = args.rtc_ramp_rate
 
@@ -166,6 +176,7 @@ def main():
 
     server = PolicyServer(policy, port=args.port)
     server.register_endpoint("get_action_raw", get_action_raw)
+    server.register_endpoint("identity", lambda: identity, requires_input=False)
     print(f"[serve_policy] {args.model_path} on :{args.port} (denoising {args.denoising_steps})")
     server.run()
 

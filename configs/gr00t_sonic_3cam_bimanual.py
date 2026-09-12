@@ -34,6 +34,10 @@ Usage:
     --modality_config_path configs/gr00t_sonic_3cam_bimanual.py
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from copy import deepcopy
 
 from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS
@@ -45,6 +49,7 @@ from gr00t.data.types import (
     ActionType,
     ModalityConfig,
 )
+from locomani.schema import SONIC_CRATE  # noqa: E402
 
 _TAG = EmbodimentTag.UNITREE_G1_SONIC.value
 
@@ -52,7 +57,7 @@ _cfg = deepcopy(MODALITY_CONFIGS[_TAG])
 
 _cfg["video"] = ModalityConfig(
     delta_indices=[0],
-    modality_keys=["ego_view", "left_wrist", "right_wrist"],
+    modality_keys=list(SONIC_CRATE.video_keys),
 )
 
 # Same layout as gr00t_sonic_2cam.py for 0..53, then the left wrist. The
@@ -60,20 +65,7 @@ _cfg["video"] = ModalityConfig(
 # columns -- see 2cam for why they differ.
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
-    modality_keys=[
-        "left_leg",  # 0:6
-        "right_leg",  # 6:12
-        "waist",  # 12:15
-        "left_arm",  # 15:22
-        "right_arm",  # 22:29
-        "left_hand",  # 29:36
-        "right_hand",  # 36:43
-        "projected_gravity",  # 43:46
-        "right_wrist_pos",  # 46:49
-        "right_wrist_abs_quat",  # 49:53
-        "left_wrist_pos",  # 53:56
-        "left_wrist_abs_quat",  # 56:60
-    ],
+    modality_keys=list(SONIC_CRATE.state_keys),
 )
 
 _ABS = ActionConfig(
@@ -83,7 +75,7 @@ _ABS = ActionConfig(
 )
 _cfg["action"] = ModalityConfig(
     delta_indices=list(range(40)),
-    modality_keys=["motion_token", "left_gripper", "right_gripper"],
+    modality_keys=list(SONIC_CRATE.action_keys),
     action_configs=[_ABS, _ABS, _ABS],
 )
 

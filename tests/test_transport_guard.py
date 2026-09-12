@@ -11,9 +11,9 @@ from unittest.mock import Mock
 import mujoco
 import numpy as np
 
-from locomani.backends.sonic import stream_reach as sr
 from locomani.backends.sonic.primitives import Primitives
 from locomani.pipeline.execution_record import ExecutionRecord
+from locomani.tasks.bottle import execution as sr
 from locomani.tasks.bottle.transport_guard import SweepResult, TransportGuard
 
 XML = """<mujoco><worldbody>

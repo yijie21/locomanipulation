@@ -67,7 +67,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         movement = (0.0, 0.0, 0.0)
         speed = 0.0
         if height is not None:
-            from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS
+            from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS
 
             self.arm.mode = LocomotionMode.IDEL_SQUAT
             self.arm.height = height - SQUAT_HEIGHT_BIAS
@@ -289,7 +289,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
             desired_height = float(
                 np.clip(base[2] - max(need, 0), STANDING_PELVIS_Z - self.config.max_drop, STANDING_PELVIS_Z)
             )
-            from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS
+            from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS
 
             previous = (
                 self.arm.height + SQUAT_HEIGHT_BIAS if self.arm.mode == LocomotionMode.IDEL_SQUAT else float(base[2])
@@ -345,7 +345,7 @@ class ImageServoPolicy(RecoverableGraspPolicy):
         return result[0].close and self.observer.latest["precise"] and closure_clear(self, state) is None
 
     def execute(self, *, grip_world, squat_hint, ghost):
-        from locomani.backends.sonic.stream_reach import _servo_continuous
+        from locomani.tasks.bottle.execution import _servo_continuous
 
         end = time.monotonic() + self.config.recovery_timeout
         try:

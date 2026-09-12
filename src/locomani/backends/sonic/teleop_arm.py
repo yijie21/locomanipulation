@@ -296,7 +296,7 @@ class TeleopArm:
         lifted 8.7 cm, and then dropped the bottle 79.9 cm in the palm frame
         during the hold. A partial clamp survives the lift and not the carry.
         """
-        from locomani.tasks.bottle.grasp_capture import bilateral_dex1_contact
+        from locomani.primitives.contacts import bilateral_dex1_contact
 
         closed = (HAND_CLOSED_RIGHT if self.side == "right" else HAND_CLOSED_LEFT).astype(np.float32)
         contact_alpha = None

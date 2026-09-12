@@ -70,6 +70,23 @@ class RoundResult:
     produced: bool
     execution: dict
 
+    @classmethod
+    def from_mapping(cls, row: dict) -> "RoundResult":
+        """Normalize an already executed manifest/result; never runs control code."""
+        if type(row.get("ok")) is not bool:
+            raise ValueError("round result requires a boolean ok field")
+        produced = row.get("produced", False)
+        if type(produced) is not bool:
+            raise ValueError("round result produced must be boolean")
+        why = row.get("why", "")
+        if not isinstance(why, str):
+            raise ValueError("round result why must be text")
+        return cls(row["ok"], why, produced, deepcopy(row.get("execution", {})))
+
+    def accepted(self, *, require_recording: bool = False) -> bool:
+        """Task success and usable recording are distinct acceptance questions."""
+        return self.ok and (self.produced or not require_recording)
+
     def __iter__(self):
         # Compatibility with existing evaluation/diagnostic tuple unpacking.
         return iter((self.ok, self.why, self.produced))

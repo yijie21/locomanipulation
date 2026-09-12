@@ -64,7 +64,7 @@ def closure_clear(policy, state):
 
 
 def run(policy, ghost):
-    from locomani.backends.sonic.stream_reach import SQUAT_HEIGHT_BIAS, _servo_continuous, toppled
+    from locomani.tasks.bottle.execution import SQUAT_HEIGHT_BIAS, _servo_continuous, toppled
 
     p, arm, ex = policy.p, policy.arm, policy.execution
     side, key = policy.side, policy.task.target.key

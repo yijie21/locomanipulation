@@ -1,20 +1,6 @@
-"""`_grip_gain` / `_ensemble` / `_stalled` / `make_vla_policy_async`, split
-out of vla_round.py (refactor step 4b family 3, pure extraction; decision
-9's file-size cap). Every statement here is unchanged from the original
-inline body -- only the packaging moved, plus every read of a vla_round
-module-level knob (`GRIP_GAIN`, `ENSEMBLE_M`, `STALL_ABORT_S`,
-`STALL_ABORT_M`, `DATASET_FPS`, `GRIP_DELAY`, `ENSEMBLE_N`, `RTC_ON`,
-`TRANSITION_COMMIT`, `TRANSITION_DECODER`, `REPLACE`, `LIFT_M`, `NEAR_M`,
-`TIMEOUT_S`), which have to stay LIVE against the `vla_round` module object
-the same way `stream_reach.toppled` did in family 2 (see that module's
-docstring for the general pattern, and vla_round.py's own for this family's
-full monkeypatch inventory) -- `eval_closed_loop.py` overrides every one of
-these by assignment (e.g. `vla_round.ENSEMBLE_N = cfg.ensemble_n`) before
-building a round, and `run_learn_pilot.py` / the RTC tools do the same for
-others. The deferred import is aliased `vr`, not `vla_round`, because
-`make_vla_policy_async` builds a nested closure itself named `vla_round`
-(matching every other channel's `vla_round(p, reset, meta, ...)`
-factory-return convention) which would shadow a same-named module import.
+"""Asynchronous token streaming, ensembling and trace predicates.
+
+Runtime options are explicit immutable VlaConfig values.
 """
 
 from __future__ import annotations
@@ -33,25 +19,24 @@ from gear_sonic.utils.inference.vla_utils import (  # noqa: E402
 )
 
 from locomani.backends.sonic.sonic_token import GRIPPER_MAX, GRIPPER_MIN, expand_hands
+from locomani.backends.sonic.vla_config import DEFAULT_VLA, LIFT_M, NEAR_M, STALL_ABORT_M, VlaConfig
 from locomani.backends.sonic.vla_obs import ObsBuilder, PolicyLink, _obj_extra, _tstart_view
 
 
-def _grip_gain(g: float) -> float:
+def _grip_gain(g: float, *, config: VlaConfig = DEFAULT_VLA) -> float:
     """Amplify the predicted gripper's deviation from fully-open."""
-    from locomani.backends.sonic import vla_round as vr
 
-    if vr.GRIP_GAIN == 1.0:
+    if config.grip_gain == 1.0:
         return g
-    return float(np.clip(GRIPPER_MAX - vr.GRIP_GAIN * (GRIPPER_MAX - g), GRIPPER_MIN, GRIPPER_MAX))
+    return float(np.clip(GRIPPER_MAX - config.grip_gain * (GRIPPER_MAX - g), GRIPPER_MIN, GRIPPER_MAX))
 
 
-def _ensemble(buf, now, rate):
+def _ensemble(buf, now, rate, *, config: VlaConfig = DEFAULT_VLA):
     """Blend every buffered chunk's prediction of `now`. -> (tok, grip) or None.
 
     buf is newest-last: [(tok, grip, t0), ...]. A chunk whose aligned index
     has run past its end is exhausted and contributes nothing.
     """
-    from locomani.backends.sonic import vla_round as vr
 
     picks, ws = [], []
     for age, (tok, grip, t0) in enumerate(reversed(buf)):  # age 0 = newest
@@ -63,7 +48,7 @@ def _ensemble(buf, now, rate):
         if i < 0 or i >= len(tok):
             continue
         picks.append((tok[i], grip[i]))
-        ws.append(np.exp(-vr.ENSEMBLE_M * age))
+        ws.append(np.exp(-config.ensemble_m * age))
     if not picks:
         return None
     w = np.asarray(ws, dtype=np.float64)
@@ -73,32 +58,38 @@ def _ensemble(buf, now, rate):
     return tok, grip
 
 
-def _stalled(trace, commanded_close) -> bool:
+def _stalled(trace, commanded_close, *, config: VlaConfig = DEFAULT_VLA) -> bool:
     """True when the pelvis has gone nowhere for STALL_ABORT_S with no close.
 
     Reads the trace that is already being recorded rather than keeping its own
     history: one source of truth, and the offline pass that calibrated the
     thresholds ran over exactly these rows.
     """
-    from locomani.backends.sonic import vla_round as vr
 
-    if vr.STALL_ABORT_S <= 0.0 or commanded_close or not trace:
+    if config.stall_abort_s <= 0.0 or commanded_close or not trace:
         return False
     now = trace[-1]["t"]
-    if now < vr.STALL_ABORT_S:
+    if now < config.stall_abort_s:
         return False
     ref = None
     for row in trace:  # oldest row still inside the window
-        if now - row["t"] <= vr.STALL_ABORT_S:
+        if now - row["t"] <= config.stall_abort_s:
             ref = row
             break
-    if ref is None or now - ref["t"] < vr.STALL_ABORT_S * 0.9:
+    if ref is None or now - ref["t"] < config.stall_abort_s * 0.9:
         return False
     a, b = ref["pelvis_xy"], trace[-1]["pelvis_xy"]
-    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 < vr.STALL_ABORT_M
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 < STALL_ABORT_M
 
 
-def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float = 0.4, trace_dir: str | None = None):
+def make_vla_policy_async(
+    link: PolicyLink,
+    task: str,
+    inference_interval: float = 0.4,
+    trace_dir: str | None = None,
+    *,
+    config: VlaConfig = DEFAULT_VLA,
+):
     """The official streaming pattern: never stop publishing.
 
     NVIDIA's own client (gear_sonic/scripts/run_vla_inference.py) does not
@@ -127,10 +118,8 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
     """
     import threading
 
-    from locomani.backends.sonic import vla_round as vr
-
     counter = {"n": 0}
-    RATE = vr.DATASET_FPS
+    RATE = config.backend.dataset_fps
 
     def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None, round_id=None):
         # OURS, not NVIDIA's: theirs holds the arms forward and bent with the
@@ -200,10 +189,10 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
         # between consecutive obs (the K the sim advances per cycle).
         lat_rec = {"infer_s": [], "cycle_s": []}
         commitment = None
-        if vr.TRANSITION_COMMIT:
+        if config.transition_commit:
             from locomani.backends.sonic.transition_execution import TransitionCommitment
 
-            commitment = TransitionCommitment(RATE, vr.TRANSITION_DECODER)
+            commitment = TransitionCommitment(RATE, config.transition_decoder)
             lat_rec["transition_commit_events"] = commitment.events
             lat_rec["transition_commit_errors"] = commitment.errors
 
@@ -215,7 +204,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                 t0 = time.time()
                 obs = obs_src.build()
                 if obs is not None:
-                    if vr.RTC_ON:
+                    if config.rtc:
                         if rtc_first:
                             obs["rtc.reset"] = 1
                         # elapsed 0 on the first request: no injection server-
@@ -246,7 +235,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                     lat_rec.setdefault("chunk_tok_span", []).append(
                         float(np.abs(np.asarray(tok)[-1] - np.asarray(tok)[0]).mean())
                     )
-                    if vr.RTC_ON:
+                    if config.rtc:
                         rtc_first = False
                         rtc_prev_t0 = t0
                         rtc_lat.append(time.time() - t0)
@@ -268,9 +257,9 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                         latest["chunk"] = (tok, grip)
                         latest["capture_chunk_id"] = getattr(getattr(link, "capture_context", None), "chunk_id", None)
                         latest["t0"] = t0
-                        if vr.ENSEMBLE_N > 1:
+                        if config.ensemble_n > 1:
                             buf.append((tok, grip, t0))
-                            del buf[: -vr.ENSEMBLE_N]
+                            del buf[: -config.ensemble_n]
                 rest = inference_interval - (time.time() - t0)
                 if rest > 0:
                     time.sleep(rest)
@@ -299,7 +288,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                 "[vla] initial-pose hold: no fresh chunk within 15 s -- policy worker stalled; round aborted"
             )
 
-        if replace is not None and vr.REPLACE:
+        if replace is not None and config.backend.replace:
             replace()  # legacy sim-only re-teleport, off by default
 
         with lock:
@@ -377,23 +366,23 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                 )
         _tstart_view(p, s_ts, obj_key, prelude)
         frame_index = 0
-        grip_hist = deque(maxlen=vr.GRIP_DELAY + 1)
+        grip_hist = deque(maxlen=config.backend.grip_delay + 1)
         lifted_at = None
         chunk_t0, idx = None, 0
         capture_chunk_id = None
         tok, grip = tok0, grip0
         last_status = 0.0
         try:
-            while time.time() - t_start < vr.TIMEOUT_S:
+            while time.time() - t_start < config.budget_s:
                 tick = time.time()
                 trace_source = dict(kind="ensemble", chunk_id=None, action_index=None)
-                if vr.ENSEMBLE_N > 1:
+                if config.ensemble_n > 1:
                     # Blend every overlapping prediction of THIS instant.
                     # Indexing is by absolute time, which also removes the
                     # drift the incrementing idx below accumulates when the
                     # loop does not land exactly on 1/RATE.
                     with lock:
-                        blended = _ensemble(buf, tick, RATE)
+                        blended = _ensemble(buf, tick, RATE, config=config)
                         if blended is None and latest["chunk"] is not None:
                             blended = (latest["chunk"][0][-1], float(latest["chunk"][1][-1]))
                     tok_j, grip_j = blended
@@ -416,13 +405,13 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                         chunk_id=capture_chunk_id,
                         action_index=j,
                         observation_wall=chunk_t0,
-                        grip_delay_frames=vr.GRIP_DELAY,
+                        grip_delay_frames=config.backend.grip_delay,
                     )
                     idx = min(idx + 1, len(tok) - 1)
 
                 grip_raw_j = grip_j
-                grip_j = _grip_gain(grip_j)
-                if vr.GRIP_DELAY > 0:
+                grip_j = _grip_gain(grip_j, config=config)
+                if config.backend.grip_delay > 0:
                     grip_hist.append(grip_j)
                     grip_j = grip_hist[0]  # value from GRIP_DELAY frames ago (deque is full after warm-up)
                 lhj, rhj = expand_hands(grip_j)
@@ -506,7 +495,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                     if st["fallen"]:
                         why = "[vla] fell"
                         break
-                    if rise > vr.LIFT_M:
+                    if rise > LIFT_M:
                         if lifted_at is None:
                             lifted_at = tick
                         elif tick - lifted_at > 2.0:
@@ -514,7 +503,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
                             break
                     else:
                         lifted_at = None
-                    if _stalled(trace, commanded_close):
+                    if _stalled(trace, commanded_close, config=config):
                         why = "[vla] reach: stalled (--stall-abort)"
                         break
 
@@ -532,7 +521,7 @@ def make_vla_policy_async(link: PolicyLink, task: str, inference_interval: float
 
         if not ok and why == "[vla] timeout" and trace:
             min_dist = min(r["dist"] for r in trace)
-            if min_dist > vr.NEAR_M:
+            if min_dist > NEAR_M:
                 why = f"[vla] walk: never closer than {min_dist:.2f} m"
             elif not commanded_close:
                 why = f"[vla] reach: at the table (min {min_dist:.2f} m) but never commanded a close"

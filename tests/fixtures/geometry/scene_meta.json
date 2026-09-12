@@ -1,0 +1,106 @@
+{
+  "surfaces": {
+    "A": {
+      "name": "dining_table",
+      "body": "dining_table_dining_table",
+      "xy": [
+        0.0,
+        0.0
+      ],
+      "top": 0.62,
+      "flat_half_extent": [
+        0.503008392382707,
+        0.5034890447461294
+      ],
+      "body_id": 35,
+      "half_extent": [
+        0.5030083703373751,
+        0.5034890428167202
+      ],
+      "circumradius": 0.7117012272477539
+    },
+    "B": {
+      "name": "counter",
+      "body": "counter_counter",
+      "xy": [
+        2.5,
+        0.0
+      ],
+      "top": 0.66,
+      "flat_half_extent": [
+        0.18630261534290476,
+        0.3852230352073887
+      ],
+      "body_id": 36,
+      "half_extent": [
+        0.1863026087401134,
+        0.3852230392015227
+      ],
+      "circumradius": 0.42790822842641113
+    }
+  },
+  "objects": {
+    "water_bottle": {
+      "body": "water_bottle_object",
+      "surface": "A",
+      "init_pos": [
+        -0.16,
+        0.385,
+        0.702
+      ],
+      "init_quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "height": 0.16,
+      "scale": 0.9999999757856136,
+      "mesh": "/workspace/code/locomanipulation/assets/robocasa/bottled_water_1/model.xml",
+      "bimanual": false,
+      "body_id": 37,
+      "qpos_adr": 40,
+      "free": true,
+      "box": {
+        "half_extent": [
+          0.02263916376978159,
+          0.02263916376978159,
+          0.07999999821186066
+        ],
+        "centre": [
+          -5.384098722416297e-11,
+          1.257279835797931e-10,
+          -3.15732617828246e-09
+        ]
+      }
+    }
+  },
+  "target_object": "water_bottle",
+  "target_pool": [
+    "water_bottle"
+  ],
+  "object_phrase": {
+    "can": "the red can",
+    "bottle": "the blue bottle",
+    "cup": "the cream cup",
+    "jar": "the green jar",
+    "orange": "the orange",
+    "plate": "the plate",
+    "fork": "the fork",
+    "napkin": "the napkin",
+    "water_bottle": "the water bottle"
+  },
+  "goal_object": "plate",
+  "robot_start": {
+    "xy": [
+      -1.5,
+      0.0
+    ],
+    "yaw_deg": 0.0,
+    "pelvis_z": 0.793
+  },
+  "scene_xml": "/workspace/code/locomanipulation/outputs/scene/sim/scene_locomani.xml",
+  "nbody": 39,
+  "ngeom": 126,
+  "nq": 47
+}

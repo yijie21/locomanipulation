@@ -8,6 +8,7 @@ import numpy as np
 
 from locomani.backends.sonic.primitives import Primitives
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST
+from locomani.primitives.contacts import bilateral_dex1_contact  # noqa: F401
 
 DEPTH_TOL = 0.020
 LATERAL_TOL = 0.026
@@ -19,12 +20,6 @@ JAW_TILT_MAX = 0.30
 IK_POSITION_TOL = 0.020
 IK_ROTATION_TOL = 0.30
 OFFSET = np.asarray(GRASP_CENTRE_OFFSET_CONST)
-
-
-def bilateral_dex1_contact(obj, side):
-    prefix = "R" if side == "right" else "L"
-    links = set(obj.get("touch_links", []))
-    return {f"{prefix}.dex1_finger_1", f"{prefix}.dex1_finger_2"} <= links
 
 
 def closure_geometry(state, side, target):

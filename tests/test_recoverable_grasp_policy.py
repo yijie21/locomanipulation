@@ -5,6 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import pytest
+
+pytestmark = pytest.mark.usefixtures("bottle_geometry")
 
 from locomani.pipeline.execution_record import ExecutionRecord
 from locomani.tasks.bottle.reach_config import ReachConfig
@@ -65,7 +68,7 @@ class Harness(RecoverableGraspPolicy):
 
 class RecoveryFlowTests(unittest.TestCase):
     def run_policy(self, p):
-        with patch("locomani.backends.sonic.stream_reach.toppled", return_value=False):
+        with patch("locomani.tasks.bottle.execution.toppled", return_value=False):
             return p.execute(grip_world=np.zeros(3), squat_hint=0.1, ghost=None)
 
     def test_small_error_grasps_without_reposition(self):
@@ -120,13 +123,13 @@ class RecoveryGeometryTests(unittest.TestCase):
     def setUpClass(cls):
         import json
 
-        from locomani import paths
+        from geometry_fixture import scene_ik, scene_meta
+
         from locomani.backends.sonic.primitives import STANDING_PELVIS_Z, Primitives
-        from locomani.primitives.arm_ik import ArmIK
         from locomani.tasks.bottle.ready_grasp_policy import ready_q
         from locomani.tasks.bottle.transport_guard import TransportGuard
 
-        meta = json.loads(Path(paths.SCENE_META).read_text())
+        meta = scene_meta()
         obj = meta["objects"]["water_bottle"]
         xyz = np.asarray(obj["init_pos"]).copy()
         xyz[1] = 0.46
@@ -139,7 +142,11 @@ class RecoveryGeometryTests(unittest.TestCase):
         )
         robot = object.__new__(Primitives)
         robot.obs = lambda: cls.state
+        from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
+
         task = SimpleNamespace(
+            config=DEFAULT_BOTTLE_TASK,
+            meta=meta,
             target=SimpleNamespace(key="water_bottle", side="right"),
             grip=lambda state: np.array([xyz[0], xyz[1], meta["surfaces"]["A"]["top"] + 0.10]),
             transport_guard=lambda ik, cfg: TransportGuard(
@@ -147,7 +154,8 @@ class RecoveryGeometryTests(unittest.TestCase):
             ),
         )
         with patch(
-            "locomani.backends.sonic.stream_reach.PlannerArm", side_effect=lambda *a, **kw: SimpleNamespace(ik=ArmIK())
+            "locomani.tasks.bottle.execution.PlannerArm",
+            side_effect=lambda *a, **kw: SimpleNamespace(ik=scene_ik()),
         ):
             cls.policy = RecoverableGraspPolicy(robot, task, ReachConfig(strategy="recovery"), None, ExecutionRecord())
 
@@ -197,7 +205,7 @@ class RecoveryIntegrationTests(unittest.TestCase):
     def test_dispatch_does_not_force_old_narrow_band(self):
         from unittest.mock import Mock
 
-        from locomani.backends.sonic import stream_reach
+        from locomani.tasks.bottle import execution as stream_reach
 
         controller = SimpleNamespace(execute=Mock(return_value=(True, "")))
         cfg = ReachConfig(strategy="recovery")
@@ -249,11 +257,12 @@ class RecoveryIntegrationTests(unittest.TestCase):
 
 class RecoveryRetractionTests(unittest.TestCase):
     def test_retraction_moves_both_palms_toward_body(self):
-        from locomani.primitives.arm_ik import ArmIK
+        from geometry_fixture import scene_ik
+
         from locomani.tasks.bottle.ready_grasp_policy import ready_q
         from locomani.tasks.bottle.recoverable_grasp_policy import retracted_q
 
-        ik = ArmIK()
+        ik = scene_ik()
         for side in ("left", "right"):
             ready, _ = ik.fk(ready_q(), side)
             back, _ = ik.fk(retracted_q(), side)
@@ -263,7 +272,7 @@ class RecoveryRetractionTests(unittest.TestCase):
         p = Harness([], [])
         with (
             patch.object(p, "expired", return_value=True),
-            patch("locomani.backends.sonic.stream_reach.toppled", return_value=False),
+            patch("locomani.tasks.bottle.execution.toppled", return_value=False),
         ):
             ok, why = p.execute(grip_world=np.zeros(3), squat_hint=0.1, ghost=None)
         self.assertFalse(ok)

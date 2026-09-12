@@ -10,21 +10,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from locomani.backends.scalebfm.action import heading
-
-STATE_DIMS = {
-    "left_leg": 6,
-    "right_leg": 6,
-    "waist": 3,
-    "left_arm": 7,
-    "right_arm": 7,
-    "left_hand": 7,
-    "right_hand": 7,
-    "projected_gravity": 3,
-    "right_wrist_pos": 3,
-    "right_wrist_abs_quat": 4,
-    "robot_velocity": 9,
-    "previous_action": 29,
-}
+from locomani.schema import VISUAL_STATE_DIMS as STATE_DIMS
 
 
 def state_features(

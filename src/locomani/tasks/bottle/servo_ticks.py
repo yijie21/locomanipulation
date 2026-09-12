@@ -11,7 +11,6 @@ import time
 
 import numpy as np
 
-from locomani.backends.sonic import servo
 from locomani.backends.sonic.primitives import (
     GRASP_CENTRE_OFFSET,
     HAND_CLOSED_LEFT,
@@ -20,7 +19,10 @@ from locomani.backends.sonic.primitives import (
     wrap,
 )
 from locomani.backends.sonic.primitives_const import HAND as _HAND
-from locomani.backends.sonic.servo import (
+from locomani.backends.sonic.streamed_arm import NUDGE_MAX
+from locomani.primitives.g1_joints import ARM_MJ
+from locomani.tasks.bottle import servo
+from locomani.tasks.bottle.servo import (
     FREEZE_TRAVEL,
     KP_TRACK,
     LEAD_MAX,
@@ -35,7 +37,7 @@ from locomani.backends.sonic.servo import (
     ServoState,
     _clipn,
 )
-from locomani.backends.sonic.servo_phases import (
+from locomani.tasks.bottle.servo_phases import (
     _phase_close,
     _phase_down,
     _phase_in,
@@ -43,8 +45,6 @@ from locomani.backends.sonic.servo_phases import (
     _phase_lift,
     _phase_up,
 )
-from locomani.backends.sonic.streamed_arm import NUDGE_MAX
-from locomani.primitives.g1_joints import ARM_MJ
 
 
 def _servo_setup(state: ServoState) -> tuple[bool, str] | None:
@@ -149,7 +149,7 @@ def _tick_prelude(state: ServoState) -> tuple[bool, str] | None:
     # version -- a plain imported name here would bind to the real
     # function at import time and never see the patch. See stream_reach.py's
     # own docstring for the rest of this monkeypatch inventory.
-    from locomani.backends.sonic import stream_reach
+    from locomani.tasks.bottle import execution as stream_reach
 
     if stream_reach.toppled(state.s, state.obj_key):
         return False, f"{state.obj_key} toppled in the {state.phase} phase"

@@ -87,7 +87,9 @@ class BottleTaskConfig:
     video_include_init: bool = False  # SIM_VIDEO_INCLUDE_INIT=1: include the ready-posture prelude in diagnostic video
     init_token_file: str | None = None  # TF_INIT_TOKEN_FILE: explicit, validated initial token JSON (opt-in)
     init_token_official: bool = False  # TF_INIT_TOKEN=official: NVIDIA's shipped token instead of our measured medoid
-    arm_channel: str = "planner"  # GYM_ARM_CHANNEL: planner (frozen-upper-body) or streamed arm control
+    arm_channel: str = field(
+        default="planner", metadata={"choices": ("planner", "streamed")}
+    )  # GYM_ARM_CHANNEL: planner (frozen-upper-body) or streamed arm control
     arm_vel: bool = True  # GYM_ARM_VEL=0: omit the streamed arm's velocity command
     left_guard: bool = True  # GYM_LEFT_GUARD=0: disable the right-arm guard latch derived from the left snapshot
     one_shot: bool = False  # --one-shot: discard a round whose first approach parks out of reach

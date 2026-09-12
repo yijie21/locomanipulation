@@ -27,8 +27,8 @@ and speed to `_tick_advance`, replacing the original's `tgt, v = ...`.
 
 `stream_reach.py` imports `_servo_continuous` from `servo_ticks.py` and the
 tuning constants from here, and re-exports both (so
-`from locomani.backends.sonic.stream_reach import _servo_continuous` and
-`patch("locomani.backends.sonic.stream_reach._servo_continuous", ...)` keep
+`from locomani.tasks.bottle.execution import _servo_continuous` and
+`patch("locomani.tasks.bottle.execution._servo_continuous", ...)` keep
 working unchanged) -- see that module's own docstring.
 """
 

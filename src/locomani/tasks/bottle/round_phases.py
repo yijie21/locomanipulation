@@ -88,6 +88,7 @@ class RoundContext:
     object_yaw: float | None = None
     goal_key: str | None = None  # container to place into after the lift (BottleTaskConfig.goal); None = bottle task
     place_config: Any = None  # BottleTaskConfig.place, read by place_phase._phase_place
+    task_config: Any = None
     round_id: int | None = None  # the manifest's own round number, so a trace file joins to it by name
 
     # -- grasp_gym.py globals, snapshotted once per round --------------
@@ -261,7 +262,7 @@ def _phase_spawn_and_settle(ctx: RoundContext):
         # stabilise after reset" from round 3 on). The crate line runs every
         # episode without a restart by re-anchoring with a streamed toggle
         # after the stand-up (wall_phases); same here, only on this path.
-        from locomani.backends.sonic.stream_reach import reanchor
+        from locomani.tasks.bottle.execution import reanchor
 
         p.cmd.hold(1.5, mode=LocomotionMode.IDLE)
         reanchor(p)
@@ -454,6 +455,8 @@ def _phase_spawn_and_settle(ctx: RoundContext):
             body=ctx.meta["objects"][ctx.obj_key]["body"],
             surface_bodies=tuple(s["body"] for s in ctx.meta["surfaces"].values()),
         ),
+        meta=ctx.meta,
+        **({"config": ctx.task_config} if ctx.task_config is not None else {}),
     )
     ctx.grip_za = float(ctx.task_grasp.grip(p.obs())[2])
 

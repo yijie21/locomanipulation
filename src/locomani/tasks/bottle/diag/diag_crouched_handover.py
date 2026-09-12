@@ -19,10 +19,10 @@ from locomani import paths
 
 sys.path.insert(0, paths.SONIC)
 from locomani.backends.sonic import agent_server
-from locomani.backends.sonic import stream_reach as sr
 from locomani.backends.sonic import vla_round as vr
 from locomani.rtc.diag_transition_cross import suffix
 from locomani.rtc.transition_capture import Capture
+from locomani.tasks.bottle import execution as sr
 from locomani.tasks.bottle import grasp_gym as gym
 
 
@@ -338,7 +338,7 @@ def main():
             )
         return result
 
-    gym.VLA_POLICY = policy
+    runtime = gym.GymRuntime(policy=policy)
     sys.argv = [
         "grasp_gym.py",
         "--rounds",
@@ -364,7 +364,7 @@ def main():
         str(a.out / "manifest.jsonl"),
     ]
     try:
-        gym.main()
+        gym.main(runtime=runtime)
     finally:
         clock.stop()
         cap.event("experiment_end")

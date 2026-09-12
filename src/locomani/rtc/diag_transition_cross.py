@@ -22,9 +22,9 @@ from locomani import paths
 
 sys.path.insert(0, paths.SONIC)
 from locomani.backends.sonic import agent_server
-from locomani.backends.sonic import stream_reach as sr
 from locomani.backends.sonic import vla_round as vr
 from locomani.rtc.transition_capture import Capture
+from locomani.tasks.bottle import execution as sr
 from locomani.tasks.bottle import grasp_gym as gym
 
 
@@ -286,6 +286,7 @@ def main():
 
     sr.PlannerArm.squat = squat
     clock = None
+    runtime = gym.GymRuntime()
     if a.arm in ["ve", "vv"]:
         C = agent_server.AgentCommander
         names = ["__init__", "command", "enter_streamed", "exit_streamed", "hold", "frame", "token_frame"]
@@ -342,7 +343,7 @@ def main():
                 result = expert_grasp(p, reset, meta, obj_key, cap)
             return result
 
-        gym.VLA_POLICY = policy
+        runtime = gym.GymRuntime(policy=policy)
     sys.argv = [
         "grasp_gym.py",
         "--rounds",
@@ -372,7 +373,7 @@ def main():
     if a.until_ok is not None:
         sys.argv.extend(["--until-ok", str(a.until_ok)])
     try:
-        gym.main()
+        gym.main(runtime=runtime)
     finally:
         if clock:
             clock.stop()

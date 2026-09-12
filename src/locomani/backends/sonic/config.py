@@ -20,6 +20,8 @@ place that decides their values.
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
 
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
@@ -82,4 +84,46 @@ class SonicBackendConfig:
         return apply_overrides(self, overrides)
 
 
-DEFAULT_BACKEND = SonicBackendConfig()
+# The process entry is the only reader. Consumers share the resolved immutable
+# object, including settings that have no individual shell variable.
+_serialized = os.environ.get("LOCOMANI_BACKEND_JSON")
+DEFAULT_BACKEND = SonicBackendConfig.from_dict(json.loads(_serialized)) if _serialized else SonicBackendConfig()
+
+# Compatibility at the shell launcher only; new Python callers pass the config.
+ENV_FIELDS = {
+    "NO_ENCODER": ("no_encoder", bool),
+    "HAND": ("hand", str),
+    "GYM_UPPER_SLEW_DEG": ("upper_slew_deg", float),
+    "TF_GRIP_DELAY": ("grip_delay", int),
+    "TF_OBS_DUMP": ("obs_dump", str),
+    "LOCOMANI_REPLACE": ("replace", bool),
+    "WRIST_CAMS": ("wrist_cams", bool),
+    "SIM_VIS": ("sim_vis", str),
+    "SCENE_RANDOM": ("scene_random", bool),
+    "TF_DATASET_FPS": ("dataset_fps", float),
+    "CLEAN_DEPLOY": ("clean_deploy", bool),
+    "EVAL_PARALLEL": ("eval_parallel", bool),
+    "SONIC_DDS_DOMAIN": ("sonic_dds_domain", int),
+    "LOCKSTEP": ("lockstep.enabled", bool),
+}
+
+
+def with_shell_overrides(cfg: SonicBackendConfig, settings: dict) -> SonicBackendConfig:
+    """Normalize legacy explicit shell overrides before serializing the child config."""
+    values = cfg.to_dict()
+    for key, (field_name, kind) in ENV_FIELDS.items():
+        if key not in settings:
+            continue
+        value = settings[key]
+        if kind is bool:
+            if str(value).lower() not in ("0", "1", "false", "true"):
+                raise ValueError(f"{key} must be 0/1 or false/true")
+            parsed = str(value).lower() in ("1", "true")
+        else:
+            parsed = kind(value)
+        target = values
+        parts = field_name.split(".")
+        for part in parts[:-1]:
+            target = target[part]
+        target[parts[-1]] = parsed
+    return SonicBackendConfig.from_dict(values)

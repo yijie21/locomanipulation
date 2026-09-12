@@ -22,6 +22,23 @@ def pytest_addoption(parser):
     parser.addoption("--run-torch", action="store_true", default=False, help="run tests that need torch")
 
 
+@pytest.fixture
+def bottle_geometry(monkeypatch):
+    """Opt-in fixtures for geometry callers that construct their own IK helper."""
+    import numpy as np
+    from geometry_fixture import DIRECTORY, scene_ik
+
+    from locomani.tasks.bottle import adaptive_grasp, ready_grasp_policy
+
+    monkeypatch.setattr(ready_grasp_policy, "ArmIK", scene_ik)
+    monkeypatch.setattr(adaptive_grasp, "_POINTS", np.load(DIRECTORY / "hand_points_dex1.npy"))
+    ready_grasp_policy.templates.cache_clear()
+    ready_grasp_policy.lower_grip_samples.cache_clear()
+    yield
+    ready_grasp_policy.templates.cache_clear()
+    ready_grasp_policy.lower_grip_samples.cache_clear()
+
+
 def pytest_collection_modifyitems(config, items):
     for item in items:
         name = item.fspath.basename

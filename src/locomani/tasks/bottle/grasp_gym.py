@@ -38,7 +38,7 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -62,7 +62,6 @@ from locomani.tasks.bottle import (  # noqa: E402
     reach_map,  # noqa: E402
     round_loop,
 )
-from locomani.tasks.bottle.config import DEFAULT_BOTTLE_TASK
 from locomani.tasks.bottle.plan import (
     TargetPlan,  # noqa: F401 -- re-exported, see module docstring
     build_rel_candidates,  # noqa: F401
@@ -77,6 +76,7 @@ from locomani.tasks.bottle.round_phases import _phase_navigate as _p_navigate
 from locomani.tasks.bottle.round_phases import _phase_spawn_and_settle as _p_spawn
 from locomani.tasks.bottle.round_phases_approach import _phase_approach as _p_approach
 from locomani.tasks.bottle.round_phases_approach import _phase_grasp_and_verify as _p_grasp
+from locomani.tasks.bottle.runtime import GymRuntime
 from locomani.tasks.bottle.tabletop_grasp import TabletopGrasp  # noqa: F401 -- re-exported, see docstring
 
 SCENE_META = paths.SCENE_META
@@ -138,24 +138,6 @@ CAN_INBOARD = (0.04, 0.08)  # can centre this far in from its nearest edge:
 # A camera-geometry constant (fovy, mount pitch), not spawn distance --
 # --view-gate-x/-y (defaults below) thread as view_gate_x/view_gate_y through
 # run_round/_run_round to the spawn check and the arrival check.
-
-# Per-round deploy restart (BottleTaskConfig.restart_deploy). OFF by default
-# since 2026-09-10: the deploy keeps its heading anchor across sim resets, which
-# used to make rounds 2+ wander or fall; round_phases now re-anchors it after
-# every reset instead (the crate line's streamed toggle), and 30 paired rounds
-# showed no yield difference at 34 s a round instead of 64 (ledger bottle §11).
-# True restores the restart (~33 s a round); eval_closed_loop pins it True.
-# Module-level default (decision 8), same pattern as vla_round.GRIP_GAIN: a
-# caller assigns grasp_gym.RESTART_DEPLOY to override.
-RESTART_DEPLOY = DEFAULT_BOTTLE_TASK.restart_deploy
-# The restart script itself is backends/sonic/deploy.restart's (paths.RESTART_DEPLOY).
-
-# BottleTaskConfig.{pose_sidecar,video_include_init,arm_pin} defaults (decision 8,
-# were LOCOMANI_POSE_SIDECAR / SIM_VIDEO_INCLUDE_INIT / GYM_ARM_PIN); module-level
-# so a caller can override by assignment, same pattern as RESTART_DEPLOY above.
-POSE_SIDECAR = DEFAULT_BOTTLE_TASK.pose_sidecar
-VIDEO_INCLUDE_INIT = DEFAULT_BOTTLE_TASK.video_include_init
-ARM_PIN = DEFAULT_BOTTLE_TASK.arm_pin
 
 
 def instruction(phrase: str) -> str:
@@ -227,10 +209,11 @@ class _SceneSetup:
     robot_nom: np.ndarray | None
 
 
-def _build_scene_and_plan(args: cli_args.GymOptions) -> _SceneSetup:
+def _build_scene_and_plan(args: cli_args.GymOptions, *, runtime: GymRuntime | None = None) -> _SceneSetup:
     """Scene/target/sampling setup, split out of main() (refactor step 4b)."""
     from locomani.pipeline.experiment_cases import load_cases, save_cases
 
+    runtime = runtime or GymRuntime(task=args.task_config_obj or GymRuntime().task)
     fixed_cases = load_cases(args.cases, SCENE_META) if args.cases else None
     if fixed_cases is not None and args.rounds > len(fixed_cases):
         # Was ap.error(...) when this check lived in main() next to the
@@ -242,7 +225,7 @@ def _build_scene_and_plan(args: cli_args.GymOptions) -> _SceneSetup:
     sampled_cases = []
     # --reach-config wins, then --task-config's `reach` block (cli_args), then the default.
     reach_config = args.reach_config_obj
-    require_expert_calibration(VLA_POLICY, reach_config, args.reach_config)
+    require_expert_calibration(runtime.policy, reach_config, args.reach_config)
     if args.record:
         require_exporter("--record")
     if args.manifest:
@@ -266,7 +249,7 @@ def _build_scene_and_plan(args: cli_args.GymOptions) -> _SceneSetup:
     # BottleTaskConfig.pose_sidecar=False (was LOCOMANI_POSE_SIDECAR=0) opts
     # out. Fail-safe: a dead sidecar prints and costs nothing.
     sidecar = None
-    if args.record and args.manifest and POSE_SIDECAR:
+    if args.record and args.manifest and runtime.task.pose_sidecar:
         from locomani.sim.privileged_pub import PoseSidecar
 
         sidecar = PoseSidecar(os.path.join(os.path.dirname(os.path.abspath(args.manifest)), "pose_sidecar"))
@@ -316,7 +299,7 @@ def _build_scene_and_plan(args: cli_args.GymOptions) -> _SceneSetup:
 
     p = reset = robot_nom = None
     if not args.sample_only:
-        p = Primitives(meta=meta)
+        p = (runtime.robot_factory or Primitives)(meta=meta)
         reset = EpisodeControlClient()
 
         # Nominal robot spawn: one clean reset, read where the pelvis lands.
@@ -363,35 +346,16 @@ def _build_scene_and_plan(args: cli_args.GymOptions) -> _SceneSetup:
     )
 
 
-def main() -> None:
-    # Run as a script this module is `__main__`; the phase modules import it by its
-    # package name. Alias so both names are the same module (module-level state such as
-    # VLA_POLICY / RESTART_DEPLOY / ARM_PIN is then read from one place). No-op when
-    # eval_closed_loop imports grasp_gym as a package and calls main() in-process.
-    sys.modules.setdefault("locomani.tasks.bottle.grasp_gym", sys.modules[__name__])
-    global VIDEO_INCLUDE_INIT
-    args = cli_args.parse_args(vla=VLA_POLICY is not None, video_include_init=VIDEO_INCLUDE_INIT)
+def main(argv=None, *, runtime: GymRuntime | None = None) -> None:
+    runtime = runtime or GymRuntime()
+    args = cli_args.parse_args(argv, vla=runtime.policy is not None, video_include_init=runtime.task.video_include_init)
     if args.print_config:
         print(json.dumps(args.report(), indent=2))
         return
-    VIDEO_INCLUDE_INIT = args.video_include_init  # legacy runtime adapter; parsing stays pure
-    setup = _build_scene_and_plan(args)
-    round_loop.round_loop(args, setup)
-
-
-# Installed by tools/eval_closed_loop.py to swap the SCRIPTED policy for a
-# VLA, leaving everything around it identical. The fork is placed after the
-# settle and before the walk (see _run_round), so a VLA round shares the round
-# sampling, the spawn bisection, the teleport, the re-anchor, the appearance
-# seed, the video and the exporter toggle with a scripted round, and differs
-# only in what drives the robot.
-#
-# That sharing is the whole point: the reference number a closed-loop result is
-# read against is the scripted policy's 200/210 = 95.2% on THIS distribution,
-# measured by the collection itself. Re-implementing the sampler in the eval
-# would put the two policies on subtly different distributions and quietly
-# invalidate the comparison.
-VLA_POLICY = None
+    task = args.task_config_obj or runtime.task
+    runtime = replace(runtime, task=replace(task, video_include_init=args.video_include_init))
+    setup = _build_scene_and_plan(args, runtime=runtime)
+    round_loop.round_loop(args, setup, runtime=runtime)
 
 
 def run_round(
@@ -424,6 +388,7 @@ def run_round(
     goal_key=None,
     place_config=None,
     round_id: int | None = None,
+    runtime: GymRuntime | None = None,
 ) -> RoundResult:
     """One round, and the exporter left in a clean state whatever happens.
 
@@ -477,6 +442,7 @@ def run_round(
             goal_key=goal_key,
             place_config=place_config,
             round_id=round_id,
+            runtime=runtime,
         )
         if not ok:
             execution.fail(why)
@@ -539,24 +505,11 @@ def _run_round(
     goal_key=None,
     place_config=None,
     round_id: int | None = None,
+    runtime: GymRuntime | None = None,
 ) -> tuple[bool, str]:
-    """One round's five phases (round_phases.py / round_phases_approach.py),
-    threaded through a RoundContext.
-
-    Body moved there (refactor step 4b, pure extraction) -- this function
-    stays HERE, thin, so that grasp_gym.VLA_POLICY / ARM_PIN /
-    VIDEO_INCLUDE_INIT / EDGE_MIN / RAISE_LEAD / RAISE_FINISH_MAX_S /
-    PALM_DRIFT_MAX are read as THIS module's own globals (bare-name lookup,
-    resolved fresh every call) and snapshotted onto the RoundContext once per
-    round -- exactly what the original inline body did, since a caller can
-    still override any of them by assignment (grasp_gym.VLA_POLICY = ...,
-    eval_closed_loop.py). diag_transition_live.py replaces
-    `grasp_gym._run_round` itself with a wrapper around the original, which
-    is why this function's own name/identity stays put here too -- `run_round`
-    above calls it by its bare name, resolved against this module's globals
-    at call time.
-    """
+    """Execute task phases using explicit runtime inputs and the owned round journal."""
     execution = execution if execution is not None else ExecutionRecord()
+    runtime = runtime or GymRuntime()
     ctx = RoundContext(
         p=p,
         reset=reset,
@@ -588,9 +541,10 @@ def _run_round(
         goal_key=goal_key,
         place_config=place_config,
         round_id=round_id,
-        vla_policy=VLA_POLICY,
-        arm_pin=ARM_PIN,
-        video_include_init=VIDEO_INCLUDE_INIT,
+        task_config=runtime.task,
+        vla_policy=runtime.policy,
+        arm_pin=runtime.task.arm_pin,
+        video_include_init=runtime.task.video_include_init,
         edge_min=EDGE_MIN,
         raise_lead=RAISE_LEAD,
         raise_finish_max_s=RAISE_FINISH_MAX_S,

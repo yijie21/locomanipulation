@@ -99,11 +99,18 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
-def main():
-    args = parse_args()
+def main(argv=None):
+    args = parse_args(argv)
     cfg = EvalConfig.load(args.config) if args.config else EvalConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
+
+    if cfg.rtc and cfg.client not in ("async", "lockstep"):
+        raise SystemExit("rtc=true is implemented for the async/lockstep clients only")
+    if cfg.transition_commit and (
+        not cfg.rtc or cfg.client != "async" or cfg.ensemble_n != 1 or not cfg.transition_decoder
+    ):
+        raise SystemExit("transition_commit=true requires rtc=true, client=async, ensemble_n=1, transition_decoder set")
 
     if args.initial_token_file:
         initial_pose.INIT_TOKEN_FILE = str(args.initial_token_file.resolve())
@@ -112,7 +119,7 @@ def main():
     # --- preflight, loudly -------------------------------------------------
     from locomani.backends.sonic import vla_round
 
-    link = vla_round.PolicyLink(port=cfg.policy_port)
+    link = vla_round.PolicyLink(port=cfg.policy_port, config=cfg)
     if not link.ping():
         sys.exit(f"no policy server on :{cfg.policy_port} -- start tools/serve_policy.py (Isaac-GR00T venv) first")
 
@@ -130,7 +137,6 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     manifest = out.with_suffix(".manifest.jsonl")
     trace_dir = args.trace_dir or str(out.parent / "closed_loop_traces")
-    write_config_snapshot(out.parent, backend_cfg=cfg.backend, eval_cfg=cfg, started=time.time())
 
     # The gym restarts the deploy every round (fresh_deploy ->
     # scripts/restart_deploy.sh, a subprocess that inherits this environment).
@@ -146,6 +152,21 @@ def main():
         lockstep=dataclasses.replace(cfg.backend.lockstep, enabled=(cfg.client == "lockstep")),
     )
     stack.export_env(backend_cfg)
+    from locomani.schema import SONIC_BOTTLE
+
+    model_identity = link.identity()
+    for kind in ("video", "state", "action"):
+        expected = list(getattr(SONIC_BOTTLE, kind + "_keys"))
+        if model_identity["modalities"][kind] != expected:
+            raise ValueError(f"policy server {kind} schema differs from the bottle observation contract")
+    write_config_snapshot(
+        out.parent,
+        backend_cfg=backend_cfg,
+        eval_cfg=cfg,
+        started=time.time(),
+        inputs={"served_checkpoint": model_identity},
+        runtime_env=dict(os.environ),
+    )
 
     # --- install the policy and run the gym's own loop ---------------------
     from locomani.tasks.bottle import grasp_gym
@@ -155,7 +176,9 @@ def main():
     # the clean-clock shim below pauses/primes around it, so eval KEEPS it by
     # default. Now a config field, because the two paths establish the deploy's
     # heading anchor differently and that is the suspect in §18's 2/100.
-    grasp_gym.RESTART_DEPLOY = cfg.restart_deploy
+    from locomani.tasks.bottle.runtime import GymRuntime
+
+    restart, robot_factory, clock = None, None, None
 
     if cfg.client == "lockstep":
         # Needs a stack started with LOCKSTEP=1 (lockstep_sim.py serving the
@@ -175,7 +198,11 @@ def main():
         from locomani.backends.sonic import agent_server
 
         clock = vla_round.LockstepClock(ls, agent_server.AgentCommander())
-        vla_round.install_lockstep_shim(clock)
+        commander_cls = vla_round.lockstep_commander_class(clock)
+
+        def robot_factory(*a, **kw):
+            return grasp_gym.Primitives(*a, commander=commander_cls(), **kw)
+
         clock.resume()
         print(
             f"[closed-loop] LOCKSTEP client: simulation clock, K ~ "
@@ -183,12 +210,12 @@ def main():
             f"steady {sorted(set(latency['steady']))[:8]}..). Not comparable "
             f"with wall-clock numbers until calibrated (docs/evaluation.md)."
         )
-        grasp_gym.VLA_POLICY = vla_round.make_vla_policy_lockstep(
-            link, ls, clock, cfg.task, latency, seed=cfg.seed, trace_dir=trace_dir
+        policy = vla_round.make_vla_policy_lockstep(
+            link, ls, clock, cfg.task, latency, seed=cfg.seed, trace_dir=trace_dir, config=cfg
         )
     elif cfg.client == "async":
-        clock = vla_round.CleanClock()
-        vla_round.install_clean_shim(clock)
+        clock = vla_round.CleanClock(config=cfg)
+        commander_cls = vla_round.clean_commander_class(clock)
         _orig_fresh = grasp_gym.fresh_deploy
 
         def fresh_deploy(p):
@@ -199,26 +226,26 @@ def main():
             clock.resume()
             return ok
 
-        grasp_gym.fresh_deploy = fresh_deploy
-        _orig_prim_init = grasp_gym.Primitives.__init__
+        restart = fresh_deploy
+        _robot = grasp_gym.Primitives
 
-        def prim_init(self, *a, **kw):
-            _orig_prim_init(self, *a, **kw)
+        def robot_factory(*a, **kw):
+            robot = _robot(*a, commander=commander_cls(), **kw)
             if not clock.primed:
                 clock.prime()
                 clock.resume()
+            return robot
 
-        grasp_gym.Primitives.__init__ = prim_init
         print(
             "[closed-loop] CLEAN DEPLOY: auto-start, no planner command in the "
             "deploy's lifetime, standing token between rounds."
         )
-        grasp_gym.VLA_POLICY = vla_round.make_vla_policy_async(
-            link, cfg.task, inference_interval=cfg.replan_interval, trace_dir=trace_dir
+        policy = vla_round.make_vla_policy_async(
+            link, cfg.task, inference_interval=cfg.replan_interval, trace_dir=trace_dir, config=cfg
         )
     else:
-        grasp_gym.VLA_POLICY = vla_round.make_vla_policy(
-            link, cfg.task, execution_horizon=cfg.execution_horizon, trace_dir=trace_dir
+        policy = vla_round.make_vla_policy(
+            link, cfg.task, execution_horizon=cfg.execution_horizon, trace_dir=trace_dir, config=cfg
         )
 
     # The same spawn distribution the collection ran (collect_pilot.sh),
@@ -284,98 +311,24 @@ def main():
     else:
         manifest.unlink(missing_ok=True)
 
-    # NOT inside the ensemble branch: caught 2026-08-30 with an arm already
-    # running, where --grip-gain 3.0 was silently a no-op because --ensemble
-    # defaults to 1. Every vla_round toggle gets its own guard.
-    #
-    # DATASET_FPS unconditionally (decision 8): was TF_DATASET_FPS, actively
-    # overridden to 25 by run_learn_pilot.py/run_ready_pilot.py for the
-    # checkpoints trained on re-converted 25 fps data (vla_round.py's own
-    # comment on DATASET_FPS explains why the wrong value is silent).
-    vla_round.DATASET_FPS = cfg.backend.dataset_fps
-    vla_round.GRIP_GAIN = cfg.grip_gain
-    # OBS_DUMP the same way, and for the same reason it was missed: the only
-    # other consumer of `backend.obs_dump` is stack.py, which exports it as
-    # TF_OBS_DUMP into the STACK's environment -- a different process from this
-    # one. The dump itself is gated by `vla_round.OBS_DUMP` here in the eval
-    # client, so until this line `--set backend.obs_dump=...` was accepted,
-    # printed in the config snapshot, and wrote nothing at all.
-    vla_round.OBS_DUMP = cfg.backend.obs_dump
-    if cfg.backend.obs_dump:
-        print(f"[closed-loop] OBS_DUMP on -> {cfg.backend.obs_dump} (one npz per policy query)")
-    # Same defect, same three fields, found in the same breath: GRIP_DELAY,
-    # REPLACE and LOCKSTEP_NO_SEED are module defaults that nothing assigned
-    # either. Their config defaults happen to equal the module defaults (0 /
-    # False / False), so no past result is wrong -- but setting them did
-    # nothing. tests/test_eval_config_reaches_the_client.py holds the rule.
-    vla_round.GRIP_DELAY = cfg.backend.grip_delay
-    vla_round.REPLACE = cfg.backend.replace
-    vla_round.LOCKSTEP_NO_SEED = cfg.backend.lockstep.no_seed
-    if cfg.grip_gain != 1.0:
-        print(
-            f"[closed-loop] GRIPPER GAIN {cfg.grip_gain} -- effective close "
-            f"trigger at raw g < "
-            f"{0.0245 - (0.0245 - 0.005) / cfg.grip_gain:.4f} "
-            f"(failure band measured p25 0.0159 / p50 0.0168 / p75 0.0178)"
-        )
-    if cfg.rtc:
-        if cfg.client not in ("async", "lockstep"):
-            raise SystemExit("rtc=true is implemented for the async/lockstep clients only")
-        vla_round.RTC_ON = True
-        print(
-            "[closed-loop] RTC on: frozen-prefix inpainting at every "
-            "replan; frozen = p90 latency, overlap = whole remainder, "
-            "ramp server-side (serve_policy --rtc-ramp-rate)."
-        )
-    if cfg.transition_commit:
-        if not cfg.rtc or cfg.client != "async" or cfg.ensemble_n != 1 or not cfg.transition_decoder:
-            raise SystemExit(
-                "transition_commit=true requires rtc=true, client=async, ensemble_n=1, transition_decoder set"
-            )
-        vla_round.TRANSITION_COMMIT = True
-        vla_round.TRANSITION_DECODER = cfg.transition_decoder
-    if cfg.ensemble_n > 1:
-        vla_round.ENSEMBLE_N = cfg.ensemble_n
-        vla_round.ENSEMBLE_M = cfg.ensemble_m
-        print(
-            f"[closed-loop] TEMPORAL ENSEMBLING on: N={cfg.ensemble_n} "
-            f"M={cfg.ensemble_m} -- not comparable with the ladder, which "
-            f"ran without it."
-        )
-    if cfg.budget_s != 90.0:
-        vla_round.TIMEOUT_S = cfg.budget_s
-        print(
-            f"[closed-loop] BUDGET {cfg.budget_s:.0f}s (ladder ran 90s) -- "
-            f"screening setting, biased downward; not a headline number."
-        )
-    if not cfg.snap:
-        vla_round.SNAP = False
-        print(
-            "[closed-loop] FSQ SNAP OFF -- raw floats on the wire (NVIDIA's "
-            "own behaviour). Not comparable with the snapped ladder."
-        )
-    if cfg.replan_interval != 0.4:
-        print(f"[closed-loop] replan interval {cfg.replan_interval}s (ladder ran 0.4s) -- diagnostic setting.")
-    if cfg.stall_abort_s > 0:
-        vla_round.STALL_ABORT_S = cfg.stall_abort_s
-        print(
-            f"[closed-loop] STALL-ABORT {cfg.stall_abort_s:.0f}s IS ON -- this "
-            f"run is NOT comparable with the 5.9/13.7/28.0 ladder (measured "
-            f"on the full {vla_round.TIMEOUT_S:.0f}s budget). Diagnostic use "
-            f"only."
-        )
-
     print(
         f"[closed-loop] {cfg.rounds} rounds, horizon {cfg.execution_horizon}, "
         f"seed {cfg.seed}\n[closed-loop] manifest -> {manifest}"
     )
-    if todo > 0:
-        old_argv = sys.argv
-        sys.argv = argv
-        try:
-            grasp_gym.main()
-        finally:
-            sys.argv = old_argv
+    try:
+        if todo > 0:
+            grasp_gym.main(
+                argv[1:],
+                runtime=GymRuntime(
+                    task=dataclasses.replace(GymRuntime().task, restart_deploy=cfg.restart_deploy),
+                    policy=policy,
+                    restart=restart,
+                    robot_factory=robot_factory,
+                ),
+            )
+    finally:
+        if clock is not None:
+            clock.stop()
 
     # --- aggregate ----------------------------------------------------------
     rows = [json.loads(l) for l in manifest.read_text().splitlines() if l.strip()]

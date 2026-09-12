@@ -28,8 +28,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # reach src/ for `python run_learn_pilot.py`
+from locomani.backends.sonic.config import SonicBackendConfig  # noqa: E402
+from locomani.pipeline import stack  # noqa: E402
 from locomani.pipeline.pilot_config import PilotConfig  # noqa: E402
 from locomani.pipeline.provenance import digest, file_digests, write_config_snapshot  # noqa: E402
+from locomani.pipeline.stages import Stage  # noqa: E402
 from locomani.tasks.bottle.config import BottleTaskConfig  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -37,7 +40,6 @@ SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 DATA = ROOT / "third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python"
 TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 SRC = ROOT / "src/locomani"
-STACK = ROOT / "scripts/stack"
 SESSIONS = Path("/workspace/tmp/p03/outputs")
 
 
@@ -69,13 +71,14 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
-def main():
-    args = parse_args()
+def main(argv=None):
+    args = parse_args(argv)
     cfg = PilotConfig.load(args.config) if args.config else PilotConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
     task_cfg = BottleTaskConfig.load(args.task) if args.task else BottleTaskConfig()
     SPAWN = spawn_argv(task_cfg.spawn)
+    collect_backend = SonicBackendConfig(no_encoder=False)
 
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -93,6 +96,7 @@ def main():
         write_config_snapshot(
             out,
             task_cfg=task_cfg,
+            backend_cfg=collect_backend,
             pilot_cfg=cfg,
             started=time.time(),
             inputs=dict(scene=file_digests(scene), initial_token=digest(token), reach_config=digest(reach_cfg_path)),
@@ -111,25 +115,22 @@ def main():
     for k in ("NO_ENCODER", "CLEAN_DEPLOY", "SIM_VIDEO_DIR", "TF_INIT_TOKEN_FILE", "CUDA_VISIBLE_DEVICES"):
         base_env.pop(k, None)
 
+    stages = Stage(out)
+
     def run(name, cmd, extra=None):
-        t0 = time.time()
-        log = out / f"{name}.log"
-        print(f"{name}: start  log={log}", flush=True)
-        with log.open("a") as f:
-            f.write("\nCOMMAND " + json.dumps([str(x) for x in cmd]) + "\n")
-            f.flush()
-            rc = subprocess.call(
-                [str(x) for x in cmd],
-                cwd=ROOT,
-                env=base_env if extra is None else dict(base_env, **extra),
-                stdout=f,
-                stderr=subprocess.STDOUT,
-            )
-        with (out / "timings.jsonl").open("a") as f:
-            f.write(json.dumps(dict(stage=name, start=t0, seconds=time.time() - t0, rc=rc)) + "\n")
-        print(f"{name}: rc={rc} in {time.time() - t0:.0f}s", flush=True)
-        if rc:
-            raise RuntimeError(f"{name} exited {rc}: {log}")
+        stages.check(name, cmd, env=base_env if extra is None else dict(base_env, **extra))
+
+    def start(name, backend, settings):
+        return stack.start_stack(
+            backend,
+            task_cfg,
+            instance=0,
+            gpu=settings.get("CUDA_VISIBLE_DEVICES", "0"),
+            inherit=base_env,
+            extra_env=settings,
+            runner=stages.run,
+            name=name,
+        )
 
     def done(stage):
         return (out / f"{stage}.done").exists()
@@ -142,17 +143,8 @@ def main():
     def stop():
         nonlocal stack_up
         if stack_up:
-            # Scoped to instance 0: stop_stack.sh's pkill is unscoped and took
-            # down another session's instance-2 stack twice on 2026-09-07.
-            run("stop_stack", ["bash", STACK / "stop_instance.sh", "0", "5590"])
+            stack.stop_instance(0, runner=stages.run)
             stack_up = False
-            subprocess.call(
-                [
-                    "bash",
-                    "-c",
-                    'for p in $(pgrep -f run_instance_exporter); do grep -qz "TF_CAMERA_PORT=5555" /proc/$p/environ 2>/dev/null && kill -9 $p; done',
-                ]
-            )
 
     server = None
     try:
@@ -177,9 +169,9 @@ def main():
             )
             env.update(stack_env)
             env.update(dict(kv.split("=", 1) for kv in cfg.gym_env))
-            stack_up = True
             before = set(SESSIONS.iterdir())
-            run(f"start_stack_{tag}", ["bash", STACK / "start_stack.sh", task_cfg.prompt], env)
+            env = start(f"start_stack_{tag}", collect_backend, env)
+            stack_up = True
             # Wait for THIS stack's exporter dir. max(mtime) alone raced: a slow
             # teardown could leave the previous batch's dir newest, giving an
             # off-by-one session<->manifest join that only surfaces at convert.
@@ -325,12 +317,12 @@ def main():
         if not done("eval"):
             ev = out / "eval"
             ev.mkdir(exist_ok=True)
-            stack_up = True
-            run(
+            eval_env = start(
                 "start_eval_stack",
-                ["bash", STACK / "start_stack.sh", task_cfg.prompt],
+                SonicBackendConfig(),
                 dict(stack_env, NO_ENCODER="1", SIM_VIDEO_DIR=str(ev / "videos")),
             )
+            stack_up = True
             slog = (ev / "serve.log").open("a")
             server = subprocess.Popen(
                 [str(TRAIN), str(SRC / "pipeline/serve_policy.py"), "--model-path", str(ckpt), "--port", "5590"],
@@ -375,7 +367,7 @@ def main():
                     "--trace-dir",
                     ev / "traces",
                 ],
-                dict(NO_ENCODER="1", SIM_VIDEO_DIR=str(ev / "videos")),
+                eval_env,
             )
             mark("eval")
     finally:
