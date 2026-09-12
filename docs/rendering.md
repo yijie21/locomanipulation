@@ -96,6 +96,8 @@ bash scripts/build_isaac_assets.sh --robot-only | --force
 `--snapshot` 的默认 label 是目录完整 basename，与 `render_wall_pilot.sh` 一致；
 只有显式 `--label` 才改变它。旧的 `scene_<seed>` 去前缀命名不再作为默认。
 
+[2026-09-12 新安装验证和已知限制](handoff/isaac-asset-portability-20260912.md)。
+
 产物在 `assets/isaac/`,已 gitignore,约 650 MB 起,随时可重建。分两层,因为两者
 变化频率不同:
 
