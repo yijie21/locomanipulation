@@ -165,6 +165,17 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
                             position_error_m=float(pe),
                             rotation_error_rad=float(re),
                             target_root=list(map(float, self.p.world_to_root_full(point - rot @ OFFSET, projected))),
+                            # The SEED, without which this cannot be re-solved
+                            # offline: the live solve carries the MEASURED leg
+                            # geometry (q[:12]) while `use_waist=False` pins the
+                            # waist at the seed's value. Re-solving the recorded
+                            # targets from a default-leg seed gave a median
+                            # position error of 0.011 m against the 0.040 the
+                            # live solve reported (2026-09-12, ledger 31), so the
+                            # difficulty lives in the seed and the target alone
+                            # does not reproduce it.
+                            seed_q=[float(v) for v in np.asarray(q).ravel()],
+                            use_waist=False,
                         )
                     )
                 self.reject_prediction("coupled_terminal_ik")
