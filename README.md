@@ -7,7 +7,10 @@ SONIC-based bottle/crate tasks and an in-process ScaleBFM bottle pipeline.
 
 Start with [AGENTS.md](AGENTS.md), then select the relevant row of the
 [change map](docs/reference/change-map.md). It identifies the actual code entry,
-configuration owner and tests. Current standards: [architecture](docs/reference/standards.md).
+configuration owner and tests. For the design principles and module boundaries, read
+[the standards](docs/reference/standards.md). When adding or changing a feature, follow
+[the change workflow](docs/reference/change-map.md#change-workflow); when adding docs,
+use [documentation ownership](docs/README.md#documentation-ownership).
 
 ```bash
 make check

@@ -7,12 +7,13 @@ Use this shared development contract with any coding agent.
 
 Read [the change map](docs/reference/change-map.md), then the row relevant to the
 request. It names the entry, configuration, reference implementation and tests.
+Use its change workflow for feature additions and modifications.
 Read [architecture and standards](docs/reference/standards.md) before changing an
 interface, dependency direction or configuration format.
 
-Read [STATE](docs/STATE.md) when resuming work or using shared compute. Historical
-experiments are reached through [the document index](docs/README.md) when a task
-needs them. They are not startup reading.
+Read [STATE](docs/STATE.md) when resuming work or using shared compute. Use
+[the document index](docs/README.md) when adding/reorganizing documentation or when
+a task needs historical evidence. Historical experiments are not startup reading.
 
 ## Make and verify a change
 

@@ -9,6 +9,30 @@
 - [Runbook](reference/runbook.md): implemented command entry points.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
+## Documentation ownership
+
+Each rule has one authoritative home; other documents link to it. Humans and coding
+agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same contract.
+
+| Material to add or change | Owning document / update rule |
+|---|---|
+| Shared entry or resource rules | `AGENTS.md`; keep it short and point to conditional detail |
+| Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected row with the code |
+| Module boundaries, interface/config conventions or evidence rules | [Standards](reference/standards.md); link the rule instead of copying it into task guides |
+| Configuration fields and defaults | Owning code; regenerate [field reference](reference/config_fields.md) with `make config-doc` |
+| Supported launch commands | [Runbook](reference/runbook.md); point to implemented entry points |
+| Task-specific usage or design explanation | Relevant task guide below; explain when the reader needs it |
+| Active progress, blockers and resources | [STATE](STATE.md); link detailed work instead of accumulating transcripts |
+| Maintenance scope and status | [ROADMAP](ROADMAP.md); link implementation and validation records |
+| Experiment claims, corrections and completed work | Task ledger or `handoff/`; preserve historical material in `archive/` with evidence links |
+
+Update an existing owning document first. Add a document when a distinct task needs
+separate detail; link it from this index or the relevant guide and state when to read
+it. Move historical material with links to the retained original and its correction.
+Follow [the evidence rules](reference/standards.md#evidence) for claims and revisions.
+Keep current rules in versioned documents reachable from these entries, so future
+contributors can find them without conversation history or an agent's private memory.
+
 ## Task and pipeline detail — read when needed
 
 [Setup](setup.md), [collection](collection.md), [dataset](dataset.md),

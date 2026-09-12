@@ -3,6 +3,14 @@
 These are the current rules. [The change map](change-map.md) lists implemented
 entry points and reference tests. Historical plans describe earlier intentions.
 
+## Design principles
+
+Organize code by responsibility, with names and explicit interfaces that explain
+its behavior. Extend the owning module's established pattern; extract shared code
+when consumers share a contract. Keep each parameter, schema and development rule
+in one authoritative place. Keep navigation short and disclose detail by task.
+Use inspectable evidence to distinguish implementation, observation and interpretation.
+
 ## Module ownership
 
 | Module | Owns | Consumer contract |
@@ -46,6 +54,9 @@ specific rules, not every architectural property or dynamic dependency.
 
 `make check` runs formatting, lint, repository structure/navigation checks, generated
 configuration-reference freshness and the unit suite. Pre-commit uses the same checks.
+Running the full suite does not require loading all source into an agent's context.
+Static checks protect specified boundaries and navigation; interface quality and
+parameter necessity still need review. There is no enforced agent reading quota.
 File/function size reports locate complexity; passing a limit does not establish a
 good interface. Split by responsibility rather than line count alone.
 
@@ -81,6 +92,8 @@ Keep the root guide, change map and STATE within the checked reading budgets.
 Link task-specific details. The document index distinguishes current navigation from
 historical evidence; tutorials do not certify experiments they recount. Generate
 field tables from configuration code. Commands must point to existing entries.
+Place new material using [documentation ownership](../README.md#documentation-ownership)
+and finish code/documentation updates through the [change workflow](change-map.md#change-workflow).
 
 Use isolated worktrees and reviewable commits. Preserve other sessions' work and
 stage explicit paths. Resource/artifact rules are in [AGENTS](../../AGENTS.md).

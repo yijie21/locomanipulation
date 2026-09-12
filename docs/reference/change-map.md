@@ -1,7 +1,10 @@
 # Change map
 
-Read the relevant row, its owning code and the named tests. Follow further imports
-when the change needs them. This map describes implemented entries, not experimental
+Read the relevant row, its owning code and the named tests, using scoped searches
+and relevant sections. Expand along callers, consumers and dependencies when needed.
+Shared protocol changes, cross-layer failures and broad refactors can require wider
+reading; explain the unresolved contract that warrants it. Routine local changes
+start from this map. This map describes implemented entries, not experimental
 validity. Test names below are relative to `tests/` and checked for existence.
 
 | Change | Entry / owner | Configuration or example | Tests |
@@ -23,7 +26,24 @@ validity. Test names below are relative to `tests/` and checked for existence.
 | Scene / camera / rendering | [build_sim_scene.py](../../src/locomani/sim/build_sim_scene.py), [scene_lib.py](../../src/locomani/sim/scene_lib.py) | [rendering tutorial](../rendering.md) | `test_head_camera_spec.py`, `test_seat_on_floor.py` |
 | Navigation / architecture checks | [lint_repository.py](../../scripts/lint_repository.py) | [standards](standards.md) | `test_repository_rules.py` |
 
-## Bottle configuration extension
+## Change workflow
+
+1. Select the row matching the requested behavior; identify its owner, current
+   interface, configuration and observable contract in the named tests. If no row
+   fits, use the [module ownership rules](standards.md#module-ownership) to place it.
+2. Implement through that interface and keep helpers with their owner. Interface,
+   dependency or configuration changes follow [the standards](standards.md).
+3. Check the changed behavior through its real consumer, including relevant failure
+   paths and parameter delivery. Run `make test TESTS="tests/test_name.py"` with the
+   actual relevant test paths. Regenerate config fields with `make config-doc` when
+   configuration changes, then run `make check`. Apply the standards' live-validation
+   requirements when physical commands, timing, sampling or acceptance change.
+4. Update the affected map row when entries, configuration owners or tests change;
+   add a row for a new change category. Update the owning documentation using the
+   [document index](../README.md#documentation-ownership). Record checks actually run
+   and remaining uncertainty; completion requires code, tests and navigation to agree.
+
+## Example: bottle grasp strategy or configuration
 
 1. Define the field/validation in its owning config. Choose `reach.strategy` for an
    implementation choice; add a numeric field only for a distinct control.
