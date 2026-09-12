@@ -40,6 +40,19 @@ SPAWN_ARGS="--spawn-edge 1.1 1.3 --face-object --spawn-yaw-err 20 --spawn-latera
 
 **2026-09-10 起的两个默认**(台账 bottle §11):采集**不再每局重启 deploy**(`BottleTaskConfig.restart_deploy=false`,复位后 `reanchor` 代替,每局 64 → 34 s,30 局配对成功率无差);闭环评测仍**固定重启**(`eval_closed_loop` 钉 `RESTART_DEPLOY=True`,评测路径没在无重启下量过)。第三人称录像默认 `SIM_VIS=none`(`SonicBackendConfig.sim_vis`),要调试图用 `--set backend.sim_vis=full`。
 
+**抓取通道的选择(2026-09-12 起)。**上面的配方走**默认 coupled 通道**(自家 IK + 预测下蹲后撤)。
+第二条通道 `ReachConfig.teleop_arm` 把手臂和腰交给 SONIC policy 自己解,profile 换成
+`configs/tasks/bottle_visible_teleop.json` 即可(其余命令不变):
+
+```bash
+TASK_CONFIG=configs/tasks/bottle_visible_teleop.json bash scripts/collect_pilot.sh
+```
+
+同一组站位上 `policy/sonic_v1_1` 在 coupled 通道是 0/30、在 teleop 通道是 20/30
+(ledger bottle.md §35;通道对照表在 `collection.md`「一局 episode 分几步」之后)。
+**但它的大规模采集还没验证过** —— 每轮录了 6–7 集,没跑过 `convert_to_hf_format` +
+`check_dataset`。正式开采前先拿一批跑通这两步;要产量、要和历史数据同分布,继续用默认通道。
+
 代码里已经是默认值、不需要设的环境变量:
 
 | 变量 | 默认 | 含义 |

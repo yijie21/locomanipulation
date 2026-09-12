@@ -295,6 +295,36 @@ convert with (sessions and manifests pair up in this order):
 
 ## 控制逻辑
 
+### 一句话:数采逻辑
+
+**一局 = 复位一次 + 完整做一遍任务;做成了就留下,做砸了当场丢掉。**
+采集就是不停跑局,直到攒够 N 条成功的。
+
+```
+①放场景  随机摆物体 + 把机器人瞬移到 1–3 m 外(带角度误差),静置沉降
+②开录    ← 'c' 键。在静置之后才开,所以数据第一帧就是任务第一帧
+③转身    转到接近航向;转不过去 → 这局作废
+④走过去  走到目标前,按"看得见的深度"刹车停下(约 0.30 m)
+⑤站定判定 停稳后算一次:以这个站位,手够不够得着?够不着 → 整局丢掉,不挪窝重站
+⑥蹲+伸手 一边蹲一边把手运到物体上方的预抓点
+⑦对准    盯着实测物体位置微调,深度/横向/高度/爪子倾角都进容差才算"就位"
+⑧合手    持续接触后再多夹一点
+⑨抬起    抬 10 cm,物体必须真的离桌 > 6 cm
+⑩抱稳验证 收到胸前 → 后退两步 → 站 2 s,物体在掌系里滑动 < 3 cm
+```
+
+走完 ⑩ 才算**成功**,录像存盘;中间任何一步失败 → **按 'x' 当场丢弃**,不进数据集。
+
+三条最容易被忽略的设计:
+
+* **站位不纠正**(visible expert 的核心):站在哪里是**抓取高度的确定性函数**,
+  站错了丢掉整局,绝不挪一步再试。因为 VLA 只看单帧图像 —— 同一个画面不能一会儿标
+  "往前走"一会儿标"停下"。代价是 **yield 只有约 0.6**,采 200 集要跑约 330 局。
+* **丢弃是当场的,不是事后筛。**磁盘上的 session 基本只有成功集;manifest 另记
+  `ok` / `produced`,转换时按它 join —— 两个数对不上说明 manifest 和 session 不是同一批,
+  那批**不能转**。
+* **一批一个 session、一个 manifest。**混用会让 `gate.py` 把两批当成一个群体。
+
 ### 三层,谁决定什么
 
 | 层 | 在哪 | 它决定什么 | 它**不**决定什么 |
@@ -303,13 +333,22 @@ convert with (sessions and manifests pair up in this order):
 | **原语** | `primitives.py`、`stream_reach.py`、`reach_map.py`、`arm_ik.py`、`adaptive_grasp.py` | 把"走到 X"、"把手放到 Y"变成 50 Hz 的**意图流** | 怎么迈腿、怎么维持平衡 |
 | **控制** | C++ deploy 里的 SONIC(encoder + policy) | 把意图编码成 64 维 token,再解成 29 个关节目标 | 任务是什么 |
 
-agent 能往 deploy 发的**只有三种东西**,全部走 :5556:
+agent 能往 deploy 发的**只有四种东西**,全部走 :5556:
 
 | 发什么 | 内容 | 谁消费 |
 |---|---|---|
 | planner 帧 | `mode` / `movement` / `facing` / `speed` / `height` | k-planner → 合成参考动作 |
 | `upper_body_position[17]` | 腰 3 + 双臂 14,由 IK 解出 | **逐字替换**进参考动作 |
 | `left/right_hand_joints` | 夹爪开合 | 直接下发,不过 policy |
+| `vr_position[9]` / `vr_orientation[12]` | 左腕点、右腕点、颈点的**骨盆系位姿** | encoder 的 `teleop` 模式,**policy 自己解手臂和腰**(2026-09-12 起) |
+
+最后一行有个**反直觉的协议事实**:这个字段的**"有无"本身就是 encoder 模式开关**。
+deploy 在"planner 消息带 `vr_position`"这个标志的**上升沿**把 encoder 切到 mode 1 `teleop`
+(此时腕位姿是伺服目标),**下降沿**切回 mode 0 `g1`(此时那个槽位被清零);
+而 `Planner()` 初始化和每次 safety reset 都会把模式打回 0。
+所以它必须**在 planner 起来、机器人站稳之后**才第一次出现,并且第一帧要等于**实测位姿**。
+2026-09-12 之前我们从开机起每帧都带它,上升沿在初始化之前就烧掉了 —— deploy 一直停在 `g1`,
+这个字段是死的。详见 ledger bottle.md §35 与 `reference/silent_failures.md` 的静默失败表。
 
 下面三张图分别回答三个不同的问题。**这里是唯一的真相源** —— `docs/` 下不再有平行的
 流程图,因为两份平行文档正是上一版图落后 10 个 commit 的原因。
@@ -467,16 +506,40 @@ flowchart TD
 episode,训出来的模型才会一次成功。唯一的例外是 `[stand]`:那是复位没做成,整局重来,
 不算一条数据。
 
+> **P6 有两套实现**(coupled / teleop),上面的图画的是默认那套。两者共享 P0–P5 与 P7,
+> 只有"手臂怎么被驱动"不同 —— 见下一节开头的对照表。
+
 ### ③ 伸手那几秒里发生了什么
 
-> **2026-09-12 起有第二条抓取执行通道:`ReachConfig.teleop_arm`(profile `configs/tasks/bottle_visible_teleop.json`)。**
-> 下面这一节描述的是 planner 通道 + 自家 IK 的 `CoupledGraspPolicy`。`TeleopGraspPolicy`(`tasks/bottle/teleop_grasp_policy.py`,
-> 手臂接口 `backends/sonic/teleop_arm.py`)走的是官方 PICO 遥操作的 `PLANNER_VR_3PT`:planner 消息里带左右腕点 + 颈点的骨盆系位姿,
-> deploy 的 encoder 切到 `teleop` 模式,**手臂、腰、步子都由 policy 自己解**,我们只命令腕的世界系位姿并按实测残差修正;
-> 没有 IK,没有 `project_squat`,没有 `coupled_terminal_ik` 拒绝,没有关节舒适界。同一 bank 上 v1.1 从 0/30 到 6/10(ledger bottle.md §35)。
-> 两个必须知道的协议事实:VR 字段的**有无**就是 encoder 模式开关(`AgentCommander.vr_targets`,`TeleopArm.start()` 在站稳后以实测位姿为第一帧置位),
-> 每次 safety reset 都把模式打回 `g1`,所以通道按局进出;deploy.log 里 `Switched to mode 'teleop'` 必须出现在 `Planner initialized` 之后。
-> 表里的 `stream_mode` 在这条通道上是 5(`PLANNER_VR_3PT`),`teleop.vr_3pt_*` 字段有值。
+**抓取本身(上面流程图的 P6,也就是「一句话」里的 ⑥~⑨)有两套实现,选哪套由 `ReachConfig.teleop_arm` 决定:**
+
+| | 默认(coupled) | 2026-09-12 起可选(`teleop_arm: true`) |
+|---|---|---|
+| 手臂谁解 | **我们自己**跑 DLS IK,腰锁死 | **policy 自己解**,腰自由 |
+| 下蹲后撤 | 用常数 `squat_prediction_backshift_ratio` **预测**,预测解不出就拒绝这个站位 | 不预测:每 tick 用**实测**骨盆位姿把世界系腕目标重新表达一遍 |
+| 通道 | planner + `upper_body_position[17]` | planner + `vr_position/vr_orientation`(encoder `teleop` 模式) |
+| 入口 profile | `configs/tasks/bottle_visible.json` | `configs/tasks/bottle_visible_teleop.json` |
+| 代码 | `tasks/bottle/coupled_grasp_policy.py` | `tasks/bottle/teleop_grasp_policy.py` + `backends/sonic/teleop_arm.py` |
+| 同一组站位上 v1.1 | **0/30** | **20/30**(7/10, 7/10, 6/10;Fisher p = 1.4e-08) |
+
+为什么差这么多:coupled 那套的常量全是按 `policy/release` 的**跟踪误差**标定的(自家 IK、
+预测后撤、关节舒适界),换 checkpoint 之后这些"替身"就不成立了;teleop 通道把这一层整个删掉,
+让 checkpoint 自己做它本来就会做的事。完整经过见 ledger bottle.md §35。
+
+**这条通道的三条必知事实**:
+1. VR 字段的**有无**就是 encoder 模式开关 —— `TeleopArm.start()` 必须在 planner 起来、
+   机器人站稳之后,**以实测位姿为第一帧**置位 `AgentCommander.vr_targets`;
+2. 每次 safety reset 把模式打回 `g1`,所以通道**按局进出**,不能跨局保持;
+3. 验收方式:`deploy.log` 里 `[Mode Filter] Switched to mode 'teleop'` 必须出现在
+   `Planner initialized` **之后**。没有这一行,腕字段就是死的,任何测量都不算数。
+
+录出来的数据也不一样:这条通道上 `teleop.stream_mode` 是 5(`PLANNER_VR_3PT`)且
+`teleop.vr_3pt_*` **有真值**(抓取段约 6 成帧),coupled 通道上那两列**恒为零**(见 `dataset.md`)。
+
+**它还没有大规模采集验证**:每轮录了 6–7 集,但还没跑过 `convert_to_hf_format` + `check_dataset`。
+正式开采之前先拿一批跑通这两步。
+
+下面这一节描述的是**默认那套**(coupled)的伺服细节。
 
 `stream_reach._servo_continuous`,50 Hz 闭环,目标全部由**实时物体真值**重算,
 从不从当前掌位外推(否则会追着自己推动的罐子跑)。

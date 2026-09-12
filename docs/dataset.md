@@ -155,6 +155,13 @@ session 批量不大的话通常只有这一个 chunk。)
 `modality_psi0.json` 是 psi0 简化动作空间用的。哪个策略实际吃多少维、为什么
 这么切,见下文「数据 schema」。
 
+> **⚠️ `action.psi0_18` 在 2026-09-12 之前的每一个数据集里都是全零**(ledger bottle.md §35.8)。
+> converter 无条件用 `teleop.vr_3pt_position/orientation` 算它(`convert_to_hf_format.compute_psi0_columns`),
+> 而 exporter 只在 `stream_mode == 5` 才写那两列 —— 单臂 coupled 线录制窗口里 `stream_mode` 一直是 3,
+> 于是那两列恒为零,psi0 这套 modality **是死数据**。抽查过 2026-09-11 的 session:864 帧只有一种取值。
+> 只有走 `teleop_arm` 通道(`collection.md` 的通道对照表)时它才有真值,而且**只在抓取段非零**
+> (run5 的 episode 0:1089 帧里 621 帧),走路与抱稳段仍是零 —— 要用它训练,**先处理这个不连续**。
+
 ### data/chunk-000/episode_*.parquet
 
 一个 episode 一个文件,**一行一帧**。列很多,按用途分四组:
@@ -163,7 +170,7 @@ session 批量不大的话通常只有这一个 chunk。)
 |---|---|---|
 | 机器人本体状态 | `observation.state`(43)、`observation.eef_state`(14)、`observation.root_orientation`(4)、`observation.projected_gravity`(3)、`observation.cpp_rotation_offset`(4)、`observation.init_base_quat`(4) | 关节角、末端位姿、朝向/重力 |
 | 动作/标签 | `action.wbc`(43)、`action.motion_token`(64)、`observation.state_psi0`(15)、`action.psi0_18`(18) | WBC 关节目标、SONIC latent、psi0 坐标系简化 state/action |
-| 遥操作/动捕溯源(`teleop.*`) | `smpl_joints`/`smpl_pose`/`smpl_frame_index`、`body_quat_w`/`target_body_orientation`、`left`/`right_hand_joints`、`left`/`right_wrist_joints`、`vr_3pt_position`/`vr_3pt_orientation`、`delta_heading`、`stream_mode`/`planner_mode`、`planner_movement`/`facing`/`speed`/`height` | SMPL 动捕原始量、VR 三点追踪、locomotion planner 指令;大部分不进训练,留着做分析/辅助监督 |
+| 遥操作/动捕溯源(`teleop.*`) | `smpl_joints`/`smpl_pose`/`smpl_frame_index`、`body_quat_w`/`target_body_orientation`、`left`/`right_hand_joints`、`left`/`right_wrist_joints`、`vr_3pt_position`/`vr_3pt_orientation`、`delta_heading`、`stream_mode`/`planner_mode`、`planner_movement`/`facing`/`speed`/`height` | SMPL 动捕原始量、VR 三点追踪、locomotion planner 指令;大部分不进训练,留着做分析/辅助监督。**`vr_3pt_*` 只在 `stream_mode == 5` 有值**:coupled 通道恒为零,`teleop_arm` 通道在抓取段是真实的腕/颈命令位姿(见上方 ⚠️) |
 | 索引/标注 | `timestamp`、`frame_index`、`episode_index`、`index`(全局帧号)、`task_index` | 定位用,不是物理量 |
 
 物体位姿(`observation.can_pose` / `plate_pose` / `water_bottle_pose`,按 session
