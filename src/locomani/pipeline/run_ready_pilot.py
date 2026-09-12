@@ -36,6 +36,39 @@ def latest_session():
     return max(Path("/workspace/tmp/p03/outputs").iterdir(), key=lambda p: p.stat().st_mtime)
 
 
+def evaluation_command(args, out: Path, reach_config: Path, initial_token_file: Path | None):
+    """Prepare the exact config/argv consumed by normal and instrumented evaluation."""
+    from locomani.pipeline.eval_config import EvalConfig
+
+    config = EvalConfig(
+        backend=SonicBackendConfig(dataset_fps=25.0),
+        rounds=args.eval_rounds,
+        stand_retries=args.stand_retries,
+        seed=16800,
+    )
+    config_path = out / "eval_config.json"
+    config.dump(config_path)
+    entry = (
+        [SIM, SRC / "rtc/diag_transition_live.py", out / "execution_capture"]
+        if args.capture_execution
+        else [SIM, SRC / "pipeline/eval_closed_loop.py"]
+    )
+    return [
+        *entry,
+        "--config",
+        config_path,
+        "--cases",
+        out / "eval_cases.json",
+        "--reach-config",
+        reach_config,
+        *(["--initial-token-file", initial_token_file] if initial_token_file else []),
+        "--out",
+        out / "eval.json",
+        "--trace-dir",
+        out / "traces",
+    ]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(__doc__)
     ap.add_argument("--out", type=Path, required=True)
@@ -173,14 +206,15 @@ def main(argv=None):
     def start(name, *, evaluation=False):
         nonlocal env
         env = stack.start_stack(
-            SonicBackendConfig(no_encoder=evaluation),
+            SonicBackendConfig(no_encoder=evaluation, dataset_fps=25.0 if evaluation else 30.0),
             SimpleNamespace(prompt="pick up the water bottle"),
             instance=0,
             gpu=env.get("CUDA_VISIBLE_DEVICES", "0"),
             inherit=env,
-            extra_env={key: value for key, value in env.items() if key.startswith(("TF_", "SIM_"))},
+            extra_env={key: env[key] for key in ("TF_EXPORTER_SCRIPT", "TF_FRAME_AUDIT_PATH") if key in env},
             runner=stages.run,
             name=name,
+            receipt_path=out / "deploy_receipts.jsonl",
         )
 
     def cached(stage):
@@ -425,39 +459,7 @@ def main(argv=None):
                 if server.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError("policy server failed to become ready")
                 time.sleep(2)
-            evaluator = (
-                [SIM, SRC / "rtc/diag_transition_live.py", out / "execution_capture"]
-                if args.capture_execution
-                else [SIM, SRC / "pipeline/eval_closed_loop.py"]
-            )
-            run(
-                "eval",
-                [
-                    *evaluator,
-                    "--fresh",
-                    str(args.eval_rounds),
-                    "--stand-retries",
-                    str(args.stand_retries),
-                    "--cases",
-                    out / "eval_cases.json",
-                    "--reach-config",
-                    reach_config,
-                    "--client",
-                    "async",
-                    "--budget",
-                    "90",
-                    "--replan-interval",
-                    ".4",
-                    *(["--initial-token-file", initial_token_file] if initial_token_file else []),
-                    "--seed",
-                    "16800",
-                    "--out",
-                    out / "eval.json",
-                    "--trace-dir",
-                    out / "traces",
-                ],
-                dict(NO_ENCODER="1", TF_DATASET_FPS="25"),
-            )
+            run("eval", evaluation_command(args, out, reach_config, initial_token_file))
             if args.capture_execution:
                 run(
                     "audit_execution",

@@ -179,31 +179,6 @@ def expert_argv(args, task_cfg_path: Path, manifest: Path, label: str, trace_dir
     return argv
 
 
-def expert_env(env: dict) -> dict:
-    """The stack env minus the per-instance port block.
-
-    The experts resolve their ports with `os.environ.setdefault(k,
-    ports.port(k))`, so an INHERITED value wins over the formula. A shell that
-    sourced `scripts/paths.sh` before fixing INSTANCE exports instance 0's
-    block (paths.sh:88 defaults INSTANCE to 0 and derives the ports from it),
-    and the expert would then talk to instance 0's stack while its own sim and
-    deploy sit on another block -- the failure the bash runners' "INSTANCE must
-    be fixed BEFORE paths.sh is sourced" comment is about, except that comment
-    only protects the runner's own shell, not a caller's. Dropping the names
-    leaves one formula: locomani.sim.ports, keyed off INSTANCE (which is set).
-    """
-    drop = (
-        "TF_CAMERA_PORT",
-        "TF_SONIC_PORT",
-        "TF_OUT_PORT",
-        "TF_KEYBOARD_PORT",
-        "TF_PRIVILEGED_PORT",
-        "TF_EPISODE_PORT",
-        "SONIC_DDS_DOMAIN",
-    )
-    return {k: v for k, v in env.items() if k not in drop}
-
-
 def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
     """Make the run directory reproducible: scene copy, task config, provenance."""
     out = args.out.resolve()
@@ -283,6 +258,7 @@ def main(argv=None) -> None:
                 extra_env=extra,
                 runner=stage.run,
                 name=f"start_stack_{tag}",
+                receipt_path=out / "deploy_receipts.jsonl",
             )
         except RuntimeError as e:
             raise SystemExit(f"[crate] {e}; see {paths.session_root(args.instance)}") from None

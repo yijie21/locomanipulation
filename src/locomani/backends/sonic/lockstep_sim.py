@@ -49,6 +49,8 @@ import time
 
 import numpy as np
 
+from locomani.backends.sonic.config import DEFAULT_BACKEND, LockstepConfig
+
 LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
 CONTROL_DT = 0.02
 
@@ -93,7 +95,7 @@ def install(sim_module) -> None:
 
 
 class LockstepRunner:
-    def __init__(self, simulator, zmq_port: int, out_port: int):
+    def __init__(self, simulator, zmq_port: int, out_port: int, *, config: LockstepConfig = DEFAULT_BACKEND.lockstep):
         import zmq
         from gear_sonic.utils.teleop.zmq.zmq_planner_sender import pack_pose_message
         from lockstep_vendor.lockstep import LockstepBarrier, LockstepTimeout
@@ -135,9 +137,7 @@ class LockstepRunner:
             self._send_token,
             physics_dt=float(self.sim.sim_dt),
             control_dt=CONTROL_DT,
-            # SonicBackendConfig.lockstep.ack_timeout's default (decision 8); never
-            # overridden in any script today, so this constant IS that default.
-            ack_timeout=5.0,
+            ack_timeout=config.ack_timeout,
         )
         self._last_time = None
         self._ticks = 0
@@ -150,10 +150,8 @@ class LockstepRunner:
         # session opens, physics runs but the robot is restored to its held
         # pose after every substep, so the deploy fills its history with a
         # static, self-consistent robot before it is allowed to move.
-        # SonicBackendConfig.lockstep.{warmup_ticks,cmd_delay}'s defaults
-        # (decision 8); neither is overridden in any script today.
-        self._warmup = 60
-        self._cmd_delay = 0
+        self._warmup = config.warmup_ticks
+        self._cmd_delay = config.cmd_delay
         self._cmd_hist = []
         self._hold_qpos = None
         self._hold_left = 0
@@ -165,10 +163,8 @@ class LockstepRunner:
         # loop sleeps with jitter, so a frame is occasionally held 1 or 3
         # ticks. Both are mean-preserving. Seeded per session so a round
         # replays exactly.
-        # SonicBackendConfig.lockstep.{jitter,jitter_seed}'s defaults (decision 8);
-        # neither is overridden in any script today.
-        self._jitter = False
-        self._jseed = 0
+        self._jitter = config.jitter
+        self._jseed = config.jitter_seed
         self._jrng = np.random.default_rng(self._jseed)
         self._img_every = max(1, int(round(self.sim.image_dt / CONTROL_DT)))
 

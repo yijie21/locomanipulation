@@ -8,6 +8,7 @@
 # Usage: INSTANCE=<i> bash scripts/restart_deploy.sh
 # Prints "deploy restarted" on success (the gym greps for it).
 set -u
+_requested_dds="${SONIC_DDS_DOMAIN:-}"
 
 INSTANCE="${INSTANCE:-0}"
 export SONIC_DDS_DOMAIN=$INSTANCE
@@ -15,6 +16,7 @@ TF_SONIC_PORT=$((5556 + 10 * INSTANCE))
 TF_OUT_PORT=$((5557 + 10 * INSTANCE))
 # shellcheck disable=SC1091
 source "$(dirname "$0")/env_deploy.sh"        # also pulls in paths.sh
+export SONIC_DDS_DOMAIN="${_requested_dds:-$INSTANCE}"
 LOGS=$(locomani_session_root "$INSTANCE")
 
 # Instance-selective kill: the port is part of the deploy's own cmdline and
@@ -119,6 +121,10 @@ if [ ! -f "$SONIC_POLICY/model_decoder.onnx" ]; then
          "(this tree has: $(ls -d policy/*/ 2>/dev/null | tr -d / | tr '\n' ' '))"
     exit 1
 fi
+# Record the final cwd and files, including foreign clean/lockstep builds.
+PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m locomani.pipeline.provenance \
+    --deploy-receipt "${LOCOMANI_DEPLOY_RECEIPTS:-$LOGS/deploy_receipts.jsonl}" \
+    --binary "$DEPLOY_BIN" --policy "$SONIC_POLICY" || exit 1
 nohup "$DEPLOY_BIN" lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \
     --obs-config "$SONIC_POLICY/observation_config.yaml" \
     "${ENC_ARG[@]}" \

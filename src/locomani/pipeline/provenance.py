@@ -51,7 +51,22 @@ def sonic_policy_identity(env: dict | None = None) -> dict:
     """Content identity of the resolved checkpoint, including equal-size weight changes."""
     env = dict(os.environ) if env is None else env
     policy = env.get("SONIC_POLICY", paths.SONIC_POLICY)
-    d = Path(env.get("SONIC_DEPLOY_ROOT", paths.SONIC_DEPLOY)) / policy
+    deploy = Path(env.get("SONIC_DEPLOY_ROOT", paths.SONIC_DEPLOY))
+    binary = Path(env.get("SONIC_DEPLOY_BIN", "./target/release/g1_deploy_onnx_ref"))
+    deps = Path(env.get("DEPS_DIR", str(Path(env.get("LOCOMANI_WORKSPACE", paths.WORKSPACE)) / "deps")))
+    if env.get("LOCKSTEP") == "1":
+        binary = (
+            Path(env.get("LOCKSTEP_DEPLOY_ROOT", str(deps / "gear_sonic_deploy_ours_lockstep")))
+            / "target/release/g1_deploy_onnx_ref"
+        )
+    elif env.get("CLEAN_DEPLOY") == "1":
+        binary = (
+            Path(env.get("CLEAN_DEPLOY_ROOT", str(deps / "gear_sonic_deploy_ours_lockstep_nvdef")))
+            / "target/release/g1_deploy_onnx_ref"
+        )
+    if binary.is_absolute():
+        deploy = binary.parent.parent.parent
+    d = deploy / policy
     cfg = d / "observation_config.yaml"
     out = {"policy": policy, "dir": str(d), "exists": d.is_dir()}
     if cfg.is_file():
@@ -62,6 +77,28 @@ def sonic_policy_identity(env: dict | None = None) -> dict:
             out[f"{name}_bytes"] = f.stat().st_size
             out[f"{name}_sha256"] = _digest(f)
     return out
+
+
+def record_deploy(receipt, binary, policy) -> dict:
+    """Append content identity from the launcher's final cwd, before starting deploy."""
+    from locomani.pipeline.stages import recorded_settings
+
+    cwd = Path.cwd()
+    identity = sonic_policy_identity({"SONIC_DEPLOY_ROOT": str(cwd), "SONIC_POLICY": policy})
+    executable = Path(binary).resolve()
+    identity.update(
+        binary=str(executable),
+        binary_sha256=_digest(executable),
+        cwd=str(cwd),
+        time=time.time(),
+        settings=recorded_settings(dict(os.environ)),
+        source="launcher after resolving deploy cwd; before exec",
+    )
+    path = Path(receipt)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as stream:
+        stream.write(json.dumps(identity) + "\n")
+    return identity
 
 
 def checkpoint_identity(path) -> dict:
@@ -106,6 +143,7 @@ def write_config_snapshot(
     snap.write_text(
         json.dumps(
             dict(
+                identity_scope="pre-launch configuration; deploy_receipts.jsonl records actual launch selection",
                 task=task_cfg.to_dict() if task_cfg is not None else None,
                 backend=backend_cfg.to_dict() if backend_cfg is not None else None,
                 eval=eval_cfg.to_dict() if eval_cfg is not None else None,
@@ -122,3 +160,14 @@ def write_config_snapshot(
         + "\n"
     )
     return snap
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Record the launcher's final deployment identity")
+    parser.add_argument("--deploy-receipt", required=True)
+    parser.add_argument("--binary", required=True)
+    parser.add_argument("--policy", required=True)
+    args = parser.parse_args()
+    record_deploy(args.deploy_receipt, args.binary, args.policy)

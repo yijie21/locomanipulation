@@ -20,8 +20,8 @@ class PilotConfig:
     batch_rounds: int = 10  # --batch-rounds: rounds attempted per collection batch
     max_batches: int = 12  # --max-batches: give up collecting after this many batches
     holdout: int = 6  # --holdout: episodes held out for the validation split
-    steps: int = 3000  # --steps: training steps (also drives SAVE_STEPS -- see save_steps below)
-    save_steps: int = 1500  # --save-steps: parsed but not wired to the train stage (pre-existing, unchanged)
+    steps: int = 3000  # --steps: final training step
+    save_steps: int = 1500  # --save-steps: periodic checkpoint interval, capped at the final step
     train_gpu: str = "1"  # --train-gpu: CUDA_VISIBLE_DEVICES for the train/serve stages
     eval_rounds: int = 100  # --eval-rounds: closed-loop eval rounds
     eval_seed: int = 6000  # --eval-seed: closed-loop eval seed

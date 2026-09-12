@@ -152,6 +152,7 @@ def main(argv=None):
         lockstep=dataclasses.replace(cfg.backend.lockstep, enabled=(cfg.client == "lockstep")),
     )
     stack.export_env(backend_cfg)
+    os.environ["LOCOMANI_DEPLOY_RECEIPTS"] = str(out.parent / "deploy_receipts.jsonl")
     from locomani.schema import SONIC_BOTTLE
 
     model_identity = link.identity()

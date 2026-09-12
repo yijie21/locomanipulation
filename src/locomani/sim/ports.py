@@ -34,6 +34,13 @@ _BASES = {
 }
 
 
+def instance_ports(index: int) -> dict[str, int]:
+    """Resolve the complete port block before crossing a process boundary."""
+    if type(index) is not int or index < 0:
+        raise ValueError("instance must be a non-negative integer")
+    return {name: base + 10 * index for name, base in _BASES.items()}
+
+
 def instance() -> int:
     try:
         return int(os.environ.get("INSTANCE", "0"))

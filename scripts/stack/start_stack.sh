@@ -12,6 +12,7 @@
 # Usage:  bash scripts/stack/start_stack.sh [task-prompt]
 
 set -u
+_requested_dds="${SONIC_DDS_DOMAIN:-}"
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/../../scripts/paths.sh"
@@ -27,7 +28,7 @@ REPO="$SONIC_ROOT"
 # the host: instance i uses ports base+10*i and DDS domain i. Instance 0 is
 # byte-identical to the historical single-stack layout.
 INSTANCE="${INSTANCE:-0}"
-export SONIC_DDS_DOMAIN=$INSTANCE
+export SONIC_DDS_DOMAIN="${SONIC_DDS_DOMAIN:-$INSTANCE}"
 export TF_CAMERA_PORT=$((5555 + 10 * INSTANCE))
 export TF_SONIC_PORT=$((5556 + 10 * INSTANCE))
 TF_OUT_PORT=$((5557 + 10 * INSTANCE))
@@ -58,6 +59,25 @@ if ! flock -n 9; then
 fi
 : > "$LOCK"
 echo "start_stack pid $$ at $(date -u +%FT%TZ) SIM_VIDEO_DIR=${SIM_VIDEO_DIR:-} LOCOMANI_SIM_DIR=${LOCOMANI_SIM_DIR:-}" >> "$LOCK"
+# Only this shell's live background jobs are eligible for failure cleanup.
+# Install after acquiring fd 9: an admission refusal must not touch its owner.
+kill_owned_tree() {
+    local owned_pid="$1" descendant
+    for descendant in $(pgrep -P "$owned_pid" || true); do
+        kill_owned_tree "$descendant"
+    done
+    kill -KILL "$owned_pid" 2>/dev/null || true
+}
+cleanup_failed_start() {
+    local status=$? owned_pid
+    if [ "$status" -ne 0 ]; then
+        for owned_pid in $(jobs -pr); do kill_owned_tree "$owned_pid"; done
+        wait 2>/dev/null || true
+    fi
+}
+trap cleanup_failed_start EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 TASK_PROMPT="${1:-walk forward}"
 
 mkdir -p "$LOGS"
@@ -65,6 +85,7 @@ cd "$REPO" || exit 1
 
 # shellcheck disable=SC1091
 source "$LOCOMANI_ROOT/scripts/env_deploy.sh"
+export SONIC_DDS_DOMAIN="${_requested_dds:-$INSTANCE}"
 # EGL renders straight to the offscreen framebuffer the ego camera reads,
 # skipping the display entirely -- exactly what a headless box needs. But
 # MUJOCO_GL is a single process-wide backend choice, not per-renderer: with
@@ -278,6 +299,10 @@ if [ ! -f "$SONIC_POLICY/model_decoder.onnx" ]; then
     echo "          ~10 min) or set SONIC_POLICY to one this tree has."
     exit 1
 fi
+# Record the final cwd and files, including foreign clean/lockstep builds.
+PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m locomani.pipeline.provenance \
+    --deploy-receipt "${LOCOMANI_DEPLOY_RECEIPTS:-$LOGS/deploy_receipts.jsonl}" \
+    --binary "$DEPLOY_BIN" --policy "$SONIC_POLICY" || exit 1
 nohup "$DEPLOY_BIN" lo "$SONIC_POLICY/model_decoder.onnx" reference/example/ \
     --obs-config "$SONIC_POLICY/observation_config.yaml" \
     "${ENC_ARG[@]}" \

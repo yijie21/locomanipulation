@@ -29,8 +29,6 @@ DT = 1.0 / CONTROL_HZ
 # [0,1.5708]). dex1: two prismatic fingers, both commanded identically —
 # +0.0245 = 9.5 cm open, -0.02 = 0.6 cm closed; NOT mirrored.
 #
-# Module-level default, not an env read (decision 8): never actually overridden
-# in any script today, so this constant IS that default.
 HAND_TYPE = DEFAULT_BACKEND.hand
 if HAND_TYPE == "dex1":
     HAND_CLOSED_LEFT = np.array([-0.02, -0.02, 0, 0, 0, 0, 0], dtype=np.float32)

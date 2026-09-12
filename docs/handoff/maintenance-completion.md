@@ -71,3 +71,38 @@ The three training modality configurations loaded in the real training venv.
 Focused delivery tests verify observation dumping/snap, per-client gain/ensemble/
 stall decisions, dataset rate, inherited shell overrides, and real child settings.
 Matched bottle GPU comparison and independent review follow the code freeze.
+
+## Independent review and corrections
+
+Initial Standards review found four delivery/lifecycle defects; Spec review found
+three (overlapping). They were reproduced and fixed before integration:
+
+- Startup failure now cleans only children launched after this shell acquired the
+  lock; admission refusal leaves the other owner untouched. Real shell tests use
+  CPU stand-ins and verify lock release and explicit DDS delivery.
+- Instance ports, upper-reference slew and all lockstep settings reach actual
+  consumers; fresh-child probes exercise defaults read from serialized config.
+- Ready pilot generates the current evaluation config/argv, including 25 FPS.
+  Its normal and instrumented routes pass the actual parser.
+- Start and restart append final-cwd/binary/model hashes to `deploy_receipts.jsonl`.
+  Foreign deployment trees and same-size weight changes are covered. Initial
+  snapshots are explicitly pre-launch requests; receipts describe launch selection.
+- Learn-pilot save interval reaches the child; final weights are selected even
+  off a periodic save step. Existing partial datasets/models are retained and
+  require inspection plus a new output directory instead of automatic deletion.
+
+Both independent re-reviews report no remaining findings (Standards: 27 focused
+CPU tests plus fresh-process consumers; Spec: 39 focused CPU tests).
+Artifacts: primary `outputs/maintenance_final_20260912/navigation_standards/`
+and `navigation_spec/`. Final GPU coverage and integration are still pending.
+
+## Fresh-context navigation observations
+
+Two independent agents started only from AGENTS/change-map, edited isolated probe
+worktrees, and passed targeted tests plus `make check`, without reading historical
+STATE/archives/ledgers. The acceptance extension read 11 files / 29,374 UTF-8 bytes /
+664 lines; the FPS validation extension read 13 files / 61,814 bytes / 1,334 lines.
+These are measured reading-cost proxies, not model token counts or a demonstrated
+percentage reduction from the old repository. One probe initially used a Python
+without pytest; AGENTS now gives `make test TESTS=...` using the configured venv.
+Probe patches and reading logs remain in the two artifact directories above.

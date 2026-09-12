@@ -8,6 +8,7 @@ import subprocess
 
 from locomani import paths
 from locomani.backends.sonic.config import ENV_FIELDS, SonicBackendConfig, with_shell_overrides
+from locomani.sim.ports import instance_ports
 
 START_STACK = os.path.join(paths.SCRIPTS, "stack", "start_stack.sh")
 STOP_INSTANCE = os.path.join(paths.SCRIPTS, "stack", "stop_instance.sh")
@@ -64,6 +65,7 @@ def resolve_env(
     ):
         env.pop(name, None)
     env.update(backend_env(backend_cfg))
+    env.update({name: str(port) for name, port in instance_ports(instance).items()})
     env["INSTANCE"] = str(instance)
     if gpu is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -81,6 +83,9 @@ def resolve_env(
     if init_token_file:
         env["TF_INIT_TOKEN_FILE"] = str(init_token_file)
     if extra_env:
+        for key in ("INSTANCE", *instance_ports(instance)):
+            if key in extra_env and str(extra_env[key]) != env[key]:
+                raise ValueError(f"{key} conflicts with instance {instance}")
         env.update(extra_env)
         env.update(backend_env(with_shell_overrides(backend_cfg, extra_env)))
     return env
@@ -97,11 +102,14 @@ def start_stack(
     inherit: dict | None = None,
     runner=None,
     name: str = "start_stack",
+    receipt_path=None,
 ) -> dict[str, str]:
     """Start one stack, optionally recording the launch through Stage.run."""
     env = resolve_env(
         backend_cfg, task_cfg, instance=instance, gpu=gpu, video_dir=video_dir, extra_env=extra_env, inherit=inherit
     )
+    if receipt_path is not None:
+        env["LOCOMANI_DEPLOY_RECEIPTS"] = str(receipt_path)
     command = ["bash", START_STACK, getattr(task_cfg, "prompt", None) or "walk forward"]
     rc = runner(name, command, cwd=paths.REPO, env=env) if runner else subprocess.call(command, cwd=paths.REPO, env=env)
     if rc:

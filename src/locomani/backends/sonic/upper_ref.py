@@ -42,6 +42,9 @@ import time
 
 import numpy as np
 
+from locomani.backends.sonic.config import DEFAULT_BACKEND, SonicBackendConfig
+from locomani.sim import ports
+
 DT = 0.02
 
 # How far the 17-value command may move in one tick.  The reference dataset's
@@ -52,9 +55,7 @@ DT = 0.02
 # walk or it turns into recorded standing at the table, and 2 deg moves 4 of
 # the token's 64 dims where the 20 deg step it replaces moved 27
 # (sonic_encoder.py --selfcheck).
-# Module-level default, not an env read (decision 8): SonicBackendConfig.upper_slew_deg
-# is never actually overridden in any script today, so this constant IS that default.
-UPPER_SLEW_DEG = 2.0
+UPPER_SLEW_DEG = DEFAULT_BACKEND.upper_slew_deg
 MAX_STEP = np.radians(UPPER_SLEW_DEG)
 
 
@@ -68,7 +69,7 @@ class RefTap:
     """
 
     def __init__(self, port: int | None = None):
-        self.port = int(os.environ.get("TF_OUT_PORT", 5557)) if port is None else int(port)
+        self.port = ports.out() if port is None else int(port)
         self._q: np.ndarray | None = None
         self._t = 0.0
         self._lock = threading.Lock()
@@ -181,12 +182,12 @@ class UpperRamp:
       and `settle` writes a real zero.
     """
 
-    def __init__(self, cmd, q0, *, max_step: float = MAX_STEP):
+    def __init__(self, cmd, q0, *, max_step: float | None = None, config: SonicBackendConfig = DEFAULT_BACKEND):
         self.cmd = cmd
         # float64 state, f32 only on the wire: the slew is applied hundreds
         # of times per round and f32 accumulation drifts the cap.
         self.q = np.asarray(q0, dtype=np.float64).copy()
-        self.max_step = float(max_step)
+        self.max_step = float(np.radians(config.upper_slew_deg) if max_step is None else max_step)
         self._t: float | None = None
         self.cmd.set_upper_body(self.q)
         self.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))

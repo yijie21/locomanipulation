@@ -30,6 +30,17 @@ def recorded_settings(env: dict[str, str]) -> dict[str, str]:
         "OMP_NUM_THREADS",
         "OPENBLAS_NUM_THREADS",
         "MKL_NUM_THREADS",
+        "DATA",
+        "RUN",
+        "OUT_ROOT",
+        "MAX_STEPS",
+        "SAVE_STEPS",
+        "SAVE_LIMIT",
+        "WORKERS",
+        "GPUS",
+        "SINGLE_GPU",
+        "SQUAT_MAX",
+        "WANDB",
     }
     prefixes = ("LOCOMANI_", "TF_", "SIM_", "LOCKSTEP", "GYM_", "TRANSPORT_")
     return {k: str(v) for k, v in env.items() if k in names or k.startswith(prefixes)}

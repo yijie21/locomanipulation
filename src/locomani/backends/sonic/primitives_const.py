@@ -8,8 +8,6 @@ aiming.
 
 from locomani.backends.sonic.config import DEFAULT_BACKEND
 
-# Module-level default, not an env read (decision 8): SonicBackendConfig.hand is
-# never actually overridden in any script today, so this constant IS that default.
 HAND = DEFAULT_BACKEND.hand
 
 # Palm(wrist)-frame vector to the point the jaw closes on.

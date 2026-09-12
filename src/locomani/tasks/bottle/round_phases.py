@@ -1,23 +1,7 @@
-"""`_run_round`'s five phases, split out of grasp_gym.py (refactor step 4b,
-pure extraction; decision 9's file-size cap). Every statement here is
-unchanged from the original inline body -- only the packaging moved:
-each closure's captured locals became a field on `RoundContext`, and the two
-helpers used from more than one phase (`_rel_dbg`, `_rel_now`) became plain
-functions taking `ctx` instead of nested closures. The last two phases
-(`_phase_approach`, `_phase_grasp_and_verify`) live in round_phases_approach.py
-instead -- all five here would not fit this file's own 600-line cap.
+"""Bottle spawn, navigation and handover phases.
 
-This module must not import `locomani.tasks.bottle.grasp_gym` at its own top
-level: grasp_gym.py imports names from here (`_run_round`'s new home is
-grasp_gym.py itself, calling these phases in sequence -- see the docstring on
-`_run_round`), so a module-level import in the other direction would make the
-two files a load-order-sensitive circular import. Nothing here needs anything
-of grasp_gym.py's at import time anyway; `RoundContext` already carries the
-one-time snapshot of grasp_gym's monkeypatchable globals (`vla_policy`,
-`arm_pin`, `video_include_init`, `edge_min`, `raise_lead`,
-`raise_finish_max_s`, `palm_drift_max`) that `_run_round` takes before
-calling phase 1, and `_phase_spawn_and_settle`'s one direct reference to
-`grasp_gym.obj_top` is a deferred, in-function import for the same reason.
+RoundContext carries explicit run settings and state shared between phases.
+Approach and grasp phases live in round_phases_approach.py.
 """
 
 from __future__ import annotations
@@ -48,15 +32,7 @@ from locomani.tasks.bottle.tabletop_grasp import TabletopGrasp, TabletopTarget
 
 @dataclass
 class RoundContext:
-    """Everything one `_run_round` call threads through its phases.
-
-    The first block is `_run_round`'s own parameters, unchanged; the second
-    is grasp_gym.py's monkeypatchable globals, snapshotted once per round by
-    `_run_round` itself (so a caller can still override any of them by
-    assignment -- eval_closed_loop.py sets grasp_gym.VLA_POLICY, for one);
-    the third is state a phase computes for a LATER phase to use -- each
-    field names the closure that used to capture it.
-    """
+    """Explicit round inputs, runtime settings, and intermediate phase state."""
 
     # -- _run_round's own parameters -----------------------------------
     p: Any
@@ -91,7 +67,7 @@ class RoundContext:
     task_config: Any = None
     round_id: int | None = None  # the manifest's own round number, so a trace file joins to it by name
 
-    # -- grasp_gym.py globals, snapshotted once per round --------------
+    # -- resolved runtime settings and control thresholds --------------
     vla_policy: Callable | None = None
     arm_pin: bool = False
     video_include_init: bool = False

@@ -18,9 +18,9 @@ needs them. They are not startup reading.
 
 - Parse configuration at the entry; pass explicit values to consumers. Keep changes
   local to the owning module and extend its existing interface.
-- Run the relevant tests from the change map, then `make check`. The repository
-  checker rejects new forbidden imports, broken navigation and oversized entry
-  documents; its errors identify the corrective action.
+- Run selected tests with `make test TESTS="tests/test_name.py"`; this uses the
+  configured CPU environment. Then run `make check`. The repository checker rejects
+  new forbidden imports, broken navigation and oversized entry documents.
 - Record checks actually run and remaining uncertainty. Experimental claims follow
   the [evidence rules](docs/reference/standards.md#evidence).
 - Preserve other sessions' edits. Stage explicit paths. Use isolated worktrees for

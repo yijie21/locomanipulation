@@ -76,6 +76,8 @@ def main(argv=None):
     cfg = PilotConfig.load(args.config) if args.config else PilotConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
+    if cfg.steps <= 0 or cfg.save_steps <= 0:
+        raise ValueError("steps and save_steps must be positive")
     task_cfg = BottleTaskConfig.load(args.task) if args.task else BottleTaskConfig()
     SPAWN = spawn_argv(task_cfg.spawn)
     collect_backend = SonicBackendConfig(no_encoder=False)
@@ -92,15 +94,6 @@ def main(argv=None):
     if not scene.exists():
         shutil.copytree(args.scene, scene)
     token = args.initial_token_file.resolve()
-    if not (out / "config_snapshot.json").exists():
-        write_config_snapshot(
-            out,
-            task_cfg=task_cfg,
-            backend_cfg=collect_backend,
-            pilot_cfg=cfg,
-            started=time.time(),
-            inputs=dict(scene=file_digests(scene), initial_token=digest(token), reach_config=digest(reach_cfg_path)),
-        )
 
     stack_env = dict(kv.split("=", 1) for kv in cfg.stack_env)
     base_env = dict(
@@ -114,6 +107,25 @@ def main(argv=None):
     )
     for k in ("NO_ENCODER", "CLEAN_DEPLOY", "SIM_VIDEO_DIR", "TF_INIT_TOKEN_FILE", "CUDA_VISIBLE_DEVICES"):
         base_env.pop(k, None)
+
+    snapshot_env = stack.resolve_env(
+        collect_backend,
+        task_cfg,
+        instance=0,
+        gpu=stack_env.get("CUDA_VISIBLE_DEVICES", "0"),
+        inherit=base_env,
+        extra_env=dict(stack_env, **dict(kv.split("=", 1) for kv in cfg.gym_env)),
+    )
+    if not (out / "config_snapshot.json").exists():
+        write_config_snapshot(
+            out,
+            task_cfg=task_cfg,
+            backend_cfg=SonicBackendConfig.from_dict(json.loads(snapshot_env["LOCOMANI_BACKEND_JSON"])),
+            pilot_cfg=cfg,
+            started=time.time(),
+            runtime_env=snapshot_env,
+            inputs=dict(scene=file_digests(scene), initial_token=digest(token), reach_config=digest(reach_cfg_path)),
+        )
 
     stages = Stage(out)
 
@@ -130,6 +142,7 @@ def main(argv=None):
             extra_env=settings,
             runner=stages.run,
             name=name,
+            receipt_path=out / "deploy_receipts.jsonl",
         )
 
     def done(stage):
@@ -237,7 +250,7 @@ def main(argv=None):
         if not done("convert"):
             for d in (train_ds, val_ds):
                 if d.exists():
-                    shutil.rmtree(d)
+                    raise RuntimeError(f"partial conversion exists at {d}; inspect it and use a new output directory")
             run(
                 "convert",
                 [
@@ -279,10 +292,14 @@ def main(argv=None):
             return
 
         # ---------------- train ----------------
-        ckpt = out / "model" / f"checkpoint-{cfg.steps}"
+        # The trainer always saves final weights to model/; periodic checkpoint
+        # directories exist only when the final step lands on the save interval.
+        ckpt = out / "model"
+        if cfg.steps % min(cfg.save_steps, cfg.steps) == 0:
+            ckpt = ckpt / f"checkpoint-{cfg.steps}"
         if not done("train"):
             if (out / "model").exists():
-                shutil.rmtree(out / "model")
+                raise RuntimeError("partial model exists; inspect it and use a new output directory")
             run(
                 "train",
                 ["bash", ROOT / "scripts/train_bottle.sh"],
@@ -291,11 +308,7 @@ def main(argv=None):
                     RUN="model",
                     OUT_ROOT=str(out),
                     MAX_STEPS=str(cfg.steps),
-                    # SAVE_STEPS deliberately mirrors `steps`, not `save_steps`: the
-                    # original argparse never wired --save-steps to this env var
-                    # either (pre-existing, left unchanged -- decision 8 does not
-                    # fix unrelated bugs).
-                    SAVE_STEPS=str(cfg.steps),
+                    SAVE_STEPS=str(min(cfg.save_steps, cfg.steps)),
                     SAVE_LIMIT="1",
                     WANDB="0",
                     WORKERS="2",  # one checkpoint (disk)
@@ -319,7 +332,7 @@ def main(argv=None):
             ev.mkdir(exist_ok=True)
             eval_env = start(
                 "start_eval_stack",
-                SonicBackendConfig(),
+                SonicBackendConfig(dataset_fps=25.0),
                 dict(stack_env, NO_ENCODER="1", SIM_VIDEO_DIR=str(ev / "videos")),
             )
             stack_up = True

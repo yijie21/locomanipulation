@@ -25,7 +25,8 @@ def test_resolved_environment_does_not_inherit_another_instances_ports_or_option
     assert inherited["INSTANCE"] == "0"
     assert env["INSTANCE"] == "1" and env["NO_ENCODER"] == "0"
     assert env["CUDA_VISIBLE_DEVICES"] == env["MUJOCO_EGL_DEVICE_ID"] == "1"
-    for name in ("TF_SONIC_PORT", "SONIC_DDS_DOMAIN", "TF_OBS_DUMP", "TF_INIT_TOKEN_FILE"):
+    assert env["TF_SONIC_PORT"] == "5566"
+    for name in ("SONIC_DDS_DOMAIN", "TF_OBS_DUMP", "TF_INIT_TOKEN_FILE"):
         assert name not in env
 
 

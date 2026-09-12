@@ -1,6 +1,7 @@
 # Developer checks (docs/reference/standards.md). `make check` is what pre-commit runs.
 PY_SIM := third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 RUFF   := /venv/main/bin/ruff
+TESTS  ?= tests
 
 .PHONY: check format lint test test-sim gate-bottle gate-crate config-doc cli
 
@@ -22,10 +23,10 @@ config-doc:
 	python3 scripts/gen_config_reference.py
 
 test:
-	$(PY_SIM) -m pytest -x -q tests
+	$(PY_SIM) -m pytest -x -q $(TESTS)
 
 test-sim:
-	$(PY_SIM) -m pytest -x -q tests --run-sim
+	$(PY_SIM) -m pytest -x -q $(TESTS) --run-sim
 
 # Task-plugin CLI (locomani/cli.py), e.g. make cli ARGS="collect --task bottle --out outputs/x --scene outputs/scene/sim"
 cli:

@@ -36,20 +36,6 @@ class BackendTests(unittest.TestCase):
         self.assertNotIn("SONIC_DDS_DOMAIN", env)  # start_stack.sh derives it from INSTANCE
 
 
-class ExpertEnvTests(unittest.TestCase):
-    def test_port_block_is_dropped_so_one_formula_survives(self):
-        """The experts use os.environ.setdefault for their ports, so an inherited
-        instance-0 block (scripts/paths.sh exports one whenever INSTANCE is unset)
-        would win over locomani.sim.ports and point them at another stack."""
-        env = R.expert_env(
-            dict(INSTANCE="1", TF_SONIC_PORT="5556", TF_CAMERA_PORT="5555", SONIC_DDS_DOMAIN="0", HOME="/root")
-        )
-        self.assertEqual(env["INSTANCE"], "1")
-        self.assertEqual(env["HOME"], "/root")
-        for k in ("TF_SONIC_PORT", "TF_CAMERA_PORT", "SONIC_DDS_DOMAIN"):
-            self.assertNotIn(k, env)
-
-
 class ArgvTests(unittest.TestCase):
     def _args(self, *extra):
         return R.parse_args(["--out", "/tmp/x", *extra])

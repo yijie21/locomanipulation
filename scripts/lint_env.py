@@ -25,7 +25,8 @@ WHITELIST = {
     "LOCOMANI_ROOT",
     "LOCOMANI_WORKSPACE",
     "LOCOMANI_SIM_DIR",
-    "LOCOMANI_BACKEND_JSON",  # one serialized config at the Python child-process entry
+    "LOCOMANI_BACKEND_JSON",
+    "LOCOMANI_DEPLOY_RECEIPTS",  # launcher/restart content-identity journal path  # one serialized config at the Python child-process entry
     "SONIC_ROOT",
     "SONIC_DEPLOY_ROOT",
     "SONIC_DEPLOY_BIN",

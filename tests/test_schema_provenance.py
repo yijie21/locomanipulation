@@ -55,3 +55,28 @@ def test_checkpoint_identity_hashes_shards_and_normalization(tmp_path):
     second = checkpoint_identity(tmp_path)
     assert first["files"]["model-00001.safetensors"] == second["files"]["model-00001.safetensors"]
     assert first["files"]["processor/statistics.json"] != second["files"]["processor/statistics.json"]
+
+
+def test_deploy_receipt_records_foreign_cwd_and_keeps_each_launch(tmp_path, monkeypatch):
+    from locomani.pipeline.provenance import record_deploy
+
+    normal = tmp_path / "normal"
+    foreign = tmp_path / "foreign"
+    for root, content in [(normal, b"aaaa"), (foreign, b"bbbb")]:
+        (root / "policy/custom").mkdir(parents=True)
+        (root / "policy/custom/model_decoder.onnx").write_bytes(content)
+        (root / "target/release").mkdir(parents=True)
+        (root / "target/release/g1_deploy_onnx_ref").write_bytes(b"executable")
+    env = dict(
+        SONIC_DEPLOY_ROOT=str(normal), CLEAN_DEPLOY="1", CLEAN_DEPLOY_ROOT=str(foreign), SONIC_POLICY="policy/custom"
+    )
+    predicted = sonic_policy_identity(env)
+    monkeypatch.chdir(foreign)
+    receipt = tmp_path / "deploy_receipts.jsonl"
+    first = record_deploy(receipt, "./target/release/g1_deploy_onnx_ref", "policy/custom")
+    (foreign / "policy/custom/model_decoder.onnx").write_bytes(b"cccc")
+    second = record_deploy(receipt, "./target/release/g1_deploy_onnx_ref", "policy/custom")
+    assert first["model_decoder.onnx_sha256"] == predicted["model_decoder.onnx_sha256"]
+    assert first["model_decoder.onnx_sha256"] != second["model_decoder.onnx_sha256"]
+    assert first["cwd"] == str(foreign)
+    assert len(receipt.read_text().splitlines()) == 2
