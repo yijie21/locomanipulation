@@ -39,6 +39,8 @@ contributors can find them without conversation history or an agent's private me
 [training](training.md), [evaluation](evaluation.md), [rendering](rendering.md),
 [crate collection](crate_collection.md), [ScaleBFM collection](scalebfm_collection.md),
 [pick and place](pick_place_collection.md).
+Crate expert redesign: [visual guidance and privileged-information contract](handoff/crate-visual-expert-design.md)
+(proposal; read when implementing the new expert or reviewing its training data).
 These tutorials include historical experiments and explanations. Their presence in
 this index does not validate their measurements or causal conclusions.
 
