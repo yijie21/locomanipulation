@@ -3049,3 +3049,28 @@ run7 新出现两局 `[grasp] local alignment disturbed target or base`(前两�
 align 起点是抓取腕点上方 8 cm 的 pregrasp,而推进步长上限 `STEP_M` 是 0.2 m/s —— 9 cm 的下降只要 0.45 s,
 横向还有 1-3 cm 残差时指尖就扫到瓶子了(t=0 height −8.3 cm → t=1.1 s +1.0 cm)。
 **没有调它**:这是下一个该看的地方(下降速率按横向残差缩放,或者对齐到位再降),不是这次的结论。
+
+## 36. 每批第 1 局在出生阶段必败:标定时的 start_control 抢占了朝向锚(2026-09-10,session cf)
+
+> 这一节是分支 `fix/first-round-anchor` 上的内容,2026-09-12 合并时按 append-only 惯例移到文末并从 §14 改号为 §36。
+> 正文未改。分支里引用它的地方(`collection.md`、`silent_failures.md`)写的是「台账 bottle §14」,即本节。
+
+**现象**:`visible10_20260910`(2/2)与 `visible200_20260910`(17/17,截至第 17 批)每批的第 1 局都在出生阶段失败:
+`[stand] could not turn N deg to the approach heading at the spawn (turn_to -88deg timed out)` 11 次、
+`[view] object not in ego view at spawn` 6 次;第 2–10 局这两种失败一次没有。代价:每批白跑 1 局(~25 s + 10% 局数),
+两条失败串混进 manifest 的 failure_reasons。
+
+**根因**:`grasp_gym` 的场景装配在 stack 起来后做一次名义出生点标定——复位到名义位姿、`start_control()`、IDLE 2.5 s。
+deploy 在它的**第一次** `start_control` 处捕获朝向锚(memory `sonic-planner-heading-anchor`),这时机器人朝向 yaw 0。
+`round_phases._phase_spawn_and_settle` 用 `p._gym_started` 判断"这台 deploy 是否已经带锚":为 True 走 hold 1.5 s + `reanchor`,
+为 False 走"锚 = 落地 yaw"。标志只在 round 阶段置 True,标定处没置,于是第 1 局 teleport 到 yaw ≈ −90° 后被当作新 deploy,
+锚差 ~90°,IDLE facing 要么转不到(超时)要么站起来面朝别处(物体出视野)。第 2 局起标志为 True,正常。
+2026-09-10 之前每局重启 deploy 时第 1 局同样跳过重启("标定已在这台 deploy 上跑过"),所以这个坑一直在,只是每批 1 局、被 yield 吞掉。
+
+**修法**(commit 见下):`grasp_gym.start_control_once(p)` = `start_control()` + `p._gym_started = True`,标定处改用它;
+`fresh_deploy` 重启后仍置 False。回归测试 `tests/test_review_2026_09_10.py::FirstRoundAnchorTests`。
+
+**验证**(`outputs/experiments/firstround_fix_20260910`,修复分支的 src,同配方 3 批 × 4 局,seed0 32000,10:45–10:53 UTC):
+每批第 1 局 **3/3 过出生阶段**(`turn_to done`、produced)——1 局 EPISODE OK(40 s),2 局在抓取阶段以普通原因失败
+(stand infeasible、coupled IK did not track),与第 2–4 局同分布;主线同日 0/34。12 局共 4 OK,样本小、失败类型正常,
+不作 yield 结论。**裁定**:合并;以后每批多出 1 局有效样本(采 200 条少跑约 34 局、约 15 分钟)。
