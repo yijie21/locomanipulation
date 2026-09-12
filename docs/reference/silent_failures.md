@@ -12,6 +12,7 @@
 | **`grasp_gym.py`** | **唯一采集入口**。一局的全部流程:采样 → 复位 → 走 → 接近 → 抓 → 抱稳,以及所有成功判据 |
 | `primitives.py` | 动作原语:`walk_to` / `turn_to` / `reach` / `stand_up` / `carry_pose`,以及世界系↔骨盆系换算 |
 | `stream_reach.py` | 伸手与抓取的 50 Hz 伺服状态机(`PlannerArm`、`grasp_streamed`) |
+| `teleop_arm.py` | **VR 3-point 通道**的手臂接口(`TeleopArm`):腕/颈位姿目标,deploy 的 encoder 走 `teleop` 模式,手臂与腰由 policy 自己解;没有 IK。配套执行器 `tasks/bottle/teleop_grasp_policy.py`,开关 `ReachConfig.teleop_arm`(ledger bottle.md §35) |
 | `agent_server.py` | ZMQ 发布端,占据 Pico 遥操作服务器的位置(`frame` / `set_upper_body` / `token_frame`) |
 | `reach_map.py` | 可达域体素图:骨盆系里哪些位置**抓得到**,以及站位联合求解 |
 | `adaptive_grasp.py` | 从手当前的位置反推抓取朝向与进刀轴 |
@@ -233,14 +234,21 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/tasks/bottl
 
 ## 常用诊断脚本
 
-`src/teleop_free/diag_*.py`(都用 `.venv_sim` 的 python,在 stack 起来后运行)。
-结论都写在各自的 docstring 里 —— **它们是这个仓库大部分"为什么是这个数"的出处**。
+都用 `.venv_sim` 的 python,在 stack 起来后运行;结论都写在各自的 docstring 里 —— **它们是这个仓库
+大部分"为什么是这个数"的出处**。
+
+**路径注意(2026-09-12 核对)**:老路径 `src/teleop_free/diag_*.py` 已不存在,而且下表里**大部分脚本已被
+refactor step 2 删除**,只在 git 历史里(`78536ae:src/teleop_free/`)。今天真正在树上的是
+`src/locomani/backends/sonic/diag_{lean,shuffle,wrist,vr3pt}.py`、`src/locomani/tasks/bottle/diag/diag_*.py`、
+`src/locomani/rtc/diag_*.py`。**数字过期时的标准做法是把脚本恢复回来重测,而不是引用旧结论**
+(`diag_wrist.py` 2026-09-11、`diag_lean.py` 2026-09-12 都是这么做的;两次都发现旧数字只对 `policy/release` 成立)。
 
 | 脚本 | 回答什么 |
 |---|---|
 | `diag_channel.py` + `diag_channel_report.py` | planner 通道 vs streamed 通道的手臂投递精度(216 样本) |
 | `diag_squatmode.py [--sweep]` | `IDEL_SQUAT` 的蹲深,以及 `height` → 骨盆高度的标定曲线 |
-| `diag_lean.py` | 命令的腰部前倾有多少被交付(答案:2–10%,基本不交付) |
+| `diag_vr3pt.py` | VR 3-point 腕/颈目标在 **encoder `teleop` 模式**下的交付(位置比、伺服残差、旋转、蹲下时手掌世界系漂移、颈点前倾→腰)。2026-09-12 实测 `outputs/diag/vr3pt_20260912/`:v1.1 reach 1.16 / 伺服残差 2.6 cm / 旋转 0.88 / 蹲 0.10 m 手掌只漂 2.3 cm / 颈前倾→腰 1.05;release 1.38 / 6.1 cm / 0.67 / 2.4 cm / 0.02。它顺带打印 deploy.log 里的 `[Mode Filter] Switched to mode 'teleop'` 一行 —— 没这一行的测量都是在 `g1` 模式下测的,腕字段是死的(ledger bottle.md 34 就是这样测出 0.01 的) |
+| `diag_lean.py` | 命令的腰部前倾有多少被交付(**答案随 checkpoint 变**:`policy/release` 0.09、`policy/sonic_v1_1` 0.87,2026-09-12 实测 `outputs/diag/lean_20260912/`;老文档里"2–10%,基本不交付"只对 release 成立) |
 | `diag_height.py` | `height` 字段在 IDLE / SLOW_WALK 下是否有效(答案:没有) |
 | `diag_ego_geom.py` | 物体在 ego 相机里的可见距离区间,随躯干前倾的变化 |
 | `diag_token_replay.py --phase capture/replay` | 录下的 token 能否复现动作 |
@@ -270,7 +278,9 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 |---|---|
 | 双臂 pilot 每集只有 25 s、视频 10–12 s、日志里没有 `[walk]` 行 | 跑的是 ready-stand 变体。`WALL_WALK` / `WALL_FEATURE` 环境变量 2026-09-09 起不再被读(旋钮在 `CrateTaskConfig`,`wall_walk` 默认 false);给 `run_wall_pilot.sh` 传 `--config configs/tasks/crate_wall.json` 或 `--set wall_walk=true`。runner 现在见到这两个变量会拒绝启动(2026-09-10) |
 | 所有 stack 结果同时变差:走位失控、"ready posture not delivered"、复位后摔倒,日志里没有一句提到 CPU | 容器 cgroup CPU 配额只有 15.36 核(`/sys/fs/cgroup/cpu.max`),`nproc` 的 32 和 load average 都是宿主机的数。别的任务把配额占满时 sim 实时因子掉到 0.18、gym 循环 9 Hz(2026-09-10,`/workspace/code/video_grasp` 的 benchmark)。起 stack 前 `bash scripts/cpu_headroom.sh`,余量 < 6 核或有 throttle 就别开;pose sidecar 的 `t` 对 `wall` 跨度可以事后算实时因子 |
-| 双臂并排视频里没有 ghost hands | `trace/` 里没有 `<label>_NN_ghost.npz`:采集时没设 `SIM_STATE_TRACE_DIR`、设了 `GHOST_TRACE=0`,或者是 2026-09-10 之前录的。渲染脚本只在文件存在时才画 |
+| 双臂并排视频里没有 ghost hands | `trace/` 里没有 `<label>_NN_ghost.npz`。2026-09-11 之前:runner 只在调用者自己 export 了 `SIM_STATE_TRACE_DIR` 时才传 `--ghost-trace`,而 runner 自己不设,所以默认其实是关的(`render_wall_pilot.sh` 的注释写成"默认传",是错的)。现在 driver 默认写 `<out>/trace`,`--no-state-trace` 才关。渲染脚本只在文件存在时才画 |
+| 双臂 pilot 的 10 集验收数字对不上、或 `gate.py compare crate` 的样本数多于跑过的局数 | 2026-09-11 之前每次 pilot 都写同一个 `outputs/videos/wall_pilot/manifest.jsonl`,而 expert 是以 **append** 打开它的:两次 pilot 混成一份,`gate.py` 把它当一个总体读。现在一个 run 一个目录(`OUT=`,不给就按时间戳新建),同目录跑第二次会被拒(续跑用 `--resume`),manifest 是 `manifest_NN.jsonl` |
+| 直接调 `bimanual_wall.py` / `bimanual_carry.py`,它却连到了另一个 instance 的栈 | expert 用 `os.environ.setdefault` 取端口,所以**继承来的** `TF_*` 会压过 `locomani.sim.ports` 的公式。任何 source 过 `scripts/paths.sh` 而当时 `INSTANCE` 未设的 shell,都导出了 instance 0 的整块端口。`run_crate_pilot.py` 起 expert 前会把这一块从 env 里删掉,只留 `INSTANCE`;手工起 expert 时要么先 `unset` 它们,要么在 export `INSTANCE` 之后再 source `paths.sh`(2026-09-11) |
 | （**2026-09-10 已修**）手写 `grasp_gym.py --task-config configs/tasks/xxx.json` 跑出来的局和采集线对不上 | 修复前 `--task-config` **只读 `goal` 和 `place` 两段**(它自己的 help 就这么写)。`reach` 段不生效 → reach config 退回 dataclass 默认值,`ready_grasp_recovery=False`,每局在 grasp 阶段被 `ready_grasp_recovery=False is retired` 直接拒绝(走近那段其实是成功的,很容易误读成控制器坏了);`spawn` 段也不生效 → 吃 grasp_gym 的宽默认(±90° 朝向偏差),机器人侧对桌子醒来,整批卡在 `[view] object not in ego view at spawn`,而且 cam **y** 出界(采集线正常的偶发失败是 cam **x** 出界)。现在 `--task-config` 携带整份 profile(reach + spawn + target + stand_retries),命令行显式给的仍然优先;`grasp_gym` 另外会在启动时拒绝跑不出结果的 reach 标定(`ready_grasp_recovery=False`),不再等走到瓶子跟前才失败。`scripts/collect_pilot.sh` 从重构 step 2 起到这次修复之前一直采不出任何一集,同因(2026-09-10,连踩三次) |
 | （**2026-09-10 已修**：`--record` 现在启动时检查 exporter，没有就拒绝）`--record` 跑完一批,`$LOCOMANI_TMP/p03*/outputs` 下没有新 session | 用了 `INSTANCE≠0`。`start_stack.sh` 只在 instance 0 起 exporter,别的实例打印 `[3/3] data exporter — skipped (instance N records no episodes)` 就跳过了,gym 照跑但什么都不落盘。采集只能用 instance 0;要避开别人换 **GPU** 而不是换 instance(`CUDA_VISIBLE_DEVICES`)(2026-09-10) |
 | （**2026-09-10 已修**：端口统一由 `locomani.sim.ports` 按 `INSTANCE` 推导）换了 `INSTANCE` 之后 gym 立刻 `no privileged state on :5581 after 10s` | 修复前 gym 不读 `INSTANCE`。stack 按 instance 挪到 5565/5566/5591,gym 仍用 instance-0 默认端口绑 :5556、等 :5581。`INSTANCE` 只在 `start_stack.sh` 自己的 shell 里展开成 `TF_*`;要让 gym 跟过去,得把 `TF_SONIC_PORT` / `TF_PRIVILEGED_PORT` / `TF_KEYBOARD_PORT` 一起 export(2026-09-10) |
@@ -278,6 +288,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | 进程存活检查 `pgrep -f <name>` 命中一堆无关 shell | `pgrep -f` 匹配整条命令行,任何命令行里出现过该字符串的 `zsh -c` / `bash -c` 都会被算作"正在运行",连两天前的僵尸 shell 也算。要求 `comm` 真的是 python:`ps -eo comm,args --no-headers \| awk '$1 ~ /^python/ && /run_sim_locomani[.]py/'`。同一类坑还有 `pkill -f` 打到自己(见台账)(2026-09-10) |
 | `start_stack.sh` 卡在 `[2/3]` 十分钟 | 首次运行在编译 TensorRT engine,正常。之后走缓存,20–40 s |
 | 没打印 `stack up` | 去 `$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log` 看是哪一个没起来 |
+| planner 消息里给了 `vr_position` 腕目标,手掌却只动命令量的 ~1%(两个 checkpoint 都一样) | **字段的"有无"是 encoder 模式开关,不是 `stream_mode`**:deploy 在 `has_vr_3point_control_` 的**上升沿**把 encoder 切到 `teleop`(mode 1,腕目标才是伺服输入),下降沿切回 `g1`(mode 0,腕槽位清零),`zmq_manager.hpp:679-693`;而 `Planner()` 初始化和每次 safety reset 都把模式重置回 0(`cpp:3770`、`zmq_manager.hpp:498`)。2026-09-12 之前 `AgentCommander.frame()` 从开机起**每一帧**都带该字段,上升沿在 planner 初始化之前就烧掉了,之后再没有沿 —— deploy 一直停在 `g1`。现在字段只在 `cmd.vr_targets=True` 时发(`TeleopArm.start()` 在 planner 起来、机器人站稳、第一帧目标=实测位姿之后置位,`stop()`/`reset_pose()` 清),与 PICO manager 的时序一致。判据:deploy.log 里 `VR 3-point control enabled` 必须出现在 `Planner initialized` **之后**,并紧跟 `[Mode Filter] Switched to mode 'teleop'` |
 | deploy 起来了但机器人不动 | 检查 :5556 上是不是有**多个** commander 在发。多个进程往同一个 deploy 发冲突意图,表现就是发呆或抽搐 |
 | 每局都 `teleport did not land` / 第 3 局起 `walked N m off the spawn while standing up` | 上一局的 deploy 朝向锚没清干净。2026-09-10 起复位阶段用 `reanchor(p)` 清(不重启);若还出现,`--set restart_deploy=true` 回到每局重启对照 |
 | 没有第三人称录像 | `SIM_VIDEO_DIR` 必须在 `start_stack.sh` **之前**给,跑起来之后设无效 |

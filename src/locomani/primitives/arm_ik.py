@@ -96,12 +96,23 @@ class ArmIK:
 
     def fk(self, q_mj29: np.ndarray, side: str):
         """Palm (pos, rot 3x3) in the pelvis frame for a full joint vector."""
+        return self.body_pose(q_mj29, PALM_BODY[side])
+
+    def body_pose(self, q_mj29: np.ndarray, body: str):
+        """Any body's (pos, rot 3x3) in the pelvis frame for a full joint vector.
+
+        The VR 3-point channel needs the torso_link pose (its neck point is
+        torso_link + 0.35 m along the torso z axis) next to the two wrist
+        links, so the palm-only `fk` is the special case of this.
+        """
         mj = self._mj
+        b = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, body)
+        if b < 0:
+            raise KeyError(f"body {body} not in the scene")
         self.data.qpos[:] = 0
         self.data.qpos[self.base_qadr + 3] = 1.0  # identity base quat
         self.data.qpos[self.qadr] = q_mj29
         mj.mj_kinematics(self.model, self.data)
-        b = self.palm_bid[side]
 
         return (self.data.xpos[b].copy(), self.data.xmat[b].reshape(3, 3).copy())
 

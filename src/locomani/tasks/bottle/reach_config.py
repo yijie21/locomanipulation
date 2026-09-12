@@ -36,6 +36,7 @@ BOOL_FIELDS = (
     "visible_expert",
     "image_servo",
     "image_servo_truth_control",
+    "teleop_arm",
 )
 
 
@@ -96,6 +97,11 @@ class ReachConfig:
     # the recorded observation; it selects the action, and the audit says whether
     # that action was reproducible from the images.
     image_servo_truth_control: bool = False
+    # Grasp on the VR 3-point channel (TeleopGraspPolicy): wrist POSE targets
+    # to the controller's "teleop" encoder mode, no arm IK, no predicted squat
+    # retreat. The channel the PICO teleop and sonic_v1_1's wrist-pose
+    # augmentation were built on (ledger bottle.md 35).
+    teleop_arm: bool = False
     image_calibration: BottleCalibration = field(default_factory=BottleCalibration)  # RGB feature calibration.
     image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
@@ -114,6 +120,7 @@ class ReachConfig:
                 "visible_expert",
                 "image_servo",
                 "image_servo_truth_control",
+                "teleop_arm",
                 "image_calibration",
                 "image_control",
             ) and (type(value) not in (int, float) or not math.isfinite(value)):
@@ -175,6 +182,10 @@ class ReachConfig:
                 raise ValueError("visible brake geometry outside supported bounds")
         if self.image_servo and not (self.visible_expert and self.coupled_squat and self.timely_capture):
             raise ValueError("image_servo requires visible_expert, coupled_squat and timely_capture")
+        if self.teleop_arm and not (self.ready_grasp_recovery and self.coupled_squat):
+            raise ValueError("teleop_arm requires ready_grasp_recovery and coupled_squat (it reuses their scaffolding)")
+        if self.teleop_arm and self.image_servo:
+            raise ValueError("teleop_arm and image_servo are different executors; pick one")
         if not isinstance(self.image_calibration, BottleCalibration) or not isinstance(self.image_control, ServoLimits):
             raise ValueError("image calibration/control must be typed configurations")
         self.approach_band()

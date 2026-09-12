@@ -2827,3 +2827,225 @@ to the C++ deployment side, "your motion will directly map to the robot"),而不
 **所以下一步应该在 STREAMED_MOTION 上做,而不是继续推 planner 的腕通道** ——
 `enter_streamed()` / `pose_chunk()` 已经实现。这也是为什么协作者用 Pico 一次就顺:
 他用的是这条通道,而我们的 expert 在 planner 模式下自己做 IK。
+
+## 35. §34 的结论要改:腕通道**是**伺服目标 —— 只是我们从没让 deploy 进过 `teleop` 编码器模式(2026-09-12, 本 session)
+
+出发点是用户的问题:"协作者用 v1.1 走路、操作都没问题,为什么我们换过来这么难"。
+按记忆 `question-the-layer-when-the-list-grows` 的做法,先读 vendor 源码和协作者用的那条流程,再动一个实验。
+探针 `src/locomani/backends/sonic/diag_vr3pt.py`,runner `scripts/experiments/vr3pt_probe_20260912.sh`,
+结果 `outputs/diag/vr3pt_20260912/`(两 checkpoint 各一份 json + deploy.log 副本,视频 `outputs/videos/vr3pt_20260912/`)。
+
+### 35.1 官方 PICO 的"弯腰抓"走的是 `PLANNER_VR_3PT`,不是 STREAMED_MOTION —— §34.4 说反了
+
+`pico_manager_thread_server.py:1843-1849, 2119`:VR_3PT 模式下 manager 发的是**planner 消息**
+(`planner=True`),里面带 `vr_position`(9)/`vr_orientation`(12):左腕点、右腕点、颈点,**骨盆系**,
+点 = `wrist_yaw_link + R_link @ [0.18, ∓0.025, 0]`、颈 = `torso_link + [0,0,0.35]`,姿态 = `inv(q_pelvis) * q_link`
+(训练侧 `gear_sonic/envs/manager_env/mdp/observations.py:1348-1442` 同一公式,**用完整骨盆旋转**,不是 heading-only)。
+**PICO 侧没有任何手臂 IK**(文档原文 "non-IK-based VR 3-point calibration"),下肢仍由 k-planner 生成;
+手放哪是 **policy 自己解**的。POSE/STREAMED_MOTION 是全身 SMPL 动捕那条,和抓取无关。
+
+### 35.2 §34 测到 0.01 的真正原因:字段的"有无"是 encoder 模式开关,而我们从开机起每帧都带着它
+
+deploy 源码(三个已编译的树都有这段):
+- `zmq_manager.hpp:1180-1222`:planner 消息带 `vr_position` → `has_vr_3point_control_ = true`;不带 → false。
+- `zmq_manager.hpp:679-693`:该标志的**上升沿** → `current_motion->SetEncodeMode(1)`(`teleop`:输入是 k-planner 的
+  **下肢**参考 + 三点目标 + heading 锚,`observation_config.yaml encoder_modes[1]`);下降沿 → 回 `g1`(mode 0,腕槽位清零)。
+- `g1_deploy_onnx_ref.cpp:3770`:`Planner()` 初始化时 `planner_motion_->SetEncodeMode(initial_encoder_mode_)`(= 0);
+  `zmq_manager.hpp:498`:每次 safety reset 若在 mode 1 也打回 0。
+
+而 `AgentCommander.frame()` 在非 FROZEN 的每一帧都发 VR 字段(默认 `stream_mode` 就是 `PLANNER_VR_3PT`),
+从**开机第一帧**起。于是上升沿在 planner 初始化之前就烧掉了,初始化把模式打回 0,之后标志一直为真、再没有沿 ——
+deploy 永远停在 `g1`,`vr_3point_local_target` 被 "Not required for this mode - leave as zero"。
+两份 09-12 的 deploy.log 顺序完全一致:`VR 3-point control enabled`(:261)**先于**
+`Setting planner_motion encode mode to 0`(:265),然后一次 `teleop` 又回 `g1`(:276→:283,即 diag 的复位),此后再无切换。
+**§34.2 的"deploy 确实收到了"是对的,"不是伺服目标"是错的:收到了,但编码器不在读它的那个模式。**
+memory `sonic-encoder-sees-only-four-inputs` 早就写着 mode 0 只读四项 —— 缺的一步是问"谁把模式切到 1"。
+
+### 35.3 修法与探针:按 PICO 的时序进通道
+
+- `AgentCommander.vr_targets`(新,默认 False,`reset_pose()` 清):VR 字段**只在它为 True 时**进 planner 消息;
+  FROZEN 仍只带 `upper_body_position`;其余帧**两者都不带**。`set_neck()` 让颈点可命令(原来钉在 `nominal_neck()`)。
+- `backends/sonic/teleop_arm.py` `TeleopArm`:planner 起来、机器人站稳后,**第一帧目标 = 实测位姿**(PICO 每次进
+  VR_3PT 也这样重标定,:2094),再置位 → 上升沿落在该落的地方;世界系目标每 tick 用**实时**骨盆位姿重表达,
+  伺服侧加 `kp·clip(目标-实测)`;`stop()` 把上身钉回 FROZEN 并清字段(下降沿)。没有 IK,腰不锁。
+- 探针六条腿,`policy/sonic_v1_1` 与 `policy/release` 各跑一遍(同脚本、同 bank 位置、instance 0):
+
+| 腿 | 量 | sonic_v1_1 | release |
+|---|---|---|---|
+| 0 entry | 进 `teleop` 后 2 s 掌心 / 骨盆漂移 | 0.4 / 0.2 cm | 0.6 / 1.0 cm |
+| 0 entry | deploy.log | `Planner initialized` → `VR 3-point control enabled` → **`Switched to mode 'teleop'`** | 同 |
+| 1 reach(开环 kp=0) | 腕点到 [0.35,-0.22,-0.05](骨盆系),位移比 / 到命令点残差 | **1.16 / 4.8 cm** | 1.38 / 10.3 cm |
+| 2 servo(kp 0.6) | 残差 | **2.6 cm** | 6.1 cm |
+| 3 rotation | 掌心绕骨盆 y 转 60°,交付 / 残差 | **52.8° (0.88) / 2.2°** | 40.0° (0.67) / 5.4° |
+| 4 squat 0.10 m | 世界系目标固定:交付蹲深 / 骨盆后撤 / 俯仰 / **掌心世界系漂移** / 残差 | 0.082 / 6.7 cm / 15.0° / **2.3 cm** / 5.3 cm | 0.101 / 6.8 cm / 9.8° / 2.4 cm / 3.4 cm |
+| 5 lean | 颈点前倾 0.30 rad:腰 pitch 交付比 / 掌心世界系漂移 | **+0.316 rad (1.05) / 0.5 cm** | +0.006 (0.02) / 1.3 cm |
+
+三件事一次量出来:(a) 腕通道在 `teleop` 模式下**就是伺服**,v1.1 比 release 好一倍(残差 2.6 vs 6.1 cm)——
+model card 那句 "wrist-pose augmentation" 终于落在它所指的通道上;(b) **蹲下时 policy 自己补掉了骨盆的后撤和俯仰**
+(掌心世界系只漂 2.3 cm,而 §32/§33 里 `project_squat` 预测不到的那部分是 3.5–6.6 cm)—— 也就是说 0.8 那个常数、
+`squat_prediction_*`、`coupled_terminal_ik` 的整套预测-拒绝机制,在这条通道上**没有存在的理由**;
+(c) **腰是颈点命令出来的**:v1.1 交付 1.05,而手在世界系里没动 —— crate 线 09-12 量到的"planner 关节通道 0.09/0.87"
+是另一条通道的数字,这条通道上 release 才是那个不交付的(0.02)。
+
+第一次探针用了相对位移 +0.15/-0.08(从垂手 rest 出发),把点放到骨盆下 35 cm、超出站立包络,ratio 0.71、残差 16 cm;
+改成抓取带的绝对点后才是上表 —— 记着:**通道测试的目标要在包络内,否则量的是包络不是通道**
+(`vr3pt_sonic_v1_1_run1_relative.json` 留作对照)。第一次跑时 lean 腿也无效(颈点当时还没接线)。
+
+### 35.4 落到 expert:`TeleopGraspPolicy`(`tasks/bottle/teleop_grasp_policy.py`,`ReachConfig.teleop_arm`)
+
+沿用 `CoupledGraspPolicy` 的 brake / stand / 蹲深脚手架,换掉执行:`assess()` 只做几何筛(蹲深范围、地面、初始清障)
+并从模板挑**姿态**,**不再因 IK 解不出而拒绝站位**;`finish()` 在 `TeleopArm` 上做 蹲+运到 pregrasp(世界系目标,
+蹲的后撤靠测量补)→ 对实测物体 local align(L 形:先横向对齐再进刀,`closure_geometry` + `closure_clear` + 
+`CaptureStability` 判"就位")→ 合手 → 抬 10 cm。阶段名保持 gate 认识的那套。
+profile `configs/tasks/bottle_visible_teleop.json` = `bottle_visible.json` + `teleop_arm: true`。
+runner `scripts/experiments/teleop_pilot_20260912.sh`,bank 用 §33 那 10 个位置(`cases10_visible.json`,
+coupled 策略上 release 4/10、v1.1 0/30)。**pilot 结果见 35.5(写入时补)。**
+
+### 35.5 pilot:同一 bank 上 coupled v1.1 0/30 → teleop v1.1 **6/10**(runs 3–4),失败三种各有名字
+
+runner `scripts/experiments/teleop_pilot_20260912.sh`,`outputs/experiments/teleop_pilot_20260912/`,每次 10 局、`--record`(6 局都落了 episode)。
+
+| run | 变量 | 结果 | 失败 |
+|---|---|---|---|
+| run1 (`sonic_v1_1_run1_crash`) | 首版 | 第 1 局 align 12 s 不过 → 我的超时分支崩 | 位置 1.1 s 就进容差(depth +0.3 / lat −0.5 / h −1.1 cm),但 `closure_clear` 一直报 **`baseline shoulder/elbow comfort limit`** —— 那是给我们 IK 分枝定的关节舒适界,量的却是 policy 自己选的关节 |
+| run2 (`_run2_comfortveto`) | 加遥测 | 同上,确认机制 | 同上 → `TeleopGraspPolicy.reference_check` 只留碰撞筛,不看关节界 |
+| run3 (`_run3_badbank_grazeclose`) | 去掉关节界 | 0/10:6 局 `[view] object not in ego view at spawn`,2 局合手后 **抬起 0.000 m**,2 局 jaw_tilt 超时 | (a) bank 选错:`cases10_visible.json` 是 09-10 的 badspawn bank(出生 1.1–3.0 m),任何手臂都过不了 6 局;(b) 合手用了 StreamedArm 的"首次接触 +0.28"规则,接触在 alpha≈0.1 的一次擦碰上被锁住,停在 0.010 —— 4.5 cm 的瓶子上 6.6 cm 的爪距,`touching` 为真、夹持力为零 |
+| **run4** (`_run4_6of10`) | §33 的 bank `cases10_az374.json`;合手改成 servo 的"持续 3 tick 双指接触 + 再走 0.6"规则;姿态也做反馈(`KP_ROT` 0.6) | **6/10**,抬起 7.4 / 7.9 / 8.7 / 7.9 / 11.1 / 9.9 cm,6 局都过了 carry+hold 尾巴 | 第 1 局 spawn 转身超时(release 在这个 bank 的第 1 局也是它);第 2、6 局 **蹲的时候把瓶子扫倒**(手停在抓取腕点上 8 cm 的 pregrasp,身体下 8 cm、后撤 8 cm、俯仰,滞后的指尖擦到瓶顶,sidecar 里 quat_w 0.30→0.67 在蹲的 1.5–2.1 s 内);第 8 局 jaw_tilt 0.34–0.37 超 0.30,而位置全在容差内 —— 模板姿态自带 0.21 的 jaw tilt 加 10° 姿态残差 |
+
+对照:同一 bank、同一 checkpoint,coupled 策略 **0/30**(§33);release + coupled 4/10。
+**换通道不是"调好了",是把三个静默机制拿掉了**:IK 拒绝(`coupled_terminal_ik`)、预测后撤(0.8)、关节舒适界 —— 每一个都是给 release 时代的自家 IK 定的,
+在 policy 自己解手臂的通道上没有对应物。**run4 的 6 局成功里,`squat_delivered_pose.retreat_m` 6–10 cm、pitch 13–15°,没有任何预测,手掌世界系残差 2 cm 上下**。
+
+run5(进行中,v1.1 与 release 配对):(a) **先悬停再蹲**——手先到抓取腕点上 0.15 m 的 hover,蹲的时候 hover 在世界系里被握住,蹲完再沿进刀轴下降;
+(b) `level_jaw()` 把模板姿态绕进刀轴转到 jaw 水平(模板自带 0.20 rad tilt 是给自家 IK 的舒适选择,这条通道上不需要)。
+
+### 35.6 run5 配对:**v1.1 7/10 对 release 3/10**,而且 release 的失败是一个机制,不是散的
+
+同一 bank、**同一份代码**(两条腿之间没有任何改动)、只有 `SONIC_POLICY` 不同,
+`outputs/experiments/teleop_pilot_20260912/{sonic_v1_1_run5,release_run5}/`,
+报告 `scripts/experiments/teleop_pilot_report_20260912.py`。
+
+|  | sonic_v1_1 | release |
+|---|---|---|
+| 成功 | **7/10**(过了 spawn 的 7/9) | 3/10 |
+| 逐局配对 | **4 : 0** 判给 v1.1 | McNemar 精确 **p = 0.125** |
+| 蹲后腕残差 | **1.2–3.7 cm** | 2.9–3.9 cm |
+| local align 用时 | 1.5–4.4 s | 1.8–5.3 s |
+| 抬起 | 8.4–11.6 cm | 12.2–13.8 cm |
+| 失败的高度误差 | align 末段中位 **−0.6 cm** | **7 次失败全是 +2.2…+7.4 cm**(中位 2.8),残差 3.9–11.4 cm |
+
+**~~这是这条线上 v1.1 第一次赢过 release~~ —— 这句话在 §35.10 被我自己推翻了**:run6 修好那两个门之后 release 从 3/10 变成 6/8,4:0 是**我的门**造成的,不是 checkpoint 的差别。(§33 在同一 bank 上是 release 4/10 对 v1.1 0/30。)
+4:0 在 10 局上还不够判(记忆 `ten-round-pilots-cannot-measure-this-line`,p=0.125),
+**但 release 的 7 次失败共用一个机制**:它在这条通道上**系统性地停高约 3 cm**,越过 `HEIGHT_TOL=0.020`——
+和探针测到的 release 伺服残差 6.1 cm(v1.1 2.6 cm)是同一件事。失败不是抖出来的。
+
+两个仍然属于**我自己**的失败,都是"私有常量比验收判据还紧",在自家驱动关节的通道上成立、在 policy 自己握着手臂的通道上不成立:
+- **round 4**:`safe True` 从 t=2.1 s 一直到 7.4 s 还是超时。卡的是 `CaptureStability` 的速度门——
+  它按**逐 tick(20 ms)**估相对速度,而 0.035 m/s 是当年对着我们自己限速的关节流标定的;
+  这条通道上 policy 自己握着手臂,1 mm 的抖在 20 ms 上读成 0.05 m/s,在 0.2 s 上读成 0.005–0.01 m/s。
+  改的是**估计的基线,不是阈值**(`SPEED_WINDOW_S = 0.2`),而且只改我自己的循环,`CaptureStability` 是和 coupled 线共用的,不动。
+- **round 5**:lat 停在 −2.4…−2.9 cm,depth 冻在 +10.5 cm 整整 12 s。我的 L 形门在横向 >1.8 cm 时不许进刀,
+  而这条通道的横向稳态误差就是 ~2 cm。门比 `LATERAL_TOL=0.026`(验收判据本身)还紧 → 死锁。改成 `LATERAL_ALIGN_M = LATERAL_TOL`。
+
+run4 的三种失败里,**蹲时扫倒瓶子**(先悬停再蹲)和 **jaw_tilt 超界**(`level_jaw`)在 run5 里都不再出现:
+run4 失败的 case 2/6/8 在 run5 全部成功。run6 用修好这两个门之后的同一份代码再跑一次配对。
+
+### 35.7 对其它线的影响:控制路径没变,只有一列 provenance 变了(**gate 尚未重跑**)
+
+`frame()` 现在只在 `cmd.vr_targets` 为真时带 VR 字段。对 coupled / crate / pick_place 这些线:
+**deploy 两种情况下都停在 encoder 模式 `g1`**(改之前上升沿在 boot 烧掉、planner 初始化打回 0;改之后根本没有沿),
+而 `g1` 模式压根不读 `vr_3point_local_target`(`cpp:2093` "leave as zero"),
+`has_vr_3point_control_` 除了切模式之外不改变 deploy 的任何行为 —— 所以**控制上是同一件事**。
+手臂本来也不是走这条通道:生产抓取是 `PLANNER_FROZEN_UPPER_BODY` 的 17 关节目标,那一支我没动。
+
+唯一真实的差别是 **exporter 记的 `teleop.vr_3pt_position` / `vr_3pt_orientation` 会变成空**
+(`run_data_exporter.py:407-412` 没有这两个 key 时写 None,不报错;`docs/dataset.md` 里这两列标的就是"不进训练")。
+改之前它们记的是**惰性的 rest 位姿常量**,不是任何人执行过的东西。
+
+**这一条是推理,不是实测。** 规范要求改主代码的 PR 附 `scripts/gate.py compare` 的输出,
+而 bottle gate 的 baseline 还是 29° profile 那次录的(STATE 里已有的 OPEN),所以**合并前要在 GPU 空闲时重跑一次 bottle gate**,
+确认 coupled 线的 10 局与 baseline 一致。
+
+### 35.8 顺带查出来的:`action.psi0_18` 在**已有的每一个数据集里都是全零**
+
+担心的是"VR 字段改成按需发,会不会把别的线的数据列改坏"。查下来相反:
+`convert_to_hf_format.compute_psi0_columns`(:319-327)**无条件**用 `teleop.vr_3pt_position/orientation`
+算 `action.psi0_18`(18 维腕位姿动作,`modality_psi0.json` 的全部动作);
+而 exporter 只在 `stream_mode == 5` 时写这两列,coupled 线录制窗口里一直是 3(`PLANNER_FROZEN_UPPER_BODY`)——
+抽查 2026-09-11 的 session:864 帧,这两列**只有一种取值,全零**。
+
+所以:(a) 我这次改动对 coupled / crate / pick_place 线**记录的内容零影响**(本来就是零);
+(b) **`action.psi0_18` 在历史上的每一个 bottle 数据集里都是全零**,psi0 这套 modality 是死数据
+(本线第四个"声明了、标定了、没人用"的东西,前三个见 §34.3);
+(c) 在 teleop 通道上它第一次是真的:run5 的 episode 0 里 **621/1089 帧** `stream_mode == 5` 且带真实腕目标
+(右腕 pelvis 系 [0.248, −0.376, 0.037],颈 [−0.003, −0.001, 0.404]),走路与抱稳段是零。
+训练要用 psi0 这套的话,**零段与非零段的不连续要先处理**。
+
+另外,exporter 在字段缺失时写的是**零,不是 None**,converter 不会崩 —— 这一条也验证过了。
+
+### 35.9 run6:两个门修好之后——**成功率没动(7/10),但失败换了地方,收敛快了一倍**
+
+同 bank 同 checkpoint,只改了 §35.6 说的那两个门(`SPEED_WINDOW_S=0.2`、`LATERAL_ALIGN_M=LATERAL_TOL`):
+
+| | run5 | run6 |
+|---|---|---|
+| v1.1 成功 | 7/10 | **7/10** |
+| 逐局配对 run5 vs run6 | — | **1 : 1**(没有方向) |
+| local align 用时 | 1.5–4.4 s | **1.4–2.0 s** |
+| 失败 | spawn 转身 / 速度门 / 横向死锁 | spawn 转身 / **hold 掉落** / 一次 depth+3.5 height−2.2 超时 |
+
+**逐 case 看,两个门确实修好了**:run5 卡速度门的 `az30:3` 这次 1.9 s 就 OK;run5 横向死锁的 `az30:4` 这次一路走到抬起(8.7 cm)。
+**但成功率没有变**,因为失败换到了别处 —— 10 局分辨不了这种差别(记忆 `ten-round-pilots-cannot-measure-this-line`),
+所以这两个改动的依据是**机制 + 收敛时间**,不是成功率,别拿 7/10→7/10 当"没用"或"有用"。
+
+新出现的 `[hold] object slipped 79.9 cm`:抬起 8.7 cm 之后在抱稳段掉了。原因是我的 `close_hand` 停在
+"首次持续接触 + 0.6 个 ramp",而 servo 对 dex1 + `require_bilateral` 的规则是**合到 alpha 1.0**
+(`servo_phases.py:301-302`)。部分夹持撑得过抬起,撑不过搬运。已改成默认 `full_close=True` 跟齐那条被验证过的规则。
+(改的时候差点破坏配对:run6 的 release 腿还没起,新进程会 import 到改后的代码 —— 已先改回、等 run6 跑完再落。
+记忆 `never-edit-a-running-bash-script` 的同类问题,对象是 .py 与"下一条腿"。)
+
+### 35.10 **自我推翻:§35.6 那个 4:0 是我自己的门造出来的,不是 checkpoint 的差别**
+
+run6 的 release 腿和 run5 的 release 腿之间,**只差 §35.6 那两个门的修法**,结果:
+
+| release,同 bank 同 checkpoint | run5(门很紧) | run6(门改到验收判据) |
+|---|---|---|
+| 成功 | **3/10** | **7/10** |
+
+而 v1.1 两次都是 7/10。也就是说:**那两个门紧到只有 v1.1 过得去**,
+于是 run5 量出 4:0、我据此写了"v1.1 第一次赢过 release"——**错的**。
+
+机制对得上:run5 里 release 的 7 次失败有 **5 次是纯 `height` 拒绝**,而它们的横向误差是 1.2–2.6 cm,
+正好骑在旧的 `LATERAL_ALIGN_M=0.018` 上 —— 那条规则在横向没对齐时**扣掉进刀方向的分量**,
+于是整段对齐都在一个被拉回来的瞄点上做,最终几何自然差一截;
+再加上逐 tick 的速度估计对抖动更大的 release 更不利。两个门都**不成比例地惩罚了 release**。
+
+**改完之后的结论:在这条通道上 v1.1 与 release 分不出来**(run6 两边都是 **7/10**)——
+和 §27 在 coupled 通道上的结论一致。
+
+**真正的结果不是"v1.1 赢了",而是:这条通道把 v1.1 从同一 bank 上的 0/30 变成 7/10。**
+那才是"换成 v1.1 之后单臂任务该怎么做"的答案;v1.1 与 release 谁更强是另一个问题,答案仍然是"分不出来"。
+
+方法论(第三次了,见 §28 的仪器、§30 的方位角):**在自己写的执行器里量 checkpoint 的差别,
+先问那些常量是按谁标定的**。这次的形式是"私有门比验收判据还紧",两条都是从自家驱动关节的通道继承来的。
+
+### 35.11 run7:合到底的夹持把 79.9 cm 的掉落变成 4.1 cm 的滑移;三次汇总 **20/30**
+
+`full_close=True`(合到 alpha 1.0,跟 `servo_phases._phase_close` 对 dex1 + bilateral 的规则一致),
+其余不变,`sonic_v1_1_run7_fullclose`:**6/10**。
+
+| | run5 | run6 | run7 |
+|---|---|---|---|
+| v1.1 成功 | 7/10 | 7/10 | 6/10 |
+| `[hold]` 滑移 | — | **79.9 cm(掉了)** | **4.1 cm**(阈值 `PALM_DRIFT_MAX=0.03`) |
+
+**夹持确实变实了**(掉落 → 只滑 4.1 cm,刚过 3 cm 判据),**成功率没变**(6 对 7,10 局分辨不了)。
+和 §35.9 一样:依据是机制,不是成功率。
+
+**三次汇总:teleop 通道上 v1.1 20/30,同一 bank 上 coupled 的 v1.1 是 0/30**(Fisher 双侧 **p = 1.4e-08**)。
+这才是可以引用的数字;"v1.1 对 release"的答案见 §35.10:**分不出来**。
+
+run7 新出现两局 `[grasp] local alignment disturbed target or base`(前两局):
+align 起点是抓取腕点上方 8 cm 的 pregrasp,而推进步长上限 `STEP_M` 是 0.2 m/s —— 9 cm 的下降只要 0.45 s,
+横向还有 1-3 cm 残差时指尖就扫到瓶子了(t=0 height −8.3 cm → t=1.1 s +1.0 cm)。
+**没有调它**:这是下一个该看的地方(下降速率按横向残差缩放,或者对齐到位再降),不是这次的结论。

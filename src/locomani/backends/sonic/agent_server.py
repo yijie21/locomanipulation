@@ -197,6 +197,9 @@ class AgentCommander:
         self.left_wrist_pos, self.right_wrist_pos = rest_wrists()
         self.left_wrist_quat = np.array([1, 0, 0, 0], dtype=np.float32)
         self.right_wrist_quat = np.array([1, 0, 0, 0], dtype=np.float32)
+        # The third point. Upright by default; TeleopArm pitches it to ask
+        # for a torso lean, which is how the PICO operator "bends".
+        self.neck_pos, self.neck_quat = nominal_neck()
         self.left_hand = self._hand_open.copy()
         self.right_hand = self._hand_open.copy()
         self.upper_body = None
@@ -207,6 +210,27 @@ class AgentCommander:
         # left/right-interleaved arms 14, the pico feedback-reader order)
         # through the walk as well.
         self.stream_mode = StreamMode.PLANNER_VR_3PT
+        # VR 3-point wrist/neck targets travel in the planner message ONLY
+        # while this is True. The deploy switches its ENCODER on the presence
+        # of that field, not on stream_mode: a planner message carrying
+        # `vr_position` sets `has_vr_3point_control_`, and the RISING edge of
+        # that flag puts the current motion into encoder mode 1 ("teleop",
+        # which reads `vr_3point_local_target` as a servo target); the falling
+        # edge puts it back to mode 0 ("g1", which zeroes the wrist slots).
+        # (zmq_manager.hpp:679-693, :1180-1222; g1_deploy_onnx_ref.cpp:2093.)
+        # Until 2026-09-12 frame() sent the field on EVERY non-frozen frame
+        # from boot, so the edge fired before `Planner()` initialised and
+        # `planner_motion_->SetEncodeMode(initial_encoder_mode_)` (cpp:3770)
+        # put it back to 0 -- and every safety reset does the same
+        # (zmq_manager.hpp:498) -- so the deploy sat in mode 0 for good and
+        # the wrist target was a dead field (ledger bottle.md 34, 0.01 of the
+        # commanded motion on both checkpoints). The PICO manager sends the
+        # field only in PLANNER_VR_3PT and only after the planner is up
+        # (pico_manager_thread_server.py:1843), so the edge lands where it
+        # counts. `TeleopArm.start()` raises this after its first target is
+        # the measured pose; `stop()` clears it. reset_pose() clears it too,
+        # so an episode never inherits a live wrist channel.
+        self.vr_targets = False
         self.upper_body: np.ndarray | None = None
         # Reference joint VELOCITY for the 17 upper-body joints. The encoder
         # observes motion_joint_velocities_* (observation_config.yaml), so a
@@ -262,6 +286,13 @@ class AgentCommander:
         if right_quat is not None:
             self.right_wrist_quat = np.asarray(right_quat, dtype=np.float32)
 
+    def set_neck(self, pos=None, quat=None) -> None:
+        """Neck point of the VR 3-point target, pelvis frame (pos, quat wxyz)."""
+        if pos is not None:
+            self.neck_pos = np.asarray(pos, dtype=np.float32)
+        if quat is not None:
+            self.neck_quat = np.asarray(quat, dtype=np.float32)
+
     def set_upper_body_vel(self, v17) -> None:
         """17 joint velocities, same order as set_upper_body. None to omit."""
         self.upper_body_vel = None if v17 is None else np.asarray(v17, dtype=np.float32)
@@ -289,9 +320,8 @@ class AgentCommander:
             self.right_hand = np.asarray(right, dtype=np.float32)
 
     def _vr_3pt(self) -> tuple[list[float], list[float]]:
-        neck_pos, neck_quat = nominal_neck()
-        pos = np.concatenate([self.left_wrist_pos, self.right_wrist_pos, neck_pos])
-        quat = np.concatenate([self.left_wrist_quat, self.right_wrist_quat, neck_quat])
+        pos = np.concatenate([self.left_wrist_pos, self.right_wrist_pos, self.neck_pos])
+        quat = np.concatenate([self.left_wrist_quat, self.right_wrist_quat, self.neck_quat])
 
         return pos.astype(np.float32).tolist(), quat.astype(np.float32).tolist()
 
@@ -337,7 +367,11 @@ class AgentCommander:
             kw["upper_body_position"] = self.upper_body.tolist()
             if self.upper_body_vel is not None:
                 kw["upper_body_velocity"] = self.upper_body_vel.tolist()
-        else:
+        elif self.vr_targets:
+            # Mirror the pico manager's PLANNER_VR_3PT branch (:1843-1849):
+            # wrist + neck targets, no upper-body joints. Any other frame
+            # carries NEITHER field -- see reset_pose() for why the field's
+            # mere presence is a mode switch on the deploy side.
             vr_pos, vr_quat = self._vr_3pt()
             kw.update(vr_3pt_position=vr_pos, vr_3pt_orientation=vr_quat, vr_3pt_compliance=list(compliance))
         self.sonic.send(

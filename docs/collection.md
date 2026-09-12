@@ -469,6 +469,15 @@ episode,训出来的模型才会一次成功。唯一的例外是 `[stand]`:那�
 
 ### ③ 伸手那几秒里发生了什么
 
+> **2026-09-12 起有第二条抓取执行通道:`ReachConfig.teleop_arm`(profile `configs/tasks/bottle_visible_teleop.json`)。**
+> 下面这一节描述的是 planner 通道 + 自家 IK 的 `CoupledGraspPolicy`。`TeleopGraspPolicy`(`tasks/bottle/teleop_grasp_policy.py`,
+> 手臂接口 `backends/sonic/teleop_arm.py`)走的是官方 PICO 遥操作的 `PLANNER_VR_3PT`:planner 消息里带左右腕点 + 颈点的骨盆系位姿,
+> deploy 的 encoder 切到 `teleop` 模式,**手臂、腰、步子都由 policy 自己解**,我们只命令腕的世界系位姿并按实测残差修正;
+> 没有 IK,没有 `project_squat`,没有 `coupled_terminal_ik` 拒绝,没有关节舒适界。同一 bank 上 v1.1 从 0/30 到 6/10(ledger bottle.md §35)。
+> 两个必须知道的协议事实:VR 字段的**有无**就是 encoder 模式开关(`AgentCommander.vr_targets`,`TeleopArm.start()` 在站稳后以实测位姿为第一帧置位),
+> 每次 safety reset 都把模式打回 `g1`,所以通道按局进出;deploy.log 里 `Switched to mode 'teleop'` 必须出现在 `Planner initialized` 之后。
+> 表里的 `stream_mode` 在这条通道上是 5(`PLANNER_VR_3PT`),`teleop.vr_3pt_*` 字段有值。
+
 `stream_reach._servo_continuous`,50 Hz 闭环,目标全部由**实时物体真值**重算,
 从不从当前掌位外推(否则会追着自己推动的罐子跑)。
 

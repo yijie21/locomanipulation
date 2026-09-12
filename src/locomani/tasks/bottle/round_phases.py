@@ -617,6 +617,10 @@ def _phase_navigate(ctx: RoundContext):
             from locomani.tasks.bottle.image_servo_policy import ImageServoPolicy
 
             controller = ImageServoPolicy
+        if getattr(ctx.reach_config, "teleop_arm", False):
+            from locomani.tasks.bottle.teleop_grasp_policy import TeleopGraspPolicy
+
+            controller = TeleopGraspPolicy
         coordinated = controller(p, arrival_task, ctx.reach_config, ctx.arm_ramp, ctx.execution)
     ctx.coordinated = coordinated
     return None
