@@ -36,6 +36,11 @@ class CrateVisualConfig:
             raise ValueError("visual.probe_height must be smaller than lift_height")
         for name in (
             "stand_off",
+            "pregrasp_above",
+            "align_tolerance",
+            "reprojection_px",
+            "hold_seconds",
+            "max_tilt_deg",
             "joint_speed",
             "approach_speed",
             "close_seconds",

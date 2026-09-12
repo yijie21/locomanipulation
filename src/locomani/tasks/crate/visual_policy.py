@@ -33,9 +33,11 @@ class VisualCratePolicy:
         self.rotations = None
         self.closed_grips = None
         self.closed_object = None
+        self.closed_relative_grips = None
         self.closure = 0.0
         self.ready_since = None
         self.last_time = None
+        self.was_visible = False
 
     def _enter(self, phase, now):
         self.phase, self.phase_started, self.ready_since = phase, now, None
@@ -55,9 +57,14 @@ class VisualCratePolicy:
         if now - self.started > cfg.timeout_seconds:
             return self._result(reason="timeout", finished=True)
         if estimate is None or now - estimate.timestamp > cfg.vision_timeout:
+            self.was_visible = False
+            self.ready_since = None
             if now - (self.last_seen if self.last_seen is not None else self.started) > cfg.vision_timeout:
                 return self._result(reason="vision_lost", finished=True)
             return self._result(reason="waiting_for_vision")
+        # Reacquisition does not make up motion skipped during occlusion.
+        dt = dt if self.was_visible else 0.0
+        self.was_visible = True
         self.last_seen = estimate.timestamp
         grips = estimate.transform(self.local_grips)
         grips = grips[np.argsort(-grips[:, 1])]
@@ -91,34 +98,44 @@ class VisualCratePolicy:
             else:
                 self.ready_since = None
         elif self.phase == "close":
-            self.closure = min(1.0, (now - self.phase_started) / cfg.close_seconds)
-            if self.closure >= 1.0 and now - self.phase_started > cfg.close_seconds + 0.4:
+            self.closure = min(1.0, self.closure + dt / cfg.close_seconds)
+            if self.closure >= 1.0:
+                self.ready_since = now if self.ready_since is None else self.ready_since
+            if self.ready_since is not None and now - self.ready_since > 0.4:
                 if np.any(np.asarray(hand_openings) < 0.003):
                     return self._result(reason="empty_gripper", finished=True)
                 self.closed_grips = tools.copy()
                 self.closed_object = estimate.position.copy()
+                self.closed_relative_grips = (tools - estimate.position) @ estimate.rotation
                 self._enter("probe", now)
         elif self.phase in ("probe", "lift", "hold"):
             # One rigid translation supplies both hand references.
             height = cfg.probe_height if self.phase == "probe" else cfg.lift_height
             target = self.closed_grips + np.array([0.0, 0.0, height])
-            delta = target - self.reference
-            delta *= min(1.0, cfg.approach_speed * dt / max(np.max(np.linalg.norm(delta, axis=1)), 1e-9))
-            self.reference += delta
+            tracking = np.max(np.linalg.norm(self.reference - tools, axis=1))
+            attachment_error = np.max(np.linalg.norm(tools - estimate.transform(self.closed_relative_grips), axis=1))
+            if tracking < 0.065 and (self.phase == "probe" or attachment_error < 0.025):
+                delta = target - self.reference
+                delta *= min(1.0, cfg.approach_speed * dt / max(np.max(np.linalg.norm(delta, axis=1)), 1e-9))
+                self.reference += delta
             tilt = np.degrees(np.arccos(np.clip(estimate.rotation[2, 2], -1, 1)))
             if tilt > cfg.max_tilt_deg:
                 return self._result(reason="visual_tilt", finished=True)
             if self.phase == "probe" and now - self.phase_started > 1.5:
                 object_motion = estimate.position - self.closed_object
-                relative_motion = tools - self.closed_grips - object_motion
-                if (
-                    object_motion[2] < cfg.probe_height * 0.35
-                    or np.max(np.linalg.norm(relative_motion, axis=1)) > 0.025
-                ):
+                if object_motion[2] < cfg.probe_height * 0.35 or attachment_error > 0.025:
                     return self._result(reason="probe_not_attached", finished=True)
                 self._enter("lift", now)
             elif self.phase == "lift" and np.max(np.linalg.norm(target - tools, axis=1)) < 0.025:
                 self._enter("hold", now)
-            elif self.phase == "hold" and now - self.phase_started >= cfg.hold_seconds:
-                return self._result(reason="completed", finished=True)
+            elif self.phase == "hold":
+                stable = (
+                    np.max(np.linalg.norm(target - tools, axis=1)) < 0.025
+                    and attachment_error < 0.025
+                    and estimate.position[2] - self.closed_object[2] >= cfg.lift_height * 0.6
+                    and np.min(hand_openings) >= 0.003
+                )
+                self.ready_since = (now if self.ready_since is None else self.ready_since) if stable else None
+                if self.ready_since is not None and now - self.ready_since >= cfg.hold_seconds:
+                    return self._result(reason="completed", finished=True)
         return self._result()

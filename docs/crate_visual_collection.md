@@ -3,6 +3,7 @@
 Use this guide for the painted-crate expert. Its intended design and remaining
 training work are in [the design](handoff/crate-visual-expert-design.md).
 Implementation is being validated with video pilots; no VLA learning result is implied.
+Measured outcomes and revisions: [video evidence](handoff/crate-visual-pilot-20260912.md).
 
 ## Information used by the expert
 
@@ -16,7 +17,9 @@ history. A simultaneous solver controls two arms and shared waist pitch. Scene
 placement occurs before recording. Object pose/contact truth is used by the
 after-episode evaluator; falling can trigger an explicitly marked external abort.
 
-The policy stops advancing when visual estimates disappear. It never refreshes a
+Loaded references wait for bilateral tracking and attachment. Completion requires
+an uninterrupted observed hold interval; occlusion resets that interval and pauses
+gripper closure progress. The policy stops advancing when visual estimates disappear. It never refreshes a
 hidden target from simulator object state. Camera streams, source timestamps,
 robot state and issued references are saved for inspection.
 
@@ -48,6 +51,7 @@ provenance, instance cleanup and the attempt manifests.
 - `observations/<label>/*.mp4`: the RGB frames actually consumed by the expert.
 - `observations/<label>/observations.jsonl`: matching frame indices, timestamps,
   robot observations, references, visual fits, gripper closures and phase transitions.
+- `attempts.jsonl`: sampled labels/seeds journaled before reset or camera setup.
 - `manifest_00.jsonl` and per-attempt `result.json`: success, failure reason,
   measured rise/tilt/contact and any exception/intervention. Failed attempts remain present.
 - `config_snapshot.json`, `deploy_receipts.jsonl`, stage logs and `trace/`: source,

@@ -1,10 +1,41 @@
 """Record the RGB frames and robot/command history actually consumed by a video pilot."""
 
 import json
+import time
+import traceback
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+from locomani.pipeline.execution_record import RoundResult
+
+
+def record_attempt(manifest: Path, label: str, seed: int, execute) -> RoundResult:
+    """Journal before setup, then persist every completed or exceptional attempt."""
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    directory = manifest.parent / "observations" / label
+    if directory.exists():
+        raise FileExistsError(f"attempt already exists: {directory}")
+    with (manifest.parent / "attempts.jsonl").open("a") as handle:
+        handle.write(json.dumps({"label": label, "seed": seed, "started_wall": time.time()}) + "\n")
+    try:
+        result = execute()
+    except Exception:
+        result = RoundResult(False, "runtime_error", False, {"metrics": {"error": traceback.format_exc(), "frames": 0}})
+    row = {
+        **result.execution["metrics"],
+        "label": label,
+        "seed": seed,
+        "ok": result.accepted(),
+        "why": result.why,
+        "produced": result.produced,
+    }
+    with manifest.open("a") as handle:
+        handle.write(json.dumps(row) + "\n")
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "result.json").write_text(json.dumps(row, indent=2))
+    return result
 
 
 class VisualRecording:

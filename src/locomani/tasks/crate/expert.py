@@ -16,6 +16,7 @@ from locomani import paths
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
 from locomani.backends.sonic.primitives import Primitives
 from locomani.backends.sonic.streamed_arm import PlannerArm
+from locomani.pipeline.execution_record import RoundResult
 from locomani.primitives.arm_ik import ArmIK
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient
@@ -25,7 +26,7 @@ from locomani.tasks.crate.evaluation import evaluate
 from locomani.tasks.crate.perception import CratePerception
 from locomani.tasks.crate.round_runner import prime
 from locomani.tasks.crate.visual_policy import VisualCratePolicy
-from locomani.tasks.crate.visual_recording import VisualRecording
+from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
 
 
 def reset_ready(p, reset, meta, cfg, rng, solver):
@@ -152,9 +153,11 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     except Exception:
         reason, error = "runtime_error", traceback.format_exc()
     finally:
-        recorder.close()
-        reset.end_video()
-        arm.stop()
+        for cleanup in (recorder.close, reset.end_video, arm.stop):
+            try:
+                cleanup()
+            except Exception:
+                reason, error = "runtime_error", (error or "") + traceback.format_exc()
     final = p.obs()
     result = evaluate(initial, final, reason, lift_height=cfg.lift_height, max_tilt_deg=cfg.max_tilt_deg)
     result.update(
@@ -168,9 +171,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     )
     if error is not None:
         result["error"] = error
-    (directory / label / "result.json").write_text(json.dumps(result, indent=2))
     print(f"[{label}] {result}", flush=True)
-    return result
+    return RoundResult(result["ok"], result["why"], result["produced"], {"metrics": result})
 
 
 def main():
@@ -198,20 +200,15 @@ def main():
     try:
         prime(p, reset)
         for index in range(args.rounds):
-            result = run_attempt(
-                p,
-                reset,
-                camera,
-                meta,
-                config,
-                directory,
-                f"{args.label}_{index:02d}",
-                np.random.default_rng(args.seed + index),
+            label, seed = f"{args.label}_{index:02d}", args.seed + index
+            result = record_attempt(
+                args.manifest,
+                label,
+                seed,
+                lambda: run_attempt(p, reset, camera, meta, config, directory, label, np.random.default_rng(seed)),
             )
-            with args.manifest.open("a") as handle:
-                handle.write(json.dumps(result) + "\n")
-            if result.get("error"):
-                raise RuntimeError(result["error"])
+            if result.why == "runtime_error":
+                raise RuntimeError(result.execution["metrics"]["error"])
     finally:
         camera.close()
         reset.close()
