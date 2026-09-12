@@ -56,10 +56,8 @@ def round_loop(args, setup) -> None:
     from locomani.pipeline.experiment_cases import save_cases
 
     goal_key, place_config, goal_prompt, goal_xy = None, None, None, None
-    if getattr(args, "task_config", None):
-        from locomani.tasks.bottle.config import BottleTaskConfig
-
-        task_cfg = BottleTaskConfig.load(args.task_config)
+    if args.task_config_obj is not None:
+        task_cfg = args.task_config_obj
         goal_key, place_config = (task_cfg.goal or None), task_cfg.place
         goal_prompt = task_cfg.prompt
         goal_xy = np.asarray(meta["objects"][goal_key]["init_pos"][:2], dtype=float) if goal_key else None

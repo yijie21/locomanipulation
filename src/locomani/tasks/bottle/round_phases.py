@@ -600,28 +600,7 @@ def _phase_navigate(ctx: RoundContext):
     ctx.arm_ramp = upper_ref.UpperRamp(p.cmd, q_free)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
 
-    coordinated = None
-    if ctx.reach_config.ready_grasp_baseline:
-        from locomani.tasks.bottle.ready_grasp_policy import ReadyGraspPolicy
+    from locomani.tasks.bottle.policy import make_grasp_policy
 
-        arrival_task = ctx.task_grasp
-        controller = ReadyGraspPolicy
-        if ctx.reach_config.ready_grasp_recovery:
-            from locomani.tasks.bottle.recoverable_grasp_policy import RecoverableGraspPolicy
-
-            controller = RecoverableGraspPolicy
-        if ctx.reach_config.coupled_squat:
-            from locomani.tasks.bottle.coupled_grasp_policy import CoupledGraspPolicy
-
-            controller = CoupledGraspPolicy
-        if ctx.reach_config.image_servo:
-            from locomani.tasks.bottle.image_servo_policy import ImageServoPolicy
-
-            controller = ImageServoPolicy
-        if getattr(ctx.reach_config, "teleop_arm", False):
-            from locomani.tasks.bottle.teleop_grasp_policy import TeleopGraspPolicy
-
-            controller = TeleopGraspPolicy
-        coordinated = controller(p, arrival_task, ctx.reach_config, ctx.arm_ramp, ctx.execution)
-    ctx.coordinated = coordinated
+    ctx.coordinated = make_grasp_policy(p, ctx.task_grasp, ctx.reach_config, ctx.arm_ramp, ctx.execution)
     return None

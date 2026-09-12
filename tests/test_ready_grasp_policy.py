@@ -28,7 +28,7 @@ class ReadyBaselineTests(unittest.TestCase):
         cfg = ReachConfig.load(path)
         self.assertTrue(cfg.ready_grasp_baseline)
         with self.assertRaises(ValueError):
-            ReachConfig(ready_grasp_baseline="true")
+            ReachConfig.from_dict({"schema_version": 1, "ready_grasp_baseline": "true"})
 
     def test_ready_hands_are_in_front_with_neutral_wrists(self):
         ik = ArmIK()
@@ -41,7 +41,7 @@ class ReadyBaselineTests(unittest.TestCase):
         np.testing.assert_array_equal(q[26:29], 0.0)
 
     def test_sampling_is_near_fk_support_and_rejects_unsupported_height(self):
-        cfg = ReachConfig(ready_grasp_baseline=True)
+        cfg = ReachConfig(strategy="ready")
         rng = np.random.default_rng(5)
         for _ in range(100):
             rel, drop = sample_stand(SimpleNamespace(grip_z=0.723), rng, cfg)
@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
 class LowerGripSamplingTests(unittest.TestCase):
     def test_lowered_grip_can_sample_without_exceeding_squat_limit(self):
-        cfg = ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True)
+        cfg = ReachConfig(strategy="recovery")
         for seed in range(3):
             rel, drop = sample_stand(SimpleNamespace(grip_z=0.6914), np.random.default_rng(seed), cfg)
             self.assertTrue(np.isfinite(rel).all())

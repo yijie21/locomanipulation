@@ -1,7 +1,8 @@
 {
  "schema_version": 1,
  "reach": {
-  "schema_version": 1,
+  "schema_version": 2,
+  "strategy": "coupled",
   "post_min": 0.3,
   "post_max": 0.4,
   "pre_min": 0.24,
@@ -14,12 +15,9 @@
   "transport_margin": 0.004,
   "sweep_joint_step": 0.04,
   "transport_guard": true,
-  "ready_grasp_baseline": true,
-  "ready_grasp_recovery": true,
   "grip_below_center": 0.02,
   "arrival_advance": 0.0,
   "measured_squat_handover": true,
-  "coupled_squat": true,
   "timely_capture": true,
   "squat_prediction_backshift_ratio": 0.8,
   "squat_prediction_drop_shortfall": 0.015,

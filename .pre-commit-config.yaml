@@ -35,6 +35,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: repository-contract
+        name: architecture and navigation contracts
+        entry: python3 scripts/lint_repository.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: unit-tests
         name: unit tests (no sim, no torch)
         entry: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m pytest -x -q tests

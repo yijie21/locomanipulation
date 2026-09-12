@@ -1,4 +1,4 @@
-"""Explicit, versioned calibration of the current tabletop reach controller."""
+"""Bottle grasp strategy and calibration; version-1 flags migrate on input."""
 
 import json
 import math
@@ -26,22 +26,52 @@ RETIRED_KEYS = frozenset(
 )
 
 
+SCHEMA_VERSION = 2
+
+# These predicates remain read-only compatibility views for existing control code.
+# The serialized/current Python interface selects exactly one strategy.
+STRATEGY_FLAGS = {
+    "legacy": frozenset(),
+    "ready": frozenset({"ready_grasp_baseline"}),
+    "recovery": frozenset({"ready_grasp_baseline", "ready_grasp_recovery"}),
+    "coupled": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat"}),
+    "image_servo": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat", "image_servo"}),
+    "teleop": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat", "teleop_arm"}),
+}
+LEGACY_STRATEGY_FIELDS = frozenset().union(*STRATEGY_FLAGS.values())
 BOOL_FIELDS = (
     "transport_guard",
-    "ready_grasp_baseline",
-    "ready_grasp_recovery",
     "measured_squat_handover",
-    "coupled_squat",
     "timely_capture",
     "visible_expert",
-    "image_servo",
     "image_servo_truth_control",
-    "teleop_arm",
 )
+
+
+def _migrate_v1(data: dict, source: str) -> dict:
+    if "strategy" in data:
+        raise ValueError("strategy requires reach schema_version=2")
+    flags = {name: data.pop(name, False) for name in LEGACY_STRATEGY_FIELDS}
+    if any(type(value) is not bool for value in flags.values()):
+        raise ValueError("legacy strategy switches must be boolean")
+    active = frozenset(name for name, value in flags.items() if value)
+    for strategy, required in STRATEGY_FLAGS.items():
+        if active == required:
+            data["strategy"] = strategy
+            break
+    else:
+        raise ValueError(f"invalid legacy strategy combination: {sorted(active)}")
+    for key in RETIRED_KEYS.intersection(data):
+        warnings.warn(f"reach config {source}: ignoring retired key {key!r}", stacklevel=3)
+        del data[key]
+    return data
 
 
 @dataclass(frozen=True)
 class ReachConfig:
+    strategy: str = field(
+        default="legacy", metadata={"choices": tuple(STRATEGY_FLAGS)}
+    )  # Select one grasp controller; legacy preserves the unconfigured default.
     post_min: float = 0.22
     post_max: float = 0.40
     pre_min: float = 0.18
@@ -54,12 +84,9 @@ class ReachConfig:
     transport_margin: float = 0.004
     sweep_joint_step: float = 0.04
     transport_guard: bool = True
-    ready_grasp_baseline: bool = False
-    ready_grasp_recovery: bool = False
     grip_below_center: float = 0.01
     arrival_advance: float = 0.0
     measured_squat_handover: bool = False
-    coupled_squat: bool = False
     timely_capture: bool = False
     squat_prediction_backshift_ratio: float = 0.0
     squat_prediction_drop_shortfall: float = 0.0
@@ -76,20 +103,10 @@ class ReachConfig:
     # arrival_advance latch (brake at a fixed measured depth instead), and the
     # recovery reposition branch (an infeasible stand discards the episode).
     visible_expert: bool = False
-    # Rotate the PLANNED stand to this azimuth (deg, object to the robot's
-    # right), keeping plan_r. 0 = leave the template's own geometry alone.
-    # Why this exists (ledger bottle.md 25/26): the FK template's comfortable
-    # grasp centre sits at 30.3 deg, but `backshift` is applied along DEPTH
-    # ONLY, which rotates the plan to 37.5 -- and on release's dead lateral
-    # channel that rotation was never executed, so the line has always run at
-    # the ~29 deg the arm is actually comfortable at (successes median 28.5 deg,
-    # failures 35.5; [0,30) 5/7 ok vs [38,50) 1/6). v1.1 executes the plan, so
-    # the distortion became visible. NOT to be confused with `azimuth_deg`,
-    # which is declared, validated and read by nothing.
+    # 0 retains the template azimuth; nonzero rotates the planned stand at fixed radius.
     stand_azimuth_deg: float = 0.0
     visible_brake_depth: float = 0.31  # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
     visible_decel_band: float = 0.12  # speed ramps down over this depth band above the brake depth
-    image_servo: bool = False  # RGB cap feedback and re-entrant arm control (ledger bottle §19).
     # Privileged-teacher variant (ledger bottle §19.9): the expert CONTROLS from
     # object truth so it is reliable, while the RGB fit is still computed every
     # tick and the SAME decide() is evaluated on it, recording per frame whether
@@ -97,10 +114,6 @@ class ReachConfig:
     # the recorded observation; it selects the action, and the audit says whether
     # that action was reproducible from the images.
     image_servo_truth_control: bool = False
-    # The description below is what `make config-doc` puts in
-    # docs/reference/config_fields.md -- the generator reads the INLINE comment,
-    # not a block comment above the field.
-    teleop_arm: bool = False  # grasp on the VR 3-point channel (TeleopGraspPolicy): wrist POSE targets to the controller's 'teleop' encoder mode, no arm IK, no predicted squat retreat (ledger bottle.md 35).
     image_calibration: BottleCalibration = field(default_factory=BottleCalibration)  # RGB feature calibration.
     image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
@@ -108,21 +121,12 @@ class ReachConfig:
         values = asdict(self)
         if any(type(v) is not bool for v in (getattr(self, name) for name in BOOL_FIELDS)):
             raise ValueError("strategy and guard switches must be boolean")
+        if type(self.strategy) is not str or self.strategy not in STRATEGY_FLAGS:
+            raise ValueError(f"unknown grasp strategy {self.strategy!r}; choices: {tuple(STRATEGY_FLAGS)}")
         for name, value in values.items():
-            if name not in (
-                "transport_guard",
-                "ready_grasp_baseline",
-                "ready_grasp_recovery",
-                "measured_squat_handover",
-                "coupled_squat",
-                "timely_capture",
-                "visible_expert",
-                "image_servo",
-                "image_servo_truth_control",
-                "teleop_arm",
-                "image_calibration",
-                "image_control",
-            ) and (type(value) not in (int, float) or not math.isfinite(value)):
+            if name not in (*BOOL_FIELDS, "strategy", "image_calibration", "image_control") and (
+                type(value) not in (int, float) or not math.isfinite(value)
+            ):
                 raise ValueError(f"{name} must be a finite number")
         if not (0 < self.post_min < self.post_max and 0 < self.pre_min < self.pre_max):
             raise ValueError("Depth bounds must be positive and ordered")
@@ -181,10 +185,6 @@ class ReachConfig:
                 raise ValueError("visible brake geometry outside supported bounds")
         if self.image_servo and not (self.visible_expert and self.coupled_squat and self.timely_capture):
             raise ValueError("image_servo requires visible_expert, coupled_squat and timely_capture")
-        if self.teleop_arm and not (self.ready_grasp_recovery and self.coupled_squat):
-            raise ValueError("teleop_arm requires ready_grasp_recovery and coupled_squat (it reuses their scaffolding)")
-        if self.teleop_arm and self.image_servo:
-            raise ValueError("teleop_arm and image_servo are different executors; pick one")
         if not isinstance(self.image_calibration, BottleCalibration) or not isinstance(self.image_control, ServoLimits):
             raise ValueError("image calibration/control must be typed configurations")
         self.approach_band()
@@ -196,22 +196,44 @@ class ReachConfig:
             raise ValueError(f"Empty pre-crouch depth band: {lo:.3f}..{hi:.3f}")
         return lo, hi
 
+    @property
+    def ready_grasp_baseline(self) -> bool:
+        return "ready_grasp_baseline" in STRATEGY_FLAGS[self.strategy]
+
+    @property
+    def ready_grasp_recovery(self) -> bool:
+        return "ready_grasp_recovery" in STRATEGY_FLAGS[self.strategy]
+
+    @property
+    def coupled_squat(self) -> bool:
+        return "coupled_squat" in STRATEGY_FLAGS[self.strategy]
+
+    @property
+    def image_servo(self) -> bool:
+        return self.strategy == "image_servo"
+
+    @property
+    def teleop_arm(self) -> bool:
+        return self.strategy == "teleop"
+
     def to_dict(self):
-        return dict(schema_version=1, **asdict(self))
+        return dict(schema_version=SCHEMA_VERSION, **asdict(self))
 
     @classmethod
     def from_dict(cls, data: dict, *, source: str = "<dict>") -> "ReachConfig":
-        """Reconstruct from a `to_dict()`-shaped mapping, dropping RETIRED_KEYS.
-
-        Used both by `load` (a JSON file) and by BottleTaskConfig's nested
-        `reach` field (an in-memory dict already parsed from the task's JSON).
-        """
+        """Read validated legacy JSON or the current single-selector format."""
         data = dict(data)
-        if data.pop("schema_version", None) != 1:
-            raise ValueError("reach config requires schema_version=1")
-        for key in RETIRED_KEYS.intersection(data):
-            warnings.warn(f"reach config {source}: ignoring retired key {key!r}", stacklevel=2)
-            del data[key]
+        version = data.pop("schema_version", None)
+        if type(version) is not int or version not in (1, SCHEMA_VERSION):
+            raise ValueError("reach config requires schema_version=1 or 2")
+        if version == 1:
+            data = _migrate_v1(data, source)
+        obsolete = LEGACY_STRATEGY_FIELDS.intersection(data)
+        if obsolete:
+            raise ValueError(f"version-2 reach config uses strategy, not {sorted(obsolete)}")
+        unknown = data.keys() - cls.__dataclass_fields__.keys()
+        if unknown:
+            raise ValueError(f"unknown reach config fields: {sorted(unknown)}")
         for key, factory in (("image_calibration", BottleCalibration), ("image_control", ServoLimits)):
             if key in data and isinstance(data[key], dict):
                 data[key] = factory(**data[key])
@@ -273,7 +295,7 @@ def require_expert_calibration(vla_policy, config: "ReachConfig", source: str | 
     therefore the case distribution, and `round_phases` has a
     `ready_grasp_baseline` branch that runs specifically when vla_policy is not
     None. What is safe is not refusing; silently SUBSTITUTING one calibration
-    for another in an eval is not (see cli_args._apply_task_config).
+    for another in an eval is not (see cli_args.resolve_options).
     """
     if vla_policy is None:
         require_runnable(config, source)

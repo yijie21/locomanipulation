@@ -1,13 +1,7 @@
-"""Bottle task knobs (decision 8, refactor step 3 item 2).
+"""Bottle task configuration. ReachConfig owns the versioned grasp strategy.
 
-Every field's default equals today's effective default: the SPAWN constant
-run_learn_pilot.py already used for the official ready-visible protocol, or
-the `os.environ.get(NAME, default)` fallback for the gym knobs. A run with no
-config file behaves identically to before this module existed.
-
-`reach` nests the existing `ReachConfig` (its own to_dict/load stay as they
-are -- `ReachConfig.load` keeps the `RETIRED_KEYS` handling from step 2 so
-historical `reach_config.json` files still load unmodified).
+Profiles retain the existing numerical defaults. Nested version-1 reach JSON
+migrates at load time; new reach snapshots serialize the single-selector format.
 """
 
 from __future__ import annotations

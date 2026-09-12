@@ -69,3 +69,12 @@
 - [policy 审计](scalebfm_policy_audit_20260909.md) — 可见性门修复、学生接口检查、仍存在的先验 (dated 2026-09-09)
 - ["检查采集视频"契约](scalebfm_video_check.md) — 固定功能的 8 条要求与复用/锁/恢复规则 (dated 2026-09-09)
 - [Codex 线程终版交接](scalebfm_handoff_20260910.md) — 决策理由表、恢复顺序、事故批注链 (dated 2026-09-10)
+
+## Entry documents preserved on 2026-09-12
+
+Verbatim copies from `4cc52ba`; historical claims and relative links retain their original context.
+
+- [STATE](state_20260912.md)
+- [ROADMAP](roadmap_20260912.md)
+- [README](readme_20260912.md)
+- [Runbook](runbook_20260912.md)

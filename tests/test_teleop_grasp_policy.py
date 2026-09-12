@@ -43,7 +43,7 @@ class AssessTests(unittest.TestCase):
     def test_config_switch_is_opt_in_and_guarded(self):
         self.assertFalse(ReachConfig().teleop_arm)
         with self.assertRaises(ValueError):
-            ReachConfig(teleop_arm=True)
+            ReachConfig.from_dict({"schema_version": 1, "teleop_arm": True})
         self.assertTrue(BottleTaskConfig.load("configs/tasks/bottle_visible_teleop.json").reach.teleop_arm)
 
     def test_level_jaw_keeps_the_entry_axis_and_zeroes_the_tilt(self):

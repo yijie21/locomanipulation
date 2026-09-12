@@ -1,34 +1,33 @@
-# 文档地图
+# Document index
 
-只有四类,四类之外不新建;带日期的诊断写进台账,不建独立文件。
+## Current development navigation
 
-## 教程(每个 pipeline 阶段一篇)
+- [AGENTS](../AGENTS.md): shared entry and resource rules.
+- [Change map](reference/change-map.md): select code/configuration/tests by intent.
+- [Standards](reference/standards.md): architecture, checks and evidence rules.
+- [Configuration fields](reference/config_fields.md): generated from code.
+- [Runbook](reference/runbook.md): implemented command entry points.
+- [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): remaining migrations.
 
-`setup.md`(环境安装)、`collection.md`(数据采集)、`dataset.md`(导出与审计)、
-`training.md`(训练)、`evaluation.md`(评测)、`rendering.md`(渲染)、
-`crate_collection.md`(双臂搬箱)、`scalebfm_collection.md`(ScaleBFM 视觉抓瓶线)、`pick_place_collection.md`(pick-and-place:抓罐头放篮子)。代码路径随主线保持更新,判据和数字不动。
+## Task and pipeline detail — read when needed
 
-## 台账(`ledger/`,每条产品线一个,append-only)
+[Setup](setup.md), [collection](collection.md), [dataset](dataset.md),
+[training](training.md), [evaluation](evaluation.md), [rendering](rendering.md),
+[crate collection](crate_collection.md), [ScaleBFM collection](scalebfm_collection.md),
+[pick and place](pick_place_collection.md).
+These tutorials include historical experiments and explanations. Their presence in
+this index does not validate their measurements or causal conclusions.
 
-`ledger/bottle.md`(单臂抓取实验总表)、`ledger/crate.md`(双臂搬箱验收/结果)、
-`ledger/scalebfm.md`(ScaleBFM 线:spike → v3/v4 → 视觉 expert Goal → yplus200 → 事故与重组)。
-`ledger/pick_place.md`(pick-and-place 线:SIMPLE 篮子场景、罐头形状的选择、place 阶段 pilot)。
-一条结论只记一处;要更正,在新的日期化章节里写并链接回旧的,不要就地覆盖。
+## Historical evidence and investigations
 
-## 参考(`reference/`)
+- Ledgers: [bottle](ledger/bottle.md), [crate](ledger/crate.md),
+  [ScaleBFM](ledger/scalebfm.md), [pick and place](ledger/pick_place.md),
+  [previous refactor](ledger/refactor.md).
+- [Silent-failure notes](reference/silent_failures.md): historical troubleshooting
+  leads; check referenced code and evidence before applying a recommendation.
+- [Archive index](archive/INDEX.md): original reports and superseded entry documents.
+- [Current migration plan](handoff/agent-maintenance-plan.md).
 
-`reference/standards.md`(代码与文档规范)、`reference/silent_failures.md`(模块地图 /
-参数 / 诊断 / 静默失败表 / FAQ)、`reference/runbook.md`(当前默认配方的唯一入口)。
-
-## 状态
-
-`STATE.md`(现在在做什么)、`ROADMAP.md`(排期)。只这两个。
-
-## 其余:`archive/`
-
-历史诊断、设计讨论、进度报告——内容冻结,只加 `archive/INDEX.md` 索引,不改内容。
-`handoff/`(进行中的跨 session 计划)与 `agents/`(agent 规则)原地保留,不算"其余"。
-
----
-
-**四类之外不新建;带日期的诊断写进台账。**
+A newer claim or a retraction has no automatic evidentiary priority. Follow
+[the evidence rules](reference/standards.md#evidence). Retain original records,
+link corrections, and state the exact scope of any newly verified observation.

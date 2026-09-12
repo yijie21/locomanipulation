@@ -13,7 +13,7 @@ from locomani.tasks.bottle.recoverable_grasp_policy import RecoverableGraspPolic
 
 class Harness(RecoverableGraspPolicy):
     def __init__(self, assess, finishes, contact=False, retract=True):
-        self.config = ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True)
+        self.config = ReachConfig(strategy="recovery")
         self.execution = ExecutionRecord()
         self.execution.metrics["recovery"] = {"attempts": []}
         self.sequence = []
@@ -104,9 +104,9 @@ class RecoveryFlowTests(unittest.TestCase):
         self.assertEqual(p.sequence.count("assess"), 3)
 
     def test_opt_in_does_not_change_baseline(self):
-        self.assertFalse(ReachConfig(ready_grasp_baseline=True).ready_grasp_recovery)
+        self.assertFalse(ReachConfig(strategy="ready").ready_grasp_recovery)
         with self.assertRaises(ValueError):
-            ReachConfig(ready_grasp_recovery=True)
+            ReachConfig.from_dict({"schema_version": 1, "ready_grasp_recovery": True})
         with self.assertRaises(ValueError):
             ReachConfig(recovery_attempts=2.5)
 
@@ -149,9 +149,7 @@ class RecoveryGeometryTests(unittest.TestCase):
         with patch(
             "locomani.backends.sonic.stream_reach.PlannerArm", side_effect=lambda *a, **kw: SimpleNamespace(ik=ArmIK())
         ):
-            cls.policy = RecoverableGraspPolicy(
-                robot, task, ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True), None, ExecutionRecord()
-            )
+            cls.policy = RecoverableGraspPolicy(robot, task, ReachConfig(strategy="recovery"), None, ExecutionRecord())
 
     def test_far_near_and_lateral_stops_have_feasible_corrections(self):
         from copy import deepcopy
@@ -202,7 +200,7 @@ class RecoveryIntegrationTests(unittest.TestCase):
         from locomani.backends.sonic import stream_reach
 
         controller = SimpleNamespace(execute=Mock(return_value=(True, "")))
-        cfg = ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True)
+        cfg = ReachConfig(strategy="recovery")
         with patch.object(stream_reach, "_creep_to_band") as old:
             result = stream_reach.execute_grasp(None, "bottle", [0, 0, 0], None, coordinated=controller, config=cfg)
             self.assertTrue(result.ok)
@@ -241,7 +239,7 @@ class RecoveryIntegrationTests(unittest.TestCase):
                 None,
                 None,
                 record=True,
-                reach_config=ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True),
+                reach_config=ReachConfig(strategy="recovery"),
             )
         self.assertFalse(result.ok)
         robot.cmd.frame.assert_called_once_with(**hold)

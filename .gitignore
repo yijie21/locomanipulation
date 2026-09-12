@@ -3,7 +3,7 @@
 
 # Generated data (episodes, logs, raw videos live here; curated videos go to /videos)
 /outputs/
-/datasets/
+/datasets
 *.log
 
 # wandb run scratch (metrics live on wandb.ai; these are local caches that

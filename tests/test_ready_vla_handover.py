@@ -48,7 +48,7 @@ class ReadyVLAHandoverTests(unittest.TestCase):
                 [0.0, 0.0],
                 spawn_off=0.0,
                 object_yaw=0.0,
-                reach_config=ReachConfig(ready_grasp_baseline=True),
+                reach_config=ReachConfig(strategy="ready"),
             )
         self.last_token_pose = token_pose
         return result, ready

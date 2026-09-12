@@ -15,9 +15,7 @@ from locomani.tasks.bottle.ready_grasp_policy import STANDING_PELVIS_Z, sample_s
 
 def visible(**kw):
     return ReachConfig(
-        ready_grasp_baseline=True,
-        ready_grasp_recovery=True,
-        coupled_squat=True,
+        strategy="coupled",
         timely_capture=True,
         visible_expert=True,
         **kw,
@@ -29,7 +27,7 @@ class VisibleConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ReachConfig(visible_expert=True)
         with self.assertRaises(ValueError):
-            ReachConfig(ready_grasp_baseline=True, visible_expert=True)
+            ReachConfig(strategy="ready", visible_expert=True)
         self.assertTrue(visible().visible_expert)
 
     def test_excludes_per_episode_draws(self):
@@ -55,7 +53,7 @@ class VisibleStandTests(unittest.TestCase):
         self.assertTrue(0.03 <= a[1] <= cfg.max_drop)
 
     def test_baseline_still_draws(self):
-        cfg = ReachConfig(ready_grasp_baseline=True, ready_grasp_recovery=True)
+        cfg = ReachConfig(strategy="recovery")
         plan = SimpleNamespace(grip_z=0.723)
         rels = {tuple(np.round(sample_stand(plan, np.random.default_rng(s), cfg)[0], 4)) for s in range(20)}
         self.assertGreater(len(rels), 1)

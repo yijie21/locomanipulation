@@ -242,11 +242,7 @@ def _build_scene_and_plan(args: argparse.Namespace) -> _SceneSetup:
         raise SystemExit("requested more rounds than fixed cases")
     sampled_cases = []
     # --reach-config wins, then --task-config's `reach` block (cli_args), then the default.
-    reach_config = (
-        ReachConfig.load(args.reach_config)
-        if args.reach_config
-        else getattr(args, "reach_config_obj", None) or DEFAULT_REACH
-    )
+    reach_config = args.reach_config_obj
     require_expert_calibration(VLA_POLICY, reach_config, args.reach_config)
     if args.record:
         require_exporter("--record")
@@ -374,7 +370,12 @@ def main() -> None:
     # VLA_POLICY / RESTART_DEPLOY / ARM_PIN is then read from one place). No-op when
     # eval_closed_loop imports grasp_gym as a package and calls main() in-process.
     sys.modules.setdefault("locomani.tasks.bottle.grasp_gym", sys.modules[__name__])
-    args = cli_args.parse_args()
+    global VIDEO_INCLUDE_INIT
+    args = cli_args.parse_args(vla=VLA_POLICY is not None, video_include_init=VIDEO_INCLUDE_INIT)
+    if args.print_config:
+        print(json.dumps(args.report(), indent=2))
+        return
+    VIDEO_INCLUDE_INIT = args.video_include_init  # legacy runtime adapter; parsing stays pure
     setup = _build_scene_and_plan(args)
     round_loop.round_loop(args, setup)
 

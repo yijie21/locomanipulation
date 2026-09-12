@@ -1,0 +1,47 @@
+[
+  {
+    "source": "src/locomani/backends/sonic/servo_phases.py",
+    "target": "locomani.tasks.bottle.adaptive_grasp",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/servo_phases.py",
+    "target": "locomani.tasks.bottle.grasp_capture.bilateral_dex1_contact",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/servo_ticks.py",
+    "target": "locomani.tasks.bottle.adaptive_grasp",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/servo_ticks.py",
+    "target": "locomani.tasks.bottle.measured_grasp.closure_geometry",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/stream_reach.py",
+    "target": "locomani.tasks.bottle.config.DEFAULT_BOTTLE_TASK",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/stream_reach.py",
+    "target": "locomani.tasks.bottle.reach_config.DEFAULT_REACH",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/stream_reach.py",
+    "target": "locomani.tasks.bottle.reach_config.ReachConfig",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/streamed_arm.py",
+    "target": "locomani.tasks.bottle.config.DEFAULT_BOTTLE_TASK",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  },
+  {
+    "source": "src/locomani/backends/sonic/teleop_arm.py",
+    "target": "locomani.tasks.bottle.grasp_capture.bilateral_dex1_contact",
+    "reason": "Existing task-owned grasp dependency at 4cc52ba; move geometry/config to its owner and pass values through the backend interface."
+  }
+]

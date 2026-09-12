@@ -33,7 +33,7 @@ class CoupledTests(unittest.TestCase):
     def test_strategy_is_opt_in(self):
         self.assertFalse(ReachConfig().coupled_squat)
         with self.assertRaises(ValueError):
-            ReachConfig(coupled_squat=True)
+            ReachConfig.from_dict({"schema_version": 1, "coupled_squat": True})
         config = ReachConfig.load("configs/collection/ready_grasp_coupled.json")
         self.assertTrue(config.coupled_squat)
         self.assertEqual(config.arrival_advance, 0.03)
