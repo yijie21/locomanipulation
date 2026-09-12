@@ -1,5 +1,7 @@
 # Document index
 
+项目功能、安装路线和首次运行示例见 [仓库 README](../README.md)。
+
 ## Current development navigation
 
 - [AGENTS](../AGENTS.md): shared entry and resource rules.
@@ -16,6 +18,7 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 
 | Material to add or change | Owning document / update rule |
 |---|---|
+| Project overview, installation routes and feature-to-guide links | [Root README](../README.md); address users running the project, and link development rules from the contribution section |
 | Shared entry or resource rules | `AGENTS.md`; keep it short and point to conditional detail |
 | Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected row with the code |
 | Module boundaries, interface/config conventions or evidence rules | [Standards](reference/standards.md); link the rule instead of copying it into task guides |
