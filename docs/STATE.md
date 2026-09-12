@@ -9,6 +9,9 @@
 - [Delivery, checks and measured limits](handoff/maintenance-completion.md).
   [Change map](reference/change-map.md) is the entry for new code changes.
 
+- Crate RGB expert video pilot completed: final batch 7/10 successes, three hold
+  timeouts, all ten videos retained. [Implementation and evidence](handoff/crate-visual-pilot-20260912.md).
+
 ## Runtime evidence and remaining uncertainty
 
 - Final bottle A/B: coupled 2/30 -> 3/30; teleop 10/10 -> 9/10. Both gates FAIL
@@ -25,13 +28,10 @@
 
 ## Shared resources
 
-- ACTIVE: crate visual expert implementation and 10-video pilot on branch
-  `feat/crate-visual-expert-20260912`; GPU 0 / instance 1, admitted through the stack lock.
-  Outputs: `outputs/crate_visual_expert_20260912/`. Recheck live state before reuse.
-
-- Owned runs ended 2026-09-12 13:31 UTC. GPU 0 was at 2 MiB / 0%; instance 0/1
-  locks were free. GPU 1 has an unrelated job. Check live state before reuse.
-- No maintenance GPU task remains running. Runtime artifacts and weights are preserved.
+- Crate pilot instance 1 stopped. At 2026-09-12 16:22 UTC, its lock was free and
+  GPU 0 was at 2 MiB / 0%; GPU 1 retained an unrelated job. Recheck live state.
+- Outputs: `outputs/crate_visual_expert_20260912/`; all trials and weights preserved.
+- No owned GPU job remains running.
 
 ## Evidence and preserved constraints
 

@@ -153,13 +153,18 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     except Exception:
         reason, error = "runtime_error", traceback.format_exc()
     finally:
+        control_reason = reason
         for cleanup in (recorder.close, reset.end_video, arm.stop):
             try:
                 cleanup()
             except Exception:
                 reason, error = "runtime_error", (error or "") + traceback.format_exc()
-    final = p.obs()
-    result = evaluate(initial, final, reason, lift_height=cfg.lift_height, max_tilt_deg=cfg.max_tilt_deg)
+    try:
+        final = p.obs()
+        result = evaluate(initial, final, reason, lift_height=cfg.lift_height, max_tilt_deg=cfg.max_tilt_deg)
+    except Exception:
+        error = (error or "") + traceback.format_exc()
+        result = {"ok": False, "why": "runtime_error"}
     result.update(
         label=label,
         seconds=time.time() - started,
@@ -167,7 +172,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         placement=placement,
         dataset_kind="painted_crate_rgb_video_pilot",
         produced=False,
-        intervention=reason.startswith("external_"),
+        control_reason=control_reason,
+        intervention=control_reason.startswith("external_"),
     )
     if error is not None:
         result["error"] = error

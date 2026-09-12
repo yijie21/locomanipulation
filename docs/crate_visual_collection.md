@@ -2,7 +2,8 @@
 
 Use this guide for the painted-crate expert. Its intended design and remaining
 training work are in [the design](handoff/crate-visual-expert-design.md).
-Implementation is being validated with video pilots; no VLA learning result is implied.
+The first ten-episode delivery is complete (7 successes, 3 hold timeouts).
+No VLA learning result is implied.
 Measured outcomes and revisions: [video evidence](handoff/crate-visual-pilot-20260912.md).
 
 ## Information used by the expert
