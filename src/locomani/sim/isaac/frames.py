@@ -161,16 +161,22 @@ def head_camera_spec(scene_xml: str = ""):
     import re
 
     xml = open(scene_xml or SCENE_XML).read()
-    mcam = re.search(
-        r'<camera name="head_camera" pos="([^"]+)" '
-        r'quat="([^"]+)" fovy="([^"]+)"',
-        xml,
-    )
-    if mcam is None:
+    # Match the element first, then each attribute on its own: MuJoCo's spec
+    # writer does not promise an attribute order, and build_sim_scene's
+    # _aim_ego_camera re-sets quat, after which the tag comes out as
+    # `name quat pos fovy`. The old single regex assumed `name pos quat fovy`
+    # and every freshly built scene failed with "no head_camera" (2026-09-11).
+    tag = re.search(r'<camera\b[^>]*\bname="head_camera"[^>]*>', xml)
+    if tag is None:
         raise SystemExit(f"no head_camera in {scene_xml or SCENE_XML}")
-    pos = [float(v) for v in mcam.group(1).split()]
-    quat = [float(v) for v in mcam.group(2).split()]  # wxyz
-    return pos, quat, float(mcam.group(3))
+
+    def attr(name, default):
+        m = re.search(rf'\b{name}="([^"]+)"', tag.group(0))
+        return m.group(1) if m else default
+
+    pos = [float(v) for v in attr("pos", "0 0 0").split()]
+    quat = [float(v) for v in attr("quat", "1 0 0 0").split()]  # wxyz
+    return pos, quat, float(attr("fovy", "45"))
 
 
 def load_state_trace(trace_path: str, session: str = "", episode: int = 0):

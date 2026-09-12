@@ -122,14 +122,16 @@ SCENE_META="$META" SCENE_XML="$SCENE_SRC_XML" OMNI_KIT_ACCEPT_EULA=YES PYTHONPAT
     "$LOCOMANI_OUTPUTS/scene" "$SCENE_DIR" > "$SCENE_DIR/kit.log" 2>&1 \
     || fail "scene build failed; see $SCENE_DIR/kit.log and build.log"
 [ -s "$SCENE_DIR/scene.usda" ] || fail "scene build produced no scene.usda; see $SCENE_DIR/kit.log"
-# The previews are a sanity check on the RENDERER, not on the USD. Isaac Sim
-# 4.5's RTX cannot build its ray-tracing acceleration structures on Blackwell
-# (RTX 50-series, compute 12.0): kit.log says "TLAS limit : valid false" and
-# every preview is the dome light's flat clear colour, while scene.usda itself
-# is complete and renders on a supported GPU / Isaac >= 5.0 (2026-09-11,
-# SRA0889). So a flat preview is a WARNING about later Isaac renders on this
-# machine, never a build failure.
-"$RENDER_PY" - "$SCENE_DIR" <<'PY' || echo "WARN: previews are flat -- the RTX renderer drew no geometry on this GPU (Isaac Sim 4.5 + RTX 50-series). The USD is fine; Isaac re-renders on this machine will be blank until RENDER_PY points at an Isaac Sim >= 5.0 venv (docs/rendering.md)."
+# The previews are a sanity check on the SCENE CONTENT, not on the USD file.
+# isaac_scene.py keeps going when the generated layout assets are absent
+# (outputs/scene/{layout,surface_b}/asset3d/*, layout/background/mesh_model.ply):
+# it logs "MISSING surface A: dining_table" to build.log and writes a stage with
+# lights + robot only, so every preview is the dome light's flat colour and
+# the Isaac half of render_wall_pilot shows the robot floating in grey
+# (2026-09-11, SRA0889 -- a machine that never ran the layout pipeline; the
+# RTX renderer itself was fine). Surface the MISSING lines and warn.
+grep -E "MISSING|background source" "$SCENE_DIR/build.log" | sed 's/^/  /'
+"$RENDER_PY" - "$SCENE_DIR" <<'PY' || echo "WARN: previews are flat -- the scene has no room/table geometry. Check the MISSING lines above: the generated layout assets under $LOCOMANI_OUTPUTS/scene/{layout,surface_b} are not on this machine (copy them from the collection machine). The robot and objects still render; only the background is empty."
 import glob, sys
 import numpy as np
 from PIL import Image
