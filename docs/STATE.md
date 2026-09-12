@@ -15,6 +15,10 @@
   distances 1.278–1.479 m. Seven reaching episodes pass the pre-contact shake diagnostic;
   navigation and hold failures remain. [Results and small videos](handoff/crate-walk-stability-20260912.md).
 
+- Isaac asset portability repaired: tracked room source, installed table meshes/texture
+  fallback, strict source validation and cache invalidation. Isaac 4.5 fresh-install
+  render passes. [Cause, update commands and evidence](handoff/isaac-asset-portability-20260912.md).
+
 ## Runtime evidence and remaining uncertainty
 
 - Final bottle A/B: coupled 2/30 -> 3/30; teleop 10/10 -> 9/10. Both gates FAIL
