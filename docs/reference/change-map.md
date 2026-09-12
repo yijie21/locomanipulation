@@ -25,6 +25,7 @@ validity. Test names below are relative to `tests/` and checked for existence.
 | CPU geometry fixtures | [geometry_fixture.py](../../tests/geometry_fixture.py) | [fixture README](../../tests/fixtures/geometry/README.md) | `test_grasp_point_ik.py`, `test_ready_grasp_policy.py` |
 | Shared config serialization | [config_base.py](../../src/locomani/config_base.py) | [bottle/config.py](../../src/locomani/tasks/bottle/config.py) | `test_configs.py`, `test_review_2026_09_10.py` |
 | Scene / camera / rendering | [build_sim_scene.py](../../src/locomani/sim/build_sim_scene.py), [scene_lib.py](../../src/locomani/sim/scene_lib.py) | [rendering tutorial](../rendering.md) | `test_head_camera_spec.py`, `test_seat_on_floor.py` |
+| Isaac source assets / cache | [scene_assets.py](../../src/locomani/sim/isaac/scene_assets.py), [build_isaac_assets.sh](../../scripts/build_isaac_assets.sh) | [rendering](../rendering.md#资产构建), [shared room source](../../assets/scene/README.md) | `test_isaac_scene_assets.py` |
 | Navigation / architecture checks | [lint_repository.py](../../scripts/lint_repository.py) | [standards](standards.md) | `test_repository_rules.py` |
 
 ## Change workflow

@@ -22,10 +22,13 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import gzip
 import os
 import sys
+from pathlib import Path
 
 from locomani import paths  # noqa: E402
+from locomani.sim.isaac.scene_assets import background_source, mesh_source, prepare_obj
 
 # abspath is not cosmetic. A relative OUT_DIR produces relative `references =`
 # in scene.usda, which USD then resolves against the layer's own directory, so
@@ -51,7 +54,7 @@ print = log  # noqa: A001 - deliberately redirect every print in this module
 
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": True, "renderer": "RayTracedLighting"})
+app = SimulationApp({"headless": True, "renderer": "RayTracedLighting", "multi_gpu": False})
 
 import numpy as np  # noqa: E402
 import omni.kit.asset_converter as asset_converter  # noqa: E402
@@ -273,7 +276,11 @@ def add_vertex_coloured_mesh(stage, prim_path: str, ply_path: str, translate, ro
     xform ops, because the floor warp below is defined in world coordinates and
     has to be applied to world-space vertices.
     """
-    mesh = trimesh.load(ply_path, force="mesh")
+    if str(ply_path).endswith(".gz"):
+        with gzip.open(ply_path, "rb") as stream:
+            mesh = trimesh.load(stream, file_type="ply", force="mesh")
+    else:
+        mesh = trimesh.load(ply_path, force="mesh")
     world = (np.asarray(mesh.vertices) * scale) @ _rotate_xyz_matrix(rotate_xyz).T
     world += np.asarray(translate, dtype=float)
     if flatten:
@@ -416,6 +423,8 @@ def place_asset(
         Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render], useExtentsHint=False
     )
     rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
+    if rng.IsEmpty():
+        raise RuntimeError(f"Scene mesh composed to no geometry: {usd_path}")
     actual = ([round(float(v), 3) for v in rng.GetMin()], [round(float(v), 3) for v in rng.GetMax()])
 
     return prim, [round(float(v) * s, 3) for v in size], actual
@@ -443,15 +452,12 @@ def make_double_sided(stage, root_prim) -> int:
 
 def obj_and_height(scene_root: str, name: str):
     """Return (obj_path, vertical size in m, mesh AABB) for a generated asset."""
-    for sub in ("layout", "surface_b"):
-        base = f"{scene_root}/{sub}/asset3d/{name}/result"
-        obj = f"{base}/mesh/{name}.obj"
-        if os.path.exists(obj):
-            m = trimesh.load(obj, force="mesh")
-            # meshes are exported y-up; we rotate +90 about x when placing
-            return obj, float(m.extents[1]), m.bounds
-
-    return None, 0.0, None
+    source = mesh_source(Path(scene_root), name)
+    if source is None:
+        return None, 0.0, None
+    obj = prepare_obj(source, Path(OUT_DIR) / "source_meshes" / name)
+    mesh = trimesh.load(obj, force="mesh")
+    return str(obj), float(mesh.extents[1]), mesh.bounds
 
 
 def _mjcf_texture_for(mesh_name: str, xml: str):
@@ -626,44 +632,40 @@ def main() -> None:
     # only in the render, not in MuJoCo, so the robot would walk straight
     # through furniture it can see. An empty shell keeps vision and physics
     # consistent, with every object present in both.
-    ply = f"{SCENE_ROOT}/bg_empty/scene_0000/mesh_model.ply"
-    if not os.path.exists(ply):
-        ply = f"{SCENE_ROOT}/layout/background/mesh_model.ply"
-    print(f"  background source: {ply}")
-    if os.path.exists(ply):
-        # The whole transform has to be known before the points are written,
-        # because the floor warp operates on world-space vertices. Derive the
-        # z-shift that puts the mesh's lowest point on 0 from the raw bounds,
-        # using the actual rotation matrix rather than a hand-written axis
-        # mapping, so changing BG_ROTATE cannot silently invalidate it.
+    ply, world_space = background_source(Path(SCENE_ROOT), Path(paths.REPO))
+    print(f"  background source: {ply} (world_space={world_space})")
+    if world_space:
+        room = add_vertex_coloured_mesh(
+            stage, "/World/Background", str(ply), translate=(0, 0, 0), rotate_xyz=(0, 0, 0), flatten=False
+        )
+    else:
         raw = trimesh.load(ply, force="mesh").bounds
         corners = np.array(np.meshgrid(*zip(raw[0], raw[1]))).reshape(3, -1).T
         rotated = (corners * BG_SCALE) @ _rotate_xyz_matrix(BG_ROTATE).T
         translate = (BG_SHIFT_XY[0], BG_SHIFT_XY[1], -float(rotated.min(0)[2]))
-
         room = add_vertex_coloured_mesh(
-            stage, "/World/Background", ply, translate=translate, rotate_xyz=BG_ROTATE, scale=BG_SCALE
+            stage, "/World/Background", str(ply), translate=translate, rotate_xyz=BG_ROTATE, scale=BG_SCALE
         )
 
-        # Measured from the warped vertices, not predicted from the raw bounds:
-        # flattening the floor moves geometry, so anything derived beforehand
-        # would describe a room that is no longer there.
-        wlo, whi = room.min(0), room.max(0)
+    # Measured from the warped vertices, not predicted from the raw bounds:
+    # flattening the floor moves geometry, so anything derived beforehand
+    # would describe a room that is no longer there.
+    wlo, whi = room.min(0), room.max(0)
 
-        # Cameras must sit inside this box — the room is a single-sided shell
-        # and any viewpoint outside it sees straight through the backfaces.
-        room_box = dict(
-            x=(float(wlo[0]), float(whi[0])), y=(float(wlo[1]), float(whi[1])), z=(float(wlo[2]), float(whi[2]))
+    # Cameras must sit inside this box — the room is a single-sided shell
+    # and any viewpoint outside it sees straight through the backfaces.
+    room_box = dict(
+        x=(float(wlo[0]), float(whi[0])), y=(float(wlo[1]), float(whi[1])), z=(float(wlo[2]), float(whi[2]))
+    )
+    print(f"  room world box: x={room_box['x']} y={room_box['y']} z={room_box['z']}")
+
+    span_needed = (ROBOT_START_XY[0] - 0.4, SURFACE_B_XY[0] + 0.4)
+    if wlo[0] > span_needed[0] or whi[0] < span_needed[1]:
+        print(
+            f"  WARNING: room x {room_box['x']} does not cover the layout "
+            f"span {span_needed} — raise BG_SCALE or retune BG_SHIFT_XY"
         )
-        print(f"  room world box: x={room_box['x']} y={room_box['y']} z={room_box['z']}")
-
-        span_needed = (ROBOT_START_XY[0] - 0.4, SURFACE_B_XY[0] + 0.4)
-        if wlo[0] > span_needed[0] or whi[0] < span_needed[1]:
-            print(
-                f"  WARNING: room x {room_box['x']} does not cover the layout "
-                f"span {span_needed} — raise BG_SCALE or retune BG_SHIFT_XY"
-            )
-        globals()["ROOM_BOX"] = room_box
+    globals()["ROOM_BOX"] = room_box
 
     # --- surfaces -----------------------------------------------------------
     surfaces = {}
@@ -672,11 +674,10 @@ def main() -> None:
     for key, name, xy in plan:
         obj, h, bounds = obj_and_height(SCENE_ROOT, name)
         if obj is None:
-            print(f"  MISSING surface {key}: {name}")
-            continue
+            raise FileNotFoundError(f"Missing surface {key}: {name}; run scripts/install_scene.sh")
         usd = asset_usd_path(OUT_DIR, name)
         if not convert_obj_to_usd(obj, usd):
-            continue
+            raise RuntimeError(f"Failed to convert scene mesh: {obj}")
         target = tops[name]
         _, size, actual = place_asset(stage, f"/World/{name}", usd, bounds, xy, 0.0, target_height=target)
         surfaces[key] = dict(xy=xy, top=target)
@@ -695,7 +696,7 @@ def main() -> None:
             continue
         usd = asset_usd_path(OUT_DIR, name)
         if not convert_obj_to_usd(obj, usd):
-            continue
+            raise RuntimeError(f"Failed to convert scene mesh: {obj}")
         surf = surfaces[key]
         x, y = (pose[0] + surf["xy"][0], pose[1] + surf["xy"][1]) if key == "A" else surf["xy"]
         # target_height keeps the render honest against MuJoCo, where the same
@@ -801,5 +802,6 @@ except BaseException:
 
     log("=== build FAILED ===")
     log(traceback.format_exc())
+    raise
 finally:
     app.close()

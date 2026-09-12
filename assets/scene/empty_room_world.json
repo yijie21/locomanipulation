@@ -1,0 +1,9 @@
+{
+  "asset": "empty_room_world.ply.gz",
+  "sha256": "9ea16f7909889003d5255959f196878da8a8b3cd7e1ddf6ebb2f2b90997ef515",
+  "bytes": 42918604,
+  "vertices": 2099513,
+  "triangles": 4190791,
+  "source_scene_sha256": "c52aae2adba1027a060c66ab15edb36bbd15f64062ffadd3c2d0b249f511fbc9",
+  "coordinate_frame": "world metres Z-up; existing BG transform and floor warp already baked"
+}

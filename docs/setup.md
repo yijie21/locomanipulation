@@ -442,11 +442,12 @@ bash scripts/setup_render_runtime.sh --deep
 bash scripts/build_isaac_assets.sh
 ```
 
-> **Isaac 场景的桌子和房间不来自第 4 步的 tarball。**`isaac_scene.py` 读的是 EmbodiedGen 的原始产物
-> `outputs/scene/{layout,surface_b}/asset3d/<name>/result/mesh/*.obj` 和 `outputs/scene/layout/background/mesh_model.ply`,
-> `scene_locomani_v1.tar.gz` 只带了 MuJoCo 要的 `mjcf/` 与 `layout/layout.json`。缺了它们第 5 步照样 "done",但打
-> `MISSING surface A: dining_table` 并 WARN,USD 里只有灯 + 机器人,Isaac 视频里机器人浮在灰底上。从跑过 EmbodiedGen
-> 的机器拷这几个目录过来,再 `build_isaac_assets.sh --force`。机器人和物体(`third_party` / `assets/crates`)不受影响。
+> 桌子和台面的源网格/贴图由第 3 步 `install_scene.sh` 从仓库场景包安装；
+> 房间背景随 Git 放在 `assets/scene/empty_room_world.ply.gz`（约 41 MB）。
+> 不需要复制本地 EmbodiedGen 输出。旧版本可能缓存了缺少桌子/房间的场景；
+> 更新代码后重新运行 `build_isaac_assets.sh`，新缓存键会触发重建。
+> 必需源资产缺失或转换失败会明确报错，不再把灰底场景当作构建成功。
+> 详见 [资产构建](rendering.md#资产构建)。
 
 **验证**:
 
