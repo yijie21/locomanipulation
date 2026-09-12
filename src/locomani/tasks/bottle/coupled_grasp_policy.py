@@ -168,7 +168,7 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
                     # rotation residual 0.002 against 0.103 -- no template
                     # rotation reproduces it, ledger 32), so the only way to
                     # compare the two solves is to run both here.
-                    _, waist_pe, waist_re = self.arm.ik.solve(
+                    waist_q, waist_pe, waist_re = self.arm.ik.solve(
                         self.side, target_root, local_rot, q_mj29=q, use_waist=True, iters=80
                     )
                     # THE SAME CALL AGAIN, byte-identical arguments. Offline the
@@ -187,6 +187,15 @@ class CoupledGraspPolicy(RecoverableGraspPolicy):
                             repeat_rotation_error_rad=float(repeat_re),
                             seed_mutated=float(np.max(np.abs(q - seed_snapshot))),
                             waist_position_error_m=float(waist_pe),
+                            # The waist angles the rescue actually used. ArmIK
+                            # widens joints 13/14 (waist roll/pitch) to 1.6x the
+                            # MJCF range on purpose, and v1.1 saturates at the
+                            # hardware limit (25.9 of 29.79 deg, crate.md
+                            # 2026-09-12), so a solution is only real if these
+                            # stay inside it -- a comparison, not a re-solve,
+                            # which matters because offline re-solves are not
+                            # evidence here (ledger 32.3/32.6).
+                            waist_q_rad=[float(v) for v in np.asarray(waist_q).ravel()[12:15]],
                             waist_rotation_error_rad=float(waist_re),
                             # The rotation target itself, which nothing recorded:
                             # without it an offline re-solve cannot even be set up.
