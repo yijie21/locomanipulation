@@ -103,6 +103,20 @@ PALM_PITCH_DEG = 60  # 45 put wrist_yaw_link on the rim (reach_vert sweep 2026-0
 # arms alone reach both bars at 0.40 m with the palms at 45 deg (arms-only
 # sweep 2026-09-07: 1.0 cm standing, 0.0 with a 9 cm crouch), at 0.47 they
 # do not (6.4 cm) -- so the stand-off is what changed, not the waist.
+#
+# 2026-09-12: THAT READING IS policy/release's. diag_lean.py re-run on both
+# checkpoints the same hour (outputs/diag/lean_20260912/): planner-channel
+# delivery ratio 0.09 on release (waist reaches 2.0 deg at the 0.52 command)
+# but 0.87 on policy/sonic_v1_1 (25.9 deg, i.e. the MJCF's 29.79 deg limit is
+# the binding constraint, not the policy). v1.1 has been the default since
+# 2026-09-11. FK on the measured joints splits the palm motion: on v1.1 the
+# lean itself lowers the palm 10.4 cm and costs 2.2 cm of forward reach (the
+# palm hangs BELOW the waist pivot, so it swings back as it drops); on
+# release the same command delivers no lean and only degrades arm tracking
+# (shoulder pitch error 8.2 -> 13.5 deg, elbow -6.0 -> +12.3).
+# The zero STAYS until a pilot says otherwise -- unlocking it changes what
+# the recorded reference means, and every crate baseline to date was recorded
+# with the waist at zero. Ledger crate.md 2026-09-12.
 WAIST_PITCH_MAX = 0.0
 
 # --- C: capture region per bar, in the stand frame (x toward the crate) ------

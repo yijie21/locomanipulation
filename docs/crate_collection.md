@@ -260,7 +260,7 @@ agent 能往 deploy 发的仍然**只有三种东西**,双臂线用法如下:
 | 发什么 | 单手线怎么用 | 双臂线怎么用 |
 |---|---|---|
 | planner 帧(`mode/movement/facing/speed`) | 走路;抓取时 `IDEL_SQUAT` + `height` 下蹲 | 走路(`SLOW_WALK`,三档速度 0.30/0.25/0.20 按剩余距离切);到站后 `IDLE` + 锁定朝向。**不下蹲**:骨盆高度全程站立 |
-| `upper_body_position[17]` | IK 只解一只手,另一只手被顺带写进去 | 两只手**都**由 IK 解(`BimanualArms`),腰 3 个关节**锁死为 0**:命令的腰前倾只交付 2–10%(`diag_lean.py`),身体不跟的参考写进数据就是谎话 |
+两只手**都**由 IK 解(`BimanualArms`),腰 3 个关节**锁死为 0**:身体不跟的参考写进数据就是谎话。**注意依据已过期**:2–10% 的交付率是 `policy/release` 的;2026-09-12 在两个 checkpoint 上重测(`outputs/diag/lean_20260912/`),planner 通道 release 0.09、**`policy/sonic_v1_1` 0.87**(满命令时腰到 25.9°,顶到 MJCF 的 29.79° 行程),而 v1.1 自 09-11 起是默认。锁仍然保留,解不解由 pilot 决定,见台账 09-12 |
 | `left/right_hand_joints` | 右爪开合 | 两爪**同一帧**开合(`CLOSE_RAMP` 1.6 s 线性) |
 
 三个必须记住的点(与单手线的三点对照):

@@ -1,4 +1,4 @@
-# STATE (updated 2026-09-11 16:0x UTC by the crate/entry-point session; several sessions write this file, keep edits surgical)
+# STATE (updated 2026-09-12 01:4x UTC by the crate session; several sessions write this file, keep edits surgical)
 
 ## INCIDENT 2026-09-09 17:23 UTC: outputs/ was deleted by a git merge (session 9d, Claude)
 - Cause: refactor commit cf6a08e (`git add -A` in a worktree that had a symlink named `outputs`) tracked that symlink;
@@ -37,6 +37,180 @@
 - 完整规则与命令:docs/scalebfm_collection.md「正式采集必须遵循的渲染与吞吐规则」。
 
 ## Now
+- **THE v1.1 SWAP IS SOLVED, AND IT WAS OUR OWN TIMING BUG: the VR 3-point wrist channel IS a servo --
+  we just never let the deploy enter the encoder mode that reads it (this session, 2026-09-12 03:0x-04:1x UTC).
+  NOTHING RUNNING; GPUs 2 MiB, instance 0 released, pids 575.** Ledger bottle.md §35 (§35.1-§35.11).
+  **COMMITTED as dd36fd8 on main (18 files, staged by name; this STATE entry is deliberately UNCOMMITTED,
+  like the two under it). NOT pushed.**
+  THE BUG: the deploy picks its encoder mode from the PRESENCE of `vr_position` in the planner message --
+  RISING edge -> mode 1 `teleop` (where `vr_3point_local_target` is the servo input), falling edge -> mode 0 `g1`
+  (where that slot is zeroed). `zmq_manager.hpp:679-693` + `:1180-1222`; `Planner()` init and every safety reset
+  put it back to 0 (`cpp:3770`, `zmq_manager.hpp:498`). `AgentCommander.frame()` sent the field from BOOT, so the
+  edge burned before the planner initialised and never came again -- the deploy sat in `g1` for every run this
+  repo has ever done. Both 09-12 deploy.logs show it: `VR 3-point control enabled` BEFORE
+  `Setting planner_motion encode mode to 0`. **Ledger §34's "the wrist pose is a cue, not a servo target" is
+  therefore WRONG and is retracted in §35.2; §34.4's "do it on STREAMED_MOTION" is wrong too -- the official
+  PICO grasp flow is PLANNER_VR_3PT** (`pico_manager_thread_server.py:1843-1849,2119`), no IK on the sender side.
+  NEW CODE (all opt-in; no existing line's messages change once the default below is kept):
+  * `AgentCommander.vr_targets` gates the VR fields; `set_neck()` makes the third point commandable.
+  * `backends/sonic/teleop_arm.py` `TeleopArm`: enter after the planner is up with the FIRST target = the MEASURED
+    pose (what the PICO manager recalibrates on every entry), world-frame targets re-expressed in the LIVE pelvis
+    frame each tick, position+attitude feedback on the measured residual. No IK. Waist free.
+  * `tasks/bottle/teleop_grasp_policy.py` `TeleopGraspPolicy` + `ReachConfig.teleop_arm` + profile
+    `configs/tasks/bottle_visible_teleop.json`. Keeps brake/stand/squat-depth; DELETES the IK rejection
+    (`coupled_terminal_ik`), the predicted squat retreat (0.8) and the joint comfort limits.
+  * `backends/sonic/diag_vr3pt.py` + `scripts/experiments/{vr3pt_probe,teleop_pilot,teleop_pilot_report,teleop_reel}_20260912.*`
+  MEASURED (probe, `outputs/diag/vr3pt_20260912/`, v1.1 | release): reach ratio 1.16 | 1.38, servo residual
+  **2.6 | 6.1 cm**, rotation 0.88 | 0.67, squat 0.10 m with the world target FIXED -> palm drifts **2.3 | 2.4 cm**
+  against a 6.7 cm pelvis retreat and 15 deg pitch, neck-lean -> waist **1.05 | 0.02**.
+  So the policy compensates the squat retreat ITSELF: `project_squat`/`squat_prediction_*` have no role here.
+  PILOTS (`outputs/experiments/teleop_pilot_20260912/`, bank `cases10_az374.json` = §33's):
+  **v1.1 0/30 (coupled, §33) -> 7/10, 7/10, 6/10 (teleop) = 20/30, Fisher p = 1.4e-08.**
+  release 7/10 on the same code.
+  **RETRACTION (§35.10): run5's "v1.1 7/10 vs release 3/10, 4:0" was MY OWN two gates** -- a lateral gate
+  tighter than the capture tolerance and a 20 ms speed estimate -- both inherited from the channel where we drove
+  the joints. Fixed (`LATERAL_ALIGN_M=LATERAL_TOL`, `SPEED_WINDOW_S=0.2`); release then went 3/10 -> 7/10 and the
+  two checkpoints are **indistinguishable**, as in §27. The real result is the 0/30 -> 7/10, not a checkpoint win.
+  ALSO FOUND (§35.8): **`action.psi0_18` is all-zero in every existing dataset** -- the converter builds it from
+  `teleop.vr_3pt_*`, which the exporter only writes at `stream_mode == 5`, and the coupled line records in 3.
+  On this channel it carries real commanded wrist poses (621/1089 frames of run5 ep0). Fourth "declared,
+  calibrated, no caller" on this line.
+  NOT DONE / NEXT:
+  a. **bottle GPU gate has NOT been re-run** -- standards require `scripts/gate.py compare` for a main-code PR.
+     §35.7 argues the coupled line is unaffected (the deploy was in `g1` either way) but that is REASONING, not a gate.
+  b. DONE: the dex1 full-close fix (`close_hand` ramps to alpha 1.0 like `servo_phases._phase_close` does for
+     bilateral dex1) turned the `[hold]` failure from a 79.9 cm DROP into a 4.1 cm slip against the 3 cm
+     `PALM_DRIFT_MAX`. Rate unchanged within 10-round noise (§35.11).
+  b2. NEW and NOT tuned: run7 lost two rounds to `local alignment disturbed target or base`. The align starts
+     8 cm above the grasp and `STEP_M` allows 0.2 m/s, so the descent takes 0.45 s and the fingers can clip
+     the bottle while 1-3 cm of lateral error remains. Scale the descent by the lateral residual, or align
+     before descending -- do NOT just slow everything down.
+  c. case `az30:0` fails `[stand] could not turn -19 deg` on BOTH v1.1 legs and neither release leg -- upstream of
+     the grasp, looks like v1.1's slower turn (§21), not the bank.
+  d. Collection on this channel is untested at scale: 7 episodes/run recorded and convertible-looking, but no
+     `convert_to_hf_format` + `check_dataset` run yet.
+  Reel: `outputs/videos/teleop_20260912/reel.mp4` (19 captioned clips, both checkpoints).
+  **THE SINGLE-ARM COLLECTION LOGIC, as it stands** (written up in full in `docs/collection.md`
+  under "一句话:数采逻辑" + the channel table; commands in `docs/reference/runbook.md` §1):
+  One round = one reset + one whole attempt; a success is kept, a failure is discarded ON THE SPOT
+  ('x' to the exporter, no retry). Spawn 1-3 m out with a yaw error -> settle -> START RECORDING
+  ('c', after the settle, so frame 0 is the task's frame 0) -> turn to the approach heading -> walk
+  in and brake at the visible depth (~0.30 m) -> **decide ONCE whether this stand can reach**;
+  if not, the whole round is discarded and the robot never re-steps (that is the visible-expert rule:
+  a single-frame policy must not see one image labelled both "walk" and "stop") -> squat while
+  carrying the hand to the pregrasp -> align on the MEASURED object until depth/lateral/height/jaw
+  tilt are all inside tolerance -> close -> lift (object must clear the table by > 6 cm) -> carry,
+  back off two steps, hold 2 s with < 3 cm of palm-frame slip. Only then is it a success.
+  Cost of the no-reposition rule: yield ~0.6, so 200 episodes take ~330 rounds at ~34 s each.
+  The manifest's `ok`/`produced` is what the converter joins on -- if those disagree with the
+  session on disk, that batch must NOT be converted. One batch = one session = one manifest.
+  Steps 6-9 now have TWO implementations (coupled = default, teleop_arm = new); everything else
+  is shared. Pipeline tail unchanged: `convert_to_hf_format.py` -> `check_dataset.py` (always).
+- **v1.1 SWAP: THE GRASP PHASE MEASURED END TO END (session cf, 2026-09-12 01:43-02:42 UTC).
+  NOTHING RUNNING; GPUs 2 MiB, instance 0 released, ports free.** Ledger bottle.md §32/§33/§34.
+  Five commits on `reach-diagnosis-20260912` (2eda5e6, d43ce48, b28564d, 999c035, 870e669), NOT on main --
+  see MERGE PENDING below. This STATE entry is deliberately UNCOMMITTED, like the crate entry under it.
+  CHANGED (instrumentation only -- no control path altered):
+  * `coupled_grasp_policy`: `squat_delivered_pose` (delivered retreat / lateral / pitch against the prediction);
+    the waist SHADOW SOLVE (`waist_position_error_m`, `waist_q_rad`) and a byte-identical REPEAT solve; and
+    `seed_q` + both pelvis frames + `target_rot_local` on every terminal-IK rejection.
+  * `diag_wrist` rewritten: `rest`/`reach` control legs GATE the run (it stops instead of printing ratios),
+    RefTap checks the deploy's own reference, rotation is referenced to `reach`.
+  * new `scripts/experiments/{retreat_seed10,retreat_report,retreat_reel,resolve_rejections,wrist_channel}_20260912.*`;
+    `tests/test_squat_prediction.py` gained the pitch-sign test. Reel: `outputs/videos/retreat_20260912/reel.mp4`.
+  * DELIBERATELY NOT CHANGED: `squat_prediction_backshift_ratio` 0.8, `TRACK_ROT_BOOST` 4.5,
+    `stand_azimuth_deg` 0.0 -- each measured and each left alone for a reason given in the ledger.
+  MEASURED (all live; 40 rounds over 4 batches on one 10-placement bank):
+  1. **The squat's retreat is UNDER-predicted.** delivered/drop 1.150 (v1.1) vs 1.003 (release) against the 0.8
+     constant; under-read +3.47 / +1.94 cm, positive in 16/16 squats; pelvis pitch +16.5 / +10.8 deg where the
+     prediction says 0. The plan is OPTIMISTIC, so correcting the ratio would reject MORE, not fewer -- the lever
+     is the stand or the drop. ~2 cm of the error is a stale constant, ~1.5 cm is v1.1's.
+  2. **The waist rescues the dominant rejection.** inside both tolerances 36/49 (v1.1) / 23/23 (release);
+     release's rescue uses waist pitch median 5.7 / max 11.5 deg, 0/23 over the MJCF 29.79 -- reachable angles,
+     not `ArmIK`'s 1.6x widening. v1.1's 49 predate the `waist_q_rad` field.
+  3. **release beats v1.1 4/10 vs 0/30 on the SAME bank**, which CONTRADICTS §27's tie on a different bank:
+     the checkpoint gap is PLACEMENT-dependent -- v1.1 loses where targets sit near the reach limit.
+  4. **The planner VR-3PT wrist channel is not a servo target on EITHER checkpoint** (0.206 m commanded ->
+     0.003 / 0.002 m of palm; the deploy does receive it). **Stage D closes as NOT APPLICABLE**:
+     `TRACK_ROT_BOOST`'s only consumer `primitives_crouch.track()` has no caller in src/locomani.
+  NEXT, in order:
+  a. One 10-round v1.1 batch JUST for `waist_q_rad` -- is 36/49 reachable, or does it lean past the MJCF limit?
+  b. The grasp phase on **STREAMED_MOTION** instead of planner + our own IK. `enter_streamed()`/`pose_chunk()`
+     already exist; that is the channel v1.1's wrist-pose augmentation and the official PICO flow actually use,
+     and memory `sonic-streamed-motion-channel` measured ~1 cm palms on it.
+  c. Ask the human collaborator for their working v1.1 teleop config (deploy flags, `--input-type`, wrist path).
+  d. Only then the waist as a DESIGN decision: planner AND executor together, 30 paired rounds, never 10 (§23).
+  USABLE NOW: on this bank release is still clearly better -- **collect on release until the reach fix lands, and
+  stop tuning the azimuth** (§30 refuted it; §33 explains why it had looked like it worked).
+  OPEN QUESTIONS:
+  * **Why does an offline IK re-solve disagree with the live solver?** 0.068/0.010 against the live 0.115/0.299 --
+    better on BOTH objectives. Live is deterministic (byte-identical repeat agrees to 0.00e+00) and seed, target,
+    rotation target, module path, scene XML, iters and damping all check out. HIGHEST PRIORITY: it decides which
+    historical conclusions stand. Until then no offline IK re-solve is evidence in this repo.
+  * Is v1.1's waist rescue inside the hardware limit? (a) answers it.
+  * Does a lean buy reach or cost it? crate's FK split says a pure lean COSTS 2.2 cm of forward reach; our joint
+    arm+waist solve says it gains 3-5 cm. Unreconciled, and it gates (d).
+  * `tests/gate/baseline_bottle.json` is still the 29-deg-profile recording -- the bottle gate cannot be trusted.
+  * Release-era speed commands still live outside `gait_speeds`: `place_phase.turn_command(speed=0.20)` (0.009 m/s
+    on v1.1) and crate's `APPR_SPEED = (0.30, 0.25, 0.20)`; the crate line has never run on the v1.1 default.
+  * No dataset carries a checkpoint stamp (`convert_to_hf_format` writes none), and the codebook is identical, so
+    mixing release-era and v1.1 episodes is undetectable.
+- **WAIST-LEAN DELIVERY RE-MEASURED ON BOTH CHECKPOINTS (2026-09-12 01:28-01:35 UTC, crate session).
+  NOTHING RUNNING; GPUs 2 MiB, instance 1 released, pids 573.** Ledger crate.md, entry 2026-09-12. NOT COMMITTED YET.
+  `src/locomani/backends/sonic/diag_lean.py` RESTORED (was `78536ae:src/teleop_free/diag_lean.py`, deleted by
+  refactor step 2) -- same move `diag_wrist.py` got on 09-11, and with the same outcome: the number a production
+  constant rests on was `policy/release`'s. Planner-channel waist delivery ratio **0.09 on release vs 0.87 on
+  policy/sonic_v1_1** (the default since 09-11); streamed 0.10 / 0.94; reproduced in a second planner-only run.
+  Release reads 7-23%, i.e. the historical "2-10%" -- so the restored script reproduces the old measurement and
+  the checkpoint is the entire difference (9.7x). At the 0.52 command v1.1 reaches 25.9 deg, against the MJCF's
+  29.79 deg waist_pitch limit: on v1.1 the BINDING CONSTRAINT IS THE HARDWARE RANGE, not the policy.
+  FK on the measured joints splits the palm motion (both checkpoints drop the palm ~11 cm, so the raw drop is NOT
+  the lean): on v1.1 the lean itself gives -10.4 cm of height and COSTS 2.2 cm of forward reach (the palm hangs
+  below the waist pivot); on release the same command delivers no lean and only degrades arm tracking (shoulder
+  pitch error 8.2 -> 13.5 deg, elbow -6.0 -> +12.3). Pelvis height is unchanged throughout -- it is not a squat.
+  **No production constant changed**: `bimanual_carry.WAIST_PITCH_MAX = 0.0` and the three zeroed IK bounds stay;
+  only their stale justifications were corrected (bimanual_carry.py comment, crate_collection.md 6, and
+  silent_failures.md's diag table -- whose header still pointed at the long-gone `src/teleop_free/diag_*.py`).
+  OPEN, user's call: unlock the waist or not. Unlocking changes what every existing crate recording means (their
+  waist column is constant 0) and would need the gate baseline re-recorded; and it buys height, not reach, so it
+  does NOT address this line's actual blocker (the walk-in stand-off delivery scatter, crate.md 09-11, parked).
+  Artifacts `outputs/diag/lean_20260912/` (summary.md + per-checkpoint json/logs, `arm/` = the joint-level rerun).
+  Repro, per checkpoint (~90 s each after the stack is up; the stack is NOT started by the diag):
+    INSTANCE=1 . scripts/paths.sh; export CUDA_VISIBLE_DEVICES=1 MUJOCO_EGL_DEVICE_ID=1
+    SONIC_POLICY=policy/sonic_v1_1 bash scripts/stack/start_stack.sh "lean diag"
+    SONIC_POLICY=policy/sonic_v1_1 PYTHONPATH=src $VENV_SIM_PY -m locomani.backends.sonic.diag_lean \
+        --arm reach --json outputs/diag/<run>/lean_v1_1.json      # then scripts/stack/stop_instance.sh 1
+  SONIC_POLICY must be set for BOTH the stack (it picks the deploy's checkpoint) and the diag (it only records
+  the name); a diag run whose json says one checkpoint while the stack ran another is the failure to watch for.
+- **MERGE PENDING (updated 2026-09-12 by this session, REPLACES the older entry):
+  `origin/main` has SEVEN commits from henry-zhao (09-11) that local main does not.
+  The merge is PROVEN CLEAN at the commit level (`git merge-tree --write-tree main origin/main` -> a tree, no
+  conflicts, working tree never touched). It is blocked ONLY by the working tree: two files the incoming commits
+  modify have UNCOMMITTED edits belonging to another session --**`docs/crate_collection.md`** (touched by 5 of
+  the 7) and **`scripts/run_wall_pilot.sh`** (touched by 0252687). `git merge` refuses before changing anything.
+  **USER RULING 2026-09-12: wait for the crate session to commit those two files, then merge.** Do NOT stash
+  them, do NOT merge around them.
+  **PUSHED 2026-09-12 as branch `teleop-channel-20260912`** (= local main, 9 commits: this session's
+  dd36fd8/e8353c5/6bfea4e plus the six reach-diagnosis ones). `main` itself could NOT be pushed -- the
+  branches have diverged (local 9 ahead, 7 behind) and a force-push would have deleted henry's seven.
+  `main`'s upstream is still `origin/main`. When the two files land: `git merge origin/main` on local main,
+  re-run `make config-doc` (both sides touched that generated file), then push main normally.
+  What is incoming, and why it is worth taking:
+  * `e41b965` stack on a host without /workspace, on any instance -- `PYTHONUNBUFFERED=1` for the readiness
+    check, lock dir under `$LOCOMANI_TMP` and deploys under `$DEPS_DIR` instead of hard-coded paths (BOTH
+    resolve to the same place on this box, so it is behaviour-neutral here), and `run_sim_locomani` now takes
+    its camera port from `ports.camera()` -- before this, **instance != 0 always bound 5555** while start_stack
+    waited on 5555+10*INSTANCE ("camera port never opened"). The crate line runs on instance 1.
+  * `ebff47d` `head_camera_spec` reads attributes by name instead of assuming the order `name pos quat fovy`;
+    `build_sim_scene._aim_ego_camera` re-sets quat, so MuJoCo writes `name quat pos fovy` and **every freshly
+    built scene failed with "no head_camera"**. Adds `tests/test_head_camera_spec.py`.
+  * `91ee205` crate preflights (+`scripts/lint_env.py` whitelist), `c4e5b12` config-doc regen,
+    `0252687`/`37cf487`/`640ba5f` crate + isaac docs and `build_isaac_assets.sh`.
+  One review note to carry, not a blocker: `91ee205` whitelists very generic names in `lint_env.py`
+  (`OUT`, `UP`, `PW`, `SAVE`, `ROT`, `OVER`, `WARM`). The whitelist is repo-wide, so those names stop being
+  linted anywhere. Worth narrowing to a per-file exemption later.
+  (The older entry here said branch `reach-diagnosis-20260912` was unmerged. It is NOT: 2eda5e6..870e669 have
+  been on local main since before this session started. Corrected rather than left to mislead.)
 - **CRATE/BIMANUAL ENTRY POINTS REFACTORED: driver and expert are separate now, like the single-arm line
   (branch session, 2026-09-11 14:45-15:2x UTC). NOTHING RUNNING of mine; instance 1 released, GPU1 2 MiB.
   Another session holds instance 0 / GPU0 (stagee_az29b_20260911), untouched by this work.** Ledger crate.md, entry 2026-09-11. NOT COMMITTED YET.
