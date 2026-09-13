@@ -1,0 +1,19 @@
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/policy_parameters.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/policy_parameters.hpp
+@@ -224,14 +224,14 @@
+     0.0, // waist_roll_joint
+     0.0, // waist_pitch_joint
+     0.2, // left_shoulder_pitch_joint
+-    0.0, // 0.2, // left_shoulder_roll_joint
++    0.2, // left_shoulder_roll_joint
+     0.0, // left_shoulder_yaw_joint
+     0.6, // left_elbow_joint
+     0.0, // left_wrist_roll_joint
+     0.0, // left_wrist_pitch_joint
+     0.0, // left_wrist_yaw_joint
+     0.2, // right_shoulder_pitch_joint
+-    0.0, // -0.2, // right_shoulder_roll_joint
++    -0.2, // right_shoulder_roll_joint
+     0.0, // right_shoulder_yaw_joint
+     0.6, // right_elbow_joint
+     0.0, // right_wrist_roll_joint

@@ -10,9 +10,12 @@ def test_assisted_pilot_restores_the_original_basket_in_its_own_scene_copy(tmp_p
     source = tmp_path / "source"
     source.mkdir()
     (source / "scene_locomani.xml").write_text(
-        '<mujoco><worldbody><body name="blue_crate_object"><geom type="box" size=".2 .13 .08" mass=".604"/></body></worldbody></mujoco>'
+        '<mujoco><worldbody><body name="table"><geom type="box" size=".5 .5 .02"/></body>'
+        '<body name="blue_crate_object"><geom type="box" size=".2 .13 .08" mass=".604"/></body></worldbody></mujoco>'
     )
-    (source / "scene_meta.json").write_text("{}")
+    (source / "scene_meta.json").write_text(
+        json.dumps({"surfaces": {"A": {"body": "table"}}, "objects": {"blue_crate": {"surface": "A"}}})
+    )
     build(source, painted)
     original = (painted / "scene_locomani.xml").read_bytes()
     args = parse_args(
@@ -35,6 +38,11 @@ def test_assisted_pilot_restores_the_original_basket_in_its_own_scene_copy(tmp_p
     assert "crate_visual_floor_label" not in (scene / "scene_locomani.xml").read_text()
     assert "crate_visual" not in json.loads((scene / "scene_meta.json").read_text())
     assert (painted / "scene_locomani.xml").read_bytes() == original
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(scene / "scene_locomani.xml")
+    assert tree.find('.//body[@name="table"]/geom').get("type") == "mesh"
+    assert tree.find('.//body[@name="blue_crate_object"]/geom').get("type") == "box"
 
 
 def test_assisted_source_validation_and_round_trip(tmp_path):

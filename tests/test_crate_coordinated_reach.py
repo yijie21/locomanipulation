@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from geometry_fixture import scene_ik
 from scipy.spatial.transform import Rotation
 
@@ -130,3 +131,72 @@ def test_delayed_camera_frames_do_not_shrink_the_velocity_measurement_interval()
         state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
     acceleration = np.diff(velocities, axis=0) / ((intervals[1:] + intervals[:-1]) / 2)[:, None]
     assert np.max(np.abs(acceleration)) <= policy.config.visual.joint_acceleration + 1e-5
+
+
+def test_attached_lift_continues_to_actual_upright_stable_hold():
+    policy, state = setup()
+    obj = np.array([0.36, 0.02, 0.385])
+    orientation = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    phases = []
+    for now in np.arange(0, 30, 0.05):
+        base = Rotation.from_quat(np.array(state["pelvis"]["quat"])[[1, 2, 3, 0]]).as_matrix()
+        if policy.phase in ("lift", "stand", "hold"):
+            tools = policy.solver.tool_poses(state["joints"])[0] @ base.T + state["pelvis"]["pos"]
+            # Ideal attached load follows measured hands, not target commands.
+            obj = policy.closed_object + np.mean(tools - policy.closed_tools, axis=0)
+        seen = CrateEstimate(base.T @ (obj - state["pelvis"]["pos"]), base.T @ orientation, now, None, {})
+        command = policy.step(now, seen, state, [0.015] * 2)
+        phases.append(command.phase)
+        if command.finished:
+            break
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+    assert command.reason == "completed"
+    assert "stand" in phases and phases.index("stand") > phases.index("lift")
+    assert policy.diagnostics["observed_torso_lean_deg"] <= policy.config.visual.upright_tolerance_deg
+    assert policy.diagnostics["observed_basket_speed"] < 0.025
+    assert policy.ready_since is not None and now - policy.ready_since >= policy.config.visual.hold_seconds
+
+
+def test_bent_actual_posture_cannot_complete_a_hold():
+    policy, state = setup()
+    policy.step(0, estimate(0, state), state, [0.015] * 2)
+    policy.x = policy.body.seed.copy()
+    policy.q = policy.x[4:].copy()
+    policy.root = Rotation.from_matrix(policy.body.put(policy.x)).as_quat()[[3, 0, 1, 2]]
+    state = dict(joints=policy.q, pelvis=dict(pos=policy.x[:3].copy(), quat=policy.root))
+    tools = policy.body.tools(policy.x)
+    obj = np.array([0.36, 0.02, 0.385])
+    policy.closed_object = obj - [0, 0, 0.1]
+    policy.closed_relative = (tools - obj) @ Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    policy.stand_targets = tools.copy()
+    policy.enter("hold")
+    for now in np.arange(0.1, 5, 0.1):
+        command = policy.step(now, estimate(now, state), state, [0.015] * 2)
+        assert command.reason != "completed"
+        if command.finished:
+            break
+    assert command.reason == "unstable_hold"
+
+
+@pytest.mark.parametrize("motion, expected", [("small_sway", "completed"), ("drift", "unstable_hold")])
+def test_final_hold_accepts_bounded_sway_but_rejects_a_moving_load(motion, expected):
+    policy, initial = setup()
+    policy.step(0, estimate(0, initial), initial, [0.015] * 2)
+    tools = policy.body.tools(policy.x)
+    obj = tools.mean(axis=0) - [0, 0, 0.07]
+    orientation = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    policy.closed_object = obj - [0, 0, 0.1]
+    policy.closed_relative = (tools - obj) @ orientation
+    policy.stand_targets = tools.copy()
+    policy.torso_target = np.eye(3)
+    policy.enter("hold")
+    for now in np.arange(0.05, 4.2, 0.05):
+        shift = np.array([0.01 * np.sin(2 * np.pi * now) if motion == "small_sway" else 0.04 * now, 0, 0])
+        state = dict(
+            joints=initial["joints"], pelvis=dict(pos=np.array(initial["pelvis"]["pos"]) + shift, quat=[1, 0, 0, 0])
+        )
+        seen = CrateEstimate(obj + shift - state["pelvis"]["pos"], orientation, now, None, {})
+        command = policy.step(now, seen, state, [0.015] * 2)
+        if command.finished:
+            break
+    assert command.reason == expected

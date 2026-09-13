@@ -27,6 +27,10 @@ def test_streamed_handoff_never_emits_an_unconstrained_planner_frame(monkeypatch
     primitive = SimpleNamespace(cmd=commander, obs=lambda: state, _facing=lambda _: (1, 0, 0))
     arm = streamed_arm.StreamedArm(primitive, "right", ik=scene_ik(), left_guard=False)
     arm.start(hold_planner_pose=True)
+    commander.set_wrists.assert_not_called()
+    commander.set_neck.assert_not_called()
+    commander.frame.assert_not_called()
+    commander.enter_streamed.assert_called_once()
     assert not any(unprotected), f"{sum(unprotected)} planner frames released both arm references before POSE takeover"
 
 

@@ -9,6 +9,21 @@ from locomani.tasks.crate.visual_config import CrateVisualConfig
 from locomani.tasks.crate.visual_scene import MARKERS
 
 
+def test_unsupported_reach_can_use_braking_allowance_without_crossing_stand_off():
+    cfg = CrateVisualConfig(stand_off=0.39, walk_brake_margin=0.10)
+    approach = VisualApproach(cfg)
+    target = ApproachTarget(np.array([0.48, 0, 0]), 0.0, "visible_simulation_pose")
+    assert approach.step(0, target, [1, 0, 0, 0], grasp_pose_available=True).phase == "settle"
+    assert approach.retry_closer()
+    command = approach.step(0.01, target, [1, 0, 0, 0], grasp_pose_available=True)
+    assert command.phase == "walk" and command.speed > 0 and not command.ready
+    for _ in range(10):
+        if not approach.retry_closer():
+            break
+    assert approach.stop_distance == cfg.stand_off
+    assert not approach.retry_closer()
+
+
 def test_far_visible_pair_guides_approach_without_filling_occluded_markers():
     perception = CratePerception(scene_ik(), {"markers": MARKERS})
     position = [1.35, 0.025, -0.05]

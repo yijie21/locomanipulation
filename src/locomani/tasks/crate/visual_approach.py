@@ -29,6 +29,16 @@ class VisualApproach:
         self.position = self.orientation = None
         self.relative_speed = self.angular_speed = 0.0
         self.relative_velocity = np.zeros(2)
+        self.stop_distance = config.stand_off + config.walk_brake_margin
+
+    def retry_closer(self):
+        """Use remaining braking allowance after unsupported reach admission; never pass stand_off."""
+        allowance = self.stop_distance - self.config.stand_off
+        if allowance <= 0:
+            return False
+        self.stop_distance = self.config.stand_off + (allowance / 2 if allowance > 0.01 else 0)
+        self.phase, self.quiet_since = "walk", None
+        return True
 
     def step(self, now, target, base_quaternion, *, grasp_pose_available):
         cfg = self.config
@@ -56,11 +66,7 @@ class VisualApproach:
             self.relative_velocity += min(1, dt / 0.4) * (velocity - self.relative_velocity)
             self.relative_speed = float(np.linalg.norm(self.relative_velocity))
         self.position = point.copy()
-        if (
-            self.phase == "walk"
-            and point[0] <= cfg.stand_off + cfg.walk_brake_margin
-            and abs(point[1]) < cfg.stand_lateral_tolerance
-        ):
+        if self.phase == "walk" and point[0] <= self.stop_distance and abs(point[1]) < cfg.stand_lateral_tolerance:
             self.phase = "settle"
         if self.phase == "settle":
             quiet = grasp_pose_available and self.relative_speed < 0.06 and self.angular_speed < 0.2

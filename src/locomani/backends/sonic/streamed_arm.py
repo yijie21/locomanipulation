@@ -115,13 +115,10 @@ class StreamedArm:
 
     def start(self, *, hold_planner_pose=False) -> None:
         s = self.p.obs()
-        # The installed deploy clears its upper-body latch only while consuming
-        # planner messages. Whole-body callers bridge that interval with measured
-        # VR wrist/neck references; an empty planner frame invokes the gait prior.
+        # A primed POSE stream atomically takes the planner override in the deploy.
         if hold_planner_pose:
             # Fill the POSE buffer while the old planner reference is still held.
-            # The VR bridge then needs only several reader cycles, not a second
-            # of two unrelated control regimes before the intended body ramp.
+            # No intermediate VR encoder mode or released planner arm frame is needed.
             from locomani.backends.sonic import upper_ref
 
             incoming = upper_ref.shared().pose()
@@ -135,41 +132,27 @@ class StreamedArm:
                 self.q[12:15], self.q[15:22], self.q[22:29] = held[:3], held[3::2], held[4::2]
             self.next_t = time.time()
             self.hold(0.1)
-            from locomani.backends.sonic.agent_server import StreamMode
-            from locomani.backends.sonic.teleop_arm import NECK_OFFSET, VR_OFFSET, _mat2quat_wxyz
-
-            for side in ("left", "right"):
-                point, rotation = self.ik.fk(np.asarray(s["joints"]), side)
-                self.p.cmd.set_wrists(
-                    **{
-                        f"{side}_pos": point + rotation @ VR_OFFSET[side],
-                        f"{side}_quat": _mat2quat_wxyz(rotation),
-                    }
-                )
-            point, rotation = self.ik.body_pose(np.asarray(s["joints"]), "torso_link")
-            self.p.cmd.set_neck(point + rotation @ NECK_OFFSET, _mat2quat_wxyz(rotation))
-            self.p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
-            self.p.cmd.vr_targets = True
             self.p.cmd.set_upper_body_vel(None)
+            self.p.cmd.enter_streamed()
+            self.p.cmd.upper_body = None
+            self.hold(0.1)
+            return
         self.p.cmd.upper_body = None
-        end = time.time() + (0.12 if hold_planner_pose else 0.4)
+        end = time.time() + 0.4
         while time.time() < end:  # one frame raced the deploy's reader;
             self.p.cmd.frame(facing=self.p._facing(s))
             time.sleep(DT)
-        if not hold_planner_pose:
-            self.q = np.array(s["joints"])
-            self.root_quat = yaw_only(s["pelvis"]["quat"])
+        self.q = np.array(s["joints"])
+        self.root_quat = yaw_only(s["pelvis"]["quat"])
         self.next_t = time.time()
         # Prime the buffer BEFORE the switch — the deploy stops control if
         # streamed mode goes active over an empty motion buffer.
-        self.hold(0.02 if hold_planner_pose else 0.3)
+        self.hold(0.3)
         self.p.cmd.enter_streamed()
-        if hold_planner_pose:
-            self.p.cmd.vr_targets = False
         # 0.4 s, not 1.0: the replay diag validated the switch with 0.6 s of
         # held frames; what the deploy needs is a non-empty buffer and a few
         # frames of continuity, not a second of recorded standing.
-        self.hold(0.1 if hold_planner_pose else 0.4)
+        self.hold(0.4)
 
     def stop(self) -> None:
         """Hand control back to the planner without a discontinuity."""

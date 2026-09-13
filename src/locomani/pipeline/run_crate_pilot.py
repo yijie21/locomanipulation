@@ -45,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # reach src/ for `
 from locomani import paths  # noqa: E402
 from locomani.backends.sonic.config import SonicBackendConfig  # noqa: E402
 from locomani.pipeline import stack  # noqa: E402
-from locomani.pipeline.provenance import file_digests, write_config_snapshot  # noqa: E402
+from locomani.pipeline.provenance import file_digests, require_pose_ownership, write_config_snapshot  # noqa: E402
 from locomani.pipeline.stages import Stage  # noqa: E402
 from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
 
@@ -213,6 +213,17 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
             from locomani.tasks.crate.visual_scene import remove_paint
 
             remove_paint(scene)
+            # Keep the basket shape while avoiding analytic box/box phantom contacts.
+            import xml.etree.ElementTree as ET
+
+            from locomani.sim.convex_boxes import convert_body_boxes
+
+            xml = scene / "scene_locomani.xml"
+            tree = ET.parse(xml)
+            meta = json.loads((scene / "scene_meta.json").read_text())
+            surface = meta["surfaces"][meta["objects"]["blue_crate"]["surface"]]
+            convert_body_boxes(tree, surface["body"])
+            tree.write(xml)
     if not (out / "config_snapshot.json").exists():
         write_config_snapshot(
             out,
@@ -233,6 +244,8 @@ def main(argv=None) -> None:
         raise SystemExit(f"{args.out} already holds a run ({state_path}); pass --resume or pick another --out")
     out, task_cfg, task_cfg_path, scene = prepare(args)
     backend = backend_config(args.allow_no_encoder)
+    if args.expert == "visual" and task_cfg.carry.reach_control == "whole_body":
+        require_pose_ownership(stack.resolve_env(backend))
     stage = Stage(out)
     trace_dir = None if args.no_state_trace else out / "trace"
     if trace_dir is not None:

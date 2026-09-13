@@ -1,0 +1,30 @@
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
+@@ -376,6 +376,13 @@
+                                        heading_state_buffer,
+                                        has_planner, planner_state, movement_state_buffer,
+                                        current_motion_mutex, report_temperature);
++          // Keep the old override until a decoded POSE actually owns the motion.
++          // Clearing at the mode flag exposes the planner's unmodified arms for a tick.
++          std::lock_guard<std::mutex> lock(current_motion_mutex);
++          if (has_upper_body_control_ && pose_interface_->OwnsStreamedMotion(current_motion)) {
++            has_upper_body_control_ = false;
++            std::cout << "[ZMQManager] POSE_UPPER_OWNERSHIP_V2" << std::endl;
++          }
+         }
+       }
+     }
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_endpoint_interface.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_endpoint_interface.hpp
+@@ -268,6 +268,11 @@
+         std::cout << "Returned to reference motion. Re-enable ZMQ mode to continue." << std::endl;
+     }
+ 
++    // Called by the owning manager under current_motion_mutex, after handle_input.
++    bool OwnsStreamedMotion(const std::shared_ptr<const MotionSequence>& motion) const {
++        return use_zmq_stream && streamed_motion_ && motion == streamed_motion_;
++    }
++
+     // Handle input and update motion data
+     void handle_input(MotionDataReader& motion_reader,
+                      std::shared_ptr<const MotionSequence>& current_motion,

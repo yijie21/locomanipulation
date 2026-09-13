@@ -299,7 +299,11 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 
 `just` 不需要装:`.justfile` 的 `build` 就是上面这两条 cmake。
 
-> **`patches/` 里有两样东西,只有一样属于这条流程。**
+双臂全身 POSE 交接还需要 [上肢控制权补丁](../patches/sonic_pose_ownership.md)：
+应用 `patches/sonic_pose_ownership.patch` 后重编。采集入口会检查实际选择的二进制，
+旧版本会明确报错。自定义 `SONIC_DEPLOY_BIN` 也必须包含该补丁。
+
+> **其余部署补丁按用途安装。**
 > `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。
 > `sonic_dds_domain.patch` + `.md`:补丁本体加说明。**照本文装出来的 deploy 没打它,因此无法参与任何多实例场景** ——
 > 而 [collection.md](collection.md) 的并行采集就是多实例。这不是"高级用法才需要",

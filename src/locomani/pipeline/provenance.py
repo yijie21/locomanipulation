@@ -68,7 +68,12 @@ def sonic_policy_identity(env: dict | None = None) -> dict:
         deploy = binary.parent.parent.parent
     d = deploy / policy
     cfg = d / "observation_config.yaml"
-    out = {"policy": policy, "dir": str(d), "exists": d.is_dir()}
+    out = {
+        "policy": policy,
+        "dir": str(d),
+        "exists": d.is_dir(),
+        "binary": str(binary if binary.is_absolute() else deploy / binary),
+    }
     if cfg.is_file():
         out["observation_config_sha256"] = _digest(cfg)
     for name in ("model_encoder.onnx", "model_decoder.onnx"):
@@ -77,6 +82,20 @@ def sonic_policy_identity(env: dict | None = None) -> dict:
             out[f"{name}_bytes"] = f.stat().st_size
             out[f"{name}_sha256"] = _digest(f)
     return out
+
+
+def require_pose_ownership(env=None):
+    """Reject a deploy that would retain a planner arm override during direct POSE takeover."""
+    import mmap
+
+    binary = Path(sonic_policy_identity(env)["binary"])
+    try:
+        with binary.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            supported = data.find(b"POSE_UPPER_OWNERSHIP_V2") >= 0
+    except (OSError, ValueError):
+        supported = False
+    if not supported:
+        raise RuntimeError(f"{binary} needs patches/sonic_pose_ownership.patch and a rebuild; see docs/setup.md")
 
 
 def record_deploy(receipt, binary, policy) -> dict:

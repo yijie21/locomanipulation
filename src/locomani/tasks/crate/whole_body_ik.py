@@ -41,6 +41,7 @@ class WholeBodyIK:
         self.feet = [m.body(f"{side}_ankle_roll_link").id for side in ("left", "right")]
         self.hands = [ik.palm_bid[side] for side in ("left", "right")]
         self.pelvis = m.body("pelvis").id
+        self.torso = m.body("torso_link").id
         self.offset = np.asarray(tool_offset)
         d.qpos[:] = m.qpos0
         self.initial = np.r_[self.base0, pitch0, self.q0]
@@ -86,7 +87,7 @@ class WholeBodyIK:
         d = self.ik.data
         return np.array([d.xpos[b] + d.xmat[b].reshape(3, 3) @ self.offset for b in self.hands])
 
-    def solve(self, positions, rotations, *, seed=None, bounds=None, posture=None, iterations=120):
+    def solve(self, positions, rotations, *, seed=None, bounds=None, posture=None, torso_rotation=None, iterations=120):
         d = self.ik.data
         positions, rotations = np.asarray(positions), np.asarray(rotations)
         prior = self.q0 if posture is None else posture
@@ -110,6 +111,9 @@ class WholeBodyIK:
                 5 * (d.subtree_com[self.pelvis, :2] - self.com0),
                 (0.008 if posture is None else 0.04) * (x[4:] - prior),
                 0.3 * (x[2] - self.base0[2]),
+                np.zeros(3)
+                if torso_rotation is None
+                else 1.5 * Rotation.from_matrix(d.xmat[self.torso].reshape(3, 3) @ torso_rotation.T).as_rotvec(),
             ]
 
         lo, hi = (self.lo, self.hi) if bounds is None else bounds

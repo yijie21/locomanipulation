@@ -49,6 +49,7 @@ Follow [AGENTS](../AGENTS.md) for GPU/instance admission. The example uses insta
 1 and GPU 0; check availability first. Build a crate scene following the
 [crate guide](crate_collection.md). For a lowered table use the
 [table-height procedure](crate_collection.md#table-height-validation).
+The whole-body entry also requires the [POSE ownership deploy patch](../patches/sonic_pose_ownership.md).
 
 ```bash
 PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
@@ -66,8 +67,10 @@ PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
 
 The profile does not alter table height. It selects `carry.reach_control=whole_body`
 and `visual.pose_source=assisted`. The runner copies the source scene and removes
-only the experimental `crate_visual_*` plates/markers from the copy. Basket mesh,
-collision shape, mass and original source remain unchanged. Use a fresh output
+the experimental `crate_visual_*` plates/markers from the copy. The support table's
+box collider is represented by an equal-size eight-vertex convex mesh to avoid
+MuJoCo's analytic box/box phantom contacts. Basket appearance and its gripper
+contact geometry remain unchanged; the original source is preserved. Use a fresh output
 directory for each experiment; old artifacts must remain intact.
 
 Configuration is resolved as defaults → profile → explicit `--set` overrides,
@@ -80,13 +83,16 @@ set `--set visual.pose_source=markers`.
 ## Low tables and a free waist
 
 `CoordinatedReach` owns one supported body reference throughout descent, closure
-and lifting. `WholeBodyIK` owns foot anchors, balance and physical posture limits.
+lifting and loaded standing. `WholeBodyIK` owns foot anchors, balance and physical posture limits.
 The existing `carry` expert remains a separate mechanical diagnostic entry.
 
 - Walk from the sampled 1.2–1.5 m table-edge distance. A quiet target/base interval
-  authorizes the handoff; unreachable placements still fail admission.
+  authorizes a support check before handoff. Unsupported reaches use the remaining
+  braking allowance for a closer visible approach, bounded by `visual.stand_off`;
+  unsupported placements can still fail admission.
 - Preserve the consumed planner joint/root reference at POSE takeover. The backend
-  bridges with measured wrist/neck references. Descent begins from that reference.
+  switches directly into a primed POSE stream and releases the planner override
+  atomically. Descent begins from that reference; there is no intermediate VR stage.
 - Move both hands, hips and all three waist axes together. Compensate bounded
   measured tracking error with the whole body; do not freeze the legs after bending.
   Joint/root rates, acceleration, planted-foot error, support COM, pelvis height,
@@ -98,6 +104,13 @@ The existing `carry` expert remains a separate mechanical diagnostic entry.
   basket rise and tilt checks. The lift baseline must not apply tracking feedback
   twice. Stop on empty grippers, clear attachment loss, displaced baskets or stalled
   reaching; retain failed and timed-out attempts.
+- After the attached lift, move the paired grasp toward the upright ready-pose
+  centre while recovering hips and torso. Success requires actual torso lean within
+  `visual.upright_tolerance_deg`, preserved attachment and a quiet load/body throughout
+  `visual.hold_seconds`. The load must stay within `visual.hold_position_tolerance`
+  of its mean position over that complete window, allowing small stance sway while
+  rejecting sustained drift. Reaching a commanded upright pose alone is insufficient.
+  Failed attachment, failed standing and unstable holding have separate terminal reasons.
 
 `VisualLowReach` retains the older marker-based policy for historical experiments.
 It reconstructs base translation from stationary foot FK; that information contract

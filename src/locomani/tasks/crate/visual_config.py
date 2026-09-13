@@ -17,6 +17,8 @@ class CrateVisualConfig:
     settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
     stand_lateral_tolerance: float = 0.04  # metres; final body IK still owns low-reach admission
     lift_seconds: float = 4.0  # minimum low-reach lift-reference duration, seconds
+    stand_seconds: float = 5.0  # minimum attached whole-body recovery duration, seconds
+    upright_tolerance_deg: float = 12.0  # measured torso lean allowed at successful completion
     stand_off: float = 0.36  # final pelvis distance from the visible basket centre, metres
     position_jitter: float = 0.02  # visible basket x/y randomisation at reset, metres
     yaw_jitter_deg: float = 5.0  # visible basket yaw randomisation at reset
@@ -33,6 +35,7 @@ class CrateVisualConfig:
     probe_height: float = 0.025  # initial lift used to observe bilateral attachment
     lift_height: float = 0.10  # total desired rise after the probe
     hold_seconds: float = 2.0  # stable hold before ending the attempt
+    hold_position_tolerance: float = 0.025  # maximum load-position radius over the final hold window, metres
     timeout_seconds: float = 35.0  # bounded expert attempt
     vision_timeout: float = 0.7  # stop advancing when the last valid RGB estimate is older
     reprojection_px: float = 4.0  # maximum RMS marker reprojection residual
@@ -48,6 +51,8 @@ class CrateVisualConfig:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")
         if not 0 <= self.waist_pitch_max <= 0.52:
             raise ValueError("visual.waist_pitch_max must be in [0, 0.52]")
+        if not 0 < self.upright_tolerance_deg <= 20:
+            raise ValueError("visual.upright_tolerance_deg must be in (0, 20]")
         if not 0 < self.probe_height < self.lift_height:
             raise ValueError("visual.probe_height must be smaller than lift_height")
         if not 1.2 <= self.start_edge_min <= self.start_edge_max <= 1.5:
@@ -56,6 +61,8 @@ class CrateVisualConfig:
             "stand_off",
             "stand_lateral_tolerance",
             "lift_seconds",
+            "stand_seconds",
+            "upright_tolerance_deg",
             "walk_speed",
             "walk_timeout",
             "settle_seconds",
@@ -63,6 +70,7 @@ class CrateVisualConfig:
             "align_tolerance",
             "reprojection_px",
             "hold_seconds",
+            "hold_position_tolerance",
             "max_tilt_deg",
             "joint_speed",
             "joint_acceleration",

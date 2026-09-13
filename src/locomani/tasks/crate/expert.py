@@ -7,6 +7,7 @@ import json
 import sys
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
 from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj
 from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
 from locomani.pipeline.execution_record import RoundResult
+from locomani.pipeline.provenance import require_pose_ownership
 from locomani.primitives.arm_ik import ArmIK
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient
@@ -197,6 +199,18 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     else perception.approach_target(images, joints, stamp)
                 )
                 nav = approach.step(now, target, raw["pelvis"]["quat"], grasp_pose_available=estimate is not None)
+                admission = None
+                if nav.ready and assisted:
+                    probe = CoordinatedReach(
+                        solver, config, raw, reference_joints=joints, reference_quaternion=raw["pelvis"]["quat"]
+                    )
+                    check = probe.step(now, estimate, raw, openings)
+                    admission = probe.diagnostics
+                    if check.reason == "unsupported_assisted_reach":
+                        if approach.retry_closer():
+                            nav = approach.step(now, target, raw["pelvis"]["quat"], grasp_pose_available=True)
+                        else:
+                            nav = replace(nav, ready=False, reason="approach_unsupported_reach")
                 arm.mode = LocomotionMode.SLOW_WALK if nav.speed > 0 else LocomotionMode.IDLE
                 yaw = p.pelvis_yaw(raw)
                 direction = nav.direction.copy()
@@ -214,6 +228,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "relative_speed": approach.relative_speed,
                     "angular_speed": approach.angular_speed,
                     "ready": nav.ready,
+                    "reach_admission": admission,
                 }
                 if nav.ready:
                     approach = None
@@ -366,6 +381,8 @@ def main():
         parser.error("--rounds must be positive")
     config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     config = config.with_overrides(args.overrides)
+    if config.carry.reach_control == "whole_body":
+        require_pose_ownership()
     meta = json.loads(Path(paths.SCENE_META).read_text())
     if config.visual.pose_source == "markers" and "crate_visual" not in meta:
         parser.error("build a distinct painted scene with python -m locomani.tasks.crate.visual_scene")
