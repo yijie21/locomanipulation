@@ -41,7 +41,7 @@
 
 ## Shared resources
 
-- 30 cm GPU validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
+- Low-reach investigation: GPU 0 / instance 1 reserved by `exp/crate-low-reach-20260913`; GPU 1 untouched.
 - Current evidence: `outputs/crate_table30_20260913/`; previous height/motion evidence retained.
 - Previous outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
