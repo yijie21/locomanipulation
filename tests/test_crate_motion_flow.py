@@ -40,14 +40,14 @@ def controller(monkeypatch):
         _facing=lambda s: (1, 0, 0),
     )
     monkeypatch.setattr(carry, "PlannerArm", lambda *a, **kw: streamed_arm.PlannerArm(*a, **kw, ik=ik))
-    return carry.BimanualArms(p), p, clock
+    return carry.BimanualArms(p, config=DEFAULT_CARRY), p, clock
 
 
 def test_stable_brake_does_not_add_a_fixed_one_second_wait(monkeypatch):
     _, p, clock = controller(monkeypatch)
     ctx = SimpleNamespace(
         p=p,
-        ramp=SimpleNamespace(push=lambda q: 0.0),
+        ramp=SimpleNamespace(push=lambda q, now: 0.0, quiet=True),
         q_pre17=np.zeros(17),
         psi=0.0,
         m={},
@@ -112,3 +112,51 @@ def test_carry_cli_override_reaches_round_context(monkeypatch, tmp_path):
     monkeypatch.setattr(carry.round_runner, "run_rounds", rounds)
     carry.main()
     assert seen == [0.4]
+
+
+def test_carry_sent_reference_acceleration_is_bounded_on_reversal(monkeypatch):
+    arms, p, clock = controller(monkeypatch)
+    arms.start(q17=np.zeros(17))
+    p.cmd.reset_mock()
+    previous = np.zeros(17)
+    velocity = np.zeros(17)
+    for tick in range(40):
+        target = arms.arm.q.copy()
+        target[15] = 0.5 if tick < 20 else -0.5
+        arms.push(target)
+        sent = np.asarray(p.cmd.set_upper_body.call_args.args[0])
+        actual_velocity = (sent - previous) / 0.02
+        assert abs(actual_velocity[3]) <= 0.7 + 5e-6, "unbounded shoulder speed on the actual wire"
+        assert abs(actual_velocity[3] - velocity[3]) <= 2.0 * 0.02 + 5e-6
+        previous, velocity = sent.copy(), actual_velocity
+
+
+def test_walk_to_reach_preserves_velocity_and_uses_elapsed_time(monkeypatch):
+    arms, p, clock = controller(monkeypatch)
+    arms.start(q17=np.zeros(17), settle_seconds=0)
+    target = np.zeros(17)
+    target[[2, 3, 4]] = [0.3, 0.5, 0.5]
+    for _ in range(10):
+        arms.motion.push(target, clock.now)
+        clock.sleep(0.02)
+    reference = arms.motion.reference
+    previous = arms.motion.q.astype(float)
+    velocity = np.asarray(p.cmd.set_upper_body_vel.call_args.args[0], dtype=float)
+    assert np.max(velocity) > 0.2
+    p.cmd.reset_mock()
+    arms.start(q17=previous, settle_seconds=0)
+    assert arms.motion.reference is reference
+    p.cmd.set_upper_body.assert_not_called()  # no second ownership/zero-velocity packet
+    old_dt = 0.02
+    for dt in (0.02, 0.05, 0.03, 0.08) * 10:
+        # Backend sleeps until the next 20 ms tick; supply the remaining delay.
+        clock.now = arms.motion.last_time + dt
+        q = reference.joints.copy()
+        q[[14, 15, 22]] = [-0.1, -0.5, -0.5]
+        arms.push(q)
+        sent = np.asarray(p.cmd.set_upper_body.call_args.args[0], dtype=float)
+        rate = (sent - previous) / dt
+        np.testing.assert_allclose(p.cmd.set_upper_body_vel.call_args.args[0], rate, atol=5e-6)
+        assert np.max(np.abs(rate)) <= DEFAULT_CARRY.joint_speed + 5e-6
+        assert np.max(np.abs(rate - velocity)) <= DEFAULT_CARRY.joint_acceleration * (dt + old_dt) / 2 + 5e-6
+        previous, velocity, old_dt = sent, rate, dt

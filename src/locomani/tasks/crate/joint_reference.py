@@ -4,10 +4,19 @@ import numpy as np
 
 
 class JointReference:
-    def __init__(self, joints, solver, *, speed, acceleration):
+    def __init__(self, joints, solver, *, speed, acceleration, joint_limits=None):
         self.joints = np.asarray(joints, dtype=float).copy()
         self.velocity = np.zeros_like(self.joints)
-        self.indices, self.lo, self.hi = solver.indices, solver.lo, solver.hi
+        self.indices = np.unique([12, 13, *solver.indices])
+        self.lo, self.hi = solver.lo.copy(), solver.hi.copy()
+        if joint_limits is not None:
+            self.lo = np.maximum(self.lo, joint_limits[0])
+            self.hi = np.minimum(self.hi, joint_limits[1])
+        # Targets obey task limits. The initial commanded pose can be outside
+        # that smaller envelope; enter it continuously instead of clipping the
+        # first sample into a sudden position/velocity jump.
+        self.travel_lo = np.minimum(self.lo, self.joints)
+        self.travel_hi = np.maximum(self.hi, self.joints)
         self.speed, self.acceleration = speed, acceleration
         self.last_dt = None
 
@@ -25,8 +34,7 @@ class JointReference:
         self.last_dt = dt
         velocity = old + np.clip(wanted - old, -self.acceleration * interval, self.acceleration * interval)
         candidate = self.joints[indices] + velocity * dt
-        bounded = np.clip(candidate, self.lo[indices], self.hi[indices])
+        bounded = np.clip(candidate, self.travel_lo[indices], self.travel_hi[indices])
         self.velocity[indices] = (bounded - self.joints[indices]) / dt
         self.joints[indices] = bounded
-        self.joints[12:14] = 0
         return self.joints.copy()

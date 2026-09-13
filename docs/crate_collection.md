@@ -732,7 +732,12 @@ OUT=$LOCOMANI_ROOT/outputs/experiments/crate_ds_$(date -u +%Y%m%d) \
 `CrateTaskConfig.carry.settle_seconds` owns the continuous quiet interval before
 reaching (default 0.3 s). The gate requires fresh body position/orientation samples
 and a completed upper-body reference; it times out as a failed attempt after 6 s.
-The same settled reference passes into `PlannerArm.start` with no extra fixed hold.
+Carry owns one `JointReference` through walk-in, reach, close and lift.
+`carry.joint_speed` (0.7 rad/s) and `carry.joint_acceleration` (2 rad/s²) bound
+the final waist/arm commands after IK and compensation, with explicit velocity
+on the SONIC channel. Handoff preserves reference position and velocity and adds
+no fixed hold. Target limits are the intersection of model and caller limits;
+an initially commanded pose outside task bounds enters them continuously.
 Other planner callers retain their default entry hold. The robot is sampled
 1.2–1.5 m outside the table edge; measured distance at video start is also recorded.
 `*_motion.jsonl` contains commanded references, velocities, measured joints and

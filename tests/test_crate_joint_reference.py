@@ -37,3 +37,18 @@ def test_acceleration_bound_uses_the_actual_irregular_camera_intervals():
         interval = dt if last_dt is None else (dt + last_dt) / 2
         assert abs(rate - velocity) <= 2 * interval + 1e-9
         previous, velocity, last_dt = current, rate, dt
+
+
+def test_initial_pose_enters_task_envelope_without_a_snap():
+    solver = BimanualIK(scene_ik(), waist_pitch_max=0.4)
+    q = (solver.lo + solver.hi) / 2
+    q[[12, 13, 18]] = [0.08, -0.06, -0.1]
+    reference = JointReference(q, solver, speed=0.7, acceleration=2.0)
+    previous, velocity = q.copy(), np.zeros(29)
+    for _ in range(150):
+        current = reference.step(q, 0.02)
+        rate = (current - previous) / 0.02
+        assert np.max(np.abs(rate)) <= 0.7 + 1e-9
+        assert np.max(np.abs(rate - velocity)) <= 0.04 + 1e-9
+        previous, velocity = current, rate
+    np.testing.assert_allclose(current[[12, 13, 18]], [0, 0, solver.lo[18]], atol=0.001)

@@ -1,40 +1,12 @@
-"""Two-handed crate pick: the scripted expert for SCENE_PRESET=crate_bimanual.
+"""Scripted two-hand crate pick: walk in, settle, reach, close and lift.
 
-    INSTANCE=1 LOCOMANI_SIM_DIR=outputs/scene/crate_bimanual \\
-        python src/locomani/tasks/crate/bimanual_carry.py --rounds 3 --manifest <jsonl>
+The carry config owns stance timing and continuous waist/arm reference limits.
+BimanualArms combines two-hand IK with the planner channel; carry phases own
+sampling, navigation and acceptance. The wall expert shares the IK adapter and
+retains its existing motion path unless it supplies a carry motion config.
 
-Runs against a stack started with the same INSTANCE / LOCOMANI_SIM_DIR (and
-SIM_VIDEO_DIR for the third-person video). Implements sections A-D of
-docs/bimanual_grasp_design.md as a minimal closed loop -- no recovery
-branch, no carry to surface B yet:
-
-  A  heading aligned DURING the walk-in (face the crate the whole way), the
-     residual after the brake is measured and logged, never turned out in
-     place (7-8 deg dead zone); the arms absorb it (offline: 8 deg costs
-     0.0 cm). Stand-off 0.40 m, feet 5 cm under the table edge like the
-     single-hand expert (EDGE_MIN 0.17).
-  B  both arms rise to a pre-grasp on the way in (UpperRamp, 2 deg/tick);
-     at the stand the reach and the 45 deg palm pitch run as ONE servo, no
-     phases; both arms and forward waist pitch are solved together.
-  C  one capture region per rim bar, both must be inside before the two
-     grippers close in the same frame.
-  D  lift 0.10 m; crate roll/pitch over 8 deg or either hand losing contact
-     is a failure; hold 2 s.
-
-Everything talks to the stack through the existing pieces: Primitives for
-state and locomotion, PlannerArm for the 17-joint upper-body channel (both
-arms ride on it; the class is per-side only in what it guards, and the
-guard is off here), ArmIK for both arms. Nothing in stream_reach /
-grasp_gym is modified.
-
-Split across three files (refactor step 4b family 5, pure extraction;
-decision 9's file-size cap): this file keeps `BimanualArms`, the module-level
-constants, `rot_z`/`rot_y`/`crate_frame`/`hand_txt`/`crate_tilt_deg`, and
-`run_round` itself (now a thin orchestrator); `carry_phases.py` has
-`run_round`'s first three phases (`_phase_reset`, `_phase_approach`,
-`_phase_grasp`) behind a `CarryRoundContext`; `carry_phases_lift.py` has the
-last two (`_phase_close`, `_phase_lift`) -- all five would not fit
-carry_phases.py's own 600-line cap.
+This legacy diagnostic expert uses simulation object poses. The RGB-gated expert
+and its privileged-information contract live in expert.py and visual_policy.py.
 """
 
 from __future__ import annotations
@@ -63,6 +35,7 @@ from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.crate import round_runner  # noqa: E402
 from locomani.tasks.crate.bimanual_ik import BimanualIK  # noqa: E402
 from locomani.tasks.crate.carry_config import DEFAULT_CARRY, CrateCarryConfig  # noqa: E402
+from locomani.tasks.crate.carry_motion import CarryMotion  # noqa: E402
 from locomani.tasks.crate.carry_phases import (  # noqa: E402
     CarryRoundContext,
     _phase_approach,
@@ -226,8 +199,10 @@ def crate_tilt_deg(s) -> float:
 class BimanualArms:
     """Both arms + the shared waist on the planner upper-body channel."""
 
-    def __init__(self, p: Primitives):
+    def __init__(self, p: Primitives, *, config: CrateCarryConfig | None = None):
         self.p = p
+        self.config = config
+        self.motion = None
         self.motion_recording = None
         self.arm = PlannerArm(p, "right", send_vel=True)
         self.arm.guard = None  # no off-hand: both hands work
@@ -251,8 +226,15 @@ class BimanualArms:
         self.hands = {"left": HAND_OPEN.copy(), "right": HAND_OPEN.copy()}
 
     def start(self, q17=None, *, settle_seconds=0.6):
+        if self.motion is not None:
+            # Walking already owns this channel. Preserve position AND velocity.
+            self.arm._face = self.p._facing(self.p.obs())
+            self.arm.next_t = time.time()
+            return
         self.arm.start(upper_reference=q17, settle_seconds=settle_seconds)
         self.arm.hands = {k: v.astype(np.float32) for k, v in self.hands.items()}
+        if self.config is not None:
+            self.motion = CarryMotion(self.arm, self.solver, self.config, time.time())
 
     def stop(self):
         self.arm.stop()
@@ -314,9 +296,13 @@ class BimanualArms:
         ).joints
 
     def push(self, q):
-        self.arm.q = q
         sent_at = time.time()
-        self.arm._push(q)
+        if self.motion is not None:
+            q = self.motion.step(q, sent_at)
+            self.arm._push(q, reference_velocity=self.motion.reference.velocity)
+        else:
+            self.arm.q = q
+            self.arm._push(q)
         if self.motion_recording is not None:
             self.motion_recording.sample(sent_at, upper_body_from_mj(q), self.p.cmd.upper_body_vel, self.p.obs())
 

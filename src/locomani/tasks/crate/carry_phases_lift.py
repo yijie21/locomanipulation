@@ -1,14 +1,6 @@
-"""`run_round`'s close/lift phases, split out of carry_phases.py (refactor
-step 4b family 5, pure extraction; decision 9's file-size cap) -- both files
-together would not fit carry_phases.py's own 600-line cap. Pure extraction,
-same as carry_phases.py's own split from bimanual_carry.py: no statement
-reordered, no constant changed.
+"""Bilateral close and lift acceptance for the crate carry round.
 
-Same circular-import note as carry_phases.py: this module must not import
-`locomani.tasks.crate.bimanual_carry` at its own top level (nothing here
-needs it at import time); `CLOSE_RAMP`, `OBJ`, `HOLD_S`, `LEVEL_*`,
-`LIFT_HEIGHT`, `LIFT_MIN`, `TILT_MAX_DEG`, `crate_frame`, `crate_tilt_deg`
-are deferred, in-function imports instead.
+Task constants are imported locally to avoid a cycle with the entry module.
 """
 
 from __future__ import annotations
@@ -26,12 +18,13 @@ def _phase_close(ctx: CarryRoundContext) -> dict | None:
 
     p, arms = ctx.p, ctx.arms
     # --- C: same-frame double close ------------------------------------------
+    hold_target = arms.arm.q.copy()
     nq = int(round(CLOSE_RAMP / DT))
     for k in range(nq + 1):
         arms.set_hands(k / nq)
-        arms.push(arms.arm.q)
+        arms.push(hold_target)
     for _ in range(int(0.6 / DT)):
-        arms.push(arms.arm.q)
+        arms.push(hold_target)
     s = p.obs()
     ctx.s = s
     touching = list(s["objects"][OBJ]["touching"])

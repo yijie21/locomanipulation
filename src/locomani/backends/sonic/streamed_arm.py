@@ -503,13 +503,21 @@ class PlannerArm(StreamedArm):
         # carry/stand tail of the episode, with the arm standing still.
         self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
 
-    def _push(self, q_mj29, observed=None, *, movement=(0.0, 0.0, 0.0), speed=-1.0) -> None:
+    def _push(self, q_mj29, observed=None, *, movement=(0.0, 0.0, 0.0), speed=-1.0, reference_velocity=None) -> None:
         from locomani.backends.sonic.primitives import upper_body_from_mj
 
+        if reference_velocity is not None:
+            reference_velocity = np.asarray(reference_velocity, dtype=float)
+            if reference_velocity.shape != (29,) or not np.isfinite(reference_velocity).all():
+                raise ValueError("reference_velocity must contain 29 finite joint velocities")
+            if self.guard is not None and self.left_guard:
+                raise ValueError("explicit velocity requires an unguarded reference")
         q = self._guard_left(np.asarray(q_mj29, dtype=float).copy(), observed=observed)
         u = upper_body_from_mj(q)
         self.p.cmd.set_upper_body(u)
-        if self.send_vel:
+        if reference_velocity is not None:
+            self.p.cmd.set_upper_body_vel(upper_body_from_mj(reference_velocity))
+        elif self.send_vel:
             self.p.cmd.set_upper_body_vel((u - upper_body_from_mj(self._q_prev)) / DT)
         self._q_prev = q.copy()
         self.p.cmd.set_hands(left=self.hands["left"], right=self.hands["right"])

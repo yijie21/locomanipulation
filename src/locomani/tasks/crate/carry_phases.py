@@ -83,7 +83,7 @@ class CarryRoundContext:
     stand_xy: np.ndarray = None  # the walk-in's target pelvis xy
     edge_x: float = None  # table edge x, read by stand_metrics()
     q_free: np.ndarray = None  # the free-standing upper-body pose, read by on_tick()
-    ramp: Any = None  # upper_ref.UpperRamp, read by on_tick()/brake()
+    ramp: Any = None  # CarryMotion, shared with the grasp and lift
     q_pre17: np.ndarray = None  # the pre-grasp 17-joint upper body pose,
     # read by on_tick()/brake()
     arms: Any = None  # BimanualArms, read by every later phase
@@ -101,7 +101,7 @@ class CarryRoundContext:
 
 def on_tick(ctx: CarryRoundContext, _s, dist) -> None:
     u = float(np.clip(1.0 - (dist - 0.10) / 0.90, 0.0, 1.0))
-    ctx.ramp.push(ctx.q_free + (3 * u * u - 2 * u**3) * (ctx.q_pre17 - ctx.q_free))
+    ctx.ramp.push(ctx.q_free + (3 * u * u - 2 * u**3) * (ctx.q_pre17 - ctx.q_free), time.time())
     if ctx.motion_recording is not None:
         ctx.motion_recording.sample(time.time(), ctx.ramp.q, ctx.p.cmd.upper_body_vel, _s)
 
@@ -115,13 +115,15 @@ def brake(ctx: CarryRoundContext) -> bool:
     if ctx.motion_recording is not None:
         ctx.motion_recording.phase = "brake"
     while time.time() - t0 < 6.0:
-        gap = ctx.ramp.push(ctx.q_pre17)
+        gap = ctx.ramp.push(ctx.q_pre17, time.time())
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(ctx.psi)), float(np.sin(ctx.psi)), 0.0))
         time.sleep(DT)
         s = p.obs()
         if ctx.motion_recording is not None:
             ctx.motion_recording.sample(time.time(), ctx.ramp.q, p.cmd.upper_body_vel, s)
-        ready = settling.step(s["wall"], p.pelvis_xy(s), s["pelvis"]["quat"], reference_ready=gap < 0.01)
+        ready = settling.step(
+            s["wall"], p.pelvis_xy(s), s["pelvis"]["quat"], reference_ready=gap < 0.01 and ctx.ramp.quiet
+        )
         if ready:
             break
     ctx.m["brake_seconds"] = time.time() - t0
@@ -291,11 +293,9 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     ctx.q_free = upper_ref.shared().upper17()
     ctx.q_free = q_meas if ctx.q_free is None else ctx.q_free
     q_free = ctx.q_free
-    ctx.ramp = upper_ref.UpperRamp(p.cmd, q_free)
-    ramp = ctx.ramp
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     # pre-grasp: both palms at the staging points, expressed for the FINAL stand
-    ctx.arms = BimanualArms(p)
+    ctx.arms = BimanualArms(p, config=ctx.config)
     arms = ctx.arms
     arms.motion_recording = ctx.motion_recording
     ctx.R_stand = rot_z(psi)
@@ -320,6 +320,8 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     q_pre = arms.solve(s_stand, up_w, ctx.rot_w, iters=200)
     ctx.q_pre17 = upper_body_from_mj(q_pre)
     q_pre17 = ctx.q_pre17
+    arms.start(q17=q_free, settle_seconds=0.0)
+    ctx.ramp = ramp = arms.motion
     for sd in ("left", "right"):
         pos, R = arms.arm.ik.fk(q_pre, sd)
         g = np.asarray(s_stand["pelvis"]["pos"]) + Primitives._rot(s_stand["pelvis"]["quat"]) @ (pos + R @ OFFSET)
@@ -399,7 +401,6 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     if not brake(ctx):
         ctx.m["why"] = "[stand] did not settle before reaching"
         return ctx.m
-    ramp.settle()
     s, yaw_err, stand_err, lateral, edge_clear = stand_metrics(ctx, "")
     ctx.m.update(yaw_err_deg=yaw_err, stand_err=stand_err, lateral=lateral, edge_clear=edge_clear)
     centre, bars, n, y_hat, psi = crate_frame(p, s)
