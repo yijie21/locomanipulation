@@ -244,7 +244,7 @@ def main(argv=None) -> None:
         raise SystemExit(f"{args.out} already holds a run ({state_path}); pass --resume or pick another --out")
     out, task_cfg, task_cfg_path, scene = prepare(args)
     backend = backend_config(args.allow_no_encoder)
-    if args.expert == "visual" and task_cfg.carry.reach_control == "whole_body":
+    if args.expert in ("visual", "carry") and task_cfg.carry.reach_control == "whole_body":
         require_pose_ownership(stack.resolve_env(backend))
     stage = Stage(out)
     trace_dir = None if args.no_state_trace else out / "trace"

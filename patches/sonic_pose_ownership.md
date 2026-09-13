@@ -20,7 +20,7 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j2
 strings "$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref" | rg POSE_UPPER_OWNERSHIP_V2
 ```
 
-The visual whole-body entry checks the selected binary for this capability and
+Both visual and carry whole-body entries check the selected binary for this capability and
 rejects an old build. An alternate `SONIC_DEPLOY_BIN` must contain the same patch.
 See [setup](../docs/setup.md) for build dependencies and the separate DDS-domain patch.
 

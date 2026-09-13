@@ -25,7 +25,7 @@
 - [30 cm hip hinge](handoff/crate-low-reach-20260913.md): privileged pilot 6/10; torso 55–58°, shallow knees, all waist axes free.
 - [30 cm RGB low reach](handoff/crate-visual-low-reach-20260913.md): 4/10 fixed batch, final check 1/3; faster rim capture and smoother references. Tracking/physics failures and VLA export remain.
 
-- [Ordinary-basket assisted coordination](handoff/crate-assisted-coordination-20260913.md): 4/10; final timing check 2/3. Continuous hips/waist/hands, restored appearance; tracking/contact failures remain.
+- [Earlier assisted coordination](handoff/crate-assisted-coordination-20260913.md): 4/10. [Loaded standing and handoff](handoff/crate-upright-handoff-20260913.md): 6/10; collision fix, physical motion clock, torso 3.5–4.2° at successful endings. Navigation/contact failures remain.
 
 ## Runtime evidence and remaining uncertainty
 
@@ -43,8 +43,8 @@
 
 ## Shared resources
 
-- Assisted coordination validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
-- Latest evidence: `outputs/crate_assisted_coordination_20260913/`; all earlier motion evidence retained.
+- Upright-carry validation complete; owned instance 1 released. GPU 1 untouched.
+- Latest evidence: `outputs/crate_upright_handoff_20260913/`; all earlier motion evidence retained.
 - Earlier outputs, datasets, recordings and weights are preserved; see the linked reports.
 
 ## Evidence and preserved constraints

@@ -4,7 +4,7 @@ Use `--expert visual` for demonstrations that approach a visible basket and gras
 its rim. The low-table profile uses simulation-assisted planning with the original
 basket appearance. It records the walk from 1.2–1.5 m away through the attempt.
 These are video/control pilots; they do not yet certify VLA training or learning.
-Implementation and measured limits: [assisted coordination](handoff/crate-assisted-coordination-20260913.md).
+Implementation and measured limits: [loaded standing and handoff](handoff/crate-upright-handoff-20260913.md).
 
 ## Information used by the expert
 
@@ -116,6 +116,15 @@ The existing `carry` expert remains a separate mechanical diagnostic entry.
 It reconstructs base translation from stationary foot FK; that information contract
 must not be confused with the assisted controller's measured simulation base pose.
 
+The assisted expert uses **simulation time** for motion rates, settling, phase
+durations and task deadlines. Camera freshness and the watchdog for a stalled
+simulator use wall time. A busy machine therefore gives the physical simulation
+time to execute its reference without accepting stale images. Before recording,
+the reset must deliver a measured quiet upright stance; unsuccessful initialization
+is reported with zero video frames. The actual 1.2–1.5 m start-distance check remains.
+This clock contract does not make the asynchronous neural controller deterministic
+or eliminate sensitivity to missed control updates.
+
 ## Outputs and limits
 
 Before sharing or packaging videos, follow mandatory
@@ -125,7 +134,7 @@ with complete duration/speed and verified playback. Preserve original recordings
 - `videos_00/*.mp4`: raw simulator overview and camera insets.
 - `observations/<label>/*.mp4`: raw camera frames consumed by the expert.
 - `observations/<label>/observations.jsonl`: matching frame indices, camera/state
-  timestamps, joint/base observations, guidance source/visibility, issued joint/root
+  timestamps, motion clock, joint/base observations, guidance source/visibility, issued joint/root
   references, body feedback, capture errors, closure and phase. For assisted poses,
   the legacy `vision` container has `source=simulation` and `reprojection_px=null`.
 - `attempts.jsonl`, `manifest_00.jsonl`, per-attempt `result.json`: every sampled

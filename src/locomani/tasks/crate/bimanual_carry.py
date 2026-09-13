@@ -29,6 +29,7 @@ from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode  # no
 from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj  # noqa: E402
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 from locomani.backends.sonic.streamed_arm import PlannerArm  # noqa: E402
+from locomani.pipeline.provenance import require_pose_ownership  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
@@ -424,6 +425,8 @@ def main() -> None:
         cfg = cfg.with_overrides(args.set_)
     if args.record and cfg.carry.reach_control == "whole_body":
         ap.error("whole_body is a motion pilot; full-pose VLA action export is not validated")
+    if cfg.carry.reach_control == "whole_body":
+        require_pose_ownership()
     # Script-vs-package double copy (see bimanual_wall.main): carry_phases*.py import this
     # module by its package name; make that name resolve to the running module so the
     # globals set below (DUMP_DIR) are the ones the phases read.
