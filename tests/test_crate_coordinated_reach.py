@@ -84,3 +84,35 @@ def test_irregular_observation_spacing_preserves_reference_acceleration():
         state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
     acceleration = np.diff(velocities, axis=0) / ((intervals[1:] + intervals[:-1]) / 2)[:, None]
     assert np.max(np.abs(acceleration)) <= policy.config.visual.joint_acceleration + 1e-5
+
+
+def test_closure_to_lift_does_not_apply_the_tracking_offset_twice():
+    policy, state = setup()
+    policy.step(0, estimate(0, state), state, [0.08] * 2)
+    policy.x = policy.body.seed.copy()  # geometrically admitted contact posture
+    policy.q = policy.x[4:].copy()
+    policy.root = Rotation.from_matrix(policy.body.put(policy.x)).as_quat()[[3, 0, 1, 2]]
+    state = dict(joints=policy.q, pelvis=dict(pos=policy.x[:3] + [0, 0, 0.03], quat=policy.root))
+    policy.feedback[:] = [0, 0, -0.03]  # constant observed tracking lag, already in the held reference
+    policy.closed_targets = policy.body.tools(policy.x)
+    policy.phase, policy.elapsed = "close", 1.01
+    policy.step(0.05, estimate(0.05, state), state, [0.015] * 2)
+    assert policy.phase == "lift"
+    start = policy.body.tools(policy.x).copy()
+    for now in np.arange(0.10, 0.31, 0.05):
+        command = policy.step(now, estimate(now, state), state, [0.015] * 2)
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3] + [0, 0, 0.03], quat=command.root_quaternion))
+    assert np.min(policy.body.tools(policy.x)[:, 2] - start[:, 2]) > -0.002
+
+
+def test_dropped_basket_aborts_instead_of_waiting_motionless_until_global_timeout():
+    policy, state = setup()
+    policy.step(0, estimate(0, state), state, [0.08] * 2)
+    tools = policy.solver.tool_poses(state["joints"])[0] + state["pelvis"]["pos"]
+    policy.closed_object = np.array([0.36, 0.02, 0.385])
+    policy.closed_relative = (tools - policy.closed_object) @ Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    policy.phase = "hold"
+    before = policy.q.copy()
+    command = policy.step(0.05, estimate(0.05, state), state, [0.0001] * 2)
+    assert command.finished and command.reason == "lost_attachment"
+    np.testing.assert_array_equal(command.joints, before)

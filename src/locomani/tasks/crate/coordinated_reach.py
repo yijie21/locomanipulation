@@ -39,6 +39,7 @@ class CoordinatedReach:
         self.elapsed = 0.0
         self.ready_since = None
         self.feedback = np.zeros((2, 3))
+        self.best_error, self.progress_time = np.inf, None
         self.diagnostics = {}
 
     def result(self, reason="", finished=False):
@@ -63,11 +64,20 @@ class CoordinatedReach:
         self.last_dt = dt
         vlo = np.maximum(-speed, self.v - acceleration * interval)
         vhi = np.minimum(speed, self.v + acceleration * interval)
+        braking_acceleration = acceleration / 2  # reserve braking margin for the next irregular interval
         vlo = np.maximum(
-            vlo, -np.maximum(0, np.sqrt(2 * acceleration * np.maximum(self.x - self.travel_lo, 0)) - acceleration * dt)
+            vlo,
+            -np.maximum(
+                0,
+                np.sqrt(2 * braking_acceleration * np.maximum(self.x - self.travel_lo, 0)) - braking_acceleration * 0.1,
+            ),
         )
         vhi = np.minimum(
-            vhi, np.maximum(0, np.sqrt(2 * acceleration * np.maximum(self.travel_hi - self.x, 0)) - acceleration * dt)
+            vhi,
+            np.maximum(
+                0,
+                np.sqrt(2 * braking_acceleration * np.maximum(self.travel_hi - self.x, 0)) - braking_acceleration * 0.1,
+            ),
         )
         lo = np.maximum(self.travel_lo, self.x + vlo * dt)
         hi = np.minimum(self.travel_hi, self.x + vhi * dt)
@@ -139,9 +149,17 @@ class CoordinatedReach:
             self.rotations = [Slerp([0, 1], Rotation.from_matrix([a, attitude])) for a in initial_attitudes]
             distance = np.max(np.linalg.norm(targets - self.start_tools, axis=1))
             self.duration = max(3.0, 1.875 * distance / cfg.approach_speed)
+            self.reach_object = obj_position.copy()
             self.enter("reach")
         self.diagnostics.update(reference_elapsed=self.elapsed, planned_reach_seconds=self.duration)
         if self.phase == "reach":
+            if np.linalg.norm(obj_position - self.reach_object) > self.region.half_length:
+                return self.result("basket_displaced_before_capture", True)
+            error = float(np.max(np.linalg.norm(tools - targets, axis=1)))
+            if self.progress_time is None or error < self.best_error - 0.005:
+                self.best_error, self.progress_time = error, now
+            if self.elapsed > self.duration and now - self.progress_time > 3.0:
+                return self.result("reach_stalled", True)
             ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
             self.diagnostics.update(capture_error=errors, capture_ready=ready)
             self.ready_since = (now if self.ready_since is None else self.ready_since) if ready else None
@@ -163,7 +181,9 @@ class CoordinatedReach:
                 self.closed_tools = tools.copy()
                 self.closed_relative = (tools - obj_position) @ obj_rotation
                 self.closed_object = obj_position.copy()
-                self.lift_targets = self.body.tools(self.x)
+                # The held FK already includes feedback; remove it before adding
+                # the same correction to the new trajectory, preserving its start.
+                self.lift_targets = self.body.tools(self.x) - cfg.tracking_gain * self.feedback
                 self.enter("lift")
         elif self.phase in ("lift", "hold"):
             attachment = float(
@@ -172,6 +192,8 @@ class CoordinatedReach:
             rise = float(obj_position[2] - self.closed_object[2])
             tilt = float(np.degrees(np.arccos(np.clip(obj_rotation[2, 2], -1, 1))))
             self.diagnostics.update(attachment_error=attachment, observed_rise=rise, observed_tilt=tilt)
+            if min(hand_openings) < 0.003 or (self.phase == "hold" and attachment > 0.06):
+                return self.result("lost_attachment", True)
             if tilt > cfg.max_tilt_deg:
                 return self.result("basket_tilt", True)
             u, _ = blend(self.elapsed, cfg.lift_seconds) if self.phase == "lift" else (1, 0)
@@ -185,6 +207,8 @@ class CoordinatedReach:
                 elif self.elapsed >= cfg.lift_seconds + 2:
                     return self.result("probe_not_attached", True)
             else:
+                if self.elapsed >= cfg.hold_seconds + 2.0:
+                    return self.result("unstable_hold", True)
                 stable = attachment < 0.03 and rise >= 0.6 * cfg.lift_height and min(hand_openings) >= 0.003
                 self.ready_since = (now if self.ready_since is None else self.ready_since) if stable else None
                 if self.ready_since is not None and now - self.ready_since >= cfg.hold_seconds:
