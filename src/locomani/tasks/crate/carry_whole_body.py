@@ -67,6 +67,8 @@ def _phase_whole_body(ctx):
     planning = time.time()
     pose = plan_low_reach(arms.arm.ik, s, list(ctx.bars.values()), [rotation, rotation], ctx.config, tool_offset=OFFSET)
     ctx.m.update(
+        body_plan_seq=s["seq"],
+        body_plan_joint_reference=pose.joints.tolist(),
         body_plan_seconds=time.time() - planning,
         body_plan_hand_errors=pose.hand_errors.tolist(),
         body_plan_foot_errors=pose.foot_errors.tolist(),

@@ -100,3 +100,30 @@ def test_full_body_adapter_delivers_config_to_both_control_layers(monkeypatch):
     assert set([12, 13, 14]).issubset(arms.solver.indices)
     np.testing.assert_allclose(arms.arm.ik.lo[12:15], arms.solver.lo[12:15])
     np.testing.assert_allclose(arms.arm.ik.hi[12:15], arms.solver.hi[12:15])
+
+
+def test_free_waist_admission_uses_reachability_instead_of_locked_waist_lateral_heuristic(monkeypatch):
+    from types import SimpleNamespace
+
+    from locomani.tasks.crate import bimanual_carry as carry
+    from locomani.tasks.crate.carry_phases import admit_grasp
+
+    ik = scene_ik()
+    monkeypatch.setattr(carry, "PlannerArm", lambda *args, **kwargs: SimpleNamespace(ik=ik, q=np.zeros(29)))
+    p = SimpleNamespace(world_to_root_full=lambda point, state: np.asarray(point))
+    config = CrateCarryConfig(reach_control="whole_body", waist_pitch_max=0.52)
+    arms = carry.BimanualArms(p, config=config)
+    for depth, expected in [(0.44, True), (2.0, False)]:
+        ctx = SimpleNamespace(
+            p=p,
+            arms=arms,
+            config=config,
+            psi=0,
+            s=dict(joints=np.zeros(29), pelvis=dict(quat=[1, 0, 0, 0])),
+            m=dict(edge_clear=0.2, yaw_err_deg=0, stand_err=-0.01, lateral=0.06),
+            bars=dict(left=[depth, 0.13, 0], right=[depth, -0.25, 0]),
+            log=lambda message: None,
+        )
+        result = admit_grasp(ctx)
+        assert (result is None) == expected
+        assert "reach_ik_errors_m" in ctx.m

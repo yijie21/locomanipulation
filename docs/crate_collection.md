@@ -782,6 +782,9 @@ rotation by `carry.pelvis_pitch_max`. Planned root position is a geometry result
 the SONIC pose message delivers joint references and root orientation, so actual
 position and balance still require live measurement. GPU validation is in progress.
 The original bilateral capture, contact and lift gates remain in force.
+For this mode, the old 4 cm lateral heuristic is replaced by the supported
+whole-body solve before bending and mandatory two-hand IK at the actual bent pose.
+The table-edge floor and heading gates remain; an unreachable reference is rejected.
 
 Carry now uses all three physical waist axes; `carry.waist_dofs=pitch` retains the
 pitch-only comparison. Other experts retain their own configuration. A waist

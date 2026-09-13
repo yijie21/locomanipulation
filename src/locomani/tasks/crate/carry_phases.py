@@ -161,12 +161,14 @@ def admit_grasp(ctx: CarryRoundContext, *, check_reach=True) -> dict | None:
     if abs(m["yaw_err_deg"]) > 20 or m["stand_err"] > 0.10:
         m["why"] = "[stand] outside the reach band"
         return m
-    if abs(m["lateral"]) > LAT_TOL:
+    if abs(m["lateral"]) > LAT_TOL and ctx.config.reach_control == "planner":
         m["why"] = f"[stand] lateral {m['lateral'] * 100:+.1f} cm off the centre line"
         return m
     # The old far-distance band assumed arm-only reach. For a farther crate,
     # admit only a simultaneous, bounded solution for both grasp points.
-    if check_reach and (m["stand_err"] < -0.08 or ctx.config.pelvis_height is not None):
+    if check_reach and (
+        m["stand_err"] < -0.08 or ctx.config.pelvis_height is not None or ctx.config.reach_control == "whole_body"
+    ):
         rotations = {side: rot_z(ctx.psi) @ rot_y(np.radians(PALM_PITCH_DEG)) for side in ("left", "right")}
         errors = ctx.arms.reach_errors(ctx.s, ctx.bars, rotations)
         m["reach_ik_errors_m"] = errors.tolist()
