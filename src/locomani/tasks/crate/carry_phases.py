@@ -35,6 +35,8 @@ from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode, StreamMode
 from locomani.backends.sonic.primitives import DT, Primitives, upper_body_from_mj, wrap
 from locomani.primitives.g1_joints import ARM_MJ
+from locomani.tasks.crate.carry_config import DEFAULT_CARRY, CrateCarryConfig
+from locomani.tasks.crate.settling import SettlingWindow
 
 # Every phase function below returns `dict | None`: `None` to continue to the
 # next phase, a (failure-populated) `m` dict to end the round with that
@@ -60,6 +62,7 @@ class CarryRoundContext:
     log: Callable
     video_label: str
     m: dict
+    config: CrateCarryConfig = DEFAULT_CARRY
     motion_recording: Any = None
 
     # -- filled in by _phase_reset, read by later phases -------------------
@@ -103,26 +106,27 @@ def on_tick(ctx: CarryRoundContext, _s, dist) -> None:
         ctx.motion_recording.sample(time.time(), ctx.ramp.q, ctx.p.cmd.upper_body_vel, _s)
 
 
-def brake(ctx: CarryRoundContext) -> None:
-    # pelvis speed under 0.06 m/s for 0.25 s, arms finishing their rise
+def brake(ctx: CarryRoundContext) -> bool:
+    """Continue the approach reference until fresh body observations are quiet."""
     p = ctx.p
-    t0, still = time.time(), None
+    t0 = time.time()
+    settling = SettlingWindow(ctx.config.settle_seconds)
+    ready = False
     if ctx.motion_recording is not None:
         ctx.motion_recording.phase = "brake"
-    prev = p.pelvis_xy(p.obs())
     while time.time() - t0 < 6.0:
-        ctx.ramp.push(ctx.q_pre17)
+        gap = ctx.ramp.push(ctx.q_pre17)
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(ctx.psi)), float(np.sin(ctx.psi)), 0.0))
         time.sleep(DT)
-        cur = p.pelvis_xy(p.obs())
+        s = p.obs()
         if ctx.motion_recording is not None:
-            ctx.motion_recording.sample(time.time(), ctx.ramp.q, p.cmd.upper_body_vel, p.obs())
-        v = float(np.linalg.norm(cur - prev)) / DT
-        prev = cur
-        still = time.time() if v > 0.06 else (still if still is not None else time.time())
-        if still is not None and time.time() - still > 0.25 and time.time() - t0 > 1.0:
+            ctx.motion_recording.sample(time.time(), ctx.ramp.q, p.cmd.upper_body_vel, s)
+        ready = settling.step(s["wall"], p.pelvis_xy(s), s["pelvis"]["quat"], reference_ready=gap < 0.01)
+        if ready:
             break
     ctx.m["brake_seconds"] = time.time() - t0
+    ctx.m.update(stance_ready=ready, stand_speed=settling.speed, stand_angular_speed=settling.angular_speed)
+    return ready
 
 
 def stand_metrics(ctx: CarryRoundContext, tag):
@@ -392,7 +396,9 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
         ctx.m["why"] = "[stand] walk-in timed out"
         return ctx.m
 
-    brake(ctx)
+    if not brake(ctx):
+        ctx.m["why"] = "[stand] did not settle before reaching"
+        return ctx.m
     ramp.settle()
     s, yaw_err, stand_err, lateral, edge_clear = stand_metrics(ctx, "")
     ctx.m.update(yaw_err_deg=yaw_err, stand_err=stand_err, lateral=lateral, edge_clear=edge_clear)
@@ -434,7 +440,7 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
 
     # --- B+C: one servo: lean + reach + pitch, both hands, to the bars -------
     handoff_started = time.time()
-    arms.start(q17=ctx.ramp.q)
+    arms.start(q17=ctx.ramp.q, settle_seconds=0.0)
     ctx.m["handoff_seconds"] = time.time() - handoff_started
     ctx.m["reach_start_s"] = time.time() - ctx.t_video
     R_stand = rot_z(psi)

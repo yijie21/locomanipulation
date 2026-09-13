@@ -429,15 +429,21 @@ class PlannerArm(StreamedArm):
         self._q_prev = None
         self._face = (1.0, 0.0, 0.0)
 
-    def start(self, *, upper_reference=None) -> None:
+    def start(self, *, upper_reference=None, settle_seconds=0.6) -> None:
         """Take over, optionally preserving an already owned frozen reference.
 
         The explicit 17-value reference is the caller's last commanded upper
         body, not the deploy's unmodified planner motion or measured joints.
-        Default entry keeps the historical measured seed for existing callers.
+        Default entry keeps the historical measured seed and 0.6 s hold.
+        A caller that already owns and has settled this channel can explicitly
+        provide its reference and settle_seconds=0 for immediate takeover.
         """
         from locomani.backends.sonic.primitives import upper_body_from_mj
 
+        if not np.isfinite(settle_seconds) or settle_seconds < 0:
+            raise ValueError("settle_seconds must be finite and non-negative")
+        if settle_seconds == 0 and upper_reference is None:
+            raise ValueError("immediate takeover requires an explicit owned upper_reference")
         if upper_reference is not None:
             upper_reference = np.asarray(upper_reference, dtype=float)
             if upper_reference.shape != (17,) or not np.isfinite(upper_reference).all():
@@ -461,7 +467,7 @@ class PlannerArm(StreamedArm):
         # standing in the reference.
         self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
         self.next_t = time.time()
-        self.hold(0.6)
+        self.hold(settle_seconds)
 
     def stop(self) -> None:
         """No mode switch to make; just leave the target where the arm is."""

@@ -1,18 +1,11 @@
-"""Crate (bimanual) task knobs (decision 8, refactor step 3 item 5).
-
-Every field's default equals today's `os.environ.get(NAME, default)` fallback
-(none of them is ever actually overridden in any committed script -- checked
-by grepping scripts/, configs/ and src/ for `NAME=`), so a run with no config
-file behaves identically to before this module existed. `rounds`/`seed`/
-`label` stay plain argparse flags on bimanual_carry.py's own CLI (a per-run
-case, not a task default).
-"""
+"""Crate task configuration, resolved at the entry and passed to its consumers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
+from locomani.tasks.crate.carry_config import CrateCarryConfig
 from locomani.tasks.crate.visual_config import CrateVisualConfig
 
 SCHEMA_VERSION = 1
@@ -20,6 +13,7 @@ SCHEMA_VERSION = 1
 
 @dataclass(frozen=True)
 class CrateTaskConfig:
+    carry: CrateCarryConfig = field(default_factory=CrateCarryConfig)
     visual: CrateVisualConfig = field(
         default_factory=CrateVisualConfig
     )  # RGB expert controls; legacy experts ignore these

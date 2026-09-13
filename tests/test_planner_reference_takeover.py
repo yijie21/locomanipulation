@@ -37,6 +37,20 @@ class PlannerReferenceTests(unittest.TestCase):
         arm, cmd, st = self.arm()
         arm.start()
         np.testing.assert_allclose(cmd.set_upper_body.call_args.args[0], upper_body_from_mj(st["joints"]))
+        arm.hold.assert_called_once_with(0.6)
+
+    def test_settled_owner_can_take_over_without_another_wait(self):
+        arm, cmd, _ = self.arm()
+        arm.start(upper_reference=READY_UPPER, settle_seconds=0)
+        arm.hold.assert_called_once_with(0)
+        np.testing.assert_allclose(cmd.set_upper_body.call_args.args[0], READY_UPPER)
+
+    def test_immediate_unowned_or_invalid_hold_is_rejected_before_publish(self):
+        for seconds in [0, -1, float("nan"), float("inf")]:
+            arm, cmd, _ = self.arm()
+            with self.assertRaises(ValueError):
+                arm.start(settle_seconds=seconds)
+            cmd.set_upper_body.assert_not_called()
 
     def test_invalid_reference_rejected_before_publishing(self):
         for reference in [np.zeros(16), np.full(17, np.nan)]:

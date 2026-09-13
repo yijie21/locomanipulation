@@ -62,6 +62,7 @@ from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.crate import round_runner  # noqa: E402
 from locomani.tasks.crate.bimanual_ik import BimanualIK  # noqa: E402
+from locomani.tasks.crate.carry_config import DEFAULT_CARRY, CrateCarryConfig  # noqa: E402
 from locomani.tasks.crate.carry_phases import (  # noqa: E402
     CarryRoundContext,
     _phase_approach,
@@ -249,8 +250,8 @@ class BimanualArms:
             ik.lo[a[4]], ik.hi[a[4]] = -np.radians(45), np.radians(45)  # wrist roll
         self.hands = {"left": HAND_OPEN.copy(), "right": HAND_OPEN.copy()}
 
-    def start(self, q17=None):
-        self.arm.start(upper_reference=q17)
+    def start(self, q17=None, *, settle_seconds=0.6):
+        self.arm.start(upper_reference=q17, settle_seconds=settle_seconds)
         self.arm.hands = {k: v.astype(np.float32) for k, v in self.hands.items()}
 
     def stop(self):
@@ -334,6 +335,7 @@ def run_round(
     log,
     video_label: str,
     record: bool = False,
+    config: CrateCarryConfig = DEFAULT_CARRY,
 ) -> dict:
     """One round's five phases (carry_phases.py / carry_phases_lift.py),
     threaded through a CarryRoundContext.
@@ -352,6 +354,7 @@ def run_round(
         log=log,
         video_label=video_label,
         m={"round": rnd, "ok": False, "why": "", "produced": False},
+        config=config,
     )
     try:
         for phase in (_phase_reset, _phase_approach, _phase_grasp, _phase_close, _phase_lift):
@@ -374,6 +377,8 @@ def run_round(
 
 
 def main() -> None:
+    from functools import partial
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0)
@@ -388,10 +393,7 @@ def main() -> None:
         "protocol). Needs INSTANCE=0: start_stack.sh runs the exporter only there",
     )
     args = ap.parse_args()
-    # Same CrateTaskConfig and the same --config/--set flags as bimanual_wall.py.
-    # This file's ROUND logic still reads none of the task's geometry fields
-    # (unlike the wall expert's wall_feature/wall_walk); deploy_self_heal_rounds
-    # below is the first field it does read.
+    # Resolve once; pass carry controls into each round.
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
@@ -428,7 +430,7 @@ def main() -> None:
         p,
         reset,
         meta,
-        run_round=run_round,
+        run_round=partial(run_round, config=cfg.carry),
         rng=np.random.default_rng(args.seed),
         rounds=args.rounds,
         label=args.label,

@@ -726,3 +726,18 @@ OUT=$LOCOMANI_ROOT/outputs/experiments/crate_ds_$(date -u +%Y%m%d) \
 4. §5 10 集 pilot:成功 ≥ 8,`move_s` 都在 lift,`static` ≤ 0.10,`trig` 以 `contact` 为主。
 5. §10 渲染第 0 集:一个机器人、有头、脚着地。
 6. 要训练集:先做 §11,采集期间 GPU 上不跑别的。
+
+### Carry motion continuity
+
+`CrateTaskConfig.carry.settle_seconds` owns the continuous quiet interval before
+reaching (default 0.3 s). The gate requires fresh body position/orientation samples
+and a completed upper-body reference; it times out as a failed attempt after 6 s.
+The same settled reference passes into `PlannerArm.start` with no extra fixed hold.
+Other planner callers retain their default entry hold. The robot is sampled
+1.2–1.5 m outside the table edge; measured distance at video start is also recorded.
+`*_motion.jsonl` contains commanded references, velocities, measured joints and
+base pose with timestamps and phase labels for diagnostic comparisons. These
+privileged diagnostics are not declared VLA observation modalities.
+
+GPU comparison evidence in `outputs/crate_motion_flow_20260913/` is in progress;
+CPU timing tests do not establish grasp reliability or learned-policy behavior.
