@@ -780,7 +780,8 @@ pose stream after walking. It plans a hip hinge from the observed feet and COM,
 keeps pelvis height above `carry.pelvis_height_min`, and bounds forward pelvis
 rotation by `carry.pelvis_pitch_max`. Planned root position is a geometry result;
 the SONIC pose message delivers joint references and root orientation, so actual
-position and balance still require live measurement. GPU validation is in progress.
+position and balance still require live measurement. See the
+[low-reach investigation](handoff/crate-low-reach-20260913.md) for measured results.
 The original bilateral capture, contact and lift gates remain in force.
 For this mode, the old 4 cm lateral heuristic is replaced by the supported
 whole-body solve before bending and mandatory two-hand IK at the actual bent pose.
@@ -791,4 +792,6 @@ pitch-only comparison. Other experts retain their own configuration. A waist
 joint limit and the torso's inclination relative to the world are distinct angles.
 The new stream keeps per-frame root orientations and explicit joint velocities
 together. `*_motion.jsonl` stores these full-body references for inspection.
+After capture, a continuous paired lift extends the held command in a fixed
+coordinate frame; measured contact, tilt and rise still decide success.
 Formal `--record` is rejected for this pilot until full-pose VLA export is validated.

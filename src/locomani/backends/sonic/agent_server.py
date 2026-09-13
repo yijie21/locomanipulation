@@ -423,6 +423,7 @@ class AgentCommander:
         are optional and omitted). `root_quat_wxyz` may be [4] (broadcast) or
         [N,4]; the deploy re-anchors its heading to the robot at mode switch,
         so a constant yaw-only quat means "hold the current heading".
+        Optional `joint_vel_isaac` is [N,29]; omitted velocities remain zero.
         """
         jp = np.atleast_2d(np.asarray(joint_pos_isaac, dtype=np.float32))
         n = len(jp)

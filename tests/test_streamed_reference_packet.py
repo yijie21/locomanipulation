@@ -30,3 +30,18 @@ def test_each_buffered_pose_keeps_its_root_rotation_and_joint_velocity(monkeypat
     for i in range(3):
         np.testing.assert_allclose(packet["joint_vel"][i], mujoco_to_isaac(np.arange(29) * 0.001 + i * 0.01), atol=1e-7)
     np.testing.assert_array_equal(packet["frame_index"], [0, 1, 2])
+
+
+def test_legacy_pose_chunk_broadcasts_root_and_defaults_to_zero_velocity(monkeypatch):
+    captured = []
+    monkeypatch.setattr(agent_server, "pack_pose_message", lambda data, **kw: captured.append(data) or b"pose")
+    commander = object.__new__(agent_server.AgentCommander)
+    commander.sonic = Mock()
+    commander.left_hand = commander.right_hand = np.zeros(7)
+    joints = np.arange(58).reshape(2, 29) * 0.01
+    commander.pose_chunk(joints, [1, 0, 0, 0], 12)
+    packet = captured[-1]
+    np.testing.assert_allclose(packet["joint_pos"], joints)
+    np.testing.assert_array_equal(packet["joint_vel"], np.zeros((2, 29)))
+    np.testing.assert_array_equal(packet["body_quat"][:, 0], [[1, 0, 0, 0]] * 2)
+    np.testing.assert_array_equal(packet["frame_index"], [12, 13])

@@ -198,6 +198,7 @@ class StreamedArm:
         self.p.cmd.heading_offset = float(self.p.obs()["pelvis"]["yaw"])
 
     def _push(self, q_mj29, *, reference_velocity=None) -> None:
+        """Buffer each pose with its own root rotation and optional 29-joint velocity."""
         q_mj29 = self._guard_left(np.asarray(q_mj29, dtype=float).copy())
         velocity = np.zeros(29) if reference_velocity is None else np.asarray(reference_velocity, dtype=float)
         if velocity.shape != (29,) or not np.isfinite(velocity).all():
@@ -427,8 +428,8 @@ class PlannerArm(StreamedArm):
     the planner message's `height` field.
 
     `send_vel=True` also fills `upper_body_velocity` by finite difference.
-    The encoder observes motion_joint_velocities_* but every channel we
-    have used so far sends zeros, which makes a moving reference look
+    The encoder observes motion_joint_velocities_*. Sending zeros for a
+    changing reference makes that reference look
     stationary to it.
     """
 
