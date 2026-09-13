@@ -88,3 +88,22 @@ def test_lift_does_not_call_tracking_delay_an_empty_grasp_but_has_a_deadline():
         if command.finished:
             break
     assert command.finished and command.reason == "probe_not_attached"
+
+
+def test_bend_to_align_keeps_the_world_staging_target_when_the_body_lags():
+    policy, q = setup()
+    estimate = visible(0)
+    centres = estimate.transform(policy.local_grips) + policy.frame.origin
+    centres = centres[np.argsort(-centres[:, 1])]
+    tools = policy.solver.tool_poses(q)[0] + policy.frame.origin
+    expected = policy.region.nearest(centres, estimate.rotation[:, 1], tools) + [
+        -0.04,
+        0,
+        policy.config.visual.pregrasp_above,
+    ]
+    for now in np.arange(0, 10, 0.04):
+        command = policy.step(now, visible(now), q, [1, 0, 0, 0], [0.095] * 2)
+        if command.phase == "align":
+            break
+    assert command.phase == "align"
+    np.testing.assert_allclose(policy.tool_reference, expected, atol=1e-8)

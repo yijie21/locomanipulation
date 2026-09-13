@@ -127,6 +127,7 @@ class VisualLowReach:
             self.attitudes = np.array([attitude] * 2)
             normal = Rotation.from_euler("z", yaw).apply([1, 0, 0])
             staging = targets - 0.04 * normal + [0, 0, cfg.pregrasp_above]
+            self.staging_reference = staging.copy()
             goal = self.solver.solve(
                 plan.joints,
                 (staging - plan.position) @ plan.rotation,
@@ -153,8 +154,7 @@ class VisualLowReach:
                 self.reference = JointReference(
                     self.q, self.solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration
                 )
-                positions, _ = self.solver.tool_poses(self.q)
-                self.tool_reference = positions @ base.T + origin
+                self.tool_reference = self.staging_reference.copy()
                 self.enter("align")
         elif self.phase == "align":
             ready, errors = self.region.contains(centres, object_rotation, tools, tool_rotations)
