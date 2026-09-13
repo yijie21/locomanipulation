@@ -1,24 +1,7 @@
-"""`run_round`'s phases, split out of bimanual_carry.py (refactor step 4b
-family 5, pure extraction; decision 9's file-size cap). Every statement
-here is unchanged from the original inline body -- only the packaging
-moved: each closure's captured locals became a field on `CarryRoundContext`,
-and the four helpers used from more than one place (`on_tick`, `brake`,
-`stand_metrics`, `pitched`) became plain functions taking `ctx` instead of
-nested closures. The last two phases (`_phase_close`, `_phase_lift`) live in
-`carry_phases_lift.py` instead -- all five here would not fit this file's
-own 600-line cap.
+"""Crate reset, walking admission and simultaneous waist/arm reaching.
 
-This module must not import `locomani.tasks.crate.bimanual_carry` at its own
-top level: `bimanual_carry.py` imports names from here (`run_round`'s new
-home is `bimanual_carry.py` itself, calling these phases in sequence), so a
-module-level import in the other direction would make the two files a
-load-order-sensitive circular import. Nothing here needs anything of
-`bimanual_carry.py`'s at import time anyway -- every module constant
-(`STAND_OFF`, `APPR_SPEED`, ...) and helper (`crate_frame`, `hand_txt`,
-`crate_tilt_deg`, `rot_z`, `rot_y`) it needs is a deferred, in-function
-import instead (none of them is ever overridden by assignment anywhere in
-the repo, so a plain import -- not a module-qualified read -- is correct
-and sufficient here, unlike vla_round.py's family-3 knobs).
+CarryRoundContext owns one round. Close and lift live in carry_phases_lift.py;
+task constants are imported locally to avoid a cycle with the entry module.
 """
 
 from __future__ import annotations
@@ -35,7 +18,7 @@ from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode, StreamMode
 from locomani.backends.sonic.primitives import DT, Primitives, upper_body_from_mj, wrap
 from locomani.primitives.g1_joints import ARM_MJ
-from locomani.tasks.crate.carry_config import DEFAULT_CARRY, CrateCarryConfig
+from locomani.tasks.crate.carry_config import DEFAULT_CARRY, START_EDGE_RANGE_M, CrateCarryConfig
 from locomani.tasks.crate.settling import SettlingWindow
 
 # Every phase function below returns `dict | None`: `None` to continue to the
@@ -218,7 +201,7 @@ def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     crate_dy = float(rng.uniform(-0.10, 0.10))
     n0 = np.array([1.0, 0.0])  # crate near wall faces -x
     stand0 = crate0[:2] - n0 * STAND_OFF
-    start_edge_distance = float(rng.uniform(1.2, 1.5))
+    start_edge_distance = float(rng.uniform(*START_EDGE_RANGE_M))
     spawn_lat = float(rng.uniform(-0.15, 0.15))
     spawn_xy = initial_robot_xy(meta, start_edge_distance) + np.array([0.0, spawn_lat])
     spawn_back = float(np.dot(stand0 - spawn_xy, n0))
@@ -255,6 +238,9 @@ def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     ctx.m["initial_edge_distance"] = edge_x - float(ctx.s["pelvis"]["pos"][0])
     if ctx.s["fallen"]:
         ctx.m["why"] = "[stand] did not stabilise after reset"
+        return ctx.m
+    if not START_EDGE_RANGE_M[0] <= ctx.m["initial_edge_distance"] <= START_EDGE_RANGE_M[1]:
+        ctx.m["why"] = "[reset] initial table-edge distance outside 1.2–1.5 m after settling"
         return ctx.m
     reset.start_video(ctx.video_label)
     ctx.log(f"[reset] {hand_txt(p, p.obs())}")

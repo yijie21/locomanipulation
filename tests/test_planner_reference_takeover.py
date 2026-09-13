@@ -52,6 +52,14 @@ class PlannerReferenceTests(unittest.TestCase):
                 arm.start(settle_seconds=seconds)
             cmd.set_upper_body.assert_not_called()
 
+    def test_invalid_or_guarded_explicit_velocity_cannot_publish(self):
+        for velocity, guard in [(np.zeros(17), None), (np.full(29, np.nan), None), (np.zeros(29), "bottle")]:
+            arm, cmd, _ = self.arm()
+            arm.guard, arm.left_guard = guard, True
+            with self.assertRaises(ValueError):
+                arm._push(np.zeros(29), reference_velocity=velocity)
+            cmd.set_upper_body.assert_not_called()
+
     def test_invalid_reference_rejected_before_publishing(self):
         for reference in [np.zeros(16), np.full(17, np.nan)]:
             arm, cmd, _ = self.arm()

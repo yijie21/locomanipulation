@@ -8,7 +8,7 @@ import numpy as np
 
 class MotionRecording:
     def __init__(self, path, started):
-        self.file = Path(path).open("w")
+        self.file = Path(path).open("x")
         self.started = started
         self.phase = "approach"
 

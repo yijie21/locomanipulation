@@ -3,6 +3,8 @@
 import math
 from dataclasses import dataclass
 
+START_EDGE_RANGE_M = (1.2, 1.5)  # recorded locomotion starts outside the near table edge
+
 
 @dataclass(frozen=True)
 class CrateCarryConfig:

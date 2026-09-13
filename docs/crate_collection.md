@@ -744,5 +744,7 @@ Other planner callers retain their default entry hold. The robot is sampled
 base pose with timestamps and phase labels for diagnostic comparisons. These
 privileged diagnostics are not declared VLA observation modalities.
 
-GPU comparison evidence in `outputs/crate_motion_flow_20260913/` is in progress;
-CPU timing tests do not establish grasp reliability or learned-policy behavior.
+[Motion-flow implementation and comparison](handoff/crate-motion-flow-20260913.md)
+records the protocol, measurements and current limitations. CPU timing tests do not
+establish grasp reliability or learned-policy behavior. Actual reset distance is
+checked before recording/walking; drift outside 1.2–1.5 m is a failed attempt.

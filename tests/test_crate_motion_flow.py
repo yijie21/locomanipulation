@@ -80,10 +80,11 @@ def test_settling_requires_fresh_continuous_quiet_pose_and_completed_reference()
     assert result
 
 
+@pytest.mark.parametrize("field", ["settle_seconds", "joint_speed", "joint_acceleration"])
 @pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf"), True])
-def test_invalid_carry_setting_is_rejected(value):
+def test_invalid_carry_setting_is_rejected(field, value):
     with pytest.raises(ValueError):
-        CrateTaskConfig.from_dict({"carry": {"settle_seconds": value}})
+        CrateTaskConfig.from_dict({"carry": {field: value}})
 
 
 def test_carry_cli_override_reaches_round_context(monkeypatch, tmp_path):
@@ -160,3 +161,36 @@ def test_walk_to_reach_preserves_velocity_and_uses_elapsed_time(monkeypatch):
         assert np.max(np.abs(rate)) <= DEFAULT_CARRY.joint_speed + 5e-6
         assert np.max(np.abs(rate - velocity)) <= DEFAULT_CARRY.joint_acceleration * (dt + old_dt) / 2 + 5e-6
         previous, velocity, old_dt = sent, rate, dt
+
+
+@pytest.mark.parametrize("distance,valid", [(1.19, False), (1.51, False), (1.3, True)])
+def test_reset_drift_is_checked_before_recording_or_walking(monkeypatch, distance, valid):
+    _, p, _ = controller(monkeypatch)
+    state = p.obs()
+    state["fallen"] = False
+    state["pelvis"]["pos"][0] = -distance
+    p.obs = lambda: state
+    p.pelvis_yaw = lambda state: 0
+    monkeypatch.setattr(phases.upper_ref, "shared", Mock())
+    monkeypatch.setattr(carry, "hand_txt", lambda *args: "fixture")
+    reset = Mock()
+    ctx = phases.CarryRoundContext(
+        p=p,
+        reset=reset,
+        meta={
+            "surfaces": {"A": {"xy": [0.5, 0], "flat_half_extent": [0.5, 0.5]}},
+            "objects": {"blue_crate": {"init_pos": [0.2, 0, 0.7], "init_quat": [1, 0, 0, 0], "surface": "A"}},
+            "robot_start": {"xy": [-1.3, 0]},
+        },
+        rnd=0,
+        rng=np.random.default_rng(11),
+        log=lambda msg: None,
+        video_label="fixture",
+        m={},
+    )
+    result = phases._phase_reset(ctx)
+    assert (result is None) == valid
+    assert reset.start_video.called == valid
+    assert ctx.m["initial_edge_distance"] == distance
+    if not valid:
+        assert "initial table-edge distance" in result["why"]
