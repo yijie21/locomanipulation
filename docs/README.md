@@ -44,7 +44,7 @@ contributors can find them without conversation history or an agent's private me
 [pick and place](pick_place_collection.md).
 Crate expert redesign: [visual guidance and privileged-information contract](handoff/crate-visual-expert-design.md)
 (proposal; read when implementing the new expert or reviewing its training data).
-[Crate RGB video pilots](crate_visual_collection.md): implemented entry, painted scene and artifact meanings.
+[Crate camera-guided video pilots](crate_visual_collection.md): simulation-assisted ordinary-basket control, historical RGB path and artifact meanings.
 [Carry motion comparison](handoff/crate-motion-flow-20260913.md): timing, command bounds and GPU evidence.
 These tutorials include historical experiments and explanations. Their presence in
 this index does not validate their measurements or causal conclusions.

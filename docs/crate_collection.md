@@ -21,9 +21,10 @@ carry 的目标站位在桌沿距离下限外预留一个 `STAND_TOL` 停步缓�
 修改这条路径先读 change map 的“Crate carry / wall reach and waist”行；
 实测范围及局限见 [弯腰修复与验证](handoff/crate-carry-waist-20260913.md)。
 
-这两个历史专家仍使用仿真物体状态。需要视觉指导动作的示范时，选择
-[`--expert visual`](crate_visual_collection.md)；它复用同一个双臂 IK，
-由 `visual_config.py` 管理前俯上限及动作平滑，不从 carry 常量读取配置。
+这两个历史专家仍是机械抓取诊断入口。需要视觉指导动作的示范时，选择
+[`--expert visual`](crate_visual_collection.md)。低桌配置允许仿真信息辅助规划，
+保留原始篮子外观，并按相机可见性约束目标；全身姿态限制由 `carry_config.py`
+管理，目标引导和动作时间由 `visual_config.py` 管理。视觉指导不要求专家仅依赖 RGB。
 
 ### 采集产物
 
@@ -797,9 +798,10 @@ After capture, a continuous paired lift extends the held command in a fixed
 coordinate frame; measured contact, tilt and rise still decide success.
 Formal `--record` is rejected for this pilot until full-pose VLA export is validated.
 
-The low-table **visual** expert now uses the same free-waist body planner through
+The low-table **visual** expert uses simulation-assisted continuous body coordination through
 `--expert visual --config configs/tasks/crate_visual_low_reach.json`; follow the
-[visual low-reach guide](crate_visual_collection.md#low-tables-and-a-free-waist).
+[camera-guided low-reach guide](crate_visual_collection.md#low-tables-and-a-free-waist).
+The profile restores the ordinary basket and records the simulation source explicitly.
 The `carry` entry remains privileged mechanical diagnostics. Its whole-body capture
 now accepts the no-post rim segment; legacy point/slot descriptions above describe
 earlier runs. [New investigation and limits](handoff/crate-visual-low-reach-20260913.md).

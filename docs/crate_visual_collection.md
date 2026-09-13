@@ -1,144 +1,130 @@
-# Crate RGB video pilots
+# Camera-guided crate video pilots
 
-Use this guide for the painted-crate expert. Its intended design and remaining
-training work are in [the design](handoff/crate-visual-expert-design.md).
-The expert now records walking from the table edge through stable grasping.
-Low-table validation and the latest changes: [visual low reach](handoff/crate-visual-low-reach-20260913.md).
-The earlier [walking and stability evidence](handoff/crate-walk-stability-20260912.md) is preserved.
-The earlier [grasp-only batch](handoff/crate-visual-pilot-20260912.md) remains preserved.
-No VLA learning result is implied.
+Use `--expert visual` for demonstrations that approach a visible basket and grasp
+its rim. The low-table profile uses simulation-assisted planning with the original
+basket appearance. It records the walk from 1.2–1.5 m away through the attempt.
+These are video/control pilots; they do not yet certify VLA training or learning.
+Implementation and measured limits: [assisted coordination](handoff/crate-assisted-coordination-20260913.md).
 
 ## Information used by the expert
 
-The pose estimator consumes three RGB streams, measured robot joints and fixed
-camera/object geometry. Visible labels on the inner far wall and basket floor
-provide complementary views during walking and deep bending. Its scene builder changes appearance only: zero mass,
-no new contacts. The ordinary unmarked basket is a separate perception task.
+“Visual guidance” describes the relationship between the visible scene and the
+action. It does **not** require an expert restricted to RGB pose estimation.
+Simulation object pose, robot state and geometric constraints may help produce
+smooth, reproducible references. Their source must be recorded honestly.
 
-At long range, only the two top markers may be visible. Their known spacing gives
-a coarse head-camera range/bearing for a frontal approach to the fixed upright basket.
-This estimate cannot authorize grasping; full RGB pose recovery is required near the table.
+`visual.pose_source` selects one implementation:
 
-Task decisions consume RGB estimates, encoder FK, finger openings, base orientation
-and their history. Base orientation is the simulated IMU signal and is recorded. A simultaneous solver controls two arms and the configured waist axes. Scene
-placement occurs before recording: the pelvis starts 1.2–1.5 m from the near table
-edge. The whole walk, brake, observed settle and grasp are recorded. No robot
-placement/reset occurs after walking begins. Object pose/contact truth is used by the
-after-episode evaluator; falling can trigger an explicitly marked external abort.
+| Source | Planning inputs | Appearance and admission |
+|---|---|---|
+| `assisted` (low-table profile) | Simulation basket pose, measured joints/base pose, camera geometry, scene occlusion geometry | Original basket; fresh camera frames and a basket visible in at least one recorded camera |
+| `markers` (historical RGB experiment) | RGB marker fits, measured joints/IMU, known marker geometry | Added wall/floor labels; RGB fit required near grasping |
 
-Joint references limit velocity and acceleration; palm rotations blend continuously.
-Reaching starts only after a continuous quiet interval in visual target motion and
-base angular motion. Loaded references wait for bilateral tracking and attachment. Completion requires
-an uninterrupted observed hold interval; occlusion resets that interval and pauses
-gripper closure progress. The policy stops advancing when visual estimates disappear. It never refreshes a
-hidden target from simulator object state. Camera streams, source timestamps,
-robot state and issued references are saved for inspection.
+The assisted path uses frustum projection and scene rays to admit a visible basket.
+It is **not** an RGB detector. Three visible surface samples spanning at least eight
+pixels in one camera are required; blank frames are rejected. Camera mount bodies
+are excluded from their own rays, and hidden geometry groups are excluded. This
+geometric check is an approximation of recorded visibility, not a pixel-level
+segmentation guarantee. RGB/state timestamps and source labels remain inspectable.
+
+Simulation may improve the target and trajectory; it cannot teleport the basket,
+reset the robot during the demonstration, move the object into reach, advance
+an unseen target indefinitely, or turn failed contact into a successful label.
+Missing/stale observations pause the reference and eventually abort. The same
+visible placement determines the target; arbitrary hidden episode flags do not
+select grasp styles or unrecorded recovery branches. This constrains potential
+hidden action causes but does not prove that a particular VLA can learn the policy.
+
+The historical [RGB low-reach batch](handoff/crate-visual-low-reach-20260913.md)
+used a painted scene and succeeded 4/10. Its observations remain historical
+measurements; that rate must not be attributed to the assisted controller.
+Earlier [walking](handoff/crate-walk-stability-20260912.md) and
+[grasp-only](handoff/crate-visual-pilot-20260912.md) evidence is preserved.
+The original [design discussion](handoff/crate-visual-expert-design.md) predates
+this explicit permission to use simulation throughout planning.
 
 ## Run
 
-Follow [AGENTS](../AGENTS.md) for GPU/instance admission. The following example uses
-instance 1 and GPU 0; check live availability first. The configured simulation
-Python is `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python`.
-
-```bash
-# Start from the crate scene built by tasks/crate/bimanual_scene.py (see crate guide).
-PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  -m locomani.tasks.crate.visual_scene outputs/scene/crate_bimanual outputs/scene/crate_visual
-
-PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  -m locomani.pipeline.run_crate_pilot --expert visual \
-  --scene outputs/scene/crate_visual --out outputs/crate_visual_pilot \
-  --instance 1 --gpu 0 --rounds 10 --seed 101
-```
-
-Configuration uses `--config` and `--set visual.FIELD=VALUE`. Fields and validation
-belong to `CrateTaskConfig.visual`; see the generated [field reference](reference/config_fields.md).
-Use a fresh output directory for each distinct experiment. The runner owns startup,
-provenance, instance cleanup and the attempt manifests.
-
-## Outputs and limits
-
-Before sharing or packaging these videos, follow the mandatory
-[video export procedure](rendering.md#video-export). Recorded originals below are
-audit inputs; viewing/download links must use the verified compressed previews.
-
-- `videos_00/*.mp4`: simulator overview with the camera insets, one per completed video attempt.
-- `observations/<label>/*.mp4`: the RGB frames actually consumed by the expert.
-- `observations/<label>/observations.jsonl`: matching frame indices, timestamps,
-  robot observations including base orientation, references, visual fits, gripper
-  closures, walking direction/speed, approach-estimate source and phase transitions.
-- `attempts.jsonl`: sampled labels/seeds journaled before reset or camera setup.
-- `manifest_00.jsonl` and per-attempt `result.json`: success, failure reason,
-  measured rise/tilt/contact and any exception/intervention. Failed attempts remain present.
-- `config_snapshot.json`, `deploy_receipts.jsonl`, stage logs and `trace/`: source,
-  deployment and simulation evidence. A video does not certify a causal explanation.
-
-The RGB MP4s are frame-indexed at a nominal 25 FPS; use the JSON timestamps for
-measurement rather than assuming fixed wall-clock spacing. The overview is recorded
-by the simulator's existing video path. Runtime artifacts remain untracked.
-
-This pilot does not produce a validated LeRobot training dataset (`--record` is
-refused). Token-label/history synchronization, both-gripper VLA inference and
-student learning validation remain separate work before formal data collection.
-Walking currently covers a frontal, obstacle-free approach to one known basket/table
-geometry. General navigation, transport and unmarked-scene perception are unvalidated.
-The saved IMU/history/command signals still need end-to-end VLA consumer validation.
-
-## Low tables and a free waist
-
-For a 30 cm table, select `--expert visual --config configs/tasks/crate_visual_low_reach.json`.
-The `carry.reach_control=whole_body` selector reuses the existing body/waist limits;
-the RGB entry owns object-directed decisions. `--expert carry` remains a privileged
-mechanical diagnostic and must not be relabeled as a visual training expert.
-The [low-reach investigation](handoff/crate-visual-low-reach-20260913.md) records
-the measured motion, unsuccessful attempts and remaining limits. Its fixed ten-attempt
-batch succeeded 4/10; low-table collection reliability is still insufficient.
-
-Build a fresh painted scene from the lowered, unpainted crate scene. The current
-builder adds visible wall and floor labels: the wall supports the long approach,
-and the floor remains visible when bending puts the far wall outside the images.
-The patches have zero mass and no collision response. Their known locations are
-object geometry, not per-episode pose truth. This is still a marked-basket task.
+Follow [AGENTS](../AGENTS.md) for GPU/instance admission. The example uses instance
+1 and GPU 0; check availability first. Build a crate scene following the
+[crate guide](crate_collection.md). For a lowered table use the
+[table-height procedure](crate_collection.md#table-height-validation).
 
 ```bash
 PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  -m locomani.tasks.crate.visual_scene outputs/scene/crate_table30 outputs/scene/crate_visual30
+  -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
+PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
+  scripts/experiments/crate_table_height_20260913.py \
+  outputs/scene/crate_bimanual outputs/scene/crate_table30 --height 0.30
 
 PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
   -m locomani.pipeline.run_crate_pilot --expert visual \
   --config configs/tasks/crate_visual_low_reach.json \
-  --scene outputs/scene/crate_visual30 --out outputs/crate_visual30_pilot \
-  --gpu 0 --instance 1 --rounds 10 --seed 41
+  --scene outputs/scene/crate_table30 --out outputs/crate_assisted_pilot \
+  --instance 1 --gpu 0 --rounds 10 --seed 41
 ```
 
-The height profile does not build the scene. Prepare the 30 cm source using the
-[table-height procedure](crate_collection.md#table-height-validation), then paint it.
-Use new scene/output directories so older evidence remains reproducible.
+The profile does not alter table height. It selects `carry.reach_control=whole_body`
+and `visual.pose_source=assisted`. The runner copies the source scene and removes
+only the experimental `crate_visual_*` plates/markers from the copy. Basket mesh,
+collision shape, mass and original source remain unchanged. Use a fresh output
+directory for each experiment; old artifacts must remain intact.
 
-Low reaching uses the following contracts:
+Configuration is resolved as defaults → profile → explicit `--set` overrides,
+then serialized to the expert process. See the generated
+[field reference](reference/config_fields.md). Assisted control requires the
+whole-body path. To reproduce the older marker path, build a distinct scene with
+`python -m locomani.tasks.crate.visual_scene SOURCE DESTINATION` and explicitly
+set `--set visual.pose_source=markers`.
 
-- Walk from the sampled 1.2–1.5 m table-edge distance using RGB range/bearing.
-  Observed quiet motion authorizes reaching; the full-body solver still rejects
-  unreachable stands. All three waist axes obey the physical model limits.
-- Preserve the consumed planner joint/root reference and owned arm override at
-  POSE takeover; measured wrist/neck references bridge the mode transition.
-  Bend and reach with bounded joint speed/acceleration. Use elapsed observation
-  time rather than assuming that every camera/control tick took 20 ms.
-- Treat the no-post rim as a graspable segment. Individual along-rim offsets may
-  differ, while the pair midpoint stays within 15 mm of the basket center. End-wall
-  clearance, jaw alignment and vertical overlap still constrain closure; the wrists need not match a single preferred 6D pose.
-- RGB fits, encoder FK, finger openings and IMU drive the controller. A planted-foot
-  frame estimates stationary base motion from those observations. Missing or stale
-  vision pauses every trajectory, including bending and closure, and eventually aborts.
-  Simulator object position and contacts are consumed only by the final evaluator.
-- Check actual delivered hand motion before deciding whether the basket follows
-  the lift. A deadline still rejects an undelivered lift. Preserve all failures.
+## Low tables and a free waist
 
-`observations.jsonl` also records the full 29-joint reference, its velocity, root
-orientation reference, reconstructed support origin, capture-region errors and
-visual lift/attachment checks. Image indices and source timestamps remain authoritative.
-The bounded backend mode handshake appears in the overview/trace but is not a
-complete token-label recording. Formal `--record` remains blocked: the current
-SONIC crate training configuration consumes single-frame observations, while this
-expert uses history. Validate history inputs, emitted 64-dimensional motion tokens,
-both grippers and synchronized replay before calling these VLA training episodes.
+`CoordinatedReach` owns one supported body reference throughout descent, closure
+and lifting. `WholeBodyIK` owns foot anchors, balance and physical posture limits.
+The existing `carry` expert remains a separate mechanical diagnostic entry.
+
+- Walk from the sampled 1.2–1.5 m table-edge distance. A quiet target/base interval
+  authorizes the handoff; unreachable placements still fail admission.
+- Preserve the consumed planner joint/root reference at POSE takeover. The backend
+  bridges with measured wrist/neck references. Descent begins from that reference.
+- Move both hands, hips and all three waist axes together. Compensate bounded
+  measured tracking error with the whole body; do not freeze the legs after bending.
+  Joint/root rates, acceleration, planted-foot error, support COM, pelvis height,
+  waist limits and shallow knee flexion constrain the solution.
+- Treat each no-post rim as a segment, allowing different along-rim hand positions.
+  Keep the pair midpoint within 15 mm of the basket center. End-wall clearance,
+  jaw alignment and vertical overlap still constrain closure.
+- Maintain the paired reference during closure and lift with actual attachment,
+  basket rise and tilt checks. The lift baseline must not apply tracking feedback
+  twice. Stop on empty grippers, clear attachment loss, displaced baskets or stalled
+  reaching; retain failed and timed-out attempts.
+
+`VisualLowReach` retains the older marker-based policy for historical experiments.
+It reconstructs base translation from stationary foot FK; that information contract
+must not be confused with the assisted controller's measured simulation base pose.
+
+## Outputs and limits
+
+Before sharing or packaging videos, follow mandatory
+[video export](rendering.md#video-export): every preview is at most 500,000 bytes,
+with complete duration/speed and verified playback. Preserve original recordings.
+
+- `videos_00/*.mp4`: raw simulator overview and camera insets.
+- `observations/<label>/*.mp4`: raw camera frames consumed by the expert.
+- `observations/<label>/observations.jsonl`: matching frame indices, camera/state
+  timestamps, joint/base observations, guidance source/visibility, issued joint/root
+  references, body feedback, capture errors, closure and phase. For assisted poses,
+  the legacy `vision` container has `source=simulation` and `reprojection_px=null`.
+- `attempts.jsonl`, `manifest_00.jsonl`, per-attempt `result.json`: every sampled
+  attempt and its actual success/failure, rise/tilt/contact, source kind and exceptions.
+- `config_snapshot.json`, `deploy_receipts.jsonl`, stage logs and `trace/`: source,
+  deployment and simulation evidence. Artifacts stay untracked.
+
+Camera MP4s use nominal 25 FPS; use JSON timestamps for measurements. The overview
+uses simulator timing. A good-looking video does not establish a causal explanation.
+The current task covers a frontal, obstacle-free approach to one known basket/table
+geometry. General navigation and transport remain outside this pilot.
+
+Formal `--record` is refused. Token/history synchronization, emitted 64-dimensional
+motion tokens, both-gripper VLA inference and end-to-end replay/learning still need
+validation before these attempts can be called ready-to-train LeRobot episodes.

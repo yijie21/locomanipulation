@@ -11,9 +11,7 @@
 
 - Crate RGB expert video pilot completed: final batch 7/10 successes, three hold
   timeouts, all ten videos retained. [Implementation and evidence](handoff/crate-visual-pilot-20260912.md).
-- Walking/stability extension: corrected full-flow batch 3/10 success; initial table-edge
-  distances 1.278–1.479 m. Seven reaching episodes pass the pre-contact shake diagnostic;
-  navigation and hold failures remain. [Results and small videos](handoff/crate-walk-stability-20260912.md).
+- [Earlier walking extension](handoff/crate-walk-stability-20260912.md): 3/10; starts 1.278–1.479 m. Seven reaches pass the shake diagnostic; navigation/hold failures remain.
 
 - Isaac asset portability repaired: tracked room source, installed table meshes/texture
   fallback, strict source validation and cache invalidation. Isaac 4.5 fresh-install
@@ -26,6 +24,8 @@
 - [30 cm validation](handoff/crate-table30-20260913.md): 0/10; three crouches delivered, but pelvis retreats 23–29 cm. Experimental profile; default flow retained.
 - [30 cm hip hinge](handoff/crate-low-reach-20260913.md): privileged pilot 6/10; torso 55–58°, shallow knees, all waist axes free.
 - [30 cm RGB low reach](handoff/crate-visual-low-reach-20260913.md): 4/10 fixed batch, final check 1/3; faster rim capture and smoother references. Tracking/physics failures and VLA export remain.
+
+- [Ordinary-basket assisted coordination](handoff/crate-assisted-coordination-20260913.md): 4/10; final timing check 2/3. Continuous hips/waist/hands, restored appearance; tracking/contact failures remain.
 
 ## Runtime evidence and remaining uncertainty
 
@@ -43,8 +43,8 @@
 
 ## Shared resources
 
-- Visual low-reach validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
-- Latest evidence: `outputs/crate_visual_low_reach_20260913/`; earlier height/motion evidence retained.
+- Assisted coordination validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
+- Latest evidence: `outputs/crate_assisted_coordination_20260913/`; all earlier motion evidence retained.
 - Earlier outputs, datasets, recordings and weights are preserved; see the linked reports.
 
 ## Evidence and preserved constraints

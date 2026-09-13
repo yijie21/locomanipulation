@@ -20,8 +20,8 @@ Isaac Sim 用于已录轨迹的离线渲染。
 | 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/training.md) · [评测](docs/evaluation.md) |
 | 渲染和分享视频 | 构建 Isaac 场景、离线重渲、压缩下载预览 | [渲染与视频导出](docs/rendering.md) |
 
-双臂视觉抓篮子目前是**视频试验流程**，需要带可见颜色标记的篮子；尚未提供经过验证的
-LeRobot 训练数据集。各任务的适用范围和已知问题见对应指南，最近的试验结果见 [项目状态](docs/STATE.md)。
+双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
+按相机可见性约束动作；尚未提供经过验证的 LeRobot 训练数据集。各任务的适用范围和已知问题见对应指南，最近的试验结果见 [项目状态](docs/STATE.md)。
 
 ## 安装环境
 
@@ -47,7 +47,7 @@ cd locomanipulation
 
 ## 快速开始
 
-下面以**双臂视觉抓篮子，运行 3 次尝试**为例。先完成安装指南第 0–4 步，
+下面以**30 cm 低桌上的双臂抓篮子，运行 3 次尝试**为例。先完成安装指南第 0–4 步，
 在仓库根目录的 Bash 终端执行。示例使用 GPU 0、实例 1；共享机器上先确认它们空闲。
 
 ```bash
@@ -55,14 +55,15 @@ export INSTANCE=1
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-# 构建双臂场景，再添加专家识别所需的可见标记
+# 构建原始篮子场景，准备保持桌面宽度不变的 30 cm 低桌
 "$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
-"$VENV_SIM_PY" -m locomani.tasks.crate.visual_scene \
-  outputs/scene/crate_bimanual outputs/scene/crate_visual
+"$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
+  outputs/scene/crate_bimanual outputs/scene/crate_table30 --height 0.30
 
 # 启动仿真与控制器，采集完整的走近、抓取过程
 "$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot --expert visual \
-  --scene outputs/scene/crate_visual --out outputs/crate_first_run \
+  --config configs/tasks/crate_visual_low_reach.json \
+  --scene outputs/scene/crate_table30 --out outputs/crate_first_run \
   --instance "$INSTANCE" --gpu 0 --rounds 3 --seed 101
 ```
 
