@@ -80,6 +80,7 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
         arm.q = q0 + (3 * u * u - 2 * u * u * u) * (ready.joints - q0)
         arm._push(arm.q)
     arm.hold(1.2)
+    stance_ready = True
     if whole_body:
         # Preparing the upright reference after a deep carry can move the base.
         # Complete that preparation first, then initialize the sampled episode
@@ -91,9 +92,29 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
         )
         time.sleep(0.3)
         arm.start(upper_reference=upper_body_from_mj(ready.joints), settle_seconds=0.0)
-        arm.hold(1.2)
+        # Initialization is outside the recording. Admit a measured quiet stance,
+        # not a wall-clock sleep that becomes too short on a busy simulator.
+        state = p.obs()
+        began = previous = float(state["t"])
+        progress_wall, quiet_since, stance_ready = time.time(), None, False
+        while state["t"] - began < cfg.walk_timeout:
+            stamp = float(state["t"])
+            if stamp < previous or time.time() - progress_wall > cfg.vision_timeout:
+                break
+            if stamp > previous:
+                previous, progress_wall = stamp, time.time()
+            w, x, y, z = state["pelvis"]["quat"]
+            upright = 1 - 2 * (x * x + y * y) >= np.cos(np.radians(cfg.upright_tolerance_deg))
+            quiet = upright and state["pelvis"]["pos"][2] >= 0.72 and np.linalg.norm(state["pelvis"]["vel"]) < 0.06
+            quiet_since = (stamp if quiet_since is None else quiet_since) if quiet else None
+            if quiet_since is not None and stamp - quiet_since >= cfg.settle_seconds:
+                stance_ready = True
+                break
+            arm._push(arm.q)
+            state = p.obs()
     return arm, {
         "initialization_resets": 2 if whole_body else 1,
+        "initial_stance_ready": stance_ready,
         "object_dxy": jitter.tolist(),
         "object_yaw": float(yaw),
         "start_edge_distance": start_distance,
@@ -123,6 +144,14 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     policy = VisualCratePolicy(geometry["grasp_points"], cfg)
     approach = VisualApproach(cfg)
     arm, placement = reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
+    if not placement["initial_stance_ready"]:
+        arm.stop()
+        return RoundResult(
+            False,
+            "initial_stance_unstable",
+            False,
+            {"metrics": dict(placement=placement, frames=0, produced=False, dataset_kind=dataset_kind)},
+        )
     reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
     initial = p.obs()
     if whole_body:
@@ -156,11 +185,24 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     last_motion = {"movement": np.zeros(3), "speed": -1.0}
     last_phase, reason, error = None, "no_camera_frames", None
     final = initial
+    last_simulation_time, last_progress_wall = float(initial["t"]) if assisted else 0.0, started
     try:
-        while time.time() - started < cfg.walk_timeout + cfg.timeout_seconds + 2:
+        while (
+            float(final["t"]) - float(initial["t"]) if assisted else time.time() - started
+        ) < cfg.walk_timeout + cfg.timeout_seconds + 2:
             now = time.time()
             raw = p.obs()
             final = raw  # evaluate the observed attempt, before mode exit or video finalization
+            motion_clock = {"motion_time": float(raw["t"])} if assisted else {}
+            if assisted:
+                if raw["t"] < last_simulation_time:
+                    reason = "simulation_clock_reversed"
+                    break
+                if raw["t"] > last_simulation_time:
+                    last_simulation_time, last_progress_wall = float(raw["t"]), now
+                elif now - last_progress_wall > cfg.vision_timeout:
+                    reason = "simulation_stalled"
+                    break
             if raw["fallen"]:
                 reason = "external_fall_abort"
                 break
@@ -198,17 +240,21 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     if assisted
                     else perception.approach_target(images, joints, stamp)
                 )
-                nav = approach.step(now, target, raw["pelvis"]["quat"], grasp_pose_available=estimate is not None)
+                nav = approach.step(
+                    now, target, raw["pelvis"]["quat"], grasp_pose_available=estimate is not None, **motion_clock
+                )
                 admission = None
                 if nav.ready and assisted:
                     probe = CoordinatedReach(
                         solver, config, raw, reference_joints=joints, reference_quaternion=raw["pelvis"]["quat"]
                     )
-                    check = probe.step(now, estimate, raw, openings)
+                    check = probe.step(now, estimate, raw, openings, **motion_clock)
                     admission = probe.diagnostics
                     if check.reason == "unsupported_assisted_reach":
                         if approach.retry_closer():
-                            nav = approach.step(now, target, raw["pelvis"]["quat"], grasp_pose_available=True)
+                            nav = approach.step(
+                                now, target, raw["pelvis"]["quat"], grasp_pose_available=True, **motion_clock
+                            )
                         else:
                             nav = replace(nav, ready=False, reason="approach_unsupported_reach")
                 arm.mode = LocomotionMode.SLOW_WALK if nav.speed > 0 else LocomotionMode.IDLE
@@ -261,7 +307,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                         )
                     continue  # reacquire RGB/encoders after the bounded mode handoff
                 body_command = (
-                    low.step(now, estimate, raw, openings)
+                    low.step(now, estimate, raw, openings, **motion_clock)
                     if assisted
                     else low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
                 )
@@ -308,6 +354,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "state_seq": raw.get("seq"),
                     "state_wall_time": raw.get("wall"),
                     "simulation_time": raw.get("t"),
+                    "motion_clock": "simulation" if assisted else "wall",
                     "joints": joints,
                     "base_quaternion": raw["pelvis"]["quat"],
                     "base_position": raw["pelvis"]["pos"],

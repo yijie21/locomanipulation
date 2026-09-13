@@ -24,6 +24,28 @@ def test_unsupported_reach_can_use_braking_allowance_without_crossing_stand_off(
     assert not approach.retry_closer()
 
 
+def test_quiet_stance_is_measured_in_physics_time_when_the_host_slows():
+    fast, slow = VisualApproach(CrateVisualConfig()), VisualApproach(CrateVisualConfig())
+    for simulation_time in np.arange(0, 2, 0.05):
+        target = np.array([0.35, 0, 0])
+        a = fast.step(
+            simulation_time,
+            ApproachTarget(target, simulation_time, "visible"),
+            [1, 0, 0, 0],
+            grasp_pose_available=True,
+            motion_time=simulation_time,
+        )
+        wall = 10 + 4 * simulation_time
+        b = slow.step(
+            wall,
+            ApproachTarget(target, wall, "visible"),
+            [1, 0, 0, 0],
+            grasp_pose_available=True,
+            motion_time=simulation_time,
+        )
+        assert a.ready == b.ready and a.phase == b.phase
+
+
 def test_far_visible_pair_guides_approach_without_filling_occluded_markers():
     perception = CratePerception(scene_ik(), {"markers": MARKERS})
     position = [1.35, 0.025, -0.05]

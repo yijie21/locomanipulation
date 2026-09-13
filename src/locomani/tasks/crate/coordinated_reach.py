@@ -113,21 +113,26 @@ class CoordinatedReach:
             reference_hand_error=pose.hand_errors,
         )
 
-    def step(self, now, estimate, state, hand_openings):
+    def step(self, wall_time, estimate, state, hand_openings, *, motion_time=None):
+        """Advance by physical time; camera timestamps and freshness use wall time."""
         cfg = self.config.visual
+        now = wall_time if motion_time is None else float(motion_time)
         if self.started is None:
             self.started = self.last_time = now
+            self.started_wall = wall_time
         control_dt = max(float(now - self.last_time), 0.0)
         dt = min(control_dt, 0.1)  # cap trajectory progress, not the physical rate interval
         self.last_time = now
         if now - self.started > cfg.timeout_seconds:
             return self.result("timeout", True)
-        if estimate is None or not 0 <= now - estimate.timestamp <= cfg.vision_timeout:
+        if estimate is None or not 0 <= wall_time - estimate.timestamp <= cfg.vision_timeout:
             self.was_visible, self.ready_since = False, None
             self.last_dt = None
             self.v[:] = 0
             self.velocity[:] = 0
-            stale = now - (self.last_seen if self.last_seen is not None else self.started) > cfg.vision_timeout
+            stale = (
+                wall_time - (self.last_seen if self.last_seen is not None else self.started_wall) > cfg.vision_timeout
+            )
             return self.result("vision_lost" if stale else "waiting_for_vision", stale)
         dt = dt if self.was_visible else 0.0
         control_dt = control_dt if self.was_visible else 0.0

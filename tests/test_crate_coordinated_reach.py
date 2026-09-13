@@ -200,3 +200,21 @@ def test_final_hold_accepts_bounded_sway_but_rejects_a_moving_load(motion, expec
         if command.finished:
             break
     assert command.reason == expected
+
+
+def test_slow_host_does_not_accelerate_physical_motion_or_weaken_camera_freshness():
+    fast, state = setup()
+    slow, _ = setup()
+    for simulation_time in np.arange(0, 2, 0.05):
+        a = fast.step(
+            simulation_time, estimate(simulation_time, state), state, [0.015] * 2, motion_time=simulation_time
+        )
+        wall_time = 100 + 4 * simulation_time
+        b = slow.step(wall_time, estimate(wall_time, state), state, [0.015] * 2, motion_time=simulation_time)
+        np.testing.assert_allclose(a.joints, b.joints, atol=1e-9)
+        np.testing.assert_allclose(a.velocity, b.velocity, atol=1e-9)
+        assert a.phase == b.phase
+        state = dict(joints=a.joints, pelvis=dict(pos=fast.x[:3].copy(), quat=a.root_quaternion))
+    # The simulator barely advances, but an image stale in wall time still aborts.
+    stale = slow.step(wall_time + 1, estimate(wall_time, state), state, [0.015] * 2, motion_time=simulation_time + 0.01)
+    assert stale.finished and stale.reason == "vision_lost"

@@ -55,7 +55,7 @@ def test_external_abort_remains_marked_when_finalization_fails(tmp_path, monkeyp
         "objects": {"blue_crate": {"pos": [0, 0, 0], "quat": [1, 0, 0, 0], "touching": []}},
     }
     monkeypatch.setattr(expert, "ArmIK", lambda path: scene_ik())
-    monkeypatch.setattr(expert, "reset_ready", lambda *args: (arm, {}))
+    monkeypatch.setattr(expert, "reset_ready", lambda *args: (arm, {"initial_stance_ready": True}))
     if failure == "evaluation":
         monkeypatch.setattr(expert, "evaluate", lambda *args, **kwargs: broken())
     meta = {"crate_visual": {"markers": MARKERS, "grasp_points": [[0.19, 0, 0.06], [-0.19, 0, 0.06]]}}
@@ -68,7 +68,10 @@ def test_external_abort_remains_marked_when_finalization_fails(tmp_path, monkeyp
     assert stopped == [True]
 
 
-def test_low_reach_rejects_reset_drift_before_starting_a_demonstration(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("stance_ready", "reason"), [(True, "invalid_initial_distance"), (False, "initial_stance_unstable")]
+)
+def test_low_reach_rejects_invalid_initialization_before_recording(tmp_path, monkeypatch, stance_ready, reason):
     from types import SimpleNamespace
     from unittest.mock import Mock
 
@@ -82,7 +85,11 @@ def test_low_reach_rejects_reset_drift_before_starting_a_demonstration(tmp_path,
     arm = SimpleNamespace(q=np.zeros(29), stop=Mock())
     reset = SimpleNamespace(start_video=Mock())
     monkeypatch.setattr(expert, "ArmIK", lambda path: scene_ik())
-    monkeypatch.setattr(expert, "reset_ready", lambda *a, **kw: (arm, {"start_edge_distance": 1.4}))
+    monkeypatch.setattr(
+        expert,
+        "reset_ready",
+        lambda *a, **kw: (arm, {"start_edge_distance": 1.4, "initial_stance_ready": stance_ready}),
+    )
     meta = dict(
         crate_visual=dict(markers=MARKERS, grasp_points=[[0.19, 0, 0.06], [-0.19, 0, 0.06]]),
         objects={"blue_crate": {"surface": "A"}},
@@ -98,7 +105,7 @@ def test_low_reach_rejects_reset_drift_before_starting_a_demonstration(tmp_path,
         "drift",
         None,
     )
-    assert result.why == "invalid_initial_distance" and not result.accepted()
+    assert result.why == reason and not result.accepted()
     reset.start_video.assert_not_called()
     arm.stop.assert_called_once()
 
@@ -130,7 +137,7 @@ def test_attempt_evaluates_the_observed_end_state_before_cleanup_can_change_it(t
     arm = SimpleNamespace(stop=lambda: cleaned.__setitem__(0, True), q=[0.0] * 29)
     reset = SimpleNamespace(start_video=lambda label: None, end_video=lambda: None)
     monkeypatch.setattr(expert, "ArmIK", lambda path: scene_ik())
-    monkeypatch.setattr(expert, "reset_ready", lambda *args: (arm, {}))
+    monkeypatch.setattr(expert, "reset_ready", lambda *args: (arm, {"initial_stance_ready": True}))
     meta = {"crate_visual": {"markers": MARKERS, "grasp_points": [[0.19, 0, 0.06], [-0.19, 0, 0.06]]}}
     result = expert.run_attempt(
         SimpleNamespace(obs=observe), reset, None, meta, CrateTaskConfig(), tmp_path, "end_state", None

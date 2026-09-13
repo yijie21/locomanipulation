@@ -40,10 +40,13 @@ class VisualApproach:
         self.phase, self.quiet_since = "walk", None
         return True
 
-    def step(self, now, target, base_quaternion, *, grasp_pose_available):
+    def step(self, wall_time, target, base_quaternion, *, grasp_pose_available, motion_time=None):
+        """Use the motion clock for movement/settling, wall time for camera freshness."""
         cfg = self.config
+        now = wall_time if motion_time is None else float(motion_time)
         if self.started is None:
             self.started = self.last_time = now
+            self.started_wall = wall_time
         dt = float(np.clip(now - self.last_time, 0.001, 0.1))
         self.last_time = now
         orientation = Rotation.from_quat(np.roll(base_quaternion, -1))
@@ -52,9 +55,9 @@ class VisualApproach:
             self.angular_speed += min(1, dt / 0.3) * (rate - self.angular_speed)
         self.orientation = orientation
         reason = "approach_timeout" if now - self.started > cfg.walk_timeout else ""
-        if target is None or now - target.timestamp > cfg.vision_timeout:
+        if target is None or wall_time - target.timestamp > cfg.vision_timeout:
             self.quiet_since = None
-            if now - (self.last_seen if self.last_seen is not None else self.started) > cfg.vision_timeout:
+            if wall_time - (self.last_seen if self.last_seen is not None else self.started_wall) > cfg.vision_timeout:
                 reason = reason or "approach_vision_lost"
             return ApproachCommand(self.phase, np.zeros(3), reason=reason)
         self.last_seen = target.timestamp
