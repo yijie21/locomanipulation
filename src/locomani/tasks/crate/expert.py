@@ -1,4 +1,4 @@
-"""Run the RGB-guided crate expert; reset and privileged evaluation stay outside its policy."""
+"""Run the camera-guided crate expert with explicit RGB or simulation-assisted pose sources."""
 
 from __future__ import annotations
 
@@ -21,9 +21,12 @@ from locomani.pipeline.execution_record import RoundResult
 from locomani.primitives.arm_ik import ArmIK
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient
+from locomani.tasks.crate.assisted_guidance import AssistedGuidance
 from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.config import CrateTaskConfig
+from locomani.tasks.crate.coordinated_reach import CoordinatedReach
 from locomani.tasks.crate.evaluation import evaluate
+from locomani.tasks.crate.grasp_region import GRASP_POINTS
 from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.round_runner import prime
@@ -106,8 +109,16 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         waist_dofs=config.carry.waist_dofs if whole_body else "pitch",
     )
     low = None
-    perception = CratePerception(ArmIK(paths.SCENE_XML), meta["crate_visual"], max_reprojection_px=cfg.reprojection_px)
-    policy = VisualCratePolicy(meta["crate_visual"]["grasp_points"], cfg)
+    assisted = cfg.pose_source == "assisted"
+    geometry = {"grasp_points": GRASP_POINTS} if assisted else meta["crate_visual"]
+    dataset_kind = (
+        "ordinary_crate_assisted_low_reach_video_pilot"
+        if assisted
+        else "painted_crate_rgb_low_reach_video_pilot"
+        if whole_body
+        else "painted_crate_rgb_walk_video_pilot"
+    )
+    policy = VisualCratePolicy(geometry["grasp_points"], cfg)
     approach = VisualApproach(cfg)
     arm, placement = reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
     reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
@@ -126,10 +137,15 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                         initial_edge_distance=distance,
                         frames=0,
                         produced=False,
-                        dataset_kind="painted_crate_rgb_low_reach_video_pilot",
+                        dataset_kind=dataset_kind,
                     )
                 },
             )
+    perception = (
+        AssistedGuidance(ArmIK(paths.SCENE_XML))
+        if assisted
+        else CratePerception(ArmIK(paths.SCENE_XML), geometry, max_reprojection_px=cfg.reprojection_px)
+    )
     recorder = VisualRecording(directory / label)
     reset.start_video(label)
     started = time.time()
@@ -168,14 +184,16 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
             images = message["images"]
             joints = np.asarray(raw["joints"], dtype=float)
             measured, rotations = solver.tool_poses(joints)
-            new_estimate = perception.update(images, joints, stamp)
+            new_estimate = perception.update(images, raw if assisted else joints, stamp)
             estimate = new_estimate  # an occluded frame cannot refresh a true-state target
             openings = np.array([2 * (np.mean(raw["palms"][side]["hand_q"][:2]) + 0.023) for side in ("left", "right")])
             navigation = None
             if approach is not None:
                 target = (
-                    ApproachTarget(estimate.position, stamp, "full_rgb_pose")
+                    ApproachTarget(estimate.position, stamp, "visible_simulation_pose" if assisted else "full_rgb_pose")
                     if estimate is not None
+                    else None
+                    if assisted
                     else perception.approach_target(images, joints, stamp)
                 )
                 nav = approach.step(now, target, raw["pelvis"]["quat"], grasp_pose_available=estimate is not None)
@@ -201,24 +219,37 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     approach = None
             elif whole_body:
                 if low is None:
-                    # Body planning cannot begin without a current RGB fit.
+                    # Body planning needs a currently admitted visible target.
                     if estimate is None:
                         arm._push(arm.q)
                         continue
                     arm = StreamedArm(p, "right", ik=model, left_guard=False)
                     arm.start(hold_planner_pose=True)
                     handoff_state = p.obs()
-                    low = VisualLowReach(
-                        solver,
-                        meta["crate_visual"],
-                        config,
-                        handoff_state["joints"],
-                        handoff_state["pelvis"]["quat"],
-                        reference_joints=arm.q,
-                        reference_quaternion=arm.root_quat,
-                    )
+                    if assisted:
+                        low = CoordinatedReach(
+                            solver,
+                            config,
+                            handoff_state,
+                            reference_joints=arm.q,
+                            reference_quaternion=arm.root_quat,
+                        )
+                    else:
+                        low = VisualLowReach(
+                            solver,
+                            geometry,
+                            config,
+                            handoff_state["joints"],
+                            handoff_state["pelvis"]["quat"],
+                            reference_joints=arm.q,
+                            reference_quaternion=arm.root_quat,
+                        )
                     continue  # reacquire RGB/encoders after the bounded mode handoff
-                body_command = low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
+                body_command = (
+                    low.step(now, estimate, raw, openings)
+                    if assisted
+                    else low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
+                )
                 q = body_command.joints
                 closed = np.zeros_like(HAND_OPEN)
                 closed[:2] = -0.023
@@ -264,6 +295,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "simulation_time": raw.get("t"),
                     "joints": joints,
                     "base_quaternion": raw["pelvis"]["quat"],
+                    "base_position": raw["pelvis"]["pos"],
+                    "guidance": perception.diagnostics if assisted else {"pose_source": "rgb_markers"},
                     "navigation": navigation,
                     "hand_openings": openings,
                     "reference_joints": q,
@@ -276,6 +309,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "vision": None
                     if estimate is None
                     else {
+                        "source": "simulation" if assisted else "rgb_markers",
                         "position": estimate.position,
                         "rotation": estimate.rotation,
                         "reprojection_px": estimate.reprojection_px,
@@ -305,7 +339,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         seconds=time.time() - started,
         frames=recorder.frames,
         placement=placement,
-        dataset_kind="painted_crate_rgb_low_reach_video_pilot" if whole_body else "painted_crate_rgb_walk_video_pilot",
+        dataset_kind=dataset_kind,
         produced=False,
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),
@@ -333,7 +367,7 @@ def main():
     config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     config = config.with_overrides(args.overrides)
     meta = json.loads(Path(paths.SCENE_META).read_text())
-    if "crate_visual" not in meta:
+    if config.visual.pose_source == "markers" and "crate_visual" not in meta:
         parser.error("build a distinct painted scene with python -m locomani.tasks.crate.visual_scene")
     from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
 

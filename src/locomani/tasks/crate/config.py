@@ -16,7 +16,7 @@ class CrateTaskConfig:
     carry: CrateCarryConfig = field(default_factory=CrateCarryConfig)
     visual: CrateVisualConfig = field(
         default_factory=CrateVisualConfig
-    )  # RGB expert controls; legacy experts ignore these
+    )  # Camera-guided expert controls; legacy experts ignore these
     wall_feature: str = "rail"  # WALL_FEATURE: rail (rim bars) or wall (full-height long walls) grasp geometry
     wall_walk: bool = False  # WALL_WALK=1: bimanual_carry's walk-in approach instead of a ready stand
     gripper_gear: float = 250.0  # GRIPPER_GEAR: dex1 finger actuator gear (env override for A/B runs)
@@ -37,6 +37,10 @@ class CrateTaskConfig:
     deploy_self_heal_rounds: int = 2  # consecutive '[stand] did not stabilise' rounds before restarting this
     # instance's deploy (0 = off). Was a bare `dead_rounds >= 2` in bimanual_wall.main and absent from
     # bimanual_carry.py; backends/sonic/deploy.SelfHeal is the shared trigger.
+
+    def __post_init__(self):
+        if self.visual.pose_source == "assisted" and self.carry.reach_control != "whole_body":
+            raise ValueError("visual.pose_source=assisted requires carry.reach_control=whole_body")
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

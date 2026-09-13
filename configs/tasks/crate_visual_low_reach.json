@@ -6,6 +6,7 @@
     "waist_pitch_max": 0.52
   },
   "visual": {
+    "pose_source": "assisted",
     "settle_seconds": 0.3,
     "stand_off": 0.39,
     "stand_lateral_tolerance": 0.14,

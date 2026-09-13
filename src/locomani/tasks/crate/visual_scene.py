@@ -6,6 +6,8 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from locomani.tasks.crate.grasp_region import GRASP_POINTS
+
 MARKERS = {
     "cyan": {"position": [0.075, -0.1178, 0.065], "rgba": [0.03, 1, 1, 1]},
     "green": {"position": [0.075, -0.1178, -0.035], "rgba": [0.03, 1, 0.03, 1]},
@@ -84,8 +86,25 @@ def build(source: Path, destination: Path):
         "version": 3,
         "markers": markers,
         "marker_groups": [list(MARKERS), list(FLOOR_MARKERS)],
-        "grasp_points": [[0.1933, 0, 0.060], [-0.1933, 0, 0.060]],
+        "grasp_points": GRASP_POINTS,
     }
+    meta_path.write_text(json.dumps(meta, indent=2))
+
+
+def remove_paint(scene: Path):
+    """Restore the original appearance in a newly copied run scene, preserving physics."""
+    xml = scene / "scene_locomani.xml"
+    tree = ET.parse(xml)
+    body = tree.find('.//body[@name="blue_crate_object"]')
+    if body is not None:
+        for geom in list(body.findall("geom")):
+            if geom.get("name", "").startswith("crate_visual_"):
+                body.remove(geom)
+        tree.write(xml)
+    meta_path = scene / "scene_meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta.pop("crate_visual", None)
+    meta["scene_xml"] = str(xml.resolve())
     meta_path.write_text(json.dumps(meta, indent=2))
 
 

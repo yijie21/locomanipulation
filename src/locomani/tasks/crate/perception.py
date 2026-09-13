@@ -27,7 +27,7 @@ class CrateEstimate:
     position: np.ndarray
     rotation: np.ndarray
     timestamp: float
-    reprojection_px: float
+    reprojection_px: float | None
     detections: dict
 
     def transform(self, points):

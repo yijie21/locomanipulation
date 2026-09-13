@@ -199,7 +199,7 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
             f"no crate scene at {args.scene}; build it:\n"
             f"  {paths.VENV_SIM_PY} {Path(paths.SRC) / 'tasks/crate/bimanual_scene.py'} {args.scene}"
         )
-    if args.expert == "visual":
+    if args.expert == "visual" and task_cfg.visual.pose_source == "markers":
         metadata = json.loads((args.scene / "scene_meta.json").read_text())
         if "crate_visual" not in metadata:
             raise SystemExit("visual expert requires a scene built by locomani.tasks.crate.visual_scene")
@@ -209,6 +209,10 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
     scene = out / args.scene.name
     if not scene.exists():
         shutil.copytree(args.scene, scene)
+        if args.expert == "visual" and task_cfg.visual.pose_source == "assisted":
+            from locomani.tasks.crate.visual_scene import remove_paint
+
+            remove_paint(scene)
     if not (out / "config_snapshot.json").exists():
         write_config_snapshot(
             out,

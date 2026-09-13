@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CrateVisualConfig:
+    pose_source: str = "markers"  # markers: RGB fitting; assisted: visible target with simulation pose/feedback
     waist_pitch_max: float = 0.40  # radians; additionally bounded by the robot model
     palm_pitch_deg: float = 60.0  # downward grasp orientation relative to the observed basket
     start_edge_min: float = 1.2  # initial pelvis distance from the near table edge, metres
@@ -38,7 +39,11 @@ class CrateVisualConfig:
     max_tilt_deg: float = 15.0  # observed basket tilt limit during lifting
 
     def __post_init__(self):
+        if self.pose_source not in ("markers", "assisted"):
+            raise ValueError("visual.pose_source must be markers or assisted")
         for name, value in vars(self).items():
+            if name == "pose_source":
+                continue
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")
         if not 0 <= self.waist_pitch_max <= 0.52:

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+GRASP_POINTS = ((0.1933, 0.0, 0.060), (-0.1933, 0.0, 0.060))
+
 
 @dataclass(frozen=True)
 class RimRegion:
