@@ -407,7 +407,14 @@ class AgentCommander:
         self.command(start=True, stop=False, planner=True)
 
     def pose_chunk(
-        self, joint_pos_isaac: np.ndarray, root_quat_wxyz, frame_index_start: int, left_hand=None, right_hand=None
+        self,
+        joint_pos_isaac: np.ndarray,
+        root_quat_wxyz,
+        frame_index_start: int,
+        left_hand=None,
+        right_hand=None,
+        *,
+        joint_vel_isaac=None,
     ) -> None:
         """One `pose` message: an [N,29] IsaacLab-order joint chunk.
 
@@ -419,12 +426,19 @@ class AgentCommander:
         """
         jp = np.atleast_2d(np.asarray(joint_pos_isaac, dtype=np.float32))
         n = len(jp)
+        velocity = (
+            np.zeros((n, 29), dtype=np.float32)
+            if joint_vel_isaac is None
+            else np.asarray(joint_vel_isaac, dtype=np.float32)
+        )
+        if velocity.shape != (n, 29) or not np.isfinite(velocity).all():
+            raise ValueError("joint_vel_isaac must contain one finite 29-joint velocity per pose")
         quat = np.asarray(root_quat_wxyz, dtype=np.float32)
         if quat.ndim == 1:
             quat = np.tile(quat, (n, 1))
         data = {
             "joint_pos": jp,
-            "joint_vel": np.zeros((n, 29), dtype=np.float32),
+            "joint_vel": velocity,
             "body_quat": quat.reshape(n, 1, 4),
             "frame_index": np.arange(frame_index_start, frame_index_start + n, dtype=np.int64),
         }

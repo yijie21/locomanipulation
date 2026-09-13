@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "carry": {
+    "reach_control": "whole_body",
+    "waist_dofs": "all",
+    "waist_pitch_max": 0.52
+  }
+}

@@ -1,4 +1,4 @@
-"""Simultaneous tool-point IK for two arms and one shared waist pitch."""
+"""Simultaneous tool-point IK for two arms and a shared, bounded waist."""
 
 from dataclasses import dataclass
 
@@ -34,16 +34,20 @@ class BimanualIK:
 
     sides = ("left", "right")
 
-    def __init__(self, ik: ArmIK, *, waist_pitch_max: float, tool_offset=(0.1515, 0.0, 0.0)):
+    def __init__(self, ik: ArmIK, *, waist_pitch_max: float, tool_offset=(0.1515, 0.0, 0.0), waist_dofs="pitch"):
+        if waist_dofs not in ("pitch", "all"):
+            raise ValueError("waist_dofs must be pitch or all")
         self.ik = ik
         self.offset = np.asarray(tool_offset, dtype=float)
-        self.indices = np.array([14, *ARM_MJ["left"], *ARM_MJ["right"]])
+        waist = [14] if waist_dofs == "pitch" else [12, 13, 14]
+        self.indices = np.array([*waist, *ARM_MJ["left"], *ARM_MJ["right"]])
         self.cols = ik.dadr[self.indices]
         # Read physical ranges, never the single-arm solver's historical 1.6x waist bounds.
         ranges = ik.model.jnt_range[ik.jids].copy()
         self.lo, self.hi = ranges[:, 0], ranges[:, 1]
-        self.lo[12:15] = 0.0
-        self.hi[12:14] = 0.0
+        if waist_dofs == "pitch":
+            self.lo[12:15] = 0.0
+            self.hi[12:14] = 0.0
         self.hi[14] = min(float(waist_pitch_max), self.hi[14])
         for side in self.sides:
             arm = ARM_MJ[side]

@@ -12,7 +12,7 @@ class MotionRecording:
         self.started = started
         self.phase = "approach"
 
-    def sample(self, now, reference, velocity, state, *, body_height=None):
+    def sample(self, now, reference, velocity, state, *, body_height=None, root_reference=None):
         self.file.write(
             json.dumps(
                 dict(
@@ -26,6 +26,7 @@ class MotionRecording:
                     base_quat=state["pelvis"]["quat"],
                     base_position=state["pelvis"]["pos"],
                     body_height=body_height,
+                    root_reference=root_reference,
                 )
             )
             + "\n"

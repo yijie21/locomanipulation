@@ -189,6 +189,8 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
     task_cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         task_cfg = task_cfg.with_overrides(args.set_)
+    if args.expert == "carry" and args.record and task_cfg.carry.reach_control == "whole_body":
+        raise SystemExit("whole_body is a motion pilot; full-pose VLA action export is not validated")
     task_cfg_path = out / "task_config.json"
     if not task_cfg_path.exists():
         task_cfg.dump(task_cfg_path)

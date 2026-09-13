@@ -208,8 +208,14 @@ class BimanualArms:
         self.arm = PlannerArm(p, "right", send_vel=True)
         self.arm.guard = None  # no off-hand: both hands work
         ik = self.arm.ik
-        self.solver = BimanualIK(ik, waist_pitch_max=(config or DEFAULT_CARRY).waist_pitch_max, tool_offset=OFFSET)
-        # Keep yaw/roll neutral while allowing forward pitch within real limits.
+        self.solver = BimanualIK(
+            ik,
+            waist_pitch_max=(config or DEFAULT_CARRY).waist_pitch_max,
+            waist_dofs=config.waist_dofs if config is not None else "pitch",
+            tool_offset=OFFSET,
+        )
+        # Configured carry axes are free within physical ranges; legacy wall
+        # construction without a carry config retains its pitch-only contract.
         ik.lo[12:15] = self.solver.lo[12:15]
         ik.hi[12:15] = self.solver.hi[12:15]
         # Arm bounds that make the "arm overhead" branch impossible. Pilots
@@ -364,10 +370,16 @@ def run_round(
         config=config,
     )
     from locomani.tasks.crate.carry_crouch import _phase_crouch
+    from locomani.tasks.crate.carry_whole_body import _phase_whole_body
+
+    if record and config.reach_control == "whole_body":
+        raise ValueError("whole_body is a motion pilot; full-pose VLA action export is not validated")
 
     try:
         phases = (_phase_reset, _phase_approach)
-        if config.pelvis_height is not None:
+        if config.reach_control == "whole_body":
+            phases += (_phase_whole_body,)
+        elif config.pelvis_height is not None:
             phases += (_phase_crouch,)
         phases += (_phase_grasp, _phase_close, _phase_lift)
         for phase in phases:
@@ -410,6 +422,8 @@ def main() -> None:
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
+    if args.record and cfg.carry.reach_control == "whole_body":
+        ap.error("whole_body is a motion pilot; full-pose VLA action export is not validated")
     # Script-vs-package double copy (see bimanual_wall.main): carry_phases*.py import this
     # module by its package name; make that name resolve to the running module so the
     # globals set below (DUMP_DIR) are the ones the phases read.

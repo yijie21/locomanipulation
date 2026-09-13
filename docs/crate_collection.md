@@ -772,3 +772,20 @@ successes: three attempts lowered the pelvis by 24–25 cm but also retreated 23
 all three failed low-pose admission. This profile remains experimental, and is not
 validated for formal VLA collection. The report contains measured waist/torso angles,
 full walking previews and the fixed-footprint `--height 0.30` scene preparation command.
+
+### Whole-body low-reach pilot
+
+`--expert carry --config configs/tasks/crate_low_reach.json` selects a full-body
+pose stream after walking. It plans a hip hinge from the observed feet and COM,
+keeps pelvis height above `carry.pelvis_height_min`, and bounds forward pelvis
+rotation by `carry.pelvis_pitch_max`. Planned root position is a geometry result;
+the SONIC pose message delivers joint references and root orientation, so actual
+position and balance still require live measurement. GPU validation is in progress.
+The original bilateral capture, contact and lift gates remain in force.
+
+Carry now uses all three physical waist axes; `carry.waist_dofs=pitch` retains the
+pitch-only comparison. Other experts retain their own configuration. A waist
+joint limit and the torso's inclination relative to the world are distinct angles.
+The new stream keeps per-frame root orientations and explicit joint velocities
+together. `*_motion.jsonl` stores these full-body references for inspection.
+Formal `--record` is rejected for this pilot until full-pose VLA export is validated.

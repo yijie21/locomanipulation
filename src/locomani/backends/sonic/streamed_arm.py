@@ -100,6 +100,8 @@ class StreamedArm:
         for j, (lo, hi) in {12: (-0.35, 0.35), 13: (-0.15, 0.15), 14: (-0.05, 0.20)}.items():
             self.ik.lo[j], self.ik.hi[j] = lo, hi
         self.buf: deque = deque(maxlen=CHUNK)
+        self.root_buf: deque = deque(maxlen=CHUNK)
+        self.velocity_buf: deque = deque(maxlen=CHUNK)
         self.i = 0
         # Start from the commander's CURRENT hand targets, not open: entering
         # streamed mode mid-carry with zeroed hands would uncurl the fingers
@@ -195,15 +197,23 @@ class StreamedArm:
         # unreachable.
         self.p.cmd.heading_offset = float(self.p.obs()["pelvis"]["yaw"])
 
-    def _push(self, q_mj29) -> None:
+    def _push(self, q_mj29, *, reference_velocity=None) -> None:
         q_mj29 = self._guard_left(np.asarray(q_mj29, dtype=float).copy())
+        velocity = np.zeros(29) if reference_velocity is None else np.asarray(reference_velocity, dtype=float)
+        if velocity.shape != (29,) or not np.isfinite(velocity).all():
+            raise ValueError("reference_velocity must contain 29 finite values")
+        if reference_velocity is not None and self.guard is not None and self.left_guard:
+            raise ValueError("explicit velocity requires an unguarded reference")
         self.buf.append(mujoco_to_isaac(q_mj29).astype(np.float32))
+        self.root_buf.append(np.asarray(self.root_quat, dtype=np.float32).copy())
+        self.velocity_buf.append(mujoco_to_isaac(velocity).astype(np.float32))
         self.p.cmd.pose_chunk(
             np.stack(self.buf),
-            self.root_quat,
+            np.stack(self.root_buf),
             self.i - len(self.buf) + 1,
             left_hand=self.hands["left"],
             right_hand=self.hands["right"],
+            joint_vel_isaac=np.stack(self.velocity_buf),
         )
         self.i += 1
         self.next_t += DT

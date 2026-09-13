@@ -218,6 +218,9 @@ def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     crate_yaw0 = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)  # never carry a closed jaw into the walk-in
+    if ctx.config.reach_control == "whole_body":
+        p.cmd.exit_streamed()
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=p._facing(p.obs()))
     if ctx.config.pelvis_height is not None and p.obs()["pelvis"]["pos"][2] < 0.70:
         # Between videos, release the previous crate and leave squat mode
         # before teleporting to the next standing reset. Otherwise the old
@@ -313,6 +316,12 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     # 61 deg from the nearest limit), and every later solve warm-starts there.
     arms.arm.q = np.zeros(29)
     q_pre = arms.solve(s_stand, up_w, ctx.rot_w, iters=200)
+    if ctx.config.reach_control == "whole_body":
+        # Walk with a comfortable carried posture; low reaching begins only
+        # after foot placement is observed and a supported hinge is planned.
+        q_pre[12:15] = 0
+        q_pre[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
+        q_pre[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
     ctx.q_pre17 = upper_body_from_mj(q_pre)
     q_pre17 = ctx.q_pre17
     arms.start(q17=q_free, settle_seconds=0.0)
@@ -400,7 +409,7 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     ctx.m.update(yaw_err_deg=yaw_err, stand_err=stand_err, lateral=lateral, edge_clear=edge_clear)
     centre, bars, n, y_hat, psi = crate_frame(p, s)
     ctx.s, ctx.centre, ctx.bars, ctx.n, ctx.y_hat, ctx.psi = s, centre, bars, n, y_hat, psi
-    return admit_grasp(ctx, check_reach=ctx.config.pelvis_height is None)
+    return admit_grasp(ctx, check_reach=ctx.config.pelvis_height is None and ctx.config.reach_control == "planner")
 
 
 def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
