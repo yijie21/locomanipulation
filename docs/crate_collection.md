@@ -596,6 +596,14 @@ flowchart TD
      bash scripts/render_wall_pilot.sh "$V" "$R" 10 wall_s0 > "$R/render_all.log" 2>&1
    ```
 
+   跑久了想提前停:`bash scripts/stack/stop_render.sh` 会把驱动脚本和它当前那一轮的 Isaac worker
+   一起停掉,不是简单 `pkill` 驱动脚本就够 —— 每次 `isaac_render` 调用都套了一层 `timeout`,
+   `timeout` 会把它放进**自己单独的进程组**,好让超时触发时能连子进程一并收拾;只杀驱动脚本会把
+   这个 worker 落下,变成孤儿继续占着 GPU(2026-09-13 实测:驱动已经跑到第 50 集的
+   MuJoCo 渲染,第 48 集的 Isaac worker 还在另一个进程组里活着)。同一台机器上如果同时有多个
+   `render_wall_pilot.sh` 在跑,不带参数会拒绝执行并列出每一个,加一段 `$R`(输出目录)里的字样
+   区分要停哪一个,例如 `bash scripts/stack/stop_render.sh my_run`。SIGTERM 优先,3 秒后还没退才上 SIGKILL。
+
    只要 MuJoCo 这一半(不装 Isaac 也能跑,4 s 一集,带 ghost hands 和三路画中画):
 
    ```bash
