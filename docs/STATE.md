@@ -41,8 +41,8 @@
 
 ## Shared resources
 
-- Motion regression complete: GPU 0 / instance 1 released; GPU 1 has unrelated work.
-- Current evidence: `outputs/crate_motion_flow_20260913/`; all attempts and originals retained.
+- Table-height validation: GPU 0 / instance 1 reserved by `exp/crate-table55-20260913`; GPU 1 untouched.
+- Active evidence: `outputs/crate_table55_20260913/`; previous motion evidence and originals retained.
 - Previous outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
   Datasets, recordings and weights are preserved.
