@@ -22,8 +22,8 @@
 - Carry / wall waist pitch enabled and measured on v1.1; deep-grasp reliability
   remains limited. [Implementation and evidence](handoff/crate-carry-waist-20260913.md).
 
-- Carry continuous motion: 11/30 vs 0/30, shorter handoff; navigation failures remain.
-  [Motion comparison](handoff/crate-motion-flow-20260913.md). [55 cm validation](handoff/crate-table55-20260913.md): 6/10 vs 5/10; less wrist bend, other posture/contact issues remain.
+- [Carry motion](handoff/crate-motion-flow-20260913.md): 11/30 vs 0/30. [55 cm validation](handoff/crate-table55-20260913.md): 6/10 vs 5/10; posture/contact limits remain.
+- [30 cm validation](handoff/crate-table30-20260913.md): 0/10; three crouches delivered, but pelvis retreats 23–29 cm. Experimental profile; default flow retained.
 
 ## Runtime evidence and remaining uncertainty
 
@@ -41,8 +41,8 @@
 
 ## Shared resources
 
-- 30 cm validation: GPU 0 / instance 1 reserved by `exp/crate-table30-20260913`; GPU 1 untouched.
-- Active evidence: `outputs/crate_table30_20260913/`; previous height/motion evidence retained.
+- 30 cm GPU validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
+- Current evidence: `outputs/crate_table30_20260913/`; previous height/motion evidence retained.
 - Previous outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
   Datasets, recordings and weights are preserved.

@@ -1,4 +1,4 @@
-"""Prepare the fixed-footprint 55 cm carry experiment; starts no GPU process.
+"""Prepare a lowered, fixed-footprint carry experiment; starts no GPU process.
 
 This dated experiment deliberately supports only the inspected 62 cm scene.
 The generic builder scales the whole table; this comparison holds XY constant.
@@ -19,7 +19,10 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def prepare(source, destination):
+def prepare(source, destination, height=0.55):
+    if not np.isfinite(height) or not 0.04 < height <= 0.62:
+        raise ValueError("height must be above the 4 cm tabletop thickness and at most 0.62 m")
+    drop = 0.62 - height
     meta = json.loads((source / "scene_meta.json").read_text())
     table = meta["surfaces"]["A"]
     crate = meta["objects"]["blue_crate"]
@@ -36,21 +39,21 @@ def prepare(source, destination):
     assert np.allclose(np.fromstring(top.get("pos"), sep=" "), [0, 0, 0.29])
     assert float(top.get("size").split()[2]) == 0.02
     assert len(list(body)) == 3 and basket is not None
-    body.set("pos", "0 0 0.275")
-    top.set("pos", "0 0 0.255")
+    body.set("pos", f"0 0 {height / 2:.15g}")
+    top.set("pos", f"0 0 {height / 2 - 0.02:.15g}")
     mesh_names = [g.get("mesh") for g in body.findall("geom") if g.get("mesh")]
     assert len(mesh_names) == 2
     for name in mesh_names:
         assert len(root.findall(f".//geom[@mesh='{name}']")) == 1
         mesh = root.find(f"./asset/mesh[@name='{name}']")
         scale = np.fromstring(mesh.get("scale"), sep=" ")
-        scale[2] *= 0.55 / 0.62
+        scale[2] *= height / 0.62
         mesh.set("scale", " ".join(f"{v:.15g}" for v in scale))
     pos = np.fromstring(basket.get("pos"), sep=" ")
-    pos[2] -= 0.07
+    pos[2] -= drop
     basket.set("pos", " ".join(f"{v:.15g}" for v in pos))
-    table["top"] = 0.55
-    crate["init_pos"][2] -= 0.07
+    table["top"] = height
+    crate["init_pos"][2] -= drop
     meta["scene_xml"] = str(destination / xml.name)
 
     # copytree refuses to overwrite evidence, including partially prepared scenes.
@@ -91,7 +94,7 @@ def prepare(source, destination):
     active = (original.geom_contype != 0) | (original.geom_conaffinity != 0)
     np.testing.assert_array_equal(original.geom_size[active], lowered.geom_size[active])
     qpos = original.qpos0.copy()
-    qpos[crate["qpos_adr"] + 2] -= 0.07
+    qpos[crate["qpos_adr"] + 2] -= drop
     np.testing.assert_allclose(qpos, lowered.qpos0, atol=1e-12, rtol=0)
     top_id = original.geom(top.get("name")).id
     geometry = []
@@ -105,7 +108,7 @@ def prepare(source, destination):
                 "crate_initial_xyz": data.xpos[cid].tolist(),
             }
         )
-    np.testing.assert_allclose([g["top_world_z"] for g in geometry], [0.62, 0.55], atol=1e-12)
+    np.testing.assert_allclose([g["top_world_z"] for g in geometry], [0.62, height], atol=1e-12)
     np.testing.assert_array_equal(geometry[0]["table_half_xy"], geometry[1]["table_half_xy"])
     report = {
         "source": str(source),
@@ -126,5 +129,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
+    parser.add_argument("--height", type=float, default=0.55, help="tabletop height in metres (default: 0.55)")
     args = parser.parse_args()
-    prepare(args.source.resolve(), args.destination.resolve())
+    prepare(args.source.resolve(), args.destination.resolve(), args.height)

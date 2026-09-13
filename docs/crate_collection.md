@@ -767,4 +767,8 @@ command-to-measurement offset throughout crouch, grasp and lift. A 20 s crouch
 timeout is a failure. Low-pose admission rechecks actual stance and two-hand IK.
 The episode ends in the low pose; reset owns recovery, avoiding an implicit
 stand-up with the held crate. `carry.pelvis_height=null` disables this phase.
-These controls require live validation; a static IK solution is not an execution result.
+[30 cm GPU validation](handoff/crate-table30-20260913.md) completed at 0/10 full-task
+successes: three attempts lowered the pelvis by 24–25 cm but also retreated 23–29 cm;
+all three failed low-pose admission. This profile remains experimental, and is not
+validated for formal VLA collection. The report contains measured waist/torso angles,
+full walking previews and the fixed-footprint `--height 0.30` scene preparation command.
