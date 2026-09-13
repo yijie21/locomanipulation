@@ -214,3 +214,24 @@ def test_lift_keeps_capture_command_and_bilateral_geometry():
     velocity = np.diff([lift.sample(t) for t in times], axis=0) / (times[1] - times[0])
     assert np.max(np.abs(velocity)) <= cfg.joint_speed
     assert np.max(np.abs(np.diff(velocity, axis=0))) / (times[1] - times[0]) <= cfg.joint_acceleration
+
+
+def test_fixed_posture_preference_reduces_redundant_arm_twist_without_locking_waist():
+    from locomani.tasks.crate.bimanual_ik import BimanualIK
+
+    solver = BimanualIK(scene_ik(), waist_pitch_max=0.52, waist_dofs="all")
+    preferred = np.zeros(29)
+    preferred[12:15] = [0.06, -0.08, 0.48]
+    preferred[15:22] = [-1.3, 0.3, 0.08, 1.1, -0.12, 0.2, -0.15]
+    preferred[22:29] = [-1.3, -0.3, -0.08, 1.1, 0.12, 0.2, 0.15]
+    positions, rotations = solver.tool_poses(preferred)
+    seed = preferred.copy()
+    seed[[17, 19, 24, 26]] += [0.6, 0.6, -0.6, -0.6]
+    initial = solver.solve(seed, positions, rotations, iterations=200, rot_weight=0.25).joints
+    q = initial.copy()
+    for _ in range(80):
+        solution = solver.solve(q, positions, rotations, iterations=12, posture=preferred, rot_weight=0.25)
+        q = solution.joints
+    assert max(solution.errors) < 0.001
+    assert np.linalg.norm(q - preferred) < 0.6 * np.linalg.norm(initial - preferred)
+    assert set([12, 13, 14]).issubset(solver.indices)

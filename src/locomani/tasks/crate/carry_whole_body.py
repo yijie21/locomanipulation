@@ -114,6 +114,10 @@ def _phase_whole_body(ctx):
     if not pose.reachable:
         ctx.m["why"] = "[whole_body] no supported low-reach reference"
         return ctx.m
+    # Repeated IK must retain one preference. Using each previous command as
+    # the next prior lets shoulder yaw and wrist roll counter-rotate over
+    # time without improving reach, until the decoder stops tracking them.
+    ctx.grasp_posture = pose.joints.copy()
     planned = dict(
         s,
         pelvis=dict(
