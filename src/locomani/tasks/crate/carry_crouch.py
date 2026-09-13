@@ -50,6 +50,7 @@ def _phase_crouch(ctx):
     quiet = SettlingWindow(ctx.config.settle_seconds)
     start = time.time()
     ready = False
+    terminal = None
     while time.time() - start < 20:
         s = p.obs()
         if s["fallen"]:
@@ -63,7 +64,21 @@ def _phase_crouch(ctx):
         u = float(np.clip((start_z - s["pelvis"]["pos"][2]) / max(start_z - target_z, 0.02), 0, 1))
         targets = {side: initial[side][0] * (1 - u) + goals[side] * u for side in arms.solver.sides}
         desired_rotations = {side: rotations[side](u).as_matrix() for side in arms.solver.sides}
-        q = arms.solve(s, targets, desired_rotations, from_measured=True, rot_weight=0.25)
+        if terminal is None and abs(s["pelvis"]["pos"][2] - target_z) < 0.015:
+            terminal = arms.solve(
+                s,
+                goals,
+                {side: rot_z(psi) for side in arms.solver.sides},
+                from_measured=True,
+                iters=200,
+                rot_weight=0.25,
+            )
+            ctx.m["crouch_terminal_s"] = time.time() - start
+        q = (
+            terminal
+            if terminal is not None
+            else arms.solve(s, targets, desired_rotations, from_measured=True, rot_weight=0.25)
+        )
         arms.push(q)
         gap = np.max(np.abs(q[12:29] - arms.arm.q[12:29]))
         ready = quiet.step(

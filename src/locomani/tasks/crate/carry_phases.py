@@ -218,6 +218,11 @@ def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     crate_yaw0 = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)  # never carry a closed jaw into the walk-in
+    if ctx.config.pelvis_height is not None and p.obs()["pelvis"]["pos"][2] < 0.70:
+        # Between videos, release the previous crate and leave squat mode
+        # before teleporting to the next standing reset. Otherwise the old
+        # low planner reference initially drives the freshly reset legs.
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=p._facing(p.obs()))
     reset.pin_arms()
     reset.set_ghost()
     reset.reset(
