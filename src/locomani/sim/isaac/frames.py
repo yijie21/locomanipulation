@@ -156,8 +156,8 @@ def load_frames(session: str, episode: int, sidecar_glob: str):
     return joints, pel, objs
 
 
-def head_camera_spec(scene_xml: str = ""):
-    """Read the MJCF-authored ego camera verbatim from the scene XML."""
+def camera_spec(scene_xml: str, name: str):
+    """Read a named MJCF-authored camera verbatim from the scene XML."""
     import re
 
     xml = open(scene_xml or SCENE_XML).read()
@@ -166,17 +166,27 @@ def head_camera_spec(scene_xml: str = ""):
     # _aim_ego_camera re-sets quat, after which the tag comes out as
     # `name quat pos fovy`. The old single regex assumed `name pos quat fovy`
     # and every freshly built scene failed with "no head_camera" (2026-09-11).
-    tag = re.search(r'<camera\b[^>]*\bname="head_camera"[^>]*>', xml)
+    tag = re.search(rf'<camera\b[^>]*\bname="{re.escape(name)}"[^>]*>', xml)
     if tag is None:
-        raise SystemExit(f"no head_camera in {scene_xml or SCENE_XML}")
+        raise SystemExit(f"no {name} camera in {scene_xml or SCENE_XML}")
 
-    def attr(name, default):
-        m = re.search(rf'\b{name}="([^"]+)"', tag.group(0))
+    def attr(attr_name, default):
+        m = re.search(rf'\b{attr_name}="([^"]+)"', tag.group(0))
         return m.group(1) if m else default
 
     pos = [float(v) for v in attr("pos", "0 0 0").split()]
     quat = [float(v) for v in attr("quat", "1 0 0 0").split()]  # wxyz
     return pos, quat, float(attr("fovy", "45"))
+
+
+def head_camera_spec(scene_xml: str = ""):
+    """Read the MJCF-authored ego camera verbatim from the scene XML."""
+    return camera_spec(scene_xml, "head_camera")
+
+
+def wrist_camera_spec(scene_xml: str, side: str):
+    """Read the MJCF-authored `<side>_wrist` camera (e.g. left_wrist) verbatim."""
+    return camera_spec(scene_xml, f"{side}_wrist")
 
 
 def load_state_trace(trace_path: str, session: str = "", episode: int = 0):

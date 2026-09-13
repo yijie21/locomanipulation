@@ -498,6 +498,47 @@ def mount_camera(stage, cfg: StageCfg, cam_spec, log=print):
     return sensor, cam_path
 
 
+def mount_inset_cameras(stage, cfg: StageCfg, specs: dict, log=print) -> dict:
+    """Place picture-in-picture cameras (ego, left/right wrist, or any
+    combination) as absolute world-space prims, keyed by their MuJoCo camera
+    name.
+
+    Always absolute, never parented to a body: the ego entry here is a
+    SEPARATE camera from `mount_camera`'s main one, because the main one
+    often (via a caller's --cam-traj) follows a third-person tracking shot
+    rather than the ego view -- so this ego inset would not be redundant even
+    when the main camera happens to be the ego view too. Every entry is
+    re-posed from its own named replay FK every frame, independent of
+    `cfg.absolute_camera` and of whatever the main camera is doing. Sized to
+    the caller's own resolution -- normally a small inset, not the full
+    frame, since RTX render cost scales with viewport pixel count.
+
+    `specs` is `{camera_name: (pos, quat, fovy, width, height)}` (wxyz quat,
+    degrees fovy); returns `{camera_name: (sensor, cam_path)}`.
+    """
+    from isaacsim.sensors.camera import Camera as SensorCamera
+    from pxr import Gf, Sdf, UsdGeom
+
+    out = {}
+    for cam_name, (cam_pos, cam_quat, cam_fovy, width, height) in specs.items():
+        cam_path = f"/World/inset_{cam_name}"
+        cam_prim = UsdGeom.Camera.Define(stage, Sdf.Path(cam_path))
+        xf = UsdGeom.Xformable(cam_prim.GetPrim())
+        xf.AddTranslateOp().Set(Gf.Vec3d(*cam_pos))
+        xf.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(cam_quat[0], Gf.Vec3d(*cam_quat[1:])))
+        focal = 18.0
+        cam_prim.GetClippingRangeAttr().Set(Gf.Vec2f(0.02, 1000.0))
+        cam_prim.GetFocalLengthAttr().Set(focal)
+        ap_v = 2 * focal * np.tan(np.deg2rad(cam_fovy) / 2)
+        cam_prim.GetVerticalApertureAttr().Set(ap_v)
+        cam_prim.GetHorizontalApertureAttr().Set(ap_v * width / height)
+        sensor = SensorCamera(prim_path=cam_path, resolution=(width, height))
+        sensor.initialize()
+        out[cam_name] = (sensor, cam_path)
+        log(f"inset camera [{cam_name}]: {cam_path} res=({width}x{height}) fovy={cam_fovy}")
+    return out
+
+
 def _freeze_root(robot) -> None:
     """Zero the floating base's velocity. Nothing else does.
 
@@ -615,4 +656,20 @@ def step_and_grab(world, sensor, steps: int = SETTLE_STEPS):
         got = sensor.get_rgba()
         if got is not None and got.size:
             rgba = got
+    return rgba
+
+
+def step_and_grab_all(world, sensors: dict, steps: int = SETTLE_STEPS) -> dict:
+    """Like `step_and_grab`, but reads every named sensor after the SAME
+    `world.step(render=True)` calls: one step updates every active render
+    product, so picture-in-picture cameras cost extra render passes, not
+    extra settle loops (and extra simulation ticks). `{name: rgba|None}`,
+    one entry per key of `sensors`."""
+    rgba = {name: None for name in sensors}
+    for _ in range(max(1, steps)):
+        world.step(render=True)
+        for name, sensor in sensors.items():
+            got = sensor.get_rgba()
+            if got is not None and got.size:
+                rgba[name] = got
     return rgba

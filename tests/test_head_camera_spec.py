@@ -48,5 +48,34 @@ class HeadCameraSpecTests(unittest.TestCase):
             _spec_of('<camera name="left_wrist" pos="0 0 0" quat="1 0 0 0" fovy="60"/>')
 
 
+def _wrist_spec_of(cam_tag: str, side: str):
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+        f.write(BODY.format(cam=cam_tag))
+    return frames.wrist_camera_spec(f.name, side)
+
+
+class WristCameraSpecTests(unittest.TestCase):
+    def test_reads_the_named_side(self):
+        pos, quat, fovy = _wrist_spec_of(
+            '<camera name="left_wrist" pos="0.055 0 0.085" '
+            'quat="0.635149 0.310782 -0.310782 -0.635149" fovy="80"/>',
+            "left",
+        )
+        self.assertEqual((pos, quat, fovy), ([0.055, 0.0, 0.085], [0.635149, 0.310782, -0.310782, -0.635149], 80.0))
+
+    def test_left_and_right_are_independent(self):
+        both = (
+            '<camera name="left_wrist" pos="0.055 0 0.085" quat="1 0 0 0" fovy="80"/>'
+            '<camera name="right_wrist" pos="-0.055 0 0.085" quat="1 0 0 0" fovy="81"/>'
+        )
+        self.assertEqual(_wrist_spec_of(both, "left")[0], [0.055, 0.0, 0.085])
+        self.assertEqual(_wrist_spec_of(both, "right")[0], [-0.055, 0.0, 0.085])
+        self.assertEqual(_wrist_spec_of(both, "right")[2], 81.0)
+
+    def test_missing_side_is_a_clean_failure(self):
+        with self.assertRaises(SystemExit):
+            _wrist_spec_of('<camera name="head_camera" pos="0 0 0" quat="1 0 0 0" fovy="70"/>', "left")
+
+
 if __name__ == "__main__":
     unittest.main()
