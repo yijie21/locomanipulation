@@ -748,3 +748,12 @@ privileged diagnostics are not declared VLA observation modalities.
 records the protocol, measurements and current limitations. CPU timing tests do not
 establish grasp reliability or learned-policy behavior. Actual reset distance is
 checked before recording/walking; drift outside 1.2–1.5 m is a failed attempt.
+
+### Table-height validation
+
+[55 cm versus 62 cm GPU comparison](handoff/crate-table55-20260913.md) records
+the fixed-footprint scene recipe and complete walk/grasp/lift results. Lowering the
+table reduced measured wrist bend in this sample, but did not establish more waist
+bending, nearly straight arms, less shake or high reliability. Read that report when
+changing height: the generic scene builder also scales table XY, and a fixed-pelvis
+CPU IK solution does not predict the posture reached by the moving robot.

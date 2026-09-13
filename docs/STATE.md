@@ -23,7 +23,7 @@
   remains limited. [Implementation and evidence](handoff/crate-carry-waist-20260913.md).
 
 - Carry continuous motion: 11/30 vs 0/30, shorter handoff; navigation failures remain.
-  [Timing, command bounds and complete GPU comparison](handoff/crate-motion-flow-20260913.md).
+  [Motion comparison](handoff/crate-motion-flow-20260913.md). [55 cm validation](handoff/crate-table55-20260913.md): 6/10 vs 5/10; less wrist bend, other posture/contact issues remain.
 
 ## Runtime evidence and remaining uncertainty
 
@@ -41,8 +41,8 @@
 
 ## Shared resources
 
-- Table-height validation: GPU 0 / instance 1 reserved by `exp/crate-table55-20260913`; GPU 1 untouched.
-- Active evidence: `outputs/crate_table55_20260913/`; previous motion evidence and originals retained.
+- Table-height validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
+- Current evidence: `outputs/crate_table55_20260913/`; previous motion evidence and originals retained.
 - Previous outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
   Datasets, recordings and weights are preserved.
