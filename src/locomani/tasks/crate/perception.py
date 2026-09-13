@@ -42,7 +42,7 @@ class ApproachTarget:
 
 
 def marker_candidates(image):
-    """Centroids of four physical colour patches; accepts only the actual RGB image."""
+    """Centroids of visible physical colour patches; accepts only the actual RGB image."""
     hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
     hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
     masks = {

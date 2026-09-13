@@ -95,6 +95,8 @@ class VisualLowReach:
         if estimate is None or not 0 <= now - estimate.timestamp <= cfg.vision_timeout:
             self.was_visible, self.ready_since = False, None
             self.velocity[:] = 0
+            if self.reference is not None:
+                self.reference.pause()
             stale = now - (self.last_seen if self.last_seen is not None else self.started) > cfg.vision_timeout
             return self.result("vision_lost" if stale else "waiting_for_vision", stale)
         dt = dt if self.was_visible else 0.0

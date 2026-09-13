@@ -107,3 +107,25 @@ def test_bend_to_align_keeps_the_world_staging_target_when_the_body_lags():
             break
     assert command.phase == "align"
     np.testing.assert_allclose(policy.tool_reference, expected, atol=1e-8)
+
+
+def test_alignment_reacquisition_does_not_restore_a_stale_nonzero_velocity():
+    policy, q = setup()
+    root = np.array([1, 0, 0, 0])
+    object_position = policy.frame.origin + visible(0).position
+    object_rotation = visible(0).rotation
+
+    def observe(now):
+        origin, base = policy.frame.observe(q, root)
+        return CrateEstimate(base.T @ (object_position - origin), base.T @ object_rotation, now, 0, {})
+
+    for now in np.arange(0, 10, 0.04):
+        command = policy.step(now, observe(now), q, root, [0.095] * 2)
+        q, root = command.joints, command.root_quaternion
+        if command.phase == "align" and np.max(np.abs(command.velocity)) > 0.01:
+            break
+    assert command.phase == "align" and np.max(np.abs(command.velocity)) > 0.01
+    held = policy.step(now + 0.1, None, q, root, [0.095] * 2)
+    resumed = policy.step(now + 0.2, observe(now + 0.2), q, root, [0.095] * 2)
+    np.testing.assert_array_equal(held.joints, resumed.joints)
+    np.testing.assert_array_equal(resumed.velocity, np.zeros(29))

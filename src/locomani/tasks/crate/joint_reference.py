@@ -20,6 +20,11 @@ class JointReference:
         self.speed, self.acceleration = speed, acceleration
         self.last_dt = None
 
+    def pause(self):
+        """Hold the current position; resume acceleration from rest when inputs return."""
+        self.velocity[:] = 0
+        self.last_dt = None
+
     def step(self, target, dt):
         dt = max(float(dt), 0.0)
         if dt == 0:

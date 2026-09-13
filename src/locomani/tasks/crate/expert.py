@@ -137,10 +137,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     last_camera_received = last_command_time = started
     last_motion = {"movement": np.zeros(3), "speed": -1.0}
     last_phase, reason, error = None, "no_camera_frames", None
+    final = initial
     try:
         while time.time() - started < cfg.walk_timeout + cfg.timeout_seconds + 2:
             now = time.time()
             raw = p.obs()
+            final = raw  # evaluate the observed attempt, before mode exit or video finalization
             if raw["fallen"]:
                 reason = "external_fall_abort"
                 break
@@ -294,7 +296,6 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
             except Exception:
                 reason, error = "runtime_error", (error or "") + traceback.format_exc()
     try:
-        final = p.obs()
         result = evaluate(initial, final, reason, lift_height=cfg.lift_height, max_tilt_deg=cfg.max_tilt_deg)
     except Exception:
         error = (error or "") + traceback.format_exc()
@@ -308,6 +309,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         produced=False,
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),
+        evaluation_state_seq=final.get("seq"),
     )
     if "pelvis" in initial:
         result["initial_edge_distance"] = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])

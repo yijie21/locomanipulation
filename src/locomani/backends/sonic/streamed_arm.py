@@ -1,13 +1,7 @@
-"""`StreamedArm` / `PlannerArm`, split out of stream_reach.py (refactor step
-4b family 2, pure extraction; decision 9's file-size cap). Every statement
-here is unchanged from the original inline body -- only the packaging moved:
-the two classes plus `yaw_only` and the tuning constants only they use.
-`make_arm()`, `reanchor()`, `_servo_continuous` (now servo.py) and everything
-else in stream_reach.py's module docstring stay there and import `StreamedArm`
-/ `PlannerArm` from here, so `from locomani.tasks.bottle.execution import
-PlannerArm` (round_phases.py, bimanual_carry.py, the diag tools, the tests
-that `patch(...)` these names on the `stream_reach` module) keeps working
-unchanged -- see stream_reach.py's own docstring for the re-export.
+"""Planner and POSE arm channels, with explicit reference ownership at takeover.
+
+Whole-body callers can preserve the consumed planner pose during mode changes.
+Legacy single-arm callers keep the established default handoff and guard behavior.
 """
 
 from __future__ import annotations

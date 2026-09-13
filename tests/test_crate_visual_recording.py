@@ -101,3 +101,39 @@ def test_low_reach_rejects_reset_drift_before_starting_a_demonstration(tmp_path,
     assert result.why == "invalid_initial_distance" and not result.accepted()
     reset.start_video.assert_not_called()
     arm.stop.assert_called_once()
+
+
+def test_attempt_evaluates_the_observed_end_state_before_cleanup_can_change_it(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from geometry_fixture import scene_ik
+
+    from locomani.tasks.crate import expert
+    from locomani.tasks.crate.config import CrateTaskConfig
+    from locomani.tasks.crate.visual_scene import MARKERS
+
+    calls, cleaned = [0], [False]
+
+    def observe():
+        calls[0] += 1
+        return {
+            "fallen": calls[0] > 1,
+            "objects": {
+                "blue_crate": {
+                    "pos": [0, 0, 0.1 if calls[0] > 1 and not cleaned[0] else 0],
+                    "quat": [1, 0, 0, 0],
+                    "touching": [],
+                }
+            },
+        }
+
+    arm = SimpleNamespace(stop=lambda: cleaned.__setitem__(0, True), q=[0.0] * 29)
+    reset = SimpleNamespace(start_video=lambda label: None, end_video=lambda: None)
+    monkeypatch.setattr(expert, "ArmIK", lambda path: scene_ik())
+    monkeypatch.setattr(expert, "reset_ready", lambda *args: (arm, {}))
+    meta = {"crate_visual": {"markers": MARKERS, "grasp_points": [[0.19, 0, 0.06], [-0.19, 0, 0.06]]}}
+    result = expert.run_attempt(
+        SimpleNamespace(obs=observe), reset, None, meta, CrateTaskConfig(), tmp_path, "end_state", None
+    )
+    assert result.why == "external_fall_abort"
+    assert result.execution["metrics"]["rise"] == pytest.approx(0.1)
