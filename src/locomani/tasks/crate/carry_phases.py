@@ -559,8 +559,8 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             "y_hat": [float(v) for v in y_hat],
             "errs_mm": ctx.m["capture_err_mm"],
         }
-        path = os.path.join(DUMP_DIR, f"servo_end_round{rnd}.json")
-        with open(path, "w") as f:
+        path = os.path.join(DUMP_DIR, f"{ctx.video_label}_servo_end.json")
+        with open(path, "x") as f:
             json.dump(dump, f, indent=1)
         log(f"[dump] {path}  touch_links {s['objects'][OBJ].get('touch_links')}")
     ctx.m["waist_pitch_cmd_deg"] = float(np.degrees(arms.arm.q[14]))
