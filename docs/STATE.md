@@ -22,6 +22,9 @@
 - Carry / wall waist pitch enabled and measured on v1.1; deep-grasp reliability
   remains limited. [Implementation and evidence](handoff/crate-carry-waist-20260913.md).
 
+- Carry continuous motion: 11/30 vs 0/30, shorter handoff; navigation failures remain.
+  [Timing, command bounds and complete GPU comparison](handoff/crate-motion-flow-20260913.md).
+
 ## Runtime evidence and remaining uncertainty
 
 - Final bottle A/B: coupled 2/30 -> 3/30; teleop 10/10 -> 9/10. Both gates FAIL
@@ -38,9 +41,8 @@
 
 ## Shared resources
 
-- All owned crate waist diagnostic/pilot stacks have stopped; instance 1 lock is free.
-  At 2026-09-13 02:38 UTC GPU 0 was idle; GPU 1 had unrelated work. Recheck live state.
-- Current evidence: `outputs/crate_carry_waist_20260913/`; failures and source videos retained.
+- Motion regression complete: GPU 0 / instance 1 released; GPU 1 has unrelated work.
+- Current evidence: `outputs/crate_motion_flow_20260913/`; all attempts and originals retained.
 - Previous outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
   Datasets, recordings and weights are preserved.

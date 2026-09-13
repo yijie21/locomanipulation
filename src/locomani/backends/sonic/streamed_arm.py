@@ -409,7 +409,8 @@ class PlannerArm(StreamedArm):
     writes only the 17 upper-body joints (waist 3 + arms 14), which the
     deploy substitutes into the k-planner's reference every tick
     (g1_deploy_onnx_ref.cpp:781-787). `has_upper_body_control_` therefore
-    never clears and no twitch is possible.
+    never clears, avoiding that latch-clear transition. The caller still needs
+    a continuous reference to avoid position and velocity jumps on this channel.
 
     The cost is the legs: they belong to the k-planner animation, so
     `squat()` is a no-op here and pelvis height is only reachable through
@@ -504,6 +505,11 @@ class PlannerArm(StreamedArm):
         self.p.cmd.set_upper_body_vel(np.zeros(17, dtype=np.float32))
 
     def _push(self, q_mj29, observed=None, *, movement=(0.0, 0.0, 0.0), speed=-1.0, reference_velocity=None) -> None:
+        """Publish and pace one reference; explicit velocity uses 29-joint MuJoCo order.
+
+        An unguarded trajectory owner can supply its elapsed-time derivative.
+        Other callers retain the existing send_vel finite-difference behavior.
+        """
         from locomani.backends.sonic.primitives import upper_body_from_mj
 
         if reference_velocity is not None:
