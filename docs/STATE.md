@@ -24,6 +24,7 @@
 
 - [Carry motion](handoff/crate-motion-flow-20260913.md): 11/30 vs 0/30. [55 cm validation](handoff/crate-table55-20260913.md): 6/10 vs 5/10; posture/contact limits remain.
 - [30 cm validation](handoff/crate-table30-20260913.md): 0/10; three crouches delivered, but pelvis retreats 23–29 cm. Experimental profile; default flow retained.
+- [30 cm hip hinge](handoff/crate-low-reach-20260913.md): 6/10; torso pitch 55–58°, shallow knees, all waist axes free. Stable lift holds; navigation/reach failures and VLA export remain.
 
 ## Runtime evidence and remaining uncertainty
 
@@ -41,11 +42,9 @@
 
 ## Shared resources
 
-- Low-reach investigation: GPU 0 / instance 1 reserved by `exp/crate-low-reach-20260913`; GPU 1 untouched.
-- Current evidence: `outputs/crate_table30_20260913/`; previous height/motion evidence retained.
-- Previous outputs: `outputs/crate_visual_expert_20260912/`,
-  `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
-  Datasets, recordings and weights are preserved.
+- Low-reach GPU validation complete: GPU 0 / instance 1 released; GPU 1 untouched.
+- Latest evidence: `outputs/crate_low_reach_20260913/`; earlier height/motion evidence retained.
+- Earlier outputs, datasets, recordings and weights are preserved; see the linked reports.
 
 ## Evidence and preserved constraints
 

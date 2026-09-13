@@ -758,7 +758,7 @@ bending, nearly straight arms, less shake or high reliability. Read that report 
 changing height: the generic scene builder also scales table XY, and a fixed-pelvis
 CPU IK solution does not predict the posture reached by the moving robot.
 
-The experimental [30 cm carry profile](../configs/tasks/crate_table30.json) opts
+The historical [30 cm squat comparison profile](../configs/tasks/crate_table30.json) opts
 into `carry.pelvis_height=0.53` and `carry.waist_pitch_max=0.52` radians. Use it only
 with a separately prepared low scene; the profile does not rebuild the table.
 After walking, both hand staging targets descend with measured pelvis motion.
@@ -772,6 +772,7 @@ successes: three attempts lowered the pelvis by 24–25 cm but also retreated 23
 all three failed low-pose admission. This profile remains experimental, and is not
 validated for formal VLA collection. The report contains measured waist/torso angles,
 full walking previews and the fixed-footprint `--height 0.30` scene preparation command.
+For the current low-reach implementation, use the whole-body profile below.
 
 ### Whole-body low-reach pilot
 
