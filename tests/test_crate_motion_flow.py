@@ -164,7 +164,12 @@ def test_walk_to_reach_preserves_velocity_and_uses_elapsed_time(monkeypatch):
 
 
 @pytest.mark.parametrize("distance,valid", [(1.19, False), (1.51, False), (1.3, True)])
-def test_reset_drift_is_checked_before_recording_or_walking(monkeypatch, distance, valid):
+@pytest.mark.parametrize("reach_control", ["planner", "whole_body"])
+def test_reset_drift_is_checked_before_recording_or_walking(monkeypatch, distance, valid, reach_control):
+    from dataclasses import replace
+
+    from locomani.backends.sonic import streamed_arm
+
     _, p, _ = controller(monkeypatch)
     state = p.obs()
     state["fallen"] = False
@@ -174,6 +179,17 @@ def test_reset_drift_is_checked_before_recording_or_walking(monkeypatch, distanc
     monkeypatch.setattr(phases.upper_ref, "shared", Mock())
     monkeypatch.setattr(carry, "hand_txt", lambda *args: "fixture")
     reset = Mock()
+    events = []
+    reset.reset.side_effect = lambda **kw: events.append("physics_reset")
+    p._facing = lambda state: [1, 0, 0]
+
+    def reanchor(p):
+        events.append("reanchor")
+        p.cmd.heading_offset = 0.37
+
+    anchor = Mock(side_effect=reanchor)
+    monkeypatch.setattr(streamed_arm, "reanchor", anchor)
+    reset.start_video.side_effect = lambda *args: events.append("video")
     ctx = phases.CarryRoundContext(
         p=p,
         reset=reset,
@@ -187,10 +203,16 @@ def test_reset_drift_is_checked_before_recording_or_walking(monkeypatch, distanc
         log=lambda msg: None,
         video_label="fixture",
         m={},
+        config=replace(DEFAULT_CARRY, reach_control=reach_control),
     )
     result = phases._phase_reset(ctx)
     assert (result is None) == valid
     assert reset.start_video.called == valid
     assert ctx.m["initial_edge_distance"] == distance
+    if reach_control == "whole_body":
+        assert events[:2] == ["physics_reset", "reanchor"]
+        assert p.cmd.heading_offset == 0.37
+    else:
+        anchor.assert_not_called()
     if not valid:
         assert "initial table-edge distance" in result["why"]

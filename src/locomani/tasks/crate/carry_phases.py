@@ -245,7 +245,17 @@ def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     p.cmd.start_control()
     p._gym_started = True
     upper_ref.shared().wait(3.0)
-    p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
+    if ctx.config.reach_control == "whole_body":
+        from locomani.backends.sonic.streamed_arm import reanchor
+
+        # Leaving POSE reinitializes the planner at the previous episode's
+        # heading. start_control() on an already running deploy does not reset
+        # that anchor. Use the existing mode handshake after the physical
+        # reset and stand-up; never replace its anchor with an unrelated yaw.
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE)
+        reanchor(p)
+    else:
+        p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
     fv0 = (float(np.cos(psi0)), float(np.sin(psi0)), 0.0)
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=fv0)
     ctx.s = p.obs()
