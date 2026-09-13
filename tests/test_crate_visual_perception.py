@@ -49,3 +49,13 @@ def test_coloured_background_fragment_in_one_wrist_does_not_override_agreeing_vi
     assert estimate is not None
     np.testing.assert_allclose(estimate.position, position, atol=0.008)
     assert "cyan" not in estimate.detections["right_wrist"]
+
+
+def test_visible_shadowed_labels_still_supply_a_pose_but_black_occlusion_does_not():
+    perception = CratePerception(scene_ik(), {"markers": MARKERS})
+    images, joints = observation(perception, [0.4, 0, -0.05])
+    shadowed = {name: (image.astype(float) * 0.25).astype(np.uint8) for name, image in images.items()}
+    estimate = perception.update(shadowed, joints, 1.0)
+    assert estimate is not None
+    np.testing.assert_allclose(estimate.position, [0.4, 0, -0.05], atol=0.008)
+    assert perception.update({name: image * 0 for name, image in images.items()}, joints, 1.1) is None

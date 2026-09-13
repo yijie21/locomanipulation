@@ -46,7 +46,7 @@ def detect_markers(image):
     hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
     hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
     masks = {
-        name: (hue >= lo) & (hue <= hi) & (saturation > 140) & (value > 90)
+        name: (hue >= lo) & (hue <= hi) & (saturation > 140) & (value > 50)
         for name, (lo, hi) in {"cyan": (82, 98), "green": (48, 75), "magenta": (138, 162), "yellow": (25, 37)}.items()
     }
     detections = {}

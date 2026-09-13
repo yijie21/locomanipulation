@@ -172,6 +172,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     arm = StreamedArm(p, "right", ik=model, left_guard=False)
                     arm.start(hold_planner_pose=True)
                     low = VisualLowReach(solver, meta["crate_visual"], config, arm.q, arm.root_quat)
+                    continue  # reacquire RGB/encoders after the bounded mode handoff
                 body_command = low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
                 q = body_command.joints
                 closed = np.zeros_like(HAND_OPEN)
