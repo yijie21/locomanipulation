@@ -796,3 +796,10 @@ together. `*_motion.jsonl` stores these full-body references for inspection.
 After capture, a continuous paired lift extends the held command in a fixed
 coordinate frame; measured contact, tilt and rise still decide success.
 Formal `--record` is rejected for this pilot until full-pose VLA export is validated.
+
+The low-table **visual** expert now uses the same free-waist body planner through
+`--expert visual --config configs/tasks/crate_visual_low_reach.json`; follow the
+[visual low-reach guide](crate_visual_collection.md#low-tables-and-a-free-waist).
+The `carry` entry remains privileged mechanical diagnostics. Its whole-body capture
+now accepts the no-post rim segment; legacy point/slot descriptions above describe
+earlier runs. [New investigation and limits](handoff/crate-visual-low-reach-20260913.md).
