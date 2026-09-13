@@ -159,7 +159,8 @@ STAND_OFF_RANGE = (0.14, 0.28)  # pelvis to the crate's near face
 STAND_LAT_RANGE = (-0.05, 0.05)
 STAND_YAW_DEG = 5.0
 STAND_YAW_MAX_DEG = 10.0  # fail fast: nothing downstream survives a bigger heading error
-CRATE_DY_RANGE = (-0.08, 0.08)
+# CrateTaskConfig.crate_dy_range_m's default; main() reassigns this after --config/--set.
+CRATE_DY_RANGE = tuple(DEFAULT_CRATE_TASK.crate_dy_range_m)
 SPAWN_BACK = 0.45  # reset this far behind the stand, teleport in with the arms up
 # --- walk-in (WALL_WALK=1): bimanual_carry's approach in front of this grasp ---
 # CrateTaskConfig.wall_walk's default (decision 8); main() reassigns this
@@ -340,10 +341,11 @@ def main() -> None:
     # caller would (module-level assignment), so wall_phases.py's deferred
     # `from bimanual_wall import WALK` etc. (read fresh each round) see it.
     global FEATURE, WALK, DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW
-    global CRATE_SETBACK_LEVELS, CRATE_YAW_LEVELS_DEG
+    global CRATE_SETBACK_LEVELS, CRATE_YAW_LEVELS_DEG, CRATE_DY_RANGE
     FEATURE, WALK = cfg.wall_feature, cfg.wall_walk
     CRATE_SETBACK_LEVELS = tuple(cfg.crate_setback_levels_m)
     CRATE_YAW_LEVELS_DEG = tuple(cfg.crate_yaw_levels_deg)
+    CRATE_DY_RANGE = tuple(cfg.crate_dy_range_m)
     DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW = _wall_feature_constants(FEATURE)
     inst = ports.instance()
     # One formula, in locomani.sim.ports: this used to carry its own copy of the

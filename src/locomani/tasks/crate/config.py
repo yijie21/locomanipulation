@@ -26,6 +26,10 @@ class CrateTaskConfig:
     crate_yaw_levels_deg: tuple[
         float, ...
     ] = ()  # per-episode crate yaw levels (deg) about its centre; () = 0. With both set, rounds walk the levels' product in a fixed shuffled order
+    crate_dy_range_m: tuple[float, float] = (
+        -0.08,
+        0.08,
+    )  # per-episode crate lateral offset (m) along the table edge, sampled uniformly each round
     scene_preset: str = "crate_bimanual"  # SCENE_PRESET: build_sim_scene.py --preset for the crate scene
     # -- the fields BottleTaskConfig has and this one was missing (2026-09-11) --
     # Task.config_cls is meant to be the one object a pipeline needs to drive a
@@ -41,6 +45,8 @@ class CrateTaskConfig:
     def __post_init__(self):
         if self.visual.pose_source == "assisted" and self.carry.reach_control != "whole_body":
             raise ValueError("visual.pose_source=assisted requires carry.reach_control=whole_body")
+        if len(self.crate_dy_range_m) != 2 or self.crate_dy_range_m[0] > self.crate_dy_range_m[1]:
+            raise ValueError("crate_dy_range_m must be a (low, high) pair with low <= high")
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)
