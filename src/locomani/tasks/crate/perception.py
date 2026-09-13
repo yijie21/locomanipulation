@@ -47,7 +47,16 @@ def detect_markers(image):
     hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
     masks = {
         name: (hue >= lo) & (hue <= hi) & (saturation > 140) & (value > 50)
-        for name, (lo, hi) in {"cyan": (82, 98), "green": (48, 75), "magenta": (138, 162), "yellow": (25, 37)}.items()
+        for name, (lo, hi) in {
+            "cyan": (82, 98),
+            "green": (48, 75),
+            "magenta": (138, 162),
+            "yellow": (25, 37),
+            "red": (0, 5),
+            "orange": (8, 20),
+            "blue": (108, 125),
+            "violet": (128, 137),
+        }.items()
     }
     detections = {}
     for name, mask in masks.items():
@@ -91,7 +100,10 @@ class CratePerception:
 
     def update(self, images, joints, timestamp):
         cameras = self.cameras(joints, images)
-        detections = {stream: detect_markers(images[stream]) for stream in cameras}
+        detections = {
+            stream: {name: uv for name, uv in detect_markers(images[stream]).items() if name in self.markers}
+            for stream in cameras
+        }
         pairs = [
             (stream, name, uv)
             for stream, points in detections.items()
@@ -102,12 +114,21 @@ class CratePerception:
             return None
         candidates = []
         for stream, points in detections.items():
-            if len(points) != 4:
+            if len(points) < 4:
                 continue
-            names = list(self.markers)
+            names = list(points)
             obj = np.array([self.markers[name] for name in names], np.float64)
             pixels = np.array([points[name] for name in names], np.float64)
-            ok, rvec, tvec = cv2.solvePnP(obj, pixels, cameras[stream].intrinsic, None, flags=cv2.SOLVEPNP_ITERATIVE)
+            # Four coplanar wall/floor points keep the original planar solver.
+            # Mixed planes use EPNP, whose minimum is four correspondences.
+            planar = np.linalg.matrix_rank(obj - obj.mean(axis=0), tol=1e-5) <= 2
+            ok, rvec, tvec = cv2.solvePnP(
+                obj,
+                pixels,
+                cameras[stream].intrinsic,
+                None,
+                flags=cv2.SOLVEPNP_ITERATIVE if planar else cv2.SOLVEPNP_EPNP,
+            )
             if ok:
                 rotation = cameras[stream].rotation @ cv2.Rodrigues(rvec)[0]
                 position = cameras[stream].position + cameras[stream].rotation @ tvec.ravel()

@@ -483,6 +483,11 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
     q_last = None
     across_int = {"left": 0.0, "right": 0.0}
     phase = "servo"
+    whole_body = ctx.config.reach_control == "whole_body"
+    from locomani.tasks.crate.grasp_region import RimRegion
+
+    region = RimRegion()
+    previous_wall = None
     while time.time() - t0 < SERVO_TIMEOUT:
         s = p.obs()
         if s["fallen"]:
@@ -495,6 +500,16 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             ctx.m["why"] = "[grasp] crate pushed > 5 cm before closing"
             arms.stop()
             return ctx.m
+        tick_dt = DT if previous_wall is None else float(np.clip(s["wall"] - previous_wall, 0, 0.1))
+        previous_wall = s.get("wall", time.time())
+        measured = [arms.grip_point(s, side) for side in ("left", "right")]
+        centres_array = np.array([bars[side] for side in ("left", "right")])
+        crate_rotation = Primitives._rot(s["objects"][OBJ]["quat"])
+        goals = (
+            region.nearest(centres_array, crate_rotation[:, 1], np.array([point for point, _ in measured]))
+            if whole_body
+            else centres_array
+        )
         errs, ready = {}, True
         for sd in ("left", "right"):
             g, _ = arms.grip_point(s, sd)
@@ -503,17 +518,22 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             errs[sd] = (along, across, height)  # logged as [along, across, height]
             ready &= abs(along) <= ALONG_TOL and abs(across) <= ACROSS_TOL and -HEIGHT_TOL_BELOW <= height <= HEIGHT_TOL
             # reference: advance toward the bar, capped ahead of the measured point
-            want = bars[sd]
+            want = goals[0 if sd == "left" else 1]
             step = want - ref[sd]
             d = float(np.linalg.norm(step))
-            if d > ADVANCE_PER_TICK:
-                step *= ADVANCE_PER_TICK / d
+            advance = ADVANCE_PER_TICK * tick_dt / DT
+            if d > advance:
+                step *= advance / d
             nxt = ref[sd] + step
             lead = nxt - g
             ld = float(np.linalg.norm(lead))
             if ld > LEAD_CAP:
                 nxt = g + lead * (LEAD_CAP / ld)
             ref[sd] = nxt
+        if whole_body:
+            ready, _ = region.contains(
+                centres_array, crate_rotation, [point for point, _ in measured], [rot for _, rot in measured]
+            )
         # The planner channel tracks the reference with a 1-3 cm residual and
         # the reference alone never closes it (pilot 3: 9-50 mm left over after
         # 25 s). Same remedy as the single-hand servo: overdrive the command by
@@ -526,12 +546,11 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             # slow integrator across the bar: the proportional overdrive leaves the
             # policy's constant outward offset in place, an integrator does not
             across_int[sd] = float(
-                np.clip(across_int[sd] - ACROSS_INT_RATE * errs[sd][1], -ACROSS_INT_CAP, ACROSS_INT_CAP)
+                np.clip(across_int[sd] - ACROSS_INT_RATE * tick_dt / DT * errs[sd][1], -ACROSS_INT_CAP, ACROSS_INT_CAP)
             )
             cmd[sd] = ref[sd] + corr + np.array([*(y_hat * across_int[sd]), 0.0])
         rot_w = {sd: pitched(ctx, sd) for sd in ("left", "right")}
         ctx.rot_w = rot_w
-        whole_body = ctx.config.reach_control == "whole_body"
         q = arms.solve(
             s,
             cmd,
@@ -582,11 +601,11 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
         ):
             span = max(float(np.max(np.abs(ee[sd] - err_hist[-1][1][sd]))) for _, ee in err_hist for sd in errs)
             stalled = span <= STALL_MM
-        if ready or stalled:
+        if ready or (stalled and not whole_body):
             ready_since = ready_since or now
             if now - ready_since >= 0.1:
                 phase = "close"
-                close_trigger = "region" if ready else "stall"
+                close_trigger = "rim_region" if whole_body else "region" if ready else "stall"
                 break
         else:
             ready_since = None

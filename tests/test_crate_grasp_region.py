@@ -26,3 +26,61 @@ def test_end_wall_wrong_jaw_direction_and_high_fingers_cannot_authorize_closure(
     for displacement in ([0.105, 0, 0], [0, 0.020, 0], [0, 0, 0.045], [0, 0, -0.015]):
         assert not region.contains(centres, rotation, centres + displacement, wrists)[0]
     assert not region.contains(centres, rotation, centres, [np.eye(3)] * 2)[0]
+
+
+def test_carry_consumer_closes_at_valid_rim_offset_without_recentering(monkeypatch):
+    from types import SimpleNamespace
+
+    from locomani.tasks.crate import bimanual_carry as carry
+    from locomani.tasks.crate import carry_phases
+    from locomani.tasks.crate.carry_config import CrateCarryConfig
+
+    clock = [0.0]
+    monkeypatch.setattr(carry_phases, "time", SimpleNamespace(time=lambda: clock[0]))
+    monkeypatch.setattr(carry, "SERVO_TIMEOUT", 0.4)
+    monkeypatch.setattr(carry, "DUMP_DIR", "")
+    centres = dict(left=np.array([0.4, 0.1933, 0.445]), right=np.array([0.4, -0.1933, 0.445]))
+    crate_rotation = Rotation.from_euler("z", 90, degrees=True)
+    wrist = Rotation.from_euler("y", 60, degrees=True).as_matrix()
+    state = dict(
+        fallen=False,
+        joints=np.zeros(29),
+        wall=0.0,
+        objects={"blue_crate": {"quat": crate_rotation.as_quat()[[3, 0, 1, 2]]}},
+    )
+
+    def observe():
+        clock[0] += 0.02
+        state["wall"] = clock[0]
+        return state
+
+    monkeypatch.setattr(
+        carry, "crate_frame", lambda *a: (np.array([0.4, 0, 0.385]), centres, np.array([1, 0]), np.array([0, 1]), 0)
+    )
+    arms = SimpleNamespace(
+        arm=SimpleNamespace(q=np.zeros(29)),
+        start=lambda **kw: None,
+        stop=lambda: None,
+        grip_point=lambda s, side: (centres[side] + [0.07, 0, 0.02], wrist),
+        solve=lambda *a, **kw: np.zeros(29),
+        push=lambda *a, **kw: None,
+    )
+    ctx = SimpleNamespace(
+        p=SimpleNamespace(obs=observe),
+        log=lambda *a: None,
+        rnd=0,
+        arms=arms,
+        centre=np.array([0.4, 0, 0.385]),
+        bars=centres,
+        n=np.array([1, 0]),
+        y_hat=np.array([0, 1]),
+        psi=0,
+        ramp=SimpleNamespace(q=np.zeros(17)),
+        m={},
+        t_video=0,
+        config=CrateCarryConfig(reach_control="whole_body"),
+        grasp_posture=None,
+    )
+    assert carry_phases._phase_grasp(ctx) is None
+    assert ctx.m["close_trigger"] == "rim_region"
+    assert clock[0] < 0.25
