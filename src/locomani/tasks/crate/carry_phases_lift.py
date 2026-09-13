@@ -9,7 +9,6 @@ import time
 
 import numpy as np
 
-from locomani.backends.sonic.primitives import DT
 from locomani.tasks.crate.carry_phases import CarryRoundContext
 
 
@@ -19,12 +18,16 @@ def _phase_close(ctx: CarryRoundContext) -> dict | None:
     p, arms = ctx.p, ctx.arms
     # --- C: same-frame double close ------------------------------------------
     hold_target = arms.arm.q.copy()
-    nq = int(round(CLOSE_RAMP / DT))
-    for k in range(nq + 1):
-        arms.set_hands(k / nq)
-        arms.push(hold_target)
-    for _ in range(int(0.6 / DT)):
-        arms.push(hold_target)
+    started = time.time()
+    while time.time() - started < CLOSE_RAMP + 0.6:
+        s = p.obs()
+        if s.get("fallen", False):
+            ctx.m["why"] = "[grasp] fell during closing"
+            arms.stop()
+            return ctx.m
+        arms.set_hands(min(1.0, (time.time() - started) / CLOSE_RAMP))
+        arms.push(hold_target, observed=s)
+    ctx.m["close_seconds"] = time.time() - started
     s = p.obs()
     ctx.s = s
     touching = list(s["objects"][OBJ]["touching"])
@@ -57,8 +60,7 @@ def _phase_lift(ctx: CarryRoundContext) -> dict | None:
     # --- D: lift, level check, hold -------------------------------------------
     z0 = float(s["objects"][OBJ]["pos"][2])
     lift_ref = {sd: arms.grip_point(s, sd)[0] for sd in ("left", "right")}
-    nl = int(round(2.0 / DT))
-    nh = int(round(HOLD_S / DT))
+    duration = 2.0
     body_lift = None
     if ctx.config.reach_control == "whole_body":
         from locomani.tasks.crate.carry_whole_body import PairedLiftReference
@@ -68,12 +70,14 @@ def _phase_lift(ctx: CarryRoundContext) -> dict | None:
         if np.max(body_lift.errors) > 0.02:
             ctx.m["why"] = "[lift] no continuous paired lift reference"
             return ctx.m
-        nl = int(np.ceil(body_lift.duration / DT))
+        duration = body_lift.duration
     level = 0.0  # + means the left hand is lowered
     max_dz = 0.0
-    for k in range(1, nl + nh + 1):
+    started, last_log = time.time(), 0.0
+    while time.time() - started < duration + HOLD_S:
         s = p.obs()
-        u = min(k / nl, 1.0)
+        elapsed = time.time() - started
+        u = min(elapsed / duration, 1.0)
         _, bars, _, _, _ = crate_frame(p, s)
         dz = float(bars["left"][2] - bars["right"][2])  # left bar end higher: +
         max_dz = max(max_dz, abs(dz))
@@ -83,18 +87,20 @@ def _phase_lift(ctx: CarryRoundContext) -> dict | None:
             "left": lift_ref["left"] + np.array([0.0, 0.0, z_lift - 0.5 * level]),
             "right": lift_ref["right"] + np.array([0.0, 0.0, z_lift + 0.5 * level]),
         }
-        arms.push(body_lift.sample(k * DT) if body_lift is not None else arms.solve(s, tgt, rot_w))
-        if k % int(round(0.5 / DT)) == 0:
+        arms.push(body_lift.sample(elapsed) if body_lift is not None else arms.solve(s, tgt, rot_w), observed=s)
+        if elapsed - last_log >= 0.5:
+            last_log = elapsed
             log(
-                f"[lift] t={k * DT:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m "
+                f"[lift] t={elapsed:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m "
                 f"tilt {crate_tilt_deg(s):.1f} deg bar dz {dz * 1000:+.0f} mm level {level * 1000:+.0f} mm "
                 f"touch {list(s['objects'][OBJ]['touching'])}"
             )
         if crate_tilt_deg(s) > TILT_MAX_DEG:
-            ctx.m["why"] = f"[{'lift' if k <= nl else 'hold'}] crate tilted {crate_tilt_deg(s):.1f} deg"
+            ctx.m["why"] = f"[{'lift' if elapsed <= duration else 'hold'}] crate tilted {crate_tilt_deg(s):.1f} deg"
             ctx.m.update(rise=float(s["objects"][OBJ]["pos"][2]) - z0, max_bar_dz=max_dz)
             arms.stop()
             return ctx.m
+    ctx.m["lift_seconds"] = time.time() - started
     ctx.m["max_bar_dz"] = max_dz
     s = p.obs()
     rise = float(s["objects"][OBJ]["pos"][2]) - z0

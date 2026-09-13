@@ -555,7 +555,7 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             gap = float(q[j] - s["joints"][j])
             q[j] += float(np.clip(WRIST_PITCH_COMP * gap, -WRIST_PITCH_COMP_CAP, WRIST_PITCH_COMP_CAP))
         q_last = q.copy()
-        arms.push(q)
+        arms.push(q, observed=s)
         if int((time.time() - t0) / 1.0) != int((time.time() - t0 - DT) / 1.0):
             from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
 

@@ -34,7 +34,7 @@ class WholeBodyArms(BimanualArms):
         # switches back to planner before resetting the standing robot.
         return
 
-    def push(self, q, *, reference_velocity=None):
+    def push(self, q, *, reference_velocity=None, observed=None):
         sent_at = time.time()
         q = self.motion.step(q, sent_at) if self.motion is not None else np.asarray(q).copy()
         self.arm.q = q
@@ -51,7 +51,7 @@ class WholeBodyArms(BimanualArms):
                 sent_at,
                 upper_body_from_mj(q),
                 upper_body_from_mj(velocity),
-                self.p.obs(),
+                self.p.obs() if observed is None else observed,
                 root_reference=dict(
                     quat=self.arm.root_quat.tolist(), joints=q.tolist(), velocity=np.asarray(velocity).tolist()
                 ),
@@ -149,8 +149,8 @@ def _phase_whole_body(ctx):
         speed = 30 * u * u * (1 - u) * (1 - u) / duration
         u = u**3 * (10 - 15 * u + 6 * u * u)
         arms.arm.root_quat = roots(u).as_quat()[[3, 0, 1, 2]].astype(np.float32)
-        arms.push(q0 * (1 - u) + target * u, reference_velocity=(target - q0) * speed)
         s = ctx.p.obs()
+        arms.push(q0 * (1 - u) + target * u, reference_velocity=(target - q0) * speed, observed=s)
         if s["fallen"]:
             ctx.m["why"] = "[whole_body] fell entering the low pose"
             return ctx.m

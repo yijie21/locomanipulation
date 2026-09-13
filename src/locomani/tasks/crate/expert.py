@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from locomani import paths
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
 from locomani.backends.sonic.primitives import Primitives
-from locomani.backends.sonic.streamed_arm import PlannerArm
+from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
 from locomani.pipeline.execution_record import RoundResult
 from locomani.primitives.arm_ik import ArmIK
 from locomani.sim import ports
@@ -27,11 +27,12 @@ from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.round_runner import prime
 from locomani.tasks.crate.visual_approach import VisualApproach, initial_robot_xy
+from locomani.tasks.crate.visual_low_reach import VisualLowReach
 from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
 
 
-def reset_ready(p, reset, meta, cfg, rng, solver):
+def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
     """Place at the sampled table-edge distance; all initialization ends before recording."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
     yaw = np.pi / 2 + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
@@ -39,6 +40,9 @@ def reset_ready(p, reset, meta, cfg, rng, solver):
     start_xy = initial_robot_xy(meta, start_distance)
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
+    if whole_body:
+        p.cmd.exit_streamed()
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=p._facing(p.obs()))
     reset.pin_arms()
     reset.reset(
         objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
@@ -48,13 +52,20 @@ def reset_ready(p, reset, meta, cfg, rng, solver):
     p.cmd.start_control()
     p.hold_yaw = 0.0
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
-    p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
+    if whole_body:
+        reanchor(p)
+    else:
+        p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
     arm = PlannerArm(p, "right", send_vel=False, left_guard=False)
     arm.start()
     # The same ready pose is used for every basket placement, before task observations begin.
     ready = solver.solve(
         np.zeros(29), [[0.27, 0.22, 0.13], [0.27, -0.22, 0.13]], [np.eye(3), np.eye(3)], iterations=160
     )
+    if whole_body:
+        ready.joints[:] = 0
+        ready.joints[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
+        ready.joints[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
     q0 = arm.q.copy()
     for k in range(1, 126):
         u = k / 125
@@ -72,11 +83,17 @@ def reset_ready(p, reset, meta, cfg, rng, solver):
 def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     cfg = config.visual
     model = ArmIK(paths.SCENE_XML)
-    solver = BimanualIK(model, waist_pitch_max=cfg.waist_pitch_max)
+    whole_body = config.carry.reach_control == "whole_body"
+    solver = BimanualIK(
+        model,
+        waist_pitch_max=config.carry.waist_pitch_max if whole_body else cfg.waist_pitch_max,
+        waist_dofs=config.carry.waist_dofs if whole_body else "pitch",
+    )
+    low = None
     perception = CratePerception(ArmIK(paths.SCENE_XML), meta["crate_visual"], max_reprojection_px=cfg.reprojection_px)
     policy = VisualCratePolicy(meta["crate_visual"]["grasp_points"], cfg)
     approach = VisualApproach(cfg)
-    arm, placement = reset_ready(p, reset, meta, cfg, rng, solver)
+    arm, placement = reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
     reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
     initial = p.obs()
     recorder = VisualRecording(directory / label)
@@ -102,13 +119,14 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     break
                 arm._push(arm.q)
                 continue
+            now = time.time()
             last_camera_received = now
             stamp = max(float(v) for v in message["timestamps"].values())
             if now - min(float(v) for v in message["timestamps"].values()) > cfg.vision_timeout:
                 reason = "stale_camera_abort"
                 break
             if stamp == last_image_time:
-                arm._push(arm.q, **last_motion)
+                arm._push(arm.q, **({} if low is not None else last_motion))
                 continue
             last_image_time = stamp
             images = message["images"]
@@ -145,6 +163,33 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                 }
                 if nav.ready:
                     approach = None
+            elif whole_body:
+                if low is None:
+                    # Body planning cannot begin without a current RGB fit.
+                    if estimate is None:
+                        arm._push(arm.q)
+                        continue
+                    arm = StreamedArm(p, "right", ik=model, left_guard=False)
+                    arm.start(hold_planner_pose=True)
+                    low = VisualLowReach(solver, meta["crate_visual"], config, arm.q, arm.root_quat)
+                body_command = low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
+                q = body_command.joints
+                closed = np.zeros_like(HAND_OPEN)
+                closed[:2] = -0.023
+                arm.hands = {
+                    side: HAND_OPEN + body_command.closure * (closed - HAND_OPEN) for side in ("left", "right")
+                }
+                arm.q, arm.root_quat = q, body_command.root_quaternion
+                arm._push(q, reference_velocity=body_command.velocity)
+                points, attitudes = solver.tool_poses(q)
+                command = ExpertCommand(
+                    points,
+                    attitudes,
+                    body_command.closure,
+                    body_command.phase,
+                    body_command.reason,
+                    body_command.finished,
+                )
             else:
                 command = policy.step(now, estimate, measured, rotations, openings)
                 correction = np.clip(
@@ -176,6 +221,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "navigation": navigation,
                     "hand_openings": openings,
                     "reference_joints": q,
+                    "root_reference": None if low is None else dict(quaternion=arm.root_quat, velocity=low.velocity),
+                    "low_reach": None if low is None else low.diagnostics,
                     "tool_reference": command.positions,
                     "closure": command.closure,
                     "phase": command.phase,
@@ -213,7 +260,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         seconds=time.time() - started,
         frames=recorder.frames,
         placement=placement,
-        dataset_kind="painted_crate_rgb_walk_video_pilot",
+        dataset_kind="painted_crate_rgb_low_reach_video_pilot" if whole_body else "painted_crate_rgb_walk_video_pilot",
         produced=False,
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),

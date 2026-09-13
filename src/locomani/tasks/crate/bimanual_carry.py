@@ -306,10 +306,10 @@ class BimanualArms:
             joint_limits=(self.arm.ik.lo, self.arm.ik.hi),
         ).joints
 
-    def push(self, q):
+    def push(self, q, *, observed=None):
         sent_at = time.time()
         if self.height_control is not None:
-            s = self.p.obs()
+            s = self.p.obs() if observed is None else observed
             self.arm.mode = LocomotionMode.IDEL_SQUAT
             self.arm.height = self.height_control.step(s["wall"], s["pelvis"]["pos"][2])
         if self.motion is not None:
@@ -323,7 +323,7 @@ class BimanualArms:
                 sent_at,
                 upper_body_from_mj(q),
                 self.p.cmd.upper_body_vel,
-                self.p.obs(),
+                self.p.obs() if observed is None else observed,
                 body_height=None
                 if self.height_control is None
                 else {
