@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from locomani import paths
 from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
-from locomani.backends.sonic.primitives import Primitives
+from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj
 from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
 from locomani.pipeline.execution_record import RoundResult
 from locomani.primitives.arm_ik import ArmIK
@@ -75,7 +75,20 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
         arm.q = q0 + (3 * u * u - 2 * u * u * u) * (ready.joints - q0)
         arm._push(arm.q)
     arm.hold(1.2)
+    if whole_body:
+        # Preparing the upright reference after a deep carry can move the base.
+        # Complete that preparation first, then initialize the sampled episode
+        # under its already-upright reference. This is always before recording;
+        # the sample is unchanged and the actual start is still checked below.
+        reset.reset(
+            objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
+            robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
+        )
+        time.sleep(0.3)
+        arm.start(upper_reference=upper_body_from_mj(ready.joints), settle_seconds=0.0)
+        arm.hold(1.2)
     return arm, {
+        "initialization_resets": 2 if whole_body else 1,
         "object_dxy": jitter.tolist(),
         "object_yaw": float(yaw),
         "start_edge_distance": start_distance,

@@ -10,14 +10,19 @@ class RimRegion:
     # Current no-post crate: 269.4 mm bar, end walls begin at +/-118.7 mm.
     # A 29 mm finger pad plus 14.2 mm end clearance leaves +/-90 mm travel.
     half_length: float = 0.09
+    midpoint_tolerance: float = 0.015  # keep the grip line near the empty basket centre
     across: float = 0.018
     below: float = 0.010
     above: float = 0.030
 
     def nearest(self, centres, tangent, tools):
-        """Choose one common along-rim offset, preserving bilateral spacing."""
-        along = np.mean((np.asarray(tools) - centres) @ tangent)
-        return np.asarray(centres) + np.clip(along, -self.half_length, self.half_length) * tangent
+        """Nearest pair whose midpoint supports the basket, allowing opposite offsets."""
+        along = (np.asarray(tools) - centres) @ tangent
+        along = np.clip(along, -self.half_length, self.half_length)
+        # Aim inside the acceptance band so decoder tracking error does not
+        # leave the measured pair perpetually just outside its boundary.
+        along -= np.mean(along)
+        return np.asarray(centres) + along[:, None] * tangent
 
     def contains(self, centres, rotation, tools, tool_rotations):
         """Both open jaws surround the bar with insertion and end-wall clearance.
@@ -37,4 +42,5 @@ class RimRegion:
             & aligned
             & insertion
         )
-        return bool(np.all(ready)), error
+        balanced = abs(np.mean(error[:, 1])) <= self.midpoint_tolerance
+        return bool(np.all(ready) and balanced), error
