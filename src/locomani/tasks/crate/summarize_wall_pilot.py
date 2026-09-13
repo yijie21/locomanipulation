@@ -17,7 +17,13 @@ import sys
 import numpy as np
 
 d = sys.argv[1]
-rows = [json.loads(l) for l in open(os.path.join(d, "manifest.jsonl")) if l.strip()]
+# run_crate_pilot.py batches into manifest_<tag>.jsonl (never a single
+# manifest.jsonl) so that two pilots writing the same directory can't merge
+# into one file; read every batch the same way it does before printing totals.
+manifests = sorted(glob.glob(os.path.join(d, "manifest_*.jsonl")))
+if not manifests:
+    raise FileNotFoundError(f"no manifest_*.jsonl in {d}")
+rows = [json.loads(l) for m in manifests for l in open(m) if l.strip()]
 
 
 def _key(r):
