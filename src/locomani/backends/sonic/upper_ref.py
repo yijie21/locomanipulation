@@ -71,6 +71,7 @@ class RefTap:
     def __init__(self, port: int | None = None):
         self.port = ports.out() if port is None else int(port)
         self._q: np.ndarray | None = None
+        self._root: np.ndarray | None = None
         self._t = 0.0
         self._lock = threading.Lock()
         self._run = False
@@ -104,6 +105,12 @@ class RefTap:
                 if q is not None and len(q) == 29:
                     with self._lock:
                         self._q = np.asarray(q, dtype=np.float32)
+                        root = np.asarray(m.get("base_quat_target", []), dtype=np.float32)
+                        self._root = (
+                            root
+                            if root.shape == (4,) and np.isfinite(root).all() and np.linalg.norm(root) > 0.5
+                            else None
+                        )
                         self._t = time.time()
             time.sleep(0.004)
 
@@ -120,6 +127,13 @@ class RefTap:
                 return None
 
             return self._q.copy()
+
+    def pose(self):
+        """One fresh joint/root reference packet, before frozen-upper substitution."""
+        with self._lock:
+            if self._q is None or self._root is None or time.time() - self._t > 0.2:
+                return None
+            return self._q.copy(), self._root.copy()
 
     def upper17(self, max_age: float = 0.5) -> np.ndarray | None:
         """The same reference as a 17-value upper-body command."""

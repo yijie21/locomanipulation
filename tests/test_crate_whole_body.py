@@ -157,7 +157,7 @@ def test_body_reference_arrival_cannot_admit_a_still_moving_robot(monkeypatch):
         )
 
     p = SimpleNamespace(obs=state)
-    arm = SimpleNamespace(ik=None, q=np.zeros(29))
+    arm = SimpleNamespace(ik=None, q=np.zeros(29), root_quat=[1, 0, 0, 0])
 
     def push(q, **kwargs):
         now[0] += 0.02

@@ -58,14 +58,16 @@ class LowReachCommand:
 
 
 class VisualLowReach:
-    def __init__(self, solver, geometry, config, joints, base_quaternion):
+    def __init__(
+        self, solver, geometry, config, joints, base_quaternion, *, reference_joints=None, reference_quaternion=None
+    ):
         self.solver, self.config = solver, config
         self.region = RimRegion()
         self.local_grips = np.asarray(geometry["grasp_points"])
         self.frame = SupportFrame(solver.ik, joints, base_quaternion)
-        self.q = np.asarray(joints).copy()
+        self.q = np.asarray(joints if reference_joints is None else reference_joints).copy()
         self.velocity = np.zeros(29)
-        self.root = np.asarray(base_quaternion).copy()
+        self.root = np.asarray(base_quaternion if reference_quaternion is None else reference_quaternion).copy()
         self.phase, self.closure = "observe", 0.0
         self.started = self.last_time = self.last_seen = None
         self.was_visible = False

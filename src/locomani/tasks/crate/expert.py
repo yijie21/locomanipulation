@@ -13,6 +13,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from locomani import paths
+from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
 from locomani.backends.sonic.primitives import Primitives
 from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
@@ -51,10 +52,12 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
     time.sleep(0.4)
     p.cmd.start_control()
     p.hold_yaw = 0.0
-    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
     if whole_body:
+        upper_ref.shared().wait(3.0)
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
         reanchor(p)
-    else:
+    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
+    if not whole_body:
         p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
     arm = PlannerArm(p, "right", send_vel=False, left_guard=False)
     arm.start()
@@ -96,6 +99,24 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     arm, placement = reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
     reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
     initial = p.obs()
+    if whole_body:
+        distance = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])
+        if not 1.2 <= distance <= 1.5:
+            arm.stop()
+            return RoundResult(
+                False,
+                "invalid_initial_distance",
+                False,
+                {
+                    "metrics": dict(
+                        placement=placement,
+                        initial_edge_distance=distance,
+                        frames=0,
+                        produced=False,
+                        dataset_kind="painted_crate_rgb_low_reach_video_pilot",
+                    )
+                },
+            )
     recorder = VisualRecording(directory / label)
     reset.start_video(label)
     started = time.time()
@@ -171,7 +192,16 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                         continue
                     arm = StreamedArm(p, "right", ik=model, left_guard=False)
                     arm.start(hold_planner_pose=True)
-                    low = VisualLowReach(solver, meta["crate_visual"], config, arm.q, arm.root_quat)
+                    handoff_state = p.obs()
+                    low = VisualLowReach(
+                        solver,
+                        meta["crate_visual"],
+                        config,
+                        handoff_state["joints"],
+                        handoff_state["pelvis"]["quat"],
+                        reference_joints=arm.q,
+                        reference_quaternion=arm.root_quat,
+                    )
                     continue  # reacquire RGB/encoders after the bounded mode handoff
                 body_command = low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
                 q = body_command.joints

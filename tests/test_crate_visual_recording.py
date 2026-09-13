@@ -66,3 +66,38 @@ def test_external_abort_remains_marked_when_finalization_fails(tmp_path, monkeyp
     assert result.execution["metrics"]["intervention"] is True
     assert result.execution["metrics"]["control_reason"] == "external_fall_abort"
     assert stopped == [True]
+
+
+def test_low_reach_rejects_reset_drift_before_starting_a_demonstration(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import numpy as np
+    from geometry_fixture import scene_ik
+
+    from locomani.tasks.crate import expert
+    from locomani.tasks.crate.config import CrateTaskConfig
+    from locomani.tasks.crate.visual_scene import MARKERS
+
+    arm = SimpleNamespace(q=np.zeros(29), stop=Mock())
+    reset = SimpleNamespace(start_video=Mock())
+    monkeypatch.setattr(expert, "ArmIK", lambda path: scene_ik())
+    monkeypatch.setattr(expert, "reset_ready", lambda *a, **kw: (arm, {"start_edge_distance": 1.4}))
+    meta = dict(
+        crate_visual=dict(markers=MARKERS, grasp_points=[[0.19, 0, 0.06], [-0.19, 0, 0.06]]),
+        objects={"blue_crate": {"surface": "A"}},
+        surfaces={"A": {"xy": [0, 0], "flat_half_extent": [0.5, 0.5]}},
+    )
+    result = expert.run_attempt(
+        SimpleNamespace(obs=lambda: {"pelvis": {"pos": [-1.4, 0, 0.78]}}),
+        reset,
+        None,
+        meta,
+        CrateTaskConfig.load("configs/tasks/crate_visual_low_reach.json"),
+        tmp_path,
+        "drift",
+        None,
+    )
+    assert result.why == "invalid_initial_distance" and not result.accepted()
+    reset.start_video.assert_not_called()
+    arm.stop.assert_called_once()

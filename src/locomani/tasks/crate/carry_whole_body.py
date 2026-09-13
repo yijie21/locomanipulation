@@ -134,7 +134,7 @@ def _phase_whole_body(ctx):
     arms.motion_recording = ctx.motion_recording
     arms.start()
     q0 = arms.arm.q.copy()
-    r0 = Rotation.from_quat(np.asarray(ctx.p.obs()["pelvis"]["quat"])[[1, 2, 3, 0]])
+    r0 = Rotation.from_quat(np.asarray(arms.arm.root_quat)[[1, 2, 3, 0]])
     roots = Slerp([0, 1], Rotation.from_matrix([r0.as_matrix(), pose.rotation]))
     distance = float(np.max(np.abs(target - q0)))
     duration = max(

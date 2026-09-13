@@ -128,8 +128,17 @@ class StreamedArm:
             # Fill the POSE buffer while the old planner reference is still held.
             # The VR bridge then needs only several reader cycles, not a second
             # of two unrelated control regimes before the intended body ramp.
-            self.q = np.asarray(s["joints"]).copy()
-            self.root_quat = np.asarray(s["pelvis"]["quat"], dtype=np.float32)
+            from locomani.backends.sonic import upper_ref
+
+            incoming = upper_ref.shared().pose()
+            if incoming is None:
+                raise RuntimeError("continuous POSE takeover needs a fresh planner joint/root reference")
+            self.q, self.root_quat = (np.asarray(value).copy() for value in incoming)
+            # body_q_target excludes the frozen override. Compose the actual
+            # reference being consumed, not the measured tracking error.
+            held = self.p.cmd.upper_body
+            if held is not None:
+                self.q[12:15], self.q[15:22], self.q[22:29] = held[:3], held[3::2], held[4::2]
             self.next_t = time.time()
             self.hold(0.1)
             from locomani.backends.sonic.agent_server import StreamMode
@@ -153,12 +162,9 @@ class StreamedArm:
         while time.time() < end:  # one frame raced the deploy's reader;
             self.p.cmd.frame(facing=self.p._facing(s))
             time.sleep(DT)
-        if hold_planner_pose:
-            s = self.p.obs()
-        self.q = np.array(s["joints"])
-        self.root_quat = (
-            np.asarray(s["pelvis"]["quat"], dtype=np.float32) if hold_planner_pose else yaw_only(s["pelvis"]["quat"])
-        )
+        if not hold_planner_pose:
+            self.q = np.array(s["joints"])
+            self.root_quat = yaw_only(s["pelvis"]["quat"])
         self.next_t = time.time()
         # Prime the buffer BEFORE the switch — the deploy stops control if
         # streamed mode goes active over an empty motion buffer.
