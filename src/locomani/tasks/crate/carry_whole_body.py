@@ -16,7 +16,7 @@ class WholeBodyArms(BimanualArms):
     """A paired arm servo over a held full-body pose reference, with the same task interface."""
 
     def __init__(self, p, config):
-        super().__init__(p, config)
+        super().__init__(p, config=config)
         self.arm = StreamedArm(p, "right", ik=self.arm.ik, left_guard=False)
         self.arm.ik.lo[12:15], self.arm.ik.hi[12:15] = self.solver.lo[12:15], self.solver.hi[12:15]
         self.entered = False

@@ -82,3 +82,21 @@ def test_whole_body_recording_is_rejected_before_scene_or_stack_use(tmp_path):
     )
     with pytest.raises(SystemExit, match="full-pose VLA action export"):
         prepare(args)
+
+
+def test_full_body_adapter_delivers_config_to_both_control_layers(monkeypatch):
+    from types import SimpleNamespace
+
+    from locomani.backends.sonic.streamed_arm import PlannerArm
+    from locomani.tasks.crate import bimanual_carry
+    from locomani.tasks.crate.carry_whole_body import WholeBodyArms
+
+    ik = scene_ik()
+    p = SimpleNamespace(cmd=SimpleNamespace(left_hand=np.zeros(7), right_hand=np.zeros(7)))
+    monkeypatch.setattr(bimanual_carry, "PlannerArm", lambda *args, **kwargs: PlannerArm(*args, **kwargs, ik=ik))
+    cfg = CrateCarryConfig(reach_control="whole_body", waist_pitch_max=0.52)
+    arms = WholeBodyArms(p, cfg)
+    assert arms.config == cfg
+    assert set([12, 13, 14]).issubset(arms.solver.indices)
+    np.testing.assert_allclose(arms.arm.ik.lo[12:15], arms.solver.lo[12:15])
+    np.testing.assert_allclose(arms.arm.ik.hi[12:15], arms.solver.hi[12:15])
