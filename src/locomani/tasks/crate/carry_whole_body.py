@@ -25,7 +25,7 @@ class WholeBodyArms(BimanualArms):
     def start(self, q17=None, *, settle_seconds=0.6):
         if self.entered:
             return
-        self.arm.start()
+        self.arm.start(hold_planner_pose=True)
         self.arm.hands = {k: v.astype(np.float32) for k, v in self.hands.items()}
         self.entered = True
 

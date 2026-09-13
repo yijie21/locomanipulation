@@ -119,48 +119,46 @@ class StreamedArm:
 
     # -- plumbing ----------------------------------------------------------
 
-    def start(self) -> None:
+    def start(self, *, hold_planner_pose=False) -> None:
         s = self.p.obs()
-        # Release the planner's upper-body pin before streaming: the deploy
-        # OVERWRITES the upper-body joints of any reference motion while
-        # `has_upper_body_control_` is latched (g1_deploy_onnx_ref.cpp:780),
-        # and the latch updates per planner message — so one frame WITHOUT
-        # the field clears it. Skipping this froze the arm mid-grasp with
-        # IK res 0.000 and a motionless palm.
-        #
-        # This window is what makes the arms twitch at the stand (the deploy
-        # is still driving the body, hears "no upper-body target", and hands
-        # the arms to the gait prior until the first streamed frame snaps
-        # them back), and two ways round it have now been measured and
-        # reverted, both 0/6 on seed 11/7 against 5/6 here:
-        #   - hold the sim-side pin through the handoff: the arm comes out
-        #     of a stiff position loop and the servo cannot absorb it;
-        #   - skip the clear entirely and let PLANNER_TIMEOUT do it (the
-        #     official Pico manager's order, pico_manager_thread_server.py
-        #     :2098): the deploy only evaluates that timeout while the
-        #     planner is ENABLED (zmq_manager.hpp:623), so once
-        #     enter_streamed() disables it the latch never expires and the
-        #     upper body stays pinned to the last frozen target — exactly
-        #     the "arm not tracking, res 0.000" failure above.
-        # The latch can therefore only be cleared from inside planner mode.
-        # What has NOT been tried: hold the arms through the window with
-        # VR-3pt wrist targets at the measured palm pose (switch
-        # stream_mode to PLANNER_VR_3PT for these 0.4 s) — same control
-        # regime as the streamed tracking that follows, so no stiff-pin
-        # discontinuity, and the planner stays enabled so the clear still
-        # happens.
+        # The installed deploy clears its upper-body latch only while consuming
+        # planner messages. Whole-body callers bridge that interval with measured
+        # VR wrist/neck references; an empty planner frame invokes the gait prior.
+        if hold_planner_pose:
+            from locomani.backends.sonic.agent_server import StreamMode
+            from locomani.backends.sonic.teleop_arm import NECK_OFFSET, VR_OFFSET, _mat2quat_wxyz
+
+            for side in ("left", "right"):
+                point, rotation = self.ik.fk(np.asarray(s["joints"]), side)
+                self.p.cmd.set_wrists(
+                    **{
+                        f"{side}_pos": point + rotation @ VR_OFFSET[side],
+                        f"{side}_quat": _mat2quat_wxyz(rotation),
+                    }
+                )
+            point, rotation = self.ik.body_pose(np.asarray(s["joints"]), "torso_link")
+            self.p.cmd.set_neck(point + rotation @ NECK_OFFSET, _mat2quat_wxyz(rotation))
+            self.p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
+            self.p.cmd.vr_targets = True
+            self.p.cmd.set_upper_body_vel(None)
         self.p.cmd.upper_body = None
         end = time.time() + 0.4
         while time.time() < end:  # one frame raced the deploy's reader;
             self.p.cmd.frame(facing=self.p._facing(s))
             time.sleep(DT)
+        if hold_planner_pose:
+            s = self.p.obs()
         self.q = np.array(s["joints"])
-        self.root_quat = yaw_only(s["pelvis"]["quat"])
+        self.root_quat = (
+            np.asarray(s["pelvis"]["quat"], dtype=np.float32) if hold_planner_pose else yaw_only(s["pelvis"]["quat"])
+        )
         self.next_t = time.time()
         # Prime the buffer BEFORE the switch — the deploy stops control if
         # streamed mode goes active over an empty motion buffer.
         self.hold(0.3)
         self.p.cmd.enter_streamed()
+        if hold_planner_pose:
+            self.p.cmd.vr_targets = False
         # 0.4 s, not 1.0: the replay diag validated the switch with 0.6 s of
         # held frames; what the deploy needs is a non-empty buffer and a few
         # frames of continuity, not a second of recorded standing.
