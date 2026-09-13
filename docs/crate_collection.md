@@ -7,6 +7,26 @@
 
 ## 0. 这条流水线现在能给什么
 
+### Waist and reach
+
+`--expert carry` 和 `--expert wall` 共用 `BimanualArms`。自 2026-09-13 起，
+双臂与腰部前俯由同一个 `BimanualIK` 同时求解；`WAIST_PITCH_MAX` 为 0.4 rad
+（22.9°），并受机器人模型限位约束。腰部扭转、侧弯仍保持中立。前俯角写入
+SONIC 的 17 维上身位置指令第 3 项，测量反馈也包含腰部；无需新增 CLI 参数。
+
+carry 的目标站位在桌沿距离下限外预留一个 `STAND_TOL` 停步缓冲，停稳后仍低于
+`EDGE_FLOOR`（13 cm）就终止该集。物体较深、超出旧的固定距离范围时，还要检查
+当前位置下两个抓取点的 IK 残差；够不到就失败退出，原有接触、倾斜和抬升判据继续生效。
+放开前俯不代表所有深度都可抓取，也不代表 IK 可达就等于真实控制能准确跟踪。
+修改这条路径先读 change map 的“Crate carry / wall reach and waist”行；
+实测范围及局限见 [弯腰修复与验证](handoff/crate-carry-waist-20260913.md)。
+
+这两个历史专家仍使用仿真物体状态。需要视觉指导动作的示范时，选择
+[`--expert visual`](crate_visual_collection.md)；它复用同一个双臂 IK，
+由 `visual_config.py` 管理前俯上限及动作平滑，不从 carry 常量读取配置。
+
+### 采集产物
+
 | 产物 | 有没有 | 怎么来 |
 |---|---|---|
 | 每集第三人称视频、50 Hz 状态轨迹(`qpos`/`qvel`)、manifest、expert 日志 | **有** | §4–5 pilot |

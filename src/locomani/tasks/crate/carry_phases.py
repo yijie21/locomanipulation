@@ -135,6 +135,51 @@ def stand_metrics(ctx: CarryRoundContext, tag):
     return s, yaw_err, stand_err, lateral, edge_clear
 
 
+def stand_target(centre, normal, lateral_axis, edge_x):
+    """Leave a stopping-tolerance buffer before the existing table-edge floor."""
+    from locomani.tasks.crate.bimanual_carry import EDGE_FLOOR, STAND_LAT_BIAS, STAND_OFF, STAND_TOL
+
+    target = np.asarray(centre[:2]) - normal * STAND_OFF + lateral_axis * STAND_LAT_BIAS
+    target[0] = min(target[0], edge_x - EDGE_FLOOR - STAND_TOL)
+    return target
+
+
+def admit_grasp(ctx: CarryRoundContext) -> dict | None:
+    """Keep edge/alignment gates; admit farther targets by bounded two-hand IK."""
+    from locomani.tasks.crate.bimanual_carry import (
+        ACROSS_TOL,
+        ALONG_TOL,
+        EDGE_FLOOR,
+        HEIGHT_TOL,
+        LAT_TOL,
+        PALM_PITCH_DEG,
+        rot_y,
+        rot_z,
+    )
+
+    m = ctx.m
+    if m["edge_clear"] < EDGE_FLOOR:
+        m["why"] = "[stand] stopped inside the table-edge floor"
+        return m
+    if abs(m["yaw_err_deg"]) > 20 or m["stand_err"] > 0.10:
+        m["why"] = "[stand] outside the reach band"
+        return m
+    if abs(m["lateral"]) > LAT_TOL:
+        m["why"] = f"[stand] lateral {m['lateral'] * 100:+.1f} cm off the centre line"
+        return m
+    # The old far-distance band assumed arm-only reach. For a farther crate,
+    # admit only a simultaneous, bounded solution for both grasp points.
+    if m["stand_err"] < -0.08:
+        rotations = {side: rot_z(ctx.psi) @ rot_y(np.radians(PALM_PITCH_DEG)) for side in ("left", "right")}
+        errors = ctx.arms.reach_errors(ctx.s, ctx.bars, rotations)
+        m["reach_ik_errors_m"] = errors.tolist()
+        ctx.log(f"[stand] extended reach IK residuals {np.round(errors * 100, 2).tolist()} cm")
+        if np.max(errors) > max(ALONG_TOL, ACROSS_TOL, HEIGHT_TOL):
+            m["why"] = "[stand] beyond bounded bimanual reach"
+            return m
+    return None
+
+
 def pitched(ctx: CarryRoundContext, sd):
     from locomani.tasks.crate.bimanual_carry import PALM_PITCH_DEG, UP_ABOVE, rot_y
 
@@ -202,10 +247,7 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     from locomani.tasks.crate.bimanual_carry import (
         APPR_SPEED,
         EDGE_FLOOR,
-        LAT_TOL,
         OFFSET,
-        STAND_LAT_BIAS,
-        STAND_OFF,
         STAND_TOL,
         UP_ABOVE,
         UP_SHORT,
@@ -223,10 +265,10 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     # --- A+B: walk in facing the crate, both arms rising to the pre-grasp ----
     centre, bars, n, y_hat, psi = crate_frame(p, s)
     ctx.centre, ctx.bars, ctx.n, ctx.y_hat, ctx.psi = centre, bars, n, y_hat, psi
-    ctx.stand_xy = centre[:2] - n * STAND_OFF + y_hat * STAND_LAT_BIAS
-    stand_xy = ctx.stand_xy
     ctx.edge_x = float(ctx.surf["xy"][0]) - ctx.hx
     edge_x = ctx.edge_x
+    ctx.stand_xy = stand_target(centre, n, y_hat, edge_x)
+    stand_xy = ctx.stand_xy
     ctx.m["stand_target"] = [float(v) for v in stand_xy]
     q_meas = upper_body_from_mj(s["joints"])
     ctx.q_free = upper_ref.shared().upper17()
@@ -337,19 +379,12 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
         return ctx.m
 
     brake(ctx)
+    ramp.settle()
     s, yaw_err, stand_err, lateral, edge_clear = stand_metrics(ctx, "")
     ctx.m.update(yaw_err_deg=yaw_err, stand_err=stand_err, lateral=lateral, edge_clear=edge_clear)
-    ramp.settle()
-    s = p.obs()
     centre, bars, n, y_hat, psi = crate_frame(p, s)
     ctx.s, ctx.centre, ctx.bars, ctx.n, ctx.y_hat, ctx.psi = s, centre, bars, n, y_hat, psi
-    if abs(yaw_err) > 20 or stand_err < -0.08 or stand_err > 0.10:
-        ctx.m["why"] = "[stand] outside the reach band"
-        return ctx.m
-    if abs(lateral) > LAT_TOL:
-        ctx.m["why"] = f"[stand] lateral {lateral * 100:+.1f} cm off the centre line"
-        return ctx.m
-    return None
+    return admit_grasp(ctx)
 
 
 def _phase_grasp(ctx: CarryRoundContext) -> dict | None:

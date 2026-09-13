@@ -15,7 +15,7 @@ branch, no carry to surface B yet:
      single-hand expert (EDGE_MIN 0.17).
   B  both arms rise to a pre-grasp on the way in (UpperRamp, 2 deg/tick);
      at the stand the reach and the 45 deg palm pitch run as ONE servo, no
-     phases, waist locked -- a commanded lean is not delivered (diag_lean).
+     phases; both arms and forward waist pitch are solved together.
   C  one capture region per rim bar, both must be inside before the two
      grippers close in the same frame.
   D  lift 0.10 m; crate roll/pitch over 8 deg or either hand losing contact
@@ -61,6 +61,7 @@ from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient  # noqa: E402
 from locomani.tasks.crate import round_runner  # noqa: E402
+from locomani.tasks.crate.bimanual_ik import BimanualIK  # noqa: E402
 from locomani.tasks.crate.carry_phases import (  # noqa: E402
     CarryRoundContext,
     _phase_approach,
@@ -98,26 +99,10 @@ LAT_TOL = 0.04  # lateral gate at the stand
 WAYPOINT_BACK = 0.35  # m behind the stand along the normal
 WAYPOINT_TOL = 0.08
 PALM_PITCH_DEG = 60  # 45 put wrist_yaw_link on the rim (reach_vert sweep 2026-09-07); 60 clears it at 0.30-0.36
-# NO waist. diag_lean.py: 2-10% of a commanded lean is delivered on either
-# channel, and pilot 4 confirmed it (34 deg commanded, 2.8 measured). The
-# arms alone reach both bars at 0.40 m with the palms at 45 deg (arms-only
-# sweep 2026-09-07: 1.0 cm standing, 0.0 with a 9 cm crouch), at 0.47 they
-# do not (6.4 cm) -- so the stand-off is what changed, not the waist.
-#
-# 2026-09-12: THAT READING IS policy/release's. diag_lean.py re-run on both
-# checkpoints the same hour (outputs/diag/lean_20260912/): planner-channel
-# delivery ratio 0.09 on release (waist reaches 2.0 deg at the 0.52 command)
-# but 0.87 on policy/sonic_v1_1 (25.9 deg, i.e. the MJCF's 29.79 deg limit is
-# the binding constraint, not the policy). v1.1 has been the default since
-# 2026-09-11. FK on the measured joints splits the palm motion: on v1.1 the
-# lean itself lowers the palm 10.4 cm and costs 2.2 cm of forward reach (the
-# palm hangs BELOW the waist pivot, so it swings back as it drops); on
-# release the same command delivers no lean and only degrades arm tracking
-# (shoulder pitch error 8.2 -> 13.5 deg, elbow -6.0 -> +12.3).
-# The zero STAYS until a pilot says otherwise -- unlocking it changes what
-# the recorded reference means, and every crate baseline to date was recorded
-# with the waist at zero. Ledger crate.md 2026-09-12.
-WAIST_PITCH_MAX = 0.0
+# Forward lean participates in the shared two-hand solve on SONIC v1.1.
+# This task cap is additionally bounded by the physical robot model. Old
+# locked-waist trials remain historical evidence, not a runtime restriction.
+WAIST_PITCH_MAX = 0.4  # radians (22.9 degrees); yaw and roll remain neutral
 
 # --- C: capture region per bar, in the stand frame (x toward the crate) ------
 # Capture region per hand, in the stand frame: n points from the robot ACROSS
@@ -244,11 +229,10 @@ class BimanualArms:
         self.arm = PlannerArm(p, "right", send_vel=True)
         self.arm.guard = None  # no off-hand: both hands work
         ik = self.arm.ik
-        # All three waist joints locked: what the IK put there was not
-        # delivered (see WAIST_PITCH_MAX), and a reference the body does not
-        # follow is a lie in the recorded data.
-        ik.lo[12:15] = 0.0
-        ik.hi[12:15] = 0.0
+        self.solver = BimanualIK(ik, waist_pitch_max=WAIST_PITCH_MAX, tool_offset=OFFSET)
+        # Keep yaw/roll neutral while allowing forward pitch within real limits.
+        ik.lo[12:15] = self.solver.lo[12:15]
+        ik.hi[12:15] = self.solver.hi[12:15]
         # Arm bounds that make the "arm overhead" branch impossible. Pilots
         # 7-9: one arm or the other flipped to a hyperextended elbow with the
         # wrist rolled 50-70 deg and shot 60-70 cm above the bar; the policy
@@ -275,6 +259,13 @@ class BimanualArms:
         R = Primitives._rot(s["palms"][side]["quat"])
         return palm + R @ OFFSET, R
 
+    def reach_errors(self, s, targets_w, rots_w):
+        """Both hand residuals at the current pelvis pose, without sending motion."""
+        q = self.solve(s, targets_w, rots_w, iters=200, from_measured=True, rot_weight=0.25)
+        points, _ = self.solver.tool_poses(q)
+        targets = [self.p.world_to_root_full(targets_w[side], s) for side in self.solver.sides]
+        return np.linalg.norm(points - targets, axis=1)
+
     def solve(
         self,
         s,
@@ -287,20 +278,15 @@ class BimanualArms:
         posture_weight=0.0,
         ghost_targets=None,
     ):
-        """One coupled step: each arm in turn. use_waist stays on so the
-        solver's structure is unchanged, but the waist bounds are zero, so it
-        cannot move.
+        """Solve both hands and their shared waist in one system.
 
-        from_measured: warm-start from the MEASURED arm joints instead of the
-        last command. Warm-starting from the command let the reference drift
-        away from what the policy tracks -- pilot 8: right wrist roll 12 ->
-        66 deg off, shoulder yaw 8 -> 47, the hand climbing 10 cm while the
-        overdrive kept pushing. From the measurement the command can only
-        ever be one small step from the body.
+        from_measured seeds the waist and both arms from encoder feedback;
+        otherwise the previous command is the initial posture. Joint bounds
+        constrain the solution; trajectory pacing belongs to the caller.
         """
         q = self.arm.q.copy()
         if from_measured:
-            q[15:29] = np.asarray(s["joints"], dtype=float)[15:29]
+            q[12:29] = np.asarray(s["joints"], dtype=float)[12:29]
         ghost = getattr(self, "ghost", None)
         if ghost is not None:
             # ghost_trace.GhostTargetTrace: the aimed wrist poses, per state seq.
@@ -310,23 +296,19 @@ class BimanualArms:
             # jitters (user, 2026-09-10: "the ghost moves and leaves the rail").
             ghost.row(s.get("seq"), ghost_targets if ghost_targets is not None else targets_w, rots_w)
         Rp = Primitives._rot(s["pelvis"]["quat"])
-        for side in ("left", "right"):
-            tgt = self.p.world_to_root_full(targets_w[side], s)
-            rot = Rp.T @ rots_w[side]
-            q, pe, re = self.arm.ik.solve(
-                side,
-                tgt,
-                rot,
-                q_mj29=q,
-                iters=iters,
-                use_waist=True,
-                waist_cost=3.0,
-                point_offset=OFFSET,
-                rot_weight=rot_weight,
-                posture=posture,
-                posture_weight=posture_weight,
-            )
-        return q
+        targets = [self.p.world_to_root_full(targets_w[side], s) for side in self.solver.sides]
+        rotations = [Rp.T @ rots_w[side] for side in self.solver.sides]
+        return self.solver.solve(
+            q,
+            targets,
+            rotations,
+            iterations=iters,
+            posture=posture,
+            rot_weight=rot_weight,
+            posture_weight=posture_weight,
+            # The wall expert can additionally constrain shoulder pitch.
+            joint_limits=(self.arm.ik.lo, self.arm.ik.hi),
+        ).joints
 
     def push(self, q):
         self.arm.q = q

@@ -5,9 +5,10 @@ dropped by the refactor) for the same reason `diag_wrist.py` was restored on
 2026-09-11: its answer is a per-checkpoint number that a production constant
 was set from, and the checkpoint has changed.
 
-The constant here is `bimanual_carry.WAIST_PITCH_MAX = 0.0` and the three
-zeroed IK bounds in `BimanualArms.__init__` (`ik.lo[12:15] = ik.hi[12:15] = 0`)
--- the crate expert streams waist = 0 in every `upper_body_position[17]` frame.
+At restoration on 2026-09-12, `bimanual_carry.WAIST_PITCH_MAX = 0.0` and
+`BimanualArms.__init__` zeroed all three waist bounds. This describes that
+historical baseline. Forward pitch was enabled in the shared two-hand solver
+on 2026-09-13; see docs/handoff/crate-carry-waist-20260913.md for new evidence.
 The justification on record is this diagnostic's old reading, 2-10% of a
 commanded lean delivered on `policy/release`, confirmed by crate pilot 4 (34
 deg commanded, 2.8 measured). But the native reference-replay of 2026-09-10

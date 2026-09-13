@@ -1,4 +1,4 @@
-# STATE — 2026-09-12
+# STATE — 2026-09-13
 
 ## Delivery
 
@@ -19,6 +19,9 @@
   fallback, strict source validation and cache invalidation. Isaac 4.5 fresh-install
   render passes. [Cause, update commands and evidence](handoff/isaac-asset-portability-20260912.md).
 
+- Carry / wall waist pitch enabled and measured on v1.1; deep-grasp reliability
+  remains limited. [Implementation and evidence](handoff/crate-carry-waist-20260913.md).
+
 ## Runtime evidence and remaining uncertainty
 
 - Final bottle A/B: coupled 2/30 -> 3/30; teleop 10/10 -> 9/10. Both gates FAIL
@@ -35,11 +38,12 @@
 
 ## Shared resources
 
-- Crate walking batches and Isaac asset validation have stopped. At 2026-09-12
-  17:40 UTC GPU 0 was free; GPU 1 retained an unrelated job. Recheck live state.
-- Outputs: `outputs/crate_visual_expert_20260912/`,
+- All owned crate waist diagnostic/pilot stacks have stopped; instance 1 lock is free.
+  At 2026-09-13 02:38 UTC GPU 0 was idle; GPU 1 had unrelated work. Recheck live state.
+- Current evidence: `outputs/crate_carry_waist_20260913/`; failures and source videos retained.
+- Previous outputs: `outputs/crate_visual_expert_20260912/`,
   `outputs/crate_walk_stability_20260912/`, `outputs/isaac_asset_portability_20260912/`.
-  All trials, original videos and weights preserved; no owned GPU job remains.
+  Datasets, recordings and weights are preserved.
 
 ## Evidence and preserved constraints
 
