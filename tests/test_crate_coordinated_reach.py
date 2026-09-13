@@ -116,3 +116,17 @@ def test_dropped_basket_aborts_instead_of_waiting_motionless_until_global_timeou
     command = policy.step(0.05, estimate(0.05, state), state, [0.0001] * 2)
     assert command.finished and command.reason == "lost_attachment"
     np.testing.assert_array_equal(command.joints, before)
+
+
+def test_delayed_camera_frames_do_not_shrink_the_velocity_measurement_interval():
+    policy, state = setup()
+    previous = policy.step(0, estimate(0, state), state, [0.08] * 2).joints
+    intervals = np.array([0.04, 0.11, 0.06, 0.16, 0.04] * 8)
+    velocities = []
+    for now, dt in zip(np.cumsum(intervals), intervals):
+        command = policy.step(now, estimate(now, state), state, [0.08] * 2)
+        velocities.append((command.joints - previous) / dt)
+        previous = command.joints.copy()
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+    acceleration = np.diff(velocities, axis=0) / ((intervals[1:] + intervals[:-1]) / 2)[:, None]
+    assert np.max(np.abs(acceleration)) <= policy.config.visual.joint_acceleration + 1e-5

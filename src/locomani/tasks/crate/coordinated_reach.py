@@ -69,14 +69,16 @@ class CoordinatedReach:
             vlo,
             -np.maximum(
                 0,
-                np.sqrt(2 * braking_acceleration * np.maximum(self.x - self.travel_lo, 0)) - braking_acceleration * 0.1,
+                np.sqrt(2 * braking_acceleration * np.maximum(self.x - self.travel_lo, 0))
+                - braking_acceleration * max(dt, 0.1),
             ),
         )
         vhi = np.minimum(
             vhi,
             np.maximum(
                 0,
-                np.sqrt(2 * braking_acceleration * np.maximum(self.travel_hi - self.x, 0)) - braking_acceleration * 0.1,
+                np.sqrt(2 * braking_acceleration * np.maximum(self.travel_hi - self.x, 0))
+                - braking_acceleration * max(dt, 0.1),
             ),
         )
         lo = np.maximum(self.travel_lo, self.x + vlo * dt)
@@ -109,7 +111,8 @@ class CoordinatedReach:
         cfg = self.config.visual
         if self.started is None:
             self.started = self.last_time = now
-        dt = float(np.clip(now - self.last_time, 0, 0.1))
+        control_dt = max(float(now - self.last_time), 0.0)
+        dt = min(control_dt, 0.1)  # cap trajectory progress, not the physical rate interval
         self.last_time = now
         if now - self.started > cfg.timeout_seconds:
             return self.result("timeout", True)
@@ -121,6 +124,7 @@ class CoordinatedReach:
             stale = now - (self.last_seen if self.last_seen is not None else self.started) > cfg.vision_timeout
             return self.result("vision_lost" if stale else "waiting_for_vision", stale)
         dt = dt if self.was_visible else 0.0
+        control_dt = control_dt if self.was_visible else 0.0
         self.was_visible, self.last_seen = True, estimate.timestamp
         self.elapsed += dt
         base, origin = rotation(state["pelvis"]["quat"]), np.asarray(state["pelvis"]["pos"])
@@ -151,7 +155,9 @@ class CoordinatedReach:
             self.duration = max(3.0, 1.875 * distance / cfg.approach_speed)
             self.reach_object = obj_position.copy()
             self.enter("reach")
-        self.diagnostics.update(reference_elapsed=self.elapsed, planned_reach_seconds=self.duration)
+        self.diagnostics.update(
+            reference_elapsed=self.elapsed, planned_reach_seconds=self.duration, control_interval=control_dt
+        )
         if self.phase == "reach":
             if np.linalg.norm(obj_position - self.reach_object) > self.region.half_length:
                 return self.result("basket_displaced_before_capture", True)
@@ -170,10 +176,10 @@ class CoordinatedReach:
                 u, _ = blend(self.elapsed, self.duration)
                 commanded = self.start_tools + u * (targets - self.start_tools)
                 attitudes = np.array([r(u).as_matrix() for r in self.rotations])
-                self.advance(commanded, attitudes, tools, dt)
+                self.advance(commanded, attitudes, tools, control_dt)
         if self.phase == "close":
             # Maintain the paired world reference while smoothly braking any residual body motion.
-            self.advance(self.closed_targets - cfg.tracking_gain * self.feedback, self.attitudes, tools, dt)
+            self.advance(self.closed_targets - cfg.tracking_gain * self.feedback, self.attitudes, tools, control_dt)
             self.closure = min(1.0, self.elapsed / cfg.close_seconds)
             if self.elapsed >= cfg.close_seconds + 0.2:
                 if min(hand_openings) < 0.003:
@@ -197,7 +203,7 @@ class CoordinatedReach:
             if tilt > cfg.max_tilt_deg:
                 return self.result("basket_tilt", True)
             u, _ = blend(self.elapsed, cfg.lift_seconds) if self.phase == "lift" else (1, 0)
-            self.advance(self.lift_targets + [0, 0, u * cfg.lift_height], self.attitudes, tools, dt)
+            self.advance(self.lift_targets + [0, 0, u * cfg.lift_height], self.attitudes, tools, control_dt)
             if self.phase == "lift":
                 delivered_probe = np.mean(tools[:, 2] - self.closed_tools[:, 2]) >= cfg.probe_height
                 if delivered_probe and (rise < cfg.probe_height * 0.35 or attachment > 0.03):
