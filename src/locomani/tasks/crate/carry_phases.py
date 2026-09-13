@@ -60,6 +60,7 @@ class CarryRoundContext:
     log: Callable
     video_label: str
     m: dict
+    motion_recording: Any = None
 
     # -- filled in by _phase_reset, read by later phases -------------------
     surf: dict = None  # meta["surfaces"]["A"], read by _phase_approach
@@ -98,23 +99,30 @@ class CarryRoundContext:
 def on_tick(ctx: CarryRoundContext, _s, dist) -> None:
     u = float(np.clip(1.0 - (dist - 0.10) / 0.90, 0.0, 1.0))
     ctx.ramp.push(ctx.q_free + (3 * u * u - 2 * u**3) * (ctx.q_pre17 - ctx.q_free))
+    if ctx.motion_recording is not None:
+        ctx.motion_recording.sample(time.time(), ctx.ramp.q, ctx.p.cmd.upper_body_vel, _s)
 
 
 def brake(ctx: CarryRoundContext) -> None:
     # pelvis speed under 0.06 m/s for 0.25 s, arms finishing their rise
     p = ctx.p
     t0, still = time.time(), None
+    if ctx.motion_recording is not None:
+        ctx.motion_recording.phase = "brake"
     prev = p.pelvis_xy(p.obs())
     while time.time() - t0 < 6.0:
         ctx.ramp.push(ctx.q_pre17)
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=(float(np.cos(ctx.psi)), float(np.sin(ctx.psi)), 0.0))
         time.sleep(DT)
         cur = p.pelvis_xy(p.obs())
+        if ctx.motion_recording is not None:
+            ctx.motion_recording.sample(time.time(), ctx.ramp.q, p.cmd.upper_body_vel, p.obs())
         v = float(np.linalg.norm(cur - prev)) / DT
         prev = cur
         still = time.time() if v > 0.06 else (still if still is not None else time.time())
         if still is not None and time.time() - still > 0.25 and time.time() - t0 > 1.0:
             break
+    ctx.m["brake_seconds"] = time.time() - t0
 
 
 def stand_metrics(ctx: CarryRoundContext, tag):
@@ -192,23 +200,26 @@ def pitched(ctx: CarryRoundContext, sd):
 
 def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     from locomani.tasks.crate.bimanual_carry import OBJ, STAND_OFF, hand_txt
+    from locomani.tasks.crate.visual_approach import initial_robot_xy
 
     p, reset, meta, rng = ctx.p, ctx.reset, ctx.meta, ctx.rng
     ctx.surf = meta["surfaces"]["A"]
     ctx.hx = float(ctx.surf["flat_half_extent"][0])
     crate0 = np.asarray(meta["objects"][OBJ]["init_pos"], dtype=float)
 
-    # --- reset: crate yaw jitter, robot spawn 1.0-1.3 m behind the stand ----
+    # Reset before recording; distance is measured from the table edge.
     crate_dyaw = 0.0  # bars parallel to the table edge (was +-15 deg)
     crate_dy = float(rng.uniform(-0.10, 0.10))
     n0 = np.array([1.0, 0.0])  # crate near wall faces -x
     stand0 = crate0[:2] - n0 * STAND_OFF
-    spawn_back = float(rng.uniform(1.0, 1.3))
+    start_edge_distance = float(rng.uniform(1.2, 1.5))
     spawn_lat = float(rng.uniform(-0.15, 0.15))
-    spawn_xy = stand0 - n0 * spawn_back + np.array([0.0, spawn_lat])
+    spawn_xy = initial_robot_xy(meta, start_edge_distance) + np.array([0.0, spawn_lat])
+    spawn_back = float(np.dot(stand0 - spawn_xy, n0))
     robot_nom = np.asarray(meta["robot_start"]["xy"], dtype=float)
     psi0 = float(np.arctan2(*(crate0[:2] - spawn_xy)[::-1])) + float(rng.uniform(-0.17, 0.17))
     ctx.m.update(crate_dyaw_deg=np.degrees(crate_dyaw), crate_dy=crate_dy, spawn_back=spawn_back, spawn_lat=spawn_lat)
+    ctx.m.update(start_edge_distance=start_edge_distance, start_xy=spawn_xy.tolist(), start_yaw=psi0)
 
     # reset() takes an ABSOLUTE yaw (privileged_pub: qpos quat := yaw_quat),
     # so the crate's scene yaw (90 deg, handles at +-y) is the base, not zero.
@@ -234,6 +245,8 @@ def _phase_reset(ctx: CarryRoundContext) -> dict | None:
     fv0 = (float(np.cos(psi0)), float(np.sin(psi0)), 0.0)
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=fv0)
     ctx.s = p.obs()
+    edge_x = float(ctx.surf["xy"][0]) - ctx.hx
+    ctx.m["initial_edge_distance"] = edge_x - float(ctx.s["pelvis"]["pos"][0])
     if ctx.s["fallen"]:
         ctx.m["why"] = "[stand] did not stabilise after reset"
         return ctx.m
@@ -280,6 +293,7 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     # pre-grasp: both palms at the staging points, expressed for the FINAL stand
     ctx.arms = BimanualArms(p)
     arms = ctx.arms
+    arms.motion_recording = ctx.motion_recording
     ctx.R_stand = rot_z(psi)
     R_stand = ctx.R_stand
     ctx.rot_w = {sd: R_stand for sd in ("left", "right")}  # fingers level while walking in
@@ -419,7 +433,10 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
     centre, bars, n, y_hat, psi = ctx.centre, ctx.bars, ctx.n, ctx.y_hat, ctx.psi
 
     # --- B+C: one servo: lean + reach + pitch, both hands, to the bars -------
+    handoff_started = time.time()
     arms.start(q17=ctx.ramp.q)
+    ctx.m["handoff_seconds"] = time.time() - handoff_started
+    ctx.m["reach_start_s"] = time.time() - ctx.t_video
     R_stand = rot_z(psi)
     ctx.R_stand = R_stand
     ctx.ref = {sd: bars[sd] + np.array([*(-n * UP_SHORT), UP_ABOVE]) for sd in ("left", "right")}

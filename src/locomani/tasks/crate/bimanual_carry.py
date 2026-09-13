@@ -54,7 +54,7 @@ sys.path.insert(
 
 from locomani import paths  # noqa: E402
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode  # noqa: E402
-from locomani.backends.sonic.primitives import Primitives  # noqa: E402
+from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj  # noqa: E402
 from locomani.backends.sonic.primitives_const import GRASP_CENTRE_OFFSET_CONST  # noqa: E402
 from locomani.backends.sonic.streamed_arm import PlannerArm  # noqa: E402
 from locomani.primitives.g1_joints import ARM_MJ  # noqa: E402
@@ -70,6 +70,7 @@ from locomani.tasks.crate.carry_phases import (  # noqa: E402
 )
 from locomani.tasks.crate.carry_phases_lift import _phase_close, _phase_lift  # noqa: E402
 from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
+from locomani.tasks.crate.motion_recording import MotionRecording  # noqa: E402
 
 OBJ = "blue_crate"
 OFFSET = np.asarray(GRASP_CENTRE_OFFSET_CONST, dtype=float)  # palm -> grip centre, palm frame
@@ -226,6 +227,7 @@ class BimanualArms:
 
     def __init__(self, p: Primitives):
         self.p = p
+        self.motion_recording = None
         self.arm = PlannerArm(p, "right", send_vel=True)
         self.arm.guard = None  # no off-hand: both hands work
         ik = self.arm.ik
@@ -312,7 +314,10 @@ class BimanualArms:
 
     def push(self, q):
         self.arm.q = q
+        sent_at = time.time()
         self.arm._push(q)
+        if self.motion_recording is not None:
+            self.motion_recording.sample(sent_at, upper_body_from_mj(q), self.p.cmd.upper_body_vel, self.p.obs())
 
     def set_hands(self, alpha: float):
         for side, closed in (("left", CRATE_HAND_CLOSED), ("right", CRATE_HAND_CLOSED)):
@@ -348,13 +353,23 @@ def run_round(
         video_label=video_label,
         m={"round": rnd, "ok": False, "why": "", "produced": False},
     )
-    for phase in (_phase_reset, _phase_approach, _phase_grasp, _phase_close, _phase_lift):
-        result = phase(ctx)
-        if result is not None:
-            return result
-        if phase is _phase_reset and record:
-            # See bimanual_wall.run_round: after the settle, before the task.
-            round_runner.start_recording(p, ctx.m)
+    try:
+        for phase in (_phase_reset, _phase_approach, _phase_grasp, _phase_close, _phase_lift):
+            if ctx.motion_recording is not None:
+                ctx.motion_recording.phase = phase.__name__.removeprefix("_phase_")
+            if ctx.t_video is not None:
+                ctx.m.setdefault("phase_started_s", {})[phase.__name__] = time.time() - ctx.t_video
+            result = phase(ctx)
+            if result is not None:
+                return result
+            if phase is _phase_reset:
+                if DUMP_DIR:
+                    ctx.motion_recording = MotionRecording(Path(DUMP_DIR) / f"{video_label}_motion.jsonl", ctx.t_video)
+                if record:
+                    round_runner.start_recording(p, ctx.m)
+    finally:
+        if ctx.motion_recording is not None:
+            ctx.motion_recording.close()
     raise AssertionError("carry_phases: no phase returned a result")
 
 
