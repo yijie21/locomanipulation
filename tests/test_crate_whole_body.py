@@ -183,3 +183,34 @@ def test_body_reference_arrival_cannot_admit_a_still_moving_robot(monkeypatch):
     result = body._phase_whole_body(ctx)
     assert not result["body_stance_ready"]
     assert "did not settle" in result["why"]
+
+
+def test_lift_keeps_capture_command_and_bilateral_geometry():
+    from types import SimpleNamespace
+
+    from locomani.tasks.crate.bimanual_ik import BimanualIK
+    from locomani.tasks.crate.carry_whole_body import PairedLiftReference
+
+    ik = scene_ik()
+    solver = BimanualIK(ik, waist_pitch_max=0.52, waist_dofs="all")
+    q = np.zeros(29)
+    q[12:15] = [0.04, -0.03, 0.5]
+    q[15:22] = [-1.4, 0.2, 0, 1.2, 0, 0.15, 0]
+    q[22:29] = [-1.4, -0.2, 0, 1.2, 0, 0.15, 0]
+    arms = SimpleNamespace(arm=SimpleNamespace(q=q, ik=ik), solver=solver)
+    # Physical limits here, including all waist axes, match the real adapter.
+    ik.lo[12:15], ik.hi[12:15] = solver.lo[12:15], solver.hi[12:15]
+    rotation = Rotation.from_euler("y", 33, degrees=True)
+    state = dict(pelvis=dict(quat=rotation.as_quat()[[3, 0, 1, 2]]))
+    cfg = CrateCarryConfig(reach_control="whole_body", waist_pitch_max=0.52)
+    lift = PairedLiftReference(arms, state, 0.1, cfg)
+    np.testing.assert_array_equal(lift.sample(0), q)
+    before, before_r = solver.tool_poses(q)
+    after, after_r = solver.tool_poses(lift.sample(lift.duration))
+    np.testing.assert_allclose((after - before) @ rotation.as_matrix().T, [[0, 0, 0.1]] * 2, atol=0.001)
+    np.testing.assert_allclose(after_r, before_r, atol=0.002)
+    np.testing.assert_array_equal(lift.target[:12], q[:12])
+    times = np.linspace(0, lift.duration, 301)
+    velocity = np.diff([lift.sample(t) for t in times], axis=0) / (times[1] - times[0])
+    assert np.max(np.abs(velocity)) <= cfg.joint_speed
+    assert np.max(np.abs(np.diff(velocity, axis=0))) / (times[1] - times[0]) <= cfg.joint_acceleration

@@ -58,6 +58,40 @@ class WholeBodyArms(BimanualArms):
             )
 
 
+class PairedLiftReference:
+    """Extend the captured command with one common translation in a frozen frame.
+
+    Re-anchoring to measured palms discards the capture tracking offset. Solving
+    every tick against the moving pelvis then feeds body sway back into the
+    reference. Keep the command's hand attitudes and inter-hand displacement;
+    observations still own contact, tilt and actual lift acceptance.
+    """
+
+    def __init__(self, arms, state, height, config):
+        self.start = arms.arm.q.copy()
+        positions, rotations = arms.solver.tool_poses(self.start)
+        base = Rotation.from_quat(np.asarray(state["pelvis"]["quat"])[[1, 2, 3, 0]]).as_matrix()
+        solution = arms.solver.solve(
+            self.start,
+            positions + base.T @ np.array([0.0, 0.0, height]),
+            rotations,
+            iterations=180,
+            rot_weight=0.5,
+            joint_limits=(arms.arm.ik.lo, arms.arm.ik.hi),
+        )
+        self.target = solution.joints
+        self.errors = solution.errors
+        distance = float(np.max(np.abs(self.target - self.start)))
+        self.duration = max(
+            3.0, 1.875 * distance / config.joint_speed, np.sqrt(5.8 * distance / config.joint_acceleration)
+        )
+
+    def sample(self, elapsed):
+        u = np.clip(elapsed / self.duration, 0.0, 1.0)
+        u = u**3 * (10 - 15 * u + 6 * u * u)
+        return self.start + u * (self.target - self.start)
+
+
 def _phase_whole_body(ctx):
     """Plan at the observed stand; ramp continuously to a low staging pose."""
     from locomani.tasks.crate.carry_phases import admit_grasp, stand_metrics

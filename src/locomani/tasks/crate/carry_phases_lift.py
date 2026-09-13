@@ -59,6 +59,16 @@ def _phase_lift(ctx: CarryRoundContext) -> dict | None:
     lift_ref = {sd: arms.grip_point(s, sd)[0] for sd in ("left", "right")}
     nl = int(round(2.0 / DT))
     nh = int(round(HOLD_S / DT))
+    body_lift = None
+    if ctx.config.reach_control == "whole_body":
+        from locomani.tasks.crate.carry_whole_body import PairedLiftReference
+
+        body_lift = PairedLiftReference(arms, s, LIFT_HEIGHT, ctx.config)
+        ctx.m["lift_reference_errors_m"] = body_lift.errors.tolist()
+        if np.max(body_lift.errors) > 0.02:
+            ctx.m["why"] = "[lift] no continuous paired lift reference"
+            return ctx.m
+        nl = int(np.ceil(body_lift.duration / DT))
     level = 0.0  # + means the left hand is lowered
     max_dz = 0.0
     for k in range(1, nl + nh + 1):
@@ -73,7 +83,7 @@ def _phase_lift(ctx: CarryRoundContext) -> dict | None:
             "left": lift_ref["left"] + np.array([0.0, 0.0, z_lift - 0.5 * level]),
             "right": lift_ref["right"] + np.array([0.0, 0.0, z_lift + 0.5 * level]),
         }
-        arms.push(arms.solve(s, tgt, rot_w))
+        arms.push(body_lift.sample(k * DT) if body_lift is not None else arms.solve(s, tgt, rot_w))
         if k % int(round(0.5 / DT)) == 0:
             log(
                 f"[lift] t={k * DT:.1f} rise {float(s['objects'][OBJ]['pos'][2]) - z0:+.3f} m "

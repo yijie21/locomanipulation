@@ -322,18 +322,22 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     # From zero it finds the comfortable branch (elbow 43, wrist roll 7,
     # 61 deg from the nearest limit), and every later solve warm-starts there.
     arms.arm.q = np.zeros(29)
-    q_pre = arms.solve(s_stand, up_w, ctx.rot_w, iters=200)
     if ctx.config.reach_control == "whole_body":
         # Walk with a comfortable carried posture; low reaching begins only
         # after foot placement is observed and a supported hinge is planned.
-        q_pre[12:15] = 0
+        q_pre = np.zeros(29)
         q_pre[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
         q_pre[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
+    else:
+        q_pre = arms.solve(s_stand, up_w, ctx.rot_w, iters=200)
     ctx.q_pre17 = upper_body_from_mj(q_pre)
     q_pre17 = ctx.q_pre17
     arms.start(q17=q_free, settle_seconds=0.0)
     ctx.ramp = ramp = arms.motion
     for sd in ("left", "right"):
+        if ctx.config.reach_control == "whole_body":
+            log(f"[walk posture] {sd}: arm q {np.round(np.degrees(q_pre[ARM_MJ[sd]]), 0).tolist()}")
+            continue
         pos, R = arms.arm.ik.fk(q_pre, sd)
         g = np.asarray(s_stand["pelvis"]["pos"]) + Primitives._rot(s_stand["pelvis"]["quat"]) @ (pos + R @ OFFSET)
         log(
@@ -516,7 +520,8 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             cmd[sd] = ref[sd] + corr + np.array([*(y_hat * across_int[sd]), 0.0])
         rot_w = {sd: pitched(ctx, sd) for sd in ("left", "right")}
         ctx.rot_w = rot_w
-        q = arms.solve(s, cmd, rot_w, from_measured=True, rot_weight=0.25, ghost_targets=ref)
+        whole_body = ctx.config.reach_control == "whole_body"
+        q = arms.solve(s, cmd, rot_w, from_measured=not whole_body, rot_weight=0.25, ghost_targets=ref)
         # Joint-space compensation on the wrist pitch alone: the policy delivers
         # the right wrist pitch 20 deg short of the command (diagnostic dump
         # 2026-09-07: cmd 49 / meas 29, every other joint within 10), which is
@@ -526,7 +531,7 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
         # made this an integrator that sat on its +-15 deg cap; pilots 25-28
         # then showed the right wrist 50-60 deg past the command and the hand
         # 13 cm high.
-        for sd in ("left", "right"):
+        for sd in () if whole_body else ("left", "right"):
             j = ARM_MJ[sd][5]
             gap = float(q[j] - s["joints"][j])
             q[j] += float(np.clip(WRIST_PITCH_COMP * gap, -WRIST_PITCH_COMP_CAP, WRIST_PITCH_COMP_CAP))
