@@ -757,3 +757,14 @@ table reduced measured wrist bend in this sample, but did not establish more wai
 bending, nearly straight arms, less shake or high reliability. Read that report when
 changing height: the generic scene builder also scales table XY, and a fixed-pelvis
 CPU IK solution does not predict the posture reached by the moving robot.
+
+The experimental [30 cm carry profile](../configs/tasks/crate_table30.json) opts
+into `carry.pelvis_height=0.53` and `carry.waist_pitch_max=0.52` radians. Use it only
+with a separately prepared low scene; the profile does not rebuild the table.
+After walking, both hand staging targets descend with measured pelvis motion.
+`carry.height_speed` bounds the planner height command; feedback corrects the
+command-to-measurement offset throughout crouch, grasp and lift. A 20 s crouch
+timeout is a failure. Low-pose admission rechecks actual stance and two-hand IK.
+The episode ends in the low pose; reset owns recovery, avoiding an implicit
+stand-up with the held crate. `carry.pelvis_height=null` disables this phase.
+These controls require live validation; a static IK solution is not an execution result.

@@ -137,6 +137,13 @@ def _cast(current: Any, raw: str, tp: Any = None) -> Any:
     pick the element type for a tuple/list field whose *current* value is
     empty -- `type(current[0])` has nothing to look at then.
     """
+    members = typing.get_args(tp)
+    if type(None) in members:
+        if raw.strip().lower() == "null":
+            return None
+        non_null = [member for member in members if member is not type(None)]
+        if current is None and len(non_null) == 1 and non_null[0] in (bool, int, float, str):
+            return _cast(non_null[0](), raw, non_null[0])
     if isinstance(current, bool):
         low = raw.strip().lower()
         if low in ("1", "true", "yes", "on"):

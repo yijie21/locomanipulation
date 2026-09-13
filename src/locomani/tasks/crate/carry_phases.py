@@ -141,7 +141,7 @@ def stand_target(centre, normal, lateral_axis, edge_x):
     return target
 
 
-def admit_grasp(ctx: CarryRoundContext) -> dict | None:
+def admit_grasp(ctx: CarryRoundContext, *, check_reach=True) -> dict | None:
     """Keep edge/alignment gates; admit farther targets by bounded two-hand IK."""
     from locomani.tasks.crate.bimanual_carry import (
         ACROSS_TOL,
@@ -166,7 +166,7 @@ def admit_grasp(ctx: CarryRoundContext) -> dict | None:
         return m
     # The old far-distance band assumed arm-only reach. For a farther crate,
     # admit only a simultaneous, bounded solution for both grasp points.
-    if m["stand_err"] < -0.08:
+    if check_reach and (m["stand_err"] < -0.08 or ctx.config.pelvis_height is not None):
         rotations = {side: rot_z(ctx.psi) @ rot_y(np.radians(PALM_PITCH_DEG)) for side in ("left", "right")}
         errors = ctx.arms.reach_errors(ctx.s, ctx.bars, rotations)
         m["reach_ik_errors_m"] = errors.tolist()
@@ -296,6 +296,10 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
         pos=[float(stand_xy[0]), float(stand_xy[1]), float(s["pelvis"]["pos"][2])],
         quat=[float(np.cos(psi / 2)), 0.0, 0.0, float(np.sin(psi / 2))],
     )
+    if ctx.config.pelvis_height is not None:
+        # Solve the staging pose at the planned low height. The same joint
+        # pose stays higher while walking; both hands descend with the body.
+        s_stand["pelvis"]["pos"][2] = ctx.config.pelvis_height
     # Seed the pre-grasp IK from the zero posture, NOT the measured arms:
     # from the hanging arms the DLS lands in a straight-elbow, wrist-rolled
     # branch (elbow -6 deg, wrist roll 80) that the policy tracks with a 20 deg
@@ -391,7 +395,7 @@ def _phase_approach(ctx: CarryRoundContext) -> dict | None:
     ctx.m.update(yaw_err_deg=yaw_err, stand_err=stand_err, lateral=lateral, edge_clear=edge_clear)
     centre, bars, n, y_hat, psi = crate_frame(p, s)
     ctx.s, ctx.centre, ctx.bars, ctx.n, ctx.y_hat, ctx.psi = s, centre, bars, n, y_hat, psi
-    return admit_grasp(ctx)
+    return admit_grasp(ctx, check_reach=ctx.config.pelvis_height is None)
 
 
 def _phase_grasp(ctx: CarryRoundContext) -> dict | None:

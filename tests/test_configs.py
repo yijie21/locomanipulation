@@ -25,15 +25,39 @@ same effective values the old argv did, without actually running the pipeline.
 
 import unittest
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 
 from locomani.backends.sonic.config import SonicBackendConfig
+from locomani.config_base import apply_overrides
 from locomani.pipeline.eval_config import EvalConfig
 from locomani.pipeline.pilot_config import PilotConfig
 from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle.reach_config import ReachConfig
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+class OptionalOverrideTests(unittest.TestCase):
+    def test_optional_scalars_parse_from_the_declared_type_and_can_be_cleared(self):
+        @dataclass
+        class Config:
+            height: float | None = None
+            count: int | None = None
+            enabled: bool | None = None
+            label: str | None = None
+
+        cfg = apply_overrides(Config(), ["height=0.53", "count=2", "enabled=false", "label=fixture"])
+        self.assertEqual(cfg, Config(0.53, 2, False, "fixture"))
+        self.assertEqual(apply_overrides(cfg, ["height=null", "count=null", "enabled=null", "label=null"]), Config())
+
+    def test_null_does_not_clear_a_required_number(self):
+        @dataclass
+        class Config:
+            height: float = 0.53
+
+        with self.assertRaises(ValueError):
+            apply_overrides(Config(), ["height=null"])
 
 
 class BottleVisibleTaskTests(unittest.TestCase):

@@ -77,7 +77,7 @@ PALM_PITCH_DEG = 60  # 45 put wrist_yaw_link on the rim (reach_vert sweep 2026-0
 # Forward lean participates in the shared two-hand solve on SONIC v1.1.
 # This task cap is additionally bounded by the physical robot model. Old
 # locked-waist trials remain historical evidence, not a runtime restriction.
-WAIST_PITCH_MAX = 0.4  # radians (22.9 degrees); yaw and roll remain neutral
+WAIST_PITCH_MAX = DEFAULT_CARRY.waist_pitch_max  # compatibility default for the wall expert
 
 # --- C: capture region per bar, in the stand frame (x toward the crate) ------
 # Capture region per hand, in the stand frame: n points from the robot ACROSS
@@ -204,10 +204,11 @@ class BimanualArms:
         self.config = config
         self.motion = None
         self.motion_recording = None
+        self.height_control = None
         self.arm = PlannerArm(p, "right", send_vel=True)
         self.arm.guard = None  # no off-hand: both hands work
         ik = self.arm.ik
-        self.solver = BimanualIK(ik, waist_pitch_max=WAIST_PITCH_MAX, tool_offset=OFFSET)
+        self.solver = BimanualIK(ik, waist_pitch_max=(config or DEFAULT_CARRY).waist_pitch_max, tool_offset=OFFSET)
         # Keep yaw/roll neutral while allowing forward pitch within real limits.
         ik.lo[12:15] = self.solver.lo[12:15]
         ik.hi[12:15] = self.solver.hi[12:15]
@@ -237,6 +238,10 @@ class BimanualArms:
             self.motion = CarryMotion(self.arm, self.solver, self.config, time.time())
 
     def stop(self):
+        if self.height_control is not None:
+            # The episode ends in its measured squat. Do not stand up with a
+            # held crate as an unmeasured cleanup movement; reset owns recovery.
+            return
         self.arm.stop()
 
     def grip_point(self, s, side):
@@ -297,6 +302,10 @@ class BimanualArms:
 
     def push(self, q):
         sent_at = time.time()
+        if self.height_control is not None:
+            s = self.p.obs()
+            self.arm.mode = LocomotionMode.IDEL_SQUAT
+            self.arm.height = self.height_control.step(s["wall"], s["pelvis"]["pos"][2])
         if self.motion is not None:
             q = self.motion.step(q, sent_at)
             self.arm._push(q, reference_velocity=self.motion.reference.velocity)
@@ -304,7 +313,19 @@ class BimanualArms:
             self.arm.q = q
             self.arm._push(q)
         if self.motion_recording is not None:
-            self.motion_recording.sample(sent_at, upper_body_from_mj(q), self.p.cmd.upper_body_vel, self.p.obs())
+            self.motion_recording.sample(
+                sent_at,
+                upper_body_from_mj(q),
+                self.p.cmd.upper_body_vel,
+                self.p.obs(),
+                body_height=None
+                if self.height_control is None
+                else {
+                    "command": self.arm.height,
+                    "feedback_wall": self.height_control.wall,
+                    "target": self.height_control.target,
+                },
+            )
 
     def set_hands(self, alpha: float):
         for side, closed in (("left", CRATE_HAND_CLOSED), ("right", CRATE_HAND_CLOSED)):
@@ -342,8 +363,14 @@ def run_round(
         m={"round": rnd, "ok": False, "why": "", "produced": False},
         config=config,
     )
+    from locomani.tasks.crate.carry_crouch import _phase_crouch
+
     try:
-        for phase in (_phase_reset, _phase_approach, _phase_grasp, _phase_close, _phase_lift):
+        phases = (_phase_reset, _phase_approach)
+        if config.pelvis_height is not None:
+            phases += (_phase_crouch,)
+        phases += (_phase_grasp, _phase_close, _phase_lift)
+        for phase in phases:
             if ctx.motion_recording is not None:
                 ctx.motion_recording.phase = phase.__name__.removeprefix("_phase_")
             if ctx.t_video is not None:
