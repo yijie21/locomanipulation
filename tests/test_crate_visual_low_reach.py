@@ -58,3 +58,33 @@ def test_support_frame_recovers_a_rigid_base_rotation_from_foot_encoders_only():
     origin, base = frame.observe(q, [1, 0, 0, 0])
     np.testing.assert_allclose(origin, frame.origin)
     np.testing.assert_allclose(frame.feet(q) @ base.T + origin, frame.anchors)
+
+
+def test_lift_does_not_call_tracking_delay_an_empty_grasp_but_has_a_deadline():
+    policy, q = setup()
+    root = np.array([1, 0, 0, 0])
+    object_position = policy.frame.origin + visible(0).position
+    object_rotation = visible(0).rotation
+
+    def observe(now):
+        origin, base = policy.frame.observe(q, root)
+        return CrateEstimate(base.T @ (object_position - origin), base.T @ object_rotation, now, 0, {})
+
+    for now in np.arange(0, 20, 0.04):
+        command = policy.step(now, observe(now), q, root, [0.016] * 2)
+        q, root = command.joints, command.root_quaternion
+        assert not command.finished, command.reason
+        if command.phase == "lift":
+            break
+    assert command.phase == "lift"
+    started = now
+    # The decoder has not yet delivered the requested hand motion. Both jaws
+    # still surround the visible bar, so an elapsed 1.5 s alone proves nothing.
+    for now in np.arange(started + 0.04, started + 1.8, 0.04):
+        command = policy.step(now, observe(now), q, root, [0.016] * 2)
+        assert not command.finished, command.reason
+    for now in np.arange(now + 0.04, started + 6, 0.04):
+        command = policy.step(now, observe(now), q, root, [0.016] * 2)
+        if command.finished:
+            break
+    assert command.finished and command.reason == "probe_not_attached"

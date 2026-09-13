@@ -58,3 +58,25 @@ def test_missing_visual_target_cannot_keep_walking():
     missing = approach.step(0.2, None, [1, 0, 0, 0], grasp_pose_available=False)
     assert missing.speed == 0 and not missing.ready
     assert approach.step(0.8, None, [1, 0, 0, 0], grasp_pose_available=False).reason == "approach_vision_lost"
+
+
+def test_millimetre_pixel_fit_jitter_does_not_look_like_continuous_body_motion():
+    approach = VisualApproach(CrateVisualConfig(settle_seconds=0.3))
+    ready = False
+    for index, now in enumerate(np.arange(0, 1.5, 0.03)):
+        position = np.array([0.40 + (-1) ** index * 0.003, 0, 0])
+        command = approach.step(now, ApproachTarget(position, now, "pose"), [1, 0, 0, 0], grasp_pose_available=True)
+        ready |= command.ready
+    assert ready, "zero-mean 3 mm pose noise prevented a quiet-stance decision"
+
+
+def test_sustained_visual_motion_still_prevents_stance_admission():
+    approach = VisualApproach(CrateVisualConfig(settle_seconds=0.3))
+    for now in np.arange(0, 1.5, 0.03):
+        command = approach.step(
+            now,
+            ApproachTarget(np.array([0.40 - 0.12 * now, 0, 0]), now, "pose"),
+            [1, 0, 0, 0],
+            grasp_pose_available=True,
+        )
+        assert not command.ready

@@ -145,7 +145,7 @@ class VisualLowReach:
         if self.phase == "bend":
             u, speed = blend(self.elapsed, self.duration)
             self.q = self.q0 + u * (self.q1 - self.q0)
-            self.velocity = speed * (self.q1 - self.q0)
+            self.velocity = (speed if dt > 0 else 0) * (self.q1 - self.q0)
             self.root = quaternion(self.roots(u).as_matrix())
             if self.elapsed >= self.duration:
                 self.reference = JointReference(
@@ -185,6 +185,7 @@ class VisualLowReach:
             if self.elapsed >= cfg.close_seconds + 0.2:
                 if min(hand_openings) < 0.003:
                     return self.result("empty_gripper", True)
+                self.closed_tools = tools.copy()
                 self.closed_relative = (tools - object_position) @ object_rotation
                 self.closed_object = object_position.copy()
                 self.lift_start = self.q.copy()
@@ -214,13 +215,16 @@ class VisualLowReach:
             if tilt > cfg.max_tilt_deg:
                 return self.result("visual_tilt", True)
             if self.phase == "lift":
-                if self.elapsed > self.duration / 2 and (rise < cfg.probe_height * 0.35 or attachment > 0.03):
+                delivered_probe = np.mean(tools[:, 2] - self.closed_tools[:, 2]) >= cfg.probe_height
+                if delivered_probe and (rise < cfg.probe_height * 0.35 or attachment > 0.03):
                     return self.result("probe_not_attached", True)
                 u, speed = blend(self.elapsed, self.duration)
                 self.q = self.lift_start + u * (self.lift_target - self.lift_start)
-                self.velocity = speed * (self.lift_target - self.lift_start)
-                if self.elapsed >= self.duration:
+                self.velocity = (speed if dt > 0 else 0) * (self.lift_target - self.lift_start)
+                if self.elapsed >= self.duration and rise >= cfg.lift_height * 0.6 and attachment < 0.03:
                     self.enter("hold")
+                elif self.elapsed >= self.duration + 2.0:
+                    return self.result("probe_not_attached", True)
             else:
                 stable = attachment < 0.03 and rise >= 0.6 * cfg.lift_height and min(hand_openings) >= 0.003
                 self.ready_since = (now if self.ready_since is None else self.ready_since) if stable else None

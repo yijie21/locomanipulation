@@ -70,3 +70,14 @@ def test_floor_labels_recover_pose_when_the_far_wall_has_left_every_image():
     assert estimate is not None
     np.testing.assert_allclose(estimate.position, [0.4, 0, -0.05], atol=0.008)
     assert all(set(points) <= set(FLOOR_MARKERS) for points in estimate.detections.values())
+
+
+def test_floor_colour_identity_survives_render_gamma_without_becoming_wall_magenta():
+    from locomani.tasks.crate.perception import detect_markers
+    from locomani.tasks.crate.visual_scene import FLOOR_MARKERS
+
+    image = np.zeros((80, 240, 3), dtype=np.uint8)
+    for index, marker in enumerate(FLOOR_MARKERS.values()):
+        colour = tuple(int(c ** (1 / 2.2) * 255) for c in marker["rgba"][:3])
+        cv2.circle(image, (30 + index * 60, 40), 8, colour, -1)
+    assert set(detect_markers(image)) == set(FLOOR_MARKERS)

@@ -28,6 +28,7 @@ class VisualApproach:
         self.started = self.last_time = self.last_seen = self.quiet_since = None
         self.position = self.orientation = None
         self.relative_speed = self.angular_speed = 0.0
+        self.relative_velocity = np.zeros(2)
 
     def step(self, now, target, base_quaternion, *, grasp_pose_available):
         cfg = self.config
@@ -49,8 +50,11 @@ class VisualApproach:
         self.last_seen = target.timestamp
         point = target.position
         if self.position is not None:
-            speed = np.linalg.norm(point[:2] - self.position[:2]) / dt
-            self.relative_speed += min(1, dt / 0.4) * (speed - self.relative_speed)
+            # Filter signed displacement before taking its magnitude. Filtering
+            # magnitudes interprets zero-mean pixel-fit jitter as persistent motion.
+            velocity = (point[:2] - self.position[:2]) / dt
+            self.relative_velocity += min(1, dt / 0.4) * (velocity - self.relative_velocity)
+            self.relative_speed = float(np.linalg.norm(self.relative_velocity))
         self.position = point.copy()
         if self.phase == "walk" and point[0] <= cfg.stand_off + cfg.walk_brake_margin and abs(point[1]) < 0.04:
             self.phase = "settle"

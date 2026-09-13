@@ -55,7 +55,7 @@ def detect_markers(image):
             "red": (0, 5),
             "orange": (8, 20),
             "blue": (108, 125),
-            "violet": (128, 137),
+            "violet": (126, 137),
         }.items()
     }
     detections = {}
