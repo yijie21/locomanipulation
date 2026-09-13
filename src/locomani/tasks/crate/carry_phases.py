@@ -182,6 +182,11 @@ def admit_grasp(ctx: CarryRoundContext, *, check_reach=True) -> dict | None:
 def pitched(ctx: CarryRoundContext, sd):
     from locomani.tasks.crate.bimanual_carry import PALM_PITCH_DEG, UP_ABOVE, rot_y
 
+    if ctx.config.reach_control == "whole_body":
+        # The hip hinge already rotated smoothly to the grasp attitude.
+        # Returning to level here would fold the wrists, then reverse them.
+        return ctx.R_stand @ rot_y(np.radians(PALM_PITCH_DEG))
+
     # palm pitch follows the descent: level at the staging height, the
     # full PALM_PITCH_DEG at the bar, so the fingertips never lead the jaw
     # into the rim.

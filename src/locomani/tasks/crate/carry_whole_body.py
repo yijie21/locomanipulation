@@ -9,6 +9,7 @@ from locomani.backends.sonic.primitives import upper_body_from_mj
 from locomani.backends.sonic.streamed_arm import StreamedArm
 from locomani.tasks.crate.bimanual_carry import OFFSET, PALM_PITCH_DEG, UP_ABOVE, UP_SHORT, BimanualArms, rot_y, rot_z
 from locomani.tasks.crate.carry_motion import CarryMotion
+from locomani.tasks.crate.settling import SettlingWindow
 from locomani.tasks.crate.whole_body_ik import plan_low_reach
 
 
@@ -89,7 +90,7 @@ def _phase_whole_body(ctx):
     )
     goals = {side: ctx.bars[side] + np.array([*(-ctx.n * UP_SHORT), UP_ABOVE]) for side in ("left", "right")}
     arms.arm.q = pose.joints.copy()
-    target = arms.solve(planned, goals, {side: rot_z(ctx.psi) for side in goals}, iters=180)
+    target = arms.solve(planned, goals, {side: rotation for side in goals}, iters=180)
     # The full-body pose owns legs and root; both hands approach from above.
     ctx.arms = arms
     arms.motion_recording = ctx.motion_recording
@@ -102,7 +103,9 @@ def _phase_whole_body(ctx):
         4.0, 1.875 * distance / ctx.config.joint_speed, np.sqrt(5.8 * distance / ctx.config.joint_acceleration)
     )
     start = time.time()
-    while time.time() - start < duration + 0.4:
+    settling = SettlingWindow(ctx.config.settle_seconds)
+    ready = False
+    while time.time() - start < duration + 6.0:
         t = time.time() - start
         u = min(t / duration, 1.0)
         speed = 30 * u * u * (1 - u) * (1 - u) / duration
@@ -113,6 +116,13 @@ def _phase_whole_body(ctx):
         if s["fallen"]:
             ctx.m["why"] = "[whole_body] fell entering the low pose"
             return ctx.m
+        ready = settling.step(s["wall"], s["pelvis"]["pos"], s["pelvis"]["quat"], reference_ready=t >= duration)
+        if ready:
+            break
+    ctx.m["body_stance_ready"] = ready
+    if not ready:
+        ctx.m["why"] = "[whole_body] body did not settle after the reference arrived"
+        return ctx.m
     arms.motion = CarryMotion(arms.arm, arms.solver, ctx.config, time.time())
     ctx.m["body_entry_seconds"] = time.time() - start
     s, yaw, along, lateral, edge = stand_metrics(ctx, " after hip hinge")

@@ -127,3 +127,59 @@ def test_free_waist_admission_uses_reachability_instead_of_locked_waist_lateral_
         result = admit_grasp(ctx)
         assert (result is None) == expected
         assert "reach_ik_errors_m" in ctx.m
+
+
+def test_low_reach_keeps_grasp_attitude_across_body_and_arm_phases():
+    from types import SimpleNamespace
+
+    from locomani.tasks.crate.carry_phases import pitched
+
+    ctx = SimpleNamespace(config=CrateCarryConfig(reach_control="whole_body"), R_stand=np.eye(3))
+    np.testing.assert_allclose(pitched(ctx, "left"), Rotation.from_euler("y", 60, degrees=True).as_matrix())
+
+
+def test_body_reference_arrival_cannot_admit_a_still_moving_robot(monkeypatch):
+    from types import SimpleNamespace
+
+    from locomani.tasks.crate import carry_whole_body as body
+    from locomani.tasks.crate.whole_body_ik import WholeBodyPose
+
+    now = [0.0]
+    monkeypatch.setattr(body, "time", SimpleNamespace(time=lambda: now[0]))
+
+    def state():
+        return dict(
+            joints=np.zeros(29),
+            seq=int(now[0] * 50),
+            wall=now[0],
+            fallen=False,
+            pelvis=dict(pos=[now[0] * 0.1, 0, 0.78], quat=[1, 0, 0, 0]),
+        )
+
+    p = SimpleNamespace(obs=state)
+    arm = SimpleNamespace(ik=None, q=np.zeros(29))
+
+    def push(q, **kwargs):
+        now[0] += 0.02
+
+    arms = SimpleNamespace(arm=arm, solve=lambda *a, **kw: np.zeros(29), start=lambda: None, push=push)
+    monkeypatch.setattr(body, "WholeBodyArms", lambda *a: arms)
+    monkeypatch.setattr(
+        body,
+        "plan_low_reach",
+        lambda *a, **kw: WholeBodyPose(
+            np.zeros(29), np.array([0, 0, 0.78]), np.eye(3), np.zeros(2), np.zeros(2), np.zeros(2)
+        ),
+    )
+    ctx = SimpleNamespace(
+        p=p,
+        config=CrateCarryConfig(reach_control="whole_body"),
+        psi=0,
+        m={},
+        bars=dict(left=np.array([0.4, 0.2, 0.45]), right=np.array([0.4, -0.2, 0.45])),
+        n=np.array([1, 0]),
+        motion_recording=None,
+    )
+    result = body._phase_whole_body(ctx)
+    assert not result["body_stance_ready"]
+    assert "did not settle" in result["why"]
