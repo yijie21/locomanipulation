@@ -9,7 +9,9 @@ from locomani.tasks.crate.perception import CrateEstimate
 
 
 def setup():
-    config = CrateTaskConfig.load("configs/tasks/crate_visual_low_reach.json")
+    config = CrateTaskConfig.load("configs/tasks/crate_visual_low_reach.json").with_overrides(
+        ["visual.approach_speed=0.1"]
+    )
     q = np.zeros(29)
     q[[0, 6]], q[[3, 9]], q[[4, 10]] = -0.1, 0.2, -0.1
     q[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
@@ -68,3 +70,17 @@ def test_unseen_or_stale_target_holds_body_and_cannot_close():
     np.testing.assert_array_equal(resumed.joints, moved.joints)
     assert paused.closure == 0
     assert policy.step(1.2, estimate(0.1, state), state, [0.08] * 2).reason == "vision_lost"
+
+
+def test_irregular_observation_spacing_preserves_reference_acceleration():
+    policy, state = setup()
+    previous = policy.step(0, estimate(0, state), state, [0.08] * 2).joints
+    intervals = np.array([0.024, 0.064, 0.032, 0.045] * 24)
+    velocities = []
+    for now, dt in zip(np.cumsum(intervals), intervals):
+        command = policy.step(now, estimate(now, state), state, [0.08] * 2)
+        velocities.append((command.joints - previous) / dt)
+        previous = command.joints.copy()
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+    acceleration = np.diff(velocities, axis=0) / ((intervals[1:] + intervals[:-1]) / 2)[:, None]
+    assert np.max(np.abs(acceleration)) <= policy.config.visual.joint_acceleration + 1e-5

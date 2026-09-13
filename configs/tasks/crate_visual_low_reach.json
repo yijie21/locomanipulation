@@ -12,7 +12,7 @@
     "stand_lateral_tolerance": 0.14,
     "walk_brake_margin": 0.10,
     "pregrasp_above": 0.04,
-    "approach_speed": 0.10,
+    "approach_speed": 0.16,
     "tracking_gain": 0.7,
     "tracking_cap": 0.04,
     "close_seconds": 0.8

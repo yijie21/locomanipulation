@@ -30,6 +30,7 @@ class CoordinatedReach:
         self.body.put(self.x)
         self.x[:3] += np.mean(self.body.feet_pos - solver.ik.data.xpos[self.body.feet], axis=0)
         self.travel_lo, self.travel_hi = np.minimum(self.body.lo, self.x), np.maximum(self.body.hi, self.x)
+        self.last_dt = None
         self.v = np.zeros(33)
         self.velocity = np.zeros(29)
         self.phase, self.closure = "observe", 0.0
@@ -58,8 +59,10 @@ class CoordinatedReach:
         self.feedback += (1 - np.exp(-dt / 0.4)) * (observed_error - self.feedback)
         speed = np.r_[[self.config.carry.height_speed] * 3, cfg.palm_rotation_speed, [cfg.joint_speed] * 29]
         acceleration = np.r_[[0.2] * 3, cfg.joint_acceleration, [cfg.joint_acceleration] * 29]
-        vlo = np.maximum(-speed, self.v - acceleration * dt)
-        vhi = np.minimum(speed, self.v + acceleration * dt)
+        interval = dt if self.last_dt is None else (dt + self.last_dt) / 2
+        self.last_dt = dt
+        vlo = np.maximum(-speed, self.v - acceleration * interval)
+        vhi = np.minimum(speed, self.v + acceleration * interval)
         vlo = np.maximum(
             vlo, -np.maximum(0, np.sqrt(2 * acceleration * np.maximum(self.x - self.travel_lo, 0)) - acceleration * dt)
         )
@@ -102,6 +105,7 @@ class CoordinatedReach:
             return self.result("timeout", True)
         if estimate is None or not 0 <= now - estimate.timestamp <= cfg.vision_timeout:
             self.was_visible, self.ready_since = False, None
+            self.last_dt = None
             self.v[:] = 0
             self.velocity[:] = 0
             stale = now - (self.last_seen if self.last_seen is not None else self.started) > cfg.vision_timeout
@@ -136,6 +140,7 @@ class CoordinatedReach:
             distance = np.max(np.linalg.norm(targets - self.start_tools, axis=1))
             self.duration = max(3.0, 1.875 * distance / cfg.approach_speed)
             self.enter("reach")
+        self.diagnostics.update(reference_elapsed=self.elapsed, planned_reach_seconds=self.duration)
         if self.phase == "reach":
             ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
             self.diagnostics.update(capture_error=errors, capture_ready=ready)
