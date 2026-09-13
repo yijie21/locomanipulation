@@ -56,7 +56,11 @@ class VisualApproach:
             self.relative_velocity += min(1, dt / 0.4) * (velocity - self.relative_velocity)
             self.relative_speed = float(np.linalg.norm(self.relative_velocity))
         self.position = point.copy()
-        if self.phase == "walk" and point[0] <= cfg.stand_off + cfg.walk_brake_margin and abs(point[1]) < 0.04:
+        if (
+            self.phase == "walk"
+            and point[0] <= cfg.stand_off + cfg.walk_brake_margin
+            and abs(point[1]) < cfg.stand_lateral_tolerance
+        ):
             self.phase = "settle"
         if self.phase == "settle":
             quiet = grasp_pose_available and self.relative_speed < 0.06 and self.angular_speed < 0.2

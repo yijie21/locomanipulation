@@ -14,6 +14,8 @@ class CrateVisualConfig:
     walk_brake_margin: float = 0.07  # stop commanding steps before the final basket distance
     walk_timeout: float = 30.0  # maximum walking and stance-settling duration
     settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
+    stand_lateral_tolerance: float = 0.04  # metres; final body IK still owns low-reach admission
+    lift_seconds: float = 4.0  # minimum low-reach lift-reference duration, seconds
     stand_off: float = 0.36  # final pelvis distance from the visible basket centre, metres
     position_jitter: float = 0.02  # visible basket x/y randomisation at reset, metres
     yaw_jitter_deg: float = 5.0  # visible basket yaw randomisation at reset
@@ -47,6 +49,8 @@ class CrateVisualConfig:
             raise ValueError("visual.start_edge_min/max must define an interval within [1.2, 1.5] metres")
         for name in (
             "stand_off",
+            "stand_lateral_tolerance",
+            "lift_seconds",
             "walk_speed",
             "walk_timeout",
             "settle_seconds",

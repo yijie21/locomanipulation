@@ -83,7 +83,7 @@ def test_lift_does_not_call_tracking_delay_an_empty_grasp_but_has_a_deadline():
     for now in np.arange(started + 0.04, started + 1.8, 0.04):
         command = policy.step(now, observe(now), q, root, [0.016] * 2)
         assert not command.finished, command.reason
-    for now in np.arange(now + 0.04, started + 6, 0.04):
+    for now in np.arange(now + 0.04, started + policy.duration + 2.2, 0.04):
         command = policy.step(now, observe(now), q, root, [0.016] * 2)
         if command.finished:
             break

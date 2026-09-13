@@ -202,7 +202,9 @@ class VisualLowReach:
                 self.lift_target = goal.joints
                 distance = np.max(np.abs(self.lift_target - self.lift_start))
                 self.duration = max(
-                    3.0, 1.875 * distance / cfg.joint_speed, np.sqrt(5.8 * distance / cfg.joint_acceleration)
+                    cfg.lift_seconds,
+                    1.875 * distance / cfg.joint_speed,
+                    np.sqrt(5.8 * distance / cfg.joint_acceleration),
                 )
                 self.enter("lift")
         elif self.phase in ("lift", "hold"):

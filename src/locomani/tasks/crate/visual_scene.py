@@ -67,7 +67,7 @@ def build(source: Path, destination: Path):
             "geom",
             name=f"crate_visual_{name}",
             type="cylinder",
-            size="0.009 0.0003",
+            size="0.009 0.0003" if name in FLOOR_MARKERS else "0.0125 0.0003",
             quat="1 0 0 0" if name in FLOOR_MARKERS else "0.707106781 -0.707106781 0 0",
             pos=" ".join(map(str, marker["position"])),
             rgba=" ".join(map(str, marker["rgba"])),
@@ -80,7 +80,12 @@ def build(source: Path, destination: Path):
     meta_path = destination / "scene_meta.json"
     meta = json.loads(meta_path.read_text())
     meta["scene_xml"] = str(xml.resolve())
-    meta["crate_visual"] = {"version": 3, "markers": markers, "grasp_points": [[0.1933, 0, 0.060], [-0.1933, 0, 0.060]]}
+    meta["crate_visual"] = {
+        "version": 3,
+        "markers": markers,
+        "marker_groups": [list(MARKERS), list(FLOOR_MARKERS)],
+        "grasp_points": [[0.1933, 0, 0.060], [-0.1933, 0, 0.060]],
+    }
     meta_path.write_text(json.dumps(meta, indent=2))
 
 

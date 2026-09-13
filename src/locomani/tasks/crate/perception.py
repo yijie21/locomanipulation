@@ -41,7 +41,7 @@ class ApproachTarget:
     source: str
 
 
-def detect_markers(image):
+def marker_candidates(image):
     """Centroids of four physical colour patches; accepts only the actual RGB image."""
     hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
     hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
@@ -63,9 +63,13 @@ def detect_markers(image):
         count, _, stats, centres = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
         candidates = [i for i in range(1, count) if 4 <= stats[i, cv2.CC_STAT_AREA] <= 3000]
         if candidates:
-            index = max(candidates, key=lambda i: stats[i, cv2.CC_STAT_AREA])
-            detections[name] = centres[index]
+            indices = sorted(candidates, key=lambda i: stats[i, cv2.CC_STAT_AREA], reverse=True)
+            detections[name] = centres[indices]
     return detections
+
+
+def detect_markers(image):
+    return {name: centres[0] for name, centres in marker_candidates(image).items()}
 
 
 class CratePerception:
@@ -74,6 +78,7 @@ class CratePerception:
     def __init__(self, ik: ArmIK, geometry: dict, *, max_reprojection_px=4.0):
         self.ik = ik
         self.markers = {name: np.array(marker["position"]) for name, marker in geometry["markers"].items()}
+        self.groups = geometry.get("marker_groups", [list(self.markers)])
         self.max_reprojection_px = max_reprojection_px
         self.last = None
 
@@ -100,61 +105,79 @@ class CratePerception:
 
     def update(self, images, joints, timestamp):
         cameras = self.cameras(joints, images)
-        detections = {
-            stream: {name: uv for name, uv in detect_markers(images[stream]).items() if name in self.markers}
+        components = {
+            stream: {name: points for name, points in marker_candidates(images[stream]).items() if name in self.markers}
             for stream in cameras
         }
-        pairs = [
-            (stream, name, uv)
-            for stream, points in detections.items()
-            for name, uv in points.items()
-            if name in self.markers
-        ]
+        detections = {
+            stream: {name: points[0] for name, points in names.items()} for stream, names in components.items()
+        }
+        pairs = []
+        for stream, names in components.items():
+            for name, points in names.items():
+                selected = [0]
+                if self.last is not None:
+                    predicted = cameras[stream].project([self.last.rotation @ self.markers[name] + self.last.position])[
+                        0
+                    ][0]
+                    selected += list(np.argsort(np.linalg.norm(points - predicted, axis=1))[:3])
+                pairs.extend((stream, name, points[index]) for index in dict.fromkeys(selected))
         if len({name for _, name, _ in pairs}) < 3:
             return None
         candidates = []
         for stream, points in detections.items():
-            if len(points) < 4:
-                continue
-            names = list(points)
-            obj = np.array([self.markers[name] for name in names], np.float64)
-            pixels = np.array([points[name] for name in names], np.float64)
-            # Four coplanar wall/floor points keep the original planar solver.
-            # Mixed planes use EPNP, whose minimum is four correspondences.
-            planar = np.linalg.matrix_rank(obj - obj.mean(axis=0), tol=1e-5) <= 2
-            ok, rvec, tvec = cv2.solvePnP(
-                obj,
-                pixels,
-                cameras[stream].intrinsic,
-                None,
-                flags=cv2.SOLVEPNP_ITERATIVE if planar else cv2.SOLVEPNP_EPNP,
-            )
-            if ok:
-                rotation = cameras[stream].rotation @ cv2.Rodrigues(rvec)[0]
-                position = cameras[stream].position + cameras[stream].rotation @ tvec.ravel()
-                candidates.append(np.r_[position, Rotation.from_matrix(rotation).as_rotvec()])
+            for group in dict.fromkeys(tuple(group) for group in [*self.groups, list(self.markers)]):
+                names = [name for name in group if name in points]
+                if len(names) < 4:
+                    continue
+                obj = np.array([self.markers[name] for name in names], np.float64)
+                pixels = np.array([points[name] for name in names], np.float64)
+                planar = np.linalg.matrix_rank(obj - obj.mean(axis=0), tol=1e-5) <= 2
+                try:
+                    ok, rvec, tvec = cv2.solvePnP(
+                        obj,
+                        pixels,
+                        cameras[stream].intrinsic,
+                        None,
+                        flags=cv2.SOLVEPNP_ITERATIVE if planar else cv2.SOLVEPNP_EPNP,
+                    )
+                except cv2.error:
+                    continue  # a degenerate image hypothesis cannot authorize motion
+                if ok:
+                    rotation = cameras[stream].rotation @ cv2.Rodrigues(rvec)[0]
+                    position = cameras[stream].position + cameras[stream].rotation @ tvec.ravel()
+                    candidates.append(np.r_[position, Rotation.from_matrix(rotation).as_rotvec()])
         if self.last is not None:
             candidates.append(np.r_[self.last.position, Rotation.from_matrix(self.last.rotation).as_rotvec()])
         if not candidates:
             return None
 
         def residual(values, observations):
-            rotation = Rotation.from_rotvec(values[3:]).as_matrix()
-            return np.concatenate(
-                [
-                    cameras[stream].project([rotation @ self.markers[name] + values[:3]])[0][0] - uv
-                    for stream, name, uv in observations
-                ]
-            )
+            points = np.array([self.markers[name] for _, name, _ in observations])
+            points = Rotation.from_rotvec(values[3:]).apply(points) + values[:3]
+            result = np.empty((len(observations), 2))
+            streams = np.array([stream for stream, _, _ in observations])
+            pixels = np.array([uv for _, _, uv in observations])
+            for stream, camera in cameras.items():
+                mask = streams == stream
+                if mask.any():
+                    result[mask] = camera.project(points[mask])[0] - pixels[mask]
+            return result.ravel()
 
-        # Reject coloured background fragments using agreement with a valid
-        # camera/history hypothesis before combining observations across views.
-        support = [
-            np.linalg.norm(residual(candidate, pairs).reshape(-1, 2), axis=1) < self.max_reprojection_px * 3
-            for candidate in candidates
-        ]
-        best = int(np.argmax([np.count_nonzero(mask) for mask in support]))
-        inliers = [pair for pair, keep in zip(pairs, support[best], strict=True) if keep]
+        def support(candidate):
+            errors = np.linalg.norm(residual(candidate, pairs).reshape(-1, 2), axis=1)
+            nearest = {}
+            for index, (stream, name, _) in enumerate(pairs):
+                key = stream, name
+                if errors[index] < self.max_reprojection_px * 3 and (
+                    key not in nearest or errors[index] < errors[nearest[key]]
+                ):
+                    nearest[key] = index
+            return list(nearest.values())
+
+        supports = [support(candidate) for candidate in candidates]
+        best = int(np.argmax([len(indices) for indices in supports]))
+        inliers = [pairs[index] for index in supports[best]]
         if len({name for _, name, _ in inliers}) < 3:
             return None
         fit = least_squares(

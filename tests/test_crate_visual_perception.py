@@ -81,3 +81,17 @@ def test_floor_colour_identity_survives_render_gamma_without_becoming_wall_magen
         colour = tuple(int(c ** (1 / 2.2) * 255) for c in marker["rgba"][:3])
         cv2.circle(image, (30 + index * 60, 40), 8, colour, -1)
     assert set(detect_markers(image)) == set(FLOOR_MARKERS)
+
+
+def test_visible_floor_markers_are_not_discarded_for_larger_background_components():
+    from locomani.tasks.crate.visual_scene import FLOOR_MARKERS
+
+    perception = CratePerception(scene_ik(), {"markers": FLOOR_MARKERS})
+    images, joints = observation(perception, [0.4, 0, -0.05], FLOOR_MARKERS)
+    assert perception.update(images, joints, 1.0) is not None
+    for image in images.values():
+        cv2.circle(image, (30, 30), 10, (255, 7, 7), -1)
+        cv2.circle(image, (90, 30), 10, (255, 102, 7), -1)
+    estimate = perception.update(images, joints, 1.04)
+    assert estimate is not None
+    np.testing.assert_allclose(estimate.position, [0.4, 0, -0.05], atol=0.008)
