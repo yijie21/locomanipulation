@@ -1,6 +1,6 @@
 # 归档文档索引
 
-本索引收集了文档重组期间冻结的历史诊断、设计讨论和实验报告。这些文档的内容未作修改，仅用于历史查找；活跃的进行中计划保留在 `docs/handoff/`，agent 规则保留在 `docs/agents/`。
+本索引收集了文档重组期间冻结的历史诊断、设计讨论和实验报告。历史正文保留；个别快照仅修正搬迁后的相对链接并在文件头注明，仅用于历史查找；活跃的进行中计划保留在 `docs/handoff/`，agent 规则保留在 `docs/agents/`。
 
 ## 已归档文档
 
@@ -45,7 +45,7 @@
 - [Refactor step 2 — retired-branch deletion candidates (evidence table, 2026-09-09)](../handoff/refactor-step2-candidates.md) — 淘汰分支和配置的删除裁定与依赖证据表 (dated 2026-09-09)
 - [Refactor step 3 — knobs into config objects (decision 8)](../handoff/refactor-step3-config.md) — 配置对象设计、字段映射和环境变量白名单规则
 - [Refactor step 4a — package layout move (decision 12)](../handoff/refactor-step4-layout.md) — 从 `src/teleop_free` 到 `src/locomani/` 的包重组目标结构与导入改写
-- [ScaleBFM 分支交接:控制器替换、v3 单手 expert、准备用它采集训练数据](../handoff/scalebfm_handoff.md) — ScaleBFM 在仿真中的集成现状、资产清单和建议的 v3 采集配置 (dated 2026-09-08)
+- [ScaleBFM 分支交接:控制器替换、v3 单手 expert、准备用它采集训练数据](scalebfm_handoff_20260910.md) — ScaleBFM 在仿真中的集成现状、资产清单和建议的 v3 采集配置 (dated 2026-09-08)
 - [SONIC 采集的 lockstep 化:可加速、逐帧可复现,wall-clock 路径零改动](../handoff/sonic_lockstep_collection_plan.md) — lockstep 化采集的设计方案与当前阻碍分析（搁置中） (dated 2026-09-08)
 
 ## docs/agents/ (agent 规则,不在归档里,原地保留)
@@ -78,3 +78,9 @@ Verbatim copies from `4cc52ba`; historical claims and relative links retain thei
 - [ROADMAP](roadmap_20260912.md)
 - [README](readme_20260912.md)
 - [Runbook](runbook_20260912.md)
+
+## Task guides preserved on 2026-09-14
+
+- [Crate guide](crate_collection_20260914.md): original at `153c8b6`; current commands and capability boundaries are in [crate collection](../crate_collection.md).
+- [Bottle collection guide](collection_20260914.md): original at `153c8b6`; preserves removed reach estimates and old global cleanup instructions for history only.
+- Both snapshots record original SHA-256 values. Relative Markdown links were adjusted for the archive location; historical claims were not rewritten.

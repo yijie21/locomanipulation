@@ -1,0 +1,27 @@
+# Shared runtime, data and development checks
+
+Use the matching row; expand along actual callers only as the change requires.
+Back to [domain navigation](change-map.md). Test names are relative to `tests/`.
+
+| Change | Entry / owner | Configuration or example | Tests |
+|---|---|---|---|
+| SONIC protocol / arm execution | [streamed_arm.py](../../src/locomani/backends/sonic/streamed_arm.py), [teleop_arm.py](../../src/locomani/backends/sonic/teleop_arm.py) | [sonic/config.py](../../src/locomani/backends/sonic/config.py); [POSE deploy capability](../../patches/sonic_pose_ownership.md) | `test_sonic_policy_default.py`, `test_teleop_arm.py`, `test_streamed_handoff.py`, `test_pose_ownership.py` |
+| Stack lifecycle / ports | [stack.py](../../src/locomani/pipeline/stack.py), [ports.py](../../src/locomani/sim/ports.py), [start_stack.sh](../../scripts/stack/start_stack.sh) | [stages.py](../../src/locomani/pipeline/stages.py); bottle/crate pilots share the seam | `test_stack_delivery.py`, `test_stack_start_failure.py`, `test_instance_ports.py` |
+| Dataset fields / conversion | [schema.py](../../src/locomani/schema.py) → [convert_to_hf_format.py](../../src/locomani/pipeline/convert_to_hf_format.py) | [gr00t_sonic_2cam.py](../../configs/gr00t_sonic_2cam.py) | `test_schema_provenance.py`, `test_verification_tail.py` |
+| Training / closed-loop evaluation | [run_learn_pilot.py](../../src/locomani/pipeline/run_learn_pilot.py), [eval_closed_loop.py](../../src/locomani/pipeline/eval_closed_loop.py) | [pilot_config.py](../../src/locomani/pipeline/pilot_config.py), [eval_config.py](../../src/locomani/pipeline/eval_config.py) | `test_runtime_consumers.py`, `test_eval_config_reaches_the_client.py`, `test_trace_round_join.py` |
+| Task result / acceptance | [base.py](../../src/locomani/tasks/base.py), [execution_record.py](../../src/locomani/pipeline/execution_record.py) | `RoundResult.accepted(require_recording=...)` | `test_task_acceptance.py`, `test_execution_record.py` |
+| Model / run provenance | [provenance.py](../../src/locomani/pipeline/provenance.py), [serve_policy.py](../../src/locomani/pipeline/serve_policy.py) | `config_snapshot.json`, `deploy_receipts.jsonl`, stage `commands.jsonl` | `test_schema_provenance.py`, `test_stack_delivery.py` |
+| CPU geometry fixtures | [geometry_fixture.py](../../tests/geometry_fixture.py) | [fixture README](../../tests/fixtures/geometry/README.md) | `test_grasp_point_ik.py`, `test_ready_grasp_policy.py` |
+| Shared config serialization | [config_base.py](../../src/locomani/config_base.py) | [bottle/config.py](../../src/locomani/tasks/bottle/config.py) | `test_configs.py`, `test_review_2026_09_10.py` |
+| Verification routing / navigation / architecture | [check_changes.py](../../scripts/check_changes.py), [lint_repository.py](../../scripts/lint_repository.py) | [Verification](../agents/session-workflow.md#verification), [standards](standards.md) | `test_check_workflow.py`, `test_repository_rules.py` |
+
+## Current limitations
+
+`locomani.cli` still dispatches to different drivers; consult the relevant row for
+argument meanings. ScaleBFM has an independent in-process runner. SONIC consumers
+still read derived compatibility properties of ReachConfig; five historical strategy
+switches migrate only at the version-1 JSON boundary. GymRuntime and VlaConfig carry production runtime choices explicitly. Legacy
+RTC diagnostics retain scoped instrumentation hooks. The gym-options report covers
+its parser; child receipts and delivery tests cover subprocess settings.
+
+Next migrations: [ROADMAP](../ROADMAP.md). Launch commands: [runbook](runbook.md).

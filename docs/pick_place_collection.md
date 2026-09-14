@@ -1,5 +1,8 @@
 # pick-and-place 数据采集
 
+运行和参数修改按相应章节阅读；带日期的结果、原因分析和“复现清单”是对应实验的范围，
+当前改动的验收遵循 [standards](reference/standards.md#checks)，不从旧成功率自动推导。
+
 走到桌前,右手抓起罐头,转身放进左边的篮子。它是 bottle 单臂线的延长:出生、走入、抓取、抬起四段原样复用
 `docs/collection.md` 的 expert,抬起之后接一个 place 阶段。本文按教程的固定章节写;设计与取舍在
 `docs/handoff/pick_place_plan.md`,实验数字只记在 `docs/ledger/pick_place.md`。
@@ -201,7 +204,7 @@ plan §4 有建议范围。
 ## 10. 渲染(可选)
 
 第三人称视频由 sim 自带(`SIM_VIDEO_DIR`,runner 按批设);拼 reel 用 ffmpeg concat(台账 §3/§4 的 reel 就是这样拼的),
-分局压缩到几百 KB:`ffmpeg -i in.mp4 -vf scale=480:-2,fps=10 -c:v libx264 -crf 34 -an out.mp4`。Isaac 渲染未验证篮子贴图。
+分享前按[视频导出规则](rendering.md#video-export)生成完整预览并核对实际字节数；单条最多 500,000 字节。Isaac 渲染未验证篮子贴图。
 
 ## 11. 到训练数据集还差的一步
 

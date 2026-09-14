@@ -7,7 +7,7 @@ Use this shared development contract with any coding agent.
 
 Start with the specified file or known owner for local edits. Use scoped searches.
 For new features, unclear ownership or cross-module changes, consult the relevant
-row of [the change map](docs/reference/change-map.md); expand reading along actual
+domain of [the change map](docs/reference/change-map.md); expand reading along actual
 callers and dependencies as needed.
 Read [architecture and standards](docs/reference/standards.md) before changing an
 interface, dependency direction or configuration format.

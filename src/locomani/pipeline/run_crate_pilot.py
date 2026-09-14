@@ -74,15 +74,15 @@ def parse_args(argv=None):
         type=int,
         default=0,
         help="restart the stack every N rounds (0 = one stack for the whole run, today's behaviour). "
-        "The single-arm line restarts every 10 because the exporter leaks threads against the "
-        "container pid cap; the crate line has no exporter yet (docs/crate_collection.md §11)",
+        "With --record, defaults to 10 to bound exporter thread growth; "
+        "see docs/crate_collection.md",
     )
     ap.add_argument("--instance", type=int, default=1)
     ap.add_argument(
         "--allow-instance-0",
         action="store_true",
-        help="instance 0 is the collection/eval stack, and the exporter only runs there -- which is what "
-        "recording a crate dataset will need (docs/crate_collection.md §11). Refused without this flag",
+        help="instance 0 is the collection/eval stack, and the exporter only runs there. "
+        "--record forces instance 0 and enables this flag. Otherwise refused without it",
     )
     ap.add_argument("--gpu", default="1", help="CUDA_VISIBLE_DEVICES and MUJOCO_EGL_DEVICE_ID for the stack")
     ap.add_argument(
@@ -96,7 +96,7 @@ def parse_args(argv=None):
         "--record",
         action="store_true",
         help="drive the data exporter and keep only the rounds that succeed -- the crate line's first "
-        "route to a LeRobot dataset (docs/crate_collection.md \u00a711). Implies instance 0, the only one "
+        "route to a LeRobot dataset (docs/crate_collection.md). Implies instance 0, the only one "
         "start_stack.sh runs an exporter on, and a batch size so the exporter's thread growth stays "
         "under the container pid cap",
     )

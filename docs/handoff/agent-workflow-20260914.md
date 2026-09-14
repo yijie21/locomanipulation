@@ -1,6 +1,6 @@
 # Agent workflow adjustment — 2026-09-14
 
-Read this for the delivered scope and remaining guideline work. Daily instructions
+Read this for the first delivery scope; the [follow-up report](agent-guideline-completion-20260914.md) completes the remaining work. Daily instructions
 remain in [AGENTS](../../AGENTS.md) and the [session workflow](../agents/session-workflow.md).
 Baseline: `c2b5686`; implementation branch: `chore/agent-workflow-20260914`.
 
@@ -46,7 +46,9 @@ Logs: `outputs/agent_workflow_20260914/{focused.log,hook_probe.json,commit.log}`
 No physical commands, simulation protocol or acceptance thresholds changed; this
 workflow adjustment does not require a GPU behavior comparison.
 
-## Remaining guideline work
+## Remaining guideline work at this delivery
+
+All four follow-ups were subsequently handled in [the completion report](agent-guideline-completion-20260914.md); the original scope is retained below.
 
 1. Shorten the detailed change map by task domain; conditional reading is delivered,
    but the full table remains about 11.6 KB. Avoid replacing it with many tiny routers.

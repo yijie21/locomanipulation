@@ -22,4 +22,4 @@ Crate scene redesign remains separate future work; this delivery does not tune i
 control or acceptance thresholds. Size advisories locate remaining complex control
 routines; they are not a claim that every function has been rewritten.
 
-Current workflow changes and remaining guideline work: [2026-09-14 delivery](handoff/agent-workflow-20260914.md).
+Workflow rules: [first delivery](handoff/agent-workflow-20260914.md). All four guideline follow-ups: [completion and measured limits](handoff/agent-guideline-completion-20260914.md).

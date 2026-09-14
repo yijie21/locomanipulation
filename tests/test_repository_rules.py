@@ -72,6 +72,30 @@ def test_runtime_paths_are_rejected_including_directory_replacing_symlinks():
     assert rules.artifact_errors(["src/locomani/paths.py", "assets/robot.xml"]) == []
 
 
+def test_domain_maps_keep_link_and_test_checks(tmp_path):
+    name = "docs/reference/change-map-crate.md"
+    path = tmp_path / name
+    path.parent.mkdir(parents=True)
+    path.write_text("[owner](missing.py) `test_missing.py`\n")
+    errors = rules.navigation_errors(tmp_path, {name: 35})
+    assert any("broken link" in error for error in errors)
+    assert any("missing tests/test_missing.py" in error for error in errors)
+    (path.parent / "missing.py").touch()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_missing.py").touch()
+    assert rules.navigation_errors(tmp_path, {name: 35}) == []
+
+
+def test_router_cannot_hide_excessive_reading_in_one_long_line(tmp_path):
+    name = "docs/reference/change-map.md"
+    path = tmp_path / name
+    path.parent.mkdir(parents=True)
+    path.write_text("腰" * (rules.BYTE_BUDGETS[name] // 3 + 1))
+    assert len(path.read_text().splitlines()) == 1
+    errors = rules.navigation_errors(tmp_path, {name: 40})
+    assert len(errors) == 1 and "bytes" in errors[0]
+
+
 def test_changed_markdown_outside_entry_guides_is_checked(tmp_path):
     guide = tmp_path / "docs/task.md"
     guide.parent.mkdir()

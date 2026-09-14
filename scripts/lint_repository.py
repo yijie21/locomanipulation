@@ -24,12 +24,17 @@ GUIDES = {
     "docs/STATE.md": 60,
     "docs/ROADMAP.md": 60,
     "docs/README.md": 80,
-    "docs/reference/change-map.md": 75,
+    "docs/reference/change-map.md": 40,
+    "docs/reference/change-map-bottle.md": 45,
+    "docs/reference/change-map-crate.md": 35,
+    "docs/reference/change-map-runtime.md": 45,
+    "docs/reference/change-map-rendering.md": 35,
     "docs/reference/standards.md": 100,
     "docs/reference/runbook.md": 100,
     "docs/agents/session-workflow.md": 50,
     "docs/handoff/agent-maintenance-plan.md": 120,
 }
+BYTE_BUDGETS = {"docs/reference/change-map.md": 3000}
 
 
 def imports(source: str, filename: str) -> set[str]:
@@ -104,13 +109,16 @@ def navigation_errors(
         body = path.read_text()
         if limit is not None and len(body.splitlines()) > limit:
             errors.append(f"{name}: over {limit} lines; move task-specific detail behind a relevant link")
+        byte_limit = BYTE_BUDGETS.get(name)
+        if byte_limit is not None and len(body.encode("utf-8")) > byte_limit:
+            errors.append(f"{name}: over {byte_limit} bytes; keep the router focused on domains")
         for link in re.findall(r"\[[^\]]*\]\(([^)]+)\)", body):
             if link.startswith(("https://", "http://", "mailto:", "#")):
                 continue
             target = unquote(link.split("#", 1)[0])
             if not (path.parent / target).exists():
                 errors.append(f"{name}: broken link {link}")
-        if name == "docs/reference/change-map.md":
+        if name == "docs/reference/change-map.md" or name.startswith("docs/reference/change-map-"):
             for test in re.findall(r"`(test_[\w]+\.py)`", body):
                 if not (root / "tests" / test).is_file():
                     errors.append(f"{name}: missing tests/{test}; name an actual verification entry")

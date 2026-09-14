@@ -1,5 +1,9 @@
 # 渲染:MuJoCo 物理 + Isaac 像素
 
+首次使用读“运行时”和“资产构建”；双臂轨迹回放、画中画与受管停止见
+[crate 回放](crate_collection.md#10-渲染并排视频可选)。只有导出时才需要下面的视频交付步骤。
+后半部分带日期的调查保留原实验范围，不代表所有当前控制模式的行为或性能。
+
 ## Video export
 
 导出任何任务的视频、提供播放链接或打包 ZIP 前，必须满足
@@ -27,12 +31,12 @@
 
 ## 渲染与物理
 
-物理永远是 MuJoCo,wall-clock,SONIC 的 ZMQ 时序一行不改。Isaac 只负责像素,
+本页的离线回放路线使用 MuJoCo 记录物理状态，Isaac 负责像素，
 按已录轨迹**事后重渲**,不进采集回路。这与 SIMPLE 自己的 SONIC 路线一致
 (`docs/source/sonic-wbc/replay_render.md`:把 Isaac 放进实时回路会饿死
 ZMQ/DDS 通信并触发控制器心跳超时)。
 
-票表在 `.scratch/isaac-render/issues/`,先读 `00-context.md`。
+当前回放入口见 [rendering 导航](reference/change-map-rendering.md)；旧 `.scratch/isaac-render/issues/` 是本机历史调查，不是安装或开发前置资料。
 
 ## 运行时
 

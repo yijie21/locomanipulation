@@ -83,7 +83,7 @@ runner 负责启停自己的实例并记录每次尝试；失败也会留下结�
 | `trace/` | 仿真状态轨迹，可用于检查与离线重渲 |
 | `config_snapshot.json`、`deploy_receipts.jsonl` | 本次配置、代码和实际控制模型的记录 |
 
-分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500 KB 的预览，原片保留。
+分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500,000 字节 的预览，原片保留。
 需要调整任务参数时查 [配置字段表](docs/reference/config_fields.md)；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
 
 ## 仓库与更多文档

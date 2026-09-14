@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from locomani.tasks.crate.config import CrateTaskConfig
 
 
@@ -29,19 +31,16 @@ if __name__ == "__main__":
 
 
 def test_bounds_reject_nonfinite_or_nonnumeric_values():
-    import pytest
-
     for bounds in [(float("nan"), 0.1), (-float("inf"), float("inf")), ("a", "b"), (False, True), None]:
         with pytest.raises(ValueError, match="crate_dy_range_m"):
             CrateTaskConfig.from_dict({"crate_dy_range_m": bounds})
 
 
-def test_cli_range_reaches_the_actual_reset_without_module_mutation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("config_source", ["cli", "profile"])
+def test_configured_range_reaches_the_actual_reset_without_module_mutation(tmp_path, monkeypatch, config_source):
     import json
     from types import SimpleNamespace
     from unittest.mock import Mock
-
-    import pytest
 
     from locomani.tasks.crate import bimanual_wall as wall
 
@@ -74,7 +73,13 @@ def test_cli_range_reaches_the_actual_reset_without_module_mutation(tmp_path, mo
 
     monkeypatch.setattr(wall.round_runner, "run_rounds", rounds)
     for value in [0.035, -0.025, 0.035]:
-        monkeypatch.setattr("sys.argv", ["wall", "--set", f"crate_dy_range_m={value},{value}"])
+        if config_source == "profile":
+            profile = tmp_path / "crate_profile.json"
+            profile.write_text(json.dumps({"crate_dy_range_m": [value, value]}))
+            argv = ["wall", "--config", str(profile)]
+        else:
+            argv = ["wall", "--set", f"crate_dy_range_m={value},{value}"]
+        monkeypatch.setattr("sys.argv", argv)
         with pytest.raises(ResetObserved):
             wall.main()
     assert received == [0.035, -0.025, 0.035]

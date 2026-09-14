@@ -2,7 +2,7 @@
 
 ## Delivery
 
-- [Agent workflow](handoff/agent-workflow-20260914.md): conditional entry, shared verification routing and completion criteria; remaining guideline work is listed there.
+- [Guideline completion](handoff/agent-guideline-completion-20260914.md): domain navigation, current/historical guide separation, local skills audit and measured forward-tests; first delivery owns verification/completion rules.
 - Structural maintenance completed at source commits `bac6492` and `ec7ca1d`,
   against baseline `2e9af84`. Full CPU checks and independent Standards/Spec reviews pass.
 - Short agent entry, shared runtime/configuration seams, task/backend separation,

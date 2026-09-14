@@ -21,7 +21,7 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 |---|---|
 | Project overview, installation routes and feature-to-guide links | [Root README](../README.md); address users running the project, and link development rules from the contribution section |
 | Shared entry or resource rules | `AGENTS.md`; keep it short and point to conditional detail |
-| Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected row with the code |
+| Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected domain row with the code |
 | Module boundaries, interface/config conventions or evidence rules | [Standards](reference/standards.md); link the rule instead of copying it into task guides |
 | Configuration fields and defaults | Owning code; regenerate [field reference](reference/config_fields.md) with `make config-doc` |
 | Supported launch commands | [Runbook](reference/runbook.md); point to implemented entry points |
@@ -34,6 +34,9 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 Update an existing owning document first. Add a document when a distinct task needs
 separate detail; link it from this index or the relevant guide and state when to read
 it. Move historical material with links to the retained original and its correction.
+Keep current supported usage and capability limits near the task entry; link dated
+experiments separately. When a result changes, update current guidance and retain
+the original evidence instead of appending contradictory operating instructions.
 Follow [the evidence rules](reference/standards.md#evidence) for claims and revisions.
 Keep current rules in versioned documents reachable from these entries, so future
 contributors can find them without conversation history or an agent's private memory.
@@ -48,8 +51,8 @@ Crate expert redesign: [visual guidance and privileged-information contract](han
 (proposal; read when implementing the new expert or reviewing its training data).
 [Crate camera-guided video pilots](crate_visual_collection.md): simulation-assisted ordinary-basket control, historical RGB path and artifact meanings.
 [Carry motion comparison](handoff/crate-motion-flow-20260913.md): timing, command bounds and GPU evidence.
-These tutorials include historical experiments and explanations. Their presence in
-this index does not validate their measurements or causal conclusions.
+Guides identify historical experiments separately from current usage. This index does
+not validate their measurements or causal conclusions. [Guideline audit and probes](handoff/agent-guideline-completion-20260914.md).
 
 ## Historical evidence and investigations
 

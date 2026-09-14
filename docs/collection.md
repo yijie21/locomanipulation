@@ -1,6 +1,10 @@
 # 数据采集
 
-> 场景、单局流程、大规模采集,以及控制逻辑 / 随机化 / 相机的工作原理。
+> 单臂使用说明。首次采集读“场景”和“跑一局”，扩量时读“大规模采集”；
+> 修改控制时按 [bottle 导航](reference/change-map-bottle.md)定位代码。
+> 双臂场景与低桌可达性请用 [crate 指南](crate_collection.md)，旧扫描数字不代表当前能力。
+> 下文带日期的动作分析、成功率和成本是对应版本的历史观察，不能充当当前验收标准。
+> [重组前全文](archive/collection_20260914.md)保留原始表述和追溯线索。
 
 ## 场景:直接用现成的(推荐)
 
@@ -10,13 +14,6 @@
 SCENE_PRESET=bottle_only bash scripts/install_scene.sh   # VLA 实验的瓶子场景
 # 不带 SCENE_PRESET = 老的多物体桌面。预设定义在 scene_lib.SCENE_PRESETS;
 # bottle_only = 一个 RoboCasa 水瓶(assets/robocasa/,已入 git),其余全空。
-# crate_bimanual = 一个 NVIDIA 蓝色 600x400 周转箱(assets/crates/blue_crate/),
-#   长边横放、两端把手在 y=±0.30,近侧箱壁与桌沿齐平,给双手搬运任务用;箱体碰撞
-#   是 11 个 box 拼的,把手上方的箱沿(3 cm 高、2.4 cm 厚)是夹爪该夹的地方,
-#   site grip_px/grip_nx。可达性(2026-09-07 IK 扫描):脚/膝比骨盆前伸 0.22 m,
-#   骨盆最近只能站到桌沿外 0.27 m,箱沿在前方 0.47 m——单靠手臂差 12-15 cm,
-#   要腰前倾 33°、手掌下俯 60° 才能双手同时到位且无穿透;箱子每往桌里挪 1 cm
-#   都要多弯腰,放桌子中央够不到。扫描脚本 outputs/scene/crate_bimanual/reach_pitch.py。
 ```
 
 解包 `assets/scene_locomani_v1.tar.gz` 到 `outputs/scene/`(双桌面 + 目标/干扰物体的
@@ -144,22 +141,21 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 | `[gym]` | 局外的框架问题 | stack 挂了、端口冲突 |
 
 `[stand]` 类失败会**重试整局**(不算一条数据),其余直接丢弃,**不重试** ——
-数据集里只留一次成功的 episode,训出来的模型才会一次成功。
+这描述当前样本筛选方式，不能据此推断训练后的策略会一次成功。
 
-**当前实测**:近几批 11/12、12/12、5/5;一条成功 episode 约 **34 s**(2026-09-10 起不再每局重启 deploy;之前 64–105 s),
+**历史实测（2026-09-10，非当前成功率保证）**:当时几批 11/12、12/12、5/5;一条成功 episode 约 **34 s**(2026-09-10 起不再每局重启 deploy;之前 64–105 s),
 落盘约 **13–18 MB**(三路相机;只留 ego 时约 4.7 MB)。
 
-### Stop and Clean 
+### Stop and Clean
+
+先确认本次任务拥有的实例，停止其 runner / expert，再清理该实例的栈。例如本次拥有实例 0：
 
 ```bash
-bash scripts/stack/stop_stack.sh
+bash scripts/stack/stop_instance.sh 0
 ```
 
-杀掉 sim / deploy / exporter 三个长驻进程,以及 `zmq_driver.py`、`collect_episode.py`、
-`grasp_gym.py`、`diag_walk.py` 这几个会绑 `:5556`/`:5580`(跟 `zmq_driver.py` 抢同一对
-端口,见 `Primitives` -> `AgentCommander`)的客户端脚本。杀完会打印 `remaining:` /
-`ports:` 让你确认真的干净了 —— **不干净**的话下一次 `start_stack.sh` 会在打完启动
-横幅之后才报 `Address already in use`,看着像起来了其实没有。
+按 [资源规则](../AGENTS.md#shared-resources-and-artifacts)核对进程、实例锁和端口。
+历史 `stop_stack.sh` 会全局匹配进程，不适合同机共享环境；保留数据与日志。
 
 ---
 

@@ -1,5 +1,9 @@
 # ScaleBFM 视觉抓瓶数据采集
 
+首次正式采集读环境、渲染与吞吐准入规则及运行入口；修改策略按
+[bottle / ScaleBFM 导航](reference/change-map-bottle.md)定位。实验数字查带日期的台账，
+不作为任意新配置的成功率保证。
+
 > 场景、单集流程、pilot 与验收、以及控制逻辑 / 数据形状 / 随机化 / 相机的工作原理。结构对齐
 > `docs/collection.md`(SONIC 单手采集)和 `docs/crate_collection.md`(双臂搬箱)。这条线用 ScaleBFM
 > 替代 SONIC 做全身控制,expert 与 sim 在**同一个进程**里逐 tick 运行,没有 stack、没有 ZMQ、没有墙钟。
