@@ -14,21 +14,35 @@ from locomani.backends.sonic.primitives import (
     HAND_OPEN,
     LocomotionMode,
     Primitives,
-    upper_body_from_mj,
 )
 from locomani.backends.sonic.streamed_arm import StreamedArm
 from locomani.pipeline.provenance import require_pose_ownership
 from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.contacts import bilateral_dex1_contact
 from locomani.primitives.supported_motion import SupportedMotion
-from locomani.tasks.bottle.assisted_target import AssistedBottleTarget
+from locomani.tasks.bottle.assisted_target import BottleTargetObserver
 from locomani.tasks.bottle.grasp_capture import closure_geometry
-from locomani.tasks.bottle.ready_grasp_policy import OFFSET, ready_q, templates, terminal_rotation
+from locomani.tasks.bottle.ready_grasp_policy import OFFSET
+from locomani.tasks.bottle.walking_reach import WalkingReach
 
 
 def smooth(u):
     u = np.clip(u, 0.0, 1.0)
     return u * u * (3 - 2 * u)
+
+
+def entry_step(command, measured, target, entry_axis, dt, hand_speed):
+    """One continuous, cap-clearing step toward the bottle's capture region."""
+    above = max(measured[2], command[2]) - target[2]
+    gap = 0.018 + 0.10 * smooth((above - 0.018) / 0.04)
+    goal = target - gap * entry_axis
+    delta = goal - command
+    behind = min(float((target - hand) @ entry_axis) for hand in (measured, command))
+    if delta[2] < 0 and above > 0.035:
+        delta[2] *= smooth((behind - 0.05) / 0.05)
+    speed = min(hand_speed, 0.02 + 0.5 * np.linalg.norm(goal - measured))
+    step = delta * min(1.0, speed * min(dt, 0.1) / max(np.linalg.norm(delta), 1e-9))
+    return command + step, gap
 
 
 class WholeBodyGraspPolicy:
@@ -39,13 +53,13 @@ class WholeBodyGraspPolicy:
         self.ik = ArmIK()
         self.guard = task.transport_guard(self.ik, config)
         self.guard.finger_only_target_contact = True
-        self.target = AssistedBottleTarget(self.ik, task, self.cfg.vision_timeout)
+        self.target = BottleTargetObserver(self.ik, task, self.cfg.vision_timeout)
         self.error = None
         self.arm = self.motion = None
         self.completed = False
-        self.last_walk = None
+        self.walking = WalkingReach(self.ik, self.cfg, arm_ramp.q)
         self.stats = execution.metrics.setdefault(
-            "whole_body", dict(samples=[], references=[], source="assisted", clock="simulation")
+            "whole_body", dict(samples=[], walking=[], references=[], source="assisted", clock="simulation")
         )
         self.previous_observer = robot.cmd.reference_observer
         robot.cmd.reference_observer = self.observe_reference
@@ -81,20 +95,35 @@ class WholeBodyGraspPolicy:
             self.stats.update(normalized)
 
     def walk_tick(self, state):
+        if self.walking.last == float(state["t"]):
+            return self.error is None
+        started = time.perf_counter()
         target = self.target.observe(state)
+        observed = time.perf_counter()
         self.context = dict(seq=state["seq"], t=state["t"], phase="prepare", camera=self.target.diagnostics.copy())
-        q = ready_q()
-        if target is not None:
-            depth = self.p.world_to_root_full(target, state)[0]
-            u = smooth((0.65 - depth) / 0.35)
-            q[14] = 0.10 * u
-            q[22] -= 0.18 * u
-        stamp = float(state["t"])
-        if self.last_walk is not None and stamp <= self.last_walk:
-            return True
-        self.last_walk = stamp
-        wanted = upper_body_from_mj(q)
-        self.ramp.push(wanted)
+        previous = self.walking.q.copy()
+        try:
+            wanted, velocity = self.walking.step(state, target)
+        except ValueError as exc:
+            self.error = str(exc)
+            self.stats["failure"] = dict(state=state, previous_t=self.walking.last, reason=self.error)
+            return False
+        planned = time.perf_counter()
+        predicted = np.asarray(state["joints"], dtype=float).copy()
+        delta = wanted - previous
+        predicted[12:15] += delta[:3]
+        predicted[15:22] += delta[3::2]
+        predicted[22:29] += delta[4::2]
+        self.error = self._clear(state, predicted, False)
+        if self.error:
+            self.stats["failure"] = dict(state=state, reference=wanted, reason=self.error)
+            return False
+        self.p.cmd.set_upper_body(wanted)
+        self.p.cmd.set_upper_body_vel(velocity)
+        elapsed = dict(camera=observed - started, planning=planned - observed, clearance=time.perf_counter() - planned)
+        self.stats["last_walk_timing"] = dict(t=state["t"], **elapsed)
+        if self.walking.diagnostics.get("plan_updated"):
+            self.stats["walking"].append(dict(**self.walking.diagnostics, camera=self.target.diagnostics.copy()))
         return True
 
     def _hold_planner(self, state):
@@ -110,7 +139,8 @@ class WholeBodyGraspPolicy:
             stamp = float(state["t"])
             if state["fallen"] or stamp - start > 3:
                 return False
-            self.walk_tick(state)
+            if not self.walk_tick(state):
+                return False
             self._hold_planner(state)
             if stamp > previous:
                 previous, last_progress = stamp, time.monotonic()
@@ -144,7 +174,7 @@ class WholeBodyGraspPolicy:
         try:
             self.execution.enter("whole_body.brake")
             if not self._brake():
-                return False, "whole-body base did not stabilize"
+                return False, self.error or "whole-body base did not stabilize"
             ok, why = self._reach()
             self.completed = ok
             self.stats["outcome"] = dict(ok=ok, reason=why, state=self.p.obs())
@@ -186,16 +216,15 @@ class WholeBodyGraspPolicy:
         initial = self._measured_tools(state)
         rotations = np.array([Primitives._rot(state["palms"][side]["quat"]) for side in ("left", "right")])
         root = Primitives._rot(state["pelvis"]["quat"])
-        rel = self.p.world_to_root_full(target, state)
-        _, _, local_rot = min(templates(), key=lambda row: np.linalg.norm(row[1] - rel))
-        desired_rot = terminal_rotation(root, local_rot, self.config)
-        # Upright bottle: keep both entry and jaw axes level in world space.
-        # Carrying the pelvis pitch into the wrist puts its housing into the neck.
-        desired_rot = Rotation.from_euler("z", np.arctan2(desired_rot[1, 0], desired_rot[0, 0])).as_matrix()
+        desired_rot = self.walking.rotation
+        if desired_rot is None:
+            desired_rot = Rotation.from_euler("z", np.arctan2(root[1, 0], root[0, 0])).as_matrix()
         turn = Slerp([0, 1], Rotation.from_matrix([rotations[1], desired_rot]))
-        gap = max(0.10, self.config.pregrasp_gap)
-        approach_part = "clear"
-        lean_target = float(np.clip((initial[1, 2] - target[2]) / 0.6, 0.0, 0.55))
+        # Preparation already moved the hand: lean follows bottle height, not
+        # the remaining hand error (which would erase the bend after good preparation).
+        lean_target = float(np.clip((state["pelvis"]["pos"][2] + 0.12 - target[2]) / 0.6, 0.0, 0.55))
+        motion.body.put(motion.x)
+        torso_reference = self.ik.data.xmat[motion.body.torso].reshape(3, 3).copy()
         self.stats["initial"] = dict(
             state=state, reference=self.arm.q, root=self.arm.root_quat, support_offset=motion.support_offset
         )
@@ -233,27 +262,13 @@ class WholeBodyGraspPolicy:
             self.context = dict(seq=state["seq"], t=stamp, phase=phase, camera=self.target.diagnostics.copy())
             torso_target = None
             if phase == "reach":
-                outside = target - gap * desired_rot[:, 0]
-                if approach_part == "clear":
-                    goal = outside.copy()
-                    goal[2] = max(initial[1, 2], target[2] + 0.12)
-                    if np.linalg.norm((actual[1] - outside)[:2]) < 0.035:
-                        approach_part = "descend"
-                elif approach_part == "descend":
-                    goal = outside.copy()
-                    if abs(actual[1, 2] - target[2]) < 0.03:
-                        approach_part = "insert"
-                else:
-                    # Stop inside the capture region, leaving room before the
-                    # palm housing rather than centring the bottle against it.
-                    goal = target - 0.010 * desired_rot[:, 0]
-                delta = goal - targets[1]
-                speed_limit = min(self.cfg.hand_speed, 0.02 + 0.5 * np.linalg.norm(goal - actual[1]))
-                targets[1] += delta * min(1.0, speed_limit * min(dt, 0.1) / max(np.linalg.norm(delta), 1e-9))
+                targets[1], entry_gap = entry_step(
+                    targets[1], actual[1], target, desired_rot[:, 0], dt, self.cfg.hand_speed
+                )
                 progress = min(1.0, progress + min(dt, 0.1) / 1.0)
                 rotations[1] = turn(smooth(progress)).as_matrix()
                 torso_target = motion.body.heading @ Rotation.from_euler("y", lean_target).as_matrix()
-                self.context["approach_part"] = approach_part
+                self.context.update(approach_part="direct", entry_gap=float(entry_gap))
                 geometry = closure_geometry(state, "right", target)
                 relative = target - actual[1]
                 window.append((stamp, relative))
@@ -264,7 +279,7 @@ class WholeBodyGraspPolicy:
                     if stamp == window[0][0]
                     else np.linalg.norm(relative - window[0][1]) / (stamp - window[0][0])
                 )
-                if geometry["ready"] and speed < 0.08:
+                if geometry["ready"] and geometry["depth_m"] >= 0.005 and speed < 0.08:
                     # Close while stabilizing the measured capture region. The
                     # slow finger ramp and bilateral-contact gate replace a
                     # separate stationary wait at an already graspable bottle.
@@ -321,12 +336,16 @@ class WholeBodyGraspPolicy:
             if max(drift) > 0.05:
                 self.stats["failure"] = dict(state=state, measured_foot_drift=drift)
                 return False, "whole-body measured foot drift"
+            if torso_target is not None:
+                turn_delta = Rotation.from_matrix(torso_target @ torso_reference.T).as_rotvec()
+                turn_delta *= min(1.0, 0.25 * dt / max(np.linalg.norm(turn_delta), 1e-9))
+                torso_reference = Rotation.from_rotvec(turn_delta).as_matrix() @ torso_reference
             pose = motion.step(
                 targets,
                 rotations,
                 actual,
                 dt,
-                torso_rotation=torso_target,
+                torso_rotation=torso_reference,
                 measured_rotations=np.array(
                     [Primitives._rot(state["palms"][side]["quat"]) for side in ("left", "right")]
                 ),
@@ -347,7 +366,7 @@ class WholeBodyGraspPolicy:
             reason = self._clear(
                 state,
                 predicted["joints"],
-                phase != "reach" or approach_part == "insert",
+                phase != "reach" or abs(actual[1, 2] - target[2]) < 0.035,
                 candidate_base=[*predicted["pelvis"]["pos"], *predicted["pelvis"]["quat"]],
             )
             if reason:

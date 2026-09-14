@@ -15,6 +15,8 @@ class WholeBodyConfig:
     close_seconds: float = 1.2
     tracking_gain: float = 1.0
     vision_timeout: float = 1.0
+    walk_plan_hz: float = 5.0
+    walk_filter_seconds: float = 0.45
 
     @property
     def waist_dofs(self):
@@ -30,3 +32,5 @@ class WholeBodyConfig:
             raise ValueError("whole-body height or speed outside supported range")
         if not (self.tracking_gain <= 1 and self.vision_timeout <= 1 and self.close_seconds >= 0.5):
             raise ValueError("whole-body feedback, freshness or closure outside supported range")
+        if not (1 <= self.walk_plan_hz <= 10 and 0.2 <= self.walk_filter_seconds <= 1):
+            raise ValueError("walking reach requires slow planning and gait filtering")

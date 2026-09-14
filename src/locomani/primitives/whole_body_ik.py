@@ -30,9 +30,14 @@ class WholeBodyPose:
 class WholeBodyIK:
     """A fixed support problem, reusable for admission and continuous paired motion."""
 
-    def __init__(self, ik: ArmIK, state, config, *, tool_offset, joint_limits=None, hand_weights=(1.0, 1.0)):
+    def __init__(
+        self, ik: ArmIK, state, config, *, tool_offset, joint_limits=None, hand_weights=(1.0, 1.0), com_weight=5.0
+    ):
         self.ik = ik
         self.hand_weights = np.asarray(hand_weights, dtype=float)
+        if not np.isfinite(com_weight) or com_weight <= 0:
+            raise ValueError("COM weight must be positive and finite")
+        self.com_weight = float(com_weight)
         if (
             self.hand_weights.shape != (2,)
             or not np.isfinite(self.hand_weights).all()
@@ -115,7 +120,7 @@ class WholeBodyIK:
                 3 * foot_rot,
                 10 * ((points - positions) * self.hand_weights[:, None]).ravel(),
                 0.6 * hand_rot * np.repeat(self.hand_weights, 3),
-                5 * (d.subtree_com[self.pelvis, :2] - self.com0),
+                self.com_weight * (d.subtree_com[self.pelvis, :2] - self.com0),
                 (0.008 if posture is None else 0.04) * (x[4:] - prior),
                 0.3 * (x[2] - self.base0[2]),
                 np.zeros(3)

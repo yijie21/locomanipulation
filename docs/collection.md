@@ -81,8 +81,31 @@ session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景
 
 `bottle_whole_body.json` 是显式选择的连续全身候选策略，默认仍为 `bottle_visible.json`。
 使用前安装 [POSE 与夹爪交接补丁](setup.md)，确认所选 deploy 包含两个 capability 标记。
-当前实验结果和限制见 [固定样本验证记录](handoff/bottle-continuous-20260914.md)，
+当前实现与实验结果见 [行走准备和连续抓取](handoff/bottle-direct-20260914.md)，
+上一版基线见 [固定样本验证记录](handoff/bottle-continuous-20260914.md)，
 不能把“能运行候选策略”理解为已提高成功率或已验证 VLA 学习效果。
+
+候选策略的动作设计是：
+
+- 走近时由 ego / 右腕相机的实际可见性准入仿真目标点，结合本体状态补偿身体移动。
+  视觉观测在独立线程处理，先滤掉步态摆动，再以 5 Hz 更新手臂规划；关节指令连续发送，
+  并限制速度和加速度。迟到的图像结果不会延长目标缓存的有效期。
+- 行走阶段做保守的方向、伸手距离准备；腿部仍由 SONIC 控制，腰部平滑回到行走中性参考。
+  相机短暂遮挡只沿用最后可见目标，超时不继续追踪隐藏的物体位置。
+- 减速后延续同一瓶子目标与抓取方向，接入双脚支撑的全身求解，协调腰、髋和手臂。
+  最终伸手不再强制经过“高处保持 → 下降 → 前插”三个路点；实际碰撞、接触与承载验收仍保留。
+- 接管从当前参考开始，不瞬间跳到 READY；抬起和身体恢复继续重叠进行。
+
+`reach.whole_body.walk_plan_hz` 控制规划频率，`walk_filter_seconds` 控制滤波时间常数，
+默认 5 Hz / 0.45 s。配置定义在 [whole_body_config.py](../src/locomani/tasks/bottle/whole_body_config.py)，
+行走引导在 [walking_reach.py](../src/locomani/tasks/bottle/walking_reach.py)，
+全身抓取在 [whole_body_policy.py](../src/locomani/tasks/bottle/whole_body_policy.py)。
+本次固定 10 次尝试为 6/10 成功（上一版 3/10），刹车到闭合的成功样本中位数从 9.84 s 降到 6.68 s。
+但实测关节步进 p99 和接管后的抬手幅度未改善，因此它仍是候选策略，不能等同于全面更平滑。
+完整指标与全部失败记录见上述验证文档。
+
+这是使用仿真几何辅助的专家，并非从 RGB 直接估计抓取位姿；数据标签是否正确与 VLA 是否学会，
+需要分别检验。动作更直接不能代替真实接触成功或训练评测。
 
 先冻结同一组目标位置、站位、出生扰动、外观和物体 yaw：
 

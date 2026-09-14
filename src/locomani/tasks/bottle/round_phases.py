@@ -498,38 +498,18 @@ def _phase_navigate(ctx: RoundContext):
     p = ctx.p
     ctx.execution.enter("navigate")
 
+    from locomani.tasks.bottle.policy import prepares_during_navigation
+
+    early = prepares_during_navigation(ctx.reach_config)
+    if early:
+        _prepare_grasp_policy(ctx, preserve_reference=True)
+
     plan_r = float(np.hypot(ctx.rel[0], ctx.rel[1]))
     ctx.plan_r = plan_r
-    # Two-stage arrival. The WALK is precise (telemetry: walk_to returns
-    # within 0.05 m of its target) — what scatters is the DECELERATION:
-    # 0.03-0.34 m of momentum creep lands AFTER walk_to returns. So stop
-    # the momentum walk 0.30 m short (heading held: face_target near a
-    # close target spun the robot 110-160 deg at the stop), wait 2 s for
-    # the creep to finish, then CRAWL the remainder inside the gait's
-    # deadband: a 0.30 speed command measures ~0.05 m/s, i.e. near-zero
-    # momentum, closed 50 Hz on the LIVE can depth — stop the tick it
-    # enters the plan band.
-    # The reach begins ON THE WAY IN, not after arriving. Leg 1 walks with
-    # the arms swinging; leg 2 hands the 17 upper-body joints over and drives
-    # them to READY by distance remaining, so the arm is up exactly when the
-    # body arrives.
-    #
-    # The handover used to be seeded from the arm's CURRENT MEASURED angles
-    # and was believed to have no step in it. It has two, both of them in the
-    # REFERENCE the encoder observes rather than in the motion:
-    #
-    #  1. the measured pose is not the quantity the deploy replaces. It
-    #     substitutes the 17 values into `current_motion_`'s joints verbatim
-    #     (g1_deploy_onnx_ref.cpp:781), so what is being displaced is the
-    #     k-planner's own arm reference -- and the two differ by the whole
-    #     tracking error of the frozen decoder. Seed from `body_q_target`,
-    #     which IS that quantity (upper_ref.RefTap).
-    #  2. the rise is parameterised by DISTANCE REMAINING, which is not a
-    #     rate. A round that skips leg 1 starts its approach already inside
-    #     RAISE_LEAD, evaluates the smoothstep at u=0.3-0.6 on the first tick
-    #     and commands a third of the whole rise in 20 ms. UpperRamp caps the
-    #     per-tick change and sends the matching `upper_body_velocity`, which
-    #     nothing on this path used to send at all.
+    # A distant spawn walks to the lead point before the camera-relative final
+    # approach. Continuous guidance owns the arms on both legs; older strategies
+    # retain their takeover at the start of the final approach. Reference seeding
+    # and physical-time rate limits avoid a READY jump for the continuous expert.
     lead_tgt = np.asarray(ctx.spawn_xy) - (0.30 + ctx.raise_lead) * np.array(ctx.fv[:2])
     # ALONG-TRACK, not distance. The lead point is fixed 1.30 m behind the
     # stand while the spawn is now sampled anywhere from 1.0 to 3.0 m back,
@@ -548,11 +528,26 @@ def _phase_navigate(ctx: RoundContext):
         # spawn turn's dead-zone residual, which a long walk then magnifies
         # into a lateral error the deadband approach cannot erase.
         if not p.walk_to(
-            lead_tgt, stop_dist=0.10, timeout=10.0 + 8.0 * ctx.spawn_off, face_target=False, face_yaw=ctx.psi
+            lead_tgt,
+            stop_dist=0.10,
+            timeout=10.0 + 8.0 * ctx.spawn_off,
+            face_target=False,
+            face_yaw=ctx.psi,
+            on_tick=(lambda state, _dist: ctx.coordinated.walk_tick(state)) if early else None,
         ):
+            if early and ctx.coordinated.error:
+                return False, ctx.coordinated.error
             return False, "[stand] fell during the walk-up"
     else:
         p.log(f"[gym] leg 1 skipped (lead point {along:+.2f} m along track)")
+    if not early:
+        _prepare_grasp_policy(ctx)
+    return None
+
+
+def _prepare_grasp_policy(ctx, *, preserve_reference=False):
+    """Take over the upper reference at the selected controller's entry point."""
+    p = ctx.p
     q_meas = upper_body_from_mj(p.obs()["joints"])
     q_free = upper_ref.shared().upper17()
     if q_free is None:  # stale, not merely un-started
@@ -571,7 +566,7 @@ def _phase_navigate(ctx: RoundContext):
             f"{np.degrees(gap[worst]):.1f} deg on "
             f"{UPPER_BODY_NAMES[worst]} (mean {np.degrees(gap.mean()):.1f})"
         )
-    if ctx.reach_config.ready_grasp_baseline:
+    if ctx.reach_config.ready_grasp_baseline and not preserve_reference:
         from locomani.tasks.bottle.ready_grasp_policy import ready_q
 
         q_free = upper_body_from_mj(ready_q())

@@ -1,8 +1,4 @@
-"""`Primitives`'s walking/turning mixin, split out of primitives.py (refactor
-step 4b family 4, pure extraction; decision 9's file-size cap). Every
-statement here is unchanged from the original inline body -- only the
-packaging moved.
-"""
+"""Walking and navigation primitives with an optional interruptible arm callback."""
 
 from __future__ import annotations
 
@@ -56,6 +52,7 @@ class PrimitivesWalkMixin:
         `on_tick(state, dist)` runs once per control tick before the frame is
         sent, so a caller can shape the upper body WHILE the legs walk — that
         is what lets the arm rise on the way in instead of after arriving.
+        Returning False aborts the walk and sends a stop command.
         """
         target = np.asarray(target_xy, dtype=float)
         end = time.time() + timeout
@@ -75,7 +72,10 @@ class PrimitivesWalkMixin:
                 return True
 
             if on_tick is not None:
-                on_tick(s, dist)
+                if on_tick(s, dist) is False:
+                    self.aborted = "walking callback rejected the next command"
+                    self.cmd.frame(mode=LocomotionMode.IDLE, speed=0.0, movement=(0, 0, 0))
+                    return False
             direction = err / max(dist, 1e-6)
             # Ease off over the last 0.5 m so it does not overshoot the stop.
             gain = float(np.clip(dist / 0.5, 0.25, 1.0))

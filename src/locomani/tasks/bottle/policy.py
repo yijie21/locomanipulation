@@ -3,6 +3,11 @@
 from locomani.tasks.bottle.reach_config import ReachConfig
 
 
+def prepares_during_navigation(config: ReachConfig):
+    """Only the continuous expert owns filtered arm guidance on the initial walk."""
+    return config.strategy == "whole_body"
+
+
 def make_grasp_policy(robot, task, config: ReachConfig, arm_ramp, execution):
     """Build one controller using the resolved strategy and unchanged dependencies.
 

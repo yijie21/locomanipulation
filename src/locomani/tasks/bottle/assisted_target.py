@@ -5,6 +5,8 @@ point may bridge a short occlusion; hidden truth never updates that cached point
 """
 
 import time
+from copy import copy, deepcopy
+from threading import Event, Lock, Thread
 
 import numpy as np
 
@@ -103,3 +105,64 @@ class AssistedBottleTarget:
 
     def close(self):
         self.client.close()
+
+
+class BottleTargetObserver:
+    """Latest completed camera observation; image work never runs in the caller.
+
+    ZMQ is constructed/used/closed by its owner thread. Camera FK has private
+    MjData; it cannot overwrite the controller's IK scratch space. A delayed
+    result retains its image timestamp and therefore cannot extend freshness.
+    """
+
+    def __init__(self, ik, task, timeout, *, observer_factory=None):
+        self.timeout = timeout
+        self._lock, self._stop = Lock(), Event()
+        self._state = self._point = self._seen = None
+        self._diagnostics = self.diagnostics = {}
+        if observer_factory is None:
+            camera_ik = copy(ik)
+            camera_ik.data = ik._mj.MjData(ik.model)
+            observer_factory = lambda: AssistedBottleTarget(camera_ik, task, timeout)
+        self._factory = observer_factory
+        self._thread = Thread(target=self._run, name="bottle-vision", daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        observer = None
+        try:
+            observer = self._factory()
+            while not self._stop.wait(0.01):
+                with self._lock:
+                    state = self._state
+                if state is None:
+                    continue
+                started = time.monotonic()
+                point = observer.observe(state)
+                diagnostics = dict(observer.diagnostics, worker_seconds=time.monotonic() - started)
+                with self._lock:
+                    self._point, self._seen = point, observer.seen
+                    self._diagnostics = diagnostics
+        except Exception as exc:
+            with self._lock:
+                self._point = None
+                self._diagnostics = dict(error=f"camera observer: {type(exc).__name__}: {exc}")
+        finally:
+            if observer is not None:
+                observer.close()
+
+    def observe(self, state, *, now=None):
+        now = time.time() if now is None else now
+        snapshot = deepcopy(state)
+        with self._lock:
+            self._state = snapshot
+            self.diagnostics = deepcopy(self._diagnostics)
+            if self._point is not None and self._seen is not None and 0 <= now - self._seen <= self.timeout:
+                return self._point.copy()
+        return None
+
+    def close(self):
+        self._stop.set()
+        # Cleanup must not wait indefinitely for a stalled camera SDK call.
+        # The daemon owns eventual socket teardown when that call returns.
+        self._thread.join(timeout=0.5)

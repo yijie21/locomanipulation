@@ -27,8 +27,8 @@
     "pregrasp_gap": 0.07,
     "local_reach_limit": 0.2,
     "visible_expert": true,
-    "visible_brake_depth": 0.31,
-    "visible_decel_band": 0.12,
+    "visible_brake_depth": 0.40,
+    "visible_decel_band": 0.24,
     "stand_azimuth_deg": 0.0
   },
   "target": "water_bottle",

@@ -21,8 +21,9 @@ def test_whole_body_configuration_reaches_actual_factory_and_roundtrips():
     from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
 
     task = BottleTaskConfig.load("configs/tasks/bottle_whole_body.json")
-    changed = task.with_overrides(["reach.whole_body.hand_speed=0.12"])
+    changed = task.with_overrides(["reach.whole_body.hand_speed=0.12", "reach.whole_body.walk_plan_hz=4"])
     assert changed.reach.whole_body.hand_speed == 0.12
+    assert changed.reach.whole_body.walk_plan_hz == 4
     assert ReachConfig.from_dict(changed.reach.to_dict()) == changed.reach
     args = [object(), object(), changed.reach, object(), ExecutionRecord()]
     with patch.object(WholeBodyGraspPolicy, "__init__", return_value=None) as initialize:
@@ -32,7 +33,14 @@ def test_whole_body_configuration_reaches_actual_factory_and_roundtrips():
 
 @pytest.mark.parametrize(
     "field,value",
-    [("joint_speed", 2), ("waist_pitch_max", 1), ("vision_timeout", float("nan")), ("close_seconds", 0.1)],
+    [
+        ("joint_speed", 2),
+        ("waist_pitch_max", 1),
+        ("vision_timeout", float("nan")),
+        ("close_seconds", 0.1),
+        ("walk_plan_hz", 30),
+        ("walk_filter_seconds", 0.01),
+    ],
 )
 def test_invalid_physical_limits_fail_before_execution(field, value):
     with pytest.raises(ValueError):
@@ -149,3 +157,82 @@ def test_successful_grasp_does_not_serialize_logs_before_loaded_transport():
     policy.arm.stop.assert_called_once_with(preserve_reference=True)
     policy.close.assert_not_called()
     assert policy.p.cmd.reference_observer is policy.previous_observer
+
+
+def test_supported_takeover_preserves_existing_decoder_tracking_bias():
+    ik = scene_ik()
+    q = np.zeros(29)
+    q[[0, 6]], q[[3, 9]], q[[4, 10]] = -0.1, 0.2, -0.1
+    q[15:22], q[22:29] = [-0.35, 0.2, 0, 0.8, 0, 0, 0], [-0.35, -0.2, 0, 0.8, 0, 0, 0]
+    state = dict(joints=q, pelvis=dict(pos=[0, 0, 0.78], quat=[1, 0, 0, 0]))
+    motion = SupportedMotion(ik, state, WholeBodyConfig(), q, [1, 0, 0, 0], tool_offset=[0.1515, 0, 0])
+    reference_tools = motion.body.tools(motion.x).copy()
+    rotations = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    measured = reference_tools + [[0.02, 0.04, -0.09], [-0.04, 0.01, 0.07]]
+    pose = motion.step(measured, rotations, measured, 0.02, measured_rotations=rotations)
+    np.testing.assert_allclose(motion.feedback, reference_tools - measured, atol=1e-10)
+    np.testing.assert_allclose(pose.joints, q, atol=1e-5)
+
+
+def test_continuous_entry_clears_cap_before_inserting_and_has_no_raised_waypoint():
+    from locomani.tasks.bottle.whole_body_policy import entry_step
+
+    target, axis = np.array([0.4, -0.2, 0.7]), np.array([1.0, 0, 0])
+    point = target + [-0.02, 0, 0.15]
+    for _ in range(600):
+        following, gap = entry_step(point, point, target, axis, 0.02, 0.16)
+        assert following[2] <= point[2] + 1e-9
+        assert np.linalg.norm(following - point) <= 0.16 * 0.02 + 1e-9
+        if point[2] - target[2] >= 0.06:
+            assert gap >= 0.115
+        point = following
+    assert abs(point[2] - target[2]) < 0.001
+    assert abs((target - point) @ axis - 0.018) < 0.001
+    # At capture height with a clear path, the hand advances directly and
+    # never moves upward or takes an intermediate backward waypoint.
+    point = target - 0.15 * axis
+    for _ in range(200):
+        following, _ = entry_step(point, point, target, axis, 0.02, 0.16)
+        assert following[0] >= point[0]
+        np.testing.assert_allclose(following[1:], point[1:])
+        point = following
+
+
+def test_slow_camera_does_not_block_control_or_freshen_a_late_result():
+    import time
+    from threading import Event
+
+    from locomani.tasks.bottle.assisted_target import BottleTargetObserver
+
+    entered, release, finished = Event(), Event(), Event()
+
+    class SlowCamera:
+        seen = 10.0
+        diagnostics = {"visible": {"right_wrist": 10.0}}
+
+        def observe(self, state):
+            entered.set()
+            release.wait(2)
+            return np.array([0.3, -0.2, 0.7])
+
+        def close(self):
+            finished.set()
+
+    worker = BottleTargetObserver(None, None, 0.7, observer_factory=SlowCamera)
+    try:
+        assert worker.observe({"seq": 1}, now=10.1) is None
+        assert entered.wait(1)
+        # Image work is still blocked, but the actual controller-facing API returns.
+        assert worker.observe({"seq": 2}, now=10.2) is None
+        release.set()
+        deadline = time.monotonic() + 1
+        point = None
+        while point is None and time.monotonic() < deadline:
+            point = worker.observe({"seq": 3}, now=10.3)
+            time.sleep(0.001)
+        np.testing.assert_array_equal(point, [0.3, -0.2, 0.7])
+        assert worker.observe({"seq": 4}, now=10.8) is None
+    finally:
+        release.set()
+        worker.close()
+    assert finished.is_set()

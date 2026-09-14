@@ -8,7 +8,7 @@ from locomani.primitives.whole_body_ik import WholeBodyIK
 
 class SupportedMotion:
     def __init__(self, ik, state, config, reference_joints, reference_root, *, tool_offset, hand_weights=(1, 1)):
-        self.body = WholeBodyIK(ik, state, config, tool_offset=tool_offset, hand_weights=hand_weights)
+        self.body = WholeBodyIK(ik, state, config, tool_offset=tool_offset, hand_weights=hand_weights, com_weight=20.0)
         root = Rotation.from_quat(np.asarray(reference_root)[[1, 2, 3, 0]]).as_matrix()
         pitch = Rotation.from_matrix(root).as_euler("xyz")[1]
         self.body.heading = root @ Rotation.from_euler("y", -pitch).as_matrix()
@@ -27,6 +27,7 @@ class SupportedMotion:
         self.v = np.zeros(33)
         self.feedback = np.zeros((2, 3))
         self.rotation_feedback = np.zeros((2, 3))
+        self.feedback_origin = self.rotation_origin = None
         self.config = config
         self.posture = np.asarray(reference_joints).copy()
         self.previous_dt = None
@@ -51,15 +52,27 @@ class SupportedMotion:
         if not np.isfinite(dt) or dt <= 0 or dt > 0.5:
             raise ValueError("supported motion needs a fresh advancing physical clock")
         cfg = self.config
-        error = np.clip(self.body.tools(self.x) - measured, -0.08, 0.08)
-        self.feedback += (1 - np.exp(-dt / 0.4)) * (error - self.feedback)
+        error = self.body.tools(self.x) - measured
+        first = self.feedback_origin is None
+        if first:
+            self.feedback_origin = error.copy()
+        # Preserve the decoder's existing reference/measurement offset at
+        # takeover. Starting compensation at zero would move an otherwise held
+        # hand just to erase that offset, then reverse as feedback warmed up.
+        error = self.feedback_origin + np.clip(error - self.feedback_origin, -0.08, 0.08)
+        alpha = 1 if first else 1 - np.exp(-dt / 0.4)
+        self.feedback += alpha * (error - self.feedback)
         if measured_rotations is not None:
             reference_rotations = self.body.ik.data.xmat[self.body.hands].reshape(2, 3, 3)
             error_rot = Rotation.from_matrix(
                 reference_rotations @ np.asarray(measured_rotations).transpose(0, 2, 1)
             ).as_rotvec()
-            error_rot *= np.minimum(1, np.radians(20) / np.maximum(np.linalg.norm(error_rot, axis=1), 1e-9))[:, None]
-            self.rotation_feedback += (1 - np.exp(-dt / 0.4)) * (error_rot - self.rotation_feedback)
+            if self.rotation_origin is None:
+                self.rotation_origin = error_rot.copy()
+                self.rotation_feedback = error_rot.copy()
+            residual = error_rot - self.rotation_origin
+            residual *= np.minimum(1, np.radians(20) / np.maximum(np.linalg.norm(residual, axis=1), 1e-9))[:, None]
+            self.rotation_feedback += alpha * (self.rotation_origin + residual - self.rotation_feedback)
         corrected_rotations = Rotation.from_rotvec(cfg.tracking_gain * self.rotation_feedback).as_matrix() @ rotations
         corrected_positions = np.asarray(positions) + cfg.tracking_gain * self.feedback
         speed = np.r_[[0.04] * 3, 0.6, [cfg.joint_speed] * 29]
