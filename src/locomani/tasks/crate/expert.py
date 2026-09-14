@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from locomani import paths
 from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
+from locomani.backends.sonic.pose_preview import PosePreview
 from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj
 from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
 from locomani.pipeline.execution_record import RoundResult
@@ -32,7 +33,8 @@ from locomani.tasks.crate.grasp_region import GRASP_POINTS
 from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.round_runner import prime
-from locomani.tasks.crate.visual_approach import VisualApproach, initial_robot_xy
+from locomani.tasks.crate.visible_target import VisibleTarget
+from locomani.tasks.crate.visual_approach import ApproachPreparation, VisualApproach, initial_robot_xy
 from locomani.tasks.crate.visual_low_reach import VisualLowReach
 from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
@@ -178,6 +180,11 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         else CratePerception(ArmIK(paths.SCENE_XML), geometry, max_reprojection_px=cfg.reprojection_px)
     )
     recorder = VisualRecording(directory / label)
+    target_cache = VisibleTarget()
+    preparation = ApproachPreparation(solver, cfg, arm.q) if assisted and whole_body else None
+    # The transport journals every reference send, even during mode priming.
+    if hasattr(p, "cmd"):
+        p.cmd.reference_observer = recorder.observe_reference
     reset.start_video(label)
     started = time.time()
     estimate, last_image_time = None, 0.0
@@ -185,6 +192,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     last_motion = {"movement": np.zeros(3), "speed": -1.0}
     last_phase, reason, error = None, "no_camera_frames", None
     final = initial
+    last_control_time = None
+    images, message = None, None
     last_simulation_time, last_progress_wall = float(initial["t"]) if assisted else 0.0, started
     try:
         while (
@@ -206,42 +215,64 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
             if raw["fallen"]:
                 reason = "external_fall_abort"
                 break
-            message = camera.read()
-            if message is None or not {"ego_view", "left_wrist", "right_wrist"} <= set(message["images"]):
-                arm.mode = LocomotionMode.IDLE
-                last_motion = {"movement": np.zeros(3), "speed": -1.0}
-                if now - last_camera_received > cfg.vision_timeout:
-                    reason = "camera_unavailable"
+            if assisted and raw["t"] == last_control_time:
+                time.sleep(0.002)
+                continue  # no new physical sample: do not append a contradictory held pose
+            last_control_time = raw.get("t")
+            incoming = camera.read()
+            fresh_image = False
+            if incoming is not None and {"ego_view", "left_wrist", "right_wrist"} <= set(incoming["images"]):
+                last_camera_received = now
+                stamp = max(float(v) for v in incoming["timestamps"].values())
+                if now - min(float(v) for v in incoming["timestamps"].values()) > cfg.vision_timeout:
+                    reason = "stale_camera_abort"
                     break
-                arm._push(arm.q)
-                continue
-            now = time.time()
-            last_camera_received = now
-            stamp = max(float(v) for v in message["timestamps"].values())
-            if now - min(float(v) for v in message["timestamps"].values()) > cfg.vision_timeout:
-                reason = "stale_camera_abort"
+                fresh_image = stamp != last_image_time
+                if fresh_image:
+                    message, images = incoming, incoming["images"]
+                    last_image_time = stamp
+                    estimate = perception.update(images, raw if assisted else np.asarray(raw["joints"]), stamp)
+                    if assisted:
+                        target_cache.update(estimate, raw)
+            if now - last_camera_received > cfg.vision_timeout:
+                reason = "camera_unavailable"
                 break
-            if stamp == last_image_time:
-                arm._push(arm.q, **({} if low is not None else last_motion))
-                continue
-            last_image_time = stamp
-            images = message["images"]
+            if assisted:
+                estimate = target_cache.at(raw)
             joints = np.asarray(raw["joints"], dtype=float)
             measured, rotations = solver.tool_poses(joints)
-            new_estimate = perception.update(images, raw if assisted else joints, stamp)
-            estimate = new_estimate  # an occluded frame cannot refresh a true-state target
+            recorder.context = dict(
+                state_seq=raw.get("seq"),
+                simulation_time=raw.get("t"),
+                state_wall_time=raw.get("wall"),
+                image_frame=(recorder.frames if fresh_image else recorder.frames - 1) if images is not None else None,
+                image_timestamp=last_image_time or None,
+                phase=last_phase or "walk",
+            )
+            if (not assisted and not fresh_image) or images is None:
+                arm._push(arm.q, **({} if low is not None else last_motion))
+                continue
             openings = np.array([2 * (np.mean(raw["palms"][side]["hand_q"][:2]) + 0.023) for side in ("left", "right")])
             navigation = None
             if approach is not None:
                 target = (
-                    ApproachTarget(estimate.position, stamp, "visible_simulation_pose" if assisted else "full_rgb_pose")
+                    ApproachTarget(
+                        estimate.position,
+                        estimate.timestamp,
+                        "visible_simulation_pose" if assisted else "full_rgb_pose",
+                    )
                     if estimate is not None
                     else None
                     if assisted
                     else perception.approach_target(images, joints, stamp)
                 )
                 nav = approach.step(
-                    now, target, raw["pelvis"]["quat"], grasp_pose_available=estimate is not None, **motion_clock
+                    now,
+                    target,
+                    raw["pelvis"]["quat"],
+                    grasp_pose_available=estimate is not None,
+                    **({"base_velocity": raw["pelvis"]["vel"]} if assisted else {}),
+                    **motion_clock,
                 )
                 admission = None
                 if nav.ready and assisted:
@@ -261,9 +292,13 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                 yaw = p.pelvis_yaw(raw)
                 direction = nav.direction.copy()
                 direction[:2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]] @ direction[:2]
-                q = arm.q.copy()
+                q, velocity = (
+                    (arm.q.copy(), np.zeros(29)) if preparation is None else preparation.step(float(raw["t"]), estimate)
+                )
+                arm.q = q
+                recorder.context["phase"] = nav.phase
                 last_motion = {"movement": direction, "speed": nav.speed if nav.speed > 0 else -1.0}
-                arm._push(q, **last_motion)
+                arm._push(q, reference_velocity=velocity, **last_motion)
                 positions, reference_rotations = solver.tool_poses(q)
                 command = ExpertCommand(positions, reference_rotations, 0.0, nav.phase, nav.reason, bool(nav.reason))
                 navigation = {
@@ -284,7 +319,33 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     if estimate is None:
                         arm._push(arm.q)
                         continue
-                    arm = StreamedArm(p, "right", ik=model, left_guard=False)
+                    recorder.context["phase"] = "handoff"
+                    if fresh_image:
+                        recorder.append(
+                            images,
+                            dict(
+                                wall_time=now,
+                                image_timestamps=message["timestamps"],
+                                state_seq=raw.get("seq"),
+                                simulation_time=raw.get("t"),
+                                joints=joints,
+                                base_quaternion=raw["pelvis"]["quat"],
+                                base_position=raw["pelvis"]["pos"],
+                                reference_joints=arm.q,
+                                phase="handoff",
+                            ),
+                        )
+                    arm = StreamedArm(
+                        p,
+                        "right",
+                        ik=model,
+                        left_guard=False,
+                        preview=(
+                            PosePreview(acceleration=cfg.joint_acceleration, joint_limits=(solver.lo, solver.hi))
+                            if assisted
+                            else None
+                        ),
+                    )
                     arm.start(hold_planner_pose=True)
                     handoff_state = p.obs()
                     if assisted:
@@ -318,7 +379,13 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     side: HAND_OPEN + body_command.closure * (closed - HAND_OPEN) for side in ("left", "right")
                 }
                 arm.q, arm.root_quat = q, body_command.root_quaternion
-                arm._push(q, reference_velocity=body_command.velocity)
+                recorder.context["phase"] = body_command.phase
+                if not body_command.finished or body_command.reason == "completed":
+                    arm._push(
+                        q,
+                        reference_velocity=body_command.velocity,
+                        **({"reference_time": raw["t"]} if assisted else {}),
+                    )
                 points, attitudes = solver.tool_poses(q)
                 command = ExpertCommand(
                     points,
@@ -346,39 +413,46 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
             if command.phase != last_phase:
                 print(f"[{label}] {command.phase} at {now - started:.2f}s", flush=True)
                 last_phase = command.phase
-            recorder.append(
-                images,
-                {
-                    "wall_time": now,
-                    "image_timestamps": message["timestamps"],
-                    "state_seq": raw.get("seq"),
-                    "state_wall_time": raw.get("wall"),
-                    "simulation_time": raw.get("t"),
-                    "motion_clock": "simulation" if assisted else "wall",
-                    "joints": joints,
-                    "base_quaternion": raw["pelvis"]["quat"],
-                    "base_position": raw["pelvis"]["pos"],
-                    "guidance": perception.diagnostics if assisted else {"pose_source": "rgb_markers"},
-                    "navigation": navigation,
-                    "hand_openings": openings,
-                    "reference_joints": q,
-                    "root_reference": None if low is None else dict(quaternion=arm.root_quat, velocity=low.velocity),
-                    "low_reach": None if low is None else low.diagnostics,
-                    "tool_reference": command.positions,
-                    "closure": command.closure,
-                    "phase": command.phase,
-                    "reason": command.reason,
-                    "vision": None
-                    if estimate is None
-                    else {
-                        "source": "simulation" if assisted else "rgb_markers",
-                        "position": estimate.position,
-                        "rotation": estimate.rotation,
-                        "reprojection_px": estimate.reprojection_px,
-                        "detections": estimate.detections,
+            if fresh_image:
+                recorder.append(
+                    images,
+                    {
+                        "wall_time": now,
+                        "image_timestamps": message["timestamps"],
+                        "state_seq": raw.get("seq"),
+                        "state_wall_time": raw.get("wall"),
+                        "simulation_time": raw.get("t"),
+                        "motion_clock": "simulation" if assisted else "wall",
+                        "joints": joints,
+                        "base_quaternion": raw["pelvis"]["quat"],
+                        "base_position": raw["pelvis"]["pos"],
+                        "base_velocity": raw["pelvis"].get("vel"),
+                        "guidance": perception.diagnostics if assisted else {"pose_source": "rgb_markers"},
+                        "navigation": navigation,
+                        "hand_openings": openings,
+                        "reference_joints": q,
+                        "command_id": recorder.command_count - 1,
+                        "root_reference": None
+                        if low is None
+                        else dict(quaternion=arm.root_quat, velocity=low.velocity),
+                        "low_reach": None if low is None else low.diagnostics,
+                        "tool_reference": command.positions,
+                        "closure": command.closure,
+                        "phase": command.phase,
+                        "reason": command.reason,
+                        "vision": None
+                        if estimate is None
+                        else {
+                            "source": "simulation" if assisted else "rgb_markers",
+                            "position": estimate.position,
+                            "rotation": estimate.rotation,
+                            "reprojection_px": estimate.reprojection_px,
+                            "detections": estimate.detections,
+                        },
                     },
-                },
-            )
+                )
+            if assisted and command.phase == "hold" and recorder.training_tail is None:
+                recorder.mark_training_end(raw)
             if command.finished:
                 reason = command.reason
                 break
@@ -386,6 +460,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         reason, error = "runtime_error", traceback.format_exc()
     finally:
         control_reason = reason
+        if hasattr(p, "cmd"):
+            p.cmd.reference_observer = None
         for cleanup in (recorder.close, reset.end_video, arm.stop):
             try:
                 cleanup()
@@ -407,6 +483,17 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         intervention=control_reason.startswith("external_"),
         evaluation_state_seq=final.get("seq"),
     )
+    if assisted:
+        result["reference_stream"] = dict(
+            clock="simulation",
+            rate_hz=1 / PosePreview.dt,
+            future_frames=PosePreview.future_frames,
+            history_frames=PosePreview.history_frames,
+            prediction="shared_tangent_braking",
+        )
+    result["command_count"] = recorder.command_count
+    if result["ok"] and recorder.training_tail is not None:
+        result["training_tail"] = recorder.training_tail
     if "pelvis" in initial:
         result["initial_edge_distance"] = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])
     if error is not None:

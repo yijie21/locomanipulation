@@ -113,6 +113,21 @@ class CoordinatedReach:
             reference_hand_error=pose.hand_errors,
         )
 
+    def brake(self, dt):
+        """A lost visual target stops progress and brakes the last physical reference."""
+        if dt <= 0:
+            return
+        acceleration = np.r_[
+            [0.2] * 3, self.config.visual.joint_acceleration, [self.config.visual.joint_acceleration] * 29
+        ]
+        interval = dt if self.last_dt is None else (dt + self.last_dt) / 2
+        velocity = self.v + np.clip(-self.v, -acceleration * interval, acceleration * interval)
+        x = np.clip(self.x + velocity * dt, self.travel_lo, self.travel_hi)
+        self.v = (x - self.x) / dt
+        self.x, self.last_dt = x, dt
+        self.q, self.velocity = x[4:].copy(), self.v[4:].copy()
+        self.root = quaternion(self.body.put(x))
+
     def step(self, wall_time, estimate, state, hand_openings, *, motion_time=None):
         """Advance by physical time; camera timestamps and freshness use wall time."""
         cfg = self.config.visual
@@ -127,15 +142,12 @@ class CoordinatedReach:
             return self.result("timeout", True)
         if estimate is None or not 0 <= wall_time - estimate.timestamp <= cfg.vision_timeout:
             self.was_visible, self.ready_since = False, None
-            self.last_dt = None
-            self.v[:] = 0
-            self.velocity[:] = 0
+            self.brake(control_dt)
             stale = (
                 wall_time - (self.last_seen if self.last_seen is not None else self.started_wall) > cfg.vision_timeout
             )
             return self.result("vision_lost" if stale else "waiting_for_vision", stale)
         dt = dt if self.was_visible else 0.0
-        control_dt = control_dt if self.was_visible else 0.0
         self.was_visible, self.last_seen = True, estimate.timestamp
         self.elapsed += dt
         base, origin = rotation(state["pelvis"]["quat"]), np.asarray(state["pelvis"]["pos"])
@@ -145,6 +157,12 @@ class CoordinatedReach:
         centres = local_centres[np.argsort(-local_centres[:, 1])] @ base.T + origin
         obj_rotation, obj_position = base @ estimate.rotation, origin + base @ estimate.position
         targets = self.region.nearest(centres, obj_rotation[:, 1], tools)
+        # The cached camera-admitted pose owns reach targets. Current simulation
+        # state independently checks displacement, attachment and load safety.
+        if "objects" in state:
+            observed_object = state["objects"]["blue_crate"]
+            obj_position = np.asarray(observed_object["pos"])
+            obj_rotation = rotation(observed_object["quat"])
         self.diagnostics = dict(observed_grips=centres, measured_tools=tools, information_source="simulation_assisted")
         if self.phase == "observe":
             axis = centres[0] - centres[1]
@@ -163,6 +181,10 @@ class CoordinatedReach:
             if not admission.reachable:
                 return self.result("unsupported_assisted_reach", True)
             self.posture = admission.joints.copy()
+            final_torso = self.solver.ik.data.xmat[self.body.torso].reshape(3, 3).copy()
+            self.body.put(self.x)
+            initial_torso = self.solver.ik.data.xmat[self.body.torso].reshape(3, 3).copy()
+            self.reach_rotation = Slerp([0, 1], Rotation.from_matrix([initial_torso, final_torso]))
             self.start_tools = self.body.tools(self.x)
             self.body.put(self.x)
             initial_attitudes = self.solver.ik.data.xmat[self.body.hands].reshape(2, 3, 3)
@@ -190,6 +212,7 @@ class CoordinatedReach:
                 self.enter("close")
             else:
                 u, _ = blend(self.elapsed, self.duration)
+                self.torso_target = self.reach_rotation(u).as_matrix()
                 commanded = self.start_tools + u * (targets - self.start_tools)
                 attitudes = np.array([r(u).as_matrix() for r in self.rotations])
                 self.advance(commanded, attitudes, tools, control_dt)
@@ -206,6 +229,19 @@ class CoordinatedReach:
                 # The held FK already includes feedback; remove it before adding
                 # the same correction to the new trajectory, preserving its start.
                 self.lift_targets = self.body.tools(self.x) - cfg.tracking_gain * self.feedback
+                self.stand_targets = self.lift_targets + self.start_tools.mean(axis=0) - self.lift_targets.mean(axis=0)
+                self.stand_targets[:, 2] = np.maximum(
+                    self.stand_targets[:, 2], self.lift_targets[:, 2] + cfg.lift_height
+                )
+                self.body.put(self.x)
+                planned_torso = self.solver.ik.data.xmat[self.body.torso].reshape(3, 3).copy()
+                measured_torso = base @ self.solver.ik.body_pose(np.asarray(state["joints"]), "torso_link")[1]
+                # Do not ask a lagging torso to bend farther at lift-off.
+                initial_torso = min((planned_torso, measured_torso), key=lambda r: np.arccos(np.clip(r[2, 2], -1, 1)))
+                self.torso_target = initial_torso.copy()
+                self.stand_rotation = Slerp([0, 1], Rotation.from_matrix([initial_torso, self.body.heading]))
+                self.stand_posture = self.posture.copy()
+                self.recovery_started = None
                 self.enter("lift")
         elif self.phase in ("lift", "stand", "hold"):
             attachment = float(
@@ -227,36 +263,37 @@ class CoordinatedReach:
                 return self.result("lost_attachment", True)
             if tilt > cfg.max_tilt_deg:
                 return self.result("basket_tilt", True)
-            if self.phase == "lift":
-                u, _ = blend(self.elapsed, cfg.lift_seconds)
-                self.advance(self.lift_targets + [0, 0, u * cfg.lift_height], self.attitudes, tools, control_dt)
+            if self.phase in ("lift", "stand"):
                 delivered_probe = np.mean(tools[:, 2] - self.closed_tools[:, 2]) >= cfg.probe_height
-                if delivered_probe and (rise < cfg.probe_height * 0.35 or attachment > 0.03):
-                    return self.result("probe_not_attached", True)
-                if self.elapsed >= cfg.lift_seconds and rise >= cfg.lift_height * 0.6 and attachment < 0.03:
-                    self.stand_start = self.body.tools(self.x) - cfg.tracking_gain * self.feedback
-                    # Move the attached pair back to the upright ready-pose centre.
-                    # Preserve its separation and attitude; never command the object.
-                    self.stand_targets = (
-                        self.stand_start + self.start_tools.mean(axis=0) - self.stand_start.mean(axis=0)
-                    )
-                    self.body.put(self.x)
-                    initial_torso = self.solver.ik.data.xmat[self.body.torso].reshape(3, 3).copy()
-                    self.stand_rotation = Slerp([0, 1], Rotation.from_matrix([initial_torso, self.body.heading]))
-                    self.stand_posture = self.posture.copy()
-                    self.enter("stand")
-                elif self.elapsed >= cfg.lift_seconds + 2:
-                    return self.result("probe_not_attached", True)
-            elif self.phase == "stand":
-                u, _ = blend(self.elapsed, cfg.stand_seconds)
-                self.torso_target = self.stand_rotation(u).as_matrix()
-                self.posture = self.stand_posture + u * (self.body.q0 - self.stand_posture)
-                self.advance(
-                    self.stand_start + u * (self.stand_targets - self.stand_start), self.attitudes, tools, control_dt
-                )
-                if self.elapsed >= cfg.stand_seconds and lean <= cfg.upright_tolerance_deg and attachment < 0.03:
+                if self.recovery_started is None:
+                    if delivered_probe:
+                        if rise < cfg.probe_height * 0.35 or attachment > 0.03:
+                            return self.result("probe_not_attached", True)
+                        # A phase label changes, not the motion clock or reference.
+                        self.recovery_started = self.elapsed
+                        self.phase = "stand"
+                    elif self.elapsed >= cfg.lift_seconds + 2:
+                        return self.result("probe_not_attached", True)
+                lift_u, _ = blend(self.elapsed, cfg.lift_seconds)
+                recovery_time = 0 if self.recovery_started is None else self.elapsed - self.recovery_started
+                stand_u, _ = blend(recovery_time, cfg.stand_seconds)
+                lifted = self.lift_targets + [0, 0, cfg.lift_height]
+                targets = self.lift_targets + [0, 0, lift_u * cfg.lift_height]
+                targets += stand_u * (self.stand_targets - lifted)
+                self.torso_target = self.stand_rotation(stand_u).as_matrix()
+                self.posture = self.stand_posture + stand_u * (self.body.q0 - self.stand_posture)
+                self.diagnostics.update(lift_progress=lift_u, recovery_progress=stand_u, loaded_targets=targets.copy())
+                self.advance(targets, self.attitudes, tools, control_dt)
+                if (
+                    self.recovery_started is not None
+                    and recovery_time >= cfg.stand_seconds
+                    and self.elapsed >= cfg.lift_seconds
+                    and lean <= cfg.upright_tolerance_deg
+                    and attachment < 0.03
+                    and rise >= cfg.lift_height * 0.6
+                ):
                     self.enter("hold")
-                elif self.elapsed >= cfg.stand_seconds + 4:
+                elif recovery_time >= cfg.stand_seconds + 4:
                     return self.result("stand_not_delivered", True)
             else:
                 self.advance(self.stand_targets, self.attitudes, tools, control_dt)

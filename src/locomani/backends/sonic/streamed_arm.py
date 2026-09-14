@@ -80,11 +80,12 @@ def yaw_only(quat_wxyz):
 class StreamedArm:
     """Owns the pose stream: joint references, hand targets, pacing."""
 
-    def __init__(self, p: Primitives, side: str, *, ik=None, left_guard: bool = True):
+    def __init__(self, p: Primitives, side: str, *, ik=None, left_guard: bool = True, preview=None):
         self.p = p
         self.side = side
         self.ik = ArmIK() if ik is None else ik
         self.left_guard = left_guard
+        self.preview = preview
         # The waist may HELP the reach but only within a human lean. With the
         # stock limits the IK bridged any height/side gap by folding the
         # torso flat onto the table (head down, palm never reaching its
@@ -185,7 +186,7 @@ class StreamedArm:
         # unreachable.
         self.p.cmd.heading_offset = float(self.p.obs()["pelvis"]["yaw"])
 
-    def _push(self, q_mj29, *, reference_velocity=None) -> None:
+    def _push(self, q_mj29, *, reference_velocity=None, reference_time=None) -> None:
         """Buffer each pose with its own root rotation and optional 29-joint velocity."""
         q_mj29 = self._guard_left(np.asarray(q_mj29, dtype=float).copy())
         velocity = np.zeros(29) if reference_velocity is None else np.asarray(reference_velocity, dtype=float)
@@ -196,13 +197,21 @@ class StreamedArm:
         self.buf.append(mujoco_to_isaac(q_mj29).astype(np.float32))
         self.root_buf.append(np.asarray(self.root_quat, dtype=np.float32).copy())
         self.velocity_buf.append(mujoco_to_isaac(velocity).astype(np.float32))
+        positions, roots, velocities = np.stack(self.buf), np.stack(self.root_buf), np.stack(self.velocity_buf)
+        first_frame = self.i - len(self.buf) + 1
+        if self.preview is not None:
+            # Explicit physical time for control; priming samples the same clock.
+            stamp = float(self.p.obs()["t"]) if reference_time is None else float(reference_time)
+            poses, speeds, roots, first_frame = self.preview.sample(stamp, q_mj29, velocity, self.root_quat)
+            positions = np.array([mujoco_to_isaac(q) for q in poses], dtype=np.float32)
+            velocities = np.array([mujoco_to_isaac(v) for v in speeds], dtype=np.float32)
         self.p.cmd.pose_chunk(
-            np.stack(self.buf),
-            np.stack(self.root_buf),
-            self.i - len(self.buf) + 1,
+            positions,
+            roots,
+            first_frame,
             left_hand=self.hands["left"],
             right_hand=self.hands["right"],
-            joint_vel_isaac=np.stack(self.velocity_buf),
+            joint_vel_isaac=velocities,
         )
         self.i += 1
         self.next_t += DT

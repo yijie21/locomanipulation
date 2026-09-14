@@ -41,7 +41,7 @@ def test_continuous_body_feedback_moves_hips_with_hands_without_breaking_support
     np.testing.assert_array_equal(first.joints, state["joints"])
     previous = first.joints
     velocities, feet = [], []
-    for now in np.arange(0.05, 7, 0.05):
+    for now in np.arange(0.05, 4, 0.05):
         command = policy.step(now, estimate(now, state), state, [0.015] * 2)
         assert not command.finished, command.reason
         velocities.append((command.joints - previous) / 0.05)
@@ -57,20 +57,26 @@ def test_continuous_body_feedback_moves_hips_with_hands_without_breaking_support
     before = policy.x.copy()
     # A tracking lag requires a further whole-body correction, including the hips.
     state["pelvis"]["pos"] = state["pelvis"]["pos"] + [0, 0, 0.035]
-    policy.step(7.05, estimate(7.05, state), state, [0.015] * 2)
+    policy.step(4.05, estimate(4.05, state), state, [0.015] * 2)
     assert np.linalg.norm(policy.x[4:16] - before[4:16]) > 1e-4
 
 
-def test_unseen_or_stale_target_holds_body_and_cannot_close():
+def test_unseen_target_brakes_continuously_without_advancing_or_closing():
     policy, state = setup()
     policy.step(0, estimate(0, state), state, [0.08] * 2)
-    moved = policy.step(0.1, estimate(0.1, state), state, [0.08] * 2)
-    paused = policy.step(0.2, None, state, [0.08] * 2)
-    resumed = policy.step(0.3, estimate(0.3, state), state, [0.08] * 2)
-    np.testing.assert_array_equal(paused.joints, moved.joints)
-    np.testing.assert_array_equal(resumed.joints, moved.joints)
-    assert paused.closure == 0
-    assert policy.step(1.2, estimate(0.1, state), state, [0.08] * 2).reason == "vision_lost"
+    for now in np.arange(0.05, 1.0, 0.05):
+        before = policy.step(now, estimate(now, state), state, [0.08] * 2)
+    elapsed = policy.elapsed
+    for now in np.arange(1.0, 1.5, 0.05):
+        command = policy.step(now, None, state, [0.08] * 2)
+        np.testing.assert_allclose((command.joints - before.joints) / 0.05, command.velocity, atol=1e-8)
+        assert (
+            np.max(np.abs(command.velocity - before.velocity)) <= policy.config.visual.joint_acceleration * 0.05 + 1e-7
+        )
+        assert command.closure == 0 and policy.elapsed == elapsed
+        before = command
+    assert np.max(np.abs(command.velocity)) < 1e-7
+    assert policy.step(1.8, estimate(0.1, state), state, [0.08] * 2).reason == "vision_lost"
 
 
 def test_irregular_observation_spacing_preserves_reference_acceleration():
@@ -137,7 +143,7 @@ def test_attached_lift_continues_to_actual_upright_stable_hold():
     policy, state = setup()
     obj = np.array([0.36, 0.02, 0.385])
     orientation = Rotation.from_euler("z", 90, degrees=True).as_matrix()
-    phases = []
+    phases, loaded, velocities = [], [], []
     for now in np.arange(0, 30, 0.05):
         base = Rotation.from_quat(np.array(state["pelvis"]["quat"])[[1, 2, 3, 0]]).as_matrix()
         if policy.phase in ("lift", "stand", "hold"):
@@ -147,10 +153,18 @@ def test_attached_lift_continues_to_actual_upright_stable_hold():
         seen = CrateEstimate(base.T @ (obj - state["pelvis"]["pos"]), base.T @ orientation, now, None, {})
         command = policy.step(now, seen, state, [0.015] * 2)
         phases.append(command.phase)
+        velocities.append(command.velocity)
+        if policy.diagnostics.get("loaded_targets") is not None:
+            loaded.append((command.phase, policy.diagnostics["loaded_targets"].copy()))
         if command.finished:
             break
         state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
     assert command.reason == "completed"
+    heights = np.array([positions[:, 2] for _, positions in loaded])
+    assert np.min(np.diff(heights, axis=0)) >= -1e-9
+    boundary = next(i for i, (phase, _) in enumerate(loaded) if phase == "stand")
+    assert np.min(heights[boundary + 1] - heights[boundary]) > 1e-5
+    assert np.max(np.abs(np.diff(velocities, axis=0))) / 0.05 <= policy.config.visual.joint_acceleration + 1e-5
     assert "stand" in phases and phases.index("stand") > phases.index("lift")
     assert policy.diagnostics["observed_torso_lean_deg"] <= policy.config.visual.upright_tolerance_deg
     assert policy.diagnostics["observed_basket_speed"] < 0.025

@@ -4,7 +4,9 @@ Use `--expert visual` for demonstrations that approach a visible basket and gras
 its rim. The low-table profile uses simulation-assisted planning with the original
 basket appearance. It records the walk from 1.2–1.5 m away through the attempt.
 These are video/control pilots; they do not yet certify VLA training or learning.
-Implementation and measured limits: [loaded standing and handoff](handoff/crate-upright-handoff-20260913.md).
+The [continuity revision](handoff/crate-continuous-motion-20260914.md) records the
+current implementation and live checks. The earlier [continuity audit](handoff/crate-continuity-audit-20260914.md)
+and [loaded-standing batch](handoff/crate-upright-handoff-20260913.md) retain the pre-change evidence.
 
 ## Information used by the expert
 
@@ -30,7 +32,7 @@ segmentation guarantee. RGB/state timestamps and source labels remain inspectabl
 Simulation may improve the target and trajectory; it cannot teleport the basket,
 reset the robot during the demonstration, move the object into reach, advance
 an unseen target indefinitely, or turn failed contact into a successful label.
-Missing/stale observations pause the reference and eventually abort. The same
+A newly occluded view stops target progress and brakes the reference; stale input eventually aborts. The same
 visible placement determines the target; arbitrary hidden episode flags do not
 select grasp styles or unrecorded recovery branches. This constrains potential
 hidden action causes but does not prove that a particular VLA can learn the policy.
@@ -86,8 +88,11 @@ set `--set visual.pose_source=markers`.
 lifting and loaded standing. `WholeBodyIK` owns foot anchors, balance and physical posture limits.
 The existing `carry` expert remains a separate mechanical diagnostic entry.
 
-- Walk from the sampled 1.2–1.5 m table-edge distance. A quiet target/base interval
-  authorizes a support check before handoff. Unsupported reaches use the remaining
+- Walk from the sampled 1.2–1.5 m table-edge distance. Prepare the two hands and a
+  small waist lean as the visible basket approaches, with joint rate limits while
+  the walking planner still owns the feet. A continuously quiet measured base
+  interval authorizes a support check before handoff. The assisted path uses
+  current base velocity/rotation, avoiding extra waits for the visual speed filter. Unsupported reaches use the remaining
   braking allowance for a closer visible approach, bounded by `visual.stand_off`;
   unsupported placements can still fail admission.
 - Preserve the consumed planner joint/root reference at POSE takeover. The backend
@@ -95,6 +100,7 @@ The existing `carry` expert remains a separate mechanical diagnostic entry.
   atomically. Descent begins from that reference; there is no intermediate VR stage.
 - Move both hands, hips and all three waist axes together. Compensate bounded
   measured tracking error with the whole body; do not freeze the legs after bending.
+  Torso rotation and hand descent share the same progress variable.
   Joint/root rates, acceleration, planted-foot error, support COM, pelvis height,
   waist limits and shallow knee flexion constrain the solution.
 - Treat each no-post rim as a segment, allowing different along-rim hand positions.
@@ -104,8 +110,11 @@ The existing `carry` expert remains a separate mechanical diagnostic entry.
   basket rise and tilt checks. The lift baseline must not apply tracking feedback
   twice. Stop on empty grippers, clear attachment loss, displaced baskets or stalled
   reaching; retain failed and timed-out attempts.
-- After the attached lift, move the paired grasp toward the upright ready-pose
-  centre while recovering hips and torso. Success requires actual torso lean within
+- Once the observed attachment probe passes, continue lifting while moving the
+  paired grasp toward its upright preparation centre and recovering hips/torso.
+  The lift and recovery ramps overlap on one clock: changing the phase label does
+  not reset the reference or its velocity. Nominal hand height never decreases;
+  measured height can still deviate and must be checked in physics traces. Success requires actual torso lean within
   `visual.upright_tolerance_deg`, preserved attachment and a quiet load/body throughout
   `visual.hold_seconds`. The load must stay within `visual.hold_position_tolerance`
   of its mean position over that complete window, allowing small stance sway while
@@ -115,6 +124,22 @@ The existing `carry` expert remains a separate mechanical diagnostic entry.
 `VisualLowReach` retains the older marker-based policy for historical experiments.
 It reconstructs base translation from stationary foot FK; that information contract
 must not be confused with the assisted controller's measured simulation base pose.
+
+Camera updates and reference execution have separate lifecycles. New images admit
+or invalidate a basket pose cached in world coordinates. Between images the pose
+is re-expressed using current robot proprioception, retaining its original camera
+timestamp. Each new physical state advances the controller; reused images do not
+insert a stationary joint command with zero velocity. Actual simulation object
+state independently checks displacement, attachment, tilt and stability.
+
+The assisted POSE sender uses [PosePreview](../src/locomani/backends/sonic/pose_preview.py).
+SONIC v1.1 reserves 46 future frames for its encoder; sending only past samples
+makes execution lag behind the newest reference. The sender resamples references
+at 50 Hz in physical time, retains five historical ticks and supplies 50 future
+ticks that continuously brake along the current body trajectory's tangent to rest.
+Each update replaces that prediction; it is neither a new grasp target nor an
+unbounded extrapolation. Every pose keeps its own root rotation and joint velocity.
+The older marker and mechanical experts keep their existing send mode.
 
 The assisted expert uses **simulation time** for motion rates, settling, phase
 durations and task deadlines. Camera freshness and the watchdog for a stalled
@@ -137,6 +162,23 @@ with complete duration/speed and verified playback. Preserve original recordings
   timestamps, motion clock, joint/base observations, guidance source/visibility, issued joint/root
   references, body feedback, capture errors, closure and phase. For assisted poses,
   the legacy `vision` container has `source=simulation` and `reprojection_px=null`.
+- `observations/<label>/commands.jsonl`: every successfully sent planner/POSE
+  reference, including handoff priming and commands between camera frames.
+  `command_id`, send wall time, the decision's state sequence/simulation time,
+  image index/timestamp and phase join it to observations and the physics trace.
+  Payloads retain actual protocol ordering: planner upper-body order or POSE
+  Isaac joint order, buffered frame indices, roots, velocities and both grippers.
+  The decision state can precede the send (especially during priming). A send log
+  does not certify deploy consumption. POSE packets include future predictions;
+  their latest 50 frames must not be mistaken for already executed training actions.
+- Successful results include an inclusive `training_tail.end_seq`, with image,
+  command and physical-time boundaries at entry to the upright loaded hold.
+  That boundary is published only after the full hold succeeds. Future training
+  conversion should retain the prefix through this boundary and omit the final
+  verification hold; raw video/control/physics files remain complete. Failed
+  attempts have no successful training boundary. This uses the shared
+  [sequence-boundary meaning](../src/locomani/pipeline/verification_tail.py), but
+  these pilot manifests are not yet inputs to the formal dataset converter.
 - `attempts.jsonl`, `manifest_00.jsonl`, per-attempt `result.json`: every sampled
   attempt and its actual success/failure, rise/tilt/contact, source kind and exceptions.
 - `config_snapshot.json`, `deploy_receipts.jsonl`, stage logs and `trace/`: source,

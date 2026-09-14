@@ -44,7 +44,7 @@
 ## Shared resources
 
 - [Review follow-up fixes](handoff/review-fixes-20260914.md): CPU, live wall offset and Isaac 4.5 inset checks pass; instance 1 released, GPU 1 untouched.
-- Latest evidence: `outputs/review_fixes_20260914/`; all earlier motion evidence retained.
+- [Continuous assisted motion](handoff/crate-continuous-motion-20260914.md): camera/control separation, future POSE window, overlapping reach/recovery and training end marker. GPU batch 6/10; failed attempts retained. GPU 0 / instance 1 released; GPU 1 untouched.
 - Earlier outputs, datasets, recordings and weights are preserved; see the linked reports.
 
 ## Evidence and preserved constraints
@@ -57,4 +57,3 @@
   from `4cc52ba`; its RUNNING claims do not describe current resource availability.
 - The historical record attributes NO DAgger and parked crate stand tuning to the
   user; this maintenance task does not change either policy.
-- Resource/artifact rules: [AGENTS](../AGENTS.md). [Maintenance status](ROADMAP.md).

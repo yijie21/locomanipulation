@@ -144,3 +144,52 @@ def test_attempt_evaluates_the_observed_end_state_before_cleanup_can_change_it(t
     )
     assert result.why == "external_fall_abort"
     assert result.execution["metrics"]["rise"] == pytest.approx(0.1)
+
+
+def test_transport_journal_includes_priming_and_reused_image_commands(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import numpy as np
+    from geometry_fixture import scene_ik
+
+    from locomani.backends.sonic import agent_server, streamed_arm, upper_ref
+    from locomani.primitives.g1_joints import mujoco_to_isaac
+    from locomani.tasks.crate.visual_recording import VisualRecording
+
+    clock = [0.0]
+    monkeypatch.setattr(
+        streamed_arm,
+        "time",
+        SimpleNamespace(time=lambda: clock[0], sleep=lambda dt: clock.__setitem__(0, clock[0] + dt)),
+    )
+    monkeypatch.setattr(
+        upper_ref, "shared", lambda: SimpleNamespace(pose=lambda: (np.zeros(29), np.array([1, 0, 0, 0])))
+    )
+    packet_data = []
+    monkeypatch.setattr(agent_server, "pack_pose_message", lambda data, **kw: packet_data.append(data) or b"pose")
+    commander = object.__new__(agent_server.AgentCommander)
+    commander.sonic, commander.enter_streamed, commander.set_upper_body_vel = Mock(), Mock(), Mock()
+    commander.left_hand = commander.right_hand = np.zeros(7)
+    commander.upper_body = np.zeros(17)
+    recorder = VisualRecording(tmp_path / "recording")
+    recorder.context = dict(state_seq=1, simulation_time=0.0, image_frame=0, phase="handoff")
+    commander.reference_observer = recorder.observe_reference
+    p = SimpleNamespace(cmd=commander, obs=lambda: {})
+    arm = streamed_arm.StreamedArm(p, "right", ik=scene_ik(), left_guard=False)
+    arm.start(hold_planner_pose=True)
+    for t in (0.02, 0.04, 0.06):
+        # Several physical updates consume the same admitted image.
+        recorder.context.update(state_seq=int(t * 100) + 1, simulation_time=t, phase="reach")
+        arm._push(np.ones(29) * t, reference_velocity=np.ones(29))
+    recorder.mark_training_end(dict(seq=7, t=0.06))
+    recorder.close()
+    rows = [json.loads(s) for s in (recorder.directory / "commands.jsonl").read_text().splitlines()]
+    assert len(rows) == len(packet_data) == commander.sonic.send.call_count == 13
+    assert [r["phase"] for r in rows[:10]] == ["handoff"] * 10
+    assert len({r["image_frame"] for r in rows[-3:]}) == 1
+    for row, packet in zip(rows, packet_data):
+        for key in packet:
+            np.testing.assert_array_equal(row["payload"][key], packet[key])
+    np.testing.assert_allclose(rows[-1]["payload"]["joint_pos"][-1], mujoco_to_isaac(np.ones(29) * 0.06))
+    assert recorder.training_tail["end_seq"] == 7 and recorder.training_tail["end_command_id"] == 12

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from geometry_fixture import scene_ik
+from scipy.spatial.transform import Rotation
 from test_crate_visual_perception import observation
 
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
@@ -117,3 +118,53 @@ def test_sustained_visual_motion_still_prevents_stance_admission():
             grasp_pose_available=True,
         )
         assert not command.ready
+
+
+def test_approach_prepares_both_hands_before_stopping_with_bounded_joint_motion():
+    from test_crate_coordinated_reach import setup
+
+    from locomani.tasks.crate.perception import CrateEstimate
+    from locomani.tasks.crate.visual_approach import ApproachPreparation
+
+    policy, state = setup()
+    prep = ApproachPreparation(policy.solver, policy.config.visual, state["joints"])
+    previous, velocity = state["joints"].copy(), np.zeros(29)
+    initial_tools = policy.solver.tool_poses(previous)[0]
+    for now in np.arange(0, 4.01, 0.05):
+        seen = CrateEstimate(
+            np.array([1.4 - 0.25 * now, 0, -0.395]),
+            Rotation.from_euler("z", 90, degrees=True).as_matrix(),
+            now,
+            None,
+            {},
+        )
+        q, v = prep.step(now, seen)
+        if now:
+            np.testing.assert_allclose((q - previous) / 0.05, v, atol=1e-8)
+            assert np.max(np.abs(v - velocity)) <= prep.config.joint_acceleration * 0.05 + 1e-6
+        if 2.99 < now < 3.01:
+            # Still outside the stop distance: both hands already move down.
+            assert seen.position[0] > prep.config.stand_off + prep.config.walk_brake_margin
+            assert np.max(policy.solver.tool_poses(q)[0][:, 2] - initial_tools[:, 2]) < -0.03
+        previous, velocity = q.copy(), v.copy()
+    np.testing.assert_allclose(q[:12], state["joints"][:12])
+    assert 0.01 < q[14] <= 0.12 + 1e-3
+
+
+def test_assisted_stance_uses_current_proprioception_and_still_requires_a_quiet_interval():
+    cfg = CrateVisualConfig(settle_seconds=0.3)
+    approach = VisualApproach(cfg)
+    # The target stops moving before the visual velocity filter has decayed.
+    for now in np.arange(0, 1.21, 0.05):
+        moving = now < 0.8
+        point = np.array([max(0.39, 0.9 - 0.8 * now), 0, 0])
+        command = approach.step(
+            now,
+            ApproachTarget(point, now, "visible"),
+            [1, 0, 0, 0],
+            grasp_pose_available=True,
+            base_velocity=[0.3 if moving else 0.01, 0, 0],
+        )
+        if now < 1.1:
+            assert not command.ready
+    assert command.ready

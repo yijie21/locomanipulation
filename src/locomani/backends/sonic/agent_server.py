@@ -184,6 +184,7 @@ class AgentCommander:
         # mode entered the pipeline. Whoever triggers a re-anchor must store
         # the robot's yaw at that moment here; frame() undoes the rotation.
         self.heading_offset = 0.0
+        self.reference_observer = None  # optional sink for successfully sent reference payloads
 
     def reset_pose(self) -> None:
         """Put the upper body back to rest — arms down, hands open.
@@ -374,18 +375,23 @@ class AgentCommander:
             # mere presence is a mode switch on the deploy side.
             vr_pos, vr_quat = self._vr_3pt()
             kw.update(vr_3pt_position=vr_pos, vr_3pt_orientation=vr_quat, vr_3pt_compliance=list(compliance))
-        self.sonic.send(
-            build_planner_message(
-                int(mode),
-                list(movement),
-                list(facing),
-                speed=speed,
-                height=height,
-                left_hand_position=self.left_hand.tolist(),
-                right_hand_position=self.right_hand.tolist(),
-                **kw,
-            )
+        data = dict(
+            mode=int(mode),
+            movement=list(movement),
+            facing=list(facing),
+            speed=speed,
+            height=height,
+            left_hand_position=self.left_hand.tolist(),
+            right_hand_position=self.right_hand.tolist(),
+            **kw,
         )
+        self.sonic.send(build_planner_message(**data))
+        self._observe_reference("planner", data)
+
+    def _observe_reference(self, channel, data):
+        observer = getattr(self, "reference_observer", None)
+        if observer is not None:
+            observer(channel, data)
 
     # -- streamed motion (the channel Pico teleop actually uses) -----------
 
@@ -448,6 +454,7 @@ class AgentCommander:
         if right_hand is not None:
             data["right_hand_joints"] = np.asarray(right_hand, dtype=np.float32)
         self.sonic.send(pack_pose_message(data, topic="pose", version=1))
+        self._observe_reference("pose", data)
 
     def token_frame(
         self, token, right_hand=None, left_hand=None, frame_index: int | None = None, trace_source=None

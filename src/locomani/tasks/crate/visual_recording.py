@@ -43,6 +43,10 @@ class VisualRecording:
         directory.mkdir(parents=True, exist_ok=False)
         self.directory = directory
         self.log = (directory / "observations.jsonl").open("w")
+        self.commands = (directory / "commands.jsonl").open("w")
+        self.command_count = 0
+        self.context = {}
+        self.training_tail = None
         self.writers = {}
         self.fps = fps
         self.frames = 0
@@ -66,7 +70,40 @@ class VisualRecording:
         )
         self.frames += 1
 
+    def observe_reference(self, channel, payload):
+        """Called after each successful send, including POSE handoff/priming frames.
+
+        POSE payloads retain their buffered frame indices, roots and velocities;
+        planner payloads retain their actual 17-joint order and movement fields.
+        This journals sends, not acknowledgement or execution by the deploy.
+        """
+        self.commands.write(
+            json.dumps(
+                dict(
+                    command_id=self.command_count,
+                    sent_wall_time=time.time(),
+                    **self.context,
+                    channel=channel,
+                    payload=payload,
+                ),
+                default=lambda x: x.tolist() if isinstance(x, np.ndarray) else float(x),
+            )
+            + "\n"
+        )
+        self.command_count += 1
+
+    def mark_training_end(self, state):
+        """Tentative inclusive boundary; publish only if the following hold succeeds."""
+        self.training_tail = dict(
+            end_seq=int(state["seq"]),
+            simulation_time=float(state["t"]),
+            end_command_id=self.command_count - 1,
+            end_frame=self.frames - 1,
+            reason="upright_loaded_hold_verification",
+        )
+
     def close(self):
         for writer in self.writers.values():
             writer.release()
         self.log.close()
+        self.commands.close()

@@ -16,8 +16,8 @@ class CrateVisualConfig:
     walk_timeout: float = 30.0  # maximum walking and stance-settling duration
     settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
     stand_lateral_tolerance: float = 0.04  # metres; final body IK still owns low-reach admission
-    lift_seconds: float = 4.0  # minimum low-reach lift-reference duration, seconds
-    stand_seconds: float = 5.0  # minimum attached whole-body recovery duration, seconds
+    lift_seconds: float = 4.0  # lift ramp duration; assisted standing overlaps after the measured probe
+    stand_seconds: float = 5.0  # attached recovery duration after the measured probe, seconds
     upright_tolerance_deg: float = 12.0  # measured torso lean allowed at successful completion
     stand_off: float = 0.36  # final pelvis distance from the visible basket centre, metres
     position_jitter: float = 0.02  # visible basket x/y randomisation at reset, metres
