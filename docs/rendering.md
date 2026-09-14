@@ -3,6 +3,7 @@
 本页说明场景、控制、采集和重渲之间的数据流。首次理解系统读“整体流程”，
 已有轨迹要重渲读“运行时”和“资产构建”；具体双臂批处理命令见
 [双臂回放](crate_collection.md#渲染并排视频)，分享视频见 [Video export](#video-export)。
+背景的表征、导入和着色见 [EmbodiedGen 背景如何进入 Isaac](#embodiedgen-背景如何进入-isaac)。
 
 ## 整体流程
 
@@ -24,6 +25,7 @@ flowchart TD
     E -->|专家参考| D
     C -->|控制输出| D
     B --> U["离线构建 Isaac USD 资产"]
+    BG["空房间背景网格<br/>独立视觉资产"] --> U
     B --> R["MuJoCo 状态回放<br/>恢复记录状态，计算正向运动学"]
     T --> R
     R --> I["Isaac 逐帧同步<br/>机器人、物体和相机姿态"]
@@ -186,6 +188,80 @@ bash scripts/build_isaac_assets.sh --snapshot "$SNAPSHOT"
 场景 USD 与机器人 USD 分开缓存。它们复用源几何，但碰撞体与可视网格用途不同；
 新物体的可视网格转换是否受支持仍需检查构建日志及画面，不能只看脚本成功退出。
 资产缺失与新安装验证见 [资产可移植性报告](handoff/isaac-asset-portability-20260912.md)。
+
+## EmbodiedGen 背景如何进入 Isaac
+
+### 当前背景是什么表征
+
+**当前 Isaac 路线使用带顶点颜色的三角网格（mesh），没有加载 3D Gaussian Splatting 模型。**
+“EmbodiedGen 生成”描述资产的来源，不能据此判断渲染时采用哪一种表征。
+[EmbodiedGen 官方输出说明](https://horizonrobotics.github.io/EmbodiedGen/docs/tutorials/layout_gen.html)
+列出了同一背景的两种文件：
+
+| 文件 | 内容 | 本仓库 Isaac 路线 |
+|---|---|---|
+| `gs_model.ply` | 3DGS 高斯模型 | 未读取 |
+| `mesh_model.ply` | 带颜色的三角网格 | 读取并转换成 USD Mesh |
+
+两者都可以使用 `.ply` 后缀，要看文件内部字段和加载代码。
+当前仓库的背景副本 [empty_room_world.ply.gz](../assets/scene/README.md)
+包含 **2,099,513 个顶点、4,190,791 个三角面**；文件头明确列出顶点的
+`x/y/z`、`red/green/blue` 和面的 `vertex_indices`。
+这是由很多小三角形组成、颜色存于顶点的房间表面；
+相机移动时，视角和遮挡由这些三维表面决定。
+
+`.gz` 只是压缩包装，不改变三维表征。数量、校验和及坐标系记录在
+[资产元数据](../assets/scene/empty_room_world.json)，无需启动 Isaac 就能核对。
+
+### 从原始背景到 USD
+
+`build_isaac_assets.sh` 调用 [isaac_scene.py](../src/locomani/sim/isaac_scene.py) 构建场景，
+其中 [background_source](../src/locomani/sim/isaac/scene_assets.py) 按以下顺序选源：
+
+1. 原始 `outputs/scene/bg_empty/scene_0000/mesh_model.ply` 存在时，使用该文件。
+2. 否则使用随 Git 分发的 `assets/scene/empty_room_world.ply.gz`。
+
+本次核对的 checkout 中原始文件已不存在，因此使用第 2 条。
+这个副本来自先前 Isaac 场景的 `/World/Background`，保留同一空房间的顶点、三角面和颜色，
+来源记录见 [资产说明](../assets/scene/README.md)。世界坐标变换和地板修正已经烘焙，
+加载时不会再缩放、旋转或修正一次。
+
+```mermaid
+flowchart LR
+    A["原始 mesh_model.ply<br/>或已保存的空房间网格"] --> B["trimesh 读取<br/>顶点、三角面、顶点颜色"]
+    B --> C["UsdGeom.Mesh<br/>/World/Background"]
+    C --> D["scene.usda<br/>与机器人、桌子、物体组合"]
+    D --> E["Isaac RTX Real-Time<br/>从回放相机生成 RGB"]
+```
+
+`add_vertex_coloured_mesh` 直接构造 `UsdGeom.Mesh`：
+顶点写入 `points`，三角面写入 `faceVertexCounts/faceVertexIndices`，
+RGB 写入按顶点插值的 `displayColor`。
+原始背景需要坐标变换和地板修正；保存的世界坐标副本跳过这些步骤。
+这条转换使用现成网格数据，不在 Isaac 中重新生成房间或训练 3DGS。
+
+### 进入 Isaac 后怎样渲染
+
+离线回放打开生成的 USD 场景，
+[configure_renderer](../src/locomani/sim/isaac/stage.py) 显式调用
+`rep.settings.set_render_rtx_realtime()`，选择 **Omniverse RTX Real-Time 实时渲染**。
+场景构建预览使用 `RayTracedLighting`；相关模式可对照
+[Isaac Sim 4.5 官方示例](https://docs.isaacsim.omniverse.nvidia.com/4.5.0/replicator_tutorials/tutorial_replicator_isaac_snippets.html)。
+当前路线渲染的是 USD 网格和材质，没有调用 Gaussian splatting 渲染器。
+
+**背景的材质有单独处理。** 房间顶点颜色已经包含生成/重建时的光照外观，
+`bind_unlit_vertex_colour_material` 将 `displayColor` 接到
+`UsdPreviewSurface.emissiveColor`，并将 `diffuseColor` 设为黑色。
+这样以保存的背景颜色为主，避免再当作普通漫反射表面重复打光。
+两个材质字段的含义见 [NVIDIA 材质文档](https://docs.omniverse.nvidia.com/materials-and-rendering/latest/templates/UsdPreviewSurface.html)。
+
+机器人、桌子和物体则使用各自网格、材质及场景灯光。
+背景颜色保留了原有明暗，因此“RTX 渲染”不意味着房间已恢复成可以任意重新打光的完整材质场景；
+曝光和色调映射等仍会影响最终像素。当前也没有把 3DGS 的视角相关外观带入这条网格路线。
+
+房间网格在这里是视觉背景，不会自动增加 MuJoCo 的墙体碰撞。
+实际地面、桌面和抓取物体的碰撞仍由 MuJoCo 场景定义。
+原始 RGB、网格重渲和未来可能接入的 3DGS 图像需要分别记录来源。
 
 ## 从已有采集开始重渲
 
