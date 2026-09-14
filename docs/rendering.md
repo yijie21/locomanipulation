@@ -1,8 +1,233 @@
-# 渲染:MuJoCo 物理 + Isaac 像素
+# MuJoCo 仿真与 Isaac 离线渲染
 
-首次使用读“运行时”和“资产构建”；双臂轨迹回放、画中画与受管停止见
-[crate 回放](crate_collection.md#渲染并排视频)。只有导出时才需要下面的视频交付步骤。
-后半部分带日期的调查保留原实验范围，不代表所有当前控制模式的行为或性能。
+本页说明场景、控制、采集和重渲之间的数据流。首次理解系统读“整体流程”，
+已有轨迹要重渲读“运行时”和“资产构建”；具体双臂批处理命令见
+[双臂回放](crate_collection.md#渲染并排视频)，分享视频见 [Video export](#video-export)。
+
+## 整体流程
+
+**MuJoCo 运行任务并记录实际运动；Isaac 根据记录重建每一帧的姿态，生成另一种渲染画面。**
+当前 SONIC 采集和闭环评测使用 MuJoCo 相机，Isaac 位于采集完成后的离线处理阶段。
+
+```mermaid
+flowchart TD
+    A["场景源资产 + 任务场景配置"] --> B["本次场景快照<br/>MJCF + scene_meta.json"]
+    B --> M["MuJoCo<br/>物理、碰撞、接触与物体运动"]
+    M --> O["MuJoCo 相机图像<br/>机器人观测"]
+    O --> E["专家策略 / 评测时的 VLA"]
+    M -->|仅专家的仿真辅助| E
+    E --> C["SONIC 全身控制器<br/>下发机器人控制命令"]
+    C --> M
+    M -->|机器人反馈| C
+    M --> T["实际状态轨迹<br/>seq + qpos + qvel"]
+    O --> D["原始观测、动作、视频与结果记录"]
+    E -->|专家参考| D
+    C -->|控制输出| D
+    B --> U["离线构建 Isaac USD 资产"]
+    B --> R["MuJoCo 状态回放<br/>恢复记录状态，计算正向运动学"]
+    T --> R
+    R --> I["Isaac 逐帧同步<br/>机器人、物体和相机姿态"]
+    U --> I
+    I --> V["Isaac 视频 / MuJoCo 与 Isaac 并排视频"]
+```
+
+这条链路有三个不同的工作：
+
+| 工作 | 决定什么 | 主要入口 |
+|---|---|---|
+| 在线任务执行 | 机器人如何走、弯腰、抓取；物体是否真的抬起、滑脱或飞走 | 专家 → SONIC → [run_sim_locomani.py](../src/locomani/sim/run_sim_locomani.py) |
+| 采集与记录 | 实际状态、相机、动作参考、控制输出和任务结果 | 任务 runner、exporter、[StateTrace](../src/locomani/sim/privileged_pub.py) |
+| 离线渲染 | 在已记录的动作上生成光照、材质和相机画面 | [isaac_render.py](../src/locomani/sim/isaac/isaac_render.py) |
+
+例如一次抓篮中，篮子在 MuJoCo 里滑脱了，Isaac 会按对应轨迹重现这个运动。
+重渲不会重新调用专家或 SONIC 去尝试抓取；成功标签来自原任务的验收。
+渲染需要自己的 GPU 资源，但不需要保持原来的控制栈运行。
+这样的分工让离线 RTX 渲染可以独立调画质，不占用在线控制循环的每步时间预算。
+专家可额外使用约定的仿真辅助信息；VLA 接收其数据/模型配置定义的观测字段，
+不默认继承专家用到的全部信息。
+
+## 采集时记录什么
+
+场景构建把源网格、物体尺寸/摆放、机器人和碰撞设置写入
+`scene_locomani.xml`，配套 `scene_meta.json` 描述目标与桌面等信息。
+任务 runner 使用该次场景副本；重渲也必须使用**同一次运行对应的副本**。
+
+| 记录 | 用途与边界 |
+|---|---|
+| MuJoCo 相机 RGB | ego、左腕、右腕等实际采集视角；专家/VLA 和 exporter 按各自接口消费 |
+| 第三人称原片 | 由 `SIM_VIDEO_DIR` 开启，方便检查走近、接触和抬升；画中画不等于训练视频文件 |
+| `*_state_trace.npz` | `seq`、完整 `qpos`、`qvel`；包含机器人浮动基座、关节和场景自由物体状态 |
+| exporter session | 原始相机、机器人观测与动作字段；支持录制的任务才产生正式 episode |
+| manifest、配置快照与动作日志 | 任务指令、成败、输入身份、控制来源；不由渲染器重新生成 |
+
+`StateTrace` 在仿真进程内、发布状态之后，以该次发布的 `seq` 记录同一份状态。
+它记录的是发布/控制帧，不是所有物理积分子步，也不是专家希望到达的目标姿态。
+`SIM_STATE_TRACE_DIR` 控制轨迹记录；单臂/pick-and-place 的自动 runner 会设置它，
+双臂 runner 默认开启，可用 `--no-state-trace` 关闭。
+
+视频、trace 和 session 是独立产物：有 MP4 不代表有可重渲的完整状态，
+有 trace 也不代表已经生成可训练的数据。轨迹写入失败可能只产生警告，
+开始重渲前要检查文件实际存在。各任务目录和录制边界见
+[单臂](collection.md#5-产物与验收)、[双臂](crate_collection.md#5-产物与验收)、
+[pick-and-place](pick_place_collection.md#5-产物与验收)。
+
+## Isaac 怎样重现同一段动作
+
+### 从一份状态恢复机器人、物体和相机
+
+[MujocoReplay](../src/locomani/sim/isaac/replay.py) 加载该次 MJCF，
+逐帧恢复 `qpos` / `qvel`，调用 `mj_forward` 计算关节链和相机的世界位姿。
+此处的 MuJoCo 用来解释记录状态，不执行 `mj_step` 重新模拟动作。
+
+随后 [stage.py](../src/locomani/sim/isaac/stage.py)：
+
+1. 按关节名称把记录值映射到 Isaac 机器人，设置关节体根链接的世界位姿。
+   根链接从导入的 articulation 读取，不能直接把骨盆位姿当成它；当前 G1 导入通常以 `torso_link` 为根。
+2. 同步各物体世界位姿，并应用从 MJCF 保留的网格缩放与偏移。
+3. 用同一次 MuJoCo 正向运动学得到的相机世界位姿设置 Isaac 相机。
+4. 推进渲染更新并读取图像，进入下一条记录。
+
+Isaac 内部仍创建 World 并调用 `world.step(render=True)` 来更新变换和图像。
+镜像流程关闭重力、清零机器人根与关节速度，并反复下发记录姿态；
+这些更新不构成第二次任务执行，也不能作为独立的抓取物理验证。
+默认进行两次更新让相机变换进入渲染管线；这也不是让原任务多执行两步。
+
+### 主视角、画中画与并排视频
+
+| 输出 | 相机来自哪里 |
+|---|---|
+| Isaac 默认主画面 | 同帧 MuJoCo `head_camera` 的位姿和视场角 |
+| 第三人称主画面 | `--cam-traj` 提供的世界相机轨迹 |
+| ego / 左腕 / 右腕画中画 | 各自 MJCF 相机在该帧的正向运动学，不是从主画面裁切 |
+
+双臂并排脚本先用 [mujoco_render.py](../src/locomani/sim/isaac/mujoco_render.py)
+读取 trace，生成 `tracking_mujoco.mp4`，同时保存每帧第三人称相机的 `cam_traj.npz`。
+Isaac 再读取**相同 trace、场景和相机轨迹**生成画面，最后由 ffmpeg 横向拼接。
+因此左侧是 MuJoCo 的离线重渲，右侧是 Isaac 重渲，两侧无需分别跑一次任务。
+
+Isaac 输出文件虽叫 `ego_isaac.mp4`，传入第三人称 `--cam-traj` 后内容实际是第三人称。
+`--insets` 会增加独立的第二遍回放，生成该渲染器自己的三路相机画中画再合成；
+不是贴上原来 MuJoCo 的 RGB。Isaac 对缺失、陈旧或不同渲染帧的画中画输入会报错。
+需要 ghost 时只在诊断视角显示规划目标，不把它当作真实手部或训练观测。
+
+### 轨迹与训练行的对齐
+
+优先使用 `--state-trace`。若还传入 exporter `--session` / `--episode`，
+[frames.py](../src/locomani/sim/isaac/frames.py) 根据该 episode 的 `priv_seq`
+选取、排列 trace 行；缺少对应状态会报错，避免用上一帧填补。
+`--session ""` 则按 trace 自身顺序回放完整尝试。
+这是状态行的对齐，原相机曝光时刻与 action 时间仍需通过各自记录核对。
+
+旧数据没有 trace 时，仍可用 parquet + pose sidecar 重建近似状态；
+这是历史兼容路径，不能声称逐帧重现原片。
+旧 `compute_cam_traj.py` 主要用于这条路径；当前 trace 模式直接计算 ego/腕相机，
+并排模式由 `mujoco_render.py` 生成第三人称轨迹，不要求先跑该旧工具。
+
+当前 NPZ 只有 `seq/qpos/qvel`，视频按 `--fps` 和 `--stride` 编码：
+例如 50 Hz 状态、stride 4 对应 12.5 FPS。匹配 session 后应按该输入的实际采样率设置，
+不能机械沿用 50 FPS 默认值。测量停顿或抖动还需核对对应日志时间戳和丢帧情况，
+不能把渲染所花的墙钟时间当成机器人动作时长。
+
+## 运行时
+
+按 [安装指南](setup.md)第 7 步准备 Isaac 环境，在仓库根目录的 Bash 终端执行：
+
+```bash
+. scripts/paths.sh
+export PYTHONPATH="$LOCOMANI_ROOT/src"
+bash scripts/setup_render_runtime.sh
+# 需要验证实际 Kit 启动时再运行；会占用渲染资源
+bash scripts/setup_render_runtime.sh --deep
+```
+
+`SIMPLE_ROOT` 是固定版本的 SIMPLE 检出目录，`RENDER_PY` 是装有 Isaac Sim 的 Python，
+默认来自 `$SIMPLE_ROOT/.venv/bin/python`。二者可分开配置。
+安装脚本的 pin 与补丁见 [SIMPLE 补丁说明](../patches/simple.md)。
+
+离线重渲不 import `simple` 包，也不需要下载它的大型 `data/` 资产集合。
+机器人和场景 USD 由本仓库构建；SIMPLE 检出主要提供当前使用的渲染运行环境。
+环境升级后需要重新验证像素、相机和耗时，旧版本测量不自动适用。
+
+## 资产构建
+
+资产分成**可追溯的源文件**和**本机生成的 USD 缓存**：
+
+| 部分 | 来源 → 生成物 |
+|---|---|
+| 机器人 | 已安装的 G1/Dex1 MJCF 与网格 → `assets/isaac/robot/g1_dex1.usda` |
+| 桌子、台面、静态道具 | 安装的场景网格/贴图与本次元数据 → `assets/isaac/scene/<label>/scene.usda` |
+| 水瓶、篮子等可动物体 | 本次 MJCF 引用的可视网格、缩放与材质 → 同一场景缓存中的 `usd/<object>/` |
+| 房间背景 | 生成的背景源，或仓库自带 `assets/scene/empty_room_world.ply.gz` → 场景 USD |
+
+先执行 `bash scripts/install_scene.sh` 安装仓库的 `assets/scene_locomani_v1.tar.gz`，
+再按任务指南准备对应场景。桌面网格/贴图和 [压缩房间源](../assets/scene/README.md)
+随仓库提供，不需要从另一台机器复制 `outputs/`。
+
+```bash
+# 换成该次采集保存的场景副本，而非后来修改过的工作场景
+SNAPSHOT="$LOCOMANI_ROOT/outputs/crate_collect_10/crate_table30"
+export CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0
+bash scripts/build_isaac_assets.sh --snapshot "$SNAPSHOT"
+
+# 仅构建机器人；需要强制重建时可显式添加 --force
+# bash scripts/build_isaac_assets.sh --robot-only
+```
+
+示例 GPU 0 须按 [资源规则](../AGENTS.md#shared-resources-and-artifacts)确认空闲。
+不传 `--snapshot` 时使用当前工作场景，label 为 `work`；
+传入快照后 label 默认为目录的完整 basename，上例为 `crate_table30`，
+可用 `--label` 显式指定。渲染的 `--scene-dir` 必须匹配该次构建位置。
+
+构建器检查必需的房间、桌面源文件，并对来源、几何、贴图和路径等做缓存校验。
+场景缓存失效时保留旧目录再重建；机器人导入还会执行多网格 reference 拆分，
+保留躯干、骨盆和手腕的可视部件。生成的 `assets/isaac/` 不进 Git，
+换机器应根据源资产重新构建。
+
+场景 USD 与机器人 USD 分开缓存。它们复用源几何，但碰撞体与可视网格用途不同；
+新物体的可视网格转换是否受支持仍需检查构建日志及画面，不能只看脚本成功退出。
+资产缺失与新安装验证见 [资产可移植性报告](handoff/isaac-asset-portability-20260912.md)。
+
+## 从已有采集开始重渲
+
+1. 在任务运行目录找齐 trace、对应场景快照、manifest 和实际 episode 标签。
+2. 用上面的 `--snapshot` 构建该场景的 USD；核对桌高、物体尺寸和场景路径。
+3. 选择输出：直接用 `isaac_render` 渲染 ego，或按
+   [双臂回放命令](crate_collection.md#渲染并排视频)生成同相机的 MuJoCo / Isaac 并排视频。
+4. 检查每集输出、完整解码、首尾、背景/桌面、双手与物体，再生成下载预览。
+
+直接渲染已有 trace 的 ego 主视角示例（替换 `TRACE` 为实际文件）：
+
+```bash
+TRACE="$LOCOMANI_ROOT/outputs/crate_collect_10/trace/visual_crate_s41_00_state_trace.npz"
+"$RENDER_PY" -m locomani.sim.isaac.isaac_render \
+  --session "" --episode 0 --state-trace "$TRACE" \
+  --scene-xml "$SNAPSHOT/scene_locomani.xml" \
+  --scene-dir "$ISAAC_ASSETS/scene/crate_table30" \
+  --out outputs/renders_isaac/crate_ego_example --fps 50 --stride 4
+```
+
+这条直接命令在前台运行，用 Ctrl-C 停止。双臂批处理入口由 `render_job.py` 管理归属，
+停止方式见 [受管渲染停止](crate_collection.md#中途停止渲染--清理)；
+独立启动的渲染器不在该停止命令范围内。Kit 初始化和画面预热可能较慢，日志在输出目录。
+
+## 当前接通范围与限制
+
+| 功能 | 当前状态 |
+|---|---|
+| MuJoCo 在线物理与相机采集 | 已接通；按任务指南选择录制方式 |
+| 基于 trace 的 Isaac 离线重渲 | 已实现；双臂有受管并排脚本 |
+| `collect.sh` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
+| `run_learn_pilot` / `run_crate_pilot` 自动追加 Isaac | 当前没有该阶段，需显式调用离线渲染入口 |
+| Isaac 图像作为在线专家/VLA 的输入 | 当前主流程未接入 live mirror；不能从离线视频推断已支持 |
+| 自动把 Isaac 视频写回训练数据集 | 当前转换器读取原 session 图像，没有自动替换步骤 |
+
+Isaac 画面可用于检查或后续数据处理，但若要作为 VLA 训练 RGB，需要另行完成
+相机、时间戳、状态/action 和裁剪边界的对齐，并保留图像来源。
+当前双臂 visual 的正式数据导出限制仍按 [双臂指南](crate_collection.md)执行。
+
+不同渲染器的材质、光照和背面处理会造成像素差异；Isaac 还有时域渲染状态，
+不能要求同一输入两次出图逐像素相同。核验时应对齐几何、状态和相机，并在相同版本上建立容差。
+主画面、画中画、ghost、源视频和训练 RGB 的用途要区分清楚。
 
 ## Video export
 
@@ -29,236 +254,9 @@
 4. 播放页面和回复链接指向合格预览。ZIP 仅包含这些预览和必要的小型说明文件；
    打包后再次核对成员和总体积，并报告单片范围及 ZIP 大小。历史原片和旧大包保留作审计。
 
-## 渲染与物理
+## 代码入口与历史证据
 
-本页的离线回放路线使用 MuJoCo 记录物理状态，Isaac 负责像素，
-按已录轨迹**事后重渲**,不进采集回路。这与 SIMPLE 自己的 SONIC 路线一致
-(`docs/source/sonic-wbc/replay_render.md`:把 Isaac 放进实时回路会饿死
-ZMQ/DDS 通信并触发控制器心跳超时)。
-
-当前回放入口见 [rendering 导航](reference/change-map-rendering.md)；旧 `.scratch/isaac-render/issues/` 是本机历史调查，不是安装或开发前置资料。
-
-## 运行时
-
-```bash
-bash scripts/setup_render_runtime.sh          # 检查 pin、打补丁、验证 isaacsim
-bash scripts/setup_render_runtime.sh --deep   # 外加一次真正的 import(会启动 Kit,数分钟)
-```
-
-可重复执行:第二次每个补丁都报 `already applied` 且不改动任何文件。三个状态由
-`git apply` 自己的检查判定,不靠 grep 标记串:反向检查通过就是已打,正向检查通过
-就打上,两者都不通过说明工作树漂移了,脚本拒绝继续而不是静默重打。
-
-## 两个变量,以及它们为什么是两个
-
-`scripts/paths.sh` 里:
-
-| 变量 | 默认 | 含义 |
-|---|---|---|
-| `SIMPLE_ROOT` | `$LOCOMANI_ROOT/third_party/SIMPLE` | SIMPLE 检出位置(安装见 `docs/setup.md` 第 7 步)|
-| `SIMPLE_PIN` | `6d10628…` | 期望的 commit |
-| `RENDER_PY` | `$SIMPLE_ROOT/.venv/bin/python` | 装了 `isaacsim` 的 python |
-
-`RENDER_PY` 单独成一个变量是刻意的。SIMPLE 在自己的 `pyproject.toml` 里硬 pin
-`isaacsim[all,extscache]==4.5.0`,而 3DGS/NuRec 需要 Isaac Sim 5.0 以上。渲染
-运行时必须能在不等 SIMPLE 松开这个 pin 的前提下升级,把 `RENDER_PY` 指向另一个
-venv 即可,其它什么都不用改。
-
-## SIMPLE 是被 pin 的检出,不是 vendor 进来的依赖
-
-和其它上游仓库一样放在 gitignored 的 `third_party/` 下,固定到一个 commit;clone、submodule、
-venv 的步骤在 `docs/setup.md` 第 7 步,补丁与 pin 见 `patches/simple.md`。它的 `data/`
-(HF 上十几 GB 的资产)主线渲染一个字节都不读,不用下载。
-
-更要紧的是**离线重渲不 import `simple` 包**。它把我们自己的
-`scene_locomani.xml` 走 Isaac 的 MJCF importer,关节名 1:1,状态同步就是一次
-qpos 拷贝;相机由 MuJoCo FK 驱动,因为 MJCF importer 把 link 原点放在 armature
-joint 上,直接挂相机会低约 24 cm。所以对 SIMPLE 的真实依赖只有两条:一个装了
-`isaacsim` 的 venv,以及它转换好的场景与 robocasa 物体 USD。
-
-`simple_ext`(dex1 机器人与 hug-container 任务注册)和烘焙了 d435_link 的
-flat USD 属于 MuJoCo/Isaac 像素对齐的对照 harness,不在主线上,用
-`--with-alignment` 才装。
-
-## 资产构建
-
-```bash
-bash scripts/build_isaac_assets.sh                                  # 机器人 + 当前工作场景
-bash scripts/build_isaac_assets.sh --snapshot <批次的 scene_<seed> 目录>
-bash scripts/build_isaac_assets.sh --robot-only | --force
-```
-
-首次安装先执行 `bash scripts/install_scene.sh`。桌子、台面及贴图来自仓库中的
-`assets/scene_locomani_v1.tar.gz`；空房间来自已跟踪的
-[`assets/scene/empty_room_world.ply.gz`](../assets/scene/README.md)，约 41 MB。
-不需要从另一台机器拷贝 EmbodiedGen 输出，也不需要 Git LFS。
-
-旧版本只读取被忽略的 `outputs/scene/{layout,surface_b}/asset3d` 和背景目录，
-源文件缺失时仍写出缺少桌子/房间的 USD。现在构建前检查必需源资产；缺失就报错，
-转换失败也不会写入成功缓存。升级后重新执行上面的构建命令即可；旧缓存会被保留
-为 `.previous.<时间>`，新的源文件、贴图、场景 XML、构建器、检出位置和 USD 输出目录参与缓存校验。
-`--snapshot` 的默认 label 是目录完整 basename，与 `render_wall_pilot.sh` 一致；
-只有显式 `--label` 才改变它。旧的 `scene_<seed>` 去前缀命名不再作为默认。
-
-[2026-09-12 新安装验证和已知限制](handoff/isaac-asset-portability-20260912.md)。
-
-产物在 `assets/isaac/`,已 gitignore,约 650 MB 起,随时可重建。分两层,因为两者
-变化频率不同:
-
-| 层 | 位置 | 缓存键 | 耗时 |
-|---|---|---|---|
-| 机器人 | `robot/g1_dex1.usda` | 机器人 MJCF 的哈希 | 10 s,92 MB |
-| 场景 | `scene/<label>/` | 元数据、XML、网格/贴图、背景、构建器及检出路径的哈希 | 20 s,280 MB |
-
-机器人与场景无关,桌子多高都是同一具关节体,所以只建一次。场景按 batch 变,
-`collect.sh` 每批用 `SCENE_SEED` 重建,桌面高度随之改变,所以按 seed 分别建、
-分别缓存。缓存命中的开销是 10 毫秒,放进每集的后处理循环里也无所谓。
-
-## 两个步骤都用 RENDER_PY
-
-```bash
-"$RENDER_PY" -m locomani.sim.isaac.compute_cam_traj --session <dir> --episode 0 \
-    --sidecar '<glob>' --out cam_traj.npz [--scene-xml <该批快照>]
-"$RENDER_PY" -m locomani.sim.isaac.isaac_render  --session <dir> --episode 0 \
-    --sidecar '<glob>' --cam-traj cam_traj.npz --out <dir> [--scene-xml <该批快照>]
-```
-
-`compute_cam_traj` 不启动 Kit,但它同时需要 mujoco 和 pandas,而只有 render venv
-两个都有,sim venv 有 mujoco 没有 pandas。迁移前的 docstring 说它跑在 sim venv,
-是错的(2026-09-05 实测)。
-
-`--scene-xml` 默认指当前工作场景,只有在没有别的 batch 重建过它的前提下才正确;
-重渲旧数据要指向该批的快照 `$OUT/scene_<seed>/scene_locomani.xml`。
-
-## Isaac 的渲染不是逐位可复现的
-
-同一份脚本、同一份输入连跑两次,解码后没有一帧逐位相同,最大通道差 123,平均绝对
-差 0.85。DLSS 是时域累积的。所以任何"和参考图对比"的验收都必须给容差,不能要求
-bit-identical;判定重构或迁移是否等价,要用"同脚本跑两次"做对照。
-
-## 采集侧的 flag
-
-`scripts/collect.sh` 认 `RENDER_BACKEND`:
-
-| 值 | 行为 |
-|---|---|
-| 不设 / `mujoco` | 默认,老路径逐字节不变 |
-| `isaac` | 每集之后追加离线重渲阶段 |
-| 其它 | 报错退出 |
-
-它切换的是**视觉后端,不是物理**。
-
-## T_render:闭环评测要不要 hybrid clock(2026-09-05 裁定)
-
-**结论:不需要。纯 async 就够,票 10 的 hybrid clock 不做。**
-
-复现:`"$RENDER_PY" -m locomani.sim.isaac.bench_render`,原始结果在
-`outputs/renders_isaac/bench/t_render_2026-09-05.json`。
-
-分母先说清楚,搞错就会把结论放大一倍:动作流跑在 `TF_DATASET_FPS`,
-`run_eval_arm.sh` 钉死为 **25 fps**,不是 50 Hz;40 步的 chunk 是 1.6 s,
-0.4 s 的 replan 间隔就是这么来的。
-
-**预算**,来自两条 100 局干净协议臂的真实 trace(`tools/latency_dist.py`):
-
-| 臂 | 稳态 obs→obs 间隔(帧 @25fps) | 首次推理 |
-|---|---|---|
-| clean100 | p10/p50/p90 = 10 / 10 / 10,max 18 | p50 3,max 13 |
-| base100 | p10/p50/p90 = 10 / 10 / 10,max 20 | p50 3,max 16 |
-
-也就是每个 replan 周期身体照旧执行约 10 帧(0.4 s)的旧计划。
-
-**开销**,640×480(与数据集一致,没有为了压低数字降质量),两块 GPU 空闲:
-
-| 节奏 | p50 | p90 | p99 | 折合帧 p50 / p90 |
-|---|---|---|---|---|
-| 连续渲染(离线重渲) | 16.0 ms | 19.7 ms | 23.9 ms | 0.40 / 0.49 |
-| 间隔渲染(live mirror,0.2 s 间隔) | 27.8 ms | 36.2 ms | 42.6 ms | 0.70 / 0.91 |
-
-间隔渲染比连续渲染慢约七成,因为 RTX 在连续帧之间复用时域状态,停顿后这部分作废。
-live mirror 是间隔那一行,所以判定按它。
-
-**判定**:p90 加不到 1 帧,预算是 10 帧,增幅约 9%。这远在延迟敏感度的平坦区内,
-不值得为它引入冻结机制、也不值得承担冻结机制自身的验证成本(empty-freeze 对照)。
-
-**四条限制,写下来免得以后误用这个数字:**
-
-1. 这是进程内的渲染耗时。live mirror 还要加 IPC 往返,所以这是它的**下界**,
-   票 08 必须自己量一次往返。
-2. 机器空闲时测的。策略 server 和渲染抢同一块卡会更差,评测本来就要求 wall-clock
-   臂串行跑。
-3. Isaac Sim 4.5。升到 6.0(票 12)之后这个数字作废,基准工具留在仓库里就是为了重跑。
-4. 不含 Kit 启动和冷缓存的首帧,预热 40 帧之后才开始计时。评测自己的首次推理本来
-   就单独处理。
-
-## 相机位姿需要两次步进(2026-09-06)
-
-绝对世界相机位姿设进 `SensorCamera` 之后,要**两次** `world.step(render=True)` 才进入
-渲染管线。只步进一次,每一帧画的都是上一帧的相机。
-
-实测,状态跳 50 帧之后与 MuJoCo 同帧对比:
-
-| 步进次数 | 桌面 IoU | 质心偏差 |
-|---|---|---|
-| 1 | 0.428 | (−11.6, +67.2) px |
-| 2 | 0.756 | (−1.1, −1.3) px |
-| 3 / 5 | 0.758 / 0.759 | 约 1 px |
-
-相邻帧之间这个滞后很小、看不出来,但它是系统性的,会原样进数据集,所以比明显的错误更糟。
-SIMPLE 不会遇到:它把相机挂在机器人下面,位姿和关节体在同一次 fabric 更新里走。我们用的是
-逐帧绝对世界位姿,代价就在这里。`stage.SETTLE_STEPS = 2`。
-
-**对 T_render 的影响**:每帧渲两次,所以票 04 量的耗时要翻倍,p90 从 0.91 帧变成约 1.8 帧
-(25 fps 下)。稳态预算是 10 帧,增幅约 18%,"纯 async 够用、不需要 hybrid clock"的裁定不变。
-
-## 关节体的根是 torso_link,不是 pelvis(2026-09-06)
-
-`set_world_pose` 移动的是 PhysX 认定的关节体**根链接**,而 PhysX 把它排在
-`body_names` 第一位。我们这具 G1 的 MJCF 浮动基座是 `pelvis`,根却是 `torso_link`。
-按骨盆位姿下发,等于把躯干钉在骨盆的位置上,腰以下反着动。
-
-一个原因造成了三种看起来无关的现象:零位姿下 34 个链接偏同一个 54.15 mm 向量;
-真实位姿下残差随运动链增长到 112 mm;误差只由三个腰关节贡献,手臂、腿、夹爪、
-基座位置与朝向全部精确。决定性的测量是驱动单个腰关节时躯干的**角度**误差,它精确
-等于指令角度(0.25 rad → 14.324°,0.50 rad → 28.648°),即躯干根本没转。
-
-修法是 `stage.root_body(robot)` 取 `body_names[0]`,replay 下发该链接的位姿。修后
-零位姿和两个真实位姿下每个链接都是 0.00 mm(最大 0.03),桌面 IoU 从 0.886/0.786
-升到 0.938/0.888。
-
-**两个探针陷阱**,写下来免得重犯:只量被驱动关节**自己的子链接**,再坏的关节也读
-0.00 mm,因为子链接就在关节原点上,要看下游;`get_link_transforms` 返回的四元数是
-**xyzw**,按 wxyz 读会让位置精确的链接报出 180° 的假误差。
-
-## 已解决:多可视网格的 body 丢网格,和手腕"断开"的两个原因
-
-用户看到的症状是一个:Isaac 里前臂和钳口之间空一段。原因是两个,互相掩盖。
-
-**1. importer 的合成丢网格。** 每个 mesh 资产各自导成 `/meshes/<asset>` 原型(一个带
-geom pos/quat 的 Xform,里面一个叫 `mesh` 的几何);带多个可视 geom 的 body 被写成
-**一个** `/visuals/<body>` prim 上的 reference **列表**。USD 合成时同名子节点合并,每个原型的
-几何都叫 `mesh`,所以合成结果里只剩一个 `mesh`,其余原型的几何**不是被遮住、不是放错,
-是不存在**。受影响的四个 body:`pelvis`(丢轮廓壳)、`torso_link`(四个网格丢三个:logo、
-head、waist_support)、左右 `wrist_yaw_link`(丢自己的圆柱,只剩 Dex1 托板)。
-
-修法是 `locomani/sim/isaac/split_visual_refs.py`:在导出的 `.usda` **文本**上把 reference
-列表改成每个 reference 一个子 prim(`<asset>_visual`),原型、变换、其余 prim 一字不动;
-`scripts/build_isaac_assets.sh` 在 convert 之后自动跑,缓存 key 同时含 MJCF 和这个脚本的
-hash。验证(2026-09-07,ep05 第 1050/1100 帧):合成后手腕 1→2、躯干 1→4、骨盆 1→2 个
-Mesh prim;34 个链接的 PhysX 位姿与未拆分构建**逐位相同**;像素差只在新出现的网格上。
-
-之前记的"拆 reference 会让机器人整体位移(IoU 0.49)"是当时 articulation root 还取错
-prim(见上一节)时的现象,不是拆分本身的问题;那时三种试法都是在**活 stage** 上改
-(`ClearReferences` / `BatchNamespaceEdit`),后者根本没生效。在 layer 文本上改绕开了
-这两条。`mjcf_split.py`(上游改 MJCF)仍留着没接,Isaac 4.5 的 importer 对它 SIGABRT。
-
-**2. 头部网格从内部被看见。** 拆分之后 `head_link` 终于合成出来,结果画面右下角出现一个
-大灰色圆顶。`head_camera` 在 torso 系的位置是 (0.06, 0, 0.45),而 head_link 的包围盒是
-x∈[-0.064, 0.075]、z∈[0.269, 0.476]:**相机在头的网格内部**,离前表面 1.5 cm。MuJoCo 看不到
-它只是因为 MuJoCo 剔除背面(把 `mjRND_CULL_FACE` 关掉,MuJoCo 里同一个圆顶盖住大半画面);
-RTX 不剔除背面(`/rtx/hydra/faceCulling/enabled` 在 stage 加载前后设都无效),而从封闭网格
-内部看到的每个面都是背面,所以**隐藏这个网格就等于 MuJoCo 的剔除结果**。
-`StageCfg.hidden_visuals` 默认隐藏 `torso_link/head_link_visual`,prim 不存在时直接报错
-(意味着机器人 USD 是拆分前的旧构建)。
-
-最终对照在 `outputs/renders_isaac/ep05/wrist_fix_vs_mujoco.png`:MuJoCo | 修前 | 修后。
+- [渲染代码导航](reference/change-map-rendering.md)：定位场景资产、逐帧同步、相机和进程生命周期。
+- [渲染修复与验证](handoff/review-fixes-20260914.md)：Isaac 4.5 画中画和受管停止的验证范围。
+- [重组前渲染文档](archive/rendering_20260914.md)：保留时延、相机更新、关节体根、多网格及背面遮挡的历史调查原文。
+  这些测量和旧“无需 hybrid clock”的裁定不替代当前模式、机器或新版本的验证。

@@ -79,9 +79,10 @@ Verbatim copies from `4cc52ba`; historical claims and relative links retain thei
 - [README](readme_20260912.md)
 - [Runbook](runbook_20260912.md)
 
-## Task guides preserved on 2026-09-14
+## Guides preserved on 2026-09-14
 
 - [Crate guide](crate_collection_20260914.md): original at `153c8b6`; current commands and capability boundaries are in [crate collection](../crate_collection.md).
 - [Bottle collection guide](collection_20260914.md): original at `153c8b6`; preserves removed reach estimates and old global cleanup instructions for history only.
 - [Pick-and-place collection guide](pick_place_collection_20260914.md): original at `797371c`; current usage is in [pick-and-place collection](../pick_place_collection.md).
+- [Rendering guide](rendering_20260914.md): original at `2f57ad3`; retains camera/root/mesh diagnostics and timing claims. Current architecture and implemented limits are in [simulation and rendering](../rendering.md).
 - These snapshots record original SHA-256 values. Relative Markdown links were adjusted for the archive location; historical claims were not rewritten.

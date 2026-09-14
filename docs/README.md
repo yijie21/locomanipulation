@@ -54,7 +54,8 @@ versioned documents reachable here, without requiring conversation history or pr
 历史数字和逐版诊断放入台账/归档，首次运行不要求阅读；底层字段只链接生成的配置表。
 
 通用流程：[安装](setup.md)、[数据转换](dataset.md)、[训练](training.md)、
-[评测](evaluation.md)、[渲染和视频导出](rendering.md)。
+[评测](evaluation.md)、[MuJoCo 仿真、Isaac 离线渲染与视频导出](rendering.md)。
+理解在线控制、状态记录和离线重渲如何衔接时，读 [渲染整体流程](rendering.md#整体流程)。
 专家设计、控制协议和对应实验从各采集指南的“进一步阅读”进入。
 
 ## Historical evidence and investigations
