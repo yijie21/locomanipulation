@@ -52,13 +52,11 @@ specific rules, not every architectural property or dynamic dependency.
 
 ## Checks
 
-`make check` runs formatting, lint, repository structure/navigation checks, generated
-configuration-reference freshness and the unit suite. Pre-commit uses the same checks.
-Running the full suite does not require loading all source into an agent's context.
-Static checks protect specified boundaries and navigation; interface quality and
-parameter necessity still need review. There is no enforced agent reading quota.
-File/function size reports locate complexity; passing a limit does not establish a
-good interface. Split by responsibility rather than line count alone.
+Final validation is selected by `scripts/check_changes.py`, shared by `make check`
+and the commit hook. Use the [verification scope and completion criteria](../agents/session-workflow.md)
+when choosing checks or deciding whether work is delivered. Static checks protect
+specified boundaries and links; interface quality and parameter necessity still need
+review. Size advisories locate complexity, not interface quality or a reading quota.
 
 Test observable contracts and important failure modes through real consumers.
 Configuration changes need precedence, migration, invalid-input and delivery coverage.

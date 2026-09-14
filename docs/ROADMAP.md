@@ -6,7 +6,7 @@ claims and priorities require evidence before reuse.
 
 | Work | Status and acceptance evidence |
 |---|---|
-| Short entry/navigation | Delivered: checked AGENTS → change map → owner/tests; history loaded on demand |
+| Short entry/navigation | Delivered: known local edits start at their owner; map/standards/history loaded when relevant |
 | Configuration path | Delivered: explicit bottle strategy and precedence; immutable runtime choices; real client and subprocess delivery tests |
 | Runner/environment convergence | Delivered: bottle/crate share stack resolution and stage records; actual-shell admission and failed-start cleanup tests |
 | Backend/task separation | Delivered: backend-to-task exception list empty; bottle execution stays with bottle; generic arm dependencies explicit |
@@ -21,3 +21,5 @@ The user excluded crate physical success/reproducibility as a blocker on 2026-09
 Crate scene redesign remains separate future work; this delivery does not tune its
 control or acceptance thresholds. Size advisories locate remaining complex control
 routines; they are not a claim that every function has been rewritten.
+
+Current workflow changes and remaining guideline work: [2026-09-14 delivery](handoff/agent-workflow-20260914.md).

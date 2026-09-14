@@ -1,11 +1,18 @@
-# Developer checks (docs/reference/standards.md). `make check` is what pre-commit runs.
+# Developer checks; make check and pre-commit share scripts/check_changes.py.
 PY_SIM := third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 RUFF   := /venv/main/bin/ruff
 TESTS  ?= tests
 
-.PHONY: check format lint test test-sim gate-bottle gate-crate config-doc cli
+.PHONY: check check-all check-docs format lint test test-sim gate-bottle gate-crate config-doc cli
 
-check: lint test
+check:
+	python3 scripts/check_changes.py
+
+check-all:
+	python3 scripts/check_changes.py --all
+
+check-docs:
+	python3 scripts/lint_repository.py --navigation-only --changed-docs
 
 format:
 	$(RUFF) format .
@@ -15,7 +22,7 @@ lint:
 	$(RUFF) check .
 	python3 scripts/lint_sizes.py
 	python3 scripts/lint_env.py --strict
-	python3 scripts/lint_repository.py
+	python3 scripts/lint_repository.py --changed-docs
 	python3 scripts/gen_config_reference.py --check
 
 # Regenerate docs/reference/config_fields.md from the config dataclasses.

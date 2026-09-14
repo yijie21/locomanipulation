@@ -7,6 +7,7 @@ This is a static import check, not proof about arbitrary runtime/dynamic imports
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import re
@@ -87,15 +88,21 @@ def dependency_errors(root: Path) -> list[str]:
     return errors
 
 
-def navigation_errors(root: Path, guides: dict[str, int] | None = None) -> list[str]:
+def navigation_errors(
+    root: Path, guides: dict[str, int] | None = None, documents: set[str] | frozenset[str] = frozenset()
+) -> list[str]:
     errors = []
-    for name, limit in (GUIDES if guides is None else guides).items():
+    checked: dict[str, int | None] = dict(GUIDES if guides is None else guides)
+    for name in documents:
+        if name.endswith(".md") and (root / name).is_file():
+            checked.setdefault(name, None)
+    for name, limit in checked.items():
         path = root / name
         if not path.is_file():
             errors.append(f"{name}: missing navigation document")
             continue
         body = path.read_text()
-        if len(body.splitlines()) > limit:
+        if limit is not None and len(body.splitlines()) > limit:
             errors.append(f"{name}: over {limit} lines; move task-specific detail behind a relevant link")
         for link in re.findall(r"\[[^\]]*\]\(([^)]+)\)", body):
             if link.startswith(("https://", "http://", "mailto:", "#")):
@@ -119,8 +126,19 @@ def artifact_errors(tracked: list[str]) -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--navigation-only", action="store_true", help="check documentation without scanning code")
+    parser.add_argument("--changed-docs", action="store_true", help="also check links in modified Markdown files")
+    args = parser.parse_args()
+    documents = set()
+    if args.changed_docs:
+        from check_changes import changed_paths
+
+        documents = changed_paths(ROOT)
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, text=True).split("\0")
-    errors = dependency_errors(ROOT) + navigation_errors(ROOT) + artifact_errors(tracked)
+    errors = navigation_errors(ROOT, documents=documents) + artifact_errors(tracked)
+    if not args.navigation_only:
+        errors += dependency_errors(ROOT)
     for error in errors:
         print(f"[repository] {error}")
     print(f"[repository] {'FAIL' if errors else 'PASS'}: {len(errors)} issues")

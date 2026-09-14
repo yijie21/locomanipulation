@@ -6,7 +6,8 @@
 
 - [AGENTS](../AGENTS.md): shared entry and resource rules.
 - [Change map](reference/change-map.md): select code/configuration/tests by intent.
-- [Standards](reference/standards.md): architecture, checks and evidence rules.
+- [Standards](reference/standards.md): architecture and evidence rules.
+- [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): implemented command entry points.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
@@ -25,6 +26,7 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 | Configuration fields and defaults | Owning code; regenerate [field reference](reference/config_fields.md) with `make config-doc` |
 | Supported launch commands | [Runbook](reference/runbook.md); point to implemented entry points |
 | Task-specific usage or design explanation | Relevant task guide below; explain when the reader needs it |
+| Verification scope, final check execution and completion criteria | [Session workflow](agents/session-workflow.md); keep Makefile and commit-hook behavior consistent |
 | Active progress, blockers and resources | [STATE](STATE.md); link detailed work instead of accumulating transcripts |
 | Maintenance scope and status | [ROADMAP](ROADMAP.md); link implementation and validation records |
 | Experiment claims, corrections and completed work | Task ledger or `handoff/`; preserve historical material in `archive/` with evidence links |

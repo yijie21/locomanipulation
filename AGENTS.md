@@ -5,9 +5,10 @@ Use this shared development contract with any coding agent.
 
 ## Find the change
 
-Read [the change map](docs/reference/change-map.md), then the row relevant to the
-request. It names the entry, configuration, reference implementation and tests.
-Use its change workflow for feature additions and modifications.
+Start with the specified file or known owner for local edits. Use scoped searches.
+For new features, unclear ownership or cross-module changes, consult the relevant
+row of [the change map](docs/reference/change-map.md); expand reading along actual
+callers and dependencies as needed.
 Read [architecture and standards](docs/reference/standards.md) before changing an
 interface, dependency direction or configuration format.
 
@@ -19,9 +20,12 @@ a task needs historical evidence. Historical experiments are not startup reading
 
 - Parse configuration at the entry; pass explicit values to consumers. Keep changes
   local to the owning module and extend its existing interface.
-- Run selected tests with `make test TESTS="tests/test_name.py"`; this uses the
-  configured CPU environment. Then run `make check`. The repository checker rejects
-  new forbidden imports, broken navigation and oversized entry documents.
+- During implementation, use related tests with `make test TESTS="tests/test_name.py"`.
+  For final validation choose the installed commit hook, or `make check` when
+  delivering without a commit. Both use the [same scope rules](docs/agents/session-workflow.md#verification).
+- Continue authorized implementation and validation through the
+  [completion criteria](docs/agents/session-workflow.md#completion); resolve routine
+  local choices without repeated approval.
 - Record checks actually run and remaining uncertainty. Experimental claims follow
   the [evidence rules](docs/reference/standards.md#evidence).
 - Preserve other sessions' edits. Stage explicit paths. Use isolated worktrees for

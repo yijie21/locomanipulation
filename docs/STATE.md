@@ -2,12 +2,12 @@
 
 ## Delivery
 
+- [Agent workflow](handoff/agent-workflow-20260914.md): conditional entry, shared verification routing and completion criteria; remaining guideline work is listed there.
 - Structural maintenance completed at source commits `bac6492` and `ec7ca1d`,
   against baseline `2e9af84`. Full CPU checks and independent Standards/Spec reviews pass.
 - Short agent entry, shared runtime/configuration seams, task/backend separation,
   typed results, portable test assets and schema/provenance checks are implemented.
 - [Delivery, checks and measured limits](handoff/maintenance-completion.md).
-  [Change map](reference/change-map.md) is the entry for new code changes.
 
 - Crate RGB expert video pilot completed: final batch 7/10 successes, three hold
   timeouts, all ten videos retained. [Implementation and evidence](handoff/crate-visual-pilot-20260912.md).

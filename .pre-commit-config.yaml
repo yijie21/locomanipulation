@@ -1,47 +1,11 @@
-# All hooks are local and use the tools already on this box (no network at commit time).
-#   ~/.local/bin/pre-commit install        # once per clone
-#   make check                              # the same checks by hand
-# Size lint reports existing complexity; environment and repository rules are strict.
+# Select the commit hook OR make check for final validation, not both.
+# Checks do not rewrite files; run make format to fix formatting before retrying.
 repos:
   - repo: local
     hooks:
-      - id: ruff-format
-        name: ruff format
-        entry: /venv/main/bin/ruff format --force-exclude
-        language: system
-        types: [python]
-      - id: ruff-check
-        name: ruff check
-        entry: /venv/main/bin/ruff check --fix --force-exclude
-        language: system
-        types: [python]
-      - id: lint-sizes
-        name: file/function size caps (report)
-        entry: python3 scripts/lint_sizes.py
-        language: system
-        pass_filenames: false
-        always_run: true
-      - id: lint-env
-        name: os.environ whitelist (strict)
-        entry: python3 scripts/lint_env.py --strict
-        language: system
-        pass_filenames: false
-        always_run: true
-      - id: config-doc-fresh
-        name: config field reference is up to date
-        entry: python3 scripts/gen_config_reference.py --check
-        language: system
-        pass_filenames: false
-        always_run: true
-      - id: repository-contract
-        name: architecture and navigation contracts
-        entry: python3 scripts/lint_repository.py
-        language: system
-        pass_filenames: false
-        always_run: true
-      - id: unit-tests
-        name: unit tests (CPU; no live simulation)
-        entry: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m pytest -x -q tests
+      - id: check-changes
+        name: final validation (documentation or full CPU checks)
+        entry: python3 scripts/check_changes.py
         language: system
         pass_filenames: false
         always_run: true

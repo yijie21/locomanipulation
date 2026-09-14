@@ -70,3 +70,12 @@ def test_navigation_detects_broken_links_missing_tests_and_budget_overflow():
 def test_runtime_paths_are_rejected_including_directory_replacing_symlinks():
     assert len(rules.artifact_errors(["outputs", "third_party", "datasets", "outputs/run/data.json"])) == 4
     assert rules.artifact_errors(["src/locomani/paths.py", "assets/robot.xml"]) == []
+
+
+def test_changed_markdown_outside_entry_guides_is_checked(tmp_path):
+    guide = tmp_path / "docs/task.md"
+    guide.parent.mkdir()
+    guide.write_text("[missing](missing.md)\n")
+    assert "broken link" in rules.navigation_errors(tmp_path, {}, {"docs/task.md"})[0]
+    (guide.parent / "missing.md").touch()
+    assert rules.navigation_errors(tmp_path, {}, {"docs/task.md", "docs/deleted.md"}) == []

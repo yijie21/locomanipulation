@@ -92,5 +92,5 @@ runner 负责启停自己的实例并记录每次尝试；失败也会留下结�
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
 完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)。
 
-需要修改代码或贡献功能时，再阅读 [开发入口 AGENTS.md](AGENTS.md)、
-[代码导航](docs/reference/change-map.md) 和 [开发规范](docs/reference/standards.md)。
+需要修改代码或贡献功能时，从 [开发入口 AGENTS.md](AGENTS.md) 开始。已知文件的局部修改可直接进入；
+归属不明或新增功能时查 [代码导航](docs/reference/change-map.md)，改变接口或配置格式时查 [开发规范](docs/reference/standards.md)。

@@ -1,11 +1,9 @@
 # Change map
 
-Read the relevant row, its owning code and the named tests, using scoped searches
-and relevant sections. Expand along callers, consumers and dependencies when needed.
-Shared protocol changes, cross-layer failures and broad refactors can require wider
-reading; explain the unresolved contract that warrants it. Routine local changes
-start from this map. This map describes implemented entries, not experimental
-validity. Test names below are relative to `tests/` and checked for existence.
+Use this map for new features, unclear ownership or cross-module changes. Known
+local edits can start at their owning file. Search for the relevant row and expand
+along actual dependencies; the full table is not startup reading. Test names are
+relative to `tests/` and checked for existence. Entries do not certify experiments.
 
 | Change | Entry / owner | Configuration or example | Tests |
 |---|---|---|---|
@@ -32,11 +30,11 @@ validity. Test names below are relative to `tests/` and checked for existence.
 | Isaac ego/wrist picture-in-picture | [isaac_render.py](../../src/locomani/sim/isaac/isaac_render.py) → [stage.py](../../src/locomani/sim/isaac/stage.py), [frames.py](../../src/locomani/sim/isaac/frames.py) | [render-wall-pilot insets](../crate_collection.md#10-渲染并排视频可选) | `test_head_camera_spec.py`, `test_isaac_dataset_insets.py`, `test_isaac_capture.py`, `test_isaac_inset_render.py` |
 | Render launch / scoped shutdown | [render_job.py](../../src/locomani/pipeline/render_job.py) ← [render_wall_pilot.sh](../../scripts/render_wall_pilot.sh), [stop_render.sh](../../scripts/stack/stop_render.sh) | [Job ownership](../crate_collection.md#中途停止渲染--清理) | `test_render_job.py` |
 | Isaac source assets / cache | [scene_assets.py](../../src/locomani/sim/isaac/scene_assets.py), [build_isaac_assets.sh](../../scripts/build_isaac_assets.sh) | [rendering](../rendering.md#资产构建), [shared room source](../../assets/scene/README.md) | `test_isaac_scene_assets.py` |
-| Navigation / architecture checks | [lint_repository.py](../../scripts/lint_repository.py) | [standards](standards.md) | `test_repository_rules.py` |
+| Verification routing / navigation / architecture | [check_changes.py](../../scripts/check_changes.py), [lint_repository.py](../../scripts/lint_repository.py) | [Verification](../agents/session-workflow.md#verification), [standards](standards.md) | `test_check_workflow.py`, `test_repository_rules.py` |
 
 ## Change workflow
 
-1. Select the row matching the requested behavior; identify its owner, current
+1. Start at the known owner or use the relevant row; identify its current
    interface, configuration and observable contract in the named tests. If no row
    fits, use the [module ownership rules](standards.md#module-ownership) to place it.
 2. Implement through that interface and keep helpers with their owner. Interface,
@@ -44,7 +42,7 @@ validity. Test names below are relative to `tests/` and checked for existence.
 3. Check the changed behavior through its real consumer, including relevant failure
    paths and parameter delivery. Run `make test TESTS="tests/test_name.py"` with the
    actual relevant test paths. Regenerate config fields with `make config-doc` when
-   configuration changes, then run `make check`. Apply the standards' live-validation
+   configuration changes. Choose final validation using the [session workflow](../agents/session-workflow.md#verification). Apply the standards' live-validation
    requirements when physical commands, timing, sampling or acceptance change.
 4. Update the affected map row when entries, configuration owners or tests change;
    add a row for a new change category. Update the owning documentation using the
@@ -59,7 +57,7 @@ validity. Test names below are relative to `tests/` and checked for existence.
    and its tests; keep selection out of round sequencing.
 3. Profile fields represented on the gym CLI resolve in `cli_args.py`. Use explicit
    presence parsing and check both expert and VLA modes.
-4. Run named tests, `make config-doc`, then `make check`. Inspect resolved gym options
+4. Run named tests and `make config-doc`; use the final validation entry above. Inspect resolved gym options
    with `PYTHONPATH=src python -m locomani.tasks.bottle.cli_args --task-config <profile>`.
    This CPU-only command prints resolved values and sources without a simulator.
 
