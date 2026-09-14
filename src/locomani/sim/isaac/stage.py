@@ -660,16 +660,20 @@ def step_and_grab(world, sensor, steps: int = SETTLE_STEPS):
 
 
 def step_and_grab_all(world, sensors: dict, steps: int = SETTLE_STEPS) -> dict:
-    """Like `step_and_grab`, but reads every named sensor after the SAME
-    `world.step(render=True)` calls: one step updates every active render
-    product, so picture-in-picture cameras cost extra render passes, not
-    extra settle loops (and extra simulation ticks). `{name: rgba|None}`,
-    one entry per key of `sensors`."""
+    """Read fresh, synchronized camera buffers from the final settled render step.
+
+    Isaac's current-frame buffer pairs RGBA with its rendering-frame ID. Missing
+    or stale cameras return None; a previous step's image must never fill the gap.
+    """
     rgba = {name: None for name in sensors}
     for _ in range(max(1, steps)):
+        previous = {name: sensor.get_current_frame()["rendering_frame"] for name, sensor in sensors.items()}
         world.step(render=True)
-        for name, sensor in sensors.items():
-            got = sensor.get_rgba()
-            if got is not None and got.size:
-                rgba[name] = got
+        frames = {name: dict(sensor.get_current_frame()) for name, sensor in sensors.items()}
+        latest = max((f["rendering_frame"] for f in frames.values()), default=0)
+        rgba = {}
+        for name, frame in frames.items():
+            got, stamp = frame.get("rgba"), frame["rendering_frame"]
+            fresh = stamp > previous[name] and stamp == latest
+            rgba[name] = got.copy() if fresh and got is not None and got.size else None
     return rgba

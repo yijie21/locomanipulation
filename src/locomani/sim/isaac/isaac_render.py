@@ -438,6 +438,7 @@ def _render(
     # requested; without them pass 1 writes directly to the final file, byte-
     # for-byte the original behaviour.
     main_dir = tempfile.mkdtemp(prefix="main_", dir=args.out) if inset_layout else None
+    vw = None
     try:
         vw = None if inset_layout else cv2.VideoWriter(final_path, fourcc, fps, (args.width, args.height))
         written_ts = []
@@ -494,41 +495,42 @@ def _render(
 
             for _i in range(8):
                 push(0)
-                if any(v is not None for v in S.step_and_grab_all(world, inset_sensors).values()):
+                if all(v is not None for v in S.step_and_grab_all(world, inset_sensors).values()):
                     if _i:
                         log(f"inset warm-up: {_i} discarded step(s)")
                     break
             else:
-                log("WARNING inset sensors still empty after 8 warm-up steps")
-            reference = next(iter(inset_sensors))
+                raise RuntimeError("Inset cameras missing or stale after 8 warm-up steps")
             prev, calm = None, 0
             for _i in range(80):
                 push(0)
-                cur = S.step_and_grab_all(world, inset_sensors).get(reference)
-                if cur is None:
+                grabbed = S.step_and_grab_all(world, inset_sensors)
+                if any(v is None for v in grabbed.values()):
+                    prev, calm = None, 0
                     continue
-                cur = cur[..., :3].astype(np.float32)
-                if prev is not None and float(np.abs(cur - prev).mean()) < 0.5:
-                    calm += 1
-                    if calm >= 3:
-                        log(f"inset picture settled after {_i + 1} extra warm-up steps")
-                        break
-                else:
-                    calm = 0
+                cur = {name: rgba[..., :3].astype(np.float32) for name, rgba in grabbed.items()}
+                quiet = prev is not None and all(float(np.abs(cur[n] - prev[n]).mean()) < 0.5 for n in cur)
+                calm = calm + 1 if quiet else 0
+                if calm >= 3:
+                    log(f"inset pictures settled after {_i + 1} extra warm-up steps")
+                    break
                 prev = cur
             else:
-                log("WARNING inset picture still changing after 80 extra warm-up steps")
+                log("WARNING inset pictures still changing after 80 extra warm-up steps")
 
             vw = cv2.VideoWriter(final_path, fourcc, fps, (args.width, args.height))
             written = 0
             for i, t in enumerate(written_ts):
                 push(t)
                 grabbed = S.step_and_grab_all(world, inset_sensors)
+                missing = [name for name in inset_layout if grabbed.get(name) is None]
+                if missing:
+                    raise RuntimeError(f"frame {t}: missing/stale inset cameras: {', '.join(missing)}")
                 frame = cv2.imread(os.path.join(main_dir, f"{i:06d}.png"))
+                if frame is None:
+                    raise RuntimeError(f"frame {t}: missing main-pass image")
                 for cam_name, (label, w, h, x, y) in inset_layout.items():
-                    irgba = grabbed.get(cam_name)
-                    if irgba is not None:
-                        _paste_inset(frame, irgba, label, w, h, x, y)
+                    _paste_inset(frame, grabbed[cam_name], label, w, h, x, y)
                 vw.write(frame)
                 written += 1
                 if t % 200 == 0:
@@ -538,6 +540,8 @@ def _render(
                 UsdGeom.Imageable(stg.GetPrimAtPath(path)).MakeVisible()
             log(f"inset pass: wrote {written}/{len(written_ts)} composited frames")
     finally:
+        if vw is not None:
+            vw.release()
         if main_dir is not None:
             shutil.rmtree(main_dir, ignore_errors=True)
 

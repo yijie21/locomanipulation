@@ -306,6 +306,11 @@ pilot 混成一份 manifest,而 `scripts/gate.py` 读的正是这份。旧 runne
 | `wall_feature` | `rail`(默认)/ `wall` | 夹哪个特征。`rail`:箱子不转,夹两端 30 mm 高的箱沿横杆,下探底 5 cm;`wall`:箱子转 90°,夹左右两面整高箱壁,下探底 8 cm。20/20 是在 `rail` 上做到的 |
 | `wall_walk` | `true` / `false`(**默认 false**;`crate_wall.json` 里是 true) | `true`:从 1.0–1.3 m 外走进来,完整 episode;`false`:出生在站位后 0.45 m,双臂先抬到 hover 姿势再**瞬移**到抽样的站位上,只量抓取本身(ready-stand pilot) |
 
+`crate_dy_range_m` 指定每集篮子横向偏移的均匀抽样区间（米），默认 `[-0.08, 0.08]`。
+例如 `--set crate_dy_range_m=-0.03,0.03`；上下界相等可固定位置。上下界必须为有限数值且前者不大于后者，
+非法配置在起栈前报错。配置从入口显式传入 `WallRoundContext`，reset 直接消费该值；manifest 的 `crate_dy`
+记录实际抽样值，`task_config.json` 保留区间。
+
 ### 产出在哪
 
 | 产物 | 路径 |
@@ -612,7 +617,10 @@ flowchart TD
 (`locomani.pipeline.sim_video.INSETS`)。**Isaac 侧开销明显更大**:三个画中画相机是三个独立挂载、独立摆位的
 RTX 相机,整段画中画还是主视角渲完之后**再完整重放一遍状态轨迹**才画出来的(不是同一趟顺手多渲几个相机),
 等于这一集的总渲染步数接近翻倍——量大时开着 `ISAAC_RENDER_ARGS="--insets"` 跑,先把 `render_wall_pilot.sh`
-给 Isaac 那一步的 1500 秒超时调大。为什么要挂三个独立相机、为什么要分两趟渲染,见下面"双臂导出的两条默认规则"。
+给 Isaac 那一步的 1500 秒超时调大。主视角和画中画分别预热，避免逐帧切换头部网格、ghost 的可见性。
+
+Isaac 的三路相机必须全部预热完成；每个合成帧只接收最后一次步进中更新、且 `rendering_frame` 相同的图像。
+缺图或旧图会使渲染失败，不能悄悄少一块画中画后仍报告完成。渲染器失败时，批处理脚本立即以非零状态退出。
 
 只测 MuJoCo 这一侧的画中画(不装 Isaac 也能跑,4 s 一集,带 ghost hands):
 
@@ -629,23 +637,42 @@ bash scripts/stack/stop_render.sh          # 只有一个 render_wall_pilot.sh �
 bash scripts/stack/stop_render.sh my_run   # 同机同时跑多个时,用 $R(输出目录)里的字样区分要停哪一个
 ```
 
-不是简单 `pkill` 驱动脚本就够——每次 `isaac_render` 调用都套了一层 `timeout`,`timeout` 会把它放进**自己单独的
-进程组**,好让超时触发时能连子进程一并收拾;只杀驱动脚本会把这个 worker 落下,变成孤儿继续占着 GPU
-(2026-09-13 实测:驱动已经跑到第 50 集的 MuJoCo 渲染,第 48 集的 Isaac worker 还在另一个进程组里活着)。
-`stop_render.sh` 会把驱动脚本和它当前那一轮的 Isaac worker 一起停掉,SIGTERM 优先,3 秒后还没退才上 SIGKILL。
-同一台机器上如果同时有多个 `render_wall_pilot.sh` 在跑,不带参数会拒绝执行并列出每一个,提示你加关键字区分,
-避免一不小心停了别人的渲染。
+`render_wall_pilot.sh` 经 `pipeline/render_job.py` 启动，给自己的子进程树写入唯一任务标识和规范化输出目录。
+`stop_render.sh` 只匹配当前用户的这些任务；关键字仅筛选输出目录，**带不带关键字都必须只匹配一个任务**。
+停止时逐个核对进程身份，通过 Linux pidfd 发信号，不向整个进程组广播。先暂停并枚举子进程，
+再发 SIGTERM，3 秒后仍未退出才发 SIGKILL；同一任务中脱离父进程或另建进程组的 worker 也在范围内。
+其它渲染任务，以及同进程组中没有该任务标识的进程，都不会被选中。
 
-**布局资产**:Isaac 场景里的房间、桌子、台面不是从 MJCF 转的,而是读 `outputs/scene/{layout,surface_b}/asset3d/<name>/result/mesh/*.obj`
-和 `outputs/scene/layout/background/mesh_model.ply`。这些是 EmbodiedGen 的原始产物,**`assets/scene_locomani_v1.tar.gz` 里没有**
-(它只装了 MuJoCo 要的 `mjcf/` 和 `layout/layout.json`,commit 3a0f6bc 有意为之),只在跑过 EmbodiedGen 的机器上有。没有它们时 `isaac_scene.py` 照样
-写出只有灯和机器人的 `scene.usda`,`build.log` 里是 `MISSING surface A: dining_table`,三张预览纯灰,Isaac 视频里机器人和箱子
-浮在灰底上。2026-09-11 起构建脚本会把 MISSING 行打到终端并 WARN。新机器要从采集机拷 `outputs/scene/{layout/asset3d,layout/background,
-surface_b,bg_empty}` 过来再 `--force` 重建。MuJoCo 那一半不受影响(它的桌子来自 MJCF 自己的网格)。
+运行中的任务会锁定输出目录；即使驱动已退出，只要其 worker 仍在，就拒绝在该目录启动新任务。
+旧版脚本启动的进程、直接启动的未标记渲染器不归这个命令管理；出现 “No managed render job matches”
+只代表没有匹配的受管任务。独立渲染器也可通过同一入口启动，例如：
+
+```bash
+python3 src/locomani/pipeline/render_job.py run --out "$R" -- \
+  "$RENDER_PY" -m locomani.sim.isaac.isaac_render --session "" \
+  --state-trace "$V/trace/wall_s0_00_state_trace.npz" \
+  --scene-xml "$V/crate_bimanual/scene_locomani.xml" --out "$R" --insets
+```
+
+**布局资产**：房间源资产已纳入 `assets/scene/`，桌子使用安装后的场景网格，并有纹理回退。
+当前构建会检查缺失源文件并失效旧缓存；按 [资产构建](rendering.md#资产构建) 安装和重建。
+旧版本缺背景、桌子的原因和 Isaac 4.5 验证见 [资产可移植性修复](handoff/isaac-asset-portability-20260912.md)。
 
 每集约 3 min:MuJoCo 用跟踪相机重放状态轨迹(`--stride 4`,并写出 `cam_traj.npz`)→ Isaac 沿同一条相机轨迹重放
 → ffmpeg hstack。产出 `$R/sbs_roundNN.mp4`(左 MuJoCo、右 Isaac);每集目录 `$R/rNN/` 有
 `tracking_mujoco.mp4`、`cam_traj.npz`、`ego_isaac.mp4`、`render.log`。第 0 集出来先看三样:只有一个机器人、有头、脚在地面上。
+
+**双臂预览与 ghost hands 的含义**:
+- `MUJOCO_RENDER_ARGS="--insets"`:MuJoCo 侧叠三路画中画(ego / L wrist / R wrist),和采集时的第三人称录像同一布局。
+- **ghost hands**:专家每次解 IK 时把双手的目标手腕位姿(抓取点减去 `OFFSET`,`ghost_trace.py`)按状态 `seq` 记到
+  `trace/<label>_NN_ghost.npz`(driver 默认开,`--no-state-trace` 关——过去它取决于一个 runner 自己不设的环境变量,所以默认其实是关的);
+  `render_wall_pilot.sh` 发现这个文件就把它传给两个渲染器,MuJoCo 和 Isaac 都画一对洋红半透明的张开夹爪
+  (`sim/isaac/ghost.py`,几何和 `scene_lib.add_ghost_hand` 同一套数学,Isaac 侧引用机器人 USD 的 `/meshes/*`)。
+  走路阶段没有 IK 目标,ghost 停在地下;画中画里永远没有 ghost。看视频时:ghost 是"想去哪",实手是"到了哪"。
+  ghost 画的是**纯目标点 `ref`**(hover → 杆上 → 下探 → 抬起,随阶段移动),不是伺服真正交给 IK 的命令
+  (`ref + lead cap + overdrive`,那个会超前于目标、来回抖);两者的差就是伺服在补的跟踪滞后。
+
+分享上述视频前，必须按 [视频导出规则](rendering.md#video-export) 生成每条不超过 500,000 字节的完整预览；保留原始录像。
 
 ---
 
@@ -748,3 +775,81 @@ OUT=$LOCOMANI_ROOT/outputs/experiments/crate_ds_$(date -u +%Y%m%d) \
 4. §5 10 集 pilot:成功 ≥ 8,`move_s` 都在 lift,`static` ≤ 0.10,`trig` 以 `contact` 为主。
 5. §10 渲染第 0 集:一个机器人、有头、脚着地。
 6. 要训练集:先做 §11,采集期间 GPU 上不跑别的。
+
+### Carry motion continuity
+
+`CrateTaskConfig.carry.settle_seconds` owns the continuous quiet interval before
+reaching (default 0.3 s). The gate requires fresh body position/orientation samples
+and a completed upper-body reference; it times out as a failed attempt after 6 s.
+Carry owns one `JointReference` through walk-in, reach, close and lift.
+`carry.joint_speed` (0.7 rad/s) and `carry.joint_acceleration` (2 rad/s²) bound
+the final waist/arm commands after IK and compensation, with explicit velocity
+on the SONIC channel. Handoff preserves reference position and velocity and adds
+no fixed hold. Target limits are the intersection of model and caller limits;
+an initially commanded pose outside task bounds enters them continuously.
+Other planner callers retain their default entry hold. The robot is sampled
+1.2–1.5 m outside the table edge; measured distance at video start is also recorded.
+`*_motion.jsonl` contains commanded references, velocities, measured joints and
+base pose with timestamps and phase labels for diagnostic comparisons. These
+privileged diagnostics are not declared VLA observation modalities.
+
+[Motion-flow implementation and comparison](handoff/crate-motion-flow-20260913.md)
+records the protocol, measurements and current limitations. CPU timing tests do not
+establish grasp reliability or learned-policy behavior. Actual reset distance is
+checked before recording/walking; drift outside 1.2–1.5 m is a failed attempt.
+
+### Table-height validation
+
+[55 cm versus 62 cm GPU comparison](handoff/crate-table55-20260913.md) records
+the fixed-footprint scene recipe and complete walk/grasp/lift results. Lowering the
+table reduced measured wrist bend in this sample, but did not establish more waist
+bending, nearly straight arms, less shake or high reliability. Read that report when
+changing height: the generic scene builder also scales table XY, and a fixed-pelvis
+CPU IK solution does not predict the posture reached by the moving robot.
+
+The historical [30 cm squat comparison profile](../configs/tasks/crate_table30.json) opts
+into `carry.pelvis_height=0.53` and `carry.waist_pitch_max=0.52` radians. Use it only
+with a separately prepared low scene; the profile does not rebuild the table.
+After walking, both hand staging targets descend with measured pelvis motion.
+`carry.height_speed` bounds the planner height command; feedback corrects the
+command-to-measurement offset throughout crouch, grasp and lift. A 20 s crouch
+timeout is a failure. Low-pose admission rechecks actual stance and two-hand IK.
+The episode ends in the low pose; reset owns recovery, avoiding an implicit
+stand-up with the held crate. `carry.pelvis_height=null` disables this phase.
+[30 cm GPU validation](handoff/crate-table30-20260913.md) completed at 0/10 full-task
+successes: three attempts lowered the pelvis by 24–25 cm but also retreated 23–29 cm;
+all three failed low-pose admission. This profile remains experimental, and is not
+validated for formal VLA collection. The report contains measured waist/torso angles,
+full walking previews and the fixed-footprint `--height 0.30` scene preparation command.
+For the current low-reach implementation, use the whole-body profile below.
+
+### Whole-body low-reach pilot
+
+`--expert carry --config configs/tasks/crate_low_reach.json` selects a full-body
+pose stream after walking. It plans a hip hinge from the observed feet and COM,
+keeps pelvis height above `carry.pelvis_height_min`, and bounds forward pelvis
+rotation by `carry.pelvis_pitch_max`. Planned root position is a geometry result;
+the SONIC pose message delivers joint references and root orientation, so actual
+position and balance still require live measurement. See the
+[low-reach investigation](handoff/crate-low-reach-20260913.md) for measured results.
+The original bilateral capture, contact and lift gates remain in force.
+For this mode, the old 4 cm lateral heuristic is replaced by the supported
+whole-body solve before bending and mandatory two-hand IK at the actual bent pose.
+The table-edge floor and heading gates remain; an unreachable reference is rejected.
+
+Carry now uses all three physical waist axes; `carry.waist_dofs=pitch` retains the
+pitch-only comparison. Other experts retain their own configuration. A waist
+joint limit and the torso's inclination relative to the world are distinct angles.
+The new stream keeps per-frame root orientations and explicit joint velocities
+together. `*_motion.jsonl` stores these full-body references for inspection.
+After capture, a continuous paired lift extends the held command in a fixed
+coordinate frame; measured contact, tilt and rise still decide success.
+Formal `--record` is rejected for this pilot until full-pose VLA export is validated.
+
+The low-table **visual** expert uses simulation-assisted continuous body coordination through
+`--expert visual --config configs/tasks/crate_visual_low_reach.json`; follow the
+[camera-guided low-reach guide](crate_visual_collection.md#low-tables-and-a-free-waist).
+The profile restores the ordinary basket and records the simulation source explicitly.
+The `carry` entry remains privileged mechanical diagnostics. Its whole-body capture
+now accepts the no-post rim segment; legacy point/slot descriptions above describe
+earlier runs. [New investigation and limits](handoff/crate-visual-low-reach-20260913.md).

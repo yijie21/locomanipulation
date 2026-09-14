@@ -159,8 +159,6 @@ STAND_OFF_RANGE = (0.14, 0.28)  # pelvis to the crate's near face
 STAND_LAT_RANGE = (-0.05, 0.05)
 STAND_YAW_DEG = 5.0
 STAND_YAW_MAX_DEG = 10.0  # fail fast: nothing downstream survives a bigger heading error
-# CrateTaskConfig.crate_dy_range_m's default; main() reassigns this after --config/--set.
-CRATE_DY_RANGE = tuple(DEFAULT_CRATE_TASK.crate_dy_range_m)
 SPAWN_BACK = 0.45  # reset this far behind the stand, teleport in with the arms up
 # --- walk-in (WALL_WALK=1): bimanual_carry's approach in front of this grasp ---
 # CrateTaskConfig.wall_walk's default (decision 8); main() reassigns this
@@ -269,6 +267,8 @@ def run_round(
     log,
     video_label: str,
     record: bool = False,
+    *,
+    config: CrateTaskConfig = DEFAULT_CRATE_TASK,
 ) -> dict:
     """One round's six phases (wall_phases.py / wall_phases_descend.py),
     threaded through a WallRoundContext.
@@ -286,6 +286,7 @@ def run_round(
         log=log,
         video_label=video_label,
         m={"round": rnd, "ok": False, "why": "", "produced": False},
+        config=config,
     )
     for phase in (_phase_reset, _phase_stand, _phase_hover, _phase_descend, _phase_close, _phase_lift):
         result = phase(ctx)
@@ -311,6 +312,8 @@ from locomani.primitives.g1_joints import ARM_MJ as ARM_IDX  # noqa: E402
 
 
 def main() -> None:
+    from functools import partial
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0)
@@ -341,11 +344,10 @@ def main() -> None:
     # caller would (module-level assignment), so wall_phases.py's deferred
     # `from bimanual_wall import WALK` etc. (read fresh each round) see it.
     global FEATURE, WALK, DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW
-    global CRATE_SETBACK_LEVELS, CRATE_YAW_LEVELS_DEG, CRATE_DY_RANGE
+    global CRATE_SETBACK_LEVELS, CRATE_YAW_LEVELS_DEG
     FEATURE, WALK = cfg.wall_feature, cfg.wall_walk
     CRATE_SETBACK_LEVELS = tuple(cfg.crate_setback_levels_m)
     CRATE_YAW_LEVELS_DEG = tuple(cfg.crate_yaw_levels_deg)
-    CRATE_DY_RANGE = tuple(cfg.crate_dy_range_m)
     DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW = _wall_feature_constants(FEATURE)
     inst = ports.instance()
     # One formula, in locomani.sim.ports: this used to carry its own copy of the
@@ -377,7 +379,7 @@ def main() -> None:
         p,
         reset,
         meta,
-        run_round=run_round,
+        run_round=partial(run_round, config=cfg),
         rng=np.random.default_rng(args.seed),
         rounds=args.rounds,
         label=args.label,

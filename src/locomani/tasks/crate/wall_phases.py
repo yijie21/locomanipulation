@@ -27,7 +27,7 @@ correct and sufficient here, unlike vla_round.py's family-3 knobs).
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import numpy as np
@@ -38,6 +38,7 @@ from locomani.backends.sonic.primitives import DT, Primitives, upper_body_from_m
 from locomani.backends.sonic.streamed_arm import reanchor
 from locomani.primitives.g1_joints import ARM_MJ as ARM_IDX
 from locomani.sim.privileged_pub import EpisodeControlClient
+from locomani.tasks.crate.config import CrateTaskConfig
 
 # Every phase function below returns `dict | None`: `None` to continue to the
 # next phase, a (failure-populated) `m` dict to end the round with that
@@ -63,6 +64,7 @@ class WallRoundContext:
     log: Callable
     video_label: str
     m: dict
+    config: CrateTaskConfig = field(default_factory=CrateTaskConfig)
 
     # -- filled in by _phase_reset, read by later phases -------------------
     surf: dict = None  # meta["surfaces"]["A"], read by _phase_stand
@@ -171,7 +173,6 @@ def servo_tick(ctx: WallRoundContext, s, ref):
 
 def _phase_reset(ctx: WallRoundContext) -> dict | None:
     from locomani.tasks.crate.bimanual_wall import (
-        CRATE_DY_RANGE,
         CRATE_SETBACK_LEVELS,
         CRATE_YAW_DELTA,
         CRATE_YAW_LEVELS_DEG,
@@ -197,7 +198,7 @@ def _phase_reset(ctx: WallRoundContext) -> dict | None:
     crate_yaw0 = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
 
     # --- reset: crate rotated, near face on the table edge; robot on a sampled stand
-    crate_dy = float(rng.uniform(*CRATE_DY_RANGE))
+    crate_dy = float(rng.uniform(*ctx.config.crate_dy_range_m))
     # Placement design (2026-09-10): the crate can sit `setback` in from the
     # edge and be yawed about its centre. The levels' product is walked in a
     # fixed shuffled order so a short pilot covers every corner; nothing

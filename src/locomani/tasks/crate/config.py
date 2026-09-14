@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
+from numbers import Real
 
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
 from locomani.tasks.crate.carry_config import CrateCarryConfig
@@ -45,8 +47,14 @@ class CrateTaskConfig:
     def __post_init__(self):
         if self.visual.pose_source == "assisted" and self.carry.reach_control != "whole_body":
             raise ValueError("visual.pose_source=assisted requires carry.reach_control=whole_body")
-        if len(self.crate_dy_range_m) != 2 or self.crate_dy_range_m[0] > self.crate_dy_range_m[1]:
-            raise ValueError("crate_dy_range_m must be a (low, high) pair with low <= high")
+        bounds = self.crate_dy_range_m
+        if (
+            not isinstance(bounds, (tuple, list))
+            or len(bounds) != 2
+            or any(isinstance(v, bool) or not isinstance(v, Real) or not isfinite(v) for v in bounds)
+            or bounds[0] > bounds[1]
+        ):
+            raise ValueError("crate_dy_range_m must be a finite numeric (low, high) pair with low <= high")
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

@@ -13,9 +13,14 @@
 # --insets --help for why: a fully separate second pass, not a cheap overlay).
 # Per round: MuJoCo re-render with the tracking camera (+ cam_traj.npz), the Isaac
 # replay on that camera path, then an ffmpeg hstack -> <out_dir>/sbs_roundNN.mp4.
-set -uo pipefail
+set -euo pipefail
+if [ "${1:-}" != "--owned-job" ]; then
+  root=$(cd "$(dirname "$0")/.." && pwd)
+  exec python3 "$root/src/locomani/pipeline/render_job.py" run --out "${2:?out dir}" -- bash "$root/scripts/render_wall_pilot.sh" --owned-job "$@"
+fi
+shift
 . "$(dirname "$0")/paths.sh"
-P="${1:?pilot dir}"; O="${2:?out dir}"; N="${3:-10}"; LABEL="${4:-wall_s0}"
+P=$(realpath -m "${1:?pilot dir}"); O=$(realpath -m "${2:?out dir}"); N="${3:-10}"; LABEL="${4:-wall_s0}"
 SCENE="${LOCOMANI_SIM_DIR:-$LOCOMANI_ROOT/outputs/scene/crate_bimanual}"
 ISAAC_SCENE="$LOCOMANI_ROOT/assets/isaac/scene/$(basename "$SCENE")"
 mkdir -p "$O"; cd "$LOCOMANI_ROOT"

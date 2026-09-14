@@ -57,8 +57,7 @@ def _wrist_spec_of(cam_tag: str, side: str):
 class WristCameraSpecTests(unittest.TestCase):
     def test_reads_the_named_side(self):
         pos, quat, fovy = _wrist_spec_of(
-            '<camera name="left_wrist" pos="0.055 0 0.085" '
-            'quat="0.635149 0.310782 -0.310782 -0.635149" fovy="80"/>',
+            '<camera name="left_wrist" pos="0.055 0 0.085" quat="0.635149 0.310782 -0.310782 -0.635149" fovy="80"/>',
             "left",
         )
         self.assertEqual((pos, quat, fovy), ([0.055, 0.0, 0.085], [0.635149, 0.310782, -0.310782, -0.635149], 80.0))

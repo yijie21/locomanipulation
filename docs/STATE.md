@@ -1,4 +1,4 @@
-# STATE — 2026-09-13
+# STATE — 2026-09-14
 
 ## Delivery
 
@@ -43,8 +43,8 @@
 
 ## Shared resources
 
-- Upright-carry validation complete; owned instance 1 released. GPU 1 untouched.
-- Latest evidence: `outputs/crate_upright_handoff_20260913/`; all earlier motion evidence retained.
+- [Review follow-up fixes](handoff/review-fixes-20260914.md): CPU, live wall offset and Isaac 4.5 inset checks pass; instance 1 released, GPU 1 untouched.
+- Latest evidence: `outputs/review_fixes_20260914/`; all earlier motion evidence retained.
 - Earlier outputs, datasets, recordings and weights are preserved; see the linked reports.
 
 ## Evidence and preserved constraints
