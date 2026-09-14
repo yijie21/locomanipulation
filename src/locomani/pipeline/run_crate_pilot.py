@@ -189,6 +189,13 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
     task_cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         task_cfg = task_cfg.with_overrides(args.set_)
+    if args.expert == "wall" and task_cfg.carry.reach_control == "whole_body":
+        raise SystemExit(
+            "wall cannot execute carry.reach_control=whole_body; "
+            "for the continuous assisted basket task pass --expert visual "
+            "--config configs/tasks/crate_visual_low_reach.json and a 30 cm scene. "
+            "The bare runner defaults to the separate wall diagnostic."
+        )
     if args.expert == "carry" and args.record and task_cfg.carry.reach_control == "whole_body":
         raise SystemExit("whole_body is a motion pilot; full-pose VLA action export is not validated")
     task_cfg_path = out / "task_config.json"
@@ -232,6 +239,14 @@ def prepare(args) -> tuple[Path, CrateTaskConfig, Path, Path]:
             started=time.time(),
             inputs=dict(scene=file_digests(scene)),
         )
+    metadata = json.loads((scene / "scene_meta.json").read_text())
+    print(
+        f"crate run: expert={args.expert}, reach={task_cfg.carry.reach_control}, "
+        f"pose_source={task_cfg.visual.pose_source}, "
+        f"table_top={metadata.get('surfaces', {}).get('A', {}).get('top')}, "
+        f"config={task_cfg_path}, scene={scene}",
+        flush=True,
+    )
     return out, task_cfg, task_cfg_path, scene
 
 
@@ -244,6 +259,7 @@ def main(argv=None) -> None:
         raise SystemExit(f"{args.out} already holds a run ({state_path}); pass --resume or pick another --out")
     out, task_cfg, task_cfg_path, scene = prepare(args)
     backend = backend_config(args.allow_no_encoder)
+
     if args.expert in ("visual", "carry") and task_cfg.carry.reach_control == "whole_body":
         require_pose_ownership(stack.resolve_env(backend))
     stage = Stage(out)

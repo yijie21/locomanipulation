@@ -8,7 +8,7 @@
 
 | 项目 | 当前支持 |
 |---|---|
-| 默认任务 | 30 cm 低桌 + 原始篮子外观 + `configs/tasks/crate_visual_low_reach.json` |
+| 默认任务 | 30 cm 低桌、篮子向桌内退入 4 cm + 原始外观 + `configs/tasks/crate_visual_low_reach.json` |
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
@@ -30,13 +30,15 @@ export INSTANCE=1
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src"
 bash scripts/install_scene.sh
-"$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
+"$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual_depth04 --crate-setback 0.04
 "$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
-  outputs/scene/crate_bimanual outputs/scene/crate_table30 --height 0.30
+  outputs/scene/crate_bimanual_depth04 outputs/scene/crate_table30_depth04 --height 0.30
 ```
 
 场景资产随仓库提供；构建结果包含 `scene_locomani.xml` 和 `scene_meta.json`。
 低桌配置文件**不会改变桌面几何**，因此降低桌高和选择控制 profile 是两个步骤。
+`--crate-setback 0.04` 同时修改 XML 初始位置和 reset 元数据；任务 JSON 不代替这项场景构建参数。
+此前本页漏写了这 4 cm，生成的场景与 6/10 实验不同；见 [复现核对](handoff/crate-reproduction-20260914.md)。
 篮子外观、桌面碰撞处理与场景副本的具体约定见 [场景处理](crate_visual_collection.md#run)。
 
 ## 3. 跑一局
@@ -46,7 +48,7 @@ bash scripts/install_scene.sh
 ```bash
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
   --expert visual --config configs/tasks/crate_visual_low_reach.json \
-  --scene outputs/scene/crate_table30 --out outputs/crate_first_attempt \
+  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_first_attempt \
   --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 101
 ```
 
@@ -64,11 +66,13 @@ runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地
 ```bash
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
   --expert visual --config configs/tasks/crate_visual_low_reach.json \
-  --scene outputs/scene/crate_table30 --out outputs/crate_collect_10 \
+  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_collect_10 \
   --instance "$INSTANCE" --gpu 0 --rounds 10 --seed 41
 ```
 
 `--rounds` 控制尝试数；`--batch-rounds N` 可按批重启栈，默认整个 visual pilot 使用一批。
+必须保留 `--expert visual` 和上述配置：裸 runner 默认是 `wall` 诊断，
+`run_wall_pilot.sh` / `run_bimanual_pilot.sh` 也不代表这里的连续 visual 专家。
 `--resume` 从首个未完成 batch 继续，不是 episode 级续采；先检查原有尝试记录和未完成 batch。
 更改场景或配置时使用新目录，保留失败、零帧初始化失败及其原因，不以重跑覆盖原始样本。
 
@@ -78,7 +82,7 @@ runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地
 
 | 路径 | 内容 / 查看方式 |
 |---|---|
-| `inputs.json`、`task_config.json`、`crate_table30/` | 运行输入、解析后的任务配置及场景副本；副本目录沿用传入场景名 |
+| `inputs.json`、`task_config.json`、`crate_table30_depth04/` | 运行输入、解析后的任务配置及场景副本；副本目录沿用传入场景名 |
 | `config_snapshot.json`、`deploy_receipts.jsonl` | 配置来源、场景身份与实际部署模型 |
 | `videos_00/*.mp4` | 第三人称原片及机器人相机画中画 |
 | `observations/<label>/*.mp4`、`observations/<label>/observations.jsonl` | 专家消费的相机帧及对应机器人状态、时间戳、可见性与阶段 |
@@ -113,7 +117,7 @@ manifest 的成功标签不证明动作质量或 VLA 可学性。
 ```bash
 V="$LOCOMANI_ROOT/outputs/crate_wall_example"
 R="$LOCOMANI_ROOT/outputs/renders_isaac/crate_review_example"
-export LOCOMANI_SIM_DIR="$V/crate_bimanual"
+export LOCOMANI_SIM_DIR="$V/crate_bimanual_depth04"
 CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 \
   bash scripts/build_isaac_assets.sh --snapshot "$LOCOMANI_SIM_DIR"
 mkdir -p "$R"
@@ -168,7 +172,7 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 ```bash
 "$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot \
   --expert wall --config configs/tasks/crate_wall.json \
-  --scene outputs/scene/crate_bimanual --out outputs/crate_wall_example \
+  --scene outputs/scene/crate_bimanual_depth04 --out outputs/crate_wall_example \
   --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 0
 ```
 
@@ -185,6 +189,7 @@ wall / planner carry 添加 `--record` 会强制使用**实例 0**，未指定 b
 | 低桌没有生效 | 实际 `--scene`、运行目录场景副本与桌高；仅换 JSON 不会改变桌子 |
 | 刚启动就失败 / 没有视频 | `attempts.jsonl`、`result.json` 和启动日志；初始化失败可能是零帧 |
 | 抓不到、倾斜或站直失败 | manifest 的阶段与失败原因、双手接触、支撑跟踪及 state trace |
+| 别人的成功率与本机不同 | 先比 `--expert`、解析后的配置、桌高与篮子 inset、`deploy_receipts.jsonl` 的模型/二进制身份；再比失败类型，不能只比 git SHA |
 | `--record` 被拒绝 | 是否选了 visual 或 whole-body carry；当前属于能力限制 |
 | Isaac 缺少桌子或背景 | 本次场景副本与 [资产构建](rendering.md#资产构建)，重新构建对应缓存 |
 

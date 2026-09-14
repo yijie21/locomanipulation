@@ -25,6 +25,8 @@ outputs/scene/sim that the single-hand collection uses is never touched.
 
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import subprocess
 import sys
@@ -122,10 +124,19 @@ def harden_pads(xml_path: str) -> int:
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:]]
-    if not args or args[0].startswith("-"):
-        raise SystemExit(__doc__)
-    out = os.path.abspath(args[0])
+    parser = argparse.ArgumentParser(__doc__)
+    parser.add_argument("out_dir")
+    parser.add_argument("--seed", type=int)
+    parser.add_argument(
+        "--crate-setback",
+        type=float,
+        default=DEFAULT_CRATE_TASK.crate_setback,
+        help="basket inset from the near table edge, in metres; the continuous 6/10 reference uses 0.04",
+    )
+    args = parser.parse_args()
+    if not 0 <= args.crate_setback <= 0.20:
+        parser.error("--crate-setback must be within 0..0.20 m")
+    out = os.path.abspath(args.out_dir)
     # SCENE_TABLE_TOP / CRATE_SETBACK (scene_lib.CRATE_SETBACK) are knobs for
     # the walk-in geometry. A 0.45 m table with the crate 10 cm in from the
     # edge was tried on 2026-09-07 so the policy's default walking pose
@@ -145,13 +156,42 @@ def main() -> None:
         "--table-top",
         "0.62",
     ]
-    if "--seed" in args:
-        build_argv += ["--seed", args[args.index("--seed") + 1]]
+    if args.seed is not None:
+        build_argv += ["--seed", str(args.seed)]
     subprocess.run(build_argv, check=True)
     xml = os.path.join(out, "scene_locomani.xml")
     print(
         f"[bimanual_scene] finger pads hardened: {harden_pads(xml)} geoms, gripper gear {GRIPPER_GEAR:.0f}, fingers coupled {COUPLE_FINGERS}, range {FINGER_RANGE} -> {xml}"
     )
+    set_crate_setback(out, args.crate_setback)
+
+
+def set_crate_setback(directory, setback):
+    """Set the initial edge inset in both physics and reset metadata, once."""
+    import xml.etree.ElementTree as ET
+    from pathlib import Path
+
+    import numpy as np
+
+    directory = Path(directory)
+    if not np.isfinite(setback) or not 0 <= setback <= 0.20:
+        raise ValueError("crate setback must be within 0..0.20 m")
+    meta_path = directory / "scene_meta.json"
+    meta = json.loads(meta_path.read_text())
+    crate = meta["objects"]["blue_crate"]
+    # Builder emits the default inset. Reapplying this operation is idempotent.
+    old = float(meta.get("crate_setback", DEFAULT_CRATE_TASK.crate_setback))
+    crate["init_pos"][0] += setback - old
+    tree = ET.parse(directory / "scene_locomani.xml")
+    body = tree.find(f"./worldbody/body[@name='{crate['body']}']")
+    if body is None:
+        raise ValueError("crate body missing from scene")
+    pos = np.fromstring(body.get("pos"), sep=" ")
+    pos[0] += setback - old
+    body.set("pos", " ".join(f"{value:.15g}" for value in pos))
+    tree.write(directory / "scene_locomani.xml", encoding="unicode")
+    meta["crate_setback"] = setback
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n")
 
 
 if __name__ == "__main__":

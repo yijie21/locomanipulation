@@ -75,6 +75,11 @@ class ArgvTests(unittest.TestCase):
 
 
 class RunDirTests(unittest.TestCase):
+    def test_whole_body_profile_cannot_silently_run_the_wall_default(self):
+        args = R.parse_args(["--out", "/tmp/unused-crate-run", "--config", "configs/tasks/crate_visual_low_reach.json"])
+        with self.assertRaisesRegex(SystemExit, "pass --expert visual"):
+            R.prepare(args)
+
     def test_a_second_run_in_the_same_directory_is_refused(self):
         """The experts open the manifest in APPEND mode and gate.py reads the
         directory, so two pilots sharing it become one population."""
