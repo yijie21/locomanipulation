@@ -83,4 +83,5 @@ Verbatim copies from `4cc52ba`; historical claims and relative links retain thei
 
 - [Crate guide](crate_collection_20260914.md): original at `153c8b6`; current commands and capability boundaries are in [crate collection](../crate_collection.md).
 - [Bottle collection guide](collection_20260914.md): original at `153c8b6`; preserves removed reach estimates and old global cleanup instructions for history only.
-- Both snapshots record original SHA-256 values. Relative Markdown links were adjusted for the archive location; historical claims were not rewritten.
+- [Pick-and-place collection guide](pick_place_collection_20260914.md): original at `797371c`; current usage is in [pick-and-place collection](../pick_place_collection.md).
+- These snapshots record original SHA-256 values. Relative Markdown links were adjusted for the archive location; historical claims were not rewritten.

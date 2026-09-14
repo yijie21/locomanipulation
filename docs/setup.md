@@ -369,7 +369,7 @@ preset / target / target_pool / 桌上物体:
 
 对不上就是 `SCENE_PRESET` 没生效(最常见的是给在了 `start_stack.sh` 上)。
 
-细节见[下一节](collection.md#场景直接用现成的推荐)。
+细节见[下一节](collection.md#2-环境与场景)。
 
 ### 5. GR00T 微调 venv(要训练/评测 VLA 就必需)
 

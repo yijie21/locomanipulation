@@ -1,4 +1,7 @@
-# Camera-guided crate video pilots
+# 双臂视觉专家：控制与观测说明
+
+首次运行、批量采集与其他双臂场景统一从 [双臂采集指南](crate_collection.md) 进入。
+本页用于理解专家的信息来源、连续控制和观测/动作记录协议。
 
 Use `--expert visual` for demonstrations that approach a visible basket and grasp
 its rim. The low-table profile uses simulation-assisted planning with the original
@@ -47,25 +50,10 @@ this explicit permission to use simulation throughout planning.
 
 ## Run
 
-Follow [AGENTS](../AGENTS.md) for GPU/instance admission. The example uses instance
-1 and GPU 0; check availability first. Build a crate scene following the
-[crate guide](crate_collection.md). For a lowered table use the
-[table-height procedure](crate_collection.md#table-height-validation).
-The whole-body entry also requires the [POSE ownership deploy patch](../patches/sonic_pose_ownership.md).
-
-```bash
-PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
-PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  scripts/experiments/crate_table_height_20260913.py \
-  outputs/scene/crate_bimanual outputs/scene/crate_table30 --height 0.30
-
-PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  -m locomani.pipeline.run_crate_pilot --expert visual \
-  --config configs/tasks/crate_visual_low_reach.json \
-  --scene outputs/scene/crate_table30 --out outputs/crate_assisted_pilot \
-  --instance 1 --gpu 0 --rounds 10 --seed 41
-```
+Build the scene and run the one-attempt or batch recipe in the
+[collection guide](crate_collection.md#2-环境与场景). That guide owns launch commands,
+GPU/instance selection, the [table-height procedure](crate_collection.md#table-height-validation)
+and the required POSE ownership patch. This section explains scene and source handling.
 
 The profile does not alter table height. It selects `carry.reach_control=whole_body`
 and `visual.pose_source=assisted`. The runner copies the source scene and removes

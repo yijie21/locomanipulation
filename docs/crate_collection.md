@@ -1,98 +1,114 @@
-# 双臂搬箱采集与回放
+# 双臂数据采集
 
-本页说明当前可运行的入口、配置边界和产物。实现依据为
-[crate 导航](reference/change-map-crate.md)中的代码；字段默认值查
-[生成的配置文档](reference/config_fields.md)，实验成功率查文末的具体报告。
-旧流程完整保留在[历史指南](archive/crate_collection_20260914.md)，不作为当前运行指令。
+让 G1 从桌边 1.2–1.5 m 外走近低桌，双手抓住篮沿，抬起篮子并恢复直立。
+本文是双臂任务的使用入口，默认介绍**视觉指导、仿真辅助规划的抓篮流程**；
+机械可达性、箱壁接触和轨迹回放作为同一任务下的细分用途。
 
-## 选择专家
+## 1. 任务与能力
 
-| 目的 | 入口与配置 | 产物和限制 |
-|---|---|---|
-| 视觉指导的低桌抓篮、抬起并站直 | `--expert visual --config configs/tasks/crate_visual_low_reach.json` | 原始篮子外观，仿真辅助规划，相机可见性约束；视频/控制 pilot，拒绝 `--record` |
-| 全身弯腰与双手机械可达性诊断 | `--expert carry --config configs/tasks/crate_low_reach.json` | whole-body 动作 pilot，拒绝 `--record`；不等同于 visual 的持物站直流程 |
-| 传统 planner 搬箱诊断 | `--expert carry`，`carry.reach_control=planner` | 视频、状态轨迹，可使用 `--record` |
-| 箱壁/箱沿接触诊断 | `--expert wall --config configs/tasks/crate_wall.json` | 视频、轨迹、可选 ghost 目标，可使用 `--record` |
+| 项目 | 当前支持 |
+|---|---|
+| 默认任务 | 30 cm 低桌 + 原始篮子外观 + `configs/tasks/crate_visual_low_reach.json` |
+| 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
+| 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
+| 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
+| 后续链路 | 默认 visual 路径拒绝 `--record`；尚未验证正式 LeRobot 数据导出和 VLA 学习 |
 
-视觉专家的输入来源、可见性近似、失败处理和动作连续性见
-[视觉采集指南](crate_visual_collection.md)。仿真信息可以辅助规划；其来源要记录，
-失败接触不能被改写为成功。上述录制能力不代表数据已通过 VLA 学习验证。
+当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
+仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
+[视觉专家说明](crate_visual_collection.md)。
 
-## 环境与一集 pilot
+## 2. 环境与场景
 
-按 [安装指南](setup.md)准备 sim、SONIC v1.1 与场景；whole-body 路径还需要
-[POSE ownership 补丁](../patches/sonic_pose_ownership.md)。运行前按
-[资源规则](../AGENTS.md#shared-resources-and-artifacts)检查 GPU、实例锁和当前占用。
-下面的实例 1 / GPU 0 是示例，确认空闲后使用；单卡机器不要照抄 runner 的 GPU 1 默认值。
+先完成 [安装指南](setup.md)第 0–4 步，准备 SONIC v1.1，
+并应用 [POSE ownership 补丁](../patches/sonic_pose_ownership.md)。
+以下命令均在仓库根目录的 **Bash** 终端执行；GPU 0、实例 1 是示例，
+启动前按 [资源规则](../AGENTS.md#shared-resources-and-artifacts)确认空闲。
 
 ```bash
 export INSTANCE=1
 . scripts/paths.sh
+export PYTHONPATH="$LOCOMANI_ROOT/src"
 bash scripts/install_scene.sh
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot \
-  --expert wall --config configs/tasks/crate_wall.json \
-  --scene outputs/scene/crate_bimanual --out outputs/crate_wall_example \
-  --instance 1 --gpu 0 --rounds 1 --seed 0
-```
-
-`crate_wall.json` 显式开启 `wall_walk`；不加载配置时该字段默认为 false。
-需要十集时改 `--rounds 10`，使用新输出目录。配置顺序为默认值 → `--config` →
-显式 `--set KEY=VALUE`，解析结果写入运行目录并交付专家。更改 scene/profile 时
-核对 `task_config.json`、场景副本和 manifest，避免把不同分布混成一个实验。
-中断后 `--resume` 只从首个未完成 batch 继续；原始尝试和失败记录保留。
-
-### Waist and reach
-
-`BimanualArms` 共享双手与腰部 IK，但调用者决定自由度：
-carry 使用 `carry.waist_dofs`（默认 `all`）；wall 无 carry 配置调用，仍为 pitch-only。
-低桌 `crate_low_reach.json` / `crate_visual_low_reach.json` 选择 whole-body，
-腰部三轴自由度在物理限位内参与求解。不要把 wall 的限制套用到 carry/visual。
-
-腰关节 pitch、骨盆姿态和躯干相对世界的倾角是不同量；配置里的角度上限
-不能直接当成机器人最终弯腰角。whole-body 路径协调支撑、髋部和双手，
-实际跟踪、接触、箱体倾斜和抬升仍决定结果。物体超出可达范围应失败退出。
-修改这些行为从 [crate 导航](reference/change-map-crate.md)定位消费者和相关测试。
-
-### Table-height validation
-
-低桌 profile 不会改变几何，必须单独构建低桌场景。固定桌面 XY 尺寸的配方：
-
-```bash
-PYTHONPATH=src "$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
+"$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
+"$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
   outputs/scene/crate_bimanual outputs/scene/crate_table30 --height 0.30
 ```
 
-然后把 `--scene` 指向 `outputs/scene/crate_table30`。视觉辅助模式的完整运行命令和
-箱体外观/桌面碰撞处理见[低桌视觉 pilot](crate_visual_collection.md#run)。
-改变高度、深度或姿态控制需要按[行为验证要求](reference/standards.md#checks)检查实际运动；
-固定骨盆 CPU IK 可达性无法证明真实控制会跟踪成功。55 cm、30 cm 下蹲、30 cm
-髋部前俯是不同实验，见文末；旧 squat profile 仅用于历史比较。
+场景资产随仓库提供；构建结果包含 `scene_locomani.xml` 和 `scene_meta.json`。
+低桌配置文件**不会改变桌面几何**，因此降低桌高和选择控制 profile 是两个步骤。
+篮子外观、桌面碰撞处理与场景副本的具体约定见 [场景处理](crate_visual_collection.md#run)。
 
-## 产物、录制与停止
+## 3. 跑一局
 
-运行目录保留 `inputs.json`、`task_config.json`、场景副本、分 batch 日志/manifest、
-`videos_*/` 和默认开启的 `trace/*_state_trace.npz`。标签由专家和 batch seed 决定，
-回放前读取实际文件名；不要把 carry/visual 轨迹当作 `wall_s0`。
-`*_motion.jsonl`、ghost 目标和仿真状态是诊断信息，不自动成为 VLA 观测。
-manifest 的结果须结合完整走近、抓取、抬升视频和物理记录判断；失败视频也保留。
+这里运行 **1 次尝试**，从走近开始录视频，成功局到持篮直立验收结束：
 
-wall / planner carry 的 `--record` 会强制 instance 0，并在未显式设置时
-令 `--batch-rounds=10`。先确认 instance 0 属于本次任务；exporter 只在该实例运行。
-复位成功后开始录制，任务成功保存、失败丢弃；manifest 的 `produced` 与 session
-需要对齐。数据转换和核验见[数据指南](dataset.md)，三相机双臂配置为
-[`gr00t_sonic_3cam_bimanual.py`](../configs/gr00t_sonic_3cam_bimanual.py)。
-visual 和 whole-body carry 的完整动作导出尚未验证，runner 明确拒绝录制。
+```bash
+"$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
+  --expert visual --config configs/tasks/crate_visual_low_reach.json \
+  --scene outputs/scene/crate_table30 --out outputs/crate_first_attempt \
+  --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 101
+```
 
-停止前台 pilot 用其终端的 Ctrl-C；需要清理时，先核对并停止本次 runner/expert，
-再用 `bash scripts/stack/stop_instance.sh 1` 清理本次拥有的实例（示例为 1）。
-该命令按实例作用，不替你判断资源归属。保留输出；不要按专家名全局杀进程。
+runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
+进度见本次运行目录的启动日志。每次新实验使用新的 `--out`，查看 manifest 和完整视频判断结果。
 
-## 10. 渲染并排视频(可选)
+**不要加 `--record`**：本流程直接保存视频、相机和动作记录，
+这些产物尚不能作为正式 LeRobot episode 交给转换器。启动参数中的 `--gpu 0` 是显式选择；
+不要照抄 runner 的 GPU 1 默认值。
 
-回放需要 state trace、与采集一致的场景副本及 Isaac 资产；不需要重新启动 SONIC 栈。
-先按[渲染环境与资产构建](rendering.md#资产构建)检查房间、桌子源文件，
-再构建该次运行的副本。以下针对上面的单集 wall 示例：
+## 4. 批量采集
+
+下面采集 **10 次尝试**，包含成功和失败，不是“收够 10 条成功”：
+
+```bash
+"$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
+  --expert visual --config configs/tasks/crate_visual_low_reach.json \
+  --scene outputs/scene/crate_table30 --out outputs/crate_collect_10 \
+  --instance "$INSTANCE" --gpu 0 --rounds 10 --seed 41
+```
+
+`--rounds` 控制尝试数；`--batch-rounds N` 可按批重启栈，默认整个 visual pilot 使用一批。
+`--resume` 从首个未完成 batch 继续，不是 episode 级续采；先检查原有尝试记录和未完成 batch。
+更改场景或配置时使用新目录，保留失败、零帧初始化失败及其原因，不以重跑覆盖原始样本。
+
+## 5. 产物与验收
+
+以下路径相对于本次 `--out`：
+
+| 路径 | 内容 / 查看方式 |
+|---|---|
+| `inputs.json`、`task_config.json`、`crate_table30/` | 运行输入、解析后的任务配置及场景副本；副本目录沿用传入场景名 |
+| `config_snapshot.json`、`deploy_receipts.jsonl` | 配置来源、场景身份与实际部署模型 |
+| `videos_00/*.mp4` | 第三人称原片及机器人相机画中画 |
+| `observations/<label>/*.mp4`、`observations/<label>/observations.jsonl` | 专家消费的相机帧及对应机器人状态、时间戳、可见性与阶段 |
+| `observations/<label>/commands.jsonl` | 实际发送的 planner / POSE 动作参考；区别于根目录 runner 的命令日志 |
+| `attempts.jsonl`、`manifest_00.jsonl`、每次尝试的 `result.json` | 全部采样尝试的真实成败、接触、抬升、倾斜与异常 |
+| `trace/*_state_trace.npz` | 物理状态轨迹；用于动作核对和离线回放 |
+
+### 相机与动作
+
+ego、左腕和右腕用于可见性检查及动作审查。相机 MP4 按名义 25 FPS 保存，
+时序测量应读 JSON 时间戳；第三人称原片使用仿真时间。
+发送记录不是控制器已经执行的证明，POSE 包含未来参考帧，不能把它们直接当作当前训练 action。
+字段和对齐限制见 [观测与动作记录](crate_visual_collection.md#outputs-and-limits)。
+
+验收应核对实际初始距离、完整走近过程、双手接触、真实离桌抬升及恢复直立后的持物状态。
+停止到俯身、试提到站直之间的停顿和抖动需要结合视频与物理时间测量；
+manifest 的成功标签不证明动作质量或 VLA 可学性。
+
+成功结果的 `training_tail.end_seq` 标记进入最终直立持物验证时的训练前缀边界，
+仅在完整验证成功后发布；原片仍保留验证尾段，失败尝试不提供成功边界。
+正式 token / history 对齐、双爪推理和学习验证仍待完成。
+
+分享或打包执行 [视频导出规则](rendering.md#video-export)：保留原片，
+每条预览最多 **500,000 字节**，保持完整时长、正常速度和比例。
+
+### 渲染并排视频
+
+回放需要该次采集的 trace、场景副本和 Isaac 资产，不需要重新启动 SONIC。
+先按 [渲染环境与资产构建](rendering.md#资产构建)准备环境和房间/桌子源文件。
+下面以第 6 节的单集 wall 诊断为例：
 
 ```bash
 V="$LOCOMANI_ROOT/outputs/crate_wall_example"
@@ -106,17 +122,74 @@ CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 \
   bash scripts/render_wall_pilot.sh "$V" "$R" 1 wall_s0 > "$R/render_all.log" 2>&1
 ```
 
-`LOCOMANI_SIM_DIR` 必须对应录制的副本；低桌运行不能误用默认高桌。
-两个 `*_RENDER_ARGS` 分别控制 MuJoCo / Isaac 的 ego、左腕、右腕画中画，默认都关闭。
-Isaac 画中画用独立的第二遍重放，开销较高；缺失或陈旧相机帧会报错。
-脚本每集 Isaac 超时为 1500 s；超时失败需调查耗时后调整，不能把残片交付成完整视频。
-缺失 trace 会被脚本跳过，所以 `RENDER_ALL_DONE` 本身不证明每集都渲染成功。
-核对预计集数、输出文件、完整解码与首尾画面，检查房间/桌子、机器人和相机视角。
+结果为 `sbs_roundNN.mp4`（左 MuJoCo、右 Isaac）及 `rNN/` 中间文件。
+visual / carry 回放须改成实际场景副本和 trace 标签，不能沿用 `wall_s0` 或默认高桌。
+两个 `*_RENDER_ARGS` 独立控制画中画；Isaac 使用第二遍重放，缺失或陈旧相机帧会报错。
 
-输出为 `sbs_roundNN.mp4`（左 MuJoCo、右 Isaac）及 `rNN/` 的中间文件。
-Ghost 仅表示规划目标，不能作为真实接触或 VLA 观测的证据。
-导出或打包前执行[视频导出规则](rendering.md#video-export)：保持全流程、正常速度和比例，
-每条预览最多 **500,000 字节**，保留原片并报告实际大小。
+缺失 trace 可能被跳过，`RENDER_ALL_DONE` 本身不证明每集均成功。
+核对预计集数、完整解码与首尾画面、房间和桌子、相机视角；超时残片不能当完整视频交付。
+Ghost 只表示规划目标。所有回放视频交付前同样执行上述压缩规则。
+
+## 6. 调整任务
+
+| 想调整什么 | 修改入口 | 注意事项 |
+|---|---|---|
+| 出生距离、接近与停车 | `CrateTaskConfig.visual` | 检查真实采样距离和完整行走，不仅是配置值 |
+| 俯身、双手与持物站直 | `carry` / `visual` 的对应字段 | 参考 [crate 代码导航](reference/change-map-crate.md)定位控制器 |
+| 桌高、篮子深度与形状 | 场景构建工具与 `--scene` | 控制 profile 不改变几何；改场景后重新验证接触与可达性 |
+| 专家输入 | `visual.pose_source` | 当前默认 profile 为 `assisted`；历史 `markers` 路径需要专门的标记场景 |
+
+配置优先级是默认值 → `--config` → 显式 `--set KEY=VALUE`，解析后写入运行目录并交付专家。
+字段含义以 [配置表](reference/config_fields.md)为准；新实验使用单独的 profile 和输出目录。
+
+### Waist and reach
+
+低桌 visual / whole-body carry 使用腰部三轴自由度，并协调髋部、支撑和双手。
+普通 carry 的自由度由 `carry.waist_dofs` 决定，wall 仍为 pitch-only。
+腰关节 pitch、骨盆姿态和躯干世界倾角是不同量，配置上限不能直接当成实际弯腰角。
+物体超出可达范围应失败；固定骨盆 CPU IK 不能证明真实 SONIC 跟踪成功。
+
+### Table-height validation
+
+第 2 节的构建命令保持桌面 XY 尺寸并降到 30 cm。改高度时修改 `--height`，
+输出到新场景目录，再同步 runner 的 `--scene`；同时检查控制 profile 是否适用于新几何。
+55 cm、30 cm 下蹲和髋部前俯是不同实验，具体证据在文末。
+
+### 其他双臂场景与专家
+
+| 用途 | 入口 / 配置 | 录制边界 |
+|---|---|---|
+| 全身弯腰与双手机械可达性诊断 | `--expert carry --config configs/tasks/crate_low_reach.json` | whole-body 动作 pilot，拒绝 `--record` |
+| 传统 planner 搬箱诊断 | `--expert carry`，`carry.reach_control=planner` | 可录 exporter session |
+| 箱壁 / 箱沿接触诊断 | `--expert wall --config configs/tasks/crate_wall.json` | 可录 session、轨迹和可选 ghost |
+
+例如单集 wall 接触诊断使用第 2 节构建的原始高度场景：
+
+```bash
+"$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot \
+  --expert wall --config configs/tasks/crate_wall.json \
+  --scene outputs/scene/crate_bimanual --out outputs/crate_wall_example \
+  --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 0
+```
+
+`crate_wall.json` 显式开启 `wall_walk`；不加载 profile 时默认为 false。
+wall / planner carry 添加 `--record` 会强制使用**实例 0**，未指定 batch 大小时采用 10；
+须确认实例 0 归本任务所有。成功 episode 保存、失败丢弃，检查 `produced` 与 session 配对。
+转换参考 [数据指南](dataset.md)和 [双臂数据配置](../configs/gr00t_sonic_3cam_bimanual.py)；
+有 exporter 录制入口不等于已经验证 VLA 学习，也不等同于默认 visual 的完整持物站直流程。
+
+## 7. 排错与停止
+
+| 现象 | 先查哪里 |
+|---|---|
+| 低桌没有生效 | 实际 `--scene`、运行目录场景副本与桌高；仅换 JSON 不会改变桌子 |
+| 刚启动就失败 / 没有视频 | `attempts.jsonl`、`result.json` 和启动日志；初始化失败可能是零帧 |
+| 抓不到、倾斜或站直失败 | manifest 的阶段与失败原因、双手接触、支撑跟踪及 state trace |
+| `--record` 被拒绝 | 是否选了 visual 或 whole-body carry；当前属于能力限制 |
+| Isaac 缺少桌子或背景 | 本次场景副本与 [资产构建](rendering.md#资产构建)，重新构建对应缓存 |
+
+用 Ctrl-C 停止前台 runner。需要额外清理时，先确认本次 runner / expert 已退出，
+再执行 `bash scripts/stack/stop_instance.sh 1`（示例实例）；只清理自己拥有的实例并保留产物。
 
 ### 中途停止渲染 / 清理
 
@@ -124,19 +197,18 @@ Ghost 仅表示规划目标，不能作为真实接触或 VLA 观测的证据。
 bash scripts/stack/stop_render.sh crate_review_example
 ```
 
-此参数筛选输出目录；必须唯一匹配当前用户的一个受管任务。启动器自动生成内部 job ID，
-不支持用户指定 `--job-id`。停止只向核验属于该任务的进程发信号；目录仍有 worker 时
-拒绝重用。未受管的独立渲染器不在此命令范围内；详情见
-[渲染生命周期实现](../src/locomani/pipeline/render_job.py)和[修复验证](handoff/review-fixes-20260914.md)。
+参数按输出目录筛选，须唯一匹配本人的受管渲染任务。
+启动器自动生成内部 job ID，不接受用户指定 `--job-id`；
+仅停止归属核验通过的进程，目录仍有 worker 时拒绝重用。
+独立启动的未受管渲染器不在该命令范围内。
 
-## 已测证据与历史
+## 8. 进一步阅读
 
-- [运动连续性](handoff/crate-motion-flow-20260913.md)：carry 走近、交接与限速的比较。
-- [55 cm 桌高](handoff/crate-table55-20260913.md)、[30 cm 下蹲](handoff/crate-table30-20260913.md)、
-  [30 cm 髋部前俯](handoff/crate-low-reach-20260913.md)：不同配置和控制路径，不能混用结论。
-- [视觉辅助持物站直](handoff/crate-upright-handoff-20260913.md)：完整尝试与失败类型。
-- [原始设计](archive/bimanual_grasp_design.md)、[旧指南全文](archive/crate_collection_20260914.md)、
-  [crate 台账](ledger/crate.md)：只在追溯相关实验时阅读。
-
-当前代码支持的接口不等于可靠性证明；历史结论和后续撤回都依
-[证据规则](reference/standards.md#evidence)核验。未建立任意深度、高成功率或 VLA 可学性保证。
+- [视觉专家说明](crate_visual_collection.md)：信息来源、相机可见性、连续动作与记录字段。
+- [crate 代码导航](reference/change-map-crate.md)：修改双手、腰部、交接或失败判据时阅读。
+- [连续动作版本及验证](handoff/crate-continuous-motion-20260914.md)：当前实现的固定批次证据和剩余限制。
+- [55 cm](handoff/crate-table55-20260913.md)、[30 cm 下蹲](handoff/crate-table30-20260913.md)、
+  [髋部前俯](handoff/crate-low-reach-20260913.md)、[持物站直](handoff/crate-upright-handoff-20260913.md)：
+  按对应配置追溯历史实验。
+- [crate 台账](ledger/crate.md)、[历史指南全文](archive/crate_collection_20260914.md)：
+  保留早期设计、诊断流程及原始结论，不作为当前运行规则。

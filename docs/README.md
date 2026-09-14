@@ -9,7 +9,7 @@
 - [Standards](reference/standards.md): architecture and evidence rules.
 - [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
 - [Configuration fields](reference/config_fields.md): generated from code.
-- [Runbook](reference/runbook.md): implemented command entry points.
+- [Runbook](reference/runbook.md): command reference and manual stack operation.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Documentation ownership
@@ -19,51 +19,52 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 
 | Material to add or change | Owning document / update rule |
 |---|---|
-| Project overview, installation routes and feature-to-guide links | [Root README](../README.md); address users running the project, and link development rules from the contribution section |
+| Project overview, installation routes and feature-to-guide links | [Root README](../README.md); one row and one canonical guide per task family; keep cases and alternate commands inside that guide |
 | Shared entry or resource rules | `AGENTS.md`; keep it short and point to conditional detail |
 | Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected domain row with the code |
 | Module boundaries, interface/config conventions or evidence rules | [Standards](reference/standards.md); link the rule instead of copying it into task guides |
 | Configuration fields and defaults | Owning code; regenerate [field reference](reference/config_fields.md) with `make config-doc` |
-| Supported launch commands | [Runbook](reference/runbook.md); point to implemented entry points |
-| Task-specific usage or design explanation | Relevant task guide below; explain when the reader needs it |
+| Task operation, runnable examples and capability limits | Canonical task guide below; keep the shared section order and update the affected example with the implementation |
+| Cross-task CLI reference, wrappers and manual stack operation | [Runbook](reference/runbook.md); link task guides for complete collection recipes |
+| Detailed task design or protocol | Link from the owning task guide; do not create a competing usage entry or copy its launch recipe |
 | Verification scope, final check execution and completion criteria | [Session workflow](agents/session-workflow.md); keep Makefile and commit-hook behavior consistent |
 | Active progress, blockers and resources | [STATE](STATE.md); link detailed work instead of accumulating transcripts |
 | Maintenance scope and status | [ROADMAP](ROADMAP.md); link implementation and validation records |
 | Experiment claims, corrections and completed work | Task ledger or `handoff/`; preserve historical material in `archive/` with evidence links |
 
-Update an existing owning document first. Add a document when a distinct task needs
-separate detail; link it from this index or the relevant guide and state when to read
-it. Move historical material with links to the retained original and its correction.
-Keep current supported usage and capability limits near the task entry; link dated
-experiments separately. When a result changes, update current guidance and retain
-the original evidence instead of appending contradictory operating instructions.
-Follow [the evidence rules](reference/standards.md#evidence) for claims and revisions.
-Keep current rules in versioned documents reachable from these entries, so future
-contributors can find them without conversation history or an agent's private memory.
+Update an existing owning document first. Add a document for distinct detail, link it
+from its task guide or this index, and state when to read it. Separate current usage
+from dated experiments; preserve originals and link corrections when evidence changes.
+Follow [the evidence rules](reference/standards.md#evidence). Keep current rules in
+versioned documents reachable here, without requiring conversation history or private memory.
 
 ## Task and pipeline detail — read when needed
 
-[Setup](setup.md), [collection](collection.md), [dataset](dataset.md),
-[training](training.md), [evaluation](evaluation.md), [rendering and video export](rendering.md),
-[crate collection](crate_collection.md), [ScaleBFM collection](scalebfm_collection.md),
-[pick and place](pick_place_collection.md).
-Crate expert redesign: [visual guidance and privileged-information contract](handoff/crate-visual-expert-design.md)
-(proposal; read when implementing the new expert or reviewing its training data).
-[Crate camera-guided video pilots](crate_visual_collection.md): simulation-assisted ordinary-basket control, historical RGB path and artifact meanings.
-[Carry motion comparison](handoff/crate-motion-flow-20260913.md): timing, command bounds and GPU evidence.
-Guides identify historical experiments separately from current usage. This index does
-not validate their measurements or causal conclusions. [Guideline audit and probes](handoff/agent-guideline-completion-20260914.md).
+| 采集任务 | 唯一使用入口 |
+|---|---|
+| SONIC 单臂 | [单臂采集](collection.md) |
+| SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂采集](crate_collection.md) |
+| Pick-and-place | [Pick-and-place 采集](pick_place_collection.md) |
+| ScaleBFM 后端 | [ScaleBFM 采集](scalebfm_collection.md) |
+
+单臂、双臂和 pick-and-place 指南统一按以下顺序维护：
+**任务与能力 → 环境与场景 → 跑一局 → 批量采集 → 产物与验收 → 调整任务 → 排错与停止 → 进一步阅读**。
+新 case 放进所属任务指南；新任务沿用此结构。明确区分尝试数与成功数、
+视频 pilot 与训练数据，以及已实现接口与已验证学习效果；不适用或未验证的部分直接注明。
+历史数字和逐版诊断放入台账/归档，首次运行不要求阅读；底层字段只链接生成的配置表。
+
+通用流程：[安装](setup.md)、[数据转换](dataset.md)、[训练](training.md)、
+[评测](evaluation.md)、[渲染和视频导出](rendering.md)。
+专家设计、控制协议和对应实验从各采集指南的“进一步阅读”进入。
 
 ## Historical evidence and investigations
 
 - Ledgers: [bottle](ledger/bottle.md), [crate](ledger/crate.md),
-  [ScaleBFM](ledger/scalebfm.md), [pick and place](ledger/pick_place.md),
-  [previous refactor](ledger/refactor.md).
-- [Silent-failure notes](reference/silent_failures.md): historical troubleshooting
-  leads; check referenced code and evidence before applying a recommendation.
+  [ScaleBFM](ledger/scalebfm.md), [pick and place](ledger/pick_place.md), [previous refactor](ledger/refactor.md).
+- [Silent-failure notes](reference/silent_failures.md): historical troubleshooting leads; verify against code and evidence.
 - [Archive index](archive/INDEX.md): original reports and superseded entry documents.
-- [First migration](handoff/agent-maintenance-plan.md); [maintenance delivery and validation](handoff/maintenance-completion.md).
+- [First migration](handoff/agent-maintenance-plan.md); [maintenance delivery](handoff/maintenance-completion.md).
+- [Guideline audit and probes](handoff/agent-guideline-completion-20260914.md).
 
-A newer claim or a retraction has no automatic evidentiary priority. Follow
-[the evidence rules](reference/standards.md#evidence). Retain original records,
-link corrections, and state the exact scope of any newly verified observation.
+A newer claim or a retraction has no automatic evidentiary priority. Retain original
+records, link corrections, and state the exact scope of any newly verified observation.

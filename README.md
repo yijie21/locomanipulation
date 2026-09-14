@@ -11,10 +11,9 @@ Isaac Sim 用于已录轨迹的离线渲染。
 
 | 想做什么 | 提供的功能 | 从这里开始 |
 |---|---|---|
-| 单臂抓瓶、采集示范 | SONIC 专家策略、场景随机化、单局与批量采集 | [单臂采集](docs/collection.md) · [命令入口](docs/reference/runbook.md) |
-| 双臂视觉抓篮子 | 从桌边 1.2–1.5 m 处开始，视觉引导走近、停车、双手对齐并抬起篮子 | [视觉专家使用指南](docs/crate_visual_collection.md) |
-| 双臂搬箱与轨迹回放 | 箱子场景构建、既有专家策略、状态轨迹与 MuJoCo / Isaac 对照视频 | [双臂采集教程](docs/crate_collection.md) |
-| 抓起再放下 | 抓取罐头并放入篮子的 pick-and-place 试验 | [抓取与放置](docs/pick_place_collection.md) |
+| 单臂采集 | 走近桌子、单手抓瓶，单局与批量录制 | [单臂采集指南](docs/collection.md) |
+| 双臂采集 | 视觉指导走近、俯身抓篮、抬起并站直；含其他专家场景与回放 | [双臂采集指南](docs/crate_collection.md) |
+| Pick-and-place 采集 | 走近桌子、右手抓起罐头并放入篮子，单局与批量录制 | [Pick-and-place 采集指南](docs/pick_place_collection.md) |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm_collection.md) |
 | 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/dataset.md) |
 | 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/training.md) · [评测](docs/evaluation.md) |
@@ -69,7 +68,7 @@ export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。
 runner 负责启停自己的实例并记录每次尝试；失败也会留下结果。重跑时换一个新的输出目录。
-想从单臂任务开始，按 [单臂采集教程](docs/collection.md) 操作；批量流程见 [命令入口](docs/reference/runbook.md)。
+单臂任务从 [单臂采集指南](docs/collection.md) 开始；本例的批量采集、参数与回放见 [双臂采集指南](docs/crate_collection.md)。
 
 ## 查看运行结果
 
