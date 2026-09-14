@@ -21,6 +21,15 @@ third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
 manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,session 目录名是时间戳,
 所以两边都按各自的自然顺序排就对上了(seed 超过 9 时记得用 `sort -V`)。
 
+### 只去掉末端验收尾段
+
+新单臂采集的成功 manifest 提供 `execution.metrics.training_tail.end_seq`，
+表示退离桌边结束、进入最终持物验收的序号。转换时在上述命令添加
+`--trim-verification-tail`，通过 session 的逐行 sequence sidecar 保留到这个边界的
+连续前缀。原始数据和视频仍保留完整验收，验收失败的局不会进入成功数据集。
+缺失边界或序号不能猜测裁剪；此选项要求 manifest，且不能同时使用 `--drop-idle`
+或 `--include-discarded`。任务中间的停顿应修控制逻辑，不能靠删帧掩盖。
+
 对错了不会静默 —— 转换器**硬校验**两件事,不符直接报错退出:
 
 - manifest 里 `produced` 的行数 == session 里的 episode 数
@@ -53,7 +62,7 @@ third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
 | 段 | 回答什么 | 内容 |
 |---|---|---|
 | **structure** | 文件之间自洽吗 | 计数三方一致、`episode_index` 连续、parquet 行数 == 声明长度、`index`/`frame_index`/`timestamp`/`task_index` 自洽、列宽 == `info.json` 声明、无 NaN/Inf、抽检视频帧数 == parquet 行数 |
-| **modality** | GR00T 认得出来吗 | 官方 `unitree_g1_sonic` 点的 8 个 state group / 3 个 action group 是否都在、切片是否越界、总维度是否 46 / 78 |
+| **modality** | GR00T 认得出来吗 | 同时检查 stock（state 46 / action 78）与本仓库单臂 2cam（state 53 / action 65）所选字段和切片 |
 | **grasp** | 数字描述的是一次抓取吗 | 每局有闭合事件、闭合时腕已在物体 30 cm 内、闭合**之后**物体才升、末段物↔腕距离恒定 |
 | **alignment** | 第 t 帧和第 t 行是同一时刻吗 | 见下 |
 
@@ -64,16 +73,10 @@ third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
 所以逐帧图像变化量是手臂速度的代理,而手臂速度在表里也有
 (`|d(observation.state)/dt|`)。两者互相关,峰值所在的 lag 就是错位帧数。
 
-```
-video vs table: 16 wrist-camera measurements, lag distribution {0: 16}
-action vs state: body trails the token by a median +3 frames (100 ms)
-```
-
-第二条查的是**因果方向**:token 是指令、身体是响应,身体必须**滞后**。0 或负数说明两列在
-时间上被搞反了。+3 帧 ≈ 100 ms 就是 SONIC WBC 从 latent 解码到关节动起来的响应时间。
-
-> 相关曲线在 ±3、±6 有规律小凸起,是 50→30 Hz 重采样的混叠(5:3 每 3 帧重复一次取帧
-> 模式),不是真实时延 —— 脚本对小于 0.02 的领先量直接当 0,就是为了不被它骗。
+对齐检查报告图像变化与关节速度的相关峰值，以及 token 与身体响应的相对 lag。
+这些是诊断指标，不能证明每张图的曝光时间与每条 action 精确对应。按 25 fps 换算，
+3 帧是 120 ms；旧 30 fps 实验中的 3 帧才是 100 ms。重复采样、周期动作和低运动量
+都会影响相关峰值，不能仅凭 lag 正负推断因果关系或宣称 VLA 可学。
 
 **一个反直觉的坑,写在这里免得再踩:** `observation.can_pose` / `plate_pose` 是
 **9 维(xyz + rot6d)且在机器人坐标系下**,不是世界坐标。所以"物体相对起始高度上升了吗"
@@ -82,7 +85,8 @@ action vs state: body trails the token by a median +3 frames (100 ms)
 
 ### VLA 部署时这条链路怎么变
 
-训练好的模型输出 78 维,**不经过 encoder**,用 protocol v4 直接喂进 :5556:
+本仓库单臂模型输出 **65 维**：64 维 token + 1 维右夹爪；部署端恢复两组 7 维夹爪
+报文后，通过 protocol v4 发送，**不经过 encoder**。双臂 profile 输出 66 维。
 
 ```bash
 NO_ENCODER=1 bash scripts/stack/start_stack.sh "pick up the water bottle"   # 关键:必须不加载 encoder
@@ -93,9 +97,9 @@ NO_ENCODER=1 bash scripts/stack/start_stack.sh "pick up the water bottle"   # �
 the encoder",`g1_deploy_onnx_ref.cpp:3096`),外部 token 流永远压不住。不给
 `--encoder-file`,mode 变成 -1,才会走 "tokens can be set externally"。
 
-这条路已经端到端验证过(`diag_token_replay.py`):录下成功 episode 的 64 维 token
-再喂回去,关节轨迹复现到 **0.2–0.9°**。开环回放抓不到罐子(浮动基座把误差积分成
-0.77 m 位移),那是开环的固有性质,不是链路问题 —— VLA 部署是闭环的。
+当前数据应分别验证字段选择、实际消费命令、转换对齐和 live token 回放。
+历史回放指标不能替代新策略的检查；从不同初始物理状态开环发送一段 token，
+只能检查动作通道，不能当作整集任务复现或 VLA 闭环成功证据。
 
 ---
 
@@ -192,79 +196,55 @@ parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parqu
 
 ## 数据 schema
 
-一条 episode 的 parquet 里列很多,但**训练用的只有下面这些**。完整推导见
-[`patches/vla_action_space.md`](../patches/vla_action_space.md)。
+2026-09-14 按当前 schema 与模型配置修正本节。[修订前原文](https://github.com/yijie21/locomanipulation/blob/e302d11/docs/dataset.md)
+保留了旧 78/46 维说明、量化试验和延迟解释；这些历史说法不作为当前接口或动态行为结论。
 
-### action:78 维
+原始列、模型选择的字段和部署报文分开定义。唯一代码来源是
+[schema.py](../src/locomani/schema.py)；模型使用的字段由对应配置选择。
 
-| 分量 | 维度 | 说明 |
-|---|---|---|
-| `motion_token` | 64 | SONIC latent。**1/16 量化**(整条 episode 只有 31 个取值,约 5 bit/维)→ VLA 输出头应该做**分类**而不是回归。**latent 属于 checkpoint**:2026-09-11 起默认 encoder 是 `policy/sonic_v1_1`,此前所有数据集/模型是 `policy/release` 的 token 空间,两者不能混用也不能互相解码(码本本身两边相同:都是 1/16 网格、范围 [−1.0, 0.9375]) |
-| `left_hand_joints` | 7 | 本仓库的任务全程用右手,这一列恒定 |
-| `right_hand_joints` | 7 | dex1 是平行夹爪:分量 0 和 1 同步开合(−0.020..0.024),2–6 恒定 |
+| 用途 | state | action | 相机 |
+|---|---|---|---|
+| 本仓库单臂 `gr00t_sonic_2cam.py` | 53 = 43 关节 + 3 重力 + 7 右腕位姿 | 65 = 64 token + 1 右夹爪 | ego、右腕 |
+| 本仓库双臂 `gr00t_sonic_3cam_bimanual.py` | 60 = 单臂 state + 7 左腕位姿 | 66 = 64 token + 左右夹爪各 1 | ego、左右腕 |
+| 上游 stock `unitree_g1_sonic` | 46 = 43 关节 + 3 重力 | 78 = 64 token + 两组 7 维手部字段 | 由 stock 配置选择 |
 
-**量化的死区有多大(2026-08-28 实测,`tools/sonic_encoder.py`)。**把一个 29 维参考
-姿态送进 encoder,只改一个关节,看 64 维 token 里有几维发生变化:
+单臂右夹爪两个滑轨共用一个标量，左夹爪保持张开。
+[sonic_token.py](../src/locomani/backends/sonic/sonic_token.py)负责 65 维 action 与
+protocol v4 的转换。若实际采集的左手也变化，或右夹爪两分量不相等，65 维 profile
+就无法无损表达这次动作，必须拒绝该数据或显式修改模型接口。
 
-| 关节 | 0.25° | 0.5° | 1° | 2° | 5° | 10° | 20° |
+`motion_token` 在 1/16 网格上，范围为 [−1.0, 0.9375]。token 的语义取决于
+encoder/decoder checkpoint；检查 `deploy_receipts.jsonl` 的模型和观测配置 hash。
+相同网格不能说明旧 release 数据能交给 v1.1 decoder。量化也不意味着细微动作
+优化没有价值：需要测最终 token、夹爪命令和实际运动，不能由单关节的静态试验
+推导整个动态策略的平滑性上限。
+
+43 维关节列按以下顺序保存，两组手部字段分别紧跟各自手臂：
+
+| 切片 | 0:6 | 6:12 | 12:15 | 15:22 | 22:29 | 29:36 | 36:43 |
 |---|---|---|---|---|---|---|---|
-| right_elbow | 0 | 0 | 1 | 4 | 8 | 14 | 27 |
-| right_shoulder_pitch | 0 | 1 | 2 | 7 | 15 | 30 | 47 |
-| waist_pitch | 1 | 1 | 2 | 2 | 8 | 16 | 29 |
-| left_knee | 0 | 0 | 0 | 2 | 10 | 19 | 40 |
+| 内容 | 左腿 | 右腿 | 腰 | 左臂 | 左手 | 右臂 | 右手 |
 
-即**亚度级的动作打磨在 label 里根本不存在**;要让 VLA 看得见,改动得是度级的。
-这条数是"把动作做得更丝滑"这类提案的天花板。
+`meta/modality.json` 是可选择字段的映射，不能把里面所有条目相加当成模型维度。
+仿真物体位姿可以用于专家规划和离线验收，但不进入这些 VLA 输入字段。
 
-**这三个名字和 7 这个宽度都不能改。** Isaac-GR00T 的 `unitree_g1_sonic` 配置
-(`gr00t/configs/data/embodiment_configs.py`)是**按名字**挑 action group 的,挑不到只打
-一句 `Warning: Joint group 'left_hand_joints' not found` 就继续跑 —— 训练照常收敛,只是
-两只手被静默丢掉。78 = 64 + 7 + 7 也正是 SONIC 推理端期望的 action space。
+### 夹爪标签必须来自实际消费命令
 
-至于为什么只有这三个:deploy 的 pose protocol v4 是 token-only 流,必填 `token_state`,
-选填 `frame_index` / `left_hand_joints` / `right_hand_joints` / `body_quat_w` ——
-**planner 指令(mode / movement / facing / speed / height)没有通道**。它们仍然被写进
-parquet(将来可以当辅助监督),但不是 action。
+默认启动脚本现在通过仓库的 `run_instance_exporter.py` 启动 exporter。
+它将 `teleop.left_hand_joints` / `teleop.right_hand_joints` 写成同一份 C++ state
+报文中的 `last_left_hand_action` / `last_right_hand_action`，与记录的 token 共用来源。
+不要绕过此 wrapper 直接启动上游 exporter：joint-only POSE 消息可能没有被 SMPL
+订阅者解码，旧 fallback 会把真正闭合的夹爪标成张开。
 
-### state:46 维
+自动采集的 `collect/frame_audit_*.jsonl` 记录逐行消费命令、状态序号和相机发布时刻。
+对原始采集运行执行：
 
-官方配置只取 8 个 group:`left_leg` 6 + `right_leg` 6 + `waist` 3 + `left_arm` 7 +
-`right_arm` 7 + `left_hand` 7 + `right_hand` 7 + `projected_gravity` 3。
+```bash
+PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
+  -m locomani.pipeline.audit_bottle_actions outputs/bottle_run \
+  --out outputs/bottle_run/actions_audit.json
+```
 
-**43 维里的实际切片顺序是按左右分组的,两只手夹在两条胳膊中间**,不是"先两条
-胳膊再两只手"——照后者切会静默地把左手当成右臂:
-
-| 切片 | 0:6 | 6:12 | 12:15 | 15:22 | **22:29** | **29:36** | 36:43 |
-|---|---|---|---|---|---|---|---|
-| 内容 | left_leg | right_leg | waist | left_arm | **left_hand** | **right_arm** | right_hand |
-
-`meta/modality.json` 一直是对的,是本文档上一版的组名罗列顺序把人带偏了。三条独立
-佐证:`tools/sonic_decoder.py` 的 `BODY_IDX`(= `0:22` + `29:36`)正是从 43 里挑出
-29 个身体关节;22:29 和 36:43 两块的取值范围是夹爪量级(0.002 / 0.034),15:22 和
-29:36 是弧度量级的手臂运动;用 `state[BODY_IDX]` 做 FK,右掌离被抓住的瓶子 0.14 m,
-按错误切法则是 0.24 m。
-
-`meta/modality.json` 是**菜单**,embodiment 配置才是**点单** —— 菜单里多列的条目
-(腕位姿、root 四元数、`can_pose`/`plate_pose` 等特权信息)一个都不会进模型,所以多列
-无害;但**改名会致命**,因为点单点不到。
-
-### observation
-
-三路 RGB(`ego_view` / `left_wrist` / `right_wrist`)+ 43 维本体状态(腿 12 + 腰 3 +
-双臂 14 + 双手 14)+ 每局自己的指令(`task_index` → `meta/tasks.jsonl`)。
-
-特权量(`observation.can_pose` / `plate_pose`,骨盆系)**留在 parquet 里但不在
-modality 里**。它们是分析和写判据用的;把它们声明成 state 就等于让模型吃一条部署时
-根本不存在的通道 —— deploy 只有 ego 相机和本体感受。这是这里唯一一个**会照样让 loss
-下降**的错误,所以 `convert_to_hf_format.py` 的 `MODALITY` 明确把它们排除在外。
-
-### modality.json 里的切片
-
-转换器写出的 `meta/modality.json` / `modality_gr00t_sonic.json` 就是 GR00T 实际读的
-切片表:
-
-| | 维度 | 内容 |
-|---|---|---|
-| `action` | **66** | `motion_token` 64 + 左右夹爪各 1(7 宽的列是 Dex3 遗留,只取第 0 个分量) |
-| `state` | **72** | 43 维关节 + 腕位姿 14 + root/gravity/offset/init_quat 15 |
-| `video` | 3 | 按 session 实际有的流填,不写死 |
+检查包括：65 维动作能否恢复原报文、标签是否等于逐行消费命令、重复 token、
+关节变化与停顿诊断。旧数据缺少消费命令 receipt 时标为 **未验证**，不能仅凭维度
+正确就判 PASS。该审计不替代真实持物验收、转换后的 `check_dataset` 或 VLA 训练评测。

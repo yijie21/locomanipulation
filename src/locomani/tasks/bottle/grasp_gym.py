@@ -558,7 +558,7 @@ def _run_round(
                 return result
         raise AssertionError("round_phases: no phase returned a result")
     finally:
-        if reach_config.image_servo and ctx.coordinated is not None:
+        if ctx.coordinated is not None and hasattr(ctx.coordinated, "close"):
             ctx.coordinated.close()
 
 

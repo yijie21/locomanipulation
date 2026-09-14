@@ -369,9 +369,14 @@ def _phase_grasp_and_verify(ctx: RoundContext):
 
     hold_ref = palm_frame_offset(s, ctx.obj_key, ctx.side)
     hold_side = "left" if ctx.side == "right" else "right"
-    p.stand_up(hold_side)
-    p.carry_pose(ctx.side)
-    p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=ctx.fv)
+    prepare_carry = getattr(ctx.coordinated, "prepare_carry", None)
+    if prepare_carry is not None:
+        if not prepare_carry():
+            return False, "[hold] continuous carry preparation failed"
+    else:
+        p.stand_up(hold_side)
+        p.carry_pose(ctx.side)
+        p.cmd.hold(1.0, mode=LocomotionMode.IDLE, facing=ctx.fv)
     # With the can secured in the carry pose, back off two steps (~0.35 m,
     # heading held) before the hold check: clears the table edge so
     # whatever comes next (turn, navigation) cannot clip it, and a grip

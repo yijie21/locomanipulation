@@ -183,17 +183,13 @@ def apply_overrides(obj: T, overrides: list[str]) -> T:
             if parts[0] not in values:
                 raise ValueError(f"unknown field {parts[0]!r} on {type(obj).__name__}")
             values[parts[0]] = _cast(values[parts[0]], raw, hints.get(parts[0]))
-        elif len(parts) == 2:
-            top, sub = parts
+        else:
+            top = parts[0]
             if top not in values:
                 raise ValueError(f"unknown field {top!r} on {type(obj).__name__}")
             nested = values[top]
-            nested_hints = _resolved_field_types(type(nested))
-            nested_values = {f.name: getattr(nested, f.name) for f in dataclasses.fields(nested)}
-            if sub not in nested_values:
-                raise ValueError(f"unknown field {top}.{sub!r}")
-            nested_values[sub] = _cast(nested_values[sub], raw, nested_hints.get(sub))
-            values[top] = type(nested)(**nested_values)
-        else:
-            raise ValueError(f"--set keys nest at most one level deep, got {key!r}")
+            if not dataclasses.is_dataclass(nested):
+                raise ValueError(f"field {top!r} is not a nested configuration")
+            values[top] = apply_overrides(nested, [f"{'.'.join(parts[1:])}={raw}"])
+
     return validate(type(obj)(**values))

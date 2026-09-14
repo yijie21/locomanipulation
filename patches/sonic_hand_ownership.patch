@@ -1,0 +1,30 @@
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
+@@ -97,6 +97,7 @@
+         zmq_conflate_(zmq_conflate), 
+         zmq_verbose_(zmq_verbose) {
+       
++      std::cout << "[ZMQManager] PLANNER_HAND_OWNERSHIP_V1" << std::endl;
+       type_ = InputType::NETWORK;
+       active_mode_ = ManagedMode::PLANNER;  // Default to planner mode
+       
+@@ -396,7 +397,8 @@
+     }
+ 
+     bool HasHandJoints() const override {
+-      if ((active_mode_ == ManagedMode::STREAMED_MOTION || (!is_planner_ready_ && switch_from_teleop_to_planner_)) && pose_interface_) {
++      // Hands follow the selected input immediately; planner initialization only gates body motion.
++      if (active_mode_ == ManagedMode::STREAMED_MOTION && pose_interface_) {
+         return pose_interface_->HasHandJoints();
+       }
+       return has_hand_joints_;
+@@ -431,7 +433,8 @@
+     }
+ 
+     std::pair<bool, std::array<double, 7>> GetHandPose(bool is_left) const override {
+-      if ((active_mode_ == ManagedMode::STREAMED_MOTION || (!is_planner_ready_ && switch_from_teleop_to_planner_)) && pose_interface_) {
++      // Hands follow the selected input immediately; planner initialization only gates body motion.
++      if (active_mode_ == ManagedMode::STREAMED_MOTION && pose_interface_) {
+         return pose_interface_->GetHandPose(is_left);
+       }
+       return InputInterface::GetHandPose(is_left);

@@ -35,6 +35,11 @@ def install(collector_class, output_path):
         result = original(self, t_start)
         priv = getattr(self, "_latest_priv", None) or {}
         receipt["priv_seq"] = priv.get("seq")
+        receipt["consumed_hand_action"] = {
+            side: list(map(float, state[f"last_{side}_hand_action"]))
+            for side in ("left", "right")
+            if f"last_{side}_hand_action" in state
+        }
         stream.write(json.dumps(receipt) + "\n")
         counters[episode] = receipt["row_index"] + 1
         return result

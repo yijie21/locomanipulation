@@ -38,11 +38,11 @@
   equal action arrays; checkpoint identities verified. Crate pilot flow PASS, 2/2.
 - User excludes crate success/reproducibility as a blocker; scene redesign is
   separate. No physical control or gate thresholds were tuned in this maintenance.
-- Future bottle behavior work needs a discriminating protocol for these failures.
-  Raw evidence and repeated comparisons: [delivery report](handoff/maintenance-completion.md).
+- New [bottle fixed-sample work](handoff/bottle-continuous-20260914.md) retains failure diagnostics; prior comparisons remain in the [delivery report](handoff/maintenance-completion.md).
 
 ## Shared resources
 
+- [Bottle continuous candidate](handoff/bottle-continuous-20260914.md): 3/10 → 3/10; consumed-action and dataset audits pass, opt-in retained. GPU 0 / instance 0 released; GPU 1 untouched.
 - [Review follow-up fixes](handoff/review-fixes-20260914.md): CPU, live wall offset and Isaac 4.5 inset checks pass; instance 1 released, GPU 1 untouched.
 - [Continuous assisted motion](handoff/crate-continuous-motion-20260914.md): camera/control separation, future POSE window, overlapping reach/recovery and training end marker. GPU batch 6/10; failed attempts retained. GPU 0 / instance 1 released; GPU 1 untouched.
 - Earlier outputs, datasets, recordings and weights are preserved; see the linked reports.

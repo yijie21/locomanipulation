@@ -6,7 +6,6 @@ Source scripts/paths.sh before launching so TF_* ports are consistent.
 """
 
 import os
-import runpy
 import sys
 
 # Launched by scripts/stack/start_stack.sh with the data-collection venv and no PYTHONPATH:
@@ -35,18 +34,21 @@ if __name__ == "__main__":
     ]:
         if flag not in sys.argv:
             sys.argv.extend([flag, str(ports.port(variable))])
-    if not os.environ.get("TF_FRAME_AUDIT_PATH"):
-        runpy.run_module("gear_sonic.scripts.run_data_exporter", run_name="__main__")
-    else:
-        from gear_sonic.scripts import run_data_exporter as exporter
+    from gear_sonic.scripts import run_data_exporter as exporter
 
+    from locomani.pipeline.recorded_hand_actions import install as install_hands
+
+    install_hands(exporter.GrootDataCollector)
+    stream = None
+    if os.environ.get("TF_FRAME_AUDIT_PATH"):
         from locomani.pipeline.collection_frame_audit import install
 
         stream = install(exporter.GrootDataCollector, os.environ["TF_FRAME_AUDIT_PATH"])
-        config = exporter.tyro.cli(exporter.SonicDataExporterConfig)
-        if config.dataset_name is None:
-            config.dataset_name = exporter.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        try:
-            exporter.main(config)
-        finally:
+    config = exporter.tyro.cli(exporter.SonicDataExporterConfig)
+    if config.dataset_name is None:
+        config.dataset_name = exporter.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    try:
+        exporter.main(config)
+    finally:
+        if stream is not None:
             stream.close()

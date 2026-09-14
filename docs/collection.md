@@ -77,6 +77,40 @@ mkdir -p /workspace/tmp/p03/outputs
 session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景或任务配置时使用新目录，
 不要修改正在运行的配置快照或覆盖旧产物。
 
+### 固定采样比较新策略
+
+`bottle_whole_body.json` 是显式选择的连续全身候选策略，默认仍为 `bottle_visible.json`。
+使用前安装 [POSE 与夹爪交接补丁](setup.md)，确认所选 deploy 包含两个 capability 标记。
+当前实验结果和限制见 [固定样本验证记录](handoff/bottle-continuous-20260914.md)，
+不能把“能运行候选策略”理解为已提高成功率或已验证 VLA 学习效果。
+
+先冻结同一组目标位置、站位、出生扰动、外观和物体 yaw：
+
+```bash
+LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim" "$VENV_SIM_PY" \
+  -m locomani.tasks.bottle.grasp_gym --task-config configs/tasks/bottle_visible.json \
+  --targets water_bottle --rounds 10 --seed 31000 \
+  --sample-only --write-cases outputs/bottle_cases10.json
+```
+
+然后对同一 case bank 分别运行基线和候选；保留全部十次尝试，不用成功后重采样填满：
+
+```bash
+for variant in visible whole_body; do
+  "$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
+    --config configs/pilot/learn_200.json --task "configs/tasks/bottle_${variant}.json" \
+    --scene outputs/scene/sim --out "outputs/bottle_fixed_${variant}" \
+    --cases outputs/bottle_cases10.json \
+    --set through=collect --set successes=10 --set batch_rounds=10 \
+    --set max_batches=1 --set seed0=31000 \
+    --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+done
+```
+
+不足 10 条成功时 runner 返回非零退出码，但失败记录和视频仍保留。
+case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场景须生成新 bank。
+固定的是采样条件，异步控制、接触和渲染时序仍可能使重复实验产生不同结果。
+
 ## 5. 产物与验收
 
 以下路径相对于本次 `--out`：
@@ -130,6 +164,22 @@ session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景
 `--task` 选择 **BottleTaskConfig**。修改任务参数应编辑单独的任务 profile，
 不能把 `spawn` / `reach` 字段直接塞进 runner 的 `--set`。
 字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准。
+
+### 连续全身候选的动作原则
+
+`reach.strategy=whole_body` 沿用相同走近和采样入口，在减速时准备手臂，随后让
+腰、髋、手共用带速度/加速度约束的支撑参考。三个腰部自由度均可参与。
+接近可抓区域时开始闭合，持续双侧接触后抬升；物体离桌后，抬升、收手和恢复直立
+重叠进行。回到走路控制前预发保持夹爪和上肢的 planner 命令，再退离桌边并验收稳持。
+
+仿真位姿辅助几何规划，但目标须通过真实 ego/右腕图像的新鲜度和近似可见性检查，
+短时遮挡只沿用上次可见目标；不会用隐藏的新位置无限追踪。可见性由相机几何和 ray
+近似判定，尚不是 RGB 位姿估计器。碰撞、物体被推走、失去接触或身体不稳定仍判失败。
+支持约束和连续参考不能保证 SONIC 的实际动作同样平滑，应同时检查参考与执行轨迹。
+
+运动参数集中在 `reach.whole_body`，通过类型化配置传到消费者；不增加散落的环境变量。
+抓取后的退离与稳持验收沿用原标准。训练转换只截去已标记的末端验收尾段，不删除
+任务中间的停顿来掩盖控制问题。参数和证据分别见配置表与验证记录。
 
 ## 7. 排错与停止
 

@@ -48,6 +48,17 @@ class TransportGuardTests(unittest.TestCase):
         self.assertTrue(0 < result.fraction < 1)
         self.assertEqual(result.link, "right_shoulder_pitch_link")
 
+    def test_base_translation_checks_midpath_even_when_joint_reference_is_constant(self):
+        ik, state = self.setup_scene(0.0, (1.0, 0.0, 0.0))
+        state["pelvis"]["pos"] = [-0.3, 0.0, 0.0]
+        guard = TransportGuard(ik, "bottle", "target")
+        self.assertTrue(guard.check(state, [0.0], "right").clear)
+        hit = guard.check(state, [0.0], "right", candidate_base=[0.3, 0, 0, 1, 0, 0, 0])
+        self.assertFalse(hit.clear)
+        self.assertTrue(0 < hit.fraction < 1)
+        self.assertGreater(hit.samples, 2)
+        self.assertEqual(state["pelvis"]["pos"], [-0.3, 0.0, 0.0])
+
     def test_margin_and_private_model(self):
         ik, state = self.setup_scene(0.0, (1.093, 0.0, 0.0))
         saved = ik.model.geom_margin.copy()

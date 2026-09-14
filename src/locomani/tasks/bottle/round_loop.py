@@ -193,6 +193,11 @@ def round_loop(args, setup, *, runtime=None) -> None:
         )
         if fixed_cases is not None and "object_yaw" in case:
             sampled_cases[-1]["object_yaw"] = case["object_yaw"]
+        elif args.write_cases:
+            # Freeze the last reset variable without consuming the sampling RNG
+            # used by existing target/stand/spawn cases.
+            yaw_rng = np.random.default_rng(np.random.SeedSequence([appearance, 0xB0771E]))
+            sampled_cases[-1]["object_yaw"] = float(yaw_rng.uniform(-np.pi, np.pi))
         if args.sample_only:
             continue
         if goal_key:
@@ -271,7 +276,7 @@ def round_loop(args, setup, *, runtime=None) -> None:
                 one_shot=args.one_shot,
                 mid_band=args.mid_band,
                 reach_config=reach_config,
-                object_yaw=(case.get("object_yaw") if fixed_cases is not None else None),
+                object_yaw=sampled_cases[-1].get("object_yaw"),
                 goal_key=goal_key,
                 place_config=place_config,
                 round_id=rnd,

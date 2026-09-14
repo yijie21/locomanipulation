@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # reach src/ for `python run_learn_pilot.py`
 from locomani.backends.sonic.config import SonicBackendConfig  # noqa: E402
 from locomani.pipeline import stack  # noqa: E402
+from locomani.pipeline.experiment_cases import load_cases, save_cases  # noqa: E402
 from locomani.pipeline.pilot_config import PilotConfig  # noqa: E402
 from locomani.pipeline.provenance import digest, file_digests, write_config_snapshot  # noqa: E402
 from locomani.pipeline.stages import Stage  # noqa: E402
@@ -66,6 +67,9 @@ def parse_args(argv=None):
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--scene", type=Path, required=True, help="frozen scene dir (LOCOMANI_SIM_DIR)")
     ap.add_argument(
+        "--cases", type=Path, help="fixed sampling bank; scene identity must match, batches consume it in order"
+    )
+    ap.add_argument(
         "--initial-token-file", type=Path, default=ROOT / "configs/deployment/ready_grasp_initial_token.json"
     )
     return ap.parse_args(argv)
@@ -93,6 +97,11 @@ def main(argv=None):
     scene = out / "scene"
     if not scene.exists():
         shutil.copytree(args.scene, scene)
+    cases = load_cases(args.cases, scene / "scene_meta.json") if args.cases else None
+    if cases is not None and len(cases) < cfg.batch_rounds * cfg.max_batches:
+        raise ValueError("fixed cases must cover batch_rounds * max_batches; no implicit resampling")
+    if cases is not None and any("object_yaw" not in case for case in cases):
+        raise ValueError("fixed cases need object_yaw; regenerate with grasp_gym --sample-only --write-cases")
     token = args.initial_token_file.resolve()
 
     stack_env = dict(kv.split("=", 1) for kv in cfg.stack_env)
@@ -116,6 +125,10 @@ def main(argv=None):
         inherit=base_env,
         extra_env=dict(stack_env, **dict(kv.split("=", 1) for kv in cfg.gym_env)),
     )
+    if task_cfg.reach.strategy == "whole_body":
+        from locomani.pipeline.provenance import require_pose_ownership
+
+        require_pose_ownership(snapshot_env, hand_handoff=True)
     if not (out / "config_snapshot.json").exists():
         write_config_snapshot(
             out,
@@ -124,7 +137,12 @@ def main(argv=None):
             pilot_cfg=cfg,
             started=time.time(),
             runtime_env=snapshot_env,
-            inputs=dict(scene=file_digests(scene), initial_token=digest(token), reach_config=digest(reach_cfg_path)),
+            inputs=dict(
+                scene=file_digests(scene),
+                initial_token=digest(token),
+                reach_config=digest(reach_cfg_path),
+                **({"cases": digest(args.cases)} if args.cases else {}),
+            ),
         )
 
     stages = Stage(out)
@@ -172,6 +190,16 @@ def main(argv=None):
             b = state["batches"]
             tag = f"{b:02d}"
             manifest = collect / f"manifest_{tag}.jsonl"
+            case_argv = []
+            if cases is not None:
+                batch_cases = cases[b * cfg.batch_rounds : (b + 1) * cfg.batch_rounds]
+                case_path = collect / f"cases_{tag}.json"
+                if case_path.exists():
+                    if load_cases(case_path, scene / "scene_meta.json") != batch_cases:
+                        raise ValueError("fixed case batch changed on resume")
+                else:
+                    save_cases(case_path, batch_cases, scene / "scene_meta.json")
+                case_argv = ["--cases", case_path]
             if manifest.exists():
                 raise RuntimeError(f"{manifest} exists but is not in inputs.json; inspect before continuing")
             env = dict(
@@ -214,8 +242,7 @@ def main(argv=None):
                         task_cfg_path,
                         "--rounds",
                         str(cfg.batch_rounds),
-                        "--until-ok",
-                        str(cfg.successes - state["kept"]),
+                        *(["--until-ok", str(cfg.successes - state["kept"])] if cases is None else []),
                         "--seed",
                         str(cfg.seed0 + 100 * b),
                         "--stand-retries",
@@ -223,6 +250,7 @@ def main(argv=None):
                         "--record",
                         "--video-include-init",
                         *SPAWN,
+                        *case_argv,
                         "--manifest",
                         manifest,
                     ],

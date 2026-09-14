@@ -155,8 +155,8 @@ class StreamedArm:
         # frames of continuity, not a second of recorded standing.
         self.hold(0.4)
 
-    def stop(self) -> None:
-        """Hand control back to the planner without a discontinuity."""
+    def stop(self, *, preserve_reference=False) -> None:
+        """Hand control back to the planner; optionally retain the owned reference."""
         from locomani.backends.sonic.primitives import upper_body_from_mj
 
         s = self.p.obs()
@@ -166,8 +166,22 @@ class StreamedArm:
         # target, so hand back the pose the streamed reach actually ended in
         # — otherwise the switch snaps the arms to the stale target and yanks
         # whatever the hand is holding.
-        self.p.cmd.set_upper_body(upper_body_from_mj(s["joints"]))
+        self.p.cmd.set_upper_body(upper_body_from_mj(self.q if preserve_reference else s["joints"]))
         self.p.cmd.set_hands(**{self.side: self.hands[self.side]})
+        if preserve_reference:
+            # The deploy reads its latest planner packet when switching modes.
+            # Prime that packet before the switch; setting the Python cache
+            # alone leaves a gap with stale or absent arm/hand ownership.
+            self.p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+            self.p.cmd.vr_targets = False
+            self.p.cmd.set_upper_body_vel(np.zeros(17))
+            self.p.cmd.frame(
+                mode=LocomotionMode.IDLE,
+                height=-1.0,
+                speed=0.0,
+                movement=(0, 0, 0),
+                facing=(np.cos(s["pelvis"]["yaw"]), np.sin(s["pelvis"]["yaw"]), 0),
+            )
         self.p.cmd.exit_streamed()
         # The switch re-anchors the deploy's planner heading at the robot's
         # current yaw (diag_heading.py); record it so frame() can undo the

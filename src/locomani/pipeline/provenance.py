@@ -84,7 +84,7 @@ def sonic_policy_identity(env: dict | None = None) -> dict:
     return out
 
 
-def require_pose_ownership(env=None):
+def require_pose_ownership(env=None, *, hand_handoff=False):
     """Reject a deploy that would retain a planner arm override during direct POSE takeover."""
     import mmap
 
@@ -92,10 +92,13 @@ def require_pose_ownership(env=None):
     try:
         with binary.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
             supported = data.find(b"POSE_UPPER_OWNERSHIP_V2") >= 0
+            hands_supported = data.find(b"PLANNER_HAND_OWNERSHIP_V1") >= 0
     except (OSError, ValueError):
-        supported = False
+        supported = hands_supported = False
     if not supported:
         raise RuntimeError(f"{binary} needs patches/sonic_pose_ownership.patch and a rebuild; see docs/setup.md")
+    if hand_handoff and not hands_supported:
+        raise RuntimeError(f"{binary} needs patches/sonic_hand_ownership.patch and a rebuild; see docs/setup.md")
 
 
 def record_deploy(receipt, binary, policy) -> dict:

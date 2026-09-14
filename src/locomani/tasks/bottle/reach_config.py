@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from locomani.tasks.bottle.image_servo_config import BottleCalibration, ServoLimits
+from locomani.tasks.bottle.whole_body_config import WholeBodyConfig
 
 # Fields deleted from ReachConfig that may still appear in a committed
 # outputs/experiments/*/reach_config.json snapshot. `load` drops them with a
@@ -36,6 +37,7 @@ STRATEGY_FLAGS = {
     "recovery": frozenset({"ready_grasp_baseline", "ready_grasp_recovery"}),
     "coupled": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat"}),
     "image_servo": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat", "image_servo"}),
+    "whole_body": frozenset({"ready_grasp_baseline", "ready_grasp_recovery"}),
     "teleop": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat", "teleop_arm"}),
 }
 LEGACY_STRATEGY_FIELDS = frozenset().union(*STRATEGY_FLAGS.values())
@@ -117,6 +119,8 @@ class ReachConfig:
     image_calibration: BottleCalibration = field(default_factory=BottleCalibration)  # RGB feature calibration.
     image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
+    whole_body: WholeBodyConfig = field(default_factory=WholeBodyConfig)
+
     def __post_init__(self):
         values = asdict(self)
         if any(type(v) is not bool for v in (getattr(self, name) for name in BOOL_FIELDS)):
@@ -124,7 +128,7 @@ class ReachConfig:
         if type(self.strategy) is not str or self.strategy not in STRATEGY_FLAGS:
             raise ValueError(f"unknown grasp strategy {self.strategy!r}; choices: {tuple(STRATEGY_FLAGS)}")
         for name, value in values.items():
-            if name not in (*BOOL_FIELDS, "strategy", "image_calibration", "image_control") and (
+            if name not in (*BOOL_FIELDS, "strategy", "image_calibration", "image_control", "whole_body") and (
                 type(value) not in (int, float) or not math.isfinite(value)
             ):
                 raise ValueError(f"{name} must be a finite number")
@@ -147,7 +151,7 @@ class ReachConfig:
             raise ValueError("Squat prediction calibration outside supported bounds")
         if (self.squat_prediction_backshift_ratio or self.squat_prediction_drop_shortfall) and not self.coupled_squat:
             raise ValueError("Squat prediction calibration requires coupled squat")
-        if self.timely_capture and not self.coupled_squat:
+        if self.timely_capture and not (self.coupled_squat or self.strategy == "whole_body"):
             raise ValueError("Timing experiments require coupled squat")
         if self.ready_grasp_recovery and (not self.ready_grasp_baseline or not self.transport_guard):
             raise ValueError("Recovery requires ready baseline and collision guard")
@@ -187,6 +191,8 @@ class ReachConfig:
             raise ValueError("image_servo requires visible_expert, coupled_squat and timely_capture")
         if not isinstance(self.image_calibration, BottleCalibration) or not isinstance(self.image_control, ServoLimits):
             raise ValueError("image calibration/control must be typed configurations")
+        if not isinstance(self.whole_body, WholeBodyConfig):
+            raise ValueError("whole_body must be a typed configuration")
         self.approach_band()
 
     def approach_band(self):
@@ -234,7 +240,11 @@ class ReachConfig:
         unknown = data.keys() - cls.__dataclass_fields__.keys()
         if unknown:
             raise ValueError(f"unknown reach config fields: {sorted(unknown)}")
-        for key, factory in (("image_calibration", BottleCalibration), ("image_control", ServoLimits)):
+        for key, factory in (
+            ("image_calibration", BottleCalibration),
+            ("image_control", ServoLimits),
+            ("whole_body", WholeBodyConfig),
+        ):
             if key in data and isinstance(data[key], dict):
                 data[key] = factory(**data[key])
         return cls(**data)

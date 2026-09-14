@@ -358,7 +358,7 @@ fi
 # limit -- a second stack then hangs at thread creation (2026-09-03).
 nohup env OMP_NUM_THREADS="${EXPORTER_THREADS:-4}" MKL_NUM_THREADS="${EXPORTER_THREADS:-4}" \
     OPENBLAS_NUM_THREADS="${EXPORTER_THREADS:-4}" NUMEXPR_NUM_THREADS="${EXPORTER_THREADS:-4}" \
-    "$REPO/.venv_data_collection/bin/python" "${TF_EXPORTER_SCRIPT:-gear_sonic/scripts/run_data_exporter.py}" \
+    "$REPO/.venv_data_collection/bin/python" "${TF_EXPORTER_SCRIPT:-$LOCOMANI_SRC/pipeline/run_instance_exporter.py}" \
     --task-prompt "$TASK_PROMPT" \
     --root-output-dir "$LOGS/outputs" \
     "${WRIST_ARG[@]}" \

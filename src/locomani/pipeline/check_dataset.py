@@ -539,8 +539,8 @@ def pass_alignment(root, info, eps, r, n_eps):
         f"action vs state: body trails the token by a median {med:+.0f} frames ({med / info['fps'] * 1000:.0f} ms)",
     )
     r.note(
-        "a token is a command and the body is its consequence, so the body "
-        "must TRAIL. Zero or negative means the columns are swapped in time."
+        "positive lag is consistent with a delayed body response. Correlation alone does not prove "
+        "exposure alignment or causality; zero/negative lag requires inspecting clocks and signal quality."
     )
 
 

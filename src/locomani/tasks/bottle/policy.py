@@ -9,6 +9,10 @@ def make_grasp_policy(robot, task, config: ReachConfig, arm_ramp, execution):
     Imports stay at construction time: inspecting configuration needs no simulator.
     The unconfigured legacy mode has no coordinated controller.
     """
+    if config.strategy == "whole_body":
+        from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
+
+        return WholeBodyGraspPolicy(robot, task, config, arm_ramp, execution)
     if config.strategy == "legacy":
         return None
     if config.strategy == "ready":

@@ -44,3 +44,43 @@ def test_standalone_whole_body_carry_checks_the_same_capability(tmp_path, monkey
     monkeypatch.setattr(bimanual_carry.ports, "instance", Mock(side_effect=AssertionError("admission was bypassed")))
     with pytest.raises(RuntimeError, match="sonic_pose_ownership.patch"):
         bimanual_carry.main()
+
+
+def test_loaded_handoff_requires_hand_ownership_without_restricting_existing_pose_users(tmp_path):
+    binary = tmp_path / "deploy"
+    env = {"SONIC_DEPLOY_BIN": str(binary)}
+    binary.write_bytes(b"POSE_UPPER_OWNERSHIP_V2")
+    require_pose_ownership(env)
+    with pytest.raises(RuntimeError, match="sonic_hand_ownership.patch"):
+        require_pose_ownership(env, hand_handoff=True)
+    binary.write_bytes(b"POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1")
+    require_pose_ownership(env, hand_handoff=True)
+
+
+def test_bottle_whole_body_rejects_missing_hand_patch_before_stack(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from locomani.pipeline import run_learn_pilot
+
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    (scene / "scene_meta.json").write_text("{}")
+    binary = tmp_path / "deploy"
+    binary.write_bytes(b"POSE_UPPER_OWNERSHIP_V2")
+    monkeypatch.setenv("SONIC_DEPLOY_BIN", str(binary))
+    start = Mock(side_effect=AssertionError("stack started before admission"))
+    monkeypatch.setattr(run_learn_pilot.stack, "start_stack", start)
+    with pytest.raises(RuntimeError, match="sonic_hand_ownership.patch"):
+        run_learn_pilot.main(
+            [
+                "--task",
+                "configs/tasks/bottle_whole_body.json",
+                "--scene",
+                str(scene),
+                "--out",
+                str(tmp_path / "out"),
+                "--set",
+                "through=collect",
+            ]
+        )
+    start.assert_not_called()

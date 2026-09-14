@@ -113,8 +113,11 @@ class TransportGuard:
         m.geom_conaffinity[self.obstacles] = 1
         m.geom_margin[self.obstacles] = margin
 
-    def check(self, state, candidate, side, *, allow_target_contact=False):
-        """Sweep measured→candidate joints, holding measured base/finger poses.
+    def check(self, state, candidate, side, *, allow_target_contact=False, candidate_base=None):
+        """Sweep joints and optional base motion from the supplied measured state.
+
+        Without candidate_base the measured base remains fixed. Finger poses
+        always remain measured; closure screening is a separate query.
 
         Candidate is a full MuJoCo-order body joint vector. Each interval is
         at most joint_step rad in any joint; margin covers a finite sampling
@@ -130,6 +133,15 @@ class TransportGuard:
         d.qpos[:] = m.qpos0
         base = self.ik.base_qadr
         d.qpos[base : base + 7] = [*state["pelvis"]["pos"], *state["pelvis"]["quat"]]
+        base_start = d.qpos[base : base + 7].copy()
+        rotations = None
+        if candidate_base is not None:
+            from scipy.spatial.transform import Rotation, Slerp
+
+            base_end = np.asarray(candidate_base, dtype=float)
+            if base_end.shape != (7,) or not np.isfinite(base_end).all():
+                raise ValueError("candidate base must contain xyz and a finite quaternion")
+            rotations = Slerp([0, 1], Rotation.from_quat(np.array([base_start[3:], base_end[3:]])[:, [1, 2, 3, 0]]))
         obj = state["objects"][self.target_key]
         d.qpos[self.target_qadr : self.target_qadr + 7] = [*obj["pos"], *obj["quat"]]
         for hand, adrs in self.finger_qadr.items():
@@ -140,12 +152,19 @@ class TransportGuard:
         if not np.isfinite(d.qpos).all():
             raise ValueError("Non-finite sweep state")
         steps = max(1, int(math.ceil(float(np.max(np.abs(q1 - q0))) / self.joint_step)))
+        if rotations is not None:
+            translation_steps = np.linalg.norm(base_end[:3] - base_start[:3]) / 0.02
+            rotation_steps = np.linalg.norm((rotations(1) * rotations(0).inv()).as_rotvec()) / self.joint_step
+            steps = max(steps, int(math.ceil(translation_steps)), int(math.ceil(rotation_steps)))
         # Bound unexpected invalid commands without doing unbounded work.
         if steps > 200:
             raise ValueError("Sweep reference jump exceeds 200 intervals")
         for i in range(steps + 1):
             fraction = i / steps
             d.qpos[self.ik.qadr] = q0 + fraction * (q1 - q0)
+            if rotations is not None:
+                d.qpos[base : base + 3] = base_start[:3] + fraction * (base_end[:3] - base_start[:3])
+                d.qpos[base + 3 : base + 7] = rotations(fraction).as_quat()[[3, 0, 1, 2]]
             mujoco.mj_kinematics(m, d)
             mujoco.mj_collision(m, d)
             hits = []
