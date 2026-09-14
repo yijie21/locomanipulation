@@ -41,7 +41,7 @@
 - New [bottle fixed-sample work](handoff/bottle-continuous-20260914.md) retains failure diagnostics; prior comparisons remain in the [delivery report](handoff/maintenance-completion.md).
 
 ## Shared resources
-- [Bottle filtered walking](handoff/bottle-direct-20260914.md): final 6/10 vs 3/10; reach is faster, joint-step/rebound limits remain. GPU 0 / instance 0 released; GPU 1 untouched.
+- [Bottle filtered walking](handoff/bottle-direct-20260914.md): final 6/10 vs 3/10; raw action labels pass; rebound and image alignment remain unresolved. GPU 0 / instance 0 released; GPU 1 untouched.
 
 - [Bottle continuous candidate](handoff/bottle-continuous-20260914.md): 3/10 → 3/10; consumed-action and dataset audits pass, opt-in retained. GPU 0 / instance 0 released; GPU 1 untouched.
 - [Review follow-up fixes](handoff/review-fixes-20260914.md): CPU, live wall offset and Isaac 4.5 inset checks pass; instance 1 released, GPU 1 untouched.

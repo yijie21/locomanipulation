@@ -154,3 +154,47 @@ The next motion investigation should separate walking, braking and POSE executio
 when measuring joint steps, then test the physical response to the reference
 handoff. The current evidence does not justify solving the remaining rebound by
 adding another sequence of grasp waypoints or loosening collision acceptance.
+
+## Final code, data and preview checks
+
+Source commit: `f7fc675`. The installed commit hook passed full lint and the default
+CPU suite (`commit.log`). Live validation used only GPU 0 / launcher instance 0;
+the owned instance is stopped and released. GPU 1 was not used or stopped.
+
+The raw action audit passes all ten final recordings, including failed attempts:
+token/hand schemas, wire commands and exact consumed-hand receipts agree
+(`final_actions.json`). This verifies labels, not image exposure alignment.
+
+All six successful episodes were converted into `final_dataset`: 2,464 frames at
+25 Hz, with 18 camera clips. Conversion removes only the contiguous marked terminal
+verification tail; no middle pauses were dropped. The exact invocation and output
+are retained in `conversion_command.json` and `conversion.log`.
+
+The unchanged full dataset check reports **30 passed, 2 failed**
+(`dataset_check.log`), so this dataset is **not cleared for training**:
+
+- The post-close lift check passes 5/6 because the dataset has pelvis-relative
+  bottle position but lacks `observation.root_position`. The check falls back to
+  relative height, which cannot establish world lift while the robot changes
+  posture. An independent audit joins every post-close converted frame by its
+  original `priv_seq` to recorded physical qpos. All six sequences match and all
+  six world lifts exceed 3 cm; peak rises are 13.2–18.4 cm. In dataset episode 5
+  (source episode 8 / case `31000:8`), relative rise is 0.000596 m while actual
+  world rise is 0.167286 m. See `world_lift_audit.py` and `world_lift_audit.json`.
+  These are peak post-close rises, distinct from the earlier loaded-upright
+  snapshots. Neither the original dataset nor the failed check was relabeled.
+- Image/table alignment has 5/12 wrist-camera measurements at zero lag, 6/12 at
+  one frame and 1/12 at two frames (up to 80 ms). Correlation does not establish
+  exact exposure timing, so these results require camera/state clock investigation;
+  they do not justify shifting labels to improve the score or loosening the gate.
+  Action/body response has a median positive two-frame lag and passes its check.
+
+The next data work is to carry the root/world transform into the physical lift
+check and investigate camera exposure/state pairing using recorded timestamps.
+The checker's generic statement that the left arm never moves is an outdated
+message, not a measurement of this candidate.
+
+The inspected full-duration preview is `previews/final_case01.mp4`: **404,108 bytes**,
+21.80 s versus the 21.84 s source, normal playback speed. Full decode, actual size
+and duration were verified (`previews/verification.json`). Source videos and all
+failed experimental attempts remain preserved.
