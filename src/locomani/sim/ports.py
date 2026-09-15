@@ -130,8 +130,7 @@ def require_exporter(why: str = "--record") -> None:
     raise SystemExit(
         f"{why} needs the data exporter, and none is running for instance {instance()} "
         f"(camera port {camera()}).\n"
-        "  start_stack.sh only starts the exporter on instance 0; other instances print\n"
-        '  "[3/3] data exporter - skipped (instance N records no episodes)" and record nothing.\n'
-        "  To keep off another session's stack, hold INSTANCE=0 and move the GPU instead:\n"
-        "  CUDA_VISIBLE_DEVICES=<card> MUJOCO_EGL_DEVICE_ID=<card>."
+        "  start_stack.sh starts the exporter on instance 0, or on another instance only with\n"
+        "  RECORD_INSTANCE=1 (run_crate_pilot.py --record sets it); otherwise it prints\n"
+        '  "[3/3] data exporter - skipped (instance N records no episodes)" and records nothing.'
     )

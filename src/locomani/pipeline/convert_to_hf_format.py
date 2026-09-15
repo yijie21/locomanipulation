@@ -41,6 +41,7 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[2])
 )  # reach src/ for `python src/locomani/pipeline/convert_to_hf_format.py`
 from locomani.pipeline.verification_tail import training_prefix_length  # noqa: E402
+from locomani.pipeline.world_lift import DST_FPS, SRC_FPS, resample_selection  # noqa: E402
 from locomani.schema import SONIC_MODALITY
 
 # Fallback only. It is what every episode gets when no --manifest is given,
@@ -131,7 +132,9 @@ def check_manifest(rows, src_eps, discarded, sess_name):
 #
 # CHANGING THIS IS A TWO-PLACE EDIT: the deploy has to publish at the same rate
 # or motions replay at the wrong speed. See TF_DATASET_FPS in vla_round.py.
-SRC_FPS, DST_FPS = 50, 25
+# SRC_FPS / DST_FPS / resample_selection are imported above from world_lift: one 50->25 row pick
+# shared by the converter and check_dataset --run-dir, so the two cannot drift.
+
 W, H = 640, 480
 
 MODALITY = SONIC_MODALITY
@@ -692,8 +695,8 @@ def main():
                 table = table.take(pa.array(np.flatnonzero(keep)))
                 print(f"    idle filter: dropped {dropped} of {len(keep)} frames ({dropped / len(keep) * 100:.0f}%)")
         n50 = table.num_rows
-        n30 = int(np.floor((n50 - 1) * DST_FPS / SRC_FPS)) + 1
-        sel = np.clip(np.round(np.arange(n30) * SRC_FPS / DST_FPS).astype(int), 0, n50 - 1)
+        sel = resample_selection(n50)
+        n30 = len(sel)
         sub = table.take(pa.array(sel))
 
         pdf = sub.select(

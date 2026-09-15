@@ -113,11 +113,15 @@ class TransportGuard:
         m.geom_conaffinity[self.obstacles] = 1
         m.geom_margin[self.obstacles] = margin
 
-    def check(self, state, candidate, side, *, allow_target_contact=False, candidate_base=None):
+    def check(self, state, candidate, side, *, allow_target_contact=False, candidate_base=None, ignore_target=False):
         """Sweep joints and optional base motion from the supplied measured state.
 
         Without candidate_base the measured base remains fixed. Finger poses
         always remain measured; closure screening is a separate query.
+        `ignore_target` drops the target object from this side's obstacles: once
+        the jaws hold it, wrist-link contact with the bottle in hand is not a
+        transport collision (it aborted 21/81 lifts with the bottle already
+        8 cm off the table, 2026-09-14). Table and body checks are unchanged.
 
         Candidate is a full MuJoCo-order body joint vector. Each interval is
         at most joint_step rad in any joint; margin covers a finite sampling
@@ -176,6 +180,7 @@ class TransportGuard:
                     g in self.hands[side]
                     and other in self.obstacles
                     and contact.dist <= self.margin
+                    and not (ignore_target and other in self.target_geoms)
                     and not (
                         allow_target_contact
                         and other in self.target_geoms

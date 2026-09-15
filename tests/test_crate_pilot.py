@@ -96,17 +96,13 @@ if __name__ == "__main__":
 
 
 class RecordTests(unittest.TestCase):
-    def test_visual_video_pilot_refuses_unvalidated_training_export(self):
-        with self.assertRaises(SystemExit):
-            R.parse_args(["--out", "/tmp/x", "--expert", "visual", "--record"])
-
-    def test_record_forces_instance_0_and_a_batch_size(self):
-        """A --record run on any other instance finishes every round and writes
-        nothing: start_stack.sh runs the exporter only on instance 0 (memory
-        only-instance-0-can-record). The batch size is the single-arm line's, for
-        the exporter's thread growth against the container pid cap."""
-        a = R.parse_args(["--out", "/tmp/x", "--record", "--instance", "1"])
-        self.assertEqual(a.instance, 0)
+    def test_visual_pilot_records_on_its_own_instance(self):
+        """--record no longer forces instance 0: start_stack.sh starts the exporter
+        on any instance given RECORD_INSTANCE=1, so the visual expert records on
+        the instance/GPU it holds. The batch size is the single-arm line's, for the
+        exporter's thread growth against the container pid cap."""
+        a = R.parse_args(["--out", "/tmp/x", "--expert", "visual", "--record", "--instance", "1"])
+        self.assertEqual((a.instance, a.expert, a.record), (1, "visual", True))
         self.assertEqual(a.batch_rounds, 10)
 
     def test_record_reaches_the_expert(self):

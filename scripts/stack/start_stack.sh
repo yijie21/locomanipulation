@@ -324,8 +324,14 @@ fi
 echo "  ok"
 
 echo "[3/3] data exporter"
-if [ "$INSTANCE" != "0" ]; then
-    echo "  skipped (instance $INSTANCE records no episodes)"
+# Instance 0 always records. Another instance records only when the caller
+# opts in with RECORD_INSTANCE=1 (run_crate_pilot.py --record does): the
+# exporter is ~500 threads against the container's pid cap, so it is not free,
+# but its ports and its session root are already per-instance
+# (locomani.sim.ports, paths.session_root), and stop_instance.sh kills only
+# the exporter serving this instance's camera port.
+if [ "$INSTANCE" != "0" ] && [ "${RECORD_INSTANCE:-0}" != "1" ]; then
+    echo "  skipped (instance $INSTANCE records no episodes; RECORD_INSTANCE=1 to record here)"
 else
 cd "$REPO" || exit 1
 # --record-wrist-cameras adds observation.images.{left,right}_wrist to the

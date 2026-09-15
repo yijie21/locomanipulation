@@ -1,219 +1,167 @@
-# 交接：SONIC 动态回放与部署一致性审计
+# 当前任务交接：单臂瓶子专家的走路准备、动作平滑与闭环学习性
 
-更新时间：2026-09-10 14:2x UTC（session 29 续写；12:03 之前的内容由 Codex 写）。工作目录 `/workspace/code/locomanipulation`。
-本文区分事实、决策、假设；数值对应已保存实验，不把准备工作算成完成实验。
+当前续作见 [中部抓取、接触恢复与实际平滑验证](docs/handoff/bottle-contact-expert-20260915.md)。
+用户要求继续实现三个优化项，并把瓶子抓在指垫中部，最终采集新的 10 集视频；不启动 VLA 训练。
+当前交付 checkpoint11：中部抓取、接触恢复、有界跟踪补偿及制动/舒适姿态改动已集成；配置保留1.2秒闭爪。候选checkpoint12实测2/4，未采用，源码与证据保留。
+固定四例验证为 3/4；新种子 30300 首批仅 6/10，已停止后续采集，证据保存在 `outputs/bottle_contact_20260915/final_collect`。GPU 0 / instance 0 已释放。
+checkpoint11新种子30700/30800在 `outputs/bottle_contact_20260915/final_collect_v3` 完成10/15；10份合规预览已审计，ZIP4552364bytes。checkpoint12固定四例回归2/4后恢复checkpoint11，GPU0/instance0已释放。
+本轮新十集视频已生成并审计；main `make check` 已通过，后续文档状态更新单独验证。尚未达到高可靠/完全自然的目标，具体剩余项见当前续作报告。
 
-## 1. 当前目标与授权边界
+更新日期：2026-09-15 UTC。工作目录：`/workspace/code/locomanipulation`。基线提交 `fcf23d9`，
+用户已要求提交并推送当前代码与文档快照，随后依次实施跟踪响应辨识与末端制动、停车与全身姿态联合规划、带物轨迹与稳定交接。稳定性验证前不缩短动作时间。上一版交接原文保留在
+`docs/archive/handoff-bottle-walking-20260914.md`（`docs/archive/INDEX.md` 按约定未改）。
 
-- 当前研究任务：用户要求“开始对比官方动态动作回放，以及模型、PD 增益和仿真配置的一致性”，解释本地 SONIC 弯腰跟踪弱、协作者真机 G1 可以弯腰的差异。
-- 当前这轮指令仅要求保存交接；未新启动或重跑实验。
-- GPU1 / instance1 验证已获授权，常规诊断修正不需再次询问。不要占用 instance0/GPU0 或干扰其他会话任务。
-- 旧 ScaleBFM Goal 已被用户明确取消。不要恢复 Goal、ABCD、训练或早期任务；按当前明确任务推进。
-- 长期背景：视觉+本体状态驱动、利于 VLA 学习的人类式抓取，VLA 不读取物体真值；专家先验缺口曾要求暂记不修。诊断用 privileged 真值只作测量，不能据此给专家增加新特权控制。
-- 读 `docs/STATE.md` 资源规则及 `docs/ledger/bottle.md` §12–15；STATE 混有不同会话旧的 RUNNING 条目，应以时间戳、进程和产物核实，不能盲信。
-- 禁止删除/覆盖 outputs。历史 outputs 曾因 symlink merge 丢失，详情见 STATE incident。不要重跑已经完成的 phase1/phase2 或200集采集。
-- 多个 Claude 同时修改本工作区；`git status` 不是本会话独占改动清单。不要回退、清理、提交他人的改动；未要求 commit。不要主动创建子代理。
+标记约定：**事实**＝代码、日志、manifest 或保留轨迹直接支持；**决策**＝已采用并写进代码/配置；
+**假设**＝需要实验区分的解释，不是已定根因。每个实验的权威记录是
+[docs/handoff/bottle-hanging-start-20260914.md](docs/handoff/bottle-hanging-start-20260914.md)
+第五到第十节和 [docs/handoff/crate-formal-export-20260914.md](docs/handoff/crate-formal-export-20260914.md)
+的闭环一节；日常入口是 [docs/collection.md](docs/collection.md)、[docs/evaluation.md](docs/evaluation.md)。
 
-## 1b. 2026-09-10 下午：checkpoint A/B 与随后的代码修复
+## 1. 目标与范围
 
-> **2026-09-11 用户裁定推翻了本节的操作结论：以后一律用 SONIC v1.1。**
-> 仓库默认 `SONIC_POLICY` 已改成 `policy/sonic_v1_1`（唯一默认值在 `scripts/paths.sh`
-> 与 `locomani.paths`），离线 encoder/decoder、provenance、文档同步改完，记录见
-> 台账 `docs/ledger/bottle.md` §20。**下面的测量本身没有被推翻**，它现在的含义是：
-> 采集线的 approach/brake 时序、`TRACK_ROT_BOOST=4.5`、站位标定都还是 release 时代的数字，
-> 必须先在 v1.1 上重测，然后才能把任何抓取成功率当成 checkpoint 的属性。
+- 总目标：单臂 bottle 与双臂 crate 两条线各自 200 集采集 → LeRobot 转换 → GR00T 10k 步微调 →
+  100 局闭环评测；之后回答"为什么单臂闭环低"，并把单臂专家的走路阶段改成像双臂那样随物体连续
+  调整、动作更顺、对 VLA 更可学。
+- 本轮做了：双臂闭环评测器（新）、两条线的 100 局闭环、单臂失败的离线逐键替换定位、刹车深度
+  0.31、走路准备三版、三种平滑变体、用户的"胶囊相切 + 像素触发 + 全身 IK"方案。
+- 没做：任何新动作律下的重新采集 200 集、训练与闭环；crate 线在 71/100 之后未再动。
 
-**结论（2026-09-10 当时）：v1.1 不能直接换进采集线。** 20 局固定 case bank，release **9/20** vs sonic_v1_1 **0/20**，
-9 个不一致 case 全部 release 赢，精确 McNemar p=0.0039。机制是到位几何不是抓取：
-v1_1 停在 0.498 m（release 0.377，plan_r 0.32），横向偏 −0.324 vs −0.214（t=−6.38），
-approach 有 10/20 次 `stalled`（release 2/20）。要换 checkpoint 必须连带重标 approach 时序。
-产物 `outputs/experiments/v11_bottle_ab20_20260910/`，台账 `docs/ledger/bottle.md` §17。
+## 2. 已确认的约束（事实）
 
-注意 §16 的参考回放结论（v1_1 腰 RMSE 3.9° vs release 12.9°）与此不矛盾：
-v1.1 确实更会弯腰，但它走不到位。两条结论要一起读。
+- 不删除 `outputs/`、数据集、权重；每段导出/引用的视频必须有 ≤500,000 字节的全时长预览并有
+  `verification.json`（本轮全部满足，见第 6 节）。
+- 不改验收门限；`docs/STATE.md` ≤60 行（现 59）；文档与代码同改；回复里用绝对路径。
+- 两个仿真不能共用一块 GPU；单臂 pilot 固定实例 0；双臂闭环用实例 2 / 端口 5700（5591 是实例 1
+  的特权端口，5590 是实例 1 的键盘端口）。
+- 单臂 pilot 的启动条件：`PYTHONPATH=src`，且必须
+  `export SONIC_DEPLOY_ROOT=/workspace/code/locomanipulation/outputs/bottle_continuous_20260914/deploy`
+  （`scripts/paths.sh` 默认的 `third_party/.../gear_sonic_deploy` 缺夹爪交接补丁，
+  `require_pose_ownership` 直接拒绝）。
+- GPU 上现存一个 `/workspace/miniconda3/envs/vg/bin/python` 进程（3 GB），不是本会话的，未动。
 
-**已落地的四条修复**（`make check` 通过，未提交）：`locomani.sim.ports` 统一端口公式；
-`reach_config.require_runnable()` 与 `ports.require_exporter()` 两个启动期拒绝；
-`--task-config` 携带整份 profile；修好 `scripts/collect_pilot.sh`（自重构 step 2 起一直采不出数据）。
-细节与动机见 ledger §17.3。**待办：主代码改动按规范要附 `scripts/gate.py compare` 输出，尚未跑。**
+## 3. 已采用的决策及理由
 
-## 2. 最新运行状态（2026-09-10 12:40 UTC 核对）
+| 决策 | 理由（事实） |
+|---|---|
+| `visible_brake_depth` 0.40 → 0.31（`configs/tasks/bottle_whole_body.json`） | 闭环失败局停在专家 park 0.46 的位置，从不做专家随后 10 cm 的全身前移；改 0.31 后 park→全身阶段的前移由 10.6 cm 降到 3.4 cm，同 20 seed 17/20 vs 15/20，髋/桌 2 vs 3 |
+| 走路阶段手目标改为 v3 律（`walking_reach.py`）：腕从第一次规划起转向手指朝前，工具点固定在髋旁 x 0.08、抓点上方 `walk_clearance` 0.06，横向跟随瓶子，"至少落后瓶子 12 cm"用原始点计算，走路限速 `walk_joint_speed` 0.7，腰参与求解 | dex1 手指从掌心向下伸 19 cm，垂臂指尖 0.53 m 低于 0.62 m 桌面；0.45 rad/s 转腕要吃掉整段 3.5 s 走路（v1 2/20）；相对瓶子定义的 x 会以步速后退、手停在瓶子深度上扫倒瓶子（v2 0/20）；滤波深度在刹车时低估约 10 cm |
+| 走路腰包络去掉 roll（yaw ±0.1、pitch 0–0.12） | v3 每局把 roll 打满 +0.1，骨盆侧倾，右髋在近站位贴桌（5/20）；去掉后 2/20；去 roll 后髋旁姿势 IK 误差 ≤1.7 cm |
+| 三个平滑选项做成字段并默认关闭：`pose_lowpass_hz`、`reach_seconds`（`tracking_gain` 原有） | 同 20 seed 分别 7/6/6 of 20；只有增益 0.3 让身体各阶段更平但 7 局伸手超时（反馈在补 decoder 偏差） |
+| 用户方案的字段：`visible_brake_edge` 0.27、`raise_trigger_px` 36、`lean_max`（JSON 设 1.0，默认 0.55） | 已实现并跑 12/20；两项在当前出生带上不起作用（第 6 节）。字段保留，值未回退，属于待用户决定 |
+| 硬化手指垫为单臂默认场景（`scripts/install_scene.sh`） | 采样 20 局 0 滑脱（本轮之前已定） |
 
-**事实：phase3 已经跑出有效动态回放，并完成了 release / sonic_v1_1 单因素对照。GPU1 已交还。**
+## 4. 已完成工作与修改文件（全部未提交）
 
-- `retry_reset/`（Codex 那轮）仍是 CPU gate 超时的记录，run.exit=1，未启动仿真，原样保留。
-- CPU 争用已解除：Playwright Chrome 属于 `toporetarget-reimp-25` 会话，我通过 SendMessage 说明后对方自行关闭，
-  未擅自终止对方进程。空闲从 −0.05 核回到 7.6–10 核。
-- 新产物：`outputs/diagnostics/sonic_native_phase3_20260910/retry_reset_02/`（policy/release，3/3）与
-  `.../v1_1/`（policy/sonic_v1_1，3/3）。两者 run.exit=0。
-- 12:33 UTC pick-place 会话认领 GPU1（instance 0）。我的可选录像对照在 CPU gate 内被中止，**从未创建 stack**；
-  `video_release/` 只是残留目录，不是结果。GPU1 当前 2 MiB，无我方进程。
-- 结论摘要与全部数字见 `docs/ledger/bottle.md` §16、`docs/STATE.md`。
+新增：`src/locomani/pipeline/eval_crate_closed_loop.py`、`src/locomani/tasks/crate/vla_rounds.py`、
+`src/locomani/pipeline/world_lift.py`、`configs/deployment/crate_initial_token.json`、
+`configs/deployment/whole_body_initial_token.json`、`tests/test_crate_vla_eval.py`、`tests/test_world_lift.py`、
+`docs/handoff/{bottle-hanging-start,crate-depth-convergence,crate-formal-export}-20260914.md`。
 
-## 3. 已确认的决策及理由
+本轮改动的单臂文件：`src/locomani/tasks/bottle/walking_reach.py`（v3 律、raise 门、去 roll）、
+`whole_body_policy.py`（`ReferenceFilter`、`reach_path`、`lean_angle`、传 `brake_depth`/`ego_px`）、
+`whole_body_config.py`（`walk_clearance`、`walk_joint_speed`、`pose_lowpass_hz`、`reach_seconds`、
+`raise_trigger_px`、`lean_max`）、`reach_config.py`（`visible_brake_edge`）、
+`round_phases_approach.py`（`visible_stop`、`visible_speed_scale`）、`assisted_target.py`（`ego_height_px`）、
+`configs/tasks/bottle_whole_body.json`、`tests/test_bottle_walking_reach.py`、`tests/test_bottle_whole_body.py`、
+`tests/test_replay_obs.py`（按 schema 比较相机键）。
 
-1. 先用 C++ 原生 CSV loader 回放官方本地动态参考，绕开 Python `pose_chunk` 路径。理由：phase2 静态测试的关节速度始终为0，不能代表动态运动能力。
-2. 实验使用私有可执行文件和诊断脚本，不修改生产模型、PD 或专家控制。逐项改变变量，保持可归因性。
-3. phase3 第一条记录属于无效初始化，不计动态回放失败。模型加载时仿真缺乏有效控制，随后 start 后还等4秒；play开始时已经倒地。
-4. 重试修正为模型 `Init Done` 后 reset、读取新 wall 时间戳状态、检查初始骨盆高度，再立即发送 `]t`。这仍是待验证诊断协议，不宣称修好了 SONIC。
-5. 资源门槛：连续3个5秒窗口空闲>=6核且无 cgroup throttle，最多等10分钟；未满足则不创建 stack。避免CPU争抢使实时控制结果失真。
-6. 官方深蹲参考 root 最低约0.332m，因此本诊断不以任务标准root<0.4m判定失败；脚本<0.15m保护中止也不是完整成功定义。
-7. 一致性只说证据覆盖到的层面：实际LowCmd匹配当前C++不等于匹配训练/真机；同名身体参数一致不等于整机一致。
+文档：`docs/collection.md`（复现表、采集逻辑）、`docs/evaluation.md`（两条线 2026-09-15 结果、双臂闭环一节）、
+`docs/crate_collection.md`、`docs/reference/config_fields.md`（`make config-doc` 生成）、`docs/STATE.md`。
+其余 `M` 文件（crate 视觉专家、导出、check_dataset、start_stack 等）属本轮之前同一未提交序列，见各 handoff。
 
-## 4. 已完成实验与结论
+## 5. 测试与实验结果（事实）
 
-### Phase1：孤立腰部参考，已完成
+闭环（checkpoint-10000，seed 6000，100 局）：
 
-产物 `outputs/diagnostics/sonic_lean_20260910/live/phase1_summary.json`，详见 ledger §13。
-10正式case（neutral/reach各5次），每case planner/streamed ×6角度，共120条件，无记录到的跌倒，batch.exit=0。
-请求29.8°时均值：
+| 线 | 结果 | 失败 | 目录 |
+|---|---|---|---|
+| 双臂 crate | 71/100，Wilson 0.61–0.79（验证批 9/10） | 20 闭合无抬起（18 局双手未接触）、5 到桌未闭合、4 reset 未稳 | `outputs/crate_eval100_20260915`（预览 `previews/`，100 段） |
+| 单臂 bottle | 17/100，Wilson 0.11–0.26 | 60 到桌未闭合（最近 0.32 m）、11 spawn 视野、7 闭合无抬、3 走路、2 stand | `outputs/bottle_vla200b_20260914/eval`（预览 `previews/`，87 段） |
 
-|条件|实际腰pitch°|实际躯干pitch°|电机腰目标°|
-|---|---:|---:|---:|
-|neutral planner|0.04|1.95|0.95|
-|neutral streamed|0.68|6.33|1.11|
-|reach planner|1.82|3.46|-9.57|
-|reach streamed|2.30|6.31|-11.11|
+单臂闭环定位（`outputs/bottle_vla200b_20260914/eval_dump10`，10 局 dump，2/10）：val 闭合前后 10/10 预测
+闭合；失败局观测 0/70；换入成功局两路图像 58/70，只换腕或只换 ego 0/70，换任何状态 0/70；反向
+12/12→0/12。结论（事实）：闭合是两路图像的联合函数，与本体状态无关；失败局停在 0.37–0.52 m，
+专家 park 0.46（0.42–0.52）、全身阶段开始 0.35。
 
-事实：本地输出不忠实跟随孤立腰参考；不能由此断言G1/SONIC不能弯腰。
-其他审计：ready-grasp `use_waist=False`；通用IK pitch上限0.20rad，物理约0.52rad；旧direct诊断绕过IK上限，因此该上限不能解释全部弱跟踪。
+专家同 20 seed（30000，硬垫）对照：
 
-### Phase2：协调全身静态参考与实际encoder输入，已完成
+| 运行目录 | 变化 | 结果 | 主要失败 |
+|---|---|---|---|
+| `outputs/bottle_hardpads_sampled20_20260914` | 基线（刹车 0.40） | 15/20 | 髋/桌 3 |
+| `outputs/bottle_brake031_sampled20_20260915` | 刹车 0.31 | 17/20 | 髋/桌 2 |
+| `outputs/bottle_walkprep_sampled20_20260915` | 走路准备 v1 | 2/20 | 指/桌 8（走路末段） |
+| `outputs/bottle_walkprep2_sampled20_20260915` | v2 | 0/20 | 扫倒 5、腕指/瓶 6 |
+| `outputs/bottle_walkprep3_sampled20_20260915` | v3（当前律，含 roll） | 14/20 | 髋/桌 5 |
+| `outputs/bottle_smooth_A_lowpass4_20260915` | + `pose_lowpass_hz` 4 | 7/20 | 髋/桌 9、无接触 4 |
+| `outputs/bottle_smooth_B_gain03_20260915` | + `tracking_gain` 0.3 | 6/20 | 伸手超时 7 |
+| `outputs/bottle_smooth_C_minjerk3_20260915` | + `reach_seconds` 3 | 6/20 | 扰动 5、腕/瓶 4 |
+| `outputs/bottle_edge_sampled20_20260915` | 用户方案（去 roll、桌沿 0.27、触发 36 px、lean_max 1.0） | 12/20 | 无接触 3、髋/桌 2 |
 
-目录 `outputs/diagnostics/sonic_lean_phase2_20260910/`；关键文件 `summary.json`、`encoder_report.json`、`encoder_root_check.json`、`plan.json`。
-15/15 case（5条件×3次），run.exit=0，无记录跌倒，instance1关闭。
-参考 `squat_001__A359` 第85帧，ramp3s/hold4s/return3s；这不是动态回放。
+每个运行的 20 段预览在各自 `previews/`，`verification.json` 全部 `all_ok`。
 
-|条件|请求躯干°|实际躯干°|实际腰°|电机腰目标°|
-|---|---:|---:|---:|---:|
-|legacy_waist_052|29.79|5.35|0.27|-4.06|
-|waist_only|25.17|4.90|0.32|-9.03|
-|legs_waist|25.17|7.38|1.43|-6.03|
-|legs_waist_root|34.97|13.06|1.16|-11.12|
-|full_pose|34.97|16.52|7.14|-46.92|
+动作几何（事实）：v3 接管时工具点高于抓点 4.8 cm、落后 15.6 cm，右掌 0.761 m（基线 16.3 cm /
+7.4 cm / 0.846 m），伸手 3.4 s（基线 5.1 s）。抖动：各阶段被跟踪的参考加速度 0.4–1.5 rad/s²、
+>2 Hz 占 0.4–14%，身体 3–6 rad/s²、>2 Hz 占 24–44%；双臂走路段一样（腰 8.1 rad/s²，72%）。
+日志里每次 POSE 发送只存两帧，第二帧是 preview 的 50 tick 未来终点，不是参考。
 
-实际 encoder 输入捕获：23365完整记录，1762输入float32/64token，mode0。稳态关节参考最大误差5.89e-8rad；重建rootpitch与请求相差<=0.05°；dq块全0。
-文件尾7072字节不完整记录忽略，15个hold区间都有覆盖。
-**结论：信号确实到达encoder；协调参考将实际弯腰4.9°提高到16.5°，但仍低于约35°。尚未找到最终根因。**
-局限：同一deploy在reset间保留历史，不是严格配对RNG；私有binary为当前源码重编译，非原生产binary逐字节相同，legacy弱跟踪对照已复现。
+用户方案的元素效果（事实）：桌沿规则 20 局只触发 2 局（瓶子在桌盒边内 2–5 cm，深度 0.31 先到）；
+36 px 触发在出生点（≈1.5 m，36–37 px）第一次规划即触发；去 roll 髋/桌 5→2；距离项 ≤0.37 rad 未
+改变前倾。真实网格 guard：直立离桌沿 ≤0.23 m 右髋贴桌、0.27 m 无碰、前倾 20–40° 在 0.20 m 也无碰。
+臂长：肩到工具点 0.37 m，抓点高度前伸上限约 0.60 m（70° 躯干）；双臂抓取瞬间手掌前伸 0.29–0.32 m。
 
-### Phase3：动态回放已完成，checkpoint 对照已完成
+检查：`make check` 通过（最后一次 2026-09-15 08:0x UTC）；相关测试
+`tests/test_bottle_walking_reach.py tests/test_bottle_whole_body.py tests/test_visible_expert.py tests/test_configs.py` 55 通过。
 
-目录 `outputs/diagnostics/sonic_native_phase3_20260910/`。
-
-让回放有效的启动协议：等 `Init Done` → reset → `]` 接管 → **1 秒沉降** → 才 `t`。沉降窗口内骨盆 0.890→0.786 m、
-ncon 0→33（reset 是瞬移，采样在物理步进前，机器人还悬空）。旧的 `]t` 连发就是在悬空态开播，这才是那条 0.119 m
-记录的成因。两次运行各 3 遍全部完整播完：**423/424 帧、正好 50.00 fps、8.46 s、无跌倒**。
-
-3 次均值，取参考最深前倾帧（参考躯干 40.3°、腰 29.3°）：
-
-|checkpoint|躯干 pitch|腰 pitch|腰 RMSE|躯干 RMSE|
-|---|---:|---:|---:|---:|
-|policy/release|14.5°|8.1°|12.9°|12.4°|
-|policy/sonic_v1_1|25.3°|21.4°|**3.9°**|**5.7°**|
-
-唯一变量是 checkpoint（含其自带 observation 配置）。重复性：release 腰 8.3/8.2/7.9，v1_1 腰 21.4/21.5/21.2。
-**动态并不能救静态弱跟踪**——release 的动态结果与 phase2 静态同量级，handoff 原假设 1 判否。
-encoder 的 10 个参考槽位实测为 `k, k+5, …, k+45`，确实包含未来 0.9 s。
-
-已用数字排除的环节：参考→encoder 2.1e-7 rad；参考与官方 MJCF 自洽（FK 躯干 pitch 复现 body_quat 到 0.01°，
-所以"腰 pitch 正 = 前倾"在参考/官方/本仓一致）；deploy 观测 vs privileged 真值 ≤1.2°/2.3°；
-`last_action` vs sim `cmd_q` ≤0.05 rad；两份配置都通过 deploy 自身维度校验（1762/994 与 1751/994）。
-
-仍未解释、且**两个 checkpoint 共有**：`waist_pitch` 是唯一与自身参考反相关的指令通道（6 次运行全为 −0.90 左右，
-参考要 +29.3° 时电机目标约 −60°；腿/臂 +0.95…0.99）。单通道符号翻转排除映射错位。腰 kp=28.5（armature×ω²），
-实测该关节重力保持力矩 12–23 Nm，所以实际弯腰不是这条指令驱动的。
-
-`sim_parity.json` / `parity_report.json` 结论不变：29 身体关节参数一致；Dex1 35.864952kg vs 官方 Dex3 36.1652352kg；
-实际 LowCmd 的腰 pitch kp≈28.5012 / kd≈1.81445（不是 YAML 里的 400/250）。
-
-配置疑点：`policy/release/observation_config.yaml` 是第三份手改配置，既不等于 `observation_config_sonic_release.yaml`
-也不等于 `_sonic_v1_1.yaml`（多 `motion_root_z_position*` 共 11 维，正好对上实测 1762 vs 官方两份写的 1751；
-anchor 用非 heading 归一化版本）。`policy/sonic_v1_1/` 是自洽的模型+配置对。
-
-### 已完成的ScaleBFM工作（背景，勿重复）
-
-`outputs/experiments/scalebfm200_noretract_sonic_20260910/RESULTS.json`：200成功并audit通过、49387帧、400视频，LeRobot v2.1转换和stats完成；该结果记录training_started=false，本会话没有启动其训练。
-数据路径：同目录 `dataset/`。34集OSMesa+166集EGL，来源历史保留；中断seed4035跳过。
-用户取消向身体收回约7cm：carry_back=0。成功标准对齐 `sonic_lift6cm_hold2s_v1`（抬升>6cm持续>2s，任务fall root<.4）；24s预算和采集质量audit保留。
-吞吐：旧OSMesa中位约176s/集；EGL12集pilot 12/12、24视频解码通过、中位5.497s，后续约5–6s/集。
-固定规则已写 `docs/scalebfm_collection.md`：正式批采GPU EGL、明确CUDA/EGL设备、先pilot及视频/吞吐验收；软件渲染须显式 `--allow-software-rendering`。
-历史 make check、17项成功判据测试通过；这些不是phase3的新增测试。
-其他会话的 `visible200` 是另一份SONIC数据，不要与本200集混淆。
-
-## 5. 文件及实现关键点
-
-本阶段新增、尚未提交的脚本：
-- `scripts/experiments/sonic_native_replay_20260910.py`：原生PTY控制，3次目标，每次12s；记录state/debug/躯干FK；拒绝覆盖同名case。
-- `scripts/experiments/sonic_native_replay_20260910.sh`：GPU1/instance1资源gate、启动和清理。gate超时不会stop未由其启动的stack。
-- `scripts/experiments/sonic_native_parity_20260910.py`：CPU只读MJCF质量、选项、模型哈希、LowCmd和常数对比。
-- 本阶段更新 `docs/STATE.md`、`docs/ledger/bottle.md` §15；本次创建本HANDOFF。
-
-之前本会话相关脚本（具体变更读文件，勿重建）：
-`sonic_lean_audit_20260910.py`、`sonic_lean_live_20260910.py`、`sonic_lean_batch_20260910.sh`、
-`sonic_lean_phase2_20260910.py/.sh`、`sonic_encoder_capture_build_20260910.py`、
-`sonic_encoder_capture_report_20260910.py`、`scalebfm200_20260910.py`，均在scripts/experiments。
-之前ScaleBFM相关生产修改涉及 `configs/tasks/bottle_visual.json`、`tasks/bottle_visual/{config.py,success.py,round.py,pipeline/collect.py,pipeline/eval.py}`、`tests/test_visual_success.py`及collection/scalebfm文档；与其他会话修改交叠，不能按本表整体回退。
-其他git status中的runtime、scene、refactor、assets/simple等修改不能归为本会话所有。
-
-私有诊断binary：
-`outputs/diagnostics/sonic_lean_phase2_20260910/deploy/target/release/g1_deploy_onnx_ref`。
-运行cwd为该目录的 `deploy/`；policy/reference等symlink到生产目录。
-生产树 `third_party/GR00T-WholeBodyControl/gear_sonic_deploy`；私有encoder_capture.cpp在实际Encode后捕获同一输入buffer和token。
-单TU编译，缓存StateLogger ABI不符时私有重编译state_logger.o并优先链接；build日志/manifest/命令均保留，不用全量重编译。
-
-Encoder捕获格式：little-endian `<IdIIi` = magic0x53454e43、double wall、uint32 ni、uint32 nt、int32 mode，接ni+nt个float32。
-输入4:294为10×29关节参考（ISAACLAB顺序），294:584为速度，601:661为10×6 root参考；6D转rotation后需结合base quat重建世界方向。
-`last_action`已经是MuJoCo顺序、缩放加default后的电机q目标，不能再重排/缩放；`body_q_target`在encoder上半身覆盖前，不代表实际encoder输入。
-
-原生参考：`third_party/GR00T-WholeBodyControl/gear_sonic_deploy/reference/example/squat_001__A359/`。
-424帧50Hz；CSV有header；joint_pos/vel为ISAACLAB顺序（旧模块注释可能误写MJ），用g1_joints.isaac_to_mujoco。body_quat wxyz，body0 pelvis/body7 torso。
-参考首帧root约[-.00254,.01266,.79256]，quat[.71218,-.03302,-.02698,-.70070]（yaw约-89°），腰pitch .12222rad；默认reset不等于该首帧。
-Reset API支持robot dxy/yaw/dof(MJ)/dof_from，暂不支持完整root roll/pitch/z；seat_on_floor会调整root高度，不能未经检查视为精确首帧reset。
-原生input-type=zmq，不发送Pythonpose包；`]`start、`t`play、`r`restart、`i`heading reinitialize，换行切stream/native（不要误切）。当前无planner。
-
-## 6. 未解决问题（按当前证据重排）
-
-1. **已判否**：动态速度/未来帧能改善静态弱跟踪。有效动态回放与静态同量级。
-2. **已判否（作为主因）**：启动/初姿对齐。修正协议后 3/3 有效、无跌倒、播放速率精确 50 fps，弱跟踪照旧。
-3. **已有强证据**：checkpoint 是主导因素（腰 RMSE 12.9° → 3.9°）。尚未确认协作者真机跑的是哪个 checkpoint —— 这是
-   现在最该问用户/协作者的一件事。
-4. **未解释**：`waist_pitch` 指令通道与参考反相关（两个 checkpoint 共有）。可能是训练时 robot 资产与参考数据集的
-   腰 pitch 符号约定不一致，也可能是这条通道的动作本就被设计成负载补偿项。判别需要训练侧配置或 IsaacLab 资产，
-   目前仓库里没有。**不要**据此改生产代码或给腰加特权控制。
-5. **未知**：训练 PD、协作者真机 checkpoint 与参考接口。仍不能宣称与真机一致。
-6. **限制**：私有 binary 与官方发布 binary 的构建差异；静态 legacy 弱跟踪已复现，但不是二进制相同性证明。
-
-## 7. 下一步与关键命令
-
-1. 先问清协作者真机用的是哪个 checkpoint 与哪份 observation 配置。若是 sonic_v1_1，本地"不能弯腰"基本就解释完了。
-2. 若要继续本地：把 `policy/sonic_v1_1` 接到生产链路是一个独立决定（会改变所有既有 deployment verdict，见
-   memory「Deployment verdicts are checkpoint-conditional」），需用户拍板，不要顺手换。
-3. 想要可视化证据：录像对照（`SONIC_NATIVE_VIDEO=1`）尚未跑成，等 GPU1 空出再跑，换新目录名。
-4. 想追 waist_pitch 反号：需要训练侧的 G1 资产/关节约定或 IsaacLab 配置；仓库内已无更多可查证据。
+## 6. 关键路径与命令
 
 ```bash
-cd /workspace/code/locomanipulation
-export PYTHONPATH=$PWD/src
-bash scripts/cpu_headroom.sh 3
-nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv
-# 重跑（必须换目录，脚本拒绝覆盖已有 case）
-SONIC_NATIVE_OUT=$PWD/outputs/diagnostics/sonic_native_phase3_20260910/<新目录> \
-  SONIC_NATIVE_POLICY=policy/sonic_v1_1 bash scripts/experiments/sonic_native_replay_20260910.sh
-# 离线分析，不占 GPU
-SONIC_NATIVE_OUT=<目录> third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  scripts/experiments/sonic_native_report_20260910.py
-SONIC_NATIVE_OUT=<目录> third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
-  scripts/experiments/sonic_native_channel_audit_20260910.py
+cd /workspace/code/locomanipulation && . scripts/paths.sh
+export SONIC_DEPLOY_ROOT=/workspace/code/locomanipulation/outputs/bottle_continuous_20260914/deploy
+export PYTHONPATH=/workspace/code/locomanipulation/src
+
+# 单臂专家 20 局（同 seed 对照；每次换 --out）
+"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot --config configs/pilot/learn_200.json \
+  --task configs/tasks/bottle_whole_body.json --scene outputs/scene/sim_hardpads --out outputs/<run> \
+  --set through=collect --set successes=20 --set batch_rounds=10 --set max_batches=2 --set seed0=30000 \
+  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+# 变体：把 reach.whole_body 块写进任务 JSON 副本（例：outputs/bottle_smooth_20260915/task_*.json）
+
+# 双臂闭环 100 局
+"$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop \
+  --checkpoint outputs/crate_vla200_record_20260914/model/checkpoint-10000 \
+  --scene outputs/scene/crate_table30_depth04 --out outputs/<eval> --instance 2 --gpu 1 --serve-gpu 1 --rounds 100 --seed 6000
+
+# 离线问策略"会不会闭合"（需 serve_policy 在 :5590）
+third_party/Isaac-GR00T/.venv/bin/python src/locomani/pipeline/replay_obs.py --dataset outputs/bottle_vla200b_20260914/val_dataset --episode 0 --near-close
+third_party/Isaac-GR00T/.venv/bin/python src/locomani/pipeline/replay_obs.py --dump <obs_dump dir> --substitute video.ego_view,video.right_wrist --donor-dump <npz>
+
+# 预览（≤500,000 字节 + verification.json）与抖动表
+nice -n 19 /usr/bin/python3 outputs/bottle_smooth_20260915/make_previews.py outputs/<run>/previews outputs/<run>/collect/videos_0*/*.mp4
+python3 outputs/bottle_smooth_20260915/smooth_table.py 0   # 0 = 被跟踪参考帧；1 = preview 未来终点
+
+PYTHONPATH=src "$VENV_SIM_PY" -m pytest -q tests/test_bottle_walking_reach.py tests/test_bottle_whole_body.py tests/test_visible_expert.py tests/test_configs.py
+make config-doc && make check
 ```
 
-GPU1隔离环境（launcher已设置）：INSTANCE=1、SONIC_DDS_DOMAIN=1、CUDA_VISIBLE_DEVICES=1、MUJOCO_EGL_DEVICE_ID=1；TF_CAMERA_PORT=5565、TF_SONIC_PORT=5566、TF_OUT_PORT=5567、TF_KEYBOARD_PORT=5590、TF_PRIVILEGED_PORT=5591、TF_EPISODE_PORT=5592；OMP/OPENBLAS/MKL线程均1。EGL设备编号不能想当然跟随CUDA屏蔽重排。
-动态库环境 `source scripts/env_deploy.sh`；仿真Python为 `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python`。
-`bash scripts/stack/stop_instance.sh 1` 仅在确认是自己的instance1时使用；它会强制结束实例。
-后台启动请用Python subprocess.Popen(..., start_new_session=True, stdin=DEVNULL, stdout=log, stderr=STDOUT)并保存PID，简单nohup &在本工具shell中曾未存活。
+## 7. 未解决问题与假设
 
-## 8. 验证与建议技能
+- **假设**：去 roll 后抓取侧多出的 4 局失败（无接触/滑脱/指瓶）来自接管时手构型变化；闭合时深度
+  1.9 cm、横向 ≤2 cm 在成功带内，20 局分不出因果与噪声。
+- **假设**：身体抖动来自 deploy 跟踪与步态（依据是参考平滑而身体不平滑、双臂同样），未做控制器侧实验。
+- **假设**：可见触发（像素高度、桌沿、腕相机可见）会改善策略的吸收态；任何新律都没重新采集训练。
+- **事实**：刹停时髋/桌家族在相同走路代码下 20 局里 0–9 局波动（A 9、B 0、C 3、v3 5），20 局比较
+  读不出 ±3 的差异；本线各版本成功率在 12–17/20 之间。
+- **事实**：`visible_brake_edge` 0.27 与 `raise_trigger_px` 36 在当前出生带（瓶子桌沿内 4–8 cm、
+  出生 1.1–1.3 m）上不起作用；要生效需深度刹车 ≥0.33 或去掉、触发高于出生尺寸且转腕提前。
+- **事实**：`docs/archive/INDEX.md` 未加归档条目（按约定未动该文件）。
 
-- phase3新增Python脚本编译检查、shell bash -n通过；parity脚本已实际运行生成JSON。重试控制协议未通过动作验证，因为资源gate超时。
-- 建议沿用 `/home/yijie/.agents/skills/diagnosing-bugs/SKILL.md`：先获得对应症状的有效回放闭环，再单因素测假设；无效初始化不是模型失败证据。
-- 本交接采用handoff技能组织；用户明确要求项目根HANDOFF.md，优先于技能“临时目录”默认位置。
+## 8. 下一步
+
+1. 用户决定单臂默认律：回退到 `fcf23d9` 的 `walking_reach.py` + 刹车 0.31（17/20），或保留 v3 + 去 roll
+   （12–14/20，动作是用户要的）。当前树是后者。
+2. 若继续用户方案：`visible_brake_depth` 改 0.33–0.35 或 0 让桌沿规则成为主判据；触发像素设在出生尺寸
+   之上（≥45 px）并把转腕速度或提前量相应加大；再跑一次。
+3. 判据改为 100 局或"各阶段到达数 + 阶段遥测"，不再用 20 局成功率比较。
+4. 律定下后再做 200 集采集 → 训练 → 100 局闭环，并用 `eval_dump10` 的替换实验复核吸收态是否消失。
+5. 抖动：唯一实测有效的杠杆是反馈增益（0.3 太低），可试 0.5–0.7 或放慢反馈滤波；C 的终点改为
+   抓点后 1.8 cm 再试。

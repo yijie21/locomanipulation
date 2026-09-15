@@ -77,7 +77,7 @@ def _obj_extra(st, obj_key):
 class ObsBuilder:
     """Assemble the policy's flat observation from the live stack."""
 
-    def __init__(self, task: str):
+    def __init__(self, task: str, schema=SONIC_BOTTLE):
         from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
         from gear_sonic.data.features_sonic_vla import get_g1_robot_model
         from gear_sonic.utils.data_collection.zmq_state_subscriber import (
@@ -90,6 +90,9 @@ class ObsBuilder:
         self.state = ZMQStateSubscriber(host="localhost", port=state_port)
         self.rm = get_g1_robot_model()
         self.task = task
+        # Which TaskSchema this observation serves: SONIC_BOTTLE (two cameras,
+        # right wrist, 53-d) or SONIC_CRATE (three cameras, both wrists, 60-d).
+        self.schema = schema
         self._last_img = None
         self._last_proprio = None
 
@@ -107,7 +110,7 @@ class ObsBuilder:
             self._poll()
             if self._last_img is not None and self._last_proprio is not None:
                 have = set(self._last_img)
-                if {"ego_view", "right_wrist"} <= have:
+                if set(self.schema.video_keys) <= have:
                     return True
             time.sleep(0.05)
         return False
@@ -149,10 +152,14 @@ class ObsBuilder:
             "state.right_wrist_abs_quat": f32(rw_quat),
             "annotation.human.task_description": self.task,
         }
-        for key in SONIC_BOTTLE.video_keys:
+        if "left_wrist_pos" in self.schema.state_keys:
+            pl_left = self.rm.frame_placement(self.rm.supplemental_info.hand_frame_names["left"])
+            obs["state.left_wrist_pos"] = f32(pl_left.translation[:3])
+            obs["state.left_wrist_abs_quat"] = f32(R.from_matrix(pl_left.rotation).as_quat(scalar_first=True))
+        for key in self.schema.video_keys:
             img = np.asarray(self._last_img[key])
             obs[f"video.{key}"] = img[None].astype(np.uint8)
-        SONIC_BOTTLE.validate_observation(obs)
+        self.schema.validate_observation(obs)
         return obs
 
     def close(self):
@@ -222,3 +229,12 @@ class PolicyLink:
         tok = np.asarray(out["action.motion_token"], dtype=np.float64)
         grip = np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
         return (snap(tok) if self.config.snap else tok), grip
+
+    def get_chunk_bimanual(self, obs) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """-> (token [40,64], left gripper [40], right gripper [40]) for a SONIC_CRATE checkpoint."""
+        out = self._call("get_action_raw", {"obs": obs})
+        self.last_rtc = out.get("rtc.applied")
+        tok = np.asarray(out["action.motion_token"], dtype=np.float64)
+        left = np.asarray(out["action.left_gripper"], dtype=np.float64).reshape(-1)
+        right = np.asarray(out["action.right_gripper"], dtype=np.float64).reshape(-1)
+        return (snap(tok) if self.config.snap else tok), left, right

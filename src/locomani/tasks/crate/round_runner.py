@@ -23,9 +23,9 @@ protocol is the bottle line's, exactly (`zmq_driver.SonicCommander.key`):
 
 and the manifest row carries `ok` and `produced`, which is what
 `convert_to_hf_format.py --manifest` joins on (positionally, per session).
-Recording still needs INSTANCE=0: `start_stack.sh` starts the exporter only
-there (memory only-instance-0-can-record), which is why `--record` is off by
-default and every pilot to date ran without it.
+Recording needs an exporter on this instance: `start_stack.sh` starts one on
+instance 0, or on any instance with RECORD_INSTANCE=1 (run_crate_pilot.py
+--record sets it); `ports.require_exporter` refuses a batch without one.
 """
 
 from __future__ import annotations

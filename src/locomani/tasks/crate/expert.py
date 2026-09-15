@@ -124,7 +124,7 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
     }
 
 
-def run_attempt(p, reset, camera, meta, config, directory, label, rng):
+def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record=False):
     cfg = config.visual
     model = ArmIK(paths.SCENE_XML)
     whole_body = config.carry.reach_control == "whole_body"
@@ -145,6 +145,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     )
     policy = VisualCratePolicy(geometry["grasp_points"], cfg)
     approach = VisualApproach(cfg)
+    stand_attempts = approach.stand_attempts  # the list outlives the approach object
     arm, placement = reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
     if not placement["initial_stance_ready"]:
         arm.stop()
@@ -186,6 +187,13 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
     if hasattr(p, "cmd"):
         p.cmd.reference_observer = recorder.observe_reference
     reset.start_video(label)
+    produced = False
+    if record:
+        # 'c': the exporter goes IDLE -> RECORDING. Every initialization step
+        # ended in reset_ready, so frame 0 of the episode is the task. The
+        # matching save/discard key is sent once the attempt is evaluated.
+        p.cmd.key("c")
+        produced = True
     started = time.time()
     estimate, last_image_time = None, 0.0
     last_camera_received = last_command_time = started
@@ -310,6 +318,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
                     "angular_speed": approach.angular_speed,
                     "ready": nav.ready,
                     "reach_admission": admission,
+                    "stand_attempts": list(stand_attempts),
                 }
                 if nav.ready:
                     approach = None
@@ -478,7 +487,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
         frames=recorder.frames,
         placement=placement,
         dataset_kind=dataset_kind,
-        produced=False,
+        produced=produced,
+        task=config.prompt,
+        target="blue_crate",
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),
         evaluation_state_seq=final.get("seq"),
@@ -492,8 +503,20 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng):
             prediction="shared_tangent_braking",
         )
     result["command_count"] = recorder.command_count
+    result["stand_attempts"] = list(stand_attempts)
     if result["ok"] and recorder.training_tail is not None:
         result["training_tail"] = recorder.training_tail
+        # The converter's trim reads row["execution"]["metrics"]["training_tail"]
+        # (verification_tail.training_prefix_length); the same marker under the
+        # single-arm line's path, so one converter serves both lines.
+        result["execution"] = {"metrics": {"training_tail": dict(recorder.training_tail)}}
+    if produced:
+        # 'c' saves, 'x' discards; the exporter writes the episode from its own
+        # loop, and the 2 s IDLE hold gives it rows past the training boundary.
+        # Sent on every path that started recording, including runtime errors,
+        # so the exporter never stays in RECORDING and the manifest join holds.
+        p.cmd.key("c" if result["ok"] else "x")
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
     if "pelvis" in initial:
         result["initial_edge_distance"] = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])
     if error is not None:
@@ -510,9 +533,16 @@ def main():
     parser.add_argument("--label", default="visual_crate")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--set", dest="overrides", action="append", default=[])
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="drive the data exporter: 'c' at task start, 'c'/'x' after evaluation; refused without an exporter",
+    )
     args = parser.parse_args()
     if args.rounds < 1:
         parser.error("--rounds must be positive")
+    if args.record:
+        ports.require_exporter("--record")
     config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     config = config.with_overrides(args.overrides)
     if config.carry.reach_control == "whole_body":
@@ -534,7 +564,9 @@ def main():
                 args.manifest,
                 label,
                 seed,
-                lambda: run_attempt(p, reset, camera, meta, config, directory, label, np.random.default_rng(seed)),
+                lambda: run_attempt(
+                    p, reset, camera, meta, config, directory, label, np.random.default_rng(seed), record=args.record
+                ),
             )
             if result.why == "runtime_error":
                 raise RuntimeError(result.execution["metrics"]["error"])

@@ -35,22 +35,25 @@ class DefaultCheckpointTests(unittest.TestCase):
 
     def test_python_half_agrees_with_the_shell_half(self):
         env = {k: v for k, v in os.environ.items() if k != "SONIC_POLICY"}
-        with unittest.mock.patch.dict(os.environ, env, clear=True):
-            fresh = importlib.reload(paths)
-            try:
+        try:
+            with unittest.mock.patch.dict(os.environ, env, clear=True):
+                fresh = importlib.reload(paths)
                 self.assertEqual(fresh.SONIC_POLICY, DEFAULT)
                 self.assertTrue(fresh.SONIC_POLICY_DIR.endswith(DEFAULT))
                 self.assertTrue(fresh.sonic_policy_file("model_decoder.onnx").endswith("model_decoder.onnx"))
-            finally:
-                importlib.reload(paths)  # restore the module other tests imported
+        finally:
+            importlib.reload(paths)  # restore the module other tests imported, under the real env
 
     def test_the_env_override_still_works(self):
-        with unittest.mock.patch.dict(os.environ, {"SONIC_POLICY": "policy/release"}):
-            fresh = importlib.reload(paths)
-            try:
+        try:
+            with unittest.mock.patch.dict(os.environ, {"SONIC_POLICY": "policy/release"}):
+                fresh = importlib.reload(paths)
                 self.assertTrue(fresh.SONIC_POLICY_DIR.endswith("policy/release"))
-            finally:
-                importlib.reload(paths)
+        finally:
+            # Restore AFTER the env patch is undone: a reload inside the `with`
+            # re-reads the patched value and leaves the module at policy/release
+            # for every later test whenever SONIC_POLICY is exported in the shell.
+            importlib.reload(paths)
 
     def test_the_deploy_launchers_check_the_checkpoint_exists(self):
         # A foreign deploy tree (SIMPLE's own lockstep build) has policy/release

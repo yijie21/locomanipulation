@@ -1,18 +1,20 @@
 """The real gym prelude must reach token-only deployment without expert IK."""
 
+import json
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import numpy as np
+import pytest
 
 from locomani.tasks.bottle import grasp_gym as gym
 from locomani.tasks.bottle.reach_config import ReachConfig
 
 
 class ReadyVLAHandoverTests(unittest.TestCase):
-    def run_prelude(self, policy, camera=(0.0, 0.0), token_file=None, token_ready=True):
+    def run_prelude(self, policy, camera=(0.0, 0.0), token_file=None, token_ready=True, strategy="ready"):
         p, reset = Mock(), Mock()
         p._gym_started = False
         state = {"fallen": False, "pelvis": {"pos": [0.0, 0.0, 0.8]}, "objects": {"water_bottle": {"cam": camera}}}
@@ -47,7 +49,7 @@ class ReadyVLAHandoverTests(unittest.TestCase):
                 [0.0, 0.0],
                 spawn_off=0.0,
                 object_yaw=0.0,
-                reach_config=ReachConfig(strategy="ready"),
+                reach_config=ReachConfig(strategy=strategy),
                 runtime=gym.GymRuntime(policy=policy),
             )
         self.last_token_pose = token_pose
@@ -64,6 +66,15 @@ class ReadyVLAHandoverTests(unittest.TestCase):
         result, ready = self.run_prelude(None)
         self.assertEqual(result, (False, "[stand] baseline ready posture not delivered"))
         ready.assert_called_once()
+
+    def test_continuous_expert_prepares_only_the_waist(self):
+        # whole_body raises the arm during the walk from the deploy's own
+        # reference; priming READY first recorded a raise-then-drop. The waist
+        # is still prepared, or the spawn view gate rejects the round.
+        result, ready = self.run_prelude(None, strategy="whole_body")
+        ready.assert_called_once()
+        self.assertEqual(ready.call_args.kwargs, {"arms": False})
+        self.assertEqual(result, (False, "[stand] neutral waist not delivered"))
 
     def test_vla_still_rejects_invisible_target_before_policy(self):
         policy = Mock(return_value=(True, "must not run"))
@@ -99,3 +110,21 @@ class ReadyVLAHandoverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_token_file_forms_and_declared_arms(tmp_path, monkeypatch):
+    from locomani.backends.sonic import initial_pose
+
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps([0.0] * 64))
+    rich = tmp_path / "rich.json"
+    rich.write_text(json.dumps({"token": [0.0625] * 64, "arms": [0.1] * 14, "source": "test"}))
+    assert initial_pose.load_token_file(bare).shape == (64,)
+    assert float(initial_pose.load_token_file(rich)[0]) == 0.0625
+    monkeypatch.setattr(initial_pose, "INIT_TOKEN_FILE", str(bare))
+    assert initial_pose.initial_arms() is None
+    monkeypatch.setattr(initial_pose, "INIT_TOKEN_FILE", str(rich))
+    np.testing.assert_allclose(initial_pose.initial_arms(), 0.1)
+    rich.write_text(json.dumps({"token": [0.0] * 64, "arms": [0.1] * 13}))
+    with pytest.raises(ValueError, match="14 finite arm joints"):
+        initial_pose.initial_arms()

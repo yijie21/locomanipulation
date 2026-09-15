@@ -95,10 +95,10 @@ def parse_args(argv=None):
     ap.add_argument(
         "--record",
         action="store_true",
-        help="drive the data exporter and keep only the rounds that succeed -- the crate line's first "
-        "route to a LeRobot dataset (docs/crate_collection.md). Implies instance 0, the only one "
-        "start_stack.sh runs an exporter on, and a batch size so the exporter's thread growth stays "
-        "under the container pid cap",
+        help="drive the data exporter and keep only the rounds that succeed -- the crate line's "
+        "route to a LeRobot dataset (docs/crate_collection.md). Starts an exporter on this instance "
+        "(RECORD_INSTANCE=1 for start_stack.sh) and defaults the batch size so the exporter's thread "
+        "growth stays under the container pid cap",
     )
     ap.add_argument(
         "--resume",
@@ -115,14 +115,12 @@ def parse_args(argv=None):
         "(memory no-encoder-breaks-planner-arms)",
     )
     args = ap.parse_args(argv)
-    if args.expert == "visual" and args.record:
-        ap.error("visual currently records RGB/history video pilots; formal LeRobot export is not yet validated")
     if args.record:
-        # Not a warning: a --record run on another instance completes every round
-        # and produces no session at all (memory only-instance-0-can-record).
-        args.instance, args.allow_instance_0 = 0, True
+        # The exporter is started on whichever instance this run holds
+        # (RECORD_INSTANCE=1 below); the expert still refuses to start a batch
+        # unless ports.require_exporter finds it.
         if not args.batch_rounds:
-            args.batch_rounds = 10  # the single-arm line's batch, for the same pid-cap reason
+            args.batch_rounds = 10  # the single-arm line's batch, for the exporter pid-cap reason
     if args.instance == 0 and not args.allow_instance_0:
         ap.error("refusing INSTANCE=0: that is the collection/eval stack (pass --allow-instance-0 to override)")
     if args.batch_rounds < 0:
@@ -270,6 +268,12 @@ def main(argv=None) -> None:
     per_batch = args.batch_rounds or args.rounds
     batches = -(-args.rounds // per_batch)  # ceil
     state = json.loads(state_path.read_text()) if state_path.exists() else dict(manifests=[], batches=0)
+    state.setdefault("sessions", [])
+    # Where this instance's exporter writes raw sessions; one new dir per stack
+    # start, joined to that batch's manifest for convert_to_hf_format.py.
+    sessions_root = Path(paths.session_root(args.instance)) / "outputs"
+    if args.record:
+        sessions_root.mkdir(parents=True, exist_ok=True)
     print(
         f"[crate] {args.expert} expert, {args.rounds} rounds in {batches} batch(es), seed {args.seed}, "
         f"instance {args.instance}, gpu {args.gpu}, scene {scene} -> {out}",
@@ -288,8 +292,11 @@ def main(argv=None) -> None:
         videos = out / f"videos_{tag}"
         videos.mkdir(exist_ok=True)
         extra = {"LOCOMANI_SIM_DIR": str(scene)}  # the EGL device follows `gpu` inside stack.start_stack
+        if args.record:
+            extra["RECORD_INSTANCE"] = "1"
         if trace_dir is not None:
             extra["SIM_STATE_TRACE_DIR"] = str(trace_dir)
+        before = set(sessions_root.iterdir()) if args.record else set()
         try:
             env = stack.start_stack(
                 backend,
@@ -304,6 +311,21 @@ def main(argv=None) -> None:
             )
         except RuntimeError as e:
             raise SystemExit(f"[crate] {e}; see {paths.session_root(args.instance)}") from None
+        if args.record:
+            # run_learn_pilot.py's rule: wait for THIS stack's exporter dir rather
+            # than taking the newest, so a slow teardown cannot shift the
+            # session<->manifest join by one batch.
+            session = None
+            for _ in range(60):
+                fresh = [d for d in sessions_root.iterdir() if d not in before]
+                if fresh:
+                    session = max(fresh, key=lambda d: d.stat().st_mtime)
+                    break
+                time.sleep(1)
+            if session is None:
+                stack.stop_instance(args.instance, runner=stage.run)
+                raise SystemExit(f"[crate] no exporter session dir appeared under {sessions_root} after start_stack")
+            state["sessions"].append(str(session))
         state["manifests"].append(str(manifest))
         state_path.write_text(json.dumps(state, indent=1))
         try:

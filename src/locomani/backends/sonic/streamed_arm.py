@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from copy import deepcopy
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from locomani.backends.sonic.primitives import (
     DT,
@@ -107,6 +109,12 @@ class StreamedArm:
         }
         self.q = None  # current reference, MuJoCo order
         self.root_quat = None
+        self.reference_velocity = np.zeros(29)
+        self.root_angular_velocity = np.zeros(3)
+        self.reference_time = None
+        self.handoff_diagnostics = {}
+        self.braking_diagnostics = {}
+        self._handoff_first_q = self._handoff_first_velocity = None
         self.next_t = None
         self.guard = None  # object key to keep the off hand away from
         self._left_now = None  # guarded left-arm joints, carried across move_to
@@ -114,7 +122,7 @@ class StreamedArm:
 
     # -- plumbing ----------------------------------------------------------
 
-    def start(self, *, hold_planner_pose=False) -> None:
+    def start(self, *, hold_planner_pose=False, inherit_planner_velocity=False) -> None:
         s = self.p.obs()
         # A primed POSE stream atomically takes the planner override in the deploy.
         if hold_planner_pose:
@@ -122,21 +130,50 @@ class StreamedArm:
             # No intermediate VR encoder mode or released planner arm frame is needed.
             from locomani.backends.sonic import upper_ref
 
-            incoming = upper_ref.shared().pose()
+            tap = upper_ref.shared()
+            planner_state = tap.pose_state() if inherit_planner_velocity and hasattr(tap, "pose_state") else None
+            incoming = tap.pose() if planner_state is None else (planner_state["joints"], planner_state["root"])
             if incoming is None:
                 raise RuntimeError("continuous POSE takeover needs a fresh planner joint/root reference")
             self.q, self.root_quat = (np.asarray(value).copy() for value in incoming)
+            if planner_state is not None:
+                self.reference_velocity = np.asarray(planner_state["velocity"], dtype=float).copy()
+                self.root_angular_velocity = np.asarray(planner_state["root_angular_velocity"], dtype=float).copy()
             # body_q_target excludes the frozen override. Compose the actual
             # reference being consumed, not the measured tracking error.
             held = self.p.cmd.upper_body
             if held is not None:
                 self.q[12:15], self.q[15:22], self.q[22:29] = held[:3], held[3::2], held[4::2]
+                held_velocity = getattr(self.p.cmd, "upper_body_vel", None)
+                if inherit_planner_velocity and held_velocity is not None:
+                    held_velocity = np.asarray(held_velocity, dtype=float)
+                    self.reference_velocity[12:15] = held_velocity[:3]
+                    self.reference_velocity[15:22] = held_velocity[3::2]
+                    self.reference_velocity[22:29] = held_velocity[4::2]
+            incoming_q, incoming_v = self.q.copy(), self.reference_velocity.copy()
+            self._handoff_first_q = self._handoff_first_velocity = None
             self.next_t = time.time()
-            self.hold(0.1)
+            self.hold(
+                0.1,
+                reference_velocity=self.reference_velocity if inherit_planner_velocity else None,
+                root_angular_velocity=self.root_angular_velocity if inherit_planner_velocity else None,
+            )
             self.p.cmd.set_upper_body_vel(None)
             self.p.cmd.enter_streamed()
             self.p.cmd.upper_body = None
-            self.hold(0.1)
+            self.hold(
+                0.1,
+                reference_velocity=self.reference_velocity if inherit_planner_velocity else None,
+                root_angular_velocity=self.root_angular_velocity if inherit_planner_velocity else None,
+            )
+            self.handoff_diagnostics = dict(
+                inherited_velocity=bool(inherit_planner_velocity),
+                q_start_error=float(np.max(np.abs(incoming_q - self._handoff_first_q))),
+                dq_start_error=float(np.max(np.abs(incoming_v - self._handoff_first_velocity))),
+                incoming_speed=float(np.max(np.abs(incoming_v))),
+                outgoing_speed=float(np.max(np.abs(self.reference_velocity))),
+                root_angular_speed=float(np.linalg.norm(self.root_angular_velocity)),
+            )
             return
         self.p.cmd.upper_body = None
         end = time.time() + 0.4
@@ -200,7 +237,7 @@ class StreamedArm:
         # unreachable.
         self.p.cmd.heading_offset = float(self.p.obs()["pelvis"]["yaw"])
 
-    def _push(self, q_mj29, *, reference_velocity=None, reference_time=None) -> None:
+    def _push(self, q_mj29, *, reference_velocity=None, reference_time=None, root_angular_velocity=None) -> None:
         """Buffer each pose with its own root rotation and optional 29-joint velocity."""
         q_mj29 = self._guard_left(np.asarray(q_mj29, dtype=float).copy())
         velocity = np.zeros(29) if reference_velocity is None else np.asarray(reference_velocity, dtype=float)
@@ -208,6 +245,9 @@ class StreamedArm:
             raise ValueError("reference_velocity must contain 29 finite values")
         if reference_velocity is not None and self.guard is not None and self.left_guard:
             raise ValueError("explicit velocity requires an unguarded reference")
+        if self._handoff_first_q is None:
+            self._handoff_first_q = q_mj29.copy()
+            self._handoff_first_velocity = velocity.copy()
         self.buf.append(mujoco_to_isaac(q_mj29).astype(np.float32))
         self.root_buf.append(np.asarray(self.root_quat, dtype=np.float32).copy())
         self.velocity_buf.append(mujoco_to_isaac(velocity).astype(np.float32))
@@ -216,7 +256,13 @@ class StreamedArm:
         if self.preview is not None:
             # Explicit physical time for control; priming samples the same clock.
             stamp = float(self.p.obs()["t"]) if reference_time is None else float(reference_time)
-            poses, speeds, roots, first_frame = self.preview.sample(stamp, q_mj29, velocity, self.root_quat)
+            poses, speeds, roots, first_frame = self.preview.sample(
+                stamp,
+                q_mj29,
+                velocity,
+                self.root_quat,
+                root_angular_velocity=root_angular_velocity,
+            )
             positions = np.array([mujoco_to_isaac(q) for q in poses], dtype=np.float32)
             velocities = np.array([mujoco_to_isaac(v) for v in speeds], dtype=np.float32)
         self.p.cmd.pose_chunk(
@@ -234,10 +280,218 @@ class StreamedArm:
             time.sleep(lag)
         else:
             self.next_t = time.time()
+        if reference_velocity is not None:
+            self.reference_velocity = velocity.copy()
+            if root_angular_velocity is None and self.preview is not None:
+                self.root_angular_velocity = np.asarray(
+                    self.preview.diagnostics["root_angular_velocity"], dtype=float
+                ).copy()
+            elif root_angular_velocity is not None:
+                self.root_angular_velocity = np.asarray(root_angular_velocity, dtype=float).copy()
+            self.reference_time = stamp if self.preview is not None else reference_time
 
-    def hold(self, seconds: float) -> None:
+    def hold(self, seconds: float, *, reference_velocity=None, root_angular_velocity=None) -> None:
+        velocity = None if reference_velocity is None else np.asarray(reference_velocity, dtype=float).copy()
+        angular = None if root_angular_velocity is None else np.asarray(root_angular_velocity, dtype=float).copy()
+        if velocity is not None and angular is None:
+            angular = np.zeros(3)
+        previous_stamp = self.reference_time if velocity is not None else None
         for _ in range(int(round(seconds / DT))):
-            self._push(self.q)
+            stamp = float(self.p.obs()["t"]) if velocity is not None else None
+            elapsed = 0.0 if velocity is None or previous_stamp is None else stamp - previous_stamp
+            if elapsed < 0 or elapsed > 0.5:
+                raise ValueError("streamed hold physical state clock gap")
+            if velocity is not None and elapsed > 0:
+                speed = max(float(np.max(np.abs(velocity))), float(np.linalg.norm(angular)))
+                scale = max(0.0, 1 - self.preview.acceleration * elapsed / speed) if speed else 0.0
+                next_velocity = velocity * scale
+                self.q += 0.5 * (velocity + next_velocity) * elapsed
+                velocity = next_velocity
+                if angular is not None:
+                    next_angular = angular * scale
+                    rotation = Rotation.from_quat(self.root_quat[[1, 2, 3, 0]])
+                    rotation = Rotation.from_rotvec(0.5 * (angular + next_angular) * elapsed) * rotation
+                    self.root_quat = rotation.as_quat()[[3, 0, 1, 2]]
+                    angular = next_angular
+                self.reference_velocity = velocity.copy()
+                self.root_angular_velocity = angular.copy()
+            if velocity is None:
+                # Preserve the legacy StreamedArm/PlannerArm override contract.
+                self._push(self.q)
+            else:
+                self._push(
+                    self.q,
+                    reference_velocity=velocity,
+                    reference_time=stamp,
+                    root_angular_velocity=angular,
+                )
+            previous_stamp = stamp
+            if stamp is not None:
+                self.reference_time = stamp
+        if velocity is not None:
+            self.reference_velocity = velocity
+        if angular is not None:
+            self.root_angular_velocity = angular
+
+    def stopping_reference(self):
+        """Return the exact bounded endpoint of the current continuous preview."""
+        if self.preview is None or not self.preview.continuous_handoff:
+            raise RuntimeError("braking handoff requires a continuous POSE preview")
+        if self.q is None or self.root_quat is None:
+            raise RuntimeError("braking handoff requires an active POSE reference")
+
+        probe = deepcopy(self.preview)
+        stamp = float(self.p.obs()["t"]) if self.reference_time is None else float(self.reference_time)
+        poses, _, roots, _ = probe.sample(
+            stamp,
+            self.q,
+            self.reference_velocity,
+            self.root_quat,
+            root_angular_velocity=self.root_angular_velocity,
+        )
+        current = int(probe.diagnostics["current_offset"])
+        speed = max(
+            float(np.max(np.abs(self.reference_velocity))),
+            float(np.linalg.norm(self.root_angular_velocity)),
+        )
+        stop_offset = int(np.ceil(speed / self.preview.acceleration / self.preview.dt - 1e-12)) if speed else 0
+        stop_index = current + stop_offset
+        if stop_index >= len(poses):
+            raise RuntimeError("continuous POSE preview does not reach rest inside its future window")
+        return dict(
+            joints=poses[stop_index].copy(),
+            root=roots[stop_index].copy(),
+            duration=stop_offset * self.preview.dt,
+            frames=stop_offset,
+            preview=probe.diagnostics.copy(),
+        )
+
+    @staticmethod
+    def _observed_rate_diagnostics(samples):
+        """Summarize measured q finite differences without calling them packet rates."""
+        if len(samples) < 2:
+            return dict(samples=len(samples), max_joint_speed=None, max_joint_acceleration=None)
+        velocities = []
+        velocity_times = []
+        for (t0, q0), (t1, q1) in zip(samples, samples[1:]):
+            dt = t1 - t0
+            if dt > 0:
+                velocities.append((q1 - q0) / dt)
+                velocity_times.append((t0 + t1) / 2)
+        if not velocities:
+            return dict(samples=len(samples), max_joint_speed=None, max_joint_acceleration=None)
+        acceleration = []
+        for t0, t1, v0, v1 in zip(velocity_times, velocity_times[1:], velocities, velocities[1:]):
+            if t1 > t0:
+                acceleration.append((v1 - v0) / (t1 - t0))
+        return dict(
+            samples=len(samples),
+            max_joint_speed=float(np.max(np.abs(velocities))),
+            max_joint_acceleration=float(np.max(np.abs(acceleration))) if acceleration else None,
+        )
+
+    def brake_to_stop(self, prediction=None):
+        """Emit the preview's acceleration-bounded braking path and finish at rest.
+
+        Collision admission belongs to the task policy and must happen before this
+        method: ``prediction`` is the already-admitted result of
+        :meth:`stopping_reference`.
+        """
+        prediction = self.stopping_reference() if prediction is None else prediction
+        frames = int(prediction["frames"])
+        if frames < 0:
+            raise ValueError("braking prediction has a negative frame count")
+
+        q = np.asarray(self.q, dtype=float).copy()
+        root = Rotation.from_quat(np.asarray(self.root_quat, dtype=float)[[1, 2, 3, 0]])
+        velocity0 = np.asarray(self.reference_velocity, dtype=float).copy()
+        angular0 = np.asarray(self.root_angular_velocity, dtype=float).copy()
+        endpoint_velocity, endpoint_angular = velocity0.copy(), angular0.copy()
+        speed0 = max(float(np.max(np.abs(velocity0))), float(np.linalg.norm(angular0)))
+        braking_time = speed0 / self.preview.acceleration if speed0 else 0.0
+        effective_lo, effective_hi = np.minimum(self.preview.lo, q), np.maximum(self.preview.hi, q)
+        stamp = float(self.p.obs()["t"]) if self.reference_time is None else float(self.reference_time)
+        command = [(stamp, velocity0.copy(), angular0.copy())]
+        observed = []
+        max_preview_acceleration = 0.0
+
+        def observe():
+            state = self.p.obs()
+            observed_stamp = float(state["t"])
+            joints = np.asarray(state["joints"], dtype=float)
+            if joints.shape == (29,) and np.isfinite(joints).all():
+                if not observed or observed_stamp > observed[-1][0]:
+                    observed.append((observed_stamp, joints.copy()))
+
+        observe()
+        for offset in range(1, frames + 1):
+            scale = max(0.0, 1 - offset * self.preview.dt / braking_time) if braking_time else 0.0
+            next_velocity = velocity0 * scale
+            interval_velocity = 0.5 * (endpoint_velocity + next_velocity)
+            following = q + interval_velocity * self.preview.dt
+            clipped = (following < effective_lo) | (following > effective_hi)
+            if np.any(clipped):
+                following = np.clip(following, effective_lo, effective_hi)
+                next_velocity[clipped] = 0.0
+
+            next_angular = angular0 * scale
+            interval_angular = 0.5 * (endpoint_angular + next_angular)
+            root = Rotation.from_rotvec(interval_angular * self.preview.dt) * root
+            q, endpoint_velocity, endpoint_angular = following, next_velocity, next_angular
+            stamp += self.preview.dt
+            self.q = q.copy()
+            self.root_quat = root.as_quat()[[3, 0, 1, 2]]
+            self._push(
+                self.q,
+                reference_velocity=endpoint_velocity,
+                reference_time=stamp,
+                root_angular_velocity=endpoint_angular,
+            )
+            max_preview_acceleration = max(
+                max_preview_acceleration,
+                float(self.preview.diagnostics.get("max_packet_acceleration", 0.0)),
+            )
+            command.append((stamp, endpoint_velocity.copy(), endpoint_angular.copy()))
+            observe()
+
+        self.reference_velocity = endpoint_velocity.copy()
+        self.root_angular_velocity = endpoint_angular.copy()
+        self.reference_time = stamp
+        if frames == 0:
+            self._push(
+                self.q,
+                reference_velocity=np.zeros(29),
+                reference_time=stamp,
+                root_angular_velocity=np.zeros(3),
+            )
+            command.append((stamp, np.zeros(29), np.zeros(3)))
+            observe()
+
+        joint_acceleration = []
+        angular_acceleration = []
+        for (t0, v0, w0), (t1, v1, w1) in zip(command, command[1:]):
+            dt = t1 - t0
+            if dt > 0:
+                joint_acceleration.append((v1 - v0) / dt)
+                angular_acceleration.append((w1 - w0) / dt)
+        self.braking_diagnostics = dict(
+            predicted=dict(prediction),
+            packet=dict(
+                samples=len(command),
+                initial_joint_speed=float(np.max(np.abs(velocity0))),
+                final_joint_speed=float(np.max(np.abs(self.reference_velocity))),
+                max_joint_speed=float(np.max(np.abs([sample[1] for sample in command]))),
+                max_joint_acceleration=(float(np.max(np.abs(joint_acceleration))) if joint_acceleration else 0.0),
+                initial_root_angular_speed=float(np.linalg.norm(angular0)),
+                final_root_angular_speed=float(np.linalg.norm(self.root_angular_velocity)),
+                max_root_angular_acceleration=(
+                    float(np.max(np.linalg.norm(angular_acceleration, axis=1))) if angular_acceleration else 0.0
+                ),
+                max_preview_joint_acceleration=max_preview_acceleration,
+            ),
+            observed=self._observed_rate_diagnostics(observed),
+        )
+        return self.braking_diagnostics
 
     def _guard_left(self, q: np.ndarray, observed=None) -> np.ndarray:
         """Keep the off (left) palm outside LEFT_SAFE_M of the object.

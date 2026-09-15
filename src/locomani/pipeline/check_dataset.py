@@ -63,6 +63,13 @@ LOCAL_STATE = SONIC_STATE + ["right_wrist_pos", "right_wrist_abs_quat"]
 LOCAL_ACTION = ["motion_token", "right_gripper"]
 LOCAL_STATE_DIM, LOCAL_ACTION_DIM = 53, 65
 LOCAL_VIDEO = ["ego_view", "right_wrist"]
+# The crate line (configs/gr00t_sonic_3cam_bimanual.py): both wrist poses in the
+# state, both gripper scalars in the action, all three cameras.
+CRATE_STATE = LOCAL_STATE + ["left_wrist_pos", "left_wrist_abs_quat"]
+CRATE_STATE_DIM = LOCAL_STATE_DIM + 7
+CRATE_ACTION = ["motion_token", "left_gripper", "right_gripper"]
+CRATE_ACTION_DIM = LOCAL_ACTION_DIM + 1
+CRATE_VIDEO = ["ego_view", "left_wrist", "right_wrist"]
 
 ALLOW_NO_POSE = False  # set from --allow-missing-object-pose
 
@@ -224,6 +231,13 @@ def pass_structure(root, info, eps, tasks, stats, r, n_videos):
     r.note(f"tasks: {list(tasks.values())}")
 
 
+def bimanual(root):
+    """A crate dataset: its task table names the crate. The task text is the
+    one field the converter takes from the manifest, so it is the honest tag."""
+    tasks = (root / "meta/tasks.jsonl").read_text().lower()
+    return "crate" in tasks
+
+
 def pass_modality(root, r):
     """Does the official SONIC config actually resolve against this dataset?"""
     print("\n[2/3] modality (Isaac-GR00T unitree_g1_sonic)")
@@ -245,6 +259,12 @@ def pass_modality(root, r):
             ("2cam", "state", LOCAL_STATE, LOCAL_STATE_DIM),
             ("2cam", "action", LOCAL_ACTION, LOCAL_ACTION_DIM),
         )
+        if bimanual(root):
+            profiles += (
+                ("3cam_bimanual", "state", CRATE_STATE, CRATE_STATE_DIM),
+                ("3cam_bimanual", "action", CRATE_ACTION, CRATE_ACTION_DIM),
+            )
+            r.note("crate task: also auditing the 3cam_bimanual profile (both wrists, both grippers)")
     for label, grp, want, want_dim in profiles:
         missing = [k for k in want if k not in mod.get(grp, {})]
         r.check(
@@ -272,7 +292,12 @@ def pass_modality(root, r):
         f"video: both streams gr00t_sonic_2cam.py reads are present "
         f"{sorted(have)}" + (f" -- MISSING {sorted(set(LOCAL_VIDEO) - have)}" if not set(LOCAL_VIDEO) <= have else ""),
     )
-    if "left_wrist" in have:
+    if bimanual(root):
+        r.check(
+            set(CRATE_VIDEO) <= have,
+            f"video: all three streams gr00t_sonic_3cam_bimanual.py reads are present {sorted(have)}",
+        )
+    elif "left_wrist" in have:
         r.note(
             "left_wrist is recorded but NOT trained on: over this dataset the "
             "left arm never moves, so its camera shows the table and an idle "
@@ -280,7 +305,7 @@ def pass_modality(root, r):
         )
 
 
-def pass_grasp(root, info, eps, r):
+def pass_grasp(root, info, eps, r, run=None):
     """Do the numbers describe a grasp, in the right causal order?
 
     Anchoring on the object's own height does NOT work: can_pose is expressed in
@@ -321,6 +346,20 @@ def pass_grasp(root, info, eps, r):
         return
     pose_col = pose_cols[0]
     r.note(f"object pose column: {pose_col}")
+    two_handed = bimanual(root)
+    if two_handed:
+        r.note("crate task: proximity is measured from the midpoint of both wrists; the close event is the right jaw")
+    # --trim-verification-tail's receipt: which source rows each episode kept.
+    trims = {}
+    trims_path = root / "meta/verification_trims.jsonl"
+    if trims_path.exists():
+        for line in trims_path.read_text().splitlines():
+            if line.strip():
+                row = json.loads(line)
+                trims[row["episode"]] = row
+    if run is not None:
+        r.note(f"world object height from the run's state trace ({run.object}, {run.trace_dir})")
+    world_source = None
 
     at_hand, rose_after, held, no_event = 0, 0, 0, 0
     rises, dists = [], []
@@ -332,7 +371,15 @@ def pass_grasp(root, info, eps, r):
         has_root = all(c in schema for c in root_cols)
         t = pq.read_table(p, columns=cols + (root_cols if has_root else []))
         can = np.stack(t[pose_col].to_pylist())[:, :3]
-        if has_root:
+        trim = trims.get(e["episode_index"])
+        if run is not None and trim is not None:
+            can_z_world = run.world_z(trim["source_session"], trim["source_episode"], trim["kept_source_rows"])
+            if len(can_z_world) != len(can):
+                raise SystemExit(
+                    f"episode {e['episode_index']}: trace lookup gave {len(can_z_world)} rows, parquet has {len(can)}"
+                )
+            world_source = "state trace"
+        elif has_root:
             # The pose column is in the PELVIS frame (same convention as the
             # SONIC exporter). The lift happens while the pelvis itself rises,
             # lowers and pitches (squat, carry), so a pelvis-frame z delta
@@ -344,9 +391,12 @@ def pass_grasp(root, info, eps, r):
             # third row of R(root): world z of a pelvis-frame vector
             r2 = np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], 1)
             can_z_world = rp[:, 2] + (r2 * can).sum(1)
+            world_source = "root pose columns"
         else:
             can_z_world = can[:, 2]
-        wrist = np.stack(t["observation.eef_state"].to_pylist())[:, 7:10]
+            world_source = world_source or "PELVIS-FRAME z (under-reads any lift the pelvis takes part in)"
+        eef = np.stack(t["observation.eef_state"].to_pylist())
+        wrist = (eef[:, 0:3] + eef[:, 7:10]) / 2 if two_handed else eef[:, 7:10]
         grip = np.stack(t["teleop.right_hand_joints"].to_pylist())[:, 0]
         thr = (np.percentile(grip, 95) + np.percentile(grip, 5)) / 2
         closed = grip < thr
@@ -371,7 +421,9 @@ def pass_grasp(root, info, eps, r):
         f"object-to-wrist distance holds steady at the end ({held}/{n}) -- rigid attachment, not a knock-over",
     )
     if rises:
-        r.note(f"rise after close: median {np.median(rises) * 100:.1f} cm, min {min(rises) * 100:.1f} cm")
+        r.note(
+            f"rise after close: median {np.median(rises) * 100:.1f} cm, min {min(rises) * 100:.1f} cm ({world_source})"
+        )
         r.note(f"final object-to-wrist offset: median {np.median(dists) * 100:.1f} cm")
 
 
@@ -557,6 +609,12 @@ def main():
         "when the privileged object-pose column is absent or "
         "ambiguous, instead of failing",
     )
+    ap.add_argument(
+        "--run-dir",
+        help="the pilot run directory (inputs.json, trace/, scene copy) that produced the dataset's "
+        "sessions: the grasp pass then judges the object's rise in WORLD z from the state trace "
+        "instead of the pelvis-frame pose column (which under-reads whole-body lifts)",
+    )
     args = ap.parse_args()
     globals()["ALLOW_NO_POSE"] = args.allow_missing_object_pose
 
@@ -569,7 +627,12 @@ def main():
 
     pass_structure(root, info, eps, tasks, stats, r, 0 if args.quick else args.videos)
     pass_modality(root, r)
-    pass_grasp(root, info, eps, r)
+    run = None
+    if args.run_dir:
+        from locomani.pipeline.world_lift import RunTraces
+
+        run = RunTraces(args.run_dir)
+    pass_grasp(root, info, eps, r, run)
     if not args.quick:
         pass_alignment(root, info, eps, r, args.align_episodes)
 

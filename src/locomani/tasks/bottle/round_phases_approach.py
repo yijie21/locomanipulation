@@ -19,6 +19,26 @@ from locomani.tasks.bottle import execution as stream_reach
 from locomani.tasks.bottle.round_phases import RoundContext, _rel_dbg, _rel_now
 
 
+def visible_stop(depth, edge, cfg, *, stop_depth=None, stop_edge=None):
+    """The visible expert stops at the measured object depth or, when configured, at a table-edge
+    distance, whichever comes first (the walking posture's capsule tangent to the edge)."""
+    stop_depth = cfg.visible_brake_depth if stop_depth is None else float(stop_depth)
+    stop_edge = cfg.visible_brake_edge if stop_edge is None else float(stop_edge)
+    return depth <= stop_depth or (stop_edge > 0 and edge <= stop_edge)
+
+
+def visible_speed_scale(depth, edge, cfg, *, stop_depth=None, stop_edge=None):
+    """Speed factor in [0, 1]: monotone in depth above the brake depth and, when configured, in
+    edge distance above the brake edge; the smaller of the two."""
+    band = max(cfg.visible_decel_band, 1e-6)
+    stop_depth = cfg.visible_brake_depth if stop_depth is None else float(stop_depth)
+    stop_edge = cfg.visible_brake_edge if stop_edge is None else float(stop_edge)
+    u = float(np.clip((depth - stop_depth) / band, 0.0, 1.0))
+    if stop_edge > 0:
+        u = min(u, float(np.clip((edge - stop_edge) / band, 0.0, 1.0)))
+    return u
+
+
 def _phase_approach(ctx: RoundContext):
     p, rm = ctx.p, ctx.rm
     if ctx.reach_config.image_servo:
@@ -26,7 +46,7 @@ def _phase_approach(ctx: RoundContext):
 
     def raise_arm(_s, dist):
         if ctx.coordinated is not None:
-            ctx.coordinated.walk_tick(_s)
+            ctx.coordinated.walk_tick(_s, edge_distance=ctx.edge_dist(p.pelvis_xy(_s)))
             return
         u = float(np.clip(1.0 - (dist - 0.06) / ctx.raise_lead, 0.0, 1.0))
         sm = 3 * u * u - 2 * u**3
@@ -131,91 +151,260 @@ def _phase_approach(ctx: RoundContext):
         appr_end = time.time() + seconds
         why, stall_x, stall_t = "timeout", None, time.time()
         brake_x, brake_e = float("nan"), float("nan")
+        last_slow_walk_command_speed = None
         from locomani.tasks.bottle.arrival_validation import ArrivalAdvance
 
         advance_gate = ArrivalAdvance(advance)
-        while time.time() < appr_end:
-            s = p.obs()
-            if s["fallen"]:
-                return "fell"
-            r = _rel_now(ctx, s)
-            if ramp or ctx.coordinated is not None:
-                raise_arm(s, float(np.linalg.norm(np.asarray(ctx.spawn_xy) - p.pelvis_xy(s))))
-            if ctx.coordinated is not None and ctx.coordinated.error:
-                return ctx.coordinated.error
-            reachable = rm.margin(r, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
+        trace = None
+
+        def measurement(state):
+            rel = _rel_now(ctx, state)
+            return dict(
+                observation_sequence=int(state["seq"]),
+                observation_physical_time_s=float(state["t"]),
+                pelvis_position_m=np.asarray(state["pelvis"]["pos"], dtype=float).tolist(),
+                object_depth_m=float(rel[0]),
+                table_edge_distance_m=float(ctx.edge_dist(p.pelvis_xy(state))),
+            )
+
+        def observe_settlement(
+            state,
+            *,
+            complete=False,
+            settled=False,
+            completion_reason=None,
+        ):
+            if trace is None:
+                return
+            sample = measurement(state)
+            request = trace["request"]
+            forward = np.asarray(request["forward_direction_xy"], dtype=float)
+            displacement = float(
+                np.dot(
+                    np.asarray(sample["pelvis_position_m"][:2]) - np.asarray(request["pelvis_position_m"][:2]),
+                    forward,
+                )
+            )
+            settling = trace["settling"]
+            settling["maximum_forward_displacement_m"] = max(settling["maximum_forward_displacement_m"], displacement)
+            settling["minimum_table_edge_distance_m"] = min(
+                settling["minimum_table_edge_distance_m"], sample["table_edge_distance_m"]
+            )
+            settling.update(
+                final_observation_sequence=sample["observation_sequence"],
+                final_physical_time_s=sample["observation_physical_time_s"],
+                final_forward_displacement_m=displacement,
+                final_object_depth_m=sample["object_depth_m"],
+                final_table_edge_distance_m=sample["table_edge_distance_m"],
+            )
+            if complete:
+                settling["complete"] = True
+                settling["settled"] = bool(settled)
+                settling["completion_reason"] = completion_reason
+
+        settlement_hook = getattr(ctx.coordinated, "set_approach_settlement_observer", None)
+        if settlement_hook is not None:
+            settlement_hook(observe_settlement)
+
+        def request_stop(state, reason, observation_wall_time):
+            nonlocal brake_x, brake_e, trace
+            walk = None if ctx.coordinated is None else ctx.coordinated.walking
+            idle_call_monotonic_before_s = time.monotonic()
+            idle_call_wall_before_s = time.time()
+            p.cmd.frame(mode=LocomotionMode.IDLE, facing=ctx.fv)
+            idle_call_monotonic_after_s = time.monotonic()
+            idle_call_wall_after_s = time.time()
+            sample = measurement(state)
+            trace = dict(
+                request=dict(
+                    **sample,
+                    reason=reason,
+                    forward_direction_xy=np.asarray(ctx.fv[:2], dtype=float).tolist(),
+                    observation_received_wall_time_s=float(observation_wall_time),
+                    idle_call_monotonic_before_s=idle_call_monotonic_before_s,
+                    idle_call_monotonic_after_s=idle_call_monotonic_after_s,
+                    idle_call_wall_before_s=idle_call_wall_before_s,
+                    idle_call_wall_after_s=idle_call_wall_after_s,
+                    nominal_stop_depth_m=float(
+                        ctx.reach_config.visible_brake_depth if walk is None else walk.nominal_stop_depth
+                    ),
+                    nominal_stop_edge_m=(
+                        None
+                        if (walk is None and ctx.reach_config.visible_brake_edge <= 0)
+                        or (walk is not None and walk.nominal_stop_edge is None)
+                        else float(ctx.reach_config.visible_brake_edge if walk is None else walk.nominal_stop_edge)
+                    ),
+                    chosen_stop_depth_m=float(
+                        ctx.reach_config.visible_brake_depth
+                        if walk is None or walk.chosen_stop_depth is None
+                        else walk.chosen_stop_depth
+                    ),
+                    chosen_stop_edge_m=(
+                        None
+                        if (walk is None and ctx.reach_config.visible_brake_edge <= 0)
+                        or (walk is not None and walk.chosen_stop_edge is None)
+                        else float(ctx.reach_config.visible_brake_edge if walk is None else walk.chosen_stop_edge)
+                    ),
+                    stop_lead_m=0.0 if walk is None else float(walk.stop_lead),
+                    stop_speed_m_s=0.0 if walk is None else float(walk.stop_speed),
+                    last_slow_walk_command_speed=last_slow_walk_command_speed,
+                ),
+                settling=dict(
+                    maximum_forward_displacement_m=0.0,
+                    minimum_table_edge_distance_m=sample["table_edge_distance_m"],
+                    final_observation_sequence=sample["observation_sequence"],
+                    final_physical_time_s=sample["observation_physical_time_s"],
+                    final_forward_displacement_m=0.0,
+                    final_object_depth_m=sample["object_depth_m"],
+                    final_table_edge_distance_m=sample["table_edge_distance_m"],
+                    complete=False,
+                    settled=False,
+                    completion_reason=None,
+                ),
+            )
+            ctx.execution.metrics.setdefault("approach_stop_requests", []).append(trace)
+            brake_x = sample["object_depth_m"]
+            brake_e = sample["table_edge_distance_m"]
+            return reason
+
+        def stop_reason(rel, edge_now):
+            reachable = rm.margin(rel, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
+            selected_stop_edge = ctx.reach_config.visible_brake_edge
             if VISIBLE:
-                stop_here = r[0] <= ctx.reach_config.visible_brake_depth
-            else:
-                stop_here = advance_gate.stop(r[0], reachable) if advance else reachable
-            if stop_here:
-                why = "visible brake depth" if VISIBLE else "advanced reachable stop" if advance else "can reachable"
-                brake_x, brake_e = r[0], ctx.edge_dist(p.pelvis_xy(s))
+                walk = None if ctx.coordinated is None else ctx.coordinated.walking
+                if walk is not None and walk.chosen_stop_edge is not None:
+                    selected_stop_edge = walk.chosen_stop_edge
+                if visible_stop(
+                    rel[0],
+                    edge_now,
+                    ctx.reach_config,
+                    stop_depth=None if walk is None else walk.chosen_stop_depth,
+                    stop_edge=None if walk is None else walk.chosen_stop_edge,
+                ):
+                    by_edge = selected_stop_edge > 0 and edge_now <= selected_stop_edge
+                    return "visible brake edge" if by_edge else "visible brake depth"
+            elif advance_gate.stop(rel[0], reachable) if advance else reachable:
+                return "advanced reachable stop" if advance else "can reachable"
+            if edge_now <= ctx.edge_min + EDGE_LEAD:
+                return "edge floor"
+            return None
+
+        while time.time() < appr_end:
+            state = p.obs()
+            observation_wall_time = time.time()
+            rel = _rel_now(ctx, state)
+            edge_now = ctx.edge_dist(p.pelvis_xy(state))
+            if state["fallen"]:
+                request_stop(state, "fell", observation_wall_time)
+                observe_settlement(state, complete=True, completion_reason="fell")
+                return "fell"
+
+            # Check the fresh sensor frame before camera/IK work can delay braking.
+            reason = stop_reason(rel, edge_now)
+            if reason is not None:
+                why = request_stop(state, reason, observation_wall_time)
                 break
-            if ctx.edge_dist(p.pelvis_xy(s)) <= ctx.edge_min + EDGE_LEAD:
-                why = "edge floor"
-                brake_x, brake_e = r[0], ctx.edge_dist(p.pelvis_xy(s))
+
+            if ramp or ctx.coordinated is not None:
+                raise_arm(
+                    state,
+                    float(np.linalg.norm(np.asarray(ctx.spawn_xy) - p.pelvis_xy(state))),
+                )
+
+            # Planning can be expensive and can also choose new per-round stop
+            # limits. Never reuse the observation from before it ran.
+            state = p.obs()
+            observation_wall_time = time.time()
+            rel = _rel_now(ctx, state)
+            edge_now = ctx.edge_dist(p.pelvis_xy(state))
+            if state["fallen"]:
+                request_stop(state, "fell", observation_wall_time)
+                observe_settlement(state, complete=True, completion_reason="fell")
+                return "fell"
+            if ctx.coordinated is not None and ctx.coordinated.error:
+                request_stop(state, ctx.coordinated.error, observation_wall_time)
+                observe_settlement(
+                    state,
+                    complete=True,
+                    completion_reason="coordinated planning error",
+                )
+                return ctx.coordinated.error
+            reason = stop_reason(rel, edge_now)
+            if reason is not None:
+                why = request_stop(state, reason, observation_wall_time)
                 break
-            if stall_x is None or stall_x - r[0] > 0.015:
-                stall_x, stall_t = r[0], time.time()
+
+            if stall_x is None or stall_x - rel[0] > 0.015:
+                stall_x, stall_t = rel[0], time.time()
             elif time.time() - stall_t > 5.0:
-                why = "stalled"
+                why = request_stop(state, "stalled", observation_wall_time)
                 break
-            # STEER at the planned stand, do not just push along the
-            # heading. Pushing along fv was the first version of this loop
-            # and it lost the lateral geometry: sideways error persisted,
-            # the can drifted onto the centreline (measured rel y +0.14
-            # where the plan wanted -0.12), the right arm's envelope is
-            # narrower there so the gate fired late, and the walk ran on to
-            # the edge floor -- which is what the corrector then backed out
-            # of.
-            to_stand = np.asarray(aim_xy) - p.pelvis_xy(s)
+
+            # Steer toward the planned stand rather than pushing along the
+            # heading, which would preserve lateral arrival error.
+            to_stand = np.asarray(aim_xy) - p.pelvis_xy(state)
             n_ts = float(np.linalg.norm(to_stand))
             mv = to_stand / n_ts if n_ts > 1e-3 else np.array(ctx.fv[:2])
             fv_now = ctx.fv
-            speed = APPR_MID if r[0] - ctx.plan_r <= MID_BAND else APPR_COARSE
+            speed = APPR_MID if rel[0] - ctx.plan_r <= MID_BAND else APPR_COARSE
             if VISIBLE and ctx.reach_config.visible_decel_band > 0:
-                # Monotone in the measured depth: full speed above the band,
-                # ramping to the gait's slow floor at the brake depth.
-                u = float(
-                    np.clip(
-                        (r[0] - ctx.reach_config.visible_brake_depth) / ctx.reach_config.visible_decel_band, 0.0, 1.0
-                    )
+                walk = None if ctx.coordinated is None else ctx.coordinated.walking
+                u = visible_speed_scale(
+                    rel[0],
+                    edge_now,
+                    ctx.reach_config,
+                    stop_depth=None if walk is None else walk.chosen_stop_depth,
+                    stop_edge=None if walk is None else walk.chosen_stop_edge,
                 )
                 speed = min(speed, APPR_SHUFFLE + (speed - APPR_SHUFFLE) * u)
             p.cmd.frame(
-                mode=LocomotionMode.SLOW_WALK, facing=fv_now, movement=(float(mv[0]), float(mv[1]), 0.0), speed=speed
+                mode=LocomotionMode.SLOW_WALK,
+                facing=fv_now,
+                movement=(float(mv[0]), float(mv[1]), 0.0),
+                speed=speed,
             )
+            last_slow_walk_command_speed = float(speed)
             time.sleep(0.02)
+        else:
+            state = p.obs()
+            observation_wall_time = time.time()
+            why = request_stop(
+                state,
+                "fell" if state["fallen"] else "timeout",
+                observation_wall_time,
+            )
+            if state["fallen"]:
+                observe_settlement(state, complete=True, completion_reason="fell")
+                return "fell"
+
         if ramp and ctx.coordinated is None:
-            # Finish whatever is left of the rise: the stop can fire before
-            # the slew reaches READY, and a snap there would be a step in the
-            # reference. The origin is the RAMP's own commanded state, not the
-            # measured pose -- re-anchoring on the measurement here (which is
-            # what this used to do) put a step of the whole tracking error
-            # back in, every time it ran. Costs nothing when the rise already
-            # finished during the walk: the first push returns converged and
-            # no frame is sent, so no standing is recorded.
+            # Finish a partly-completed rise while standing, retaining the ramp's
+            # commanded origin rather than re-anchoring on tracking error.
             t0 = time.time()
             while time.time() - t0 < ctx.raise_finish_max_s:
                 if ctx.arm_ramp.push(READY_UPPER) < 1e-3:
                     break
                 p.cmd.frame(mode=LocomotionMode.IDLE, facing=ctx.fv)
+                state = p.obs()
+                observe_settlement(state)
                 time.sleep(0.02)
             ctx.arm_ramp.settle()
             if time.time() - t0 > 0.10:
-                p.log(f"[gym] arm rise finished at the table: {time.time() - t0:.2f} s of standing")
-        # No settle hold at all any more (was 1.0 s, then 0.2 s). The grasp
-        # is a 50 Hz servo that re-aims on the measured object pose every
-        # tick, so a settled base buys nothing -- and every recorded standing
-        # frame here teaches a VLA that standing is what one does at the
-        # table (the round-1/2 stall).
-        x_end = _rel_now(ctx, p.obs())[0]
+                p.log(f"[gym] arm rise finished at table: {time.time() - t0:.2f} s standing")
+
+        final_state = p.obs()
+        observe_settlement(
+            final_state,
+            complete=ctx.coordinated is None,
+            completion_reason=("approach idle phase complete" if ctx.coordinated is None else None),
+        )
+        x_end = _rel_now(ctx, final_state)[0]
+        end_edge = ctx.edge_dist(p.pelvis_xy(final_state))
         p.log(
             f"[gym] approach: exit={why} braked at x {brake_x:.2f} "
             f"edge {brake_e:.2f} -> stopped x {x_end:.2f} "
-            f"edge {ctx.edge_dist(p.pelvis_xy(p.obs())):.2f} "
-            f"(carry {brake_x - x_end:+.2f}, plan_r {ctx.plan_r:.2f})"
+            f"edge {end_edge:.2f} "
+            f"(carry {brake_x - x_end:+.2f}, plan {ctx.plan_r:.2f})"
         )
         ctx.execution.metrics.setdefault("arrival_measurements", []).append(
             dict(
@@ -224,12 +413,11 @@ def _phase_approach(ctx: RoundContext):
                 brake_depth_m=brake_x,
                 brake_edge_m=brake_e,
                 end_depth_m=x_end,
-                end_edge_m=ctx.edge_dist(p.pelvis_xy(p.obs())),
+                end_edge_m=end_edge,
                 reason=why,
             )
         )
-        _rel_dbg(ctx, "post-approach", p.obs())
-
+        _rel_dbg(ctx, "post-approach", final_state)
         return why
 
     approach_result = do_approach(45.0, ramp=True)
@@ -237,6 +425,9 @@ def _phase_approach(ctx: RoundContext):
         return False, ctx.coordinated.error
     if approach_result == "fell":
         return False, "[stand] fell during the approach"
+    settle_for_admission = getattr(ctx.coordinated, "settle_for_admission", None)
+    if settle_for_admission is not None and not settle_for_admission():
+        return False, ctx.coordinated.error or "[stand] base did not settle after approach"
     _r0 = _rel_now(ctx, p.obs())
     ctx.execution.metrics["first_stop"] = round(float(np.hypot(_r0[0], _r0[1])), 3)
 

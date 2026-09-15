@@ -127,6 +127,19 @@ def expand_hands(gripper):
     return LEFT_HAND_CONST.copy(), right
 
 
+def hand_from_gripper(gripper):
+    """One gripper scalar -> one 7-wide protocol v4 hand field (jaw components 0 and 1)."""
+    g = float(np.clip(gripper, GRIPPER_MIN, GRIPPER_MAX))
+    hand = np.zeros(7, dtype=np.float32)
+    hand[0] = hand[1] = g
+    return hand
+
+
+def expand_hands_bimanual(left_gripper, right_gripper):
+    """Two predicted gripper scalars (the crate action's last two dims) -> (left7, right7)."""
+    return hand_from_gripper(left_gripper), hand_from_gripper(right_gripper)
+
+
 def split_action(action):
     """A 65-wide model action -> (token[64], gripper scalar), snapped.
 

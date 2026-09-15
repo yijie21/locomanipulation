@@ -12,7 +12,7 @@
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
-| 后续链路 | 默认 visual 路径拒绝 `--record`；尚未验证正式 LeRobot 数据导出和 VLA 学习 |
+| 后续链路 | `--record` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
 
 当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
 仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
@@ -55,8 +55,8 @@ bash scripts/install_scene.sh
 runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
 进度见本次运行目录的启动日志。每次新实验使用新的 `--out`，查看 manifest 和完整视频判断结果。
 
-**不要加 `--record`**：本流程直接保存视频、相机和动作记录，
-这些产物尚不能作为正式 LeRobot episode 交给转换器。启动参数中的 `--gpu 0` 是显式选择；
+不加 `--record` 时本流程只保存视频、相机和动作记录（诊断用途，不进转换器）；
+正式训练数据见第 4 节的录制方式。启动参数中的 `--gpu 0` 是显式选择；
 不要照抄 runner 的 GPU 1 默认值。
 
 ## 4. 批量采集
@@ -71,6 +71,50 @@ runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地
 ```
 
 `--rounds` 控制尝试数；`--batch-rounds N` 可按批重启栈，默认整个 visual pilot 使用一批。
+
+### 录制成正式训练数据
+
+加 `--record`，runner 会在本实例上启动 data exporter（`RECORD_INSTANCE=1`），
+专家在任务开始时发 `c`、评估后发 `c`（成功保存）或 `x`（失败丢弃），
+每批一个 exporter session，写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，
+并记录在 `<out>/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
+exporter 约占 500 个线程，容器 pid 上限 3840，实测两个录制栈约 1800，
+不要再并行第三个。实例不再被强制成 0，因此可以在 GPU 1 / 实例 1 上与
+单臂采集（GPU 0 / 实例 0）并行录制；同一块 GPU 上不能跑两个仿真。
+
+```bash
+"$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
+  --expert visual --config configs/tasks/crate_visual_low_reach.json \
+  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_record_10 \
+  --instance "$INSTANCE" --gpu 1 --rounds 10 --batch-rounds 10 --seed 7000 --record
+```
+
+manifest 行带 `task`、`produced`、`ok` 和成功局的
+`execution.metrics.training_tail.end_seq`（进入直立持物验收的序号），
+转换器按 [数据指南](dataset.md) 的方式裁掉验收尾段：
+
+```bash
+"$VENV_DATA_PY" -m locomani.pipeline.convert_to_hf_format \
+  --sessions $(python3 -c "import json;print(' '.join(json.load(open('outputs/crate_record_10/inputs.json'))['sessions']))") \
+  --manifest $(python3 -c "import json;print(' '.join(json.load(open('outputs/crate_record_10/inputs.json'))['manifests']))") \
+  --trim-verification-tail --out outputs/crate_record_10/dataset --jobs 4
+"$VENV_DATA_PY" -m locomani.pipeline.check_dataset outputs/crate_record_10/dataset \
+  --run-dir outputs/crate_record_10
+```
+
+`--run-dir` 让审计从本次运行的 `trace/` 按 exporter 的 `priv_seq` 精确取出箱子的
+世界高度来判"闭合后抬升"；没有它，检查器只能用骨盆坐标系的位姿列，
+而躯干直立时这一列会把 20 cm 的真实抬升读成几厘米（2026-09-14 验证批：
+7/7 世界抬升 21.2–21.6 cm，骨盆系只判出 2/7）。双臂时贴近度用两腕中点。
+
+训练用 `configs/gr00t_sonic_3cam_bimanual.py`（60 维状态、66 维动作、三路相机）；
+`check_dataset` 在任务文本含 crate 时同时审计这个 profile。
+
+**预期成功率**（2026-09-14，本页第 2 节的场景 + `crate_visual_low_reach.json` + SONIC v1.1
++ 带补丁的 deploy，GPU 1 / 实例 1 `--record`）：260 次尝试的正式录制前 194 次 163 成功（84%），
+10 局验证批 7/10；失败以 `basket_tilt`、`invalid_initial_distance` 和接触类为主。
+另一台机器数字不同时，先按第 7 节"别人的成功率与本机不同"逐项核对。
+训练后的闭环评测见 [双臂 Closed-loop](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)。
 必须保留 `--expert visual` 和上述配置：裸 runner 默认是 `wall` 诊断，
 `run_wall_pilot.sh` / `run_bimanual_pilot.sh` 也不代表这里的连续 visual 专家。
 `--resume` 从首个未完成 batch 继续，不是 episode 级续采；先检查原有尝试记录和未完成 batch。
@@ -177,8 +221,8 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 ```
 
 `crate_wall.json` 显式开启 `wall_walk`；不加载 profile 时默认为 false。
-wall / planner carry 添加 `--record` 会强制使用**实例 0**，未指定 batch 大小时采用 10；
-须确认实例 0 归本任务所有。成功 episode 保存、失败丢弃，检查 `produced` 与 session 配对。
+wall / planner carry 添加 `--record` 时在本实例启动 exporter，未指定 batch 大小时采用 10；
+成功 episode 保存、失败丢弃，检查 `produced` 与 session 配对。
 转换参考 [数据指南](dataset.md)和 [双臂数据配置](../configs/gr00t_sonic_3cam_bimanual.py)；
 有 exporter 录制入口不等于已经验证 VLA 学习，也不等同于默认 visual 的完整持物站直流程。
 

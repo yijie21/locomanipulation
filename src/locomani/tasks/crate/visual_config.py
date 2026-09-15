@@ -12,10 +12,15 @@ class CrateVisualConfig:
     start_edge_min: float = 1.2  # initial pelvis distance from the near table edge, metres
     start_edge_max: float = 1.5  # upper end of initial table-edge distance sampling
     walk_speed: float = 0.35  # maximum SONIC approach speed command, metres/second
+    walk_speed_min: float = (
+        0.35  # smallest approach command; the deploy does not step below ~0.3, so a lower floor is a dead command
+    )
     walk_brake_margin: float = 0.07  # stop commanding steps before the final basket distance
     walk_timeout: float = 30.0  # maximum walking and stance-settling duration
     settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
     stand_lateral_tolerance: float = 0.04  # metres; final body IK still owns low-reach admission
+    stand_depth_tolerance: float = 0.04  # metres past stand_off a quiet stance may rest before re-walking
+    stand_depth_retries: int = 2  # re-walks allowed when the quiet stance is farther than the tolerance
     lift_seconds: float = 4.0  # lift ramp duration; assisted standing overlaps after the measured probe
     stand_seconds: float = 5.0  # attached recovery duration after the measured probe, seconds
     upright_tolerance_deg: float = 12.0  # measured torso lean allowed at successful completion
@@ -51,8 +56,12 @@ class CrateVisualConfig:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")
         if not 0 <= self.waist_pitch_max <= 0.52:
             raise ValueError("visual.waist_pitch_max must be in [0, 0.52]")
+        if not isinstance(self.stand_depth_retries, int) or isinstance(self.stand_depth_retries, bool):
+            raise ValueError("visual.stand_depth_retries must be an integer")
         if not 0 < self.upright_tolerance_deg <= 20:
             raise ValueError("visual.upright_tolerance_deg must be in (0, 20]")
+        if not 0 < self.walk_speed_min <= self.walk_speed:
+            raise ValueError("visual.walk_speed_min must be positive and at most walk_speed")
         if not 0 < self.probe_height < self.lift_height:
             raise ValueError("visual.probe_height must be smaller than lift_height")
         if not 1.2 <= self.start_edge_min <= self.start_edge_max <= 1.5:
@@ -60,6 +69,7 @@ class CrateVisualConfig:
         for name in (
             "stand_off",
             "stand_lateral_tolerance",
+            "stand_depth_tolerance",
             "lift_seconds",
             "stand_seconds",
             "upright_tolerance_deg",

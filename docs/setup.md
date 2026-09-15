@@ -367,9 +367,15 @@ preset / target / target_pool / 桌上物体:
   target      water_bottle
   target_pool ['water_bottle']
   on the table ['water_bottle']
+  finger pads HARDENED (priority 1, condim 4)
 ```
 
 对不上就是 `SCENE_PRESET` 没生效(最常见的是给在了 `start_stack.sh` 上)。
+最后一行必须是 HARDENED:2026-09-14 起安装脚本默认给指垫加硬接触
+(`build_sim_scene.py --harden-pads`,`object` 级),否则全身抓取抬升时瓶子会从爪中
+蠕变滑出(同样 20 个 seed:软垫 12/20 含 5 次滑脱,硬垫 15/20 无滑脱)。
+`HARDEN_PADS=0 SCENE_PRESET=bottle_only bash scripts/install_scene.sh` 重建
+2026-09-14 之前的软垫基线;那之前采的数据集和固定 case bank 都对应软垫场景。
 
 细节见[下一节](collection.md#2-环境与场景)。
 

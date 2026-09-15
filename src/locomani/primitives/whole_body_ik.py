@@ -83,6 +83,7 @@ class WholeBodyIK:
         self.seed[4 + np.array([0, 6])] -= 0.3
         self.seed[18] = min(0.45, config.waist_pitch_max)
         self.seed = np.clip(self.seed, self.lo, self.hi)
+        self.last_diagnostics = {}
 
     def put(self, x):
         ik = self.ik
@@ -99,10 +100,38 @@ class WholeBodyIK:
         d = self.ik.data
         return np.array([d.xpos[b] + d.xmat[b].reshape(3, 3) @ self.offset for b in self.hands])
 
-    def solve(self, positions, rotations, *, seed=None, bounds=None, posture=None, torso_rotation=None, iterations=120):
+    def solve(
+        self,
+        positions,
+        rotations,
+        *,
+        seed=None,
+        bounds=None,
+        posture=None,
+        posture_weights=None,
+        continuity_reference=None,
+        continuity_dt=None,
+        continuity_weight=0.0,
+        torso_rotation=None,
+        iterations=120,
+    ):
         d = self.ik.data
         positions, rotations = np.asarray(positions), np.asarray(rotations)
         prior = self.q0 if posture is None else posture
+        if posture_weights is None:
+            posture_scale = 0.008 if posture is None else 0.04
+        else:
+            posture_scale = np.asarray(posture_weights, dtype=float)
+            if posture_scale.shape != (29,) or not np.isfinite(posture_scale).all() or np.any(posture_scale < 0):
+                raise ValueError("posture_weights must contain 29 finite nonnegative values")
+        if not np.isfinite(continuity_weight) or continuity_weight < 0:
+            raise ValueError("continuity_weight must be finite and nonnegative")
+        if continuity_weight > 0:
+            continuity_reference = np.asarray(continuity_reference, dtype=float)
+            if continuity_reference.shape != (33,) or not np.isfinite(continuity_reference).all():
+                raise ValueError("continuity_reference must contain 33 finite values")
+            if continuity_dt is None or not np.isfinite(continuity_dt) or continuity_dt <= 0:
+                raise ValueError("continuity_dt must be positive and finite")
 
         def residual(x):
             points = self.tools(x)
@@ -115,23 +144,37 @@ class WholeBodyIK:
             hand_rot = np.concatenate(
                 [Rotation.from_matrix(d.xmat[b].reshape(3, 3) @ r.T).as_rotvec() for b, r in zip(self.hands, rotations)]
             )
+            continuity = (
+                np.empty(0)
+                if continuity_weight == 0
+                else continuity_weight * (x - continuity_reference) / continuity_dt
+            )
             return np.r_[
                 20 * (d.xpos[self.feet] - self.feet_pos).ravel(),
                 3 * foot_rot,
                 10 * ((points - positions) * self.hand_weights[:, None]).ravel(),
                 0.6 * hand_rot * np.repeat(self.hand_weights, 3),
                 self.com_weight * (d.subtree_com[self.pelvis, :2] - self.com0),
-                (0.008 if posture is None else 0.04) * (x[4:] - prior),
+                posture_scale * (x[4:] - prior),
                 0.3 * (x[2] - self.base0[2]),
                 np.zeros(3)
                 if torso_rotation is None
                 else 1.5 * Rotation.from_matrix(d.xmat[self.torso].reshape(3, 3) @ torso_rotation.T).as_rotvec(),
+                continuity,
             ]
 
         lo, hi = (self.lo, self.hi) if bounds is None else bounds
         x0 = np.clip(self.seed if seed is None else seed, lo, hi)
         result = least_squares(residual, x0, bounds=(lo, hi), max_nfev=iterations, ftol=1e-6, xtol=1e-6, gtol=1e-6)
         self.seed = result.x.copy()
+        continuity_velocity_error = (
+            0.0 if continuity_weight == 0 else float(np.max(np.abs((result.x - continuity_reference) / continuity_dt)))
+        )
+        self.last_diagnostics = dict(
+            continuity_weight=float(continuity_weight),
+            continuity_velocity_error=continuity_velocity_error,
+            posture_residual_norm=float(np.linalg.norm(np.asarray(posture_scale) * (result.x[4:] - prior))),
+        )
         rotation = self.put(result.x)
         return WholeBodyPose(
             result.x[4:].copy(),

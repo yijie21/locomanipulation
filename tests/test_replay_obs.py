@@ -21,6 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from locomani.pipeline import replay_obs  # noqa: E402
+from locomani.schema import SONIC_BOTTLE  # noqa: E402
 
 
 def _obs(**over):
@@ -52,8 +53,8 @@ def test_the_key_set_matches_the_live_observation_builder():
         "ObsBuilder.build() and replay_obs disagree about the state keys; "
         "replaying a different observation than the eval sends answers a different question"
     )
-    for key in replay_obs.VIDEO_KEYS:
-        assert f'"{key.split(".")[-1]}"' in src
+    # The live builder takes its camera names from the task schema (SONIC_BOTTLE by default).
+    assert tuple(replay_obs.VIDEO_KEYS) == tuple(f"video.{k}" for k in SONIC_BOTTLE.video_keys)
 
 
 def test_check_keys_rejects_a_missing_or_extra_key():

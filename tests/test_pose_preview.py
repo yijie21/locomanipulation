@@ -51,3 +51,40 @@ def test_future_brakes_within_joint_bounds_without_moving_a_stationary_reference
     assert np.max(positions) <= 1
     np.testing.assert_allclose(positions[:, 1:], 0)
     np.testing.assert_allclose(velocity[-1], 0)
+
+
+def test_continuous_preview_handles_sparse_duplicate_samples_and_out_of_limit_takeover():
+    preview = PosePreview(
+        acceleration=2.0,
+        joint_limits=(np.full(29, -1.0), np.full(29, 1.0)),
+        continuous_handoff=True,
+    )
+    q0, v0 = np.zeros(29), np.full(29, 0.6)
+    preview.sample(0.0, q0, v0, [1, 0, 0, 0])
+    # Duplicate physical ticks replace the current reference instead of
+    # manufacturing time or integrating velocity.
+    duplicate = q0 + 0.01
+    p_duplicate, _, _, _ = preview.sample(0.0, duplicate, v0, [1, 0, 0, 0])
+    np.testing.assert_allclose(p_duplicate[0], duplicate)
+
+    # Incompatible sparse endpoint velocities cannot make Hermite history
+    # overshoot either observed endpoint.
+    q1 = np.full(29, 0.04)
+    positions, velocities, _, _ = preview.sample(0.10, q1, -v0, [1, 0, 0, 0])
+    history = positions[: preview.diagnostics["current_offset"] + 1]
+    assert np.min(history) >= 0.01 - 1e-12
+    assert np.max(history) <= 0.04 + 1e-12
+    np.testing.assert_allclose(np.diff(positions, axis=0) / preview.dt, velocities[1:], atol=1e-8)
+
+    # A planner pose already just outside a nominal bound is the first emitted
+    # pose and the preview never snaps it back inside in one frame.
+    outside = np.zeros(29)
+    outside[0] = 1.03
+    second = PosePreview(
+        acceleration=2.0,
+        joint_limits=(np.full(29, -1.0), np.full(29, 1.0)),
+        continuous_handoff=True,
+    )
+    positions, _, _, _ = second.sample(0.0, outside, np.zeros(29), [1, 0, 0, 0])
+    assert positions[0, 0] == pytest.approx(1.03)
+    np.testing.assert_allclose(positions[:, 0], 1.03)

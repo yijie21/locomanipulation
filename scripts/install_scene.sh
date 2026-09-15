@@ -61,10 +61,19 @@ fi
 # the first time scene_lib.py changes. Do not read it as "the baked scene is
 # fine".
 PY="$SONIC_ROOT/.venv_sim/bin/python"
+# Finger pads are hardened by default since 2026-09-14 (build_sim_scene.py
+# --harden-pads, level `object`): with MuJoCo's default soft contact a held
+# bottle crept out of the jaws during the whole-body lift (5 of 20 sampled
+# rounds), with the hardened pads none did (memory mujoco-grip-creep). The
+# crate scene has been hardened in code since 2026-09-11. HARDEN_PADS=0 rebuilds
+# the pre-2026-09-14 soft-pad baseline; datasets and case banks from before
+# that date were collected against it.
+PAD_ARG=(--harden-pads)
+if [ "${HARDEN_PADS:-1}" = "0" ]; then PAD_ARG=(); fi
 if [ -x "$PY" ]; then
     "$PY" "$LOCOMANI_SRC/sim/build_sim_scene.py" \
         "$ROOT/outputs/scene" "$ROOT/outputs/scene/sim" \
-        --preset "${SCENE_PRESET:-}" \
+        --preset "${SCENE_PRESET:-}" "${PAD_ARG[@]}" \
         | tail -n 3
     # Echo the result. A scene built with the wrong SCENE_PRESET is otherwise
     # indistinguishable from a right one until grasp_gym says "targets not in
@@ -78,6 +87,13 @@ print(f"  preset      {preset or '<none> (default multi-object table)'}")
 print(f"  target      {m.get('target_object')}")
 print(f"  target_pool {m.get('target_pool') or [m.get('target_object')]}")
 print(f"  on the table {sorted(m.get('objects', {}))}")
+import mujoco
+model = mujoco.MjModel.from_xml_path(sys.argv[1].replace("scene_meta.json", "scene_locomani.xml"))
+pads = [i for i in range(model.ngeom) if model.geom_dataid[i] >= 0
+        and model.mesh(int(model.geom_dataid[i])).name in ("dex1_col_1", "dex1_col_2")
+        and (model.geom_contype[i] or model.geom_conaffinity[i])]
+hard = all(model.geom_priority[i] == 1 and model.geom_condim[i] == 4 for i in pads)
+print(f"  finger pads {'HARDENED (priority 1, condim 4)' if hard else 'SOFT (MuJoCo default; HARDEN_PADS=0 baseline)'}")
 EOF
 else
     echo

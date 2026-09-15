@@ -274,7 +274,8 @@ def parse_args(argv=None):
         help="stiffen the four dex1 finger-pad collision geoms (priority 1, condim 4, and --pad-level's "
         "solref/solimp): a held object creeps out of the soft default contact at 0.2-0.5 cm/s, which any "
         "hold longer than a few seconds meets (pick_place carry; memory mujoco-grip-creep). Off by default "
-        "so the bottle/crate gate baselines keep their physics.",
+        "in this CLI; scripts/install_scene.sh passes it since 2026-09-14 (HARDEN_PADS=0 there rebuilds the "
+        "soft-pad baseline that every dataset and case bank before that date was collected against).",
     )
     ap.add_argument(
         "--pad-level",

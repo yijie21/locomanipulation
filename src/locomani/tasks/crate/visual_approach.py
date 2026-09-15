@@ -34,14 +34,51 @@ class VisualApproach:
         self.relative_speed = self.angular_speed = 0.0
         self.relative_velocity = np.zeros(2)
         self.stop_distance = config.stand_off + config.walk_brake_margin
+        # Every quiet stance the walk delivered, whether or not it was accepted.
+        # The gait scatters the achieved depth by centimetres around the planned
+        # stop, and a far stance is what the reach later cannot support.
+        self.stand_attempts = []
+        self.depth_retries = 0
+        self.quiet_points = []
 
-    def retry_closer(self):
-        """Use remaining braking allowance after unsupported reach admission; never pass stand_off."""
+    def _tighten_stop(self):
+        """Halve the remaining braking allowance; never command a stop past stand_off."""
         allowance = self.stop_distance - self.config.stand_off
         if allowance <= 0:
             return False
         self.stop_distance = self.config.stand_off + (allowance / 2 if allowance > 0.01 else 0)
-        self.phase, self.quiet_since = "walk", None
+        return True
+
+    def _walk_again(self):
+        self.phase, self.quiet_since, self.quiet_points = "walk", None, []
+
+    def retry_closer(self):
+        """Use remaining braking allowance after unsupported reach admission; never pass stand_off."""
+        if not self._tighten_stop():
+            return False
+        self._walk_again()
+        return True
+
+    def _stance_converged(self):
+        """Depth-axis convergence: a quiet stance farther than the tolerance re-walks while retries remain."""
+        cfg = self.config
+        # Judge the stance on the quiet interval's mean, not one pose sample:
+        # millimetre pose jitter must not decide a re-walk any more than it
+        # decides quietness.
+        point = np.mean(self.quiet_points, axis=0)
+        depth = float(point[0] - cfg.stand_off)
+        attempt = dict(depth_m=float(point[0]), lateral_m=float(point[1]), depth_error_m=depth)
+        # Millimetre resolution: the visible pose is not better than that, and
+        # float rounding must not turn a stance on the tolerance into a re-walk.
+        if round(depth, 3) > cfg.stand_depth_tolerance and self.depth_retries < cfg.stand_depth_retries:
+            self.depth_retries += 1
+            self._tighten_stop()
+            attempt["accepted"] = False
+            self.stand_attempts.append(attempt)
+            self._walk_again()
+            return False
+        attempt["accepted"] = True
+        self.stand_attempts.append(attempt)
         return True
 
     def step(self, wall_time, target, base_quaternion, *, grasp_pose_available, motion_time=None, base_velocity=None):
@@ -84,11 +121,22 @@ class VisualApproach:
             angular = self.angular_speed if base_velocity is None else rate
             quiet = grasp_pose_available and speed < 0.06 and angular < 0.2
             self.quiet_since = (now if self.quiet_since is None else self.quiet_since) if quiet else None
+            self.quiet_points = self.quiet_points + [point[:2].copy()] if quiet else []
             ready = self.quiet_since is not None and now - self.quiet_since >= cfg.settle_seconds
+            if ready and not self._stance_converged():
+                return self._walk_command(point, reason)
             return ApproachCommand(self.phase, np.zeros(3), ready=ready, reason=reason)
+        return self._walk_command(point, reason)
+
+    def _walk_command(self, point, reason):
+        cfg = self.config
         error = np.array([max(0, point[0] - cfg.stand_off), point[1], 0.0])
         direction = error / max(np.linalg.norm(error), 1e-6)
-        speed = float(np.clip(0.7 * np.linalg.norm(error), 0.10, cfg.walk_speed))
+        # The planner's speed field is a step, not a slope (backends/sonic/gait_speeds.py):
+        # 0.10 delivered 0.011 m/s over 940 samples of two crate batches while 0.35
+        # delivered 0.48 m/s. A floor below the step is a walk that never starts,
+        # which is how a depth re-walk stood still for 20 s.
+        speed = float(np.clip(0.7 * np.linalg.norm(error), cfg.walk_speed_min, cfg.walk_speed))
         return ApproachCommand(self.phase, direction, speed, reason=reason)
 
 

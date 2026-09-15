@@ -132,11 +132,39 @@ OURS_INITIAL_MOTION_TOKEN = np.array(
 )
 
 
+def _read_token_file(filename) -> dict:
+    """Two on-disk forms: a bare 64-list (the ready-grasp era) or a dict with
+    `token` and, optionally, `arms` -- the 14 arm joints (MuJoCo order: left 7,
+    right 7) the token is expected to deliver, measured from the training data
+    whose first frames the token was derived from."""
+    data = json.loads(Path(filename).read_text())
+    return data if isinstance(data, dict) else {"token": data}
+
+
 def load_token_file(filename) -> np.ndarray:
-    token = np.asarray(json.loads(Path(filename).read_text()), dtype=np.float32)
+    token = np.asarray(_read_token_file(filename)["token"], dtype=np.float32)
     if token.shape != (64,) or not np.isfinite(token).all() or np.max(abs(token)) > 1.25:
         raise ValueError("Initial token file must contain 64 finite values within [-1.25, 1.25]")
     return token
+
+
+def initial_arms() -> np.ndarray | None:
+    """The arm posture INIT_TOKEN_FILE declares, or None for a bare-token file.
+
+    The ready-grasp token file has none and the prelude checks READY_UPPER; the
+    whole-body file carries the hanging arms its data starts from, because the
+    continuous expert never primes READY (docs/collection.md) and a policy
+    trained on that data must be handed over from the same posture.
+    """
+    if not INIT_TOKEN_FILE or not Path(INIT_TOKEN_FILE).exists():
+        return None  # a missing file is load_token_file's error to raise, at prime time
+    arms = _read_token_file(INIT_TOKEN_FILE).get("arms")
+    if arms is None:
+        return None
+    arms = np.asarray(arms, dtype=float)
+    if arms.shape != (14,) or not np.isfinite(arms).all():
+        raise ValueError("Initial token file `arms` must contain 14 finite arm joints")
+    return arms
 
 
 def initial_token() -> np.ndarray:

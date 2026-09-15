@@ -381,19 +381,35 @@ def _phase_spawn_and_settle(ctx: RoundContext):
         stamp = time.time()
         reset.start_video(f"gym_{int(stamp)}")
         ctx.execution.metrics["video_start_wall"] = stamp
+    from locomani.tasks.bottle.policy import prepares_during_navigation
+
     if ctx.reach_config.ready_grasp_baseline and ctx.vla_policy is None:
         from locomani.tasks.bottle.ready_grasp_policy import prepare_ready
 
         # This drives the expert encoder's upper-body reference. Token-only
         # deployment initializes through its own VLA prelude; asking it to
         # execute this reference can time out before the first model request.
-        if not prepare_ready(p):
-            return False, "[stand] baseline ready posture not delivered"
+        #
+        # The continuous expert keeps the deploy's hanging arms and raises
+        # the right one during the walk with rate limits (walking_reach.py);
+        # priming READY here and then seeding the takeover from the live
+        # reference recorded a both-arms raise at 0.5 s and a drop back at
+        # 1.5 s. Only the waist is prepared for it, and that part is not
+        # optional: without it the spawn view gate rejected 6/10 rounds.
+        arms = not prepares_during_navigation(ctx.reach_config)
+        if not prepare_ready(p, arms=arms):
+            return (
+                False,
+                "[stand] baseline ready posture not delivered" if arms else "[stand] neutral waist not delivered",
+            )
     elif ctx.reach_config.ready_grasp_baseline and ctx.vla_policy is not None and initial_pose.INIT_TOKEN_FILE:
         from locomani.backends.sonic.initial_pose import prepare_token_pose
         from locomani.tasks.bottle.ready_grasp_policy import ready_q
 
-        if not prepare_token_pose(p, ready_q()[15:]):
+        # The token file may declare the arms it delivers (whole-body data
+        # starts from hanging arms); a bare token file keeps the READY check.
+        expected_arms = initial_pose.initial_arms()
+        if not prepare_token_pose(p, ready_q()[15:] if expected_arms is None else expected_arms):
             return False, "[stand] token-only ready posture not delivered"
     _o0 = p.obs()["objects"][ctx.obj_key]
     cam0 = _o0.get("cam")

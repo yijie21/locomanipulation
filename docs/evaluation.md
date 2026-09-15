@@ -126,6 +126,15 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
     --out outputs/eval/<run>/closed_loop.json
 ```
 
+**初始 token 文件必须与训练数据的开局姿势一致。** `run_learn_pilot` 的
+`--initial-token-file` 默认是 `configs/deployment/ready_grasp_initial_token.json`(READY
+抬臂姿势的裸 64 维 token,prelude 之后按 `ready_q()` 的手臂检查)。用 `bottle_whole_body.json`
+采的数据从 SONIC 自己的垂臂参考开始(2026-09-14 起),对应文件是
+`configs/deployment/whole_body_initial_token.json`:190 集训练数据首帧 token 的量化均值,外加
+`arms` 字段(首帧实测 14 个手臂关节,MuJoCo 顺序),prelude 改按它检查。拿错文件的症状是
+100 局全部 `[stand] token-only ready posture not delivered`(2026-09-14 实测 10/10)。
+带 `arms` 的 dict 形式和裸列表形式都能被 `initial_pose.load_token_file` 读取。
+
 动作下发相关的几个参数互相有隐式生效前提(完整 help 文本见
 `eval_closed_loop.py:86-124`)。**这张表的默认值就是代码里的默认值**——两者
 分家过一次(表写 `--execution-horizon` 8 而代码是 16;表写 `--ensemble` 1 而
@@ -399,6 +408,17 @@ stack 在静止站立时**真实发出过**的 token，取到其余 193 个 L1 �
 落在 `src/locomani/backends/sonic/initial_pose.py`，默认生效；`TF_INIT_TOKEN=official` 可退回官方。
 实测录像里托管段已经变成手臂下垂直立，前倾和「挺一下」消失；3 局冒烟 2/3 成功。
 
+
+### 2026-09-15：垂臂开局 + 硬化手指垫（`bottle_vla200b_20260914`）：17/100
+
+采集 272 局 / 200 成功（74%，seed 30000）→ 190/10 episodes → 10,000 步（train loss 0.087）→
+100 局闭环（seed 6000，async，horizon 16，90 s，`whole_body_initial_token.json` 开局）：
+**17/100**，Wilson 95% 0.11–0.26。失败 60 局是"到桌边但从未下闭合指令"（最近距离中位
+0.32 m），11 局是 spawn 时物体不在 ego 视野（VLA 之前的丢弃），7 局闭合了没抬起，3 局走路没到，
+2 局 stand 阶段。与 `visible200` 的"爪子从不触发"是同一吸收态；专家采集的 74% 成功率没有
+传递到策略里。离线逐键替换（`eval_dump10/`）表明闭合由 ego + 腕两路图像共同决定、状态无关，失败局停在专家的 park 距离（刹车 0.40 m）而没有做专家随后 10 cm 的全身前移；刹车改 0.31 后同 20 seed 采集 17/20（原 15/20），见 [handoff](handoff/bottle-hanging-start-20260914.md#sixth-step-why-the-policy-never-closes-and-the-brake-depth-2026-09-15)。原片 `outputs/bottle_vla200b_20260914/eval/videos/`，预览
+`eval/previews/`（每片 ≤500,000 字节，`verification.json`）。过程见
+[handoff](handoff/bottle-hanging-start-20260914.md#fifth-step-200-episode-collection-training-and-100-round-closed-loop-2026-09-1415)。
 
 ## 加速评测:`scripts/seq_ab.sh`(A+C+B 筛选 harness)
 
@@ -1009,3 +1029,39 @@ policy server 实际都在 GPU0(延迟中位仍 70 ms),已修。
 此前所有 wall-clock 数字(ladder、2×2、flow200 早期臂)都是在退化 deploy 上量的,
 引用时须注明;正式数字自 clean100 起一律用干净协议(`CLEAN_DEPLOY=1` +
 `--clean-deploy`)。
+
+
+## 双臂 Closed-loop：`src/locomani/pipeline/eval_crate_closed_loop.py`
+
+单臂闭环的 crate 版本（2026-09-15）。一条命令负责三件事：在指定实例 / GPU 上起 token-only
+栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用 `configs/gr00t_sonic_3cam_bimanual.py`
+在自己的端口（默认 5700，避开实例端口块；单臂评测的策略端口 5590 正是实例 1 的键盘端口，
+所以单臂评测运行期间双臂评测要用 `--instance 2`）起策略服务、在栈环境里运行
+`locomani.tasks.crate.vla_rounds`，最后把 manifest 聚合成 `closed_loop.json`
+（字段与单臂相同：`successes`、`success_rate`、`wilson95`、`failure_stages`）。
+
+```bash
+"$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop \
+  --checkpoint outputs/<run>/model/checkpoint-10000 \
+  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_eval_100 \
+  --instance 1 --gpu 1 --serve-gpu 1 --rounds 100 --seed 6000
+```
+
+每局：`reset_ready` 的采样（抖动、yaw、桌沿距离）→ `prepare_token_pose` 用
+`configs/deployment/crate_initial_token.json`（训练数据首帧 token 的量化均值 + 首帧手臂关节）
+把机器人带到数据的开局姿势 → 阻塞式 chunk 循环：三路相机 + 60 维状态 → token [40,64] 与左右夹爪
+[40] → 每次发 `--execution-horizon`（默认 16）帧，两只手各自展开 → 判定用 crate 专家自己的
+`evaluation.evaluate`（抬升 ≥ 0.6×`lift_height`、倾角 < `max_tilt_deg`、双手同时接触），
+连续 2 s 成立才算成功；否则沿用单臂的 `[vla] walk / reach / close` 失败串。
+观测构造与策略连接在 `vla_obs.py` 里按 `TaskSchema` 切换（`ObsBuilder(schema=SONIC_CRATE)`、
+`PolicyLink.get_chunk_bimanual`），策略服务的 modality 与 `SONIC_CRATE` 不一致会直接拒绝。
+
+### 2026-09-15 结果：`crate_vla200_record_20260914` checkpoint-10000
+
+验证批 `outputs/crate_eval10_20260915c` 9/10；正式 100 局 `outputs/crate_eval100_20260915`
+（seed 6000，instance 2 / GPU 1，端口 5700）：**71/100**，Wilson 95% 0.61–0.79。失败 20 局
+"闭合了但没抬起"（其中 18 局结束时双手都没接触箱子、抬升 0），5 局到桌边从未闭合（最近 0.34 m），
+4 局 reset 后没站稳。成功局抬升中位 15.2 cm、倾角 7.4°、18 s。同一批前 10 个 seed 在 100 局跑里
+8/10、验证跑 9/10，单局不可跨栈重启复现。原片 `videos_NN/`，预览 `previews/`
+（100 片，最大 499,012 字节，共 38.2 MB，`verification.json`）。与单臂同一 checkpoint 家族的
+对照：单臂 17/100（见上文 2026-09-15 条目）。

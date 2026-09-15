@@ -71,7 +71,9 @@ class RefTap:
     def __init__(self, port: int | None = None):
         self.port = ports.out() if port is None else int(port)
         self._q: np.ndarray | None = None
+        self._dq: np.ndarray | None = None
         self._root: np.ndarray | None = None
+        self._root_angular: np.ndarray | None = None
         self._t = 0.0
         self._lock = threading.Lock()
         self._run = False
@@ -103,15 +105,34 @@ class RefTap:
             if m is not None:
                 q = m.get("body_q_target")
                 if q is not None and len(q) == 29:
+                    stamp = time.time()
+                    q = np.asarray(q, dtype=np.float32)
+                    root = np.asarray(m.get("base_quat_target", []), dtype=np.float32)
+                    root = (
+                        root if root.shape == (4,) and np.isfinite(root).all() and np.linalg.norm(root) > 0.5 else None
+                    )
                     with self._lock:
-                        self._q = np.asarray(q, dtype=np.float32)
-                        root = np.asarray(m.get("base_quat_target", []), dtype=np.float32)
-                        self._root = (
-                            root
-                            if root.shape == (4,) and np.isfinite(root).all() and np.linalg.norm(root) > 0.5
-                            else None
-                        )
-                        self._t = time.time()
+                        dt = stamp - self._t
+                        if self._q is not None and 0.005 <= dt <= 0.2:
+                            raw_dq = np.clip((q - self._q) / dt, -1.5, 1.5)
+                            self._dq = raw_dq if self._dq is None else 0.35 * raw_dq + 0.65 * self._dq
+                            if root is not None and self._root is not None:
+                                from scipy.spatial.transform import Rotation
+
+                                current = Rotation.from_quat(root[[1, 2, 3, 0]])
+                                previous = Rotation.from_quat(self._root[[1, 2, 3, 0]])
+                                raw_angular = np.clip((current * previous.inv()).as_rotvec() / dt, -1.5, 1.5)
+                                self._root_angular = (
+                                    raw_angular
+                                    if self._root_angular is None
+                                    else 0.35 * raw_angular + 0.65 * self._root_angular
+                                )
+                            else:
+                                self._root_angular = np.zeros(3, dtype=np.float32)
+                        else:
+                            self._dq = np.zeros(29, dtype=np.float32)
+                            self._root_angular = np.zeros(3, dtype=np.float32)
+                        self._q, self._root, self._t = q, root, stamp
             time.sleep(0.004)
 
     def stop(self) -> None:
@@ -134,6 +155,26 @@ class RefTap:
             if self._q is None or self._root is None or time.time() - self._t > 0.2:
                 return None
             return self._q.copy(), self._root.copy()
+
+    def pose_state(self):
+        """One fresh planner q/dq/root state for a bumpless POSE takeover.
+
+        Velocity is a bounded, smoothed finite difference of the same planner
+        reference packets. It seeds a short braking preview and is never
+        extrapolated as a constant over the full encoder horizon.
+        """
+        with self._lock:
+            if self._q is None or self._root is None or time.time() - self._t > 0.2:
+                return None
+            return dict(
+                joints=self._q.copy(),
+                velocity=np.zeros(29, dtype=np.float32) if self._dq is None else self._dq.copy(),
+                root=self._root.copy(),
+                root_angular_velocity=(
+                    np.zeros(3, dtype=np.float32) if self._root_angular is None else self._root_angular.copy()
+                ),
+                timestamp=float(self._t),
+            )
 
     def upper17(self, max_age: float = 0.5) -> np.ndarray | None:
         """The same reference as a 17-value upper-body command."""

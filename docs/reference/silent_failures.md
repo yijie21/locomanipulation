@@ -107,7 +107,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../collection.md#6-调整任务) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../collection.md#相机与动作) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
-| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**采集必须用 `0`**:`start_stack.sh` 在 instance≠0 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`--record` 采不出任何 session。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
+| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**单臂采集必须用 `0`**:`start_stack.sh` 在 instance≠0 且未设 `RECORD_INSTANCE=1` 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`--record` 采不出任何 session;crate 的 `run_crate_pilot --record` 会设这个变量,在任意实例录制。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
 | `SONIC_POLICY` | **`policy/sonic_v1_1`**(2026-09-11 起;此前是 `policy/release`) | deploy + 离线 encoder/decoder | 跑哪个 SONIC checkpoint。默认值只写在 `scripts/paths.sh`(shell)与 `locomani.paths.SONIC_POLICY`(python),`start_stack.sh` / `restart_deploy.sh` 里的是同值兜底。**在 `start_stack.sh` 之前 export**。切回旧 checkpoint 用 `SONIC_POLICY=policy/release`。三件随之而变的事:① encoder 观测维度 1751(release 1762)且 anchor 用 heading 归一化(orientation_mode 1),离线工具已改为从 checkpoint 自己的 `observation_config.yaml` 读布局;② **token 是 checkpoint 私有 latent**,见下一节;③ 抓取线的时序仍是 release 标定的(`TRACK_ROT_BOOST=4.5`、approach/brake 带),未重测。实测:v1_1 腰跟踪远好于 release(腰 RMSE 3.9° vs 12.9°,台账 bottle §16),但同一 case bank 上抓取 0/20 vs release 9/20(§17) |
 | `NO_ENCODER` | `0` | deploy | `1` = **不加载 encoder**,token-only / VLA 部署配置。**采集(planner 模式)禁用**:没有 encoder 时上肢/下蹲参考被静默丢弃,抬臂阶段停滞(2026-09-03) |
@@ -141,7 +141,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | 编排脚本自己手抄一份 stack 清理逻辑 | 三个组件都报 ok,但一张图都没发 | sim 的图像发布器是 multiprocessing **子进程**,`kill -9` 父进程会把它孤儿化、继续占着 :5555。抄漏 `pkill -f spawn_main` 的那一份就是这么坏的,而 `kill_stack()` 一度有**四份**拷贝。好在 `start_stack.sh` 检测到"组件都起来了但没有图像"会拒绝交出 stack,否则就是一个安静地渲染不出画面的 stack。**停 stack 只用 `stop_stack.sh`**,它还多杀 `serve_policy.py`、等端口真正释放、并回显剩余进程 |
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
 | 两个 runner 同一秒抢同一 instance 的端口块 | 两边都打印 "stack up",rc 0 | 一边的 gym 报 `Address already in use :5556`,另一边每局 1 s 报 `teleport landed 1.85 m off`(2026-09-10,pick-place session 与 session 29)。端口检查是 TOCTOU;2026-09-10 起 `start_stack.sh` 用 `/workspace/tmp/locomani_locks/instance_<i>.lock` 上 `flock -n`,锁的 fd 被 sim/deploy/exporter 继承,任一存活就拒绝第二个栈(退出码 3,打印持有者),全部死掉自动释放;`stop_instance.sh` 只杀本 instance 的进程(按 comm=python + 环境里的 `TF_CAMERA_PORT` 匹配)。起栈前仍要读 STATE 的 RUNNING 行 |
-| `build_sim_scene.py` 不带 `--harden-pads` 重建 | 场景正常,指面回到软接触 | 持物几秒后蠕变滑脱;看 XML 里 `dex1_col_1` 有没有 `priority="1"` |
+| `build_sim_scene.py` 不带 `--harden-pads` 重建(或 `HARDEN_PADS=0 install_scene.sh`) | 场景正常,指面回到软接触 | 持物几秒后蠕变滑脱(2026-09-14:同 20 seed 软垫 5 次滑脱、硬垫 0 次);`install_scene.sh` 回显 `finger pads HARDENED`,或看 XML 里 `dex1_col_1` 有没有 `priority="1"` |
 | place 伺服按 `upper_ref.MAX_STEP`(2°/tick)限幅 | 手臂看着在动 | 冗余 IK(腰 + 臂)逐拍换姿态,持物滑脱 3–4 cm,像接触蠕变;`place_trace` 10 Hz 漂移曲线能分辨(2026-09-10) |
 | **用 A checkpoint 的 token 喂 B checkpoint 的 decoder** | 数字全在合法范围,图照跑 | token 是 **checkpoint 私有的 FSQ latent**。两个 checkpoint 的码本完全相同(都是 1/16 网格、`[−1.0, 0.9375]`,2026-09-11 实测),所以任何"取值合法 / 在网格上 / 在训练分布内"的检查都过 —— 变的是**含义**。2026-09-11 默认切到 `policy/sonic_v1_1` 之后:此前所有数据集(`action.motion_token`)与 GR00T checkpoint 都是 release 空间的,拿去 v1.1 部署是安静的胡话;离线 `eval_open_loop` / `sonic_decoder` 的"度数"指标同理。要复现旧数字就 `SONIC_POLICY=policy/release` 整条链一起切。运行记录里已经写进 `config_snapshot.json` 的 `sonic_policy` 字段(2026-09-11 起) |
 | 离线 encoder 的观测布局写死成某个 checkpoint 的 | 图照跑,返回 64 个数 | v1.1 的 encoder 输入是 **1751** 维、anchor 块叫 `motion_anchor_orientation_heading_10frame_step5`(偏移 584,**orientation_mode 1**:左乘的是机器人 heading 而不是整个 base 四元数);release 是 1762 / 偏移 601 / mode 0。维度对不上时 `SonicEncoder` 会直接抛错,但**偏移和 anchor 算法对不上不会** —— 所以 `sonic_encoder.py` 现在从 checkpoint 自己的 `observation_config.yaml` 读布局(`EncoderLayout.from_config`),并按 anchor 块名字选 heading 与否,不再写死 |
@@ -154,7 +154,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 
 ### 端口
 
-`INSTANCE=i` 时全部加 `10*i`,DDS domain 也用 `i`;只有 instance 0 挂 exporter 落盘。
+`INSTANCE=i` 时全部加 `10*i`,DDS domain 也用 `i`;instance 0 总挂 exporter 落盘,其他实例要 `RECORD_INSTANCE=1`(session 在 `p03_i<i>/outputs`)。
 
 > **端口分得开,DDS domain 分不开 —— 除非 deploy 打过补丁。**
 > `INSTANCE` 只对 Python 侧和端口有效。**库存的 `g1_deploy_onnx_ref` 把 DDS domain

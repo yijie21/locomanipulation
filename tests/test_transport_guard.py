@@ -82,6 +82,19 @@ class TransportGuardTests(unittest.TestCase):
             TransportGuard(ik, "bottle", "target").check(state, [0.0], "right", allow_target_contact=True).clear
         )
 
+    def test_attached_target_is_no_obstacle_but_other_obstacles_still_are(self):
+        ik, state = self.setup_scene(0.0)
+        guard = TransportGuard(ik, "bottle", "target", finger_only_target_contact=True)
+        # The wrist link at the held bottle: rejected as a collision, allowed once attached.
+        self.assertFalse(guard.check(state, [0.0], "right", allow_target_contact=True).clear)
+        self.assertTrue(guard.check(state, [0.0], "right", ignore_target=True).clear)
+        # A non-target obstacle at the same place is still a hit with ignore_target.
+        xml = XML.replace('<body name="target" pos="1 0 0">', '<body name="table" pos="1 0 0">')
+        ik.model = mujoco.MjModel.from_xml_string(xml)
+        table_guard = TransportGuard(ik, "bottle", "table", finger_only_target_contact=True)
+        table_guard.target_geoms = set()  # the sphere is now an ordinary obstacle
+        self.assertFalse(table_guard.check(state, [0.0], "right", ignore_target=True).clear)
+
     def test_finger_only_capture_allows_the_actual_finger_contact(self):
         ik, state = self.setup_scene(0.0)
         xml = XML.replace(

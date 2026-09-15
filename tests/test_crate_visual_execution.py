@@ -15,9 +15,12 @@ from locomani.tasks.crate.visual_approach import ApproachCommand
 from locomani.tasks.crate.visual_low_reach import LowReachCommand
 
 
+@pytest.mark.parametrize("record", [False, True])
 @pytest.mark.parametrize("accepted", [True, False])
-def test_reused_image_advances_control_and_only_success_publishes_training_boundary(tmp_path, monkeypatch, accepted):
-    samples, timeouts = [], []
+def test_reused_image_advances_control_and_only_success_publishes_training_boundary(
+    tmp_path, monkeypatch, accepted, record
+):
+    samples, timeouts, keys = [], [], []
     state = dict(
         t=0.0,
         seq=0,
@@ -32,7 +35,7 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
         state["t"] = state["seq"] * 0.02
         return dict(state)
 
-    commander = SimpleNamespace(reference_observer=None)
+    commander = SimpleNamespace(reference_observer=None, key=keys.append, hold=lambda *a, **kw: None)
     p = SimpleNamespace(cmd=commander, obs=observe, pelvis_yaw=lambda raw: 0)
 
     class Arm:
@@ -88,7 +91,10 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
         expert,
         "VisualApproach",
         lambda cfg: SimpleNamespace(
-            relative_speed=0, angular_speed=0, step=lambda *a, **kw: ApproachCommand("settle", np.zeros(3), ready=True)
+            relative_speed=0,
+            angular_speed=0,
+            stand_attempts=[],
+            step=lambda *a, **kw: ApproachCommand("settle", np.zeros(3), ready=True),
         ),
     )
     monkeypatch.setattr(expert, "evaluate", lambda *a, **kw: dict(ok=accepted, why=a[2]))
@@ -105,8 +111,13 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
         tmp_path,
         "episode",
         None,
+        record=record,
     )
     assert result.ok == accepted, result.execution
+    # The exporter protocol: 'c' at task start, then 'c' saves / 'x' discards --
+    # exactly one closing key per started recording, so the manifest join holds.
+    assert keys == ((["c", "c"] if accepted else ["c", "x"]) if record else [])
+    assert result.produced == record
     rows = [json.loads(line) for line in (tmp_path / "episode/commands.jsonl").read_text().splitlines()]
     body_commands = [row for row in rows if row["phase"] in ("reach", "hold")]
     assert len(body_commands) == (5 if accepted else 4)  # one RGB image still drives five physical control updates
@@ -114,8 +125,11 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
     assert np.all(np.diff([row["simulation_time"] for row in body_commands]) > 0)
     assert all(row["payload"]["reference_velocity"] == [0.1] * 29 for row in body_commands)
     metrics = result.execution["metrics"]
+    assert metrics["task"] == "pick up the crate" and metrics["target"] == "blue_crate"
     if accepted:
         assert metrics["training_tail"]["end_seq"] < metrics["evaluation_state_seq"]
+        # The converter's trim reads the marker where the single-arm gym puts it.
+        assert metrics["execution"]["metrics"]["training_tail"] == metrics["training_tail"]
     else:
-        assert "training_tail" not in metrics
+        assert "training_tail" not in metrics and "execution" not in metrics
     assert timeouts == ["video_closed"] and commander.reference_observer is None

@@ -4,7 +4,9 @@
 
 ## 导出 LeRobot v2.1 并对接 GR00T
 
-exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`。转成 LeRobot v2.1
+exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
+`$LOCOMANI_TMP/p03_i<N>/outputs/`（`--record` 在实例 N 上录制，见
+[双臂采集](crate_collection.md#录制成正式训练数据)）。转成 LeRobot v2.1
 (格式对齐 `hojjunekim/g1_sonic_orange_to_plate_locomani`,含 29-DoF 关节状态 +
 64 维 SONIC motion latent + 三路 25fps 视频):
 
@@ -50,6 +52,11 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 数据流见 `docs/architecture.drawio`。
 
 ### 转完先查一遍(强烈建议)
+
+
+若数据集由 pilot 运行目录产生（有 `inputs.json`、`trace/` 和场景副本，目前是 crate
+pilot 的布局），加 `--run-dir <运行目录>`：抬升检查改用状态 trace 里的世界坐标高度，
+不再受骨盆坐标系位姿列的影响（[world_lift.py](../src/locomani/pipeline/world_lift.py)）。
 
 ```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \

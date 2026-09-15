@@ -7,7 +7,7 @@
 
 | 项目 | 当前支持 |
 |---|---|
-| 默认任务 | `bottle_only` 场景 + `configs/tasks/bottle_visible.json` |
+| 默认任务 | `bottle_only` 场景（硬垫）+ `configs/tasks/bottle_whole_body.json`；`bottle_visible.json` 是 2026-09-14 前的基线入口 |
 | 动作过程 | 随机出生 → 走近可见目标 → 减速、准备抓取 → 伸手、闭合、抬起 → 退手与验收 |
 | 专家输入 | 相机可见性、机器人状态与仿真物体信息辅助规划；不是纯 RGB 策略 |
 | 采集能力 | 单局检查、按成功数批量采集、exporter session、manifest、视频与状态轨迹 |
@@ -29,9 +29,13 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 "$VENV_SIM_PY" -c 'import json; m=json.load(open("outputs/scene/sim/scene_meta.json")); print(m.get("target_pool"))'
 ```
 
-目标池应包含 `water_bottle`。安装脚本解包仓库自带的场景资产、改写当前路径，
-并使用仿真环境重新构建 `outputs/scene/sim`；不需要先运行 EmbodiedGen。
-若提示跳过重建，先补齐仿真环境。漏掉 `SCENE_PRESET` 会构建多物体桌面。
+目标池应包含 `water_bottle`，且脚本最后一行回显 `finger pads HARDENED`。安装脚本解包
+仓库自带的场景资产、改写当前路径，并使用仿真环境重新构建 `outputs/scene/sim`；
+不需要先运行 EmbodiedGen。若提示跳过重建，先补齐仿真环境。漏掉 `SCENE_PRESET`
+会构建多物体桌面。指垫硬化是 2026-09-14 起的默认（见 [安装指南](setup.md#4-装场景必需)），
+本页所有成功率都在硬垫场景上测得；固定 case bank 用
+`outputs/bottle_continuous_20260914/cases_fixed10_hardpads.json`（同样 10 个 case，
+按硬垫场景重新盖章；旧文件只匹配软垫场景）。
 
 ## 3. 跑一局
 
@@ -41,7 +45,7 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 ```bash
 mkdir -p /workspace/tmp/p03/outputs
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-  --config configs/pilot/learn_200.json --task configs/tasks/bottle_visible.json \
+  --config configs/pilot/learn_200.json --task configs/tasks/bottle_whole_body.json \
   --scene outputs/scene/sim --out outputs/bottle_first_run \
   --set through=collect --set successes=1 \
   --set batch_rounds=1 --set max_batches=1 --set seed0=30000 \
@@ -62,7 +66,7 @@ mkdir -p /workspace/tmp/p03/outputs
 
 ```bash
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-  --config configs/pilot/learn_200.json --task configs/tasks/bottle_visible.json \
+  --config configs/pilot/learn_200.json --task configs/tasks/bottle_whole_body.json \
   --scene outputs/scene/sim --out outputs/bottle_collect_10 \
   --set through=collect --set successes=10 \
   --set batch_rounds=10 --set max_batches=3 --set seed0=30100 \
@@ -77,15 +81,68 @@ mkdir -p /workspace/tmp/p03/outputs
 session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景或任务配置时使用新目录，
 不要修改正在运行的配置快照或覆盖旧产物。
 
+### 复现要点与预期成功率
+
+另一台机器要得到与本页相同的数字，下面每一项都必须一致；任何一项不同都先比它，再谈策略：
+
+| 项目 | 要求 | 核对方法 |
+|---|---|---|
+| SONIC 权重 | `policy/sonic_v1_1`（`scripts/paths.sh` 默认） | 运行目录 `deploy_receipts.jsonl` |
+| deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
+| 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED` | `outputs/scene/sim/scene_meta.json`、脚本回显 |
+| 任务配置 | `configs/tasks/bottle_whole_body.json`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
+| pilot 配置 | `configs/pilot/learn_200.json` + 本页的 `--set` | 运行目录 `inputs.json` |
+| 资源 | 该 GPU 上没有第二个仿真；CPU 配额有余量 | `nvidia-smi`、`/sys/fs/cgroup/cpu.stat` |
+| 闭环评测的初始 token | `--initial-token-file configs/deployment/whole_body_initial_token.json`（与这份数据的垂臂开局一致；默认的 READY token 会让 100 局全部卡在 prelude） | 评测目录 `config_snapshot.json` 的 `initial_token` 摘要 |
+
+2026-09-14 在上述配置下的实测（同一天、同一份代码，失败按"阶段 × 连杆"分类）：
+
+| 运行 | 结果 | 剩余失败 |
+|---|---|---|
+| 采样 20 局，`seed0=30000`（`outputs/bottle_hardpads_sampled20_20260914`） | 15/20 | 髋/桌接管判定 3（停得 ≤0.44 m 时）、抬升中手指/桌 1、无双侧接触 1；无滑脱 |
+| 同 20 局，`visible_brake_depth` 0.40→0.31（`outputs/bottle_brake031_sampled20_20260915`，2026-09-15） | 17/20 | 髋/桌接管判定 2、腕/瓶接管判定 1；park 0.355 m（0.34–0.39），park 到全身阶段开始的骨盆前移由 10.6 cm 降到 3.4 cm |
+| 固定 10 case，`seed0=31000`（`outputs/bottle_hardpads_fixed10_20260914`，软垫场景同代码为 6/10） | 7/10 | 抬升中手指/桌 1、髋/桌接管 1、无双侧接触 1；无滑脱 |
+
+10 局批次之间本身有 ±2 局的波动（同 seed 步态不可复现），比较时至少用 20 局并按失败族对照，
+不要只看总数。证据与历次改动见 [开局与抬升交接](handoff/bottle-hanging-start-20260914.md)。
+
 ### 固定采样比较新策略
 
-`bottle_whole_body.json` 是显式选择的连续全身候选策略，默认仍为 `bottle_visible.json`。
+`bottle_whole_body.json` 是本页的采集入口（连续全身策略，2026-09-14 起）；
+`bottle_visible.json` 是此前的基线入口，只用于与旧数据对照。
 使用前安装 [POSE 与夹爪交接补丁](setup.md)，确认所选 deploy 包含两个 capability 标记。
 当前实现与实验结果见 [行走准备和连续抓取](handoff/bottle-direct-20260914.md)，
 上一版基线见 [固定样本验证记录](handoff/bottle-continuous-20260914.md)，
 不能把“能运行候选策略”理解为已提高成功率或已验证 VLA 学习效果。
 
-候选策略的动作设计是：
+当前默认 profile 已启用 `reach.whole_body.natural_walk_prep` 和
+`wrist_roi_supervisor`。自然准备同时选择停车位置和预抓姿态，以舒适关节先验、
+实际网格扫掠检查及腕相机投影筛选候选；无可行候选时保持并低频重试。
+停车距离包含速度相关的制动提前量，伸手目标还受实时瓶子距离约束。
+ego 尺寸用连续图像确认和滞回触发抬手，腕相机稳定获取目标后停止搜索抬升，
+以 2 Hz、带死区和幅度限制的画面修正维持取景。规划之间仍连续发送关节参考。
+POSE 接管继承当前参考速度，并让完整未来窗口的位置与速度使用同一条有界轨迹。
+开始夹紧时固定实测手部世界位置目标，保留平移跟踪补偿及其变化速度，继续限制补偿的速度和加速度；
+腕部旋转补偿和舒适姿态先验保持不变，关节参考继续受速度、加速度约束；
+恢复直立后先检查持瓶制动路径，再连续收住参考速度，
+保持右爪闭合并交回行走控制。日志分别记录指令连续性和实测运动。
+实现、逐版失败原因和新采集结果见
+[自然准备、腕相机取景与连续参考](handoff/bottle-natural-expert-20260915.md)。
+
+全身抓取的目标深度现为标定工具点前方 1.2 mm（共享指垫区间的中点），合爪窗口为该点 ±5 mm，
+使瓶子进入指垫中部；规划与实测准入使用同一深度定义，保留腕、掌和桌面的碰撞检查。
+伸手目标根据实测前进速度连续后退，为剩余制动行程留出空间；实际中央几何和预测停下时的深度都满足窗口后才闭合，静稳窗口仅作诊断。
+跟踪补偿限制变化速度和加速度，
+保留接管时的解码偏差；全身 IK 使用舒适姿态先验和速度、加速度硬约束。
+当前配置关闭速度连续代价，避免其在停止伸手时继续偏好原有前进速度。
+停车先发制动命令，再做耗时手臂规划，并在完成支撑制动后检查站位；
+当前制动提前量上限仍为 0.10 m，实际制动距离的散布需要继续校准。
+抓起和恢复直立的进度受双侧接触与掌心坐标系内的滑动速度调节，短暂失去接触时
+减速并保持闭爪，稳定恢复后再继续；超时仍报告失败。具体改动、物理验证及限制见
+[中部抓取、接触恢复与运动跟踪](handoff/bottle-contact-expert-20260915.md)。
+这些改动尚不代表已验证 VLA 学习收益。
+
+共同动作原则与此前诊断记录如下；固定髋旁手目标和固定停车距离的记录属于旧版：
 
 - 走近时由 ego / 右腕相机的实际可见性准入仿真目标点，结合本体状态补偿身体移动。
   视觉观测在独立线程处理，先滤掉步态摆动，再以 5 Hz 更新手臂规划；关节指令连续发送，
@@ -95,8 +152,38 @@ session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景
 - 减速后延续同一瓶子目标与抓取方向，接入双脚支撑的全身求解，协调腰、髋和手臂。
   最终伸手不再强制经过“高处保持 → 下降 → 前插”三个路点；实际碰撞、接触与承载验收仍保留。
 - 接管从当前参考开始，不瞬间跳到 READY；抬起和身体恢复继续重叠进行。
+- transport guard 的预测碰撞门限（`transport_margin`）在三处含义不同：接管时允许手指
+  贴着瓶子（准备好的手本来就该在那里）；伸手阶段接近后允许手指接触；闭合并持续接触
+  后进入抬升，手里的瓶子对右臂不再算障碍，桌子和身体的检查不变。2026-09-14 之前
+  抬升中腕部连杆碰到手里的瓶子会中止回合（81 局里 21 局，瓶子已离桌中位 8 cm），
+  接管时手指贴瓶又中止 12 局。抬升高度、稳持、滑移验收没有放宽。
+- 全身抓取失败后先钉住一个零速度的停止参考，再把同一姿势交还 planner 并退出 POSE 流。
+  以前失败路径不退出流模式，下一局 reset 后机器人落点偏 0.10–0.12 m，
+  并一直重复到批次结束（2026-09-14 当天 8 个 stand 阶段失败全部紧跟在一次全身失败之后）。
+  连续专家在 engage 后只把腰部准备到中性参考，不再先送双臂 READY 基线：录制从 SONIC
+  自己的垂臂参考开始，右臂在走近中按速度 / 加速度限制逐渐抬起（与双臂采集的开局一致）。
+  此前的顺序会在 0.5 s 双臂抬起、1.5 s 又落回，再于走路时重新抬起。腰部准备不能省：
+  engage 姿势前倾约 8°，不回中性时出生视野门限会拒绝大部分回合；而且要等实测腰角
+  收敛到 0.03 rad 内再放行，手臂那档 0.30 rad 的容差会在腰还没动时就放行。
 
-`reach.whole_body.walk_plan_hz` 控制规划频率，`walk_filter_seconds` 控制滤波时间常数，
+- 旧版走路阶段的手目标（2026-09-15，自然准备接入前，照双臂 `ApproachPreparation`）：从第一次规划起腕就转向入口
+  姿态（手指朝前），工具点保持在抓点上方 `walk_clearance`（0.06 m）、髋旁 x 0.08（骨盆坐标系常量，
+  对应双臂的 `stand_off − walk_brake_margin`：手不前伸，瓶子走过来），横向跟随瓶子，且始终留在瓶子
+  后方至少 12 cm（基座会越过 0.31 m 刹车点停在约 0.2 m）；腰在双臂线的行走包络内（yaw/roll ±0.1、
+  pitch 0–0.12 rad）参与求解，走路限速 `walk_joint_speed` 0.7 rad/s。这样掌心基本保持垂臂高度，
+  停下后只剩约 15 cm 滑入和 5 cm 下降。同 20 seed 14/20（基线 17/20），多出的 3 局是刹停时髋/桌接管判定，
+  来自走路 IK 把腰 roll 打满 +0.1。
+- 2026-09-15 起的"胶囊相切"方案：走路包络去掉腰 roll；抬手由 ego 视野里瓶子的像素高度触发
+  （`raise_trigger_px` 36 px ≈ 1.5 m，触发前双臂保持原样）；刹车改为"骨盆离桌沿 `visible_brake_edge`
+  0.27 m 或物体深度 `visible_brake_depth` 0.31 m，先到者停"（瓶子在桌沿内 4–8 cm，所以通常是桌沿先到，
+  停下时瓶子离骨盆 0.31–0.35 m；直立站在 ≤0.23 m 时右髋连杆会贴到桌面，0.27 m 无碰）；停下后的
+  全身伸手里躯干前倾目标取"高度项"和"距离项（骨盆到抓点 0.30→0.60 m 线性到 `lean_max`）"中较大者，
+  `bottle_whole_body.json` 把 `lean_max` 设为 1.0 rad，远瓶自动深弯；伸手终点仍由 `entry_step`
+  停在抓点后 1.8 cm。之前的目标是骨盆坐标系里的固定盒子
+  （z ≥ 骨盆 +0.05，掌心 0.84 m），那是清障高度：dex1 手指从掌心向下伸 19 cm，垂臂指尖 0.53 m
+  低于 0.62 m 桌面。第一次尝试（抓点上方 4 cm、不用腰、0.45 rad/s）2/20，见
+  [handoff](handoff/bottle-hanging-start-20260914.md#seventh-step-the-crate-style-walking-preparation-does-not-fit-this-table-2026-09-15)。
+- `reach.whole_body.walk_plan_hz` 控制规划频率，`walk_filter_seconds` 控制滤波时间常数，
 默认 5 Hz / 0.45 s。配置定义在 [whole_body_config.py](../src/locomani/tasks/bottle/whole_body_config.py)，
 行走引导在 [walking_reach.py](../src/locomani/tasks/bottle/walking_reach.py)，
 全身抓取在 [whole_body_policy.py](../src/locomani/tasks/bottle/whole_body_policy.py)。
@@ -113,7 +200,7 @@ session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景
 
 ```bash
 LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim" "$VENV_SIM_PY" \
-  -m locomani.tasks.bottle.grasp_gym --task-config configs/tasks/bottle_visible.json \
+  -m locomani.tasks.bottle.grasp_gym --task-config configs/tasks/bottle_whole_body.json \
   --targets water_bottle --rounds 10 --seed 31000 \
   --sample-only --write-cases outputs/bottle_cases10.json
 ```
@@ -182,7 +269,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 
 ```bash
 "$VENV_SIM_PY" -m locomani.tasks.bottle.cli_args \
-  --task-config configs/tasks/bottle_visible.json
+  --task-config configs/tasks/bottle_whole_body.json
 ```
 
 自动 runner 的 `--config` / `--set` 修改 **PilotConfig**（采集规模、阶段和运行环境），
@@ -194,8 +281,12 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 
 `reach.strategy=whole_body` 沿用相同走近和采样入口，在走近时逐渐准备手臂，减速后让
 腰、髋、手共用带速度/加速度约束的支撑参考。三个腰部自由度均可参与。
-接近可抓区域时开始闭合，持续双侧接触后抬升；物体离桌后，抬升、收手和恢复直立
-重叠进行。回到走路控制前预发保持夹爪和上肢的 planner 命令，再退离桌边并验收稳持。
+接近可抓区域时开始闭合，持续双侧接触后抬升；物体离桌后，抬升和恢复直立重叠进行，
+手相对躯干的位置保持不变，不再向身体回收（此前 6 cm 的回收加上躯干直立会把肘折到
+胸前的别扭角度）。抬升高度由 `reach.whole_body.lift_height`（默认 0.06 m）、时长由
+`lift_seconds`（默认 5 s）给出，躯干直立本身再额外抬高约 0.2 m。此前 0.16 m / 3 s
+的组合让瓶子以约 13 cm/s 上升 35–41 cm，2026-09-14 的 30 局里有 4 局从爪中滑出。
+回到走路控制前预发保持夹爪和上肢的 planner 命令，再退离桌边并验收稳持。
 
 仿真位姿辅助几何规划，但目标须通过真实 ego/右腕图像的新鲜度和近似可见性检查，
 短时遮挡只沿用上次可见目标；不会用隐藏的新位置无限追踪。可见性由相机几何和 ray

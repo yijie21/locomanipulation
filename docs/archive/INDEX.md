@@ -81,6 +81,7 @@ Verbatim copies from `4cc52ba`; historical claims and relative links retain thei
 
 ## Guides preserved on 2026-09-14
 
+- [旧 SONIC 动态回放交接](handoff-sonic-replay-20260910.md)：根 `HANDOFF.md` 在 `fcf23d9` 的原样快照；旧资源分配和待办仅供追溯，当前任务见 [根交接](../../HANDOFF.md)。
 - [Crate guide](crate_collection_20260914.md): original at `153c8b6`; current commands and capability boundaries are in [crate collection](../crate_collection.md).
 - [Bottle collection guide](collection_20260914.md): original at `153c8b6`; preserves removed reach estimates and old global cleanup instructions for history only.
 - [Pick-and-place collection guide](pick_place_collection_20260914.md): original at `797371c`; current usage is in [pick-and-place collection](../pick_place_collection.md).

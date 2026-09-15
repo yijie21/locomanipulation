@@ -62,6 +62,8 @@ class AssistedBottleTarget:
                         d.qpos[m.joint(f"{side}_hand_gripper_{i}_joint").qposadr[0]] = value
                 mj.mj_fwdPosition(m, d)
                 points = self.samples @ Primitives._rot(obj["quat"]).T + obj["pos"]
+                ego_px = 0.0  # apparent height of the bottle in the ego view, the visible trigger for raising the arm
+                wrist_roi = None
                 for name, camera in self.streams.items():
                     stamp, rgb = timestamps.get(name, 0), message["images"].get(name)
                     if rgb is None or not 0 <= now - stamp <= self.timeout or np.std(rgb) < 1:
@@ -92,10 +94,40 @@ class AssistedBottleTarget:
                             hits.append(uv[index])
                     if len(hits) >= 3 and np.max(np.ptp(hits, axis=0)) >= 8:
                         visible[name] = float(stamp)
+                        hit_uv = np.asarray(hits, dtype=float)
+                        extent = np.ptp(hit_uv, axis=0) / np.array([w, h], dtype=float)
+                        centroid = np.mean(hit_uv, axis=0) / np.array([w, h], dtype=float)
+                        if name == "right_wrist":
+                            # Only samples whose camera ray terminated on the
+                            # target contribute. The image timestamp prevents
+                            # one frame from satisfying stable acquisition.
+                            camera_rotation = d.cam_xmat[cid].reshape(3, 3)
+                            pelvis_rotation = Primitives._rot(state["pelvis"]["quat"])
+                            # Moving the camera along +camera-x reduces +u;
+                            # moving it along -camera-y reduces +v under the
+                            # projection convention above. Express those
+                            # directions in the pelvis frame used by ArmIK.
+                            correction_basis = pelvis_rotation.T @ np.column_stack(
+                                [camera_rotation[:, 0], -camera_rotation[:, 1]]
+                            )
+                            wrist_roi = dict(
+                                timestamp=float(stamp),
+                                centroid=np.clip(centroid, 0.0, 1.0),
+                                extent=np.clip(extent, 0.0, 1.0),
+                                occupancy=float(np.prod(np.clip(extent, 0.0, 1.0))),
+                                quality=float(np.clip(len(hits) / len(self.samples), 0.0, 1.0)),
+                                admitted_samples=len(hits),
+                                image_size=[int(w), int(h)],
+                                correction_basis_pelvis=correction_basis,
+                            )
+                    if name == "ego_view" and hits:
+                        ego_px = float(np.ptp(np.array(hits)[:, 1]))
                 if visible:
                     self.point, self.seen = self.task.grip(state).copy(), max(visible.values())
                 self.diagnostics = dict(
                     image_timestamps=timestamps,
+                    ego_height_px=ego_px,
+                    wrist_roi=wrist_roi,
                     visible=visible,
                     state_seq=state["seq"],
                     source="simulation_with_camera_rays",

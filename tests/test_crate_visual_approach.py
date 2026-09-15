@@ -168,3 +168,66 @@ def test_assisted_stance_uses_current_proprioception_and_still_requires_a_quiet_
         if now < 1.1:
             assert not command.ready
     assert command.ready
+
+
+def _settle(approach, depth, start, grasp_pose_available=True):
+    """Hold a quiet stance at `depth` from `start` until the approach decides; return the deciding command."""
+    for now in np.arange(start, start + 3, 0.05):
+        command = approach.step(
+            now,
+            ApproachTarget(np.array([depth, 0, 0]), now, "pose"),
+            [1, 0, 0, 0],
+            grasp_pose_available=grasp_pose_available,
+        )
+        if command.ready or command.phase == "walk":
+            return command, now
+    raise AssertionError("no decision within 3 s")
+
+
+def test_far_quiet_stance_re_walks_before_it_is_admitted():
+    cfg = CrateVisualConfig(stand_off=0.39, walk_brake_margin=0.07, stand_depth_tolerance=0.04)
+    approach = VisualApproach(cfg)
+    # The brake margin lets the walk stop at 0.46; a stance that rests there is 7 cm too far.
+    command, now = _settle(approach, 0.46, 0.0)
+    assert command.phase == "walk" and command.speed > 0 and not command.ready
+    assert approach.stand_attempts == [
+        dict(depth_m=pytest.approx(0.46), lateral_m=0.0, depth_error_m=pytest.approx(0.07), accepted=False)
+    ]
+    assert approach.stop_distance == pytest.approx(0.425)
+    # The second walk-in lands inside the tolerance and is admitted after a fresh quiet interval.
+    command, later = _settle(approach, 0.42, now + 0.05)
+    assert command.ready and later - now >= cfg.settle_seconds
+    assert approach.stand_attempts[-1]["accepted"] and len(approach.stand_attempts) == 2
+
+
+def test_depth_retries_are_bounded_and_the_last_stance_is_recorded():
+    cfg = CrateVisualConfig(stand_off=0.39, walk_brake_margin=0.07, stand_depth_tolerance=0.04, stand_depth_retries=0)
+    approach = VisualApproach(cfg)
+    command, _ = _settle(approach, 0.46, 0.0)
+    assert command.ready, "with no retries the far stance is handed to reach admission, not re-walked"
+    assert approach.stand_attempts[-1] == dict(
+        depth_m=pytest.approx(0.46), lateral_m=0.0, depth_error_m=pytest.approx(0.07), accepted=True
+    )
+
+
+def test_near_stance_is_not_re_walked():
+    approach = VisualApproach(CrateVisualConfig(stand_off=0.39, stand_depth_tolerance=0.04))
+    command, _ = _settle(approach, 0.33, 0.0)
+    assert command.ready and approach.stand_attempts[-1]["accepted"]
+
+
+def test_depth_convergence_fields_are_validated():
+    with pytest.raises(ValueError, match="stand_depth_retries"):
+        CrateVisualConfig(stand_depth_retries=1.5)
+    with pytest.raises(ValueError, match="stand_depth_tolerance"):
+        CrateVisualConfig(stand_depth_tolerance=0)
+
+
+def test_walk_commands_never_fall_below_the_stepping_floor():
+    cfg = CrateVisualConfig(stand_off=0.39, walk_brake_margin=0.07, walk_speed_min=0.35)
+    approach = VisualApproach(cfg)
+    # 8 cm of depth error used to command 0.10, which the deploy does not walk on.
+    near = approach.step(0, ApproachTarget(np.array([0.47, 0, 0]), 0, "pose"), [1, 0, 0, 0], grasp_pose_available=True)
+    assert near.phase == "walk" and near.speed == pytest.approx(0.35)
+    with pytest.raises(ValueError, match="walk_speed_min"):
+        CrateVisualConfig(walk_speed=0.3, walk_speed_min=0.35)

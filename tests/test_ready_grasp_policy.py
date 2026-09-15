@@ -155,3 +155,14 @@ class LowerGripSamplingTests(unittest.TestCase):
             self.assertTrue(np.isfinite(rel).all())
             self.assertLessEqual(drop, cfg.max_drop)
             self.assertGreaterEqual(drop, 0.03)
+
+
+def test_ready_target_keeps_the_seed_arms_and_neutralises_the_waist():
+    from locomani.backends.sonic.primitives import upper_body_from_mj
+    from locomani.tasks.bottle.ready_grasp_policy import ready_q, ready_target
+
+    seed = np.arange(17, dtype=float) * 0.1 + 0.05  # a leaning waist and hanging arms
+    only_waist = ready_target(seed, arms=False)
+    np.testing.assert_allclose(only_waist[:3], upper_body_from_mj(ready_q())[:3])
+    np.testing.assert_allclose(only_waist[3:], seed[3:])
+    np.testing.assert_allclose(ready_target(seed), upper_body_from_mj(ready_q()))

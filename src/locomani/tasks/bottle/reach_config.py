@@ -109,6 +109,7 @@ class ReachConfig:
     stand_azimuth_deg: float = 0.0
     visible_brake_depth: float = 0.31  # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
     visible_decel_band: float = 0.12  # speed ramps down over this depth band above the brake depth
+    visible_brake_edge: float = 0.0  # 0 = off; the walk also stops when the pelvis is this close to the table edge (compact walking posture's capsule tangent to the edge, 2026-09-15); the deceleration band applies to it too
     # Privileged-teacher variant (ledger bottle §19.9): the expert CONTROLS from
     # object truth so it is reliable, while the RGB fit is still computed every
     # tick and the SAME decide() is evaluated on it, recording per frame whether
@@ -187,6 +188,8 @@ class ReachConfig:
                 raise ValueError("visible_expert requires the ready baseline with the recovery controller")
             if not (0.20 <= self.visible_brake_depth <= 0.45 and 0 <= self.visible_decel_band <= 0.30):
                 raise ValueError("visible brake geometry outside supported bounds")
+            if not 0 <= self.visible_brake_edge <= 0.45:
+                raise ValueError("visible_brake_edge outside supported bounds")
         if self.image_servo and not (self.visible_expert and self.coupled_squat and self.timely_capture):
             raise ValueError("image_servo requires visible_expert, coupled_squat and timely_capture")
         if not isinstance(self.image_calibration, BottleCalibration) or not isinstance(self.image_control, ServoLimits):

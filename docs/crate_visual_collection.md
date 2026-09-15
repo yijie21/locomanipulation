@@ -83,6 +83,17 @@ The existing `carry` expert remains a separate mechanical diagnostic entry.
   current base velocity/rotation, avoiding extra waits for the visual speed filter. Unsupported reaches use the remaining
   braking allowance for a closer visible approach, bounded by `visual.stand_off`;
   unsupported placements can still fail admission.
+- Converge the stance on the depth axis before handing over. The gait scatters the
+  achieved stop by centimetres around the commanded one, and a stance that rests
+  farther than `visual.stand_depth_tolerance` past `visual.stand_off` (judged on the
+  quiet interval's mean visible depth) re-walks with a tightened stop, at most
+  `visual.stand_depth_retries` times; a near stance is never backed away from. Every
+  quiet stance is recorded as `stand_attempts` in the navigation record and the
+  attempt result, accepted or not, so a far stance stays visible instead of being
+  mistaken for a reach failure. Retries are still bounded by `visual.walk_timeout`.
+  Walk commands never drop below `visual.walk_speed_min`: the planner's speed
+  field is a step, and a command under it (the former 0.10 floor) does not move
+  the robot at all, so a re-walk commanded that way stands still until timeout.
 - Preserve the consumed planner joint/root reference at POSE takeover. The backend
   switches directly into a primed POSE stream and releases the planner override
   atomically. Descent begins from that reference; there is no intermediate VR stage.
@@ -177,6 +188,10 @@ uses simulator timing. A good-looking video does not establish a causal explanat
 The current task covers a frontal, obstacle-free approach to one known basket/table
 geometry. General navigation and transport remain outside this pilot.
 
-Formal `--record` is refused. Token/history synchronization, emitted 64-dimensional
-motion tokens, both-gripper VLA inference and end-to-end replay/learning still need
-validation before these attempts can be called ready-to-train LeRobot episodes.
+`--record` (2026-09-14) drives the data exporter from the visual expert: `c` at task
+start, `c`/`x` after evaluation, one exporter session per batch joined to the batch
+manifest through `<out>/inputs.json`. The exporter writes the same columns as the
+single-arm line (43-d state, 64-d SONIC token, consumed hand commands, three
+cameras), and `convert_to_hf_format.py --trim-verification-tail` keeps the prefix up
+to `training_tail.end_seq`. Both-gripper VLA inference and end-to-end learning are
+still unvalidated; a converted dataset is training-ready in format, not in proof.

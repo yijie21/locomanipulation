@@ -132,14 +132,38 @@ def sample_stand(plan, rng, config):
     return centre[:2] - [config.backshift, 0.0] + rng.uniform(-0.01, 0.01, 2), float(drop)
 
 
-def prepare_ready(p, timeout=3.0):
-    """Before recording: both arms ready, wrists neutral, no hidden reach phase."""
+def ready_target(seed, *, arms=True):
+    """The 17-value preparation target: waist neutral always, arms READY only when asked.
+
+    The continuous expert raises the arm during the walk from the deploy's own
+    hanging reference, so it keeps the seed's arms; but the waist still has to
+    reach its neutral value before the spawn view gate, because the deploy's
+    engage posture leans ~8 deg forward and the ego camera then puts the
+    bottle below the gate (measured 6/10 spawn rejections on 2026-09-14).
+    """
+    ready = upper_body_from_mj(ready_q())
+    if arms:
+        return ready
+    target = np.asarray(seed, dtype=float).copy()
+    target[:3] = ready[:3]
+    return target
+
+
+def prepare_ready(p, timeout=3.0, *, arms=True, waist_tolerance=0.03):
+    """Before recording: waist neutral and, unless `arms=False`, both arms ready with wrists neutral.
+
+    The arm gate tolerates 0.30 rad because the wrists settle late. The waist
+    gate cannot: the engage lean is only 0.14 rad, so the arm tolerance would
+    admit it before the waist has moved, and the ego view gate then still
+    sees the lean (measured: 0.14 -> 0.16 at 1 s, 6/10 spawn rejections).
+    """
     from locomani.backends.sonic import upper_ref
 
     seed = upper_ref.shared().upper17()
     if seed is None:
         raise RuntimeError("ready baseline needs a fresh owned planner reference")
-    target = upper_body_from_mj(ready_q())
+    target = ready_target(seed, arms=arms)
+    checked, tolerance = (slice(3, None), 0.30) if arms else (slice(0, 3), waist_tolerance)
     ramp = UpperRamp(p.cmd, seed)
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     end = time.monotonic() + timeout
@@ -152,8 +176,8 @@ def prepare_ready(p, timeout=3.0):
         pushes += 1
         p.cmd.frame(mode=LocomotionMode.IDLE, facing=p._facing(state))
         measured = upper_body_from_mj(state["joints"])
-        joint_err = float(np.max(np.abs(measured[3:] - target[3:])))
-        if residual < 0.01 and joint_err < 0.30:
+        joint_err = float(np.max(np.abs(measured[checked] - target[checked])))
+        if residual < 0.01 and joint_err < tolerance:
             ramp.settle()
             return True
         time.sleep(0.02)
