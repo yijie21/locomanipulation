@@ -45,7 +45,7 @@ bash scripts/install_scene.sh
 runner 因未收够 1 条成功数据退出；只有抓起罐头不算任务完成。
 
 ```bash
-mkdir -p /workspace/tmp/p03/outputs
+mkdir -p $LOCOMANI_TMP/p03/outputs
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
   --config configs/pilot/learn_200.json --task configs/tasks/pick_place.json \
   --scene outputs/scene/pick_place --out outputs/pick_place_first_run \
@@ -55,7 +55,7 @@ mkdir -p /workspace/tmp/p03/outputs
 ```
 
 runner 负责启动 sim / SONIC deploy / exporter 和专家，并在结束后停止本次实例。
-它固定使用 **实例 0**，目前从 `/workspace/tmp/p03/outputs` 查找 session；
+它固定使用 **实例 0**，目前从 `$LOCOMANI_TMP/p03/outputs` 查找 session；
 上述命令使用默认临时目录。自定义目录或只检查动作时见 [手动命令入口](reference/runbook.md#manual-bottle-or-pick-and-place-check)。
 
 `through=collect` 必须保留，否则 pilot 配置默认继续到转换、训练和评测。

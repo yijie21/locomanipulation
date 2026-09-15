@@ -41,7 +41,8 @@ SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 DATA = ROOT / "third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python"
 TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 SRC = ROOT / "src/locomani"
-SESSIONS = Path("/workspace/tmp/p03/outputs")
+# Session output directory from LOCOMANI_TMP environment variable (e.g. ~/workspace/tmp)
+SESSIONS = Path(os.environ.get("LOCOMANI_TMP", "/tmp")) / "p03/outputs"
 
 
 def spawn_argv(spawn) -> list[str]:

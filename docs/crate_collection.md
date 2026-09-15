@@ -160,18 +160,20 @@ manifest 的成功标签不证明动作质量或 VLA 可学性。
 
 ```bash
 V="$LOCOMANI_ROOT/outputs/crate_wall_example"
-R="$LOCOMANI_ROOT/outputs/renders_isaac/crate_review_example"
-export LOCOMANI_SIM_DIR="$V/crate_bimanual_depth04"
+R="$LOCOMANI_ROOT/outputs/renders_isaac/crate_collect_10"
+export LOCOMANI_SIM_DIR="$V/crate_table30_depth04"
 CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 \
   bash scripts/build_isaac_assets.sh --snapshot "$LOCOMANI_SIM_DIR"
 mkdir -p "$R"
 CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 \
   MUJOCO_RENDER_ARGS="--insets" ISAAC_RENDER_ARGS="--insets" \
-  bash scripts/render_wall_pilot.sh "$V" "$R" 1 wall_s0 > "$R/render_all.log" 2>&1
+  bash scripts/render_wall_pilot.sh "$V" "$R" 10 visual_crate_s41 > "$R/render_all.log" 2>&1
+
+
 ```
 
 结果为 `sbs_roundNN.mp4`（左 MuJoCo、右 Isaac）及 `rNN/` 中间文件。
-visual / carry 回放须改成实际场景副本和 trace 标签，不能沿用 `wall_s0` 或默认高桌。
+visual / carry 回放须改成实际场景副本和 trace 标签。
 两个 `*_RENDER_ARGS` 独立控制画中画；Isaac 使用第二遍重放，缺失或陈旧相机帧会报错。
 
 缺失 trace 可能被跳过，`RENDER_ALL_DONE` 本身不证明每集均成功。

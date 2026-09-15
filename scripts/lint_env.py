@@ -24,6 +24,7 @@ WHITELIST = {
     "WANDB",
     "LOCOMANI_ROOT",
     "LOCOMANI_WORKSPACE",
+    "LOCOMANI_TMP",  # process-level session/log root, shared with scripts/paths.sh
     "LOCOMANI_SIM_DIR",
     "LOCOMANI_BACKEND_JSON",
     "LOCOMANI_DEPLOY_RECEIPTS",  # launcher/restart content-identity journal path  # one serialized config at the Python child-process entry
