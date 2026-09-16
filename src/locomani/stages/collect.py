@@ -112,7 +112,7 @@ def _bottle_batch(run, out: Path, stages: Stage, b: int, cases, state: dict, bac
     before = set(sessions.iterdir())
     stages.record(f"start_stack_{tag}", ["locomani.stack", "up", str(spec.instance)], env)
     stack = Stack(spec, base_env=env, record_command=stages.record)
-    stack.up()
+    env = stack.up()  # the agent runs in exactly the environment the stack's children got (DDS domain included)
     try:
         session = _wait_session(sessions, before) if spec.record else None
         state["sessions"].append(str(session) if session else None)

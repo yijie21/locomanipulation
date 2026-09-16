@@ -72,7 +72,7 @@ def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
     stages = Stage(out)
     stages.record("start_eval_stack", ["locomani.stack", "up", str(spec.instance)], env)
     stack = Stack(spec, base_env=env, record_command=stages.record)
-    stack.up()
+    env = stack.up()
     server = None
     try:
         server = _serve(ckpt, e.policy_port, str(run_cfg.gpu), ev / "serve.log")

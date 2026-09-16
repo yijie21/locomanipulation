@@ -1,8 +1,10 @@
-# backend/sonic: generated from configs/backends/sonic.json on 2026-09-16
+# backend/sonic: generated from configs/backends/sonic.json on 2026-09-16.
+# no_encoder is false: collection runs the deploy WITH its encoder (planner arm/waist references are
+# dropped without it, memory no-encoder-breaks-planner-arms); the eval stage forces no_encoder=true itself.
 defaults:
 - _sonic
 - _self_
-no_encoder: true
+no_encoder: false
 hand: dex1
 upper_slew_deg: 2.0
 grip_delay: 0
