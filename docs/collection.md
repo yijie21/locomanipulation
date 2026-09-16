@@ -92,7 +92,9 @@ python -m locomani.cli collect task=pick_place scene=sim collect.successes=50
 python -m locomani.cli collect +experiment=crate_table30_record            # 双臂 crate 录制线
 ```
 
-Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_table30 embodiment=g1_single_arm` 在组合时就报错。每次运行把完整解析后的配置写到 `<out>/run_config.yaml|json`，这就是这次运行的 provenance。旧的 JSON 配置文件和 `--set` 覆盖仍被底层驱动读取：入口把组合结果落成 `task_config.json`/`pilot_config.json` 再调用它们（基础设施计划第 3 步把阶段拆成独立进程后删除）。
+每个阶段是一个独立进程（`src/locomani/stages/`），只通过运行目录里的 manifest 认识彼此：`collect` 自己起 stack、跑专家、写 `<out>/collect/manifest.json`（sessions、manifests、yield、失败原因、起跑时的 CPU/pid/GPU 实测）；`convert` 读它、写 `train_dataset`/`val_dataset` 和自己的 manifest；`train` 读 convert 的、写 checkpoint 路径；`eval` 读 train 的、自己起评估 stack 和策略服务；`stats` 汇总。每个 manifest 带本阶段依赖的配置组的 hash 和上游 manifest 的 hash，上游不存在或未成功就拒绝运行；只重跑 eval = 在同一个 `out` 上再执行 `python -m locomani.cli eval ...`。
+
+Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_table30 embodiment=g1_single_arm` 在组合时就报错。每次运行把完整解析后的配置写到 `<out>/run_config.yaml|json`，这就是这次运行的 provenance。专家进程（`grasp_gym.py`、`crate/expert.py`）仍从运行目录里落下的 `task_config.json`/`reach_config.json` 读配置；旧的 `run_learn_pilot`/`run_crate_pilot` 驱动保留到基线对照通过（计划第 5 步）。
 
 ### 复现要点与预期成功率
 

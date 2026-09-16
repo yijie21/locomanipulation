@@ -39,6 +39,8 @@
 - 步骤 1 完成（`7105545`）：`locomani.conf` + `configs/{task,embodiment,scene,backend,collect,train,eval,experiment}/` + `python -m locomani.cli`；OmegaConf 对 frozen 嵌套 dataclass 需清只读标记（`conf.writable`），`tuple`/`Optional` 字段全部通过。
 - 步骤 2：`locomani.stack.Stack`（GPU1 实机 up/status/restart-deploy 30 s/down 验证通过，无残留进程与端口）；shell 启动/停止/重启脚本已删；`pipeline/stack.py` 的 `start_stack`/`stop_instance` 改为桥接，`deploy.restart` 经 `Stack.attach`。子进程仍读环境变量（sim/exporter 的 `TF_*`、`LOCOMANI_SIM_DIR` 等），`ENV_FIELDS` 翻译层留给步骤 3 的 agent 进程改造一并删。首次端到端复跑 `outputs/runs/infra_check_simple8` 2/8：主机负载 21、CPU 用满配额、GPU1 有外来 3 GB 进程，失败家族是已知的负载家族（停位过深 ×5、站位看不到瓶子 ×2），不能判定；负载降到 7 核以下后重跑。
 
+- 步骤 3：`src/locomani/stages/`（collect / convert / train / eval / stats 各一个模块，`<out>/<stage>/manifest.json` 约定：配置组 hash、上游 manifest hash、outputs、metrics、起跑资源），`locomani.cli <stage>` 直接调用，不再桥接 `run_learn_pilot`；crate 的 collect 仍走 `run_crate_pilot`。`train_bottle.sh` 读 `MODALITY`/`BASE_MODEL`；convert 的 GR00T stats 改用 embodiment 的 modality 配置（旧 pilot 用 2cam 算 stats、3cam 训练，不一致）。
+
 ## 待定（执行时决定，不影响上面 8 条）
 
 - OmegaConf 对 `tuple[float, float]`、`Optional[...]`、frozen dataclass 的支持要先用现有 5 个 config 类试一遍；不行的字段改 list。

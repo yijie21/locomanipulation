@@ -225,7 +225,7 @@ RUNNER=(exec)
 if [ "${DRY:-0}" = "1" ]; then RUNNER=(echo); fi
 "${RUNNER[@]}" "$GR00T/.venv/bin/torchrun" --nproc_per_node="$GPUS" --master_port="${PORT:-29500}" \
     -m gr00t.experiment.launch_finetune \
-    --base-model-path nvidia/GR00T-N1.7-3B \
+    --base-model-path "${BASE_MODEL:-nvidia/GR00T-N1.7-3B}" \
     --dataset-path "$DATA" \
     --embodiment-tag UNITREE_G1_SONIC \
     --modality-config-path "${MODALITY:-$LOCOMANI_ROOT/configs/gr00t_sonic_2cam.py}" \
