@@ -17,6 +17,7 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm_collection.md) |
 | 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/dataset.md) |
 | 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/training.md) · [评测](docs/evaluation.md) |
+| 多卡并行、多配置对比 | 一个 job 文件跑多个实验，按 manifest 跳过已完成阶段，结果注册表 | [基础设施计划与现状](docs/handoff/infra-plan-20260916.md) · `configs/jobs/example.yaml` |
 | MuJoCo 仿真与 Isaac 渲染 | 仿真与采集流程、EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染指南](docs/rendering.md) |
 
 双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
@@ -46,48 +47,51 @@ cd locomanipulation
 
 ## 快速开始
 
-下面以**30 cm 低桌上的双臂抓篮子，运行 3 次尝试**为例。先完成安装指南第 0–4 步，
-在仓库根目录的 Bash 终端执行。示例使用 GPU 0、实例 1；共享机器上先确认它们空闲。
+所有阶段只有一个命令：`python -m locomani.cli <collect|convert|train|eval|stats> [覆盖项]`。一次运行由七个配置组组成
+（`task` × `embodiment` × `scene` × `backend` × `collect` × `train` × `eval`，各在 `configs/<组>/` 下一个 YAML 一个版本），
+`configs/experiment/<name>.yaml` 固定一整套组合，用 `+experiment=<name>` 选中。先完成安装指南第 0–4 步，在仓库根目录执行：
 
 ```bash
-export INSTANCE=1
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-# 构建原始篮子场景，准备保持桌面宽度不变的 30 cm 低桌
-"$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual
-"$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
-  outputs/scene/crate_bimanual outputs/scene/crate_table30 --height 0.30
+# 只打印组合后的配置，不运行
+"$VENV_SIM_PY" -m locomani.cli show +experiment=bottle_simple_lowcom
 
-# 启动仿真与控制器，采集完整的走近、抓取过程
-"$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot --expert visual \
-  --config configs/tasks/crate_visual_low_reach.json \
-  --scene outputs/scene/crate_table30 --out outputs/crate_first_run \
-  --instance "$INSTANCE" --gpu 0 --rounds 3 --seed 101
+# 单臂抓瓶：固定样本库 8 局，GPU 1
+"$VENV_SIM_PY" -m locomani.cli collect +experiment=bottle_simple_lowcom name=my_first_run gpu=1
+
+# 同一个运行目录上接着做：转换 → 训练 → 闭环评测 → 汇总
+"$VENV_SIM_PY" -m locomani.cli convert name=my_first_run
+"$VENV_SIM_PY" -m locomani.cli train   name=my_first_run gpu=1
+"$VENV_SIM_PY" -m locomani.cli eval    name=my_first_run gpu=1 eval.rounds=20
+
+# 多个实验并行（一卡一 job，起跑前实测 CPU / pid / 显存）；`launch ls` 看注册表
+"$VENV_SIM_PY" -m locomani.launch run configs/jobs/example.yaml --gpus 0,1
 ```
 
-首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。
-runner 负责启停自己的实例并记录每次尝试；失败也会留下结果。重跑时换一个新的输出目录。
-单臂任务从 [单臂采集指南](docs/collection.md) 开始；本例的批量采集、参数与回放见 [双臂采集指南](docs/crate_collection.md)。
+首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。每个阶段是一个独立进程：`collect` 和 `eval`
+自己启停仿真、控制器和导出器（`src/locomani/stack/`，手工控制用 `python -m locomani.stack.cli up|status|down --instance N`），
+结果写进 `outputs/runs/<name>/<阶段>/manifest.json`，下一阶段只读这个文件。双臂抓篮子的命令见 [双臂采集指南](docs/crate_collection.md)。
 
 ## 查看运行结果
 
-以上示例的结果保存在 `outputs/crate_first_run/`：
+以上示例的结果保存在 `outputs/runs/<name>/`：
 
 | 路径 | 内容 |
 |---|---|
-| `videos_00/` | 第三人称录像，包含机器人相机的画中画 |
-| `observations/` | 专家实际看到的 RGB、时间戳、机器人状态和动作参考 |
-| `manifest_00.jsonl`、`attempts.jsonl` | 每次尝试的标签、成败及失败原因 |
-| `trace/` | 仿真状态轨迹，可用于检查与离线重渲 |
-| `config_snapshot.json`、`deploy_receipts.jsonl` | 本次配置、代码和实际控制模型的记录 |
+| `run_config.yaml`、`run_config.json` | 本次运行完整解析后的配置（provenance） |
+| `<阶段>/manifest.json` | 该阶段依赖的配置组 hash、上游 manifest hash、产物路径、指标、起跑时的 CPU / pid / GPU 实测 |
+| `collect/manifest_00.jsonl`、`collect/videos_00/`、`collect/state_trace_00/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹 |
+| `train_dataset/`、`model/checkpoint-<steps>/`、`eval/closed_loop.json` | 转换后的 LeRobot 数据集、微调 checkpoint、闭环评测结果（录像在 `eval/videos/`） |
 
+并行 launcher 每完成一个阶段在 `outputs/registry.jsonl` 追加一行（`launch ls` 查看，`launch compare A B --stage eval` 并排比较）。
 分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500,000 字节 的预览，原片保留。
-需要调整任务参数时查 [配置字段表](docs/reference/config_fields.md)；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
+需要调整参数时查 [配置字段表](docs/reference/config_fields.md)；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
 
 ## 仓库与更多文档
 
-`src/locomani/` 是仿真和任务代码，`configs/` 是运行配置，`assets/` 是随仓库提供的资产。
+`src/locomani/` 是仿真、任务、阶段（`stages/`）、栈管理（`stack/`）和 launcher（`launch.py`）代码，`configs/` 是按组划分的运行配置（YAML，`conf.py` 用 Hydra 组合），`assets/` 是随仓库提供的资产。
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
 完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)。
 

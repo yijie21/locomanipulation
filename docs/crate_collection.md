@@ -46,10 +46,11 @@ bash scripts/install_scene.sh
 这里运行 **1 次尝试**，从走近开始录视频，成功局到持篮直立验收结束：
 
 ```bash
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
-  --expert visual --config configs/task/crate_visual_low_reach.yaml \
-  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_first_attempt \
-  --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 101
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
+  task=crate_visual_low_reach scene=crate_table30_depth04 \
+  name=crate_first_attempt collect.instance="$INSTANCE" gpu=0 \
+  collect.batch_rounds=1 collect.max_batches=1 collect.successes=1 \
+  collect.seed0=101 embodiment=g1_bimanual collect.record=false
 ```
 
 runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
@@ -64,10 +65,11 @@ runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地
 下面采集 **10 次尝试**，包含成功和失败，不是“收够 10 条成功”：
 
 ```bash
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
-  --expert visual --config configs/task/crate_visual_low_reach.yaml \
-  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_collect_10 \
-  --instance "$INSTANCE" --gpu 0 --rounds 10 --seed 41
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
+  task=crate_visual_low_reach scene=crate_table30_depth04 \
+  name=crate_collect_10 collect.instance="$INSTANCE" gpu=0 \
+  collect.batch_rounds=10 collect.max_batches=1 collect.successes=10 \
+  collect.seed0=41 embodiment=g1_bimanual collect.record=false
 ```
 
 `--rounds` 控制尝试数；`--batch-rounds N` 可按批重启栈，默认整个 visual pilot 使用一批。
@@ -83,10 +85,11 @@ exporter 约占 500 个线程，容器 pid 上限 3840，实测两个录制栈�
 单臂采集（GPU 0 / 实例 0）并行录制；同一块 GPU 上不能跑两个仿真。
 
 ```bash
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
-  --expert visual --config configs/task/crate_visual_low_reach.yaml \
-  --scene outputs/scene/crate_table30_depth04 --out outputs/crate_record_10 \
-  --instance "$INSTANCE" --gpu 1 --rounds 10 --batch-rounds 10 --seed 7000 --record
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
+  task=crate_visual_low_reach scene=crate_table30_depth04 \
+  name=crate_record_10 collect.instance="$INSTANCE" gpu=1 \
+  collect.batch_rounds=10 collect.max_batches=1 collect.successes=10 \
+  collect.seed0=7000 embodiment=g1_bimanual
 ```
 
 manifest 行带 `task`、`produced`、`ok` 和成功局的
@@ -95,11 +98,11 @@ manifest 行带 `task`、`produced`、`ok` 和成功局的
 
 ```bash
 "$VENV_DATA_PY" -m locomani.pipeline.convert_to_hf_format \
-  --sessions $(python3 -c "import json;print(' '.join(json.load(open('outputs/crate_record_10/inputs.json'))['sessions']))") \
-  --manifest $(python3 -c "import json;print(' '.join(json.load(open('outputs/crate_record_10/inputs.json'))['manifests']))") \
-  --trim-verification-tail --out outputs/crate_record_10/dataset --jobs 4
-"$VENV_DATA_PY" -m locomani.pipeline.check_dataset outputs/crate_record_10/dataset \
-  --run-dir outputs/crate_record_10
+  --sessions $(python3 -c "import json;print(' '.join(json.load(open('outputs/runs/crate_record_10/inputs.json'))['sessions']))") \
+  --manifest $(python3 -c "import json;print(' '.join(json.load(open('outputs/runs/crate_record_10/inputs.json'))['manifests']))") \
+  --trim-verification-tail --out outputs/runs/crate_record_10/dataset --jobs 4
+"$VENV_DATA_PY" -m locomani.pipeline.check_dataset outputs/runs/crate_record_10/dataset \
+  --run-dir outputs/runs/crate_record_10
 ```
 
 `--run-dir` 让审计从本次运行的 `trace/` 按 exporter 的 `priv_seq` 精确取出箱子的
@@ -159,7 +162,7 @@ manifest 的成功标签不证明动作质量或 VLA 可学性。
 下面以第 6 节的单集 wall 诊断为例：
 
 ```bash
-V="$LOCOMANI_ROOT/outputs/crate_wall_example"
+V="$LOCOMANI_ROOT/outputs/runs/crate_wall_example"
 R="$LOCOMANI_ROOT/outputs/renders_isaac/crate_collect_10"
 export LOCOMANI_SIM_DIR="$V/crate_table30_depth04"
 CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 \
@@ -216,10 +219,11 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 例如单集 wall 接触诊断使用第 2 节构建的原始高度场景：
 
 ```bash
-"$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot \
-  --expert wall --config configs/task/crate_wall.yaml \
-  --scene outputs/scene/crate_bimanual_depth04 --out outputs/crate_wall_example \
-  --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 0
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
+  task=crate_wall task.expert=wall scene=crate_bimanual_depth04 \
+  name=crate_wall_example collect.instance="$INSTANCE" gpu=0 \
+  collect.batch_rounds=1 collect.max_batches=1 collect.successes=1 \
+  collect.seed0=0 embodiment=g1_bimanual collect.record=false
 ```
 
 `crate_wall.json` 显式开启 `wall_walk`；不加载 profile 时默认为 false。
