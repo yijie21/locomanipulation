@@ -204,6 +204,9 @@ class AgentCommander:
         self.left_hand = self._hand_open.copy()
         self.right_hand = self._hand_open.copy()
         self.upper_body = None
+        LAST_CMD["pose_send"] = None
+        LAST_CMD["control_owner_requested"] = None
+        LAST_CMD["stream_mode_requested"] = None
         # Which planner sub-mode `frame()` runs in. PLANNER_VR_3PT tracks the
         # wrist position targets above but ONLY while standing — the walking
         # policy ignores them and swings the arms. PLANNER_FROZEN_UPPER_BODY
@@ -243,6 +246,8 @@ class AgentCommander:
 
     def command(self, *, start: bool, stop: bool, planner: bool) -> None:
         self.sonic.send(build_command_message(start=start, stop=stop, planner=planner))
+        if start and not stop:
+            LAST_CMD["control_owner_requested"] = "planner" if planner else "streamed"
 
     def start_control(self) -> None:
         self.command(start=True, stop=False, planner=True)
@@ -274,6 +279,7 @@ class AgentCommander:
                 topic="manager_state",
             )
         )
+        LAST_CMD["stream_mode_requested"] = int(stream_mode)
 
     # -- upper body --------------------------------------------------------
 
@@ -395,19 +401,33 @@ class AgentCommander:
 
     # -- streamed motion (the channel Pico teleop actually uses) -----------
 
-    def enter_streamed(self) -> None:
+    def enter_streamed(self, prime=None) -> None:
         """Switch the deploy to STREAMED_MOTION: it now imitates `pose` frames.
 
         Prime the pose buffer with `pose_chunk` BEFORE calling this —
         g1_deploy_onnx_ref.cpp:618 stops control if the mode is active with no
-        motion frames buffered.
+        motion frames buffered. `prime`, when given, is called between the
+        motion switch and the POSE manager state: the deploy's command handler
+        answers planner=False by selecting the motion reader's default clip,
+        and only a pose chunk that forces a catch-up (a session's first packet)
+        re-selects the streamed motion, so a chunk sent right after the
+        switch keeps the default clip to a tick.
         """
-        # Tell the manager the stream is POSE too: with a stale
-        # FROZEN_UPPER_BODY manager state the deploy keeps the upper body
-        # pinned to the frozen targets and the streamed reach stalls with
-        # IK res 0.000 and a motionless palm.
-        self.manager_state(StreamMode.POSE)
+        # Switch the motion first, then tell the manager the stream is POSE.
+        # The other order released the FROZEN_UPPER_BODY pin while the planner
+        # was still the motion source: for ~0.5 s the deploy played its own
+        # default upper body (shoulder roll -0.3, elbow 1.0, wrists 0, jaws
+        # closed) before the streamed frames took over, which every takeover
+        # showed as a wrist flip and a jaw close/reopen (stage4_wrap8k traces,
+        # 2026-09-16). With the pin held through the switch the arms stay at
+        # the frozen targets, which are the same pose the primed chunk holds.
+        # The POSE manager state still follows immediately: with a stale
+        # FROZEN_UPPER_BODY state the deploy keeps the upper body pinned and
+        # the streamed reach stalls with IK res 0.000 and a motionless palm.
         self.command(start=True, stop=False, planner=False)
+        if prime is not None:
+            prime()
+        self.manager_state(StreamMode.POSE)
 
     def exit_streamed(self) -> None:
         self.command(start=True, stop=False, planner=True)
@@ -421,6 +441,7 @@ class AgentCommander:
         right_hand=None,
         *,
         joint_vel_isaac=None,
+        diagnostic_current_offset: int | None = None,
     ) -> None:
         """One `pose` message: an [N,29] IsaacLab-order joint chunk.
 
@@ -440,6 +461,8 @@ class AgentCommander:
         )
         if velocity.shape != (n, 29) or not np.isfinite(velocity).all():
             raise ValueError("joint_vel_isaac must contain one finite 29-joint velocity per pose")
+        if diagnostic_current_offset is not None and not 0 <= diagnostic_current_offset < n:
+            raise ValueError("diagnostic_current_offset must index the pose packet")
         quat = np.asarray(root_quat_wxyz, dtype=np.float32)
         if quat.ndim == 1:
             quat = np.tile(quat, (n, 1))
@@ -454,7 +477,28 @@ class AgentCommander:
         if right_hand is not None:
             data["right_hand_joints"] = np.asarray(right_hand, dtype=np.float32)
         self.sonic.send(pack_pose_message(data, topic="pose", version=1))
-        self._observe_reference("pose", data)
+        sent_wall = time.time()
+        observed = dict(data)
+        observed["packet_sample_count"] = n
+        if diagnostic_current_offset is not None:
+            i = int(diagnostic_current_offset)
+            observed["diagnostic_current"] = dict(
+                offset=i,
+                frame_index=int(data["frame_index"][i]),
+                joint_pos=data["joint_pos"][i],
+                joint_vel=data["joint_vel"][i],
+                body_quat=data["body_quat"][i],
+            )
+            LAST_CMD["pose_send"] = dict(
+                sent_wall=sent_wall,
+                timestamp_semantics="agent_post_send_wall_no_deploy_ack",
+                joint_order="isaaclab",
+                **{
+                    key: value.tolist() if hasattr(value, "tolist") else value
+                    for key, value in observed["diagnostic_current"].items()
+                },
+            )
+        self._observe_reference("pose", observed)
 
     def token_frame(
         self, token, right_hand=None, left_hand=None, frame_index: int | None = None, trace_source=None

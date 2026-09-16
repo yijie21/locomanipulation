@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -266,3 +267,69 @@ def test_braking_uses_the_last_successfully_sent_reference_state(monkeypatch):
     assert diagnostics["packet"]["initial_joint_speed"] == pytest.approx(0.60)
     assert diagnostics["packet"]["initial_root_angular_speed"] == pytest.approx(0.4)
     np.testing.assert_allclose(arm.q, prediction["joints"], atol=1e-10)
+
+
+def test_pose_switch_is_confirmed_from_the_deploy_echo_and_repushed_until_then(monkeypatch):
+    """The deploy can drop the chunk sent with the switch; the takeover keeps pushing until it echoes ours."""
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(streamed_arm.time, "sleep", lambda _: None)
+    default_clip = np.zeros(29)
+    default_clip[23], default_clip[25] = -0.3, 1.0  # the reader's neutral_kick arms
+    held = np.zeros(29)
+    held[23], held[25] = -0.45, 1.2
+    pushed = []
+    commander = MagicMock()
+    commander.left_hand = commander.right_hand = np.zeros(7)
+    commander.upper_body = None
+    commander.enter_streamed.side_effect = lambda prime=None: prime() if prime else None
+
+    class Tap:
+        def pose(self):
+            return held.copy(), np.array([1.0, 0, 0, 0])
+
+        def snapshot(self, max_age=0.2):
+            # The deploy echoes the default clip until it has decoded the THIRD chunk.
+            q = held if len(pushed) >= 3 else default_clip
+            return dict(received_wall=time.time() + 1.0, body_q_target=q.astype(np.float32))
+
+    monkeypatch.setattr(upper_ref, "shared", lambda: Tap())
+    arm = streamed_arm.StreamedArm.__new__(streamed_arm.StreamedArm)
+    arm.__dict__.update(
+        p=SimpleNamespace(cmd=commander, obs=lambda: dict(t=0.0)),
+        q=None,
+        root_quat=None,
+        hands={"left": np.zeros(7), "right": np.zeros(7)},
+        reference_velocity=np.zeros(29),
+        root_angular_velocity=np.zeros(3),
+        reference_time=None,
+        handoff_diagnostics={},
+        switch_diagnostics={},
+        _handoff_first_q=None,
+        _handoff_first_velocity=None,
+        _stream_released=False,
+        next_t=None,
+        guard=None,
+        left_guard=False,
+        _left_now=None,
+        _q_prev=np.zeros(29),
+        send_vel=False,
+        mode=0,
+        _face=None,
+        height=-1.0,
+        i=0,
+    )
+    monkeypatch.setattr(arm, "_push", lambda q, **kw: pushed.append(np.asarray(q).copy()), raising=False)
+    monkeypatch.setattr(
+        arm,
+        "hold",
+        lambda *a, **k: (
+            setattr(arm, "_handoff_first_q", held.copy()) or setattr(arm, "_handoff_first_velocity", np.zeros(29))
+        ),
+        raising=False,
+    )
+    arm.start(hold_planner_pose=True)
+    assert commander.enter_streamed.call_count == 1
+    assert arm.switch_diagnostics["confirmed"] is True and arm.switch_diagnostics["pushes"] == 2
+    assert len(pushed) == 3 and all(np.allclose(q, held) for q in pushed)
+    assert arm.handoff_diagnostics["switch"]["confirmed"] is True

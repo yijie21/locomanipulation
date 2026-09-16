@@ -876,6 +876,7 @@ class PoseSidecar:
         self._lock = _th.Lock()
         self._fh = None
         self._alive = True
+        self._reference_tap = None
         try:
             _os.makedirs(out_dir, exist_ok=True)
             ctx = zmq.Context.instance()
@@ -883,6 +884,12 @@ class PoseSidecar:
             self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
             self.sock.RCVTIMEO = 500
             self.sock.connect(f"tcp://{host}:{port or PRIVILEGED_PORT}")
+            try:
+                from locomani.backends.sonic import upper_ref as _upper_ref
+
+                self._reference_tap = _upper_ref.shared()
+            except Exception as e:  # noqa: BLE001 - additive diagnostics remain fail-safe
+                print(f"[sidecar] deploy reference tap unavailable: {e}")
             t = _th.Thread(target=self._loop, daemon=True)
             t.start()
         except Exception as e:  # noqa: BLE001
@@ -913,7 +920,20 @@ class PoseSidecar:
                         "wall": msg.get("wall"),
                         "pelvis": list(pel["pos"]) + list(pel["quat"]),
                         "objects": {k: list(o["pos"]) + list(o["quat"]) for k, o in msg.get("objects", {}).items()},
+                        "joints": msg.get("joints"),
                     }
+                    try:
+                        tap = self._reference_tap
+                        reference = None if tap is None else tap.snapshot()
+                        if reference is not None:
+                            reference = dict(reference)
+                            reference["body_q_target"] = reference["body_q_target"].tolist()
+                            root = reference.get("base_quat_target")
+                            reference["base_quat_target"] = None if root is None else root.tolist()
+                            reference["age_at_state_wall_s"] = float(row["wall"] - reference["received_wall"])
+                            row["deploy_reference"] = reference
+                    except Exception:
+                        pass
                     # ACTION-SIDE bookkeeping (2026-09-04): what the expert
                     # COMMANDED on this frame -- the planner frame, the 17
                     # upper-body joint targets, the hand targets and the IK's
@@ -927,6 +947,11 @@ class PoseSidecar:
                         from locomani.primitives import arm_ik as _ik
 
                         c = _as.LAST_CMD
+                        row["reference_command_state"] = {
+                            "control_owner_requested": c.get("control_owner_requested"),
+                            "stream_mode_requested": c.get("stream_mode_requested"),
+                            "pose_send": c.get("pose_send"),
+                        }
                         if c.get("frame") is not None:
                             row["cmd"] = c["frame"]
                         if c.get("u17") is not None:

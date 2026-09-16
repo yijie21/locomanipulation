@@ -97,6 +97,7 @@ class SupportedMotion:
         self.rotation_feedback_rate = np.zeros((2, 3))
         self.feedback_origin = self.rotation_origin = None
         self.translation_feedback_frozen = False
+        self.rotation_feedback_frozen = False
         self.config = config
         self.posture = np.asarray(reference_joints, dtype=float).copy()
         self.posture_start = self.posture.copy()
@@ -135,6 +136,21 @@ class SupportedMotion:
         self.posture_weights = 0.04 + amount * (self.posture_weights_target - 0.04)
         self.diagnostics["posture_blend"] = amount
 
+    def retarget_posture(self, posture_reference, posture_weights):
+        """Start a continuous posture blend from the current supported reference."""
+        target = np.asarray(posture_reference, dtype=float)
+        weights = np.asarray(posture_weights, dtype=float)
+        if target.shape != (29,) or not np.isfinite(target).all():
+            raise ValueError("supported posture_reference must contain 29 finite values")
+        if weights.shape != (29,) or not np.isfinite(weights).all() or np.any(weights < 0):
+            raise ValueError("supported posture_weights must contain 29 finite nonnegative values")
+        self.posture_start = self.joints
+        self.posture = self.posture_start.copy()
+        self.posture_target = target.copy()
+        self.posture_weights_target = weights.copy()
+        self.posture_weights = np.full(29, 0.04)
+        self.diagnostics["posture_retargeted"] = True
+
     def freeze_posture(self):
         """Hold the current reference as the loaded posture prior."""
         self.posture = self.joints
@@ -156,21 +172,49 @@ class SupportedMotion:
         self.diagnostics["translation_feedback_frozen"] = True
         return measured.copy(), reference
 
+    def freeze_translation_feedback(self):
+        """Hold the current translation compensation without moving the reference.
+
+        Unlike `freeze_translation_at_measured_tools` this keeps the active
+        reference where it is; it stops the bounded correction from chasing the
+        tracking bias. At the loaded hold that chase moved the hand 7-17 mm per
+        0.2 s at 4-8 cm/s, the compensation rate itself (stage3_7_governor8),
+        so the measured quiet window could never form.
+        """
+        self.translation_feedback_frozen = True
+        self.feedback_rate.fill(0)
+        self.diagnostics["translation_feedback_frozen"] = True
+
     def resume_translation_feedback(self):
         """Resume bounded measured tracking correction without a rate jump."""
         self.translation_feedback_frozen = False
         self.diagnostics["translation_feedback_frozen"] = False
 
+    def freeze_rotation_feedback(self):
+        """Hold rotation compensation and discard a stale pre-close derivative."""
+        self.rotation_feedback_frozen = True
+        self.rotation_feedback_rate.fill(0.0)
+        self.diagnostics["rotation_feedback_frozen"] = True
+
+    def resume_rotation_feedback(self):
+        """Resume bounded rotation correction from the stationary close hold."""
+        self.rotation_feedback_frozen = False
+        self.diagnostics["rotation_feedback_frozen"] = False
+
     @property
     def joints(self):
         return self.x[4:].copy()
 
-    def measured_foot_drift(self, state):
+    def measured_foot_positions(self, state):
+        """Return measured world foot positions for support-snapshot comparisons."""
         ik, d = self.body.ik, self.body.ik.data
         d.qpos[ik.qadr] = state["joints"]
         d.qpos[ik.base_qadr : ik.base_qadr + 7] = [*state["pelvis"]["pos"], *state["pelvis"]["quat"]]
         ik._mj.mj_kinematics(ik.model, d)
-        return np.linalg.norm(d.xpos[self.body.feet] - self.measured_feet, axis=1)
+        return d.xpos[self.body.feet].copy()
+
+    def measured_foot_drift(self, state):
+        return np.linalg.norm(self.measured_foot_positions(state) - self.measured_feet, axis=1)
 
     @property
     def root(self):
@@ -181,8 +225,11 @@ class SupportedMotion:
             raise ValueError("supported motion needs a fresh advancing physical clock")
         cfg = self.config
         error = self.body.tools(self.x) - measured
+        # "first" is the first step ever, for both loops: a frozen translation
+        # loop must not leave the rotation loop without it (the simple expert
+        # resumes rotation feedback at the lift with translation still frozen).
+        first = self.feedback_origin is None
         if not self.translation_feedback_frozen:
-            first = self.feedback_origin is None
             if first:
                 self.feedback_origin = error.copy()
             # Preserve the decoder's existing reference/measurement offset at
@@ -207,7 +254,7 @@ class SupportedMotion:
                 )
             else:
                 self.feedback += alpha * (error - self.feedback)
-        if measured_rotations is not None:
+        if measured_rotations is not None and not self.rotation_feedback_frozen:
             reference_rotations = self.body.ik.data.xmat[self.body.hands].reshape(2, 3, 3)
             error_rot = Rotation.from_matrix(
                 reference_rotations @ np.asarray(measured_rotations).transpose(0, 2, 1)
@@ -286,6 +333,7 @@ class SupportedMotion:
             rotation_feedback_rate=self.rotation_feedback_rate.copy(),
             tracking_correction_dynamics=bool(cfg.tracking_correction_dynamics),
             translation_feedback_frozen=bool(self.translation_feedback_frozen),
+            rotation_feedback_frozen=bool(self.rotation_feedback_frozen),
             **self.body.last_diagnostics,
         )
         return pose

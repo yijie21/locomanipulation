@@ -36,9 +36,14 @@ def test_whole_body_configuration_reaches_actual_factory_and_roundtrips():
     assert changed.reach.whole_body.capture_min_samples == 6
     assert changed.reach.whole_body.capture_brake_acceleration == 0.20
     assert changed.reach.whole_body.capture_brake_lookahead_seconds == 0.10
+    assert changed.reach.whole_body.capture_terminal_window_seconds == 0.20
+    assert changed.reach.whole_body.capture_terminal_max_gap_seconds == 0.05
     assert changed.reach.whole_body.tracking_correction_dynamics is True
     assert changed.reach.whole_body.ik_velocity_continuity_weight == 0.0
     assert changed.reach.whole_body.comfort_posture is True
+    assert changed.reach.whole_body.stance_forward_margin_m == 0.18
+    assert changed.reach.whole_body.stance_yaw_margin_deg == 16.0
+    assert changed.reach.whole_body.stance_solver_iterations == 40
     assert ReachConfig.from_dict(changed.reach.to_dict()) == changed.reach
     args = [object(), object(), changed.reach, object(), ExecutionRecord()]
     with patch.object(WholeBodyGraspPolicy, "__init__", return_value=None) as initialize:
@@ -67,18 +72,30 @@ def test_whole_body_configuration_reaches_actual_factory_and_roundtrips():
         ("capture_angular_drift_max", 0.01),
         ("capture_brake_acceleration", 0.01),
         ("capture_brake_lookahead_seconds", 1.0),
+        ("capture_terminal_window_seconds", 0.01),
+        ("capture_terminal_max_gap_seconds", 0.2),
         ("tracking_translation_speed", 0.001),
         ("tracking_rotation_acceleration", 3.0),
         ("ik_velocity_continuity_weight", 0.3),
         ("walk_plan_hz", 30),
         ("walk_filter_seconds", 0.01),
+        ("stance_forward_margin_m", 0.5),
+        ("stance_yaw_margin_deg", 40),
+        ("stance_solver_iterations", 20.0),
+        ("stance_plan_tolerance_m", 0.1),
+        ("stance_settled_timeout", 0.1),
         ("lift_seconds", 0.5),
         ("lift_height", 0.4),
+        ("loaded_tracking_translation_full_m", 0.06),
+        ("loaded_object_tilt_fail_rad", 0.20),
+        ("loaded_grip_swing_full_rad", -0.01),
+        ("loaded_orientation_recovery_seconds", 0.05),
     ],
 )
 def test_invalid_physical_limits_fail_before_execution(field, value):
+    config = WholeBodyConfig(natural_walk_prep=field.startswith("stance_"))
     with pytest.raises(ValueError):
-        replace(WholeBodyConfig(), **{field: value})
+        replace(config, **{field: value})
 
 
 def test_supported_motion_tracks_right_hand_with_planted_feet_and_bounded_rates():
@@ -114,9 +131,11 @@ def test_return_to_planner_preserves_owned_reference_instead_of_tracking_error()
     arm = StreamedArm(p, "right", ik=scene_ik())
     arm.q = q
     arm.stop(preserve_reference=True)
+    arm.stop(preserve_reference=True)
     np.testing.assert_array_equal(cmd.set_upper_body.call_args.args[0], upper_body_from_mj(q))
     names = [call[0] for call in cmd.method_calls]
     assert names.index("frame") < names.index("exit_streamed")
+    assert cmd.exit_streamed.call_count == 1
     np.testing.assert_array_equal(cmd.set_upper_body_vel.call_args.args[0], np.zeros(17))
 
 
@@ -546,54 +565,6 @@ def test_close_transition_preserves_commanded_tools_and_rotations():
     np.testing.assert_allclose(corrected, reference_rotations, atol=1e-12)
 
 
-def test_loaded_handoff_checks_attached_stop_before_braking_and_keeps_hand_closed():
-    from locomani.backends.sonic.primitives import HAND_CLOSED_RIGHT
-    from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
-
-    q = np.linspace(-0.1, 0.1, 29)
-    stop = q + 0.02
-    state = dict(joints=q - 0.01, pelvis=dict(pos=[0, 0, 0.8], quat=[1, 0, 0, 0]))
-    prediction = dict(joints=stop, root=np.array([1, 0, 0, 0]), duration=0.2, frames=10, preview={})
-    events = []
-    arm = Mock(
-        q=q.copy(),
-        root_quat=np.array([1.0, 0, 0, 0]),
-        reference_velocity=np.full(29, 0.4),
-        root_angular_velocity=np.array([0, 0.2, 0]),
-        hands={"right": np.zeros(7)},
-    )
-    arm.stopping_reference.return_value = prediction
-
-    def brake(admitted):
-        assert events == ["clear"]
-        events.append("brake")
-        arm.q = admitted["joints"].copy()
-        arm.reference_velocity = np.zeros(29)
-        arm.root_angular_velocity = np.zeros(3)
-        return dict(packet=dict(max_joint_acceleration=2.0), observed=dict(max_joint_acceleration=3.0))
-
-    arm.brake_to_stop.side_effect = brake
-    policy = WholeBodyGraspPolicy.__new__(WholeBodyGraspPolicy)
-    policy.arm, policy.stats = arm, {}
-    policy.p = SimpleNamespace(obs=Mock(side_effect=[state, dict(state, joints=stop.copy())]))
-
-    def clear(*args, **kwargs):
-        events.append("clear")
-        assert kwargs["attached"] is True
-        np.testing.assert_allclose(args[1], state["joints"] + stop - q)
-        return None
-
-    policy._clear = clear
-    ok, reason = policy._brake_handoff()
-
-    assert ok and "stopped handback" in reason
-    assert events == ["clear", "brake"]
-    np.testing.assert_array_equal(arm.hands["right"], HAND_CLOSED_RIGHT)
-    assert policy.stats["handback"]["admitted"] is True
-    assert policy.stats["handback"]["braking"]["packet"]["max_joint_acceleration"] == 2.0
-    assert policy.stats["handback"]["braking"]["observed"]["max_joint_acceleration"] == 3.0
-
-
 def test_loaded_handoff_does_not_emit_an_unadmitted_stopping_reference():
     from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
 
@@ -776,9 +747,7 @@ def test_terminal_braking_uses_the_current_cap_clearing_goal(monkeypatch):
         0.02,
         0.16,
         0.020,
-        measured_forward_speed=0.10,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
 
     assert gap == pytest.approx(0.120)
@@ -801,58 +770,50 @@ def test_central_entry_goal_advances_smoothly_through_the_old_tip_capture_depth(
     assert float((target - positions[-1]) @ axis) == pytest.approx(-0.002, abs=1e-6)
 
 
-def test_filtered_momentum_retreat_and_predictive_capture_use_full_stopping_distance():
+def test_terminal_observer_prediction_drives_capture_consumer():
     from locomani.tasks.bottle.whole_body_policy import (
         CaptureAdmissionConsumer,
-        ForwardSpeedFilter,
+        TerminalMotionObserver,
         momentum_guarded_depth,
         predictive_capture_geometry,
-        stopping_retreat,
+        signed_stopping_displacement,
     )
 
-    assert stopping_retreat(0.080, 0.20, 0.10) == pytest.approx(0.024)
+    assert signed_stopping_displacement(0.080, 0.20, 0.10) == pytest.approx(0.024)
+    assert signed_stopping_displacement(-0.080, 0.20, 0.10) == pytest.approx(-0.024)
+    assert momentum_guarded_depth(0.0012, 0.024) == pytest.approx((0.0252, 0.024, False))
+    assert momentum_guarded_depth(0.095, 0.024) == pytest.approx((0.10, 0.024, True))
 
-    speed_filter = ForwardSpeedFilter(0.10)
-    filtered = speed_filter.step(0.080, 0.020)
-    assert 0 < filtered < 0.080
-    released = speed_filter.step(0.0, 0.020)
-    assert 0 < released < filtered
-
-    depth, filtered_retreat, capped = momentum_guarded_depth(0.0012, filtered, 0.20, 0.10)
-    assert depth == pytest.approx(0.0012 + filtered_retreat)
-    assert not capped
-    capped_depth, uncapped_retreat, capped = momentum_guarded_depth(0.0598981638, 0.20, 0.20, 0.10)
-    assert capped_depth == pytest.approx(0.10)
-    assert uncapped_retreat == pytest.approx(0.12)
-    assert capped is True
-
-    jitter_filter = ForwardSpeedFilter(0.10)
-    jitter_retreats = [
-        stopping_retreat(jitter_filter.step(raw, 0.020), 0.20, 0.10) for raw in [0.080, 0.0, 0.080, 0.0, 0.080, 0.0]
-    ]
-    assert np.max(np.abs(np.diff(jitter_retreats))) < stopping_retreat(0.080, 0.20, 0.10)
-
+    observer = TerminalMotionObserver(0.20, 0.10)
+    status = None
+    for stamp in np.linspace(0.0, 0.20, 11):
+        status = observer.step(stamp, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.0012)
     geometry = dict(
         ready=True,
-        depth_m=0.0057,
+        rejection_reasons=[],
+        depth_m=0.0012,
         preferred_depth_m=0.0012,
         depth_tolerance_m=0.005,
-        rejection_reasons=[],
     )
-    predicted = predictive_capture_geometry(geometry, 0.080, filtered, 0.20, 0.10)
-    assert predicted["stopping"]["prediction_speed_m_s"] == pytest.approx(0.080)
-    assert predicted["stopping"]["stopping_retreat_m"] == pytest.approx(0.024)
-    assert predicted["stopping"]["predicted_depth_m"] == pytest.approx(-0.0183)
-    assert not predicted["ready"]
-    assert predicted["rejection_reasons"] == ["predicted_stopping_depth"]
+    admitted = predictive_capture_geometry(geometry, status)
+    assert admitted["ready"]
+    assert admitted["stopping"]["predicted_depth_interval_m"] == pytest.approx([0.0012, 0.0012])
 
     entered = []
     consumer = CaptureAdmissionConsumer()
-    assert consumer.consume("reach", predicted, lambda: entered.append(True)) == "reach"
-    assert entered == []
-    stationary = predictive_capture_geometry(geometry, 0.0, 0.0, 0.20, 0.10)
-    assert consumer.consume("reach", stationary, lambda: entered.append(True)) == "close"
+    assert consumer.consume("reach", admitted, lambda: entered.append(True)) == "close"
     assert entered == [True]
+
+    moving = TerminalMotionObserver(0.20, 0.10)
+    for stamp in np.linspace(0.0, 0.20, 11):
+        x = 0.080 * stamp
+        status = moving.step(stamp, [x, 0.0, 0.0], [1.0, 0.0, 0.0], 0.0057)
+    rejected = predictive_capture_geometry({**geometry, "depth_m": 0.0057}, status)
+    assert status["trend_velocity_m_s"] == pytest.approx(0.080)
+    assert status["stopping_displacement_m"] == pytest.approx(0.024)
+    assert status["predicted_depth_interval_m"] == pytest.approx([-0.0183, -0.0183])
+    assert not rejected["ready"]
+    assert "predicted_depth_interval" in rejected["rejection_reasons"]
 
 
 def test_dynamic_momentum_depth_drives_timed_path_and_retracts_ahead_per_tick_command():
@@ -866,7 +827,7 @@ def test_dynamic_momentum_depth_drives_timed_path_and_retracts_ahead_per_tick_co
     target = np.array([0.4, -0.2, 0.7])
     axis = np.array([1.0, 0.0, 0.0])
     initial = target - 0.10 * axis
-    dynamic_depth, _, _ = momentum_guarded_depth(0.0012, 0.060, 0.20, 0.10)
+    dynamic_depth, _, _ = momentum_guarded_depth(0.0012, 0.015)
     timed, _ = advance_entry_command(
         initial,
         initial,
@@ -877,9 +838,7 @@ def test_dynamic_momentum_depth_drives_timed_path_and_retracts_ahead_per_tick_co
         0.02,
         0.16,
         dynamic_depth,
-        measured_forward_speed=0.060,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
     np.testing.assert_allclose(
         timed,
@@ -897,9 +856,7 @@ def test_dynamic_momentum_depth_drives_timed_path_and_retracts_ahead_per_tick_co
         0.02,
         0.16,
         dynamic_depth,
-        measured_forward_speed=0.060,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
     assert float((following - ahead) @ axis) < 0
     assert np.linalg.norm(following - ahead) <= 0.16 * 0.02 + 1e-9

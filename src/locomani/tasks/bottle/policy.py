@@ -4,8 +4,8 @@ from locomani.tasks.bottle.reach_config import ReachConfig
 
 
 def prepares_during_navigation(config: ReachConfig):
-    """Only the continuous expert owns filtered arm guidance on the initial walk."""
-    return config.strategy == "whole_body"
+    """The continuous and the simple experts own filtered arm guidance on the initial walk."""
+    return config.strategy in ("whole_body", "simple")
 
 
 def make_grasp_policy(robot, task, config: ReachConfig, arm_ramp, execution):
@@ -18,6 +18,10 @@ def make_grasp_policy(robot, task, config: ReachConfig, arm_ramp, execution):
         from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
 
         return WholeBodyGraspPolicy(robot, task, config, arm_ramp, execution)
+    if config.strategy == "simple":
+        from locomani.tasks.bottle.simple_policy import SimpleGraspPolicy
+
+        return SimpleGraspPolicy(robot, task, config, arm_ramp, execution)
     if config.strategy == "legacy":
         return None
     if config.strategy == "ready":

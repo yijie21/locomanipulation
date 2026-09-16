@@ -9,14 +9,18 @@ from locomani.tasks.bottle import round_phases_approach as approach
 from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
 
 
-def _state(seq, depth, *, x=0.0, t=None, fallen=False, speed=0.0):
+def _state(seq, depth, *, x=0.0, yaw=0.0, t=None, fallen=False, speed=0.0):
     return dict(
         seq=seq,
         t=float(seq if t is None else t),
         depth=depth,
         fallen=fallen,
-        pelvis=dict(pos=[x, 0.0, 0.8], vel=[speed, 0.0, 0.0]),
-        objects={"bottle": {"cam": [0.0, 0.0]}},
+        pelvis=dict(
+            pos=[x, 0.0, 0.8],
+            quat=[np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)],
+            vel=[speed, 0.0, 0.0],
+        ),
+        objects={"bottle": {"cam": [0.0, 0.0], "pos": [x + depth, 0.0, 0.7]}},
     )
 
 
@@ -34,7 +38,14 @@ class _Coordinated:
         )
         self.settlement_observer = None
 
-    def walk_tick(self, state, *, edge_distance=None):
+    def walk_tick(
+        self,
+        state,
+        *,
+        edge_distance=None,
+        navigation_heading=None,
+        navigation_target=None,
+    ):
         self.events.append(("plan", state["seq"], edge_distance))
         return True
 
@@ -59,6 +70,7 @@ def _context(states, events):
         obs=Mock(side_effect=observe),
         cmd=cmd,
         pelvis_xy=lambda state: np.asarray(state["pelvis"]["pos"][:2]),
+        object_pos=lambda key, state: np.asarray(state["objects"][key]["pos"]),
         log=Mock(),
     )
     coordinated = _Coordinated(events)
@@ -98,6 +110,44 @@ def _simple_approach_geometry(monkeypatch):
     monkeypatch.setattr(approach.stream_reach, "toppled", lambda *_args: False)
 
 
+def test_coordinated_visible_stop_and_speed_ignore_pelvis_yaw_at_fixed_world_pose():
+    first = _state(1, 0.40, yaw=0.0)
+    turned_yaw = 0.70
+    turned = _state(2, 0.40, yaw=turned_yaw)
+    ctx = _context([first], [])
+    cfg = ctx.reach_config
+    turned_rel = (0.40 * np.cos(turned_yaw), 0.40 * np.sin(turned_yaw), 0.0)
+
+    first_depth, first_frame = approach._visible_depth_measurement(ctx, first, (0.40, -0.1, 0.0))
+    turned_depth, turned_frame = approach._visible_depth_measurement(ctx, turned, turned_rel)
+
+    assert first_depth == pytest.approx(0.40)
+    assert turned_depth == pytest.approx(first_depth)
+    assert first_frame == turned_frame == "fixed_navigation_heading"
+    assert approach.visible_stop(first_depth, 0.5, cfg) == approach.visible_stop(turned_depth, 0.5, cfg)
+    assert approach.visible_speed_scale(first_depth, 0.5, cfg) == pytest.approx(
+        approach.visible_speed_scale(turned_depth, 0.5, cfg)
+    )
+    speed_args = dict(
+        plan_depth=0.25,
+        mid_band=0.10,
+        coarse_speed=0.40,
+        mid_speed=0.25,
+        shuffle_speed=0.20,
+    )
+    first_speed = approach._visible_command_speed(first_depth, 0.5, cfg, **speed_args)
+    turned_speed = approach._visible_command_speed(turned_depth, 0.5, cfg, **speed_args)
+    assert turned_speed == pytest.approx(first_speed)
+
+    ctx.coordinated = None
+    legacy_depth, legacy_frame = approach._visible_depth_measurement(ctx, turned, turned_rel)
+    assert legacy_depth == pytest.approx(turned_rel[0])
+    assert legacy_frame == "current_pelvis_yaw"
+    assert approach.visible_stop(legacy_depth, 0.5, cfg)
+    assert approach.visible_speed_scale(legacy_depth, 0.5, cfg) == pytest.approx(0.0)
+    assert approach._visible_command_speed(legacy_depth, 0.5, cfg, **speed_args) == pytest.approx(0.20)
+
+
 def test_approach_stops_on_first_fresh_observation_before_planning():
     events = []
     state = _state(17, 0.30, x=0.1, t=2.4)
@@ -110,7 +160,9 @@ def test_approach_stops_on_first_fresh_observation_before_planning():
     assert request["observation_sequence"] == 17
     assert request["observation_physical_time_s"] == 2.4
     assert request["pelvis_position_m"] == [0.1, 0.0, 0.8]
-    assert request["object_depth_m"] == 0.30
+    assert request["object_depth_m"] == pytest.approx(0.30)
+    assert request["object_depth_frame"] == "fixed_navigation_heading"
+    assert request["ego_object_depth_m"] == 0.30
     assert request["table_edge_distance_m"] == 0.4
     assert request["reason"] == "visible brake depth"
     assert request["forward_direction_xy"] == [1.0, 0.0]
@@ -151,7 +203,7 @@ def test_approach_rechecks_a_new_observation_after_planning_before_walking():
         final_observation_sequence=22,
         final_physical_time_s=3.4,
         final_forward_displacement_m=pytest.approx(0.12),
-        final_object_depth_m=0.18,
+        final_object_depth_m=pytest.approx(0.18),
         final_table_edge_distance_m=pytest.approx(0.28),
         complete=True,
         settled=False,
@@ -204,7 +256,9 @@ def test_whole_body_brake_holds_idle_before_each_planner_tick_and_finalizes_trac
     policy = WholeBodyGraspPolicy.__new__(WholeBodyGraspPolicy)
     policy.p = SimpleNamespace(obs=Mock(side_effect=[first, quiet_start, quiet]))
     policy._hold_planner = Mock(side_effect=lambda state: events.append(("hold", state["seq"])))
-    policy.walk_tick = Mock(side_effect=lambda state: events.append(("plan", state["seq"])) or True)
+    policy._preparation_hold_tick = Mock(
+        side_effect=lambda state: events.append(("prepare_hold", state["seq"])) or True
+    )
     observed = []
     policy._approach_settlement_observer = lambda state, complete=False, settled=False, completion_reason=None: (
         observed.append((state["seq"], complete, settled, completion_reason))
@@ -212,8 +266,47 @@ def test_whole_body_brake_holds_idle_before_each_planner_tick_and_finalizes_trac
 
     assert policy._brake()
 
-    assert events == [("hold", 30), ("plan", 30), ("hold", 31), ("plan", 31)]
+    assert events == [
+        ("hold", 30),
+        ("prepare_hold", 30),
+        ("hold", 31),
+        ("prepare_hold", 31),
+    ]
     assert observed[-1] == (32, True, True, "brake quiet")
+
+
+def test_whole_body_brake_samples_preparation_every_tick_and_restarts_support_dwell():
+    samples = [
+        _state(40, 0.2, t=8.00, speed=0.1),
+        _state(41, 0.2, t=8.05),
+        _state(42, 0.2, t=8.10),
+        _state(43, 0.2, t=8.15, speed=0.1),
+        _state(44, 0.2, t=8.20),
+        _state(45, 0.2, t=8.25),
+        _state(46, 0.2, t=8.30),
+        _state(47, 0.2, t=8.35),
+        _state(48, 0.2, t=8.40),
+        _state(49, 0.2, t=8.45),
+    ]
+    policy = WholeBodyGraspPolicy.__new__(WholeBodyGraspPolicy)
+    policy.p = SimpleNamespace(obs=Mock(side_effect=samples))
+    policy._hold_planner = Mock()
+    policy._preparation_hold_tick = Mock(return_value=True)
+    policy._approach_settlement_observer = lambda *_args, **_kwargs: None
+    policy._settled_request = None
+    calls = []
+
+    def settled_tick(state, *, support_quiet, allow_submission):
+        calls.append((state["t"], support_quiet, allow_submission))
+        return {"status": "legacy" if allow_submission else "preparing"}
+
+    policy._settled_stance_tick = settled_tick
+
+    assert policy._brake()
+    assert [stamp for stamp, _, _ in calls] == pytest.approx([sample["t"] for sample in samples[1:]])
+    assert calls[2][1:] == (False, False)
+    assert not any(admitted for _, _, admitted in calls[:-1])
+    assert calls[-1][2]
 
 
 def test_settle_for_admission_is_reused_by_execute_without_a_second_brake():
@@ -227,3 +320,27 @@ def test_settle_for_admission_is_reused_by_execute_without_a_second_brake():
 
     policy._brake.assert_called_once_with()
     policy.execution.enter.assert_called_once_with("whole_body.brake")
+
+
+def test_visible_shuffle_speed_overrides_the_checkpoint_floor():
+    assert approach.approach_shuffle_speed(SimpleNamespace(visible_shuffle_speed=0.35), 0.20) == 0.35
+    assert approach.approach_shuffle_speed(SimpleNamespace(visible_shuffle_speed=0.0), 0.20) == 0.20
+    assert approach.approach_shuffle_speed(SimpleNamespace(), 0.20) == 0.20
+    cfg = SimpleNamespace(visible_brake_depth=0.31, visible_decel_band=0.50, visible_brake_edge=0.27)
+    common = dict(plan_depth=0.3, mid_band=0.0, coarse_speed=0.40, mid_speed=0.215, shuffle_speed=0.35)
+    # At the brake edge the command is the crawl floor, half a band out it is halfway to coarse.
+    assert approach._visible_command_speed(0.6, 0.27, cfg, **common) == pytest.approx(0.35)
+    assert approach._visible_command_speed(0.6, 0.52, cfg, **common) == pytest.approx(0.375)
+    assert approach._visible_command_speed(0.9, 0.9, cfg, **common) == pytest.approx(0.40)
+
+
+def test_simple_task_accepts_the_crawl_band_and_rejects_a_floor_above_bounds():
+    from locomani.tasks.bottle.config import BottleTaskConfig
+
+    task = BottleTaskConfig.load("configs/tasks/bottle_simple.json")
+    # A crawl floor above v1.1's 0.28-0.30 speed step and a band the gait can respond within.
+    assert 0.30 <= task.reach.visible_shuffle_speed <= 0.35 and task.reach.visible_decel_band >= 0.50
+    with pytest.raises(ValueError):
+        task.with_overrides(["reach.visible_shuffle_speed=0.7"])
+    with pytest.raises(ValueError):
+        task.with_overrides(["reach.visible_decel_band=0.7"])

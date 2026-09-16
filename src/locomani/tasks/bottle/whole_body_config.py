@@ -23,8 +23,10 @@ class WholeBodyConfig:
     capture_drift_speed_max: float = 0.03  # maximum least-squares palm-frame position drift, metres/second
     capture_rotation_diameter_max: float = 0.035  # maximum pairwise measured palm rotation spread, radians
     capture_angular_drift_max: float = 0.20  # maximum least-squares measured palm rotation drift, radians/second
-    capture_brake_acceleration: float = 0.20  # terminal measured-speed braking acceleration, metres/second squared
-    capture_brake_lookahead_seconds: float = 0.10  # terminal advance lookahead on measured forward speed
+    capture_brake_acceleration: float = 0.20  # terminal Cartesian retreat/entry acceleration, metres/second squared
+    capture_brake_lookahead_seconds: float = 0.10  # lookahead used in signed terminal trend stop prediction
+    capture_terminal_window_seconds: float = 0.20  # measured Cartesian history used by terminal motion observer
+    capture_terminal_max_gap_seconds: float = 0.05  # reset terminal history across larger physical-time gaps
     contact_confirm_seconds: float = (
         0.10  # continuous bilateral contact and quiet palm-frame motion required before loading
     )
@@ -69,6 +71,16 @@ class WholeBodyConfig:
     pregrasp_gap_max: float = 0.16
     pregrasp_lateral_span: float = 0.04
     stance_ik_tolerance: float = 0.025
+    stance_forward_margin_m: float = 0.18  # extra post-command travel beyond the 0.10 m stop lead
+    stance_yaw_margin_deg: float = 16.0
+    stance_waist_yaw_max: float = 0.10
+    stance_waist_roll_max: float = 0.05
+    stance_solver_iterations: int = 40
+    stance_plan_tolerance_m: float = 0.015
+    stance_plan_yaw_tolerance_deg: float = 2.0
+    stance_plan_joint_tolerance_rad: float = 0.08
+    stance_plan_freshness_seconds: float = 1.0
+    stance_settled_timeout: float = 3.0
     walk_stop_acceleration: float = 0.8  # conservative measured gait deceleration used for stop lead, m/s^2
     walk_stop_latency: float = 0.10  # command/observation allowance in the stopping envelope, seconds
     walk_stop_lead_max: float = 0.10
@@ -81,10 +93,25 @@ class WholeBodyConfig:
     roi_correction_hz: float = 2.0
     lean_max: float = 0.55  # torso lean target cap in the supported reach; the height term or the distance term (0 at 0.30 m, full at 0.60 m pelvis-to-grip) asks for it
     walk_joint_speed: float = 0.7  # reference joint speed cap while walking (the crate's walking preparation uses 0.7); at 0.45 the wrist turn took the whole 3.5 s walk
-    lift_height: float = 0.06  # explicit vertical lift after capture, metres; the torso recovery adds ~0.2 m of its own
+    lift_height: float = (
+        0.06  # measured bottle-rise requirement; live command adds stance_ik_tolerance (0.085 m resolved)
+    )
     lift_seconds: float = (
         5.0  # lift ramp duration; 0.16 m in 3 s (13 cm/s with the torso rise) slid the bottle out of the jaws
     )
+    # Task priors for conservative live admission; physical limits remain unmeasured.
+    loaded_tracking_translation_full_m: float = 0.015
+    loaded_tracking_translation_stop_m: float = 0.050
+    loaded_tracking_rotation_full_rad: float = 0.060
+    loaded_tracking_rotation_stop_rad: float = 0.180
+    loaded_object_tilt_full_rad: float = 0.105
+    loaded_object_tilt_stop_rad: float = 0.262
+    loaded_object_tilt_fail_rad: float = 0.349
+    loaded_liftoff_rise_m: float = 0.010  # measured object rise that marks the load transferring from table to hand
+    loaded_grip_swing_full_rad: float = 0.035
+    loaded_grip_swing_stop_rad: float = 0.120
+    loaded_grip_swing_fail_rad: float = 0.200
+    loaded_orientation_recovery_seconds: float = 0.40  # stop-band recovery timeout, seconds
 
     @property
     def waist_dofs(self):
@@ -154,6 +181,8 @@ class WholeBodyConfig:
             and 0.05 <= self.capture_angular_drift_max <= 0.8
             and 0.05 <= self.capture_brake_acceleration <= 1.0
             and 0.02 <= self.capture_brake_lookahead_seconds <= 0.3
+            and 0.10 <= self.capture_terminal_window_seconds <= 0.5
+            and 0.02 <= self.capture_terminal_max_gap_seconds <= 0.1
         ):
             raise ValueError("whole-body centred capture window or terminal braking outside supported range")
         if not (
@@ -182,6 +211,17 @@ class WholeBodyConfig:
             and 0.06 <= self.pregrasp_gap_min <= self.pregrasp_gap_max <= 0.22
             and 0 <= self.pregrasp_lateral_span <= 0.10
             and 0.005 <= self.stance_ik_tolerance <= 0.06
+            and 0.10 <= self.stance_forward_margin_m <= 0.30
+            and 1 <= self.stance_yaw_margin_deg <= 30
+            and 0.02 <= self.stance_waist_yaw_max <= 0.30
+            and 0.01 <= self.stance_waist_roll_max <= 0.15
+            and type(self.stance_solver_iterations) is int
+            and 10 <= self.stance_solver_iterations <= 100
+            and 0.003 <= self.stance_plan_tolerance_m <= 0.05
+            and 0.5 <= self.stance_plan_yaw_tolerance_deg <= 10.0
+            and 0.02 <= self.stance_plan_joint_tolerance_rad <= 0.20
+            and 0.2 <= self.stance_plan_freshness_seconds <= 3.0
+            and 0.5 <= self.stance_settled_timeout <= 8.0
             and 0.3 <= self.walk_stop_acceleration <= 2.0
             and 0 <= self.walk_stop_latency <= 0.3
             and 0.04 <= self.walk_stop_lead_max <= 0.25
@@ -201,7 +241,43 @@ class WholeBodyConfig:
             and 0.5 <= self.roi_correction_hz <= self.walk_plan_hz
         ):
             raise ValueError("wrist ROI supervision is outside the supported range")
+        if not 0.002 <= self.loaded_liftoff_rise_m <= 0.03:
+            raise ValueError("whole_body.loaded_liftoff_rise_m must be within [0.002, 0.03] m")
         if self.lift_height > 0.30:
             raise ValueError("whole_body.lift_height above 0.30 m is outside the supported lift")
         if not 1.0 <= self.lift_seconds <= 10.0:
             raise ValueError("whole_body.lift_seconds must be within [1, 10] s")
+        loaded_bands = (
+            (
+                "loaded_tracking_translation",
+                self.loaded_tracking_translation_full_m,
+                self.loaded_tracking_translation_stop_m,
+                None,
+            ),
+            (
+                "loaded_tracking_rotation",
+                self.loaded_tracking_rotation_full_rad,
+                self.loaded_tracking_rotation_stop_rad,
+                None,
+            ),
+            (
+                "loaded_object_tilt",
+                self.loaded_object_tilt_full_rad,
+                self.loaded_object_tilt_stop_rad,
+                self.loaded_object_tilt_fail_rad,
+            ),
+            (
+                "loaded_grip_swing",
+                self.loaded_grip_swing_full_rad,
+                self.loaded_grip_swing_stop_rad,
+                self.loaded_grip_swing_fail_rad,
+            ),
+        )
+        for name, full, stopped, failed in loaded_bands:
+            values = (full, stopped) if failed is None else (full, stopped, failed)
+            if not all(math.isfinite(value) for value in values) or not 0 <= full < stopped:
+                raise ValueError(f"whole_body.{name} needs finite limits with 0 <= full < stop")
+            if failed is not None and failed <= stopped:
+                raise ValueError(f"whole_body.{name}_fail must be greater than its stop limit")
+        if not 0.1 <= self.loaded_orientation_recovery_seconds <= 2.0:
+            raise ValueError("whole_body.loaded_orientation_recovery_seconds must be within [0.1, 2.0] s")

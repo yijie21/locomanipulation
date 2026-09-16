@@ -87,6 +87,7 @@ class TransportGuard:
             robot_geoms = set(geoms(descendants(int(m.jnt_bodyid[base_joint]))))
             arm_geoms = set(g for group in self.hands.values() for g in group)
             self.hands["body"] = sorted(robot_geoms - arm_geoms)
+        self.target_contact_geoms = set(self.finger_geoms)
         target = body(target_body)
         self.obstacles = geoms(descendants(target))
         self.target_geoms = frozenset(self.obstacles)
@@ -112,6 +113,31 @@ class TransportGuard:
         m.geom_contype[self.obstacles] = 2
         m.geom_conaffinity[self.obstacles] = 1
         m.geom_margin[self.obstacles] = margin
+
+    def allow_target_contact_meshes(self, mesh_names):
+        """Let arm geoms built from these meshes touch the target like the fingers do.
+
+        The Dex1 housing (`Dex1_base_link`, attached to the wrist yaw link)
+        sits 0-4 mm from a bottle held at the middle of the pads: in every
+        wrist/bottle guard of stage3_3/3_4 the pads were already 1-11 mm into
+        the bottle while the housing brushed it, and backing the bottle 5-10 mm
+        cleared the housing with the pads still engaged (2026-09-16,
+        housing_clearance_review.json). The housing is therefore part of the
+        intended grasp envelope, not a transport obstacle; table and body
+        clearance are unchanged. Returns the number of geoms added.
+        """
+        m = self.model
+        wanted = set(mesh_names)
+        added = 0
+        for group in self.hands.values():
+            for g in group:
+                if int(m.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_MESH):
+                    continue
+                mesh = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_MESH, int(m.geom_dataid[g]))
+                if mesh in wanted and g not in self.target_contact_geoms:
+                    self.target_contact_geoms.add(g)
+                    added += 1
+        return added
 
     def check(self, state, candidate, side, *, allow_target_contact=False, candidate_base=None, ignore_target=False):
         """Sweep joints and optional base motion from the supplied measured state.
@@ -184,7 +210,7 @@ class TransportGuard:
                     and not (
                         allow_target_contact
                         and other in self.target_geoms
-                        and (not self.finger_only_target_contact or g in self.finger_geoms)
+                        and (not self.finger_only_target_contact or g in self.target_contact_geoms)
                     )
                 ):
                     hits.append((float(contact.dist), g, other))

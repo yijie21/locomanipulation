@@ -519,6 +519,11 @@ def _phase_navigate(ctx: RoundContext):
     early = prepares_during_navigation(ctx.reach_config)
     if early:
         _prepare_grasp_policy(ctx, preserve_reference=True)
+        prepare_walk = getattr(ctx.coordinated, "prepare_walk", None)
+        if prepare_walk is not None:
+            # The arms take their walking pose standing, before the first step:
+            # an arm motion during the walk is a cue-less action in the data.
+            prepare_walk()
 
     plan_r = float(np.hypot(ctx.rel[0], ctx.rel[1]))
     ctx.plan_r = plan_r
@@ -549,7 +554,15 @@ def _phase_navigate(ctx: RoundContext):
             timeout=10.0 + 8.0 * ctx.spawn_off,
             face_target=False,
             face_yaw=ctx.psi,
-            on_tick=(lambda state, _dist: ctx.coordinated.walk_tick(state)) if early else None,
+            on_tick=(
+                lambda state, _dist: ctx.coordinated.walk_tick(
+                    state,
+                    navigation_heading=ctx.fv,
+                    navigation_target=ctx.spawn_xy,
+                )
+            )
+            if early
+            else None,
         ):
             if early and ctx.coordinated.error:
                 return False, ctx.coordinated.error

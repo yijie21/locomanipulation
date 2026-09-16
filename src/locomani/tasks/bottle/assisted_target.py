@@ -42,6 +42,12 @@ class AssistedBottleTarget:
             + centre
         )
 
+    def age(self, *, now=None):
+        """Seconds since the cameras last admitted the target (inf if never)."""
+        now = time.time() if now is None else now
+        with self._lock:
+            return float("inf") if self._seen is None else max(0.0, now - self._seen)
+
     def observe(self, state, *, now=None):
         now = time.time() if now is None else now
         message = self.client.read()
@@ -182,6 +188,12 @@ class BottleTargetObserver:
         finally:
             if observer is not None:
                 observer.close()
+
+    def age(self, *, now=None):
+        """Seconds since the cameras last admitted the target (inf if never)."""
+        now = time.time() if now is None else now
+        with self._lock:
+            return float("inf") if self._seen is None else max(0.0, now - self._seen)
 
     def observe(self, state, *, now=None):
         now = time.time() if now is None else now

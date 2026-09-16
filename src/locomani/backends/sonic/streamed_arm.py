@@ -26,6 +26,8 @@ from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.g1_joints import ARM_MJ, mujoco_to_isaac
 
 CHUNK = 5  # pose frames per message, like the pico manager
+SWITCH_CONFIRM_S = 1.0  # re-issue the POSE switch if the deploy has not echoed the held frame by then
+SWITCH_MATCH_RAD = 0.03  # body_q_target within this of the pushed frame on all 14 arm joints = the stream is the source
 JOINT_SPEED = 0.8  # rad/s for large repositioning moves
 FINE_SPEED = 0.4  # rad/s inside the servo
 # TRIMMED FOR IMITATION DATA (2026-08-25). These settles were tuned for
@@ -109,10 +111,12 @@ class StreamedArm:
         }
         self.q = None  # current reference, MuJoCo order
         self.root_quat = None
+        self._stream_released = False
         self.reference_velocity = np.zeros(29)
         self.root_angular_velocity = np.zeros(3)
         self.reference_time = None
         self.handoff_diagnostics = {}
+        self.switch_diagnostics = {}
         self.braking_diagnostics = {}
         self._handoff_first_q = self._handoff_first_velocity = None
         self.next_t = None
@@ -123,6 +127,7 @@ class StreamedArm:
     # -- plumbing ----------------------------------------------------------
 
     def start(self, *, hold_planner_pose=False, inherit_planner_velocity=False) -> None:
+        self._stream_released = False
         s = self.p.obs()
         # A primed POSE stream atomically takes the planner override in the deploy.
         if hold_planner_pose:
@@ -153,20 +158,28 @@ class StreamedArm:
             incoming_q, incoming_v = self.q.copy(), self.reference_velocity.copy()
             self._handoff_first_q = self._handoff_first_velocity = None
             self.next_t = time.time()
-            self.hold(
-                0.1,
+            self.p.cmd.set_upper_body_vel(None)
+            # No chunk before the switch: the session's FIRST packet is what
+            # forces the deploy's catch-up and re-selects the streamed motion
+            # after planner=False (a chunk primed earlier makes the post-switch
+            # chunk an ordinary extension and the default clip plays on:
+            # stage4_wrap8m, jaw closed 0.18 s). The first push goes between the
+            # motion switch and the POSE manager state (AgentCommander.enter_streamed).
+            push = lambda: self._push(  # noqa: E731
+                self.q,
                 reference_velocity=self.reference_velocity if inherit_planner_velocity else None,
                 root_angular_velocity=self.root_angular_velocity if inherit_planner_velocity else None,
             )
-            self.p.cmd.set_upper_body_vel(None)
-            self.p.cmd.enter_streamed()
+            self.p.cmd.enter_streamed(prime=push)
+            self._confirm_streamed(tap, push)
             self.p.cmd.upper_body = None
             self.hold(
-                0.1,
+                0.2,
                 reference_velocity=self.reference_velocity if inherit_planner_velocity else None,
                 root_angular_velocity=self.root_angular_velocity if inherit_planner_velocity else None,
             )
             self.handoff_diagnostics = dict(
+                switch=dict(self.switch_diagnostics),
                 inherited_velocity=bool(inherit_planner_velocity),
                 q_start_error=float(np.max(np.abs(incoming_q - self._handoff_first_q))),
                 dq_start_error=float(np.max(np.abs(incoming_v - self._handoff_first_velocity))),
@@ -183,17 +196,24 @@ class StreamedArm:
         self.q = np.array(s["joints"])
         self.root_quat = yaw_only(s["pelvis"]["quat"])
         self.next_t = time.time()
-        # Prime the buffer BEFORE the switch — the deploy stops control if
-        # streamed mode goes active over an empty motion buffer.
-        self.hold(0.3)
-        self.p.cmd.enter_streamed()
-        # 0.4 s, not 1.0: the replay diag validated the switch with 0.6 s of
-        # held frames; what the deploy needs is a non-empty buffer and a few
-        # frames of continuity, not a second of recorded standing.
-        self.hold(0.4)
+        # The session's first chunk goes between the motion switch and the POSE
+        # manager state (it forces the deploy's catch-up onto the streamed
+        # motion); the buffer is therefore non-empty when POSE goes active.
+        from locomani.backends.sonic import upper_ref
+
+        push = lambda: self._push(self.q)  # noqa: E731
+        self.p.cmd.enter_streamed(prime=push)
+        self._confirm_streamed(upper_ref.shared(), push)
+        self.handoff_diagnostics = dict(switch=dict(self.switch_diagnostics))
+        # 0.6 s of held frames: the replay diag validated the switch with 0.6 s;
+        # what the deploy needs is a non-empty buffer and a few frames of
+        # continuity, not a second of recorded standing.
+        self.hold(0.6)
 
     def stop(self, *, preserve_reference=False) -> None:
         """Hand control back to the planner; optionally retain the owned reference."""
+        if self._stream_released:
+            return
         from locomani.backends.sonic.primitives import upper_body_from_mj
 
         s = self.p.obs()
@@ -220,6 +240,7 @@ class StreamedArm:
                 facing=(np.cos(s["pelvis"]["yaw"]), np.sin(s["pelvis"]["yaw"]), 0),
             )
         self.p.cmd.exit_streamed()
+        self._stream_released = True
         # The switch re-anchors the deploy's planner heading at the robot's
         # current yaw (diag_heading.py); record it so frame() can undo the
         # rotation, or the next navigation walks confidently sideways.
@@ -272,6 +293,9 @@ class StreamedArm:
             left_hand=self.hands["left"],
             right_hand=self.hands["right"],
             joint_vel_isaac=velocities,
+            diagnostic_current_offset=(
+                self.preview.diagnostics["current_offset"] if self.preview is not None else len(positions) - 1
+            ),
         )
         self.i += 1
         self.next_t += DT
@@ -289,6 +313,52 @@ class StreamedArm:
             elif root_angular_velocity is not None:
                 self.root_angular_velocity = np.asarray(root_angular_velocity, dtype=float).copy()
             self.reference_time = stamp if self.preview is not None else reference_time
+
+    def _confirm_streamed(self, tap, push) -> None:
+        """Re-push the held frame until the deploy's published reference IS that frame.
+
+        The switch is a race inside the deploy: the tick that sees planner=False
+        runs a safety reset (the reference becomes a frozen copy of the reader's
+        default clip: shoulder roll -0.3, elbow 1.0, wrists 0, jaws closed), then
+        the ZMQ toggle, which drops any pose chunk that has already arrived. A
+        chunk sent right after the command can land in that gap, and the default
+        clip plays until a later chunk is decoded (stage4_wrap8o 30700:2: 0.25 s,
+        1 round in 8; every other round took the first chunk). The deploy's
+        g1_debug `body_q_target` is built from the motion it is playing, so the
+        only proof of the switch is that field equalling the pushed frame. Until
+        it does, push again every tick; after SWITCH_CONFIRM_S re-issue the whole
+        switch once; give up (recorded, not failed) after twice that.
+        """
+        snapshot = getattr(tap, "snapshot", None)
+        if snapshot is None or self.q is None:
+            self.switch_diagnostics = dict(confirmed=None, seconds=0.0, pushes=0, switches=1)
+            return
+        t0 = time.time()
+        pushes, switches, confirmed = 0, 1, False
+        while True:
+            seen = snapshot(max_age=0.2)
+            if (
+                seen is not None
+                and seen["received_wall"] > t0
+                and float(np.max(np.abs(np.asarray(seen["body_q_target"][15:29], dtype=float) - self.q[15:29])))
+                < SWITCH_MATCH_RAD
+            ):
+                confirmed = True
+                break
+            elapsed = time.time() - t0
+            if elapsed > 2 * SWITCH_CONFIRM_S:
+                break
+            if elapsed > SWITCH_CONFIRM_S and switches == 1:
+                self.p.cmd.enter_streamed(prime=push)
+                switches += 1
+            else:
+                push()
+            pushes += 1
+        self.switch_diagnostics = dict(
+            confirmed=confirmed, seconds=round(time.time() - t0, 3), pushes=pushes, switches=switches
+        )
+        if not confirmed:
+            print(f"[streamed_arm] POSE switch unconfirmed after {self.switch_diagnostics}", flush=True)
 
     def hold(self, seconds: float, *, reference_velocity=None, root_angular_velocity=None) -> None:
         velocity = None if reference_velocity is None else np.asarray(reference_velocity, dtype=float).copy()

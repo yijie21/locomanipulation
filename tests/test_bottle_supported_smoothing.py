@@ -18,6 +18,7 @@ from locomani.tasks.bottle.whole_body_policy import (
     CaptureSettleGate,
     begin_live_translation_hold,
     entry_step,
+    freeze_rotation_reference,
     terminal_entry_speed,
 )
 
@@ -111,41 +112,38 @@ def test_capture_window_keeps_six_samples_across_slower_irregular_control_ticks(
     assert statuses[-1]["held_seconds"] == pytest.approx(0.201)
 
 
-def test_terminal_entry_brakes_fast_motion_near_centre_but_resumes_when_stationary():
-    assert terminal_entry_speed(0.10, 0.09, 0.07, 0.20, 0.10) == pytest.approx(0.07)
-    assert terminal_entry_speed(0.008, 0.09, 0.024, 0.20, 0.10) == 0.0
-    assert terminal_entry_speed(0.003, 0.0, 0.0215, 0.20, 0.10) > 0.0
+def test_terminal_entry_decelerates_at_active_goal_and_keeps_corrections_continuous():
+    assert terminal_entry_speed(0.10, 0.07, 0.20) == pytest.approx(0.07)
+    assert terminal_entry_speed(0.0001, 0.024, 0.20) == pytest.approx(np.sqrt(0.00004))
+    assert terminal_entry_speed(0.0, 0.024, 0.20) == 0.0
 
-    entry_axis = np.array([1.0, 0.0, 0.0])
+    axis = np.array([1.0, 0.0, 0.0])
     target = np.zeros(3)
-    fast_near = np.array([-0.0092, 0.0, 0.0])
+    centred = np.array([-0.0012, 0.0, 0.0])
     held, _ = entry_step(
-        fast_near,
-        fast_near,
+        centred,
+        centred,
         target,
-        entry_axis,
+        axis,
         0.02,
         0.16,
         0.0012,
-        measured_forward_speed=0.09,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
-    np.testing.assert_array_equal(held, fast_near)
+    np.testing.assert_array_equal(held, centred)
 
+    outside = np.array([-0.0092, 0.0, 0.0])
     resumed, _ = entry_step(
-        held,
-        held,
+        outside,
+        outside,
         target,
-        entry_axis,
+        axis,
         0.02,
         0.16,
         0.0012,
-        measured_forward_speed=0.0,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
-    assert resumed[0] > held[0]
+    assert resumed[0] > outside[0]
     assert resumed[0] < -0.0012
 
     centred_with_lateral_error = np.array([-0.0012, 0.01, 0.0])
@@ -153,13 +151,11 @@ def test_terminal_entry_brakes_fast_motion_near_centre_but_resumes_when_stationa
         centred_with_lateral_error,
         centred_with_lateral_error,
         target,
-        entry_axis,
+        axis,
         0.02,
         0.16,
         0.0012,
-        measured_forward_speed=0.09,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
     assert corrected[1] < centred_with_lateral_error[1]
 
@@ -168,15 +164,14 @@ def test_terminal_entry_brakes_fast_motion_near_centre_but_resumes_when_stationa
         too_deep,
         too_deep,
         target,
-        entry_axis,
+        axis,
         0.02,
         0.16,
         0.0012,
-        measured_forward_speed=0.09,
         brake_acceleration=0.20,
-        brake_lookahead_seconds=0.10,
     )
     assert retreated[0] < too_deep[0]
+    assert np.linalg.norm(retreated - too_deep) <= 0.16 * 0.02 + 1e-12
 
 
 def test_bounded_correction_attenuates_tick_oscillation_and_obeys_physical_rate_limits():
@@ -337,6 +332,136 @@ def test_capture_brakes_translation_at_measured_tools_and_lift_resumes_continuou
     corrected_after = first_target + cfg.tracking_gain * fresh.feedback
     correction_step = np.linalg.norm(corrected_after - corrected_before, axis=1)
     assert np.max(correction_step) <= cfg.tracking_translation_acceleration * 0.02**2 + 1e-12
+
+
+def test_rotation_feedback_freezes_close_hold_and_restarts_lift_from_zero_rate():
+    ik = scene_ik()
+    state = supported_state()
+    cfg = replace(WholeBodyConfig(), tracking_correction_dynamics=True)
+    motion = SupportedMotion(
+        ik,
+        state,
+        cfg,
+        state["joints"],
+        [1, 0, 0, 0],
+        tool_offset=[0.1515, 0, 0],
+        hand_weights=(0.35, 1),
+    )
+    dt = 0.02
+
+    tools = motion.body.tools(motion.x).copy()
+    reference_rotations = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    motion.step(tools, reference_rotations, tools, dt, measured_rotations=reference_rotations)
+
+    tools = motion.body.tools(motion.x).copy()
+    reference_rotations = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    reach_error = np.array([[0.0, 0.06, 0.0], [0.0, -0.08, 0.0]])
+    measured_rotations = Rotation.from_rotvec(-reach_error).as_matrix() @ reference_rotations
+    motion.step(tools, reference_rotations, tools, dt, measured_rotations=measured_rotations)
+    assert np.max(np.linalg.norm(motion.rotation_feedback_rate, axis=1)) > 0
+
+    reference_rotations = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    frozen_targets = freeze_rotation_reference(
+        reference_rotations,
+        motion.rotation_feedback,
+        cfg.tracking_gain,
+    )
+    corrected_close = Rotation.from_rotvec(cfg.tracking_gain * motion.rotation_feedback).as_matrix() @ frozen_targets
+    np.testing.assert_allclose(corrected_close, reference_rotations, atol=1e-12)
+
+    feedback_at_close = motion.rotation_feedback.copy()
+    motion.freeze_rotation_feedback()
+    np.testing.assert_array_equal(motion.rotation_feedback_rate, np.zeros((2, 3)))
+    tools = motion.body.tools(motion.x).copy()
+    noisy_hold = Rotation.from_rotvec(-2 * reach_error).as_matrix() @ reference_rotations
+    motion.step(tools, frozen_targets, tools, dt, measured_rotations=noisy_hold)
+    np.testing.assert_array_equal(motion.rotation_feedback, feedback_at_close)
+    np.testing.assert_array_equal(motion.rotation_feedback_rate, np.zeros((2, 3)))
+
+    motion.resume_rotation_feedback()
+    tools = motion.body.tools(motion.x).copy()
+    live_reference = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    lift_error = np.array([[0.0, 0.12, 0.0], [0.0, -0.14, 0.0]])
+    measured_lift = Rotation.from_rotvec(-lift_error).as_matrix() @ live_reference
+    motion.step(tools, frozen_targets, tools, dt, measured_rotations=measured_lift)
+
+    max_rate = cfg.tracking_rotation_acceleration * dt
+    assert np.max(np.linalg.norm(motion.rotation_feedback_rate, axis=1)) <= max_rate + 1e-12
+    feedback_step = np.linalg.norm(motion.rotation_feedback - feedback_at_close, axis=1)
+    assert np.max(feedback_step) <= cfg.tracking_rotation_acceleration * dt**2 + 1e-12
+    assert not motion.diagnostics["rotation_feedback_frozen"]
+
+
+def test_translation_feedback_freeze_holds_value_without_moving_the_reference():
+    ik = scene_ik()
+    state = supported_state()
+    cfg = replace(WholeBodyConfig(), tracking_correction_dynamics=True)
+    motion = SupportedMotion(
+        ik,
+        state,
+        cfg,
+        state["joints"],
+        [1, 0, 0, 0],
+        tool_offset=[0.1515, 0, 0],
+        hand_weights=(0.35, 1),
+    )
+    dt = 0.02
+    tools = motion.body.tools(motion.x).copy()
+    rotations = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    motion.step(tools, rotations, tools, dt)
+    # A steady tracking error makes the bounded compensation move.
+    measured = tools + np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -0.02]])
+    for _ in range(5):
+        tools = motion.body.tools(motion.x).copy()
+        motion.step(tools, rotations, measured, dt)
+    assert np.linalg.norm(motion.feedback_rate[1]) > 0
+    held = motion.feedback.copy()
+    reference_before = motion.body.tools(motion.x).copy()
+    motion.freeze_translation_feedback()
+    np.testing.assert_array_equal(motion.feedback_rate, np.zeros((2, 3)))
+    assert motion.diagnostics["translation_feedback_frozen"]
+    # The reference is not moved by the freeze and the value stays put under more error.
+    np.testing.assert_allclose(motion.body.tools(motion.x), reference_before)
+    tools = motion.body.tools(motion.x).copy()
+    motion.step(tools, rotations, measured + [[0, 0, 0], [0, 0, -0.03]], dt)
+    np.testing.assert_array_equal(motion.feedback, held)
+    motion.resume_translation_feedback()
+    tools = motion.body.tools(motion.x).copy()
+    motion.step(tools, rotations, measured, dt)
+    assert (
+        np.max(np.linalg.norm(motion.feedback - held, axis=1)) <= cfg.tracking_translation_acceleration * dt**2 + 1e-12
+    )
+
+
+def test_rotation_feedback_runs_while_translation_feedback_is_frozen():
+    ik = scene_ik()
+    state = supported_state()
+    cfg = replace(WholeBodyConfig(), tracking_correction_dynamics=True)
+    motion = SupportedMotion(
+        ik,
+        state,
+        cfg,
+        state["joints"],
+        [1, 0, 0, 0],
+        tool_offset=[0.1515, 0, 0],
+        hand_weights=(0.35, 1),
+    )
+    dt = 0.02
+    tools = motion.body.tools(motion.x).copy()
+    rotations = ik.data.xmat[motion.body.hands].reshape(2, 3, 3).copy()
+    motion.step(tools, rotations, tools, dt, measured_rotations=rotations)
+    motion.freeze_translation_feedback()
+    motion.freeze_rotation_feedback()
+    motion.resume_rotation_feedback()
+    held = motion.feedback.copy()
+    tools = motion.body.tools(motion.x).copy()
+    measured = Rotation.from_rotvec([[0, 0.05, 0], [0, -0.05, 0]]).as_matrix() @ rotations
+    # Regression: this raised UnboundLocalError('first') on 2026-09-16.
+    motion.step(tools, rotations, tools, dt, measured_rotations=measured)
+    np.testing.assert_array_equal(motion.feedback, held)
+    assert (
+        np.max(np.linalg.norm(motion.rotation_feedback_rate, axis=1)) <= cfg.tracking_rotation_acceleration * dt + 1e-12
+    )
 
 
 def test_stationary_close_hold_unwinds_takeover_bias_with_bounded_feedback():

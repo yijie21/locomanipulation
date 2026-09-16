@@ -295,7 +295,39 @@ def parse_args(argv=None):
         default="",
         help="narrow what goes on the table (was SCENE_PRESET); see scene_lib.SCENE_PRESETS",
     )
+    ap.add_argument(
+        "--object-com-drop",
+        type=float,
+        default=0.0,
+        metavar="M",
+        help="lower the target object's centre of mass by this many metres (explicit inertial, mass and "
+        "inertia unchanged). A half-full bottle carries its mass low; the tipping energy barrier "
+        "m*g*(sqrt(r^2+z^2)-z) grows as the centre drops, so a pad that touches first slides the "
+        "bottle instead of toppling it.",
+    )
     return ap.parse_args(argv)
+
+
+def lower_object_com(spec, model, meta, drop_m: float) -> dict:
+    """Give the target object an explicit inertial with its centre of mass lowered by drop_m."""
+    target = meta["target_object"]
+    body_name = meta["objects"][target]["body"]
+    bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    if bid < 0:
+        raise ValueError(f"target object body {body_name!r} not in the compiled scene")
+    body = spec.body(body_name)
+    body.explicitinertial = True
+    body.mass = float(model.body_mass[bid])
+    body.ipos = model.body_ipos[bid] - np.array([0.0, 0.0, float(drop_m)])
+    body.iquat = model.body_iquat[bid].copy()
+    body.inertia = model.body_inertia[bid].copy()
+    return dict(
+        body=body_name,
+        mass=float(model.body_mass[bid]),
+        com_before=[float(v) for v in model.body_ipos[bid]],
+        com_after=[float(v) for v in body.ipos],
+        com_drop_m=float(drop_m),
+    )
 
 
 def main() -> None:
@@ -321,6 +353,10 @@ def main() -> None:
     if args.harden_pads:
         n = harden_finger_pads(spec, args.pad_level)
         print(f"[scene] finger pads hardened: {n} geoms (--harden-pads, level {args.pad_level})")
+    if args.object_com_drop:
+        lowered = lower_object_com(spec, model, meta, args.object_com_drop)
+        meta["objects"][meta["target_object"]]["inertial"] = lowered
+        print(f"[scene] target centre of mass lowered by {args.object_com_drop:.3f} m: {lowered}")
     _aim_ego_camera(spec)  # BEFORE to_xml(): see the note in there
     model = spec.compile()  # re-compile so the check below sees the aim
     _check_ego_camera(model)

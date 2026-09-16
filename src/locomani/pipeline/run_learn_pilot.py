@@ -126,7 +126,7 @@ def main(argv=None):
         inherit=base_env,
         extra_env=dict(stack_env, **dict(kv.split("=", 1) for kv in cfg.gym_env)),
     )
-    if task_cfg.reach.strategy == "whole_body":
+    if task_cfg.reach.strategy in ("whole_body", "simple"):
         from locomani.pipeline.provenance import require_pose_ownership
 
         require_pose_ownership(snapshot_env, hand_handoff=True)

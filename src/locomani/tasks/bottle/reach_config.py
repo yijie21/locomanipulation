@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from locomani.tasks.bottle.image_servo_config import BottleCalibration, ServoLimits
+from locomani.tasks.bottle.simple_config import SimpleGraspConfig
 from locomani.tasks.bottle.whole_body_config import WholeBodyConfig
 
 # Fields deleted from ReachConfig that may still appear in a committed
@@ -38,6 +39,7 @@ STRATEGY_FLAGS = {
     "coupled": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat"}),
     "image_servo": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat", "image_servo"}),
     "whole_body": frozenset({"ready_grasp_baseline", "ready_grasp_recovery"}),
+    "simple": frozenset({"ready_grasp_baseline", "ready_grasp_recovery"}),
     "teleop": frozenset({"ready_grasp_baseline", "ready_grasp_recovery", "coupled_squat", "teleop_arm"}),
 }
 LEGACY_STRATEGY_FIELDS = frozenset().union(*STRATEGY_FLAGS.values())
@@ -109,6 +111,7 @@ class ReachConfig:
     stand_azimuth_deg: float = 0.0
     visible_brake_depth: float = 0.31  # pelvis-frame object depth at which the walk stops (07d brake median: first_reachable 0.392 - advance 0.08)
     visible_decel_band: float = 0.12  # speed ramps down over this depth band above the brake depth
+    visible_shuffle_speed: float = 0.0  # 0 = the checkpoint's shuffle band; a command above the checkpoint's speed step (v1.1: 0.35 -> 0.083 m/s) makes the deceleration band a crawl the planner's stop can end within centimetres instead of the 0.02-0.26 m gait overshoot
     visible_brake_edge: float = 0.0  # 0 = off; the walk also stops when the pelvis is this close to the table edge (compact walking posture's capsule tangent to the edge, 2026-09-15); the deceleration band applies to it too
     # Privileged-teacher variant (ledger bottle §19.9): the expert CONTROLS from
     # object truth so it is reliable, while the RGB fit is still computed every
@@ -121,6 +124,7 @@ class ReachConfig:
     image_control: ServoLimits = field(default_factory=ServoLimits)  # Explicit feedback and execution limits.
 
     whole_body: WholeBodyConfig = field(default_factory=WholeBodyConfig)
+    simple: SimpleGraspConfig = field(default_factory=SimpleGraspConfig)  # simple single-arm expert (strategy "simple")
 
     def __post_init__(self):
         values = asdict(self)
@@ -129,9 +133,14 @@ class ReachConfig:
         if type(self.strategy) is not str or self.strategy not in STRATEGY_FLAGS:
             raise ValueError(f"unknown grasp strategy {self.strategy!r}; choices: {tuple(STRATEGY_FLAGS)}")
         for name, value in values.items():
-            if name not in (*BOOL_FIELDS, "strategy", "image_calibration", "image_control", "whole_body") and (
-                type(value) not in (int, float) or not math.isfinite(value)
-            ):
+            if name not in (
+                *BOOL_FIELDS,
+                "strategy",
+                "image_calibration",
+                "image_control",
+                "whole_body",
+                "simple",
+            ) and (type(value) not in (int, float) or not math.isfinite(value)):
                 raise ValueError(f"{name} must be a finite number")
         if not (0 < self.post_min < self.post_max and 0 < self.pre_min < self.pre_max):
             raise ValueError("Depth bounds must be positive and ordered")
@@ -152,7 +161,7 @@ class ReachConfig:
             raise ValueError("Squat prediction calibration outside supported bounds")
         if (self.squat_prediction_backshift_ratio or self.squat_prediction_drop_shortfall) and not self.coupled_squat:
             raise ValueError("Squat prediction calibration requires coupled squat")
-        if self.timely_capture and not (self.coupled_squat or self.strategy == "whole_body"):
+        if self.timely_capture and not (self.coupled_squat or self.strategy in ("whole_body", "simple")):
             raise ValueError("Timing experiments require coupled squat")
         if self.ready_grasp_recovery and (not self.ready_grasp_baseline or not self.transport_guard):
             raise ValueError("Recovery requires ready baseline and collision guard")
@@ -186,8 +195,10 @@ class ReachConfig:
         if self.visible_expert:
             if not (self.ready_grasp_baseline and self.ready_grasp_recovery):
                 raise ValueError("visible_expert requires the ready baseline with the recovery controller")
-            if not (0.20 <= self.visible_brake_depth <= 0.45 and 0 <= self.visible_decel_band <= 0.30):
+            if not (0.20 <= self.visible_brake_depth <= 0.45 and 0 <= self.visible_decel_band <= 0.60):
                 raise ValueError("visible brake geometry outside supported bounds")
+            if not 0 <= self.visible_shuffle_speed <= 0.60:
+                raise ValueError("visible_shuffle_speed outside supported bounds")
             if not 0 <= self.visible_brake_edge <= 0.45:
                 raise ValueError("visible_brake_edge outside supported bounds")
         if self.image_servo and not (self.visible_expert and self.coupled_squat and self.timely_capture):
@@ -196,6 +207,8 @@ class ReachConfig:
             raise ValueError("image calibration/control must be typed configurations")
         if not isinstance(self.whole_body, WholeBodyConfig):
             raise ValueError("whole_body must be a typed configuration")
+        if not isinstance(self.simple, SimpleGraspConfig):
+            raise ValueError("simple must be a typed configuration")
         self.approach_band()
 
     def approach_band(self):
@@ -247,6 +260,7 @@ class ReachConfig:
             ("image_calibration", BottleCalibration),
             ("image_control", ServoLimits),
             ("whole_body", WholeBodyConfig),
+            ("simple", SimpleGraspConfig),
         ):
             if key in data and isinstance(data[key], dict):
                 data[key] = factory(**data[key])

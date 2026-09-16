@@ -39,6 +39,48 @@ def visible_speed_scale(depth, edge, cfg, *, stop_depth=None, stop_edge=None):
     return u
 
 
+def approach_shuffle_speed(cfg, checkpoint_shuffle):
+    """The deceleration band's floor command: `visible_shuffle_speed` when set, else the checkpoint's shuffle band.
+
+    v1.1's shuffle band (0.20) sits below its 0.28-0.30 speed step, so the walk
+    keeps its gait speed until the brake fires and the planner's stop then
+    overshoots 0.02-0.26 m with the gait phase (stage4_hang8*, 2026-09-16). A
+    floor above the step (0.35 -> 0.083 m/s measured) turns the band into a
+    crawl the stop can end within centimetres.
+    """
+    override = float(getattr(cfg, "visible_shuffle_speed", 0.0) or 0.0)
+    return override if override > 0 else float(checkpoint_shuffle)
+
+
+def _visible_command_speed(
+    depth,
+    edge,
+    cfg,
+    *,
+    plan_depth,
+    mid_band,
+    coarse_speed,
+    mid_speed,
+    shuffle_speed,
+    stop_depth=None,
+    stop_edge=None,
+):
+    speed = mid_speed if depth - plan_depth <= mid_band else coarse_speed
+    scale = visible_speed_scale(depth, edge, cfg, stop_depth=stop_depth, stop_edge=stop_edge)
+    return min(speed, shuffle_speed + (speed - shuffle_speed) * scale)
+
+
+def _visible_depth_measurement(ctx, state, rel):
+    """Measure stop depth in the frame that owns the selected stop."""
+    if ctx.coordinated is None or not ctx.reach_config.visible_expert:
+        return float(rel[0]), "current_pelvis_yaw"
+    heading = np.asarray(ctx.fv[:2], dtype=float).copy()
+    heading /= np.linalg.norm(heading)
+    target_xy = np.asarray(ctx.p.object_pos(ctx.obj_key, state), dtype=float)[:2]
+    pelvis_xy = np.asarray(ctx.p.pelvis_xy(state), dtype=float)
+    return float((target_xy - pelvis_xy) @ heading), "fixed_navigation_heading"
+
+
 def _phase_approach(ctx: RoundContext):
     p, rm = ctx.p, ctx.rm
     if ctx.reach_config.image_servo:
@@ -46,7 +88,12 @@ def _phase_approach(ctx: RoundContext):
 
     def raise_arm(_s, dist):
         if ctx.coordinated is not None:
-            ctx.coordinated.walk_tick(_s, edge_distance=ctx.edge_dist(p.pelvis_xy(_s)))
+            ctx.coordinated.walk_tick(
+                _s,
+                edge_distance=ctx.edge_dist(p.pelvis_xy(_s)),
+                navigation_heading=ctx.fv,
+                navigation_target=aim_xy,
+            )
             return
         u = float(np.clip(1.0 - (dist - 0.06) / ctx.raise_lead, 0.0, 1.0))
         sm = 3 * u * u - 2 * u**3
@@ -120,6 +167,7 @@ def _phase_approach(ctx: RoundContext):
     # bands keep release's commands because v1.1's step jumps straight over the
     # 0.016-0.018 m/s they deliver there (gait_speeds.py says why).
     APPR_COARSE, APPR_MID, APPR_SHUFFLE = gait_speeds.approach_bands()
+    APPR_SHUFFLE = approach_shuffle_speed(ctx.reach_config, APPR_SHUFFLE)
     # The expert's own 1-2 cm/s shuffle-imitating crawl let the learned policy
     # set its own stop point independent of where the expert stopped; removing
     # it (formerly GYM_SHUFFLE_BAND=0) moved 07d 30% -> 48%, McNemar p=0.052
@@ -159,11 +207,14 @@ def _phase_approach(ctx: RoundContext):
 
         def measurement(state):
             rel = _rel_now(ctx, state)
+            object_depth, object_depth_frame = _visible_depth_measurement(ctx, state, rel)
             return dict(
                 observation_sequence=int(state["seq"]),
                 observation_physical_time_s=float(state["t"]),
                 pelvis_position_m=np.asarray(state["pelvis"]["pos"], dtype=float).tolist(),
-                object_depth_m=float(rel[0]),
+                object_depth_m=object_depth,
+                object_depth_frame=object_depth_frame,
+                ego_object_depth_m=float(rel[0]),
                 table_edge_distance_m=float(ctx.edge_dist(p.pelvis_xy(state))),
             )
 
@@ -267,15 +318,16 @@ def _phase_approach(ctx: RoundContext):
             brake_e = sample["table_edge_distance_m"]
             return reason
 
-        def stop_reason(rel, edge_now):
+        def stop_reason(state, rel, edge_now):
             reachable = rm.margin(rel, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
             selected_stop_edge = ctx.reach_config.visible_brake_edge
             if VISIBLE:
                 walk = None if ctx.coordinated is None else ctx.coordinated.walking
                 if walk is not None and walk.chosen_stop_edge is not None:
                     selected_stop_edge = walk.chosen_stop_edge
+                visible_depth, _ = _visible_depth_measurement(ctx, state, rel)
                 if visible_stop(
-                    rel[0],
+                    visible_depth,
                     edge_now,
                     ctx.reach_config,
                     stop_depth=None if walk is None else walk.chosen_stop_depth,
@@ -300,7 +352,7 @@ def _phase_approach(ctx: RoundContext):
                 return "fell"
 
             # Check the fresh sensor frame before camera/IK work can delay braking.
-            reason = stop_reason(rel, edge_now)
+            reason = stop_reason(state, rel, edge_now)
             if reason is not None:
                 why = request_stop(state, reason, observation_wall_time)
                 break
@@ -329,13 +381,16 @@ def _phase_approach(ctx: RoundContext):
                     completion_reason="coordinated planning error",
                 )
                 return ctx.coordinated.error
-            reason = stop_reason(rel, edge_now)
+            reason = stop_reason(state, rel, edge_now)
             if reason is not None:
                 why = request_stop(state, reason, observation_wall_time)
                 break
 
-            if stall_x is None or stall_x - rel[0] > 0.015:
-                stall_x, stall_t = rel[0], time.time()
+            control_depth = rel[0]
+            if VISIBLE and ctx.coordinated is not None:
+                control_depth, _ = _visible_depth_measurement(ctx, state, rel)
+            if stall_x is None or stall_x - control_depth > 0.015:
+                stall_x, stall_t = control_depth, time.time()
             elif time.time() - stall_t > 5.0:
                 why = request_stop(state, "stalled", observation_wall_time)
                 break
@@ -346,17 +401,21 @@ def _phase_approach(ctx: RoundContext):
             n_ts = float(np.linalg.norm(to_stand))
             mv = to_stand / n_ts if n_ts > 1e-3 else np.array(ctx.fv[:2])
             fv_now = ctx.fv
-            speed = APPR_MID if rel[0] - ctx.plan_r <= MID_BAND else APPR_COARSE
+            speed = APPR_MID if control_depth - ctx.plan_r <= MID_BAND else APPR_COARSE
             if VISIBLE and ctx.reach_config.visible_decel_band > 0:
                 walk = None if ctx.coordinated is None else ctx.coordinated.walking
-                u = visible_speed_scale(
-                    rel[0],
+                speed = _visible_command_speed(
+                    control_depth,
                     edge_now,
                     ctx.reach_config,
+                    plan_depth=ctx.plan_r,
+                    mid_band=MID_BAND,
+                    coarse_speed=APPR_COARSE,
+                    mid_speed=APPR_MID,
+                    shuffle_speed=APPR_SHUFFLE,
                     stop_depth=None if walk is None else walk.chosen_stop_depth,
                     stop_edge=None if walk is None else walk.chosen_stop_edge,
                 )
-                speed = min(speed, APPR_SHUFFLE + (speed - APPR_SHUFFLE) * u)
             p.cmd.frame(
                 mode=LocomotionMode.SLOW_WALK,
                 facing=fv_now,

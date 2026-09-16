@@ -75,6 +75,7 @@ class RefTap:
         self._root: np.ndarray | None = None
         self._root_angular: np.ndarray | None = None
         self._t = 0.0
+        self._sample_id = 0
         self._lock = threading.Lock()
         self._run = False
         self._th: threading.Thread | None = None
@@ -133,6 +134,7 @@ class RefTap:
                             self._dq = np.zeros(29, dtype=np.float32)
                             self._root_angular = np.zeros(3, dtype=np.float32)
                         self._q, self._root, self._t = q, root, stamp
+                        self._sample_id += 1
             time.sleep(0.004)
 
     def stop(self) -> None:
@@ -148,6 +150,30 @@ class RefTap:
                 return None
 
             return self._q.copy()
+
+    def snapshot(self, max_age: float = 0.2) -> dict | None:
+        """Return one asynchronous deploy-selected-frame publication.
+
+        The deploy builds these fields from a mutex-consistent
+        ``current_motion`` / ``current_frame`` snapshot. In streamed POSE mode
+        this identifies the frame selected by the deploy, but the publisher has
+        no controller acknowledgement or source timestamp. ``received_wall``
+        is therefore receive time in this process, never exact consumption
+        time. Frozen-upper substitution is absent from this raw debug field.
+        """
+        with self._lock:
+            received_wall = float(self._t)
+            if self._q is None or time.time() - received_wall > max_age:
+                return None
+            return dict(
+                schema_version=1,
+                source="deploy_current_motion_output",
+                timestamp_semantics="agent_receive_wall_no_controller_ack",
+                sample_id=int(self._sample_id),
+                received_wall=received_wall,
+                body_q_target=self._q.copy(),
+                base_quat_target=None if self._root is None else self._root.copy(),
+            )
 
     def pose(self):
         """One fresh joint/root reference packet, before frozen-upper substitution."""

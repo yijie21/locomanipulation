@@ -157,3 +157,30 @@ class TransportGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_housing_mesh_may_touch_target_like_fingers_once_allowed(self):
+        # A wrist-link geom built from the Dex1 housing mesh, at the bottle.
+        xml = XML.replace(
+            '<geom type="sphere" pos="1 0 0" size=".05" mass="1"/>',
+            '<geom type="mesh" mesh="Dex1_base_link" pos="1 0 0" mass="1"/>',
+        ).replace(
+            "<mujoco><worldbody>",
+            '<mujoco><asset><mesh name="Dex1_base_link" vertex="0 0 0  .05 0 0  0 .05 0  0 0 .05  -.05 0 0  0 -.05 0  0 0 -.05"/></asset><worldbody>',
+        )
+        model = mujoco.MjModel.from_xml_string(xml)
+        ik = SimpleNamespace(model=model, data=mujoco.MjData(model), base_qadr=0, qadr=np.array([7]))
+        state = {
+            "pelvis": {"pos": [0, 0, 0], "quat": [1, 0, 0, 0]},
+            "joints": [0.0],
+            "objects": {"bottle": {"pos": [1, 0, 0], "quat": [1, 0, 0, 0]}},
+            "palms": {"right": {"hand_q": []}},
+        }
+        guard = TransportGuard(ik, "bottle", "target", finger_only_target_contact=True)
+        self.assertEqual(guard.target_contact_geoms, set(guard.finger_geoms))
+        self.assertFalse(guard.check(state, [0.0], "right", allow_target_contact=True).clear)
+        self.assertEqual(guard.allow_target_contact_meshes(("no_such_mesh",)), 0)
+        self.assertEqual(guard.allow_target_contact_meshes(("Dex1_base_link",)), 1)
+        self.assertEqual(guard.allow_target_contact_meshes(("Dex1_base_link",)), 0)
+        self.assertTrue(guard.check(state, [0.0], "right", allow_target_contact=True).clear)
+        # Without the target-contact allowance the housing is still an obstacle.
+        self.assertFalse(guard.check(state, [0.0], "right", allow_target_contact=False).clear)

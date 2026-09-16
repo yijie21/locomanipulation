@@ -139,7 +139,7 @@ POSE 接管继承当前参考速度，并让完整未来窗口的位置与速度
 当前制动提前量上限仍为 0.10 m，实际制动距离的散布需要继续校准。
 抓起和恢复直立的进度受双侧接触与掌心坐标系内的滑动速度调节，短暂失去接触时
 减速并保持闭爪，稳定恢复后再继续；超时仍报告失败。具体改动、物理验证及限制见
-[中部抓取、接触恢复与运动跟踪](handoff/bottle-contact-expert-20260915.md)。
+[中部抓取、接触恢复与运动跟踪](handoff/bottle-contact-expert-20260915.md)。 后续按响应辨识、停车与全身规划、带物轨迹与稳定交接的顺序推进，见 [当前实施记录](handoff/bottle-dynamics-expert-20260915.md)。
 这些改动尚不代表已验证 VLA 学习收益。
 
 共同动作原则与此前诊断记录如下；固定髋旁手目标和固定停车距离的记录属于旧版：
@@ -296,6 +296,34 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 运动参数集中在 `reach.whole_body`，通过类型化配置传到消费者；不增加散落的环境变量。
 抓取后的退离与稳持验收沿用原标准。训练转换只截去已标记的末端验收尾段，不删除
 任务中间的停顿来掩盖控制问题。参数和证据分别见配置表与验证记录。
+
+### 简化单臂专家（`reach.strategy=simple`，2026-09-16）
+
+和双臂线同形：回合开始站立时双臂以 1.0 rad/s 收到配置的下垂姿态（`prepare_walk`，实测到 0.15 rad 内即走，上限 3 s；走路期间不再有任何手臂动作）（`reach.simple.hang_*`：肘 1.2、肩滚外展 0.45、腕关节全零，左臂镜像），手腕不做任何翻转，整臂比规划器的下垂姿态离身体远 8 cm（骨盆外 30 cm），腕相机 80° 视锥内到自身几何 ≥ 35 cm（离线射线扫描；外展 0.25 打到大腿 12 cm；前臂前伸的姿态会改变步态，停位冲到 0.08–0.10 m）；不跟踪瓶子。步态一结束（骨盆 < 0.10 m/s、腿 < 0.50 rad/s，不等静止）就接管 POSE，`stats.stand` 记录站姿；接管时两只手显式张开。之后是一条连续的最小加加速度路径：手在桌面高度带且离桌沿
+不足 6 cm 时先后缩 10 cm，竖直抬到 max(抓取高度 +8 cm, 桌面 +12 cm) 并前移 10 cm，按
+停稳后的位置重算接近线，滑到预抓取点；然后一段 8 cm/s 的进入，横向按实测掌坐标偏移
+在线修正（3 cm/s、最多 4 cm），到位或双侧接触即闭爪 → 抬升 → 躯干回正，交接给规划器。
+手指方向不沿骨盆到瓶子的方位，而是随瓶子向右的偏移向内转（1.2 rad/m，上限 20°）：
+离线 IK 在 8 个实测站位上扫描，手指朝前到向内 20° 的关节余量最大（65–70°），沿方位
+向外 30–40° 只有 42–55°，向内 60° 只剩 17–27°。前倾只按前向深度算（0.30 m 内为 0）。
+站位由刹车时的步速决定，不由刹车点决定：规划器停步会随步态相位冲出 0.02–0.26 m，
+而 v1.1 的 shuffle 指令（0.20）低于它的速度阶跃（0.28–0.30），减速带原本不减速。
+`reach.visible_shuffle_speed` 0.32 配 0.60 m 减速带让最后半米慢速爬行，刹车沿 0.40
+（`visible_brake_depth` 0.44）使停稳站位落在离桌沿 0.20–0.31 m。下垂的 Dex1 手几何
+最前端在骨盆前 0.15–0.18 m、高 0.55–0.72 m，正是桌面高度带，站位 < 0.22 m 时手在
+抬起前就贴着桌面（离线用 `TransportGuard` 在状态轨迹上复现，`stage4_hang8`…`8e`）。
+只保留实测硬门：碰撞扫描、摔倒、瓶子被撞离 5 cm、闭爪后双侧指垫接触、抬升后瓶子
+上升 ≥4 cm，以及各相位超时；没有终端观测器、异步站姿规划、静止窗和进度调速。
+字段在 `reach.simple.*`（`docs/reference/config_fields.md`）。配套场景
+`outputs/scene/sim_lowcom` 由 `build_sim_scene.py --object-com-drop 0.05` 生成，把
+瓶子重心下移 5 cm，使单边指垫先碰到时瓶子倾向滑动而不是倾倒。
+
+```bash
+"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot --config configs/pilot/learn_200.json \
+  --task configs/tasks/bottle_simple.json --scene outputs/scene/sim_lowcom --out outputs/<run> \
+  --set through=collect --set successes=8 --set batch_rounds=8 --set max_batches=1 --set seed0=30700 \
+  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+```
 
 ## 7. 排错与停止
 
