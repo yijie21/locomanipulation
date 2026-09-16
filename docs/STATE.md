@@ -2,7 +2,7 @@
 
 ## Delivery
 
-- [Infra plan](handoff/infra-plan-20260916.md): branch `refactor/infra-20260916` from freeze `ba18972`; steps 0–4 committed (baselines, Hydra config groups + `locomani.cli`, Python `Stack`, stages with manifests, launcher + registry); end-to-end re-run through the new path `outputs/runs/infra_check3_simple8` 7/8, gate PASS 5/5 vs the frozen baseline; `run_learn_pilot` deleted; open: remaining old drivers/JSON configs, crate collect onto stages, tutorials.
+- [Infra plan](handoff/infra-plan-20260916.md): branch `refactor/infra-20260916` from freeze `ba18972`; steps 0–4 committed (baselines, Hydra config groups + `locomani.cli`, Python `Stack`, stages with manifests, launcher + registry); end-to-end re-run through the new path `outputs/runs/infra_check3_simple8` 7/8, gate PASS 5/5 vs the frozen baseline; old drivers (`run_learn_pilot`, `run_crate_pilot`, `run_ready_pilot`, `PilotConfig`) deleted, crate collect/eval on the stages (`c04ada5`); open: JSON config twins, legacy shell runners, ENV_FIELDS, tutorial rewrite.
 - [Guideline completion](handoff/agent-guideline-completion-20260914.md): domain navigation, current/historical guide separation, local skills audit and measured forward-tests; first delivery owns verification/completion rules.
 - Structural maintenance completed at source commits `bac6492` and `ec7ca1d`, against baseline `2e9af84`. Full CPU checks and independent Standards/Spec reviews pass.
 - Short agent entry, shared runtime/configuration seams, task/backend separation,
