@@ -2,9 +2,9 @@
 
 ## Delivery
 
+- [Infra plan](handoff/infra-plan-20260916.md): branch `refactor/infra-20260916` from freeze `ba18972`; steps 0–4 committed (baselines, Hydra config groups + `locomani.cli`, Python `Stack`, stages with manifests, launcher + registry); open: end-to-end re-run under sane host load, delete old drivers, tutorials.
 - [Guideline completion](handoff/agent-guideline-completion-20260914.md): domain navigation, current/historical guide separation, local skills audit and measured forward-tests; first delivery owns verification/completion rules.
-- Structural maintenance completed at source commits `bac6492` and `ec7ca1d`,
-  against baseline `2e9af84`. Full CPU checks and independent Standards/Spec reviews pass.
+- Structural maintenance completed at source commits `bac6492` and `ec7ca1d`, against baseline `2e9af84`. Full CPU checks and independent Standards/Spec reviews pass.
 - Short agent entry, shared runtime/configuration seams, task/backend separation,
   typed results, portable test assets and schema/provenance checks are implemented.
 - [Delivery, checks and measured limits](handoff/maintenance-completion.md).

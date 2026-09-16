@@ -142,6 +142,8 @@ class Launcher:
         """Block until a card is free and the live headroom admits the stage; None for GPU-less stages."""
         need = job.resources[stage]
         wants = [job.gpu] if job.gpu != "any" else list(self.gpus)
+        if self.dry_run:  # plan only: the first card the job may use, no live admission
+            return wants[0] if stage in NEEDS_GPU else None
         waited = 0.0
         while True:
             live = common.resources_now()
