@@ -24,7 +24,7 @@ protocol is the bottle line's, exactly (`zmq_driver.SonicCommander.key`):
 and the manifest row carries `ok` and `produced`, which is what
 `convert_to_hf_format.py --manifest` joins on (positionally, per session).
 Recording needs an exporter on this instance: `start_stack.sh` starts one on
-instance 0, or on any instance with RECORD_INSTANCE=1 (run_crate_pilot.py
+instance 0, or on any instance with RECORD_INSTANCE=1 (the collect stage
 --record sets it); `ports.require_exporter` refuses a batch without one.
 """
 

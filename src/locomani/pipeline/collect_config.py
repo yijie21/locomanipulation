@@ -1,7 +1,6 @@
 """Collect stage knobs: how many episodes, in what batches, with which extra process environment.
 
-Split out of `PilotConfig` (decision 4 of docs/handoff/infra-plan-20260916.md: one config per
-stage). `PilotConfig` is kept only for the crate driver's legacy fields until that line moves to stages.
+Split out of the retired `PilotConfig` (decision 4 of docs/handoff/infra-plan-20260916.md: one config per stage).
 """
 
 from __future__ import annotations

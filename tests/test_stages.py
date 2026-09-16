@@ -158,3 +158,51 @@ def test_collect_stage_rejects_a_deploy_without_the_hand_patch_before_any_stack(
     monkeypatch.setattr(collect, "Stack", Mock(side_effect=AssertionError("stack started before admission")))
     with pytest.raises(RuntimeError, match="sonic_hand_ownership.patch"):
         collect.run(run, cfg, tmp_path / "run")
+
+
+def test_crate_collect_runs_the_expert_with_the_encoder_on_and_the_record_flag(tmp_path, monkeypatch):
+    run, cfg = conf.load_run(
+        [
+            "task=crate_table30",
+            "embodiment=g1_bimanual",
+            "scene=crate_table30_depth04",
+            "collect.successes=2",
+            "collect.batch_rounds=2",
+            "collect.max_batches=1",
+            "collect.seed0=7000",
+        ]
+    )
+    scene = tmp_path / "crate_table30_depth04"
+    scene.mkdir()
+    (scene / "scene_meta.json").write_text("{}")
+    monkeypatch.setattr("locomani.tasks.crate.prepare.prepare_scene", lambda *a, **k: scene)
+    seen = {}
+
+    class FakeStack:
+        def __init__(self, spec, *, base_env=None, record_command=None):
+            seen["spec"] = spec
+            self.env = dict(base_env or {})
+
+        def up(self):
+            return self.env
+
+        def down(self):
+            seen["down"] = True
+
+    def fake_run(self, name, argv, env=None, cwd=None):
+        argv = [str(a) for a in argv]
+        seen["argv"], seen["env"], seen["name"] = argv, env, name
+        Path(argv[argv.index("--manifest") + 1]).write_text(
+            "\n".join(json.dumps(dict(ok=True, produced=True)) for _ in range(2)) + "\n"
+        )
+        return 0
+
+    monkeypatch.setattr(collect, "Stack", FakeStack)
+    monkeypatch.setattr(collect.Stage, "run", fake_run)
+    monkeypatch.setattr(collect, "_wait_session", lambda sessions, before, timeout=60.0: tmp_path / "session")
+    m = collect.run(run, cfg, tmp_path / "run")
+    assert m["ok"] and m["metrics"]["kept"] == 2 and seen["down"]
+    assert seen["name"] == "visual_00" and seen["argv"][2].endswith("tasks/crate/expert.py")
+    assert "--record" in seen["argv"] and seen["argv"][seen["argv"].index("--label") + 1] == "visual_crate_s7000"
+    assert seen["env"]["NO_ENCODER"] == "0" and seen["env"]["RECORD_INSTANCE"] == "1"
+    assert seen["spec"].encoder and seen["spec"].scene_dir == str(scene) and seen["spec"].record

@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.pipeline.eval_config import EvalConfig
-from locomani.pipeline.pilot_config import PilotConfig
 from locomani.tasks.bottle_visual import classify_failure
 from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
 from locomani.tasks.bottle_visual.pipeline.provenance import line_sources, source_relpath
@@ -39,13 +38,11 @@ class ConfigFailFastTests(unittest.TestCase):
     def test_enum_fields_reject_typos(self):
         with self.assertRaisesRegex(ValueError, "client"):
             EvalConfig().with_overrides(["client=asnyc"])
-        with self.assertRaisesRegex(ValueError, "through"):
-            PilotConfig().with_overrides(["through=collec"])
         with self.assertRaisesRegex(ValueError, "facing"):
             BottleVisualTaskConfig().with_overrides(["grasp.facing=table"])
 
     def test_valid_round_trips_still_pass(self):
-        for cfg in (EvalConfig(), PilotConfig(), BottleVisualTaskConfig(), ScaleBfmBackendConfig()):
+        for cfg in (EvalConfig(), BottleVisualTaskConfig(), ScaleBfmBackendConfig()):
             self.assertEqual(type(cfg).from_dict(cfg.to_dict()), cfg)
         self.assertEqual(EvalConfig().with_overrides(["client=lockstep", "rtc=true"]).client, "lockstep")
 

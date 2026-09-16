@@ -84,7 +84,7 @@ def episode() -> int:
 
 # Every entry point start_stack.sh can launch as the exporter. The default is
 # gear_sonic's run_data_exporter.py; the pipeline overrides TF_EXPORTER_SCRIPT
-# to our run_instance_exporter.py (run_learn_pilot.py, run_ready_pilot.py), so
+# to our run_instance_exporter.py (the collect stage), so
 # matching only the default name refuses every pipeline collect on a stack whose
 # exporter is up (caught by session 65 on a live gate run, 2026-09-10). A new
 # entry point has to be added here.
@@ -131,6 +131,6 @@ def require_exporter(why: str = "--record") -> None:
         f"{why} needs the data exporter, and none is running for instance {instance()} "
         f"(camera port {camera()}).\n"
         "  start_stack.sh starts the exporter on instance 0, or on another instance only with\n"
-        "  RECORD_INSTANCE=1 (run_crate_pilot.py --record sets it); otherwise it prints\n"
+        "  RECORD_INSTANCE=1 (the collect stage sets it when recording); otherwise it prints\n"
         '  "[3/3] data exporter - skipped (instance N records no episodes)" and records nothing.'
     )

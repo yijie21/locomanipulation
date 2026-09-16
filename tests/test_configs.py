@@ -31,7 +31,6 @@ from pathlib import Path
 from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.config_base import apply_overrides
 from locomani.pipeline.eval_config import EvalConfig
-from locomani.pipeline.pilot_config import PilotConfig
 from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle.reach_config import ReachConfig
 
@@ -78,45 +77,6 @@ class BottleVisibleTaskTests(unittest.TestCase):
         self.assertEqual(task.spawn.edge_jitter, 0.20)
 
 
-class LearnPilotReproductionTests(unittest.TestCase):
-    """configs/pilot/learn_200.json + the launch.sh's --set-equivalents."""
-
-    def load(self):
-        cfg = PilotConfig.load(REPO / "configs/pilot/learn_200.json")
-        return cfg.with_overrides(
-            [
-                "train_gpu=0",
-                "gym_env=GYM_SHUFFLE_BAND=0",
-                "stack_env=CUDA_VISIBLE_DEVICES=1,MUJOCO_EGL_DEVICE_ID=1",
-            ]
-        )
-
-    def test_seeds_and_steps_match_the_launch_argv(self):
-        cfg = self.load()
-        self.assertEqual(cfg.successes, 200)
-        self.assertEqual(cfg.holdout, 10)
-        self.assertEqual(cfg.max_batches, 40)
-        self.assertEqual(cfg.seed0, 30000)
-        self.assertEqual(cfg.steps, 3000)
-        self.assertEqual(cfg.save_steps, 3000)
-        self.assertEqual(cfg.eval_rounds, 100)
-        self.assertEqual(cfg.eval_seed, 6000)
-
-    def test_set_overrides_match_the_launch_argv(self):
-        cfg = self.load()
-        self.assertEqual(cfg.train_gpu, "0")
-        self.assertEqual(cfg.gym_env, ("GYM_SHUFFLE_BAND=0",))
-        self.assertEqual(cfg.stack_env, ("CUDA_VISIBLE_DEVICES=1", "MUJOCO_EGL_DEVICE_ID=1"))
-
-    def test_unset_fields_keep_their_argparse_defaults(self):
-        # The old script never took --batch-rounds/--squat-max/--through for this
-        # launch, so today's effective default (the argparse default) must hold.
-        cfg = self.load()
-        self.assertEqual(cfg.batch_rounds, 10)
-        self.assertEqual(cfg.squat_max, 4096)
-        self.assertEqual(cfg.through, "eval")
-
-
 class CanonicalConfigsRoundTripTests(unittest.TestCase):
     """Every canonical file loads as the dataclass it names and round-trips."""
 
@@ -142,10 +102,6 @@ class CanonicalConfigsRoundTripTests(unittest.TestCase):
             ),
         )
         self.assertEqual(cfg.spawn_edge, (1.1, 1.3))
-
-    def test_learn_200(self):
-        cfg = PilotConfig.load(REPO / "configs/pilot/learn_200.json")
-        self.assertEqual(PilotConfig.from_dict(cfg.to_dict()), cfg)
 
 
 if __name__ == "__main__":

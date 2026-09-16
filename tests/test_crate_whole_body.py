@@ -65,23 +65,13 @@ def test_low_reach_profile_delivers_physical_waist_freedom_and_rejects_mixed_con
 def test_whole_body_recording_is_rejected_before_scene_or_stack_use(tmp_path):
     import pytest
 
-    from locomani.pipeline.run_crate_pilot import parse_args, prepare
+    from locomani.tasks.crate.config import CrateTaskConfig
+    from locomani.tasks.crate.prepare import prepare_scene
 
-    args = parse_args(
-        [
-            "--expert",
-            "carry",
-            "--record",
-            "--config",
-            "configs/tasks/crate_low_reach.json",
-            "--scene",
-            str(tmp_path / "missing_scene"),
-            "--out",
-            str(tmp_path / "out"),
-        ]
-    )
+    cfg = CrateTaskConfig.load("configs/tasks/crate_low_reach.json")
     with pytest.raises(SystemExit, match="full-pose VLA action export"):
-        prepare(args)
+        prepare_scene(tmp_path / "missing_scene", tmp_path / "out", cfg, "carry", record=True)
+    assert not (tmp_path / "out").exists()
 
 
 def test_full_body_adapter_delivers_config_to_both_control_layers(monkeypatch):

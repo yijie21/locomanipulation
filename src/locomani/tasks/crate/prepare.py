@@ -1,0 +1,81 @@
+"""Crate run preparation: the scene copy an expert reads and the refusals that come before any stack.
+
+Moved out of the retired `pipeline/run_crate_pilot.py` so the collect stage (`locomani.stages.collect`)
+and the tests share one implementation.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+from locomani import paths
+from locomani.tasks.crate.config import CrateTaskConfig
+
+EXPERTS = {
+    "visual": ("tasks/crate/expert.py", "visual_crate"),
+    "wall": ("tasks/crate/bimanual_wall.py", "wall"),
+    "carry": ("tasks/crate/bimanual_carry.py", "bimanual"),
+}
+
+
+def check_profile(task_cfg: CrateTaskConfig, expert: str, record: bool) -> None:
+    """Refuse combinations the experts cannot execute, before any resource is touched."""
+    if expert not in EXPERTS:
+        raise SystemExit(f"unknown crate expert {expert!r}; choices {sorted(EXPERTS)}")
+    if expert == "wall" and task_cfg.carry.reach_control == "whole_body":
+        raise SystemExit(
+            "wall cannot execute carry.reach_control=whole_body; "
+            "for the continuous assisted basket task pass --expert visual "
+            "--config configs/tasks/crate_visual_low_reach.json and a 30 cm scene. "
+            "The bare runner defaults to the separate wall diagnostic."
+        )
+    if expert == "carry" and record and task_cfg.carry.reach_control == "whole_body":
+        raise SystemExit("whole_body is a motion pilot; full-pose VLA action export is not validated")
+
+
+def prepare_scene(src: Path, out: Path, task_cfg: CrateTaskConfig, expert: str, *, record: bool = False) -> Path:
+    """Copy the frozen crate scene into the run (named after the source, the expert's lookups need that) and
+    strip the marker paint for the assisted pose source; returns the copy."""
+    check_profile(task_cfg, expert, record)
+    src = Path(src)
+    if not (src / "scene_meta.json").is_file():
+        raise SystemExit(
+            f"no crate scene at {src}; build it:\n  {paths.VENV_SIM_PY} {Path(paths.SRC) / 'tasks/crate/bimanual_scene.py'} {src}"
+        )
+    if expert == "visual" and task_cfg.visual.pose_source == "markers":
+        if "crate_visual" not in json.loads((src / "scene_meta.json").read_text()):
+            raise SystemExit("visual expert requires a scene built by locomani.tasks.crate.visual_scene")
+    scene = Path(out) / src.name
+    if not scene.exists():
+        Path(out).mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, scene)
+        if expert == "visual" and task_cfg.visual.pose_source == "assisted":
+            import xml.etree.ElementTree as ET
+
+            from locomani.sim.convex_boxes import convert_body_boxes
+            from locomani.tasks.crate.visual_scene import remove_paint
+
+            remove_paint(scene)
+            xml = scene / "scene_locomani.xml"
+            tree = ET.parse(xml)
+            meta = json.loads((scene / "scene_meta.json").read_text())
+            surface = meta["surfaces"][meta["objects"]["blue_crate"]["surface"]]
+            convert_body_boxes(tree, surface["body"])
+            tree.write(xml)
+    return scene
+
+
+def expert_argv(
+    expert: str, task_cfg_path: Path, manifest: Path, rounds: int, seed: int, *, record: bool, trace_dir=None
+) -> list:
+    """The expert's own command line (the flags the retired pilot passed)."""
+    script, prefix = EXPERTS[expert]
+    argv = [paths.VENV_SIM_PY, "-u", Path(paths.SRC) / script, "--rounds", str(rounds), "--seed", str(seed)]
+    if record:
+        argv.append("--record")
+    argv += ["--manifest", manifest, "--label", f"{prefix}_s{seed}", "--config", task_cfg_path]
+    if trace_dir is not None and expert == "wall":
+        argv += ["--ghost-trace", str(trace_dir)]
+    return argv

@@ -148,45 +148,98 @@ def _bottle_batch(run, out: Path, stages: Stage, b: int, cases, state: dict, bac
     return manifest
 
 
-def _crate_batches(run, out: Path, cfg: DictConfig) -> dict:
-    """The crate line through its own driver (it owns its stack); returns the collect state."""
-    from locomani.pipeline import run_crate_pilot
+def _crate_batches(run, out: Path, stages: Stage, state: dict) -> dict:
+    """The crate experts, batch by batch on their own stack."""
+    from locomani.tasks.crate.prepare import expert_argv, prepare_scene
 
-    task_path = out / "task_config.json"
-    rounds = run.collect.batch_rounds * run.collect.max_batches
-    argv = ["--expert", "visual", "--out", str(out), "--config", str(task_path), "--scene", str(out / "scene")]
-    argv += ["--rounds", str(rounds), "--batch-rounds", str(run.collect.batch_rounds), "--seed", str(run.collect.seed0)]
-    argv += ["--instance", str(run.collect.instance), "--gpu", str(run.gpu)]
-    if run.collect.record:
-        argv.append("--record")
-    if (out / "inputs.json").exists():
-        argv.append("--resume")
-    run_crate_pilot.main(argv)
-    inputs = json.loads((out / "inputs.json").read_text())
-    kept = sum(1 for m in inputs["manifests"] for r in common.rows(Path(m)) if r.get("ok") and r.get("produced"))
-    return dict(
-        sessions=inputs.get("sessions", []), manifests=inputs["manifests"], kept=kept, batches=inputs.get("batches", 0)
-    )
+    expert, record = run.task.expert, bool(run.collect.record)
+    src = Path(run.scene.dir)
+    scene = prepare_scene(src if src.is_absolute() else common.ROOT / src, out, run.task, expert, record=record)
+    backend = run.backend if isinstance(run.backend, SonicBackendConfig) else SonicBackendConfig()
+    if expert in ("visual", "carry") and run.task.carry.reach_control == "whole_body":
+        from locomani.pipeline.provenance import require_pose_ownership
+
+        require_pose_ownership(
+            stack_env.resolve_env(backend, run.task, instance=run.collect.instance, gpu=str(run.gpu))
+        )
+    trace_dir = out / "trace"
+    trace_dir.mkdir(exist_ok=True)
+    while state["batches"] < run.collect.max_batches and state["kept"] < run.collect.successes:
+        b = state["batches"]
+        tag = f"{b:02d}"
+        manifest = out / f"manifest_{tag}.jsonl"
+        if manifest.exists() and str(manifest) not in state["manifests"]:
+            raise RuntimeError(f"{manifest} exists but is not in inputs.json; inspect before continuing")
+        videos = out / f"videos_{tag}"
+        videos.mkdir(exist_ok=True)
+        extra = dict(LOCOMANI_SIM_DIR=str(scene), SIM_STATE_TRACE_DIR=str(trace_dir))
+        extra.update(dict(kv.split("=", 1) for kv in run.collect.stack_env))
+        if record:
+            extra["RECORD_INSTANCE"] = "1"
+        env = stack_env.resolve_env(
+            backend, run.task, instance=run.collect.instance, gpu=str(run.gpu), video_dir=str(videos), extra_env=extra
+        )
+        spec = StackSpec(
+            instance=int(run.collect.instance),
+            gpu=str(run.gpu),
+            scene_dir=str(scene),
+            prompt=run.task.prompt,
+            record=record,
+            encoder=not backend.no_encoder,
+            wrist_cams=bool(backend.wrist_cams),
+            video_dir=str(videos),
+            env={k: v for k, v in env.items() if k.startswith(("TF_", "LOCOMANI_BACKEND_JSON", "HAND"))},
+            receipts=str(out / "deploy_receipts.jsonl"),
+        )
+        sessions = session_root(spec.instance) / "outputs"
+        sessions.mkdir(parents=True, exist_ok=True)
+        before = set(sessions.iterdir())
+        stages.record(f"start_stack_{tag}", ["locomani.stack", "up", str(spec.instance)], env)
+        stack = Stack(spec, base_env=env, record_command=stages.record)
+        env = stack.up()
+        try:
+            session = _wait_session(sessions, before) if record else None
+            state["sessions"].append(str(session) if session else None)
+            state["manifests"].append(str(manifest))
+            (out / "collect" / "inputs.json").write_text(json.dumps(state, indent=1))
+            seed = run.collect.seed0 + 100 * b
+            argv = expert_argv(
+                expert,
+                out / "task_config.json",
+                manifest,
+                run.collect.batch_rounds,
+                seed,
+                record=record,
+                trace_dir=trace_dir,
+            )
+            stages.run(f"{expert}_{tag}", argv, env=env)
+        finally:
+            stack.down()
+            stages.record("stop_stack", ["locomani.stack", "down", str(spec.instance)], {})
+        got = sum(bool(r.get("ok") and (r.get("produced", True) if record else True)) for r in common.rows(manifest))
+        state["kept"] += got
+        state["batches"] += 1
+        (out / "collect" / "inputs.json").write_text(json.dumps(state, indent=1))
+        print(f"collect: batch {tag} {got} kept, total {state['kept']}/{run.collect.successes}", flush=True)
+    return state
 
 
 def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
     started, resources = time.time(), common.resources_now()
     out.mkdir(parents=True, exist_ok=True)
-    scene = _prepare_scene(run_cfg, out)
+    scene = _prepare_scene(run_cfg, out) if run_cfg.task.plugin != "crate" else out
     task_path = out / "task_config.json"
     if not task_path.exists():
         run_cfg.task.dump(task_path)
     if hasattr(run_cfg.task, "reach") and not (out / "reach_config.json").exists():
         run_cfg.task.reach.dump(out / "reach_config.json")
     plugin = run_cfg.task.plugin
+    collect = common.stage_dir(out, "collect")
+    inputs = collect / "inputs.json"
+    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
     if plugin == "crate":
-        state = _crate_batches(run_cfg, out, cfg)
+        state = _crate_batches(run_cfg, out, Stage(out), state)
     else:
-        collect = common.stage_dir(out, "collect")
-        inputs = collect / "inputs.json"
-        state = (
-            json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
-        )
         backend = run_cfg.backend if isinstance(run_cfg.backend, SonicBackendConfig) else SonicBackendConfig()
         if getattr(run_cfg.task.reach, "strategy", None) in ("whole_body", "simple"):
             # the streamed-pose experts need the patched deploy (hand ownership); refuse before any stack

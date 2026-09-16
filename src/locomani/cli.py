@@ -8,8 +8,8 @@
 The stage composes the run (`locomani.conf`), writes `run_config.yaml|json` into the run directory
 and runs that one stage (`locomani.stages`), which reads its upstream stage's manifest and writes
 its own `<out>/<stage>/manifest.json`. Stages only meet through those manifests (decision 4 of
-docs/handoff/infra-plan-20260916.md); the crate task's collect stage still runs through its own
-driver (`run_crate_pilot`).
+docs/handoff/infra-plan-20260916.md); the crate task's collect stage runs the crate experts through
+`locomani.tasks.crate.prepare`.
 """
 
 from __future__ import annotations

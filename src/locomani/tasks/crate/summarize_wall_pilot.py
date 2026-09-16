@@ -17,7 +17,7 @@ import sys
 import numpy as np
 
 d = sys.argv[1]
-# run_crate_pilot.py batches into manifest_<tag>.jsonl (never a single
+# the collect stage batches into manifest_<tag>.jsonl (never a single
 # manifest.jsonl) so that two pilots writing the same directory can't merge
 # into one file; read every batch the same way it does before printing totals.
 manifests = sorted(glob.glob(os.path.join(d, "manifest_*.jsonl")))

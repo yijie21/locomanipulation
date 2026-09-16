@@ -1,7 +1,9 @@
 #!/bin/bash
-# The bimanual CARRY pilot (bimanual_carry.py). Same three-line shim as
-# run_wall_pilot.sh: scripts/run_crate_pilot.sh is the runner,
-# src/locomani/pipeline/run_crate_pilot.py the driver.
-#
-#   bash scripts/run_bimanual_pilot.sh [rounds] [seed] [extra args to run_crate_pilot.py]
-exec env CRATE_EXPERT=carry bash "$(dirname "$0")/run_crate_pilot.sh" "$@"
+# Carry diagnostic through the collect stage: bash scripts/run_bimanual_pilot.sh [rounds] [seed] [extra overrides]
+set -uo pipefail
+. "$(dirname "$0")/paths.sh"
+cd "$LOCOMANI_ROOT" || exit 1
+ROUNDS="${1:-10}"; SEED="${2:-0}"; shift 2 2>/dev/null || true
+PYTHONPATH=src exec "$VENV_SIM_PY" -m locomani.cli collect task=crate_low_reach task.expert=carry embodiment=g1_bimanual \
+  scene=crate_table30_depth04 collect.batch_rounds="$ROUNDS" collect.max_batches=1 collect.successes="$ROUNDS" \
+  collect.seed0="$SEED" collect.record=false collect.instance="${INSTANCE:-1}" gpu="${GPU:-1}" name="carry_pilot_$SEED" "$@"

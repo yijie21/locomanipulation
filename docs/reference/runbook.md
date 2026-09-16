@@ -18,14 +18,16 @@ explicitly; newly written reach snapshots use version 2.
 ## Bottle collection, conversion and training
 
 ```bash
-make cli ARGS="collect --task bottle --config configs/tasks/bottle_visible.json --out outputs/experiments/<name> --scene outputs/scene/sim"
+export PYTHONPATH=src
+"$VENV_SIM_PY" -m locomani.cli collect task=bottle_visible scene.dir=outputs/scene/sim gpu=0 name=<name>
+"$VENV_SIM_PY" -m locomani.cli convert name=<name>
+"$VENV_SIM_PY" -m locomani.cli train name=<name>
+"$VENV_SIM_PY" -m locomani.cli eval name=<name>
 ```
 
-This dispatches to `pipeline/run_learn_pilot.py`. Its direct `--config` selects
-PilotConfig; direct `--task` selects BottleTaskConfig. The wrapper currently renames
-that task argument to `--config`. Use a fresh output directory. The stage verbs
-`convert` and `train` use the same driver; read its `--help` before resuming a run.
-After conversion run `src/locomani/pipeline/check_dataset.py` on the dataset.
+This dispatches to the unified CLI. Each stage reads the previous stage's manifest and writes its own.
+Use `locomani.cli show name=<name>` to inspect the resolved configuration. Use a fresh run name each time.
+After conversion run `src/locomani/pipeline/check_dataset.py` on the dataset in `outputs/runs/<name>/`.
 
 ## Manual bottle or pick-and-place check
 
@@ -75,7 +77,7 @@ An older policy server must be restarted to supply the identity endpoint.
 | Operation | Driver / guide |
 |---|---|
 | Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../evaluation.md) |
-| Crate collection | `src/locomani/pipeline/run_crate_pilot.py --help`; [crate collection](../crate_collection.md) |
+| Crate collection | `python -m locomani.cli show task=crate_visual embodiment=g1_bimanual scene=crate_table30`; [crate collection](../crate_collection.md) |
 | ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm_collection.md) |
 | Pick and place | Bottle driver with `configs/tasks/pick_place.json`; [task guide](../pick_place_collection.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |

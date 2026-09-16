@@ -126,8 +126,8 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
     --out outputs/eval/<run>/closed_loop.json
 ```
 
-**初始 token 文件必须与训练数据的开局姿势一致。** `run_learn_pilot` 的
-`--initial-token-file` 默认是 `configs/deployment/ready_grasp_initial_token.json`(READY
+**初始 token 文件必须与训练数据的开局姿势一致。** 采集阶段（`locomani.stages.collect`）的
+初始 token 文件默认是 `configs/deployment/ready_grasp_initial_token.json`(READY
 抬臂姿势的裸 64 维 token,prelude 之后按 `ready_q()` 的手臂检查)。用 `bottle_whole_body.json`
 采的数据从 SONIC 自己的垂臂参考开始(2026-09-14 起),对应文件是
 `configs/deployment/whole_body_initial_token.json`:190 集训练数据首帧 token 的量化均值,外加

@@ -46,12 +46,11 @@ runner 因未收够 1 条成功数据退出；只有抓起罐头不算任务完�
 
 ```bash
 mkdir -p $LOCOMANI_TMP/p03/outputs
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-  --config configs/pilot/learn_200.json --task configs/tasks/pick_place.json \
-  --scene outputs/scene/pick_place --out outputs/pick_place_first_run \
-  --set through=collect --set successes=1 \
-  --set batch_rounds=1 --set max_batches=1 --set seed0=32000 \
-  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+export PYTHONPATH=src
+"$VENV_SIM_PY" -m locomani.cli collect task=pick_place \
+  scene.dir=outputs/scene/pick_place collect.successes=1 \
+  collect.batch_rounds=1 collect.max_batches=1 collect.seed0=32000 \
+  gpu=0
 ```
 
 runner 负责启动 sim / SONIC deploy / exporter 和专家，并在结束后停止本次实例。
@@ -67,12 +66,11 @@ runner 负责启动 sim / SONIC deploy / exporter 和专家，并在结束后停
 目标是 **10 条成功示范，最多 3 批、每批 10 次尝试**：
 
 ```bash
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-  --config configs/pilot/learn_200.json --task configs/tasks/pick_place.json \
-  --scene outputs/scene/pick_place --out outputs/pick_place_collect_10 \
-  --set through=collect --set successes=10 \
-  --set batch_rounds=10 --set max_batches=3 --set seed0=32300 \
-  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+export PYTHONPATH=src
+"$VENV_SIM_PY" -m locomani.cli collect task=pick_place \
+  scene.dir=outputs/scene/pick_place collect.successes=10 \
+  collect.batch_rounds=10 collect.max_batches=3 collect.seed0=32300 \
+  gpu=0 name=pick_place_collect_10
 ```
 
 `successes` 是保留条数；每批重启栈并产生独立 session / manifest，

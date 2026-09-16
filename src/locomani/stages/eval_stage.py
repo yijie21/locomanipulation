@@ -43,12 +43,58 @@ def _serve(ckpt: Path, port: int, gpu: str, log: Path) -> subprocess.Popen:
     return server
 
 
+def _crate_eval(run_cfg, out: Path, ckpt: Path, ev: Path) -> None:
+    """The bimanual evaluator owns its own stack and policy server (eval_crate_closed_loop)."""
+    e = run_cfg.eval
+    scene = next(p for p in out.iterdir() if p.is_dir() and (p / "scene_meta.json").exists())
+    Stage(out).check(
+        "eval",
+        [
+            common.SIM_PY,
+            "-m",
+            "locomani.pipeline.eval_crate_closed_loop",
+            "--checkpoint",
+            ckpt,
+            "--scene",
+            scene,
+            "--out",
+            ev,
+            "--config",
+            out / "task_config.json",
+            "--rounds",
+            str(e.rounds),
+            "--seed",
+            str(e.seed),
+            "--instance",
+            str(run_cfg.collect.instance),
+            "--gpu",
+            str(run_cfg.gpu),
+            "--serve-gpu",
+            str(run_cfg.gpu),
+        ],
+        env=dict(os.environ, PYTHONPATH=str(common.ROOT / "src")),
+    )
+
+
 def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
     started, resources = time.time(), common.resources_now()
     up = common.require_upstream(out, "eval")
     ckpt = Path(up["outputs"]["checkpoint"])
     ev = common.stage_dir(out, "eval")
     e = run_cfg.eval
+    if run_cfg.task.plugin == "crate":
+        _crate_eval(run_cfg, out, ckpt, ev)
+        result = json.loads((ev / "closed_loop.json").read_text())
+        return common.write_manifest(
+            out,
+            "eval",
+            cfg,
+            ok=True,
+            outputs=dict(closed_loop=ev / "closed_loop.json", checkpoint=ckpt),
+            metrics={k: result[k] for k in ("rounds", "successes", "success_rate") if k in result},
+            started=started,
+            resources=resources,
+        )
     backend = SonicBackendConfig(dataset_fps=25.0, no_encoder=True)
     env = stack_env.resolve_env(
         backend,

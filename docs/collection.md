@@ -44,12 +44,11 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 
 ```bash
 mkdir -p /workspace/tmp/p03/outputs
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-  --config configs/pilot/learn_200.json --task configs/tasks/bottle_whole_body.json \
-  --scene outputs/scene/sim --out outputs/bottle_first_run \
-  --set through=collect --set successes=1 \
-  --set batch_rounds=1 --set max_batches=1 --set seed0=30000 \
-  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+export PYTHONPATH=src
+"$VENV_SIM_PY" -m locomani.cli collect task=bottle_whole_body \
+  scene.dir=outputs/scene/sim collect.successes=1 \
+  collect.batch_rounds=1 collect.max_batches=1 collect.seed0=30000 \
+  gpu=0
 ```
 
 此自动采集入口固定使用 **实例 0**，目前从 `/workspace/tmp/p03/outputs` 查找 exporter session；
@@ -65,13 +64,14 @@ mkdir -p /workspace/tmp/p03/outputs
 目标是 **10 条成功示范，最多 3 批、每批 10 次尝试**：
 
 ```bash
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-  --config configs/pilot/learn_200.json --task configs/tasks/bottle_whole_body.json \
-  --scene outputs/scene/sim --out outputs/bottle_collect_10 \
-  --set through=collect --set successes=10 \
-  --set batch_rounds=10 --set max_batches=3 --set seed0=30100 \
-  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+export PYTHONPATH=src
+"$VENV_SIM_PY" -m locomani.cli collect task=bottle_whole_body \
+  scene.dir=outputs/scene/sim collect.successes=10 \
+  collect.batch_rounds=10 collect.max_batches=3 collect.seed0=30100 \
+  gpu=0 name=bottle_collect_10
 ```
+
+Run the same command four times (`name=bottle_collect_10_2`, etc.) to continue batching, or use `--resume` to continue the same run.
 
 `successes` 是保留条数，`batch_rounds` / `max_batches` 限制尝试预算；达到预算仍不足会明确报错。
 每批重启栈，限制 exporter 的资源增长；一个 batch 对应一个 session 和一个 manifest。
@@ -94,7 +94,7 @@ python -m locomani.cli collect +experiment=crate_table30_record            # 双
 
 每个阶段是一个独立进程（`src/locomani/stages/`），只通过运行目录里的 manifest 认识彼此：`collect` 自己起 stack、跑专家、写 `<out>/collect/manifest.json`（sessions、manifests、yield、失败原因、起跑时的 CPU/pid/GPU 实测）；`convert` 读它、写 `train_dataset`/`val_dataset` 和自己的 manifest；`train` 读 convert 的、写 checkpoint 路径；`eval` 读 train 的、自己起评估 stack 和策略服务；`stats` 汇总。每个 manifest 带本阶段依赖的配置组的 hash 和上游 manifest 的 hash，上游不存在或未成功就拒绝运行；只重跑 eval = 在同一个 `out` 上再执行 `python -m locomani.cli eval ...`。
 
-Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_table30 embodiment=g1_single_arm` 在组合时就报错。每次运行把完整解析后的配置写到 `<out>/run_config.yaml|json`，这就是这次运行的 provenance。专家进程（`grasp_gym.py`、`crate/expert.py`）仍从运行目录里落下的 `task_config.json`/`reach_config.json` 读配置；旧的 `run_learn_pilot`/`run_crate_pilot` 驱动保留到基线对照通过（计划第 5 步）。
+Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_table30 embodiment=g1_single_arm` 在组合时就报错。每次运行把完整解析后的配置写到 `<out>/run_config.yaml|json`，这就是这次运行的 provenance。专家进程（`grasp_gym.py`、`crate/expert.py`）仍从运行目录里落下的 `task_config.json`/`reach_config.json` 读配置。
 
 ### 复现要点与预期成功率
 
@@ -223,14 +223,13 @@ LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim" "$VENV_SIM_PY" \
 然后对同一 case bank 分别运行基线和候选；保留全部十次尝试，不用成功后重采样填满：
 
 ```bash
+export PYTHONPATH=src
 for variant in visible whole_body; do
-  "$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot \
-    --config configs/pilot/learn_200.json --task "configs/tasks/bottle_${variant}.json" \
-    --scene outputs/scene/sim --out "outputs/bottle_fixed_${variant}" \
-    --cases outputs/bottle_cases10.json \
-    --set through=collect --set successes=10 --set batch_rounds=10 \
-    --set max_batches=1 --set seed0=31000 \
-    --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+  "$VENV_SIM_PY" -m locomani.cli collect task=bottle_${variant} \
+    scene.dir=outputs/scene/sim scene.cases=outputs/bottle_cases10.json \
+    collect.successes=10 collect.batch_rounds=10 \
+    collect.max_batches=1 collect.seed0=31000 \
+    gpu=0 name=bottle_fixed_${variant}
 done
 ```
 
@@ -334,10 +333,10 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 瓶子重心下移 5 cm，使单边指垫先碰到时瓶子倾向滑动而不是倾倒。
 
 ```bash
-"$VENV_SIM_PY" -u -m locomani.pipeline.run_learn_pilot --config configs/pilot/learn_200.json \
-  --task configs/tasks/bottle_simple.json --scene outputs/scene/sim_lowcom --out outputs/<run> \
-  --set through=collect --set successes=8 --set batch_rounds=8 --set max_batches=1 --set seed0=30700 \
-  --set stack_env=CUDA_VISIBLE_DEVICES=0,MUJOCO_EGL_DEVICE_ID=0
+export PYTHONPATH=src
+"$VENV_SIM_PY" -m locomani.cli collect task=bottle_simple scene=lowcom \
+  collect.successes=8 collect.batch_rounds=8 collect.max_batches=1 collect.seed0=30700 \
+  gpu=0 name=<run>
 ```
 
 ## 7. 排错与停止

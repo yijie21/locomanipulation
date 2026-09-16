@@ -32,7 +32,7 @@ for i in $(seq -f %02g 0 $((N - 1))); do
   # expert wrote them. True by default only since 2026-09-11: before that the
   # runner passed --ghost-trace only if the CALLER had exported
   # SIM_STATE_TRACE_DIR, which it never set itself, so this comment was wrong.
-  # run_crate_pilot.py writes <out>/trace unless --no-state-trace.
+  # the collect stage writes <out>/trace.
   GH=(); [ -f "$P/trace/${LABEL}_${i}_ghost.npz" ] && GH=(--ghost-trace "$P/trace/${LABEL}_${i}_ghost.npz")
   MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID="${MUJOCO_EGL_DEVICE_ID:-1}" PYTHONPATH=src "$RENDER_PY" -m locomani.sim.isaac.mujoco_render \
     --state-trace "$T" --scene-xml "$SCENE/scene_locomani.xml" --out "$d" --stride 4 "${GH[@]}" ${MUJOCO_RENDER_ARGS:-} 2>&1 | grep -v Warning | tail -1

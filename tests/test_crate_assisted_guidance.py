@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-from locomani.pipeline.run_crate_pilot import parse_args, prepare
+from locomani.tasks.crate.config import CrateTaskConfig
+from locomani.tasks.crate.prepare import prepare_scene
 from locomani.tasks.crate.visual_scene import build
 
 
@@ -18,21 +19,8 @@ def test_assisted_pilot_restores_the_original_basket_in_its_own_scene_copy(tmp_p
     )
     build(source, painted)
     original = (painted / "scene_locomani.xml").read_bytes()
-    args = parse_args(
-        [
-            "--expert",
-            "visual",
-            "--scene",
-            str(painted),
-            "--out",
-            str(tmp_path / "run"),
-            "--set",
-            "visual.pose_source=assisted",
-            "--set",
-            "carry.reach_control=whole_body",
-        ]
-    )
-    _, config, _, scene = prepare(args)
+    config = CrateTaskConfig().with_overrides(["visual.pose_source=assisted", "carry.reach_control=whole_body"])
+    scene = prepare_scene(painted, tmp_path / "run", config, "visual")
     assert config.visual.pose_source == "assisted"
     assert "crate_visual_label" not in (scene / "scene_locomani.xml").read_text()
     assert "crate_visual_floor_label" not in (scene / "scene_locomani.xml").read_text()
