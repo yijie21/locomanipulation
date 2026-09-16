@@ -81,6 +81,19 @@ mkdir -p /workspace/tmp/p03/outputs
 session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景或任务配置时使用新目录，
 不要修改正在运行的配置快照或覆盖旧产物。
 
+### 统一入口与配置组（2026-09-16）
+
+所有阶段只有一个命令：`python -m locomani.cli <collect|convert|train|eval|stats|show> [覆盖项]`（`make run ARGS=...` 同义）。一次运行由七个配置组组成，每组一个 YAML 目录、一个 dataclass 做 schema（YAML 里写了 dataclass 没有的字段会在组合时报错，`__post_init__` 的校验照常触发）：`task/`（专家决策、验收、失败分类）、`embodiment/`（动作/状态维度、相机、GR00T modality；`g1_single_arm`、`g1_bimanual`）、`scene/`（冻结场景目录 + 固定样本库）、`backend/`、`collect/`、`train/`、`eval/`。`configs/config.yaml` 是默认组合；`configs/experiment/<name>.yaml` 固定一个版本，用 `+experiment=<name>` 选中，只增不改。例子：
+
+```
+python -m locomani.cli show    +experiment=bottle_simple_lowcom            # 只打印组合结果
+python -m locomani.cli collect +experiment=bottle_simple_lowcom gpu=1      # 冻结专家的 8 局固定库
+python -m locomani.cli collect task=pick_place scene=sim collect.successes=50
+python -m locomani.cli collect +experiment=crate_table30_record            # 双臂 crate 录制线
+```
+
+Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_table30 embodiment=g1_single_arm` 在组合时就报错。每次运行把完整解析后的配置写到 `<out>/run_config.yaml|json`，这就是这次运行的 provenance。旧的 JSON 配置文件和 `--set` 覆盖仍被底层驱动读取：入口把组合结果落成 `task_config.json`/`pilot_config.json` 再调用它们（基础设施计划第 3 步把阶段拆成独立进程后删除）。
+
 ### 复现要点与预期成功率
 
 另一台机器要得到与本页相同的数字，下面每一项都必须一致；任何一项不同都先比它，再谈策略：

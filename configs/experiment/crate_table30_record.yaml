@@ -1,0 +1,13 @@
+# @package _global_
+# Bimanual crate record line on the 30 cm table (crate_record_val_20260914 / gate carry arm).
+defaults:
+- override /task: crate_visual_low_reach
+- override /scene: crate_table30_depth04
+- override /embodiment: g1_bimanual
+name: crate_table30_record
+collect:
+  successes: 20
+  batch_rounds: 10
+  max_batches: 2
+  seed0: 7000
+  instance: 2

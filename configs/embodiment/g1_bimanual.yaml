@@ -1,0 +1,15 @@
+# embodiment/g1_bimanual: G1 + Dex1, both arms act (the crate line)
+defaults:
+- _schema
+- _self_
+name: g1_bimanual
+arms: bimanual
+state_dim: 78
+action_dim: 78
+cameras:
+- ego_view
+- left_wrist
+- right_wrist
+gr00t_tag: unitree_g1_sonic
+gr00t_modality_config: configs/gr00t_sonic_3cam_bimanual.py
+dataset_kind: sonic_bimanual

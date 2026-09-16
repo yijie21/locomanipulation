@@ -1,0 +1,18 @@
+# Root of every run: one entry per group (docs/handoff/infra-plan-20260916.md decision 2).
+# Select a version with `+experiment=<name>`; override anything with `group.key=value`.
+defaults:
+  - run_schema
+  - task: bottle_simple
+  - embodiment: g1_single_arm
+  - scene: sim
+  - backend: sonic
+  - collect: learn_200
+  - train: gr00t_default
+  - eval: closed_loop_100
+  - _self_
+
+name: run
+stage: collect
+out: outputs/runs/${name}
+gpu: "0"
+seed: 0

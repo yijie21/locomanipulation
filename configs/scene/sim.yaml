@@ -1,0 +1,8 @@
+# scene/sim: the default frozen bottle scene
+defaults:
+- _schema
+- _self_
+name: sim
+dir: outputs/scene/sim
+cases: null
+preset: null

@@ -1,0 +1,34 @@
+# task/bottle_visual: generated from configs/tasks/bottle_visual.json on 2026-09-16; schema _bottle_visual
+defaults:
+- _bottle_visual
+- _self_
+grasp:
+  stand_distance: 0.375
+  stand_backstep: 0.06
+  stand_left: 0.15
+  reach_start: 0.5
+  pre_back: 0.1
+  carry_back: 0.0
+  pre_tolerance: 0.035
+  close_along: 0.02
+  close_across: 0.018
+  close_speed: 0.1
+  pitch_feedforward_deg: 0.0
+  lift_height: 0.12
+  carry_clearance: 0.12
+  edge_clearance: 0.22
+  high_table_front: 0.2
+  facing: edge
+scene_profile: yplus_center_v1
+strata:
+- high_near
+- low_near
+- low_deep
+recoveries:
+- none
+max_s: 24.0
+native_codec: true
+action_hz: 25
+integral_gain: 1.0
+reference_style: direct
+policy_device: cpu

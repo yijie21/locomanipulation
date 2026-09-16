@@ -1,0 +1,8 @@
+# @package _global_
+# Single-arm simple expert, 200-episode collection on the default scene.
+defaults:
+- override /task: bottle_simple
+- override /scene: sim
+- override /embodiment: g1_single_arm
+- override /collect: learn_200
+name: bottle_simple_learn200

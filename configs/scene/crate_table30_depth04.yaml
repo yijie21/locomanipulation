@@ -1,0 +1,8 @@
+# scene/crate_table30_depth04: crate on the 30 cm table, 4 cm depth (the crate record line)
+defaults:
+- _schema
+- _self_
+name: crate_table30_depth04
+dir: outputs/scene/crate_table30_depth04
+cases: null
+preset: crate_bimanual

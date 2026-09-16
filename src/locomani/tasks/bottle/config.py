@@ -74,6 +74,7 @@ class PlaceConfig:
 
 @dataclass(frozen=True)
 class BottleTaskConfig:
+    plugin: str = "bottle"  # task plugin name (locomani.tasks.registry): decides which pipeline runs this config
     reach: ReachConfig = field(default_factory=ReachConfig)
     target: str = "water_bottle"  # --targets: which scene object(s) grasp_gym draws from
     prompt: str = "pick up the water bottle"  # the episode instruction / stack.py's start_stack task prompt

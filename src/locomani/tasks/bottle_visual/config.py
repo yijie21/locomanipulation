@@ -52,6 +52,7 @@ def ruled_grasp() -> GraspConfig:
 
 @dataclass(frozen=True)
 class BottleVisualTaskConfig:
+    plugin: str = "bottle_visual"  # task plugin name (locomani.tasks.registry): decides which pipeline runs this config
     grasp: GraspConfig = field(default_factory=ruled_grasp)  # planner geometry; see ruled_grasp()
     scene_profile: str = field(
         default="yplus_center_v1", metadata={"choices": ("yplus_center_v1", "legacy_edges_v1")}

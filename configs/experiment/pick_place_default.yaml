@@ -1,0 +1,7 @@
+# @package _global_
+# Single-arm pick-and-place (can into basket) on the default scene.
+defaults:
+- override /task: pick_place
+- override /scene: sim
+- override /embodiment: g1_single_arm
+name: pick_place_default

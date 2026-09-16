@@ -1,0 +1,8 @@
+# task/crate_low_reach: generated from configs/tasks/crate_low_reach.json on 2026-09-16; schema _crate
+defaults:
+- _crate
+- _self_
+carry:
+  reach_control: whole_body
+  waist_dofs: all
+  waist_pitch_max: 0.52

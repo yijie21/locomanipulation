@@ -15,6 +15,7 @@ SCHEMA_VERSION = 1
 
 @dataclass(frozen=True)
 class CrateTaskConfig:
+    plugin: str = "crate"  # task plugin name (locomani.tasks.registry): decides which pipeline runs this config
     carry: CrateCarryConfig = field(default_factory=CrateCarryConfig)
     visual: CrateVisualConfig = field(
         default_factory=CrateVisualConfig

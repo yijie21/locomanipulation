@@ -1,0 +1,6 @@
+# task/crate_wall: generated from configs/tasks/crate_wall.json on 2026-09-16; schema _crate
+defaults:
+- _crate
+- _self_
+wall_feature: rail
+wall_walk: true

@@ -1,0 +1,9 @@
+# backend/scalebfm: generated from configs/backends/scalebfm.json on 2026-09-16
+defaults:
+- _scalebfm
+- _self_
+checkpoint: /workspace/models/scalebfm/humanoid_transformer_m_22200.pt
+scene_dir: ''
+object_name: water_bottle
+grip_kp: 1.0
+grip_kd: 0.025

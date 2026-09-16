@@ -1,0 +1,25 @@
+# backend/sonic: generated from configs/backends/sonic.json on 2026-09-16
+defaults:
+- _sonic
+- _self_
+no_encoder: true
+hand: dex1
+upper_slew_deg: 2.0
+grip_delay: 0
+obs_dump: null
+replace: false
+wrist_cams: true
+sim_vis: none
+scene_random: false
+dataset_fps: 30.0
+clean_deploy: false
+eval_parallel: false
+sonic_dds_domain: null
+lockstep:
+  enabled: false
+  ack_timeout: 5.0
+  warmup_ticks: 60
+  cmd_delay: 0
+  jitter: false
+  jitter_seed: 0
+  no_seed: false

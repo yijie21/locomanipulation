@@ -1,0 +1,97 @@
+# task/bottle_whole_body: generated from configs/tasks/bottle_whole_body.json on 2026-09-16; schema _bottle
+defaults:
+- _bottle
+- _self_
+reach:
+  strategy: whole_body
+  post_min: 0.3
+  post_max: 0.4
+  pre_min: 0.24
+  pre_max: 0.29
+  backshift: 0.08
+  depth_margin: 0.01
+  azimuth_deg: 42.0
+  approach_timeout: 10.0
+  max_drop: 0.13
+  transport_margin: 0.004
+  sweep_joint_step: 0.04
+  transport_guard: true
+  grip_below_center: 0.01
+  arrival_advance: 0.0
+  measured_squat_handover: true
+  timely_capture: true
+  squat_prediction_backshift_ratio: 0.0
+  squat_prediction_drop_shortfall: 0.0
+  recovery_attempts: 0
+  recovery_timeout: 35.0
+  pregrasp_rise: 0.08
+  pregrasp_gap: 0.07
+  local_reach_limit: 0.2
+  visible_expert: true
+  visible_brake_depth: 0.31
+  visible_decel_band: 0.24
+  visible_brake_edge: 0.27
+  stand_azimuth_deg: 0.0
+  whole_body:
+    lean_max: 1.0
+    natural_walk_prep: true
+    wrist_roi_supervisor: true
+    capture_depth_m: 0.0012
+    capture_depth_tolerance_m: 0.005
+    capture_lateral_tolerance_m: 0.012
+    capture_height_tolerance_m: 0.015
+    contact_confirm_seconds: 0.1
+    contact_loss_grace_seconds: 0.12
+    contact_recovery_timeout: 0.8
+    contact_speed_max: 0.08
+    capture_quiet_seconds: 0.1
+    tracking_correction_dynamics: true
+    tracking_translation_deadband: 0.002
+    tracking_translation_speed: 0.04
+    tracking_translation_acceleration: 0.2
+    tracking_rotation_deadband: 0.015
+    tracking_rotation_speed: 0.15
+    tracking_rotation_acceleration: 0.6
+    ik_velocity_continuity_weight: 0.0
+    comfort_posture: true
+    comfort_waist_weight: 0.12
+    comfort_elbow_wrist_weight: 0.08
+    capture_min_samples: 6
+    capture_position_diameter_max: 0.004
+    capture_drift_speed_max: 0.03
+    capture_rotation_diameter_max: 0.035
+    capture_angular_drift_max: 0.2
+    capture_brake_acceleration: 0.2
+    capture_brake_lookahead_seconds: 0.1
+    stance_forward_margin_m: 0.18
+    stance_yaw_margin_deg: 16.0
+    stance_waist_yaw_max: 0.1
+    stance_waist_roll_max: 0.05
+    stance_solver_iterations: 40
+    stance_plan_tolerance_m: 0.015
+    stance_plan_freshness_seconds: 1.0
+    stance_settled_timeout: 3.0
+    stance_plan_yaw_tolerance_deg: 2.0
+    stance_plan_joint_tolerance_rad: 0.08
+target: water_bottle
+prompt: pick up the water bottle
+spawn:
+  edge_range:
+  - 1.1
+  - 1.3
+  face_object: true
+  yaw_err_deg: 20.0
+  lateral: 0.2
+  edge_jitter: 0.2
+stand_retries: 0
+restart_deploy: false
+arm_pin: false
+pose_sidecar: true
+video_include_init: false
+init_token_file: null
+init_token_official: false
+arm_channel: planner
+arm_vel: true
+left_guard: true
+one_shot: false
+plugin: bottle

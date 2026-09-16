@@ -1,0 +1,15 @@
+# embodiment/g1_single_arm: G1 + Dex1, right arm acts, three cameras (the bottle and pick-place lines)
+defaults:
+- _schema
+- _self_
+name: g1_single_arm
+arms: single
+state_dim: 46
+action_dim: 46
+cameras:
+- ego_view
+- left_wrist
+- right_wrist
+gr00t_tag: unitree_g1_sonic
+gr00t_modality_config: configs/gr00t_sonic_3cam.py
+dataset_kind: sonic_single_arm

@@ -83,5 +83,6 @@
  "arm_channel": "planner",
  "arm_vel": true,
  "left_guard": true,
- "one_shot": false
+ "one_shot": false,
+ "plugin": "pick_place"
 }

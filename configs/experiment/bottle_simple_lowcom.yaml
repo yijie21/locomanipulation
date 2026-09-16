@@ -1,0 +1,8 @@
+# @package _global_
+# The frozen single-arm simple expert on the low-CoM scene, 8-case fixed bank (root stage4_27_wrap; gate tests/gate/baseline_simple.json).
+defaults:
+- override /task: bottle_simple
+- override /scene: lowcom
+- override /embodiment: g1_single_arm
+- override /collect: fixed8
+name: bottle_simple_lowcom

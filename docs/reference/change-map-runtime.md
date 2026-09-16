@@ -13,13 +13,13 @@ Back to [domain navigation](change-map.md). Test names are relative to `tests/`.
 | Model / run provenance | [provenance.py](../../src/locomani/pipeline/provenance.py), [serve_policy.py](../../src/locomani/pipeline/serve_policy.py) | `config_snapshot.json`, `deploy_receipts.jsonl`, stage `commands.jsonl` | `test_schema_provenance.py`, `test_stack_delivery.py` |
 | Offline tracking-response identification | [response_identification.py](../../src/locomani/pipeline/response_identification.py), [upper_ref.py](../../src/locomani/backends/sonic/upper_ref.py), [privileged_pub.py](../../src/locomani/sim/privileged_pub.py) | Episode sidecars and traces; `--run-root`, `--split`, `--out`. Asynchronous reference receive times; held-out recursive prediction gates model export | `test_response_identification.py`, `test_response_instrumentation.py` |
 | CPU geometry fixtures | [geometry_fixture.py](../../tests/geometry_fixture.py) | [fixture README](../../tests/fixtures/geometry/README.md) | `test_grasp_point_ik.py`, `test_ready_grasp_policy.py` |
+| Run composition (task × embodiment × scene × backend × collect × train × eval) and the one CLI | [conf.py](../../src/locomani/conf.py), [cli.py](../../src/locomani/cli.py), [embodiment_config.py](../../src/locomani/embodiment_config.py), [scene_config.py](../../src/locomani/scene_config.py) | [configs/config.yaml](../../configs/config.yaml), `configs/<group>/*.yaml`, `configs/experiment/*.yaml` (`+experiment=<name>`), [infra plan](../handoff/infra-plan-20260916.md) | `test_conf.py` |
 | Shared config serialization | [config_base.py](../../src/locomani/config_base.py) | [bottle/config.py](../../src/locomani/tasks/bottle/config.py) | `test_configs.py`, `test_review_2026_09_10.py` |
 | Verification routing / navigation / architecture | [check_changes.py](../../scripts/check_changes.py), [lint_repository.py](../../scripts/lint_repository.py) | [Verification](../agents/session-workflow.md#verification), [standards](standards.md) | `test_check_workflow.py`, `test_repository_rules.py` |
 
 ## Current limitations
 
-`locomani.cli` still dispatches to different drivers; consult the relevant row for
-argument meanings. ScaleBFM has an independent in-process runner. SONIC consumers
+`locomani.cli` composes a run with Hydra and still dispatches to the old drivers (`run_learn_pilot`, `run_crate_pilot`) by dumping the composed configs into the run directory; the collection backend and the crate expert kind are hard-coded in those drivers until step 3 of the infra plan. Crate convert/train/eval are not bridged. ScaleBFM has an independent in-process runner. SONIC consumers
 still read derived compatibility properties of ReachConfig; five historical strategy
 switches migrate only at the version-1 JSON boundary. GymRuntime and VlaConfig carry production runtime choices explicitly. Legacy
 RTC diagnostics retain scoped instrumentation hooks. The gym-options report covers

@@ -38,5 +38,7 @@ cd IsaacLab
 echo "=== [5/5] gear_sonic[training] ==="
 cd "$REPO"
 pip install -e "gear_sonic/[training]"
+# Run composition (src/locomani/conf.py) needs Hydra in every interpreter that imports locomani.
+pip install "hydra-core>=1.3,<1.4"
 
 echo "=== DONE ==="

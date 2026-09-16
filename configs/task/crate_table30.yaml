@@ -1,0 +1,7 @@
+# task/crate_table30: generated from configs/tasks/crate_table30.json on 2026-09-16; schema _crate
+defaults:
+- _crate
+- _self_
+carry:
+  pelvis_height: 0.53
+  waist_pitch_max: 0.52

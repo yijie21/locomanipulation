@@ -1,0 +1,8 @@
+# scene/lowcom: low centre-of-mass bottle scene with the 8-case fixed bank (build_sim_scene.py --object-com-drop)
+defaults:
+- _schema
+- _self_
+name: lowcom
+dir: outputs/scene/sim_lowcom
+cases: outputs/bottle_dynamics_20260915/regression8_lowcom.json
+preset: lowcom
