@@ -76,9 +76,9 @@ for b in $(seq 0 $((BATCHES - 1))); do
     # COLLECT_NO_STOP=1: another instance's stack is running (an eval);
     # stop only THIS instance instead of every stack on the machine.
     if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
-        bash scripts/stack/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
+        PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "${INSTANCE:-0}" > /dev/null 2>&1
     else
-        bash scripts/stack/stop_stack.sh > /dev/null 2>&1
+        PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "${INSTANCE:-0}" > /dev/null 2>&1
     fi
     "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
         outputs/scene outputs/scene/sim --seed "$seed" --preset "${SCENE_PRESET:-}" \
@@ -102,9 +102,10 @@ for b in $(seq 0 $((BATCHES - 1))); do
         "$(git log -1 --format=%h -- src/locomani/sim/scene_lib.py 2>/dev/null)" \
         > "$SNAP/provenance.json"
 
-    nohup env SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-        bash scripts/stack/start_stack.sh "pick up the object" \
-        > "$OUT/stack_$seed.log" 2>&1 &
+    # `up` blocks until the stack is ready (exit 0) or has been torn down (exit 1).
+    SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli up \
+        --instance "${INSTANCE:-0}" --gpu "${CUDA_VISIBLE_DEVICES:-0}" --prompt "pick up the object" \
+        > "$OUT/stack_$seed.log" 2>&1 && echo "stack up" >> "$OUT/stack_$seed.log"
     # Wait for the stack rather than sleeping: the deploy's first boot after a
     # scene change still loads cached TensorRT engines, but "still booting" and
     # "failed" look identical to a fixed sleep.
@@ -138,11 +139,7 @@ for b in $(seq 0 $((BATCHES - 1))); do
     fi
 done
 
-if [ "${COLLECT_NO_STOP:-0}" = "1" ]; then
-    bash scripts/stack/stop_instance.sh "${INSTANCE:-0}" > /dev/null 2>&1
-else
-    bash scripts/stack/stop_stack.sh > /dev/null 2>&1
-fi
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "${INSTANCE:-0}" > /dev/null 2>&1
 echo
 echo "===== totals ====="
 grep -h -oE "^EPISODE (OK|FAILED \[[a-z]+\])" "$OUT"/gym_*.log | sort | uniq -c

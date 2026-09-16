@@ -114,7 +114,7 @@ token + 1 维 gripper,一条轨迹的图就有 65 个纵向子图。
 
 ```bash
 # 1. stack 必须 token-only(带 encoder 时外部 token 流压不住,cpp:3096)
-NO_ENCODER=1 SCENE_RANDOM=0 bash scripts/stack/start_stack.sh "pick up the water bottle"
+python -m locomani.stack.cli up --instance 0 --gpu 0 --prompt "pick up the water bottle" --no-encoder
 
 # 2. policy server,第二张卡
 CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
@@ -158,7 +158,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
 - VLA 局**出生即朝向 approach heading、跳过脚本转向**:token-only 模式下没收到
   token 时 `token_state` 置零(cpp:3066),站立撑得住、主动转向是坏的;而训练
   episode 本来就从转向完成后开始录。
-- eval 会 `export NO_ENCODER=1`:gym 每局重启 deploy(`restart_deploy.sh`),
+- eval 会 `export NO_ENCODER=1`:gym 每局重启 deploy(`locomani.stack.cli restart-deploy`),
   不传下去的话第 2 局就被换回带 encoder 的 deploy。
 - 结果 = 成功率 + Wilson 95% 区间 + **分阶段失败分布**(walk / reach / close /
   fell / timeout)。分阶段才可行动:失败在 close = 忠实继承了数据的缺陷;失败在

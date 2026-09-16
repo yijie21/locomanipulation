@@ -63,7 +63,7 @@ if pgrep -f "g1_deploy""_onnx_ref" >/dev/null; then
             | grep -q "encoder-file"; then
         echo "the running deploy has NO ENCODER -- its token labels would be"
         echo "zeros. Restart the collection stack first:"
-        echo "  SCENE_RANDOM=0 bash scripts/stack/start_stack.sh \"pick up the water bottle\""
+        echo "  python -m locomani.stack.cli up --prompt \"pick up the water bottle\""
         exit 1
     fi
 else

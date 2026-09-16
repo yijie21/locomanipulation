@@ -33,7 +33,7 @@ boot_stack() {
   kill_instance $i
   sleep 2
   env INSTANCE=$i SIM_VIDEO_DIR=$PWD/outputs/videos/stream_i$i \
-    nohup bash scripts/stack/start_stack.sh > $OUT/stack_$i.log 2>&1 &
+    PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli up --instance "$i" --gpu "${CUDA_VISIBLE_DEVICES:-0}" > $OUT/stack_$i.log 2>&1
   for _ in $(seq 1 90); do
     grep -q "stack up" $OUT/stack_$i.log 2>/dev/null && return 0
     sleep 5

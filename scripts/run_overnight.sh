@@ -86,13 +86,13 @@ note ""
 # 12 rounds before spending 4-6 hours. The repo's rule for any new axis, and
 # this batch changes four at once.
 say "0/6 gate: $GATE_N rounds, need >= $GATE_MIN"
-bash "$LOCOMANI_STACK/stop_stack.sh" > /dev/null 2>&1
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "${INSTANCE:-0}" > /dev/null 2>&1
 "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py \
     outputs/scene outputs/scene/sim --seed "$SEED0" --preset "${SCENE_PRESET:-}" \
     | grep -E '^\[scene\]' \
     || die "gate: scene rebuild failed"
 nohup env SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/sim_video" \
-    bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle" \
+    PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli up --instance "${INSTANCE:-0}" --gpu "${CUDA_VISIBLE_DEVICES:-0}" --prompt "pick up the water bottle" \
     > "$COLLECT_OUT/stack_gate.log" 2>&1 &
 for _ in $(seq 1 120); do
     grep -qiE "stack up|FAILED|Traceback" "$COLLECT_OUT/stack_gate.log" && break
@@ -104,7 +104,7 @@ grep -qi "stack up" "$COLLECT_OUT/stack_gate.log" || die "gate: stack did not co
     --targets "$TARGETS" --edge-jitter "$JITTER" $SPAWN_ARGS \
     > "$COLLECT_OUT/gate.log" 2>&1
 GATE_OK=$(grep -c "^EPISODE OK" "$COLLECT_OUT/gate.log" || true)
-bash "$LOCOMANI_STACK/stop_stack.sh" > /dev/null 2>&1
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "${INSTANCE:-0}" > /dev/null 2>&1
 note "## 0. 12 局闸门"
 note ""
 note "\`$GATE_OK/$GATE_N\`（阀值 $GATE_MIN）"

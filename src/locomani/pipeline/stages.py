@@ -72,6 +72,18 @@ class Stage:
                 f.write(json.dumps(dict(stage=name, start=started, seconds=time.time() - started, rc=rc)) + "\n")
             print(f"{name}: exit {rc}", flush=True)
 
+    def record(self, name: str, argv, env: dict | None = None) -> None:
+        """Record a command another object executed (the stack manager's children)."""
+        receipt = dict(
+            stage=name,
+            argv=[str(x) for x in argv],
+            cwd=str(paths.REPO),
+            settings=recorded_settings(env or {}),
+            start=time.time(),
+        )
+        with (self.out / "commands.jsonl").open("a") as f:
+            f.write(json.dumps(receipt) + "\n")
+
     def check(self, name: str, cmd, env: dict | None = None, cwd=None) -> None:
         rc = self.run(name, cmd, env=env, cwd=cwd)
         if rc:

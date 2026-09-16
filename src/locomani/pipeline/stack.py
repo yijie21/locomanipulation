@@ -1,4 +1,4 @@
-"""Resolve SONIC child settings and start/stop one instance through the shared shell launcher."""
+"""Resolve SONIC child settings and start/stop one instance through `locomani.stack.Stack`."""
 
 from __future__ import annotations
 
@@ -9,9 +9,6 @@ import subprocess
 from locomani import paths
 from locomani.backends.sonic.config import ENV_FIELDS, SonicBackendConfig, with_shell_overrides
 from locomani.sim.ports import instance_ports
-
-START_STACK = os.path.join(paths.SCRIPTS, "stack", "start_stack.sh")
-STOP_INSTANCE = os.path.join(paths.SCRIPTS, "stack", "stop_instance.sh")
 
 
 def backend_env(cfg: SonicBackendConfig) -> dict[str, str]:
@@ -104,25 +101,79 @@ def start_stack(
     name: str = "start_stack",
     receipt_path=None,
 ) -> dict[str, str]:
-    """Start one stack, optionally recording the launch through Stage.run."""
+    """Start one stack through `locomani.stack.Stack` and return the environment its agent process needs.
+
+    `runner`, when it is a `Stage.run`, only records the children's commands (nothing is executed
+    through a shell any more); the live `Stack` is kept in `LIVE[instance]` for `stop_instance`.
+    """
+    from locomani.stack import Stack, StackSpec
+
     env = resolve_env(
         backend_cfg, task_cfg, instance=instance, gpu=gpu, video_dir=video_dir, extra_env=extra_env, inherit=inherit
     )
-    if receipt_path is not None:
-        env["LOCOMANI_DEPLOY_RECEIPTS"] = str(receipt_path)
-    command = ["bash", START_STACK, getattr(task_cfg, "prompt", None) or "walk forward"]
-    rc = runner(name, command, cwd=paths.REPO, env=env) if runner else subprocess.call(command, cwd=paths.REPO, env=env)
-    if rc:
-        raise RuntimeError(f"start_stack.sh exited {rc}")
+    cfg = SonicBackendConfig.from_dict(json.loads(env["LOCOMANI_BACKEND_JSON"]))
+    spec = StackSpec(
+        instance=int(instance),
+        gpu=str(env.get("CUDA_VISIBLE_DEVICES", gpu if gpu is not None else "0")),
+        scene_dir=env.get("LOCOMANI_SIM_DIR", paths.SIM_DIR),
+        prompt=getattr(task_cfg, "prompt", None) or "walk forward",
+        record=(int(instance) == 0) or env.get("RECORD_INSTANCE", "0") == "1",
+        policy=env.get("SONIC_POLICY", paths.SONIC_POLICY),
+        deploy_root=env.get("SONIC_DEPLOY_ROOT", paths.SONIC_DEPLOY),
+        deploy_bin=env.get("SONIC_DEPLOY_BIN") or None,
+        encoder=not cfg.no_encoder,
+        lockstep=bool(cfg.lockstep.enabled),
+        auto_start=bool(cfg.clean_deploy or cfg.lockstep.enabled),
+        default_motion="neutral_kick_R_001__A543" if (cfg.clean_deploy or cfg.lockstep.enabled) else None,
+        wrist_cams=bool(cfg.wrist_cams),
+        video_dir=env.get("SIM_VIDEO_DIR") or None,
+        sim_vis=env.get("SIM_VIS", "none"),
+        scene_random=env.get("SCENE_RANDOM", "0") == "1",
+        dds_domain=cfg.sonic_dds_domain,
+        env={
+            k: v
+            for k, v in env.items()
+            if k
+            in (
+                "LOCOMANI_BACKEND_JSON",
+                "TF_INIT_TOKEN_FILE",
+                "TF_OBS_DUMP",
+                "TF_GRIP_DELAY",
+                "HAND",
+                "TF_DATASET_FPS",
+                "TF_POSE_OBJECTS",
+                "EXPORTER_THREADS",
+            )
+        },
+        receipts=str(receipt_path) if receipt_path is not None else None,
+    )
+    record = None
+    if runner is not None and hasattr(runner, "__self__") and hasattr(runner.__self__, "record"):
+        record = runner.__self__.record
+    if record is not None:
+        record(name, ["locomani.stack", "up", str(instance)], env)
+    stack_obj = Stack(spec, base_env=env, record_command=record)
+    stack_obj.up()
+    LIVE[int(instance)] = stack_obj
     return env
 
 
+LIVE: dict[int, "object"] = {}
+
+
 def stop_instance(instance: int = 0, port: int | None = None, *, runner=None) -> None:
-    """Run `scripts/stack/stop_instance.sh`, scoped to one instance."""
-    args = ["bash", STOP_INSTANCE, str(instance)]
+    """Stop one instance's stack (this process's `Stack` if it started it, else the one in the state file)."""
+    from locomani.stack import Stack
+
+    stack_obj = LIVE.pop(int(instance), None)
+    if stack_obj is None:
+        try:
+            stack_obj = Stack.attach(int(instance))
+        except FileNotFoundError:
+            stack_obj = None
+    if stack_obj is not None:
+        stack_obj.down()
     if port is not None:
-        args.append(str(port))
-    if runner:
-        runner("stop_stack", args, cwd=paths.REPO)
-    else:
-        subprocess.call(args, cwd=paths.REPO)
+        subprocess.call(["pkill", "-9", "-f", f"serve_policy[.]py .*--port {int(port)}( |$)"])
+    if runner is not None and hasattr(runner, "__self__") and hasattr(runner.__self__, "record"):
+        runner.__self__.record("stop_stack", ["locomani.stack", "down", str(instance)], {})

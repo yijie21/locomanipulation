@@ -1,0 +1,19 @@
+{
+ "arm": "carry",
+ "source": "outputs/gate_baseline_20260916/crate/manifest_*.jsonl",
+ "metrics": {
+  "rounds": 20,
+  "ok": 17,
+  "yield_": 0.85,
+  "produced": 19,
+  "rise_m": 0.2083,
+  "tilt_deg": 2.7004,
+  "end_depth_m": 1.3306,
+  "stand_attempts": null,
+  "failure_reasons": [
+   "basket_tilt",
+   "invalid_initial_distance"
+  ],
+  "seconds": 23.5933
+ }
+}

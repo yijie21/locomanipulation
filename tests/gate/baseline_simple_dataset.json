@@ -1,0 +1,273 @@
+{
+ "source": "/workspace/tmp/p03/outputs/2026-09-16-13-52-58 (stage4_wrap8p, root ba18972)",
+ "fps": 25,
+ "total_episodes": 6,
+ "total_frames": 3358,
+ "features": {
+  "observation.images.ego_view": [
+   "video",
+   [
+    480,
+    640,
+    3
+   ]
+  ],
+  "observation.state": [
+   "float64",
+   [
+    43
+   ]
+  ],
+  "observation.eef_state": [
+   "float64",
+   [
+    14
+   ]
+  ],
+  "observation.water_bottle_pose": [
+   "float32",
+   [
+    9
+   ]
+  ],
+  "action.wbc": [
+   "float64",
+   [
+    43
+   ]
+  ],
+  "observation.root_orientation": [
+   "float64",
+   [
+    4
+   ]
+  ],
+  "observation.projected_gravity": [
+   "float64",
+   [
+    3
+   ]
+  ],
+  "observation.cpp_rotation_offset": [
+   "float64",
+   [
+    4
+   ]
+  ],
+  "observation.init_base_quat": [
+   "float64",
+   [
+    4
+   ]
+  ],
+  "teleop.delta_heading": [
+   "float64",
+   [
+    1
+   ]
+  ],
+  "action.motion_token": [
+   "float64",
+   [
+    64
+   ]
+  ],
+  "teleop.smpl_joints": [
+   "float32",
+   [
+    72
+   ]
+  ],
+  "teleop.smpl_pose": [
+   "float32",
+   [
+    63
+   ]
+  ],
+  "teleop.body_quat_w": [
+   "float32",
+   [
+    4
+   ]
+  ],
+  "teleop.target_body_orientation": [
+   "float32",
+   [
+    6
+   ]
+  ],
+  "teleop.left_hand_joints": [
+   "float32",
+   [
+    7
+   ]
+  ],
+  "teleop.right_hand_joints": [
+   "float32",
+   [
+    7
+   ]
+  ],
+  "teleop.smpl_frame_index": [
+   "int64",
+   [
+    1
+   ]
+  ],
+  "teleop.left_wrist_joints": [
+   "float32",
+   [
+    3
+   ]
+  ],
+  "teleop.right_wrist_joints": [
+   "float32",
+   [
+    3
+   ]
+  ],
+  "teleop.stream_mode": [
+   "int32",
+   [
+    1
+   ]
+  ],
+  "teleop.planner_mode": [
+   "int32",
+   [
+    1
+   ]
+  ],
+  "teleop.planner_movement": [
+   "float32",
+   [
+    3
+   ]
+  ],
+  "teleop.planner_facing": [
+   "float32",
+   [
+    3
+   ]
+  ],
+  "teleop.planner_speed": [
+   "float32",
+   [
+    1
+   ]
+  ],
+  "teleop.planner_height": [
+   "float32",
+   [
+    1
+   ]
+  ],
+  "teleop.vr_3pt_position": [
+   "float32",
+   [
+    9
+   ]
+  ],
+  "teleop.vr_3pt_orientation": [
+   "float32",
+   [
+    18
+   ]
+  ],
+  "observation.images.left_wrist": [
+   "video",
+   [
+    480,
+    640,
+    3
+   ]
+  ],
+  "observation.images.right_wrist": [
+   "video",
+   [
+    480,
+    640,
+    3
+   ]
+  ],
+  "observation.state_psi0": [
+   "float32",
+   [
+    15
+   ]
+  ],
+  "action.psi0_18": [
+   "float32",
+   [
+    18
+   ]
+  ],
+  "timestamp": [
+   "float32",
+   [
+    1
+   ]
+  ],
+  "frame_index": [
+   "int64",
+   [
+    1
+   ]
+  ],
+  "episode_index": [
+   "int64",
+   [
+    1
+   ]
+  ],
+  "index": [
+   "int64",
+   [
+    1
+   ]
+  ],
+  "task_index": [
+   "int64",
+   [
+    1
+   ]
+  ]
+ },
+ "parquet": {
+  "data/chunk-000/episode_000000.parquet": "717bf49d145108ee638e49e00493968719a29b023e48513513aaf875dbc03e4a",
+  "data/chunk-000/episode_000001.parquet": "07819e88afb08a45662e921f699a04e67a8fb67cfbf9a4d09d75ecf43a1c65b2",
+  "data/chunk-000/episode_000002.parquet": "a2de01447b569a6c4cc1ad6e7425228f5aa956a574d88d7cd25e8d8d300b7656",
+  "data/chunk-000/episode_000003.parquet": "3edebf822a3ac8402475003bdf9d7a9aa090cee086043694ec856b040c1c45bf",
+  "data/chunk-000/episode_000004.parquet": "866aad3fe9b4890f407e47efc88f21df1e4394e447162117a3f054c3d24e8235",
+  "data/chunk-000/episode_000005.parquet": "218581fa78ac585d69e0e8d2afc468e7a329b4553afb92a58c83e3f9f60ba403"
+ },
+ "meta": {
+  "episodes.jsonl": "5cc3586a438e4fcee03edfd32e29462065d9f6d32f869ca1af7fd6e305c9c4b5",
+  "episodes_stats.jsonl": "7cb129db13b0e63fffb44a3c2551a4320a5f1a9859a67f9ae29f49de6fbc307f",
+  "info.json": "cb977fa79fc29cc01be9186596246865cced274b0b86be820050701361d04fc2",
+  "modality.json": "2075211da23b90a23efa9038bbb4dcff63925cd3bc45131344ec3c094a2c3415",
+  "modality_gr00t_sonic.json": "2075211da23b90a23efa9038bbb4dcff63925cd3bc45131344ec3c094a2c3415",
+  "modality_psi0.json": "55222e9d79a7527207f71ba7165a028529635e4b8bac6f613db44240e1029233",
+  "tasks.jsonl": "bcd8657a3cb636716db38ad676c6b53c1f036225a3a9e5a05d93ffe36ad6071d"
+ },
+ "videos": {
+  "videos/chunk-000/observation.images.ego_view/episode_000000.mp4": 1651196,
+  "videos/chunk-000/observation.images.ego_view/episode_000001.mp4": 1661628,
+  "videos/chunk-000/observation.images.ego_view/episode_000002.mp4": 1726327,
+  "videos/chunk-000/observation.images.ego_view/episode_000003.mp4": 1586116,
+  "videos/chunk-000/observation.images.ego_view/episode_000004.mp4": 2141605,
+  "videos/chunk-000/observation.images.ego_view/episode_000005.mp4": 1832355,
+  "videos/chunk-000/observation.images.left_wrist/episode_000000.mp4": 2262066,
+  "videos/chunk-000/observation.images.left_wrist/episode_000001.mp4": 2253196,
+  "videos/chunk-000/observation.images.left_wrist/episode_000002.mp4": 2409942,
+  "videos/chunk-000/observation.images.left_wrist/episode_000003.mp4": 2273614,
+  "videos/chunk-000/observation.images.left_wrist/episode_000004.mp4": 2312491,
+  "videos/chunk-000/observation.images.left_wrist/episode_000005.mp4": 2595952,
+  "videos/chunk-000/observation.images.right_wrist/episode_000000.mp4": 2212506,
+  "videos/chunk-000/observation.images.right_wrist/episode_000001.mp4": 2305686,
+  "videos/chunk-000/observation.images.right_wrist/episode_000002.mp4": 2379151,
+  "videos/chunk-000/observation.images.right_wrist/episode_000003.mp4": 2241933,
+  "videos/chunk-000/observation.images.right_wrist/episode_000004.mp4": 2307592,
+  "videos/chunk-000/observation.images.right_wrist/episode_000005.mp4": 2453775
+ }
+}

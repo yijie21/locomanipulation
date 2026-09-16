@@ -20,7 +20,7 @@
 #
 #   export SCENE_RANDOM=0 SIM_VIS=bbox,readout
 #   SIM_VIDEO_DIR=outputs/sim_video \
-#       bash scripts/stack/start_stack.sh "pick up the red can"
+#       python -m locomani.stack.cli up --prompt "pick up the red can"
 #
 # CHUNK is not a tuning knob -- it is a hard ceiling. The exporter leaks
 # about 93 threads per episode and this container's cgroup caps the instance
@@ -141,8 +141,8 @@ while :; do
     wait "$gym_pid" 2>/dev/null || true
     grep -E "^\[gym\] [0-9]+/" "$OUT/gym_$tag.log" || echo "  (no result line)"
     # Roll to a fresh session before the next chunk fills this one's quota.
-    if new=$(TASK_PROMPT="$PROMPT" bash "$(dirname "$0")/restart_exporter.sh"); then
-        echo "  new session $new"
+    if PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli restart-exporter --instance "${INSTANCE:-0}"; then
+        echo "  exporter restarted (new session under $(locomani_session_root "${INSTANCE:-0}")/outputs)"
     else
         echo "  WARNING: exporter restart failed"; break
     fi

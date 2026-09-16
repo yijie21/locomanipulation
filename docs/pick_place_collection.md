@@ -151,7 +151,7 @@ runner 的 `--config` / `--set` 只调整 PilotConfig；任务参数用单独的
 | 启动失败 / 没有 session | `start_stack_00.log`、`$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log`、实例锁与路径 |
 
 前台运行用 Ctrl-C 停止 runner。需要额外清理时，确认本次 runner / expert 已退出，
-再执行 `bash scripts/stack/stop_instance.sh 0`，只停止自己拥有的实例；保留结果和日志。
+再执行 `python -m locomani.stack.cli down --instance 0`，只停止自己拥有的实例；保留结果和日志。
 
 ## 8. 进一步阅读
 

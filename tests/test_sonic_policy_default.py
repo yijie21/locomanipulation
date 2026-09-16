@@ -22,8 +22,6 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULT = "policy/sonic_v1_1"
 SHELL_DEFAULTS = {
     "scripts/paths.sh": r'export SONIC_POLICY="\$\{SONIC_POLICY:-([^}"]+)\}"',
-    "scripts/stack/start_stack.sh": r'SONIC_POLICY="\$\{SONIC_POLICY:-([^}"]+)\}"',
-    "scripts/restart_deploy.sh": r'SONIC_POLICY="\$\{SONIC_POLICY:-([^}"]+)\}"',
 }
 
 
@@ -55,13 +53,18 @@ class DefaultCheckpointTests(unittest.TestCase):
             # for every later test whenever SONIC_POLICY is exported in the shell.
             importlib.reload(paths)
 
-    def test_the_deploy_launchers_check_the_checkpoint_exists(self):
+    def test_the_stack_manager_defaults_to_the_same_checkpoint_and_checks_it_exists(self):
         # A foreign deploy tree (SIMPLE's own lockstep build) has policy/release
-        # only, and $SONIC_POLICY resolves against the deploy's cwd -- without a
+        # only, and the policy resolves against the deploy's cwd -- without a
         # guard that reads as a stack timeout, not a missing file.
-        for rel in ("scripts/stack/start_stack.sh", "scripts/restart_deploy.sh"):
-            text = (REPO / rel).read_text()
-            self.assertIn('if [ ! -f "$SONIC_POLICY/model_decoder.onnx" ]; then', text, rel)
+        import tempfile
+
+        from locomani.stack.manager import Stack, StackSpec
+
+        self.assertEqual(StackSpec().policy, paths.SONIC_POLICY)
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaisesRegex(RuntimeError, "model_decoder.onnx"):
+                Stack(StackSpec(deploy_root=root, policy="policy/missing"))._deploy_argv()
 
 
 class EncoderLayoutTests(unittest.TestCase):

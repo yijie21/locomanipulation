@@ -23,7 +23,7 @@ run_arm() {  # $1=arm(A|Bp) $2=batch
     read -r free thr < <(cpu_free)
     log "batch $b arm $arm: cpu free $free cores, throttled ${thr} ms"
     if [ "$free" -lt 6 ] || [ "$thr" -gt 0 ]; then log "batch $b arm $arm: REFUSED (cpu)"; return 1; fi
-    bash scripts/stack/stop_instance.sh 0 > /dev/null 2>&1
+    PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance 0 > /dev/null 2>&1
     log "batch $b arm $arm: start stack"
     if ! bash scripts/stack/start_stack.sh "pick up the water bottle" > "$E/stack2_${arm}${b}.log" 2>&1; then
         log "batch $b arm $arm: STACK FAILED"; return 1; fi
@@ -37,7 +37,7 @@ sys.argv = ['grasp_gym.py'] + sys.argv[1:]
 grasp_gym.main()
 " "${COMMON[@]}" --seed $((29000 + b)) --cases "$E/cases_$b.json" --manifest "$E/manifest2_${arm}${b}.jsonl" > "$E/gym2_${arm}${b}.log" 2>&1
     log "batch $b arm $arm: rc=$? in $(( $(date +%s) - t0 ))s  $(grep -E '^\[gym\] [0-9]+/' "$E/gym2_${arm}${b}.log" | tail -1)"
-    bash scripts/stack/stop_instance.sh 0 > /dev/null 2>&1
+    PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance 0 > /dev/null 2>&1
 }
 ( while true; do echo "$(date +%T) $(cut -d' ' -f1-3 /proc/loadavg) $(cpu_free)" >> "$E/cpu2.log"; sleep 25; done ) &
 SAMPLER=$!

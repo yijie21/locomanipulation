@@ -67,13 +67,13 @@ mkdir -p "$EVAL_DIR"
 say() { echo; echo "=========== $* ($(date '+%F %T')) ==========="; }
 note() { echo "$*" >> "$REPORT"; }
 
-# One implementation, and it is stop_stack.sh -- not a copy here. Four scripts
+# One implementation, and it is locomani.stack.cli down -- not a copy here. Four scripts
 # used to hand-roll this, and the copy in run_closed_loop.sh was made without
 # stop_stack's `pkill -f spawn_main`, so a kill orphaned the sim's
 # multiprocessing image publisher holding :5555 and the next start_stack
 # refused to hand back a stack that published no images. stop_stack also waits
 # for the ports to actually free and says what survived, which no copy did.
-kill_stack() { bash "$LOCOMANI_STACK/stop_stack.sh" > /dev/null 2>&1; }
+kill_stack() { PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "${INSTANCE:-0}" > /dev/null 2>&1; }
 
 serve() {  # policy server on :5590, GPU 1
     local log="$LOCOMANI_TMP/serve_$RUN.log"
@@ -93,10 +93,9 @@ echo "video -> $VIDEO_DIR"
 kill_stack
 sleep 2
 mkdir -p "$VIDEO_DIR"
-NO_ENCODER=1 SIM_VIDEO_DIR="$VIDEO_DIR" \
-    bash "$LOCOMANI_STACK/start_stack.sh" "pick up the water bottle" \
-    > "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" 2>&1
-grep -qi "stack up" "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" \
+SIM_VIDEO_DIR="$VIDEO_DIR" PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli up --no-encoder \
+    --instance "${INSTANCE:-0}" --gpu "${CUDA_VISIBLE_DEVICES:-0}" --prompt "pick up the water bottle" \
+    > "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log" 2>&1 \
     || { echo "stack did not come up"; tail -5 "$LOCOMANI_OUTPUTS/logs/stack_cl_$RUN.log"; exit 1; }
 serve "$CKPT" || exit 1
 

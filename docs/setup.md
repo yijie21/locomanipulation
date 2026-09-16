@@ -216,7 +216,7 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 ```
 
 > **默认 checkpoint 是 `policy/sonic_v1_1`**(2026-09-11 用户裁定)。`sonic_v1_1/`
-> 缺失时 `start_stack.sh` 会带着"这棵 deploy 树里有哪些 policy"直接失败退出,不会
+> 缺失时 `locomani.stack.cli up` 会带着"这棵 deploy 树里有哪些 policy"直接失败退出,不会
 > 拖到超时;首次启动会重建 TensorRT engine(~10 min,之后缓存在 `policy/sonic_v1_1/*.trt`)。
 > encoder 观测维度也随之变化(v1.1 是 1751,release 是 1762),离线工具从 checkpoint
 > 自己的 `observation_config.yaml` 读布局,不再写死。
@@ -357,7 +357,7 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 `fork` 当遮挡物 —— 和本仓库所有实验数字都不是同一个任务。
 
 变量在**重建场景那一刻**被读(`scene_lib.py`),不是起 stack 时,所以补在
-`start_stack.sh` 上没用,只能重跑本脚本。
+`locomani.stack.cli up` 上没用,只能重跑本脚本。
 
 **验证** —— 这一步自己会报告结果,不用另外敲命令。脚本跑完回显它实际建出来的
 preset / target / target_pool / 桌上物体:
@@ -370,7 +370,7 @@ preset / target / target_pool / 桌上物体:
   finger pads HARDENED (priority 1, condim 4)
 ```
 
-对不上就是 `SCENE_PRESET` 没生效(最常见的是给在了 `start_stack.sh` 上)。
+对不上就是 `SCENE_PRESET` 没生效(最常见的是给在了 `locomani.stack.cli up` 上)。
 最后一行必须是 HARDENED:2026-09-14 起安装脚本默认给指垫加硬接触
 (`build_sim_scene.py --harden-pads`,`object` 级),否则全身抓取抬升时瓶子会从爪中
 蠕变滑出(同样 20 个 seed:软垫 12/20 含 5 次滑脱,硬垫 15/20 无滑脱)。

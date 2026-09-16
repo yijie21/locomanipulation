@@ -93,17 +93,13 @@ ISAAC_ASSETS = os.environ.get("ISAAC_ASSETS", os.path.join(REPO, "assets", "isaa
 # cached separately (scripts/build_isaac_assets.sh).
 ROBOT_MJCF = os.path.join(SONIC, "gear_sonic", "data", "robot_model", "model_data", "g1", "g1_29dof_with_dex1.xml")
 
-RESTART_DEPLOY = os.path.join(SCRIPTS, "restart_deploy.sh")
+TMP = os.environ.get("LOCOMANI_TMP", os.path.join(WORKSPACE, "tmp"))  # session logs, exporter sessions, instance locks
 
 
 def session_root(instance: int = 0) -> str:
-    """Where start_stack.sh puts logs and the exporter puts raw sessions.
-
-    Instance 0 is the plain path; instance i gets a suffix, matching
-    start_stack.sh so multi-instance runs do not collide.
-    """
+    """Where the stack puts its logs and the exporter its raw sessions (one directory per instance)."""
     tail = "p03" if int(instance) == 0 else f"p03_i{int(instance)}"
-    return os.path.join(WORKSPACE, "tmp", tail)
+    return os.path.join(TMP, tail)
 
 
 def describe() -> str:

@@ -44,11 +44,11 @@ TASK=configs/tasks/bottle_visible.json
 PROMPT="pick up the water bottle"
 export LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim"
 SIM_VIDEO_DIR="$LOCOMANI_ROOT/outputs/bottle_manual/videos" \
-  bash scripts/stack/start_stack.sh "$PROMPT"
+  python -m locomani.stack.cli up --instance "$INSTANCE" --gpu 0 --prompt "$PROMPT"
 "$VENV_SIM_PY" -u -m locomani.tasks.bottle.grasp_gym \
   --task-config "$TASK" --rounds 1 --seed 30000 --video-include-init \
   --manifest outputs/bottle_manual/manifest.jsonl
-bash scripts/stack/stop_instance.sh "$INSTANCE"
+python -m locomani.stack.cli down --instance "$INSTANCE"
 ```
 
 For pick-and-place, set `TASK=configs/tasks/pick_place.json`,
@@ -79,7 +79,7 @@ An older policy server must be restarted to supply the identity endpoint.
 | ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm_collection.md) |
 | Pick and place | Bottle driver with `configs/tasks/pick_place.json`; [task guide](../pick_place_collection.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |
-| Stop an owned SONIC stack | `bash scripts/stack/stop_instance.sh <instance>` |
+| Stop an owned SONIC stack | `python -m locomani.stack.cli down --instance <instance>` |
 
 The previous runbook is preserved [verbatim](../archive/runbook_20260912.md).
 Its old variables, running claims and empirical recommendations require verification.

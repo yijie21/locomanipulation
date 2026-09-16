@@ -51,7 +51,7 @@ esac
   | grep -E "^\[scene\]"
 
 env NO_ENCODER=1 SIM_VIS=readout SIM_VIDEO_DIR="$PWD/outputs/videos/cl_$NAME" \
-  bash scripts/stack/start_stack.sh "pick up the water bottle" \
+  PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli up --instance "$INSTANCE" --gpu "${CUDA_VISIBLE_DEVICES:-0}" --prompt "pick up the water bottle" \
   > outputs/logs/stack_$NAME.log 2>&1
 grep -qi "stack up" outputs/logs/stack_$NAME.log \
   || { echo "STACK_FAILED $NAME"; tail -8 outputs/logs/stack_$NAME.log; exit 1; }
@@ -76,4 +76,4 @@ echo "SERVE_UP $NAME"
 ok=$(grep -c '"ok": true' "$OUT/closed_loop.manifest.jsonl" 2>/dev/null || echo 0)
 tr=$(ls "$OUT"/traces/round_*.json 2>/dev/null | wc -l)
 echo "ARM_DONE $NAME ok=$ok rounds=$tr"
-bash scripts/stack/stop_instance.sh "$INSTANCE" "$PORT" > /dev/null 2>&1
+PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli down --instance "$INSTANCE" > /dev/null 2>&1; pkill -9 -f "serve_policy[.]py .*--port $PORT( |$)" 2>/dev/null

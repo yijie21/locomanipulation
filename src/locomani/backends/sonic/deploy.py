@@ -25,41 +25,24 @@ and the threshold is a config field instead of a literal `>= 2`.
 
 from __future__ import annotations
 
-import os
-import subprocess
-
-from locomani import paths
-
-OK_MARKER = "deploy restarted"  # restart_deploy.sh's own success line
+OK_MARKER = "deploy restarted"  # written to deploy.log by Stack.restart_deploy
 
 
 def restart(instance: int | None = None, timeout: float = 360.0) -> bool:
-    """Kill and relaunch this instance's deploy. True only when it came back.
+    """Kill and relaunch this instance's deploy through the live `Stack`. True only when it came back.
 
-    `instance` is passed as INSTANCE in the child's environment (the script
-    derives its port block from it); None inherits whatever this process has,
-    which is what the bottle line wants -- it runs inside the gym, already in
-    the right instance's environment.
+    `instance` None = this process's INSTANCE (the bottle gym runs inside the instance's environment).
     """
-    env = dict(os.environ)
-    if instance is not None:
-        env["INSTANCE"] = str(instance)
+    from locomani.sim import ports
+    from locomani.stack import Stack
+
+    index = ports.instance() if instance is None else int(instance)
     try:
-        r = subprocess.run(
-            ["bash", paths.RESTART_DEPLOY],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=paths.REPO,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        print(f"[deploy] restart timed out after {timeout:.0f}s")
+        stack = Stack.attach(index)
+    except FileNotFoundError as e:
+        print(f"[deploy] restart: {e}")
         return False
-    if OK_MARKER not in r.stdout:
-        print(f"[deploy] restart failed (exit {r.returncode}): {r.stdout[-300:]}")
-        return False
-    return True
+    return stack.restart_deploy()
 
 
 class SelfHeal:

@@ -11,7 +11,7 @@
 # expert process that assumes it is up). Until 2026-09-11 this file and its
 # twin run_bimanual_pilot.sh each carried all of that inline, in ~80 lines of
 # near-identical text, including a hand-rolled `pgrep -f` copy of
-# stop_instance.sh and a third copy of the port arithmetic.
+# the stop script and a third copy of the port arithmetic.
 #
 #   OUT            run directory (default outputs/videos/wall_pilot/<UTC stamp>;
 #                  one run per directory, so two pilots never append to one manifest)

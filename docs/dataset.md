@@ -43,7 +43,7 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 > `TASK = "pick up the red can"`(`convert_to_hf_format.py:43`)—— 于是一整个
 > 水瓶数据集会被标成"拿起红罐子",画面和语言对不上,而且这在训练日志里完全看不出来。
 >
-> 注意 exporter 的 `--task-prompt`(`start_stack.sh` 的那个字符串、
+> 注意 exporter 的 `--task-prompt`(`locomani.stack.cli up` 的那个字符串、
 > `collect_pilot.sh` 的 `PROMPT`)**不参与**这条链路:它对整个 session 是固定的,
 > 只影响录像叠字和 session 元数据。它写错不会污染数据集,但会让你在排查时看错地方
 > —— 所以还是让它和场景里的目标物体保持一致。
@@ -96,7 +96,7 @@ third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
 报文后，通过 protocol v4 发送，**不经过 encoder**。双臂 profile 输出 66 维。
 
 ```bash
-NO_ENCODER=1 bash scripts/stack/start_stack.sh "pick up the water bottle"   # 关键:必须不加载 encoder
+python -m locomani.stack.cli up --instance 0 --gpu 0 --prompt "pick up the water bottle" --no-encoder   # 关键:必须不加载 encoder
 ```
 
 `NO_ENCODER=1` 不是省显存。deploy 只要加载了 encoder,`initial_encoder_mode_` 就是 0,

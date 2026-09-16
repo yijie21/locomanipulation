@@ -360,11 +360,10 @@ def main(argv=None):
                     if kept + min(8, args.successes) * (3 - chunk) < args.successes:
                         break  # Remaining sessions cannot meet the declared success target.
                     if kept < args.successes:
-                        run(
-                            f"exporter_restart_{chunk:02d}",
-                            ["bash", ROOT / "scripts/restart_exporter.sh"],
-                            dict(TASK_PROMPT="pick up the water bottle"),
-                        )
+                        from locomani.stack import Stack
+
+                        stages.record(f"exporter_restart_{chunk:02d}", ["locomani.stack", "restart-exporter", "0"], {})
+                        Stack.attach(0).restart_exporter()
             stop()
             if kept < args.successes:
                 raise RuntimeError(

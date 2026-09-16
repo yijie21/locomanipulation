@@ -31,12 +31,16 @@ def test_resolved_environment_does_not_inherit_another_instances_ports_or_option
 
 
 def test_stack_and_child_receive_identical_settings_through_real_processes(tmp_path, monkeypatch):
+    from locomani.stack import manager
+
     received = tmp_path / "stack.json"
-    script = tmp_path / "start.sh"
-    script.write_text(
-        f"#!/bin/sh\nexec {sys.executable} -c 'import os,json; print(json.dumps(dict(os.environ)))' > {received}\n"
-    )
-    monkeypatch.setattr(stack, "START_STACK", str(script))
+
+    def fake_up(self):
+        received.write_text(json.dumps(self.env))
+        return dict(self.env)
+
+    monkeypatch.setattr(manager.Stack, "up", fake_up)
+    monkeypatch.setattr(manager, "session_root", lambda instance: tmp_path / f"p03_i{instance}")
     backend = SonicBackendConfig(no_encoder=False, obs_dump="observations", sonic_dds_domain=7)
     env = stack.start_stack(
         backend,
@@ -46,6 +50,7 @@ def test_stack_and_child_receive_identical_settings_through_real_processes(tmp_p
         inherit={"PATH": "/bin"},
         runner=Stage(tmp_path).run,
     )
+    stack.LIVE.pop(1, None)
     launched = json.loads(received.read_text())
     Stage(tmp_path).check(
         "expert", [sys.executable, "-c", "import os,json; print(json.dumps(dict(os.environ)))"], env=env
@@ -53,6 +58,7 @@ def test_stack_and_child_receive_identical_settings_through_real_processes(tmp_p
     child = json.loads((tmp_path / "expert.log").read_text().splitlines()[-1])
     for name in ("INSTANCE", "NO_ENCODER", "TF_OBS_DUMP", "SONIC_DDS_DOMAIN", "TF_INIT_TOKEN_FILE"):
         assert launched[name] == child[name] == env[name]
+    assert launched["MUJOCO_EGL_DEVICE_ID"] == "1" and launched["TF_SONIC_PORT"] == "5566"
     records = [json.loads(line) for line in (tmp_path / "commands.jsonl").read_text().splitlines()]
     assert len(records) == 2
     assert records[0]["settings"] == records[1]["settings"]

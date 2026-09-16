@@ -99,7 +99,7 @@ echo "[sweep] servers up"
 for i in 0 1; do
     kill_instance $i; sleep 2
     env INSTANCE=$i NO_ENCODER=1 SIM_VIDEO_DIR="$LOCOMANI_OUTPUTS/videos/sweep_i$i" \
-        nohup bash scripts/stack/start_stack.sh "$TASK" > "$LOGS/stack_$i.log" 2>&1 &
+        PYTHONPATH=src "$VENV_SIM_PY" -m locomani.stack.cli up --instance "$i" --gpu "${CUDA_VISIBLE_DEVICES:-0}" --prompt "$TASK" > "$LOGS/stack_$i.log" 2>&1
     ok=0
     for _ in $(seq 1 90); do
         grep -q "stack up" "$LOGS/stack_$i.log" 2>/dev/null && { ok=1; break; }; sleep 5

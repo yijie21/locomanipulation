@@ -29,7 +29,7 @@ export SONIC_DEPLOY_ROOT="${SONIC_DEPLOY_ROOT:-$SONIC_ROOT/gear_sonic_deploy}"
 # Which SONIC checkpoint the deploy runs, relative to $SONIC_DEPLOY_ROOT. The
 # DEFAULT IS v1.1 since 2026-09-11 (user ruling); policy/release is the older
 # NVIDIA release checkpoint and is now only a comparison arm. One definition for
-# the whole repo: start_stack.sh, restart_deploy.sh and locomani.paths all read
+# the whole repo: locomani.stack.manager and locomani.paths all read
 # it, so the offline encoder/decoder can never disagree with the running deploy.
 # A token is a checkpoint-private latent -- see docs/reference/silent_failures.md.
 export SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"
@@ -73,8 +73,8 @@ locomani_session_root() {
 
 # --- ZMQ ports and the DDS domain, derived from INSTANCE, in ONE place -------
 #
-# Every one of these used to be re-derived by whoever needed it: start_stack.sh
-# had all six, restart_deploy.sh two, par_batch.sh three, and the Python side
+# Every one of these used to be re-derived by whoever needed it: the old start_stack.sh
+# had all six, the old restart_deploy.sh two, par_batch.sh three, and the Python side
 # read them from the environment with instance-0 defaults baked in. Which meant
 # a launcher that did not export them -- collect_pilot.sh and collect.sh
 # mention INSTANCE nowhere -- silently handed grasp_gym port 5556, i.e. THE

@@ -33,6 +33,12 @@
 5. 基线对照复跑；删旧入口。
 6. 文档：教程按 collection.md 章节结构重写 collect / train / eval 三篇；`docs/reference/standards.md` 加 job/manifest/registry 规则。
 
+## 进度（2026-09-16）
+
+- 步骤 0 完成：root 冻结提交 `ba18972`（分支 `refactor/infra-20260916` 从它切出）；基线 `tests/gate/baseline_simple.json`（stage4_wrap8p，6/8）、`baseline_carry.json`（`outputs/gate_baseline_20260916/crate`，17/20）、`baseline_simple_dataset.json`（8p 的 session 经 convert：6 集、3358 帧、37 个特征、parquet/meta 的 sha256）；`scripts/gate.py` 新增 `simple`、`carry` 两臂，`simple` 的停位容差 2 cm、接触侧归一化，对 8n/8o/8p 三批干跑全部 PASS。
+- 步骤 1 完成（`7105545`）：`locomani.conf` + `configs/{task,embodiment,scene,backend,collect,train,eval,experiment}/` + `python -m locomani.cli`；OmegaConf 对 frozen 嵌套 dataclass 需清只读标记（`conf.writable`），`tuple`/`Optional` 字段全部通过。
+- 步骤 2：`locomani.stack.Stack`（GPU1 实机 up/status/restart-deploy 30 s/down 验证通过，无残留进程与端口）；shell 启动/停止/重启脚本已删；`pipeline/stack.py` 的 `start_stack`/`stop_instance` 改为桥接，`deploy.restart` 经 `Stack.attach`。子进程仍读环境变量（sim/exporter 的 `TF_*`、`LOCOMANI_SIM_DIR` 等），`ENV_FIELDS` 翻译层留给步骤 3 的 agent 进程改造一并删。首次端到端复跑 `outputs/runs/infra_check_simple8` 2/8：主机负载 21、CPU 用满配额、GPU1 有外来 3 GB 进程，失败家族是已知的负载家族（停位过深 ×5、站位看不到瓶子 ×2），不能判定；负载降到 7 核以下后重跑。
+
 ## 待定（执行时决定，不影响上面 8 条）
 
 - OmegaConf 对 `tuple[float, float]`、`Optional[...]`、frozen dataclass 的支持要先用现有 5 个 config 类试一遍；不行的字段改 list。
