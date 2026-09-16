@@ -293,7 +293,7 @@ TRACE="$LOCOMANI_ROOT/outputs/crate_collect_10/trace/visual_crate_s41_00_state_t
 | MuJoCo 在线物理与相机采集 | 已接通；按任务指南选择录制方式 |
 | 基于 trace 的 Isaac 离线重渲 | 已实现；双臂有受管并排脚本 |
 | `collect` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
-| `run_learn_pilot` / `run_crate_pilot` 自动追加 Isaac | 当前没有该阶段，需显式调用离线渲染入口 |
+| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段（`locomani.cli` 的五个阶段里没有渲染阶段），需显式调用离线渲染入口 |
 | Isaac 图像作为在线专家/VLA 的输入 | 当前主流程未接入 live mirror；不能从离线视频推断已支持 |
 | 自动把 Isaac 视频写回训练数据集 | 当前转换器读取原 session 图像，没有自动替换步骤 |
 

@@ -1,0 +1,7 @@
+# The full single-arm line on one card: 200 kept episodes -> LeRobot dataset -> 10k-step finetune ->
+# 100 closed-loop rounds -> summary.  `python -m locomani.launch run configs/jobs/bottle_simple_200.yaml --gpus 1`
+jobs:
+  - name: bottle_simple_200_20260916
+    overrides: ["+experiment=bottle_simple_learn200"]
+    stages: [collect, convert, train, eval, stats]
+    gpu: any

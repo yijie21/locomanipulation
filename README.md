@@ -17,7 +17,7 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm_collection.md) |
 | 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/dataset.md) |
 | 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/training.md) · [评测](docs/evaluation.md) |
-| 多卡并行、多配置对比 | 一个 job 文件跑多个实验，按 manifest 跳过已完成阶段，结果注册表 | [基础设施计划与现状](docs/handoff/infra-plan-20260916.md) · `configs/jobs/example.yaml` |
+| 多卡并行、多配置对比 | 一个 job 文件跑多个实验，按 manifest 跳过已完成阶段，结果注册表 | [运行基础设施指南](docs/infra.md) · `configs/jobs/example.yaml` |
 | MuJoCo 仿真与 Isaac 渲染 | 仿真与采集流程、EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染指南](docs/rendering.md) |
 
 双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，

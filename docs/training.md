@@ -87,7 +87,7 @@ export PYTHONPATH=src
 
 ## 5. 产物与验收
 
-以下路径相对于本次 `--out`(即 `outputs/runs/<run_name>`):
+以下路径相对于本次运行目录(即 `outputs/runs/<name>/`):
 
 | 路径 | 内容 |
 |---|---|
@@ -288,7 +288,7 @@ OOM(峰值 32.1 GB)、16 能跑但只剩 950 MiB 余量、**8(accum 8)峰值 27.
 | 报 `meta/stats.json` 缺失就直接退出 | 按提示手动跑一次 `gr00t.data.stats`,或改走 `DatasetFactory.build()` 自动生成(见 §6);`locomani.cli convert` 产出的数据集通常已经算过 |
 | `WANDB` 相关报错 | `locomani.cli train` 已固定 `WANDB=0`;手动调脚本时没登录会在启动阶段**立即报错**,不是等到 torchrun 下才挂死 |
 | 训练/评测同盘 ENOSPC | 两个训练同时存 checkpoint 前先算账 —— checkpoint 大小 × 保留个数 × 任务数。2026-08-25 的事故:bottle250(6.5 GB × 10)+ frozen_dit(12 GB × 8)并行把 165 GB 吃穿,闭环评测和训练双双死于 ENOSPC。旧 checkpoint 评完即删,或调小保留个数 |
-| `<out>/train/model` 已存在,拒绝重跑 | 这是防止覆盖一半的 checkpoint;换一个新的 `--out` 或先确认旧 checkpoint 已经不需要 |
+| `<out>/model` 已存在,拒绝重跑 | 这是防止覆盖一半的 checkpoint;换一个新的 `name=` 或先确认旧 checkpoint 已经不需要 |
 
 前台运行用 Ctrl-C 停止训练进程本身;`locomani.launch` 起的 job 同样可以
 Ctrl-C 中止,已完成的阶段(manifest `ok=true` 且哈希未变)下次重跑会被跳过,
@@ -296,6 +296,7 @@ Ctrl-C 中止,已完成的阶段(manifest `ok=true` 且哈希未变)下次重跑
 
 ## 8. 进一步阅读
 
+- [运行基础设施](infra.md)：配置组怎么组合、阶段产物与断点、多卡并行的作业文件与资源准入。
 - [数据集转换](dataset.md):train_dataset/val_dataset 的字段、图像/动作对齐、`check_dataset` 审计。
 - [评测](evaluation.md):开环选 checkpoint、闭环验收、部署参数如何影响成功率。
 - [`src/gr00t/UPSTREAM.md`](../src/gr00t/UPSTREAM.md):vendored GR00T 包对上游的改动清单。

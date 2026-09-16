@@ -302,8 +302,10 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 双臂全身 POSE 交接还需要 [上肢控制权补丁](../patches/sonic_pose_ownership.md)：
 应用 `patches/sonic_pose_ownership.patch` 后重编。采集入口会检查实际选择的二进制，
 旧版本会明确报错。自定义 `SONIC_DEPLOY_BIN` 也必须包含该补丁。
-单臂 `whole_body` 还需 [夹爪交接补丁](../patches/sonic_hand_ownership.md)，
-防止 POSE 回到 planner 时夹爪命令短暂恢复默认值；应用后重编。
+单臂的 streamed-pose 专家（`reach.strategy` 为 `simple` 或 `whole_body`）还需
+[夹爪交接补丁](../patches/sonic_hand_ownership.md)，防止 POSE 回到 planner 时夹爪命令
+短暂恢复默认值；应用后重编。`collect` 阶段起栈前就会检查实际选中的二进制，没打补丁直接报错；
+已编译好的二进制在别处时用 `SONIC_DEPLOY_ROOT` 指过去。
 
 > **其余部署补丁按用途安装。**
 > `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。

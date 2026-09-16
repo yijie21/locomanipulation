@@ -1,8 +1,17 @@
 # @package _global_
-# Single-arm simple expert, 200-episode collection on the default scene.
+# Single-arm simple expert (frozen at stage4_27_wrap) on its low-CoM scene: 200 kept episodes with
+# randomised spawns, a 10k-step finetune, 100 closed-loop rounds. The collection seeds (40000+100*batch)
+# stay clear of the frozen gate bank (30700) and the reserved fresh20 bank (30900).
 defaults:
 - override /task: bottle_simple
-- override /scene: sim
+- override /scene: lowcom
 - override /embodiment: g1_single_arm
 - override /collect: learn_200
 name: bottle_simple_learn200
+scene:
+  cases: null  # sample every round from task.spawn; the 8-case bank is the gate, not training data
+collect:
+  seed0: 40000
+train:
+  steps: 10000
+  save_steps: 5000

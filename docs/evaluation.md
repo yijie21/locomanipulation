@@ -1009,6 +1009,7 @@ resume 会被拒绝**,要混用得 `--force-resume`)两个 opt-in 参数缩短�
 
 ## 8. 进一步阅读
 
+- [运行基础设施](infra.md)：配置组怎么组合、阶段产物与断点、多卡并行的作业文件与资源准入。
 - [数据采集](collection.md) / [双臂采集](crate_collection.md):任务与场景怎么来。
 - [数据集转换](dataset.md):train/val 数据集的字段与审计。
 - [训练](training.md):从数据集到 checkpoint,含 checkpoint 事后选流程。

@@ -37,12 +37,12 @@ bash scripts/install_scene.sh
 元数据应显示 `soup_can` 和 `basket`。预设使用约 62 cm 桌面、6 × 14 cm 罐头和
 30 × 20 × 15 cm 空心篮子；具体几何以生成的场景为准。
 `--harden-pads` 使用共享的 `object` 指面接触配置，是**构建时**开关；
-启动 runner 不会补上遗漏的接触设置。
+启动采集阶段不会补上遗漏的接触设置。
 
 ## 3. 跑一局
 
 这里运行 **1 次完整抓取与放置尝试**并录制。失败会留下诊断记录，
-runner 因未收够 1 条成功数据退出；只有抓起罐头不算任务完成。
+采集阶段因未收够 1 条成功数据退出；只有抓起罐头不算任务完成。
 
 ```bash
 mkdir -p $LOCOMANI_TMP/p03/outputs
@@ -53,11 +53,10 @@ export PYTHONPATH=src
   gpu=0
 ```
 
-runner 负责启动 sim / SONIC deploy / exporter 和专家，并在结束后停止本次实例。
+采集阶段负责启动 sim / SONIC deploy / exporter 和专家，并在结束后停止本次实例。
 它固定使用 **实例 0**，目前从 `$LOCOMANI_TMP/p03/outputs` 查找 session；
 上述命令使用默认临时目录。自定义目录或只检查动作时见 [手动命令入口](reference/runbook.md#manual-bottle-or-pick-and-place-check)。
 
-`through=collect` 必须保留，否则 pilot 配置默认继续到转换、训练和评测。
 检查 `collect_00.log` 中的抬升、`[place]` 阶段和最终 `EPISODE OK` / 失败标签，
 再看视频确认罐头确实释放在篮内。首次部署的缓存构建进度见 `start_stack_00.log` 及栈日志。
 
@@ -82,13 +81,13 @@ export PYTHONPATH=src
 
 ## 5. 产物与验收
 
-以下路径相对于本次 `--out`：
+以下路径相对于本次运行目录 `outputs/runs/<name>/`：
 
 | 路径 | 内容 / 查看方式 |
 |---|---|
 | `task_config.json`、`reach_config.json`、`scene/` | 本次任务、抓取配置及场景副本 |
 | `config_snapshot.json`、`deploy_receipts.jsonl` | 配置、输入身份与部署模型 |
-| `collect_00.log`、`commands.jsonl`、`timings.jsonl` | 专家日志、runner 启动命令与阶段耗时 |
+| `collect_00.log`、`commands.jsonl`、`timings.jsonl` | 专家日志、阶段启动命令与阶段耗时 |
 | `collect/manifest_00.jsonl` | 每次尝试的指令、结果、`produced`；放置指标和轨迹在 `execution.metrics.place` / `execution.metrics.place_trace` |
 | `collect/inputs.json` | session / manifest 的有序配对及采集进度 |
 | `collect/videos_00/*.mp4`、`collect/state_trace_00/` | 完整过程原片及物理轨迹 |
@@ -118,14 +117,15 @@ exporter 默认记录 ego、左腕、右腕；该任务复用单臂 schema，
 
 | 想调整什么 | 修改入口 | 注意事项 |
 |---|---|---|
-| 出生与罐头沿桌沿随机化 | 任务 JSON 的 `spawn` | 当前距离为桌边 1.1–1.3 m，罐头采样还受 `place.goal_gap` 约束 |
+| 出生与罐头沿桌沿随机化 | `task.spawn`（`configs/task/pick_place.yaml`） | 当前距离为桌边 1.1–1.3 m，罐头采样还受 `place.goal_gap` 约束 |
 | 抓取高度和策略 | `reach` | 更换罐头后检查抓取模板覆盖、碰撞和实际持物稳定性 |
 | 放置区域与运动速度 | `place.band_x/band_y`、`v_travel/v_descend` | 区域在骨盆坐标系；同时检查脚步能否到位和持物 IK 可达性 |
 | 下降与松手 | `release_clearance`、`place_tol/place_tol_late`、相关 timeout | 深度相对篮沿；放宽容差不能代替篮内落物检查 |
 | 容器和任务指令 | `goal`、`prompt`、场景几何及 `goal_inner_half` | 当前篮子固定；更换尺寸或位置需同步验收范围与可见性 |
 
 字段含义和默认值见 [配置表](reference/config_fields.md)。
-runner 的 `--config` / `--set` 只调整 PilotConfig；任务参数用单独的 `--task` profile。
+命令行覆盖项按组分开：`collect.*` 只调采集规模，任务参数用 `task.*` 或换一个 `task=` profile
+（组合规则见 [运行基础设施](infra.md)）。
 无需启动仿真即可查看 gym 对该 profile 的解析：
 
 ```bash
@@ -148,7 +148,7 @@ runner 的 `--config` / `--set` 只调整 PilotConfig；任务参数用单独的
 | `[place]` / `[retreat]` | 释放误差、篮内判据、手臂退出后的碰撞或扫动 |
 | 启动失败 / 没有 session | `start_stack_00.log`、`$LOCOMANI_TMP/p03/{sim,deploy,exporter}.log`、实例锁与路径 |
 
-前台运行用 Ctrl-C 停止 runner。需要额外清理时，确认本次 runner / expert 已退出，
+前台运行用 Ctrl-C 停止阶段进程。需要额外清理时，确认本次阶段 / expert 已退出，
 再执行 `python -m locomani.stack.cli down --instance 0`，只停止自己拥有的实例；保留结果和日志。
 
 ## 8. 进一步阅读

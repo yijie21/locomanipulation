@@ -11,6 +11,14 @@ exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
 64 维 SONIC motion latent + 三路 25fps 视频):
 
 ```bash
+# 正常路径：转换是一个阶段，session 与 manifest 的配对从 collect 的 manifest 里读
+python -m locomani.cli convert name=<run>     # 产出 <out>/train_dataset 与 <out>/val_dataset
+```
+
+`train.holdout` 决定切出多少条做验证集（0 表示不切）。手工转换散落的 session
+（不属于某次运行、或要自定义裁剪选项）时直接调底层转换器：
+
+```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
     src/locomani/pipeline/convert_to_hf_format.py \
     --sessions "$LOCOMANI_TMP"/p03/outputs/<session1> <session2> ... \

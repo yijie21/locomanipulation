@@ -12,7 +12,7 @@
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
-| 后续链路 | `--record` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
+| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
 
 当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
 仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
@@ -53,12 +53,11 @@ PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
   collect.seed0=101 embodiment=g1_bimanual collect.record=false
 ```
 
-runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
-进度见本次运行目录的启动日志。每次新实验使用新的 `--out`，查看 manifest 和完整视频判断结果。
+采集阶段启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
+进度见本次运行目录的启动日志。每次新实验使用新的 `name=`，查看 manifest 和完整视频判断结果。
 
-不加 `--record` 时本流程只保存视频、相机和动作记录（诊断用途，不进转换器）；
-正式训练数据见第 4 节的录制方式。启动参数中的 `--gpu 0` 是显式选择；
-不要照抄 runner 的 GPU 1 默认值。
+`collect.record=false` 时本流程只保存视频、相机和动作记录（诊断用途，不进转换器）；
+正式训练数据见第 4 节的录制方式。命令里的 `gpu=0` 是显式选择，不要照抄别处的卡号。
 
 ## 4. 批量采集
 
@@ -72,14 +71,15 @@ PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
   collect.seed0=41 embodiment=g1_bimanual collect.record=false
 ```
 
-`--rounds` 控制尝试数；`--batch-rounds N` 可按批重启栈，默认整个 visual pilot 使用一批。
+`collect.batch_rounds` 控制每批尝试数，`collect.max_batches` 控制批数上限；每批重启一次栈，
+默认整个 visual pilot 使用一批。`collect.successes` 是要保留的成功条数。
 
 ### 录制成正式训练数据
 
-加 `--record`，runner 会在本实例上启动 data exporter（`RECORD_INSTANCE=1`），
+`collect.record=true`（默认）时，采集阶段会在本实例上启动 data exporter（`RECORD_INSTANCE=1`），
 专家在任务开始时发 `c`、评估后发 `c`（成功保存）或 `x`（失败丢弃），
 每批一个 exporter session，写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，
-并记录在 `<out>/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
+并记录在 `<out>/collect/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
 exporter 约占 500 个线程，容器 pid 上限 3840，实测两个录制栈约 1800，
 不要再并行第三个。实例不再被强制成 0，因此可以在 GPU 1 / 实例 1 上与
 单臂采集（GPU 0 / 实例 0）并行录制；同一块 GPU 上不能跑两个仿真。
@@ -114,26 +114,27 @@ manifest 行带 `task`、`produced`、`ok` 和成功局的
 `check_dataset` 在任务文本含 crate 时同时审计这个 profile。
 
 **预期成功率**（2026-09-14，本页第 2 节的场景 + `crate_visual_low_reach.json` + SONIC v1.1
-+ 带补丁的 deploy，GPU 1 / 实例 1 `--record`）：260 次尝试的正式录制前 194 次 163 成功（84%），
++ 带补丁的 deploy，GPU 1 / 实例 1 录制）：260 次尝试的正式录制前 194 次 163 成功（84%），
 10 局验证批 7/10；失败以 `basket_tilt`、`invalid_initial_distance` 和接触类为主。
 另一台机器数字不同时，先按第 7 节"别人的成功率与本机不同"逐项核对。
 训练后的闭环评测见 [双臂 Closed-loop](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)。
-必须保留 `--expert visual` 和上述配置：裸 runner 默认是 `wall` 诊断，
-`run_wall_pilot.sh` / `run_bimanual_pilot.sh` 也不代表这里的连续 visual 专家。
-`--resume` 从首个未完成 batch 继续，不是 episode 级续采；先检查原有尝试记录和未完成 batch。
+专家由 `task.expert` 选择（默认 `visual`；`wall` / `carry` 是诊断专家，
+`scripts/run_wall_pilot.sh`、`run_bimanual_pilot.sh` 跑的就是它们，不代表这里的连续 visual 专家）。
+同名重跑从首个未完成 batch 继续（读 `collect/inputs.json`），不是 episode 级续采；
+先检查原有尝试记录和未完成 batch。
 更改场景或配置时使用新目录，保留失败、零帧初始化失败及其原因，不以重跑覆盖原始样本。
 
 ## 5. 产物与验收
 
-以下路径相对于本次 `--out`：
+以下路径相对于本次运行目录 `outputs/runs/<name>/`：
 
 | 路径 | 内容 / 查看方式 |
 |---|---|
-| `inputs.json`、`task_config.json`、`crate_table30_depth04/` | 运行输入、解析后的任务配置及场景副本；副本目录沿用传入场景名 |
+| `collect/inputs.json`、`task_config.json`、`run_config.yaml`、`crate_table30_depth04/` | 运行输入、解析后的任务配置及场景副本；副本目录沿用传入场景名 |
 | `config_snapshot.json`、`deploy_receipts.jsonl` | 配置来源、场景身份与实际部署模型 |
 | `videos_00/*.mp4` | 第三人称原片及机器人相机画中画 |
 | `observations/<label>/*.mp4`、`observations/<label>/observations.jsonl` | 专家消费的相机帧及对应机器人状态、时间戳、可见性与阶段 |
-| `observations/<label>/commands.jsonl` | 实际发送的 planner / POSE 动作参考；区别于根目录 runner 的命令日志 |
+| `observations/<label>/commands.jsonl` | 实际发送的 planner / POSE 动作参考；区别于运行目录根部的 `commands.jsonl` |
 | `attempts.jsonl`、`manifest_00.jsonl`、每次尝试的 `result.json` | 全部采样尝试的真实成败、接触、抬升、倾斜与异常 |
 | `trace/*_state_trace.npz` | 物理状态轨迹；用于动作核对和离线回放 |
 
@@ -192,7 +193,8 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 | 桌高、篮子深度与形状 | 场景构建工具与 `--scene` | 控制 profile 不改变几何；改场景后重新验证接触与可达性 |
 | 专家输入 | `visual.pose_source` | 当前默认 profile 为 `assisted`；历史 `markers` 路径需要专门的标记场景 |
 
-配置优先级是默认值 → `--config` → 显式 `--set KEY=VALUE`，解析后写入运行目录并交付专家。
+配置优先级是组默认值 → `+experiment=<name>` → 命令行的 `task.*` / `collect.*` 覆盖项，
+解析后写入运行目录的 `run_config.yaml` 并交付专家。
 字段含义以 [配置表](reference/config_fields.md)为准；新实验使用单独的 profile 和输出目录。
 
 ### Waist and reach
@@ -205,16 +207,16 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 ### Table-height validation
 
 第 2 节的构建命令保持桌面 XY 尺寸并降到 30 cm。改高度时修改 `--height`，
-输出到新场景目录，再同步 runner 的 `--scene`；同时检查控制 profile 是否适用于新几何。
+输出到新场景目录，再把 `scene=` / `scene.dir=` 指过去；同时检查控制 profile 是否适用于新几何。
 55 cm、30 cm 下蹲和髋部前俯是不同实验，具体证据在文末。
 
 ### 其他双臂场景与专家
 
 | 用途 | 入口 / 配置 | 录制边界 |
 |---|---|---|
-| 全身弯腰与双手机械可达性诊断 | `--expert carry --config configs/task/crate_low_reach.yaml` | whole-body 动作 pilot，拒绝 `--record` |
-| 传统 planner 搬箱诊断 | `--expert carry`，`carry.reach_control=planner` | 可录 exporter session |
-| 箱壁 / 箱沿接触诊断 | `--expert wall --config configs/task/crate_wall.yaml` | 可录 session、轨迹和可选 ghost |
+| 全身弯腰与双手机械可达性诊断 | `task=crate_low_reach task.expert=carry` | whole-body 动作 pilot，拒绝录制（`collect.record=false`） |
+| 传统 planner 搬箱诊断 | `task.expert=carry`，`task.carry.reach_control=planner` | 可录 exporter session |
+| 箱壁 / 箱沿接触诊断 | `task=crate_wall task.expert=wall` | 可录 session、轨迹和可选 ghost |
 
 例如单集 wall 接触诊断使用第 2 节构建的原始高度场景：
 
@@ -227,7 +229,7 @@ PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
 ```
 
 `crate_wall.json` 显式开启 `wall_walk`；不加载 profile 时默认为 false。
-wall / planner carry 添加 `--record` 时在本实例启动 exporter，未指定 batch 大小时采用 10；
+wall / planner carry 在 `collect.record=true` 时于本实例启动 exporter，未指定 batch 大小时采用 10；
 成功 episode 保存、失败丢弃，检查 `produced` 与 session 配对。
 转换参考 [数据指南](dataset.md)和 [双臂数据配置](../configs/gr00t_sonic_3cam_bimanual.py)；
 有 exporter 录制入口不等于已经验证 VLA 学习，也不等同于默认 visual 的完整持物站直流程。
@@ -239,12 +241,13 @@ wall / planner carry 添加 `--record` 时在本实例启动 exporter，未指�
 | 低桌没有生效 | 实际 `--scene`、运行目录场景副本与桌高；仅换 JSON 不会改变桌子 |
 | 刚启动就失败 / 没有视频 | `attempts.jsonl`、`result.json` 和启动日志；初始化失败可能是零帧 |
 | 抓不到、倾斜或站直失败 | manifest 的阶段与失败原因、双手接触、支撑跟踪及 state trace |
-| 别人的成功率与本机不同 | 先比 `--expert`、解析后的配置、桌高与篮子 inset、`deploy_receipts.jsonl` 的模型/二进制身份；再比失败类型，不能只比 git SHA |
-| `--record` 被拒绝 | 是否选了 visual 或 whole-body carry；当前属于能力限制 |
+| 别人的成功率与本机不同 | 先比 `task.expert`、解析后的配置、桌高与篮子 inset、`deploy_receipts.jsonl` 的模型/二进制身份；再比失败类型，不能只比 git SHA |
+| 录制被拒绝 | 是否选了 visual 或 whole-body carry；当前属于能力限制 |
 | Isaac 缺少桌子或背景 | 本次场景副本与 [资产构建](rendering.md#资产构建)，重新构建对应缓存 |
 
-用 Ctrl-C 停止前台 runner。需要额外清理时，先确认本次 runner / expert 已退出，
-再执行 `bash scripts/stack/stop_instance.sh 1`（示例实例）；只清理自己拥有的实例并保留产物。
+用 Ctrl-C 停止前台阶段进程；阶段自己会停掉它起的栈。需要额外清理时，先确认本次
+阶段 / expert 已退出，再执行 `python -m locomani.stack.cli down --instance 1`（示例实例）；
+只清理自己拥有的实例并保留产物。
 
 ### 中途停止渲染 / 清理
 
@@ -259,6 +262,7 @@ bash scripts/stack/stop_render.sh crate_review_example
 
 ## 8. 进一步阅读
 
+- [运行基础设施](infra.md)：配置组怎么组合、阶段产物与断点、多卡并行的作业文件与资源准入。
 - [视觉专家说明](crate_visual_collection.md)：信息来源、相机可见性、连续动作与记录字段。
 - [crate 代码导航](reference/change-map-crate.md)：修改双手、腰部、交接或失败判据时阅读。
 - [连续动作版本及验证](handoff/crate-continuous-motion-20260914.md)：当前实现的固定批次证据和剩余限制。

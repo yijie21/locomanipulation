@@ -10,7 +10,7 @@
 - [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): command reference and manual stack operation.
-- [Infra plan 2026-09-16](handoff/infra-plan-20260916.md): the one CLI (`locomani.cli`), config groups (`conf.py`, `configs/<group>/`), stages with manifests (`stages/`), the Python stack (`stack/`), the launcher and registry (`launch.py`); decisions, progress and what is still open.
+- [Run infrastructure](infra.md): the one CLI (`locomani.cli`), the seven config groups, stages and their manifests, the process stack, and multi-GPU parallel jobs. Read it before composing a run or adding an experiment; the 2026-09-16 [decision record](handoff/infra-plan-20260916.md) is history.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Documentation ownership

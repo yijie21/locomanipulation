@@ -39,7 +39,7 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 
 ## 3. 跑一局
 
-这里运行 **1 次尝试**并录制；失败时保留诊断记录，runner 会因未收够 1 条成功数据退出。
+这里运行 **1 次尝试**并录制；失败时保留诊断记录，采集阶段会因未收够 1 条成功数据退出。
 它负责启动 sim / SONIC deploy / exporter，再启动专家，结束后停止本次实例。
 
 ```bash
@@ -55,8 +55,8 @@ export PYTHONPATH=src
 示例采用默认 `LOCOMANI_TMP=/workspace/tmp`。自定义临时目录时可用文末的手动入口。
 首次部署可能较久地构建 TensorRT 缓存，进度见输出目录的 `start_stack_00.log` 和栈日志。
 
-`through=collect` 表示只采集；`learn_200.json` 本身默认运行到评测，不要遗漏这个覆盖。
-每次新实验使用新的 `--out`。打开 `collect_00.log`，检查 `EPISODE OK` 或带标签的失败原因，
+`locomani.cli collect` 只跑采集这一个阶段；要继续转换 / 训练 / 评测，就在同一个 `name=` 上依次执行后面的动词。
+每次新实验使用新的 `name=`。打开 `collect_00.log`，检查 `EPISODE OK` 或带标签的失败原因，
 再结合完整视频判断实际动作。
 
 ## 4. 批量采集
@@ -71,7 +71,7 @@ export PYTHONPATH=src
   gpu=0 name=bottle_collect_10
 ```
 
-Run the same command four times (`name=bottle_collect_10_2`, etc.) to continue batching, or use `--resume` to continue the same run.
+同一个 `name=` 重跑会接着采（读 `collect/inputs.json` 的批次进度）；要另起一份数据就换一个 `name=`。
 
 `successes` 是保留条数，`batch_rounds` / `max_batches` 限制尝试预算；达到预算仍不足会明确报错。
 每批重启栈，限制 exporter 的资源增长；一个 batch 对应一个 session 和一个 manifest。
@@ -106,7 +106,7 @@ Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_ta
 | deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
 | 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED` | `outputs/scene/sim/scene_meta.json`、脚本回显 |
 | 任务配置 | `configs/task/bottle_whole_body.yaml`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
-| pilot 配置 | `configs/pilot/learn_200.json` + 本页的 `--set` | 运行目录 `inputs.json` |
+| 采集配方 | `configs/experiment/<name>.yaml`（组合 task / scene / collect），或本页的 `collect.*` 覆盖项 | 运行目录 `run_config.yaml`、`collect/inputs.json` |
 | 资源 | 该 GPU 上没有第二个仿真；CPU 配额有余量 | `nvidia-smi`、`/sys/fs/cgroup/cpu.stat` |
 | 闭环评测的初始 token | `--initial-token-file configs/deployment/whole_body_initial_token.json`（与这份数据的垂臂开局一致；默认的 READY token 会让 100 局全部卡在 prelude） | 评测目录 `config_snapshot.json` 的 `initial_token` 摘要 |
 
@@ -233,19 +233,19 @@ for variant in visible whole_body; do
 done
 ```
 
-不足 10 条成功时 runner 返回非零退出码，但失败记录和视频仍保留。
+不足 10 条成功时采集阶段返回非零退出码，但失败记录和视频仍保留。
 case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场景须生成新 bank。
 固定的是采样条件，异步控制、接触和渲染时序仍可能使重复实验产生不同结果。
 
 ## 5. 产物与验收
 
-以下路径相对于本次 `--out`：
+以下路径相对于本次运行目录 `outputs/runs/<name>/`：
 
 | 路径 | 内容 / 查看方式 |
 |---|---|
 | `task_config.json`、`reach_config.json`、`scene/` | 本次任务配置与场景副本 |
 | `config_snapshot.json`、`deploy_receipts.jsonl` | 配置来源、输入身份及实际部署模型 |
-| `collect_00.log`、`commands.jsonl`、`timings.jsonl` | 专家日志、runner 启动命令与阶段耗时 |
+| `collect_00.log`、`commands.jsonl`、`timings.jsonl` | 专家日志、阶段启动命令与阶段耗时 |
 | `collect/manifest_00.jsonl` | 每次尝试的目标、指令、结果及 `produced` 标志 |
 | `collect/inputs.json` | session / manifest 的有序配对、保留条数与批次进度 |
 | `collect/videos_00/*.mp4`、`collect/state_trace_00/` | 第三人称原片与物理状态轨迹 |
@@ -259,7 +259,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 第三人称画中画用于检查，不能替代训练相机。
 
 验收时核对完整走近与抓取过程、真实抬升和持物结果，以及 manifest / session 的对应关系。
-`--record` 才触发 episode 录制，失败尝试不作为成功示范保留；
+`collect.record=true`（默认）才触发 episode 录制，失败尝试不作为成功示范保留；
 `produced` 用于判断该行是否对应 exporter episode，不能只数 `ok`。
 逐局指令通过 manifest 传给转换器，不应全部替换为 exporter 的单条 session prompt。
 
@@ -276,7 +276,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 | 目标与语言指令 | `target`、`prompt` 与场景目标池 | 指令必须对应场景中实际存在的目标 |
 | 抓取策略、站位和接近行为 | `reach` | 沿用已有策略入口；改控制逻辑用 [bottle 代码导航](reference/change-map-bottle.md) |
 | 桌高、物体形状和尺寸 | `scene_lib.py` 与场景构建入口 | 重建场景、使用新输出目录；配置文件不会自动改几何 |
-| 外观与相机 | sim 外观设置、相机配置 | 自动 runner 固定 `SCENE_RANDOM=0`；改变记录相机时同步数据配置 |
+| 外观与相机 | sim 外观设置、相机配置 | 采集阶段固定 `SCENE_RANDOM=0`；改变记录相机时同步数据配置 |
 
 直接调用 gym 时，已支持的选项按默认值 → 任务 JSON → 显式 CLI 合并。
 先用无需模拟器的命令检查实际参数来源：
@@ -286,10 +286,11 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
   --task-config configs/task/bottle_whole_body.yaml
 ```
 
-自动 runner 的 `--config` / `--set` 修改 **PilotConfig**（采集规模、阶段和运行环境），
-`--task` 选择 **BottleTaskConfig**。修改任务参数应编辑单独的任务 profile，
-不能把 `spawn` / `reach` 字段直接塞进 runner 的 `--set`。
-字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准。
+命令行覆盖项按组分开：`collect.*` 改采集规模（成功条数、每批轮数、种子），
+`task.*`（含 `task.spawn.*`、`task.reach.*`）改专家行为，`scene=` 换场景。
+要复现的配方写成 `configs/experiment/<name>.yaml`，不要把一长串覆盖项留在 shell 历史里；
+组合结果先用 `locomani.cli show` 看一眼，运行后以运行目录里的 `run_config.yaml` 为准。
+字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准，组合规则见 [运行基础设施](infra.md)。
 
 ### 连续全身候选的动作原则
 
@@ -349,8 +350,9 @@ export PYTHONPATH=src
 | 跑完却没有成功数据 | manifest 的 `ok` / `produced`、exporter 日志、`inputs.json`；失败尝试不等于成功 episode |
 | 同目录重跑被拒绝 / session 对不上 | 中断 batch 和阶段标记；保留现场，核对配对后再决定恢复方式 |
 
-前台运行用 Ctrl-C 停止 runner。需要额外清理时先确认本次 runner / expert 已退出，
-再执行 `bash scripts/stack/stop_instance.sh 0`，仅作用于本次拥有的实例。保留数据与日志。
+前台运行用 Ctrl-C 停止阶段进程；阶段自己会停掉它起的栈。需要额外清理时先确认本次
+阶段 / expert 已退出，再执行 `python -m locomani.stack.cli down --instance 0`，
+仅作用于本次拥有的实例。保留数据与日志。
 
 ## 8. 进一步阅读
 
