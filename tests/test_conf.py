@@ -58,9 +58,6 @@ def test_task_and_embodiment_must_be_compatible():
 def test_cli_override_reaches_a_nested_field_and_the_stage_is_recorded():
     run, cfg = conf.load_run(["collect.successes=8", "stage=eval", "gpu=1"])
     assert run.collect.successes == 8 and run.stage == "eval"
-    pilot = conf.pilot_from(run, through="eval")
-    assert pilot.successes == 8 and pilot.train_gpu == "1"
-    assert "CUDA_VISIBLE_DEVICES=1" in pilot.stack_env and "MUJOCO_EGL_DEVICE_ID=1" in pilot.stack_env
 
 
 def test_snapshot_writes_the_resolved_tree(tmp_path):

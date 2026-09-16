@@ -26,7 +26,6 @@ from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.embodiment_config import EmbodimentConfig
 from locomani.pipeline.collect_config import CollectConfig
 from locomani.pipeline.eval_config import EvalConfig
-from locomani.pipeline.pilot_config import PilotConfig
 from locomani.pipeline.train_config import TrainConfig
 from locomani.scene_config import SceneConfig
 from locomani.tasks.bottle.config import BottleTaskConfig
@@ -145,26 +144,6 @@ def snapshot(cfg: DictConfig, out: Path) -> Path:
     OmegaConf.save(cfg, path, resolve=True)
     (out / "run_config.json").write_text(json.dumps(OmegaConf.to_container(cfg, resolve=True), indent=1))
     return path
-
-
-def pilot_from(run: RunConfig, through: str) -> PilotConfig:
-    """Bridge: the `PilotConfig` that `run_learn_pilot` still consumes, assembled from the stage configs."""
-    return PilotConfig(
-        successes=run.collect.successes,
-        batch_rounds=run.collect.batch_rounds,
-        max_batches=run.collect.max_batches,
-        holdout=run.train.holdout,
-        steps=run.train.steps,
-        save_steps=run.train.save_steps,
-        train_gpu=str(run.gpu),
-        eval_rounds=run.eval.rounds,
-        eval_seed=run.eval.seed,
-        seed0=run.collect.seed0,
-        through=through,
-        squat_max=run.train.squat_max,
-        gym_env=tuple(run.collect.gym_env),
-        stack_env=tuple(run.collect.stack_env) + (f"CUDA_VISIBLE_DEVICES={run.gpu}", f"MUJOCO_EGL_DEVICE_ID={run.gpu}"),
-    )
 
 
 def resolve_repo_path(value: str) -> Path:

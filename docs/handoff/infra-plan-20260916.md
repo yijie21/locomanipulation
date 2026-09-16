@@ -41,6 +41,10 @@
 
 - 步骤 3：`src/locomani/stages/`（collect / convert / train / eval / stats 各一个模块，`<out>/<stage>/manifest.json` 约定：配置组 hash、上游 manifest hash、outputs、metrics、起跑资源），`locomani.cli <stage>` 直接调用，不再桥接 `run_learn_pilot`；crate 的 collect 仍走 `run_crate_pilot`。`train_bottle.sh` 读 `MODALITY`/`BASE_MODEL`；convert 的 GR00T stats 改用 embodiment 的 modality 配置（旧 pilot 用 2cam 算 stats、3cam 训练，不一致）。
 
+- 步骤 4 完成（`fde9cc0`、`dab109a`）：`locomani.launch run <jobs.yaml> --gpus 0,1`（每阶段一个子进程、manifest 判定跳过、准入 = 一卡一 job + 实测 CPU/pid/显存、`outputs/registry.jsonl`、`ls`/`compare`；`configs/jobs/example.yaml`）。
+- 步骤 5（进行中）：新路径端到端复跑 `outputs/runs/infra_check3_simple8`（`locomani.cli collect +experiment=bottle_simple_lowcom`，负载 8.6 核、GPU1 空闲时起跑）**7/8**，`scripts/gate.py compare simple` 对冻结基线 **PASS 5/5**（yield 0.75→0.875，停位中位 0.147→0.153 m，失败集合无新成员）。之前两次复跑不能判定：一次是主机负载 21（2/8，停位过深/看不到瓶子），一次是 `backend/sonic.yaml` 从旧 JSON 带来的 `no_encoder: true`（0/8，全部站起失败：无编码器时 deploy 丢弃规划器手臂/腰参考；已改为 false，eval 阶段自行强制 true，`a2d5d1e`）。已删 `run_learn_pilot.py` 和 `conf.pilot_from`；仍保留：`run_crate_pilot.py`（crate collect 阶段仍经它）、`run_ready_pilot.py`、`PilotConfig`、`configs/{tasks,backends,eval,pilot}/*.json`（测试与 crate 驱动仍读）、旧 shell 跑批脚本（已改为调用 stack CLI）——下一步逐个删除并把 crate collect 直接建在 `stages.collect` 上。
+- 步骤 6：`docs/collection.md` 加了统一入口/配置组/阶段 manifest 一节，`standards.md` 加了运行/阶段/launcher 规则，change-map 三行；collect/train/eval 三篇教程按 collection.md 章节重写尚未做。
+
 ## 待定（执行时决定，不影响上面 8 条）
 
 - OmegaConf 对 `tuple[float, float]`、`Optional[...]`、frozen dataclass 的支持要先用现有 5 个 config 类试一遍；不行的字段改 list。

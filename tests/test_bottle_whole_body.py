@@ -153,22 +153,6 @@ def test_unseen_target_cache_never_updates_from_new_hidden_truth():
     assert target.observe(state, now=9.9) is None
 
 
-def test_short_fixed_case_bank_rejects_before_starting_stack(tmp_path, monkeypatch):
-    from locomani.pipeline import run_learn_pilot as pilot
-    from locomani.pipeline.experiment_cases import save_cases
-
-    scene = tmp_path / "scene"
-    scene.mkdir()
-    (scene / "scene_meta.json").write_text("{}")
-    bank = tmp_path / "cases.json"
-    save_cases(bank, [], scene / "scene_meta.json")
-    start = Mock(side_effect=AssertionError("must reject before resource acquisition"))
-    monkeypatch.setattr(pilot.stack, "start_stack", start)
-    with pytest.raises(ValueError, match="fixed cases must cover"):
-        pilot.main(["--scene", str(scene), "--out", str(tmp_path / "out"), "--cases", str(bank)])
-    start.assert_not_called()
-
-
 def test_whole_body_trace_can_be_serialized_on_cleanup():
     from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
 

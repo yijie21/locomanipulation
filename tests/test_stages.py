@@ -52,6 +52,9 @@ def test_upstream_manifest_is_required_and_hashed(tmp_path, run_cfg):
 def test_collect_stage_runs_batches_on_its_own_stack_and_writes_the_manifest(tmp_path, run_cfg, monkeypatch):
     run, cfg = run_cfg
     out = tmp_path / "run"
+    patched = tmp_path / "deploy"
+    patched.write_bytes(b"POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1")
+    monkeypatch.setenv("SONIC_DEPLOY_BIN", str(patched))
     events = []
 
     class FakeStack:
@@ -86,3 +89,72 @@ def test_collect_stage_runs_batches_on_its_own_stack_and_writes_the_manifest(tmp
     assert (out / "scene" / "scene_meta.json").exists() and (out / "task_config.json").exists()
     assert json.loads((out / "collect" / "inputs.json").read_text())["kept"] == 2
     assert "resources_at_start" in m and m["upstream"] == {}
+
+
+@pytest.mark.parametrize("steps,save_steps", [(6, 3), (5, 3)])
+def test_train_stage_delivers_the_save_interval_to_its_training_process(tmp_path, monkeypatch, steps, save_steps):
+    import sys
+
+    from locomani.stages import train
+
+    run, cfg = conf.load_run([f"train.steps={steps}", f"train.save_steps={save_steps}", "gpu=1"])
+    out = tmp_path / "run"
+    ds = out / "train_dataset"
+    ds.mkdir(parents=True)
+    common.write_manifest(out, "collect", cfg, ok=True, outputs={}, metrics={}, started=0.0, resources={})
+    common.write_manifest(
+        out, "convert", cfg, ok=True, outputs=dict(train_dataset=ds), metrics={}, started=0.0, resources={}
+    )
+    original_check = train.Stage.check
+
+    def training_stub(self, name, command, env=None, cwd=None):
+        assert name == "train" and str(command[1]).endswith("scripts/train_bottle.sh")
+        original_check(
+            self,
+            name,
+            [
+                sys.executable,
+                "-c",
+                'import os,json; print(json.dumps({k: os.environ[k] for k in ["MAX_STEPS", "SAVE_STEPS", "MODALITY", "CUDA_VISIBLE_DEVICES"]}))',
+            ],
+            env=env,
+        )
+        (train.checkpoint_path(out, run.train)).mkdir(parents=True)
+
+    monkeypatch.setattr(train.Stage, "check", training_stub)
+    m = train.run(run, cfg, out)
+    received = json.loads((out / "train.log").read_text().splitlines()[-1])
+    assert received["MAX_STEPS"] == str(steps) and received["SAVE_STEPS"] == str(min(save_steps, steps))
+    assert (
+        received["MODALITY"].endswith(run.embodiment.gr00t_modality_config) and received["CUDA_VISIBLE_DEVICES"] == "1"
+    )
+    assert m["ok"] and m["outputs"]["checkpoint"].endswith("model" if steps % save_steps else f"checkpoint-{steps}")
+    assert m["upstream"] == {"convert": common.manifest_hash(out, "convert")}
+
+
+def test_collect_stage_rejects_a_short_case_bank_before_building_a_stack(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from locomani.pipeline.experiment_cases import save_cases
+
+    patched = tmp_path / "deploy"
+    patched.write_bytes(b"POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1")
+    monkeypatch.setenv("SONIC_DEPLOY_BIN", str(patched))
+    bank = tmp_path / "cases.json"
+    save_cases(bank, [], Path(conf.paths.REPO) / "outputs/scene/sim_lowcom/scene_meta.json")
+    run, cfg = conf.load_run(["+experiment=bottle_simple_lowcom", f"scene.cases={bank}"])
+    monkeypatch.setattr(collect, "Stack", Mock(side_effect=AssertionError("must reject before resource acquisition")))
+    with pytest.raises(ValueError, match="fixed cases must cover"):
+        collect.run(run, cfg, tmp_path / "run")
+
+
+def test_collect_stage_rejects_a_deploy_without_the_hand_patch_before_any_stack(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    binary = tmp_path / "deploy"
+    binary.write_bytes(b"POSE_UPPER_OWNERSHIP_V2")
+    monkeypatch.setenv("SONIC_DEPLOY_BIN", str(binary))
+    run, cfg = conf.load_run(["task=bottle_whole_body", "scene=lowcom", "collect=fixed8"])
+    monkeypatch.setattr(collect, "Stack", Mock(side_effect=AssertionError("stack started before admission")))
+    with pytest.raises(RuntimeError, match="sonic_hand_ownership.patch"):
+        collect.run(run, cfg, tmp_path / "run")

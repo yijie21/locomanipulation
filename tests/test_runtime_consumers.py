@@ -1,5 +1,6 @@
 """Settings reach clocks, controllers and the real evaluation parser."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -62,61 +63,3 @@ def test_ready_pilot_command_is_accepted_by_the_actual_eval_parser(tmp_path, cap
     assert config.backend.dataset_fps == 25.0
     assert config.client == "async"
     assert parsed.cases == str(tmp_path / "eval_cases.json")
-
-
-@pytest.mark.parametrize("steps,save_steps", [(6, 3), (5, 3)])
-def test_learn_pilot_delivers_the_save_interval_to_its_training_process(tmp_path, monkeypatch, steps, save_steps):
-    import json
-    import sys
-
-    from locomani.pipeline import run_learn_pilot
-    from locomani.pipeline.stages import Stage
-
-    out, scene = tmp_path / "out", tmp_path / "scene"
-    out.mkdir()
-    scene.mkdir()
-    (scene / "scene_meta.json").write_text("{}")
-    (out / "collect.done").touch()
-    (out / "convert.done").touch()
-    original_check = Stage.check
-
-    def training_stub(self, name, command, env=None, cwd=None):
-        assert name == "train"
-        assert str(command[1]).endswith("scripts/train_bottle.sh")
-        original_check(
-            self,
-            name,
-            [
-                sys.executable,
-                "-c",
-                'import os,json; print(json.dumps({key:os.environ[key] for key in ["MAX_STEPS","SAVE_STEPS"]}))',
-            ],
-            env=env,
-        )
-        # The external trainer saves final weights in model/ and a periodic
-        # directory only on a save step (experiment.py's existing contract).
-        model = out / "model"
-        model.mkdir()
-        if steps % save_steps == 0:
-            (model / f"checkpoint-{steps}").mkdir()
-
-    monkeypatch.setattr(Stage, "check", training_stub)
-    run_learn_pilot.main(
-        [
-            "--out",
-            str(out),
-            "--scene",
-            str(scene),
-            "--set",
-            "through=train",
-            "--set",
-            f"steps={steps}",
-            "--set",
-            f"save_steps={save_steps}",
-        ]
-    )
-    received = json.loads((out / "train.log").read_text().splitlines()[-1])
-    assert received == {"MAX_STEPS": str(steps), "SAVE_STEPS": str(save_steps)}
-    assert (out / "train.done").exists()
-    receipt = json.loads((out / "commands.jsonl").read_text())
-    assert receipt["settings"]["SAVE_STEPS"] == str(save_steps)

@@ -1,8 +1,7 @@
 """Collect stage knobs: how many episodes, in what batches, with which extra process environment.
 
 Split out of `PilotConfig` (decision 4 of docs/handoff/infra-plan-20260916.md: one config per
-stage). `PilotConfig` remains the bridge object `run_learn_pilot` still consumes; `conf.pilot_from`
-assembles it from collect + train + eval.
+stage). `PilotConfig` is kept only for the crate driver's legacy fields until that line moves to stages.
 """
 
 from __future__ import annotations

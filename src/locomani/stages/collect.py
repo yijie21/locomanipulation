@@ -187,12 +187,20 @@ def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
         state = (
             json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
         )
+        backend = run_cfg.backend if isinstance(run_cfg.backend, SonicBackendConfig) else SonicBackendConfig()
+        if getattr(run_cfg.task.reach, "strategy", None) in ("whole_body", "simple"):
+            # the streamed-pose experts need the patched deploy (hand ownership); refuse before any stack
+            from locomani.pipeline.provenance import require_pose_ownership
+
+            require_pose_ownership(
+                stack_env.resolve_env(backend, run_cfg.task, instance=run_cfg.collect.instance, gpu=str(run_cfg.gpu)),
+                hand_handoff=True,
+            )
         cases = None
         if run_cfg.scene.cases:
             cases = load_cases(common.ROOT / run_cfg.scene.cases, scene / "scene_meta.json")
             if len(cases) < run_cfg.collect.batch_rounds * run_cfg.collect.max_batches:
                 raise ValueError("fixed cases must cover batch_rounds * max_batches; no implicit resampling")
-        backend = run_cfg.backend if isinstance(run_cfg.backend, SonicBackendConfig) else SonicBackendConfig()
         stages = Stage(out)
         while state["kept"] < run_cfg.collect.successes and state["batches"] < run_cfg.collect.max_batches:
             manifest = _bottle_batch(run_cfg, out, stages, state["batches"], cases, state, backend)
