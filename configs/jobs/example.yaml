@@ -1,0 +1,16 @@
+# A job list for `python -m locomani.launch run configs/jobs/example.yaml --gpus 0,1`.
+# Each job: overrides for locomani.cli (an experiment file plus anything else), the stages to run in
+# order, which GPU it may use ("any" = whichever the launcher holds free), and per-stage resource
+# declarations that override launch.DEFAULT_RESOURCES. Jobs run in parallel across GPUs; a stage whose
+# manifest is up to date (same config hash, same upstream hash) is skipped.
+jobs:
+  - name: simple_fixed8
+    overrides: ["+experiment=bottle_simple_lowcom"]
+    stages: [collect, stats]
+    gpu: any
+  - name: pick_place_seedA
+    overrides: ["+experiment=pick_place_default", "collect.seed0=30000"]
+    stages: [collect, convert, train, eval, stats]
+    gpu: any
+    resources:
+      train: {cpu_cores: 4, pids: 300, gpu_mib_free: 28000}
