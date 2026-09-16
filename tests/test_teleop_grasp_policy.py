@@ -12,8 +12,8 @@ pytestmark = pytest.mark.usefixtures("bottle_geometry")
 
 sys.path[:0] = [str(Path(__file__).resolve().parent)]
 
+from locomani import conf
 from locomani.pipeline.execution_record import ExecutionRecord
-from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle.reach_config import ReachConfig
 from locomani.tasks.bottle.ready_grasp_policy import OFFSET
 from locomani.tasks.bottle.teleop_grasp_policy import TeleopGraspPolicy, level_jaw
@@ -24,7 +24,7 @@ def _policy(*, floor=True, clear=True, grip_shift=(0.0, 0.0, 0.0)):
     p.side = "right"
     p.execution = ExecutionRecord()
     p.execution.metrics["teleop_grasp"] = {}
-    p.config = BottleTaskConfig.load("configs/tasks/bottle_visible_teleop.json").reach
+    p.config = conf.load_group("task", "bottle_visible_teleop").reach
     p.floor_clear = lambda *a, **kw: floor
     p.guard = SimpleNamespace(hands=["right", "left", "body"], check=lambda *a, **kw: SimpleNamespace(clear=clear))
     # an IK that FAILS everything: the teleop policy must not consult it
@@ -47,7 +47,7 @@ class AssessTests(unittest.TestCase):
         self.assertFalse(ReachConfig().teleop_arm)
         with self.assertRaises(ValueError):
             ReachConfig.from_dict({"schema_version": 1, "teleop_arm": True})
-        self.assertTrue(BottleTaskConfig.load("configs/tasks/bottle_visible_teleop.json").reach.teleop_arm)
+        self.assertTrue(conf.load_group("task", "bottle_visible_teleop").reach.teleop_arm)
 
     def test_level_jaw_keeps_the_entry_axis_and_zeroes_the_tilt(self):
         from scipy.spatial.transform import Rotation

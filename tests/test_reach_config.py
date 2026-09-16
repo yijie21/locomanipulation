@@ -70,7 +70,7 @@ class CalibrationGateTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             require_expert_calibration(None, ReachConfig())
         self.assertIn("ready_grasp_recovery=False", str(caught.exception))
-        self.assertIn("--task-config", str(caught.exception))
+        self.assertIn("task=bottle_visible", str(caught.exception))
 
     def test_the_message_names_the_file_when_one_was_given(self):
         with self.assertRaises(SystemExit) as caught:
@@ -81,9 +81,13 @@ class CalibrationGateTests(unittest.TestCase):
         require_expert_calibration(None, ReachConfig(strategy="recovery"))
 
     def test_a_task_config_never_recalibrates_a_vla_round(self):
+        import tempfile
+
+        from locomani import conf
         from locomani.tasks.bottle.cli_args import parse_args
 
-        profile = Path(__file__).resolve().parents[1] / "configs/tasks/bottle_visible.json"
+        profile = Path(tempfile.mkdtemp()) / "bottle_visible.json"
+        conf.load_group("task", "bottle_visible").dump(profile)
         args = parse_args(["--task-config", str(profile)], vla=True)
         self.assertEqual(args.reach_config_obj, DEFAULT_REACH)
         self.assertEqual(args.spawn_yaw_err, 20.0)

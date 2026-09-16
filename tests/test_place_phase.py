@@ -93,10 +93,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(back, cfg)
         self.assertEqual(back.place.band_x, (0.20, 0.28))
 
-    def test_pick_place_json_names_the_goal(self):
-        from pathlib import Path
+    def test_pick_place_yaml_names_the_goal(self):
+        from locomani import conf
 
-        cfg = BottleTaskConfig.load(Path(__file__).resolve().parents[1] / "configs/tasks/pick_place.json")
+        cfg = conf.load_group("task", "pick_place")
         self.assertEqual((cfg.target, cfg.goal), ("soup_can", "basket"))
 
 

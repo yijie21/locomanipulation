@@ -282,9 +282,13 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--seeds", default="101,102,103")
     parser.add_argument(
-        "--config", help="BottleVisualTaskConfig JSON (configs/tasks/bottle_visual.json); default = the ruled expert"
+        "--config",
+        help="BottleVisualTaskConfig JSON (task=bottle_visual, configs/task/bottle_visual.yaml); "
+        "default = the ruled expert",
     )
-    parser.add_argument("--backend", help="ScaleBfmBackendConfig JSON (configs/backends/scalebfm.json)")
+    parser.add_argument(
+        "--backend", help="ScaleBfmBackendConfig JSON (backend=scalebfm, configs/backend/scalebfm.yaml)"
+    )
     parser.add_argument(
         "--set",
         action="append",

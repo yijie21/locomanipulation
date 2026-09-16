@@ -34,6 +34,7 @@ from locomani.tasks.crate.config import CrateTaskConfig
 
 CONFIGS = os.path.join(paths.REPO, "configs")
 STAGES = ("collect", "convert", "train", "eval", "stats")
+GROUPS = ("task", "embodiment", "scene", "backend", "collect", "train", "eval")
 
 # Schema node name -> dataclass, per group. A group YAML starts with `defaults: [_<schema>, _self_]`.
 TASK_SCHEMAS = {"_bottle": BottleTaskConfig, "_crate": CrateTaskConfig, "_bottle_visual": BottleVisualTaskConfig}
@@ -121,6 +122,7 @@ def objects(cfg: DictConfig) -> RunConfig:
     run = OmegaConf.to_object(cfg)
     if not isinstance(run, RunConfig):
         raise TypeError("root config must be typed by run_schema (configs/config.yaml defaults)")
+    run = dataclasses.replace(run, **{g: _typed(getattr(run, g)) for g in GROUPS})
     if run.stage not in STAGES:
         raise ValueError(f"stage must be one of {STAGES}, got {run.stage!r}")
     plugin = getattr(run.task, "plugin", None)
@@ -144,6 +146,30 @@ def snapshot(cfg: DictConfig, out: Path) -> Path:
     OmegaConf.save(cfg, path, resolve=True)
     (out / "run_config.json").write_text(json.dumps(OmegaConf.to_container(cfg, resolve=True), indent=1))
     return path
+
+
+def load_group(group: str, name: str):
+    """One group file as its dataclass, without composing a whole run (`load_group("task", "bottle_simple")`).
+
+    This is what tests and standalone tools use instead of the retired JSON twins under
+    `configs/tasks`, `configs/backends` and `configs/eval`.
+    """
+    cfg = compose_run(
+        [f"{group}={name}"]
+        + (
+            ["embodiment=g1_bimanual", "scene=crate_table30_depth04"]
+            if group == "task" and name.startswith("crate")
+            else []
+        )
+    )
+    return _typed(OmegaConf.to_object(cfg[group]))
+
+
+def _typed(obj):
+    """OmegaConf hands tuple-typed fields back as lists; the dataclass's own from_dict restores the declared types."""
+    if hasattr(obj, "to_dict") and hasattr(type(obj), "from_dict"):
+        return type(obj).from_dict(obj.to_dict())
+    return obj
 
 
 def resolve_repo_path(value: str) -> Path:

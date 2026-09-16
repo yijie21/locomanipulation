@@ -35,17 +35,17 @@
 | 脚本 | 干什么 |
 |---|---|
 | `locomani.stack.cli` | 起 / 停三进程 stack（`up` / `down --instance <N>`）。**停只用 `locomani.stack.cli down`,不要自己手写 kill** —— 它多杀 `spawn_main`(sim 的图像发布子进程,孤儿化后占着 :5555,下一次启动会被 `locomani.stack.cli up` 拒绝)和 `serve_policy.py`,还会等端口真正释放并回显剩余进程 |
-| `scripts/run_overnight.sh` | **跑一次完整实验**:12 局闸门 → 采集 → 转换 → 审计 → 训练 → 闭环。`RUN=` 命名,`SPAWN_EDGE=` 定出生距离 |
-| `scripts/run_closed_loop.sh` | **只评一个 checkpoint**:起 stack + 策略服务器,20 轮再续到 100。`CKPT=` 默认取训练最久的那个 |
+| `python -m locomani.launch` | **跑一次完整实验**:用 YAML 定义各阶段配置,执行 `python -m locomani.launch run configs/jobs/complete_pipeline.yaml --gpus 0,1`。多个实验在 YAML 里并行跑 |
+| `python -m locomani.cli eval` | **只评一个 checkpoint**:起 stack + 策略服务器,运行 `PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli eval name=<run_name> gpu=1 eval.rounds=100` |
 | `scripts/archive/` | round 2/3/4 和旧 pipeline 的编排脚本。**历史记录,不维护,已知跑不起来**(调用的 `eval_closed_loop` 参数已不存在),留着是因为阶梯上那几个数的确切配置只写在里面 |
-| `scripts/collect.sh` | **大规模采集**:按批换场景尺寸,批内逐局换目标/出生/外观 |
-| `scripts/collect_pilot.sh` | **先导批**:单目标、外观钉死,只变出生点和物体位置,采到 N 条成功为止 |
+| `python -m locomani.cli collect` | **大规模采集**:运行 `PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect task=<task> name=<run_name> gpu=0 collect.rounds=N` |
+| `python -m locomani.cli collect` | **先导批**:单目标、外观钉死,只变出生点和物体位置,采到 N 条成功为止,用 `collect.until_ok=N` 代替 `--rounds` |
 | `scripts/export_rerun.py` | 把 episode 导成 Rerun `.rrd`,本地 `pip install rerun-sdk && rerun <file>` 看视频+曲线+3D |
 | `scripts/install_scene.sh` | 解包并重建场景。`SCENE_PRESET` 在**这一行**上给才有效;不给 = 默认多物体桌面。venv 不存在时不重建并以非零退出 |
 | `scripts/paths.sh` | 所有 shell 脚本的路径来源 |
 | `scripts/env_deploy.sh` | 编译 / 运行 C++ deploy 的环境(替代上游的 `install_deps.sh`) |
 | `scripts/push_videos.sh` | 把一批录像替换进 `videos/` 并推送 |
-| `scripts/par_batch.sh` | 多实例并行跑(迭代用,不落盘) |
+| `python -m locomani.launch` | 多实例并行跑:用 YAML 定义多个配置,并行执行 |
 
 不在流水线上的:`navigator.py`(FMM 导航,当前 gym 不走这条)、`zmq_driver.py`
 (最早的 walk-only 验证)、`isaac_scene.py` / `compose_scene.py`(渲染检查)。
@@ -66,7 +66,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `backends/scalebfm/network.py` | vendored HumanoidTransformer + `load_policy()`;资产在 `assets/scalebfm/`,FK MJCF **必须**是 ScaleTrack 那份 |
 | `backends/scalebfm/config.py` | `ScaleBfmBackendConfig`:checkpoint、scene_dir、object_name、grip_kp/kd(默认 1.0/0.025) |
 | `backends/scalebfm/{action,executor,chunks,reference,state,camera}.py` | 29 维原生动作编解码、25→50 Hz 执行器、延迟 chunk、SE(3) 参考、91 维学生状态、双相机观测 |
-| **`tasks/bottle_visual/round.py`** | **唯一 expert 入口**:`run_case` 与 `python -m locomani.tasks.bottle_visual.round --config configs/tasks/bottle_visual.json` |
+| **`tasks/bottle_visual/round.py`** | **唯一 expert 入口**:`run_case` 与 `python -m locomani.tasks.bottle_visual.round --config configs/task/bottle_visual.yaml` |
 | `tasks/bottle_visual/config.py` | `BottleVisualTaskConfig`(默认 = yplus200 采集 expert)+ `GraspConfig` |
 | `tasks/bottle_visual/{planner,motion,observation,sensor,visibility}.py` | 决策(walk/reach/entry/close/lift/carry)、连续参考、带延迟/遮挡/量化的场景估计、可见性门 |
 | `tasks/bottle_visual/{scene,sampling,geometry}.py` | 三个桌高/深度层、`yplus_center_v1` 重置分布、边缘几何常量 |
@@ -107,7 +107,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../collection.md#6-调整任务) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../collection.md#相机与动作) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
-| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**单臂采集必须用 `0`**:stack manager 在 instance≠0 且未设 `RECORD_INSTANCE=1` 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`--record` 采不出任何 session;crate 的采集可设 `collect.instance=<N>` 来改变实例。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
+| `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**单臂采集必须用 `0`**:stack manager 在 instance≠0 且未设 `RECORD_INSTANCE=1` 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`collect` 命令采不出任何 session;crate 的采集可设 `collect.instance=<N>` 来改变实例。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
 | `SONIC_POLICY` | **`policy/sonic_v1_1`**(2026-09-11 起;此前是 `policy/release`) | deploy + 离线 encoder/decoder | 跑哪个 SONIC checkpoint。默认值只写在 `scripts/paths.sh`(shell)与 `locomani.paths.SONIC_POLICY`(python),`locomani.stack.cli up` / `locomani.stack.cli restart-deploy` 里的是同值兜底。**在 `locomani.stack.cli up` 之前 export**。切回旧 checkpoint 用 `SONIC_POLICY=policy/release`。三件随之而变的事:① encoder 观测维度 1751(release 1762)且 anchor 用 heading 归一化(orientation_mode 1),离线工具已改为从 checkpoint 自己的 `observation_config.yaml` 读布局;② **token 是 checkpoint 私有 latent**,见下一节;③ 抓取线的时序仍是 release 标定的(`TRACK_ROT_BOOST=4.5`、approach/brake 带),未重测。实测:v1_1 腰跟踪远好于 release(腰 RMSE 3.9° vs 12.9°,台账 bottle §16),但同一 case bank 上抓取 0/20 vs release 9/20(§17) |
 | `NO_ENCODER` | `0` | deploy | `1` = **不加载 encoder**,token-only / VLA 部署配置。**采集(planner 模式)禁用**:没有 encoder 时上肢/下蹲参考被静默丢弃,抬臂阶段停滞(2026-09-03) |
@@ -176,8 +176,8 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 > **Python 侧的端口以前也分不开,现在由 `paths.sh` 统一派生。**
 > 六个端口(相机 5555 / 命令 5556 / debug 5557 / 键盘 5580 / 特权 5581 /
 > episode 5582)在 `agent_server.py`、`vla_round.py`、`privileged_pub.py` 里是
-> `os.environ.get("TF_...", <instance-0 默认值>)`。而 `collect_pilot.sh` /
-> `collect.sh` 从来不提 `INSTANCE` —— 于是即使 stack 用 `INSTANCE=1` 起来了,
+> `os.environ.get("TF_...", <instance-0 默认值>)`。而 `collect` 命令的调用方
+> 从来不提 `INSTANCE` —— 于是即使 stack 用 `INSTANCE=1` 起来了,
 > 它们启动的 `grasp_gym` 还是去连 5556,**连到 instance 0 的那个 stack 上**。
 > 和 DDS domain 那个坑同一个形状,只是在 Python 侧:全都连上了,没有任何报错,
 > 只是连错了 stack。现在这六个端口和 `SONIC_DDS_DOMAIN` 都由 `scripts/paths.sh`
@@ -276,7 +276,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 双臂 pilot 每集只有 25 s、视频 10–12 s、日志里没有 `[walk]` 行 | 跑的是 ready-stand 变体。`WALL_WALK` / `WALL_FEATURE` 环境变量 2026-09-09 起不再被读(旋钮在 `CrateTaskConfig`,`wall_walk` 默认 false);给 `run_wall_pilot.sh` 传 `--config configs/tasks/crate_wall.json` 或 `--set wall_walk=true`。runner 现在见到这两个变量会拒绝启动(2026-09-10) |
+| 双臂 pilot 每集只有 25 s、视频 10–12 s、日志里没有 `[walk]` 行 | 跑的是 ready-stand 变体。`WALL_WALK` / `WALL_FEATURE` 环境变量 2026-09-09 起不再被读(旋钮在 `CrateTaskConfig`,`wall_walk` 默认 false);给 `run_wall_pilot.sh` 传 `--config configs/task/crate_wall.yaml` 或 `--set wall_walk=true`。runner 现在见到这两个变量会拒绝启动(2026-09-10) |
 | `walk_pose_preflight.py` / `reach_preflight.py` 对 `POSE_LEFT_DEG=…`、`PW=… OUT=…` 没反应,跑出来的是默认姿势 | 这两个预检 2026-09-09 argparse 化(refactor step 3)后不再读环境变量,旋钮是 `--pose-left-deg` / `--pw --out-dist --up --over --warm --save`;2026-09-11 起脚本见到旧变量会拒绝启动。`walk_pose_preflight` 还依赖 pilot trace `outputs/videos/wall_pilot/trace/wall_s0_05_state_trace.npz`,没有的机器用 `--trace none` |
 | `locomani.stack.cli up` 报 "REFUSED: instance N is held by a live stack",但 `pgrep` 找不到任何栈,前一行有 `flock: Bad file descriptor` | 不是被占用,是锁文件没建成(2026-09-11 前锁目录写死 `/workspace/tmp`)。现在锁目录跟 `LOCOMANI_TMP`,建不了直接报目录名 |
 | instance ≠ 0 的栈 "camera port never opened",sim.log 正常、子进程活着 | 2026-09-11 前 sim 的图像子进程永远绑 5555(`SimLoopConfig.camera_port` 没接 `TF_CAMERA_PORT`)。现在 `run_sim_locomani.py` 用 `ports.camera()`,sim.log 打 `[sim] camera publisher -> :PORT` |
@@ -288,7 +288,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | 双臂并排视频里没有 ghost hands | `trace/` 里没有 `<label>_NN_ghost.npz`。2026-09-11 之前:runner 只在调用者自己 export 了 `SIM_STATE_TRACE_DIR` 时才传 `--ghost-trace`,而 runner 自己不设,所以默认其实是关的(`render_wall_pilot.sh` 的注释写成"默认传",是错的)。现在 driver 默认写 `<out>/trace`,`--no-state-trace` 才关。渲染脚本只在文件存在时才画 |
 | 双臂 pilot 的 10 集验收数字对不上、或 `gate.py compare crate` 的样本数多于跑过的局数 | 2026-09-11 之前每次 pilot 都写同一个 `outputs/videos/wall_pilot/manifest.jsonl`,而 expert 是以 **append** 打开它的:两次 pilot 混成一份,`gate.py` 把它当一个总体读。现在一个 run 一个目录(`OUT=`,不给就按时间戳新建),同目录跑第二次会被拒(续跑用 `--resume`),manifest 是 `manifest_NN.jsonl` |
 | 直接调 `bimanual_wall.py` / `bimanual_carry.py`,它却连到了另一个 instance 的栈 | expert 用 `os.environ.setdefault` 取端口,所以**继承来的** `TF_*` 会压过 `locomani.sim.ports` 的公式。任何 source 过 `scripts/paths.sh` 而当时 `INSTANCE` 未设的 shell,都导出了 instance 0 的整块端口。新的采集阶段起 expert 前会把这一块从 env 里删掉,只留 `INSTANCE`;手工起 expert 时要么先 `unset` 它们,要么在 export `INSTANCE` 之后再 source `paths.sh`(2026-09-11) |
-| （**2026-09-10 已修**）手写 `grasp_gym.py --task-config configs/tasks/xxx.json` 跑出来的局和采集线对不上 | 修复前 `--task-config` **只读 `goal` 和 `place` 两段**(它自己的 help 就这么写)。`reach` 段不生效 → reach config 退回 dataclass 默认值,`ready_grasp_recovery=False`,每局在 grasp 阶段被 `ready_grasp_recovery=False is retired` 直接拒绝(走近那段其实是成功的,很容易误读成控制器坏了);`spawn` 段也不生效 → 吃 grasp_gym 的宽默认(±90° 朝向偏差),机器人侧对桌子醒来,整批卡在 `[view] object not in ego view at spawn`,而且 cam **y** 出界(采集线正常的偶发失败是 cam **x** 出界)。现在 `--task-config` 携带整份 profile(reach + spawn + target + stand_retries),命令行显式给的仍然优先;`grasp_gym` 另外会在启动时拒绝跑不出结果的 reach 标定(`ready_grasp_recovery=False`),不再等走到瓶子跟前才失败。`scripts/collect_pilot.sh` 从重构 step 2 起到这次修复之前一直采不出任何一集,同因(2026-09-10,连踩三次) |
+| （**2026-09-10 已修**）手写 `grasp_gym.py --task-config configs/task/xxx.yaml` 跑出来的局和采集线对不上 | 修复前 `--task-config` **只读 `goal` 和 `place` 两段**(它自己的 help 就这么写)。`reach` 段不生效 → reach config 退回 dataclass 默认值,`ready_grasp_recovery=False`,每局在 grasp 阶段被 `ready_grasp_recovery=False is retired` 直接拒绝(走近那段其实是成功的,很容易误读成控制器坏了);`spawn` 段也不生效 → 吃 grasp_gym 的宽默认(±90° 朝向偏差),机器人侧对桌子醒来,整批卡在 `[view] object not in ego view at spawn`,而且 cam **y** 出界(采集线正常的偶发失败是 cam **x** 出界)。现在 `--task-config` 携带整份 profile(reach + spawn + target + stand_retries),命令行显式给的仍然优先;`grasp_gym` 另外会在启动时拒绝跑不出结果的 reach 标定(`ready_grasp_recovery=False`),不再等走到瓶子跟前才失败。`scripts/collect_pilot.sh` 从重构 step 2 起到这次修复之前一直采不出任何一集,同因(2026-09-10,连踩三次) |
 | （**2026-09-10 已修**：`--record` 现在启动时检查 exporter，没有就拒绝）`--record` 跑完一批,`$LOCOMANI_TMP/p03*/outputs` 下没有新 session | 用了 `INSTANCE≠0`。stack manager 只在 instance 0 起 exporter,别的实例打印 `[3/3] data exporter — skipped (instance N records no episodes)` 就跳过了,gym 照跑但什么都不落盘。采集只能用 instance 0;要避开别人换 **GPU** 而不是换 instance(`CUDA_VISIBLE_DEVICES`)(2026-09-10) |
 | （**2026-09-10 已修**：端口统一由 `locomani.sim.ports` 按 `INSTANCE` 推导）换了 `INSTANCE` 之后 gym 立刻 `no privileged state on :5581 after 10s` | 修复前 gym 不读 `INSTANCE`。stack 按 instance 挪到 5565/5566/5591,gym 仍用 instance-0 默认端口绑 :5556、等 :5581。`INSTANCE` 只在 stack manager 自己的 shell 里展开成 `TF_*`;要让 gym 跟过去,得把 `TF_SONIC_PORT` / `TF_PRIVILEGED_PORT` / `TF_KEYBOARD_PORT` 一起 export(2026-09-10) |
 | 后台 runner 判断"机器可用"后起 stack,却和别人撞了端口 | GPU 空闲 ≠ instance 空闲:另一个 session 可能正用同一 instance 的 5555-5582 在**另一张卡**上工作。runner 的准入检查必须同时看 (1) 目标 GPU 显存 (2) `cpu_headroom.sh` (3) 有没有活着的 sim/exporter/deploy 进程。2026-09-10 的 `visible200_train_eval_20260910.sh` 只做了 (1)(2),当天靠人工约定时间窗兜住;该脚本**不补丁**——`scripts/experiments/<name>.sh` 要与实际执行的那份一致,修复放进下一个 runner |
@@ -311,7 +311,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 | `check_dataset.py` 报 `body trails the token by -N frames` | action 和 state 在时间上被搞反了,是最严重的一类,**不要拿去训** |
 | `EPISODE FAILED [view] object outside ego view at stand` 每局都这样 | ego 相机没被重新瞄准,停在原厂的下视 + fovy 45。重建一次场景:`build_sim_scene.py` 现在会在编译后自检瞄准、不对就拒绝写盘。历史成因是它曾用 `str.replace` 改 `to_xml()` 的输出,而 MuJoCo 3.12 改了属性发射顺序,replace 静默失配 —— 用 3.12 装出来的旧版本会全局 0% 成功率 |
 | `[gym] targets not in the scene` | 场景不是你以为的那套。报错会列出场景里**实际**有什么 —— 按那份清单对照下面[「场景装成了哪一套」](#场景装成了哪一套)判断是哪种病 |
-| 采完之后场景尺寸不对了 | `collect.sh` 就地重建场景。`SCENE_PRESET=<你那套> bash scripts/install_scene.sh` 恢复 —— 漏掉 `SCENE_PRESET` 会顺带把桌上的物体换成默认那套 |
+| 采完之后场景尺寸不对了 | `collect` 命令就地重建场景。`SCENE_PRESET=<你那套> bash scripts/install_scene.sh` 恢复 —— 漏掉 `SCENE_PRESET` 会顺带把桌上的物体换成默认那套 |
 | 换了机器路径全错 | `export LOCOMANI_WORKSPACE=<你的根>`,然后 `python src/locomani/paths.py` 自查 |
 | 场景 MJCF 找不到 mesh | 重跑 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh`;它会探测并改写 tarball 里烘死的路径 |
 | `ValueError: ... Error opening file ... scene_31dof.xml` | 新 clone 的 `third_party` 里没有 dex1 生成文件。先跑 `third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/sim/make_dex1_model.py`,再 `SCENE_PRESET=<你那套> bash scripts/install_scene.sh` |

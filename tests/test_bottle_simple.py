@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
+from locomani import conf
 from locomani.pipeline.execution_record import ExecutionRecord
-from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle.policy import make_grasp_policy, prepares_during_navigation
 from locomani.tasks.bottle.reach_config import ReachConfig
 from locomani.tasks.bottle.simple_config import SimpleGraspConfig
@@ -39,7 +39,7 @@ from locomani.tasks.bottle.whole_body_config import WholeBodyConfig
 
 
 def test_simple_task_config_loads_dispatches_and_roundtrips():
-    task = BottleTaskConfig.load("configs/tasks/bottle_simple.json")
+    task = conf.load_group("task", "bottle_simple")
     assert task.reach.strategy == "simple"
     assert task.reach.ready_grasp_baseline and task.reach.ready_grasp_recovery
     assert task.reach.simple == SimpleGraspConfig()

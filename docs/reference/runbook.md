@@ -8,7 +8,7 @@ in [setup](../setup.md); shared-resource rules are in [AGENTS](../../AGENTS.md).
 
 ```bash
 PYTHONPATH=src python3 -m locomani.tasks.bottle.cli_args \
-  --task-config configs/tasks/bottle_visible.json
+  --task-config configs/task/bottle_visible.yaml
 ```
 
 The report covers resolved gym options and their sources, not every child-process
@@ -42,7 +42,7 @@ export INSTANCE=0
 export PYTHONPATH="$LOCOMANI_ROOT/src"
 export CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0
 export SIM_VIS=none SCENE_RANDOM=0
-TASK=configs/tasks/bottle_visible.json
+TASK=configs/task/bottle_visible.yaml
 PROMPT="pick up the water bottle"
 export LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim"
 SIM_VIDEO_DIR="$LOCOMANI_ROOT/outputs/bottle_manual/videos" \
@@ -53,7 +53,7 @@ SIM_VIDEO_DIR="$LOCOMANI_ROOT/outputs/bottle_manual/videos" \
 python -m locomani.stack.cli down --instance "$INSTANCE"
 ```
 
-For pick-and-place, set `TASK=configs/tasks/pick_place.json`,
+For pick-and-place, set `TASK=configs/task/pick_place.yaml`,
 `PROMPT="pick up the red can and put it in the basket"` and
 `LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/pick_place"`; use a separate output directory.
 GPU/instance selection requires ownership as usual. Stop the expert before cleanup.
@@ -79,7 +79,7 @@ An older policy server must be restarted to supply the identity endpoint.
 | Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../evaluation.md) |
 | Crate collection | `python -m locomani.cli show task=crate_visual embodiment=g1_bimanual scene=crate_table30`; [crate collection](../crate_collection.md) |
 | ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm_collection.md) |
-| Pick and place | Bottle driver with `configs/tasks/pick_place.json`; [task guide](../pick_place_collection.md) |
+| Pick and place | Bottle driver with `configs/task/pick_place.yaml`; [task guide](../pick_place_collection.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |
 | Stop an owned SONIC stack | `python -m locomani.stack.cli down --instance <instance>` |
 

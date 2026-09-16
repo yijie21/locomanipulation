@@ -8,7 +8,7 @@
 
 | 项目 | 当前支持 |
 |---|---|
-| 默认任务 | 30 cm 低桌、篮子向桌内退入 4 cm + 原始外观 + `configs/tasks/crate_visual_low_reach.json` |
+| 默认任务 | 30 cm 低桌、篮子向桌内退入 4 cm + 原始外观 + `configs/task/crate_visual_low_reach.yaml` |
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
@@ -47,7 +47,7 @@ bash scripts/install_scene.sh
 
 ```bash
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
-  --expert visual --config configs/tasks/crate_visual_low_reach.json \
+  --expert visual --config configs/task/crate_visual_low_reach.yaml \
   --scene outputs/scene/crate_table30_depth04 --out outputs/crate_first_attempt \
   --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 101
 ```
@@ -65,7 +65,7 @@ runner 启停自己的仿真和控制实例。首次 SONIC 部署可能较久地
 
 ```bash
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
-  --expert visual --config configs/tasks/crate_visual_low_reach.json \
+  --expert visual --config configs/task/crate_visual_low_reach.yaml \
   --scene outputs/scene/crate_table30_depth04 --out outputs/crate_collect_10 \
   --instance "$INSTANCE" --gpu 0 --rounds 10 --seed 41
 ```
@@ -84,7 +84,7 @@ exporter 约占 500 个线程，容器 pid 上限 3840，实测两个录制栈�
 
 ```bash
 "$VENV_SIM_PY" -u -m locomani.pipeline.run_crate_pilot \
-  --expert visual --config configs/tasks/crate_visual_low_reach.json \
+  --expert visual --config configs/task/crate_visual_low_reach.yaml \
   --scene outputs/scene/crate_table30_depth04 --out outputs/crate_record_10 \
   --instance "$INSTANCE" --gpu 1 --rounds 10 --batch-rounds 10 --seed 7000 --record
 ```
@@ -209,15 +209,15 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 
 | 用途 | 入口 / 配置 | 录制边界 |
 |---|---|---|
-| 全身弯腰与双手机械可达性诊断 | `--expert carry --config configs/tasks/crate_low_reach.json` | whole-body 动作 pilot，拒绝 `--record` |
+| 全身弯腰与双手机械可达性诊断 | `--expert carry --config configs/task/crate_low_reach.yaml` | whole-body 动作 pilot，拒绝 `--record` |
 | 传统 planner 搬箱诊断 | `--expert carry`，`carry.reach_control=planner` | 可录 exporter session |
-| 箱壁 / 箱沿接触诊断 | `--expert wall --config configs/tasks/crate_wall.json` | 可录 session、轨迹和可选 ghost |
+| 箱壁 / 箱沿接触诊断 | `--expert wall --config configs/task/crate_wall.yaml` | 可录 session、轨迹和可选 ghost |
 
 例如单集 wall 接触诊断使用第 2 节构建的原始高度场景：
 
 ```bash
 "$VENV_SIM_PY" -m locomani.pipeline.run_crate_pilot \
-  --expert wall --config configs/tasks/crate_wall.json \
+  --expert wall --config configs/task/crate_wall.yaml \
   --scene outputs/scene/crate_bimanual_depth04 --out outputs/crate_wall_example \
   --instance "$INSTANCE" --gpu 0 --rounds 1 --seed 0
 ```

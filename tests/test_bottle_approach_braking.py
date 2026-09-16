@@ -335,9 +335,9 @@ def test_visible_shuffle_speed_overrides_the_checkpoint_floor():
 
 
 def test_simple_task_accepts_the_crawl_band_and_rejects_a_floor_above_bounds():
-    from locomani.tasks.bottle.config import BottleTaskConfig
+    from locomani import conf
 
-    task = BottleTaskConfig.load("configs/tasks/bottle_simple.json")
+    task = conf.load_group("task", "bottle_simple")
     # A crawl floor above v1.1's 0.28-0.30 speed step and a band the gait can respond within.
     assert 0.30 <= task.reach.visible_shuffle_speed <= 0.35 and task.reach.visible_decel_band >= 0.50
     with pytest.raises(ValueError):

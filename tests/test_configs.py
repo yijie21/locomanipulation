@@ -11,30 +11,49 @@ invocation of the official ready-visible protocol, before the CLI shrink:
 
 The new equivalent is:
 
-    python src/locomani/pipeline/run_learn_pilot.py \
-        --config configs/pilot/learn_200.json \
-        --task configs/tasks/bottle_visible.json \
-        --out $E --scene ... \
-        --set train_gpu=0 \
-        --set gym_env=GYM_SHUFFLE_BAND=0 \
-        --set stack_env=CUDA_VISIBLE_DEVICES=1,MUJOCO_EGL_DEVICE_ID=1
+    python -m locomani.cli collect \
+        task=bottle_visible name=<run_name> gpu=0 \
+        collect.gym_env=GYM_SHUFFLE_BAND=0 \
+        collect.stack_env=CUDA_VISIBLE_DEVICES=1,MUJOCO_EGL_DEVICE_ID=1
 
-These tests assert the canonical files plus those --set overrides produce the
-same effective values the old argv did, without actually running the pipeline.
+These tests assert the canonical `configs/task|backend|eval` YAML groups
+(the JSON twins under `configs/tasks|backends|eval` are retired -- see
+`locomani.conf.load_group`) plus those overrides produce the same effective
+values the old argv did, without actually running the pipeline.
 """
 
 import unittest
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from locomani import conf
+from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.config_base import apply_overrides
 from locomani.pipeline.eval_config import EvalConfig
 from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle.reach_config import ReachConfig
+from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
+from locomani.tasks.crate.config import CrateTaskConfig
 
 REPO = Path(__file__).resolve().parents[1]
+
+# Every group name migrated off the retired JSON twins, with the dataclass it composes to.
+TASK_GROUPS = [
+    ("bottle_simple", BottleTaskConfig),
+    ("bottle_visible", BottleTaskConfig),
+    ("bottle_visible_teleop", BottleTaskConfig),
+    ("bottle_visual", BottleVisualTaskConfig),
+    ("bottle_whole_body", BottleTaskConfig),
+    ("crate_low_reach", CrateTaskConfig),
+    ("crate_table30", CrateTaskConfig),
+    ("crate_visual_low_reach", CrateTaskConfig),
+    ("crate_wall", CrateTaskConfig),
+    ("pick_place", BottleTaskConfig),
+]
+BACKEND_GROUPS = [("sonic", SonicBackendConfig), ("scalebfm", ScaleBfmBackendConfig)]
+EVAL_GROUPS = [("closed_loop_100", EvalConfig)]
 
 
 class OptionalOverrideTests(unittest.TestCase):
@@ -61,7 +80,7 @@ class OptionalOverrideTests(unittest.TestCase):
 
 class BottleVisibleTaskTests(unittest.TestCase):
     def test_reach_matches_ready_grasp_visible_json(self):
-        task = BottleTaskConfig.load(REPO / "configs/tasks/bottle_visible.json")
+        task = conf.load_group("task", "bottle_visible")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # brake_preplan, retired (step 2)
             want = ReachConfig.load(REPO / "configs/collection/ready_grasp_visible.json")
@@ -69,8 +88,10 @@ class BottleVisibleTaskTests(unittest.TestCase):
         self.assertEqual(task.reach.visible_brake_depth, 0.31)  # brake depth
 
     def test_spawn_matches_the_official_ready_visible_distribution(self):
-        task = BottleTaskConfig.load(REPO / "configs/tasks/bottle_visible.json")
-        self.assertEqual(task.spawn.edge_range, (1.1, 1.3))
+        task = conf.load_group("task", "bottle_visible")
+        # load_group composes through OmegaConf, which materializes a tuple-typed field as a
+        # list; tuple() normalizes before comparing against the dataclass's own tuple default.
+        self.assertEqual(tuple(task.spawn.edge_range), (1.1, 1.3))
         self.assertTrue(task.spawn.face_object)
         self.assertEqual(task.spawn.yaw_err_deg, 20.0)
         self.assertEqual(task.spawn.lateral, 0.20)
@@ -78,18 +99,31 @@ class BottleVisibleTaskTests(unittest.TestCase):
 
 
 class CanonicalConfigsRoundTripTests(unittest.TestCase):
-    """Every canonical file loads as the dataclass it names and round-trips."""
+    """Every canonical YAML group loads as the dataclass it names and round-trips."""
 
-    def test_bottle_visible(self):
-        task = BottleTaskConfig.load(REPO / "configs/tasks/bottle_visible.json")
-        self.assertEqual(BottleTaskConfig.from_dict(task.to_dict()), task)
+    def test_every_group_round_trips(self):
+        groups = (
+            [("task", name, cls) for name, cls in TASK_GROUPS]
+            + [("backend", name, cls) for name, cls in BACKEND_GROUPS]
+            + [("eval", name, cls) for name, cls in EVAL_GROUPS]
+        )
+        for group, name, cls in groups:
+            with self.subTest(group=group, name=name):
+                cfg = conf.load_group(group, name)
+                self.assertIsInstance(cfg, cls)
+                # Compare at the to_dict() level, not object equality: OmegaConf (load_group's
+                # composition) materializes a tuple-typed field as a list, while from_dict
+                # restores the dataclass's own tuple type -- to_dict() normalizes both to lists.
+                self.assertEqual(cls.from_dict(cfg.to_dict()).to_dict(), cfg.to_dict())
 
     def test_sonic_backend(self):
-        backend = SonicBackendConfig.load(REPO / "configs/backends/sonic.json")
-        self.assertEqual(backend, SonicBackendConfig())
+        backend = conf.load_group("backend", "sonic")
+        # collect runs the deploy WITH its encoder (memory: no-encoder-breaks-planner-arms);
+        # the retired JSON twin carried the eval-era no_encoder=True default instead.
+        self.assertEqual(backend, replace(SonicBackendConfig(), no_encoder=False))
 
     def test_closed_loop_100(self):
-        cfg = EvalConfig.load(REPO / "configs/eval/closed_loop_100.json")
+        cfg = conf.load_group("eval", "closed_loop_100")
         self.assertEqual(
             (cfg.seed, cfg.client, cfg.rounds, cfg.budget_s, cfg.replan_interval, cfg.ensemble_n),
             (
@@ -101,7 +135,7 @@ class CanonicalConfigsRoundTripTests(unittest.TestCase):
                 1,
             ),
         )
-        self.assertEqual(cfg.spawn_edge, (1.1, 1.3))
+        self.assertEqual(tuple(cfg.spawn_edge), (1.1, 1.3))
 
 
 if __name__ == "__main__":

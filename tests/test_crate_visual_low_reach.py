@@ -2,14 +2,14 @@ import numpy as np
 from geometry_fixture import scene_ik
 from scipy.spatial.transform import Rotation
 
+from locomani import conf
 from locomani.tasks.crate.bimanual_ik import BimanualIK
-from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.perception import CrateEstimate
 from locomani.tasks.crate.visual_low_reach import SupportFrame, VisualLowReach
 
 
 def setup():
-    config = CrateTaskConfig.load("configs/tasks/crate_visual_low_reach.json")
+    config = conf.load_group("task", "crate_visual_low_reach")
     q = np.zeros(29)
     q[[0, 6]], q[[3, 9]], q[[4, 10]] = -0.25, 0.5, -0.25
     q[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]

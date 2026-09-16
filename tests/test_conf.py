@@ -65,3 +65,10 @@ def test_snapshot_writes_the_resolved_tree(tmp_path):
     path = conf.snapshot(cfg, tmp_path)
     saved = OmegaConf.load(path)
     assert saved.out == "outputs/runs/snap" and saved.task.plugin == "bottle"
+
+
+def test_composed_dataclasses_keep_their_declared_tuple_types():
+    run, _ = conf.load_run([])
+    assert isinstance(run.task.spawn.edge_range, tuple) and isinstance(run.embodiment.cameras, tuple)
+    assert type(run.task).from_dict(run.task.to_dict()) == run.task
+    assert isinstance(conf.load_group("eval", "closed_loop_100").spawn_edge, tuple)

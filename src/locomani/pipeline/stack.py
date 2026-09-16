@@ -7,21 +7,13 @@ import os
 import subprocess
 
 from locomani import paths
-from locomani.backends.sonic.config import ENV_FIELDS, SonicBackendConfig, with_shell_overrides
+from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.sim.ports import instance_ports
 
 
 def backend_env(cfg: SonicBackendConfig) -> dict[str, str]:
-    """The env dict `start_stack.sh` (and its children) expect for `cfg`."""
-    env = {}
-    for name, (field_name, kind) in ENV_FIELDS.items():
-        value = cfg
-        for part in field_name.split("."):
-            value = getattr(value, part)
-        if value is not None:
-            env[name] = str(int(value)) if kind is bool else str(value)
-    env["LOCOMANI_BACKEND_JSON"] = json.dumps(cfg.to_dict(), sort_keys=True)
-    return env
+    """The one variable every child and the agent read the backend config from."""
+    return {"LOCOMANI_BACKEND_JSON": json.dumps(cfg.to_dict(), sort_keys=True)}
 
 
 def export_env(cfg: SonicBackendConfig) -> None:
@@ -49,6 +41,7 @@ def resolve_env(
         raise ValueError("instance must be a non-negative integer")
     env = dict(os.environ if inherit is None else inherit)
     for name in (
+        "LOCOMANI_BACKEND_JSON",
         "TF_CAMERA_PORT",
         "TF_SONIC_PORT",
         "TF_OUT_PORT",
@@ -64,6 +57,8 @@ def resolve_env(
     env.update(backend_env(backend_cfg))
     env.update({name: str(port) for name, port in instance_ports(instance).items()})
     env["INSTANCE"] = str(instance)
+    if backend_cfg.sonic_dds_domain is not None:  # otherwise the stack derives it from the instance
+        env["SONIC_DDS_DOMAIN"] = str(backend_cfg.sonic_dds_domain)
     if gpu is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
         # MUJOCO_EGL_DEVICE_ID is a PHYSICAL device index -- CUDA_VISIBLE_DEVICES
@@ -84,7 +79,6 @@ def resolve_env(
             if key in extra_env and str(extra_env[key]) != env[key]:
                 raise ValueError(f"{key} conflicts with instance {instance}")
         env.update(extra_env)
-        env.update(backend_env(with_shell_overrides(backend_cfg, extra_env)))
     return env
 
 

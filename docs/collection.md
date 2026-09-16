@@ -7,7 +7,7 @@
 
 | 项目 | 当前支持 |
 |---|---|
-| 默认任务 | `bottle_only` 场景（硬垫）+ `configs/tasks/bottle_whole_body.json`；`bottle_visible.json` 是 2026-09-14 前的基线入口 |
+| 默认任务 | `bottle_only` 场景（硬垫）+ `configs/task/bottle_whole_body.yaml`；`bottle_visible.json` 是 2026-09-14 前的基线入口 |
 | 动作过程 | 随机出生 → 走近可见目标 → 减速、准备抓取 → 伸手、闭合、抬起 → 退手与验收 |
 | 专家输入 | 相机可见性、机器人状态与仿真物体信息辅助规划；不是纯 RGB 策略 |
 | 采集能力 | 单局检查、按成功数批量采集、exporter session、manifest、视频与状态轨迹 |
@@ -105,7 +105,7 @@ Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_ta
 | SONIC 权重 | `policy/sonic_v1_1`（`scripts/paths.sh` 默认） | 运行目录 `deploy_receipts.jsonl` |
 | deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
 | 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED` | `outputs/scene/sim/scene_meta.json`、脚本回显 |
-| 任务配置 | `configs/tasks/bottle_whole_body.json`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
+| 任务配置 | `configs/task/bottle_whole_body.yaml`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
 | pilot 配置 | `configs/pilot/learn_200.json` + 本页的 `--set` | 运行目录 `inputs.json` |
 | 资源 | 该 GPU 上没有第二个仿真；CPU 配额有余量 | `nvidia-smi`、`/sys/fs/cgroup/cpu.stat` |
 | 闭环评测的初始 token | `--initial-token-file configs/deployment/whole_body_initial_token.json`（与这份数据的垂臂开局一致；默认的 READY token 会让 100 局全部卡在 prelude） | 评测目录 `config_snapshot.json` 的 `initial_token` 摘要 |
@@ -215,7 +215,7 @@ POSE 接管继承当前参考速度，并让完整未来窗口的位置与速度
 
 ```bash
 LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim" "$VENV_SIM_PY" \
-  -m locomani.tasks.bottle.grasp_gym --task-config configs/tasks/bottle_whole_body.json \
+  -m locomani.tasks.bottle.grasp_gym --task-config configs/task/bottle_whole_body.yaml \
   --targets water_bottle --rounds 10 --seed 31000 \
   --sample-only --write-cases outputs/bottle_cases10.json
 ```
@@ -283,7 +283,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 
 ```bash
 "$VENV_SIM_PY" -m locomani.tasks.bottle.cli_args \
-  --task-config configs/tasks/bottle_whole_body.json
+  --task-config configs/task/bottle_whole_body.yaml
 ```
 
 自动 runner 的 `--config` / `--set` 修改 **PilotConfig**（采集规模、阶段和运行环境），

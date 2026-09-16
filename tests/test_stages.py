@@ -204,5 +204,5 @@ def test_crate_collect_runs_the_expert_with_the_encoder_on_and_the_record_flag(t
     assert m["ok"] and m["metrics"]["kept"] == 2 and seen["down"]
     assert seen["name"] == "visual_00" and seen["argv"][2].endswith("tasks/crate/expert.py")
     assert "--record" in seen["argv"] and seen["argv"][seen["argv"].index("--label") + 1] == "visual_crate_s7000"
-    assert seen["env"]["NO_ENCODER"] == "0" and seen["env"]["RECORD_INSTANCE"] == "1"
+    assert '"no_encoder": false' in seen["env"]["LOCOMANI_BACKEND_JSON"] and seen["env"]["RECORD_INSTANCE"] == "1"
     assert seen["spec"].encoder and seen["spec"].scene_dir == str(scene) and seen["spec"].record

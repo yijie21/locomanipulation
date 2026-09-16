@@ -20,7 +20,7 @@ third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
 ```
 
 **`--sessions` 和 `--manifest` 必须一一对应、同序**:第 k 个 session 是第 k 个
-manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,session 目录名是时间戳,
+manifest 那一批产生的。`collect` 命令的批次是按 seed 递增跑的,session 目录名是时间戳,
 所以两边都按各自的自然顺序排就对上了(seed 超过 9 时记得用 `sort -V`)。
 
 ### 只去掉末端验收尾段
@@ -44,7 +44,7 @@ manifest 那一批产生的。`collect.sh` 的批次是按 seed 递增跑的,ses
 > 水瓶数据集会被标成"拿起红罐子",画面和语言对不上,而且这在训练日志里完全看不出来。
 >
 > 注意 exporter 的 `--task-prompt`(`locomani.stack.cli up` 的那个字符串、
-> `collect_pilot.sh` 的 `PROMPT`)**不参与**这条链路:它对整个 session 是固定的,
+> `collect` 命令的 `task` 参数)**不参与**这条链路:它对整个 session 是固定的,
 > 只影响录像叠字和 session 元数据。它写错不会污染数据集,但会让你在排查时看错地方
 > —— 所以还是让它和场景里的目标物体保持一致。
 

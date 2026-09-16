@@ -49,9 +49,10 @@ def test_unreachable_low_object_is_rejected_by_geometry():
 def test_low_reach_profile_delivers_physical_waist_freedom_and_rejects_mixed_controls(tmp_path):
     import pytest
 
+    from locomani import conf
     from locomani.tasks.crate.config import CrateTaskConfig
 
-    cfg = CrateTaskConfig.load("configs/tasks/crate_low_reach.json")
+    cfg = conf.load_group("task", "crate_low_reach")
     path = tmp_path / "task.json"
     cfg.dump(path)
     restored = CrateTaskConfig.load(path)
@@ -65,10 +66,10 @@ def test_low_reach_profile_delivers_physical_waist_freedom_and_rejects_mixed_con
 def test_whole_body_recording_is_rejected_before_scene_or_stack_use(tmp_path):
     import pytest
 
-    from locomani.tasks.crate.config import CrateTaskConfig
+    from locomani import conf
     from locomani.tasks.crate.prepare import prepare_scene
 
-    cfg = CrateTaskConfig.load("configs/tasks/crate_low_reach.json")
+    cfg = conf.load_group("task", "crate_low_reach")
     with pytest.raises(SystemExit, match="full-pose VLA action export"):
         prepare_scene(tmp_path / "missing_scene", tmp_path / "out", cfg, "carry", record=True)
     assert not (tmp_path / "out").exists()

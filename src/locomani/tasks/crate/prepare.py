@@ -27,8 +27,8 @@ def check_profile(task_cfg: CrateTaskConfig, expert: str, record: bool) -> None:
     if expert == "wall" and task_cfg.carry.reach_control == "whole_body":
         raise SystemExit(
             "wall cannot execute carry.reach_control=whole_body; "
-            "for the continuous assisted basket task pass --expert visual "
-            "--config configs/tasks/crate_visual_low_reach.json and a 30 cm scene. "
+            "for the continuous assisted basket task pass --expert visual with "
+            "task=crate_visual_low_reach (configs/task/crate_visual_low_reach.yaml) and a 30 cm scene. "
             "The bare runner defaults to the separate wall diagnostic."
         )
     if expert == "carry" and record and task_cfg.carry.reach_control == "whole_body":

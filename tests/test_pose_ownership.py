@@ -42,9 +42,14 @@ def test_whole_body_launch_rejects_an_old_binary_before_starting_resources(tmp_p
 def test_standalone_whole_body_carry_checks_the_same_capability(tmp_path, monkeypatch):
     from unittest.mock import Mock
 
+    from locomani import conf
     from locomani.tasks.crate import bimanual_carry
 
-    monkeypatch.setattr("sys.argv", ["carry", "--config", "configs/tasks/crate_low_reach.json"])
+    # bimanual_carry's --config only reads JSON; task=crate_low_reach (whole_body reach_control)
+    # dumped to a file stands in for the retired configs/tasks/crate_low_reach.json.
+    config_path = tmp_path / "crate_low_reach.json"
+    conf.load_group("task", "crate_low_reach").dump(config_path)
+    monkeypatch.setattr("sys.argv", ["carry", "--config", str(config_path)])
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
     monkeypatch.setattr(bimanual_carry.ports, "instance", Mock(side_effect=AssertionError("admission was bypassed")))
     with pytest.raises(RuntimeError, match="sonic_pose_ownership.patch"):

@@ -26,7 +26,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from locomani import paths
+from locomani import conf, paths
 from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.pipeline import stack
 from locomani.pipeline.provenance import file_digests, write_config_snapshot
@@ -39,7 +39,7 @@ SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 MODALITY = ROOT / "configs/gr00t_sonic_3cam_bimanual.py"
 DEFAULT_TOKEN = ROOT / "configs/deployment/crate_initial_token.json"
-DEFAULT_CONFIG = ROOT / "configs/tasks/crate_visual_low_reach.json"
+DEFAULT_TASK_GROUP = "crate_visual_low_reach"  # configs/task/crate_visual_low_reach.yaml
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -77,7 +77,9 @@ def parse_args(argv=None):
         "--scene", type=Path, required=True, help="crate scene dir (copied into --out, like run_crate_pilot)"
     )
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    ap.add_argument(
+        "--config", type=Path, default=None, help=f"CrateTaskConfig JSON; defaults to task={DEFAULT_TASK_GROUP}"
+    )
     ap.add_argument("--rounds", type=int, default=10)
     ap.add_argument("--batch-rounds", type=int, default=10, help="stack restart cadence, as the crate pilots")
     ap.add_argument("--seed", type=int, default=6000)
@@ -142,7 +144,13 @@ def main(argv=None):
     scene = out / args.scene.name
     if not scene.exists():
         shutil.copytree(args.scene, scene)
-    task_cfg = CrateTaskConfig.load(args.config)
+    task_cfg = CrateTaskConfig.load(args.config) if args.config else conf.load_group("task", DEFAULT_TASK_GROUP)
+    # vla_rounds.py runs in a separate process (a fresh stack's venv) and reads --config as a JSON
+    # path (CrateTaskConfig.load); when no explicit path was given, dump the resolved YAML-group
+    # config so that subprocess boundary still gets a real file.
+    config_path = args.config if args.config else out / "task_config.json"
+    if not args.config:
+        task_cfg.dump(config_path)
     backend = SonicBackendConfig(no_encoder=True, dataset_fps=25.0)
     stage = Stage(out)
     started = time.time()
@@ -192,7 +200,7 @@ def main(argv=None):
                         "--manifest",
                         manifest,
                         "--config",
-                        args.config,
+                        config_path,
                         "--policy-port",
                         args.port,
                         "--execution-horizon",

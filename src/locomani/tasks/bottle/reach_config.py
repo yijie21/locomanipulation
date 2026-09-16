@@ -300,8 +300,8 @@ def require_runnable(config: "ReachConfig", source: str | None = None) -> None:
         "reach calibration has ready_grasp_recovery=False, which the removal of the "
         "non-recovery path made unrunnable: every round would walk to the object and then "
         f"fail in the grasp stage.\n  {where}\n"
-        "  pass the collection profile's calibration -- --task-config "
-        "configs/tasks/bottle_visible.json applies its `reach` block, or give --reach-config <file>."
+        "  pass the collection profile's calibration -- task=bottle_visible "
+        "(configs/task/bottle_visible.yaml) applies its `reach` block, or give --reach-config <file>."
     )
 
 

@@ -7,7 +7,7 @@
 
 | 项目 | 当前支持 |
 |---|---|
-| 默认任务 | `pick_place` 场景 + `configs/tasks/pick_place.json`；目标 `soup_can`、容器 `basket` |
+| 默认任务 | `pick_place` 场景 + `configs/task/pick_place.yaml`；目标 `soup_can`、容器 `basket` |
 | 动作过程 | 随机出生 → 走近、抓起 → 抬高避开篮沿 → 转向放置区域 → 移到篮上、下降松手 → 退手与验收 |
 | 专家输入 | 复用单臂专家；仿真罐头/篮子位姿、机器人状态和相机可见性辅助规划 |
 | 采集能力 | 单局检查、按成功数批量采集、exporter session、manifest、视频与状态轨迹 |
@@ -130,7 +130,7 @@ runner 的 `--config` / `--set` 只调整 PilotConfig；任务参数用单独的
 
 ```bash
 "$VENV_SIM_PY" -m locomani.tasks.bottle.cli_args \
-  --task-config configs/tasks/pick_place.json
+  --task-config configs/task/pick_place.yaml
 ```
 
 改变物体或容器几何后，先检查抓取模板、持物放置带 IK、出生/抓取/放置时的相机视野，

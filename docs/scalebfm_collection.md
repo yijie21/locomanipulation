@@ -83,7 +83,7 @@ third_party/Isaac-GR00T/.venv/bin/python -m locomani.tasks.bottle_visual.pipelin
 | `reference.py` | `PoseTransition` / `bounded`:连续腕参考插值与限幅 |
 | `state.py` | 91 维学生 state(`STATE_DIMS`,§6) |
 | `camera.py` | `RobotCameraObserver`:`ego_view`(`head_camera`)+ `right_wrist`,320×240 RGB,带 0.4 s 图像历史 |
-| `config.py` | `ScaleBfmBackendConfig`:`checkpoint` / `scene_dir` / `object_name` / `grip_kp` / `grip_kd`;JSON 在 `configs/backends/scalebfm.json` |
+| `config.py` | `ScaleBfmBackendConfig`:`checkpoint` / `scene_dir` / `object_name` / `grip_kp` / `grip_kd`;JSON 在 `configs/backend/scalebfm.yaml` |
 
 策略接口(每个 50 Hz tick):`root_quat[1,3,4]`(wxyz)、`base_ang_vel[1,3,3]`、`dof_pos` / `dof_vel` / `last_action`
 `[1,3,29]`(**IsaacLab 关节顺序**,metadata `joint_names`)、`target_pos[1,6,14,3]`、`target_quat[1,6,14,4]`
@@ -119,7 +119,7 @@ bash scripts/scalebfm_video_check.sh --plan-only
 CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OMP_NUM_THREADS=1 PYTHONPATH=src \
 third_party/Isaac-GR00T/.venv/bin/python -m locomani.tasks.bottle_visual.round \
   --out outputs/diagnostics/bfm_smoke --seeds 18001,18002,18003 \
-  [--config configs/tasks/bottle_visual.json] [--backend configs/backends/scalebfm.json] \
+  [--config configs/task/bottle_visual.yaml] [--backend configs/backend/scalebfm.yaml] \
   [--set grasp.stand_distance=0.4] [--set-backend grip_kd=0.03] [--edges y+] \
   [--record-observations] [--case-offset N]
 ```

@@ -1,10 +1,11 @@
 """Closed-loop evaluation: the finetuned VLA drives the real stack, N rounds.
 
-    .venv_sim $ python eval_closed_loop.py [--config configs/eval/closed_loop_100.json] \
+    .venv_sim $ python eval_closed_loop.py [--config path/to/eval_config.json] \
                     [--set policy_port=5590] [--out outputs/eval/bottle200/closed_loop.json]
 
 Every semantic knob lives in `EvalConfig` (locomani/pipeline/eval_config.py);
-see `configs/eval/closed_loop_100.json` for the canonical 100-round protocol.
+see `configs/eval/closed_loop_100.yaml` (`conf.load_group("eval", "closed_loop_100")`)
+for the canonical 100-round protocol.
 `--set key=value` (dotted for `backend.*`) overrides one field at a time.
 
 PREREQUISITES (this script checks, it does not arrange):
@@ -32,8 +33,8 @@ HOW MANY ROUNDS
 its Wilson interval is 30-40 points wide. 20 rounds exist to support PAIRED
 comparison against a same-seed run, where they resolve large effects only
 (6-0 or 8-1 discordant reaches p<0.05 -- roughly a doubling). Numbers that
-go into the ladder, or into any document, still need 100 (configs/eval/
-closed_loop_100.json).
+go into the ladder, or into any document, still need 100 (eval=closed_loop_100,
+configs/eval/closed_loop_100.yaml).
 
 Success rate with a Wilson 95% interval, and the per-stage failure breakdown
 (walk / reach / close / fell / timeout) from vla_round's classifier. The

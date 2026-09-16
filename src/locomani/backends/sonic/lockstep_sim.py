@@ -56,11 +56,10 @@ CONTROL_DT = 0.02
 
 
 def enabled() -> bool:
-    # Receiving end of the shell boundary (decision 8): this runs inside the
-    # sim's own OS process, launched by start_stack.sh with no channel to
-    # receive SonicBackendConfig.lockstep.enabled other than inherited env --
-    # stack.py is the sole writer of LOCKSTEP (whitelisted, scripts/lint_env.py).
-    return os.environ.get("LOCKSTEP", "0") == "1"
+    """The sim process reads the same LOCOMANI_BACKEND_JSON the stack gave every child (no per-field shell variable)."""
+    from locomani.backends.sonic.config import DEFAULT_BACKEND
+
+    return bool(DEFAULT_BACKEND.lockstep.enabled)
 
 
 def install(sim_module) -> None:
