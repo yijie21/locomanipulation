@@ -43,7 +43,10 @@ def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
         ],
     )
     modality = common.ROOT / run_cfg.embodiment.gr00t_modality_config
-    for label, ds in (("train", train_ds), ("val", val_ds)):
+    splits = [("train", train_ds)] + (
+        [("val", val_ds)] if (val_ds / "meta" / "info.json").exists() else []
+    )  # holdout=0 -> no val
+    for label, ds in splits:
         stages.check(
             f"stats_{label}",
             [
@@ -68,7 +71,7 @@ def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
         "convert",
         cfg,
         ok=True,
-        outputs=dict(train_dataset=train_ds, val_dataset=val_ds, modality_config=modality),
+        outputs=dict(train_dataset=train_ds, val_dataset=val_ds if len(splits) > 1 else "", modality_config=modality),
         metrics=metrics,
         started=started,
         resources=resources,

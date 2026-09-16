@@ -48,6 +48,8 @@
 - 步骤 5 收尾：crate 线经新路径复跑 `outputs/runs/crate_check_record20` **15/20**，`gate.py compare carry` 对 `baseline_carry.json` **PASS 4/4**（yield 0.85→0.75 在容差内、失败集合相同）。JSON 双胞胎已删（`configs/{tasks,backends,eval}/*.json`，只留退役的 `bottle_image_servo.json`），约 20 个测试和 4 个源文件改用 `conf.load_group(group, name)`；OmegaConf 把 tuple 字段还原成 list 的问题在 `conf._typed` 里用各 dataclass 自己的 `from_dict` 修正。旧 shell 跑批脚本 9 个已删，文档引用改为 CLI / launcher。`ENV_FIELDS` 翻译层已删：backend 只通过 `LOCOMANI_BACKEND_JSON` 一个变量到达 agent / sim / exporter，`lockstep_sim` 读同一份 JSON；sim 的 `SIM_VIS`/`SCENE_RANDOM` 由 `StackSpec` 显式设置。
 - 步骤 6 完成：`docs/training.md`、`docs/evaluation.md` 按 `collection.md` 的八章结构重写（新 CLI、manifest、launcher），`collection.md` 的命令块已换。
 
+- 全通路 smoke（`configs/jobs/smoke_pipeline.yaml`，`outputs/runs/smoke_pipeline`）：1 集采集 → convert → 10 步训练 → 闭环评估 → stats，`locomani.launch` 全部 ok，registry 落行。暴露并修掉 4 个 bug：convert 在 `holdout=0` 时仍对不存在的 val 集算 stats；eval 阶段起策略服务没传 embodiment 的 modality 配置；单臂 embodiment 误指 3cam（bottle 线的观测契约是 `gr00t_sonic_2cam.py`，已改回，crate 仍 3cam bimanual）；`clean_clock` 的 commander 包装不接受今天上午加的 `enter_streamed(prime=...)`（评估路径自那次改动后从没跑过）。launcher 的 pid 声明从 2700 降到 1800（本仓库 exporter 4 线程，1.8k 基线上稳起）；CPU 声明 8 核在主机 8–9 核占用下会拒绝，smoke 用 6。
+
 ## 待定（执行时决定，不影响上面 8 条）
 
 - OmegaConf 对 `tuple[float, float]`、`Optional[...]`、frozen dataclass 的支持要先用现有 5 个 config 类试一遍；不行的字段改 list。

@@ -35,10 +35,12 @@ CPU_QUOTA_FALLBACK = 16.0
 PID_LIMIT_FALLBACK = 3840
 PID_MARGIN = 200
 DEFAULT_RESOURCES = {  # declared per stage (decision 6); a job's `resources` overrides per stage
-    "collect": dict(cpu_cores=8, pids=2700, gpu_mib_free=6000),
+    "collect": dict(
+        cpu_cores=8, pids=1800, gpu_mib_free=6000
+    ),  # pids: our exporter runs 4 threads; stacks started fine from a 1.8k baseline (2026-09-16)
     "convert": dict(cpu_cores=4, pids=200, gpu_mib_free=0),
     "train": dict(cpu_cores=4, pids=300, gpu_mib_free=28000),
-    "eval": dict(cpu_cores=8, pids=2700, gpu_mib_free=12000),
+    "eval": dict(cpu_cores=8, pids=1800, gpu_mib_free=12000),
     "stats": dict(cpu_cores=1, pids=10, gpu_mib_free=0),
 }
 NEEDS_GPU = {"collect", "train", "eval"}

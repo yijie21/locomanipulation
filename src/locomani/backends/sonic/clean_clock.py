@@ -116,11 +116,13 @@ def clean_commander_class(clock: CleanClock):
             with clock.lock:
                 orig_command(self, start=start, stop=stop, planner=planner)
 
-        def enter_streamed(self) -> None:
+        def enter_streamed(self, prime=None) -> None:
             if clock._priming:
-                orig_enter(self)
+                orig_enter(self, prime=prime)
                 return
             clock.pause()  # the round publishes from here on
+            if prime is not None:
+                prime()  # the session's first chunk still has to reach the deploy (agent_server.enter_streamed)
 
         def exit_streamed(self) -> None:
             clock.resume()  # the round is over; keep standing

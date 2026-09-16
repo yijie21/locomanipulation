@@ -11,5 +11,5 @@ cameras:
 - left_wrist
 - right_wrist
 gr00t_tag: unitree_g1_sonic
-gr00t_modality_config: configs/gr00t_sonic_3cam.py
+gr00t_modality_config: configs/gr00t_sonic_2cam.py  # the bottle observation contract (SONIC_BOTTLE video keys); 3cam is not what eval_closed_loop accepts
 dataset_kind: sonic_single_arm

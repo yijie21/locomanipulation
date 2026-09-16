@@ -1,0 +1,17 @@
+# Whole-pipeline smoke: one kept episode, 10 training steps, 2 eval rounds. Tests the path, not the policy.
+jobs:
+  - name: smoke_pipeline
+    overrides:
+      - "+experiment=bottle_simple_lowcom"
+      - "collect.successes=1"
+      - "collect.batch_rounds=2"
+      - "collect.max_batches=2"
+      - "train.steps=10"
+      - "train.save_steps=10"
+      - "train.holdout=0"
+      - "eval.rounds=2"
+    stages: [collect, convert, train, eval, stats]
+    gpu: any
+    resources:
+      collect: {cpu_cores: 6, pids: 1800, gpu_mib_free: 6000}
+      eval: {cpu_cores: 6, pids: 1800, gpu_mib_free: 12000}

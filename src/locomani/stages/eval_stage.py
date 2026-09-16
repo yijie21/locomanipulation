@@ -19,7 +19,7 @@ from locomani.stages import common
 TOKEN_FILE = common.ROOT / "configs/deployment/ready_grasp_initial_token.json"
 
 
-def _serve(ckpt: Path, port: int, gpu: str, log: Path) -> subprocess.Popen:
+def _serve(ckpt: Path, port: int, gpu: str, log: Path, modality: Path, tag: str) -> subprocess.Popen:
     server = subprocess.Popen(
         [
             str(common.TRAIN_PY),
@@ -28,9 +28,17 @@ def _serve(ckpt: Path, port: int, gpu: str, log: Path) -> subprocess.Popen:
             str(ckpt),
             "--port",
             str(port),
+            "--modality-config",
+            str(modality),
+            "--embodiment-tag",
+            tag.upper(),
         ],
         cwd=common.ROOT,
-        env=dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu)),
+        env=dict(
+            os.environ,
+            CUDA_VISIBLE_DEVICES=str(gpu),
+            HF_HOME=os.environ.get("HF_HOME", os.path.join(common.paths.WORKSPACE, "huggingface_cache")),
+        ),
         stdout=log.open("a"),
         stderr=subprocess.STDOUT,
     )
@@ -121,7 +129,14 @@ def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
     env = stack.up()
     server = None
     try:
-        server = _serve(ckpt, e.policy_port, str(run_cfg.gpu), ev / "serve.log")
+        server = _serve(
+            ckpt,
+            e.policy_port,
+            str(run_cfg.gpu),
+            ev / "serve.log",
+            common.ROOT / run_cfg.embodiment.gr00t_modality_config,
+            run_cfg.embodiment.gr00t_tag,
+        )
         stages.check(
             "eval",
             [
