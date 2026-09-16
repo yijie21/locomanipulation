@@ -35,6 +35,13 @@ def main():
     ap.add_argument("--embodiment-tag", default="UNITREE_G1_SONIC")
     ap.add_argument("--denoising-steps", type=int, default=4)
     ap.add_argument(
+        "--backbone-path",
+        default=None,
+        help="local Cosmos-Reason2-2B directory. The checkpoint records the backbone path training used "
+        "(config.json model_name); a checkpoint trained on another machine points at a directory that "
+        "does not exist here, and this replaces it. Default: use the checkpoint's record",
+    )
+    ap.add_argument(
         "--rtc-ramp-rate",
         type=float,
         default=3.0,
@@ -141,7 +148,8 @@ def main():
     identity["modality_config_sha256"] = digest(cfg_path)
     identity["denoising_steps"] = args.denoising_steps
     identity["rtc_ramp_rate"] = args.rtc_ramp_rate
-    policy = RTCPolicy(model_path=args.model_path, embodiment_tag=tag, device="cuda")
+    identity["backbone_path"] = args.backbone_path
+    policy = RTCPolicy(model_path=args.model_path, embodiment_tag=tag, device="cuda", backbone_path=args.backbone_path)
     identity["modalities"] = {kind: list(value.modality_keys) for kind, value in policy.modality_configs.items()}
     for kind in ("video", "state", "action"):
         if list(cfg[kind].modality_keys) != identity["modalities"][kind]:

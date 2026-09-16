@@ -20,6 +20,7 @@ This module provides the core policy classes for running Gr00t models:
 - Gr00tSimPolicyWrapper: Wrapper for compatibility with existing Gr00t simulation environments
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,31 @@ def _rec_to_dtype(x: Any, dtype: torch.dtype) -> Any:
         return x
 
 
+def _backbone_override(model_dir: Path, backbone_path: str | None) -> dict:
+    """`{"model_name": <dir>}` for from_pretrained, or `{}` to keep the checkpoint's record.
+
+    Both `Gr00tN1d7Config` and `Gr00tN1d7Processor` accept `model_name` as a
+    from_pretrained kwarg, so one dict serves the model and the processor. Fails
+    early, naming the flag to set, when the recorded backbone is a directory that
+    does not exist on this machine; transformers would otherwise report it as an
+    invalid Hub repo id after the checkpoint config has already been parsed.
+    """
+    if backbone_path is not None:
+        if not Path(backbone_path).is_dir():
+            raise ValueError(f"backbone directory does not exist: {backbone_path}")
+        return {"model_name": str(backbone_path)}
+    config_file = model_dir / "config.json"
+    if config_file.exists():
+        recorded = json.loads(config_file.read_text()).get("model_name", "")
+        if recorded.startswith(("/", "~", ".")) and not Path(recorded).expanduser().is_dir():
+            raise ValueError(
+                f"checkpoint {model_dir} records its VLM backbone at {recorded}, which does not exist "
+                "here; pass backbone_path with the local Cosmos-Reason2-2B directory (--backbone-path on "
+                "serve_policy.py, open_loop_eval.py and scripts/gr00t_open_loop.sh)"
+            )
+    return {}
+
+
 def _sim_language_batch_to_sequence(value: Any) -> Any:
     """Normalize sim language batches while preserving validation semantics."""
     if isinstance(value, np.ndarray):
@@ -87,6 +113,7 @@ class Gr00tPolicy(BasePolicy):
         *,
         device: int | str,
         strict: bool = True,
+        backbone_path: str | None = None,
     ):
         """Initialize the Gr00t Policy.
 
@@ -96,6 +123,10 @@ class Gr00tPolicy(BasePolicy):
             model_path: Path to the pretrained model checkpoint directory
             device: Device to run the model on (e.g., 'cuda:0', 0, 'cpu')
             strict: Whether to enforce strict input validation (default: True)
+            backbone_path: Local directory of the VLM backbone (Cosmos-Reason2-2B). The
+                checkpoint records the backbone under `model_name` as whatever path or Hub id
+                training used, and a checkpoint trained elsewhere carries a path that does not
+                exist here. This overrides that record for both the model and the processor.
         """
         # Import this to register all models.
         import gr00t.model  # noqa: F401
@@ -104,9 +135,10 @@ class Gr00tPolicy(BasePolicy):
         if isinstance(embodiment_tag, str):
             embodiment_tag = EmbodimentTag.resolve(embodiment_tag)
         model_dir = Path(model_path)
+        backbone_override = _backbone_override(model_dir, backbone_path)
 
         # Load the pretrained model and move to target device with bfloat16 precision
-        model = AutoModel.from_pretrained(model_dir)
+        model = AutoModel.from_pretrained(model_dir, **backbone_override)
         model.eval()  # Set model to evaluation mode
         model.to(device=device, dtype=torch.bfloat16)
         self.model = model
@@ -121,7 +153,7 @@ class Gr00tPolicy(BasePolicy):
             and not (model_dir / "processor_config.json").exists()
             else model_dir
         )
-        self.processor: BaseProcessor = AutoProcessor.from_pretrained(processor_dir)
+        self.processor: BaseProcessor = AutoProcessor.from_pretrained(processor_dir, **backbone_override)
         self.processor.eval()
 
         # Store embodiment-specific configurations

@@ -11,6 +11,9 @@ closed_loop.json with the same fields the single-arm evaluation reports.
         --checkpoint outputs/crate_vla200_record_20260914/model/checkpoint-10000 \\
         --scene outputs/scene/crate_table30_depth04 --out outputs/crate_eval_10 \\
         --instance 1 --gpu 1 --serve-gpu 1 --rounds 10 --seed 6000
+
+A checkpoint trained on another machine records that machine's Cosmos-Reason2-2B
+directory; add `--backbone-path <local Cosmos-Reason2-2B dir>` to serve it here.
 """
 
 from __future__ import annotations
@@ -87,6 +90,13 @@ def parse_args(argv=None):
     ap.add_argument("--gpu", default="1", help="CUDA/EGL device for the stack")
     ap.add_argument("--serve-gpu", default="1", help="CUDA_VISIBLE_DEVICES for serve_policy")
     ap.add_argument(
+        "--backbone-path",
+        type=Path,
+        default=None,
+        help="local Cosmos-Reason2-2B directory for serve_policy, needed when the checkpoint was trained "
+        "on another machine and records a backbone path that does not exist here",
+    )
+    ap.add_argument(
         "--port",
         type=int,
         default=5700,
@@ -105,24 +115,41 @@ def parse_args(argv=None):
         ap.error("--rounds and --batch-rounds must be positive")
     if not (args.checkpoint / "config.json").exists():
         ap.error(f"no checkpoint at {args.checkpoint}")
+    if args.backbone_path is not None and not (args.backbone_path / "config.json").exists():
+        ap.error(f"no backbone model at {args.backbone_path}")
     return args
+
+
+def serve_command(args) -> list[str]:
+    cmd = [
+        str(TRAIN),
+        str(SRC / "pipeline/serve_policy.py"),
+        "--model-path",
+        str(args.checkpoint),
+        "--port",
+        str(args.port),
+        "--modality-config",
+        str(MODALITY),
+    ]
+    if args.backbone_path is not None:
+        cmd += ["--backbone-path", str(args.backbone_path)]
+    return cmd
+
+
+def serve_env(args) -> dict:
+    # PYTHONUNBUFFERED: the "listening" line serve() waits for is a plain print in
+    # PolicyServer.run(), and stdout into serve.log is block-buffered. Without this the
+    # line stays in the child's buffer, the 600 s wait expires and a healthy server is
+    # reported as "did not come up" (2026-09-16). run_learn_pilot.py sets the same.
+    return dict(stack.os.environ, CUDA_VISIBLE_DEVICES=str(args.serve_gpu), PYTHONUNBUFFERED="1")
 
 
 def serve(args, out: Path, stage: Stage) -> subprocess.Popen:
     log = (out / "serve.log").open("a")
     server = subprocess.Popen(
-        [
-            str(TRAIN),
-            str(SRC / "pipeline/serve_policy.py"),
-            "--model-path",
-            str(args.checkpoint),
-            "--port",
-            str(args.port),
-            "--modality-config",
-            str(MODALITY),
-        ],
+        serve_command(args),
         cwd=ROOT,
-        env=dict(stack.os.environ, CUDA_VISIBLE_DEVICES=str(args.serve_gpu)),
+        env=serve_env(args),
         stdout=log,
         stderr=subprocess.STDOUT,
     )

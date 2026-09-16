@@ -52,3 +52,32 @@ def test_driver_refuses_instance_0_and_missing_checkpoints(tmp_path):
         driver.parse_args(base + ["--instance", "0"])
     with pytest.raises(SystemExit):
         driver.parse_args(["--checkpoint", str(tmp_path / "none"), "--scene", str(tmp_path), "--out", str(tmp_path)])
+
+
+def test_backbone_path_reaches_serve_policy_only_when_given(tmp_path):
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "config.json").write_text("{}")
+    backbone = tmp_path / "Cosmos-Reason2-2B"
+    backbone.mkdir()
+    (backbone / "config.json").write_text("{}")
+    base = ["--checkpoint", str(ckpt), "--scene", str(tmp_path), "--out", str(tmp_path / "o")]
+    assert "--backbone-path" not in driver.serve_command(driver.parse_args(base))
+    cmd = driver.serve_command(driver.parse_args(base + ["--backbone-path", str(backbone)]))
+    assert cmd[cmd.index("--backbone-path") + 1] == str(backbone)
+    assert cmd[cmd.index("--model-path") + 1] == str(ckpt)
+    with pytest.raises(SystemExit):
+        driver.parse_args(base + ["--backbone-path", str(tmp_path / "missing")])
+
+
+def test_serve_env_pins_the_gpu_and_unbuffers_the_listening_line(tmp_path, monkeypatch):
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "config.json").write_text("{}")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "7")
+    env = driver.serve_env(
+        driver.parse_args(
+            ["--checkpoint", str(ckpt), "--scene", str(tmp_path), "--out", str(tmp_path), "--serve-gpu", "0"]
+        )
+    )
+    assert (env["CUDA_VISIBLE_DEVICES"], env["PYTHONUNBUFFERED"]) == ("0", "1")
