@@ -6,6 +6,8 @@ the gate compares DISTRIBUTIONS of a short fixed-seed run against a recorded
 baseline, with tolerances set by the measured seed variance. Two arms:
 
   bottle  single-arm ready-grasp collection (grasp_gym manifests, 1 batch of 10)
+  simple  frozen single-arm simple expert (fixed bank regression8_lowcom, 8 rounds)
+  carry   crate record line (tasks/crate/expert.py --record manifests, 20 rounds)
   crate   bimanual wall pilot (bimanual_wall manifests, 10 rounds)
 
 The crate geometry/timing fields are emitted by wall_phases*.py. Carry manifests
@@ -37,6 +39,11 @@ import sys
 from collections import Counter
 
 TOL = dict(yield_abs=0.15, depth_m=0.01, drop_m=0.005, duration_rel=0.30, angle_deg=1.5, duration_floor_s=0.05)
+# The simple expert's stop is set by the planner's gait at the brake: three batches of the same code
+# gave stop medians 0.147-0.157 m (stage4_wrap8n/8o/8p), so its depth tolerance is 2 cm, and its
+# rare last-resort phases (retreat) may be absent from a candidate without being a regression.
+ARM_TOL = dict(simple=dict(depth_m=0.02), carry=dict(depth_m=0.03))
+ARM_STAGES_NEW_ONLY = {"simple"}
 
 
 def _rows(pattern):
@@ -52,6 +59,11 @@ def _rows(pattern):
 def _norm_reason(why):
     # "[stand] could not turn -12 deg ..." -> "[stand] could not turn N deg ..."; numbers are noise
     return re.sub(r"[-+]?\d+(\.\d+)?", "N", why or "")[:70]
+
+
+def _norm_side(why):
+    # the side of a body/table contact is stance noise, not behaviour
+    return _norm_reason(re.sub(r"left|right", "S", why or ""))
 
 
 def _median(xs):
@@ -108,19 +120,66 @@ def metrics_crate(rows):
     )
 
 
-METRICS = dict(bottle=metrics_bottle, crate=metrics_crate)
+def metrics_simple(rows):
+    """The frozen single-arm `reach.strategy=simple` expert (docs/handoff/infra-plan-20260916.md, decision 7)."""
+    ok = [r for r in rows if r.get("ok")]
+    phases, edges, prep, switch, entry_z = Counter(), [], [], 0, []
+    for r in rows:
+        m = ((r.get("execution") or {}).get("metrics") or {}).get("simple") or {}
+        phases.update({p["phase"] for p in m.get("phases") or []})
+        if (m.get("plan") or {}).get("pelvis_edge_m") is not None:
+            edges.append(m["plan"]["pelvis_edge_m"])
+        if (m.get("prepare_walk") or {}).get("seconds") is not None:
+            prep.append(m["prepare_walk"]["seconds"])
+        switch += int(bool(((m.get("takeover") or {}).get("switch") or {}).get("confirmed")))
+        for e in m.get("entries") or []:
+            if e.get("offset_in_palm"):
+                entry_z.append(abs(e["offset_in_palm"][2]))
+    return dict(
+        rounds=len(rows),
+        ok=len(ok),
+        yield_=round(len(ok) / len(rows), 3),
+        stages=sorted(phases),
+        end_depth_m=_median(edges),
+        prepare_walk_s=_median(prep),
+        switch_confirmed=switch,
+        entry_height_err_m=_median(entry_z),
+        failure_reasons=sorted({_norm_side(r.get("why")) for r in rows if not r.get("ok")}),
+        seconds=_median([r.get("seconds") for r in rows]),
+    )
 
 
-def compare(base, cand):
+def metrics_carry(rows):
+    """The crate record line (`tasks/crate/expert.py --record` manifests: rise, tilt, stand attempts)."""
+    ok = [r for r in rows if r.get("ok")]
+    return dict(
+        rounds=len(rows),
+        ok=len(ok),
+        yield_=round(len(ok) / len(rows), 3),
+        produced=sum(int(bool(r.get("produced"))) for r in rows),
+        rise_m=_median([r.get("rise") for r in ok]),
+        tilt_deg=_median([r.get("tilt_deg") for r in ok]),
+        end_depth_m=_median([r.get("initial_edge_distance") for r in rows]),
+        stand_attempts=_median([r.get("stand_attempts") for r in rows]),
+        failure_reasons=sorted({_norm_side(r.get("why")) for r in rows if not r.get("ok")}),
+        seconds=_median([r.get("seconds") for r in rows]),
+    )
+
+
+METRICS = dict(bottle=metrics_bottle, crate=metrics_crate, simple=metrics_simple, carry=metrics_carry)
+
+
+def compare(base, cand, arm=None):
     checks = []
+    tol = TOL | ARM_TOL.get(arm, {})
 
     def add(name, ok, detail):
         checks.append((name, bool(ok), detail))
 
     # One-sided: a yield DROP beyond the tolerance is a regression; a higher yield is not
     # (2026-09-10: an 8/9 batch tripped the symmetric check against a 20/30 baseline).
-    add("yield", cand["yield_"] >= base["yield_"] - TOL["yield_abs"], f"{base['yield_']} -> {cand['yield_']}")
-    for key, tol in (
+    add("yield", cand["yield_"] >= base["yield_"] - tol["yield_abs"], f"{base['yield_']} -> {cand['yield_']}")
+    for key, tol_key in (
         ("end_depth_m", "depth_m"),
         ("stand_off_m", "depth_m"),
         ("depth_m", "depth_m"),
@@ -128,7 +187,7 @@ def compare(base, cand):
         ("yaw_err_deg", "angle_deg"),
     ):
         if key in base and base[key] is not None and cand.get(key) is not None:
-            add(key, abs(cand[key] - base[key]) <= TOL[tol], f"{base[key]} -> {cand[key]}")
+            add(key, abs(cand[key] - base[key]) <= tol[tol_key], f"{base[key]} -> {cand[key]}")
     add(
         "exit_majority",
         cand.get("exit_majority") == base.get("exit_majority"),
@@ -137,15 +196,15 @@ def compare(base, cand):
     if "stages" in base:
         new = sorted(set(cand["stages"]) - set(base["stages"]))
         gone = sorted(set(base["stages"]) - set(cand["stages"]))
-        add("stages", not new and not gone, f"new {new} missing {gone}")
+        add("stages", not new and (not gone or arm in ARM_STAGES_NEW_ONLY), f"new {new} missing {gone}")
     new_f = sorted(set(cand["failure_reasons"]) - set(base["failure_reasons"]))
     add("failure_reasons", not new_f, f"new {new_f}")
     for k, v in base.get("stage_s", {}).items():
         c = cand.get("stage_s", {}).get(k)
         if v and c is not None:
-            if v < TOL["duration_floor_s"]:
+            if v < tol["duration_floor_s"]:
                 continue  # millisecond-scale stage markers: their jitter is not behaviour
-            add(f"stage_s.{k}", abs(c - v) <= TOL["duration_rel"] * v, f"{v} -> {c}")
+            add(f"stage_s.{k}", abs(c - v) <= tol["duration_rel"] * v, f"{v} -> {c}")
     return checks
 
 
@@ -164,7 +223,7 @@ def main():
         print(f"[gate] baseline -> {args.baseline}")
         return
     base = json.load(open(args.baseline))["metrics"]
-    checks = compare(base, m)
+    checks = compare(base, m, args.arm)
     width = max(len(c[0]) for c in checks)
     for name, ok, detail in checks:
         print(f"  {'PASS' if ok else 'FAIL'}  {name:<{width}}  {detail}")

@@ -1,0 +1,27 @@
+{
+ "arm": "simple",
+ "source": "outputs/bottle_dynamics_20260915/stage4_wrap8p/collect/manifest_00.jsonl",
+ "metrics": {
+  "rounds": 8,
+  "ok": 6,
+  "yield_": 0.75,
+  "stages": [
+   "close",
+   "entry",
+   "lift",
+   "reach",
+   "recover",
+   "retreat",
+   "settle"
+  ],
+  "end_depth_m": 0.1469,
+  "prepare_walk_s": 0.82,
+  "switch_confirmed": 8,
+  "entry_height_err_m": 0.0074,
+  "failure_reasons": [
+   "[grasp] simple clearance: S:S_dexN_finger_N_link:dining_table_dining_t",
+   "[grasp] simple clearance: body:S_hip_roll_link:dining_table_dining_tab"
+  ],
+  "seconds": 36.8
+ }
+}
