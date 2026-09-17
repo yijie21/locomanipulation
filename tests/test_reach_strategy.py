@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from locomani import conf
+from locomani import profiles
 from locomani.tasks.bottle.policy import make_grasp_policy
 from locomani.tasks.bottle.reach_config import LEGACY_STRATEGY_FIELDS, ReachConfig
 
@@ -73,7 +73,7 @@ def test_ambiguous_or_invalid_formats_fail_before_execution(data):
 
 
 def test_current_task_overrides_change_the_selected_strategy():
-    task = conf.load_group("task", "bottle_visible")
+    task = profiles.load("task", "bottle_visible")
     changed = task.with_overrides(["reach.strategy=teleop"])
     assert changed.reach.teleop_arm and not task.reach.teleop_arm
     with pytest.raises(ValueError):

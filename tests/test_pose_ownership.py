@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from locomani.pipeline.provenance import require_pose_ownership
@@ -18,37 +20,45 @@ def test_pose_takeover_requires_the_selected_binary_capability(tmp_path):
 
 
 @pytest.mark.parametrize("expert", ["visual", "carry"])
-def test_whole_body_launch_rejects_an_old_binary_before_starting_resources(tmp_path, monkeypatch, expert):
+def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, monkeypatch, expert):
+    """The check runs before the stack, not after: an unpatched deploy must cost nothing to find out."""
+    import sys
     from unittest.mock import Mock
 
-    from locomani import conf
-    from locomani.stages import collect
+    import yaml
 
-    run, cfg = conf.load_run(
-        [
-            "task=crate_visual_low_reach",
-            "embodiment=g1_bimanual",
-            "scene=crate_table30_depth04",
-            f"task.expert={expert}",
-        ]
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import collect_crate
+    import run_common
+
+    cfg = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "configs/experiments/crate_table30_record.yaml").read_text()
     )
-    monkeypatch.setattr("locomani.tasks.crate.prepare.prepare_scene", lambda *a, **k: tmp_path)
-    monkeypatch.setattr(collect, "Stack", Mock(side_effect=AssertionError("resources started before admission")))
+    cfg["task"]["expert"] = expert
+    experiment = tmp_path / "experiment.yaml"
+    experiment.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    monkeypatch.setattr(run_common, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(run_common, "require_headroom", lambda *a, **k: {})
+    monkeypatch.setattr(collect_crate, "Stack", Mock(side_effect=AssertionError("a stack started before admission")))
+    monkeypatch.setattr(
+        collect_crate, "prepare", Mock(side_effect=AssertionError("the scene was copied before admission"))
+    )
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
     with pytest.raises(RuntimeError, match="sonic_pose_ownership.patch"):
-        collect.run(run, cfg, tmp_path / "out")
+        collect_crate.main([str(experiment), "--gpu", "0"])
 
 
 def test_standalone_whole_body_carry_checks_the_same_capability(tmp_path, monkeypatch):
     from unittest.mock import Mock
 
-    from locomani import conf
+    from locomani import profiles
     from locomani.tasks.crate import bimanual_carry
 
     # bimanual_carry's --config only reads JSON; task=crate_low_reach (whole_body reach_control)
     # dumped to a file stands in for the retired configs/tasks/crate_low_reach.json.
     config_path = tmp_path / "crate_low_reach.json"
-    conf.load_group("task", "crate_low_reach").dump(config_path)
+    profiles.load("task", "crate_low_reach").dump(config_path)
     monkeypatch.setattr("sys.argv", ["carry", "--config", str(config_path)])
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
     monkeypatch.setattr(bimanual_carry.ports, "instance", Mock(side_effect=AssertionError("admission was bypassed")))

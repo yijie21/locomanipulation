@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from geometry_fixture import scene_ik
 
-from locomani import conf
+from locomani import profiles
 from locomani.backends.sonic.primitives import upper_body_from_mj
 from locomani.backends.sonic.streamed_arm import StreamedArm
 from locomani.pipeline.execution_record import ExecutionRecord
@@ -20,7 +20,7 @@ from locomani.tasks.bottle.whole_body_config import WholeBodyConfig
 def test_whole_body_configuration_reaches_actual_factory_and_roundtrips():
     from locomani.tasks.bottle.whole_body_policy import WholeBodyGraspPolicy
 
-    task = conf.load_group("task", "bottle_whole_body")
+    task = profiles.load("task", "bottle_whole_body")
     changed = task.with_overrides(["reach.whole_body.hand_speed=0.12", "reach.whole_body.walk_plan_hz=4"])
     assert changed.reach.whole_body.hand_speed == 0.12
     assert changed.reach.whole_body.walk_plan_hz == 4

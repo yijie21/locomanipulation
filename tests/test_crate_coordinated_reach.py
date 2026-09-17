@@ -3,14 +3,14 @@ import pytest
 from geometry_fixture import scene_ik
 from scipy.spatial.transform import Rotation
 
-from locomani import conf
+from locomani import profiles
 from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.coordinated_reach import CoordinatedReach
 from locomani.tasks.crate.perception import CrateEstimate
 
 
 def setup():
-    config = conf.load_group("task", "crate_visual_low_reach").with_overrides(["visual.approach_speed=0.1"])
+    config = profiles.load("task", "crate_visual_low_reach").with_overrides(["visual.approach_speed=0.1"])
     q = np.zeros(29)
     q[[0, 6]], q[[3, 9]], q[[4, 10]] = -0.1, 0.2, -0.1
     q[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]

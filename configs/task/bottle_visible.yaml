@@ -3,6 +3,7 @@ defaults:
 - _bottle
 - _self_
 reach:
+  schema_version: 2  # which reach contract this profile is written against
   strategy: coupled
   post_min: 0.3
   post_max: 0.4

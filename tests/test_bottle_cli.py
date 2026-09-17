@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from locomani import conf
+from locomani import profiles
 from locomani.tasks.bottle.cli_args import GymOptions, parse_args, resolve_options
 from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle.reach_config import DEFAULT_REACH
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # task=bottle_visible as a standalone JSON file, for exercising --task-config's own path-loading
 # (BottleTaskConfig.load reads JSON only); configs/tasks/bottle_visible.json is retired.
 PROFILE = str(Path(tempfile.mkdtemp()) / "bottle_visible.json")
-conf.load_group("task", "bottle_visible").dump(PROFILE)
+profiles.load("task", "bottle_visible").dump(PROFILE)
 
 
 def test_no_profile_preserves_legacy_gym_defaults():

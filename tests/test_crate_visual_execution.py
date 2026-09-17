@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from geometry_fixture import scene_ik
 
-from locomani import conf
+from locomani import profiles
 from locomani.tasks.crate import expert
 from locomani.tasks.crate.perception import CrateEstimate
 from locomani.tasks.crate.visual_approach import ApproachCommand
@@ -107,7 +107,7 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
         reset,
         camera,
         meta,
-        conf.load_group("task", "crate_visual_low_reach"),
+        profiles.load("task", "crate_visual_low_reach"),
         tmp_path,
         "episode",
         None,

@@ -275,3 +275,15 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   准入拒绝（`15.38 + 8 > 15.36`）。没有去动别人的进程，改成"等有余量自动开跑"，CPU 一空冒烟就自己跑完了。
   契约拆分：`bottle_convert` 与新的 `bottle_convert_val` 分开——验证集只在 `train.holdout > 0` 时存在，
   而冒烟实验刻意设为 0（集数太少），两种形态因此都可检查。
+- **commit 12**：删除组合路径，65 个文件、−2318 行。删掉：`cli.py`、`conf.py`、`launch.py`、`stages/`、
+  四个运行级 schema、`configs/{experiment,jobs,embodiment,scene,collect,train}/`、
+  `test_conf/test_stages/test_launch/test_stage_config_delivery`、两条过渡等价性测试、
+  两个只为省敲命令而存在的 shell 包装（`run_wall_pilot.sh`、`run_bimanual_pilot.sh`）；`make cli` 改为 `make run`。
+  **与计划的两处偏差（均已核实）**：
+  (1) `configs/{task,backend,eval}/` **保留**——它们不是组合路径的输入，而是专家、评测器和 17 个测试
+  按名字引用的 profile 库。新增 `src/locomani/profiles.py`（48 行，纯 YAML + 各自 dataclass 的 `from_dict`，
+  不依赖 Hydra）取代 `conf.load_group`，18 个调用点已迁移；顺带给 5 个瓶子任务档补上
+  `reach.schema_version`（此前靠 Hydra schema 提供，裸读会被拒）。
+  (2) `pipeline/stack.py` **保留**——两个评测器直接调 `start_stack`/`stop_instance`，合并它就要改范围外的评测器。
+  `test_pose_ownership` 里"起资源前必须拒绝未打补丁的 deploy"那条改写到 `collect_crate.py` 上，行为照旧被钉住。
+  验收：全量套件 rc=0、`make lint` PASS（含 change-map 链接与 `config_fields.md` 重新生成）。

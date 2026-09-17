@@ -85,7 +85,7 @@ WHITELIST = {
     # ONLY to refuse to start when a caller still sets them (they were the
     # knobs before the refactor-step-3 argparse conversion; now --pose-left-deg,
     # --pw/--out-dist/--up/--over/--warm/--save/--sag/--rot/--pitch0). Never
-    # used as a value -- same pattern as run_wall_pilot.sh's WALL_WALK check.
+    # used as a value -- same pattern as the wall expert's WALL_WALK check.
     "POSE_LEFT_DEG",
     "PW",
     "OUT",

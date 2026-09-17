@@ -78,7 +78,7 @@ def test_low_reach_rejects_invalid_initialization_before_recording(tmp_path, mon
     import numpy as np
     from geometry_fixture import scene_ik
 
-    from locomani import conf
+    from locomani import profiles
     from locomani.tasks.crate import expert
     from locomani.tasks.crate.visual_scene import MARKERS
 
@@ -100,7 +100,7 @@ def test_low_reach_rejects_invalid_initialization_before_recording(tmp_path, mon
         reset,
         None,
         meta,
-        conf.load_group("task", "crate_visual_low_reach"),
+        profiles.load("task", "crate_visual_low_reach"),
         tmp_path,
         "drift",
         None,

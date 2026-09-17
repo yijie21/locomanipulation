@@ -94,9 +94,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(back.place.band_x, (0.20, 0.28))
 
     def test_pick_place_yaml_names_the_goal(self):
-        from locomani import conf
+        from locomani import profiles
 
-        cfg = conf.load_group("task", "pick_place")
+        cfg = profiles.load("task", "pick_place")
         self.assertEqual((cfg.target, cfg.goal), ("soup_can", "basket"))
 
 

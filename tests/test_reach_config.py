@@ -83,11 +83,11 @@ class CalibrationGateTests(unittest.TestCase):
     def test_a_task_config_never_recalibrates_a_vla_round(self):
         import tempfile
 
-        from locomani import conf
+        from locomani import profiles
         from locomani.tasks.bottle.cli_args import parse_args
 
         profile = Path(tempfile.mkdtemp()) / "bottle_visible.json"
-        conf.load_group("task", "bottle_visible").dump(profile)
+        profiles.load("task", "bottle_visible").dump(profile)
         args = parse_args(["--task-config", str(profile)], vla=True)
         self.assertEqual(args.reach_config_obj, DEFAULT_REACH)
         self.assertEqual(args.spawn_yaw_err, 20.0)

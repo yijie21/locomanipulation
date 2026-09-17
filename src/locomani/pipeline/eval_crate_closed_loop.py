@@ -26,7 +26,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from locomani import conf, paths
+from locomani import paths, profiles
 from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.pipeline import stack
 from locomani.pipeline.provenance import file_digests, write_config_snapshot
@@ -144,7 +144,7 @@ def main(argv=None):
     scene = out / args.scene.name
     if not scene.exists():
         shutil.copytree(args.scene, scene)
-    task_cfg = CrateTaskConfig.load(args.config) if args.config else conf.load_group("task", DEFAULT_TASK_GROUP)
+    task_cfg = CrateTaskConfig.load(args.config) if args.config else profiles.load("task", DEFAULT_TASK_GROUP)
     # vla_rounds.py runs in a separate process (a fresh stack's venv) and reads --config as a JSON
     # path (CrateTaskConfig.load); when no explicit path was given, dump the resolved YAML-group
     # config so that subprocess boundary still gets a real file.

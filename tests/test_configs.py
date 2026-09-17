@@ -27,7 +27,7 @@ import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from locomani import conf
+from locomani import profiles
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.config_base import apply_overrides
@@ -80,7 +80,7 @@ class OptionalOverrideTests(unittest.TestCase):
 
 class BottleVisibleTaskTests(unittest.TestCase):
     def test_reach_matches_ready_grasp_visible_json(self):
-        task = conf.load_group("task", "bottle_visible")
+        task = profiles.load("task", "bottle_visible")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # brake_preplan, retired (step 2)
             want = ReachConfig.load(REPO / "configs/collection/ready_grasp_visible.json")
@@ -88,7 +88,7 @@ class BottleVisibleTaskTests(unittest.TestCase):
         self.assertEqual(task.reach.visible_brake_depth, 0.31)  # brake depth
 
     def test_spawn_matches_the_official_ready_visible_distribution(self):
-        task = conf.load_group("task", "bottle_visible")
+        task = profiles.load("task", "bottle_visible")
         # load_group composes through OmegaConf, which materializes a tuple-typed field as a
         # list; tuple() normalizes before comparing against the dataclass's own tuple default.
         self.assertEqual(tuple(task.spawn.edge_range), (1.1, 1.3))
@@ -109,7 +109,7 @@ class CanonicalConfigsRoundTripTests(unittest.TestCase):
         )
         for group, name, cls in groups:
             with self.subTest(group=group, name=name):
-                cfg = conf.load_group(group, name)
+                cfg = profiles.load(group, name)
                 self.assertIsInstance(cfg, cls)
                 # Compare at the to_dict() level, not object equality: OmegaConf (load_group's
                 # composition) materializes a tuple-typed field as a list, while from_dict
@@ -117,13 +117,13 @@ class CanonicalConfigsRoundTripTests(unittest.TestCase):
                 self.assertEqual(cls.from_dict(cfg.to_dict()).to_dict(), cfg.to_dict())
 
     def test_sonic_backend(self):
-        backend = conf.load_group("backend", "sonic")
+        backend = profiles.load("backend", "sonic")
         # collect runs the deploy WITH its encoder (memory: no-encoder-breaks-planner-arms);
         # the retired JSON twin carried the eval-era no_encoder=True default instead.
         self.assertEqual(backend, replace(SonicBackendConfig(), no_encoder=False))
 
     def test_closed_loop_100(self):
-        cfg = conf.load_group("eval", "closed_loop_100")
+        cfg = profiles.load("eval", "closed_loop_100")
         self.assertEqual(
             (cfg.seed, cfg.client, cfg.rounds, cfg.budget_s, cfg.replan_interval, cfg.ensemble_n),
             (

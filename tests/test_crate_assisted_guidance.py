@@ -36,10 +36,10 @@ def test_assisted_pilot_restores_the_original_basket_in_its_own_scene_copy(tmp_p
 def test_assisted_source_validation_and_round_trip(tmp_path):
     import pytest
 
-    from locomani import conf
+    from locomani import profiles
     from locomani.tasks.crate.config import CrateTaskConfig
 
-    config = conf.load_group("task", "crate_visual_low_reach")
+    config = profiles.load("task", "crate_visual_low_reach")
     path = tmp_path / "config.json"
     config.dump(path)
     assert CrateTaskConfig.load(path).visual.pose_source == "assisted"

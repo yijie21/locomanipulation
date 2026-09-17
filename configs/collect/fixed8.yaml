@@ -1,8 +1,0 @@
-# collect/fixed8: one batch of the 8-case fixed bank (stage4_wrap8n..8p, the frozen expert's gate)
-defaults:
-- _schema
-- _self_
-successes: 8
-batch_rounds: 8
-max_batches: 1
-seed0: 30700

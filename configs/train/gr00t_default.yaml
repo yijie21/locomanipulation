@@ -1,8 +1,0 @@
-# train/gr00t_default: the train half of configs/pilot/learn_200.json (2026-09-16)
-defaults:
-- _schema
-- _self_
-steps: 3000
-save_steps: 3000
-holdout: 10
-squat_max: 4096

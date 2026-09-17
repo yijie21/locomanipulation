@@ -3,7 +3,7 @@ PY_SIM := third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 RUFF   := /venv/main/bin/ruff
 TESTS  ?= tests
 
-.PHONY: check check-all check-docs format lint test test-sim gate-bottle gate-crate config-doc cli
+.PHONY: check check-all check-docs format lint test test-sim gate-bottle gate-crate config-doc run
 
 check:
 	python3 scripts/check_changes.py
@@ -35,9 +35,9 @@ test:
 test-sim:
 	$(PY_SIM) -m pytest -x -q $(TESTS) --run-sim
 
-# Task-plugin CLI (locomani/cli.py), e.g. make cli ARGS="collect --task bottle --out outputs/x --scene outputs/scene/sim"
-cli:
-	PYTHONPATH=src $(PY_SIM) -m locomani.cli $(ARGS)
+# One experiment through every stage, e.g. make run ARGS="configs/experiments/bottle_simple_200.yaml --gpu 1"
+run:
+	python3 scripts/pipeline.py $(ARGS)
 
 # Behaviour gate: run the candidate first (see scripts/gate.py --help), then compare.
 gate-bottle:

@@ -23,12 +23,6 @@ EXPERIMENTS = Path(__file__).resolve().parents[1] / "configs" / "experiments"
 FILES = sorted(EXPERIMENTS.glob("*.yaml"))
 TASK_SCHEMA = {"bottle": BottleTaskConfig, "pick_place": BottleTaskConfig, "crate": CrateTaskConfig}
 BLOCKS = {"name", "task", "embodiment", "scene", "backend", "collect", "train", "eval"}
-COMPOSED = {  # expanded file -> the configs/experiment/ composition it was taken from (transition only)
-    "bottle_simple_200": "bottle_simple_learn200",
-    "bottle_simple_gate8": "bottle_simple_lowcom",
-    "pick_place": "pick_place_default",
-    "crate_table30_record": "crate_table30_record",
-}
 
 
 def load(path: Path) -> dict:
@@ -58,24 +52,6 @@ def test_backend_and_eval_blocks_are_accepted_by_their_consumers(path):
     cfg = load(path)
     SonicBackendConfig.from_dict(cfg["backend"])
     EvalConfig.from_dict(cfg["eval"])  # the file the evaluator is handed, nested backend included
-
-
-@pytest.mark.parametrize("new,old", sorted(COMPOSED.items()))
-def test_expanded_file_equals_what_the_composed_one_resolved_to(new, old):
-    """Transition test: the expanded file is the old composition, not a retyping of it.
-
-    Delete it together with `conf.py` in the commit that removes the composed path -- until then it
-    is what makes the two paths interchangeable, so a gate run on one is evidence about the other.
-    """
-    from locomani import conf  # the path being replaced; not imported at module level for that reason
-
-    run, _ = conf.load_run([f"+experiment={old}", f"name={new}"])
-    cfg = load(EXPERIMENTS / f"{new}.yaml")
-    assert TASK_SCHEMA[cfg["task"]["plugin"]].from_dict(cfg["task"]).to_dict() == run.task.to_dict()
-    assert SonicBackendConfig.from_dict(cfg["backend"]).to_dict() == run.backend.to_dict()
-    assert EvalConfig.from_dict(cfg["eval"]).to_dict() == run.eval.to_dict()
-    for block, resolved in (("collect", run.collect), ("train", run.train)):
-        assert cfg[block] == {k: v for k, v in resolved.to_dict().items() if k != "schema_version"}
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
