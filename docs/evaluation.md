@@ -71,7 +71,7 @@ checkpoint 配置后失败(报 `records its VLM backbone at ..., which does not 
 有这个参数的入口:`serve_policy.py`、`gr00t/eval/open_loop_eval.py`、
 `scripts/gr00t_open_loop.sh`(也接受环境变量 `BACKBONE_PATH=`)和
 `eval_crate_closed_loop.py`(透传给它起的 policy server);自研 `eval_open_loop.py` 和
-`locomani.cli eval`(`eval_stage._serve` 拼命令时不透传它)没有,后者要绕开 stage 用下面的
+`scripts/eval_bottle.py`(起 policy server 时不透传它)没有,单臂线要用它就绕开脚本走下面的
 手动三步。本机训练的 checkpoint 不需要它:`model_name` 只要含 `Cosmos-Reason2`/`Qwen3-VL`
 (本地目录路径也行,不再要求 `nvidia/` 前缀)就按原记录加载。传进来的目录必须存在且含
 `config.json`,否则在加载模型前就报错。
@@ -1011,7 +1011,7 @@ seed 6000,出生 1.1–1.3 m:
 | 部署参数(`--ensemble`/`--replan-interval` 等)的旧结论直接套到新 checkpoint | 见 §6 历次翻案(dart200 上 ensemble +50,flow200 上为零;replan 1.6 在 walk200 上更差、在 dart200 上更好)——**换 checkpoint 必须复筛**,引用旧数字要引本文档的裁定小节,不要引中途重挖的原始 json |
 | 闭环评测跑在错误的场景高度上 | 采集脚本按种子重建 `outputs/scene/sim`(桌高会变),评测栈读磁盘上当时的场景;不同批次场景不一致会让结果不可比(2026-09-04 曾把 smooth200 三臂跑废,归档为 `*_scene647`)。现在评测脚本每次启动前固定重建场景,混用旧数据前先确认场景哈希一致 |
 | 双卡并行跑评测,GPU 参数没生效 | 曾出现评测脚本的 GPU 参数覆盖外部 `CUDA_VISIBLE_DEVICES`,并行两臂的 policy server 实际都落在 GPU0(已修);怀疑时看 `serve.log` 里的显存占用卡号 |
-| `policy server did not come up`,`serve.log` 末尾是 `checkpoint ... records its VLM backbone at /group-volume/..., which does not exist here` | checkpoint 在别的机器上训练,`config.json` 的 `model_name` 指向那台机器的 Cosmos-Reason2-2B 目录。手动调用 `serve_policy.py`/`eval_crate_closed_loop.py`/`gr00t_open_loop.sh` 时加 `--backbone-path <本地目录>`(见 §3);`locomani.cli eval` 不透传这个参数。旧代码对本地目录路径还会报 `Unsupported model name`(要求 `nvidia/` 前缀),现已改为只匹配模型家族名。`serve.log` 里的 `listening` 行若始终不出现而进程仍在、端口已监听,是 stdout 缓冲(见 §3 读日志) |
+| `policy server did not come up`,`serve.log` 末尾是 `checkpoint ... records its VLM backbone at /group-volume/..., which does not exist here` | checkpoint 在别的机器上训练,`config.json` 的 `model_name` 指向那台机器的 Cosmos-Reason2-2B 目录。手动调用 `serve_policy.py`/`eval_crate_closed_loop.py`/`gr00t_open_loop.sh` 时加 `--backbone-path <本地目录>`(见 §3);`scripts/eval_bottle.py` 不透传这个参数。旧代码对本地目录路径还会报 `Unsupported model name`(要求 `nvidia/` 前缀),现已改为只匹配模型家族名。`serve.log` 里的 `listening` 行若始终不出现而进程仍在、端口已监听,是 stdout 缓冲(见 §3 读日志) |
 
 **Ctrl-C 停止**:`eval_stage.run()` 用 `try/finally` 保证中断时 policy server 和
 stack 都会被正常回收(不会留下孤儿 deploy 或占用 sim 端口),但 `manifest.json`
