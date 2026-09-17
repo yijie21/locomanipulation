@@ -183,3 +183,13 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   五份可自动记录的契约都已对各自基准运行 `check` 通过。
   契约只查"有没有"，不查内容；每份契约声明一条 `CRITICAL` 产物（例如 `eval/videos/*.mp4`），
   删掉它必须是明确动作而不是顺手。`test_artifact_contract.py` 21 项通过。
+- **commit 2**：`configs/experiments/` 四份全展开文件（bottle_simple_200 391 行、bottle_simple_gate8 391、
+  pick_place 390、crate_table30_record 192），由 `locomani.cli show` 导出后逐块核对。
+  **等价性已钉住**：四份文件的 task / backend / eval / collect / train 五个块与 Hydra 组合结果逐字段相等
+  （`test_experiment_files.py` 的过渡用例，随 `conf.py` 一起在 commit 12 删除）——因此闸门在任一路径上的
+  结果对另一条路径同样成立。
+  字段审计的结果：删掉 `embodiment.{arms,state_dim,action_dim,cameras,dataset_kind}` 和
+  `scene.{name,preset}`（全仓库无消费者，只有 `name`/`gr00t_tag`/`gr00t_modality_config`/`dir`/`cases`
+  被读），以及根字段 `stage`/`out`/`seed`（`out` 由 `name` 推出，`gpu` 改为命令行参数）。
+  严格 `from_dict` 当场抓到一处：`task.reach` 必须带 `schema_version`，`cli show` 的输出把它剥掉了——
+  这正是"展开后逐字段校验"的价值。
