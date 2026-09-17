@@ -31,9 +31,15 @@ tar -xzf "$TAR" -C "$ROOT/outputs"
 # it was packed on, and hard-coding that path here means the next person to
 # re-pack the scene from a different checkout silently ships a tarball this
 # script cannot fix.
-BAKED=$(grep -rhoE '/[^"'"'"' <>]+/outputs/scene/' "$ROOT/outputs/scene" \
-        --include="*.xml" --include="*.json" 2>/dev/null \
-        | head -1 | sed 's#/outputs/scene/$##')
+# Collect first, slice second. Piping grep straight into `head -1` makes head
+# close the pipe after one line while grep is still walking the tree; grep then
+# dies of SIGPIPE, `pipefail` propagates 141 and `set -e` aborts the script --
+# after tar has already unpacked, so the scene is left half-installed with no
+# message at all. It is a race (it depends on whether grep still has a write
+# pending), which is why this stood for a while before biting.
+BAKED_HITS=$(grep -rhoE '/[^"'"'"' <>]+/outputs/scene/' "$ROOT/outputs/scene" \
+        --include="*.xml" --include="*.json" 2>/dev/null || true)
+BAKED=$(printf '%s\n' "$BAKED_HITS" | sed -n '1s#/outputs/scene/$##p')
 if [ -z "$BAKED" ]; then
     echo "no absolute paths found in the scene — nothing to retarget"
 elif [ "$BAKED" = "$ROOT" ]; then

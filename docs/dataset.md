@@ -40,10 +40,20 @@ manifest 那一批产生的。`collect` 命令的批次是按 seed 递增跑的,
 缺失边界或序号不能猜测裁剪；此选项要求 manifest，且不能同时使用 `--drop-idle`
 或 `--include-discarded`。任务中间的停顿应修控制逻辑，不能靠删帧掩盖。
 
-对错了不会静默 —— 转换器**硬校验**两件事,不符直接报错退出:
+对错了不会静默 —— 转换器在解码任何一帧之前**硬校验**四件事,不符直接报错退出:
 
 - manifest 里 `produced` 的行数 == session 里的 episode 数
 - 每一行的 `ok` == 该 episode 在 disk 上是否被 discarded
+- 没有 0 字节的 episode parquet(exporter 中途死掉会留下没 flush 的空文件)
+- 每个 episode 的录制密度 ≥ `MIN_RECORDING_DENSITY`(0.60 行/序号单位)
+
+最后一条挡的是 2026-09-17 发现的静默损坏:健康 session 每个 episode 都在
+1.10–1.15 行/序号单位,但机器被其他负载占用时 exporter 会安静地只留下零头 ——
+同一天三个 session 出现 0.04–0.44 的 episode,其中一局 37 秒的成功回合只录到
+1.2 秒画面。危险的不是报错,而是这种残片只要训练边界恰好落在它确实录到的区间内
+就能通过其余所有检查,以 22 帧"示范"的身份进入数据集;当天五个残片里只有一个
+响了,而且纯属运气。判定在 `recording_density.py`,拒绝时会打印实测数字;
+遇到就重采,不要放宽阈值。
 
 > **`--manifest` 名义上可选,实际上必给。**数据集里的语言标注(`task_index` →
 > `meta/tasks.jsonl`)**只**来自 manifest 的逐局 `task` 字段。省掉 `--manifest`

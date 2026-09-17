@@ -40,6 +40,7 @@ import pyarrow.parquet as pq_mod
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[2])
 )  # reach src/ for `python src/locomani/pipeline/convert_to_hf_format.py`
+from locomani.pipeline.recording_density import check_recording_density  # noqa: E402
 from locomani.pipeline.verification_tail import training_prefix_length  # noqa: E402
 from locomani.pipeline.world_lift import DST_FPS, SRC_FPS, resample_selection  # noqa: E402
 from locomani.schema import SONIC_MODALITY
@@ -593,13 +594,24 @@ def main():
             man = load_manifest(args.manifest[si])
             check_manifest(man, src_eps, discarded, sess.name)
             mans[si] = dict(zip(src_eps, man))
+        kept_eps = []
         for pq in pqs:
             src_ep = int(pq.stem.split("_")[1])
             if src_ep in discarded and not args.include_discarded:
                 continue
             if args.only is not None and src_ep not in args.only:
                 continue
+            # An exporter that dies mid-flush leaves the file it had open at zero
+            # bytes. Reading it in pass 2 raises out of pyarrow with nothing but a
+            # path, after the rest of the session has already been transcoded.
+            if pq.stat().st_size == 0:
+                raise SystemExit(
+                    f"[recording] {sess.name}: episode {src_ep} is an empty file "
+                    f"({pq}). The exporter never flushed it; re-collect this session."
+                )
+            kept_eps.append(src_ep)
             items.append({"si": si, "sess": sess, "src_ep": src_ep, "pq": pq})
+        check_recording_density(sess, kept_eps)
 
     # Every session must describe the same columns. info.json is copied from
     # the FIRST session and becomes the dataset's declared schema, so a session
