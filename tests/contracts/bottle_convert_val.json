@@ -1,0 +1,62 @@
+{
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916",
+ "note": "the held-out validation split, which convert writes when train.holdout is above zero. Audited with the same checks as the training split: a split nothing reads is a split nothing catches.",
+ "required": [
+  {
+   "pattern": "val_dataset/data/chunk-*/*.parquet",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/episodes.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/episodes_stats.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/info.json",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/modality.json",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/modality_gr00t_sonic.json",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/modality_psi0.json",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/relative_stats.json",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/stats.json",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/tasks.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/meta/verification_trims.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/videos/chunk-*/observation.images.ego_view/*.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/videos/chunk-*/observation.images.left_wrist/*.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "val_dataset/videos/chunk-*/observation.images.right_wrist/*.mp4",
+   "min": 1
+  }
+ ]
+}

@@ -323,3 +323,19 @@ def test_the_bimanual_line_keeps_its_own_port_block(crate_eval):
     cfg, _ = crate_eval
     assert cfg["collect"]["instance"] != 0
     assert cfg["eval"]["policy_port"] != 5590  # 5590 is instance 1's privileged port
+
+
+def test_the_pipeline_dispatches_by_task_line():
+    """One experiment, the stages its task needs -- the bimanual line has its own two scripts."""
+    single = dry_run("pipeline.py", "bottle_simple_200.yaml", "--gpu", "1")
+    bimanual = dry_run("pipeline.py", "crate_table30_record.yaml", "--gpu", "1")
+    assert "collect_bottle.py" in single and "eval_bottle.py" in single
+    assert "collect_crate.py" in bimanual and "eval_crate.py" in bimanual
+    for out in (single, bimanual):
+        assert out.index("[collect]") < out.index("[convert]") < out.index("[train]") < out.index("[eval]")
+        assert "convert.py" in out and "train.py" in out  # both lines share these
+
+
+def test_the_pipeline_can_start_and_stop_at_a_stage():
+    out = dry_run("pipeline.py", "bottle_simple_200.yaml", "--gpu", "1", "--from", "train", "--to", "train")
+    assert "[train]" in out and "[collect]" not in out and "[eval]" not in out

@@ -267,3 +267,11 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   spawn 1.2–1.5、`pick up the crate`）并让实验覆盖它，新旧两条路径继续逐字段相等。
   顺带验证了 provenance 规则：旧运行目录 `crate_flat_20260917` 的 dry-run 仍按它**自己那份** `config.yaml`
   输出端口 5590 和单臂 token——运行读的永远是它开始时的副本。
+- **commit 11**：`scripts/pipeline.py`（88 行：按 `task.plugin` 分派、产物存在则跳过、`--from/--to`）+ 2 项分派测试。
+  **验收**：`bottle_simple_smoke.yaml` 全链路通过——采集 2 批留 1 集 → 转换 1 集 495 帧 → 训练 10 步 →
+  评测 4 次尝试 0 成功（冒烟只测通路）；`bottle_collect` / `bottle_convert` / `bottle_train` / `bottle_eval`
+  四份契约全 PASS，随后删除 24 GB 冒烟 checkpoint。
+  **资源准入第三次拦住真问题**：起跑时另一个项目（`real2sim_pipeline` 的 `remove_movables`）占了约 14.5 核，
+  准入拒绝（`15.38 + 8 > 15.36`）。没有去动别人的进程，改成"等有余量自动开跑"，CPU 一空冒烟就自己跑完了。
+  契约拆分：`bottle_convert` 与新的 `bottle_convert_val` 分开——验证集只在 `train.holdout > 0` 时存在，
+  而冒烟实验刻意设为 0（集数太少），两种形态因此都可检查。
