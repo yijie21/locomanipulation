@@ -199,3 +199,12 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   新入口 `spec_from_config(cfg, run_dir, gpu, backend=...)`：整份实验配置进，一个 `StackSpec` 出；
   `backend` 显式传块而不是读固定键——采集栈要编码器、评测栈必须关编码器，这个差别留在调用处可见。
   旧的 `StackSpec(...)` 构造和 `resolve_env` 行为不变（`test_stack_delivery`、`test_stack_start_failure` 照旧通过）。
+- **commit 4**：`scripts/run_common.py`（123 行，超出 100 行目标 23 行——多出来的是注释里那几条实测教训，
+  没有为了凑数删掉）：`open_run`（读实验文件 + **逐字节复制**到 `<run>/config.yaml`，同名再跑但文件变了就拒绝）、
+  `measure`/`shortfall`/`require_headroom`（CPU 配额 1 秒 delta、pid 余量 200、该卡空闲显存；
+  **拒绝而不等待**，读不到的数不作为拒绝理由）、`require_deploy_patches`、`show`（dry-run 统一格式）、
+  `summarise`。
+  **与计划的一处偏差**：阶段摘要写成 `<run>/summary.json` 的一个键，而不是 `collect/summary.json`——
+  这样跨运行对比就是 `ls outputs/runs/*/summary.json`，同时下游阶段照样能读上游那条记录。
+  `test_run_common.py` 11 项：pid 上限卡在边界上（3840−200−1800 恰好通过，多一个就拒绝）、
+  显存不足只拒绝训练不拒绝评测、读不到的测量不拒绝、改了文件的同名重跑被拒。
