@@ -1,0 +1,176 @@
+# 重构计划：阶段脚本扁平化（2026-09-17）
+
+`/request-refactor-plan` 访谈结果。六个决定：a+b（局部性 + 概念少，Python 扁平脚本）、
+实验配置全展开一文件、`stack.py` 保留为库并收紧、并行/跳过/注册表减到最简 + 保留资源准入、
+按任务线分脚本 + `pipeline.py` 调度、验收 = GPU 闸门 + dry-run 送达测试 + 产物契约。
+
+## Problem Statement
+
+2026-09-16 的基础设施重构把"采集 → 转换 → 训练 → 评测"收敛成一个 CLI、七个 Hydra 配置组、
+五个阶段模块、一个 Stack 类和一个 launcher。结果是：跑一次单臂采集，从命令行到专家进程之间
+要经过 15 个文件、约 2200 行基础设施；配置分散在 29 个 YAML（732 行）里靠 Hydra 组合。
+打开任何一个阶段文件都看不到全貌，改一个行为要在 4 层之间来回跳。
+
+更严重的是它没有解决这个仓库的固有失败形态——"配置声明了，但没送到下游进程"。
+2026-09-17 在评测线上一天查出 4 个这类缺陷：`eval.backend` 整块被阶段丢弃并替换（评测录像因此消失）、
+只有 4 个字段被手抄给评测器（`spawn_edge` 因此从配置的 1.1–1.3 m 变成默认 0.7 m，100 局评测作废）、
+初始 token 在阶段里硬编码、录像起点在 `[stand]` 阶段之后（结束最早的失败家族恰好拍不到）。
+这些缺陷全部藏在"阶段 → 子进程命令行"这道缝里，而现有测试只覆盖进程内的消费者。
+
+## Solution
+
+每个阶段一个扁平的 Python 脚本，顶层顺序执行，读一份**全展开**的实验 YAML，把整份配置原样复制进
+运行目录并原样交给下游进程；进程边界上不允许手抄字段。起栈仍是一个库（`stack.py`），但子进程环境
+只在一处生成并落盘。没有 Hydra、没有 manifest hash、没有 launcher、没有注册表。
+并行 = 一卡一个终端各跑一个 YAML；跳过 = 阶段产物已存在；资源准入 = 每个脚本开头 30 行检查，不够就拒绝。
+
+验收分三层：GPU 闸门（采集行为不变）、dry-run 送达测试（YAML 里每个字段都出现在将要执行的
+argv/env 里）、产物契约（重构前记录每个阶段产出的文件清单，重构后逐项比对）。
+
+## Commits
+
+每个 commit 都让仓库处于可运行状态；新路径和旧路径**并存**直到新路径通过闸门和契约，然后一次删除旧路径。
+
+0. **落地 2026-09-17 的四个修复**作为基线：评测配置整份以 `--config` 交给评测器、`eval.backend` 不再被替换、
+   录像从传送复位开始、`world_lift` 支持阶段目录布局、`check_dataset` 锚定 episode 结尾的那次闭合、
+   eval 的 `sim_vis` 改回 `none`。带上 `test_stage_config_delivery.py`。重构从修好的基线开始。
+
+1. **记录产物契约**。新脚本 `scripts/artifact_contract.py record <run_dir> <stage>`，把该阶段产出的
+   文件清单（相对路径，按批编号的目录用通配）写成 `tests/contracts/<line>_<stage>.json`。
+   从现有运行记录：单臂 collect/convert/train/eval（`bottle_simple_200_20260916`，eval 用 commit 0 之后
+   带录像的那份）、双臂 collect（`crate_check_record20`）、双臂 eval（`crate_eval100_20260915` 的目录结构）。
+   配套 `tests/test_artifact_contract.py`：给一个运行目录和一份契约，缺一个文件就失败。
+   此时契约描述的是**旧路径**的产出，这是重构的验收标尺。
+
+2. **写全展开的实验文件**。`configs/experiments/bottle_simple_200.yaml`、`bottle_simple_gate8.yaml`、
+   `pick_place.yaml`、`crate_table30_record.yaml`。首版由 `locomani.cli show` 的组合结果导出再手工整理
+   （去掉 Hydra 的 `defaults`、`schema_version`），字段一个不少。此时无消费者，只加不改。
+   一个只读测试：每个实验文件的 task 块能被对应任务 dataclass 的 `from_dict` 接受（未知字段报错）。
+
+3. **收紧 `stack.py`**。给 `Stack` 加一个从整份配置构造的入口（配置 dict + 运行目录 + GPU），
+   子进程环境在**一个函数**里一次生成，并写进运行目录的 `stack_env.json`。旧的 `StackSpec` 构造路径保留、
+   行为不变。测试：给定配置，生成的环境是确定的，且包含录像目录、渲染开关、编码器开关、实例端口。
+
+4. **脚本公共部分** `scripts/run_common.py`，控制在 100 行内：读 YAML、复制到运行目录、资源检查
+   （CPU 配额 / pid / 该卡显存，不够就 `SystemExit` 并打印原因）、`--dry-run` 的统一打印格式
+   （每条将执行的命令：argv + 它专属的环境变量）。测试资源检查的判定函数（纯函数，喂假数据）。
+
+5. **`scripts/collect_bottle.py`**。读实验 YAML → 复制场景 → 把 task 块 dump 成专家读的 JSON →
+   按批：起栈、跑 `grasp_gym.py`、停栈 → 写 `collect/summary.json`。带 `--dry-run`。
+   测试：dry-run 输出里，YAML 的 spawn / seed / successes / 录像目录 / 编码器开关逐项可见。
+   **验收**：`bottle_simple_gate8.yaml` 跑 8 局固定库，`scripts/gate.py compare simple` 对冻结基线 PASS；
+   产物契约 `bottle_collect` PASS。
+
+6. **`scripts/convert.py`**。读上游 `collect/summary.json` 的 session/manifest 配对 → 调转换器 →
+   GR00T stats → `check_dataset --run-dir`。dry-run 测试。
+   **验收**：在 `bottle_simple_200_20260916` 的 session 上重跑，数据集 `meta/` 与现有 `train_dataset` 一致；
+   契约 `bottle_convert` PASS。
+
+7. **`scripts/train.py`**。读上游数据集路径 → 调 `train_bottle.sh`（环境变量从 YAML 的 train 块和 embodiment
+   块生成）。dry-run 测试断言 MODALITY / MAX_STEPS / SAVE_STEPS / CUDA_VISIBLE_DEVICES。
+   **验收**：10 步冒烟，契约 `bottle_train` PASS，冒烟 checkpoint 随即删除。
+
+8. **`scripts/eval_bottle.py`**。起评测栈（`eval.backend`）→ 起策略服务 → 把 YAML 的 eval 块 dump 成 JSON
+   以 `--config` 交给 `eval_closed_loop.py` → 停栈。dry-run 测试断言 spawn_edge、initial_token、
+   video_include_init、SIM_VIDEO_DIR 全部送达。
+   **验收**：3 局，契约 `bottle_eval` PASS——**录像目录非空**是这条契约的核心断言。
+
+9. **`scripts/collect_crate.py`**。用 `tasks/crate/prepare.py` 准备场景、按 `task.expert` 选专家、
+   按批起栈跑专家。dry-run 测试。**验收**：20 局 ready-stand，`gate.py compare crate` PASS；契约 `crate_collect` PASS。
+
+10. **`scripts/eval_crate.py`**。只是调 `eval_crate_closed_loop.py`（它自己起栈和策略服务），把 YAML 的
+    eval 块和运行目录传过去。dry-run 测试。**验收**：3 局，契约 `crate_eval` PASS。
+
+11. **`scripts/pipeline.py`**。读 YAML 的 `task.plugin` 选脚本，按 collect → convert → train → eval 顺序
+    `subprocess.check_call`；每个阶段"产物存在则跳过"。`--from <stage>` / `--to <stage>` 两个开关，没有别的。
+    **验收**：全链路冒烟（1 集、10 步、2 局）通过；`--dry-run` 打印四条命令。
+
+12. **删除旧路径**：`cli.py`、`conf.py`、`stages/`、`launch.py`、`embodiment_config.py`、`scene_config.py`、
+    `collect_config.py`、`train_config.py`、`configs/{task,scene,embodiment,backend,collect,train,eval,experiment,jobs}/`、
+    `outputs/registry.jsonl` 的写入、`pipeline/stack.py` 的 `resolve_env`（并入 `stack.py`）、
+    以及 `test_conf`、`test_stages`、`test_launch`、`test_stack_delivery` 里测这些对象的用例。
+    `Makefile` 的 `run`/`cli` target 改指 `pipeline.py`。提交钩子的全量 CPU 套件通过。
+
+13. **文档**：`docs/infra.md` 重写（一个 YAML、六个脚本、并行就是多开终端）、README 快速开始、
+    三份采集教程和训练/评测教程的命令、`reference/runbook.md`、`reference/change-map-runtime.md`、
+    `config_fields.md` 重新生成、`STATE.md`。`lint_repository.py` 通过。
+
+14. **收尾**：本文件记录进度和实测数字；记忆更新。
+
+## Decision Document
+
+- **脚本形态**：每个阶段一个 Python 脚本，顶层顺序执行，读起来是一条直线；bash 只保留 `paths.sh`
+  这种环境设置。不用 Hydra，配置就是 `yaml.safe_load` 出来的 dict。
+- **配置**：一个实验一个全展开的 YAML，包含 task / scene / embodiment / backend / collect / train / eval
+  全部字段。新实验 = 复制一份改几行。脚本启动时把它**原样**复制到运行目录，这份就是 provenance，
+  也是下游阶段读的那份。"这个值来自哪个文件"的答案永远是"运行目录里那一份"。
+- **进程边界纪律**：脚本把整块配置（task 块 → 专家的 JSON、eval 块 → 评测器的 `--config`）交给下游，
+  不手抄单个字段。唯一允许的例外是 `dataset_fps`（评测栈钉在数据集的 25 fps）。
+- **校验**：脚本读自己那块配置时用现有 dataclass 的 `from_dict`（`BottleTaskConfig`、`CrateTaskConfig`、
+  `SonicBackendConfig`、`EvalConfig`），未知字段照旧报错。`config_base.py` 因此**保留**（它们都依赖它）。
+  运行级 schema（`RunConfig`、`EmbodimentConfig`、`SceneConfig`、`CollectConfig`、`TrainConfig`）删除，
+  它们的字段直接成为 YAML 里的普通键。
+- **Stack**：保留为库，地位等同于 `grasp_gym.py`——阶段脚本调它三行，不需要打开它。接口收紧为
+  "从整份配置构造"，子进程环境在一处生成并落盘 `stack_env.json`。`StackSpec`/`resolve_env`/`child_env`
+  三处各自决定子进程看到什么的现状结束。
+- **并行**：一张卡一个终端各跑一个 YAML。没有 jobs 文件、没有 launcher、没有 GPU 分配。
+- **跳过**：阶段产物存在就跳过（数据集目录、checkpoint 目录、`closed_loop.json`）；要重跑就删该产物。不算 hash。
+- **注册表**：删除。对比实验 = 看各运行目录的 `summary.json`。
+- **资源准入**：保留为每个脚本开头的检查——CPU 配额（`cpu.max`，不是 `nproc`）、pid 数（容器上限 3840，
+  一个录制栈约 1800）、该卡空闲显存。不够就拒绝启动并打印原因，**不等待**。
+- **任务线**：`collect_bottle` / `eval_bottle`（pick_place 也走这两条，同一专家同一 gym）、
+  `collect_crate` / `eval_crate`、`convert` / `train` 两条线共用。`pipeline.py` 按 `task.plugin` 分派。
+- **运行目录**：沿用 `outputs/runs/<name>/`，阶段产物路径固定（`collect/`、`train_dataset/`、`model/`、`eval/`），
+  阶段之间靠固定路径 + `collect/summary.json` 认识彼此，不再有 manifest。
+- **专家接口不变**：专家仍从运行目录读 `task_config.json` / `reach_config.json`；评测器仍用 `--config` + `--set`。
+- **dry-run**：每个脚本 `--dry-run` 不起任何进程，打印将执行的每条命令（argv + 专属环境变量）。
+  这是送达测试的观测点，也是人看"这次到底会跑什么"的入口。
+
+## Testing Decisions
+
+- **好的测试只看外部行为**：给一份 YAML，断言脚本**将要执行**的命令里有什么（dry-run 输出），
+  以及跑完后目录里**有什么文件**（产物契约）。不测内部函数怎么拼字符串。
+- **三层验收**，各抓一类问题：
+  1. GPU 闸门（`scripts/gate.py`，现有）：单臂 8 局固定库对冻结基线 `baseline_simple.json`，
+     双臂 20 局对 `baseline_crate.json`——抓"采集行为变了"。这是上次重构唯一的验收，它的盲区是 eval。
+  2. dry-run 送达测试（新，`tests/test_dry_run_delivery.py`）：对每个脚本、每份实验文件，断言 YAML 里
+     每个非默认字段出现在 argv 或 env 里——抓"配置声明了没送到"，即 2026-09-17 那 4 个缺陷中的 3 个。
+     先例：`tests/test_stage_config_delivery.py`（commit 0）、`tests/test_eval_config_reaches_the_client.py`。
+  3. 产物契约（新，`tests/test_artifact_contract.py` + `tests/contracts/*.json`）：重构前从旧路径记录
+     每阶段文件清单，重构后逐项比对——抓"以前有的东西没了"，即评测录像消失那一类。
+     契约在 commit 1 记录，之后每个脚本 commit 都要过它。
+- **被测模块**：六个阶段脚本 + `pipeline.py`（dry-run 与契约）、`stack.py` 的环境生成（确定性 + 关键键存在）、
+  `run_common.py` 的资源判定（纯函数）。
+- **不测的**：专家、转换器、训练脚本、评测器内部——范围之外，它们各有自己的测试。
+- **闸门噪声**：crate 的 `stand_off_m` 同一份代码两次可差 1.8 倍容差；闸门 FAIL 先在同一代码上复跑一次再判。
+  单臂 8 局批次间有 ±1 局波动，比较失败集合而不是总数。
+
+## Out of Scope
+
+- 专家进程及其配置 dataclass：`grasp_gym.py`、`round_phases.py`、`crate/expert.py`、`bimanual_*.py`、
+  `BottleTaskConfig`、`ReachConfig`、`CrateTaskConfig`。单臂专家冻结在 `stage4_27_wrap`。
+- `convert_to_hf_format.py`、`check_dataset.py`、`world_lift.py`、`train_bottle.sh`、`serve_policy.py`、
+  `eval_closed_loop.py`、`eval_crate_closed_loop.py` 的内部——脚本只调它们。
+- `gate.py` 和 `tests/gate/` 基线。
+- 2026-09-17 评测暴露的控制层根因（无编码器的评测栈下 deploy 前奏不接管 / 复位后倒地 / 走偏 0.5 m）。
+  那是控制问题，重构不碰；重构后用新脚本继续查。
+- 评测预览（`previews/`）：仓库里没有代码生成它，是按 `docs/rendering.md` 的人工导出步骤，不进契约。
+- ScaleBFM 线（独立的进程内 runner）。
+- Isaac 离线渲染流程。
+
+## Further Notes
+
+- **顺序原则**：先记契约（commit 1），再写新脚本，最后删旧路径（commit 12）。新旧并存期间两条路径都能跑，
+  闸门可以在同一份代码上对两条路径各跑一次做 A/B。
+- **配置"复活"陷阱**：把"声明但未送达"的字段接通本身就是行为变更。2026-09-17 修好 `eval.backend` 送达后，
+  旧 JSON 带来的 `sim_vis: full` 首次生效，仿真图像发布率 33 → 19 Hz，机器人复位即倒地。
+  commit 2 写实验文件时，每个字段都要问一句"这个值现在真的生效吗，还是从没生效过的陈年默认"。
+- **删除纪律**：commit 12 前 `git diff --name-only main..HEAD` 检查没有 `outputs/` 或 symlink 混入；
+  按名暂存，不用 `git add -A`。
+- **运行前提**：单臂 streamed-pose 专家要求打过夹爪交接补丁的 deploy，`SONIC_DEPLOY_ROOT` 指向
+  `outputs/bottle_continuous_20260914/deploy`；这个前提写进 `run_common.py` 的启动检查，缺了就拒绝。
+- GitHub issue：本机没有 `gh`，计划先落在这里；需要 issue 时把本文粘贴过去。
+
+## 进度
+
+（执行时在此追加：commit、闸门结果、契约结果、实测数字。）
