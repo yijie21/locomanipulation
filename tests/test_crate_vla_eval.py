@@ -81,3 +81,34 @@ def test_serve_env_pins_the_gpu_and_unbuffers_the_listening_line(tmp_path, monke
         )
     )
     assert (env["CUDA_VISIBLE_DEVICES"], env["PYTHONUNBUFFERED"]) == ("0", "1")
+
+
+def test_the_batch_warms_up_before_the_first_recorded_round(monkeypatch, tmp_path):
+    """No recorded round may be the deploy's first.
+
+    The deploy's first round in a process passes through its reference motion's
+    frame-0 crouch and steps out of it at the mode switch: 0.5 rad of knee and
+    3.3 cm of pelvis height inside 0.3 s, the lurch at the start of every
+    evaluation video. Every later round is transient-free, so the batch spends
+    one unrecorded prelude on it (docs/handoff/crate-eval-prelude-twitch-20260917.md).
+    """
+    from locomani.tasks.crate import vla_rounds
+
+    order, placements = [], []
+
+    def fake_prelude(p, reset, meta, cfg, rng):
+        placements.append(float(rng.random()))
+        order.append("prelude")
+        return {}, None
+
+    monkeypatch.setattr(vla_rounds, "prelude", fake_prelude)
+
+    rng_a, rng_b = np.random.default_rng([6000, 0xB1A5]), np.random.default_rng(6000)
+    vla_rounds.warm_up(None, None, None, None, rng_a)
+    order.append("round 0")
+    fake_prelude(None, None, None, None, rng_b)
+
+    assert order == ["prelude", "round 0", "prelude"]
+    # The warm-up draws from its own stream, so round 0 still gets seed 6000's placement.
+    assert placements[0] != placements[1]
+    assert placements[1] == float(np.random.default_rng(6000).random())

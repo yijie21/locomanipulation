@@ -1067,6 +1067,12 @@ token-only 栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用
 最后把 manifest 聚合成 `closed_loop.json`（字段与单臂相同：`successes`、
 `success_rate`、`wilson95`、`failure_stages`）。
 
+每批**先跑一局不录像的热身回合**（`vla_rounds.warm_up`，约 10 s）。deploy 进程的第一局
+必然经过它参考动作的第 0 帧半蹲（膝 0.67、骨盆 0.755 m），并在切到 streamed 的瞬间
+一步跳到 token 姿态——0.3 s 内膝伸 0.5 rad、身高 +3.3 cm、俯仰摆 7.5°，就是从前每段
+评测录像开头那下前倾；第二局起同样的序列完全无瞬态。实测矩阵、deploy 侧机制和五条
+试过无效的方案见 [开局跳变](handoff/crate-eval-prelude-twitch-20260917.md)。
+
 ```bash
 # 经 CLI(推荐):task=crate_table30 一类实验会自动路由到这里
 python scripts/eval_crate.py outputs/runs/<crate_run> --gpu 1

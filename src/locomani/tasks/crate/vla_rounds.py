@@ -80,16 +80,57 @@ def place(p, reset, meta, cfg, rng):
     )
 
 
-def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execution_horizon, dataset_fps, trace_path):
+def prelude(p, reset, meta, cfg, rng):
+    """Placement, reset and the token posture: everything a round does before the policy is asked.
+
+    Returns (placement, why); `why` is None when the robot stands in the token posture.
+    """
     placement = place(p, reset, meta, cfg.visual, rng)
     initial = p.obs()
     if float(initial["pelvis"]["pos"][2]) < 0.5 or initial["fallen"]:
-        return dict(ok=False, why="[stand] robot did not stabilise after reset", placement=placement)
+        return placement, "[stand] robot did not stabilise after reset"
     expected_arms = initial_pose.initial_arms()
     if expected_arms is None:
-        return dict(ok=False, why="[stand] crate token file declares no arms", placement=placement)
+        return placement, "[stand] crate token file declares no arms"
     if not initial_pose.prepare_token_pose(p, expected_arms):
-        return dict(ok=False, why="[stand] token-only ready posture not delivered", placement=placement)
+        return placement, "[stand] token-only ready posture not delivered"
+    return placement, None
+
+
+def warm_up(p, reset, meta, cfg, rng) -> None:
+    """One full prelude before the first recorded round, so no recorded round is the deploy's first.
+
+    Measured 2026-09-17 on the crate scene (outputs/twitch_body/*): the deploy's
+    FIRST round in a process visits its reference motion's frame-0 posture --
+    crouched, knee 0.67, pelvis 0.755 m, elbows -0.29 -- and then steps to the
+    token posture (knee 0.17, pelvis 0.788, elbows +0.83) at the mode switch:
+    0.5 rad of knee, 3.3 cm of height, 7.5 deg of pitch and 9 rad/s at the elbow
+    inside 0.3 s. That is the lurch at the start of every evaluation video.
+    From the second round on, the identical sequence (reset, start_control,
+    IDLE hold, enter_streamed) is transient-free: pitch within 0.1 deg, arms
+    0.00 rad/s. Once the deploy has streamed a token it no longer returns to
+    frame 0, whichever direction the mode switches.
+
+    What does not work, each measured: pinning the arms on the sim covers the
+    arms only (knee still 0.31->0.45->0.17, pitch to -9 deg); launching with
+    the encoder moves the start point to standing, but the switch's safety
+    reset (zmq_manager.hpp TriggerSafetyReset on every mode change, no bypass)
+    still plays frame 0 for a few ticks (pitch -13.6..+4.7 deg, arms 26 rad/s);
+    switching during the landing stacks the two transients (pitch +10.7 deg,
+    knee 1.02); a bare start_control + token before any reset does not take.
+
+    So the batch runs one unrecorded prelude first. It costs ~10 s per batch.
+    The placement draws from its own generator, so the recorded rounds keep
+    the seeds the manifest promises.
+    """
+    _, why = prelude(p, reset, meta, cfg, rng)
+    print(f"[vla] warm-up round: {'ok' if why is None else why}", flush=True)
+
+
+def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execution_horizon, dataset_fps, trace_path):
+    placement, why = prelude(p, reset, meta, cfg, rng)
+    if why is not None:
+        return dict(ok=False, why=why, placement=placement)
     if not obs_src.wait_ready(10.0):
         return dict(ok=False, why="[vla] camera/state streams never became ready", placement=placement)
 
@@ -226,6 +267,7 @@ def main(argv=None):
         args.trace_dir.mkdir(parents=True, exist_ok=True)
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     try:
+        warm_up(p, reset, meta, config, np.random.default_rng([args.seed, 0xB1A5]))
         for index in range(args.rounds):
             seed = args.seed + index
             started = time.time()

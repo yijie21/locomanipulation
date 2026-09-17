@@ -49,7 +49,20 @@ class InitialTokenPoseTests(unittest.TestCase):
         p.obs.return_value = {"fallen": fallen, "joints": [0.0] * 15 + [arm_error] * 14}
         events = []
         p.cmd.token_frame.side_effect = lambda *a, **kw: events.append(("token", np.array(a[0]).copy(), kw))
-        p.cmd.enter_streamed.side_effect = lambda: events.append(("enter",))
+
+        def enter_streamed(prime=None):
+            """The real commander's order (agent_server.enter_streamed).
+
+            The motion switch first, then the caller's packet, then the POSE
+            manager state -- the deploy drops anything that arrived before the
+            switch, so where the first packet falls is the whole point.
+            """
+            events.append(("switch",))
+            if prime is not None:
+                prime()
+            events.append(("manager",))
+
+        p.cmd.enter_streamed.side_effect = enter_streamed
         token = np.arange(64, dtype=np.float32) / 128
         with (
             patch.object(initial_pose, "INIT_TOKEN_FILE", "explicit.json"),
@@ -59,11 +72,15 @@ class InitialTokenPoseTests(unittest.TestCase):
             result = initial_pose.prepare_token_pose(p, np.zeros(14), hold_seconds=0.4)
         return result, events, token
 
-    def test_fixed_token_is_primed_then_held_with_open_hands(self):
+    def test_the_first_token_lands_inside_the_switch_and_nothing_precedes_it(self):
+        # A packet sent before the switch is dropped by the deploy's ZMQ toggle,
+        # and it also makes the post-switch packet an ordinary extension, so the
+        # default clip keeps playing -- the twitch at the start of a round.
         result, events, token = self.prepare()
         self.assertTrue(result)
-        self.assertEqual(events[30], ("enter",))
-        self.assertTrue(all(e[0] == "token" for e in events[:30]))
+        kinds = [e[0] for e in events]
+        self.assertEqual(kinds[:3], ["switch", "token", "manager"])
+        self.assertGreater(kinds.count("token"), 1)  # the hold keeps republishing it
         for event in events:
             if event[0] == "token":
                 np.testing.assert_array_equal(event[1], token)

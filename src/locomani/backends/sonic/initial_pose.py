@@ -202,11 +202,33 @@ def prepare_token_pose(p, expected_arm_q, hold_seconds=3.0) -> bool:
         raise ValueError("Initial pose hold must be positive and finite")
     token = initial_token()
     left, right = expand_hands(GRIPPER_MAX)
-    # Match the deploy's normal prime-before-enter ordering.
-    for _ in range(30):
+
+    def push() -> None:
         p.cmd.token_frame(token, right_hand=right, left_hand=left, frame_index=0)
-        time.sleep(0.02)
-    p.cmd.enter_streamed()
+
+    # The session's FIRST packet has to land BETWEEN the motion switch and the
+    # POSE manager state, and nothing may precede it: the tick that sees
+    # planner=False runs a safety reset and then a ZMQ toggle that drops any
+    # chunk already queued, so only a packet forcing a catch-up re-selects the
+    # streamed motion. This used to send 30 frames first, "to match the deploy's
+    # normal prime-before-enter ordering" -- the toggle threw them away, and a
+    # chunk primed earlier also makes the post-switch packet an ordinary
+    # extension (single-arm: jaw closed 0.18 s, stage4_wrap8m). The empty-buffer
+    # rule that loop was aimed at (g1_deploy_onnx_ref.cpp:618) is met by `prime`
+    # itself, which runs before manager_state.
+    #
+    # MEASURED on the crate scene, 2026-09-17: this removes a 0.6 s stall -- the
+    # arms reach the token posture at 0.26 s rather than 0.87 s. It does NOT
+    # remove the step itself: the arms still cross 1.1 rad at ~9 rad/s, because
+    # the token is a pose unrelated to where they are and the prelude has no ramp
+    # to it. Collection is smooth because it never runs this path (round_phases
+    # gates it on a VLA policy) and uses prepare_ready's UpperRamp instead.
+    # An attempt to reuse that ramp here failed and was reverted: seeded from
+    # upper_ref the planner reference read +0.985 at the left elbow while the
+    # measured joint was -0.285, and the measured joint did not move for the
+    # whole ramp, so PLANNER_FROZEN_UPPER_BODY is not in force at this point in a
+    # round. Understand that before trying again.
+    p.cmd.enter_streamed(prime=push)
     end = time.monotonic() + hold_seconds
     while time.monotonic() < end:
         p.cmd.token_frame(token, right_hand=right, left_hand=left, frame_index=0)
