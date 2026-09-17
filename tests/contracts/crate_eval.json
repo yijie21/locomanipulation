@@ -1,0 +1,15 @@
+{
+ "recorded_from": "outputs/crate_eval100_20260915 (pre-refactor layout, mapped onto the stage's eval/ directory)",
+ "note": "bimanual closed loop: the evaluator owns its own stack, so it writes per-batch round logs and video directories next to the result. The reference run's mp4 files were deleted in the 2026-09-17 cleanup; videos_*/*.mp4 is listed from the recorded inventory (1.7 GB across videos_00..09), not from the surviving directory.",
+ "required": [
+  {"pattern": "eval/closed_loop.json", "min": 1},
+  {"pattern": "eval/closed_loop.manifest.jsonl", "min": 1},
+  {"pattern": "eval/config_snapshot.json", "min": 1},
+  {"pattern": "eval/deploy_receipts.jsonl", "min": 1},
+  {"pattern": "eval/manifest.json", "min": 1},
+  {"pattern": "eval/rounds_*.log", "min": 1},
+  {"pattern": "eval/traces/round_*.json", "min": 1},
+  {"pattern": "eval/videos_*/*.mp4", "min": 1},
+  {"pattern": "eval.log", "min": 1}
+ ]
+}

@@ -1,0 +1,78 @@
+{
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916",
+ "note": "single-arm collect: per-batch manifests, videos, state traces and the frozen scene copy",
+ "required": [
+  {
+   "pattern": "collect/frame_audit_*.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "collect/inputs.json",
+   "min": 1
+  },
+  {
+   "pattern": "collect/manifest.json",
+   "min": 1
+  },
+  {
+   "pattern": "collect/manifest_*.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "collect/pose_sidecar/*.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "collect/state_trace_*/*.npz",
+   "min": 1
+  },
+  {
+   "pattern": "collect/videos_*/*.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "collect_*.log",
+   "min": 1
+  },
+  {
+   "pattern": "commands.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "deploy_receipts.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "reach_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "run_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "run_config.yaml",
+   "min": 1
+  },
+  {
+   "pattern": "scene/scene_locomani.xml",
+   "min": 1
+  },
+  {
+   "pattern": "scene/scene_locomani_zone.xml",
+   "min": 1
+  },
+  {
+   "pattern": "scene/scene_meta.json",
+   "min": 1
+  },
+  {
+   "pattern": "task_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "timings.jsonl",
+   "min": 1
+  }
+ ]
+}

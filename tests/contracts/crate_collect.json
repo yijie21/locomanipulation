@@ -1,0 +1,78 @@
+{
+ "recorded_from": "outputs/runs/crate_check_record20",
+ "note": "bimanual collect: per-batch manifests and videos, the shared trace directory, the expert observation records and the scene copy",
+ "required": [
+  {
+   "pattern": "*/scene_meta.json",
+   "min": 1
+  },
+  {
+   "pattern": "attempts.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "collect/inputs.json",
+   "min": 1
+  },
+  {
+   "pattern": "collect/manifest.json",
+   "min": 1
+  },
+  {
+   "pattern": "deploy_receipts.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "manifest_*.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "observations/visual_crate_s*_*/commands.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "observations/visual_crate_s*_*/ego_view.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "observations/visual_crate_s*_*/left_wrist.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "observations/visual_crate_s*_*/observations.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "observations/visual_crate_s*_*/result.json",
+   "min": 1
+  },
+  {
+   "pattern": "observations/visual_crate_s*_*/right_wrist.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "run_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "run_config.yaml",
+   "min": 1
+  },
+  {
+   "pattern": "task_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "trace/*.npz",
+   "min": 1
+  },
+  {
+   "pattern": "videos_*/*.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "visual_*.log",
+   "min": 1
+  }
+ ]
+}

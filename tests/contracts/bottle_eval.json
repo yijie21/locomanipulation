@@ -1,0 +1,38 @@
+{
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916",
+ "note": "single-arm closed loop: the result, the config actually handed to the evaluator, and one video per attempt",
+ "required": [
+  {
+   "pattern": "eval.log",
+   "min": 1
+  },
+  {
+   "pattern": "eval/closed_loop.json",
+   "min": 1
+  },
+  {
+   "pattern": "eval/closed_loop.manifest.jsonl",
+   "min": 1
+  },
+  {
+   "pattern": "eval/config_snapshot.json",
+   "min": 1
+  },
+  {
+   "pattern": "eval/eval_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "eval/manifest.json",
+   "min": 1
+  },
+  {
+   "pattern": "eval/serve.log",
+   "min": 1
+  },
+  {
+   "pattern": "eval/videos/*.mp4",
+   "min": 1
+  }
+ ]
+}

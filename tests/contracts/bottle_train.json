@@ -1,0 +1,122 @@
+{
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916",
+ "note": "train: the finetuned checkpoint and its log",
+ "required": [
+  {
+   "pattern": "model/*.safetensors",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/*.safetensors",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/embodiment_id.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/experiment_cfg/conf.yaml",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/experiment_cfg/config.yaml",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/experiment_cfg/dataset_statistics.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/experiment_cfg/final_model_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/experiment_cfg/final_processor_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/model.safetensors.index.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/processor_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/statistics.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/trainer_state.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/training_args.bin",
+   "min": 1
+  },
+  {
+   "pattern": "model/checkpoint-*/wandb_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/experiment_cfg/conf.yaml",
+   "min": 1
+  },
+  {
+   "pattern": "model/experiment_cfg/config.yaml",
+   "min": 1
+  },
+  {
+   "pattern": "model/experiment_cfg/dataset_statistics.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/experiment_cfg/final_model_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/experiment_cfg/final_processor_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/model.safetensors.index.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/processor/embodiment_id.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/processor/processor_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/processor/statistics.json",
+   "min": 1
+  },
+  {
+   "pattern": "model/training_args.bin",
+   "min": 1
+  },
+  {
+   "pattern": "model/wandb_config.json",
+   "min": 1
+  },
+  {
+   "pattern": "train.log",
+   "min": 1
+  },
+  {
+   "pattern": "train/manifest.json",
+   "min": 1
+  }
+ ]
+}

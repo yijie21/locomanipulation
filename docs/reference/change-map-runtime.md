@@ -18,6 +18,7 @@ Back to [domain navigation](change-map.md). Test names are relative to `tests/`.
 | Run composition (task × embodiment × scene × backend × collect × train × eval) and the one CLI | [conf.py](../../src/locomani/conf.py), [cli.py](../../src/locomani/cli.py), [embodiment_config.py](../../src/locomani/embodiment_config.py), [scene_config.py](../../src/locomani/scene_config.py) | [configs/config.yaml](../../configs/config.yaml), `configs/<group>/*.yaml`, `configs/experiment/*.yaml` (`+experiment=<name>`), [run infrastructure](../infra.md) | `test_conf.py` |
 | Shared config serialization | [config_base.py](../../src/locomani/config_base.py) | [bottle/config.py](../../src/locomani/tasks/bottle/config.py) | `test_configs.py`, `test_review_2026_09_10.py` |
 | Verification routing / navigation / architecture | [check_changes.py](../../scripts/check_changes.py), [lint_repository.py](../../scripts/lint_repository.py) | [Verification](../agents/session-workflow.md#verification), [standards](standards.md) | `test_check_workflow.py`, `test_repository_rules.py` |
+| What a stage must still leave behind (the net for an artifact that quietly stops being produced) | [artifact_contract.py](../../scripts/artifact_contract.py) | `tests/contracts/*.json`, recorded from an accepted run; `artifact_contract.py check <run_dir> <name>` | `test_artifact_contract.py` |
 
 ## Current limitations
 

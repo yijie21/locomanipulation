@@ -173,4 +173,13 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
 
 ## 进度
 
-（执行时在此追加：commit、闸门结果、契约结果、实测数字。）
+- **commit 0** `40aaed0`：四个送达修复 + 审计两处（世界 z、闭合锚点）落地，`eval_stack()` 抽出使这道缝
+  可在无 GPU 下测试；全量 CPU 套件通过。计划文档 `4c09802`。
+- **commit 1**：`scripts/artifact_contract.py`（record / check，~90 行）与六份契约
+  `tests/contracts/*.json`。基准来源：单臂四阶段取自 `outputs/runs/bottle_simple_200_20260916`
+  （eval 用 commit 0 之后带录像的那次 3 局），双臂 collect 取自 `outputs/runs/crate_check_record20`，
+  双臂 eval 由 `outputs/crate_eval100_20260915` 的目录结构映射到阶段布局后手写——该参考目录的 mp4
+  已在 2026-09-17 清理中删除，`videos_*/*.mp4` 依据当时的清单（videos_00..09 共 1.7 GB）补回。
+  五份可自动记录的契约都已对各自基准运行 `check` 通过。
+  契约只查"有没有"，不查内容；每份契约声明一条 `CRITICAL` 产物（例如 `eval/videos/*.mp4`），
+  删掉它必须是明确动作而不是顺手。`test_artifact_contract.py` 21 项通过。
