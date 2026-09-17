@@ -84,6 +84,26 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return c - h, c + h
 
 
+def round_outcomes(rows):
+    """One row per round: the attempt the round ended on.
+
+    The manifest holds one line per ATTEMPT, and a stand retry re-runs the same
+    case -- same case_id, same spawn, same object pose, same appearance seed --
+    because the robot never stabilised after the reset teleport, before the task
+    began. Those lines are one sample, not two, so counting them as rounds both
+    inflates the denominator with setup failures and, when the retry is the one
+    that works, reports a round that succeeded as a 50% success rate.
+
+    Rounds are kept in first-seen order. A manifest without `round` (anything
+    older than this field) degrades to one round per line, which is what the
+    reader assumed all along.
+    """
+    ended: dict = {}
+    for i, r in enumerate(rows):
+        ended[r.get("round", i)] = r
+    return list(ended.values())
+
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", type=Path, help="EvalConfig JSON; defaults if omitted")
@@ -334,7 +354,8 @@ def main(argv=None):
             clock.stop()
 
     # --- aggregate ----------------------------------------------------------
-    rows = [json.loads(l) for l in manifest.read_text().splitlines() if l.strip()]
+    attempts = [json.loads(l) for l in manifest.read_text().splitlines() if l.strip()]
+    rows = round_outcomes(attempts)
     n = len(rows)
     k = sum(1 for r in rows if r["ok"])
     lo, hi = wilson(k, n)
@@ -351,6 +372,9 @@ def main(argv=None):
         successes=k,
         success_rate=k / n if n else 0.0,
         wilson95=[lo, hi],
+        # Kept so a run that needed many re-teleports to get going is still
+        # visible: it says the stack was struggling, not that the policy was.
+        stand_retries_used=len(attempts) - n,
         scripted_reference=dict(
             successes=200,
             attempts=210,

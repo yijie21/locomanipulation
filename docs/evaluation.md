@@ -384,10 +384,19 @@ posture not delivered`(2026-09-14 实测 10/10)。带 `arms` 的 dict 形式和�
 ### closed-loop:输出与验收
 
 `outputs/runs/<name>/eval/` 下:`closed_loop.json`(`rounds`/`successes`/
-`success_rate`/`wilson95`/失败阶段分布)、`traces/`(逐局位姿与失败签名)、
+`success_rate`/`wilson95`/`stand_retries_used`/失败阶段分布)、`traces/`(逐局位姿与失败签名)、
 `videos/`、`serve.log`、`eval.log`。**验收只看 `success_rate` 配它的 Wilson
 区间**——20 局能筛选方向,不能当最终数字(见 §4);任何要写进文档/论文的数字都
 要 100 局全预算跑出。
+
+`closed_loop.manifest.jsonl` 是**每次尝试一行**,`closed_loop.json` 是**每回合一条**:
+`stand_retries: 1` 时,重置传送后没站稳(`[stand]` 开头的失败)会用**同一个 case**
+重跑一次——同样的 case_id、出生点、物体位姿和外观种子,所以那是同一个样本,不是两局。
+回合的结果取它结束时的那次尝试,重试次数单独记在 `stand_retries_used`。
+2026-09-17 之前的读法直接用 manifest 行数当分母,于是分母普遍翻倍
+(`eval_baseline43_noencoder` 的 49 行其实是 25 个回合),而且一局在重试后成功会被
+报成 1/2 = 50%。当时的历史评测成功数都是 0,`success_rate` 0.0 未受影响,受影响的是
+分母和 Wilson 区间。
 
 ## 6. 调整任务(控制逻辑+判据表)
 
