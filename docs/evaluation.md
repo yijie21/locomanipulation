@@ -357,8 +357,10 @@ execution-horizon 索引、指标算术)与官方实现一致。踩过一次坑:
 token 的量化均值,外加 `arms` 字段(首帧实测 14 个手臂关节,MuJoCo 顺序),
 prelude 改按它检查。拿错文件的症状是 100 局全部 `[stand] token-only ready
 posture not delivered`(2026-09-14 实测 10/10)。带 `arms` 的 dict 形式和裸列表
-形式都能被 `initial_pose.load_token_file` 读取。**`eval` 阶段目前固定用
-`ready_grasp_initial_token.json`,不按任务切换**——见 §7。
+形式都能被 `initial_pose.load_token_file` 读取。选哪一份由 **`eval.initial_token`** 决定
+(2026-09-17 起;此前 `eval` 阶段硬编码 `ready_grasp_initial_token.json`,不按任务切换)。
+瓶子线的 `configs/eval/closed_loop_100.yaml` 已指向 `whole_body_initial_token.json`:
+`bottle_simple` 的 200 集数据首帧手臂姿态与该文件逐关节相差 ≤0.3°。
 
 ### closed-loop:输出与验收
 
@@ -984,7 +986,8 @@ seed 6000,出生 1.1–1.3 m:
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 100 局全部 `[stand] token-only ready posture not delivered` | 初始 token 文件与训练数据的开局姿势不一致(见 §5)。`locomani.cli eval` 目前固定用 `configs/deployment/ready_grasp_initial_token.json`,不按任务切换;训练数据来自 `bottle_whole_body`(开局是 `whole_body_initial_token.json`)时,要匹配就得绕开 stage,直接用 §3 的手动三步调用 `eval_closed_loop.py --initial-token-file configs/deployment/whole_body_initial_token.json` |
+| 100 局全部 `[stand] token-only ready posture not delivered` | 初始 token 文件与训练数据的开局姿势不一致(见 §5);用 `eval.initial_token` 指向与这份数据开局一致的文件 |
+| 100 局全部死在 `[stand]`,策略一次动作都没被问过 | 先核对**评测实际用的**出生分布和阶段参数:运行目录的 `eval/eval_config.json` 就是交给评测器的那一份(2026-09-17 起整份 `--config` 传递)。此前阶段只手抄 4 个字段,`spawn_edge` 因此从配置的 1.1–1.3 m 变成评测器默认的 0.7 m,100 局全部作废 |
 | 单个 20 局跑出一个"很好/很差"的数字就下结论 | 20 局的 Wilson 区间宽 30-40 点(见 §4);先看是不是与另一场配对显著,不显著就只能说"看不出大效应",不能说"没有差异" |
 | 部署参数(`--ensemble`/`--replan-interval` 等)的旧结论直接套到新 checkpoint | 见 §6 历次翻案(dart200 上 ensemble +50,flow200 上为零;replan 1.6 在 walk200 上更差、在 dart200 上更好)——**换 checkpoint 必须复筛**,引用旧数字要引本文档的裁定小节,不要引中途重挖的原始 json |
 | 闭环评测跑在错误的场景高度上 | 采集脚本按种子重建 `outputs/scene/sim`(桌高会变),评测栈读磁盘上当时的场景;不同批次场景不一致会让结果不可比(2026-09-04 曾把 smooth200 三臂跑废,归档为 `*_scene647`)。现在评测脚本每次启动前固定重建场景,混用旧数据前先确认场景哈希一致 |

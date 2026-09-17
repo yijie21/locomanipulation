@@ -37,6 +37,11 @@ class EvalConfig(VlaConfig):
     spawn_edge: tuple[float, ...] = (0.7,)  # --spawn-edge: metres from the table, one or two values
     task: str = "pick up the water bottle"  # --task: the episode instruction
     target: str = "water_bottle"  # --target: which scene object grasp_gym draws from
+    video_include_init: bool = False  # --video-include-init: start the round video at the reset, so a prelude
+    # failure ([stand]/[view]) is on film too; the default starts it after the visibility gate
+    initial_token: str = "configs/deployment/ready_grasp_initial_token.json"  # --initial-token-file: the token the
+    # deploy holds while the first chunk is computed. It MUST match the opening pose of the training data -- the
+    # READY token on arms-down data stalls every round in the prelude (docs/evaluation.md, "初始 token 文件").
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

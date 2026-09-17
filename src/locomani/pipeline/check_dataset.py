@@ -305,6 +305,18 @@ def pass_modality(root, r):
         )
 
 
+def grasp_close_frame(closed: np.ndarray) -> int:
+    """Start of the closure the episode ends in -- the grasp, not an earlier jaw blip that reopened.
+
+    The deploy plays its default clip for a few ticks at the planner -> streamed takeover, which can
+    close and reopen the jaw while the hand is still far from the object (1/190 episodes on
+    2026-09-16). Anchoring the causality checks on the first close then measures that blip.
+    """
+    idx = np.flatnonzero(closed)
+    breaks = np.flatnonzero(np.diff(idx) > 1)
+    return int(idx[breaks[-1] + 1]) if len(breaks) else int(idx[0])
+
+
 def pass_grasp(root, info, eps, r, run=None):
     """Do the numbers describe a grasp, in the right causal order?
 
@@ -362,7 +374,7 @@ def pass_grasp(root, info, eps, r, run=None):
     world_source = None
 
     at_hand, rose_after, held, no_event = 0, 0, 0, 0
-    rises, dists = [], []
+    rises, dists, blips = [], [], []
     for e in eps:
         p, _ = ep_paths(root, info, e["episode_index"])
         cols = [pose_col, "observation.eef_state", "teleop.right_hand_joints"]
@@ -403,7 +415,10 @@ def pass_grasp(root, info, eps, r, run=None):
         if not closed.any():
             no_event += 1
             continue
-        fc = int(np.argmax(closed))
+        fc = grasp_close_frame(closed)
+        first = int(np.argmax(closed))
+        if first != fc:  # a jaw blip before the grasp (the deploy's takeover clip) -- report it, anchor on the grasp
+            blips.append((e["episode_index"], first, fc, int(np.argmin(closed[first:]))))
         d = np.linalg.norm(can - wrist, axis=1)
         rise = float(can_z_world[fc:].max() - can_z_world[fc])
         at_hand += d[fc] < 0.30
@@ -420,6 +435,12 @@ def pass_grasp(root, info, eps, r, run=None):
         held == n,
         f"object-to-wrist distance holds steady at the end ({held}/{n}) -- rigid attachment, not a knock-over",
     )
+    if blips:
+        r.note(
+            f"jaw closed and reopened before the grasp in {len(blips)}/{n} episodes "
+            f"(first close -> grasp close): {[(b[0], b[1], b[2]) for b in blips[:5]]} -- the deploy's takeover clip "
+            "(docs/reference/silent_failures.md); the checks above anchor on the closure the episode ends in"
+        )
     if rises:
         r.note(
             f"rise after close: median {np.median(rises) * 100:.1f} cm, min {min(rises) * 100:.1f} cm ({world_source})"

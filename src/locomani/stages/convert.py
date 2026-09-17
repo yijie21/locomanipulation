@@ -61,7 +61,9 @@ def run(run_cfg, cfg: DictConfig, out: Path) -> dict:
                 modality,
             ],
         )
-        stages.check(f"audit_{label}", [common.DATA_PY, common.SRC / "pipeline/check_dataset.py", ds])
+        # --run-dir: judge the lift in WORLD z from this run's state trace; the exporter's pose column is
+        # pelvis-frame and under-reads every lift the pelvis takes part in (15/190 false failures, 2026-09-16)
+        stages.check(f"audit_{label}", [common.DATA_PY, common.SRC / "pipeline/check_dataset.py", ds, "--run-dir", out])
     info = json.loads((train_ds / "meta" / "info.json").read_text())
     metrics = dict(
         train_episodes=info.get("total_episodes"), train_frames=info.get("total_frames"), fps=info.get("fps")

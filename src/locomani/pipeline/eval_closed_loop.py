@@ -273,6 +273,7 @@ def main(argv=None):
         "0.20",
         "--edge-jitter",
         "0.20",
+        *(["--video-include-init"] if cfg.video_include_init else []),
     ]
     if args.cases:
         if cfg.resume:

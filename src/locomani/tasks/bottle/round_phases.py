@@ -175,6 +175,13 @@ def _phase_spawn_and_settle(ctx: RoundContext):
     ctx.reset_robot = {"dxy": [float(ctx.d_robot[0]), float(ctx.d_robot[1])], "yaw": psi_spawn}
     reset.reset(objects=ctx.reset_objects, robot=ctx.reset_robot, appearance=ctx.appearance)
     time.sleep(0.3)
+    if ctx.video_include_init:
+        # Film from the teleport, not from the visibility gate: a [stand] failure happens before that
+        # gate, so until 2026-09-17 the one failure family that ends a round earliest was the one
+        # family with no video at all. The exporter's episode window is unchanged (it opens on 'c').
+        stamp = time.time()
+        reset.start_video(f"gym_{int(stamp)}")
+        ctx.execution.metrics["video_start_wall"] = stamp
     landed_xy = np.asarray(p.pelvis_xy(p.obs()))
     want_xy = np.asarray(ctx.spawn_xy) - ctx.spawn_off * fv2 + ctx.spawn_lat * perp
     tp_err = float(np.linalg.norm(landed_xy - want_xy))
@@ -377,7 +384,7 @@ def _phase_spawn_and_settle(ctx: RoundContext):
     # Diagnostic video can include readiness/visibility failures without
     # changing the training recorder's acceptance window.
     include_init_video = ctx.video_include_init
-    if include_init_video:
+    if include_init_video and "video_start_wall" not in ctx.execution.metrics:  # already rolling since the teleport
         stamp = time.time()
         reset.start_video(f"gym_{int(stamp)}")
         ctx.execution.metrics["video_start_wall"] = stamp

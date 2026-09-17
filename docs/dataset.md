@@ -62,9 +62,11 @@ manifest 那一批产生的。`collect` 命令的批次是按 seed 递增跑的,
 ### 转完先查一遍(强烈建议)
 
 
-若数据集由 pilot 运行目录产生（有 `inputs.json`、`trace/` 和场景副本，目前是 crate
-pilot 的布局），加 `--run-dir <运行目录>`：抬升检查改用状态 trace 里的世界坐标高度，
-不再受骨盆坐标系位姿列的影响（[world_lift.py](../src/locomani/pipeline/world_lift.py)）。
+加 `--run-dir <运行目录>`：抬升检查改用状态 trace 里的世界坐标高度，不再受骨盆坐标系
+位姿列的影响（[world_lift.py](../src/locomani/pipeline/world_lift.py)）。两种目录布局都支持
+——双臂线的逐局 `label`，以及单臂线没有 label 时按 `seq` 覆盖区间把 episode 和 trace 对上。
+`convert` 阶段默认就带上它：不带时机器人站起来的那部分抬升会被骨盆系抵消，2026-09-17 的
+200 集数据里有 15/190 被误判为"没抬起来"（实测世界抬升中位 15 cm、最小 6 cm）。
 
 ```bash
 third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
@@ -97,6 +99,11 @@ third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/python \
 **9 维(xyz + rot6d)且在机器人坐标系下**,不是世界坐标。所以"物体相对起始高度上升了吗"
 这种判据会在**机器人下蹲**时触发(骨盆降低 → 物体相对高度跳变),在完全正常的数据上报
 0/200。判据必须锚在**夹爪闭合那一帧**上。
+
+锚的是**这一局收尾时的那次闭合**,不是第一次闭合:接管瞬间 deploy 会短暂播一下默认片段,
+夹爪闭合约 20 帧又张开(2026-09-17 的 200 集里 43/190 有这种毛刺,帧号 74–136)。锚在
+第一次闭合上会把毛刺当成抓取,判出"闭合时腕离物体 32 cm"。审计会把这些局逐一列出来,
+它同时是训练数据的一个已知瑕疵:约四分之一的示范带一段"离瓶子很远却发出闭合"的监督信号。
 
 ### VLA 部署时这条链路怎么变
 
