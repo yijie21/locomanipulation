@@ -153,3 +153,51 @@ def test_a_run_without_a_finished_collection_is_refused(tmp_path):
         cwd=ROOT,
     )
     assert result.returncode != 0 and "no finished collection" in result.stderr
+
+
+@pytest.fixture(scope="module")
+def trained(tmp_path_factory):
+    """A run directory shaped like one conversion just finished."""
+    run = tmp_path_factory.mktemp("run")
+    (run / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    (run / "summary.json").write_text(json.dumps({"convert": {"train_dataset": "/tmp/train_dataset"}}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "train.py"), str(run), "--gpu", "3", "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), result.stdout
+
+
+def test_the_training_budget_reaches_the_recipe(trained):
+    cfg, out = trained
+    assert f"MAX_STEPS={cfg['train']['steps']}" in out
+    assert f"SAVE_STEPS={cfg['train']['save_steps']}" in out
+    assert f"GLOBAL_BATCH={cfg['train']['global_batch']}" in out
+    assert f"SQUAT_MAX={cfg['train']['squat_max']}" in out
+
+
+def test_the_modality_and_the_card_reach_the_recipe(trained):
+    cfg, out = trained
+    assert cfg["embodiment"]["gr00t_modality_config"] in out  # which state/action contract is trained
+    assert "CUDA_VISIBLE_DEVICES=3" in out
+    assert "DATA=/tmp/train_dataset" in out
+
+
+def test_the_checkpoint_path_follows_the_step_count(trained):
+    cfg, out = trained
+    assert f"checkpoint-{cfg['train']['steps']}" in out
+
+
+def test_training_without_a_dataset_is_refused(tmp_path):
+    (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    (tmp_path / "summary.json").write_text(json.dumps({"collect": {"kept": 200}}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "train.py"), str(tmp_path), "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode != 0 and "convert stage" in result.stderr

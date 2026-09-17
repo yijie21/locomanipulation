@@ -232,3 +232,10 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   一直依赖**上游隐式继承的 `PYTHONPATH`**（旧路径由 launcher 设在阶段进程上）。扁平脚本没有那份隐式环境，
   于是在转换完成、跑了 12 分钟之后才炸。修法是脚本显式声明子进程环境，并在 dry-run 里打印、由测试钉住。
   记下未处理的一项：`Stage.check` 的日志是**追加**而非覆盖，`audit_train.log` 里叠着多次运行的输出，读日志容易误判。
+- **commit 7**：`scripts/train.py`（97 行，只做一件事：把 `train`/`embodiment` 两个块变成
+  `train_bottle.sh` 读的环境变量）+ `configs/experiments/bottle_simple_smoke.yaml`（与 200 集那份**只差 8 个值**，
+  commit 11 的全链路冒烟复用它）+ 4 项送达测试。
+  **验收**：10 步冒烟在 GPU1 上跑通（10 步 36 秒，加载与保存是大头），落下 `model/checkpoint-10`，
+  `artifact_contract.py check bottle_train` 对冒烟目录和 200 集目录**都 PASS**，随后删除该 24 GB 冒烟产物。
+  契约按同样的方式**故意改了一条**：`train/manifest.json` 由 summary 里的 train 条目取代（checkpoint 路径、
+  步数、训练所用数据集）。

@@ -1,7 +1,11 @@
 {
- "recorded_from": "outputs/runs/bottle_simple_200_20260916",
- "note": "train: the finetuned checkpoint and its log",
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916 (old path), updated for the flat script in commit 7",
+ "note": "train: the finetuned checkpoint and its log. Commit 7 dropped the stage manifest -- the run's summary.json carries the checkpoint path, the step count and the dataset it was trained on.",
  "required": [
+  {
+   "pattern": "config.yaml",
+   "min": 1
+  },
   {
    "pattern": "model/*.safetensors",
    "min": 1
@@ -111,11 +115,11 @@
    "min": 1
   },
   {
-   "pattern": "train.log",
+   "pattern": "summary.json",
    "min": 1
   },
   {
-   "pattern": "train/manifest.json",
+   "pattern": "train.log",
    "min": 1
   }
  ]
