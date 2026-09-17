@@ -369,8 +369,14 @@ class Stack:
             str(self.spec.instance),
         ]
         argv += ["--interface", "lo", "--no-enable-onscreen", "--enable-offscreen", "--enable-image-publish"]
-        self._spawn("sim", argv, cwd=paths.SONIC, env=self.env)
         port = self.spec.ports()["TF_CAMERA_PORT"]
+        # Refuse a port someone else already holds rather than adopting it. This probe asks
+        # "is anything listening", which an orphaned publisher from an aborted run satisfies;
+        # the sim's own publisher then dies on bind, the sim keeps running without images, and
+        # the expert reports `camera_unavailable` a whole round later (2026-09-17).
+        if _port_open(port):
+            raise self._fail("sim", f"camera port {port} is already in use; an earlier run left a publisher behind")
+        self._spawn("sim", argv, cwd=paths.SONIC, env=self.env)
         if not _wait(lambda: _port_open(port), 90):
             raise self._fail("sim", f"camera port {port} never opened")
 
@@ -432,12 +438,21 @@ class Stack:
         self.record_settings()
         self._acquire_lock()
         try:
+            # sim.log is shared by every run on this instance and only ever grows, so this
+            # readiness marker has to be looked for in THIS run's section of it -- the deploy
+            # markers below already do. Without the offset the check found a "Image publish
+            # frequency" line from a previous run and passed while this sim's publisher was
+            # dead, which is exactly the case the message names (2026-09-17: an orphaned
+            # publisher from an aborted run held :5575, the port probe in _start_sim saw it
+            # listening, and the crate expert only found out a full round later, reporting
+            # `camera_unavailable` as if the task had failed).
+            sim_log = self.root / "sim.log"
+            sim_mark = sim_log.stat().st_size if sim_log.exists() else 0
             self._start_sim()
             self._start_deploy()
             if self.spec.record:
                 self._start_exporter()
-            sim_log = self.root / "sim.log"
-            if not _wait(lambda: _log_has(sim_log, READY_SIM_IMAGE), 40, 2.0):
+            if not _wait(lambda: _log_has(sim_log, READY_SIM_IMAGE, sim_mark), 40, 2.0):
                 raise self._fail("sim", "has not published a single image (an orphaned publisher may hold the port)")
         except BaseException:
             self._release_lock()

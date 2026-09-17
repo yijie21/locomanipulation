@@ -122,3 +122,51 @@ def test_spec_builds_the_deploy_command_from_explicit_fields(tmp_path):
     assert env["MUJOCO_EGL_DEVICE_ID"] == "1" and env["LOCOMANI_SIM_DIR"].startswith("/")
     with pytest.raises(RuntimeError, match="model_decoder.onnx"):
         Stack(StackSpec(deploy_root=str(root), policy="policy/missing"))._deploy_argv()
+
+
+def test_a_camera_port_someone_else_holds_is_refused_not_adopted(runtime, monkeypatch):
+    """An orphaned publisher satisfies "is anything listening" and must not be adopted.
+
+    Found 2026-09-17: an aborted run left its image publisher on :5575; the probe
+    saw the port open, this sim's own publisher died on bind, the sim ran on
+    without images, and the crate expert reported `camera_unavailable` a full
+    round later as though the task had failed.
+    """
+    stack = Stack(StackSpec(instance=139, record=False))
+    monkeypatch.setattr(manager, "_port_open", lambda port: True)
+    spawned = []
+    monkeypatch.setattr(stack, "_spawn", lambda *a, **kw: spawned.append(a[0]))
+    with pytest.raises(RuntimeError, match="already in use"):
+        stack._start_sim()
+    assert spawned == []  # refused before launching anything
+
+
+def test_the_image_marker_is_read_from_this_run_s_section_of_the_shared_log(runtime, monkeypatch):
+    """sim.log is shared per instance and only grows, so the marker needs this run's offset.
+
+    Without it the readiness check finds a previous run's "Image publish
+    frequency" line and passes while this sim is publishing nothing.
+    """
+    stack = Stack(StackSpec(instance=140, record=False))
+    stack.root.mkdir(parents=True, exist_ok=True)
+    stale = stack.root / "sim.log"
+    stale.write_text(f"{manager.READY_SIM_IMAGE}: 30.0 -- from a previous run\n")
+
+    publishes = False
+
+    def start_sim():
+        if publishes:  # what a healthy sim does: the marker appears AFTER up() took its offset
+            with stale.open("a") as f:
+                f.write(f"{manager.READY_SIM_IMAGE}: 31.0 -- this run\n")
+
+    monkeypatch.setattr(stack, "_start_sim", start_sim)
+    monkeypatch.setattr(stack, "_start_deploy", lambda: None)
+    monkeypatch.setattr(manager, "_wait", lambda pred, timeout, interval=1.0: bool(pred()))
+    for name in ("_acquire_lock", "_release_lock", "record_settings", "_save"):
+        monkeypatch.setattr(stack, name, lambda: None)
+
+    with pytest.raises(RuntimeError, match="not published a single image"):
+        stack.up()  # the stale line alone must not satisfy it
+
+    publishes = True
+    stack.up()

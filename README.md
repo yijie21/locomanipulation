@@ -82,7 +82,7 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 | `config.yaml` | 实验文件的逐字节副本，这次运行的 provenance（`--name` 只改目录名，副本里的 `name:` 仍是来源实验的） |
 | `summary.json` | 每个阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
 | `stack_env.json`、`commands.jsonl`、`timings.jsonl` | 仿真栈告诉子进程的全部设置、每个子进程的命令行与耗时 |
-| `collect/manifest_00.jsonl`、`collect/videos_00/`、`collect/state_trace_00/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹 |
+| `collect/manifest_00.jsonl`、`collect/videos_00/`、`collect/state_trace_00/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹。**双臂**写在顶层（`manifest_00.jsonl`、`videos_00/`），状态轨迹是全批共用的 `trace/` |
 | `train_dataset/`、`model/checkpoint-<steps>/`、`eval/closed_loop.json` | 转换后的 LeRobot 数据集、微调 checkpoint、闭环评测结果（录像在 `eval/videos/`） |
 
 比较多次运行就是 `cat outputs/runs/*/summary.json`。产物是否齐全可以查契约：

@@ -46,10 +46,17 @@ bash scripts/install_scene.sh
 这里运行 **1 次尝试**，从走近开始录视频，成功局到持篮直立验收结束：
 
 ```bash
-# 只跑一局：复制实验文件，把 collect 改成 batch_rounds 1 / max_batches 1 / successes 1
-python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
-  --gpu 0 --name crate_first_attempt
+cp configs/experiments/crate_table30_record.yaml configs/experiments/crate_first_attempt.yaml
+# 顶层 name 不缩进；缩进的那个是 embodiment.name
+sed -i 's/^name: .*/name: crate_first_attempt/; s/^  batch_rounds: .*/  batch_rounds: 1/; s/^  max_batches: .*/  max_batches: 1/; s/^  successes: .*/  successes: 1/' \
+  configs/experiments/crate_first_attempt.yaml
+python scripts/collect_crate.py configs/experiments/crate_first_attempt.yaml --gpu 0
 ```
+
+直接跑未修改的 `crate_table30_record.yaml` 是 **20 条成功 / 每批 10 局 / 最多 2 批**，不是一局。
+决定尝试次数的是 `batch_rounds`：双臂专家只接 `--rounds`，**没有"成功够了就停"**
+（`crate/prepare.py:expert_argv`），所以 `collect.successes` 在这条线上**只是事后的验收门槛**，
+不满足时采集阶段非零退出，失败记录和视频仍保留。
 
 采集阶段启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
 进度见本次运行目录的启动日志。每次新实验使用新的 `--name`，查看 manifest 和完整视频判断结果。
@@ -62,9 +69,10 @@ python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
 下面采集 **10 次尝试**，包含成功和失败，不是“收够 10 条成功”：
 
 ```bash
-# 只跑一局：复制实验文件，把 collect 改成 batch_rounds 1 / max_batches 1 / successes 1
-python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
-  --gpu 0 --name crate_collect_10
+cp configs/experiments/crate_table30_record.yaml configs/experiments/crate_collect_10.yaml
+sed -i 's/^name: .*/name: crate_collect_10/; s/^  batch_rounds: .*/  batch_rounds: 10/; s/^  max_batches: .*/  max_batches: 1/' \
+  configs/experiments/crate_collect_10.yaml
+python scripts/collect_crate.py configs/experiments/crate_collect_10.yaml --gpu 0
 ```
 
 `collect.batch_rounds` 控制每批尝试数，`collect.max_batches` 控制批数上限；每批重启一次栈，
@@ -85,14 +93,38 @@ python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
   --gpu 1 --name crate_record_10
 ```
 
+### 一份实验文件，一条流水线
+
+双臂和单臂用**同一套扁平脚本**：`scripts/pipeline.py` 按 `task.plugin` 分流，
+只有采集和评测两个阶段分线，转换和训练完全共用。一条命令跑完整条线：
+
+```bash
+python scripts/pipeline.py configs/experiments/crate_table30_record.yaml --gpu 1
+python scripts/pipeline.py configs/experiments/crate_table30_record.yaml --gpu 1 --dry-run   # 只看命令
+```
+
+展开后是 `collect_crate.py` → `convert.py` → `train.py` → `eval_crate.py`
+（单臂是 `collect_bottle.py` → 同样的 convert/train → `eval_bottle.py`）。
+也可以把运行目录逐个交给这些脚本，在阶段之间插手工检查。产物已存在的阶段自动跳过，
+要重跑就删掉那个产物（`train_dataset/`、`model/`、`eval/closed_loop.json`）。
+完整说明见 [运行基础设施](infra.md)。
+
+**产物落点与单臂不同**：双臂把 manifest 和视频写在运行目录**顶层**
+（`manifest_00.jsonl`、`videos_00/`），状态轨迹是全批共用的 `trace/`；
+单臂则在 `collect/` 之下、且状态轨迹按批分目录。README 的产物表描述的是单臂布局。
+
+下面这段手工转换等价于 `scripts/convert.py` 这一步，用于只想单独转换、
+或要换输出目录时；走流水线时不需要手动执行。注意它的 `--out` 目录名由你指定，
+而 `scripts/convert.py` 固定写 `train_dataset/` 和 `val_dataset/`。
+
 manifest 行带 `task`、`produced`、`ok` 和成功局的
 `execution.metrics.training_tail.end_seq`（进入直立持物验收的序号），
 转换器按 [数据指南](dataset.md) 的方式裁掉验收尾段：
 
 ```bash
 "$VENV_DATA_PY" -m locomani.pipeline.convert_to_hf_format \
-  --sessions $(python3 -c "import json;print(' '.join(json.load(open('outputs/runs/crate_record_10/inputs.json'))['sessions']))") \
-  --manifest $(python3 -c "import json;print(' '.join(json.load(open('outputs/runs/crate_record_10/inputs.json'))['manifests']))") \
+  --sessions $(python3 -c "import json;print(' '.join(json.load(open('outputs/runs/crate_record_10/collect/inputs.json'))['sessions']))") \
+  --manifest $(python3 -c "import json;print(' '.join(json.load(open('outputs/runs/crate_record_10/collect/inputs.json'))['manifests']))") \
   --trim-verification-tail --out outputs/runs/crate_record_10/dataset --jobs 4
 "$VENV_DATA_PY" -m locomani.pipeline.check_dataset outputs/runs/crate_record_10/dataset \
   --run-dir outputs/runs/crate_record_10
@@ -111,8 +143,9 @@ manifest 行带 `task`、`produced`、`ok` 和成功局的
 10 局验证批 7/10；失败以 `basket_tilt`、`invalid_initial_distance` 和接触类为主。
 另一台机器数字不同时，先按第 7 节"别人的成功率与本机不同"逐项核对。
 训练后的闭环评测见 [双臂 Closed-loop](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)。
-专家由 `task.expert` 选择（默认 `visual`；`wall` / `carry` 是诊断专家，
-`scripts/run_wall_pilot.sh`、`run_bimanual_pilot.sh` 跑的就是它们，不代表这里的连续 visual 专家）。
+专家由 `task.expert` 选择（默认 `visual`；`wall` / `carry` 是诊断专家，在实验文件里改
+`task.expert` 即可，不代表这里的连续 visual 专家。此前跑它们的 `scripts/run_wall_pilot.sh`
+和 `run_bimanual_pilot.sh` 已在扁平化重构中删除）。
 同名重跑从首个未完成 batch 继续（读 `collect/inputs.json`），不是 episode 级续采；
 先检查原有尝试记录和未完成 batch。
 更改场景或配置时使用新目录，保留失败、零帧初始化失败及其原因，不以重跑覆盖原始样本。
