@@ -12,6 +12,7 @@ environment. A test that reimplemented the assembly would pass on exactly the bu
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -84,3 +85,71 @@ def test_a_fresh_sample_run_asks_for_successes_not_cases():
     assert f"--until-ok {cfg['collect']['successes']}" in out  # keep going until this many are kept
     assert "--cases" not in out  # every round drawn from task.spawn
     assert f"--seed {cfg['collect']['seed0']}" in out
+
+
+@pytest.fixture(scope="module")
+def converted(tmp_path_factory):
+    """A run directory shaped like one collection just finished, without running collection."""
+    run = tmp_path_factory.mktemp("run")
+    (run / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "collect": {
+                    "sessions": ["/tmp/session_a", "/tmp/session_b"],
+                    "manifests": ["/tmp/manifest_a.jsonl", "/tmp/manifest_b.jsonl"],
+                    "kept": 200,
+                }
+            }
+        )
+    )
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "convert.py"), str(run), "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), result.stdout
+
+
+def test_the_session_manifest_pairing_is_delivered_in_order(converted):
+    _, out = converted
+    assert "--sessions /tmp/session_a /tmp/session_b" in out
+    assert "--manifest /tmp/manifest_a.jsonl /tmp/manifest_b.jsonl" in out
+
+
+def test_the_holdout_and_modality_reach_the_converter(converted):
+    cfg, out = converted
+    assert f"--holdout {cfg['train']['holdout']}" in out
+    assert cfg["embodiment"]["gr00t_modality_config"] in out
+    assert cfg["embodiment"]["gr00t_tag"].upper() in out
+
+
+def test_the_audit_is_given_the_run_so_it_reads_world_height(converted):
+    """Without --run-dir the pelvis-frame column cancels the lift and good episodes fail."""
+    _, out = converted
+    assert "check_dataset.py" in out and "--run-dir" in out
+
+
+def test_the_children_are_handed_the_source_path(converted):
+    """They run in other virtual environments and import locomani by name.
+
+    The audit only imports it on the --run-dir branch, so relying on an inherited PYTHONPATH worked
+    until the day that branch became the default (2026-09-17) and the conversion died after twelve
+    minutes of work.
+    """
+    _, out = converted
+    assert out.count("PYTHONPATH=") >= 3 and "/src" in out
+
+
+def test_a_run_without_a_finished_collection_is_refused(tmp_path):
+    (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    (tmp_path / "summary.json").write_text(json.dumps({"collect": {"sessions": [], "manifests": []}}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "convert.py"), str(tmp_path), "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode != 0 and "no finished collection" in result.stderr

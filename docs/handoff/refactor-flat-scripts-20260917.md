@@ -220,3 +220,15 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   `scene/scene_locomani_zone.xml` 删除——那是仿真**只在开可视化时**生成的文件，参考运行是在昨天
   `sim_vis=full` 的评测诊断里顺带留下的，属于记录契约时没筛掉的偶然产物。
   已知行为（沿用旧路径）：固定库运行保留数少于 `successes` 时脚本以非零退出，闸门运行因此总是"失败退出"。
+- **commit 6**：`scripts/convert.py`（125 行）+ `run_common.load_run_config`（下游阶段只读运行目录里的
+  `config.yaml` 副本）+ 5 项送达测试。
+  **验收**：在 200 集那 30 个 session 上用新脚本重转，`meta/` 下 **10 个文件逐字节相同**
+  （含 `gr00t.data.stats` 产的 `stats.json`、`relative_stats.json`），190 个 parquet、570 个视频数量一致；
+  两个 split 的审计各 **32 项全过**；`artifact_contract.py check bottle_convert` PASS。
+  验收时给旧路径产生的运行目录补了两样桥接物并已记录：`config.yaml`（直接拷贝 `bottle_simple_200.yaml`，
+  commit 2 的等价性测试已证明它与 Hydra 组合结果逐字段相等）、`summary.json` 的 collect 条目（由
+  `collect/inputs.json` 转写）。
+  **抓到一个真 bug**：`check_dataset.py` 由 data-collection venv 启动、在 `--run-dir` 分支里 `import locomani`，
+  一直依赖**上游隐式继承的 `PYTHONPATH`**（旧路径由 launcher 设在阶段进程上）。扁平脚本没有那份隐式环境，
+  于是在转换完成、跑了 12 分钟之后才炸。修法是脚本显式声明子进程环境，并在 dry-run 里打印、由测试钉住。
+  记下未处理的一项：`Stage.check` 的日志是**追加**而非覆盖，`audit_train.log` 里叠着多次运行的输出，读日志容易误判。

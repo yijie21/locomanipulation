@@ -46,6 +46,14 @@ def open_run(experiment: Path | str, name: str | None = None) -> tuple[dict, Pat
     return cfg, run_dir
 
 
+def load_run_config(run_dir: Path) -> dict:
+    """The copy this run started from. A later stage reads this, never the file in configs/."""
+    path = Path(run_dir) / "config.yaml"
+    if not path.exists():
+        raise SystemExit(f"{path} is missing; this directory was not opened by a stage script")
+    return yaml.safe_load(path.read_text())
+
+
 def measure(gpu: str | None = None) -> dict:
     """Cores in use (1 s cgroup delta), pids in the container, free MiB on the card."""
     live: dict = {}
