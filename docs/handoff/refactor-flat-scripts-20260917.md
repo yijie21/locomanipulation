@@ -275,6 +275,10 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   准入拒绝（`15.38 + 8 > 15.36`）。没有去动别人的进程，改成"等有余量自动开跑"，CPU 一空冒烟就自己跑完了。
   契约拆分：`bottle_convert` 与新的 `bottle_convert_val` 分开——验证集只在 `train.holdout > 0` 时存在，
   而冒烟实验刻意设为 0（集数太少），两种形态因此都可检查。
+- **commit 13**：文档全面改写。`docs/infra.md` 按现状重写（一份实验文件、六个脚本、并行=多开终端、
+  "删产物即重跑"）；README 快速开始、三份采集指南、训练/评测/数据集指南、runbook、standards 的 run 规则、
+  silent_failures 的入口表全部跟进。**当前文档里不再出现组合 CLI、launcher 或 jobs 文件**；
+  两份重构计划作为历史保留并在索引中链接。
 - **commit 12**：删除组合路径，65 个文件、−2318 行。删掉：`cli.py`、`conf.py`、`launch.py`、`stages/`、
   四个运行级 schema、`configs/{experiment,jobs,embodiment,scene,collect,train}/`、
   `test_conf/test_stages/test_launch/test_stage_config_delivery`、两条过渡等价性测试、
@@ -287,3 +291,39 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   (2) `pipeline/stack.py` **保留**——两个评测器直接调 `start_stack`/`stop_instance`，合并它就要改范围外的评测器。
   `test_pose_ownership` 里"起资源前必须拒绝未打补丁的 deploy"那条改写到 `collect_crate.py` 上，行为照旧被钉住。
   验收：全量套件 rc=0、`make lint` PASS（含 change-map 链接与 `config_fields.md` 重新生成）。
+
+## 收尾（commit 14）
+
+**十四个 commit 全部落地**，每一步都有验收，工作区干净，全量 CPU 套件与 `make lint` 通过。
+
+### 实测数字
+
+| 阶段 | 验收 | 结果 |
+|---|---|---|
+| collect（单臂） | 8 局固定库 + `gate.py compare simple` | 6/8，**PASS 5/5**（yield 0.75→0.75，停位 0.1469→0.1506 m，失败家族无新成员） |
+| convert | 200 集 30 个 session 重转，与旧路径比对 | `meta/` **10 个文件逐字节相同**，190 parquet / 570 视频一致，两个 split 审计各 32/32 |
+| train | 10 步冒烟 | `model/checkpoint-10` 落盘，契约 PASS，24 GB 产物随即删除 |
+| eval（单臂） | 3 局闭环 | 0/6（控制层根因在范围外），**6 段录像**——契约要护的就是这个目录 |
+| collect（双臂） | 20 局 ready-stand ×2 | 16/20 与 12/20；闸门 3/4 与 2/4，两次多出的家族各不相同 |
+| eval（双臂） | 按用户决定不跑 | 契约标注 **UNVERIFIED**，由测试钉住 |
+| 全链路 | `pipeline.py` 冒烟 | 采集 1 集 → 转换 495 帧 → 训练 10 步 → 评测 4 次尝试，四份契约全 PASS |
+
+### 这次重构真正买到的东西
+
+不是"层数变少"（那是结果），而是**三类以前无人看守的问题现在有了看守**：
+
+1. **配置声明了没送达** → 每个脚本 `--dry-run` 打印将执行的命令与环境变量，`test_dry_run_delivery.py`
+   逐字面断言。这一类问题 2026-09-17 一天内出现四次（`eval.backend` 被丢、`spawn_edge` 变成 0.7、
+   token 硬编码、录像拍不到 stand），全部由这条防线复现并锁住。
+2. **产物悄悄不再产生** → `tests/contracts/*.json` 从旧路径录下"一个阶段必须留下什么"，
+   重构过程中共**故意修改 11 条**，每一条都是明确决定而不是顺手。
+3. **资源不足硬跑成"机器人故障"** → `require_headroom` 在三次真实场合拒绝启动
+   （GPU1 被别的项目占满 31.9 GB、未打补丁的 deploy、CPU 配额被别的项目吃掉 14.5 核）。
+
+### 已知未了事项
+
+- 双臂评测契约未经真实运行验证（checkpoint 已删）；用户手动 eval 时应跑
+  `python scripts/artifact_contract.py check outputs/runs/<name> crate_eval`。
+- 评测栈下 deploy 前奏不接管 / 复位后倒地的**控制层根因**仍未解决，属重构范围外。
+- `Stage.check` 的日志是追加而非覆盖，同一运行目录里多次运行的输出会叠加。
+- 固定库运行保留数不足时脚本非零退出，闸门运行因此总是"失败退出"（沿用旧语义）。
