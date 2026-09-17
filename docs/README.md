@@ -64,6 +64,7 @@ versioned documents reachable here, without requiring conversation history or pr
 - Ledgers: [bottle](ledger/bottle.md), [crate](ledger/crate.md),
   [ScaleBFM](ledger/scalebfm.md), [pick and place](ledger/pick_place.md), [previous refactor](ledger/refactor.md).
 - [Silent-failure notes](reference/silent_failures.md): historical troubleshooting leads; verify against code and evidence.
+- [F10: silent exporter frame loss](handoff/exporter-frame-loss-20260917.md): open, root cause not located; also the index of the 2026-09-17 cold-start walkthrough's eleven findings (F1-F11).
 - [Archive index](archive/INDEX.md): original reports and superseded entry documents.
 - [First migration](handoff/agent-maintenance-plan.md); [maintenance delivery](handoff/maintenance-completion.md).
 - [Guideline audit and probes](handoff/agent-guideline-completion-20260914.md).
