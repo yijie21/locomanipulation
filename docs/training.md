@@ -11,7 +11,7 @@
 | 训练代码 | vendored `src/gr00t/`,`launch_finetune` 微调 GR00T-N1.7-3B 的 projector + diffusion action head |
 | embodiment | `g1_single_arm`(单臂,bottle/pick_place 系任务)、`g1_bimanual`(双臂,crate) |
 | 硬件 | 单卡(8-bit AdamW,量化省显存)或多卡(DeepSpeed ZeRO-2,`gpus>1`) |
-| 输出 | `outputs/runs/<name>/train/model/checkpoint-<steps>`、`train/manifest.json` |
+| 输出 | `outputs/runs/<name>/model/checkpoint-<steps>`、`train/manifest.json` |
 | 验收 | checkpoint 事后选(开环 nMSE),真正的验收标准是闭环成功率(见 evaluation.md) |
 
 ## 2. 环境与场景
@@ -87,7 +87,7 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1            
 
 | 路径 | 内容 |
 |---|---|
-| `train/model/checkpoint-<steps>/` | 训练产出的 checkpoint(权重 + 归一化 processor) |
+| `model/checkpoint-<steps>/` | 训练产出的 checkpoint(权重 + 归一化 processor) |
 | `train/train.log` | `launch_finetune` 的标准输出(loss、保存记录) |
 | `train/manifest.json` | `checkpoint`/`train_dataset` 路径、`steps`/`gpus`/`global_batch` 指标、config 与上游 hash |
 | `run_config.yaml`/`run_config.json` | 这次运行完整解析后的配置,训练用到的所有字段都能在这里查到 |

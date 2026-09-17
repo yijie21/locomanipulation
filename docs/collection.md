@@ -37,6 +37,19 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 `outputs/bottle_continuous_20260914/cases_fixed10_hardpads.json`（同样 10 个 case，
 按硬垫场景重新盖章；旧文件只匹配软垫场景）。
 
+**再建一次低重心版本**：本页推荐的 `bottle_simple_*.yaml` 用的是
+`scene.dir: outputs/scene/sim_lowcom`，**不是**上面那个 `outputs/scene/sim`。
+`install_scene.sh` 只建后者，所以新机器上还要跑一次（它把瓶子重心下移 5 cm，
+让单边指垫先碰到时瓶子倾向滑动而不是倾倒，见 §6）：
+
+```bash
+"$VENV_SIM_PY" "$LOCOMANI_SRC/sim/build_sim_scene.py" \
+  "$LOCOMANI_ROOT/outputs/scene" "$LOCOMANI_ROOT/outputs/scene/sim_lowcom" \
+  --preset bottle_only --harden-pads --object-com-drop 0.05
+```
+
+要换哪个场景由实验文件的 `scene.dir` 说了算；两者都在 `outputs/scene/` 下并存。
+
 ## 3. 跑一局
 
 这里运行 **1 次尝试**并录制；失败时保留诊断记录，采集阶段会因未收够 1 条成功数据退出。
@@ -47,9 +60,17 @@ mkdir -p /workspace/tmp/p03/outputs
 export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
 # 先看会发生什么，什么都不写：
 python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 0 --dry-run
-# 真的跑一局：复制一份实验文件、把 collect 改成 1 局，再跑它
-python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 0 --name my_first_round
+# 真的跑一局：复制一份实验文件，把 collect.batch_rounds 改成 1，再跑它
+cp configs/experiments/bottle_simple_gate8.yaml configs/experiments/my_first_round.yaml
+sed -i 's/^name: .*/name: my_first_round/; s/^  batch_rounds: .*/  batch_rounds: 1/' \
+  configs/experiments/my_first_round.yaml   # 顶层 name 不缩进；缩进的那个是 embodiment.name
+python scripts/collect_bottle.py configs/experiments/my_first_round.yaml --gpu 0
 ```
+
+**改的是 `batch_rounds` 而不是 `successes`。** 这份实验带固定 case bank
+（`scene.cases`），此时"成功够了就停"不生效（见 §4），`successes` 只是事后的
+验收门槛，尝试次数由 `batch_rounds` 决定。直接跑未改的 `bottle_simple_gate8.yaml`
+会跑 **8 局**，不是一局。
 
 此自动采集入口固定使用 **实例 0**，目前从 `/workspace/tmp/p03/outputs` 查找 exporter session；
 示例采用默认 `LOCOMANI_TMP=/workspace/tmp`。自定义临时目录时可用文末的手动入口。
@@ -72,6 +93,11 @@ python scripts/collect_bottle.py configs/experiments/my_line.yaml --gpu 0
 同一个 `--name` 重跑会接着采（读 `collect/inputs.json` 的批次进度）；要另起一份数据就换一个名字。
 
 `successes` 是保留条数，`batch_rounds` / `max_batches` 限制尝试预算；达到预算仍不足会明确报错。
+**但只在不带固定 case bank 时如此**：实验文件给了 `scene.cases` 时，"成功够了就停"
+（`--until-ok`）不会传给 gym，整个 `batch_rounds` 预算必定跑满，`successes` 退化成
+事后的最低验收门槛。所以 `bottle_simple_gate8.yaml`（带 bank）把 `successes` 改成 1
+不会只采一集，要改的是 `batch_rounds`。这是有意的——固定 bank 的对照要保留全部尝试，
+不能成功后重采样填满（见本节末"固定采样比较新策略"）。
 每批重启栈，限制 exporter 的资源增长；一个 batch 对应一个 session 和一个 manifest。
 扩到更多数据时调整这三个字段，保留采样分布和失败记录。
 
@@ -110,7 +136,7 @@ python scripts/pipeline.py configs/experiments/crate_table30_record.yaml --gpu 1
 |---|---|---|
 | SONIC 权重 | `policy/sonic_v1_1`（`scripts/paths.sh` 默认） | 运行目录 `deploy_receipts.jsonl` |
 | deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
-| 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED` | `outputs/scene/sim/scene_meta.json`、脚本回显 |
+| 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED`；`simple` 线还要按 §2 再建 `outputs/scene/sim_lowcom` | 实验文件的 `scene.dir` 指向哪个，就核对那个目录的 `scene_meta.json` |
 | 任务配置 | `configs/task/bottle_whole_body.yaml`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
 | 采集配方 | `configs/experiments/<name>.yaml`（全展开，一次运行读的每个值都在里面） | 运行目录 `config.yaml`（逐字节副本）、`collect/inputs.json` |
 | 资源 | 该 GPU 上没有第二个仿真；CPU 配额有余量 | `nvidia-smi`、`/sys/fs/cgroup/cpu.stat` |
@@ -293,7 +319,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 `task.*`（含 `task.spawn.*`、`task.reach.*`）改专家行为，`scene=` 换场景。
 要复现的配方就是 `configs/experiments/<name>.yaml` 本身——复制一份改几行，不要把一长串覆盖项留在 shell 历史里；
 跑之前用 `--dry-run` 看一眼会执行什么，跑完以运行目录里的 `config.yaml` 为准。
-字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准，组合规则见 [运行基础设施](infra.md)。
+`task` / `backend` / `eval` 三块的字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准；`collect` 和 `train` 不是 dataclass，不在那张表里，逐字段说明写在 `configs/experiments/bottle_simple_200.yaml` 的注释中。组合规则见 [运行基础设施](infra.md)。
 
 ### 连续全身候选的动作原则
 

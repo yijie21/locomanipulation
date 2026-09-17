@@ -35,6 +35,11 @@ NEEDS = {  # measured, not theoretical: an exporter holds ~1800 pids and the con
 def open_run(experiment: Path | str, name: str | None = None, *, write: bool = True) -> tuple[dict, Path]:
     """Read the experiment file and copy it verbatim into the run directory it names.
 
+    `--name` chooses the DIRECTORY only. The copy stays byte-for-byte, so under a `--name` the
+    `name:` inside it still reads as the experiment's own -- that is the file this run came from,
+    which is the question provenance has to answer, and it is what lets the guard below compare
+    the two by bytes. Nothing downstream reads `cfg["name"]`; the run directory is passed along.
+
     `write=False` is what --dry-run passes: a dry run answers "what would this do" and must leave
     nothing behind, not even the directory it would have claimed.
     """

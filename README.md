@@ -79,7 +79,7 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 
 | 路径 | 内容 |
 |---|---|
-| `config.yaml` | 实验文件的逐字节副本，这次运行的 provenance |
+| `config.yaml` | 实验文件的逐字节副本，这次运行的 provenance（`--name` 只改目录名，副本里的 `name:` 仍是来源实验的） |
 | `summary.json` | 每个阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
 | `stack_env.json`、`commands.jsonl`、`timings.jsonl` | 仿真栈告诉子进程的全部设置、每个子进程的命令行与耗时 |
 | `collect/manifest_00.jsonl`、`collect/videos_00/`、`collect/state_trace_00/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹 |
@@ -88,7 +88,7 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 比较多次运行就是 `cat outputs/runs/*/summary.json`。产物是否齐全可以查契约：
 `python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval`。
 分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500,000 字节 的预览，原片保留。
-需要调整参数时查 [配置字段表](docs/reference/config_fields.md)；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
+需要调整参数时查 [配置字段表](docs/reference/config_fields.md)（它由 dataclass 生成，覆盖 task / backend / eval；`collect` 和 `train` 两块是普通 YAML，逐字段说明在 `configs/experiments/bottle_simple_200.yaml` 的注释里）；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
 
 ## 仓库与更多文档
 

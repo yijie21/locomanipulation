@@ -33,7 +33,7 @@ closed-loop 评测(`eval_closed_loop.py`、`eval_crate_closed_loop.py`)要起完
 token-only 栈(sim + deploy)、一个独立的 policy server 进程,还要用 gear_sonic
 的相机客户端和 pinocchio FK 构造观测,所以跑在 **sim venv** 下
 (`common.SIM_PY = $VENV_SIM_PY`)。经 `scripts/eval_bottle.py` 跑时,
-这一切由 `src/locomani/stages/eval_stage.py` 自动管理(起栈、起 policy server、
+这一切由 `scripts/eval_bottle.py` 自动管理(起栈、起 policy server、
 `try/finally` 保证跑完拆栈);手动跑(见 §3)则要自己按顺序起停。
 
 评测用到的配置组是 `configs/eval/*.yaml`(`EvalConfig`,字段 `rounds`/`seed`/
@@ -49,15 +49,15 @@ token-only 栈(sim + deploy)、一个独立的 policy server 进程,还要用 ge
 ```bash
 # 自研 nMSE 套件
 third_party/Isaac-GR00T/.venv/bin/python src/locomani/pipeline/eval_open_loop.py \
-    --model-path outputs/runs/<run>/train/model/checkpoint-N \
-    --dataset outputs/runs/<run>/convert/val_dataset \
+    --model-path outputs/runs/<run>/model/checkpoint-N \
+    --dataset outputs/runs/<run>/val_dataset \
     --out outputs/eval/<run>/open_loop_checkpoint-N.json \
     --wandb-run <run>          # val 曲线写回训练 run,同一根 x 轴
 
 # 官方对照(排序用,不是数值对照,见 §5)
 bash scripts/gr00t_open_loop.sh \
-    --model-path outputs/runs/<run>/train/model/checkpoint-N \
-    --dataset-path outputs/runs/<run>/convert/val_dataset \
+    --model-path outputs/runs/<run>/model/checkpoint-N \
+    --dataset-path outputs/runs/<run>/val_dataset \
     --out-dir outputs/eval/<run>/checkpoint-N \
     --backbone-path ~/Checkpoints/Cosmos-Reason2-2B   # 仅 checkpoint 在别的机器上训练时需要,见下
 ```
@@ -368,7 +368,7 @@ execution-horizon 索引、指标算术)与官方实现一致。踩过一次坑:
 
 ### closed-loop:初始 token 文件
 
-**初始 token 文件必须与训练数据的开局姿势一致。** 采集阶段(`locomani.stages.collect`)
+**初始 token 文件必须与训练数据的开局姿势一致。** 采集阶段(`scripts/collect_bottle.py`)
 的初始 token 文件默认是 `configs/deployment/ready_grasp_initial_token.json`
 (READY 抬臂姿势的裸 64 维 token,prelude 之后按 `ready_q()` 的手臂检查)。用
 `bottle_whole_body` 采的数据从 SONIC 自己的垂臂参考开始(2026-09-14 起),对应
