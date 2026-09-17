@@ -263,11 +263,20 @@ class ArgsConfig:
     model_path: str | None = None
     """Path to the model checkpoint."""
 
+    backbone_path: str | None = None
+    """Local Cosmos-Reason2-2B directory. Needed when the checkpoint was trained on another
+    machine and records a backbone path (config.json model_name) that does not exist here."""
+
     denoising_steps: int = 4
     """Number of denoising steps to use."""
 
     save_plot_path: str | None = None
-    """Path to save the plot to."""
+    """Path to save the plot to. One literal file: with several --traj-ids every trajectory
+    overwrites the previous one, so prefer --save-plot-dir for multi-trajectory runs."""
+
+    save_plot_dir: str | None = None
+    """Directory to save one plot per trajectory to, as traj_<id>.jpeg. Default (neither
+    option given): /tmp/open_loop_eval/traj_<id>.jpeg."""
 
     modality_keys: list[str] | None = None
     """List of modality keys to plot. If None, plot all keys."""
@@ -304,6 +313,7 @@ def main(args: ArgsConfig):
             embodiment_tag=args.embodiment_tag,
             model_path=local_model_path,
             device="cuda" if torch.cuda.is_available() else "cpu",
+            backbone_path=args.backbone_path,
         )
         # Apply --denoising-steps: the action head reads num_inference_timesteps
         # at sampling time.
@@ -349,7 +359,8 @@ def main(args: ArgsConfig):
             args.modality_keys,
             steps=args.steps,
             execution_horizon=args.execution_horizon,
-            save_plot_path=args.save_plot_path,
+            save_plot_path=args.save_plot_path
+            or (f"{args.save_plot_dir}/traj_{traj_id}.jpeg" if args.save_plot_dir else None),
         )
         logging.info(f"MSE for trajectory {traj_id}: {mse}, MAE: {mae}")
         all_mse.append(mse)

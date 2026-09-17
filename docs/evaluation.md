@@ -58,8 +58,23 @@ third_party/Isaac-GR00T/.venv/bin/python src/locomani/pipeline/eval_open_loop.py
 bash scripts/gr00t_open_loop.sh \
     --model-path outputs/runs/<run>/train/model/checkpoint-N \
     --dataset-path outputs/runs/<run>/convert/val_dataset \
-    --out-dir outputs/eval/<run>/checkpoint-N
+    --out-dir outputs/eval/<run>/checkpoint-N \
+    --backbone-path ~/Checkpoints/Cosmos-Reason2-2B   # 仅 checkpoint 在别的机器上训练时需要,见下
 ```
+
+**`--backbone-path`(别处训练的 checkpoint)**:checkpoint 的 `config.json` 把训练时用的
+VLM backbone(Cosmos-Reason2-2B)位置原样记在 `model_name` 里——在线训练记的是 Hub id
+`nvidia/Cosmos-Reason2-2B`,从本地副本训练记的是那台机器上的目录(集群上是
+`/group-volume/.../Cosmos-Reason2-2B`)。拿到本机评测时这个目录不存在,加载会在解析完
+checkpoint 配置后失败(报 `records its VLM backbone at ..., which does not exist here`);
+`--backbone-path <本地 Cosmos-Reason2-2B 目录>` 把模型和 processor 的这条记录一起替换掉。
+有这个参数的入口:`serve_policy.py`、`gr00t/eval/open_loop_eval.py`、
+`scripts/gr00t_open_loop.sh`(也接受环境变量 `BACKBONE_PATH=`)和
+`eval_crate_closed_loop.py`(透传给它起的 policy server);自研 `eval_open_loop.py` 和
+`locomani.cli eval`(`eval_stage._serve` 拼命令时不透传它)没有,后者要绕开 stage 用下面的
+手动三步。本机训练的 checkpoint 不需要它:`model_name` 只要含 `Cosmos-Reason2`/`Qwen3-VL`
+(本地目录路径也行,不再要求 `nvidia/` 前缀)就按原记录加载。传进来的目录必须存在且含
+`config.json`,否则在加载模型前就报错。
 
 跨 `execution_horizon ∈ {1,8,16,40}` 各报一遍——误差随 horizon 的增长曲线就是
 "一个 chunk 敢信多少步"的直接证据(选 checkpoint 只跑 h16 即可,全 horizon 留给
@@ -86,9 +101,10 @@ python scripts/eval_bottle.py outputs/runs/<run_name> --gpu 1
 # 1. stack,必须 token-only(带 encoder 时外部 token 流压不住,cpp:3096)
 python -m locomani.stack.cli up --instance 0 --gpu 0 --prompt "pick up the water bottle" --no-encoder
 
-# 2. policy server,第二张卡
+# 2. policy server,第二张卡(别处训练的 checkpoint 加 --backbone-path,见上)
 CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
-    src/locomani/pipeline/serve_policy.py --model-path <ckpt> --port 5590
+    src/locomani/pipeline/serve_policy.py --model-path <ckpt> --port 5590 \
+    [--backbone-path ~/Checkpoints/Cosmos-Reason2-2B]
 
 # 3. 评测本体(sim venv —— 它要 gear_sonic 的相机客户端和 pinocchio FK)
 "$VENV_SIM_PY" src/locomani/pipeline/eval_closed_loop.py \
@@ -105,7 +121,8 @@ CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
 **读日志**:`<out>/eval.log` 是评测本体(`eval_closed_loop.py`/
 `eval_crate_closed_loop.py`)的标准输出;`<out>/eval/serve.log` 是 policy server
 的(启动成功看有没有 "listening" 字样——`eval_stage._serve` 轮询的就是这一行,
-600 s 超时视为失败);栈的启停命令记在 `<out>/commands.jsonl`。每一局的详细记录
+600 s 超时视为失败;`eval_crate_closed_loop.py` 起 server 时设了 `PYTHONUNBUFFERED=1`,
+这一行即时落盘,否则会留在子进程缓冲区里、健康的 server 被误判为没起来);栈的启停命令记在 `<out>/commands.jsonl`。每一局的详细记录
 在 `<out>/eval/traces/`(位姿、失败阶段、`stall_abort_s`/`full_budget` 等字段,
 见 §5、§6),视频在 `<out>/eval/videos/`。`eval/manifest.json` 的 `ok=true` 加
 `metrics.success_rate` 才是一次跑完的评测;进程被中断(见 §7)不会写 manifest,
@@ -328,7 +345,9 @@ token + enter_streamed,keepalive 线程在整个慢启动期间(连流+首推理
 每张图对应一条轨迹(65 个纵向子图:64 token + 1 gripper);官方脚本对每条轨迹的
 图用同一个文件路径,多条轨迹会互相覆盖,所以脚本跑完统一把图挪到
 `<out-dir>/plots/`。产出:每条轨迹一张对比图、`<out-dir>/metrics.json`、
-`<out-dir>/run.log`。`--model-path`/`--dataset-path` 传反会在加载模型前就报错。
+`<out-dir>/run.log`。`--model-path`/`--dataset-path` 传反会在加载模型前就报错;
+checkpoint 记录的 backbone 目录在本机不存在时也一样(`records its VLM backbone at ...,
+which does not exist here`),按 §3 加 `--backbone-path`。
 
 **两套结果互相印证**(`scripts/crosscheck_open_loop.sh`,10 个 checkpoint,
 Spearman rho +0.988,选出的最优 checkpoint 一致)——说明自研这一层(轨迹迭代、
@@ -992,6 +1011,7 @@ seed 6000,出生 1.1–1.3 m:
 | 部署参数(`--ensemble`/`--replan-interval` 等)的旧结论直接套到新 checkpoint | 见 §6 历次翻案(dart200 上 ensemble +50,flow200 上为零;replan 1.6 在 walk200 上更差、在 dart200 上更好)——**换 checkpoint 必须复筛**,引用旧数字要引本文档的裁定小节,不要引中途重挖的原始 json |
 | 闭环评测跑在错误的场景高度上 | 采集脚本按种子重建 `outputs/scene/sim`(桌高会变),评测栈读磁盘上当时的场景;不同批次场景不一致会让结果不可比(2026-09-04 曾把 smooth200 三臂跑废,归档为 `*_scene647`)。现在评测脚本每次启动前固定重建场景,混用旧数据前先确认场景哈希一致 |
 | 双卡并行跑评测,GPU 参数没生效 | 曾出现评测脚本的 GPU 参数覆盖外部 `CUDA_VISIBLE_DEVICES`,并行两臂的 policy server 实际都落在 GPU0(已修);怀疑时看 `serve.log` 里的显存占用卡号 |
+| `policy server did not come up`,`serve.log` 末尾是 `checkpoint ... records its VLM backbone at /group-volume/..., which does not exist here` | checkpoint 在别的机器上训练,`config.json` 的 `model_name` 指向那台机器的 Cosmos-Reason2-2B 目录。手动调用 `serve_policy.py`/`eval_crate_closed_loop.py`/`gr00t_open_loop.sh` 时加 `--backbone-path <本地目录>`(见 §3);`locomani.cli eval` 不透传这个参数。旧代码对本地目录路径还会报 `Unsupported model name`(要求 `nvidia/` 前缀),现已改为只匹配模型家族名。`serve.log` 里的 `listening` 行若始终不出现而进程仍在、端口已监听,是 stdout 缓冲(见 §3 读日志) |
 
 **Ctrl-C 停止**:`eval_stage.run()` 用 `try/finally` 保证中断时 policy server 和
 stack 都会被正常回收(不会留下孤儿 deploy 或占用 sim 端口),但 `manifest.json`
@@ -1037,8 +1057,13 @@ python scripts/eval_crate.py outputs/runs/<crate_run> --gpu 1
 "$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop \
   --checkpoint outputs/<run>/model/checkpoint-10000 \
   --scene outputs/scene/crate_table30_depth04 --out outputs/crate_eval_100 \
-  --instance 1 --gpu 1 --serve-gpu 1 --rounds 100 --seed 6000
+  --instance 1 --gpu 1 --serve-gpu 1 --rounds 100 --seed 6000 \
+  [--backbone-path ~/Checkpoints/Cosmos-Reason2-2B]   # checkpoint 在别的机器上训练时,见 §3
 ```
+
+`--backbone-path` 原样透传给它起的 `serve_policy.py`;目录不存在或没有 `config.json` 时,
+参数解析阶段就报错,不会起栈。经 CLI 路由时 `eval_stage` 不传这个参数,别处训练的
+checkpoint 只能走这条手动命令。
 
 每局：`reset_ready` 的采样（抖动、yaw、桌沿距离）→ `prepare_token_pose` 用
 `configs/deployment/crate_initial_token.json`（训练数据首帧 token 的量化均值 + 首帧手臂关节）

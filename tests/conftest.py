@@ -14,7 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 SIM_TEST_FILES = {"test_ready_pilot.py"}
 # test_visual_training / test_visual_validation import gr00t + omegaconf + pandas (the GR00T venv), the
 # rest of the ScaleBFM line's tests run in .venv_sim like every other unit test (2026-09-10 reorg).
-TORCH_TEST_FILES = {"test_action_prefix_loss.py", "test_visual_training.py", "test_visual_validation.py"}
+TORCH_TEST_FILES = {
+    "test_action_prefix_loss.py",
+    "test_backbone_path.py",
+    "test_visual_training.py",
+    "test_visual_validation.py",
+}
 
 
 def pytest_addoption(parser):

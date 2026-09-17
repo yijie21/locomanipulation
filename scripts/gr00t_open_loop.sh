@@ -5,7 +5,14 @@
 #
 #   bash scripts/gr00t_open_loop.sh \
 #       --model-path PATH --dataset-path PATH [--out-dir PATH] \
-#       [--horizon N] [--embodiment-tag TAG]
+#       [--horizon N] [--embodiment-tag TAG] [--backbone-path PATH]
+#
+# --backbone-path: the local Cosmos-Reason2-2B directory. A checkpoint records
+# the backbone path its training machine used (config.json model_name); one
+# trained on the cluster points at /group-volume/..., which does not exist
+# here, and open_loop_eval.py refuses to load it until told where the local
+# copy is. Also settable as BACKBONE_PATH=... in the environment. Not needed
+# for checkpoints trained on this machine.
 #
 # Named flags, not positional args: --model-path and --dataset-path are two
 # unrelated absolute paths of the same shape (a directory), and swapping two
@@ -24,15 +31,15 @@
 #     (open_loop_eval.py:149); on an episode where the grasp happens well past
 #     frame 200, a fixed default would score only the walk and never see it.
 #
-# WHY --save-plot-path IS NOT PASSED THROUGH TO THE PYTHON SCRIPT
+# WHERE THE PLOTS GO
 #
-# evaluate_single_trajectory() writes to save_plot_path as a literal file
-# path, and main() passes the SAME args.save_plot_path for every traj_id in
-# the loop -- so one fixed path would make every trajectory after the first
-# overwrite the last. Left unset, the script's own default embeds traj_id
-# (/tmp/open_loop_eval/traj_{traj_id}.jpeg) and is therefore collision-free;
-# this script lets that default run and then moves the results into
-# $OUT_DIR/plots afterward.
+# --save-plot-dir $OUT_DIR/plots, so every trajectory's plot lands in the
+# output directory as it is produced. (Not --save-plot-path: that is one
+# literal file, and main() passes the same one for every traj_id, so each
+# trajectory would overwrite the last.) Earlier this script let the Python
+# default write to /tmp/open_loop_eval and moved the files afterward; a run
+# that died between the eval and the move left 76 plots in /tmp, where the
+# next run's cleanup deleted them (2026-09-16). Nothing is staged in /tmp now.
 set -u
 set -o pipefail   # so the `python | tee` pipeline below still reports python's exit code
 # shellcheck disable=SC1091
@@ -42,7 +49,7 @@ cd "$LOCOMANI_ROOT" || exit 1
 usage() {
     cat >&2 <<EOF
 usage: $(basename "$0") --model-path PATH --dataset-path PATH [--out-dir PATH]
-                         [--horizon N] [--embodiment-tag TAG]
+                         [--horizon N] [--embodiment-tag TAG] [--backbone-path PATH]
 EOF
 }
 
@@ -51,6 +58,7 @@ DATASET_PATH=""
 OUT_DIR=""
 EMBODIMENT_TAG="${EMBODIMENT_TAG:-UNITREE_G1_SONIC}"
 HORIZON="${HORIZON:-16}"
+BACKBONE_PATH="${BACKBONE_PATH:-}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -59,6 +67,7 @@ while [ $# -gt 0 ]; do
         --out-dir)        OUT_DIR="${2:?--out-dir needs a value}"; shift 2 ;;
         --horizon)        HORIZON="${2:?--horizon needs a value}"; shift 2 ;;
         --embodiment-tag) EMBODIMENT_TAG="${2:?--embodiment-tag needs a value}"; shift 2 ;;
+        --backbone-path)  BACKBONE_PATH="${2:?--backbone-path needs a value}"; shift 2 ;;
         -h|--help)        usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage; exit 1 ;;
     esac
@@ -81,13 +90,20 @@ OUT_DIR="${OUT_DIR:-$LOCOMANI_OUTPUTS/eval/$(basename "$MODEL_PATH")}"
     exit 1
 }
 
-GR00T_PY="${GR00T_PY:-$LOCOMANI_ROOT/third_party/Isaac-GR00T/.venv/bin/python}"
-PLOT_TMP="/tmp/open_loop_eval"          # hardcoded default inside open_loop_eval.py
-LOG="$OUT_DIR/run.log"
+BACKBONE_ARGS=()
+if [ -n "$BACKBONE_PATH" ]; then
+    [ -f "$BACKBONE_PATH/config.json" ] || {
+        echo "error: --backbone-path '$BACKBONE_PATH' has no config.json (not a Cosmos-Reason2-2B directory)" >&2
+        exit 1
+    }
+    BACKBONE_ARGS=(--backbone-path "$BACKBONE_PATH")
+fi
 
-mkdir -p "$OUT_DIR/plots"
-rm -f "$PLOT_TMP"/traj_*.jpeg
-mkdir -p "$PLOT_TMP"
+GR00T_PY="${GR00T_PY:-$LOCOMANI_ROOT/third_party/Isaac-GR00T/.venv/bin/python}"
+LOG="$OUT_DIR/run.log"
+PLOTS="$OUT_DIR/plots"
+
+mkdir -p "$PLOTS"
 
 # Every episode, derived not hardcoded -- see header.
 n_val=$("$GR00T_PY" -c "
@@ -105,6 +121,7 @@ print(max(json.loads(l)['length'] for l in open('$DATASET_PATH/meta/episodes.jso
 echo "open-loop eval: $MODEL_PATH"
 echo "  dataset    $DATASET_PATH  ($n_val episodes)"
 echo "  horizon    $HORIZON   steps $STEPS"
+[ -n "$BACKBONE_PATH" ] && echo "  backbone   $BACKBONE_PATH"
 echo "  out        $OUT_DIR"
 echo
 
@@ -116,18 +133,20 @@ echo
     --traj-ids $TRAJ_IDS \
     --steps "$STEPS" \
     --execution-horizon "$HORIZON" \
+    --save-plot-dir "$PLOTS" \
+    "${BACKBONE_ARGS[@]}" \
     2>&1 | tee "$LOG"
 status=$?
 if [ "$status" != 0 ]; then
     echo "open_loop_eval.py exited $status -- see $LOG"; exit "$status"
 fi
 
-mapfile -t plots < <(ls "$PLOT_TMP"/traj_*.jpeg 2>/dev/null)
-if [ "${#plots[@]}" -gt 0 ]; then
-    mv "${plots[@]}" "$OUT_DIR/plots/"
-fi
+n_plots=0
+for plot in "$PLOTS"/traj_*.jpeg; do
+    [ -f "$plot" ] && n_plots=$((n_plots + 1))
+done
 echo
-echo "saved ${#plots[@]} plot(s) to $OUT_DIR/plots"
+echo "saved $n_plots plots to $PLOTS"
 
 "$GR00T_PY" - "$LOG" "$OUT_DIR/metrics.json" <<'PYEOF'
 import json, re, sys
