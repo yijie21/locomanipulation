@@ -179,6 +179,9 @@ def spec_from_config(
     run_dir = Path(run_dir)
     b = SonicBackendConfig.from_dict(dict(backend if backend is not None else cfg["backend"]))
     task, collect = cfg["task"], cfg.get("collect", {})
+    # Which deploy tree runs is a property of the machine, not of the experiment: the streamed-pose
+    # experts need one built with the hand-ownership patch, and on a box where that build lives
+    # outside the tree SONIC_DEPLOY_ROOT points at it. Same precedence the previous path had.
     child: dict[str, str] = {"LOCOMANI_BACKEND_JSON": json.dumps(b.to_dict(), sort_keys=True)}
     if task.get("init_token_file"):
         child["TF_INIT_TOKEN_FILE"] = str(task["init_token_file"])
@@ -188,6 +191,9 @@ def spec_from_config(
         scene_dir=str(scene_dir if scene_dir is not None else run_dir / "scene"),
         prompt=task.get("prompt") or "walk forward",
         record=bool(collect.get("record", True)) if record is None else bool(record),
+        policy=os.environ.get("SONIC_POLICY", paths.SONIC_POLICY),
+        deploy_root=os.environ.get("SONIC_DEPLOY_ROOT", paths.SONIC_DEPLOY),
+        deploy_bin=os.environ.get("SONIC_DEPLOY_BIN") or None,
         encoder=not b.no_encoder,
         lockstep=bool(b.lockstep.enabled),
         auto_start=bool(b.clean_deploy or b.lockstep.enabled),

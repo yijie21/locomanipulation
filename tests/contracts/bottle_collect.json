@@ -1,6 +1,6 @@
 {
- "recorded_from": "outputs/runs/bottle_simple_200_20260916",
- "note": "single-arm collect: per-batch manifests, videos, state traces and the frozen scene copy",
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916 (old path), updated for the flat script in commit 5",
+ "note": "single-arm collect: per-batch manifests, videos, state traces and the frozen scene copy. Commit 5 replaced three artifacts deliberately: the stage manifest and the two resolved-config dumps became <run>/summary.json and the verbatim config.yaml, and the stack now records what its children were told in stack_env.json. scene/scene_locomani_zone.xml was dropped as incidental -- the sim writes it only under visualisation, and the reference run had picked one up from an unrelated session.",
  "required": [
   {
    "pattern": "collect/frame_audit_*.jsonl",
@@ -8,10 +8,6 @@
   },
   {
    "pattern": "collect/inputs.json",
-   "min": 1
-  },
-  {
-   "pattern": "collect/manifest.json",
    "min": 1
   },
   {
@@ -39,6 +35,10 @@
    "min": 1
   },
   {
+   "pattern": "config.yaml",
+   "min": 1
+  },
+  {
    "pattern": "deploy_receipts.jsonl",
    "min": 1
   },
@@ -47,23 +47,19 @@
    "min": 1
   },
   {
-   "pattern": "run_config.json",
-   "min": 1
-  },
-  {
-   "pattern": "run_config.yaml",
-   "min": 1
-  },
-  {
    "pattern": "scene/scene_locomani.xml",
    "min": 1
   },
   {
-   "pattern": "scene/scene_locomani_zone.xml",
+   "pattern": "scene/scene_meta.json",
    "min": 1
   },
   {
-   "pattern": "scene/scene_meta.json",
+   "pattern": "stack_env.json",
+   "min": 1
+  },
+  {
+   "pattern": "summary.json",
    "min": 1
   },
   {

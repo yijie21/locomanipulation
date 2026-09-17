@@ -208,3 +208,15 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   这样跨运行对比就是 `ls outputs/runs/*/summary.json`，同时下游阶段照样能读上游那条记录。
   `test_run_common.py` 11 项：pid 上限卡在边界上（3840−200−1800 恰好通过，多一个就拒绝）、
   显存不足只拒绝训练不拒绝评测、读不到的测量不拒绝、改了文件的同名重跑被拒。
+- **commit 5**：`scripts/collect_bottle.py`（198 行，顶层一条直线）+ `tests/test_dry_run_delivery.py`（7 项）。
+  **验收**：`bottle_simple_gate8.yaml` 在 GPU0 上跑 8 局固定库 **6/8**，
+  `gate.py compare simple` 对冻结基线 **PASS 5/5**（yield 0.75→0.75，停位中位 0.1469→0.1506 m，失败家族无新成员）；
+  `artifact_contract.py check bottle_collect` PASS。
+  dry-run 当场抓到一个新引入的 bug：`spec_from_config` 用了 `StackSpec` 的默认 deploy 路径（树内未打补丁的二进制），
+  而旧路径让 `SONIC_DEPLOY_ROOT` 优先——已改回同样的优先级。资源准入也生效了一次：GPU1 被别的项目占了 31.9 GB，
+  `require_headroom` 直接拒绝（`689 MiB free < 6000 needed`），改用 GPU0。
+  **契约按计划被"故意修改"了四条**（每一条都是明确动作）：`collect/manifest.json` 和
+  `run_config.{json,yaml}` 由 `<run>/summary.json` + 逐字节的 `config.yaml` 取代，新增 `stack_env.json`；
+  `scene/scene_locomani_zone.xml` 删除——那是仿真**只在开可视化时**生成的文件，参考运行是在昨天
+  `sim_vis=full` 的评测诊断里顺带留下的，属于记录契约时没筛掉的偶然产物。
+  已知行为（沿用旧路径）：固定库运行保留数少于 `successes` 时脚本以非零退出，闸门运行因此总是"失败退出"。
