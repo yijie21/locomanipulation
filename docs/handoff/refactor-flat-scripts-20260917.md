@@ -193,3 +193,9 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   被读），以及根字段 `stage`/`out`/`seed`（`out` 由 `name` 推出，`gpu` 改为命令行参数）。
   严格 `from_dict` 当场抓到一处：`task.reach` 必须带 `schema_version`，`cli show` 的输出把它剥掉了——
   这正是"展开后逐字段校验"的价值。
+- **commit 3**：`StackSpec.settings()` 成为**唯一**决定子进程环境的函数（`child_env` 只剩"继承 + 覆盖"
+  两步，并清掉可能从环境里漏进来的 `SIM_VIDEO_DIR`/`SONIC_DDS_DOMAIN`）；`Stack(run_dir=...)` 在 `up()`
+  时把它写成 `<run>/stack_env.json`，事后还能回答"子进程到底被告知了什么"。
+  新入口 `spec_from_config(cfg, run_dir, gpu, backend=...)`：整份实验配置进，一个 `StackSpec` 出；
+  `backend` 显式传块而不是读固定键——采集栈要编码器、评测栈必须关编码器，这个差别留在调用处可见。
+  旧的 `StackSpec(...)` 构造和 `resolve_env` 行为不变（`test_stack_delivery`、`test_stack_start_failure` 照旧通过）。

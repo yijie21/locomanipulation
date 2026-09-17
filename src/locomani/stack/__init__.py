@@ -7,6 +7,6 @@ by an explicit readiness signal, and stopped by process group; the live stack's 
 paths are written to `<session_root>/stack.json` so any process on the box can attach to it.
 """
 
-from locomani.stack.manager import Stack, StackSpec, session_root
+from locomani.stack.manager import Stack, StackSpec, session_root, spec_from_config
 
-__all__ = ["Stack", "StackSpec", "session_root"]
+__all__ = ["Stack", "StackSpec", "session_root", "spec_from_config"]

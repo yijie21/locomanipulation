@@ -64,14 +64,15 @@ class StackSpec:
         p = Path(self.scene_dir)
         return p if p.is_absolute() else Path(paths.REPO) / p
 
-    def child_env(self, base: dict | None = None) -> dict[str, str]:
-        env = dict(os.environ if base is None else base)
-        for name in (
-            "SIM_VIDEO_DIR",
-            "SONIC_DDS_DOMAIN",
-        ):  # owned by the spec below; everything else the agent sees, the children see
-            env.pop(name, None)
-        env.update({k: str(v) for k, v in self.ports().items()})
+    def settings(self) -> dict[str, str]:
+        """Every variable this stack decides for its children -- the only place that decision is made.
+
+        Read it, and you know what the sim, the deploy and the exporter were told; write it next to
+        the run (`Stack.up` does) and you can still answer that question afterwards. Chasing one
+        variable across a resolver, a spec field and a filter is how `SIM_VIDEO_DIR` reached the
+        exporter but not the sim, and the eval stage recorded no video for a day (2026-09-17).
+        """
+        env = {k: str(v) for k, v in self.ports().items()}
         env.update(
             INSTANCE=str(self.instance),
             SONIC_DDS_DOMAIN=str(self.instance if self.dds_domain is None else self.dds_domain),
@@ -92,6 +93,13 @@ class StackSpec:
         if self.auto_start:
             env["SONIC_AUTO_START"] = "1"
         env.update({k: str(v) for k, v in self.env.items()})
+        return env
+
+    def child_env(self, base: dict | None = None) -> dict[str, str]:
+        env = dict(os.environ if base is None else base)
+        for name in ("SIM_VIDEO_DIR", "SONIC_DDS_DOMAIN"):  # owned below: an inherited value must not leak in
+            env.pop(name, None)
+        env.update(self.settings())
         return env
 
 
@@ -149,19 +157,73 @@ def _kill_group(pid: int, grace: float = 2.0, proc: subprocess.Popen | None = No
             pass
 
 
+def spec_from_config(
+    cfg: dict,
+    *,
+    run_dir,
+    gpu: str,
+    backend: dict | None = None,
+    scene_dir=None,
+    video_dir=None,
+    record: bool | None = None,
+) -> StackSpec:
+    """The stack one expanded experiment config asks for (`configs/experiments/*.yaml`).
+
+    `backend` picks the block, because the two stacks a run needs differ exactly there: collection
+    runs the deploy WITH its encoder (without it the planner's arm and crouch references are
+    dropped), evaluation runs it without (the token stream will not hold otherwise). Passing the
+    block instead of reading a fixed key is what keeps that difference visible at the call site.
+    """
+    from locomani.backends.sonic.config import SonicBackendConfig
+
+    run_dir = Path(run_dir)
+    b = SonicBackendConfig.from_dict(dict(backend if backend is not None else cfg["backend"]))
+    task, collect = cfg["task"], cfg.get("collect", {})
+    child: dict[str, str] = {"LOCOMANI_BACKEND_JSON": json.dumps(b.to_dict(), sort_keys=True)}
+    if task.get("init_token_file"):
+        child["TF_INIT_TOKEN_FILE"] = str(task["init_token_file"])
+    return StackSpec(
+        instance=int(collect.get("instance", 0)),
+        gpu=str(gpu),
+        scene_dir=str(scene_dir if scene_dir is not None else run_dir / "scene"),
+        prompt=task.get("prompt") or "walk forward",
+        record=bool(collect.get("record", True)) if record is None else bool(record),
+        encoder=not b.no_encoder,
+        lockstep=bool(b.lockstep.enabled),
+        auto_start=bool(b.clean_deploy or b.lockstep.enabled),
+        wrist_cams=bool(b.wrist_cams),
+        video_dir=None if video_dir is None else str(video_dir),
+        sim_vis=b.sim_vis,
+        scene_random=bool(b.scene_random),
+        dds_domain=b.sonic_dds_domain,
+        env=child,
+        receipts=str(run_dir / "deploy_receipts.jsonl"),
+    )
+
+
 class Stack:
     """One instance's sim, deploy and exporter; `up()` blocks until each is ready, `down()` kills by group."""
 
     CHILDREN = ("sim", "deploy", "exporter")
 
-    def __init__(self, spec: StackSpec, *, base_env: dict | None = None, record_command=None):
+    def __init__(self, spec: StackSpec, *, base_env: dict | None = None, record_command=None, run_dir=None):
         self.spec = spec
         self.root = session_root(spec.instance)
+        self.run_dir = None if run_dir is None else Path(run_dir)  # where to leave stack_env.json
         self.env = spec.child_env(base_env)
         self.pids: dict[str, int] = {}
         self._procs: dict[str, subprocess.Popen] = {}  # handles of the children THIS process started (reaped on stop)
         self._lock_fd = None
         self._record = record_command  # callable(name, argv, env) for the run's commands.jsonl
+
+    def record_settings(self) -> Path | None:
+        """Leave what the children were told next to the run, so it stays answerable afterwards."""
+        if self.run_dir is None:
+            return None
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        path = self.run_dir / "stack_env.json"
+        path.write_text(json.dumps(self.spec.settings(), indent=1, sort_keys=True))
+        return path
 
     # -- state file ---------------------------------------------------------
     @property
@@ -361,6 +423,7 @@ class Stack:
     def up(self) -> dict[str, str]:
         """Start sim, deploy and (if recording) the exporter; return the environment an agent process needs."""
         self.root.mkdir(parents=True, exist_ok=True)
+        self.record_settings()
         self._acquire_lock()
         try:
             self._start_sim()
