@@ -35,17 +35,17 @@
 | 脚本 | 干什么 |
 |---|---|
 | `locomani.stack.cli` | 起 / 停三进程 stack（`up` / `down --instance <N>`）。**停只用 `locomani.stack.cli down`,不要自己手写 kill** —— 它多杀 `spawn_main`(sim 的图像发布子进程,孤儿化后占着 :5555,下一次启动会被 `locomani.stack.cli up` 拒绝)和 `serve_policy.py`,还会等端口真正释放并回显剩余进程 |
-| `python -m locomani.launch` | **跑一次完整实验**:用 YAML 定义各阶段配置,执行 `python -m locomani.launch run configs/jobs/complete_pipeline.yaml --gpus 0,1`。多个实验在 YAML 里并行跑 |
-| `python -m locomani.cli eval` | **只评一个 checkpoint**:起 stack + 策略服务器,运行 `PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli eval name=<run_name> gpu=1 eval.rounds=100` |
+| `scripts/pipeline.py` | **跑一次完整实验**:一份全展开的实验文件跑完采集 → 转换 → 训练 → 评测,`python scripts/pipeline.py configs/experiments/<name>.yaml --gpu 1`;产物已存在的阶段自动跳过 |
+| `scripts/eval_bottle.py` / `eval_crate.py` | **只评一个 checkpoint**:起 stack + 策略服务器,`python scripts/eval_bottle.py outputs/runs/<name> --gpu 1`;整份 eval 块以 `--config` 交给评测器 |
 | `scripts/archive/` | round 2/3/4 和旧 pipeline 的编排脚本。**历史记录,不维护,已知跑不起来**(调用的 `eval_closed_loop` 参数已不存在),留着是因为阶梯上那几个数的确切配置只写在里面 |
-| `python -m locomani.cli collect` | **大规模采集**:运行 `PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect task=<task> name=<run_name> gpu=0 collect.rounds=N` |
-| `python -m locomani.cli collect` | **先导批**:单目标、外观钉死,只变出生点和物体位置,采到 N 条成功为止,用 `collect.until_ok=N` 代替 `--rounds` |
+| `scripts/collect_bottle.py` / `collect_crate.py` | **大规模采集**:`python scripts/collect_bottle.py configs/experiments/<name>.yaml --gpu 0`,按批起栈、跑专家、停栈 |
+| 同上 | **先导批**:复制一份实验文件,把 `collect` 改小、`scene.cases` 指向固定样本库,采到 N 条成功为止 |
 | `scripts/export_rerun.py` | 把 episode 导成 Rerun `.rrd`,本地 `pip install rerun-sdk && rerun <file>` 看视频+曲线+3D |
 | `scripts/install_scene.sh` | 解包并重建场景。`SCENE_PRESET` 在**这一行**上给才有效;不给 = 默认多物体桌面。venv 不存在时不重建并以非零退出 |
 | `scripts/paths.sh` | 所有 shell 脚本的路径来源 |
 | `scripts/env_deploy.sh` | 编译 / 运行 C++ deploy 的环境(替代上游的 `install_deps.sh`) |
 | `scripts/push_videos.sh` | 把一批录像替换进 `videos/` 并推送 |
-| `python -m locomani.launch` | 多实例并行跑:用 YAML 定义多个配置,并行执行 |
+| 多开终端 | 并行就是一卡一个终端各跑一份实验;没有作业文件,也没有调度器 |
 
 不在流水线上的:`navigator.py`(FMM 导航,当前 gym 不走这条)、`zmq_driver.py`
 (最早的 walk-only 验证)、`isaac_scene.py` / `compose_scene.py`(渲染检查)。

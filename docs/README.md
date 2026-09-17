@@ -10,7 +10,7 @@
 - [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): command reference and manual stack operation.
-- [Run infrastructure](infra.md): the one CLI (`locomani.cli`), the seven config groups, stages and their manifests, the process stack, and multi-GPU parallel jobs. Read it before composing a run or adding an experiment; the 2026-09-16 [decision record](handoff/infra-plan-20260916.md) is history.
+- [Run infrastructure](infra.md): one expanded experiment file per run, one flat script per stage, the process stack, and what parallelism means here (a second terminal). Read it before adding an experiment; the [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Documentation ownership

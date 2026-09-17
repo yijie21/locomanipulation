@@ -39,51 +39,47 @@ bash scripts/link_gr00t_src.sh
 在此基础上单独跑训练:
 
 ```bash
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli train name=<run_name> gpu=0
+python scripts/train.py outputs/runs/<run_name> --gpu 0
+python scripts/train.py outputs/runs/<run_name> --gpu 0 --dry-run   # 先看会传哪些环境变量
 ```
 
-`train` 阶段读取上游(`convert`)manifest 拿到 `train_dataset` 路径,组好环境
-变量后调用 `scripts/train_bottle.sh`,再把 checkpoint 路径连同
-`steps`/`gpus`/`global_batch` 写进自己的 manifest;若 `<out>/train/model`
+`train.py` 从运行目录的 `summary.json` 拿到 `convert` 写下的 `train_dataset` 路径,
+把运行自己的 `train`/`embodiment` 两个块变成环境变量后调用 `scripts/train_bottle.sh`,
+再把 checkpoint 路径、步数和所用数据集写回 `summary.json`;若 `<run>/model`
 已存在会直接拒绝重跑,避免覆盖一半的 checkpoint。
 
 日志在 `<out>/train.log`(`locomani.pipeline.stages.Stage` 统一写的位置),
 启动命令记在 `<out>/commands.jsonl`,耗时记在 `<out>/timings.jsonl`。盯
 训练进度就 `tail -f <out>/train.log`,找 loss 曲线和 `Saving checkpoint` 字样;
-`train/manifest.json` 的 `ok=true` 加上 `metrics.steps` 达到目标步数才算这局
-真正跑完,不要只看进程退出码。
+`summary.json` 的 `train` 条目出现、且 `model/checkpoint-<steps>/` 真的在那里,
+才算这局跑完,不要只看进程退出码。
 
 ## 4. 批量(+验收)
 
-端到端跑完整条流水线(采集 → 转换 → 训练 → 闭环评测),一次一个 job:
+端到端跑完整条流水线(采集 → 转换 → 训练 → 闭环评测)就是一条命令:
 
 ```bash
-python -m locomani.launch run configs/jobs/example.yaml --gpus 0,1
+python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml --gpu 1
 ```
 
-`configs/jobs/example.yaml` 的 `pick_place_seedA` 就是一条完整的
-`[collect, convert, train, eval, stats]` job;job 之间在空闲 GPU 上并行,同一
-job 内的阶段按序在一张卡上跑,manifest 命中(配置哈希 + 上游哈希都没变)的
-阶段会被跳过。跑完用 `python -m locomani.launch ls` 看状态,`compare <run_a>
-<run_b> --stage eval` 比较两次运行的某个阶段。
+它按 `task.plugin` 选对应的脚本、按顺序跑,产物已存在的阶段自动跳过(要重跑就删掉
+那个产物:数据集目录、`model/`、`eval/closed_loop.json`)。`--from`/`--to` 限定跑哪几段。
+并行就是**再开一个终端**换一张卡,没有作业文件也没有调度器:
+
+```bash
+python scripts/pipeline.py configs/experiments/A.yaml --gpu 0    # 终端 1
+python scripts/pipeline.py configs/experiments/B.yaml --gpu 1    # 终端 2
+cat outputs/runs/*/summary.json                                  # 比较结果
+```
 
 或者分阶段逐个手动运行,方便在训练前后插手工检查:
 
 ```bash
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli collect task=bottle_simple name=<run_name> gpu=0  # 采集
-"$VENV_SIM_PY" -m locomani.cli convert name=<run_name>                          # 转换
-"$VENV_SIM_PY" -m locomani.cli train name=<run_name> gpu=0                      # 训练
-"$VENV_SIM_PY" -m locomani.cli eval name=<run_name> gpu=1 eval.rounds=100       # 闭环评测
+python scripts/collect_bottle.py configs/experiments/bottle_simple_200.yaml --gpu 0  # 采集
+python scripts/convert.py outputs/runs/bottle_simple_200                             # 转换
+python scripts/train.py   outputs/runs/bottle_simple_200 --gpu 0                     # 训练
+python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1                 # 闭环评测
 ```
-
-只想评一个已经训好的 checkpoint(自己起 stack、起策略服务器、跑够
-`eval.rounds` 轮):同一条 `eval` 命令,前提是 `<out>/train/manifest.json` 已存在。
-
-验收不是"跑完没报错"。训练本身没有验证集机制,先看 §5 的 checkpoint 事后选
-流程把 checkpoint 定下来,再用 [evaluation.md](evaluation.md) 的闭环成功率
-过一遍——开环指标只能当体温计,不能替代闭环。
 
 ## 5. 产物与验收
 
@@ -151,9 +147,9 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 `train` 阶段的 `TrainConfig`(`configs/train/*.yaml`,`src/locomani/pipeline/train_config.py`)
 只暴露 `steps`/`save_steps`/`holdout`/`gpus`/`global_batch`/`squat_max`/`base_model`
 七个字段,通过 `train.<field>=<value>` 覆盖,例如
-`python -m locomani.cli train name=<run> train.steps=20000 train.gpus=2`。
+在实验文件里把 `train.steps` 改成 20000、`train.gpus` 改成 2,再跑 `scripts/train.py`。
 它们只是 `launch_finetune` 完整超参数的一个子集;下面是完整表,直接调用
-`bash scripts/train_bottle.sh`(而不经过 `locomani.cli`)时才用得上全部选项。
+`bash scripts/train_bottle.sh`(而不经过 `scripts/train.py`)时才用得上全部选项。
 
 ### `launch_finetune` 完整超参数表
 
@@ -222,10 +218,10 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 | `--output-dir` | `./outputs` | checkpoint/日志输出目录 |
 | `--experiment-name` | None | wandb run 名;不给用 `output_dir` 的 basename |
 | `--save-steps` | 1000 | 每多少步存一次 checkpoint(即 `train.save_steps`) |
-| `--save-total-limit` | 5 | 最多保留几个 checkpoint,超了删旧的(`locomani.cli` 固定传 `SAVE_LIMIT=1`) |
+| `--save-total-limit` | 5 | 最多保留几个 checkpoint,超了删旧的(`train.py` 固定传 `SAVE_LIMIT=1`) |
 | `--save-only-model` | False | 只存模型权重,不存 optimizer/scheduler/RNG 状态(省盘,但不能 resume) |
 | `--resume-from-checkpoint` | False | 从 `output_dir` 里最新的 `checkpoint-*` 续训;和 `save-only-model=True` 不兼容(`experiment.run` 里强制检查) |
-| `--use-wandb` | False | 是否记录到 wandb(`locomani.cli` 固定关闭) |
+| `--use-wandb` | False | 是否记录到 wandb(`train.py` 固定关闭) |
 
 数据集分片/采样(`--shard-size`/`--episode-sampling-rate`/`--num-shards-per-epoch`/
 `--ds-weights-alpha`)控制预加载与多数据集混合权重,默认值对单数据集训练够用。
@@ -266,7 +262,7 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 
 ### 单卡训练:`SINGLE_GPU=1`
 
-`train.gpus=1` 时 `locomani.cli train` 会自动设 `SINGLE_GPU=1`;直接调用脚本
+`train.gpus=1` 时 `train.py` 会自动设 `SINGLE_GPU=1`;直接调用脚本
 时也可以手动指定:
 
 ```bash
@@ -285,12 +281,12 @@ OOM(峰值 32.1 GB)、16 能跑但只剩 950 MiB 余量、**8(accum 8)峰值 27.
 | 现象 | 先查哪里 |
 |---|---|
 | 训练拒跑,报 gr00t 解析到 third_party | 重新执行 `bash scripts/link_gr00t_src.sh`(§2) |
-| 报 `meta/stats.json` 缺失就直接退出 | 按提示手动跑一次 `gr00t.data.stats`,或改走 `DatasetFactory.build()` 自动生成(见 §6);`locomani.cli convert` 产出的数据集通常已经算过 |
-| `WANDB` 相关报错 | `locomani.cli train` 已固定 `WANDB=0`;手动调脚本时没登录会在启动阶段**立即报错**,不是等到 torchrun 下才挂死 |
+| 报 `meta/stats.json` 缺失就直接退出 | 按提示手动跑一次 `gr00t.data.stats`,或改走 `DatasetFactory.build()` 自动生成(见 §6);`scripts/convert.py` 产出的数据集通常已经算过 |
+| `WANDB` 相关报错 | `train.py` 已固定 `WANDB=0`;手动调脚本时没登录会在启动阶段**立即报错**,不是等到 torchrun 下才挂死 |
 | 训练/评测同盘 ENOSPC | 两个训练同时存 checkpoint 前先算账 —— checkpoint 大小 × 保留个数 × 任务数。2026-08-25 的事故:bottle250(6.5 GB × 10)+ frozen_dit(12 GB × 8)并行把 165 GB 吃穿,闭环评测和训练双双死于 ENOSPC。旧 checkpoint 评完即删,或调小保留个数 |
 | `<out>/model` 已存在,拒绝重跑 | 这是防止覆盖一半的 checkpoint;换一个新的 `name=` 或先确认旧 checkpoint 已经不需要 |
 
-前台运行用 Ctrl-C 停止训练进程本身;`locomani.launch` 起的 job 同样可以
+前台运行用 Ctrl-C 停止训练进程本身;`pipeline.py` 起的阶段同样可以
 Ctrl-C 中止,已完成的阶段(manifest `ok=true` 且哈希未变)下次重跑会被跳过,
 不必从头再来。
 

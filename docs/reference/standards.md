@@ -49,8 +49,9 @@ specific rules, not every architectural property or dynamic dependency.
 - `schema.py` owns stored/model field order; conversion, training configurations
   and observation builders consume it. A policy server reports its checkpoint
   file hashes and actual model modalities; evaluation checks and records them.
-- Runs (infra plan 2026-09-16): a run is composed from `configs/` groups by `locomani.conf`; a version is a file under `configs/experiment/` (`+experiment=<name>`), never edited after it has produced results.
-- Stages: one process each (`python -m locomani.cli <stage>`), reading only the upstream `<out>/<stage>/manifest.json` (config-group hash, upstream hash, outputs, metrics, resources) and writing its own; stacks start only through `locomani.stack.Stack`; parallel work goes through `locomani.launch`, which appends every finished stage to `outputs/registry.jsonl`.
+- Runs (2026-09-17): a run is one expanded file in `configs/experiments/`, copied verbatim into the run
+  directory; a version is a new file, not an override. Named profiles live in `configs/{task,backend,eval}/`.
+- Stages: one flat script each (`scripts/<stage>.py`), reading its upstream's entry in `<run>/summary.json`; every stage takes `--dry-run`, which prints what it would run and writes nothing.
 
 ## Checks
 

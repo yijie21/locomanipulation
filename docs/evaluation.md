@@ -8,8 +8,8 @@
 | 项目 | 当前支持 |
 |---|---|
 | open-loop | `eval_open_loop.py`(自研 nMSE 套件)+ `gr00t/eval/open_loop_eval.py`(官方朴素 MSE),都只读 checkpoint + val 数据集,不起 sim,用来逐 checkpoint 选型 |
-| closed-loop(单臂) | `locomani.cli eval`(bottle 系任务)自动起 token-only 栈 + policy server,跑够 `eval.rounds` 局,是唯一的验收标准 |
-| closed-loop(双臂) | `eval_crate_closed_loop.py`(crate 任务),`locomani.cli eval` 对 `task.plugin=crate` 自动路由到它(见 §6) |
+| closed-loop(单臂) | `scripts/eval_bottle.py` 自动起 token-only 栈 + policy server,跑够 `eval.rounds` 局,是唯一的验收标准 |
+| closed-loop(双臂) | `eval_crate_closed_loop.py`,由 `scripts/eval_crate.py` 对 `task.plugin=crate` 自动路由到它(见 §6) |
 | 统计工具 | Wilson 95% 区间(单臂样本量)、McNemar 配对检验(两配置比较)——`src/locomani/pipeline/seq_mcnemar.py` |
 
 本仓库已有的硬证据:把**真值** token 开环回放,关节轨迹复现到 0.2–0.9°,机器人
@@ -27,19 +27,19 @@ open-loop 评测脚本(`src/locomani/pipeline/eval_open_loop.py`、`scripts/gr00
 包的 `src/gr00t/eval/open_loop_eval.py`)只需要 checkpoint 和 val 数据集,跑在
 **GR00T venv** 下(`common.TRAIN_PY = third_party/Isaac-GR00T/.venv/bin/python`),不起
 sim、不占训练/评测之外的资源,可以和别的评测同时跑在别的卡上;它们不经过
-`locomani.cli`,不是流水线的一个 stage,挑哪个 checkpoint 是手动决策。
+`scripts/`,不是流水线的一个阶段,挑哪个 checkpoint 是手动决策。
 
 closed-loop 评测(`eval_closed_loop.py`、`eval_crate_closed_loop.py`)要起完整的
 token-only 栈(sim + deploy)、一个独立的 policy server 进程,还要用 gear_sonic
 的相机客户端和 pinocchio FK 构造观测,所以跑在 **sim venv** 下
-(`common.SIM_PY = $VENV_SIM_PY`)。经 `locomani.cli eval`/`locomani.launch` 跑时,
+(`common.SIM_PY = $VENV_SIM_PY`)。经 `scripts/eval_bottle.py` 跑时,
 这一切由 `src/locomani/stages/eval_stage.py` 自动管理(起栈、起 policy server、
 `try/finally` 保证跑完拆栈);手动跑(见 §3)则要自己按顺序起停。
 
 评测用到的配置组是 `configs/eval/*.yaml`(`EvalConfig`,字段 `rounds`/`seed`/
 `client`/`budget_s`/`replan_interval`/`execution_horizon`/`ensemble_n`/
 `ensemble_m`/`policy_port`/`spawn_edge`/`task`/`target`,外加一个 `backend:` 子块),
-随 `run_config.yaml` 一起被 `locomani.cli`/`locomani.launch` 组装、快照。bottle 系
+随运行目录的 `config.yaml` 一起落盘;实际交给评测器的那份写在 `eval/eval_config.json`。bottle 系
 任务默认 policy 端口 5590,crate 默认 5700(避开单臂评测占用的实例端口块,见 §6)。
 
 ## 3. 跑一局(+读日志)
@@ -69,7 +69,7 @@ bash scripts/gr00t_open_loop.sh \
 
 ```bash
 export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli eval name=<run_name> gpu=1 eval.rounds=100
+python scripts/eval_bottle.py outputs/runs/<run_name> --gpu 1
 ```
 
 前提是同一个运行目录下已有 `train/manifest.json`(先跑过 collect/convert/train,
@@ -114,14 +114,16 @@ CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
 ## 4. 批量(+验收)
 
 ```bash
-python -m locomani.launch run configs/jobs/example.yaml --gpus 0,1
+python scripts/pipeline.py configs/experiments/A.yaml --gpu 0    # 终端 1
+python scripts/pipeline.py configs/experiments/B.yaml --gpu 1    # 终端 2
 ```
 
-`pick_place_seedA` 那条 job 的 `stages: [collect, convert, train, eval, stats]`
-把闭环评测接在训练后面自动跑;manifest 命中的阶段会被跳过,所以补采、重训之后只
-重跑真正变了的部分。跑完 `python -m locomani.launch ls` 看所有运行,
-`python -m locomani.launch compare <run_a> <run_b> --stage eval` 比较两次运行的
-成功率/失败构成。
+两份实验文件各跑一条线,产物已存在的阶段自动跳过(要重跑就删掉那个产物)。
+跑完 `cat outputs/runs/*/summary.json` 并排看结果。
+
+`pipeline.py` 把闭环评测接在训练后面自动跑;补采或重训之后,删掉哪个阶段的产物就只重跑哪一段
+(`--from eval` 只跑评测)。要比较两次运行的成功率和失败构成,读各自的
+`summary.json` 与 `eval/closed_loop.json`。
 
 ### 加速评测(A+C+B 筛选 harness)
 
@@ -144,11 +146,9 @@ python -m locomani.launch run configs/jobs/example.yaml --gpus 0,1
 
 编排这套流程(两个并行 stack + 按轮做序贯 look)的脚本 `scripts/seq_ab.sh` 已随
 本轮重构下线,配对/序贯判定逻辑本身还在 `src/locomani/pipeline/seq_mcnemar.py`,
-但目前没有替代的一键驱动脚本。等价效果目前要拼:两个 `eval`-only 的
-`locomani.launch` job(建一个类似 `configs/jobs/example.yaml` 的文件,两条 job
-各自 `overrides: ["name=<run>", "eval.budget_s=60", ...]`、`stages: [eval]`、
-`gpu: any`,分别加/不加 `eval.ensemble_n=3 eval.ensemble_m=0.3`),并行占两张卡跑出
-两份 `closed_loop.json` 与 `traces/`,再手动喂给 `seq_mcnemar.py` 做配对判定。下面
+但目前没有替代的一键驱动脚本。等价效果目前要拼:复制两份实验文件(一份加 `eval.ensemble_n=3`/`eval.ensemble_m=0.3`,
+一份不加,两份都把 `eval.budget_s` 调小),各在一张卡上 `python scripts/eval_bottle.py <run> --gpu N`,
+跑出两份 `closed_loop.json` 与 `traces/`,再手动喂给 `seq_mcnemar.py` 做配对判定。下面
 几节里具体的历史命令(`seq_ab.sh` 的选项)因此不再能直接照抄执行,
 保留仅供理解方法论与复核历史数字。
 
@@ -995,7 +995,7 @@ seed 6000,出生 1.1–1.3 m:
 
 **Ctrl-C 停止**:`eval_stage.run()` 用 `try/finally` 保证中断时 policy server 和
 stack 都会被正常回收(不会留下孤儿 deploy 或占用 sim 端口),但 `manifest.json`
-只在整局跑完后才写,中断后重跑等于从头开始——`locomani.cli eval` 本身不支持
+只在整局跑完后才写,中断后重跑等于从头开始——`eval_bottle.py` 本身不支持
 断点续跑。手动调用 `eval_closed_loop.py` 时可以用 `--stall-abort SEC`(窗口内
 净位移 < 3 cm 且尚未 commanded_close 就提前收局,实测取舍见下表;**默认关,
 发表的数字必须保持关**,代价是单向地把成功记成失败)和 `--resume`(保留已有
@@ -1020,7 +1020,7 @@ resume 会被拒绝**,要混用得 `--force-resume`)两个 opt-in 参数缩短�
 
 ## 双臂 Closed-loop：`src/locomani/pipeline/eval_crate_closed_loop.py`
 
-单臂闭环的 crate 版本（2026-09-15）。经 `locomani.cli eval`（`task.plugin=crate`
+单臂闭环的 crate 版本（2026-09-15）。经 `scripts/eval_crate.py`（`task.plugin=crate`
 时自动路由到这里）或直接手动调用都行；一条命令负责三件事：在指定实例 / GPU 上起
 token-only 栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用
 `configs/gr00t_sonic_3cam_bimanual.py` 在自己的端口（默认 5700，避开实例端口块；
@@ -1031,7 +1031,7 @@ token-only 栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用
 
 ```bash
 # 经 CLI(推荐):task=crate_table30 一类实验会自动路由到这里
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli eval name=<crate_run> gpu=1 eval.rounds=100 eval.seed=6000
+python scripts/eval_crate.py outputs/runs/<crate_run> --gpu 1
 
 # 手动调用(脱离 pipeline 单独调试用)
 "$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop \

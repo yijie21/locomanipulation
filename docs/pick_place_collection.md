@@ -46,11 +46,8 @@ bash scripts/install_scene.sh
 
 ```bash
 mkdir -p $LOCOMANI_TMP/p03/outputs
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli collect task=pick_place \
-  scene.dir=outputs/scene/pick_place collect.successes=1 \
-  collect.batch_rounds=1 collect.max_batches=1 collect.seed0=32000 \
-  gpu=0
+python scripts/collect_bottle.py configs/experiments/pick_place.yaml \
+  --gpu 0 --name pick_place_first_round
 ```
 
 采集阶段负责启动 sim / SONIC deploy / exporter 和专家，并在结束后停止本次实例。
@@ -65,11 +62,9 @@ export PYTHONPATH=src
 目标是 **10 条成功示范，最多 3 批、每批 10 次尝试**：
 
 ```bash
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli collect task=pick_place \
-  scene.dir=outputs/scene/pick_place collect.successes=10 \
-  collect.batch_rounds=10 collect.max_batches=3 collect.seed0=32300 \
-  gpu=0 name=pick_place_collect_10
+mkdir -p $LOCOMANI_TMP/p03/outputs
+python scripts/collect_bottle.py configs/experiments/pick_place.yaml \
+  --gpu 0 --name pick_place_collect_10
 ```
 
 `successes` 是保留条数；每批重启栈并产生独立 session / manifest，

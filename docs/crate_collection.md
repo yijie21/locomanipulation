@@ -46,15 +46,13 @@ bash scripts/install_scene.sh
 这里运行 **1 次尝试**，从走近开始录视频，成功局到持篮直立验收结束：
 
 ```bash
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
-  task=crate_visual_low_reach scene=crate_table30_depth04 \
-  name=crate_first_attempt collect.instance="$INSTANCE" gpu=0 \
-  collect.batch_rounds=1 collect.max_batches=1 collect.successes=1 \
-  collect.seed0=101 embodiment=g1_bimanual collect.record=false
+# 只跑一局：复制实验文件，把 collect 改成 batch_rounds 1 / max_batches 1 / successes 1
+python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
+  --gpu 0 --name crate_first_attempt
 ```
 
 采集阶段启停自己的仿真和控制实例。首次 SONIC 部署可能较久地构建 TensorRT 缓存，
-进度见本次运行目录的启动日志。每次新实验使用新的 `name=`，查看 manifest 和完整视频判断结果。
+进度见本次运行目录的启动日志。每次新实验使用新的 `--name`，查看 manifest 和完整视频判断结果。
 
 `collect.record=false` 时本流程只保存视频、相机和动作记录（诊断用途，不进转换器）；
 正式训练数据见第 4 节的录制方式。命令里的 `gpu=0` 是显式选择，不要照抄别处的卡号。
@@ -64,11 +62,9 @@ PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
 下面采集 **10 次尝试**，包含成功和失败，不是“收够 10 条成功”：
 
 ```bash
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
-  task=crate_visual_low_reach scene=crate_table30_depth04 \
-  name=crate_collect_10 collect.instance="$INSTANCE" gpu=0 \
-  collect.batch_rounds=10 collect.max_batches=1 collect.successes=10 \
-  collect.seed0=41 embodiment=g1_bimanual collect.record=false
+# 只跑一局：复制实验文件，把 collect 改成 batch_rounds 1 / max_batches 1 / successes 1
+python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
+  --gpu 0 --name crate_collect_10
 ```
 
 `collect.batch_rounds` 控制每批尝试数，`collect.max_batches` 控制批数上限；每批重启一次栈，
@@ -85,11 +81,8 @@ exporter 约占 500 个线程，容器 pid 上限 3840，实测两个录制栈�
 单臂采集（GPU 0 / 实例 0）并行录制；同一块 GPU 上不能跑两个仿真。
 
 ```bash
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
-  task=crate_visual_low_reach scene=crate_table30_depth04 \
-  name=crate_record_10 collect.instance="$INSTANCE" gpu=1 \
-  collect.batch_rounds=10 collect.max_batches=1 collect.successes=10 \
-  collect.seed0=7000 embodiment=g1_bimanual
+python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
+  --gpu 1 --name crate_record_10
 ```
 
 manifest 行带 `task`、`produced`、`ok` 和成功局的
@@ -193,8 +186,8 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 | 桌高、篮子深度与形状 | 场景构建工具与 `--scene` | 控制 profile 不改变几何；改场景后重新验证接触与可达性 |
 | 专家输入 | `visual.pose_source` | 当前默认 profile 为 `assisted`；历史 `markers` 路径需要专门的标记场景 |
 
-配置优先级是组默认值 → `+experiment=<name>` → 命令行的 `task.*` / `collect.*` 覆盖项，
-解析后写入运行目录的 `run_config.yaml` 并交付专家。
+配置就是那份实验文件本身：`configs/experiments/<name>.yaml` 全展开，无继承无组合，
+运行开始时逐字节复制到运行目录的 `config.yaml` 并据此交付专家。
 字段含义以 [配置表](reference/config_fields.md)为准；新实验使用单独的 profile 和输出目录。
 
 ### Waist and reach
@@ -221,11 +214,9 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 例如单集 wall 接触诊断使用第 2 节构建的原始高度场景：
 
 ```bash
-PYTHONPATH=src "$VENV_SIM_PY" -m locomani.cli collect \
-  task=crate_wall task.expert=wall scene=crate_bimanual_depth04 \
-  name=crate_wall_example collect.instance="$INSTANCE" gpu=0 \
-  collect.batch_rounds=1 collect.max_batches=1 collect.successes=1 \
-  collect.seed0=0 embodiment=g1_bimanual collect.record=false
+# 只跑一局：复制实验文件，把 collect 改成 batch_rounds 1 / max_batches 1 / successes 1
+python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
+  --gpu 0 --name crate_wall_example
 ```
 
 `crate_wall.json` 显式开启 `wall_walk`；不加载 profile 时默认为 false。

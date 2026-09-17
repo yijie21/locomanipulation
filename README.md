@@ -17,7 +17,7 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm_collection.md) |
 | 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/dataset.md) |
 | 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/training.md) · [评测](docs/evaluation.md) |
-| 多卡并行、多配置对比 | 一个 job 文件跑多个实验，按 manifest 跳过已完成阶段，结果注册表 | [运行基础设施指南](docs/infra.md) · `configs/jobs/example.yaml` |
+| 多卡并行、多配置对比 | 一份实验文件一次运行，一卡一个终端；产物存在即跳过 | [运行基础设施指南](docs/infra.md) · `configs/experiments/` |
 | MuJoCo 仿真与 Isaac 渲染 | 仿真与采集流程、EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染指南](docs/rendering.md) |
 
 双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
@@ -47,32 +47,31 @@ cd locomanipulation
 
 ## 快速开始
 
-所有阶段只有一个命令：`python -m locomani.cli <collect|convert|train|eval|stats> [覆盖项]`。一次运行由七个配置组组成
-（`task` × `embodiment` × `scene` × `backend` × `collect` × `train` × `eval`，各在 `configs/<组>/` 下一个 YAML 一个版本），
-`configs/experiment/<name>.yaml` 固定一整套组合，用 `+experiment=<name>` 选中。先完成安装指南第 0–4 步，在仓库根目录执行：
+一次运行就是一份实验文件：`configs/experiments/<name>.yaml` 里写着这次运行读的**每一个**值，
+没有继承也没有组合。新实验就是复制一份改几行。先完成安装指南第 0–4 步，在仓库根目录执行：
 
 ```bash
 . scripts/paths.sh
-export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
 
-# 只打印组合后的配置，不运行
-"$VENV_SIM_PY" -m locomani.cli show +experiment=bottle_simple_lowcom
+# 先看会发生什么：打印每个阶段将执行的命令，什么都不写
+python scripts/pipeline.py configs/experiments/bottle_simple_gate8.yaml --gpu 1 --dry-run
 
-# 单臂抓瓶：固定样本库 8 局，GPU 1
-"$VENV_SIM_PY" -m locomani.cli collect +experiment=bottle_simple_lowcom name=my_first_run gpu=1
+# 跑起来：采集 → 转换 → 训练 → 闭环评测
+python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml --gpu 1
 
-# 同一个运行目录上接着做：转换 → 训练 → 闭环评测 → 汇总
-"$VENV_SIM_PY" -m locomani.cli convert name=my_first_run
-"$VENV_SIM_PY" -m locomani.cli train   name=my_first_run gpu=1
-"$VENV_SIM_PY" -m locomani.cli eval    name=my_first_run gpu=1 eval.rounds=20
-
-# 多个实验并行（一卡一 job，起跑前实测 CPU / pid / 显存）；`launch ls` 看注册表
-"$VENV_SIM_PY" -m locomani.launch run configs/jobs/example.yaml --gpus 0,1
+# 单个阶段也能单独跑
+python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 1
+python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 ```
 
-首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。每个阶段是一个独立进程：`collect` 和 `eval`
-自己启停仿真、控制器和导出器（`src/locomani/stack/`，手工控制用 `python -m locomani.stack.cli up|status|down --instance N`），
-结果写进 `outputs/runs/<name>/<阶段>/manifest.json`，下一阶段只读这个文件。双臂抓篮子的命令见 [双臂采集指南](docs/crate_collection.md)。
+并行就是**多开一个终端**、换一张卡：`--gpu 0` 和 `--gpu 1` 各跑一份实验，没有作业文件也没有调度器。
+阶段产物已存在就自动跳过，要重跑就删掉那个产物（数据集目录、`model/`、`eval/closed_loop.json`）。
+
+首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。`collect` 和 `eval`
+自己启停仿真、控制器和导出器（`src/locomani/stack/`，手工控制用
+`python -m locomani.stack.cli up|status|down --instance N`）。双臂抓篮子的命令见
+[双臂采集指南](docs/crate_collection.md)。完整说明见 [运行基础设施指南](docs/infra.md)。
 
 ## 查看运行结果
 
@@ -80,18 +79,20 @@ export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 | 路径 | 内容 |
 |---|---|
-| `run_config.yaml`、`run_config.json` | 本次运行完整解析后的配置（provenance） |
-| `<阶段>/manifest.json` | 该阶段依赖的配置组 hash、上游 manifest hash、产物路径、指标、起跑时的 CPU / pid / GPU 实测 |
+| `config.yaml` | 实验文件的逐字节副本，这次运行的 provenance |
+| `summary.json` | 每个阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
+| `stack_env.json`、`commands.jsonl`、`timings.jsonl` | 仿真栈告诉子进程的全部设置、每个子进程的命令行与耗时 |
 | `collect/manifest_00.jsonl`、`collect/videos_00/`、`collect/state_trace_00/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹 |
 | `train_dataset/`、`model/checkpoint-<steps>/`、`eval/closed_loop.json` | 转换后的 LeRobot 数据集、微调 checkpoint、闭环评测结果（录像在 `eval/videos/`） |
 
-并行 launcher 每完成一个阶段在 `outputs/registry.jsonl` 追加一行（`launch ls` 查看，`launch compare A B --stage eval` 并排比较）。
+比较多次运行就是 `cat outputs/runs/*/summary.json`。产物是否齐全可以查契约：
+`python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval`。
 分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500,000 字节 的预览，原片保留。
 需要调整参数时查 [配置字段表](docs/reference/config_fields.md)；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
 
 ## 仓库与更多文档
 
-`src/locomani/` 是仿真、任务、阶段（`stages/`）、栈管理（`stack/`）和 launcher（`launch.py`）代码，`configs/` 是按组划分的运行配置（YAML，`conf.py` 用 Hydra 组合），`assets/` 是随仓库提供的资产。
+`scripts/` 是每个阶段一个的扁平脚本（采集 / 转换 / 训练 / 评测 / `pipeline.py`），`src/locomani/` 是仿真、任务、专家和栈管理（`stack/`）代码，`configs/experiments/` 是全展开的实验文件、`configs/{task,backend,eval}/` 是按名字引用的 profile 库，`assets/` 是随仓库提供的资产。
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
 完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)。
 

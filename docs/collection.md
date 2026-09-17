@@ -44,19 +44,19 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 
 ```bash
 mkdir -p /workspace/tmp/p03/outputs
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli collect task=bottle_whole_body \
-  scene.dir=outputs/scene/sim collect.successes=1 \
-  collect.batch_rounds=1 collect.max_batches=1 collect.seed0=30000 \
-  gpu=0
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
+# 先看会发生什么，什么都不写：
+python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 0 --dry-run
+# 真的跑一局：复制一份实验文件、把 collect 改成 1 局，再跑它
+python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 0 --name my_first_round
 ```
 
 此自动采集入口固定使用 **实例 0**，目前从 `/workspace/tmp/p03/outputs` 查找 exporter session；
 示例采用默认 `LOCOMANI_TMP=/workspace/tmp`。自定义临时目录时可用文末的手动入口。
 首次部署可能较久地构建 TensorRT 缓存，进度见输出目录的 `start_stack_00.log` 和栈日志。
 
-`locomani.cli collect` 只跑采集这一个阶段；要继续转换 / 训练 / 评测，就在同一个 `name=` 上依次执行后面的动词。
-每次新实验使用新的 `name=`。打开 `collect_00.log`，检查 `EPISODE OK` 或带标签的失败原因，
+`collect_bottle.py` 只跑采集这一个阶段；要一次跑完整条线用 `scripts/pipeline.py`，
+要单独接着做就把运行目录交给 `convert.py` / `train.py` / `eval_bottle.py`。每次新实验用新的 `--name`。打开 `collect_00.log`，检查 `EPISODE OK` 或带标签的失败原因，
 再结合完整视频判断实际动作。
 
 ## 4. 批量采集
@@ -64,14 +64,12 @@ export PYTHONPATH=src
 目标是 **10 条成功示范，最多 3 批、每批 10 次尝试**：
 
 ```bash
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli collect task=bottle_whole_body \
-  scene.dir=outputs/scene/sim collect.successes=10 \
-  collect.batch_rounds=10 collect.max_batches=3 collect.seed0=30100 \
-  gpu=0 name=bottle_collect_10
+cp configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
+# 改 name、collect.successes/batch_rounds/max_batches/seed0 四处，然后：
+python scripts/collect_bottle.py configs/experiments/my_line.yaml --gpu 0
 ```
 
-同一个 `name=` 重跑会接着采（读 `collect/inputs.json` 的批次进度）；要另起一份数据就换一个 `name=`。
+同一个 `--name` 重跑会接着采（读 `collect/inputs.json` 的批次进度）；要另起一份数据就换一个名字。
 
 `successes` 是保留条数，`batch_rounds` / `max_batches` 限制尝试预算；达到预算仍不足会明确报错。
 每批重启栈，限制 exporter 的资源增长；一个 batch 对应一个 session 和一个 manifest。
@@ -81,20 +79,28 @@ export PYTHONPATH=src
 session 和 manifest；这不是任意时刻的 episode 级恢复。更改场景或任务配置时使用新目录，
 不要修改正在运行的配置快照或覆盖旧产物。
 
-### 统一入口与配置组（2026-09-16）
+### 一份实验文件，一个脚本（2026-09-17）
 
-所有阶段只有一个命令：`python -m locomani.cli <collect|convert|train|eval|stats|show> [覆盖项]`（`make run ARGS=...` 同义）。一次运行由七个配置组组成，每组一个 YAML 目录、一个 dataclass 做 schema（YAML 里写了 dataclass 没有的字段会在组合时报错，`__post_init__` 的校验照常触发）：`task/`（专家决策、验收、失败分类）、`embodiment/`（动作/状态维度、相机、GR00T modality；`g1_single_arm`、`g1_bimanual`）、`scene/`（冻结场景目录 + 固定样本库）、`backend/`、`collect/`、`train/`、`eval/`。`configs/config.yaml` 是默认组合；`configs/experiment/<name>.yaml` 固定一个版本，用 `+experiment=<name>` 选中，只增不改。例子：
+每个阶段一个扁平脚本，从上往下读完就知道它做了什么：`scripts/collect_bottle.py`（本页）、
+`collect_crate.py`、`convert.py`、`train.py`、`eval_bottle.py`、`eval_crate.py`，
+`scripts/pipeline.py` 按 `task.plugin` 把它们串起来。
 
+一次运行由**一份完整的实验文件**描述：`configs/experiments/<name>.yaml` 里写着这次运行读的每一个值，
+八个块（`name` + task / embodiment / scene / backend / collect / train / eval），没有继承也没有组合。
+新实验就是复制一份改几行；两份实验 `diff` 一下就是两次运行的全部差别。
+
+```bash
+python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml --gpu 1   # 整条线
+python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 1   # 只采集
+python scripts/pipeline.py configs/experiments/crate_table30_record.yaml --gpu 1 --dry-run   # 双臂，只看命令
 ```
-python -m locomani.cli show    +experiment=bottle_simple_lowcom            # 只打印组合结果
-python -m locomani.cli collect +experiment=bottle_simple_lowcom gpu=1      # 冻结专家的 8 局固定库
-python -m locomani.cli collect task=pick_place scene=sim collect.successes=50
-python -m locomani.cli collect +experiment=crate_table30_record            # 双臂 crate 录制线
-```
 
-每个阶段是一个独立进程（`src/locomani/stages/`），只通过运行目录里的 manifest 认识彼此：`collect` 自己起 stack、跑专家、写 `<out>/collect/manifest.json`（sessions、manifests、yield、失败原因、起跑时的 CPU/pid/GPU 实测）；`convert` 读它、写 `train_dataset`/`val_dataset` 和自己的 manifest；`train` 读 convert 的、写 checkpoint 路径；`eval` 读 train 的、自己起评估 stack 和策略服务；`stats` 汇总。每个 manifest 带本阶段依赖的配置组的 hash 和上游 manifest 的 hash，上游不存在或未成功就拒绝运行；只重跑 eval = 在同一个 `out` 上再执行 `python -m locomani.cli eval ...`。
+运行开始时实验文件被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，**下游阶段读的是那份副本**——
+跑到一半改实验文件不会影响正在跑的运行。阶段之间只通过运行目录认识彼此：
+`summary.json` 里每个阶段一条记录（保留数、数据集路径、checkpoint、成功率）。
+产物已存在的阶段自动跳过，要重跑就删掉那个产物。并行就是多开一个终端换一张卡。
 
-Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_table30 embodiment=g1_single_arm` 在组合时就报错。每次运行把完整解析后的配置写到 `<out>/run_config.yaml|json`，这就是这次运行的 provenance。专家进程（`grasp_gym.py`、`crate/expert.py`）仍从运行目录里落下的 `task_config.json`/`reach_config.json` 读配置。
+完整说明见 [运行基础设施](infra.md)。
 
 ### 复现要点与预期成功率
 
@@ -106,7 +112,7 @@ Task 声明它能跑的 embodiment（`conf.TASK_EMBODIMENTS`），`task=crate_ta
 | deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
 | 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED` | `outputs/scene/sim/scene_meta.json`、脚本回显 |
 | 任务配置 | `configs/task/bottle_whole_body.yaml`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
-| 采集配方 | `configs/experiment/<name>.yaml`（组合 task / scene / collect），或本页的 `collect.*` 覆盖项 | 运行目录 `run_config.yaml`、`collect/inputs.json` |
+| 采集配方 | `configs/experiments/<name>.yaml`（全展开，一次运行读的每个值都在里面） | 运行目录 `config.yaml`（逐字节副本）、`collect/inputs.json` |
 | 资源 | 该 GPU 上没有第二个仿真；CPU 配额有余量 | `nvidia-smi`、`/sys/fs/cgroup/cpu.stat` |
 | 闭环评测的初始 token | `--initial-token-file configs/deployment/whole_body_initial_token.json`（与这份数据的垂臂开局一致；默认的 READY token 会让 100 局全部卡在 prelude） | 评测目录 `config_snapshot.json` 的 `initial_token` 摘要 |
 
@@ -223,13 +229,10 @@ LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim" "$VENV_SIM_PY" \
 然后对同一 case bank 分别运行基线和候选；保留全部十次尝试，不用成功后重采样填满：
 
 ```bash
-export PYTHONPATH=src
+# 两份实验文件，只差 task 块和 name：把 scene.cases 指向上面这份 bank，
+# collect 设成 successes/batch_rounds 10、max_batches 1、seed0 31000
 for variant in visible whole_body; do
-  "$VENV_SIM_PY" -m locomani.cli collect task=bottle_${variant} \
-    scene.dir=outputs/scene/sim scene.cases=outputs/bottle_cases10.json \
-    collect.successes=10 collect.batch_rounds=10 \
-    collect.max_batches=1 collect.seed0=31000 \
-    gpu=0 name=bottle_fixed_${variant}
+  python scripts/collect_bottle.py configs/experiments/bottle_fixed_${variant}.yaml --gpu 0
 done
 ```
 
@@ -288,8 +291,8 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 
 命令行覆盖项按组分开：`collect.*` 改采集规模（成功条数、每批轮数、种子），
 `task.*`（含 `task.spawn.*`、`task.reach.*`）改专家行为，`scene=` 换场景。
-要复现的配方写成 `configs/experiment/<name>.yaml`，不要把一长串覆盖项留在 shell 历史里；
-组合结果先用 `locomani.cli show` 看一眼，运行后以运行目录里的 `run_config.yaml` 为准。
+要复现的配方就是 `configs/experiments/<name>.yaml` 本身——复制一份改几行，不要把一长串覆盖项留在 shell 历史里；
+跑之前用 `--dry-run` 看一眼会执行什么，跑完以运行目录里的 `config.yaml` 为准。
 字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准，组合规则见 [运行基础设施](infra.md)。
 
 ### 连续全身候选的动作原则
@@ -334,10 +337,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 瓶子重心下移 5 cm，使单边指垫先碰到时瓶子倾向滑动而不是倾倒。
 
 ```bash
-export PYTHONPATH=src
-"$VENV_SIM_PY" -m locomani.cli collect task=bottle_simple scene=lowcom \
-  collect.successes=8 collect.batch_rounds=8 collect.max_batches=1 collect.seed0=30700 \
-  gpu=0 name=<run>
+python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 0 --name <run>
 ```
 
 ## 7. 排错与停止

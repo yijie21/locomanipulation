@@ -12,7 +12,7 @@ exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
 
 ```bash
 # 正常路径：转换是一个阶段，session 与 manifest 的配对从 collect 的 manifest 里读
-python -m locomani.cli convert name=<run>     # 产出 <out>/train_dataset 与 <out>/val_dataset
+python scripts/convert.py outputs/runs/<run>   # 产出 <run>/train_dataset 与 <run>/val_dataset
 ```
 
 `train.holdout` 决定切出多少条做验证集（0 表示不切）。手工转换散落的 session
