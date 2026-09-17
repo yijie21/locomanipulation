@@ -258,3 +258,12 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   因此双臂的等价性改用**确定性证据**：`test_both_paths_build_the_same_stack` 断言四份实验在新旧两条路径下
   构造出的 `StackSpec` **20 个子进程环境变量与全部关键字段逐项相同**（实测 crate 线 0 差异）。
   连续量也一致：`end_depth_m` 基线 1.3306 → 1.3215 / 1.3295，`exit_majority` 两次都 PASS。
+- **commit 10**：`scripts/eval_crate.py`（116 行）+ 3 项送达测试。**按用户决定不跑真实评测**
+  （双臂 checkpoint 已在 2026-09-17 清理中删除），只保证逻辑一致；`crate_eval` 契约因此明确标注
+  **UNVERIFIED**，并由一条测试钉住这个标注——第一次真实双臂评测必须验证它。
+  写脚本时发现旧路径在双臂线上也有"声明未送达"：评测器接受 `--port`/`--budget-s`/`--execution-horizon`/
+  `--initial-token-file`，而旧 stage 一个都没传，全用评测器默认值。更要紧的是共享的 eval 组让 crate 线
+  带上了**单臂的开局 token**；新增 `configs/eval/crate_closed_loop.yaml`（crate token、端口 5700、
+  spawn 1.2–1.5、`pick up the crate`）并让实验覆盖它，新旧两条路径继续逐字段相等。
+  顺带验证了 provenance 规则：旧运行目录 `crate_flat_20260917` 的 dry-run 仍按它**自己那份** `config.yaml`
+  输出端口 5590 和单臂 token——运行读的永远是它开始时的副本。

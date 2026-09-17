@@ -281,3 +281,45 @@ def test_recording_is_enabled_on_whichever_instance_this_line_uses(crate):
     assert cfg["collect"]["instance"] != 0  # this line does not share instance 0 with the bottle runs
     assert "RECORD_INSTANCE=1" in out
     assert f"INSTANCE={cfg['collect']['instance']}" in out
+
+
+@pytest.fixture(scope="module")
+def crate_eval(tmp_path_factory):
+    run = tmp_path_factory.mktemp("crate_run")
+    (run / "config.yaml").write_text((EXPERIMENTS / "crate_table30_record.yaml").read_text())
+    (run / "summary.json").write_text(json.dumps({"train": {"checkpoint": "/tmp/model/checkpoint-10000"}}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "eval_crate.py"), str(run), "--gpu", "1", "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text()), result.stdout
+
+
+def test_the_bimanual_evaluator_opens_in_its_own_pose(crate_eval):
+    """The single-arm token would start the robot where this line's training data never does."""
+    cfg, out = crate_eval
+    assert cfg["eval"]["initial_token"].endswith("crate_initial_token.json")
+    assert cfg["eval"]["initial_token"] in out
+
+
+def test_the_fields_the_bimanual_evaluator_accepts_are_all_delivered(crate_eval):
+    """Port, budget and horizon used to be declared and then left at the evaluator's defaults."""
+    cfg, out = crate_eval
+    for flag, value in (
+        ("--rounds", cfg["eval"]["rounds"]),
+        ("--seed", cfg["eval"]["seed"]),
+        ("--port", cfg["eval"]["policy_port"]),
+        ("--execution-horizon", cfg["eval"]["execution_horizon"]),
+        ("--budget-s", cfg["eval"]["budget_s"]),
+        ("--instance", cfg["collect"]["instance"]),
+    ):
+        assert f"{flag} {value}" in out, flag
+
+
+def test_the_bimanual_line_keeps_its_own_port_block(crate_eval):
+    cfg, _ = crate_eval
+    assert cfg["collect"]["instance"] != 0
+    assert cfg["eval"]["policy_port"] != 5590  # 5590 is instance 1's privileged port

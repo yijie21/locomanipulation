@@ -4,6 +4,7 @@ defaults:
 - override /task: crate_visual_low_reach
 - override /scene: crate_table30_depth04
 - override /embodiment: g1_bimanual
+- override /eval: crate_closed_loop
 name: crate_table30_record
 collect:
   successes: 20

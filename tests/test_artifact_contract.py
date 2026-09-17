@@ -37,6 +37,15 @@ def test_every_stage_has_a_contract():
     assert set(NAMES) == set(CRITICAL)
 
 
+def test_an_unverified_contract_says_so():
+    """crate_eval was written from the old path's layout and has never been checked against a run.
+
+    The bimanual checkpoint was deleted before the flat script existed, so the first real bimanual
+    evaluation is what confirms this one -- until then the file has to admit it.
+    """
+    assert "UNVERIFIED" in json.loads((CONTRACTS / "crate_eval.json").read_text())["note"]
+
+
 @pytest.mark.parametrize("name", NAMES)
 def test_contract_is_loadable_and_carries_its_provenance(name):
     doc = json.loads((CONTRACTS / f"{name}.json").read_text())

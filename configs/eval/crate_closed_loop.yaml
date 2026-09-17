@@ -1,0 +1,55 @@
+# eval/crate_closed_loop: the bimanual closed loop. Same shape as closed_loop_100, but this line
+# opens in its own pose -- the crate token, not the single-arm arms-down one -- and the bimanual
+# evaluator owns its stack, so it takes the policy port the crate pilots used.
+defaults:
+- _schema
+- _self_
+backend:
+  no_encoder: true
+  hand: dex1
+  upper_slew_deg: 2.0
+  grip_delay: 0
+  obs_dump: null
+  replace: false
+  wrist_cams: true
+  sim_vis: none
+  scene_random: false
+  dataset_fps: 25.0
+  clean_deploy: false
+  eval_parallel: false
+  sonic_dds_domain: null
+  lockstep:
+    enabled: false
+    ack_timeout: 5.0
+    warmup_ticks: 60
+    cmd_delay: 0
+    jitter: false
+    jitter_seed: 0
+    no_seed: false
+rounds: 100
+seed: 6000
+client: async
+budget_s: 90.0
+replan_interval: 0.4
+execution_horizon: 16
+ensemble_n: 1
+ensemble_m: 0.3
+rtc: false
+transition_commit: false
+transition_decoder: null
+policy_port: 5700
+stand_retries: 1
+latency_dist: null
+latency_frames: null
+grip_gain: 1.0
+snap: true
+stall_abort_s: 0.0
+resume: false
+force_resume: false
+spawn_edge:
+- 1.2
+- 1.5
+task: pick up the crate
+target: crate
+video_include_init: true
+initial_token: configs/deployment/crate_initial_token.json
