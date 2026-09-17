@@ -124,11 +124,13 @@ def run_batch(cfg: dict, run_dir: Path, gpu: str, state: dict, dry_run: bool) ->
         TF_EXPORTER_SCRIPT=str(ROOT / "src/locomani/pipeline/run_instance_exporter.py"),
         **dict(kv.split("=", 1) for kv in cfg["collect"].get("gym_env", [])),
     )
-    argv = gym_argv(cfg, run_dir, batch, state["kept"], batch_cases(cfg, run_dir, batch, tag), manifest)
-    if dry_run:
+    if dry_run:  # name the slice file without writing it: a dry run leaves nothing behind
+        cases = collect_dir / f"cases_{tag}.json" if cfg["scene"].get("cases") else None
+        argv = gym_argv(cfg, run_dir, batch, state["kept"], cases, manifest)
         run_common.show(f"stack_up_{tag}", ["locomani.stack", "up", str(spec.instance)], spec.settings())
         run_common.show(f"collect_{tag}", argv, {k: v for k, v in env.items() if k not in spec.settings()})
         return manifest
+    argv = gym_argv(cfg, run_dir, batch, state["kept"], batch_cases(cfg, run_dir, batch, tag), manifest)
     sessions = session_root(spec.instance) / "outputs"
     sessions.mkdir(parents=True, exist_ok=True)
     before = set(sessions.iterdir())
@@ -158,11 +160,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="print what would run, start nothing")
     args = ap.parse_args(argv)
 
-    cfg, run_dir = run_common.open_run(args.experiment, args.name)
+    cfg, run_dir = run_common.open_run(args.experiment, args.name, write=not args.dry_run)
     collect = cfg["collect"]
-    if not args.dry_run:
-        run_common.require_headroom("collect", gpu=args.gpu)
-        run_common.require_deploy_patches(cfg)
+    if args.dry_run:
+        run_batch(cfg, run_dir, args.gpu, dict(sessions=[], manifests=[], kept=0, batches=0), True)
+        return 0
+    run_common.require_headroom("collect", gpu=args.gpu)
+    run_common.require_deploy_patches(cfg)
     prepare(cfg, run_dir)
     (run_dir / "collect").mkdir(exist_ok=True)
     inputs = run_dir / "collect" / "inputs.json"

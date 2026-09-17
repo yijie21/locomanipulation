@@ -52,3 +52,5 @@ task: pick up the water bottle
 target: water_bottle
 # the bottle lines collect from SONIC's own arms-down reference, so the prelude must hold that token
 initial_token: configs/deployment/whole_body_initial_token.json
+video_include_init: true  # film from the teleport: a [stand] failure ends the round before the
+# visibility gate, and that is the family with no footage at all otherwise

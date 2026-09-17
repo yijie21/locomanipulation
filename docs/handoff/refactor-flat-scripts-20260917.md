@@ -239,3 +239,12 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   `artifact_contract.py check bottle_train` 对冒烟目录和 200 集目录**都 PASS**，随后删除该 24 GB 冒烟产物。
   契约按同样的方式**故意改了一条**：`train/manifest.json` 由 summary 里的 train 条目取代（checkpoint 路径、
   步数、训练所用数据集）。
+- **commit 8**：`scripts/eval_bottle.py`（142 行）+ 5 项送达测试。
+  **验收**：200 集那个 checkpoint 上跑 3 局（含重试共 6 次尝试）**0/6**（控制层根因未修，属范围外），
+  但 `eval/videos/` 里有 **6 段录像**——`artifact_contract.py check bottle_eval` PASS，
+  而这条契约存在的理由就是这个目录曾经空了一整天。契约同样故意改一条：`eval/manifest.json` → summary 的 eval 条目。
+  配置改动：瓶子线的 `eval.video_include_init` 改为 true（`[stand]` 是结束最早、也是唯一拍不到的失败家族），
+  并**镜像回** `configs/eval/closed_loop_100.yaml` 保持新旧路径等价（crate 那份一并对齐）。
+  过程中两处自查：批量替换误改了 `task` 块里的同名字段，被等价性测试当场挡住；`--dry-run` 原本会创建运行目录
+  并复制场景，现在 `open_run(write=False)` 之后**一个字节都不写**——测试留下的 `outputs/runs/delivery_check`
+  正是靠这条被消除的。

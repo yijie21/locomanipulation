@@ -188,5 +188,5 @@ eval:
   - 1.3
   task: pick up the water bottle
   target: water_bottle
-  video_include_init: false
+  video_include_init: true  # shared with the single-arm line; the bimanual evaluator records per batch
   initial_token: configs/deployment/whole_body_initial_token.json

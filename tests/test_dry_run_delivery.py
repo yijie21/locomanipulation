@@ -201,3 +201,57 @@ def test_training_without_a_dataset_is_refused(tmp_path):
         cwd=ROOT,
     )
     assert result.returncode != 0 and "convert stage" in result.stderr
+
+
+@pytest.fixture(scope="module")
+def evaluated(tmp_path_factory):
+    """A run directory shaped like one training just finished."""
+    run = tmp_path_factory.mktemp("run")
+    (run / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    (run / "summary.json").write_text(json.dumps({"train": {"checkpoint": "/tmp/model/checkpoint-10000"}}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "eval_bottle.py"), str(run), "--gpu", "2", "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), result.stdout
+
+
+def test_the_evaluator_is_handed_the_whole_block_as_a_file(evaluated):
+    """Not a few fields: that is how a hundred rounds spawned at 0.7 m while the config said 1.1."""
+    _, out = evaluated
+    assert "--config" in out and "eval/eval_config.json" in out
+
+
+def test_the_evaluation_stack_runs_without_the_encoder(evaluated):
+    """Collection needs the deploy's encoder; token streaming will not hold with it."""
+    cfg, out = evaluated
+    assert cfg["eval"]["backend"]["no_encoder"] is True
+    assert '"no_encoder": true' in out
+
+
+def test_the_round_video_directory_is_delivered(evaluated):
+    """The artifact that silently disappeared for a day."""
+    _, out = evaluated
+    assert "SIM_VIDEO_DIR=" in out and "eval/videos" in out
+
+
+def test_the_opening_token_and_the_checkpoint_are_delivered(evaluated):
+    cfg, out = evaluated
+    assert cfg["eval"]["initial_token"] in out  # must match the pose the training data opens in
+    assert "--model-path /tmp/model/checkpoint-10000" in out
+    assert cfg["embodiment"]["gr00t_modality_config"] in out
+
+
+def test_evaluating_without_a_checkpoint_is_refused(tmp_path):
+    (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    (tmp_path / "summary.json").write_text(json.dumps({"convert": {"train_dataset": "/tmp/d"}}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "eval_bottle.py"), str(tmp_path), "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode != 0 and "train stage" in result.stderr

@@ -1,7 +1,11 @@
 {
- "recorded_from": "outputs/runs/bottle_simple_200_20260916",
- "note": "single-arm closed loop: the result, the config actually handed to the evaluator, and one video per attempt",
+ "recorded_from": "outputs/runs/bottle_simple_200_20260916 (old path), updated for the flat script in commit 8",
+ "note": "single-arm closed loop: the result, the config actually handed to the evaluator, and one video per attempt. eval/videos/*.mp4 is the line this contract exists for -- it was empty for a day while the stage reported ok. Commit 8 dropped the stage manifest; the run summary carries the round count, the successes and the checkpoint they were run against.",
  "required": [
+  {
+   "pattern": "config.yaml",
+   "min": 1
+  },
   {
    "pattern": "eval.log",
    "min": 1
@@ -23,15 +27,15 @@
    "min": 1
   },
   {
-   "pattern": "eval/manifest.json",
-   "min": 1
-  },
-  {
    "pattern": "eval/serve.log",
    "min": 1
   },
   {
    "pattern": "eval/videos/*.mp4",
+   "min": 1
+  },
+  {
+   "pattern": "summary.json",
    "min": 1
   }
  ]

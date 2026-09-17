@@ -32,12 +32,18 @@ NEEDS = {  # measured, not theoretical: an exporter holds ~1800 pids and the con
 }
 
 
-def open_run(experiment: Path | str, name: str | None = None) -> tuple[dict, Path]:
-    """Read the experiment file and copy it verbatim into the run directory it names."""
+def open_run(experiment: Path | str, name: str | None = None, *, write: bool = True) -> tuple[dict, Path]:
+    """Read the experiment file and copy it verbatim into the run directory it names.
+
+    `write=False` is what --dry-run passes: a dry run answers "what would this do" and must leave
+    nothing behind, not even the directory it would have claimed.
+    """
     experiment = Path(experiment)
     cfg = yaml.safe_load(experiment.read_text())
     cfg["name"] = name or cfg["name"]
     run_dir = RUNS / cfg["name"]
+    if not write:
+        return cfg, run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     copy = run_dir / "config.yaml"
     if copy.exists() and copy.read_text() != experiment.read_text():
