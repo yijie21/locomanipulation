@@ -37,7 +37,7 @@ rtc: false
 transition_commit: false
 transition_decoder: null
 policy_port: 5590
-stand_retries: 1
+stand_retries: 0
 latency_dist: null
 latency_frames: null
 grip_gain: 1.0

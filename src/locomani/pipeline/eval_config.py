@@ -25,7 +25,13 @@ class EvalConfig(VlaConfig):
     replan_interval: float = 0.4  # --replan-interval: async client seconds between chunk requests
     execution_horizon: int = 16  # --execution-horizon: blocking client chunk steps per replan
     policy_port: int = 5590  # --policy-port: serve_policy.py's port
-    stand_retries: int = 1  # --stand-retries: 0 or 1, reset retries after a stand-stage failure
+    # 0 since 2026-09-17: a stand-stage failure IS a failed round. Collection has
+    # always scored it that way (task.stand_retries is 0 everywhere); evaluation,
+    # the side that publishes a number, was the lenient one. Retrying also cannot
+    # tell an initialisation stumble from a genuinely bad approach -- both arrive
+    # as `[stand]` -- so it quietly credits the policy for the ones it caused.
+    # Set it to 1 only to diagnose a struggling stack, never to produce a result.
+    stand_retries: int = 0  # --stand-retries: 0 or 1, reset retries after a stand-stage failure
     latency_dist: str | None = None  # --latency-dist: empirical latency distribution JSON (lockstep client)
     latency_frames: int | None = None  # --latency-frames: fixed simulated inference latency, frames (lockstep client)
     restart_deploy: bool = True  # --set restart_deploy=false: skip the per-round deploy restart, as collection
