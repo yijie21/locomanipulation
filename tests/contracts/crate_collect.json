@@ -1,6 +1,6 @@
 {
- "recorded_from": "outputs/runs/crate_check_record20",
- "note": "bimanual collect: per-batch manifests and videos, the shared trace directory, the expert observation records and the scene copy",
+ "recorded_from": "outputs/runs/crate_check_record20 (old path), updated for the flat script in commit 9",
+ "note": "bimanual collect: per-batch manifests and videos, the shared trace directory, the expert's observation records and the scene copy, which keeps the source directory's name because the expert's lookups depend on it. Commit 9 made the same three replacements as the single-arm line: the stage manifest and the two resolved-config dumps became summary.json and the verbatim config.yaml, and the stack records what its children were told.",
  "required": [
   {
    "pattern": "*/scene_meta.json",
@@ -15,7 +15,7 @@
    "min": 1
   },
   {
-   "pattern": "collect/manifest.json",
+   "pattern": "config.yaml",
    "min": 1
   },
   {
@@ -51,11 +51,11 @@
    "min": 1
   },
   {
-   "pattern": "run_config.json",
+   "pattern": "stack_env.json",
    "min": 1
   },
   {
-   "pattern": "run_config.yaml",
+   "pattern": "summary.json",
    "min": 1
   },
   {

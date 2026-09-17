@@ -248,3 +248,13 @@ argv/env 里）、产物契约（重构前记录每个阶段产出的文件清�
   过程中两处自查：批量替换误改了 `task` 块里的同名字段，被等价性测试当场挡住；`--dry-run` 原本会创建运行目录
   并复制场景，现在 `open_run(write=False)` 之后**一个字节都不写**——测试留下的 `outputs/runs/delivery_check`
   正是靠这条被消除的。
+- **commit 9**：`scripts/collect_crate.py`（161 行）+ 3 项双臂送达测试；`crate_collect` 契约同样故意改三条后 PASS。
+  **验收（重要，结论与计划预期不同）**：20 局 ready-stand 两次：**16/20** 与 **12/20**。
+  `gate.py compare carry` 分别 3/4 与 2/4，两次都只挂在 `failure_reasons` 上，且**每次多出来的家族都不一样**
+  （第一次 `basket_displaced_before_capture`，第二次 `reach_stalled`，且前者没有复现）。
+  同一代码血统的四份 20 局样本产出率 12–17，说明**这条线的 20 局样本判不了回归**——与记忆里
+  "10-round pilots cannot measure this line" 和 "crate gate FAIL 可能是纯噪声" 一致；
+  另需注意 `baseline_crate.json` 来自 **wall** 诊断专家，visual 线要对 `baseline_carry.json`（上次重构也是这么做的）。
+  因此双臂的等价性改用**确定性证据**：`test_both_paths_build_the_same_stack` 断言四份实验在新旧两条路径下
+  构造出的 `StackSpec` **20 个子进程环境变量与全部关键字段逐项相同**（实测 crate 线 0 差异）。
+  连续量也一致：`end_depth_m` 基线 1.3306 → 1.3215 / 1.3295，`exit_majority` 两次都 PASS。

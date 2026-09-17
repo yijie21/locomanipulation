@@ -255,3 +255,29 @@ def test_evaluating_without_a_checkpoint_is_refused(tmp_path):
         cwd=ROOT,
     )
     assert result.returncode != 0 and "train stage" in result.stderr
+
+
+@pytest.fixture(scope="module")
+def crate():
+    cfg = yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text())
+    return cfg, dry_run("collect_crate.py", "crate_table30_record.yaml", "--gpu", "1", "--name", "crate_delivery")
+
+
+def test_the_chosen_expert_runs_with_the_run_budget(crate):
+    cfg, out = crate
+    assert f"--rounds {cfg['collect']['batch_rounds']}" in out
+    assert f"--seed {cfg['collect']['seed0']}" in out
+    assert f"--label {'visual_crate' if cfg['task']['expert'] == 'visual' else cfg['task']['expert']}" in out
+
+
+def test_the_bimanual_scene_copy_keeps_the_source_name(crate):
+    """The expert's own lookups depend on the directory name, so the copy may not be renamed."""
+    cfg, out = crate
+    assert Path(cfg["scene"]["dir"]).name in out
+
+
+def test_recording_is_enabled_on_whichever_instance_this_line_uses(crate):
+    cfg, out = crate
+    assert cfg["collect"]["instance"] != 0  # this line does not share instance 0 with the bottle runs
+    assert "RECORD_INSTANCE=1" in out
+    assert f"INSTANCE={cfg['collect']['instance']}" in out
