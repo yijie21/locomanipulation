@@ -53,8 +53,9 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 
 ## 4. 每次都要改的字段
 
-这里只说字段**控制什么**，不复述默认值——默认值以
-[配置字段表](reference/config_fields.md)（由 dataclass 生成）和实验文件自身的注释为准。
+这里只说字段**控制什么**，不复述默认值。`task`/`backend`/`eval` 的默认值查
+[配置字段表](reference/config_fields.md)；**`collect` 和 `train` 是普通 YAML、没有 dataclass，
+那张表里查不到**，它们的唯一出处是实验文件自身的注释。
 
 | 字段 | 控制什么 | 调大 / 调小意味着 |
 |---|---|---|
@@ -71,15 +72,20 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 | `train.holdout` | 留几集做验证 | 必须**小于**实际保留的集数 |
 | `eval.rounds` | 闭环评测跑几局 | 20 局只看得出"翻倍级"差异，100 局才判得动 10 个点 |
 | `eval.seed` | 评测的采样种子 | 与采集的 seed 刻意错开 |
+| `eval.policy_port` | policy server 的端口 | 默认 5590，**并行评测必须改**（见 §6） |
 
 ## 5. 双臂没有"成功够了就停"
 
-双臂专家只接 `--rounds`（`crate/prepare.py:expert_argv`），**`--until-ok` 根本不传给它**。
-所以 `collect.batch_rounds × max_batches` 就是**必定跑满**的尝试数，`collect.successes`
-退化成事后的验收门槛——不满足时采集阶段非零退出，但失败记录和视频**仍然保留**。
+分两层，容易只记住一层：
 
-直接跑未修改的 `crate_table30_record.yaml` 是 **20 条成功 / 每批 10 局 / 最多 2 批**。
-要只跑一局，改的是 `batch_rounds`（连带 `max_batches: 1`），不是 `successes`。
+- **批内**：`batch_rounds` 局一定跑满。双臂专家只接 `--rounds`（`crate/prepare.py:expert_argv`），
+  `--until-ok` 根本不传给它——**除非专家崩了**，异常会向上抛并中止整批。
+- **批间**：`successes` 是**活判据**。`collect_crate.py:134` 的循环条件是
+  `kept < successes and batches < max_batches`，够了就不再开新批（单臂同一行，这不是双臂特性）。
+
+所以尝试数是 `batch_rounds ×（实际跑了几批）`，不是 `× max_batches`。**要保证跑满 N 批，
+`successes` 必须大于 `batch_rounds × N` 能采到的数量**；反过来把 `successes` 调小只会少跑批。
+预算用尽仍不够时采集阶段非零退出，但失败记录和视频**仍然保留**。
 
 ## 6. 跑
 
@@ -91,6 +97,10 @@ python scripts/pipeline.py configs/experiments/my_crate.yaml --gpu 1            
 ```
 
 展开后是 `collect_crate.py` → `convert.py` → `train.py` → `eval_crate.py`。
+
+> **双臂的 `eval` 块不是整份交给评测器的。** `eval_crate.py` 只挑十几个 flag 传下去，
+> `eval.backend` 整块在 `eval_crate_closed_loop.py:181` 由代码重建；实测配置写 `client: async`，
+> `closed_loop.json` 记录的却是 `blocking`。改 `eval` 块里没被传递的字段不会有任何效果。
 也可以分阶段跑，方便在中间插手工检查：
 
 ```bash
@@ -119,6 +129,13 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 **同一块 GPU 上不能跑两个仿真。** exporter 约占 500 个线程，容器 pid 上限 3840，
 实测两个录制栈约 1800——**不要再并行第三个**。
 
+**换卡还不够，另外两个端口是进程范围的**（采集不受影响，它按 instance 偏移）：
+
+| 端口 | 谁的 | 怎么换 | 不换会怎样 |
+|---|---|---|---|
+| 29500 | torchrun（`train_bottle.sh`） | `export PORT=29540` | `EADDRINUSE`，train 阶段直接挂 |
+| 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use` |
+
 `collect.record=true`（默认）时采集阶段在本实例上起 data exporter，每批一个 session，
 写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，并记在
 `<run>/collect/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
@@ -136,7 +153,8 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 | `collect/inputs.json` | 批次进度、exporter session 与 manifest 的对应 |
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集 |
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
-| `eval/closed_loop.json`、`eval/videos/` | 闭环结果与录像 |
+| `eval/closed_loop.json`、`eval/videos_NN/` | 闭环结果与录像 |
+| `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里 |
 
 manifest 行带 `task`、`produced`、`ok`，成功局还带
 `execution.metrics.training_tail.end_seq`（进入直立持物验收的序号）——
@@ -161,6 +179,8 @@ python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
 | `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
 | 采集非零退出但视频还在 | `successes` 门槛没达到（§5）。记录是完整的 |
 | 评测第一局动作突变 | 已修：每批先跑一局不录像的热身回合。原因见 [开局跳变](handoff/crate-eval-prelude-twitch-20260917.md) |
+| `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局 |
+| 一整批只跑了几局就结束 | 专家抛异常会中止整批（§5）。在 `visual_NN.log` 里搜 `Traceback` |
 | 栈起不来、端口被占 | `python -m locomani.stack.cli status --instance N`；锁在 `$LOCOMANI_TMP/locomani_locks/` |
 
 `check_dataset` 一定要带 `--run-dir`：它让审计从本次运行的 `trace/` 按 exporter 的

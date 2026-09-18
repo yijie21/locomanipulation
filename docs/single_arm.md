@@ -8,11 +8,18 @@
 
 先做完 [安装指南](setup.md) 第 0–5 步。以下命令都在仓库根目录的 **Bash** 终端里跑。
 
+**每开一个新终端都要跑这三行**（环境变量不跨终端存活；没有第三行时任何 collect/eval
+都会在起进程之前拒跑 `needs patches/sonic_hand_ownership.patch`）：
+
 ```bash
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src"
 export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
+```
 
+**每台机器只建一次场景**：
+
+```bash
 SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/scene/sim
 "$VENV_SIM_PY" "$LOCOMANI_SRC/sim/build_sim_scene.py" \
   "$LOCOMANI_ROOT/outputs/scene" "$LOCOMANI_ROOT/outputs/scene/sim_lowcom" \
@@ -26,17 +33,17 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/sc
 "$VENV_SIM_PY" -c 'import json; print(json.load(open("outputs/scene/sim/scene_meta.json"))["target_pool"])'
 ```
 
-目标池里要有 `water_bottle`，`install_scene.sh` 最后一行要回显 `finger pads HARDENED`。
+目标池里要有 `water_bottle`，`install_scene.sh` 会回显 `finger pads HARDENED`。
 用哪个场景由实验文件的 `scene.dir` 决定，两者在 `outputs/scene/` 下并存。
 
-新机器还要跑一次 `bash scripts/link_gr00t_src.sh`（把 venv 的 `gr00t` 指向 `src/gr00t/`；指错时训练拒跑）。
+新机器还要跑一次 `bash scripts/link_gr00t_src.sh`——它改的是**训练 venv**
+（`third_party/Isaac-GR00T/.venv`，不是 `$VENV_SIM_PY`），把 `gr00t` 指向 `src/gr00t/`；指错时训练拒跑。
 
 ## 2. 一次运行 = 一份实验文件
 
-`configs/experiments/<name>.yaml` 是**完整**的：这次运行读的每一个值都在里面，没有继承也
-没有组合。八个块——`name` + `task` / `embodiment` / `scene` / `backend` / `collect` /
-`train` / `eval`。运行开始时它被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，
-**下游阶段读的永远是那份副本**：跑到一半改实验文件不影响正在跑的运行。
+`configs/experiments/<name>.yaml` 是**完整**的：这次运行读的每一个值都在里面，没有继承也没有组合。
+八个块——`name` + `task` / `embodiment` / `scene` / `backend` / `collect` / `train` / `eval`。
+运行开始时它被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，**下游阶段读的永远是那份副本**。
 
 现有单臂实验：`bottle_simple_200`（200 集 + 10k 步 + 100 局）、`bottle_simple_gate8`
 （8 局固定 case bank，闸门用）、`bottle_simple_smoke`（全链路冒烟）、`pick_place`。
@@ -57,8 +64,9 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 
 ## 4. 每次都要改的字段
 
-这里只说字段**控制什么**，不复述默认值——默认值以
-[配置字段表](reference/config_fields.md)（由 dataclass 生成）和实验文件自身的注释为准。
+这里只说字段**控制什么**，不复述默认值。`task`/`backend`/`eval` 的默认值查
+[配置字段表](reference/config_fields.md)；**`collect` 和 `train` 是普通 YAML、没有 dataclass，
+那张表里查不到**，它们的唯一出处是实验文件自身的注释。
 
 | 字段 | 控制什么 | 调大 / 调小意味着 |
 |---|---|---|
@@ -75,6 +83,7 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 | `train.holdout` | 留几集做验证 | 必须**小于** `collect.successes`，否则训练集为空 |
 | `eval.rounds` | 闭环评测跑几局 | 20 局只能看出"翻倍级"差异，100 局才判得动 10 个点 |
 | `eval.seed` | 评测的采样种子 | 与采集的 seed 刻意错开 |
+| `eval.policy_port` | policy server 的端口 | 默认 5590，**并行评测必须改**（见 §6） |
 | `eval.initial_token` | 交接时 deploy 举着的姿势 | **必须和训练数据的开局姿势一致**，配错 100 局全卡在 `[stand]` |
 
 ## 5. 固定 case bank 的例外
@@ -116,9 +125,17 @@ python scripts/eval_bottle.py    outputs/runs/my_line --gpu 1               # �
 **产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
 `eval/closed_loop.json`）。要重跑就**删掉它的产物**——整个续跑故事就这一条，`ls` 一眼看得见。
 
-**并行就是多开一个终端换一张卡**，没有作业文件也没有调度器：
+**并行是多开一个终端换一张卡**，没有作业文件也没有调度器——**但换卡不够，还要换两个端口**：
+
+| 端口 | 谁的 | 怎么换 | 不换会怎样 |
+|---|---|---|---|
+| 29500 | torchrun（`train_bottle.sh`） | `export PORT=29540` | `EADDRINUSE`（端口 29500），train 阶段直接挂 |
+| 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use`，eval 起不来 |
+
+两个都**不是每卡一个**，是进程范围的 TCP 端口；采集阶段不受影响（它的端口按 instance 偏移）。
 
 ```bash
+export PORT=29540                                                                # 终端 2 专用
 python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml  --gpu 0   # 终端 1
 python scripts/pipeline.py configs/experiments/bottle_simple_gate8.yaml --gpu 1   # 终端 2
 cat outputs/runs/*/summary.json                                  # 比较结果
@@ -129,9 +146,8 @@ cat outputs/runs/*/summary.json                                  # 比较结果
 
 ## 7. 同一套脚本的另外两条线
 
-`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用的是**完全一样的 `collect_bottle.py`
-+ `eval_bottle.py`**，差别只在实验文件的 `task.plugin`、`task.goal`、`task.place` 和场景。
-上面每一条命令原样适用，只换实验文件。
+`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用**完全一样的 `collect_bottle.py` +
+`eval_bottle.py`**，只差实验文件的 `task.plugin` / `task.goal` / `task.place` 和场景；命令原样适用。
 
 ## 8. 产物
 
@@ -147,9 +163,11 @@ cat outputs/runs/*/summary.json                                  # 比较结果
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集（`train.holdout` 为 0 时没有验证集） |
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
 | `eval/closed_loop.json`、`eval/videos/`、`eval/eval_config.json` | 闭环结果、录像、**实际交给评测器的那份配置** |
+| `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里。契约共要求 9 个路径，用下面的命令查全 |
 
-**读日志**：`collect_NN.log` 找 `EPISODE OK` 或带标签的失败原因；`train.log` 找 loss 和 `Copying experiment config directory`（存档的实际字样，没有 “Saving”）；`eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**——要 `summary.json` 里有那一条、产物真的在那里。产物齐不齐有专门的网：
-**光看退出码不算跑完**——要 `summary.json` 里有那一条、产物真的在那里。产物齐不齐有专门的网：
+**读日志**：`collect_NN.log` 找 `EPISODE OK` 或带标签的失败原因；`train.log` 找 loss 和
+`Copying experiment config directory`（存档时的实际字样）；`eval/serve.log` 里有 `listening`
+才算 policy server 起来了。**光看退出码不算跑完**——要 `summary.json` 里有那一条、产物真的在那里：
 
 ```bash
 python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
@@ -164,7 +182,8 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 | `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
 | `model/ exists` / `closed_loop.json exists` | 阶段拒绝覆盖已有产物。检查后删掉再重跑 |
 | 100 局全卡在 `[stand]` | `eval.initial_token` 和训练数据的开局姿势不一致（§4 最后一行） |
-| 栈起不来、端口被占 | `python -m locomani.stack.cli status --instance N`；锁在 `$LOCOMANI_TMP/locomani_locks/` |
+| `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局；实测 2026-09-18 十局里出现一次 |
+| 栈起不来、端口被占 | 先看 §6 的两个端口；栈本身用 `python -m locomani.stack.cli status --instance N`，锁在 `$LOCOMANI_TMP/locomani_locks/` |
 | 阶段"被跳过"但你想重跑 | 删掉它的产物（§6） |
 
 手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。
