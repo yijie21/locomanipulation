@@ -266,3 +266,15 @@ A/B —— 但注意两件事:(1) 一旦上身参考带腰,**所有既有 crate 
 
 产物:`outputs/diag/lean_20260912/`(`summary.md`、`lean_{release,sonic_v1_1}.json` 两通道、
 `arm/lean_*.json` 带实测手臂关节、每次运行的 stack/diag 日志)。
+
+## 附:双臂闭环首个正式结果(原 `docs/evaluation.md`,2026-09-18 并入)
+
+### 2026-09-15 结果：`crate_vla200_record_20260914` checkpoint-10000
+
+验证批 `outputs/crate_eval10_20260915c` 9/10；正式 100 局 `outputs/crate_eval100_20260915`
+（seed 6000，instance 2 / GPU 1，端口 5700）：**71/100**，Wilson 95% 0.61–0.79。失败 20 局
+"闭合了但没抬起"（其中 18 局结束时双手都没接触箱子、抬升 0），5 局到桌边从未闭合（最近 0.34 m），
+4 局 reset 后没站稳。成功局抬升中位 15.2 cm、倾角 7.4°、18 s。同一批前 10 个 seed 在 100 局跑里
+8/10、验证跑 9/10，单局不可跨栈重启复现。原片 `videos_NN/`，预览 `previews/`
+（100 片，最大 499,012 字节，共 38.2 MB，`verification.json`）。与单臂同一 checkpoint 家族的
+对照：单臂 17/100（见上文 2026-09-15 条目）。
