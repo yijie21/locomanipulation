@@ -134,3 +134,22 @@ def test_runbooks_may_only_name_paths_that_exist(tmp_path):
     (tmp_path / "configs/experiments/x.yaml").touch()
     (tmp_path / "src/locomani").mkdir(parents=True)
     assert rules.navigation_errors(tmp_path, {name: 180}) == []
+
+
+def test_a_runbook_may_name_the_experiment_file_it_tells_you_to_create(tmp_path):
+    name = rules.COMMAND_DOCUMENTS[0]
+    path = tmp_path / name
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "    cp configs/experiments/real.yaml configs/experiments/mine.yaml\n"
+        "    python scripts/pipeline.py configs/experiments/mine.yaml --gpu 1\n"
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/pipeline.py").touch()
+    (tmp_path / "configs/experiments").mkdir(parents=True)
+    (tmp_path / "configs/experiments/real.yaml").touch()
+    assert rules.navigation_errors(tmp_path, {name: 180}) == []
+    # ... but only the copy's destination; the template it copies still has to be there.
+    (tmp_path / "configs/experiments/real.yaml").unlink()
+    errors = rules.navigation_errors(tmp_path, {name: 180})
+    assert len(errors) == 1 and "configs/experiments/real.yaml" in errors[0]

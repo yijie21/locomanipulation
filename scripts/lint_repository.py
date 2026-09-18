@@ -24,6 +24,8 @@ GUIDES = {
     "docs/STATE.md": 60,
     "docs/ROADMAP.md": 60,
     "docs/README.md": 80,
+    "docs/single_arm.md": 180,
+    "docs/bimanual.md": 180,
     "docs/reference/change-map.md": 40,
     "docs/reference/change-map-bottle.md": 45,
     "docs/reference/change-map-crate.md": 35,
@@ -103,10 +105,16 @@ def dependency_errors(root: Path) -> list[str]:
 
 
 def command_path_errors(root: Path, name: str, body: str) -> list[str]:
-    """Every scripts/configs/src/tests path a runbook prints has to be on disk."""
+    """Every scripts/configs/src/tests path a runbook prints has to be on disk.
+
+    Except one a reader creates by following the page: a runbook that opens with
+    `cp <a template> configs/experiments/my_line.yaml` is not assuming that file,
+    it is making it. Exempt each `cp` destination, and only that.
+    """
+    created = set(re.findall(r"^\s*cp\s+\S+\s+(\S+)", body, re.MULTILINE))
     return [
         f"{name}: names {path}, which does not exist; a runbook may only print commands that run"
-        for path in sorted(set(COMMAND_PATH.findall(body)))
+        for path in sorted(set(COMMAND_PATH.findall(body)) - created)
         if not (root / path).exists()
     ]
 
