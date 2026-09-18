@@ -257,6 +257,35 @@ bash scripts/stack/stop_render.sh crate_review_example
 
 ## 五、双臂闭环评测器
 
+### 回合之间不再交还 planner（2026-09-18，默认）
+
+每个回合的 `finally` 原本调 `p.cmd.exit_streamed()`，那是 `command(planner=True)`。
+于是**下一局的 3.4 秒 settle 跑在 planner 模式**，而 planner IDLE 会漂——策略还没被问到
+第一个动作，底盘已经走掉了。`warm_up()` 是唯一不调它的 prelude，这就是每批第一局、
+且只有它干净的原因。
+
+各 30 局 / 3 批，每局三点采样（spawn / held / streamed）：
+
+| | planner（旧） | 默认（clean） |
+|---|---|---|
+| settle 中位 | 0.0922 m | **0.0048 m** |
+| settle 最大 | **0.8251 m** | 0.0197 m |
+| 交接 中位 | 0.0675 m | **0.0003 m** |
+| 合计 > 5 cm | 26/30 | **0/30** |
+| 单局最差 | **1.0529 m** | 0.0200 m |
+
+现在整批待在 streamed 模式、由单臂那套 CleanClock 发站立 token 保活，并开
+`SONIC_AUTO_START`。后者顺带退掉了 [台账](ledger/bottle.md) 定义的"退化" deploy
+（planner settle 后 enter_streamed → 行走 token 只按 1/3 执行）——**在此之前双臂所有
+闭环数字都是穿过那个状态测的，包括 71/100。**
+
+`--no-clean` 保留旧行为，只用于复现历史数字。
+
+**走过的弯路**：先猜是"上一局遗留的 token 穿过复位"，在 `place()` 里推 12 帧站立 token。
+A/B 失败——其余 27 局只从 0.067 降到 0.054，而三个干净局劣化了 70 倍，因为推 token 这个
+动作本身就值约 2 cm。是第三个采样点把位移拆成 settle 段和交接段，才看出大头（64%）在
+settle，矛头转向 planner 模式。
+
 ### 交接处的遥测（2026-09-18 起）
 
 每局的 `placement.takeover` 里有**两个采样**：`held`（token 姿态保持住、`enter_streamed` 之前）

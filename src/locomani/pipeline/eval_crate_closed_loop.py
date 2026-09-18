@@ -150,11 +150,14 @@ def parse_args(argv=None):
         "every other field is refused or recorded, never silently dropped (see HONOURED)",
     )
     ap.add_argument(
-        "--clean",
-        action="store_true",
-        help="never touch the planner: SONIC_AUTO_START engages the deploy and a standing-token "
-        "keepalive holds streamed mode between rounds",
+        "--no-clean",
+        dest="clean",
+        action="store_false",
+        help="hand the deploy back to the planner between rounds, as this line did before "
+        "2026-09-18. Only for reproducing a historical number: measured over 30 rounds it lets "
+        "the settle drift the base a median 0.09 m and up to 0.83 m before the policy is asked",
     )
+    ap.set_defaults(clean=True)
     ap.add_argument("--allow-instance-0", action="store_true")
     args = ap.parse_args(argv)
     if args.eval_config:
@@ -292,7 +295,7 @@ def main(argv=None):
                         args.initial_token_file,
                         "--trace-dir",
                         out / "traces",
-                        *(["--clean"] if args.clean else []),
+                        *([] if args.clean else ["--no-clean"]),
                         "--round-offset",
                         b * args.batch_rounds,
                     ],

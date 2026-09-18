@@ -292,11 +292,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(__doc__)
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument(
-        "--clean",
-        action="store_true",
-        help="never leave streamed mode between rounds: a CleanClock publishes the standing token "
-        "in the gap, so the settle runs on the token channel instead of a drifting planner IDLE",
+        "--no-clean",
+        dest="clean",
+        action="store_false",
+        help="leave streamed mode between rounds, so the settle runs on a drifting planner IDLE. "
+        "The pre-2026-09-18 behaviour, kept only to reproduce a historical number",
     )
+    ap.set_defaults(clean=True)
     ap.add_argument(
         "--round-offset",
         type=int,

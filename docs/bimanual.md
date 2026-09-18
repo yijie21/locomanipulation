@@ -180,7 +180,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
 | 第三个录制栈起不来 / 段错误 | 容器 pid 上限。两个录制栈已占约 1800（§6） |
 | `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
 | 采集非零退出但视频还在 | `successes` 门槛没达到（§5）。记录是完整的 |
-| 评测第一局动作突变 | 已修：每批先跑一局不录像的热身回合。原因见 [开局跳变](handoff/crate-eval-prelude-twitch-20260917.md) |
+| 评测开局动作突变 | 已修（2026-09-18）：回合之间不再交还 planner，settle 跑在 token 通道上。此前底盘在 settle 里漂中位 0.09 m、最大 0.83 m。要复现旧行为加 `--no-clean` |
 | `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局 |
 | 一整批只跑了几局就结束 | 专家抛异常会中止整批（§5）。在 `visual_NN.log` 里搜 `Traceback` |
 | 栈起不来、端口被占 | `python -m locomani.stack.cli status --instance N`；锁在 `$LOCOMANI_TMP/locomani_locks/` |

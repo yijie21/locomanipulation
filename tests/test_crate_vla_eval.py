@@ -178,9 +178,10 @@ def test_clean_mode_reaches_both_the_round_loop_and_the_stack():
     from locomani import paths
 
     rounds = (Path(paths.REPO) / "src/locomani/tasks/crate/vla_rounds.py").read_text()
-    assert '"--clean",' in rounds and "CleanClock(config=vla_cfg)" in rounds
+    assert '"--no-clean",' in rounds and "CleanClock(config=vla_cfg)" in rounds
     assert "clean_commander_class(clock)()" in rounds
 
     driver_source = (Path(paths.REPO) / "src/locomani/pipeline/eval_crate_closed_loop.py").read_text()
     assert "clean_deploy=args.clean" in driver_source
-    assert '*(["--clean"] if args.clean else []),' in driver_source
+    assert '*([] if args.clean else ["--no-clean"]),' in driver_source
+    assert "ap.set_defaults(clean=True)" in driver_source  # clean is the default, not the option
