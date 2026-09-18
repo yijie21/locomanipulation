@@ -23,7 +23,7 @@ for i in $(seq 1 60); do
 done
 echo "$(date -u +%FT%TZ) start" >> "$LOG"
 # ABSOLUTE paths: the sim process runs with cwd third_party/GR00T-WholeBodyControl/, so a relative
-# LOCOMANI_SIM_DIR / SIM_VIDEO_DIR resolves over there (documented in docs/collection.md; I hit it anyway).
+# LOCOMANI_SIM_DIR / SIM_VIDEO_DIR resolves over there (documented in docs/single_arm_design.md; I hit it anyway).
 LOCOMANI_SIM_DIR=$PWD/$SRC/scene NO_ENCODER=1 SIM_VIDEO_DIR=$PWD/$E/videos \
   bash scripts/stack/start_stack.sh "pick up the water bottle" >> "$E/stack.log" 2>&1
 rc=$?; echo "$(date -u +%FT%TZ) stack rc=$rc" >> "$LOG"

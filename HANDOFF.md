@@ -23,7 +23,7 @@ checkpoint11新种子30700/30800在 `outputs/bottle_contact_20260915/final_colle
 **假设**＝需要实验区分的解释，不是已定根因。每个实验的权威记录是
 [docs/handoff/bottle-hanging-start-20260914.md](docs/handoff/bottle-hanging-start-20260914.md)
 第五到第十节和 [docs/handoff/crate-formal-export-20260914.md](docs/handoff/crate-formal-export-20260914.md)
-的闭环一节；日常入口是 [docs/collection.md](docs/collection.md)、[docs/evaluation.md](docs/evaluation.md)。
+的闭环一节；日常入口是 [docs/single_arm.md](docs/single_arm.md)、[docs/single_arm.md](docs/single_arm.md)。
 
 ## 1. 目标与范围
 
@@ -73,8 +73,8 @@ checkpoint11新种子30700/30800在 `outputs/bottle_contact_20260915/final_colle
 `configs/tasks/bottle_whole_body.json`、`tests/test_bottle_walking_reach.py`、`tests/test_bottle_whole_body.py`、
 `tests/test_replay_obs.py`（按 schema 比较相机键）。
 
-文档：`docs/collection.md`（复现表、采集逻辑）、`docs/evaluation.md`（两条线 2026-09-15 结果、双臂闭环一节）、
-`docs/crate_collection.md`、`docs/reference/config_fields.md`（`make config-doc` 生成）、`docs/STATE.md`。
+文档：`docs/single_arm.md`（复现表、采集逻辑）、`docs/single_arm.md`（两条线 2026-09-15 结果、双臂闭环一节）、
+`docs/bimanual.md`、`docs/reference/config_fields.md`（`make config-doc` 生成）、`docs/STATE.md`。
 其余 `M` 文件（crate 视觉专家、导出、check_dataset、start_stack 等）属本轮之前同一未提交序列，见各 handoff。
 
 ## 5. 测试与实验结果（事实）

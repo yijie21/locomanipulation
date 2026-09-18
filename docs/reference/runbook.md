@@ -39,8 +39,8 @@ left behind everything it owes.
 
 Use this when inspecting motion without recording an episode, or when using a
 custom `LOCOMANI_TMP` that the collection script does not discover yet.
-Prepare the scene using the relevant [bottle](../collection.md) or
-[pick-and-place](../pick_place_collection.md) guide. In Bash at the repository root:
+Prepare the scene using the relevant [bottle](../single_arm.md) or
+[pick-and-place](../single_arm.md) guide. In Bash at the repository root:
 
 ```bash
 export INSTANCE=0
@@ -82,10 +82,10 @@ An older policy server must be restarted to supply the identity endpoint.
 
 | Operation | Driver / guide |
 |---|---|
-| Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../evaluation.md) |
-| Crate collection | `python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml --dry-run`; [crate collection](../crate_collection.md) |
-| ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm_collection.md) |
-| Pick and place | `collect_bottle.py` with `configs/experiments/pick_place.yaml`; [task guide](../pick_place_collection.md) |
+| Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../single_arm.md) |
+| Crate collection | `python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml --dry-run`; [crate collection](../bimanual.md) |
+| ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm.md) |
+| Pick and place | `collect_bottle.py` with `configs/experiments/pick_place.yaml`; [task guide](../single_arm.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |
 | Stop an owned SONIC stack | `python -m locomani.stack.cli down --instance <instance>` |
 

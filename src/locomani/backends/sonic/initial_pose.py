@@ -43,7 +43,7 @@ distance to the other 193.
 
 Regenerate (194 settled-stand frames, planner mode IDLE, whole body below
 0.05 rad/s, first 4 s of each episode):
-    see docs/evaluation.md, "初始姿态"
+    see docs/single_arm_design.md, "初始姿态"
 """
 
 import json
@@ -153,7 +153,7 @@ def initial_arms() -> np.ndarray | None:
 
     The ready-grasp token file has none and the prelude checks READY_UPPER; the
     whole-body file carries the hanging arms its data starts from, because the
-    continuous expert never primes READY (docs/collection.md) and a policy
+    continuous expert never primes READY (docs/single_arm_design.md) and a policy
     trained on that data must be handed over from the same posture.
     """
     if not INIT_TOKEN_FILE or not Path(INIT_TOKEN_FILE).exists():

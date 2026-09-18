@@ -5,7 +5,7 @@
 不作为任意新配置的成功率保证。
 
 > 场景、单集流程、pilot 与验收、以及控制逻辑 / 数据形状 / 随机化 / 相机的工作原理。结构对齐
-> `docs/collection.md`(SONIC 单手采集)和 `docs/crate_collection.md`(双臂搬箱)。这条线用 ScaleBFM
+> `docs/single_arm.md`(SONIC 单手采集)和 `docs/bimanual.md`(双臂搬箱)。这条线用 ScaleBFM
 > 替代 SONIC 做全身控制,expert 与 sim 在**同一个进程**里逐 tick 运行,没有 stack、没有 ZMQ、没有墙钟。
 > 所有数字、日期化结果和 ruling 都在台账 `docs/ledger/scalebfm.md`;本文只写判据和路径。Codex 线程的
 > 原始文档已冻结到 `docs/archive/scalebfm_*.md`,本文按章节链接。所有路径相对仓库根目录。

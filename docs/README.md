@@ -10,7 +10,7 @@
 - [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): command reference and manual stack operation.
-- [Run infrastructure](infra.md): one expanded experiment file per run, one flat script per stage, the process stack, and what parallelism means here (a second terminal). Read it before adding an experiment; the [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
+- [Run infrastructure](single_arm.md): one expanded experiment file per run, one flat script per stage, the process stack, and what parallelism means here (a second terminal). Read it before adding an experiment; the [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Documentation ownership
@@ -43,10 +43,10 @@ versioned documents reachable here, without requiring conversation history or pr
 
 | 采集任务 | 唯一使用入口 |
 |---|---|
-| SONIC 单臂 | [单臂采集](collection.md) |
-| SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂采集](crate_collection.md) |
-| Pick-and-place | [Pick-and-place 采集](pick_place_collection.md) |
-| ScaleBFM 后端 | [ScaleBFM 采集](scalebfm_collection.md) |
+| SONIC 单臂 | [单臂采集](single_arm.md) |
+| SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂采集](bimanual.md) |
+| Pick-and-place | [Pick-and-place 采集](single_arm.md) |
+| ScaleBFM 后端 | [ScaleBFM 采集](scalebfm.md) |
 
 单臂、双臂和 pick-and-place 指南统一按以下顺序维护：
 **任务与能力 → 环境与场景 → 跑一局 → 批量采集 → 产物与验收 → 调整任务 → 排错与停止 → 进一步阅读**。
@@ -54,8 +54,8 @@ versioned documents reachable here, without requiring conversation history or pr
 视频 pilot 与训练数据，以及已实现接口与已验证学习效果；不适用或未验证的部分直接注明。
 历史数字和逐版诊断放入台账/归档，首次运行不要求阅读；底层字段只链接生成的配置表。
 
-通用流程：[安装](setup.md)、[数据转换](dataset.md)、[训练](training.md)、
-[评测](evaluation.md)、[MuJoCo 仿真、Isaac 离线渲染与视频导出](rendering.md)。
+通用流程：[安装](setup.md)、[数据转换](single_arm.md)、[训练](single_arm.md)、
+[评测](single_arm.md)、[MuJoCo 仿真、Isaac 离线渲染与视频导出](rendering.md)。
 理解在线控制、状态记录和离线重渲如何衔接时，读 [渲染整体流程](rendering.md#整体流程)。
 专家设计、控制协议和对应实验从各采集指南的“进一步阅读”进入。
 

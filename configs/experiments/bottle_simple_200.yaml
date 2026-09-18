@@ -322,7 +322,7 @@ backend:
 collect:
   successes: 200      # episodes to keep. WITHOUT scene.cases, collection stops as soon as it
                       # has this many; WITH a fixed bank it is only the acceptance floor and the
-                      # whole batch_rounds budget always runs (see docs/collection.md section 4)
+                      # whole batch_rounds budget always runs (see docs/single_arm.md, "固定 case bank 的例外")
   batch_rounds: 10    # attempts per batch. With a fixed bank this is what decides how many rounds run
   max_batches: 40     # batch ceiling, so a bad run ends instead of collecting forever
   seed0: 40000        # first batch's sampling seed; batch k uses seed0 + 100*k

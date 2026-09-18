@@ -1,6 +1,6 @@
 """Ghost hands for the offline renders: the IK target pose of each hand, drawn as
 a translucent magenta copy of the gripper in BOTH the MuJoCo and the Isaac
-replay (docs/crate_collection.md §10). The live sim has one right-hand ghost
+replay (docs/bimanual_design.md). The live sim has one right-hand ghost
 mocap body (scene_lib.add_ghost_hand); the renders inject their own pair so the
 collection scene is untouched.
 """

@@ -2,7 +2,7 @@
 
 本页说明场景、控制、采集和重渲之间的数据流。首次理解系统读“整体流程”，
 已有轨迹要重渲读“运行时”和“资产构建”；具体双臂批处理命令见
-[双臂回放](crate_collection.md#渲染并排视频)，分享视频见 [Video export](#video-export)。
+[双臂回放](bimanual_design.md#渲染并排视频)，分享视频见 [Video export](#video-export)。
 背景的表征、导入和着色见 [EmbodiedGen 背景如何进入 Isaac](#embodiedgen-背景如何进入-isaac)。
 
 ## 整体流程
@@ -70,8 +70,8 @@ flowchart TD
 视频、trace 和 session 是独立产物：有 MP4 不代表有可重渲的完整状态，
 有 trace 也不代表已经生成可训练的数据。轨迹写入失败可能只产生警告，
 开始重渲前要检查文件实际存在。各任务目录和录制边界见
-[单臂](collection.md#5-产物与验收)、[双臂](crate_collection.md#5-产物与验收)、
-[pick-and-place](pick_place_collection.md#5-产物与验收)。
+[单臂](single_arm.md#8-产物)、[双臂](bimanual.md#7-产物)、
+[pick-and-place](single_arm_design.md#四pick-and-place-这条变体)。
 
 ## Isaac 怎样重现同一段动作
 
@@ -268,7 +268,7 @@ RGB 写入按顶点插值的 `displayColor`。
 1. 在任务运行目录找齐 trace、对应场景快照、manifest 和实际 episode 标签。
 2. 用上面的 `--snapshot` 构建该场景的 USD；核对桌高、物体尺寸和场景路径。
 3. 选择输出：直接用 `isaac_render` 渲染 ego，或按
-   [双臂回放命令](crate_collection.md#渲染并排视频)生成同相机的 MuJoCo / Isaac 并排视频。
+   [双臂回放命令](bimanual_design.md#渲染并排视频)生成同相机的 MuJoCo / Isaac 并排视频。
 4. 检查每集输出、完整解码、首尾、背景/桌面、双手与物体，再生成下载预览。
 
 直接渲染已有 trace 的 ego 主视角示例（替换 `TRACE` 为实际文件）：
@@ -283,7 +283,7 @@ TRACE="$LOCOMANI_ROOT/outputs/crate_collect_10/trace/visual_crate_s41_00_state_t
 ```
 
 这条直接命令在前台运行，用 Ctrl-C 停止。双臂批处理入口由 `render_job.py` 管理归属，
-停止方式见 [受管渲染停止](crate_collection.md#中途停止渲染--清理)；
+停止方式见 [受管渲染停止](bimanual_design.md#四中途停止渲染与清理)；
 独立启动的渲染器不在该停止命令范围内。Kit 初始化和画面预热可能较慢，日志在输出目录。
 
 ## 当前接通范围与限制
@@ -299,7 +299,7 @@ TRACE="$LOCOMANI_ROOT/outputs/crate_collect_10/trace/visual_crate_s41_00_state_t
 
 Isaac 画面可用于检查或后续数据处理，但若要作为 VLA 训练 RGB，需要另行完成
 相机、时间戳、状态/action 和裁剪边界的对齐，并保留图像来源。
-当前双臂 visual 的正式数据导出限制仍按 [双臂指南](crate_collection.md)执行。
+当前双臂 visual 的正式数据导出限制仍按 [双臂指南](bimanual.md)执行。
 
 不同渲染器的材质、光照和背面处理会造成像素差异；Isaac 还有时域渲染状态，
 不能要求同一输入两次出图逐像素相同。核验时应对齐几何、状态和相机，并在相同版本上建立容差。

@@ -230,7 +230,7 @@ def main(argv=None):
             f"[closed-loop] LOCKSTEP client: simulation clock, K ~ "
             f"{latency['source']} (first {sorted(set(latency['first']))[:6]}.. "
             f"steady {sorted(set(latency['steady']))[:8]}..). Not comparable "
-            f"with wall-clock numbers until calibrated (docs/evaluation.md)."
+            f"with wall-clock numbers until calibrated (docs/single_arm_design.md)."
         )
         policy = vla_round.make_vla_policy_lockstep(
             link, ls, clock, cfg.task, latency, seed=cfg.seed, trace_dir=trace_dir, config=cfg

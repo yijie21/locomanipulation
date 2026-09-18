@@ -17,7 +17,7 @@
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
-| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](evaluation.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
+| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](single_arm_design.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
 
 当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
 仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
@@ -61,8 +61,8 @@
 
 ### 运行
 
-在 [采集指南](crate_collection.md#2-环境与场景) 中构建场景并运行单次尝试或批量配置。
-该指南管理启动命令、GPU/实例选择、[桌面高度验证过程](crate_collection.md#table-height-validation) 和所需的 POSE 所有权补丁。
+在 [采集指南](bimanual_design.md#2-环境与场景) 中构建场景并运行单次尝试或批量配置。
+该指南管理启动命令、GPU/实例选择、[桌面高度验证过程](bimanual_design.md#table-height-validation) 和所需的 POSE 所有权补丁。
 本部分解释场景和来源处理。
 
 配置不更改桌面高度。它选择 `carry.reach_control=whole_body` 和 `visual.pose_source=assisted`。
@@ -240,7 +240,7 @@ python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
 `crate_wall.json` 显式开启 `wall_walk`；不加载 profile 时默认为 false。
 wall / planner carry 在 `collect.record=true` 时于本实例启动 exporter，未指定 batch 大小时采用 10；
 成功 episode 保存、失败丢弃，检查 `produced` 与 session 配对。
-转换参考 [数据指南](dataset.md)和 [双臂数据配置](../configs/gr00t_sonic_3cam_bimanual.py)；
+转换参考 [数据指南](single_arm_design.md)和 [双臂数据配置](../configs/gr00t_sonic_3cam_bimanual.py)；
 有 exporter 录制入口不等于已经验证 VLA 学习，也不等同于默认 visual 的完整持物站直流程。
 
 ## 四、中途停止渲染与清理

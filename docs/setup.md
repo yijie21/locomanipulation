@@ -310,7 +310,7 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 > **其余部署补丁按用途安装。**
 > `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。
 > `sonic_dds_domain.patch` + `.md`:补丁本体加说明。**照本文装出来的 deploy 没打它,因此无法参与任何多实例场景** ——
-> 而 [collection.md](collection.md) 的并行采集就是多实例。这不是"高级用法才需要",
+> 而 [single_arm.md](single_arm.md) 的并行采集就是多实例。这不是"高级用法才需要",
 > 是本文装出来的东西不满足那份文档的前提。
 >
 > 只跑单条 stack 就不用管它(单条完全正常)。要跑多条就得先打上再重编:
@@ -379,7 +379,7 @@ preset / target / target_pool / 桌上物体:
 `HARDEN_PADS=0 SCENE_PRESET=bottle_only bash scripts/install_scene.sh` 重建
 2026-09-14 之前的软垫基线;那之前采的数据集和固定 case bank 都对应软垫场景。
 
-细节见[下一节](collection.md#2-环境与场景)。
+细节见[下一节](single_arm.md#1-准备一次)。
 
 ### 5. GR00T 微调 venv(要训练/评测 VLA 就必需)
 

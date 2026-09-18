@@ -168,7 +168,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 
 默认 exporter 录 ego、左腕、右腕三路；单臂训练配置
 [gr00t_sonic_2cam.py](../configs/gr00t_sonic_2cam.py)使用 ego + 右腕。
-原始记录、转换后的训练字段和控制器命令不是同一种数据格式，字段说明见 [数据指南](dataset.md)。
+原始记录、转换后的训练字段和控制器命令不是同一种数据格式，字段说明见 [数据指南](single_arm_design.md)。
 第三人称画中画用于检查，不能替代训练相机。
 
 验收时核对完整走近与抓取过程、真实抬升和持物结果，以及 manifest / session 的对应关系。
@@ -176,8 +176,8 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 `produced` 用于判断该行是否对应 exporter episode，不能只数 `ok`。
 逐局指令通过 manifest 传给转换器，不应全部替换为 exporter 的单条 session prompt。
 
-转换步骤、图像/动作对齐、`--trim-verification-tail` 与数据检查统一见 [数据集转换](dataset.md)；
-训练和闭环结果分别见 [训练](training.md)、[评测](evaluation.md)。
+转换步骤、图像/动作对齐、`--trim-verification-tail` 与数据检查统一见 [数据集转换](single_arm_design.md)；
+训练和闭环结果分别见 [训练](single_arm_design.md)、[评测](single_arm_design.md)。
 分享或打包视频执行 [视频导出规则](rendering.md#video-export)：保留原片，
 每条预览压到几百 KB，最多 **500,000 字节**，保持完整时长和正常速度。
 
@@ -203,7 +203,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 `task.*`（含 `task.spawn.*`、`task.reach.*`）改专家行为，`scene=` 换场景。
 要复现的配方就是 `configs/experiments/<name>.yaml` 本身——复制一份改几行，不要把一长串覆盖项留在 shell 历史里；
 跑之前用 `--dry-run` 看一眼会执行什么，跑完以运行目录里的 `config.yaml` 为准。
-`task` / `backend` / `eval` 三块的字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准；`collect` 和 `train` 不是 dataclass，不在那张表里，逐字段说明写在 `configs/experiments/bottle_simple_200.yaml` 的注释中。组合规则见 [运行基础设施](infra.md)。
+`task` / `backend` / `eval` 三块的字段含义和默认值以 [生成的配置表](reference/config_fields.md)为准；`collect` 和 `train` 不是 dataclass，不在那张表里，逐字段说明写在 `configs/experiments/bottle_simple_200.yaml` 的注释中。组合规则见 [运行基础设施](single_arm.md)。
 
 #### 连续全身候选的动作原则
 
@@ -285,7 +285,7 @@ python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --
 exporter 默认记录 ego、左腕、右腕；该任务复用单臂 schema，
 [训练配置](../configs/gr00t_sonic_2cam.py)选 ego + 右腕和右手动作。
 任务指令由 profile 的 `prompt` 写入 manifest，包含抓取和放置两个目标。
-第三人称画中画不能替代训练相机；字段、转换与对齐见 [数据指南](dataset.md)。
+第三人称画中画不能替代训练相机；字段、转换与对齐见 [数据指南](single_arm_design.md)。
 
 验收需要罐头真实落在篮内且低于篮沿、手已离开，篮子移动和退手后的扰动在配置允许范围内。
 当前判据不要求罐头最终竖直。检查以下内容：
@@ -296,7 +296,7 @@ exporter 默认记录 ego、左腕、右腕；该任务复用单臂 schema，
 - 篮子在决策与放置过程中的可见性；记录中可见不等于已经证明 VLA 可学。
 
 成功结果中的 `training_tail.end_seq` 为后续裁去验证尾段提供边界。
-使用 [转换与检查流程](dataset.md)验证后才能称为训练数据；本任务尚未完成这一验证。
+使用 [转换与检查流程](single_arm_design.md)验证后才能称为训练数据；本任务尚未完成这一验证。
 分享视频执行 [视频导出规则](rendering.md#video-export)：保留原片，预览每条最多
 **500,000 字节**，保留完整时长和正常速度。Isaac 下篮子贴图仍需单独检查。
 
@@ -312,7 +312,7 @@ exporter 默认记录 ego、左腕、右腕；该任务复用单臂 schema，
 
 字段含义和默认值见 [配置表](reference/config_fields.md)。
 命令行覆盖项按组分开：`collect.*` 只调采集规模，任务参数用 `task.*` 或换一个 `task=` profile
-（组合规则见 [运行基础设施](infra.md)）。
+（组合规则见 [运行基础设施](single_arm.md)）。
 无需启动仿真即可查看 gym 对该 profile 的解析：
 
 ```bash
@@ -803,7 +803,7 @@ CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
 
 exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
 `$LOCOMANI_TMP/p03_i<N>/outputs/`（`--record` 在实例 N 上录制，见
-[双臂采集](crate_collection.md#录制成正式训练数据)）。转成 LeRobot v2.1
+[双臂采集](bimanual_design.md#录制成正式训练数据)）。转成 LeRobot v2.1
 (格式对齐 `hojjunekim/g1_sonic_orange_to_plate_locomani`,含 29-DoF 关节状态 +
 64 维 SONIC motion latent + 三路 25fps 视频):
 
@@ -992,7 +992,7 @@ session 批量不大的话通常只有这一个 chunk。)
 > converter 无条件用 `teleop.vr_3pt_position/orientation` 算它(`convert_to_hf_format.compute_psi0_columns`),
 > 而 exporter 只在 `stream_mode == 5` 才写那两列 —— 单臂 coupled 线录制窗口里 `stream_mode` 一直是 3,
 > 于是那两列恒为零,psi0 这套 modality **是死数据**。抽查过 2026-09-11 的 session:864 帧只有一种取值。
-> 只有走 `teleop_arm` 通道(`collection.md` 的通道对照表)时它才有真值,而且**只在抓取段非零**
+> 只有走 `teleop_arm` 通道(`single_arm_design.md` 的通道对照表)时它才有真值,而且**只在抓取段非零**
 > (run5 的 episode 0:1089 帧里 621 帧),走路与抱稳段仍是零 —— 要用它训练,**先处理这个不连续**。
 
 #### data/chunk-000/episode_*.parquet
@@ -1025,7 +1025,7 @@ parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parqu
 
 ### 数据 schema
 
-2026-09-14 按当前 schema 与模型配置修正本节。[修订前原文](https://github.com/yijie21/locomanipulation/blob/e302d11/docs/dataset.md)
+2026-09-14 按当前 schema 与模型配置修正本节。[修订前原文](https://github.com/yijie21/locomanipulation/blob/e302d11/docs/single_arm_design.md)
 保留了旧 78/46 维说明、量化试验和延迟解释；这些历史说法不作为当前接口或动态行为结论。
 
 原始列、模型选择的字段和部署报文分开定义。唯一代码来源是

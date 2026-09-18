@@ -11,13 +11,13 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 
 | 想做什么 | 提供的功能 | 从这里开始 |
 |---|---|---|
-| 单臂采集 | 走近桌子、单手抓瓶，单局与批量录制 | [单臂采集指南](docs/collection.md) |
-| 双臂采集 | 视觉指导走近、俯身抓篮、抬起并站直；含其他专家场景与回放 | [双臂采集指南](docs/crate_collection.md) |
-| Pick-and-place 采集 | 走近桌子、右手抓起罐头并放入篮子，单局与批量录制 | [Pick-and-place 采集指南](docs/pick_place_collection.md) |
-| 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm_collection.md) |
-| 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/dataset.md) |
-| 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/training.md) · [评测](docs/evaluation.md) |
-| 多卡并行、多配置对比 | 一份实验文件一次运行，一卡一个终端；产物存在即跳过 | [运行基础设施指南](docs/infra.md) · `configs/experiments/` |
+| 单臂采集 | 走近桌子、单手抓瓶，单局与批量录制 | [单臂采集指南](docs/single_arm.md) |
+| 双臂采集 | 视觉指导走近、俯身抓篮、抬起并站直；含其他专家场景与回放 | [双臂采集指南](docs/bimanual.md) |
+| Pick-and-place 采集 | 走近桌子、右手抓起罐头并放入篮子，单局与批量录制 | [Pick-and-place 采集指南](docs/single_arm.md) |
+| 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm.md) |
+| 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/single_arm.md) |
+| 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/single_arm.md) · [评测](docs/single_arm.md) |
+| 多卡并行、多配置对比 | 一份实验文件一次运行，一卡一个终端；产物存在即跳过 | [运行基础设施指南](docs/single_arm.md) · `configs/experiments/` |
 | MuJoCo 仿真与 Isaac 渲染 | 仿真与采集流程、EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染指南](docs/rendering.md) |
 
 双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
@@ -39,7 +39,7 @@ cd locomanipulation
 | SONIC 单臂 / 双臂仿真采集 | 安装指南第 **0–4 步**：路径、上游仓库、仿真与采集环境、SONIC 权重及补丁、C++ deploy、场景 |
 | GR00T / VLA 训练与评测 | 在上述基础上完成第 **5 步**，安装微调环境 |
 | Isaac 离线渲染 | 额外完成第 **7 步**，安装 SIMPLE 渲染运行时，再按 [资产构建](docs/rendering.md#资产构建) 生成 USD |
-| ScaleBFM 采集与评测 | 按 [ScaleBFM 指南](docs/scalebfm_collection.md) 配置独立后端、权重和运行资产 |
+| ScaleBFM 采集与评测 | 按 [ScaleBFM 指南](docs/scalebfm.md) 配置独立后端、权重和运行资产 |
 | 重新生成场景或训练 SONIC | 按安装指南第 **6 步**及相应生成工具配置可选环境 |
 
 安装指南包含逐步命令和每一步的验证方法。`LOCOMANI_WORKSPACE` 可指定依赖、日志和缓存所在目录；
@@ -71,7 +71,7 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。`collect` 和 `eval`
 自己启停仿真、控制器和导出器（`src/locomani/stack/`，手工控制用
 `python -m locomani.stack.cli up|status|down --instance N`）。双臂抓篮子的命令见
-[双臂采集指南](docs/crate_collection.md)。完整说明见 [运行基础设施指南](docs/infra.md)。
+[双臂采集指南](docs/bimanual.md)。完整说明见 [运行基础设施指南](docs/single_arm.md)。
 
 ## 查看运行结果
 

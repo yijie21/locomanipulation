@@ -41,7 +41,7 @@ a task needs historical evidence. Historical experiments are not startup reading
 - Before GPU/stack work, check live GPU use, instance locks and STATE. Acquire
   resources through the existing launcher. Stop only the owned instance.
 - Formal ScaleBFM collection uses GPU EGL and pilot admission checks; read the
-  [collection requirements](docs/scalebfm_collection.md) before running it.
+  [collection requirements](docs/scalebfm.md) before running it.
 - `outputs/`, `third_party/` and `datasets/` are runtime paths. Never track them,
   including symlinks. Preserve datasets and weights; planned deletion of outputs
   or weights must be recorded in STATE at least 24 hours beforehand.

@@ -28,7 +28,7 @@
 | `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径约定)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
-| `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](../dataset.md#转完先查一遍强烈建议)) |
+| `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](../single_arm_design.md#转完先查一遍强烈建议)) |
 
 脚本:
 
@@ -58,7 +58,7 @@
 
 ### ScaleBFM 线(`backends/scalebfm` + `tasks/bottle_visual`,2026-09-10 起)
 
-SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scalebfm_collection.md](../scalebfm_collection.md),台账 [ledger/scalebfm.md](../ledger/scalebfm.md)。
+SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scalebfm.md](../scalebfm.md),台账 [ledger/scalebfm.md](../ledger/scalebfm.md)。
 
 | 文件 | 角色 |
 |---|---|
@@ -104,8 +104,8 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `locomani.stack.cli up` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `none`(2026-09-10 前是 `full`) | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `TF_DATASET_FPS` | `30` | vla_round | 闭环回放的发布帧率,**必须等于 checkpoint 训练数据的 fps**。转换器 2026-08-28 起写 25,所以用重转数据训出来的 checkpoint 要 `--set backend.dataset_fps=25`(2026-09 起环境变量 `TF_DATASET_FPS` 不再被读取,只有 `SonicBackendConfig.dataset_fps`);不匹配不会报错,只是动作按错速度回放 |
-| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../collection.md#6-调整任务) |
-| `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../collection.md#相机与动作) |
+| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../single_arm_design.md#6-调整任务) |
+| `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../single_arm_design.md#相机与动作) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**单臂采集必须用 `0`**:stack manager 在 instance≠0 且未设 `RECORD_INSTANCE=1` 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`collect` 命令采不出任何 session;crate 的采集可设 `collect.instance=<N>` 来改变实例。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
 | `SCENE` | `locomani` | sim | `default` 换成上游空场景 |
@@ -136,7 +136,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | 官方 `open_loop_eval.py` 的 `--steps` 默认 200 | `min(steps, len)` 静默截断 | 只评了 546–832 帧 episode 的前 200 帧(走路段),抓取根本没评到,却给出一个看起来正常的 MSE |
 | `ISAACLAB_TO_MUJOCO` / `MUJOCO_TO_ISAACLAB` 取反了 | 图照跑,照样返回 64/29 个数 | 两个数组的**名字与内容是反的**(`ISAACLAB_TO_MUJOCO[mujoco_index] → isaaclab index`),所以"把 MuJoCo 序转成 IsaacLab 序"要用**名字读起来相反的那个**。`sonic_decoder.py` 已经写了这条警告,`sonic_encoder.py` 第一版还是踩了 —— 唯一露馅的地方是:把参考里的肘抬 20°,解码端回答的是**膝盖**。改对之后 top-2 响应落回同一条手臂 |
 | 不发 `upper_body_velocity` | 上一次发过的值**永远**留在 reference 里 | `input_interface.hpp:381-390` 读 buffer 没有过期判定,`g1_deploy_onnx_ref.cpp:2985` 又把有效位 `std::ignore` 掉:只要还在发 position,速度就一直用最后收到的那一组。从来没发过则是硬 0 —— 位置在扫、参考速度读 0,而 encoder 的 mode-0 活输入里 290/644 是速度。收尾必须**显式发零**,不能靠省略 |
-| frozen 接管时拿**实测**关节当种子 | 看着连续,参考跳 123°(单帧) | 被替换的是 k-planner 自己的手臂参考(`cpp:781` 逐字写进 `current_motion_` 的 10 个 lookahead 帧),不是实测姿态;两者相差整个 decoder 的跟踪误差(平均 15.5°,wrist pitch 上 61–65°)。种子要取 `body_q_target`(g1_debug key 22)—— 它就是那个量,**不带 default-angle 偏移**(`output_interface.hpp:192`,和 `body_q` 不同),而且替换只写进 observation buffer、从不写回 motion,所以覆盖期间它照样报 k-planner 的手臂。见 [collection.md](../archive/collection_20260914.md#上身接管两个台阶和它们的修法2026-08-28) |
+| frozen 接管时拿**实测**关节当种子 | 看着连续,参考跳 123°(单帧) | 被替换的是 k-planner 自己的手臂参考(`cpp:781` 逐字写进 `current_motion_` 的 10 个 lookahead 帧),不是实测姿态;两者相差整个 decoder 的跟踪误差(平均 15.5°,wrist pitch 上 61–65°)。种子要取 `body_q_target`(g1_debug key 22)—— 它就是那个量,**不带 default-angle 偏移**(`output_interface.hpp:192`,和 `body_q` 不同),而且替换只写进 observation buffer、从不写回 motion,所以覆盖期间它照样报 k-planner 的手臂。见 [single_arm_design.md](../archive/collection_20260914.md#上身接管两个台阶和它们的修法2026-08-28) |
 | 部署帧率和训练数据的 fps 不一致 | 不报错,动作按 1.2× / 0.83× 速度回放 | chunk 是一串**帧**,发布速率必须等于训练数据的 fps。转换器 2026-08-28 起写 25(`DST_FPS`),而 `SonicBackendConfig.dataset_fps` 默认仍是 30(现有 checkpoint 都是 30 训的)—— **第一个用重转数据训的 checkpoint 必须显式带 `--set backend.dataset_fps=25`**(旧文档写的 `TF_DATASET_FPS=25` 在 2026-09 重构后已无效,eval_closed_loop 只读 config)。两边都是常数,谁都不知道对方,所以只能靠这条记着 |
 | 编排脚本自己手抄一份 stack 清理逻辑 | 三个组件都报 ok,但一张图都没发 | sim 的图像发布器是 multiprocessing **子进程**,`kill -9` 父进程会把它孤儿化、继续占着 :5555。抄漏 `pkill -f spawn_main` 的那一份就是这么坏的,而 `kill_stack()` 一度有**四份**拷贝。好在 `locomani.stack.cli up` 检测到"组件都起来了但没有图像"会拒绝交出 stack,否则就是一个安静地渲染不出画面的 stack。**停 stack 只用 `locomani.stack.cli down`**,它还多杀 `serve_policy.py`、等端口真正释放、并回显剩余进程 |
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
@@ -186,7 +186,7 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 > **`INSTANCE=1` 的 5590 和闭环评测的 `serve_policy` 撞端口。**
 > `TF_KEYBOARD_PORT = 5580 + 10*INSTANCE`,所以 `INSTANCE=1` 占住 5590,而
 > `serve_policy.py` 的默认端口正是 5590(`scripts/archive/run_round3.sh`、
-> [evaluation.md](../evaluation.md) 都用它)。**多实例采集和闭环评测不能同时跑**,
+> [single_arm_design.md](../single_arm_design.md) 都用它)。**多实例采集和闭环评测不能同时跑**,
 > 或者给 `serve_policy` 换个端口。
 
 | 端口 | 方向 | 内容 |
@@ -258,7 +258,7 @@ refactor step 2 删除**,只在 git 历史里(`78536ae:src/teleop_free/`)。今�
 | `diag_wrist_cam.py --dataset DS [--sweep]` | 腕相机挂载位置:从数据集里的真实抓取帧离线重建场景并**渲染**,报告物体离近平面多近、被裁掉多少。不需要 stack(它自己建模型) |
 | `diag_ik_grasp.py` | 纯运动学抓取 bench(不经过 policy) |
 
-数据集本身的检查不在这里,在 [`tools/check_dataset.py`](../dataset.md#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。
+数据集本身的检查不在这里,在 [`tools/check_dataset.py`](../single_arm_design.md#转完先查一遍强烈建议) —— 它不需要 stack 起着,只读磁盘上已经转好的数据集。
 
 **不需要 stack 的离线工具**(`src/teleop_free/tools/`,同样用 `.venv_sim` 的
 python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
@@ -266,7 +266,7 @@ python;`sonic_encoder` / `sonic_decoder` 需要 `SONIC_DEPLOY_ROOT` 指到
 
 | 工具 | 回答什么 |
 |---|---|
-| `motion_smoothness.py A B --n 60 --events` | 两个数据集的运动质量逐项对比(jerk / 高频占比 / SPARC / cadence / token 台阶),外加"剧烈段来自哪里"的归因。结论见 [collection.md](../archive/collection_20260914.md#动作质量和人类-teleop-逐项量过一遍2026-08-28) |
+| `motion_smoothness.py A B --n 60 --events` | 两个数据集的运动质量逐项对比(jerk / 高频占比 / SPARC / cadence / token 台阶),外加"剧烈段来自哪里"的归因。结论见 [single_arm_design.md](../archive/collection_20260914.md#动作质量和人类-teleop-逐项量过一遍2026-08-28) |
 | `sonic_encoder.py --selfcheck --dataset DS` | 离线跑 SONIC 的 motion encoder:任意 29 维参考动作 → 64 维 token,不用起 stack。`--selfcheck` 校验 1762 维的分块偏移、FSQ 码本、灵敏度与解码端一致性 |
 | `sonic_decoder.py` | 反过来:token 差异 → 关节度数,给 open-loop 指标一个单位 |
 

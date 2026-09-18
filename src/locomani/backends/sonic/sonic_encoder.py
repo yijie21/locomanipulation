@@ -62,7 +62,7 @@ THE THREE THINGS THAT ARE EASY TO GET WRONG
      emits, per frame, the first two columns of the rotation matrix of
      `conj(left_quat) * (delta_heading * motion_root_quat[f])`, flattened
      row-wise. So 60 of the 644 live numbers depend on where the robot actually
-     is. docs/collection.md's gloss that the token is "pure intent, carrying no
+     is. docs/single_arm_design.md's gloss that the token is "pure intent, carrying no
      proprioceptive state" holds for the two joint blocks and NOT for this one.
      `left_quat` is the whole difference between the checkpoints
      (orientation_mode, cpp:684): release uses the FULL measured base

@@ -130,7 +130,7 @@ ScaleBFM(上海 AI Lab,arXiv 2607.15163,MIT)是 SONIC 的候选替代 controller
 
 **取消**:用户 2026-09-09 说"先暂停,取消之前的 goal";07:05:44 UTC SIGTERM 驱动/审计(exit 143),07:07 保存停止记录。A29 停在 40 次优化器更新,无 checkpoint;B29/C29 未训;总消耗 9040/18000 更新;18/36 检查点审计;无 `selection_locked.json`、无确认。平台 Goal 因三轮自动续跑缺人工授权标为 blocked。**裁定**:B 单 seed 点估计最高但无统计优势;B/C 高桌 0/20;C 是合成恢复不是学生态 DAgger;不能宣布胜者。
 
-(来源: HANDOFF.md §0–7;docs/scalebfm_goal_plan.md「Measurable gates」「Fixed VLA budget」「C2 reach-domain」「Bounded development repair」「Geometry-based follow-up」「Review correction」;docs/scalebfm_goal_history_20260908.md「Run ledger」;docs/scalebfm_goal_history_20260908_c4.md「CURRENT: formal C4 v2」「20:35/20:43 UTC」;docs/scalebfm_goal_history_20260909_c5_044144.md「A17/B17 selection」;docs/scalebfm_goal_state.md「User cancellation」;docs/scalebfm_vla_comparison_results.md;docs/scalebfm_acceptance_evidence.md;docs/scalebfm_visual_collection.md「观测和动作协议」;docs/STATE.md「ScaleBFM visual-expert Goal」条)
+(来源: HANDOFF.md §0–7;docs/scalebfm_goal_plan.md「Measurable gates」「Fixed VLA budget」「C2 reach-domain」「Bounded development repair」「Geometry-based follow-up」「Review correction」;docs/scalebfm_goal_history_20260908.md「Run ledger」;docs/scalebfm_goal_history_20260908_c4.md「CURRENT: formal C4 v2」「20:35/20:43 UTC」;docs/scalebfm_goal_history_20260909_c5_044144.md「A17/B17 selection」;docs/scalebfm_goal_state.md「User cancellation」;docs/scalebfm_vla_comparison_results.md;docs/scalebfm_acceptance_evidence.md;docs/scalebfm_visual_single_arm_design.md「观测和动作协议」;docs/STATE.md「ScaleBFM visual-expert Goal」条)
 
 ## 8. 2026-09-09 yplus_center_v1 几何、固定视频检查、policy 审计(有界,CPU)
 
@@ -211,7 +211,7 @@ ScaleBFM(上海 AI Lab,arXiv 2607.15163,MIT)是 SONIC 的候选替代 controller
 |---|---|---|---|
 | 1 移动 + 删除 | f8fc71b | `src/teleop_free/scalebfm/` → `src/locomani/backends/scalebfm/`(network/runtime/action/executor/chunks/reference/state/camera)+ `src/locomani/tasks/bottle_visual/`(round/harness/planner/motion/observation/sensor/scene/geometry/sampling/recovery/visibility/audit/replay)+ `pipeline/`(collect/recording/export/train/preflight/audit_checkpoint/eval/report/summarize/video_check/follow_video/provenance);tests 改名 `tests/test_visual_*.py` 进 unit tier;`src/teleop_free/` 的 8 个 alias stub 一并删除 | 当前 expert(round.py)在 CPU 上重放 seed 18001/18002/18003:trace.npz、actions.npz、commands/observations/result 与 a3e2fee **逐字节相同**;50 项 visual 单元测试通过 |
 | 2 旋钮进 config | 51a4d25 | `ScaleBfmBackendConfig`(checkpoint、scene_dir、object_name、grip_kp/kd)与 `BottleVisualTaskConfig`(grasp: GraspConfig + scene_profile/strata/recoveries/max_s/native_codec/action_hz/integral_gain/reference_style/policy_device);默认值 = yplus200 采集 expert;`configs/backends/scalebfm.json`、`configs/tasks/bottle_visual.json`;round.py 的 21 个 flag 变成 `--config/--backend/--set`;BFM_EDGE / 猴子补丁 STAND_D、EDGE_INBOARD、GRIP_KP 全部改为参数;lint_env --strict 通过 | 同 3 个 seed 经新 CLI 重放,仍逐字节相同;`make lint` / `make test` 绿 |
-| 3 文档 | 本节 | 本台账(§1–13 由 15 份文档蒸馏)、教程 `docs/scalebfm_collection.md`、6 份设计/协议文档 + 两份 handoff 进 `docs/archive/`,其余 7 份数字已全部进台账后删除 | — |
+| 3 文档 | 本节 | 本台账(§1–13 由 15 份文档蒸馏)、教程 `docs/scalebfm.md`、6 份设计/协议文档 + 两份 handoff 进 `docs/archive/`,其余 7 份数字已全部进台账后删除 | — |
 
 **删除的代码及裁定**(删除于 f8fc71b):crate spike 的 episode/envelope(run_spike.run_round、run_bend、render_*,§1 已记录);v3 18-d 线(run_bottle.run_round、record_bottle、eval_bfm_bottle、bfm_action、augment_bfm_velocity、`configs/gr00t_bfm_{2cam,vel_2cam,vel4_2cam}.py`、`scripts/bfm_pilot.sh`;§3 三个 pilot 0/60,checkpoint 与数据均已删)、run_bottle_v4(0/3,§3)、corner 场景(只为复现 v3/v4 数据集,§4)、run_visual_comparison(已取消 Goal 的驱动,§7)、visual_pelvis_ablation + 其测试(ABCD 数据已丢,§11)、visual_baseline 与 cohort 臂 A(运行的是 outputs/ 下的冻结快照,§13)、harness.main(v3 探针 CLI)、bottle_probe / probe_visual_mode6 / calibrate_visual_reach(一次性探针,产物已丢)、sonic_envelope + `scripts/run_sonic_envelope.sh`(SONIC 对照,与本线无关)。
 
@@ -300,7 +300,7 @@ wall中位5.497s,范围4.82–6.46s;相较旧采集175.94s中位约32倍(不同s
 之后继续collect->export->stats;当前未训练。资源约束未放宽,录像规格及审计规则未降低。
 
 **固定规则落地**:
-- docs/scalebfm_collection.md新增「正式采集必须遵循的渲染与吞吐规则」,STATE固定规则同步。
+- docs/scalebfm.md新增「正式采集必须遵循的渲染与吞吐规则」,STATE固定规则同步。
 - 通用pipeline.collect默认EGL并记录render_backend/render_device;非EGL必须显式
   --allow-software-rendering用于独立诊断。已实际调用OSMesa不带开关,按预期在采集前拒绝。
 - 当前200runner只允许正式EGL;首次EGL续采先自动pilot,要求12入选+24video解码+median<=60s,

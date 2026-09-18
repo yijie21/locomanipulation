@@ -2,7 +2,7 @@
 
 ## 2026-09-10：重构后的独立审核（未修实现）
 
-范围：`git diff 78536ae...1b32a48`；ScaleBFM 以迁移前已提交原始代码 `a3e2fee` 另作对照。依据 `docs/handoff/refactor-plan.md`、步骤执行记录、`docs/reference/standards.md` 和 ROADMAP 的延期裁定。审阅中其他会话在修改 `docs/crate_collection.md`、`docs/reference/silent_failures.md`、`scripts/run_wall_pilot.sh`；这些未提交修改不属于本次定稿结论。
+范围：`git diff 78536ae...1b32a48`；ScaleBFM 以迁移前已提交原始代码 `a3e2fee` 另作对照。依据 `docs/handoff/refactor-plan.md`、步骤执行记录、`docs/reference/standards.md` 和 ROADMAP 的延期裁定。审阅中其他会话在修改 `docs/bimanual_design.md`、`docs/reference/silent_failures.md`、`scripts/run_wall_pilot.sh`；这些未提交修改不属于本次定稿结论。
 
 裁定：目录、配置集中和文档分类方向成立，但尚不能以“行为保持、可复现性完整”验收。以下区分可复现缺陷、文档问题和已接受的延期；不以尺寸超限代替行为审核。
 

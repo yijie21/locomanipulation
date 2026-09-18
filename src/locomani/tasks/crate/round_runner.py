@@ -11,7 +11,7 @@ This module is that loop, once. Each expert supplies its own `run_round`; the
 differences that are real (ghost trace, label prefix) are parameters.
 
 `--record` lives here too. Until now the crate line could not produce a
-LeRobot dataset at all: `docs/crate_collection.md` §11 listed "drive the
+LeRobot dataset at all: `docs/bimanual_design.md` listed "drive the
 exporter from the expert, the way grasp_gym.py does" as the missing step. The
 protocol is the bottle line's, exactly (`zmq_driver.SonicCommander.key`):
 

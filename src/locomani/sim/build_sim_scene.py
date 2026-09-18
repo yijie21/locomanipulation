@@ -283,7 +283,7 @@ def parse_args(argv=None):
         choices=tuple(PAD_LEVELS),
         # A SEPARATE flag, not a value on --harden-pads: the documented build command is
         # `--harden-pads outputs/scene outputs/scene/pick_place` (docs/reference/runbook.md,
-        # docs/pick_place_collection.md), and an optional-value flag swallows the first
+        # docs/single_arm_design.md), and an optional-value flag swallows the first
         # positional -- "invalid choice: 'outputs/scene'". Caught by grepping the docs for
         # every identifier this change touched (2026-09-11).
         help="which calibration --harden-pads applies: `object` (a bottle or can, the default) or "

@@ -4,7 +4,7 @@
 
 # 台账:crate(双臂搬箱)线
 
-## 2026-09-07 wall pilot 验收判据(来自 `docs/crate_collection.md` §5,表格原样保留在教程里)
+## 2026-09-07 wall pilot 验收判据(来自 `docs/bimanual_design.md` §5,表格原样保留在教程里)
 
 `run_wall_pilot.sh` 10 集 pilot 的验收表,`WALL_FEATURE=rail`:
 
@@ -190,7 +190,7 @@ baseline(2026-09-09)ok 8/10、`stand_off_m` 0.2149、容差 ±0.010。
 
 **文档巡查补记(同日,用户追问"相应的文档更新了吗")**:按改动涉及的每个标识符 grep 了一遍 `docs/`,
 查出一个**真 bug**:C 把 `--harden-pads` 从 `store_true` 改成了 `nargs="?"` 带 choices,而
-`docs/reference/runbook.md:75` 与 `docs/pick_place_collection.md:26` 里记录的命令是
+`docs/reference/runbook.md:75` 与 `docs/single_arm_design.md:26` 里记录的命令是
 `--harden-pads outputs/scene outputs/scene/pick_place` —— 可选值会**吞掉第一个位置参数**,
 实测报 `invalid choice: 'outputs/scene'` 后 exit 2,即 pick_place 的建场景命令被改坏。
 已改成 `--harden-pads`(仍是 store_true)+ 独立的 `--pad-level {object,crate}`(默认 object):
@@ -256,7 +256,7 @@ planner 通道中位:release **0.09**(0.07–0.23)、v1.1 **0.87**(0.72–1.03);
 - 代价:v1.1 满前倾时骨盆漂移 2.1 cm(0 前倾时 0.1 cm)。
 
 **没有改生产常量。** `WAIST_PITCH_MAX = 0.0` 和三条 IK 边界保持原样,只把 `bimanual_carry.py` 里过期的注释、
-`docs/crate_collection.md` §6 和 `docs/reference/silent_failures.md` 的诊断表改成 checkpoint-conditional 的说法
+`docs/bimanual_design.md` §6 和 `docs/reference/silent_failures.md` 的诊断表改成 checkpoint-conditional 的说法
 (后者顺带修掉一个更老的错:表头写的 `src/teleop_free/diag_*.py` 路径早已不存在,表里大部分脚本只在 git 历史里)。
 
 **留给用户裁决**:解不解腰。解的话最小代价路径是 ready-stand pilot(`wall_walk=false`,变量最少)先跑 10 集
@@ -267,7 +267,7 @@ A/B —— 但注意两件事:(1) 一旦上身参考带腰,**所有既有 crate 
 产物:`outputs/diag/lean_20260912/`(`summary.md`、`lean_{release,sonic_v1_1}.json` 两通道、
 `arm/lean_*.json` 带实测手臂关节、每次运行的 stack/diag 日志)。
 
-## 附:双臂闭环首个正式结果(原 `docs/evaluation.md`,2026-09-18 并入)
+## 附:双臂闭环首个正式结果(原 `docs/single_arm_design.md`,2026-09-18 并入)
 
 ### 2026-09-15 结果：`crate_vla200_record_20260914` checkpoint-10000
 

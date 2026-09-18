@@ -29,7 +29,7 @@
 | R3 | fast200 | fast200(同 200 局,专家停顿 4.6→3.0 s,零 DAgger) | **28/100**(28%,CI 20–37) | — | 无 trace |
 | R4 | fast250 | + 50 局靶向 DAgger(0.35–0.55 m 处恢复) | **48/101**(48%,CI 38–57) | fast200 vs fast250 9:29,p=0.002 | 无 trace |
 
-**结论**:R3 证明病在数据形状(同样 200 局翻倍);R4 证明靶向 DAgger 有效(+29:−9)。但 2026-08-28 发现这些局里约 2/3 在 VLA 接管前已被脚本走到桌边(stand-start gap),所以它们是「混合任务」数字;修复后同一 R4 模型的全任务干净基线是 12/100(该臂目录已不在,来源 docs/evaluation.md:504)。
+**结论**:R3 证明病在数据形状(同样 200 局翻倍);R4 证明靶向 DAgger 有效(+29:−9)。但 2026-08-28 发现这些局里约 2/3 在 VLA 接管前已被脚本走到桌边(stand-start gap),所以它们是「混合任务」数字;修复后同一 R4 模型的全任务干净基线是 12/100(该臂目录已不在,来源 docs/single_arm_design.md:504)。
 
 ## 2. 走路段进入任务:出生距离与 walk200(退化 deploy)
 
@@ -62,7 +62,7 @@
 
 ## 4. 部署侧普查(退化 deploy,2026-08-30/31)
 
-这一批是排除法,大多数臂只有 20 局或没有 manifest,按'只收可重算'的规则不列成功率,只记结论(来源 docs/evaluation.md:571–760):开环 denoising 步数 4 即够(模型开环只比噪声地板高 2%);观测延迟 33 ms 不是因素;replan 1.6 s 显著更差;grip-gain 3.0 无差异(爪子不是瓶颈);200 局随机出生扫描证伪'停位窄甜区',真实模式是 0.50 m 悬崖(≥0.50 m 成功 5%,<0.50 m 55%);初始姿态 token 换成数据 medoid(关节误差 23°→3.4°)。
+这一批是排除法,大多数臂只有 20 局或没有 manifest,按'只收可重算'的规则不列成功率,只记结论(来源 docs/single_arm_design.md:571–760):开环 denoising 步数 4 即够(模型开环只比噪声地板高 2%);观测延迟 33 ms 不是因素;replan 1.6 s 显著更差;grip-gain 3.0 无差异(爪子不是瓶颈);200 局随机出生扫描证伪'停位窄甜区',真实模式是 0.50 m 悬崖(≥0.50 m 成功 5%,<0.50 m 55%);初始姿态 token 换成数据 medoid(关节误差 23°→3.4°)。
 
 ## 术语:从第 5 节起需要的全部背景
 
@@ -989,7 +989,7 @@ ready-grasp 线(七个 `ready_grasp_*.json` 加两个 task config)自 09-07 起�
 划界:
 - **实验内部有效**:dart-vs-flow 的 2×2 四格同一实验同一协议,内部比较全部成立。
 - **跨实验无效**:把 flow200 的 50/100 拎出来当作 09-07 之后 arm 的参考,是拿两个分布比。
-  `docs/reference/runbook.md` 和 `docs/evaluation.md` 里"当前正式基线"的说法已加限定。
+  `docs/reference/runbook.md` 和 `docs/single_arm_design.md` 里"当前正式基线"的说法已加限定。
 
 过程中被否掉的两个中间结论(都记下来,免得再走一遍):
 1. "`run_learn_pilot` 的 eval 段传 `--task-config`,会被本次 diff 改掉分布"——不成立,那是 collect 段。
@@ -1923,7 +1923,7 @@ r3 的画面可以直接看到那个"罩在瓶子上方、把自己腕部视野�
 | 离线 decoder | `sonic_decoder.py` / `eval_open_loop.py` / `rtc/{analyze_transition_capture,probe_prefix_models}.py` 默认解码器跟随 `SONIC_POLICY`。994 维 policy 观测两边**逐块相同**,这半边不需要分支 |
 | provenance | `config_snapshot.json` 新增 `sonic_policy`(名字、目录、obs config 的 sha256、两个 ONNX 的字节数)—— 没有这个字段,事后无法判定一份数据集的 token 属于哪个 latent 空间 |
 | 测试 | `tests/test_sonic_policy_default.py`(9 条):三个 shell 入口默认值一致、python 与 shell 一致、env 覆盖仍有效、两个启动脚本都有存在性检查、两套布局的维度/偏移/heading、`heading_quat` 丢俯仰留偏航、两种 anchor 在俯仰下确实不同、provenance 带 checkpoint |
-| 文档 | `docs/setup.md`(下载 `--sonic-v1-1` + 验证)、`docs/collection.md`(链路图的模型路径)、`docs/dataset.md`(`motion_token` 行)、`docs/reference/silent_failures.md`(env 表 + 三条新静默失败行) |
+| 文档 | `docs/setup.md`(下载 `--sonic-v1-1` + 验证)、`docs/single_arm_design.md`(链路图的模型路径)、`docs/single_arm_design.md`(`motion_token` 行)、`docs/reference/silent_failures.md`(env 表 + 三条新静默失败行) |
 
 验证:`sonic_encoder --selfcheck` 在 v1.1 与 release 上**都 PASS**(结构/码本/灵敏度);
 单测全绿;`ruff` / `lint_env` / `lint_sizes` 无新增欠债。
@@ -2959,7 +2959,7 @@ run4 失败的 case 2/6/8 在 run5 全部成功。run6 用修好这两个门之�
 手臂本来也不是走这条通道:生产抓取是 `PLANNER_FROZEN_UPPER_BODY` 的 17 关节目标,那一支我没动。
 
 唯一真实的差别是 **exporter 记的 `teleop.vr_3pt_position` / `vr_3pt_orientation` 会变成空**
-(`run_data_exporter.py:407-412` 没有这两个 key 时写 None,不报错;`docs/dataset.md` 里这两列标的就是"不进训练")。
+(`run_data_exporter.py:407-412` 没有这两个 key 时写 None,不报错;`docs/single_arm_design.md` 里这两列标的就是"不进训练")。
 改之前它们记的是**惰性的 rest 位姿常量**,不是任何人执行过的东西。
 
 **这一条是推理,不是实测。** 规范要求改主代码的 PR 附 `scripts/gate.py compare` 的输出,
@@ -3053,7 +3053,7 @@ align 起点是抓取腕点上方 8 cm 的 pregrasp,而推进步长上限 `STEP_
 ## 36. 每批第 1 局在出生阶段必败:标定时的 start_control 抢占了朝向锚(2026-09-10,session cf)
 
 > 这一节是分支 `fix/first-round-anchor` 上的内容,2026-09-12 合并时按 append-only 惯例移到文末并从 §14 改号为 §36。
-> 正文未改。分支里引用它的地方(`collection.md`、`silent_failures.md`)写的是「台账 bottle §14」,即本节。
+> 正文未改。分支里引用它的地方(`single_arm_design.md`、`silent_failures.md`)写的是「台账 bottle §14」,即本节。
 
 **现象**:`visible10_20260910`(2/2)与 `visible200_20260910`(17/17,截至第 17 批)每批的第 1 局都在出生阶段失败:
 `[stand] could not turn N deg to the approach heading at the spawn (turn_to -88deg timed out)` 11 次、
@@ -3075,7 +3075,7 @@ deploy 在它的**第一次** `start_control` 处捕获朝向锚(memory `sonic-p
 (stand infeasible、coupled IK did not track),与第 2–4 局同分布;主线同日 0/34。12 局共 4 OK,样本小、失败类型正常,
 不作 yield 结论。**裁定**:合并;以后每批多出 1 局有效样本(采 200 条少跑约 34 局、约 15 分钟)。
 
-## 附:评测视角的同批实验记录(原 `docs/evaluation.md` §4/§6,2026-09-18 并入)
+## 附:评测视角的同批实验记录(原 `docs/single_arm_design.md` §4/§6,2026-09-18 并入)
 
 以下 625 行原样来自评测指南,那里不再保留逐轮记录:**怎么跑**归 runbook、
 **为什么这么设计**归详解、**某天跑出什么数**归本台账。

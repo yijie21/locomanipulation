@@ -47,7 +47,7 @@ class EvalConfig(VlaConfig):
     # failure ([stand]/[view]) is on film too; the default starts it after the visibility gate
     initial_token: str = "configs/deployment/ready_grasp_initial_token.json"  # --initial-token-file: the token the
     # deploy holds while the first chunk is computed. It MUST match the opening pose of the training data -- the
-    # READY token on arms-down data stalls every round in the prelude (docs/evaluation.md, "初始 token 文件").
+    # READY token on arms-down data stalls every round in the prelude (docs/single_arm_design.md, "初始 token 文件").
 
     def __post_init__(self) -> None:
         """The async client and `backend.clean_deploy` are one decision, not two.
