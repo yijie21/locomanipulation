@@ -131,7 +131,7 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 |---|---|
 | `config.yaml` | 实验文件的逐字节副本 |
 | `summary.json` | 每阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
-| `manifest_NN.jsonl`、`videos_NN/` | 逐局成败与原因、录像。**在顶层**，单臂在 `collect/` 之下 |
+|  `manifest_NN.jsonl`、`videos_NN/` | 逐局成败与原因、录像。**在顶层**，单臂在 `collect/` 之下 |
 | `trace/` | 状态轨迹。**全批共用一个目录**，单臂按批分目录 |
 | `collect/inputs.json` | 批次进度、exporter session 与 manifest 的对应 |
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集 |
@@ -143,7 +143,7 @@ manifest 行带 `task`、`produced`、`ok`，成功局还带
 转换器按它裁掉验收尾段。训练用 `configs/gr00t_sonic_3cam_bimanual.py`
 （60 维状态、66 维动作、三路相机）。
 
-**读日志**：`collect_NN.log` 找逐局成败；`train.log` 找 loss 和 `Saving checkpoint`；
+**读日志**：`visual_NN.log`（日志按 `task.expert` 命名，不是 `collect_NN`）找逐局成败；`train.log` 找 loss 和 `Copying experiment config directory`；`eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**。产物齐不齐有专门的网：
 `eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**。
 产物齐不齐有专门的网：
 

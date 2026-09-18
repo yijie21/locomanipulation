@@ -148,7 +148,7 @@ cat outputs/runs/*/summary.json                                  # 比较结果
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
 | `eval/closed_loop.json`、`eval/videos/`、`eval/eval_config.json` | 闭环结果、录像、**实际交给评测器的那份配置** |
 
-**读日志**：`collect_NN.log` 找 `EPISODE OK` 或带标签的失败原因；`train.log` 找 loss 和 `Saving checkpoint`；`eval/serve.log` 里有 `listening` 才算 policy server 起来了。
+**读日志**：`collect_NN.log` 找 `EPISODE OK` 或带标签的失败原因；`train.log` 找 loss 和 `Copying experiment config directory`（存档的实际字样，没有 “Saving”）；`eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**——要 `summary.json` 里有那一条、产物真的在那里。产物齐不齐有专门的网：
 **光看退出码不算跑完**——要 `summary.json` 里有那一条、产物真的在那里。产物齐不齐有专门的网：
 
 ```bash

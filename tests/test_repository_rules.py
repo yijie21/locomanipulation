@@ -153,3 +153,26 @@ def test_a_runbook_may_name_the_experiment_file_it_tells_you_to_create(tmp_path)
     (tmp_path / "configs/experiments/real.yaml").unlink()
     errors = rules.navigation_errors(tmp_path, {name: 180})
     assert len(errors) == 1 and "configs/experiments/real.yaml" in errors[0]
+
+
+def test_a_runbook_may_only_name_output_that_something_prints(tmp_path):
+    name = rules.COMMAND_DOCUMENTS[0]
+    path = tmp_path / name
+    path.parent.mkdir(parents=True)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "scripts/recipe.py").write_text(
+        '"""A docstring mentioning Saving is not output."""\n'
+        "print(f\"  finger pads {'HARDENED (priority 1)' if hard else 'SOFT'}\")\n"
+        "# a comment mentioning Vanished is not output either\n"
+    )
+    path.write_text(
+        "装完回显 `finger pads HARDENED`；训练日志里找 `Saving checkpoint` 和 `Vanished marker`。\n"
+        "命令 `python -m locomani.stack.cli status --instance N` 和配置 `max_batches: 1` 不算输出。\n"
+    )
+    errors = rules.navigation_errors(tmp_path, {name: 180})
+    assert len(errors) == 2, errors
+    # Assembled at runtime, so the phrase is never contiguous -- but every word is there.
+    assert not any("finger pads" in e for e in errors)
+    assert any("`Saving checkpoint` names" in e and "'Saving'" in e for e in errors)
+    assert any("`Vanished marker` names" in e and "'Vanished'" in e for e in errors)

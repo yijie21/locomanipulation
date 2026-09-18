@@ -129,3 +129,21 @@ def test_alignment_reacquisition_does_not_restore_a_stale_nonzero_velocity():
     resumed = policy.step(now + 0.2, observe(now + 0.2), q, root, [0.095] * 2)
     np.testing.assert_array_equal(held.joints, resumed.joints)
     np.testing.assert_array_equal(resumed.velocity, np.zeros(29))
+
+
+def test_blend_never_exceeds_one_so_the_recovery_slerp_cannot_reject_it():
+    """2026-09-18: `blend` clipped its input but not its output, so smootherstep
+    returned 1.0000000000000016 near the boundary; `coordinated_reach`'s recovery
+    hands that to a Slerp on [0, 1], which raised and killed the whole batch."""
+    import numpy as np
+    from scipy.spatial.transform import Rotation, Slerp
+
+    from locomani.tasks.crate.visual_low_reach import blend
+
+    slerp = Slerp([0, 1], Rotation.from_matrix([np.eye(3), np.eye(3)]))
+    rng = np.random.default_rng(0)
+    times = np.concatenate([np.linspace(4.9, 5.2, 20001), rng.uniform(4.999, 5.001, 5000)])
+    values = [blend(float(t), 5.0)[0] for t in times]
+    assert max(values) <= 1.0 and min(values) >= 0.0
+    for value in values[::97]:
+        slerp(value)  # raises if the fix regresses

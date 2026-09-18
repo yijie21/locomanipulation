@@ -24,8 +24,18 @@ def quaternion(matrix):
 
 
 def blend(t, duration):
+    """Smootherstep and its derivative, both clipped -- clipping `u` is not enough.
+
+    `u**3 * (10 - 15u + 6u**2)` is 1 at u == 1 in exact arithmetic but evaluates to
+    1.0000000000000016 for u just below it, and `coordinated_reach`'s recovery feeds
+    this straight to a `Slerp` built on [0, 1], which rejects anything above 1.0.
+    Measured 2026-09-18: 171 of 250001 samples across the boundary came back high,
+    and one did it in a real round -- a grasp that had already succeeded (rise
+    0.218 m, both pads touching) was recorded as `runtime_error`, and because
+    `expert.py` re-raises, it took the rest of that batch with it: 3 rounds of 10.
+    """
     u = np.clip(t / duration, 0, 1)
-    return u**3 * (10 - 15 * u + 6 * u * u), 30 * u * u * (1 - u) ** 2 / duration
+    return np.clip(u**3 * (10 - 15 * u + 6 * u * u), 0.0, 1.0), 30 * u * u * (1 - u) ** 2 / duration
 
 
 class SupportFrame:

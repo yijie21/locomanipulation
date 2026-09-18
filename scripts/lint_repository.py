@@ -47,6 +47,17 @@ COMMAND_DOCUMENTS = ("docs/single_arm.md", "docs/bimanual.md")
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
 
+# A runbook that says "look in the log for X" has to name an X something prints.
+# 2026-09-18: both runbooks told the reader to grep train.log for `Saving checkpoint`.
+# Nothing in the repository has ever printed the word "Saving"; the recipe writes
+# `Copying ... to .../checkpoint-100`. A reader following the doc concludes the
+# training failed. Checked per word, not per string, because the real messages are
+# assembled at runtime -- `f"  finger pads {'HARDENED ...' if hard else ...}"` and
+# `f"{path} exists; ..."` never contain the doc's phrase contiguously.
+QUOTED = re.compile(r"`([^`\n]+)`")
+NOT_A_MESSAGE = re.compile(r"^(python|bash|export|cp|sed|make|git)\s|[×]|^[\w.]+:\s")
+MESSAGE_WORD = re.compile(r"[A-Za-z][\w.]{3,}")
+
 
 def imports(source: str, filename: str) -> set[str]:
     """Include function-local imports and resolve package-relative imports."""
@@ -119,10 +130,63 @@ def command_path_errors(root: Path, name: str, body: str) -> list[str]:
     ]
 
 
+def source_text(root: Path) -> str:
+    """Everything the repository could print: string literals only, never comments.
+
+    The first draft of this read whole files and passed, because the only place the
+    word "Saving" appears in the repository is the comment above explaining that
+    nothing prints it. Literals are also the honest reading of "something prints
+    this" -- and an f-string's fixed parts are Constants, so runtime-assembled
+    messages still resolve word by word.
+    """
+    parts = []
+    for base in ("src", "scripts"):
+        for path in sorted((root / base).rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix == ".py":
+                try:
+                    tree = ast.parse(path.read_text(errors="ignore"), filename=str(path))
+                except SyntaxError:
+                    continue
+                docstrings = {
+                    id(n.value)
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+                }
+                parts += [
+                    n.value
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings
+                ]
+            elif path.suffix == ".sh":
+                parts += [line.split("#", 1)[0] for line in path.read_text(errors="ignore").splitlines()]
+    return "\n".join(parts)
+
+
+def message_errors(name: str, body: str, sources: str) -> list[str]:
+    """Quoted multi-word output a runbook tells you to look for must be printable."""
+    errors = []
+    for quoted in sorted({q for q in QUOTED.findall(body) if " " in q and "/" not in q}):
+        if NOT_A_MESSAGE.search(quoted):
+            continue
+        missing = [w for w in MESSAGE_WORD.findall(quoted) if w not in sources]
+        if missing:
+            errors.append(f"{name}: `{quoted}` names {missing}, which nothing in src/ or scripts/ prints")
+    return errors
+
+
 def navigation_errors(
     root: Path, guides: dict[str, int] | None = None, documents: set[str] | frozenset[str] = frozenset()
 ) -> list[str]:
     errors = []
+    cached: list[str] = []  # read the source tree at most once, and only if a runbook changed
+
+    def sources() -> str:
+        if not cached:
+            cached.append(source_text(root))
+        return cached[0]
+
     checked: dict[str, int | None] = dict(GUIDES if guides is None else guides)
     for name in documents:
         if name.endswith(".md") and (root / name).is_file():
@@ -146,6 +210,7 @@ def navigation_errors(
                 errors.append(f"{name}: broken link {link}")
         if name in COMMAND_DOCUMENTS:
             errors += command_path_errors(root, name, body)
+            errors += message_errors(name, body, sources())
         if name == "docs/reference/change-map.md" or name.startswith("docs/reference/change-map-"):
             for test in re.findall(r"`(test_[\w]+\.py)`", body):
                 if not (root / "tests" / test).is_file():
