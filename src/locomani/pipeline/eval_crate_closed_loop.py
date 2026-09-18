@@ -149,6 +149,12 @@ def parse_args(argv=None):
         help="the run's whole EvalConfig JSON. Fields this evaluator implements are taken from it; "
         "every other field is refused or recorded, never silently dropped (see HONOURED)",
     )
+    ap.add_argument(
+        "--clean",
+        action="store_true",
+        help="never touch the planner: SONIC_AUTO_START engages the deploy and a standing-token "
+        "keepalive holds streamed mode between rounds",
+    )
     ap.add_argument("--allow-instance-0", action="store_true")
     args = ap.parse_args(argv)
     if args.eval_config:
@@ -222,7 +228,11 @@ def main(argv=None):
     config_path = args.config if args.config else out / "task_config.json"
     if not args.config:
         task_cfg.dump(config_path)
-    backend = SonicBackendConfig(no_encoder=True, dataset_fps=25.0)
+    # clean_deploy gives the child SONIC_AUTO_START (stack/manager.py:199), so the deploy
+    # engages itself and no planner command is needed to start it. Paired with --clean below:
+    # ledger/bottle.md:9 calls a planner settle before enter_streamed the `degraded` deploy,
+    # which executes walking tokens at ~1/3. This line had been degraded in every round.
+    backend = SonicBackendConfig(no_encoder=True, dataset_fps=25.0, clean_deploy=args.clean)
     stage = Stage(out)
     started = time.time()
     write_config_snapshot(
@@ -282,6 +292,7 @@ def main(argv=None):
                         args.initial_token_file,
                         "--trace-dir",
                         out / "traces",
+                        *(["--clean"] if args.clean else []),
                         "--round-offset",
                         b * args.batch_rounds,
                     ],

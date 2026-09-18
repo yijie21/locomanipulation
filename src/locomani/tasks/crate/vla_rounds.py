@@ -78,6 +78,15 @@ def classify(min_dist: float, commanded_close: bool, moved_m: float) -> str:
     return f"[vla] close: commanded a grasp but no lift (object moved {moved_m * 100:.0f} cm laterally)"
 
 
+def takeover_sample(p, st) -> dict:
+    """Where the body is, in the four numbers a handover transient moves."""
+    return dict(
+        yaw_deg=float(np.degrees(p.pelvis_yaw(st))),
+        pelvis_xy=[float(v) for v in np.asarray(p.pelvis_xy(st))],
+        **posture(st),
+    )
+
+
 def place(p, reset, meta, cfg, rng):
     """reset_ready's sampling without its planner-arm ready pose (the token prelude owns the arms)."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
@@ -92,6 +101,11 @@ def place(p, reset, meta, cfg, rng):
         robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
     )
     time.sleep(0.4)
+    # Third sample, and the reason for it: `held` is taken after this function returns,
+    # so spawn->held is the settle and held->streamed is the handover. Without the split
+    # the 6 cm measured on 2026-09-18 could not be charged to either one, and the first
+    # guess -- that it was the handover -- cost an A/B that made the clean rounds worse.
+    spawn = takeover_sample(p, p.obs())
     p.cmd.start_control()
     p.hold_yaw = 0.0
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
@@ -100,15 +114,7 @@ def place(p, reset, meta, cfg, rng):
         object_yaw=float(yaw),
         start_edge_distance=start_distance,
         start_xy=start_xy.tolist(),
-    )
-
-
-def takeover_sample(p, st) -> dict:
-    """Where the body is, in the four numbers a handover transient moves."""
-    return dict(
-        yaw_deg=float(np.degrees(p.pelvis_yaw(st))),
-        pelvis_xy=[float(v) for v in np.asarray(p.pelvis_xy(st))],
-        **posture(st),
+        takeover=dict(spawn=spawn),
     )
 
 
@@ -128,7 +134,7 @@ def prelude(p, reset, meta, cfg, rng):
     # The recorded round starts after `enter_streamed`, so a transient at the switch
     # sits before the trace's first row and before the video's first frame -- which is
     # how a systematic yaw step of a few degrees went unattributed until 2026-09-18.
-    placement["takeover"] = dict(held=takeover_sample(p, initial))
+    placement["takeover"]["held"] = takeover_sample(p, initial)
     delivered = initial_pose.prepare_token_pose(p, expected_arms)
     placement["takeover"]["streamed"] = takeover_sample(p, p.obs())
     if not delivered:
@@ -286,6 +292,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser(__doc__)
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument(
+        "--clean",
+        action="store_true",
+        help="never leave streamed mode between rounds: a CleanClock publishes the standing token "
+        "in the gap, so the settle runs on the token channel instead of a drifting planner IDLE",
+    )
+    ap.add_argument(
         "--round-offset",
         type=int,
         default=0,
@@ -317,7 +329,32 @@ def main(argv=None):
             raise SystemExit(
                 f"policy server {kind} schema differs from the crate observation contract: {modalities[kind]}"
             )
-    p, reset = Primitives(), EpisodeControlClient()
+    clock = None
+    if args.clean:
+        # Keep the deploy in streamed mode for the whole batch, on a standing token.
+        # Without this every round ends with `exit_streamed()` -- a planner command --
+        # so the NEXT round's 3.4 s settle runs in planner mode, where IDLE drifts at
+        # 8-24 cm/s. Measured 2026-09-18 over 30 rounds: the settle moved the base up
+        # to 0.54 m, and the only clean rounds in the run were the three that followed
+        # `warm_up`, which never leaves streamed mode. The single-arm line has had this
+        # since the clean-deploy work; this line never did.
+        from dataclasses import replace as dataclass_replace
+
+        from locomani.backends.sonic.clean_clock import CleanClock, clean_commander_class
+        from locomani.backends.sonic.vla_config import DEFAULT_VLA
+
+        vla_cfg = dataclass_replace(
+            DEFAULT_VLA,
+            backend=dataclass_replace(DEFAULT_VLA.backend, dataset_fps=25.0, clean_deploy=True),
+        )
+        clock = CleanClock(config=vla_cfg)  # reads INIT_TOKEN_FILE, set above
+        p = Primitives(commander=clean_commander_class(clock)())
+        clock.attach(p.cmd)
+        clock.prime()
+        clock.resume()
+    else:
+        p = Primitives()
+    reset = EpisodeControlClient()
     obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE)
     if args.trace_dir is not None:
         args.trace_dir.mkdir(parents=True, exist_ok=True)

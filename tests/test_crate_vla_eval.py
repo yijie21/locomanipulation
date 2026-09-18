@@ -169,3 +169,18 @@ def test_each_batch_numbers_its_traces_globally_so_they_do_not_overwrite():
 
     driver_source = (Path(paths.REPO) / "src/locomani/pipeline/eval_crate_closed_loop.py").read_text()
     assert '"--round-offset",' in driver_source and "b * args.batch_rounds," in driver_source
+
+
+def test_clean_mode_reaches_both_the_round_loop_and_the_stack():
+    """The transient was not one thing: leaving streamed mode at the end of every round
+    put the NEXT round's 3.4 s settle in planner mode, where IDLE drifts. Both halves of
+    the fix -- the keepalive and SONIC_AUTO_START -- hang off this one flag."""
+    from locomani import paths
+
+    rounds = (Path(paths.REPO) / "src/locomani/tasks/crate/vla_rounds.py").read_text()
+    assert '"--clean",' in rounds and "CleanClock(config=vla_cfg)" in rounds
+    assert "clean_commander_class(clock)()" in rounds
+
+    driver_source = (Path(paths.REPO) / "src/locomani/pipeline/eval_crate_closed_loop.py").read_text()
+    assert "clean_deploy=args.clean" in driver_source
+    assert '*(["--clean"] if args.clean else []),' in driver_source
