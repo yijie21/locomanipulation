@@ -16,7 +16,7 @@
 
 当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
 仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
-[视觉专家说明](crate_visual_collection.md)。
+[视觉专家说明](bimanual_design.md)。
 
 ## 2. 环境与场景
 
@@ -39,7 +39,7 @@ bash scripts/install_scene.sh
 低桌配置文件**不会改变桌面几何**，因此降低桌高和选择控制 profile 是两个步骤。
 `--crate-setback 0.04` 同时修改 XML 初始位置和 reset 元数据；任务 JSON 不代替这项场景构建参数。
 此前本页漏写了这 4 cm，生成的场景与 6/10 实验不同；见 [复现核对](handoff/crate-reproduction-20260914.md)。
-篮子外观、桌面碰撞处理与场景副本的具体约定见 [场景处理](crate_visual_collection.md#run)。
+篮子外观、桌面碰撞处理与场景副本的具体约定见 [场景处理](bimanual_design.md#run)。
 
 ## 3. 跑一局
 
@@ -169,7 +169,7 @@ manifest 行带 `task`、`produced`、`ok` 和成功局的
 ego、左腕和右腕用于可见性检查及动作审查。相机 MP4 按名义 25 FPS 保存，
 时序测量应读 JSON 时间戳；第三人称原片使用仿真时间。
 发送记录不是控制器已经执行的证明，POSE 包含未来参考帧，不能把它们直接当作当前训练 action。
-字段和对齐限制见 [观测与动作记录](crate_visual_collection.md#outputs-and-limits)。
+字段和对齐限制见 [观测与动作记录](bimanual_design.md#outputs-and-limits)。
 
 验收应核对实际初始距离、完整走近过程、双手接触、真实离桌抬升及恢复直立后的持物状态。
 停止到俯身、试提到站直之间的停顿和抖动需要结合视频与物理时间测量；
@@ -287,7 +287,7 @@ bash scripts/stack/stop_render.sh crate_review_example
 ## 8. 进一步阅读
 
 - [运行基础设施](infra.md)：配置组怎么组合、阶段产物与断点、多卡并行的作业文件与资源准入。
-- [视觉专家说明](crate_visual_collection.md)：信息来源、相机可见性、连续动作与记录字段。
+- [视觉专家说明](bimanual_design.md)：信息来源、相机可见性、连续动作与记录字段。
 - [crate 代码导航](reference/change-map-crate.md)：修改双手、腰部、交接或失败判据时阅读。
 - [连续动作版本及验证](handoff/crate-continuous-motion-20260914.md)：当前实现的固定批次证据和剩余限制。
 - [55 cm](handoff/crate-table55-20260913.md)、[30 cm 下蹲](handoff/crate-table30-20260913.md)、

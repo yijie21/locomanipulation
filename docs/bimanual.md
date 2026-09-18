@@ -1,7 +1,7 @@
 # 双臂：从采集到评测
 
 视觉指导走近、俯身抓篮、抬起并站直。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
-为什么这么设计、试过什么被否掉了，在 [双臂视觉专家](crate_visual_collection.md)；
+为什么这么设计、试过什么被否掉了，在 [双臂详解](bimanual_design.md)；
 哪天跑出什么数，在 [双臂台账](ledger/crate.md)。
 
 和单臂用**同一套扁平脚本**，只有采集和评测分线（`collect_crate.py` / `eval_crate.py`），
@@ -170,7 +170,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
 
 ## 9. 进一步阅读
 
-- [双臂视觉专家](crate_visual_collection.md)：视觉专家的信息来源、连续控制、观测/动作协议、诊断专家。
+- [双臂详解](bimanual_design.md)：视觉专家的信息来源、连续控制、观测/动作协议、诊断专家。
 - [双臂台账](ledger/crate.md)：逐轮实测数字与裁定。
 - [配置字段表](reference/config_fields.md)：字段含义与默认值以它为准。
 - [单臂](single_arm.md)：抓瓶那条线，结构与本页逐节对应。

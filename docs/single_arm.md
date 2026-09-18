@@ -1,7 +1,7 @@
 # 单臂：从采集到评测
 
 走近桌子、单手抓瓶。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
-为什么这么设计、试过什么被否掉了，在 [单臂采集指南](collection.md)；
+为什么这么设计、试过什么被否掉了，在 [单臂详解](single_arm_design.md)；
 哪天跑出什么数，在 [单臂台账](ledger/bottle.md)。
 
 ## 1. 准备一次
@@ -173,7 +173,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 
 ## 10. 进一步阅读
 
-- [单臂采集指南](collection.md)：专家设计、控制原则、被否掉的方案。
+- [单臂详解](single_arm_design.md)：专家设计、控制原则、被否掉的方案。
 - [单臂台账](ledger/bottle.md)：逐轮实测数字与裁定。
 - [配置字段表](reference/config_fields.md)：字段含义与默认值以它为准。
 - [双臂](bimanual.md)：抓篮子那条线，结构与本页逐节对应。
