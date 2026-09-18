@@ -9,16 +9,17 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 
 ## 功能与文档
 
-| 想做什么 | 提供的功能 | 从这里开始 |
-|---|---|---|
-| 单臂采集 | 走近桌子、单手抓瓶，单局与批量录制 | [单臂采集指南](docs/single_arm.md) |
-| 双臂采集 | 视觉指导走近、俯身抓篮、抬起并站直；含其他专家场景与回放 | [双臂采集指南](docs/bimanual.md) |
-| Pick-and-place 采集 | 走近桌子、右手抓起罐头并放入篮子，单局与批量录制 | [Pick-and-place 采集指南](docs/single_arm.md) |
-| 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM 指南](docs/scalebfm.md) |
-| 整理训练数据 | 转换 LeRobot 数据集，检查图像、状态、动作与数据格式 | [数据集转换与检查](docs/single_arm.md) |
-| 训练和测试 VLA | GR00T 微调、离线预测评测、仿真闭环评测 | [训练](docs/single_arm.md) · [评测](docs/single_arm.md) |
-| 多卡并行、多配置对比 | 一份实验文件一次运行，一卡一个终端；产物存在即跳过 | [运行基础设施指南](docs/single_arm.md) · `configs/experiments/` |
-| MuJoCo 仿真与 Isaac 渲染 | 仿真与采集流程、EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染指南](docs/rendering.md) |
+一条线一页，**采集 → 转换 → 训练 → 评测都在同一页里**，不用跳转：
+
+| 想做什么 | 提供的功能 | 怎么跑 | 为什么这么设计 |
+|---|---|---|---|
+| 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
+| 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
+| 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
+| MuJoCo 仿真与 Isaac 渲染 | EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染](docs/rendering.md) | 同页 |
+
+逐轮实测数字和历次裁定在台账：[单臂](docs/ledger/bottle.md)、[双臂](docs/ledger/crate.md)、
+[ScaleBFM](docs/ledger/scalebfm.md)。
 
 双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
 按相机可见性约束动作；尚未提供经过验证的 LeRobot 训练数据集。各任务的适用范围和已知问题见对应指南，最近的试验结果见 [项目状态](docs/STATE.md)。
@@ -70,8 +71,7 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 
 首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。`collect` 和 `eval`
 自己启停仿真、控制器和导出器（`src/locomani/stack/`，手工控制用
-`python -m locomani.stack.cli up|status|down --instance N`）。双臂抓篮子的命令见
-[双臂采集指南](docs/bimanual.md)。完整说明见 [运行基础设施指南](docs/single_arm.md)。
+`python -m locomani.stack.cli up|status|down --instance N`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md)。
 
 ## 查看运行结果
 
