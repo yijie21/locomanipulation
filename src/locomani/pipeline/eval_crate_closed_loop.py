@@ -282,6 +282,8 @@ def main(argv=None):
                         args.initial_token_file,
                         "--trace-dir",
                         out / "traces",
+                        "--round-offset",
+                        b * args.batch_rounds,
                     ],
                     env=env,
                 )

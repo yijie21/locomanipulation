@@ -1,6 +1,7 @@
 """The crate closed-loop evaluator: action decode, failure strings, driver arguments."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -154,3 +155,17 @@ def test_the_crate_trace_carries_the_two_posture_channels_it_was_missing():
 
     blank = posture({})
     assert blank == {"pelvis_z": None, "torso_pitch": None}
+
+
+def test_each_batch_numbers_its_traces_globally_so_they_do_not_overwrite():
+    """A 100-round evaluation kept 10 traces: the batch loop runs one process per batch,
+    each numbering its rounds from zero into one shared `traces/` directory, so batch 1
+    overwrote batch 0. Videos were always per-batch directories; traces were not."""
+    from locomani import paths
+
+    rounds = (Path(paths.REPO) / "src/locomani/tasks/crate/vla_rounds.py").read_text()
+    assert '"--round-offset",' in rounds
+    assert 'f"round_{index + args.round_offset:03d}.json"' in rounds
+
+    driver_source = (Path(paths.REPO) / "src/locomani/pipeline/eval_crate_closed_loop.py").read_text()
+    assert '"--round-offset",' in driver_source and "b * args.batch_rounds," in driver_source

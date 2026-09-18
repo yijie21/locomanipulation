@@ -285,6 +285,14 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
 def main(argv=None):
     ap = argparse.ArgumentParser(__doc__)
     ap.add_argument("--rounds", type=int, default=1)
+    ap.add_argument(
+        "--round-offset",
+        type=int,
+        default=0,
+        help="number of rounds already run in this evaluation. The batch loop runs one process per "
+        "batch, each numbering its rounds from zero, so without this every batch overwrote the "
+        "previous batch's traces: a 100-round evaluation kept 10 of them",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument("--config", type=Path)
@@ -332,7 +340,9 @@ def main(argv=None):
                 budget_s=args.budget_s,
                 execution_horizon=args.execution_horizon,
                 dataset_fps=args.dataset_fps,
-                trace_path=None if args.trace_dir is None else args.trace_dir / f"round_{index:03d}.json",
+                trace_path=None
+                if args.trace_dir is None
+                else args.trace_dir / f"round_{index + args.round_offset:03d}.json",
             )
             reset.end_video()
             row = dict(
