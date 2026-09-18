@@ -100,16 +100,24 @@ def prelude(p, reset, meta, cfg, rng):
 def warm_up(p, reset, meta, cfg, rng) -> None:
     """One full prelude before the first recorded round, so no recorded round is the deploy's first.
 
-    Measured 2026-09-17 on the crate scene (outputs/twitch_body/*): the deploy's
-    FIRST round in a process visits its reference motion's frame-0 posture --
-    crouched, knee 0.67, pelvis 0.755 m, elbows -0.29 -- and then steps to the
-    token posture (knee 0.17, pelvis 0.788, elbows +0.83) at the mode switch:
+    Measured 2026-09-17 on the crate scene (outputs/twitch_body/*): until the
+    deploy's FIRST external token arrives it stands in a posture nobody chose --
+    knee 0.67, pelvis 0.755 m, elbows -0.29. That is not the reference motion's
+    frame 0 (near-zero joints at 0.790 m) and not the reset pose
+    (DEFAULT_DOF_ANGLES, knee 0.30): the evaluation stack launches with
+    NO_ENCODER=1, so `GatherTokenState` (deploy.cpp:1662) feeds the policy
+    `token_state_data_`, still an all-zero buffer, and the crouch is simply what
+    the policy does with a zero token. With the encoder on, the same IDLE hold
+    stands at knee 0.16 / pelvis 0.787. The first token then fills that buffer
+    for good (is_using_encoder_ never turns back on), which is why the step to
+    the token posture (knee 0.17, pelvis 0.788, elbows +0.83) happens once, at
+    the mode switch:
     0.5 rad of knee, 3.3 cm of height, 7.5 deg of pitch and 9 rad/s at the elbow
     inside 0.3 s. That is the lurch at the start of every evaluation video.
     From the second round on, the identical sequence (reset, start_control,
     IDLE hold, enter_streamed) is transient-free: pitch within 0.1 deg, arms
-    0.00 rad/s. Once the deploy has streamed a token it no longer returns to
-    frame 0, whichever direction the mode switches.
+    0.00 rad/s -- the buffer still holds the last token, so the IDLE hold now
+    settles at the token posture instead of the zero-token crouch.
 
     What does not work, each measured: pinning the arms on the sim covers the
     arms only (knee still 0.31->0.45->0.17, pitch to -9 deg); launching with
