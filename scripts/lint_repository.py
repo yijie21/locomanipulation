@@ -36,6 +36,15 @@ GUIDES = {
 }
 BYTE_BUDGETS = {"docs/reference/change-map.md": 3000}
 
+# Runbooks: documents a reader executes line by line. Every repository path they
+# name must exist, because the 2026-09-17 cold-start walkthrough found five of its
+# eleven findings here -- guides still naming deleted scripts (run_wall_pilot.sh)
+# and paths missing a directory level. A doc that is not present is skipped: GUIDES
+# owns "does this document exist", this owns "is what it tells you to run there".
+COMMAND_DOCUMENTS = ("docs/single_arm.md", "docs/bimanual.md")
+# Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
+COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
+
 
 def imports(source: str, filename: str) -> set[str]:
     """Include function-local imports and resolve package-relative imports."""
@@ -93,6 +102,15 @@ def dependency_errors(root: Path) -> list[str]:
     return errors
 
 
+def command_path_errors(root: Path, name: str, body: str) -> list[str]:
+    """Every scripts/configs/src/tests path a runbook prints has to be on disk."""
+    return [
+        f"{name}: names {path}, which does not exist; a runbook may only print commands that run"
+        for path in sorted(set(COMMAND_PATH.findall(body)))
+        if not (root / path).exists()
+    ]
+
+
 def navigation_errors(
     root: Path, guides: dict[str, int] | None = None, documents: set[str] | frozenset[str] = frozenset()
 ) -> list[str]:
@@ -118,6 +136,8 @@ def navigation_errors(
             target = unquote(link.split("#", 1)[0])
             if not (path.parent / target).exists():
                 errors.append(f"{name}: broken link {link}")
+        if name in COMMAND_DOCUMENTS:
+            errors += command_path_errors(root, name, body)
         if name == "docs/reference/change-map.md" or name.startswith("docs/reference/change-map-"):
             for test in re.findall(r"`(test_[\w]+\.py)`", body):
                 if not (root / "tests" / test).is_file():

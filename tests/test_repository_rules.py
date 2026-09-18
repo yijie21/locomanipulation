@@ -103,3 +103,34 @@ def test_changed_markdown_outside_entry_guides_is_checked(tmp_path):
     assert "broken link" in rules.navigation_errors(tmp_path, {}, {"docs/task.md"})[0]
     (guide.parent / "missing.md").touch()
     assert rules.navigation_errors(tmp_path, {}, {"docs/task.md", "docs/deleted.md"}) == []
+
+
+def test_runbooks_may_only_name_paths_that_exist(tmp_path):
+    name = rules.COMMAND_DOCUMENTS[0]
+    path = tmp_path / name
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "见 `scripts/run_wall_pilot.sh`：\n\n"
+        "    python scripts/collect_bottle.py configs/experiments/x.yaml --gpu 1\n\n"
+        "产物在 outputs/runs/<name>/collect/，模板见 configs/experiments/<name>.yaml，"
+        "代码在 src/locomani/ 下。\n"
+    )
+    errors = rules.navigation_errors(tmp_path, {name: 180})
+    named = {error.split("names ")[1].split(",")[0] for error in errors if "names " in error}
+    # `outputs/` is runtime, so it is never checked. A path interrupted by a `<name>`
+    # placeholder truncates to its parent directory, which is checked as a directory --
+    # not a false positive, and it still catches a renamed `configs/` or `src/` tree.
+    assert named == {
+        "scripts/run_wall_pilot.sh",
+        "scripts/collect_bottle.py",
+        "configs/experiments/x.yaml",
+        "configs/experiments",
+        "src/locomani",
+    }
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/run_wall_pilot.sh").touch()
+    (tmp_path / "scripts/collect_bottle.py").touch()
+    (tmp_path / "configs/experiments").mkdir(parents=True)
+    (tmp_path / "configs/experiments/x.yaml").touch()
+    (tmp_path / "src/locomani").mkdir(parents=True)
+    assert rules.navigation_errors(tmp_path, {name: 180}) == []
