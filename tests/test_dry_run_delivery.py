@@ -298,25 +298,37 @@ def crate_eval(tmp_path_factory):
     return yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text()), result.stdout
 
 
-def test_the_bimanual_evaluator_opens_in_its_own_pose(crate_eval):
-    """The single-arm token would start the robot where this line's training data never does."""
+def test_the_fields_the_bimanual_evaluator_accepts_are_all_delivered(crate_eval, tmp_path):
+    """Since 2026-09-18 the whole eval block goes over as one file rather than as
+    hand-picked flags, so this parses the command the stage would run and checks the
+    values that come out the other side -- not that a flag appears in a string."""
+    from locomani.pipeline import eval_crate_closed_loop as driver
+    from locomani.pipeline.eval_config import EvalConfig
+
     cfg, out = crate_eval
+    assert "--eval-config" in out and "--instance {}".format(cfg["collect"]["instance"]) in out
+
+    checkpoint = tmp_path / "ckpt"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text("{}")
+    evaluation = EvalConfig.from_dict(cfg["eval"])
+    evaluation.dump(tmp_path / "eval_config.json")
+    args = driver.parse_args(
+        [
+            "--checkpoint", str(checkpoint),
+            "--scene", str(tmp_path),
+            "--out", str(tmp_path / "o"),
+            "--eval-config", str(tmp_path / "eval_config.json"),
+        ]
+    )  # fmt: skip
+    assert args.rounds == cfg["eval"]["rounds"]
+    assert args.seed == cfg["eval"]["seed"]
+    assert args.port == cfg["eval"]["policy_port"]
+    assert args.execution_horizon == cfg["eval"]["execution_horizon"]
+    assert args.budget_s == cfg["eval"]["budget_s"]
+    # The single-arm token would start the robot where this line's training data never does.
+    assert str(args.initial_token_file).endswith("crate_initial_token.json")
     assert cfg["eval"]["initial_token"].endswith("crate_initial_token.json")
-    assert cfg["eval"]["initial_token"] in out
-
-
-def test_the_fields_the_bimanual_evaluator_accepts_are_all_delivered(crate_eval):
-    """Port, budget and horizon used to be declared and then left at the evaluator's defaults."""
-    cfg, out = crate_eval
-    for flag, value in (
-        ("--rounds", cfg["eval"]["rounds"]),
-        ("--seed", cfg["eval"]["seed"]),
-        ("--port", cfg["eval"]["policy_port"]),
-        ("--execution-horizon", cfg["eval"]["execution_horizon"]),
-        ("--budget-s", cfg["eval"]["budget_s"]),
-        ("--instance", cfg["collect"]["instance"]),
-    ):
-        assert f"{flag} {value}" in out, flag
 
 
 def test_the_bimanual_line_keeps_its_own_port_block(crate_eval):

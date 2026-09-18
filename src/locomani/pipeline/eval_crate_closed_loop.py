@@ -73,6 +73,41 @@ def aggregate(manifest: Path) -> dict:
     )
 
 
+# The EvalConfig fields this evaluator actually reads. Everything else in the block
+# is not implemented here: `client` is refused outright because a config that says
+# "async" while the loop runs blocking is exactly the kind of quiet lie the 2026-09-18
+# cold-start run caught (eval_config.json said async, closed_loop.json said blocking),
+# and the rest is written to `ignored_eval_fields.json` so "declared" and "delivered"
+# can be compared without reading this file.
+HONOURED = ("rounds", "seed", "policy_port", "execution_horizon", "budget_s", "initial_token")
+PINNED = dict(client="blocking")
+
+
+def apply_eval_config(ap, args) -> None:
+    """Take the run's whole eval block, then say out loud what is not used."""
+    from locomani.pipeline.eval_config import EvalConfig
+
+    evaluation = EvalConfig.load(args.eval_config)
+    for field, value in PINNED.items():
+        if getattr(evaluation, field) != value:
+            ap.error(
+                f"{args.eval_config}: {field}={getattr(evaluation, field)!r}, but the crate evaluator only "
+                f"implements {field}={value!r}. Set it in the experiment file rather than letting the run "
+                f"record a value it never used."
+            )
+    args.rounds = evaluation.rounds
+    args.seed = evaluation.seed
+    args.port = evaluation.policy_port
+    args.execution_horizon = evaluation.execution_horizon
+    args.budget_s = evaluation.budget_s
+    args.initial_token_file = ROOT / evaluation.initial_token
+    args.ignored_eval_fields = {
+        name: getattr(evaluation, name)
+        for name in evaluation.to_dict()
+        if name not in HONOURED and name not in PINNED and name != "schema_version"
+    }
+
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--checkpoint", type=Path, required=True)
@@ -107,8 +142,17 @@ def parse_args(argv=None):
     ap.add_argument("--execution-horizon", type=int, default=16)
     ap.add_argument("--budget-s", type=float, default=90.0)
     ap.add_argument("--initial-token-file", type=Path, default=DEFAULT_TOKEN)
+    ap.add_argument(
+        "--eval-config",
+        type=Path,
+        default=None,
+        help="the run's whole EvalConfig JSON. Fields this evaluator implements are taken from it; "
+        "every other field is refused or recorded, never silently dropped (see HONOURED)",
+    )
     ap.add_argument("--allow-instance-0", action="store_true")
     args = ap.parse_args(argv)
+    if args.eval_config:
+        apply_eval_config(ap, args)
     if args.instance == 0 and not args.allow_instance_0:
         ap.error("refusing INSTANCE=0: that is the collection/eval stack (pass --allow-instance-0 to override)")
     if args.rounds < 1 or args.batch_rounds < 1:
@@ -261,6 +305,10 @@ def main(argv=None):
         manifest=str(manifest),
         backend=dataclasses.asdict(backend),
     )
+    ignored = getattr(args, "ignored_eval_fields", None)
+    if ignored:
+        (out / "ignored_eval_fields.json").write_text(json.dumps(ignored, indent=1, default=str))
+        print(f"[crate-eval] {len(ignored)} eval fields not implemented here: {', '.join(sorted(ignored))}", flush=True)
     (out / "closed_loop.json").write_text(json.dumps(summary, indent=1))
     print(
         f"[crate-eval] {summary['successes']}/{summary['rounds']} ok  failure stages {summary['failure_stages']}",

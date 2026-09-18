@@ -112,3 +112,45 @@ def test_the_batch_warms_up_before_the_first_recorded_round(monkeypatch, tmp_pat
     # The warm-up draws from its own stream, so round 0 still gets seed 6000's placement.
     assert placements[0] != placements[1]
     assert placements[1] == float(np.random.default_rng(6000).random())
+
+
+def test_the_whole_eval_block_is_delivered_or_refused_but_never_silently_dropped(tmp_path):
+    """2026-09-18: eval_config.json recorded `client: async` while the loop ran
+    blocking, because the driver hand-picked thirteen flags and ignored the rest."""
+    from locomani.pipeline.eval_config import EvalConfig
+
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "config.json").write_text("{}")
+    base = ["--checkpoint", str(ckpt), "--scene", str(tmp_path), "--out", str(tmp_path / "o")]
+
+    honoured = tmp_path / "eval_config.json"
+    EvalConfig(rounds=7, seed=41, client="blocking", policy_port=5701, budget_s=42.0).dump(honoured)
+    args = driver.parse_args(base + ["--eval-config", str(honoured)])
+    assert (args.rounds, args.seed, args.port, args.budget_s) == (7, 41, 5701, 42.0)
+    # What it cannot implement is named, not dropped.
+    assert "spawn_edge" in args.ignored_eval_fields and "backend" in args.ignored_eval_fields
+    assert not set(driver.HONOURED) & set(args.ignored_eval_fields)
+
+    lying = tmp_path / "lying.json"
+    EvalConfig(client="async").dump(lying)
+    with pytest.raises(SystemExit):
+        driver.parse_args(base + ["--eval-config", str(lying)])
+
+
+def test_the_crate_trace_carries_the_two_posture_channels_it_was_missing():
+    """2026-09-18: the crate trace had pelvis_xy/pelvis_yaw/fallen and nothing else,
+    so "did it lurch or fall at the start" could not be answered from its artifacts."""
+    from locomani.tasks.crate.vla_rounds import posture
+
+    upright = posture({"pelvis": {"pos": [0.0, 0.0, 0.788], "quat": [1.0, 0.0, 0.0, 0.0]}})
+    assert upright["pelvis_z"] == pytest.approx(0.788)
+    assert upright["torso_pitch"] == pytest.approx(0.0, abs=1e-9)
+
+    # +ve pitch is leaning forward, the same sign convention as the single-arm trace.
+    half = np.sin(np.radians(10) / 2), np.cos(np.radians(10) / 2)
+    leaning = posture({"pelvis": {"pos": [0.0, 0.0, 0.75], "quat": [half[1], 0.0, half[0], 0.0]}})
+    assert np.degrees(leaning["torso_pitch"]) == pytest.approx(10.0, abs=0.01)
+
+    blank = posture({})
+    assert blank == {"pelvis_z": None, "torso_pitch": None}

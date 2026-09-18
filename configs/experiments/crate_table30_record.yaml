@@ -173,7 +173,7 @@ eval:
   stall_abort_s: 0.0
   rounds: 100
   seed: 6000
-  client: async
+  client: blocking  # the crate evaluator implements only this; it refuses any other value
   replan_interval: 0.4
   execution_horizon: 16
   policy_port: 5700

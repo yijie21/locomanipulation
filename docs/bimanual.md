@@ -98,9 +98,10 @@ python scripts/pipeline.py configs/experiments/my_crate.yaml --gpu 1            
 
 展开后是 `collect_crate.py` → `convert.py` → `train.py` → `eval_crate.py`。
 
-> **双臂的 `eval` 块不是整份交给评测器的。** `eval_crate.py` 只挑十几个 flag 传下去，
-> `eval.backend` 整块在 `eval_crate_closed_loop.py:181` 由代码重建；实测配置写 `client: async`，
-> `closed_loop.json` 记录的却是 `blocking`。改 `eval` 块里没被传递的字段不会有任何效果。
+> **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /
+> `policy_port` / `execution_horizon` / `budget_s` / `initial_token`；`client` 只支持
+> `blocking`，写别的会**在启动前报错**而不是静默跑成别的；其余字段落盘到
+> `eval/ignored_eval_fields.json`，可以直接比对"声明了什么"和"用上了什么"。
 也可以分阶段跑，方便在中间插手工检查：
 
 ```bash
@@ -155,6 +156,7 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
 | `eval/closed_loop.json`、`eval/videos_NN/` | 闭环结果与录像 |
 | `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里 |
+| `eval/ignored_eval_fields.json` | 这次评测**没有实现**的 `eval` 字段及其值 |
 
 manifest 行带 `task`、`produced`、`ok`，成功局还带
 `execution.metrics.training_tail.end_seq`（进入直立持物验收的序号）——

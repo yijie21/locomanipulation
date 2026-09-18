@@ -257,6 +257,22 @@ bash scripts/stack/stop_render.sh crate_review_example
 
 ## 五、双臂闭环评测器
 
+### 交接处的遥测（2026-09-18 起）
+
+每局的 `placement.takeover` 里有**两个采样**：`held`（token 姿态保持住、`enter_streamed` 之前）
+和 `streamed`（切换之后）。每个采样带 `yaw_deg` / `pelvis_xy` / `pelvis_z` / `torso_pitch`。
+
+加它的原因是一次查不下去的调查：2026-09-18 两个 agent 冷启动跑完后，问题是
+"评测开局有没有跳变"，而**这条线的 trace 当时只有 `pelvis_xy` / `pelvis_yaw` / `fallen`**，
+既没有骨盆高度也没有躯干俯仰；而且 trace 的第一个采样点在切换**之后**，录像的第一帧也是。
+单臂线靠 `[gym] win pinned/held/video` 三点采样测出了每局 **−2.2° 到 −6.5° 的单向 yaw 阶跃**
+（骨盆同期只动 2–11 mm），双臂只能靠帧差看到"有东西在动"，无法定性。
+
+`trace` 的每一行现在也带 `pelvis_z` 和 `torso_pitch`（`vla_rounds.posture`），
+和单臂 trace 对齐。**注意采样仍是每 chunk 一次（约 0.73 s）**，
+所以 trace 本身仍看不见 0.3 s 的瞬态——瞬态要看 `takeover` 那两个采样。
+
+
 
 单臂闭环的 crate 版本（2026-09-15）。经 `scripts/eval_crate.py`（`task.plugin=crate`
 时自动路由到这里）或直接手动调用都行；一条命令负责三件事：在指定实例 / GPU 上起

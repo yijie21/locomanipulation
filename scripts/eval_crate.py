@@ -60,16 +60,11 @@ def rounds_argv(cfg: dict, run_dir: Path, ev: Path, checkpoint: Path, gpu: str) 
         "--scene", scene_of(run_dir, cfg),
         "--out", ev,
         "--config", run_dir / "task_config.json",
-        "--rounds", str(e["rounds"]),
+        "--eval-config", ev / "eval_config.json",         # whole block, not hand-picked fields
         "--batch-rounds", str(collect["batch_rounds"]),   # stack restart cadence, as the crate pilots
-        "--seed", str(e["seed"]),
         "--instance", str(collect["instance"]),
         "--gpu", str(gpu),
         "--serve-gpu", str(gpu),
-        "--port", str(e["policy_port"]),
-        "--execution-horizon", str(e["execution_horizon"]),
-        "--budget-s", str(e["budget_s"]),
-        "--initial-token-file", ROOT / e["initial_token"],
     ]  # fmt: skip
 
 

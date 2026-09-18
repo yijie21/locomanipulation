@@ -46,6 +46,29 @@ CLOSE_THRESHOLD = 0.005  # a commanded jaw under this is a close (vla_round.py's
 LIFT_HOLD_S = 2.0
 
 
+def posture(st) -> dict:
+    """Pelvis height and torso pitch, the two channels this trace never had.
+
+    The single-arm trace has carried both since the bottle line existed
+    (`vla_client.py`); the crate trace recorded only `pelvis_xy`/`pelvis_yaw`/
+    `fallen`, so the one question repeatedly asked of it -- did the robot lurch or
+    fall at the start of a round -- could not be answered from its own artifacts.
+    On 2026-09-18 it took a separate probe script and frame differencing to
+    establish that the opening transient is a yaw step, not a body collapse.
+    """
+    pelvis = st.get("pelvis") or {}
+    position, quaternion = pelvis.get("pos"), pelvis.get("quat")
+    pitch = None
+    if quaternion is not None:
+        w, x, y, z = (float(v) for v in quaternion)
+        # pitch about the body y axis, +ve = leaning forward (same form as vla_client)
+        pitch = float(np.arcsin(float(np.clip(2.0 * (w * y - z * x), -1.0, 1.0))))
+    return dict(
+        pelvis_z=None if position is None else float(position[2]),
+        torso_pitch=pitch,
+    )
+
+
 def classify(min_dist: float, commanded_close: bool, moved_m: float) -> str:
     """The bottle line's failure strings, so the two lines aggregate alike."""
     if min_dist > NEAR_M:
@@ -80,6 +103,15 @@ def place(p, reset, meta, cfg, rng):
     )
 
 
+def takeover_sample(p, st) -> dict:
+    """Where the body is, in the four numbers a handover transient moves."""
+    return dict(
+        yaw_deg=float(np.degrees(p.pelvis_yaw(st))),
+        pelvis_xy=[float(v) for v in np.asarray(p.pelvis_xy(st))],
+        **posture(st),
+    )
+
+
 def prelude(p, reset, meta, cfg, rng):
     """Placement, reset and the token posture: everything a round does before the policy is asked.
 
@@ -92,7 +124,14 @@ def prelude(p, reset, meta, cfg, rng):
     expected_arms = initial_pose.initial_arms()
     if expected_arms is None:
         return placement, "[stand] crate token file declares no arms"
-    if not initial_pose.prepare_token_pose(p, expected_arms):
+    # Three samples across the handover, as the bottle gym's win pinned/held/video.
+    # The recorded round starts after `enter_streamed`, so a transient at the switch
+    # sits before the trace's first row and before the video's first frame -- which is
+    # how a systematic yaw step of a few degrees went unattributed until 2026-09-18.
+    placement["takeover"] = dict(held=takeover_sample(p, initial))
+    delivered = initial_pose.prepare_token_pose(p, expected_arms)
+    placement["takeover"]["streamed"] = takeover_sample(p, p.obs())
+    if not delivered:
         return placement, "[stand] token-only ready posture not delivered"
     return placement, None
 
@@ -201,6 +240,7 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
                     pelvis_xy=[float(v) for v in pel],
                     pelvis_yaw=float(p.pelvis_yaw(st)),
                     obj_xy=[float(v) for v in obj[:2]],
+                    **posture(st),
                 )
             )
             if st["fallen"]:
