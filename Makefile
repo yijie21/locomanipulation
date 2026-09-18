@@ -23,6 +23,7 @@ lint:
 	python3 scripts/lint_sizes.py
 	python3 scripts/lint_env.py --strict
 	python3 scripts/lint_repository.py --changed-docs
+	python3 scripts/lint_mermaid.py
 	python3 scripts/gen_config_reference.py --check
 
 # Regenerate docs/reference/config_fields.md from the config dataclasses.

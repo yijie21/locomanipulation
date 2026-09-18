@@ -301,3 +301,130 @@ checkpoint 只能走这条手动命令。
 
 实测结果(2026-09-15,`crate_vla200_record_20260914` checkpoint-10000,71/100)在
 [双臂台账](ledger/crate.md)。
+
+## 六、图解
+
+图里**只写字段名，不写数值**——`crate_table30_record.yaml` 覆盖了 `CrateVisualConfig`
+六个默认值（`stand_off`、`settle_seconds`、`walk_brake_margin`、`stand_lateral_tolerance`、
+`pregrasp_above`、`approach_speed`），写死的数字只会误导。数值以
+[配置字段表](reference/config_fields.md) 和实验文件自身为准。
+
+`task.expert` 决定跑哪个专家（`tasks/crate/prepare.py:15`）。本页这条线是 `visual`；
+`wall` / `carry` 是诊断专家，**和 `visual` 不共用任何抓取代码**——`expert.py` 对
+`bimanual_wall.py` / `bimanual_carry.py` 零 import，`ACROSS_BIAS`、`OVERDRIVE`、
+`LEAD_CAP`、`WALK_SIDE_LEFT_DEG` 这些常量只属于 wall 那条。
+
+### 图 ①：`visual` 专家的一局
+
+`crate_table30_record.yaml` 是 `carry.reach_control: whole_body` + `visual.pose_source: assisted`，
+落到 `CoordinatedReach`（`coordinated_reach.py:13`）。另两种组合（`markers` 走
+`VisualLowReach`，非 whole_body 走 `VisualCratePolicy`）相位名略有不同，判据同构。
+
+```mermaid
+flowchart TD
+  RS["<b>reset_ready</b> 摆到抽样的桌沿距离，PlannerArm 载入 ready 臂姿<br/>expert.py:43"]
+  G0{"initial_stance_ready<br/>∧ 初始桌沿距离 ∈ [start_edge_min, start_edge_max]"}
+  WK["<b>walk</b> 朝篮子走，speed 由剩余距离切档<br/>visual_approach.py:31"]
+  WG{"到位：x ≤ stand_off + walk_brake_margin<br/>∧ |lateral| < stand_lateral_tolerance<br/>visual_approach.py:114"}
+  ST["<b>settle</b> 等静止<br/>visual_approach.py:31"]
+  SG{"连续安静 settle_seconds（速度 < 0.06 m/s ∧ 角速 < 0.2 rad/s，硬编码<br/>visual_approach.py:122）<br/>∧ 站位收敛：depth ≤ stand_depth_tolerance 或重试 ≥ stand_depth_retries"}
+  HO["<b>handoff</b> PlannerArm → StreamedArm，建 CoordinatedReach<br/>expert.py:325-378"]
+  OB["<b>observe</b> WholeBodyIK 解可达性，算 reach 时长<br/>coordinated_reach.py:167"]
+  RE["<b>reach</b> 逐 tick 朝抓取点推进，带跟踪反馈<br/>coordinated_reach.py:199"]
+  RG{"region.contains() 且保持 ≥ 0.1 s"}
+  CL["<b>close</b> 双爪按 close_seconds 同步闭合<br/>coordinated_reach.py:219"]
+  LF["<b>lift</b> 先抬 probe_height 验证附着，再到 lift_height<br/>coordinated_reach.py:246"]
+  SD["<b>stand</b> 带载恢复直立，历时 stand_seconds<br/>coordinated_reach.py:282"]
+  HD["<b>hold</b> 稳定保持 hold_seconds<br/>coordinated_reach.py:298"]
+  EV{"<b>evaluate()</b> 未摔 ∧ 上升 ≥ 0.6×lift_height<br/>∧ 倾角 < max_tilt_deg ∧ 双手仍接触<br/>evaluation.py:7"}
+  OK(["<b>OK</b>"])
+  BAD(["<b>FAILED</b>"])
+
+  RS --> G0
+  G0 -- 不过 --> BAD
+  G0 -- 过 --> WK --> WG
+  WG -- 未到 --> WK
+  WG -- 到位 --> ST --> SG
+  SG -- 不满足 --> ST
+  SG -- 满足 --> HO --> OB --> RE --> RG
+  RG -- 是 --> CL --> LF --> SD --> HD --> EV
+  RG -- 否 --> RE
+  OB -. 不可达 .-> BAD
+  RE -. 篮子在抓住前被推开 / reach 停滞 .-> BAD
+  CL -. 空夹 .-> BAD
+  LF -. 未附着 / 倾角超限 / 松脱 .-> BAD
+  SD -. 未能直立 .-> BAD
+  HD -. 保持不稳 .-> BAD
+  EV -- 不过 --> BAD
+  EV -- 过 --> OK
+```
+
+**失败标签**按阶段分组（都可 grep 到）：
+
+| 组 | 标签 |
+|---|---|
+| 开局 | `initial_stance_unstable`、`invalid_initial_distance`、`external_fall_abort` |
+| 感知 | `camera_unavailable`、`stale_camera_abort`、`approach_vision_lost`、`vision_lost` |
+| 超时 | `approach_timeout`（`walk_timeout`）、`timeout`（`timeout_seconds`）、`reach_stalled` |
+| 可达性 | `unsupported_assisted_reach`（assisted）/ `unsupported_visual_reach`、`unreachable_visual_staging`、`unreachable_visual_lift`（markers） |
+| 抓取 | `empty_gripper`、`basket_displaced_before_capture`、`probe_not_attached`、`lost_attachment` |
+| 抬升与恢复 | `basket_tilt`、`stand_not_delivered`、`unstable_hold` |
+| 事后判定 | `evaluation_fallen`、`evaluation_insufficient_rise`、`evaluation_tilt`、`evaluation_missing_contact` |
+
+仿真辅助（`pose_source: assisted`）另有 `simulation_clock_reversed`、`simulation_stalled`。
+
+### 图 ②：`wall` 诊断专家的一局（原图，2026-09-14）
+
+下面是当时为 `wall` 专家画的图。它**不是**上面那条线：`ACROSS_BIAS` / `OVERDRIVE` /
+`LEAD_CAP` / `REACH_POSTURE_W` 全部只存在于 `bimanual_wall.py` 和 `wall_phases.py`。
+`task.expert: wall` 时跑的是它，图里的数值是当时那批实验的。
+#### wall 专家的相位（原图）
+
+```mermaid
+flowchart TD
+  R["<b>复位</b> reset_pose → 松爪 → pin arms → 箱子摆回桌沿(横向 ±8 cm 抽样)→ 机器人摆到出生点<br/>start_control → IDLE 2 s → reanchor(重锚 deploy 的朝向)→ IDLE 1.5 s 朝向锁定"]
+  W["<b>走入</b> SLOW_WALK 经 waypoint(站位后 0.35 m)再直线到站位;全程面朝箱子;<br/>上身钉在走路姿势(手垂体侧,WALK_SIDE_LEFT_DEG);三档速度按剩余距离切"]
+  B["<b>停站</b> IDLE 锁向;骨盆速度 < 0.06 m/s 持续 0.25 s"]
+  G{"<b>站位门</b> |yaw| ≤ 10° ∧ stand-off ∈ [0.13, 0.32] ∧ |lateral| ≤ 8 cm"}
+  RB["<b>退回 waypoint 再走</b> ≤ 3 次,整段录下"]
+  D["<b>量站位 → 定深度</b> depth = 0.38 − stand-off,夹到 [0.06, 0.11]<br/>从 q=0 解 hover 关节解(作为姿态先验)"]
+  RE["<b>reach</b> 一条 Bezier 2.5 s:体侧 → 上提 0.25 外张 0.15 → hover 上方 0.10 → hover(箱沿顶上 6 cm)<br/>掌俯仰 90° 平滑到 60°;IK 逐 tick 热启动、带姿态先验;无停顿直接进下探"]
+  DE["<b>下探</b> 参考点以 0.04 m/s 下降,最低到顶下 5 cm(rail);每 tick 双手伺服(过驱动 + 横向前馈 + 6 cm 领先上限)"]
+  C{"<b>闭合触发</b> contact:参考仍在降、实测高度 0.3 s 内变化 < 3 mm、横向 ≤ 2 cm、垫心已到顶<br/>seated:双手横向 ≤ 1.5 cm 且垫心在顶下 ≥ 1.5 cm 持续 0.3 s<br/>floor:到底 0.5 s 且手确实在顶(≤ +5 mm)"}
+  CL["<b>闭合</b> 两爪同一帧,1.6 s 线性;0.6 s 后检查双侧接触"]
+  L["<b>抬起</b> 开环 IK 目标上升 10 cm(2 s)+ 左右找平 + 掌俯仰跟随箱子俯仰(−1.5×,cap 25°);hold 2 s"]
+  OK(["OK:上升 ≥ 6 cm ∧ 倾斜 ≤ 20° ∧ 双手仍接触"])
+  BAD(["FAIL:[stand] / [reach] / [descend] / [grasp] / [lift] / [hold]"])
+  R --> W --> B --> G
+  G -- 不过 --> RB --> W
+  G -- 三次都不过 --> BAD
+  G -- 过 --> D --> RE --> DE --> C
+  C -- 12 s 内都没触发 --> BAD
+  C -- 触发 --> CL --> L --> OK
+  R -. 复位后站不稳 .-> BAD
+  W -. 摔倒 / 40 s 超时 .-> BAD
+  DE -. 摔倒 / 合爪前箱子被推 > 5 cm .-> BAD
+  CL -. 单侧无接触 .-> BAD
+  L -. 倾斜 > 20° / 上升 < 6 cm / 失去接触 .-> BAD
+```
+
+`wall_walk=false` 时把"走入 → 停站 → 站位门"换成:先在出生点把双臂 2 s 平滑抬到 hover 关节解,再 `align_robot_xy`
+瞬移到抽样站位(stand-off 0.14–0.28、横向 ±5 cm、yaw ±5°)。出生点在站位后 0.45 m 而不是站位上,是因为 policy
+起控时的甩臂把箱子撞转了 84°(pilot 1)。
+
+失败的集直接记 FAIL,**不重试**;唯一像重试的是站位门失败时退回 waypoint 重走——那是要录下的"桌边闭环修正",
+不是丢弃。
+
+### ② 伸手、下探、合爪那几秒里发生了什么
+
+单手线在这一段是"下蹲 + 50 Hz 伺服进 capture region";双臂线不蹲,所以整段都是手臂的事:
+
+- **reach 是一条曲线,不是相位序列。**从走路姿势的垫心出发,三次 Bezier 经两个控制点到 hover 点,2.5 s 走完;
+  掌俯仰从 90°(手指下垂)线性到 60°。每 tick 用上一 tick 的解热启动 IK,并以 hover 关节解为姿态先验
+  (`REACH_POSTURE_W` 0.02)——先验是为了不让 IK 在越沿那一段跳到"手腕扭 90–110°"的分支。日志里 `lag L/R`
+  是实测垫心落后曲线的距离,2–3 cm 正常。
+- **没有 hover hold。**reach 一结束下探就开始,policy 还欠着的 2–3 cm 由下探伺服吃掉。`wall_walk=false` 保留一段
+  ≤ 2.5 s 的 hover(手停下就结束),只是为了旧 A/B 数字可比。
+- **下探是参考点在降,不是手在降。**参考以 0.04 m/s 匀速下降到"底"(顶下 5 cm),手跟不跟得上由三个判据看:
+  `contact`(手被箱沿顶住不再下降)是主判据,`seated`(垫心确实进到顶下 1.5 cm 且横向居中)是毫米级备用,
+  `floor`(参考到底 0.5 s)是兜底、且要求手真在顶上——pilot 23 r5 从 0.30 m 站位闭合时双垫离顶 26–33 mm,夹的是空气。

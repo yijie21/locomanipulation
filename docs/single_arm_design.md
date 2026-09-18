@@ -1077,3 +1077,297 @@ PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_data_collection/bin/pyth
 检查包括：65 维动作能否恢复原报文、标签是否等于逐行消费命令、重复 token、
 关节变化与停顿诊断。旧数据缺少消费命令 receipt 时标为 **未验证**，不能仅凭维度
 正确就判 PASS。该审计不替代真实持物验收、转换后的 `check_dataset` 或 VLA 训练评测。
+
+## 八、图解
+
+四张图，**每张只画一条策略**。`reach.strategy` 决定跑哪一条
+（`src/locomani/tasks/bottle/policy.py:11` 分派）：`bottle_simple_*` 是 `simple`，
+`pick_place` 是 `coupled`。两条路径**没有共用的抓取控制器**，别拿一张图套另一条。
+
+图里**只写字段名，不写数值**——实验文件会覆盖 dataclass 默认值
+（`crate_table30_record.yaml` 就覆盖了 6 个），写死的数字只会变成下一个 F2。
+数值以 [配置字段表](reference/config_fields.md) 和实验文件自身为准。
+
+
+### 图 ①：SONIC latent 是怎么产生的（四个进程与数据流）
+
+最容易误解的一点:脚本化 agent **从来不直接输出 latent**,也不直接输出关节角。
+它输出的是**意图**;latent 是 deploy 内部的 encoder 从意图渲染出的参考动作里编码出来的。
+
+```mermaid
+flowchart LR
+  subgraph AG["🤖 Agent 进程 — Python .venv_sim<br/>入口: grasp_gym.py"]
+    A1["planner 帧<br/>mode/movement/facing/speed/height<br/>—<br/>agent_server.py: AgentCommander.frame()<br/>调用方: primitives.py (walk_to/turn_to/reach)"]
+    A2["upper_body_position[17]<br/>腰 3 + 双臂 14，由 IK 解出<br/>—<br/>agent_server.py: set_upper_body()<br/>IK: arm_ik.py　驱动: servo.py / servo_ticks.py"]
+    A3["left/right_hand_joints<br/>夹爪开合<br/>—<br/>agent_server.py: frame(left_hand=,right_hand=)<br/>驱动: grasp_gym.py 抓取逻辑"]
+  end
+
+  subgraph DP["⚙️ SONIC Deploy 进程 — C++<br/>third_party/GR00T-WholeBodyControl/gear_sonic_deploy<br/>二进制: g1_deploy_onnx_ref"]
+    D1["k-planner ONNX<br/>合成 29-DoF 参考动作<br/>—<br/>include/localmotion_kplanner*.hpp<br/>模型: planner/target_vel/V2/planner_sonic.onnx"]
+    D2["★ 逐字替换 17 个上身关节<br/>无 ramp<br/>—<br/>g1_deploy_onnx_ref.cpp:~781"]
+    D3["encoder<br/>只读 4 个观测 / 644 个数<br/>—<br/>include/encoder.hpp<br/>模型: $SONIC_POLICY/model_encoder.onnx(.trt)<br/>默认 policy/sonic_v1_1(2026-09-11 起)"]
+    D4["64 维 token<br/>（encoder 输出缓冲区，无独立文件）"]
+    D5["policy<br/>token + 本体感受 436 维<br/>—<br/>include/control_policy.hpp<br/>模型: $SONIC_POLICY/model_decoder.onnx(.trt)"]
+  end
+
+  subgraph SM["🌐 MuJoCo Sim 进程 — Python .venv_sim<br/>入口: run_sim_locomani.py"]
+    S1["物理<br/>—<br/>run_sim_locomani.py<br/>（改自上游 run_sim_loop.py）"]
+    S2["三路相机<br/>ego + 左右腕<br/>—<br/>run_sim_locomani.py + sim_video.py<br/>相机定义: scene_lib.py"]
+    S3["特权真值<br/>—<br/>privileged_pub.py:<br/>PrivilegedPublisher / EpisodeControlServer"]
+  end
+
+  subgraph EXG["📦 Data Exporter 进程 — Python .venv_data_collection<br/>third_party/GR00T-WholeBodyControl"]
+    EX["data exporter<br/>LeRobot 原始 session<br/>—<br/>gear_sonic/scripts/run_data_exporter.py<br/>核心: gear_sonic/data/exporter.py"]
+  end
+
+  A1 -->|":5556 planner"| D1
+  A2 -->|":5556 planner"| D2
+  A3 -->|":5556 planner"| D5
+  D1 --> D2 --> D3 --> D4 --> D5
+  D5 -->|"29 关节目标 · DDS lo"| S1
+  S2 -->|":5555"| EX
+  D4 -->|":5557 g1_debug"| EX
+  S3 -->|"5581<br/>agent 侧接收:<br/>privileged_pub.py EpisodeControlClient"| AG
+
+  classDef agentStyle fill:#d6e8ff,stroke:#3070c0,color:#000
+  classDef deployStyle fill:#ffe6d6,stroke:#d2691e,color:#000
+  classDef simStyle fill:#d9f2d9,stroke:#2e8b57,color:#000
+  classDef exportStyle fill:#e8d9ff,stroke:#7b3fbf,color:#000
+  class A1,A2,A3 agentStyle
+  class D1,D2,D3,D4,D5 deployStyle
+  class S1,S2,S3 simStyle
+  class EX exportStyle
+```
+
+**进程归属速查:**
+
+| 分组 | 语言 / venv | 入口进程 | 关键源码 |
+|---|---|---|---|
+| 🤖 Agent | Python, `.venv_sim` | `grasp_gym.py` | `agent_server.py`(ZMQ 发布端)、`arm_ik.py`、`primitives.py`、`servo.py`/`servo_ticks.py` |
+| ⚙️ SONIC Deploy | C++,不在本仓库 | `g1_deploy_onnx_ref` | `third_party/GR00T-WholeBodyControl/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp`,及 `include/{localmotion_kplanner,encoder,control_policy}.hpp` |
+| 🌐 MuJoCo Sim | Python, `.venv_sim` | `run_sim_locomani.py` | `privileged_pub.py`(发布端)、`sim_video.py`、`scene_lib.py` |
+| 📦 Data Exporter | Python, `.venv_data_collection` | `run_data_exporter.py` | `third_party/GR00T-WholeBodyControl/gear_sonic/{scripts/run_data_exporter.py, data/exporter.py}` |
+
+Agent 进程和 Sim 进程虽然都用同一个 `.venv_sim`,但是**两个独立的操作系统进程**,靠 ZMQ(:5581/:5582)通信,不是同一个 Python 解释器;D4(64 维 token)没有独立文件,只是 `encoder.hpp` 输出、`control_policy.hpp` 读取之间的一段内存缓冲区,同时镜像发到 `:5557` 给 exporter;SONIC Deploy 的源码在 `third_party/` 下,是 clone 来的上游仓库,不受本仓库 git 管理。
+
+三个必须记住的点:
+
+1. **`upper_body_position` 是 17 个关节一起替换的**(腰 3 + 双臂 14,MuJoCo 索引
+   12–28),而且是**逐字替换、没有 ramp**。所以 IK 只解一只手,另一只手也会被这 17 维
+   带走 —— 走路时"举起手臂"是**双臂一起举**,闲着的那只只是被顺带写进去了。
+2. **encoder 看不见机器人。**mode 0 下它只读 4 个观测共 644 个数:`encoder_mode_4`(4)、
+   `motion_joint_positions_10frame_step5`(290)、`motion_joint_velocities_...`(290)、
+   `motion_anchor_orientation_...`(60)。其余声明过的观测全被置零。**token 是纯意图**,
+   不含任何本体状态。
+3. **下蹲不走 `upper_body`。**它是 planner 帧里的 `mode=IDEL_SQUAT` + `height=<骨盆
+   目标高度,绝对米>`,由 k-planner 渲染成弯腿参考动作,再由 encoder 编码进 token。
+   所以下蹲**在 token 里**,不需要额外通道。旧 `diag_lean.py` 曾记录孤立腰 pitch
+   指令交付 2–10%;这不等于 SONIC 无法完成全身弯腰。该测试未提供髋、腿和躯干协同参考,
+   原始日志已丢失。当前 ready-grasp 还主动排除了腰部 IK;见 [弯腰诊断](ledger/bottle.md#12-sonic-弯腰能力审计2026-09-10codex)。
+
+### k-planner 的完整输入
+
+`k-planner`(`planner_sonic.onnx`,V2,TensorRT 后端)对外声明了 11 个具名输入
+tensor,但 grasp_gym.py 只摸得到其中 5 个 —— 其余由 deploy 自己维护,agent 从不写:
+
+| tensor 名 | dim | dtype | 谁写它 |
+|---|---|---|---|
+| `mode` | 1 | int64 | **grasp_gym.py 驱动**(经 `agent_server.frame()`) |
+| `movement_direction` | 3 | float32 | **grasp_gym.py 驱动** |
+| `facing_direction` | 3 | float32 | **grasp_gym.py 驱动** |
+| `target_vel`(agent 侧叫 `speed`) | 1 | float32 | **grasp_gym.py 驱动** |
+| `height` | 1 | float32 | **grasp_gym.py 驱动** |
+| `context_mujoco_qpos` | 4×36=144(4 帧 ×(7 根位姿+29 关节)) | float32 | deploy 内部自回归维护(上一次推理输出),agent 不碰 |
+| `random_seed` | 1 | int64 | deploy 内部维护 |
+| `has_specific_target` | 1 | int64 | 恒为 0(waypoint 功能,这条 pipeline 没用上) |
+| `specific_target_positions` | 12(4 个路点 × xyz) | float32 | 恒为 0 |
+| `specific_target_headings` | 4 | float32 | 恒为 0 |
+| `allowed_pred_num_tokens` | 11 | int64 | 恒为构造时的默认 mask |
+
+### 图 ②：`simple` 专家的一局（`bottle_simple_*` 跑的就是这条）
+
+八个相位，定义在 `simple_policy.py:41` 的 `PHASES`，主循环在 `simple_policy.py:528-900`
+逐相位分派。**没有伺服状态机**——每个相位是一段开环笛卡尔运动，由支撑式全身 IK 执行，
+判据只有"测得的硬事实"（碰撞扫掠、摔倒、瓶子被碰开、闭合后的双侧垫接触、抬升后的实测上升）
+和超时。控制器不 import `servo*` 任何模块。
+
+```mermaid
+flowchart TD
+  W["<b>走入</b> prepare_walk → walk_tick<br/>simple_policy.py:327/363"]
+  SA["<b>站定交接</b> settle_for_admission<br/>腿速 ≤ stand_leg_speed_rad_s ∧ 骨盆速 ≤ stand_pelvis_speed_m_s<br/>持续 stand_settle_s；超过 stand_settle_timeout_s 强制接管<br/>simple_policy.py:402-455"]
+  V{"<b>可见性门</b> 瓶子须在 target_grace_s 内被 ego 相机接纳<br/>simple_policy.py:533"}
+  B["<b>backoff</b> 手在桌面带内时先退出<br/>simple_policy.py:679"]
+  R["<b>reach</b> 连续最小 jerk 路径：抬起 → 滑到 pre-grasp<br/>刹车稳定后重规划一次；历时 reach_seconds<br/>simple_policy.py:687"]
+  S["<b>settle</b> 等手落到 pre-grasp 命令点附近<br/>simple_policy.py:711"]
+  SG{"‖实测 − 命令‖ ≤ settle_tolerance_m<br/>或 settle_timeout_s 到时"}
+  E["<b>entry</b> 沿进刀轴推进，按夹爪轴做横向补偿<br/>simple_policy.py:720"]
+  EG{"<b>对齐判据</b> entry_aligned(offset)<br/>横向 ≤ entry_lateral_tolerance_m<br/>∧ 高度 ≤ entry_height_tolerance_m<br/>或已有双侧接触"}
+  RT["<b>retreat</b> 沿进刀线退开，再试一次<br/>历时 retreat_seconds；simple_policy.py:790"]
+  C["<b>close</b> 夹爪按 close_seconds 斜坡闭合<br/>期间用实测位保位；simple_policy.py:795"]
+  CG{"双侧垫接触须在 close_seconds + contact_timeout_s 内出现"}
+  L["<b>lift</b> 抬升 lift_height_m，历时 lift_seconds<br/>躯干前倾冻结在 lean_at_lift；simple_policy.py:807"]
+  RC["<b>recover</b> 躯干回正，手保持高度，历时 recover_seconds<br/>simple_policy.py:813"]
+  OK(["<b>OK</b> 双侧接触仍在 ∧ 实测上升 ≥ min_rise_m"])
+  BAD(["<b>FAILED</b>"])
+
+  W --> SA --> V
+  V -- 不过 --> BAD
+  V -- 过 --> B --> R --> S --> SG
+  SG --> E --> EG
+  EG -- 对齐 / 已接触 --> C --> CG
+  EG -- 未对齐 ∧ 尝试数 < entry_attempts --> RT --> E
+  EG -- 尝试数用尽 --> BAD
+  E -. elapsed > entry_timeout_s .-> BAD
+  CG -- 有接触 --> L --> RC
+  CG -- 超时 --> BAD
+  RC --> OK
+  RC -. 接触丢失 / 上升 < min_rise_m .-> BAD
+```
+
+**整局随时可能触发的失败**（不画进主线，否则图没法看）：摔倒、物理时钟停摆或跳变、
+IK 碰撞扫掠预测到碰撞（`clearance: {side}:{link}:{obstacle}`）、支撑参考超出容差、
+总时长超 `recovery_timeout`；以及 **backoff–retreat 期间**瓶子被碰开超过
+`disturb_limit_m`（`simple_policy.py:670`——闭合开始后这条就不再检查）。
+
+### 图 ③ / ④：`coupled` / `ready` 系（`pick_place` 跑的是这条）
+
+下面两张是 **2026-09-14 的原图**，画的是 `ready` → `recovery` → `coupled` 这条继承链
+（`CoupledGraspPolicy` 继承 `RecoverableGraspPolicy`，经 `ready_grasp_policy.py:258/407`
+调用 `execution._servo_continuous`）。`pick_place.yaml` 至今用的就是它，所以图有效；
+但**图里的数值是当时那批实验的**，改参数请以配置表为准。
+
+`simple` 线不走这条：它既不下蹲，也没有这个状态机。
+#### coupled 线的一局（原图，2026-09-14）
+
+```mermaid
+flowchart TD
+  P0["<b>P0 进程启动一次</b><br/>载入 reach_map_dex1.npz → plan_core_stand 联合求解站位与蹲深<br/>标定名义出生点（读 teleport 落点，在 start_control 之前）"]
+  P1["<b>P1 采样</b> 抽目标 + 拒绝采样物体位置 + 站位 + 出生点<br/>物体贴桌沿内侧，站位 edge ∈ 合法带，整条接近线不撞桌"]
+  P2["<b>P2 复位</b> IDLE 1s 静默 deploy → reset_pose → teleport<br/>→ start_control → IDLE 1.5s + reanchor（清上一局的朝向锚，deploy 不重启）<br/>→ IDLE 4s 沉降 → 松臂 → 开录像 + 'c'"]
+  P2T["<b>P2b 出生点转身</b> 转到接近航向<br/>SLOW_WALK，tol 0.16 rad（控制器有 7–8° 死区）"]
+  P3["<b>P3 行走（腿 1）</b> walk_to 到 stand 后方 1.30 m<br/>锁向；双臂随步态自然摆动"]
+  P4["<b>P4 接近（腿 2）</b> 切 FROZEN_UPPER，从当前关节角接管（无跳变）<br/>三段速 0.26 → 0.215 → 0.20 朝 stand 转向前进<br/>同时按剩余距离把 17 关节 ramp 到 READY"]
+  P4G{"停止判据<br/>可达裕度 ≥ 0.075<br/>或 桌沿 ≤ 0.23"}
+  P4R["<b>前向修复 ≤2 次</b><br/>太远 → 再走一次。<b>永不后退</b>"]
+  P5{"<b>P5 门</b> 桌沿 ≥ 0.06 ∧ 在可达域内<br/>∧ 物体未倒 ∧ ego 视野 |x| ≤ 0.8, |y| ≤ 0.9"}
+  P6["<b>P6 抓取</b> adaptive_grasp 定朝向与进刀轴<br/>→ IDEL_SQUAT 下蹲（掌位由实时 IK 钉住）<br/>→ 50 Hz 伺服（见图 ③）"]
+  P7["<b>P7 抱稳</b> ego 可见度 ≥ 70% → stand_up + carry_pose<br/>→ 锁向后退 0.35 m（两步）→ IDLE 2s"]
+  P7G{"掌系漂移 3 cm 以内 ∧ 物体高于桌面 3 cm 以上"}
+  OK(["EPISODE OK ≈ 34 s"])
+  BAD(["EPISODE FAILED<br/>[stand] 重试整局 · 其余直接丢弃"])
+
+  P0 --> P1 --> P2 --> P2T --> P3 --> P4 --> P4G
+  P4G -- 未达标 --> P4R --> P4G
+  P4G -- 达标 --> P5
+  P5 -- 通过 --> P6 --> P7 --> P7G
+  P7G -- 通过 --> OK
+  P2 -. 落点偏 / 站不稳 .-> BAD
+  P2T -. 转身超时 .-> BAD
+  P3 -. 摔倒 .-> BAD
+  P4R -. 摔倒 .-> BAD
+  P5 -. 顶到桌沿 / 够不到 / 物体倒 / 看不见 .-> BAD
+  P6 -. 规划失败 / 摔倒 / 物体被推倒 / 超时 .-> BAD
+  P7G -. 滑脱 / 掉回桌上 .-> BAD
+```
+
+失败的 episode 直接丢弃(exporter 收到 `x`),**不重试** —— 数据集里只留一次成功的
+episode,训出来的模型才会一次成功。唯一的例外是 `[stand]`:那是复位没做成,整局重来,
+不算一条数据。
+
+> **P6 有两套实现**(coupled / teleop),上面的图画的是默认那套。两者共享 P0–P5 与 P7,
+> 只有"手臂怎么被驱动"不同 —— 见下一节开头的对照表。
+
+#### 图 ④：coupled 伺服状态机（`servo_phases.py` 至今如此）
+
+**抓取本身(上面流程图的 P6,也就是「一句话」里的 ⑥~⑨)有两套实现,选哪套由 `ReachConfig.teleop_arm` 决定:**
+
+| | 默认(coupled) | 2026-09-12 起可选(`teleop_arm: true`) |
+|---|---|---|
+| 手臂谁解 | **我们自己**跑 DLS IK,腰锁死 | **policy 自己解**,腰自由 |
+| 下蹲后撤 | 用常数 `squat_prediction_backshift_ratio` **预测**,预测解不出就拒绝这个站位 | 不预测:每 tick 用**实测**骨盆位姿把世界系腕目标重新表达一遍 |
+| 通道 | planner + `upper_body_position[17]` | planner + `vr_position/vr_orientation`(encoder `teleop` 模式) |
+| 入口 profile | `configs/tasks/bottle_visible.json` | `configs/tasks/bottle_visible_teleop.json` |
+| 代码 | `tasks/bottle/coupled_grasp_policy.py` | `tasks/bottle/teleop_grasp_policy.py` + `backends/sonic/teleop_arm.py` |
+| 同一组站位上 v1.1 | **0/30** | **20/30**(7/10, 7/10, 6/10;Fisher p = 1.4e-08) |
+
+为什么差这么多:coupled 那套的常量全是按 `policy/release` 的**跟踪误差**标定的(自家 IK、
+预测后撤、关节舒适界),换 checkpoint 之后这些"替身"就不成立了;teleop 通道把这一层整个删掉,
+让 checkpoint 自己做它本来就会做的事。完整经过见 ledger bottle.md §35。
+
+**这条通道的三条必知事实**:
+1. VR 字段的**有无**就是 encoder 模式开关 —— `TeleopArm.start()` 必须在 planner 起来、
+   机器人站稳之后,**以实测位姿为第一帧**置位 `AgentCommander.vr_targets`;
+2. 每次 safety reset 把模式打回 `g1`,所以通道**按局进出**,不能跨局保持;
+3. 验收方式:`deploy.log` 里 `[Mode Filter] Switched to mode 'teleop'` 必须出现在
+   `Planner initialized` **之后**。没有这一行,腕字段就是死的,任何测量都不算数。
+
+录出来的数据也不一样:这条通道上 `teleop.stream_mode` 是 5(`PLANNER_VR_3PT`)且
+`teleop.vr_3pt_*` **有真值**(抓取段约 6 成帧),coupled 通道上那两列**恒为零**(见 `dataset.md`)。
+
+**它还没有大规模采集验证**:每轮录了 6–7 集,但还没跑过 `convert_to_hf_format` + `check_dataset`。
+正式开采之前先拿一批跑通这两步。
+
+下面这一节描述的是**默认那套**(coupled)的伺服细节。
+
+`execution._servo_continuous`（相位函数在 `servo_phases.py`）,50 Hz 闭环,目标全部由**实时物体真值**重算,
+从不从当前掌位外推(否则会追着自己推动的罐子跑)。
+
+```mermaid
+stateDiagram-v2
+  [*] --> up
+  up: <b>up</b> 抬到物体正上方
+  down: <b>down</b> 降到 pregrasp
+  in: <b>in</b> 沿进刀轴平移进入夹爪包络
+  close: <b>close</b> 2 s 斜坡闭合
+  lift: <b>lift</b> 抬升 0.20 m
+  up --> down: 参考位距目标 3 cm 以内
+  down --> in: 参考 1.5 cm、实际掌位 4.5 cm 以内
+  in --> in: <b>接触闪避</b> 物体被推动超过 1.5 cm<br/>→ 沿进刀轴退 5 cm，1 s 后重新对准
+  in --> in: <b>卡死解锁</b> 6 s 无进刀进展 → 抬起脱离摩擦锁
+  in --> close: 对准容差保持 0.4 s<br/>横向 2.0 cm、进刀残差 3.0 cm 以内
+  in --> close: <b>包络内接触</b> 物体已在夹爪之间且进刀将尽<br/>→ 立刻闭合，别再退了
+  close --> lift: 持续接触后再多压 0.6 个行程
+  lift --> [*]: 到位停 0.8 s 后确认抬起
+  close --> [*]: 闭合到底仍无接触 → 失败
+```
+
+两个当初花了很多局才找对的细节:
+
+- **`in → close` 的"包络内接触"分支**是必须的。物体已经进了夹爪、只是被腕部压着时,
+  再执行"接触闪避"退一次就会把它捅倒。改成立刻闭合之后,悬停不闭合的现象消失了。
+- **`close` 阶段仍在主动保位**。冻结参考会让手掌下沉,闭合的横扫把物体带倒。
+
+
+### 图 ⑤：Pick-and-place 的一局（`pick_place.yaml`，也是 `coupled`）
+
+走近到抓起那一段与图 ③ 完全相同；新东西从 `raise` 开始。原图，2026-09-14。
+`place_phase._servo`（`place_phase.py:150`）和 `PlaceConfig`（`config.py:34`）都还在。
+
+```mermaid
+flowchart TD
+  S["<b>出生 + settle</b> 1.1–1.3 m 外,±20° yaw,横向 ±0.20;罐头过 ego 门(篮子门待加,plan §4)"]
+  A["<b>走入 → 刹车 → creep → 下蹲</b> bottle 线原样(visible expert,brake 0.31 m)"]
+  G["<b>reach / close / lift</b> bottle 线原样;lift ≥ 6 cm,伺服期间可见率 ≥ 70%"]
+  R["<b>raise</b> 手臂伺服:罐底抬到沿口上 +3 cm,xy 不动;base IDLE"]
+  T["<b>turn-to-band</b> 只动腿:SLOW_WALK 0.20 转向 + 前后小步,直到篮心进 band_x × band_y;刹停 0.25 s"]
+  C["<b>carry-over</b> 手臂伺服:罐心到篮心正上方(hover 高度),0.15 m/s,腰 pitch ≤ 0.35"]
+  D["<b>descend</b> 0.10 m/s 降到罐底离沿口 −10 cm(篮底上 4 cm);xy < 3 cm 立即张开,或 4 s 到时且 xy < 5 cm 张开"]
+  RL["<b>release</b> 0.6 s 线性张开;hold 0.4 s"]
+  RT["<b>retreat</b> 掌心竖直上抬 14 cm(0.10 m/s)→ arm.stop → 后退 0.35 m(bottle 的 back-off)"]
+  V["<b>verify</b> IDLE 2 s:罐心在篮内矩形且低于沿口、双手无接触、篮子位移 < 5 cm、松手后罐头未被扫动 > 5 cm"]
+  OK(["OK"]); BAD(["FAIL:[stand]/[view]/[grasp] 同 bottle;[carry]/[turn]/[place]/[retreat] 新增"])
+  S --> A --> G --> R --> T --> C --> D --> RL --> RT --> V --> OK
+  R -. 滑脱 ≥ 3 cm / 摔倒 .-> BAD
+  T -. 8 s 未进带 / 未刹停 .-> BAD
+  C -. 不可达 / 超时 .-> BAD
+  D -. 到时 xy > 5 cm .-> BAD
+  V -. 不满足任一条 .-> BAD
+```
+
+### ② place 伺服怎么动
+
+`place_phase._servo` 每 tick:读实测罐心(或掌心),把一个**参考点**以设定速度朝目标推进(这就是策略要学的速度剖面),
+掌心目标 = 掌心 + (参考点 − 实测罐心),偏移封顶 6 cm(防 windup);IK 解 8 关节(腰 + 右臂,保持抓取时的掌姿态),
+每关节每 tick 最多 0.01 rad;`arm._push` 发 17 维上身 + 手指 + IDLE 帧。控制的是**罐心**而不是掌心,所以抓取时的握偏
+不进放置误差。
+
