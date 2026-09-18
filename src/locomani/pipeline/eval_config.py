@@ -9,7 +9,7 @@ and hands it to `pipeline/stack.export_env` -- see the module docstring there.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from locomani.backends.sonic.vla_config import VlaConfig
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
@@ -48,6 +48,27 @@ class EvalConfig(VlaConfig):
     initial_token: str = "configs/deployment/ready_grasp_initial_token.json"  # --initial-token-file: the token the
     # deploy holds while the first chunk is computed. It MUST match the opening pose of the training data -- the
     # READY token on arms-down data stalls every round in the prelude (docs/evaluation.md, "初始 token 文件").
+
+    def __post_init__(self) -> None:
+        """The async client and `backend.clean_deploy` are one decision, not two.
+
+        `vla_round.CleanClock` exists for a deploy engaged by SONIC_AUTO_START: its
+        commander drops every planner command, which is how "no planner command in
+        the deploy's lifetime" is achieved. `eval_closed_loop` installs that
+        commander for `client == "async"` -- the default -- while the stack only
+        exports SONIC_AUTO_START when `backend.clean_deploy` is set. With the two
+        apart the suppressed `start_control` has nothing standing in for it: the
+        deploy takes the mode switch, receives the standing token and never starts
+        its control loop, so the robot simply falls where the reset dropped it and
+        the round dies as `[stand] robot did not stabilise after reset`.
+
+        The pre-refactor runner kept them together in one line
+        (`wall) export CLEAN_DEPLOY=1; CL="--client async"`); config groups split
+        them across two dataclasses and nothing held the pair. Measured 2026-09-17:
+        with clean_deploy false, the deploy's log for such a round holds 245
+        received tokens and not one `Loop timing` line.
+        """
+        object.__setattr__(self, "backend", replace(self.backend, clean_deploy=self.client == "async"))
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

@@ -105,8 +105,18 @@ def main(argv: list[str] | None = None) -> int:
     checkpoint = checkpoint_of(run_dir)
     ev = run_dir / "eval"
     evaluation = EvalConfig.from_dict(cfg["eval"])  # validated here, so a bad field fails before a stack starts
+    # The stack gets the VALIDATED block, not the raw one: EvalConfig is where the
+    # client/clean_deploy invariant is applied, and handing spec_from_config the file's
+    # dict instead walks straight past it -- the deploy then launches without
+    # SONIC_AUTO_START while the async commander suppresses the start_control that
+    # would have engaged it (2026-09-17).
     spec = spec_from_config(
-        cfg, run_dir=run_dir, gpu=args.gpu, backend=cfg["eval"]["backend"], video_dir=ev / "videos", record=False
+        cfg,
+        run_dir=run_dir,
+        gpu=args.gpu,
+        backend=evaluation.backend.to_dict(),
+        video_dir=ev / "videos",
+        record=False,
     )
 
     if args.dry_run:

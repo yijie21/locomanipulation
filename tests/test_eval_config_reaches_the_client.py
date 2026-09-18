@@ -84,3 +84,25 @@ def test_clock_commanders_do_not_change_other_instances(monkeypatch):
     assert AgentCommander.command is original
     AgentCommander().command(start=True, stop=False, planner=True)
     assert len(sent) == 1
+
+
+def test_the_async_client_engages_the_deploy_it_then_refuses_to_command():
+    """`client=async` and `backend.clean_deploy` are one decision.
+
+    The async client installs CleanClock's commander, which drops every planner
+    command -- including the `start_control` that starts the deploy's control
+    loop. SONIC_AUTO_START is what stands in for it, and the stack exports that
+    only for `clean_deploy`. Split apart (which is what the config groups did to
+    the pre-refactor `wall) export CLEAN_DEPLOY=1; CL="--client async"`), the
+    deploy takes the mode switch, receives the standing token, never starts
+    control, and the robot falls where the reset dropped it: measured on
+    2026-09-17 as 245 received tokens and zero `Loop timing` lines, reported as
+    `[stand] robot did not stabilise after reset`.
+    """
+    from locomani.pipeline.eval_config import EvalConfig
+
+    assert EvalConfig.from_dict({"client": "async"}).backend.clean_deploy is True
+    # An explicit false in the file cannot re-open the gap either.
+    assert EvalConfig.from_dict({"client": "async", "backend": {"clean_deploy": False}}).backend.clean_deploy is True
+    for other in ("lockstep", "blocking"):
+        assert EvalConfig.from_dict({"client": other}).backend.clean_deploy is False

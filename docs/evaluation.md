@@ -548,6 +548,17 @@ DAgger 精准命中了"最后一厘米",但**中段 reach 覆盖仍是瓶颈**�
 `eval_closed_loop.py --client async`(默认)。结构照抄 NVIDIA 自己的
 `gear_sonic/scripts/run_vla_inference.py`:
 
+> **async 客户端和 `backend.clean_deploy` 是同一个决定,不是两个。** async 会装上
+> `CleanClock` 的 commander,它丢弃**所有** planner 命令——包括启动 deploy 控制回路的
+> `start_control`;顶替它engage的是 `SONIC_AUTO_START`,而栈只在 `clean_deploy` 为真时导出它。
+> 两者拆开时 deploy 会接受模式切换、收到站立 token,却**从不启动控制回路**,机器人就倒在
+> reset 把它放下的地方,回合报 `[stand] robot did not stabilise after reset`。
+> 2026-09-17 实测:deploy 日志里 245 个已收 token、**零条 `Loop timing`**。
+> 重构前这对绑在一行里(`wall) export CLEAN_DEPLOY=1; CL="--client async"`),配置组把它们
+> 拆到两个 dataclass 后没人再守着。现在 `EvalConfig.__post_init__` 强制 `clean_deploy =
+> (client == "async")`,实验文件里写什么都覆盖不掉;`scripts/eval_bottle.py` 也改成把**校验后**的
+> backend 交给栈,而不是文件里的原始 dict(否则不变量在半路被绕过)。
+
 ```
 worker 线程:每 0.4 s 取最新观测 → policy server 出 40 步 chunk
 主循环:   30 Hz 不间断发 token;新 chunk 以延迟补偿索引接入
