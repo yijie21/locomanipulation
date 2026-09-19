@@ -188,7 +188,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 | 阶段"被跳过"但你想重跑 | 删掉它的产物（§6） |
 
 手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。
-**只有 instance 0 会跑导出器**，所以并行按 GPU 分而不是按实例分。
+**单臂录制必须留在实例 0**：`collect_bottle.py` 不设 `RECORD_INSTANCE`，导出器只在实例 0 起。所以单臂并行按 GPU 分；双臂会设，能同时在实例 1 录制，见 [双臂](bimanual.md)。
 更细的失败形态见 [隐性失败](reference/silent_failures.md)。
 
 ## 10. 进一步阅读
