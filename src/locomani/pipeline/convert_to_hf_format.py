@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +43,7 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[2])
 )  # reach src/ for `python src/locomani/pipeline/convert_to_hf_format.py`
 from locomani.pipeline.recording_density import check_recording_density  # noqa: E402
+from locomani.pipeline.third_person import link_third_person, third_person_source
 from locomani.pipeline.verification_tail import training_prefix_length  # noqa: E402
 from locomani.pipeline.world_lift import DST_FPS, SRC_FPS, resample_selection  # noqa: E402
 from locomani.schema import SONIC_MODALITY
@@ -727,6 +730,13 @@ def main():
             return t.set_column(i, pa.field(name, typ), pa.array(arr, type=typ))
 
         new_ep = sink.new_ep
+        if args.manifest and it["si"] in mans:
+            joined = mans[it["si"]]
+            clip = third_person_source(
+                args.manifest[it["si"]], joined[it["src_ep"]], list(joined).index(it["src_ep"]), len(joined)
+            )
+            if clip is not None:
+                link_third_person(clip, sink.out / "third_person" / f"episode_{new_ep:06d}.mp4")
         sub = set_col(sub, "timestamp", (np.arange(n30) / DST_FPS).astype(np.float32), pa.float32())
         sub = set_col(sub, "frame_index", np.arange(n30, dtype=np.int64), pa.int64())
         sub = set_col(sub, "episode_index", np.full(n30, new_ep, dtype=np.int64), pa.int64())

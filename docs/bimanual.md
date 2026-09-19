@@ -153,6 +153,7 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 | `trace/` | 状态轨迹。**全批共用一个目录**，单臂按批分目录 |
 | `collect/inputs.json` | 批次进度、exporter session 与 manifest 的对应 |
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集 |
+| `train_dataset/third_person/episode_NNNNNN.mp4` | 每集的第三人称录像，**按集号对齐**（硬链接，不占额外磁盘）。不是相机流，不进策略 |
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
 | `eval/closed_loop.json`、`eval/videos_NN/` | 闭环结果与录像 |
 | `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里 |
