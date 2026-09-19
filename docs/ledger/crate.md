@@ -278,3 +278,21 @@ A/B —— 但注意两件事:(1) 一旦上身参考带腰,**所有既有 crate 
 8/10、验证跑 9/10，单局不可跨栈重启复现。原片 `videos_NN/`，预览 `previews/`
 （100 片，最大 499,012 字节，共 38.2 MB，`verification.json`）。与单臂同一 checkpoint 家族的
 对照：单臂 17/100（见上文 2026-09-15 条目）。
+
+## 2026-09-19 文档走查同批:双臂 20 局采集 17/20,一局在出生阶段即被判掉
+
+**为什么跑**:按 README/runbook 的指令并行采集单双臂各 20 局(GPU 0 / 实例 0 与
+GPU 1 / 实例 1),不论成败都保留第三视角视频。同批的单臂结果见
+[单臂台账 §37](bottle.md)。
+
+**结果**:`bimanual_20ep_20260919`,seed0 7000,batch_rounds 10 × max_batches 2,
+**17/20**。失败 3 局:`basket_tilt` 2、`invalid_initial_distance` 1。
+
+**一个只有双臂线才有的记账缺口**:`invalid_initial_distance` 那一局
+(`visual_crate_s7100_01`)**没有视频**。`tasks/crate/expert.py:166` 在回合开始前就
+返回,此时没有任何画面存在,所以 20 行 manifest 只对应 19 个 mp4。这不是丢帧也不是
+写坏——跑起来之后才失败的(`basket_tilt`、`runtime_error`)都有完整视频。要"每局都有
+视频"的场合,双臂线要按轮次而不是按文件数记账。
+
+**并行可行性**(实测):两个录制栈 pid 峰值 2325 / 3840,CPU 15.36 核,两卡各一个 sim
+(1490 MiB)。与 `docs/bimanual.md:131` 记的"约 1800"同量级,**第三个栈仍然不可以**。
