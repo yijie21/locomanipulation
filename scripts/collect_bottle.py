@@ -81,7 +81,7 @@ def gym_argv(cfg: dict, run_dir: Path, batch: int, kept: int, cases, manifest: P
         "--seed", str(collect["seed0"] + 100 * batch),
         "--stand-retries", str(cfg["task"].get("stand_retries", 0)),
         *(["--record"] if collect["record"] else []),
-        "--video-include-init",
+        *(["--video-include-init"] if cfg["task"].get("video_include_init") else []),
         "--spawn-edge", *[str(v) for v in spawn["edge_range"]],
         *(["--face-object"] if spawn["face_object"] else []),
         "--spawn-yaw-err", str(spawn["yaw_err_deg"]),
