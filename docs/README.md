@@ -52,6 +52,10 @@ versioned documents reachable here, without requiring conversation history or pr
 → 跑 → 产物 → 排错 → 进一步阅读**。新 case 放进所属的线；新线沿用此结构。
 明确区分尝试数与成功数、视频 pilot 与训练数据，以及已实现接口与已验证学习效果。
 
+固定站姿下的[双臂可达实验](bimanual_reachability.md)说明 ghost 验证、条件域计算和区间查询；[本轮证据](handoff/g1-reachability-atlas-20260920.md)记录实测限制。可迁移双臂抓箱：[箱体边沿抓点规划](box_rim_planning.md)根据尺寸和实际停车状态生成 ghost；[仿真执行](box_rim_execution.md)说明低速接近、闭合与试提的验证边界。正式采集仍使用现有专家。
+
+双臂可达实验的环境与采样范围预览见 [G1 平地 ghost hand 预览](handoff/g1-reachability-preview-20260920.md)；预览仅展示目标分布。后续 [14组动态 reach 实验](handoff/g1-ghost-reach-execution-20260920.md) 已完成，6组成功、8组超时仅指 reach 阶段；[后续诊断](handoff/g1-startup-jump-diagnosis-20260920.md) 确认初始化缺陷，整段原地要求未通过。
+
 跨线通用：[安装](setup.md)、[MuJoCo 仿真、Isaac 离线渲染与视频导出](rendering.md)。
 数据集格式（LeRobot 布局与 schema）两条线共用，在 [单臂详解](single_arm_design.md) 里。
 理解在线控制、状态记录和离线重渲如何衔接时，读 [渲染整体流程](rendering.md#整体流程)。
@@ -70,3 +74,7 @@ versioned documents reachable here, without requiring conversation history or pr
 
 A newer claim or a retraction has no automatic evidentiary priority. Retain original
 records, link corrections, and state the exact scope of any newly verified observation.
+
+历史记录：G1 修正 reset 后的同14组重跑见 [本次结果与视频](handoff/g1-ghost-reach-fixed-reset-repeat-20260920.md)：当时4组reach成功、9组超时、1组初始化倒地，启动同步问题尚未解决；当前状态见上方可达实验与本轮证据。
+
+G1 [原 expert 实跑与任务录像起点修正](handoff/g1-original-expert-task-boundary-20260920.md)：原版行走抓取成功；当前单组reach视频3.92秒，从站稳状态直接开始，准备诊断另存。前轮证据见 [同14组重录](handoff/g1-shared-expert-ready-repeat-20260920.md)。

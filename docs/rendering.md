@@ -307,6 +307,10 @@ Isaac 画面可用于检查或后续数据处理，但若要作为 VLA 训练 RG
 
 ## Video export
 
+实时 MuJoCo 录像可在场景的 `scene_meta.json` 中设置 `"video_camera": "reverse_room"`
+等 XML 相机名，使用固定机位。未指定时保持骨盆跟踪视角；小房间中应先检查
+跟踪机位是否落到墙外。固定机位只影响录像主画面，腕部和第一视角小窗保持原相机。
+
 导出任何任务的视频、提供播放链接或打包 ZIP 前，必须满足
 [AGENTS 的视频大小规则](../AGENTS.md#shared-resources-and-artifacts)。
 这是面向查看和下载的交付步骤；原始采集、训练和审计视频保留在原位置。

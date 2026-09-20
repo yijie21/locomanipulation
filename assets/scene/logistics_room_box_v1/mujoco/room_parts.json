@@ -1,0 +1,398 @@
+[
+ {
+  "name": "room_00",
+  "material": "Cartridge blue hub",
+  "texture": null,
+  "rgb": [
+   0.025,
+   0.16,
+   0.28
+  ],
+  "tris": 28200
+ },
+ {
+  "name": "room_01",
+  "material": "Floor edge",
+  "texture": null,
+  "rgb": [
+   0.012,
+   0.014,
+   0.014
+  ],
+  "tris": 120
+ },
+ {
+  "name": "room_02",
+  "material": "Reference photograph | Rubber",
+  "texture": "Rubber_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 1320
+ },
+ {
+  "name": "room_03",
+  "material": "Wall paint",
+  "texture": null,
+  "rgb": [
+   0.74,
+   0.735,
+   0.695
+  ],
+  "tris": 1260
+ },
+ {
+  "name": "room_04",
+  "material": "Cardboard white",
+  "texture": null,
+  "rgb": [
+   0.78,
+   0.77,
+   0.71
+  ],
+  "tris": 1056
+ },
+ {
+  "name": "room_05",
+  "material": "Carpet",
+  "texture": null,
+  "rgb": [
+   0.23,
+   0.215,
+   0.176
+  ],
+  "tris": 24
+ },
+ {
+  "name": "room_06",
+  "material": "Yellow strap",
+  "texture": null,
+  "rgb": [
+   0.86,
+   0.75,
+   0.012
+  ],
+  "tris": 24
+ },
+ {
+  "name": "room_07",
+  "material": "Black powdercoat",
+  "texture": null,
+  "rgb": [
+   0.023,
+   0.027,
+   0.03
+  ],
+  "tris": 91912
+ },
+ {
+  "name": "room_08",
+  "material": "Steel",
+  "texture": null,
+  "rgb": [
+   0.56,
+   0.61,
+   0.64
+  ],
+  "tris": 35996
+ },
+ {
+  "name": "room_09",
+  "material": "Rubber",
+  "texture": null,
+  "rgb": [
+   0.011,
+   0.013,
+   0.014
+  ],
+  "tris": 8956
+ },
+ {
+  "name": "room_10",
+  "material": "Luminous diffuser",
+  "texture": null,
+  "rgb": [
+   0.92,
+   0.95,
+   1.0
+  ],
+  "tris": 60
+ },
+ {
+  "name": "room_11",
+  "material": "Black plastic",
+  "texture": null,
+  "rgb": [
+   0.009,
+   0.012,
+   0.013
+  ],
+  "tris": 18760
+ },
+ {
+  "name": "room_12",
+  "material": "Cardboard raw",
+  "texture": null,
+  "rgb": [
+   0.32,
+   0.195,
+   0.085
+  ],
+  "tris": 300
+ },
+ {
+  "name": "room_13",
+  "material": "Navy ink",
+  "texture": null,
+  "rgb": [
+   0.012,
+   0.019,
+   0.049
+  ],
+  "tris": 24
+ },
+ {
+  "name": "room_14",
+  "material": "Pine wood cross grain",
+  "texture": null,
+  "rgb": [
+   0.52,
+   0.33,
+   0.15
+  ],
+  "tris": 156
+ },
+ {
+  "name": "room_15",
+  "material": "Pine wood",
+  "texture": null,
+  "rgb": [
+   0.52,
+   0.33,
+   0.15
+  ],
+  "tris": 264
+ },
+ {
+  "name": "room_16",
+  "material": "Blue enamel",
+  "texture": null,
+  "rgb": [
+   0.018,
+   0.068,
+   0.4
+  ],
+  "tris": 132
+ },
+ {
+  "name": "room_17",
+  "material": "Brushed rollers",
+  "texture": null,
+  "rgb": [
+   0.63,
+   0.68,
+   0.7
+  ],
+  "tris": 10836
+ },
+ {
+  "name": "room_18",
+  "material": "HP side",
+  "texture": "hp_side.jpg",
+  "rgb": [
+   0.8,
+   0.8,
+   0.8
+  ],
+  "tris": 4
+ },
+ {
+  "name": "room_19",
+  "material": "Red wheel",
+  "texture": null,
+  "rgb": [
+   0.4,
+   0.017,
+   0.035
+  ],
+  "tris": 752
+ },
+ {
+  "name": "room_20",
+  "material": "Ivory shelf",
+  "texture": null,
+  "rgb": [
+   0.7,
+   0.69,
+   0.55
+  ],
+  "tris": 96
+ },
+ {
+  "name": "room_21",
+  "material": "Green laminate",
+  "texture": null,
+  "rgb": [
+   0.23,
+   0.64,
+   0.003
+  ],
+  "tris": 96
+ },
+ {
+  "name": "room_22",
+  "material": "Reference photograph | NOR_front_A",
+  "texture": "NOR_front_A_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 8640
+ },
+ {
+  "name": "room_23",
+  "material": "Reference photograph | NOR_storage_A",
+  "texture": "NOR_storage_A_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 46656
+ },
+ {
+  "name": "room_24",
+  "material": "Reference photograph | NOR_anniversary",
+  "texture": "NOR_anniversary_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 40608
+ },
+ {
+  "name": "room_25",
+  "material": "Reference photograph | NOR_storage_B",
+  "texture": "NOR_storage_B_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 48384
+ },
+ {
+  "name": "room_26",
+  "material": "Reference photograph | NOR_lid",
+  "texture": "NOR_lid_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 54144
+ },
+ {
+  "name": "room_27",
+  "material": "Reference photograph | NOR_front_B",
+  "texture": "NOR_front_B_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 6912
+ },
+ {
+  "name": "room_28",
+  "material": "Reference photograph | NOR_front_C",
+  "texture": "NOR_front_C_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 4320
+ },
+ {
+  "name": "room_29",
+  "material": "Reference photograph | NOR_front_D",
+  "texture": "NOR_front_D_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 6912
+ },
+ {
+  "name": "room_30",
+  "material": "Reference photograph | HP_lid_A",
+  "texture": "HP_lid_A_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 6912
+ },
+ {
+  "name": "room_31",
+  "material": "Reference photograph | HP_end_0",
+  "texture": "HP_end_0_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 5184
+ },
+ {
+  "name": "room_32",
+  "material": "Reference photograph | HP_longside",
+  "texture": "HP_longside_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 13824
+ },
+ {
+  "name": "room_33",
+  "material": "Reference photograph | HP_end_1",
+  "texture": "HP_end_1_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 5184
+ },
+ {
+  "name": "room_34",
+  "material": "Reference photograph | HP_end_2",
+  "texture": "HP_end_2_color.jpg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 3456
+ },
+ {
+  "name": "room_35",
+  "material": "Cartridge label",
+  "texture": null,
+  "rgb": [
+   0.76,
+   0.78,
+   0.73
+  ],
+  "tris": 37800
+ }
+]

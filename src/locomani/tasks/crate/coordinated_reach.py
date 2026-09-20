@@ -1,6 +1,7 @@
 """Visible-target reach with simulation-assisted, continuously coordinated body feedback."""
 
 from collections import deque
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
@@ -10,6 +11,37 @@ from locomani.tasks.crate.visual_low_reach import LowReachCommand, blend, quater
 from locomani.tasks.crate.whole_body_ik import WholeBodyIK
 
 
+@dataclass(frozen=True)
+class CoordinatedTarget:
+    """Object-local grasp geometry consumed by :class:`CoordinatedReach`.
+
+    ``capture_rotation_local`` has capture across, tangent and up axes as
+    columns. The default exactly describes the historical blue-crate target.
+    """
+
+    object_key: str = "blue_crate"
+    grasp_points_local: tuple[tuple[float, float, float], ...] = GRASP_POINTS
+    capture_rotation_local: np.ndarray = field(default_factory=lambda: np.eye(3))
+    region: RimRegion = field(default_factory=RimRegion)
+    information_source: str = "simulation_assisted"
+    preserve_point_order: bool = False
+    reach_only: bool = False
+
+    def __post_init__(self):
+        points = np.asarray(self.grasp_points_local, dtype=float)
+        frame = np.asarray(self.capture_rotation_local, dtype=float)
+        if points.shape != (2, 3) or not np.isfinite(points).all():
+            raise ValueError("grasp_points_local must contain two finite 3D points")
+        if frame.shape != (3, 3) or not np.isfinite(frame).all():
+            raise ValueError("capture_rotation_local must be a finite 3x3 rotation")
+        if not np.allclose(frame.T @ frame, np.eye(3), atol=1e-6) or np.linalg.det(frame) < 0.999999:
+            raise ValueError("capture_rotation_local must be right-handed and orthonormal")
+        if not self.object_key:
+            raise ValueError("object_key must be non-empty")
+        object.__setattr__(self, "grasp_points_local", tuple(map(tuple, points)))
+        object.__setattr__(self, "capture_rotation_local", frame.copy())
+
+
 class CoordinatedReach:
     """One supported body reference through descent, capture and paired lifting.
 
@@ -17,9 +49,19 @@ class CoordinatedReach:
     feet stay anchored, and unseen targets cannot advance the trajectory.
     """
 
-    def __init__(self, solver, config, state, *, reference_joints, reference_quaternion):
+    def __init__(
+        self,
+        solver,
+        config,
+        state,
+        *,
+        reference_joints,
+        reference_quaternion,
+        target: CoordinatedTarget | None = None,
+    ):
         self.solver, self.config = solver, config
-        self.region = RimRegion()
+        self.target = CoordinatedTarget() if target is None else target
+        self.region = self.target.region
         self.body = WholeBodyIK(
             solver.ik, state, config.carry, tool_offset=solver.offset, joint_limits=(solver.lo, solver.hi)
         )
@@ -153,17 +195,26 @@ class CoordinatedReach:
         base, origin = rotation(state["pelvis"]["quat"]), np.asarray(state["pelvis"]["pos"])
         tools, tool_rotations = self.solver.tool_poses(np.asarray(state["joints"]))
         tools, tool_rotations = tools @ base.T + origin, base @ tool_rotations
-        local_centres = estimate.transform(GRASP_POINTS)
-        centres = local_centres[np.argsort(-local_centres[:, 1])] @ base.T + origin
-        obj_rotation, obj_position = base @ estimate.rotation, origin + base @ estimate.position
-        targets = self.region.nearest(centres, obj_rotation[:, 1], tools)
+        local_centres = estimate.transform(self.target.grasp_points_local)
+        if not self.target.preserve_point_order:
+            local_centres = local_centres[np.argsort(-local_centres[:, 1])]
+        centres = local_centres @ base.T + origin
+        obj_rotation, obj_position = (
+            base @ estimate.rotation @ self.target.capture_rotation_local,
+            origin + base @ estimate.position,
+        )
+        # A reachability probe owns exact world capture centres.  Ordinary
+        # crate execution still permits the historical slide along the rim.
+        targets = centres if self.target.reach_only else self.region.nearest(centres, obj_rotation[:, 1], tools)
         # The cached camera-admitted pose owns reach targets. Current simulation
         # state independently checks displacement, attachment and load safety.
-        if "objects" in state:
-            observed_object = state["objects"]["blue_crate"]
+        if self.target.object_key in state.get("objects", {}):
+            observed_object = state["objects"][self.target.object_key]
             obj_position = np.asarray(observed_object["pos"])
-            obj_rotation = rotation(observed_object["quat"])
-        self.diagnostics = dict(observed_grips=centres, measured_tools=tools, information_source="simulation_assisted")
+            obj_rotation = rotation(observed_object["quat"]) @ self.target.capture_rotation_local
+        self.diagnostics = dict(
+            observed_grips=centres, measured_tools=tools, information_source=self.target.information_source
+        )
         if self.phase == "observe":
             axis = centres[0] - centres[1]
             yaw = np.arctan2(-axis[0], axis[1])
@@ -202,15 +253,18 @@ class CoordinatedReach:
             error = float(np.max(np.linalg.norm(tools - targets, axis=1)))
             if self.progress_time is None or error < self.best_error - 0.005:
                 self.best_error, self.progress_time = error, now
-            if self.elapsed > self.duration and now - self.progress_time > 3.0:
+            if not self.target.reach_only and self.elapsed > self.duration and now - self.progress_time > 3.0:
                 return self.result("reach_stalled", True)
-            ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
-            self.diagnostics.update(capture_error=errors, capture_ready=ready)
-            self.ready_since = (now if self.ready_since is None else self.ready_since) if ready else None
-            if self.ready_since is not None and now - self.ready_since >= 0.1:
-                self.closed_targets = self.body.tools(self.x)
-                self.enter("close")
+            if self.target.reach_only:
+                self.diagnostics.update(capture_error=np.linalg.norm(tools - targets, axis=1), capture_ready=False)
             else:
+                ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
+                self.diagnostics.update(capture_error=errors, capture_ready=ready)
+                self.ready_since = (now if self.ready_since is None else self.ready_since) if ready else None
+                if self.ready_since is not None and now - self.ready_since >= 0.1:
+                    self.closed_targets = self.body.tools(self.x)
+                    self.enter("close")
+            if self.phase == "reach":
                 u, _ = blend(self.elapsed, self.duration)
                 self.torso_target = self.reach_rotation(u).as_matrix()
                 commanded = self.start_tools + u * (targets - self.start_tools)

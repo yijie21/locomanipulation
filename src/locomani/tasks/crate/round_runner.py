@@ -47,14 +47,23 @@ def start_recording(p, m: dict) -> None:
     m["produced"] = True
 
 
-def prime(p, reset) -> None:
+def prime(p, reset, *, reset_label: str = "", on_phase=None) -> None:
     """Bring the robot to the IDLE stance both experts start every session from."""
+    phase = on_phase or (lambda _name, _details: None)
+    phase("prime_started", {})
     p.cmd.reset_pose()
     reset.pin_arms()
-    reset.reset()
+    phase("reset_commanded", {"reset_id": "session_prime", "label": reset_label})
+    if reset_label:
+        reset.reset(label=reset_label)
+    else:
+        reset.reset()
     time.sleep(0.3)
+    phase("prime_reset_settled", {"duration_s": 0.3})
     p.cmd.start_control()
+    phase("prime_control_started", {})
     p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
+    phase("prime_idle_complete", {"duration_s": 2.5})
 
 
 def run_rounds(

@@ -27,13 +27,14 @@ import argparse
 import json
 import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
-ROOT = "/workspace/code/locomanipulation"
-DEFAULT_BASE = f"{ROOT}/outputs/scene/crate_table30_depth04/scene_locomani.xml"
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BASE = ROOT / "outputs/scene/crate_table30_depth04/scene_locomani.xml"
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("scene_dir", help="the directory blender_to_mujoco.py wrote")
-parser.add_argument("--base", default=DEFAULT_BASE, help="scene_locomani.xml to inherit the robot from")
+parser.add_argument("--base", default=str(DEFAULT_BASE), help="scene_locomani.xml to inherit the robot from")
 parser.add_argument("--platform-top", type=float, default=0.371)
 parser.add_argument("--near-edge-y", type=float, default=-0.555)
 args = parser.parse_args()
@@ -70,9 +71,9 @@ for _p in parts:
 used = set()
 for p in parts:
     name, tex, rgb = p["name"], p["texture"], p["rgb"]
-    ET.SubElement(asset, "mesh", name=name, file=f"{MJ}/mesh/{name}.obj")
+    ET.SubElement(asset, "mesh", name=name, file=f"mesh/{name}.obj")
     if tex and os.path.exists(f"{TEX}/{tex}") and tex not in used:
-        ET.SubElement(asset, "texture", type="2d", colorspace="linear", name=f"t_{name}", file=f"{TEX}/{tex}")
+        ET.SubElement(asset, "texture", type="2d", colorspace="linear", name=f"t_{name}", file=f"textures/{tex}")
         used.add(tex)
     if tex and os.path.exists(f"{TEX}/{tex}"):
         ET.SubElement(asset, "material", name=f"m_{name}", texture=f"t_{name}", specular="0.1", shininess="0.1")
@@ -80,7 +81,7 @@ for p in parts:
         ET.SubElement(
             asset, "material", name=f"m_{name}", rgba=f"{rgb[0]} {rgb[1]} {rgb[2]} 1", specular="0.1", shininess="0.1"
         )
-ET.SubElement(asset, "mesh", name="nor_cal_box", file=f"{MJ}/mesh/nor_cal_box.obj")
+ET.SubElement(asset, "mesh", name="nor_cal_box", file="mesh/nor_cal_box.obj")
 ET.SubElement(asset, "material", name="m_nor_cal", rgba="0.86 0.78 0.62 1", specular="0.05", shininess="0.05")
 
 # room: visual only. Walls and racks are scenery; the robot must not collide
@@ -194,6 +195,15 @@ if g is not None:
 ET.SubElement(
     world, "light", pos="0 0 2.9", dir="0 0 -1", directional="false", diffuse="0.6 0.6 0.6", specular="0.1 0.1 0.1"
 )
+
+# The calibrated base is generated under outputs/ and historically contains
+# checkout-specific absolute references to the standard SONIC mesh install.
+# Make inherited references portable from the generated scene directory too.
+for element in root.iter():
+    file_path = element.get("file")
+    if file_path and os.path.isabs(file_path):
+        element.set("file", os.path.relpath(file_path, MJ))
+
 tree.write(OUT, encoding="unicode")
 print(f"[mjcf] wrote {OUT}")
 print(f"[mjcf] {len(parts)} room parts, platform {2 * hx:.2f}x{2 * hy:.2f} top {PLATFORM_TOP}, carton at {BOX_POS}")

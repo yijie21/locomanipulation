@@ -16,11 +16,13 @@ task touches the walls or the racks.
 import json
 import os
 import sys
+from pathlib import Path
 
 import bpy
 import mathutils
 
-BOX_BLEND = "/workspace/code/locomanipulation/assets/blender/NOR_CAL_Box_Refined_V2.blend"
+ROOT = Path(__file__).resolve().parents[1]
+BOX_BLEND = str(ROOT / "assets/blender/NOR_CAL_Box_Refined_V2.blend")
 OBJ = "NOR-CAL | complete single carton mesh"
 PLATFORM_TOP, NEAR_EDGE_Y = 0.371, -0.555
 outdir = sys.argv[-1]

@@ -485,6 +485,27 @@ class EpisodeControlServer:
 
     def _apply(self, req: dict) -> None:
         mujoco = self._mj
+        robot = req.get("robot") or {}
+        dof = robot.get("dof")
+        j0 = 0
+        if dof is not None:
+            from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
+
+            dof = np.asarray(dof, dtype=float)
+            if dof.shape != (len(MUJOCO_JOINT_NAMES),):
+                raise ValueError(f"robot.dof must contain {len(MUJOCO_JOINT_NAMES)} joint values")
+            if not np.isfinite(dof).all():
+                raise ValueError("robot.dof must contain only finite joint values")
+            try:
+                j0_value = float(robot.get("dof_from", 0))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("robot.dof_from must be a finite integer") from exc
+            if not np.isfinite(j0_value) or not j0_value.is_integer():
+                raise ValueError("robot.dof_from must be a finite integer")
+            j0 = int(j0_value)
+            if not 0 <= j0 <= len(MUJOCO_JOINT_NAMES):
+                raise ValueError(f"robot.dof_from must be in [0, {len(MUJOCO_JOINT_NAMES)}]")
+
         self._appearance(req.get("appearance"))
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[:] = self.qpos0
@@ -505,7 +526,6 @@ class EpisodeControlServer:
             if "yaw" in delta:
                 self.data.qpos[adr + 3 : adr + 7] = self._yaw_quat(float(delta["yaw"]))
 
-        robot = req.get("robot") or {}
         if robot:
             dx, dy = robot.get("dxy", (0.0, 0.0))
             self.data.qpos[0] += dx
@@ -516,7 +536,6 @@ class EpisodeControlServer:
             # e.g. a recorded observation.state[[0:22]+[29:36]] -- lets a token replay
             # start from the recorded whole-body pose instead of the default stand
             # (2026-09-04: the default stand's arms hit the bottle at 0.3 m).
-            dof = robot.get("dof")
             if dof is not None:
                 # "dof_from": first joint index to apply (15 = arms only: a
                 # recorded LEG pose plus the seat-on-floor guess toppled the
@@ -528,7 +547,6 @@ class EpisodeControlServer:
                     for n in MUJOCO_JOINT_NAMES:
                         jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n)
                         self._dof_qadr.append(int(self.model.jnt_qposadr[jid]) if jid >= 0 else -1)
-                j0 = int(robot.get("dof_from", 0))
                 for i, (a, v) in enumerate(zip(self._dof_qadr, dof)):
                     if a >= 0 and i >= j0:
                         self.data.qpos[a] = float(v)
@@ -561,7 +579,11 @@ class EpisodeControlServer:
                 print(f"[episode] bad request: {e}")
                 continue
             if req.get("cmd") == "reset":
-                self._apply(req)
+                try:
+                    self._apply(req)
+                except (TypeError, ValueError) as exc:
+                    print(f"[episode] invalid reset: {exc}")
+                    continue
                 self._place_ghost(None, None)  # a new episode has no plan yet
                 print(f"[episode] reset applied: {req.get('label', '')}")
             elif req.get("cmd") == "align_robot_xy":

@@ -1,4 +1,8 @@
-# STATE — 2026-09-17
+# STATE — 2026-09-20
+- G1 task-video boundary fixed: original expert one-run walked/grasped/lifted20.8cm; ghost case1 starts quiet then reaches after0.02s,success. Full task previews16.32s/3.92s (428468/396664 bytes); initialization saved separately.20 focused tests+make check pass; GPU1/instance2 released. [Comparison and evidence](handoff/g1-original-expert-task-boundary-20260920.md). Latest: [conditional atlas + videos](handoff/g1-reachability-atlas-20260920.md): 1120 IK targets/448 candidates; live14=2 success,5 timeout,7 support rejection. All task starts quiet; 28s/17.68s previews 436027/430816 bytes.16 focused+make check pass; GPU1/instance2 released. Scene/docs sync: [scope and asset checks](handoff/scene-and-bimanual-sync-20260920.md); portable MuJoCo/USD + LFS sources prepared, no owned GPU stack.
+
+- Static box rim planner: integrated into `main` working tree from `feat/box-rim-planner-20260920`; 16 focused tests, `make check`, six-case geometry grid and eight-input delivery reproduction passed their stated checks. No live collection stack. [Behavior, artifacts, limits and next action](handoff/box-rim-planner-20260920.md).
+- Box rim execution: user-authorized unchanged-code repeat `coordinated_expert_support_repeat_once` passed standing admission then stopped at cumulative pelvis path 0.30016 m (`reposition_travel_budget_exceeded`), before grasp planning/reach. Full 2.88 s preview 352,709 bytes verified. GPU 1 / instance 2 released. Initialization synchronization diagnosis remains open; no code edits or further retries. [Evidence](handoff/box-rim-execution-20260920.md).
 
 ## Delivery
 
@@ -50,11 +54,7 @@
 
 ## Evidence and preserved constraints
 
-- Historical conclusions and retractions remain unverified; use the
-  [evidence rules](reference/standards.md#evidence) before relying on them.
-- [Earlier GPU handoff](handoff/maintenance-gpu-regression-20260912.md) retains
-  the first delivery's comparisons and protocol corrections.
-- The original 1473-line [STATE archive](archive/state_20260912.md) is verbatim
-  from `4cc52ba`; its RUNNING claims do not describe current resource availability.
-- The historical record attributes NO DAgger and parked crate stand tuning to the
-  user; this maintenance task does not change either policy.
+- Historical conclusions and retractions remain unverified; use the [evidence rules](reference/standards.md#evidence) before relying on them.
+- [Earlier GPU handoff](handoff/maintenance-gpu-regression-20260912.md) retains the first delivery's comparisons and protocol corrections.
+- The original 1473-line [STATE archive](archive/state_20260912.md) is verbatim from `4cc52ba`; its RUNNING claims do not describe current resource availability.
+- The historical record attributes NO DAgger and parked crate stand tuning to the   user; this maintenance task does not change either policy.

@@ -68,7 +68,7 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             if VIDEO_DIR:
                 from locomani.pipeline.sim_video import VideoRecorder
 
-                recorder = VideoRecorder(self.mj_model, VIDEO_DIR)
+                recorder = VideoRecorder(self.mj_model, VIDEO_DIR, camera_name=meta.get("video_camera"))
                 self._recorder = recorder
             # SIM_STATE_TRACE_DIR: write SIMPLE's qpos/qvel trace per episode,
             # which is what an offline Isaac re-render replays. Off by default,

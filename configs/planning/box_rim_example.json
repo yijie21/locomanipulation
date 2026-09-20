@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "scene_xml": "../../tests/fixtures/geometry/scene_locomani.xml",
+  "target": {
+    "body": "water_bottle_object",
+    "collider_mode": "replace_with_open_box_proxy"
+  },
+  "box": {
+    "size_m": [0.32, 0.28, 0.18],
+    "wall_thickness_m": 0.01,
+    "pose": {
+      "position": [0.0, 0.0, 0.62],
+      "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0]
+    },
+    "local_com_m": [0.0, 0.0, 0.09],
+    "corner_clearance_m": 0.025,
+    "forbidden_intervals": []
+  },
+  "robot_state": {
+    "source": "explicit",
+    "joints": [
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    ],
+    "pelvis": {
+      "position": [-0.6, 0.0, 0.793],
+      "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0]
+    }
+  },
+  "planner": {
+    "samples_per_rim": 5,
+    "side_offsets_m": [0.0],
+    "depths_m": [0.006],
+    "palm_pitch_deg": [45.0],
+    "top_k": 4,
+    "coarse_iterations": 350,
+    "whole_body_iterations": 160
+  },
+  "render": {
+    "width": 960,
+    "height": 720
+  }
+}

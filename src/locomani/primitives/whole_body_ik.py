@@ -186,6 +186,21 @@ class WholeBodyIK:
         )
 
 
-def plan_low_reach(ik: ArmIK, state, positions, rotations, config, *, tool_offset):
+def plan_low_reach(
+    ik: ArmIK,
+    state,
+    positions,
+    rotations,
+    config,
+    *,
+    tool_offset,
+    joint_limits=None,
+):
     """Solve from observed feet, hands and pelvis; minimize lowering and posture change."""
-    return WholeBodyIK(ik, state, config, tool_offset=tool_offset).solve(positions, rotations)
+    return WholeBodyIK(
+        ik,
+        state,
+        config,
+        tool_offset=tool_offset,
+        joint_limits=joint_limits,
+    ).solve(positions, rotations)

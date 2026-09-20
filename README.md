@@ -1,9 +1,7 @@
 # locomanipulation
 
-面向 **Unitree G1 的移动操作（locomanipulation）仿真与数据采集项目**：
-让机器人走近桌子、抓取物体或完成放置，并提供单臂任务的数据转换、VLA 微调和评测工具。
-主要使用 MuJoCo 运行物理仿真、SONIC v1.1 执行全身控制；另有 ScaleBFM 控制路线。
-Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 工作流程](docs/rendering.md#整体流程)。
+面向 **Unitree G1 的移动操作（locomanipulation）仿真与数据采集项目**：让机器人走近桌子、抓取物体或完成放置，并提供单臂任务的数据转换、VLA 微调和评测工具。
+主要使用 MuJoCo 运行物理仿真、SONIC v1.1 执行全身控制；另有 ScaleBFM 控制路线。Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 工作流程](docs/rendering.md#整体流程)。
 
 [安装环境](#安装环境) · [快速开始](#快速开始) · [功能与文档](#功能与文档) · [查看运行结果](#查看运行结果)
 
@@ -15,7 +13,8 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 |---|---|---|---|
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
 | 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
-| 导入 Blender 场景 | 把一个 `.blend` 房间变成 MuJoCo 物理场景与 Isaac 渲染场景 | [Blender 场景](docs/blender_scenes.md) | 同页 |
+| 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿可达域实验 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
+| 导入 Blender 场景 | 物流间纸箱场景的 MuJoCo / Isaac 资产、Blender 导入与尺寸说明 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
 | MuJoCo 仿真与 Isaac 渲染 | EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染](docs/rendering.md) | 同页 |
 
@@ -33,6 +32,7 @@ Git LFS 用于下载上游机器人网格和库；本仓库附带的场景包与
 ```bash
 git clone https://github.com/yijie21/locomanipulation.git
 cd locomanipulation
+git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 ```
 
 | 要运行的功能 | 安装范围 |

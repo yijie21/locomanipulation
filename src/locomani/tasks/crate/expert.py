@@ -9,6 +9,7 @@ import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -40,72 +41,105 @@ from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
 
 
-def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
-    """Place at the sampled table-edge distance; all initialization ends before recording."""
-    jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
-    yaw = np.pi / 2 + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
-    start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
-    start_xy = initial_robot_xy(meta, start_distance)
+def prepare_stationary_ready(
+    p,
+    reset,
+    cfg,
+    solver,
+    *,
+    placement: Callable[[str], None],
+    whole_body: bool = False,
+    on_phase: Callable[[str, dict], None] | None = None,
+):
+    """Run the visual expert's stationary controller preparation and admission.
+
+    ``placement`` owns scene-specific reset contents. This lets floor-only
+    diagnostics use the original controller sequence without inventing a crate
+    or maintaining another ready-state initializer.
+    """
+
+    def phase(name: str, **details) -> None:
+        if on_phase is not None:
+            on_phase(name, details)
+
+    phase("preparation_started", whole_body=whole_body)
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
     if whole_body:
         p.cmd.exit_streamed()
         p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=p._facing(p.obs()))
+        phase("pre_reset_idle_complete", duration_s=1.5)
     reset.pin_arms()
-    reset.reset(
-        objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
-        robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
-    )
+    phase("simulation_pins_released")
+    phase("reset_commanded", reset_id="initial_placement")
+    placement("initial_placement")
     time.sleep(0.4)
+    phase("initial_placement_settled", duration_s=0.4)
     p.cmd.start_control()
     p.hold_yaw = 0.0
+    phase("control_started")
     if whole_body:
         upper_ref.shared().wait(3.0)
+        phase("upper_reference_ready", timeout_s=3.0)
         p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
+        phase("reanchor_started")
         reanchor(p)
+        phase("reanchor_complete")
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
+    if whole_body:
+        phase("post_reanchor_idle_complete", before_s=1.5, after_s=3.0)
     if not whole_body:
         p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
     arm = PlannerArm(p, "right", send_vel=False, left_guard=False)
     arm.start()
-    # The same ready pose is used for every basket placement, before task observations begin.
+    phase("planner_arm_started", settle_seconds="default")
+
+    # The original visual expert's ready pose and transition are deliberately
+    # kept here as one owner. Whole-body operation overrides the solver's
+    # single-arm ready output exactly as it did before this extraction.
     ready = solver.solve(
-        np.zeros(29), [[0.27, 0.22, 0.13], [0.27, -0.22, 0.13]], [np.eye(3), np.eye(3)], iterations=160
+        np.zeros(29),
+        [[0.27, 0.22, 0.13], [0.27, -0.22, 0.13]],
+        [np.eye(3), np.eye(3)],
+        iterations=160,
     )
     if whole_body:
         ready.joints[:] = 0
         ready.joints[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
         ready.joints[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
     q0 = arm.q.copy()
+    phase("ready_transition_started", frames=125)
     for k in range(1, 126):
         u = k / 125
         arm.q = q0 + (3 * u * u - 2 * u * u * u) * (ready.joints - q0)
         arm._push(arm.q)
+    phase("ready_transition_complete", frames=125)
     arm.hold(1.2)
+    phase("ready_hold_complete", duration_s=1.2)
+
     stance_ready = True
+    state = None
+    quiet_since = None
     if whole_body:
-        # Preparing the upright reference after a deep carry can move the base.
-        # Complete that preparation first, then initialize the sampled episode
-        # under its already-upright reference. This is always before recording;
-        # the sample is unchanged and the actual start is still checked below.
-        reset.reset(
-            objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
-            robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
-        )
+        # Establish the sampled episode only after the ready reference exists.
+        phase("reset_commanded", reset_id="prepared_placement")
+        placement("prepared_placement")
         time.sleep(0.3)
+        phase("prepared_placement_settled", duration_s=0.3)
         arm.start(upper_reference=upper_body_from_mj(ready.joints), settle_seconds=0.0)
-        # Initialization is outside the recording. Admit a measured quiet stance,
-        # not a wall-clock sleep that becomes too short on a busy simulator.
+        phase("planner_reference_reseeded", settle_seconds=0.0)
+
         state = p.obs()
         began = previous = float(state["t"])
         progress_wall, quiet_since, stance_ready = time.time(), None, False
+        phase("quiet_admission_started")
         while state["t"] - began < cfg.walk_timeout:
             stamp = float(state["t"])
             if stamp < previous or time.time() - progress_wall > cfg.vision_timeout:
                 break
             if stamp > previous:
                 previous, progress_wall = stamp, time.time()
-            w, x, y, z = state["pelvis"]["quat"]
+            _w, x, y, _z = state["pelvis"]["quat"]
             upright = 1 - 2 * (x * x + y * y) >= np.cos(np.radians(cfg.upright_tolerance_deg))
             quiet = upright and state["pelvis"]["pos"][2] >= 0.72 and np.linalg.norm(state["pelvis"]["vel"]) < 0.06
             quiet_since = (stamp if quiet_since is None else quiet_since) if quiet else None
@@ -114,9 +148,44 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
                 break
             arm._push(arm.q)
             state = p.obs()
+        phase(
+            "quiet_admitted" if stance_ready else "quiet_admission_failed",
+            quiet_duration_sim_s=(float(state["t"]) - quiet_since if quiet_since is not None else 0.0),
+        )
+
     return arm, {
         "initialization_resets": 2 if whole_body else 1,
         "initial_stance_ready": stance_ready,
+        "ready_reference": ready.joints.copy(),
+        "admission_state": state,
+    }
+
+
+def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
+    """Place at the sampled table-edge distance; all initialization ends before recording."""
+    jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
+    yaw = np.pi / 2 + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
+    start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
+    start_xy = initial_robot_xy(meta, start_distance)
+
+    def placement(_reset_id: str) -> None:
+        reset.reset(
+            objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
+            robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
+        )
+
+    arm, preparation = prepare_stationary_ready(
+        p,
+        reset,
+        cfg,
+        solver,
+        placement=placement,
+        whole_body=whole_body,
+    )
+    preparation.pop("admission_state")
+    preparation.pop("ready_reference")
+    return arm, {
+        **preparation,
         "object_dxy": jitter.tolist(),
         "object_yaw": float(yaw),
         "start_edge_distance": start_distance,

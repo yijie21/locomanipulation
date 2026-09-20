@@ -135,24 +135,37 @@ def _draw_label(scn, pos, text: str, rgba) -> None:
     scn.ngeom += 1
 
 
-class VideoRecorder:
-    """A tracking camera on the pelvis, written straight to mp4."""
+def recording_camera(model, track_body: str = "pelvis", camera_name: str | None = None):
+    """Use an explicit scene camera, or the historical pelvis tracking view."""
+    cam = mujoco.MjvCamera()
+    mujoco.mjv_defaultCamera(cam)
+    if camera_name is not None:
+        if not isinstance(camera_name, str) or not camera_name:
+            raise ValueError("video_camera must be a non-empty scene camera name")
+        camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, camera_name)
+        if camera_id < 0:
+            raise ValueError(f"video_camera is absent from scene: {camera_name}")
+        cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+        cam.fixedcamid = camera_id
+    else:
+        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, track_body)
+        if bid >= 0:
+            cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            cam.trackbodyid = bid
+        cam.distance, cam.azimuth, cam.elevation = 2.5, 135.0, -20.0
+    return cam
 
-    def __init__(self, model, out_dir: str, track_body: str = "pelvis"):
+
+class VideoRecorder:
+    """A scene-selected or pelvis-tracking camera, written straight to mp4."""
+
+    def __init__(self, model, out_dir: str, track_body: str = "pelvis", *, camera_name: str | None = None):
         self.model = model
         self.out_dir = out_dir
         os.makedirs(out_dir, exist_ok=True)
 
+        self.cam = recording_camera(model, track_body, camera_name)
         self.renderer = mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
-        self.cam = mujoco.MjvCamera()
-        mujoco.mjv_defaultCamera(self.cam)
-        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, track_body)
-        if bid >= 0:
-            self.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
-            self.cam.trackbodyid = bid
-        # 2.5, not 3.2: this is a diagnostic view, and at 3.2 m the hand and
-        # the object are a few dozen pixels each.
-        self.cam.distance, self.cam.azimuth, self.cam.elevation = 2.5, 135.0, -20.0
 
         # Debug visuals (ghost hand, grip bead, reach cloud) live in geom
         # group 4, which default options hide: the ego inset and the exporter's

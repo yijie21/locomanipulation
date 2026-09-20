@@ -27,6 +27,8 @@ from locomani.tasks.bottle.reach_config import ReachConfig  # noqa: E402
 from locomani.tasks.bottle.simple_config import SimpleGraspConfig  # noqa: E402
 from locomani.tasks.bottle.whole_body_config import WholeBodyConfig  # noqa: E402
 from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig, GraspConfig  # noqa: E402
+from locomani.tasks.crate.box_rim_execution_config import BoxRimExecutionConfig  # noqa: E402
+from locomani.tasks.crate.box_rim_planner import PlannerOptions  # noqa: E402
 from locomani.tasks.crate.carry_config import CrateCarryConfig  # noqa: E402
 from locomani.tasks.crate.config import CrateTaskConfig  # noqa: E402
 from locomani.tasks.crate.visual_config import CrateVisualConfig  # noqa: E402
@@ -49,6 +51,12 @@ CONFIGS = [
     ("CrateTaskConfig", CrateTaskConfig, "locomani/tasks/crate/config.py"),
     ("CrateCarryConfig", CrateCarryConfig, "locomani/tasks/crate/carry_config.py (CrateTaskConfig.carry)"),
     ("CrateVisualConfig", CrateVisualConfig, "locomani/tasks/crate/visual_config.py (CrateTaskConfig.visual)"),
+    ("PlannerOptions", PlannerOptions, "locomani/tasks/crate/box_rim_planner.py (offline box rim planning)"),
+    (
+        "BoxRimExecutionConfig",
+        BoxRimExecutionConfig,
+        "locomani/tasks/crate/box_rim_execution_config.py (simulation probe)",
+    ),
     ("ScaleBfmBackendConfig", ScaleBfmBackendConfig, "locomani/backends/scalebfm/config.py"),
     ("BottleVisualTaskConfig", BottleVisualTaskConfig, "locomani/tasks/bottle_visual/config.py"),
     ("GraspConfig", GraspConfig, "locomani/tasks/bottle_visual/config.py (BottleVisualTaskConfig.grasp)"),

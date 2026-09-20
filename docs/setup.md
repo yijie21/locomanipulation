@@ -12,6 +12,8 @@ sudo apt-get install -y git git-lfs cmake build-essential curl
 git lfs install          # 只需一次;不做的话下面 clone 出来的是空壳,见第 1 步
 ```
 
+本仓库新增的物流间 MuJoCo / Isaac 场景及 Blender 源文件也使用 LFS；克隆本仓库后运行 `git lfs pull`，按[场景包说明](../assets/scene/logistics_room_box_v1/README.md)检查依赖。
+
 **`git-lfs` 不是可选的。**上游 `GR00T-WholeBodyControl` 用 LFS 存 1275 个文件 ——
 不只是模型,还有机器人网格(`*.STL` `*.obj` `*.dae`)和共享库(`*.so` `*.a`)。
 没装 git-lfs 时 `git clone` **返回 0、不打印任何警告**,只是把这些文件换成约 130
