@@ -15,11 +15,11 @@ Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 
 |---|---|---|---|
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
 | 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
+| 导入 Blender 场景 | 把一个 `.blend` 房间变成 MuJoCo 物理场景与 Isaac 渲染场景 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
 | MuJoCo 仿真与 Isaac 渲染 | EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染](docs/rendering.md) | 同页 |
 
-逐轮实测数字和历次裁定在台账：[单臂](docs/ledger/bottle.md)、[双臂](docs/ledger/crate.md)、
-[ScaleBFM](docs/ledger/scalebfm.md)。
+逐轮实测数字和历次裁定在台账：[单臂](docs/ledger/bottle.md)、[双臂](docs/ledger/crate.md)、[ScaleBFM](docs/ledger/scalebfm.md)、[Blender 场景](docs/ledger/blender_scenes.md)。
 
 双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
 按相机可见性约束动作；尚未提供经过验证的 LeRobot 训练数据集。各任务的适用范围和已知问题见对应指南，最近的试验结果见 [项目状态](docs/STATE.md)。
