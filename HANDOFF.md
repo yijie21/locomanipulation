@@ -1,7 +1,7 @@
 # HANDOFF — 阶段入口重构为扁平 bash（等资源跑闸门）
 
 更新时间：2026-09-21 UTC。工作目录：`/workspace/code/locomanipulation`。
-分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），四个提交，**未推送**。
+分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），七个提交，**未推送**。
 `main` 未动。工作树里另有上一轮五维 reach 搜索的未提交改动，见最后一节——**不要顺手提交或删除**。
 
 ## 目标与当前状态
@@ -10,7 +10,8 @@
 直接调用功能代码，并把进程边界摊开：采集 = 起栈 + 跑 agent 两个终端，闭环评测 = 起栈 +
 策略服务 + 跑局三个终端。协作者随后提出同形方案，对齐后改了三条决定。
 
-**代码与文档已完成；不需要 exporter 的验证全部通过；需要录制栈的行为闸门尚未跑，卡在共享资源。**
+**代码、文档、GPU 闸门都已完成。** 两条线的行为闸门都跑过，七份产物契约过了六份，
+`run_overnight.sh` 端到端跑通一次。闸门过程中抓到并修掉**五个真回退**，见下。
 八个决定、全部证据和待办清单以 [重构记录](docs/handoff/refactor-flat-bash-20260921.md) 为准。
 
 ## 约束与已确认决定
@@ -38,6 +39,14 @@ scripts/run_overnight.sh                           唯一的组合脚本
 
 每个 bash 十几行、一个 `exec`；功能代码在 `src/locomani/pipeline/run_*.py`。
 
+## 闸门结论（先读这条）
+
+**两条线的行为闸门都 FAIL，但不是这次重构的问题。** 单臂线上，**未改动的旧代码**对同一份冻结基线
+也 FAIL，只是挂在别的判据（旧路径挂 `end_depth_m`，新路径挂 `failure_reasons`）；双臂线 3/4 PASS，
+唯一的 FAIL 又是 `failure_reasons`。那条判据在同版本 A/A 上就会触发，台账里早有记录。
+**n=8 / n=20 分辨不了这两条线**，所以等价性按 2026-09-17 的先例用**送达**定：
+专家 argv 逐 token 一致，`stack_env.json` 的差异可逐项解释。
+
 ## 已验证（含真跑）
 
 - **转换**：新旧 dry-run 命令**字节一致**（6,468 B）。**训练**：`DRY=1` 下 torchrun 命令**逐 token 一致**，
@@ -50,14 +59,35 @@ scripts/run_overnight.sh                           唯一的组合脚本
 - **开环评测**：10/10 轨迹，MSE 0.001749 / MAE 0.027843（`outputs/open_loop_refactor_20260921/`）。
   台账无此 checkpoint 的历史开环数字，这是首次测量、不是对照。
 - **契约差异可枚举**：`git diff` 只有三条声明过的 pattern；旧布局运行对旧契约 4/4 PASS。
+- **单臂行为闸门**：新路径 6/8（yield 0.75 = 基线），旧路径 8/8；逐局配对 8 局差 2 局，都在 grasp 阶段。
+- **双臂行为闸门**：20 局 15/20，`gate.py compare carry` **3/4 PASS**（yield 0.85→0.75 在容差内）。
+- **`run_overnight.sh` 端到端**：采集 → 转换 → 训练 10 步（写出 `checkpoint-10`）→ 3 局闭环，exit 0。
+- **七份契约过六份**，全部在新路径端到端产出的运行上：`bottle_collect` / `bottle_convert` /
+  `bottle_convert_val` / `bottle_train` / `bottle_eval` / `crate_collect`。
 - `make check` 与 `make check-docs` 全绿。
 
-## 尚未验证（等资源）
+## 闸门抓到并修掉的五个回退
 
-- 单臂 `bottle_simple_gate8.yaml` 8 局 + `gate.py compare simple`；双臂 20 局 + `compare crate`
-  ——录制栈需约 1800 pid，2026-09-21 容器常驻 2200–2400（外部 `go2rl` / `JeVLA` 作业）。
-- 10 步训练冒烟——训练要 28 GB 显存，当天两卡最高只剩 17.7 GB。
-- 其余六份产物契约（要记录型运行才产得出对应产物）。
+**这五个 dry-run、单元测试、产物契约一个都看不见，只有真跑才会暴露。**
+
+1. `world_lift` 把状态轨迹目录硬编码成按批的 `collect/state_trace_{批}` → `check_dataset --run-dir`
+   在新路径的每次采集上都崩。改为优先按 run、回退按批（旧运行仍可审）。
+2. **批 0 重起 exporter 丢一帧相机对齐**：两次实测 lag 0 只有 50% / 38%（中位 +1），
+   旧路径 86%（中位 +0）；批 0 不重起后 **100%**，两批运行（批 1 仍重起）也是 **100%**——
+   代价只在"栈刚起、图像发布还没稳"时重起。
+3. `run_overnight.sh` 漏下策略服务：它用 SIGTERM 收尾，而包装脚本只处理 Ctrl-C，7 GB 显存被孤儿进程占着。
+4. **双臂轨迹写错目录**：起栈按单臂设 `SIM_STATE_TRACE_DIR`，而双臂专家命令行拿的是 `<run>/trace`，
+   两边分叉。轨迹目录现在是线的属性（`lines.Line.trace_root`）。
+5. **驱动被重复收费它即将 attach 的那个栈**（pids 和 cores 都是）。`group_threads()` 数出该栈实际持有的
+   线程并从预算里减掉，**相对起栈前基线的预留量不变，只是不再翻倍**。驱动因此先 attach 再查闸门；
+   "起栈前先验部署补丁"这条昂贵检查仍在 `run_stack`。
+
+## 尚未验证
+
+- **`crate_eval` 契约**：磁盘上没有双臂 checkpoint（`crate_vla200_record_20260914/model` 已按
+  2026-09-16 的记录删除），要先训一个。这份契约的 note 本来就标着 UNVERIFIED。
+- **`failure_reasons` 判据本身需要重标定**：它在两条线上都会对未改动的代码报 FAIL。
+  这是闸门的问题，不是重构的问题，但会让以后每次比对都带一个假 FAIL。
 
 **开跑前先量**：`cat /sys/fs/cgroup/pids.current`、`nvidia-smi`、`find /workspace/tmp -name stack.json`。
 
