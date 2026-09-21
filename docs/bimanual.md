@@ -126,8 +126,8 @@ bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 （读 `collect/inputs.json`），**不是** episode 级续采——先检查未完成 batch 的记录。
 
 **并行**：双臂不强制实例 0，所以可以 GPU 1 / 实例 1 录制，与单臂（GPU 0 / 实例 0）同时跑。
-**同一块 GPU 上不能跑两个仿真。** exporter 约占 500 个线程，容器 pid 上限 3840，
-实测两个录制栈约 1800——**不要再并行第三个**。
+**同一块 GPU 上不能跑两个仿真。** 容器 pid 上限 3840，开销几乎全在 exporter：实测 sim + deploy 仅
+**176** 个 pid（2269 → 2441），所以不录制的运行按 400 准入、录制的按 1800——**不要并行第三个录制栈**。
 
 **换卡还不够，另外两个端口是进程范围的**（采集不受影响，它按 instance 偏移）：
 
@@ -177,7 +177,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
 |---|---|
 | 场景与别人的实验对不上 | §1 那 4 cm `--crate-setback`，或桌高那一步没跑 |
 | `not enough headroom -- cpu/pids/gpu ...` | 资源不足时脚本**拒绝启动并说明原因**。配额打满时仿真掉墙钟，专家的计时阶段会集体失败、看起来像机器人故障 |
-| 第三个录制栈起不来 / 段错误 | 容器 pid 上限。两个录制栈已占约 1800（§6） |
+| 第三个录制栈起不来 / 段错误 | 容器 pid 上限。每个录制栈按 1800 预算，开销几乎全在 exporter（§6） |
 | `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
 | 采集非零退出但视频还在 | `successes` 门槛没达到（§5）。记录是完整的 |
 | 评测开局动作突变 | 已修（2026-09-18）：回合之间不再交还 planner，settle 跑在 token 通道上。此前底盘在 settle 里漂中位 0.09 m、最大 0.83 m。要复现旧行为加 `--no-clean` |
