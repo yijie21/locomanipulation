@@ -39,8 +39,19 @@ import sys
 from collections import Counter
 
 TOL = dict(yield_abs=0.15, depth_m=0.01, drop_m=0.005, duration_rel=0.30, angle_deg=1.5, duration_floor_s=0.05)
-# The simple expert's stop is set by the planner's gait at the brake: three batches of the same code
-# gave stop medians 0.147-0.157 m (stage4_wrap8n/8o/8p), so its depth tolerance is 2 cm, and its
+# The simple expert's stop is set by the planner's gait at the brake, so its depth tolerance is a
+# question about run-to-run spread rather than about the expert. Three batches once gave stop
+# medians spanning 1 cm (stage4_wrap8n/8o/8p) and 2 cm was read off that. Seven runs of ONE
+# revision over one fixed bank and seed, measured 2026-09-21, span 0.1344-0.1695: mean 0.1508,
+# sd 0.0115, range 3.5 cm -- against 2 cm, 5 of those 21 same-revision pairs (24%) failed.
+#
+# The gate compares two runs, so what has to be bounded is the DIFFERENCE of two of them, whose
+# sd is sd*sqrt(2). With sd estimated from seven runs that interval is t-based, not normal:
+#   t(0.975, 6) * 0.0115 * sqrt(2) = 0.0398  ->  4 cm
+# which leaves 0 of 21 same-revision pairs failing and still separates revisions that genuinely
+# differ (stage4_wrap8f stops 17 cm away, at 0.3218 m).
+#
+# carry keeps 3 cm: its three independent runs span 0.0066 m (1.3240-1.3306), well inside it. Its
 # rare last-resort phases (retreat) may be absent from a candidate without being a regression.
 # A reason ABSENT from a baseline of n rounds is not evidence that it cannot happen: by the rule of
 # three its rate could still be as high as 3/n at 95%. So the check below is on the SHARE of
@@ -63,7 +74,7 @@ TOL = dict(yield_abs=0.15, depth_m=0.01, drop_m=0.005, duration_rel=0.30, angle_
 # n=8 it can only see that when it is large.
 RULE_OF_THREE = 3.0
 
-ARM_TOL = dict(simple=dict(depth_m=0.02), carry=dict(depth_m=0.03))
+ARM_TOL = dict(simple=dict(depth_m=0.04), carry=dict(depth_m=0.03))
 ARM_STAGES_NEW_ONLY = {"simple"}
 
 

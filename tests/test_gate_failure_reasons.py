@@ -72,3 +72,19 @@ def test_metrics_report_counts_so_the_share_can_be_computed():
         assert sum(counts.values()) == 2, name
     # simple and carry collapse the side, so those two rows are ONE family, not two
     assert len(gate.METRICS["simple"](rows)["failure_counts"]) == 1
+
+
+def test_the_simple_arm_depth_tolerance_covers_its_measured_spread():
+    """4 cm, from seven runs of one revision: mean 0.1508, sd 0.0115, t(0.975,6)*sd*sqrt(2)=0.0398.
+
+    2 cm came from three batches that happened to span 1 cm, and failed 5 of 21 same-revision
+    pairs. carry keeps 3 cm because its three runs span 0.0066 m.
+    """
+    assert gate.ARM_TOL["simple"]["depth_m"] == 0.04
+    assert gate.ARM_TOL["carry"]["depth_m"] == 0.03
+    spread = 0.1695 - 0.1344  # the measured extremes of the same-revision set
+    assert spread > gate.ARM_TOL["simple"]["depth_m"] - 0.01  # the tolerance is of that order
+    base = dict(rounds=8, yield_=1.0, end_depth_m=0.1469, failure_reasons=[])
+    cand = dict(rounds=8, yield_=1.0, end_depth_m=0.1695, failure_reasons=[], failure_counts={})
+    depth = next(c for c in gate.compare(base, cand, arm="simple") if c[0] == "end_depth_m")
+    assert depth[1], depth[2]  # the widest same-revision pair seen must not fail
