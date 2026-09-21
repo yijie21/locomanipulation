@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -94,15 +95,38 @@ def new_session(sessions: Path, before: set, timeout: float = 60.0) -> Path:
 
 
 def open_exporter_session(stack: Stack, collect_root: Path, batch: int) -> str | None:
-    """Restart the exporter onto this batch's receipt file; return the session it opened."""
+    """The exporter session this batch records into; return it, or None when nothing records.
+
+    Batch 0 uses the session the stack starter's exporter already opened. Restarting it there
+    would subscribe a fresh exporter to a camera stream that has been publishing for a minute,
+    and that costs a frame: two runs that restarted at batch 0 put 50% and 38% of their
+    wrist-camera measurements at lag 0 with a median of +1, where the pre-refactor path -- whose
+    exporter came up with the sim -- put 86% at lag 0 with a median of +0 (2026-09-21).
+    Later batches must restart: `convert` pairs session k with manifest k by position.
+    """
     if not stack.spec.record:
         return None
     sessions = session_root(stack.spec.instance) / "outputs"
     sessions.mkdir(parents=True, exist_ok=True)
+    if batch == 0:
+        existing = sorted(sessions.iterdir(), key=lambda p: p.stat().st_mtime)
+        if existing and _alive_exporter(stack):
+            return str(existing[-1])
     before = set(sessions.iterdir())
     stack.env["TF_FRAME_AUDIT_PATH"] = str(frame_audit_path(collect_root, batch))
     stack.restart_exporter()
     return str(new_session(sessions, before))
+
+
+def _alive_exporter(stack: Stack) -> bool:
+    pid = stack.pids.get("exporter")
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except OSError:
+        return False
+    return True
 
 
 def kept_in(manifest: Path, record: bool) -> int:

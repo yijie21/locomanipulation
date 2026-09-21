@@ -91,7 +91,12 @@ class RunTraces:
         if label:
             return self.trace_dir / f"{label}_state_trace.npz"
         batch = self.manifests[self.sessions.index(str(Path(session)))].stem.rsplit("_", 1)[-1]
-        directory = self.run / "collect" / f"state_trace_{batch}"
+        # One directory per run since 2026-09-21 (the stack outlives a batch, so SIM_STATE_TRACE_DIR
+        # is fixed when the sim starts); runs collected before that have one per batch. Try the
+        # current layout first and fall back, so an old run stays auditable.
+        directory = self.run / "collect" / "state_trace"
+        if not directory.is_dir():
+            directory = self.run / "collect" / f"state_trace_{batch}"
         lo, hi = int(seqs[0]), int(seqs[-1])
         hits = [
             p for p, first, last in self._seq_ranges(directory) if first - EDGE_TICKS <= lo <= hi <= last + EDGE_TICKS

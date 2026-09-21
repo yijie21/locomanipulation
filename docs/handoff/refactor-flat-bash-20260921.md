@@ -152,6 +152,59 @@ pid 门槛按 `record` 分档后评测不再被拒（评测本来就不起 expor
 这说明策略确实在被闭环驱动，而不是卡在一个吸收态。**3 局对成功率没有任何说明力**，这条线
 100 局的历史数字在台账里，不要拿这个 0/3 去比。
 
+## GPU 闸门（2026-09-21 晚，GPU1 让出后）
+
+### 单臂行为闸门：两条路都对同一份冻结基线 FAIL，且 FAIL 在不同判据上
+
+`bottle_simple_gate8.yaml`（固定库 `regression8_lowcom`，8 局）新旧两条路各跑一次：
+
+| | yield | end_depth_m | failure_reasons | 判定 |
+|---|---|---|---|---|
+| 冻结基线（`stage4_wrap8p`） | 0.75 | 0.1469 | — | — |
+| **新路径** | 0.75（6/8） | 0.1557 PASS | **FAIL**（多一个失败类别） | FAIL 4/5 |
+| **旧路径**（未改动的代码） | 1.00（8/8） | **FAIL** 0.1695 | PASS | FAIL 4/5 |
+
+**未改动的代码也过不了这道闸门**，只是挂在别的判据上。逐局配对（同库同种子）：8 局里 2 局不同，
+都在 grasp 阶段。结论：**n=8 分辨不了这条线**，这和台账里"同版本 A/A 也 FAIL 于新失败类别"一致。
+所以等价性按 2026-09-17 的先例用**送达**来定：专家 argv **29 个 token 逐字一致**；`stack_env.json`
+24 个键里 5 处不同，全部可解释——`SIM_VIDEO_DIR` 是声明过的布局改动，另外四个（`RECORD_INSTANCE`、
+`SIM_STATE_TRACE_DIR`、`TF_EXPORTER_SCRIPT`、`TF_FRAME_AUDIT_PATH`）**旧路径也送达了，只是从没被记进
+`stack_env.json`**（它们当时在 `base_env` 里，而该文件只写 `spec.settings()`）。旧运行确实有
+`state_trace_00/` 和 `frame_audit_00.jsonl` 为证。`RECORD_INSTANCE` 只被旧桥接 `pipeline/stack.py:114`
+读取，在实例 0 上惰性。
+
+### 抓到并修掉的两个真回退
+
+1. **`world_lift` 找不到状态轨迹。** `world_lift.py:93` 把目录硬编码成按批的
+   `collect/state_trace_{批}`，正是这次布局改动替换掉的。`check_dataset --run-dir` 因此在新路径的
+   每一次采集上都会崩。改成先找按 run 的目录、找不到再回退到按批的（旧运行仍可审）。
+   **dry-run、单元测试、产物契约都看不见它——是整条链跑出来的。**
+2. **批 0 重起 exporter 会丢一帧相机对齐。** 驱动原本在每批之前都重起 exporter，包括批 0；
+   那时 sim 的图像发布刚起来还没稳。实测：
+
+   | 运行 | lag 0 占比 | 中位 | 判定 |
+   |---|---|---|---|
+   | 旧路径 | 12/14 = 86% | +0 | PASS |
+   | 新路径，批 0 重起 | 4/8 = 50% | +0 | FAIL |
+   | 新路径，批 0 重起（重复） | 3/8 = 38% | **+1** | FAIL |
+   | 新路径，批 0 **不重起** | **8/8 = 100%** | +0 | PASS |
+   | 新路径，两批（批 1 仍重起） | **10/10 = 100%** | +0 | PASS |
+
+   最后一行很重要：**批间重起 exporter 没有代价**，有代价的只是在栈刚起、发布还没稳时重起。
+   批 0 本来就有起栈脚本建好的 session，直接用它。
+
+3. **`run_overnight.sh` 会漏下策略服务。** 它用 `kill`（SIGTERM）收尾，而 `run_vla_server.py`
+   只处理 `KeyboardInterrupt`，于是包装进程死了、占 7 GB 显存的 `serve_policy.py` 活着。
+   手动三终端不会暴露（Ctrl-C 送到整个前台组）。已改成同时处理 SIGTERM 并在 `finally` 里必收；
+   验证方式是起服务、对包装进程发 SIGTERM、数子进程——从 1 变 0。
+
+### 通过的
+
+- **十步训练冒烟**：`run_overnight.sh` 一条命令跑完 采集 → 转换 → 训练（10 步，写出 `checkpoint-10`，
+  配方自动选了单卡 8×8 accum + `adamw_bnb_8bit`）→ 3 局闭环，exit 0。
+- **五份单臂产物契约全部 PASS**，且都是新路径端到端产出的运行：`bottle_collect`、`bottle_convert`、
+  `bottle_convert_val`（`bottle_twobatch_probe`）、`bottle_train`、`bottle_eval`（`bottle_chain_smoke2`）。
+
 ## 尚未验证（阻塞在共享资源上）
 
 **要起仿真栈的闸门一项都没跑。** 2026-09-21 两次测量：`pids.current` = 2205 → 2264 / 上限 3840，一个带 exporter 的采集栈
