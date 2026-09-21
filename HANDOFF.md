@@ -1,8 +1,9 @@
-# HANDOFF — 阶段入口重构为扁平 bash（等资源跑闸门）
+# HANDOFF — 阶段入口重构为扁平 bash（已合并进 main）
 
 更新时间：2026-09-21 UTC。工作目录：`/workspace/code/locomanipulation`。
-分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），十二个提交，**已推送到 `origin/refactor/flat-bash-pipeline`**（2026-09-21）；未合并进 main。
-`main` 未动。工作树里另有上一轮五维 reach 搜索的未提交改动，见最后一节——**不要顺手提交或删除**。
+**已合并进 `main` 并推送**（2026-09-21，merge commit `eee5aaf`，分支 `refactor/flat-bash-pipeline` 保留）。
+合并后的 main 上 `make check`、`make check-docs` 与入口 dry-run 自检全部通过。
+工作树里另有上一轮五维 reach 搜索的未提交改动，见最后一节——**不要顺手提交或删除**。
 
 ## 目标与当前状态
 
@@ -10,7 +11,7 @@
 直接调用功能代码，并把进程边界摊开：采集 = 起栈 + 跑 agent 两个终端，闭环评测 = 起栈 +
 策略服务 + 跑局三个终端。协作者随后提出同形方案，对齐后改了三条决定。
 
-**代码、文档、GPU 闸门都已完成。** 两条线的行为闸门都跑过，七份产物契约过了六份，
+**重构结束。代码、文档、GPU 闸门都已完成并合并。** 两条线的行为闸门都跑过，七份产物契约过了六份，
 `run_overnight.sh` 端到端跑通一次。闸门过程中抓到并修掉**五个真回退**，见下。
 八个决定、全部证据和待办清单以 [重构记录](docs/handoff/refactor-flat-bash-20260921.md) 为准。
 
