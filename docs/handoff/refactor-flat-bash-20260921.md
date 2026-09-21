@@ -74,11 +74,30 @@ scripts/bimanual/{run_agent_server,run_vla_inference}.sh
   `test_artifact_contract.py` 的 CRITICAL 表、以及三份契约本身。
 - **dry-run**：两条线的八个入口全部跑通。
 
+## 不吃 pid 的那部分已经跑过（2026-09-21）
+
+用户批准先跑不占 pid 的验证。做了三件事：
+
+- **开环评测跑通了真的 GPU**：`scripts/open_loop_eval.sh`（原 `gr00t_open_loop.sh`）在
+  `bottle_simple_200_20260916` 的 `checkpoint-10000` × 10 集验证集上跑完 10/10 条轨迹，
+  平均 MSE 0.001749 / MAE 0.027843，10 张图和 `metrics.json` 在
+  `outputs/open_loop_refactor_20260921/`。台账里**没有**这条 checkpoint 的历史开环数字，所以这是
+  首次测量、不是对照；扩散头是采样的，单次数字本身也不该当作基线。它证明的是这条改名后的
+  路径端到端可用。
+- **契约的改动正好等于声明的那三条**：`git diff HEAD~1 HEAD -- tests/contracts/` 只有
+  `collect/state_trace_*/`、`collect/videos_*/`、`eval/videos_*/` 三行 pattern 和三处 note。
+  旧布局的运行对**旧**契约 4/4 PASS（collect / convert / train / eval），对**新**契约只在那两条
+  重命名的 pattern 上失败——差异是可枚举的，没有别的东西被顺手改掉。
+- **补了 attach 缝的测试**（`tests/test_stage_attach.py`）：驱动在没有栈时必须报出**起栈的那条命令**，
+  而且资源闸门要排在查栈之前——后者是顺序断言，防止以后有人把栈查询挪到准入检查前面。
+
 ## 尚未验证（阻塞在共享资源上）
 
-**GPU 闸门一项都没跑。** 2026-09-21 容器 `pids.current` = 2205 / 上限 3840，一个带 exporter 的采集栈
+**要起仿真栈的闸门一项都没跑。** 2026-09-21 两次测量：`pids.current` = 2205 → 2264 / 上限 3840，一个带 exporter 的采集栈
 需要约 1800，`require_headroom("collect")` 会直接拒绝。占用来自外部作业（三个 `go2rl` python 共 662 线程、
-GPU0/GPU1 合计 21 GB）加上 agent 工具链。因此下列仍是**待办**，在它们通过之前旧路径不能删：
+GPU0/GPU1 合计 21 GB，后来又多了一个 `JeVLA/libero_pilot` 占 9.5 GB）加上 agent 工具链。
+显存在当天晚些时候**更紧**而不是更松：GPU0 只剩 17.7 GB、GPU1 只剩 14.6 GB，训练需要 28 GB。
+因此下列仍是**待办**，在它们通过之前旧路径不能删：
 
 - 单臂 `bottle_simple_gate8.yaml` 8 局 + `gate.py compare simple`
 - 双臂 20 局 + `gate.py compare crate`
