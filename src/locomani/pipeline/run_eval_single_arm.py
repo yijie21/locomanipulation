@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     if (ev / "closed_loop.json").exists():
         raise SystemExit(f"{ev / 'closed_loop.json'} exists; move the finished evaluation aside before rerunning")
     checkpoint = checkpoint_of(run_dir)
-    run_context.require_headroom("eval", gpu=args.gpu)
+    run_context.require_headroom("eval", gpu=args.gpu, record=False)  # an evaluation runs no exporter
     run_context.require_deploy_patches(cfg)
     ev.mkdir(parents=True, exist_ok=True)
     evaluation.dump(ev / "eval_config.json")

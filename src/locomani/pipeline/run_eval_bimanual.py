@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n  attaches to instance {cfg['collect']['instance']}, policy port {evaluation.policy_port}")
         return 0
 
-    run_context.require_headroom("eval", gpu=args.gpu)
+    run_context.require_headroom("eval", gpu=args.gpu, record=False)  # an evaluation runs no exporter
     ev.mkdir(parents=True, exist_ok=True)
     evaluation.dump(ev / "eval_config.json")
     Stage(run_dir).check("eval", rounds_argv(cfg, run_dir, ev, checkpoint, args.gpu))

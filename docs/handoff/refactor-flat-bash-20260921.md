@@ -91,6 +91,46 @@ scripts/bimanual/{run_agent_server,run_vla_inference}.sh
 - **补了 attach 缝的测试**（`tests/test_stage_attach.py`）：驱动在没有栈时必须报出**起栈的那条命令**，
   而且资源闸门要排在查栈之前——后者是顺序断言，防止以后有人把栈查询挪到准入检查前面。
 
+## 不录制的冒烟跑通了（2026-09-21）
+
+用户批准按 `record` 给 pid 门槛分档后跑的。**先实测再改阈值**：用 `locomani.stack.cli up --no-record`
+（它本来就不经过 `require_headroom`，所以不需要绕过任何闸门）起一次 sim + deploy，带看门狗——
+容器 pid 逼近上限会立刻收栈，因为 pid 耗尽会让**整台机器上所有进程**都 fork 失败，不只是自己这个。
+
+| | pids |
+|---|---|
+| 起栈前 | 2269 |
+| 就绪 | 2441 |
+| 启动峰值 | 2445 |
+| 停栈后 | 2266（无泄漏） |
+
+**不录制的栈只要约 176 个 pid**，那 1800 几乎全是 exporter。于是 `shortfall` / `require_headroom`
+多了一个 `record` 参数，非记录运行按 `NO_EXPORTER_PIDS = 400`（实测的两倍多，给 agent 进程和更重的
+场景留余量）。这同时修好了一件一直不对的事：**评测从来不起 exporter，却一直按 1800 被拒**。
+
+随后按文档的两终端流程跑了 `configs/experiments/bottle_smoke_norecord.yaml`：
+
+- 终端 1 `collect_data.sh` 37 秒起栈并**退出**，sim + deploy 继续活着（pids 2302 → 2446）。
+- 终端 2 `single_arm/run_agent_server.sh` attach 上去，跑批 00，1/1 保留，**自己收栈**；
+  结束后 pids 回落、`stack.json` 归零。
+- 产物落在新布局上：`collect/videos/gym_1789959859.mp4`、
+  `collect/state_trace/gym_1789959859_state_trace.npz`——同一个时间戳，这就是新布局依赖的
+  "跨批唯一文件名"在真实运行里的样子。`summary.json` 的 `sessions` 是 `[null]`（没有 exporter），
+  `stack_env.json` 里 `SIM_VIDEO_DIR` / `SIM_STATE_TRACE_DIR` / `TF_FRAME_AUDIT_PATH` 逐项送达。
+
+### 冒烟抓到的两件事
+
+1. **provenance 回退，已修。** 第一次冒烟的 `commands.jsonl` 只有一行；旧路径有
+   `stack_sim` / `stack_deploy` / `stack_exporter`。原因是 `run_stack` 建 `Stack` 时没把
+   `record_command` 交过去——起栈换了个进程，记录器就被忘在原地了。修完重跑，三行齐全
+   （`stack_exporter` 缺席是对的，这次不录制）。**这是 dry-run 和测试都看不见的一类缺陷。**
+2. **CPU 准入把"它即将使用的那个栈"算成了负载。** 驱动第一次被拒（`8.41 cores in use + 8 needed
+   > quota 15.36`），而那 8.41 里有一大半是终端 1 刚起的 sim + deploy。旧的单进程设计里，
+   `require_headroom` 跑的时候栈还没起。`NEEDS["collect"]["cores"] = 8` 是按"栈 + 专家"定的，
+   现在这两半由两个进程各付一次。**尚未修**：正确的做法和 pid 那次一样——起栈的付栈的钱，驱动只付
+   agent 的钱——但需要先实测专家进程单独占多少核，不该拍脑袋。当前的应对是等一会儿重试。
+   栈在驱动被拒后**仍然活着**，这正是 `stop_stack.sh` 存在的场景。
+
 ## 尚未验证（阻塞在共享资源上）
 
 **要起仿真栈的闸门一项都没跑。** 2026-09-21 两次测量：`pids.current` = 2205 → 2264 / 上限 3840，一个带 exporter 的采集栈
@@ -103,6 +143,7 @@ GPU0/GPU1 合计 21 GB，后来又多了一个 `JeVLA/libero_pilot` 占 9.5 GB�
 - 双臂 20 局 + `gate.py compare crate`
 - 10 步训练冒烟、3 局闭环（断言 `eval/videos/` 非空）、7 份产物契约逐项比对
 - 顺带测一次"只重起 exporter 能回收多少 pid"——这个数字不改变代码形状，但决定文档里该怎么写批次代价
+- 实测专家进程单独的 CPU 占用，把 `NEEDS[*]["cores"]` 也按"起栈的 / 驱动的"拆开（见上面第 2 点）
 
 ## 并存与删除
 

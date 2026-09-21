@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n  attaches to instance {collect['instance']}; {collect['max_batches']} batches at most")
         return 0
 
-    run_context.require_headroom("collect", gpu=args.gpu)
+    run_context.require_headroom("collect", gpu=args.gpu, record=bool(collect["record"]))
     run_context.require_deploy_patches(cfg)
     line.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
     inputs = run_dir / "collect" / "inputs.json"

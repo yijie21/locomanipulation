@@ -26,6 +26,7 @@ from locomani import paths
 from locomani.pipeline import run_context
 from locomani.pipeline.eval_config import EvalConfig
 from locomani.pipeline.lines import line_of
+from locomani.pipeline.stages import Stage
 from locomani.stack import Stack, spec_from_config
 
 ROOT = Path(paths.REPO)
@@ -108,7 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         run_context.show(f"stack_up_{args.mode}", ["locomani.stack", "up", str(spec.instance)], spec.settings())
         return 0
 
-    run_context.require_headroom("collect" if args.mode == "collect" else "eval", gpu=args.gpu)
+    recording = args.mode == "collect" and bool(cfg["collect"]["record"])
+    run_context.require_headroom("collect" if args.mode == "collect" else "eval", gpu=args.gpu, record=recording)
     run_context.require_deploy_patches(cfg)
     scene = line.prepare(cfg, run_dir)
     collect_root.mkdir(parents=True, exist_ok=True)
@@ -117,7 +119,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "collect"
         else eval_spec(cfg, run_dir, scene, args.gpu)
     )
-    stack = Stack(spec, base_env=spec.settings(), run_dir=run_dir)
+    # The children's argv belongs in the run's commands.jsonl, as it did when one process owned
+    # the whole stage: `stack_sim` / `stack_deploy` / `stack_exporter` are how a finished run
+    # answers "what was the deploy actually launched with", and the answer stops existing the
+    # moment the starter forgets to hand the recorder over (found by the 2026-09-21 smoke, which
+    # produced a one-line commands.jsonl next to the old path's stack rows).
+    stage = Stage(run_dir)
+    stack = Stack(spec, base_env=spec.settings(), record_command=stage.record, run_dir=run_dir)
     stack.up()
     print(json.dumps(dict(instance=spec.instance, run=str(run_dir), pids=stack.pids, ports=spec.ports())))
     return 0
