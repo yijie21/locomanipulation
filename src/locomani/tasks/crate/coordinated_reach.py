@@ -63,7 +63,15 @@ class CoordinatedReach:
         self.target = CoordinatedTarget() if target is None else target
         self.region = self.target.region
         self.body = WholeBodyIK(
-            solver.ik, state, config.carry, tool_offset=solver.offset, joint_limits=(solver.lo, solver.hi)
+            solver.ik,
+            state,
+            config.carry,
+            tool_offset=solver.offset,
+            joint_limits=(solver.lo, solver.hi),
+            com_shift_max=config.carry.com_shift_max,
+            com_free_radius=config.carry.com_free_radius,
+            knee_max=config.carry.knee_max,
+            pelvis_forward_max=config.carry.pelvis_forward_max,
         )
         self.q = np.asarray(reference_joints).copy()
         self.root = np.asarray(reference_quaternion).copy()
@@ -78,6 +86,7 @@ class CoordinatedReach:
         self.v = np.zeros(33)
         self.velocity = np.zeros(29)
         self.phase, self.closure = "observe", 0.0
+        self.measured_base = None  # measured pelvis in the solver frame, set each step
         self.started = self.last_time = self.last_seen = None
         self.was_visible = False
         self.elapsed = 0.0
@@ -134,6 +143,11 @@ class CoordinatedReach:
         lo = np.minimum(lo, self.travel_hi - 1e-10)
         hi = np.maximum(hi, self.travel_lo + 1e-10)
         lo = np.minimum(lo, hi - 1e-10)
+        if self.config.carry.base_anchor == "measured" and self.measured_base is not None:
+            # The streamed pose carries joints and root attitude only; the controller
+            # places the pelvis itself. Solving from where it actually is keeps hand
+            # corrections in joints the controller tracks instead of a virtual base shift.
+            lo[:3], hi[:3] = self.measured_base - 0.005, self.measured_base + 0.005
         pose = self.body.solve(
             targets + cfg.tracking_gain * self.feedback,
             attitudes,
@@ -154,6 +168,14 @@ class CoordinatedReach:
             tracking_correction=self.feedback,
             reference_hand_error=pose.hand_errors,
         )
+
+    def solver_frame_base(self, state):
+        """Measured pelvis position expressed in the solver frame (feet coincide with the solver's feet)."""
+        quat = np.asarray(state["pelvis"]["quat"], dtype=float)
+        pitch = Rotation.from_matrix(rotation(quat)).as_euler("xyz")[1]
+        self.body.put(np.r_[state["pelvis"]["pos"], pitch, np.asarray(state["joints"], dtype=float)])
+        correction = np.mean(self.body.feet_pos - self.solver.ik.data.xpos[self.body.feet], axis=0)
+        return np.asarray(state["pelvis"]["pos"], dtype=float) + correction
 
     def brake(self, dt):
         """A lost visual target stops progress and brakes the last physical reference."""
@@ -190,6 +212,7 @@ class CoordinatedReach:
             )
             return self.result("vision_lost" if stale else "waiting_for_vision", stale)
         dt = dt if self.was_visible else 0.0
+        self.measured_base = self.solver_frame_base(state)
         self.was_visible, self.last_seen = True, estimate.timestamp
         self.elapsed += dt
         base, origin = rotation(state["pelvis"]["quat"]), np.asarray(state["pelvis"]["pos"])

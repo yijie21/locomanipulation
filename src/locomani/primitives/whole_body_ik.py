@@ -21,23 +21,55 @@ class WholeBodyPose:
     hand_errors: np.ndarray
     foot_errors: np.ndarray
     com_shift: np.ndarray
+    com_shift_max: float = 0.015
 
     @property
     def reachable(self):
-        return max(self.hand_errors) < 0.02 and max(self.foot_errors) < 0.005 and np.linalg.norm(self.com_shift) < 0.015
+        return (
+            max(self.hand_errors) < 0.02
+            and max(self.foot_errors) < 0.005
+            and np.linalg.norm(self.com_shift) < self.com_shift_max
+        )
 
 
 class WholeBodyIK:
     """A fixed support problem, reusable for admission and continuous paired motion."""
 
     def __init__(
-        self, ik: ArmIK, state, config, *, tool_offset, joint_limits=None, hand_weights=(1.0, 1.0), com_weight=5.0
+        self,
+        ik: ArmIK,
+        state,
+        config,
+        *,
+        tool_offset,
+        joint_limits=None,
+        hand_weights=(1.0, 1.0),
+        com_weight=5.0,
+        com_shift_max=0.015,
+        com_free_radius=0.0,
+        knee_max=0.85,
+        pelvis_forward_max=0.20,
     ):
         self.ik = ik
         self.hand_weights = np.asarray(hand_weights, dtype=float)
         if not np.isfinite(com_weight) or com_weight <= 0:
             raise ValueError("COM weight must be positive and finite")
         self.com_weight = float(com_weight)
+        # Support envelope. com_shift_max is the admission threshold; com_free_radius
+        # is a dead band in the residual inside which the horizontal COM is not pulled
+        # back to its initial position at all (0 keeps the historical linear pull).
+        # Knee flexion and forward pelvis travel are capped explicitly.
+        for name, value in (
+            ("com_shift_max", com_shift_max),
+            ("knee_max", knee_max),
+            ("pelvis_forward_max", pelvis_forward_max),
+        ):
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be positive and finite")
+        if not np.isfinite(com_free_radius) or com_free_radius < 0:
+            raise ValueError("com_free_radius must be finite and nonnegative")
+        self.com_shift_max, self.com_free_radius = float(com_shift_max), float(com_free_radius)
+        self.knee_max, self.pelvis_forward_max = float(knee_max), float(pelvis_forward_max)
         if (
             self.hand_weights.shape != (2,)
             or not np.isfinite(self.hand_weights).all()
@@ -64,7 +96,7 @@ class WholeBodyIK:
         ranges = m.jnt_range[ik.jids].copy()
         ranges[14, 1] = min(ranges[14, 1], config.waist_pitch_max)
         ranges[[3, 9], 0] = 0.05
-        ranges[[3, 9], 1] = np.minimum(ranges[[3, 9], 1], 0.85)
+        ranges[[3, 9], 1] = np.minimum(ranges[[3, 9], 1], self.knee_max)
         ranges[[18, 25], 0] = np.maximum(ranges[[18, 25], 0], np.radians(5))
         if joint_limits is not None:
             ranges[:, 0] = np.maximum(ranges[:, 0], joint_limits[0])
@@ -73,7 +105,7 @@ class WholeBodyIK:
             ranges[12:14] = [-1e-9, 1e-9]
         self.lo = np.r_[self.base0[:2] - [0.3, 0.15], config.pelvis_height_min, min(0, pitch0), ranges[:, 0]]
         self.hi = np.r_[
-            self.base0[:2] + [0.2, 0.15],
+            self.base0[:2] + [self.pelvis_forward_max, 0.15],
             max(self.base0[2] + 0.02, config.pelvis_height_min + 0.01),
             config.pelvis_pitch_max,
             ranges[:, 1],
@@ -149,12 +181,21 @@ class WholeBodyIK:
                 if continuity_weight == 0
                 else continuity_weight * (x - continuity_reference) / continuity_dt
             )
+            com_shift = d.subtree_com[self.pelvis, :2] - self.com0
+            if self.com_free_radius > 0:
+                # Inside the free disc only a tenth of the pull remains, so the solver
+                # spends COM margin when the hands need it and otherwise stays central.
+                com_norm = np.linalg.norm(com_shift)
+                com_shift = com_shift * (
+                    (0.1 * min(com_norm, self.com_free_radius) + max(0.0, com_norm - self.com_free_radius))
+                    / max(com_norm, 1e-9)
+                )
             return np.r_[
                 20 * (d.xpos[self.feet] - self.feet_pos).ravel(),
                 3 * foot_rot,
                 10 * ((points - positions) * self.hand_weights[:, None]).ravel(),
                 0.6 * hand_rot * np.repeat(self.hand_weights, 3),
-                self.com_weight * (d.subtree_com[self.pelvis, :2] - self.com0),
+                self.com_weight * com_shift,
                 posture_scale * (x[4:] - prior),
                 0.3 * (x[2] - self.base0[2]),
                 np.zeros(3)
@@ -183,6 +224,7 @@ class WholeBodyIK:
             np.linalg.norm(self.tools(result.x) - positions, axis=1),
             np.linalg.norm(d.xpos[self.feet] - self.feet_pos, axis=1),
             d.subtree_com[self.pelvis, :2].copy() - self.com0,
+            self.com_shift_max,
         )
 
 
