@@ -66,9 +66,9 @@ Configuration changes need precedence, migration, invalid-input and delivery cov
 For structural migration compare resolved values, selected implementations and
 replayable decisions with a fixed pre-change revision. Record intended differences.
 
-Main-code refactor PRs retain the bottle/crate `scripts/gate.py compare` requirement.
-Check baseline/candidate protocol compatibility before interpreting a gate. An
-unavailable or incompatible comparison is unverified, never an implicit pass.
+Main-code refactor PRs retain the bottle/crate `scripts/gate.py compare` requirement; an incompatible
+comparison is unverified, never an implicit pass. A criterion is evidence only once its same-revision
+false-alarm rate is known, so run the unchanged code through it before calling a FAIL a regression.
 For this maintenance delivery, the user explicitly excluded crate physical
 success/reproducibility as a blocker (2026-09-12); retain its diagnostic failures.
 Changes to physical commands, timing, sampling or acceptance also need live validation.
