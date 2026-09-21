@@ -1,7 +1,7 @@
 # HANDOFF — 阶段入口重构为扁平 bash（等资源跑闸门）
 
 更新时间：2026-09-21 UTC。工作目录：`/workspace/code/locomanipulation`。
-分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），十一个提交，**未推送**。
+分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），十二个提交，**已推送到 `origin/refactor/flat-bash-pipeline`**（2026-09-21）；未合并进 main。
 `main` 未动。工作树里另有上一轮五维 reach 搜索的未提交改动，见最后一节——**不要顺手提交或删除**。
 
 ## 目标与当前状态
