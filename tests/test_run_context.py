@@ -1,4 +1,4 @@
-"""The checks every stage script runs before it starts anything.
+"""The checks every stage entry runs before it starts anything.
 
 The admission thresholds are the expensive part to get wrong in either direction. Too strict and a
 run refuses on a machine that could carry it; too loose and the container's CPU quota saturates,
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import run_common  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from locomani.pipeline import run_context as run_common  # noqa: E402
 
 IDLE = dict(cores=1.0, pids=1000, quota=15.36, pids_max=3840, gpu_free_mib=32000)
 
@@ -95,3 +95,30 @@ def test_show_prints_the_command_and_its_own_settings(capsys):
     run_common.show("collect_00", ["python", "grasp_gym.py", "--rounds", 10], {"SIM_VIDEO_DIR": "/tmp/v"})
     out = capsys.readouterr().out
     assert "grasp_gym.py --rounds 10" in out and "SIM_VIDEO_DIR=/tmp/v" in out
+
+
+def test_a_run_that_records_nothing_is_not_charged_for_the_exporter():
+    """Measured 2026-09-21: sim + deploy moved pids.current 2269 -> 2441, peak 2445.
+
+    The 1800 in NEEDS is the exporter. Charging it to a run that starts no exporter -- every
+    evaluation, and the dry pilots that sample and score rounds without writing episodes -- refuses
+    work the machine can carry, which is how a whole class of checks went unrun on a loaded box.
+    """
+    loaded = dict(IDLE, pids=2264)
+    assert run_common.shortfall("collect", loaded) is not None  # recording still refused
+    assert run_common.shortfall("collect", loaded, record=False) is None
+    assert run_common.shortfall("eval", loaded, record=False) is None
+
+
+def test_the_exporter_free_budget_still_refuses_a_full_container():
+    """Lower is not absent: a container with no room left must still be refused."""
+    full = dict(IDLE, pids=3500)
+    assert run_common.shortfall("collect", full, record=False) is not None
+    assert run_common.shortfall("eval", full, record=False) is not None
+
+
+def test_a_stage_needing_less_than_the_exporter_free_budget_keeps_its_own_number():
+    """convert asks for 200; `record=False` must not raise it to NO_EXPORTER_PIDS."""
+    assert run_common.NEEDS["convert"]["pids"] < run_common.NO_EXPORTER_PIDS
+    tight = dict(IDLE, pids=3400)
+    assert run_common.shortfall("convert", tight, record=False) is None

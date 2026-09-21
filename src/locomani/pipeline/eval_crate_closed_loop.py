@@ -31,7 +31,7 @@ from pathlib import Path
 
 from locomani import paths, profiles
 from locomani.backends.sonic.config import SonicBackendConfig
-from locomani.pipeline import stack
+from locomani.pipeline import run_vla_server, stack
 from locomani.pipeline.provenance import file_digests, write_config_snapshot
 from locomani.pipeline.stages import Stage
 from locomani.tasks.crate.config import CrateTaskConfig
@@ -120,6 +120,14 @@ def parse_args(argv=None):
     )
     ap.add_argument("--rounds", type=int, default=10)
     ap.add_argument("--batch-rounds", type=int, default=10, help="stack restart cadence, as the crate pilots")
+    ap.add_argument(
+        "--attach",
+        action="store_true",
+        help="use a stack and a policy server that are already running (scripts/start_stack.sh and "
+        "scripts/run_vla_server.sh), instead of starting and stopping both here. The deploy is "
+        "restarted between batches rather than the whole stack, which is what the per-batch "
+        "restart was for: the exporter is not running in an evaluation.",
+    )
     ap.add_argument("--seed", type=int, default=6000)
     ap.add_argument("--instance", type=int, default=1)
     ap.add_argument("--gpu", default="1", help="CUDA/EGL device for the stack")
@@ -251,25 +259,45 @@ def main(argv=None):
     )
     (out / "inputs.json").write_text(json.dumps({k: str(v) for k, v in vars(args).items()}, indent=1))
     server = None
+    live = None
     try:
-        server = serve(args, out, stage)
+        if args.attach:
+            from locomani.stack import Stack
+
+            try:
+                live = Stack.attach(args.instance)
+            except FileNotFoundError:
+                raise SystemExit(
+                    f"no stack on instance {args.instance}; start one in another terminal:\n"
+                    f"  bash scripts/start_stack.sh <run> --gpu {args.gpu}"
+                )
+            run_vla_server.wait_for_server(args.port)
+        else:
+            server = serve(args, out, stage)
         batches = -(-args.rounds // args.batch_rounds)
         for b in range(batches):
             tag = f"{b:02d}"
             rounds = min(args.batch_rounds, args.rounds - b * args.batch_rounds)
             videos = out / f"videos_{tag}"
             videos.mkdir(exist_ok=True)
-            env = stack.start_stack(
-                backend,
-                task_cfg,
-                instance=args.instance,
-                gpu=str(args.gpu),
-                video_dir=str(videos),
-                extra_env={"LOCOMANI_SIM_DIR": str(scene), "NO_ENCODER": "1"},
-                runner=stage.run,
-                name=f"start_stack_{tag}",
-                receipt_path=out / "deploy_receipts.jsonl",
-            )
+            if args.attach:
+                # The video directory is fixed when the sim starts, so an attached run writes
+                # every batch into the one the stack was given (eval/videos), not videos_<batch>.
+                if b:
+                    live.restart_deploy()
+                env = dict(live.env)
+            else:
+                env = stack.start_stack(
+                    backend,
+                    task_cfg,
+                    instance=args.instance,
+                    gpu=str(args.gpu),
+                    video_dir=str(videos),
+                    extra_env={"LOCOMANI_SIM_DIR": str(scene), "NO_ENCODER": "1"},
+                    runner=stage.run,
+                    name=f"start_stack_{tag}",
+                    receipt_path=out / "deploy_receipts.jsonl",
+                )
             try:
                 stage.check(
                     f"rounds_{tag}",
@@ -302,7 +330,8 @@ def main(argv=None):
                     env=env,
                 )
             finally:
-                stack.stop_instance(args.instance, runner=stage.run)
+                if not args.attach:
+                    stack.stop_instance(args.instance, runner=stage.run)
     finally:
         if server is not None and server.poll() is None:
             server.terminate()

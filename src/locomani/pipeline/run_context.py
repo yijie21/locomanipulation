@@ -1,9 +1,13 @@
-"""What every stage script does before it does its own work: read the experiment, claim the run
+"""What every stage entry does before it does its own work: read the experiment, claim the run
 directory, refuse to start without headroom, and -- with --dry-run -- say what it would execute.
 
     cfg, run_dir = open_run(args.experiment, args.name)
     require_headroom("collect", gpu=args.gpu)
     require_deploy_patches(cfg)
+
+Moved here from `scripts/run_common.py` on 2026-09-21: the stage entries became python modules
+called by one flat bash script each, so their shared preamble belongs in the package rather than
+beside the scripts (docs/handoff/refactor-flat-bash-20260921.md).
 
 The experiment file is copied verbatim to `<run>/config.yaml`. That copy is the run's provenance
 and is what a later stage reads, so a stage never depends on a file that may have changed since.
@@ -15,13 +19,14 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+from locomani import paths
+
+ROOT = Path(paths.REPO)
 RUNS = ROOT / "outputs" / "runs"
 PID_MARGIN = 200  # a stack needs room to fork after the check passes
 NEEDS = {  # measured, not theoretical: an exporter holds ~1800 pids and the container's ceiling is 3840
@@ -30,6 +35,13 @@ NEEDS = {  # measured, not theoretical: an exporter holds ~1800 pids and the con
     "train": dict(cores=4, pids=300, gpu_free_mib=28000),
     "eval": dict(cores=8, pids=1800, gpu_free_mib=12000),
 }
+# What a stack costs WITHOUT the exporter. Measured on 2026-09-21: bringing sim + deploy up on
+# instance 0 moved pids.current 2269 -> 2441 and peaked at 2445, and stopping it returned to 2266.
+# So the whole 1800 above is the exporter, and a run that records nothing -- every evaluation, and
+# the dry pilots that sample and score rounds without writing episodes -- was being refused on a
+# budget it does not spend. Kept at more than twice the measurement because the agent process and
+# a heavier scene are not in it.
+NO_EXPORTER_PIDS = 400
 
 
 def open_run(experiment: Path | str, name: str | None = None, *, write: bool = True) -> tuple[dict, Path]:
@@ -95,31 +107,68 @@ def measure(gpu: str | None = None) -> dict:
     return live
 
 
-def shortfall(stage: str, live: dict) -> str | None:
-    """Why this stage must not start now, or None. Pure, so the thresholds are testable."""
+def group_threads(pids) -> int:
+    """Threads currently held by these processes and everything in their process groups.
+
+    What a stack that is ALREADY RUNNING costs right now, so a process attaching to it is not
+    charged for it a second time (see `already` in `shortfall`).
+    """
+    wanted = set()
+    for pid in pids:
+        try:
+            wanted.add(int(Path(f"/proc/{int(pid)}/stat").read_text().split(") ")[1].split()[2]))
+        except (OSError, ValueError, IndexError):
+            continue
+    total = 0
+    for task in Path("/proc").iterdir():
+        if not task.name.isdigit():
+            continue
+        try:
+            fields = Path(f"/proc/{task.name}/stat").read_text().split(") ")[1].split()
+            if int(fields[2]) in wanted:
+                total += int(fields[17])  # num_threads
+        except (OSError, ValueError, IndexError):
+            continue
+    return total
+
+
+def shortfall(stage: str, live: dict, *, record: bool = True, already: int = 0) -> str | None:
+    """Why this stage must not start now, or None. Pure, so the thresholds are testable.
+
+    `already` is what a stack this process is about to ATTACH to already holds. Collection and
+    evaluation are two processes since 2026-09-21 -- one starts the stack, the other drives it --
+    and both were charged the whole stage budget, so the driver was refused for resources the
+    stack it was going to use had already taken (pids 1864 + 1800 > 3640 with a live stack holding
+    313 of those 1864). Subtracting keeps the reservation the same size above the pre-stack
+    baseline instead of doubling it.
+    """
     need = NEEDS[stage]
+    pids_needed = max((need["pids"] if record else min(need["pids"], NO_EXPORTER_PIDS)) - already, 0)
     if (cores := live.get("cores")) is not None and cores + need["cores"] > live.get("quota", 16.0):
         return f"cpu: {cores} cores in use + {need['cores']} needed > quota {live.get('quota')}"
-    if (pids := live.get("pids")) is not None and pids + need["pids"] > live.get("pids_max", 3840) - PID_MARGIN:
-        return f"pids: {pids} + {need['pids']} needed > {live.get('pids_max', 3840) - PID_MARGIN}"
+    if (pids := live.get("pids")) is not None and pids + pids_needed > live.get("pids_max", 3840) - PID_MARGIN:
+        return f"pids: {pids} + {pids_needed} needed > {live.get('pids_max', 3840) - PID_MARGIN}"
     free = live.get("gpu_free_mib")
     if need["gpu_free_mib"] and free is not None and free < need["gpu_free_mib"]:
         return f"gpu: {free} MiB free < {need['gpu_free_mib']} needed"
     return None
 
 
-def require_headroom(stage: str, *, gpu: str | None = None) -> dict:
+def require_headroom(stage: str, *, gpu: str | None = None, record: bool = True, already: int = 0) -> dict:
     """Refuse rather than wait: a saturated quota makes the sim miss its wall clock and every
-    timed expert phase fail as a control error, which reads like a robot problem for hours."""
+    timed expert phase fail as a control error, which reads like a robot problem for hours.
+
+    `record=False` is what a run without an exporter passes -- every evaluation, and collection
+    with `collect.record` off. It asks for NO_EXPORTER_PIDS instead of the recording budget.
+    """
     live = measure(gpu)
-    if (why := shortfall(stage, live)) is not None:
+    if (why := shortfall(stage, live, record=record, already=already)) is not None:
         raise SystemExit(f"{stage}: not enough headroom -- {why}")
     return live
 
 
 def require_deploy_patches(cfg: dict) -> None:
     """The streamed-pose experts need a patched deploy; check before anything is started."""
-    sys.path.insert(0, str(ROOT / "src"))
     from locomani.pipeline.provenance import require_pose_ownership
 
     strategy = (cfg.get("task", {}).get("reach") or {}).get("strategy")

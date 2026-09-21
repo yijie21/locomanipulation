@@ -51,6 +51,12 @@ WHITELIST = {
     "HOME",
     "PATH",
     "TMPDIR",
+    # The finetune recipe's two hardware escape hatches, from scripts/train_bottle.sh when it was
+    # ported into locomani.pipeline.run_train (2026-09-21). They describe the CARD, not the
+    # experiment -- pin the optimizer, or refuse to pick one from VRAM at all -- which is why they
+    # stay in the environment while everything about the run comes from its YAML.
+    "OPTIM",
+    "OPTIM_AUTO",
     # -- refactor step 3, step 6 additions -----------------------------------
     # Genuinely process-level: torchrun's own rank, not a knob of ours.
     "RANK",

@@ -24,13 +24,13 @@ from artifact_contract import CONTRACTS, check, load, pattern_for  # noqa: E402
 
 NAMES = sorted(p.stem for p in CONTRACTS.glob("*.json"))
 CRITICAL = {  # the artifact each contract exists to protect, named so a deletion has to be deliberate
-    "bottle_collect": "collect/videos_*/*.mp4",
+    "bottle_collect": "collect/videos/*.mp4",
     "bottle_convert": "train_dataset/meta/info.json",
     "bottle_convert_val": "val_dataset/meta/info.json",
     "bottle_train": "model/checkpoint-*/config.json",
     "bottle_eval": "eval/videos/*.mp4",
-    "crate_collect": "videos_*/*.mp4",
-    "crate_eval": "eval/videos_*/*.mp4",
+    "crate_collect": "videos/*.mp4",
+    "crate_eval": "eval/videos/*.mp4",
 }
 
 

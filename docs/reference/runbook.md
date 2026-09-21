@@ -21,17 +21,23 @@ explicitly; newly written reach snapshots use version 2.
 . scripts/paths.sh
 export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
 
-python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml --gpu 1      # the whole path
-python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 1
-python scripts/convert.py     outputs/runs/<name>
-python scripts/train.py       outputs/runs/<name> --gpu 1
-python scripts/eval_bottle.py outputs/runs/<name> --gpu 1
+bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1   # the whole path
+# collection is two terminals: the recording stack, then the agent that drives it
+bash scripts/collect_data.sh                configs/experiments/bottle_simple_gate8.yaml --gpu 1
+bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8.yaml --gpu 1
+bash scripts/convert_data.sh outputs/runs/<name>
+bash scripts/train.sh        outputs/runs/<name> --gpu 1
+# closed-loop evaluation is three: the stack, the policy server, the rounds
+bash scripts/start_stack.sh                  outputs/runs/<name> --gpu 1
+bash scripts/run_vla_server.sh               outputs/runs/<name> --gpu 1
+bash scripts/single_arm/run_vla_inference.sh outputs/runs/<name> --gpu 1
+bash scripts/stop_stack.sh --instance 0   # only when a driver was killed before it could
 ```
 
 Every script takes `--dry-run`, which prints the commands and environment it would use and writes
 nothing. The first stage opens the run from an experiment file; the later ones take the run
 directory and read the copy of that file inside it. A stage whose artifact already exists is
-skipped by `pipeline.py`; delete the artifact to redo it. After conversion, `check_dataset.py` has
+skipped by `run_overnight.sh`; delete the artifact to redo it. After conversion, `check_dataset.py` has
 already run with `--run-dir`; `artifact_contract.py check <run_dir> <name>` says whether a stage
 left behind everything it owes.
 
@@ -83,9 +89,9 @@ An older policy server must be restarted to supply the identity endpoint.
 | Operation | Driver / guide |
 |---|---|
 | Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../single_arm.md) |
-| Crate collection | `python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml --dry-run`; [crate collection](../bimanual.md) |
+| Crate collection | `bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_table30_record.yaml --dry-run`; [crate collection](../bimanual.md) |
 | ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm.md) |
-| Pick and place | `collect_bottle.py` with `configs/experiments/pick_place.yaml`; [task guide](../single_arm.md) |
+| Pick and place | `run_collect_single_arm.py` with `configs/experiments/pick_place.yaml`; [task guide](../single_arm.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |
 | Stop an owned SONIC stack | `python -m locomani.stack.cli down --instance <instance>` |
 

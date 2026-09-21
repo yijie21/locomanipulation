@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Turn the exporter's sessions into a LeRobot dataset, compute its statistics, audit it.
 
-    python scripts/convert.py outputs/runs/bottle_simple_200
-    python scripts/convert.py outputs/runs/bottle_simple_200 --dry-run
+    python -m locomani.pipeline.run_convert outputs/runs/bottle_simple_200
+    python -m locomani.pipeline.run_convert outputs/runs/bottle_simple_200 --dry-run
+
+`scripts/convert_data.sh` is one line over this. It needs no card and no stack, and it serves both
+lines unchanged: single-arm and bimanual runs differ in how they were collected, not in what the
+converter is handed.
 
 Serves both lines: the pairing of exporter sessions with collection manifests comes from the run's
 own summary, so this script does not need to know which expert produced them. The pairing is
@@ -18,17 +22,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "src"))
+from locomani import paths
+from locomani.pipeline import run_context
+from locomani.pipeline.stages import Stage
 
-import run_common  # noqa: E402
-
-from locomani import paths  # noqa: E402
-from locomani.pipeline.stages import Stage  # noqa: E402
+ROOT = Path(paths.REPO)
 
 DATA_PY = Path(paths.SONIC) / ".venv_data_collection" / "bin" / "python"
 TRAIN_PY = Path(paths.THIRD_PARTY) / "Isaac-GR00T" / ".venv" / "bin" / "python"
@@ -82,13 +82,13 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
-    cfg = run_common.load_run_config(run_dir)
+    cfg = run_context.load_run_config(run_dir)
     entry = collected(run_dir)
     train_ds, val_ds = run_dir / "train_dataset", run_dir / "val_dataset"
     stage = Stage(run_dir)
 
     if not args.dry_run:
-        run_common.require_headroom("convert")
+        run_context.require_headroom("convert")
         for existing in (train_ds, val_ds):
             if existing.exists():
                 raise SystemExit(f"{existing} exists; inspect it and remove it, or convert into a new run")
@@ -102,13 +102,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         for name, command in commands:
-            run_common.show(name, command, {"PYTHONPATH": CHILD_ENV["PYTHONPATH"]})
+            run_context.show(name, command, {"PYTHONPATH": CHILD_ENV["PYTHONPATH"]})
         return 0
     for name, command in commands:
         stage.check(name, command, env=CHILD_ENV)
 
     info = json.loads((train_ds / "meta" / "info.json").read_text())
-    run_common.summarise(
+    run_context.summarise(
         run_dir,
         "convert",
         train_dataset=str(train_ds),

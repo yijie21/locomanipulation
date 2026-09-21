@@ -79,7 +79,7 @@ def _backbone_override(model_dir: Path, backbone_path: str | None) -> dict:
             raise ValueError(
                 f"checkpoint {model_dir} records its VLM backbone at {recorded}, which does not exist "
                 "here; pass backbone_path with the local Cosmos-Reason2-2B directory (--backbone-path on "
-                "serve_policy.py, open_loop_eval.py and scripts/gr00t_open_loop.sh)"
+                "serve_policy.py, open_loop_eval.py and scripts/open_loop_eval.sh)"
             )
     return {}
 

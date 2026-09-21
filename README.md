@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
 | 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
-| 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿可达域实验 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
+| 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿五维可达搜索 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
 | 导入 Blender 场景 | 物流间纸箱场景的 MuJoCo / Isaac 资产、Blender 导入与尺寸说明 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
 | MuJoCo 仿真与 Isaac 渲染 | EmbodiedGen 背景导入、轨迹重渲与视频导出 | [仿真与渲染](docs/rendering.md) | 同页 |
@@ -48,30 +48,32 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 
 ## 快速开始
 
-一次运行就是一份实验文件：`configs/experiments/<name>.yaml` 里写着这次运行读的**每一个**值，
-没有继承也没有组合。新实验就是复制一份改几行。先完成安装指南第 0–4 步，在仓库根目录执行：
+一次运行就是一份实验文件：`configs/experiments/<name>.yaml` 里写着这次运行读的**每一个**值，没有继承
+也没有组合，新实验就是复制一份改几行。先完成安装指南第 0–4 步，在仓库根目录执行：
 
 ```bash
 . scripts/paths.sh
 export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
 
-# 先看会发生什么：打印每个阶段将执行的命令，什么都不写
-python scripts/pipeline.py configs/experiments/bottle_simple_gate8.yaml --gpu 1 --dry-run
-
-# 跑起来：采集 → 转换 → 训练 → 闭环评测
-python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml --gpu 1
-
-# 单个阶段也能单独跑
-python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 1
-python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
+# 无人值守跑完整条线：采集 → 转换 → 训练 → 闭环评测
+bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1
+# 或者一个阶段一个终端；采集是两个：起录制栈 / 跑 agent（每个脚本都吃 --dry-run）
+bash scripts/collect_data.sh                 configs/experiments/bottle_simple_200.yaml --gpu 1
+bash scripts/single_arm/run_agent_server.sh  configs/experiments/bottle_simple_200.yaml --gpu 1
+bash scripts/convert_data.sh outputs/runs/bottle_simple_200   # 不用卡
+bash scripts/train.sh        outputs/runs/bottle_simple_200 --gpu 1
+# 闭环评测三个终端：栈 / 策略服务 / 跑局
+bash scripts/start_stack.sh                  outputs/runs/bottle_simple_200 --gpu 1
+bash scripts/run_vla_server.sh               outputs/runs/bottle_simple_200 --gpu 1
+bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gpu 1
 ```
 
-并行就是**多开一个终端**、换一张卡：`--gpu 0` 和 `--gpu 1` 各跑一份实验，没有作业文件也没有调度器。
-阶段产物已存在就自动跳过，要重跑就删掉那个产物（数据集目录、`model/`、`eval/closed_loop.json`）。
+每个脚本都是十几行 bash、一个 `exec`，直接调功能代码，没有一层套一层；`run_overnight.sh` 是**唯一**
+会调用其它脚本的脚本（无人值守批量用），读代码请从单阶段脚本读起。并行就是多开一个终端换一张卡，
+没有作业文件也没有调度器；阶段产物已存在就自动跳过，要重跑就删掉那个产物。
 
-首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。`collect` 和 `eval`
-自己启停仿真、控制器和导出器（`src/locomani/stack/`，手工控制用
-`python -m locomani.stack.cli up|status|down --instance N`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md)。
+首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。仿真栈由 `collect_data.sh` /
+`start_stack.sh` 起、由驱动脚本或 `stop_stack.sh` 收（`src/locomani/stack/`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md)。
 
 ## 查看运行结果
 
@@ -82,17 +84,15 @@ python scripts/eval_bottle.py outputs/runs/bottle_simple_200 --gpu 1
 | `config.yaml` | 实验文件的逐字节副本，这次运行的 provenance（`--name` 只改目录名，副本里的 `name:` 仍是来源实验的） |
 | `summary.json` | 每个阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
 | `stack_env.json`、`commands.jsonl`、`timings.jsonl` | 仿真栈告诉子进程的全部设置、每个子进程的命令行与耗时 |
-| `collect/manifest_00.jsonl`、`collect/videos_00/`、`collect/state_trace_00/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹。**双臂**写在顶层（`manifest_00.jsonl`、`videos_00/`），状态轨迹是全批共用的 `trace/` |
+| `collect/manifest_00.jsonl`、`collect/videos/`、`collect/state_trace/` | 每局的成败与原因、第三人称录像（含机器人相机画中画）、仿真状态轨迹。manifest 按批分；录像和轨迹一个运行一个目录，因为栈跨批存活。**双臂**写在顶层 |
 | `train_dataset/`、`model/checkpoint-<steps>/`、`eval/closed_loop.json` | 转换后的 LeRobot 数据集、微调 checkpoint、闭环评测结果（录像在 `eval/videos/`） |
 
-比较多次运行就是 `cat outputs/runs/*/summary.json`。产物是否齐全可以查契约：
-`python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval`。
-分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500,000 字节 的预览，原片保留。
-需要调整参数时查 [配置字段表](docs/reference/config_fields.md)（它由 dataclass 生成，覆盖 task / backend / eval；`collect` 和 `train` 两块是普通 YAML，逐字段说明在 `configs/experiments/bottle_simple_200.yaml` 的注释里）；排查安装问题先看 [安装指南](docs/setup.md) 的对应验证步骤。
+比较多次运行就是 `cat outputs/runs/*/summary.json`；产物是否齐全查契约：`python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval`。
+分享视频前按 [视频导出步骤](docs/rendering.md#video-export) 生成每段不超过 500,000 字节的预览，原片保留；调参数查 [配置字段表](docs/reference/config_fields.md)（由 dataclass 生成，覆盖 task / backend / eval）。
 
 ## 仓库与更多文档
 
-`scripts/` 是每个阶段一个的扁平脚本（采集 / 转换 / 训练 / 评测 / `pipeline.py`），`src/locomani/` 是仿真、任务、专家和栈管理（`stack/`）代码，`configs/experiments/` 是全展开的实验文件、`configs/{task,backend,eval}/` 是按名字引用的 profile 库，`assets/` 是随仓库提供的资产。
+`scripts/` 是每个阶段一个的扁平 bash（采集 / 转换 / 训练 / 评测 / `run_overnight.sh`），`src/locomani/` 是仿真、任务、专家和栈管理（`stack/`）代码，`configs/experiments/` 是全展开的实验文件、`configs/{task,backend,eval}/` 是按名字引用的 profile 库，`assets/` 是随仓库提供的资产。
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
 完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)。
 
