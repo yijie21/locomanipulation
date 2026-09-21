@@ -88,3 +88,34 @@ def test_the_simple_arm_depth_tolerance_covers_its_measured_spread():
     cand = dict(rounds=8, yield_=1.0, end_depth_m=0.1695, failure_reasons=[], failure_counts={})
     depth = next(c for c in gate.compare(base, cand, arm="simple") if c[0] == "end_depth_m")
     assert depth[1], depth[2]  # the widest same-revision pair seen must not fail
+
+
+def test_the_yield_tolerance_comes_from_the_baseline_size():
+    """A fixed 0.15 claimed a precision eight rounds do not have.
+
+    Seven runs of one revision yielded 0.50-1.00 with sd 0.157 against a binomial prediction of
+    0.160, so the spread is sampling; the 95% bound on the difference of two 8-round runs is 0.44.
+    Deriving it from n cut same-revision false alarms from 9/42 to 3/42 -- the design point of a
+    95% interval -- while still catching four of the five regressions the ledger records.
+    """
+    wide = gate.yield_bound(dict(rounds=8, yield_=0.75))
+    narrow = gate.yield_bound(dict(rounds=100, yield_=0.75))
+    assert wide > 0.3, wide  # eight rounds cannot resolve less than that
+    assert narrow < wide / 2, (narrow, wide)  # and a hundred rounds should not pretend otherwise
+    assert gate.yield_bound(dict(rounds=8, yield_=1.0)) > 0  # finite at the edges, not zero
+    assert gate.yield_bound({}) == gate.TOL["yield_abs"]  # a baseline without a count keeps the old number
+
+
+def test_a_two_round_difference_in_eight_is_not_a_regression():
+    """0.75 -> 0.5 is two rounds; the gate used to call that a failure."""
+    base = dict(rounds=8, yield_=0.75, failure_reasons=[])
+    cand = dict(rounds=8, yield_=0.5, failure_reasons=[], failure_counts={})
+    check = next(c for c in gate.compare(base, cand, arm="simple") if c[0] == "yield")
+    assert check[1], check[2]
+
+
+def test_the_same_drop_at_a_hundred_rounds_is_a_regression():
+    base = dict(rounds=100, yield_=0.75, failure_reasons=[])
+    cand = dict(rounds=100, yield_=0.5, failure_reasons=[], failure_counts={})
+    check = next(c for c in gate.compare(base, cand, arm="simple") if c[0] == "yield")
+    assert not check[1], check[2]

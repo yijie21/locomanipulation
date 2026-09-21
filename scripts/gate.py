@@ -74,6 +74,28 @@ TOL = dict(yield_abs=0.15, depth_m=0.01, drop_m=0.005, duration_rel=0.30, angle_
 # n=8 it can only see that when it is large.
 RULE_OF_THREE = 3.0
 
+
+def yield_bound(base):
+    """How far two runs of the SAME revision can differ in yield, from the baseline's own size.
+
+    A fixed 0.15 was a claim about run-to-run noise that nobody had measured. Seven runs of one
+    expert revision (8 rounds each, one fixed bank, one seed) yielded 0.50 to 1.00 with sd 0.157 --
+    and the binomial sd at p=0.714, n=8 is 0.160, so that spread is sampling and nothing else. The
+    95% bound on the difference of two such runs is 0.443, which is why 9 of those 42 same-revision
+    pairs (21%) were failing a 0.15 tolerance.
+
+    So the tolerance comes from n instead of being one number for every sample size: Agresti-Coull
+    (two added successes and failures, which keeps it finite at p = 0 or 1) on the difference of two
+    proportions. It tightens as the evidence grows -- about 0.38 at n=8, 0.23 at n=20, 0.10 at
+    n=100 -- rather than claiming a precision eight rounds do not have.
+    """
+    n, p = base.get("rounds"), base.get("yield_")
+    if not n or p is None:
+        return TOL["yield_abs"]
+    adjusted = (round(p * n) + 2) / (n + 4)
+    return 1.96 * (2 * adjusted * (1 - adjusted) / (n + 4)) ** 0.5
+
+
 ARM_TOL = dict(simple=dict(depth_m=0.04), carry=dict(depth_m=0.03))
 ARM_STAGES_NEW_ONLY = {"simple"}
 
@@ -214,7 +236,12 @@ def compare(base, cand, arm=None):
 
     # One-sided: a yield DROP beyond the tolerance is a regression; a higher yield is not
     # (2026-09-10: an 8/9 batch tripped the symmetric check against a 20/30 baseline).
-    add("yield", cand["yield_"] >= base["yield_"] - tol["yield_abs"], f"{base['yield_']} -> {cand['yield_']}")
+    y_tol = yield_bound(base)
+    add(
+        "yield",
+        cand["yield_"] >= base["yield_"] - y_tol,
+        f"{base['yield_']} -> {cand['yield_']} (tolerance {y_tol:.2f} from n={base.get('rounds')})",
+    )
     for key, tol_key in (
         ("end_depth_m", "depth_m"),
         ("stand_off_m", "depth_m"),
