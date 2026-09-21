@@ -1,4 +1,4 @@
-"""The checks every stage script runs before it starts anything.
+"""The checks every stage entry runs before it starts anything.
 
 The admission thresholds are the expensive part to get wrong in either direction. Too strict and a
 run refuses on a machine that could carry it; too loose and the container's CPU quota saturates,
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import run_common  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from locomani.pipeline import run_context as run_common  # noqa: E402
 
 IDLE = dict(cores=1.0, pids=1000, quota=15.36, pids_max=3840, gpu_free_mib=32000)
 

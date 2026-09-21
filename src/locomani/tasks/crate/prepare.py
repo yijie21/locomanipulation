@@ -79,3 +79,29 @@ def expert_argv(
     if trace_dir is not None and expert == "wall":
         argv += ["--ghost-trace", str(trace_dir)]
     return argv
+
+
+def prepare(cfg: dict, run_dir: Path) -> Path:
+    """Freeze the scene and the expert's config for a bimanual run; returns the scene copy.
+
+    The single-arm counterpart is `locomani.tasks.bottle.prepare.prepare`, and the two are called
+    through the same seam (`locomani.pipeline.lines`) so the shared stack starter carries no
+    per-line branch. Idempotent: the stack starter and the round driver are separate processes
+    since 2026-09-21 and either may be the one that gets here first.
+    """
+    task = CrateTaskConfig.from_dict(cfg["task"])
+    source = Path(cfg["scene"]["dir"])
+    scene = prepare_scene(
+        source if source.is_absolute() else Path(paths.REPO) / source,
+        Path(run_dir),
+        task,
+        task.expert,
+        record=bool(cfg["collect"]["record"]),
+    )
+    task.dump(Path(run_dir) / "task_config.json")
+    return scene
+
+
+def collect_root(run_dir: Path) -> Path:
+    """This line keeps manifests, videos and traces beside the run, not under `collect/`."""
+    return Path(run_dir)

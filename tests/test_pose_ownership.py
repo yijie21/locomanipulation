@@ -27,9 +27,8 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
 
     import yaml
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    import collect_crate
-    import run_common
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from locomani.pipeline import lines, run_collect_bimanual, run_context
 
     cfg = yaml.safe_load(
         (Path(__file__).resolve().parents[1] / "configs/experiments/crate_table30_record.yaml").read_text()
@@ -38,15 +37,26 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
     experiment = tmp_path / "experiment.yaml"
     experiment.write_text(yaml.safe_dump(cfg, sort_keys=False))
 
-    monkeypatch.setattr(run_common, "RUNS", tmp_path / "runs")
-    monkeypatch.setattr(run_common, "require_headroom", lambda *a, **k: {})
-    monkeypatch.setattr(collect_crate, "Stack", Mock(side_effect=AssertionError("a stack started before admission")))
+    # Patch where the value is READ, not where it is re-exported: `open_run` resolves RUNS in
+    # run_context, so patching a name that merely points at it leaves the real outputs/runs in
+    # play -- which is how this test wrote into a live run directory on 2026-09-21.
+    monkeypatch.setattr(run_context, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(run_context, "require_headroom", lambda *a, **k: {})
     monkeypatch.setattr(
-        collect_crate, "prepare", Mock(side_effect=AssertionError("the scene was copied before admission"))
+        run_collect_bimanual, "Stack", Mock(side_effect=AssertionError("a stack was touched before admission"))
+    )
+    monkeypatch.setattr(
+        run_collect_bimanual,
+        "line_of",
+        lambda cfg: lines.Line(
+            name="bimanual",
+            prepare=Mock(side_effect=AssertionError("the scene was copied before admission")),
+            collect_root=lambda run_dir: run_dir,
+        ),
     )
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
     with pytest.raises(RuntimeError, match="sonic_pose_ownership.patch"):
-        collect_crate.main([str(experiment), "--gpu", "0"])
+        run_collect_bimanual.main([str(experiment), "--gpu", "0"])
 
 
 def test_standalone_whole_body_carry_checks_the_same_capability(tmp_path, monkeypatch):

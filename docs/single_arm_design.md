@@ -153,7 +153,7 @@ LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim" "$VENV_SIM_PY" \
 # 两份实验文件，只差 task 块和 name：把 scene.cases 指向上面这份 bank，
 # collect 设成 successes/batch_rounds 10、max_batches 1、seed0 31000
 for variant in visible whole_body; do
-  python scripts/collect_bottle.py configs/experiments/bottle_fixed_${variant}.yaml --gpu 0
+  bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_fixed_${variant}.yaml --gpu 0
 done
 ```
 
@@ -247,7 +247,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 瓶子重心下移 5 cm，使单边指垫先碰到时瓶子倾向滑动而不是倾倒。
 
 ```bash
-python scripts/collect_bottle.py configs/experiments/bottle_simple_gate8.yaml --gpu 0 --name <run>
+bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8.yaml --gpu 0 --name <run>
 ```
 
 
@@ -394,9 +394,9 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 `train` 阶段的 `TrainConfig`(`configs/train/*.yaml`,`src/locomani/pipeline/train_config.py`)
 只暴露 `steps`/`save_steps`/`holdout`/`gpus`/`global_batch`/`squat_max`/`base_model`
 七个字段,通过 `train.<field>=<value>` 覆盖,例如
-在实验文件里把 `train.steps` 改成 20000、`train.gpus` 改成 2,再跑 `scripts/train.py`。
+在实验文件里把 `train.steps` 改成 20000、`train.gpus` 改成 2,再跑 `scripts/train.sh`。
 它们只是 `launch_finetune` 完整超参数的一个子集;下面是完整表,直接调用
-`bash scripts/train_bottle.sh`(而不经过 `scripts/train.py`)时才用得上全部选项。
+`bash scripts/train.sh`(而不经过 `scripts/train.sh`)时才用得上全部选项。
 
 #### `launch_finetune` 完整超参数表
 
@@ -404,9 +404,9 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 ([`src/gr00t/configs/finetune_config.py`](../src/gr00t/configs/finetune_config.py))
 ——这个 dataclass 的每个字段就是一个 CLI flag(tyro 把 `snake_case` 转成
 `--kebab-case`;`bool` 字段同时生成 `--flag`/`--no-flag` 两个开关,
-`train_bottle.sh` 里的 `--tune-projector`/`--no-tune-visual` 就是这么来的)。
+`train.sh` 里的 `--tune-projector`/`--no-tune-visual` 就是这么来的)。
 **脚本末尾的 `"$@"` 会把额外参数原样透传**,覆盖任意一项不用改脚本,直接追加
-即可,例如 `bash scripts/train_bottle.sh --learning-rate 5e-5`。
+即可,例如 `bash scripts/train.sh --learning-rate 5e-5`。
 
 ##### 数据 / 模型路径(必填,无默认值)
 
@@ -504,7 +504,7 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 依赖,但会自愈:`LeRobotEpisodeLoader._load_metadata()` 对它是硬 `assert`
 (`lerobot_episode_loader.py:180`),但 `DatasetFactory.build()` 会先在 rank-0
 上调 `generate_stats()`/`generate_rel_stats()`(`factory.py:56-59`)——**缺失时
-自动生成,不是人工步骤**。`train_bottle.sh` 的启动前检查不会替你等生成,缺失
+自动生成,不是人工步骤**。`train.sh` 的启动前检查不会替你等生成,缺失
 时直接报错退出并打印生成命令(排错见 [runbook §9](single_arm.md))。
 
 #### 单卡训练:`SINGLE_GPU=1`
@@ -513,7 +513,7 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 时也可以手动指定:
 
 ```bash
-SINGLE_GPU=1 RUN=<name> DATA=<train_ds> bash scripts/train_bottle.sh
+SINGLE_GPU=1 RUN=<name> DATA=<train_ds> bash scripts/train.sh
 ```
 
 双卡需求从来不是算力,是 Adam:1.62B 可训参数的 fp32 m/v 就要 13 GB,加上主权重、
@@ -548,7 +548,7 @@ OOM(峰值 32.1 GB)、16 能跑但只剩 950 MiB 余量、**8(accum 8)峰值 27.
 编排这套流程(两个并行 stack + 按轮做序贯 look)的脚本 `scripts/seq_ab.sh` 已随
 本轮重构下线,配对/序贯判定逻辑本身还在 `src/locomani/pipeline/seq_mcnemar.py`,
 但目前没有替代的一键驱动脚本。等价效果目前要拼:复制两份实验文件(一份加 `eval.ensemble_n=3`/`eval.ensemble_m=0.3`,
-一份不加,两份都把 `eval.budget_s` 调小),各在一张卡上 `python scripts/eval_bottle.py <run> --gpu N`,
+一份不加,两份都把 `eval.budget_s` 调小),各在一张卡上 `bash scripts/single_arm/run_vla_inference.sh <run> --gpu N`,
 跑出两份 `closed_loop.json` 与 `traces/`,再手动喂给 `seq_mcnemar.py` 做配对判定。下面
 几节里具体的历史命令(`seq_ab.sh` 的选项)因此不再能直接照抄执行,
 保留仅供理解方法论与复核历史数字。
@@ -617,7 +617,7 @@ execution-horizon 索引、指标算术)与官方实现一致。踩过一次坑:
 
 #### closed-loop:初始 token 文件
 
-**初始 token 文件必须与训练数据的开局姿势一致。** 采集阶段(`scripts/collect_bottle.py`)
+**初始 token 文件必须与训练数据的开局姿势一致。** 采集阶段(`scripts/single_arm/run_agent_server.sh`)
 的初始 token 文件默认是 `configs/deployment/ready_grasp_initial_token.json`
 (READY 抬臂姿势的裸 64 维 token,prelude 之后按 `ready_q()` 的手臂检查)。用
 `bottle_whole_body` 采的数据从 SONIC 自己的垂臂参考开始(2026-09-14 起),对应
@@ -706,7 +706,7 @@ posture not delivered`(2026-09-14 实测 10/10)。带 `arms` 的 dict 形式和�
 > 2026-09-17 实测:deploy 日志里 245 个已收 token、**零条 `Loop timing`**。
 > 重构前这对绑在一行里(`wall) export CLEAN_DEPLOY=1; CL="--client async"`),配置组把它们
 > 拆到两个 dataclass 后没人再守着。现在 `EvalConfig.__post_init__` 强制 `clean_deploy =
-> (client == "async")`,实验文件里写什么都覆盖不掉;`scripts/eval_bottle.py` 也改成把**校验后**的
+> (client == "async")`,实验文件里写什么都覆盖不掉;`scripts/single_arm/run_vla_inference.sh` 也改成把**校验后**的
 > backend 交给栈,而不是文件里的原始 dict(否则不变量在半路被绕过)。
 
 ```
@@ -809,7 +809,7 @@ exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
 
 ```bash
 # 正常路径：转换是一个阶段，session 与 manifest 的配对从 collect 的 manifest 里读
-python scripts/convert.py outputs/runs/<run>   # 产出 <run>/train_dataset 与 <run>/val_dataset
+bash scripts/convert_data.sh outputs/runs/<run>   # 产出 <run>/train_dataset 与 <run>/val_dataset
 ```
 
 `train.holdout` 决定切出多少条做验证集（0 表示不切）。手工转换散落的 session

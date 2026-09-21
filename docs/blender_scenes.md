@@ -39,8 +39,22 @@
 ```bash
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src"
-which blender                      # 需要 Blender 5.x,它自带 USD API
+blender --version                  # 需要 Blender 5.x,它自带 USD API
 ```
+
+**环境从哪来。** 两个转换脚本都不在本仓库的任何 venv 里跑——它们以 `blender --background ... --python`
+的方式跑在 **Blender 自带的 Python** 里（脚本 `import bpy`，仓库的 venv 里没有这个模块，也不该有）。
+所以：
+
+| 需要的东西 | 怎么满足 | 验证 |
+|---|---|---|
+| Blender 5.x 本体 | 从 blender.org 下官方 tar.xz 解开，把可执行文件软链到 `PATH` 上（本机：`/usr/local/bin/blender` -> `/workspace/tools/blender/blender`，**在 `$LOCOMANI_WORKSPACE` 下，recycle 不会保留容器里的那份软链，要重建**）。不要用发行版仓库里的 4.x：USD 导出 API 不同 | `blender --version` 打出 `5.x LTS` |
+| USD 导出 | Blender 5.x 自带，无需另装 | `docs/blender_scenes.md` 第 2 节那条命令能产出 `.usd` |
+| `import locomani` | 由上面的 `PYTHONPATH` 提供；Blender 的 Python 不认识仓库的 venv | 转换脚本不报 `ModuleNotFoundError` |
+| 贴图与 `.blend` | 放在 `assets/blender/`（含 `textures/`、`fonts/`），随 `.blend` 一起 | 见第 15 行的同步说明 |
+
+`uv`/`pip` 在这里一概用不上：**不要**试图把 `bpy` 装进 `.venv_sim` 或 `.venv` 去"统一环境"，
+那是一个和本机 Blender 版本无关的 wheel，导出的 USD 会和 Isaac 这边对不上。
 
 把 `.blend` 放进 `assets/blender/`。房间必须是**公制、1 单位 = 1 米**(`blender_to_usd.py` 会打印实际值,不对就在 Blender 里改)。
 

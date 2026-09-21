@@ -1,6 +1,6 @@
 {
  "recorded_from": "outputs/runs/crate_check_record20 (old path), updated for the flat script in commit 9",
- "note": "bimanual collect: per-batch manifests and videos, the shared trace directory, the expert's observation records and the scene copy, which keeps the source directory's name because the expert's lookups depend on it. Commit 9 made the same three replacements as the single-arm line: the stage manifest and the two resolved-config dumps became summary.json and the verbatim config.yaml, and the stack records what its children were told.",
+ "note": "bimanual collect: per-batch manifests and videos, the shared trace directory, the expert's observation records and the scene copy, which keeps the source directory's name because the expert's lookups depend on it. Commit 9 made the same three replacements as the single-arm line: the stage manifest and the two resolved-config dumps became summary.json and the verbatim config.yaml, and the stack records what its children were told. 2026-09-21: the stack outlives a batch, so SIM_VIDEO_DIR and SIM_STATE_TRACE_DIR are fixed when the sim starts and the per-batch directories became one per run (file names are gym_<timestamp>, unique across batches). Manifests, frame-audit receipts and exporter sessions stay per batch: convert pairs session k with manifest k by position, and audit_bottle_actions reads frame_audit_<batch>.jsonl by batch number.",
  "required": [
   {
    "pattern": "*/scene_meta.json",
@@ -67,7 +67,7 @@
    "min": 1
   },
   {
-   "pattern": "videos_*/*.mp4",
+   "pattern": "videos/*.mp4",
    "min": 1
   },
   {

@@ -259,6 +259,30 @@ class Stack:
         return stack
 
     # -- lock -----------------------------------------------------------------
+    def _require_instance_free(self) -> None:
+        """Refuse to start on top of a stack that is still running, whoever started it.
+
+        The flock below lives in the process that called `up()`, so it is released the moment that
+        process exits -- which is exactly what `scripts/collect_data.sh` does: start the stack and
+        return. The children outlive it, so from 2026-09-21 the question "is this instance taken"
+        is answered by the state file's pids, not by who holds the fd.
+        """
+        path = self.state_path
+        if not path.exists():
+            return
+        try:
+            pids = json.loads(path.read_text()).get("pids", {})
+        except (OSError, ValueError):
+            return  # unreadable state tells us nothing; the flock and the port probes still guard
+        live = {name: int(pid) for name, pid in pids.items() if _alive(int(pid))}
+        if live:
+            raise RuntimeError(
+                f"instance {self.spec.instance} already runs a stack ({live}); "
+                f"stop it with `python -m locomani.stack.cli down --instance {self.spec.instance}` "
+                f"or pick another instance"
+            )
+        path.unlink()  # every child of the recorded stack is gone: the file is stale
+
     def _acquire_lock(self) -> None:
         lock_dir = Path(paths.TMP) / "locomani_locks"
         lock_dir.mkdir(parents=True, exist_ok=True)
@@ -436,6 +460,7 @@ class Stack:
         """Start sim, deploy and (if recording) the exporter; return the environment an agent process needs."""
         self.root.mkdir(parents=True, exist_ok=True)
         self.record_settings()
+        self._require_instance_free()
         self._acquire_lock()
         try:
             # sim.log is shared by every run on this instance and only ever grows, so this

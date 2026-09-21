@@ -1,6 +1,6 @@
 {
  "recorded_from": "outputs/runs/bottle_simple_200_20260916 (old path), updated for the flat script in commit 5",
- "note": "single-arm collect: per-batch manifests, videos, state traces and the frozen scene copy. Commit 5 replaced three artifacts deliberately: the stage manifest and the two resolved-config dumps became <run>/summary.json and the verbatim config.yaml, and the stack now records what its children were told in stack_env.json. scene/scene_locomani_zone.xml was dropped as incidental -- the sim writes it only under visualisation, and the reference run had picked one up from an unrelated session.",
+ "note": "single-arm collect: per-batch manifests, videos, state traces and the frozen scene copy. Commit 5 replaced three artifacts deliberately: the stage manifest and the two resolved-config dumps became <run>/summary.json and the verbatim config.yaml, and the stack now records what its children were told in stack_env.json. scene/scene_locomani_zone.xml was dropped as incidental -- the sim writes it only under visualisation, and the reference run had picked one up from an unrelated session. 2026-09-21: the stack outlives a batch, so SIM_VIDEO_DIR and SIM_STATE_TRACE_DIR are fixed when the sim starts and the per-batch directories became one per run (file names are gym_<timestamp>, unique across batches). Manifests, frame-audit receipts and exporter sessions stay per batch: convert pairs session k with manifest k by position, and audit_bottle_actions reads frame_audit_<batch>.jsonl by batch number.",
  "required": [
   {
    "pattern": "collect/frame_audit_*.jsonl",
@@ -19,11 +19,11 @@
    "min": 1
   },
   {
-   "pattern": "collect/state_trace_*/*.npz",
+   "pattern": "collect/state_trace/*.npz",
    "min": 1
   },
   {
-   "pattern": "collect/videos_*/*.mp4",
+   "pattern": "collect/videos/*.mp4",
    "min": 1
   },
   {

@@ -244,7 +244,7 @@ Ghost 只表示规划目标。所有回放视频交付前同样执行上述压�
 
 ```bash
 # 只跑一局：复制实验文件，把 collect 改成 batch_rounds 1 / max_batches 1 / successes 1
-python scripts/collect_crate.py configs/experiments/crate_table30_record.yaml \
+bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_table30_record.yaml \
   --gpu 0 --name crate_wall_example
 ```
 
@@ -314,7 +314,7 @@ settle，矛头转向 planner 模式。
 
 
 
-单臂闭环的 crate 版本（2026-09-15）。经 `scripts/eval_crate.py`（`task.plugin=crate`
+单臂闭环的 crate 版本（2026-09-15）。经 `scripts/bimanual/run_vla_inference.sh`（`task.plugin=crate`
 时自动路由到这里）或直接手动调用都行；一条命令负责三件事：在指定实例 / GPU 上起
 token-only 栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用
 `configs/gr00t_sonic_3cam_bimanual.py` 在自己的端口（默认 5700，避开实例端口块；
@@ -331,7 +331,7 @@ token-only 栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用
 
 ```bash
 # 经 CLI(推荐):task=crate_table30 一类实验会自动路由到这里
-python scripts/eval_crate.py outputs/runs/<crate_run> --gpu 1
+bash scripts/bimanual/run_vla_inference.sh outputs/runs/<crate_run> --gpu 1
 
 # 手动调用(脱离 pipeline 单独调试用)
 "$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop \

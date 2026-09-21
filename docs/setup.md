@@ -62,7 +62,7 @@ export LOCOMANI_WORKSPACE=/home/workspace     # 协作者最常见的情况
 
 > **Hugging Face 缓存不归 `LOCOMANI_CACHE` 管,而且第 0–4 步根本没人设 `HF_HOME`。**
 > 全仓设它的只有两处,值还不一样:EmbodiedGen 那套脚本设成
-> `$LOCOMANI_WORKSPACE/.hf_home`,`scripts/train_bottle.sh` 设成
+> `$LOCOMANI_WORKSPACE/.hf_home`,`scripts/train.sh` 设成
 > `$LOCOMANI_WORKSPACE/huggingface_cache`。所以第 2 步下载 SONIC 权重时,它会落在
 > HF 的默认位置(`~/.cache/huggingface`,即**根分区**)。根分区小的机器要自己先
 > `export HF_HOME=$LOCOMANI_WORKSPACE/huggingface_cache`,和下一节那三个
@@ -394,7 +394,7 @@ bash scripts/link_gr00t_src.sh     # 回到仓库根跑;把 `import gr00t` 指�
 最后一步不可省:**训练代码是 `src/gr00t/`**(vendored、入 git、二次开发改这里,
 见 [src/gr00t/UPSTREAM.md](../src/gr00t/UPSTREAM.md)),而 venv 建好时 editable
 安装指向的是 gitignore 掉的 third_party clone。`link_gr00t_src.sh` 改写 `.pth`
-并自验;`train_bottle.sh` 每次启动也会验,指错会拒跑。
+并自验;`train.sh` 每次启动也会验,指错会拒跑。
 
 评测的 decoder 指标还需要 CPU 版 onnxruntime:
 

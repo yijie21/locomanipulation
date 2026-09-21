@@ -95,20 +95,19 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 
 ## 6. 跑
 
-整条线一条命令，按 `task.plugin` 分派、按顺序跑：
+整条线一条命令跑完，或者一个阶段一个终端，方便中间插手工检查：
 
 ```bash
-python scripts/pipeline.py configs/experiments/my_line.yaml --gpu 1 --dry-run   # 先看会发生什么
-python scripts/pipeline.py configs/experiments/my_line.yaml --gpu 1             # 真跑
-```
-
-也可以分阶段跑，方便在中间插手工检查：
-
-```bash
-python scripts/collect_bottle.py configs/experiments/my_line.yaml --gpu 0   # 采集
-python scripts/convert.py        outputs/runs/my_line                       # 转换（不用卡）
-python scripts/train.py          outputs/runs/my_line --gpu 0               # 训练
-python scripts/eval_bottle.py    outputs/runs/my_line --gpu 1               # 闭环评测
+bash scripts/run_overnight.sh configs/experiments/my_line.yaml --gpu 1   # 整条线，无人值守
+# 采集两个终端：起录制栈（起完即退）/ 跑 agent server（专家 + 批次循环 + resume，跑完自己收栈）
+bash scripts/collect_data.sh                configs/experiments/my_line.yaml --gpu 0
+bash scripts/single_arm/run_agent_server.sh configs/experiments/my_line.yaml --gpu 0
+bash scripts/convert_data.sh outputs/runs/my_line              # 转换（不用卡）
+bash scripts/train.sh        outputs/runs/my_line --gpu 0      # 训练
+# 闭环评测：三个终端。栈 / 策略服务 / 跑局
+bash scripts/start_stack.sh                  outputs/runs/my_line --gpu 1
+bash scripts/run_vla_server.sh               outputs/runs/my_line --gpu 1
+bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
 ```
 
 **命令行只有 6 个参数**，其余一切都在实验文件里：
@@ -119,7 +118,7 @@ python scripts/eval_bottle.py    outputs/runs/my_line --gpu 1               # �
 | `<run_dir>` | `convert`/`train`/`eval` 的位置参数：接着哪次运行往下做 |
 | `--gpu N` | 用哪张卡。`convert` 不需要 |
 | `--name X` | 运行目录改叫 X（副本里的 `name:` 仍是来源实验的） |
-| `--from` / `--to` | 只有 `pipeline.py` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
+| `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
 | `--dry-run` | 打印每个阶段将执行的命令和环境变量，**一个字节都不写** |
 
 **产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
@@ -129,15 +128,15 @@ python scripts/eval_bottle.py    outputs/runs/my_line --gpu 1               # �
 
 | 端口 | 谁的 | 怎么换 | 不换会怎样 |
 |---|---|---|---|
-| 29500 | torchrun（`train_bottle.sh`） | `export PORT=29540` | `EADDRINUSE`（端口 29500），train 阶段直接挂 |
+| 29500 | torchrun（`train.sh`） | `export PORT=29540` | `EADDRINUSE`（端口 29500），train 阶段直接挂 |
 | 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use`，eval 起不来 |
 
 两个都**不是每卡一个**，是进程范围的 TCP 端口；采集阶段不受影响（它的端口按 instance 偏移）。
 
 ```bash
 export PORT=29540                                                                # 终端 2 专用
-python scripts/pipeline.py configs/experiments/bottle_simple_200.yaml  --gpu 0   # 终端 1
-python scripts/pipeline.py configs/experiments/bottle_simple_gate8.yaml --gpu 1   # 终端 2
+bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml  --gpu 0   # 终端 1
+bash scripts/run_overnight.sh configs/experiments/bottle_simple_gate8.yaml --gpu 1   # 终端 2
 cat outputs/runs/*/summary.json                                  # 比较结果
 ```
 
@@ -146,8 +145,8 @@ cat outputs/runs/*/summary.json                                  # 比较结果
 
 ## 7. 同一套脚本的另外两条线
 
-`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用**完全一样的 `collect_bottle.py` +
-`eval_bottle.py`**，只差实验文件的 `task.plugin` / `task.goal` / `task.place` 和场景；命令原样适用。
+`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用**完全一样的 `run_collect_single_arm.py` +
+`run_eval_single_arm.py`**，只差实验文件的 `task.plugin` / `task.goal` / `task.place` 和场景；命令原样适用。
 
 ## 8. 产物
 
@@ -188,7 +187,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 | 阶段"被跳过"但你想重跑 | 删掉它的产物（§6） |
 
 手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。
-**单臂录制必须留在实例 0**：`collect_bottle.py` 不设 `RECORD_INSTANCE`，导出器只在实例 0 起。所以单臂并行按 GPU 分；双臂会设，能同时在实例 1 录制，见 [双臂](bimanual.md)。
+**单臂录制必须留在实例 0**：`run_collect_single_arm.py` 不设 `RECORD_INSTANCE`，导出器只在实例 0 起。所以单臂并行按 GPU 分；双臂会设，能同时在实例 1 录制，见 [双臂](bimanual.md)。
 更细的失败形态见 [隐性失败](reference/silent_failures.md)。
 
 ## 10. 进一步阅读

@@ -4,7 +4,7 @@
 为什么这么设计、试过什么被否掉了，在 [双臂详解](bimanual_design.md)；
 哪天跑出什么数，在 [双臂台账](ledger/crate.md)。
 
-和单臂用**同一套扁平脚本**，只有采集和评测分线（`collect_crate.py` / `eval_crate.py`），
+和单臂用**同一套扁平脚本**，只有采集和评测分线（`run_collect_bimanual.py` / `run_eval_bimanual.py`），
 转换和训练完全共用。结构与 [单臂](single_arm.md) 逐节对应。
 
 ## 1. 准备一次
@@ -80,7 +80,7 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 
 - **批内**：`batch_rounds` 局一定跑满。双臂专家只接 `--rounds`（`crate/prepare.py:expert_argv`），
   `--until-ok` 根本不传给它——**除非专家崩了**，异常会向上抛并中止整批。
-- **批间**：`successes` 是**活判据**。`collect_crate.py:134` 的循环条件是
+- **批间**：`successes` 是**活判据**。`run_collect_bimanual.py:134` 的循环条件是
   `kept < successes and batches < max_batches`，够了就不再开新批（单臂同一行，这不是双臂特性）。
 
 所以尝试数是 `batch_rounds ×（实际跑了几批）`，不是 `× max_batches`。**要保证跑满 N 批，
@@ -89,27 +89,26 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 
 ## 6. 跑
 
-整条线一条命令，按 `task.plugin` 分派、按顺序跑：
+整条线一条命令跑完，或者一个阶段一个终端，方便中间插手工检查：
 
 ```bash
-python scripts/pipeline.py configs/experiments/my_crate.yaml --gpu 1 --dry-run   # 先看会发生什么
-python scripts/pipeline.py configs/experiments/my_crate.yaml --gpu 1             # 真跑
+bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 1 --line bimanual   # 整条线，无人值守
+# 采集两个终端；起栈脚本两条线共用，按 task.plugin 冻结各自的场景
+bash scripts/collect_data.sh               configs/experiments/my_crate.yaml --gpu 1
+bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 1
+bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
+bash scripts/train.sh        outputs/runs/my_crate --gpu 1      # 训练
+# 闭环评测：三个终端，和单臂同构；这条线每批重起的是 deploy，不是整个栈
+bash scripts/start_stack.sh                 outputs/runs/my_crate --gpu 1
+bash scripts/run_vla_server.sh              outputs/runs/my_crate --gpu 1
+bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 ```
-
-展开后是 `collect_crate.py` → `convert.py` → `train.py` → `eval_crate.py`。
 
 > **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /
 > `policy_port` / `execution_horizon` / `budget_s` / `initial_token`；`client` 只支持
 > `blocking`，写别的会**在启动前报错**而不是静默跑成别的；其余字段落盘到
 > `eval/ignored_eval_fields.json`，可以直接比对"声明了什么"和"用上了什么"。
 也可以分阶段跑，方便在中间插手工检查：
-
-```bash
-python scripts/collect_crate.py configs/experiments/my_crate.yaml --gpu 1   # 采集
-python scripts/convert.py       outputs/runs/my_crate                       # 转换（不用卡）
-python scripts/train.py         outputs/runs/my_crate --gpu 1               # 训练
-python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # 闭环评测
-```
 
 **命令行只有 6 个参数**，其余一切都在实验文件里：
 
@@ -119,7 +118,7 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 | `<run_dir>` | `convert`/`train`/`eval` 的位置参数：接着哪次运行往下做 |
 | `--gpu N` | 用哪张卡。`convert` 不需要 |
 | `--name X` | 运行目录改叫 X（副本里的 `name:` 仍是来源实验的） |
-| `--from` / `--to` | 只有 `pipeline.py` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
+| `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
 | `--dry-run` | 打印每个阶段将执行的命令和环境变量，**一个字节都不写** |
 
 **产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
@@ -134,7 +133,7 @@ python scripts/eval_crate.py    outputs/runs/my_crate --gpu 1               # �
 
 | 端口 | 谁的 | 怎么换 | 不换会怎样 |
 |---|---|---|---|
-| 29500 | torchrun（`train_bottle.sh`） | `export PORT=29540` | `EADDRINUSE`，train 阶段直接挂 |
+| 29500 | torchrun（`train.sh`） | `export PORT=29540` | `EADDRINUSE`，train 阶段直接挂 |
 | 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use` |
 
 `collect.record=true`（默认）时采集阶段在本实例上起 data exporter，每批一个 session，

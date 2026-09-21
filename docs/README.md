@@ -10,7 +10,7 @@
 - [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): command reference and manual stack operation.
-- One expanded experiment file per run, one flat script per stage, parallelism as a second terminal: each runbook carries this for its own line. The [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
+- One expanded experiment file per run, one flat bash script per stage over one python module, parallelism as a second terminal: each runbook carries this for its own line, and the decisions, the byte A/B evidence and the gate still outstanding are in [the 2026-09-21 refactor](handoff/refactor-flat-bash-20260921.md). The [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
 - [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Documentation ownership
@@ -52,7 +52,7 @@ versioned documents reachable here, without requiring conversation history or pr
 → 跑 → 产物 → 排错 → 进一步阅读**。新 case 放进所属的线；新线沿用此结构。
 明确区分尝试数与成功数、视频 pilot 与训练数据，以及已实现接口与已验证学习效果。
 
-固定站姿下的[双臂可达实验](bimanual_reachability.md)说明 ghost 验证、条件域计算和区间查询；[本轮证据](handoff/g1-reachability-atlas-20260920.md)记录实测限制。可迁移双臂抓箱：[箱体边沿抓点规划](box_rim_planning.md)根据尺寸和实际停车状态生成 ghost；[仿真执行](box_rim_execution.md)说明低速接近、闭合与试提的验证边界。正式采集仍使用现有专家。
+固定站姿下的[双臂可达实验](bimanual_reachability.md)说明 ghost 验证、条件域计算和区间查询；[五维联合实测](handoff/g1-joint-reach-search-20260920.md)记录1,277次尝试、原生复核、倾角对照与独立复测；[早期条件切片](handoff/g1-reachability-atlas-20260920.md)保留原atlas的覆盖限制。可迁移双臂抓箱：[箱体边沿抓点规划](box_rim_planning.md)根据尺寸和实际停车状态生成 ghost；[仿真执行](box_rim_execution.md)说明低速接近、闭合与试提的验证边界。正式采集仍使用现有专家。
 
 双臂可达实验的环境与采样范围预览见 [G1 平地 ghost hand 预览](handoff/g1-reachability-preview-20260920.md)；预览仅展示目标分布。后续 [14组动态 reach 实验](handoff/g1-ghost-reach-execution-20260920.md) 已完成，6组成功、8组超时仅指 reach 阶段；[后续诊断](handoff/g1-startup-jump-diagnosis-20260920.md) 确认初始化缺陷，整段原地要求未通过。
 
