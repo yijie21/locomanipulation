@@ -18,10 +18,15 @@ from locomani.tasks.bottle.config import BottleTaskConfig
 ROOT = Path(paths.REPO)
 
 
+def scene_name(cfg: dict, run_dir: Path) -> Path:
+    """What the frozen scene is called, without freezing it -- a dry run must name it too."""
+    return Path(run_dir) / "scene"
+
+
 def prepare(cfg: dict, run_dir: Path) -> Path:
     """Copy the scene into the run and dump the two files the expert process reads. Returns the scene."""
     run_dir = Path(run_dir)
-    scene = run_dir / "scene"
+    scene = scene_name(cfg, run_dir)
     if not scene.exists():
         source = Path(cfg["scene"]["dir"])
         shutil.copytree(source if source.is_absolute() else ROOT / source, scene)

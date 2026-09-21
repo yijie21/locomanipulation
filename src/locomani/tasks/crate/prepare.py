@@ -110,3 +110,8 @@ def collect_root(run_dir: Path) -> Path:
 def trace_root(run_dir: Path) -> Path:
     """This line has always kept traces beside the run, and its expert is handed the path."""
     return Path(run_dir) / "trace"
+
+
+def scene_name(cfg: dict, run_dir: Path) -> Path:
+    """The copy keeps the SOURCE directory's name; the expert's own lookups depend on it."""
+    return Path(run_dir) / Path(cfg["scene"]["dir"]).name

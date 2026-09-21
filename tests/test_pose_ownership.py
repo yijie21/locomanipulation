@@ -60,6 +60,7 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
             prepare=Mock(side_effect=AssertionError("the scene was copied before admission")),
             collect_root=lambda run_dir: run_dir,
             trace_root=lambda run_dir: run_dir / "trace",
+            scene_name=lambda cfg, run_dir: run_dir / "scene",
         ),
     )
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))

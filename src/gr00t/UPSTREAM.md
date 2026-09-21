@@ -21,7 +21,7 @@ verify with:
     third_party/Isaac-GR00T/.venv/bin/python -c "import gr00t; print(gr00t.__file__)"
     # must print .../src/gr00t/__init__.py
 
-`scripts/train_bottle.sh` performs the same check before every run and refuses
+`scripts/train.sh` performs the same check before every run and refuses
 to train against the third_party copy, because the failure is otherwise
 silent: same package name, same version, stale code.
 
@@ -39,4 +39,4 @@ below.
   expose `optim` as a FinetuneConfig field (launch_finetune hardcoded
   "adamw_torch"). Motivation: "adamw_bnb_8bit" shrinks Adam state 13 GB ->
   3.2 GB, letting the full 1.62B-trainable finetune fit ONE 32 GB GPU
-  (SINGLE_GPU=1 in scripts/train_bottle.sh).
+  (the single-card path in locomani.pipeline.run_train, behind scripts/train.sh).

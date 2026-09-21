@@ -9,7 +9,7 @@ depends on those two answers asks here, so the shared entries carry a lookup rat
 `if plugin == ...` branch -- the form that hides "declared in the config, never delivered", this
 repository's most expensive failure shape.
 
-Adding a line means adding a row here and a `prepare`/`collect_root`/`trace_root` trio in its task package.
+Adding a line means adding a row here and the four functions above in its task package.
 """
 
 from __future__ import annotations
@@ -25,18 +25,31 @@ class Line:
     prepare: Callable[[dict, Path], Path]  # freeze scene + expert configs, idempotent; returns the scene
     collect_root: Callable[[Path], Path]  # where manifests and videos go
     trace_root: Callable[[Path], Path]  # where the sim writes state traces, and where the expert is told
+    scene_name: Callable[[dict, Path], Path]  # what the frozen scene will be called, without freezing it
 
 
 def _bottle() -> Line:
     from locomani.tasks.bottle import prepare as p
 
-    return Line(name="single_arm", prepare=p.prepare, collect_root=p.collect_root, trace_root=p.trace_root)
+    return Line(
+        name="single_arm",
+        prepare=p.prepare,
+        collect_root=p.collect_root,
+        trace_root=p.trace_root,
+        scene_name=p.scene_name,
+    )
 
 
 def _crate() -> Line:
     from locomani.tasks.crate import prepare as p
 
-    return Line(name="bimanual", prepare=p.prepare, collect_root=p.collect_root, trace_root=p.trace_root)
+    return Line(
+        name="bimanual",
+        prepare=p.prepare,
+        collect_root=p.collect_root,
+        trace_root=p.trace_root,
+        scene_name=p.scene_name,
+    )
 
 
 BUILDERS = {  # task plugin -> the line it belongs to

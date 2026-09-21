@@ -202,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"batch        {batch} x {accum} accum = {batch * accum} effective")
     print(f"optim        {optim}  [{optim_why}]")
     print(f"steps        {train['steps']}, checkpoint every {min(train['save_steps'], train['steps'])} (keep 1)")
+    # consumed in this process rather than handed to torchrun, so a dry run has to say it out loud
+    print(f"squat max    {train['squat_max']} MiB of foreign VRAM tolerated on the card")
     print()
 
     if args.dry_run:

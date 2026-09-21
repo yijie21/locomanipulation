@@ -111,7 +111,7 @@ def test_runbooks_may_only_name_paths_that_exist(tmp_path):
     path.parent.mkdir(parents=True)
     path.write_text(
         "见 `scripts/run_wall_pilot.sh`：\n\n"
-        "    python scripts/collect_bottle.py configs/experiments/x.yaml --gpu 1\n\n"
+        "    bash scripts/single_arm/run_agent_server.sh configs/experiments/x.yaml --gpu 1\n\n"
         "产物在 outputs/runs/<name>/collect/，模板见 configs/experiments/<name>.yaml，"
         "代码在 src/locomani/ 下。\n"
     )
@@ -122,14 +122,15 @@ def test_runbooks_may_only_name_paths_that_exist(tmp_path):
     # not a false positive, and it still catches a renamed `configs/` or `src/` tree.
     assert named == {
         "scripts/run_wall_pilot.sh",
-        "scripts/collect_bottle.py",
+        "scripts/single_arm/run_agent_server.sh",
         "configs/experiments/x.yaml",
         "configs/experiments",
         "src/locomani",
     }
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts/run_wall_pilot.sh").touch()
-    (tmp_path / "scripts/collect_bottle.py").touch()
+    (tmp_path / "scripts/single_arm").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "scripts/single_arm/run_agent_server.sh").touch()
     (tmp_path / "configs/experiments").mkdir(parents=True)
     (tmp_path / "configs/experiments/x.yaml").touch()
     (tmp_path / "src/locomani").mkdir(parents=True)
@@ -142,10 +143,10 @@ def test_a_runbook_may_name_the_experiment_file_it_tells_you_to_create(tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text(
         "    cp configs/experiments/real.yaml configs/experiments/mine.yaml\n"
-        "    python scripts/pipeline.py configs/experiments/mine.yaml --gpu 1\n"
+        "    bash scripts/run_overnight.sh configs/experiments/mine.yaml --gpu 1\n"
     )
     (tmp_path / "scripts").mkdir()
-    (tmp_path / "scripts/pipeline.py").touch()
+    (tmp_path / "scripts/run_overnight.sh").touch()
     (tmp_path / "configs/experiments").mkdir(parents=True)
     (tmp_path / "configs/experiments/real.yaml").touch()
     assert rules.navigation_errors(tmp_path, {name: 180}) == []

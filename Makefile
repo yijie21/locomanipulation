@@ -38,7 +38,7 @@ test-sim:
 
 # One experiment through every stage, e.g. make run ARGS="configs/experiments/bottle_simple_200.yaml --gpu 1"
 run:
-	python3 scripts/pipeline.py $(ARGS)
+	bash scripts/run_overnight.sh $(ARGS)
 
 # Behaviour gate: run the candidate first (see scripts/gate.py --help), then compare.
 gate-bottle:

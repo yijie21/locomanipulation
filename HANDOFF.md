@@ -1,7 +1,7 @@
 # HANDOFF — 阶段入口重构为扁平 bash（等资源跑闸门）
 
 更新时间：2026-09-21 UTC。工作目录：`/workspace/code/locomanipulation`。
-分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），七个提交，**未推送**。
+分支：**`refactor/flat-bash-pipeline`**（从 `main` 的 `fcf1b9d` 分出），十一个提交，**未推送**。
 `main` 未动。工作树里另有上一轮五维 reach 搜索的未提交改动，见最后一节——**不要顺手提交或删除**。
 
 ## 目标与当前状态
@@ -20,8 +20,9 @@
 - 主路径脚本**互不调用**，唯一例外是 `scripts/run_overnight.sh`（无人值守批量用），
   文档里写明"读代码从单阶段脚本读起"。
 - 采集与评测的驱动**按线分两份**；convert / train / open-loop / 起栈 / 策略服务各一份。
-- 新旧路径**并存**：旧的 `scripts/*.py` 和 `train_bottle.sh` 保留，`scripts/run_common.py`
-  变成指向 `run_context` 的 re-export，保证只有一份实现。**闸门全部通过后才一次性删除。**
+- 旧路径**已删除**（闸门通过后，2026-09-21）：`scripts/{collect_bottle,collect_crate,convert,train,
+  eval_bottle,eval_crate,pipeline}.py`、`train_bottle.sh`、`run_common.py` shim 都不在了，
+  `make pipeline` 指向 `run_overnight.sh`，送达测试套件也改成驱动新入口。
 - 共享资源按 [AGENTS](AGENTS.md) 和 [STATE](docs/STATE.md)：开跑前重查 GPU、pid、实例锁，只停自己的实例。
 - 提交按路径显式 `git add`，绝不 `-A`（工作树里有别人未提交的东西）。
 

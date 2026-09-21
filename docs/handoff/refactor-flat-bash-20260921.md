@@ -323,11 +323,23 @@ GPU0/GPU1 合计 21 GB，后来又多了一个 `JeVLA/libero_pilot` 占 9.5 GB�
 - 顺带测一次"只重起 exporter 能回收多少 pid"——这个数字不改变代码形状，但决定文档里该怎么写批次代价
 - 实测专家进程单独的 CPU 占用，把 `NEEDS[*]["cores"]` 也按"起栈的 / 驱动的"拆开（见上面第 2 点）
 
-## 并存与删除
+## 旧路径已删除（2026-09-21，闸门通过后）
 
-旧的 `scripts/{collect_bottle,collect_crate,convert,train,eval_bottle,eval_crate,pipeline}.py` 和
-`scripts/train_bottle.sh` **仍在**，`scripts/run_common.py` 变成了指向 `run_context` 的 re-export，
-保证并存期只有一份实现。闸门全部通过后一次性删除它们，并删掉这个 shim。
+`scripts/{collect_bottle,collect_crate,convert,train,eval_bottle,eval_crate,pipeline}.py`、
+`train_bottle.sh`、`run_common.py` shim 全部删除；`make pipeline` 指向 `run_overnight.sh`。
+
+删除前必须先搬的两处**功能性**引用：
+
+- `Makefile` 的 `pipeline` 目标。
+- **`tests/test_dry_run_delivery.py` 整套送达守卫在此之前一直驱动的是旧脚本**——也就是说新路径
+  从没被它覆盖过。现在 `dry_run()` 把**两个进程**的 dry-run 拼起来（起栈的 + 驱动的），评测那侧拼
+  三个（栈 / 策略服务 / 跑局），因为"这个值送到了吗"在拆分之后本来就是一条线上多个进程的并集。
+  改的过程中它立刻抓到一个真 bug：`run_stack` 的 dry-run 把场景一律叫 `<run>/scene`，而**双臂要保留
+  源目录名**，`LOCOMANI_SIM_DIR` 因此被误报。场景名也变成了线的属性（`lines.Line.scene_name`）。
+  另外 `squat_max` 原先在 dry-run 里根本不出现（它是进程内的预检阈值，不跨边界），现在会打印出来。
+
+`crate_eval` 契约标记为 **STILL UNVERIFIED**（note 里写明），因为磁盘上没有双臂 checkpoint、
+用户决定不训；其余六份都在新路径端到端产出的运行上 PASS。
 
 ## 一处顺带补上的送达缺口
 

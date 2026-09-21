@@ -97,4 +97,5 @@ def _line_that_prepares_nothing(cfg):
         prepare=lambda c, r: r / "scene",
         collect_root=lambda r: r / "collect",
         trace_root=lambda r: r / "collect" / "state_trace",
+        scene_name=lambda c, r: r / "scene",
     )

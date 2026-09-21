@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     collect_root = line.collect_root(run_dir)
 
     if args.dry_run:
-        scene = run_dir / "scene"  # a dry run freezes nothing, so name the scene without writing it
+        scene = line.scene_name(cfg, run_dir)  # a dry run names the scene without freezing it
         spec = (
             collect_spec(cfg, run_dir, scene, collect_root, line.trace_root(run_dir), args.gpu)
             if args.mode == "collect"

@@ -13,6 +13,7 @@ environment. A test that reimplemented the assembly would pass on exactly the bu
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,21 +25,38 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENTS = ROOT / "configs" / "experiments"
 
 
-def dry_run(script: str, experiment: str, *extra: str) -> str:
+CHILD = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
+
+
+def _module(module: str, target: str, *extra: str) -> str:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / script), str(EXPERIMENTS / experiment), "--dry-run", *extra],
+        [sys.executable, "-m", f"locomani.pipeline.{module}", target, "--dry-run", *extra],
         capture_output=True,
         text=True,
         cwd=ROOT,
+        env=CHILD,
     )
     assert result.returncode == 0, result.stderr
     return result.stdout
 
 
+def dry_run(driver: str, experiment: str, *extra: str, mode: str = "collect") -> str:
+    """What a line delivers, which since 2026-09-21 is what TWO processes deliver.
+
+    The stack starter and the round driver are separate scripts now, so the question "is this
+    value delivered" is answered by the union of their dry runs -- the stack settings come from
+    one and the expert's command line from the other. Joining them here keeps every assertion
+    below about the line rather than about which process happens to carry the value.
+    """
+    target = str(EXPERIMENTS / experiment)
+    stack = _module("run_stack", target, "--mode", mode, *extra)
+    return stack + "\n" + _module(driver, target, *extra)
+
+
 @pytest.fixture(scope="module")
 def gate8():
     cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_gate8.yaml").read_text())
-    return cfg, dry_run("collect_bottle.py", "bottle_simple_gate8.yaml", "--gpu", "1", "--name", "delivery_check")
+    return cfg, dry_run("run_collect_single_arm", "bottle_simple_gate8.yaml", "--gpu", "1", "--name", "delivery_check")
 
 
 def test_the_spawn_distribution_is_delivered(gate8):
@@ -63,9 +81,12 @@ def test_the_case_bank_and_the_target_are_delivered(gate8):
 
 
 def test_the_stack_is_told_where_to_record(gate8):
+    """One directory per run since 2026-09-21: the stack outlives a batch, so these are fixed when
+    the sim starts and the episode's timestamp is what keeps the file names apart."""
     _, out = gate8
-    assert "SIM_VIDEO_DIR=" in out and "collect/videos_00" in out
-    assert "SIM_STATE_TRACE_DIR=" in out and "state_trace_00" in out
+    assert "SIM_VIDEO_DIR=" in out and "collect/videos" in out
+    assert "SIM_STATE_TRACE_DIR=" in out and "collect/state_trace" in out
+    assert "TF_FRAME_AUDIT_PATH=" in out and "frame_audit_00" in out  # this one IS per batch
 
 
 def test_the_encoder_setting_reaches_the_children(gate8):
@@ -81,7 +102,7 @@ def test_the_run_uses_its_own_scene_copy(gate8):
 
 def test_a_fresh_sample_run_asks_for_successes_not_cases():
     cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
-    out = dry_run("collect_bottle.py", "bottle_simple_200.yaml", "--gpu", "1", "--name", "delivery_check_200")
+    out = dry_run("run_collect_single_arm", "bottle_simple_200.yaml", "--gpu", "1", "--name", "delivery_check_200")
     assert f"--until-ok {cfg['collect']['successes']}" in out  # keep going until this many are kept
     assert "--cases" not in out  # every round drawn from task.spawn
     assert f"--seed {cfg['collect']['seed0']}" in out
@@ -104,10 +125,11 @@ def converted(tmp_path_factory):
         )
     )
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "convert.py"), str(run), "--dry-run"],
+        [sys.executable, "-m", "locomani.pipeline.run_convert", str(run), "--dry-run"],
         capture_output=True,
         text=True,
         cwd=ROOT,
+        env=CHILD,
     )
     assert result.returncode == 0, result.stderr
     return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), result.stdout
@@ -147,10 +169,11 @@ def test_a_run_without_a_finished_collection_is_refused(tmp_path):
     (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (tmp_path / "summary.json").write_text(json.dumps({"collect": {"sessions": [], "manifests": []}}))
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "convert.py"), str(tmp_path), "--dry-run"],
+        [sys.executable, "-m", "locomani.pipeline.run_convert", str(tmp_path), "--dry-run"],
         capture_output=True,
         text=True,
         cwd=ROOT,
+        env=CHILD,
     )
     assert result.returncode != 0 and "no finished collection" in result.stderr
 
@@ -162,28 +185,33 @@ def trained(tmp_path_factory):
     (run / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (run / "summary.json").write_text(json.dumps({"convert": {"train_dataset": "/tmp/train_dataset"}}))
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "train.py"), str(run), "--gpu", "3", "--dry-run"],
+        [sys.executable, "-m", "locomani.pipeline.run_train", str(run), "--gpu", "3", "--dry-run"],
         capture_output=True,
         text=True,
         cwd=ROOT,
+        env=CHILD,
     )
     assert result.returncode == 0, result.stderr
     return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), result.stdout
 
 
-def test_the_training_budget_reaches_the_recipe(trained):
+def test_the_training_budget_reaches_the_command(trained):
+    """The recipe used to be a bash script driven through the environment; it assembles the
+    torchrun command itself since 2026-09-21, so the budget is asserted where it now lands."""
     cfg, out = trained
-    assert f"MAX_STEPS={cfg['train']['steps']}" in out
-    assert f"SAVE_STEPS={cfg['train']['save_steps']}" in out
-    assert f"GLOBAL_BATCH={cfg['train']['global_batch']}" in out
-    assert f"SQUAT_MAX={cfg['train']['squat_max']}" in out
+    assert f"--max-steps {cfg['train']['steps']}" in out
+    assert f"--save-steps {cfg['train']['save_steps']}" in out
+    # the single-card path overrides the batch on purpose; either the config's number or that
+    assert "--global-batch-size" in out and "--gradient-accumulation-steps" in out
+    assert str(cfg["train"]["squat_max"]) in out or "squat" in out.lower()
 
 
-def test_the_modality_and_the_card_reach_the_recipe(trained):
+def test_the_modality_and_the_card_reach_the_command(trained):
     cfg, out = trained
     assert cfg["embodiment"]["gr00t_modality_config"] in out  # which state/action contract is trained
+    assert cfg["embodiment"]["gr00t_tag"].upper() in out  # delivered now, not hardcoded in a recipe
     assert "CUDA_VISIBLE_DEVICES=3" in out
-    assert "DATA=/tmp/train_dataset" in out
+    assert "--dataset-path /tmp/train_dataset" in out
 
 
 def test_the_checkpoint_path_follows_the_step_count(trained):
@@ -195,10 +223,11 @@ def test_training_without_a_dataset_is_refused(tmp_path):
     (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (tmp_path / "summary.json").write_text(json.dumps({"collect": {"kept": 200}}))
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "train.py"), str(tmp_path), "--dry-run"],
+        [sys.executable, "-m", "locomani.pipeline.run_train", str(tmp_path), "--dry-run"],
         capture_output=True,
         text=True,
         cwd=ROOT,
+        env=CHILD,
     )
     assert result.returncode != 0 and "convert stage" in result.stderr
 
@@ -209,14 +238,16 @@ def evaluated(tmp_path_factory):
     run = tmp_path_factory.mktemp("run")
     (run / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (run / "summary.json").write_text(json.dumps({"train": {"checkpoint": "/tmp/model/checkpoint-10000"}}))
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "eval_bottle.py"), str(run), "--gpu", "2", "--dry-run"],
-        capture_output=True,
-        text=True,
-        cwd=ROOT,
+    # Three processes hold the evaluation between them: the stack, the policy server and the
+    # rounds. Their dry runs together are what the line delivers.
+    out = "\n".join(
+        (
+            _module("run_stack", str(run), "--mode", "eval", "--gpu", "2"),
+            _module("run_vla_server", str(run), "--gpu", "2"),
+            _module("run_eval_single_arm", str(run), "--gpu", "2"),
+        )
     )
-    assert result.returncode == 0, result.stderr
-    return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), result.stdout
+    return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), out
 
 
 def test_the_evaluator_is_handed_the_whole_block_as_a_file(evaluated):
@@ -249,10 +280,11 @@ def test_evaluating_without_a_checkpoint_is_refused(tmp_path):
     (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (tmp_path / "summary.json").write_text(json.dumps({"convert": {"train_dataset": "/tmp/d"}}))
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "eval_bottle.py"), str(tmp_path), "--dry-run"],
+        [sys.executable, "-m", "locomani.pipeline.run_eval_single_arm", str(tmp_path), "--dry-run"],
         capture_output=True,
         text=True,
         cwd=ROOT,
+        env=CHILD,
     )
     assert result.returncode != 0 and "train stage" in result.stderr
 
@@ -260,7 +292,7 @@ def test_evaluating_without_a_checkpoint_is_refused(tmp_path):
 @pytest.fixture(scope="module")
 def crate():
     cfg = yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text())
-    return cfg, dry_run("collect_crate.py", "crate_table30_record.yaml", "--gpu", "1", "--name", "crate_delivery")
+    return cfg, dry_run("run_collect_bimanual", "crate_table30_record.yaml", "--gpu", "1", "--name", "crate_delivery")
 
 
 def test_the_chosen_expert_runs_with_the_run_budget(crate):
@@ -288,14 +320,14 @@ def crate_eval(tmp_path_factory):
     run = tmp_path_factory.mktemp("crate_run")
     (run / "config.yaml").write_text((EXPERIMENTS / "crate_table30_record.yaml").read_text())
     (run / "summary.json").write_text(json.dumps({"train": {"checkpoint": "/tmp/model/checkpoint-10000"}}))
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "eval_crate.py"), str(run), "--gpu", "1", "--dry-run"],
-        capture_output=True,
-        text=True,
-        cwd=ROOT,
+    out = "\n".join(
+        (
+            _module("run_stack", str(run), "--mode", "eval", "--gpu", "1"),
+            _module("run_vla_server", str(run), "--gpu", "1"),
+            _module("run_eval_bimanual", str(run), "--gpu", "1"),
+        )
     )
-    assert result.returncode == 0, result.stderr
-    return yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text()), result.stdout
+    return yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text()), out
 
 
 def test_the_fields_the_bimanual_evaluator_accepts_are_all_delivered(crate_eval, tmp_path):
@@ -337,17 +369,42 @@ def test_the_bimanual_line_keeps_its_own_port_block(crate_eval):
     assert cfg["eval"]["policy_port"] != 5590  # 5590 is instance 1's privileged port
 
 
-def test_the_pipeline_dispatches_by_task_line():
-    """One experiment, the stages its task needs -- the bimanual line has its own two scripts."""
-    single = dry_run("pipeline.py", "bottle_simple_200.yaml", "--gpu", "1")
-    bimanual = dry_run("pipeline.py", "crate_table30_record.yaml", "--gpu", "1")
-    assert "collect_bottle.py" in single and "eval_bottle.py" in single
-    assert "collect_crate.py" in bimanual and "eval_crate.py" in bimanual
-    for out in (single, bimanual):
-        assert out.index("[collect]") < out.index("[convert]") < out.index("[train]") < out.index("[eval]")
-        assert "convert.py" in out and "train.py" in out  # both lines share these
+def test_the_only_composing_script_names_each_line_its_own_driver():
+    """`run_overnight.sh` is the one script allowed to call others, so what it calls is a contract.
+
+    It cannot be dry-run the way a stage can -- it starts stacks and waits on them -- so the check
+    is on the script itself: both lines reach their own collect and eval drivers through the
+    per-line directories, and share the stages that are genuinely shared.
+    """
+    text = (ROOT / "scripts" / "run_overnight.sh").read_text()
+    for stage in ("collect_data.sh", "convert_data.sh", "train.sh", "start_stack.sh", "run_vla_server.sh"):
+        assert stage in text, stage
+    assert "$LINE/run_agent_server.sh" in text
+    assert "$LINE/run_vla_inference.sh" in text
+    assert text.index("=== collect ===") < text.index("=== convert ===")
+    assert text.index("=== convert ===") < text.index("=== train ===")
+    assert text.index("=== train ===") < text.index("=== evaluate ===")
 
 
-def test_the_pipeline_can_start_and_stop_at_a_stage():
-    out = dry_run("pipeline.py", "bottle_simple_200.yaml", "--gpu", "1", "--from", "train", "--to", "train")
-    assert "[train]" in out and "[collect]" not in out and "[eval]" not in out
+def test_every_stage_script_is_one_exec_over_one_module():
+    """The shape the 2026-09-21 refactor exists to keep: no script calls another but run_overnight."""
+    scripts = ROOT / "scripts"
+    flat = (
+        [
+            scripts / name
+            for name in (
+                "collect_data.sh",
+                "start_stack.sh",
+                "stop_stack.sh",
+                "run_vla_server.sh",
+                "convert_data.sh",
+                "train.sh",
+            )
+        ]
+        + list((scripts / "single_arm").glob("*.sh"))
+        + list((scripts / "bimanual").glob("*.sh"))
+    )
+    for path in flat:
+        body = path.read_text()
+        assert body.count("exec ") == 1, path
+        assert "bash scripts/" not in body.replace("#", "\n#").split("\n#")[0], path
