@@ -131,6 +131,27 @@ scripts/bimanual/{run_agent_server,run_vla_inference}.sh
    agent 的钱——但需要先实测专家进程单独占多少核，不该拍脑袋。当前的应对是等一会儿重试。
    栈在驱动被拒后**仍然活着**，这正是 `stop_stack.sh` 存在的场景。
 
+## 闭环评测的三终端流程也跑通了（2026-09-21）
+
+pid 门槛按 `record` 分档后评测不再被拒（评测本来就不起 exporter），于是用
+`configs/experiments/bottle_eval_smoke3.yaml`（3 局，`policy_port` 挪到 5700 以避开实例端口块）
+在 GPU1 上跑了一次完整的三终端流程。checkpoint 是从 `bottle_simple_200_20260916` 借来的，
+运行目录里的 `train` 条目是手写的——这是**路径冒烟，不是训练**。
+
+- 终端 1 `start_stack.sh` 起评测栈（deploy 不带 encoder）并退出；
+- 终端 2 `run_vla_server.sh` 约 20 秒后打出 `listening on tcp://0.0.0.0:5700`，输出同时进终端和
+  `<run>/eval/serve.log`；
+- 终端 3 `single_arm/run_vla_inference.sh` 等到端口应答才开第一局，跑完 3 局并**自己收栈**。
+
+**`bottle_eval` 契约在一次完全由新路径产出的运行上 PASS**——七份契约里第一份被真运行验证的，
+而且它的核心断言正是"录像目录非空"：`eval/videos/` 里 3 局 3 个 mp4。
+`closed_loop.json`、`closed_loop.manifest.jsonl`、`config_snapshot.json`、`eval_config.json`、
+`traces/`、`serve.log` 全部就位，`summary.json` 多了 `eval` 条目。
+
+结果 **0/3**。三局是三种**不同**的失败家族（走近不足 1.25 m、合爪但无抬升、站位偏离 spawn 0.41 m），
+这说明策略确实在被闭环驱动，而不是卡在一个吸收态。**3 局对成功率没有任何说明力**，这条线
+100 局的历史数字在台账里，不要拿这个 0/3 去比。
+
 ## 尚未验证（阻塞在共享资源上）
 
 **要起仿真栈的闸门一项都没跑。** 2026-09-21 两次测量：`pids.current` = 2205 → 2264 / 上限 3840，一个带 exporter 的采集栈
@@ -141,7 +162,8 @@ GPU0/GPU1 合计 21 GB，后来又多了一个 `JeVLA/libero_pilot` 占 9.5 GB�
 
 - 单臂 `bottle_simple_gate8.yaml` 8 局 + `gate.py compare simple`
 - 双臂 20 局 + `gate.py compare crate`
-- 10 步训练冒烟、3 局闭环（断言 `eval/videos/` 非空）、7 份产物契约逐项比对
+- 10 步训练冒烟（显存不够：训练要 28 GB，当天两张卡最多只剩 17.7 GB）
+- 其余六份产物契约（`bottle_eval` 已在新路径上 PASS）
 - 顺带测一次"只重起 exporter 能回收多少 pid"——这个数字不改变代码形状，但决定文档里该怎么写批次代价
 - 实测专家进程单独的 CPU 占用，把 `NEEDS[*]["cores"]` 也按"起栈的 / 驱动的"拆开（见上面第 2 点）
 
