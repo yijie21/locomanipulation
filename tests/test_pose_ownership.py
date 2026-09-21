@@ -42,8 +42,15 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
     # play -- which is how this test wrote into a live run directory on 2026-09-21.
     monkeypatch.setattr(run_context, "RUNS", tmp_path / "runs")
     monkeypatch.setattr(run_context, "require_headroom", lambda *a, **k: {})
+    # Attaching is a READ of stack.json and starts nothing; what must cost nothing to find out is
+    # STARTING a stack, and that check lives in run_stack (asserted below). The driver only has to
+    # refuse before it runs a round.
+    attached = Mock()
+    attached.pids = {}
+    monkeypatch.setattr(run_collect_bimanual.Stack, "attach", Mock(return_value=attached))
+    monkeypatch.setattr(run_context, "group_threads", lambda pids: 0)
     monkeypatch.setattr(
-        run_collect_bimanual, "Stack", Mock(side_effect=AssertionError("a stack was touched before admission"))
+        run_collect_bimanual, "run_batch", Mock(side_effect=AssertionError("a round ran before admission"))
     )
     monkeypatch.setattr(
         run_collect_bimanual,
@@ -52,6 +59,7 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
             name="bimanual",
             prepare=Mock(side_effect=AssertionError("the scene was copied before admission")),
             collect_root=lambda run_dir: run_dir,
+            trace_root=lambda run_dir: run_dir / "trace",
         ),
     )
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
@@ -85,3 +93,27 @@ def test_loaded_handoff_requires_hand_ownership_without_restricting_existing_pos
         require_pose_ownership(env, hand_handoff=True)
     binary.write_bytes(b"POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1")
     require_pose_ownership(env, hand_handoff=True)
+
+
+def test_starting_a_stack_checks_the_binary_before_it_starts_anything(tmp_path, monkeypatch):
+    """The expensive half of the old assertion, now in the process that actually starts the stack."""
+    import sys
+    from unittest.mock import Mock
+
+    import yaml
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from locomani.pipeline import run_context, run_stack
+
+    cfg = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "configs/experiments/crate_table30_record.yaml").read_text()
+    )
+    experiment = tmp_path / "experiment.yaml"
+    experiment.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    monkeypatch.setattr(run_context, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(run_context, "require_headroom", lambda *a, **k: {})
+    monkeypatch.setattr(run_stack, "Stack", Mock(side_effect=AssertionError("a stack started before admission")))
+    monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
+    with pytest.raises(RuntimeError, match="sonic_pose_ownership.patch"):
+        run_stack.main([str(experiment), "--mode", "collect", "--gpu", "0"])

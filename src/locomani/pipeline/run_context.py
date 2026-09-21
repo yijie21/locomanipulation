@@ -107,10 +107,43 @@ def measure(gpu: str | None = None) -> dict:
     return live
 
 
-def shortfall(stage: str, live: dict, *, record: bool = True) -> str | None:
-    """Why this stage must not start now, or None. Pure, so the thresholds are testable."""
+def group_threads(pids) -> int:
+    """Threads currently held by these processes and everything in their process groups.
+
+    What a stack that is ALREADY RUNNING costs right now, so a process attaching to it is not
+    charged for it a second time (see `already` in `shortfall`).
+    """
+    wanted = set()
+    for pid in pids:
+        try:
+            wanted.add(int(Path(f"/proc/{int(pid)}/stat").read_text().split(") ")[1].split()[2]))
+        except (OSError, ValueError, IndexError):
+            continue
+    total = 0
+    for task in Path("/proc").iterdir():
+        if not task.name.isdigit():
+            continue
+        try:
+            fields = Path(f"/proc/{task.name}/stat").read_text().split(") ")[1].split()
+            if int(fields[2]) in wanted:
+                total += int(fields[17])  # num_threads
+        except (OSError, ValueError, IndexError):
+            continue
+    return total
+
+
+def shortfall(stage: str, live: dict, *, record: bool = True, already: int = 0) -> str | None:
+    """Why this stage must not start now, or None. Pure, so the thresholds are testable.
+
+    `already` is what a stack this process is about to ATTACH to already holds. Collection and
+    evaluation are two processes since 2026-09-21 -- one starts the stack, the other drives it --
+    and both were charged the whole stage budget, so the driver was refused for resources the
+    stack it was going to use had already taken (pids 1864 + 1800 > 3640 with a live stack holding
+    313 of those 1864). Subtracting keeps the reservation the same size above the pre-stack
+    baseline instead of doubling it.
+    """
     need = NEEDS[stage]
-    pids_needed = need["pids"] if record else min(need["pids"], NO_EXPORTER_PIDS)
+    pids_needed = max((need["pids"] if record else min(need["pids"], NO_EXPORTER_PIDS)) - already, 0)
     if (cores := live.get("cores")) is not None and cores + need["cores"] > live.get("quota", 16.0):
         return f"cpu: {cores} cores in use + {need['cores']} needed > quota {live.get('quota')}"
     if (pids := live.get("pids")) is not None and pids + pids_needed > live.get("pids_max", 3840) - PID_MARGIN:
@@ -121,7 +154,7 @@ def shortfall(stage: str, live: dict, *, record: bool = True) -> str | None:
     return None
 
 
-def require_headroom(stage: str, *, gpu: str | None = None, record: bool = True) -> dict:
+def require_headroom(stage: str, *, gpu: str | None = None, record: bool = True, already: int = 0) -> dict:
     """Refuse rather than wait: a saturated quota makes the sim miss its wall clock and every
     timed expert phase fail as a control error, which reads like a robot problem for hours.
 
@@ -129,7 +162,7 @@ def require_headroom(stage: str, *, gpu: str | None = None, record: bool = True)
     with `collect.record` off. It asks for NO_EXPORTER_PIDS instead of the recording budget.
     """
     live = measure(gpu)
-    if (why := shortfall(stage, live, record=record)) is not None:
+    if (why := shortfall(stage, live, record=record, already=already)) is not None:
         raise SystemExit(f"{stage}: not enough headroom -- {why}")
     return live
 

@@ -34,3 +34,8 @@ def prepare(cfg: dict, run_dir: Path) -> Path:
 def collect_root(run_dir: Path) -> Path:
     """Where this line keeps manifests, videos, traces and the batch bookkeeping."""
     return Path(run_dir) / "collect"
+
+
+def trace_root(run_dir: Path) -> Path:
+    """One directory per run since 2026-09-21; the file names carry the episode's timestamp."""
+    return Path(run_dir) / "collect" / "state_trace"

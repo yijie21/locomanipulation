@@ -168,13 +168,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n  attaches to instance {collect['instance']}; {collect['max_batches']} batches at most")
         return 0
 
-    run_context.require_headroom("collect", gpu=args.gpu, record=bool(collect["record"]))
-    run_context.require_deploy_patches(cfg)
-    line.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
-    collect_root.mkdir(parents=True, exist_ok=True)
-    inputs = collect_root / "inputs.json"
-    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
-
     try:
         stack = Stack.attach(int(collect["instance"]))
     except FileNotFoundError:
@@ -182,6 +175,16 @@ def main(argv: list[str] | None = None) -> int:
             f"no stack on instance {collect['instance']}; start one in another terminal:\n"
             f"  bash scripts/collect_data.sh {args.experiment} --gpu {args.gpu}"
         )
+    # The stack is already up and was admitted by whoever started it; ask only for the rest.
+    run_context.require_headroom(
+        "collect", gpu=args.gpu, record=bool(collect["record"]), already=run_context.group_threads(stack.pids.values())
+    )
+    run_context.require_deploy_patches(cfg)
+    line.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
+    collect_root.mkdir(parents=True, exist_ok=True)
+    inputs = collect_root / "inputs.json"
+    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
+
     try:
         while state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"]:
             manifest = run_batch(cfg, run_dir, collect_root, stack, state)

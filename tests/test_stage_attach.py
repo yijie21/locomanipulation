@@ -59,18 +59,42 @@ def test_evaluation_without_a_stack_names_the_script_that_starts_one(run_dir, mo
     assert "scripts/start_stack.sh" in str(refusal.value)
 
 
-def test_the_resource_guard_runs_before_the_stack_is_looked_up(run_dir, monkeypatch):
-    """A loaded machine must be refused by the admission check, not by a missing stack file."""
+def test_the_driver_is_not_charged_for_the_stack_it_attaches_to(run_dir, monkeypatch):
+    """The admission check subtracts what the live stack already holds.
+
+    This assertion used to be the opposite -- guard first, stack second -- and the 2026-09-21
+    bimanual gate overturned it: both processes asked for the whole stage budget, so the driver
+    was refused for resources the stack it was about to use had already taken (pids 1864 + 1800 >
+    3640 while that stack held 313 of the 1864). The driver cannot subtract what it has not yet
+    looked up, so the order is attach, then ask for the rest. A machine with no stack at all is
+    told to start one, which is the thing that would have to happen anyway.
+    """
     experiment, _ = run_dir
-    monkeypatch.setattr(run_context, "require_headroom", Mock(side_effect=SystemExit("collect: not enough headroom")))
+    seen = {}
+    monkeypatch.setattr(run_collect_single_arm, "line_of", _line_that_prepares_nothing)
     monkeypatch.setattr(
-        run_collect_single_arm.Stack, "attach", Mock(side_effect=AssertionError("looked for a stack first"))
+        run_collect_single_arm.Stack, "attach", Mock(return_value=_stack_with(pids={"sim": 11, "deploy": 12}))
     )
-    with pytest.raises(SystemExit, match="headroom"):
+    monkeypatch.setattr(run_context, "group_threads", lambda pids: 313)
+    monkeypatch.setattr(run_context, "require_headroom", lambda *a, **k: seen.update(k) or {})
+    monkeypatch.setattr(run_collect_single_arm, "run_batch", Mock(side_effect=SystemExit("stop here")))
+    with pytest.raises(SystemExit):
         run_collect_single_arm.main([str(experiment), "--gpu", "0"])
+    assert seen.get("already") == 313
+
+
+def _stack_with(pids):
+    stack = Mock()
+    stack.pids = pids
+    return stack
 
 
 def _line_that_prepares_nothing(cfg):
     from locomani.pipeline.lines import Line
 
-    return Line(name="single_arm", prepare=lambda c, r: r / "scene", collect_root=lambda r: r / "collect")
+    return Line(
+        name="single_arm",
+        prepare=lambda c, r: r / "scene",
+        collect_root=lambda r: r / "collect",
+        trace_root=lambda r: r / "collect" / "state_trace",
+    )

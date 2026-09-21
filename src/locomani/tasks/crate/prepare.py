@@ -105,3 +105,8 @@ def prepare(cfg: dict, run_dir: Path) -> Path:
 def collect_root(run_dir: Path) -> Path:
     """This line keeps manifests, videos and traces beside the run, not under `collect/`."""
     return Path(run_dir)
+
+
+def trace_root(run_dir: Path) -> Path:
+    """This line has always kept traces beside the run, and its expert is handed the path."""
+    return Path(run_dir) / "trace"

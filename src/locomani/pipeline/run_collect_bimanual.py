@@ -33,7 +33,7 @@ from locomani.tasks.crate.prepare import check_profile, expert_argv
 ROOT = Path(paths.REPO)
 
 
-def run_batch(cfg: dict, run_dir: Path, collect_root: Path, stack: Stack, state: dict) -> Path:
+def run_batch(cfg: dict, run_dir: Path, collect_root: Path, trace_root: Path, stack: Stack, state: dict) -> Path:
     batch = state["batches"]
     tag = f"{batch:02d}"
     manifest = collect_root / f"manifest_{tag}.jsonl"
@@ -47,9 +47,9 @@ def run_batch(cfg: dict, run_dir: Path, collect_root: Path, stack: Stack, state:
         collect["batch_rounds"],
         collect["seed0"] + 100 * batch,
         record=bool(collect["record"]),
-        trace_dir=run_dir / "trace",
+        trace_dir=trace_root,
     )
-    (run_dir / "trace").mkdir(exist_ok=True)
+    trace_root.mkdir(parents=True, exist_ok=True)
     state["sessions"].append(open_exporter_session(stack, collect_root, batch))
     state["manifests"].append(str(manifest))
     (run_dir / "collect").mkdir(exist_ok=True)
@@ -83,17 +83,11 @@ def main(argv: list[str] | None = None) -> int:
             collect["batch_rounds"],
             collect["seed0"],
             record=bool(collect["record"]),
-            trace_dir=run_dir / "trace",
+            trace_dir=line.trace_root(run_dir),
         )
         run_context.show(f"{cfg['task']['expert']}_00", argv_expert)
         print(f"\n  attaches to instance {collect['instance']}; {collect['max_batches']} batches at most")
         return 0
-
-    run_context.require_headroom("collect", gpu=args.gpu, record=bool(collect["record"]))
-    run_context.require_deploy_patches(cfg)
-    line.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
-    inputs = run_dir / "collect" / "inputs.json"
-    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
 
     try:
         stack = Stack.attach(int(collect["instance"]))
@@ -102,9 +96,18 @@ def main(argv: list[str] | None = None) -> int:
             f"no stack on instance {collect['instance']}; start one in another terminal:\n"
             f"  bash scripts/collect_data.sh {args.experiment} --gpu {args.gpu}"
         )
+    # The stack is already up and was admitted by whoever started it; ask only for the rest.
+    run_context.require_headroom(
+        "collect", gpu=args.gpu, record=bool(collect["record"]), already=run_context.group_threads(stack.pids.values())
+    )
+    run_context.require_deploy_patches(cfg)
+    line.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
+    inputs = run_dir / "collect" / "inputs.json"
+    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
+
     try:
         while state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"]:
-            manifest = run_batch(cfg, run_dir, collect_root, stack, state)
+            manifest = run_batch(cfg, run_dir, collect_root, line.trace_root(run_dir), stack, state)
             state["kept"] += kept_in(manifest, bool(collect["record"]))
             state["batches"] += 1
             inputs.write_text(json.dumps(state, indent=1))

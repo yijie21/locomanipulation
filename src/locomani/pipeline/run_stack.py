@@ -38,10 +38,10 @@ def frame_audit_path(collect_root: Path, batch: int) -> Path:
     return collect_root / f"frame_audit_{batch:02d}.jsonl"
 
 
-def collect_spec(cfg: dict, run_dir: Path, scene: Path, collect_root: Path, gpu: str):
+def collect_spec(cfg: dict, run_dir: Path, scene: Path, collect_root: Path, trace_root: Path, gpu: str):
     """The recording stack: the exporter's first session pairs with batch 00's manifest."""
     extra = {
-        "SIM_STATE_TRACE_DIR": str(collect_root / "state_trace"),
+        "SIM_STATE_TRACE_DIR": str(trace_root),
         "TF_FRAME_AUDIT_PATH": str(frame_audit_path(collect_root, 0)),
         "TF_EXPORTER_SCRIPT": str(EXPORTER),
         **dict(kv.split("=", 1) for kv in cfg["collect"].get("gym_env", [])),
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         scene = run_dir / "scene"  # a dry run freezes nothing, so name the scene without writing it
         spec = (
-            collect_spec(cfg, run_dir, scene, collect_root, args.gpu)
+            collect_spec(cfg, run_dir, scene, collect_root, line.trace_root(run_dir), args.gpu)
             if args.mode == "collect"
             else eval_spec(cfg, run_dir, scene, args.gpu)
         )
@@ -114,8 +114,9 @@ def main(argv: list[str] | None = None) -> int:
     run_context.require_deploy_patches(cfg)
     scene = line.prepare(cfg, run_dir)
     collect_root.mkdir(parents=True, exist_ok=True)
+    line.trace_root(run_dir).mkdir(parents=True, exist_ok=True)
     spec = (
-        collect_spec(cfg, run_dir, scene, collect_root, args.gpu)
+        collect_spec(cfg, run_dir, scene, collect_root, line.trace_root(run_dir), args.gpu)
         if args.mode == "collect"
         else eval_spec(cfg, run_dir, scene, args.gpu)
     )

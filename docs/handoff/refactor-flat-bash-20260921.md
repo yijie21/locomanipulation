@@ -205,6 +205,39 @@ pid 门槛按 `record` 分档后评测不再被拒（评测本来就不起 expor
 - **五份单臂产物契约全部 PASS**，且都是新路径端到端产出的运行：`bottle_collect`、`bottle_convert`、
   `bottle_convert_val`（`bottle_twobatch_probe`）、`bottle_train`、`bottle_eval`（`bottle_chain_smoke2`）。
 
+### 双臂线（同晚）
+
+`crate_table30_record.yaml`（expert `visual`，2 批 × 10 局，实例 2）走新路径跑满 20 局，15/20 保留。
+
+| 判据 | 基线 | 本次 | |
+|---|---|---|---|
+| yield | 0.85 | 0.75 | PASS（容差 ±0.15） |
+| end_depth_m | 1.3306 | 1.3240 | PASS |
+| exit_majority | None | None | PASS |
+| failure_reasons | — | 多一个 `evaluation_missing_contact` | FAIL |
+
+`gate.py compare carry` **3/4 PASS**，唯一 FAIL 又是那条在单臂线上同版本 A/A 也会触发的判据。
+
+### 又抓到两个 bug（都是双臂特有的）
+
+4. **双臂的状态轨迹写错了目录。** 起栈脚本按单臂的习惯把 `SIM_STATE_TRACE_DIR` 设成
+   `<run>/state_trace`，而双臂专家的命令行拿到的仍是 `<run>/trace`——sim 写了 19 条进前者，后者空着，
+   `crate_collect` 契约因此 FAIL。轨迹目录现在和 `collect_root` 一样是**线的属性**（`lines.Line.trace_root`）：
+   单臂 `collect/state_trace`，双臂 `trace`。短探针验证：`trace/` 2 条、`state_trace/` 0 条，契约 PASS。
+5. **驱动被重复收费了它即将 attach 的那个栈。** 双臂驱动被拒于 `pids: 1864 + 1800 needed > 3640`，
+   而那 1864 里有 313 正是终端 1 刚起的栈。这和之前记在"已知未修"里的 CPU 那条是同一个 bug，
+   现在精确修掉、不用拍常数：`run_context.group_threads()` 数出该栈进程组当前实际持有的线程数，
+   `shortfall(..., already=N)` 从预算里减掉——**相对起栈前的基线，预留量不变，只是不再翻倍**。
+   代价是驱动必须先 attach 再查闸门（attach 只是读 `stack.json`，不启动任何东西）；
+   "起栈前必须先验部署补丁"这条昂贵的检查仍在 `run_stack` 里，测试也跟着搬了过去。
+
+### 七份契约：六份 PASS
+
+`bottle_collect` / `bottle_convert` / `bottle_convert_val` / `bottle_train` / `bottle_eval` / `crate_collect`
+全部在**新路径端到端产出的运行**上 PASS。只剩 `crate_eval`——它需要一个双臂 checkpoint，而
+`crate_vla200_record_20260914/model` 已不在磁盘上（见 STATE 的 2026-09-16 删除记录），
+这份契约的 note 本来也写着 UNVERIFIED。
+
 ## 尚未验证（阻塞在共享资源上）
 
 **要起仿真栈的闸门一项都没跑。** 2026-09-21 两次测量：`pids.current` = 2205 → 2264 / 上限 3840，一个带 exporter 的采集栈
