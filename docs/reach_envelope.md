@@ -6,8 +6,9 @@
 在 [记录](handoff/g1-capability-envelope-20260921.md)；早先在 expert 默认配置下的五维搜索在
 [五维联合实测](handoff/g1-joint-reach-search-20260920.md)，它的可达面比这里小一圈——原因见记录第 1 节。
 
-先记住三个数：正对目标（y=0、yaw=0）边界 **0.58–0.62 m**；h 0.55→0.85 几乎不变；
-yaw=+30° 比 −30° 差 5–10 cm。这张图筛的是**位置**，姿态误差只记录不筛。
+先记住四个数：正对目标（y=0、yaw=0）边界 **0.58–0.62 m**（h 0.55–0.85）；**h<0.50 要下蹲**，蹲下后
+h=0.40 到 0.58、h=0.30 到 0.48–0.53、h=0.20 到 0.38–0.43、**h=0.10 够不到**；yaw=+30° 比 −30° 差 5–10 cm。
+这张图筛的是**位置**，姿态误差只记录不筛。
 
 ## 1. 准备一次
 
@@ -34,6 +35,7 @@ bash scripts/reach_envelope.sh outputs/reach_envelope/<name>
 |---|---|---|
 | `grid` | y {−0.12, 0, 0.12} × h {0.55, 0.70, 0.85} × d {0.32, 0.44, 0.52} × yaw {−30…30, 5 档} | 135 条线；x 不在网格里，是被搜的量 |
 | `envelope` | `base_anchor=measured`, `com_shift_max` 0.11, `com_free_radius` 0.10, `pelvis_pitch_max` 0.85, `pelvis_height_min` 0.55, `knee_max` 1.5, `pelvis_forward_max` 0.35, `tracking_cap` 0.15, `tracking_gain` 1.0 | 全身 IK 支撑上限与跟踪反馈；字段含义见 [config_fields](reference/config_fields.md) 的 `CrateCarryConfig` |
+| `envelope_overrides` | `[{h_below: 0.50, envelope: {base_anchor: measured_xy, pelvis_height_target: 0.65}}]` | h 低于阈值的线叠加这些字段：把 IK 的骨盆拉到 0.65 m（实测交付 0.57 m），高度不锚定实测值。每个覆盖组一份 bank，组间串行、组内分片并行 |
 | `criteria` | 手位 2 cm、姿态 15°、保持 0.5 s、12 s 超时、脚漂移 3 cm | ghost 执行器的在线判据；`boundary_search` 只用**位置**做过/不过 |
 | `scene_dir` | `outputs/scene/g1_floor` | 第 1 节的场景 |
 | `shards` | `[{gpu 1, instance 0}, {gpu 0, instance 1}]` | 每个分片一个 SONIC 栈，并行 |
@@ -57,7 +59,12 @@ bash scripts/reach_envelope.sh outputs/reach_envelope/<name>
   只会高估——2026-09-21 高估 10–15 cm——所以只拿它定起点，不拿它说可达。
 - 过（最佳手位 ≤2 cm）→ x + 5 cm；不过或 IK 拒绝 → x − 5 cm；初始化失败 → 同点重试。
 - 一条线在 [x_pass, x_fail] 夹住即停；到 0.20 m 仍不过的线记为无解，不再重试。
-- 2026-09-21：135 条线、8 轮、386 次、1.5 h（两栈）。
+- 2026-09-21：h 0.55–0.85 135 条线、8 轮、386 次、1.5 h（两栈）；h 0.30–0.50 135 条线、9 轮、586 次。
+- **下蹲**（`pelvis_height_target`）：不蹲时 h=0.30 骨盆只到 0.73 m，肩撞躯干，45 条线里 40 条到 0.20 m 仍失败；
+  拉到 0.65 后骨盆实测 0.57 m，h=0.30 正对到 0.48–0.53、h=0.40 到 0.58，过点姿态中位从 20° 降到 13°。
+  拉到 0.58 与 0.65 交付相同（腿已弯到底），取 0.65。h≥0.55 未测下蹲，所以默认只对 h<0.50 生效。
+- **最低可达高度**（y=0，下蹲）：h=0.20 正对 0.38–0.43 m（d 0.44/0.32），h=0.10 六条线在 0.20 m 处仍差 4–12 cm——
+  骨盆到 0.55–0.61 已是下蹲极限，再低的目标要跪或走进去。
 
 进度随时看：
 

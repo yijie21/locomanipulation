@@ -40,6 +40,13 @@ DEFAULT_SEARCH = {
         "tracking_cap": 0.15,
         "tracking_gain": 1.0,
     },
+    # Lines whose h is below `h_below` get these envelope fields on top of `envelope`. Measured
+    # 2026-09-21: without the crouch h=0.30 is unreachable (pelvis stays at 0.73 m, shoulders hit
+    # the torso); pulling the solver's pelvis to 0.65 m delivers a 0.57 m pelvis and 0.48-0.53 m
+    # of reach at h=0.30, +10 cm at h=0.40. Not measured at h>=0.55, so it is not the default there.
+    "envelope_overrides": [
+        {"h_below": 0.50, "envelope": {"base_anchor": "measured_xy", "pelvis_height_target": 0.65}},
+    ],
     "criteria": {
         "target_timeout_sim_s": 12.0,
         "success_hold_sim_s": 0.5,
@@ -70,6 +77,7 @@ def setup(run_dir: Path):
         SEARCH=run_dir,
         GRID={k: tuple(v) for k, v in cfg["grid"].items()},
         ENVELOPE=cfg["envelope"],
+        OVERRIDES=cfg.get("envelope_overrides", []),
         CRITERIA=cfg["criteria"],
         TILT=cfg["bodyward_tilt_deg"],
         SCENE=scene.resolve(),
@@ -77,6 +85,22 @@ def setup(run_dir: Path):
         SEED=cfg["seed"],
     )
     return cfg
+
+
+def envelope_for(line):
+    """The envelope a line runs under: the base one plus the first override whose h_below exceeds its h."""
+    env = dict(_state["ENVELOPE"])
+    for rule in _state["OVERRIDES"]:
+        if line["h"] < rule["h_below"]:
+            env.update(rule["envelope"])
+            break
+    return env
+
+
+def group_of(line):
+    return next(
+        (i for i, rule in enumerate(_state["OVERRIDES"]) if line["h"] < rule["h_below"]), len(_state["OVERRIDES"])
+    )
 
 
 def lines():
@@ -110,10 +134,10 @@ def ik_upper_bound():
     q[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
     q[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
     state = dict(joints=q, pelvis=dict(pos=[0, 0, 0.78], quat=[1, 0, 0, 0]))
-    env = {k: v for k, v in _state["ENVELOPE"].items() if k not in ("tracking_cap", "tracking_gain")}
-    cfg = CrateCarryConfig(reach_control="whole_body", waist_dofs="all", waist_pitch_max=0.52, **env)
     out = {}
     for l in lines():
+        env = {k: v for k, v in envelope_for(l).items() if k not in ("tracking_cap", "tracking_gain", "base_anchor")}
+        cfg = CrateCarryConfig(reach_control="whole_body", waist_dofs="all", waist_pitch_max=0.52, **env)
         A = (
             R.from_euler("z", l["yaw"], degrees=True).as_matrix()
             @ R.from_euler("y", 90 - _state["TILT"], degrees=True).as_matrix()
@@ -129,6 +153,7 @@ def ik_upper_bound():
             com_free_radius=cfg.com_free_radius,
             knee_max=cfg.knee_max,
             pelvis_forward_max=cfg.pelvis_forward_max,
+            pelvis_height_target=cfg.pelvis_height_target,
         )
         seed = body.seed.copy()
         for x in np.arange(X_MAX, X_MIN - 1e-9, -STEP):  # downward: the first admitted x is the (over-estimated) bound
@@ -147,7 +172,7 @@ def observations():
     """{line key: {x: record}} from every finished round."""
     obs = {}
     for rd in sorted(_state["SEARCH"].glob("round_*")):
-        for shard in rd.glob("shard_*"):
+        for shard in list(rd.glob("shard_*")) + list(rd.glob("group_*/shard_*")):
             for cf in (shard / "result.cases").glob("*.json") if (shard / "result.cases").is_dir() else []:
                 c = json.load(open(cf))["case"]
                 src = c.get("target", {}).get("source_centres_robot_m")
@@ -214,26 +239,37 @@ def plan(n):
     upper, obs = ik_upper_bound(), observations()
     rd = _state["SEARCH"] / f"round_{n}"
     rd.mkdir(parents=True, exist_ok=True)
-    anchors = []
+    groups = {}
     for l in lines():
         x = next_x(key(l), upper.get(key(l)), obs)
         if x is not None:
-            anchors.append([x, l["y"], l["h"], l["d"], l["yaw"]])
-    if not anchors:
+            groups.setdefault(group_of(l), []).append([x, l["y"], l["h"], l["d"], l["yaw"]])
+    if not groups:
         print("nothing left to sample")
         return
+    total = 0
+    for g, anchors in sorted(groups.items()):
+        gd = rd / f"group_{g}"
+        gd.mkdir(exist_ok=True)
+        _write_group(n, g, gd, anchors, envelope_for({"h": anchors[0][2]}))
+        total += len(anchors)
+    print(f"round {n}: {total} trials, {len(groups)} envelope groups x {len(_state['SHARDS'])} shards")
+
+
+def _write_group(n, g, gd, anchors, envelope):
+    G = _state["GRID"]
     sampling = {
         "schema_version": 1,
         "method": "grid",
         "seed": _state["SEED"] + n,
         "count": 0,
         "bodyward_tilt_deg": _state["TILT"],
-        "bounds": {
+        "bounds": {  # the bank validator needs bounds; they only need to contain the grid
             "x_m": [X_MIN, X_MAX],
-            "y_m": [-0.2, 0.2],
-            "height_m": [0.5, 0.9],
-            "separation_m": [0.3, 0.55],
-            "yaw_deg": [-35, 35],
+            "y_m": [min(G["y"]) - 0.01, max(G["y"]) + 0.01],
+            "height_m": [min(G["h"]) - 0.01, max(G["h"]) + 0.01],
+            "separation_m": [min(G["d"]) - 0.01, max(G["d"]) + 0.01],
+            "yaw_deg": [min(G["yaw"]) - 1, max(G["yaw"]) + 1],
         },
         "axis_values": {
             "x_m": [anchors[0][0]],
@@ -244,38 +280,37 @@ def plan(n):
         },
         "anchors": anchors[1:],
     }
-    json.dump(sampling, open(rd / "sampling.json", "w"), indent=1)
+    json.dump(sampling, open(gd / "sampling.json", "w"), indent=1)
     subprocess.run(
         [
             sys.executable,
             str(Path(paths.REPO) / "scripts/generate_joint_reach_bank.py"),
-            str(rd / "sampling.json"),
+            str(gd / "sampling.json"),
             "--output",
-            str(rd / "bank.json"),
+            str(gd / "bank.json"),
         ],
         check=True,
         cwd=paths.REPO,
     )
     for shard, spec in enumerate(_state["SHARDS"]):
-        d = rd / f"shard_{shard}"
+        d = gd / f"shard_{shard}"
         d.mkdir(exist_ok=True)
         req = {
             "schema_version": 1,
-            "source_targets": str(rd / "bank.json"),
-            "request_identity": f"{_state['SEARCH'].name}_r{n}_s{shard}",
+            "source_targets": str(gd / "bank.json"),
+            "request_identity": f"{_state['SEARCH'].name}_r{n}_g{g}_s{shard}",
             "seed": _state["SEED"],
             "runtime": {
                 "backend": {"no_encoder": False},
                 "gpu": str(spec["gpu"]),
                 "instance": int(spec["instance"]),
                 "scene_dir": str(_state["SCENE"]),
-                "video_label_prefix": f"bnd_r{n}_s{shard}",
+                "video_label_prefix": f"bnd_r{n}_g{g}_s{shard}",
             },
             "experiment": _state["CRITERIA"],
-            "envelope": _state["ENVELOPE"],
+            "envelope": envelope,
         }
         json.dump(req, open(d / "request.json", "w"), indent=1)
-    print(f"round {n}: {len(anchors)} trials, {len(_state['SHARDS'])} shards")
 
 
 def status():

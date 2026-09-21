@@ -72,6 +72,7 @@ class CoordinatedReach:
             com_free_radius=config.carry.com_free_radius,
             knee_max=config.carry.knee_max,
             pelvis_forward_max=config.carry.pelvis_forward_max,
+            pelvis_height_target=config.carry.pelvis_height_target,
         )
         self.q = np.asarray(reference_joints).copy()
         self.root = np.asarray(reference_quaternion).copy()
@@ -143,11 +144,15 @@ class CoordinatedReach:
         lo = np.minimum(lo, self.travel_hi - 1e-10)
         hi = np.maximum(hi, self.travel_lo + 1e-10)
         lo = np.minimum(lo, hi - 1e-10)
-        if self.config.carry.base_anchor == "measured" and self.measured_base is not None:
+        anchor = self.config.carry.base_anchor
+        if anchor != "reference" and self.measured_base is not None:
             # The streamed pose carries joints and root attitude only; the controller
             # places the pelvis itself. Solving from where it actually is keeps hand
             # corrections in joints the controller tracks instead of a virtual base shift.
-            lo[:3], hi[:3] = self.measured_base - 0.005, self.measured_base + 0.005
+            # measured_xy leaves height free so a lower pelvis_height_target can still
+            # bend the streamed leg reference and be followed.
+            n = 2 if anchor == "measured_xy" else 3
+            lo[:n], hi[:n] = self.measured_base[:n] - 0.005, self.measured_base[:n] + 0.005
         pose = self.body.solve(
             targets + cfg.tracking_gain * self.feedback,
             attitudes,

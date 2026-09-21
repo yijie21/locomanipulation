@@ -34,29 +34,59 @@
 历史记录里“5 mm 壁厚”的说法不能当作实际碰撞厚度。原历史保留，当前以编译模型为准。
 尺寸/包围盒的检查证据见资产包 manifest；这不证明纸箱已能稳定抓起或搬运。
 
-## 1. 准备
+## 0. 一句话总览
+
+```
+.blend ──blender_to_usd.py──▶ <name>/<room>.usdc + textures/      （Isaac 离线重渲用）
+.blend ──blender_to_mujoco.py──▶ <name>_mj/*.obj + textures(PNG)
+        ──build_mujoco_scene.py──▶ <name>_mj/scene_locomani.xml   （物理 + 策略图像用）
+```
+
+两条支路**互不依赖**，可以只做一条。仓库已经附带一套做好的（见上），新用户先用它验证环境，再换自己的 `.blend`。
+
+## 1. 环境：需要什么、不需要什么
+
+**不需要 conda，不需要仓库的任何 venv 装 `bpy`。** 两个转换脚本以 `blender --background --python` 方式跑在
+**Blender 自带的 Python** 里；`bpy` 和 USD API 都是 Blender 自带的。三条支路各自的环境：
+
+| 步骤 | 跑在哪个解释器里 | 怎么得到 | 验证 |
+|---|---|---|---|
+| `blender_to_usd.py` / `blender_to_mujoco.py` | Blender 5.x 自带 Python | 从 [blender.org](https://www.blender.org/download/lts/) 下 **5.x LTS** 官方 tar.xz，解开，把 `blender` 软链到 `PATH`（本机 `/usr/local/bin/blender -> /workspace/tools/blender/blender`；容器 recycle 后要重建软链）。**不要**用发行版仓库的 4.x：USD 导出 API 不同 | `blender --version` 打出 `Blender 5.x LTS` |
+| `build_mujoco_scene.py`、`render_mujoco_frame.py`、场景校验 | 仓库的 `.venv_sim`（`$VENV_SIM_PY`） | [安装指南](setup.md) 第 0–5 步（`scripts/setup_sonic.sh`） | `"$VENV_SIM_PY" -c "import mujoco"` |
+| 用 USD 真渲染一帧（可选） | 装了 `isaacsim` 的 render venv（`$RENDER_PY`） | [安装指南](setup.md) 第 7 步（SIMPLE，约 20 GB，**只有要 Isaac 像素才装**） | `"$RENDER_PY" -c "import isaacsim"` |
+| 大文件 | Git LFS | `git lfs install && git lfs pull` | `assets/blender/*.blend` 不是 130 字节的指针文件 |
+
+Blender 的 Python 要能 `import locomani`（脚本里用到仓库的工具函数）——靠环境变量，不靠安装：
 
 ```bash
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src"
-blender --version                  # 需要 Blender 5.x,它自带 USD API
+blender --version
 ```
-
-**环境从哪来。** 两个转换脚本都不在本仓库的任何 venv 里跑——它们以 `blender --background ... --python`
-的方式跑在 **Blender 自带的 Python** 里（脚本 `import bpy`，仓库的 venv 里没有这个模块，也不该有）。
-所以：
-
-| 需要的东西 | 怎么满足 | 验证 |
-|---|---|---|
-| Blender 5.x 本体 | 从 blender.org 下官方 tar.xz 解开，把可执行文件软链到 `PATH` 上（本机：`/usr/local/bin/blender` -> `/workspace/tools/blender/blender`，**在 `$LOCOMANI_WORKSPACE` 下，recycle 不会保留容器里的那份软链，要重建**）。不要用发行版仓库里的 4.x：USD 导出 API 不同 | `blender --version` 打出 `5.x LTS` |
-| USD 导出 | Blender 5.x 自带，无需另装 | `docs/blender_scenes.md` 第 2 节那条命令能产出 `.usd` |
-| `import locomani` | 由上面的 `PYTHONPATH` 提供；Blender 的 Python 不认识仓库的 venv | 转换脚本不报 `ModuleNotFoundError` |
-| 贴图与 `.blend` | 放在 `assets/blender/`（含 `textures/`、`fonts/`），随 `.blend` 一起 | 见第 15 行的同步说明 |
 
 `uv`/`pip` 在这里一概用不上：**不要**试图把 `bpy` 装进 `.venv_sim` 或 `.venv` 去"统一环境"，
 那是一个和本机 Blender 版本无关的 wheel，导出的 USD 会和 Isaac 这边对不上。
 
-把 `.blend` 放进 `assets/blender/`。房间必须是**公制、1 单位 = 1 米**(`blender_to_usd.py` 会打印实际值,不对就在 Blender 里改)。
+### 先用仓库自带的场景验证环境
+
+```bash
+git lfs pull
+. scripts/paths.sh
+"$VENV_SIM_PY" assets/scene/logistics_room_box_v1/check_assets.py --load-mujoco --load-usd
+```
+
+它校验两份资产树的哈希、拒绝绝对路径、量纸箱 OBJ、在 CPU 上编译 MJCF、用 Blender 自带的 USD API 打开 USDC。
+通过说明 Blender、LFS、`.venv_sim` 三样都对了。
+
+### 自己的 `.blend` 要满足的约定
+
+- 放在 `assets/blender/`；贴图**打包进 .blend**（Blender：File → External Data → Pack Resources），
+  这样文件是自包含的，LFS 只需要跟踪 `.blend`。仓库的房间 50 张贴图里 49 张是打包的，
+  工作树里的 `assets/blender/textures/` 不是复现必需的。
+- **公制、1 单位 = 1 米**、Z 朝上。`blender_to_usd.py` 会打印实际单位，不对就在 Blender 里改，不要在脚本里补缩放。
+- 房间是布景：几千个物体共用几十个材质没关系（MuJoCo 支路按材质合并），但**工作面（桌/托盘）和目标物要是独立、命名清楚的物体**，
+  后面 `build_mujoco_scene.py` 要按名字给它们加碰撞体。
+- 相机和灯光可以放在 .blend 里，会一起进 USD；但灯光强度的换算见 §2。
 
 ## 2. 出 Isaac 场景
 
@@ -76,14 +106,15 @@ blender --background assets/blender/<room>.blend \
 | 曲线 `widths` | `2.0`,而舞台单位是米 | **一根地面走线渲染成 2 米宽的灰飘带** |
 | `DomeLight` 环境贴图 | 一张纯色 EXR | RTX 报 `MirroredBall environment format not supported yet` 后**整个环境光失效**,背光的角落全黑 |
 
-灯光强度**不写进 USD**,见 [§4](#4-已知未解决)。
+灯光强度**不写进 USD**,见 §4 的"已知未解决"。
 
 ## 3. 出 MuJoCo 场景
 
 ```bash
 blender --background assets/blender/<room>.blend \
   --python scripts/blender_to_mujoco.py -- outputs/scene/<name>_mj
-python scripts/build_mujoco_scene.py outputs/scene/<name>_mj
+"$VENV_SIM_PY" scripts/build_mujoco_scene.py outputs/scene/<name>_mj \
+  --base outputs/scene/crate_table30_depth04/scene_locomani.xml   # 机器人树从这里继承
 ```
 
 第一步按**材质**(不是按物体)导出 OBJ —— MuJoCo 一个 geom 绑一个材质,而房间是几千个物体共用几十个材质。
@@ -107,7 +138,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 "$VENV_SIM_PY" \
   scripts/render_mujoco_frame.py outputs/scene/<name>_mj/scene_locomani.xml \
   /tmp/mj.png --camera <相机名>
 
-python scripts/compare_frames.py <isaac.png> /tmp/mj.png --out /tmp/pair.png
+"$VENV_SIM_PY" scripts/compare_frames.py <isaac.png> /tmp/mj.png --out /tmp/pair.png
 ```
 
 `compare_frames.py` 报两个数,回答的是不同问题:
@@ -141,7 +172,20 @@ python scripts/compare_frames.py <isaac.png> /tmp/mj.png --out /tmp/pair.png
 
 没有这两块,场景搭好了专家也不知道在哪儿干活。字段含义见 [双臂详解](bimanual_design.md)。
 
-## 7. 进一步阅读
+## 7. 常见错误对照
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| `blender: command not found` / 打出 4.x | 没装 5.x 或软链丢了（容器 recycle） | 重做 §1 的软链 |
+| `ModuleNotFoundError: locomani` | Blender 的 Python 看不到仓库 | `export PYTHONPATH="$LOCOMANI_ROOT/src"` 后再跑 |
+| `.blend` 只有 130 字节 / 打开报损坏 | LFS 指针没拉 | `git lfs pull` |
+| 贴图缺失（粉色/黑色面） | .blend 引用了作者机器上的路径 | 在 Blender 里 Pack Resources 后重存；仓库房间的修复见资产包 `rebuild_blender_scene.py` |
+| Isaac 里画面全黑 / 取景跑偏 / 2 米宽灰带 | Blender USD 导出器的单位错误 | `blender_to_usd.py` 已修四处（§2 表）；灯光增益在渲染时给，不写进 USD |
+| MuJoCo 报贴图读不了 | MuJoCo 不读 JPG | `blender_to_mujoco.py` 自动转 PNG；手改场景时也只用 PNG |
+| 编译 MJCF 时 mesh 找不到 | `meshdir` 是绝对路径或指向别的机器 | 用 `prepare_logistics_scene.py` 生成运行副本；G1/Dex1 网格相对 `third_party/GR00T-WholeBodyControl` |
+| 机器人在新场景里行为变了 | 重写了机器人树 | 永远 `--base` 继承现成的 `scene_locomani.xml`，只动布景和工作面 |
+
+## 8. 进一步阅读
 
 - [Blender 场景台账](ledger/blender_scenes.md):逐次实测数字、四个单位错误的发现过程、未解决项。
 - [MuJoCo 仿真与 Isaac 渲染](rendering.md):既有的重渲链路与视频导出。

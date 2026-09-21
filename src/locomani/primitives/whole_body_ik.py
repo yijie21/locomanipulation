@@ -49,6 +49,7 @@ class WholeBodyIK:
         com_free_radius=0.0,
         knee_max=0.85,
         pelvis_forward_max=0.20,
+        pelvis_height_target=None,
     ):
         self.ik = ik
         self.hand_weights = np.asarray(hand_weights, dtype=float)
@@ -70,6 +71,11 @@ class WholeBodyIK:
             raise ValueError("com_free_radius must be finite and nonnegative")
         self.com_shift_max, self.com_free_radius = float(com_shift_max), float(com_free_radius)
         self.knee_max, self.pelvis_forward_max = float(knee_max), float(pelvis_forward_max)
+        # The height residual pulls the pelvis toward this value; None keeps the initial height,
+        # a lower value asks the solver to crouch (the streamed leg reference is what delivers it).
+        if pelvis_height_target is not None and (not np.isfinite(pelvis_height_target) or pelvis_height_target <= 0):
+            raise ValueError("pelvis_height_target must be positive and finite")
+        self.pelvis_height_target = pelvis_height_target
         if (
             self.hand_weights.shape != (2,)
             or not np.isfinite(self.hand_weights).all()
@@ -197,7 +203,7 @@ class WholeBodyIK:
                 0.6 * hand_rot * np.repeat(self.hand_weights, 3),
                 self.com_weight * com_shift,
                 posture_scale * (x[4:] - prior),
-                0.3 * (x[2] - self.base0[2]),
+                0.3 * (x[2] - (self.base0[2] if self.pelvis_height_target is None else self.pelvis_height_target)),
                 np.zeros(3)
                 if torso_rotation is None
                 else 1.5 * Rotation.from_matrix(d.xmat[self.torso].reshape(3, 3) @ torso_rotation.T).as_rotvec(),

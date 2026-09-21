@@ -22,19 +22,20 @@ class CrateCarryConfig:
     com_free_radius: float = 0.0  # COM travel the whole-body solver leaves unpenalised, m; 0 pulls to the start
     knee_max: float = 0.85  # whole-body knee flexion bound, rad
     pelvis_forward_max: float = 0.20  # whole-body forward pelvis travel bound, m
-    base_anchor: str = "reference"  # reach-phase pelvis position: the solver's own reference, or the measured pelvis
+    base_anchor: str = "reference"  # reach-phase pelvis: reference | measured | measured_xy (height left free)
+    pelvis_height_target: float | None = None  # whole-body height the solver is pulled toward, m; None keeps the start
 
     def __post_init__(self):
         if self.reach_control not in ("planner", "whole_body"):
             raise ValueError("carry.reach_control must be planner or whole_body")
         if self.waist_dofs not in ("pitch", "all"):
             raise ValueError("carry.waist_dofs must be pitch or all")
-        if self.base_anchor not in ("reference", "measured"):
-            raise ValueError("carry.base_anchor must be reference or measured")
+        if self.base_anchor not in ("reference", "measured", "measured_xy"):
+            raise ValueError("carry.base_anchor must be reference, measured or measured_xy")
         for name, value in vars(self).items():
             if name in ("reach_control", "waist_dofs", "base_anchor"):
                 continue
-            if name == "pelvis_height" and value is None:
+            if name in ("pelvis_height", "pelvis_height_target") and value is None:
                 continue
             if name == "com_free_radius" and value == 0:
                 continue
@@ -50,6 +51,8 @@ class CrateCarryConfig:
             raise ValueError("whole-body pelvis bounds require pitch <= 0.85 rad and height between 0.55 and 0.78 m")
         if self.com_shift_max > 0.15 or self.com_free_radius > self.com_shift_max:
             raise ValueError("carry.com_shift_max must not exceed 0.15 m and must bound com_free_radius")
+        if self.pelvis_height_target is not None and not self.pelvis_height_min <= self.pelvis_height_target <= 0.80:
+            raise ValueError("carry.pelvis_height_target must lie between pelvis_height_min and 0.80 m")
         if self.knee_max > 2.0 or self.pelvis_forward_max > 0.5:
             raise ValueError("carry.knee_max must not exceed 2.0 rad and pelvis_forward_max 0.5 m")
 

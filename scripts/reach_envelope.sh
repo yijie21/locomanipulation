@@ -25,18 +25,21 @@ search=locomani.tasks.crate.reach_envelope.boundary_search
 while :; do
   [ -f "$run_dir/STOP" ] && { echo "STOP before round $n"; break; }
   rd=$run_dir/round_$n
-  [ -f "$rd/bank.json" ] || "$VENV_SIM_PY" -m $search plan "$run_dir" "$n"
-  [ -f "$rd/bank.json" ] || { echo "round $n: nothing planned"; break; }
-  shards=$(ls -d "$rd"/shard_* | wc -l)
-  echo "=== round $n: $(python3 -c "import json;print(len(json.load(open('$rd/bank.json'))['samples']))") trials over $shards shards $(date -u +%H:%M:%S)"
-  pids=()
-  for ((s = 0; s < shards; s++)); do
-    "$VENV_SIM_PY" scripts/probe_ghost_reach.py "$rd/shard_$s/request.json" --output "$rd/shard_$s/result.json" \
-      --shard-index "$s" --shard-count "$shards" > "$rd/shard_$s/launch.log" 2>&1 &
-    pids+=($!)
-    sleep 20 # stagger stack bring-up
+  [ -d "$rd" ] && ls "$rd"/group_*/bank.json >/dev/null 2>&1 || "$VENV_SIM_PY" -m $search plan "$run_dir" "$n"
+  ls "$rd"/group_*/bank.json >/dev/null 2>&1 || { echo "round $n: nothing planned"; break; }
+  # Envelope groups (one per h band) run one after another; the shards of a group run in parallel.
+  for gd in "$rd"/group_*; do
+    shards=$(ls -d "$gd"/shard_* | wc -l)
+    echo "=== round $n $(basename "$gd"): $(python3 -c "import json;print(len(json.load(open('$gd/bank.json'))['samples']))") trials over $shards shards $(date -u +%H:%M:%S)"
+    pids=()
+    for ((s = 0; s < shards; s++)); do
+      "$VENV_SIM_PY" scripts/probe_ghost_reach.py "$gd/shard_$s/request.json" --output "$gd/shard_$s/result.json" \
+        --shard-index "$s" --shard-count "$shards" > "$gd/shard_$s/launch.log" 2>&1 &
+      pids+=($!)
+      sleep 20 # stagger stack bring-up
+    done
+    for p in "${pids[@]}"; do wait "$p" || echo "shard exited $?"; done
   done
-  for p in "${pids[@]}"; do wait "$p" || echo "shard exited $?"; done
   echo "=== round $n done $(date -u +%H:%M:%S)"
   n=$((n + 1))
 done

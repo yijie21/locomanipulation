@@ -62,3 +62,17 @@ def test_strip_to_floor_keeps_robot_and_floor_only(tmp_path):
     meta = json.loads((tmp_path / "scene_meta.json").read_text())
     assert meta["objects"] == {} and meta["robot_start"]["xy"] == [0.0, 0.0]
     assert result["nq"] == 7
+
+
+def test_envelope_overrides_apply_below_the_height_threshold():
+    B._state.update(
+        ENVELOPE={"tracking_cap": 0.15},
+        OVERRIDES=[{"h_below": 0.50, "envelope": {"pelvis_height_target": 0.65, "base_anchor": "measured_xy"}}],
+    )
+    assert B.envelope_for({"h": 0.30}) == {
+        "tracking_cap": 0.15,
+        "pelvis_height_target": 0.65,
+        "base_anchor": "measured_xy",
+    }
+    assert B.envelope_for({"h": 0.70}) == {"tracking_cap": 0.15}
+    assert B.group_of({"h": 0.30}) == 0 and B.group_of({"h": 0.70}) == 1
