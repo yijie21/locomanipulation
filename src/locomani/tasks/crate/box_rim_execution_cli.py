@@ -171,6 +171,10 @@ def load_execution_request(path: Path) -> dict:
     }
 
 
+def _wrap_angle(angle: float) -> float:
+    return float((angle + math.pi) % (2 * math.pi) - math.pi)
+
+
 def _initialise(request, primitives, reset) -> dict | None:
     runtime = request["runtime"]
     if not runtime["reset_before_episode"]:
@@ -226,11 +230,14 @@ def _initialise(request, primitives, reset) -> dict | None:
         time.sleep(0.4)
         requested_yaw = float(runtime["robot_yaw"])
         primitives.hold_yaw = requested_yaw
-        primitives.cmd.hold(
-            2.5,
-            mode=LocomotionMode.IDLE,
-            facing=(math.cos(requested_yaw), math.sin(requested_yaw), 0.0),
-        )
+        facing = (math.cos(requested_yaw), math.sin(requested_yaw), 0.0)
+        primitives.cmd.hold(2.5, mode=LocomotionMode.IDLE, facing=facing)
+        # The offset reanchor() records is the yaw read after the toggle's twitch, not at the
+        # switch instant, so the held heading still lands anywhere within ~30 deg of the request
+        # (measured 67-99 deg for 90). Fold the observed residual into the offset and hold again.
+        error = _wrap_angle(float(primitives.obs()["pelvis"]["yaw"]) - requested_yaw)
+        primitives.cmd.heading_offset = _wrap_angle(getattr(primitives.cmd, "heading_offset", 0.0) + error)
+        primitives.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=facing)
         return None
     reanchor(primitives)
     requested_yaw = float(runtime["robot_yaw"])
