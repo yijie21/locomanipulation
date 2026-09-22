@@ -102,6 +102,16 @@ ffmpeg -i $R/videos/reel_h070_source.mp4 -vf "setpts=0.5*PTS,scale=1024:-2" -r 1
 | `outputs/reach_envelope/low_h_squat65_20260921/videos/envelope_reach_h{0.40,0.30}_squat.mp4` | 下蹲 0.65，y=0 一行 × 5 yaw × 3 d |
 | `outputs/reach_envelope/lowest_h_20260921/videos/envelope_reach_h0.20_h0.10_squat.mp4` | 下蹲，h=0.20 可达 0.38–0.43，h=0.10 全 × |
 
+### 查一个箱子
+
+```bash
+"$VENV_SIM_PY" -m locomani.tasks.crate.reach_envelope.query <run_dir> [<run_dir>...] -- x y h d yaw_deg
+```
+
+把几次搜索的表合成一张网格（后面的目录覆盖前面的同一条线，下蹲的运行放最后），在 (y, h, d, yaw) 上线性插值
+2 cm 位置边界，报 `margin = 边界 x − 箱子 x`：≥5 cm `reach`、0–5 cm `marginal`（一格噪声内）、<0 `no_reach`，
+落在测过的范围外 `unknown`。它回答"手能不能到"，不回答"能不能抓起来"——见 §7。
+
 ## 5. 均匀覆盖与复测
 
 网格只覆盖任务会出现的 (y, h, d, yaw)。要出五维投影图或验证插值，另起一个 `boundary_refinement` /

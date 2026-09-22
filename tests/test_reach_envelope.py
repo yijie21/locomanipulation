@@ -76,3 +76,22 @@ def test_envelope_overrides_apply_below_the_height_threshold():
     }
     assert B.envelope_for({"h": 0.70}) == {"tracking_cap": 0.15}
     assert B.group_of({"h": 0.30}) == 0 and B.group_of({"h": 0.70}) == 1
+
+
+def test_query_interpolates_boundary_and_flags_margin(tmp_path):
+    from locomani.tasks.crate.reach_envelope.query import ReachEnvelope
+
+    rows = []
+    for y in (-0.1, 0.1):
+        for h in (0.5, 0.7):
+            for d in (0.3, 0.5):
+                for yaw in (-10.0, 10.0):
+                    rows.append(dict(y=y, h=h, d=d, yaw=yaw, trials=2, x_pass=0.5 if h > 0.6 else 0.4, x_fail=None))
+    rows[0]["x_pass"] = None  # never passed: scored just below X_MIN
+    (tmp_path / "boundary_table.json").write_text(json.dumps(rows))
+    env = ReachEnvelope([tmp_path])
+    assert env.query(0.30, 0.0, 0.7, 0.4, 0.0)["verdict"] == "reach"  # boundary 0.525, margin 0.225
+    assert env.query(0.50, 0.0, 0.7, 0.4, 0.0)["verdict"] == "marginal"
+    assert env.query(0.60, 0.0, 0.7, 0.4, 0.0)["verdict"] == "no_reach"
+    assert env.query(0.30, 0.0, 0.9, 0.4, 0.0)["verdict"] == "unknown"  # h outside the measured box
+    assert env.query(0.30, -0.1, 0.5, 0.3, -10.0)["boundary_x_m"] == pytest.approx(0.175)
