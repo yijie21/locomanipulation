@@ -140,9 +140,13 @@ stand 阶段骨盆继续下沉（0.67→0.61 m）、`com_shift` 涨到 0.09–0.
 |---|---|---|---|
 | 原 | — | 2/10 | lost_attachment ×6, basket_tilt, empty_gripper |
 | fix | stand 阶段 `pelvis_height_target` 随 `stand_u` 混回起始高度，hold 释放 | 3/10 | basket_tilt ×2, reach_stalled ×2, lost_attachment, empty_gripper, invalid_initial_distance |
-| fix2 | + stand 阶段放开 `measured_xy` 锚定窗口（±5 mm → ±0.5 m），仅在有下蹲目标时 | 待跑（`crate_abl_crouch_fix2`，CPU 被其他会话占满时排队） | |
+| fix2 | + stand 阶段放开 `measured_xy` 锚定窗口（±5 mm → ±0.5 m），仅在有下蹲目标时 | 2/10 | lost_attachment ×4, reach_stalled ×2, empty_gripper, invalid_initial_distance |
 
-fix 那版起身仍不成功：骨盆 stand/hold 停在 0.62–0.65 m。两局 `reach_stalled` 是另一种形态：reach 阶段骨盆就沉到 0.64 m、
+fix2 让参考真的起身了（`crate_abl_crouch_fix2` 成功局：参考骨盆 z 0.59→0.75、参考膝角 1.49→0.4 rad，实测骨盆 0.66→0.77 m），
+但顺序是躯干先竖直、骨盆后升：stand 的 5 s 里躯干从 35° 回到 2°，骨盆仍在 0.66 m，附着误差从 0.003 单调涨到 0.02（成功局）或
+越过 0.06（4 局 `lost_attachment`）。也就是说下蹲抓取剩下的限制是**低骨盆、竖躯干时握持在滑**，不再是 IK 目标；三版 2/10、3/10、2/10
+在同一噪声里，都远低于不蹲的 9/10。代码保留 fix2（下蹲目标不配置时不生效），下蹲在真实抓取里仍不可用。
+fix 那版起身不成功：骨盆 stand/hold 停在 0.62–0.65 m。两局 `reach_stalled` 是另一种形态：reach 阶段骨盆就沉到 0.64 m、
 `com_shift` 0.09–0.10，手停在 3 cm 外，与起身无关。
 
 ## 真实场景校准：0.62 m 桌（2026-09-22，`outputs/runs/crate_env62_so40`）
@@ -197,7 +201,7 @@ fix 那版起身仍不成功：骨盆 stand/hold 停在 0.62–0.65 m。两局 `
 
 ## 未做
 
-- 下蹲 fix2 的 10 局验证；`reach_stalled`（reach 阶段沉到 0.64 m 停手）未处理。
+- 下蹲抓取的握持滑移（stand 阶段附着误差单调增长）和 `reach_stalled`（reach 阶段沉到 0.64 m 停手）未处理；下一手是让骨盆与躯干同步升，而不是先竖躯干。
 - 0.62 m 桌的 expert 入手标定；校正表第二行。
 - 右侧劣势在下蹲里放大：朝外转的 15 条线不蹲能到 0.30、蹲了到 0.20 仍不过（见上）。
 

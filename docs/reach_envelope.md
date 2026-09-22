@@ -149,8 +149,8 @@ ffmpeg -i $R/videos/reel_h070_source.mp4 -vf "setpts=0.5*PTS,scale=1024:-2" -r 1
   只开下蹲 **2/10**（`lost_attachment` ×6）。2026-09-22 的 trace 给出机制：控制器是**后坐**着蹲下去的（骨盆后退 20 cm、下沉 14 cm），
   `pelvis_height_target` 在 stand 阶段仍把 IK 往下拉，`measured_xy` 又把 IK 基座钉在后坐位置，起身时腿伸不直，参考膝角反而顶到
   `knee_max`。现在 `CoordinatedReach` 在 stand 阶段随 `stand_u` 把高度目标混回起始高度、并放开 xy 锚定窗口（hold 起完全释放）；
-  只放高度目标那版复测 3/10（`lost_attachment` 6→1，换成 `basket_tilt`×2、`reach_stalled`×2）。加放锚定那版的 10 局见
-  [台账](handoff/g1-capability-envelope-20260921.md#下蹲修复2026-09-22)。修到 9/10 量级之前不要在真实抓取里开它。
+  只放高度目标 3/10，再放锚定 2/10（[台账](handoff/g1-capability-envelope-20260921.md#下蹲修复2026-09-22)）：参考和实测骨盆现在都会起身，
+  但躯干先竖、骨盆后升，这 5 s 里握持在滑（附着误差单调涨到 0.02–0.06）。剩下的是握持力学，不是 IK 目标；不要在真实抓取里开它。
 - **换桌高要先重标定 expert，站位扫描才有意义。** 2026-09-22 用 `crate_env2_*` 同一套视觉配置在 0.62 m 桌
   （`outputs/scene/crate_bimanual_depth04`，`configs/experiments/crate_env62_so40.yaml`）跑 10 局：**0/10**，
   `basket_displaced_before_capture`×5（0.28–0.40 m 站位都有，手在合爪前撞箱）、走近超时×3、`reach_stalled`×2。
