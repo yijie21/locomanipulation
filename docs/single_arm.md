@@ -104,6 +104,9 @@ bash scripts/start_stack.sh collect         configs/experiments/my_line.yaml --g
 bash scripts/single_arm/run_agent_server.sh configs/experiments/my_line.yaml --gpu 0
 bash scripts/convert_data.sh outputs/runs/my_line              # 转换（不用卡）
 bash scripts/train.sh        outputs/runs/my_line --gpu 0      # 训练
+ # 开环评测（可选，不起栈）
+bash scripts/open_loop_eval.sh --model-path outputs/runs/my_line/model/checkpoint-10000 \
+  --dataset-path outputs/runs/my_line/val_dataset --out-dir outputs/runs/my_line/eval/open_loop  
 # 闭环评测：三个终端。栈 / 策略服务 / 跑局
 bash scripts/start_stack.sh eval             outputs/runs/my_line --gpu 1
 bash scripts/run_vla_server.sh               outputs/runs/my_line --gpu 1
@@ -120,6 +123,12 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
 | `--name X` | 运行目录改叫 X（副本里的 `name:` 仍是来源实验的） |
 | `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
 | `--dry-run` | 打印每个阶段将执行的命令和环境变量，**一个字节都不写** |
+
+**开环评测不在这 6 个参数里**：`scripts/open_loop_eval.sh` 是流水线外的独立脚本，跑的是 NVIDIA 官方的
+`open_loop_eval.py`，用具名参数（`--model-path`/`--dataset-path` 传反会在加载模型前就报错），`--steps`
+按最长 episode 自动推导、不会静默截断。产出 `<out-dir>/metrics.json`（逐轨迹与平均 MSE/MAE）、`plots/`
+（每条轨迹一张图）、`run.log`。集群上训的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`；
+`train.holdout` 为 0 时没有 `val_dataset/`。指标含义见 [单臂详解](single_arm_design.md)。
 
 **产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
 `eval/closed_loop.json`）。要重跑就**删掉它的产物**——整个续跑故事就这一条，`ls` 一眼看得见。
