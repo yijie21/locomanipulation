@@ -98,6 +98,9 @@ bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --g
 bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 1
 bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
 bash scripts/train.sh        outputs/runs/my_crate --gpu 1      # 训练
+# 开环评测（可选，不起栈）
+bash scripts/open_loop_eval.sh --model-path outputs/runs/my_crate/model/checkpoint-3000 \
+  --dataset-path outputs/runs/my_crate/val_dataset --out-dir outputs/runs/my_crate/eval/open_loop
 # 闭环评测：三个终端，和单臂同构；这条线每批重起的是 deploy，不是整个栈
 bash scripts/start_stack.sh eval            outputs/runs/my_crate --gpu 1
 bash scripts/run_vla_server.sh              outputs/runs/my_crate --gpu 1
@@ -120,6 +123,12 @@ bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 | `--name X` | 运行目录改叫 X（副本里的 `name:` 仍是来源实验的） |
 | `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
 | `--dry-run` | 打印每个阶段将执行的命令和环境变量，**一个字节都不写** |
+
+**开环评测不在这 6 个参数里**：`scripts/open_loop_eval.sh` 是流水线外的独立脚本，两条线共用，跑的是 NVIDIA 官方的
+`open_loop_eval.py`，用具名参数（`--model-path`/`--dataset-path` 传反会在加载模型前就报错），`--steps`
+按最长 episode 自动推导、不会静默截断。产出 `<out-dir>/metrics.json`（逐轨迹与平均 MSE/MAE）、`plots/`
+（每条轨迹一张图）、`run.log`。集群上训的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`；
+`train.holdout` 为 0 时没有 `val_dataset/`。指标含义见 [单臂详解](single_arm_design.md)。
 
 **产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
 `eval/closed_loop.json`）。要重跑就**删掉它的产物**。同名重跑从首个未完成 batch 继续
@@ -165,8 +174,6 @@ manifest 行带 `task`、`produced`、`ok`，成功局还带
 （60 维状态、66 维动作、三路相机）。
 
 **读日志**：`visual_NN.log`（日志按 `task.expert` 命名，不是 `collect_NN`）找逐局成败；`train.log` 找 loss 和 `Copying experiment config directory`；`eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**。产物齐不齐有专门的网：
-`eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**。
-产物齐不齐有专门的网：
 
 ```bash
 python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
