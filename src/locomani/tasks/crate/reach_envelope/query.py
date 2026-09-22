@@ -2,9 +2,10 @@
 
     python -m locomani.tasks.crate.reach_envelope.query <run_dir> [<run_dir>...] -- x y h d yaw_deg
 
-Merges the boundary tables of several search runs (later runs override earlier ones on the same
-(y, h, d, yaw) line, so list the crouch runs last), interpolates the 2 cm position boundary x over
-(y, h, d, yaw), and reports margin = boundary - x. The envelope is a floor-only, planted-feet,
+Merges the boundary tables of several search runs (on the same (y, h, d, yaw) line the deepest
+passing x wins, so a crouch run only ever adds reach where the crouch helped and the no-crouch
+table stands where it did not), interpolates the 2 cm position boundary x over (y, h, d, yaw),
+and reports margin = boundary - x. The envelope is a floor-only, planted-feet,
 position-only measurement (see docs/reach_envelope.md §7); treat margin as necessary, not sufficient.
 """
 
@@ -30,7 +31,8 @@ class ReachEnvelope:
                 if r["trials"] == 0:
                     continue
                 xb = X_FLOOR if r["x_pass"] is None else r["x_pass"] + 0.025
-                cells[(round(r["y"], 3), round(r["h"], 3), round(r["d"], 3), round(r["yaw"], 1))] = xb
+                key = (round(r["y"], 3), round(r["h"], 3), round(r["d"], 3), round(r["yaw"], 1))
+                cells[key] = max(cells.get(key, -np.inf), xb)
         self.axes = tuple(sorted({k[i] for k in cells}) for i in range(4))
         grid = np.full([len(a) for a in self.axes], np.nan)
         for k, v in cells.items():

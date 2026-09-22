@@ -95,3 +95,27 @@ def test_query_interpolates_boundary_and_flags_margin(tmp_path):
     assert env.query(0.60, 0.0, 0.7, 0.4, 0.0)["verdict"] == "no_reach"
     assert env.query(0.30, 0.0, 0.9, 0.4, 0.0)["verdict"] == "unknown"  # h outside the measured box
     assert env.query(0.30, -0.1, 0.5, 0.3, -10.0)["boundary_x_m"] == pytest.approx(0.175)
+
+
+def test_query_merge_keeps_the_deepest_pass_per_line(tmp_path):
+    """A crouch run adds reach where the crouch helped; where it failed the no-crouch line stands."""
+    from locomani.tasks.crate.reach_envelope.query import ReachEnvelope
+
+    def table(name, x_pass_by_yaw):
+        rows = [
+            dict(y=y, h=h, d=d, yaw=yaw, trials=1, x_pass=x_pass_by_yaw[yaw], x_fail=None)
+            for y in (-0.1, 0.1)
+            for h in (0.3, 0.4)
+            for d in (0.3, 0.5)
+            for yaw in (-10.0, 10.0)
+        ]
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "boundary_table.json").write_text(json.dumps(rows))
+        return tmp_path / name
+
+    upright = table("upright", {-10.0: 0.30, 10.0: 0.30})
+    crouch = table("crouch", {-10.0: 0.45, 10.0: None})  # helps at -10, never passes at +10
+    for order in ([upright, crouch], [crouch, upright]):
+        env = ReachEnvelope(order)
+        assert env.boundary_x(0.0, 0.3, 0.4, -10.0) == pytest.approx(0.475)
+        assert env.boundary_x(0.0, 0.3, 0.4, 10.0) == pytest.approx(0.325)

@@ -63,6 +63,10 @@ bash scripts/reach_envelope.sh outputs/reach_envelope/<name>
 - **下蹲**（`pelvis_height_target`）：不蹲时 h=0.30 骨盆只到 0.73 m，肩撞躯干，45 条线里 40 条到 0.20 m 仍失败；
   拉到 0.65 后骨盆实测 0.57 m，h=0.30 正对到 0.48–0.53、h=0.40 到 0.58，过点姿态中位从 20° 降到 13°。
   拉到 0.58 与 0.65 交付相同（腿已弯到底），取 0.65。h≥0.55 未测下蹲，所以默认只对 h<0.50 生效。
+- **下蹲在 y=±0.12**（2026-09-22，`outputs/reach_envelope/low_h_squat65_y_20260922`，60 条线、7 轮、213 次、单栈 1.1 h）：
+  45 条夹住。h=0.30 从不蹲的"到 0.20 仍不过"提到 0.40–0.45（正对及朝箱子内侧转的偏角）；h=0.40 提到 0.40–0.55。
+  **朝外转的 15 条全部不过**（y=−0.12 配 yaw +15/+30、y=+0.12 配 yaw −30，加上 y=+0.12 的三条 −15）——同一批线不蹲时还能到 0.30。
+  下蹲是把手位换低，代价是朝外的偏角失去 IK 余量；`query` 按每条线取最深过点，所以这些格仍用不蹲的表。
 - **最低可达高度**（y=0，下蹲）：h=0.20 正对 0.38–0.43 m（d 0.44/0.32），h=0.10 六条线在 0.20 m 处仍差 4–12 cm——
   骨盆到 0.55–0.61 已是下蹲极限，再低的目标要跪或走进去。
 
@@ -106,9 +110,14 @@ ffmpeg -i $R/videos/reel_h070_source.mp4 -vf "setpts=0.5*PTS,scale=1024:-2" -r 1
 
 ```bash
 "$VENV_SIM_PY" -m locomani.tasks.crate.reach_envelope.query <run_dir> [<run_dir>...] -- x y h d yaw_deg
+# 目前完整的一组：
+"$VENV_SIM_PY" -m locomani.tasks.crate.reach_envelope.query \
+  outputs/g1_capability_envelope_20260921/boundary outputs/reach_envelope/low_h_20260921 \
+  outputs/reach_envelope/low_h_squat65_20260921 outputs/reach_envelope/lowest_h_20260921 \
+  outputs/reach_envelope/low_h_squat65_y_20260922 -- 0.40 0.12 0.30 0.44 0
 ```
 
-把几次搜索的表合成一张网格（后面的目录覆盖前面的同一条线，下蹲的运行放最后），在 (y, h, d, yaw) 上线性插值
+把几次搜索的表合成一张网格（同一条线取各次搜索里**最深的过点**，所以下蹲的运行只在它更深的格里生效），在 (y, h, d, yaw) 上线性插值
 2 cm 位置边界，报 `margin = 边界 x − 箱子 x`：≥5 cm `reach`、0–5 cm `marginal`（一格噪声内）、<0 `no_reach`，
 落在测过的范围外 `unknown`。它回答"手能不能到"，不回答"能不能抓起来"——见 §7。
 
