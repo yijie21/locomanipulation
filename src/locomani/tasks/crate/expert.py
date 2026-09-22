@@ -35,7 +35,14 @@ from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.round_runner import prime
 from locomani.tasks.crate.visible_target import VisibleTarget
-from locomani.tasks.crate.visual_approach import ApproachPreparation, VisualApproach, initial_robot_xy
+from locomani.tasks.crate.visual_approach import (
+    ApproachPreparation,
+    VisualApproach,
+    approach_heading,
+    edge_distance,
+    initial_robot_xy,
+    scene_object_yaw,
+)
 from locomani.tasks.crate.visual_low_reach import VisualLowReach
 from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
@@ -50,6 +57,7 @@ def prepare_stationary_ready(
     placement: Callable[[str], None],
     whole_body: bool = False,
     on_phase: Callable[[str, dict], None] | None = None,
+    heading: float = 0.0,
 ):
     """Run the visual expert's stationary controller preparation and admission.
 
@@ -76,16 +84,17 @@ def prepare_stationary_ready(
     time.sleep(0.4)
     phase("initial_placement_settled", duration_s=0.4)
     p.cmd.start_control()
-    p.hold_yaw = 0.0
+    p.hold_yaw = float(heading)
+    facing = (float(np.cos(heading)), float(np.sin(heading)), 0.0)
     phase("control_started")
     if whole_body:
         upper_ref.shared().wait(3.0)
         phase("upper_reference_ready", timeout_s=3.0)
-        p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
+        p.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=facing)
         phase("reanchor_started")
         reanchor(p)
         phase("reanchor_complete")
-    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
+    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=facing)
     if whole_body:
         phase("post_reanchor_idle_complete", before_s=1.5, after_s=3.0)
     if not whole_body:
@@ -164,14 +173,22 @@ def prepare_stationary_ready(
 def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
     """Place at the sampled table-edge distance; all initialization ends before recording."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
-    yaw = np.pi / 2 + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
-    start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
-    start_xy = initial_robot_xy(meta, start_distance)
+    # The object keeps the scene's own yaw (pi/2 in the synthetic table scenes,
+    # 0 in the logistics room: long axis across the walk-in either way).
+    yaw = scene_object_yaw(meta) + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
+    heading = approach_heading(meta)
+    base = np.asarray(meta["robot_start"]["xy"], dtype=float)
+    if cfg.start_pose == "scene":
+        start_xy = base + cfg.start_advance * np.array([np.cos(heading), np.sin(heading)])
+        start_distance = edge_distance(meta, start_xy)
+    else:
+        start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
+        start_xy = initial_robot_xy(meta, start_distance)
 
     def placement(_reset_id: str) -> None:
         reset.reset(
             objects={target_key(meta): {"dxy": jitter.tolist(), "yaw": float(yaw)}},
-            robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
+            robot={"dxy": (start_xy - base).tolist(), "yaw": heading},
         )
 
     arm, preparation = prepare_stationary_ready(
@@ -181,6 +198,7 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
         solver,
         placement=placement,
         whole_body=whole_body,
+        heading=heading,
     )
     preparation.pop("admission_state")
     preparation.pop("ready_reference")
@@ -230,8 +248,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
     initial = p.obs()
     if whole_body:
-        distance = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])
-        if not 1.2 <= distance <= 1.5:
+        distance = edge_distance(meta, initial["pelvis"]["pos"])
+        if cfg.start_pose == "sampled" and not 1.2 <= distance <= 1.5:
             arm.stop()
             return RoundResult(
                 False,
@@ -375,6 +393,11 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             nav = replace(nav, ready=False, reason="approach_unsupported_reach")
                 arm.mode = LocomotionMode.SLOW_WALK if nav.speed > 0 else LocomotionMode.IDLE
                 yaw = p.pelvis_yaw(raw)
+                if nav.facing_offset:
+                    # Turn in place: re-aim the held planner heading at the target
+                    # from the CURRENT yaw. The new heading stays held afterwards.
+                    face = yaw + nav.facing_offset
+                    arm._face = (float(np.cos(face)), float(np.sin(face)), 0.0)
                 direction = nav.direction.copy()
                 direction[:2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]] @ direction[:2]
                 q, velocity = (
@@ -391,6 +414,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                     "source": None if target is None else target.source,
                     "movement": direction,
                     "speed": nav.speed,
+                    "facing_offset": nav.facing_offset,
                     "relative_speed": approach.relative_speed,
                     "angular_speed": approach.angular_speed,
                     "ready": nav.ready,
@@ -594,9 +618,10 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         # Sent on every path that started recording, including runtime errors,
         # so the exporter never stays in RECORDING and the manifest join holds.
         p.cmd.key("c" if result["ok"] else "x")
-        p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
+        heading = approach_heading(meta)
+        p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=(float(np.cos(heading)), float(np.sin(heading)), 0.0))
     if "pelvis" in initial:
-        result["initial_edge_distance"] = float(initial_robot_xy(meta, 0)[0] - initial["pelvis"]["pos"][0])
+        result["initial_edge_distance"] = edge_distance(meta, initial["pelvis"]["pos"])
     if error is not None:
         result["error"] = error
     print(f"[{label}] {result}", flush=True)

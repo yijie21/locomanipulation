@@ -96,7 +96,9 @@
   无支撑的接触使用剩余的制动余量以获得更接近的可见接近，受 `visual.stand_off` 限制；无支撑的放置仍然可能失败准入。
 - 在交接前在深度轴上收敛站立。步态在命令位置周围散落几厘米的实现停止，站立位置远于 `visual.stand_off` 超过 `visual.stand_depth_tolerance` 的（在安静间隔的平均可见深度上判断）将重新行走，收紧停止位置，最多 `visual.stand_depth_retries` 次；接近的站立从不后退。
   每个安静的站立都记录为导航记录中的 `stand_attempts` 和尝试结果（接受或不接受），因此远站立保持可见而不被误认为到达失败。重试仍然受 `visual.walk_timeout` 限制。
-  行走命令从不低于 `visual.walk_speed_min`：规划器的速度字段是步进函数，在它下面的命令（前 0.10 下限）根本不移动机器人，所以以那种方式命令的重新行走会站立不动直到超时。
+  行走命令从不低于 `visual.walk_speed_min`：规划器的速度字段不是 m/s，映射属于当时的部署栈（`ledger/crate.md` 2026-09-22：0.10 曾交付 0.011 m/s，0.20 当天交付 0.05 m/s），落在映射脚下的命令根本不移动机器人，所以以那种方式命令的重新行走会站立不动直到超时。
+- 起点由场景的 `robot_start` 朝向定义走入轴（合成桌子场景朝 +x，物流房间朝 +y），物体保持场景自己的偏航再加 `yaw_jitter_deg`。`visual.start_pose` 为 `sampled`（默认）时在近桌沿前 `start_edge_min`–`start_edge_max` 抽起点；为 `scene` 时直接用场景 `robot_start` 沿朝向前移 `start_advance`（房间纸箱线用箱沿线验证局 `dy0.225_r00` 的起点：前移 0.225 m，离平台沿 0.425 m），并跳过 1.2–1.5 m 的初始距离校验（距离照常记录）。
+- 横向残差怎么处理由 `visual.stand_lateral_gate` 决定。`walk`（默认）：深度到位但 |lateral| 还在 `stand_lateral_tolerance` 之外就继续走，走着修横向——三组 20 局 pilot 里深度过冲与横向误差负相关，就是这段走出来的。`turn`：深度到位即停，横向残差按 atan2(lateral, depth) 转成原地转向（相位 `turn`，movement 为零，facing 从当前偏航重新指向目标），进容差后走常规的安静 settle；转向精度受控制器 7–8° 的朝向死区限制。
 - 在 POSE 交接时保留消耗的规划器关节/根部参考。后端直接切换到准备好的 POSE 流并以原子方式释放规划器覆盖。
   下降从该参考开始；没有中间 VR 阶段。
 - 同时移动双手、臀部和所有三个腰轴。用整个身体补偿有界的测量跟踪错误；不要在弯曲后冻结腿部。
@@ -381,7 +383,8 @@ flowchart TD
   RS["<b>reset_ready</b> 摆到抽样的桌沿距离，PlannerArm 载入 ready 臂姿<br/>expert.py:43"]
   G0{"initial_stance_ready<br/>∧ 初始桌沿距离 ∈ [start_edge_min, start_edge_max]"}
   WK["<b>walk</b> 朝篮子走，speed 由剩余距离切档<br/>visual_approach.py:31"]
-  WG{"到位：x ≤ stand_off + walk_brake_margin<br/>∧ |lateral| < stand_lateral_tolerance<br/>visual_approach.py:114"}
+  WG{"到位：x ≤ stand_off + walk_brake_margin<br/>∧ (|lateral| < stand_lateral_tolerance ∨ stand_lateral_gate = turn)<br/>visual_approach.py"}
+  TN["<b>turn</b>（仅 stand_lateral_gate = turn 且 |lateral| 超容差）原地转 atan2(lateral, depth)"]
   ST["<b>settle</b> 等静止<br/>visual_approach.py:31"]
   SG{"连续安静 settle_seconds（速度 < 0.06 m/s ∧ 角速 < 0.2 rad/s，硬编码<br/>visual_approach.py:122）<br/>∧ 站位收敛：depth ≤ stand_depth_tolerance 或重试 ≥ stand_depth_retries"}
   HO["<b>handoff</b> PlannerArm → StreamedArm，建 CoordinatedReach<br/>expert.py:325-378"]
@@ -401,6 +404,7 @@ flowchart TD
   G0 -- 过 --> WK --> WG
   WG -- 未到 --> WK
   WG -- 到位 --> ST --> SG
+  ST -- "|lateral| 超容差 ∧ gate = turn" --> TN --> ST
   SG -- 不满足 --> ST
   SG -- 满足 --> HO --> OB --> RE --> RG
   RG -- 是 --> CL --> LF --> SD --> HD --> EV

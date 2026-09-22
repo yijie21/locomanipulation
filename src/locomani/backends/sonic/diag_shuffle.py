@@ -20,7 +20,13 @@ been measured), and the carry is a DISPLACEMENT over 3.5 s of commanded IDLE, so
 without that control the carry column cannot be read.
 
     python -m locomani.backends.sonic.diag_shuffle --speeds 0.20,0.26 --repeats 3
+    python -m locomani.backends.sonic.diag_shuffle --march 0.30,0.35 --crab 0,90 --speeds 0.32
                                                    (needs a live stack)
+
+2026-09-22 (ledger crate.md): `--march` legs (zero movement vector) do NOT step
+in place -- 0-0.3 steps/s, same as IDLE -- and the v1.1 speed map measured that
+day was CONTINUOUS from 0.20 (0.05 m/s) to 0.35 (0.25 m/s), not the 0.28->0.30
+step of 2026-09-11. Re-measure before trusting either table.
 
 RESTORED 2026-09-11: this file was deleted by refactor step 2 (ec0eb1c, "delete
 unimported diag/tool scripts") and brought back for the v1.1 re-calibration --
@@ -194,6 +200,13 @@ def main() -> None:
         "approach heading -- and the deploy normalises the movement vector's magnitude away, so "
         "forward delivery does not imply lateral delivery (ledger bottle.md 24.5).",
     )
+    ap.add_argument(
+        "--march",
+        type=str,
+        default="",
+        help="speeds to probe with a ZERO movement vector in SLOW_WALK (does the gait step in place?). "
+        "Each is repeated --repeats times; net/lat then read as drift, steps/s as the answer.",
+    )
     ap.add_argument("--json", default=None, help="write every leg's numbers here")
     a = ap.parse_args()
     p = Primitives(verbose=False)
@@ -215,6 +228,8 @@ def main() -> None:
     else:
         grid = [(LocomotionMode.SLOW_WALK, sp, True, 0.0) for sp in (0.18, 0.22, 0.26, 0.30, 0.40)]
         grid += [(LocomotionMode.SLOW_WALK, 0.30, False, 0.0), (LocomotionMode.WALK, 0.35, True, 0.0)]
+    if a.march:
+        grid += [(LocomotionMode.SLOW_WALK, float(x), False, 0.0) for x in a.march.split(",") for _ in range(a.repeats)]
     # The control: commanded IDLE from a standstill. Its `net` is the drift
     # rate the carry column has to be read against, not zero.
     grid += [(LocomotionMode.IDLE, 0.0, False, 0.0) for _ in range(max(1, a.repeats))]

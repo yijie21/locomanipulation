@@ -5,7 +5,13 @@ from scipy.spatial.transform import Rotation
 from test_crate_visual_perception import observation
 
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
-from locomani.tasks.crate.visual_approach import VisualApproach, initial_robot_xy
+from locomani.tasks.crate.visual_approach import (
+    VisualApproach,
+    approach_heading,
+    edge_distance,
+    initial_robot_xy,
+    scene_object_yaw,
+)
 from locomani.tasks.crate.visual_config import CrateVisualConfig
 from locomani.tasks.crate.visual_scene import MARKERS
 
@@ -231,3 +237,72 @@ def test_walk_commands_never_fall_below_the_stepping_floor():
     assert near.phase == "walk" and near.speed == pytest.approx(0.35)
     with pytest.raises(ValueError, match="walk_speed_min"):
         CrateVisualConfig(walk_speed=0.3, walk_speed_min=0.35)
+
+
+def test_walk_gate_keeps_walking_while_lateral_is_out_of_tolerance():
+    cfg = CrateVisualConfig(stand_off=0.36, walk_brake_margin=0.07, stand_lateral_tolerance=0.14)
+    approach = VisualApproach(cfg)
+    command = approach.step(
+        0, ApproachTarget(np.array([0.40, 0.20, 0]), 0, "pose"), [1, 0, 0, 0], grasp_pose_available=True
+    )
+    assert command.phase == "walk" and command.speed > 0 and command.facing_offset == 0
+
+
+def test_turn_gate_stops_on_depth_and_turns_toward_the_lateral_residual():
+    cfg = CrateVisualConfig(
+        stand_off=0.36,
+        walk_brake_margin=0.07,
+        stand_lateral_tolerance=0.14,
+        stand_lateral_gate="turn",
+        settle_seconds=0.3,
+    )
+    approach = VisualApproach(cfg)
+    target = ApproachTarget(np.array([0.40, 0.20, 0]), 0, "pose")
+    command = approach.step(0, target, [1, 0, 0, 0], grasp_pose_available=True)
+    assert command.phase == "turn" and command.speed == 0 and not command.ready
+    assert command.facing_offset == pytest.approx(np.arctan2(0.20, 0.40))
+    # Once the target sits inside the lateral tolerance the ordinary quiet settle follows.
+    command, _ = _settle(approach, 0.40, 0.05)
+    assert command.ready
+    assert approach.stand_attempts[-1]["accepted"]
+
+
+def test_turn_gate_field_is_validated():
+    with pytest.raises(ValueError):
+        CrateVisualConfig(stand_lateral_gate="spin")
+
+
+def _room_meta():
+    """The logistics room: robot_start faces +y, the platform sits ahead, the box lies with its long axis across."""
+    return {
+        "target_object": "nor_cal_box",
+        "robot_start": {"xy": [0.0, -1.205], "yaw_deg": 90.0},
+        "objects": {"nor_cal_box": {"surface": "A", "init_quat": [1.0, 0.0, 0.0, 0.0]}},
+        "surfaces": {"A": {"xy": [0.0, -0.105], "flat_half_extent": [0.6, 0.45]}},
+    }
+
+
+def test_room_placement_walks_in_along_the_scene_heading():
+    meta = _room_meta()
+    assert approach_heading(meta) == pytest.approx(np.pi / 2)
+    np.testing.assert_allclose(initial_robot_xy(meta, 1.3), [0.0, -0.555 - 1.3], atol=1e-9)
+    assert edge_distance(meta, [0.0, -0.98, 0.79]) == pytest.approx(0.425)
+    assert scene_object_yaw(meta) == pytest.approx(0.0)
+
+
+def test_synthetic_table_placement_is_unchanged_by_the_heading_generalisation():
+    meta = {
+        "target_object": "nor_cal_box",
+        "robot_start": {"xy": [-1.5, 0.0], "yaw_deg": 0.0},
+        "objects": {"nor_cal_box": {"surface": "A", "init_quat": [0.7071067811865476, 0.0, 0.0, 0.7071067811865475]}},
+        "surfaces": {"A": {"xy": [0.0, 0.0], "flat_half_extent": [0.301, 0.301]}},
+    }
+    np.testing.assert_allclose(initial_robot_xy(meta, 1.3), [-0.301 - 1.3, 0.0])
+    assert edge_distance(meta, [-1.5, 0.0]) == pytest.approx(1.199)
+    assert scene_object_yaw(meta) == pytest.approx(np.pi / 2)
+
+
+def test_start_pose_field_is_validated():
+    with pytest.raises(ValueError):
+        CrateVisualConfig(start_pose="video")
+    assert CrateVisualConfig(start_pose="scene", start_advance=0.225).start_advance == 0.225

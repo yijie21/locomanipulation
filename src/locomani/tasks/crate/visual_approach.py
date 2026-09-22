@@ -17,12 +17,45 @@ class ApproachCommand:
     speed: float = 0.0
     ready: bool = False
     reason: str = ""
+    facing_offset: float = 0.0  # radians to add to the held heading (turn phase only; + = left)
+
+
+def approach_heading(meta):
+    """World yaw of the walk-in, radians: the scene's `robot_start` heading.
+
+    0 in the synthetic table scenes (the robot walks +x), pi/2 in the logistics
+    room (it walks +y toward the platform). Every placement below is expressed
+    along this axis so one expert runs in both.
+    """
+    return float(np.radians((meta.get("robot_start") or {}).get("yaw_deg", 0.0)))
+
+
+def _near_edge(meta):
+    """Centre of the target surface's edge facing the walk-in, and the unit walk-in axis."""
+    surface = meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
+    heading = approach_heading(meta)
+    axis = np.array([np.cos(heading), np.sin(heading)])
+    reach = abs(axis[0]) * surface["flat_half_extent"][0] + abs(axis[1]) * surface["flat_half_extent"][1]
+    return np.asarray(surface["xy"][:2], dtype=float) - axis * reach, axis
 
 
 def initial_robot_xy(meta, distance):
-    surface = meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
-    edge_x = surface["xy"][0] - surface["flat_half_extent"][0]
-    return np.array([edge_x - distance, surface["xy"][1]])
+    """Start point `distance` metres before the near table edge, on the walk-in axis."""
+    edge, axis = _near_edge(meta)
+    return edge - axis * distance
+
+
+def edge_distance(meta, xy):
+    """Signed distance from `xy` to the near table edge along the walk-in axis (positive = short of it)."""
+    edge, axis = _near_edge(meta)
+    return float(axis @ (edge - np.asarray(xy[:2], dtype=float)))
+
+
+def scene_object_yaw(meta):
+    """World yaw of the target object as the scene places it (from `init_quat`, w-x-y-z)."""
+    obj = meta["objects"][meta.get("target_object") or "blue_crate"]
+    w, x, y, z = obj.get("init_quat") or (1.0, 0.0, 0.0, 0.0)
+    return float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
 
 
 class VisualApproach:
@@ -111,8 +144,18 @@ class VisualApproach:
             self.relative_velocity += min(1, dt / 0.4) * (velocity - self.relative_velocity)
             self.relative_speed = float(np.linalg.norm(self.relative_velocity))
         self.position = point.copy()
-        if self.phase == "walk" and point[0] <= self.stop_distance and abs(point[1]) < cfg.stand_lateral_tolerance:
+        aligned = abs(point[1]) < cfg.stand_lateral_tolerance
+        if self.phase == "walk" and point[0] <= self.stop_distance and (aligned or cfg.stand_lateral_gate == "turn"):
             self.phase = "settle"
+        if self.phase == "settle" and not aligned and cfg.stand_lateral_gate == "turn":
+            # Depth is reached; the lateral residual is a heading error (a
+            # walk holds its entry heading and drifts 3-16 deg in 5 s, ledger
+            # crate.md 2026-09-22). Turn on the spot to face the target instead
+            # of walking on: walking on for lateral is what overshoots depth.
+            self.quiet_since, self.quiet_points = None, []
+            return ApproachCommand(
+                "turn", np.zeros(3), reason=reason, facing_offset=float(np.arctan2(point[1], max(point[0], 1e-3)))
+            )
         if self.phase == "settle":
             # Assisted execution has measured base velocity. Use that current
             # physical signal instead of waiting for the visual derivative's
@@ -132,10 +175,12 @@ class VisualApproach:
         cfg = self.config
         error = np.array([max(0, point[0] - cfg.stand_off), point[1], 0.0])
         direction = error / max(np.linalg.norm(error), 1e-6)
-        # The planner's speed field is a step, not a slope (backends/sonic/gait_speeds.py):
-        # 0.10 delivered 0.011 m/s over 940 samples of two crate batches while 0.35
-        # delivered 0.48 m/s. A floor below the step is a walk that never starts,
-        # which is how a depth re-walk stood still for 20 s.
+        # The planner's speed field is not m/s and its map belongs to the deployed
+        # stack (ledger crate.md 2026-09-22): 0.10 delivered 0.011 m/s over 940
+        # samples of two crate batches, while on 2026-09-22 0.20 delivered 0.05 m/s
+        # and 0.35 0.25 m/s with a 10 cm carry. A floor below the map's foot is a
+        # walk that never starts, which is how a depth re-walk stood still for 20 s;
+        # re-measure with backends/sonic/diag_shuffle.py before moving the floor.
         speed = float(np.clip(0.7 * np.linalg.norm(error), cfg.walk_speed_min, cfg.walk_speed))
         return ApproachCommand(self.phase, direction, speed, reason=reason)
 

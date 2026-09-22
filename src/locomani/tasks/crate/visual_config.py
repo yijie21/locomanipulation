@@ -11,6 +11,8 @@ class CrateVisualConfig:
     palm_pitch_deg: float = 60.0  # downward grasp orientation relative to the observed basket
     start_edge_min: float = 1.2  # initial pelvis distance from the near table edge, metres
     start_edge_max: float = 1.5  # upper end of initial table-edge distance sampling
+    start_pose: str = "sampled"  # sampled: start_edge_min..max before the near edge; scene: the scene's robot_start, advanced by start_advance (the logistics-room box line starts where the box-rim reference round dy0.225_r00 did)
+    start_advance: float = 0.0  # metres forward of the scene's robot_start along its heading; start_pose scene only
     walk_speed: float = 0.35  # maximum SONIC approach speed command, metres/second
     walk_speed_min: float = (
         0.35  # smallest approach command; the deploy does not step below ~0.3, so a lower floor is a dead command
@@ -19,6 +21,7 @@ class CrateVisualConfig:
     walk_timeout: float = 30.0  # maximum walking and stance-settling duration
     settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
     stand_lateral_tolerance: float = 0.04  # metres; final body IK still owns low-reach admission
+    stand_lateral_gate: str = "walk"  # walk: keep walking until |lateral| is inside the tolerance; turn: stop on depth, then turn in place to face the target (ledger crate.md 2026-09-22: walking on for lateral is what overshoots depth)
     stand_depth_tolerance: float = 0.04  # metres past stand_off a quiet stance may rest before re-walking
     stand_depth_retries: int = 2  # re-walks allowed when the quiet stance is farther than the tolerance
     lift_seconds: float = 4.0  # lift ramp duration; assisted standing overlaps after the measured probe
@@ -49,8 +52,12 @@ class CrateVisualConfig:
     def __post_init__(self):
         if self.pose_source not in ("markers", "assisted"):
             raise ValueError("visual.pose_source must be markers or assisted")
+        if self.stand_lateral_gate not in ("walk", "turn"):
+            raise ValueError("visual.stand_lateral_gate must be walk or turn")
+        if self.start_pose not in ("sampled", "scene"):
+            raise ValueError("visual.start_pose must be sampled or scene")
         for name, value in vars(self).items():
-            if name == "pose_source":
+            if name in ("pose_source", "stand_lateral_gate", "start_pose"):
                 continue
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")
