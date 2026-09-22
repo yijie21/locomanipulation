@@ -31,6 +31,14 @@ def test_a_busy_quota_refuses_the_stages_that_need_cores():
     assert run_common.shortfall("convert", live) is None  # 9 + 4 still fits
 
 
+def test_a_driver_attaching_to_a_live_stack_is_not_charged_the_stack_again():
+    """The stack's ~5 cores are already inside `cores`; the driver only needs its own."""
+    live = dict(IDLE, cores=9.5)  # others 4.5 + our stack 5: a fresh stack would not fit
+    assert "cpu" in run_common.shortfall("collect", live)
+    assert run_common.shortfall("collect", live, record=False, already=313) is None  # 9.5 + 2 fits
+    assert "cpu" in run_common.shortfall("collect", dict(live, cores=14.0), record=False, already=313)
+
+
 def test_the_pid_ceiling_counts_the_margin():
     """A stack that passes the check still has to fork; the margin is what it forks into."""
     live = dict(IDLE, pids=3840 - 200 - 1800)  # exactly at the line

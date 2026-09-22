@@ -42,6 +42,10 @@ NEEDS = {  # measured, not theoretical: an exporter holds ~1800 pids and the con
 # budget it does not spend. Kept at more than twice the measurement because the agent process and
 # a heavier scene are not in it.
 NO_EXPORTER_PIDS = 400
+# What the DRIVER costs when the stack is already up: the expert process and its ZMQ clients,
+# measured 2026-09-22 at 1-1.5 cores while a sim + deploy stack held ~5. Charging the attaching
+# driver the whole stage budget refused it whenever anything else on the box held ~3 cores.
+ATTACH_CORES = 2
 
 
 def open_run(experiment: Path | str, name: str | None = None, *, write: bool = True) -> tuple[dict, Path]:
@@ -144,8 +148,9 @@ def shortfall(stage: str, live: dict, *, record: bool = True, already: int = 0) 
     """
     need = NEEDS[stage]
     pids_needed = max((need["pids"] if record else min(need["pids"], NO_EXPORTER_PIDS)) - already, 0)
-    if (cores := live.get("cores")) is not None and cores + need["cores"] > live.get("quota", 16.0):
-        return f"cpu: {cores} cores in use + {need['cores']} needed > quota {live.get('quota')}"
+    cores_needed = ATTACH_CORES if already > 0 else need["cores"]  # the live stack's cores are in `cores`
+    if (cores := live.get("cores")) is not None and cores + cores_needed > live.get("quota", 16.0):
+        return f"cpu: {cores} cores in use + {cores_needed} needed > quota {live.get('quota')}"
     if (pids := live.get("pids")) is not None and pids + pids_needed > live.get("pids_max", 3840) - PID_MARGIN:
         return f"pids: {pids} + {pids_needed} needed > {live.get('pids_max', 3840) - PID_MARGIN}"
     free = live.get("gpu_free_mib")

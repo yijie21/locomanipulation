@@ -132,7 +132,7 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
 | 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use`，eval 起不来 |
 
 两个都**不是每卡一个**，是进程范围的 TCP 端口；采集阶段不受影响（端口按 instance 偏移）。pid 也共享：
-上限 3840，开销几乎全在 exporter（实测 sim + deploy 仅 176），不录制的运行按 400 准入、录制的按 1800。
+上限 3840，开销几乎全在 exporter（实测 sim + deploy 仅 176），不录制的运行按 400 准入、录制的按 1800。CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 核。
 
 ```bash
 export PORT=29540                                                                # 终端 2 专用
