@@ -74,6 +74,9 @@ class CoordinatedReach:
             pelvis_forward_max=config.carry.pelvis_forward_max,
             pelvis_height_target=config.carry.pelvis_height_target,
         )
+        # The crouch serves the reach; standing up with the load returns the pelvis to its start height.
+        self.crouch_height = config.carry.pelvis_height_target
+        self.anchor_release = 0.0  # 0 pins the solver base to the measured pelvis; 1 frees it (stand-up)
         self.q = np.asarray(reference_joints).copy()
         self.root = np.asarray(reference_quaternion).copy()
         pitch = Rotation.from_matrix(rotation(self.root)).as_euler("xyz")[1]
@@ -152,7 +155,16 @@ class CoordinatedReach:
             # measured_xy leaves height free so a lower pelvis_height_target can still
             # bend the streamed leg reference and be followed.
             n = 2 if anchor == "measured_xy" else 3
-            lo[:n], hi[:n] = self.measured_base[:n] - 0.005, self.measured_base[:n] + 0.005
+            if self.anchor_release <= 0:
+                lo[:n], hi[:n] = self.measured_base[:n] - 0.005, self.measured_base[:n] + 0.005
+            else:
+                # The controller crouches by sitting back (~20 cm); pinned there, the solver can only
+                # bend the knees further when asked to rise. Widen the window as the stand progresses
+                # so the pelvis can come back over the feet inside the travel bounds.
+                w = 0.005 + self.anchor_release * 0.5
+                lo[:n] = np.maximum(lo[:n], self.measured_base[:n] - w)
+                hi[:n] = np.minimum(hi[:n], self.measured_base[:n] + w)
+                lo[:n] = np.minimum(lo[:n], hi[:n] - 1e-10)
         pose = self.body.solve(
             targets + cfg.tracking_gain * self.feedback,
             attitudes,
@@ -364,6 +376,15 @@ class CoordinatedReach:
                 targets += stand_u * (self.stand_targets - lifted)
                 self.torso_target = self.stand_rotation(stand_u).as_matrix()
                 self.posture = self.stand_posture + stand_u * (self.body.q0 - self.stand_posture)
+                # Only a crouched start needs the base freed; the upright flow keeps its measured anchor.
+                self.anchor_release = stand_u if self.crouch_height is not None else 0.0
+                if self.crouch_height is not None:
+                    # Keep the crouch through the lift; release it with the posture during the stand,
+                    # or the solver keeps pulling the pelvis down under hands that rise to standing height.
+                    self.body.pelvis_height_target = self.crouch_height + stand_u * (
+                        self.body.base0[2] - self.crouch_height
+                    )
+                self.diagnostics["pelvis_height_target"] = self.body.pelvis_height_target
                 self.diagnostics.update(lift_progress=lift_u, recovery_progress=stand_u, loaded_targets=targets.copy())
                 self.advance(targets, self.attitudes, tools, control_dt)
                 if (
@@ -374,6 +395,8 @@ class CoordinatedReach:
                     and attachment < 0.03
                     and rise >= cfg.lift_height * 0.6
                 ):
+                    self.body.pelvis_height_target = None
+                    self.anchor_release = 1.0
                     self.enter("hold")
                 elif recovery_time >= cfg.stand_seconds + 4:
                     return self.result("stand_not_delivered", True)

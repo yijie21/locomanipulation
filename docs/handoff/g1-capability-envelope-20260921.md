@@ -129,6 +129,29 @@ h=0.10：6 条线在 0.20 m 处仍失败（最佳 4–12 cm，骨盆 0.55–0.61
 的 0.265/0.282 一致，与包络无关**；空地图对同一篮子 0.53 m。差距是抓取力学（前倾越多抬起越不稳），不是手够不到。
 so70 因 CPU 余量被拒（另一会话在跑），so45 被我误停（等待条件提前触发），均未补跑：边界已在 0.27–0.31 夹住。
 
+## 下蹲修复（2026-09-22）
+
+`crate_abl_crouch` 2/10 的 trace（`outputs/runs/crate_abl_crouch/observations/*/observations.jsonl`）：lift 阶段附着误差 ≤0.6 cm，
+stand 阶段骨盆继续下沉（0.67→0.61 m）、`com_shift` 涨到 0.09–0.115、参考手误差到 5 cm，然后一只手脱开；不蹲的局骨盆全程 0.75–0.78。
+再看参考关节：stand 阶段参考膝角 1.38→1.49 rad（顶到 `knee_max`），高度目标已回到 0.79 也不伸腿。原因是控制器靠**后坐**下蹲
+（reach→lift 骨盆相对起点 x −0.19…−0.22 m、z −0.12…−0.14 m），`measured_xy` 把 IK 基座钉在那里，腿伸直就必须把骨盆挪回脚上方，锚定不允许。
+
+| 版本 | 改动（`coordinated_reach.py`） | `crate_abl_crouch*` 10 局 | 失败 |
+|---|---|---|---|
+| 原 | — | 2/10 | lost_attachment ×6, basket_tilt, empty_gripper |
+| fix | stand 阶段 `pelvis_height_target` 随 `stand_u` 混回起始高度，hold 释放 | 3/10 | basket_tilt ×2, reach_stalled ×2, lost_attachment, empty_gripper, invalid_initial_distance |
+| fix2 | + stand 阶段放开 `measured_xy` 锚定窗口（±5 mm → ±0.5 m），仅在有下蹲目标时 | 待跑（`crate_abl_crouch_fix2`，CPU 被其他会话占满时排队） | |
+
+fix 那版起身仍不成功：骨盆 stand/hold 停在 0.62–0.65 m。两局 `reach_stalled` 是另一种形态：reach 阶段骨盆就沉到 0.64 m、
+`com_shift` 0.09–0.10，手停在 3 cm 外，与起身无关。
+
+## 真实场景校准：0.62 m 桌（2026-09-22，`outputs/runs/crate_env62_so40`）
+
+同一套 `crate_env2_*` 视觉配置换到 `outputs/scene/crate_bimanual_depth04`（桌面 0.62、篮沿 ≈0.77 m），stand_off 0.40，10 局 **0/10**：
+`basket_displaced_before_capture` ×5（实测站位 0.28–0.40 m 都有），`approach_timeout` ×3（站位 0.45），`reach_stalled` ×2。
+同 stand_off 在矮桌实测站位 0.24 m，这里 0.28–0.46 m；失败发生在合爪前，不是抬起。这套按 0.30 m 桌标定的入手几何不适用于 0.62 m 桌，
+站位扫描要等 expert 重标定后再做；校正表目前只有矮桌一行。`crate_env62_so30/so50.yaml` 已备好未跑。
+
 ## 三个机制（按发现顺序）
 
 1. **放开 IK 上限本身一厘米都不换来。** 第一轮七个包络在 0.50 处全是 3.3–4.3 cm。IK 敢规划得更深，但流给 SONIC 的姿态只有关节角
@@ -155,6 +178,11 @@ so70 因 CPU 余量被拒（另一会话在跑），so45 被我误停（等待�
   `test_box_rim_coordinated_execution`、`test_crate_visual_low_reach`、`test_crate_reachability_atlas`）全部通过；未跑完整 `make check`。
 
 ## 未做
+
+- 下蹲 fix2 的 10 局验证；`reach_stalled`（reach 阶段沉到 0.64 m 停手）未处理。
+- 0.62 m 桌的 expert 入手标定；校正表第二行。
+- 空地 y=±0.12 下蹲搜索 `outputs/reach_envelope/low_h_squat65_y_20260922`：第 0 轮 60/60 不过（起点为离线上界 −10 cm），
+  `STOP` 后暂停，`bash scripts/reach_envelope.sh <dir> --from 1` 续跑；`search.json` 的 `shards` 只是分片基础设施，可按空闲 GPU 改。
 
 - 边界搜索每点一次（复测证明噪声约一格）；y 只到 ±0.12；边界处的单次结果按五维搜索的经验（1 cm 翻转、复测 7/16 混合）应视为 ±1 格噪声。
 - 没有姿态反馈；没有对夹爪标定姿态容忍；没有真箱子/平台碰撞；站姿是初始化站姿而非走完停下的站姿。

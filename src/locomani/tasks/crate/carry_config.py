@@ -23,7 +23,9 @@ class CrateCarryConfig:
     knee_max: float = 0.85  # whole-body knee flexion bound, rad
     pelvis_forward_max: float = 0.20  # whole-body forward pelvis travel bound, m
     base_anchor: str = "reference"  # reach-phase pelvis: reference | measured | measured_xy (height left free)
-    pelvis_height_target: float | None = None  # whole-body height the solver is pulled toward, m; None keeps the start
+    pelvis_height_target: float | None = (
+        None  # crouch height the solver is pulled toward through reach/close/lift, m; released with the stand
+    )
 
     def __post_init__(self):
         if self.reach_control not in ("planner", "whole_body"):

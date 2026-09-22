@@ -169,6 +169,42 @@ def test_attached_lift_continues_to_actual_upright_stable_hold():
     assert policy.ready_since is not None and now - policy.ready_since >= policy.config.visual.hold_seconds
 
 
+def test_crouch_height_target_is_released_while_standing_up_with_the_load():
+    config = profiles.load("task", "crate_visual_low_reach").with_overrides(
+        ["visual.approach_speed=0.1", "carry.base_anchor=measured_xy", "carry.pelvis_height_target=0.70"]
+    )
+    q = np.zeros(29)
+    q[[0, 6]], q[[3, 9]], q[[4, 10]] = -0.1, 0.2, -0.1
+    q[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
+    q[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
+    state = dict(joints=q, pelvis=dict(pos=[0, 0, 0.78], quat=[1, 0, 0, 0]))
+    solver = BimanualIK(scene_ik(), waist_pitch_max=0.52, waist_dofs="all")
+    policy = CoordinatedReach(solver, config, state, reference_joints=q, reference_quaternion=state["pelvis"]["quat"])
+    obj = np.array([0.36, 0.02, 0.385])
+    orientation = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    targets = {}
+    for now in np.arange(0, 30, 0.05):
+        base = Rotation.from_quat(np.array(state["pelvis"]["quat"])[[1, 2, 3, 0]]).as_matrix()
+        if policy.phase in ("lift", "stand", "hold"):
+            tools = policy.solver.tool_poses(state["joints"])[0] @ base.T + state["pelvis"]["pos"]
+            obj = policy.closed_object + np.mean(tools - policy.closed_tools, axis=0)
+        seen = CrateEstimate(base.T @ (obj - state["pelvis"]["pos"]), base.T @ orientation, now, None, {})
+        command = policy.step(now, seen, state, [0.015] * 2)
+        targets.setdefault(command.phase, []).append(policy.body.pelvis_height_target)
+        if command.finished:
+            break
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+    assert command.reason == "completed"
+    # The crouch holds through reach, close and the lift itself.
+    assert all(v == pytest.approx(0.70) for phase in ("reach", "close", "lift") for v in targets[phase])
+    # The stand blends it monotonically back to the start height; the hold no longer pulls on it.
+    stand = np.array(targets["stand"], dtype=float)
+    assert np.all(np.diff(stand) >= -1e-9) and stand[0] == pytest.approx(0.70, abs=1e-6) and stand[-1] > 0.75
+    assert all(v is None for v in targets["hold"])
+    assert policy.anchor_release == 1.0
+    assert policy.diagnostics["observed_torso_lean_deg"] <= policy.config.visual.upright_tolerance_deg
+
+
 def test_bent_actual_posture_cannot_complete_a_hold():
     policy, state = setup()
     policy.step(0, estimate(0, state), state, [0.015] * 2)

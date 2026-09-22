@@ -137,7 +137,15 @@ ffmpeg -i $R/videos/reel_h070_source.mp4 -vf "setpts=0.5*PTS,scale=1024:-2" -r 1
   `reach_stalled`——手到了篮沿，前倾越大抓住后越抬不稳。所以 `query` 的 `no_reach` 可信，`reach` 只是必要条件，
   这类矮桌篮子还要 x ≤ 0.28 m；换箱子或桌高要重做一条 20 局的站位扫描。
 - **下蹲只对 h<0.40 的目标用，且当前会伤抓取。** 消融（stand_off 0.40 各 10 局）：只放开 IK 上限 9/10、只放大反馈 9/10、
-  只开下蹲 **2/10**（`lost_attachment` ×6：`pelvis_height_target` 在 lift/stand 阶段仍把骨盆往下拉）。修好 lift 之前不要在真实抓取里开它。
+  只开下蹲 **2/10**（`lost_attachment` ×6）。2026-09-22 的 trace 给出机制：控制器是**后坐**着蹲下去的（骨盆后退 20 cm、下沉 14 cm），
+  `pelvis_height_target` 在 stand 阶段仍把 IK 往下拉，`measured_xy` 又把 IK 基座钉在后坐位置，起身时腿伸不直，参考膝角反而顶到
+  `knee_max`。现在 `CoordinatedReach` 在 stand 阶段随 `stand_u` 把高度目标混回起始高度、并放开 xy 锚定窗口（hold 起完全释放）；
+  只放高度目标那版复测 3/10（`lost_attachment` 6→1，换成 `basket_tilt`×2、`reach_stalled`×2）。加放锚定那版的 10 局见
+  [台账](handoff/g1-capability-envelope-20260921.md#下蹲修复2026-09-22)。修到 9/10 量级之前不要在真实抓取里开它。
+- **换桌高要先重标定 expert，站位扫描才有意义。** 2026-09-22 用 `crate_env2_*` 同一套视觉配置在 0.62 m 桌
+  （`outputs/scene/crate_bimanual_depth04`，`configs/experiments/crate_env62_so40.yaml`）跑 10 局：**0/10**，
+  `basket_displaced_before_capture`×5（0.28–0.40 m 站位都有，手在合爪前撞箱）、走近超时×3、`reach_stalled`×2。
+  这不是站位边界，是按 0.30 m 桌标定的入手几何不适用；"真实边界 − 空地边界"的校正表目前只有矮桌一行（0.28 vs 0.53）。
 - 位置过的点里姿态 ≤15° 的只有约四分之一（中位 20°，下蹲后 13°）；夹爪能容忍多大姿态误差没标定。
 - 站姿是 expert 初始化站姿，不是走完停下的站姿（脚错开、骨盆偏航没注入）。
 - 没有箱体/平台碰撞；右侧（+yaw、−y）的劣势是控制器跟踪侧的不对称，根因未定位。
