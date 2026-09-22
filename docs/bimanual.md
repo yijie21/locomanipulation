@@ -94,8 +94,7 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 ```bash
 bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 1 --line bimanual   # 整条线，无人值守
 # 采集两个终端；起栈脚本两条线共用，按 task.plugin 冻结各自的场景
-bash scripts/collect_data.sh               configs/experiments/my_crate.yaml --gpu 1
-# 纸箱走同一条线：场景 --preset box_bimanual，见 handoff/box-via-basket-line-20260922.md
+bash scripts/collect_data.sh               configs/experiments/my_crate.yaml --gpu 1   # 纸箱同线：handoff/box-via-basket-line-20260922.md
 bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 1
 bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
 bash scripts/train.sh        outputs/runs/my_crate --gpu 1      # 训练
