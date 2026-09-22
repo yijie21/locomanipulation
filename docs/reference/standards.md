@@ -41,9 +41,9 @@ specific rules, not every architectural property or dynamic dependency.
 - Use one selector for mutually exclusive implementations and separate fields for
   independent capabilities. Historical formats use versioned migrations; current
   formats reject obsolete fields and unknown choices.
-- At subprocess boundaries serialize resolved configuration and verify delivery.
-  `pipeline/stack.py` resolves the child environment; `pipeline/stages.py` records
-  the actual command, settings and exit status. Bottle and crate use both.
+- A file whose body only assembles arguments for the next file must not exist. A subprocess is for
+  a venv boundary or a recorded reason (`tests/fixtures/interpreter_spawns.json`, checked); across
+  one serialize resolved configuration and verify delivery, in process record what was resolved.
 - Task entries return `RoundResult`; acceptance consumes this completed result.
   Do not start an episode from acceptance. Phase inputs remain task-specific.
 - `schema.py` owns stored/model field order; conversion, training configurations

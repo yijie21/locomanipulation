@@ -44,7 +44,10 @@ BYTE_BUDGETS = {"docs/reference/change-map.md": 3000}
 # eleven findings here -- guides still naming deleted scripts (run_wall_pilot.sh)
 # and paths missing a directory level. A doc that is not present is skipped: GUIDES
 # owns "does this document exist", this owns "is what it tells you to run there".
-COMMAND_DOCUMENTS = ("docs/single_arm.md", "docs/bimanual.md")
+# README prints the quickstart, so it has to name commands that exist. It was NOT checked
+# until 2026-09-22, which is how it kept printing `scripts/collect_data.sh` for a whole
+# refactor after that script was deleted.
+COMMAND_DOCUMENTS = ("README.md", "docs/single_arm.md", "docs/bimanual.md")
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
 

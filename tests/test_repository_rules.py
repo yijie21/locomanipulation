@@ -31,7 +31,7 @@ def test_debt_rejects_new_edges_and_requires_removing_fixed_exceptions():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         path = root / "src/locomani/backends/sonic/example.py"
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         debt = root / rules.DEBT
         debt.parent.mkdir(parents=True)
         debt.write_text("[]")
@@ -57,7 +57,7 @@ def test_navigation_detects_broken_links_missing_tests_and_budget_overflow():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         path = root / "docs/reference/change-map.md"
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("[broken](missing.md)\n`test_missing.py`\nextra\n")
         errors = rules.navigation_errors(root, {"docs/reference/change-map.md": 2})
         assert len(errors) == 3
@@ -75,7 +75,7 @@ def test_runtime_paths_are_rejected_including_directory_replacing_symlinks():
 def test_domain_maps_keep_link_and_test_checks(tmp_path):
     name = "docs/reference/change-map-crate.md"
     path = tmp_path / name
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("[owner](missing.py) `test_missing.py`\n")
     errors = rules.navigation_errors(tmp_path, {name: 35})
     assert any("broken link" in error for error in errors)
@@ -89,7 +89,7 @@ def test_domain_maps_keep_link_and_test_checks(tmp_path):
 def test_router_cannot_hide_excessive_reading_in_one_long_line(tmp_path):
     name = "docs/reference/change-map.md"
     path = tmp_path / name
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("腰" * (rules.BYTE_BUDGETS[name] // 3 + 1))
     assert len(path.read_text().splitlines()) == 1
     errors = rules.navigation_errors(tmp_path, {name: 40})
@@ -108,7 +108,7 @@ def test_changed_markdown_outside_entry_guides_is_checked(tmp_path):
 def test_runbooks_may_only_name_paths_that_exist(tmp_path):
     name = rules.COMMAND_DOCUMENTS[0]
     path = tmp_path / name
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)  # README.md's parent is the tree root itself
     path.write_text(
         "见 `scripts/run_wall_pilot.sh`：\n\n"
         "    bash scripts/single_arm/run_agent_server.sh configs/experiments/x.yaml --gpu 1\n\n"
@@ -140,7 +140,7 @@ def test_runbooks_may_only_name_paths_that_exist(tmp_path):
 def test_a_runbook_may_name_the_experiment_file_it_tells_you_to_create(tmp_path):
     name = rules.COMMAND_DOCUMENTS[0]
     path = tmp_path / name
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "    cp configs/experiments/real.yaml configs/experiments/mine.yaml\n"
         "    bash scripts/run_overnight.sh configs/experiments/mine.yaml --gpu 1\n"
@@ -159,7 +159,7 @@ def test_a_runbook_may_name_the_experiment_file_it_tells_you_to_create(tmp_path)
 def test_a_runbook_may_only_name_output_that_something_prints(tmp_path):
     name = rules.COMMAND_DOCUMENTS[0]
     path = tmp_path / name
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "src").mkdir()
     (tmp_path / "scripts/recipe.py").write_text(

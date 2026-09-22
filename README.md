@@ -58,12 +58,12 @@ export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"  
 # 无人值守跑完整条线：采集 → 转换 → 训练 → 闭环评测
 bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1
 # 或者一个阶段一个终端；采集是两个：起录制栈 / 跑 agent（每个脚本都吃 --dry-run）
-bash scripts/collect_data.sh                 configs/experiments/bottle_simple_200.yaml --gpu 1
+bash scripts/start_stack.sh collect          configs/experiments/bottle_simple_200.yaml --gpu 1
 bash scripts/single_arm/run_agent_server.sh  configs/experiments/bottle_simple_200.yaml --gpu 1
 bash scripts/convert_data.sh outputs/runs/bottle_simple_200   # 不用卡
 bash scripts/train.sh        outputs/runs/bottle_simple_200 --gpu 1
 # 闭环评测三个终端：栈 / 策略服务 / 跑局
-bash scripts/start_stack.sh                  outputs/runs/bottle_simple_200 --gpu 1
+bash scripts/start_stack.sh eval             outputs/runs/bottle_simple_200 --gpu 1
 bash scripts/run_vla_server.sh               outputs/runs/bottle_simple_200 --gpu 1
 bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gpu 1
 ```
@@ -72,8 +72,8 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gp
 会调用其它脚本的脚本（无人值守批量用），读代码请从单阶段脚本读起。并行就是多开一个终端换一张卡，
 没有作业文件也没有调度器；阶段产物已存在就自动跳过，要重跑就删掉那个产物。
 
-首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。仿真栈由 `collect_data.sh` /
-`start_stack.sh` 起、由驱动脚本或 `stop_stack.sh` 收（`src/locomani/stack/`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md)。
+首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。仿真栈由 `start_stack.sh collect` /
+`start_stack.sh eval` 起、由驱动脚本或 `stop_stack.sh` 收（`src/locomani/stack/`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md)。
 
 ## 查看运行结果
 
