@@ -211,9 +211,13 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
     }
 
 
-def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record=False):
+def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record=False, scene_xml=None):
     cfg = config.visual
-    model = ArmIK(paths.SCENE_XML)
+    # The run's own scene, not the one `locomani.paths` froze when it was imported: an
+    # in-process caller attaches to a stack and only then learns which run it is serving
+    # (docs/handoff/flat-functional-scripts-20260922.md).
+    scene_xml = scene_xml or paths.SCENE_XML
+    model = ArmIK(scene_xml)
     whole_body = config.carry.reach_control == "whole_body"
     solver = BimanualIK(
         model,
@@ -266,9 +270,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 },
             )
     perception = (
-        AssistedGuidance(ArmIK(paths.SCENE_XML), key=key, box=target_meta.get("box"))
+        AssistedGuidance(ArmIK(scene_xml), key=key, box=target_meta.get("box"))
         if assisted
-        else CratePerception(ArmIK(paths.SCENE_XML), geometry, max_reprojection_px=cfg.reprojection_px)
+        else CratePerception(ArmIK(scene_xml), geometry, max_reprojection_px=cfg.reprojection_px)
     )
     recorder = VisualRecording(directory / label)
     target_cache = VisibleTarget()
@@ -628,47 +632,87 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     return RoundResult(result["ok"], result["why"], result["produced"], {"metrics": result})
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--label", default="visual_crate")
     parser.add_argument("--config", type=Path)
+    parser.add_argument(
+        "--scene-dir",
+        type=Path,
+        help="the run's own scene copy; defaults to whatever LOCOMANI_SIM_DIR named at import",
+    )
     parser.add_argument("--set", dest="overrides", action="append", default=[])
     parser.add_argument(
         "--record",
         action="store_true",
         help="drive the data exporter: 'c' at task start, 'c'/'x' after evaluation; refused without an exporter",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.rounds < 1:
         parser.error("--rounds must be positive")
-    if args.record:
-        ports.require_exporter("--record")
     config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
-    config = config.with_overrides(args.overrides)
+    run(
+        config.with_overrides(args.overrides),
+        rounds=args.rounds,
+        seed=args.seed,
+        manifest=args.manifest,
+        label=args.label,
+        record=args.record,
+        scene_dir=args.scene_dir,
+    )
+
+
+def run(config, *, rounds, seed, manifest, label="visual_crate", record=False, scene_dir=None):
+    """Every attempt this configuration asks for, against the scene it names.
+
+    The entry for a caller that already HAS a configuration: the collection entry point builds one
+    and calls this, so neither side assembles a command line for a process that is never started
+    (docs/handoff/flat-functional-scripts-20260922.md, decisions 2 and 11). `main` is the CLI edge
+    over it and nothing else.
+
+    `scene_dir` is the run's own scene copy. Defaulting to `locomani.paths` keeps every existing
+    CLI and diagnostic caller working, but an in-process caller must pass it: those module
+    attributes were resolved when `locomani.paths` was imported, which is before a process that
+    attaches to a stack knows which run it is serving.
+    """
+    if record:
+        ports.require_exporter("--record")
     if config.carry.reach_control == "whole_body":
         require_pose_ownership()
-    meta = json.loads(Path(paths.SCENE_META).read_text())
+    scene_meta = Path(scene_dir) / "scene_meta.json" if scene_dir else Path(paths.SCENE_META)
+    scene_xml = str(Path(scene_dir) / "scene_locomani.xml") if scene_dir else paths.SCENE_XML
+    meta = json.loads(scene_meta.read_text())
     if config.visual.pose_source == "markers" and "crate_visual" not in meta:
-        parser.error("build a distinct painted scene with python -m locomani.tasks.crate.visual_scene")
+        raise SystemExit("build a distinct painted scene with python -m locomani.tasks.crate.visual_scene")
     from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
 
+    manifest = Path(manifest)
     camera = ComposedCameraClientSensor(server_ip="localhost", port=ports.port("TF_CAMERA_PORT"))
     p, reset = Primitives(), EpisodeControlClient()
-    directory = args.manifest.parent / "observations"
+    directory = manifest.parent / "observations"
     directory.mkdir(parents=True, exist_ok=True)
     try:
         prime(p, reset)
-        for index in range(args.rounds):
-            label, seed = f"{args.label}_{index:02d}", args.seed + index
+        for index in range(rounds):
+            round_label, round_seed = f"{label}_{index:02d}", seed + index
             result = record_attempt(
-                args.manifest,
-                label,
-                seed,
+                manifest,
+                round_label,
+                round_seed,
                 lambda: run_attempt(
-                    p, reset, camera, meta, config, directory, label, np.random.default_rng(seed), record=args.record
+                    p,
+                    reset,
+                    camera,
+                    meta,
+                    config,
+                    directory,
+                    round_label,
+                    np.random.default_rng(round_seed),
+                    record=record,
+                    scene_xml=scene_xml,
                 ),
             )
             if result.why == "runtime_error":

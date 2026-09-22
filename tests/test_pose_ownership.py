@@ -28,7 +28,10 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
     import yaml
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    from locomani.pipeline import lines, run_collect_bimanual, run_context
+    import locomani.stack as stack_module
+    from locomani.pipeline import run_context
+    from locomani.tasks.crate import collect as crate_collect
+    from locomani.tasks.crate import prepare as crate_prepare
 
     cfg = yaml.safe_load(
         (Path(__file__).resolve().parents[1] / "configs/experiments/crate_table30_record.yaml").read_text()
@@ -47,25 +50,16 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
     # refuse before it runs a round.
     attached = Mock()
     attached.pids = {}
-    monkeypatch.setattr(run_collect_bimanual.Stack, "attach", Mock(return_value=attached))
+    attached.env = {"INSTANCE": "2"}
+    monkeypatch.setattr(stack_module.Stack, "attach", Mock(return_value=attached))
     monkeypatch.setattr(run_context, "group_threads", lambda pids: 0)
+    monkeypatch.setattr(crate_collect, "run_batch", Mock(side_effect=AssertionError("a round ran before admission")))
     monkeypatch.setattr(
-        run_collect_bimanual, "run_batch", Mock(side_effect=AssertionError("a round ran before admission"))
-    )
-    monkeypatch.setattr(
-        run_collect_bimanual,
-        "line_of",
-        lambda cfg: lines.Line(
-            name="bimanual",
-            prepare=Mock(side_effect=AssertionError("the scene was copied before admission")),
-            collect_root=lambda run_dir: run_dir,
-            trace_root=lambda run_dir: run_dir / "trace",
-            scene_name=lambda cfg, run_dir: run_dir / "scene",
-        ),
+        crate_prepare, "prepare", Mock(side_effect=AssertionError("the scene was copied before admission"))
     )
     monkeypatch.setenv("SONIC_DEPLOY_BIN", str(tmp_path / "unpatched"))
     with pytest.raises(RuntimeError, match="sonic_pose_ownership.patch"):
-        run_collect_bimanual.main([str(experiment), "--gpu", "0"])
+        crate_collect.main([str(experiment), "--gpu", "0"])
 
 
 def test_standalone_whole_body_carry_checks_the_same_capability(tmp_path, monkeypatch):

@@ -45,7 +45,7 @@ wanted() { [ "$(rank "$1")" -ge "$(rank "$FROM")" ] && [ "$(rank "$1")" -le "$(r
 # takes the stack down when it finishes, and the trap covers the case where it never gets there.
 if wanted collect && [ ! -f "$RUN/summary.json" ]; then
     echo "=== collect ==="
-    bash "$LOCOMANI_ROOT/scripts/collect_data.sh" "$EXPERIMENT" --gpu "$GPU" || exit 1
+    bash "$LOCOMANI_ROOT/scripts/start_stack.sh" collect "$EXPERIMENT" --gpu "$GPU" || exit 1
     INSTANCE=$("$VENV_SIM_PY" -c "
 import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))['collect']['instance'])" "$EXPERIMENT")
     trap 'bash "$LOCOMANI_ROOT/scripts/stop_stack.sh" --instance "$INSTANCE" 2>/dev/null' EXIT
@@ -71,7 +71,7 @@ fi
 # stack down at the end.
 if wanted eval && [ ! -f "$RUN/eval/closed_loop.json" ]; then
     echo "=== evaluate ==="
-    bash "$LOCOMANI_ROOT/scripts/start_stack.sh" "$RUN" --gpu "$GPU" || exit 1
+    bash "$LOCOMANI_ROOT/scripts/start_stack.sh" eval "$RUN" --gpu "$GPU" || exit 1
     bash "$LOCOMANI_ROOT/scripts/run_vla_server.sh" "$RUN" --gpu "$GPU" &
     SERVER=$!
     trap 'kill "$SERVER" 2>/dev/null' EXIT

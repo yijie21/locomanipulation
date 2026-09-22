@@ -4,7 +4,7 @@
     python -m locomani.pipeline.run_stack configs/experiments/bottle_simple_200.yaml --mode collect --gpu 1
     python -m locomani.pipeline.run_stack outputs/runs/bottle_simple_200 --mode eval --gpu 1
 
-`scripts/collect_data.sh` and `scripts/start_stack.sh` are one line each over this; the round
+`scripts/start_stack.sh` is one line over this and passes `--mode` straight through; the round
 driver is a separate process that attaches (`Stack.attach`). Which of the two backend blocks is
 used is the whole difference between the modes and is spelled out here rather than defaulted:
 collection runs the deploy WITH its encoder (without it the planner's arm and crouch references

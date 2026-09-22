@@ -39,6 +39,12 @@ class GymOptions:
     view_gate_y: float = 0.90
     reach_config: str | None = None
     task_config: str | None = None
+    # The run's own scene copy. `locomani.paths` resolves LOCOMANI_SIM_DIR at IMPORT, which is
+    # correct for a process the stack launched and wrong for one that attaches to a stack and
+    # then learns which run it is serving. Passing it explicitly is the rule in AGENTS.md
+    # ("parse configuration at the entry; pass explicit values to consumers"); None keeps the
+    # imported default for every CLI and diagnostic caller.
+    scene_meta: str | None = None
     cases: str | None = None
     write_cases: str | None = None
     sample_only: bool = False
@@ -83,6 +89,7 @@ def parser() -> argparse.ArgumentParser:
         "--reach-config", help="explicit versioned reach calibration; takes precedence over the task profile"
     )
     ap.add_argument("--task-config", help="task profile: spawn, target, stand retries, expert reach and place settings")
+    ap.add_argument("--scene-meta", help="scene_meta.json of the run's own scene copy")
     ap.add_argument("--cases", help="fixed case bank; bypass random sampling")
     ap.add_argument("--write-cases", help="write exact sampled conditions")
     ap.add_argument("--sample-only", action="store_true")

@@ -67,3 +67,40 @@
 ### 未决（不是决策）
 - 房间 20 局 0/20 的失败构成（reach_stalled 8、摔倒 6、unsupported reach 4）还没按阶段看；摔倒为什么比合成桌子多。
 - `vla_rounds.py`（闭环评估）的起点放置仍写死偏航 0 / 物体 π/2，没有跟着改。
+
+## 2026-09-22 bash 直接调功能脚本；共享 driver 方案被否决
+
+### 目标与约束的变化
+协作者报了四条重复（`collect_data.sh` vs `start_stack.sh`；`run_vla_server.py` vs `serve_policy.py`；
+两个 `run_eval_*` vs `eval_closed_loop.py`）。第一次修改把四个 driver 合成两个共享 driver，
+**被用户否决并全部回退**：那不是减层，是在功能代码上又加一层。用户定的原则——
+bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂的功能代码。
+
+### 决策
+1. **规则**：任何一个文件，如果它的 body 就是"给下一个文件拼参数"，它就不该存在。库和进程内组合不算层，
+   拼 argv 再 spawn 的中间人才算。可检查形式：**只有跨 venv 边界才准 spawn 子进程**。
+   理由：四个 driver 在自己已经在跑的那个解释器里再 spawn 一次，这一跳不买任何东西，且已经制造过真 bug
+   （脚本以 `__main__` 跑而别处按包名 import，产生第二份模块副本）。`eval_closed_loop.py:194` 已经是对的做法。
+2. **collect / eval 的整个 driver 层删除**，功能脚本直接读运行目录的 `config.yaml`；`run_stack.py` 保留
+   （它的 body 在构造 stack spec，是真内容）。跨 venv 的 convert / train / serve 三跳保持原样。
+3. **collect 入口放 `tasks/<线>/collect.py`**，不放 `pipeline/`。理由：放 pipeline 下它会重新变成
+   "两条线通用的东西"然后长回 driver；放线目录下它只能认识自己这条线，是结构性防护。
+4. **共享部分（批次循环、exporter session、计数）抽成 `pipeline/batches.py`**，带两条硬约束：
+   不准 import `tasks/`、不准拼 argv。
+5. **验收要 GPU 闸门**，不接受"`make check` 绿就算过"：`--until-ok` 这类 flag 悄悄掉了，CPU 测试发现不了。
+   新旧路径并存到闸门通过再删旧。
+6. **`collect_data.sh` 与 `start_stack.sh` 合并**为 `start_stack.sh collect|eval <target>`（协作者第 0 条）。
+
+十六条完整决策、阶段划分与进度：`docs/handoff/flat-functional-scripts-20260922.md`。
+
+### 被否决的方案（及原因）
+- **共享 driver `run_collect.py` / `run_eval.py` + `lines.py` 分派表**：六条命令的 dry-run 字节相同、
+  `make check` 全绿，方向仍然错。**验证通过不等于设计正确**——当时的验证只能证明行为没变，证明不了层数没增加。
+- **一个 bash 读 `task.plugin` 分派**：bash 里解析 YAML 要起一个 python 进程，为省一个文件又加一次调用。
+- **为了让 `--dry-run` 的 30 条 argv 断言活着而保留子进程**：本末倒置。那些断言防的是 stage→子进程的缝，
+  缝删掉之后这类 bug 结构性消失；缝还在的 stack/convert/train/serve 四处断言原样保留。
+
+### 未决（不是决策）
+- 两套评测器（`eval_closed_loop.py` 438 行 / `eval_crate_closed_loop.py` 365 行）的合并，即协作者第 2、3 条
+  指向的深层问题。要动到产出 `closed_loop.json` 的路径，需要 checkpoint 和 GPU 闸门。
+- 阶段 3–8 全部未开始；阶段 4–6 要等 GPU 窗口。

@@ -29,8 +29,14 @@ CHILD = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
 
 
 def _module(module: str, target: str, *extra: str) -> str:
+    """`module` is a dotted path under `locomani`, or a bare name under `locomani.pipeline`.
+
+    The collect entries moved to `locomani.tasks.<line>.collect` on 2026-09-22, when the driver
+    layer over them was deleted; the pipeline stages are still where they were.
+    """
+    dotted = module if "." in module else f"locomani.pipeline.{module}"
     result = subprocess.run(
-        [sys.executable, "-m", f"locomani.pipeline.{module}", target, "--dry-run", *extra],
+        [sys.executable, "-m", dotted, target, "--dry-run", *extra],
         capture_output=True,
         text=True,
         cwd=ROOT,
@@ -38,6 +44,18 @@ def _module(module: str, target: str, *extra: str) -> str:
     )
     assert result.returncode == 0, result.stderr
     return result.stdout
+
+
+def resolved(out: str, name: str) -> dict:
+    """The options an in-process stage printed under `[name]`.
+
+    Collect and eval stopped spawning a child on 2026-09-22, so there is no argv to grep for; the
+    entry prints the configuration it resolved instead. This keeps the assertions literal -- the
+    value from the experiment file has to be the value the stage will act on -- which is the
+    property that makes this suite catch a field lost between declaration and use.
+    """
+    block = out[out.index(f"[{name}]") + len(name) + 2 :].strip()
+    return json.loads(block.split("\n\n")[0])
 
 
 def dry_run(driver: str, experiment: str, *extra: str, mode: str = "collect") -> str:
@@ -56,28 +74,34 @@ def dry_run(driver: str, experiment: str, *extra: str, mode: str = "collect") ->
 @pytest.fixture(scope="module")
 def gate8():
     cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_gate8.yaml").read_text())
-    return cfg, dry_run("run_collect_single_arm", "bottle_simple_gate8.yaml", "--gpu", "1", "--name", "delivery_check")
+    return cfg, dry_run(
+        "locomani.tasks.bottle.collect", "bottle_simple_gate8.yaml", "--gpu", "1", "--name", "delivery_check"
+    )
 
 
 def test_the_spawn_distribution_is_delivered(gate8):
     cfg, out = gate8
     spawn = cfg["task"]["spawn"]
-    assert f"--spawn-edge {spawn['edge_range'][0]} {spawn['edge_range'][1]}" in out
-    assert f"--spawn-yaw-err {spawn['yaw_err_deg']}" in out
-    assert f"--spawn-lateral {spawn['lateral']}" in out
-    assert f"--edge-jitter {spawn['edge_jitter']}" in out
+    options = resolved(out, "collect_00")["options"]
+    assert list(options["spawn_edge"]) == list(spawn["edge_range"])
+    assert options["spawn_yaw_err"] == spawn["yaw_err_deg"]
+    assert options["spawn_lateral"] == spawn["lateral"]
+    assert options["edge_jitter"] == spawn["edge_jitter"]
+    assert options["face_object"] == spawn["face_object"]
 
 
 def test_the_collection_budget_is_delivered(gate8):
     cfg, out = gate8
-    assert f"--rounds {cfg['collect']['batch_rounds']}" in out
-    assert f"--seed {cfg['collect']['seed0']}" in out  # batch 0; later batches step by 100
+    options = resolved(out, "collect_00")["options"]
+    assert options["rounds"] == cfg["collect"]["batch_rounds"]
+    assert options["seed"] == cfg["collect"]["seed0"]  # batch 0; later batches step by 100
 
 
 def test_the_case_bank_and_the_target_are_delivered(gate8):
     cfg, out = gate8
-    assert "--cases" in out and "cases_00.json" in out  # this batch's slice of the fixed bank
-    assert f"--targets {cfg['task']['target']}" in out
+    options = resolved(out, "collect_00")["options"]
+    assert options["cases"].endswith("cases_00.json")  # this batch's slice of the fixed bank
+    assert options["targets"] == cfg["task"]["target"]
 
 
 def test_the_stack_is_told_where_to_record(gate8):
@@ -102,10 +126,13 @@ def test_the_run_uses_its_own_scene_copy(gate8):
 
 def test_a_fresh_sample_run_asks_for_successes_not_cases():
     cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
-    out = dry_run("run_collect_single_arm", "bottle_simple_200.yaml", "--gpu", "1", "--name", "delivery_check_200")
-    assert f"--until-ok {cfg['collect']['successes']}" in out  # keep going until this many are kept
-    assert "--cases" not in out  # every round drawn from task.spawn
-    assert f"--seed {cfg['collect']['seed0']}" in out
+    out = dry_run(
+        "locomani.tasks.bottle.collect", "bottle_simple_200.yaml", "--gpu", "1", "--name", "delivery_check_200"
+    )
+    options = resolved(out, "collect_00")["options"]
+    assert options["until_ok"] == cfg["collect"]["successes"]  # keep going until this many are kept
+    assert options["cases"] is None  # every round drawn from task.spawn
+    assert options["seed"] == cfg["collect"]["seed0"]
 
 
 @pytest.fixture(scope="module")
@@ -244,16 +271,25 @@ def evaluated(tmp_path_factory):
         (
             _module("run_stack", str(run), "--mode", "eval", "--gpu", "2"),
             _module("run_vla_server", str(run), "--gpu", "2"),
-            _module("run_eval_single_arm", str(run), "--gpu", "2"),
+            _module("locomani.pipeline.eval_closed_loop", str(run), "--gpu", "2"),
         )
     )
     return yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text()), out
 
 
-def test_the_evaluator_is_handed_the_whole_block_as_a_file(evaluated):
-    """Not a few fields: that is how a hundred rounds spawned at 0.7 m while the config said 1.1."""
-    _, out = evaluated
-    assert "--config" in out and "eval/eval_config.json" in out
+def test_the_evaluator_resolves_the_whole_block_not_a_few_fields(evaluated):
+    """Not a few fields: that is how a hundred rounds spawned at 0.7 m while the config said 1.1.
+
+    Until 2026-09-22 the block was handed to a subprocess as `--config <file>` and this asserted
+    the flag. The evaluator IS the entry now, so there is no flag; what it prints is the resolved
+    `EvalConfig`, and the check is that the whole block is there rather than a hand-picked few
+    (docs/handoff/flat-functional-scripts-20260922.md, decision 10).
+    """
+    cfg, out = evaluated
+    resolved = json.loads(out[out.index("[eval]") + len("[eval]") :].strip().split("\n\n")[0])
+    for field, value in cfg["eval"].items():
+        if isinstance(value, (str, int, float, bool)):
+            assert resolved[field] == value, field
 
 
 def test_the_evaluation_stack_runs_without_the_encoder(evaluated):
@@ -280,7 +316,7 @@ def test_evaluating_without_a_checkpoint_is_refused(tmp_path):
     (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (tmp_path / "summary.json").write_text(json.dumps({"convert": {"train_dataset": "/tmp/d"}}))
     result = subprocess.run(
-        [sys.executable, "-m", "locomani.pipeline.run_eval_single_arm", str(tmp_path), "--dry-run"],
+        [sys.executable, "-m", "locomani.pipeline.eval_closed_loop", str(tmp_path), "--dry-run"],
         capture_output=True,
         text=True,
         cwd=ROOT,
@@ -292,14 +328,18 @@ def test_evaluating_without_a_checkpoint_is_refused(tmp_path):
 @pytest.fixture(scope="module")
 def crate():
     cfg = yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text())
-    return cfg, dry_run("run_collect_bimanual", "crate_table30_record.yaml", "--gpu", "1", "--name", "crate_delivery")
+    return cfg, dry_run(
+        "locomani.tasks.crate.collect", "crate_table30_record.yaml", "--gpu", "1", "--name", "crate_delivery"
+    )
 
 
 def test_the_chosen_expert_runs_with_the_run_budget(crate):
     cfg, out = crate
-    assert f"--rounds {cfg['collect']['batch_rounds']}" in out
-    assert f"--seed {cfg['collect']['seed0']}" in out
-    assert f"--label {'visual_crate' if cfg['task']['expert'] == 'visual' else cfg['task']['expert']}" in out
+    plan = resolved(out, f"{cfg['task']['expert']}_00")
+    assert int(plan["rounds"]) == cfg["collect"]["batch_rounds"]
+    assert int(plan["seed"]) == cfg["collect"]["seed0"]
+    expected = "visual_crate" if cfg["task"]["expert"] == "visual" else cfg["task"]["expert"]
+    assert plan["label"].startswith(expected)
 
 
 def test_the_bimanual_scene_copy_keeps_the_source_name(crate):
@@ -324,7 +364,7 @@ def crate_eval(tmp_path_factory):
         (
             _module("run_stack", str(run), "--mode", "eval", "--gpu", "1"),
             _module("run_vla_server", str(run), "--gpu", "1"),
-            _module("run_eval_bimanual", str(run), "--gpu", "1"),
+            _module("locomani.pipeline.eval_crate_closed_loop", str(run), "--gpu", "1"),
         )
     )
     return yaml.safe_load((EXPERIMENTS / "crate_table30_record.yaml").read_text()), out
@@ -338,7 +378,11 @@ def test_the_fields_the_bimanual_evaluator_accepts_are_all_delivered(crate_eval,
     from locomani.pipeline.eval_config import EvalConfig
 
     cfg, out = crate_eval
-    assert "--eval-config" in out and "--instance {}".format(cfg["collect"]["instance"]) in out
+    # The evaluator IS the entry since 2026-09-22, so there is no `--eval-config` flag to look
+    # for; it prints the block it resolved, and it still names the instance it will attach to.
+    assert "attaches to instance {}".format(cfg["collect"]["instance"]) in out
+    resolved = json.loads(out[out.index("[eval]") + len("[eval]") :].strip().split("\n\n")[0])
+    assert resolved["rounds"] == cfg["eval"]["rounds"] and resolved["seed"] == cfg["eval"]["seed"]
 
     checkpoint = tmp_path / "ckpt"
     checkpoint.mkdir()
@@ -377,8 +421,13 @@ def test_the_only_composing_script_names_each_line_its_own_driver():
     per-line directories, and share the stages that are genuinely shared.
     """
     text = (ROOT / "scripts" / "run_overnight.sh").read_text()
-    for stage in ("collect_data.sh", "convert_data.sh", "train.sh", "start_stack.sh", "run_vla_server.sh"):
+    for stage in ("convert_data.sh", "train.sh", "run_vla_server.sh"):
         assert stage in text, stage
+    # One script starts both stacks since 2026-09-22, so the mode it is told is the contract: an
+    # unattended chain that started the eval stack in collect mode would run the deploy WITH its
+    # encoder and the token stream would not hold.
+    assert 'start_stack.sh" collect' in text
+    assert 'start_stack.sh" eval' in text
     assert "$LINE/run_agent_server.sh" in text
     assert "$LINE/run_vla_inference.sh" in text
     assert text.index("=== collect ===") < text.index("=== convert ===")
@@ -393,7 +442,6 @@ def test_every_stage_script_is_one_exec_over_one_module():
         [
             scripts / name
             for name in (
-                "collect_data.sh",
                 "start_stack.sh",
                 "stop_stack.sh",
                 "run_vla_server.sh",

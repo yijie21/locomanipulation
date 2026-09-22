@@ -311,11 +311,15 @@ def arms_offset():
 from locomani.primitives.g1_joints import ARM_MJ as ARM_IDX  # noqa: E402
 
 
-def main() -> None:
+def main(argv=None) -> None:
     from functools import partial
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument(
+        "--scene-dir",
+        help="the run's own scene copy; defaults to whatever LOCOMANI_SIM_DIR named at import",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--manifest", default="")
     ap.add_argument("--label", default="wall")
@@ -328,7 +332,7 @@ def main() -> None:
     )
     ap.add_argument("--config", type=Path, help="CrateTaskConfig JSON; defaults if omitted")
     ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
@@ -356,10 +360,11 @@ def main() -> None:
         os.environ.setdefault(k, str(ports.port(k)))
     global DUMP_DIR
     DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
-    meta = json.load(open(paths.SCENE_META))
+    scene_meta = f"{args.scene_dir}/scene_meta.json" if args.scene_dir else paths.SCENE_META
+    meta = json.load(open(scene_meta))
     if meta.get("target_object") != OBJ:
-        raise SystemExit(f"{paths.SCENE_META} is not the crate scene")
-    print(f"[wall] instance {inst}, scene {paths.SCENE_META}, task config {cfg.to_dict()}")
+        raise SystemExit(f"{scene_meta} is not the crate scene")
+    print(f"[wall] instance {inst}, scene {scene_meta}, task config {cfg.to_dict()}")
     if args.record:
         # The same refusal grasp_gym makes: the exporter only exists on instance 0,
         # so a --record run anywhere else finishes every round and writes nothing.

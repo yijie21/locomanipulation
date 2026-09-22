@@ -4,7 +4,7 @@
 #   bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gpu 1
 #
 # Terminal 3 of three:
-#   bash scripts/start_stack.sh    <same run> --gpu 1   # terminal 1
+#   bash scripts/start_stack.sh eval <same run> --gpu 1   # terminal 1
 #   bash scripts/run_vla_server.sh <same run> --gpu 1   # terminal 2
 #
 # Refuses before the first round if either of the other two is missing, naming the command that
@@ -17,4 +17,4 @@ cd "$LOCOMANI_ROOT" || exit 1
 [ $# -ge 1 ] || { echo "usage: $(basename "$0") <run-dir> [--gpu N] [--keep-stack] [--dry-run]" >&2; exit 1; }
 
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-exec "$VENV_SIM_PY" -m locomani.pipeline.run_eval_single_arm "$@"
+exec "$VENV_SIM_PY" -m locomani.pipeline.eval_closed_loop "$@"

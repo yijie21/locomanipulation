@@ -1,0 +1,52 @@
+[
+  {
+    "source": "src/locomani/pipeline/run_convert.py",
+    "interpreter": "isaac_gr00t",
+    "reason": "gr00t.data.stats lives in third_party/Isaac-GR00T/.venv and .venv_sim has no gr00t; a venv boundary"
+  },
+  {
+    "source": "src/locomani/pipeline/run_train.py",
+    "interpreter": "isaac_gr00t",
+    "reason": "torchrun and gr00t.experiment.launch_finetune live in the Isaac-GR00T venv; a venv boundary"
+  },
+  {
+    "source": "src/locomani/pipeline/run_vla_server.py",
+    "interpreter": "isaac_gr00t",
+    "reason": "serve_policy.py imports gr00t; the driver runs in .venv_sim, which has none. A venv boundary, and the reason the two files are not one (docs/handoff/flat-functional-scripts-20260922.md, decision 5)"
+  },
+  {
+    "source": "src/locomani/pipeline/eval_crate_closed_loop.py",
+    "interpreter": "isaac_gr00t",
+    "reason": "serves the checkpoint itself when not given --attach; same gr00t venv boundary as run_vla_server"
+  },
+  {
+    "source": "src/locomani/pipeline/eval_crate_closed_loop.py",
+    "interpreter": "venv_sim",
+    "reason": "NOT a venv boundary: tasks.crate.vla_rounds runs in the same venv. It is spawned because it must run inside the environment of the stack this evaluator restarts between batches, and the deploy restart is what that isolation is for. Converting it needs a crate checkpoint to verify against; none exists on disk (2026-09-22)"
+  },
+  {
+    "source": "src/locomani/stack/manager.py",
+    "interpreter": "venv_sim",
+    "reason": "the stack's own children (sim, deploy) are long-lived services with their own environment and lifetime, started once and outliving the process that starts them; not a stage calling a function"
+  },
+  {
+    "source": "src/locomani/tasks/crate/prepare.py",
+    "interpreter": "venv_sim",
+    "reason": "expert_argv builds the diagnostic experts' command line. Since 2026-09-22 tasks/crate/collect.py calls their main() in this process and drops the interpreter prefix, so nothing spawns it; the builder is kept because the argv is still their calling convention"
+  },
+  {
+    "source": "src/locomani/tasks/crate/bimanual_scene.py",
+    "interpreter": "same-interpreter",
+    "reason": "scene builder: re-runs itself under the mujoco viewer. Not on any collection or evaluation path. Unreviewed by the 2026-09-22 refactor"
+  },
+  {
+    "source": "src/locomani/tasks/crate/reach_envelope/floor_scene.py",
+    "interpreter": "same-interpreter",
+    "reason": "reach-envelope scene builder, spawns bimanual_scene in the same venv. A real instance of the pattern the refactor removed, on a diagnostic path with no gate to verify a change against"
+  },
+  {
+    "source": "src/locomani/tasks/crate/reach_envelope/boundary_search.py",
+    "interpreter": "same-interpreter",
+    "reason": "reach-envelope boundary search, spawns its own worker in the same venv. Same as floor_scene: a real instance, diagnostic path, no gate"
+  }
+]

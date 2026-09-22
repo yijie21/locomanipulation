@@ -38,7 +38,7 @@
 | `scripts/run_overnight.sh` | **跑一次完整实验**:一份全展开的实验文件跑完采集 → 转换 → 训练 → 评测,`bash scripts/run_overnight.sh configs/experiments/<name>.yaml --gpu 1`;产物已存在的阶段自动跳过 |
 | `scripts/single_arm/run_vla_inference.sh` / `scripts/bimanual/run_vla_inference.sh` | **只评一个 checkpoint**:三个终端——`start_stack.sh` 起评测栈、`run_vla_server.sh` 服务 checkpoint、`<line>/run_vla_inference.sh` 跑局;跑局那个在第一局之前会检查栈和端口,缺哪个就报出补救命令。整份 eval 块以 `--config` 交给评测器 |
 | `scripts/archive/` | round 2/3/4 和旧 pipeline 的编排脚本。**历史记录,不维护,已知跑不起来**(调用的 `eval_closed_loop` 参数已不存在),留着是因为阶梯上那几个数的确切配置只写在里面 |
-| `scripts/collect_data.sh` + `scripts/<line>/run_agent_server.sh` | **大规模采集**:两个终端——前者起录制栈(起完即退),后者 attach 上去按批跑专家、跑完收栈。sim 和 deploy 跨批存活,**每批换的是 exporter**(session 与 manifest 按位置配对) |
+| `scripts/start_stack.sh collect` + `scripts/<line>/run_agent_server.sh` | **大规模采集**:两个终端——前者起录制栈(起完即退),后者 attach 上去按批跑专家、跑完收栈。sim 和 deploy 跨批存活,**每批换的是 exporter**(session 与 manifest 按位置配对) |
 | 同上 | **先导批**:复制一份实验文件,把 `collect` 改小、`scene.cases` 指向固定样本库,采到 N 条成功为止 |
 | `scripts/export_rerun.py` | 把 episode 导成 Rerun `.rrd`,本地 `pip install rerun-sdk && rerun <file>` 看视频+曲线+3D |
 | `scripts/install_scene.sh` | 解包并重建场景。`SCENE_PRESET` 在**这一行**上给才有效;不给 = 默认多物体桌面。venv 不存在时不重建并以非零退出 |

@@ -3,7 +3,7 @@
 #
 #   bash scripts/run_vla_server.sh outputs/runs/bottle_simple_200 --gpu 1
 #
-# Terminal 2 of three (terminal 1: scripts/start_stack.sh; terminal 3: the line's
+# Terminal 2 of three (terminal 1: scripts/start_stack.sh eval; terminal 3: the line's
 # run_vla_inference.sh). Serves both lines -- the checkpoint, the modality config and the
 # embodiment tag all come from the run itself.
 #

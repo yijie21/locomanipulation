@@ -214,7 +214,8 @@ def _build_scene_and_plan(args: cli_args.GymOptions, *, runtime: GymRuntime | No
     from locomani.pipeline.experiment_cases import load_cases, save_cases
 
     runtime = runtime or GymRuntime(task=args.task_config_obj or GymRuntime().task)
-    fixed_cases = load_cases(args.cases, SCENE_META) if args.cases else None
+    scene_meta = args.scene_meta or SCENE_META
+    fixed_cases = load_cases(args.cases, scene_meta) if args.cases else None
     if fixed_cases is not None and args.rounds > len(fixed_cases):
         # Was ap.error(...) when this check lived in main() next to the
         # parser (pre refactor step 4b); ap isn't in scope split out into
@@ -256,7 +257,7 @@ def _build_scene_and_plan(args: cli_args.GymOptions, *, runtime: GymRuntime | No
 
     rng = np.random.default_rng(args.seed if args.seed is not None else (os.getpid() * 7919) % 2**31)
 
-    meta = json.load(open(SCENE_META))
+    meta = json.load(open(scene_meta))
     pool = resolve_pool(meta, args.targets)
     print(f"[gym] target pool: {', '.join(pool)}")
     surf_a = meta["surfaces"]["A"]
@@ -346,16 +347,45 @@ def _build_scene_and_plan(args: cli_args.GymOptions, *, runtime: GymRuntime | No
     )
 
 
-def main(argv=None, *, runtime: GymRuntime | None = None) -> None:
+def run(options: cli_args.GymOptions, *, runtime: GymRuntime | None = None) -> None:
+    """Every round this configuration asks for.
+
+    The entry for a caller that already HAS a configuration -- `eval_closed_loop` builds one and
+    calls this. Taking `GymOptions` rather than an argv list is what lets an in-process caller stop
+    assembling a command line for a process it is not going to start
+    (docs/handoff/flat-functional-scripts-20260922.md, decision 11).
+    """
     runtime = runtime or GymRuntime()
-    args = cli_args.parse_args(argv, vla=runtime.policy is not None, video_include_init=runtime.task.video_include_init)
-    if args.print_config:
-        print(json.dumps(args.report(), indent=2))
+    task = options.task_config_obj or runtime.task
+    runtime = replace(runtime, task=replace(task, video_include_init=options.video_include_init))
+    setup = _build_scene_and_plan(options, runtime=runtime)
+    try:
+        round_loop.round_loop(options, setup, runtime=runtime)
+    finally:
+        # `_build_scene_and_plan` opens a robot and an episode-control client, each holding a ZMQ
+        # context and socket. Every caller used to be a process that exited straight afterwards, so
+        # nothing ever closed them. A collection run now calls this once per BATCH in one process
+        # (40 of them for a 200-episode run), where not closing is a leak of two contexts a batch.
+        # Closing before an exit is a no-op, so this is free for the old callers.
+        for resource in (setup.p, setup.reset):
+            close = getattr(resource, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception as error:  # a stuck socket must not lose the batch's results
+                    print(f"[gym] closing {type(resource).__name__} failed: {error}", flush=True)
+
+
+def main(argv=None, *, runtime: GymRuntime | None = None) -> None:
+    """The CLI edge: parse, then run. Parsing lives here and nowhere deeper."""
+    runtime = runtime or GymRuntime()
+    options = cli_args.parse_args(
+        argv, vla=runtime.policy is not None, video_include_init=runtime.task.video_include_init
+    )
+    if options.print_config:
+        print(json.dumps(options.report(), indent=2))
         return
-    task = args.task_config_obj or runtime.task
-    runtime = replace(runtime, task=replace(task, video_include_init=args.video_include_init))
-    setup = _build_scene_and_plan(args, runtime=runtime)
-    round_loop.round_loop(args, setup, runtime=runtime)
+    run(options, runtime=runtime)
 
 
 def run_round(

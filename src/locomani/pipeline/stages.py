@@ -1,7 +1,14 @@
-"""Run a child process and retain its command, delivered settings and exit status."""
+"""Retain what a stage acted on, what it delivered, and how it ended.
+
+A stage that spawns a child records the child's argv (`run` / `check` / `record`). A stage that
+runs IN THIS PROCESS has no argv to record, so it records the configuration it resolved instead
+(`record_config` / `timed`) -- the same question answered, which is what the receipt is for
+(docs/handoff/flat-functional-scripts-20260922.md, decision 4).
+"""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -88,3 +95,36 @@ class Stage:
         rc = self.run(name, cmd, env=env, cwd=cwd)
         if rc:
             raise RuntimeError(f"{name} exited {rc}: {self.out / (name + '.log')}")
+
+    def record_config(self, name: str, config: dict, env: dict | None = None) -> None:
+        """Record the configuration an in-process stage resolved, where an argv would have gone.
+
+        `config` is what the stage will act on -- for the gym, `GymOptions.report()`, which carries
+        every option AND where each one came from. That is strictly more than the argv it replaced:
+        an argv showed the values, not whether a value was the config's or the code's default.
+        """
+        receipt = dict(
+            stage=name,
+            config=config,
+            cwd=str(paths.REPO),
+            settings=recorded_settings(env or dict(os.environ)),
+            start=time.time(),
+        )
+        with (self.out / "commands.jsonl").open("a") as f:
+            f.write(json.dumps(receipt, default=str) + "\n")
+
+    @contextlib.contextmanager
+    def timed(self, name: str):
+        """Time an in-process stage and record how it ended, as `run` does for a child."""
+        started = time.time()
+        print(f"{name}: start", flush=True)
+        rc = 0
+        try:
+            yield
+        except BaseException:
+            rc = 1
+            raise
+        finally:
+            with (self.out / "timings.jsonl").open("a") as f:
+                f.write(json.dumps(dict(stage=name, start=started, seconds=time.time() - started, rc=rc)) + "\n")
+            print(f"{name}: exit {rc}", flush=True)

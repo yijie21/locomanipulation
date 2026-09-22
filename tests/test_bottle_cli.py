@@ -5,7 +5,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -78,8 +79,6 @@ def test_explicit_reach_is_loaded_once_and_overrides_profile_even_for_vla():
 
 
 def test_explicit_offset_selects_offset_sampling_in_scene_setup(tmp_path):
-    from types import SimpleNamespace
-
     from geometry_fixture import DIRECTORY
 
     from locomani.tasks.bottle import grasp_gym
@@ -144,16 +143,37 @@ def test_diagnostic_video_override_is_explicit_and_parsing_has_no_runtime_effect
 def test_gym_main_delivers_the_resolved_options_to_the_round_driver():
     from locomani.tasks.bottle import grasp_gym
 
+    # A namespace, not a bare string: `run` closes the robot and the episode client the setup
+    # opened, so the stand-in has to carry the fields a real `_SceneSetup` does.
+    scene = SimpleNamespace(p=None, reset=None)
     with (
         patch.object(sys, "argv", ["gym", "--task-config", PROFILE, "--spawn-yaw-err", "90"]),
-        patch.object(grasp_gym, "_build_scene_and_plan", return_value="scene") as setup,
+        patch.object(grasp_gym, "_build_scene_and_plan", return_value=scene) as setup,
         patch.object(grasp_gym.round_loop, "round_loop") as run,
     ):
         grasp_gym.main(runtime=grasp_gym.GymRuntime(policy=object()))
     options = setup.call_args.args[0]
     assert options.spawn_yaw_err == 90.0
     assert options.reach_config_obj == DEFAULT_REACH
-    run.assert_called_once_with(options, "scene", runtime=setup.call_args.kwargs["runtime"])
+    run.assert_called_once_with(options, scene, runtime=setup.call_args.kwargs["runtime"])
+
+
+def test_the_gym_closes_what_the_scene_setup_opened():
+    """A collection run calls `run` once per batch in ONE process; nothing else closes these."""
+    from locomani.tasks.bottle import grasp_gym
+
+    robot, episode = MagicMock(), MagicMock()
+    scene = SimpleNamespace(p=robot, reset=episode)
+    with (
+        patch.object(sys, "argv", ["gym", "--task-config", PROFILE]),
+        patch.object(grasp_gym, "_build_scene_and_plan", return_value=scene),
+        patch.object(grasp_gym.round_loop, "round_loop", side_effect=RuntimeError("a batch failed")),
+    ):
+        with pytest.raises(RuntimeError):
+            grasp_gym.main()
+    # Closed even when the batch raised: the next batch must not inherit a live socket.
+    robot.close.assert_called_once_with()
+    episode.close.assert_called_once_with()
 
 
 def test_report_mode_does_not_start_runtime(capsys):

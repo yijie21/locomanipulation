@@ -263,7 +263,7 @@ class Stack:
         """Refuse to start on top of a stack that is still running, whoever started it.
 
         The flock below lives in the process that called `up()`, so it is released the moment that
-        process exits -- which is exactly what `scripts/collect_data.sh` does: start the stack and
+        process exits -- which is exactly what `scripts/start_stack.sh` does: start the stack and
         return. The children outlive it, so from 2026-09-21 the question "is this instance taken"
         is answered by the state file's pids, not by who holds the fd.
         """

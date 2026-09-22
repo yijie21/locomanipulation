@@ -28,7 +28,7 @@
 ```bash
 # 房间 pilot（两个终端；先查余量）
 bash scripts/cpu_headroom.sh
-bash scripts/collect_data.sh              configs/experiments/box_room_20260922.yaml --gpu 0
+bash scripts/start_stack.sh collect       configs/experiments/box_room_20260922.yaml --gpu 0
 bash scripts/bimanual/run_agent_server.sh configs/experiments/box_room_20260922.yaml --gpu 0
 # 步态实测（默认 sim 场景，不用纸箱）
 bash scripts/experiments/gait_micro_20260922.sh          # GAIT_SPEEDS/GAIT_CRAB/GAIT_MARCH 可覆盖

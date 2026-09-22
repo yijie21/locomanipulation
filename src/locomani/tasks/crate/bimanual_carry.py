@@ -402,11 +402,15 @@ def run_round(
     raise AssertionError("carry_phases: no phase returned a result")
 
 
-def main() -> None:
+def main(argv=None) -> None:
     from functools import partial
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument(
+        "--scene-dir",
+        help="the run's own scene copy; defaults to whatever LOCOMANI_SIM_DIR named at import",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--manifest", default="")
     ap.add_argument("--label", default="bimanual")
@@ -418,7 +422,7 @@ def main() -> None:
         help="drive the data exporter too, keeping only the rounds that succeed (grasp_gym.py's flag, same "
         "protocol). Needs INSTANCE=0: start_stack.sh runs the exporter only there",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     # Resolve once; pass carry controls into each round.
     cfg = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     if args.set_:
@@ -438,14 +442,15 @@ def main() -> None:
         os.environ.setdefault(k, str(ports.port(k)))
     global DUMP_DIR
     DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
-    meta = json.load(open(paths.SCENE_META))
+    scene_meta = f"{args.scene_dir}/scene_meta.json" if args.scene_dir else paths.SCENE_META
+    meta = json.load(open(scene_meta))
     if meta.get("target_object") != OBJ:
         raise SystemExit(
-            f"{paths.SCENE_META} is not the crate scene (target "
+            f"{scene_meta} is not the crate scene (target "
             f"{meta.get('target_object')}); build it with bimanual_scene.py "
             f"and point LOCOMANI_SIM_DIR at it"
         )
-    print(f"[bimanual] instance {inst}, scene {paths.SCENE_META}, task config {cfg.to_dict()}")
+    print(f"[bimanual] instance {inst}, scene {scene_meta}, task config {cfg.to_dict()}")
     if args.record:
         # The same refusal grasp_gym makes: the exporter only exists on instance 0,
         # so a --record run anywhere else finishes every round and writes nothing.

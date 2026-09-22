@@ -370,6 +370,6 @@ def round_loop(args, setup, *, runtime=None) -> None:
             print(f"EPISODE FAILED {why} in {dt:.0f}s")
         reset.end_video()
     if args.write_cases:
-        save_cases(args.write_cases, sampled_cases, paths.SCENE_META)
+        save_cases(args.write_cases, sampled_cases, args.scene_meta or paths.SCENE_META)
 
     print(f"[gym] {wins}/{played} OK")

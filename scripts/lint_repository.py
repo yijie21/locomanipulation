@@ -17,6 +17,7 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 DEBT = "tests/fixtures/architecture_debt.json"
+SPAWNS = "tests/fixtures/interpreter_spawns.json"
 GUIDES = {
     "AGENTS.md": 80,
     "CLAUDE.md": 12,
@@ -112,6 +113,80 @@ def dependency_errors(root: Path) -> list[str]:
         errors.append(f"{source}: forbidden import {target}; pass data through the owning interface (see standards)")
     for source, target in sorted(allowed - actual):
         errors.append(f"{DEBT}: remove resolved exception {source} -> {target}")
+    return errors
+
+
+# Which interpreter a spawn starts. A spawn of an EXTERNAL tool (pgrep, ffmpeg, nvidia-smi) is not
+# listed and is never checked -- the rule is about starting our own code in another python.
+INTERPRETERS = {
+    "sys.executable": "same-interpreter",
+    "VENV_SIM_PY": "venv_sim",
+    ".venv_sim/bin/python": "venv_sim",
+    "VENV_DATA_PY": "venv_data_collection",
+    ".venv_data_collection/bin/python": "venv_data_collection",
+    "TRAIN_PY": "isaac_gr00t",
+    "TORCHRUN": "isaac_gr00t",
+    "Isaac-GR00T/.venv": "isaac_gr00t",
+    "RENDER_PY": "render",
+}
+SPAWNING_CALLS = {"run", "call", "Popen", "check_call", "check_output"}
+
+
+def interpreter_spawns(root: Path) -> set[tuple[str, str]]:
+    """Every place src/locomani builds a command line for a python interpreter, and which one.
+
+    A subprocess is the seam this repository keeps losing configuration across, so starting one is
+    allowed only where a venv boundary makes it unavoidable, or for a reason written down in
+    `SPAWNS`. Four drivers assembled a command line for a second interpreter of the SAME venv,
+    which then parsed it straight back; they were deleted on 2026-09-22
+    (docs/handoff/flat-functional-scripts-20260922.md, decision 5).
+
+    The signal is a list whose FIRST element names an interpreter -- which is how every one of
+    these is written, and it catches the spawn wherever it is finally handed to (`subprocess`
+    directly, or `Stage.run`, which is how the pipeline stages do it). Static and literal: a
+    command assembled from parts at runtime is not caught, and an external tool (pgrep, ffmpeg,
+    nvidia-smi) never is, because the rule is about starting OUR code in another python.
+    """
+    found = set()
+    for path in sorted((root / "src/locomani").rglob("*.py")):
+        name = path.relative_to(root).as_posix()
+        source = path.read_text(errors="ignore")
+        try:
+            tree = ast.parse(source, filename=name)
+        except SyntaxError:
+            continue
+        # Module-level constants, so a spawn cannot hide behind a local name for the interpreter
+        # (`SIM = ROOT / ".venv_sim/bin/python"` and then `[SIM, ...]`).
+        constants = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                constants[node.targets[0].id] = ast.get_source_segment(source, node.value) or ""
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.List, ast.Tuple)) or not node.elts:
+                continue
+            head = ast.get_source_segment(source, node.elts[0]) or ""
+            for word in re.findall(r"[A-Za-z_][A-Za-z_0-9]*", head):
+                head += " " + constants.get(word, "")
+            for token, interpreter in INTERPRETERS.items():
+                if token in head:
+                    found.add((name, interpreter))
+    return found
+
+
+def spawn_errors(root: Path) -> list[str]:
+    rows = json.loads((root / SPAWNS).read_text())
+    allowed = {(row["source"], row["interpreter"]) for row in rows}
+    errors = []
+    if len(allowed) != len(rows) or any(not row.get("reason", "").strip() for row in rows):
+        errors.append(f"{SPAWNS}: entries must be unique and have a reason")
+    actual = interpreter_spawns(root)
+    for source, interpreter in sorted(actual - allowed):
+        errors.append(
+            f"{source}: starts a {interpreter} python. A subprocess is only for a venv boundary; "
+            f"call the function in this process, or record the reason in {SPAWNS}"
+        )
+    for source, interpreter in sorted(allowed - actual):
+        errors.append(f"{SPAWNS}: remove the resolved entry {source} -> {interpreter}")
     return errors
 
 
@@ -239,7 +314,7 @@ def main() -> int:
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, text=True).split("\0")
     errors = navigation_errors(ROOT, documents=documents) + artifact_errors(tracked)
     if not args.navigation_only:
-        errors += dependency_errors(ROOT)
+        errors += dependency_errors(ROOT) + spawn_errors(ROOT)
     for error in errors:
         print(f"[repository] {error}")
     print(f"[repository] {'FAIL' if errors else 'PASS'}: {len(errors)} issues")

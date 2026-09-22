@@ -100,12 +100,12 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 ```bash
 bash scripts/run_overnight.sh configs/experiments/my_line.yaml --gpu 1   # 整条线，无人值守
 # 采集两个终端：起录制栈（起完即退）/ 跑 agent server（专家 + 批次循环 + resume，跑完自己收栈）
-bash scripts/collect_data.sh                configs/experiments/my_line.yaml --gpu 0
+bash scripts/start_stack.sh collect         configs/experiments/my_line.yaml --gpu 0
 bash scripts/single_arm/run_agent_server.sh configs/experiments/my_line.yaml --gpu 0
 bash scripts/convert_data.sh outputs/runs/my_line              # 转换（不用卡）
 bash scripts/train.sh        outputs/runs/my_line --gpu 0      # 训练
 # 闭环评测：三个终端。栈 / 策略服务 / 跑局
-bash scripts/start_stack.sh                  outputs/runs/my_line --gpu 1
+bash scripts/start_stack.sh eval             outputs/runs/my_line --gpu 1
 bash scripts/run_vla_server.sh               outputs/runs/my_line --gpu 1
 bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
 ```
@@ -146,8 +146,8 @@ cat outputs/runs/*/summary.json                                  # 比较结果
 
 ## 7. 同一套脚本的另外两条线
 
-`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用**完全一样的 `run_collect_single_arm.py` +
-`run_eval_single_arm.py`**，只差实验文件的 `task.plugin` / `task.goal` / `task.place` 和场景；命令原样适用。
+`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用**完全一样的 `tasks/bottle/collect.py` +
+`eval_closed_loop.py`**，只差实验文件的 `task.plugin` / `task.goal` / `task.place` 和场景；命令原样适用。
 
 ## 8. 产物
 
@@ -188,7 +188,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 | 阶段"被跳过"但你想重跑 | 删掉它的产物（§6） |
 
 手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。
-**单臂录制必须留在实例 0**：`run_collect_single_arm.py` 不设 `RECORD_INSTANCE`，导出器只在实例 0 起。所以单臂并行按 GPU 分；双臂会设，能同时在实例 1 录制，见 [双臂](bimanual.md)。
+**录制的实例由起栈那一步决定**：`collect.record` 为真时 `run_stack.py` 给栈设 `RECORD_INSTANCE=1`，导出器就在该实例上起，两条线同一条路径（双臂闸门跑在实例 2）。并行仍按 GPU 分。
 更细的失败形态见 [隐性失败](reference/silent_failures.md)。
 
 ## 10. 进一步阅读

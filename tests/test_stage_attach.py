@@ -21,7 +21,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from locomani.pipeline import run_collect_single_arm, run_context, run_eval_single_arm  # noqa: E402
+from locomani.pipeline import eval_closed_loop, run_context  # noqa: E402
+from locomani.tasks.bottle import collect as bottle_collect  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENT = ROOT / "configs/experiments/bottle_simple_200.yaml"
@@ -40,23 +41,27 @@ def run_dir(tmp_path, monkeypatch):
 
 
 def test_collection_without_a_stack_names_the_script_that_starts_one(run_dir, monkeypatch):
+    """Since 2026-09-22 the entry IS the line's own module; the refusal must survive that."""
     experiment, _ = run_dir
-    monkeypatch.setattr(run_collect_single_arm, "line_of", _line_that_prepares_nothing)
-    monkeypatch.setattr(run_collect_single_arm.Stack, "attach", Mock(side_effect=FileNotFoundError("no state")))
+    monkeypatch.setattr(bottle_collect.Stack, "attach", Mock(side_effect=FileNotFoundError("no state")))
     with pytest.raises(SystemExit) as refusal:
-        run_collect_single_arm.main([str(experiment), "--gpu", "0"])
-    assert "scripts/collect_data.sh" in str(refusal.value)
+        bottle_collect.main([str(experiment), "--gpu", "0"])
+    assert "scripts/start_stack.sh collect" in str(refusal.value)
 
 
 def test_evaluation_without_a_stack_names_the_script_that_starts_one(run_dir, monkeypatch, tmp_path):
+    """Since 2026-09-22 the evaluator IS the entry; the refusal has to survive that move."""
+    import locomani.pipeline.run_vla_server as server
+    import locomani.stack as stack_module
+
     experiment, run = run_dir
     run_context.open_run(experiment)  # claim the directory the way the collection stage would
     (run / "summary.json").write_text('{"train": {"checkpoint": "%s"}}' % (tmp_path / "ck"))
-    monkeypatch.setattr(run_eval_single_arm.Stack, "attach", Mock(side_effect=FileNotFoundError("no state")))
-    monkeypatch.setattr(run_eval_single_arm, "wait_for_server", Mock(side_effect=AssertionError("waited first")))
+    monkeypatch.setattr(stack_module.Stack, "attach", Mock(side_effect=FileNotFoundError("no state")))
+    monkeypatch.setattr(server, "wait_for_server", Mock(side_effect=AssertionError("waited before attaching")))
     with pytest.raises(SystemExit) as refusal:
-        run_eval_single_arm.main([str(run), "--gpu", "0"])
-    assert "scripts/start_stack.sh" in str(refusal.value)
+        eval_closed_loop.main([str(run), "--gpu", "0"])
+    assert "scripts/start_stack.sh eval" in str(refusal.value)
 
 
 def test_the_driver_is_not_charged_for_the_stack_it_attaches_to(run_dir, monkeypatch):
@@ -71,21 +76,21 @@ def test_the_driver_is_not_charged_for_the_stack_it_attaches_to(run_dir, monkeyp
     """
     experiment, _ = run_dir
     seen = {}
-    monkeypatch.setattr(run_collect_single_arm, "line_of", _line_that_prepares_nothing)
-    monkeypatch.setattr(
-        run_collect_single_arm.Stack, "attach", Mock(return_value=_stack_with(pids={"sim": 11, "deploy": 12}))
-    )
+    monkeypatch.setattr(bottle_collect.Stack, "attach", Mock(return_value=_stack_with(pids={"sim": 11, "deploy": 12})))
     monkeypatch.setattr(run_context, "group_threads", lambda pids: 313)
     monkeypatch.setattr(run_context, "require_headroom", lambda *a, **k: seen.update(k) or {})
-    monkeypatch.setattr(run_collect_single_arm, "run_batch", Mock(side_effect=SystemExit("stop here")))
+    monkeypatch.setattr(bottle_collect, "run_batch", Mock(side_effect=SystemExit("stop here")))
     with pytest.raises(SystemExit):
-        run_collect_single_arm.main([str(experiment), "--gpu", "0"])
+        bottle_collect.main([str(experiment), "--gpu", "0"])
     assert seen.get("already") == 313
 
 
 def _stack_with(pids):
     stack = Mock()
     stack.pids = pids
+    # The entry copies the stack's environment into its own before opening any client, so the
+    # stand-in needs a real mapping rather than a Mock attribute.
+    stack.env = {"INSTANCE": "0"}
     return stack
 
 

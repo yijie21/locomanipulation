@@ -74,6 +74,58 @@ from locomani.pipeline.provenance import write_config_snapshot  # noqa: E402
 REPO = Path(__file__).resolve().parents[3]
 
 
+def gym_options(
+    cfg,
+    manifest,
+    *,
+    rounds: int,
+    seed: int,
+    cases: str | None = None,
+    reach_config: str | None = None,
+    vla: bool = True,
+    video_include_init: bool = False,
+):
+    """Which gym options this evaluation sets, and what the rest is left at.
+
+    The same spawn distribution the collection ran, WITHOUT `record` (no dataset is written) and
+    WITHOUT `until_ok` (failures are the measurement, not something to retry past). `rounds` and
+    `seed` are arguments rather than read off `cfg` because a resumed run offsets both.
+
+    Keys are `GymOptions` field names and values are what argparse would have produced: until
+    2026-09-22 this was an argv list assembled for a process that is never started, because the
+    gym runs in THIS one (docs/handoff/flat-functional-scripts-20260922.md, decision 11). It is
+    resolved through `cli_args.resolve_options`, the same merge `grasp_gym.main` uses, so an
+    option set here and an option set on a command line cannot diverge.
+    """
+    from locomani.tasks.bottle import cli_args
+    from locomani.tasks.bottle.reach_config import ReachConfig
+
+    explicit = dict(
+        rounds=rounds,
+        stand_retries=cfg.stand_retries,
+        targets=cfg.target,
+        seed=seed,
+        manifest=str(manifest),
+        spawn_edge=[float(v) for v in cfg.spawn_edge],
+        face_object=True,
+        spawn_yaw_err=20.0,
+        spawn_lateral=0.20,
+        edge_jitter=0.20,
+    )
+    if cfg.video_include_init:
+        explicit["video_include_init"] = True
+    if cases:
+        explicit["cases"] = cases
+    if reach_config:
+        explicit["reach_config"] = reach_config
+    return cli_args.resolve_options(
+        explicit,
+        reach=ReachConfig.load(reach_config) if reach_config else None,
+        vla=vla,
+        video_include_init=video_include_init,
+    )
+
+
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     if n == 0:
         return 0.0, 1.0
@@ -106,6 +158,19 @@ def round_outcomes(rows):
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "run",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="the run directory train wrote. Given this, every option below is read from the run's "
+        "own config.yaml and summary.json, the stack is attached and taken down here, and the "
+        "result is recorded in summary.json. The explicit options remain for diagnostics that "
+        "evaluate something other than a run (scripts/experiments/)",
+    )
+    ap.add_argument("--gpu", default="0")
+    ap.add_argument("--keep-stack", action="store_true", help="leave the stack running when the rounds end")
+    ap.add_argument("--dry-run", action="store_true", help="print what would run, start nothing")
     ap.add_argument("--config", type=Path, help="EvalConfig JSON; defaults if omitted")
     ap.add_argument("--set", dest="set_", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--out", default=None)
@@ -120,8 +185,91 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
+def evaluate_run(args):
+    """Evaluate the run `args.run` names: attach the stack, run the rounds here, record the result.
+
+    This is what `run_eval_single_arm.py` was until 2026-09-22. It is not a separate process any
+    more -- the rounds run in THIS one, so there is no argv to assemble for them and no second
+    place for the environment to differ (docs/handoff/flat-functional-scripts-20260922.md).
+    """
+    from locomani.pipeline import run_context, run_vla_server
+    from locomani.pipeline.stages import Stage
+    from locomani.stack import Stack
+
+    run_dir = args.run if args.run.is_absolute() else REPO / args.run
+    cfg_file = run_context.load_run_config(run_dir)
+    evaluation = EvalConfig.from_dict(cfg_file["eval"])  # validated here, so a bad field fails first
+    ev = run_dir / "eval"
+    instance = int(cfg_file["collect"]["instance"])
+
+    if args.dry_run:
+        run_context.checkpoint_of(run_dir)
+        run_context.show_config("eval", evaluation.to_dict())
+        print(f"\n  attaches to instance {instance}, policy port {evaluation.policy_port}")
+        return 0
+
+    if (ev / "closed_loop.json").exists():
+        raise SystemExit(f"{ev / 'closed_loop.json'} exists; move the finished evaluation aside before rerunning")
+    checkpoint = run_context.checkpoint_of(run_dir)
+    run_context.require_deploy_patches(cfg_file)
+    ev.mkdir(parents=True, exist_ok=True)
+    evaluation.dump(ev / "eval_config.json")
+
+    try:
+        stack = Stack.attach(instance)
+    except FileNotFoundError:
+        raise SystemExit(
+            f"no stack on instance {instance}; start one in another terminal:\n"
+            f"  bash scripts/start_stack.sh eval {args.run} --gpu {args.gpu}"
+        )
+    # Attach FIRST, then ask only for what the running stack does not already hold. The collection
+    # driver got this on 2026-09-21; the evaluation path never did, and with the stack and the
+    # policy server both up it was refused for the 8 cores its own stack was already using
+    # (7.68 in use + 8 needed > 15.36). An evaluation runs no exporter, hence record=False.
+    run_context.require_headroom(
+        "eval", gpu=args.gpu, record=False, already=run_context.group_threads(stack.pids.values())
+    )
+    # The instance's port block and the scene, before anything opens a client. The subprocess this
+    # used to be was handed exactly this as its whole environment; in-process it is assigned.
+    os.environ.update({k: str(v) for k, v in stack.env.items()})
+    run_vla_server.wait_for_server(evaluation.policy_port)
+
+    # Fill in what the driver used to pass on a command line, then run the evaluation below.
+    args.config = ev / "eval_config.json"
+    args.set_ = list(args.set_) + ["backend.dataset_fps=25"]  # the stack is pinned to the dataset's rate
+    args.reach_config = args.reach_config or str(run_dir / "reach_config.json")
+    args.initial_token_file = args.initial_token_file or (REPO / cfg_file["eval"]["initial_token"])
+    args.out = str(ev / "closed_loop.json")
+    args.trace_dir = str(ev / "traces")
+
+    stage = Stage(run_dir)
+    stage.record_config("eval", evaluation.to_dict(), env=dict(stack.env))
+    try:
+        with stage.timed("eval"):
+            _evaluate(args)
+    finally:
+        if not args.keep_stack:
+            stack.down()
+
+    result = json.loads((ev / "closed_loop.json").read_text())
+    run_context.summarise(
+        run_dir,
+        "eval",
+        checkpoint=str(checkpoint),
+        **{k: result[k] for k in ("rounds", "successes", "success_rate") if k in result},
+    )
+    print(f"eval: {result.get('successes')}/{result.get('rounds')} -> {ev / 'closed_loop.json'}")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
+    if args.run is not None:
+        return evaluate_run(args)
+    return _evaluate(args)
+
+
+def _evaluate(args):
     cfg = EvalConfig.load(args.config) if args.config else EvalConfig()
     if args.set_:
         cfg = cfg.with_overrides(args.set_)
@@ -270,37 +418,8 @@ def main(argv=None):
             link, cfg.task, execution_horizon=cfg.execution_horizon, trace_dir=trace_dir, config=cfg
         )
 
-    # The same spawn distribution the collection ran (collect_pilot.sh),
-    # WITHOUT --record (no dataset is being written) and WITHOUT --until-ok
-    # (failures are the measurement, not something to retry past).
-    argv = [
-        "grasp_gym",
-        "--rounds",
-        str(cfg.rounds),
-        "--stand-retries",
-        str(cfg.stand_retries),
-        "--targets",
-        cfg.target,
-        "--seed",
-        str(cfg.seed),
-        "--manifest",
-        str(manifest),
-        *(["--spawn-edge"] + [str(v) for v in cfg.spawn_edge]),
-        "--face-object",
-        "--spawn-yaw-err",
-        "20",
-        "--spawn-lateral",
-        "0.20",
-        "--edge-jitter",
-        "0.20",
-        *(["--video-include-init"] if cfg.video_include_init else []),
-    ]
-    if args.cases:
-        if cfg.resume:
-            raise SystemExit("fixed case evaluation does not support RNG-offset resume; run a separate case subset")
-        argv += ["--cases", args.cases]
-    if args.reach_config:
-        argv += ["--reach-config", args.reach_config]
+    if args.cases and cfg.resume:
+        raise SystemExit("fixed case evaluation does not support RNG-offset resume; run a separate case subset")
     done = 0
     if cfg.resume and manifest.exists():
         done = sum(1 for l in manifest.read_text().splitlines() if l.strip())
@@ -326,8 +445,6 @@ def main(argv=None):
         # Offset so the top-up cannot redraw the rounds already measured. The
         # sample is still i.i.d. from the same distribution, which is all a
         # rate estimate needs.
-        argv[argv.index("--seed") + 1] = str(cfg.seed + done)
-        argv[argv.index("--rounds") + 1] = str(todo)
         print(f"[closed-loop] resuming: {done} rounds already in the manifest, {todo} to go (seed {cfg.seed}+{done})")
         if todo == 0:
             print("[closed-loop] nothing to do; aggregating what is there")
@@ -338,17 +455,25 @@ def main(argv=None):
         f"[closed-loop] {cfg.rounds} rounds, horizon {cfg.execution_horizon}, "
         f"seed {cfg.seed}\n[closed-loop] manifest -> {manifest}"
     )
+    runtime = GymRuntime(
+        task=dataclasses.replace(GymRuntime().task, restart_deploy=cfg.restart_deploy),
+        policy=policy,
+        restart=restart,
+        robot_factory=robot_factory,
+    )
+    options = gym_options(
+        cfg,
+        manifest,
+        rounds=todo if (cfg.resume and done) else cfg.rounds,
+        seed=cfg.seed + done if (cfg.resume and done) else cfg.seed,
+        cases=args.cases,
+        reach_config=args.reach_config,
+        vla=runtime.policy is not None,
+        video_include_init=runtime.task.video_include_init,
+    )
     try:
         if todo > 0:
-            grasp_gym.main(
-                argv[1:],
-                runtime=GymRuntime(
-                    task=dataclasses.replace(GymRuntime().task, restart_deploy=cfg.restart_deploy),
-                    policy=policy,
-                    restart=restart,
-                    robot_factory=robot_factory,
-                ),
-            )
+            grasp_gym.run(options, runtime=runtime)
     finally:
         if clock is not None:
             clock.stop()

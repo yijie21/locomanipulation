@@ -2,7 +2,7 @@
 
 The sim reads the scene at launch and the expert reads the two config dumps at launch, so this has
 to happen before the stack comes up -- which, since 2026-09-21, is a different process from the one
-that drives the rounds (`scripts/collect_data.sh` and `scripts/single_arm/run_agent_server.sh`).
+that drives the rounds (`scripts/start_stack.sh collect` and `scripts/single_arm/run_agent_server.sh`).
 Both call this, so it is idempotent: whoever gets there first freezes the run, the other finds it
 already frozen. The crate line's equivalent is `locomani.tasks.crate.prepare.prepare`.
 """

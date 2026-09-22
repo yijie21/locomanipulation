@@ -110,11 +110,21 @@ def apply_eval_config(ap, args) -> None:
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument(
-        "--scene", type=Path, required=True, help="crate scene dir (copied into --out, like run_crate_pilot)"
+        "run",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="the run directory train wrote. Given this, the checkpoint, scene, task config and "
+        "eval block are read from the run itself and the result is recorded in its summary.json; "
+        "the explicit options below remain for evaluating something that is not a run",
     )
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--dry-run", action="store_true", help="print what would run, start nothing")
+    ap.add_argument("--checkpoint", type=Path, required=False)
+    ap.add_argument(
+        "--scene", type=Path, help="crate scene dir (copied into --out); read from the run when one is given"
+    )
+    ap.add_argument("--out", type=Path, help="output directory; read from the run when one is given")
     ap.add_argument(
         "--config", type=Path, default=None, help=f"CrateTaskConfig JSON; defaults to task={DEFAULT_TASK_GROUP}"
     )
@@ -123,7 +133,7 @@ def parse_args(argv=None):
     ap.add_argument(
         "--attach",
         action="store_true",
-        help="use a stack and a policy server that are already running (scripts/start_stack.sh and "
+        help="use a stack and a policy server that are already running (scripts/start_stack.sh eval and "
         "scripts/run_vla_server.sh), instead of starting and stopping both here. The deploy is "
         "restarted between batches rather than the whole stack, which is what the per-batch "
         "restart was for: the exporter is not running in an evaluation.",
@@ -170,11 +180,15 @@ def parse_args(argv=None):
     args = ap.parse_args(argv)
     if args.eval_config:
         apply_eval_config(ap, args)
+    if args.run is not None:
+        # A run directory supplies the instance, the checkpoint and the scene; validating the
+        # defaults of options it is about to overwrite would refuse a perfectly good run.
+        return args
     if args.instance == 0 and not args.allow_instance_0:
         ap.error("refusing INSTANCE=0: that is the collection/eval stack (pass --allow-instance-0 to override)")
     if args.rounds < 1 or args.batch_rounds < 1:
         ap.error("--rounds and --batch-rounds must be positive")
-    if not (args.checkpoint / "config.json").exists():
+    if args.checkpoint is not None and not (args.checkpoint / "config.json").exists():
         ap.error(f"no checkpoint at {args.checkpoint}")
     if args.backbone_path is not None and not (args.backbone_path / "config.json").exists():
         ap.error(f"no backbone model at {args.backbone_path}")
@@ -222,8 +236,69 @@ def serve(args, out: Path, stage: Stage) -> subprocess.Popen:
     return server
 
 
+def evaluate_run(args):
+    """Evaluate the run `args.run` names, filling the options in from the run itself.
+
+    This is what `run_eval_bimanual.py` was until 2026-09-22. The evaluator below still attaches
+    the stack and serves the checkpoint for itself (`--attach`), because it restarts the deploy
+    between batches -- so unlike the single-arm line, this function does not hold the stack.
+    """
+    from locomani.pipeline import run_context
+    from locomani.tasks.crate import prepare
+
+    run_dir = args.run if args.run.is_absolute() else ROOT / args.run
+    cfg = run_context.load_run_config(run_dir)
+    from locomani.pipeline.eval_config import EvalConfig
+
+    evaluation = EvalConfig.from_dict(cfg["eval"])
+    ev = run_dir / "eval"
+    collect = cfg["collect"]
+
+    if args.dry_run:
+        run_context.checkpoint_of(run_dir)
+        run_context.show_config("eval", evaluation.to_dict())
+        print(f"\n  attaches to instance {collect['instance']}, policy port {evaluation.policy_port}")
+        return 0
+
+    checkpoint = run_context.checkpoint_of(run_dir)
+    run_context.require_headroom("eval", gpu=args.gpu, record=False)  # an evaluation runs no exporter
+    ev.mkdir(parents=True, exist_ok=True)
+    evaluation.dump(ev / "eval_config.json")
+
+    args.attach = True  # the stack and the policy server are already up, in the other terminals
+    args.checkpoint = checkpoint
+    args.scene = prepare.scene_name(cfg, run_dir)
+    args.out = ev
+    args.config = run_dir / "task_config.json"
+    args.eval_config = ev / "eval_config.json"
+    args.batch_rounds = collect["batch_rounds"]  # deploy restart cadence, as the crate pilots
+    args.instance = int(collect["instance"])
+    args.serve_gpu = args.gpu
+    apply_eval_config(argparse.ArgumentParser(), args)
+    _evaluate(args)
+
+    result = json.loads((ev / "closed_loop.json").read_text())
+    run_context.summarise(
+        run_dir,
+        "eval",
+        checkpoint=str(checkpoint),
+        **{k: result[k] for k in ("rounds", "successes", "success_rate") if k in result},
+    )
+    print(f"eval: {result.get('successes')}/{result.get('rounds')} -> {ev / 'closed_loop.json'}")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
+    if args.run is not None:
+        return evaluate_run(args)
+    missing = [n for n in ("checkpoint", "scene", "out") if getattr(args, n) is None]
+    if missing:
+        raise SystemExit(f"give a run directory, or every one of {', '.join('--' + n for n in missing)}")
+    return _evaluate(args)
+
+
+def _evaluate(args):
     out = args.out.resolve()
     manifest = out / "closed_loop.manifest.jsonl"
     if manifest.exists():
@@ -269,7 +344,7 @@ def main(argv=None):
             except FileNotFoundError:
                 raise SystemExit(
                     f"no stack on instance {args.instance}; start one in another terminal:\n"
-                    f"  bash scripts/start_stack.sh <run> --gpu {args.gpu}"
+                    f"  bash scripts/start_stack.sh eval <run> --gpu {args.gpu}"
                 )
             run_vla_server.wait_for_server(args.port)
         else:

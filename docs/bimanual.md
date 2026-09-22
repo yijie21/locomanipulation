@@ -4,7 +4,7 @@
 为什么这么设计、试过什么被否掉了，在 [双臂详解](bimanual_design.md)；
 哪天跑出什么数，在 [双臂台账](ledger/crate.md)。
 
-和单臂用**同一套扁平脚本**，只有采集和评测分线（`run_collect_bimanual.py` / `run_eval_bimanual.py`），
+和单臂用**同一套扁平脚本**，采集和评测各走自己那条线的功能脚本（`tasks/crate/collect.py` / `eval_crate_closed_loop.py`），
 转换和训练完全共用。结构与 [单臂](single_arm.md) 逐节对应。
 
 ## 1. 准备一次
@@ -80,7 +80,7 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 
 - **批内**：`batch_rounds` 局一定跑满。双臂专家只接 `--rounds`（`crate/prepare.py:expert_argv`），
   `--until-ok` 根本不传给它——**除非专家崩了**，异常会向上抛并中止整批。
-- **批间**：`successes` 是**活判据**。`run_collect_bimanual.py:134` 的循环条件是
+- **批间**：`successes` 是**活判据**。`tasks/crate/collect.py` 主循环的条件是
   `kept < successes and batches < max_batches`，够了就不再开新批（单臂同一行，这不是双臂特性）。
 
 所以尝试数是 `batch_rounds ×（实际跑了几批）`，不是 `× max_batches`。**要保证跑满 N 批，
@@ -94,12 +94,12 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 ```bash
 bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 1 --line bimanual   # 整条线，无人值守
 # 采集两个终端；起栈脚本两条线共用，按 task.plugin 冻结各自的场景
-bash scripts/collect_data.sh               configs/experiments/my_crate.yaml --gpu 1   # 纸箱同线：handoff/box-via-basket-line-20260922.md
+bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --gpu 1   # 纸箱同线：handoff/box-via-basket-line-20260922.md
 bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 1
 bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
 bash scripts/train.sh        outputs/runs/my_crate --gpu 1      # 训练
 # 闭环评测：三个终端，和单臂同构；这条线每批重起的是 deploy，不是整个栈
-bash scripts/start_stack.sh                 outputs/runs/my_crate --gpu 1
+bash scripts/start_stack.sh eval            outputs/runs/my_crate --gpu 1
 bash scripts/run_vla_server.sh              outputs/runs/my_crate --gpu 1
 bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 ```

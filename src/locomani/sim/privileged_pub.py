@@ -42,10 +42,29 @@ ARM_PIN: dict = {"left": None, "right": None, "waist": None}
 OBJ_PIN: dict = {}
 GHOST_PARK = (0.0, 0.0, -5.0)
 
+
 # Per-instance overrides so several stacks can share the host (parallel
 # data collection); instance i uses base + 10*i via start_stack.sh.
-PRIVILEGED_PORT = ports.privileged()
-EPISODE_PORT = ports.episode()
+#
+# Resolved WHEN USED, not at import. These were module constants (and default
+# argument values, which Python evaluates at import too) until 2026-09-22.
+# That was safe only because every consumer was a fresh process launched with
+# the stack's environment already in it. An in-process caller -- the collection
+# entry point since the flat-functional-scripts refactor -- sets INSTANCE and
+# the TF_* block and then opens a client, and with import-time constants it
+# would silently get instance 0's ports: the stack sits on 5565/5566/5591 while
+# the client binds :5556 and waits on :5581, and the only symptom arrives ten
+# seconds later as "no privileged state on :5581". Binding the value to import
+# order is the "import-order setup" standards.md forbids, so `None` means
+# "ask now" at every one of these seams.
+def privileged_port() -> int:
+    return ports.privileged()
+
+
+def episode_port() -> int:
+    return ports.episode()
+
+
 # OFF by default (user's call, 2026-08-28). SCENE_RANDOM=1 turns it back on.
 #
 # The trade is real in both directions. Pinned appearance is what a controlled
@@ -91,8 +110,14 @@ class PrivilegedPublisher:
     """Binds :5581 and publishes ground truth at whatever rate it is stepped."""
 
     def __init__(
-        self, model, data, object_bodies: dict[str, str], port: int = PRIVILEGED_PORT, surfaces: list[str] | None = None
+        self,
+        model,
+        data,
+        object_bodies: dict[str, str],
+        port: int | None = None,
+        surfaces: list[str] | None = None,
     ):
+        port = privileged_port() if port is None else port
         self._seq = 0
         import mujoco
 
@@ -344,8 +369,9 @@ class EpisodeControlServer:
     """
 
     def __init__(
-        self, model, data, meta: dict, default_dof_angles=None, port: int = EPISODE_PORT, recorder=None, trace=None
+        self, model, data, meta: dict, default_dof_angles=None, port: int | None = None, recorder=None, trace=None
     ):
+        port = episode_port() if port is None else port
         import mujoco
 
         # The ghost hand is a mocap body: no joints, no collision, teleported
@@ -672,7 +698,8 @@ class EpisodeControlServer:
 class EpisodeControlClient:
     """Agent-side reset sender."""
 
-    def __init__(self, host: str = "localhost", port: int = EPISODE_PORT):
+    def __init__(self, host: str = "localhost", port: int | None = None):
+        port = episode_port() if port is None else port
         self.ctx = zmq.Context()
         self.sock = self.ctx.socket(zmq.PUSH)
         self.sock.setsockopt(zmq.LINGER, 1000)
@@ -754,12 +781,13 @@ class EpisodeControlClient:
 class PrivilegedSubscriber:
     """Agent-side reader. CONFLATE, so `latest()` never returns stale state."""
 
-    def __init__(self, host: str = "localhost", port: int = PRIVILEGED_PORT):
+    def __init__(self, host: str = "localhost", port: int | None = None):
+        self.port = privileged_port() if port is None else port
         self.ctx = zmq.Context()
         self.sock = self.ctx.socket(zmq.SUB)
         self.sock.setsockopt(zmq.CONFLATE, 1)
         self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
-        self.sock.connect(f"tcp://{host}:{port}")
+        self.sock.connect(f"tcp://{host}:{self.port}")
         self._last = None
 
     def latest(self, timeout_ms: int = 200) -> dict | None:
@@ -776,7 +804,7 @@ class PrivilegedSubscriber:
             if s is not None:
                 return s
         raise TimeoutError(
-            f"no privileged state on :{PRIVILEGED_PORT} after {timeout_s:.0f}s — is run_sim_locomani.py running?"
+            f"no privileged state on :{self.port} after {timeout_s:.0f}s — is run_sim_locomani.py running?"
         )
 
     def close(self) -> None:
@@ -905,7 +933,7 @@ class PoseSidecar:
             self.sock = ctx.socket(zmq.SUB)
             self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
             self.sock.RCVTIMEO = 500
-            self.sock.connect(f"tcp://{host}:{port or PRIVILEGED_PORT}")
+            self.sock.connect(f"tcp://{host}:{port or privileged_port()}")
             try:
                 from locomani.backends.sonic import upper_ref as _upper_ref
 

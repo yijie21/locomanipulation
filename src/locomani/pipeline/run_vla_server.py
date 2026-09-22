@@ -4,7 +4,7 @@
     python -m locomani.pipeline.run_vla_server outputs/runs/bottle_simple_200 --gpu 1
 
 `scripts/run_vla_server.sh` is one line over this. It is terminal 2 of three: terminal 1 holds the
-stack (`scripts/start_stack.sh`), terminal 3 drives the rounds. Ctrl-C here frees the card.
+stack (`scripts/start_stack.sh eval`), terminal 3 drives the rounds. Ctrl-C here frees the card.
 
 Which checkpoint, which modality config and which embodiment tag are read from the run, not passed
 in: they are recorded in the run's own `summary.json` and `config.yaml`, and a second hand-typed
@@ -18,7 +18,6 @@ same stream.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import signal
 import socket
@@ -60,14 +59,6 @@ def _interrupt(signum, frame) -> None:
     raise KeyboardInterrupt
 
 
-def checkpoint_of(run_dir: Path) -> Path:
-    summary = run_dir / "summary.json"
-    entry = json.loads(summary.read_text()).get("train") if summary.exists() else None
-    if not entry or not entry.get("checkpoint"):
-        raise SystemExit(f"{summary} has no checkpoint; run the train stage first")
-    return Path(entry["checkpoint"])
-
-
 def server_argv(cfg: dict, checkpoint: Path, port: int) -> list:
     return [
         TRAIN_PY, SERVER,
@@ -100,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
     cfg = run_context.load_run_config(run_dir)
     port = EvalConfig.from_dict(cfg["eval"]).policy_port
-    checkpoint = checkpoint_of(run_dir)
+    checkpoint = run_context.checkpoint_of(run_dir)
     command = server_argv(cfg, checkpoint, port)
 
     if args.dry_run:

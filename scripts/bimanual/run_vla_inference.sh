@@ -4,7 +4,7 @@
 #   bash scripts/bimanual/run_vla_inference.sh outputs/runs/crate_table30_record --gpu 1
 #
 # Terminal 3 of three:
-#   bash scripts/start_stack.sh    <same run> --gpu 1   # terminal 1
+#   bash scripts/start_stack.sh eval <same run> --gpu 1   # terminal 1
 #   bash scripts/run_vla_server.sh <same run> --gpu 1   # terminal 2
 #
 # This line's evaluator restarts the DEPLOY between batches rather than the whole stack: an
@@ -18,4 +18,4 @@ cd "$LOCOMANI_ROOT" || exit 1
 [ $# -ge 1 ] || { echo "usage: $(basename "$0") <run-dir> [--gpu N] [--dry-run]" >&2; exit 1; }
 
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-exec "$VENV_SIM_PY" -m locomani.pipeline.run_eval_bimanual "$@"
+exec "$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop "$@"

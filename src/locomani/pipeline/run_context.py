@@ -81,6 +81,21 @@ def load_run_config(run_dir: Path) -> dict:
     return yaml.safe_load(path.read_text())
 
 
+def checkpoint_of(run_dir: Path) -> Path:
+    """The checkpoint the train stage recorded for this run.
+
+    Read, never recomputed: `run_train.checkpoint_of` decides where the recipe leaves the weights
+    and `summarise` writes that answer down, so everything downstream asks the run instead of
+    re-deriving it. Copies of this lived in the two eval drivers and the policy server; the
+    drivers are gone since 2026-09-22 and this is where the remaining callers look.
+    """
+    summary = Path(run_dir) / "summary.json"
+    entry = json.loads(summary.read_text()).get("train") if summary.exists() else None
+    if not entry or not entry.get("checkpoint"):
+        raise SystemExit(f"{summary} has no checkpoint; run the train stage first")
+    return Path(entry["checkpoint"])
+
+
 def measure(gpu: str | None = None) -> dict:
     """Cores in use (1 s cgroup delta), pids in the container, free MiB on the card."""
     live: dict = {}
@@ -185,6 +200,17 @@ def show(name: str, argv: list, env: dict | None = None) -> None:
     print(f"\n[{name}]\n  " + " ".join(str(a) for a in argv))
     for key, value in sorted((env or {}).items()):
         print(f"    {key}={value}")
+
+
+def show_config(name: str, config: dict) -> None:
+    """The dry-run format for a stage that runs in THIS process.
+
+    There is no argv to print when nothing is spawned, so it prints the resolved configuration the
+    stage will act on. For the gym that is `GymOptions.report()`, which pairs every option with
+    where it came from -- config default, task profile, or this stage (decision 10).
+    """
+    print(f"\n[{name}]")
+    print(json.dumps(config, indent=2, sort_keys=True, default=str))
 
 
 def summarise(run_dir: Path, stage: str, **metrics) -> Path:
