@@ -93,6 +93,20 @@ source scripts/paths.sh
 只停止自己启动的 Stack。结果区分物理检查通过与明确失败；失败结果也应保留。
 实现与试跑证据见 [2026-09-20 执行记录](handoff/box-rim-execution-20260920.md)。
 
+## 站位扫描
+
+[扫描入口](../scripts/box_rim_sweep.py)从一份请求模板生成每局一份请求（`runtime.robot_dxy[1]` 分档、横向/偏航种子抖动、七档轮转），
+一个栈跑完全部，`table` 按档给成功数和退出阶段：
+
+```bash
+"$VENV_SIM_PY" scripts/box_rim_sweep.py plan  outputs/box_rim_sweep_<name> --template REQUEST.json --gpu 1
+"$VENV_SIM_PY" scripts/box_rim_sweep.py run   outputs/box_rim_sweep_<name>     # STOP 文件在局间停；已有 result.json 的局跳过
+"$VENV_SIM_PY" scripts/box_rim_sweep.py table outputs/box_rim_sweep_<name>
+```
+
+2026-09-22 七档 × 10 局 **0/70**：61 局在规划阶段无候选，规划成功的 8 局全部因调整走动的刹车过冲超出 0.30 m 预算；
+深度不是判别变量，见[记录](handoff/box-rim-depth-sweep-20260922.md)。
+
 ## 验证边界
 
 最新 `coordinated_square_ready_once` 已通过静态与原控制器准入，但在首个
