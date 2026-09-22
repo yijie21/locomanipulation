@@ -53,6 +53,23 @@ reanchor 后再 `reset` 一次、`hold_yaw` 与 facing 用请求值——coordin
 失败挪到后面的闸门——`stale_observation` 3、`unsupported_transit_waypoint` 4、`initial_escape_*` 3（右手指/右髋）、
 `transit_tracking_error` 2、预算超限 1。完整表见下。
 
+## 单集抓取尝试（同日，`outputs/box_rim_grasp_*_20260922`、`box_rim_coordinated_20260922`）
+
+修好朝向后在 dy 0.225（箱心距 0.59 m，规划器给的候选不用走）按用户要求逐闸门放开、每次 1–3 集：
+
+| 放开的闸门 | 集数 | 走到 | 拦下的 |
+|---|---|---|---|
+| 无 | 2 | `transit_raise`（手到箱前 1.2/1.8 cm） | 脚锚点 5.7 mm > 5 mm；重心 1.6 cm > 1.5 cm |
+| 脚锚点 2 cm、重心 3 cm | 1 | `transit_above`（手张开悬在沿口上方） | 路点位置误差 4.5 cm > 3.5 cm |
+| + 路点容差 6 cm | 4 | 3 集 `ready_escape`（右手指/腕 vs 右髋 0.02–0.1 mm 的"新接触对"），1 集 above_rim 5 个路点全过后左脚/地面 −7.2 mm 被判碰撞 | 逃逸簿记只认起始几何对；脚压地基线上限 6 mm |
+| + 脚压地 12 mm、逃逸允许包络内的擦碰（代码） | 3 | 2 集 transit（手 3.4–6.1 cm 外） | **脚锚点 2.6–6.1 cm**：手伸到 0.70 m 高的沿口时站立控制器在挪脚；1 集擦碰加深 0.16→0.31 mm |
+| `coordinated` 模式（VisualApproach + CoordinatedReach，09-20 的迁移路径） | 3 | 走入到 0.41–0.44 m、准入通过 | 第一帧 reach **参考**位姿手指与箱壁碰撞（`non_pad_target_collision`，实测无接触）——与 09-20 相同 |
+
+结论：朝向修好后，`supported_pose` 这条线剩下的限制不是闸门而是物理——静态规划假设双脚不动，SONIC 在双臂前伸到 0.7 m 时会挪脚 2–6 cm，
+后续每个路点都在这个位移上累计误差；`coordinated` 模式的抓点几何（手指贴外壁进入）对这个纸箱在参考层就碰壁。
+两条都不是再放一个阈值能过的。逃逸擦碰的代码放宽（同包络内的新接触对按起始接触追踪，须清零）保留，测试覆盖。
+视频：`outputs/box_rim_grasp_relaxed_20260922/videos/dy0.225_r00.mp4`（手悬在沿口上方那集）。
+
 ## 未做
 
 - 规划器为什么从实测姿态出不了粗 IK 候选：把 `rounds/dy0.325_r00` 的 `planning_snapshot` 喂给离线规划器复现，是下一步。

@@ -244,6 +244,11 @@ def _initialise(request, primitives, reset) -> dict | None:
     primitives.hold_yaw = requested_yaw
     facing = (math.cos(requested_yaw), math.sin(requested_yaw), 0.0)
     primitives.cmd.hold(4.5, mode=LocomotionMode.IDLE, facing=facing)
+    # Same residual-offset calibration as the ready-pose path above: the re-anchor's recorded
+    # offset is not the deploy's anchor, so the held heading lands 20-30 deg off without it.
+    error = _wrap_angle(float(primitives.obs()["pelvis"]["yaw"]) - requested_yaw)
+    primitives.cmd.heading_offset = _wrap_angle(getattr(primitives.cmd, "heading_offset", 0.0) + error)
+    primitives.cmd.hold(1.5, mode=LocomotionMode.IDLE, facing=facing)
     state = primitives.obs()
     return {
         "reference": _ready_reference(state["joints"], pose),

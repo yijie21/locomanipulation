@@ -1798,6 +1798,18 @@ class BoxRimExecutor:
         current = {pair: 0.0 for pair in initial_contacts}
         for contact in rejected:
             pair = self._contact_pair(contact)
+            penetration_now = max(0.0, -float(contact["distance_m"]))
+            if (
+                contact["classification"] == "robot_self_collision"
+                and pair not in initial_contacts
+                and penetration_now <= self.config.initial_escape_max_penetration_m
+            ):
+                # The hand leaving the hip grazes other link pairs on the way (wrist-yaw, finger vs
+                # hip roll/yaw at 1-100 um, 2026-09-22). Within the same depth envelope that admits
+                # the initial contacts, a graze is tracked like them: it may not deepen and must
+                # clear before the escape completes, but it is not a new collision.
+                initial_contacts[pair] = penetration_now
+                current[pair] = 0.0
             if contact["classification"] != "robot_self_collision" or pair not in initial_contacts:
                 raise _Failure(
                     "initial_escape_new_collision",

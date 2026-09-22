@@ -373,6 +373,43 @@ def test_initial_escape_admits_only_monotonic_resolution_and_forbids_recontact()
         controller._admit_initial_escape(state, waypoint, targets)
 
 
+def test_initial_escape_tracks_a_graze_on_other_links_but_rejects_a_deep_new_pair():
+    """A new self-contact within the escape depth envelope is tracked like the initial ones (it may
+    not deepen, and must clear); a new pair beyond the envelope is a collision."""
+    runtime = _ProbeRuntime(rise=False)
+    controller = _executor(runtime, initial_escape_samples=5)
+    state = controller._observe(require_advance=False)
+    waypoint = _escape_waypoint(state)
+    targets = np.zeros((2, 3))
+    controller._support_diagnostics = _clear_support
+
+    def graze_then_clear(_state, joints, _targets, **_kwargs):
+        if 0.05 <= joints[0] < 0.08:
+            return [], [_escape_contact(0.00001, geom_2="finger")]
+        return [], [_escape_contact(0.0001)] if joints[0] < 0.05 else []
+
+    controller._collision_reasons = graze_then_clear
+    controller._admit_initial_escape(state, waypoint, targets)
+
+    def graze_deepens(_state, joints, _targets, **_kwargs):
+        if joints[0] >= 0.05:
+            return [], [_escape_contact(0.00001 + 0.01 * (float(joints[0]) - 0.05), geom_2="finger")]
+        return [], [_escape_contact(0.0001)]
+
+    controller._collision_reasons = graze_deepens
+    with pytest.raises(execution._Failure, match="initial_escape_penetration_increased"):
+        controller._admit_initial_escape(state, waypoint, targets)
+
+    def deep_new_pair(_state, joints, _targets, **_kwargs):
+        if joints[0] >= 0.05:
+            return [], [_escape_contact(0.002, geom_2="finger")]
+        return [], [_escape_contact(0.0001)]
+
+    controller._collision_reasons = deep_new_pair
+    with pytest.raises(execution._Failure, match="initial_escape_new_collision"):
+        controller._admit_initial_escape(state, waypoint, targets)
+
+
 def test_initial_escape_rejects_new_pair_and_tracks_measured_clearance():
     runtime = _ProbeRuntime(rise=False)
     controller = _executor(runtime, initial_escape_samples=5)
@@ -384,7 +421,7 @@ def test_initial_escape_rejects_new_pair_and_tracks_measured_clearance():
     def adds_pair(_state, joints, _targets, **_kwargs):
         contacts = [_escape_contact(0.0001)]
         if joints[0] >= 0.05:
-            contacts = [_escape_contact(0.00001, geom_2="finger")]
+            contacts = [_escape_contact(0.002, geom_2="finger")]  # beyond the escape depth envelope
         return [], contacts
 
     controller._collision_reasons = adds_pair
@@ -422,9 +459,14 @@ def test_escape_tracking_envelope_is_bounded_and_reference_remains_strict():
         controller._resolving_contact_depths(
             [_escape_contact(0.00036)], initial, measured, phase="observed", progress=0.02, tracking=True
         )
+    # A graze on other links inside the envelope is tracked from its own depth; a deep new pair is not.
+    grazed = controller._resolving_contact_depths(
+        [_escape_contact(0.00001, geom_2="finger")], initial, measured, phase="observed", progress=0.02, tracking=True
+    )
+    assert grazed[("finger", "hip")] == pytest.approx(0.00001) and ("finger", "hip") in initial
     with pytest.raises(execution._Failure, match="initial_escape_new_collision"):
         controller._resolving_contact_depths(
-            [_escape_contact(0.00001, geom_2="finger")],
+            [_escape_contact(0.002, geom_2="finger_b")],
             initial,
             measured,
             phase="observed",
@@ -604,9 +646,11 @@ def test_initial_ready_reset_applies_only_upper_dofs_and_keeps_open_hands(monkey
     start_index = next(i for i, event in enumerate(events) if event[0] == "start_control")
     wait_index = next(i for i, event in enumerate(events) if event[0] == "upper_wait")
     reanchor_index = next(i for i, event in enumerate(events) if event[0] == "reanchor")
-    final_hold_index = max(i for i, event in enumerate(events) if event[0] == "hold")
-    assert start_index < wait_index < reanchor_index < final_hold_index
+    holds = [i for i, event in enumerate(events) if event[0] == "hold"]
+    final_hold_index, calibration_hold_index = holds[-2], holds[-1]
+    assert start_index < wait_index < reanchor_index < final_hold_index < calibration_hold_index
     assert events[final_hold_index][1] == pytest.approx(4.5)
+    assert events[calibration_hold_index][1] == pytest.approx(1.5)  # heading-offset calibration hold
     np.testing.assert_allclose(
         events[final_hold_index][2]["facing"],
         [0.0, 1.0, 0.0],
