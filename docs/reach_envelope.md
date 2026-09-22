@@ -93,6 +93,15 @@ ffmpeg -i $R/videos/reel_h070_source.mp4 -vf "setpts=0.5*PTS,scale=1024:-2" -r 1
 视频从 qpos 轨迹离线复现，幽灵手是真实 Dex1 手的网格放在目标位姿上，橙线是当前手到目标；
 交付文件按仓库规则压到 500,000 bytes 以内（2 倍速 + 150 kbps 约 330 kB / 40 s）。
 
+已渲好的视频（2 倍速，均 <500 kB）：
+
+| 文件 | 内容 |
+|---|---|
+| `outputs/g1_capability_envelope_20260921/videos/envelope_reach_h{0.55,0.70,0.85}.mp4` | 不下蹲，3×5 格 (y × yaw) × 3 个 d |
+| `outputs/reach_envelope/low_h_20260921/videos/envelope_reach_h{0.50,0.30}_nosquat.mp4` | 不下蹲：0.50 可达，0.30 几乎全 ×（橙字回放最接近的一次） |
+| `outputs/reach_envelope/low_h_squat65_20260921/videos/envelope_reach_h{0.40,0.30}_squat.mp4` | 下蹲 0.65，y=0 一行 × 5 yaw × 3 d |
+| `outputs/reach_envelope/lowest_h_20260921/videos/envelope_reach_h0.20_h0.10_squat.mp4` | 下蹲，h=0.20 可达 0.38–0.43，h=0.10 全 × |
+
 ## 5. 均匀覆盖与复测
 
 网格只覆盖任务会出现的 (y, h, d, yaw)。要出五维投影图或验证插值，另起一个 `boundary_refinement` /

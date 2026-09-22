@@ -15,6 +15,7 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from locomani import paths
 from locomani.tasks.crate.reach_envelope.ghost_scene import build_ghost_scene, set_ghost_pose
 
 RUN = Path(sys.argv[1]).resolve()
@@ -24,7 +25,10 @@ TW, TH, HDR, CAP = 256, 192, 64, 34
 cfg = json.load(open(RUN / "search.json"))
 Y, YAW, D = tuple(cfg["grid"]["y"]), tuple(cfg["grid"]["yaw"]), tuple(cfg["grid"]["d"])
 rows = json.load(open(RUN / "boundary_table.json"))
-model = build_ghost_scene(Path(cfg["scene_dir"]) if Path(cfg["scene_dir"]).is_absolute() else None, RUN)
+scene_dir = Path(cfg["scene_dir"])
+if not scene_dir.is_absolute():
+    scene_dir = Path(paths.REPO) / scene_dir
+model = build_ghost_scene(scene_dir, RUN)
 data = mujoco.MjData(model)
 renderer = mujoco.Renderer(model, height=TH, width=TW)
 cam = mujoco.MjvCamera()
@@ -126,24 +130,36 @@ for h in H_SEL:
             for b, yaw in enumerate(YAW):
                 r = next(r for r in rows if (r["y"], r["h"], r["d"], r["yaw"]) == (y, h, d, yaw))
                 if r["x_pass"] is None:
-                    tiles[(a, b)] = None
+                    # No passing x: replay the closest attempt so the shortfall is visible.
+                    measured = [s for s in r["samples"] if s["pos"] is not None]
+                    if not measured:
+                        tiles[(a, b)] = None
+                        continue
+                    sample = min(measured, key=lambda s: s["pos"])
+                    c = json.load(open(RUN / sample["case"]))["case"]
+                    tiles[(a, b)] = (sample["x"], frames(c), False)
                     continue
                 sample = next(s for s in r["samples"] if abs(s["x"] - r["x_pass"]) < 1e-6)
                 c = json.load(open(RUN / sample["case"]))["case"]
-                tiles[(a, b)] = (r["x_pass"], frames(c))
-        n = max(len(t[1]) for t in tiles.values() if t)
+                tiles[(a, b)] = (r["x_pass"], frames(c), True)
+        n = max((len(t[1]) for t in tiles.values() if t), default=12)
+        squat = cfg["envelope"].get("pelvis_height_target") or next(
+            (r["envelope"].get("pelvis_height_target") for r in cfg.get("envelope_overrides", []) if h < r["h_below"]),
+            None,
+        )
         for k in range(n + 12):
             im = Image.new("RGB", (W, Hh), "#101d2b")
             dr = ImageDraw.Draw(im)
             dr.text(
                 (12, 8),
-                f"G1 双臂前伸包络（最终配置）   抓点高度 h = {h:.2f} m   双手间距 d = {d:.2f} m",
+                f"G1 双臂前伸包络   抓点高度 h = {h:.2f} m   双手间距 d = {d:.2f} m"
+                + (f"   下蹲目标 {squat:.2f} m" if squat else "   不下蹲"),
                 font=font(22),
                 fill="white",
             )
             dr.text(
                 (12, 38),
-                "每格 = 该 (y, yaw) 下位置误差 ≤ 2 cm 的最远 x；橙线 = 手到目标；双脚不动",
+                "每格 = 该 (y, yaw) 下位置误差 ≤ 2 cm 的最远 x（橙字 = 无解，回放最接近的一次）；橙线 = 手到目标；双脚不动",
                 font=font(15),
                 fill="#9fb3c8",
             )
@@ -151,14 +167,18 @@ for h in H_SEL:
                 x0, y0 = b * TW, HDR + a * (TH + CAP)
                 if t is None:
                     dr.rectangle((x0, y0, x0 + TW, y0 + TH), fill="#1b2a3a")
-                    dr.text((x0 + 70, y0 + 80), "0.20 m 仍自碰", font=font(16), fill="#8a8f98")
+                    dr.text((x0 + 70, y0 + 80), "无有效尝试", font=font(16), fill="#8a8f98")
                     label, col = "×", "#8a8f98"
                 else:
-                    xp, fr = t
+                    xp, fr, passed = t
                     rgb, err = fr[min(k, len(fr) - 1)]
                     im.paste(Image.fromarray(rgb), (x0, y0))
-                    label = f"x {xp:.2f} m   手位 {err:4.1f} cm"
-                    col = "#7CFC9A" if err <= 2 else "#d8e9f6"
+                    if passed:
+                        label = f"x {xp:.2f} m   手位 {err:4.1f} cm"
+                        col = "#7CFC9A" if err <= 2 else "#d8e9f6"
+                    else:
+                        label = f"× 最近一次 x {xp:.2f} m   手位 {err:4.1f} cm"
+                        col = "#ffb37c"
                 dr.text((x0 + 6, y0 + TH + 2), f"y {Y[a]:+.2f}  yaw {YAW[b]:+.0f}°", font=font(13), fill="#9fb3c8")
                 dr.text((x0 + 6, y0 + TH + 17), label, font=font(13), fill=col)
             proc.stdin.write(im.tobytes())
