@@ -20,7 +20,7 @@ class ApproachCommand:
 
 
 def initial_robot_xy(meta, distance):
-    surface = meta["surfaces"][meta["objects"]["blue_crate"]["surface"]]
+    surface = meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
     edge_x = surface["xy"][0] - surface["flat_half_extent"][0]
     return np.array([edge_x - distance, surface["xy"][1]])
 

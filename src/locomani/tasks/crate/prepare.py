@@ -61,7 +61,7 @@ def prepare_scene(src: Path, out: Path, task_cfg: CrateTaskConfig, expert: str, 
             xml = scene / "scene_locomani.xml"
             tree = ET.parse(xml)
             meta = json.loads((scene / "scene_meta.json").read_text())
-            surface = meta["surfaces"][meta["objects"]["blue_crate"]["surface"]]
+            surface = meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
             convert_body_boxes(tree, surface["body"])
             tree.write(xml)
     return scene

@@ -392,6 +392,23 @@ MESH_TARGETS = {
         # apply, and no single-hand grasp plan should be derived for it.
         bimanual=True,
     ),
+    "nor_cal_box": dict(
+        # Cardboard moving box, 450 x 320 x 330 mm outer with 10 mm walls
+        # (assets/crates/nor_cal_box/model.xml, from the logistics room). Same
+        # placement as the crate: long axis across the robot, near wall flush
+        # with the table edge, so the two end walls sit left and right of the
+        # robot at y = +-0.22 for the two hands (2026-09-22).
+        mjcf=f"{paths.REPO}/assets/crates/nor_cal_box/model.xml",
+        height=0.330,
+        surface="A",
+        xy=(0.0, 0.0),
+        near_edge=True,
+        footprint=(0.450, 0.320),
+        yaw_deg=90.0,
+        phrase="the cardboard box",
+        mass=1.2,
+        bimanual=True,
+    ),
     # --- SIMPLE pick-and-place trio (2026-09-10) ----------------------------
     # From SIMPLE's G1WholebodyBendPickAndPlaceTeleop-v0 (basket = objects:0,
     # pickable from GraspNet-1B): a basket in the middle of the near edge and
@@ -443,6 +460,11 @@ SCENE_PRESETS = {
     #                              left and right, for the two-handed carry
     "crate_bimanual": dict(
         on_surface_a=[], on_surface_b=[], primitives=[], mesh_targets=["blue_crate"], target_object="blue_crate"
+    ),
+    # SCENE_PRESET=box_bimanual  the cardboard box alone on the table, end walls
+    #                            left and right, for the two-handed carry
+    "box_bimanual": dict(
+        on_surface_a=[], on_surface_b=[], primitives=[], mesh_targets=["nor_cal_box"], target_object="nor_cal_box"
     ),
     # SCENE_PRESET=pick_place  SIMPLE's basket in the middle of the near edge,
     #                          the soup can to the robot's right; the can is

@@ -4,9 +4,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
-def evaluate(initial, final, reason, *, lift_height, max_tilt_deg):
-    obj = final["objects"]["blue_crate"]
-    rise = float(obj["pos"][2] - initial["objects"]["blue_crate"]["pos"][2])
+def evaluate(initial, final, reason, *, lift_height, max_tilt_deg, key="blue_crate"):
+    obj = final["objects"][key]
+    rise = float(obj["pos"][2] - initial["objects"][key]["pos"][2])
     quat = obj["quat"]
     rot = Rotation.from_quat([*quat[1:], quat[0]]).as_matrix()
     tilt = float(np.degrees(np.arccos(np.clip(rot[2, 2], -1, 1))))

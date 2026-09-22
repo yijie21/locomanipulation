@@ -13,20 +13,30 @@ from locomani.tasks.crate.perception import Camera, CrateEstimate
 class AssistedGuidance:
     streams = {"ego_view": "head_camera", "left_wrist": "left_wrist", "right_wrist": "right_wrist"}
 
-    def __init__(self, ik):
+    def __init__(self, ik, key="blue_crate", box=None):
         self.ik = ik
-        self.body = ik.model.body("blue_crate_object").id
+        self.key = key
+        self.body = ik.model.body(f"{key}_object").id
         self.object_qadr = int(ik.model.jnt_qposadr[ik.model.body_jntadr[self.body]])
-        # Surface samples on the ordinary solid rim and bottom; no added labels.
-        self.samples = np.array(
-            [[x, y, z] for x in (-0.1933, 0, 0.1933) for y in (-0.12, 0, 0.12) for z in (-0.08, 0.07)]
-        )
+        # Surface samples on the ordinary solid rim and bottom; no added labels. The crate's
+        # historical grid, or the same grid scaled to another target's box (2026-09-22).
+        if box is None:
+            xs, ys, zs = (-0.1933, 0, 0.1933), (-0.12, 0, 0.12), (-0.08, 0.07)
+        else:
+            hx, hy, hz = (float(v) for v in box["half_extent"])
+            cz = float(box.get("centre", (0.0, 0.0, 0.0))[2])
+            xs, ys, zs = (
+                (-(hx - 0.008), 0, hx - 0.008),
+                (-(hy - 0.015), 0, hy - 0.015),
+                (cz - hz + 0.005, cz + hz - 0.015),
+            )
+        self.samples = np.array([[x, y, z] for x in xs for y in ys for z in zs])
         self.diagnostics = {}
 
     def update(self, images, state, timestamp):
         ik = self.ik
         m, d, mj = ik.model, ik.data, ik._mj
-        obj = state["objects"]["blue_crate"]
+        obj = state["objects"][self.key]
         base = Rotation.from_quat(np.asarray(state["pelvis"]["quat"])[[1, 2, 3, 0]]).as_matrix()
         obj_rotation = Rotation.from_quat(np.asarray(obj["quat"])[[1, 2, 3, 0]]).as_matrix()
         d.qpos[:] = m.qpos0

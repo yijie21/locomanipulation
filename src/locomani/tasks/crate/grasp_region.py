@@ -6,6 +6,27 @@ import numpy as np
 
 GRASP_POINTS = ((0.1933, 0.0, 0.060), (-0.1933, 0.0, 0.060))
 
+# The two points above, generalised: one per end wall (object-frame +-x), 8 mm inside the
+# outer face, 25 mm below the rim top. Written so the blue crate reproduces GRASP_POINTS.
+GRASP_WALL_INSET_M = 0.008
+GRASP_BELOW_RIM_M = 0.025
+
+
+def target_key(meta: dict) -> str:
+    """The scene's bimanual target; scenes built before 2026-09-22 carry only the crate."""
+    return str(meta.get("target_object") or "blue_crate")
+
+
+def grasp_points_for(obj: dict) -> tuple[tuple[float, float, float], ...]:
+    """Object-frame grasp pair from scene_meta.objects[key].box (half_extent, centre)."""
+    box = obj.get("box")
+    if not box:
+        return GRASP_POINTS
+    hx, _, hz = (float(v) for v in box["half_extent"])
+    cz = float(box.get("centre", (0.0, 0.0, 0.0))[2])
+    x, z = hx - GRASP_WALL_INSET_M, cz + hz - GRASP_BELOW_RIM_M
+    return ((x, 0.0, z), (-x, 0.0, z))
+
 
 @dataclass(frozen=True)
 class RimRegion:

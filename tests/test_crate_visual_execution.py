@@ -83,7 +83,7 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
     monkeypatch.setattr(expert, "reset_ready", lambda *a, **kw: (Arm(), {"initial_stance_ready": True}))
     monkeypatch.setattr(expert, "StreamedArm", Arm)
     monkeypatch.setattr(expert, "CoordinatedReach", Body)
-    monkeypatch.setattr(expert, "AssistedGuidance", lambda ik: guidance)
+    monkeypatch.setattr(expert, "AssistedGuidance", lambda ik, **_kw: guidance)
     monkeypatch.setattr(
         expert, "ApproachPreparation", lambda *a: SimpleNamespace(step=lambda *args: (np.zeros(29), np.zeros(29)))
     )

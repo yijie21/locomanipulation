@@ -28,9 +28,9 @@ from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.assisted_guidance import AssistedGuidance
 from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.config import CrateTaskConfig
-from locomani.tasks.crate.coordinated_reach import CoordinatedReach
+from locomani.tasks.crate.coordinated_reach import CoordinatedReach, CoordinatedTarget
 from locomani.tasks.crate.evaluation import evaluate
-from locomani.tasks.crate.grasp_region import GRASP_POINTS
+from locomani.tasks.crate.grasp_region import grasp_points_for, target_key
 from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.round_runner import prime
@@ -170,7 +170,7 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
 
     def placement(_reset_id: str) -> None:
         reset.reset(
-            objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
+            objects={target_key(meta): {"dxy": jitter.tolist(), "yaw": float(yaw)}},
             robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
         )
 
@@ -204,7 +204,10 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     )
     low = None
     assisted = cfg.pose_source == "assisted"
-    geometry = {"grasp_points": GRASP_POINTS} if assisted else meta["crate_visual"]
+    key = target_key(meta)
+    target_meta = (meta.get("objects") or {}).get(key) or {}
+    grasp_points = grasp_points_for(target_meta)
+    geometry = {"grasp_points": grasp_points} if assisted else meta["crate_visual"]
     dataset_kind = (
         "ordinary_crate_assisted_low_reach_video_pilot"
         if assisted
@@ -245,7 +248,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 },
             )
     perception = (
-        AssistedGuidance(ArmIK(paths.SCENE_XML))
+        AssistedGuidance(ArmIK(paths.SCENE_XML), key=key, box=target_meta.get("box"))
         if assisted
         else CratePerception(ArmIK(paths.SCENE_XML), geometry, max_reprojection_px=cfg.reprojection_px)
     )
@@ -354,7 +357,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 admission = None
                 if nav.ready and assisted:
                     probe = CoordinatedReach(
-                        solver, config, raw, reference_joints=joints, reference_quaternion=raw["pelvis"]["quat"]
+                        solver,
+                        config,
+                        raw,
+                        reference_joints=joints,
+                        reference_quaternion=raw["pelvis"]["quat"],
+                        target=CoordinatedTarget(object_key=key, grasp_points_local=grasp_points),
                     )
                     check = probe.step(now, estimate, raw, openings, **motion_clock)
                     admission = probe.diagnostics
@@ -433,6 +441,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             handoff_state,
                             reference_joints=arm.q,
                             reference_quaternion=arm.root_quat,
+                            target=CoordinatedTarget(object_key=key, grasp_points_local=grasp_points),
                         )
                     else:
                         low = VisualLowReach(
@@ -546,7 +555,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
             except Exception:
                 reason, error = "runtime_error", (error or "") + traceback.format_exc()
     try:
-        result = evaluate(initial, final, reason, lift_height=cfg.lift_height, max_tilt_deg=cfg.max_tilt_deg)
+        result = evaluate(initial, final, reason, lift_height=cfg.lift_height, max_tilt_deg=cfg.max_tilt_deg, key=key)
     except Exception:
         error = (error or "") + traceback.format_exc()
         result = {"ok": False, "why": "runtime_error"}
@@ -558,7 +567,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         dataset_kind=dataset_kind,
         produced=produced,
         task=config.prompt,
-        target="blue_crate",
+        target=key,
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),
         evaluation_state_seq=final.get("seq"),

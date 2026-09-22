@@ -133,6 +133,15 @@ def main() -> None:
         default=DEFAULT_CRATE_TASK.crate_setback,
         help="basket inset from the near table edge, in metres; the continuous 6/10 reference uses 0.04",
     )
+    parser.add_argument(
+        "--preset",
+        default="crate_bimanual",
+        choices=("crate_bimanual", "box_bimanual"),
+        help="which bimanual target goes on the table (scene_lib.SCENE_PRESETS)",
+    )
+    parser.add_argument(
+        "--table-top", type=float, default=0.62, help="table height, m (0.62 shipped; 0.371 = the logistics pallet)"
+    )
     args = parser.parse_args()
     if not 0 <= args.crate_setback <= 0.20:
         parser.error("--crate-setback must be within 0..0.20 m")
@@ -152,9 +161,9 @@ def main() -> None:
         os.path.join(paths.OUTPUTS, "scene"),
         out,
         "--preset",
-        "crate_bimanual",
+        args.preset,
         "--table-top",
-        "0.62",
+        str(args.table_top),
     ]
     if args.seed is not None:
         build_argv += ["--seed", str(args.seed)]
@@ -178,7 +187,7 @@ def set_crate_setback(directory, setback):
         raise ValueError("crate setback must be within 0..0.20 m")
     meta_path = directory / "scene_meta.json"
     meta = json.loads(meta_path.read_text())
-    crate = meta["objects"]["blue_crate"]
+    crate = meta["objects"][meta.get("target_object", "blue_crate")]
     # Builder emits the default inset. Reapplying this operation is idempotent.
     old = float(meta.get("crate_setback", DEFAULT_CRATE_TASK.crate_setback))
     crate["init_pos"][0] += setback - old
