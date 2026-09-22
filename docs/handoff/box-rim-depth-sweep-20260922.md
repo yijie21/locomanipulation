@@ -41,6 +41,18 @@
 `outputs/box_rim_execution_20260920/scene_reverse_camera`（XML 相同，只多 `video_camera: reverse_room`），
 `scene_xml` 也要同步改。执行器报的碰撞没有一次是平台：都是右手指 vs 右髋的自碰撞，或右踝 vs 地面。
 
+## 修复（同日）：重锚定之后再放一次、朝请求的偏航
+
+探针（`outputs/box_rim_diag_cam_20260922/probe_init`）逐步采样：复位后 92–96° 稳定 3 s；`reanchor()` 的流式切换本身把机器人
+转到 126°（记录 `heading_offset` 126°）；非 coordinated 路径随后按**实测**偏航保持，把 126° 锁死。按请求偏航保持能拉回 101°，
+再复位一次并按请求偏航保持得到 93–97°（偏移量在传送后仍有效）。修法（`box_rim_execution_cli.py` `_initialise` pose=None 分支）：
+reanchor 后再 `reset` 一次、`hold_yaw` 与 facing 用请求值——coordinated 路径靠第二次 reset 早就是这样。验证局
+`outputs/box_rim_diag_fix_20260922` 进入规划时偏航 99°（此前 111–130°；残差 ~9° 是 IDLE 的收敛，探针里也是 96–101°）。
+
+修复后重跑 70 局（`outputs/box_rim_sweep_depth_v2_20260922`，`scene_reverse_camera`）：前 14 局里"规划无候选"从 12/14 降到 1/14，
+失败挪到后面的闸门——`stale_observation` 3、`unsupported_transit_waypoint` 4、`initial_escape_*` 3（右手指/右髋）、
+`transit_tracking_error` 2、预算超限 1。完整表见下。
+
 ## 未做
 
 - 规划器为什么从实测姿态出不了粗 IK 候选：把 `rounds/dy0.325_r00` 的 `planning_snapshot` 喂给离线规划器复现，是下一步。

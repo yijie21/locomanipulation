@@ -216,14 +216,20 @@ def _initialise(request, primitives, reset) -> dict | None:
     primitives.cmd.start_control()
     upper_ref.shared().wait(3.0)
     if pose is None:
+        # The streamed toggle inside reanchor() spins the robot (measured 2026-09-22: 95 -> 126 deg
+        # in this room), and holding the yaw measured AFTER it locked that error in -- every box-rim
+        # round then planned 20-40 deg off the box. Re-place the robot after the re-anchor (the
+        # recorded heading offset survives the teleport) and hold the REQUESTED yaw, as the
+        # coordinated path already does through its second reset.
         reanchor(primitives)
-        state = primitives.obs()
-        yaw = float(state["pelvis"]["yaw"])
-        primitives.hold_yaw = yaw
+        reset.reset(robot=robot, label=runtime.get("video_label", "box_rim_probe"))
+        time.sleep(0.4)
+        requested_yaw = float(runtime["robot_yaw"])
+        primitives.hold_yaw = requested_yaw
         primitives.cmd.hold(
             2.5,
             mode=LocomotionMode.IDLE,
-            facing=(math.cos(yaw), math.sin(yaw), 0.0),
+            facing=(math.cos(requested_yaw), math.sin(requested_yaw), 0.0),
         )
         return None
     reanchor(primitives)
