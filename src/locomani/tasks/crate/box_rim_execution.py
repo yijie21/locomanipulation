@@ -452,7 +452,13 @@ class BoxRimExecutor:
             joint_acceleration=self.config.maximum_joint_acceleration_rps2,
             tracking_gain=self.config.coordinated_tracking_gain,
             tracking_cap=self.config.coordinated_tracking_cap_m,
-            align_tolerance=min(0.018, self.config.align_position_tolerance_m),
+            # direct_grasp: the jaw opening is the tolerance, so the request's align tolerance
+            # stands; otherwise the basket line's 1.8 cm capture alignment is the ceiling.
+            align_tolerance=(
+                self.config.align_position_tolerance_m
+                if self.config.direct_grasp
+                else min(0.018, self.config.align_position_tolerance_m)
+            ),
             close_seconds=self.config.close_s,
             probe_height=self.config.probe_lift_m,
             max_tilt_deg=math.degrees(self.config.maximum_object_tilt_rad),
@@ -493,6 +499,10 @@ class BoxRimExecutor:
         )
         if usable_half_length <= 0:
             raise _Failure("coordinated_capture_region_empty", rim_pair=rim_pair)
+        if getattr(getattr(self, "config", None), "direct_grasp", False):
+            # Points the planner puts near a corner leave a millimetre region, and the controller
+            # then aborts on the first touch; the jaw tolerates a few cm of box motion.
+            usable_half_length = max(usable_half_length, 0.05)
         return CoordinatedTarget(
             object_key=self.target_key,
             grasp_points_local=tuple(map(tuple, local_targets)),
@@ -747,7 +757,9 @@ class BoxRimExecutor:
                 # measured check above keeps the real penetration limit.
                 max_target_penetration_m=current_box.wall_thickness_m,
             )
-            if measured_rejected or reference_rejected or state.get("furniture_touch"):
+            if (
+                measured_rejected or reference_rejected or state.get("furniture_touch")
+            ) and not self.config.direct_grasp:
                 raise _Failure(
                     "coordinated_collision",
                     measured_contacts=measured_rejected,

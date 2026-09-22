@@ -17,6 +17,10 @@ def _vector(value, length: int, name: str) -> np.ndarray:
 @dataclass(frozen=True)
 class BoxRimExecutionConfig:
     approach_mode: str = "supported_pose"
+    # coordinated only: do not stop on planned/measured wall contacts before the grasp -- the
+    # controller reaches, closes and lifts; the box's own rise/slip/tilt verdict decides. Falls and
+    # the object guards still apply. A "just try it" mode for the grasp itself (2026-09-22).
+    direct_grasp: bool = False
     observation_max_age_s: float = 0.25
     watchdog_wall_s: float = 1.0
     settle_s: float = 0.5
@@ -83,6 +87,10 @@ class BoxRimExecutionConfig:
     def __post_init__(self):
         if self.approach_mode not in ("supported_pose", "planner_arms", "legacy_low_reach", "coordinated"):
             raise ValueError("approach_mode must be supported_pose, planner_arms, legacy_low_reach or coordinated")
+        if not isinstance(self.direct_grasp, bool):
+            raise ValueError("direct_grasp must be boolean")
+        if self.direct_grasp and self.approach_mode != "coordinated":
+            raise ValueError("direct_grasp is only defined for approach_mode=coordinated")
         positive = (
             self.observation_max_age_s,
             self.watchdog_wall_s,
