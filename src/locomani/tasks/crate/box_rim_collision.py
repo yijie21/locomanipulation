@@ -12,6 +12,10 @@ from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
 from locomani.tasks.crate.box_rim_geometry import OpenBoxGeometry
 
 SupportContactPolicy = Literal["bounded_growth", "diagnostic_floor"]
+# intended_pad: a finger geom may touch only the wall its target sits on, within reach of the target.
+# any_wall: a finger geom may graze any target wall within the penetration envelope -- the
+# continuous coordinated reach slides the fingers along the rim on the way in (2026-09-22).
+FingerWallPolicy = Literal["intended_pad", "any_wall"]
 
 
 @dataclass(frozen=True)
@@ -344,9 +348,12 @@ class StaticCollisionChecker:
         support_penetration_growth_tolerance_m=0.0015,
         gripper_q=None,
         support_contact_policy: SupportContactPolicy = "bounded_growth",
+        finger_wall_policy: FingerWallPolicy = "intended_pad",
     ):
         if support_contact_policy not in ("bounded_growth", "diagnostic_floor"):
             raise ValueError("support_contact_policy must be 'bounded_growth' or 'diagnostic_floor'")
+        if finger_wall_policy not in ("intended_pad", "any_wall"):
+            raise ValueError("finger_wall_policy must be 'intended_pad' or 'any_wall'")
         if (
             not np.isfinite([support_baseline_max_penetration_m, support_penetration_growth_tolerance_m]).all()
             or support_baseline_max_penetration_m <= 0
@@ -384,8 +391,17 @@ class StaticCollisionChecker:
                 and near_target <= target_contact_tolerance_m
                 and contact.dist >= -max_target_penetration_m
             )
+            grazing_target_wall = (
+                finger_wall_policy == "any_wall"
+                and other_target
+                and robot_geom in self.finger_geoms
+                and contact.dist >= -max_target_penetration_m
+            )
             if intended_target_contact:
                 classification = "allowed_finger_pad_target_contact"
+                destination = allowed
+            elif grazing_target_wall:
+                classification = "allowed_finger_wall_graze"
                 destination = allowed
             elif r1 and r2:
                 classification = "robot_self_collision"

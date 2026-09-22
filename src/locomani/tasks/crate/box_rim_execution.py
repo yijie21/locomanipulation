@@ -741,6 +741,11 @@ class BoxRimExecutor:
                 gripper_q=self._commanded_gripper_q(hands),
                 position=controller.x[:3],
                 quaternion_wxyz=command.root_quaternion,
+                # The reference is a plan the controller tracks with centimetre lag, not the body:
+                # entering along the side walls the finger links overlap the wall by up to its
+                # thickness in the plan while the measured hands stay clear (2026-09-22). The
+                # measured check above keeps the real penetration limit.
+                max_target_penetration_m=current_box.wall_thickness_m,
             )
             if measured_rejected or reference_rejected or state.get("furniture_touch"):
                 raise _Failure(
@@ -1233,9 +1238,12 @@ class BoxRimExecutor:
         gripper_q=None,
         position=None,
         quaternion_wxyz=None,
+        max_target_penetration_m=None,
     ):
         box = self.box if box is None else box
         gripper_q = self._observed_gripper_q(state) if gripper_q is None else gripper_q
+        if max_target_penetration_m is None:
+            max_target_penetration_m = min(self.planner.options.max_target_penetration_m, box.wall_thickness_m / 4)
         allowed, rejected = self.planner.collision.check(
             self._robot_state(state),
             joints,
@@ -1244,13 +1252,16 @@ class BoxRimExecutor:
             box,
             targets,
             target_contact_tolerance_m=self.planner.options.target_contact_tolerance_m,
-            max_target_penetration_m=min(self.planner.options.max_target_penetration_m, box.wall_thickness_m / 4),
+            max_target_penetration_m=max_target_penetration_m,
             support_baseline_max_penetration_m=self.planner.options.support_baseline_max_penetration_m,
             support_penetration_growth_tolerance_m=self.planner.options.support_penetration_growth_tolerance_m,
             gripper_q=gripper_q,
             support_contact_policy=(
                 "diagnostic_floor" if self.config.approach_mode == "coordinated" else "bounded_growth"
             ),
+            # The continuous reach slides the fingers along the rim on the way in; the static
+            # planner's intended-pad rule would reject that as a wall collision (2026-09-22).
+            finger_wall_policy=("any_wall" if self.config.approach_mode == "coordinated" else "intended_pad"),
         )
         return [value.to_dict() for value in allowed], [value.to_dict() for value in rejected]
 
