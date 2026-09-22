@@ -26,6 +26,21 @@
   （或把预算按 0.30 + 过冲放宽、并测过冲分布）。横向/偏航扫描（问题 3 的第三步）没有意义，未跑。
 - 视频：`reel_first_pass.mp4`（七档各一局，27 s）；每局 `videos/<name>.mp4`；每局事件在 `rounds/<name>/result.json`。
 
+## 更正（同日晚）：规划时机器人没朝着箱子
+
+状态轨迹（`outputs/box_rim_diag_cam_20260922/state_trace`，从复位后第一帧起）显示复位后偏航是 110–130°，不是请求的 90°±3°；
+篮子线偏航正确（0–5°），所以这个偏差只在起始朝向 90° 的场景出现。规划阶段机器人朝左偏 20–40° 看箱子，这才是 61/70 局
+"无粗 IK 候选"的原因；进入调整走动后步态把朝向拉回 86–96°，所以走过的 8 局反而能规划。偏航在仿真里是直接写 qpos 的
+（`privileged_pub.py:534`），偏差发生在 `box_rim_execution_cli.py:219–233` 的 reanchor + 4.5 s IDLE hold 期间，
+与 memory `sonic-planner-heading-anchor`（重锚定时的偏航旋转 facing）一致，未逐行定位。
+
+验证局（`dy0.225_r00`，`scene_reverse_camera`）：走 0.18 m 在预算内、规划成功、进到 `transit_raise` 才因右踝/地面
+`observed_collision_during_motion` 停下——比扫描里任何一局都远。
+
+另：扫描视频主画面是骨盆跟踪相机（`video_camera` 缺省），在这个房间里落在机器人背后的墙内；模板要指向
+`outputs/box_rim_execution_20260920/scene_reverse_camera`（XML 相同，只多 `video_camera: reverse_room`），
+`scene_xml` 也要同步改。执行器报的碰撞没有一次是平台：都是右手指 vs 右髋的自碰撞，或右踝 vs 地面。
+
 ## 未做
 
 - 规划器为什么从实测姿态出不了粗 IK 候选：把 `rounds/dy0.325_r00` 的 `planning_snapshot` 喂给离线规划器复现，是下一步。
