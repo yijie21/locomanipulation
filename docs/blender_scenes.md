@@ -38,7 +38,7 @@
 
 ```
 .blend ──blender_to_usd.py──▶ <name>/<room>.usdc + textures/      （Isaac 离线重渲用）
-.blend ──blender_to_mujoco.py──▶ <name>_mj/*.obj + textures(PNG)
+.blend ──blender_to_mujoco.py──▶ <name>_mj/mesh/*.obj + room_parts.json   （贴图 PNG 从资产包拷入）
         ──build_mujoco_scene.py──▶ <name>_mj/scene_locomani.xml   （物理 + 策略图像用）
 ```
 
@@ -51,7 +51,7 @@
 
 | 步骤 | 跑在哪个解释器里 | 怎么得到 | 验证 |
 |---|---|---|---|
-| `blender_to_usd.py` / `blender_to_mujoco.py` | Blender 5.x 自带 Python | 从 [blender.org](https://www.blender.org/download/lts/) 下 **5.x LTS** 官方 tar.xz，解开，把 `blender` 软链到 `PATH`（本机 `/usr/local/bin/blender -> /workspace/tools/blender/blender`；容器 recycle 后要重建软链）。**不要**用发行版仓库的 4.x：USD 导出 API 不同 | `blender --version` 打出 `Blender 5.x LTS` |
+| `blender_to_usd.py` / `blender_to_mujoco.py` | Blender 5.x 自带 Python | 从 [blender.org](https://www.blender.org/download/lts/) 下 **5.x LTS** 官方 tar.xz，解开，把 `blender` 软链到 `PATH`（SRA0889 上是 `~/tools/blender-5.2.2-linux-x64`，软链 `~/tools/blender` 和 `~/.local/bin/blender`；`/opt` 下还残留 root 装的 4.2，`~/.local/bin` 在 PATH 里排前面所以不影响）。**不能**用 4.x：`NOR_CAL_Box_Refined_V2.blend` 是 Blender 5.2 存的，文件头是 5.0 起的新格式 `BLENDER17-`，4.x 直接报 `not a blend file`；USD 导出 API 也不同。换完软链后已开着的终端要 `hash -r`，否则 bash 仍用缓存的旧路径 | `blender --version` 打出 `Blender 5.x LTS` |
 | `build_mujoco_scene.py`、`render_mujoco_frame.py`、场景校验 | 仓库的 `.venv_sim`（`$VENV_SIM_PY`） | [安装指南](setup.md) 第 0–5 步（`scripts/setup_sonic.sh`） | `"$VENV_SIM_PY" -c "import mujoco"` |
 | 用 USD 真渲染一帧（可选） | 装了 `isaacsim` 的 render venv（`$RENDER_PY`） | [安装指南](setup.md) 第 7 步（SIMPLE，约 20 GB，**只有要 Isaac 像素才装**） | `"$RENDER_PY" -c "import isaacsim"` |
 | 大文件 | Git LFS | `git lfs install && git lfs pull` | `assets/blender/*.blend` 不是 130 字节的指针文件 |
@@ -111,14 +111,25 @@ blender --background assets/blender/<room>.blend \
 ## 3. 出 MuJoCo 场景
 
 ```bash
+. scripts/paths.sh
+export PYTHONPATH="$LOCOMANI_ROOT/src"
+mj=outputs/scene/<name>_mj
 blender --background assets/blender/<room>.blend \
-  --python scripts/blender_to_mujoco.py -- outputs/scene/<name>_mj
-"$VENV_SIM_PY" scripts/build_mujoco_scene.py outputs/scene/<name>_mj \
+  --python scripts/blender_to_mujoco.py -- "$mj"
+cp -a assets/scene/logistics_room_box_v1/mujoco/textures "$mj"/          # MuJoCo 不读 JPG
+cp assets/scene/logistics_room_box_v1/mujoco/texture_map.json "$mj"/     # JPG 名 → PNG 名
+"$VENV_SIM_PY" scripts/build_mujoco_scene.py "$mj" \
   --base outputs/scene/crate_table30_depth04/scene_locomani.xml   # 机器人树从这里继承
 ```
 
 第一步按**材质**(不是按物体)导出 OBJ —— MuJoCo 一个 geom 绑一个材质,而房间是几千个物体共用几十个材质。
-第二步在现成的 `scene_locomani.xml` 上做手术,生成新的场景:
+它只写 `mesh/*.obj` 和 `room_parts.json`,**不产贴图**;PNG 贴图和 `texture_map.json` 是发布时手工转好、随资产包提供的,
+第三步要读它们,所以先拷进来。换了新房间、贴图名对不上时,自己把 JPG 转成 PNG 并补 `texture_map.json`。
+
+第三步在现成的 `scene_locomani.xml` 上做手术,生成新的场景。`--base` 必须是**已有的、带标定好机器人的场景**
+(`crate_table30_depth04` 那份,在 `outputs/` 下、不进 git;manifest 记录的是发布时那份的哈希,本机的可能已经不同),
+而不是正在生成的输出文件。脚本会先删掉自己上一次加的所有 asset、geom、相机和灯再重新添加,所以重复运行、
+甚至误把输出当 `--base` 都得到同一份文件。它加的东西:
 
 | 加了什么 | 为什么 |
 |---|---|
@@ -129,17 +140,21 @@ blender --background assets/blender/<room>.blend \
 
 **机器人树、关节默认值、执行器全部从 base 场景继承**,不重写 —— 重建机器人等于引入一次新标定。
 
-贴图会自动转成 PNG:**MuJoCo 不读 JPG**。
+生成的 XML 里相机有 `head_camera`、`left_wrist`、`right_wrist`(继承自 base)和 `reverse_room`(脚本加的,对应 Isaac 的 "02 Reverse room" 机位)。
 
 ## 4. 渲一帧并对比
 
 ```bash
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 "$VENV_SIM_PY" \
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
   scripts/render_mujoco_frame.py outputs/scene/<name>_mj/scene_locomani.xml \
-  /tmp/mj.png --camera <相机名>
+  /tmp/mj.png --camera head_camera    # 也有 left_wrist / right_wrist / reverse_room
 
 "$VENV_SIM_PY" scripts/compare_frames.py <isaac.png> /tmp/mj.png --out /tmp/pair.png
 ```
+
+`MUJOCO_EGL_DEVICE_ID` 是 **EGL 设备表的下标,不是 CUDA 编号**:那张表里还有集显和 llvmpipe,
+也不跟着 `CUDA_VISIBLE_DEVICES` 重排。单张 NVIDIA 卡的工作站上显卡是 0;填错会报
+`Cannot initialize a EGL device display`(SRA0889 上 1、2 是没驱动的 Intel 集显,3 是 llvmpipe)。
 
 `compare_frames.py` 报两个数,回答的是不同问题:
 
@@ -177,11 +192,18 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 "$VENV_SIM_PY" \
 | 症状 | 原因 | 处理 |
 |---|---|---|
 | `blender: command not found` / 打出 4.x | 没装 5.x 或软链丢了（容器 recycle） | 重做 §1 的软链 |
+| 换了软链，同一个终端里 `blender` 仍打出 4.2 | bash 缓存了上次解析到的路径 | `hash -r` 或开新终端 |
+| 读房间 .blend 只警告 `newer Blender binary`，append 纸箱时报 `not a blend file` | 用的是 4.x：房间是 4.5 旧文件头还能读，纸箱是 5.2 新文件头读不了 | 装 5.x LTS（§1）；文件本身没坏 |
 | `ModuleNotFoundError: locomani` | Blender 的 Python 看不到仓库 | `export PYTHONPATH="$LOCOMANI_ROOT/src"` 后再跑 |
 | `.blend` 只有 130 字节 / 打开报损坏 | LFS 指针没拉 | `git lfs pull` |
 | 贴图缺失（粉色/黑色面） | .blend 引用了作者机器上的路径 | 在 Blender 里 Pack Resources 后重存；仓库房间的修复见资产包 `rebuild_blender_scene.py` |
 | Isaac 里画面全黑 / 取景跑偏 / 2 米宽灰带 | Blender USD 导出器的单位错误 | `blender_to_usd.py` 已修四处（§2 表）；灯光增益在渲染时给，不写进 USD |
-| MuJoCo 报贴图读不了 | MuJoCo 不读 JPG | `blender_to_mujoco.py` 自动转 PNG；手改场景时也只用 PNG |
+| `build_mujoco_scene.py` 报 `FileNotFoundError: .../<name>_mj/scene_locomani.xml` | `--base` 指向了还没生成的输出文件 | `--base outputs/scene/crate_table30_depth04/scene_locomani.xml`（§3） |
+| `build_mujoco_scene.py` 报 `texture_map.json` 不存在 | 导出脚本不产贴图 | 按 §3 从资产包拷入 `textures/` 和 `texture_map.json` |
+| 加载 XML 报 `repeated name 'room_00' in mesh` | 旧版构建脚本在自己的输出上重复叠加 | 脚本已改为可重复运行；用正确的 `--base` 重新生成一次 |
+| MuJoCo 报贴图读不了 | MuJoCo 不读 JPG | 只用资产包里的 PNG；手改场景时也只用 PNG |
+| `Cannot initialize a EGL device display` | `MUJOCO_EGL_DEVICE_ID` 指到了集显或不存在的 EGL 设备 | 单卡机器用 0（§4）；它是 EGL 下标，不是 CUDA 编号 |
+| `render: no camera named head` | 相机名写错 | 用 `head_camera` / `left_wrist` / `right_wrist` / `reverse_room`，报错信息会列出全部 |
 | 编译 MJCF 时 mesh 找不到 | `meshdir` 是绝对路径或指向别的机器 | 用 `prepare_logistics_scene.py` 生成运行副本；G1/Dex1 网格相对 `third_party/GR00T-WholeBodyControl` |
 | 机器人在新场景里行为变了 | 重写了机器人树 | 永远 `--base` 继承现成的 `scene_locomani.xml`，只动布景和工作面 |
 

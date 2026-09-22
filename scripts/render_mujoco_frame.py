@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Render one frame of a MuJoCo scene from one of its own cameras.
 
-    MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 "$VENV_SIM_PY" \
+    MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
         scripts/render_mujoco_frame.py <scene_locomani.xml> <out.png> --camera reverse_room
+
+MUJOCO_EGL_DEVICE_ID is the index into the EGL device list, not a CUDA index:
+that list also holds integrated GPUs and llvmpipe, and it is not reordered by
+CUDA_VISIBLE_DEVICES. On a one-NVIDIA-GPU workstation the card is 0.
 
 Pair it with the Isaac render of the same camera to check that the two
 simulators really hold the same layout; scripts/compare_frames.py reports how
@@ -12,6 +16,7 @@ far apart they are.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 
@@ -38,7 +43,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"render: no camera named {args.camera}; this model has {names}")
         return 2
 
-    renderer = mujoco.Renderer(model, height=args.height, width=args.width)
+    try:
+        renderer = mujoco.Renderer(model, height=args.height, width=args.width)
+    except (ImportError, RuntimeError) as e:
+        # mujoco.egl raises ImportError when MUJOCO_EGL_DEVICE_ID names an EGL
+        # device it cannot initialize (an iGPU without a driver, for instance).
+        dev = os.environ.get("MUJOCO_EGL_DEVICE_ID")
+        print(f"render: cannot create a {os.environ.get('MUJOCO_GL', 'default')} context: {e}")
+        print(f"render: MUJOCO_EGL_DEVICE_ID={dev!r} is an EGL device index, not a CUDA one; try 0 (the NVIDIA card)")
+        return 2
     camera = mujoco.MjvCamera()
     camera.type = mujoco.mjtCamera.mjCAMERA_FIXED
     camera.fixedcamid = cam_id

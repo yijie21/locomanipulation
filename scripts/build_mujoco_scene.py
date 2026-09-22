@@ -54,14 +54,27 @@ root = tree.getroot()
 asset = root.find("asset")
 world = root.find("worldbody")
 
-# drop the old scene furniture; keep floor, light, and the whole robot tree
+# drop the old scene furniture; keep floor, light, and the whole robot tree.
+# Also drop everything a previous run of this script added: the base may be our
+# own output (a re-run, or --base pointing at the scene being built), and
+# MuJoCo rejects a second mesh named room_00.
+OWN = ("room_", "t_room_", "m_room_", "vis_room_", "nor_cal", "m_nor_cal", "platform_col", "reverse_room", "room_light")
+
+
+def ours(el):
+    return (el.get("name") or "").startswith(OWN)
+
+
 for body in list(world.findall("body")):
     if body.get("name") != "pelvis":
         world.remove(body)
+for el in list(world):
+    if el.tag in ("geom", "camera", "light") and ours(el):
+        world.remove(el)
 for tag in ("texture", "material", "mesh"):
     for el in list(asset.findall(tag)):
         n = el.get("name") or ""
-        if any(k in n for k in ("dining_table", "counter", "blue_crate")):
+        if any(k in n for k in ("dining_table", "counter", "blue_crate")) or ours(el):
             asset.remove(el)
 
 parts = json.load(open(f"{MJ}/room_parts.json"))
@@ -193,7 +206,14 @@ if g is not None:
     g.set("offwidth", "960")
     g.set("offheight", "720")
 ET.SubElement(
-    world, "light", pos="0 0 2.9", dir="0 0 -1", directional="false", diffuse="0.6 0.6 0.6", specular="0.1 0.1 0.1"
+    world,
+    "light",
+    name="room_light",
+    pos="0 0 2.9",
+    dir="0 0 -1",
+    directional="false",
+    diffuse="0.6 0.6 0.6",
+    specular="0.1 0.1 0.1",
 )
 
 # The calibrated base is generated under outputs/ and historically contains
