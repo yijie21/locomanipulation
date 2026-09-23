@@ -67,7 +67,7 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 | `collect.record` | 录不录 LeRobot 数据 | `false` 只留视频/相机/动作记录，不进转换器 |
 | `collect.instance` | 端口块与 exporter 目录 | 双臂不强制实例 0，可与单臂并行（见 §6） |
 | `task.expert` | 用哪个专家 | `visual` 是本页这条线；`wall` / `carry` 是诊断专家 |
-| `scene.dir` | 用哪个场景 | 就是 §1 建的 `outputs/scene/crate_table30_depth04` |
+| `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: crate` 就是 §1 建的 `outputs/scene/crate_table30_depth04`；`name: warehouse` 是物流房间（名字表 `configs/scenes.yaml`） |
 | `train.steps` / `save_steps` | 优化器步数 / 存档间隔 | 要冒烟就让 `save_steps` 等于 `steps`，否则存不下 checkpoint |
 | `train.holdout` | 留几集做验证 | 必须**小于**实际保留的集数 |
 | `eval.rounds` | 闭环评测跑几局 | 20 局只看得出"翻倍级"差异，100 局才判得动 10 个点 |

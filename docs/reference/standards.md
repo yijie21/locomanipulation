@@ -50,7 +50,7 @@ specific rules, not every architectural property or dynamic dependency.
   and observation builders consume it. A policy server reports its checkpoint
   file hashes and actual model modalities; evaluation checks and records them.
 - Runs (2026-09-17): a run is one expanded file in `configs/experiments/`, copied verbatim into the run
-  directory; a version is a new file, not an override. Named profiles live in `configs/{task,backend,eval}/`.
+  directory; a version is a new file, not an override. Named profiles live in `configs/{task,backend,eval}/`, scene names in `configs/scenes.yaml`.
 - Stages: one flat script each (`scripts/<stage>.py`), reading its upstream's entry in `<run>/summary.json`; every stage takes `--dry-run`, which prints what it would run and writes nothing.
 
 ## Checks

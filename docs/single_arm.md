@@ -34,7 +34,7 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/sc
 ```
 
 目标池里要有 `water_bottle`，`install_scene.sh` 会回显 `finger pads HARDENED`。
-用哪个场景由实验文件的 `scene.dir` 决定，两者在 `outputs/scene/` 下并存。
+用哪个场景由实验文件的 `scene.dir`（或场景名 `scene.name`，名字表 `configs/scenes.yaml`）决定，两者在 `outputs/scene/` 下并存。
 
 新机器还要跑一次 `bash scripts/link_gr00t_src.sh`——它改的是**训练 venv**
 （`third_party/Isaac-GR00T/.venv`，不是 `$VENV_SIM_PY`），把 `gr00t` 指向 `src/gr00t/`；指错时训练拒跑。
@@ -76,7 +76,7 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 | `collect.max_batches` | 最多几批 | 批数上限，采不够会明确报错而不是无限跑 |
 | `collect.seed0` | 第一批的采样种子 | 换它就是换一组 case；批次号往后累加 |
 | `collect.record` | 录不录 LeRobot 数据 | `false` 只采样打分不落数据，比录制快很多 |
-| `scene.dir` | 用哪个场景 | `sim_lowcom` 是 `simple` 线的默认 |
+| `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: bottle` 就是 `sim_lowcom`，`simple` 线的默认 |
 | `scene.cases` | 固定 case bank 文件 | 非空就是固定对照，见 §5 |
 | `train.steps` | 优化器步数 | 训练时长的主要来源 |
 | `train.save_steps` | 存 checkpoint 的间隔 | 要冒烟就让它等于 `steps`，否则一个 checkpoint 都存不下 |

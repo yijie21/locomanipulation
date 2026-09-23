@@ -130,3 +130,30 @@ def test_a_stage_needing_less_than_the_exporter_free_budget_keeps_its_own_number
     assert run_common.NEEDS["convert"]["pids"] < run_common.NO_EXPORTER_PIDS
     tight = dict(IDLE, pids=3400)
     assert run_common.shortfall("convert", tight, record=False) is None
+
+
+def test_a_scene_name_resolves_to_its_directory_in_the_run_and_its_copy(tmp_path, monkeypatch):
+    """The copy keeps the name verbatim; both readers hand consumers the directory."""
+    monkeypatch.setattr(run_common, "RUNS", tmp_path / "runs")
+    experiment = tmp_path / "exp.yaml"
+    experiment.write_text("name: r\nscene:\n  name: warehouse\n  cases: null\n")
+    cfg, run_dir = run_common.open_run(experiment)
+    assert cfg["scene"]["dir"] == "outputs/box_rim_execution_20260920/scene_reverse_camera"
+    assert "dir" not in yaml.safe_load((run_dir / "config.yaml").read_text())["scene"]
+    assert run_common.load_run_config(run_dir)["scene"] == cfg["scene"]
+
+
+def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
+    names = yaml.safe_load(run_common.SCENES.read_text())
+    assert set(names) == {"bottle", "crate", "warehouse"}
+    for entry in names.values():
+        assert yaml.safe_load((run_common.ROOT / entry["example"]).read_text())["scene"]["dir"] == entry["dir"]
+    cfg = {"scene": {"dir": "outputs/scene/sim_lowcom"}}
+    assert run_common.resolve_scene(cfg) == {"scene": {"dir": "outputs/scene/sim_lowcom"}}
+
+
+def test_an_unknown_or_doubly_given_scene_is_refused():
+    with pytest.raises(SystemExit, match="bottle, crate, warehouse"):
+        run_common.resolve_scene({"scene": {"name": "blue"}})
+    with pytest.raises(SystemExit, match="give one"):
+        run_common.resolve_scene({"scene": {"name": "crate", "dir": "outputs/scene/sim"}})

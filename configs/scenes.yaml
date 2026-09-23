@@ -1,0 +1,17 @@
+# Scene names: what an experiment's `scene: {name: ...}` means (resolved by run_context.resolve_scene).
+#
+# A name, once given, never points at a different directory: a run's config.yaml keeps the NAME, and
+# a later stage re-resolves it through this file. A rebuilt or changed scene gets a new name.
+# `scene: {dir: ...}` still works for a directory without a name.
+
+bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
+  dir: outputs/scene/sim_lowcom
+  example: configs/experiments/bottle_simple_200.yaml
+
+crate:  # the same blue floor, both arms, a crate on a table
+  dir: outputs/scene/crate_table30_depth04
+  example: configs/experiments/crate_env2_so45.yaml
+
+warehouse:  # the scanned logistics room, both arms, a cardboard box
+  dir: outputs/box_rim_execution_20260920/scene_reverse_camera
+  example: configs/experiments/box_room_20260922.yaml

@@ -28,6 +28,7 @@ from locomani import paths
 
 ROOT = Path(paths.REPO)
 RUNS = ROOT / "outputs" / "runs"
+SCENES = ROOT / "configs" / "scenes.yaml"
 PID_MARGIN = 200  # a stack needs room to fork after the check passes
 NEEDS = {  # measured, not theoretical: an exporter holds ~1800 pids and the container's ceiling is 3840
     "collect": dict(cores=8, pids=1800, gpu_free_mib=6000),
@@ -60,7 +61,7 @@ def open_run(experiment: Path | str, name: str | None = None, *, write: bool = T
     nothing behind, not even the directory it would have claimed.
     """
     experiment = Path(experiment)
-    cfg = yaml.safe_load(experiment.read_text())
+    cfg = resolve_scene(yaml.safe_load(experiment.read_text()))
     cfg["name"] = name or cfg["name"]
     run_dir = RUNS / cfg["name"]
     if not write:
@@ -78,7 +79,25 @@ def load_run_config(run_dir: Path) -> dict:
     path = Path(run_dir) / "config.yaml"
     if not path.exists():
         raise SystemExit(f"{path} is missing; this directory was not opened by a stage script")
-    return yaml.safe_load(path.read_text())
+    return resolve_scene(yaml.safe_load(path.read_text()))
+
+
+def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
+    """Turn `scene: {name: warehouse}` into the `scene.dir` every consumer reads; returns `cfg`.
+
+    Resolved here, where both the experiment and a run's copy are read, so no consumer knows names
+    exist. The copy keeps the name; `configs/scenes.yaml` promises a name never moves.
+    """
+    scene = cfg.get("scene") or {}
+    if "name" not in scene:
+        return cfg
+    if scene.get("dir"):
+        raise SystemExit(f"scene gives both name {scene['name']!r} and dir {scene['dir']!r}; give one")
+    names = yaml.safe_load(Path(registry).read_text())
+    if scene["name"] not in names:
+        raise SystemExit(f"no scene called {scene['name']!r}; {registry} names {', '.join(sorted(names))}")
+    scene["dir"] = names[scene["name"]]["dir"]
+    return cfg
 
 
 def checkpoint_of(run_dir: Path) -> Path:
