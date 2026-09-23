@@ -51,7 +51,7 @@
   - [x] 2.4.2 stand_off 0.40（`box_room_so40`）0/10，失败移到"碰动箱子"5/10（2026-09-23）
   - [x] 2.4.3 起点 advance 0 + 刹车余量 0.05（`box_room_approach`）0/10；`walk_steer: depth`（`box_room_steer`）0/10、停位离散 1.2 cm（2026-09-23）
   - [x] 2.4.4 真专家接入守线 + staged + orientation_gain + 1 cm 抓深 + 后退（`box_room_grasp_20260923`）0/10，守线 6/10 越线（2026-09-23）
-  - [ ] 2.4.5 提交 2.4.4 的代码（expert/visual_approach/visual_config/grasp_region/diag_brake 改动 + `primitives/foot_watch.py`、`tasks/crate/retreat.py`、`tests/test_crate_guard_retreat.py`、`box_room_grasp_20260923.yaml`；默认全关，`make check` 已过）
+  - [x] 2.4.5 提交 2.4.4 的代码（expert/visual_approach/visual_config/grasp_region/diag_brake 改动 + `primitives/foot_watch.py`、`tasks/crate/retreat.py`、`tests/test_crate_guard_retreat.py`、`box_room_grasp_20260923.yaml`；默认全关，`make check` 已过）（2026-09-23）
   - [x] 2.4.6 warehouse 起点后移 0.3–0.4 m，用真专家（手臂前伸姿态）重标守线的刹车后滑行，再验证不越线（2026-09-23：后移 0.25 m 到离线 0.90 m；根因其实是慢仿真，见 2.4.10）
   - [ ] 2.4.7 伸手回到不摔的 carry 块（crate 值 + 0.7/0.04），另解"手悬在目标上方 5–10 cm 下不来"
   - [ ] 2.4.8 跑通后退段（`retreat_distance 0.3`），出 10 局视频
@@ -66,7 +66,8 @@
     - [ ] 2.4.10.7 停近后若仍够不到：解决伸手段（手指差 27–44 cm、高 12 cm）
     - [ ] 2.4.10.8 纸箱显示网格减面（46 万 → ~5k 面）或关阴影，让实时渲染/VLA 评测也跑满速；先问协作者 `assets/crates/nor_cal_box/visual/`
     - [ ] 2.4.10.9 `diag_brake` 补 reanchor（非 0 起始朝向场景一起步就转 ~90°）
-    - [ ] 2.4.10.10 提交本会话代码（见 STATE 的文件清单），`make check` 已过
+    - [x] 2.4.10.10 提交本会话代码（见 STATE 的文件清单），`make check` 已过（2026-09-23）
+    - [x] 2.4.10.11 文档入口：删 `docs/STATE.md`，README/AGENTS 指向根目录 STATE/TODO/DECISIONS；`docs/handoff/warehouse-render-cost-20260923.md`；台账 crate 09-23、rendering 离线渲染、blender_scenes 已知问题（2026-09-23）
 - [ ] 2.5 待验证：摔倒 6/20 为何比合成桌子多（假设：reanchor/IDLE 期间贴着托盘垛）
 - [ ] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续
 - [ ] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（假设，未改）

@@ -24,7 +24,7 @@
   2026-09-17 一天查出四个，其中一个让 100 局评测在 0.7 m 而非配置的 1.1–1.3 m 生成。
 - 主路径脚本**互不调用**，唯一例外 `scripts/run_overnight.sh`（无人值守批量）。
 - 采集与评测的驱动**按线分两份**；convert / train / open-loop / 起栈 / 策略服务各一份。
-- 共享资源按 [AGENTS](AGENTS.md) 和 [STATE](docs/STATE.md)：开跑前重查 GPU、pid、实例锁，只停自己的实例。
+- 共享资源按 [AGENTS](AGENTS.md) 和 [STATE](STATE.md)：开跑前重查 GPU、pid、实例锁，只停自己的实例。
 - 提交按路径显式 `git add`，**绝不 `-A`**（工作树里有别人未提交的东西；本次一次 `git add -u` 误暂存了
   6 个别人的文件，已即时 `git restore --staged` 撤回）。
 - 产物视频与预览遵守 500,000 bytes 硬上限；`outputs/`、`third_party/`、`datasets/` 不入 Git。

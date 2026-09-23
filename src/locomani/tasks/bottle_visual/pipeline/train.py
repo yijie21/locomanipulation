@@ -2,7 +2,7 @@
 
 Use --dry-run to validate/save the resolved configuration without initializing a
 GPU. Actual launches require a released GPU selected with CUDA_VISIBLE_DEVICES;
-check docs/STATE.md first. This entry point preserves causal image-history padding
+check STATE.md first. This entry point preserves causal image-history padding
 and full camera FOV, which the older generic finetune wrapper does not configure.
 """
 

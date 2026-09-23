@@ -11,7 +11,7 @@
 - [Configuration fields](reference/config_fields.md): generated from code.
 - [Runbook](reference/runbook.md): command reference and manual stack operation.
 - One expanded experiment file per run, one flat bash script per stage over one python module, parallelism as a second terminal: each runbook carries this for its own line, and the decisions, the byte A/B evidence and the gate still outstanding are in [the 2026-09-21 refactor](handoff/refactor-flat-bash-20260921.md). The [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
-- [STATE](STATE.md): active work; [ROADMAP](ROADMAP.md): maintenance scope and status.
+- [STATE](../STATE.md): active work, with [TODO](../TODO.md) and [DECISIONS](../DECISIONS.md); [ROADMAP](ROADMAP.md): maintenance scope and status.
 
 ## Documentation ownership
 
@@ -30,7 +30,7 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 | **What a run produced on a given day** -- rounds, seeds, success rates | That line's ledger ([bottle](ledger/bottle.md), [crate](ledger/crate.md)) |
 | Cross-task CLI reference, wrappers and manual stack operation | [Runbook](reference/runbook.md); the runbooks own the complete per-line recipes |
 | Verification scope, final check execution and completion criteria | [Session workflow](agents/session-workflow.md); keep Makefile and commit-hook behavior consistent |
-| Active progress, blockers and resources | [STATE](STATE.md); link detailed work instead of accumulating transcripts |
+| Active progress, blockers and resources | [STATE](../STATE.md) (written by `/handoff` with TODO and DECISIONS); link detailed work instead of accumulating transcripts |
 | Maintenance scope and status | [ROADMAP](ROADMAP.md); link implementation and validation records |
 | Experiment claims, corrections and completed work | Task ledger or `handoff/`; preserve historical material in `archive/` with evidence links |
 

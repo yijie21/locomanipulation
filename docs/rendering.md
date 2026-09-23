@@ -286,12 +286,35 @@ TRACE="$LOCOMANI_ROOT/outputs/crate_collect_10/trace/visual_crate_s41_00_state_t
 停止方式见 [受管渲染停止](bimanual_design.md#四中途停止渲染与清理)；
 独立启动的渲染器不在该停止命令范围内。Kit 初始化和画面预热可能较慢，日志在输出目录。
 
+## 离线渲染（backend.render offline）
+
+实验文件里设 `backend.render: offline`（默认 `live`）后，sim 不建渲染器、不发布相机图像、不写 `SIM_VIDEO_DIR` 的录像，
+只保留物理和 state trace。视频事后从 trace 渲出，和实时录像逐帧一致（2026-09-23 核对 184/184 帧）：
+
+```bash
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 \
+  third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/render_trace_videos.py outputs/runs/<run>
+# 默认用该 run 的场景副本、写到 <run>/videos；--scene / --out 可改
+```
+
+用在渲染拖慢仿真的场景。warehouse 的纸箱显示网格有 46.3 万面，3 路相机每 tick 渲染 39–44 ms，sim 只剩 0.35× 实时，
+deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后回到 0.95×。证据见
+[warehouse 渲染负担交接](handoff/warehouse-render-cost-20260923.md)。
+
+限制：
+
+- 只支持双臂 assisted 专家（`visual.pose_source: assisted`），它读的是黑色占位帧 `PlaceholderCamera`；
+  markers 专家要读像素，`expert.run` 会直接拒绝。
+- 没有图像就没有训练 RGB：`--record` 数据集导出、VLA 闭环评测都必须用 `live`。离线加录制的组合没测过。
+- 渲染慢的根本解是给纸箱网格减面或关阴影（隐藏网格后 2.0 ms，关阴影后 11 ms），见 [Blender 场景](blender_scenes.md#7-常见错误对照)。
+
 ## 当前接通范围与限制
 
 | 功能 | 当前状态 |
 |---|---|
 | MuJoCo 在线物理与相机采集 | 已接通；按任务指南选择录制方式 |
 | 基于 trace 的 Isaac 离线重渲 | 已实现；双臂有受管并排脚本 |
+| `backend.render: offline` + trace 出 MuJoCo 视频 | 已实现；仅双臂 assisted 专家，见[上一节](#离线渲染backendrender-offline) |
 | `collect` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
 | `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段（`scripts/` 里没有渲染脚本），需显式调用离线渲染入口 |
 | Isaac 图像作为在线专家/VLA 的输入 | 当前主流程未接入 live mirror；不能从离线视频推断已支持 |

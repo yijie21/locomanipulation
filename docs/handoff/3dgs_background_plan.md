@@ -394,7 +394,7 @@ NVIDIA 自己的 Marble 博客也承认 PLY→USDZ 仍需手动对齐和定尺�
 ### 10.3 机器资源注意
 
 - 3DGS 渲染要 GPU。本机两张 5090,经常被采集 / 训练 / 另一个 session 占着,
-  开工前看 `docs/STATE.md` 的 RUNNING 行和 `nvidia-smi`。
+  开工前看 `STATE.md` 的 RUNNING 行和 `nvidia-smi`。
 - CPU 配额只有 15.36 核(`/sys/fs/cgroup/cpu.max`,`nproc` 的 32 是宿主机),
   用 `scripts/cpu_headroom.sh` 判断余量,起 stack 需要 ≥ 6 核空闲。
 - 本地 `gs_model.ply` 2.2 M splat,124 MB;InteriorGS 单场景规模相近,

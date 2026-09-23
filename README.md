@@ -20,8 +20,8 @@
 
 逐轮实测数字和历次裁定在台账：[单臂](docs/ledger/bottle.md)、[双臂](docs/ledger/crate.md)、[ScaleBFM](docs/ledger/scalebfm.md)、[Blender 场景](docs/ledger/blender_scenes.md)。
 
-双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，
-按相机可见性约束动作；尚未提供经过验证的 LeRobot 训练数据集。各任务的适用范围和已知问题见对应指南，最近的试验结果见 [项目状态](docs/STATE.md)。
+双臂视觉抓篮子目前是**视频试验流程**：低桌配置使用普通篮子，允许仿真信息辅助规划，按相机可见性约束动作；尚未提供经过验证的 LeRobot 训练数据集。各任务的适用范围和已知问题见对应指南。
+**接手开发和最近的试验结果从这三个文件开始**：[STATE.md](STATE.md)（当前进度、卡点、下一步和命令）、[TODO.md](TODO.md)（任务账本）、[DECISIONS.md](DECISIONS.md)（每次决策的理由与被否决的方案）。
 
 ## 安装环境
 

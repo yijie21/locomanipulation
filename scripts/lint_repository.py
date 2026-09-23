@@ -22,7 +22,7 @@ GUIDES = {
     "AGENTS.md": 80,
     "CLAUDE.md": 12,
     "README.md": 100,
-    "docs/STATE.md": 60,
+    "STATE.md": 60,
     "docs/ROADMAP.md": 60,
     "docs/README.md": 80,
     "docs/single_arm.md": 210,

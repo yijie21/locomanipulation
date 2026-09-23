@@ -1,0 +1,99 @@
+# warehouse 纸箱线：过冲撞箱的根因是渲染负担；离线渲染跑通，0/10 停得太远（2026-09-23）
+
+接手入口。当前进度与下一步以根目录 [STATE](../../STATE.md) 为准，任务编号见 [TODO](../../TODO.md) 2.4.10，
+决策理由见 [DECISIONS](../../DECISIONS.md)「2026-09-23 warehouse 撞箱的根因……」。本页是证据和复现方式。
+
+## 结论
+
+1. **warehouse 场景里的仿真只有 0.30–0.36× 实时**，原因是纸箱 `nor_cal_box` 的显示网格：46.3 万面，外加 2 盏投影灯
+   （shadowsize 4096），3 路相机每 tick 渲染 39–44 ms。walk 场景同样 3 路相机只要 1.3 ms。
+2. 慢仿真下 deploy 按墙钟推进参考，物理跟不上，步长偏大（0.17–0.34 m，正常 0.14 m），实际速度约是指令的 3 倍。
+   **视频里的"过冲撞箱"就是这个现象**，不是专家或守线的移植 bug。
+3. 新增 `backend.render: offline`（默认 `live`）：sim 不渲染，专家读占位帧，视频事后从 state trace 渲出。
+   打开后 sim 回到 0.95–0.97×，走路段 0/10 碰箱、横偏 ≤ 7 cm。
+4. 离线 10 局仍是 **0/10**，失败原因变成**停得太远、手够不到**（见下表）。
+
+## 根因的证据
+
+| 测量 | walk | warehouse | 来源 |
+|---|---|---|---|
+| sim 实时比 | 0.90–0.95 | 0.30–0.36（合成桌子 `box_pilot_*` 也是 0.36） | 每局 trace 行数 × 0.02 s ÷ manifest 的 `seconds` |
+| 物理步进 | ~0.15 ms | ~0.15 ms | `outputs/diagnostics/warehouse_speed_20260923` |
+| 3 路相机渲染 | 1.3 ms | 39–44 ms；隐藏纸箱显示网格 2.0 ms；关阴影 11 ms | 同上 |
+| 不读相机 / 持续读 3 路 | — | 0.42 / 0.43，读不读没有差别 | 同上 |
+
+两个被排除的假设：
+
+- **资源抢占**：原样重跑 `box_room_grasp_hanging2_rerun_20260923`，CPU 只用 4.5–6.5 核，GPU0 上只有这一个栈，结果仍是 0.35×。
+- **reanchor 朝向错**：横漂的方向每局随机，原样重跑降到 4–15 cm，不是固定的角度偏差。
+
+sim 实时比的算法：state trace 每 0.02 s 仿真时间一行，行数 × 0.02 ÷ 该局墙钟 `seconds`。
+渲染拆分复现（不起栈）：`bash scripts/experiments/warehouse_speed_probe_20260923.sh --repeats 5`。
+
+## 离线 10 局（`outputs/runs/box_room_grasp_offline_20260923`，seed 7000–7009）
+
+配置 `configs/experiments/box_room_grasp_offline_20260923.yaml`，相对 `box_room_grasp_hanging2_20260923` 只改了
+`backend.render: offline`。流程是手臂下垂走入 → 守线刹车（`approach_stop: guard`、`guard_margin 0.15`）
+→ 原地抬手 → 分段伸手（`reach_path: staged`）→ 抓取 → 后退 0.3 m。
+
+| 局 | 结果 | 站位 depth（m） | 走路时身体离线的最小余量（m） |
+|---|---|---|---|
+| 00 | timeout | 0.60 | 0.26 |
+| 01 | vision_lost | 0.67 | 0.31 |
+| 02 | timeout | 0.67 | 0.26 |
+| 03 | timeout | 0.53 | 0.21 |
+| 04 | timeout | 0.61 | 0.25 |
+| 05 | unsupported_assisted_reach | 0.72 | 0.37 |
+| 06 | timeout | 0.57 | 0.22 |
+| 07 | unsupported_assisted_reach | 0.72 | 0.38 |
+| 08 | timeout | 0.65 | 0.29 |
+| 09 | timeout | 0.53 | 0.20 |
+
+- depth 取自 `manifest_00.jsonl` 的 `stand_attempts[].depth_m`；余量是 `guard.walk_body_past_line_max` 取负。
+- 7 局 timeout 都是手在伸手段够不到：手指离抓点 27–44 cm（前后方向 23–42 cm，高度差约 12 cm）。
+  这组数是用会话临时脚本重放 trace 得到的，脚本没有入库。
+- 2 局站位 0.72 m，被伸手准入直接拒绝。
+- 01 局 `vision_lost` **没有查过原因**。占位帧时间戳的 bug（每次读取打新时间戳，导致估计被判过期）修复前是 6/6 局 `vision_lost`。
+- 预览视频（单个 ≤ 500 KB）在该 run 的 `previews/`，全分辨率在 `videos/`。
+
+## 哪些旧结论作废
+
+以下结论都是在 0.35× 慢仿真里测的，需要在满速下重测，不能直接引用：
+
+- 守线余量 0.15 m：当初是为防撞箱加的；离线时身体离线仍空 20–38 cm，应回到 0.03 m（TODO 2.4.10.6）。
+- `box_room_grasp_20260923` 的守线 6/10 越线。
+- 扩包络的 carry 块把骨盆带后 0.3–1.3 m 导致的摔倒（TODO 2.4.7）。
+- `warehouse_speed_20260923` 的横偏数据：`diag_brake` 不做 reanchor，起始朝向 90° 的场景一起步就转约 90°。速度数据仍然有效。
+
+## 怎么跑
+
+```bash
+cd /workspace/code/locomanipulation
+. scripts/paths.sh
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
+CFG=configs/experiments/box_room_grasp_offline_20260923.yaml   # 复制一份，改 name 和要试的一个旋钮
+bash scripts/start_stack.sh collect $CFG --gpu 0
+bash scripts/bimanual/run_agent_server.sh $CFG --gpu 0
+bash scripts/stop_stack.sh --instance 0
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 \
+  third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/render_trace_videos.py outputs/runs/<run>
+```
+
+离线模式的用法和限制见 [仿真与渲染](../rendering.md#离线渲染backendrender-offline)。
+
+## 未做 / 下一步
+
+- **2.4.10.6**：守线余量 0.15 → 0.03，离线再跑 10 局。预计能停近约 12 cm，但离抓点仍差 10–30 cm（假设，未验证）。
+- **2.4.10.7**：停近之后如果仍够不到，就要单独处理伸手段。
+- **2.4.10.8 纸箱网格减面或关阴影**：VLA 闭环评测必须实时渲染，所以这一步最终绕不开。离线测过，隐藏网格后渲染从 39 ms 降到 2 ms。
+  `assets/crates/nor_cal_box/visual/` 是协作者还没入库的目录，要先跟协作者商量。
+- **2.4.10.9**：给 `diag_brake` 补 reanchor。
+
+## 代码（`b826594`；`backend.render` 以外的开关都默认关闭）
+
+- `backend.render`：字段在 `src/locomani/backends/sonic/config.py`，sim 端在 `src/locomani/sim/run_sim_locomani.py`，
+  起栈时不等图像、不设视频目录在 `src/locomani/stack/manager.py`；专家的占位帧 `PlaceholderCamera` 在 `src/locomani/tasks/crate/expert.py`。
+- 守线刹车的落脚预测在 `src/locomani/primitives/foot_watch.py`；手臂下垂走入（`HangingWalk`）、站起后重放置、按世界轴行走、
+  `walk_body_past_line_max` 都在 `src/locomani/tasks/crate/expert.py`；后退在 `src/locomani/tasks/crate/retreat.py`。
+  字段说明见 [config_fields](../reference/config_fields.md)。
+- 不录制的栈按 5 核预留（`NO_EXPORTER_CORES`），见 `src/locomani/pipeline/run_context.py`。

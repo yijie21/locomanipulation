@@ -29,7 +29,7 @@ LeRobot v2.1 数据集 → GR00T 3000 步 checkpoint → 配对闭环评测(§6 
 | 模型 | `/workspace/models/scalebfm/humanoid_transformer_m_22200.pt`(HF `WeishuaiZeng/ScaleBFM`,唯一用过的 checkpoint);`assets/scalebfm/{mode_table.pt, model_22200_tensorrt_metadata.json, g1_29dof_fk.xml}`。路径在 `ScaleBfmBackendConfig.checkpoint`,`pipeline/provenance.verify_runtime_assets()` 对它们做哈希 |
 | 场景 | `outputs/scene/sim`(瓶子场景,`scene_meta.json` + MJCF),由 `ScaleBfmBackendConfig.scene_dir` 指定,空串即默认 |
 | expert(CPU) | `CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OMP_NUM_THREADS=1 PYTHONPATH=src` —— 单线程、软件渲染、不占 GPU,可以在别人的采集栈旁边跑(它没有 SONIC deploy 那种 LowState 保护;但 GPU 上的仿真探针会打断别人的 SONIC 采集,见 §9) |
-| 采集 / 训练(GPU) | `collect.py` 固定 `policy_device="cuda"`、`MUJOCO_GL=egl`;先按 `docs/STATE.md` 核对 GPU 归属 |
+| 采集 / 训练(GPU) | `collect.py` 固定 `policy_device="cuda"`、`MUJOCO_GL=egl`;先按 `STATE.md` 核对 GPU 归属 |
 | 测试 / 磁盘 | `make test` 跑 unit tier(`tests/test_visual_*.py`);`test_visual_training.py` / `test_visual_validation.py` 是 torch tier(`pytest --run-torch`)。checkpoint 20 GB 量级,采集前 `df` |
 
 ---
@@ -51,7 +51,7 @@ LeRobot v2.1 数据集 → GR00T 3000 步 checkpoint → 配对闭环评测(§6 
 5. **运行中切换须保留断点与来源记录。** 完整集复用,不覆盖;中断集记账并跳过。
    记录旧/新渲染方式对应的集、配置历史、源代码和资产哈希。OSMesa/EGL可能有像素差异,
    混合数据不得声称逐位复现;训练与评测的渲染方式也必须记录。
-6. GPU归属、CPU余量>=6核及无限流要求仍按 `docs/STATE.md` 执行;短测通过不豁免资源检查。
+6. GPU归属、CPU余量>=6核及无限流要求仍按 `STATE.md` 执行;短测通过不豁免资源检查。
 
 GPU1环境示例(本机已验证EGL设备1;其他机器应重新核对):
 
@@ -419,7 +419,7 @@ profile 的输出目录追加新 profile 的 case(`config.json` 校验会拒绝)
   的下沉 / 后退吃掉,产生假 FAIL 并停掉过一次 pilot。抬升一律用 `trace.npz` 的世界 z(`result.rise_cm` 就是)。
 - **2026-09-08 不要在采集中的 SONIC 栈旁边跑仿真探针**:SONIC deploy 的 LowState 保护一次 80 ms 卡顿就退出、自愈重启,
   把别人的 session 切成 1–6 s 残段。本线 expert 是 CPU 单线程没有这个问题,但 `collect.py` / `eval.py` 用 GPU 与 EGL,
-  起之前看 `docs/STATE.md` 和 `nvidia-smi`。
+  起之前看 `STATE.md` 和 `nvidia-smi`。
 - **2026-09-09 mj_camlight**:`follow_video.py` 与小视频导出器对新 `MjData` 只调 `mj_kinematics`,灯光位置 / 方向全零,
   第三视角视频整体变暗。训练 RGB 和闭环观测走 `sim.step` 后的状态渲染,不受影响;修导出器要用新目录重出片,
   不要把暗视频当成暗光训练的证据。台账 §10。
@@ -429,7 +429,7 @@ profile 的输出目录追加新 profile 的 case(`config.json` 校验会拒绝)
 - **2026-09-09 可见门与真值读取**:旧审计只统计任务阶段到合爪的可见比例,t=0 不可见后来可见仍 accepted;旧代码取
   像素最多的相机而不是两门都过的相机;固定瓶半高判抬升。三处都已修(台账 §8),但 expert 仍在瓶子可见后直接读
   三维中心与 `surfaces['A']` 的桌高 / 中心 / 半宽,**未验证桌边在视野内**——这是仍存在的信息可得性缺口。
-- **2026-09-10 outputs/ 丢失**:合并误跟踪的 `outputs` 符号链接删掉了整个目录(`docs/STATE.md` INCIDENT)。
+- **2026-09-10 outputs/ 丢失**:合并误跟踪的 `outputs` 符号链接删掉了整个目录(`STATE.md` INCIDENT)。
   ABCD 实验的 `run.py` / `PLAN.md` / `progress.json` 当时放在 `outputs/experiments/<id>/` 里,一起没了。
   **编排脚本、计划、配置只能住在 `src/` / `scripts/` / `configs/` / `docs/`,`outputs/` 只放实验产物**;
   checkpoint 与数据集另做独立备份。影响核查见台账 §13。
@@ -443,4 +443,4 @@ profile 的输出目录追加新 profile 的 case(`config.json` 校验会拒绝)
 3. §3 三个 seed(三分层各一)`events` 走完 `walk → reach → entry → close → lift → carry`,`ok=true`。
 4. §4 `audit_summary.accepted == count`;"检查采集视频"两张 review 图里走路与抬手重叠、无背面视角。
 5. §6 `--record-observations` 的 `student.npz` 形状 `(n,91)` / `(n,29)`,`replay.py` 重放与录制一致。
-6. 采集用 GPU 之前查 `docs/STATE.md`;实验目录里不放任何脚本。
+6. 采集用 GPU 之前查 `STATE.md`;实验目录里不放任何脚本。

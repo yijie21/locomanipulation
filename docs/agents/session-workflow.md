@@ -47,4 +47,4 @@ are separate claims. Follow [evidence rules](../reference/standards.md#evidence)
 ## Handoff
 
 Name the branch/commit, changed behavior, validation, uncertainty and next action.
-Keep active status/resources in [STATE](../STATE.md), linked evidence outside it, and durable rules in versioned documents.
+Keep active status/resources in [STATE](../../STATE.md), linked evidence outside it, and durable rules in versioned documents.
