@@ -1,0 +1,200 @@
+--- a/deploy.cpp
++++ b/deploy.cpp
+@@ -234,6 +234,11 @@
+     float replan_interval_boxing_ = 1.0;
+     float replan_interval_ = 1.0;
+     float replan_interval_counter_ = 0.0f;
++    // WAYPOINT_TARGET_V1: the latched absolute planner-frame waypoint
++    int last_target_id_ = -1;
++    bool target_active_ = false;
++    std::array<float, 3> target_abs_ = {0.0f, 0.0f, 0.0f};
++    float target_heading_abs_ = 0.0f;
+ 
+     // Idle-mode error-based readaptation with double-threshold state machine.
+     // States: IDLE (do nothing), ADAPTING (toward robot state), RECOVERING (toward planner target).
+@@ -3887,6 +3892,16 @@
+               }
+             }
+             
++            // WAYPOINT_TARGET_V1: a new target id, or a cleared target, replans; an active target keeps the
++            // periodic replan going even in a static mode, so the spring can finish converging
++            bool target_changed = movement_state_data.data &&
++                                  movement_state_data.data->has_target &&
++                                  movement_state_data.data->target_id != last_target_id_;
++            bool target_cleared = movement_state_data.data && !movement_state_data.data->has_target && target_active_;
++            if (target_changed || target_cleared || (target_active_ && time_to_replan)) {
++              need_replan = true;
++            }
++
+             if (movement_mode_changed || facing_direction_changed || height_changed) {
+               need_replan = true;
+             } else if (!under_static_motion_mode && (movement_speed_changed || movement_direction_changed || (time_to_replan && movement_state_data.data->movement_speed != 0))) {
+@@ -3925,6 +3940,28 @@
+               last_movement_state_.height = movement_state_data.data->height;
+             }
+             
++            if (target_changed && planner_motion_ && planner_motion_->timesteps > 0) {
++              // Latch: the planner reference root at the current frame, plus the requested offset in its heading
++              int f = std::min(current_frame_, planner_motion_->timesteps - 1);
++              auto q = planner_motion_->BodyQuaternions(f)[0];  // w, x, y, z
++              auto p = planner_motion_->BodyPositions(f)[0];
++              double yaw = std::atan2(2.0 * (q[0] * q[3] + q[1] * q[2]), 1.0 - 2.0 * (q[2] * q[2] + q[3] * q[3]));
++              const auto& d = movement_state_data.data->target;
++              target_abs_ = {static_cast<float>(p[0] + std::cos(yaw) * d[0] - std::sin(yaw) * d[1]),
++                             static_cast<float>(p[1] + std::sin(yaw) * d[0] + std::cos(yaw) * d[1]),
++                             static_cast<float>(p[2])};
++              target_heading_abs_ = static_cast<float>(yaw + d[2]);
++              target_active_ = true;
++              last_target_id_ = movement_state_data.data->target_id;
++              std::cout << "[waypoint] id=" << last_target_id_ << " root=(" << p[0] << "," << p[1] << "," << yaw
++                        << ") target=(" << target_abs_[0] << "," << target_abs_[1] << "," << target_heading_abs_
++                        << ")" << std::endl;
++            } else if (target_cleared) {
++              target_active_ = false;
++              std::cout << "[waypoint] cleared" << std::endl;
++            }
++            planner_->SetSpecificTarget(target_active_, target_abs_, target_heading_abs_);
++
+             try {
+               // Update planning with current movement parameters
+ 
+--- a/include/localmotion_kplanner.hpp
++++ b/include/localmotion_kplanner.hpp
+@@ -63,6 +63,12 @@
+     std::array<double, 3> facing_direction;      ///< Unit vector: desired facing direction [x,y,z].
+     double movement_speed;                        ///< Desired speed (−1 = mode default, 0 = stationary).
+     double height;                                ///< Desired body height (−1 = mode default).
++    // WAYPOINT_TARGET_V1 (locomanipulation 2026-09-23): optional root waypoint [dx, dy, dyaw] in the
++    // planner root's heading frame at the moment `target_id` is first seen; latched to an absolute
++    // planner-frame target by the planner thread and fed to the model's specific_target_* inputs.
++    bool has_target = false;
++    std::array<double, 3> target = {0.0, 0.0, 0.0};
++    int target_id = -1;
+ 
+     MovementState(int mode = 0, 
+                      const std::array<double, 3>& movement = {0.0, 0.0, 0.0},
+@@ -694,6 +700,10 @@
+ 
+ 
+     virtual float *GetContextBuffer() = 0;
++
++    /// WAYPOINT_TARGET_V1: set (or clear) the model's specific-target inputs; all four waypoint frames
++    /// get the same absolute planner-frame root position and heading. No-op for version-0 models.
++    virtual void SetSpecificTarget(bool enabled, const std::array<float, 3>& position, float heading) {}
+     virtual int32_t GetNumPredFrames() = 0;
+     virtual const float *GetMujocoQposBuffer() = 0;
+     virtual float *GetMovementDirectionValues() = 0;
+--- a/include/localmotion_kplanner_onnx.hpp
++++ b/include/localmotion_kplanner_onnx.hpp
+@@ -315,6 +315,18 @@
+                   << ", facing: [" << facing_direction_values_[0] << ", " << facing_direction_values_[1] << ", " << facing_direction_values_[2] << "]" << std::endl;
+     }
+ 
++
++    void SetSpecificTarget(bool enabled, const std::array<float, 3>& position, float heading) override {
++        if (!(config_.version == 1 || config_.version == 2)) return;
++        has_specific_target_[0] = enabled ? 1 : 0;
++        for (int n = 0; n < 4; ++n) {
++            specific_target_positions_[n * 3 + 0] = enabled ? position[0] : 0.0f;
++            specific_target_positions_[n * 3 + 1] = enabled ? position[1] : 0.0f;
++            specific_target_positions_[n * 3 + 2] = enabled ? position[2] : 0.0f;
++            specific_target_headings_[n] = enabled ? heading : 0.0f;
++        }
++    }
++
+     virtual float *GetContextBuffer() override {
+         return context_qpos_values_.data();
+     }
+--- a/include/localmotion_kplanner_tensorrt.hpp
++++ b/include/localmotion_kplanner_tensorrt.hpp
+@@ -670,6 +670,18 @@
+                   << ", facing: [" << facing_direction_values_[0] << ", " << facing_direction_values_[1] << ", " << facing_direction_values_[2] << "]" << std::endl;
+     }
+     
++
++    void SetSpecificTarget(bool enabled, const std::array<float, 3>& position, float heading) override {
++        if (!(config_.version == 1 || config_.version == 2)) return;
++        has_specific_target_[0] = enabled ? 1 : 0;
++        for (int n = 0; n < 4; ++n) {
++            specific_target_positions_[n * 3 + 0] = enabled ? position[0] : 0.0f;
++            specific_target_positions_[n * 3 + 1] = enabled ? position[1] : 0.0f;
++            specific_target_positions_[n * 3 + 2] = enabled ? position[2] : 0.0f;
++            specific_target_headings_[n] = enabled ? heading : 0.0f;
++        }
++    }
++
+     virtual float *GetContextBuffer() override {
+         return context_qpos_values_.data();
+     }
+--- a/include/input_interface/input_command.hpp
++++ b/include/input_interface/input_command.hpp
+@@ -101,6 +101,9 @@
+   /// Desired body height.  -1.0 means "use the default for the current mode".
+   double height = -1.0;
+ 
++  /// WAYPOINT_TARGET_V1: optional [dx, dy, dyaw, id]; see MovementState.
++  std::optional<std::array<double, 4>> target;
++
+   /// Local steady-clock timestamp recorded when the message was received.
+   /// Used to detect planner timeouts (stale data → fallback to IDLE).
+   std::chrono::steady_clock::time_point timestamp{};
+--- a/include/input_interface/zmq_manager.hpp
++++ b/include/input_interface/zmq_manager.hpp
+@@ -636,6 +636,13 @@
+             latest_planner_message_.height
+           );
+ 
++          if (latest_planner_message_.target.has_value()) {  // WAYPOINT_TARGET_V1
++            const auto& t = *latest_planner_message_.target;
++            mode_state.has_target = true;
++            mode_state.target = {t[0], t[1], t[2]};
++            mode_state.target_id = static_cast<int>(std::lround(t[3]));
++          }
++
+           if (is_squat_motion_mode(static_cast<LocomotionMode>(mode_state.locomotion_mode))) {
+             if (mode_state.height < 0.2) mode_state.height = 0.2;
+           }
+@@ -813,6 +820,7 @@
+       int upper_body_position_idx = -1, upper_body_velocity_idx = -1;
+       int left_hand_joints_idx = -1, right_hand_joints_idx = -1;
+       int vr_position_idx = -1, vr_orientation_idx = -1, vr_compliance_idx = -1;
++      int target_idx = -1;  // WAYPOINT_TARGET_V1
+ 
+       for (size_t i = 0; i < hdr.fields.size(); ++i) {
+         const auto& f = hdr.fields[i];
+@@ -828,6 +836,7 @@
+         else if (f.name == "vr_position") vr_position_idx = static_cast<int>(i);
+         else if (f.name == "vr_orientation") vr_orientation_idx = static_cast<int>(i);
+         else if (f.name == "vr_compliance") vr_compliance_idx = static_cast<int>(i);
++        else if (f.name == "target") target_idx = static_cast<int>(i);
+       }
+       
+       if (mode_idx < 0 || movement_idx < 0 || facing_idx < 0) {
+@@ -919,6 +928,27 @@
+         }
+       }
+ 
++      // WAYPOINT_TARGET_V1: optional target [dx, dy, dyaw, id]
++      if (target_idx >= 0) {
++        const auto& t_buf = bufs[target_idx];
++        const auto& t_field = hdr.fields[target_idx];
++        std::array<double, 4> t{};
++        for (int i = 0; i < 4; ++i) {
++          if (t_field.dtype == "f32") {
++            float val;
++            std::memcpy(&val, static_cast<const uint8_t*>(t_buf.data) + i * sizeof(float), sizeof(float));
++            if (needs_swap) val = byte_swap(val);
++            t[i] = static_cast<double>(val);
++          } else {
++            double val;
++            std::memcpy(&val, static_cast<const uint8_t*>(t_buf.data) + i * sizeof(double), sizeof(double));
++            if (needs_swap) val = byte_swap(val);
++            t[i] = val;
++          }
++        }
++        msg.target = t;
++      }
++
+       // Optional: upper_body_position (17 DOF, decode based on dtype)
+       if (upper_body_position_idx >= 0) {
+         const auto& ub_pos_buf = bufs[upper_body_position_idx];

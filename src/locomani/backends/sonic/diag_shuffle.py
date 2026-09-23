@@ -47,6 +47,7 @@ import time
 import numpy as np
 
 from locomani import paths
+from locomani.backends.sonic.agent_server import StreamMode
 from locomani.backends.sonic.primitives import DT, LocomotionMode, Primitives
 from locomani.sim.privileged_pub import EpisodeControlClient
 
@@ -85,6 +86,8 @@ def free_heading(meta, xy):
         sf = meta["surfaces"].get(k)
         if sf:
             rects.append((np.asarray(sf["xy"], float), np.asarray(sf.get("half_extent", [0.6, 0.6])[:2], float)))
+    if not rects:  # the walk scene: nothing to walk into, keep the start heading
+        return 0.0, 9.0
     best, best_d = 0.0, -1.0
     for th in np.linspace(-np.pi, np.pi, 72, endpoint=False):
         v = np.array([np.cos(th), np.sin(th)])
@@ -100,7 +103,15 @@ def free_heading(meta, xy):
     return best, best_d
 
 
-def reset_and_face(p, reset, meta, crab_deg: float = 0.0):
+def hold_upper(p, upper):
+    """Carry a fixed 17-joint upper body (waist y/r/p, L/R-interleaved arms) through the legs, the way the
+    crate expert's approach does; reset_pose() clears it, so it is set again after every reset."""
+    if upper is not None:
+        p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
+        p.cmd.set_upper_body(upper)
+
+
+def reset_and_face(p, reset, meta, crab_deg: float = 0.0, upper=None):
     """One clean start per leg: quiesce, teleport home, stand, turn to open
     floor. Without the quiesce the deploy carries the previous leg's intent
     through the reset.
@@ -116,6 +127,7 @@ def reset_and_face(p, reset, meta, crab_deg: float = 0.0):
     reset.reset(label="shuffle")
     time.sleep(0.3)
     p.cmd.start_control()
+    hold_upper(p, upper)
     p.cmd.hold(3.0, mode=LocomotionMode.IDLE)
     s = p.obs()
     if s["fallen"]:
@@ -207,8 +219,18 @@ def main() -> None:
         help="speeds to probe with a ZERO movement vector in SLOW_WALK (does the gait step in place?). "
         "Each is repeated --repeats times; net/lat then read as drift, steps/s as the answer.",
     )
+    ap.add_argument(
+        "--upper",
+        default="",
+        help="17 comma-separated upper-body joint targets held through every leg (waist y/r/p, then L/R-interleaved "
+        "arms); default: the deploy's own arms. 2026-09-23: the warehouse walk ends with the arms prepared forward, "
+        "and the stop carry measured with default arms did not transfer.",
+    )
     ap.add_argument("--json", default=None, help="write every leg's numbers here")
     a = ap.parse_args()
+    upper = [float(x) for x in a.upper.split(",")] if a.upper else None
+    if upper is not None and len(upper) != 17:
+        ap.error("--upper takes 17 values")
     p = Primitives(verbose=False)
     reset = EpisodeControlClient()
     p.cmd.reset_pose()
@@ -247,7 +269,7 @@ def main() -> None:
         if consecutive_falls >= 3:
             print("three consecutive falls -- stopping, the stack is not standing the robot up")
             break
-        placed = reset_and_face(p, reset, meta, crab_deg=crab)
+        placed = reset_and_face(p, reset, meta, crab_deg=crab, upper=upper)
         tag = f"{mode.name:>10} {sp:>6.2f} {crab:>5.0f} {str(mv):>5}"
         if placed is None:
             print(f"{tag}   FELL during the reset")
@@ -269,7 +291,7 @@ def main() -> None:
         rows.append(dict(mode=mode.name, speed=sp, crab_deg=crab, move=mv, fell=False, **r))
     if a.json:
         with open(a.json, "w") as fh:
-            json.dump(dict(policy=paths.SONIC_POLICY, leg_s=LEG, warmup_s=WARMUP, rows=rows), fh, indent=1)
+            json.dump(dict(policy=paths.SONIC_POLICY, upper=upper, leg_s=LEG, warmup_s=WARMUP, rows=rows), fh, indent=1)
         print(f"\nwrote {a.json}")
 
 

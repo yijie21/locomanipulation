@@ -306,3 +306,30 @@ def test_start_pose_field_is_validated():
     with pytest.raises(ValueError):
         CrateVisualConfig(start_pose="video")
     assert CrateVisualConfig(start_pose="scene", start_advance=0.225).start_advance == 0.225
+
+
+def test_depth_steering_walks_straight_and_stops_on_depth_despite_lateral_offset():
+    """walk_steer=depth: no sideways movement, and a lateral residual beyond tolerance does not keep it walking."""
+    cfg = CrateVisualConfig(stand_off=0.40, walk_brake_margin=0.05, stand_lateral_tolerance=0.04, walk_steer="depth")
+    approach = VisualApproach(cfg)
+    far = approach.step(
+        0, ApproachTarget(np.array([0.60, 0.10, 0]), 0.0, "visible"), [1, 0, 0, 0], grasp_pose_available=True
+    )
+    assert far.phase == "walk" and far.speed > 0 and np.allclose(far.direction, [1, 0, 0])
+    near = approach.step(
+        0.02, ApproachTarget(np.array([0.44, 0.10, 0]), 0.02, "visible"), [1, 0, 0, 0], grasp_pose_available=True
+    )
+    assert near.phase == "settle" and near.speed == 0
+
+
+def test_target_steering_still_chases_the_lateral_offset():
+    approach = VisualApproach(CrateVisualConfig(stand_off=0.40, walk_brake_margin=0.05, stand_lateral_tolerance=0.04))
+    command = approach.step(
+        0, ApproachTarget(np.array([0.44, 0.10, 0]), 0.0, "visible"), [1, 0, 0, 0], grasp_pose_available=True
+    )
+    assert command.phase == "walk" and command.direction[1] > 0.5
+
+
+def test_walk_steer_rejects_unknown_choice():
+    with pytest.raises(ValueError, match="walk_steer"):
+        CrateVisualConfig(walk_steer="sideways")

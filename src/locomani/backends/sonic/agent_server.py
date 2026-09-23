@@ -45,6 +45,25 @@ from gear_sonic.utils.teleop.zmq.zmq_planner_sender import (
 from locomani.backends.sonic.config import DEFAULT_BACKEND
 from locomani.sim import ports
 
+PLANNER_TOPIC, PLANNER_HEADER = b"planner", 1280  # zmq_planner_sender's layout: topic, JSON header, payload
+
+
+def with_planner_field(message: bytes, name: str, values) -> bytes:
+    """Append one f32 field to an already-built planner message (header entry + payload bytes)."""
+    import json
+    import struct
+
+    head = message[len(PLANNER_TOPIC) : len(PLANNER_TOPIC) + PLANNER_HEADER]
+    header = json.loads(head.rstrip(b"\x00"))
+    values = [float(v) for v in values]
+    header["fields"].append({"name": name, "dtype": "f32", "shape": [len(values)]})
+    packed = json.dumps(header, separators=(",", ":")).encode()
+    if len(packed) > PLANNER_HEADER:
+        raise ValueError("planner header too large")
+    payload = message[len(PLANNER_TOPIC) + PLANNER_HEADER :]
+    return PLANNER_TOPIC + packed.ljust(PLANNER_HEADER, b"\x00") + payload + struct.pack(f"<{len(values)}f", *values)
+
+
 SONIC_PORT = ports.sonic()
 KEYBOARD_PORT = ports.keyboard()
 
@@ -343,8 +362,13 @@ class AgentCommander:
         height: float = -1.0,
         stream_mode: StreamMode | None = None,
         compliance=DEFAULT_COMPLIANCE,
+        target=None,
     ) -> None:
         """Emit one full control frame: manager_state + planner.
+
+        `target` = (dx, dy, dyaw, id): a root waypoint in the planner root's heading frame, latched by the
+        deploy when `id` is new. Needs a deploy built with WAYPOINT_TARGET_V1
+        (outputs/deploy_waypoint_20260923); an unpatched deploy ignores the field.
 
         `stream_mode` defaults to the commander's `self.stream_mode`, so a
         session-wide choice (frozen upper body vs VR-3pt wrists) does not have
@@ -391,7 +415,10 @@ class AgentCommander:
             right_hand_position=self.right_hand.tolist(),
             **kw,
         )
-        self.sonic.send(build_planner_message(**data))
+        message = build_planner_message(**data)
+        if target is not None:
+            message = with_planner_field(message, "target", target)
+        self.sonic.send(message)
         self._observe_reference("planner", data)
 
     def _observe_reference(self, channel, data):

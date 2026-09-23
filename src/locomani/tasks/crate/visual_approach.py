@@ -145,7 +145,8 @@ class VisualApproach:
             self.relative_speed = float(np.linalg.norm(self.relative_velocity))
         self.position = point.copy()
         aligned = abs(point[1]) < cfg.stand_lateral_tolerance
-        if self.phase == "walk" and point[0] <= self.stop_distance and (aligned or cfg.stand_lateral_gate == "turn"):
+        depth_only = cfg.stand_lateral_gate == "turn" or cfg.walk_steer == "depth"
+        if self.phase == "walk" and point[0] <= self.stop_distance and (aligned or depth_only):
             self.phase = "settle"
         if self.phase == "settle" and not aligned and cfg.stand_lateral_gate == "turn":
             # Depth is reached; the lateral residual is a heading error (a
@@ -174,6 +175,10 @@ class VisualApproach:
     def _walk_command(self, point, reason):
         cfg = self.config
         error = np.array([max(0, point[0] - cfg.stand_off), point[1], 0.0])
+        if cfg.walk_steer == "depth":
+            # Straight along the body heading: the braking carry measured in the walk scene is a
+            # straight-line carry, and a pixel-noisy lateral term only swings the step direction.
+            error[1] = 0.0
         direction = error / max(np.linalg.norm(error), 1e-6)
         # The planner's speed field is not m/s and its map belongs to the deployed
         # stack (ledger crate.md 2026-09-22): 0.10 delivered 0.011 m/s over 940
