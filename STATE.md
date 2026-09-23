@@ -1,50 +1,48 @@
-# STATE — 2026-09-23（会话：平铺重构 —— bash 直接调功能脚本，阶段 1–8 全部落地）
+# STATE — 2026-09-23（会话：重构审查 → 7 处缺陷修复，已推送）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 `origin/main` 同步（`c175089`）。
-工作树里**只剩协作者（codex）的在途改动，不是我的，不要动、不要提交**：
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 `origin/main` 同步（`278acdf` + 本 handoff 提交）。
+工作树里**只剩协作者的在途改动，不是我的，不要动、不要提交**：
 `docs/bimanual_reachability.md`、`scripts/probe_ghost_reach.py`、`src/locomani/tasks/crate/ghost_reach_execution{,_cli}.py`、
 `tests/test_ghost_reach_execution.py`（未暂存）；`docs/handoff/g1-joint-reach-search-20260920.md`、
 `scripts/generate_joint_reach_bank.py`、`src/locomani/tasks/crate/joint_reach_sampling.py`、`tests/test_joint_reach_sampling.py`（untracked）。
-没有运行中的栈；交接时 GPU0、GPU1 都是 2 MiB（GPU1 此前长期被别的项目占着，起栈前再查）。
+没有运行中的栈（`find /workspace/tmp -maxdepth 3 -name stack.json` 无输出）。交接时 GPU0 空，GPU1 被别的项目占 ~25 GB。
 
 ## 当前进度
 
-平铺重构计划（`docs/handoff/flat-functional-scripts-20260922.md`，16 条决策、8 阶段）**全部完成并推送**。
-改动清单见 `git show --stat a8bd4e7 c175089`，不在这里复述。现在的调用形状：
-
-```
-scripts/start_stack.sh collect|eval   -> pipeline/run_stack.py
-scripts/single_arm/run_agent_server.sh -> tasks/bottle/collect.py   (进程内跑 grasp_gym.run)
-scripts/bimanual/run_agent_server.sh   -> tasks/crate/collect.py    (进程内跑 expert.run / wall,carry.main)
-scripts/single_arm/run_vla_inference.sh -> pipeline/eval_closed_loop.py <run>
-scripts/bimanual/run_vla_inference.sh   -> pipeline/eval_crate_closed_loop.py <run>
-scripts/run_vla_server.sh / convert_data.sh / train.sh -> 跨 venv 到 Isaac-GR00T（必须 spawn）
-```
+- 协作者 henry-zhao 的 4 个远端提交已读、已合入：只有 `a76938a` 与重构有关（删我留下的重复文档），其余是场景/文档。
+- 自查出的 7 项缺陷全部修复，一个提交 `278acdf`。改动清单：`git show --stat 278acdf`；决策与被否方案：
+  `DECISIONS.md` 末节"2026-09-23 重构审查"。账本：`TODO.md` 1.20。
 
 ## 已确认
 
-- 单臂闸门 PASS 5/5：`outputs/runs/gate8_new_20260922`（GPU0 / instance 0，yield 0.75→0.875）。
-- 双臂闸门 PASS 4/4：`outputs/runs/crate_new_20260922`（instance 2，yield 0.85→0.95）；日志证明进程内 agent 绑的是实例 2 端口。
-- 两批同进程无泄漏：`outputs/runs/leakcheck2_20260922`，fds 54→18→56、threads 78→69→79。
-- 单臂闭环实跑一局 exit 0（`bottle_simple_200_20260916`，结果在 `eval_smoke_20260922/`；历史 `eval/` 与 summary 已还原）。
-  该局失败是策略质量（`[vla] walk: never closer than 1.28 m`），用户已定此处成功率无意义。
-- 新旧路径解析出的 `GymOptions` / crate batch plan 与旧 driver 的 argv 逐字段相同（5 组 + 4 组，唯一差异是新加的场景字段）。
-- `lint_repository.spawn_errors` 真的会拒：`tests/test_interpreter_spawn_rule.py` 重建删掉的形状并断言被拒。
-- `make check` 全绿（提交前，完整工作树）。
+- `make check` 全绿：提交前一次、rebase 到协作者 4 个提交之上后再一次。
+- 单臂实跑 `outputs/runs/gate8_fix_20260923`（GPU0 / instance 0，2 批 × 4 局）：
+  - 第 0 批用栈命名的 session `2026-09-23-01-36-02`，第 1 批重启 exporter 得到 `…-01-38-38`，两者都有 data/meta/videos，
+    与 `manifest_00/01` 在 `inputs.json` 里按序配对；
+  - `collect_00.log` / `collect_01.log` 已写出，含逐局 `EPISODE OK/FAILED`；
+  - `gate.py compare simple` PASS 5/5（yield 0.625，n=8，容差内）；结束后栈已收；
+  - 驱动退出码 1 是因为只凑到 5/8（配置要 8），属预期行为。
+- 协作者的在途 diff 在 commit/rebase 前后逐行一致（`git diff --stat` 对比）。
 
-## 未解决 / 待验证
+## 假设 / 待验证
 
-- **提交钩子被协作者的在途工作挡着**：它 stash 未暂存改动，再拿 untracked 的 `test_joint_reach_sampling.py` 跑 `HEAD` 的旧
-  `ghost_reach_execution.py`（`len(samples) != 14`）必然失败。两次提交都用了 `--no-verify`。等协作者提交那半后钩子自然恢复。
-- **未实跑**：`eval_crate_closed_loop <run>` 的 run-dir 模式只 dry-run 过——磁盘上没有任何双臂 checkpoint。
-- **未实跑**：`wall` / `carry` 经 `tasks/crate/collect.py` 进程内调用只在 CPU 上验证过（没有它们的闸门）。
-- handoff 文档第 3 行状态句过时（TODO 1.14）。
+- **待验证**：双臂 run-dir 评测（`eval_crate_closed_loop <run>`）的修复——栈 `auto_start`、attach 核对、收栈——
+  只有单测，没有实跑；磁盘上没有双臂 checkpoint。
+- **待验证**：中断续跑的实机行为（只有单测 `tests/test_split_process_bookkeeping.py`）。
+- **假设**：子进程恢复继承宿主环境（含 TMPDIR）不影响闸门数字——单臂 2×4 在容差内，但样本很小。
+- **已知副作用**：本次之前起的栈的 `stack.json` 没有 `run_dir`/`mode`，驱动 attach 会被拒，需重起一次。
+
+## 未解决 / 卡点
+
+- 提交钩子仍被协作者 untracked 的 `test_joint_reach_sampling.py` 挡着（stash 后跑旧代码必挂），本次又用了
+  `--no-verify`。等协作者提交那半后自然恢复。
+- `outputs/runs/crate_env2_so45` 处于"批已登记未完成"状态，下次同名续跑会被 `resume_state` 自动清理（manifest 改名留存）。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **2.2 / 2.3**：纸箱房间线——用户看 `box_room_20260922/reel_failures.mp4`，再按阶段拆 20 局（上一会话留下，本会话未动）。
-- **1.14**：修 handoff 文档第 3 行（一行改动）。
-- **1.19**：有双臂 checkpoint 时实跑 `eval_crate_closed_loop <run>` 一次。
+- **1.19**：有双臂 checkpoint 时实跑 `eval_crate_closed_loop <run>` 一次（顺带验 1.20.1）。
+- **1.20.10**：实机演练一次中断续跑。
+- **2.2 / 2.3**：纸箱房间线——用户看 `box_room_20260922/reel_failures.mp4`，再按阶段拆 20 局。
 
 ## 关键路径与命令
 
@@ -55,7 +53,7 @@ export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"  
 bash scripts/cpu_headroom.sh && nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
 find /workspace/tmp -maxdepth 3 -name stack.json          # 有输出 = 有栈在跑
 
-# 采集（两个终端）
+# 采集（两个终端；同一 yaml、同一 --name，否则 attach 被拒）
 bash scripts/start_stack.sh collect configs/experiments/box_room_20260922.yaml --gpu 0
 bash scripts/bimanual/run_agent_server.sh configs/experiments/box_room_20260922.yaml --gpu 0
 # 闭环评测（三个终端）
@@ -68,10 +66,10 @@ bash scripts/stop_stack.sh --instance <N>
 # 闸门
 python3 scripts/gate.py compare simple "outputs/runs/<run>/collect/manifest_*.jsonl" tests/gate/baseline_simple.json
 python3 scripts/gate.py compare carry  "outputs/runs/<run>/manifest_*.jsonl"         tests/gate/baseline_carry.json
-# spawn 规则 / 全量检查
-python3 scripts/lint_repository.py && make check
+# 本次新增单测 / 全量检查
+make test TESTS="tests/test_split_process_bookkeeping.py" && make check
+# 实跑脚本范例（scratch，改 yaml 后复用）：生成 gate8 变体 → start_stack collect → run_agent_server
 ```
 
-- 方案与全部证据：`docs/handoff/flat-functional-scripts-20260922.md`；决策：`DECISIONS.md` 末两节。
-- spawn 白名单（每条带理由）：`tests/fixtures/interpreter_spawns.json`。
+- 阶段日志：进程内阶段现在写 `<run>/<stage>.log`（单臂 `collect_NN.log`，双臂 `<expert>_NN.log`）。
 - 纸箱房间线：台账 `docs/ledger/crate.md` 末尾三节；场景 `outputs/box_rim_execution_20260920/scene_reverse_camera`。

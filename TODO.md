@@ -36,6 +36,10 @@
   - [x] 1.20.5 `run_stack` 子进程不继承宿主环境（旧路径继承），且与 attach 后重启的子进程不一致
   - [x] 1.20.6 双臂评测 attach 模式不收栈，`run_overnight` 夜跑后栈残留
   - [x] 1.20.7 小项：第 0 批 exporter session 靠 mtime 猜；attach 不校验栈属于本 run；`run_overnight` 只看 `summary.json` 文件存在
+  - [x] 1.20.8 提交前文档核对：runbook / change-map-runtime / single_arm_design / silent_failures 补齐（2026-09-23）
+  - [x] 1.20.9 提交并推送 `278acdf`（`--no-verify`，rebase 解了两本 runbook 与协作者开环评测段的冲突，协作者在途文件未动）（2026-09-23）
+  - [ ] 1.20.10 实机演练一次中断续跑（采集跑到第 1 批中途 Ctrl-C，同名重跑，核对 `inputs.json` 与 `interrupted_manifest_*`）
+  - [ ] 1.20.11 现存栈（本次之前起的）attach 会被拒——有长跑栈的会话需知会（无主 `stack.json`）
 
 ## 2. 纸箱线（物流房间）——承接上一会话的 STATE
 

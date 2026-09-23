@@ -151,3 +151,57 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 两套评测器本身的合并（协作者第 2、3 条的深层问题）：需要 checkpoint + 闸门，未排期。
 - 双臂 checkpoint 磁盘上一个都没有（`crate_doc_walkthrough`、`agent_bimanual` 的目录都不在），
   `eval_crate_closed_loop` 的 run-dir 模式只做过 dry-run，没实跑过。
+
+## 2026-09-23 重构审查：启停栈与驱动栈拆成两个进程后的 7 处缺陷，全部修复
+
+### 目标与约束的变化
+- 用户怀疑多轮重构引入了 bug / 逻辑混乱，要求先读协作者（henry-zhao）的 4 个远端提交再自查。结论：协作者的提交
+  只有 `a76938a`（删掉我留下的一段重复文档）与重构有关，其余是场景资产/文档，没有修重构本身的 bug。
+- 自查找到的 7 项，用户决定"全部修复"，并要求提交前核对文档随代码一起更新。
+
+### 决策
+1. **评测栈的 backend 由"线"决定（`lines.Line.eval_backend`），不由 `EvalConfig` 单独决定**。理由：`EvalConfig`
+   把 `clean_deploy` 绑在 `client == "async"`，而双臂评测器钉死 `blocking` 又默认 clean rounds（丢掉所有 planner
+   命令，包括启动）——栈不带 `SONIC_AUTO_START` 就没人拉起 deploy。单臂的配对本来是对的，所以只有双臂覆盖成
+   恒为 clean。双臂 rounds 在 attach 时再核对一遍 `auto_start == clean`，别处起的栈也挡得住。
+2. **`spec_from_config` 补回 clean/lockstep 的 `default_motion`**，与 `pipeline.stack.start_stack`、`stack.cli` 一致。
+   理由：同一规则三处写、这一处漏了；`start_stack.sh eval` 起的 clean 栈都从 deploy 自己的默认动作起步。
+3. **续跑只认完成的批（`batches.resume_state`）**：未完成批的 session 从列表丢掉，半截 manifest 改名为
+   `interrupted_manifest_NN_*.jsonl`（不被 `manifest_*` 通配符匹配）后整批重来。理由：批在开跑前就登记，
+   续跑会重复登记，manifest 又是 append 打开，`convert` 按位置配对从此错一位（`crate_env2_so45` 就处在这个状态）。
+4. **exporter 的 session 名由栈在启动时指定（`--dataset-name`）并写进 `stack.json`**，第 0 批用它，旧栈状态没有名字
+   就重启 exporter 而不是猜。理由：session 目录是同实例所有 run 共用的，exporter 等到 robot config 才建目录，
+   "mtime 最新的那个"可能是上一个 run 的。
+5. **`stack.json` 记录 `run_dir` 和 `mode`，四个 attach 的驱动都经 `run_context.require_stack_of` 核对**，
+   不属于本 run 或模式不对就拒绝。理由：`--keep-stack` 留下的栈或两个终端 `--name` 不一致时，驱动会写进
+   别的 run 的 trace/帧审计/视频目录，事后只看得到一个分裂的 run。代价：本次之前起的栈会被拒，重起一次即可。
+6. **`Stage.timed` 在 fd 1/2 层 tee 进 `<name>.log`**（Python、C 扩展、子进程输出都进），异常 traceback 也写进去。
+   理由：进程内阶段不再有日志，runbook 却还让人查 `collect_NN.log` / `visual_NN.log`；换 `sys.stdout` 抓不到
+   客户端库直接写 fd 的输出。
+7. **双臂批的异常在 `timed` 外面接住**，并把 `SystemExit` 和 `main()` 非零返回都当作批失败。理由：旧路径是子进程
+   非零退出、被记录不被抛出；进程内原写法让 `timings.jsonl` 记 rc 0，且 `SystemExit` 会直接终止整个 run。
+8. **`run_stack` 的子进程重新继承宿主环境**，先剥掉栈自己有条件设置的四个变量（`SIM_VIDEO_DIR`、
+   `SONIC_DDS_DOMAIN`、`SONIC_AUTO_START`、`MUJOCO_EGL_DEVICE_ID`）。理由：只给 `spec.settings()` 时 sim/deploy/
+   第一个 exporter 没有 PATH/HOME/TMPDIR，而驱动 attach 后重启的子进程继承驱动的全量环境——一个 run 两套环境。
+9. **双臂 run-dir 评测自己收栈（`--keep-stack` 可留），准入先 attach 再只要余量，deploy 重启失败即报错**；
+   `run_overnight.sh` 评测段的 trap 也收栈，采集"已完成"改为 summary 的 collect 条目 kept ≥ successes。
+10. **提交用 `--no-verify`，rebase 用 `--autostash`**，协作者 5 个在途文件未暂存、前后 diff 逐行一致。理由同
+    2026-09-22 第 8 条：钩子 stash 未暂存改动后拿 untracked 的 `test_joint_reach_sampling.py` 跑旧代码必然失败；
+    提交前与 rebase 后各跑一次 `make check` 全绿作为依据。
+
+### 被否决的方案（及原因）
+- **改 `EvalConfig` 让 `clean_deploy` 也看线/看 `blocking`**：`EvalConfig` 不知道自己属于哪条线，而单臂的
+  async↔clean 配对是被 2026-09-17 故障验证过的不变量；把线的差异塞进共享配置类就是"在 plugin 上分支"。
+- **把双臂 rounds 默认改成 `--no-clean`，与栈对齐**：会让 IDLE 漂移回来（2026-09-18 实测 30 局 settle 把底盘
+  推出中位 0.09 m、最多 0.83 m），拿一个已测过的回退换对齐。
+- **续跑时"修复"重复条目（去重）而保留半截 manifest**：半截 manifest 与那批 session 的局对不齐，append 再跑一次
+  只会把两次尝试的行混在一个文件里。整批重来最简单、且与"批级而非 episode 级续采"的既有约定一致。
+- **第 0 批改为总是重启 exporter**：2026-09-21 实测第 0 批重启会让腕部相机测量多丢一帧（lag 0 占比 86%→38-50%）。
+  命名 session 保住了"不重启"的收益又去掉了猜测。
+- **替换 `sys.stdout`/`sys.stderr` 来写阶段日志**：抓不到 C 扩展和子进程直接写 fd 的输出。
+- **attach 时对无主栈（旧状态文件）放行**：放行就等于这条检查对所有现存栈失效；拒绝的代价只是重起一次。
+
+### 未决（不是决策）
+- 双臂 run-dir 评测（本次第 1、9 条）仍未实跑：磁盘上没有双臂 checkpoint（TODO 1.19）。
+- 单臂实跑闸门 `gate8_fix_20260923` 只有 2×4 局，覆盖了命名 session / 重启 session / 日志 / 收栈，不覆盖中断续跑
+  （由单测 `test_split_process_bookkeeping.py` 覆盖，未实机演练）。
