@@ -37,6 +37,7 @@ export PYTHONPATH="$LOCOMANI_ROOT/src"
 | 走到线前刹车、绝不越线 | `scripts/experiments/brake_marker_20260923.sh --guard` → `diag_brake.py`，渲染 `render_brake_marker_20260923.py` | 按落脚点预测刹车，全程 0.25 时 50/50 不越线，身体最前点停在线前 15.5 ± 2.6 cm；两脚前后错开约 13 cm，切模式或延迟刹车都收不齐 |
 | 刹车后双手能越线多远 | `scripts/experiments/brake_then_reach_20260923.sh` → `brake_then_reach_20260923.py`，渲染 `render_brake_reach_20260923.py` | 手最前点比骨盆远 65–69 cm；越线距离 = 这个值 − 刹车后骨盆到线的距离（28–39 cm）。依赖协作者尚未提交的 `ghost_reach_execution*.py` |
 | 刹车后伸到纸箱抓取点（虚拟箱子碰撞检查） | `brake_then_reach_20260923.sh --box --reach-path staged --below-rim 0.010 [--orientation-gain 1.0]`，碰撞检查 `box_contact_20260923.py` | 能伸到（误差 0.5–1.4 cm）；直接伸手 5/5 次穿过侧壁，`reach_path=staged` 在伸过去途中不碰；`orientation_gain 1.0` 使成功次数 3/5→4/5，朝向误差 19.6°→12.4°；手掌碰箱沿是因为下落时下冲 1–3 cm |
+| 下落下冲、z 反馈、守线收紧（均未采纳） | `--descend-speed`、`--z-guard`（`visual.descend_speed` / `descend_z_guard`）；`diag_brake --stride-mode recent2 --extra 0.185` | 放慢下落 4/5、z 保护 3/5，都没能稳定避免手掌压箱沿；收紧守线 0/50 越线，但最近离线只剩 1.7 cm、停位离散翻倍。**现用方案**：守线刹车（余量 20 cm、安全 3 cm、最小步长 14 cm）+ `reach_path=staged` + 抓取深度 1 cm + `orientation_gain 1.0`，walk 场景 4/5 |
 | planner 路点 | [路点补丁](../patches/sonic_waypoint_target.md)，`diag_brake.py --waypoint` | 停得很齐，但本体只走到目标的 35–55%，不能用作位置控制 |
 
 `diag_*` 都要求栈已经起在 walk 场景上：各 `.sh` 会自己起栈、收栈，只用 instance 0。

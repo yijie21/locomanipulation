@@ -33,6 +33,8 @@ class CrateVisualConfig:
     yaw_jitter_deg: float = 5.0  # visible basket yaw randomisation at reset
     pregrasp_above: float = 0.09  # metres above each grasp point
     reach_path: str = "direct"  # assisted CoordinatedReach: direct = one straight blend from the ready hands to the grasp points; staged = first to a pregrasp point pregrasp_above over each grasp point and pregrasp_back toward the body, then straight down (2026-09-23: direct swept the hands through the warehouse box, 8 of 10 displaced-box rounds had a hand on it)
+    descend_speed: float = 0.0  # staged reach: Cartesian speed limit of the final straight-down segment, m/s; 0 = approach_speed. The descent undershot the grasp point by 1-3 cm and put the palm on the box rim (2026-09-23)
+    descend_z_guard: bool = False  # staged reach, descent only: once a measured grip point is at or below its target height, its z position feedback may no longer grow downward and backs off by the undershoot. The feedback had to cover a ~8 cm model offset (cap 0.15) and then drove the palm 1-3 cm past the grasp point into the box rim (2026-09-23)
     pregrasp_back: float = 0.04  # staged reach: metres the pregrasp point sits toward the body from the grasp point
     reach_rotation_weight: float = 0.6  # assisted CoordinatedReach: whole-body IK weight on hand orientation (rad) against hand position (10 per metre); 0.6 trades ~10 deg for 1 cm, and at long reach gave up 10-20 deg of palm pitch (2026-09-23)
     orientation_gain: float = 0.0  # assisted CoordinatedReach: fraction of the filtered predicted-vs-measured palm rotation added to the commanded attitude; 0 = none. SONIC tracked the palm pitch 8-14 deg flat at long reach (2026-09-23)
@@ -68,6 +70,10 @@ class CrateVisualConfig:
             raise ValueError("visual.start_pose must be sampled or scene")
         for name, value in vars(self).items():
             if name in ("pose_source", "stand_lateral_gate", "start_pose", "walk_steer", "reach_path"):
+                continue
+            if name == "descend_z_guard":
+                if not isinstance(value, bool):
+                    raise ValueError("visual.descend_z_guard must be a boolean")
                 continue
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")

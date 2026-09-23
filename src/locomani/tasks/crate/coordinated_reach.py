@@ -111,14 +111,26 @@ class CoordinatedReach:
     def enter(self, phase):
         self.phase, self.elapsed, self.ready_since = phase, 0.0, None
 
-    def advance(self, targets, attitudes, measured, dt, measured_rotations=None):
-        """Rate/acceleration limits belong inside the supported body solve, including hips."""
+    def advance(self, targets, attitudes, measured, dt, measured_rotations=None, z_floor=None):
+        """Rate/acceleration limits belong inside the supported body solve, including hips.
+
+        `z_floor` (per hand, world z): the height the measured grip point must not be driven below. A hand at
+        or under it keeps its z feedback from growing downward and backs it off by the undershoot.
+        """
         if dt <= 0:
             return
         cfg = self.config.visual
         predicted = self.body.tools(self.x)
         observed_error = np.clip(predicted - measured, -cfg.tracking_cap, cfg.tracking_cap)
-        self.feedback += (1 - np.exp(-dt / 0.4)) * (observed_error - self.feedback)
+        alpha = 1 - np.exp(-dt / 0.4)
+        previous_z = self.feedback[:, 2].copy()
+        self.feedback += alpha * (observed_error - self.feedback)
+        if z_floor is not None:
+            under = np.asarray(measured)[:, 2] <= np.asarray(z_floor)
+            backed = np.maximum(self.feedback[:, 2], previous_z) + alpha * (
+                np.asarray(z_floor) - np.asarray(measured)[:, 2]
+            )
+            self.feedback[:, 2] = np.where(under, np.minimum(backed, cfg.tracking_cap), self.feedback[:, 2])
         if cfg.orientation_gain > 0 and measured_rotations is not None:
             # The palm-attitude counterpart of the position feedback: the rotation from what the controller
             # delivers to what the solver predicted, filtered, capped, and pre-applied to the command.
@@ -342,7 +354,7 @@ class CoordinatedReach:
                     # Straight down from the pregrasp point, at the same Cartesian speed limit.
                     drop = np.max(np.linalg.norm(targets - first, axis=1))
                     self.descend_from = self.body.tools(self.x)
-                    self.descend_duration = max(1.5, 1.875 * drop / cfg.approach_speed)
+                    self.descend_duration = max(1.5, 1.875 * drop / (cfg.descend_speed or cfg.approach_speed))
                     self.best_error, self.progress_time = np.inf, None
                     self.enter("descend")
                     return self.result()  # this tick's reference is already sent; descend from the next one
@@ -365,7 +377,14 @@ class CoordinatedReach:
             else:
                 u, _ = blend(self.elapsed, self.descend_duration)
                 commanded = self.descend_from + u * (targets - self.descend_from)
-                self.advance(commanded, self.attitudes, tools, control_dt, tool_rotations)
+                self.advance(
+                    commanded,
+                    self.attitudes,
+                    tools,
+                    control_dt,
+                    tool_rotations,
+                    z_floor=targets[:, 2] if cfg.descend_z_guard else None,
+                )
         if self.phase == "close":
             # Maintain the paired world reference while smoothly braking any residual body motion.
             self.advance(

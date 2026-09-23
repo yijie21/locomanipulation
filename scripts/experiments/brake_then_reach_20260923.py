@@ -84,6 +84,13 @@ def main(argv=None) -> int:
     ap.add_argument("--reach-path", choices=("direct", "staged"), default="direct", help="CrateVisualConfig.reach_path")
     ap.add_argument("--rotation-weight", type=float, default=0.6, help="CrateVisualConfig.reach_rotation_weight")
     ap.add_argument("--orientation-gain", type=float, default=0.0, help="CrateVisualConfig.orientation_gain")
+    ap.add_argument("--descend-speed", type=float, default=0.0, help="CrateVisualConfig.descend_speed (0 = approach)")
+    ap.add_argument(
+        "--tracking",
+        default="",
+        help="gain,cap for the position feedback; default: the envelope run's (1.0,0.15). Warehouse runs 0.7,0.04",
+    )
+    ap.add_argument("--z-guard", action="store_true", help="CrateVisualConfig.descend_z_guard")
     ap.add_argument("--pregrasp-above", type=float, default=0.08, help="staged: metres over each grasp point")
     a = ap.parse_args(argv)
     a.out.mkdir(parents=True, exist_ok=True)
@@ -93,7 +100,10 @@ def main(argv=None) -> int:
     ik = ArmIK(paths.SCENE_XML)
     solver = BimanualIK(ik, waist_pitch_max=0.52, waist_dofs="all")
     checker = MeasuredCollisionChecker(ArmIK(paths.SCENE_XML))
-    control = original_reach_control_config(envelope=dict(ENVELOPE))
+    envelope = dict(ENVELOPE)
+    if a.tracking:
+        envelope["tracking_gain"], envelope["tracking_cap"] = (float(v) for v in a.tracking.split(","))
+    control = original_reach_control_config(envelope=envelope)
     control = replace(
         control,
         visual=replace(
@@ -102,6 +112,8 @@ def main(argv=None) -> int:
             pregrasp_above=a.pregrasp_above,
             reach_rotation_weight=a.rotation_weight,
             orientation_gain=a.orientation_gain,
+            descend_speed=a.descend_speed,
+            descend_z_guard=a.z_guard,
         ),
     )
     criteria = GhostReachCriteria()
@@ -119,6 +131,9 @@ def main(argv=None) -> int:
                 below_rim=a.below_rim if a.box else None,
                 rotation_weight=a.rotation_weight,
                 orientation_gain=a.orientation_gain,
+                descend_speed=a.descend_speed,
+                z_guard=a.z_guard,
+                tracking=[control.visual.tracking_gain, control.visual.tracking_cap],
             )
             brake = brake_trial(p, reset, 0.25, a.marker, 3.0, f"{label}_brake", guard=GUARD)
             row["brake"] = brake

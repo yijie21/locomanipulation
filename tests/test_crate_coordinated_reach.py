@@ -343,3 +343,43 @@ def test_orientation_feedback_pre_rotates_the_command_by_the_tracking_deficit():
     assert max(applied) <= 4.0 + 1e-6
     off, sent = _advance_with_flat_palms(gain=0.0)
     assert np.allclose(sent[-1], off.attitudes) and not off.rotation_feedback.any()
+
+
+def test_descend_speed_stretches_only_the_final_descent():
+    def descent_seconds(speed):
+        policy, state = setup()
+        policy.config = policy.config.with_overrides(["visual.reach_path=staged", f"visual.descend_speed={speed}"])
+        policy.step(0, estimate(0, state), state, [0.08] * 2)
+        for now in np.arange(0.05, 20, 0.05):
+            command = policy.step(now, estimate(now, state), state, [0.015] * 2)
+            state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+            if policy.phase == "descend":
+                return policy.descend_duration, policy.duration
+        raise AssertionError("never descended")
+
+    fast, reach_fast = descent_seconds(0.0)
+    slow, reach_slow = descent_seconds(0.02)
+    assert slow > fast and reach_slow == reach_fast
+
+
+def test_descent_z_guard_stops_downward_windup_and_backs_off_below_the_floor():
+    policy, state = setup()
+    policy.config = policy.config.with_overrides(["visual.tracking_cap=0.15"])
+    policy.step(0, estimate(0, state), state, [0.08] * 2)
+    floor = policy.body.tools(policy.x)[:, 2].copy()
+    policy.feedback[:, 2] = -0.06  # already correcting a model that puts the hands too low
+    for _ in range(20):
+        tools = policy.body.tools(policy.x)
+        measured = tools + [0.0, 0.0, 0.10]  # measured far above predicted: unguarded, z feedback grows down
+        measured[:, 2] = floor - 0.01  # ...but the grip is already 1 cm under its floor
+        before = policy.feedback[:, 2].copy()
+        policy.advance(tools, policy.attitudes, measured, 0.05, z_floor=floor)
+        assert np.all(policy.feedback[:, 2] >= before - 1e-12)  # never grows downward under the floor
+    assert np.all(policy.feedback[:, 2] > -0.06)  # and it backed off
+    unguarded, state = setup()
+    unguarded.config = policy.config
+    unguarded.step(0, estimate(0, state), state, [0.08] * 2)
+    unguarded.feedback[:, 2] = -0.06
+    tools = unguarded.body.tools(unguarded.x)
+    unguarded.advance(tools, unguarded.attitudes, tools + [0.0, 0.0, 0.10], 0.05)
+    assert np.all(unguarded.feedback[:, 2] < -0.06)

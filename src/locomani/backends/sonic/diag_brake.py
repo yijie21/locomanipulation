@@ -50,6 +50,7 @@ class FootWatch:
         self.stand_z = None
         self.planted = [True, True]
         self.landings = []
+        self.last_strides = []
 
     def feet_now(self, s):
         q = self.data.qpos
@@ -72,6 +73,7 @@ class FootWatch:
             self.landings.append(max(a for a, p in zip(along, planted) if p))
         front = max((a for a, p in zip(along, planted) if p), default=float("nan"))
         stride = self.landings[-1] - self.landings[-2] if len(self.landings) >= 2 else None
+        self.last_strides = list(np.diff(self.landings[-3:]))  # the most recent (up to) two strides
         return landed, front, stride
 
 
@@ -153,7 +155,13 @@ def trial(
                     moved, still_since, trigger = False, None, False
                 trigger = trigger or s["seq"] - first > waypoint["timeout"] * SIM_HZ
             if guard is not None:
-                stride = guard["stride0"] if stride is None else max(stride, guard["stride0"])
+                if guard.get("stride_mode") == "recent2":
+                    # the larger of the last two strides; stride0 only until two strides exist. At 0.20-0.25 the
+                    # strides run 2-22 cm, and the fixed 14 cm floor bound on every brake (2026-09-23)
+                    strides = watch.last_strides
+                    stride = max(strides) if len(strides) >= 2 else guard["stride0"]
+                else:
+                    stride = guard["stride0"] if stride is None else max(stride, guard["stride0"])
                 if pending is None and landed and front + stride + guard["extra"] >= marker - guard["margin"]:
                     # C: the brake may be held back `brake_delay` simulated seconds after the landing that
                     # decided it, so the feet are further into the stride when IDLE arrives
@@ -253,6 +261,12 @@ def main(argv=None) -> int:
         help="guard: frontmost low-body reach past the planted front ankle after IDLE, worst case (m)",
     )
     ap.add_argument("--margin", type=float, default=0.03, help="guard: clearance kept before the line (m)")
+    ap.add_argument(
+        "--stride-mode",
+        choices=("floor", "recent2"),
+        default="floor",
+        help="guard stride prediction: floor = max(last stride, stride0); recent2 = max of the last two strides",
+    )
     ap.add_argument("--stride0", type=float, default=0.14, help="guard: stride assumed until two landings are seen (m)")
     ap.add_argument(
         "--brake-delay", type=float, default=0.0, help="guard: simulated s between the deciding landing and IDLE"
@@ -290,7 +304,9 @@ def main(argv=None) -> int:
             tag = f"{speed:.2f}" if a.final_speed is None else f"{speed:.2f}to{a.final_speed:.2f}"
             label = f"brake_{tag}_{i:02d}"
             r = dict(speed=speed, final_speed=a.final_speed, final_distance=a.final_distance, i=i, label=label)
-            guard = dict(extra=a.extra, margin=a.margin, stride0=a.stride0) if a.guard else None
+            guard = (
+                dict(extra=a.extra, margin=a.margin, stride0=a.stride0, stride_mode=a.stride_mode) if a.guard else None
+            )
             r.update(
                 trial(
                     p,
