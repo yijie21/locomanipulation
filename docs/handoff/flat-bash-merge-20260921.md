@@ -1,3 +1,4 @@
+<!-- Archived from root HANDOFF.md on 2026-09-23; historical claims are retained. Current state: ../../STATE.md -->
 # HANDOFF — 阶段入口重构为扁平 bash（已合并进 main）
 
 更新时间：2026-09-21 UTC。工作目录：`/workspace/code/locomanipulation`。
@@ -24,7 +25,7 @@
   2026-09-17 一天查出四个，其中一个让 100 局评测在 0.7 m 而非配置的 1.1–1.3 m 生成。
 - 主路径脚本**互不调用**，唯一例外 `scripts/run_overnight.sh`（无人值守批量）。
 - 采集与评测的驱动**按线分两份**；convert / train / open-loop / 起栈 / 策略服务各一份。
-- 共享资源按 [AGENTS](AGENTS.md) 和 [STATE](STATE.md)：开跑前重查 GPU、pid、实例锁，只停自己的实例。
+- 共享资源按 [AGENTS](../../AGENTS.md) 和 [STATE](../../STATE.md)：开跑前重查 GPU、pid、实例锁，只停自己的实例。
 - 提交按路径显式 `git add`，**绝不 `-A`**（工作树里有别人未提交的东西；本次一次 `git add -u` 误暂存了
   6 个别人的文件，已即时 `git restore --staged` 撤回）。
 - 产物视频与预览遵守 500,000 bytes 硬上限；`outputs/`、`third_party/`、`datasets/` 不入 Git。
@@ -205,14 +206,14 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_collect
 
 那轮结论：1,277 次尝试 / 1,164 个五维坐标，898 次真正进入 reach，**232 次在线与原生共同确认成功**，
 369 次被控制器在 observe 阶段拒绝，10 条判定分歧。详细事实以
-[五维联合实测记录](docs/handoff/g1-joint-reach-search-20260920.md) 为准；
+[五维联合实测记录](g1-joint-reach-search-20260920.md) 为准；
 **不要把在线成功 237 写成共同确认数**。
 
 ## 早期背景
 
-- [本轮完整决策与证据](docs/handoff/refactor-flat-bash-20260921.md)（八条决定、标定数据、七个回退）
-- [扁平 Python 脚本重构（2026-09-17）](docs/handoff/refactor-flat-scripts-20260917.md)、
-  [基础设施重构（2026-09-16）](docs/handoff/infra-plan-20260916.md)：本轮不推翻它们的结论。
-- [单臂](docs/single_arm.md)、[双臂](docs/bimanual.md) runbook；
-  [通用 runbook](docs/reference/runbook.md)、[静默失败清单](docs/reference/silent_failures.md)、
-  [开发规范](docs/reference/standards.md)。
+- [本轮完整决策与证据](refactor-flat-bash-20260921.md)（八条决定、标定数据、七个回退）
+- [扁平 Python 脚本重构（2026-09-17）](refactor-flat-scripts-20260917.md)、
+  [基础设施重构（2026-09-16）](infra-plan-20260916.md)：本轮不推翻它们的结论。
+- [单臂](../single_arm.md)、[双臂](../bimanual.md) runbook；
+  [通用 runbook](../reference/runbook.md)、[静默失败清单](../reference/silent_failures.md)、
+  [开发规范](../reference/standards.md)。
