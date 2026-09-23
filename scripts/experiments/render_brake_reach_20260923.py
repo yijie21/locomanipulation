@@ -21,6 +21,9 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from box_contact_20260923 import placed  # noqa: E402  (the same box/pallet placement the contact check uses)
+
 REPO = Path(__file__).resolve().parents[2]
 SCENE = REPO / "outputs" / "scene" / "walk" / "scene_locomani.xml"
 FONT = REPO / "assets" / "blender" / "fonts" / "NotoSansCJK-Regular.ttc"
@@ -95,9 +98,13 @@ def main() -> int:
     hands = [g for g in robot if model.geom_bodyid[g] in hand_ids]
     font = ImageFont.truetype(str(FONT), 24)
     summary = {}
-    for x in sorted({r["target_x"] for r in res["rows"]}):
-        rows = [r for r in res["rows"] if r["target_x"] == x and "status" in r]
-        full = out / f"reach_{x:.2f}.mp4"
+
+    def tag(x):
+        return x if isinstance(x, str) else f"{x:.2f}"
+
+    for x in sorted({tag(r["target_x"]) for r in res["rows"]}):
+        rows = [r for r in res["rows"] if tag(r["target_x"]) == x and "status" in r]
+        full = out / f"reach_{x}.mp4"
         tmp = full.with_suffix(".raw.mp4")
         writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), HZ / EVERY, (W, H))
         stats = []
@@ -106,6 +113,10 @@ def main() -> int:
             line = np.asarray(r["line_xy"])
             targets = json.loads((out / "traces" / f"{r['label']}.json").read_text())["target"]["fixed_centres_world_m"]
             hand_past, low_past = [], []
+            box = []
+            if r["target_x"] == "box":
+                first = json.loads((out / "traces" / f"{r['label']}.json").read_text())["traces"][0]
+                box = placed(line, r["heading"], np.asarray(first["pelvis_position_m"][:2]))
             parts = [
                 q for q in ("brake", "prep", "reach") if (out / "trace" / f"{r['label']}_{q}_state_trace.npz").exists()
             ]
@@ -132,6 +143,10 @@ def main() -> int:
                         rot,
                         [0.9, 0.1, 0.1, 1],
                     )
+                    for _name, size, pos, yaw in box:
+                        c, s_ = np.cos(yaw), np.sin(yaw)
+                        add_geom(renderer.scene, mujoco.mjtGeom.mjGEOM_BOX, size, pos,
+                                 [[c, -s_, 0], [s_, c, 0], [0, 0, 1]], [0.8, 0.6, 0.35, 0.45])  # fmt: skip
                     if part != "brake":
                         for c in targets:
                             add_geom(
@@ -145,7 +160,7 @@ def main() -> int:
                     frame = Image.fromarray(renderer.render())
                     d = ImageDraw.Draw(frame)
                     lines = [
-                        f"目标 x={x:.2f} m（骨盆前方）  第 {r['i'] + 1}/{len(rows)} 次  {dict(brake='行走+守线刹车', prep='抬臂准备+伸出', reach='双臂伸出')[part]}",
+                        f"目标 {'箱子抓取点' if x == 'box' else f'x={x} m（骨盆前方）'}  第 {r['i'] + 1}/{len(rows)} 次  {dict(brake='行走+守线刹车', prep='抬臂准备+伸出', reach='双臂伸出')[part]}",
                         f"手最前点距红线 {100 * hp:+.1f} cm    下身最前点距红线 {100 * lp:+.1f} cm",
                     ]
                     if part == parts[-1] and i >= len(qpos) - HZ:
@@ -171,7 +186,7 @@ def main() -> int:
         writer.release()
         ffmpeg("-i", str(tmp), "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", str(full))
         tmp.unlink()
-        summary[f"{x:.2f}"] = dict(trials=stats, previews=[str(p) for p in previews(full)])
+        summary[x] = dict(trials=stats, previews=[str(p) for p in previews(full)])
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
     return 0

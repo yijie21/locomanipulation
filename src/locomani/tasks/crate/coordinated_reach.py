@@ -96,6 +96,7 @@ class CoordinatedReach:
         self.elapsed = 0.0
         self.ready_since = None
         self.feedback = np.zeros((2, 3))
+        self.rotation_feedback = np.zeros((2, 3))  # filtered predicted-vs-measured palm rotation vectors (world)
         self.best_error, self.progress_time = np.inf, None
         self.diagnostics = {}
         self.torso_target = None
@@ -110,7 +111,7 @@ class CoordinatedReach:
     def enter(self, phase):
         self.phase, self.elapsed, self.ready_since = phase, 0.0, None
 
-    def advance(self, targets, attitudes, measured, dt):
+    def advance(self, targets, attitudes, measured, dt, measured_rotations=None):
         """Rate/acceleration limits belong inside the supported body solve, including hips."""
         if dt <= 0:
             return
@@ -118,6 +119,22 @@ class CoordinatedReach:
         predicted = self.body.tools(self.x)
         observed_error = np.clip(predicted - measured, -cfg.tracking_cap, cfg.tracking_cap)
         self.feedback += (1 - np.exp(-dt / 0.4)) * (observed_error - self.feedback)
+        if cfg.orientation_gain > 0 and measured_rotations is not None:
+            # The palm-attitude counterpart of the position feedback: the rotation from what the controller
+            # delivers to what the solver predicted, filtered, capped, and pre-applied to the command.
+            predicted_rotations = self.solver.ik.data.xmat[self.body.hands].reshape(2, 3, 3)  # tools() put self.x
+            error = np.array(
+                [Rotation.from_matrix(p @ m.T).as_rotvec() for p, m in zip(predicted_rotations, measured_rotations)]
+            )
+            cap = np.radians(cfg.orientation_cap_deg)
+            error *= np.minimum(1.0, cap / np.maximum(np.linalg.norm(error, axis=1, keepdims=True), 1e-9))
+            self.rotation_feedback += (1 - np.exp(-dt / 0.4)) * (error - self.rotation_feedback)
+            attitudes = np.array(
+                [
+                    Rotation.from_rotvec(cfg.orientation_gain * f).as_matrix() @ a
+                    for f, a in zip(self.rotation_feedback, attitudes)
+                ]
+            )
         speed = np.r_[[self.config.carry.height_speed] * 3, cfg.palm_rotation_speed, [cfg.joint_speed] * 29]
         acceleration = np.r_[[0.2] * 3, cfg.joint_acceleration, [cfg.joint_acceleration] * 29]
         interval = dt if self.last_dt is None else (dt + self.last_dt) / 2
@@ -173,6 +190,7 @@ class CoordinatedReach:
             posture=self.posture,
             torso_rotation=self.torso_target,
             iterations=6,
+            hand_rotation_weight=cfg.reach_rotation_weight,
         )
         next_x = self.body.seed.copy()
         self.v = (next_x - self.x) / dt
@@ -183,8 +201,14 @@ class CoordinatedReach:
             foot_error=pose.foot_errors,
             com_shift=pose.com_shift,
             tracking_correction=self.feedback,
+            orientation_correction_deg=np.degrees(np.linalg.norm(self.rotation_feedback, axis=1)),
             reference_hand_error=pose.hand_errors,
         )
+
+    def pregrasp(self, targets):
+        """Staged reach waypoint: pregrasp_above over each grasp point, pregrasp_back toward the body."""
+        cfg = self.config.visual
+        return targets - cfg.pregrasp_back * self.outward + np.array([0.0, 0.0, cfg.pregrasp_above])
 
     def solver_frame_base(self, state):
         """Measured pelvis position expressed in the solver frame (feet coincide with the solver's feet)."""
@@ -280,7 +304,10 @@ class CoordinatedReach:
             self.body.put(self.x)
             initial_attitudes = self.solver.ik.data.xmat[self.body.hands].reshape(2, 3, 3)
             self.rotations = [Slerp([0, 1], Rotation.from_matrix([a, attitude])) for a in initial_attitudes]
-            distance = np.max(np.linalg.norm(targets - self.start_tools, axis=1))
+            # Horizontal unit vector from the body toward the object, across the grasp line.
+            self.outward = Rotation.from_euler("z", yaw).apply([1.0, 0.0, 0.0])
+            first = self.pregrasp(targets) if cfg.reach_path == "staged" else targets
+            distance = np.max(np.linalg.norm(first - self.start_tools, axis=1))
             self.duration = max(3.0, 1.875 * distance / cfg.approach_speed)
             self.reach_object = obj_position.copy()
             self.enter("reach")
@@ -307,12 +334,47 @@ class CoordinatedReach:
             if self.phase == "reach":
                 u, _ = blend(self.elapsed, self.duration)
                 self.torso_target = self.reach_rotation(u).as_matrix()
-                commanded = self.start_tools + u * (targets - self.start_tools)
+                first = self.pregrasp(targets) if cfg.reach_path == "staged" else targets
+                commanded = self.start_tools + u * (first - self.start_tools)
                 attitudes = np.array([r(u).as_matrix() for r in self.rotations])
-                self.advance(commanded, attitudes, tools, control_dt)
+                self.advance(commanded, attitudes, tools, control_dt, tool_rotations)
+                if cfg.reach_path == "staged" and self.elapsed >= self.duration:
+                    # Straight down from the pregrasp point, at the same Cartesian speed limit.
+                    drop = np.max(np.linalg.norm(targets - first, axis=1))
+                    self.descend_from = self.body.tools(self.x)
+                    self.descend_duration = max(1.5, 1.875 * drop / cfg.approach_speed)
+                    self.best_error, self.progress_time = np.inf, None
+                    self.enter("descend")
+                    return self.result()  # this tick's reference is already sent; descend from the next one
+        if self.phase == "descend":
+            # Same capture and stall rules as the direct reach, including reach_only probes that never close.
+            if self.target.reach_only:
+                ready, errors = False, np.linalg.norm(tools - targets, axis=1)
+            else:
+                ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
+            self.diagnostics.update(capture_error=errors, capture_ready=ready)
+            error = float(np.max(np.linalg.norm(tools - targets, axis=1)))
+            if self.progress_time is None or error < self.best_error - 0.005:
+                self.best_error, self.progress_time = error, now
+            if not self.target.reach_only and self.elapsed > self.descend_duration and now - self.progress_time > 3.0:
+                return self.result("reach_stalled", True)
+            self.ready_since = (now if self.ready_since is None else self.ready_since) if ready else None
+            if self.ready_since is not None and now - self.ready_since >= 0.1:
+                self.closed_targets = self.body.tools(self.x)
+                self.enter("close")
+            else:
+                u, _ = blend(self.elapsed, self.descend_duration)
+                commanded = self.descend_from + u * (targets - self.descend_from)
+                self.advance(commanded, self.attitudes, tools, control_dt, tool_rotations)
         if self.phase == "close":
             # Maintain the paired world reference while smoothly braking any residual body motion.
-            self.advance(self.closed_targets - cfg.tracking_gain * self.feedback, self.attitudes, tools, control_dt)
+            self.advance(
+                self.closed_targets - cfg.tracking_gain * self.feedback,
+                self.attitudes,
+                tools,
+                control_dt,
+                tool_rotations,
+            )
             self.closure = min(1.0, self.elapsed / cfg.close_seconds)
             if self.elapsed >= cfg.close_seconds + 0.2:
                 if min(hand_openings) < 0.003:
@@ -386,7 +448,7 @@ class CoordinatedReach:
                     )
                 self.diagnostics["pelvis_height_target"] = self.body.pelvis_height_target
                 self.diagnostics.update(lift_progress=lift_u, recovery_progress=stand_u, loaded_targets=targets.copy())
-                self.advance(targets, self.attitudes, tools, control_dt)
+                self.advance(targets, self.attitudes, tools, control_dt, tool_rotations)
                 if (
                     self.recovery_started is not None
                     and recovery_time >= cfg.stand_seconds
@@ -401,7 +463,7 @@ class CoordinatedReach:
                 elif recovery_time >= cfg.stand_seconds + 4:
                     return self.result("stand_not_delivered", True)
             else:
-                self.advance(self.stand_targets, self.attitudes, tools, control_dt)
+                self.advance(self.stand_targets, self.attitudes, tools, control_dt, tool_rotations)
                 if self.elapsed >= cfg.hold_seconds + 2.0:
                     return self.result("unstable_hold", True)
                 stable = (

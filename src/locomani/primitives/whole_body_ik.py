@@ -152,7 +152,10 @@ class WholeBodyIK:
         continuity_weight=0.0,
         torso_rotation=None,
         iterations=120,
+        hand_rotation_weight=0.6,
     ):
+        """`hand_rotation_weight` scales the hand orientation residual (rad) against position (10 per metre):
+        at 0.6, 1 cm of hand position costs about as much as 10 degrees of hand orientation."""
         d = self.ik.data
         positions, rotations = np.asarray(positions), np.asarray(rotations)
         prior = self.q0 if posture is None else posture
@@ -200,7 +203,7 @@ class WholeBodyIK:
                 20 * (d.xpos[self.feet] - self.feet_pos).ravel(),
                 3 * foot_rot,
                 10 * ((points - positions) * self.hand_weights[:, None]).ravel(),
-                0.6 * hand_rot * np.repeat(self.hand_weights, 3),
+                hand_rotation_weight * hand_rot * np.repeat(self.hand_weights, 3),
                 self.com_weight * com_shift,
                 posture_scale * (x[4:] - prior),
                 0.3 * (x[2] - (self.base0[2] if self.pelvis_height_target is None else self.pelvis_height_target)),

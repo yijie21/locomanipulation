@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -35,11 +36,15 @@ from locomani.tasks.crate.ghost_reach_execution import (
     original_reach_control_config,
 )
 from locomani.tasks.crate.ghost_reach_execution_cli import SonicGhostReachRuntime
+from locomani.tasks.crate.grasp_region import GRASP_BELOW_RIM_M, GRASP_WALL_INSET_M
 
 ENVELOPE = json.loads(
     Path(paths.REPO, "outputs/g1_capability_envelope_20260921/boundary/round_5/shard_0/request.json").read_text()
 )["envelope"]
 GUARD = dict(extra=0.20, margin=0.03, stride0=0.14)  # the 50/50 constant-0.25 validation (brake_guard025_valid)
+# The warehouse box (outputs/box_rim_execution_20260920/scene_reverse_camera, nor_cal_box on the 0.371 m pallet):
+# grasp pair on the side walls, 0.8 cm in and 2.5 cm under the rim, mid-depth -> 0.16 m past its front face.
+BOX = dict(behind_line=0.16, rim=0.371 + 0.33, separation=2 * (0.225 - GRASP_WALL_INSET_M))
 
 
 def case_at(x, h=0.70, d=0.44, index=1):
@@ -68,6 +73,18 @@ def main(argv=None) -> int:
     ap.add_argument("--targets", default="0.60,0.70", help="reach midpoint x values (m, settled robot frame)")
     ap.add_argument("--repeats", type=int, default=5)
     ap.add_argument("--marker", type=float, default=0.9)
+    ap.add_argument(
+        "--box",
+        action="store_true",
+        help="ignore --targets: aim at the warehouse box's grasp pair with its front face on the line (BOX)",
+    )
+    ap.add_argument(
+        "--below-rim", type=float, default=GRASP_BELOW_RIM_M, help="--box: grasp point depth under the rim (m)"
+    )
+    ap.add_argument("--reach-path", choices=("direct", "staged"), default="direct", help="CrateVisualConfig.reach_path")
+    ap.add_argument("--rotation-weight", type=float, default=0.6, help="CrateVisualConfig.reach_rotation_weight")
+    ap.add_argument("--orientation-gain", type=float, default=0.0, help="CrateVisualConfig.orientation_gain")
+    ap.add_argument("--pregrasp-above", type=float, default=0.08, help="staged: metres over each grasp point")
     a = ap.parse_args(argv)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "traces").mkdir(exist_ok=True)
@@ -77,14 +94,32 @@ def main(argv=None) -> int:
     solver = BimanualIK(ik, waist_pitch_max=0.52, waist_dofs="all")
     checker = MeasuredCollisionChecker(ArmIK(paths.SCENE_XML))
     control = original_reach_control_config(envelope=dict(ENVELOPE))
+    control = replace(
+        control,
+        visual=replace(
+            control.visual,
+            reach_path=a.reach_path,
+            pregrasp_above=a.pregrasp_above,
+            reach_rotation_weight=a.rotation_weight,
+            orientation_gain=a.orientation_gain,
+        ),
+    )
     criteria = GhostReachCriteria()
     rows = []
-    for x in [float(v) for v in a.targets.split(",")]:
+    for x in ["box"] if a.box else [float(v) for v in a.targets.split(",")]:
         for i in range(a.repeats):
             if (a.out / "STOP").exists():
                 break
-            label = f"reach_x{x:.2f}_{i:02d}"
-            row = dict(target_x=x, i=i, label=label)
+            label = f"reach_{x}_{i:02d}" if a.box else f"reach_x{x:.2f}_{i:02d}"
+            row = dict(
+                target_x=x,
+                i=i,
+                label=label,
+                reach_path=a.reach_path,
+                below_rim=a.below_rim if a.box else None,
+                rotation_weight=a.rotation_weight,
+                orientation_gain=a.orientation_gain,
+            )
             brake = brake_trial(p, reset, 0.25, a.marker, 3.0, f"{label}_brake", guard=GUARD)
             row["brake"] = brake
             if brake.get("fell") is not None or "origin_xy" not in brake:
@@ -111,7 +146,16 @@ def main(argv=None) -> int:
                 try:
                     result = GhostReachExecutor(
                         solver, runtime, criteria=criteria, control_config=control, collision_checker=checker
-                    ).run_case(case_at(x), state)
+                    ).run_case(
+                        case_at(
+                            BOX["behind_line"] - row["ready_pelvis_past_line_cm"] / 100,
+                            BOX["rim"] - a.below_rim,
+                            BOX["separation"],
+                        )
+                        if a.box
+                        else case_at(x),
+                        state,
+                    )
                 finally:
                     reset.end_video()
             except Exception as error:  # noqa: BLE001 - one bad trial must not end the run
@@ -137,7 +181,7 @@ def main(argv=None) -> int:
             (a.out / "traces" / f"{label}.json").write_text(json.dumps(result))
             rows.append(row)
             print(
-                f"x {x:.2f} #{i}: {row['status']:8s} {row['reason']:28s} pelvis {row['ready_pelvis_past_line_cm']:+.1f} "
+                f"x {x} #{i}: {row['status']:8s} {row['reason']:28s} pelvis {row['ready_pelvis_past_line_cm']:+.1f} "
                 f"| tools max past line L {row['tool_max_past_line_cm'][0]:+.1f} R {row['tool_max_past_line_cm'][1]:+.1f} cm "
                 f"| best err {row['best_position_error_cm']:.1f} cm, foot drift {row['foot_drift_cm']:.1f}",
                 flush=True,

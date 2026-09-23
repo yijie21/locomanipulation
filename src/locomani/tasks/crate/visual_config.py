@@ -32,6 +32,11 @@ class CrateVisualConfig:
     position_jitter: float = 0.02  # visible basket x/y randomisation at reset, metres
     yaw_jitter_deg: float = 5.0  # visible basket yaw randomisation at reset
     pregrasp_above: float = 0.09  # metres above each grasp point
+    reach_path: str = "direct"  # assisted CoordinatedReach: direct = one straight blend from the ready hands to the grasp points; staged = first to a pregrasp point pregrasp_above over each grasp point and pregrasp_back toward the body, then straight down (2026-09-23: direct swept the hands through the warehouse box, 8 of 10 displaced-box rounds had a hand on it)
+    pregrasp_back: float = 0.04  # staged reach: metres the pregrasp point sits toward the body from the grasp point
+    reach_rotation_weight: float = 0.6  # assisted CoordinatedReach: whole-body IK weight on hand orientation (rad) against hand position (10 per metre); 0.6 trades ~10 deg for 1 cm, and at long reach gave up 10-20 deg of palm pitch (2026-09-23)
+    orientation_gain: float = 0.0  # assisted CoordinatedReach: fraction of the filtered predicted-vs-measured palm rotation added to the commanded attitude; 0 = none. SONIC tracked the palm pitch 8-14 deg flat at long reach (2026-09-23)
+    orientation_cap_deg: float = 20.0  # largest palm-attitude correction the orientation feedback may apply, degrees
     approach_speed: float = 0.055  # maximum Cartesian reference speed, metres/second
     joint_speed: float = 0.7  # maximum reference joint speed, radians/second
     joint_acceleration: float = 2.0  # maximum reference velocity change, radians/second squared
@@ -57,10 +62,12 @@ class CrateVisualConfig:
             raise ValueError("visual.stand_lateral_gate must be walk or turn")
         if self.walk_steer not in ("target", "depth"):
             raise ValueError("visual.walk_steer must be target or depth")
+        if self.reach_path not in ("direct", "staged"):
+            raise ValueError("visual.reach_path must be direct or staged")
         if self.start_pose not in ("sampled", "scene"):
             raise ValueError("visual.start_pose must be sampled or scene")
         for name, value in vars(self).items():
-            if name in ("pose_source", "stand_lateral_gate", "start_pose", "walk_steer"):
+            if name in ("pose_source", "stand_lateral_gate", "start_pose", "walk_steer", "reach_path"):
                 continue
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")

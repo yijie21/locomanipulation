@@ -266,3 +266,80 @@ def test_slow_host_does_not_accelerate_physical_motion_or_weaken_camera_freshnes
     # The simulator barely advances, but an image stale in wall time still aborts.
     stale = slow.step(wall_time + 1, estimate(wall_time, state), state, [0.015] * 2, motion_time=simulation_time + 0.01)
     assert stale.finished and stale.reason == "vision_lost"
+
+
+def test_staged_reach_stops_over_the_grasp_points_then_comes_straight_down():
+    """reach_path=staged: the commanded hands reach the pregrasp point, then only descend onto the grasp points."""
+    policy, state = setup()
+    policy.config = policy.config.with_overrides(["visual.reach_path=staged"])
+    cfg = policy.config.visual
+    policy.step(0, estimate(0, state), state, [0.08] * 2)
+    phases, at_switch, during_descent = [], None, []
+    for now in np.arange(0.05, 12, 0.05):
+        command = policy.step(now, estimate(now, state), state, [0.015] * 2)
+        assert not command.finished, command.reason
+        if policy.phase == "descend" and at_switch is None:
+            at_switch = policy.body.tools(policy.x).copy()
+        if policy.phase == "descend":
+            during_descent.append(policy.body.tools(policy.x).copy())
+        phases.append(policy.phase)
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+        if policy.phase == "close":
+            break
+    assert "descend" in phases and phases.index("descend") > phases.index("reach")
+    offset = policy.pregrasp(np.zeros((2, 3)))
+    assert np.allclose(offset[:, 2], cfg.pregrasp_above) and np.allclose(
+        np.linalg.norm(offset[:, :2], axis=1), cfg.pregrasp_back
+    )
+    moves = np.array(during_descent) - at_switch
+    horizontal = np.linalg.norm(moves[..., :2] + offset[:, :2], axis=-1)  # toward the grasp point, not sideways
+    assert moves[..., 2].min() < -0.5 * cfg.pregrasp_above  # it came down
+    assert np.all(horizontal <= cfg.pregrasp_back + 0.01)
+
+
+def test_reach_path_rejects_unknown_choice():
+    import pytest
+
+    from locomani.tasks.crate.visual_config import CrateVisualConfig
+
+    with pytest.raises(ValueError, match="reach_path"):
+        CrateVisualConfig(reach_path="sideways")
+
+
+def _advance_with_flat_palms(gain, cap_deg=20.0, deficit_deg=10.0, steps=40):
+    """Drive advance() while the 'measured' palms sit deficit_deg flatter (about their y) than predicted."""
+    from scipy.spatial.transform import Rotation as R
+
+    policy, state = setup()
+    policy.config = policy.config.with_overrides(
+        [f"visual.orientation_gain={gain}", f"visual.orientation_cap_deg={cap_deg}"]
+    )
+    policy.step(0, estimate(0, state), state, [0.08] * 2)  # observe: attitudes and the solver seed exist
+    sent = []
+    real_solve = policy.body.solve
+
+    def spy(positions, rotations, **kw):
+        sent.append(np.array(rotations))
+        return real_solve(positions, rotations, **kw)
+
+    policy.body.solve = spy
+    for _ in range(steps):
+        tools = policy.body.tools(policy.x)
+        predicted = policy.solver.ik.data.xmat[policy.body.hands].reshape(2, 3, 3)
+        flat = np.array([p @ R.from_euler("y", -deficit_deg, degrees=True).as_matrix() for p in predicted])
+        policy.advance(tools, policy.attitudes, tools, 0.05, flat)
+    return policy, sent
+
+
+def test_orientation_feedback_pre_rotates_the_command_by_the_tracking_deficit():
+    from scipy.spatial.transform import Rotation as R
+
+    policy, sent = _advance_with_flat_palms(gain=1.0)
+    applied = [np.degrees(R.from_matrix(c @ a.T).magnitude()) for c, a in zip(sent[-1], policy.attitudes)]
+    assert np.allclose(applied, 10.0, atol=1.0), applied  # the filtered deficit, fully fed forward
+    assert np.allclose(policy.diagnostics["orientation_correction_deg"], 10.0, atol=1.0)
+    capped, sent = _advance_with_flat_palms(gain=1.0, cap_deg=4.0)
+    applied = [np.degrees(R.from_matrix(c @ a.T).magnitude()) for c, a in zip(sent[-1], capped.attitudes)]
+    assert max(applied) <= 4.0 + 1e-6
+    off, sent = _advance_with_flat_palms(gain=0.0)
+    assert np.allclose(sent[-1], off.attitudes) and not off.rotation_feedback.any()
