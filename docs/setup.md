@@ -366,7 +366,9 @@ gitignored 的生成产物,新 clone 的 `third_party/GR00T-WholeBodyControl` �
 会导致 `MjSpec.from_file` 报 `Error opening file ... scene_31dof.xml`:
 
 ```bash
-third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/sim/make_dex1_model.py
+# locomani 不 pip 安装(pyproject.toml 只放 tooling),靠 PYTHONPATH=src 找包;
+# 漏掉它会报 ModuleNotFoundError: No module named 'locomani'。
+PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locomani/sim/make_dex1_model.py
 ```
 
 然后装场景。**`SCENE_PRESET` 必须给在这一行上**:
