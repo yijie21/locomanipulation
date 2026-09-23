@@ -145,15 +145,17 @@ def test_a_scene_name_resolves_to_its_directory_in_the_run_and_its_copy(tmp_path
 
 def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     names = yaml.safe_load(run_common.SCENES.read_text())
-    assert set(names) == {"bottle", "crate", "warehouse"}
+    assert set(names) == {"bottle", "crate", "warehouse", "walk"}
     for entry in names.values():
-        assert yaml.safe_load((run_common.ROOT / entry["example"]).read_text())["scene"]["dir"] == entry["dir"]
+        assert "example" in entry or "build" in entry
+        if "example" in entry:
+            assert yaml.safe_load((run_common.ROOT / entry["example"]).read_text())["scene"]["dir"] == entry["dir"]
     cfg = {"scene": {"dir": "outputs/scene/sim_lowcom"}}
     assert run_common.resolve_scene(cfg) == {"scene": {"dir": "outputs/scene/sim_lowcom"}}
 
 
 def test_an_unknown_or_doubly_given_scene_is_refused():
-    with pytest.raises(SystemExit, match="bottle, crate, warehouse"):
+    with pytest.raises(SystemExit, match="bottle, crate, walk, warehouse"):
         run_common.resolve_scene({"scene": {"name": "blue"}})
     with pytest.raises(SystemExit, match="give one"):
         run_common.resolve_scene({"scene": {"name": "crate", "dir": "outputs/scene/sim"}})
