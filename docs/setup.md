@@ -202,9 +202,14 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 
 ```bash
 (cd third_party/GR00T-WholeBodyControl \
- && git apply --include='gear_sonic/data/*' ../../patches/vla_action_space.patch \
- && git apply ../../patches/exporter_priv_seq.patch)
+ && { git apply --check --reverse --include='gear_sonic/data/*' ../../patches/vla_action_space.patch 2>/dev/null \
+      || git apply --include='gear_sonic/data/*' ../../patches/vla_action_space.patch; } \
+ && { git apply --check --reverse ../../patches/exporter_priv_seq.patch 2>/dev/null \
+      || git apply ../../patches/exporter_priv_seq.patch; } \
+ && echo "补丁已打")
 ```
+
+这条命令可以重复执行:已打的补丁被反向 check 识别后跳过,只有没打的才真正 apply。
 
 原因见 [`patches/vla_action_space.md`](../patches/vla_action_space.md)。
 `vla_action_space.patch` 只取它的 `features_sonic_vla.py` 部分;exporter 用更新的
