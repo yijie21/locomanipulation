@@ -45,9 +45,32 @@
 
 - [x] 2.1 房间 pilot `box_room_20260922` 0/20，代码与文档已提交（`704004d`、`f5ea2e9`）
 - [ ] 2.2 用户看 `outputs/runs/box_room_20260922/reel_failures.mp4`
-- [ ] 2.3 按阶段拆 20 局：摔倒 6 局在哪个相位；reach_stalled 8 局的站位深度与手到抓点距离
-- [ ] 2.4 据 2.3 决定改 `stand_off` / `pregrasp_above` / 摔倒原因；每次一个改动、20 局、同 seed 7000
+- [x] 2.3 按阶段拆 20 局：摔倒 6 局在哪个相位；reach_stalled 8 局的站位深度与手到抓点距离（2026-09-23：`reach_anatomy_20260923.py`；伸手阶段反馈 1.0/0.15 顶满、手起点离抓点 ~20 cm）
+- [~] 2.4 据 2.3 决定改 `stand_off` / `pregrasp_above` / 摔倒原因；每次一个改动、20 局、同 seed 7000
+  - [x] 2.4.1 反馈 0.7/0.04（`box_room_fb07`）0/10；整个 carry 块回退（`box_room_carry`）0/10、摔倒 3→0（2026-09-23）
+  - [x] 2.4.2 stand_off 0.40（`box_room_so40`）0/10，失败移到"碰动箱子"5/10（2026-09-23）
+  - [x] 2.4.3 起点 advance 0 + 刹车余量 0.05（`box_room_approach`）0/10；`walk_steer: depth`（`box_room_steer`）0/10、停位离散 1.2 cm（2026-09-23）
+  - [x] 2.4.4 真专家接入守线 + staged + orientation_gain + 1 cm 抓深 + 后退（`box_room_grasp_20260923`）0/10，守线 6/10 越线（2026-09-23）
+  - [ ] 2.4.5 提交 2.4.4 的代码（expert/visual_approach/visual_config/grasp_region/diag_brake 改动 + `primitives/foot_watch.py`、`tasks/crate/retreat.py`、`tests/test_crate_guard_retreat.py`、`box_room_grasp_20260923.yaml`；默认全关，`make check` 已过）
+  - [ ] 2.4.6 warehouse 起点后移 0.3–0.4 m，用真专家（手臂前伸姿态）重标守线的刹车后滑行，再验证不越线
+  - [ ] 2.4.7 伸手回到不摔的 carry 块（crate 值 + 0.7/0.04），另解"手悬在目标上方 5–10 cm 下不来"
+  - [ ] 2.4.8 跑通后退段（`retreat_distance 0.3`），出 10 局视频
+  - [ ] 2.4.9 纸箱抓深常量 `GRASP_BELOW_RIM_M` 仍为 0.025；warehouse 靠配置 `box_grasp_below_rim 0.01`（决定是否改常量）
 - [ ] 2.5 待验证：摔倒 6/20 为何比合成桌子多（假设：reanchor/IDLE 期间贴着托盘垛）
 - [ ] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续
 - [ ] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（假设，未改）
 - [-] 2.8 `stand_lateral_gate: turn` 作为下一步 —— 它针对的横向偏置是合成场景现象，房间里没有
+
+## 3. walk 场景：SONIC v1.1 行走能力（`docs/walk.md` 探针表）
+
+- [x] 3.1 场景名 bottle / crate / warehouse / walk（`configs/scenes.yaml`，`50d3ec6`、`e8a0019`）（2026-09-23）
+- [x] 3.2 小步小角度探针 `diag_micro`：转向可做准，平移量子化，`walk_to` 小目标不可信（2026-09-23）
+- [x] 3.3 速度渐变视频 + 速度图（SLOW_WALK / mode 18 / mode 20）（2026-09-23）
+- [x] 3.4 走到标记刹车 `diag_brake`；守线刹车全程 0.25 50/50 不越线、0.55→0.25 50/50（2026-09-23）
+- [x] 3.5 planner 路点补丁 `patches/sonic_waypoint_target.patch`：停得齐但本体只走 35–55%（2026-09-23）
+- [-] 3.6 停后收脚（B 切模式 / C 延迟刹车 / A 朝向微调）—— B、C 实测无效，A 用户否决
+- [-] 3.7 守线收紧（extra 0.185 + recent2）—— 最近离线 1.7 cm、离散翻倍，不采纳
+- [x] 3.8 刹车后伸手越线测量：手比骨盆远 65–69 cm（2026-09-23）
+- [x] 3.9 虚拟纸箱伸手：staged + 1 cm 抓深 + orientation_gain 1.0 = 4/5（`box_reach_fb_20260923`）（2026-09-23）
+- [-] 3.10 descend_speed / descend_z_guard 止下冲 —— 4/5、3/5，没能稳定避免手掌压箱沿，默认关
+- [ ] 3.11 VLA 视角：伸手阶段 latent 可学性复查（探针 B 在 box_room 数据上 reach R²≈0.16）；新专家跑通后重跑 `probe_visual_grounding_20260923.py`

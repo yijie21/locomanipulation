@@ -1,75 +1,72 @@
-# STATE — 2026-09-23（会话：重构审查 → 7 处缺陷修复，已推送）
+# STATE — 2026-09-23（会话：walk 场景量 SONIC 行走 → 守线刹车 → 两段式伸手 → warehouse 真专家接入，0/10）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 `origin/main` 同步（`278acdf` + 本 handoff 提交）。
-工作树里**只剩协作者的在途改动，不是我的，不要动、不要提交**：
-`docs/bimanual_reachability.md`、`scripts/probe_ghost_reach.py`、`src/locomani/tasks/crate/ghost_reach_execution{,_cli}.py`、
-`tests/test_ghost_reach_execution.py`（未暂存）；`docs/handoff/g1-joint-reach-search-20260920.md`、
-`scripts/generate_joint_reach_bank.py`、`src/locomani/tasks/crate/joint_reach_sampling.py`、`tests/test_joint_reach_sampling.py`（untracked）。
-没有运行中的栈（`find /workspace/tmp -maxdepth 3 -name stack.json` 无输出）。交接时 GPU0 空，GPU1 被别的项目占 ~25 GB。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，**本地领先 origin/main 3 个提交未推送**
+（`cabeb9b`、`eb9c4e3`、`20d52a3`，外加本 handoff 提交）。
+
+## 工作树里的两类未提交改动
+
+- **我的（TODO 2.4.5，待提交；默认全关，`make check` 已通过）**：
+  `src/locomani/tasks/crate/{expert,visual_approach,visual_config,grasp_region}.py`、`src/locomani/backends/sonic/diag_brake.py`、
+  `docs/reference/config_fields.md`；新文件 `src/locomani/primitives/foot_watch.py`、`src/locomani/tasks/crate/retreat.py`、
+  `tests/test_crate_guard_retreat.py`、`configs/experiments/box_room_grasp_20260923.yaml`。
+- **协作者的（不要动、不要提交）**：`docs/bimanual_reachability.md`、`scripts/probe_ghost_reach.py`、
+  `src/locomani/tasks/crate/ghost_reach_execution{,_cli}.py`、`tests/test_ghost_reach_execution.py`；未跟踪的
+  `docs/handoff/g1-joint-reach-search-20260920.md`、`scripts/generate_joint_reach_bank.py`、
+  `src/locomani/tasks/crate/joint_reach_sampling.py`、`tests/test_joint_reach_sampling.py`。
+  - `scripts/experiments/brake_then_reach_20260923.py` **依赖协作者未提交的** `original_reach_control_config(envelope=...)`。
+  - 提交钩子仍被 `test_joint_reach_sampling.py` 挡住 → 先跑 `make check` 再 `--no-verify`（本会话一直这样）。
+
+没有运行中的栈（`find /workspace/tmp -maxdepth 3 -name stack.json` 无输出）。
 
 ## 当前进度
 
-- 协作者 henry-zhao 的 4 个远端提交已读、已合入：只有 `a76938a` 与重构有关（删我留下的重复文档），其余是场景/文档。
-- 自查出的 7 项缺陷全部修复，一个提交 `278acdf`。改动清单：`git show --stat 278acdf`；决策与被否方案：
-  `DECISIONS.md` 末节"2026-09-23 重构审查"。账本：`TODO.md` 1.20。
-
-## 已确认
-
-- `make check` 全绿：提交前一次、rebase 到协作者 4 个提交之上后再一次。
-- 单臂实跑 `outputs/runs/gate8_fix_20260923`（GPU0 / instance 0，2 批 × 4 局）：
-  - 第 0 批用栈命名的 session `2026-09-23-01-36-02`，第 1 批重启 exporter 得到 `…-01-38-38`，两者都有 data/meta/videos，
-    与 `manifest_00/01` 在 `inputs.json` 里按序配对；
-  - `collect_00.log` / `collect_01.log` 已写出，含逐局 `EPISODE OK/FAILED`；
-  - `gate.py compare simple` PASS 5/5（yield 0.625，n=8，容差内）；结束后栈已收；
-  - 驱动退出码 1 是因为只凑到 5/8（配置要 8），属预期行为。
-- 协作者的在途 diff 在 commit/rebase 前后逐行一致（`git diff --stat` 对比）。
+- 已确认（walk 场景，数据在 `outputs/diagnostics/`，结论表在 `docs/walk.md`）：
+  - SLOW_WALK 速度图：≤0.15 不走，0.20–0.50 不稳，≥0.55 线性（`speed_ramp_v11_20260923`）。
+  - 守线刹车（extra 0.20 / margin 0.03 / stride0 0.14）：全程 0.25 50/50 不越线、身体最前点停在线前 15.5 ± 2.6 cm
+    （`brake_guard025_valid_20260923`）；0.55→0.25 50/50（`brake_guard_valid{,2}_20260923`）。
+  - 刹车后手比骨盆远 65–69 cm（`brake_reach_20260923`）。
+  - 虚拟纸箱：staged + 抓深 1 cm + orientation_gain 1.0 → 4/5（`box_reach_fb_20260923`）。
+- 已确认（warehouse 真专家，`outputs/runs/box_room_grasp_20260923`，10 局）：**0/10**；
+  守线在 warehouse **6/10 越线**（最多 +5 cm）；停稳→伸手已缩到 ~1.4 s；后退段一局都没走到。
+  逐局阶段表：`/tmp/claude-1002/.../scratchpad/grasp_anatomy.txt`（临时；可用 STATE 下方命令重算）。
 
 ## 假设 / 待验证
 
-- **待验证**：双臂 run-dir 评测（`eval_crate_closed_loop <run>`）的修复——栈 `auto_start`、attach 核对、收栈——
-  只有单测，没有实跑；磁盘上没有双臂 checkpoint。
-- **待验证**：中断续跑的实机行为（只有单测 `tests/test_split_process_bookkeeping.py`）。
-- **假设**：子进程恢复继承宿主环境（含 TMPDIR）不影响闸门数字——单臂 2×4 在容差内，但样本很小。
-- **已知副作用**：本次之前起的栈的 `stack.json` 没有 `run_dir`/`mode`，驱动 attach 会被拒，需重起一次。
-
-## 未解决 / 卡点
-
-- 提交钩子仍被协作者 untracked 的 `test_joint_reach_sampling.py` 挡着（stash 后跑旧代码必挂），本次又用了
-  `--no-verify`。等协作者提交那半后自然恢复。
-- `outputs/runs/crate_env2_so45` 处于"批已登记未完成"状态，下次同名续跑会被 `resume_state` 自动清理（manifest 改名留存）。
+- **假设**：warehouse 越线是因为起点离托盘边只有 0.64 m，刹车落在起步冲刺里（刹车时骨盆 0.46–0.66 m/s、手臂前伸），
+  与 walk 标定条件（0.5 m 助跑、0.12 m/s、手臂下垂）不同。起点后移后应恢复——**待验证**（TODO 2.4.6）。
+- **假设**：伸手阶段骨盆后退 0.3–1.3 m / 2 摔来自扩包络 carry 块（`box_room_20260922` 同样 3 摔、回退后 0 摔）——
+  与 walk 场景幽灵执行器不一致，**待验证**（TODO 2.4.7）。
+- **待验证**：后退段 `tasks/crate/retreat.py` 只有单测，从未在仿真里执行过。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **1.19**：有双臂 checkpoint 时实跑 `eval_crate_closed_loop <run>` 一次（顺带验 1.20.1）。
-- **1.20.10**：实机演练一次中断续跑。
-- **2.2 / 2.3**：纸箱房间线——用户看 `box_room_20260922/reel_failures.mp4`，再按阶段拆 20 局。
+- **2.4.5** 提交上述"我的"未提交改动（只按文件名 add）。
+- **2.4.6** warehouse 起点后移 0.3–0.4 m，用真专家重标守线刹车后滑行，再验证不越线。
+- **2.4.7** 伸手回到不摔的 carry 块（crate 值 + 0.7/0.04），另解"手悬在目标上方下不来"。
 
 ## 关键路径与命令
 
 ```bash
 cd /workspace/code/locomanipulation
 . scripts/paths.sh
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 单臂/纸箱都需要打过补丁的 deploy
-bash scripts/cpu_headroom.sh && nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
-find /workspace/tmp -maxdepth 3 -name stack.json          # 有输出 = 有栈在跑
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
+bash scripts/cpu_headroom.sh && nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory --format=csv,noheader
+find /workspace/tmp -maxdepth 3 -name stack.json     # 有输出 = 有栈在跑
 
-# 采集（两个终端；同一 yaml、同一 --name，否则 attach 被拒）
-bash scripts/start_stack.sh collect configs/experiments/box_room_20260922.yaml --gpu 0
-bash scripts/bimanual/run_agent_server.sh configs/experiments/box_room_20260922.yaml --gpu 0
-# 闭环评测（三个终端）
-bash scripts/start_stack.sh eval outputs/runs/<run> --gpu 0
-bash scripts/run_vla_server.sh outputs/runs/<run> --gpu 0
-bash scripts/single_arm/run_vla_inference.sh outputs/runs/<run> --gpu 0 --set rounds=1
-# 收栈（只收自己的实例）
-bash scripts/stop_stack.sh --instance <N>
+# warehouse 真专家（新方案），两个终端或一个脚本串起来
+bash scripts/start_stack.sh collect configs/experiments/box_room_grasp_20260923.yaml --gpu 0
+bash scripts/bimanual/run_agent_server.sh configs/experiments/box_room_grasp_20260923.yaml --gpu 0
+bash scripts/stop_stack.sh --instance 0
 
-# 闸门
-python3 scripts/gate.py compare simple "outputs/runs/<run>/collect/manifest_*.jsonl" tests/gate/baseline_simple.json
-python3 scripts/gate.py compare carry  "outputs/runs/<run>/manifest_*.jsonl"         tests/gate/baseline_carry.json
-# 本次新增单测 / 全量检查
-make test TESTS="tests/test_split_process_bookkeeping.py" && make check
-# 实跑脚本范例（scratch，改 yaml 后复用）：生成 gate8 变体 → start_stack collect → run_agent_server
+# walk 场景探针（各 .sh 自己起/收栈，instance 0；结果在 outputs/diagnostics/<name>）
+bash scripts/experiments/brake_marker_20260923.sh --speeds 0.25 --marker 0.9 --guard --extra 0.20 --margin 0.03 --repeats 50
+bash scripts/experiments/brake_then_reach_20260923.sh --box --reach-path staged --below-rim 0.010 --orientation-gain 1.0 --repeats 5
+bash scripts/experiments/speed_ramp_20260923.sh --mode 1
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/experiments/box_contact_20260923.py outputs/diagnostics/<run>
+
+make test TESTS="tests/test_crate_guard_retreat.py tests/test_crate_coordinated_reach.py" && make check
 ```
 
-- 阶段日志：进程内阶段现在写 `<run>/<stage>.log`（单臂 `collect_NN.log`，双臂 `<expert>_NN.log`）。
-- 纸箱房间线：台账 `docs/ledger/crate.md` 末尾三节；场景 `outputs/box_rim_execution_20260920/scene_reverse_camera`。
+- 资源：一个栈约 1 核 CPU、1.5 GB 显存；**GPU0 上别的进程启动瞬间会拖断 deploy**（SimpleRoboJev vision worker 实测过），
+  实验期间请把其它任务放 GPU1。
+- 视频交付：单文件 ≤500,000 字节，超了拆成编号分段（见 `docs/rendering.md#video-export`）。
