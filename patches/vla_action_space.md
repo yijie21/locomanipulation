@@ -4,7 +4,15 @@
 so these two edits live only in the working tree. `vla_action_space.patch` is
 `git diff` from inside `third_party/GR00T-WholeBodyControl`; re-apply with
 
-    cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch
+    cd third_party/GR00T-WholeBodyControl \
+      && git apply --include='gear_sonic/data/*' ../../patches/vla_action_space.patch \
+      && git apply ../../patches/exporter_priv_seq.patch
+
+The exporter hunks in this patch are superseded by `exporter_priv_seq.patch`
+(a newer cumulative diff of `run_data_exporter.py` that contains them plus the
+per-row priv_seq sidecar), hence the `--include`; applying this patch whole on
+top of that one fails with `patch does not apply`. Check with
+`git apply --check --reverse` on the same two commands.
 
 ## 1. `run_data_exporter.py` — record planner fields in mode 3 too
 

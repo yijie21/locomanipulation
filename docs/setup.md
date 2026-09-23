@@ -201,10 +201,16 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 是 267 而不是 78):
 
 ```bash
-(cd third_party/GR00T-WholeBodyControl && git apply ../../patches/vla_action_space.patch)
+(cd third_party/GR00T-WholeBodyControl \
+ && git apply --include='gear_sonic/data/*' ../../patches/vla_action_space.patch \
+ && git apply ../../patches/exporter_priv_seq.patch)
 ```
 
 原因见 [`patches/vla_action_space.md`](../patches/vla_action_space.md)。
+`vla_action_space.patch` 只取它的 `features_sonic_vla.py` 部分;exporter 用更新的
+[`exporter_priv_seq.patch`](../patches/exporter_priv_seq.md),它已包含前者的 exporter
+hunks 并加了 per-row priv_seq 旁路。整份 `vla_action_space.patch` 直接 apply 会在
+exporter 上与 `exporter_priv_seq.patch` 冲突。
 
 **验证**:
 
@@ -214,8 +220,12 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
  && .venv_sim/bin/python -c "import skfmm; print(skfmm.__version__)" \
  && ls gear_sonic_deploy/policy/sonic_v1_1/model_decoder.onnx \
  && ls gear_sonic_deploy/policy/release/model_decoder.onnx \
- && git apply --check --reverse ../../patches/vla_action_space.patch && echo "补丁已打")
+ && git apply --check --reverse --include='gear_sonic/data/*' ../../patches/vla_action_space.patch \
+ && git apply --check --reverse ../../patches/exporter_priv_seq.patch && echo "补丁已打")
 ```
+
+补丁已打的树上再跑一次 `git apply`(不带 `--check --reverse`)会报
+`patch does not apply`,这是 git 在找"打补丁前"的上下文找不到,不是补丁坏了。
 
 > **默认 checkpoint 是 `policy/sonic_v1_1`**(2026-09-11 用户裁定)。`sonic_v1_1/`
 > 缺失时 `locomani.stack.cli up` 会带着"这棵 deploy 树里有哪些 policy"直接失败退出,不会
