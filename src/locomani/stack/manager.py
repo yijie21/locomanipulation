@@ -97,7 +97,8 @@ class StackSpec:
 
     def child_env(self, base: dict | None = None) -> dict[str, str]:
         env = dict(os.environ if base is None else base)
-        for name in ("SIM_VIDEO_DIR", "SONIC_DDS_DOMAIN"):  # owned below: an inherited value must not leak in
+        # owned by `settings`, which sets them only conditionally: an inherited value must not leak in
+        for name in ("SIM_VIDEO_DIR", "SONIC_DDS_DOMAIN", "SONIC_AUTO_START", "MUJOCO_EGL_DEVICE_ID"):
             env.pop(name, None)
         env.update(self.settings())
         return env
@@ -197,6 +198,10 @@ def spec_from_config(
         encoder=not b.no_encoder,
         lockstep=bool(b.lockstep.enabled),
         auto_start=bool(b.clean_deploy or b.lockstep.enabled),
+        # Same rule as `pipeline.stack.start_stack` and `stack.cli`: a deploy nothing warms up with a
+        # planner command starts from this clip. This builder dropped it until 2026-09-23, so every
+        # clean eval stack from `start_stack.sh eval` started from the deploy's own default instead.
+        default_motion="neutral_kick_R_001__A543" if (b.clean_deploy or b.lockstep.enabled) else None,
         wrist_cams=bool(b.wrist_cams),
         video_dir=None if video_dir is None else str(video_dir),
         sim_vis=b.sim_vis,
@@ -212,10 +217,14 @@ class Stack:
 
     CHILDREN = ("sim", "deploy", "exporter")
 
-    def __init__(self, spec: StackSpec, *, base_env: dict | None = None, record_command=None, run_dir=None):
+    def __init__(self, spec: StackSpec, *, base_env: dict | None = None, record_command=None, run_dir=None, mode=None):
         self.spec = spec
         self.root = session_root(spec.instance)
-        self.run_dir = None if run_dir is None else Path(run_dir)  # where to leave stack_env.json
+        # Where to leave stack_env.json, and -- through the state file -- which run this stack
+        # serves: the process that attaches later checks it (`run_context.require_stack_of`).
+        self.run_dir = None if run_dir is None else Path(run_dir)
+        self.mode = mode  # "collect" / "eval" when a stage started it
+        self.session: Path | None = None  # the exporter session the running exporter records into
         self.env = spec.child_env(base_env)
         self.pids: dict[str, int] = {}
         self._procs: dict[str, subprocess.Popen] = {}  # handles of the children THIS process started (reaped on stop)
@@ -241,6 +250,9 @@ class Stack:
             spec=dataclasses.asdict(self.spec),
             pids=self.pids,
             ports=self.spec.ports(),
+            run_dir=None if self.run_dir is None else str(self.run_dir),
+            mode=self.mode,
+            session=None if self.session is None else str(self.session),
             root=str(self.root),
             owner=os.getpid(),
             started=time.time(),
@@ -254,8 +266,9 @@ class Stack:
         if not path.exists():
             raise FileNotFoundError(f"no stack state for instance {instance} ({path})")
         state = json.loads(path.read_text())
-        stack = cls(StackSpec(**state["spec"]))
+        stack = cls(StackSpec(**state["spec"]), run_dir=state.get("run_dir"), mode=state.get("mode"))
         stack.pids = {k: int(v) for k, v in state["pids"].items()}
+        stack.session = Path(state["session"]) if state.get("session") else None
         return stack
 
     # -- lock -----------------------------------------------------------------
@@ -447,13 +460,29 @@ class Stack:
             os.path.join(paths.SONIC, ".venv_data_collection", "bin", "python"),
             os.path.join(paths.SRC, "pipeline", "run_instance_exporter.py"),
         ]
-        argv += ["--task-prompt", s.prompt, "--root-output-dir", str(self.root / "outputs"), "--no-text-to-speech"]
+        # The session is NAMED here rather than found afterwards by mtime. The sessions directory
+        # is shared by every run on this instance, and the exporter only creates its session once
+        # the robot config arrives -- so "the newest one" could be the previous run's
+        # (2026-09-23). `convert` pairs session k with manifest k, so the name has to be certain.
+        sessions = self.root / "outputs"
+        sessions.mkdir(parents=True, exist_ok=True)
+        name = time.strftime("%Y-%m-%d-%H-%M-%S")
+        while (sessions / name).exists():
+            time.sleep(1.0)
+            name = time.strftime("%Y-%m-%d-%H-%M-%S")
+        self.session = sessions / name
+        argv += ["--task-prompt", s.prompt, "--root-output-dir", str(sessions), "--dataset-name", name]
+        argv.append("--no-text-to-speech")
         if s.wrist_cams:
             argv.append("--record-wrist-cameras")
         self._spawn("exporter", argv, cwd=paths.SONIC, env=env)
         time.sleep(8)
         if not _alive(self.pids["exporter"]):
             raise self._fail("exporter", "exited at start")
+        if not _wait(lambda: self.session.exists() or not _alive(self.pids["exporter"]), 60, 1.0):
+            raise self._fail("exporter", f"never opened its session {self.session}")
+        if not _alive(self.pids["exporter"]):
+            raise self._fail("exporter", "exited before opening its session")
 
     # -- lifecycle ------------------------------------------------------------
     def up(self) -> dict[str, str]:

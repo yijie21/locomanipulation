@@ -177,6 +177,9 @@ def parse_args(argv=None):
     )
     ap.set_defaults(clean=True)
     ap.add_argument("--allow-instance-0", action="store_true")
+    ap.add_argument(
+        "--keep-stack", action="store_true", help="with a run directory: leave the stack running when the rounds end"
+    )
     args = ap.parse_args(argv)
     if args.eval_config:
         apply_eval_config(ap, args)
@@ -239,9 +242,12 @@ def serve(args, out: Path, stage: Stage) -> subprocess.Popen:
 def evaluate_run(args):
     """Evaluate the run `args.run` names, filling the options in from the run itself.
 
-    This is what `run_eval_bimanual.py` was until 2026-09-22. The evaluator below still attaches
-    the stack and serves the checkpoint for itself (`--attach`), because it restarts the deploy
-    between batches -- so unlike the single-arm line, this function does not hold the stack.
+    This is what `run_eval_bimanual.py` was until 2026-09-22. The rounds below attach the stack
+    (`--attach`) and restart its deploy between batches; this function checks the stack is this
+    run's, admits the evaluation against what the stack already holds, and takes the stack down
+    at the end -- as the single-arm evaluator does. Until 2026-09-23 it did none of the three: the
+    headroom check charged the stack's own cores a second time, and an unattended run left the
+    stack up after its rounds.
     """
     from locomani.pipeline import run_context
     from locomani.tasks.crate import prepare
@@ -261,7 +267,19 @@ def evaluate_run(args):
         return 0
 
     checkpoint = run_context.checkpoint_of(run_dir)
-    run_context.require_headroom("eval", gpu=args.gpu, record=False)  # an evaluation runs no exporter
+    from locomani.stack import Stack
+
+    try:
+        stack = Stack.attach(int(collect["instance"]))
+    except FileNotFoundError:
+        raise SystemExit(
+            f"no stack on instance {collect['instance']}; start one in another terminal:\n"
+            f"  bash scripts/start_stack.sh eval {args.run} --gpu {args.gpu}"
+        )
+    run_context.require_stack_of(stack, run_dir, "eval")
+    run_context.require_headroom(  # an evaluation runs no exporter; the live stack is already paid for
+        "eval", gpu=args.gpu, record=False, already=run_context.group_threads(stack.pids.values())
+    )
     ev.mkdir(parents=True, exist_ok=True)
     evaluation.dump(ev / "eval_config.json")
 
@@ -275,7 +293,14 @@ def evaluate_run(args):
     args.instance = int(collect["instance"])
     args.serve_gpu = args.gpu
     apply_eval_config(argparse.ArgumentParser(), args)
-    _evaluate(args)
+    try:
+        _evaluate(args)
+    finally:
+        if not args.keep_stack:
+            try:  # re-read the state file: the rounds restarted the deploy, so its pid is new
+                Stack.attach(args.instance).down()
+            except FileNotFoundError:
+                pass  # already down
 
     result = json.loads((ev / "closed_loop.json").read_text())
     run_context.summarise(
@@ -346,6 +371,15 @@ def _evaluate(args):
                     f"no stack on instance {args.instance}; start one in another terminal:\n"
                     f"  bash scripts/start_stack.sh eval <run> --gpu {args.gpu}"
                 )
+            if live.spec.auto_start != args.clean:
+                # Clean rounds drop every planner command, the start included, so only
+                # SONIC_AUTO_START engages the deploy; unclean rounds start it themselves and an
+                # auto-started deploy fights them. `start_stack.sh eval` decides this from
+                # `lines.Line.eval_backend`; a stack from anywhere else may disagree (2026-09-23).
+                raise SystemExit(
+                    f"the stack on instance {args.instance} runs auto_start={live.spec.auto_start}, but these "
+                    f"rounds are {'clean' if args.clean else '--no-clean'}; restart the stack to match"
+                )
             run_vla_server.wait_for_server(args.port)
         else:
             server = serve(args, out, stage)
@@ -358,8 +392,8 @@ def _evaluate(args):
             if args.attach:
                 # The video directory is fixed when the sim starts, so an attached run writes
                 # every batch into the one the stack was given (eval/videos), not videos_<batch>.
-                if b:
-                    live.restart_deploy()
+                if b and not live.restart_deploy():
+                    raise RuntimeError(f"deploy restart before batch {tag} failed; see {live.root / 'deploy.log'}")
                 env = dict(live.env)
             else:
                 env = stack.start_stack(

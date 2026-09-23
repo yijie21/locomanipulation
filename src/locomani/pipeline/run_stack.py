@@ -61,19 +61,21 @@ def collect_spec(cfg: dict, run_dir: Path, scene: Path, collect_root: Path, trac
 
 
 def eval_spec(cfg: dict, run_dir: Path, scene: Path, gpu: str):
-    """The evaluation stack, built from the VALIDATED eval block.
+    """The evaluation stack, built from the VALIDATED eval block, as the run's line runs it.
 
     `EvalConfig` is where the client/clean_deploy invariant is applied; handing `spec_from_config`
     the file's raw dict instead walks straight past it, and the deploy then launches without
     SONIC_AUTO_START while the async commander suppresses the start_control that would have
-    engaged it (2026-09-17).
+    engaged it (2026-09-17). The line then has the last word, because the bimanual evaluator runs
+    its rounds clean under a pinned blocking client, which that invariant reads as "not clean"
+    (`lines.Line.eval_backend`, 2026-09-23).
     """
     evaluation = EvalConfig.from_dict(cfg["eval"])
     spec = spec_from_config(
         cfg,
         run_dir=run_dir,
         gpu=gpu,
-        backend=evaluation.backend.to_dict(),
+        backend=line_of(cfg).eval_backend(evaluation),
         scene_dir=scene,
         video_dir=run_dir / "eval" / "videos",
         record=False,
@@ -126,7 +128,12 @@ def main(argv: list[str] | None = None) -> int:
     # moment the starter forgets to hand the recorder over (found by the 2026-09-21 smoke, which
     # produced a one-line commands.jsonl next to the old path's stack rows).
     stage = Stage(run_dir)
-    stack = Stack(spec, base_env=spec.settings(), record_command=stage.record, run_dir=run_dir)
+    # The children inherit this process's environment under the spec's settings, as they did before
+    # the stack starter was its own process (`pipeline.stack.resolve_env`: "host bootstrap settings
+    # are inherited"). Handing them `spec.settings()` ALONE left sim, deploy and the first exporter
+    # without PATH, HOME or TMPDIR, while every child the attached driver restarts later inherits
+    # the driver's -- two environments inside one run (2026-09-23).
+    stack = Stack(spec, record_command=stage.record, run_dir=run_dir, mode=args.mode)
     stack.up()
     print(json.dumps(dict(instance=spec.instance, run=str(run_dir), pids=stack.pids, ports=spec.ports())))
     return 0

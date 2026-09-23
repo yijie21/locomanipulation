@@ -11,7 +11,9 @@
 #
 # Each block below is one stage and can be run on its own, in the terminals the stage documents.
 # A stage whose artifact is already in the run directory is skipped; to redo one, delete what it
-# produced (the dataset directory, model/, eval/closed_loop.json).
+# produced (the dataset directory, model/, eval/closed_loop.json). Collection counts as done only
+# when summary.json's collect entry kept as many episodes as the experiment asks for: a collection
+# that stopped short writes that entry too, and continuing past it converted the short dataset.
 set -u
 # shellcheck disable=SC1091
 . "$(dirname "$0")/paths.sh"
@@ -43,7 +45,15 @@ wanted() { [ "$(rank "$1")" -ge "$(rank "$FROM")" ] && [ "$(rank "$1")" -le "$(r
 # Two terminals in the documented path: the stack in one, the agent server in the other. Here the
 # stack is started in the background and the agent server runs in the foreground; the agent server
 # takes the stack down when it finishes, and the trap covers the case where it never gets there.
-if wanted collect && [ ! -f "$RUN/summary.json" ]; then
+collected() {
+    "$VENV_SIM_PY" -c "
+import json, pathlib, sys, yaml
+summary = pathlib.Path(sys.argv[1]) / 'summary.json'
+entry = json.loads(summary.read_text()).get('collect') if summary.exists() else None
+wanted = yaml.safe_load(open(sys.argv[2]))['collect']['successes']
+sys.exit(0 if entry and entry.get('kept', 0) >= wanted else 1)" "$RUN" "$EXPERIMENT"
+}
+if wanted collect && ! collected; then
     echo "=== collect ==="
     bash "$LOCOMANI_ROOT/scripts/start_stack.sh" collect "$EXPERIMENT" --gpu "$GPU" || exit 1
     INSTANCE=$("$VENV_SIM_PY" -c "
@@ -72,9 +82,12 @@ fi
 if wanted eval && [ ! -f "$RUN/eval/closed_loop.json" ]; then
     echo "=== evaluate ==="
     bash "$LOCOMANI_ROOT/scripts/start_stack.sh" eval "$RUN" --gpu "$GPU" || exit 1
+    INSTANCE=$("$VENV_SIM_PY" -c "
+import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))['collect']['instance'])" "$RUN/config.yaml")
     bash "$LOCOMANI_ROOT/scripts/run_vla_server.sh" "$RUN" --gpu "$GPU" &
     SERVER=$!
-    trap 'kill "$SERVER" 2>/dev/null' EXIT
+    # the rounds driver takes the stack down when it ends; this covers it never getting there
+    trap 'kill "$SERVER" 2>/dev/null; bash "$LOCOMANI_ROOT/scripts/stop_stack.sh" --instance "$INSTANCE" 2>/dev/null' EXIT
     bash "$LOCOMANI_ROOT/scripts/$LINE/run_vla_inference.sh" "$RUN" --gpu "$GPU"
     status=$?
     kill "$SERVER" 2>/dev/null

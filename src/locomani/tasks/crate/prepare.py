@@ -115,3 +115,15 @@ def trace_root(run_dir: Path) -> Path:
 def scene_name(cfg: dict, run_dir: Path) -> Path:
     """The copy keeps the SOURCE directory's name; the expert's own lookups depend on it."""
     return Path(run_dir) / Path(cfg["scene"]["dir"]).name
+
+
+def eval_backend(evaluation) -> dict:
+    """The eval stack's backend block: always a clean deploy, whatever `client` says.
+
+    `EvalConfig` ties `clean_deploy` to `client == "async"`, but this line's evaluator pins
+    `client="blocking"` AND runs its rounds clean (`vla_rounds --clean`, the default): a commander
+    that drops every planner command, including the start that would engage the deploy. Only
+    SONIC_AUTO_START engages it then. Taking the block unchanged started a deploy nothing engaged
+    -- `eval_crate_closed_loop --attach` now refuses that pairing too (2026-09-23).
+    """
+    return {**evaluation.backend.to_dict(), "clean_deploy": True}

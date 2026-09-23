@@ -24,8 +24,8 @@ exporter's threads grow with every episode against a container ceiling of 3840 p
 the deploy live across the whole run.
 
 Interrupted runs continue: `collect/inputs.json` records which batches finished and what they
-kept, and rerunning the same name picks up from the next batch. It is not episode-level resume;
-check the last batch's log and manifest before continuing.
+kept, and rerunning the same name reruns the unfinished batch from its start, its partial manifest
+moved aside (`batches.resume_state`). It is not episode-level resume.
 """
 
 from __future__ import annotations
@@ -198,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             f"no stack on instance {collect['instance']}; start one in another terminal:\n"
             f"  bash scripts/start_stack.sh collect {args.experiment} --gpu {args.gpu}"
         )
+    run_context.require_stack_of(stack, run_dir, "collect")
     # The stack is already up and was admitted by whoever started it; ask only for the rest.
     run_context.require_headroom(
         "collect", gpu=args.gpu, record=bool(collect["record"]), already=run_context.group_threads(stack.pids.values())
@@ -211,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     collect_root.mkdir(parents=True, exist_ok=True)
     prepare.trace_root(run_dir).mkdir(parents=True, exist_ok=True)
     inputs = collect_root / "inputs.json"
-    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
+    state = batches.resume_state(inputs)  # only finished batches count; an unfinished one reruns
 
     try:
         while state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"]:

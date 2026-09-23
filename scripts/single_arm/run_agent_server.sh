@@ -13,7 +13,7 @@
 # the robot and the world.
 #
 # The stack is taken down when the run ends (a recording stack holds ~1800 of the container's 3840
-# pids). Pass --keep-stack to leave it up for a second run.
+# pids). Pass --keep-stack to leave it up for a rerun of the SAME run; another run is refused.
 set -u
 # shellcheck disable=SC1091
 . "$(dirname "$0")/../paths.sh"

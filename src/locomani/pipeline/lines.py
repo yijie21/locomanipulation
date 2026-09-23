@@ -4,12 +4,15 @@ Single-arm and bimanual share the stack, the converter, the finetune and the ope
 differ in how a run is frozen before the stack starts (scene name, which configs the expert reads),
 in where the collected artifacts sit (`<run>/collect/` versus beside the run), and in where state
 traces go (`<run>/collect/state_trace` versus `<run>/trace`) -- the crate line's expert is handed
-that directory on its command line, so the two must not drift apart. Everything that
-depends on those two answers asks here, so the shared entries carry a lookup rather than an
+that directory on its command line, so the two must not drift apart. They also differ in whether
+the evaluation deploy engages itself: the single-arm rounds tie that to `client == "async"`, the
+bimanual rounds always run clean and need it on (`eval_backend`; the two disagreed from 2026-09-21
+to 2026-09-23, and a bimanual run-dir evaluation would have started a deploy nothing engaged).
+Everything that depends on those answers asks here, so the shared entries carry a lookup rather than an
 `if plugin == ...` branch -- the form that hides "declared in the config, never delivered", this
 repository's most expensive failure shape.
 
-Adding a line means adding a row here and the four functions above in its task package.
+Adding a line means adding a row here and the five functions above in its task package.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ class Line:
     collect_root: Callable[[Path], Path]  # where manifests and videos go
     trace_root: Callable[[Path], Path]  # where the sim writes state traces, and where the expert is told
     scene_name: Callable[[dict, Path], Path]  # what the frozen scene will be called, without freezing it
+    eval_backend: Callable[[object], dict]  # the backend block the EVAL stack runs, from the run's EvalConfig
 
 
 def _bottle() -> Line:
@@ -37,6 +41,7 @@ def _bottle() -> Line:
         collect_root=p.collect_root,
         trace_root=p.trace_root,
         scene_name=p.scene_name,
+        eval_backend=p.eval_backend,
     )
 
 
@@ -49,6 +54,7 @@ def _crate() -> Line:
         collect_root=p.collect_root,
         trace_root=p.trace_root,
         scene_name=p.scene_name,
+        eval_backend=p.eval_backend,
     )
 
 

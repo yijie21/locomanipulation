@@ -130,7 +130,7 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
 （每条轨迹一张图）、`run.log`。集群上训的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`；
 `train.holdout` 为 0 时没有 `val_dataset/`。指标含义见 [单臂详解](single_arm_design.md)。
 
-**产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
+**产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目且 kept 够数 / `train_dataset/` / `model/` /
 `eval/closed_loop.json`）。要重跑就**删掉它的产物**——整个续跑故事就这一条，`ls` 一眼看得见。
 
 **并行是多开一个终端换一张卡**，没有作业文件也没有调度器——**但换卡不够，还要换两个端口**：
@@ -150,8 +150,8 @@ bash scripts/run_overnight.sh configs/experiments/bottle_simple_gate8.yaml --gpu
 cat outputs/runs/*/summary.json                                  # 比较结果
 ```
 
-采集内部还有批级续跑：`collect/inputs.json` 记录已完成的批次，同名重跑接着采。这**不是**
-任意时刻的 episode 级恢复——先看最后一批的日志和 manifest 再继续。
+采集内部还有批级续跑：`collect/inputs.json` 只记完成的批次，中断的那批整批重来（半截 manifest 移到
+`interrupted_manifest_NN_*.jsonl`）。`--keep-stack` 留下的栈只给同一 run 同一模式用，别的 run 来 attach 会被拒。
 
 ## 7. 同一套脚本的另外两条线
 

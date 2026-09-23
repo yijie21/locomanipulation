@@ -51,6 +51,8 @@ def test_collection_rejects_an_old_binary_before_starting_resources(tmp_path, mo
     attached = Mock()
     attached.pids = {}
     attached.env = {"INSTANCE": "2"}
+    attached.run_dir = tmp_path / "runs" / cfg["name"]  # this run's own collect stack
+    attached.mode = "collect"
     monkeypatch.setattr(stack_module.Stack, "attach", Mock(return_value=attached))
     monkeypatch.setattr(run_context, "group_threads", lambda pids: 0)
     monkeypatch.setattr(crate_collect, "run_batch", Mock(side_effect=AssertionError("a round ran before admission")))

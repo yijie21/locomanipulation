@@ -130,9 +130,9 @@ bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 （每条轨迹一张图）、`run.log`。集群上训的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`；
 `train.holdout` 为 0 时没有 `val_dataset/`。指标含义见 [单臂详解](single_arm_design.md)。
 
-**产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目 / `train_dataset/` / `model/` /
-`eval/closed_loop.json`）。要重跑就**删掉它的产物**。同名重跑从首个未完成 batch 继续
-（读 `collect/inputs.json`），**不是** episode 级续采——先检查未完成 batch 的记录。
+**产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目且 kept 够数 / `train_dataset/` / `model/` /
+`eval/closed_loop.json`）。要重跑就**删掉它的产物**。同名重跑时中断的那批**整批重来**：半截 manifest 移到
+`interrupted_manifest_NN_*.jsonl`，session 不计入 `collect/inputs.json`。attach 的栈必须是本 run、本模式起的。
 
 **并行**：双臂不强制实例 0，所以可以 GPU 1 / 实例 1 录制，与单臂（GPU 0 / 实例 0）同时跑。
 **同一块 GPU 上不能跑两个仿真。** 容器 pid 上限 3840，开销几乎全在 exporter：实测 sim + deploy 仅

@@ -37,7 +37,8 @@ bash scripts/stop_stack.sh --instance 0   # only when a driver was killed before
 Every script takes `--dry-run`, which prints the commands and environment it would use and writes
 nothing. The first stage opens the run from an experiment file; the later ones take the run
 directory and read the copy of that file inside it. A stage whose artifact already exists is
-skipped by `run_overnight.sh`; delete the artifact to redo it. After conversion, `check_dataset.py` has
+skipped by `run_overnight.sh` (collection only once `summary.json` records enough kept episodes); delete
+the artifact to redo it. A driver refuses a stack that another run, or the other mode, started. After conversion, `check_dataset.py` has
 already run with `--run-dir`; `artifact_contract.py check <run_dir> <name>` says whether a stage
 left behind everything it owes.
 

@@ -9,13 +9,14 @@
 #
 # This line's evaluator restarts the DEPLOY between batches rather than the whole stack: an
 # evaluation runs no exporter, so there are no exporter threads to reclaim, and the deploy is what
-# the per-batch restart was ever for.
+# the per-batch restart was ever for. Takes the stack down when the rounds end; --keep-stack leaves
+# it up.
 set -u
 # shellcheck disable=SC1091
 . "$(dirname "$0")/../paths.sh"
 cd "$LOCOMANI_ROOT" || exit 1
 
-[ $# -ge 1 ] || { echo "usage: $(basename "$0") <run-dir> [--gpu N] [--dry-run]" >&2; exit 1; }
+[ $# -ge 1 ] || { echo "usage: $(basename "$0") <run-dir> [--gpu N] [--keep-stack] [--dry-run]" >&2; exit 1; }
 
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 exec "$VENV_SIM_PY" -m locomani.pipeline.eval_crate_closed_loop "$@"

@@ -222,6 +222,7 @@ def evaluate_run(args):
             f"no stack on instance {instance}; start one in another terminal:\n"
             f"  bash scripts/start_stack.sh eval {args.run} --gpu {args.gpu}"
         )
+    run_context.require_stack_of(stack, run_dir, "eval")
     # Attach FIRST, then ask only for what the running stack does not already hold. The collection
     # driver got this on 2026-09-21; the evaluation path never did, and with the stack and the
     # policy server both up it was refused for the 8 cores its own stack was already using

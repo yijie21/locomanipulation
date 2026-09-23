@@ -187,6 +187,33 @@ def require_headroom(stage: str, *, gpu: str | None = None, record: bool = True,
     return live
 
 
+def require_stack_of(stack, run_dir: Path, mode: str) -> None:
+    """Refuse to drive a stack another run -- or the other mode -- started.
+
+    Starting and driving are two processes since 2026-09-21, and the stack's children were told
+    this run's scene, trace directory, frame-audit file and video directory when they started. A
+    driver attached to someone else's stack (a `--keep-stack` left over from another run, or the
+    two terminals given different `--name`s) records into THAT run's directories with nothing to
+    show for it but a split run. The mode matters the same way: the collect stack runs the deploy
+    with its encoder, the eval stack without, and neither works for the other's driver.
+    """
+    owner = getattr(stack, "run_dir", None)
+    started = getattr(stack, "mode", None)
+    here = Path(run_dir).resolve()
+    restart = (
+        f"stop it (bash scripts/stop_stack.sh --instance {stack.spec.instance}) and start this run's own "
+        f"(bash scripts/start_stack.sh {mode} <same target> ...)"
+    )
+    if owner is None:
+        raise SystemExit(f"the stack on instance {stack.spec.instance} does not say which run started it; {restart}")
+    if Path(owner).resolve() != here:
+        raise SystemExit(f"the stack on instance {stack.spec.instance} serves {owner}, not {here}; {restart}")
+    if started != mode:
+        raise SystemExit(
+            f"the stack on instance {stack.spec.instance} was started for {started!r}, this is {mode!r}; {restart}"
+        )
+
+
 def require_deploy_patches(cfg: dict) -> None:
     """The streamed-pose experts need a patched deploy; check before anything is started."""
     from locomani.pipeline.provenance import require_pose_ownership

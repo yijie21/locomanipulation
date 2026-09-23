@@ -23,7 +23,8 @@ their CLI stays the seam for now. That argv never crosses a process boundary, wh
 that mattered -- but converting them to a `run(...)` like `expert.py`'s is the cleanup left.
 
 Interrupted runs continue: `collect/inputs.json` records which batches finished and what they
-kept, and rerunning the same name picks up from the next batch.
+kept, and rerunning the same name reruns the unfinished batch from its start
+(`batches.resume_state`).
 """
 
 from __future__ import annotations
@@ -87,17 +88,21 @@ def run_batch(cfg: dict, run_dir: Path, stack: Stack, state: dict) -> Path:
     name = f"{chosen}_{batch:02d}"
     stage = Stage(run_dir)
     stage.record_config(name, dict(plan, config=config.to_dict()), env=dict(stack.env))
-    with stage.timed(name):
-        try:
+    try:
+        with stage.timed(name):
             if chosen == "visual":
                 expert.run(config, **{k: v for k, v in plan.items() if k != "manifest"}, manifest=manifest)
             else:
-                diagnostic(chosen).main(diagnostic_argv(cfg, run_dir, batch))
-        except Exception as error:
-            # This line has always recorded a failing batch rather than ending the run: a batch can
-            # end on a failed round with the run still live. The subprocess form of this was a
-            # non-zero exit that `Stage.run` recorded and did not raise on.
-            print(f"{name}: expert ended with {type(error).__name__}: {error}", flush=True)
+                rc = diagnostic(chosen).main(diagnostic_argv(cfg, run_dir, batch))
+                if rc:
+                    raise SystemExit(rc)
+    except (Exception, SystemExit) as error:
+        # This line has always recorded a failing batch rather than ending the run: a batch can
+        # end on a failed round with the run still live. The subprocess form of this was a
+        # non-zero exit that `Stage.run` recorded and did not raise on -- whatever the expert
+        # exited with, `SystemExit` and a non-zero `main()` return included. Caught OUTSIDE
+        # `timed`, so timings.jsonl says rc 1 for this batch rather than 0 (2026-09-23).
+        print(f"{name}: expert ended with {type(error).__name__}: {error}", flush=True)
     return manifest
 
 
@@ -161,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             f"no stack on instance {collect['instance']}; start one in another terminal:\n"
             f"  bash scripts/start_stack.sh collect {args.experiment} --gpu {args.gpu}"
         )
+    run_context.require_stack_of(stack, run_dir, "collect")
     run_context.require_headroom(
         "collect", gpu=args.gpu, record=bool(collect["record"]), already=run_context.group_threads(stack.pids.values())
     )
@@ -170,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.update({k: str(v) for k, v in stack.env.items()})
     prepare.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
     inputs = inputs_path(run_dir)
-    state = json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
+    state = batches.resume_state(inputs)  # only finished batches count; an unfinished one reruns
 
     try:
         while state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"]:

@@ -276,7 +276,7 @@ bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_ga
 | `config_snapshot.json`、`deploy_receipts.jsonl` | 配置、输入身份与部署模型 |
 | `collect_00.log`、`commands.jsonl`、`timings.jsonl` | 专家日志、阶段启动命令与阶段耗时 |
 | `collect/manifest_00.jsonl` | 每次尝试的指令、结果、`produced`；放置指标和轨迹在 `execution.metrics.place` / `execution.metrics.place_trace` |
-| `collect/inputs.json` | session / manifest 的有序配对及采集进度 |
+| `collect/inputs.json` | session / manifest 的有序配对及采集进度（只记完成的批；中断批的半截 manifest 移为 `collect/interrupted_manifest_NN_*.jsonl`） |
 | `collect/videos_00/*.mp4`、`collect/state_trace_00/` | 完整过程原片及物理轨迹 |
 | `/workspace/tmp/p03/outputs/<时间戳>/` | exporter 原始 session；配对以 `inputs.json` 为准 |
 

@@ -12,7 +12,10 @@ import contextlib
 import json
 import os
 import subprocess
+import sys
+import threading
 import time
+import traceback
 from pathlib import Path
 
 from locomani import paths
@@ -115,12 +118,23 @@ class Stage:
 
     @contextlib.contextmanager
     def timed(self, name: str):
-        """Time an in-process stage and record how it ended, as `run` does for a child."""
+        """Time an in-process stage, keep its output in `<name>.log`, and record how it ended.
+
+        The log is what `run` leaves for a child. The stages that moved in-process on 2026-09-22
+        left none, while the runbooks still sent readers to `collect_NN.log` / `visual_NN.log`
+        for per-round outcomes -- so an unattended run's only record was a terminal (2026-09-23).
+        """
         started = time.time()
-        print(f"{name}: start", flush=True)
+        log = self.out / f"{name}.log"
+        print(f"{name}: start  log={log}", flush=True)
         rc = 0
         try:
-            yield
+            with tee_output(log, f"===== {name} start {time.strftime('%FT%TZ', time.gmtime())} ====="):
+                try:
+                    yield
+                except BaseException:
+                    traceback.print_exc()  # into the log: a caller may catch it and carry on
+                    raise
         except BaseException:
             rc = 1
             raise
@@ -128,3 +142,50 @@ class Stage:
             with (self.out / "timings.jsonl").open("a") as f:
                 f.write(json.dumps(dict(stage=name, start=started, seconds=time.time() - started, rc=rc)) + "\n")
             print(f"{name}: exit {rc}", flush=True)
+
+
+@contextlib.contextmanager
+def tee_output(log: Path, header: str):
+    """Copy everything written to fds 1 and 2 -- Python, C extensions, children -- into `log` too.
+
+    At the descriptor level rather than by swapping `sys.stdout`, because the gym's clients and the
+    libraries under them write to the fds directly, and a child a stage spawns inherits them.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    saved = (os.dup(1), os.dup(2))
+    read, write = os.pipe()
+    with Path(log).open("ab") as f:
+        f.write(("\n" + header + "\n").encode())
+        f.flush()
+
+        def pump() -> None:
+            try:
+                while chunk := os.read(read, 65536):
+                    try:
+                        os.write(saved[0], chunk)
+                    except OSError:
+                        pass  # the terminal went away; the log still gets it
+                    f.write(chunk)
+                    f.flush()
+            except (OSError, ValueError):
+                pass  # the stage ended with a child still holding the pipe; its output stops here
+
+        thread = threading.Thread(target=pump, name=f"tee:{Path(log).name}", daemon=True)
+        thread.start()
+        os.dup2(write, 1)
+        os.dup2(write, 2)
+        os.close(write)
+        try:
+            yield
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(saved[0], 1)
+            os.dup2(saved[1], 2)
+            # EOF arrives once no copy of the write end is left; a child that outlived the stage
+            # still holds one, so bound the wait rather than hang on it.
+            thread.join(timeout=5)
+            os.close(read)
+            os.close(saved[0])
+            os.close(saved[1])

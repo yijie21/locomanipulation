@@ -74,9 +74,10 @@ def test_the_driver_is_not_charged_for_the_stack_it_attaches_to(run_dir, monkeyp
     looked up, so the order is attach, then ask for the rest. A machine with no stack at all is
     told to start one, which is the thing that would have to happen anyway.
     """
-    experiment, _ = run_dir
+    experiment, run = run_dir
     seen = {}
-    monkeypatch.setattr(bottle_collect.Stack, "attach", Mock(return_value=_stack_with(pids={"sim": 11, "deploy": 12})))
+    stack = _stack_with(pids={"sim": 11, "deploy": 12}, run_dir=run, mode="collect")
+    monkeypatch.setattr(bottle_collect.Stack, "attach", Mock(return_value=stack))
     monkeypatch.setattr(run_context, "group_threads", lambda pids: 313)
     monkeypatch.setattr(run_context, "require_headroom", lambda *a, **k: seen.update(k) or {})
     monkeypatch.setattr(bottle_collect, "run_batch", Mock(side_effect=SystemExit("stop here")))
@@ -85,9 +86,11 @@ def test_the_driver_is_not_charged_for_the_stack_it_attaches_to(run_dir, monkeyp
     assert seen.get("already") == 313
 
 
-def _stack_with(pids):
+def _stack_with(pids, run_dir=None, mode=None):
     stack = Mock()
     stack.pids = pids
+    stack.run_dir = run_dir  # which run started it, and for what: the driver checks both
+    stack.mode = mode
     # The entry copies the stack's environment into its own before opening any client, so the
     # stand-in needs a real mapping rather than a Mock attribute.
     stack.env = {"INSTANCE": "0"}
@@ -103,4 +106,5 @@ def _line_that_prepares_nothing(cfg):
         collect_root=lambda r: r / "collect",
         trace_root=lambda r: r / "collect" / "state_trace",
         scene_name=lambda c, r: r / "scene",
+        eval_backend=lambda evaluation: evaluation.backend.to_dict(),
     )

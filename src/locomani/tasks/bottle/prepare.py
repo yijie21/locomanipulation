@@ -44,3 +44,12 @@ def collect_root(run_dir: Path) -> Path:
 def trace_root(run_dir: Path) -> Path:
     """One directory per run since 2026-09-21; the file names carry the episode's timestamp."""
     return Path(run_dir) / "collect" / "state_trace"
+
+
+def eval_backend(evaluation) -> dict:
+    """The eval stack's backend block, as `EvalConfig` validated it.
+
+    `EvalConfig` already ties `clean_deploy` to `client == "async"`, which is exactly the pairing
+    `eval_closed_loop` installs its commander by, so this line takes the block unchanged.
+    """
+    return evaluation.backend.to_dict()
