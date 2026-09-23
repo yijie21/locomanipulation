@@ -52,10 +52,21 @@
   - [x] 2.4.3 起点 advance 0 + 刹车余量 0.05（`box_room_approach`）0/10；`walk_steer: depth`（`box_room_steer`）0/10、停位离散 1.2 cm（2026-09-23）
   - [x] 2.4.4 真专家接入守线 + staged + orientation_gain + 1 cm 抓深 + 后退（`box_room_grasp_20260923`）0/10，守线 6/10 越线（2026-09-23）
   - [ ] 2.4.5 提交 2.4.4 的代码（expert/visual_approach/visual_config/grasp_region/diag_brake 改动 + `primitives/foot_watch.py`、`tasks/crate/retreat.py`、`tests/test_crate_guard_retreat.py`、`box_room_grasp_20260923.yaml`；默认全关，`make check` 已过）
-  - [ ] 2.4.6 warehouse 起点后移 0.3–0.4 m，用真专家（手臂前伸姿态）重标守线的刹车后滑行，再验证不越线
+  - [x] 2.4.6 warehouse 起点后移 0.3–0.4 m，用真专家（手臂前伸姿态）重标守线的刹车后滑行，再验证不越线（2026-09-23：后移 0.25 m 到离线 0.90 m；根因其实是慢仿真，见 2.4.10）
   - [ ] 2.4.7 伸手回到不摔的 carry 块（crate 值 + 0.7/0.04），另解"手悬在目标上方 5–10 cm 下不来"
   - [ ] 2.4.8 跑通后退段（`retreat_distance 0.3`），出 10 局视频
   - [ ] 2.4.9 纸箱抓深常量 `GRASP_BELOW_RIM_M` 仍为 0.025；warehouse 靠配置 `box_grasp_below_rim 0.01`（决定是否改常量）
+  - [x] 2.4.10 查"warehouse 过冲撞箱"：抬着手走 9/10 撞箱 → 改手臂下垂走、刹后抬手（`box_room_grasp_hanging*`）（2026-09-23）
+    - [x] 2.4.10.1 站起后重放置 + 世界轴行走；守线线取箱子前面；`walk_body_past_line_max`（2026-09-23）
+    - [x] 2.4.10.2 原样重跑排除资源抢占（`box_room_grasp_hanging2_rerun`，仍 0.35×）（2026-09-23）
+    - [x] 2.4.10.3 定位慢仿真根因：纸箱 46 万面网格 + 阴影，3 路渲染 39 ms（`warehouse_speed_20260923` + 离线拆分）（2026-09-23）
+    - [x] 2.4.10.4 `backend.render: offline` + 占位帧 + `scripts/render_trace_videos.py`；离线 10 局 0/10，停得太远（`box_room_grasp_offline_20260923`，视频在 previews/）（2026-09-23）
+    - [x] 2.4.10.5 不录制的栈 CPU 预留 5 核（`NO_EXPORTER_CORES`）（2026-09-23）
+    - [ ] 2.4.10.6 离线模式下守线余量 0.15 → 0.03，再跑 10 局（用户已暂停，待其确认）
+    - [ ] 2.4.10.7 停近后若仍够不到：解决伸手段（手指差 27–44 cm、高 12 cm）
+    - [ ] 2.4.10.8 纸箱显示网格减面（46 万 → ~5k 面）或关阴影，让实时渲染/VLA 评测也跑满速；先问协作者 `assets/crates/nor_cal_box/visual/`
+    - [ ] 2.4.10.9 `diag_brake` 补 reanchor（非 0 起始朝向场景一起步就转 ~90°）
+    - [ ] 2.4.10.10 提交本会话代码（见 STATE 的文件清单），`make check` 已过
 - [ ] 2.5 待验证：摔倒 6/20 为何比合成桌子多（假设：reanchor/IDLE 期间贴着托盘垛）
 - [ ] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续
 - [ ] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（假设，未改）
