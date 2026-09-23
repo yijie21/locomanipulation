@@ -65,6 +65,9 @@ class SonicBackendConfig:
     eval_parallel: bool = False  # EVAL_PARALLEL: this run is one arm of a parallel multi-instance measurement
     sonic_dds_domain: int | None = None  # SONIC_DDS_DOMAIN: DDS domain id so parallel sim+deploy pairs don't cross
     lockstep: LockstepConfig = field(default_factory=LockstepConfig)
+    render: str = field(
+        default="live", metadata={"choices": ("live", "offline")}
+    )  # live: the sim renders and publishes the cameras (and SIM_VIDEO_DIR's video) every tick; offline: it renders nothing -- the assisted crate expert runs on placeholder frames and videos are rendered from the state trace afterwards (scripts/render_trace_videos.py). 2026-09-23: rendering the warehouse box's 463k-face mesh held that sim at 0.35x real time
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

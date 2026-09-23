@@ -91,7 +91,13 @@ def run_batch(cfg: dict, run_dir: Path, stack: Stack, state: dict) -> Path:
     try:
         with stage.timed(name):
             if chosen == "visual":
-                expert.run(config, **{k: v for k, v in plan.items() if k != "manifest"}, manifest=manifest)
+                expert.run(
+                    config,
+                    **{k: v for k, v in plan.items() if k != "manifest"},
+                    manifest=manifest,
+                    # this process attaches to the stack, so the stack's LOCOMANI_BACKEND_JSON never reached it
+                    render=cfg.get("backend", {}).get("render", "live"),
+                )
             else:
                 rc = diagnostic(chosen).main(diagnostic_argv(cfg, run_dir, batch))
                 if rc:

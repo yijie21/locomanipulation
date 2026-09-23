@@ -17,12 +17,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from locomani import paths
 from locomani.backends.sonic import upper_ref
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
+from locomani.backends.sonic.config import DEFAULT_BACKEND
 from locomani.backends.sonic.pose_preview import PosePreview
-from locomani.backends.sonic.primitives import Primitives, upper_body_from_mj
+from locomani.backends.sonic.primitives import DT, Primitives, upper_body_from_mj
 from locomani.backends.sonic.streamed_arm import PlannerArm, StreamedArm, reanchor
 from locomani.pipeline.execution_record import RoundResult
 from locomani.pipeline.provenance import require_pose_ownership
 from locomani.primitives.arm_ik import ArmIK
+from locomani.primitives.foot_watch import FootWatch, GuardBrake
 from locomani.sim import ports
 from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.assisted_guidance import AssistedGuidance
@@ -33,6 +35,7 @@ from locomani.tasks.crate.evaluation import evaluate
 from locomani.tasks.crate.grasp_region import grasp_points_for, target_key
 from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
+from locomani.tasks.crate.retreat import retreat
 from locomani.tasks.crate.round_runner import prime
 from locomani.tasks.crate.visible_target import VisibleTarget
 from locomani.tasks.crate.visual_approach import (
@@ -41,6 +44,7 @@ from locomani.tasks.crate.visual_approach import (
     approach_heading,
     edge_distance,
     initial_robot_xy,
+    near_edge,
     scene_object_yaw,
 )
 from locomani.tasks.crate.visual_low_reach import VisualLowReach
@@ -48,28 +52,34 @@ from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
 
 
-def prepare_stationary_ready(
-    p,
-    reset,
-    cfg,
-    solver,
-    *,
-    placement: Callable[[str], None],
-    whole_body: bool = False,
-    on_phase: Callable[[str, dict], None] | None = None,
-    heading: float = 0.0,
-):
-    """Run the visual expert's stationary controller preparation and admission.
+class PlaceholderCamera:
+    """backend.render offline: the sim renders nothing, so every read is three black frames at the published
+    camera size. Only the assisted expert may run on it (its pose and visibility are geometric).
 
-    ``placement`` owns scene-specific reset contents. This lets floor-only
-    diagnostics use the original controller sequence without inventing a crate
-    or maintaining another ready-state initializer.
-    """
+    Frames change at the live stream's ~30 Hz, not on every read: the reach rejects an estimate stamped after its
+    own `now`, which a per-read stamp always is (every offline round ended `vision_lost`, 2026-09-23)."""
 
-    def phase(name: str, **details) -> None:
-        if on_phase is not None:
-            on_phase(name, details)
+    shapes = dict.fromkeys(("ego_view", "left_wrist", "right_wrist"), (480, 640, 3))  # sim CAMERA_CONFIGS
+    period = 1 / 30
 
+    def __init__(self):
+        self.stamp = 0.0
+
+    def read(self):
+        now = time.time()
+        if now - self.stamp >= self.period:
+            self.stamp = now
+        return {
+            "images": {n: np.zeros(s, np.uint8) for n, s in self.shapes.items()},
+            "timestamps": dict.fromkeys(self.shapes, self.stamp),
+        }
+
+    def close(self):
+        pass
+
+
+def stand_up(p, reset, *, placement, whole_body, phase, heading):
+    """Rest arms, place the scene, start control and stand in IDLE (>= 3 s) facing `heading`; arms stay the planner's."""
     phase("preparation_started", whole_body=whole_body)
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
@@ -99,6 +109,56 @@ def prepare_stationary_ready(
         phase("post_reanchor_idle_complete", before_s=1.5, after_s=3.0)
     if not whole_body:
         p.cmd.heading_offset = float(p.pelvis_yaw(p.obs()))
+
+
+class HangingWalk:
+    """approach_stop=guard's walk: plain planner frames, the walking policy's own swinging arms -- the condition the
+    guard brake was calibrated in (walk scene, diag_brake.trial). Arms raised during the walk put the fingers into
+    the warehouse box 0.9-1.6 s after the start in 6/10 rounds (box_room_grasp_20260923). Implements the part of
+    PlannerArm the approach loop drives; the arms are readied in place after the brake (prepare_stationary_ready)."""
+
+    def __init__(self, p, heading):
+        self.p, self.mode = p, LocomotionMode.IDLE
+        self._face = (float(np.cos(heading)), float(np.sin(heading)), 0.0)
+        self.q = np.asarray(p.obs()["joints"], dtype=float).copy()
+        self.next_t = time.time()
+
+    def _push(self, _q=None, *, reference_velocity=None, movement=(0.0, 0.0, 0.0), speed=-1.0) -> None:
+        self.p.cmd.frame(mode=self.mode, facing=self._face, movement=movement, speed=speed)
+        self.next_t += DT
+        lag = self.next_t - time.time()
+        if lag > 0:
+            time.sleep(lag)
+        else:
+            self.next_t = time.time()
+
+    def stop(self) -> None:
+        pass
+
+
+def prepare_stationary_ready(
+    p,
+    reset,
+    cfg,
+    solver,
+    *,
+    placement: Callable[[str], None],
+    whole_body: bool = False,
+    on_phase: Callable[[str, dict], None] | None = None,
+    heading: float = 0.0,
+):
+    """Run the visual expert's stationary controller preparation and admission.
+
+    ``placement`` owns scene-specific reset contents. This lets floor-only
+    diagnostics use the original controller sequence without inventing a crate
+    or maintaining another ready-state initializer.
+    """
+
+    def phase(name: str, **details) -> None:
+        if on_phase is not None:
+            on_phase(name, details)
+
+    stand_up(p, reset, placement=placement, whole_body=whole_body, phase=phase, heading=heading)
     arm = PlannerArm(p, "right", send_vel=False, left_guard=False)
     arm.start()
     phase("planner_arm_started", settle_seconds="default")
@@ -170,8 +230,8 @@ def prepare_stationary_ready(
     }
 
 
-def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
-    """Place at the sampled table-edge distance; all initialization ends before recording."""
+def start_placement(reset, meta, cfg, rng):
+    """The sampled episode's reset: object jitter and yaw, robot start pose. Returns (placement, its record)."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
     # The object keeps the scene's own yaw (pi/2 in the synthetic table scenes,
     # 0 in the logistics room: long axis across the walk-in either way).
@@ -191,6 +251,17 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
             robot={"dxy": (start_xy - base).tolist(), "yaw": heading},
         )
 
+    return placement, {
+        "object_dxy": jitter.tolist(),
+        "object_yaw": float(yaw),
+        "start_edge_distance": start_distance,
+        "start_xy": start_xy.tolist(),
+    }
+
+
+def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
+    """Place at the sampled table-edge distance; all initialization ends before recording."""
+    placement, record = start_placement(reset, meta, cfg, rng)
     arm, preparation = prepare_stationary_ready(
         p,
         reset,
@@ -198,17 +269,55 @@ def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):
         solver,
         placement=placement,
         whole_body=whole_body,
-        heading=heading,
+        heading=approach_heading(meta),
     )
     preparation.pop("admission_state")
     preparation.pop("ready_reference")
-    return arm, {
-        **preparation,
-        "object_dxy": jitter.tolist(),
-        "object_yaw": float(yaw),
-        "start_edge_distance": start_distance,
-        "start_xy": start_xy.tolist(),
+    return arm, {**preparation, **record}
+
+
+def reset_hanging(p, reset, meta, cfg, rng):
+    """approach_stop=guard: place and stand with the planner's own arms; the ready arms come after the brake."""
+    placement, record = start_placement(reset, meta, cfg, rng)
+    heading = approach_heading(meta)
+    stand_up(p, reset, placement=placement, whole_body=True, phase=lambda *_a, **_k: None, heading=heading)
+    # Standing up drifts the robot ~11 cm and turns it ~12 deg off the walk-in axis (first hanging round,
+    # 2026-09-23); re-place it, as prepare_stationary_ready's second reset does, and wait out the landing.
+    placement("prepared_placement")
+    time.sleep(0.3)
+    walk = HangingWalk(p, heading)
+    state = p.obs()
+    began, quiet_since, stance_ready = float(state["t"]), None, False
+    while float(state["t"]) - began < cfg.walk_timeout and not state["fallen"]:
+        _w, x, y, _z = state["pelvis"]["quat"]
+        upright = 1 - 2 * (x * x + y * y) >= np.cos(np.radians(cfg.upright_tolerance_deg))
+        quiet = upright and state["pelvis"]["pos"][2] >= 0.72 and np.linalg.norm(state["pelvis"]["vel"]) < 0.06
+        quiet_since = (float(state["t"]) if quiet_since is None else quiet_since) if quiet else None
+        if quiet_since is not None and float(state["t"]) - quiet_since >= 1.0:
+            stance_ready = True
+            break
+        walk._push()
+        state = p.obs()
+    offset = np.asarray(state["pelvis"]["pos"][:2]) - np.asarray(record["start_xy"])
+    return walk, {
+        "initialization_resets": 2,
+        "initial_stance_ready": stance_ready,
+        "start_offset_m": offset.tolist(),
+        "start_yaw_error_deg": float(np.degrees((p.pelvis_yaw(state) - heading + np.pi) % (2 * np.pi) - np.pi)),
+        **record,
     }
+
+
+def box_front_line(state, key, box, axis):
+    """Distance along `axis` of the box's near face at its observed pose (world origin), from its `box` footprint."""
+    obj = state["objects"][key]
+    w, x, y, z = obj["quat"]
+    yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    rotation = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+    local = rotation.T @ axis
+    hx, hy = (float(v) for v in box["half_extent"][:2])
+    centre = np.asarray(obj["pos"][:2], dtype=float) + rotation @ np.asarray(box.get("centre", (0, 0, 0))[:2], float)
+    return float(axis @ centre - abs(local[0]) * hx - abs(local[1]) * hy)
 
 
 def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record=False, scene_xml=None):
@@ -228,7 +337,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     assisted = cfg.pose_source == "assisted"
     key = target_key(meta)
     target_meta = (meta.get("objects") or {}).get(key) or {}
-    grasp_points = grasp_points_for(target_meta)
+    grasp_points = grasp_points_for(target_meta, cfg.box_grasp_below_rim)
     geometry = {"grasp_points": grasp_points} if assisted else meta["crate_visual"]
     dataset_kind = (
         "ordinary_crate_assisted_low_reach_video_pilot"
@@ -240,7 +349,30 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     policy = VisualCratePolicy(geometry["grasp_points"], cfg)
     approach = VisualApproach(cfg)
     stand_attempts = approach.stand_attempts  # the list outlives the approach object
-    arm, placement = reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
+    # approach_stop=guard runs the walk-scene sequence (brake_then_reach_20260923): walk with the planner's own
+    # arms, guard-brake, ready the arms in place, reach. The line is the nearer of the target surface's edge and
+    # the box's front face; distances below are along the walk-in axis from the world origin.
+    guard = None
+    if cfg.approach_stop == "guard":
+        if not (assisted and whole_body):
+            raise ValueError("visual.approach_stop=guard needs pose_source assisted and carry.reach_control whole_body")
+        edge_xy, walk_axis = near_edge(meta)
+        guard = dict(
+            watch=FootWatch(scene_xml),
+            rule=GuardBrake(extra=cfg.guard_extra, margin=cfg.guard_margin, stride0=cfg.guard_stride0),
+            axis=walk_axis,
+            line=float(walk_axis @ edge_xy),
+            closest=-np.inf,  # frontmost low-body point relative to the line, max over the attempt (+ = crossed)
+            # the same for any geom reaching below the box top, over the walk only (the reach crosses it by design)
+            walk_closest=-np.inf,
+            brake=None,
+        )
+    retreat_record = None
+    arm, placement = (
+        reset_hanging(p, reset, meta, cfg, rng)
+        if guard is not None
+        else reset_ready(p, reset, meta, cfg, rng, solver, **({"whole_body": True} if whole_body else {}))
+    )
     if not placement["initial_stance_ready"]:
         arm.stop()
         return RoundResult(
@@ -251,6 +383,11 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         )
     reference = JointReference(arm.q, solver, speed=cfg.joint_speed, acceleration=cfg.joint_acceleration)
     initial = p.obs()
+    body_top = np.inf
+    if guard is not None and target_meta.get("box"):
+        guard["line"] = min(guard["line"], box_front_line(initial, key, target_meta["box"], guard["axis"]))
+        box = target_meta["box"]
+        body_top = float(initial["objects"][key]["pos"][2]) + float(box["centre"][2]) + float(box["half_extent"][2])
     if whole_body:
         distance = edge_distance(meta, initial["pelvis"]["pos"])
         if cfg.start_pose == "sampled" and not 1.2 <= distance <= 1.5:
@@ -270,13 +407,15 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 },
             )
     perception = (
-        AssistedGuidance(ArmIK(scene_xml), key=key, box=target_meta.get("box"))
+        AssistedGuidance(
+            ArmIK(scene_xml), key=key, box=target_meta.get("box"), rendered=not isinstance(camera, PlaceholderCamera)
+        )
         if assisted
         else CratePerception(ArmIK(scene_xml), geometry, max_reprojection_px=cfg.reprojection_px)
     )
     recorder = VisualRecording(directory / label)
     target_cache = VisibleTarget()
-    preparation = ApproachPreparation(solver, cfg, arm.q) if assisted and whole_body else None
+    preparation = ApproachPreparation(solver, cfg, arm.q) if assisted and whole_body and guard is None else None
     # The transport journals every reference send, even during mode priming.
     if hasattr(p, "cmd"):
         p.cmd.reference_observer = recorder.observe_reference
@@ -368,6 +507,14 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                     if assisted
                     else perception.approach_target(images, joints, stamp)
                 )
+                brake_now = False
+                if guard is not None:
+                    landed, front, stride = guard["watch"].update(raw, np.zeros(2), guard["axis"])
+                    brake_now, used = guard["rule"].should_brake(
+                        landed, front, stride, guard["watch"].last_strides, guard["line"]
+                    )
+                    if brake_now and guard["brake"] is None:
+                        guard["brake"] = dict(front_ankle_to_line=guard["line"] - front, stride=used, t=raw.get("t"))
                 nav = approach.step(
                     now,
                     target,
@@ -375,9 +522,10 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                     grasp_pose_available=estimate is not None,
                     **({"base_velocity": raw["pelvis"]["vel"]} if assisted else {}),
                     **motion_clock,
+                    guard_brake=brake_now,
                 )
                 admission = None
-                if nav.ready and assisted:
+                if nav.ready and assisted and guard is None:
                     probe = CoordinatedReach(
                         solver,
                         config,
@@ -404,8 +552,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                     arm._face = (float(np.cos(face)), float(np.sin(face)), 0.0)
                 direction = nav.direction.copy()
                 direction[:2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]] @ direction[:2]
+                if guard is not None and nav.speed > 0:
+                    direction = np.array([*guard["axis"], 0.0])  # world walk-in axis, as diag_brake walks
                 q, velocity = (
-                    (arm.q.copy(), np.zeros(29)) if preparation is None else preparation.step(float(raw["t"]), estimate)
+                    (joints.copy() if guard is not None else arm.q.copy(), np.zeros(29))
+                    if preparation is None
+                    else preparation.step(float(raw["t"]), estimate)
                 )
                 arm.q = q
                 recorder.context["phase"] = nav.phase
@@ -429,6 +581,28 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                     approach = None
             elif whole_body:
                 if low is None:
+                    if isinstance(arm, HangingWalk):
+                        # Guard stance is quiet: ready the arms in place, as the walk scene did after its brake
+                        # (a no-op placement keeps the robot where the brake left it). Blocks for ~10 s.
+                        print(f"[{label}] arm preparation at {now - started:.2f}s", flush=True)
+                        arm, prepared = prepare_stationary_ready(
+                            p,
+                            reset,
+                            cfg,
+                            solver,
+                            placement=lambda _reset_id: None,
+                            whole_body=True,
+                            heading=approach_heading(meta),
+                        )
+                        placement["arm_preparation"] = dict(
+                            initial_stance_ready=prepared["initial_stance_ready"],
+                            pelvis_xy=[float(v) for v in p.obs()["pelvis"]["pos"][:2]],
+                        )
+                        if not prepared["initial_stance_ready"]:
+                            reason = "arm_preparation_unstable"
+                            break
+                        last_camera_received = last_progress_wall = time.time()
+                        continue
                     # Body planning needs a currently admitted visible target.
                     if estimate is None:
                         arm._push(arm.q)
@@ -525,6 +699,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 arm.q = q
                 arm._push(q)
             last_command_time = now
+            if guard is not None:
+                past = guard["watch"].frontmost_low(raw, np.zeros(2), guard["axis"]) - guard["line"]
+                guard["closest"] = max(guard["closest"], past)
+                if isinstance(arm, HangingWalk):
+                    past = guard["watch"].frontmost_low(raw, np.zeros(2), guard["axis"], top=body_top) - guard["line"]
+                    guard["walk_closest"] = max(guard["walk_closest"], past)
             if command.phase != last_phase:
                 print(f"[{label}] {command.phase} at {now - started:.2f}s", flush=True)
                 last_phase = command.phase
@@ -571,6 +751,11 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
             if command.finished:
                 reason = command.reason
                 break
+        if reason == "completed" and cfg.retreat_distance > 0 and isinstance(arm, StreamedArm):
+            print(f"[{label}] retreat at {time.time() - started:.2f}s", flush=True)
+            reason, retreat_record, final = retreat(
+                p, arm, cfg, key, approach_heading(meta), float(initial["objects"][key]["pos"][2])
+            )
     except Exception:
         reason, error = "runtime_error", traceback.format_exc()
     finally:
@@ -609,6 +794,15 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
             prediction="shared_tangent_braking",
         )
     result["command_count"] = recorder.command_count
+    if guard is not None:
+        result["guard"] = dict(
+            line=guard["line"],
+            brake=guard["brake"],
+            frontmost_past_line_max=guard["closest"],
+            walk_body_past_line_max=guard["walk_closest"],
+        )
+    if retreat_record is not None:
+        result["retreat"] = retreat_record
     result["stand_attempts"] = list(stand_attempts)
     if result["ok"] and recorder.training_tail is not None:
         result["training_tail"] = recorder.training_tail
@@ -665,7 +859,7 @@ def main(argv=None):
     )
 
 
-def run(config, *, rounds, seed, manifest, label="visual_crate", record=False, scene_dir=None):
+def run(config, *, rounds, seed, manifest, label="visual_crate", record=False, scene_dir=None, render=None):
     """Every attempt this configuration asks for, against the scene it names.
 
     The entry for a caller that already HAS a configuration: the collection entry point builds one
@@ -687,10 +881,20 @@ def run(config, *, rounds, seed, manifest, label="visual_crate", record=False, s
     meta = json.loads(scene_meta.read_text())
     if config.visual.pose_source == "markers" and "crate_visual" not in meta:
         raise SystemExit("build a distinct painted scene with python -m locomani.tasks.crate.visual_scene")
-    from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
-
     manifest = Path(manifest)
-    camera = ComposedCameraClientSensor(server_ip="localhost", port=ports.port("TF_CAMERA_PORT"))
+    # `render` like `scene_dir`: an in-process caller hands over the run's backend.render; the import-time
+    # DEFAULT_BACKEND only knows it when this process was started with the stack's environment
+    if (render or DEFAULT_BACKEND.render) == "offline":
+        if config.visual.pose_source != "assisted":
+            raise SystemExit(
+                "backend.render offline needs visual.pose_source assisted: the markers expert reads pixels"
+            )
+        print("[expert] backend.render offline: placeholder frames, no camera stream", flush=True)
+        camera = PlaceholderCamera()
+    else:
+        from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
+
+        camera = ComposedCameraClientSensor(server_ip="localhost", port=ports.port("TF_CAMERA_PORT"))
     p, reset = Primitives(), EpisodeControlClient()
     directory = manifest.parent / "observations"
     directory.mkdir(parents=True, exist_ok=True)

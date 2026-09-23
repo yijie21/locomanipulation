@@ -12,7 +12,7 @@ class CrateVisualConfig:
     start_edge_min: float = 1.2  # initial pelvis distance from the near table edge, metres
     start_edge_max: float = 1.5  # upper end of initial table-edge distance sampling
     start_pose: str = "sampled"  # sampled: start_edge_min..max before the near edge; scene: the scene's robot_start, advanced by start_advance (the logistics-room box line starts where the box-rim reference round dy0.225_r00 did)
-    start_advance: float = 0.0  # metres forward of the scene's robot_start along its heading; start_pose scene only
+    start_advance: float = 0.0  # metres along robot_start heading (negative = back); start_pose scene only
     walk_speed: float = 0.35  # maximum SONIC approach speed command, metres/second
     walk_speed_min: float = (
         0.35  # smallest approach command; the deploy does not step below ~0.3, so a lower floor is a dead command
@@ -22,6 +22,16 @@ class CrateVisualConfig:
     settle_seconds: float = 1.0  # continuously quiet visual/IMU interval before reaching
     stand_lateral_tolerance: float = 0.04  # metres; final body IK still owns low-reach admission
     stand_lateral_gate: str = "walk"  # walk: keep walking until |lateral| is inside the tolerance; turn: stop on depth, then turn in place to face the target (ledger crate.md 2026-09-22: walking on for lateral is what overshoots depth)
+    approach_stop: str = "depth"  # depth: stop commanding steps at stand_off + walk_brake_margin; guard: the target surface's near edge is a line nothing below 0.37 m may cross -- brake on the foot landing where one more stride would (primitives/foot_watch.py; walk scene 50/50, docs/walk.md). Guard stances are accepted as they land (no depth re-walks). Guard also runs the walk scene's sequence: walk with the planner's own arms (no ApproachPreparation), ready the arms in place after the brake, no reach admission; the line is the nearer of the surface edge and a `box` target's front face
+    guard_extra: float = (
+        0.20  # guard: worst reach of the frontmost low-body point past the front planted ankle after IDLE, m
+    )
+    guard_margin: float = 0.03  # guard: clearance kept before the line, m
+    guard_stride0: float = 0.14  # guard: floor on the predicted next stride, m
+    box_grasp_below_rim: float = 0.025  # grasp point depth under the rim for scenes whose target carries a `box` (the cardboard box); the crate's bar ignores it. 0.01 in the warehouse: 0.025 put the Dex1 palm on the 1 cm wall top (2026-09-23)
+    retreat_distance: float = 0.0  # after a completed hold: walk this far backward holding the load, m; 0 = end at the hold. Success then requires the load still held after the retreat
+    retreat_speed: float = 0.35  # SLOW_WALK speed command for the retreat
+    retreat_timeout: float = 10.0  # simulated seconds allowed for the retreat
     walk_steer: str = "target"  # target: steer the movement at the planned stance (depth and lateral); depth: walk straight ahead on the body heading and stop on depth alone, the lateral residual left to the reach (2026-09-23: target steering turned the last 0.1 s of the walk up to 50 deg sideways and scattered the stance)
     stand_depth_tolerance: float = 0.04  # metres past stand_off a quiet stance may rest before re-walking
     stand_depth_retries: int = 2  # re-walks allowed when the quiet stance is farther than the tolerance
@@ -64,12 +74,18 @@ class CrateVisualConfig:
             raise ValueError("visual.stand_lateral_gate must be walk or turn")
         if self.walk_steer not in ("target", "depth"):
             raise ValueError("visual.walk_steer must be target or depth")
+        if self.approach_stop not in ("depth", "guard"):
+            raise ValueError("visual.approach_stop must be depth or guard")
         if self.reach_path not in ("direct", "staged"):
             raise ValueError("visual.reach_path must be direct or staged")
         if self.start_pose not in ("sampled", "scene"):
             raise ValueError("visual.start_pose must be sampled or scene")
         for name, value in vars(self).items():
-            if name in ("pose_source", "stand_lateral_gate", "start_pose", "walk_steer", "reach_path"):
+            if name in ("pose_source", "stand_lateral_gate", "start_pose", "walk_steer", "reach_path", "approach_stop"):
+                continue
+            if name == "start_advance":
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise ValueError("visual.start_advance must be a finite number")
                 continue
             if name == "descend_z_guard":
                 if not isinstance(value, bool):

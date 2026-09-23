@@ -30,7 +30,7 @@ def approach_heading(meta):
     return float(np.radians((meta.get("robot_start") or {}).get("yaw_deg", 0.0)))
 
 
-def _near_edge(meta):
+def near_edge(meta):
     """Centre of the target surface's edge facing the walk-in, and the unit walk-in axis."""
     surface = meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
     heading = approach_heading(meta)
@@ -41,13 +41,13 @@ def _near_edge(meta):
 
 def initial_robot_xy(meta, distance):
     """Start point `distance` metres before the near table edge, on the walk-in axis."""
-    edge, axis = _near_edge(meta)
+    edge, axis = near_edge(meta)
     return edge - axis * distance
 
 
 def edge_distance(meta, xy):
     """Signed distance from `xy` to the near table edge along the walk-in axis (positive = short of it)."""
-    edge, axis = _near_edge(meta)
+    edge, axis = near_edge(meta)
     return float(axis @ (edge - np.asarray(xy[:2], dtype=float)))
 
 
@@ -87,6 +87,8 @@ class VisualApproach:
 
     def retry_closer(self):
         """Use remaining braking allowance after unsupported reach admission; never pass stand_off."""
+        if self.config.approach_stop == "guard":
+            return False  # the guard stance is the nearest one that keeps the body behind the line
         if not self._tighten_stop():
             return False
         self._walk_again()
@@ -95,6 +97,10 @@ class VisualApproach:
     def _stance_converged(self):
         """Depth-axis convergence: a quiet stance farther than the tolerance re-walks while retries remain."""
         cfg = self.config
+        if cfg.approach_stop == "guard":
+            point = np.mean(self.quiet_points, axis=0)
+            self.stand_attempts.append(dict(depth_m=float(point[0]), lateral_m=float(point[1]), accepted=True))
+            return True
         # Judge the stance on the quiet interval's mean, not one pose sample:
         # millimetre pose jitter must not decide a re-walk any more than it
         # decides quietness.
@@ -114,8 +120,22 @@ class VisualApproach:
         self.stand_attempts.append(attempt)
         return True
 
-    def step(self, wall_time, target, base_quaternion, *, grasp_pose_available, motion_time=None, base_velocity=None):
-        """Use the motion clock for movement/settling, wall time for camera freshness."""
+    def step(
+        self,
+        wall_time,
+        target,
+        base_quaternion,
+        *,
+        grasp_pose_available,
+        motion_time=None,
+        base_velocity=None,
+        guard_brake=False,
+    ):
+        """Use the motion clock for movement/settling, wall time for camera freshness.
+
+        `guard_brake` (approach_stop=guard): the caller's foot-landing decision that one more stride would cross
+        the line; it replaces the stop_distance test.
+        """
         cfg = self.config
         now = wall_time if motion_time is None else float(motion_time)
         if self.started is None:
@@ -146,7 +166,10 @@ class VisualApproach:
         self.position = point.copy()
         aligned = abs(point[1]) < cfg.stand_lateral_tolerance
         depth_only = cfg.stand_lateral_gate == "turn" or cfg.walk_steer == "depth"
-        if self.phase == "walk" and point[0] <= self.stop_distance and (aligned or depth_only):
+        if cfg.approach_stop == "guard":
+            if self.phase == "walk" and guard_brake:
+                self.phase = "settle"
+        elif self.phase == "walk" and point[0] <= self.stop_distance and (aligned or depth_only):
             self.phase = "settle"
         if self.phase == "settle" and not aligned and cfg.stand_lateral_gate == "turn":
             # Depth is reached; the lateral residual is a heading error (a
@@ -175,10 +198,12 @@ class VisualApproach:
     def _walk_command(self, point, reason):
         cfg = self.config
         error = np.array([max(0, point[0] - cfg.stand_off), point[1], 0.0])
-        if cfg.walk_steer == "depth":
+        if cfg.walk_steer == "depth" or cfg.approach_stop == "guard":
             # Straight along the body heading: the braking carry measured in the walk scene is a
             # straight-line carry, and a pixel-noisy lateral term only swings the step direction.
             error[1] = 0.0
+        if cfg.approach_stop == "guard":
+            error = np.array([1.0, 0.0, 0.0])  # the line, not stand_off, ends the walk
         direction = error / max(np.linalg.norm(error), 1e-6)
         # The planner's speed field is not m/s and its map belongs to the deployed
         # stack (ledger crate.md 2026-09-22): 0.10 delivered 0.011 m/s over 940
@@ -186,7 +211,11 @@ class VisualApproach:
         # and 0.35 0.25 m/s with a 10 cm carry. A floor below the map's foot is a
         # walk that never starts, which is how a depth re-walk stood still for 20 s;
         # re-measure with backends/sonic/diag_shuffle.py before moving the floor.
-        speed = float(np.clip(0.7 * np.linalg.norm(error), cfg.walk_speed_min, cfg.walk_speed))
+        speed = (
+            cfg.walk_speed
+            if cfg.approach_stop == "guard"  # constant: the guard's calibration is a constant-speed gait
+            else float(np.clip(0.7 * np.linalg.norm(error), cfg.walk_speed_min, cfg.walk_speed))
+        )
         return ApproachCommand(self.phase, direction, speed, reason=reason)
 
 

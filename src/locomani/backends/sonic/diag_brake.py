@@ -24,58 +24,8 @@ import numpy as np
 
 from locomani import paths
 from locomani.backends.sonic.primitives import DT, LocomotionMode, Primitives
+from locomani.primitives.foot_watch import FootWatch, GuardBrake
 from locomani.sim.privileged_pub import EpisodeControlClient
-
-FEET = ("left_ankle_roll_link", "right_ankle_roll_link")
-
-
-class FootWatch:
-    """Planted-foot bookkeeping from the privileged state, by forward kinematics of the walk-scene model.
-
-    A foot is planted while its ankle is within 1 cm of its standing height. A landing is the tick a foot
-    becomes planted; the front planted ankle and the last stride (distance between consecutive landings)
-    are what the guard brake predicts from.
-    """
-
-    def __init__(self):
-        import mujoco
-
-        from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
-
-        self.mujoco = mujoco
-        self.model = mujoco.MjModel.from_xml_path(paths.SCENE_XML)
-        self.data = mujoco.MjData(self.model)
-        self.qadr = [int(self.model.jnt_qposadr[self.model.joint(n).id]) for n in MUJOCO_JOINT_NAMES]
-        self.feet = [self.model.body(n).id for n in FEET]
-        self.stand_z = None
-        self.planted = [True, True]
-        self.landings = []
-        self.last_strides = []
-
-    def feet_now(self, s):
-        q = self.data.qpos
-        q[:3] = s["pelvis"]["pos"]
-        q[3:7] = s["pelvis"]["quat"]
-        q[self.qadr] = s["joints"]
-        self.mujoco.mj_kinematics(self.model, self.data)
-        return [self.data.xpos[b].copy() for b in self.feet]
-
-    def update(self, s, x0, h):
-        """Returns (landed this tick, front planted ankle along h, last stride or None)."""
-        feet = self.feet_now(s)
-        if self.stand_z is None:
-            self.stand_z = [f[2] for f in feet]
-        planted = [f[2] < z + 0.01 for f, z in zip(feet, self.stand_z)]
-        landed = any(p and not was for p, was in zip(planted, self.planted))
-        self.planted = planted
-        along = [float((f[:2] - x0) @ h) for f in feet]
-        if landed:
-            self.landings.append(max(a for a, p in zip(along, planted) if p))
-        front = max((a for a, p in zip(along, planted) if p), default=float("nan"))
-        stride = self.landings[-1] - self.landings[-2] if len(self.landings) >= 2 else None
-        self.last_strides = list(np.diff(self.landings[-3:]))  # the most recent (up to) two strides
-        return landed, front, stride
-
 
 SIM_HZ = 50  # privileged state publishes per simulated second; `seq` counts them
 
@@ -121,7 +71,8 @@ def trial(
     n = np.array([-h[1], h[0]])
     fv = (h[0], h[1], 0.0)
     xy0 = p.pelvis_xy(s).copy()
-    watch = FootWatch()
+    watch = FootWatch(paths.SCENE_XML)
+    brake_rule = None if guard is None else GuardBrake(**guard)
     reset.start_video(label)
     recent = deque(maxlen=SIM_HZ // 2)  # (seq, forward) over the last 0.5 simulated s
     brake, pending = None, None
@@ -155,14 +106,8 @@ def trial(
                     moved, still_since, trigger = False, None, False
                 trigger = trigger or s["seq"] - first > waypoint["timeout"] * SIM_HZ
             if guard is not None:
-                if guard.get("stride_mode") == "recent2":
-                    # the larger of the last two strides; stride0 only until two strides exist. At 0.20-0.25 the
-                    # strides run 2-22 cm, and the fixed 14 cm floor bound on every brake (2026-09-23)
-                    strides = watch.last_strides
-                    stride = max(strides) if len(strides) >= 2 else guard["stride0"]
-                else:
-                    stride = guard["stride0"] if stride is None else max(stride, guard["stride0"])
-                if pending is None and landed and front + stride + guard["extra"] >= marker - guard["margin"]:
+                decide, stride = brake_rule.should_brake(landed, front, stride, watch.last_strides, marker)
+                if pending is None and decide:
                     # C: the brake may be held back `brake_delay` simulated seconds after the landing that
                     # decided it, so the feet are further into the stride when IDLE arrives
                     pending = s["seq"] + int(brake_delay * SIM_HZ)

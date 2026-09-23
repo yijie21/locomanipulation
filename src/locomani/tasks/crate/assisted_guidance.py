@@ -13,8 +13,11 @@ from locomani.tasks.crate.perception import Camera, CrateEstimate
 class AssistedGuidance:
     streams = {"ego_view": "head_camera", "left_wrist": "left_wrist", "right_wrist": "right_wrist"}
 
-    def __init__(self, ik, key="blue_crate", box=None):
+    def __init__(self, ik, key="blue_crate", box=None, *, rendered=True):
+        """`rendered=False` (backend.render offline): the frames are placeholders, so the blank-stream test is
+        skipped; visibility is geometric either way."""
         self.ik = ik
+        self.rendered = rendered
         self.key = key
         self.body = ik.model.body(f"{key}_object").id
         self.object_qadr = int(ik.model.jnt_qposadr[ik.model.body_jntadr[self.body]])
@@ -50,7 +53,7 @@ class AssistedGuidance:
         points = self.samples @ obj_rotation.T + obj["pos"]
         visible = {}
         for stream, name in self.streams.items():
-            if stream not in images or np.std(images[stream]) < 1:
+            if stream not in images or (self.rendered and np.std(images[stream]) < 1):
                 continue
             cid = m.camera(name).id
             height, width = images[stream].shape[:2]

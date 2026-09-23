@@ -31,6 +31,13 @@ def test_a_busy_quota_refuses_the_stages_that_need_cores():
     assert run_common.shortfall("convert", live) is None  # 9 + 4 still fits
 
 
+def test_a_stack_without_the_exporter_is_charged_its_own_cores():
+    live = dict(IDLE, cores=9.2)  # 9.2 + 8 > 15.36, 9.2 + 5 fits
+    assert "cpu" in run_common.shortfall("collect", live)
+    assert run_common.shortfall("collect", live, record=False) is None
+    assert "cpu" in run_common.shortfall("collect", dict(live, cores=11.0), record=False)
+
+
 def test_a_driver_attaching_to_a_live_stack_is_not_charged_the_stack_again():
     """The stack's ~5 cores are already inside `cores`; the driver only needs its own."""
     live = dict(IDLE, cores=9.5)  # others 4.5 + our stack 5: a fresh stack would not fit

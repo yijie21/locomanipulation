@@ -47,6 +47,10 @@ NO_EXPORTER_PIDS = 400
 # measured 2026-09-22 at 1-1.5 cores while a sim + deploy stack held ~5. Charging the attaching
 # driver the whole stage budget refused it whenever anything else on the box held ~3 cores.
 ATTACH_CORES = 2
+# A stack WITHOUT the exporter: the same 2026-09-22 measurement's ~5 cores for sim + deploy. The
+# 8 above is the recording stack's; like NO_EXPORTER_PIDS, a run that records nothing is not
+# charged for it (2026-09-23: a render-offline pilot refused at 9.2 in use + 8 > 15.36).
+NO_EXPORTER_CORES = 5
 
 
 def open_run(experiment: Path | str, name: str | None = None, *, write: bool = True) -> tuple[dict, Path]:
@@ -182,7 +186,8 @@ def shortfall(stage: str, live: dict, *, record: bool = True, already: int = 0) 
     """
     need = NEEDS[stage]
     pids_needed = max((need["pids"] if record else min(need["pids"], NO_EXPORTER_PIDS)) - already, 0)
-    cores_needed = ATTACH_CORES if already > 0 else need["cores"]  # the live stack's cores are in `cores`
+    # the live stack's cores are in `cores`
+    cores_needed = ATTACH_CORES if already > 0 else need["cores"] if record else min(need["cores"], NO_EXPORTER_CORES)
     if (cores := live.get("cores")) is not None and cores + cores_needed > live.get("quota", 16.0):
         return f"cpu: {cores} cores in use + {cores_needed} needed > quota {live.get('quota')}"
     if (pids := live.get("pids")) is not None and pids + pids_needed > live.get("pids_max", 3840) - PID_MARGIN:

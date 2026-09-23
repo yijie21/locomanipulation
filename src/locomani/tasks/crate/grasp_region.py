@@ -17,14 +17,14 @@ def target_key(meta: dict) -> str:
     return str(meta.get("target_object") or "blue_crate")
 
 
-def grasp_points_for(obj: dict) -> tuple[tuple[float, float, float], ...]:
-    """Object-frame grasp pair from scene_meta.objects[key].box (half_extent, centre)."""
+def grasp_points_for(obj: dict, below_rim: float = GRASP_BELOW_RIM_M) -> tuple[tuple[float, float, float], ...]:
+    """Object-frame grasp pair from scene_meta.objects[key].box (half_extent, centre), `below_rim` under its top."""
     box = obj.get("box")
     if not box:
         return GRASP_POINTS
     hx, _, hz = (float(v) for v in box["half_extent"])
     cz = float(box.get("centre", (0.0, 0.0, 0.0))[2])
-    x, z = hx - GRASP_WALL_INSET_M, cz + hz - GRASP_BELOW_RIM_M
+    x, z = hx - GRASP_WALL_INSET_M, cz + hz - below_rim
     return ((x, 0.0, z), (-x, 0.0, z))
 
 

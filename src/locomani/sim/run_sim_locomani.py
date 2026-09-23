@@ -326,6 +326,10 @@ def main(config: SimLoopConfig) -> None:
 
     if config.enable_image_publish:
         assert config.enable_offscreen, "enable_offscreen must be True when enable_image_publish is True"
+    if not config.enable_offscreen:
+        # backend.render offline: BaseSimulator.start() calls update_render_caches every IMAGE_DT whether or not
+        # DefaultEnv built renderers, and without them the first call kills the sim.
+        DefaultEnv.update_render_caches = lambda self: None
 
     install_camera_configs()
     install_privileged_publisher(meta, wbc_config.get("DEFAULT_DOF_ANGLES"))

@@ -19,6 +19,7 @@ READY_DEPLOY = "Init Done"
 READY_DEPLOY_LOCKSTEP = "simulation-clock control thread active"
 READY_AUTO_START = "transitioning to CONTROL state"
 READY_SIM_IMAGE = "Image publish frequency"
+READY_SIM_EPISODE = "[episode] :"  # privileged_pub.EpisodeControlServer is listening
 LOWSTATE_TRIP = "LowState"  # the deploy stops itself on a one-loop LowState timeout (memory sonic-deploy-lowstate-trip)
 DEPLOY_LIBS = ("zmq-install/lib", "onnxruntime-linux-x64-gpu-1.22.0/lib", "tensorrt-root/lib")
 
@@ -48,6 +49,7 @@ class StackSpec:
     wrist_cams: bool = True  # exporter --record-wrist-cameras
     exporter_threads: int = 4
     video_dir: str | None = None  # SIM_VIDEO_DIR for the sim's video writer
+    image_publish: bool = True  # sim renders and publishes the cameras (backend.render live)
     sim_vis: str = "none"  # SIM_VIS for the sim process
     scene_random: bool = False  # SCENE_RANDOM for the sim process
     dds_domain: int | None = None  # SONIC_DDS_DOMAIN; None = instance
@@ -203,7 +205,8 @@ def spec_from_config(
         # clean eval stack from `start_stack.sh eval` started from the deploy's own default instead.
         default_motion="neutral_kick_R_001__A543" if (b.clean_deploy or b.lockstep.enabled) else None,
         wrist_cams=bool(b.wrist_cams),
-        video_dir=None if video_dir is None else str(video_dir),
+        video_dir=None if video_dir is None or b.render == "offline" else str(video_dir),
+        image_publish=b.render == "live",
         sim_vis=b.sim_vis,
         scene_random=bool(b.scene_random),
         dds_domain=b.sonic_dds_domain,
@@ -405,7 +408,12 @@ class Stack:
             "--instance",
             str(self.spec.instance),
         ]
-        argv += ["--interface", "lo", "--no-enable-onscreen", "--enable-offscreen", "--enable-image-publish"]
+        argv += ["--interface", "lo", "--no-enable-onscreen"]
+        if not self.spec.image_publish:
+            # backend.render offline: nothing to render, nothing to wait for; the sim is up once it publishes state
+            self._spawn("sim", argv, cwd=paths.SONIC, env=self.env)
+            return
+        argv += ["--enable-offscreen", "--enable-image-publish"]
         port = self.spec.ports()["TF_CAMERA_PORT"]
         # Refuse a port someone else already holds rather than adopting it. This probe asks
         # "is anything listening", which an orphaned publisher from an aborted run satisfies;
@@ -506,7 +514,11 @@ class Stack:
             self._start_deploy()
             if self.spec.record:
                 self._start_exporter()
-            if not _wait(lambda: _log_has(sim_log, READY_SIM_IMAGE, sim_mark), 40, 2.0):
+            if not self.spec.image_publish:
+                # backend.render offline publishes no image; the sim is up once its episode server is
+                if not _wait(lambda: _log_has(sim_log, READY_SIM_EPISODE, sim_mark), 40, 2.0):
+                    raise self._fail("sim", "episode server never came up")
+            elif not _wait(lambda: _log_has(sim_log, READY_SIM_IMAGE, sim_mark), 40, 2.0):
                 raise self._fail("sim", "has not published a single image (an orphaned publisher may hold the port)")
         except BaseException:
             self._release_lock()
