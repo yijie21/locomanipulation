@@ -201,15 +201,20 @@ uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python 
 是 267 而不是 78):
 
 ```bash
-(cd third_party/GR00T-WholeBodyControl \
- && { git apply --check --reverse --include='gear_sonic/data/*' ../../patches/vla_action_space.patch 2>/dev/null \
-      || git apply --include='gear_sonic/data/*' ../../patches/vla_action_space.patch; } \
- && { git apply --check --reverse ../../patches/exporter_priv_seq.patch 2>/dev/null \
-      || git apply ../../patches/exporter_priv_seq.patch; } \
- && echo "补丁已打")
+# 可重复执行:每个补丁先反向 check(--check --reverse 通过 == 已打上),
+# 已打的跳过,没打的才真正 apply。
+(
+  cd third_party/GR00T-WholeBodyControl &&
+  # 1) features_sonic_vla.py:action 空间 267 -> 78 维,加 object pose 列。
+  #    --include 只取补丁里 gear_sonic/data/ 的 hunk,exporter 部分见第 2 步。
+  { git apply --check --reverse --include='gear_sonic/data/*' ../../patches/vla_action_space.patch 2>/dev/null ||
+    git apply --include='gear_sonic/data/*' ../../patches/vla_action_space.patch; } &&
+  # 2) run_data_exporter.py:用更新的累积补丁(含第 1 步的 exporter hunk + priv_seq 旁路)。
+  { git apply --check --reverse ../../patches/exporter_priv_seq.patch 2>/dev/null ||
+    git apply ../../patches/exporter_priv_seq.patch; } &&
+  echo "补丁已打"
+)
 ```
-
-这条命令可以重复执行:已打的补丁被反向 check 识别后跳过,只有没打的才真正 apply。
 
 原因见 [`patches/vla_action_space.md`](../patches/vla_action_space.md)。
 `vla_action_space.patch` 只取它的 `features_sonic_vla.py` 部分;exporter 用更新的
