@@ -39,9 +39,9 @@
   },
   "payloads": {
     "mujoco": {
-      "tree_sha256": "225c0a0ea773ca1342bf1ea484907c250723d0951bcb1268d3a639eccd3e3b02",
-      "file_count": 55,
-      "bytes": 92019489
+      "tree_sha256": "9f0f01f96861e3d107d1048c01598e09986d48b881248645a83dc78364c94866",
+      "file_count": 70,
+      "bytes": 111911992
     },
     "isaac": {
       "tree_sha256": "6b5d507da49d3b93fdd596fb12fdde6f18f78fff81ca5bb144d40c7d7f69ff0c",

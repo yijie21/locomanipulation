@@ -123,8 +123,10 @@ cp assets/scene/logistics_room_box_v1/mujoco/texture_map.json "$mj"/     # JPG �
 ```
 
 第一步按**材质**(不是按物体)导出 OBJ —— MuJoCo 一个 geom 绑一个材质,而房间是几千个物体共用几十个材质。
-它只写 `mesh/*.obj` 和 `room_parts.json`,**不产贴图**;PNG 贴图和 `texture_map.json` 是发布时手工转好、随资产包提供的,
-第三步要读它们,所以先拷进来。换了新房间、贴图名对不上时,自己把 JPG 转成 PNG 并补 `texture_map.json`。
+纸箱同样按材质拆成 `mesh/nor_cal_00..08.obj`(它的 9 个材质里 6 个是实物照片),清单在 `carton_parts.json`。
+它只写 OBJ 和这两份 JSON,**不产贴图**;PNG 贴图和 `texture_map.json` 是发布时转好、随资产包提供的,
+第三步要读它们,所以先拷进来。换了新房间、贴图名对不上时,自己把 JPG 转成 PNG 并补 `texture_map.json`
+(转法见资产包 README 的 "Regenerate from Blender")。
 
 第三步在现成的 `scene_locomani.xml` 上做手术,生成新的场景。`--base` 必须是**已有的、带标定好机器人的场景**
 (`crate_table30_depth04` 那份,在 `outputs/` 下、不进 git;manifest 记录的是发布时那份的哈希,本机的可能已经不同),
@@ -136,6 +138,7 @@ cp assets/scene/logistics_room_box_v1/mujoco/texture_map.json "$mj"/     # JPG �
 | 每材质一个视觉 geom,`contype=0` | 房间只是布景,不参与碰撞 |
 | 托盘/桌面一个 box 碰撞体 | 它就是工作面 |
 | 目标物 5 块板(底 + 四壁) | 中空;凸包会变成实心块,手伸不进去 |
+| 目标物 9 个视觉 geom,每材质一个 | 6 个面是实物照片贴图;MuJoCo 一个 geom 只绑一张贴图,整块导出就只能是纯色 |
 | 地面 plane 保留碰撞、**关闭渲染** | plane 是平面碰撞的精确图元;它的棋盘贴图会和房间地板网格打架 |
 
 **机器人树、关节默认值、执行器全部从 base 场景继承**,不重写 —— 重建机器人等于引入一次新标定。
@@ -202,6 +205,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 | `build_mujoco_scene.py` 报 `texture_map.json` 不存在 | 导出脚本不产贴图 | 按 §3 从资产包拷入 `textures/` 和 `texture_map.json` |
 | 加载 XML 报 `repeated name 'room_00' in mesh` | 旧版构建脚本在自己的输出上重复叠加 | 脚本已改为可重复运行；用正确的 `--base` 重新生成一次 |
 | MuJoCo 报贴图读不了 | MuJoCo 不读 JPG | 只用资产包里的 PNG；手改场景时也只用 PNG |
+| 渲染里纸箱是一块纯色，货架上的箱子却有纹理 | 2026-09-22 之前纸箱整块导出、材质写死牛皮纸色 | 用当前脚本重新导出并构建；`carton_parts.json` 应有 9 份、其中 6 份带 `Figure*.jpeg` |
 | `Cannot initialize a EGL device display` | `MUJOCO_EGL_DEVICE_ID` 指到了集显或不存在的 EGL 设备 | 单卡机器用 0（§4）；它是 EGL 下标，不是 CUDA 编号 |
 | `render: no camera named head` | 相机名写错 | 用 `head_camera` / `left_wrist` / `right_wrist` / `reverse_room`，报错信息会列出全部 |
 | 编译 MJCF 时 mesh 找不到 | `meshdir` 是绝对路径或指向别的机器 | 用 `prepare_logistics_scene.py` 生成运行副本；G1/Dex1 网格相对 `third_party/GR00T-WholeBodyControl` |

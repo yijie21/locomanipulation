@@ -1,0 +1,101 @@
+[
+ {
+  "name": "nor_cal_00",
+  "material": "01 Front | original photograph",
+  "texture": "Figure1.jpeg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 20928
+ },
+ {
+  "name": "nor_cal_01",
+  "material": "Exposed kraft corrugation",
+  "texture": null,
+  "rgb": [
+   0.38,
+   0.23,
+   0.105
+  ],
+  "tris": 231176
+ },
+ {
+  "name": "nor_cal_02",
+  "material": "02 Rear | original photograph",
+  "texture": "Figure2.jpeg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 20928
+ },
+ {
+  "name": "nor_cal_03",
+  "material": "03 Left | original photograph",
+  "texture": "Figure3.jpeg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 42712
+ },
+ {
+  "name": "nor_cal_04",
+  "material": "04 Right | original photograph",
+  "texture": "Figure4.jpeg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 42712
+ },
+ {
+  "name": "nor_cal_05",
+  "material": "05 Inside | original photograph",
+  "texture": "Figure5.jpeg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 65928
+ },
+ {
+  "name": "nor_cal_06",
+  "material": "06 Bottom | original photograph",
+  "texture": "Figure6.jpeg",
+  "rgb": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "tris": 128
+ },
+ {
+  "name": "nor_cal_07",
+  "material": "White paper liner",
+  "texture": null,
+  "rgb": [
+   0.73,
+   0.7,
+   0.63
+  ],
+  "tris": 31328
+ },
+ {
+  "name": "nor_cal_08",
+  "material": "Shadow in die-cut seam",
+  "texture": null,
+  "rgb": [
+   0.105,
+   0.065,
+   0.029
+  ],
+  "tris": 6912
+ }
+]

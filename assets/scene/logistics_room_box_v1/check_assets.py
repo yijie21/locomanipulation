@@ -118,7 +118,7 @@ def check_mjcf(*, load: bool) -> dict:
     colliders = {
         geom.get("name"): geom
         for geom in box.findall("geom")
-        if geom.get("name", "").startswith("nor_cal_") and geom.get("name") != "nor_cal_vis"
+        if geom.get("name", "").startswith("nor_cal_") and not geom.get("name", "").startswith("nor_cal_vis")
     }
     if set(colliders) != {
         "nor_cal_floor",
@@ -132,12 +132,20 @@ def check_mjcf(*, load: bool) -> dict:
         if geom.get("contype", "1") == "0":
             raise AssertionError(f"inactive box collider: {geom.get('name')}")
 
-    lower, upper, vertices = _obj_bounds(MJCF.parent / "mesh/nor_cal_box.obj")
+    # the carton is one OBJ per material (six are photographs); measure their union
+    pieces = sorted((MJCF.parent / "mesh").glob("nor_cal_*.obj"))
+    if not pieces:
+        raise AssertionError("no carton meshes under mesh/nor_cal_*.obj")
+    bounds = [_obj_bounds(piece) for piece in pieces]
+    lower = tuple(min(b[0][axis] for b in bounds) for axis in range(3))
+    upper = tuple(max(b[1][axis] for b in bounds) for axis in range(3))
+    vertices = sum(b[2] for b in bounds)
     _assert_close(lower, (-0.225, -0.16, 0.0), tolerance=1e-6)
     _assert_close(upper, (0.225, 0.16, 0.33), tolerance=1e-6)
 
     result = {
         "file_references": len(refs),
+        "visual_box_parts": len(pieces),
         "visual_box_bounds_m": {"min": lower, "max": upper},
         "visual_box_vertices": vertices,
     }
@@ -145,7 +153,7 @@ def check_mjcf(*, load: bool) -> dict:
         import mujoco
 
         model = mujoco.MjModel.from_xml_path(str(MJCF))
-        expected = {"nbody": 36, "ngeom": 121, "nq": 47, "nv": 45, "nu": 33}
+        expected = {"nbody": 36, "ngeom": 129, "nq": 47, "nv": 45, "nu": 33}
         actual = {name: int(getattr(model, name)) for name in expected}
         if actual != expected:
             raise AssertionError(f"compiled MuJoCo topology differs: {actual}")

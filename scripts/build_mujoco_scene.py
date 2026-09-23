@@ -15,7 +15,9 @@ What it adds, and the reasoning behind the split:
   is the work surface.
 * the carton as a body with a free joint and FIVE box colliders (floor and four
   walls). A convex hull would be a solid block no hand could enter, which is the
-  same reason the blue crate is eleven boxes rather than one.
+  same reason the blue crate is eleven boxes rather than one. Its looks are one
+  visual geom per material, because six of the nine are photographs of the
+  real box and MuJoCo binds one texture per geom.
 * the ground plane keeps colliding but stops being drawn. A plane is the exact,
   cheap, well-behaved collider for a flat floor, but the base scene's blue-grey
   checker material was fighting the room's own floor mesh.
@@ -58,7 +60,18 @@ world = root.find("worldbody")
 # Also drop everything a previous run of this script added: the base may be our
 # own output (a re-run, or --base pointing at the scene being built), and
 # MuJoCo rejects a second mesh named room_00.
-OWN = ("room_", "t_room_", "m_room_", "vis_room_", "nor_cal", "m_nor_cal", "platform_col", "reverse_room", "room_light")
+OWN = (
+    "room_",
+    "t_room_",
+    "m_room_",
+    "vis_room_",
+    "nor_cal",
+    "t_nor_cal",
+    "m_nor_cal",
+    "platform_col",
+    "reverse_room",
+    "room_light",
+)
 
 
 def ours(el):
@@ -78,24 +91,33 @@ for tag in ("texture", "material", "mesh"):
             asset.remove(el)
 
 parts = json.load(open(f"{MJ}/room_parts.json"))
+carton = json.load(open(f"{MJ}/carton_parts.json"))
 texmap = json.load(open(f"{MJ}/texture_map.json"))
-for _p in parts:
+for _p in parts + carton:
     _p["texture"] = texmap.get(_p["texture"])  # MuJoCo reads PNG only
-used = set()
-for p in parts:
+textures = {}  # PNG file -> texture element name; two parts may share one image
+
+
+def bind(p, specular, shininess):
+    """Mesh and material assets for one exported part; textured when its PNG exists."""
     name, tex, rgb = p["name"], p["texture"], p["rgb"]
     ET.SubElement(asset, "mesh", name=name, file=f"mesh/{name}.obj")
-    if tex and os.path.exists(f"{TEX}/{tex}") and tex not in used:
-        ET.SubElement(asset, "texture", type="2d", colorspace="linear", name=f"t_{name}", file=f"textures/{tex}")
-        used.add(tex)
     if tex and os.path.exists(f"{TEX}/{tex}"):
-        ET.SubElement(asset, "material", name=f"m_{name}", texture=f"t_{name}", specular="0.1", shininess="0.1")
-    else:
+        if tex not in textures:
+            textures[tex] = f"t_{name}"
+            ET.SubElement(asset, "texture", type="2d", colorspace="linear", name=textures[tex], file=f"textures/{tex}")
         ET.SubElement(
-            asset, "material", name=f"m_{name}", rgba=f"{rgb[0]} {rgb[1]} {rgb[2]} 1", specular="0.1", shininess="0.1"
+            asset, "material", name=f"m_{name}", texture=textures[tex], specular=specular, shininess=shininess
         )
-ET.SubElement(asset, "mesh", name="nor_cal_box", file="mesh/nor_cal_box.obj")
-ET.SubElement(asset, "material", name="m_nor_cal", rgba="0.86 0.78 0.62 1", specular="0.05", shininess="0.05")
+    else:
+        rgba = f"{rgb[0]} {rgb[1]} {rgb[2]} 1"
+        ET.SubElement(asset, "material", name=f"m_{name}", rgba=rgba, specular=specular, shininess=shininess)
+
+
+for p in parts:
+    bind(p, "0.1", "0.1")
+for p in carton:
+    bind(p, "0.05", "0.05")
 
 # room: visual only. Walls and racks are scenery; the robot must not collide
 # with 489k triangles, and nothing in the task touches them.
@@ -132,18 +154,19 @@ ET.SubElement(
 body = ET.SubElement(world, "body", name="nor_cal_box_object", pos=f"{BOX_POS[0]} {BOX_POS[1]} {BOX_POS[2]}")
 ET.SubElement(body, "freejoint", name="nor_cal_box_free")
 ET.SubElement(body, "inertial", pos=f"0 0 {BOX['z'] / 2}", mass="1.2", diaginertia="0.02 0.03 0.03")
-ET.SubElement(
-    body,
-    "geom",
-    name="nor_cal_vis",
-    type="mesh",
-    mesh="nor_cal_box",
-    material="m_nor_cal",
-    contype="0",
-    conaffinity="0",
-    group="1",
-    density="0",
-)
+for p in carton:  # looks only; the five box colliders below carry the contact
+    ET.SubElement(
+        body,
+        "geom",
+        name=f"nor_cal_vis_{p['name'][-2:]}",
+        type="mesh",
+        mesh=p["name"],
+        material=f"m_{p['name']}",
+        contype="0",
+        conaffinity="0",
+        group="1",
+        density="0",
+    )
 w, hxb, hyb, hzb = BOX["wall"], BOX["x"] / 2, BOX["y"] / 2, BOX["z"] / 2
 walls = [
     ("floor", f"0 0 {w}", f"{hxb} {hyb} {w}"),

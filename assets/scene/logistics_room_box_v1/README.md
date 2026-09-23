@@ -22,7 +22,7 @@ All values are metres in a Z-up frame.
 |---|---|
 | HP platform | 1.200 × 0.900 × 0.371; centre `(0, -0.105, 0.1855)`; top `z=0.371` |
 | Platform Y edges | near `-0.555`, far `+0.345` |
-| Box visual mesh | 0.450 × 0.320 × 0.330; local bounds `(-0.225, -0.160, 0)` to `(0.225, 0.160, 0.330)` |
+| Box visual mesh | nine OBJs, one per material (six are photographs of the real box); union 0.450 × 0.320 × 0.330; local bounds `(-0.225, -0.160, 0)` to `(0.225, 0.160, 0.330)` |
 | Box body | origin `(0, -0.390, 0.371)`, identity rotation; rim `z=0.701` |
 | Box physics | same 0.450 × 0.320 × 0.330 outer dimensions; 0.010 wall/floor thickness; five active box colliders |
 | Box inertial | mass 1.2 kg; local COM `(0, 0, 0.165)` |
@@ -111,6 +111,24 @@ blender --background assets/blender/logistics_room.blend \
   --base outputs/scene/crate_table30_depth04/scene_locomani.xml
 ```
 
-Blender 5.2.0 LTS produced the recorded payload. The Isaac USD keeps light gain
-at 1.0; callers apply renderer-specific gain at render time. `room_parts.json`
-and `texture_map.json` record the MuJoCo material split and JPG-to-PNG mapping.
+The exporter writes the carton as one OBJ per material (`mesh/nor_cal_00..08.obj`,
+listed in `carton_parts.json`) because six of its nine materials are photographs
+of the real box and MuJoCo binds one texture per geom. Those photographs are the
+Isaac payload's `Figure1..6.jpeg`; the packaged `Figure1..6.png` are the same
+images resized to 2048 px wide, made with Pillow from `.venv_sim`:
+
+```bash
+"$VENV_SIM_PY" -c '
+from PIL import Image
+for i in range(1, 7):
+    im = Image.open(f"assets/scene/logistics_room_box_v1/isaac/textures/Figure{i}.jpeg").convert("RGB")
+    im.resize((2048, round(im.height * 2048 / im.width)), Image.LANCZOS).save(
+        f"assets/scene/logistics_room_box_v1/mujoco/textures/Figure{i}.png", optimize=True)'
+```
+
+Blender 5.2.0 LTS produced the room payload; the carton parts and their PNG
+textures were regenerated with Blender 5.2.2 LTS on 2026-09-22 (before that the
+carton was a single untextured OBJ with a flat kraft colour). The Isaac USD
+keeps light gain at 1.0; callers apply renderer-specific gain at render time.
+`room_parts.json`, `carton_parts.json` and `texture_map.json` record the MuJoCo
+material split and JPG-to-PNG mapping.
