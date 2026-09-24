@@ -18,6 +18,7 @@ from locomani.stack import Stack, StackSpec  # noqa: E402
 from locomani.tasks.crate.ghost_reach_execution_cli import (  # noqa: E402
     load_execution_request,
     request_description,
+    resolve_case_selection,
 )
 
 
@@ -34,7 +35,13 @@ def main(argv=None) -> int:
     parser.add_argument("request", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--case-index", type=int, choices=range(1, 15))
+    selection_group = parser.add_mutually_exclusive_group()
+    selection_group.add_argument("--case-index", type=int)
+    selection_group.add_argument("--case-range", metavar="START:STOP")
+    selection_group.add_argument("--case-indices", type=Path)
+    parser.add_argument("--shard-index", type=int)
+    parser.add_argument("--shard-count", type=int)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
     request = load_execution_request(args.request.resolve())
     runtime = request["runtime"]
@@ -47,8 +54,24 @@ def main(argv=None) -> int:
         "--output",
         str(args.output.resolve()),
     ]
+    selection = resolve_case_selection(
+        request,
+        case_index=args.case_index,
+        case_range=args.case_range,
+        case_indices_path=args.case_indices,
+        shard_index=args.shard_index,
+        shard_count=args.shard_count,
+    )
     if args.case_index is not None:
         command.extend(["--case-index", str(args.case_index)])
+    elif args.case_range is not None:
+        command.extend(["--case-range", args.case_range])
+    elif args.case_indices is not None:
+        command.extend(["--case-indices", str(args.case_indices.resolve())])
+    elif args.shard_index is not None or args.shard_count is not None:
+        command.extend(["--shard-index", str(args.shard_index), "--shard-count", str(args.shard_count)])
+    if args.resume:
+        command.append("--resume")
     stack_env = stack_environment(backend, args.output)
     if args.dry_run:
         print(
@@ -56,7 +79,7 @@ def main(argv=None) -> int:
                 {
                     "command": command,
                     "stack_env": stack_env,
-                    **request_description(request, args.output, case_index=args.case_index),
+                    **request_description(request, args.output, selection=selection),
                 },
                 indent=2,
                 ensure_ascii=False,

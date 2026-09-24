@@ -1,6 +1,6 @@
 # 固定站姿的双臂可达实验
 
-本页说明如何从一个实际站稳状态计算条件 IK 候选域，并用原双臂 expert 验证。
+本页说明如何计算条件 IK 候选域，以及联合采样五维目标并用原双臂 expert 实际 reach。
 先读[双臂设计](bimanual_design.md)；箱体接触和搬运属于[箱沿执行](box_rim_execution.md)。
 本实验的场景只有 G1 和地面，不包含纸箱、平台或负载。
 
@@ -8,7 +8,8 @@
 
 双抓点用机器人站位坐标系中的 `(x,y,h,d,theta)` 表达：x 向前、y 向左，
 h 是共同距地高度，d 是两点间距，theta 是两点连线相对正对箱体的偏角。
-给定 h/d/theta 后，扫描中点 x/y；抓点位置固定，IK 可尝试不同向身体倾斜的工具角度。
+条件 atlas 给定 h/d/theta 后扫描中点 x/y；联合搜索同时改变全部五个变量。
+抓点位置固定，IK 可尝试不同向身体倾斜的工具角度。
 一次真实执行使用该点选定的固定倾角，不在运动中重新优化倾角。
 
 调用方需要准备：
@@ -81,7 +82,52 @@ PYTHONPATH=src "$VENV_SIM_PY" scripts/probe_ghost_reach.py request.json \
 导入检查原始目标身份与倾角，保留每次独立站姿的差异；成功点不会把整个格子染成已验证。
 当前只证明空载 reach，不能推出合爪、承载或完整搬运成功。
 
+## 五维联合采样与实测搜索
+
+[联合采样入口](../scripts/generate_joint_reach_bank.py)生成 executor 可直接消费的任意大小目标集，
+索引必须连续为 `1..N`。配置由[采样模块](../src/locomani/tasks/crate/joint_reach_sampling.py)校验：
+`schema_version=1`，`method` 为 `sobol`、`stratified`、`grid` 或 `boundary_refinement`，
+`bounds` 必须包含 `x_m/y_m/height_m/separation_m/yaw_deg` 的上下界。
+Sobol/分层采样提供 `count`、`seed`、`bodyward_tilt_deg`；网格使用 `axis_values`。
+可叠加 `anchors` 五元组列表和 `anchor_grid` 各轴列表，稳定去重后保留来源。
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src "$VENV_SIM_PY" scripts/generate_joint_reach_bank.py sampling.json --output outputs/reachability/joint_bank.json
+PYTHONPATH=src "$VENV_SIM_PY" scripts/probe_ghost_reach.py request.json --output outputs/reachability/shard_0/result.json --shard-index 0 --shard-count 4
+```
+
+请求的 `source_targets` 指向该目标集。每个并行分片使用独立 GPU/instance 请求和输出目录；
+零基分片按 `(index-1) % shard_count` 选择目标，不改变目标坐标。
+其他互斥选择方式是 `--case-index N`、`--case-range START:STOP`（含两端）和
+`--case-indices FILE`（JSON 整数列表或每行一个整数）。
+
+每条终态立即写入 `result.cases/000001.json`，保留完整轨迹、初始化、目标及身份；
+`result.progress.jsonl` 和 `result.checkpoint.json` 保存紧凑进度，正常结束再汇总 `result.json`。
+同一命令加 `--resume` 可跳过所有已落盘终态，包括失败；请求、目标、场景、判据、控制器配置、
+实现哈希和所选索引必须一致。中断的录像不会覆盖，恢复会使用新的录像后缀。
+运行期间不要修改这些源文件；断点恢复不是更换控制器后复用旧结果的途径。
+
+必须分别报告：实测成功、实际伸手后的失败、控制器伸手前拒绝，以及初始化/基础设施失败。
+原始 `execution_started` 只表示进入 executor，不能证明下发了伸手；
+使用 `classify_reach_attempt` 检查轨迹中的 `controller_phase="reach"`，得到 `reach_commanded`。
+成功还需原生状态轨迹复核双手同时满足位置/角度与脚部约束的保持窗口。
+实测离散点和有限网格不是整个连续五维空间的可达证明。
+
+边界加密的 `observations` 指向 `schema_version=1`、含 `observations` 列表的 JSON；
+每行保存 `coordinates` 五元组、`sample_id`、`status`、`reason` 与 `reach_commanded`。
+只有实际伸手的成功/失败参与归一化五维近邻边界采样，初始化、时钟和看门狗错误不参与。
+原生轨迹与在线判定不一致时保留原状态，另设 `refinement_eligible=false` 排除该条加密依据并安排复测；
+省略该字段兼容旧观察格式。正式加密前应完成原生复核，并冻结观察文件以免后续分析覆盖它。
+`neighbor_count` 和 `min_normalized_distance` 控制邻居数及采样间距。
+每个新目标记录成功/失败邻居、距离和观察集哈希。
+改变倾角的重试与独立复位复测应另存目标集，保留首次结果；单一倾角失败不能说明其他倾角也失败。
+
 ## 本轮证据与历史
+
+[2026-09-20 五维联合实测搜索](handoff/g1-joint-reach-search-20260920.md)完成
+1,277 次尝试、898 次真正伸手、232 次在线与原生共同确认成功；包括联合覆盖、边界加密、
+倾角对照、独立复测与异常补跑。交互报告、纸箱参数网格和完整时长预览见该记录。
+这是有限实测点集，不能把成功点外包范围当成连续可达域。
 
 [2026-09-20 可达域记录](handoff/g1-reachability-atlas-20260920.md)包含 7 个切片、
 1,120 个目标、14 次实测及视频。原生轨迹验证的成功只有 2 点，IK 候选域仍需闭环验证。

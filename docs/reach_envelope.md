@@ -135,8 +135,7 @@ ffmpeg -i $R/videos/reel_h070_source.mp4 -vf "setpts=0.5*PTS,scale=1024:-2" -r 1
 - 开跑前：`cat /sys/fs/cgroup/pids.current`（上限 3840，一个不录制的栈约 180）、`nvidia-smi`、
   `find /workspace/tmp -maxdepth 3 -name stack.json`（有别人的栈就别用那个实例）。
 - 分片进程是 `probe_ghost_reach.py` 起的栈，每次退出自己收；驱动被杀时用 `scripts/stop_stack.sh --instance N`。
-- 请求里的 `envelope` 块由 `ghost_reach_execution_cli.py` 解析；这段接线目前仍在工作树里未提交
-  （与另一会话的分片/resume 改动交错），提交后本行删掉。
+- 请求里的 `envelope` 块由 `ghost_reach_execution_cli.py` 解析，进 provenance 与 resume identity。
 
 ## 7. 这张图不说明什么
 

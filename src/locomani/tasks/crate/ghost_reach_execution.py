@@ -208,13 +208,39 @@ class GhostReachControlConfig:
     carry: CrateCarryConfig
 
 
+ENVELOPE_FIELDS = frozenset(
+    {
+        "waist_pitch_max",
+        "pelvis_pitch_max",
+        "pelvis_height_min",
+        "com_shift_max",
+        "com_free_radius",
+        "knee_max",
+        "pelvis_forward_max",
+        "base_anchor",
+        "pelvis_height_target",
+    }
+)
+TRACKING_FIELDS = frozenset({"tracking_gain", "tracking_cap"})
+
+
 def original_reach_control_config(
     bodyward_tilt_deg: float = DEFAULT_BODYWARD_TILT_DEG,
+    envelope: dict | None = None,
 ) -> GhostReachControlConfig:
-    """Original assisted low-reach profile used by the bimanual expert."""
+    """Original assisted low-reach profile used by the bimanual expert.
+
+    ``envelope`` overrides the whole-body support bounds only (see ENVELOPE_FIELDS);
+    it never touches the visual profile, timing or acceptance thresholds.
+    """
     if not math.isfinite(bodyward_tilt_deg) or not 0.0 <= bodyward_tilt_deg <= 45.0:
         raise ValueError("bodyward_tilt_deg must be finite and in [0, 45]")
-    return GhostReachControlConfig(
+    envelope = {} if envelope is None else dict(envelope)
+    tracking = {name: envelope.pop(name) for name in list(envelope) if name in TRACKING_FIELDS}
+    unknown = set(envelope) - ENVELOPE_FIELDS
+    if unknown:
+        raise ValueError(f"envelope has unsupported fields: {sorted(unknown)}")
+    config = GhostReachControlConfig(
         visual=CrateVisualConfig(
             pose_source="assisted",
             palm_pitch_deg=90.0 - bodyward_tilt_deg,
@@ -236,6 +262,11 @@ def original_reach_control_config(
             waist_pitch_max=0.52,
         ),
     )
+    if envelope:
+        config = replace(config, carry=replace(config.carry, **envelope))
+    if tracking:
+        config = replace(config, visual=replace(config.visual, **tracking))
+    return config
 
 
 class GhostReachRuntime(Protocol):
@@ -378,6 +409,7 @@ class GhostReachExecutor:
         target = world_target(case, initial_state)
         initial_centres = target.centres_m.copy()
         initial_feet = foot_positions(self.solver.ik, initial_state)
+        initial_tools, _ = _measured_tools(self.solver, initial_state)
         local_points = (
             (0.5 * case.separation_m, 0.0, 0.0),
             (-0.5 * case.separation_m, 0.0, 0.0),
@@ -517,6 +549,8 @@ class GhostReachExecutor:
         else:
             stop_error = None
         final_feet = foot_positions(self.solver.ik, final_state)
+        final_tools, _ = _measured_tools(self.solver, final_state)
+        measured_tool_displacement = np.linalg.norm(final_tools - initial_tools, axis=1)
         return _json_safe(
             {
                 "index": case.index,
@@ -538,6 +572,15 @@ class GhostReachExecutor:
                 },
                 "final_feet_world_m": final_feet,
                 "walk_command_count": self.runtime.walk_command_count,
+                "execution_started": True,
+                "execution_start_seq": initial_state.get("seq"),
+                "execution_end_seq": final_state.get("seq"),
+                "execution_start_sim_time_s": began_sim,
+                "execution_end_sim_time_s": float(final_state["t"]),
+                "initial_tools_world_m": initial_tools,
+                "final_tools_world_m": final_tools,
+                "measured_tool_displacement_m": measured_tool_displacement,
+                "max_measured_tool_displacement_m": float(np.max(measured_tool_displacement)),
                 "sim_duration_s": float(final_state["t"]) - began_sim,
                 "stop_error": stop_error,
                 "traces": traces,
@@ -551,11 +594,13 @@ def load_source_cases(path: Path) -> tuple[list[GhostReachCase], dict]:
     if not isinstance(raw, dict) or raw.get("schema_version") != 1:
         raise ValueError("source targets schema_version must be 1")
     samples = raw.get("samples")
-    if not isinstance(samples, list) or len(samples) != 14:
-        raise ValueError("source targets must contain exactly 14 samples")
+    if not isinstance(samples, list) or not samples:
+        raise ValueError("source targets must contain a non-empty sample list")
+    if len(samples) > 1_000_000:
+        raise ValueError("source targets may contain at most 1000000 samples")
     cases = [GhostReachCase.from_source(sample) for sample in samples]
-    if [case.index for case in cases] != list(range(1, 15)):
-        raise ValueError("source sample indices must be exactly 1..14 in order")
+    if [case.index for case in cases] != list(range(1, len(cases) + 1)):
+        raise ValueError("source sample indices must be unique, contiguous 1..N, and in order")
     identity = {
         "path": str(path.resolve()),
         "sha256": hashlib.sha256(payload).hexdigest(),

@@ -1,4 +1,4 @@
-"""Child process for the floor-only 14-case dynamic ghost reach probe."""
+"""Child process for resumable floor-only dynamic ghost reach probes."""
 
 from __future__ import annotations
 
@@ -6,8 +6,10 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import time
 import traceback
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -22,8 +24,10 @@ from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.box_rim_execution import SonicBoxRimRuntime
 from locomani.tasks.crate.expert import prepare_stationary_ready
 from locomani.tasks.crate.ghost_reach_execution import (
+    ENVELOPE_FIELDS,
     PALM_PITCH_DEG,
     PREVIEW_TILT_DEG,
+    TRACKING_FIELDS,
     GhostReachCriteria,
     GhostReachExecutor,
     MeasuredCollisionChecker,
@@ -34,6 +38,7 @@ from locomani.tasks.crate.ghost_reach_execution import (
 from locomani.tasks.crate.round_runner import prime
 
 TOP_LEVEL_FIELDS = {"schema_version", "source_targets", "request_identity", "seed", "runtime", "experiment"}
+OPTIONAL_TOP_LEVEL_FIELDS = {"envelope"}
 RUNTIME_FIELDS = {"backend", "gpu", "instance", "scene_dir", "video_label_prefix"}
 EXPERIMENT_FIELDS = set(GhostReachCriteria.__dataclass_fields__)
 
@@ -56,7 +61,7 @@ def _sha256(path: Path) -> str:
 def load_execution_request(path: Path) -> dict:
     request_path = path.resolve()
     raw = json.loads(request_path.read_text())
-    _strict_keys(raw, TOP_LEVEL_FIELDS, TOP_LEVEL_FIELDS, "request")
+    _strict_keys(raw, TOP_LEVEL_FIELDS | OPTIONAL_TOP_LEVEL_FIELDS, TOP_LEVEL_FIELDS, "request")
     if raw["schema_version"] != 1:
         raise ValueError("request.schema_version must be 1")
     if not isinstance(raw["request_identity"], str) or not raw["request_identity"].strip():
@@ -91,6 +96,14 @@ def load_execution_request(path: Path) -> dict:
     experiment = raw["experiment"]
     _strict_keys(experiment, EXPERIMENT_FIELDS, set(), "experiment")
     criteria = GhostReachCriteria(**experiment)
+    envelope = raw.get("envelope", {})
+    _strict_keys(envelope, set(ENVELOPE_FIELDS | TRACKING_FIELDS), set(), "envelope")
+    for name, value in envelope.items():
+        if name == "base_anchor":
+            continue  # validated by CrateCarryConfig
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"envelope.{name} must be a number")
+    control_config = original_reach_control_config(envelope=envelope)  # validates the bounds now
     label_prefix = runtime.get("video_label_prefix", "ghost_reach")
     if (
         not isinstance(label_prefix, str)
@@ -108,6 +121,8 @@ def load_execution_request(path: Path) -> dict:
         "source_identity": source_identity,
         "cases": cases,
         "criteria": criteria,
+        "envelope": dict(envelope),
+        "control_config": control_config,
         "runtime": {
             "backend": backend,
             "gpu": str(runtime["gpu"]),
@@ -121,23 +136,64 @@ def load_execution_request(path: Path) -> dict:
     }
 
 
-def _selected_cases(request: dict, case_index: int | None) -> list:
+def _selected_cases(
+    request: dict,
+    case_index: int | None = None,
+    selection: dict | None = None,
+) -> list:
     cases = request["cases"]
+    if case_index is not None and selection is not None:
+        raise ValueError("case_index and selection are mutually exclusive")
+    if selection is not None:
+        indices = selection["indices"]
+        by_index = {case.index: case for case in cases}
+        if not indices:
+            raise ValueError("case selection must not be empty")
+        if len(set(indices)) != len(indices):
+            raise ValueError("case selection indices must be unique")
+        missing = [index for index in indices if index not in by_index]
+        if missing:
+            raise ValueError(f"source targets do not contain case indices {missing}")
+        return [by_index[index] for index in indices]
     if case_index is None:
         return cases
-    if not isinstance(case_index, int) or isinstance(case_index, bool) or not 1 <= case_index <= 14:
-        raise ValueError("case_index must be an integer from 1 through 14")
+    if not isinstance(case_index, int) or isinstance(case_index, bool) or not 1 <= case_index <= len(cases):
+        raise ValueError(f"case_index must be an integer from 1 through {len(cases)}")
     selected = [case for case in cases if case.index == case_index]
     if len(selected) != 1:
         raise ValueError(f"source targets do not contain case index {case_index}")
     return selected
 
 
-def request_description(request: dict, output: Path, *, case_index: int | None = None) -> dict:
+def _request_control_config(request: dict):
+    """Requests built by hand (tests) may omit the resolved config; rebuild it from the envelope."""
+    if "control_config" in request:
+        return request["control_config"]
+    return original_reach_control_config(envelope=request.get("envelope", {}))
+
+
+def request_description(
+    request: dict,
+    output: Path,
+    *,
+    case_index: int | None = None,
+    selection: dict | None = None,
+) -> dict:
     runtime = request["runtime"]
-    selected = _selected_cases(request, case_index)
+    selected = _selected_cases(request, case_index, selection)
     selected_tilts = [case.bodyward_tilt_deg for case in selected]
     one_tilt = len(set(selected_tilts)) == 1
+    owner_dir = Path(__file__).resolve().parent
+    implementation_files = (
+        "ghost_reach_execution_cli.py",
+        "ghost_reach_execution.py",
+        "coordinated_reach.py",
+        "expert.py",
+        "bimanual_ik.py",
+        "box_rim_execution.py",
+        "visual_config.py",
+        "carry_config.py",
+    )
     return {
         "request": str(request["path"]),
         "request_sha256": request["sha256"],
@@ -153,9 +209,19 @@ def request_description(request: dict, output: Path, *, case_index: int | None =
         "source_case_count": len(request["cases"]),
         "case_count": len(selected),
         "selected_case_index": case_index,
+        "selection": selection
+        or {
+            "mode": "case_index" if case_index is not None else "all",
+            "indices": [case.index for case in selected],
+        },
         "criteria": request["criteria"].__dict__,
         "controller": {
             "owner": "CoordinatedReach/WholeBodyIK",
+            "resolved_original_reach_control_config": asdict(_request_control_config(request)),
+            "envelope": request.get("envelope", {}),
+            "resolved_backend_config": runtime["backend"].to_dict(),
+            "implementation_sha256": {name: _sha256(owner_dir / name) for name in implementation_files},
+            "policy_path": os.environ.get("SONIC_POLICY"),
             "reach_only_extension": True,
             "palm_pitch_deg": 90.0 - selected_tilts[0] if one_tilt else None,
             "preview_bodyward_tilt_deg": selected_tilts[0] if one_tilt else None,
@@ -167,6 +233,80 @@ def request_description(request: dict, output: Path, *, case_index: int | None =
             "walking_commands": "forbidden",
         },
     }
+
+
+def resolve_case_selection(
+    request: dict,
+    *,
+    case_index: int | None = None,
+    case_range: str | None = None,
+    case_indices_path: Path | None = None,
+    shard_index: int | None = None,
+    shard_count: int | None = None,
+) -> dict:
+    """Resolve one stable subset while retaining global source indices."""
+    shard_requested = shard_index is not None or shard_count is not None
+    mode_count = sum(value is not None for value in (case_index, case_range, case_indices_path))
+    mode_count += int(shard_requested)
+    if mode_count > 1:
+        raise ValueError("case-index, case-range, case-indices, and shard selection are mutually exclusive")
+
+    all_indices = [case.index for case in request["cases"]]
+    if case_index is not None:
+        selection = {"mode": "case_index", "case_index": case_index, "indices": [case_index]}
+    elif case_range is not None:
+        parts = case_range.split(":")
+        if len(parts) != 2:
+            raise ValueError("case_range must use inclusive START:STOP syntax")
+        try:
+            start, stop = (int(value) for value in parts)
+        except ValueError as error:
+            raise ValueError("case_range endpoints must be integers") from error
+        if start < 1 or stop < start:
+            raise ValueError("case_range must satisfy 1 <= START <= STOP")
+        selection = {"mode": "case_range", "start": start, "stop": stop, "indices": list(range(start, stop + 1))}
+    elif case_indices_path is not None:
+        path = case_indices_path.resolve()
+        text = path.read_text()
+        try:
+            decoded = json.loads(text)
+            decoded_from_json = True
+        except json.JSONDecodeError:
+            decoded = [line.strip() for line in text.splitlines() if line.strip()]
+            decoded_from_json = False
+        if not isinstance(decoded, list):
+            raise ValueError("case_indices file must be a JSON list or contain one integer per line")
+        if decoded_from_json and any(not isinstance(value, int) or isinstance(value, bool) for value in decoded):
+            raise ValueError("case_indices entries must be integers")
+        try:
+            indices = [int(value) for value in decoded]
+        except (TypeError, ValueError) as error:
+            raise ValueError("case_indices entries must be integers") from error
+        selection = {
+            "mode": "case_indices",
+            "path": str(path),
+            "sha256": _sha256(path),
+            "indices": indices,
+        }
+    elif shard_requested:
+        if shard_index is None or shard_count is None:
+            raise ValueError("shard_index and shard_count must be provided together")
+        if isinstance(shard_index, bool) or isinstance(shard_count, bool):
+            raise ValueError("shard_index and shard_count must be integers")
+        if shard_count < 1 or shard_index < 0 or shard_index >= shard_count:
+            raise ValueError("sharding requires SHARD_COUNT >= 1 and 0 <= SHARD_INDEX < SHARD_COUNT")
+        indices = [index for index in all_indices if (index - 1) % shard_count == shard_index]
+        selection = {
+            "mode": "shard",
+            "shard_index": shard_index,
+            "shard_count": shard_count,
+            "indices": indices,
+        }
+    else:
+        selection = {"mode": "all", "indices": all_indices}
+
+    _selected_cases(request, selection=selection)
+    return selection
 
 
 class SonicGhostReachRuntime(SonicBoxRimRuntime):
@@ -449,6 +589,194 @@ def _artifact_paths(output: Path, label: str) -> dict:
     }
 
 
+def _progress_artifacts(output: Path) -> dict[str, Path]:
+    output = output.resolve()
+    return {
+        "case_dir": output.with_name(f"{output.stem}.cases"),
+        "checkpoint": output.with_name(f"{output.stem}.checkpoint.json"),
+        "progress_jsonl": output.with_name(f"{output.stem}.progress.jsonl"),
+        "invocations": output.with_name(f"{output.stem}.invocations.json"),
+    }
+
+
+def _atomic_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with temporary.open("w") as stream:
+        json.dump(value, stream, indent=2, ensure_ascii=False)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)
+
+
+def _resume_identity(description: dict) -> dict:
+    return {
+        "schema_version": 1,
+        "request_sha256": description["request_sha256"],
+        "request_identity": description["request_identity"],
+        "source_targets": description["source_targets"],
+        "scene_xml_sha256": description["scene_xml_sha256"],
+        "scene_meta_sha256": description["scene_meta_sha256"],
+        "criteria": description["criteria"],
+        "controller": description["controller"],
+        "selection": description["selection"],
+    }
+
+
+def _case_record_path(artifacts: dict[str, Path], index: int) -> Path:
+    return artifacts["case_dir"] / f"{index:06d}.json"
+
+
+def _compact_case(case: dict) -> dict:
+    return {
+        "index": case["index"],
+        "status": case.get("status"),
+        "reason": case.get("reason"),
+        "execution_started": bool(case.get("execution_started", False)),
+        "sim_duration_s": case.get("sim_duration_s"),
+        "max_measured_tool_displacement_m": case.get("max_measured_tool_displacement_m"),
+    }
+
+
+def _load_completed_cases(
+    artifacts: dict[str, Path],
+    identity: dict,
+    selected_indices: list[int],
+    *,
+    resume: bool,
+) -> dict[int, dict]:
+    existing_case_files = artifacts["case_dir"].is_dir() and any(artifacts["case_dir"].glob("*.json"))
+    any_progress = (
+        existing_case_files
+        or artifacts["checkpoint"].exists()
+        or artifacts["progress_jsonl"].exists()
+        or artifacts["invocations"].exists()
+    )
+    if any_progress and not resume:
+        raise ValueError("progress artifacts already exist; pass --resume to retain completed cases")
+    if not resume:
+        return {}
+
+    if artifacts["checkpoint"].exists():
+        checkpoint = json.loads(artifacts["checkpoint"].read_text())
+        if checkpoint.get("resume_identity") != identity:
+            raise ValueError("checkpoint identity does not match request/source/scene/controller/selection")
+
+    completed: dict[int, dict] = {}
+    for index in selected_indices:
+        path = _case_record_path(artifacts, index)
+        if not path.exists():
+            continue
+        record = json.loads(path.read_text())
+        if record.get("schema_version") != 1 or record.get("resume_identity") != identity:
+            raise ValueError(f"completed case {index} identity does not match current run")
+        case = record.get("case")
+        if not isinstance(case, dict) or case.get("index") != index:
+            raise ValueError(f"completed case record {index} is malformed")
+        completed[index] = case
+    return completed
+
+
+def _begin_recording_invocation(
+    artifacts: dict[str, Path],
+    identity: dict,
+    output: Path,
+    label_prefix: str,
+    *,
+    resume: bool,
+) -> tuple[dict, list[dict]]:
+    history: list[dict] = []
+    if artifacts["invocations"].exists():
+        document = json.loads(artifacts["invocations"].read_text())
+        if document.get("resume_identity") != identity:
+            raise ValueError("recording invocation identity does not match current run")
+        history = document.get("invocations", [])
+        if not isinstance(history, list):
+            raise ValueError("recording invocation history is malformed")
+    ordinal = len(history)
+    suffix = "" if ordinal == 0 and not resume else f"_resume{ordinal:03d}"
+    video_dir = output.resolve().parent / "videos"
+    preexisting = (
+        sorted(str(path.resolve()) for path in video_dir.glob(f"{label_prefix}*")) if video_dir.exists() else []
+    )
+    invocation = {
+        "ordinal": ordinal,
+        "recording_suffix": suffix,
+        "started_wall_time_s": time.time(),
+        "preexisting_recording_artifacts": preexisting,
+        "status": "running",
+    }
+    history.append(invocation)
+    _atomic_json(
+        artifacts["invocations"],
+        {"schema_version": 1, "resume_identity": identity, "invocations": history},
+    )
+    return invocation, history
+
+
+def _update_recording_invocation(
+    artifacts: dict[str, Path],
+    identity: dict,
+    history: list[dict],
+    **updates,
+) -> None:
+    history[-1].update(updates)
+    _atomic_json(
+        artifacts["invocations"],
+        {"schema_version": 1, "resume_identity": identity, "invocations": history},
+    )
+
+
+def _write_checkpoint(
+    artifacts: dict[str, Path],
+    identity: dict,
+    selected_indices: list[int],
+    completed: dict[int, dict],
+) -> None:
+    ordered = [_compact_case(completed[index]) for index in selected_indices if index in completed]
+    _atomic_json(
+        artifacts["checkpoint"],
+        {
+            "schema_version": 1,
+            "resume_identity": identity,
+            "selected_case_count": len(selected_indices),
+            "completed_case_count": len(ordered),
+            "completed": ordered,
+            "summary": summarize_cases(ordered),
+        },
+    )
+
+
+def _record_completed_case(
+    artifacts: dict[str, Path],
+    identity: dict,
+    selected_indices: list[int],
+    completed: dict[int, dict],
+    result: dict,
+) -> None:
+    index = result["index"]
+    if index in completed:
+        raise RuntimeError(f"case {index} already has a terminal result")
+    result.setdefault("execution_started", False)
+    result.setdefault(
+        "attempt_classification",
+        "executed_reach" if result["execution_started"] else "admission_or_initialization_rejection",
+    )
+    _atomic_json(
+        _case_record_path(artifacts, index),
+        {"schema_version": 1, "resume_identity": identity, "case": result},
+    )
+    progress = {"schema_version": 1, **_compact_case(result), "recorded_wall_time_s": time.time()}
+    artifacts["progress_jsonl"].parent.mkdir(parents=True, exist_ok=True)
+    with artifacts["progress_jsonl"].open("a") as stream:
+        stream.write(json.dumps(progress, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    completed[index] = result
+    _write_checkpoint(artifacts, identity, selected_indices, completed)
+
+
 def _initialization_observation(primitives) -> dict | None:
     try:
         state = primitives.obs()
@@ -463,7 +791,51 @@ def _initialization_observation(primitives) -> dict | None:
     }
 
 
-def run_live(request: dict, output: Path, *, case_index: int | None = None) -> dict:
+def run_live(
+    request: dict,
+    output: Path,
+    *,
+    case_index: int | None = None,
+    selection: dict | None = None,
+    resume: bool = False,
+) -> dict:
+    description = request_description(request, output, case_index=case_index, selection=selection)
+    identity = _resume_identity(description)
+    selected_cases = _selected_cases(request, case_index, selection)
+    selected_indices = [case.index for case in selected_cases]
+    progress_artifacts = _progress_artifacts(output)
+    completed = _load_completed_cases(
+        progress_artifacts,
+        identity,
+        selected_indices,
+        resume=resume,
+    )
+    cases_out = [completed[index] for index in selected_indices if index in completed]
+    _write_checkpoint(progress_artifacts, identity, selected_indices, completed)
+
+    def record_result(result: dict) -> None:
+        _record_completed_case(progress_artifacts, identity, selected_indices, completed, result)
+        cases_out.append(result)
+
+    if len(completed) == len(selected_indices):
+        return {
+            "schema_version": 1,
+            "request": description,
+            "started_from_seed": request["seed"],
+            "session_prime": {"status": "resume_complete_no_stack_work"},
+            "cases": cases_out,
+            "summary": summarize_cases(cases_out),
+        }
+
+    recording_invocation, invocation_history = _begin_recording_invocation(
+        progress_artifacts,
+        identity,
+        output,
+        request["runtime"]["video_label_prefix"],
+        resume=resume,
+    )
+    recording_prefix = request["runtime"]["video_label_prefix"] + recording_invocation["recording_suffix"]
+    case_label_width = max(2, len(str(len(request["cases"]))))
     require_pose_ownership()
     runtime_request = request["runtime"]
     meta = runtime_request["scene_meta"]
@@ -472,28 +844,43 @@ def run_live(request: dict, output: Path, *, case_index: int | None = None) -> d
     collision_checker = MeasuredCollisionChecker(ArmIK(str(runtime_request["scene_xml"])))
     primitives = Primitives(meta=meta)
     reset = EpisodeControlClient()
-    cases_out: list[dict] = []
-    prime_label = f"{runtime_request['video_label_prefix']}_session_prime"
+    prime_label = f"{recording_prefix}_session_prime"
     session_prime: dict = {}
     try:
         session_prime = _prime_session(primitives, reset, output, prime_label)
+        _update_recording_invocation(
+            progress_artifacts,
+            identity,
+            invocation_history,
+            session_prime=session_prime,
+        )
         if session_prime["status"] != "ready":
+            _update_recording_invocation(
+                progress_artifacts,
+                identity,
+                invocation_history,
+                status="session_prime_failed",
+                ended_wall_time_s=time.time(),
+            )
             return {
                 "schema_version": 1,
-                "request": request_description(request, output, case_index=case_index),
+                "request": description,
                 "started_from_seed": request["seed"],
                 "session_prime": session_prime,
                 "cases": cases_out,
                 "summary": summarize_cases(cases_out),
             }
 
-        for case in _selected_cases(request, case_index):
-            label = f"{runtime_request['video_label_prefix']}_{case.index:02d}"
+        for case in selected_cases:
+            if case.index in completed:
+                continue
+            label = f"{recording_prefix}_{case.index:0{case_label_width}d}"
             artifacts = _artifact_paths(output, label)
             initialization_label = f"{label}_initialization"
             initialization_artifacts = _artifact_paths(output, initialization_label)
             initialization_video_started = False
             task_video_started = False
+            execution_started = False
             runtime = None
             initialization: dict = {
                 "status": "running",
@@ -527,7 +914,7 @@ def run_live(request: dict, output: Path, *, case_index: int | None = None) -> d
                     error=f"{type(error).__name__}: {error}",
                     last_observation=_initialization_observation(primitives),
                 )
-                cases_out.append(
+                record_result(
                     {
                         "index": case.index,
                         "label_zh": case.label_zh,
@@ -564,7 +951,7 @@ def run_live(request: dict, output: Path, *, case_index: int | None = None) -> d
                     runtime.safe_stop()
                 except Exception:
                     pass
-                cases_out.append(
+                record_result(
                     {
                         "index": case.index,
                         "label_zh": case.label_zh,
@@ -615,9 +1002,10 @@ def run_live(request: dict, output: Path, *, case_index: int | None = None) -> d
                         solver,
                         runtime,
                         criteria=request["criteria"],
-                        control_config=original_reach_control_config(),
+                        control_config=_request_control_config(request),
                         collision_checker=collision_checker,
                     )
+                    execution_started = True
                     result = executor.run_case(case, task_initial_state)
                     result["initialization"].update(initialization)
                     result["initialization_artifacts"] = initialization_artifacts
@@ -649,6 +1037,7 @@ def run_live(request: dict, output: Path, *, case_index: int | None = None) -> d
                             "label_zh": case.label_zh,
                             "status": "failed",
                             "reason": "runtime_error",
+                            "execution_started": execution_started,
                             "error": f"{type(error).__name__}: {error}",
                             "traceback": traceback.format_exc(),
                             "initialization": initialization,
@@ -666,17 +1055,27 @@ def run_live(request: dict, output: Path, *, case_index: int | None = None) -> d
                     _end_video_confirmed(primitives, reset, result["task_recording_boundary"])
                 except Exception as video_error:  # noqa: BLE001
                     result["video_finalization_error"] = f"{type(video_error).__name__}: {video_error}"
-            cases_out.append(result)
+            record_result(result)
     finally:
         reset.pin_arms()
         reset.close()
         primitives.close()
 
+    cases_out = [completed[index] for index in selected_indices if index in completed]
+    _update_recording_invocation(
+        progress_artifacts,
+        identity,
+        invocation_history,
+        status="completed",
+        ended_wall_time_s=time.time(),
+        completed_case_count=len(cases_out),
+    )
     return {
         "schema_version": 1,
-        "request": request_description(request, output, case_index=case_index),
+        "request": description,
         "started_from_seed": request["seed"],
         "session_prime": session_prime,
+        "recording_invocation": recording_invocation,
         "cases": cases_out,
         "summary": summarize_cases(cases_out),
     }
@@ -687,17 +1086,31 @@ def main(argv=None) -> int:
     parser.add_argument("request", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--validate-only", action="store_true")
-    parser.add_argument("--case-index", type=int, choices=range(1, 15))
+    selection_group = parser.add_mutually_exclusive_group()
+    selection_group.add_argument("--case-index", type=int)
+    selection_group.add_argument("--case-range", metavar="START:STOP")
+    selection_group.add_argument("--case-indices", type=Path)
+    parser.add_argument("--shard-index", type=int)
+    parser.add_argument("--shard-count", type=int)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
     try:
         request = load_execution_request(args.request)
+        selection = resolve_case_selection(
+            request,
+            case_index=args.case_index,
+            case_range=args.case_range,
+            case_indices_path=args.case_indices,
+            shard_index=args.shard_index,
+            shard_count=args.shard_count,
+        )
         if args.validate_only:
             result = {
                 "valid": True,
-                **request_description(request, args.output, case_index=args.case_index),
+                **request_description(request, args.output, selection=selection),
             }
         else:
-            result = run_live(request, args.output, case_index=args.case_index)
+            result = run_live(request, args.output, selection=selection, resume=args.resume)
         exit_code = 0
     except Exception as error:  # noqa: BLE001 - preserve validation/startup failure in requested output
         result = {
@@ -708,8 +1121,7 @@ def main(argv=None) -> int:
             "traceback": traceback.format_exc(),
         }
         exit_code = 2
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+    _atomic_json(args.output, result)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return exit_code
 

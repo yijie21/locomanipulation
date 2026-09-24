@@ -5,6 +5,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from scipy.spatial.transform import Rotation
 
 from locomani.tasks.crate import ghost_reach_execution as execution
@@ -206,6 +207,110 @@ def test_source_file_is_exact_fourteen_case_identity(tmp_path):
     assert len(identity["sha256"]) == 64
 
 
+def test_source_file_accepts_arbitrary_finite_contiguous_bank(tmp_path):
+    samples = []
+    for index in range(1, 18):
+        x = 0.2 + index * 0.01
+        samples.append(
+            {
+                "index": index,
+                "label_zh": f"joint-{index}",
+                "parameters": {
+                    "pair_midpoint_x_m": x,
+                    "pair_midpoint_y_m": 0.0,
+                    "ground_height_z_m": 0.7,
+                    "pair_separation_m": 0.4,
+                    "pair_line_yaw_deg": 0.0,
+                },
+                "capture_centres_xyz": {
+                    "left": [x, 0.2, 0.7],
+                    "right": [x, -0.2, 0.7],
+                },
+                "orientation_endpoints": {},
+            }
+        )
+    path = tmp_path / "joint_bank.json"
+    path.write_text(json.dumps({"schema_version": 1, "samples": samples}))
+
+    cases, identity = execution.load_source_cases(path)
+
+    assert [case.index for case in cases] == list(range(1, 18))
+    assert identity["sample_count"] == 17
+
+    samples[-1]["index"] = 16
+    path.write_text(json.dumps({"schema_version": 1, "samples": samples}))
+    with pytest.raises(ValueError, match="unique, contiguous 1..N"):
+        execution.load_source_cases(path)
+
+
+def test_case_selection_preserves_global_indices_and_shards():
+    request = {"cases": [replace(_case(), index=index) for index in range(1, 18)]}
+
+    ranged = execution_cli.resolve_case_selection(request, case_range="4:7")
+    sharded = execution_cli.resolve_case_selection(request, shard_index=1, shard_count=4)
+
+    assert ranged == {"mode": "case_range", "start": 4, "stop": 7, "indices": [4, 5, 6, 7]}
+    assert sharded["indices"] == [2, 6, 10, 14]
+    assert [case.index for case in execution_cli._selected_cases(request, selection=sharded)] == [2, 6, 10, 14]
+
+
+def test_checkpoint_resume_retains_failures_and_rejects_duplicates(tmp_path):
+    output = tmp_path / "result.json"
+    artifacts = execution_cli._progress_artifacts(output)
+    identity = {
+        "schema_version": 1,
+        "request_sha256": "request",
+        "source_targets": {"sha256": "source"},
+        "scene_xml_sha256": "scene",
+        "controller": {"owner": "original"},
+        "selection": {"mode": "shard", "shard_index": 0, "shard_count": 2, "indices": [1, 3]},
+    }
+    completed = {}
+    failure = {"index": 1, "status": "failed", "reason": "target_timeout", "execution_started": True}
+    rejection = {"index": 3, "status": "initialization_failed", "reason": "initial_stance_unstable"}
+
+    execution_cli._record_completed_case(artifacts, identity, [1, 3], completed, failure)
+    execution_cli._record_completed_case(artifacts, identity, [1, 3], completed, rejection)
+    resumed = execution_cli._load_completed_cases(artifacts, identity, [1, 3], resume=True)
+
+    assert list(resumed) == [1, 3]
+    assert resumed[1]["status"] == "failed"
+    assert resumed[3]["execution_started"] is False
+    assert len(artifacts["progress_jsonl"].read_text().splitlines()) == 2
+    checkpoint = json.loads(artifacts["checkpoint"].read_text())
+    assert checkpoint["completed_case_count"] == 2
+    with pytest.raises(RuntimeError, match="already has a terminal result"):
+        execution_cli._record_completed_case(artifacts, identity, [1, 3], completed, failure)
+    with pytest.raises(ValueError, match="identity does not match"):
+        execution_cli._load_completed_cases(artifacts, {**identity, "request_sha256": "changed"}, [1, 3], resume=True)
+
+    changed_controller = {**identity, "controller": {"owner": "changed implementation"}}
+    with pytest.raises(ValueError, match="identity does not match"):
+        execution_cli._load_completed_cases(artifacts, changed_controller, [1, 3], resume=True)
+
+
+def test_resume_uses_new_recording_suffix_and_preserves_interrupted_artifacts(tmp_path):
+    output = tmp_path / "result.json"
+    artifacts = execution_cli._progress_artifacts(output)
+    identity = {"schema_version": 1, "selection": {"mode": "all", "indices": [1]}}
+    video_dir = tmp_path / "videos"
+    video_dir.mkdir()
+    interrupted = video_dir / "ghost_01.mp4"
+    interrupted.write_bytes(b"interrupted-recording")
+
+    first, history = execution_cli._begin_recording_invocation(artifacts, identity, output, "ghost", resume=True)
+    second, second_history = execution_cli._begin_recording_invocation(
+        artifacts, identity, output, "ghost", resume=True
+    )
+
+    assert first["recording_suffix"] == "_resume000"
+    assert second["recording_suffix"] == "_resume001"
+    assert str(interrupted.resolve()) in first["preexisting_recording_artifacts"]
+    assert interrupted.read_bytes() == b"interrupted-recording"
+    assert len(history) == 1
+    assert len(second_history) == 2
+
+
 def test_launcher_delivers_absolute_native_state_trace_directory(tmp_path):
     backend = SimpleNamespace(to_dict=lambda: {"schema_version": 1, "no_encoder": False})
     output = tmp_path / "run" / "result.json"
@@ -294,6 +399,7 @@ def test_single_case_recording_separates_initialization_from_fresh_task_boundary
         "cases": [replace(_case(), index=index) for index in range(1, 15)],
         "criteria": execution.GhostReachCriteria(),
         "runtime": {
+            "backend": SimpleNamespace(to_dict=lambda: {"schema_version": 1, "test": True}),
             "scene_xml": scene_xml,
             "scene_meta_path": scene_meta,
             "scene_meta": {},
