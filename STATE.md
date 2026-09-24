@@ -15,16 +15,16 @@
 
 - 已确认：warehouse sim 只有 0.30–0.36× 实时，根因是 `nor_cal_box` 显示网格 46.3 万面 + 2 盏投影灯（3 路渲染 39–44 ms，walk 1.3 ms）；
   慢仿真下实际速度约 3 倍 = 用户看到的"过冲撞箱"。
-- 已确认：`backend.render: offline` 后 sim 0.95–0.97×，走路 0/10 碰箱；离线 10 局（`outputs/runs/box_room_grasp_offline_20260923`）
-  0/10——停在 depth 0.53–0.72 m，手指离抓点 27–44 cm，7 局伸手超时、2 局准入拒绝、1 局 vision_lost（未查）。
-- 已确认：守线余量 0.03（`outputs/runs/box_room_grasp_offline_m003_20260923`）停位中位 0.63→0.49 m，走路仍 0 碰箱；仍 0/10。
+- 已确认：`backend.render: offline` 后 sim 0.95–0.97×，走路 0/10 碰箱；守线余量 0.15→0.03 把停位中位 0.63→0.49 m（两轮各 0/10，伸手段无效，见下）。
 - 已确认（09-24）：**两轮离线 run 的伸手段从未执行**——占位帧戳晚于循环的 `now`，伸手参考时钟 0/440 tick 推进；实时 run 正常。
   已修（`expert.py` 读完相机再取 `now`）+ 契约测试。此前"手卡在 pregrasp 前"的结论作废。
+- 已确认（09-24，`outputs/runs/box_room_grasp_offline_m003b_20260924`）：修复后伸手 10/10 执行，0/10；三个几何限制按站位分层——
+  ≤0.51 ready 姿态手指压近壁（3 局）、≥0.54 下落时掌落壁顶停滞/掉箱（6 局）、0.46–0.52 抓深 1 cm 只夹到壁顶几毫米（试提掉）。
 - 待验证：此前所有 warehouse 结论都在慢仿真里测的（守线越线、carry 块摔倒），需满速重测。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **2.4.10.14** 修复后同配置重跑 m003：第一次真正的离线伸手测量（等用户确认）。
+- **2.4.10.15** 抓深 0.01 → 0.03（等用户确认）；**2.4.10.12** ready 原地抬升；**2.4.10.16** 远站位掌俯仰。
 - **2.4.10.8** 纸箱网格减面 / 关阴影——先问协作者。
 
 ## 卡点
@@ -42,7 +42,7 @@ bash scripts/cpu_headroom.sh && nvidia-smi --query-compute-apps=gpu_uuid,pid,use
 find /workspace/tmp -maxdepth 3 -name stack.json     # 有输出 = 有栈在跑
 
 # 离线渲染 pilot（当前基线；复制后改 name 和一个旋钮）
-CFG=configs/experiments/box_room_grasp_offline_m003_20260923.yaml
+CFG=configs/experiments/box_room_grasp_offline_m003b_20260924.yaml
 bash scripts/start_stack.sh collect $CFG --gpu 0
 bash scripts/bimanual/run_agent_server.sh $CFG --gpu 0
 bash scripts/stop_stack.sh --instance 0
