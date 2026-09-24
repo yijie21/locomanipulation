@@ -58,7 +58,15 @@ def test_backend_and_eval_blocks_are_accepted_by_their_consumers(path):
 def test_paths_the_file_names_exist(path):
     cfg = load(path)
     root = EXPERIMENTS.parents[1]
-    for value in (cfg["embodiment"]["gr00t_modality_config"], cfg["scene"]["dir"], cfg["eval"]["initial_token"]):
+    # `scene: {name: ...}` resolves through configs/scenes.yaml (run_context.resolve_scene); the registry promises
+    # the name exists, so here only the registry entry is required, not the (gitignored) outputs/ directory.
+    if "name" in cfg["scene"]:
+        registry = yaml.safe_load((root / "configs/scenes.yaml").read_text())
+        assert cfg["scene"]["name"] in registry, f"scene name {cfg['scene']['name']!r} not in configs/scenes.yaml"
+        scene_dir = registry[cfg["scene"]["name"]]["dir"]
+    else:
+        scene_dir = cfg["scene"]["dir"]
+    for value in (cfg["embodiment"]["gr00t_modality_config"], scene_dir, cfg["eval"]["initial_token"]):
         assert (root / value).exists(), f"{value} does not exist"
     cases = cfg["scene"].get("cases")
     assert cases is None or (root / cases).exists()

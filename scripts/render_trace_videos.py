@@ -32,16 +32,35 @@ def main(argv=None) -> int:
     out = a.out or a.run / "videos"
     out.mkdir(parents=True, exist_ok=True)
     meta = json.loads((scene / "scene_meta.json").read_text())
-    model = mujoco.MjModel.from_xml_path(str(scene / "scene_locomani.xml"))
+    # Ghost-hands rule (2026-09-24): a run whose expert wrote <label>_ghost.npz (the commanded grip targets, by
+    # state seq) gets translucent ghost grippers at those targets in the third-person view. Geom group 4 is on
+    # for the tracking camera only; the ego/wrist insets render with default options and never show them.
+    ghost_files = {p.name.removesuffix("_ghost.npz"): p for p in (a.run / "trace").glob("*_ghost.npz")}
+    ghost_ids = None
+    if ghost_files:
+        from locomani.sim.isaac import ghost as G
+        from locomani.tasks.crate.ghost_trace import ghost_poses, load_ghost_trace
+
+        model, ghost_ids = G.inject_mujoco(str(scene / "scene_locomani.xml"))
+    else:
+        model = mujoco.MjModel.from_xml_path(str(scene / "scene_locomani.xml"))
     data = mujoco.MjData(model)
     recorder = VideoRecorder(model, str(out), camera_name=meta.get("video_camera"))
+    if ghost_ids is not None:
+        recorder.vopt.geomgroup[4] = 1
     for trace in sorted((a.run / "trace").glob("*_state_trace.npz")):
-        qpos = np.load(trace)["qpos"]
+        npz = np.load(trace)
+        qpos, seqs = npz["qpos"], npz["seq"]
         if qpos.shape[1] != model.nq:
             raise SystemExit(f"{trace.name}: qpos width {qpos.shape[1]} != scene nq {model.nq}")
-        recorder.start(trace.name.removesuffix("_state_trace.npz"))
-        for q in qpos:
+        label = trace.name.removesuffix("_state_trace.npz")
+        table = load_ghost_trace(str(ghost_files[label])) if ghost_ids is not None and label in ghost_files else None
+        recorder.start(label)
+        for q, seq in zip(qpos, seqs):
             data.qpos[:] = q
+            if ghost_ids is not None:
+                gpos, gquat = ghost_poses(table, int(seq)) if table else ghost_poses({}, 0)
+                G.set_mujoco(data, ghost_ids, gpos, gquat)
             mujoco.mj_forward(model, data)
             recorder.frame(data)
         recorder.stop()

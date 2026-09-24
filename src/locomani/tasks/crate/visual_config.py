@@ -62,6 +62,18 @@ class CrateVisualConfig:
     reach_rotation_weight: float = 0.6  # assisted CoordinatedReach: whole-body IK weight on hand orientation (rad) against hand position (10 per metre); 0.6 trades ~10 deg for 1 cm, and at long reach gave up 10-20 deg of palm pitch (2026-09-23)
     orientation_gain: float = 0.0  # assisted CoordinatedReach: fraction of the filtered predicted-vs-measured palm rotation added to the commanded attitude; 0 = none. SONIC tracked the palm pitch 8-14 deg flat at long reach (2026-09-23)
     orientation_cap_deg: float = 20.0  # largest palm-attitude correction the orientation feedback may apply, degrees
+    close_target: float = -0.023  # closed-hand finger setpoint sent to both Dex1 fingers, m (joint range -0.023..0.03; 0 gap at -0.023). The sim's finger force is kp 1.5 x gear 250 x (setpoint - q): a 1 cm wall stops the jaw at -0.0177, so -0.023 gives 2 N per finger (9.5 N of friction for four pads, under the 1.2 kg box's 11.8 N); -0.06 gives 16 N, under the 20 N motor clamp. The deploy only clips finger targets to the Dex3 limits (-1.05/-0.724 rad) (2026-09-24)
+    stand_forward_min: float = 0.0  # stand/hold: smallest forward distance (m, along the body-to-object axis from the CURRENT pelvis, enforced every tick -- the pelvis itself advances 11-17 cm during the stand) of the stand hand targets' midpoint; 0 = the historical targets, which pull the hands back to the ready pose's position (0.16 m ahead for the lifted ready). With the 0.32 m deep warehouse box that rams its near wall into the torso at the end of the stand: box wall 6-9 cm from the pelvis, tilt to 14 deg and one jaw slips off in 15/15 lifted rounds (2026-09-24). The box needs its half depth plus clearance, ~0.35
+    lift_pitch_follow_gain: float = 0.0  # lift/stand/hold: rotate the commanded palm attitudes about the hand-hand axis by -gain x the box's measured pitch since closing (assisted truth; low-pass 0.2 s, capped by lift_pitch_follow_cap_deg); 0 = off. The rim pinch is a hinge and the box followed the palms' 10-25 deg attitude drift to the 15 deg tilt gate in 5/10 (2026-09-24); the crate line's bar grasp needed the same follow at 1.5 (bimanual_wall, 2026-09-13)
+    lift_pitch_follow_cap_deg: float = 25.0  # largest palm rotation the pitch follow may command, degrees
+    close_trigger: str = "gate"  # when the coordinated reach closes: gate = both measured grip points inside RimRegion (across/along/up box + 25 deg palm alignment + insertion, the crate bar's rule); contact = the jaw is physically around the wall wherever the hands landed: |across| <= contact_across (the open Dex1 jaw is 9.5 cm wide) and the grip point at least contact_below_rim under the rim top, OR that hand touching the object (privileged contact) with the grip point no more than 1.5 cm above the rim -- no palm-attitude gate. Adapts the grasp to what SONIC delivered instead of stalling 2-5 cm away (8/20 reach stalls, 2026-09-24)
+    contact_across: float = (
+        0.045  # contact trigger: largest across-wall error, m, at which the wall is still between the open pads
+    )
+    contact_along: float = 0.13  # contact trigger: largest along-wall offset of a grip point from the wall's midpoint, m, at which the pads are still on the wall (warehouse box wall 0.32 m long, pad 0.03: 0.13). The crate-era RimRegion window is +-0.09 and the hands slide 7-10 cm toward the robot on this wall (2026-09-24)
+    contact_overdrive: float = 0.0  # close_trigger=contact: the staged descent aims this far BELOW the grasp point, m, so the hands keep going until the trigger fires (pads under the rim, or the pad/palm touching the wall) instead of parking 1-4 cm above the rim where the delivery stopped short (7/20 stalls, 2026-09-24). 0 = descend to the grasp point as before
+    contact_below_rim: float = 0.005  # contact trigger: the grip point must be at least this far under the rim top, m, unless the hand already touches the object
+    capture_across: float = 0.0  # closing gate: allowed across-wall error of each measured grip point, m; 0 = RimRegion's 0.018 (set for the crate's 16 mm bar). The Dex1 jaw opens 9.5 cm, so a 1 cm box wall can sit +-4.2 cm off the jaw centre and still be closed on; the warehouse descend arrived 2-5.6 cm off across in 28/39 stalled rounds (2026-09-24)
     approach_speed: float = 0.055  # maximum Cartesian reference speed, metres/second
     joint_speed: float = 0.7  # maximum reference joint speed, radians/second
     joint_acceleration: float = 2.0  # maximum reference velocity change, radians/second squared
@@ -75,6 +87,7 @@ class CrateVisualConfig:
     lift_height: float = 0.10  # total desired rise after the probe
     hold_seconds: float = 2.0  # stable hold before ending the attempt
     hold_position_tolerance: float = 0.025  # maximum load-position radius over the final hold window, metres
+    hold_frame: str = "world"  # frame of the hold-window load position: world (the crate line's rule: the load must not move in the room) or pelvis (the load must not move IN THE HANDS; the body's own IDLE drift under load, 2.5-8 cm back and up to 5 cm sideways in 4 s on the warehouse box, is left to the retreat). Success = lifted, torso upright, retreat_distance walked with the load still held (user's definition, 2026-09-24)
     timeout_seconds: float = 35.0  # bounded expert attempt
     vision_timeout: float = 0.7  # stop advancing when the last valid RGB estimate is older
     reprojection_px: float = 4.0  # maximum RMS marker reprojection residual
@@ -95,11 +108,17 @@ class CrateVisualConfig:
             raise ValueError("visual.ready_pose must be forward or lifted")
         if self.ready_pose == "lifted" and self.elbow_min_deg >= 0:
             raise ValueError("visual.ready_pose lifted needs visual.elbow_min_deg below 0 (the forearms fold up)")
+        if self.close_trigger not in ("gate", "contact"):
+            raise ValueError("visual.close_trigger must be gate or contact")
+        if self.hold_frame not in ("world", "pelvis"):
+            raise ValueError("visual.hold_frame must be world or pelvis")
         if self.start_pose not in ("sampled", "scene"):
             raise ValueError("visual.start_pose must be sampled or scene")
         for name, value in vars(self).items():
             if name in (
                 "pose_source",
+                "close_trigger",
+                "hold_frame",
                 "stand_lateral_gate",
                 "start_pose",
                 "walk_steer",
@@ -108,7 +127,7 @@ class CrateVisualConfig:
                 "ready_pose",
             ):
                 continue
-            if name in ("start_advance", "reach_feedforward_forward", "reach_feedforward_up"):
+            if name in ("start_advance", "reach_feedforward_forward", "reach_feedforward_up", "close_target"):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError(f"visual.{name} must be a finite number")
                 continue

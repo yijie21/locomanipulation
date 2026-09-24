@@ -152,7 +152,7 @@ def test_a_scene_name_resolves_to_its_directory_in_the_run_and_its_copy(tmp_path
 
 def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     names = yaml.safe_load(run_common.SCENES.read_text())
-    assert set(names) == {"bottle", "crate", "warehouse", "walk"}
+    assert set(names) == {"bottle", "crate", "warehouse", "warehouse_textured", "walk"}
     for entry in names.values():
         assert "example" in entry or "build" in entry
         if "example" in entry:

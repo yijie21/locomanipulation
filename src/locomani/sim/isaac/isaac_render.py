@@ -94,6 +94,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="npz from compute_cam_traj.py; overrides the USD camera mount with MuJoCo-FK world poses per frame",
     )
     ap.add_argument("--end-frame", type=int, default=0, help="stop after this many source frames (0 = all)")
+    ap.add_argument(
+        "--rtx-setting",
+        action="append",
+        default=[],
+        metavar="PATH=VALUE",
+        help="carb setting applied after the renderer is configured, repeatable; bool/int/float parsed, else string. "
+        "E.g. /rtx/post/histogram/enabled=false (no auto-exposure: with it on, light intensities have NO effect on "
+        "the picture, the tonemapper renormalises every frame) and /rtx/post/tonemap/op=0 (Clamp, MuJoCo-like linear "
+        "response; 5 = ACES default). Measured 2026-09-24 on the warehouse: auto-exposure lifted the robot's 0.2 "
+        "greys to 108/255 and pushed 0.7 to 212, a head/torso ratio of 0.51 against MuJoCo's 0.23",
+    )
     ap.add_argument("--debug-cam", action="store_true", help="save a third-person still every 200 frames")
     ap.add_argument(
         "--insets",
@@ -286,6 +297,26 @@ def _render(
 
     inset_specs, inset_layout = inset_specs or {}, inset_layout or {}
     stg = S.assemble_stage(cfg, log)
+    if getattr(args, "rtx_setting", None):  # tests drive _render with a bare namespace
+        import carb.settings
+
+        st = carb.settings.get_settings()
+        for item in args.rtx_setting:
+            path, _, raw = item.partition("=")
+            low = raw.strip().lower()
+            value: object
+            if low in ("true", "false"):
+                value = low == "true"
+            else:
+                try:
+                    value = int(raw)
+                except ValueError:
+                    try:
+                        value = float(raw)
+                    except ValueError:
+                        value = raw
+            st.set(path.strip(), value)
+            log(f"rtx setting {path.strip()} = {value!r}")
     ghost = ghost_paths = None
     if args.ghost_trace and qpos is not None:
         from locomani.sim.isaac import ghost as G

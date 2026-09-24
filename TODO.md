@@ -128,3 +128,9 @@
 - [x] 3.15 warehouse 10 局 Isaac 重渲（`box_room_grasp_offline_close06_20260924`，2026-09-24）：房间用 Blender 直出的 USDC，`scripts/build_isaac_warehouse_scene.py` 生成 `assets/isaac/scene/warehouse_textured/`（scene.usda 引用 /root、停用 env_light 和静态纸箱；可动纸箱包装层也引用 /root 并停用其余 237 子 prim，否则丢材质绑定渲成素灰；sidecar 偏移 (0, 0.39, −0.371)），`scripts/render_isaac_warehouse.sh` 每局 mujoco_render（新加 `--azimuth 225 --distance 2.2`，默认机位在南隔断外只见墙）→ isaac_render → 并排。10/10 成功，~1 min/局，并排预览 `previews_isaac/`（130–175 KB），全分辨率 `isaac/<局>/side_by_side.mp4`。房间贴图、纸箱印字、机器人含头在 Isaac 里完整，机位逐帧一致；Isaac 略亮
     - [x] 3.15.1 Isaac 里 G1 发白（用户 2026-09-24 问）：颜色绑定没错（MJCF 0.7/0.2/0.3/0.25 四档都取到），是曝光。房间由 5 块 24828 强度天花板 RectLight + 自发光灯板照亮，dome/平行光改强度像素不变；默认自动曝光 + ACES 把 0.2 灰抬到 108、0.7 灰推到 212（头/躯干 0.51，MuJoCo 0.23）。`isaac_render` 新增 `--rtx-setting 路径=值`；自动曝光关 + `filmIso` 30 后躯干 139（MuJoCo 136）、头/躯干 0.36，已设为 `render_isaac_warehouse.sh` 默认并重渲 10 局。Clamp 全饱和、Linear 更平，不用（2026-09-24）
 - [ ] 3.11 VLA 视角：伸手阶段 latent 可学性复查（探针 B 在 box_room 数据上 reach R²≈0.16）；新专家跑通后重跑 `probe_visual_grounding_20260923.py`
+
+## 4. 三场景采集按 README 从零复现（协作者报 bottle 开局摔倒、文档没跟代码；用户 2026-09-24 定）
+
+- [~] 4.1 提交本会话 warehouse 代码（`make check`，按文件名 add，`--no-verify`），给复现一个干净基点
+- [ ] 4.2 无上下文 agent（headless `claude -p`，关钩子 + auto-memory）按 README 复现 bottle → crate → warehouse 采集，各 10 局 `record: true`，run 名前缀 `docrepro_20260924_`；只报告不修，每步写信息来源；bottle 加 `convert_data`；报告 `outputs/docrepro_20260924/report.md`
+- [ ] 4.3 读报告：文档问题直接改（grep 全部出现处）；代码 bug 先定位根因报给用户，点头再修，修后只重跑该场景 10 局；环境问题写进对应页常见问题表

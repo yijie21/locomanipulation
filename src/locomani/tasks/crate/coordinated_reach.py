@@ -101,6 +101,9 @@ class CoordinatedReach:
         self.align_started, self.align_residual = None, None
         self.feedforward = np.zeros(3)
         self.rotation_feedback = np.zeros((2, 3))  # filtered predicted-vs-measured palm rotation vectors (world)
+        self.ghost = None  # GhostTargetTrace: every commanded (pre-feedback) grip target + palm attitude, by state seq
+        self._seq = None
+        self.contact_sides = ()  # hands the privileged state reports touching the target object this tick
         self.best_error, self.progress_time = np.inf, None
         self.diagnostics = {}
         self.torso_target = None
@@ -115,14 +118,86 @@ class CoordinatedReach:
     def enter(self, phase):
         self.phase, self.elapsed, self.ready_since = phase, 0.0, None
 
+    def descend_goal(self, targets):
+        """Where the staged descent aims: the grasp points, or contact_overdrive below them in contact mode."""
+        cfg = self.config.visual
+        if cfg.close_trigger == "contact" and cfg.contact_overdrive > 0:
+            return targets - np.array([0.0, 0.0, cfg.contact_overdrive])
+        return targets
+
     def start_descend(self, targets, first):
         """Straight down from the pregrasp point, at the same Cartesian speed limit."""
         cfg = self.config.visual
-        drop = np.max(np.linalg.norm(targets - first, axis=1))
+        drop = np.max(np.linalg.norm(self.descend_goal(targets) - first, axis=1))
         self.descend_from = self.body.tools(self.x)
         self.descend_duration = max(1.5, 1.875 * drop / (cfg.descend_speed or cfg.approach_speed))
         self.best_error, self.progress_time = np.inf, None
         self.enter("descend")
+
+    def contact_ready(self, centres, obj_rotation, tools):
+        """visual.close_trigger=contact: close when each jaw is physically around its wall, wherever the hand
+        landed -- the wall inside the open jaw (|across| <= contact_across) and the grip point under the rim
+        top by contact_below_rim, or that hand already touching the object with the grip point at most 1.5 cm
+        above the rim (a pad or the palm has met the wall; descending further only jams). No palm-attitude
+        gate: the delivered attitude is what SONIC gave, closing on it beats stalling 2-5 cm away."""
+        cfg = self.config.visual
+        error = (np.asarray(tools) - centres) @ obj_rotation  # per hand: across, along, up
+        rim = self.target.rim_above_grasp
+        ready = []
+        for i, side in enumerate(("left", "right")):
+            across, along, up = error[i]
+            inside = abs(across) <= cfg.contact_across and abs(along) <= cfg.contact_along
+            entered = up <= rim - cfg.contact_below_rim
+            touched = side in self.contact_sides and up <= rim + 0.015
+            ready.append(inside and (entered or touched))
+        return bool(all(ready)), error
+
+    def capture_ready(self, centres, obj_rotation, tools, tool_rotations):
+        if self.config.visual.close_trigger == "contact":
+            return self.contact_ready(centres, obj_rotation, tools)
+        return self.region.contains(centres, obj_rotation, tools, tool_rotations)
+
+    def forward_floor(self, targets, state):
+        """Stand/hold hand targets kept at least visual.stand_forward_min ahead of the CURRENT pelvis along the
+        body-to-object axis. A floor applied once at closing is not enough: the pelvis itself advances 11-17 cm
+        while the torso straightens (2026-09-24), and a deep box rides into the torso."""
+        cfg = self.config.visual
+        if cfg.stand_forward_min <= 0:
+            return targets
+        pelvis_xy = np.asarray(state["pelvis"]["pos"][:2], dtype=float)
+        forward = float((np.mean(targets, axis=0)[:2] - pelvis_xy) @ self.outward[:2])
+        self.diagnostics["stand_forward_m"] = max(forward, cfg.stand_forward_min)
+        if forward < cfg.stand_forward_min:
+            return targets + (cfg.stand_forward_min - forward) * self.outward
+        return targets
+
+    def follow_attitudes(self, obj_rotation, dt):
+        """Palm attitudes for the loaded phases: the reach attitudes, rotated about the hand-hand axis
+        against the box's measured pitch since closing (visual.lift_pitch_follow_gain).
+
+        A rim pinch is a hinge: the box's pitch about the line between the hands is held only by pad
+        friction, so it follows the palms' attitude drift during the lift and swings to the tilt gate
+        (2026-09-24). Rotating the commanded palms the other way by gain x pitch brings it back, as the
+        crate line's bar grasp needed (pitch follow, 2026-09-13). Low-passed (0.2 s) and capped.
+        """
+        cfg = self.config.visual
+        if cfg.lift_pitch_follow_gain <= 0 or getattr(self, "closed_rotation", None) is None:
+            return self.attitudes
+        axis = obj_rotation[:, 0]  # world direction of the box's grasp axis (end wall to end wall)
+        relative = Rotation.from_matrix(obj_rotation @ self.closed_rotation.T).as_rotvec()
+        pitch = float(relative @ axis)
+        if dt > 0:
+            self.pitch_follow += (1 - np.exp(-dt / 0.2)) * (pitch - self.pitch_follow)
+        angle = float(
+            np.clip(
+                -cfg.lift_pitch_follow_gain * self.pitch_follow,
+                -np.radians(cfg.lift_pitch_follow_cap_deg),
+                np.radians(cfg.lift_pitch_follow_cap_deg),
+            )
+        )
+        self.diagnostics.update(pitch_follow_measured_deg=np.degrees(pitch), pitch_follow_command_deg=np.degrees(angle))
+        correction = Rotation.from_rotvec(angle * axis).as_matrix()
+        return np.array([correction @ a for a in self.attitudes])
 
     def advance(self, targets, attitudes, measured, dt, measured_rotations=None, z_floor=None, hold_across=None):
         """Rate/acceleration limits belong inside the supported body solve, including hips.
@@ -136,6 +211,11 @@ class CoordinatedReach:
         if dt <= 0:
             return
         cfg = self.config.visual
+        if self.ghost is not None:
+            # The pure reference (before position/orientation feedback), as the ghost-hands rule requires.
+            self.ghost.row(
+                self._seq, {"left": targets[0], "right": targets[1]}, {"left": attitudes[0], "right": attitudes[1]}
+            )
         predicted = self.body.tools(self.x)
         observed_error = np.clip(predicted - measured, -cfg.tracking_cap, cfg.tracking_cap)
         alpha = 1 - np.exp(-dt / 0.4)
@@ -270,6 +350,8 @@ class CoordinatedReach:
         """Advance by physical time; camera timestamps and freshness use wall time."""
         cfg = self.config.visual
         now = wall_time if motion_time is None else float(motion_time)
+        self._seq = state.get("seq")
+        self.contact_sides = tuple((state.get("objects") or {}).get(self.target.object_key, {}).get("touching") or ())
         if self.started is None:
             self.started = self.last_time = now
             self.started_wall = wall_time
@@ -364,7 +446,7 @@ class CoordinatedReach:
             if self.target.reach_only:
                 self.diagnostics.update(capture_error=np.linalg.norm(tools - targets, axis=1), capture_ready=False)
             else:
-                ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
+                ready, errors = self.capture_ready(centres, obj_rotation, tools, tool_rotations)
                 self.diagnostics.update(capture_error=errors, capture_ready=ready)
                 self.ready_since = (now if self.ready_since is None else self.ready_since) if ready else None
                 if self.ready_since is not None and now - self.ready_since >= 0.1:
@@ -404,9 +486,10 @@ class CoordinatedReach:
             if self.target.reach_only:
                 ready, errors = False, np.linalg.norm(tools - targets, axis=1)
             else:
-                ready, errors = self.region.contains(centres, obj_rotation, tools, tool_rotations)
+                ready, errors = self.capture_ready(centres, obj_rotation, tools, tool_rotations)
             self.diagnostics.update(capture_error=errors, capture_ready=ready)
-            error = float(np.max(np.linalg.norm(tools - targets, axis=1)))
+            goal = self.descend_goal(targets)
+            error = float(np.max(np.linalg.norm(tools - goal, axis=1)))
             if self.progress_time is None or error < self.best_error - 0.005:
                 self.best_error, self.progress_time = error, now
             if not self.target.reach_only and self.elapsed > self.descend_duration and now - self.progress_time > 3.0:
@@ -417,7 +500,7 @@ class CoordinatedReach:
                 self.enter("close")
             else:
                 u, _ = blend(self.elapsed, self.descend_duration)
-                commanded = self.descend_from + u * (targets - self.descend_from)
+                commanded = self.descend_from + u * (goal - self.descend_from)
                 hold = None
                 if cfg.lateral_hold_below_rim:
                     below = tools[:, 2] <= targets[:, 2] + self.target.rim_above_grasp + 0.01
@@ -448,6 +531,8 @@ class CoordinatedReach:
                 self.closed_tools = tools.copy()
                 self.closed_relative = (tools - obj_position) @ obj_rotation
                 self.closed_object = obj_position.copy()
+                self.closed_rotation = obj_rotation.copy()
+                self.pitch_follow = 0.0
                 # The held FK already includes feedback; remove it before adding
                 # the same correction to the new trajectory, preserving its start.
                 self.lift_targets = self.body.tools(self.x) - cfg.tracking_gain * self.feedback
@@ -455,6 +540,14 @@ class CoordinatedReach:
                 self.stand_targets[:, 2] = np.maximum(
                     self.stand_targets[:, 2], self.lift_targets[:, 2] + cfg.lift_height
                 )
+                if cfg.stand_forward_min > 0:
+                    # Keep the held load clear of the torso through the stand: the ready-pose position the
+                    # targets return to sits inside a deep box's footprint (2026-09-24, warehouse).
+                    pelvis_xy = np.asarray(state["pelvis"]["pos"][:2], dtype=float)
+                    forward = float((self.stand_targets.mean(axis=0)[:2] - pelvis_xy) @ self.outward[:2])
+                    if forward < cfg.stand_forward_min:
+                        self.stand_targets = self.stand_targets + (cfg.stand_forward_min - forward) * self.outward
+                    self.diagnostics["stand_forward_m"] = max(forward, cfg.stand_forward_min)
                 self.body.put(self.x)
                 planned_torso = self.solver.ik.data.xmat[self.body.torso].reshape(3, 3).copy()
                 measured_torso = base @ self.solver.ik.body_pose(np.asarray(state["joints"]), "torso_link")[1]
@@ -485,6 +578,7 @@ class CoordinatedReach:
                 return self.result("lost_attachment", True)
             if tilt > cfg.max_tilt_deg:
                 return self.result("basket_tilt", True)
+            attitudes = self.follow_attitudes(obj_rotation, control_dt)
             if self.phase in ("lift", "stand"):
                 delivered_probe = np.mean(tools[:, 2] - self.closed_tools[:, 2]) >= cfg.probe_height
                 if self.recovery_started is None:
@@ -514,7 +608,8 @@ class CoordinatedReach:
                     )
                 self.diagnostics["pelvis_height_target"] = self.body.pelvis_height_target
                 self.diagnostics.update(lift_progress=lift_u, recovery_progress=stand_u, loaded_targets=targets.copy())
-                self.advance(targets, self.attitudes, tools, control_dt, tool_rotations)
+                targets = self.forward_floor(targets, state)
+                self.advance(targets, attitudes, tools, control_dt, tool_rotations)
                 if (
                     self.recovery_started is not None
                     and recovery_time >= cfg.stand_seconds
@@ -529,7 +624,9 @@ class CoordinatedReach:
                 elif recovery_time >= cfg.stand_seconds + 4:
                     return self.result("stand_not_delivered", True)
             else:
-                self.advance(self.stand_targets, self.attitudes, tools, control_dt, tool_rotations)
+                self.advance(
+                    self.forward_floor(self.stand_targets, state), attitudes, tools, control_dt, tool_rotations
+                )
                 if self.elapsed >= cfg.hold_seconds + 2.0:
                     return self.result("unstable_hold", True)
                 stable = (
@@ -542,7 +639,8 @@ class CoordinatedReach:
                     self.hold_window.clear()
                     self.ready_since = None
                 else:
-                    self.hold_window.append((now, obj_position.copy()))
+                    anchor = np.asarray(state["pelvis"]["pos"], dtype=float) if cfg.hold_frame == "pelvis" else 0.0
+                    self.hold_window.append((now, obj_position - anchor))
                     while len(self.hold_window) > 1 and self.hold_window[1][0] <= now - cfg.hold_seconds:
                         self.hold_window.popleft()
                     positions = np.array([p for _, p in self.hold_window])

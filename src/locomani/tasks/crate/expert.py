@@ -33,7 +33,8 @@ from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.coordinated_reach import CoordinatedReach, CoordinatedTarget
 from locomani.tasks.crate.evaluation import evaluate
-from locomani.tasks.crate.grasp_region import GRASP_BELOW_RIM_M, grasp_points_for, target_key
+from locomani.tasks.crate.ghost_trace import GhostTargetTrace
+from locomani.tasks.crate.grasp_region import GRASP_BELOW_RIM_M, RimRegion, grasp_points_for, target_key
 from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.retreat import retreat
@@ -373,6 +374,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     target_meta = (meta.get("objects") or {}).get(key) or {}
     grasp_points = grasp_points_for(target_meta, cfg.box_grasp_below_rim)
     rim_above_grasp = cfg.box_grasp_below_rim if target_meta.get("box") else GRASP_BELOW_RIM_M
+    # The closing gate's across-wall band: the crate bar's 1.8 cm unless the config widens it (visual.capture_across).
+    capture_region = RimRegion(across=cfg.capture_across) if cfg.capture_across > 0 else RimRegion()
     geometry = {"grasp_points": grasp_points} if assisted else meta["crate_visual"]
     dataset_kind = (
         "ordinary_crate_assisted_low_reach_video_pilot"
@@ -449,6 +452,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         else CratePerception(ArmIK(scene_xml), geometry, max_reprojection_px=cfg.reprojection_px)
     )
     recorder = VisualRecording(directory / label)
+    # Ghost-hands rule (2026-09-24): every run records the commanded grip targets next to its state trace so the
+    # third-person video can draw them as translucent grippers (never the ego/wrist views).
+    ghost = GhostTargetTrace(str(directory.parent / "trace"), solver.offset)
     target_cache = VisibleTarget()
     preparation = ApproachPreparation(solver, cfg, arm.q) if assisted and whole_body and guard is None else None
     # The transport journals every reference send, even during mode priming.
@@ -574,7 +580,10 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                         reference_joints=joints,
                         reference_quaternion=raw["pelvis"]["quat"],
                         target=CoordinatedTarget(
-                            object_key=key, grasp_points_local=grasp_points, rim_above_grasp=rim_above_grasp
+                            object_key=key,
+                            grasp_points_local=grasp_points,
+                            rim_above_grasp=rim_above_grasp,
+                            region=capture_region,
                         ),
                     )
                     check = probe.step(now, estimate, raw, openings, **motion_clock)
@@ -687,9 +696,14 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             reference_joints=arm.q,
                             reference_quaternion=arm.root_quat,
                             target=CoordinatedTarget(
-                                object_key=key, grasp_points_local=grasp_points, rim_above_grasp=rim_above_grasp
+                                object_key=key,
+                                grasp_points_local=grasp_points,
+                                rim_above_grasp=rim_above_grasp,
+                                region=capture_region,
                             ),
                         )
+                        ghost.start(label)
+                        low.ghost = ghost
                     else:
                         low = VisualLowReach(
                             solver,
@@ -708,7 +722,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 )
                 q = body_command.joints
                 closed = np.zeros_like(HAND_OPEN)
-                closed[:2] = -0.023
+                closed[:2] = cfg.close_target
                 arm.hands = {
                     side: HAND_OPEN + body_command.closure * (closed - HAND_OPEN) for side in ("left", "right")
                 }
@@ -739,7 +753,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 )
                 q = reference.step(solution.joints, now - last_command_time)
                 closed = np.zeros_like(HAND_OPEN)
-                closed[:2] = -0.023
+                closed[:2] = cfg.close_target
                 arm.hands = {side: HAND_OPEN + command.closure * (closed - HAND_OPEN) for side in ("left", "right")}
                 arm.q = q
                 arm._push(q)
@@ -807,7 +821,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         control_reason = reason
         if hasattr(p, "cmd"):
             p.cmd.reference_observer = None
-        for cleanup in (recorder.close, reset.end_video, arm.stop):
+        for cleanup in (recorder.close, reset.end_video, arm.stop, ghost.stop):
             try:
                 cleanup()
             except Exception:

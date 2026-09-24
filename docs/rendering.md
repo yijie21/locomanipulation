@@ -106,6 +106,8 @@ Isaac 内部仍创建 World 并调用 `world.step(render=True)` 来更新变换�
 读取 trace，生成 `tracking_mujoco.mp4`，同时保存每帧第三人称相机的 `cam_traj.npz`。
 Isaac 再读取**相同 trace、场景和相机轨迹**生成画面，最后由 ffmpeg 横向拼接。
 因此左侧是 MuJoCo 的离线重渲，右侧是 Isaac 重渲，两侧无需分别跑一次任务。
+机位默认是录像器的跟踪相机（骨盆后方 2.5 m、方位 135°、仰角 −20°），可用 `--distance/--azimuth/--elevation` 改；
+warehouse 的起点离南侧隔断只有约 1 m，默认机位在墙外、两边都只看到墙，用 `--azimuth 225 --distance 2.2`（机器人前右方，室内）。
 
 Isaac 输出文件虽叫 `ego_isaac.mp4`，传入第三人称 `--cam-traj` 后内容实际是第三人称。
 `--insets` 会增加独立的第二遍回放，生成该渲染器自己的三路相机画中画再合成；
@@ -188,6 +190,37 @@ bash scripts/build_isaac_assets.sh --snapshot "$SNAPSHOT"
 场景 USD 与机器人 USD 分开缓存。它们复用源几何，但碰撞体与可视网格用途不同；
 新物体的可视网格转换是否受支持仍需检查构建日志及画面，不能只看脚本成功退出。
 资产缺失与新安装验证见 [资产可移植性报告](handoff/isaac-asset-portability-20260912.md)。
+
+## ghost 夹爪规则（2026-09-24 起，所有场景）
+
+每次跑 expert 都把**命令的抓取目标**（反馈修正之前的纯参考：两手抓点 + 掌姿态，按状态 seq）记到 `<run>/trace/<label>_ghost.npz`
+（`CoordinatedReach.ghost` → `tasks/crate/ghost_trace.py`）。`scripts/render_trace_videos.py` 发现该文件就把半透明品红夹爪放在目标位姿上，
+目标每次微调都能在视频里看到它动。**只画在第三人称跟踪视角**（geom group 4 只对主相机打开）；ego 和左右腕相机的画中画用默认选项渲染，
+永远不含 ghost，VLA 数据不受影响。Isaac 重渲（`render_isaac_warehouse.sh`）发现同名文件时把 `--ghost-trace` 传给两个渲染器，同样只在主画面。
+没有 `_ghost.npz` 的旧 run 渲染时没有 ghost（不能事后重建当时的目标）。
+
+## warehouse（Blender 房间）的 Isaac 重渲
+
+两桌面场景的资产构建器（`scene_assets.py` / `isaac_scene.py`）要 layout、桌面网格和 PLY 房间，对 Blender 导出的房间不适用。
+warehouse 走另一条路，结果仍是 `stage.py` 期望的目录布局，重放代码不变：
+
+```bash
+python3 scripts/build_isaac_warehouse_scene.py     # 需要 pxr（pip install usd-core，或任一 Isaac/Blender python）
+bash scripts/render_isaac_warehouse.sh outputs/runs/<run>   # 每局：mujoco_render → isaac_render → 并排 → previews_isaac/
+```
+
+- `scene.usda` 把 `assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc` 的 `/root` 引用到 `/World/room`，停用其中的 `env_light`
+  （RTX 不认它的 EXR，见 blender_scenes.md）和静态纸箱；`assemble_stage` 于是补 dome + 平行光。
+- `usd/nor_cal_box/` 是可动纸箱：同样引用 `/root` 但停用其余 237 个子 prim。只引用纸箱 prim 会丢掉 `/root/_materials` 的绑定
+  （纸箱渲成素灰，日志里一串 `_ReportErrors ... material:binding`）。sidecar 的 `offset_pos = (0, 0.39, −0.371)` 把烘在世界坐标里的网格
+  挪到 MJCF body 原点（底面中心），之后 `sync_replay` 直接用 body 位姿。
+- 机器人仍是 MJCF 导入的 `g1_dex1.usda`；`--scene-xml` 用 `outputs/scene/warehouse_textured/scene_locomani.xml`（见 blender_scenes.md：旧 `warehouse` 场景的纸箱没贴图）。
+- 机位：`mujoco_render --azimuth 225 --distance 2.2`。默认 2.5 m / 135° 在南侧隔断外面，两边都只渲到墙。
+- 曝光：`isaac_render --rtx-setting`（新，可重复，`路径=值`）；批处理默认关自动曝光、`filmIso` 30。房间由 5 块 24828 强度的天花板 RectLight
+  和自发光灯板照亮（USDC 里 1200× 增益已烘入），dome/平行光强度改了没有像素变化；默认自动曝光 + ACES 把机器人 0.2 灰抬到 108/255、0.7 灰推到 212，
+  头/躯干比 0.51（MuJoCo 0.23）。ISO 30 后躯干 139 对 MuJoCo 136、头/躯干 0.36；剩余差距是白房间的间接光，MuJoCo 没有全局光。
+  `tonemap/op=0`（Clamp）全帧饱和，`op=1`（Linear）比 ACES 更平，都不用。
+- 2026-09-24 首次跑通：房间贴图、纸箱印字、机器人（含头）在 Isaac 里都完整，机位与 MuJoCo 逐帧一致。
 
 ## EmbodiedGen 背景如何进入 Isaac
 

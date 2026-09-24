@@ -34,7 +34,14 @@ def _relative_references(tree: ET.ElementTree, source: Path, destination: Path) 
             if not sonic_candidate.is_file():
                 raise FileNotFoundError(f"unresolved source asset: {value}")
             resolved = sonic_candidate.resolve()
-        element.set("file", Path(os.path.relpath(resolved, destination)).as_posix())
+        # Assets copied along with the scene (mesh/, textures/) are written relative to the scene dir itself
+        # ("mesh/room_00.obj"), so any copy of the dir resolves them; anything outside the scene dir
+        # (the robot meshes under third_party) is written absolute: a run copies the scene dir one level
+        # deeper (outputs/runs/<run>/<scene>/), where "../../../third_party" no longer resolves (2026-09-24).
+        if resolved.is_relative_to(source):
+            element.set("file", resolved.relative_to(source).as_posix())  # travels with the copied dir
+        else:
+            element.set("file", str(resolved))
 
 
 def main() -> int:

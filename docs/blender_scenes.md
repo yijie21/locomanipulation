@@ -173,6 +173,10 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 所以灯光增益**不烘进 USD**,留给渲染时的调用方;仓库的数据集重渲走 `locomani.sim.isaac.isaac_render`,不受影响。
 不要再从上面九条里找。
 
+**运行时场景可能早于贴图提交**（2026-09-24 发现）。`configs/scenes.yaml` 的 `warehouse`（`outputs/box_rim_execution_20260920/scene_reverse_camera`）是 09-20 从 `outputs/scene/logistics_mujoco` 装的，
+早于 `0bf8eed`（纸箱拆 9 块材质、6 张实物照片），所以那份场景里纸箱是一整块纯色网格。用 `scripts/prepare_logistics_scene.py`
+从资产包重装即可（`warehouse_textured`）；场景名不改指向，重装的场景要起新名字。
+
 **纸箱显示网格太重，拖慢 MuJoCo 仿真**（2026-09-23 实测）。`nor_cal_box` 的显示网格有 46.3 万面，加上场景里 2 盏投影灯
 （shadowsize 4096），采集时 3 路相机每 tick 渲染 39–44 ms，warehouse 的 sim 只剩 0.30–0.36× 实时，机器人走得比指令快约 3 倍。
 离线测过：隐藏纸箱显示网格后 2.0 ms，关阴影后 11 ms。目前的绕法是 [`backend.render: offline`](rendering.md#离线渲染backendrender-offline)，

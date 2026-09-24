@@ -83,6 +83,16 @@ def main(argv=None) -> None:
     ap.add_argument("--fps", type=int, default=50, help="rate of the recorded states")
     ap.add_argument("--stride", type=int, default=4)
     ap.add_argument(
+        "--distance", type=float, default=TRACK["distance"], help="tracking camera distance from the pelvis, m"
+    )
+    ap.add_argument(
+        "--azimuth",
+        type=float,
+        default=TRACK["azimuth"],
+        help="tracking camera azimuth, deg (MuJoCo convention; 135 = behind-right of a +y-facing robot, 225 = front-right). The warehouse start is ~1 m from the south partition, so the default 2.5 m / 135 shot sits outside the room and both renderers see a wall (2026-09-24)",
+    )
+    ap.add_argument("--elevation", type=float, default=TRACK["elevation"], help="tracking camera elevation, deg")
+    ap.add_argument(
         "--ghost-trace",
         default="",
         help="<label>_ghost.npz from the bimanual expert: draw the aimed wrist poses as translucent ghost hands",
@@ -115,7 +125,7 @@ def main(argv=None) -> None:
     mujoco.mjv_defaultCamera(cam)
     cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
     cam.trackbodyid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
-    cam.distance, cam.azimuth, cam.elevation = TRACK["distance"], TRACK["azimuth"], TRACK["elevation"]
+    cam.distance, cam.azimuth, cam.elevation = args.distance, args.azimuth, args.elevation
     vopt = mujoco.MjvOption()
     mujoco.mjv_defaultOption(vopt)
     vopt.geomgroup[4] = 1 if ghost is not None else 0  # ghost hands only when asked (the insets never show them)

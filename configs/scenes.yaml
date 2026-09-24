@@ -17,6 +17,10 @@ warehouse:  # the scanned logistics room, both arms, a cardboard box
   dir: outputs/box_rim_execution_20260920/scene_reverse_camera
   example: configs/experiments/box_room_20260922.yaml
 
+warehouse_textured:  # the same room rebuilt from the published pack after 0bf8eed: the carton carries its 9 per-material geoms and 6 photo textures; `warehouse` (built 2026-09-20 from the pre-texture logistics_mujoco) has one plain-colour carton mesh. Robot, surfaces, objects, nq identical; ngeom 121 -> 129
+  dir: outputs/scene/warehouse_textured
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured
+
 walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SONIC locomotion; camera walk_follow
   dir: outputs/scene/walk
   build: python -m locomani.tasks.walk.scene outputs/scene/walk
