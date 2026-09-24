@@ -176,7 +176,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 **运行时场景可能早于贴图提交**（2026-09-24 发现）。`configs/scenes.yaml` 的 `warehouse`（`outputs/box_rim_execution_20260920/scene_reverse_camera`）是 09-20 从 `outputs/scene/logistics_mujoco` 装的，
 早于 `0bf8eed`（纸箱拆 9 块材质、6 张实物照片），所以那份场景里纸箱是一整块纯色网格。用 `scripts/prepare_logistics_scene.py`
 从资产包重装即可（`warehouse_textured`）；场景名不改指向，重装的场景要起新名字。新实验一律用 `warehouse_textured`，
-现行基线与跑法见 [§6](#在物流房间里采集warehouse)。
+现行基线与跑法见 [warehouse](warehouse.md)。
 
 **纸箱显示网格太重，拖慢 MuJoCo 仿真**（2026-09-23 实测）。`nor_cal_box` 的显示网格有 46.3 万面，加上场景里 2 盏投影灯
 （shadowsize 4096），采集时 3 路相机每 tick 渲染 39–44 ms，warehouse 的 sim 只剩 0.30–0.36× 实时，机器人走得比指令快约 3 倍。
@@ -202,36 +202,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 
 没有这两块,场景搭好了专家也不知道在哪儿干活。字段含义见 [双臂详解](bimanual_design.md)。
 
-### 在物流房间里采集（warehouse）
-
-和 crate 同一条管线（[双臂](bimanual.md) §6），换一份实验文件。现行基线是
-`configs/experiments/box_room_grasp_baseline_20260924.yaml`（场景 `warehouse_textured`，20 局 6/20；
-成功 = 抬起、躯干直立、后退 0.3 m 箱子不掉）。新实验复制它，改 `name` 和**一个**旋钮，对照一律 20 局；
-要出训练数据就把 `collect.record` 改成 `true`，并在转换前多跑一步渲相机：
-
-```bash
-. scripts/paths.sh
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 基线在这份 deploy 上测得
-bash scripts/start_stack.sh collect       configs/experiments/box_room_grasp_baseline_20260924.yaml --gpu 0
-bash scripts/bimanual/run_agent_server.sh configs/experiments/box_room_grasp_baseline_20260924.yaml --gpu 0
-# 仿真时不渲染，录像事后从 trace 渲出（第三视角自动画 ghost 夹爪）
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 \
-  third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/render_trace_videos.py outputs/runs/<run>
-bash scripts/render_isaac_warehouse.sh outputs/runs/<run>   # 可选：Isaac 并排，写 previews_isaac/
-# 只在 record: true 时：先从 trace 渲数据集的三路相机，再转换（转换会拒绝还没渲的离线运行）
-bash scripts/render_dataset_cameras.sh outputs/runs/<run> --gpu 0
-bash scripts/convert_data.sh           outputs/runs/<run>
-```
-
-与 crate 不同的三处：
-
-- **`backend.render: offline` 不能改回 `live`**。纸箱显示网格太重（§7），实时渲染时 sim 只剩 0.35× 实时，
-  机器人走得比指令快约 3 倍；2026-09-24 用旧的实时渲染配置 `box_room_20260922` 复现是 0/20。离线回到约 0.95×。
-- **数据集的相机是事后渲的**。离线时 sim 不出图，exporter 先存黑色占位帧（其余列都是实录的）；
-  `render_dataset_cameras.sh` 按每行记下的 sim seq（`priv_seq/`）从 `trace/` 取 qpos，用和 sim 同一份场景、
-  同一组相机渲出三路图，覆盖占位帧。对照实时录制的 crate 局核过：画面一致，实时帧比渲的晚 1–2 行
-  （实时相机 30 Hz 出图、exporter 取最近一张），同行差值中位数 5–6/255（含压缩）。
-- **deploy 用打过夹爪补丁的那份**（上面的 `export`）。默认 deploy 下的抓取成功率没测过。
+在这个房间里采集（场景怎么建、基线配置、离线渲染、补渲数据集相机）见 [warehouse](warehouse.md)。
 
 ## 7. 常见错误对照
 

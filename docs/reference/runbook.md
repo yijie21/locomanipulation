@@ -19,7 +19,7 @@ explicitly; newly written reach snapshots use version 2.
 
 ```bash
 . scripts/paths.sh
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # original author's machine only; a fresh setup builds both patches (setup step 3) and skips this
 
 bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1   # the whole path
 # collection is two terminals: the recording stack, then the agent that drives it
@@ -90,7 +90,7 @@ An older policy server must be restarted to supply the identity endpoint.
 | Operation | Driver / guide |
 |---|---|
 | Closed-loop SONIC evaluation | `src/locomani/pipeline/eval_closed_loop.py --help`; [evaluation](../single_arm.md) |
-| Crate collection | `bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_table30_record.yaml --dry-run`; [crate collection](../bimanual.md) |
+| Crate / warehouse collection | `bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_table30_record.yaml --dry-run` (warehouse: `box_room_grasp_baseline_20260924.yaml`); [crate](../bimanual.md), [warehouse](../warehouse.md) |
 | ScaleBFM collection/evaluation | `src/locomani/tasks/bottle_visual/pipeline/collect.py` / `eval.py`; [ScaleBFM collection](../scalebfm.md) |
 | Pick and place | `tasks/bottle/collect.py` with `configs/experiments/pick_place.yaml`; [task guide](../single_arm.md) |
 | Behavior comparison | `python3 scripts/gate.py --help`; match baseline and candidate protocols |

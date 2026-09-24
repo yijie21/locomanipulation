@@ -339,7 +339,7 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 - 只支持双臂 assisted 专家（`visual.pose_source: assisted`），它读的是黑色占位帧 `PlaceholderCamera`；
   markers 专家要读像素，`expert.run` 会直接拒绝。
 - 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出
-  （[跑法](blender_scenes.md#在物流房间里采集warehouse)）；没渲过的离线运行 convert 会拒绝。VLA 闭环评测要实时出图，仍须 `live`。
+  （[跑法](warehouse.md#5-跑)）；没渲过的离线运行 convert 会拒绝。VLA 闭环评测要实时出图，仍须 `live`。
 - 渲染慢的根本解是给纸箱网格减面或关阴影（隐藏网格后 2.0 ms，关阴影后 11 ms），见 [Blender 场景](blender_scenes.md#7-常见错误对照)。
 
 ## 当前接通范围与限制

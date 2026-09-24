@@ -14,7 +14,7 @@
 ```bash
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src"
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 仅原作者机器；新机器按安装第 3 步打补丁后不要这行
 ```
 
 **每台机器只建一次场景**：

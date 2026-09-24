@@ -150,7 +150,7 @@ CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 �
 写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，并记在
 `<run>/collect/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
 
-物流房间抓纸箱（warehouse）同线，但必须 `backend.render: offline`，录制时转换前要先渲相机；基线配置、命令和原因见 [Blender 场景 · 在物流房间里采集](blender_scenes.md#在物流房间里采集warehouse)。
+物流房间抓纸箱是同一条管线，但场景、渲染方式和转换前的一步不同，单独一页：[warehouse](warehouse.md)。
 
 ## 7. 产物
 

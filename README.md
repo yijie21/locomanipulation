@@ -12,7 +12,8 @@
 | 想做什么 | 提供的功能 | 怎么跑 | 为什么这么设计 |
 |---|---|---|---|
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
-| 双臂 | 视觉指导走近、俯身抓篮、抬起并站直；物流房间抓纸箱见 [warehouse 跑法](docs/blender_scenes.md#在物流房间里采集warehouse) | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
+| 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
+| 物流房间抓纸箱 | 双臂扣住纸箱沿、抬起、站直、后退；仿真时不渲染，数据集相机事后从轨迹补渲 | [warehouse](docs/warehouse.md) | [DECISIONS](DECISIONS.md) |
 | 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿五维可达搜索 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
 | 导入 Blender 场景 | 物流间纸箱场景的 MuJoCo / Isaac 资产、Blender 导入与尺寸说明 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
@@ -37,7 +38,7 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 
 | 要运行的功能 | 安装范围 |
 |---|---|
-| SONIC 单臂 / 双臂仿真采集 | 安装指南第 **0–4 步**：路径、上游仓库、仿真与采集环境、SONIC 权重及补丁、C++ deploy、场景 |
+| SONIC 单臂 / 双臂 / warehouse 仿真采集 | 安装指南第 **0–4 步**：路径、上游仓库、仿真与采集环境、SONIC 权重及补丁、C++ deploy、场景 |
 | GR00T / VLA 训练与评测 | 在上述基础上完成第 **5 步**，安装微调环境 |
 | Isaac 离线渲染 | 额外完成第 **7 步**，安装 SIMPLE 渲染运行时，再按 [资产构建](docs/rendering.md#资产构建) 生成 USD |
 | ScaleBFM 采集与评测 | 按 [ScaleBFM 指南](docs/scalebfm.md) 配置独立后端、权重和运行资产 |
@@ -53,7 +54,7 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 
 ```bash
 . scripts/paths.sh
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 打过夹爪补丁的 deploy
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 仅原作者机器；新机器按安装第 3 步打补丁后不要这行
 
 # 无人值守跑完整条线：采集 → 转换 → 训练 → 闭环评测
 bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1
@@ -73,7 +74,7 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gp
 没有作业文件也没有调度器；阶段产物已存在就自动跳过，要重跑就删掉那个产物。
 
 首次启动 SONIC 可能需要约 10 分钟构建 TensorRT engine，后续会使用缓存。仿真栈由 `start_stack.sh collect` /
-`start_stack.sh eval` 起、由驱动脚本或 `stop_stack.sh` 收（`src/locomani/stack/`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md)。
+`start_stack.sh eval` 起、由驱动脚本或 `stop_stack.sh` 收（`src/locomani/stack/`）。完整流程见 [单臂](docs/single_arm.md) / [双臂](docs/bimanual.md) / [warehouse](docs/warehouse.md)。
 
 ## 查看运行结果
 
@@ -96,5 +97,4 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gp
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
 完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)。
 
-需要修改代码或贡献功能时，从 [开发入口 AGENTS.md](AGENTS.md) 开始。已知文件的局部修改可直接进入；
-归属不明或新增功能时查 [代码导航](docs/reference/change-map.md)，改变接口或配置格式时查 [开发规范](docs/reference/standards.md)。
+需要修改代码或贡献功能时，从 [开发入口 AGENTS.md](AGENTS.md) 开始。已知文件的局部修改可直接进入；归属不明或新增功能时查 [代码导航](docs/reference/change-map.md)，改变接口或配置格式时查 [开发规范](docs/reference/standards.md)。

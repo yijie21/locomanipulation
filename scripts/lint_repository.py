@@ -27,6 +27,7 @@ GUIDES = {
     "docs/README.md": 80,
     "docs/single_arm.md": 210,
     "docs/bimanual.md": 210,
+    "docs/warehouse.md": 150,
     "docs/reference/change-map.md": 40,
     "docs/reference/change-map-bottle.md": 45,
     "docs/reference/change-map-crate.md": 35,
@@ -47,7 +48,7 @@ BYTE_BUDGETS = {"docs/reference/change-map.md": 3000}
 # README prints the quickstart, so it has to name commands that exist. It was NOT checked
 # until 2026-09-22, which is how it kept printing `scripts/collect_data.sh` for a whole
 # refactor after that script was deleted.
-COMMAND_DOCUMENTS = ("README.md", "docs/single_arm.md", "docs/bimanual.md")
+COMMAND_DOCUMENTS = ("README.md", "docs/single_arm.md", "docs/bimanual.md", "docs/warehouse.md")
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
 
