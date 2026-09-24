@@ -4,9 +4,9 @@
 
 ## 工作树里未提交的改动
 
-- 协作者的（不要动、不要提交）：`docs/bimanual_reachability.md`、`scripts/probe_ghost_reach.py`、`src/locomani/tasks/crate/ghost_reach_execution{,_cli}.py`、`tests/test_ghost_reach_execution.py`，未跟踪的 `docs/handoff/g1-joint-reach-search-20260920.md`、`scripts/generate_joint_reach_bank.py`、`src/locomani/tasks/crate/joint_reach_sampling.py`、`tests/test_joint_reach_sampling.py`、`assets/crates/nor_cal_box/visual/`。
-- 本会话的（待提交，按文件名 add）：`src/locomani/tasks/crate/{coordinated_reach,expert,visual_config}.py`、`src/locomani/sim/isaac/{isaac_render,mujoco_render}.py`、`scripts/{render_trace_videos.py,prepare_logistics_scene.py,build_isaac_warehouse_scene.py,render_isaac_warehouse.sh}`、`configs/scenes.yaml`、`configs/experiments/box_room_grasp_*_20260924.yaml`（15 个）、`tests/test_contact_close.py`、`tests/test_lift_pitch_follow.py`、`docs/{rendering,blender_scenes,walk}.md`、`docs/reference/config_fields.md`。
-- `make check` 已通过（2026-09-24 末，含本会话代码：为此改了 `tests/test_experiment_files.py`（scene name 解析）、`tests/test_run_context.py`（场景名集合）、`isaac_render` 的 `rtx_setting` 取值、`make config-doc` 重生成、`make format`）。提交钩子会 stash 协作者 WIP → 仍用 `--no-verify`，按文件名 add。handoff 提交只含三个 md。
+- 无代码改动。2026-09-24 已全部提交并推送到 `origin/main`（`8ca2fc2` warehouse 抓取、`c548ee0` 三场景复现 + 离线录制、`7a76b37` warehouse runbook、`76c5196` 可达性分片/续跑 + 五维采样——原记为"协作者 WIP"，实为已提交的 `reach_envelope.sh` / `boundary_search.py` 依赖的代码）。
+- 仍未跟踪、不属于任何提交：`assets/crates/nor_cal_box/visual/`（纸箱源网格，减面前先问维护者）、`assets/blender/{fonts,textures}/`、`package.json`、`uv.lock`。
+- 提交仍用 `make check` + `--no-verify` + 按文件名 add。
 
 ## 当前进度（全部已确认，20 局/轮、seed 7000–7019、离线渲染、场景 warehouse_textured）
 
