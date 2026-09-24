@@ -34,7 +34,15 @@ class BimanualIK:
 
     sides = ("left", "right")
 
-    def __init__(self, ik: ArmIK, *, waist_pitch_max: float, tool_offset=(0.1515, 0.0, 0.0), waist_dofs="pitch"):
+    def __init__(
+        self,
+        ik: ArmIK,
+        *,
+        waist_pitch_max: float,
+        tool_offset=(0.1515, 0.0, 0.0),
+        waist_dofs="pitch",
+        elbow_min_deg=5.0,
+    ):
         if waist_dofs not in ("pitch", "all"):
             raise ValueError("waist_dofs must be pitch or all")
         self.ik = ik
@@ -51,7 +59,9 @@ class BimanualIK:
         self.hi[14] = min(float(waist_pitch_max), self.hi[14])
         for side in self.sides:
             arm = ARM_MJ[side]
-            self.lo[arm[3]] = max(self.lo[arm[3]], np.radians(5))
+            # 5 deg (2026-09-12) keeps the forearm from folding above level; a lifted ready pose needs the fold
+            # (visual.elbow_min_deg), the reach then inherits the same floor through WholeBodyIK
+            self.lo[arm[3]] = max(self.lo[arm[3]], np.radians(elbow_min_deg))
             for index in (arm[2], arm[4]):
                 self.lo[index] = max(self.lo[index], -np.radians(50))
                 self.hi[index] = min(self.hi[index], np.radians(50))

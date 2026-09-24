@@ -46,6 +46,14 @@ class CrateVisualConfig:
     descend_speed: float = 0.0  # staged reach: Cartesian speed limit of the final straight-down segment, m/s; 0 = approach_speed. The descent undershot the grasp point by 1-3 cm and put the palm on the box rim (2026-09-23)
     descend_z_guard: bool = False  # staged reach, descent only: once a measured grip point is at or below its target height, its z position feedback may no longer grow downward and backs off by the undershoot. The feedback had to cover a ~8 cm model offset (cap 0.15) and then drove the palm 1-3 cm past the grasp point into the box rim (2026-09-23)
     pregrasp_back: float = 0.04  # staged reach: metres the pregrasp point sits toward the body from the grasp point
+    ready_pose: str = "forward"  # arms readied in place after a guard brake (prepare_stationary_ready): forward = the historical pose, tool points 0.38 m ahead at pelvis height (fingertips 0.42 m: on the warehouse box's near wall at stances under 0.51 m, 2026-09-24); lifted = tool points at ready_tool with the palm pitched ready_pitch_deg, solved by IK from the walking arms with the waist locked -- the forearms fold up, so it needs elbow_min_deg below 0
+    ready_tool: tuple[float, float, float] = (
+        0.16,
+        0.16,
+        0.05,
+    )  # lifted ready: tool point forward / lateral (mirrored) / up from the pelvis, metres; fingertips stay within 0.20 m of the pelvis through the blend from the walking arms
+    ready_pitch_deg: float = 30.0  # lifted ready: palm pitch below level; the reach slerps it to palm_pitch_deg
+    elbow_min_deg: float = 5.0  # elbow floor in both reach solvers (BimanualIK, WholeBodyIK); G1 elbow 0 = forearm level, negative folds it up (range -60). 5 since 2026-09-12; the lifted ready pose needs -60 (its solve misses by 5-10 cm at 5)
     reach_rotation_weight: float = 0.6  # assisted CoordinatedReach: whole-body IK weight on hand orientation (rad) against hand position (10 per metre); 0.6 trades ~10 deg for 1 cm, and at long reach gave up 10-20 deg of palm pitch (2026-09-23)
     orientation_gain: float = 0.0  # assisted CoordinatedReach: fraction of the filtered predicted-vs-measured palm rotation added to the commanded attitude; 0 = none. SONIC tracked the palm pitch 8-14 deg flat at long reach (2026-09-23)
     orientation_cap_deg: float = 20.0  # largest palm-attitude correction the orientation feedback may apply, degrees
@@ -78,10 +86,22 @@ class CrateVisualConfig:
             raise ValueError("visual.approach_stop must be depth or guard")
         if self.reach_path not in ("direct", "staged"):
             raise ValueError("visual.reach_path must be direct or staged")
+        if self.ready_pose not in ("forward", "lifted"):
+            raise ValueError("visual.ready_pose must be forward or lifted")
+        if self.ready_pose == "lifted" and self.elbow_min_deg >= 0:
+            raise ValueError("visual.ready_pose lifted needs visual.elbow_min_deg below 0 (the forearms fold up)")
         if self.start_pose not in ("sampled", "scene"):
             raise ValueError("visual.start_pose must be sampled or scene")
         for name, value in vars(self).items():
-            if name in ("pose_source", "stand_lateral_gate", "start_pose", "walk_steer", "reach_path", "approach_stop"):
+            if name in (
+                "pose_source",
+                "stand_lateral_gate",
+                "start_pose",
+                "walk_steer",
+                "reach_path",
+                "approach_stop",
+                "ready_pose",
+            ):
                 continue
             if name == "start_advance":
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
@@ -90,6 +110,20 @@ class CrateVisualConfig:
             if name == "descend_z_guard":
                 if not isinstance(value, bool):
                     raise ValueError("visual.descend_z_guard must be a boolean")
+                continue
+            if name == "ready_tool":
+                if (
+                    isinstance(value, (str, bytes))
+                    or len(value) != 3
+                    or any(
+                        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in value
+                    )
+                ):
+                    raise ValueError("visual.ready_tool must be three finite numbers (forward, lateral, up)")
+                continue
+            if name == "elbow_min_deg":
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not -60 <= value <= 90:
+                    raise ValueError("visual.elbow_min_deg must be a number in [-60, 90] (G1 elbow range)")
                 continue
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")

@@ -50,6 +50,7 @@ class WholeBodyIK:
         knee_max=0.85,
         pelvis_forward_max=0.20,
         pelvis_height_target=None,
+        elbow_min_deg=5.0,
     ):
         self.ik = ik
         self.hand_weights = np.asarray(hand_weights, dtype=float)
@@ -103,7 +104,7 @@ class WholeBodyIK:
         ranges[14, 1] = min(ranges[14, 1], config.waist_pitch_max)
         ranges[[3, 9], 0] = 0.05
         ranges[[3, 9], 1] = np.minimum(ranges[[3, 9], 1], self.knee_max)
-        ranges[[18, 25], 0] = np.maximum(ranges[[18, 25], 0], np.radians(5))
+        ranges[[18, 25], 0] = np.maximum(ranges[[18, 25], 0], np.radians(elbow_min_deg))
         if joint_limits is not None:
             ranges[:, 0] = np.maximum(ranges[:, 0], joint_limits[0])
             ranges[:, 1] = np.minimum(ranges[:, 1], joint_limits[1])

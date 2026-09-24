@@ -81,6 +81,7 @@ def test_whole_body_preparation_keeps_original_sequence_and_returns_started_arm(
         vision_timeout=0.7,
         upright_tolerance_deg=12.0,
         settle_seconds=0.3,
+        ready_pose="forward",  # the original sequence; `lifted` solves its own pose (test_crate_lifted_ready.py)
     )
 
     monkeypatch.setattr(expert, "PlannerArm", PlannerArm)
