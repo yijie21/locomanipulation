@@ -99,6 +99,7 @@ class CoordinatedReach:
         self.ready_since = None
         self.feedback = np.zeros((2, 3))
         self.align_started, self.align_residual = None, None
+        self.feedforward = np.zeros(3)
         self.rotation_feedback = np.zeros((2, 3))  # filtered predicted-vs-measured palm rotation vectors (world)
         self.best_error, self.progress_time = np.inf, None
         self.diagnostics = {}
@@ -338,6 +339,12 @@ class CoordinatedReach:
             self.rotations = [Slerp([0, 1], Rotation.from_matrix([a, attitude])) for a in initial_attitudes]
             # Horizontal unit vector from the body toward the object, across the grasp line.
             self.outward = Rotation.from_euler("z", yaw).apply([1.0, 0.0, 0.0])
+            # Feed-forward of the controller's steady delivery gap (delivered hands short and high of the commanded
+            # reference by a posture-dependent 6-8 cm, 2026-09-24): commanded outside the capped feedback, so the cap
+            # is left for the residual. Forward along the body-to-object axis, up in the world.
+            self.feedforward = cfg.reach_feedforward_forward * self.outward + np.array(
+                [0.0, 0.0, cfg.reach_feedforward_up]
+            )
             first = self.pregrasp(targets) if cfg.reach_path == "staged" else targets
             distance = np.max(np.linalg.norm(first - self.start_tools, axis=1))
             self.duration = max(3.0, 1.875 * distance / cfg.approach_speed)
@@ -369,7 +376,7 @@ class CoordinatedReach:
                 first = self.pregrasp(targets) if cfg.reach_path == "staged" else targets
                 commanded = self.start_tools + u * (first - self.start_tools)
                 attitudes = np.array([r(u).as_matrix() for r in self.rotations])
-                self.advance(commanded, attitudes, tools, control_dt, tool_rotations)
+                self.advance(commanded + self.feedforward, attitudes, tools, control_dt, tool_rotations)
                 if cfg.reach_path == "staged" and self.elapsed >= self.duration:
                     if cfg.descend_align_tolerance > 0:
                         self.align_started = now
@@ -391,7 +398,7 @@ class CoordinatedReach:
                 self.align_residual = across.copy()
                 self.start_descend(targets, first)
                 return self.result()
-            self.advance(first, self.attitudes, tools, control_dt, tool_rotations)
+            self.advance(first + self.feedforward, self.attitudes, tools, control_dt, tool_rotations)
         if self.phase == "descend":
             # Same capture and stall rules as the direct reach, including reach_only probes that never close.
             if self.target.reach_only:
@@ -417,7 +424,7 @@ class CoordinatedReach:
                     hold = (below, obj_rotation[:, 0])
                     self.diagnostics.update(lateral_hold=below)
                 self.advance(
-                    commanded,
+                    commanded + self.feedforward,
                     self.attitudes,
                     tools,
                     control_dt,

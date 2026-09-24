@@ -109,3 +109,21 @@ def test_across_wall_feedback_stops_changing_below_the_rim():
     assert np.max(np.abs(np.diff(np.array(held)[:, :, 1], axis=0))) < 1e-4  # across component frozen there
     free = [entry[2] for entry in descend if entry[3] is not None and not np.any(entry[3])]
     assert free and np.max(np.abs(np.diff(np.array(free)[:, :, 1], axis=0))) > 1e-4  # but it moved above the rim
+
+
+def test_reach_feedforward_shifts_the_commanded_hands_outside_the_feedback():
+    plain, state = setup()
+    shifted, _ = setup("visual.reach_feedforward_forward=0.03", "visual.reach_feedforward_up=-0.04")
+    for policy in (plain, shifted):
+        s = dict(
+            joints=state["joints"].copy(),
+            pelvis=dict(pos=list(state["pelvis"]["pos"]), quat=list(state["pelvis"]["quat"])),
+        )
+        for now in np.arange(0, 2.0, 0.05):  # well into the reach, no tracking error injected
+            command = policy.step(now, estimate(now, s), s, [0.08] * 2)
+            s = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+        assert policy.phase == "reach"
+    assert np.allclose(plain.feedback, 0, atol=1e-6) and np.allclose(shifted.feedback, 0, atol=1e-6)
+    delta = shifted.body.tools(shifted.x) - plain.body.tools(plain.x)
+    assert np.allclose(delta[:, 2], -0.04, atol=0.01)  # both hands commanded 4 cm lower
+    assert np.all(delta @ shifted.outward > 0.015)  # and forward along the body-to-object axis

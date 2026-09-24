@@ -48,6 +48,8 @@ class CrateVisualConfig:
     pregrasp_back: float = 0.04  # staged reach: metres the pregrasp point sits toward the body from the grasp point
     descend_align_tolerance: float = 0.0  # staged reach: hold at the pregrasp point until both measured grip points are within this of the grasp line across the wall (assisted: simulation truth), then descend; 0 = descend at once. The across-wall error was 2-6 cm at the start of the descend and jammed a pad on the wall face (2026-09-24)
     descend_align_timeout: float = 3.0  # staged reach: seconds the alignment hold may take before descending anyway
+    reach_feedforward_forward: float = 0.0  # metres added to every reach/align/descend hand command along the body-to-object axis, outside the capped tracking feedback. The controller delivered the hands 2-5 cm short of the reference in the warehouse descend (2026-09-24); negative pulls the command back
+    reach_feedforward_up: float = 0.0  # metres added to the same commands in world z. The hands arrived 2-9 cm above the reference (waist pitch delivered at ~2/3 of the command); a negative value commands lower from the first tick instead of waiting for the feedback to wind up
     lateral_hold_below_rim: bool = False  # staged reach, descent only: once a measured grip point is within 1 cm of the rim top or below it, its across-wall feedback stops changing. A pad against a wall face is blocked; the correction otherwise winds up to tracking_cap and shoves the wall until the box tips (2026-09-24)
     ready_pose: str = "forward"  # arms readied in place after a guard brake (prepare_stationary_ready): forward = the historical pose, tool points 0.38 m ahead at pelvis height (fingertips 0.42 m: on the warehouse box's near wall at stances under 0.51 m, 2026-09-24); lifted = tool points at ready_tool with the palm pitched ready_pitch_deg, solved by IK from the walking arms with the waist locked -- the forearms fold up, so it needs elbow_min_deg below 0
     ready_tool: tuple[float, float, float] = (
@@ -106,9 +108,9 @@ class CrateVisualConfig:
                 "ready_pose",
             ):
                 continue
-            if name == "start_advance":
+            if name in ("start_advance", "reach_feedforward_forward", "reach_feedforward_up"):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-                    raise ValueError("visual.start_advance must be a finite number")
+                    raise ValueError(f"visual.{name} must be a finite number")
                 continue
             if name in ("descend_z_guard", "lateral_hold_below_rim"):
                 if not isinstance(value, bool):
