@@ -418,6 +418,8 @@ GPU 0,instance 0,seed 7000 起 20 局,`outputs/runs/box_pilot_slow_20260922`。
 | `box_room_grasp_offline_m003b_20260924` | m003 原样,伸手时钟修复后 | 0/10,但 10/10 伸手执行:5 局合爪+试提(抓深 1 cm 只夹到壁顶几毫米,`probe_not_attached` 3 / `lost_attachment` 2),4 局远站位(≥0.54)掌落壁顶停滞,1 局(0.40)ready 姿态推走箱子 |
 | `box_room_grasp_offline_deep03_20260924` | m003b + 抓深 0.01→0.03 | 0/10,0 合爪(m003b 5):8 局下落段停滞,6 局箱子被推斜>5°;跨壁横向误差下落前已有 2–6 cm,指垫顶壁面后横向修正积分到 ±15 cm 上限把箱子推倒 |
 | `box_room_grasp_offline_lifted_20260924` | m003b + `ready_pose: lifted`（`elbow_min_deg -60`） | 0/10;抬手期间接触 0/10、箱子位移 0/10(此前 5 局/2 局);4 局合爪试提(1 cm 抓深夹不住),6 局下落停滞——4 局横向修正顶壁饱和 ±15 cm,2 局停在目标上方 2 cm |
+| `box_room_grasp_offline_hold_20260924` | lifted + `lateral_hold_below_rim` | 0/10,试提 3;沿下冻结生效但唯一一次横向饱和发生在沿上方;4 局远站位 |
+| `box_room_grasp_offline_align_20260924` | hold + `descend_align_tolerance 0.015` | 0/10,**试提 6**(1 cm 抓深全夹不住);align 进入 ≤2.8 cm 出口 ≤1.6 cm;停滞 2 远站位 + 2 局下落中横向再漂 3–5 cm |
 
 根因:`nor_cal_box` 显示网格 46.3 万面 + 2 盏投影灯,3 路相机渲染 39–44 ms(walk 1.3 ms);慢仿真下 deploy 按墙钟推进,
 步长 0.17–0.34 m(正常 0.14)、实际速度约 3 倍,这就是视频里的"过冲撞箱"。离线这组是第一组可信的 warehouse 数据:

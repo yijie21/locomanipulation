@@ -14,18 +14,17 @@
 ## 当前进度
 
 - 已确认：warehouse sim 0.30–0.36× 实时，根因是纸箱网格 46.3 万面 + 投影灯（3 路渲染 39–44 ms）；慢仿真下速度约 3 倍 = "过冲撞箱"。
-- 已确认：`backend.render: offline` 后 sim 0.95–0.97×，走路 0/10 碰箱；守线余量 0.15→0.03 把停位中位 0.63→0.49 m（两轮各 0/10，伸手段无效，见下）。
-- 已确认（09-24）：前两轮离线的伸手段从未执行（占位帧戳晚于循环 `now`，参考时钟 0/440 tick）；已修 + 契约测试，实时不受影响。
-- 已确认（09-24，m003b）：修复后伸手 10/10 执行，0/10；三层几何限制：≤0.51 ready 姿态压近壁、≥0.54 掌落壁顶、0.46–0.52 抓深 1 cm 夹不住。
+- 已确认：`backend.render: offline` 后 sim 0.95–0.97×，走路 0/10 碰箱；守线余量 0.15→0.03 把停位中位 0.63→0.49 m。
+- 已确认（09-24）：前两轮离线的伸手段从未执行（占位帧戳晚于循环 `now`）；已修 + 契约测试，实时不受影响。
+- 已确认（09-24，m003b / deep03）：三层几何限制——ready 压近壁、远站位掌落壁顶、1 cm 抓深夹不住；抓深 0.03 在 2–6 cm 横向误差下把箱子推倒。
+- 已确认（09-24，lifted `ed5819d`）：ready 原地抬升后抬手接触与箱子位移都 0/10。
+- 已确认（09-24，hold / align `833ca23`）：沿下 anti-windup 单独无效（试提 3）；预抓点真值居中后试提 6/10，全是 1 cm 抓深夹不住；
+  下落中跨壁误差会再漂 3–5 cm、修正未送达（SONIC 横向送达，非接触）。
 - 待验证：此前所有 warehouse 结论都在慢仿真里测的（守线越线、carry 块摔倒），需满速重测。
-
-- 已确认（09-24，deep03）：抓深 0.03 → 0/10、0 合爪、6 局推斜：跨壁横向误差 2–6 cm，指垫顶壁后修正积分到 ±15 cm 把箱子推倒。
-
-- 已确认（09-24，lifted，`ed5819d`）：ready 原地抬升后抬手接触 0/10、箱子位移 0/10；仍 0/10——4 局试提夹不住、4 局横向修正顶壁饱和、2 局停高 2 cm。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **2.4.10.17** 横向对准 + 修正 anti-windup（控制改动，等用户定方案）；之后回抓深 0.03；**2.4.10.16** 远站位掌俯仰。
+- **2.4.10.18** align 配置上回抓深 0.03（等用户确认）；**2.4.10.19** 下落中横向再漂 3–5 cm；**2.4.10.16** 远站位掌俯仰。
 - **2.4.10.8** 纸箱网格减面 / 关阴影——先问协作者。
 
 ## 卡点
@@ -43,7 +42,7 @@ bash scripts/cpu_headroom.sh && nvidia-smi --query-compute-apps=gpu_uuid,pid,use
 find /workspace/tmp -maxdepth 3 -name stack.json     # 有输出 = 有栈在跑
 
 # 离线渲染 pilot（当前基线；复制后改 name 和一个旋钮）
-CFG=configs/experiments/box_room_grasp_offline_lifted_20260924.yaml
+CFG=configs/experiments/box_room_grasp_offline_align_20260924.yaml
 bash scripts/start_stack.sh collect $CFG --gpu 0
 bash scripts/bimanual/run_agent_server.sh $CFG --gpu 0
 bash scripts/stop_stack.sh --instance 0
