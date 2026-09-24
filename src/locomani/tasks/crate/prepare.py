@@ -35,15 +35,25 @@ def check_profile(task_cfg: CrateTaskConfig, expert: str, record: bool) -> None:
         raise SystemExit("whole_body is a motion pilot; full-pose VLA action export is not validated")
 
 
+def _build_command(src: Path) -> str:
+    """How to build a missing scene: its `build` line in configs/scenes.yaml, else the crate table builder."""
+    import yaml
+
+    from locomani.pipeline.run_context import SCENES
+
+    for entry in (yaml.safe_load(SCENES.read_text()) or {}).values():
+        if entry.get("build") and (Path(paths.REPO) / entry["dir"]).resolve() == src.resolve():
+            return f"cd {paths.REPO} && {entry['build']}"
+    return f"{paths.VENV_SIM_PY} {Path(paths.SRC) / 'tasks/crate/bimanual_scene.py'} {src}"
+
+
 def prepare_scene(src: Path, out: Path, task_cfg: CrateTaskConfig, expert: str, *, record: bool = False) -> Path:
     """Copy the frozen crate scene into the run (named after the source, the expert's lookups need that) and
     strip the marker paint for the assisted pose source; returns the copy."""
     check_profile(task_cfg, expert, record)
     src = Path(src)
     if not (src / "scene_meta.json").is_file():
-        raise SystemExit(
-            f"no crate scene at {src}; build it:\n  {paths.VENV_SIM_PY} {Path(paths.SRC) / 'tasks/crate/bimanual_scene.py'} {src}"
-        )
+        raise SystemExit(f"no crate scene at {src}; build it:\n  {_build_command(src)}")
     if expert == "visual" and task_cfg.visual.pose_source == "markers":
         if "crate_visual" not in json.loads((src / "scene_meta.json").read_text()):
             raise SystemExit("visual expert requires a scene built by locomani.tasks.crate.visual_scene")
