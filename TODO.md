@@ -145,3 +145,7 @@
   - [x] 4.3.9 warehouse 离线录不出 LeRobot：要么事后从 trace 渲相机图写进数据集（新功能），要么纸箱网格减面改回 live（2.4.10.8）——待用户定——用户定 A（2026-09-24）：exporter 离线存占位帧（`sim/dataset_cameras.py`），`scripts/render_dataset_cameras.sh` 按 priv_seq 从 trace 渲三路相机覆盖，convert 拒绝未渲的离线运行；对照实时 crate 局 1000/1000 帧同行差值中位数 4.6–6.2；端到端 `docrepro_20260924_warehouse_dataset`（8 局 2 成功）：采集 → 渲 8 局（每局 6–10 s）→ convert 出 train/val，画面核对为真；**审计挂 1 项**：见 4.3.10；审计修后 train/val 均 32/32 通过（2026-09-24）
   - [x] 4.3.10 审计 `wrist within 30 cm of the object at close` 对纸箱不成立：量的是两腕中点到物体**原点**，`nor_cal_box` 原点在箱底（centre z 0.165），合爪时中点距原点 0.45、距中心 0.29、距箱面 0.11 m；改成量到 `scene_meta` 的 box 表面（待用户定）（用户 2026-09-24 定；`check_dataset.box_surface_distance`，有 `--run-dir` 且 scene_meta 有 box 时量到箱面，crate/bottle 原点即中心、不变严；复转 32/32，2026-09-24）
 - [x] 4.4 warehouse 单独一页 runbook `docs/warehouse.md`（准备含建场景、两个补丁；README 功能表独立一行；blender_scenes / bimanual / rendering / docs 索引指过去；`SONIC_DEPLOY_ROOT` 那行注明仅原作者机器）（用户 2026-09-24 提出，2026-09-24）
+- [x] 4.5 可达性"协作者 WIP"（分片 / 续跑 ghost-reach probe、五维联合采样 + 测试 + 09-20 handoff）提交推送：主线 `reach_envelope.sh` 依赖它（`76c5196`，2026-09-24）；纸箱源网格 `assets/crates/nor_cal_box/visual/` 不提交
+- [ ] 4.6 全新 clone 上按 README → setup → single_arm / bimanual / warehouse 从零验证（可再用无上下文 agent，这次三份 runbook 都只在装好环境的本机跑过）
+- [ ] 4.7 待验证：离线补渲的数据集帧比实时帧"新" 1–2 行，训出的策略在实时闭环评测里是否受影响（warehouse 闭环要实时出图，受 2.4.10.8 卡住）
+

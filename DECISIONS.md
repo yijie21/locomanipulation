@@ -369,3 +369,23 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 离线渲的帧比实时帧"新" 1–2 行（实时 30 Hz 取最近一张）；训练出的策略在实时闭环评测里是否受这点影响，没测。
 - exporter 比 trace 多录 ~22–25 行尾巴，渲染时保持 trace 最后一帧；这些行会被 verification tail 裁掉，但 `--include-discarded` 的失败局不裁。
 - warehouse 闭环 VLA 评测仍需实时出图（`live`），被纸箱网格卡住。
+
+## 2026-09-24 warehouse 单独一页 runbook；"协作者 WIP" 实为主线依赖，已提交
+
+### 目标与约束的变化
+- 用户问新人 pull 之后看什么文档复现三条采集线，并问 warehouse 为什么不像单臂 / 双臂那样在 README 功能表里有自己一行；又问协作者的 5 个 WIP 文件是否与主线重复。
+
+### 决策
+1. warehouse 单独一页 `docs/warehouse.md`，章节顺序同 single_arm / bimanual（准备 → 实验文件 → 新建 → 字段 → 跑 → 产物 → 排错 → 进一步阅读），README 功能表、docs 索引表各一行，登记进 `lint_repository.py` 的 COMMAND_DOCUMENTS（路径必须存在）和 150 行上限。理由：README 表的规则是"一条线一页"；塞进别的页让这条线在入口不可见，而且漏掉了"准备"一节（建场景、两个补丁）。
+2. `export SONIC_DEPLOY_ROOT=...bottle_continuous_20260914/deploy` 在 README / single_arm / warehouse / reference runbook 都注明"仅原作者机器"。理由：`outputs/` 不进 Git；那份 deploy 只是默认 deploy 多打了夹爪补丁（二进制多 `PLANNER_HAND_OWNERSHIP_V1`），新机器按 setup 第 3 步打两个补丁即可。
+3. STATE 里标"协作者的，不要动"的可达性代码（分片 / 续跑的 ghost-reach probe、五维联合采样）提交（`76c5196`）。理由：不是重复也不是多余——已提交的 `reach_envelope.sh` 传 `--shard-index/--shard-count`，干净 HEAD 上的 probe 报 `unrecognized arguments`；`boundary_search.py` 读的 `result.cases/` 只有这份 CLI 写；`reach_envelope.md` 点名的 `generate_joint_reach_bank.py` 未跟踪。git 作者全是 `yijie21`，"协作者"很可能是 09-20 / 09-21 两个会话。
+4. `assets/crates/nor_cal_box/visual/`（纸箱源网格）不随这批提交。理由：与这批代码无关；减面前先和维护者对齐。
+
+### 被否决的方案（及原因）
+- warehouse 跑法留在 `blender_scenes.md` 小节、README 双臂行里塞链接：为守 README 100 行 / bimanual 210 行上限而藏内容，用户指出入口看不到这条线；腾行数改为合并折行的散文。
+- 继续把可达性代码当别人的 WIP 不碰：推到 GitHub 的主线里 `reach_envelope.sh` 是坏的，别人 clone 下来第一步就报错。
+- 判定两套"边界搜索"重复而删一套：`boundary_search.next_x` 是网格上逐线二分出包络，`joint_reach_sampling` 是五维近邻加密验证插值（`reach_envelope.md` §5 两者互补）；`verdict` 与 `classify_reach_attempt` 回答的问题不同（过/不过/重跑 vs 是否真的下发了伸手）。
+
+### 未决（不是决策）
+- `docs/warehouse.md` 没在全新 clone 上从零走过；三份 runbook 的"新机器"路径都只在本机验证过。
+- `assets/blender/{fonts,textures}/`、`package.json`、`uv.lock` 来历不明，未跟踪。
