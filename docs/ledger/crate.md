@@ -420,6 +420,7 @@ GPU 0,instance 0,seed 7000 起 20 局,`outputs/runs/box_pilot_slow_20260922`。
 | `box_room_grasp_offline_lifted_20260924` | m003b + `ready_pose: lifted`（`elbow_min_deg -60`） | 0/10;抬手期间接触 0/10、箱子位移 0/10(此前 5 局/2 局);4 局合爪试提(1 cm 抓深夹不住),6 局下落停滞——4 局横向修正顶壁饱和 ±15 cm,2 局停在目标上方 2 cm |
 | `box_room_grasp_offline_hold_20260924` | lifted + `lateral_hold_below_rim` | 0/10,试提 3;沿下冻结生效但唯一一次横向饱和发生在沿上方;4 局远站位 |
 | `box_room_grasp_offline_align_20260924` | hold + `descend_align_tolerance 0.015` | 0/10,**试提 6**(1 cm 抓深全夹不住);align 进入 ≤2.8 cm 出口 ≤1.6 cm;停滞 2 远站位 + 2 局下落中横向再漂 3–5 cm |
+| `box_room_grasp_offline_waist035_20260924` | align + `carry.waist_pitch_max` 0.52→0.35 | 0/10,试提 1(align 6):腰命令 20° 实测 12–16°——送达按比例约 2/3,不是上限;送达差 L 8.3 cm(align 6.7),残差中位 4.1(2.8)。负结果,基线仍是 align |
 
 根因:`nor_cal_box` 显示网格 46.3 万面 + 2 盏投影灯,3 路相机渲染 39–44 ms(walk 1.3 ms);慢仿真下 deploy 按墙钟推进,
 步长 0.17–0.34 m(正常 0.14)、实际速度约 3 倍,这就是视频里的"过冲撞箱"。离线这组是第一组可信的 warehouse 数据:
