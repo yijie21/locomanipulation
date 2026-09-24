@@ -297,3 +297,52 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 下落中跨壁误差再漂 3–5 cm、修正未送达（2.4.10.19）：SONIC 横向送达问题，未查。
 - 1 cm 抓深夹不住（所有试提都掉）；深抓要在站位收紧后重试。
 - 纸箱网格减面（2.4.10.8）仍要问协作者；VLA 实时评测绕不开。
+
+## 2026-09-24 warehouse 双臂抓取暂定方案固定为 contact 版本（6/20）；成功定义改为"抬起、直立、后退两步不掉"
+
+### 目标与约束的变化
+- 用户定的成功定义：合爪抬起 + 上半身直立 + 后退两步（`retreat_distance` 0.3）箱子不掉。不再要求箱子在房间里静止 2 s。
+- 用户定：不加手孔、不换夹压端壁、不改箱子高度；只夹箱沿，摩擦按部署时的高摩擦垫算。以后 warehouse 实验一律用场景 `warehouse_textured`。
+- 用户定的固定规则：每局把命令的抓取目标记为 ghost 夹爪，只画在第三人称视频里，ego/腕相机永不画（`docs/rendering.md`）。
+
+### 决策
+1. 暂定基线 `configs/experiments/box_room_grasp_baseline_20260924.yaml`（= `box_room_grasp_contact_20260924`，6/20）。栈：`close_target` −0.06、`capture_across` 0.035、`lift_pitch_follow_gain` 0.6、`stand_forward_min` 0.35 逐 tick、`hold_frame` pelvis + hold 1 s/5 cm、`close_trigger` contact。之后每个实验复制它改一个旋钮。
+2. 夹持力不足是 0/10 的根因：仿真力律 F = kp 1.5 × gear 250 × (设定点 − q)，−0.023 设定点在 1 cm 壁上只剩 5 mm 行程 → 2 N/指；篮子横杆 1.6 cm 厚才够。`close_target` −0.06 给 16 N/指。
+3. 提起后的倾斜/脱开根因是 stand 段把手拉回 ready 位置、箱子顶进躯干；`stand_forward_min` 必须逐 tick 按当前骨盆算（骨盆起身时自己前进 11–17 cm）。
+4. hold 判据改相对骨盆并缩短：世界坐标下整机 IDLE 带载漂 2.5–8 cm 永远判不过，拖久了指垫蠕变漏箱。
+5. 合爪改接触触发：爪口套住壁就合，不再要求掌姿态；跨壁类停滞消失。
+
+### 被否决的方案（及原因）
+- 三个 lift 旋钮（`max_tilt_deg` 30 / `lift_seconds` 8 / 抓深 0.03）：都不优于场景对照，箱子俯仰随躯干起身和掌姿态漂移，不随起吊速度。
+- 掌俯仰跟随增益 1.5：过校正振荡（−6°→+10°/1.5 s），箱沿在爪里会滑，回路增益要 <1。
+- 下落到接触为止 `contact_overdrive` 0.03：2/20，多下 3 cm 让指垫沿壁面外侧被顶开 4–8 cm，横向反馈又被沿下冻结锁死。
+- 0.55 稳态走入 + 按步态相位提前刹车：带距随相位 13–34 cm，模型残差 sd 3.6、最大 11 cm，5% 局会撞托盘垛；托盘垛是 0–0.371 m 实心块。
+- 守线 `guard_extra` 0.17、waypoint 过量下发：均值最多近 3 cm 或没有守线，停位散布是步态量子（0.25 步态大步 0.21 + 并步）。
+
+### 未决（不是决策）
+- 伸手停滞 7/20（手停在沿上 1–4 cm）：候选小步下探逐步检查跨壁，或 align→descend 失败重做一次。
+- 后退剪切 2/20：`retreat_speed` 0.35→0.25，或后退时保留全身伸手控制器夹持而不冻结关节。
+- 后退成功局的转移距离只有 0.3 m；更远的搬运未测。
+
+## 2026-09-24 warehouse 场景重装为 warehouse_textured；Isaac 重渲走 Blender USDC；ghost 夹爪成固定规则
+
+### 目标与约束的变化
+- 用户要 warehouse 10 局的 Isaac 并排视频，并问纸箱贴图为什么丢；要求 ghost 夹爪在所有场景固定可视化（只第三视角）。
+
+### 决策
+1. 运行时场景 `warehouse`（`scene_reverse_camera`，09-20）早于贴图提交 `0bf8eed`，纸箱是一整块纯色网格；用 `prepare_logistics_scene.py` 从资产包重装为 `outputs/scene/warehouse_textured`（scenes.yaml 新名），编译后物理逐项一致（option/质量/关节/执行器/44 碰撞体/qpos0），只多 8 个视觉 geom。以后 warehouse 一律用它。
+2. `prepare_logistics_scene.py` 改成：目录内资产写相对场景目录的路径、目录外（机器人网格）写绝对路径。理由：run 会把场景目录拷深一层，`../../../third_party` 断了；旧场景靠绝对路径才没事。
+3. Isaac 房间用 Blender 直出的 USDC（`scripts/build_isaac_warehouse_scene.py` 生成 `assets/isaac/scene/warehouse_textured/`），机器人仍用 MJCF 导入的 `g1_dex1.usda`，可动纸箱包装层引用整个 `/root` 并停用其余 237 子 prim 以保住材质绑定；`scripts/render_isaac_warehouse.sh` 每局 mujoco_render → isaac_render → 并排。
+4. Isaac 曝光：关自动曝光、`filmIso` 30（`isaac_render --rtx-setting`）。理由：房间由 5 块 24828 强度 RectLight + 自发光灯板照亮，dome/平行光改强度像素不变；自动曝光 + ACES 把机器人 0.2 灰抬到 108、0.7 灰推到 212。
+5. `mujoco_render` 加 `--azimuth/--distance/--elevation`；warehouse 用 225°/2.2 m。理由：默认 2.5 m/135° 在南隔断外面，两边只见墙。
+6. ghost 夹爪规则：`CoordinatedReach.ghost` 记录反馈前的纯参考目标到 `trace/<label>_ghost.npz`，`render_trace_videos.py` 只在主相机开 geom group 4；Isaac 批渲转发 `--ghost-trace`。
+
+### 被否决的方案（及原因）
+- Blender → MuJoCo → Isaac 链：MuJoCo 支路本身有损（一 geom 一贴图、JPG 转 PNG、灯光相机精简）；Kit 的 MJCF 导入器能导整场景但 15 张贴图和灯全丢。两条支路本就出自同一 .blend，一致性由 `check_assets.py` 与 trace 重放保证。
+- 只引用 USDC 里的纸箱 prim 做可动物体：丢 `/root/_materials` 绑定，纸箱渲成素灰。
+- 色调映射 Clamp（全帧饱和）与 Linear（比 ACES 更平）。
+
+### 未决（不是决策）
+- Isaac 里深灰部件仍比 MuJoCo 亮（头/躯干 0.36 vs 0.23），是白房间间接光，未再调。
+- 纸箱显示网格 46 万面在 Isaac 里的渲染耗时未单独量（10 局共 ~10 分钟，可接受）。
+
