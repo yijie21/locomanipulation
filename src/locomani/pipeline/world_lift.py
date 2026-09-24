@@ -54,10 +54,12 @@ class RunTraces:
         metas = [p for p in self.run.glob("*/scene_meta.json") if "dataset" not in p.parts]
         if len(metas) != 1:
             raise ValueError(f"expected one scene copy under {self.run}, found {[str(m) for m in metas]}")
+        self.scene_dir = metas[0].parent
         meta = json.loads(metas[0].read_text())
         target = meta["target_object"]
         self.object = target
         self.qpos_adr = int(meta["objects"][target]["qpos_adr"])
+        self.box = meta["objects"][target].get("box")  # half_extent + centre in the object frame
         self.trace_dir = self.run / "trace"
 
     def label(self, session: str, source_episode: int) -> str | None:
@@ -107,13 +109,22 @@ class RunTraces:
             )
         return hits[0]
 
-    def world_z(self, session: str, source_episode: int, kept_rows: int | None = None) -> np.ndarray:
-        """World z of the target object for every converted row of one episode."""
+    def priv_seq(self, session: str, source_episode: int) -> np.ndarray:
+        """The sim seq every exporter row of one episode used, one per parquet row."""
         priv = json.loads((Path(session) / "priv_seq" / f"episode_{source_episode:06d}.json").read_text())["priv_seq"]
-        priv = np.asarray(priv[: kept_rows if kept_rows is not None else len(priv)], dtype=np.int64)
-        seqs = priv[resample_selection(len(priv))]
+        return np.asarray(priv, dtype=np.int64)
+
+    def trace_rows(self, session: str, source_episode: int, seqs: np.ndarray, *, hold_tail: bool = False):
+        """(trace, index of each seq in it) for exporter rows of one episode; raises on a join error.
+
+        `hold_tail`: rows past the trace's last seq take its last sample. The exporter keeps recording ~0.5 s
+        after the sim stops tracing (the stop travels on another socket; ~25 rows per crate episode,
+        2026-09-24), and convert trims those rows with the verification tail -- but every row still needs a
+        frame in the session's videos."""
         trace = np.load(self._trace_path(session, source_episode, seqs))
         tseq = np.asarray(trace["seq"], dtype=np.int64)
+        if hold_tail:
+            seqs = np.minimum(seqs, tseq[-1])
         # The exporter's 'c' key and the sim's trace start travel on different
         # sockets, so the first exporter row can precede the trace by a tick or
         # two (2/209 episodes on 2026-09-14). Those edge rows take the edge
@@ -124,4 +135,12 @@ class RunTraces:
         idx = np.searchsorted(tseq, clipped)
         if not np.array_equal(tseq[idx], clipped):
             raise ValueError("exporter priv_seq rows are not all present in the state trace")
+        return trace, idx
+
+    def world_z(self, session: str, source_episode: int, kept_rows: int | None = None) -> np.ndarray:
+        """World z of the target object for every converted row of one episode."""
+        priv = self.priv_seq(session, source_episode)
+        priv = priv[: kept_rows if kept_rows is not None else len(priv)]
+        seqs = priv[resample_selection(len(priv))]
+        trace, idx = self.trace_rows(session, source_episode, seqs)
         return np.asarray(trace["qpos"])[idx, self.qpos_adr + 2].astype(float)

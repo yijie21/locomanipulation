@@ -26,6 +26,7 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
+from locomani.pipeline.render_dataset_cameras import require_rendered
 from locomani.pipeline.stages import Stage
 
 ROOT = Path(paths.REPO)
@@ -83,7 +84,9 @@ def main(argv: list[str] | None = None) -> int:
 
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
     cfg = run_context.load_run_config(run_dir)
+    run_context.require_train_split(cfg)
     entry = collected(run_dir)
+    require_rendered(cfg, entry["sessions"])
     train_ds, val_ds = run_dir / "train_dataset", run_dir / "val_dataset"
     stage = Stage(run_dir)
 

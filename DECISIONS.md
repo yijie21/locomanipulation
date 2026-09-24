@@ -346,3 +346,26 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - Isaac 里深灰部件仍比 MuJoCo 亮（头/躯干 0.36 vs 0.23），是白房间间接光，未再调。
 - 纸箱显示网格 46 万面在 Isaac 里的渲染耗时未单独量（10 局共 ~10 分钟，可接受）。
 
+
+## 2026-09-24 三场景按 README 复现；warehouse 走离线渲染、数据集相机事后从 trace 渲；审计量到箱面
+
+### 目标与约束的变化
+- 协作者报 bottle 开局摔倒、文档没跟代码。用户要一个无上下文 agent 按 README 从零复现 bottle / crate / warehouse 采集，只报告不修，本会话改文档、代码 bug 先报根因。
+- 复现结果（`outputs/docrepro_20260924/report.md`）：50 局开局全站稳，摔倒未复现（用户：不追）；bottle 9/10、crate 17/20；warehouse 按文档走到 09-22 的实时渲染配置，RTF 0.35，0/20。
+
+### 决策
+1. warehouse 一律 `backend.render: offline`，入口是 6/20 基线 `box_room_grasp_baseline_20260924`（用户定）。离线复跑 20 局 6/20，与 contact 基线一致。跑法写在 `blender_scenes.md` 的"在物流房间里采集"，README / bimanual / scenes.yaml 指过去。
+2. 离线录训练数据走"事后渲"（用户选 A）：exporter 在离线时拿 `PlaceholderCamera`（`sim/dataset_cameras.py`，原本卡在等图、每局只存空 priv_seq），其余列实录；`render_dataset_cameras.sh` 按每行 priv_seq 从 `trace/` 渲三路相机覆盖占位帧；convert 拒绝未渲的离线运行（黑帧能照常解码转换，不拦就静默训练）。理由：同一 qpos、同一场景、同一 `CAMERA_CONFIGS`，对照实时 crate 局 1000/1000 帧内容一致，差值中位数 5–6/255。
+3. 审计 "wrist within 30 cm of the object at close" 在有 `--run-dir` 且 scene_meta 给 box 时量到箱面（用户定）。理由：`nor_cal_box` 原点在箱底，正确的沿上合爪距原点 0.45 m、距箱面 0.11 m；crate / bottle 原点就是中心，判据不变严。
+4. `train.holdout >= collect.successes` 在单臂采集开始和 convert 开始时直接拒绝（用户定），原来要等到 stats_train 才报 pandas 的 "No objects to concatenate"。双臂采集不查：26 份 warehouse 试跑配置是 10/10 且只采不转。
+5. 第三人称录像找不到 `videos_NN/` 时回落平铺 `videos/`（crate 按 label、bottle 按 `video_start_wall`）。`0becdd0`（09-21）起转换出的数据集 `third_person/` 都是空的。
+
+### 被否决的方案（及原因）
+- B：纸箱显示网格减面后改回实时渲染直接录。理由（用户选 A）：减面要动协作者未入库的 `assets/crates/nor_cal_box/visual/`，且离线本身已让 RTF 回到 0.95；A 不依赖资产改动。
+- 复现 agent 边跑边修：会抹掉"新读者会踩的坑"这一证据，且它不知道本机的已知雷。
+- 按 priv_seq 的 `discarded` 选要渲的局：失败局也标 discarded，但 parquet 照写（`--include-discarded` 会转），改以 `meta/episodes.jsonl` 为准。
+
+### 未决（不是决策）
+- 离线渲的帧比实时帧"新" 1–2 行（实时 30 Hz 取最近一张）；训练出的策略在实时闭环评测里是否受这点影响，没测。
+- exporter 比 trace 多录 ~22–25 行尾巴，渲染时保持 trace 最后一帧；这些行会被 verification tail 裁掉，但 `--include-discarded` 的失败局不裁。
+- warehouse 闭环 VLA 评测仍需实时出图（`live`），被纸箱网格卡住。

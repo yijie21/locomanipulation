@@ -27,6 +27,7 @@ from locomani.pipeline.provenance import require_pose_ownership
 from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.foot_watch import FootWatch, GuardBrake
 from locomani.sim import ports
+from locomani.sim.dataset_cameras import PlaceholderCamera
 from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.assisted_guidance import AssistedGuidance
 from locomani.tasks.crate.bimanual_ik import BimanualIK
@@ -52,34 +53,6 @@ from locomani.tasks.crate.visual_approach import (
 from locomani.tasks.crate.visual_low_reach import VisualLowReach
 from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
 from locomani.tasks.crate.visual_recording import VisualRecording, record_attempt
-
-
-class PlaceholderCamera:
-    """backend.render offline: the sim renders nothing, so every read is three black frames at the published
-    camera size. Only the assisted expert may run on it (its pose and visibility are geometric).
-
-    Frames change at the live stream's ~30 Hz, not on every read, so `fresh_image` toggles like live. The stamp is
-    the read time: the consumer must sample its own `now` after reading, or the frame is "from the future" and the
-    reach rejects it (per-read stamps ended every offline round `vision_lost`; the 30 Hz stamp still froze the
-    reach clock at 0 for two offline pilots, 2026-09-23/24)."""
-
-    shapes = dict.fromkeys(("ego_view", "left_wrist", "right_wrist"), (480, 640, 3))  # sim CAMERA_CONFIGS
-    period = 1 / 30
-
-    def __init__(self):
-        self.stamp = 0.0
-
-    def read(self):
-        now = time.time()
-        if now - self.stamp >= self.period:
-            self.stamp = now
-        return {
-            "images": {n: np.zeros(s, np.uint8) for n, s in self.shapes.items()},
-            "timestamps": dict.fromkeys(self.shapes, self.stamp),
-        }
-
-    def close(self):
-        pass
 
 
 def stand_up(p, reset, *, placement, whole_body, phase, heading):

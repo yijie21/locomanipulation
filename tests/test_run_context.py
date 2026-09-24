@@ -98,6 +98,12 @@ def test_open_run_refuses_to_change_a_run_in_flight(tmp_path, monkeypatch):
         run_common.open_run(experiment)
 
 
+def test_a_holdout_that_takes_every_success_is_refused_before_collecting():
+    run_common.require_train_split({"train": {"holdout": 9}, "collect": {"successes": 10}})
+    with pytest.raises(SystemExit, match="training set would be empty"):
+        run_common.require_train_split({"train": {"holdout": 10}, "collect": {"successes": 10}})
+
+
 def test_summary_accumulates_one_entry_per_stage(tmp_path):
     run_common.summarise(tmp_path, "collect", kept=200, attempts=299)
     path = run_common.summarise(tmp_path, "convert", episodes=190)
@@ -156,7 +162,8 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     for entry in names.values():
         assert "example" in entry or "build" in entry
         if "example" in entry:
-            assert yaml.safe_load((run_common.ROOT / entry["example"]).read_text())["scene"]["dir"] == entry["dir"]
+            example = yaml.safe_load((run_common.ROOT / entry["example"]).read_text())
+            assert run_common.resolve_scene(example)["scene"]["dir"] == entry["dir"]
     cfg = {"scene": {"dir": "outputs/scene/sim_lowcom"}}
     assert run_common.resolve_scene(cfg) == {"scene": {"dir": "outputs/scene/sim_lowcom"}}
 

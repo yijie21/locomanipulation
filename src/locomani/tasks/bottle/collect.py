@@ -171,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     from locomani.tasks.bottle import prepare
 
     cfg, run_dir = run_context.open_run(args.experiment, args.name, write=not args.dry_run)
+    run_context.require_train_split(cfg)
     collect = cfg["collect"]
     collect_root = prepare.collect_root(run_dir)
 

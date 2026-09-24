@@ -131,6 +131,16 @@
 
 ## 4. 三场景采集按 README 从零复现（协作者报 bottle 开局摔倒、文档没跟代码；用户 2026-09-24 定）
 
-- [~] 4.1 提交本会话 warehouse 代码（`make check`，按文件名 add，`--no-verify`），给复现一个干净基点
-- [ ] 4.2 无上下文 agent（headless `claude -p`，关钩子 + auto-memory）按 README 复现 bottle → crate → warehouse 采集，各 10 局 `record: true`，run 名前缀 `docrepro_20260924_`；只报告不修，每步写信息来源；bottle 加 `convert_data`；报告 `outputs/docrepro_20260924/report.md`
-- [ ] 4.3 读报告：文档问题直接改（grep 全部出现处）；代码 bug 先定位根因报给用户，点头再修，修后只重跑该场景 10 局；环境问题写进对应页常见问题表
+- [x] 4.1 提交本会话 warehouse 代码（`make check`，按文件名 add，`--no-verify`），给复现一个干净基点（`8ca2fc2`，make check 通过，2026-09-24）
+- [x] 4.2 无上下文 agent（headless `claude -p`，关钩子 + auto-memory）按 README 复现 bottle → crate → warehouse 采集，各 10 局 `record: true`，run 名前缀 `docrepro_20260924_`；只报告不修，每步写信息来源；bottle 加 `convert_data`；报告 `outputs/docrepro_20260924/report.md`（2026-09-24 13:33–14:27 跑完，exit 0，无残留栈）：bottle 9/10 通过、crate 17/20 通过、warehouse 0/20（RTF 0.34–0.35）；三场景 50 局开局全部站稳，**开局摔倒未复现**；报告 `outputs/docrepro_20260924/report.md`
+- [x] 4.3 读报告：文档问题直接改（grep 全部出现处）；代码 bug 先定位根因报给用户，点头再修，修后只重跑该场景 10 局；环境问题写进对应页常见问题表（2026-09-24）
+  - [x] 4.3.1 文档：产物表 `videos_NN/`/`state_trace_NN/` 与实测平铺目录不符（`single_arm.md:171`、`bimanual.md:161`）（改为 `collect/videos/`、`collect/state_trace/` 与顶层 `videos/`，2026-09-24）
+  - [x] 4.3.2 文档：`bimanual.md:63` "batch_rounds 真正决定跑几局"太绝对（实测 batch_rounds 10 → 20 局，受 successes/max_batches 约束）（表格改写 + 正好跑 N 局的设法；顺带更正 max_batches 行“每批重启一次栈”→栈跨批不重启，2026-09-24）
+  - [x] 4.3.3 文档：双臂开局站稳判据 `placement.initial_stance_ready` 未写；`*_ghost.npz` 只在进入伸手的局写（warehouse 13/20 = 20 − 7 局 approach_unsupported_reach）未写（bimanual.md §7 trace 行、§8 排错行，2026-09-24）
+  - [x] 4.3.4 文档：warehouse 入口——`scenes.yaml` 的 `example` 指向 09-22 旧配置（实时渲染 → RTF 0.35 → 0/20），现行基线 `box_room_grasp_baseline_20260924`（offline + record false）文档里找不到；录制要实时渲染，被 2.4.10.8 网格减面卡住（待用户定文档怎么写）——用户定：离线渲染 + 6/20 基线。文档已改（blender_scenes §6 新小节、bimanual 指路、README、scenes.yaml example、rendering.md）；离线 + record 实测只存 priv_seq；复跑 20 局验证中 `docrepro_20260924_warehouse_offline`；离线复跑 `docrepro_20260924_warehouse_offline` 20 局 6/20（= contact 基线 6/20），2026-09-24
+  - [x] 4.3.5 代码（待用户点头）：`train.holdout ≥ collect.successes` 时 convert 在 stats_train 抛 `No objects to concatenate`，应在读配置时报清楚（`run_context.require_train_split`，单臂采集开始与 convert 开始时检查，dry-run 即报；bimanual 采集不查：26 份试跑配置 10/10 只采不转；`plan_holdout` 改 ≥，2026-09-24）
+  - [x] 4.3.6 代码（次要）：单臂续批日志分母不更新（`round 2/1`）（不是分母 bug：原格式 `round 2/1 ok` 意为第 2 局/目标 1 成功，被误读；改成 `round 2, ok 0/1`，2026-09-24）
+  - [-] 4.3.7 bottle 开局摔倒：10 局未复现，本机近 6 天 manifest 无开局摔倒记录；需协作者的命令/配置/时间用户 2026-09-24：复现没摔倒就不追
+  - [x] 4.3.8 代码 bug（待用户点头）：`0becdd0`（09-21）起录像写平铺 `collect/videos/`，`third_person_source` 仍找 `videos_NN/` → `train_dataset/third_person/` 静默为空；修法：回落到 `videos/`，crate 按 label、bottle 按 `execution.started_wall` 匹配（用户 2026-09-24 点头；bottle 按 `execution.metrics.video_start_wall` 精确对到 `gym_<stamp>.mp4`；实测 bottle 12/12、crate 19/19，2026-09-24）
+  - [x] 4.3.9 warehouse 离线录不出 LeRobot：要么事后从 trace 渲相机图写进数据集（新功能），要么纸箱网格减面改回 live（2.4.10.8）——待用户定——用户定 A（2026-09-24）：exporter 离线存占位帧（`sim/dataset_cameras.py`），`scripts/render_dataset_cameras.sh` 按 priv_seq 从 trace 渲三路相机覆盖，convert 拒绝未渲的离线运行；对照实时 crate 局 1000/1000 帧同行差值中位数 4.6–6.2；端到端 `docrepro_20260924_warehouse_dataset`（8 局 2 成功）：采集 → 渲 8 局（每局 6–10 s）→ convert 出 train/val，画面核对为真；**审计挂 1 项**：见 4.3.10；审计修后 train/val 均 32/32 通过（2026-09-24）
+  - [x] 4.3.10 审计 `wrist within 30 cm of the object at close` 对纸箱不成立：量的是两腕中点到物体**原点**，`nor_cal_box` 原点在箱底（centre z 0.165），合爪时中点距原点 0.45、距中心 0.29、距箱面 0.11 m；改成量到 `scene_meta` 的 box 表面（待用户定）（用户 2026-09-24 定；`check_dataset.box_surface_distance`，有 `--run-dir` 且 scene_meta 有 box 时量到箱面，crate/bottle 原点即中心、不变严；复转 32/32，2026-09-24）

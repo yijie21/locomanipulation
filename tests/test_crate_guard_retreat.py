@@ -175,7 +175,7 @@ def test_offline_render_drops_the_sim_cameras_and_its_video():
 
 
 def test_offline_guidance_admits_placeholder_frames_on_geometry():
-    from locomani.tasks.crate.expert import PlaceholderCamera
+    from locomani.sim.dataset_cameras import PlaceholderCamera
 
     frames = PlaceholderCamera().read()
     assert set(frames["images"]) == {"ego_view", "left_wrist", "right_wrist"}
@@ -183,7 +183,7 @@ def test_offline_guidance_admits_placeholder_frames_on_geometry():
 
 
 def test_placeholder_frames_keep_their_stamp_between_ticks():
-    from locomani.tasks.crate.expert import PlaceholderCamera
+    from locomani.sim.dataset_cameras import PlaceholderCamera
 
     camera = PlaceholderCamera()
     first = camera.read()["timestamps"]["ego_view"]
@@ -193,7 +193,7 @@ def test_placeholder_frames_keep_their_stamp_between_ticks():
 def test_placeholder_stamp_is_the_read_time_so_now_must_be_sampled_after_the_read():
     import time
 
-    from locomani.tasks.crate.expert import PlaceholderCamera
+    from locomani.sim.dataset_cameras import PlaceholderCamera
 
     camera = PlaceholderCamera()
     camera.stamp = 0.0  # force a refresh on this read, as every reach tick slower than 1/30 s does

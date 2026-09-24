@@ -204,9 +204,14 @@ def round_loop(args, setup, *, runtime=None) -> None:
             # Pick-and-place: the instruction names the container too (BottleTaskConfig.prompt).
             task = goal_prompt
         side = "right"
-        goal = f"{args.until_ok} ok" if args.until_ok is not None else f"{args.rounds}"
+        # "round 2, ok 0/1" under --until-ok: the old "round 2/1 ok" read as a denominator that never grew
+        progress = (
+            f"round {rnd + 1}, ok {wins}/{args.until_ok}"
+            if args.until_ok is not None
+            else f"round {rnd + 1}/{args.rounds} (ok {wins})"
+        )
         print(
-            f"[gym] round {rnd + 1}/{goal} (ok {wins}): {obj_key} "
+            f"[gym] {progress}: {obj_key} "
             f"{np.round(can_xy, 2)}"
             f" rel [{rel[0]:.2f} {rel[1]:+.2f}] yaw {np.degrees(psi):.0f}"
             f" side {side} | spawn {spawn_off:.2f}m lat {spawn_lat:+.2f}m "

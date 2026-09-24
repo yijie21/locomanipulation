@@ -317,6 +317,19 @@ def grasp_close_frame(closed: np.ndarray) -> int:
     return int(idx[breaks[-1] + 1]) if len(breaks) else int(idx[0])
 
 
+def box_surface_distance(pose: np.ndarray, point: np.ndarray, box: dict) -> float:
+    """Distance from `point` to the surface of the object's box, 0 inside. `pose` is the dataset's pos3 + rot6d
+    (first two rotation columns), `point` in the same frame, `box` the scene_meta entry (half_extent and centre
+    in the object frame)."""
+    a, b = pose[3:6], pose[6:9]
+    x = a / np.linalg.norm(a)
+    y = b - (x @ b) * x
+    y = y / np.linalg.norm(y)
+    rot = np.stack([x, y, np.cross(x, y)], axis=1)
+    local = rot.T @ (point - (pose[:3] + rot @ np.asarray(box["centre"])))
+    return float(np.linalg.norm(np.maximum(np.abs(local) - np.asarray(box["half_extent"]), 0.0)))
+
+
 def pass_grasp(root, info, eps, r, run=None):
     """Do the numbers describe a grasp, in the right causal order?
 
@@ -371,6 +384,10 @@ def pass_grasp(root, info, eps, r, run=None):
                 trims[row["episode"]] = row
     if run is not None:
         r.note(f"world object height from the run's state trace ({run.object}, {run.trace_dir})")
+    # Proximity at the close is measured to the object's SURFACE when the run's scene gives its box: the pose
+    # column is the object's origin, and nor_cal_box's origin is its bottom face -- a correct two-handed grasp on
+    # the rim closed 0.45 m from it and 0.11 m from the box (2026-09-24). Crate and bottle origins are their centres.
+    box = run.box if run is not None else None
     world_source = None
 
     at_hand, rose_after, held, no_event = 0, 0, 0, 0
@@ -382,7 +399,8 @@ def pass_grasp(root, info, eps, r, run=None):
         schema = pq.read_schema(p).names
         has_root = all(c in schema for c in root_cols)
         t = pq.read_table(p, columns=cols + (root_cols if has_root else []))
-        can = np.stack(t[pose_col].to_pylist())[:, :3]
+        pose = np.stack(t[pose_col].to_pylist())
+        can = pose[:, :3]
         trim = trims.get(e["episode_index"])
         if run is not None and trim is not None:
             can_z_world = run.world_z(trim["source_session"], trim["source_episode"], trim["kept_source_rows"])
@@ -421,7 +439,7 @@ def pass_grasp(root, info, eps, r, run=None):
             blips.append((e["episode_index"], first, fc, int(np.argmin(closed[first:]))))
         d = np.linalg.norm(can - wrist, axis=1)
         rise = float(can_z_world[fc:].max() - can_z_world[fc])
-        at_hand += d[fc] < 0.30
+        at_hand += (box_surface_distance(pose[fc], wrist[fc], box) if box else d[fc]) < 0.30
         rose_after += rise > 0.03
         held += float(np.std(d[-30:])) < 0.02
         rises.append(rise)
@@ -429,7 +447,7 @@ def pass_grasp(root, info, eps, r, run=None):
 
     n = len(eps) - no_event
     r.check(no_event == 0, f"every episode has a gripper-close event ({n}/{len(eps)})")
-    r.check(at_hand == n, f"wrist within 30 cm of the object at close ({at_hand}/{n})")
+    r.check(at_hand == n, f"wrist within 30 cm of the object{' surface' if box else ''} at close ({at_hand}/{n})")
     r.check(rose_after == n, f"object rose >3 cm AFTER the close ({rose_after}/{n})")
     r.check(
         held == n,

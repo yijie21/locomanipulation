@@ -60,14 +60,14 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 | 字段 | 控制什么 | 调大 / 调小意味着 |
 |---|---|---|
 | `name` | 运行目录名 | 同名重跑会接着采，换名字才是另起一份数据 |
-| `collect.batch_rounds` | 每批**尝试**几局 | **这条线上真正决定跑几局的字段**，见 §5 |
-| `collect.max_batches` | 最多几批 | 每批重启一次栈；默认整个 visual pilot 用一批 |
+| `collect.batch_rounds` | 每批**尝试**几局 | 批内一定跑满；总局数 = `batch_rounds` × 实际跑了几批，批数由 `successes` 和 `max_batches` 决定，见 §5。要正好跑 N 局，设 `batch_rounds: N`、`max_batches: 1` |
+| `collect.max_batches` | 最多几批 | 每批开一个新的 exporter session，栈跨批不重启；默认整个 visual pilot 用一批 |
 | `collect.successes` | 保留多少条成功 | 在这条线上**只是事后的验收门槛**，见 §5 |
 | `collect.seed0` | 第一批的采样种子 | 换它就是换一组 case |
 | `collect.record` | 录不录 LeRobot 数据 | `false` 只留视频/相机/动作记录，不进转换器 |
 | `collect.instance` | 端口块与 exporter 目录 | 双臂不强制实例 0，可与单臂并行（见 §6） |
 | `task.expert` | 用哪个专家 | `visual` 是本页这条线；`wall` / `carry` 是诊断专家 |
-| `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: crate` 就是 §1 建的 `outputs/scene/crate_table30_depth04`；`name: warehouse` 是物流房间（名字表 `configs/scenes.yaml`） |
+| `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: crate` 就是 §1 建的 `outputs/scene/crate_table30_depth04`；`name: warehouse_textured` 是物流房间（旧名 `warehouse` 的纸箱没贴图，只留给旧运行；名字表 `configs/scenes.yaml`） |
 | `train.steps` / `save_steps` | 优化器步数 / 存档间隔 | 要冒烟就让 `save_steps` 等于 `steps`，否则存不下 checkpoint |
 | `train.holdout` | 留几集做验证 | 必须**小于**实际保留的集数 |
 | `eval.rounds` | 闭环评测跑几局 | 20 局只看得出"翻倍级"差异，100 局才判得动 10 个点 |
@@ -94,7 +94,7 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 ```bash
 bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 1 --line bimanual   # 整条线，无人值守
 # 采集两个终端；起栈脚本两条线共用，按 task.plugin 冻结各自的场景
-bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --gpu 1   # 纸箱同线：handoff/box-via-basket-line-20260922.md
+bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --gpu 1   # 物流房间纸箱见本节末
 bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 1
 bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
 bash scripts/train.sh        outputs/runs/my_crate --gpu 1      # 训练
@@ -150,6 +150,8 @@ CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 �
 写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，并记在
 `<run>/collect/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
 
+物流房间抓纸箱（warehouse）同线，但必须 `backend.render: offline`，录制时转换前要先渲相机；基线配置、命令和原因见 [Blender 场景 · 在物流房间里采集](blender_scenes.md#在物流房间里采集warehouse)。
+
 ## 7. 产物
 
 路径相对于 `outputs/runs/<name>/`。**采集产物的落点与单臂不同**：
@@ -158,8 +160,8 @@ CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 �
 |---|---|
 | `config.yaml` | 实验文件的逐字节副本 |
 | `summary.json` | 每阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
-|  `manifest_NN.jsonl`、`videos_NN/` | 逐局成败与原因、录像。**在顶层**，单臂在 `collect/` 之下 |
-| `trace/` | 状态轨迹。**全批共用一个目录**，单臂按批分目录 |
+| `manifest_NN.jsonl`、`videos/` | 逐局成败与原因、录像。**在顶层**，单臂在 `collect/` 之下。manifest 每批一个文件，录像整个 run 共用一个目录 |
+| `trace/` | `<局>_state_trace.npz` 状态轨迹，整个 run 共用一个目录；`<局>_ghost.npz` 是命令的抓取目标（第三视角画 ghost 夹爪用），只有进入伸手阶段的局才有，走近阶段就失败的局没有 |
 | `collect/inputs.json` | 批次进度、exporter session 与 manifest 的对应 |
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集 |
 | `train_dataset/third_person/episode_NNNNNN.mp4` | 每集的第三人称录像，**按集号对齐**（硬链接，不占额外磁盘）。不是相机流，不进策略 |
@@ -191,6 +193,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
 | 评测开局动作突变 | 已修（2026-09-18）：回合之间不再交还 planner，settle 跑在 token 通道上。此前底盘在 settle 里漂中位 0.09 m、最大 0.83 m。要复现旧行为加 `--no-clean` |
 | `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局 |
 | 一整批只跑了几局就结束 | 专家抛异常会中止整批（§5）。在 `visual_NN.log` 里搜 `Traceback` |
+| 想确认每局开局站稳了 | 看 `manifest_NN.jsonl` 每行的 `placement.initial_stance_ready`（双臂没有单臂那行 `stand drift`）。为 `false` 的局以 `initial_stance_unstable` 失败；一批里大量出现，多半是停栈后不到 20 s 就重起，deploy 收不到 LowState |
 | 栈起不来、端口被占 | `python -m locomani.stack.cli status --instance N`；锁在 `$LOCOMANI_TMP/locomani_locks/` |
 
 `check_dataset` 一定要带 `--run-dir`：它让审计从本次运行的 `trace/` 按 exporter 的

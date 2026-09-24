@@ -168,7 +168,7 @@ cat outputs/runs/*/summary.json                                  # 比较结果
 | `summary.json` | 每阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
 | `stack_env.json` | 仿真栈告诉子进程的**全部**环境变量 |
 | `commands.jsonl`、`timings.jsonl` | 每个子进程的命令行与耗时 |
-| `collect/manifest_NN.jsonl`、`collect/videos_NN/`、`collect/state_trace_NN/` | 逐局成败与原因、第三人称录像、物理轨迹 |
+| `collect/manifest_NN.jsonl`、`collect/videos/`、`collect/state_trace/` | 逐局成败与原因、第三人称录像、物理轨迹。manifest 每批一个文件；录像和轨迹整个 run 共用一个目录（栈跨批不重启） |
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集（`train.holdout` 为 0 时没有验证集） |
 | `train_dataset/third_person/episode_NNNNNN.mp4` | 每集的第三人称录像，**按集号对齐**（硬链接，不占额外磁盘）。不是相机流，不进策略 |
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |

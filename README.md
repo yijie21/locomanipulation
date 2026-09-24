@@ -12,7 +12,7 @@
 | 想做什么 | 提供的功能 | 怎么跑 | 为什么这么设计 |
 |---|---|---|---|
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
-| 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
+| 双臂 | 视觉指导走近、俯身抓篮、抬起并站直；物流房间抓纸箱见 [warehouse 跑法](docs/blender_scenes.md#在物流房间里采集warehouse) | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
 | 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿五维可达搜索 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
 | 导入 Blender 场景 | 物流间纸箱场景的 MuJoCo / Isaac 资产、Blender 导入与尺寸说明 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |

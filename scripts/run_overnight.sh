@@ -66,6 +66,8 @@ fi
 # --- convert -------------------------------------------------------------------------------
 if wanted convert && [ ! -d "$RUN/train_dataset" ]; then
     echo "=== convert ==="
+    # backend.render offline recorded black placeholder frames; this fills them (a live run is a no-op)
+    bash "$LOCOMANI_ROOT/scripts/render_dataset_cameras.sh" "$RUN" --gpu "$GPU" || exit 1
     bash "$LOCOMANI_ROOT/scripts/convert_data.sh" "$RUN" || exit 1
 fi
 

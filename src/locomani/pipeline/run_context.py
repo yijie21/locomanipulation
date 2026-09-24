@@ -238,6 +238,17 @@ def require_stack_of(stack, run_dir: Path, mode: str) -> None:
         )
 
 
+def require_train_split(cfg: dict) -> None:
+    """`train.holdout` kept episodes go to the validation set; with none left to train on, convert used to fail
+    only at stats_train with pandas' "No objects to concatenate". Check before collecting, not after."""
+    holdout, successes = cfg["train"]["holdout"], cfg["collect"]["successes"]
+    if holdout >= successes:
+        raise SystemExit(
+            f"train.holdout {holdout} >= collect.successes {successes}: the training set would be empty; "
+            "lower train.holdout (0 skips the validation set)"
+        )
+
+
 def require_deploy_patches(cfg: dict) -> None:
     """The streamed-pose experts need a patched deploy; check before anything is started."""
     from locomani.pipeline.provenance import require_pose_ownership

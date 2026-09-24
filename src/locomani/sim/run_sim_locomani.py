@@ -42,6 +42,7 @@ from gear_sonic.utils.mujoco_sim.simulator_factory import SimulatorFactory  # no
 
 from locomani import paths
 from locomani.sim import ports, sim_vis
+from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 from locomani.sim.privileged_pub import EpisodeControlServer, PrivilegedPublisher  # noqa: E402
 
 # Set SIM_VIDEO_DIR to record a tracking-camera mp4 per episode. Off by default
@@ -177,12 +178,8 @@ WRIST_CAMS = True
 # The stream names are the contract with the exporter. It resolves an image by
 # the LAST SEGMENT of the feature name -- observation.images.left_wrist looks
 # up images["left_wrist"] -- so naming them this way is the whole integration,
-# and a missing one raises there rather than silently recording nothing.
-CAMERA_CONFIGS = {
-    "ego_view": {"height": 480, "width": 640, "mjcf_name": "head_camera"},
-    "left_wrist": {"height": 480, "width": 640, "mjcf_name": "left_wrist"},
-    "right_wrist": {"height": 480, "width": 640, "mjcf_name": "right_wrist"},
-}
+# and a missing one raises there rather than silently recording nothing. The
+# table lives in dataset_cameras: the offline renderer must render exactly it.
 
 
 def install_camera_configs() -> None:

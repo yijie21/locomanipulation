@@ -39,6 +39,12 @@ if __name__ == "__main__":
     from locomani.pipeline.recorded_hand_actions import install as install_hands
 
     install_hands(exporter.GrootDataCollector)
+    from locomani.backends.sonic.config import DEFAULT_BACKEND
+
+    if DEFAULT_BACKEND.render == "offline":  # the sim publishes no images; without frames no row is recorded
+        from locomani.sim.dataset_cameras import install_exporter_placeholder
+
+        install_exporter_placeholder(exporter.GrootDataCollector)
     stream = None
     if os.environ.get("TF_FRAME_AUDIT_PATH"):
         from locomani.pipeline.collection_frame_audit import install

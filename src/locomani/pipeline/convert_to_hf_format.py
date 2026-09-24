@@ -405,8 +405,8 @@ def plan_holdout(items, n, seed):
     """
     if n <= 0:
         return set()
-    if n > len(items):
-        raise SystemExit(f"--holdout {n} exceeds {len(items)} kept episodes")
+    if n >= len(items):
+        raise SystemExit(f"--holdout {n} leaves none of {len(items)} kept episodes to train on")
     by_sess = {}
     for it in items:
         by_sess.setdefault(it["si"], []).append(it)

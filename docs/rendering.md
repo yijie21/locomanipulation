@@ -338,7 +338,8 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 
 - 只支持双臂 assisted 专家（`visual.pose_source: assisted`），它读的是黑色占位帧 `PlaceholderCamera`；
   markers 专家要读像素，`expert.run` 会直接拒绝。
-- 没有图像就没有训练 RGB：`--record` 数据集导出、VLA 闭环评测都必须用 `live`。离线加录制的组合没测过。
+- 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出
+  （[跑法](blender_scenes.md#在物流房间里采集warehouse)）；没渲过的离线运行 convert 会拒绝。VLA 闭环评测要实时出图，仍须 `live`。
 - 渲染慢的根本解是给纸箱网格减面或关阴影（隐藏网格后 2.0 ms，关阴影后 11 ms），见 [Blender 场景](blender_scenes.md#7-常见错误对照)。
 
 ## 当前接通范围与限制
@@ -349,7 +350,7 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 | 基于 trace 的 Isaac 离线重渲 | 已实现；双臂有受管并排脚本 |
 | `backend.render: offline` + trace 出 MuJoCo 视频 | 已实现；仅双臂 assisted 专家，见[上一节](#离线渲染backendrender-offline) |
 | `collect` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
-| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段（`scripts/` 里没有渲染脚本），需显式调用离线渲染入口 |
+| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_warehouse.sh`（Isaac 并排） |
 | Isaac 图像作为在线专家/VLA 的输入 | 当前主流程未接入 live mirror；不能从离线视频推断已支持 |
 | 自动把 Isaac 视频写回训练数据集 | 当前转换器读取原 session 图像，没有自动替换步骤 |
 

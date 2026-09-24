@@ -54,3 +54,23 @@ def test_world_z_joins_manifest_label_priv_seq_and_trace(tmp_path):
     with pytest.raises(ValueError, match="not all present"):
         (session / "priv_seq/episode_000001.json").write_text(json.dumps({"priv_seq": [128, 130, 135]}))
         RunTraces(run).world_z(str(session), 1)
+
+
+def test_trace_rows_holds_the_tail_the_exporter_records_after_the_trace_stops(tmp_path):
+    run, session = tmp_path / "run", tmp_path / "session"
+    (run / "scene").mkdir(parents=True)
+    (run / "trace").mkdir()
+    (session / "priv_seq").mkdir(parents=True)
+    (run / "scene/scene_meta.json").write_text(
+        json.dumps({"target_object": "box", "objects": {"box": {"qpos_adr": 0}}})
+    )
+    (run / "inputs.json").write_text(
+        json.dumps({"sessions": [str(session)], "manifests": [str(run / "manifest_00.jsonl")]})
+    )
+    (run / "manifest_00.jsonl").write_text(json.dumps({"label": "a", "produced": True}) + "\n")
+    np.savez(run / "trace/a_state_trace.npz", seq=np.arange(100, 110), qpos=np.zeros((10, 7)))
+    seqs = np.array([100, 101, 101, 109, 115, 140])  # a repeated seq, then rows past the trace's end
+    with pytest.raises(ValueError, match="not all present"):
+        RunTraces(run).trace_rows(str(session), 0, seqs)
+    _, idx = RunTraces(run).trace_rows(str(session), 0, seqs, hold_tail=True)
+    assert idx.tolist() == [0, 1, 1, 9, 9, 9]
