@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
-from locomani.tasks.crate.grasp_region import GRASP_POINTS, RimRegion
+from locomani.tasks.crate.grasp_region import GRASP_BELOW_RIM_M, GRASP_POINTS, RimRegion
 from locomani.tasks.crate.visual_low_reach import LowReachCommand, blend, quaternion, rotation
 from locomani.tasks.crate.whole_body_ik import WholeBodyIK
 
@@ -26,6 +26,7 @@ class CoordinatedTarget:
     information_source: str = "simulation_assisted"
     preserve_point_order: bool = False
     reach_only: bool = False
+    rim_above_grasp: float = GRASP_BELOW_RIM_M  # rim top height above the grasp points; lateral_hold_below_rim uses it
 
     def __post_init__(self):
         points = np.asarray(self.grasp_points_local, dtype=float)
@@ -97,6 +98,7 @@ class CoordinatedReach:
         self.elapsed = 0.0
         self.ready_since = None
         self.feedback = np.zeros((2, 3))
+        self.align_started, self.align_residual = None, None
         self.rotation_feedback = np.zeros((2, 3))  # filtered predicted-vs-measured palm rotation vectors (world)
         self.best_error, self.progress_time = np.inf, None
         self.diagnostics = {}
@@ -112,11 +114,23 @@ class CoordinatedReach:
     def enter(self, phase):
         self.phase, self.elapsed, self.ready_since = phase, 0.0, None
 
-    def advance(self, targets, attitudes, measured, dt, measured_rotations=None, z_floor=None):
+    def start_descend(self, targets, first):
+        """Straight down from the pregrasp point, at the same Cartesian speed limit."""
+        cfg = self.config.visual
+        drop = np.max(np.linalg.norm(targets - first, axis=1))
+        self.descend_from = self.body.tools(self.x)
+        self.descend_duration = max(1.5, 1.875 * drop / (cfg.descend_speed or cfg.approach_speed))
+        self.best_error, self.progress_time = np.inf, None
+        self.enter("descend")
+
+    def advance(self, targets, attitudes, measured, dt, measured_rotations=None, z_floor=None, hold_across=None):
         """Rate/acceleration limits belong inside the supported body solve, including hips.
 
         `z_floor` (per hand, world z): the height the measured grip point must not be driven below. A hand at
         or under it keeps its z feedback from growing downward and backs it off by the undershoot.
+        `hold_across` = (mask per hand, world unit vector): a held hand's feedback may not change along the
+        vector. Below the box rim a pad that meets a wall face is blocked, and the across-wall correction
+        otherwise winds up to tracking_cap against it and shoves the wall until the box tips (2026-09-24).
         """
         if dt <= 0:
             return
@@ -125,7 +139,12 @@ class CoordinatedReach:
         observed_error = np.clip(predicted - measured, -cfg.tracking_cap, cfg.tracking_cap)
         alpha = 1 - np.exp(-dt / 0.4)
         previous_z = self.feedback[:, 2].copy()
+        previous = self.feedback.copy()
         self.feedback += alpha * (observed_error - self.feedback)
+        if hold_across is not None:
+            mask, axis = np.asarray(hold_across[0], dtype=bool), np.asarray(hold_across[1], dtype=float)
+            along = (self.feedback - previous) @ axis
+            self.feedback[mask] -= along[mask, None] * axis
         if z_floor is not None:
             under = np.asarray(measured)[:, 2] <= np.asarray(z_floor)
             backed = np.maximum(self.feedback[:, 2], previous_z) + alpha * (
@@ -352,13 +371,27 @@ class CoordinatedReach:
                 attitudes = np.array([r(u).as_matrix() for r in self.rotations])
                 self.advance(commanded, attitudes, tools, control_dt, tool_rotations)
                 if cfg.reach_path == "staged" and self.elapsed >= self.duration:
-                    # Straight down from the pregrasp point, at the same Cartesian speed limit.
-                    drop = np.max(np.linalg.norm(targets - first, axis=1))
-                    self.descend_from = self.body.tools(self.x)
-                    self.descend_duration = max(1.5, 1.875 * drop / (cfg.descend_speed or cfg.approach_speed))
-                    self.best_error, self.progress_time = np.inf, None
-                    self.enter("descend")
-                    return self.result()  # this tick's reference is already sent; descend from the next one
+                    if cfg.descend_align_tolerance > 0:
+                        self.align_started = now
+                        self.enter("align")
+                    else:
+                        self.start_descend(targets, first)
+                    return self.result()  # this tick's reference is already sent; continue from the next one
+        if self.phase == "align":
+            # Hold at the pregrasp point, above the rim where nothing blocks a lateral correction, until both
+            # measured grip points are centred across the wall (assisted: the estimate is the simulation's own
+            # pose). Descending 2-6 cm off-centre jammed a pad on the wall face (2026-09-24).
+            first = self.pregrasp(targets)
+            across = ((tools - targets) @ obj_rotation)[:, 0]
+            self.diagnostics.update(align_across=across, align_seconds=now - self.align_started)
+            if (
+                np.max(np.abs(across)) <= cfg.descend_align_tolerance
+                or now - self.align_started >= cfg.descend_align_timeout
+            ):
+                self.align_residual = across.copy()
+                self.start_descend(targets, first)
+                return self.result()
+            self.advance(first, self.attitudes, tools, control_dt, tool_rotations)
         if self.phase == "descend":
             # Same capture and stall rules as the direct reach, including reach_only probes that never close.
             if self.target.reach_only:
@@ -378,6 +411,11 @@ class CoordinatedReach:
             else:
                 u, _ = blend(self.elapsed, self.descend_duration)
                 commanded = self.descend_from + u * (targets - self.descend_from)
+                hold = None
+                if cfg.lateral_hold_below_rim:
+                    below = tools[:, 2] <= targets[:, 2] + self.target.rim_above_grasp + 0.01
+                    hold = (below, obj_rotation[:, 0])
+                    self.diagnostics.update(lateral_hold=below)
                 self.advance(
                     commanded,
                     self.attitudes,
@@ -385,6 +423,7 @@ class CoordinatedReach:
                     control_dt,
                     tool_rotations,
                     z_floor=targets[:, 2] if cfg.descend_z_guard else None,
+                    hold_across=hold,
                 )
         if self.phase == "close":
             # Maintain the paired world reference while smoothly braking any residual body motion.

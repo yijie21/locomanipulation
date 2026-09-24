@@ -33,7 +33,7 @@ from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.coordinated_reach import CoordinatedReach, CoordinatedTarget
 from locomani.tasks.crate.evaluation import evaluate
-from locomani.tasks.crate.grasp_region import grasp_points_for, target_key
+from locomani.tasks.crate.grasp_region import GRASP_BELOW_RIM_M, grasp_points_for, target_key
 from locomani.tasks.crate.joint_reference import JointReference
 from locomani.tasks.crate.perception import ApproachTarget, CratePerception
 from locomani.tasks.crate.retreat import retreat
@@ -372,6 +372,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     key = target_key(meta)
     target_meta = (meta.get("objects") or {}).get(key) or {}
     grasp_points = grasp_points_for(target_meta, cfg.box_grasp_below_rim)
+    rim_above_grasp = cfg.box_grasp_below_rim if target_meta.get("box") else GRASP_BELOW_RIM_M
     geometry = {"grasp_points": grasp_points} if assisted else meta["crate_visual"]
     dataset_kind = (
         "ordinary_crate_assisted_low_reach_video_pilot"
@@ -572,7 +573,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                         raw,
                         reference_joints=joints,
                         reference_quaternion=raw["pelvis"]["quat"],
-                        target=CoordinatedTarget(object_key=key, grasp_points_local=grasp_points),
+                        target=CoordinatedTarget(
+                            object_key=key, grasp_points_local=grasp_points, rim_above_grasp=rim_above_grasp
+                        ),
                     )
                     check = probe.step(now, estimate, raw, openings, **motion_clock)
                     admission = probe.diagnostics
@@ -683,7 +686,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             handoff_state,
                             reference_joints=arm.q,
                             reference_quaternion=arm.root_quat,
-                            target=CoordinatedTarget(object_key=key, grasp_points_local=grasp_points),
+                            target=CoordinatedTarget(
+                                object_key=key, grasp_points_local=grasp_points, rim_above_grasp=rim_above_grasp
+                            ),
                         )
                     else:
                         low = VisualLowReach(
