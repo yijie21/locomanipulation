@@ -56,8 +56,10 @@ class PlaceholderCamera:
     """backend.render offline: the sim renders nothing, so every read is three black frames at the published
     camera size. Only the assisted expert may run on it (its pose and visibility are geometric).
 
-    Frames change at the live stream's ~30 Hz, not on every read: the reach rejects an estimate stamped after its
-    own `now`, which a per-read stamp always is (every offline round ended `vision_lost`, 2026-09-23)."""
+    Frames change at the live stream's ~30 Hz, not on every read, so `fresh_image` toggles like live. The stamp is
+    the read time: the consumer must sample its own `now` after reading, or the frame is "from the future" and the
+    reach rejects it (per-read stamps ended every offline round `vision_lost`; the 30 Hz stamp still froze the
+    reach clock at 0 for two offline pilots, 2026-09-23/24)."""
 
     shapes = dict.fromkeys(("ego_view", "left_wrist", "right_wrist"), (480, 640, 3))  # sim CAMERA_CONFIGS
     period = 1 / 30
@@ -461,6 +463,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 continue  # no new physical sample: do not append a contradictory held pose
             last_control_time = raw.get("t")
             incoming = camera.read()
+            # Freshness is judged against `now`, so sample it AFTER the read: a frame stamped even 0.1 ms after
+            # `now` fails the reach's `0 <= now - timestamp` and that tick is "waiting_for_vision". The live
+            # stream stamps in the sim, before this loop; the placeholder stamps at the read, after the `now`
+            # above, and at the reach's 66-125 ms ticks every read re-stamped -- the reach clock never advanced
+            # in any offline run (2026-09-23/24).
+            now = time.time()
             fresh_image = False
             if incoming is not None and {"ego_view", "left_wrist", "right_wrist"} <= set(incoming["images"]):
                 last_camera_received = now
