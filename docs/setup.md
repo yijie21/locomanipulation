@@ -124,7 +124,10 @@ mkdir -p third_party
 
 # 第 0-4 步只需要这一个。5 min 的耗时估计也是指它。
 # 子 shell:出来还在仓库根,下一步的相对路径才对得上
-(cd third_party && git clone https://github.com/NVlabs/GR00T-WholeBodyControl.git)
+(cd third_party && git clone https://github.com/NVlabs/GR00T-WholeBodyControl.git \
+  && git -C GR00T-WholeBodyControl checkout --detach 1983e88888217f6c69283cf3a9d1af01e87f07af)
+# 钉在这个 commit:本仓库所有结果用的 deploy 都从它 + 第 3 步的补丁编出来,
+# 补丁也只对它验证过。上游 main 之后的提交会让第 3 步的补丁打不上,或者打上了行为不同。
 
 # 下面三个现在【不要】clone —— 它们分属后面的步骤,加起来几十 GB,
 # 走到那一步再回来拿:
@@ -142,6 +145,18 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 # 期望 932784(约 911 KB)。如果是 ~130,就是 git-lfs 没装:
 #   sudo apt-get install -y git-lfs && git lfs install
 #   然后 cd 进去 git lfs pull,不用重新 clone
+```
+
+**已经 clone 过、跟着上游 main 走的机器**(2026-09-25 之前按本文装的都是这样)先回到钉住的 commit,
+再从第 2 步的补丁开始重做(venv 和权重不用重装,它们不随 commit 变):
+
+```bash
+cd third_party/GR00T-WholeBodyControl
+git status --short     # 有自己的改动先另存:下一行会丢掉工作树里的全部改动(包括以前打的补丁)
+git checkout -- .
+git fetch origin
+git checkout --detach 1983e88888217f6c69283cf3a9d1af01e87f07af
+cd ../..
 ```
 
 **第 2 步那条 `ls ... model_decoder.onnx` 查不出这个问题** —— `policy/` 下的权重
@@ -182,11 +197,10 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 #   release 仍是对照臂,而 2026-09-11 之前采的所有数据集/模型都是 release 的 token 空间
 ```
 
-> **上游不钉 MuJoCo 版本,`uv` 会解析到最新的。**本仓库的结果是在 **3.11.0** 上测
-> 的;3.12.0 改了 `spec.to_xml()` 的属性发射顺序,曾经因此让 ego 相机静默停在原厂
-> 朝向、成功率全局归零(已修:`build_sim_scene.py` 改用 spec API 并在编译后自检)。
-> 如果采集时每局都是 `FAILED [view] object outside ego view`,先查
-> `.venv_sim/bin/python -c "import mujoco; print(mujoco.__version__)"`,再重建场景。
+> **上游不钉 MuJoCo 版本,`uv` 会解析到最新的**(2026-09-25 是 3.14.0)。本仓库的结果全在 **3.11.0**
+> 上测,所以装完要钉回去(下一段的命令);物理和渲染在版本之间都会变。3.12.0 改过 `spec.to_xml()`
+> 的属性发射顺序,曾让 ego 相机静默停在原厂朝向、成功率全局归零(已修:`build_sim_scene.py` 改用
+> spec API 并在编译后自检)。采集时每局都是 `FAILED [view] object outside ego view`,先查版本,再重建场景。
 
 `.venv_sim` 装完之后还缺一个包:`src/locomani/primitives/navigator.py` 用 `skfmm`(路径规划的
 快速行进法)算距离场,但它是这个仓库自己的依赖,上游安装脚本不装,**必须**手动补上,
@@ -194,7 +208,10 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 'skfmm'`:
 
 ```bash
-uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm
+uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm mujoco==3.11.0
+# 只有要跑测试 / make check / 提交钩子才需要(它们都用 .venv_sim):上游装的环境里一个都没有
+uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \
+  pytest pillow pyarrow hydra-core omegaconf
 ```
 
 装完之后**必须**再打补丁,否则**录下来的 action 是错的**(整段下蹲会丢失,action 维度
@@ -234,7 +251,7 @@ exporter 上与 `exporter_priv_seq.patch` 冲突。
  && git apply --check --reverse ../../patches/exporter_priv_seq.patch && echo "补丁已打")
 ```
 
-补丁已打的树上再跑一次 `git apply`(不带 `--check --reverse`)会报
+mujoco 那行期望 `3.11.0`。补丁已打的树上再跑一次 `git apply`(不带 `--check --reverse`)会报
 `patch does not apply`,这是 git 在找"打补丁前"的上下文找不到,不是补丁坏了。
 
 > **默认 checkpoint 是 `policy/sonic_v1_1`**(2026-09-11 用户裁定)。`sonic_v1_1/`
@@ -295,11 +312,38 @@ curl -L -o ort.tgz \
 tar -xzf ort.tgz && mv onnxruntime-linux-x64-gpu-1.16.3 onnxruntime && rm ort.tgz
 cd "$LOCOMANI_ROOT"
 
+# deploy 补丁:三个,按这个顺序,打在第 1 步钉住的 commit 上。可重复执行(已打的跳过)。
+#   sonic_deploy_local_base    本仓库一直在用、从没推送到上游的 6 个提交
+#                              (DDS domain、planner 超时 10 s、SONIC_AUTO_START / --default-motion、lockstep)
+#   sonic_pose_ownership       双臂全身 POSE 交接
+#   sonic_hand_ownership       单臂 / warehouse 从 POSE 回到 planner 时夹爪不复位
+(cd third_party/GR00T-WholeBodyControl &&
+  for p in sonic_deploy_local_base sonic_pose_ownership sonic_hand_ownership; do
+    git apply --check --reverse "../../patches/$p.patch" 2>/dev/null && continue
+    git apply "../../patches/$p.patch" || { echo "打不上 $p:是不是没在钉住的 commit 上?"; exit 1; }
+  done && echo "deploy 补丁已打")
+
 # 编译
 source scripts/env_deploy.sh      # 把上面两个前缀喂给 cmake,并配好 LD_LIBRARY_PATH
 cmake -S "$SONIC_DEPLOY_ROOT" -B "$SONIC_DEPLOY_ROOT/build" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
+cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)" --clean-first
 ```
+
+**和原作者机器上的 deploy 是不是同一份**:源码逐字节相同就是同一个控制器。二进制的 sha256 在不同
+机器上本来就不同(编进去了绝对路径),比的是补丁后的源码指纹,再查二进制里的四个能力标记:
+
+```bash
+(cd "$SONIC_DEPLOY_ROOT/src" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)
+# 期望 c1360628ef7162aaf00905884d0933ee568993c37ab94a092404da17b726e0f8
+for m in POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1 SONIC_AUTO_START SONIC_DDS_DOMAIN; do
+  grep -aq "$m" "$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref" && echo "有 $m" || echo "缺 $m"
+done
+```
+
+指纹对不上就是补丁没打全或不在钉住的 commit 上(`git -C third_party/GR00T-WholeBodyControl log -1`、
+`git status`)。2026-09-25 核对过:这套补丁在 `1983e888` 上重建出的源码,与原作者 bottle / warehouse
+采集用的二进制 `5cab2fb` 的源码逐字节相同,并按上面的命令编译通过。每个补丁的来由见
+[`patches/sonic_deploy_local_base.md`](../patches/sonic_deploy_local_base.md)。
 
 **两个依赖的适配手法不一样,别拿一个去套另一个:**
 
@@ -321,33 +365,16 @@ cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
 
 `just` 不需要装:`.justfile` 的 `build` 就是上面这两条 cmake。
 
-双臂全身 POSE 交接还需要 [上肢控制权补丁](../patches/sonic_pose_ownership.md)：
-应用 `patches/sonic_pose_ownership.patch` 后重编。采集入口会检查实际选择的二进制，
-旧版本会明确报错。自定义 `SONIC_DEPLOY_BIN` 也必须包含该补丁。
-单臂的 streamed-pose 专家（`reach.strategy` 为 `simple` 或 `whole_body`）还需
-[夹爪交接补丁](../patches/sonic_hand_ownership.md)，防止 POSE 回到 planner 时夹爪命令
-短暂恢复默认值；应用后重编。`collect` 阶段起栈前就会检查实际选中的二进制，没打补丁直接报错；
-已编译好的二进制在别处时用 `SONIC_DEPLOY_ROOT` 指过去。
+两个控制权补丁为什么要打:[上肢控制权](../patches/sonic_pose_ownership.md)(双臂全身 POSE 交接)、
+[夹爪交接](../patches/sonic_hand_ownership.md)(单臂 `reach.strategy` 为 `simple` / `whole_body` 与
+warehouse:POSE 回到 planner 时夹爪命令不再短暂恢复默认值)。`collect` 起栈前会检查实际选中的二进制，
+缺了直接报错;自定义 `SONIC_DEPLOY_BIN` 也必须包含它们。已编译好的二进制在别处时用 `SONIC_DEPLOY_ROOT` 指过去。
 
-> **其余部署补丁按用途安装。**
-> `vla_action_space.patch` 是真补丁,第 2 步已经打过了(不打 action 就是错的)。
-> `sonic_dds_domain.patch` + `.md`:补丁本体加说明。**照本文装出来的 deploy 没打它,因此无法参与任何多实例场景** ——
-> 而 [single_arm.md](single_arm.md) 的并行采集就是多实例。这不是"高级用法才需要",
-> 是本文装出来的东西不满足那份文档的前提。
->
-> 只跑单条 stack 就不用管它(单条完全正常)。要跑多条就得先打上再重编:
->
-> ```bash
-> (cd third_party/GR00T-WholeBodyControl && git apply ../../patches/sonic_dds_domain.patch)
-> cmake --build "$SONIC_DEPLOY_ROOT/build" -j"$(nproc)"
-> ```
->
-> 之所以必须打,
-> 因为库存二进制把 DDS domain 硬编码成 0、根本不读 `SONIC_DDS_DOMAIN`,而
-> `INSTANCE` 只管得住 Python 侧和端口。失败模式很隐蔽:第二个 stack 的 sim 在
-> domain 1、它自己的 deploy 却在 domain 0,于是**那个 deploy 跑去接管第一个 stack
-> 的 sim**,自己的 sim 一条指令都收不到。三方状态表见
-> [reference.md 端口](reference/silent_failures.md#端口)。
+> **DDS domain 已经在上面的 `sonic_deploy_local_base` 里**,不要再单独打 `sonic_dds_domain.patch`(会冲突)。
+> 缺它的 deploy 把 DDS domain 硬编码成 0、不读 `SONIC_DDS_DOMAIN`,而 `INSTANCE` 只管得住 Python 侧和端口:
+> 第二个 stack 的 sim 在 domain 1、它自己的 deploy 却在 domain 0,于是**那个 deploy 跑去接管第一个 stack
+> 的 sim**,自己的 sim 一条指令都收不到。[single_arm.md](single_arm.md) 的并行采集就是多实例。
+> 三方状态表见 [reference.md 端口](reference/silent_failures.md#端口)。
 
 > **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
 > 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。
@@ -408,7 +435,9 @@ preset / target / target_pool / 桌上物体:
 ### 5. GR00T 微调 venv(要训练/评测 VLA 就必需)
 
 ```bash
-(cd third_party && git clone https://github.com/NVIDIA/Isaac-GR00T.git)
+(cd third_party && git clone https://github.com/NVIDIA/Isaac-GR00T.git \
+  && git -C Isaac-GR00T checkout --detach 376ba890cff8c9de64d71d982772a9c36185fdd7)
+# 钉住:本仓库的训练 venv 从这个 commit 建(2026-09-25 上游 main 已前移);训练代码本身在 src/gr00t/
 # 然后按上游 README 在 third_party/Isaac-GR00T/ 下建 .venv(uv sync / pip install -e .)
 bash scripts/link_gr00t_src.sh     # 回到仓库根跑;把 `import gr00t` 指到 src/gr00t
 ```

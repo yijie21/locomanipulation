@@ -1,5 +1,9 @@
 # Patch: SONIC deploy DDS domain from env
 
+> **Superseded 2026-09-25**: this change is part of [`sonic_deploy_local_base.patch`](sonic_deploy_local_base.md)
+> (commit 810e6de), which `docs/setup.md` step 3 applies. Do not apply both; this file stays as the record of
+> what the change is.
+
 `GR00T-WholeBodyControl/gear_sonic_deploy` is not tracked by this repo (see
 `.gitignore`), but it carries one local modification that parallel data
 collection depends on. Record it here so it can be re-applied after a fresh

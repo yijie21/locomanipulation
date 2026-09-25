@@ -3757,3 +3757,32 @@ crate 式行走准备在这张桌子上是 2/20,见 `docs/single_arm_design.md:1
 `handoff/bottle-hanging-start-20260914.md#seventh-step-...`。原因是几何硬冲突:
 dex1 手指自掌心下伸 19 cm,垂臂指尖 0.53 m,低于 0.62 m 桌面。双臂没这个问题是因为
 它面对 30 cm 低桌、双手伸进篮子。单臂 expert 仍冻结在 `stage4_27_wrap`。
+
+## 38. 按 setup.md 编出的 deploy 不摔,但抓取掉到 10/17(2026-09-24)
+
+**问题**：协作者报采集时机器人摔倒，用户怀疑我们自己编过几次 SONIC deploy 却没同步到文档。静态核对（TODO 4.8.1）：
+本机所有 deploy 都来自只在本机的 `lockstep-port` 分支（上游 1983e888 + 6 个未推送提交 + 工作树补丁）；setup.md
+的做法（clone 上游 main 不钉版本 + 4 个补丁）本机从没编过。
+
+**做法**：上游 b042411（当天 main）按 setup.md 第 2/3 步打补丁（vla_action_space 的 data 部分、exporter_priv_seq、
+pose / hand ownership）并编译，sha 472ed2b，放在 `outputs/deploy_docbuild_20260924/`（上游 sparse worktree）；
+权重复制自本机（与 HF 逐字节一致），不带 TRT 缓存。与现用二进制（5cab2fb，`bottle_continuous_20260914/deploy`）
+同一份实验配置（`docrepro_20260924_bottle` 只改 name，`train.holdout` 10→0 以通过当天新加的准入检查，不影响采集），
+同 seed，instance 0，GPU1；同 GPU 的对照臂在其后立刻重跑。比较脚本与结果 `outputs/deploy_docbuild_20260924/`。
+
+| 臂 | 二进制 | 局数 | 成功 | 摔倒（骨盆 z < 0.4） | 骨盆最低 z | 髋碰桌 | 抬起时丢指垫接触 |
+|---|---|---|---|---|---|---|---|
+| 对照（复现 agent，GPU0，13:38） | 5cab2fb | 12 | 10 | 0 | 0.720 m | 1 | 0 |
+| 对照（GPU1，文档臂之后） | 5cab2fb | 11 | 10 | 0 | 0.720 m | 0 | 0（另 1 局 lost pad contact） |
+| 文档版 | 472ed2b | 17 | 10 | 0 | 0.718 m | 5 | 2 |
+
+- **摔倒没有复现**：三臂 40 局开局全部站稳（stand drift ≤ 0.18 m），全程骨盆最低 0.718 m。
+- **文档版抓取明显变差**：成功 10/17 对 20/23（Fisher p = 0.066），髋碰桌 5/17 对 1/23（p = 0.067）；
+  同 seed 的前 6 局，两个对照臂 6/6 与 6/6，文档版 2/6。刹车停位几乎相同（骨盆离桌 x 均值 0.383 对 0.389 / 0.390 m，
+  刹后滑行 0.053 对 0.046 m），差别不在接近段，而在伸手 / 下蹲段。
+- 两个二进制在采集路径上的已知源码差别：本地提交（DDS 环境变量、planner 初始化超时 10 s、auto-start、wbc_token、
+  lockstep 代码）和上游基点之后的提交（增益缩放默认不生效、观测别名、planner 参数校验）。**哪一处造成了抓取差别未定位**，
+  样本也只到 p ≈ 0.07。
+
+**结论**：文档与本机确实不一致，而且不一致有后果（抓取变差），但单实例 bottle 采集上它不产生摔倒；协作者的摔倒
+需要他的 run 证据（TODO 4.8.2）。

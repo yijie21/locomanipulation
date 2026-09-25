@@ -1,0 +1,1549 @@
+diff --git a/gear_sonic_deploy/deploy.sh b/gear_sonic_deploy/deploy.sh
+index 6bcc617..46b1159 100755
+--- a/gear_sonic_deploy/deploy.sh
++++ b/gear_sonic_deploy/deploy.sh
+@@ -209,6 +209,7 @@ show_usage() {
+     echo "  --planner PATH          Set the planner model path (default: planner/example.onnx)"
+     echo "  --motion-data PATH      Set the motion data path (default: reference/example_motion/)"
+     echo "  --input-type TYPE       Set the input type (default: zmq_manager)"
++    echo "  --default-motion NAME   Set the default motion to load on startup"
+     echo "  --output-type TYPE      Set the output type (default: ros2)"
+     echo "  --zmq-host HOST         Set the ZMQ host (default: localhost)"
+     echo ""
+@@ -242,6 +243,7 @@ MOTION_DATA_DEFAULT="reference/example/"
+ INPUT_TYPE_DEFAULT="manager"
+ OUTPUT_TYPE_DEFAULT="all"
+ ZMQ_HOST_DEFAULT="localhost"
++DEFAULT_MOTION_NAME_DEFAULT="neutral_kick_R_001__A543"
+ 
+ # Initialize with defaults (will be set after parsing)
+ CHECKPOINT="$CHECKPOINT_DEFAULT"
+@@ -251,6 +253,7 @@ MOTION_DATA="$MOTION_DATA_DEFAULT"
+ INPUT_TYPE="$INPUT_TYPE_DEFAULT"
+ OUTPUT_TYPE="$OUTPUT_TYPE_DEFAULT"
+ ZMQ_HOST="$ZMQ_HOST_DEFAULT"
++DEFAULT_MOTION_NAME="$DEFAULT_MOTION_NAME_DEFAULT"
+ 
+ # Parse arguments
+ while [[ $# -gt 0 ]]; do
+@@ -315,6 +318,14 @@ while [[ $# -gt 0 ]]; do
+             ZMQ_HOST="$2"
+             shift 2
+             ;;
++        --default-motion)
++            if [[ -z "$2" ]]; then
++                echo -e "${RED}Error: --default-motion requires a motion name argument${NC}" >&2
++                exit 1
++            fi
++            DEFAULT_MOTION_NAME="$2"
++            shift 2
++            ;;
+         sim|real)
+             INTERFACE_MODE="$1"
+             shift
+@@ -515,6 +526,7 @@ echo -e "  Planner:            ${GREEN}$PLANNER${NC}"
+ echo -e "  Input Type:         ${GREEN}$INPUT_TYPE${NC}"
+ echo -e "  Output Type:        ${GREEN}$OUTPUT_TYPE${NC}"
+ echo -e "  ZMQ Host:           ${GREEN}$ZMQ_HOST${NC}"
++echo -e "  Default Motion:     ${GREEN}$DEFAULT_MOTION_NAME${NC}"
+ if [[ -n "$EXTRA_ARGS" ]]; then
+ echo -e "  Extra Args:         ${GREEN}$EXTRA_ARGS${NC}"
+ fi
+@@ -529,7 +541,8 @@ echo -e "${BLUE}    --encoder-file $CHECKPOINT_ENCODER \\${NC}"
+ echo -e "${BLUE}    --planner-file $PLANNER \\${NC}"
+ echo -e "${BLUE}    --input-type $INPUT_TYPE \\${NC}"
+ echo -e "${BLUE}    --output-type $OUTPUT_TYPE \\${NC}"
+-echo -e "${BLUE}    --zmq-host $ZMQ_HOST${NC}"
++echo -e "${BLUE}    --zmq-host $ZMQ_HOST \\${NC}"
++echo -e "${BLUE}    --default-motion $DEFAULT_MOTION_NAME${NC}"
+ if [[ -n "$EXTRA_ARGS" ]]; then
+ echo -e "${BLUE}    $EXTRA_ARGS${NC}"
+ fi
+@@ -560,6 +573,7 @@ if [[ "$confirm" =~ ^[Yy]$ ]] || [[ -z "$confirm" ]]; then
+             --input-type "$INPUT_TYPE" \
+             --output-type "$OUTPUT_TYPE" \
+             --zmq-host "$ZMQ_HOST" \
++            --default-motion "$DEFAULT_MOTION_NAME" \
+             $EXTRA_ARGS
+     else
+         just run g1_deploy_onnx_ref "$TARGET" "$CHECKPOINT_DECODER" "$MOTION_DATA" \
+@@ -568,7 +582,8 @@ if [[ "$confirm" =~ ^[Yy]$ ]] || [[ -z "$confirm" ]]; then
+             --planner-file "$PLANNER" \
+             --input-type "$INPUT_TYPE" \
+             --output-type "$OUTPUT_TYPE" \
+-            --zmq-host "$ZMQ_HOST"
++            --zmq-host "$ZMQ_HOST" \
++            --default-motion "$DEFAULT_MOTION_NAME"
+     fi
+ else
+     echo ""
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/dex3_hands.hpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/dex3_hands.hpp
+index 7644154..4e3d62b 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/dex3_hands.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/dex3_hands.hpp
+@@ -113,7 +113,7 @@ public:
+     double GetMaxCloseRatio() const { return max_close_ratio_; }
+ 
+     // Perform one publish tick; call this at your own cadence from the main class/thread.
+-    void writeOnce()
++    void writeOnce(const std::array<uint32_t, 4> *lockstep_ack = nullptr)
+     {
+         constexpr double MAX_DELTA_Q = 0.25;
+         // Use runtime adjustable max_close_ratio_ instead of constexpr
+@@ -151,6 +151,7 @@ public:
+                         smoothedCmd.motor_cmd()[i].q(current_q + clamped_delta);
+                     }
+                 }
++                if (lockstep_ack) smoothedCmd.reserve() = *lockstep_ack;
+                 
+                 left_.publisher->Write(smoothedCmd);
+             }
+@@ -189,6 +190,7 @@ public:
+                         smoothedCmd.motor_cmd()[i].q(current_q + clamped_delta);
+                     }
+                 }
++                if (lockstep_ack) smoothedCmd.reserve() = *lockstep_ack;
+                 
+                 right_.publisher->Write(smoothedCmd);
+             }
+@@ -463,4 +465,4 @@ private:
+     static constexpr std::array<double, DEX3_MOTOR_MAX> MIN_LIMITS_RIGHT = {-1.05, -1.05, -1.75, 0.0,  0.0,  0.0,  0.0 };
+ };
+ 
+-#endif // DEX3_HANDS_HPP
+\ No newline at end of file
++#endif // DEX3_HANDS_HPP
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/input_interface.hpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/input_interface.hpp
+index 877a139..438b448 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/input_interface.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/input_interface.hpp
+@@ -34,11 +34,13 @@
+ #include <queue>
+ #include <memory>
+ #include <optional>
++#include <functional>
+ #include "../utils.hpp"              // For DataBuffer  
+ #include "../robot_parameters.hpp"   // For HeadingState, OperatorState
+ #include "../motion_data_reader.hpp" // For MotionDataReader, MotionSequence
+ #include "../math_utils.hpp"         // For float_to_double
+ #include "../localmotion_kplanner.hpp" // For PlannerState, MovementState
++#include "../sim_lockstep.hpp"
+ 
+ /**
+  * @class InputInterface
+@@ -156,6 +158,23 @@ public:
+       }
+       return {false, {}};
+     }
++
++    // Optional simulation-lockstep hooks. Non-ZMQ interfaces keep these no-op
++    // defaults, preserving every existing input path when the flag is disabled.
++    virtual std::shared_ptr<const LockstepTokenBundle> GetLockstepTokenBundle() const {
++      return nullptr;
++    }
++
++    virtual void SetLockstepTokenCallback(
++        std::function<void(const LockstepTokenBundle&)> callback) {
++      (void)callback;
++    }
++
++    virtual void ResetLockstepInput() {}
++
++    virtual bool IsStreamedMotionMode() const { return false; }
++
++    virtual void PrepareLockstepMode() {}
+     
+     // ------------------------------------------------------------------
+     // VR 3-point tracking data accessors
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_endpoint_interface.hpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_endpoint_interface.hpp
+index 4f56765..20a460b 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_endpoint_interface.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_endpoint_interface.hpp
+@@ -66,6 +66,7 @@
+ #include <algorithm>
+ #include <cstdlib>
+ #include <limits>
++#include <functional>
+ 
+ #include "input_interface.hpp"
+ #include "zmq_packed_message_subscriber.hpp"
+@@ -581,8 +582,113 @@ public:
+       }
+       return last_receive_time_;
+     }
++
++    std::shared_ptr<const LockstepTokenBundle> GetLockstepTokenBundle() const override {
++      return lockstep_token_buffer_.GetDataWithTime().data;
++    }
++
++    void SetLockstepTokenCallback(
++        std::function<void(const LockstepTokenBundle&)> callback) override {
++      std::lock_guard<std::mutex> lock(lockstep_callback_mutex_);
++      lockstep_callback_ = std::move(callback);
++    }
++
++    void ResetLockstepInput() override {
++      {
++        std::lock_guard<std::mutex> lock(data_mutex_);
++        has_new_data_ = false;
++        buffered_header_ = {};
++        buffered_buffers_.clear();
++      }
++      lockstep_token_buffer_.Clear();
++      external_token_state_.Clear();
++      has_external_token_state_ = false;
++      has_hand_joints_ = false;
++      ResetStreamedMotion();
++    }
++
++    bool IsStreamedMotionMode() const override { return use_zmq_stream; }
++
++    void PrepareLockstepMode() override {
++      use_zmq_stream = true;
++      has_new_data_ = false;
++      ResetStreamedMotion();
++    }
+     
+ private:
++    static std::optional<LockstepTokenBundle> DecodeLockstepBundle(
++        const ZMQPackedMessageSubscriber::DecodedHeader& hdr,
++        const std::vector<ZMQPackedMessageSubscriber::BufferView>& bufs) {
++      if (hdr.version != 4 || hdr.fields.size() != bufs.size()) return std::nullopt;
++      int token_idx = -1, frame_idx = -1, left_idx = -1, right_idx = -1;
++      int session_idx = -1, step_idx = -1, action_idx = -1;
++      for (size_t i = 0; i < hdr.fields.size(); ++i) {
++        const auto& name = hdr.fields[i].name;
++        if (name == "token_state") token_idx = static_cast<int>(i);
++        else if (name == "frame_index") frame_idx = static_cast<int>(i);
++        else if (name == "left_hand_joints") left_idx = static_cast<int>(i);
++        else if (name == "right_hand_joints") right_idx = static_cast<int>(i);
++        else if (name == "lockstep_session") session_idx = static_cast<int>(i);
++        else if (name == "lockstep_sim_step") step_idx = static_cast<int>(i);
++        else if (name == "lockstep_action_seq") action_idx = static_cast<int>(i);
++      }
++      if (token_idx < 0 || frame_idx < 0 || left_idx < 0 || right_idx < 0 ||
++          session_idx < 0 || step_idx < 0 || action_idx < 0) return std::nullopt;
++      const bool swap = hdr.NeedsByteSwap();
++
++      auto read_i64 = [&](int index, int64_t& output) {
++        const auto& field = hdr.fields[static_cast<size_t>(index)];
++        const auto& buffer = bufs[static_cast<size_t>(index)];
++        if (field.dtype != "i64" || field.shape != std::vector<size_t>{1} ||
++            buffer.size < sizeof(int64_t)) return false;
++        std::memcpy(&output, buffer.data, sizeof(int64_t));
++        if (swap) output = byte_swap(output);
++        return true;
++      };
++      int64_t frame = -1, session = -1, step = -1, action = -1;
++      if (!read_i64(frame_idx, frame) || !read_i64(session_idx, session) ||
++          !read_i64(step_idx, step) || !read_i64(action_idx, action)) return std::nullopt;
++      if (session <= 0 || session > UINT32_MAX || step < 0 || step >= LOCKSTEP_NO_ACTION ||
++          action < 0 || action >= LOCKSTEP_NO_ACTION) return std::nullopt;
++
++      auto read_vector = [&](int index, size_t count, auto& output) {
++        const auto& field = hdr.fields[static_cast<size_t>(index)];
++        const auto& buffer = bufs[static_cast<size_t>(index)];
++        size_t shape_count = 1;
++        for (size_t dim : field.shape) shape_count *= dim;
++        if (shape_count != count) return false;
++        if (field.dtype == "f32" && buffer.size >= count * sizeof(float)) {
++          for (size_t i = 0; i < count; ++i) {
++            float value;
++            std::memcpy(&value, static_cast<const uint8_t*>(buffer.data) + i * sizeof(float), sizeof(float));
++            if (swap) value = byte_swap(value);
++            output[i] = static_cast<double>(value);
++          }
++          return true;
++        }
++        if (field.dtype == "f64" && buffer.size >= count * sizeof(double)) {
++          for (size_t i = 0; i < count; ++i) {
++            double value;
++            std::memcpy(&value, static_cast<const uint8_t*>(buffer.data) + i * sizeof(double), sizeof(double));
++            if (swap) value = byte_swap(value);
++            output[i] = value;
++          }
++          return true;
++        }
++        return false;
++      };
++
++      LockstepTokenBundle bundle;
++      bundle.envelope = {LOCKSTEP_MAGIC, static_cast<uint32_t>(session),
++                         static_cast<uint32_t>(step), static_cast<uint32_t>(action)};
++      bundle.frame_index = frame;
++      bundle.token.resize(64);
++      if (!read_vector(token_idx, 64, bundle.token) ||
++          !read_vector(left_idx, 7, bundle.left_hand) ||
++          !read_vector(right_idx, 7, bundle.right_hand)) return std::nullopt;
++      return bundle;
++    }
++
+     /// Reset the streamed motion buffer, merger state, and protocol version.
+     /// Called on construction, when toggling ZMQ mode, and on safety reset.
+     void ResetStreamedMotion() {
+@@ -1807,6 +1913,14 @@ private:
+         const ZMQPackedMessageSubscriber::DecodedHeader& hdr,
+         const std::vector<ZMQPackedMessageSubscriber::BufferView>& bufs) {
+         
++        auto lockstep_bundle = DecodeLockstepBundle(hdr, bufs);
++        std::function<void(const LockstepTokenBundle&)> callback;
++        if (lockstep_bundle.has_value()) {
++          lockstep_token_buffer_.SetData(*lockstep_bundle);
++          std::lock_guard<std::mutex> callback_lock(lockstep_callback_mutex_);
++          callback = lockstep_callback_;
++        }
++
+         std::lock_guard<std::mutex> lock(data_mutex_);
+         
+         // Print message received info
+@@ -1828,6 +1942,7 @@ private:
+         has_new_data_ = true;
+         last_receive_time_ = std::chrono::steady_clock::now();
+         receive_count_++;
++        if (callback && lockstep_bundle.has_value()) callback(*lockstep_bundle);
+     }
+     
+     // ------------------------------------------------------------------
+@@ -1850,6 +1965,9 @@ private:
+     bool has_new_data_ = false;               ///< True when a new message is waiting to be decoded.
+     ZMQPackedMessageSubscriber::DecodedHeader buffered_header_;  ///< Latest JSON header.
+     std::vector<std::vector<uint8_t>> buffered_buffers_;         ///< Copied binary field data.
++    DataBuffer<LockstepTokenBundle> lockstep_token_buffer_;
++    mutable std::mutex lockstep_callback_mutex_;
++    std::function<void(const LockstepTokenBundle&)> lockstep_callback_;
+     
+     // ------------------------------------------------------------------
+     // Timing / diagnostics
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
+index 6917e59..0ee39d2 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/input_interface/zmq_manager.hpp
+@@ -307,11 +307,6 @@ class ZMQManager : public InputInterface {
+                       DataBuffer<MovementState>& movement_state_buffer,
+                       std::mutex& current_motion_mutex,
+                       bool& report_temperature) override {
+-      if (!has_planner) {
+-        std::cerr << "[ZMQCommandManager ERROR] Planner not available in planner mode" << std::endl;
+-        operator_state.stop = true;
+-        return;
+-      }
+       // Emergency stop
+       if (report_temperature_flag_) {
+         report_temperature = true;
+@@ -362,6 +357,11 @@ class ZMQManager : public InputInterface {
+ 
+       // Delegate based on current mode
+       if (active_mode_ == ManagedMode::PLANNER) {
++        if (!has_planner) {
++          std::cerr << "[ZMQCommandManager ERROR] Planner not available in planner mode" << std::endl;
++          operator_state.stop = true;
++          return;
++        }
+         // Planner mode: handle planner input ourselves
+         handlePlannerInput(motion_reader, current_motion, current_frame,
+                           operator_state, reinitialize_heading,
+@@ -437,6 +437,33 @@ class ZMQManager : public InputInterface {
+       return InputInterface::GetExternalTokenState();
+     }
+ 
++    std::shared_ptr<const LockstepTokenBundle> GetLockstepTokenBundle() const override {
++      return pose_interface_ ? pose_interface_->GetLockstepTokenBundle() : nullptr;
++    }
++
++    void SetLockstepTokenCallback(
++        std::function<void(const LockstepTokenBundle&)> callback) override {
++      if (pose_interface_) pose_interface_->SetLockstepTokenCallback(std::move(callback));
++    }
++
++    void ResetLockstepInput() override {
++      if (pose_interface_) pose_interface_->ResetLockstepInput();
++      has_external_token_state_ = false;
++      has_hand_joints_ = false;
++    }
++
++    bool IsStreamedMotionMode() const override {
++      return active_mode_ == ManagedMode::STREAMED_MOTION && pose_interface_ &&
++             pose_interface_->IsStreamedMotionMode();
++    }
++
++    void PrepareLockstepMode() override {
++      active_mode_ = ManagedMode::STREAMED_MOTION;
++      if (pose_interface_) pose_interface_->PrepareLockstepMode();
++      is_planner_ready_ = false;
++      switch_from_teleop_to_planner_ = false;
++    }
++
+     std::optional<std::chrono::steady_clock::time_point> GetLastUpdateTime() const override {
+       if ((active_mode_ == ManagedMode::STREAMED_MOTION) && pose_interface_) {
+         return pose_interface_->GetLastUpdateTime();
+@@ -486,7 +513,7 @@ class ZMQManager : public InputInterface {
+ 
+             // Wait for planner to be initialized with timeout (5 seconds)
+             auto wait_start = std::chrono::steady_clock::now();
+-            constexpr auto PLANNER_INIT_TIMEOUT = std::chrono::seconds(5);
++            constexpr auto PLANNER_INIT_TIMEOUT = std::chrono::seconds(10);
+             while (planner_state.enabled) {
+               {
+                 std::lock_guard<std::mutex> lock(current_motion_mutex);
+@@ -497,7 +524,7 @@ class ZMQManager : public InputInterface {
+               std::this_thread::sleep_for(std::chrono::milliseconds(100));
+               auto elapsed = std::chrono::steady_clock::now() - wait_start;
+               if (elapsed > PLANNER_INIT_TIMEOUT) {
+-                std::cerr << "[ZMQCommandManager ERROR] Planner initialization timeout after 5 seconds" << std::endl;
++                std::cerr << "[ZMQCommandManager ERROR] Planner initialization timeout after 10 seconds" << std::endl;
+                 operator_state.stop = true;
+                 return;
+               }
+@@ -540,7 +567,7 @@ class ZMQManager : public InputInterface {
+         
+         // Wait for initialization
+         auto wait_start = std::chrono::steady_clock::now();
+-        constexpr auto PLANNER_INIT_TIMEOUT = std::chrono::seconds(5);
++        constexpr auto PLANNER_INIT_TIMEOUT = std::chrono::seconds(10);
+         while (planner_state.enabled) {
+           {
+             std::lock_guard<std::mutex> lock(current_motion_mutex);
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/sim_lockstep.hpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/sim_lockstep.hpp
+new file mode 100644
+index 0000000..1562d57
+--- /dev/null
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/sim_lockstep.hpp
+@@ -0,0 +1,232 @@
++#pragma once
++
++#include <array>
++#include <atomic>
++#include <condition_variable>
++#include <cstdint>
++#include <functional>
++#include <memory>
++#include <mutex>
++#include <optional>
++#include <stop_token>
++#include <string>
++#include <utility>
++#include <vector>
++
++inline constexpr uint32_t LOCKSTEP_MAGIC = 0x534C4B31u;
++inline constexpr uint32_t LOCKSTEP_NO_ACTION = 0xFFFFFFFFu;
++
++struct LockstepEnvelope {
++  uint32_t magic = 0;
++  uint32_t session = 0;
++  uint32_t sim_step = 0;
++  uint32_t action_seq = LOCKSTEP_NO_ACTION;
++
++  bool operator==(const LockstepEnvelope&) const = default;
++  bool IsReady() const {
++    return magic == LOCKSTEP_MAGIC && session != 0 && sim_step == 0 &&
++           action_seq == LOCKSTEP_NO_ACTION;
++  }
++  std::array<uint32_t, 4> Reserve() const {
++    return {magic, session, sim_step, action_seq};
++  }
++};
++
++struct LockstepTokenBundle {
++  LockstepEnvelope envelope;
++  int64_t frame_index = -1;
++  std::vector<double> token;
++  std::array<double, 7> left_hand{};
++  std::array<double, 7> right_hand{};
++};
++
++struct CommittedAck {
++  LockstepEnvelope envelope;
++  uint64_t commit_index = 0;
++};
++
++class SimLockstepGate {
++ public:
++  enum class WorkKind { SessionReady, Control };
++  enum class PushResult { Accepted, Duplicate, Rejected };
++
++  struct Work {
++    WorkKind kind;
++    LockstepEnvelope envelope;
++    std::optional<LockstepTokenBundle> token;
++  };
++
++  using EventCallback = std::function<void(const std::string&, const LockstepEnvelope&)>;
++
++  explicit SimLockstepGate(EventCallback callback = {})
++      : callback_(std::move(callback)) {}
++
++  PushResult PushState(const LockstepEnvelope& envelope) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (envelope.magic != LOCKSTEP_MAGIC || envelope.session == 0) {
++      EmitLocked("reject_state_header", envelope);
++      return PushResult::Rejected;
++    }
++    if (!active_session_.has_value() || envelope.session != *active_session_) {
++      if (!envelope.IsReady()) {
++        EmitLocked("reject_new_session_without_ready", envelope);
++        return PushResult::Rejected;
++      }
++      active_session_ = envelope.session;
++      last_step_ = 0;
++      last_action_ = std::nullopt;
++      pending_state_.reset();
++      pending_token_.reset();
++      in_flight_.reset();
++      ready_pending_ = envelope;
++      EmitLocked("session_ready_pending", envelope);
++      cv_.notify_all();
++      return PushResult::Accepted;
++    }
++    if (envelope.IsReady()) {
++      EmitLocked("duplicate_session_ready", envelope);
++      return PushResult::Duplicate;
++    }
++    if (envelope.sim_step <= last_step_ ||
++        (in_flight_.has_value() && envelope == in_flight_->envelope)) {
++      EmitLocked("duplicate_state", envelope);
++      return PushResult::Duplicate;
++    }
++    if (envelope.sim_step != last_step_ + 1) {
++      EmitLocked("reject_state_step", envelope);
++      return PushResult::Rejected;
++    }
++    if (envelope.action_seq != LOCKSTEP_NO_ACTION) {
++      const uint32_t expected_action = last_action_.has_value() ? *last_action_ + 1 : 0;
++      if (envelope.action_seq != expected_action) {
++        EmitLocked("reject_state_action", envelope);
++        return PushResult::Rejected;
++      }
++    }
++    pending_state_ = envelope;
++    EmitLocked("state_pending", envelope);
++    cv_.notify_all();
++    return PushResult::Accepted;
++  }
++
++  PushResult PushToken(const LockstepTokenBundle& bundle) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    const auto& envelope = bundle.envelope;
++    if (envelope.magic != LOCKSTEP_MAGIC || !active_session_.has_value() ||
++        envelope.session != *active_session_) {
++      EmitLocked("reject_token_session", envelope);
++      return PushResult::Rejected;
++    }
++    if (envelope.sim_step <= last_step_ ||
++        (in_flight_.has_value() && envelope == in_flight_->envelope)) {
++      EmitLocked("duplicate_token", envelope);
++      return PushResult::Duplicate;
++    }
++    const uint32_t expected_action = last_action_.has_value() ? *last_action_ + 1 : 0;
++    if (envelope.sim_step != last_step_ + 1 ||
++        envelope.action_seq != expected_action ||
++        envelope.action_seq == LOCKSTEP_NO_ACTION ||
++        bundle.frame_index != static_cast<int64_t>(envelope.action_seq) ||
++        bundle.token.size() != 64) {
++      EmitLocked("reject_token_sequence_or_shape", envelope);
++      return PushResult::Rejected;
++    }
++    pending_token_ = bundle;
++    EmitLocked("token_pending", envelope);
++    cv_.notify_all();
++    return PushResult::Accepted;
++  }
++
++  std::optional<Work> Wait(std::stop_token stop) {
++    std::unique_lock<std::mutex> lock(mutex_);
++    std::stop_callback wake(stop, [this] { cv_.notify_all(); });
++    cv_.wait(lock, [&] { return stop.stop_requested() || HasWorkLocked(); });
++    if (stop.stop_requested()) return std::nullopt;
++    if (ready_pending_.has_value()) {
++      Work work{WorkKind::SessionReady, *ready_pending_, std::nullopt};
++      ready_pending_.reset();
++      in_flight_ = work;
++      return work;
++    }
++    if (!pending_state_.has_value()) return std::nullopt;
++    const auto envelope = *pending_state_;
++    if (envelope.action_seq == LOCKSTEP_NO_ACTION) {
++      Work work{WorkKind::Control, envelope, std::nullopt};
++      pending_state_.reset();
++      in_flight_ = work;
++      return work;
++    }
++    if (pending_token_.has_value() && pending_token_->envelope == envelope) {
++      Work work{WorkKind::Control, envelope, pending_token_};
++      pending_state_.reset();
++      pending_token_.reset();
++      in_flight_ = work;
++      return work;
++    }
++    return std::nullopt;
++  }
++
++  bool Commit(const Work& work) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (!in_flight_.has_value() || in_flight_->kind != work.kind ||
++        in_flight_->envelope != work.envelope) {
++      return false;
++    }
++    if (work.kind == WorkKind::Control) {
++      last_step_ = work.envelope.sim_step;
++      if (work.envelope.action_seq != LOCKSTEP_NO_ACTION) {
++        last_action_ = work.envelope.action_seq;
++      }
++    }
++    ++commit_index_;
++    auto committed = std::make_shared<const CommittedAck>(
++        CommittedAck{work.envelope, commit_index_});
++    std::atomic_store_explicit(&committed_, std::move(committed),
++                               std::memory_order_release);
++    in_flight_.reset();
++    EmitLocked("commit", work.envelope);
++    return true;
++  }
++
++  std::shared_ptr<const CommittedAck> LoadCommitted() const {
++    return std::atomic_load_explicit(&committed_, std::memory_order_acquire);
++  }
++
++  void Notify() { cv_.notify_all(); }
++
++  uint32_t LastStep() const {
++    std::lock_guard<std::mutex> lock(mutex_);
++    return last_step_;
++  }
++
++  std::optional<uint32_t> LastAction() const {
++    std::lock_guard<std::mutex> lock(mutex_);
++    return last_action_;
++  }
++
++ private:
++  bool HasWorkLocked() const {
++    if (ready_pending_.has_value()) return true;
++    if (!pending_state_.has_value()) return false;
++    if (pending_state_->action_seq == LOCKSTEP_NO_ACTION) return true;
++    return pending_token_.has_value() &&
++           pending_token_->envelope == *pending_state_;
++  }
++
++  void EmitLocked(const std::string& event, const LockstepEnvelope& envelope) {
++    if (callback_) callback_(event, envelope);
++  }
++
++  mutable std::mutex mutex_;
++  std::condition_variable cv_;
++  EventCallback callback_;
++  std::optional<uint32_t> active_session_;
++  uint32_t last_step_ = 0;
++  std::optional<uint32_t> last_action_;
++  std::optional<LockstepEnvelope> ready_pending_;
++  std::optional<LockstepEnvelope> pending_state_;
++  std::optional<LockstepTokenBundle> pending_token_;
++  std::optional<Work> in_flight_;
++  uint64_t commit_index_ = 0;
++  mutable std::shared_ptr<const CommittedAck> committed_;
++};
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/state_logger.hpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/state_logger.hpp
+index 87bcc17..8afb261 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/state_logger.hpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/state_logger.hpp
+@@ -140,7 +140,7 @@ class StateLogger {
+    * @param robot_config   Optional robot configuration map (model paths, frequencies, etc.) - immutable after construction
+    */
+   StateLogger(std::string csv_dir, size_t ring_capacity, int num_joints = -1, int num_actions = -1, double dt_seconds = 0.0, bool enable_csv = true,
+-              std::map<std::string, std::variant<std::string, int, double, bool>> robot_config = {});
++              std::map<std::string, std::variant<std::string, int, double, bool>> robot_config = {}, bool strict_stride = false);
+ 
+   // Non-copyable, movable
+   StateLogger(const StateLogger&) = delete;
+@@ -197,6 +197,9 @@ class StateLogger {
+   // If newest_first is true (default), returns [newest, ..., oldest]; otherwise [oldest, ..., newest]
+   std::vector<Entry> GetLatest(size_t n, double sample_dt_seconds, bool newest_first = true) const;
+ 
++  /// Clear cross-session observation history while preserving the global index.
++  void ResetHistoryKeepIndex();
++
+  private:
+   // Time normalization helper
+   double toMillisNormalized_(const std::chrono::system_clock::time_point& t);
+@@ -217,6 +220,7 @@ class StateLogger {
+   int configured_num_joints_ = -1;
+   int configured_num_actions_ = -1;
+   bool enable_csv_ = true;
++  bool strict_stride_ = false;
+ 
+   // Ring buffer state
+   mutable std::mutex ring_mutex_;
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
+index a35f0b3..d51eba9 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
+@@ -46,6 +46,7 @@
+  *   --policy-fp16         | Use FP16 for policy TensorRT engine
+  */
+ #include <cmath>
++#include <cstdlib>
+ #include <cuda_runtime_api.h>
+ #include <memory>
+ #include <mutex>
+@@ -57,6 +58,7 @@
+ #include <algorithm>
+ #include <chrono>
+ #include <unistd.h>
++#include <cstdlib>
+ #include <cstring>
+ #include <functional>
+ #include <unordered_map>
+@@ -65,6 +67,7 @@
+ #include <chrono>
+ #include <algorithm>
+ #include <numeric>
++#include <thread>
+ 
+ // DDS
+ #include <unitree/robot/channel/channel_publisher.hpp>
+@@ -123,6 +126,7 @@
+ 
+ #include <cuda_runtime.h>
+ #include "../include/state_logger.hpp"
++#include "../include/sim_lockstep.hpp"
+ 
+ // Encoder
+ #include "../include/encoder.hpp"
+@@ -248,6 +252,7 @@ class G1Deploy {
+     // =========================================================================
+     // Flag to disable CRC checking for MuJoCo simulation
+     bool disable_crc_check_ = false;
++    bool sim_lockstep_ = false;
+     
+     bool reinitialize_heading_ = true;
+     bool report_temperature_ = false;
+@@ -269,9 +274,13 @@ class G1Deploy {
+     DataBuffer<MovementState> movement_state_buffer_;
+     
+     ChannelPublisherPtr<LowCmd_> lowcmd_publisher_;
++    ChannelPublisherPtr<LowState_> wbc_token_publisher_;  // 64-dim encoder token on rt/wbc_token (interim LowState_ wire for teleop recording)
+     ChannelSubscriberPtr<LowState_> lowstate_subscriber_;
+     ChannelSubscriberPtr<IMUState_> imutorso_subscriber_;
+     ThreadPtr input_thread_ptr_, command_writer_ptr_, control_thread_ptr_, planner_thread_ptr_;
++    SimLockstepGate lockstep_gate_;
++    std::jthread lockstep_control_thread_;
++    uint64_t lockstep_control_count_ = 0;
+     
+     // =========================================================================
+     // External clients and peripheral managers
+@@ -295,6 +304,14 @@ class G1Deploy {
+     static constexpr std::chrono::milliseconds LOW_STATE_LATE_THRESHOLD{50};
+     static constexpr std::chrono::milliseconds LOW_STATE_ABSENT_THRESHOLD{500};
+     ProgramState program_state_;
++    // SONIC_AUTO_START env var: engage the policy automatically on the first
++    // WAIT_FOR_CONTROL tick after the init ramp, as if ']' were pressed.
++    // Unset, empty, or "0" leaves the manual ']' flow unchanged.
++    // One-shot: cleared after use so a later stop is not fought.
++    bool auto_start_ = [] {
++      const char* v = std::getenv("SONIC_AUTO_START");
++      return v != nullptr && *v != '\0' && std::strcmp(v, "0") != 0;
++    }();
+     std::array<double, G1_NUM_MOTOR> last_action;
+     std::array<double, 7> last_left_hand_action;
+     std::array<double, 7> last_right_hand_action;
+@@ -2159,7 +2176,9 @@ class G1Deploy {
+       std::string zmq_out_topic = "g1_debug",
+       bool enable_motion_recording = false,
+       std::array<double, 3> initial_compliance = {0.05, 0.05, 0.0},
+-      double initial_max_close_ratio = 1.0)
++      double initial_max_close_ratio = 1.0,
++      std::string default_motion_name = "",
++      bool sim_lockstep = false)
+       : time_(0.0),
+         publish_dt_(0.002),
+         control_dt_(0.02),
+@@ -2170,6 +2189,7 @@ class G1Deploy {
+         mode_pr_(Mode::PR),
+         mode_machine_(0),
+         disable_crc_check_(disable_crc_check),
++        sim_lockstep_(sim_lockstep),
+         program_state_(ProgramState::INIT),
+         last_action {0.0},
+         last_left_hand_action {0.0},
+@@ -2179,10 +2199,27 @@ class G1Deploy {
+         initial_max_close_ratio_(initial_max_close_ratio),
+         //env(ORT_LOGGING_LEVEL_WARNING, "G1Deploy"),
+         model_path(model_file_path),
+-        planner_path(planner_file_path) {
++        planner_path(planner_file_path),
++        lockstep_gate_([this](const std::string& event, const LockstepEnvelope& envelope) {
++          if (event.rfind("reject", 0) == 0) {
++            std::cerr << "[Lockstep REJECT] event=" << event
++                      << " session=" << envelope.session
++                      << " step=" << envelope.sim_step
++                      << " action=" << envelope.action_seq << std::endl;
++          }
++        }) {
+       
+-      // Initialize ChannelFactory
+-      ChannelFactory::Instance()->Init(0, networkInterface);
++      // Initialize ChannelFactory. Domain from SONIC_DDS_DOMAIN (default 0)
++      // so several sim+deploy pairs can share this host without their DDS
++      // traffic crossing — the only hardcoded value that blocked running
++      // parallel data-collection stacks.
++      {
++        int dds_domain = 0;
++        if (const char* d = std::getenv("SONIC_DDS_DOMAIN")) {
++          dds_domain = std::atoi(d);
++        }
++        ChannelFactory::Instance()->Init(dds_domain, networkInterface);
++      }
+ 
+       // Initialize Dex3 hands (ChannelFactory already initialized above)
+       dex3_hands_.initialize("");
+@@ -2257,6 +2294,10 @@ class G1Deploy {
+       // create publisher
+       lowcmd_publisher_.reset(new ChannelPublisher<LowCmd_>(HG_CMD_TOPIC));
+       lowcmd_publisher_->InitChannel();
++      // Publish the 64-dim encoder token so teleop recording (pico_wbc_agent) can capture it.
++      wbc_token_publisher_.reset(new ChannelPublisher<LowState_>("rt/wbc_token"));
++      wbc_token_publisher_->InitChannel();
++      std::cout << "[WBC] rt/wbc_token publisher active (encoder token -> teleop recording)" << std::endl;
+       // create subscriber
+       lowstate_subscriber_.reset(new ChannelSubscriber<LowState_>(HG_STATE_TOPIC));
+       lowstate_subscriber_->InitChannel(std::bind(&G1Deploy::LowStateHandler, this, std::placeholders::_1), 1);
+@@ -2267,7 +2308,24 @@ class G1Deploy {
+         if (!motion_reader_.motions.empty()) {
+           std::cout << "✓ Motion data loaded successfully!" << std::endl;
+           // motion_reader_.PrintSummary();
+-          motion_reader_.current_motion_index_ = 0;
++
++          // Find the default motion by name (ported from hongyi-wbc: the
++          // startup reference motion is selected by --default-motion instead
++          // of whatever sorts first in the motion directory)
++          int default_motion_index = 0;
++          for (size_t i = 0; i < motion_reader_.motions.size(); i++) {
++            if (motion_reader_.motions[i]->name == default_motion_name) {
++              default_motion_index = i;
++              std::cout << "✓ Found default motion '" << default_motion_name << "' at index " << i << std::endl;
++              break;
++            }
++          }
++          if (default_motion_index == 0 && motion_reader_.motions[0]->name != default_motion_name) {
++            std::cout << "⚠ Warning: Default motion '" << default_motion_name << "' not found, using index 0 ("
++                      << motion_reader_.motions[0]->name << ")" << std::endl;
++          }
++
++          motion_reader_.current_motion_index_ = default_motion_index;
+           std::string motion_name;
+           {
+             std::lock_guard<std::mutex> lock(current_motion_mutex_);
+@@ -2434,13 +2492,14 @@ class G1Deploy {
+       robot_config["is_using_encoder"] = is_using_encoder_;
+       robot_config["policy_fp16"] = policy_fp16;
+       robot_config["planner_fp16"] = planner_fp16;
++      robot_config["sim_lockstep"] = sim_lockstep_;
+ 
+       // Initialize state logger with complete robot configuration
+       try {
+         std::string resolved_logs_dir = logs_dir;
+         // dt is control_dt_; pass complete robot_config to constructor
+         state_logger_ = std::make_unique<StateLogger>(resolved_logs_dir, 10000, G1_NUM_MOTOR, G1_NUM_MOTOR, 
+-                                                       control_dt_, enable_csv_logs, robot_config);
++                                                       control_dt_, enable_csv_logs, robot_config, sim_lockstep_);
+       } catch (const std::exception& e) {
+         std::cerr << "[ERROR] Failed to initialize state logger: " << e.what() << std::endl;
+         std::cerr << "State logger is required for operation. Exiting..." << std::endl;
+@@ -2577,15 +2636,26 @@ class G1Deploy {
+       }
+ 
+       // create threads
+-      input_thread_ptr_ = CreateRecurrentThreadEx("Input", UT_CPU_ID_NONE, input_dt_ * 1e6, &G1Deploy::Input, this);
+       command_writer_ptr_ = CreateRecurrentThreadEx("command_writer", UT_CPU_ID_NONE, publish_dt_ * 1e6,
+                                                     &G1Deploy::LowCommandWriter, this);
+-      control_thread_ptr_ =
+-          CreateRecurrentThreadEx("control", UT_CPU_ID_NONE, control_dt_ * 1e6, &G1Deploy::Control, this);
+-      
+-      if (planner_) {
+-        planner_thread_ptr_ =
+-          CreateRecurrentThreadEx("planner", UT_CPU_ID_NONE, planner_dt_ * 1e6, &G1Deploy::Planner, this);
++      if (sim_lockstep_) {
++        CreateDampingCommand();
++        input_interface_->PrepareLockstepMode();
++        input_interface_->SetLockstepTokenCallback(
++            [this](const LockstepTokenBundle& bundle) {
++              lockstep_gate_.PushToken(bundle);
++            });
++        lockstep_control_thread_ = std::jthread(
++            [this](std::stop_token stop) { LockstepControlLoop(stop); });
++        std::cout << "[Lockstep] simulation-clock control thread active" << std::endl;
++      } else {
++        input_thread_ptr_ = CreateRecurrentThreadEx("Input", UT_CPU_ID_NONE, input_dt_ * 1e6, &G1Deploy::Input, this);
++        control_thread_ptr_ =
++            CreateRecurrentThreadEx("control", UT_CPU_ID_NONE, control_dt_ * 1e6, &G1Deploy::Control, this);
++        if (planner_) {
++          planner_thread_ptr_ =
++            CreateRecurrentThreadEx("planner", UT_CPU_ID_NONE, planner_dt_ * 1e6, &G1Deploy::Planner, this);
++        }
+       }
+           
+       SetThreadPriority();
+@@ -2606,6 +2676,101 @@ class G1Deploy {
+       pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+     }
+ 
++    void ResetLockstepSession(const LockstepEnvelope& envelope) {
++      std::cout << "[Lockstep] reset begin session=" << envelope.session
++                << " logger_size=" << (state_logger_ ? state_logger_->size() : 0)
++                << " current_frame=" << current_frame_
++                << " first_token=" << first_token_received_ << std::endl;
++      if (state_logger_) state_logger_->ResetHistoryKeepIndex();
++      if (input_interface_) input_interface_->ResetLockstepInput();
++      {
++        std::lock_guard<std::mutex> lock(current_motion_mutex_);
++        current_frame_ = 0;
++        saved_frame_for_observation_window_ = 0;
++        operator_state.play = false;
++        reinitialize_heading_ = true;
++        current_motion_ = motion_reader_.GetMotionShared(motion_reader_.current_motion_index_);
++      }
++      std::fill(token_state_data_.begin(), token_state_data_.end(), 0.0);
++      last_action.fill(0.0);
++      last_left_hand_action.fill(0.0);
++      last_right_hand_action.fill(0.0);
++      left_hand_joint_buffer_.fill(0.0);
++      right_hand_joint_buffer_.fill(0.0);
++      first_token_received_ = false;
++      last_token_time_.reset();
++      std::cout << "[Lockstep] reset end session=" << envelope.session
++                << " logger_size=" << (state_logger_ ? state_logger_->size() : 0)
++                << " current_frame=" << current_frame_
++                << " program_state=" << static_cast<int>(program_state_) << std::endl;
++    }
++
++    static bool SameLockstepBundle(
++        const LockstepTokenBundle& bundle, const LockstepEnvelope& envelope) {
++      return bundle.envelope == envelope &&
++             bundle.frame_index == static_cast<int64_t>(envelope.action_seq) &&
++             bundle.token.size() == 64;
++    }
++
++    void LockstepControlLoop(std::stop_token stop) {
++      while (!stop.stop_requested() && !operator_state.stop) {
++        auto work = lockstep_gate_.Wait(stop);
++        if (!work.has_value()) break;
++        if (work->kind == SimLockstepGate::WorkKind::SessionReady) {
++          ResetLockstepSession(work->envelope);
++          if (!lockstep_gate_.Commit(*work)) {
++            std::cerr << "[Lockstep ERROR] failed to commit session-ready ack" << std::endl;
++            operator_state.stop = true;
++            break;
++          }
++          auto committed = lockstep_gate_.LoadCommitted();
++          std::cout << "[Lockstep] commit kind=ready session=" << work->envelope.session
++                    << " step=0 action=" << LOCKSTEP_NO_ACTION
++                    << " commit_index=" << (committed ? committed->commit_index : 0)
++                    << std::endl;
++          continue;
++        }
++
++        Input();
++        if (operator_state.stop) break;
++        if (work->token.has_value()) {
++          const auto consumed = input_interface_->GetLockstepTokenBundle();
++          if (!input_interface_->IsStreamedMotionMode() ||
++              !input_interface_->HasExternalTokenState() || !consumed ||
++              !SameLockstepBundle(*consumed, work->envelope)) {
++            std::cerr << "[Lockstep ERROR] matched wire bundle was not consumed by streamed input"
++                      << " session=" << work->envelope.session
++                      << " step=" << work->envelope.sim_step
++                      << " action=" << work->envelope.action_seq << std::endl;
++            operator_state.stop = true;
++            break;
++          }
++        }
++
++        if (!ControlOnce()) {
++          std::cerr << "[Lockstep ERROR] Control failed before acknowledgement"
++                    << " session=" << work->envelope.session
++                    << " step=" << work->envelope.sim_step << std::endl;
++          operator_state.stop = true;
++          break;
++        }
++        ++lockstep_control_count_;
++        if (!lockstep_gate_.Commit(*work)) {
++          std::cerr << "[Lockstep ERROR] failed to commit completed Control" << std::endl;
++          operator_state.stop = true;
++          break;
++        }
++        auto committed = lockstep_gate_.LoadCommitted();
++        const auto state = low_state_buffer_.GetDataWithTime().data;
++        std::cout << "[Lockstep] commit kind=control session=" << work->envelope.session
++                  << " step=" << work->envelope.sim_step
++                  << " action=" << work->envelope.action_seq
++                  << " control_count=" << lockstep_control_count_
++                  << " commit_index=" << (committed ? committed->commit_index : 0)
++                  << " tick=" << (state ? state->tick() : 0) << std::endl;
++      }
++    }
++
+     /// DDS callback: receives a 500 Hz LowState message from the robot SDK.
+     /// Validates CRC (unless disabled for MuJoCo sim) and stores the result
+     /// in the thread-safe low_state_buffer_.
+@@ -2638,6 +2803,13 @@ class G1Deploy {
+ 
+       low_state_buffer_.SetData(low_state);
+ 
++      if (sim_lockstep_) {
++        const auto& reserve = low_state.reserve();
++        LockstepEnvelope envelope{
++            reserve[0], reserve[1], reserve[2], reserve[3]};
++        lockstep_gate_.PushState(envelope);
++      }
++
+       // update mode machine
+       if (mode_machine_ != low_state.mode_machine()) {
+         if (mode_machine_ == 0) std::cout << "G1 type: " << unsigned(low_state.mode_machine()) << std::endl;
+@@ -2664,6 +2836,16 @@ class G1Deploy {
+       dds_low_command.mode_machine() = mode_machine_;
+ 
+       const std::shared_ptr<const MotorCommand> mc = motor_command_buffer_.GetDataWithTime().data;
++      std::shared_ptr<const CommittedAck> committed;
++      std::array<uint32_t, 4> ack_reserve{};
++      const std::array<uint32_t, 4>* ack_ptr = nullptr;
++      if (sim_lockstep_) {
++        committed = lockstep_gate_.LoadCommitted();
++        if (committed) {
++          ack_reserve = committed->envelope.Reserve();
++          ack_ptr = &ack_reserve;
++        }
++      }
+       if (mc) {
+         for (size_t i = 0; i < G1_NUM_MOTOR; i++) {
+           dds_low_command.motor_cmd().at(i).mode() = 1; // 1:Enable, 0:Disable
+@@ -2674,29 +2856,41 @@ class G1Deploy {
+           dds_low_command.motor_cmd().at(i).kd() = mc->kd.at(i);
+         }
+ 
++        if (ack_ptr) dds_low_command.reserve() = *ack_ptr;
++
+         dds_low_command.crc() = Crc32Core((uint32_t*)&dds_low_command, (sizeof(dds_low_command) >> 2) - 1);
+         lowcmd_publisher_->Write(dds_low_command);
+       }
+ 
+       // Publish Dex3 hand commands at the same publish cadence
+-      dex3_hands_.writeOnce();
++      dex3_hands_.writeOnce(ack_ptr);
+     }
+ 
+     /// Gracefully stop all threads and send a damping-only command.
+     void Stop() {
+       operator_state.stop = true;
+ 
+-      if (control_thread_ptr_) {
++      if (lockstep_control_thread_.joinable()) {
++        lockstep_control_thread_.request_stop();
++        lockstep_gate_.Notify();
++        lockstep_control_thread_.join();
++      }
++
++      if (input_thread_ptr_) {
+         input_thread_ptr_->Wait();
+         input_thread_ptr_.reset();
++      }
++      if (control_thread_ptr_) {
+         control_thread_ptr_->Wait();
+         control_thread_ptr_.reset();
++      }
++      if (command_writer_ptr_) {
+         command_writer_ptr_->Wait();
+         command_writer_ptr_.reset();
+-        if (planner_thread_ptr_) {
+-          planner_thread_ptr_->Wait();
+-          planner_thread_ptr_.reset();
+-        }
++      }
++      if (planner_thread_ptr_) {
++        planner_thread_ptr_->Wait();
++        planner_thread_ptr_.reset();
+       }
+       CreateDampingCommand();
+       LowCommandWriter();
+@@ -2761,17 +2955,19 @@ class G1Deploy {
+     }
+ 
+     /// Check for valid LowState data and recent updates; if invalid, transition to ERROR state.
+-    bool CheckSafety() {
++    /// Pass quiet=true to suppress the error prints (used while deliberately
++    /// waiting for LowState to appear, e.g. the SONIC_AUTO_START wait loop).
++    bool CheckSafety(bool quiet = false) {
+       auto low_state_data = low_state_buffer_.GetDataWithTime();
+       const std::shared_ptr<const LowState_> ls = low_state_data.data;
+       if (!ls) {
+-        std::cout << "[ERROR] LowState data is not available in the middle of the control loop!" << std::endl;
++        if (!quiet) std::cout << "[ERROR] LowState data is not available in the middle of the control loop!" << std::endl;
+         return false;
+       }
+ 
+       auto now = std::chrono::steady_clock::now();
+-      if (now - low_state_data.timestamp > LOW_STATE_ABSENT_THRESHOLD) {
+-        std::cout << "[ERROR] Lost LowState data connection from robot!" << std::endl;
++      if (!sim_lockstep_ && now - low_state_data.timestamp > LOW_STATE_ABSENT_THRESHOLD) {
++        if (!quiet) std::cout << "[ERROR] Lost LowState data connection from robot!" << std::endl;
+         return false;
+       }
+ 
+@@ -2975,7 +3171,7 @@ class G1Deploy {
+       std::tie(std::ignore, upper_body_joint_velocities_buffer_) = input_interface_->GetUpperBodyJointVelocities();
+ 
+       auto last_update_time = input_interface_->GetLastUpdateTime();
+-      if (last_update_time.has_value()) {
++      if (!sim_lockstep_ && last_update_time.has_value()) {
+         auto streaming_data_delay = std::chrono::steady_clock::now() - last_update_time.value();
+         streaming_data_delay_rolling_stats_.push(static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(streaming_data_delay).count()));
+ 
+@@ -2984,11 +3180,12 @@ class G1Deploy {
+       }
+ 
+       auto low_state_data = low_state_buffer_.GetDataWithTime();
+-      bool low_state_late = (std::chrono::steady_clock::now() - low_state_data.timestamp) > LOW_STATE_LATE_THRESHOLD;
++      bool low_state_late = !sim_lockstep_ &&
++          (std::chrono::steady_clock::now() - low_state_data.timestamp) > LOW_STATE_LATE_THRESHOLD;
+ 
+       audio_thread_->SetCommand(
+         AudioCommand{
+-          .streaming_data_absent = streaming_data_absent_debouncer_.state(),
++          .streaming_data_absent = !sim_lockstep_ && streaming_data_absent_debouncer_.state(),
+           .motor_error = error_monitor_.hasErrors(),
+           .low_state_late = low_state_late,
+           .tts_message = std::move(pending_tts_),
+@@ -3068,7 +3265,7 @@ class G1Deploy {
+                 auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     now - last_token_time_.value());
+                 
+-                if (time_since_last > TOKEN_TIMEOUT_MS) {
++                if (!sim_lockstep_ && time_since_last > TOKEN_TIMEOUT_MS) {
+                   static int stale_count = 0;
+                   if (stale_count % 50 == 0) {  // Warn every ~1 second
+                     std::cout << "⚠ [Token Safety] WARNING: No tokens received for " 
+@@ -3797,14 +3994,15 @@ class G1Deploy {
+      *    9. CurrentFrameAdvancement — advance playback cursor, blend planner.
+      *    10. Periodic timing log every 50 ticks (~1 s).
+      */
+-    void Control() {
+-      if (operator_state.stop) { return; }
++    bool ControlOnce() {
++      if (operator_state.stop) { return false; }
+ 
+       switch (program_state_) {
+         case ProgramState::INIT:
+           if (!InitControl()) {
+             std::cout << "LowState is not available, waiting for robot to be ready" << std::endl;
+-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
++            if (!sim_lockstep_) std::this_thread::sleep_for(std::chrono::milliseconds(100));
++            return false;
+           }
+           // Re-publish robot_config so late-joining subscribers can receive it
+           // before the policy is activated (ZMQ PUB has no persistence).
+@@ -3812,16 +4010,30 @@ class G1Deploy {
+           break;
+ 
+         case ProgramState::WAIT_FOR_CONTROL:
+-          if (!CheckSafety()) {
++          if (!CheckSafety(/*quiet=*/auto_start_)) {
++            if (auto_start_) {
++              // Auto-start pending but the sim is not publishing (fresh)
++              // LowState yet — the stack comes up controller-first, so wait
++              // for it instead of shutting down.  Throttled to ~1 line / 5 s.
++              static int auto_wait_count = 0;
++              if (auto_wait_count++ % 250 == 0) {
++                std::cout << "[Control] SONIC_AUTO_START: LowState not ready — waiting to engage..." << std::endl;
++              }
++              break;
++            }
+             std::cout << "[ERROR] Safety check failed, cannot start control." << std::endl;
+             operator_state.stop = true;
+-            break;
++            return false;
+           }
+ 
+           // Re-publish robot_config so late-joining subscribers can receive it
+           // before the policy is activated (ZMQ PUB has no persistence).
+           for (auto& oi : output_interfaces_) { if (oi) oi->publish_config(); }
+-          if (operator_state.start) {
++          if (auto_start_) {
++            std::cout << "[Control] SONIC_AUTO_START set — engaging policy without ']'" << std::endl;
++          }
++          if (operator_state.start || auto_start_) {
++            auto_start_ = false;
+             // Warn if starting control in token mode without tokens, but allow it
+             if (initial_encoder_mode_ == -1 && !first_token_received_) {
+               static int warn_count = 0;
+@@ -3840,7 +4052,7 @@ class G1Deploy {
+           if (!CheckSafety()) {
+             std::cout << "[ERROR] Safety check failed, stopping control." << std::endl;
+             operator_state.stop = true;
+-            break;
++            return false;
+           }
+ 
+           // NEW: Get data with timestamps for loop timing analysis
+@@ -3852,7 +4064,7 @@ class G1Deploy {
+             std::cout << "✗ Error: Failed to gather robot state to logger in the middle of the control loop!" << std::endl;
+             operator_state.stop = true;
+             std::cout << "Stopping control system." << std::endl;
+-            return;
++            return false;
+           }
+ 
+           // Handle temperature report request (F key)
+@@ -3897,7 +4109,7 @@ class G1Deploy {
+           }
+ 
+           if (!GatherInputInterfaceData()) {
+-            return;
++            return false;
+           }
+ 
+           
+@@ -3927,7 +4139,7 @@ class G1Deploy {
+               std::cout << "✗ Error: Failed to gather observations in the middle of the control loop!" << std::endl;
+               std::cout << "Stopping control system." << std::endl;
+               operator_state.stop = true;
+-              return;
++              return false;
+             }
+           } // Release lock after all observation-dependent operations
+ 
+@@ -3940,13 +4152,23 @@ class G1Deploy {
+             }
+           }
+ 
++          // Publish the current 64-dim encoder token on rt/wbc_token so teleop recording
++          // (pico_wbc_agent._TokenHandler) can capture it. Interim wire mirrors that unpack:
++          // token[0..34] -> motor_state[i].q, token[35..63] -> motor_state[i-35].dq.
++          if (wbc_token_publisher_ && token_state_data_.size() >= 64) {
++            LowState_ tok_msg{};
++            for (size_t i = 0; i < 35; ++i) tok_msg.motor_state().at(i).q() = token_state_data_[i];
++            for (size_t i = 35; i < 64; ++i) tok_msg.motor_state().at(i - 35).dq() = token_state_data_[i];
++            wbc_token_publisher_->Write(tok_msg);
++          }
++
+           auto obs_end_time = std::chrono::steady_clock::now();
+ 
+           if (!CreatePolicyCommand()) {
+             std::cout << "✗ Error: Failed to create policy command in the middle of the control loop!" << std::endl;
+             std::cout << "Stopping control system." << std::endl;
+             operator_state.stop = true;
+-            return;
++            return false;
+           }
+           auto motor_command_end_time = std::chrono::steady_clock::now();
+ 
+@@ -4032,11 +4254,12 @@ class G1Deploy {
+             (*policy_input_file_) << std::endl;
+           }
+ 
+-          if (!CurrentFrameAdvancement()) {
++          if (!(sim_lockstep_ && input_interface_->HasExternalTokenState()) &&
++              !CurrentFrameAdvancement()) {
+             std::cout << "✗ Error: Failed to advance current frame in the middle of the control loop!" << std::endl;
+             std::cout << "Stopping control system." << std::endl;
+             operator_state.stop = true;
+-            return;
++            return false;
+           }
+ 
+           if (logging_counter_ % 50 == 0) {
+@@ -4079,6 +4302,11 @@ class G1Deploy {
+           break;
+         }
+       }
++      return !operator_state.stop;
++    }
++
++    void Control() {
++      (void)ControlOnce();
+     }
+ };
+ 
+@@ -4117,11 +4345,13 @@ int main(int argc, char const* argv[]) {
+     std::cout << "  --planner-motion-logfile <path>: write planner motion to a csv file if provided" << std::endl;
+     std::cout << "  --policy-input-logfile <path>: write policy input tensors to a csv file if provided" << std::endl;
+     std::cout << "  --disable-crc-check: disable CRC validation for MuJoCo simulation" << std::endl;
++    std::cout << "  --sim-lockstep: gate Control on numbered simulation boundaries (default: OFF)" << std::endl;
+     std::cout << "  --obs-config <path>: specify observation configuration YAML file" << std::endl;
+     std::cout << "  --encoder-file <path>: specify encoder ONNX file (optional)" << std::endl;
+     std::cout << "  --planner-precision <16|32>: specify precision to run the planner model at (default: 16)" << std::endl;
+     std::cout << "  --policy-precision <16|32>: specify precision to run the policy model at (default: 32)" << std::endl;
+     std::cout << "  --zmq-host <host>: ZMQ server host (default: localhost)" << std::endl;
++    std::cout << "  --default-motion <name>: set the default motion to load on startup (default: neutral_kick_R_001__A543)" << std::endl;
+     std::cout << "  --zmq-port <port>: ZMQ server port (default: 5556)" << std::endl;
+     std::cout << "  --zmq-topic <topic>: ZMQ topic/prefix (default: pose)" << std::endl;
+     std::cout << "  --zmq-conflate: enable ZMQ CONFLATE (default: disabled)" << std::endl;
+@@ -4157,6 +4387,7 @@ int main(int argc, char const* argv[]) {
+ 
+   // Parse optional arguments
+   bool disableCrcCheck = false;\
++  bool simLockstep = false;
+   std::string obsConfigPath = "";
+   std::string encoderFile = "";
+   std::string targetMotionLogfile = "";
+@@ -4166,6 +4397,7 @@ int main(int argc, char const* argv[]) {
+   std::string playbackInputFile = "";
+   std::string inputType = "keyboard"; // Default to keyboard
+   std::string outputType = "zmq"; // Default to zmq
++  std::string default_motion_name = "neutral_kick_R_001__A543"; // default motion to load on startup
+   bool plannerFp16 = false;
+   bool policyFp16 = false;
+   std::string logsDir = "";
+@@ -4184,6 +4416,9 @@ int main(int argc, char const* argv[]) {
+     if (std::string(argv[i]) == "--disable-crc-check") {
+       disableCrcCheck = true;
+       std::cout << "[INFO] CRC checking disabled for MuJoCo simulation" << std::endl;
++    } else if (std::string(argv[i]) == "--sim-lockstep") {
++      simLockstep = true;
++      std::cout << "[INFO] Simulation lockstep enabled" << std::endl;
+     } else if (std::string(argv[i]) == "--obs-config") {
+       if (i + 1 < argc) {
+         obsConfigPath = argv[i + 1];
+@@ -4357,6 +4592,15 @@ int main(int argc, char const* argv[]) {
+     } else if (std::string(argv[i]) == "--enable-motion-recording") {
+       enableMotionRecording = true;
+       std::cout << "[INFO] Motion recording enabled" << std::endl;
++    } else if (std::string(argv[i]) == "--default-motion") {
++      if (i + 1 < argc) {
++        default_motion_name = argv[i + 1];
++        std::cout << "[INFO] Default motion set to: " << default_motion_name << std::endl;
++        i++; // Skip the next argument since it's the motion name
++      } else {
++        std::cerr << "Error: --default-motion requires a motion name argument" << std::endl;
++        exit(1);
++      }
+     } else if (std::string(argv[i]) == "--set-compliance") {
+       if (i + 1 < argc) {
+         // Parse compliance values (can be 1 or 3 values)
+@@ -4412,6 +4656,15 @@ int main(int argc, char const* argv[]) {
+     }
+   }
+ 
++  if (simLockstep && inputType != "zmq_manager") {
++    std::cerr << "Error: --sim-lockstep requires --input-type zmq_manager" << std::endl;
++    return 1;
++  }
++  if (simLockstep && !plannerFile.empty()) {
++    std::cerr << "Error: --sim-lockstep does not permit a planner model" << std::endl;
++    return 1;
++  }
++
+   std::cout << "[DEBUG] Creating G1Deploy object..." << std::endl;
+   G1Deploy custom(
+     networkInterface,
+@@ -4441,7 +4694,9 @@ int main(int argc, char const* argv[]) {
+     zmq_out_topic,
+     enableMotionRecording,
+     initial_compliance,
+-    initial_max_close_ratio
++    initial_max_close_ratio,
++    default_motion_name,
++    simLockstep
+   );
+   std::cout << "[DEBUG] G1Deploy object created successfully!" << std::endl;
+   
+@@ -4468,4 +4723,3 @@ int main(int argc, char const* argv[]) {
+   std::cout << "[DEBUG] Program exiting normally..." << std::endl;
+   return 0;
+ }
+-
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/state_logger.cpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/state_logger.cpp
+index d9cf854..818bf8a 100644
+--- a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/state_logger.cpp
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/state_logger.cpp
+@@ -21,6 +21,7 @@
+ 
+ #include <iostream>
+ #include <algorithm>
++#include <stdexcept>
+ 
+ using Entry = StateLogger::Entry;
+ 
+@@ -31,7 +32,7 @@ std::optional<std::map<std::string, std::variant<std::string, int, double, bool>
+   return robot_config_;
+ }
+ 
+-StateLogger::StateLogger(std::string csv_dir, size_t ring_capacity, int num_joints, int num_actions, double dt_seconds, bool enable_csv, std::map<std::string, std::variant<std::string, int, double, bool>> robot_config)
++StateLogger::StateLogger(std::string csv_dir, size_t ring_capacity, int num_joints, int num_actions, double dt_seconds, bool enable_csv, std::map<std::string, std::variant<std::string, int, double, bool>> robot_config, bool strict_stride)
+   : dt{dt_seconds},
+   csv_path_(getLogsDir(enable_csv, csv_dir)),
+   capacity_(ring_capacity > 0 ? ring_capacity : 1),
+@@ -39,6 +40,7 @@ StateLogger::StateLogger(std::string csv_dir, size_t ring_capacity, int num_join
+   configured_num_joints_(num_joints),
+   configured_num_actions_(num_actions),
+   enable_csv_(enable_csv),
++  strict_stride_(strict_stride),
+ 
+   sink_base_quat_(enable_csv, csv_path_, "base_quat", "base_q", FileSink::HeaderType::QUATERNION),
+   sink_base_ang_vel_(enable_csv, csv_path_, "base_ang_vel", "base_w", FileSink::HeaderType::XYZ),
+@@ -177,6 +179,12 @@ size_t StateLogger::size() const {
+   return size_;
+ }
+ 
++void StateLogger::ResetHistoryKeepIndex() {
++  std::lock_guard<std::mutex> lock(ring_mutex_);
++  start_ = 0;
++  size_ = 0;
++}
++
+ std::vector<Entry> StateLogger::GetLatest(size_t n, bool newest_first) const {
+   std::lock_guard<std::mutex> lock(ring_mutex_);
+   const size_t count = n < size_ ? n : size_;
+@@ -234,6 +242,11 @@ std::vector<Entry> StateLogger::GetLatest(size_t n, double sample_dt_seconds, bo
+     }
+   }
+ 
++  if (strict_stride_) {
++    throw std::runtime_error(
++        "StateLogger strict-stride mode forbids wall-clock timestamp fallback");
++  }
++
+   // Fallback: timestamp-based approximate downsampling
+   const size_t newest_idx = (start_ + size_ - 1) % capacity_;
+   Entry newest = ring_[newest_idx];
+@@ -503,4 +516,3 @@ Entry StateLogger::makeZeroEntry_() const {
+   e.token_state.clear();
+   return e;
+ }
+-
+diff --git a/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/unit_tests/test_sim_lockstep.cpp b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/unit_tests/test_sim_lockstep.cpp
+new file mode 100644
+index 0000000..6613025
+--- /dev/null
++++ b/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/unit_tests/test_sim_lockstep.cpp
+@@ -0,0 +1,133 @@
++#include <gtest/gtest.h>
++
++#include "sim_lockstep.hpp"
++#include "state_logger.hpp"
++
++#include <array>
++#include <atomic>
++#include <chrono>
++#include <future>
++#include <thread>
++#include <vector>
++
++namespace {
++
++LockstepTokenBundle Token(uint32_t session, uint32_t step, uint32_t action) {
++  LockstepTokenBundle bundle;
++  bundle.envelope = {LOCKSTEP_MAGIC, session, step, action};
++  bundle.frame_index = action;
++  bundle.token.assign(64, static_cast<double>(action));
++  return bundle;
++}
++
++uint64_t LogOne(StateLogger& logger) {
++  std::array<double, 4> quat{};
++  std::array<double, 3> xyz{};
++  std::array<double, 29> body{};
++  std::array<double, 58> temps{};
++  std::array<double, 7> hand{};
++  return logger.LogFullState(
++      quat, xyz, xyz, quat, xyz, xyz, body, body, body, temps, body, body,
++      hand, hand, hand, hand, hand, hand);
++}
++
++}  // namespace
++
++TEST(SimLockstep, MatchesEitherArrivalOrderAndCommitsOnce) {
++  SimLockstepGate gate;
++  const LockstepEnvelope ready{LOCKSTEP_MAGIC, 7, 0, LOCKSTEP_NO_ACTION};
++  EXPECT_EQ(gate.PushState(ready), SimLockstepGate::PushResult::Accepted);
++  auto work = gate.Wait(std::stop_token{});
++  ASSERT_TRUE(work.has_value());
++  EXPECT_EQ(work->kind, SimLockstepGate::WorkKind::SessionReady);
++  EXPECT_TRUE(gate.Commit(*work));
++
++  const auto token = Token(7, 1, 0);
++  EXPECT_EQ(gate.PushToken(token), SimLockstepGate::PushResult::Accepted);
++  EXPECT_EQ(gate.PushState(token.envelope), SimLockstepGate::PushResult::Accepted);
++  work = gate.Wait(std::stop_token{});
++  ASSERT_TRUE(work.has_value());
++  EXPECT_EQ(work->kind, SimLockstepGate::WorkKind::Control);
++  EXPECT_TRUE(gate.Commit(*work));
++  EXPECT_EQ(gate.LastStep(), 1u);
++  ASSERT_TRUE(gate.LastAction().has_value());
++  EXPECT_EQ(*gate.LastAction(), 0u);
++  ASSERT_TRUE(gate.LoadCommitted());
++  EXPECT_EQ(gate.LoadCommitted()->envelope, token.envelope);
++
++  EXPECT_EQ(gate.PushState(token.envelope), SimLockstepGate::PushResult::Duplicate);
++  EXPECT_EQ(gate.PushToken(token), SimLockstepGate::PushResult::Duplicate);
++  EXPECT_EQ(gate.LastStep(), 1u);
++}
++
++TEST(SimLockstep, RejectsWrongSessionJumpsAndBadFrame) {
++  SimLockstepGate gate;
++  EXPECT_EQ(
++      gate.PushState({LOCKSTEP_MAGIC, 9, 1, 0}),
++      SimLockstepGate::PushResult::Rejected);
++  EXPECT_EQ(
++      gate.PushState({LOCKSTEP_MAGIC, 7, 0, LOCKSTEP_NO_ACTION}),
++      SimLockstepGate::PushResult::Accepted);
++  auto ready = gate.Wait(std::stop_token{});
++  ASSERT_TRUE(ready.has_value());
++  ASSERT_TRUE(gate.Commit(*ready));
++  EXPECT_EQ(
++      gate.PushState({LOCKSTEP_MAGIC, 7, 2, 0}),
++      SimLockstepGate::PushResult::Rejected);
++  auto bad = Token(7, 1, 0);
++  bad.frame_index = 5;
++  EXPECT_EQ(gate.PushToken(bad), SimLockstepGate::PushResult::Rejected);
++}
++
++TEST(SimLockstep, NoActionControlDoesNotAdvanceActionSequence) {
++  SimLockstepGate gate;
++  gate.PushState({LOCKSTEP_MAGIC, 4, 0, LOCKSTEP_NO_ACTION});
++  auto work = gate.Wait(std::stop_token{});
++  ASSERT_TRUE(work.has_value());
++  ASSERT_TRUE(gate.Commit(*work));
++  gate.PushState({LOCKSTEP_MAGIC, 4, 1, LOCKSTEP_NO_ACTION});
++  work = gate.Wait(std::stop_token{});
++  ASSERT_TRUE(work.has_value());
++  ASSERT_TRUE(gate.Commit(*work));
++  EXPECT_FALSE(gate.LastAction().has_value());
++  const auto token = Token(4, 2, 0);
++  EXPECT_EQ(gate.PushState(token.envelope), SimLockstepGate::PushResult::Accepted);
++  EXPECT_EQ(gate.PushToken(token), SimLockstepGate::PushResult::Accepted);
++}
++
++TEST(SimLockstep, CommitReleasePublishesPriorCommandWrites) {
++  SimLockstepGate gate;
++  gate.PushState({LOCKSTEP_MAGIC, 3, 0, LOCKSTEP_NO_ACTION});
++  auto work = gate.Wait(std::stop_token{});
++  ASSERT_TRUE(work.has_value());
++  int command_epoch = 0;
++  auto reader = std::async(std::launch::async, [&] {
++    while (!gate.LoadCommitted()) std::this_thread::yield();
++    return command_epoch;
++  });
++  command_epoch = 42;
++  ASSERT_TRUE(gate.Commit(*work));
++  EXPECT_EQ(reader.get(), 42);
++}
++
++TEST(SimLockstep, StopTokenWakesWaiter) {
++  SimLockstepGate gate;
++  std::promise<bool> done;
++  std::jthread waiter([&](std::stop_token stop) {
++    done.set_value(!gate.Wait(stop).has_value());
++  });
++  waiter.request_stop();
++  gate.Notify();
++  EXPECT_TRUE(done.get_future().get());
++}
++
++TEST(StateLoggerLockstep, StrictStrideAndResetKeepGlobalIndex) {
++  StateLogger logger("", 16, 29, 29, 0.02, false, {}, true);
++  EXPECT_EQ(LogOne(logger), 0u);
++  EXPECT_NO_THROW(logger.GetLatest(1, 0.04));
++  EXPECT_THROW(logger.GetLatest(1, 0.03), std::runtime_error);
++  EXPECT_EQ(logger.size(), 1u);
++  logger.ResetHistoryKeepIndex();
++  EXPECT_EQ(logger.size(), 0u);
++  EXPECT_EQ(LogOne(logger), 1u);
++}
