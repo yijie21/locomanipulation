@@ -99,9 +99,24 @@ def test_open_run_refuses_to_change_a_run_in_flight(tmp_path, monkeypatch):
 
 
 def test_a_holdout_that_takes_every_success_is_refused_before_collecting():
-    run_common.require_train_split({"train": {"holdout": 9}, "collect": {"successes": 10}})
+    collect = {"record": True, "successes": 10, "batch_rounds": 20, "max_batches": 1}
+    run_common.require_train_split({"train": {"holdout": 9}, "collect": collect})
     with pytest.raises(SystemExit, match="training set would be empty"):
-        run_common.require_train_split({"train": {"holdout": 10}, "collect": {"successes": 10}})
+        run_common.require_train_split({"train": {"holdout": 10}, "collect": collect})
+
+
+def test_a_holdout_that_takes_every_round_of_the_budget_is_refused_before_collecting():
+    """A copy cut to 10 rounds kept `holdout: 10`: it passed the successes check and every line's convert
+    refused it afterwards (docs reproduction 2026-09-25, P7)."""
+    collect = {"record": True, "successes": 20, "batch_rounds": 10, "max_batches": 1}
+    run_common.require_train_split({"train": {"holdout": 9}, "collect": collect})
+    with pytest.raises(SystemExit, match="10 rounds"):
+        run_common.require_train_split({"train": {"holdout": 10}, "collect": collect})
+
+
+def test_a_run_that_records_nothing_has_nothing_to_split():
+    collect = {"record": False, "successes": 10, "batch_rounds": 10, "max_batches": 1}
+    run_common.require_train_split({"train": {"holdout": 10}, "collect": collect})
 
 
 def test_summary_accumulates_one_entry_per_stage(tmp_path):

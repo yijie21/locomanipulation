@@ -258,11 +258,26 @@ def require_stack_of(stack, run_dir: Path, mode: str) -> None:
 
 def require_train_split(cfg: dict) -> None:
     """`train.holdout` kept episodes go to the validation set; with none left to train on, convert used to fail
-    only at stats_train with pandas' "No objects to concatenate". Check before collecting, not after."""
-    holdout, successes = cfg["train"]["holdout"], cfg["collect"]["successes"]
+    only at stats_train with pandas' "No objects to concatenate". Check before collecting, not after.
+
+    A run keeps at most `collect.successes` episodes, and at most one per round of its `batch_rounds` x
+    `max_batches` budget. Checking only the first let a copy cut to 10 rounds keep `holdout: 10`, which every
+    line's convert then refused (docs reproduction 2026-09-25). A run that records nothing is never converted.
+    """
+    collect = cfg["collect"]
+    if not collect["record"]:
+        return
+    holdout, successes = cfg["train"]["holdout"], collect["successes"]
+    rounds = collect["batch_rounds"] * collect["max_batches"]
     if holdout >= successes:
         raise SystemExit(
             f"train.holdout {holdout} >= collect.successes {successes}: the training set would be empty; "
+            "lower train.holdout (0 skips the validation set)"
+        )
+    if holdout >= rounds:
+        raise SystemExit(
+            f"train.holdout {holdout} >= collect.batch_rounds {collect['batch_rounds']} x collect.max_batches "
+            f"{collect['max_batches']} = {rounds} rounds: the training set would be empty; "
             "lower train.holdout (0 skips the validation set)"
         )
 

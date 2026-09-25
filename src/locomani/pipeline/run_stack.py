@@ -96,6 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         run_dir = args.experiment if args.experiment.is_absolute() else ROOT / args.experiment
         cfg = run_context.load_run_config(run_dir)
     else:
+        # Checked before open_run claims the directory: the copy a refused run left behind would make the
+        # corrected experiment file "differ" from it and force a new name.
+        cfg, run_dir = run_context.open_run(args.experiment, args.name, write=False)
+        if args.mode == "collect":
+            run_context.require_train_split(cfg)
         cfg, run_dir = run_context.open_run(args.experiment, args.name, write=not args.dry_run)
 
     line = line_of(cfg)

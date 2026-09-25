@@ -154,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     from locomani.tasks.crate import prepare
 
     cfg, run_dir = run_context.open_run(args.experiment, args.name, write=not args.dry_run)
+    run_context.require_train_split(cfg)
     collect, chosen = cfg["collect"], cfg["task"]["expert"]
 
     if args.dry_run:
