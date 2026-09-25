@@ -29,7 +29,11 @@ def prepare(cfg: dict, run_dir: Path) -> Path:
     scene = scene_name(cfg, run_dir)
     if not scene.exists():
         source = Path(cfg["scene"]["dir"])
-        shutil.copytree(source if source.is_absolute() else ROOT / source, scene)
+        source = source if source.is_absolute() else ROOT / source
+        if not (source / "scene_meta.json").is_file():
+            raise SystemExit(f"no bottle scene at {source}; build it once per machine "
+                             "(docs/single_arm.md, section 1)")
+        shutil.copytree(source, scene)
     task = BottleTaskConfig.from_dict(cfg["task"])
     task.dump(run_dir / "task_config.json")
     task.reach.dump(run_dir / "reach_config.json")

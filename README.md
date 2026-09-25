@@ -50,7 +50,8 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 ## 快速开始
 
 一次运行就是一份实验文件：`configs/experiments/<name>.yaml` 里写着这次运行读的**每一个**值，没有继承
-也没有组合，新实验就是复制一份改几行。先完成安装指南第 0–4 步，在仓库根目录执行：
+也没有组合，新实验就是复制一份改几行。先完成安装指南第 0–4 步，再按[单臂 §1](docs/single_arm.md#1-准备一次)
+建一次场景（`bottle_simple_*.yaml` 用的 `outputs/scene/sim_lowcom` 不由 `install_scene.sh` 建），在仓库根目录执行：
 
 ```bash
 . scripts/paths.sh
