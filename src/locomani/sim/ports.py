@@ -31,6 +31,9 @@ _BASES = {
     "TF_KEYBOARD_PORT": 5580,
     "TF_PRIVILEGED_PORT": 5581,
     "TF_EPISODE_PORT": 5582,
+    # The Isaac mirror's request port (sim/isaac/mirror.py). Residue 8: the 555x and 558x series above
+    # use 5/6/7 and 0/1/2 (and lockstep's XSUB 4), so no instance's mirror lands on another's block.
+    "TF_ISAAC_MIRROR_PORT": 5558,
 }
 
 
@@ -80,6 +83,10 @@ def privileged() -> int:
 
 def episode() -> int:
     return port("TF_EPISODE_PORT")
+
+
+def isaac_mirror() -> int:
+    return port("TF_ISAAC_MIRROR_PORT")
 
 
 # Every entry point start_stack.sh can launch as the exporter. The default is

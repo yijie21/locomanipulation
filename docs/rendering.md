@@ -333,6 +333,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 \
 用在渲染拖慢仿真的场景。warehouse 的纸箱显示网格有 46.3 万面，3 路相机每 tick 渲染 39–44 ms，sim 只剩 0.35× 实时，
 deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后回到 0.95×。证据见
 [warehouse 渲染负担交接](handoff/warehouse-render-cost-20260923.md)。
+**2026-09-24 更正根因**：慢的不是面数，是旧 `warehouse` 场景把纸箱放在**一整块**网格里。MuJoCo 单块网格 3×面数超过 2²⁰（> 349,525 面）就掉出快路径：349,525 面 0.31 ms、349,526 面 3.91 ms。现行 `warehouse_textured` 把同样的面按材质拆成 9 块（最大 23.1 万），同一批状态三路相机 p50 3.2 / p90 6.9 ms。实时栈里的 RTF 还没测（TODO 4.7.7），测之前 warehouse 仍用 `offline`。证据 `outputs/diagnostics/render_speed_20260924/`。
 
 限制：
 
@@ -340,7 +341,29 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
   markers 专家要读像素，`expert.run` 会直接拒绝。
 - 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出
   （[跑法](warehouse.md#5-跑)）；没渲过的离线运行 convert 会拒绝。VLA 闭环评测要实时出图，仍须 `live`。
-- 渲染慢的根本解是给纸箱网格减面或关阴影（隐藏网格后 2.0 ms，关阴影后 11 ms），见 [Blender 场景](blender_scenes.md#7-常见错误对照)。
+- 渲染慢先查最大的单块显示网格（`max(model.mesh_facenum)`）：超过 349,525 面就无损拆块，不减面，见 [Blender 场景](blender_scenes.md#7-常见错误对照)。 VLA 闭环的图像改走按需 Isaac 镜像（物理循环里不渲染，TODO 4.7.9，进行中）。
+
+## VLA 闭环的 Isaac 画面（按需镜像）
+
+`eval.image_source: isaac` 时，策略的相机图像不来自 sim 的 MuJoCo 相机流（:5555），而来自 Isaac 镜像
+（`src/locomani/sim/isaac/mirror.py`，render venv，单独一张卡）：
+
+```bash
+bash scripts/start_stack.sh eval           outputs/runs/<run> --gpu 0   # 终端 1：栈
+bash scripts/run_vla_server.sh             outputs/runs/<run> --gpu 0   # 终端 2：策略服务
+bash scripts/run_isaac_mirror.sh           outputs/runs/<run> --gpu 1   # 终端 3：镜像，栈起来之后
+bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端 4：rounds
+```
+
+- **物理不等渲染。** sim 每个控制 tick 在特权状态流上发布完整 qpos（与 state trace 同 seq 的那一行，JSON 浮点逐位还原）；
+  镜像只在策略要观测时渲一帧最新状态，所以渲染再慢也只让图像晚到，不会让物理和 deploy 的墙钟错开。
+- **不改延迟补偿。** 客户端先读本体状态、再向镜像要图，图像与状态是同一时刻；渲染时间落在 `vla_client` 从 t0
+  到出 chunk 的计时里，被现有补偿覆盖。warehouse 三路相机按需渲染 p50 89 / p90 108 ms（GPU1，台账 crate.md 2026-09-24）。
+- **镜像只认 eval 栈。** 它从栈的状态文件取场景和端口（`TF_ISAAC_MIRROR_PORT` = 5558 + 10·instance），
+  场景的 Isaac stage 与曝光取自 `configs/scenes.yaml` 的 `isaac` 条目；目前只有 `warehouse_textured` 有。
+  qpos 长度对不上（栈跑的是别的场景）或 sim 没发 qpos，请求直接报错，客户端这一局记为 observation stream dropped。
+- **记录**：每次渲染的 seq、状态年龄、渲染耗时写进 `<run>/eval/isaac_mirror.jsonl`，单臂客户端的延迟记录里另有 `image`。
+- `client: lockstep` 不能配 Isaac（lockstep 的图像由 step 回复里的 MuJoCo 边界渲染提供），配置加载时拒绝。
 
 ## 当前接通范围与限制
 
@@ -351,7 +374,7 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 | `backend.render: offline` + trace 出 MuJoCo 视频 | 已实现；仅双臂 assisted 专家，见[上一节](#离线渲染backendrender-offline) |
 | `collect` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
 | `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_warehouse.sh`（Isaac 并排） |
-| Isaac 图像作为在线专家/VLA 的输入 | 当前主流程未接入 live mirror；不能从离线视频推断已支持 |
+| Isaac 图像作为 VLA 闭环的输入 | 已实现按需镜像（`eval.image_source: isaac` + `scripts/run_isaac_mirror.sh`，见[上文](#vla-闭环的-isaac-画面按需镜像)）；协议与客户端有单测，**真实闭环尚未跑过**；专家仍读 MuJoCo |
 | 自动把 Isaac 视频写回训练数据集 | 当前转换器读取原 session 图像，没有自动替换步骤 |
 
 Isaac 画面可用于检查或后续数据处理，但若要作为 VLA 训练 RGB，需要另行完成

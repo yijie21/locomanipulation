@@ -312,6 +312,9 @@ class PrivilegedPublisher:
                 }
             ),
             "joints": [float(d.qpos[a]) if a >= 0 else 0.0 for a in self.joint_qadr],
+            # The complete configuration, the row StateTrace stores under the same seq: the Isaac mirror
+            # (sim/isaac/mirror.py) renders exactly this. JSON floats round-trip exactly.
+            "qpos": d.qpos.tolist(),
             "fallen": bool(pelvis_pos[2] < 0.4),
             # physics diagnostics (2026-09-02 wall-vs-lockstep walk probe)
             "ncon": int(d.ncon),

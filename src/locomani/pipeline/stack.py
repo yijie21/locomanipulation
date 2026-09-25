@@ -48,6 +48,7 @@ def resolve_env(
         "TF_KEYBOARD_PORT",
         "TF_PRIVILEGED_PORT",
         "TF_EPISODE_PORT",
+        "TF_ISAAC_MIRROR_PORT",
         "SONIC_DDS_DOMAIN",
         "TF_OBS_DUMP",
         "TF_INIT_TOKEN_FILE",

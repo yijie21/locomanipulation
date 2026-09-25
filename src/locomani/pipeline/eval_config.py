@@ -69,6 +69,10 @@ class EvalConfig(VlaConfig):
         received tokens and not one `Loop timing` line.
         """
         object.__setattr__(self, "backend", replace(self.backend, clean_deploy=self.client == "async"))
+        if self.image_source == "isaac" and self.client == "lockstep":
+            # The lockstep step reply carries MuJoCo images rendered at the frozen boundary; the mirror
+            # renders the live sim on request, which a stepped sim does not have between steps.
+            raise ValueError("EvalConfig: image_source 'isaac' needs a wall-clock client, not client 'lockstep'")
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

@@ -297,26 +297,7 @@ def _render(
 
     inset_specs, inset_layout = inset_specs or {}, inset_layout or {}
     stg = S.assemble_stage(cfg, log)
-    if getattr(args, "rtx_setting", None):  # tests drive _render with a bare namespace
-        import carb.settings
-
-        st = carb.settings.get_settings()
-        for item in args.rtx_setting:
-            path, _, raw = item.partition("=")
-            low = raw.strip().lower()
-            value: object
-            if low in ("true", "false"):
-                value = low == "true"
-            else:
-                try:
-                    value = int(raw)
-                except ValueError:
-                    try:
-                        value = float(raw)
-                    except ValueError:
-                        value = raw
-            st.set(path.strip(), value)
-            log(f"rtx setting {path.strip()} = {value!r}")
+    S.apply_rtx_settings(getattr(args, "rtx_setting", None), log)  # tests drive _render with a bare namespace
     ghost = ghost_paths = None
     if args.ghost_trace and qpos is not None:
         from locomani.sim.isaac import ghost as G

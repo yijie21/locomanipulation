@@ -412,6 +412,37 @@ def configure_renderer(log=print) -> None:
     log("renderer configured (rtx realtime, sync, waitIdle, no sampled lighting)")
 
 
+def apply_rtx_settings(items, log=print) -> None:
+    """Apply `PATH=VALUE` carb settings after the stage is assembled; bool/int/float parsed, else string.
+
+    For per-scene look settings the renderer configuration does not cover -- the warehouse
+    turns auto-exposure off (/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30,
+    scripts/render_isaac_warehouse.sh). Every renderer of a scene must apply the same list, or
+    the offline dataset and the live mirror stop being the same picture.
+    """
+    if not items:
+        return
+    import carb.settings
+
+    st = carb.settings.get_settings()
+    for item in items:
+        path, _, raw = item.partition("=")
+        low = raw.strip().lower()
+        value: object
+        if low in ("true", "false"):
+            value = low == "true"
+        else:
+            try:
+                value = int(raw)
+            except ValueError:
+                try:
+                    value = float(raw)
+                except ValueError:
+                    value = raw
+        st.set(path.strip(), value)
+        log(f"rtx setting {path.strip()} = {value!r}")
+
+
 ROBOT_ROOT = "/World/scene"
 
 

@@ -316,6 +316,12 @@ def main(argv=None):
     ap.add_argument("--dataset-fps", type=float, default=25.0)
     ap.add_argument("--initial-token-file", required=True)
     ap.add_argument("--trace-dir", type=Path)
+    ap.add_argument(
+        "--image-source",
+        choices=("mujoco", "isaac"),
+        default="mujoco",
+        help="the policy's camera images: the sim's MuJoCo stream, or the Isaac mirror (EvalConfig.image_source)",
+    )
     args = ap.parse_args(argv)
     if args.rounds < 1:
         ap.error("--rounds must be positive")
@@ -357,7 +363,7 @@ def main(argv=None):
     else:
         p = Primitives()
     reset = EpisodeControlClient()
-    obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE)
+    obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=args.image_source)
     if args.trace_dir is not None:
         args.trace_dir.mkdir(parents=True, exist_ok=True)
     args.manifest.parent.mkdir(parents=True, exist_ok=True)

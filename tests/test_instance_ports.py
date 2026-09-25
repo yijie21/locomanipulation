@@ -22,6 +22,14 @@ class PortFormulaTests(unittest.TestCase):
             self.assertEqual(ports.privileged(), 5591)
             self.assertEqual(ports.keyboard(), 5590)
 
+    def test_the_isaac_mirror_port_follows_the_instance_without_touching_another_block(self):
+        with patch.dict(os.environ, {"INSTANCE": "1"}, clear=True):
+            self.assertEqual(ports.isaac_mirror(), 5568)
+        blocks = [set(ports.instance_ports(i).values()) for i in range(4)]
+        for i in range(4):
+            mirror = ports.instance_ports(i)["TF_ISAAC_MIRROR_PORT"]
+            self.assertFalse(any(mirror in b for j, b in enumerate(blocks) if j != i))
+
     def test_an_exported_port_still_wins(self):
         with patch.dict(os.environ, {"INSTANCE": "1", "TF_SONIC_PORT": "7777"}, clear=True):
             self.assertEqual(ports.sonic(), 7777)

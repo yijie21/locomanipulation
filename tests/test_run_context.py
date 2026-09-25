@@ -173,3 +173,35 @@ def test_an_unknown_or_doubly_given_scene_is_refused():
         run_common.resolve_scene({"scene": {"name": "blue"}})
     with pytest.raises(SystemExit, match="give one"):
         run_common.resolve_scene({"scene": {"name": "crate", "dir": "outputs/scene/sim"}})
+
+
+def test_isaac_scene_reads_the_stage_and_look_from_the_scene_registry(tmp_path, monkeypatch):
+    registry = tmp_path / "scenes.yaml"
+    registry.write_text(
+        yaml.safe_dump(
+            {
+                "room": {"dir": "outputs/scene/room", "isaac": {"dir": "room_usd", "rtx_settings": ["/rtx/a=1"]}},
+                "floor": {"dir": "outputs/scene/floor"},
+            }
+        )
+    )
+    monkeypatch.setattr(run_common.paths, "ISAAC_ASSETS", str(tmp_path / "isaac"))
+    with pytest.raises(SystemExit, match="by name"):
+        run_common.isaac_scene({"scene": {"dir": "outputs/scene/room"}}, registry)
+    with pytest.raises(SystemExit, match="has no Isaac stage"):
+        run_common.isaac_scene({"scene": {"name": "floor"}}, registry)
+    with pytest.raises(SystemExit, match="scene.usda is missing"):
+        run_common.isaac_scene({"scene": {"name": "room"}}, registry)
+    stage = tmp_path / "isaac" / "scene" / "room_usd"
+    stage.mkdir(parents=True)
+    (stage / "scene.usda").write_text("#usda 1.0\n")
+    assert run_common.isaac_scene({"scene": {"name": "room"}}, registry) == {
+        "dir": str(stage),
+        "rtx_settings": ["/rtx/a=1"],
+    }
+
+
+def test_the_warehouse_isaac_entry_is_the_look_its_renders_were_calibrated_with():
+    entry = yaml.safe_load(run_common.SCENES.read_text())["warehouse_textured"]["isaac"]
+    assert entry["dir"] == "warehouse_textured"
+    assert entry["rtx_settings"] == ["/rtx/post/histogram/enabled=false", "/rtx/post/tonemap/filmIso=30"]

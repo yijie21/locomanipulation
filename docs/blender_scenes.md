@@ -180,9 +180,8 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 
 **纸箱显示网格太重，拖慢 MuJoCo 仿真**（2026-09-23 实测）。`nor_cal_box` 的显示网格有 46.3 万面，加上场景里 2 盏投影灯
 （shadowsize 4096），采集时 3 路相机每 tick 渲染 39–44 ms，warehouse 的 sim 只剩 0.30–0.36× 实时，机器人走得比指令快约 3 倍。
-离线测过：隐藏纸箱显示网格后 2.0 ms，关阴影后 11 ms。目前的绕法是 [`backend.render: offline`](rendering.md#离线渲染backendrender-offline)，
-但 VLA 闭环评测和数据集录制必须实时渲染，所以网格减面（目标约 5k 面）或降阴影还得做。
-减面的源目录 `assets/crates/nor_cal_box/visual/` 尚未入库，改之前先和维护者对齐。
+离线测过：隐藏纸箱显示网格后 2.0 ms，关阴影后 11 ms。目前的绕法是 [`backend.render: offline`](rendering.md#离线渲染backendrender-offline)。
+**2026-09-24 更正根因**：不是面数，是这 46.3 万面在**一块**网格里。MuJoCo 单块网格 3×面数超过 2²⁰（> 349,525 面）渲染就慢约 12 倍（合成网格：349,525 面 0.31 ms、349,526 面 3.91 ms）；拆成几块、面一个不少，就回到快路径。`warehouse_textured` 按材质拆成 9 块，三路相机 3.2 ms。所以不减面：建场景时任何单块网格超过这个数就拆（TODO 4.7.8）。
 证据见 [warehouse 渲染负担交接](handoff/warehouse-render-cost-20260923.md)。
 
 ## 5. 为什么两边装的不一样
@@ -220,7 +219,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 | 加载 XML 报 `repeated name 'room_00' in mesh` | 旧版构建脚本在自己的输出上重复叠加 | 脚本已改为可重复运行；用正确的 `--base` 重新生成一次 |
 | MuJoCo 报贴图读不了 | MuJoCo 不读 JPG | 只用资产包里的 PNG；手改场景时也只用 PNG |
 | 渲染里纸箱是一块纯色，货架上的箱子却有纹理 | 2026-09-22 之前纸箱整块导出、材质写死牛皮纸色 | 用当前脚本重新导出并构建；`carton_parts.json` 应有 9 份、其中 6 份带 `Figure*.jpeg` |
-| warehouse 里机器人走得太快、过冲撞箱，同样的配置在 walk 场景正常 | 纸箱 46.3 万面显示网格 + 投影灯让渲染拖慢 sim 到 0.35× 实时 | 算 sim 实时比：trace 行数 × 0.02 s ÷ manifest 的 `seconds`，低于 0.9 就是渲染拖慢；用 `backend.render: offline`（上面“已知未解决”） |
+| warehouse 里机器人走得太快、过冲撞箱，同样的配置在 walk 场景正常 | 纸箱 46.3 万面在**一块**显示网格里（超过 MuJoCo 单网格 2²⁰ 顶点门槛）+ 投影灯，渲染拖慢 sim 到 0.35× 实时；`warehouse_textured` 已拆成 9 块 | 算 sim 实时比：trace 行数 × 0.02 s ÷ manifest 的 `seconds`，低于 0.9 就是渲染拖慢；用 `backend.render: offline`（上面“已知未解决”） |
 | `Cannot initialize a EGL device display` | `MUJOCO_EGL_DEVICE_ID` 指到了集显或不存在的 EGL 设备 | 单卡机器用 0（§4）；它是 EGL 下标，不是 CUDA 编号 |
 | `render: no camera named head` | 相机名写错 | 用 `head_camera` / `left_wrist` / `right_wrist` / `reverse_room`，报错信息会列出全部 |
 | 编译 MJCF 时 mesh 找不到 | `meshdir` 是绝对路径或指向别的机器 | 用 `prepare_logistics_scene.py` 生成运行副本；G1/Dex1 网格相对 `third_party/GR00T-WholeBodyControl` |

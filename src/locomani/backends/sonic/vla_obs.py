@@ -77,16 +77,30 @@ def _obj_extra(st, obj_key):
 class ObsBuilder:
     """Assemble the policy's flat observation from the live stack."""
 
-    def __init__(self, task: str, schema=SONIC_BOTTLE):
-        from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
+    def __init__(self, task: str, schema=SONIC_BOTTLE, image_source: str = "mujoco"):
         from gear_sonic.data.features_sonic_vla import get_g1_robot_model
         from gear_sonic.utils.data_collection.zmq_state_subscriber import (
             ZMQStateSubscriber,
         )
 
-        cam_port = int(os.environ.get("TF_CAMERA_PORT", 5555))
         state_port = int(os.environ.get("TF_OUT_PORT", 5557))
-        self.cam = ComposedCameraClientSensor(server_ip="localhost", port=cam_port)
+        # `VlaConfig.image_source`. "mujoco": the sim's camera stream, read whenever it has a new frame.
+        # "isaac": the Isaac mirror renders the sim's newest state on each build(), after the
+        # proprioception is read, so the images and the state are the same instant.
+        self.cam = self.mirror = None
+        if image_source == "isaac":
+            from locomani.sim import ports
+            from locomani.sim.isaac.mirror import MirrorClient
+
+            self.mirror = MirrorClient(ports.isaac_mirror())
+        elif image_source == "mujoco":
+            from gear_sonic.camera.composed_camera import ComposedCameraClientSensor
+
+            cam_port = int(os.environ.get("TF_CAMERA_PORT", 5555))
+            self.cam = ComposedCameraClientSensor(server_ip="localhost", port=cam_port)
+        else:
+            raise ValueError(f"image_source {image_source!r} is neither 'mujoco' nor 'isaac'")
+        self.image_meta = None  # the mirror's reply header for the images the last build() used
         self.state = ZMQStateSubscriber(host="localhost", port=state_port)
         self.rm = get_g1_robot_model()
         self.task = task
@@ -97,17 +111,29 @@ class ObsBuilder:
         self._last_proprio = None
 
     def _poll(self):
-        m = self.cam.read()
-        if m is not None:
-            self._last_img = m["images"]
+        if self.cam is not None:
+            m = self.cam.read()
+            if m is not None:
+                self._last_img = m["images"]
         s = self.state.get_msg()
         if s is not None:
             self._last_proprio = s
+
+    def _render(self) -> bool:
+        """Ask the mirror for this instant's images; False (and why, printed) if it could not."""
+        got = self.mirror.render()
+        if got is None:
+            print(f"[vla] isaac mirror: {self.mirror.last_error}", flush=True)
+            return False
+        self._last_img, self.image_meta = got
+        return True
 
     def wait_ready(self, timeout: float = 10.0) -> bool:
         end = time.time() + timeout
         while time.time() < end:
             self._poll()
+            if self.mirror is not None and self._last_img is None and self._last_proprio is not None:
+                self._render()
             if self._last_img is not None and self._last_proprio is not None:
                 have = set(self._last_img)
                 if set(self.schema.video_keys) <= have:
@@ -122,7 +148,11 @@ class ObsBuilder:
         from scipy.spatial.transform import Rotation as R
 
         self._poll()
-        if self._last_img is None or self._last_proprio is None:
+        if self._last_proprio is None:
+            return None
+        if self.mirror is not None and not self._render():
+            return None
+        if self._last_img is None:
             return None
         pr = self._last_proprio
         body = np.asarray(pr["body_q"], dtype=np.float64)
@@ -164,7 +194,7 @@ class ObsBuilder:
 
     def close(self):
         try:
-            self.cam.close()
+            (self.cam or self.mirror).close()
         except Exception:
             pass
         try:

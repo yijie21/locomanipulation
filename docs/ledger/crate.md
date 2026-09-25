@@ -427,3 +427,30 @@ GPU 0,instance 0,seed 7000 起 20 局,`outputs/runs/box_pilot_slow_20260922`。
 步长 0.17–0.34 m(正常 0.14)、实际速度约 3 倍,这就是视频里的"过冲撞箱"。离线这组是第一组可信的 warehouse 数据:
 失败从"撞箱"变成"停得太远",守线余量回到 0.03 后停位问题解决。**09-24 更正**:两轮离线 run 的伸手段都没有执行(占位帧戳晚于循环的 `now`,参考时钟 0/440 tick 推进),
 "手够不到"的读法作废;修复后重跑 m003 配置才是第一次离线伸手测量(`docs/handoff/warehouse-render-cost-20260923.md` 末节)。
+
+## 2026-09-24 渲染负担的根因更正：单块网格的 2²⁰ 顶点门槛；Isaac 三路按需渲染 89 ms
+
+三路相机（640×480）渲染一组，在 GPU0 上单独测，用真实 trace 里的状态（`scripts/experiments/bench_camera_render_20260924.py`）：
+
+| 场景 | 串行 p50 / p90 | 每路一个进程 |
+|---|---|---|
+| `warehouse_textured`（现行基线） | 3.2 / 6.9 ms | 1.8 ms/帧 |
+| `warehouse`（`scene_reverse_camera`，复现 agent 实时跑出 RTF 0.35 的场景） | 36.7 / 46.9 ms | 28.6 ms/帧 |
+| crate / bottle | 1.7 / 1.6 ms | 1.0 / 0.9 ms/帧 |
+
+两个 warehouse 场景的纸箱面数相同（462,730），区别是旧场景放在一块网格里，textured 按材质拆成 9 块（最大 231,168）。
+同一批状态交叉对照（`ab_carton.py`）：旧场景藏掉纸箱 36→2–4 ms。合成网格扫描（`mesh_size_sweep.py`、`mesh_2pow20_check.py`）：
+单块 349,525 面 0.31 ms，349,526 面 3.91 ms，正好是 3×面数 = 2²⁰；90 万面一块 10.2 ms，拆 9 块 0.6 ms。
+所以上面"纸箱网格拖慢渲染"一节说的是对的现象，根因是单块网格超门槛，不是面数，解法是拆块不是减面。
+
+Isaac（GPU1，`IsaacView` + warehouse USDC 场景，关自动曝光 / filmIso 30，三路相机，每帧 2 次 settle）：
+连续 p50 72 / p90 107 ms；间隔 0.04 s 79 / 97 ms；**间隔 0.4 s（按需镜像的节奏）89 / 108 ms，p99 130，最大 135**。300 帧无空帧。
+加上推理（bottle 评测 p50 72 ms），一轮约 160 ms，小于 0.4 s 的重规划周期。五个状态 × 三路相机与 MuJoCo 并排，几何对齐：
+`isaac_view_check/view_check_grid.png`。证据全在 `outputs/diagnostics/render_speed_20260924/`。
+
+镜像对真实 eval 栈冒烟（同日，TODO 4.7.9.10，`scripts/experiments/isaac_mirror_smoke_20260924.py`）：基线实验只改
+`eval.image_source: isaac`，run `outputs/runs/isaac_mirror_smoke_20260924`。GPU0 被别的项目占着（72%），栈和镜像**都在 GPU1**，
+所以耗时偏保守。50 次请求（每 0.4 s 一次）全部应答，seq 严格递增（中位步长 19 tick），状态年龄 p50 11 / p90 20 ms，
+渲染 p50 98 / p90 120 ms，请求往返 p50 100 / p90 122 ms。按回报的 seq 取同一 qpos 渲 MuJoCo 并排 4 组，几何一致
+（`eval/mirror_smoke/mirror_vs_mujoco.png`；没有驱动，机器人倒在箱边，画面是静止姿态）。SIGTERM 后镜像正常退出，
+`eval/isaac_mirror.jsonl` 50 行。没测的：真实策略闭环、运动中的一致性闸门（4.7.9.8）。

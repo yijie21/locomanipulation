@@ -106,3 +106,24 @@ def test_the_async_client_engages_the_deploy_it_then_refuses_to_command():
     assert EvalConfig.from_dict({"client": "async", "backend": {"clean_deploy": False}}).backend.clean_deploy is True
     for other in ("lockstep", "blocking"):
         assert EvalConfig.from_dict({"client": other}).backend.clean_deploy is False
+
+
+def test_the_image_source_is_a_closed_choice_and_the_mirror_needs_a_wall_clock_client():
+    assert EvalConfig().image_source == "mujoco"
+    assert EvalConfig().with_overrides(["image_source=isaac"]).image_source == "isaac"
+    with pytest.raises(ValueError, match="not in"):
+        EvalConfig().with_overrides(["image_source=unreal"])
+    with pytest.raises(ValueError, match="wall-clock client"):
+        EvalConfig.from_dict({"client": "lockstep", "image_source": "isaac"})
+
+
+def test_the_image_source_reaches_every_wall_clock_observation_builder():
+    from pathlib import Path
+
+    from locomani import paths
+
+    src = Path(paths.REPO) / "src/locomani"
+    for client in ("backends/sonic/vla_client.py", "backends/sonic/vla_round.py"):
+        assert "ObsBuilder(task, image_source=config.image_source)" in (src / client).read_text()
+    rounds = (src / "tasks/crate/vla_rounds.py").read_text()
+    assert "image_source=args.image_source" in rounds

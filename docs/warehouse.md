@@ -47,7 +47,7 @@ diff configs/experiments/box_room_grasp_baseline_20260924.yaml configs/experimen
 | 字段 | 含义 | 注意 |
 |---|---|---|
 | `name` | 运行目录 `outputs/runs/<name>/` | 同名运行的实验文件被改过会拒绝启动 |
-| `backend.render` | 仿真时渲不渲相机 | **必须 `offline`**。纸箱显示网格 46.3 万面，实时渲染时 sim 只剩 0.35× 实时，机器人走得比指令快约 3 倍；2026-09-24 按实时渲染跑是 0/20，离线回到 0.95× |
+| `backend.render` | 仿真时渲不渲相机 | **目前用 `offline`**。旧 `warehouse` 场景的纸箱是一整块 46.3 万面网格，超过 MuJoCo 单块网格的 2²⁰ 顶点门槛，实时渲染时 sim 只剩 0.35× 实时，机器人走得比指令快约 3 倍；2026-09-24 按实时渲染跑是 0/20，离线回到 0.95×。现行 `warehouse_textured` 把同样的面拆成 9 块，三路相机离线测 3.2 ms，但实时栈的 RTF 还没测（TODO 4.7.7） |
 | `collect.record` | 录不录 LeRobot 数据 | 基线是 `false`（只采 manifest 和轨迹，调参数用）。要出训练数据改成 `true`，并跑 §5 的渲相机一步 |
 | `collect.batch_rounds` / `max_batches` | 每批尝试几局 / 最多几批 | 批内一定跑满；要正好跑 N 局就 `batch_rounds: N`、`max_batches: 1`（和 [双臂 §5](bimanual.md) 同一套规则） |
 | `collect.successes` | 保留多少条成功 | 批间的验收门槛；不够时采集非零退出，但记录照样保留 |
@@ -79,7 +79,10 @@ bash scripts/render_isaac_warehouse.sh outputs/runs/my_box
 画面一致，实时帧比渲的晚 1–2 行（实时相机 30 Hz、exporter 取最近一张）。
 
 一局连重置约 45 s，20 局约 15 分钟。训练和开环 / 闭环评测的命令和 [双臂 §6](bimanual.md) 相同；
-但 VLA **闭环**评测要实时出图，这个场景目前做不了（纸箱网格减面之前）。
+VLA **闭环**评测的图像由 Isaac 按需镜像提供：实验文件里设 `eval.image_source: isaac`，在起栈之后、跑 rounds 之前多开一个终端
+`bash scripts/run_isaac_mirror.sh outputs/runs/my_box --gpu 1`（Isaac 用单独的卡）。物理照常按墙钟走、不等渲染；
+策略每次要观测时，镜像渲出 sim 此刻状态的三路相机（按需 p50 89 / p90 108 ms）。机制见
+[渲染 · VLA 闭环的 Isaac 画面](rendering.md#vla-闭环的-isaac-画面按需镜像)。**还没有真实闭环跑过**（没有 warehouse checkpoint，TODO 4.7.9）。
 
 ## 6. 产物
 

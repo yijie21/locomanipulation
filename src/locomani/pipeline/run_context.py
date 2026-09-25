@@ -104,6 +104,24 @@ def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
     return cfg
 
 
+def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
+    """The run's scene as Isaac renders it: `{"dir": <Isaac stage dir>, "rtx_settings": [...]}`.
+
+    From the scene's `isaac` entry in `configs/scenes.yaml`, so every Isaac renderer of a scene --
+    the offline re-render and the eval mirror -- loads the same stage with the same look.
+    """
+    name = (cfg.get("scene") or {}).get("name")
+    if not name:
+        raise SystemExit("an Isaac render needs the run's scene by name (scene: {name: ...}, configs/scenes.yaml)")
+    entry = (yaml.safe_load(Path(registry).read_text()).get(name) or {}).get("isaac")
+    if not entry:
+        raise SystemExit(f"scene {name!r} has no Isaac stage: add an `isaac` entry for it in {registry}")
+    stage = Path(paths.ISAAC_ASSETS) / "scene" / entry["dir"]
+    if not (stage / "scene.usda").is_file():
+        raise SystemExit(f"{stage / 'scene.usda'} is missing; build the Isaac stage of scene {name!r} first")
+    return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or [])}
+
+
 def checkpoint_of(run_dir: Path) -> Path:
     """The checkpoint the train stage recorded for this run.
 

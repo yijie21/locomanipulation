@@ -53,7 +53,7 @@ def make_vla_policy(
     def vla_round(p, reset, meta, obj_key, psi, fv, grip_za, record, replace=None, spawn_xy=None, round_id=None):
         from locomani.backends.sonic.primitives import LocomotionMode
 
-        obs_src = ObsBuilder(task)
+        obs_src = ObsBuilder(task, image_source=config.image_source)
         if not obs_src.wait_ready():
             obs_src.close()
             return False, "[vla] camera/state streams never became ready"

@@ -25,6 +25,9 @@ class VlaConfig:
     grip_gain: float = 1.0  # --grip-gain K: amplify the predicted gripper's deviation from fully-open
     snap: bool = True  # not --no-snap: send the predicted token snapped to the FSQ grid
     stall_abort_s: float = 0.0  # --stall-abort: end a round early after this many stalled seconds (0 = off)
+    # Where the policy's camera images come from: the sim's own MuJoCo stream (:5555), or the Isaac mirror
+    # rendering the sim's newest state on request (sim/isaac/mirror.py, scripts/run_isaac_mirror.sh).
+    image_source: str = field(default="mujoco", metadata={"choices": ("mujoco", "isaac")})
 
 
 DEFAULT_VLA = VlaConfig()

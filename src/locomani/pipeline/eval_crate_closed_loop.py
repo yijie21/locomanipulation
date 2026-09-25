@@ -79,7 +79,7 @@ def aggregate(manifest: Path) -> dict:
 # cold-start run caught (eval_config.json said async, closed_loop.json said blocking),
 # and the rest is written to `ignored_eval_fields.json` so "declared" and "delivered"
 # can be compared without reading this file.
-HONOURED = ("rounds", "seed", "policy_port", "execution_horizon", "budget_s", "initial_token")
+HONOURED = ("rounds", "seed", "policy_port", "execution_horizon", "budget_s", "initial_token", "image_source")
 PINNED = dict(client="blocking")
 
 
@@ -101,6 +101,7 @@ def apply_eval_config(ap, args) -> None:
     args.execution_horizon = evaluation.execution_horizon
     args.budget_s = evaluation.budget_s
     args.initial_token_file = ROOT / evaluation.initial_token
+    args.image_source = evaluation.image_source
     args.ignored_eval_fields = {
         name: getattr(evaluation, name)
         for name in evaluation.to_dict()
@@ -176,6 +177,7 @@ def parse_args(argv=None):
         "the settle drift the base a median 0.09 m and up to 0.83 m before the policy is asked",
     )
     ap.set_defaults(clean=True)
+    ap.set_defaults(image_source="mujoco")  # an --eval-config (a run's eval block) may name the Isaac mirror
     ap.add_argument("--allow-instance-0", action="store_true")
     ap.add_argument(
         "--keep-stack", action="store_true", help="with a run directory: leave the stack running when the rounds end"
@@ -432,6 +434,8 @@ def _evaluate(args):
                         args.initial_token_file,
                         "--trace-dir",
                         out / "traces",
+                        "--image-source",
+                        args.image_source,
                         *([] if args.clean else ["--no-clean"]),
                         "--round-offset",
                         b * args.batch_rounds,

@@ -9,7 +9,8 @@
 # the robot USD is the cached assets/isaac/robot/g1_dex1.usda (scripts/build_isaac_assets.sh --robot-only).
 # The tracking camera is front-right and in the room (azimuth 225, 2.2 m): the recorder's default 2.5 m / 135 shot sits
 # behind the south partition and both renderers see a wall (2026-09-24).
-# Exposure: auto-exposure OFF and film ISO 30 (RTX_SETTINGS below). The Blender room is lit by five 24828-intensity ceiling
+# Exposure: auto-exposure OFF and film ISO 30 (warehouse_textured's `isaac.rtx_settings` in configs/scenes.yaml, which the
+# eval mirror applies too). The Blender room is lit by five 24828-intensity ceiling
 # RectLights plus emissive diffusers, so dome/sun intensities barely matter; with the default auto-exposure + ACES the
 # robot's 0.2 greys rendered 108/255 and its 0.7 greys 212 (washed out, head/torso 0.51 vs MuJoCo 0.23). ISO 30 puts the
 # torso at 139 vs MuJoCo's 136 and head/torso at 0.36; the rest is the white room's indirect light (2026-09-24).
@@ -17,7 +18,11 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 . scripts/paths.sh
 RUN=""; XML="$PWD/outputs/scene/warehouse_textured/scene_locomani.xml"; GPU=0; STRIDE=4; LABELS=()
-RTX_SETTINGS=(--rtx-setting /rtx/post/histogram/enabled=false --rtx-setting /rtx/post/tonemap/filmIso=30)
+# The Isaac stage and its look: one entry in configs/scenes.yaml, read by every Isaac renderer of the scene.
+ISAAC_ENTRY=$("$RENDER_PY" -c 'import yaml; e = yaml.safe_load(open("configs/scenes.yaml"))["warehouse_textured"]["isaac"]; print(e["dir"]); print(*e["rtx_settings"], sep="\n")') \
+  || { echo "configs/scenes.yaml: warehouse_textured has no readable isaac entry" >&2; exit 1; }
+RTX_SETTINGS=()
+while IFS= read -r s; do RTX_SETTINGS+=(--rtx-setting "$s"); done < <(tail -n +2 <<<"$ISAAC_ENTRY")
 while [ $# -gt 0 ]; do
   case "$1" in
     --scene-xml) XML="$2"; shift 2 ;;
@@ -29,7 +34,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$RUN" ] && [ -d "$RUN/trace" ] || { echo "usage: $0 <run_dir with trace/> ..." >&2; exit 2; }
 [ -x "$RENDER_PY" ] || { echo "RENDER_PY not executable: $RENDER_PY (scripts/setup_render_runtime.sh)" >&2; exit 1; }
-SCENE="$ISAAC_ASSETS/scene/warehouse_textured"
+SCENE="$ISAAC_ASSETS/scene/$(head -1 <<<"$ISAAC_ENTRY")"
 [ -f "$SCENE/scene.usda" ] || { echo "no $SCENE/scene.usda -- run scripts/build_isaac_warehouse_scene.py" >&2; exit 1; }
 export CUDA_VISIBLE_DEVICES="$GPU" MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID="$GPU" OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH="$LOCOMANI_ROOT/src"
 if [ ${#LABELS[@]} = 0 ]; then

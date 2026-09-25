@@ -133,6 +133,13 @@ def test_the_whole_eval_block_is_delivered_or_refused_but_never_silently_dropped
     assert "spawn_edge" in args.ignored_eval_fields and "backend" in args.ignored_eval_fields
     assert not set(driver.HONOURED) & set(args.ignored_eval_fields)
 
+    mirrored = tmp_path / "mirrored.json"
+    EvalConfig(client="blocking", image_source="isaac").dump(mirrored)
+    assert driver.parse_args(base + ["--eval-config", str(mirrored)]).image_source == "isaac"
+    assert driver.parse_args(base).image_source == "mujoco"  # no run eval block: the sim's own stream
+    source = (Path(driver.__file__)).read_text()
+    assert '"--image-source",\n                        args.image_source,' in source
+
     lying = tmp_path / "lying.json"
     EvalConfig(client="async").dump(lying)
     with pytest.raises(SystemExit):

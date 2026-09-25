@@ -163,7 +163,7 @@ def make_vla_policy_async(
             keep_stop.set()
             keep_th.join(timeout=1.0)
 
-        obs_src = ObsBuilder(task)
+        obs_src = ObsBuilder(task, image_source=config.image_source)
         if not obs_src.wait_ready():
             _teardown()
             obs_src.close()
@@ -204,6 +204,11 @@ def make_vla_policy_async(
                 t0 = time.time()
                 obs = obs_src.build()
                 if obs is not None:
+                    if obs_src.image_meta is not None:  # Isaac mirror: which state the images show, how old
+                        m = obs_src.image_meta
+                        lat_rec.setdefault("image", []).append(
+                            dict(seq=m["seq"], age_s=m["state_age_s"], render_ms=m["render_ms"], obs_s=time.time() - t0)
+                        )
                     if config.rtc:
                         if rtc_first:
                             obs["rtc.reset"] = 1

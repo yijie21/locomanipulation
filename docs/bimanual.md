@@ -108,9 +108,8 @@ bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 ```
 
 > **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /
-> `policy_port` / `execution_horizon` / `budget_s` / `initial_token`；`client` 只支持
-> `blocking`，写别的会**在启动前报错**而不是静默跑成别的；其余字段落盘到
-> `eval/ignored_eval_fields.json`，可以直接比对"声明了什么"和"用上了什么"。
+> `policy_port` / `execution_horizon` / `budget_s` / `initial_token` / `image_source`（`isaac` 见 [渲染](rendering.md#vla-闭环的-isaac-画面按需镜像)）；
+> `client` 只支持 `blocking`，写别的会**在启动前报错**；其余字段落盘到 `eval/ignored_eval_fields.json`，可直接比对"声明了什么"和"用上了什么"。
 也可以分阶段跑，方便在中间插手工检查：
 
 **命令行只有 6 个参数**，其余一切都在实验文件里：
