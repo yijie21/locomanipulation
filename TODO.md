@@ -198,5 +198,5 @@
     - [ ] 4.8.4.3 全线统一 5cab2fb（crate 目前 4add301，差夹爪补丁）：先 crate 同配置同 seed 20 局对照 17/20，过了再定用 `/workspace/.env` 还是本机 third_party 按新 setup 重编（用户 2026-09-25：暂不实测）
   - [x] 4.8.6 `bottle_simple_gate8` / `bottle_chain_smoke2` / `bottle_twobatch_probe` 的 `scene.cases` 指向 `outputs/bottle_dynamics_20260915/regression8_lowcom.json`（未入库，4.6 KB），runbook.md 与 single_arm.md 的示例用 gate8，新机器直接失败——2026-09-25 用户定入库：`configs/cases/bottle_regression8_lowcom.json`，新版本 `bottle_simple_gate8_20260925.yaml`，runbook / single_arm / single_arm_design / dry-run 测试改指新版；另修：bank 按 scene_meta.json 字节哈希，而 meta 里有绝对路径，入库也换机器必挂 → schema 2 用去掉仓库根前缀的规范 JSON 哈希（`portable_scene_hash`），schema 1 照读；`bottle_chain_smoke2` / `bottle_twobatch_probe` 仍指 outputs/（内部探针，未改）
   - [ ] 4.8.7 `configs/experiments/docrepro_20260924_bottle.yaml` 的 `train.holdout 10` = `collect.successes 10`，被 09-24 新加的准入检查拒绝（本次复现在临时副本里改成 0）；待定：出新版本还是保留为复现记录
-  - [ ] 4.8.8 推送 `b8f6c82` 与 handoff 提交（用户未答复是否推送）
+  - [x] 4.8.8 推送 `b8f6c82` 与 handoff 提交（用户未答复是否推送）——2026-09-25 用户定推送：连同 P7/P8/P19/文档修复一起 rebase 到 origin d505880 上推到 `c52ffb8`
 

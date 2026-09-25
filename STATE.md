@@ -1,13 +1,11 @@
 # STATE — 2026-09-25（会话：从零按文档复现三场景；outputs 清盘；P7/P8/P19 与文档 1–4 修复）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`。已推送到 `b3b645f`；`b8f6c82`、`9a08847` 与本次 handoff 提交**未推送**（TODO 4.8.8）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`。**已推送到 `c52ffb8`**（2026-09-25，rebase 到 henry.zhao 的 d505880 之上，`make check` 全量通过）。
 没有运行中的栈、镜像或复现 agent。理由与被否决方案在 DECISIONS 最后一节（2026-09-25 从零复现）。
 
 ## 工作树
 
-- **未提交（已完成，`make check` 全量通过，等用户说提交）**：P7/P8/P19 与文档 1–4 的改动——`src/locomani/pipeline/{run_context,run_convert,run_stack}.py`、
-  `src/locomani/tasks/crate/collect.py`、`tests/{test_run_context,test_dry_run_delivery,test_interpreter_spawn_rule}.py`、`tests/fixtures/interpreter_spawns.json`、
-  `README.md`、`docs/{setup,single_arm,bimanual,warehouse}.md`、`patches/sonic_{pose,hand}_ownership.md`。提交时按文件名 add。
+- 已提交并推送：P7（dd83248）、P8（bfacda9）、文档修复含 P19 nvcc 说法更正与 single_arm 排错表的起栈摔倒行（f28db5b）、TODO（52ef590）；另两个为让 `make check` 通过的小修：d505880 的 `prepare.py` ruff format（b0e1fcd）、README 回到 100 行预算（c52ffb8）。
 - 未跟踪（与本会话无关，不要提交）：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
 - `third_party/GR00T-WholeBodyControl` 挂着两个 worktree（4.8.5 用，勿删；删时用 `git worktree remove`）：`outputs/deploy_docbuild_20260924/`、`outputs/deploy_pinned_20260925/`。
 
@@ -15,7 +13,7 @@
 
 - **从零复现（已确认，4.6.1）**：无上下文 agent 从 clone 只按文档装 0–4 步（指纹 `c1360628…`、mujoco 3.11.0），bottle 7/10、crate 8/10、warehouse 3/10，
   **30 局零开局失败、零摔倒**。报告 `outputs/fresh_repro_20260925/report.md`（P1–P20），启动器 `launch.sh` 同目录；沙盒已删。
-- **已修（已确认，未提交）**：P7 holdout 准入按 `batch_rounds × max_batches`（起栈与两条 collect 入口）；P8 convert 的 stats 在 `.venv_data_collection` 跑
+- **已修（已确认，已推送 2026-09-25）**：P7 holdout 准入按 `batch_rounds × max_batches`（起栈与两条 collect 入口）；P8 convert 的 stats 在 `.venv_data_collection` 跑
   （三数据集与训练 venv 逐字节相同，沙盒 0–4 环境 convert 全通）；P19 文档写明 CUDA 13 运行时；文档 1–4（TODO 4.6.2.4–4.6.2.7，沙盒核对过 3、4）。
 - **outputs 清盘（已确认）**：旧 expert 数据与**全部 checkpoint** 作废，删 163 G，`/workspace` 余 ~208 G；旧数据集不可恢复。清单 `outputs/cleanup_20260925/`。
 - 之前的成果不变：Isaac 按需镜像（`docs/handoff/isaac-vla-mirror-20260925.md`，真实策略闭环未跑）；setup 钉 1983e888 + 三补丁；gate8 bank 入库。
@@ -30,7 +28,7 @@
 
 ## 下一步（编号见 `TODO.md`，等用户定顺序）
 
-- 用户确认后提交上面"未提交"的改动，再做 **4.8.8** 推送。
+- 严格按 README 的 bottle 采集已确认不摔（TODO 4.6.3/4.6.4/4.8.2.4）；协作者其余问题用户定为另行单独解决（4.8.2.2/4.8.2.3/4.8.2.5）。
 - **4.8.2** 协作者开局失败：等用户定怎么拿到他那边的证据（**4.8.2.1** 开局诊断是否先加）。
 - 旧 expert 已作废：新 expert 的采集/训练由用户安排（旧 checkpoint 已全部删除）。
 
