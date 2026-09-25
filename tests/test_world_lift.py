@@ -74,3 +74,29 @@ def test_trace_rows_holds_the_tail_the_exporter_records_after_the_trace_stops(tm
         RunTraces(run).trace_rows(str(session), 0, seqs)
     _, idx = RunTraces(run).trace_rows(str(session), 0, seqs, hold_tail=True)
     assert idx.tolist() == [0, 1, 1, 9, 9, 9]
+
+
+def test_join_by_seq_window_past_an_empty_current_layout_dir(tmp_path):
+    # Single-arm manifests carry no label, so the episode is joined by the trace
+    # whose seq window holds it. bottle_simple_200_20260916 has its traces in
+    # collect/state_trace_NN plus an EMPTY collect/state_trace a later stack made;
+    # the empty one used to win the layout check and every join failed.
+    run, session = tmp_path / "run", tmp_path / "session"
+    (run / "scene").mkdir(parents=True)
+    (run / "collect/state_trace").mkdir(parents=True)
+    (run / "collect/state_trace_00").mkdir()
+    (session / "priv_seq").mkdir(parents=True)
+    (run / "scene/scene_meta.json").write_text(
+        json.dumps({"target_object": "water_bottle", "objects": {"water_bottle": {"qpos_adr": 5}}})
+    )
+    (run / "collect/inputs.json").write_text(
+        json.dumps({"sessions": [str(session)], "manifests": [str(run / "collect/manifest_00.jsonl")]})
+    )
+    (run / "collect/manifest_00.jsonl").write_text(json.dumps({"produced": True}) + "\n")
+    for first in (0, 200):  # two traces of one batch, disjoint seq windows
+        seq = np.arange(first, first + 50)
+        qpos = np.tile(seq[:, None].astype(float), (1, 9))
+        np.savez(run / f"collect/state_trace_00/g{first}_state_trace.npz", seq=seq, qpos=qpos, qvel=-qpos[:, :8])
+    (session / "priv_seq/episode_000000.json").write_text(json.dumps({"priv_seq": list(range(210, 216))}))
+    # 6 source rows -> 3 converted rows at seqs 210, 212, 214, from the second trace
+    np.testing.assert_array_equal(RunTraces(run).world_z(str(session), 0), [210, 212, 214])

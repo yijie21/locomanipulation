@@ -95,9 +95,11 @@ class RunTraces:
         batch = self.manifests[self.sessions.index(str(Path(session)))].stem.rsplit("_", 1)[-1]
         # One directory per run since 2026-09-21 (the stack outlives a batch, so SIM_STATE_TRACE_DIR
         # is fixed when the sim starts); runs collected before that have one per batch. Try the
-        # current layout first and fall back, so an old run stays auditable.
+        # current layout first and fall back, so an old run stays auditable. "Current" means it
+        # holds traces, not merely exists: a later stack pointed at an old run creates the
+        # directory empty (bottle_simple_200_20260916, 2026-09-22), and every join then failed.
         directory = self.run / "collect" / "state_trace"
-        if not directory.is_dir():
+        if not any(directory.glob("*_state_trace.npz")):
             directory = self.run / "collect" / f"state_trace_{batch}"
         lo, hi = int(seqs[0]), int(seqs[-1])
         hits = [
