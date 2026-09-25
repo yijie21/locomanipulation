@@ -227,7 +227,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 
 #### 简化单臂专家（`reach.strategy=simple`，2026-09-16）
 
-和双臂线同形：回合开始站立时双臂以 1.0 rad/s 收到配置的下垂姿态（`prepare_walk`，实测到 0.15 rad 内即走，上限 3 s；走路期间不再有任何手臂动作）（`reach.simple.hang_*`：肘 1.2、肩滚外展 0.45、腕关节全零，左臂镜像），手腕不做任何翻转，整臂比规划器的下垂姿态离身体远 8 cm（骨盆外 30 cm），腕相机 80° 视锥内到自身几何 ≥ 35 cm（离线射线扫描；外展 0.25 打到大腿 12 cm；前臂前伸的姿态会改变步态，停位冲到 0.08–0.10 m）；不跟踪瓶子。步态一结束（骨盆 < 0.10 m/s、腿 < 0.50 rad/s，不等静止）就接管 POSE，`stats.stand` 记录站姿；接管时两只手显式张开。之后是一条连续的最小加加速度路径：手在桌面高度带且离桌沿
+下面是 2026-09-25 之前的走近（现在要显式写 `reach.simple.approach_stop: visible` 才走这条）；默认走近见下一节。和双臂线同形：回合开始站立时双臂以 1.0 rad/s 收到配置的下垂姿态（`prepare_walk`，实测到 0.15 rad 内即走，上限 3 s；走路期间不再有任何手臂动作）（`reach.simple.hang_*`：肘 1.2、肩滚外展 0.45、腕关节全零，左臂镜像），手腕不做任何翻转，整臂比规划器的下垂姿态离身体远 8 cm（骨盆外 30 cm），腕相机 80° 视锥内到自身几何 ≥ 35 cm（离线射线扫描；外展 0.25 打到大腿 12 cm；前臂前伸的姿态会改变步态，停位冲到 0.08–0.10 m）；不跟踪瓶子。步态一结束（骨盆 < 0.10 m/s、腿 < 0.50 rad/s，不等静止）就接管 POSE，`stats.stand` 记录站姿；接管时两只手显式张开。之后是一条连续的最小加加速度路径：手在桌面高度带且离桌沿
 不足 6 cm 时先后缩 10 cm，竖直抬到 max(抓取高度 +8 cm, 桌面 +12 cm) 并前移 10 cm，按
 停稳后的位置重算接近线，滑到预抓取点；然后一段 8 cm/s 的进入，横向按实测掌坐标偏移
 在线修正（3 cm/s、最多 4 cm），到位或双侧接触即闭爪 → 抬升 → 躯干回正，交接给规划器。
@@ -249,6 +249,31 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 ```bash
 bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8_20260925.yaml --gpu 0 --name <run>
 ```
+
+#### 默认走近：守线刹车 + 原地抬手（`reach.simple.approach_stop: guard`，2026-09-25）
+
+用户要求按 warehouse 的方式走近，当天定为默认。和上一节的差别只在接管之前：
+
+1. **走路**：不给上身参考（`PLANNER_VR_3PT`、`upper_body=None`），手臂由步态自己摆，自然下垂。跳过 leg 1，从起步到刹车
+   一条 `SLOW_WALK` 指令：速度 `walk_speed` 0.25（v1.1 刹后滑行最小的速度，[walk 场景](walk.md)），方向在第一帧定死、
+   直指规划站位（`edge_guard.straight_walk`），不再逐帧修正。
+2. **刹车**：`GuardBrake` 以桌边为线，每次脚落地判断"再走一步 + 刹后滑行 `guard_extra_m` 会不会越过桌边 − `guard_margin_m`"。
+   要挡在线后的不是脚（warehouse 挡托盘垛），而是桌面那一层：`FootWatch.frontmost_band` 在网格顶点上取桌面下 12 cm 到上
+   3 cm 内最靠前的点（小腿可以伸进桌下）。每局记录在 manifest 的 `simple.guard`，`realised_extra_m` 就是标定 `guard_extra_m` 的量。
+3. **抬手**：停稳接管后照 warehouse 的 `lifted_ready`（`BimanualIK.lifted_ready`）：工具点骨盆前 16 cm、侧 16 cm、上 5 cm，
+   掌心下倾 30°，肘下限 −60°，腰锁定，一次求解后关节空间平滑插值 `ready_seconds` 2.5 s、停 `ready_hold_s` 0.3 s
+   （`SimpleGraspPolicy._lift_ready`，记录在 `simple.ready`）。之后左手留在原位，右手从抬起处滑到预抓取点，其余同上一节，没有后退。
+
+被否掉的两种做法（数字见[台账 39](ledger/bottle.md)）：
+
+| 做法 | 为什么不用 |
+|---|---|
+| 走路时逐帧修正方向朝站位点 | deploy 对移动方向做精确比较，方向一变就重新规划；步态变成走一步、停 1.3–1.9 s、再迈 34 cm，守线只能按 35 cm 预留，停在离桌边 0.5 m 外够不着 |
+| 手留在下垂处竖直往上抬（逐帧笛卡尔 IK） | 手离中线 21 cm、要抬到骨盆高度，只剩肩外展这一条路：抬完肩外展 36–74°、肘比肩外 10–18 cm，用户看视频否掉 |
+
+已知限制：桌面层最靠前的是下垂的手指（骨盆前约 16 cm），所以骨盆停在离桌边 0.25–0.40 m，比旧走法远；停位散布是步长
+（每步 0–19 cm），调守线参数去不掉。`lifted_ready` 插值中途手指会先前扫 6–8 cm，最近到离桌边 6 mm，守线余量没算这一段。
+gate8 闸门和它的基线 `tests/gate/baseline_simple.json` 仍是旧走法（那几份实验文件钉了 `visible`）。
 
 
 ## 四、Pick-and-place 这条变体

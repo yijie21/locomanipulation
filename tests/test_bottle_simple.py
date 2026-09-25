@@ -78,6 +78,56 @@ def test_simple_config_rejects_out_of_range_values(field, value):
         replace(SimpleGraspConfig(), **{field: value})
 
 
+def test_guard_approach_is_the_default_switch_and_rejects_unknown_modes():
+    assert SimpleGraspConfig().approach_stop == "guard"  # the bottle default since 2026-09-25
+    visible = replace(SimpleGraspConfig(), approach_stop="visible")
+    reach = ReachConfig.from_dict(dict(ReachConfig(strategy="simple", simple=visible).to_dict()))
+    assert reach.simple.approach_stop == "visible" and reach.simple.walk_speed == 0.25
+    for field, value in [
+        ("approach_stop", "planner"),
+        ("walk_speed", 0.15),
+        ("guard_extra_m", 0.5),
+        ("guard_margin_m", -0.01),
+        ("guard_stride0_m", 0.01),
+        ("guard_band_below_m", 0.5),
+        ("ready_hold_s", 3.0),
+    ]:
+        with pytest.raises(ValueError):
+            replace(SimpleGraspConfig(), **{field: value})
+
+
+def test_guard_prepare_walk_hands_the_arms_to_the_walking_policy_and_watches_the_facing_edge():
+    from locomani.backends.sonic.primitives import HAND_OPEN, StreamMode
+
+    policy = _simple_policy()
+    policy.simple = replace(SimpleGraspConfig(), approach_stop="guard")
+    policy.p.cmd = SimpleNamespace(
+        set_hands=Mock(),
+        set_upper_body=Mock(),
+        set_upper_body_vel=Mock(),
+        upper_body=np.zeros(17),
+        stream_mode=StreamMode.PLANNER_FROZEN_UPPER_BODY,
+    )
+    policy.ik = SimpleNamespace(model=object())
+    policy.task = SimpleNamespace(target=SimpleNamespace(surface_top=0.62))
+    with patch("locomani.tasks.bottle.simple_policy.EdgeGuard") as guard:
+        policy.prepare_walk(heading=(0.07, -0.998, 0.0), surface=dict(xy=[0.0, 0.0], half_extent=[0.503, 0.503]))
+    np.testing.assert_allclose(policy.p.cmd.set_hands.call_args.kwargs["right"], HAND_OPEN)
+    assert policy.p.cmd.stream_mode == StreamMode.PLANNER_VR_3PT and policy.p.cmd.upper_body is None
+    policy.p.cmd.set_upper_body_vel.assert_called_once_with(None)
+    model, edge, top, cfg = guard.call_args.args
+    assert model is policy.ik.model and top == 0.62 and cfg is policy.simple
+    np.testing.assert_allclose(edge.axis, [0.0, -1.0])
+    assert edge.line == pytest.approx(-0.503)
+    assert policy.edge_guard is guard.return_value and policy.stats["prepare_walk"]["arms"] == "walking policy"
+    # The walk and the stand send no upper-body reference: the walking policy swings the arms.
+    policy.walking = SimpleNamespace(last=None, chosen_stop_depth=None, chosen_stop_edge=None)
+    assert policy.walk_tick({"t": 1.0, "joints": np.zeros(29)})
+    policy.p.cmd.set_upper_body.assert_not_called()
+    with pytest.raises(ValueError, match="half_extent"):
+        policy.prepare_walk(heading=(0.0, -1.0, 0.0), surface=dict(xy=[0.0, 0.0]))
+
+
 def test_wrap_direction_turns_the_fingers_across_the_body_with_the_bottle_offset():
     forward = np.array([1.0, 0.0, 0.0])
     # Straight ahead: fingers forward. 0.25 m to the right: 1.0 rad to the left of the heading.
@@ -195,6 +245,7 @@ def _simple_policy():
     policy._walk_logged = -np.inf
     policy._walk_q, policy._walk_stamp = np.zeros(17), None
     policy._edge_anchor = None
+    policy.edge_guard = None
     policy.guard = SimpleNamespace(check=Mock(return_value=SimpleNamespace(clear=True)))
     policy.target = SimpleNamespace(
         observe=Mock(return_value=None), diagnostics={}, age=Mock(return_value=float("inf"))
@@ -242,7 +293,7 @@ def test_prepare_walk_opens_the_jaws_and_ramps_the_arms_standing_until_measured(
     policy.p.cmd.set_hands = Mock()
     policy.p.cmd.frame = Mock()
     policy.p._facing = Mock(return_value=np.array([1.0, 0.0]))
-    policy.simple = replace(SimpleGraspConfig(), hang_ramp_rad_s=2.0, hang_reached_rad=0.05)
+    policy.simple = replace(SimpleGraspConfig(), approach_stop="visible", hang_ramp_rad_s=2.0, hang_reached_rad=0.05)
     policy._walk_q = np.zeros(17)
     goal = hanging_arms(np.zeros(17), policy.simple)
     joints = np.zeros(29)
@@ -361,3 +412,68 @@ def test_grasp_rotation_is_a_pure_yaw():
         rotation = grasp_rotation(direction)
         assert Rotation.from_matrix(rotation).as_euler("xyz")[2] == pytest.approx(yaw)
         assert abs(Rotation.from_matrix(rotation).as_euler("xyz")[:2]).max() < 1e-12
+
+
+def _lift_policy(states, errors=(0.0, 0.0)):
+    """A guard-walk policy at the takeover: a stubbed ready solve and a streamed arm that records its pushes."""
+    from locomani.tasks.crate.bimanual_ik import BimanualSolution
+
+    policy = _simple_policy()
+    policy.simple = replace(SimpleGraspConfig(), approach_stop="guard", ready_seconds=1.0, ready_hold_s=0.2)
+    policy.p.obs = Mock(side_effect=states)
+    policy.task = SimpleNamespace(target=SimpleNamespace(key="water_bottle"))
+    policy.ik = object()
+    policy.arm = SimpleNamespace(q=np.zeros(29), _push=Mock())
+    policy._measured_tools = Mock(return_value=np.zeros((2, 3)))
+    ready = np.zeros(29)
+    ready[15:29] = 0.5  # both arms
+    solver = Mock()
+    solver.lifted_ready.return_value = BimanualSolution(ready, np.asarray(errors, dtype=float))
+    return policy, solver, ready
+
+
+def _lift_states(seconds, *, fallen_at=None):
+    return [
+        dict(
+            t=k * 0.02,
+            seq=k,
+            joints=np.zeros(29),
+            fallen=fallen_at is not None and k * 0.02 >= fallen_at,
+            objects={"water_bottle": {"pos": [0.3, 0.0, 0.7]}},
+        )
+        for k in range(int(seconds / 0.02) + 2)
+    ]
+
+
+def test_lift_ready_blends_the_arms_in_joint_space_to_the_warehouse_pose_and_holds_it():
+    policy, solver, ready = _lift_policy(_lift_states(1.3))
+    with patch("locomani.tasks.bottle.simple_policy.BimanualIK", return_value=solver) as bimanual:
+        assert policy._lift_ready() is None
+    assert bimanual.call_args.kwargs["elbow_min_deg"] == -60.0 and bimanual.call_args.kwargs["waist_dofs"] == "all"
+    tool, pitch, start = solver.lifted_ready.call_args.args
+    assert tool == (0.16, 0.16, 0.05) and pitch == 30.0
+    np.testing.assert_allclose(start, np.zeros(29))
+    calls = policy.arm._push.call_args_list
+    pushes = [c.args[0] for c in calls]
+    speeds = [c.kwargs["reference_velocity"] for c in calls]
+    for call in calls:  # a smoothstep in the physical clock, from the takeover reference to the ready pose
+        u = min(1.0, call.kwargs["reference_time"] / 1.0)
+        np.testing.assert_allclose(call.args[0], (3 * u * u - 2 * u**3) * ready, atol=1e-12)
+    assert np.max(pushes[0]) < 1e-3
+    np.testing.assert_allclose(pushes[-1], ready)  # and holds the ready pose through the hold
+    np.testing.assert_allclose(speeds[-1], 0.0)
+    assert all(np.all(p[:15] == 0.0) for p in pushes)  # legs and waist never move
+    assert policy.stats["phases"][-1]["phase"] == "ready"
+    assert policy.stats["ready"]["seconds"] >= 1.2 and policy.stats["ready"]["errors_m"] == [0.0, 0.0]
+
+
+def test_lift_ready_fails_the_round_on_a_missed_solve_or_a_fall():
+    policy, solver, _ = _lift_policy(_lift_states(1.3), errors=(0.0, 0.05))
+    with patch("locomani.tasks.bottle.simple_policy.BimanualIK", return_value=solver):
+        ok, why = policy._lift_ready()
+    assert not ok and why == "simple lifted ready pose missed by the solver"
+    policy.arm._push.assert_not_called()
+    policy, solver, _ = _lift_policy(_lift_states(1.3, fallen_at=0.4))
+    with patch("locomani.tasks.bottle.simple_policy.BimanualIK", return_value=solver):
+        ok, why = policy._lift_ready()
+    assert not ok and why == "simple fell during the ready lift"

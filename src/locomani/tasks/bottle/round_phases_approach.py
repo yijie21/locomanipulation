@@ -192,6 +192,9 @@ def _phase_approach(ctx: RoundContext):
         # pose the cameras see, nothing per-episode.
         advance = 0.0
     aim_xy = aim_xy + advance * np.asarray(ctx.fv[:2])
+    # reach.simple.approach_stop guard: one constant gait command, GuardBrake at the table edge, and no other stop
+    # rule (tasks/bottle/edge_guard.py). The expert built it in prepare_walk.
+    guard = getattr(ctx.coordinated, "edge_guard", None)
     if appr_lat:
         p.log(f"[gym] approach aim offset {appr_lat * 100:+.0f} cm lateral")
 
@@ -319,6 +322,8 @@ def _phase_approach(ctx: RoundContext):
             return reason
 
         def stop_reason(state, rel, edge_now):
+            if guard is not None:
+                return guard.step(state)
             reachable = rm.margin(rel, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
             selected_stop_edge = ctx.reach_config.visible_brake_edge
             if VISIBLE:
@@ -402,7 +407,9 @@ def _phase_approach(ctx: RoundContext):
             mv = to_stand / n_ts if n_ts > 1e-3 else np.array(ctx.fv[:2])
             fv_now = ctx.fv
             speed = APPR_MID if control_depth - ctx.plan_r <= MID_BAND else APPR_COARSE
-            if VISIBLE and ctx.reach_config.visible_decel_band > 0:
+            if guard is not None:
+                mv, speed = guard.direction(p.pelvis_xy(state), aim_xy, ctx.fv), guard.walk_speed
+            elif VISIBLE and ctx.reach_config.visible_decel_band > 0:
                 walk = None if ctx.coordinated is None else ctx.coordinated.walking
                 speed = _visible_command_speed(
                     control_depth,

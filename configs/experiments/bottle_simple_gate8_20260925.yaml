@@ -235,6 +235,7 @@ task:
       min_rise_m: 0.04
       disturb_limit_m: 0.05
       lean_max_rad: 0.55
+      approach_stop: visible     # pinned 2026-09-25 when guard became the default: this file records the hanging-arm walk with the visible brake and the pull-back
   target: water_bottle
   prompt: pick up the water bottle
   goal: ''

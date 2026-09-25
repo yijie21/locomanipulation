@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from locomani import paths
@@ -114,25 +113,10 @@ class HangingWalk:
 
 
 def lifted_ready(solver, cfg, start):
-    """Ready pose that lifts the hands in place: tool points at cfg.ready_tool (lateral mirrored), palms pitched
-    cfg.ready_pitch_deg, solved from the walking arms with the waist locked. The forward pose put the fingertips
-    0.42 m ahead, on the warehouse box's near wall at stances under 0.51 m (2026-09-24); this keeps them within
-    0.20 m through the joint blend, so the near wall is first met by the reach, which sees it."""
-    forward, lateral, up = (float(v) for v in cfg.ready_tool)
-    attitude = Rotation.from_euler("y", cfg.ready_pitch_deg, degrees=True).as_matrix()
-    lo, hi = solver.lo.copy(), solver.hi.copy()
-    lo[12:15], hi[12:15] = 0.0, 0.0
-    start = np.asarray(start, dtype=float)
-    ready = solver.solve(
-        start,
-        [[forward, lateral, up], [forward, -lateral, up]],
-        [attitude, attitude],
-        iterations=250,
-        rot_weight=0.15,
-        posture=start,
-        posture_weight=0.01,
-        joint_limits=(lo, hi),
-    )
+    """Ready pose that lifts the hands in place (BimanualIK.lifted_ready at cfg.ready_tool / cfg.ready_pitch_deg), so
+    the warehouse box's near wall is first met by the reach, which sees it. The simple bottle expert's guard walk
+    lifts the same way (tasks/bottle/simple_policy.py)."""
+    ready = solver.lifted_ready(cfg.ready_tool, cfg.ready_pitch_deg, start)
     if np.max(ready.errors) > 0.02:
         raise SystemExit(
             f"visual.ready_pose lifted: tool targets {cfg.ready_tool} missed by {np.round(ready.errors, 3).tolist()} m "

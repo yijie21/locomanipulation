@@ -530,7 +530,7 @@ def _phase_navigate(ctx: RoundContext):
         if prepare_walk is not None:
             # The arms take their walking pose standing, before the first step:
             # an arm motion during the walk is a cue-less action in the data.
-            prepare_walk()
+            prepare_walk(heading=ctx.fv, surface=ctx.surf_a)
 
     plan_r = float(np.hypot(ctx.rel[0], ctx.rel[1]))
     ctx.plan_r = plan_r
@@ -550,7 +550,12 @@ def _phase_navigate(ctx: RoundContext):
     # included, because it steers at the stand rather than pushing along
     # the heading.
     along = float(np.dot(lead_tgt - np.asarray(p.pelvis_xy(p.obs())), np.array(ctx.fv[:2])))
-    if along > 0.20:
+    # The guard walk (reach.simple.approach_stop guard) is one gait command from the first step to the brake:
+    # leg 1's walk_to would stop at the lead point and restart at its own speed.
+    guard_walk = early and getattr(ctx.coordinated, "edge_guard", None) is not None
+    if guard_walk:
+        p.log(f"[gym] leg 1 skipped: the guard walk covers the whole approach ({along:+.2f} m to the lead point)")
+    elif along > 0.20:
         # face_yaw, not face_target=False: hold the LINE, not the current
         # heading. See Primitives.walk_to -- holding the heading locks in the
         # spawn turn's dead-zone residual, which a long walk then magnifies

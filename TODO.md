@@ -202,3 +202,22 @@
   - [ ] 4.8.7 `configs/experiments/docrepro_20260924_bottle.yaml` 的 `train.holdout 10` = `collect.successes 10`，被 09-24 新加的准入检查拒绝（本次复现在临时副本里改成 0）；待定：出新版本还是保留为复现记录
   - [x] 4.8.8 推送 `b8f6c82` 与 handoff 提交（用户未答复是否推送）——2026-09-25 用户定推送：连同 P7/P8/P19/文档修复一起 rebase 到 origin d505880 上推到 `c52ffb8`
 
+
+## 5. bottle 走近改成 warehouse 的方式（用户 2026-09-25 定）
+
+步速 0.25 恒定、手臂交给步态自然下垂、按桌边守线刹车停得越近越好、停后双手原地竖直抬起、左手保持抬起、右手再去抓。腕部相机走路时拍到大腿，用户接受。先加开关，只在新实验文件里打开；试验通过、用户看完视频后，再定是否设为默认、删掉张开姿势 / 三档速度 / backoff。
+基线：`bottle_simple_10ep_20260925` 试 11 局保留 10 集；刹车时骨盆离桌边 0.39–0.42 m，之后滑行 10–28 cm；停下时手离桌边 −3…+10 cm，10/11 局要先后退。
+
+- [x] 5.1 走路：开关打开时不给上身参考，手臂交还给步态控制器（照 warehouse `HangingWalk`；视频确认自然下垂摆动）（2026-09-25）
+- [x] 5.2 步速：simple 线从起步到刹车恒定 0.25；方向起步时定死、指向规划站位点（跳过 leg 1）（2026-09-25）
+  - [x] 5.2.1 逐帧纠偏方向被否（2026-09-25）：方向定死后 10 局落脚间隔 0.24–1.18 s、无停顿，与"重规划造成停走"一致（两轮是不同 run，第一轮只 2 局）——deploy 对移动方向做精确比较，任何变化都触发重规划（10 Hz）；第一轮 2 局步态为 15 cm → 停 1.3–1.9 s → 34 cm，守线只能按 35 cm 预留，骨盆在离桌边 0.51–0.53 m 处停下，两局都 `[stand] arrival left the object out of reach`（`outputs/runs/bottle_simple_guard_20260925`，2026-09-25）
+- [x] 5.3 刹车：`FootWatch` + `GuardBrake` 以桌边为线；`FootWatch.frontmost_band` 按网格顶点取桌面那一层（顶 −12 cm … +3 cm）最靠前的点，0.6 ms/次；逐局记录在 `simple.guard`（2026-09-25）。第一轮实测 realised_extra 0.192 / 0.192（标定值 0.20）；桌面层最靠前的是下垂的 Dex1 手指，在骨盆前 16 cm
+- [x] 5.4 停稳后双手原地竖直抬到抬手高度（笛卡尔路径，手指朝下），停顿后右手滑向预抓点；左手保持抬起；去掉 backoff，接管时手越过桌边就判失败（2026-09-25）：9 局右手 0.57 → 0.78 m，水平漂移 2.4–4.1 cm，抬完误差 ≤3 cm
+  - [x] 5.4.1 抬手改成 warehouse 的 `lifted_ready`（工具点骨盆前 16 cm、侧 16 cm、上 5 cm，掌心下倾 30°，肘下限 −60°，关节空间插值）——用户 2026-09-25 看视频指出抬手时手肘往外张。实测：现抬法肩外展 18°→68°（右）/20°→53°（左），肘比肩外 13–16 cm；warehouse 同起点肩外展 34°、肘外 9 cm。离线核对 10 个停位：关节插值中途手指最多前移 3 cm，最差一局离桌边 6.8 → 3.9 cm，不越线；与 5.6 收紧守线互相牵制——用户 2026-09-25 批准；实现：`BimanualIK.lifted_ready`（从 crate expert 挪出求解，warehouse 仍在解不准时 SystemExit）、`SimpleGraspPolicy._lift_ready`（接管后关节插值 2.5 s + 停 0.3 s，解不准判本局失败）；10 局对照 `bottle_simple_guard_lifted_20260925`（2026-09-25）：10/10，肩外展 18–23°、肘外 4.6–6.0 cm（上一轮 36–74°、9.4–17.5 cm），每局 39.5–44.3 s；预览 `outputs/videos/bottle_simple_guard_lifted_20260925/`
+    - [ ] 5.4.1.1 抬手中途手指前扫 6–8 cm（参考轨迹约 3 cm + 跟踪滞后 4–5 cm：抬到 40% 时右肩后摆少 0.06–0.13 rad、肘少折至多 0.14 rad），停位最近两局抬手时离桌边只剩 6 mm / 1.2 cm，0 越线；收紧守线（5.6）前要先定：放慢插值、改插值形状（先折肘再摆肩），还是把前扫算进守线余量（待用户定）
+- [x] 5.5 单元测试 + 新实验文件，seed 40000 跑 10 局，与基线逐局对比（刹车位置、手/骨盆离桌边、成功率、失败原因、耗时），导出视频——单测 `tests/test_bottle_edge_guard.py` 等通过；实验文件 `configs/experiments/bottle_simple_guard_20260925.yaml`；第二轮（方向定死）`bottle_simple_guard_straight_20260925`：9/10（失败 1 局 `[grasp] simple lost pad contact during the lift`，与基线失败同类、不同 case）；0 局越线；骨盆离桌边 0.24–0.40 m（中位 0.34，基线 0.12–0.31、中位 0.18）；桌面层最靠前是下垂手指，离桌边 0.07–0.22 m（基线 −0.03…+0.10，10/11 要后退）；realised_extra 0.127–0.174（设 0.20）；走路 8.2–12.1 s（基线 ~4.9 s），每局 39–44 s（基线 36–40 s）；预览 `outputs/videos/bottle_simple_guard_straight_20260925/`
+- [-] 5.6 按 5.5 实测收紧 `guard_extra` / `guard_margin`——用户 2026-09-25：bottle expert 不再微调（实测刹后滑行 0.13–0.17 m，预留 0.20；收紧前还要先处理 5.4.1.1 的抬手前扫）
+- [x] 5.7 文档（2026-09-25）：`single_arm.md` 首段与 gate 行、`single_arm_design.md` 新节"默认走近：守线刹车 + 原地抬手"、台账 §39、配置字段表重新生成
+- [x] 5.8 设为 bottle 默认（用户 2026-09-25）：`SimpleGraspConfig.approach_stop` 默认 `guard`；主线 5 份（`bottle_simple_200`、`bottle_simple_smoke`、`bottle_smoke_norecord`、`bottle_eval_smoke3`、`agent_single_arm`）显式写 guard 全套参数，task/embodiment/scene/backend 与 10/10 试验逐字段相同；记录旧走法的 9 份（gate8 ×2、固定 bank 的 chain_smoke2 / twobatch_probe / doc_walkthrough_1ep、docrepro、single_arm_20ep ×2、`bottle_simple_10ep_20260925`）钉 `visible`；`make check` 通过；未提交
+  - [ ] 5.8.1 gate8 闸门换成新默认：用 guard 在 8 局 bank 上录 `tests/gate/baseline_simple.json` 的新版（现基线是旧走法 stage4_wrap8p；guard 多一个 `ready` 阶段，旧基线必 FAIL）（待用户定）
+  - [ ] 5.8.2 删除 visible 走法的代码（张开下垂 `hang_*`、三档速度与可见深度刹车、`retract_*` 后退）——钉 visible 的 9 份实验文件会跟着失效（待用户定）

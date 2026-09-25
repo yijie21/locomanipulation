@@ -6,7 +6,9 @@ IDLE is commanded the robot takes exactly one more step and its frontmost low-bo
 (worst 20.3) past the front planted ankle (walk scene, 2026-09-23, docs/walk.md). `GuardBrake` turns that into
 a decision: at each landing, brake if one more stride would carry that point past `line - margin`.
 
-Used by the crate expert's approach (`visual.approach_stop=guard`) and by `backends/sonic/diag_brake.py`.
+Used by the crate expert's approach (`visual.approach_stop=guard`), by the simple bottle expert's guard walk
+(`tasks/bottle/edge_guard.py`, where the line is a table edge and the body that must stay behind it is whatever
+reaches the table-top band: `frontmost_band`) and by `backends/sonic/diag_brake.py`.
 """
 
 from __future__ import annotations
@@ -20,13 +22,14 @@ OBSTACLE_TOP = 0.37  # m: geoms whose bottom is below this count as the body tha
 
 
 class FootWatch:
-    def __init__(self, scene_xml: str):
+    def __init__(self, scene_xml: str | None = None, *, model=None):
+        """From the scene file, or from an already-loaded scene `model` (read only; this watch has its own data)."""
         import mujoco
 
         from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
 
         self.mujoco = mujoco
-        self.model = mujoco.MjModel.from_xml_path(str(scene_xml))
+        self.model = model if model is not None else mujoco.MjModel.from_xml_path(str(scene_xml))
         self.data = mujoco.MjData(self.model)
         self.qadr = [int(self.model.jnt_qposadr[self.model.joint(n).id]) for n in MUJOCO_JOINT_NAMES]
         self.feet = [self.model.body(n).id for n in FEET]
@@ -35,6 +38,7 @@ class FootWatch:
         self.planted = [True, True]
         self.landings = []
         self.last_strides = []
+        self._band_points = None  # per robot geom: thinned mesh vertices in the geom frame, built on first use
 
     def _is_robot(self, geom) -> bool:
         """Robot geoms hang off the pelvis; scene objects are other root children."""
@@ -65,6 +69,49 @@ class FootWatch:
             if centre[2] - half[2] < top:
                 best = max(best, float((centre[:2] - origin) @ h + np.abs(h) @ half[:2]))
         return best
+
+    def _points(self) -> dict:
+        """Mesh vertices per robot mesh geom, one per 1 cm voxel (the G1 meshes carry ~380k vertices in all)."""
+        if self._band_points is None:
+            m, self._band_points = self.model, {}
+            for g in self.robot_geoms:
+                if int(m.geom_type[g]) != self.mujoco.mjtGeom.mjGEOM_MESH:
+                    continue
+                mesh = int(m.geom_dataid[g])
+                start, count = int(m.mesh_vertadr[mesh]), int(m.mesh_vertnum[mesh])
+                vertices = np.asarray(m.mesh_vert[start : start + count], dtype=float)
+                _, keep = np.unique(np.floor(vertices / 0.01).astype(np.int64), axis=0, return_index=True)
+                self._band_points[g] = vertices[np.sort(keep)]
+        return self._band_points
+
+    def frontmost_band(self, s, origin, h, low: float, high: float) -> tuple[float, str | None]:
+        """Farthest point along h (from origin) of the robot's geometry between heights `low` and `high`, and its body.
+
+        Meshes are measured on their vertices, not their bounding boxes: a thigh's box reaches from the hip to the
+        knee, so its front at knee height would stand in for the thigh at any height in the band. Other geoms use
+        their box when it overlaps the band. (-inf, None) when nothing reaches the band.
+        """
+        self.put(s)
+        origin, h = np.asarray(origin, dtype=float), np.asarray(h, dtype=float)
+        points = self._points()
+        best, geom = -np.inf, None
+        for g in self.robot_geoms:
+            rot = self.data.geom_xmat[g].reshape(3, 3)
+            if g in points:
+                world = points[g] @ rot.T + self.data.geom_xpos[g]
+                inside = world[(world[:, 2] >= low) & (world[:, 2] <= high)]
+                if not len(inside):
+                    continue
+                far = float(np.max((inside[:, :2] - origin) @ h))
+            else:
+                centre = self.data.geom_xpos[g] + rot @ self.model.geom_aabb[g, :3]
+                half = np.abs(rot) @ self.model.geom_aabb[g, 3:]
+                if centre[2] + half[2] < low or centre[2] - half[2] > high:
+                    continue
+                far = float((centre[:2] - origin) @ h + np.abs(h) @ half[:2])
+            if far > best:
+                best, geom = far, g
+        return best, None if geom is None else self.model.body(int(self.model.geom_bodyid[geom])).name
 
     def update(self, s, x0, h):
         """Returns (landed this tick, front planted ankle along h from x0, last stride or None)."""

@@ -344,3 +344,40 @@ def test_simple_task_accepts_the_crawl_band_and_rejects_a_floor_above_bounds():
         task.with_overrides(["reach.visible_shuffle_speed=0.7"])
     with pytest.raises(ValueError):
         task.with_overrides(["reach.visible_decel_band=0.7"])
+
+
+class _EdgeGuard:
+    """The guard walk's interface: scripted stop reasons, a fixed steering direction and speed."""
+
+    walk_speed = 0.25
+
+    def __init__(self, reasons):
+        self.reasons = iter(reasons)
+        self.seen = []
+
+    def step(self, state):
+        self.seen.append(state["seq"])
+        return next(self.reasons)
+
+    def direction(self, pelvis_xy, aim_xy, heading):
+        return np.array([0.6, 0.8])
+
+
+def test_guard_walk_holds_one_speed_steers_by_the_guard_and_stops_only_on_its_brake():
+    events, frames = [], []
+    # Depth 0.30 is already past the visible brake depth (0.31) and the edge floor: only the guard may stop.
+    states = [_state(30, 0.30, t=1.0), _state(31, 0.30, t=1.1), _state(32, 0.30, t=1.2)]
+    ctx = _context(states, events)
+    ctx.coordinated.edge_guard = _EdgeGuard([None, None, "guard brake"])
+    ctx.p.cmd.frame = Mock(side_effect=lambda **kw: frames.append(kw))
+
+    assert approach._phase_approach(ctx) is None
+
+    assert ctx.coordinated.edge_guard.seen == [30, 31, 32]
+    walk, idle = frames
+    assert walk["mode"] == LocomotionMode.SLOW_WALK and walk["speed"] == 0.25
+    np.testing.assert_allclose(walk["movement"], [0.6, 0.8, 0.0])
+    assert idle["mode"] == LocomotionMode.IDLE
+    request = ctx.execution.metrics["approach_stop_requests"][0]["request"]
+    assert request["reason"] == "guard brake" and request["observation_sequence"] == 32
+    assert request["last_slow_walk_command_speed"] == 0.25

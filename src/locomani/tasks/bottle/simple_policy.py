@@ -25,20 +25,22 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from locomani.backends.sonic.pose_preview import PosePreview
-from locomani.backends.sonic.primitives import HAND_CLOSED_RIGHT, HAND_OPEN, LocomotionMode, Primitives
+from locomani.backends.sonic.primitives import HAND_CLOSED_RIGHT, HAND_OPEN, LocomotionMode, Primitives, StreamMode
 from locomani.backends.sonic.streamed_arm import StreamedArm
 from locomani.pipeline.provenance import require_pose_ownership
 from locomani.primitives.arm_ik import ArmIK
 from locomani.primitives.contacts import bilateral_dex1_contact
 from locomani.primitives.supported_motion import SupportedMotion
 from locomani.tasks.bottle.assisted_target import BottleTargetObserver
+from locomani.tasks.bottle.edge_guard import EdgeGuard, facing_edge
 from locomani.tasks.bottle.ready_grasp_policy import OFFSET
 from locomani.tasks.bottle.walking_reach import WalkingReach
+from locomani.tasks.crate.bimanual_ik import BimanualIK
 
 # Arm meshes that legitimately touch the bottle in the middle-pad grasp: the Dex1
 # housing sits 0-4 mm from the held bottle (housing_clearance_review.json, 2026-09-16).
 GRASP_ENVELOPE_MESHES = ("Dex1_base_link",)
-PHASES = ("backoff", "reach", "settle", "entry", "retreat", "close", "lift", "recover")
+PHASES = ("backoff", "ready", "reach", "settle", "entry", "retreat", "close", "lift", "recover")
 CAP_CLEARING_CONTACT_HEIGHT_M = 0.035  # finger/target contact is allowed once the tool is near grip height
 HAND_FORWARD_EXTENT_M = (
     0.05  # hanging Dex1 geometry reaches this far ahead of its tool point (guard reproduction, 2026-09-16)
@@ -315,6 +317,7 @@ class SimpleGraspPolicy:
         self._walk_q = np.asarray(arm_ramp.q, dtype=float).copy()  # ramps to the configured hang during the walk
         self._walk_stamp = None
         self._edge_anchor = None  # (pelvis-to-edge distance, pelvis xy) at the last walk tick that had one
+        self.edge_guard = None  # approach_stop guard: built by prepare_walk, read by the approach loop
         self.context = {}
         self.stats = execution.metrics.setdefault(
             "simple", dict(samples=[], walking=[], phases=[], source="assisted", clock="simulation")
@@ -324,7 +327,7 @@ class SimpleGraspPolicy:
     def set_approach_settlement_observer(self, observer):
         self._settlement_observer = observer
 
-    def prepare_walk(self):
+    def prepare_walk(self, heading=None, surface=None):
         """Standing, before the first step: both jaws open, both arms in the walking hang.
 
         Ramping the arms during the walk recorded a wrist turn with no visual
@@ -336,6 +339,8 @@ class SimpleGraspPolicy:
         """
         p, simple = self.p, self.simple
         p.cmd.set_hands(left=HAND_OPEN.copy(), right=HAND_OPEN.copy())
+        if simple.approach_stop == "guard":
+            return self._prepare_guard_walk(heading, surface)
         goal = hanging_arms(self._walk_q, simple)
         state = p.obs()
         began = float(state["t"])
@@ -360,6 +365,26 @@ class SimpleGraspPolicy:
                 self.stats["prepare_walk"] = dict(seconds=stamp - began, arm_error_rad=arms_err, reached=bool(reached))
                 return
 
+    def _prepare_guard_walk(self, heading, surface):
+        """approach_stop guard: the arms go back to the walking policy, as in the warehouse walk
+        (crate/expert.py HangingWalk) -- no upper-body joints on the wire, so the planner's own swing drives them --
+        and the brake watches the table edge the heading walks into."""
+        if heading is None or surface is None or "half_extent" not in surface:
+            raise ValueError("simple guard walk needs the approach heading and the table footprint (half_extent)")
+        p = self.p
+        p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
+        p.cmd.upper_body = None
+        p.cmd.set_upper_body_vel(None)
+        edge = facing_edge(surface["xy"], surface["half_extent"], heading)
+        self.edge_guard = EdgeGuard(self.ik.model, edge, float(self.task.target.surface_top), self.simple)
+        self.stats["prepare_walk"] = dict(arms="walking policy", edge_axis=edge.axis.tolist(), edge_line=edge.line)
+
+    def _hold_walk_arms(self):
+        """Keep referencing the walking hang; with the guard walk the walking policy owns the arms instead."""
+        if self.edge_guard is None:
+            self.p.cmd.set_upper_body(self._walk_q.copy())
+            self.p.cmd.set_upper_body_vel(np.zeros(17))
+
     def walk_tick(self, state, *, edge_distance=None, navigation_heading=None, navigation_target=None):
         """Hold the hanging arms for the whole walk; only the sweep and the target observer run.
 
@@ -378,13 +403,12 @@ class SimpleGraspPolicy:
             self._edge_anchor = (float(edge_distance), np.asarray(self.p.pelvis_xy(state), dtype=float).copy())
         target = self.target.observe(state)
         # The arms hold the walking hang taken in prepare_walk: nothing moves during the walk.
-        wanted = self._walk_q.copy()
         self.error = self._clear(state, np.asarray(state["joints"], dtype=float), True)
         if self.error:
-            self.stats["failure"] = dict(state=state, reference=wanted, reason=self.error)
+            reference = None if self.edge_guard is not None else self._walk_q.copy()
+            self.stats["failure"] = dict(state=state, reference=reference, reason=self.error)
             return False
-        self.p.cmd.set_upper_body(wanted)
-        self.p.cmd.set_upper_body_vel(np.zeros(17))
+        self._hold_walk_arms()
         if stamp - self._walk_logged >= 1.0 / self.cfg.walk_plan_hz:
             self._walk_logged = stamp
             self.stats["walking"].append(
@@ -423,6 +447,8 @@ class SimpleGraspPolicy:
             joints = np.asarray(state["joints"], dtype=float)
             pelvis = np.asarray(state["pelvis"]["pos"], dtype=float)
             self.target.observe(state)  # keep the camera observer fed while standing
+            if self.edge_guard is not None:
+                self.edge_guard.band_gap(state)  # the step after IDLE is where the band front comes closest
             if began is None:
                 began = stamp
             if previous is not None:
@@ -435,10 +461,13 @@ class SimpleGraspPolicy:
                 still = leg_speed <= simple.stand_leg_speed_rad_s and pelvis_speed <= simple.stand_pelvis_speed_m_s
                 quiet = quiet + dt if still else 0.0
             previous = (stamp, joints, pelvis)
-            self.p.cmd.set_upper_body(self._walk_q.copy())
-            self.p.cmd.set_upper_body_vel(np.zeros(17))
+            self._hold_walk_arms()
             settled = still and quiet >= simple.stand_settle_s
             if settled or stamp - began >= simple.stand_settle_timeout_s:
+                if self.edge_guard is not None:
+                    # Written here, not at the takeover: the stand gates after the approach can end the round first.
+                    self.edge_guard.finish(state)
+                    self.stats["guard"] = self.edge_guard.record()
                 feet = None
                 try:
                     feet = stance_geometry(self.ik, joints)
@@ -525,6 +554,76 @@ class SimpleGraspPolicy:
         pregrasp = pregrasp_point(grip, direction, self.simple.pregrasp_back_m, self.simple.pregrasp_up_m)
         return grip, direction, pregrasp
 
+    def _lift_ready(self):
+        """approach_stop guard, right after the takeover: the warehouse's lifted ready (crate/expert.py
+        prepare_stationary_ready). One whole-arm pose solved from the walking arms (BimanualIK.lifted_ready), then a
+        smoothstep joint blend with the waist locked and the legs and root held, so the forearms fold up close to the
+        body. A straight Cartesian rise kept the hands where they hung and swung the shoulders out instead (53-68 deg,
+        elbows 13-16 cm outboard; user review of bottle_simple_guard_straight_20260925). None once the hands are up,
+        else the failed round."""
+        p, simple = self.p, self.simple
+        solver = BimanualIK(
+            self.ik,
+            waist_pitch_max=self.cfg.waist_pitch_max,
+            waist_dofs="all",
+            elbow_min_deg=simple.ready_elbow_min_deg,
+        )
+        start = np.asarray(self.arm.q, dtype=float).copy()
+        tool = (simple.ready_tool_forward_m, simple.ready_tool_lateral_m, simple.ready_tool_up_m)
+        ready = solver.lifted_ready(tool, simple.ready_pitch_deg, start)
+        record = self.stats["ready"] = dict(
+            tool=list(tool),
+            pitch_deg=simple.ready_pitch_deg,
+            errors_m=ready.errors.tolist(),
+            start=start[12:29].tolist(),
+            reference=ready.joints[12:29].tolist(),
+        )
+        if float(np.max(ready.errors)) > 0.02:
+            # The warehouse stops the run here (the pose must be delivered, not approximated); a stand is per round.
+            return self._fail("simple lifted ready pose missed by the solver", errors_m=ready.errors.tolist())
+        key = self.task.target.key
+        delta = ready.joints - start
+        state = p.obs()
+        obj0 = np.asarray(state["objects"][key]["pos"], dtype=float).copy()
+        began = previous = float(state["t"])
+        self.stats["phases"].append(dict(phase="ready", t=began, seq=state.get("seq")))
+        self.execution.enter("simple.ready")
+        wall_progress = time.monotonic()
+        while True:
+            state = p.obs()
+            stamp = float(state["t"])
+            if stamp == previous:
+                if time.monotonic() - wall_progress > 2.0:
+                    return self._fail("simple physical clock stalled", phase="ready")
+                time.sleep(0.005)
+                continue
+            wall_progress = time.monotonic()
+            if stamp < previous or stamp - previous > 0.5:
+                return self._fail("simple physical state clock gap", dt=stamp - previous, phase="ready")
+            previous = stamp
+            if state.get("fallen", False):
+                return self._fail("simple fell during the ready lift")
+            moved = float(np.linalg.norm(np.asarray(state["objects"][key]["pos"])[:2] - obj0[:2]))
+            if moved > simple.disturb_limit_m:
+                return self._fail("simple bottle knocked before the close", moved_m=moved, phase="ready")
+            u = min(1.0, (stamp - began) / simple.ready_seconds)
+            q = start + (3 * u * u - 2 * u**3) * delta
+            velocity = (6 * u - 6 * u * u) / simple.ready_seconds * delta
+            candidate = np.asarray(state["joints"], dtype=float).copy()
+            candidate[12:29] = q[12:29]
+            reason = self._clear(state, candidate, False)
+            if reason:
+                return self._fail(reason, phase="ready", progress=u)
+            self.arm.q = q
+            self.arm._push(q, reference_velocity=velocity, reference_time=stamp)
+            if stamp - began >= simple.ready_seconds + simple.ready_hold_s:
+                record.update(
+                    seconds=stamp - began,
+                    tools=self._measured_tools(state).tolist(),
+                    joints=np.asarray(state["joints"], dtype=float)[12:29].tolist(),
+                )
+                return None
+
     def _run(self):
         p, cfg, simple = self.p, self.cfg, self.simple
         key, side = self.task.target.key, "right"
@@ -536,8 +635,7 @@ class SimpleGraspPolicy:
             # the grace. Otherwise wait for a fresh admission before failing.
             if time.monotonic() - seen_at > simple.target_grace_s:
                 return self._fail("simple target not visible in student cameras", camera=dict(self.target.diagnostics))
-            self.p.cmd.set_upper_body(self._walk_q.copy())
-            self.p.cmd.set_upper_body_vel(np.zeros(17))
+            self._hold_walk_arms()
             time.sleep(0.02)
             state = p.obs()
         self.stats["target_age_s"] = self.target.age()
@@ -562,6 +660,21 @@ class SimpleGraspPolicy:
         self.stats["takeover"] = dict(switch=dict(self.arm.switch_diagnostics), braking=self.arm.brake_to_stop())
 
         state = p.obs()
+        guard_walk = self.edge_guard is not None
+        if guard_walk:
+            gap = self.edge_guard.finish(state)
+            self.stats["guard"] = self.edge_guard.record()
+            if gap < 0:
+                # The ready lift starts from here: from past the edge it would sweep the top, and there is no pull-back.
+                return self._fail(
+                    "simple body past the table edge at the takeover",
+                    band_gap_m=gap,
+                    body=self.edge_guard.final["band_body"],
+                )
+            failure = self._lift_ready()
+            if failure is not None:
+                return failure
+            state = p.obs()
         actual = self._measured_tools(state)
         targets = actual.copy()
         posture = np.asarray(self.arm.q, dtype=float).copy()
@@ -601,8 +714,12 @@ class SimpleGraspPolicy:
             else self._edge_anchor[0] - float((pelvis_xy - self._edge_anchor[1]) @ forward[:2])
         )
         hand_edge = pelvis_edge - hand_ahead
-        retract = self._edge_anchor is not None and needs_retract(
-            start_tool[2], hand_edge, table_top, simple.raise_table_margin_m, simple.retract_edge_margin_m
+        retract = (
+            not guard_walk
+            and self._edge_anchor is not None
+            and needs_retract(
+                start_tool[2], hand_edge, table_top, simple.raise_table_margin_m, simple.retract_edge_margin_m
+            )
         )
         # A hand at the edge backs off at constant speed first (a minimum-jerk
         # start left it 5 ticks at rest while the wander closed the last 4 mm,
@@ -610,11 +727,18 @@ class SimpleGraspPolicy:
         backoff_to = start_tool - simple.retract_m * forward if retract else start_tool
         raised = raise_point(backoff_to, forward, height, simple.raise_forward_m, simple.raise_outboard_m)
         path = [backoff_to, raised, pregrasp]
+        ready = None
+        if guard_walk:
+            # The hands are already up (_lift_ready): the right one slides on from where it measured, the left one
+            # holds its ready point for the whole grasp.
+            ready = actual.copy()
+            raised = actual[1].copy()
+            path = [raised, pregrasp]
         # Fingers stay down while the hand goes up (a vertical lift of the whole
         # hand, no palm swing); they turn level on the slide to the pre-grasp.
         hanging_rotation = Primitives._rot(state["palms"][side]["quat"])
         rotations[1] = hanging_rotation
-        reach_seconds = simple.raise_seconds + simple.pregrasp_seconds
+        reach_seconds = simple.pregrasp_seconds if guard_walk else simple.raise_seconds + simple.pregrasp_seconds
         raise_arc = polyline_length(path[:-1])
         self.stats["plan"] = dict(
             grip=grip.tolist(),
@@ -630,6 +754,7 @@ class SimpleGraspPolicy:
             pelvis_edge_m=pelvis_edge,
             hand_edge_m=hand_edge,
             retract=bool(retract),
+            ready=None if ready is None else ready.tolist(),
             path=[q.tolist() for q in path],
             reach_seconds=reach_seconds,
         )

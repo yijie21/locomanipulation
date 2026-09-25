@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 
 @dataclass(frozen=True)
@@ -67,11 +67,32 @@ class SimpleGraspConfig:
     min_rise_m: float = 0.04  # measured bottle rise required at the end of the lift
     disturb_limit_m: float = 0.05  # bottle knocked further than this before the close fails the round
     lean_max_rad: float = 0.55  # torso lean cap for the supported reach
+    approach_stop: str = field(
+        default="guard", metadata={"choices": ("visible", "guard")}
+    )  # the default since 2026-09-25 (user decision; pilot bottle_simple_guard_lifted_20260925 10/10). visible = walk with the arms in the hang above, the checkpoint's speed bands and the visible depth/edge brake, and pull the hand back if it stands at the edge; guard = the warehouse walk (user, 2026-09-25): the walking policy's own arms, one constant walk_speed held in one direction (straight at the planned stand), GuardBrake at the table edge (tasks/bottle/edge_guard.py), then both hands straight up in place before the right one reaches; the hang_* and retract_* fields are not read
+    walk_speed: float = 0.25  # guard: SLOW_WALK command from the first step to the brake; v1.1 carries 4.5 +- 2.5 cm after IDLE at 0.25, the least of any speed measured (walk scene, 2026-09-23)
+    guard_extra_m: float = 0.20  # guard: how far past the front planted ankle the table-band front ends after IDLE; 0.20 is the warehouse calibration for the feet, stats.guard.realised_extra_m measures it on this line
+    guard_margin_m: float = 0.03  # guard: the band front is to stop at least this far behind the edge
+    guard_stride0_m: float = (
+        0.14  # guard: floor of the predicted next stride (the measured last strides at 0.25 are 2-22 cm)
+    )
+    guard_band_below_m: float = 0.12  # guard: robot geometry from this far below the table top ...; the dining table's top and apron reach 0.12 m down at the edge, its legs are 9 cm further in
+    guard_band_above_m: float = 0.03  # ... to this far above it must stay behind the edge
+    ready_tool_forward_m: float = 0.16  # guard: the warehouse's lifted ready (crate visual.ready_tool, BimanualIK.lifted_ready): both tool points this far ahead of the pelvis ...
+    ready_tool_lateral_m: float = 0.16  # ... this far to each side (the walking policy's hang is 0.21) ...
+    ready_tool_up_m: float = 0.05  # ... and this far above it, reached by a joint-space blend with the waist locked; the straight Cartesian rise that kept the hands where they hung raised the shoulders out to 53-68 deg with the elbows 13-16 cm outboard (bottle_simple_guard_straight_20260925, user review)
+    ready_pitch_deg: float = 30.0  # guard: palms pitched this far below level in the ready pose
+    ready_elbow_min_deg: float = -60.0  # guard: elbow floor of the ready solve; the forearms fold above level, which the 5 deg floor of the reach solvers forbids (test_crate_lifted_ready)
+    ready_seconds: float = 2.5  # guard: duration of the smoothstep joint blend from the walking arms to the ready pose (the warehouse's 125 frames)
+    ready_hold_s: float = 0.3  # guard: both hands held in the ready pose this long before the right hand slides to the pre-grasp; the left one stays there for the whole grasp
 
     def __post_init__(self):
         for f in fields(self):
             value = getattr(self, f.name)
-            if type(value) not in (int, float) or not math.isfinite(value):
+            if "choices" in f.metadata:
+                if value not in f.metadata["choices"]:
+                    raise ValueError(f"simple.{f.name} must be one of {f.metadata['choices']}, not {value!r}")
+            elif type(value) not in (int, float) or not math.isfinite(value):
                 raise ValueError(f"simple.{f.name} must be a finite number")
         if not (
             0.0 <= self.stand_settle_s <= 3.0
@@ -145,3 +166,24 @@ class SimpleGraspConfig:
             raise ValueError("simple minimum rise must be within the lift and the disturbance limit 2-10 cm")
         if not 0.0 <= self.lean_max_rad <= 1.22:
             raise ValueError("simple lean cap must be within [0, 1.22] rad")
+        if not 0.20 <= self.walk_speed <= 0.80:
+            raise ValueError("simple guard walk speed must be 0.20-0.80 (v1.1 does not move below 0.20)")
+        if not (
+            0.0 <= self.guard_extra_m <= 0.40
+            and 0.0 <= self.guard_margin_m <= 0.10
+            and 0.05 <= self.guard_stride0_m <= 0.30
+            and 0.0 <= self.guard_band_below_m <= 0.40
+            and 0.0 <= self.guard_band_above_m <= 0.10
+            and 0.0 <= self.ready_hold_s <= 2.0
+            and 0.0 <= self.ready_tool_forward_m <= 0.40
+            and 0.05 <= self.ready_tool_lateral_m <= 0.40
+            and -0.20 <= self.ready_tool_up_m <= 0.40
+            and -10.0 <= self.ready_pitch_deg <= 90.0
+            and -60.0 <= self.ready_elbow_min_deg <= 5.0
+            and 1.0 <= self.ready_seconds <= 6.0
+        ):
+            raise ValueError(
+                "simple guard must be extra 0-40 cm, margin 0-10 cm, stride floor 5-30 cm, band 0-40 cm below "
+                "and 0-10 cm above the top, ready hold 0-2 s; the ready pose 0-40 cm ahead, 5-40 cm out, -20..40 cm "
+                "up, palm -10..90 deg, elbow floor -60..5 deg, blend 1-6 s"
+            )

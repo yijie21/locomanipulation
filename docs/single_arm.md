@@ -1,6 +1,6 @@
 # 单臂：从采集到评测
 
-走近桌子、单手抓瓶。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
+走近桌子、单手抓瓶（默认走近：手臂自然下垂、0.25 恒速、按桌边守线刹车，停后双手原地抬起再抓，`reach.simple.approach_stop`）。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
 为什么这么设计、试过什么被否掉了，在 [单臂详解](single_arm_design.md)；
 哪天跑出什么数，在 [单臂台账](ledger/bottle.md)。
 
@@ -47,7 +47,7 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/sc
 运行开始时它被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，**下游阶段读的永远是那份副本**。
 
 现有单臂实验：`bottle_simple_200`（200 集 + 10k 步 + 100 局）、`bottle_simple_gate8_20260925`
-（8 局固定 case bank `configs/cases/`，闸门用；旧版 `bottle_simple_gate8` 读的 bank 在未入库的 `outputs/`）、`bottle_simple_smoke`（全链路冒烟）、`pick_place`。
+（8 局固定 case bank `configs/cases/`，闸门用，钉旧走近 `approach_stop: visible`；旧版 `bottle_simple_gate8` 读的 bank 在未入库的 `outputs/`）、`bottle_simple_smoke`（全链路冒烟）、`pick_place`。
 
 ## 3. 新建一次实验
 

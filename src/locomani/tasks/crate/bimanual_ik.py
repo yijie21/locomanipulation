@@ -66,6 +66,28 @@ class BimanualIK:
                 self.lo[index] = max(self.lo[index], -np.radians(50))
                 self.hi[index] = min(self.hi[index], np.radians(50))
 
+    def lifted_ready(self, ready_tool, pitch_deg, start) -> BimanualSolution:
+        """Both hands lifted in place: tool points at `ready_tool` (forward, lateral mirrored, up from the pelvis)
+        with the palms pitched `pitch_deg` below level, solved from `start` with the waist locked. The forward
+        ready pose put the fingertips 0.42 m ahead, on the warehouse box's near wall at stances under 0.51 m
+        (2026-09-24); this keeps them within 0.20 m through a joint blend from the walking arms. The forearms fold
+        up, so the solver needs elbow_min_deg below 0 (-60). The caller judges `errors`."""
+        forward, lateral, up = (float(v) for v in ready_tool)
+        attitude = Rotation.from_euler("y", float(pitch_deg), degrees=True).as_matrix()
+        lo, hi = self.lo.copy(), self.hi.copy()
+        lo[12:15], hi[12:15] = 0.0, 0.0
+        start = np.asarray(start, dtype=float)
+        return self.solve(
+            start,
+            [[forward, lateral, up], [forward, -lateral, up]],
+            [attitude, attitude],
+            iterations=250,
+            rot_weight=0.15,
+            posture=start,
+            posture_weight=0.01,
+            joint_limits=(lo, hi),
+        )
+
     def tool_poses(self, joints):
         poses = [self.ik.fk(joints, side) for side in self.sides]
         return np.array([p + r @ self.offset for p, r in poses]), np.array([r for _, r in poses])
