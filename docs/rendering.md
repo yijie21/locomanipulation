@@ -339,8 +339,10 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 
 - 只支持双臂 assisted 专家（`visual.pose_source: assisted`），它读的是黑色占位帧 `PlaceholderCamera`；
   markers 专家要读像素，`expert.run` 会直接拒绝。
-- 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出
-  （[跑法](warehouse.md#5-跑)）；没渲过的离线运行 convert 会拒绝。VLA 闭环评测要实时出图，仍须 `live`。
+- 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出，
+  `eval.image_source: isaac` 的运行改由 `scripts/render_dataset_cameras_isaac.sh` 用 Isaac 渲（只渲成功局、只渲 25 Hz 取到的行）
+  （[跑法](warehouse.md#5-跑)）；没渲过、或渲染器与 `eval.image_source` 不一致的离线运行 convert 会拒绝。
+  VLA 闭环评测的图像走下节的 Isaac 镜像，MuJoCo 物理照样 `offline`。
 - 渲染慢先查最大的单块显示网格（`max(model.mesh_facenum)`）：超过 349,525 面就无损拆块，不减面，见 [Blender 场景](blender_scenes.md#7-常见错误对照)。 VLA 闭环的图像改走按需 Isaac 镜像（物理循环里不渲染，TODO 4.7.9，进行中）。
 
 ## VLA 闭环的 Isaac 画面（按需镜像）

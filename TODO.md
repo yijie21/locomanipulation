@@ -169,7 +169,11 @@
   - [-] 4.7.3 VLA 延迟补偿起点改为图像快照时刻（现为取观测时刻 `vla_client.py:204`）；每次推理记录图像年龄（图像 vs 本体状态差）（放弃 2026-09-24：被 4.7.9 的按需 Isaac 镜像替代，用户定）
   - [-] 4.7.4 验收：warehouse 专家实时渲染 20 局，RTF 0.35 → ≥0.9，图像年龄 p50/p90，成功率对照离线基线 6/20（放弃 2026-09-25：是 4.7.2 异步 MuJoCo 渲染的验收，4.7.2 已被镜像替代；RTF 实测并入 4.7.7）
   - [-] 4.7.5 回归：bottle 用现有 checkpoint 跑 VLA 闭环，异步渲染 vs 同步渲染不应变（该场景渲染 1.3 ms）（放弃 2026-09-25：对比的"异步 MuJoCo 渲染"不再实现；Isaac 路径的回归由 4.7.9.8 一致性闸门与 4.7.6 覆盖）
-  - [ ] 4.7.6 有 warehouse / 双臂 checkpoint 后（1.19）用实时出图跑闭环评测；策略服务与 sim 渲染分 GPU
+  - [~] 4.7.6 有 warehouse / 双臂 checkpoint 后（1.19）用实时出图跑闭环评测；策略服务与 sim 渲染分 GPU
+    - [~] 4.7.6.1 `box_room_grasp_200_cap120_20260925`（用户 2026-09-25；`box_room_grasp_200_20260925` 上限 800 局在产出率 < 0.25 时不够，7/30 时停掉换名）：采 200 成功局 → Isaac 补渲三路数据集相机 → convert → train 10000 步 → 100 局闭环（Isaac 镜像）；编排 `run_overnight.sh --from convert --isaac-gpu 1`，日志 `<run>/pipeline.log`
+      - 用户 2026-09-25：只用三路相机（ego + 双腕），第三视角不作为 VLA 输入
+    - [ ] 4.7.6.2 待验证：`eval.initial_token`（crate 的）与 warehouse 开局姿势是否一致（沿用基线值，未核对）
+    - [ ] 4.7.6.3 待验证：RTX 连续逐帧渲（数据集）与按需跳着渲（镜像）是否同图（即 4.7.9.8）；训练/评测同一 `IsaacView`，但时序不同
   - [ ] 4.7.7 实时渲染 RTF 实测：`warehouse_textured` + `backend.render: live` 起栈跑几局，量 sim 的 RTF（期望 ≥0.9，旧场景 0.35）；结果决定 4.7.2/4.7.3 是现在做还是作为结构性保险后置（用户定）
   - [ ] 4.7.8 建场景闸门：任何单块显示网格 3×面数 > 2^20（> 349,525 面）时无损拆块或报错；场景建完测三路相机一组渲染时间，超预算即失败（旧 `warehouse` 场景是否下线一并定）
   - [~] 4.7.9 VLA 闭环图像改走 isaac-sync 分支的按需 Isaac 镜像（worktree `/workspace/code/locomanipulation-isaac-sync-20260923`，其 TODO 3.4.6–3.4.8；评测时 MuJoCo 用 `backend.render: offline`，物理循环里不渲染）。定了则 4.7.2/4.7.3 被替代，4.7.7 只服务 MuJoCo 基线臂和采集——用户 2026-09-24 定：走 Isaac 镜像，Isaac 用 GPU1，在 main 开发，从分支参考/移植。**状态索引（做了 / 没做 / 分支对账）：`docs/handoff/isaac-vla-mirror-20260925.md`**
@@ -181,7 +185,7 @@
     - [x] 4.7.9.6 镜像服务（RENDER_PY、GPU1）：请求 → 渲最新状态全部 video_keys → 回图 + seq（分支 3.4.7）（2026-09-24：`sim/isaac/mirror.py` + `scripts/run_isaac_mirror.sh`，端口 `TF_ISAAC_MIRROR_PORT` 5558+10i，从 eval 栈状态文件取场景/端口，场景 Isaac stage 与曝光取 `scenes.yaml` 的 `isaac` 条目；协议单测 `test_isaac_mirror.py`；**未对真实栈跑过**；未提交）
     - [x] 4.7.9.7 `ObsBuilder` 图像源开关 mujoco / isaac，本体状态、t0、延迟补偿不动（分支 3.4.8）（2026-09-24：`VlaConfig.image_source` mujoco|isaac，lockstep+isaac 加载即拒；单臂 async/blocking 与双臂 `vla_rounds --image-source` 都接上，双臂 HONOURED 加入；`test_obs_builder_image_source.py`；未提交）
     - [ ] 4.7.9.8 在线/离线一致性闸门：镜像评测记每张图的 seq，离线同 seq 重渲对比，容差取同脚本两次的差（分支 3.4.10）
-    - [ ] 4.7.9.9 Isaac 数据集副本 `sim/isaac/render_dataset.py` 移植，与 main 的 MuJoCo 补渲 `render_dataset_cameras` 定分工
+    - [x] 4.7.9.9 Isaac 数据集副本 `sim/isaac/render_dataset.py` 移植，与 main 的 MuJoCo 补渲 `render_dataset_cameras` 定分工（2026-09-25：不移植副本，改为转换前 Isaac 填 session 占位帧 `sim/isaac/render_dataset_cameras.py`；convert 按 `eval.image_source` 核对渲染器；`run_overnight.sh --isaac-gpu`）
     - [x] 4.7.9.10 镜像对真实 eval 栈冒烟：warehouse_textured 起 eval 栈（GPU0）+ 镜像（GPU1），用 MirrorClient 连续取图，核对 seq 递增、状态年龄、渲染耗时，并与同 qpos 的 MuJoCo 图并排；不需要 checkpoint（2026-09-24：栈与镜像都在 GPU1（GPU0 被别的项目占 72%）；50/50 应答、seq 严格递增、状态年龄 p50 11 / p90 20 ms、渲染 p50 98 / p90 120 ms；同 seq 的 MuJoCo 并排几何一致；SIGTERM 正常退出；`outputs/runs/isaac_mirror_smoke_20260924/eval/mirror_smoke/`，台账 crate.md 末节）
 - [~] 4.8 协作者采集仍摔倒：核实用户的猜测"自编 SONIC deploy 二进制没同步到文档"（用户 2026-09-24）
   - [x] 4.8.1 静态核对（2026-09-24）：本机 9 个 deploy 二进制全部从只存在本机的 `lockstep-port` 分支编出（上游 1983e888 + 6 个未推送的本地提交 + 工作树补丁）；setup.md 的做法（clone 上游 main 不钉版本，现为 b042411，再打 4 个补丁）本机从没编过、跑过。文档版缺 SONIC_AUTO_START/`--default-motion`（每个 eval 栈都要，上游静默忽略未知参数）、DDS domain（`sonic_dds_domain.patch` 已打不上上游 main）、planner 初始化超时 10 s（上游 5 s）。已排除：SONIC 权重与 HF 逐字节一致；肩 roll 默认角两边编进去的都是 ±0.2；上游 1983e888 之后的 deploy 改动默认不改行为。MuJoCo 不钉版本，新装会是 3.14（本仓库在 3.11.0 上测）

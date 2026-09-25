@@ -584,3 +584,31 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - gate8 闸门和 `tests/gate/baseline_simple.json` 仍是旧走法；guard 多一个 `ready` 阶段，拿旧基线比必然 FAIL（5.8.1）。
 - 旧走法的代码（`hang_*`、三档速度与可见深度刹车、`retract_*`）删不删；删掉的话，钉 `visible` 的 9 份实验文件会跟着失效（5.8.2）。
 - 新默认采到的数据还没跑过转换 → 训练 → 闭环评测。假设：`eval.initial_token` 不用改，因为开局仍是规划器自己的下垂姿势（未验证，TODO 5.10）。
+
+## 2026-09-25 warehouse VLA 的训练图改由 Isaac 渲染，与闭环镜像同源；只用三路相机
+
+### 目标与约束的变化
+
+- 用户要采 200 集 warehouse 双臂抓取数据，用 Isaac 渲染的画面作为 VLA 的训练输入，转换后自动训练，再做 100 局闭环评测。
+- 用户定：VLA 只用三路相机（ego_view、left_wrist、right_wrist），第三视角不作为输入，只用于人看的视频。
+
+### 决策
+
+1. **Isaac 在转换前填 session 的占位帧**（`sim/isaac/render_dataset_cameras.py`、`scripts/render_dataset_cameras_isaac.sh`），
+   沿用 main 上 MuJoCo 补渲的接缝：逐行按 priv_seq 找到 trace 里的 qpos，画面来自闭环镜像用的同一个 `IsaacView`（同一 stage、同一曝光）。
+2. **只渲 convert 会读的部分**：只渲成功局，只渲 50→25 Hz 抽帧取到的行，中间行重复前一行（早 20 ms）。每局约 940 次渲染、86–90 s（GPU1，三路 p50 76–85 ms）。
+3. **convert 按 `eval.image_source` 核对渲染器**：marker 记 `renderer`，训练图与评测图不同源时直接拒绝；
+   MuJoCo 补渲拒绝 `image_source: isaac` 的运行，Isaac 补渲拒绝其余运行。
+4. **只处理已跑完的批次**，可以在另一张卡上与采集并跑、反复执行；`run_overnight.sh --isaac-gpu N` 把 Isaac 补渲和评测镜像放到这张卡上。
+
+### 被否决的方案（及原因）
+
+- 移植分支的 `sim/isaac/render_dataset.py`（转换之后另做一份数据集副本）：它依赖转换器裁尾和抽帧的细节，只能在采集和转换都结束后才开始；
+  转换前填 session 用的是现有接缝和守卫，还能和采集并跑，采集跑完时渲染也基本跟上了。
+- 每行都渲：成本翻倍（每局约 3 分钟），多出来的行都会被转换器的抽帧丢掉。
+- 第三视角作为第 4 路输入：用户不要。
+
+### 未决（不是决策）
+
+- 数据集逐帧连续渲染，镜像按需隔 0.4 s 渲染，RTX 在两种方式下出的图是否一致还没验证（TODO 4.7.9.8、4.7.6.3）。
+- warehouse 的产出率只有 0.20–0.23，停得远的局（深度 ≥ 0.52 m）0/26；`stand_off` 0.5 → 0.44 的对照实验待用户定。

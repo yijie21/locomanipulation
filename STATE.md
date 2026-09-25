@@ -1,7 +1,7 @@
 # STATE — 2026-09-25（会话：bottle 走近改成 warehouse 方式并设为默认）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `4655254`；本 handoff 提交在它之上，未推送。
-没有运行中的栈，GPU0 空闲；GPU1 上约 3.7 GB 是别的项目的 `depth_server.py`（pid 667913），不是我们的。理由与被否决的方案见 DECISIONS 最后一节。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `4655254`；其上的 `e887520`（handoff）和 Isaac 数据集渲染的提交都未推送。
+**运行中（2026-09-25 起，TODO 4.7.6.1）**：`box_room_grasp_200_cap120_20260925` 采集栈占实例 0 / GPU0，Isaac 补渲轮次占 GPU1，之后自动 convert → train → 100 局闭环（编排在会话 scratchpad，进度看 `<run>/pipeline.log`、`agent.out`）；`box_room_grasp_200_20260925` 是上限不够时停掉的半截（7/30），不用。GPU1 上 `depth_server.py` 与 SimpleRoboJev vision worker 是别的项目的。理由与被否决的方案见 DECISIONS 最后一节。
 
 ## 工作树
 

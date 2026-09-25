@@ -30,6 +30,7 @@ VLA 要图像输入。MuJoCo 在物理循环里同步渲染，渲染慢时物理
 | 4.7.9.5 | 特权状态流带完整 `qpos`，与 state trace 同 seq 行逐位相同 | `sim/privileged_pub.py` | `test_privileged_qpos.py` |
 | 4.7.9.6 | 镜像服务：REQ/REP，`TF_ISAAC_MIRROR_PORT` = 5558 + 10·instance；从 eval 栈状态文件取场景和端口；场景的 Isaac stage 与曝光取 `configs/scenes.yaml` 的 `isaac` 条目；每次渲染记 `<run>/eval/isaac_mirror.jsonl` | `sim/isaac/mirror.py`、`scripts/run_isaac_mirror.sh`、`sim/ports.py`、`pipeline/run_context.isaac_scene` | `test_isaac_mirror.py`（协议、出错回复、镜像无应答后客户端恢复） |
 | 4.7.9.7 | `VlaConfig.image_source: mujoco \| isaac`；`ObsBuilder` 先读本体再向镜像要图；单臂 async / blocking 与双臂 `vla_rounds --image-source` 都接上；`lockstep` + `isaac` 加载即拒 | `backends/sonic/{vla_config,vla_obs,vla_client,vla_round}.py`、`tasks/crate/vla_rounds.py`、`pipeline/eval_crate_closed_loop.py` | `test_obs_builder_image_source.py`、`test_eval_config_reaches_the_client.py`、`test_crate_vla_eval.py` |
+| 4.7.9.9 | Isaac 数据集相机：训练图和评测图同源。按 main 的 MuJoCo 补渲接缝做（转换前覆盖 session 占位帧，逐行 priv_seq → trace qpos），不移植分支的"转换后副本"；只渲成功局、只渲 50→25 Hz 取到的行；marker 记 `renderer`，convert 按 `eval.image_source` 拒绝不同源 | `sim/isaac/render_dataset_cameras.py`、`scripts/render_dataset_cameras_isaac.sh`、`pipeline/render_dataset_cameras.require_rendered`、`run_overnight.sh --isaac-gpu` | `test_isaac_render_dataset_cameras.py`、`test_render_dataset_cameras.py`；`box_room_grasp_200_20260925` 批 0 两局实渲（948 / 939 次渲染，p50 76 / 84 ms，每局 86–90 s），五行×三路与 MuJoCo 同状态并排几何一致（`outputs/renders/isaac_dataset_check_20260925/`）；与采集并跑时采集 RTF 0.91–0.97 不变 |
 | 4.7.9.10 | 对真实 eval 栈冒烟（无 checkpoint） | `scripts/experiments/isaac_mirror_smoke_20260924.py`，run `outputs/runs/isaac_mirror_smoke_20260924` | 50/50 应答、seq 严格递增、状态年龄 p50 11 / p90 20 ms、渲染 p50 98 / p90 120 ms（栈与镜像同在 GPU1）；同 seq MuJoCo 并排一致；SIGTERM 正常退出 |
 
 提交：`1bc335f`（渲染根因 + 镜像全部）、`121303e`（world_lift）。`render_isaac_warehouse.sh` 也改从
@@ -40,7 +41,6 @@ VLA 要图像输入。MuJoCo 在物理循环里同步渲染，渲染慢时物理
 | TODO | 内容 | 为什么还没做 / 卡在哪 |
 |---|---|---|
 | 4.7.6 | 用 Isaac 画面跑真实 VLA 闭环评测 | 没有 warehouse / 双臂 checkpoint（1.19）。前置：采集 → Isaac 重渲数据集 → 训练 |
-| 4.7.9.9 | Isaac 数据集副本（训练图也来自 Isaac，和评测图同源）；与 main 的 MuJoCo 补渲 `render_dataset_cameras` 定分工 | 分支的 `sim/isaac/render_dataset.py` 未移植。不做的话训练看 MuJoCo 图、评测看 Isaac 图，域差未测 |
 | 4.7.9.8 | 在线 / 离线一致性闸门：镜像记的 seq 离线重渲比像素，容差取同脚本两次的差 | RTX 有跨帧状态，按需跳着渲与逐帧渲是否同图未验证；eval 栈默认不写 state trace，要先打开 |
 | 4.7.9.2 | 分支对账 | 部分完成，见下节 |
 | 4.7.7 | `warehouse_textured` + `backend.render: live` 起栈实测 RTF | 只做了离线测速（3.2 ms）。影响的是 MuJoCo 实时采集和 MuJoCo 对照臂，不影响镜像 |
@@ -63,7 +63,7 @@ VLA 要图像输入。MuJoCo 在物理循环里同步渲染，渲染慢时物理
 | `bench_render.py` 的 `--state-trace`、多 gap、多路相机 | 已移植，另加 `--rtx-setting` |
 | `world_lift` 空目录修复 | 已移植（测试按 main 的 `trace_rows` 接口重写） |
 | 按需镜像设计（DECISIONS 2026-09-23 四节） | 已按它实现（3.4.6–3.4.8 对应这里 4.7.9.5–4.7.9.7） |
-| `sim/isaac/render_dataset.py`（Isaac 数据集副本）及测试 | **未移植**（4.7.9.9） |
+| `sim/isaac/render_dataset.py`（Isaac 数据集副本）及测试 | 不移植：4.7.9.9 改在转换前填 session（main 的接缝，不依赖转换器的裁尾/抽帧细节，能与采集并跑） |
 | `CAMERA_CONFIGS` 挪到 `schema.py` | 不采用：main 已在 `sim/dataset_cameras.py`，两处不能并存 |
 | 台账 `docs/ledger/bottle.md` §38（T_render）、§39（副本流水线） | **未移植**；编号与 main 新的 §38（deploy 文档版）冲突，合并时要重编号 |
 | Isaac 资产在 `outputs/isaac_sync_assets/`（bottle 场景） | 未动；main 用共享 `assets/isaac/`（warehouse） |

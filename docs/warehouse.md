@@ -68,6 +68,8 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 \
   "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/my_box
 # 只在 collect.record: true 时：先补渲数据集相机，再转换
 bash scripts/render_dataset_cameras.sh outputs/runs/my_box --gpu 0
+#   eval.image_source: isaac 的运行改用 Isaac 补渲（上一行不跑）；可在采集时另一张卡上反复跑，只动已跑完的批
+bash scripts/render_dataset_cameras_isaac.sh outputs/runs/my_box --gpu 1
 bash scripts/convert_data.sh           outputs/runs/my_box
 # 可选：Isaac 并排预览，写 <run>/previews_isaac/
 bash scripts/render_isaac_warehouse.sh outputs/runs/my_box
@@ -77,6 +79,11 @@ bash scripts/render_isaac_warehouse.sh outputs/runs/my_box
 `render_dataset_cameras.sh` 按每行记下的 sim seq（session 的 `priv_seq/`）从 `trace/` 取出那一刻的 qpos，
 用和 sim 同一份场景、同一组相机（ego + 两腕）渲出图，覆盖占位帧；每局 6–10 s。对照实时录制的局核过：
 画面一致，实时帧比渲的晚 1–2 行（实时相机 30 Hz、exporter 取最近一张）。
+`render_dataset_cameras_isaac.sh` 做同一件事，图来自闭环镜像用的同一个 `IsaacView`（同一 stage、同一曝光），
+训练图和评测图是同一个函数。为省时间只渲 convert 会读的：成功局（失败局留占位帧），且只渲 50→25 Hz 取到的行，
+中间行重复前一行（早 20 ms）；每局约 90 s（三路 p50 76–84 ms，GPU1）。convert 按 `eval.image_source` 核对 session
+是哪个渲染器补的，不一致就拒绝。整条线无人值守：
+`bash scripts/run_overnight.sh <实验文件> --gpu 0 --isaac-gpu 1 --line bimanual`（Isaac 补渲和镜像在 `--isaac-gpu`）。
 
 一局连重置约 45 s，20 局约 15 分钟。训练和开环 / 闭环评测的命令和 [双臂 §6](bimanual.md) 相同；
 VLA **闭环**评测的图像由 Isaac 按需镜像提供：实验文件里设 `eval.image_source: isaac`，在起栈之后、跑 rounds 之前多开一个终端
@@ -104,7 +111,8 @@ VLA **闭环**评测的图像由 Isaac 按需镜像提供：实验文件里设 `
 | 症状 | 原因与处理 |
 |---|---|
 | 机器人走得太快、过冲撞箱、成批 0 分 | `backend.render` 不是 `offline`。算实时比：trace 行数 × 0.02 s ÷ manifest 的 `seconds`，低于 0.9 就是渲染拖慢 |
-| convert 报 `still hold black placeholder frames` | 这是离线录制的运行，先跑 `render_dataset_cameras.sh` |
+| convert 报 `still hold black placeholder frames` | 这是离线录制的运行，先跑 `render_dataset_cameras.sh`（`eval.image_source: isaac` 的跑 `_isaac.sh`） |
+| convert 报 `rendered by another renderer` | session 补渲用的渲染器和 `eval.image_source` 不一致；训练图必须和评测图同源，换 `name` 重采 |
 | 起栈报 `the training set would be empty`，或 convert 报 `leaves none of N kept episodes` | `train.holdout` 不小于能保留（起栈时查上限）或实际保留的局数。调小实验文件里的 `train.holdout`（0 = 不留验证集）：起栈时被拒的同名重起即可；convert 才拒的，运行开始时配置已冻结，只能换 `name` 重采 |
 | 一批里大量 `initial_stance_unstable` | 停栈后不到 20 s 就重起，deploy 收不到 LowState；等 20 s、确认没有残留 sim/deploy 进程再起 |
 | 起栈报缺 POSE 补丁 | §1 的 deploy 没打补丁，或 `SONIC_DEPLOY_ROOT` 指错 |

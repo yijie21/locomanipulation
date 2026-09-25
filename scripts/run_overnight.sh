@@ -3,6 +3,10 @@
 #
 #   bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1
 #   bash scripts/run_overnight.sh configs/experiments/crate_table30_record.yaml --gpu 1 --line bimanual
+#   bash scripts/run_overnight.sh configs/experiments/box_room_grasp_200_cap120_20260925.yaml --gpu 0 --isaac-gpu 1 --line bimanual
+#
+# --isaac-gpu: an experiment with `eval.image_source: isaac` renders its dataset cameras in Isaac and is
+# evaluated through the Isaac mirror, both on this card (the stack, training and policy stay on --gpu).
 #
 # THIS IS THE ONLY SCRIPT IN scripts/ THAT CALLS OTHER SCRIPTS. Everything else is flat: one bash,
 # one exec, one python entry. Read the stage scripts to understand the pipeline -- read this one
@@ -19,24 +23,30 @@ set -u
 . "$(dirname "$0")/paths.sh"
 cd "$LOCOMANI_ROOT" || exit 1
 
-EXPERIMENT=""; GPU="0"; LINE="single_arm"; FROM="collect"; TO="eval"
+EXPERIMENT=""; GPU="0"; ISAAC_GPU=""; LINE="single_arm"; FROM="collect"; TO="eval"
 while [ $# -gt 0 ]; do
     case "$1" in
         --gpu)  GPU="${2:?--gpu needs a value}"; shift 2 ;;
+        --isaac-gpu) ISAAC_GPU="${2:?--isaac-gpu needs a value}"; shift 2 ;;
         --line) LINE="${2:?--line needs single_arm or bimanual}"; shift 2 ;;
         --from) FROM="${2:?--from needs collect|convert|train|eval}"; shift 2 ;;
         --to)   TO="${2:?--to needs collect|convert|train|eval}"; shift 2 ;;
-        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
         *) EXPERIMENT="$1"; shift ;;
     esac
 done
-[ -n "$EXPERIMENT" ] || { echo "usage: $(basename "$0") <experiment.yaml> [--gpu N] [--line single_arm|bimanual] [--from STAGE] [--to STAGE] [--to STAGE]" >&2; exit 1; }
+[ -n "$EXPERIMENT" ] || { echo "usage: $(basename "$0") <experiment.yaml> [--gpu N] [--isaac-gpu N] [--line single_arm|bimanual] [--from STAGE] [--to STAGE]" >&2; exit 1; }
 case "$LINE" in single_arm|bimanual) : ;; *) echo "--line must be single_arm or bimanual" >&2; exit 1 ;; esac
 
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 RUN="$LOCOMANI_OUTPUTS/runs/$("$VENV_SIM_PY" -c "
 import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))['name'])" "$EXPERIMENT")"
 echo "run directory  $RUN"
+IMAGE_SOURCE=$("$VENV_SIM_PY" -c "
+import sys, yaml; print((yaml.safe_load(open(sys.argv[1])).get('eval') or {}).get('image_source') or 'mujoco')" "$EXPERIMENT")
+if [ "$IMAGE_SOURCE" = isaac ] && [ -z "$ISAAC_GPU" ]; then
+    echo "eval.image_source is isaac: give the card Isaac renders on, --isaac-gpu N" >&2; exit 1
+fi
 # a stage runs when it is inside [--from, --to]; the stages are ordered collect < convert < train < eval
 rank() { case "$1" in collect) echo 0 ;; convert) echo 1 ;; train) echo 2 ;; eval) echo 3 ;; *) echo 9 ;; esac ; }
 wanted() { [ "$(rank "$1")" -ge "$(rank "$FROM")" ] && [ "$(rank "$1")" -le "$(rank "$TO")" ] ; }
@@ -66,8 +76,13 @@ fi
 # --- convert -------------------------------------------------------------------------------
 if wanted convert && [ ! -d "$RUN/train_dataset" ]; then
     echo "=== convert ==="
-    # backend.render offline recorded black placeholder frames; this fills them (a live run is a no-op)
-    bash "$LOCOMANI_ROOT/scripts/render_dataset_cameras.sh" "$RUN" --gpu "$GPU" || exit 1
+    # backend.render offline recorded black placeholder frames; this fills them (a live run is a no-op).
+    # A policy evaluated on Isaac images trains on Isaac pictures of the same states.
+    if [ "$IMAGE_SOURCE" = isaac ]; then
+        bash "$LOCOMANI_ROOT/scripts/render_dataset_cameras_isaac.sh" "$RUN" --gpu "$ISAAC_GPU" || exit 1
+    else
+        bash "$LOCOMANI_ROOT/scripts/render_dataset_cameras.sh" "$RUN" --gpu "$GPU" || exit 1
+    fi
     bash "$LOCOMANI_ROOT/scripts/convert_data.sh" "$RUN" || exit 1
 fi
 
@@ -78,9 +93,10 @@ if wanted train && [ ! -d "$RUN/model" ]; then
 fi
 
 # --- evaluate ------------------------------------------------------------------------------
-# Three terminals in the documented path: stack, policy server, rounds. Here the first two run in
-# the background; the rounds driver waits for the policy port before the first round and takes the
-# stack down at the end.
+# Three terminals in the documented path: stack, policy server, rounds (a fourth, the Isaac mirror,
+# for eval.image_source isaac). Here all but the rounds run in the background; the rounds driver waits
+# for the policy port before the first round and takes the stack down at the end. The mirror has no
+# port to wait on from there, so this waits for its "listening" line before the rounds start.
 if wanted eval && [ ! -f "$RUN/eval/closed_loop.json" ]; then
     echo "=== evaluate ==="
     bash "$LOCOMANI_ROOT/scripts/start_stack.sh" eval "$RUN" --gpu "$GPU" || exit 1
@@ -88,11 +104,23 @@ if wanted eval && [ ! -f "$RUN/eval/closed_loop.json" ]; then
 import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))['collect']['instance'])" "$RUN/config.yaml")
     bash "$LOCOMANI_ROOT/scripts/run_vla_server.sh" "$RUN" --gpu "$GPU" &
     SERVER=$!
+    MIRROR=""
     # the rounds driver takes the stack down when it ends; this covers it never getting there
-    trap 'kill "$SERVER" 2>/dev/null; bash "$LOCOMANI_ROOT/scripts/stop_stack.sh" --instance "$INSTANCE" 2>/dev/null' EXIT
+    trap 'kill "$SERVER" $MIRROR 2>/dev/null; bash "$LOCOMANI_ROOT/scripts/stop_stack.sh" --instance "$INSTANCE" 2>/dev/null' EXIT
+    if [ "$IMAGE_SOURCE" = isaac ]; then
+        mkdir -p "$RUN/eval"
+        bash "$LOCOMANI_ROOT/scripts/run_isaac_mirror.sh" "$RUN" --gpu "$ISAAC_GPU" > "$RUN/eval/isaac_mirror.log" 2>&1 &
+        MIRROR=$!
+        for _ in $(seq 600); do
+            grep -q "isaac mirror listening" "$RUN/eval/isaac_mirror.log" && break
+            kill -0 "$MIRROR" 2>/dev/null || { echo "the Isaac mirror exited; see $RUN/eval/isaac_mirror.log" >&2; exit 1; }
+            sleep 1
+        done
+        grep -q "isaac mirror listening" "$RUN/eval/isaac_mirror.log" || { echo "the Isaac mirror never listened" >&2; exit 1; }
+    fi
     bash "$LOCOMANI_ROOT/scripts/$LINE/run_vla_inference.sh" "$RUN" --gpu "$GPU"
     status=$?
-    kill "$SERVER" 2>/dev/null
+    kill "$SERVER" $MIRROR 2>/dev/null
     trap - EXIT
     [ "$status" = 0 ] || exit "$status"
 fi
