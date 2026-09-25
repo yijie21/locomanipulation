@@ -389,3 +389,28 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 ### 未决（不是决策）
 - `docs/warehouse.md` 没在全新 clone 上从零走过；三份 runbook 的"新机器"路径都只在本机验证过。
 - `assets/blender/{fonts,textures}/`、`package.json`、`uv.lock` 来历不明，未跟踪。
+
+## 2026-09-24 VLA 闭环的图像走按需 Isaac 镜像；MuJoCo 慢是单块网格过 2²⁰ 顶点，拆块不减面
+
+### 目标与约束的变化
+- 用户：场景渲染慢时机器人等图、仿真照走，机器人漂出去；问 SIMPLE 的 lockstep 能否解决。不接受减面（"治标不治本，减多少没有统一标准"）。
+- 用户：目的是 VLA 闭环评测能实时出图、不漂；最终要用 Isaac 渲染结果；Isaac 用 GPU1；在 main 开发，从分支 `feat/isaac-sync-20260923` 参考移植。
+
+### 决策
+1. **评测图像 = 按需 Isaac 镜像**（`eval.image_source: isaac`，`sim/isaac/mirror.py`）：MuJoCo 物理照旧按墙钟、评测时不渲相机；sim 在特权状态流上发完整 qpos；镜像在独立进程 / 独立 GPU 上，策略要观测时渲当下状态的全部数据集相机。理由：物理与 deploy 从不等渲染，渲染慢只让图像晚到；客户端先读本体再要图，图像与状态同一时刻，渲染时间落进现有延迟补偿，不加新时钟逻辑。
+2. **按需而非连续渲染**（沿用分支 09-23 的决定）：策略每 0.4 s 才看一次，按需约 0.9 核，连续约 4–5 核且图像比 t0 旧、不在计时里。
+3. **warehouse 旧场景慢的根因更正为单块网格超过 2²⁰ 顶点**（349,525 面 0.31 ms、349,526 面 3.91 ms）；`warehouse_textured` 同样面数拆 9 块只要 3.2 ms。解法是无损拆块（建场景闸门，TODO 4.7.8），不减面。
+4. **场景的 Isaac stage 与曝光只在 `configs/scenes.yaml` 的 `isaac` 条目里写一次**，离线重渲与镜像都读它；`--rtx-setting` 解析归 `stage.apply_rtx_settings`。理由：训练图与评测图必须是同一个渲染函数、同一套设置。
+5. **在 main 实现，分支只作参考**：移植 `IsaacView`、`bench_render` 的 state-trace 路径、`world_lift` 修复；相机表用 main 的 `dataset_cameras`，不用分支的 `schema.py`。
+
+### 被否决的方案（及原因）
+- **纸箱减面**（TODO 2.4.10.8）：用户否决；且根因是单块网格门槛，拆块无损即回到快路径。
+- **SIMPLE 的 lockstep**：lockstep 下 deploy 不起 planner 线程（采集专家和 settle 跑不了）；推理延迟在仿真时间里为 0，需人工按帧补回；09-02 干净协议校准 46/100 对 32/100（p=0.049）未过，"停远"根因未找到；SIMPLE 自己的采集/回放也不在线渲 Isaac。
+- **MuJoCo 异步渲染进程 + 延迟补偿起点改为快照时刻**（TODO 4.7.2 / 4.7.3，本会话先提出）：被 Isaac 镜像取代；按需渲染下补偿起点本来就对，无需改。
+- **Isaac 连续渲染**：见决策 2。
+- **在分支上继续开发**：分支落后 main 33 个提交且改动未提交，main 已有 warehouse 的 Isaac stage。
+
+### 未决（不是决策）
+- 训练图是否也走 Isaac（分支 `render_dataset.py` 未移植，TODO 4.7.9.9）；不走则训练 MuJoCo 图、评测 Isaac 图，域差未测。
+- RTX 跨帧状态下按需渲与逐帧渲是否同图（一致性闸门 4.7.9.8）。
+- 真实策略闭环未跑（无 warehouse checkpoint，4.7.6）。状态与证据索引：`docs/handoff/isaac-vla-mirror-20260925.md`。
