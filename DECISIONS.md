@@ -440,3 +440,42 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 协作者重编后仍 `initial_stance_unstable`：原因待他的 deploy.log / sim.log / manifest；候选按可能性：deploy 未接管（停栈后不足 20 s 重起）、mujoco 3.14 或 3.14 下建的场景、仿真不满实时。是否给开局判定加失败细节诊断待用户定。
 - 文档版抓取变差来自哪个本地提交（TODO 4.8.5）。
 - crate 用带夹爪补丁的二进制是否等价（20 局验证）。
+
+## 2026-09-25 从零按文档复现三场景采集；旧 expert 数据作废清盘；convert 不再依赖训练 venv，holdout 准入按轮数上限
+
+### 目标与约束的变化
+
+- 协作者按新 setup 重编后开局仍 `initial_stance_unstable`；用户指出上一次"按文档复现"用的是本机装好的环境、数据和二进制，不算从零。要求起一个全新 agent，在本机隔离位置从 `git clone` 开始装环境、跑三个场景的采集，**只记录不修**。
+- 用户已迭代新的 expert policy：旧数据要重采、模型要重训，`outputs/` 里旧数据和 checkpoint 不再需要。
+- 仓库是私有的，是有意为之（README 的 HTTPS clone 需要凭据不算缺陷）。
+
+### 决策
+
+1. **从零复现的隔离方式**：同一用户、沙盒 `/workspace/fresh_repro_20260925/`，`env -i` 只留镜像层 CUDA/PATH 变量，HOME/TMPDIR/HF_HOME/UV_*/LOCOMANI_WORKSPACE 全进沙盒，`claude -p` Opus 5.5，hooks、自动记忆、MCP 全关，不告诉它 `initial_stance_unstable`。理由：`/workspace/.env`、`~/.zshrc`、共享 HF 缓存、MEMORY/STATE 注入都会掩盖文档缺口；盲测避免它为绕开症状改变操作。系统层（apt、CUDA 源、驱动）隔离不了，要求它逐条记为"本机测不到"。
+2. **复现规则**：挡路时只许在仓库外最小绕过并编号记偏离（每个问题 ≤30 min）；开局失败/摔倒不许绕，只收证据；只用 GPU0；`/workspace` <8 GB 停。理由：只记不修才能测文档，但完全不许绕会让第一个问题之后的步骤全测不到。
+3. **结论（已确认）**：只按文档装 0–4 步（deploy 源码指纹 = `c1360628…`，mujoco 3.11.0，无 `.env` 线程上限），bottle 7/10、crate 8/10、warehouse 3/10，**30 局零开局失败、零摔倒**。所以协作者的问题不在文档化的安装本身（**假设**：在他的系统层或操作）。报告 `outputs/fresh_repro_20260925/report.md`，问题 P1–P20。
+4. **outputs 清盘**：删 132 G（全部 checkpoint、采集、数据集、视频、轨迹）+ `/workspace/tmp/p03*` 31 G；留 <1 MB 文本骨架、运行时输入、两个 deploy worktree、进行中 TODO 的证据；清单与脚本 `outputs/cleanup_20260925/`。理由：旧 expert 的数据全部作废；文本骨架让台账引用的 run 目录仍能打开。代价：旧数据集不可恢复（p03 原始 session 一起删了）。未按 AGENTS 提前 24 h 记 STATE，用户当场批准。
+5. **P7 holdout 准入**：`require_train_split` 除 `collect.successes` 外再比 `batch_rounds × max_batches`，在起栈（`run_stack`，领目录前）和两条线 collect 入口都查；不录制的运行跳过。理由：runbook 的"正好跑 N 局"配方保留 `holdout: 10`，旧检查放行、三条线的 convert 全部拒绝；查在起栈前才不浪费一次采集。
+6. **P8 convert 的 stats 用采集 venv**：`gr00t.data.stats` 本来就是仓库 vendored 的 `src/gr00t`，改在 `.venv_data_collection` 里跑。依据：三个数据集的 stats.json / relative_stats.json 与训练 venv 逐字节相同，沙盒 0–4 安装上 bottle/crate 的 convert 全程通过。于是"采集+转换 = 0–4 步，训练/评测 +5"。
+7. **P19 只要求 CUDA 13 运行时开发文件**（`cuda_runtime.h` + `libcudart.so.13`，缺了装 `cuda-cudart-dev-13-0`）。理由：deploy 不编 CUDA kernel，不需要 nvcc；TensorRT 是 +cuda13.0 构建。
+8. **文档 1–4**：single_arm 的 `SONIC_DEPLOY_ROOT` 行改为"只原作者机器"；补丁页的手工 apply 块标成历史、DDS 指向 local_base；bimanual 删掉不带 preset 的 `install_scene.sh`（核对过双臂场景与 `outputs/scene/sim` 的 preset 无关）；setup 第 2 步第二次下载加 `--no-planner`（核对过链 exit 0、文件相同）。
+
+### 被否决的方案（及原因）
+
+- **新建 Linux 用户做隔离**：要复制 SSH key 和 Claude 凭据，OAuth refresh token 轮换可能把用户正开着的会话挤掉线。
+- **另租一台 Vast 实例**：最接近协作者，但花钱且不在"这台机器上"。
+- **在 prompt 里告诉 agent 协作者的症状**：会引导它为避开症状改变操作，通用的"每局收证据"已覆盖。
+- **清盘时整目录删除**：会让台账引用的 run 目录失去 manifest/config，数字无从对账；文本骨架只多 0.94 G。
+- **能力测量（reach_envelope 等 26 G）全留或全删**：它们不随 expert 变、文档引用其视频，全删丢证据；全留占 24 G。取"文本 + 文档点名的媒体"。
+- **P7 在 convert 里静默收紧 holdout**：配置部分生效正是本仓库的失效形态（跑完才发现和写的不一样）；拒绝并报出上限更安全。
+- **P7 只在 convert 时查**：发现时采集已经跑完、配置已冻结，只能换名重采。
+- **P8 只改文档写"转换要第 5 步"**：让只采数据的机器为一个统计文件装约 20 GB 的训练 venv，而统计代码本来就在仓库里。
+- **P8 把 stats 挪进训练阶段**：要改 `bottle_convert` 契约（它要求 `meta/stats.json`），也会让审计之前的产物不齐。
+- **P19 让读者装 `cuda-toolkit-13-0` 或 `cuda`**：前者数 GB 且 deploy 用不到 nvcc；后者元包拉 `cuda-drivers`，会覆盖宿主注入的驱动。
+- **P1 改 README 的 clone 地址**：仓库私有是有意的，协作者有权限。
+
+### 未决（不是决策）
+
+- 协作者 `initial_stance_unstable` 的原因仍未知；现在开局判定失败只记一个 `false`（TODO 4.8.2 / 4.8.2.1）。
+- 复现报告里余下的问题用户暂缓（TODO 4.6.2.8–4.6.2.10）：crate 开局距离采样区间 = 验收区间；warehouse 基线 holdout 10 对约 6/20 不够；场景包 README/Blender、`python`、契约名等小项。
+- P19 的 `cuda-cudart-dev-13-0` 安装行没在干净机器上验证过。
