@@ -1,50 +1,55 @@
-# STATE — 2026-09-25（会话：严格按 README 跑 bottle 采集；strace 逐文件核实；拖慢实验；修复推送）
+# STATE — 2026-09-25（会话：bottle 走近改成 warehouse 方式并设为默认）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `2063a17`，本 handoff 提交在它之上。
-没有运行中的栈；两个沙盒 `/workspace/readme_bottle{,_strace}_20260925/` 已删（用户定）。理由与被否决的方案见 DECISIONS 最后一节。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `4655254`；本 handoff 提交在它之上，未推送。
+没有运行中的栈，GPU0 空闲；GPU1 上约 3.7 GB 是别的项目的 `depth_server.py`（pid 667913），不是我们的。理由与被否决的方案见 DECISIONS 最后一节。
 
 ## 工作树
 
-- 未跟踪（与本项目无关，不要提交）：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
-- `third_party/GR00T-WholeBodyControl` 挂着两个 worktree（给 4.8.5 用，不要删；删时用 `git worktree remove`）：`outputs/deploy_docbuild_20260924/`、`outputs/deploy_pinned_20260925/`。
+- 未跟踪、与本项目无关、不要提交：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`；`third_party/GR00T-WholeBodyControl` 挂着 worktree `outputs/deploy_{docbuild_20260924,pinned_20260925}/`（给 4.8.5 用，删时用 `git worktree remove`）。
 
 ## 当前进度
 
-- **严格按 README 的 bottle 采集不摔（已确认，4.6.3）**：origin d505880，`env -i` 沙盒（不给 CUDA_HOME、LD_LIBRARY_PATH、`.env`；sudo 换成拒绝桩），
-  开局 20/20 站稳，保留 10/20。拖慢实验的基线组又是 10/10 站稳，合计 30 局零开局失败。报告 `outputs/readme_bottle_20260925/report.md`。
-  这个结论只覆盖本机的系统层：CUDA 13、NVIDIA EGL、apt 源、CPU 配额都是本机提供的，测不到。
-- **strace 逐文件核实（已确认，4.6.4）**：系统目录零写入；沙盒外只写了 `/tmp/cdds.LOG`（上游写死）和 git-lfs 的 `/tmp/sock-*`；读取的非系统文件只有 `~/.ssh`。
-  逐条清单 `outputs/readme_bottle_strace_20260925/report_paths.md`、`paths.tsv`，原始 trace 是 `traces.tar.gz`。strace 下 19/20 开局失败，那是 strace 自身造成的，不算。
-- **拖慢实验（已确认，4.8.2.4）**：每 100 ms 停 16 ms，三组同一批 10 个 case。基线 7/10；只拖 sim（RTF 0.69）1/10，失败是髋部碰桌 8 次；只拖 deploy 8/10。
-  **三组开局失败都是 0**。"栈慢就开局摔"这个说法已被推翻。报告 `outputs/slowdown_20260925/report.md`。
-- **已推送**：P7、P8、P19（nvcc 那句已按实测改写）、文档修复 1–4、单臂排错表的起栈摔倒行，以及两个让 make check 通过的小修（henry 的 prepare.py 格式、README 行数）。
+- **bottle 默认专家已换成 guard 走近（已确认，TODO 5.8，`e3d49d9`）**：`reach.simple.approach_stop: guard` 是代码默认。
+  流程：手臂交给步态自然下垂 → `SLOW_WALK 0.25`，方向在第一帧定死、直指规划站位点 → 按桌边守线刹车（`tasks/bottle/edge_guard.py`，挡的是桌面那一层）
+  → 接管 → `_lift_ready`（warehouse 的 `lifted_ready`，关节空间插值）→ 左手留在原位，右手滑到预抓取点、进入、闭合、抬起。
+  主线 5 份实验文件写了 guard 全套参数；记录旧走法的 9 份钉 `visible`。
+- **实测（已确认，台账 §39）**：同一组 seed 40000。`bottle_simple_guard_lifted_20260925` 10/10，0 局越线；骨盆离桌边 0.25–0.40 m（旧走法 0.12–0.31）；
+  手在桌边后 0.08–0.22 m，不再后退；肩外展 18–23°；每局 39.5–44.3 s。旧走法基线 `bottle_simple_10ep_20260925` 10/11。
+- **文档已跟上（已确认，`4655254`）**：single_arm 首段、single_arm_design（新节、图 ②、开头两张表）、change-map-bottle、台账 §39、配置字段表。README 不用改。
+- 用户定：**bottle 专家不再微调。**
 
 ## 卡点 / 待验证
 
-- 协作者"一开始摔倒"的原因仍未知（待验证）。用户定：这条线到此为止，其余另行单独解决（4.8.2.2、4.8.2.3、4.8.2.5、4.8.2.6）。
-- 待验证：没有 nvcc 的机器上 cmake 能否配置（4.6.2.3.1）；`cuda-cudart-dev-13-0` 那一行没在干净机器上跑过。
-- 假设（未测）：sim 慢时的髋部碰桌，是因为抓取阶段按墙钟计时（4.8.2.6）。
-- 待验证：crate 换成带夹爪补丁的二进制是否等价（本机 crate 仍用 4add301，4.8.4.3）。
+- 已确认：`lifted_ready` 插值中途手指先往前扫 6–8 cm（参考轨迹约 3 cm，跟踪滞后 4–5 cm），停得最近的两局抬手时离桌边只剩 6 mm / 1.2 cm；守线余量没算这一段（5.4.1.1，待用户定）。
+- gate8 闸门及其基线 `tests/gate/baseline_simple.json` 仍是旧走法，拿 guard 去比必然 FAIL（5.8.1，待用户定）。
+- 待验证：新默认采到的数据能否走通转换 → 训练 → 闭环评测。假设 `eval.initial_token` 不用改（开局仍是规划器的下垂姿势）（5.10）。
+- 假设（数据与之一致，未做单变量验证）：逐帧修正方向导致步态停走，原因是 deploy 在方向变化时重新规划（记忆 sonic-planner-replans-on-any-direction-change）。
+- 上个会话留下、仍未解决：协作者"一开始摔倒"的原因（4.8.2.2 等，用户已搁置）；crate 仍用 4add301（4.8.4.3）。
 
 ## 下一步（编号见 `TODO.md`，顺序等用户定）
 
-- **4.8.2.2**：问协作者说的摔倒，是 sim.log 起栈时那行，还是 `collect_NN.log` 里的逐局失败；同时要他们的 RTF（pose_sidecar）和 deploy 的 `Loop timing`。
-- **4.8.2.1**：开局判定失败时，是否在 manifest 里记下卡在哪个条件（待用户定）。
-- 旧 expert 已作废：新 expert 的采集和训练由用户安排。
+- **5.10**：用新默认跑一遍整条线（`bottle_simple_200` 或缩小版），核对 `initial_token`。
+- **5.8.1**：用 guard 在 8 局 bank 上重录 gate8 基线；或者 **5.8.2**：删掉旧走法的代码（两件都待用户定）。
+- **4.8.2.2**：问协作者说的"摔倒"是 sim.log 起栈时那行，还是逐局失败。
 
 ## 关键路径与命令
 
 ```bash
-cd /workspace/code/locomanipulation && . scripts/paths.sh
+cd /workspace/code/locomanipulation && . scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src"
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 本机 bottle/warehouse 用 5cab2fb；crate 不设
 bash scripts/cpu_headroom.sh; nvidia-smi; find /workspace/tmp -maxdepth 3 -name stack.json   # 有输出 = 有栈在跑
-# 本机 bottle/warehouse 用 5cab2fb：export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"；crate 不设
-# 停栈后等 ≥20 s 再起；pkill -f 会匹配自己的命令行（本会话又踩一次），杀进程先 ps 找 pid 再 kill
+# 停栈后等 ≥20 s 再起；pkill -f 会匹配自己的命令行，杀进程先 ps 找 pid 再 kill
 
-# 严格 README 沙盒的做法（沙盒已删，脚本还在）：
-#   outputs/readme_bottle_20260925/sb.sh        env -i 跑一条命令，跨调用保留 export 和 cwd
-#   outputs/readme_bottle_strace_20260925/sbt.sh 同上，外面套 strace；analyze_traces.py → paths.tsv → summarize_paths.py
-#   outputs/slowdown_20260925/{duty_cycle.py,run_arm.sh,analyze.py}   单进程 SIGSTOP 占空比、每组驱动、汇总
-# 从 sidecar 算 sim RTF：只累加相邻行 t 的正增量（每局重置时仿真时钟归零）
+# 采集（默认 guard）：起栈（起完即退）→ agent server（跑完自己收栈）；--name 另起 run，--dry-run 只打印
+bash scripts/start_stack.sh collect configs/experiments/bottle_simple_guard_20260925.yaml --gpu 0 --name <run>
+bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_guard_20260925.yaml --gpu 0 --name <run>
+#   这份试验文件是 successes 10 / batch_rounds 10 / max_batches 1：不足 10 集时 agent 退出码 1（设计如此）
+
+# 本会话的分析脚本（原在 scratchpad，已复制到 outputs/bottle_guard_20260925/）
+python3 outputs/bottle_guard_20260925/export_previews.py outputs/runs/<run> outputs/videos/<run>   # 按 manifest 对视频，压到 ≤500 KB 并逐段核对
+python3 outputs/bottle_guard_20260925/compare_guard.py <基线 run 名> <试验 run 名>                  # 逐局对比停位 / 守线记录（在仓库根目录跑）
+PYTHONPATH=src "$VENV_SIM_PY" outputs/bottle_guard_20260925/ready_compare.py <run 名>             # 抬手后肩外展、肘外、抬手过程离桌边最小距离
+# 逐局记录：manifest 的 execution.metrics.simple.{guard,ready,plan,phases}
 
 # deploy 源码指纹与能力标记
 (cd <deploy_root>/src && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)   # 期望 c1360628…
