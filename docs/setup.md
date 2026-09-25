@@ -148,16 +148,18 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 ```
 
 **已经 clone 过、跟着上游 main 走的机器**(2026-09-25 之前按本文装的都是这样)先回到钉住的 commit,
-再从第 2 步的补丁开始重做(venv 和权重不用重装,它们不随 commit 变):
+再重跑第 2、3 步的补丁段(都可重复执行,已打的跳过;venv 和权重不用重装,它们不随 commit 变):
 
 ```bash
-cd third_party/GR00T-WholeBodyControl
-git status --short     # 有自己的改动先另存:下一行会丢掉工作树里的全部改动(包括以前打的补丁)
-git checkout -- .
-git fetch origin
-git checkout --detach 1983e88888217f6c69283cf3a9d1af01e87f07af
-cd ../..
+(cd third_party/GR00T-WholeBodyControl && git fetch origin \
+  && git checkout --detach 1983e88888217f6c69283cf3a9d1af01e87f07af)
 ```
+
+不用先清工作树:git 会把改动带过去,带不过去就整条拒绝、什么都不动。第 2 步的 Python 补丁
+(`gear_sonic/data`、`run_data_exporter.py`)在钉住的 commit 和上游 main(核对到 `a0732b6`)里是同一份文件,会原样带过去;
+旧文档让打的 deploy 补丁要么同样带过去、由第 3 步那段查出来并告诉你怎么清,要么让这里拒绝。
+拒绝时报 `Your local changes ... would be overwritten`,后面列的就是挡路的文件:有自己的改动先另存,
+没有就 `git checkout -- <这些文件>` 再重跑上面那段。
 
 **第 2 步那条 `ls ... model_decoder.onnx` 查不出这个问题** —— `policy/` 下的权重
 (`release/` 与 `sonic_v1_1/`)是 `download_from_hf.py` 下载的,不走 LFS,所以它们
