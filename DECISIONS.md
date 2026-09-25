@@ -414,3 +414,29 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 训练图是否也走 Isaac（分支 `render_dataset.py` 未移植，TODO 4.7.9.9）；不走则训练 MuJoCo 图、评测 Isaac 图，域差未测。
 - RTX 跨帧状态下按需渲与逐帧渲是否同图（一致性闸门 4.7.9.8）。
 - 真实策略闭环未跑（无 warehouse checkpoint，4.7.6）。状态与证据索引：`docs/handoff/isaac-vla-mirror-20260925.md`。
+
+## 2026-09-25 协作者的 deploy 与本机对齐：钉上游 1983e888 + 本地提交做成补丁；gate8 bank 入库并改用可移植场景哈希
+
+### 目标与约束的变化
+- 协作者报"按 setup 采集仍摔倒"；用户猜是我们自编过 SONIC deploy 却没写进文档，要求更新教程让两边同步，并找出"本机默认有、新机器跑不起来"的细节。
+- 用户暂不做实测（crate 换二进制的 20 局验证推后）；要求 gate8 bank 入库、提交并推送。
+
+### 决策
+1. **setup.md 钉上游 `1983e888`（本地 `lockstep-port` 分支的基点），把 6 个未推送的本地提交导出成 `patches/sonic_deploy_local_base.patch`，与 pose / hand 两个控制权补丁组成三补丁序列。** 理由：本机所有生产二进制都从它编出；按旧文档（上游 main 不钉 + 两补丁）编出的是另一个控制器——实测 bottle 同配置同 seed 10/17 对 20/23、髋碰桌 5/17 对 1/23（台账 bottle §38）。
+2. **base 补丁去掉 cd99cb5 把肩 roll 默认角改成 0 的那一处，而不是再叠 `sonic_policy_defaults.patch` 改回去。** 理由：生产二进制是 NVIDIA 的 ±0.2；叠 revert 后 base 补丁的反向 check 失败，补丁循环就不可重跑。
+3. **一致性用"补丁后源码指纹 + 四个能力标记"核对，不用二进制 sha。** 理由：二进制编进了绝对路径，换机器 sha 必然不同；已核对该序列在干净 checkout 上重建出 5cab2fb 的源码逐字节相同（`c1360628…`）。
+4. **补丁循环先查 HEAD 是否为钉住的 commit、deploy 源码是否干净，只对干净树一次打全三个，否则列出改动并给出清理命令，不自动清理。** 理由：协作者的 `:46` 报错已复现为"旧 `sonic_dds_domain.patch` 残留"；自动 `checkout` 会静默毁掉用户自己的改动。
+5. **同时钉 mujoco 3.11.0、Isaac-GR00T 376ba89，并补 `.venv_sim` 的测试依赖。** 理由：新装会解析到 mujoco 3.14、Isaac-GR00T 上游已前移；`make check`/提交钩子在新环境里缺 pytest / pillow / pyarrow / hydra-core / omegaconf。
+6. **gate8 bank 入库到 `configs/cases/`，出新版本 `bottle_simple_gate8_20260925.yaml`；case bank 改 schema 2（去掉仓库根前缀后的规范 JSON 哈希），schema 1 照读。** 理由：旧 bank 在未入库的 `outputs/`；且 bank 按 `scene_meta.json` 字节哈希，而 meta 含绝对路径，同一场景换 checkout 永远对不上——只入库文件不能修好。
+
+### 被否决的方案（及原因）
+- **把 `lockstep-port` 推成 fork 让协作者直接 clone**：补丁文件留在本仓库可审查、可逐项说明来由；fork 需另维护一个远端。
+- **改用上游 main + 我们的补丁**：等于换掉本机生产控制器，所有结果要重测；且 `sonic_dds_domain` 已打不上上游 main。
+- **本机 `third_party` 原地打夹爪补丁重编、全线统一 5cab2fb**：会改变 crate 当前二进制（4add301），用户暂不实测；读代码推断 crate 不受影响但未验证。
+- **只把 bank 文件入库 / 原地改 `bottle_simple_gate8.yaml`**：前者哈希对不上；后者违反"版本是新文件"的规则。
+- **把协作者的 `initial_stance_unstable` 归因于 init pose token 未上传**：token 文件均已入库，且双臂采集路径不读 token 文件（只有闭环评测与单臂部分阶段读）。
+
+### 未决（不是决策）
+- 协作者重编后仍 `initial_stance_unstable`：原因待他的 deploy.log / sim.log / manifest；候选按可能性：deploy 未接管（停栈后不足 20 s 重起）、mujoco 3.14 或 3.14 下建的场景、仿真不满实时。是否给开局判定加失败细节诊断待用户定。
+- 文档版抓取变差来自哪个本地提交（TODO 4.8.5）。
+- crate 用带夹爪补丁的二进制是否等价（20 局验证）。

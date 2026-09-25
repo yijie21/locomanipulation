@@ -1,59 +1,58 @@
-# STATE — 2026-09-24（会话：三条采集线按 README 从零复现；warehouse 离线录制 + 数据集相机补渲；文档跟上代码；可达性代码补提交）
+# STATE — 2026-09-25（会话：VLA 闭环的 Isaac 按需镜像；MuJoCo 2²⁰ 网格门槛；协作者 deploy 对齐与 setup 钉版本；gate8 bank 入库）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 `origin/main` 一致。没有运行中的栈。
-理由与被否决方案在 DECISIONS 2026-09-24 最后两节；逐项在 `TODO.md` §4（4.1–4.7）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`。已推送到 `c7f06c6`…`b3b645f`；**`b8f6c82`（镜像状态索引）和本次 handoff 提交未推送**（TODO 4.8.8）。
+没有运行中的栈或镜像。理由与被否决方案在 DECISIONS 最后两节（2026-09-24 镜像、2026-09-25 deploy 对齐）。
 
 ## 工作树
 
-- 无未提交的代码改动（今天的提交：`git log --oneline 5d93430^..HEAD`）。未跟踪：`assets/crates/nor_cal_box/visual/`（纸箱源网格，减面前先问维护者）、`assets/blender/{fonts,textures}/`、`package*.json`、`uv.lock`（来历不明）。
+- 无未提交的代码改动。未跟踪（与本会话无关，不要提交）：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、
+  `assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
+- `third_party/GR00T-WholeBodyControl` 挂着两个 worktree（4.8.5 定位用，勿删）：`outputs/deploy_docbuild_20260924/`（上游 b042411 + 旧文档补丁，二进制 472ed2b）、
+  `outputs/deploy_pinned_20260925/`（1983e888 + 新三补丁序列，二进制 fb546c2，源码 = 5cab2fb 的源码）。
 
 ## 当前进度
 
-- **复现（已确认）**：无上下文 agent（headless `claude -p`，关钩子 + auto-memory）按 README 跑三条线，
-  报告 `outputs/docrepro_20260924/report.md`。50 局开局全部站稳，协作者说的"开局摔倒"未复现（用户：不追）。
-  bottle 9/10、crate 17/20；warehouse 按旧文档走到 09-22 实时渲染配置，RTF 0.35，0/20。
-- **warehouse（已确认）**：一律 `backend.render: offline`，入口基线 `box_room_grasp_baseline_20260924`，
-  离线复跑 20 局 **6/20**（`docrepro_20260924_warehouse_offline`，与 contact 基线一致）。
-- **离线录训练数据（已确认）**：exporter 离线时用占位帧，`scripts/render_dataset_cameras.sh` 转换前从 trace 补渲三路相机，
-  convert 拒绝未补渲的离线运行。对照实时 crate 局 1000/1000 帧内容一致，同行差值中位数 5–6/255。
-  端到端 `docrepro_20260924_warehouse_dataset`：8 局 2 成功 → 补渲 8 局（每局 6–10 s）→ convert → 审计 train/val 32/32。
-- **修复与文档（已确认）**：holdout 校验、平铺 `videos/` 的第三人称录像、审计量到箱面、`docs/warehouse.md` 新页等，逐项见 TODO 4.3.x–4.4。
-- **可达性代码**：原"协作者 WIP"已提交（`76c5196`，已确认 probe 接受分片参数）；包络搜索本身没起栈跑（待验证）。
-- warehouse 抓取线本身（上一会话）：基线 6/20，失败以 `reach_stalled`（沿上停滞）和 `lost_attachment` 为主。
-
-## 下一步（编号见 `TODO.md`，等用户定顺序）
-
-- **4.6** 全新 clone 上按 README 从零验证三份 runbook（这次只在装好环境的本机跑过）。
-- **2.4.10.29** 沿上停滞 7/20：小步下探逐步查跨壁，或 align→descend 失败重做一次（overdrive 已证明会把指垫顶偏 4–8 cm）。
-- **2.4.10.29.2** 后退剪切 2/20：`retreat_speed` 0.35→0.25，或后退时保留全身伸手控制器夹持。
+- **Isaac 镜像（已确认，main）**：`eval.image_source: isaac` → `scripts/run_isaac_mirror.sh <run> --gpu 1`；真实 eval 栈冒烟 50/50、状态年龄 p50 11 ms、
+  渲染 p50 98 ms（栈与镜像同在 GPU1）。做了 / 没做 / 分支对账的索引：`docs/handoff/isaac-vla-mirror-20260925.md`。**真实策略闭环未跑**（无 warehouse checkpoint）。
+- **MuJoCo 慢的根因（已确认）**：单块网格 3×面数 > 2²⁰ 渲染慢约 12 倍；`warehouse_textured` 已拆 9 块，离线测三路 3.2 ms。实时栈 RTF 未测（4.7.7）。
+- **deploy 对齐（已确认）**：本机二进制全来自本地 `lockstep-port` 分支；setup.md 现钉 1983e888 + 三补丁，在干净 checkout 上重建出 5cab2fb 源码（指纹 `c1360628…`）。
+  本机在用：bottle / warehouse = 5cab2fb（`outputs/bottle_continuous_20260914/deploy`），crate = 4add301（默认树，无夹爪补丁）。
+- **文档版 vs 现用（已确认，台账 bottle §38）**：旧文档编法（上游 main + 两补丁）bottle 0 摔倒，但抓取 10/17 对 20/23、髋碰桌 5/17 对 1/23（p≈0.07）；原因未定位。
+- **gate8（已确认）**：bank 入库 `configs/cases/`，新版本 `bottle_simple_gate8_20260925.yaml`，case bank schema 2 可跨 checkout。
 
 ## 卡点 / 待验证
 
-- 待验证（4.7）：补渲帧比实时帧"新" 1–2 行，训出的策略在实时闭环里是否受影响；warehouse 闭环要实时出图，被纸箱网格（2.4.10.8）卡住。
-- 假设（上一会话，未变）：接触触发后脱开 1→5 是"合在壁顶几毫米"；后退剪切来自 FROZEN_UPPER_BODY 下两手随步态错开 4–6 cm。
-- 这条线 10 局方差极大（同 seed 同代码一次成、一次败，本会话 7000–7002 也见到），对照一律 20 局。
-- 停栈后等 ≥20 s 再起（否则每局 `initial_stance_unstable`）；`pkill -f` 会匹配自己的命令行，杀进程用脚本文件。
+- **协作者重编后仍 `initial_stance_unstable`**：init token 假设已排除（已确认）。原因**待验证**，等他的日志；候选（假设）：停栈后不足 20 s 重起致 deploy 未接管；
+  mujoco 3.14 或 3.14 下建的场景；仿真不满实时。开局判定失败时现在只记一个 `false`，没有细节（4.8.2.1 待用户定）。
+- 待验证：crate 换成带夹爪补丁的二进制是否等价（读代码推断无差别，未跑）。
+- 待验证：按需跳着渲的 Isaac 图与离线逐帧渲是否一致（RTX 跨帧状态，4.7.9.8）；训练图仍是 MuJoCo，与 Isaac 评测图的域差未测（4.7.9.9）。
+- 协作者从零按新 setup 装一遍的结果未知（4.6）。
+
+## 下一步（编号见 `TODO.md`，等用户定顺序）
+
+- **4.8.2** 收协作者日志，判断 `initial_stance_unstable` 属于哪一类；**4.8.2.1** 若用户同意，先加开局失败诊断再请他重跑。
+- **4.8.8** 推送 `b8f6c82` 与 handoff 提交。
+- **4.8.4.3** crate 20 局验证后全线统一 5cab2fb（用户暂缓实测）。
 
 ## 关键路径与命令
 
 ```bash
-cd /workspace/code/locomanipulation
-. scripts/paths.sh
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 本机：打过两个补丁的 deploy
-bash scripts/cpu_headroom.sh; find /workspace/tmp -maxdepth 3 -name stack.json   # 有输出 = 有栈在跑
+cd /workspace/code/locomanipulation && . scripts/paths.sh
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 本机 bottle/warehouse 的 5cab2fb；crate 不设（默认树 4add301）
+bash scripts/cpu_headroom.sh; nvidia-smi; find /workspace/tmp -maxdepth 3 -name stack.json   # 有输出 = 有栈在跑
+# 停栈后等 ≥20 s 再起；pkill -f 会匹配自己的命令行，杀进程写脚本文件
 
-# warehouse（完整跑法 docs/warehouse.md）：复制基线改 name 和一个旋钮
-CFG=configs/experiments/box_room_grasp_baseline_20260924.yaml
-bash scripts/start_stack.sh collect $CFG --gpu 0
-bash scripts/bimanual/run_agent_server.sh $CFG --gpu 0
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/<run>
-bash scripts/render_dataset_cameras.sh outputs/runs/<run> --gpu 0   # 只在 collect.record: true 时，convert 之前
-bash scripts/convert_data.sh outputs/runs/<run>
-bash scripts/render_isaac_warehouse.sh outputs/runs/<run>           # 可选：Isaac 并排
+# Isaac 镜像（评测；实验文件设 eval.image_source: isaac）
+bash scripts/start_stack.sh eval <exp.yaml|run> --gpu 0
+bash scripts/run_isaac_mirror.sh outputs/runs/<run> --gpu 1          # --dry-run 看场景/端口
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src "$VENV_SIM_PY" scripts/experiments/isaac_mirror_smoke_20260924.py outputs/runs/<run>
 
-# 无上下文复现 agent（提示词 outputs/docrepro_20260924/prompt.md）
-CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p --model claude-sonnet-5 --settings '{"disableAllHooks": true}' --permission-mode bypassPermissions --output-format stream-json --verbose "$(cat prompt.md)" < /dev/null > stream.jsonl
-make test TESTS="tests/test_render_dataset_cameras.py tests/test_world_lift.py tests/test_check_dataset_proximity.py" && make check
+# deploy 二进制指纹与能力标记（对比协作者）
+(cd <deploy_root>/src && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)   # 期望 c1360628…
+for m in POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1 SONIC_AUTO_START SONIC_DDS_DOMAIN; do grep -aq $m <binary> && echo "有 $m" || echo "缺 $m"; done
+
+# 提交：make check → git commit --no-verify → 按文件名 add（钩子会被别人的 WIP 干扰）
+make check
 ```
 
-- 复现产物 `outputs/docrepro_20260924/`，run `outputs/runs/docrepro_20260924_*`；提交：`make check` → `--no-verify` → 按文件名 add。
+- 测速命令与证据目录见 `docs/handoff/isaac-vla-mirror-20260925.md`；文档版对比：`outputs/deploy_docbuild_20260924/compare_arms.py`（台账 bottle §38）。
