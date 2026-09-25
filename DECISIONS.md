@@ -479,3 +479,51 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 协作者 `initial_stance_unstable` 的原因仍未知；现在开局判定失败只记一个 `false`（TODO 4.8.2 / 4.8.2.1）。
 - 复现报告里余下的问题用户暂缓（TODO 4.6.2.8–4.6.2.10）：crate 开局距离采样区间 = 验收区间；warehouse 基线 holdout 10 对约 6/20 不够；场景包 README/Blender、`python`、契约名等小项。
 - P19 的 `cuda-cudart-dev-13-0` 安装行没在干净机器上验证过。
+
+## 2026-09-25 严格按 README 的 bottle 采集不摔；strace 逐文件核实；拖慢实验排除"sim 慢 / deploy 抖"是开局摔倒的原因；修复推送
+
+### 目标与约束的变化
+
+- 两个协作者都说"pull 下来按 README 采集，机器人一开始总摔"。用户怀疑本会话把一些东西当成理所当然、没写进文档，要求**本会话自己**严格按 README 跑一次 bottle 采集。
+  随后要求用 strace 逐个文件核实有没有用到隔离目录外的东西，再要求做拖慢实验，分别只拖 sim、只拖 deploy。
+- 用户裁定（2026-09-25）：**严格按 README 仍然不摔，这条线就到此为止**；协作者的其余问题另行单独解决。随后删掉两个沙盒，并把积压的修复推送到 main。
+- GitHub 上的 main 被 henry.zhao 推进到 d505880（01ffc3a、d505880），协作者 pull 到的是这个版本，不是本地记的 b3b645f。
+
+### 决策
+
+1. **测的是 origin/main（d505880），不是本地工作树。** 理由：协作者 pull 的是远端，本地未推送的修复不在里面。
+2. **隔离比 fresh_repro 更严。** `env -i` 只给系统 PATH 和沙盒 HOME，不给 CUDA_HOME、LD_LIBRARY_PATH、HF_HOME，也不读 `/workspace/.env`；`sudo` 换成拒绝桩；export 和 cwd 跨命令保留（`sb.sh`，模拟同一个终端）。
+   理由：镜像给的变量也可能掩盖文档缺口；真跑 `sudo apt` 会在共享机器上升级包。偏离只有三处：clone 借 SSH key、apt 行改成 dpkg 核对、局数 200→20。
+3. **结论（已确认）**：README 路径开局 20/20 站稳，保留 10/20；拖慢实验的基线组 10/10 站稳。加起来 30 局零开局失败。
+4. **逐文件核实用 `strace -f --seccomp-bpf -y -e trace=%file,%process,connect,bind`，从 clone 开始整轮重跑。** 理由：`-y` 把 AT_FDCWD 和 dirfd 解析成绝对路径；
+   seccomp-bpf 只在列出的系统调用上停，开销最小。复用第一个沙盒就追踪不到安装步骤。结果（已确认）：系统目录零写入；沙盒外只写了 `/tmp/cdds.LOG`（上游 `channel_config.py` 写死）
+   和 git-lfs 的 `/tmp/sock-*`；读取的非系统文件只有 `~/.ssh`（ssh 按 passwd 找家目录，README 的 `git lfs pull` 也会用到）。证据在 `outputs/readme_bottle_strace_20260925/`。
+5. **strace 下的采集成败不作数。** strace 同时拖慢了 sim、deploy、exporter 和 agent（sim RTF 0.90→0.71–0.80），20 局 19 局开局失败。
+6. **拖慢方法：对单个进程做 SIGSTOP/SIGCONT 占空比，每 100 ms 停 16 ms。** 理由：不加 CPU 负载，共享配额不变；停顿长度精确（实测 16.1–16.2 ms），低于 deploy 50 ms 的 LowState 掉线保护；
+   sim 的限速器（`base_sim.py:627-631`）不追回被停掉的时间。三组用同一批 10 个 case（seed0 40000），可以逐局对比。结果（已确认）：基线 7/10、只拖 sim（RTF 0.69）1/10、只拖 deploy（LowState p90 19 ms）8/10，
+   **三组开局失败都是 0**；sim 慢时的失败是抓取阶段髋部碰桌，10 局 8 次。
+7. **P19 文档改成实测说法**：有 nvcc 时 cmake 的 `find_package(CUDAToolkit)` 会执行 `nvcc -v`（strace 实测）；没有时走 CMakeLists 里直接找运行时库的分支，未验证。
+   本文件 2026-09-25 上一节第 7 条"不需要 nvcc"按只追加规则保留原文，更正写在这里和那次提交的说明里。
+8. **`single_arm.md` 排错表加一行**：`sim.log` 开头的 `Robot has fallen, height: 0.199 m` 每次起栈都有，是正常现象（sim 起来约 2 s、deploy 还没接管，机器人躺到第一局重置）。
+   理由：本机每一份 sim.log 都有这行，协作者说的"一开始就摔"可能就是看到了它。
+9. **推送方式**：把本地提交 rebase 到 d505880 之上。make check 暴露了 henry 提交里的两处问题（`prepare.py` 没按 ruff 格式化；README 101 行，超出 100 行预算），
+   各用一个单独的小提交修掉（单臂页新加的那行也同样合并了段内行）。不改 henry 已推送的提交。最后推到 2063a17。
+10. **两个沙盒（各 46 G）删除**，删之前确认没有进程、没有 stack.json、没有指向外面的符号链接；证据和实验 yaml 都在 `outputs/{readme_bottle,readme_bottle_strace,slowdown}_20260925/`。
+
+### 被否决的方案（及原因）
+
+- **"栈慢 10–20% 就会复现协作者的开局摔倒"**（本会话 strace 轮之后写下的结论）：被拖慢实验推翻。sim 拖得比 strace 轮更狠、deploy 抖得更大，都是零开局失败。对应的记忆已删除。
+- **用 strace 轮的采集结果评估 README**：strace 本身改变了时序，结果无效。
+- **只用间接证据（/proc maps、日志里的路径、缓存修改时间）判断有没有用外部文件**：查不出"按写死路径读、不留痕迹"的情况，用户要求改用 strace 逐文件核实。
+- **用 CPU 陪跑负载或 taskset 来拖慢**：会占用共享的 15.36 核配额，把全部进程一起拖慢，也控制不住拖慢程度。**用 cgroup 限速**：非特权容器里建不了 cgroup。
+- **在沙盒里真跑 `sudo apt-get`**：已装的包会被升级，影响这台共享机器上的其他会话；改成 dpkg 核对，并记为"本机测不到"。
+- **改 henry 的提交或回退它们来通过 make check**：会改写已推送的历史；用追加的小提交修。
+- **删除或改写 DECISIONS 里"不需要 nvcc"那条**：本文件只追加。
+
+### 未决（不是决策）
+
+- 协作者说的"一开始摔倒"是 sim.log 起栈时那行，还是 collect 日志里的逐局失败（TODO 4.8.2.2）。
+- 缺 NVIDIA EGL、渲染落到 Mesa 时的表现（4.8.2.3）；strace 轮开局摔倒的剩余候选：只拖 exporter、只拖 agent、四个一起拖，或 ptrace 特有的停法（4.8.2.5）。用户已搁置。
+- sim 慢时抓取为什么会髋部碰桌（假设：抓取阶段按墙钟计时，动作相对身体提前；未查）。
+- 没有 nvcc 的机器上 cmake 能否配置成功；`cuda-cudart-dev-13-0` 那一行仍没在干净机器上跑过。
+- uv 会读上游目录一直到 `/` 的每一级父目录、以及 `~/.config/uv` 里的 `uv.toml` / `pyproject.toml`；协作者机器上如果有这类文件，装出来的包可能不同（strace 看到的探测，未测影响）。

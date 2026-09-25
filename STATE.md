@@ -1,36 +1,36 @@
-# STATE — 2026-09-25（会话：从零按文档复现三场景；outputs 清盘；P7/P8/P19 与文档 1–4 修复）
+# STATE — 2026-09-25（会话：严格按 README 跑 bottle 采集；strace 逐文件核实；拖慢实验；修复推送）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`。**已推送到 `c52ffb8`**（2026-09-25，rebase 到 henry.zhao 的 d505880 之上，`make check` 全量通过）。
-没有运行中的栈、镜像或复现 agent。理由与被否决方案在 DECISIONS 最后一节（2026-09-25 从零复现）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `2063a17`，本 handoff 提交在它之上。
+没有运行中的栈；两个沙盒 `/workspace/readme_bottle{,_strace}_20260925/` 已删（用户定）。理由与被否决的方案见 DECISIONS 最后一节。
 
 ## 工作树
 
-- 已提交并推送：P7（dd83248）、P8（bfacda9）、文档修复含 P19 nvcc 说法更正与 single_arm 排错表的起栈摔倒行（f28db5b）、TODO（52ef590）；另两个为让 `make check` 通过的小修：d505880 的 `prepare.py` ruff format（b0e1fcd）、README 回到 100 行预算（c52ffb8）。
-- 未跟踪（与本会话无关，不要提交）：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
-- `third_party/GR00T-WholeBodyControl` 挂着两个 worktree（4.8.5 用，勿删；删时用 `git worktree remove`）：`outputs/deploy_docbuild_20260924/`、`outputs/deploy_pinned_20260925/`。
+- 未跟踪（与本项目无关，不要提交）：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
+- `third_party/GR00T-WholeBodyControl` 挂着两个 worktree（给 4.8.5 用，不要删；删时用 `git worktree remove`）：`outputs/deploy_docbuild_20260924/`、`outputs/deploy_pinned_20260925/`。
 
 ## 当前进度
 
-- **从零复现（已确认，4.6.1）**：无上下文 agent 从 clone 只按文档装 0–4 步（指纹 `c1360628…`、mujoco 3.11.0），bottle 7/10、crate 8/10、warehouse 3/10，
-  **30 局零开局失败、零摔倒**。报告 `outputs/fresh_repro_20260925/report.md`（P1–P20），启动器 `launch.sh` 同目录；沙盒已删。
-- **已修（已确认，已推送 2026-09-25）**：P7 holdout 准入按 `batch_rounds × max_batches`（起栈与两条 collect 入口）；P8 convert 的 stats 在 `.venv_data_collection` 跑
-  （三数据集与训练 venv 逐字节相同，沙盒 0–4 环境 convert 全通）；P19 文档写明 CUDA 13 运行时；文档 1–4（TODO 4.6.2.4–4.6.2.7，沙盒核对过 3、4）。
-- **outputs 清盘（已确认）**：旧 expert 数据与**全部 checkpoint** 作废，删 163 G，`/workspace` 余 ~208 G；旧数据集不可恢复。清单 `outputs/cleanup_20260925/`。
-- 之前的成果不变：Isaac 按需镜像（`docs/handoff/isaac-vla-mirror-20260925.md`，真实策略闭环未跑）；setup 钉 1983e888 + 三补丁；gate8 bank 入库。
+- **严格按 README 的 bottle 采集不摔（已确认，4.6.3）**：origin d505880，`env -i` 沙盒（不给 CUDA_HOME、LD_LIBRARY_PATH、`.env`；sudo 换成拒绝桩），
+  开局 20/20 站稳，保留 10/20。拖慢实验的基线组又是 10/10 站稳，合计 30 局零开局失败。报告 `outputs/readme_bottle_20260925/report.md`。
+  这个结论只覆盖本机的系统层：CUDA 13、NVIDIA EGL、apt 源、CPU 配额都是本机提供的，测不到。
+- **strace 逐文件核实（已确认，4.6.4）**：系统目录零写入；沙盒外只写了 `/tmp/cdds.LOG`（上游写死）和 git-lfs 的 `/tmp/sock-*`；读取的非系统文件只有 `~/.ssh`。
+  逐条清单 `outputs/readme_bottle_strace_20260925/report_paths.md`、`paths.tsv`，原始 trace 是 `traces.tar.gz`。strace 下 19/20 开局失败，那是 strace 自身造成的，不算。
+- **拖慢实验（已确认，4.8.2.4）**：每 100 ms 停 16 ms，三组同一批 10 个 case。基线 7/10；只拖 sim（RTF 0.69）1/10，失败是髋部碰桌 8 次；只拖 deploy 8/10。
+  **三组开局失败都是 0**。"栈慢就开局摔"这个说法已被推翻。报告 `outputs/slowdown_20260925/report.md`。
+- **已推送**：P7、P8、P19（nvcc 那句已按实测改写）、文档修复 1–4、单臂排错表的起栈摔倒行，以及两个让 make check 通过的小修（henry 的 prepare.py 格式、README 行数）。
 
 ## 卡点 / 待验证
 
-- **协作者仍 `initial_stance_unstable`**：文档化的安装本身已排除（已确认，4.6.1）。原因**待验证**；候选（假设）：他机器的系统层（CUDA 运行时版本、
-  mujoco 未钉 3.11.0、CPU 配额 / 同时多实例）或停栈后不足 20 s 重起。开局判定失败只记一个 `false`，看不出哪种退出（4.8.2.1 待用户定）。
-- 待验证：P19 的 `cuda-cudart-dev-13-0` 安装行没在干净机器上跑过。
-- 待验证：crate 换成带夹爪补丁的二进制是否等价（本机 crate 仍是 4add301，4.8.4.3）。
-- 用户暂缓：TODO 4.6.2.8–4.6.2.10（crate 开局距离区间、warehouse 基线 holdout、场景包/Blender/`python` 等小项）。
+- 协作者"一开始摔倒"的原因仍未知（待验证）。用户定：这条线到此为止，其余另行单独解决（4.8.2.2、4.8.2.3、4.8.2.5、4.8.2.6）。
+- 待验证：没有 nvcc 的机器上 cmake 能否配置（4.6.2.3.1）；`cuda-cudart-dev-13-0` 那一行没在干净机器上跑过。
+- 假设（未测）：sim 慢时的髋部碰桌，是因为抓取阶段按墙钟计时（4.8.2.6）。
+- 待验证：crate 换成带夹爪补丁的二进制是否等价（本机 crate 仍用 4add301，4.8.4.3）。
 
-## 下一步（编号见 `TODO.md`，等用户定顺序）
+## 下一步（编号见 `TODO.md`，顺序等用户定）
 
-- 严格按 README 的 bottle 采集已确认不摔（TODO 4.6.3/4.6.4/4.8.2.4）；协作者其余问题用户定为另行单独解决（4.8.2.2/4.8.2.3/4.8.2.5）。
-- **4.8.2** 协作者开局失败：等用户定怎么拿到他那边的证据（**4.8.2.1** 开局诊断是否先加）。
-- 旧 expert 已作废：新 expert 的采集/训练由用户安排（旧 checkpoint 已全部删除）。
+- **4.8.2.2**：问协作者说的摔倒，是 sim.log 起栈时那行，还是 `collect_NN.log` 里的逐局失败；同时要他们的 RTF（pose_sidecar）和 deploy 的 `Loop timing`。
+- **4.8.2.1**：开局判定失败时，是否在 manifest 里记下卡在哪个条件（待用户定）。
+- 旧 expert 已作废：新 expert 的采集和训练由用户安排。
 
 ## 关键路径与命令
 
@@ -38,15 +38,18 @@
 cd /workspace/code/locomanipulation && . scripts/paths.sh
 bash scripts/cpu_headroom.sh; nvidia-smi; find /workspace/tmp -maxdepth 3 -name stack.json   # 有输出 = 有栈在跑
 # 本机 bottle/warehouse 用 5cab2fb：export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"；crate 不设
-# 停栈后等 ≥20 s 再起；pkill -f 会匹配自己的命令行，杀进程写脚本文件
+# 停栈后等 ≥20 s 再起；pkill -f 会匹配自己的命令行（本会话又踩一次），杀进程先 ps 找 pid 再 kill
 
-# 从零复现（隔离 agent）：见 outputs/fresh_repro_20260925/launch.sh（env -i + 沙盒 HOME，claude -p，hooks/记忆/MCP 关）
-# P8 证据：outputs/fresh_repro_20260925/p8_stats_ab/compare.txt；文档 3/4 核对：outputs/fresh_repro_20260925/doc_fixes_1_4/
+# 严格 README 沙盒的做法（沙盒已删，脚本还在）：
+#   outputs/readme_bottle_20260925/sb.sh        env -i 跑一条命令，跨调用保留 export 和 cwd
+#   outputs/readme_bottle_strace_20260925/sbt.sh 同上，外面套 strace；analyze_traces.py → paths.tsv → summarize_paths.py
+#   outputs/slowdown_20260925/{duty_cycle.py,run_arm.sh,analyze.py}   单进程 SIGSTOP 占空比、每组驱动、汇总
+# 从 sidecar 算 sim RTF：只累加相邻行 t 的正增量（每局重置时仿真时钟归零）
 
 # deploy 源码指纹与能力标记
 (cd <deploy_root>/src && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)   # 期望 c1360628…
 for m in POSE_UPPER_OWNERSHIP_V2 PLANNER_HAND_OWNERSHIP_V1 SONIC_AUTO_START SONIC_DDS_DOMAIN; do grep -aq $m <binary> && echo "有 $m" || echo "缺 $m"; done
 
-# 提交：make check → 按文件名 add → git commit --no-verify（钩子会被别人的 WIP 干扰）
+# 提交：make check（文档有行数预算：README 100、single_arm/bimanual 210）→ 按文件名 add → git commit --no-verify
 make check
 ```
