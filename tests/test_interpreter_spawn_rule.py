@@ -89,7 +89,6 @@ def test_the_boundary_crossings_are_the_ones_we_expect():
     for row in ALLOWED:
         by_interpreter.setdefault(row["interpreter"], set()).add(Path(row["source"]).name)
     assert by_interpreter["isaac_gr00t"] == {
-        "run_convert.py",
         "run_train.py",
         "run_vla_server.py",
         "eval_crate_closed_loop.py",

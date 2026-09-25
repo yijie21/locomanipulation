@@ -15,6 +15,11 @@ positional and the converter trusts it -- session k holds the episodes manifest 
 The audit runs with `--run-dir`, which judges the lift in world z from the run's state traces. The
 exporter's object-pose column is in the pelvis frame, so without it the part of a lift the pelvis
 performs cancels out and good episodes are failed (15 of 190 on 2026-09-17).
+
+Every child runs in the data-collection venv, statistics included: `gr00t.data.stats` is the vendored
+`src/gr00t` (the PYTHONPATH below puts it first in any venv), and its stats.json / relative_stats.json were
+byte-identical to the Isaac-GR00T venv's on the bottle, crate and warehouse datasets (2026-09-25). So a
+machine set up to collect (setup steps 0-4) can convert; the Isaac-GR00T venv (step 5) is for training.
 """
 
 from __future__ import annotations
@@ -32,7 +37,6 @@ from locomani.pipeline.stages import Stage
 ROOT = Path(paths.REPO)
 
 DATA_PY = Path(paths.SONIC) / ".venv_data_collection" / "bin" / "python"
-TRAIN_PY = Path(paths.THIRD_PARTY) / "Isaac-GR00T" / ".venv" / "bin" / "python"
 # The children run in other virtual environments and import locomani by name (check_dataset pulls
 # world_lift in for --run-dir), so the path is handed over explicitly rather than inherited from
 # whatever started this script.
@@ -69,7 +73,7 @@ def convert_argv(entry: dict, cfg: dict, train_ds: Path, val_ds: Path) -> list:
 
 def stats_argv(dataset: Path, cfg: dict) -> list:
     return [
-        TRAIN_PY, "-m", "gr00t.data.stats",
+        DATA_PY, "-m", "gr00t.data.stats",
         "--dataset-path", dataset,
         "--embodiment-tag", cfg["embodiment"]["gr00t_tag"].upper(),
         "--modality-config-path", ROOT / cfg["embodiment"]["gr00t_modality_config"],

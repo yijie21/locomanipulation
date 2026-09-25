@@ -192,6 +192,41 @@ def test_the_children_are_handed_the_source_path(converted):
     assert out.count("PYTHONPATH=") >= 3 and "/src" in out
 
 
+def test_the_statistics_run_without_the_training_venv(converted):
+    """Converting belongs to collection (setup steps 0-4); the Isaac-GR00T venv is step 5. The statistics
+    come from the vendored `src/gr00t` in the data venv -- byte-identical to the training venv's on the bottle,
+    crate and warehouse datasets (2026-09-25) -- so a machine set up to collect can also convert (P8)."""
+    _, out = converted
+    stats = out[out.index("[stats_train]") :].split("\n")[1]
+    assert ".venv_data_collection" in stats and "gr00t.data.stats" in stats
+    assert "Isaac-GR00T" not in out
+
+
+@pytest.mark.parametrize("line", ["bottle", "crate"])
+def test_a_copy_cut_below_its_holdout_is_refused_before_the_stack_starts(tmp_path, line):
+    """The runbooks' "exactly N rounds" recipe (batch_rounds N, max_batches 1) with the copied `holdout: 10`
+    passed admission and failed at convert on every line (docs reproduction 2026-09-25, P7)."""
+    source = {"bottle": "bottle_simple_200.yaml", "crate": "crate_table30_record.yaml"}[line]
+    cfg = yaml.safe_load((EXPERIMENTS / source).read_text())
+    cfg["name"] = f"holdout_{line}"
+    cfg["collect"].update(batch_rounds=10, max_batches=1, record=True)
+    cfg["train"]["holdout"] = 10
+    experiment = tmp_path / f"holdout_{line}.yaml"
+    experiment.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    for module, extra in (
+        ("locomani.pipeline.run_stack", ["--mode", "collect"]),
+        (f"locomani.tasks.{line}.collect", []),
+    ):
+        result = subprocess.run(
+            [sys.executable, "-m", module, str(experiment), "--dry-run", *extra],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            env=CHILD,
+        )
+        assert result.returncode != 0 and "training set would be empty" in result.stderr, (module, result.stderr)
+
+
 def test_a_run_without_a_finished_collection_is_refused(tmp_path):
     (tmp_path / "config.yaml").write_text((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
     (tmp_path / "summary.json").write_text(json.dumps({"collect": {"sessions": [], "manifests": []}}))

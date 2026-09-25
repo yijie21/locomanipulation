@@ -1,10 +1,5 @@
 [
   {
-    "source": "src/locomani/pipeline/run_convert.py",
-    "interpreter": "isaac_gr00t",
-    "reason": "gr00t.data.stats lives in third_party/Isaac-GR00T/.venv and .venv_sim has no gr00t; a venv boundary"
-  },
-  {
     "source": "src/locomani/pipeline/run_train.py",
     "interpreter": "isaac_gr00t",
     "reason": "torchrun and gr00t.experiment.launch_finetune live in the Isaac-GR00T venv; a venv boundary"
