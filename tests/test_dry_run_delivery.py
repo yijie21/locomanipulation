@@ -73,9 +73,9 @@ def dry_run(driver: str, experiment: str, *extra: str, mode: str = "collect") ->
 
 @pytest.fixture(scope="module")
 def gate8():
-    cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_gate8.yaml").read_text())
+    cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_gate8_20260925.yaml").read_text())
     return cfg, dry_run(
-        "locomani.tasks.bottle.collect", "bottle_simple_gate8.yaml", "--gpu", "1", "--name", "delivery_check"
+        "locomani.tasks.bottle.collect", "bottle_simple_gate8_20260925.yaml", "--gpu", "1", "--name", "delivery_check"
     )
 
 

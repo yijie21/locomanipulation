@@ -247,7 +247,7 @@ case bank 绑定场景 metadata hash，并须覆盖整个尝试预算；换场�
 瓶子重心下移 5 cm，使单边指垫先碰到时瓶子倾向滑动而不是倾倒。
 
 ```bash
-bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8.yaml --gpu 0 --name <run>
+bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8_20260925.yaml --gpu 0 --name <run>
 ```
 
 

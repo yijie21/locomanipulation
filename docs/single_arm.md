@@ -45,8 +45,8 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/sc
 八个块——`name` + `task` / `embodiment` / `scene` / `backend` / `collect` / `train` / `eval`。
 运行开始时它被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，**下游阶段读的永远是那份副本**。
 
-现有单臂实验：`bottle_simple_200`（200 集 + 10k 步 + 100 局）、`bottle_simple_gate8`
-（8 局固定 case bank，闸门用）、`bottle_simple_smoke`（全链路冒烟）、`pick_place`。
+现有单臂实验：`bottle_simple_200`（200 集 + 10k 步 + 100 局）、`bottle_simple_gate8_20260925`
+（8 局固定 case bank `configs/cases/`，闸门用；旧版 `bottle_simple_gate8` 读的 bank 在未入库的 `outputs/`）、`bottle_simple_smoke`（全链路冒烟）、`pick_place`。
 
 ## 3. 新建一次实验
 
@@ -90,7 +90,7 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 
 实验文件给了 `scene.cases` 时，"成功够了就停"（`--until-ok`）**不会**传给 gym：整个
 `batch_rounds` 预算必定跑满，`successes` 退化成事后的最低验收门槛。所以
-`bottle_simple_gate8.yaml`（带 bank）把 `successes` 改成 1 **不会**只采一集——要改的是
+`bottle_simple_gate8_20260925.yaml`（带 bank）把 `successes` 改成 1 **不会**只采一集——要改的是
 `batch_rounds`。这是有意的：固定 bank 的对照要保留全部尝试，不能成功后重采样填满。
 
 ## 6. 跑
@@ -146,7 +146,7 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
 ```bash
 export PORT=29540                                                                # 终端 2 专用
 bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml  --gpu 0   # 终端 1
-bash scripts/run_overnight.sh configs/experiments/bottle_simple_gate8.yaml --gpu 1   # 终端 2
+bash scripts/run_overnight.sh configs/experiments/bottle_simple_gate8_20260925.yaml --gpu 1   # 终端 2
 cat outputs/runs/*/summary.json                                  # 比较结果
 ```
 

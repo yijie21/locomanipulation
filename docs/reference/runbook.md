@@ -23,8 +23,8 @@ export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"  
 
 bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1   # the whole path
 # collection is two terminals: the recording stack, then the agent that drives it
-bash scripts/start_stack.sh collect         configs/experiments/bottle_simple_gate8.yaml --gpu 1
-bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8.yaml --gpu 1
+bash scripts/start_stack.sh collect         configs/experiments/bottle_simple_gate8_20260925.yaml --gpu 1
+bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_gate8_20260925.yaml --gpu 1
 bash scripts/convert_data.sh outputs/runs/<name>
 bash scripts/train.sh        outputs/runs/<name> --gpu 1
 # closed-loop evaluation is three: the stack, the policy server, the rounds (+ run_isaac_mirror.sh if image_source: isaac)
