@@ -1,7 +1,9 @@
-# Single-arm bottle: the frozen simple expert (stage4_27_wrap) on its low-CoM scene -- 200 kept
+# Single-arm bottle: the simple expert on its low-CoM scene -- 200 kept
 # episodes with randomised spawns, a 10k-step finetune, 100 closed-loop rounds. The collection
 # seeds (40000 + 100*batch) stay clear of the frozen gate bank (30700) and the reserved fresh20
 # bank (30900), so neither is ever trained on.
+# Since 2026-09-25 the expert walks in the warehouse way (task.reach.simple.approach_stop guard; pilot
+# bottle_simple_guard_lifted_20260925 10/10 on bottle_simple_200's first ten seeds).
 #
 # This file is complete: every value a run reads is here, with no inheritance and no composition.
 # A new experiment is a copy with a few lines changed. The run copies it verbatim to

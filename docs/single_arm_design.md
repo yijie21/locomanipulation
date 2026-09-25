@@ -12,8 +12,8 @@
 
 | 项目 | 当前支持 |
 |---|---|
-| 默认任务 | `bottle_only` 场景（硬垫）+ `configs/task/bottle_whole_body.yaml`；`bottle_visible.json` 是 2026-09-14 前的基线入口 |
-| 动作过程 | 随机出生 → 走近可见目标 → 减速、准备抓取 → 伸手、闭合、抬起 → 退手与验收 |
+| 默认任务 | `configs/experiments/bottle_simple_200.yaml`：`reach.strategy=simple`、`reach.simple.approach_stop: guard`（2026-09-25 起），场景 `outputs/scene/sim_lowcom`。更早的入口：`configs/task/bottle_whole_body.yaml`（连续全身候选，下面 §二 的 2026-09-14 数字）、`bottle_visible.yaml`（2026-09-14 前的基线） |
+| 动作过程 | 随机出生 → 手臂自然下垂、0.25 恒速走近 → 按桌边守线刹车 → 双手原地抬起 → 右手滑到预抓取点、进入、闭合、抬起 → 交还规划器与验收 |
 | 专家输入 | 相机可见性、机器人状态与仿真物体信息辅助规划；不是纯 RGB 策略 |
 | 采集能力 | 单局检查、按成功数批量采集、exporter session、manifest、视频与状态轨迹 |
 | 后续链路 | 已有 LeRobot 转换、GR00T 训练与评测入口；新配置的数据质量和学习效果需单独验证 |
@@ -32,12 +32,13 @@
 | SONIC 权重 | `policy/sonic_v1_1`（`scripts/paths.sh` 默认） | 运行目录 `deploy_receipts.jsonl` |
 | deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
 | 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED`；`simple` 线还要按 [runbook §1](single_arm.md) 再建 `outputs/scene/sim_lowcom` | 实验文件的 `scene.dir` 指向哪个，就核对那个目录的 `scene_meta.json` |
-| 任务配置 | `configs/task/bottle_whole_body.yaml`，不改字段（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表最后一行） | 运行目录 `task_config.json`、`config_snapshot.json` |
+| 任务配置 | 实验文件的 `task` 块，不改字段；默认 `bottle_simple_200`（`approach_stop: guard`）。下表 2026-09-14 的数字来自更早的 `configs/task/bottle_whole_body.yaml`（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表第二行） | 运行目录 `task_config.json`、`config_snapshot.json` |
 | 采集配方 | `configs/experiments/<name>.yaml`（全展开，一次运行读的每个值都在里面） | 运行目录 `config.yaml`（逐字节副本）、`collect/inputs.json` |
 | 资源 | 该 GPU 上没有第二个仿真；CPU 配额有余量 | `nvidia-smi`、`/sys/fs/cgroup/cpu.stat` |
 | 闭环评测的初始 token | `--initial-token-file configs/deployment/whole_body_initial_token.json`（与这份数据的垂臂开局一致；默认的 READY token 会让 100 局全部卡在 prelude） | 评测目录 `config_snapshot.json` 的 `initial_token` 摘要 |
 
-2026-09-14 在上述配置下的实测（同一天、同一份代码，失败按"阶段 × 连杆"分类）：
+默认走近（`approach_stop: guard`）的实测在 [台账 39](ledger/bottle.md)：`bottle_simple_200` 的前十个 seed 10/10。
+下面是 2026-09-14 `bottle_whole_body` 的实测（同一天、同一份代码，失败按"阶段 × 连杆"分类）：
 
 | 运行 | 结果 | 剩余失败 |
 |---|---|---|
@@ -1211,33 +1212,41 @@ tensor,但 grasp_gym.py 只摸得到其中 5 个 —— 其余由 deploy 自己�
 
 ### 图 ②：`simple` 专家的一局（`bottle_simple_*` 跑的就是这条）
 
-八个相位，定义在 `simple_policy.py:41` 的 `PHASES`，主循环在 `simple_policy.py:528-900`
-逐相位分派。**没有伺服状态机**——每个相位是一段开环笛卡尔运动，由支撑式全身 IK 执行，
+相位定义在 `simple_policy.py` 的 `PHASES`。走入由 `round_phases_approach._phase_approach` 驱动，每帧调
+`walk_tick`；接管后，默认的 guard 走近先在 `_lift_ready` 里跑完 `ready`，其余相位在 `_run` 的主循环里逐相位分派。
+**没有伺服状态机**——每个相位是一段开环运动（`ready` 在关节空间，其余是笛卡尔路径，由支撑式全身 IK 执行），
 判据只有"测得的硬事实"（碰撞扫掠、摔倒、瓶子被碰开、闭合后的双侧垫接触、抬升后的实测上升）
-和超时。控制器不 import `servo*` 任何模块。
+和超时。控制器不 import `servo*` 任何模块。`reach.simple.approach_stop` 只改接管之前（走入、刹车）和接管后的第一段（`ready` / `backoff`）。
 
 ```mermaid
 flowchart TD
-  W["<b>走入</b> prepare_walk → walk_tick<br/>simple_policy.py:327/363"]
-  SA["<b>站定交接</b> settle_for_admission<br/>腿速 ≤ stand_leg_speed_rad_s ∧ 骨盆速 ≤ stand_pelvis_speed_m_s<br/>持续 stand_settle_s；超过 stand_settle_timeout_s 强制接管<br/>simple_policy.py:402-455"]
-  V{"<b>可见性门</b> 瓶子须在 target_grace_s 内被 ego 相机接纳<br/>simple_policy.py:533"}
-  B["<b>backoff</b> 手在桌面带内时先退出<br/>simple_policy.py:679"]
-  R["<b>reach</b> 连续最小 jerk 路径：抬起 → 滑到 pre-grasp<br/>刹车稳定后重规划一次；历时 reach_seconds<br/>simple_policy.py:687"]
-  S["<b>settle</b> 等手落到 pre-grasp 命令点附近<br/>simple_policy.py:711"]
+  W["<b>走入</b> prepare_walk → 每帧 walk_tick<br/>guard（默认）：手臂交给步态，SLOW_WALK walk_speed，方向起步定死<br/>visible：手臂在 hang_* 姿态，三档速度"]
+  G{"<b>刹车</b> guard：EdgeGuard.step，脚落地时再走一步 + guard_extra_m 会越过桌边 − guard_margin_m<br/>visible：visible_brake_depth / visible_brake_edge"}
+  SA["<b>站定交接</b> settle_for_admission<br/>腿速 ≤ stand_leg_speed_rad_s ∧ 骨盆速 ≤ stand_pelvis_speed_m_s<br/>持续 stand_settle_s；超过 stand_settle_timeout_s 强制接管"]
+  V{"<b>可见性门</b> 瓶子须在 target_grace_s 内被 ego 相机接纳"}
+  T{"<b>接管</b> POSE takeover + brake_to_stop<br/>guard：桌面层已越过桌边则失败"}
+  RD["<b>ready</b>（guard）_lift_ready：BimanualIK.lifted_ready 一次求解<br/>关节空间插值 ready_seconds，停 ready_hold_s；左手留在这里"]
+  B["<b>backoff</b>（visible）手在桌面带、离桌沿近时先后缩 retract_m"]
+  R["<b>reach</b> 连续最小 jerk 路径滑到 pre-grasp，刹车稳定后重规划一次<br/>guard：从 ready 点出发，历时 pregrasp_seconds<br/>visible：先竖直抬起，历时 raise_seconds + pregrasp_seconds"]
+  S["<b>settle</b> 等手落到 pre-grasp 命令点附近"]
   SG{"‖实测 − 命令‖ ≤ settle_tolerance_m<br/>或 settle_timeout_s 到时"}
-  E["<b>entry</b> 沿进刀轴推进，按夹爪轴做横向补偿<br/>simple_policy.py:720"]
+  E["<b>entry</b> 沿进刀轴推进，按夹爪轴做横向补偿"]
   EG{"<b>对齐判据</b> entry_aligned(offset)<br/>横向 ≤ entry_lateral_tolerance_m<br/>∧ 高度 ≤ entry_height_tolerance_m<br/>或已有双侧接触"}
-  RT["<b>retreat</b> 沿进刀线退开，再试一次<br/>历时 retreat_seconds；simple_policy.py:790"]
-  C["<b>close</b> 夹爪按 close_seconds 斜坡闭合<br/>期间用实测位保位；simple_policy.py:795"]
+  RT["<b>retreat</b> 沿进刀线退开，再试一次<br/>历时 retreat_seconds"]
+  C["<b>close</b> 夹爪按 close_seconds 斜坡闭合<br/>期间用实测位保位"]
   CG{"双侧垫接触须在 close_seconds + contact_timeout_s 内出现"}
-  L["<b>lift</b> 抬升 lift_height_m，历时 lift_seconds<br/>躯干前倾冻结在 lean_at_lift；simple_policy.py:807"]
-  RC["<b>recover</b> 躯干回正，手保持高度，历时 recover_seconds<br/>simple_policy.py:813"]
+  L["<b>lift</b> 抬升 lift_height_m，历时 lift_seconds<br/>躯干前倾冻结在 lean_at_lift"]
+  RC["<b>recover</b> 躯干回正，手保持高度，历时 recover_seconds"]
   OK(["<b>OK</b> 双侧接触仍在 ∧ 实测上升 ≥ min_rise_m"])
   BAD(["<b>FAILED</b>"])
 
-  W --> SA --> V
+  W --> G --> SA --> V
   V -- 不过 --> BAD
-  V -- 过 --> B --> R --> S --> SG
+  V -- 过 --> T
+  T -- guard --> RD --> R
+  T -- visible --> B --> R
+  T -. 越过桌边 .-> BAD
+  R --> S --> SG
   SG --> E --> EG
   EG -- 对齐 / 已接触 --> C --> CG
   EG -- 未对齐 ∧ 尝试数 < entry_attempts --> RT --> E
@@ -1251,8 +1260,8 @@ flowchart TD
 
 **整局随时可能触发的失败**（不画进主线，否则图没法看）：摔倒、物理时钟停摆或跳变、
 IK 碰撞扫掠预测到碰撞（`clearance: {side}:{link}:{obstacle}`）、支撑参考超出容差、
-总时长超 `recovery_timeout`；以及 **backoff–retreat 期间**瓶子被碰开超过
-`disturb_limit_m`（`simple_policy.py:670`——闭合开始后这条就不再检查）。
+总时长超 `recovery_timeout`；guard 的 `ready` 姿势解不准（误差 > 2 cm）；以及 **ready / backoff 到 retreat 期间**
+瓶子被碰开超过 `disturb_limit_m`（`_lift_ready` 和 `_run` 里检查——闭合开始后这条就不再检查）。
 
 ### 图 ③ / ④：`coupled` / `ready` 系（`pick_place` 跑的是这条）
 
