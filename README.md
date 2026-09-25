@@ -26,7 +26,7 @@
 
 ## 安装环境
 
-准备 Linux、NVIDIA GPU 与可用驱动，以及 Git、Git LFS、CMake 和 uv。
+准备 Linux、NVIDIA GPU 与能跑 CUDA 13 的驱动、CUDA 13 运行时开发文件（安装指南第 3 步第 0 条先查），以及 Git、Git LFS、CMake 和 uv。
 Git LFS 用于下载上游机器人网格和库；本仓库附带的场景包与房间背景直接随 Git 提供。
 先克隆本仓库，再按 [完整安装指南](docs/setup.md) 配置所需组件：
 
@@ -38,7 +38,7 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 
 | 要运行的功能 | 安装范围 |
 |---|---|
-| SONIC 单臂 / 双臂 / warehouse 仿真采集 | 安装指南第 **0–4 步**：路径、上游仓库、仿真与采集环境、SONIC 权重及补丁、C++ deploy、场景 |
+| SONIC 单臂 / 双臂 / warehouse 仿真采集与转换（到 LeRobot 数据集） | 安装指南第 **0–4 步**：路径、上游仓库、仿真与采集环境、SONIC 权重及补丁、C++ deploy、场景 |
 | GR00T / VLA 训练与评测 | 在上述基础上完成第 **5 步**，安装微调环境 |
 | Isaac 离线渲染 | 额外完成第 **7 步**，安装 SIMPLE 渲染运行时，再按 [资产构建](docs/rendering.md#资产构建) 生成 USD |
 | ScaleBFM 采集与评测 | 按 [ScaleBFM 指南](docs/scalebfm.md) 配置独立后端、权重和运行资产 |

@@ -9,26 +9,27 @@
 
 ## 1. 准备一次
 
-先做完 [安装指南](setup.md) 第 0–5 步，并应用
-[POSE ownership 补丁](../patches/sonic_pose_ownership.md)。
+先做完 [安装指南](setup.md) 第 0–4 步（采集和转换只要这些；训练和评测还要第 5 步）。双臂要的
+[POSE ownership 补丁](../patches/sonic_pose_ownership.md) 第 3 步已经打了，不用再单独打；第 4 步也已经把场景源资产装进
+`outputs/scene/`，这里**不要**再跑 `install_scene.sh`——不带 `SCENE_PRESET` 时它会把单臂用的 `outputs/scene/sim` 重建成
+多物体桌（下面的双臂场景只读源资产，与 `outputs/scene/sim` 建成什么样无关，2026-09-25 核对过逐字节相同）。
 
 ```bash
 . scripts/paths.sh
 export PYTHONPATH="$LOCOMANI_ROOT/src"
 
-bash scripts/install_scene.sh
 "$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene \
   outputs/scene/crate_bimanual_depth04 --crate-setback 0.04
 "$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
   outputs/scene/crate_bimanual_depth04 outputs/scene/crate_table30_depth04 --height 0.30
 ```
 
-**三步都要跑。** 降桌高和选控制 profile 是两件事，低桌配置文件**不改变桌面几何**。
+**两步都要跑。** 降桌高和选控制 profile 是两件事，低桌配置文件**不改变桌面几何**。
 `--crate-setback 0.04` 同时改 XML 初始位置和 reset 元数据，**任务 JSON 不能代替它**——
 此前本页漏写这 4 cm，生成的场景与实验对不上（[复现核对](handoff/crate-reproduction-20260914.md)）。
 
 构建结果包含 `scene_locomani.xml` 和 `scene_meta.json`。
-新机器还要跑一次 `bash scripts/link_gr00t_src.sh`（venv 的 `gr00t` 指向 `src/gr00t/`）。
+要训练的新机器（第 5 步装完后）还要跑一次 `bash scripts/link_gr00t_src.sh`（训练 venv 的 `gr00t` 指向 `src/gr00t/`）。
 
 ## 2. 一次运行 = 一份实验文件
 
@@ -69,7 +70,7 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 | `task.expert` | 用哪个专家 | `visual` 是本页这条线；`wall` / `carry` 是诊断专家 |
 | `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: crate` 就是 §1 建的 `outputs/scene/crate_table30_depth04`；`name: warehouse_textured` 是物流房间（旧名 `warehouse` 的纸箱没贴图，只留给旧运行；名字表 `configs/scenes.yaml`） |
 | `train.steps` / `save_steps` | 优化器步数 / 存档间隔 | 要冒烟就让 `save_steps` 等于 `steps`，否则存不下 checkpoint |
-| `train.holdout` | 留几集做验证 | 必须**小于**实际保留的集数 |
+| `train.holdout` | 留几集做验证 | 必须**小于**能保留的集数，否则训练集为空。`collect.successes` 和 `batch_rounds × max_batches` 都是上限，起栈时就查；缩短运行时一起调小（0 = 不留验证集）。实际成功得更少时 convert 仍会拒绝 |
 | `eval.rounds` | 闭环评测跑几局 | 20 局只看得出"翻倍级"差异，100 局才判得动 10 个点 |
 | `eval.seed` | 评测的采样种子 | 与采集的 seed 刻意错开 |
 | `eval.policy_port` | policy server 的端口 | 默认 5590，**并行评测必须改**（见 §6） |

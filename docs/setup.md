@@ -4,7 +4,8 @@
 
 ## 环境安装
 
-前置:Linux + NVIDIA GPU(本仓库在 RTX 5090 / driver CUDA 13 上验证)、
+前置:Linux + NVIDIA GPU(本仓库在 RTX 5090 / driver CUDA 13 上验证)、CUDA 13 运行时开发文件
+(`cuda_runtime.h` + `libcudart.so.13`,第 3 步第 0 条先查、缺了怎么装)、
 [uv](https://docs.astral.sh/uv/),以及:
 
 ```bash
@@ -23,7 +24,7 @@ git lfs install          # 只需一次;不做的话下面 clone 出来的是空
 `.venv_sim` 建的。**[miniconda](https://docs.conda.io) 只有第 6 步才用到**,
 那一步是可选的。
 
-先看要装哪些。**第 0–4 步是跑仿真采数据的最小集;要训练或评测 VLA 还得加第 5 步**:
+先看要装哪些。**第 0–4 步是跑仿真采数据、转成 LeRobot 数据集的最小集;要训练或评测 VLA 还得加第 5 步**:
 
 | # | 组件 | 必需? | 耗时 |
 |---|---|---|---|
@@ -188,7 +189,7 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
  && bash install_scripts/install_mujoco_sim.sh \
  && bash install_scripts/install_data_collection.sh \
  && .venv_data_collection/bin/python download_from_hf.py \
- && .venv_data_collection/bin/python download_from_hf.py --sonic-v1-1)
+ && .venv_data_collection/bin/python download_from_hf.py --sonic-v1-1 --no-planner)
 # install_mujoco_sim.sh      -> .venv_sim(跑 MuJoCo sim 与所有 src/locomani 脚本)
 # install_data_collection.sh -> .venv_data_collection(跑 data exporter)
 # download_from_hf.py        -> SONIC policy 权重落到 gear_sonic_deploy/policy/release/
@@ -197,6 +198,9 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
 # --sonic-v1-1               -> gear_sonic_deploy/policy/sonic_v1_1/,**这是本仓库
 #   2026-09-11 起的默认 checkpoint**(`SONIC_POLICY`,见 scripts/paths.sh)。两份都要:
 #   release 仍是对照臂,而 2026-09-11 之前采的所有数据集/模型都是 release 的 token 空间
+# --no-planner               -> 两次下的是同一个 planner 文件,第一次已经放好了。脚本用 copy2 把 HF 缓存里
+#   的只读权限一起复制过来,第二次再覆盖就 PermissionError、整条链 exit 1(2026-09-25 从零复现)。
+#   同理,重跑这一段前先 (cd third_party/GR00T-WholeBodyControl && chmod -R u+w gear_sonic_deploy/policy gear_sonic_deploy/planner)
 ```
 
 > **上游不钉 MuJoCo 版本,`uv` 会解析到最新的**(2026-09-25 是 3.14.0)。本仓库的结果全在 **3.11.0**
@@ -266,11 +270,24 @@ mujoco 那行期望 `3.11.0`。补丁已打的树上再跑一次 `git apply`(不
 
 ### 3. 编译 C++ deploy(必需)
 
-三样依赖。第一样正常 `apt install`;**后两样不能**(见每段的理由),它们落在
-`$DEPS_DIR`(默认 `$LOCOMANI_WORKSPACE/deps`)。
+先确认机器上有 CUDA 13 运行时(第 0 条),然后三样依赖。第一样正常 `apt install`;**后两样不能**
+(见每段的理由),它们落在 `$DEPS_DIR`(默认 `$LOCOMANI_WORKSPACE/deps`)。
 
 ```bash
 . scripts/paths.sh && mkdir -p "$DEPS_DIR"
+
+# 0) CUDA 13 运行时:编译要 cuda_runtime.h,运行要 libcudart.so.13。deploy 不编 CUDA kernel;
+#    有 nvcc 时 cmake 的 find_package(CUDAToolkit) 执行 `nvcc -v` 定版本(2026-09-25 strace 实测),
+#    没有时走 CMakeLists 里直接找运行时库的分支(未在无 nvcc 的机器上验证)。
+#    必须是 13.x:下面 2) 的 TensorRT 是 +cuda13.0 的构建。nvidia/cuda 的 devel
+#    镜像自带(原作者机器就是),先查:
+ls "${CUDA_HOME:-/usr/local/cuda}/include/cuda_runtime.h" "${CUDA_HOME:-/usr/local/cuda}/lib64/libcudart.so.13"
+#    缺了就先按 2) 加 NVIDIA 的 CUDA apt 源,再只装运行时开发包(连依赖约 22 MB,不含驱动;
+#    这一行未在干净机器上验证过 —— 开发机镜像自带):
+#      sudo apt-get install -y cuda-cudart-dev-13-0
+#    装在 /usr/local/cuda 以外就 export CUDA_HOME=<那个目录>,cmake 和 env_deploy.sh 都读它。
+#    cmake 找不到时报 "CUDA installation incomplete. Please run: ./scripts/install_deps.sh"
+#    —— 不要照做,见本节末尾的警告。
 
 # 1) 小依赖:几 MB,正常装。久没 update 过的机器先 apt-get update,否则可能 404。
 #    (这一行未在干净机器上验证过 —— 开发机上六个包本来就装着)

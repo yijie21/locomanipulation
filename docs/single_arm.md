@@ -6,10 +6,11 @@
 
 ## 1. 准备一次
 
-先做完 [安装指南](setup.md) 第 0–5 步。以下命令都在仓库根目录的 **Bash** 终端里跑。
+先做完 [安装指南](setup.md) 第 0–4 步（采集和转换只要这些），训练和评测还要第 5 步。以下命令都在仓库根目录的 **Bash** 终端里跑。
 
-**每开一个新终端都要跑这三行**（环境变量不跨终端存活；没有第三行时任何 collect/eval
-都会在起进程之前拒跑 `needs patches/sonic_hand_ownership.patch`）：
+**每开一个新终端都要跑前两行**（环境变量不跨终端存活）。第三行**只在原作者机器上**要：那里默认 deploy 树
+没打夹爪补丁，不指过去时任何 collect/eval 都会在起进程之前拒跑 `needs patches/sonic_hand_ownership.patch`；
+新机器第 3 步已经打全三个补丁，不要这行（报这个错就是第 3 步没做完，或 `SONIC_DEPLOY_ROOT` 指到了别处）：
 
 ```bash
 . scripts/paths.sh
@@ -36,7 +37,7 @@ SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/sc
 目标池里要有 `water_bottle`，`install_scene.sh` 会回显 `finger pads HARDENED`。
 用哪个场景由实验文件的 `scene.dir`（或场景名 `scene.name`，名字表 `configs/scenes.yaml`）决定，两者在 `outputs/scene/` 下并存。
 
-新机器还要跑一次 `bash scripts/link_gr00t_src.sh`——它改的是**训练 venv**
+要训练的新机器（第 5 步装完后）还要跑一次 `bash scripts/link_gr00t_src.sh`——它改的是**训练 venv**
 （`third_party/Isaac-GR00T/.venv`，不是 `$VENV_SIM_PY`），把 `gr00t` 指向 `src/gr00t/`；指错时训练拒跑。
 
 ## 2. 一次运行 = 一份实验文件
@@ -80,7 +81,7 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 | `scene.cases` | 固定 case bank 文件 | 非空就是固定对照，见 §5 |
 | `train.steps` | 优化器步数 | 训练时长的主要来源 |
 | `train.save_steps` | 存 checkpoint 的间隔 | 要冒烟就让它等于 `steps`，否则一个 checkpoint 都存不下 |
-| `train.holdout` | 留几集做验证 | 必须**小于** `collect.successes`，否则训练集为空 |
+| `train.holdout` | 留几集做验证 | 必须**小于**能保留的集数，否则训练集为空。`collect.successes` 和 `batch_rounds × max_batches` 都是上限，起栈时就查；缩短运行时一起调小（0 = 不留验证集）。实际成功得更少时 convert 仍会拒绝 |
 | `eval.rounds` | 闭环评测跑几局 | 20 局只能看出"翻倍级"差异，100 局才判得动 10 个点 |
 | `eval.seed` | 评测的采样种子 | 与采集的 seed 刻意错开 |
 | `eval.policy_port` | policy server 的端口 | 默认 5590，**并行评测必须改**（见 §6） |
@@ -192,12 +193,12 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 | `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
 | `model/ exists` / `closed_loop.json exists` | 阶段拒绝覆盖已有产物。检查后删掉再重跑 |
 | 100 局全卡在 `[stand]` | `eval.initial_token` 和训练数据的开局姿势不一致（§4 最后一行） |
+| `sim.log` 开头有 `Robot has fallen, height: 0.199 m (not resetting; waiting for an episode reset)` | **正常，每次起栈都有**：sim 起来约 2 s、deploy 还没接管时机器人没人控制，躺到第一局重置才站起来；录像从重置开始，看不到。判断开局是否真的失败看 `collect_NN.log` 每局的 `stand drift` 行和 `[stand] ...` 失败原因 |
 | `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局；实测 2026-09-18 十局里出现一次 |
 | 栈起不来、端口被占 | 先看 §6 的两个端口；栈本身用 `python -m locomani.stack.cli status --instance N`，锁在 `$LOCOMANI_TMP/locomani_locks/` |
 | 阶段"被跳过"但你想重跑 | 删掉它的产物（§6） |
 
-手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。
-**录制的实例由起栈那一步决定**：`collect.record` 为真时 `run_stack.py` 给栈设 `RECORD_INSTANCE=1`，导出器就在该实例上起，两条线同一条路径（双臂闸门跑在实例 2）。并行仍按 GPU 分。
+手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。**录制的实例由起栈那一步决定**：`collect.record` 为真时 `run_stack.py` 给栈设 `RECORD_INSTANCE=1`，导出器就在该实例上起，两条线同一条路径（双臂闸门跑在实例 2）。并行仍按 GPU 分。
 更细的失败形态见 [隐性失败](reference/silent_failures.md)。
 
 ## 10. 进一步阅读

@@ -15,7 +15,7 @@ existing emergency-stop behavior are unchanged.
 > [`docs/setup.md` step 3](../docs/setup.md), which pins the upstream commit, applies all three in order and
 > refuses a half-patched tree. The block below records what the patch is for and how it was first applied.
 
-Apply from the repository root and rebuild:
+How it was first applied on its own (history, not an install step -- setup step 3 applies it with the other two):
 
 ```bash
 (cd third_party/GR00T-WholeBodyControl && git apply ../../patches/sonic_pose_ownership.patch)
@@ -26,7 +26,9 @@ strings "$SONIC_DEPLOY_ROOT/target/release/g1_deploy_onnx_ref" | rg POSE_UPPER_O
 
 Both visual and carry whole-body entries check the selected binary for this capability and
 rejects an old build. An alternate `SONIC_DEPLOY_BIN` must contain the same patch.
-See [setup](../docs/setup.md) for build dependencies and the separate DDS-domain patch.
+See [setup](../docs/setup.md) for build dependencies. The DDS-domain change is part of
+[`sonic_deploy_local_base`](sonic_deploy_local_base.md), the first patch of the series; do not apply
+[`sonic_dds_domain.patch`](sonic_dds_domain.md) on top of it.
 
 Keep the model's default-angle convention when rebuilding. The local SIMPLE
 `auto engage` branch changed shoulder-roll offsets to zero; the deployed production

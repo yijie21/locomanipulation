@@ -15,7 +15,8 @@ existing planner timeout and control-reset behavior remains in place.
 > [`docs/setup.md` step 3](../docs/setup.md), which pins the upstream commit, applies all three in order and
 > refuses a half-patched tree. The block below records what the patch is for and how it was first applied.
 
-Apply after the POSE ownership patch and rebuild with the same policy calibration:
+How it was first applied on its own, after the POSE ownership patch (history, not an install step -- setup step 3
+applies all three in order):
 
 ```bash
 (cd third_party/GR00T-WholeBodyControl && git apply ../../patches/sonic_hand_ownership.patch)

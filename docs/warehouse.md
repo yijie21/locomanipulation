@@ -7,9 +7,9 @@ G1 在物流房间里走到托盘上的纸箱前，双手扣住箱沿，抬起�
 
 ## 1. 准备一次
 
-先做完 [安装指南](setup.md) 第 0–4 步。第 3 步编 deploy 时**两个补丁都要打**：
+先做完 [安装指南](setup.md) 第 0–4 步。第 3 步一次打全的三个 deploy 补丁里，这条线要的是
 [POSE 控制权补丁](../patches/sonic_pose_ownership.md)（双臂必需，采集入口会检查二进制，没打直接报错）和
-[夹爪交接补丁](../patches/sonic_hand_ownership.md)（下面的基线是在打了它的 deploy 上测的）。然后建场景：
+[夹爪交接补丁](../patches/sonic_hand_ownership.md)（下面的基线是在打了它的 deploy 上测的），不用再单独打。然后建场景：
 
 ```bash
 . scripts/paths.sh
@@ -20,7 +20,7 @@ export PYTHONPATH="$LOCOMANI_ROOT/src"
 资产包 `assets/scene/logistics_room_box_v1/` 随仓库提供（`git lfs pull` 过就有）；生成的场景在 `outputs/` 下，不进 Git。
 场景名 `warehouse_textured` 指向这个目录（`configs/scenes.yaml`）。旧名 `warehouse` 是贴图提交之前装的，纸箱没贴图，只留给旧运行。
 
-> **本仓库原作者的机器**上打过两个补丁的 deploy 在别处，用
+> **本仓库原作者的机器**上打过这两个补丁的 deploy 在别处，用
 > `export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"` 指过去；新机器按上面装好后**不要**这一行。
 
 Isaac 并排重渲（§5 最后一条，可选）另需安装指南第 7 步和
@@ -49,10 +49,10 @@ diff configs/experiments/box_room_grasp_baseline_20260924.yaml configs/experimen
 | `name` | 运行目录 `outputs/runs/<name>/` | 同名运行的实验文件被改过会拒绝启动 |
 | `backend.render` | 仿真时渲不渲相机 | **目前用 `offline`**。旧 `warehouse` 场景的纸箱是一整块 46.3 万面网格，超过 MuJoCo 单块网格的 2²⁰ 顶点门槛，实时渲染时 sim 只剩 0.35× 实时，机器人走得比指令快约 3 倍；2026-09-24 按实时渲染跑是 0/20，离线回到 0.95×。现行 `warehouse_textured` 把同样的面拆成 9 块，三路相机离线测 3.2 ms，但实时栈的 RTF 还没测（TODO 4.7.7） |
 | `collect.record` | 录不录 LeRobot 数据 | 基线是 `false`（只采 manifest 和轨迹，调参数用）。要出训练数据改成 `true`，并跑 §5 的渲相机一步 |
-| `collect.batch_rounds` / `max_batches` | 每批尝试几局 / 最多几批 | 批内一定跑满；要正好跑 N 局就 `batch_rounds: N`、`max_batches: 1`（和 [双臂 §5](bimanual.md) 同一套规则） |
+| `collect.batch_rounds` / `max_batches` | 每批尝试几局 / 最多几批 | 批内一定跑满；要正好跑 N 局就 `batch_rounds: N`、`max_batches: 1`（和 [双臂 §5](bimanual.md) 同一套规则），录制时 `train.holdout` 也要小于 N |
 | `collect.successes` | 保留多少条成功 | 批间的验收门槛；不够时采集非零退出，但记录照样保留 |
 | `collect.seed0` | 第一局的 seed | 对照要同一个 |
-| `train.holdout` | 留几集做验证 | 要转换时必须**小于**成功局数，否则 convert 一开始就拒绝 |
+| `train.holdout` | 留几集做验证 | 必须**小于**能保留的集数，否则训练集为空。录制时 `collect.successes` 和 `batch_rounds × max_batches` 都是上限，起栈时就查；实际成功得更少时 convert 仍会拒绝（基线约 6/20，默认 10 就不够） |
 
 专家旋钮（`task.visual.*`）的含义见 [配置字段表](reference/config_fields.md)，历次改动的效果见 [DECISIONS](../DECISIONS.md)。
 
@@ -105,7 +105,7 @@ VLA **闭环**评测的图像由 Isaac 按需镜像提供：实验文件里设 `
 |---|---|
 | 机器人走得太快、过冲撞箱、成批 0 分 | `backend.render` 不是 `offline`。算实时比：trace 行数 × 0.02 s ÷ manifest 的 `seconds`，低于 0.9 就是渲染拖慢 |
 | convert 报 `still hold black placeholder frames` | 这是离线录制的运行，先跑 `render_dataset_cameras.sh` |
-| convert 报 `the training set would be empty` | `train.holdout` 不小于成功局数，调小（0 = 不留验证集） |
+| 起栈报 `the training set would be empty`，或 convert 报 `leaves none of N kept episodes` | `train.holdout` 不小于能保留（起栈时查上限）或实际保留的局数。调小实验文件里的 `train.holdout`（0 = 不留验证集）：起栈时被拒的同名重起即可；convert 才拒的，运行开始时配置已冻结，只能换 `name` 重采 |
 | 一批里大量 `initial_stance_unstable` | 停栈后不到 20 s 就重起，deploy 收不到 LowState；等 20 s、确认没有残留 sim/deploy 进程再起 |
 | 起栈报缺 POSE 补丁 | §1 的 deploy 没打补丁，或 `SONIC_DEPLOY_ROOT` 指错 |
 | `reach_stalled`、`lost_attachment` 占大头 | 这条线现在的主要失败形态（手停在箱沿上方、合爪后脱开），不是环境问题；进展见 [TODO](../TODO.md) 2.4.10.29 |
