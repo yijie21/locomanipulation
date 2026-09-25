@@ -134,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.get("backend", {}).get("render") != "offline":
         print(f"{run_dir.name}: backend.render is live; the cameras were recorded, nothing to render")
         return 0
+    if not cfg.get("collect", {}).get("record", True):
+        print(f"{run_dir.name}: collect.record is false; no exporter session was recorded, nothing to render")
+        return 0
     from locomani.pipeline.world_lift import RunTraces
 
     traces = RunTraces(run_dir)
