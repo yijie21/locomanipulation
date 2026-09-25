@@ -68,6 +68,40 @@ SCENE_DIR = os.path.join(OUTPUTS, "scene")  # MJCF + caches
 SIM_DIR = os.path.abspath(os.environ.get("LOCOMANI_SIM_DIR", os.path.join(SCENE_DIR, "sim")))
 SCENE_META = os.path.join(SIM_DIR, "scene_meta.json")
 SCENE_XML = os.path.join(SIM_DIR, "scene_locomani.xml")
+
+
+def adopt_sim_dir(sim_dir: str) -> None:
+    """Re-point SIM_DIR / SCENE_META / SCENE_XML at `sim_dir` after this module was imported.
+
+    For a process that learns its run's scene only after `locomani.paths` is loaded (collect and
+    eval attach to a stack and read LOCOMANI_SIM_DIR from it). Without this, every `ArmIK()` in
+    that process loaded outputs/scene/sim instead of the scene the sim is showing (2026-09-25:
+    `Missing collision body: water_bottle_object` on a machine whose outputs/scene/sim was an
+    older tabletop build). Refuses when a module already copied the old value, since that copy
+    would keep the other scene.
+    """
+    import sys
+
+    global SIM_DIR, SCENE_META, SCENE_XML
+    new = os.path.abspath(sim_dir)
+    if new == SIM_DIR:
+        return
+    old = {SIM_DIR, SCENE_META, SCENE_XML}
+    stale = sorted(
+        name
+        for name, mod in list(sys.modules.items())
+        if name.startswith("locomani.")
+        and name != __name__
+        and any(getattr(mod, a, None) in old for a in ("SIM_DIR", "SCENE_META", "SCENE_XML"))
+    )
+    if stale:
+        raise RuntimeError(f"cannot move the scene to {new}: {', '.join(stale)} already holds {SIM_DIR}")
+    SIM_DIR = new
+    SCENE_META = os.path.join(SIM_DIR, "scene_meta.json")
+    SCENE_XML = os.path.join(SIM_DIR, "scene_locomani.xml")
+    os.environ["LOCOMANI_SIM_DIR"] = SIM_DIR
+
+
 DIAG_DIR = os.path.join(OUTPUTS, "diag")  # diag_*.py results
 LOGS_DIR = os.path.join(OUTPUTS, "logs")  # episode jsonl
 MODELS_DIR = os.path.join(OUTPUTS, "models")  # exported grasp models

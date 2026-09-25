@@ -256,6 +256,18 @@ def require_stack_of(stack, run_dir: Path, mode: str) -> None:
         )
 
 
+def adopt_stack_env(stack) -> None:
+    """Take the attached stack's environment into this process: its port block and its scene.
+
+    The drivers used to be subprocesses handed exactly this as their whole environment. In-process,
+    the ports are read when used, but `locomani.paths` resolved the scene at import, so it is
+    re-pointed here too -- before anything builds an IK model from it.
+    """
+    os.environ.update({k: str(v) for k, v in stack.env.items()})
+    if os.environ.get("LOCOMANI_SIM_DIR"):
+        paths.adopt_sim_dir(os.environ["LOCOMANI_SIM_DIR"])
+
+
 def require_train_split(cfg: dict) -> None:
     """`train.holdout` kept episodes go to the validation set; with none left to train on, convert used to fail
     only at stats_train with pandas' "No objects to concatenate". Check before collecting, not after.
