@@ -317,10 +317,24 @@ cd "$LOCOMANI_ROOT"
 #                              (DDS domain、planner 超时 10 s、SONIC_AUTO_START / --default-motion、lockstep)
 #   sonic_pose_ownership       双臂全身 POSE 交接
 #   sonic_hand_ownership       单臂 / warehouse 从 POSE 回到 planner 时夹爪不复位
-(cd third_party/GR00T-WholeBodyControl &&
+# 要么三个都已打(跳过),要么从干净的 deploy 源码一次打全;别的状态停下并说明,不会打一半。
+(cd third_party/GR00T-WholeBodyControl || exit 1
+  [ "$(git rev-parse HEAD)" = 1983e88888217f6c69283cf3a9d1af01e87f07af ] ||
+    { echo "不在钉住的 commit 上(现在是 $(git log -1 --oneline)):先做第 1 步末尾那段"; exit 1; }
+  done=0
   for p in sonic_deploy_local_base sonic_pose_ownership sonic_hand_ownership; do
-    git apply --check --reverse "../../patches/$p.patch" 2>/dev/null && continue
-    git apply "../../patches/$p.patch" || { echo "打不上 $p:是不是没在钉住的 commit 上?"; exit 1; }
+    git apply --check --reverse "../../patches/$p.patch" 2>/dev/null && done=$((done + 1))
+  done
+  [ "$done" -eq 3 ] && { echo "deploy 补丁已打"; exit 0; }
+  if [ -n "$(git status --porcelain -- gear_sonic_deploy/src gear_sonic_deploy/deploy.sh)" ]; then
+    echo "deploy 源码里已有改动(旧文档让打的 sonic_dds_domain / pose / hand 补丁,或上次只打了一部分):"
+    git status --short -- gear_sonic_deploy/src gear_sonic_deploy/deploy.sh
+    echo "没有自己的改动要留,就清掉后重跑这一段:"
+    echo "  (cd third_party/GR00T-WholeBodyControl && git checkout -- gear_sonic_deploy && git clean -fd gear_sonic_deploy/src)"
+    exit 1
+  fi
+  for p in sonic_deploy_local_base sonic_pose_ownership sonic_hand_ownership; do
+    git apply "../../patches/$p.patch" || { echo "打不上 $p"; exit 1; }
   done && echo "deploy 补丁已打")
 
 # 编译

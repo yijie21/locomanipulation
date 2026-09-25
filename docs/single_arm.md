@@ -187,7 +187,7 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
 
 | 症状 | 原因与处理 |
 |---|---|
-| `needs patches/sonic_hand_ownership.patch` | 要打过补丁的 deploy。按 [安装第 3 步](setup.md) 重编，或改 `SONIC_DEPLOY_ROOT`。这个检查在**起任何进程之前**执行 |
+| `needs patches/sonic_hand_ownership.patch` | 要打过补丁的 deploy。按 [安装第 3 步](setup.md) 打三个 deploy 补丁并重编（不要单独打这一个），或改 `SONIC_DEPLOY_ROOT`。这个检查在**起任何进程之前**执行 |
 | `not enough headroom -- cpu/pids/gpu ...` | 资源不足时脚本**拒绝启动并说明原因**。配额打满时仿真掉墙钟，专家的计时阶段会集体失败、看起来像机器人故障 |
 | `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
 | `model/ exists` / `closed_loop.json exists` | 阶段拒绝覆盖已有产物。检查后删掉再重跑 |

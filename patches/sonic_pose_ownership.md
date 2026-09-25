@@ -11,6 +11,10 @@ prime the pose buffer before switching. This patch does not blend
 encoder outputs or guarantee physical tracking across modes. Planner mode and the
 existing emergency-stop behavior are unchanged.
 
+> **Do not apply this file by hand.** It is the second (pose) / third (hand) patch of the series in
+> [`docs/setup.md` step 3](../docs/setup.md), which pins the upstream commit, applies all three in order and
+> refuses a half-patched tree. The block below records what the patch is for and how it was first applied.
+
 Apply from the repository root and rebuild:
 
 ```bash

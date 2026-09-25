@@ -11,6 +11,10 @@ switching to planner mode. `StreamedArm.stop(preserve_reference=True)` does this
 The patch does not retain stale hands indefinitely or bypass emergency stops;
 existing planner timeout and control-reset behavior remains in place.
 
+> **Do not apply this file by hand.** It is the second (pose) / third (hand) patch of the series in
+> [`docs/setup.md` step 3](../docs/setup.md), which pins the upstream commit, applies all three in order and
+> refuses a half-patched tree. The block below records what the patch is for and how it was first applied.
+
 Apply after the POSE ownership patch and rebuild with the same policy calibration:
 
 ```bash
