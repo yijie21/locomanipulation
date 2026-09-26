@@ -108,6 +108,8 @@
 - [ ] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续
 - [ ] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（假设，未改）
 - [-] 2.8 `stand_lateral_gate: turn` 作为下一步 —— 它针对的横向偏置是合成场景现象，房间里没有
+- [x] 2.9 warehouse 采 10 集并导出视频（用户 2026-09-25）：`box_room_grasp_10ep_20260925` 30 局保留 11；预览 `outputs/videos/box_room_grasp_10ep_20260925/` 30 个 322–493 KB + zip 11.8 MB（2026-09-25）
+- [ ] 2.10 `stand_off` 0.5 → 0.44 的 20 局对照（同 seed 7000，只改这一个）：1013 局按停位深度分组 < 0.44 m 0.41、0.44–0.46 0.39、0.46–0.48 0.28、0.48–0.52 0.20、≥ 0.52 0.03；风险是躯干顶箱（box-stand-rams-torso）。待用户定（改专家参数）；分析脚本 `outputs/box_room_isaac_20260925/stand_depth_yield.py`
 
 ## 3. walk 场景：SONIC v1.1 行走能力（`docs/walk.md` 探针表）
 
@@ -170,9 +172,12 @@
   - [-] 4.7.4 验收：warehouse 专家实时渲染 20 局，RTF 0.35 → ≥0.9，图像年龄 p50/p90，成功率对照离线基线 6/20（放弃 2026-09-25：是 4.7.2 异步 MuJoCo 渲染的验收，4.7.2 已被镜像替代；RTF 实测并入 4.7.7）
   - [-] 4.7.5 回归：bottle 用现有 checkpoint 跑 VLA 闭环，异步渲染 vs 同步渲染不应变（该场景渲染 1.3 ms）（放弃 2026-09-25：对比的"异步 MuJoCo 渲染"不再实现；Isaac 路径的回归由 4.7.9.8 一致性闸门与 4.7.6 覆盖）
   - [~] 4.7.6 有 warehouse / 双臂 checkpoint 后（1.19）用实时出图跑闭环评测；策略服务与 sim 渲染分 GPU
-    - [~] 4.7.6.1 `box_room_grasp_200_cap120_20260925`（用户 2026-09-25；`box_room_grasp_200_20260925` 上限 800 局在产出率 < 0.25 时不够，7/30 时停掉换名）：采 200 成功局 → Isaac 补渲三路数据集相机 → convert → train 10000 步 → 100 局闭环（Isaac 镜像）；编排 `run_overnight.sh --from convert --isaac-gpu 1`，日志 `<run>/pipeline.log`
+    - [~] 4.7.6.1 `box_room_grasp_200_cap120_20260925`（用户 2026-09-25；`box_room_grasp_200_20260925` 上限 800 局在产出率 < 0.25 时不够，7/30 时停掉换名）：采 200 成功局 → Isaac 补渲三路数据集相机 → convert → train 10000 步 → 100 局闭环（Isaac 镜像）；编排 `run_overnight.sh --from convert --isaac-gpu 1`，日志 `<run>/pipeline.log`；2026-09-26 训练按用户要求停在第 5000 步（checkpoint-5000 完整），评测未跑，待用户定
       - 用户 2026-09-25：只用三路相机（ego + 双腕），第三视角不作为 VLA 输入
       - [x] 4.7.6.1.1 exporter 在批间被重启时丢掉了每批最后一集（2/94 批）：加 `batches.wait_saved`；本次运行的记录已更正，补采后共 204 集（2026-09-26）
+      - [ ] 4.7.6.1.2 用 checkpoint-5000 跑 100 局闭环（Isaac 镜像）：先在 `summary.json` 补 train 条目（checkpoint 指向 `model/checkpoint-5000`），再 `run_overnight.sh --from eval`；GPU1 被别的项目占时镜像约 23 GB 可能放不下（待用户定）
+      - [ ] 4.7.6.1.3 或者从 5000 步训到 10000：没存优化器状态，只能从 checkpoint-5000 的权重重开一次 5000 步训练，不等于原训练的后半段（待用户定）
+      - [ ] 4.7.6.1.4 可选：200 集的 Isaac 第三视角观看视频（`render_isaac_warehouse.sh`，约 1 分钟/集），用户未要求
     - [ ] 4.7.6.2 待验证：`eval.initial_token`（crate 的）与 warehouse 开局姿势是否一致（沿用基线值，未核对）
     - [ ] 4.7.6.3 待验证：RTX 连续逐帧渲（数据集）与按需跳着渲（镜像）是否同图（即 4.7.9.8）；训练/评测同一 `IsaacView`，但时序不同
   - [ ] 4.7.7 实时渲染 RTF 实测：`warehouse_textured` + `backend.render: live` 起栈跑几局，量 sim 的 RTF（期望 ≥0.9，旧场景 0.35）；结果决定 4.7.2/4.7.3 是现在做还是作为结构性保险后置（用户定）
