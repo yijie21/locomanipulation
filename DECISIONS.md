@@ -600,6 +600,12 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 3. **convert 按 `eval.image_source` 核对渲染器**：marker 记 `renderer`，训练图与评测图不同源时直接拒绝；
    MuJoCo 补渲拒绝 `image_source: isaac` 的运行，Isaac 补渲拒绝其余运行。
 4. **只处理已跑完的批次**，可以在另一张卡上与采集并跑、反复执行；`run_overnight.sh --isaac-gpu N` 把 Isaac 补渲和评测镜像放到这张卡上。
+5. **每批结束先等 exporter 写完，再重启它或收栈**（`batches.wait_saved`，bottle 和 crate 两条线都接上）。
+   专家发完保存键后只等 2 s，一集约 1900 行要写得更久；每批最后一局一旦被下一批的 exporter 重启打断，就会丢在半路。
+   `box_room_grasp_200_cap120_20260925` 的 94 批里有 2 批丢了最后一集，其中一集是成功局；manifest 记 200，磁盘上只有 199，convert 拒绝转换。
+   判断"写完"要看最后一集的 parquet：exporter 先写 `episodes.jsonl`，后写 parquet。超时直接报错，不带着缺集往下跑。
+   这次运行的更正：两行标 `produced: false` + `exporter_lost`，`kept` 改为 199，原件另存 `.orig`，脚本和记录在 `<run>/corrections/`；
+   再补采 1 批（5 集成功，10 集全部落盘），最后共 204 集。
 
 ### 被否决的方案（及原因）
 

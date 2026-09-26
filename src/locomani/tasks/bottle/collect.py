@@ -218,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"]:
             manifest = run_batch(cfg, run_dir, collect_root, stack, state)
+            batches.wait_saved(state["sessions"][-1], manifest)  # before the next batch or stack.down() kills it
             state["kept"] += batches.kept_in(manifest, bool(collect["record"]))
             state["batches"] += 1
             inputs.write_text(json.dumps(state, indent=1))

@@ -172,6 +172,7 @@
   - [~] 4.7.6 有 warehouse / 双臂 checkpoint 后（1.19）用实时出图跑闭环评测；策略服务与 sim 渲染分 GPU
     - [~] 4.7.6.1 `box_room_grasp_200_cap120_20260925`（用户 2026-09-25；`box_room_grasp_200_20260925` 上限 800 局在产出率 < 0.25 时不够，7/30 时停掉换名）：采 200 成功局 → Isaac 补渲三路数据集相机 → convert → train 10000 步 → 100 局闭环（Isaac 镜像）；编排 `run_overnight.sh --from convert --isaac-gpu 1`，日志 `<run>/pipeline.log`
       - 用户 2026-09-25：只用三路相机（ego + 双腕），第三视角不作为 VLA 输入
+      - [x] 4.7.6.1.1 exporter 在批间被重启时丢掉了每批最后一集（2/94 批）：加 `batches.wait_saved`；本次运行的记录已更正，补采后共 204 集（2026-09-26）
     - [ ] 4.7.6.2 待验证：`eval.initial_token`（crate 的）与 warehouse 开局姿势是否一致（沿用基线值，未核对）
     - [ ] 4.7.6.3 待验证：RTX 连续逐帧渲（数据集）与按需跳着渲（镜像）是否同图（即 4.7.9.8）；训练/评测同一 `IsaacView`，但时序不同
   - [ ] 4.7.7 实时渲染 RTF 实测：`warehouse_textured` + `backend.render: live` 起栈跑几局，量 sim 的 RTF（期望 ≥0.9，旧场景 0.35）；结果决定 4.7.2/4.7.3 是现在做还是作为结构性保险后置（用户定）

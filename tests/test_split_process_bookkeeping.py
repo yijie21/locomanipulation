@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -116,6 +117,52 @@ def test_a_stack_without_a_named_session_restarts_rather_than_guesses(tmp_path):
     stack.restart_exporter.side_effect = restart
     assert batches.open_exporter_session(stack, tmp_path, 0) == str(tmp_path / "fresh")
     assert stack.env["TF_FRAME_AUDIT_PATH"].endswith("frame_audit_00.jsonl")
+
+
+# -- a batch's episodes are on disk before its exporter is restarted ------------------------------
+
+
+def _session_with(tmp_path, n_indexed, n_parquet):
+    session = tmp_path / "session"
+    (session / "meta").mkdir(parents=True, exist_ok=True)
+    (session / "data" / "chunk-000").mkdir(parents=True, exist_ok=True)
+    (session / "meta" / "episodes.jsonl").write_text(
+        "".join(json.dumps({"episode_index": e}) + "\n" for e in range(n_indexed))
+    )
+    for e in range(n_parquet):
+        (session / "data" / "chunk-000" / f"episode_{e:06d}.parquet").write_bytes(b"PAR1")
+    return session
+
+
+def _manifest(tmp_path, produced):
+    manifest = tmp_path / "manifest_00.jsonl"
+    manifest.write_text("".join(json.dumps({"ok": True, "produced": p}) + "\n" for p in produced))
+    return manifest
+
+
+def test_the_last_episode_counts_once_its_parquet_is_written(tmp_path):
+    # save_episode appends meta/episodes.jsonl BEFORE it writes the parquet
+    assert batches.episodes_on_disk(_session_with(tmp_path, 3, 2)) == 2
+    assert batches.episodes_on_disk(_session_with(tmp_path, 3, 3)) == 3
+
+
+def test_wait_saved_waits_for_the_last_save_and_ignores_unproduced_rounds(tmp_path):
+    session = _session_with(tmp_path, 2, 1)
+    manifest = _manifest(tmp_path, [True, False, True])  # the middle round never started recording
+    timer = threading.Timer(0.3, lambda: _session_with(tmp_path, 2, 2))
+    timer.start()
+    try:
+        assert batches.wait_saved(str(session), manifest, timeout=5.0, poll=0.05) == 2
+    finally:
+        timer.cancel()
+
+
+def test_wait_saved_refuses_a_session_the_exporter_never_finished(tmp_path):
+    # box_room_grasp_200_cap120_20260925 batch 79: 10 produced, the exporter restarted mid-save, 9 on disk
+    session = _session_with(tmp_path, 9, 9)
+    with pytest.raises(SystemExit, match="9 episode.* produced 10"):
+        batches.wait_saved(str(session), _manifest(tmp_path, [True] * 10), timeout=0.2, poll=0.05)
+    assert batches.wait_saved(None, _manifest(tmp_path, [True])) == 0  # nothing records
 
 
 # -- whose stack ---------------------------------------------------------------------------------

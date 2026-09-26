@@ -2,6 +2,7 @@
 
     state = resume_state(collect_root / "inputs.json")
     session = open_exporter_session(stack, collect_root, batch)
+    wait_saved(session, manifest)
     kept += kept_in(manifest, record)
 
 A batch is one exporter session. The exporter is restarted between batches for two reasons, and
@@ -94,6 +95,49 @@ def resume_state(inputs: Path) -> dict:
     state["manifests"] = state["manifests"][:done]
     inputs.write_text(json.dumps(state, indent=1))
     return state
+
+
+def episodes_on_disk(session: Path) -> int:
+    """Episodes the exporter has finished writing: its episode index, and the last one's parquet in place.
+
+    The exporter's `save_episode` stops the video writers, appends `meta/episodes.jsonl`, THEN writes the
+    parquet (gear_sonic/data/exporter.py), so the index alone runs one step ahead of a finished save."""
+    index = session / "meta" / "episodes.jsonl"
+    if not index.exists():
+        return 0
+    eps = [json.loads(line)["episode_index"] for line in index.read_text().splitlines() if line.strip()]
+    if not eps:
+        return 0
+    last = session / "data" / "chunk-000" / f"episode_{max(eps):06d}.parquet"
+    return len(eps) if last.exists() and last.stat().st_size > 0 else len(eps) - 1
+
+
+def wait_saved(session: str | None, manifest: Path, *, timeout: float = 120.0, poll: float = 0.5) -> int:
+    """Block until the batch's exporter session holds every episode its manifest says was produced.
+
+    The expert sends the save/discard key at the end of a round and holds 2 s, but the exporter saves from
+    its own loop and a ~1900-row episode can take longer. Mid-batch the next round's reset covers it; after
+    a batch's LAST round the next batch restarted the exporter at once and killed the save (and at the end
+    of a run `stack.down()` does the same): 2 of 94 batches of box_room_grasp_200_cap120_20260925 lost their
+    last episode, one of them a success, and convert then refused both sessions (2026-09-26).
+
+    Raises rather than carry on: a session one episode short breaks convert's by-position join hours later.
+    """
+    if session is None:
+        return 0
+    rows = [json.loads(line) for line in Path(manifest).read_text().splitlines() if line.strip()]
+    want = sum(1 for row in rows if row.get("produced"))
+    deadline = time.monotonic() + timeout
+    while True:
+        have = episodes_on_disk(Path(session))
+        if have >= want:
+            return have
+        if time.monotonic() > deadline:
+            raise SystemExit(
+                f"{session}: {have} episode(s) saved after {timeout:.0f} s, but {Path(manifest).name} produced {want}; "
+                "the exporter never finished writing -- inspect its log before continuing"
+            )
+        time.sleep(poll)
 
 
 def kept_in(manifest: Path, record: bool) -> int:
