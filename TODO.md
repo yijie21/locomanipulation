@@ -27,7 +27,7 @@
 - [ ] 1.16 `eval_crate_closed_loop → vla_rounds` 的同 venv spawn（需要双臂 checkpoint）
 - [ ] 1.17 `wall`/`carry` 转成 `run(config, ...)`，去掉 `global DUMP_DIR`（可选；进程边界已没了）
 - [ ] 1.18 两套评测器本身合并（协作者第 2、3 条的深层问题；需 checkpoint + 闸门）
-- [ ] 1.19 `eval_crate_closed_loop` 的 run-dir 模式实跑一次（目前只 dry-run；磁盘上没有双臂 checkpoint）
+- [x] 1.19 `eval_crate_closed_loop` 的 run-dir 模式实跑一次（目前只 dry-run；磁盘上没有双臂 checkpoint）（2026-09-27：`run_overnight.sh --from eval` 以 run 目录跑通 10 局，`box_room_grasp_200_cap120_20260925`）
 - [x] 1.20 重构审查（2026-09-23）发现的 7 项问题，全部修复；make check 绿，单臂 2×4 实跑闸门 PASS 5/5（`outputs/runs/gate8_fix_20260923`）（2026-09-23）
   - [x] 1.20.1 双臂 run-dir 评测：栈无 SONIC_AUTO_START 而 rounds 走 clean commander（deploy 永不启动）—— `Line.eval_backend`；未实跑，同 1.19（2026-09-23）
   - [x] 1.20.2 采集中断续跑：sessions/manifests 预先追加 → 重复、按位置配对错位（`crate_env2_so45` 已处于此状态）
@@ -175,7 +175,7 @@
     - [~] 4.7.6.1 `box_room_grasp_200_cap120_20260925`（用户 2026-09-25；`box_room_grasp_200_20260925` 上限 800 局在产出率 < 0.25 时不够，7/30 时停掉换名）：采 200 成功局 → Isaac 补渲三路数据集相机 → convert → train 10000 步 → 100 局闭环（Isaac 镜像）；编排 `run_overnight.sh --from convert --isaac-gpu 1`，日志 `<run>/pipeline.log`；2026-09-26 训练按用户要求停在第 5000 步（checkpoint-5000 完整），评测未跑，待用户定
       - 用户 2026-09-25：只用三路相机（ego + 双腕），第三视角不作为 VLA 输入
       - [x] 4.7.6.1.1 exporter 在批间被重启时丢掉了每批最后一集（2/94 批）：加 `batches.wait_saved`；本次运行的记录已更正，补采后共 204 集（2026-09-26）
-      - [ ] 4.7.6.1.2 用 checkpoint-5000 跑 100 局闭环（Isaac 镜像）：先在 `summary.json` 补 train 条目（checkpoint 指向 `model/checkpoint-5000`），再 `run_overnight.sh --from eval`；GPU1 被别的项目占时镜像约 23 GB 可能放不下（待用户定）
+      - [~] 4.7.6.1.2 用 checkpoint-5000 跑 100 局闭环（Isaac 镜像）：先在 `summary.json` 补 train 条目（checkpoint 指向 `model/checkpoint-5000`），再 `run_overnight.sh --from eval`；GPU1 被别的项目占时镜像约 23 GB 可能放不下（待用户定）（2026-09-27：评测器修复后 10 局冒烟 9/10，100 局待 .6/.8）
         - [x] 4.7.6.1.2.1 开环（官方 `open_loop_eval.sh`，val 10 集，Isaac 渲的图）：平均 MSE 0.00123 / MAE 0.0217；对照 预测均值 0.0350 / 0.140、块首真值保持 16 帧 0.00179 / 0.0206；traj 4 最差 0.0035（约第 620 帧提前半合爪）；两手夹爪都在对的时刻合到 −0.06。产物 `eval/open_loop_ckpt5000/`（2026-09-27）
         - [x] 4.7.6.1.2.2 闭环程序性 bug：`vla_rounds.py` 写死 `blue_crate`，warehouse 的目标是 `nor_cal_box`——reset 静默跳过物体扰动，第一局 `p.object_pos` / `evaluate` 必 KeyError（即 2.7）；改为 `target_key(meta)`（2026-09-27）
         - [x] 4.7.6.1.2.3 （2026-09-27 改为直接调 `expert.start_placement`，IDLE 朝走入方向）闭环起点与训练分布不符：`place()` 机器人偏航 0 + IDLE facing +x、物体偏航 π/2、离台边 U(1.2, 1.5)；训练 205 局全是 (0, −1.455)、朝 +y（90°）、离台边 0.90 m、物体偏航 0±5°（`start_pose: scene`, `start_advance −0.25`）
@@ -184,11 +184,13 @@
         - [~] 4.7.6.1.2.6 闭环成功判据与采集不同（2026-09-27 加了 `RetreatWatch` 一列，但训练数据用 `--trim-verification-tail` 在 hold 开始处裁掉，后退段不在数据里，这一列对本 checkpoint 必然 timeout——待用户定：去掉，或改成"抬起后再持住 N 秒"）：`vla_rounds` 用 crate 的 `evaluate`（抬起 + 不倾 + 两手接触 持续 2 s），warehouse 采集成功还要求躯干直立、后退 0.3 m 不掉；`eval.task` "pick up the crate" / `eval.spawn_edge` 不被读取（prompt 实际取 `task.prompt` "pick up the box"，与数据一致）
         - [x] 4.7.6.1.2.7 10 局冒烟（Isaac 镜像，run 的 `eval.rounds` 临时改 10，`summary.json` 手补 train 条目，备份 `*.bak_20260927`）：**9/10 抬起**，1 局合爪后箱子被扯歪；9/9 成功后再持 10 s 不掉，3/9 结尾倾角 > 15°；延迟 p50 166 ms、图像状态年龄 11 ms；台账 crate.md 2026-09-27 末节，录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_20260927.zip`（2026-09-27）
         - [x] 4.7.6.1.2.7.1 评测录像改用 Isaac 渲（用户 2026-09-27）：`render_isaac_warehouse.sh` 加 `--traces/--out/--insets`，10 局 Isaac 第三视角 + Isaac 小窗，`outputs/videos/warehouse_ckpt5000_closed_loop10_isaac_20260927.zip`（3.1 MB，每段 272–341 KB）；warehouse.md §6.2、rendering.md 改为 Isaac 命令；脚本与文档未提交（2026-09-27）
+        - [ ] 4.7.6.1.2.11 双臂 blocking 循环没有 gap feeder（单臂 2026-08-31 已修，台账 bottle.md「blocking 客户端三修复」）：每周期执行 chunk 第 4–19 帧（640 ms）后停发，取图 + 推理 p50 166 ms（Isaac 渲 95 ms）期间 deploy 钳在旧 chunk 第 19 帧，新 chunk 再从第 4 帧起（跳过 0–3），周期实测 810 ms；训练数据里参考是连续的。待用户定：移植 gap feeder（间隙里续发旧 chunk 第 20 帧起）或改 async；`eval.replan_interval` 这条线不读（2026-09-27）
         - [ ] 4.7.6.1.2.8 100 局闭环：先把 run 目录现有的 `eval/closed_loop*`、`traces/`、`state_trace/`、`videos*` 挪到 `eval_smoke10_20260927/`（manifest 已存在会拒跑），`eval.rounds` 改回 100（待用户定，连同 4.7.6.1.2.6）
         - [x] 4.7.6.1.2.9 评测文档对齐（用户 2026-09-27：协作者训练完跑评测不出 bug）：warehouse.md 新 §6 训练与评测（核对表 5 项、命令、读结果、排错 3 行，reflow 后 150 行）；box_grasp_envelope / bimanual / bimanual_design §五 / rendering / 镜像 handoff 同步；实测 box_platform 默认配置 60 局开局手臂与 warehouse token 差 ≤ 0.03 rad（2026-09-27）
-        - [~] 4.7.6.1.2.10 （2026-09-27 ① 已提交推送 `eb9549f`/`b1e6827`；② warehouse 四份实验文件已改并推送，`box_platform_default` 改在磁盘上、随 6.9 提交；③ 未做）文档管不到的：① 本会话的评测代码未提交，协作者拉 main 仍是旧 `vla_rounds`（blue_crate、错朝向、−0.02 夹爪）；② `box_platform_default_20260927.yaml` 的 eval 块是 `image_source mujoco` + `render offline`（必然每局 streams never ready）且 `crate_initial_token`；warehouse 基线等实验文件也仍是 crate token；③ 可选：加载时拒绝 mujoco+offline、token 与数据首帧差 > 0.3 rad
+        - [~] 4.7.6.1.2.10 （2026-09-27 ① 已提交推送 `eb9549f`/`b1e6827`；② warehouse 四份实验文件已改并推送，`box_platform_default` 改在磁盘上、随 6.9 提交；③ 未做）文档管不到的：① 本会话的评测代码未提交，协作者拉 main 仍是旧 `vla_rounds`（blue_crate、错朝向、−0.02 夹爪）；② `box_platform_default_20260927.yaml` 的 eval 块是 `image_source mujoco` + `render offline`（必然每局 streams never ready）且 `crate_initial_token`；warehouse 基线等实验文件也仍是 crate token；③ 可选：加载时拒绝 mujoco+offline、token 与数据首帧差 > 0.3 rad（2026-09-27 续：③ 的 mujoco+offline 已被 4.7.10 的 `images.source` 在加载时化解；token 与数据首帧不符仍不报错，未做）
       - [ ] 4.7.6.1.3 或者从 5000 步训到 10000：没存优化器状态，只能从 checkpoint-5000 的权重重开一次 5000 步训练，不等于原训练的后半段（待用户定）
-      - [ ] 4.7.6.1.4 可选：200 集的 Isaac 第三视角观看视频（`render_isaac_warehouse.sh`，约 1 分钟/集），用户未要求
+      - [ ] 4.7.6.1.4 可选：200 集的 Isaac 第三视角观看视频（`render_isaac_videos.sh`，约 1 分钟/集），用户未要求
+      - [ ] 4.7.6.1.5 待用户定：`docs/warehouse.md` §5 的 Isaac 补渲耗时按 197 集更正（写的是最早 2 集的"每局约 90 s、三路 p50 76–84 ms"；全集中位 69.8 ms、含编码约 74 ms/次、约 68 s/集；闭环按需渲 p50 95.5 ms）（2026-09-27）
     - [x] 4.7.6.2 `eval.initial_token`（crate 的）与 warehouse 开局姿势不一致（2026-09-27 已核对并换成 warehouse 自己的，见 4.7.6.1.2.4）
     - [ ] 4.7.6.3 待验证：RTX 连续逐帧渲（数据集）与按需跳着渲（镜像）是否同图（即 4.7.9.8）；训练/评测同一 `IsaacView`，但时序不同
   - [ ] 4.7.7 实时渲染 RTF 实测：`warehouse_textured` + `backend.render: live` 起栈跑几局，量 sim 的 RTF（期望 ≥0.9，旧场景 0.35）；结果决定 4.7.2/4.7.3 是现在做还是作为结构性保险后置（用户定）
@@ -212,6 +214,15 @@
     - [x] 4.7.10.5 给 `box_platform` 建 Isaac stage 并登记（`scripts/build_isaac_primitive_scene.py`，ISO 20，`source.json` 钉 MJCF）；录像脚本改名 `render_isaac_videos.sh` 并按运行场景取 stage（2026-09-27）
     - [x] 4.7.10.6 冒烟 `box_platform_isaac_smoke_20260927`：采集 5 局 1 成功 → MuJoCo 补渲按来源拒绝 → Isaac 补渲 → convert（单集对齐审计 2 次测量 FAIL，样本太少）→ Isaac 并排录像 → 镜像 50/50、渲染 p50 89 ms、状态年龄 11 ms；warehouse 录像回归像素差 1.5–2.3/255（2026-09-27）
     - [x] 4.7.10.7 提交（用户 2026-09-27 定分两批，第二批随 6.9.1）：`images.source`、迁移、录像脚本改名、文档、三份模板已提交推送（`356d806`）；`scripts/build_isaac_primitive_scene.py`、`scenes.yaml` 的 box_platform `isaac` 条目、`box_platform_default` / 冒烟实验文件、文档里 box_platform 的 Isaac 提法随 6.9 一起提交（它们依赖扫参会话未提交的 `box_platform_scene.py`）
+    - [ ] 4.7.10.8 可选：box_platform 用 `images.source: isaac` 真正采集 + 训练 + 闭环一次（目前只有 5 局冒烟，单集对齐审计因样本少 FAIL）
+    - [ ] 4.7.10.9 未提交：`docs/handoff/lockstep-isaac-eval-plan-20260927.md` 及 `docs/rendering.md`、`docs/handoff/isaac-vla-mirror-20260925.md` 的链接（2026-09-27 写完，待用户说提交）
+  - [ ] 4.7.11 闭环评测的时间模型对齐现实：Isaac 渲图时冻结世界（lockstep），推理延迟按帧模拟；计划 `docs/handoff/lockstep-isaac-eval-plan-20260927.md`（用户 2026-09-27 要求写成计划，未开工）
+    - [ ] 4.7.11.0 W0 校准 lockstep 本身（2026-09-02 墙钟 46/100 vs lockstep 32/100 未过）：让 lockstep 复刻墙钟现有时间模型，看能否复现 checkpoint-5000 的成绩与失败构成
+    - [ ] 4.7.11.1 W1 双臂 lockstep 客户端（`vla_rounds` 按 tick 推进、tick 版 prelude、放开 `client`）
+    - [ ] 4.7.11.2 W2 Isaac 接入（去掉 lockstep + isaac 拒绝、offline 时 lockstep sim 不渲 MuJoCo、镜像按期望 seq 核对）
+    - [ ] 4.7.11.3 W3 延迟模型：推理 L 帧（实测约 2）、相机 C 帧，间隙里续发旧 chunk
+    - [ ] 4.7.11.4 W4 同 checkpoint、同 seed：墙钟 vs lockstep 各 10 局，再各 100 局
+    - [ ] 4.7.11.5 W5 文档与模板
 - [~] 4.8 协作者采集仍摔倒：核实用户的猜测"自编 SONIC deploy 二进制没同步到文档"（用户 2026-09-24）
   - [x] 4.8.1 静态核对（2026-09-24）：本机 9 个 deploy 二进制全部从只存在本机的 `lockstep-port` 分支编出（上游 1983e888 + 6 个未推送的本地提交 + 工作树补丁）；setup.md 的做法（clone 上游 main 不钉版本，现为 b042411，再打 4 个补丁）本机从没编过、跑过。文档版缺 SONIC_AUTO_START/`--default-motion`（每个 eval 栈都要，上游静默忽略未知参数）、DDS domain（`sonic_dds_domain.patch` 已打不上上游 main）、planner 初始化超时 10 s（上游 5 s）。已排除：SONIC 权重与 HF 逐字节一致；肩 roll 默认角两边编进去的都是 ±0.2；上游 1983e888 之后的 deploy 改动默认不改行为。MuJoCo 不钉版本，新装会是 3.14（本仓库在 3.11.0 上测）
   - [ ] 4.8.2 向协作者要证据：run 的 `deploy_receipts.jsonl`、上游 commit、`mujoco.__version__`、每局失败字符串和摔倒阶段、是采集还是闭环评测、同时跑几个实例、`scripts/cpu_headroom.sh`、deploy.log 里有没有 `Planner initialization timeout`——2026-09-25 协作者按新 setup 重编后仍 `initial_stance_unstable`；init token 假设已排除（文件已入库，双臂采集不读）；已给出要收的清单（deploy.log、sim.log、manifest、visual log、deploy_receipts、stack_env、mujoco 版本、cpu_headroom）——2026-09-25 本机从零按文档装一遍 30 局零开局失败（4.6.1），文档化的安装本身可排除

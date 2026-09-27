@@ -706,3 +706,52 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - box_platform 的 Isaac 路线只做了冒烟（`box_platform_isaac_smoke_20260927`：5 局采集 1 成功 → Isaac 补渲 → convert → Isaac 录像 → 镜像 50/50），没有训练和闭环；单集的对齐审计因样本太少 FAIL（2 次测量 1 次 +1 帧，200 集 warehouse 同一项 95–96% 通过）。
 - Isaac 的灰地面是 MuJoCo 画面里没有的东西；两边图像本来就不混用，但手压进地面时 Isaac 会被地面挡住（镜像冒烟里机器人无人驱动倒地时出现）。
 - 按需渲与连续渲是否同图（TODO 4.7.9.8）仍未验证，两个场景都是。
+
+## 2026-09-27 双臂闭环评测对齐采集；评测录像用 Isaac；Isaac 闭环的时间模型改走 lockstep（计划）
+
+### 目标与约束的变化
+
+- 用户要求用 warehouse 200 集的 checkpoint-5000 做开环与闭环，目的是核对文档与代码、找闭环的程序性 bug，并确认 VLA 用的是 Isaac 画面。
+- 用户要求协作者训练完后照文档跑评测不出 bug。
+- 用户要求评测录像也用 Isaac 渲（训练、评测都是 Isaac 图）。
+- 用户指出现实里拍照近乎瞬时，评测应与之对齐；并要求把方案写成计划文档。
+
+### 决策
+
+1. **闭环每局的摆放直接调用采集专家的 `expert.start_placement`，目标物体取场景的 `target_object`。** 原先是合成桌子的一份副本
+   （机器人偏航 0、物体 π/2、名字写死 `blue_crate`），在物流房间里机器人朝向错 90°、物体扰动被 sim 静默跳过、第一局就 KeyError。
+   复用同一个函数，评测起点才与训练分布同源，也不会再分叉。
+2. **初始 token 每条线从自己数据的首帧生成**（`configs/deployment/warehouse_initial_token.json`：194 集首帧 token 的量化均值，恰等于 medoid，
+   手臂取首帧均值）。crate 那份肩 yaw 差 0.56/0.59 rad；开局核对只和 token 文件自己的 `arms` 比，用错了不会报错。box_platform 的开局手臂与它差 ≤ 0.03 rad，共用。
+3. **双臂的合爪下限取 `task.visual.close_target`**（warehouse −0.06），单臂的 −0.02 不动。−0.02 每指只剩约 2 N，提不起 1.2 kg 的箱子，策略合得再准也抬不起。
+4. **成功判据保留"抬起 + 持 2 s"为主指标，另记"后退 `retreat_distance`"一列**，便于和采集对比。训练数据在 hold 开始处被裁掉、不含后退段，
+   这一列对现有 checkpoint 必然 timeout，文档写明读作"成功后又持住这么久"；是否改掉待用户定。
+5. **eval 栈写 `eval/state_trace/`，评测录像从轨迹事后渲**，Isaac 运行用 `render_isaac_videos.sh --traces ... --insets`（第三视角 + ego/双腕小窗，与镜像同一 stage 和曝光）。
+   offline 渲染的 sim 不录像；训练和评测都是 Isaac 图，人看的录像应一致。
+6. **开环用官方 `open_loop_eval.sh` 并配两个基线**（预测均值、块首真值保持 16 帧），原始 MSE 本身不可读。
+7. **评测文档写成"起评测前逐条核对"表**（`docs/warehouse.md` §6）：train 条目、初始 token、图像来源与渲染配对、`eval/` 残留、局数，每项写不对时的报错。
+   评测只读运行目录的 `config.yaml` 副本，已开跑的运行要改那一份。
+8. **Isaac 闭环要与现实对齐：只冻结渲染，推理延迟按帧模拟**，实现走现有 lockstep（sim 与 deploy 按 tick 同步），计划见
+   `docs/handoff/lockstep-isaac-eval-plan-20260927.md`。墙钟下每个观测多约 95 ms（Isaac 渲染），blocking 循环还在间隙里冻结参考再跳 4 帧。
+   先做 W0：让 lockstep 复刻墙钟现有时间模型，看能否复现 checkpoint-5000 的成绩——2026-09-02 lockstep 校准没通过（墙钟 46/100 vs lockstep 32/100，p = 0.049），原因未查明。
+9. **提交按归属拆开**：本会话的评测修复、`images.source`、扫参会话代码分三次提交；工作树里混着别人改动的文件用 index blob 只提交本次的部分，
+   每次都在只含暂存内容的干净 worktree 里跑全套测试后再推。这样不会把未经用户同意的 WIP 带出去。
+
+### 被否决的方案（及原因）
+
+- 修评测器之前直接跑 100 局：第一局就 KeyError，起点与训练分布不符，数字没有意义。
+- 沿用 crate 的初始 token：差 0.6 rad，且不报错。
+- 把"后退 0.3 m"当主成功判据：训练数据不含后退段，策略不可能学到。
+- 评测录像沿用 MuJoCo 渲：与策略看到的 Isaac 图不同，用户明确要 Isaac。
+- 冻结世界时只暂停 MuJoCo：deploy 的 LowState 检查约 50 ms 就退出，渲染要 95 ms。
+- 渲染和推理都冻结：现实里推理延迟存在，冻结它比现实乐观。
+- 只给 blocking 循环补帧（TODO 4.7.6.1.2.11）：参考连续了，但图仍晚 95 ms；保留作过渡。
+- 降低渲染开销（减 settle 步、降分辨率）：改画质就与训练图不同源，也降不到接近 0。
+- 改 async 客户端：执行与推理重叠，但渲染的 95 ms 仍在世界时间里流逝。
+
+### 未决（不是决策）
+
+- "后退"一列怎么改；100 局闭环（先挪走 run 的 `eval/`、`eval.rounds` 改回 100）。
+- lockstep W0 能否复现墙钟成绩；W0 过不了，lockstep 数字不能当现实的替身。
+- 按需渲与连续渲是否同图（4.7.9.8）。
+- 双臂 blocking 循环的补帧（4.7.6.1.2.11）是否先做。
