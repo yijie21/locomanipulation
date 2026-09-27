@@ -4,7 +4,7 @@
 # a later stage re-resolves it through this file. A rebuilt or changed scene gets a new name.
 # `scene: {dir: ...}` still works for a directory without a name. `example` is an experiment that uses
 # the scene; `build` is how to make it when no experiment does yet. `isaac` (optional) names the scene's
-# Isaac stage; only a scene that has one can be evaluated with `eval.image_source: isaac`.
+# Isaac stage; only a scene that has one can run with `images.source: isaac` (training and evaluation images).
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
   dir: outputs/scene/sim_lowcom
@@ -22,8 +22,9 @@ warehouse_textured:  # the same room rebuilt from the published pack after 0bf8e
   dir: outputs/scene/warehouse_textured
   example: configs/experiments/box_room_grasp_baseline_20260924.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured
-  isaac:  # its Isaac stage and the look every Isaac render of it applies (render_isaac_warehouse.sh, the eval mirror)
-    dir: warehouse_textured  # under $ISAAC_ASSETS/scene; built by scripts/build_isaac_warehouse_scene.py
+  isaac:  # its Isaac stage and the look every Isaac render of it applies (render_isaac_videos.sh, the dataset re-render, the eval mirror)
+    dir: warehouse_textured  # under $ISAAC_ASSETS/scene
+    build: python3 scripts/build_isaac_warehouse_scene.py
     # auto-exposure off, film ISO 30: with it on the robot's 0.2 greys rendered 108/255 (docs/rendering.md, warehouse)
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
 

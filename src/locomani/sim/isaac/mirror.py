@@ -176,7 +176,6 @@ def _stop(signum, frame) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     from locomani.pipeline import run_context
-    from locomani.pipeline.eval_config import EvalConfig
     from locomani.stack import Stack
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -187,11 +186,11 @@ def main(argv: list[str] | None = None) -> int:
 
     run_dir = (args.run if args.run.is_absolute() else Path.cwd() / args.run).resolve()
     cfg = run_context.load_run_config(run_dir)
-    evaluation = EvalConfig.from_dict(cfg["eval"])
-    if evaluation.image_source != "isaac":
+    source = cfg["images"]["source"]
+    if source != "isaac":
         raise SystemExit(
-            f"{run_dir.name}: eval.image_source is {evaluation.image_source!r}; the policy would never ask "
-            "this mirror. Set eval.image_source: isaac in the experiment file"
+            f"{run_dir.name}: images.source is {source!r}; the policy would never ask this mirror. "
+            "Set images.source: isaac in the experiment file"
         )
     isaac = run_context.isaac_scene(cfg)
     instance = int(cfg["collect"]["instance"])

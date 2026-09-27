@@ -9,7 +9,7 @@ seq), written over the same placeholder videos in the session, recorded in the s
 `renderer: isaac`. The pictures come from `view.IsaacView` on the scene's Isaac stage and look
 (`run_context.isaac_scene`) -- the object and settings the eval mirror serves the policy from, so training and
 closed-loop images are one function of the state (DECISIONS 2026-09-24). Convert takes an Isaac-rendered run
-only when its `eval.image_source` is isaac.
+only when its `images.source` is isaac.
 
 An Isaac frame of the three cameras costs ~70 ms against MuJoCo's ~3, so two things are cut, neither of which
 convert reads:
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if expected_renderer(cfg) != "isaac":
         raise SystemExit(
-            f"{run_dir.name}: eval.image_source is not isaac, so convert would refuse Isaac-rendered sessions; "
+            f"{run_dir.name}: images.source is not isaac, so convert would refuse Isaac-rendered sessions; "
             "its dataset cameras are MuJoCo's: scripts/render_dataset_cameras.sh"
         )
     isaac = run_context.isaac_scene(cfg)

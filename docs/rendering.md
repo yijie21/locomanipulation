@@ -196,7 +196,7 @@ bash scripts/build_isaac_assets.sh --snapshot "$SNAPSHOT"
 每次跑 expert 都把**命令的抓取目标**（反馈修正之前的纯参考：两手抓点 + 掌姿态，按状态 seq）记到 `<run>/trace/<label>_ghost.npz`
 （`CoordinatedReach.ghost` → `tasks/crate/ghost_trace.py`）。`scripts/render_trace_videos.py` 发现该文件就把半透明品红夹爪放在目标位姿上，
 目标每次微调都能在视频里看到它动。**只画在第三人称跟踪视角**（geom group 4 只对主相机打开）；ego 和左右腕相机的画中画用默认选项渲染，
-永远不含 ghost，VLA 数据不受影响。Isaac 重渲（`render_isaac_warehouse.sh`）发现同名文件时把 `--ghost-trace` 传给两个渲染器，同样只在主画面。
+永远不含 ghost，VLA 数据不受影响。Isaac 重渲（`render_isaac_videos.sh`）发现同名文件时把 `--ghost-trace` 传给两个渲染器，同样只在主画面。
 没有 `_ghost.npz` 的旧 run 渲染时没有 ghost（不能事后重建当时的目标）。
 
 ## warehouse（Blender 房间）的 Isaac 重渲
@@ -206,7 +206,8 @@ warehouse 走另一条路，结果仍是 `stage.py` 期望的目录布局，重�
 
 ```bash
 python3 scripts/build_isaac_warehouse_scene.py     # 需要 pxr（pip install usd-core，或任一 Isaac/Blender python）
-bash scripts/render_isaac_warehouse.sh outputs/runs/<run>   # 每局：mujoco_render → isaac_render → 并排 → previews_isaac/
+bash scripts/render_isaac_videos.sh outputs/runs/<run>   # 每局：mujoco_render → isaac_render → 并排 → previews_isaac/；stage 与曝光取运行场景的 isaac 条目
+bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<run>/eval/state_trace --out outputs/runs/<run>/eval --insets
 ```
 
 - `scene.usda` 把 `assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc` 的 `/root` 引用到 `/World/room`，停用其中的 `env_light`
@@ -340,14 +341,14 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 - 只支持双臂 assisted 专家（`visual.pose_source: assisted`），它读的是黑色占位帧 `PlaceholderCamera`；
   markers 专家要读像素，`expert.run` 会直接拒绝。
 - 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出，
-  `eval.image_source: isaac` 的运行改由 `scripts/render_dataset_cameras_isaac.sh` 用 Isaac 渲（只渲成功局、只渲 25 Hz 取到的行）
-  （[跑法](warehouse.md#5-跑)）；没渲过、或渲染器与 `eval.image_source` 不一致的离线运行 convert 会拒绝。
+  `images.source: isaac` 的运行改由 `scripts/render_dataset_cameras_isaac.sh` 用 Isaac 渲（只渲成功局、只渲 25 Hz 取到的行）
+  （[跑法](warehouse.md#5-跑)）；没渲过、或渲染器与 `images.source` 不一致的离线运行 convert 会拒绝。
   VLA 闭环评测的图像走下节的 Isaac 镜像，MuJoCo 物理照样 `offline`。
 - 渲染慢先查最大的单块显示网格（`max(model.mesh_facenum)`）：超过 349,525 面就无损拆块，不减面，见 [Blender 场景](blender_scenes.md#7-常见错误对照)。 VLA 闭环的图像改走按需 Isaac 镜像（物理循环里不渲染，TODO 4.7.9，进行中）。
 
 ## VLA 闭环的 Isaac 画面（按需镜像）
 
-`eval.image_source: isaac` 时，策略的相机图像不来自 sim 的 MuJoCo 相机流（:5555），而来自 Isaac 镜像
+`images.source: isaac`（整次运行的选择，训练图也由 Isaac 渲）时，策略的相机图像不来自 sim 的 MuJoCo 相机流（:5555），而来自 Isaac 镜像
 （`src/locomani/sim/isaac/mirror.py`，render venv，单独一张卡）：
 
 ```bash
@@ -366,7 +367,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
   qpos 长度对不上（栈跑的是别的场景）或 sim 没发 qpos，请求直接报错，客户端这一局记为 observation stream dropped。
 - **记录**：每次渲染的 seq、状态年龄、渲染耗时写进 `<run>/eval/isaac_mirror.jsonl`；单臂客户端的延迟记录、双臂的 `eval/traces/round_NNN.json` 每行另有 `image`（那一块动作所用图的 seq 与状态年龄）。
   eval 栈还写 `<run>/eval/state_trace/`，同 seq 的图可以事后离线重渲（一致性闸门 4.7.9.8 的输入）。
-- **MuJoCo 出图时 `eval.backend.render` 必须是 `live`。** `offline` 的栈不发相机流，`image_source: mujoco` 的每局都会 `camera/state streams never became ready`；`isaac` 则配 `offline`。
+- **eval sim 渲不渲由 `images.source` 推出**（`run_context.evaluation_of`）：`mujoco` → `live`（策略只能从发相机流的 sim 读 MuJoCo 图），`isaac` → `offline`；实验文件写了矛盾的 `eval.backend.render` 加载即拒。有 Isaac stage 的场景：`warehouse_textured`（Blender USDC）。
 - **首次真实闭环**（2026-09-27，warehouse checkpoint-5000，10 局）：渲染 p50 95 ms、图像对应状态年龄 p50 11 ms、观测 → 动作 p50 166 ms，9/10 抬起（台账 crate.md 2026-09-27 末节）。
 - `client: lockstep` 不能配 Isaac（lockstep 的图像由 step 回复里的 MuJoCo 边界渲染提供），配置加载时拒绝。
 - **做了什么、还没做什么**（训练图是否也走 Isaac、一致性闸门、真实闭环、分支对账）：[镜像状态索引](handoff/isaac-vla-mirror-20260925.md)。
@@ -379,8 +380,8 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 | 基于 trace 的 Isaac 离线重渲 | 已实现；双臂有受管并排脚本 |
 | `backend.render: offline` + trace 出 MuJoCo 视频 | 已实现；仅双臂 assisted 专家，见[上一节](#离线渲染backendrender-offline) |
 | `collect` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
-| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_warehouse.sh`（Isaac 并排） |
-| Isaac 图像作为 VLA 闭环的输入 | 已实现按需镜像（`eval.image_source: isaac` + `scripts/run_isaac_mirror.sh`，见[上文](#vla-闭环的-isaac-画面按需镜像)）；协议与客户端有单测，**真实闭环尚未跑过**；专家仍读 MuJoCo |
+| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_videos.sh`（Isaac 并排） |
+| Isaac 图像作为 VLA 闭环的输入 | 已实现按需镜像（`images.source: isaac` + `scripts/run_isaac_mirror.sh`，见[上文](#vla-闭环的-isaac-画面按需镜像)）；warehouse checkpoint-5000 已真实闭环 10 局（台账 crate.md 2026-09-27）；专家仍读 MuJoCo |
 | 自动把 Isaac 视频写回训练数据集 | 当前转换器读取原 session 图像，没有自动替换步骤 |
 
 Isaac 画面可用于检查或后续数据处理，但若要作为 VLA 训练 RGB，需要另行完成

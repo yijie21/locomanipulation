@@ -109,7 +109,7 @@ bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 0
 ```
 
 > **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /
-> `policy_port` / `execution_horizon` / `budget_s` / `initial_token` / `image_source`（`isaac` 见 [渲染](rendering.md#vla-闭环的-isaac-画面按需镜像)）；
+> `policy_port` / `execution_horizon` / `budget_s` / `initial_token`，图像来源取整次运行的 `images.source`（`isaac` 见 [渲染](rendering.md#vla-闭环的-isaac-画面按需镜像)）；
 > `client` 只支持 `blocking`，写别的会**在启动前报错**；其余字段落盘到 `eval/ignored_eval_fields.json`，可直接比对"声明了什么"和"用上了什么"。起点、夹爪下限、后退一列取自 `task.visual`，`initial_token` 必须是本线数据首帧的，见 [双臂详解 §五](bimanual_design.md#五双臂闭环评测器)。
 也可以分阶段跑，方便在中间插手工检查：
 

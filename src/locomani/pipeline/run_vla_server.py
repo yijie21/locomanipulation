@@ -28,7 +28,6 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
-from locomani.pipeline.eval_config import EvalConfig
 
 ROOT = Path(paths.REPO)
 TRAIN_PY = Path(paths.THIRD_PARTY) / "Isaac-GR00T" / ".venv" / "bin" / "python"
@@ -90,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
     cfg = run_context.load_run_config(run_dir)
-    port = EvalConfig.from_dict(cfg["eval"]).policy_port
+    port = run_context.evaluation_of(cfg).policy_port
     checkpoint = run_context.checkpoint_of(run_dir)
     command = server_argv(cfg, checkpoint, port)
 

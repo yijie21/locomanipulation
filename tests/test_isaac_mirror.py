@@ -151,5 +151,5 @@ def test_a_client_outlives_a_mirror_that_never_answered():
 
 def test_the_mirror_refuses_a_run_whose_policy_would_never_ask_it(tmp_path):
     (tmp_path / "config.yaml").write_text(json.dumps({"eval": {"client": "async"}, "collect": {"instance": 0}}))
-    with pytest.raises(SystemExit, match="image_source is 'mujoco'"):
+    with pytest.raises(SystemExit, match="images.source is 'mujoco'"):
         M.main([str(tmp_path), "--gpu", "1", "--dry-run"])

@@ -473,4 +473,4 @@ Isaac（GPU1，`IsaacView` + warehouse USDC 场景，关自动曝光 / filmIso 3
 首次合爪 27–47 s、抬起 30–51 s（训练集平均一集 32.7 s）；观测 → chunk 延迟 p50 166 ms（Isaac 渲染 p50 95 ms），跳 4 帧补偿；图像对应状态年龄 p50 11 ms。
 "后退 0.3 m"一列 9/9 都是 timeout：训练数据按 `--trim-verification-tail` 在 hold 开始处裁掉，后退段不在数据里，这一列对本 checkpoint 不可测。
 两者口径不同（策略只判抬起 + 持 2 s；专家还要直立持 5 s + 后退），10 局也不足以下结论（同一份代码 10 局之间曾差出 2/10 到 7/10），100 局待跑。
-录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_20260927.zip`（MuJoCo 第三视角 + MuJoCo 小窗，不是策略看到的 Isaac 图）。
+录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_isaac_20260927.zip`（Isaac 第三视角 + Isaac ego/双腕小窗，与镜像同一 stage 和曝光，`render_isaac_videos.sh --traces eval/state_trace --insets`（当时叫 render_isaac_warehouse.sh）从每局 qpos 轨迹事后渲，一局 2–3.5 min）；早先的 MuJoCo 版 `..._closed_loop10_20260927.zip` 留作对照。

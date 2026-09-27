@@ -5,6 +5,7 @@ import json
 import pytest
 
 from locomani.pipeline.render_dataset_cameras import MARKER, pending, renderer_of, require_rendered
+from locomani.pipeline.run_context import migrate_images
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS, PlaceholderCamera, install_exporter_placeholder
 
 
@@ -62,12 +63,13 @@ def test_convert_asks_only_for_the_episodes_it_reads(tmp_path):
 
 def test_training_images_come_from_the_renderer_the_policy_is_evaluated_on(tmp_path):
     session = _session(tmp_path, {0: 12})
-    mujoco_eval = {"backend": {"render": "offline"}, "eval": {"image_source": "mujoco"}}
-    isaac_eval = {"backend": {"render": "offline"}, "eval": {"image_source": "isaac"}}
+    mujoco_eval = {"backend": {"render": "offline"}, "images": {"source": "mujoco"}}
+    isaac_eval = {"backend": {"render": "offline"}, "images": {"source": "isaac"}}
     (session / MARKER).write_text(json.dumps({"episodes": [0]}))  # a marker from before `renderer` existed
     assert renderer_of(session) == "mujoco"
     require_rendered(mujoco_eval, [str(session)])
-    require_rendered({"backend": {"render": "offline"}}, [str(session)])  # no eval block: MuJoCo
+    # a file from before `images` existed and without eval.image_source: MuJoCo
+    require_rendered(migrate_images({"backend": {"render": "offline"}, "eval": {}}), [str(session)])
     with pytest.raises(SystemExit, match="rendered by another renderer"):
         require_rendered(isaac_eval, [str(session)])
     (session / MARKER).write_text(json.dumps({"episodes": [0], "renderer": "isaac"}))

@@ -28,7 +28,7 @@ RUN = REPO / "outputs" / "runs" / "docrepro_20260924_warehouse_offline"
 TRACE = RUN / "trace" / "visual_crate_s7000_00_state_trace.npz"
 SCENE_XML = RUN / "warehouse_textured" / "scene_locomani.xml"
 SCENE_DIR = Path(paths.ISAAC_ASSETS) / "scene" / "warehouse_textured"
-RTX = ["/rtx/post/histogram/enabled=false", "/rtx/post/tonemap/filmIso=30"]  # scripts/render_isaac_warehouse.sh
+RTX = ["/rtx/post/histogram/enabled=false", "/rtx/post/tonemap/filmIso=30"]  # scripts/render_isaac_videos.sh
 STREAMS = list(CAMERA_CONFIGS)
 
 

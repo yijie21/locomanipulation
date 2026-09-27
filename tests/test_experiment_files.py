@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from locomani.backends.sonic.config import SonicBackendConfig
+from locomani.pipeline import run_context
 from locomani.pipeline.eval_config import EvalConfig
 from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.crate.config import CrateTaskConfig
@@ -23,6 +24,7 @@ EXPERIMENTS = Path(__file__).resolve().parents[1] / "configs" / "experiments"
 FILES = sorted(EXPERIMENTS.glob("*.yaml"))
 TASK_SCHEMA = {"bottle": BottleTaskConfig, "pick_place": BottleTaskConfig, "crate": CrateTaskConfig}
 BLOCKS = {"name", "task", "embodiment", "scene", "backend", "collect", "train", "eval"}
+IMAGES = "images"  # the current format's run-level image source; a file without it is the historical format
 
 
 def load(path: Path) -> dict:
@@ -37,7 +39,7 @@ def test_there_are_experiments():
 def test_file_is_self_contained(path):
     cfg = load(path)
     assert cfg["name"] == path.stem, "the run name is the file name, so a run directory names its recipe"
-    assert set(cfg) == BLOCKS, f"unexpected or missing blocks: {set(cfg) ^ BLOCKS}"
+    assert set(cfg) - {IMAGES} == BLOCKS, f"unexpected or missing blocks: {(set(cfg) - {IMAGES}) ^ BLOCKS}"
     assert "defaults" not in cfg, "an expanded file composes nothing"
 
 
@@ -52,6 +54,7 @@ def test_backend_and_eval_blocks_are_accepted_by_their_consumers(path):
     cfg = load(path)
     SonicBackendConfig.from_dict(cfg["backend"])
     EvalConfig.from_dict(cfg["eval"])  # the file the evaluator is handed, nested backend included
+    run_context.evaluation_of(run_context.migrate_images(cfg))  # and as the stages read it: image source applied
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)

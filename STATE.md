@@ -15,6 +15,7 @@
 - 默认版本：`configs/experiments/box_platform_default_20260927.yaml`（场景名 `box_platform`，quick，起点安全范围随机，实测 24/60 = 0.40）；README / docs/README / warehouse §8 索引到 `docs/box_grasp_envelope.md`。
 - 视频：`outputs/videos/box_range_quick_20260927.zip`（24 段，quick）、`outputs/videos/box_safe_range_20260927.zip`（11 段）。
 - warehouse 200 集 checkpoint-5000：开环 MSE 0.00123；闭环评测器修了 4 处（摆放、物体名、初始 token、夹爪下限）后 10 局 **9/10** 抬起（台账 crate.md 2026-09-27 末节）；评测怎么跑见 `docs/warehouse.md` §6。遗留：`stand_off` 0.44 对照（2.10）、bottle 5.10。
+- 图像来源是整次运行的 `images.source`（mujoco | isaac，DECISIONS 2026-09-27 末节）；`box_platform` 有 Isaac stage（ISO 20），冒烟 `box_platform_isaac_smoke_20260927` 走通采集→Isaac 补渲→convert→录像→镜像。`images.source` 本身已提交推送；box_platform 的 stage 构建、登记和模板随 6.9 提交（TODO 4.7.10.7）。
 
 ## 卡点 / 待验证
 

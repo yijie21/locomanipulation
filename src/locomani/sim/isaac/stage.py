@@ -417,7 +417,7 @@ def apply_rtx_settings(items, log=print) -> None:
 
     For per-scene look settings the renderer configuration does not cover -- the warehouse
     turns auto-exposure off (/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30,
-    scripts/render_isaac_warehouse.sh). Every renderer of a scene must apply the same list, or
+    scripts/render_isaac_videos.sh). Every renderer of a scene must apply the same list, or
     the offline dataset and the live mirror stop being the same picture.
     """
     if not items:

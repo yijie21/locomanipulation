@@ -4,7 +4,7 @@
 #   bash scripts/render_dataset_cameras_isaac.sh outputs/runs/box_room_grasp_200_20260925 --gpu 1
 #   bash scripts/render_dataset_cameras_isaac.sh outputs/runs/box_room_grasp_200_20260925 --dry-run
 #
-# For a run whose experiment sets `eval.image_source: isaac` (the others use render_dataset_cameras.sh):
+# For a run whose experiment sets `images.source: isaac` (the others use render_dataset_cameras.sh):
 # the images it trains on come from the same Isaac view the eval mirror serves. Kept episodes of finished
 # batches only, so it can run on another card beside a collection still recording; rerun until done.
 set -u

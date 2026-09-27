@@ -358,7 +358,7 @@ crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initi
 `task.visual.retreat_distance` > 0 时成功局接着跑，`RetreatWatch` 记策略是否带着箱子沿走入轴后退了这么远
 （采集成功的后半段；manifest 的 `retreat` / `retreat_ok`，`closed_loop.json` 的 `retreated`）。
 2026-09-27 之前摆放是合成桌子的副本（机器人偏航 0、物体 π/2、名字写死 `blue_crate`），在物流房间里朝向错 90°。
-图像来源：`eval.image_source: mujoco` 要 `eval.backend.render: live`（`offline` 的栈不发相机流，每局 `camera/state streams never became ready`），`isaac` 配 `offline` + 镜像；只有 `configs/scenes.yaml` 里带 `isaac` 条目的场景（目前 `warehouse_textured`）能用 Isaac。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
+图像来源是整次运行的 `images.source`（`mujoco` | `isaac`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
 观测构造与策略连接在 `vla_obs.py` 里按 `TaskSchema` 切换（`ObsBuilder(schema=SONIC_CRATE)`、
 `PolicyLink.get_chunk_bimanual`），策略服务的 modality 与 `SONIC_CRATE` 不一致会直接拒绝。
 

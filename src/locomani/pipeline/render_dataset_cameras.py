@@ -19,7 +19,7 @@ offline run while any episode it reads still has its placeholder frames -- black
 silently (the converter reuses the last decoded frame when one is missing, and black frames decode fine).
 
 The marker also names its `renderer`. `locomani.sim.isaac.render_dataset_cameras` fills the same placeholders
-with Isaac pictures, and a run whose policy is evaluated on Isaac images (`eval.image_source: isaac`) is
+with Isaac pictures, and a run whose policy is evaluated on Isaac images (`images.source: isaac`) is
 converted only from Isaac-rendered sessions, every other offline run only from MuJoCo-rendered ones: training
 and closed-loop images must be one function of the state (DECISIONS 2026-09-24).
 """
@@ -73,8 +73,8 @@ def renderer_of(session: Path) -> str | None:
 
 
 def expected_renderer(cfg: dict) -> str:
-    """The renderer the dataset's images must come from: the one the policy will be evaluated on."""
-    return "isaac" if (cfg.get("eval") or {}).get("image_source") == "isaac" else "mujoco"
+    """The renderer the dataset's images must come from: the run's `images.source`, which the closed loop uses too."""
+    return run_context.migrate_images(cfg)["images"]["source"]
 
 
 def require_rendered(cfg: dict, sessions: list[str]) -> None:
@@ -86,7 +86,7 @@ def require_rendered(cfg: dict, sessions: list[str]) -> None:
     wrong = sorted(Path(s).name for s in sessions if renderer_of(Path(s)) not in (None, want))
     if wrong:
         raise SystemExit(
-            f"eval.image_source asks for {want} images, but session(s) {wrong} were rendered by another renderer; "
+            f"images.source asks for {want} images, but session(s) {wrong} were rendered by another renderer; "
             f"re-collect, or render into fresh sessions with scripts/{script}"
         )
     left = {s: pending(Path(s), kept_only=True) for s in sessions}
@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if expected_renderer(cfg) != "mujoco":
         raise SystemExit(
-            f"{run_dir.name}: eval.image_source is isaac, so its dataset cameras are Isaac's to render: "
+            f"{run_dir.name}: images.source is isaac, so its dataset cameras are Isaac's to render: "
             "scripts/render_dataset_cameras_isaac.sh"
         )
     from locomani.pipeline.world_lift import RunTraces

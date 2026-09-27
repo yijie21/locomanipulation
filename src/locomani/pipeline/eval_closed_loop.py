@@ -198,7 +198,7 @@ def evaluate_run(args):
 
     run_dir = args.run if args.run.is_absolute() else REPO / args.run
     cfg_file = run_context.load_run_config(run_dir)
-    evaluation = EvalConfig.from_dict(cfg_file["eval"])  # validated here, so a bad field fails first
+    evaluation = run_context.evaluation_of(cfg_file)  # validated here, so a bad field fails first
     ev = run_dir / "eval"
     instance = int(cfg_file["collect"]["instance"])
 

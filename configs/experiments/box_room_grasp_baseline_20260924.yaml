@@ -105,6 +105,8 @@ embodiment:
 scene:
   name: warehouse_textured
   cases: null
+images:  # which renderer draws the policy's pictures, in the dataset and the closed loop alike: mujoco | isaac (isaac needs backend.render offline, the scene's Isaac stage and a second card; docs/warehouse.md §4)
+  source: mujoco
 backend:
   no_encoder: false
   render: offline

@@ -16,7 +16,7 @@ export PYTHONPATH="$LOCOMANI_ROOT/src"
 
 > **本仓库原作者的机器**上打过这两个补丁的 deploy 在别处，用 `export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"` 指过去；新机器按上面装好后**不要**这一行。
 
-`eval.image_source: isaac` 的运行（训练图由 Isaac 补渲、闭环由 Isaac 镜像出图，§5–§6）**必须**另做安装指南第 7 步和 `python3 scripts/build_isaac_warehouse_scene.py`（要 `pxr`，`pip install usd-core`），并有第二张卡给 Isaac；`image_source: mujoco` 的运行只有 §5 最后一条的并排预览要它。
+`images.source: isaac` 的运行（训练图由 Isaac 补渲、闭环由 Isaac 镜像出图，§4–§6）**必须**另做安装指南第 7 步和 `python3 scripts/build_isaac_warehouse_scene.py`（要 `pxr`，`pip install usd-core`），并有第二张卡给 Isaac；`images.source: mujoco` 的运行只有 §5 最后一条的并排预览要它。
 
 ## 2. 一次运行 = 一份实验文件
 
@@ -36,7 +36,8 @@ diff configs/experiments/box_room_grasp_baseline_20260924.yaml configs/experimen
 | 字段 | 含义 | 注意 |
 |---|---|---|
 | `name` | 运行目录 `outputs/runs/<name>/` | 同名运行的实验文件被改过会拒绝启动 |
-| `backend.render` | 仿真时渲不渲相机 | **目前用 `offline`**。旧 `warehouse` 场景的纸箱是一整块 46.3 万面网格，超过 MuJoCo 单块网格的 2²⁰ 顶点门槛，实时渲染时 sim 只剩 0.35× 实时，机器人走得比指令快约 3 倍；2026-09-24 按实时渲染跑是 0/20，离线回到 0.95×。现行 `warehouse_textured` 把同样的面拆成 9 块，三路相机离线测 3.2 ms，但实时栈的 RTF 还没测（TODO 4.7.7） |
+| `backend.render` | 采集时 sim 渲不渲相机 | **目前用 `offline`**：旧 `warehouse` 纸箱一整块网格超过 MuJoCo 单块 2²⁰ 顶点门槛，实时渲染 sim 只剩 0.35×、机器人走快约 3 倍（2026-09-24 实时 0/20）；`warehouse_textured` 拆成 9 块，实时栈 RTF 未测（TODO 4.7.7） |
+| `images.source` | 策略看到的图由谁渲：`mujoco` \| `isaac`，训练和闭环评测同一个 | `isaac` 要 `backend.render: offline`、场景有 Isaac stage（`configs/scenes.yaml` 的 `isaac` 条目，现有 `warehouse_textured`）和第二张卡；评测时 sim 渲不渲由它决定。冲突的组合**加载时就拒绝**；旧文件的 `eval.image_source` 读作它 |
 | `collect.record` | 录不录 LeRobot 数据 | 基线是 `false`（只采 manifest 和轨迹，调参数用）。要出训练数据改成 `true`，并跑 §5 的渲相机一步 |
 | `collect.batch_rounds` / `max_batches` | 每批尝试几局 / 最多几批 | 批内一定跑满；要正好跑 N 局就 `batch_rounds: N`、`max_batches: 1`（和 [双臂 §5](bimanual.md) 同一套规则），录制时 `train.holdout` 也要小于 N |
 | `collect.successes` | 保留多少条成功 | 批间的验收门槛；不够时采集非零退出，但记录照样保留 |
@@ -57,14 +58,14 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 \
   "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/my_box
 # 只在 collect.record: true 时：先补渲数据集相机，再转换
 bash scripts/render_dataset_cameras.sh outputs/runs/my_box --gpu 0
-#   eval.image_source: isaac 的运行改用 Isaac 补渲（上一行不跑）；可在采集时另一张卡上反复跑，只动已跑完的批
+#   images.source: isaac 的运行改用 Isaac 补渲（上一行不跑）；可在采集时另一张卡上反复跑，只动已跑完的批
 bash scripts/render_dataset_cameras_isaac.sh outputs/runs/my_box --gpu 1
 bash scripts/convert_data.sh           outputs/runs/my_box
 # 可选：Isaac 并排预览，写 <run>/previews_isaac/
-bash scripts/render_isaac_warehouse.sh outputs/runs/my_box
+bash scripts/render_isaac_videos.sh outputs/runs/my_box
 ```
 
-**补渲数据集相机在做什么**：离线时 sim 不出图，exporter 先存黑色占位帧，其余列（状态、动作、物体位姿）都是实录的。`render_dataset_cameras.sh` 按每行记下的 sim seq（session 的 `priv_seq/`）从 `trace/` 取出那一刻的 qpos，用和 sim 同一份场景、同一组相机（ego + 两腕）渲出图，覆盖占位帧；每局 6–10 s。对照实时录制的局核过：画面一致，实时帧比渲的晚 1–2 行（实时相机 30 Hz、exporter 取最近一张）。`render_dataset_cameras_isaac.sh` 做同一件事，图来自闭环镜像用的同一个 `IsaacView`（同一 stage、同一曝光），训练图和评测图是同一个函数。为省时间只渲 convert 会读的：成功局（失败局留占位帧），且只渲 50→25 Hz 取到的行，中间行重复前一行（早 20 ms）；每局约 90 s（三路 p50 76–84 ms，GPU1）。convert 按 `eval.image_source` 核对 session 是哪个渲染器补的，不一致就拒绝。整条线无人值守：`bash scripts/run_overnight.sh <实验文件> --gpu 0 --isaac-gpu 1 --line bimanual`（Isaac 补渲和镜像在 `--isaac-gpu`）。
+**补渲数据集相机在做什么**：离线时 sim 不出图，exporter 先存黑色占位帧，其余列（状态、动作、物体位姿）都是实录的。`render_dataset_cameras.sh` 按每行记下的 sim seq（session 的 `priv_seq/`）从 `trace/` 取出那一刻的 qpos，用和 sim 同一份场景、同一组相机（ego + 两腕）渲出图，覆盖占位帧；每局 6–10 s。对照实时录制的局核过：画面一致，实时帧比渲的晚 1–2 行（实时相机 30 Hz、exporter 取最近一张）。`render_dataset_cameras_isaac.sh` 做同一件事，图来自闭环镜像用的同一个 `IsaacView`（同一 stage、同一曝光），训练图和评测图是同一个函数。为省时间只渲 convert 会读的：成功局（失败局留占位帧），且只渲 50→25 Hz 取到的行，中间行重复前一行（早 20 ms）；每局约 90 s（三路 p50 76–84 ms，GPU1）。convert 按 `images.source` 核对 session 是哪个渲染器补的，不一致就拒绝。整条线无人值守：`bash scripts/run_overnight.sh <实验文件> --gpu 0 --isaac-gpu 1 --line bimanual`（Isaac 补渲和镜像在 `--isaac-gpu`）。
 
 一局连重置约 45 s，20 局约 15 分钟。训练和评测见 §6。
 
@@ -74,13 +75,13 @@ bash scripts/render_isaac_warehouse.sh outputs/runs/my_box
 
 ### 6.1 起评测前逐条核对
 
-评测**只读运行目录里的 `config.yaml` 副本**，不读 `configs/experiments/` 的原件；已经开跑的运行改下表字段就改 `<run>/config.yaml`，用 `run_overnight.sh` 时原件里的 `eval.image_source` 也要一致（它按原件决定起不起镜像）。每局的起点、夹爪合爪下限（`task.visual.close_target`）和"后退"一列都取自 `task.visual`，与采集同源，见 [双臂详解 §五](bimanual_design.md#五双臂闭环评测器)。
+评测**只读运行目录里的 `config.yaml` 副本**，不读 `configs/experiments/` 的原件；已经开跑的运行改下表字段就改 `<run>/config.yaml`，用 `run_overnight.sh` 时原件里的 `images.source` 也要一致（它按原件决定起不起镜像）。每局的起点、夹爪合爪下限（`task.visual.close_target`）和"后退"一列都取自 `task.visual`，与采集同源，见 [双臂详解 §五](bimanual_design.md#五双臂闭环评测器)。
 
 | 项 | 要求 | 不对会怎样 |
 |---|---|---|
 | `summary.json` 的 train 条目 | `train.sh` 跑完自动写。训练中途停了、或要评别的 checkpoint，按下面的命令手补（整条覆盖） | `summary.json has no checkpoint; run the train stage first` |
 | `eval.initial_token` | `configs/deployment/warehouse_initial_token.json`。warehouse 与 `box_platform` 两条线的数据开局手臂都与它差 ≤ 0.03 rad；从旧实验文件抄来的 `crate_initial_token.json` 差 0.6 rad | **不报错**：开局核对只拿 token 文件自己的 `arms` 比，策略从训练里没见过的姿势起步 |
-| `eval.image_source` 与 `eval.backend.render` | `isaac` 配 `offline`，外加镜像（§6.2）；`mujoco` 配 `live`（sim 自己出图）。训练图的渲染器必须同源，convert 已核对 | `mujoco` 配 `offline`：sim 不发图，每局 `[vla] camera/state streams never became ready` |
+| `images.source` | `isaac` 起栈前要有场景的 Isaac stage 和 render venv，评测时另开镜像（§6.2）；eval sim 渲不渲由它推出，不用配 `eval.backend.render` | 缺 stage / venv：起栈时报错并给出建法；给了矛盾的 `eval.backend.render`：加载时报错 |
 | `<run>/eval/` | 没有上一次的 `closed_loop.manifest.jsonl` / `closed_loop.json` | 前者 `... exists; pick another --out`；后者让 `run_overnight.sh` 直接跳过评测。重评先 `mv outputs/runs/my_box/eval outputs/runs/my_box/eval_<标签>` |
 | `eval.rounds` | 先 10 局冒烟看录像，再 100 局；每 `collect.batch_rounds` 局重启一次 deploy | — |
 
@@ -94,13 +95,13 @@ PYTHONPATH=src python3 -c "from pathlib import Path; from locomani.pipeline.run_
 . scripts/paths.sh
 bash scripts/train.sh outputs/runs/my_box --gpu 0
 bash scripts/open_loop_eval.sh --model-path outputs/runs/my_box/model/checkpoint-5000 --dataset-path outputs/runs/my_box/val_dataset --out-dir outputs/runs/my_box/eval/open_loop   # 开环，不起栈，10 集约 7 分钟
-# 闭环，一条命令：栈 + 策略服务在 --gpu，Isaac 镜像在 --isaac-gpu（image_source mujoco 不要 --isaac-gpu）
+# 闭环，一条命令：栈 + 策略服务在 --gpu，Isaac 镜像在 --isaac-gpu（images.source mujoco 不要 --isaac-gpu）
 bash scripts/run_overnight.sh configs/experiments/my_box.yaml --gpu 0 --isaac-gpu 1 --line bimanual --from eval
 bash scripts/start_stack.sh eval           outputs/runs/my_box --gpu 0   # 或者分终端：栈 / 策略服务 / Isaac 镜像（只 isaac，等它打印 listening）/ rounds
 bash scripts/run_vla_server.sh             outputs/runs/my_box --gpu 0
 bash scripts/run_isaac_mirror.sh           outputs/runs/my_box --gpu 1
 bash scripts/bimanual/run_vla_inference.sh outputs/runs/my_box --gpu 0
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/my_box --scene outputs/runs/my_box/eval/warehouse_textured --traces outputs/runs/my_box/eval/state_trace --out outputs/runs/my_box/eval/videos   # 录像：评测时 sim 不录，从每局 qpos 轨迹事后渲
+bash scripts/render_isaac_videos.sh outputs/runs/my_box --traces outputs/runs/my_box/eval/state_trace --out outputs/runs/my_box/eval --insets --gpu 1   # 录像：评测时 sim 不录，从每局 qpos 轨迹用 Isaac 事后渲（第三视角 + ego/双腕小窗，与策略同一 stage 和曝光），一局约 2 分钟；images.source mujoco 的运行用 scripts/render_trace_videos.py --traces
 ```
 
 ### 6.3 读结果
@@ -125,20 +126,19 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 | `videos/`、`previews_isaac/` | 事后渲的录像、Isaac 并排预览 |
 | `collect/inputs.json` | exporter session 与 manifest 的对应；session 里 `meta/offline_render.json` 记哪些局补渲过 |
 | `train_dataset/`、`val_dataset/`、`audit_*.log`、`model/checkpoint-<步>/` | 转换后的 LeRobot 数据集和审计；权重 |
-| `eval/closed_loop*`、`eval/state_trace/`、`eval/traces/`、`eval/isaac_mirror.jsonl` | 闭环汇总与逐局记录（§6.3）、每局 qpos 轨迹（渲录像用）、每个动作块的策略记录、镜像的每次渲染 |
+| `eval/closed_loop*`、`eval/state_trace/`、`eval/traces/`、`eval/isaac_mirror.jsonl`、`eval/isaac/<局>/ego_isaac.mp4` | 闭环汇总与逐局记录（§6.3）、每局 qpos 轨迹（渲录像用）、每个动作块的策略记录、镜像的每次渲染、Isaac 录像（`eval/previews_isaac/` 是与 MuJoCo 的并排预览） |
 
 ## 8. 排错
 
 | 症状 | 原因与处理 |
 |---|---|
 | 机器人走得太快、过冲撞箱、成批 0 分 | `backend.render` 不是 `offline`。算实时比：trace 行数 × 0.02 s ÷ manifest 的 `seconds`，低于 0.9 就是渲染拖慢 |
-| convert 报 `still hold black placeholder frames` | 这是离线录制的运行，先跑 `render_dataset_cameras.sh`（`eval.image_source: isaac` 的跑 `_isaac.sh`） |
-| convert 报 `rendered by another renderer` | session 补渲用的渲染器和 `eval.image_source` 不一致；训练图必须和评测图同源，换 `name` 重采 |
+| convert 报 `still hold black placeholder frames` | 这是离线录制的运行，先跑 `render_dataset_cameras.sh`（`images.source: isaac` 的跑 `_isaac.sh`） |
+| convert 报 `rendered by another renderer` | session 补渲用的渲染器和 `images.source` 不一致；训练图必须和评测图同源，换 `name` 重采 |
 | 起栈报 `the training set would be empty`，或 convert 报 `leaves none of N kept episodes` | `train.holdout` 不小于能保留（起栈时查上限）或实际保留的局数。调小实验文件里的 `train.holdout`（0 = 不留验证集）：起栈时被拒的同名重起即可；convert 才拒的，运行开始时配置已冻结，只能换 `name` 重采 |
 | 一批里大量 `initial_stance_unstable` | 停栈后不到 20 s 就重起，deploy 收不到 LowState；等 20 s、确认没有残留 sim/deploy 进程再起 |
 | 起栈报缺 POSE 补丁 | §1 的 deploy 没打补丁，或 `SONIC_DEPLOY_ROOT` 指错 |
-| 评测每局 `[vla] camera/state streams never became ready` | `eval.image_source: mujoco` 却 `eval.backend.render: offline`（sim 不发图）；或 `isaac` 但镜像没起。改 `<run>/config.yaml` 后重起栈 |
-| 评测 `[vla] isaac mirror: no reply ...` | 镜像没起或挂了，看 `eval/isaac_mirror.log`；`run_overnight.sh` 要给 `--isaac-gpu` |
+| 评测每局 `[vla] isaac mirror: no reply ...` 或 `camera/state streams never became ready` | `images.source: isaac` 但镜像没起或挂了：看 `eval/isaac_mirror.log`，`run_overnight.sh` 要给 `--isaac-gpu` |
 | 评测报 `has no checkpoint`、`... exists; pick another --out` | §6.1 表的前两行与第四行 |
 | `reach_stalled`、`lost_attachment` 占大头 | 这条线现在的主要失败形态（手停在箱沿上方、合爪后脱开），不是环境问题；进展见 [TODO](../TODO.md) 2.4.10.29 |
 

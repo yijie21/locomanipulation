@@ -3,7 +3,7 @@
 #
 #   bash scripts/run_isaac_mirror.sh outputs/runs/<run> --gpu 1
 #
-# Only for a run whose experiment sets `eval.image_source: isaac`, and only after terminal 1
+# Only for a run whose experiment sets `images.source: isaac`, and only after terminal 1
 # (scripts/start_stack.sh eval) is up: the mirror renders that stack's scene from its privileged
 # state. Start it before the rounds (terminal 3); the policy client asks it for images on every
 # observation. Its own GPU: the render is ~90 ms of RTX per request (docs/rendering.md).

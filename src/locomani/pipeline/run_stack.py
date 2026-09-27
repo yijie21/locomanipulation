@@ -24,7 +24,6 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
-from locomani.pipeline.eval_config import EvalConfig
 from locomani.pipeline.lines import line_of
 from locomani.pipeline.stages import Stage
 from locomani.stack import Stack, spec_from_config
@@ -70,7 +69,7 @@ def eval_spec(cfg: dict, run_dir: Path, scene: Path, gpu: str):
     its rounds clean under a pinned blocking client, which that invariant reads as "not clean"
     (`lines.Line.eval_backend`, 2026-09-23).
     """
-    evaluation = EvalConfig.from_dict(cfg["eval"])
+    evaluation = run_context.evaluation_of(cfg)  # the eval sim renders what images.source needs
     spec = spec_from_config(
         cfg,
         run_dir=run_dir,
@@ -107,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
     line = line_of(cfg)
     collect_root = line.collect_root(run_dir)
+    run_context.require_images(cfg)  # an Isaac run this machine cannot render is refused before anything starts
 
     if args.dry_run:
         scene = line.scene_name(cfg, run_dir)  # a dry run names the scene without freezing it

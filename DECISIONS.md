@@ -677,3 +677,28 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 ### 未决（不是决策）
 
 - 箱子偏角几度就掉一半的真正原因；③ 附着反馈是否设默认；②b 下探期位移闸门；横移方案 B；同几何在房间里 26% vs 台上 43% 的差从哪来。
+
+## 2026-09-27 图像来源改为整次运行的 `images.source`
+
+### 目标与约束的变化
+
+- 用户要求采集、训练、评测都能在 MuJoCo 和 Isaac 渲染之间选，并确认 Isaac 不是简单切换（要多一套 stage、补渲、镜像和第二张卡）。
+- 原来的选择器是 `eval.image_source`，但采集补渲和 convert 核对也读它；配套字段没有在任何地方核对：Isaac 源配实时采集会让训练吃 MuJoCo 图、评测用 Isaac 图而**不报错**；MuJoCo 源配 offline 的 eval sim 每局都 `camera/state streams never became ready`（97 个历史文件是这个组合）。
+
+### 决策
+
+1. **选择器挪到运行一级**：实验文件顶层 `images: {source: mujoco | isaac}`，一个值同时决定数据集相机、convert 核对、eval sim 渲不渲和闭环图像。`run_context.migrate_images` 在每个 stage 读配置时执行：没有 `images` 的是历史格式，`eval.image_source` 读作来源，eval 渲染改成来源需要的值；当前格式里再写 `eval.image_source`、`isaac` 配实时采集、或写了矛盾的 `eval.backend.render`，加载即拒。
+2. **eval sim 的渲染由来源推出**（`run_context.evaluation_of`：`mujoco` → `live`，`isaac` → `offline`），所有评测入口（crate / 单臂驱动、起栈、策略服务、镜像）都经它拿 EvalConfig；`EvalConfig.image_source` 只作解析后的交付值，实验文件不再写它。
+3. **起栈前核对 Isaac 前提**（`require_images`）：场景有 `isaac` 条目且 stage 已建、render venv 在。stage 带 `source.json`（MJCF 的 sha256）时，场景被重建后拒绝旧 stage。
+4. 录像脚本改名 `scripts/render_isaac_videos.sh`，stage 与曝光取运行场景的 `isaac` 条目，不再写死 warehouse。
+5. 被 runbook 复制的模板（warehouse 基线、`crate_table30_record`、`bottle_simple_200`）改成当前格式；其余历史文件保持原样，由迁移读取。
+
+### 被否决的方案（及原因）
+
+- 方案 A（字段不动，只在起栈时核对）：改动小，但字段名和作用范围不符，协作者会以为它只管评测。
+- 把来源放进 `scene` 或 `embodiment` 块：scene 可以是无名目录（Isaac 需要名字），embodiment 管机器人和模型契约；单独一块最直白。
+- `isaac` 配实时采集时静默改成 offline：会改掉文件明写的采集行为，按规矩拒绝并说明。
+
+### 未决（不是决策）
+
+- 按需渲与连续渲是否同图（TODO 4.7.9.8）仍未验证。

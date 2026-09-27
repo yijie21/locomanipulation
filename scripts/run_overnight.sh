@@ -5,7 +5,7 @@
 #   bash scripts/run_overnight.sh configs/experiments/crate_table30_record.yaml --gpu 1 --line bimanual
 #   bash scripts/run_overnight.sh configs/experiments/box_room_grasp_200_cap120_20260925.yaml --gpu 0 --isaac-gpu 1 --line bimanual
 #
-# --isaac-gpu: an experiment with `eval.image_source: isaac` renders its dataset cameras in Isaac and is
+# --isaac-gpu: an experiment with `images.source: isaac` renders its dataset cameras in Isaac and is
 # evaluated through the Isaac mirror, both on this card (the stack, training and policy stay on --gpu).
 #
 # THIS IS THE ONLY SCRIPT IN scripts/ THAT CALLS OTHER SCRIPTS. Everything else is flat: one bash,
@@ -43,9 +43,10 @@ RUN="$LOCOMANI_OUTPUTS/runs/$("$VENV_SIM_PY" -c "
 import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))['name'])" "$EXPERIMENT")"
 echo "run directory  $RUN"
 IMAGE_SOURCE=$("$VENV_SIM_PY" -c "
-import sys, yaml; print((yaml.safe_load(open(sys.argv[1])).get('eval') or {}).get('image_source') or 'mujoco')" "$EXPERIMENT")
+import sys; from locomani.pipeline import run_context
+print(run_context.open_run(sys.argv[1], write=False)[0]['images']['source'])" "$EXPERIMENT") || exit 1
 if [ "$IMAGE_SOURCE" = isaac ] && [ -z "$ISAAC_GPU" ]; then
-    echo "eval.image_source is isaac: give the card Isaac renders on, --isaac-gpu N" >&2; exit 1
+    echo "images.source is isaac: give the card Isaac renders on, --isaac-gpu N" >&2; exit 1
 fi
 # a stage runs when it is inside [--from, --to]; the stages are ordered collect < convert < train < eval
 rank() { case "$1" in collect) echo 0 ;; convert) echo 1 ;; train) echo 2 ;; eval) echo 3 ;; *) echo 9 ;; esac ; }
@@ -94,7 +95,7 @@ fi
 
 # --- evaluate ------------------------------------------------------------------------------
 # Three terminals in the documented path: stack, policy server, rounds (a fourth, the Isaac mirror,
-# for eval.image_source isaac). Here all but the rounds run in the background; the rounds driver waits
+# for images.source isaac). Here all but the rounds run in the background; the rounds driver waits
 # for the policy port before the first round and takes the stack down at the end. The mirror has no
 # port to wait on from there, so this waits for its "listening" line before the rounds start.
 if wanted eval && [ ! -f "$RUN/eval/closed_loop.json" ]; then

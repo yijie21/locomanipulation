@@ -15,6 +15,7 @@ and is what a later stage reads, so a stage never depends on a file that may hav
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -65,7 +66,7 @@ def open_run(experiment: Path | str, name: str | None = None, *, write: bool = T
     nothing behind, not even the directory it would have claimed.
     """
     experiment = Path(experiment)
-    cfg = resolve_scene(yaml.safe_load(experiment.read_text()))
+    cfg = resolve_scene(migrate_images(yaml.safe_load(experiment.read_text())))
     cfg["name"] = name or cfg["name"]
     run_dir = RUNS / cfg["name"]
     if not write:
@@ -83,7 +84,80 @@ def load_run_config(run_dir: Path) -> dict:
     path = Path(run_dir) / "config.yaml"
     if not path.exists():
         raise SystemExit(f"{path} is missing; this directory was not opened by a stage script")
-    return resolve_scene(yaml.safe_load(path.read_text()))
+    return resolve_scene(migrate_images(yaml.safe_load(path.read_text())))
+
+
+IMAGE_SOURCES = ("mujoco", "isaac")
+
+
+def eval_render(source: str) -> str:
+    """The eval sim's `backend.render` for an image source: the policy reads MuJoCo frames only from a sim that
+    renders them; with Isaac the mirror draws them and the sim renders nothing."""
+    return "live" if source == "mujoco" else "offline"
+
+
+def migrate_images(cfg: dict) -> dict:
+    """Bring the experiment's image source to the current format and check it; returns `cfg`, changed in place.
+
+    The current format (2026-09-27) says once, at run level, which renderer draws the policy's pictures:
+    `images: {source: mujoco | isaac}`. It decides the dataset cameras (collection records MuJoCo frames or
+    leaves placeholders for a re-render, and convert checks which renderer filled them), the eval sim's
+    rendering and where the closed loop's images come from. The historical format has no `images` block and
+    said it as `eval.image_source`, although collection and convert read it too; such a file -- every run
+    copy before that date -- is read as that source, and its eval sim renders what the source needs.
+
+    Refused here, where every stage reads its configuration, so no stage starts on a pairing none can serve:
+    `eval.image_source` beside an `images` block; `isaac` with a live collection (it records MuJoCo frames,
+    the Isaac re-render leaves them in place and convert's check never runs, so training and evaluation see
+    different renderers); and, in the current format, an `eval.backend.render` other than the source's.
+    """
+    evaluation = cfg.get("eval") or {}
+    historical = "images" not in cfg
+    if historical:
+        cfg["images"] = {"source": evaluation.pop("image_source", None) or "mujoco"}
+    elif "image_source" in evaluation:
+        raise SystemExit("eval.image_source is the old spelling of images.source; give the source only in `images`")
+    images = cfg["images"]
+    if not isinstance(images, dict) or set(images) != {"source"} or images["source"] not in IMAGE_SOURCES:
+        raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}}}, not {images!r}")
+    source = images["source"]
+    if source == "isaac" and (cfg.get("backend") or {}).get("render", "live") != "offline":
+        raise SystemExit(
+            "images.source isaac needs backend.render: offline -- a live collection records MuJoCo frames, which "
+            "the Isaac re-render leaves in place, so the policy would train on MuJoCo and be evaluated on Isaac"
+        )
+    rendered = (evaluation.get("backend") or {}).get("render")
+    if historical and rendered is not None:
+        evaluation["backend"]["render"] = eval_render(source)  # the migrated file is a current-format one
+    elif rendered not in (None, eval_render(source)):
+        raise SystemExit(
+            f"eval.backend.render {rendered!r} contradicts images.source {source!r}, which needs "
+            f"{eval_render(source)!r}: leave it out or give that"
+        )
+    return cfg
+
+
+def evaluation_of(cfg: dict):
+    """The run's EvalConfig as its evaluator runs it: the eval block with the image source and the eval sim's
+    rendering that `images.source` decides. Every stage that evaluates builds it here, not from the bare block."""
+    from locomani.pipeline.eval_config import EvalConfig
+
+    source = migrate_images(cfg)["images"]["source"]
+    block = dict(cfg["eval"])
+    backend = {**(block.get("backend") or {}), "render": eval_render(source)}
+    return EvalConfig.from_dict({**block, "backend": backend, "image_source": source})
+
+
+def require_images(cfg: dict) -> None:
+    """Before a stack starts: an Isaac run needs its scene's Isaac stage and the render venv on this machine."""
+    if cfg["images"]["source"] != "isaac":
+        return
+    isaac_scene(cfg)
+    if not os.access(paths.RENDER_PY, os.X_OK):
+        raise SystemExit(
+            f"images.source isaac renders in the render venv, and {paths.RENDER_PY} is not there: "
+            "docs/setup.md step 7 (scripts/setup_render_runtime.sh)"
+        )
 
 
 def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
@@ -118,7 +192,16 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
         raise SystemExit(f"scene {name!r} has no Isaac stage: add an `isaac` entry for it in {registry}")
     stage = Path(paths.ISAAC_ASSETS) / "scene" / entry["dir"]
     if not (stage / "scene.usda").is_file():
-        raise SystemExit(f"{stage / 'scene.usda'} is missing; build the Isaac stage of scene {name!r} first")
+        build = entry.get("build") or "its builder"
+        raise SystemExit(f"{stage / 'scene.usda'} is missing; build the Isaac stage of scene {name!r}: {build}")
+    # A stage generated from the MuJoCo scene records which one; a rebuilt scene (other box, other platform)
+    # would otherwise be rendered with the old geometry while physics runs the new one.
+    source = stage / "source.json"
+    if source.is_file() and cfg["scene"].get("dir"):
+        built = json.loads(source.read_text()).get("scene_xml_sha256")
+        xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
+        if xml.is_file() and built != hashlib.sha256(xml.read_bytes()).hexdigest():
+            raise SystemExit(f"{stage} was built from another {xml}; rebuild it: {entry.get('build')}")
     return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or [])}
 
 

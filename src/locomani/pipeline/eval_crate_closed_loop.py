@@ -265,7 +265,7 @@ def evaluate_run(args):
     cfg = run_context.load_run_config(run_dir)
     from locomani.pipeline.eval_config import EvalConfig
 
-    evaluation = EvalConfig.from_dict(cfg["eval"])
+    evaluation = run_context.evaluation_of(cfg)
     ev = run_dir / "eval"
     collect = cfg["collect"]
 

@@ -6,7 +6,7 @@ show only milliseconds old. For five of the requests it renders MuJoCo at the ex
 reported (by seq, from its own unconflated subscription to the privileged stream) and writes Isaac |
 MuJoCo side by side, so a wrong scene or a wrong camera shows.
 
-    bash scripts/start_stack.sh eval <experiment with eval.image_source: isaac> --name <run> --gpu 1
+    bash scripts/start_stack.sh eval <experiment with images.source: isaac> --name <run> --gpu 1
     bash scripts/run_isaac_mirror.sh outputs/runs/<run> --gpu 1
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src "$VENV_SIM_PY" \
         scripts/experiments/isaac_mirror_smoke_20260924.py outputs/runs/<run>
