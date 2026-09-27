@@ -11,10 +11,9 @@ seq), written over the same placeholder videos in the session, recorded in the s
 closed-loop images are one function of the state (DECISIONS 2026-09-24). Convert takes an Isaac-rendered run
 only when its `images.source` is isaac.
 
-An Isaac frame of the three cameras costs ~70 ms against MuJoCo's ~3, so two things are cut, neither of which
-convert reads:
-- failed rounds (a session's `discarded_episode_indices`) keep their placeholders;
-- only the rows the converter's 50 -> 25 Hz pick keeps (`world_lift.resample_selection`) are rendered; every
+Failed rounds (a session's `discarded_episode_indices`) keep their placeholders, as in the MuJoCo re-render.
+An Isaac frame of the three cameras costs ~70 ms against MuJoCo's ~3, so one more thing convert never reads is
+cut: only the rows the converter's 50 -> 25 Hz pick keeps (`world_lift.resample_selection`) are rendered; every
   other row repeats the rendered row before it, 20 ms older (the live camera trails 1-2 rows anyway).
 Only finished batches (`collect/inputs.json` `batches`) are touched, so this can run beside a collection that
 is still recording, and be rerun until the run is done.
@@ -121,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         marker = session / MARKER
         if marker.exists() and json.loads(marker.read_text()).get("renderer", "mujoco") != "isaac":
             raise SystemExit(f"{session.name}: its placeholders were filled by another renderer; not mixing")
-    todo = {s: pending(s, kept_only=True) for s in sessions}
+    todo = {s: pending(s) for s in sessions}
     total = sum(len(v) for v in todo.values())
     print(
         f"{run_dir.name}: {total} kept episode(s) to render in {len(sessions)} finished session(s) "

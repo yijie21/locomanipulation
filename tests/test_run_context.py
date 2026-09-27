@@ -9,6 +9,7 @@ examined with numbers instead of with a GPU.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -220,3 +221,45 @@ def test_the_warehouse_isaac_entry_is_the_look_its_renders_were_calibrated_with(
     entry = yaml.safe_load(run_common.SCENES.read_text())["warehouse_textured"]["isaac"]
     assert entry["dir"] == "warehouse_textured"
     assert entry["rtx_settings"] == ["/rtx/post/histogram/enabled=false", "/rtx/post/tonemap/filmIso=30"]
+
+
+def _rounds(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+
+def _traces(directory: Path, *labels: str) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    for label in labels:
+        (directory / f"{label}_state_trace.npz").write_bytes(b"")
+
+
+def test_only_successful_collection_rounds_are_picked_for_the_isaac_rerender(tmp_path):
+    # two batches; a round interrupted mid-batch has its manifest renamed and its trace left behind
+    _rounds(
+        tmp_path / "manifest_00.jsonl",
+        [{"label": "visual_crate_s1_00", "ok": True}, {"label": "visual_crate_s1_01", "ok": False}],
+    )
+    _rounds(tmp_path / "manifest_01.jsonl", [{"label": "visual_crate_s2_00", "ok": True}])
+    _rounds(tmp_path / "interrupted_manifest_02_x.jsonl", [{"label": "visual_crate_s3_00", "ok": True}])
+    _traces(tmp_path / "trace", "visual_crate_s1_00", "visual_crate_s1_01", "visual_crate_s2_00", "visual_crate_s3_00")
+    assert run_common.successful_traces(tmp_path, tmp_path / "trace") == ["visual_crate_s1_00", "visual_crate_s2_00"]
+
+
+def test_an_evaluation_is_judged_by_the_manifest_beside_its_traces(tmp_path):
+    # a moved-aside evaluation keeps its own manifest; the collection manifests do not judge crate_vla_* rounds
+    _rounds(tmp_path / "manifest_00.jsonl", [{"label": "visual_crate_s1_00", "ok": True}])
+    ev = tmp_path / "eval_smoke10"
+    _rounds(
+        ev / "closed_loop.manifest.jsonl",
+        [{"round": 0, "video": "crate_vla_000", "ok": True}, {"round": 1, "video": "crate_vla_001", "ok": False}],
+    )
+    _traces(ev / "state_trace", "crate_vla_000", "crate_vla_001")
+    assert run_common.successful_traces(tmp_path, ev / "state_trace") == ["crate_vla_000"]
+
+
+def test_single_arm_manifests_under_collect_are_read_too(tmp_path):
+    manifest = tmp_path / "collect" / "manifest_00.jsonl"
+    _rounds(manifest, [{"label": "bottle_00", "ok": True}, {"label": "bottle_01", "ok": False}])
+    _traces(tmp_path / "collect" / "state_trace", "bottle_00", "bottle_01")
+    assert run_common.successful_traces(tmp_path, tmp_path / "collect" / "state_trace") == ["bottle_00"]

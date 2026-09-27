@@ -9,6 +9,9 @@ records black placeholder frames (`locomani.sim.dataset_cameras`); every other c
 row names the sim seq it used (`priv_seq/episode_N.json`) and the run's `trace/` holds the qpos at every seq,
 so each row's three camera images are rendered exactly as the live sim does -- same scene copy, same
 `CAMERA_CONFIGS`, default visual options -- and written over the placeholder videos in the session.
+Only the rounds convert reads are rendered: a failed round (the session's `discarded_episode_indices`) keeps
+its placeholders, since `run_convert` never passes --include-discarded and the converter refuses an episode
+the marker does not list (2026-09-27: on a 0.2-yield run three quarters of the episodes are failures).
 
 Checked against a live-recorded crate episode (2026-09-24): identical content; the live frame trails by 1-2
 rows (the live cameras publish at ~30 Hz and the exporter takes the latest), so a rendered row is that much
@@ -46,7 +49,7 @@ MARKER = Path("meta") / "offline_render.json"
 def recorded_episodes(session: Path) -> list[int]:
     """The session's saved episodes, from its own episode index. Not the priv_seq `discarded` flag: a failed
     round is flagged discarded and its parquet is written all the same (2 of 10 in a live crate session,
-    2026-09-24), and `--include-discarded` converts it."""
+    2026-09-24); `discarded` names those."""
     index = session / "meta" / "episodes.jsonl"
     if not index.exists():
         return []
@@ -59,11 +62,25 @@ def discarded(session: Path) -> set[int]:
     return set(json.loads(info.read_text()).get("discarded_episode_indices", [])) if info.exists() else set()
 
 
-def pending(session: Path, *, kept_only: bool = False) -> list[int]:
+def pending(session: Path) -> list[int]:
+    """The session's episodes convert will read whose placeholders no renderer has filled yet: failed rounds never."""
     marker = session / MARKER
     done = set(json.loads(marker.read_text())["episodes"]) if marker.exists() else set()
-    skip = discarded(session) if kept_only else set()
+    skip = discarded(session)
     return [e for e in recorded_episodes(session) if e not in done and e not in skip]
+
+
+def unrendered(session: Path, episodes: list[int]) -> list[int]:
+    """Of `episodes`, the ones an offline session's render stage has not filled: the converter's last check.
+
+    `pending` skips failed rounds, so an episode convert takes beyond `run_convert`'s set (`--include-discarded`)
+    still holds black frames, which decode fine and would train silently. A session with no marker is
+    live-recorded, or offline and unrendered, which `require_rendered` refuses before convert starts."""
+    marker = Path(session) / MARKER
+    if not marker.exists():
+        return []
+    rendered = set(json.loads(marker.read_text())["episodes"])
+    return [ep for ep in episodes if ep not in rendered]
 
 
 def renderer_of(session: Path) -> str | None:
@@ -89,7 +106,7 @@ def require_rendered(cfg: dict, sessions: list[str]) -> None:
             f"images.source asks for {want} images, but session(s) {wrong} were rendered by another renderer; "
             f"re-collect, or render into fresh sessions with scripts/{script}"
         )
-    left = {s: pending(Path(s), kept_only=True) for s in sessions}
+    left = {s: pending(Path(s)) for s in sessions}
     if any(left.values()):
         n = sum(len(v) for v in left.values())
         raise SystemExit(
@@ -180,7 +197,10 @@ def main(argv: list[str] | None = None) -> int:
     traces = RunTraces(run_dir)
     todo = {Path(s): pending(Path(s)) for s in traces.sessions}
     total = sum(len(v) for v in todo.values())
-    print(f"{run_dir.name}: {total} episode(s) to render in {len(todo)} session(s), scene {traces.scene_dir.name}")
+    print(
+        f"{run_dir.name}: {total} kept episode(s) to render in {len(todo)} session(s) (failed rounds keep their "
+        f"placeholders), scene {traces.scene_dir.name}"
+    )
     if args.dry_run or not total:
         return 0
 

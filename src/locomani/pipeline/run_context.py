@@ -205,6 +205,30 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
     return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or [])}
 
 
+def successful_traces(run_dir: Path, traces: Path) -> list[str]:
+    """Labels of the state traces in `traces` whose round succeeded, as the manifest that judged it says.
+
+    A closed-loop evaluation's traces (`<eval dir>/state_trace/crate_vla_NNN`) are judged by the manifest beside
+    them (`closed_loop.manifest.jsonl`, key `video`); collection traces by the run's batch manifests
+    (`manifest_NN.jsonl`, bimanual at the top, single-arm under `collect/`, key `label`). A trace no row names
+    succeeded nowhere on record -- an interrupted batch's manifest is renamed `interrupted_manifest_*` -- so it
+    is left out, as a failed round is: an Isaac re-render costs about two minutes a round (docs/rendering.md).
+    """
+    run_dir, traces = Path(run_dir), Path(traces)
+    evaluated = traces.parent / "closed_loop.manifest.jsonl"
+    if evaluated.is_file():
+        judged, key = [evaluated], "video"
+    else:
+        judged = sorted(run_dir.glob("manifest_*.jsonl")) + sorted(run_dir.glob("collect/manifest_*.jsonl"))
+        key = "label"
+    ok = set()
+    for manifest in judged:
+        rows = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+        ok |= {row[key] for row in rows if row.get("ok") and row.get(key)}
+    labels = (p.name.removesuffix("_state_trace.npz") for p in traces.glob("*_state_trace.npz"))
+    return sorted(label for label in labels if label in ok)
+
+
 def checkpoint_of(run_dir: Path) -> Path:
     """The checkpoint the train stage recorded for this run.
 

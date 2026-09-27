@@ -58,7 +58,7 @@ flowchart TD
 |---|---|---|
 | 画面 | MuJoCo 自带的 OpenGL 渲染，与物理同一个模型 | Isaac Sim RTX 渲染同一时刻的状态，场景另有一份 USD（Isaac stage），光照和材质更接近真实 |
 | 采集时 sim 出不出图 | `backend.render: live` 实时出；`offline` 不出，事后补 | 必须 `offline`，采集时不出图 |
-| 数据集相机（convert 之前） | `offline` 时由 `render_dataset_cameras.sh` 从 trace 补渲 | 由 `render_dataset_cameras_isaac.sh` 用 Isaac 从 trace 补渲（只渲成功局、只渲 25 Hz 取到的行） |
+| 数据集相机（convert 之前） | `offline` 时由 `render_dataset_cameras.sh` 从 trace 补渲（只渲成功局） | 由 `render_dataset_cameras_isaac.sh` 用 Isaac 从 trace 补渲（只渲成功局、只渲 25 Hz 取到的行） |
 | 闭环评测时策略的图 | eval sim 自己实时渲（eval 栈强制 `live`） | eval sim 不渲（强制 `offline`），另起 [Isaac 镜像](#vla-闭环的-isaac-画面按需镜像)，策略要图时按 sim 此刻的状态渲 |
 | 额外需要 | — | [安装](setup.md)第 7 步；场景在 `configs/scenes.yaml` 有 `isaac` 条目且已建 stage；第二张 GPU |
 | 能用的场景 | 全部 | `warehouse_textured`、`box_platform` |
@@ -230,6 +230,10 @@ bash scripts/render_isaac_videos.sh outputs/runs/<run>   # 每局：mujoco_rende
 bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<run>/eval/state_trace --out outputs/runs/<run>/eval --insets
 ```
 
+- 只渲成功局：每局约 2 分钟，失败的采集局也进不了数据集。成败读判这一局的 manifest——`<run>/trace` 读运行的 `manifest_NN.jsonl`
+  （`label`），评测的 `state_trace` 读旁边的 `closed_loop.manifest.jsonl`（`video`），没有任何一行点名的 trace（中断批次）也跳过；
+  开头打印 `rendering N of M traces`。`--all` 渲全部 trace，命令末尾点名 label 就只渲那几局（`run_context.successful_traces`）。
+
 - `scene.usda` 把 `assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc` 的 `/root` 引用到 `/World/room`，停用其中的 `env_light`
   （RTX 不认它的 EXR，见 blender_scenes.md）和静态纸箱；`assemble_stage` 于是补 dome + 平行光。
 - `usd/nor_cal_box/` 是可动纸箱：同样引用 `/root` 但停用其余 237 个子 prim。只引用纸箱 prim 会丢掉 `/root/_materials` 的绑定
@@ -360,8 +364,9 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 
 - 只支持双臂 assisted 专家（`visual.pose_source: assisted`），它读的是黑色占位帧 `PlaceholderCamera`；
   markers 专家要读像素，`expert.run` 会直接拒绝。
-- 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出，
-  `images.source: isaac` 的运行改由 `scripts/render_dataset_cameras_isaac.sh` 用 Isaac 渲（只渲成功局、只渲 25 Hz 取到的行）
+- 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出（只渲成功局，
+  失败局留占位帧；convert 本就不读它们，`--include-discarded` 转换未渲的局会被拒），
+  `images.source: isaac` 的运行改由 `scripts/render_dataset_cameras_isaac.sh` 用 Isaac 渲（同样只渲成功局，另外只渲 25 Hz 取到的行）
   （[跑法](warehouse.md#5-跑)）；没渲过、或渲染器与 `images.source` 不一致的离线运行 convert 会拒绝。
   VLA 闭环评测的图像走下节的 Isaac 镜像，MuJoCo 物理照样 `offline`。
 - 渲染慢先查最大的单块显示网格（`max(model.mesh_facenum)`）：超过 349,525 面就无损拆块，不减面，见 [Blender 场景](blender_scenes.md#7-常见错误对照)。

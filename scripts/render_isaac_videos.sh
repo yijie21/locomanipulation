@@ -3,9 +3,13 @@
 # Isaac stage (an `isaac` entry in configs/scenes.yaml: warehouse_textured, box_platform).
 #
 #   bash scripts/render_isaac_videos.sh <run_dir> [--scene-xml <scene_locomani.xml>] [--gpu N] [--stride 4]
-#       [--traces <dir>] [--out <dir>] [--insets] [labels...]
+#       [--traces <dir>] [--out <dir>] [--insets] [--all] [labels...]
 #
-# Per episode (default: every trace under <run_dir>/trace): mujoco_render writes the tracking shot + cam_traj.npz,
+# Which rounds: by default only those that succeeded, as the manifest that judged each one says (the run's
+# manifest_NN.jsonl for <run_dir>/trace, closed_loop.manifest.jsonl beside an eval's state_trace), because a round
+# costs about two minutes of Isaac and a failed collection round never reaches the dataset. --all renders every
+# trace; labels on the command line render exactly those.
+# Per round: mujoco_render writes the tracking shot + cam_traj.npz,
 # isaac_render renders the same camera path on the Isaac scene, ffmpeg hstacks them, and a preview lands in
 # <out>/previews_isaac/ (<out> defaults to <run_dir>; compress to <=500 KB before sharing, docs/rendering.md). The
 # Isaac-only render is <out>/isaac/<label>/ego_isaac.mp4. A closed-loop evaluation: --traces <run>/eval/state_trace
@@ -19,7 +23,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 . scripts/paths.sh
-RUN=""; XML=""; GPU=0; STRIDE=4; LABELS=(); TRACES=""; DEST=""; INSETS=()
+RUN=""; XML=""; GPU=0; STRIDE=4; LABELS=(); TRACES=""; DEST=""; INSETS=(); ALL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --scene-xml) XML="$2"; shift 2 ;;
@@ -28,7 +32,8 @@ while [ $# -gt 0 ]; do
     --traces) TRACES="$2"; shift 2 ;;
     --out) DEST="$2"; shift 2 ;;
     --insets) INSETS=(--insets); shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    --all) ALL=1; shift ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) if [ -z "$RUN" ]; then RUN="$1"; else LABELS+=("$1"); fi; shift ;;
   esac
 done
@@ -51,7 +56,17 @@ while IFS= read -r s; do [ -n "$s" ] && RTX_SETTINGS+=(--rtx-setting "$s"); done
 [ -f "$XML" ] || { echo "no scene xml $XML (pass --scene-xml)" >&2; exit 1; }
 export CUDA_VISIBLE_DEVICES="$GPU" MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID="$GPU" OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH="$LOCOMANI_ROOT/src"
 if [ ${#LABELS[@]} = 0 ]; then
-  for t in "$TRACES"/*_state_trace.npz; do LABELS+=("$(basename "$t" _state_trace.npz)"); done
+  ALL_TRACES=("$TRACES"/*_state_trace.npz)
+  if [ "$ALL" = 1 ]; then
+    for t in "${ALL_TRACES[@]}"; do LABELS+=("$(basename "$t" _state_trace.npz)"); done
+  else
+    OK_LABELS=$("$VENV_SIM_PY" -c '
+import sys
+from locomani.pipeline import run_context
+print(*run_context.successful_traces(sys.argv[1], sys.argv[2]), sep="\n")' "$RUN" "$TRACES") || exit 1
+    [ -n "$OK_LABELS" ] && mapfile -t LABELS <<<"$OK_LABELS"
+  fi
+  echo "rendering ${#LABELS[@]} of ${#ALL_TRACES[@]} traces in $TRACES ($([ "$ALL" = 1 ] && echo every round || echo successful rounds only, --all for every one))"
 fi
 mkdir -p "$DEST/isaac" "$DEST/previews_isaac"
 for L in "${LABELS[@]}"; do

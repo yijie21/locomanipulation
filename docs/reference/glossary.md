@@ -51,7 +51,7 @@
 | 词 | 意思 |
 |---|---|
 | `backend.render` | `live`：采集时 sim 实时渲相机；`offline`：不渲，只留物理和 trace，数据集相机先存黑色占位帧 |
-| 补渲 | convert 之前按 trace 给离线录制的 session 渲出数据集相机，覆盖占位帧（`render_dataset_cameras.sh` / `_isaac.sh`） |
+| 补渲 | convert 之前按 trace 给离线录制的 session 渲出数据集相机，覆盖占位帧（`render_dataset_cameras.sh` / `_isaac.sh`）；只渲成功局，失败局 convert 不读 |
 | `images.source` | 策略看到的相机图由 `mujoco` 还是 `isaac` 渲；训练和闭环评测同一个（[图像来源](../rendering.md#图像来源imagessource)） |
 | Isaac / SIMPLE | Isaac Sim 4.5：NVIDIA 的 RTX 渲染器，本仓库只用它出图，物理始终在 MuJoCo。它的 Python 环境借 SIMPLE 仓库的 venv（`$RENDER_PY`，安装第 7 步） |
 | Isaac stage | 场景给 Isaac 用的 USD 版本，在 `assets/isaac/scene/<名字>/`，由 `configs/scenes.yaml` 该场景 `isaac.build` 的命令生成 |

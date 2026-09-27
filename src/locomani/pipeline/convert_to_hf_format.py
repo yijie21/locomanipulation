@@ -43,6 +43,7 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[2])
 )  # reach src/ for `python src/locomani/pipeline/convert_to_hf_format.py`
 from locomani.pipeline.recording_density import check_recording_density  # noqa: E402
+from locomani.pipeline.render_dataset_cameras import unrendered
 from locomani.pipeline.third_person import link_third_person, third_person_source
 from locomani.pipeline.verification_tail import training_prefix_length  # noqa: E402
 from locomani.pipeline.world_lift import DST_FPS, SRC_FPS, resample_selection  # noqa: E402
@@ -615,6 +616,12 @@ def main():
             kept_eps.append(src_ep)
             items.append({"si": si, "sess": sess, "src_ep": src_ep, "pq": pq})
         check_recording_density(sess, kept_eps)
+        black = unrendered(sess, kept_eps)
+        if black:
+            raise SystemExit(
+                f"[render] {sess.name}: episodes {black} still hold black placeholder frames (offline recording; "
+                "only successful rounds are rendered). Drop --include-discarded, or render them first."
+            )
 
     # Every session must describe the same columns. info.json is copied from
     # the FIRST session and becomes the dataset's declared schema, so a session

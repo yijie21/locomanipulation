@@ -220,6 +220,8 @@
     - [x] 4.7.10.7 提交（用户 2026-09-27 定分两批，第二批随 6.9.1）：`images.source`、迁移、录像脚本改名、文档、三份模板已提交推送（`356d806`）；`scripts/build_isaac_primitive_scene.py`、`scenes.yaml` 的 box_platform `isaac` 条目、`box_platform_default` / 冒烟实验文件、文档里 box_platform 的 Isaac 提法随 6.9 一起提交（它们依赖扫参会话未提交的 `box_platform_scene.py`）
     - [ ] 4.7.10.8 可选：box_platform 用 `images.source: isaac` 真正采集 + 训练 + 闭环一次（目前只有 5 局冒烟，单集对齐审计因样本少 FAIL）
     - [x] 4.7.10.9 `docs/handoff/lockstep-isaac-eval-plan-20260927.md` 及 `docs/rendering.md`、`docs/handoff/isaac-vla-mirror-20260925.md` 的链接（2026-09-27 写完；随 4.6.5 文档复查一起提交推送，用户 2026-09-27）
+    - [x] 4.7.10.10 Isaac 并排录像 `render_isaac_videos.sh` 默认只渲成功局（用户 2026-09-27：失败局也渲浪费时间）：成败读判这一局的 manifest（采集 `manifest_NN.jsonl` 的 `label`，评测旁边 `closed_loop.manifest.jsonl` 的 `video`），`--all` 全渲、点名 label 只渲那几局；`run_context.successful_traces` + 3 个测试；实测 cap120 采集 205/950、评测 9/10、box_platform 冒烟 1/5。数据集 Isaac 补渲本来就只渲成功局（cap120 渲 204/948，没改）
+      - [x] 4.7.10.10.1 MuJoCo 补渲 `render_dataset_cameras.sh` 也只渲成功局（用户 2026-09-27）：`pending` 一律跳过 `discarded_episode_indices`（去掉 `kept_only` 开关）；为不让 `--include-discarded` 静默训黑帧，converter 用 `render_dataset_cameras.unrendered` 拒绝 marker 没列的局；`box_room_grasp_10ep_20260925` dry-run 30 → 11 局
   - [ ] 4.7.11 闭环评测的时间模型对齐现实：Isaac 渲图时冻结世界（lockstep），推理延迟按帧模拟；计划 `docs/handoff/lockstep-isaac-eval-plan-20260927.md`（用户 2026-09-27 要求写成计划，未开工）
     - [ ] 4.7.11.0 W0 校准 lockstep 本身（2026-09-02 墙钟 46/100 vs lockstep 32/100 未过）：让 lockstep 复刻墙钟现有时间模型，看能否复现 checkpoint-5000 的成绩与失败构成
     - [ ] 4.7.11.1 W1 双臂 lockstep 客户端（`vla_rounds` 按 tick 推进、tick 版 prelude、放开 `client`）

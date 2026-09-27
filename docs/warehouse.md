@@ -55,13 +55,13 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/my_box.yaml --gpu 
 # 录像：仿真时没渲，事后从每局 qpos 轨迹（trace/）渲第三视角（自动画 ghost 夹爪），写 <run>/videos/
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/my_box
 # 只在 collect.record: true 时：补渲数据集相机（exporter 采集时存的是黑色占位帧），按 images.source 二选一
-bash scripts/render_dataset_cameras.sh       outputs/runs/my_box --gpu 0   # mujoco：MuJoCo EGL 渲全部局，每局 6–10 s
+bash scripts/render_dataset_cameras.sh       outputs/runs/my_box --gpu 0   # mujoco：MuJoCo EGL 渲成功局，每局 6–10 s
 bash scripts/render_dataset_cameras_isaac.sh outputs/runs/my_box --gpu 1   # isaac：Isaac 在第二张卡渲成功局，每局约 90 s
 bash scripts/convert_data.sh                 outputs/runs/my_box           # 转成 LeRobot 训练/验证集，不用卡
-bash scripts/render_isaac_videos.sh outputs/runs/my_box --gpu 1   # 可选：同一条轨迹 MuJoCo（左）与 Isaac（右）并排对比，写 <run>/previews_isaac/；不给 --gpu 就用 0
+bash scripts/render_isaac_videos.sh outputs/runs/my_box --gpu 1   # 可选：同一条轨迹 MuJoCo（左）与 Isaac（右）并排对比，写 <run>/previews_isaac/；只渲成功局（每局约 2 分钟），失败局加 --all 或在末尾点名 label；不给 --gpu 就用 0
 ```
 
-**补渲在做什么**：离线录制时 sim 不出图，exporter 存黑色占位帧，其余列（状态、动作、物体位姿）都是实录的。补渲按每行记下的 sim seq 从 `trace/` 取出那一刻的 qpos，用同一份场景、同一组相机（ego + 两腕）渲出图，覆盖占位帧；两个脚本都可重跑，已渲的局跳过。Isaac 版只渲 convert 会读的（成功局、50→25 Hz 取到的行），用的是闭环镜像同一个渲染函数（`IsaacView`，同一 stage、同一曝光），训练图和评测图因此同源；它只动已跑完的批，可以在采集进行时另一张卡上先跑，采集结束后再跑一次补齐。convert 核对 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝。整条线无人值守：`bash scripts/run_overnight.sh configs/experiments/my_box.yaml --gpu 0 --isaac-gpu 1 --line bimanual`——`--gpu` 给栈、训练和策略服务，`--isaac-gpu` 给 Isaac 补渲和镜像（`mujoco` 的运行不给），`--line bimanual` 选双臂的专家和评测脚本（不给就是单臂）。一局连重置约 45 s，20 局约 15 分钟。
+**补渲在做什么**：离线录制时 sim 不出图，exporter 存黑色占位帧，其余列（状态、动作、物体位姿）都是实录的。补渲按每行记下的 sim seq 从 `trace/` 取出那一刻的 qpos，用同一份场景、同一组相机（ego + 两腕）渲出图，覆盖占位帧；两个脚本都只渲 convert 会读的成功局（失败局留占位帧，convert 不读；硬要 `--include-discarded` 会被拒），都可重跑，已渲的局跳过。Isaac 版另外只渲 50→25 Hz 取到的行，用的是闭环镜像同一个渲染函数（`IsaacView`，同一 stage、同一曝光），训练图和评测图因此同源；它只动已跑完的批，可以在采集进行时另一张卡上先跑，采集结束后再跑一次补齐。convert 核对 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝。整条线无人值守：`bash scripts/run_overnight.sh configs/experiments/my_box.yaml --gpu 0 --isaac-gpu 1 --line bimanual`——`--gpu` 给栈、训练和策略服务，`--isaac-gpu` 给 Isaac 补渲和镜像（`mujoco` 的运行不给），`--line bimanual` 选双臂的专家和评测脚本（不给就是单臂）。一局连重置约 45 s，20 局约 15 分钟。
 
 ## 6. 训练与评测
 
@@ -101,7 +101,7 @@ bash scripts/start_stack.sh eval           outputs/runs/my_box --gpu 0   # 终�
 bash scripts/run_vla_server.sh             outputs/runs/my_box --gpu 0   # 终端 2
 bash scripts/run_isaac_mirror.sh           outputs/runs/my_box --gpu 1   # 终端 3，只 images.source: isaac
 bash scripts/bimanual/run_vla_inference.sh outputs/runs/my_box --gpu 0   # 终端 4
-# 录像：评测时 sim 不录，事后从每局 qpos 轨迹渲。isaac 如下：第三视角 + ego/双腕小窗，与策略同一 stage 和曝光，一局约 2 分钟；mujoco 的运行用 §5 那条 render_trace_videos.py 加 outputs/runs/my_box --traces outputs/runs/my_box/eval/state_trace --out outputs/runs/my_box/eval/videos
+# 录像：评测时 sim 不录，事后从每局 qpos 轨迹渲。isaac 如下：第三视角 + ego/双腕小窗，与策略同一 stage 和曝光，一局约 2 分钟，默认只渲成功局（看失败局加 --all，或在末尾点名如 crate_vla_002）；mujoco 的运行用 §5 那条 render_trace_videos.py 加 outputs/runs/my_box --traces outputs/runs/my_box/eval/state_trace --out outputs/runs/my_box/eval/videos
 bash scripts/render_isaac_videos.sh outputs/runs/my_box --traces outputs/runs/my_box/eval/state_trace --out outputs/runs/my_box/eval --insets --gpu 1
 ```
 
