@@ -110,7 +110,7 @@ bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
 
 > **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /
 > `policy_port` / `execution_horizon` / `budget_s` / `initial_token` / `image_source`（`isaac` 见 [渲染](rendering.md#vla-闭环的-isaac-画面按需镜像)）；
-> `client` 只支持 `blocking`，写别的会**在启动前报错**；其余字段落盘到 `eval/ignored_eval_fields.json`，可直接比对"声明了什么"和"用上了什么"。
+> `client` 只支持 `blocking`，写别的会**在启动前报错**；其余字段落盘到 `eval/ignored_eval_fields.json`，可直接比对"声明了什么"和"用上了什么"。起点、夹爪下限、后退一列取自 `task.visual`，`initial_token` 必须是本线数据首帧的，见 [双臂详解 §五](bimanual_design.md#五双臂闭环评测器)。
 也可以分阶段跑，方便在中间插手工检查：
 
 **命令行只有 6 个参数**，其余一切都在实验文件里：
@@ -144,7 +144,7 @@ CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 �
 | 端口 | 谁的 | 怎么换 | 不换会怎样 |
 |---|---|---|---|
 | 29500 | torchrun（`train.sh`） | `export PORT=29540` | `EADDRINUSE`，train 阶段直接挂 |
-| 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use` |
+| `eval.policy_port`（本线实验文件 5700） | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use` |
 
 `collect.record=true`（默认）时采集阶段在本实例上起 data exporter，每批一个 session，
 写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，并记在
@@ -166,7 +166,7 @@ CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 �
 | `train_dataset/`、`val_dataset/` | LeRobot 数据集 |
 | `train_dataset/third_person/episode_NNNNNN.mp4` | 每集的第三人称录像，**按集号对齐**（硬链接，不占额外磁盘）。不是相机流，不进策略 |
 | `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
-| `eval/closed_loop.json`、`eval/videos_NN/` | 闭环结果与录像 |
+| `eval/closed_loop.json`、`eval/state_trace/` | 闭环结果；每局 qpos 轨迹，录像用 `scripts/render_trace_videos.py <run> --traces <run>/eval/state_trace --out <run>/eval/videos` 事后渲 |
 | `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里 |
 | `eval/ignored_eval_fields.json` | 这次评测**没有实现**的 `eval` 字段及其值 |
 

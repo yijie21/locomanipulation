@@ -63,7 +63,7 @@ def aggregate(manifest: Path) -> dict:
     rows = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
     ok = sum(1 for r in rows if r.get("ok"))
     stages = Counter(failure_stage(r.get("why", "")) for r in rows if not r.get("ok"))
-    return dict(
+    result = dict(
         rounds=len(rows),
         successes=ok,
         success_rate=ok / len(rows) if rows else 0.0,
@@ -71,6 +71,13 @@ def aggregate(manifest: Path) -> dict:
         failure_stages=dict(stages),
         why=dict(Counter(r.get("why", "")[:70] for r in rows if not r.get("ok"))),
     )
+    # Lifted rounds of a config with visual.retreat_distance also walk back (vla_rounds.RetreatWatch): the
+    # collection's own success is those that did so with the load held.
+    watched = [r for r in rows if r.get("retreat") is not None]
+    if watched:
+        result["retreated"] = sum(1 for r in watched if r.get("retreat_ok"))
+        result["retreat_reasons"] = dict(Counter(r["retreat"]["reason"] for r in watched))
+    return result
 
 
 # The EvalConfig fields this evaluator actually reads. Everything else in the block
@@ -309,7 +316,7 @@ def evaluate_run(args):
         run_dir,
         "eval",
         checkpoint=str(checkpoint),
-        **{k: result[k] for k in ("rounds", "successes", "success_rate") if k in result},
+        **{k: result[k] for k in ("rounds", "successes", "success_rate", "retreated") if k in result},
     )
     print(f"eval: {result.get('successes')}/{result.get('rounds')} -> {ev / 'closed_loop.json'}")
     return 0

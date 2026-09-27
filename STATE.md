@@ -1,7 +1,7 @@
 # STATE — 2026-09-27（会话：场景能力扫参 → 专家改进 ①–⑤ 全部 A/B → 双臂抓箱默认配置 `box_platform` + quick）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `4655254`；本地未推送 `e887520`、`9056a43`、`c0b97ff`、`9be8649` 和本 handoff 提交。
-**大量代码未提交**（`git status`：12 个新旋钮、`sweep.py`、`box_platform_scene.py`、`docs/box_grasp_envelope.md`、35 个实验文件），`make check` 通过；提交与否待用户定（TODO 6.9）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`；2026-09-27 评测修复提交已连同之前的 handoff 提交一起推送。
+**扫参会话的代码仍未提交**（`git status`：12 个新旋钮、`sweep.py`、`box_platform_scene.py`、`docs/box_grasp_envelope.md`、35 个实验文件，含已改好 eval 块的 `box_platform_default_20260927.yaml`），`make check` 通过；提交与否待用户定（TODO 6.9）。
 没有运行中的栈、训练或渲染；GPU1 上的进程是别的项目的。
 
 ## 工作树
@@ -14,7 +14,7 @@
 - 专家改进 ①–⑤ + 抓深 + 下探速度 + 壁厚 + 横向前馈（离线）全部无效或负结果；③ 附着反馈把站直期脱手 27 → 13%（总数不变）；`ready_after_brake quick` 每局省 5.4 s 成功率不变。
 - 默认版本：`configs/experiments/box_platform_default_20260927.yaml`（场景名 `box_platform`，quick，起点安全范围随机，实测 24/60 = 0.40）；README / docs/README / warehouse §8 索引到 `docs/box_grasp_envelope.md`。
 - 视频：`outputs/videos/box_range_quick_20260927.zip`（24 段，quick）、`outputs/videos/box_safe_range_20260927.zip`（11 段）。
-- 上一会话遗留未动：warehouse 200 集 checkpoint-5000 的闭环（4.7.6.1.2）、`stand_off` 0.44 对照（2.10）、bottle 5.10 等。
+- warehouse 200 集 checkpoint-5000：开环 MSE 0.00123；闭环评测器修了 4 处（摆放、物体名、初始 token、夹爪下限）后 10 局 **9/10** 抬起（台账 crate.md 2026-09-27 末节）；评测怎么跑见 `docs/warehouse.md` §6。遗留：`stand_off` 0.44 对照（2.10）、bottle 5.10。
 
 ## 卡点 / 待验证
 
@@ -26,7 +26,7 @@
 
 - **6.9**：提交本会话代码；决定 ③ 是否进默认配置。
 - **6.4.4.7 / 6.4.2**：箱子偏角敏感的根因；②b 位移闸门；方案 B。
-- **4.7.6.1.2**：warehouse checkpoint-5000 的 100 局闭环（上一会话遗留）。
+- **4.7.6.1.2.6 / .8**："后退"一列怎么改（训练数据不含后退）；然后 100 局闭环（先挪走 run 的 `eval/`，`eval.rounds` 改回 100）。
 
 ## 关键路径与命令
 

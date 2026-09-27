@@ -127,17 +127,21 @@ def expand_hands(gripper):
     return LEFT_HAND_CONST.copy(), right
 
 
-def hand_from_gripper(gripper):
-    """One gripper scalar -> one 7-wide protocol v4 hand field (jaw components 0 and 1)."""
-    g = float(np.clip(gripper, GRIPPER_MIN, GRIPPER_MAX))
+def hand_from_gripper(gripper, low=GRIPPER_MIN):
+    """One gripper scalar -> one 7-wide protocol v4 hand field (jaw components 0 and 1).
+
+    `low` is the closed end of the range the training data commanded: GRIPPER_MIN is the bottle
+    line's; a bimanual line passes its expert's `visual.close_target` (-0.06 on the warehouse box,
+    where -0.02 leaves ~2 N per finger and cannot lift it)."""
+    g = float(np.clip(gripper, low, GRIPPER_MAX))
     hand = np.zeros(7, dtype=np.float32)
     hand[0] = hand[1] = g
     return hand
 
 
-def expand_hands_bimanual(left_gripper, right_gripper):
+def expand_hands_bimanual(left_gripper, right_gripper, low=GRIPPER_MIN):
     """Two predicted gripper scalars (the crate action's last two dims) -> (left7, right7)."""
-    return hand_from_gripper(left_gripper), hand_from_gripper(right_gripper)
+    return hand_from_gripper(left_gripper, low), hand_from_gripper(right_gripper, low)
 
 
 def split_action(action):

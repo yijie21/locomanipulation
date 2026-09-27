@@ -347,12 +347,18 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<crate_run> --gpu 1
 参数解析阶段就报错,不会起栈。经 CLI 路由时 `eval_stage` 不传这个参数,别处训练的
 checkpoint 只能走这条手动命令。
 
-每局：`reset_ready` 的采样（抖动、yaw、桌沿距离）→ `prepare_token_pose` 用
-`configs/deployment/crate_initial_token.json`（训练数据首帧 token 的量化均值 + 首帧手臂关节）
+每局：采集专家自己的摆放 `expert.start_placement`（按 `task.visual.*` 与场景的走入朝向；`eval.spawn_edge` 不读）
+→ `prepare_token_pose` 用 `eval.initial_token`（训练数据首帧 token 的量化均值 + 首帧手臂关节，**每条线自己的**：
+crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initial_token.json`，两者肩部差 0.6 rad）
 把机器人带到数据的开局姿势 → 阻塞式 chunk 循环：三路相机 + 60 维状态 → token [40,64] 与左右夹爪
-[40] → 每次发 `--execution-horizon`（默认 16）帧，两只手各自展开 → 判定用 crate 专家自己的
+[40] → 每次发 `--execution-horizon`（默认 16）帧，两只手各自展开，下限取 `task.visual.close_target`
+（warehouse −0.06；单臂的 −0.02 每指只剩约 2 N）→ 判定用 crate 专家自己的
 `evaluation.evaluate`（抬升 ≥ 0.6×`lift_height`、倾角 < `max_tilt_deg`、双手同时接触），
 连续 2 s 成立才算成功；否则沿用单臂的 `[vla] walk / reach / close` 失败串。
+`task.visual.retreat_distance` > 0 时成功局接着跑，`RetreatWatch` 记策略是否带着箱子沿走入轴后退了这么远
+（采集成功的后半段；manifest 的 `retreat` / `retreat_ok`，`closed_loop.json` 的 `retreated`）。
+2026-09-27 之前摆放是合成桌子的副本（机器人偏航 0、物体 π/2、名字写死 `blue_crate`），在物流房间里朝向错 90°。
+图像来源：`eval.image_source: mujoco` 要 `eval.backend.render: live`（`offline` 的栈不发相机流，每局 `camera/state streams never became ready`），`isaac` 配 `offline` + 镜像；只有 `configs/scenes.yaml` 里带 `isaac` 条目的场景（目前 `warehouse_textured`）能用 Isaac。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
 观测构造与策略连接在 `vla_obs.py` 里按 `TaskSchema` 切换（`ObsBuilder(schema=SONIC_CRATE)`、
 `PolicyLink.get_chunk_bimanual`），策略服务的 modality 与 `SONIC_CRATE` 不一致会直接拒绝。
 

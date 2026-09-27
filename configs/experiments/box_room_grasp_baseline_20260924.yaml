@@ -195,4 +195,4 @@ eval:
   task: pick up the crate
   target: crate
   video_include_init: true
-  initial_token: configs/deployment/crate_initial_token.json
+  initial_token: configs/deployment/warehouse_initial_token.json  # this line's own first frames (2026-09-27); crate_initial_token.json is 0.6 rad off at the shoulder yaw

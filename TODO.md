@@ -106,7 +106,7 @@
     - [x] 2.4.10.11 文档入口：删 `docs/STATE.md`，README/AGENTS 指向根目录 STATE/TODO/DECISIONS；`docs/handoff/warehouse-render-cost-20260923.md`；台账 crate 09-23、rendering 离线渲染、blender_scenes 已知问题（2026-09-23）
 - [ ] 2.5 待验证：摔倒 6/20 为何比合成桌子多（假设：reanchor/IDLE 期间贴着托盘垛）
 - [ ] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续
-- [ ] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（假设，未改）
+- [x] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（2026-09-27 核对属实并修复，另写死 `blue_crate`，见 4.7.6.1.2.2–3）
 - [-] 2.8 `stand_lateral_gate: turn` 作为下一步 —— 它针对的横向偏置是合成场景现象，房间里没有
 - [x] 2.9 warehouse 采 10 集并导出视频（用户 2026-09-25）：`box_room_grasp_10ep_20260925` 30 局保留 11；预览 `outputs/videos/box_room_grasp_10ep_20260925/` 30 个 322–493 KB + zip 11.8 MB（2026-09-25）
 - [ ] 2.10 `stand_off` 0.5 → 0.44 的 20 局对照（同 seed 7000，只改这一个）：1013 局按停位深度分组 < 0.44 m 0.41、0.44–0.46 0.39、0.46–0.48 0.28、0.48–0.52 0.20、≥ 0.52 0.03；风险是躯干顶箱（box-stand-rams-torso）。待用户定（改专家参数）；分析脚本 `outputs/box_room_isaac_20260925/stand_depth_yield.py`
@@ -176,9 +176,19 @@
       - 用户 2026-09-25：只用三路相机（ego + 双腕），第三视角不作为 VLA 输入
       - [x] 4.7.6.1.1 exporter 在批间被重启时丢掉了每批最后一集（2/94 批）：加 `batches.wait_saved`；本次运行的记录已更正，补采后共 204 集（2026-09-26）
       - [ ] 4.7.6.1.2 用 checkpoint-5000 跑 100 局闭环（Isaac 镜像）：先在 `summary.json` 补 train 条目（checkpoint 指向 `model/checkpoint-5000`），再 `run_overnight.sh --from eval`；GPU1 被别的项目占时镜像约 23 GB 可能放不下（待用户定）
+        - [x] 4.7.6.1.2.1 开环（官方 `open_loop_eval.sh`，val 10 集，Isaac 渲的图）：平均 MSE 0.00123 / MAE 0.0217；对照 预测均值 0.0350 / 0.140、块首真值保持 16 帧 0.00179 / 0.0206；traj 4 最差 0.0035（约第 620 帧提前半合爪）；两手夹爪都在对的时刻合到 −0.06。产物 `eval/open_loop_ckpt5000/`（2026-09-27）
+        - [x] 4.7.6.1.2.2 闭环程序性 bug：`vla_rounds.py` 写死 `blue_crate`，warehouse 的目标是 `nor_cal_box`——reset 静默跳过物体扰动，第一局 `p.object_pos` / `evaluate` 必 KeyError（即 2.7）；改为 `target_key(meta)`（2026-09-27）
+        - [x] 4.7.6.1.2.3 （2026-09-27 改为直接调 `expert.start_placement`，IDLE 朝走入方向）闭环起点与训练分布不符：`place()` 机器人偏航 0 + IDLE facing +x、物体偏航 π/2、离台边 U(1.2, 1.5)；训练 205 局全是 (0, −1.455)、朝 +y（90°）、离台边 0.90 m、物体偏航 0±5°（`start_pose: scene`, `start_advance −0.25`）
+        - [x] 4.7.6.1.2.4 （2026-09-27 生成 `configs/deployment/warehouse_initial_token.json`，snapped 均值 = medoid；run 的 config.yaml 已指向它）初始 token 不符（即 4.7.6.2，已核对）：`crate_initial_token.json` 与本数据 194 集首帧比，肩 yaw 差 0.56/0.59 rad、肩 pitch 0.34/0.36，token L2 1.54（数据内首帧离散 0.077）；需按同法从本数据集生成 warehouse 的 token 文件
+        - [x] 4.7.6.1.2.5 （2026-09-27 双臂路径下限取 `visual.close_target`，单臂不动）夹爪指令被夹紧：`sonic_token.hand_from_gripper` 夹到 `GRIPPER_MIN −0.02`（bottle 量程），本数据合爪 −0.06；−0.023 每指约 2 N 提不起 1.2 kg 箱（`visual_config.close_target` 注释），闭环里策略合得再准也抬不起
+        - [~] 4.7.6.1.2.6 闭环成功判据与采集不同（2026-09-27 加了 `RetreatWatch` 一列，但训练数据用 `--trim-verification-tail` 在 hold 开始处裁掉，后退段不在数据里，这一列对本 checkpoint 必然 timeout——待用户定：去掉，或改成"抬起后再持住 N 秒"）：`vla_rounds` 用 crate 的 `evaluate`（抬起 + 不倾 + 两手接触 持续 2 s），warehouse 采集成功还要求躯干直立、后退 0.3 m 不掉；`eval.task` "pick up the crate" / `eval.spawn_edge` 不被读取（prompt 实际取 `task.prompt` "pick up the box"，与数据一致）
+        - [x] 4.7.6.1.2.7 10 局冒烟（Isaac 镜像，run 的 `eval.rounds` 临时改 10，`summary.json` 手补 train 条目，备份 `*.bak_20260927`）：**9/10 抬起**，1 局合爪后箱子被扯歪；9/9 成功后再持 10 s 不掉，3/9 结尾倾角 > 15°；延迟 p50 166 ms、图像状态年龄 11 ms；台账 crate.md 2026-09-27 末节，录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_20260927.zip`（2026-09-27）
+        - [ ] 4.7.6.1.2.8 100 局闭环：先把 run 目录现有的 `eval/closed_loop*`、`traces/`、`state_trace/`、`videos*` 挪到 `eval_smoke10_20260927/`（manifest 已存在会拒跑），`eval.rounds` 改回 100（待用户定，连同 4.7.6.1.2.6）
+        - [x] 4.7.6.1.2.9 评测文档对齐（用户 2026-09-27：协作者训练完跑评测不出 bug）：warehouse.md 新 §6 训练与评测（核对表 5 项、命令、读结果、排错 3 行，reflow 后 150 行）；box_grasp_envelope / bimanual / bimanual_design §五 / rendering / 镜像 handoff 同步；实测 box_platform 默认配置 60 局开局手臂与 warehouse token 差 ≤ 0.03 rad（2026-09-27）
+        - [ ] 4.7.6.1.2.10 文档管不到的（待用户定）：① 本会话的评测代码未提交，协作者拉 main 仍是旧 `vla_rounds`（blue_crate、错朝向、−0.02 夹爪）；② `box_platform_default_20260927.yaml` 的 eval 块是 `image_source mujoco` + `render offline`（必然每局 streams never ready）且 `crate_initial_token`；warehouse 基线等实验文件也仍是 crate token；③ 可选：加载时拒绝 mujoco+offline、token 与数据首帧差 > 0.3 rad
       - [ ] 4.7.6.1.3 或者从 5000 步训到 10000：没存优化器状态，只能从 checkpoint-5000 的权重重开一次 5000 步训练，不等于原训练的后半段（待用户定）
       - [ ] 4.7.6.1.4 可选：200 集的 Isaac 第三视角观看视频（`render_isaac_warehouse.sh`，约 1 分钟/集），用户未要求
-    - [ ] 4.7.6.2 待验证：`eval.initial_token`（crate 的）与 warehouse 开局姿势是否一致（沿用基线值，未核对）
+    - [x] 4.7.6.2 `eval.initial_token`（crate 的）与 warehouse 开局姿势不一致（2026-09-27 已核对并换成 warehouse 自己的，见 4.7.6.1.2.4）
     - [ ] 4.7.6.3 待验证：RTX 连续逐帧渲（数据集）与按需跳着渲（镜像）是否同图（即 4.7.9.8）；训练/评测同一 `IsaacView`，但时序不同
   - [ ] 4.7.7 实时渲染 RTF 实测：`warehouse_textured` + `backend.render: live` 起栈跑几局，量 sim 的 RTF（期望 ≥0.9，旧场景 0.35）；结果决定 4.7.2/4.7.3 是现在做还是作为结构性保险后置（用户定）
   - [ ] 4.7.8 建场景闸门：任何单块显示网格 3×面数 > 2^20（> 349,525 面）时无损拆块或报错；场景建完测三路相机一组渲染时间，超预算即失败（旧 `warehouse` 场景是否下线一并定）

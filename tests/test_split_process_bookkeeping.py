@@ -249,3 +249,10 @@ def test_a_failed_bimanual_batch_is_timed_as_a_failure_and_the_run_goes_on(tmp_p
     (row,) = [json.loads(r) for r in (tmp_path / "timings.jsonl").read_text().splitlines()]
     assert row["stage"] == "visual_00" and row["rc"] == 1
     assert "scene is not painted" in (tmp_path / "visual_00.log").read_text()
+
+
+def test_the_eval_stack_writes_state_traces_for_offline_renders(tmp_path):
+    """backend.render offline writes no video; the per-round qpos trace is what a round is rendered from."""
+    cfg = _experiment("crate_table30_record.yaml")
+    spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
+    assert spec.env["SIM_STATE_TRACE_DIR"] == str(tmp_path / "eval" / "state_trace")

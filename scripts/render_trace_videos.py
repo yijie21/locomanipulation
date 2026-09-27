@@ -5,7 +5,9 @@ VideoRecorder.frame is called at), so replaying it through the same VideoRecorde
 gives the video the sim would have written, without the sim paying for the rendering.
 
     MUJOCO_GL=egl third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/render_trace_videos.py \
-        outputs/runs/<run> [--scene <dir>] [--out <run>/videos]
+        outputs/runs/<run> [--scene <dir>] [--out <run>/videos] [--traces <run>/trace]
+
+A closed-loop evaluation's stack writes its traces to <run>/eval/state_trace: pass --traces and --out.
 """
 
 from __future__ import annotations
@@ -27,15 +29,17 @@ def main(argv=None) -> int:
     ap.add_argument("run", type=Path)
     ap.add_argument("--scene", type=Path, help="scene directory; default: the run's scene copy")
     ap.add_argument("--out", type=Path, help="default: <run>/videos")
+    ap.add_argument("--traces", type=Path, help="state-trace directory; default: <run>/trace")
     a = ap.parse_args(argv)
     scene = a.scene or next(p for p in a.run.iterdir() if p.is_dir() and (p / "scene_locomani.xml").exists())
     out = a.out or a.run / "videos"
+    traces = a.traces or a.run / "trace"
     out.mkdir(parents=True, exist_ok=True)
     meta = json.loads((scene / "scene_meta.json").read_text())
     # Ghost-hands rule (2026-09-24): a run whose expert wrote <label>_ghost.npz (the commanded grip targets, by
     # state seq) gets translucent ghost grippers at those targets in the third-person view. Geom group 4 is on
     # for the tracking camera only; the ego/wrist insets render with default options and never show them.
-    ghost_files = {p.name.removesuffix("_ghost.npz"): p for p in (a.run / "trace").glob("*_ghost.npz")}
+    ghost_files = {p.name.removesuffix("_ghost.npz"): p for p in traces.glob("*_ghost.npz")}
     ghost_ids = None
     if ghost_files:
         from locomani.sim.isaac import ghost as G
@@ -48,7 +52,7 @@ def main(argv=None) -> int:
     recorder = VideoRecorder(model, str(out), camera_name=meta.get("video_camera"))
     if ghost_ids is not None:
         recorder.vopt.geomgroup[4] = 1
-    for trace in sorted((a.run / "trace").glob("*_state_trace.npz")):
+    for trace in sorted(traces.glob("*_state_trace.npz")):
         npz = np.load(trace)
         qpos, seqs = npz["qpos"], npz["seq"]
         if qpos.shape[1] != model.nq:

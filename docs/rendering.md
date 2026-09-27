@@ -364,7 +364,10 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 - **镜像只认 eval 栈。** 它从栈的状态文件取场景和端口（`TF_ISAAC_MIRROR_PORT` = 5558 + 10·instance），
   场景的 Isaac stage 与曝光取自 `configs/scenes.yaml` 的 `isaac` 条目；目前只有 `warehouse_textured` 有。
   qpos 长度对不上（栈跑的是别的场景）或 sim 没发 qpos，请求直接报错，客户端这一局记为 observation stream dropped。
-- **记录**：每次渲染的 seq、状态年龄、渲染耗时写进 `<run>/eval/isaac_mirror.jsonl`，单臂客户端的延迟记录里另有 `image`。
+- **记录**：每次渲染的 seq、状态年龄、渲染耗时写进 `<run>/eval/isaac_mirror.jsonl`；单臂客户端的延迟记录、双臂的 `eval/traces/round_NNN.json` 每行另有 `image`（那一块动作所用图的 seq 与状态年龄）。
+  eval 栈还写 `<run>/eval/state_trace/`，同 seq 的图可以事后离线重渲（一致性闸门 4.7.9.8 的输入）。
+- **MuJoCo 出图时 `eval.backend.render` 必须是 `live`。** `offline` 的栈不发相机流，`image_source: mujoco` 的每局都会 `camera/state streams never became ready`；`isaac` 则配 `offline`。
+- **首次真实闭环**（2026-09-27，warehouse checkpoint-5000，10 局）：渲染 p50 95 ms、图像对应状态年龄 p50 11 ms、观测 → 动作 p50 166 ms，9/10 抬起（台账 crate.md 2026-09-27 末节）。
 - `client: lockstep` 不能配 Isaac（lockstep 的图像由 step 回复里的 MuJoCo 边界渲染提供），配置加载时拒绝。
 - **做了什么、还没做什么**（训练图是否也走 Isaac、一致性闸门、真实闭环、分支对账）：[镜像状态索引](handoff/isaac-vla-mirror-20260925.md)。
 

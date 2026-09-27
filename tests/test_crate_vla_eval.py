@@ -192,3 +192,133 @@ def test_clean_mode_reaches_both_the_round_loop_and_the_stack():
     assert "clean_deploy=args.clean" in driver_source
     assert '*([] if args.clean else ["--no-clean"]),' in driver_source
     assert "ap.set_defaults(clean=True)" in driver_source  # clean is the default, not the option
+
+
+# -- the warehouse (2026-09-27): the rounds start where the training episodes did ----------------
+
+WAREHOUSE_META = {  # walk-in +y, the carton named by the scene, not `blue_crate`
+    "robot_start": {"xy": [0.0, -1.205], "yaw_deg": 90.0},
+    "target_object": "nor_cal_box",
+    "objects": {"nor_cal_box": {"surface": "A", "init_quat": [1, 0, 0, 0]}},
+    "surfaces": {"A": {"xy": [0.0, -0.105], "flat_half_extent": [0.6, 0.45]}},
+}
+
+
+class _Cmd:
+    def __init__(self):
+        self.holds = []
+
+    def reset_pose(self):
+        pass
+
+    def set_hands(self, **_):
+        pass
+
+    def start_control(self):
+        pass
+
+    def hold(self, seconds, **kwargs):
+        self.holds.append(kwargs)
+
+
+class _P:
+    def __init__(self):
+        self.cmd = _Cmd()
+
+    def obs(self):
+        return {"pelvis": {"pos": [0.0, -1.455, 0.79], "quat": [1.0, 0.0, 0.0, 0.0]}}
+
+    def pelvis_yaw(self, _state):
+        return 0.0
+
+    def pelvis_xy(self, state):
+        return state["pelvis"]["pos"][:2]
+
+
+class _Reset:
+    def __init__(self):
+        self.calls = []
+
+    def pin_arms(self):
+        pass
+
+    def reset(self, **kwargs):
+        self.calls.append(kwargs)
+
+
+def test_the_rounds_place_as_the_collection_expert_does(monkeypatch):
+    """Until 2026-09-27 `place` copied the synthetic-table sampling: robot yaw 0 and `blue_crate`, which in the
+    logistics room faced the robot 90 deg off the walk-in and never moved the box (the sim skips the name)."""
+    from locomani.tasks.crate import vla_rounds
+    from locomani.tasks.crate.expert import start_placement
+    from locomani.tasks.crate.visual_config import CrateVisualConfig
+
+    monkeypatch.setattr(vla_rounds.time, "sleep", lambda _s: None)
+    cfg = CrateVisualConfig(start_pose="scene", start_advance=-0.25)
+    p, reset = _P(), _Reset()
+    record = vla_rounds.place(p, reset, WAREHOUSE_META, cfg, np.random.default_rng(6000))
+
+    expert = _Reset()
+    placement, expected = start_placement(expert, WAREHOUSE_META, cfg, np.random.default_rng(6000))
+    placement("expert")
+    assert reset.calls == expert.calls
+    assert set(reset.calls[0]["objects"]) == {"nor_cal_box"}
+    assert reset.calls[0]["robot"]["yaw"] == pytest.approx(np.pi / 2)
+    np.testing.assert_allclose(record["start_xy"], [0.0, -1.455], atol=1e-12)
+    assert {k: v for k, v in record.items() if k != "takeover"} == expected
+    np.testing.assert_allclose(p.cmd.holds[0]["facing"], (0.0, 1.0, 0.0), atol=1e-12)
+
+
+def test_the_bimanual_close_reaches_the_depth_its_expert_commanded():
+    """The warehouse expert closes to -0.06 (visual.close_target); the bottle floor -0.02 left ~2 N per finger."""
+    assert hand_from_gripper(-0.05, -0.06)[0] == pytest.approx(-0.05)
+    assert hand_from_gripper(-0.09, -0.06)[0] == pytest.approx(-0.06)
+    assert hand_from_gripper(-0.05)[0] == pytest.approx(GRIPPER_MIN)  # the single-arm floor is unchanged
+    left, right = expand_hands_bimanual(-0.06, 0.0, -0.06)
+    assert (left[0], right[0]) == (pytest.approx(-0.06), 0.0)
+    rounds = (Path(driver.__file__).parents[1] / "tasks/crate/vla_rounds.py").read_text()
+    assert "low = cfg.visual.close_target" in rounds and "hand_from_gripper(left[j], low)" in rounds
+
+
+def _state(t, y, fallen=False):
+    return {"t": t, "fallen": fallen, "pelvis": {"pos": [0.0, y, 0.79]}}
+
+
+def test_a_lifted_round_is_also_scored_on_the_collection_retreat():
+    from locomani.tasks.crate.visual_config import CrateVisualConfig
+    from locomani.tasks.crate.vla_rounds import RetreatWatch
+
+    visual = CrateVisualConfig(retreat_distance=0.3, lift_height=0.1)
+    both = ["left", "right"]
+
+    walked = RetreatWatch(_state(10.0, -0.40), np.pi / 2, visual)  # facing +y: backward is -y
+    assert not walked.update(_state(10.7, -0.55), 0.10, both)
+    assert not walked.update(_state(11.4, -0.71), 0.10, both)  # 0.31 m back: the 1 s settle starts
+    assert walked.update(_state(12.5, -0.72), 0.10, both)
+    assert walked.record()["reason"] == "completed" and walked.record()["walked"] == pytest.approx(0.32)
+
+    flicker = RetreatWatch(_state(0.0, -0.40), np.pi / 2, visual)
+    assert not flicker.update(_state(0.7, -0.45), 0.10, ["left"])  # one check without a hand is a flicker
+    assert not flicker.update(_state(1.4, -0.50), 0.10, both)
+    assert not flicker.update(_state(2.1, -0.52), 0.05, both)  # below 0.6 x lift_height: lost
+    assert flicker.update(_state(2.8, -0.53), 0.04, both)
+    assert flicker.record()["reason"] == "dropped"
+
+    stood = RetreatWatch(_state(0.0, -0.40), np.pi / 2, visual)
+    assert stood.update(_state(visual.retreat_timeout + 0.1, -0.41), 0.10, both)
+    assert stood.record()["reason"] == "timeout"
+
+
+def test_aggregate_counts_the_retreats_of_the_lifted_rounds(tmp_path):
+    manifest = tmp_path / "m.jsonl"
+    rows = [
+        dict(ok=True, why="ok", retreat=dict(reason="completed"), retreat_ok=True),
+        dict(ok=True, why="ok", retreat=dict(reason="dropped"), retreat_ok=False),
+        dict(ok=False, why="[vla] fell", retreat=None, retreat_ok=None),
+    ]
+    manifest.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    result = driver.aggregate(manifest)
+    assert (result["successes"], result["retreated"]) == (2, 1)
+    assert result["retreat_reasons"] == {"completed": 1, "dropped": 1}
+    manifest.write_text(json.dumps(dict(ok=True, why="ok")) + "\n")  # a crate run without a retreat
+    assert "retreated" not in driver.aggregate(manifest)

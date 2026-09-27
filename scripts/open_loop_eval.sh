@@ -3,7 +3,7 @@
 # EVERY episode of a dataset for one checkpoint: saves every trajectory's
 # plot, the per-trajectory MSE/MAE, and the averaged MSE/MAE.
 #
-#   bash scripts/gr00t_open_loop.sh \
+#   bash scripts/open_loop_eval.sh \
 #       --model-path PATH --dataset-path PATH [--out-dir PATH] \
 #       [--horizon N] [--embodiment-tag TAG] [--backbone-path PATH]
 #

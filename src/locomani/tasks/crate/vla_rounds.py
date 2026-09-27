@@ -3,8 +3,9 @@
 Runs inside a token-only stack (NO_ENCODER=1) that eval_crate_closed_loop.py
 started, one process per batch, exactly like the visual expert. Each round:
 
-  1. placement -- the visual expert's sampling (reset_ready's jitter, yaw and
-     table-edge distance), through the episode control client;
+  1. placement -- the visual expert's own sampling (`expert.start_placement`:
+     its start pose, object jitter and yaw, along the scene's walk-in heading),
+     through the episode control client;
   2. token prelude -- initial_pose.prepare_token_pose with the crate token file
      (first-frame token and arm posture of the training data), so the policy is
      handed over from the posture its data starts in;
@@ -13,7 +14,10 @@ started, one process per batch, exactly like the visual expert. Each round:
      frames published with both hands;
   4. verdict -- the crate expert's own criterion (crate/evaluation.evaluate):
      rise, tilt and BOTH hands touching, sustained for two seconds; the
-     bottle line's walk / reach / close failure strings otherwise.
+     bottle line's walk / reach / close failure strings otherwise. With
+     `visual.retreat_distance` set (the warehouse), a lifted round keeps
+     running and records whether the policy also walks that far back with the
+     load held -- the rest of the collection's success -- as `retreat`.
 
 No privileged geometry enters the action: the policy sees only the cameras and
 proprioception; `p.obs()` is used for placement, the verdict and the trace.
@@ -32,7 +36,7 @@ from locomani import paths
 from locomani.backends.sonic import initial_pose
 from locomani.backends.sonic.agent_server import HAND_OPEN, LocomotionMode
 from locomani.backends.sonic.primitives import Primitives
-from locomani.backends.sonic.sonic_token import GRIPPER_MAX, expand_hands_bimanual, hand_from_gripper
+from locomani.backends.sonic.sonic_token import expand_hands_bimanual, hand_from_gripper
 from locomani.backends.sonic.vla_config import NEAR_M
 from locomani.backends.sonic.vla_obs import ObsBuilder, PolicyLink
 from locomani.backends.sonic.vla_round import latency_index
@@ -40,7 +44,10 @@ from locomani.schema import SONIC_CRATE
 from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.evaluation import evaluate
-from locomani.tasks.crate.visual_approach import initial_robot_xy
+from locomani.tasks.crate.expert import start_placement
+from locomani.tasks.crate.grasp_region import target_key
+from locomani.tasks.crate.retreat import CONTACT_GAP, SETTLE
+from locomani.tasks.crate.visual_approach import approach_heading
 
 CLOSE_THRESHOLD = 0.005  # a commanded jaw under this is a close (vla_round.py's rule)
 LIFT_HOLD_S = 2.0
@@ -88,18 +95,18 @@ def takeover_sample(p, st) -> dict:
 
 
 def place(p, reset, meta, cfg, rng):
-    """reset_ready's sampling without its planner-arm ready pose (the token prelude owns the arms)."""
-    jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
-    yaw = np.pi / 2 + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
-    start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
-    start_xy = initial_robot_xy(meta, start_distance)
+    """The collection expert's placement without its planner-arm ready pose (the token prelude owns the arms).
+
+    `expert.start_placement` itself, so the rounds start where the training episodes did: until 2026-09-27
+    this was a copy of the synthetic-table sampling (robot yaw 0, object yaw pi/2, `blue_crate`), which in
+    the logistics room faced the robot 90 deg off the walk-in and never moved the box (the sim skips an
+    unknown object name)."""
+    placement, record = start_placement(reset, meta, cfg, rng)
+    heading = approach_heading(meta)
     p.cmd.reset_pose()
     p.cmd.set_hands(left=HAND_OPEN, right=HAND_OPEN)
     reset.pin_arms()
-    reset.reset(
-        objects={"blue_crate": {"dxy": jitter.tolist(), "yaw": float(yaw)}},
-        robot={"dxy": (start_xy - meta["robot_start"]["xy"]).tolist(), "yaw": 0.0},
-    )
+    placement("vla_round")
     time.sleep(0.4)
     # Third sample, and the reason for it: `held` is taken after this function returns,
     # so spawn->held is the settle and held->streamed is the handover. Without the split
@@ -107,15 +114,9 @@ def place(p, reset, meta, cfg, rng):
     # guess -- that it was the handover -- cost an A/B that made the clean rounds worse.
     spawn = takeover_sample(p, p.obs())
     p.cmd.start_control()
-    p.hold_yaw = 0.0
-    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(1, 0, 0))
-    return dict(
-        object_dxy=jitter.tolist(),
-        object_yaw=float(yaw),
-        start_edge_distance=start_distance,
-        start_xy=start_xy.tolist(),
-        takeover=dict(spawn=spawn),
-    )
+    p.hold_yaw = heading
+    p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(float(np.cos(heading)), float(np.sin(heading)), 0.0))
+    return dict(record, takeover=dict(spawn=spawn))
 
 
 def prelude(p, reset, meta, cfg, rng):
@@ -180,6 +181,55 @@ def warm_up(p, reset, meta, cfg, rng) -> None:
     print(f"[vla] warm-up round: {'ok' if why is None else why}", flush=True)
 
 
+class RetreatWatch:
+    """After the lift verdict: does the policy walk `retreat_distance` back along the walk-in with the load held?
+
+    The collection's success (`tasks/crate/retreat.retreat`, where the expert walks back on the planner) scored
+    here on the policy's own motion. Checked once per chunk, the only times this loop reads the state, so a
+    contact gap is counted from the first check without both hands to the next one that has them again.
+    """
+
+    def __init__(self, state, heading, visual):
+        self.axis = np.array([np.cos(heading), np.sin(heading)])
+        self.start_xy = np.asarray(state["pelvis"]["pos"][:2], dtype=float)
+        self.t0 = float(state["t"])
+        self.distance, self.timeout = visual.retreat_distance, visual.retreat_timeout
+        self.floor = 0.6 * visual.lift_height  # rise above the start, as `retreat` and `evaluate` count held
+        self.walked, self.lost_since, self.settle_from = 0.0, None, None
+        self.min_rise, self.reason, self.seconds = float("inf"), "budget", 0.0
+
+    def update(self, state, rise, touching) -> bool:
+        """One check; True when the retreat is decided (its `reason` is then set)."""
+        now = float(state["t"])
+        self.seconds = now - self.t0
+        self.min_rise = min(self.min_rise, rise)
+        self.walked = float((self.start_xy - np.asarray(state["pelvis"]["pos"][:2])) @ self.axis)
+        held = rise >= self.floor and {"left", "right"} <= set(touching)
+        self.lost_since = None if held else (now if self.lost_since is None else self.lost_since)
+        if state["fallen"]:
+            self.reason = "fallen"
+        elif self.lost_since is not None and now - self.lost_since >= CONTACT_GAP:
+            self.reason = "dropped"
+        elif self.settle_from is None and self.seconds > self.timeout:
+            self.reason = "timeout"
+        else:
+            if self.settle_from is None and self.walked >= self.distance:
+                self.settle_from = now
+            if self.settle_from is None or now - self.settle_from < SETTLE:
+                return False
+            self.reason = "completed"
+        return True
+
+    def record(self) -> dict:
+        return dict(
+            reason=self.reason,
+            walked=round(self.walked, 3),
+            distance_target=self.distance,
+            seconds=round(self.seconds, 2),
+            min_rise=round(self.min_rise, 3),
+        )
+
+
 def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execution_horizon, dataset_fps, trace_path):
     placement, why = prelude(p, reset, meta, cfg, rng)
     if why is not None:
@@ -188,15 +238,16 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
         return dict(ok=False, why="[vla] camera/state streams never became ready", placement=placement)
 
     dt = 1.0 / dataset_fps
+    key = target_key(meta)
+    low = cfg.visual.close_target  # the closed end the expert commanded, which the policy was trained on
     init_tok = initial_pose.initial_token()
-    l_open, r_open = expand_hands_bimanual(GRIPPER_MAX, GRIPPER_MAX)
     initial = p.obs()
-    obj0 = np.asarray(p.object_pos("blue_crate", initial))
+    obj0 = np.asarray(p.object_pos(key, initial))
     obs = obs_src.build()
     if obs is None:
         return dict(ok=False, why="[vla] observation stream dropped", placement=placement)
     tok0, left0, right0 = link.get_chunk_bimanual(obs)
-    l0, r0 = expand_hands_bimanual(left0[0], right0[0])
+    l0, r0 = expand_hands_bimanual(left0[0], right0[0], low)
     n_bl = max(1, int(1.0 * dataset_fps))
     for i in range(n_bl):  # the 1 s blend from the standing token into chunk 0 (vla_round.py)
         a = (i + 1) / n_bl
@@ -206,6 +257,7 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
     t_start = time.time()
     frame_index, commanded_close, lifted_at, min_dist = 0, False, None, float("inf")
     ok, why, trace, final = False, "[vla] timeout", [], initial
+    retreat = None  # RetreatWatch once the lift verdict has held, when the config asks for a retreat
     try:
         while time.time() - t_start < budget_s:
             t_obs = time.time()
@@ -213,11 +265,13 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
             if obs is None:
                 why = "[vla] observation stream dropped"
                 break
+            image = obs_src.image_meta  # the Isaac mirror's reply header (seq, state age), None on the MuJoCo stream
             tok, left, right = link.get_chunk_bimanual(obs)
-            skip = latency_index(time.time() - t_obs, dataset_fps, len(tok))
+            latency = time.time() - t_obs
+            skip = latency_index(latency, dataset_fps, len(tok))
             n = max(1, min(execution_horizon, len(tok) - skip))
             for j in range(skip, skip + n):
-                lhj, rhj = hand_from_gripper(left[j]), hand_from_gripper(right[j])
+                lhj, rhj = hand_from_gripper(left[j], low), hand_from_gripper(right[j], low)
                 if left[j] < CLOSE_THRESHOLD or right[j] < CLOSE_THRESHOLD:
                     commanded_close = True
                 p.cmd.token_frame(tok[j], right_hand=rhj, left_hand=lhj, frame_index=frame_index)
@@ -225,13 +279,18 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
                 time.sleep(dt)
             st = p.obs()
             final = st
-            obj = np.asarray(p.object_pos("blue_crate", st))
+            obj = np.asarray(p.object_pos(key, st))
             pel = np.asarray(p.pelvis_xy(st))
             rise = float(obj[2] - obj0[2])
             dist = float(np.linalg.norm(obj[:2] - pel))
             min_dist = min(min_dist, dist)
             verdict = evaluate(
-                initial, st, "completed", lift_height=cfg.visual.lift_height, max_tilt_deg=cfg.visual.max_tilt_deg
+                initial,
+                st,
+                "completed",
+                lift_height=cfg.visual.lift_height,
+                max_tilt_deg=cfg.visual.max_tilt_deg,
+                key=key,
             )
             trace.append(
                 dict(
@@ -246,9 +305,18 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
                     pelvis_xy=[float(v) for v in pel],
                     pelvis_yaw=float(p.pelvis_yaw(st)),
                     obj_xy=[float(v) for v in obj[:2]],
+                    latency_s=round(latency, 4),
+                    skip=skip,
+                    image=None
+                    if image is None
+                    else {k: image.get(k) for k in ("seq", "t", "state_age_s", "render_ms")},
                     **posture(st),
                 )
             )
+            if retreat is not None:
+                if retreat.update(st, rise, verdict["touching"]):
+                    break
+                continue
             if st["fallen"]:
                 why = "[vla] fell"
                 break
@@ -257,14 +325,16 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
                     lifted_at = time.time()
                 elif time.time() - lifted_at > LIFT_HOLD_S:
                     ok, why = True, "ok"
-                    break
+                    if cfg.visual.retreat_distance <= 0:
+                        break
+                    retreat = RetreatWatch(st, approach_heading(meta), cfg.visual)
             else:
                 lifted_at = None
     finally:
         p.cmd.exit_streamed()
         p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
     if not ok and why == "[vla] timeout":
-        moved = float(np.linalg.norm(np.asarray(p.object_pos("blue_crate", final))[:2] - obj0[:2]))
+        moved = float(np.linalg.norm(np.asarray(p.object_pos(key, final))[:2] - obj0[:2]))
         why = classify(min_dist, commanded_close, moved)
     verdict = evaluate(
         initial,
@@ -272,12 +342,16 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
         "completed" if ok else "failed",
         lift_height=cfg.visual.lift_height,
         max_tilt_deg=cfg.visual.max_tilt_deg,
+        key=key,
     )
+    retreat_record = None if retreat is None else retreat.record()
     if trace_path is not None:
-        trace_path.write_text(json.dumps(dict(ok=ok, why=why, trace=trace)))
+        trace_path.write_text(json.dumps(dict(ok=ok, why=why, retreat=retreat_record, trace=trace)))
     return dict(
         ok=ok,
         why=why,
+        retreat=retreat_record,
+        retreat_ok=None if retreat is None else retreat_record["reason"] == "completed",
         placement=placement,
         rise=verdict["rise"],
         tilt_deg=verdict["tilt_deg"],
@@ -372,7 +446,9 @@ def main(argv=None):
         for index in range(args.rounds):
             seed = args.seed + index
             started = time.time()
-            reset.start_video(f"crate_vla_{index:03d}")  # the sim's overview mp4 under SIM_VIDEO_DIR
+            # the sim's overview mp4 under SIM_VIDEO_DIR and its state trace; numbered across batches like the traces
+            label = f"crate_vla_{index + args.round_offset:03d}"
+            reset.start_video(label)
             result = run_round(
                 p,
                 reset,
@@ -394,8 +470,8 @@ def main(argv=None):
                 round=index,
                 seed=seed,
                 task=config.prompt,
-                target="blue_crate",
-                video=f"crate_vla_{index:03d}",
+                target=target_key(meta),
+                video=label,
                 wall_seconds=time.time() - started,
                 **result,
             )

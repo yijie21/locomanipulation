@@ -80,7 +80,9 @@ def eval_spec(cfg: dict, run_dir: Path, scene: Path, gpu: str):
         video_dir=run_dir / "eval" / "videos",
         record=False,
     )
-    return spec
+    # Per-round qpos traces, so a round can be rendered afterwards (backend.render offline writes no video)
+    # and an Isaac-mirror image re-rendered from the seq it was taken at (TODO 4.7.9.8).
+    return dataclasses.replace(spec, env={**spec.env, "SIM_STATE_TRACE_DIR": str(run_dir / "eval" / "state_trace")})
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -454,3 +454,23 @@ Isaac（GPU1，`IsaacView` + warehouse USDC 场景，关自动曝光 / filmIso 3
 渲染 p50 98 / p90 120 ms，请求往返 p50 100 / p90 122 ms。按回报的 seq 取同一 qpos 渲 MuJoCo 并排 4 组，几何一致
 （`eval/mirror_smoke/mirror_vs_mujoco.png`；没有驱动，机器人倒在箱边，画面是静止姿态）。SIGTERM 后镜像正常退出，
 `eval/isaac_mirror.jsonl` 50 行。没测的：真实策略闭环、运动中的一致性闸门（4.7.9.8）。
+
+## 2026-09-27 warehouse 200 集 checkpoint-5000：开环 + 闭环 10 局（Isaac 镜像），闭环评测器先修四处
+
+运行 `box_room_grasp_200_cap120_20260925`，训练停在 5000 步（`summary.json` 的 train 条目手补）。开环（官方脚本，val 10 集，Isaac 渲的图）
+平均 MSE 0.00123 / MAE 0.0217；预测均值基线 0.0350 / 0.140，块首真值保持 16 帧 0.00179 / 0.0206；两手夹爪都在对的时刻合到 −0.06。
+
+闭环前 `vla_rounds.py` 在物流房间跑不对，四处都修了：物体名写死 `blue_crate`（warehouse 是 `nor_cal_box`，reset 静默跳过、第一局即 KeyError）；
+摆放是合成桌子的副本（机器人偏航 0、物体 π/2、离台边 U(1.2, 1.5)），改为直接调 `expert.start_placement`（训练 205 局全在 (0, −1.455)、朝 +y、离台边 0.90 m）；
+`eval.initial_token` 用的是 crate 的（肩 yaw 差 0.56/0.59 rad，token L2 1.54，数据首帧内离散 0.077），新文件
+`configs/deployment/warehouse_initial_token.json`（194 集首帧的 snapped 均值，恰等于 medoid）；夹爪下限 −0.02（单臂量程）改取 `visual.close_target` −0.06。
+
+| 组 | 抬起判据成功 | 失败 | 成功后再持 10 s 不掉 | 结尾倾角 > 15° |
+|---|---|---|---|---|
+| checkpoint-5000，seed 6000–6009 | **9/10**（Wilson 0.60–0.98） | 1 `close`：合爪后箱子被扯歪滑走 25 cm | 9/9 | 3/9（16.7°、18.0°、23.2°） |
+| 专家采集（同一 run，950 局） | 走到后退阶段 242/950 = 0.25 | reach_stalled 0.39、lost_attachment 0.17、basket_tilt 0.11 | — | — |
+
+首次合爪 27–47 s、抬起 30–51 s（训练集平均一集 32.7 s）；观测 → chunk 延迟 p50 166 ms（Isaac 渲染 p50 95 ms），跳 4 帧补偿；图像对应状态年龄 p50 11 ms。
+"后退 0.3 m"一列 9/9 都是 timeout：训练数据按 `--trim-verification-tail` 在 hold 开始处裁掉，后退段不在数据里，这一列对本 checkpoint 不可测。
+两者口径不同（策略只判抬起 + 持 2 s；专家还要直立持 5 s + 后退），10 局也不足以下结论（同一份代码 10 局之间曾差出 2/10 到 7/10），100 局待跑。
+录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_20260927.zip`（MuJoCo 第三视角 + MuJoCo 小窗，不是策略看到的 Isaac 图）。
