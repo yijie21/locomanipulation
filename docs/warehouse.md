@@ -98,7 +98,7 @@ bash scripts/train.sh outputs/runs/my_box --gpu 0
 bash scripts/open_loop_eval.sh --model-path outputs/runs/my_box/model/checkpoint-5000 --dataset-path outputs/runs/my_box/val_dataset --out-dir outputs/runs/my_box/eval/open_loop   # 开环评测（可选，不起栈）：验证集上逐帧比较预测动作与真值，10 集约 7 分钟
 bash scripts/run_overnight.sh configs/experiments/my_box.yaml --gpu 0 --isaac-gpu 1 --line bimanual --from eval   # 闭环一条命令：--from eval 只跑评测这一段；mujoco 的运行不给 --isaac-gpu
 bash scripts/start_stack.sh eval           outputs/runs/my_box --gpu 0   # 终端 1（终端 1–4 与上一条二选一）
-bash scripts/run_vla_server.sh             outputs/runs/my_box --gpu 0   # 终端 2
+bash scripts/run_vla_server.sh             outputs/runs/my_box --gpu 0   # 终端 2（集群上训的 checkpoint 加 --backbone-path ~/Checkpoints/Cosmos-Reason2-2B）
 bash scripts/run_isaac_mirror.sh           outputs/runs/my_box --gpu 1   # 终端 3，只 images.source: isaac
 bash scripts/bimanual/run_vla_inference.sh outputs/runs/my_box --gpu 0   # 终端 4
 # 录像：评测时 sim 不录，事后从每局 qpos 轨迹渲。isaac 如下：第三视角 + ego/双腕小窗，与策略同一 stage 和曝光，一局约 2 分钟，默认只渲成功局（看失败局加 --all，或在末尾点名如 crate_vla_002）；mujoco 的运行用 §5 那条 render_trace_videos.py 加 outputs/runs/my_box --traces outputs/runs/my_box/eval/state_trace --out outputs/runs/my_box/eval/videos
