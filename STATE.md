@@ -1,6 +1,6 @@
 # STATE — 2026-09-27（会话：场景能力扫参 → 专家改进 ①–⑤ 全部 A/B → 双臂抓箱默认配置 `box_platform` + quick）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`；2026-09-27 评测修复提交已连同之前的 handoff 提交一起推送。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `b1e6827`（评测修复 `eb9549f` + 合并协作者 henry.zhao 的 4 个修复）。
 **扫参会话的代码仍未提交**（`git status`：12 个新旋钮、`sweep.py`、`box_platform_scene.py`、`docs/box_grasp_envelope.md`、35 个实验文件，含已改好 eval 块的 `box_platform_default_20260927.yaml`），`make check` 通过；提交与否待用户定（TODO 6.9）。
 没有运行中的栈、训练或渲染；GPU1 上的进程是别的项目的。
 
