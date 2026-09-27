@@ -35,6 +35,7 @@ git lfs install          # 只需一次;不做的话下面 clone 出来的是空
 | 4 | 装场景 | 必需 | 5 s |
 | 5 | GR00T 微调 venv | **要训练或评测 VLA 就必需** | 按上游 README |
 | 6 | conda 训练环境 / EmbodiedGen | 可选,只有 SONIC 自身 RL 训练或重新生成场景才要 | 1 h+ |
+| 7 | Isaac 渲染 runtime(SIMPLE 的 venv,内含 Isaac Sim 4.5) | 可选,只有 Isaac 离线重渲或 `images.source: isaac`(策略的训练图、评测图由 Isaac 渲)才要 | venv 约 20 GB,主要看网速 |
 
 > 这张表的编号和下面的小节编号一一对应。想训练模型的人**不能**跳过第 5 步。
 
@@ -407,7 +408,7 @@ warehouse:POSE 回到 planner 时夹爪命令不再短暂恢复默认值)。`col
 > 缺它的 deploy 把 DDS domain 硬编码成 0、不读 `SONIC_DDS_DOMAIN`,而 `INSTANCE` 只管得住 Python 侧和端口:
 > 第二个 stack 的 sim 在 domain 1、它自己的 deploy 却在 domain 0,于是**那个 deploy 跑去接管第一个 stack
 > 的 sim**,自己的 sim 一条指令都收不到。[single_arm.md](single_arm.md) 的并行采集就是多实例。
-> 三方状态表见 [reference.md 端口](reference/silent_failures.md#端口)。
+> 三方状态表见 [隐性失败 · 端口](reference/silent_failures.md#端口)。
 
 > **不要跑 `gear_sonic_deploy/scripts/install_deps.sh`。**它有 `apt install cuda`
 > 的 fallback,而 `cuda` 元包会拉 `cuda-drivers`,覆盖掉宿主注入的 NVIDIA 驱动。
@@ -501,7 +502,7 @@ EmbodiedGen 要自己拿:
 > 路径变量,但**没有在别的机器上实测过** —— 它们只在重新生成场景时才用得到,
 > 而重新生成场景需要几十 GB 下载。用现成场景的话完全不碰它们。
 
-### 7. Isaac 渲染 runtime:SIMPLE(可选,只有离线重渲 / Isaac 像素才需要)
+### 7. Isaac 渲染 runtime:SIMPLE(可选,只有 Isaac 离线重渲或 `images.source: isaac` 才需要)
 
 渲染线(`docs/rendering.md`)从 SIMPLE 只拿**一样东西:一个装了 `isaacsim` 4.5 的 venv**。
 它不 import `simple` 包,不读 SIMPLE 的 `data/`。所以 SIMPLE 和第 1 步的仓库一样 clone 到
@@ -540,9 +541,11 @@ bash scripts/setup_render_runtime.sh --deep
 
 # 5) 把机器人 MJCF 和场景转成 USD(-> assets/isaac/,gitignored 的生成产物)
 bash scripts/build_isaac_assets.sh
+#    纸箱场景(warehouse_textured / box_platform)的 Isaac stage 由各自的脚本建,命令在
+#    configs/scenes.yaml 该场景的 isaac.build,见 docs/warehouse.md 第 1 节
 ```
 
-> 桌子和台面的源网格/贴图由第 3 步 `install_scene.sh` 从仓库场景包安装；
+> 桌子和台面的源网格/贴图由第 4 步 `install_scene.sh` 从仓库场景包安装；
 > 房间背景随 Git 放在 `assets/scene/empty_room_world.ply.gz`（约 41 MB）。
 > 不需要复制本地 EmbodiedGen 输出。旧版本可能缓存了缺少桌子/房间的场景；
 > 更新代码后重新运行 `build_isaac_assets.sh`，新缓存键会触发重建。

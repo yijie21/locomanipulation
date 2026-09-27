@@ -16,8 +16,11 @@
 | 实测 | 全维度同时随机 **24/60 = 0.40**（区间 0.29–0.53），四种箱子几何 6/15、5/15、3/15、10/15 | `box_range_quick_*_20260927` |
 
 ```bash
-. scripts/paths.sh && export TMPDIR=/workspace/tmp SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
-# 场景（已生成在 outputs/scene/box_platform；重建命令在 configs/scenes.yaml）
+. scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src"
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 仅原作者机器；新机器按安装第 3 步打补丁后不要这行
+# 场景只建一次（命令同 configs/scenes.yaml 里 box_platform 的 build）
+"$VENV_SIM_PY" -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform --width 0.45 --length 0.32 --height 0.60
+# 采集（两个终端：起栈 / 跑专家），再从 trace 事后渲录像，写 <run>/videos/
 bash scripts/start_stack.sh collect       configs/experiments/box_platform_default_20260927.yaml --gpu 0
 bash scripts/bimanual/run_agent_server.sh configs/experiments/box_platform_default_20260927.yaml --gpu 0
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/box_platform_default_20260927
@@ -81,7 +84,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 |---|---|---|---|---|---|---|---|
 | 成功率 | 0.08 | **0.46** | **0.44** | 0.42 | 0.15 | 0.24 | 0.08 |
 
-横移明显不对称：机器人在箱子中线右侧 8 cm 内和正中一样，左侧偏一点就掉（右腕坐标系不是镜像的，见 memory `dex1-right-palm-frame-not-mirrored`）。
+横移明显不对称：机器人在箱子中线右侧 8 cm 内和正中一样，左侧偏一点就掉（dex1 右手掌的坐标系不是左手的镜像，两侧难度不同）。
 
 ### 3.4 真正起作用的中间量：停位深度
 

@@ -1,7 +1,7 @@
 # locomanipulation
 
 面向 **Unitree G1 的移动操作（locomanipulation）仿真与数据采集项目**：让机器人走近桌子、抓取物体或完成放置，并提供单臂任务的数据转换、VLA 微调和评测工具。
-主要使用 MuJoCo 运行物理仿真、SONIC v1.1 执行全身控制；另有 ScaleBFM 控制路线。Isaac Sim 用于已录轨迹的离线渲染；完整分工见 [MuJoCo 与 Isaac 工作流程](docs/rendering.md#整体流程)。
+主要使用 MuJoCo 运行物理仿真、SONIC v1.1 执行全身控制；另有 ScaleBFM 控制路线。Isaac Sim 只出图：离线重渲已录轨迹，或作为策略训练图与闭环评测图的来源（`images.source: isaac`，目前是双臂纸箱线）；完整分工见 [MuJoCo 与 Isaac 工作流程](docs/rendering.md#整体流程)。
 
 [安装环境](#安装环境) · [快速开始](#快速开始) · [功能与文档](#功能与文档) · [查看运行结果](#查看运行结果)
 
@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
 | 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
-| 双臂抓纸箱（物流房间 / 台上） | 双臂扣住纸箱沿、抬起、站直；仿真时不渲染，数据集相机事后从轨迹补渲；默认配置与布局参数范围 | [warehouse](docs/warehouse.md) | [默认配置与参数范围](docs/box_grasp_envelope.md) |
+| 双臂抓纸箱（物流房间 / 台上） | 双臂扣住纸箱沿、抬起、站直；仿真时不渲染，数据集相机事后从轨迹补渲（MuJoCo 或 Isaac 出图）；默认配置与布局参数范围 | [warehouse](docs/warehouse.md) | [默认配置与参数范围](docs/box_grasp_envelope.md) |
 | 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿五维可达搜索 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
 | 导入 Blender 场景 | 物流间纸箱场景的 MuJoCo / Isaac 资产、Blender 导入与尺寸说明 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
@@ -40,7 +40,7 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 |---|---|
 | SONIC 单臂 / 双臂 / warehouse 仿真采集与转换（到 LeRobot 数据集） | 安装指南第 **0–4 步**：路径、上游仓库、仿真与采集环境、SONIC 权重及补丁、C++ deploy、场景 |
 | GR00T / VLA 训练与评测 | 在上述基础上完成第 **5 步**，安装微调环境 |
-| Isaac 离线渲染 | 额外完成第 **7 步**，安装 SIMPLE 渲染运行时，再按 [资产构建](docs/rendering.md#资产构建) 生成 USD |
+| Isaac 渲染（离线重渲；`images.source: isaac` 的训练图与评测图） | 额外完成第 **7 步**，安装 SIMPLE 渲染运行时（装有 Isaac Sim 的 Python），再按 [资产构建](docs/rendering.md#资产构建) 生成 USD；纸箱场景的 Isaac stage 见 [warehouse §1](docs/warehouse.md#1-准备一次) |
 | ScaleBFM 采集与评测 | 按 [ScaleBFM 指南](docs/scalebfm.md) 配置独立后端、权重和运行资产 |
 | 重新生成场景或训练 SONIC | 按安装指南第 **6 步**及相应生成工具配置可选环境 |
 
@@ -95,6 +95,6 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gp
 
 `scripts/` 是每个阶段一个的扁平 bash（采集 / 转换 / 训练 / 评测 / `run_overnight.sh`），`src/locomani/` 是仿真、任务、专家和栈管理（`stack/`）代码，`configs/experiments/` 是全展开的实验文件、`configs/{task,backend,eval}/` 是按名字引用的 profile 库，`assets/` 是随仓库提供的资产。
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
-完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)。
+完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)；文档里反复出现的名词（栈、deploy、exporter、trace、token、镜像……）见 [术语表](docs/reference/glossary.md)。
 
 需要修改代码或贡献功能时，从 [开发入口 AGENTS.md](AGENTS.md) 开始。已知文件的局部修改可直接进入；归属不明或新增功能时查 [代码导航](docs/reference/change-map.md)，改变接口或配置格式时查 [开发规范](docs/reference/standards.md)。

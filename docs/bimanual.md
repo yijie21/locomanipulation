@@ -2,7 +2,7 @@
 
 视觉指导走近、俯身抓篮、抬起并站直。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
 为什么这么设计、试过什么被否掉了，在 [双臂详解](bimanual_design.md)；
-哪天跑出什么数，在 [双臂台账](ledger/crate.md)。
+哪天跑出什么数，在 [双臂台账](ledger/crate.md)；栈、deploy、exporter、token 等名词见 [术语表](reference/glossary.md)。
 
 和单臂用**同一套扁平脚本**，采集和评测各走自己那条线的功能脚本（`tasks/crate/collect.py` / `eval_crate_closed_loop.py`），
 转换和训练完全共用。结构与 [单臂](single_arm.md) 逐节对应。

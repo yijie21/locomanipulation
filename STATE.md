@@ -1,7 +1,7 @@
 # STATE — 2026-09-27（会话：warehouse checkpoint-5000 开环/闭环 → 评测器修复 → `images.source` → 6.9 提交 → lockstep 计划）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `1411b58`；之后的 handoff 提交在本地。
-未提交：`docs/handoff/lockstep-isaac-eval-plan-20260927.md` 及 `docs/rendering.md`、`docs/handoff/isaac-vla-mirror-20260925.md` 里指向它的链接（TODO 4.7.10.9，待用户说提交）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，handoff 提交与本次文档复查都已推送。
+lockstep 计划与其链接（4.7.10.9）已随文档复查（TODO 4.6.5，新增 `docs/reference/glossary.md`）一起提交推送。
 没有运行中的栈、镜像、训练或渲染；GPU1 上约 3.7 GB 是别的项目的。
 
 ## 工作树

@@ -38,8 +38,8 @@
 ## 3. 跑
 
 ```bash
-. scripts/paths.sh && export TMPDIR=/workspace/tmp PYTHONPATH=$PWD/src
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 与 warehouse 采集相同
+. scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src"
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 仅原作者机器（与 warehouse 采集相同）；新机器按安装第 3 步打补丁后不要这行
 SW=configs/sweeps/box_envelope_s1_20260926.yaml
 "$VENV_SIM_PY" -m locomani.tasks.crate.sweep cells $SW      # 列出格子和状态，不动任何东西
 # 每个实例一个终端，同一个循环，只换 I（实例）和 G（显卡）

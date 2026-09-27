@@ -2,7 +2,7 @@
 
 走近桌子、单手抓瓶（默认走近：手臂自然下垂、0.25 恒速、按桌边守线刹车，停后双手原地抬起再抓，`reach.simple.approach_stop`）。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
 为什么这么设计、试过什么被否掉了，在 [单臂详解](single_arm_design.md)；
-哪天跑出什么数，在 [单臂台账](ledger/bottle.md)。
+哪天跑出什么数，在 [单臂台账](ledger/bottle.md)；栈、deploy、exporter、token 等名词见 [术语表](reference/glossary.md)。
 
 ## 1. 准备一次
 

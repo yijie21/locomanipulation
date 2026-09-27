@@ -8,8 +8,7 @@
 - [Change map](reference/change-map.md): select code/configuration/tests by intent.
 - [Standards](reference/standards.md): architecture and evidence rules.
 - [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
-- [Configuration fields](reference/config_fields.md): generated from code.
-- [Runbook](reference/runbook.md): command reference and manual stack operation.
+- [Configuration fields](reference/config_fields.md): generated from code. [Runbook](reference/runbook.md): command reference and manual stack operation.
 - One expanded experiment file per run, one flat bash script per stage over one python module, parallelism as a second terminal: each runbook carries this for its own line, and the decisions, the byte A/B evidence and the gate still outstanding are in [the 2026-09-21 refactor](handoff/refactor-flat-bash-20260921.md). The [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
 - [STATE](../STATE.md): active work, with [TODO](../TODO.md) and [DECISIONS](../DECISIONS.md); [ROADMAP](ROADMAP.md): maintenance scope and status.
 
@@ -25,6 +24,7 @@ agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same 
 | Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected domain row with the code |
 | Module boundaries, interface/config conventions or evidence rules | [Standards](reference/standards.md); link the rule instead of copying it into task guides |
 | Configuration fields and defaults | Owning code; regenerate [field reference](reference/config_fields.md) with `make config-doc` |
+| A term the guides use without explaining (stack, deploy, exporter, trace, token, mirror...) | [Glossary](reference/glossary.md); define it once there and link it instead of re-explaining per guide |
 | **How to run it** -- commands, their arguments, artifacts, troubleshooting | That line's runbook ([single arm](single_arm.md), [bimanual](bimanual.md)); capped at 180 lines, and it never restates a default value that the generated field table owns |
 | **Why it is built this way** -- principles, rejected alternatives, protocols | That line's design page ([single arm](single_arm_design.md), [bimanual](bimanual_design.md)) |
 | **What a run produced on a given day** -- rounds, seeds, success rates | That line's ledger ([bottle](ledger/bottle.md), [crate](ledger/crate.md)) |
@@ -56,7 +56,7 @@ versioned documents reachable here, without requiring conversation history or pr
 
 双臂可达实验的环境与采样范围预览见 [G1 平地 ghost hand 预览](handoff/g1-reachability-preview-20260920.md)；预览仅展示目标分布。后续 [14组动态 reach 实验](handoff/g1-ghost-reach-execution-20260920.md) 已完成，6组成功、8组超时仅指 reach 阶段；[后续诊断](handoff/g1-startup-jump-diagnosis-20260920.md) 确认初始化缺陷，整段原地要求未通过。
 
-跨线通用：[安装](setup.md)、[MuJoCo 仿真、Isaac 离线渲染与视频导出](rendering.md)。
+跨线通用：[安装](setup.md)、[MuJoCo 仿真、Isaac 渲染与视频导出](rendering.md)（含[图像来源 `images.source`](rendering.md#图像来源imagessource)）、[术语表](reference/glossary.md)。
 数据集格式（LeRobot 布局与 schema）各线共用，在 [单臂详解](single_arm_design.md) 里。
 理解在线控制、状态记录和离线重渲如何衔接时，读 [渲染整体流程](rendering.md#整体流程)。
 专家设计、控制协议和对应实验从各采集指南的“进一步阅读”进入。
