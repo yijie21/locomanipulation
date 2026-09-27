@@ -45,6 +45,7 @@ from locomani.tasks.crate.visual_approach import (
     VisualApproach,
     approach_heading,
     edge_distance,
+    facing_correction,
     initial_robot_xy,
     near_edge,
     scene_object_yaw,
@@ -135,19 +136,30 @@ def prepare_stationary_ready(
     whole_body: bool = False,
     on_phase: Callable[[str, dict], None] | None = None,
     heading: float = 0.0,
+    after_brake: bool = False,
 ):
     """Run the visual expert's stationary controller preparation and admission.
 
     ``placement`` owns scene-specific reset contents. This lets floor-only
     diagnostics use the original controller sequence without inventing a crate
-    or maintaining another ready-state initializer.
+    or maintaining another ready-state initializer. ``after_brake`` (visual.ready_after_brake=quick) skips the
+    teleported-reset part of stand_up: the walk just delivered a standing, controlled stance, and all the POSE
+    stream needs before the READY blend is a heading re-anchor at the yaw the brake left.
     """
 
     def phase(name: str, **details) -> None:
         if on_phase is not None:
             on_phase(name, details)
 
-    stand_up(p, reset, placement=placement, whole_body=whole_body, phase=phase, heading=heading)
+    if after_brake:
+        p.hold_yaw = float(heading)
+        facing = (float(np.cos(heading)), float(np.sin(heading)), 0.0)
+        phase("reanchor_started", after_brake=True)
+        reanchor(p)
+        p.cmd.hold(cfg.reanchor_hold_seconds, mode=LocomotionMode.IDLE, facing=facing)
+        phase("reanchor_complete", after_s=cfg.reanchor_hold_seconds)
+    else:
+        stand_up(p, reset, placement=placement, whole_body=whole_body, phase=phase, heading=heading)
     arm = PlannerArm(p, "right", send_vel=False, left_guard=False)
     arm.start()
     phase("planner_arm_started", settle_seconds="default")
@@ -168,14 +180,15 @@ def prepare_stationary_ready(
         ready.joints[15:22] = [-0.35, 0.2, 0, 0.8, 0, 0, 0]
         ready.joints[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
     q0 = arm.q.copy()
-    phase("ready_transition_started", frames=125)
-    for k in range(1, 126):
-        u = k / 125
+    frames = max(1, int(round(cfg.ready_blend_seconds / DT)))  # 125 at the historical 2.5 s
+    phase("ready_transition_started", frames=frames)
+    for k in range(1, frames + 1):
+        u = k / frames
         arm.q = q0 + (3 * u * u - 2 * u * u * u) * (ready.joints - q0)
         arm._push(arm.q)
-    phase("ready_transition_complete", frames=125)
-    arm.hold(1.2)
-    phase("ready_hold_complete", duration_s=1.2)
+    phase("ready_transition_complete", frames=frames)
+    arm.hold(cfg.ready_hold_seconds)
+    phase("ready_hold_complete", duration_s=cfg.ready_hold_seconds)
 
     stance_ready = True
     state = None
@@ -221,8 +234,17 @@ def prepare_stationary_ready(
     }
 
 
+def _draw(rng, bounds) -> float:
+    """Uniform in `bounds`; a closed range draws nothing, so the rng stream of a config without it is unchanged."""
+    low, high = (float(v) for v in bounds)
+    return low if low == high else float(rng.uniform(low, high))
+
+
 def start_placement(reset, meta, cfg, rng):
-    """The sampled episode's reset: object jitter and yaw, robot start pose. Returns (placement, its record)."""
+    """The sampled episode's reset: object jitter and yaw, robot start pose. Returns (placement, its record).
+
+    The layout ranges (start_yaw/start_lateral/object_setback/object_yaw) draw after the historical draws and
+    only when open, so a config without them places exactly as before."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
     # The object keeps the scene's own yaw (pi/2 in the synthetic table scenes,
     # 0 in the logistics room: long axis across the walk-in either way).
@@ -235,18 +257,31 @@ def start_placement(reset, meta, cfg, rng):
     else:
         start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
         start_xy = initial_robot_xy(meta, start_distance)
+    axis = np.array([np.cos(heading), np.sin(heading)])
+    left = np.array([-axis[1], axis[0]])
+    start_yaw = _draw(rng, cfg.start_yaw_range_deg)
+    lateral = _draw(rng, cfg.start_lateral_range)
+    setback = _draw(rng, cfg.object_setback_range)
+    object_yaw = _draw(rng, cfg.object_yaw_range_deg)
+    start_xy = start_xy + lateral * left
+    object_dxy = jitter + setback * axis
+    yaw += np.radians(object_yaw)
 
     def placement(_reset_id: str) -> None:
         reset.reset(
-            objects={target_key(meta): {"dxy": jitter.tolist(), "yaw": float(yaw)}},
-            robot={"dxy": (start_xy - base).tolist(), "yaw": heading},
+            objects={target_key(meta): {"dxy": object_dxy.tolist(), "yaw": float(yaw)}},
+            robot={"dxy": (start_xy - base).tolist(), "yaw": heading + np.radians(start_yaw)},
         )
 
     return placement, {
-        "object_dxy": jitter.tolist(),
+        "object_dxy": object_dxy.tolist(),
         "object_yaw": float(yaw),
         "start_edge_distance": start_distance,
         "start_xy": start_xy.tolist(),
+        "start_yaw_offset_deg": start_yaw,
+        "start_lateral_m": lateral,
+        "object_setback_m": setback,
+        "object_yaw_offset_deg": object_yaw,
     }
 
 
@@ -297,6 +332,47 @@ def reset_hanging(p, reset, meta, cfg, rng):
         "start_yaw_error_deg": float(np.degrees((p.pelvis_yaw(state) - heading + np.pi) % (2 * np.pi) - np.pi)),
         **record,
     }
+
+
+def face_target(p, arm, cfg, seen, state, grasp_points):
+    """visual.face_after_brake: turn on the spot by facing_correction(); the HangingWalk then holds the new heading.
+
+    The facing is commanded ABSOLUTE and held (diag_micro's `face` trial: 3-20 deg delivered at 75-90% in IDLE or
+    SLOW_WALK, 2026-09-23), not re-aimed from the current yaw each tick as Primitives.turn_to does -- inside the
+    controller's ~7 deg heading dead zone that re-aim commands a residual it ignores (a 7.5 deg turn_to delivered
+    2.8 deg in 6 s, 2026-09-27). Returns the record kept in the round's placement, with the heading to hold."""
+    yaw0 = float(p.pelvis_yaw(state))
+    offset = facing_correction(cfg.face_after_brake, seen, grasp_points)
+    requested = yaw0 + offset
+    facing = (float(np.cos(requested)), float(np.sin(requested)), 0.0)
+    t0 = time.time()
+    done, settled_since = (
+        bool(abs(offset) <= np.radians(cfg.face_tolerance_deg)),
+        None,
+    )  # plain bool: it is written to the manifest
+    while not done and time.time() - t0 < cfg.face_timeout:
+        p.cmd.frame(mode=LocomotionMode.SLOW_WALK, movement=(0.0, 0.0, 0.0), facing=facing)
+        time.sleep(DT)
+        s = p.obs()
+        if s["fallen"]:
+            break
+        err = (requested - float(p.pelvis_yaw(s)) + np.pi) % (2 * np.pi) - np.pi
+        if abs(err) < np.radians(cfg.face_tolerance_deg):
+            settled_since = settled_since if settled_since is not None else time.time()
+            done = bool(time.time() - settled_since >= 0.3)
+        else:
+            settled_since = None
+    yaw1 = float(p.pelvis_yaw(p.obs()))
+    held = requested if done else yaw1  # a turn that did not arrive is not fought any further
+    arm._face = (float(np.cos(held)), float(np.sin(held)), 0.0)
+    return dict(
+        mode=cfg.face_after_brake,
+        requested_deg=float(np.degrees(offset)),
+        delivered_deg=float(np.degrees((yaw1 - yaw0 + np.pi) % (2 * np.pi) - np.pi)),
+        seconds=round(time.time() - t0, 2),
+        done=done,
+        heading=float(held),
+    )
 
 
 def box_front_line(state, key, box, axis):
@@ -363,6 +439,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
             brake=None,
         )
     retreat_record = None
+    heading = approach_heading(meta)  # the held world heading; face_after_brake may change it after the brake
+    turn_record = None
     arm, placement = (
         reset_hanging(p, reset, meta, cfg, rng)
         if guard is not None
@@ -385,7 +463,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         body_top = float(initial["objects"][key]["pos"][2]) + float(box["centre"][2]) + float(box["half_extent"][2])
     if whole_body:
         distance = edge_distance(meta, initial["pelvis"]["pos"])
-        if cfg.start_pose == "sampled" and not 1.2 <= distance <= 1.5:
+        slack = cfg.start_edge_tolerance
+        if cfg.start_pose == "sampled" and not cfg.start_edge_min - slack <= distance <= cfg.start_edge_max + slack:
             arm.stop()
             return RoundResult(
                 False,
@@ -430,7 +509,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     last_camera_received = last_command_time = started
     last_motion = {"movement": np.zeros(3), "speed": -1.0}
     last_phase, reason, error = None, "no_camera_frames", None
-    final = initial
+    final, final_wall = initial, started
     last_control_time = None
     images, message = None, None
     last_simulation_time, last_progress_wall = float(initial["t"]) if assisted else 0.0, started
@@ -440,7 +519,10 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         ) < cfg.walk_timeout + cfg.timeout_seconds + 2:
             now = time.time()
             raw = p.obs()
-            final = raw  # evaluate the observed attempt, before mode exit or video finalization
+            final, final_wall = (
+                raw,
+                time.time(),
+            )  # evaluate the observed attempt, before mode exit or video finalization
             motion_clock = {"motion_time": float(raw["t"])} if assisted else {}
             if assisted:
                 if raw["t"] < last_simulation_time:
@@ -591,6 +673,16 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
             elif whole_body:
                 if low is None:
                     if isinstance(arm, HangingWalk):
+                        if cfg.face_after_brake != "none" and turn_record is None:
+                            # Square up to the box before the arms come out: a start offset or a turned box
+                            # becomes a heading change, which the walk-in tolerates and the reach does not.
+                            print(f"[{label}] turn at {now - started:.2f}s", flush=True)
+                            seen = target_cache.at(raw) or estimate
+                            turn_record = face_target(p, arm, cfg, seen, raw, grasp_points)
+                            heading = turn_record["heading"]
+                            placement["turn"] = turn_record
+                            last_camera_received = last_progress_wall = time.time()
+                            continue
                         # Guard stance is quiet: ready the arms in place, as the walk scene did after its brake
                         # (a no-op placement keeps the robot where the brake left it). Blocks for ~10 s.
                         print(f"[{label}] arm preparation at {now - started:.2f}s", flush=True)
@@ -601,7 +693,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             solver,
                             placement=lambda _reset_id: None,
                             whole_body=True,
-                            heading=approach_heading(meta),
+                            heading=heading,
+                            after_brake=cfg.ready_after_brake == "quick",
                         )
                         placement["arm_preparation"] = dict(
                             initial_stance_ready=prepared["initial_stance_ready"],
@@ -769,9 +862,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                 break
         if reason == "completed" and cfg.retreat_distance > 0 and isinstance(arm, StreamedArm):
             print(f"[{label}] retreat at {time.time() - started:.2f}s", flush=True)
-            reason, retreat_record, final = retreat(
-                p, arm, cfg, key, approach_heading(meta), float(initial["objects"][key]["pos"][2])
-            )
+            reason, retreat_record, final = retreat(p, arm, cfg, key, heading, float(initial["objects"][key]["pos"][2]))
+            final_wall = time.time()
     except Exception:
         reason, error = "runtime_error", traceback.format_exc()
     finally:
@@ -800,6 +892,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         control_reason=control_reason,
         intervention=control_reason.startswith("external_"),
         evaluation_state_seq=final.get("seq"),
+        # simulated seconds per wall second over the attempt: a starved sim fails timed phases as control errors
+        real_time_factor=(
+            round((float(final["t"]) - float(initial["t"])) / (final_wall - started), 3)
+            if final_wall > started and "t" in final and "t" in initial
+            else None
+        ),
     )
     if assisted:
         result["reference_stream"] = dict(
@@ -820,6 +918,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     if retreat_record is not None:
         result["retreat"] = retreat_record
     result["stand_attempts"] = list(stand_attempts)
+    if getattr(low, "retries", None) is not None:  # CoordinatedReach only; the markers path has no retry
+        result["retries"] = dict(low.retries)  # descend re-centres and reseats this round used (visual.*_retries)
     if result["ok"] and recorder.training_tail is not None:
         result["training_tail"] = recorder.training_tail
         # The converter's trim reads row["execution"]["metrics"]["training_tail"]
@@ -832,7 +932,6 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         # Sent on every path that started recording, including runtime errors,
         # so the exporter never stays in RECORDING and the manifest join holds.
         p.cmd.key("c" if result["ok"] else "x")
-        heading = approach_heading(meta)
         p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=(float(np.cos(heading)), float(np.sin(heading)), 0.0))
     if "pelvis" in initial:
         result["initial_edge_distance"] = edge_distance(meta, initial["pelvis"]["pos"])

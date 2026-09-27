@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Isaac re-render of a run's episodes, side by side with the MuJoCo tracking shot of the SAME trace, for any scene with an
-# Isaac stage (an `isaac` entry in configs/scenes.yaml, e.g. warehouse_textured).
+# Isaac stage (an `isaac` entry in configs/scenes.yaml: warehouse_textured, box_platform).
 #
 #   bash scripts/render_isaac_videos.sh <run_dir> [--scene-xml <scene_locomani.xml>] [--gpu N] [--stride 4]
 #       [--traces <dir>] [--out <dir>] [--insets] [labels...]
@@ -15,7 +15,7 @@
 # cached assets/isaac/robot/g1_dex1.usda (scripts/build_isaac_assets.sh --robot-only).
 # The tracking camera is front-right (azimuth 225, 2.2 m): in the warehouse the recorder's default 2.5 m / 135 shot
 # sits behind the south partition and both renderers see a wall (2026-09-24). Each scene's exposure is explained in
-# configs/scenes.yaml (the warehouse: ISO 30 under its ceiling lights).
+# configs/scenes.yaml (warehouse ISO 30 under its ceiling lights, box_platform ISO 20 under the default dome and sun).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 . scripts/paths.sh

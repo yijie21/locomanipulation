@@ -173,7 +173,7 @@ def test_a_scene_name_resolves_to_its_directory_in_the_run_and_its_copy(tmp_path
 
 def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     names = yaml.safe_load(run_common.SCENES.read_text())
-    assert set(names) == {"bottle", "crate", "warehouse", "warehouse_textured", "walk"}
+    assert set(names) == {"bottle", "crate", "warehouse", "warehouse_textured", "walk", "box_platform"}
     for entry in names.values():
         assert "example" in entry or "build" in entry
         if "example" in entry:
@@ -184,7 +184,7 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
 
 
 def test_an_unknown_or_doubly_given_scene_is_refused():
-    with pytest.raises(SystemExit, match="bottle, crate, walk, warehouse"):
+    with pytest.raises(SystemExit, match="bottle, box_platform, crate, walk, warehouse"):
         run_common.resolve_scene({"scene": {"name": "blue"}})
     with pytest.raises(SystemExit, match="give one"):
         run_common.resolve_scene({"scene": {"name": "crate", "dir": "outputs/scene/sim"}})

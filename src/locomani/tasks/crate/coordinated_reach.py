@@ -105,6 +105,10 @@ class CoordinatedReach:
         self._seq = None
         self.contact_sides = ()  # hands the privileged state reports touching the target object this tick
         self.best_error, self.progress_time = np.inf, None
+        self.retries = dict(descend=0, reseat=0)  # visual.descend_retries / reseat_retries used so far
+        self.last_retry = None  # the latest retry (kind, after, count), kept in the diagnostics from then on
+        self.attachment_feedback = np.zeros(2)  # per hand: filtered vertical drift from the closed hand-box offset, m
+        self.reopen_targets = None
         self.diagnostics = {}
         self.torso_target = None
         self.previous_load = None
@@ -117,6 +121,25 @@ class CoordinatedReach:
 
     def enter(self, phase):
         self.phase, self.elapsed, self.ready_since = phase, 0.0, None
+
+    def retry(self, kind, now, after):
+        """Try the descend again instead of ending the round on `after`: `descend` backs up to the pregrasp point
+        (the align phase re-centres there), `reseat` first opens the jaws where the hands are. Returns this tick's
+        command, or None when visual.<kind>_retries is used up. Every failure was terminal until 2026-09-27."""
+        cfg = self.config.visual
+        if self.retries[kind] >= (cfg.descend_retries if kind == "descend" else cfg.reseat_retries):
+            return None
+        self.retries[kind] += 1
+        self.last_retry = dict(kind=kind, after=after, count=dict(self.retries), at=round(float(now), 3))
+        self.diagnostics["retry"] = self.last_retry
+        self.best_error, self.progress_time = np.inf, None
+        if kind == "reseat":
+            self.reopen_targets = self.body.tools(self.x) - cfg.tracking_gain * self.feedback
+            self.enter("reopen")
+        else:
+            self.align_started = now
+            self.enter("align")
+        return self.result()
 
     def descend_goal(self, targets):
         """Where the staged descent aims: the grasp points, or contact_overdrive below them in contact mode."""
@@ -207,6 +230,8 @@ class CoordinatedReach:
         `hold_across` = (mask per hand, world unit vector): a held hand's feedback may not change along the
         vector. Below the box rim a pad that meets a wall face is blocked, and the across-wall correction
         otherwise winds up to tracking_cap against it and shoves the wall until the box tips (2026-09-24).
+        With visual.lateral_hold_common_mode only the differential part of that change is removed: the pair's
+        mean shift stays free, because the stalls of 2026-09-27 were the PAIR drifting 3-5 cm to one side.
         """
         if dt <= 0:
             return
@@ -225,7 +250,10 @@ class CoordinatedReach:
         if hold_across is not None:
             mask, axis = np.asarray(hold_across[0], dtype=bool), np.asarray(hold_across[1], dtype=float)
             along = (self.feedback - previous) @ axis
+            if cfg.lateral_hold_common_mode:
+                along = along - np.mean(along)  # the held hand loses only its share of the pair's spread change
             self.feedback[mask] -= along[mask, None] * axis
+            self.diagnostics["across_feedback"] = self.feedback @ axis
         if z_floor is not None:
             under = np.asarray(measured)[:, 2] <= np.asarray(z_floor)
             backed = np.maximum(self.feedback[:, 2], previous_z) + alpha * (
@@ -392,7 +420,10 @@ class CoordinatedReach:
             obj_position = np.asarray(observed_object["pos"])
             obj_rotation = rotation(observed_object["quat"]) @ self.target.capture_rotation_local
         self.diagnostics = dict(
-            observed_grips=centres, measured_tools=tools, information_source=self.target.information_source
+            observed_grips=centres,
+            measured_tools=tools,
+            information_source=self.target.information_source,
+            **({"retry": self.last_retry} if self.last_retry else {}),
         )
         if self.phase == "observe":
             axis = centres[0] - centres[1]
@@ -466,6 +497,21 @@ class CoordinatedReach:
                     else:
                         self.start_descend(targets, first)
                     return self.result()  # this tick's reference is already sent; continue from the next one
+        if self.phase == "reopen":
+            # A reseat retry: let go where the hands are (the fingers open over close_seconds while the targets
+            # hold), then back up to the pregrasp point and re-centre.
+            self.closure = max(0.0, 1.0 - self.elapsed / cfg.close_seconds)
+            self.advance(
+                self.reopen_targets - cfg.tracking_gain * self.feedback,
+                self.attitudes,
+                tools,
+                control_dt,
+                tool_rotations,
+            )
+            if self.elapsed >= cfg.close_seconds + 0.2:
+                self.align_started = now
+                self.enter("align")
+            return self.result()
         if self.phase == "align":
             # Hold at the pregrasp point, above the rim where nothing blocks a lateral correction, until both
             # measured grip points are centred across the wall (assisted: the estimate is the simulation's own
@@ -493,7 +539,7 @@ class CoordinatedReach:
             if self.progress_time is None or error < self.best_error - 0.005:
                 self.best_error, self.progress_time = error, now
             if not self.target.reach_only and self.elapsed > self.descend_duration and now - self.progress_time > 3.0:
-                return self.result("reach_stalled", True)
+                return self.retry("descend", now, "reach_stalled") or self.result("reach_stalled", True)
             self.ready_since = (now if self.ready_since is None else self.ready_since) if ready else None
             if self.ready_since is not None and now - self.ready_since >= 0.1:
                 self.closed_targets = self.body.tools(self.x)
@@ -505,7 +551,8 @@ class CoordinatedReach:
                 if cfg.lateral_hold_below_rim:
                     below = tools[:, 2] <= targets[:, 2] + self.target.rim_above_grasp + 0.01
                     hold = (below, obj_rotation[:, 0])
-                    self.diagnostics.update(lateral_hold=below)
+                    across = ((tools - targets) @ obj_rotation)[:, 0]
+                    self.diagnostics.update(lateral_hold=below, across_common_mode=float(np.mean(across)))
                 self.advance(
                     commanded + self.feedforward,
                     self.attitudes,
@@ -527,7 +574,18 @@ class CoordinatedReach:
             self.closure = min(1.0, self.elapsed / cfg.close_seconds)
             if self.elapsed >= cfg.close_seconds + 0.2:
                 if min(hand_openings) < 0.003:
-                    return self.result("empty_gripper", True)
+                    return self.retry("reseat", now, "empty_gripper") or self.result("empty_gripper", True)
+                if cfg.seat_depth > 0:
+                    # Seated evenly and deep enough to survive the stand? Otherwise spend a reseat, never the round.
+                    error = (tools - centres) @ obj_rotation  # per hand: across, along, up
+                    depth = self.target.rim_above_grasp - error[:, 2]
+                    skew = np.abs(error[0] - error[1])
+                    seated = bool(np.all(depth >= cfg.seat_depth) and np.all(skew[1:] <= cfg.seat_skew))
+                    self.diagnostics["seat"] = dict(
+                        depth=depth.tolist(), skew_along=float(skew[1]), skew_up=float(skew[2]), ok=seated
+                    )
+                    if not seated and (again := self.retry("reseat", now, "seat_rejected")) is not None:
+                        return again
                 self.closed_tools = tools.copy()
                 self.closed_relative = (tools - obj_position) @ obj_rotation
                 self.closed_object = obj_position.copy()
@@ -559,10 +617,16 @@ class CoordinatedReach:
                 self.recovery_started = None
                 self.enter("lift")
         elif self.phase in ("lift", "stand", "hold"):
-            attachment = float(
-                np.max(np.linalg.norm(tools - (self.closed_relative @ obj_rotation.T + obj_position), axis=1))
-            )
+            drift = tools - (self.closed_relative @ obj_rotation.T + obj_position)  # per hand, world
+            attachment = float(np.max(np.linalg.norm(drift, axis=1)))
             rise = float(obj_position[2] - self.closed_object[2])
+            if cfg.attachment_gain > 0 and self.recovery_started is not None and control_dt > 0:
+                # The pinch creeps UP the wall under load; command the hand that rose back down by what it rose.
+                # Not during the probe lift, whose delivered-height test would read the correction as a short lift.
+                alpha = 1 - np.exp(-control_dt / 0.3)
+                self.attachment_feedback += alpha * (drift[:, 2] - self.attachment_feedback)
+                self.attachment_feedback = np.clip(self.attachment_feedback, -cfg.attachment_cap, cfg.attachment_cap)
+            self.diagnostics["attachment_feedback"] = self.attachment_feedback.copy()
             tilt = float(np.degrees(np.arccos(np.clip(obj_rotation[2, 2], -1, 1))))
             self.diagnostics.update(attachment_error=attachment, observed_rise=rise, observed_tilt=tilt)
             torso = base @ self.solver.ik.body_pose(np.asarray(state["joints"]), "torso_link")[1]
@@ -575,6 +639,8 @@ class CoordinatedReach:
                 self.diagnostics.update(observed_basket_speed=basket_speed, observed_torso_speed=torso_speed)
             self.previous_load = obj_position.copy(), torso.copy()
             if min(hand_openings) < 0.003 or (self.phase != "lift" and attachment > 0.06):
+                if self.phase == "lift" and (again := self.retry("reseat", now, "lost_attachment")) is not None:
+                    return again
                 return self.result("lost_attachment", True)
             if tilt > cfg.max_tilt_deg:
                 return self.result("basket_tilt", True)
@@ -584,12 +650,16 @@ class CoordinatedReach:
                 if self.recovery_started is None:
                     if delivered_probe:
                         if rise < cfg.probe_height * 0.35 or attachment > 0.03:
-                            return self.result("probe_not_attached", True)
+                            return self.retry("reseat", now, "probe_not_attached") or self.result(
+                                "probe_not_attached", True
+                            )
                         # A phase label changes, not the motion clock or reference.
                         self.recovery_started = self.elapsed
                         self.phase = "stand"
                     elif self.elapsed >= cfg.lift_seconds + 2:
-                        return self.result("probe_not_attached", True)
+                        return self.retry("reseat", now, "probe_not_attached") or self.result(
+                            "probe_not_attached", True
+                        )
                 lift_u, _ = blend(self.elapsed, cfg.lift_seconds)
                 recovery_time = 0 if self.recovery_started is None else self.elapsed - self.recovery_started
                 stand_u, _ = blend(recovery_time, cfg.stand_seconds)
@@ -607,8 +677,10 @@ class CoordinatedReach:
                         self.body.base0[2] - self.crouch_height
                     )
                 self.diagnostics["pelvis_height_target"] = self.body.pelvis_height_target
-                self.diagnostics.update(lift_progress=lift_u, recovery_progress=stand_u, loaded_targets=targets.copy())
                 targets = self.forward_floor(targets, state)
+                self.diagnostics["loaded_targets_raw"] = targets.copy()
+                targets[:, 2] -= cfg.attachment_gain * self.attachment_feedback
+                self.diagnostics.update(lift_progress=lift_u, recovery_progress=stand_u, loaded_targets=targets.copy())
                 self.advance(targets, attitudes, tools, control_dt, tool_rotations)
                 if (
                     self.recovery_started is not None
@@ -624,9 +696,11 @@ class CoordinatedReach:
                 elif recovery_time >= cfg.stand_seconds + 4:
                     return self.result("stand_not_delivered", True)
             else:
-                self.advance(
-                    self.forward_floor(self.stand_targets, state), attitudes, tools, control_dt, tool_rotations
-                )
+                targets = self.forward_floor(self.stand_targets, state)
+                self.diagnostics["loaded_targets_raw"] = targets.copy()
+                targets[:, 2] -= cfg.attachment_gain * self.attachment_feedback
+                self.diagnostics["loaded_targets"] = targets.copy()
+                self.advance(targets, attitudes, tools, control_dt, tool_rotations)
                 if self.elapsed >= cfg.hold_seconds + 2.0:
                     return self.result("unstable_hold", True)
                 stable = (

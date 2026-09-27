@@ -1,0 +1,37 @@
+# Scene capability sweep, step 1 (user 2026-09-26): which box height x length the bimanual expert + SONIC grasp at
+# least half the time, the other axes held at the centre. Run: docs/scene_sweep.md section 3, one loop per
+# instance; table: python -m locomani.tasks.crate.sweep report <this file>. Step 2 (one axis at a time around the
+# best cell of this grid) is a second file with `chains`.
+#
+# Fixed by the user: a 10 cm solid platform (the box height makes up the rest of the grip height), the warehouse
+# carton's light high-friction walls (1.2 kg, friction 1.4), the box always in view (the assisted guidance's
+# visibility test enforces it), no obstacles. Success = lift and hold (retreat_distance 0), threshold 0.5.
+name: box_envelope_s1_20260926
+base: configs/experiments/box_room_grasp_200_cap120_20260925.yaml  # the warehouse expert the 200-episode run used
+platform_top: 0.10
+stand_forward_clearance: 0.19  # stand_forward_min = length / 2 + this (0.35 for the 0.32 m carton, as in the base)
+set:
+  task.visual.retreat_distance: 0.0  # success = lift and hold (user 2026-09-26)
+  task.visual.start_pose: sampled  # the start comes from start_edge, not the room's robot_start
+  task.visual.start_edge_tolerance: 0.05  # the reset lands a few cm off the sampled distance
+  task.visual.position_jitter: 0.0  # the layout ranges replace the jitters
+  task.visual.yaw_jitter_deg: 0.0
+  collect.record: false
+  eval.image_source: mujoco  # cells never evaluate; run_overnight.sh would otherwise ask for an Isaac card
+  collect.successes: 1000  # never binding: the stop rule ends a cell
+  collect.batch_rounds: 5
+  collect.max_batches: 8  # 40 attempts at most, room for excluded rounds on top of max_rounds
+  collect.seed0: 50000  # every cell the same seeds, so cells pair round by round
+  collect.stop_rule: {threshold: 0.5, min_rounds: 10, max_rounds: 30, min_rtf: 0.9}
+centre:
+  width: 0.45  # across the walk-in: the gripped walls (the warehouse carton)
+  length: 0.32  # along the walk-in (the warehouse carton)
+  height: 0.45  # grip 0.54 m on the 10 cm platform
+  start_edge: [1.2, 1.2]  # pelvis to the near edge at the start, m
+  start_yaw_deg: [0, 0]
+  start_lateral: [0, 0]
+  object_setback: [0, 0]
+  object_yaw_deg: [0, 0]
+grid:  # grip height = 0.10 + height - 0.01: 0.39 / 0.54 / 0.69 (the warehouse's 0.68) / 0.84 m
+  height: [0.30, 0.45, 0.60, 0.75]
+  length: [0.20, 0.32, 0.44]  # hands past the front face: 0.10 / 0.16 / 0.22 m

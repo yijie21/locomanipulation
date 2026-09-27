@@ -21,12 +21,14 @@ TWO RULES, because this module is where a deleted driver could quietly grow back
   * it must not assemble a command line.
 
 It answers "which exporter session does this batch record into", "how many episodes did this
-manifest keep" and "which batches finished, so where does an interrupted run continue". Anything that needs to know WHICH expert is running belongs in that expert's line.
+manifest keep", "which batches finished, so where does an interrupted run continue" and, for a run
+that measures a success rate rather than collecting (`collect.stop_rule`), "has it measured enough". Anything that needs to know WHICH expert is running belongs in that expert's line.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -144,3 +146,28 @@ def kept_in(manifest: Path, record: bool) -> int:
     """Episodes this batch kept: a round that succeeded, and that produced an episode when recording."""
     rows = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
     return sum(bool(row.get("ok") and (row.get("produced", True) if record else True)) for row in rows)
+
+
+def wilson(successes: int, rounds: int, z: float = 1.96) -> tuple[float, float]:
+    """The Wilson score interval of successes/rounds (95% at z 1.96); (0, 1) for no rounds."""
+    if rounds <= 0:
+        return 0.0, 1.0
+    p = successes / rounds
+    centre = p + z * z / (2 * rounds)
+    half = z * math.sqrt(p * (1 - p) / rounds + z * z / (4 * rounds * rounds))
+    scale = 1 + z * z / rounds
+    return max(0.0, (centre - half) / scale), min(1.0, (centre + half) / scale)
+
+
+def stop_verdict(successes: int, rounds: int, rule: dict) -> str | None:
+    """`collect.stop_rule`: "above"/"below" once the Wilson interval of successes/rounds clears `threshold`,
+    "undecided" at `max_rounds`; None = run another batch. Nothing is decided before `min_rounds` (two batches of
+    five at least: one bad stretch of the stack must not decide a layout). Fixed before a run, never after."""
+    if rounds < int(rule["min_rounds"]):
+        return None
+    low, high = wilson(successes, rounds)
+    if low > float(rule["threshold"]):
+        return "above"
+    if high < float(rule["threshold"]):
+        return "below"
+    return "undecided" if rounds >= int(rule["max_rounds"]) else None

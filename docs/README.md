@@ -46,7 +46,7 @@ versioned documents reachable here, without requiring conversation history or pr
 |---|---|---|---|
 | SONIC 单臂（含 pick-and-place、bottle_visual） | [单臂](single_arm.md) | [单臂详解](single_arm_design.md) | [台账](ledger/bottle.md) |
 | SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂](bimanual.md) | [双臂详解](bimanual_design.md) | [台账](ledger/crate.md) |
-| SONIC 物流房间抓纸箱（离线渲染、数据集相机事后补渲） | [warehouse](warehouse.md) | [DECISIONS](../DECISIONS.md) | [DECISIONS](../DECISIONS.md) |
+| SONIC 双臂抓纸箱（物流房间；台上默认配置 `box_platform`） | [warehouse](warehouse.md) | [默认配置、成功率随参数的变化、取值](box_grasp_envelope.md)；方法 [scene_sweep](scene_sweep.md) | [台账](ledger/crate.md) |
 | ScaleBFM 后端 | [ScaleBFM](scalebfm.md) | 同页 | [台账](ledger/scalebfm.md) |
 
 三份 runbook 按同一顺序维护：**准备 → 一次运行=一份实验文件 → 新建实验 → 每次都要改的字段 → 跑 → 产物 → 排错 → 进一步阅读**。新 case 放进所属的线；新线沿用此结构。

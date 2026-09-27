@@ -136,6 +136,38 @@ def diagnostic_argv(cfg: dict, run_dir: Path, batch: int) -> list:
     return [str(a) for a in argv[3:]] + ["--scene-dir", str(prepare.scene_name(cfg, run_dir))]
 
 
+# A round that measures the stack, not the layout: the reset never produced a task, or the process or its clock broke.
+NOT_A_MEASUREMENT = frozenset(
+    {
+        "initial_stance_unstable",
+        "invalid_initial_distance",
+        "runtime_error",
+        "camera_unavailable",
+        "no_camera_frames",
+        "simulation_stalled",
+        "simulation_clock_reversed",
+        "stale_camera_abort",
+    }
+)
+
+
+def stop_tally(manifests: list[str], rule: dict) -> dict:
+    """What `collect.stop_rule` counts over the finished batches: successes and rounds, leaving out the rounds that
+    measured the stack (NOT_A_MEASUREMENT, or a real-time factor under `min_rtf` -- a starved sim fails timed phases
+    as control errors). `excluded` says how many were left out."""
+    rows = [json.loads(line) for m in manifests for line in Path(m).read_text().splitlines() if line.strip()]
+    floor = float(rule.get("min_rtf", 0.0))
+
+    def measured(row):
+        rtf = row.get("real_time_factor")
+        return not ({row.get("why"), row.get("control_reason")} & NOT_A_MEASUREMENT) and (rtf is None or rtf >= floor)
+
+    counted = [row for row in rows if measured(row)]
+    return dict(
+        successes=sum(bool(row.get("ok")) for row in counted), rounds=len(counted), excluded=len(rows) - len(counted)
+    )
+
+
 def inputs_path(run_dir: Path) -> Path:
     """The batch bookkeeping, under `collect/` even though this line keeps everything else beside the run."""
     return Path(run_dir) / "collect" / "inputs.json"
@@ -184,8 +216,13 @@ def main(argv: list[str] | None = None) -> int:
     inputs = inputs_path(run_dir)
     state = batches.resume_state(inputs)  # only finished batches count; an unfinished one reruns
 
+    rule = collect.get(
+        "stop_rule"
+    )  # a run that measures a success rate: stop once it is decided (batches.stop_verdict)
     try:
-        while state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"]:
+        while (
+            state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"] and not state.get("stop")
+        ):
             manifest = run_batch(cfg, run_dir, stack, state)
             batches.wait_saved(state["sessions"][-1], manifest)  # before the next batch or stack.down() kills it
             state["kept"] += batches.kept_in(manifest, bool(collect["record"]))
@@ -194,6 +231,13 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"collect: batch {state['batches'] - 1:02d} -> {state['kept']}/{collect['successes']} kept", flush=True
             )
+            if rule:
+                tally = stop_tally(state["manifests"], rule)
+                verdict = batches.stop_verdict(tally["successes"], tally["rounds"], rule)
+                print(f"collect: {tally} -> {verdict or 'another batch'}", flush=True)
+                if verdict:
+                    state["stop"] = dict(tally, verdict=verdict)
+                    inputs.write_text(json.dumps(state, indent=1))
     finally:
         if not args.keep_stack:
             stack.down()  # a recording stack left up holds ~1800 of the container's 3840 pids
@@ -210,8 +254,9 @@ def main(argv: list[str] | None = None) -> int:
         failures=sorted({str(r.get("why") or "")[:70] for r in rows if not r.get("ok")}),
         sessions=state["sessions"],
         manifests=state["manifests"],
+        **({"stop": state.get("stop")} if rule else {}),
     )
-    if state["kept"] < collect["successes"]:
+    if state["kept"] < collect["successes"] and not state.get("stop"):
         raise SystemExit(f"stopped at {state['kept']}/{collect['successes']} kept after {state['batches']} batches")
     print(f"collect: {state['kept']} kept in {state['batches']} batches -> {run_dir}")
     return 0

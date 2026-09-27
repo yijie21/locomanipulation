@@ -97,7 +97,7 @@
 - 在交接前在深度轴上收敛站立。步态在命令位置周围散落几厘米的实现停止，站立位置远于 `visual.stand_off` 超过 `visual.stand_depth_tolerance` 的（在安静间隔的平均可见深度上判断）将重新行走，收紧停止位置，最多 `visual.stand_depth_retries` 次；接近的站立从不后退。
   每个安静的站立都记录为导航记录中的 `stand_attempts` 和尝试结果（接受或不接受），因此远站立保持可见而不被误认为到达失败。重试仍然受 `visual.walk_timeout` 限制。
   行走命令从不低于 `visual.walk_speed_min`：规划器的速度字段不是 m/s，映射属于当时的部署栈（`ledger/crate.md` 2026-09-22：0.10 曾交付 0.011 m/s，0.20 当天交付 0.05 m/s），落在映射脚下的命令根本不移动机器人，所以以那种方式命令的重新行走会站立不动直到超时。
-- 起点由场景的 `robot_start` 朝向定义走入轴（合成桌子场景朝 +x，物流房间朝 +y），物体保持场景自己的偏航再加 `yaw_jitter_deg`。`visual.start_pose` 为 `sampled`（默认）时在近桌沿前 `start_edge_min`–`start_edge_max` 抽起点；为 `scene` 时直接用场景 `robot_start` 沿朝向前移 `start_advance`（房间纸箱线用箱沿线验证局 `dy0.225_r00` 的起点：前移 0.225 m，离平台沿 0.425 m），并跳过 1.2–1.5 m 的初始距离校验（距离照常记录）。
+- 起点由场景的 `robot_start` 朝向定义走入轴（合成桌子场景朝 +x，物流房间朝 +y），物体保持场景自己的偏航再加 `yaw_jitter_deg`。`visual.start_pose` 为 `sampled`（默认）时在近桌沿前 `start_edge_min`–`start_edge_max` 抽起点；为 `scene` 时直接用场景 `robot_start` 沿朝向前移 `start_advance`（房间纸箱线用箱沿线验证局 `dy0.225_r00` 的起点：前移 0.225 m，离平台沿 0.425 m），并跳过初始距离校验（距离照常记录）；`sampled` 时实测距离须落在 `start_edge_min`–`start_edge_max` ± `start_edge_tolerance` 内（区间允许 0.5–2.5 m）。四个布局区间 `start_yaw_range_deg`（起点朝向偏离走入轴）、`start_lateral_range`（起点横移）、`object_setback_range`（物体沿走入轴后退）、`object_yaw_range_deg`（物体偏角）默认 (0, 0) 不抽样，打开时在原有抽样之后均匀抽取、记入 `placement`；guard 走法的朝向命令仍是走入轴、横向不修正（场景能力扫参，`docs/scene_sweep.md`）。
 - 横向残差怎么处理由 `visual.stand_lateral_gate` 决定。`walk`（默认）：深度到位但 |lateral| 还在 `stand_lateral_tolerance` 之外就继续走，走着修横向——三组 20 局 pilot 里深度过冲与横向误差负相关，就是这段走出来的。`turn`：深度到位即停，横向残差按 atan2(lateral, depth) 转成原地转向（相位 `turn`，movement 为零，facing 从当前偏航重新指向目标），进容差后走常规的安静 settle；转向精度受控制器 7–8° 的朝向死区限制。
 - 在 POSE 交接时保留消耗的规划器关节/根部参考。后端直接切换到准备好的 POSE 流并以原子方式释放规划器覆盖。
   下降从该参考开始；没有中间 VR 阶段。
@@ -358,7 +358,7 @@ crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initi
 `task.visual.retreat_distance` > 0 时成功局接着跑，`RetreatWatch` 记策略是否带着箱子沿走入轴后退了这么远
 （采集成功的后半段；manifest 的 `retreat` / `retreat_ok`，`closed_loop.json` 的 `retreated`）。
 2026-09-27 之前摆放是合成桌子的副本（机器人偏航 0、物体 π/2、名字写死 `blue_crate`），在物流房间里朝向错 90°。
-图像来源是整次运行的 `images.source`（`mujoco` | `isaac`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
+图像来源是整次运行的 `images.source`（`mujoco` | `isaac`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`、`box_platform`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
 观测构造与策略连接在 `vla_obs.py` 里按 `TaskSchema` 切换（`ObsBuilder(schema=SONIC_CRATE)`、
 `PolicyLink.get_chunk_bimanual`），策略服务的 modality 与 `SONIC_CRATE` 不一致会直接拒绝。
 
@@ -387,7 +387,7 @@ crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initi
 ```mermaid
 flowchart TD
   RS["<b>reset_ready</b> 摆到抽样的桌沿距离，PlannerArm 载入 ready 臂姿<br/>expert.py:43"]
-  G0{"initial_stance_ready<br/>∧ 初始桌沿距离 ∈ [start_edge_min, start_edge_max]"}
+  G0{"initial_stance_ready<br/>∧ 初始桌沿距离 ∈ [start_edge_min, start_edge_max] ± start_edge_tolerance"}
   WK["<b>walk</b> 朝篮子走，speed 由剩余距离切档<br/>visual_approach.py:31"]
   WG{"到位：x ≤ stand_off + walk_brake_margin<br/>∧ (|lateral| < stand_lateral_tolerance ∨ stand_lateral_gate = turn)<br/>visual_approach.py"}
   TN["<b>turn</b>（仅 stand_lateral_gate = turn 且 |lateral| 超容差）原地转 atan2(lateral, depth)"]

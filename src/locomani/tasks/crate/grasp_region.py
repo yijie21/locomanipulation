@@ -24,7 +24,10 @@ def grasp_points_for(obj: dict, below_rim: float = GRASP_BELOW_RIM_M) -> tuple[t
         return GRASP_POINTS
     hx, _, hz = (float(v) for v in box["half_extent"])
     cz = float(box.get("centre", (0.0, 0.0, 0.0))[2])
-    x, z = hx - GRASP_WALL_INSET_M, cz + hz - below_rim
+    # A box that states its wall thickness is gripped at mid-wall when that is deeper than the historical inset
+    # (a 30 mm wall, 2026-09-27); the 10 mm carton keeps its calibrated 8 mm.
+    inset = max(GRASP_WALL_INSET_M, float(box.get("wall", 0.0)) / 2)
+    x, z = hx - inset, cz + hz - below_rim
     return ((x, 0.0, z), (-x, 0.0, z))
 
 

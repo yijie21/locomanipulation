@@ -383,3 +383,53 @@ def test_descent_z_guard_stops_downward_windup_and_backs_off_below_the_floor():
     tools = unguarded.body.tools(unguarded.x)
     unguarded.advance(tools, unguarded.attitudes, tools + [0.0, 0.0, 0.10], 0.05)
     assert np.all(unguarded.feedback[:, 2] < -0.06)
+
+
+def _lift_with_a_creeping_pinch(gain, creep_per_s=0.005, seconds=14.0):
+    """The attached-lift harness with the load creeping DOWN relative to the measured hands once the probe is
+    delivered (the sweep's pinch slip, 2026-09-27); returns per-tick (phase, raw target z, commanded target z,
+    attachment feedback) and the policy."""
+    policy, state = setup()
+    policy.config = policy.config.with_overrides([f"visual.attachment_gain={gain}"])
+    orientation = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    obj = np.array([0.36, 0.02, 0.385])
+    ticks, creep_started = [], None
+    for now in np.arange(0, seconds, 0.05):
+        base = Rotation.from_quat(np.array(state["pelvis"]["quat"])[[1, 2, 3, 0]]).as_matrix()
+        if policy.phase in ("lift", "stand", "hold"):
+            tools = policy.solver.tool_poses(state["joints"])[0] @ base.T + state["pelvis"]["pos"]
+            obj = policy.closed_object + np.mean(tools - policy.closed_tools, axis=0)
+            if policy.recovery_started is not None:
+                creep_started = now if creep_started is None else creep_started
+                obj = obj - [0.0, 0.0, creep_per_s * (now - creep_started)]
+        seen = CrateEstimate(base.T @ (obj - state["pelvis"]["pos"]), base.T @ orientation, now, None, {})
+        command = policy.step(now, seen, state, [0.015] * 2)
+        d = policy.diagnostics
+        if d.get("loaded_targets") is not None:
+            ticks.append(
+                (
+                    policy.phase,
+                    d["loaded_targets_raw"][:, 2].copy(),
+                    d["loaded_targets"][:, 2].copy(),
+                    d["attachment_feedback"].copy(),
+                )
+            )
+        if command.finished:
+            break
+        state = dict(joints=command.joints, pelvis=dict(pos=policy.x[:3].copy(), quat=command.root_quaternion))
+    return policy, ticks
+
+
+def test_attachment_feedback_lowers_the_hands_by_what_they_rose_relative_to_the_load():
+    plain, ticks0 = _lift_with_a_creeping_pinch(0.0)
+    assert np.all(plain.attachment_feedback == 0)
+    assert all(np.allclose(raw, cmd) for _, raw, cmd, _ in ticks0)  # gain 0: the command is the raw target
+    fed, ticks1 = _lift_with_a_creeping_pinch(1.0)
+    cap = fed.config.visual.attachment_cap
+    stand = [(raw, cmd, fb) for phase, raw, cmd, fb in ticks1 if phase in ("stand", "hold")]
+    assert len(stand) > 20
+    for raw, cmd, fb in stand:
+        np.testing.assert_allclose(raw - cmd, fb, atol=1e-9)  # lowered by exactly the filtered drift
+        assert np.all(np.abs(fb) <= cap + 1e-9)
+    assert max(np.max(fb) for _, _, fb in stand) > 0.005  # the creep was seen and acted on
+    assert all(np.all(fb == 0) for phase, _, _, fb in ticks1 if phase == "lift")  # nothing before the probe

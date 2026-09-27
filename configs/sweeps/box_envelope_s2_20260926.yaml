@@ -1,0 +1,49 @@
+# Scene capability sweep, step 2 (user 2026-09-26): around the step-1 cell with the warehouse carton's geometry
+# (height 0.60 x length 0.32, 13/30 in box_envelope_s1_20260926), one axis at a time -- how far each can go before the
+# success rate is clearly below 0.3 (user: the centre itself is ~0.45, so 0.5 would leave every level undecided).
+# Width is a grid (not monotone); the per-episode axes are chains of bands running outward from the centre, one chain
+# per side (the right palm frame is not mirrored), and a band that comes out "below" ends its chain.
+# Run and read as docs/scene_sweep.md section 3.
+name: box_envelope_s2_20260926
+base: configs/experiments/box_room_grasp_200_cap120_20260925.yaml
+platform_top: 0.10
+stand_forward_clearance: 0.19
+set:
+  task.visual.retreat_distance: 0.0
+  task.visual.start_pose: sampled
+  task.visual.start_edge_tolerance: 0.05
+  task.visual.position_jitter: 0.0
+  task.visual.yaw_jitter_deg: 0.0
+  collect.record: false
+  eval.image_source: mujoco
+  collect.successes: 1000
+  collect.batch_rounds: 5
+  collect.max_batches: 8
+  collect.seed0: 50000
+  collect.stop_rule: {threshold: 0.3, min_rounds: 10, max_rounds: 30, min_rtf: 0.9}
+centre:
+  width: 0.45
+  length: 0.32
+  height: 0.60
+  start_edge: [1.2, 1.2]
+  start_yaw_deg: [0, 0]
+  start_lateral: [0, 0]
+  object_setback: [0, 0]
+  object_yaw_deg: [0, 0]
+grid:
+  width: [0.30, 0.38, 0.55]  # the centre's 0.45 is step 1's cell
+chains:  # each level is a (low, high) band sampled uniformly per episode
+  start_edge:  # pelvis to the near edge at the start, m
+    - [[1.0, 1.2], [0.8, 1.0], [0.6, 0.8]]
+    - [[1.2, 1.5], [1.5, 1.75], [1.75, 2.0]]
+  start_yaw_deg:  # + = the robot starts turned left of the walk-in axis
+    - [[0, 10], [10, 20], [20, 30]]
+    - [[-10, 0], [-20, -10], [-30, -20]]
+  start_lateral:  # + = the robot starts left of the box's centre line, m
+    - [[0, 0.08], [0.08, 0.16], [0.16, 0.25]]
+    - [[-0.08, 0], [-0.16, -0.08], [-0.25, -0.16]]
+  object_setback:  # box front face behind the platform edge, m
+    - [[0, 0.05], [0.05, 0.10], [0.10, 0.15]]
+  object_yaw_deg:  # + = the box turned counter-clockwise seen from above
+    - [[0, 7], [7, 14], [14, 20]]
+    - [[-7, 0], [-14, -7], [-20, -14]]

@@ -51,6 +51,26 @@ def edge_distance(meta, xy):
     return float(axis @ (edge - np.asarray(xy[:2], dtype=float)))
 
 
+def facing_correction(mode, estimate, grasp_points_local):
+    """Yaw to add to the current heading (radians, + = left) for visual.face_after_brake, from a pelvis-frame estimate.
+
+    centre: aim the body at the target's centre. box_yaw: aim it along the normal of the grasp line (the two
+    grasp points, i.e. the gripped walls), whichever sense is nearest to straight ahead, so the box is square
+    to the body. none: 0.
+    """
+    if mode == "none" or estimate is None:
+        return 0.0
+    if mode == "centre":
+        return float(np.arctan2(estimate.position[1], estimate.position[0]))
+    across = np.asarray(estimate.transform(grasp_points_local), dtype=float)
+    across = across[1, :2] - across[0, :2]
+    normal = float(np.arctan2(across[1], across[0])) - np.pi / 2
+    normal = (normal + np.pi) % (2 * np.pi) - np.pi
+    if abs(normal) > np.pi / 2:
+        normal = (normal + 2 * np.pi) % (2 * np.pi) - np.pi
+    return float(normal)
+
+
 def scene_object_yaw(meta):
     """World yaw of the target object as the scene places it (from `init_quat`, w-x-y-z)."""
     obj = meta["objects"][meta.get("target_object") or "blue_crate"]

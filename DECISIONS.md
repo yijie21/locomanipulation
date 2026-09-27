@@ -678,7 +678,7 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 - 箱子偏角几度就掉一半的真正原因；③ 附着反馈是否设默认；②b 下探期位移闸门；横移方案 B；同几何在房间里 26% vs 台上 43% 的差从哪来。
 
-## 2026-09-27 图像来源改为整次运行的 `images.source`
+## 2026-09-27 图像来源改为整次运行的 `images.source`；box_platform 建 Isaac stage
 
 ### 目标与约束的变化
 
@@ -690,15 +690,19 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 1. **选择器挪到运行一级**：实验文件顶层 `images: {source: mujoco | isaac}`，一个值同时决定数据集相机、convert 核对、eval sim 渲不渲和闭环图像。`run_context.migrate_images` 在每个 stage 读配置时执行：没有 `images` 的是历史格式，`eval.image_source` 读作来源，eval 渲染改成来源需要的值；当前格式里再写 `eval.image_source`、`isaac` 配实时采集、或写了矛盾的 `eval.backend.render`，加载即拒。
 2. **eval sim 的渲染由来源推出**（`run_context.evaluation_of`：`mujoco` → `live`，`isaac` → `offline`），所有评测入口（crate / 单臂驱动、起栈、策略服务、镜像）都经它拿 EvalConfig；`EvalConfig.image_source` 只作解析后的交付值，实验文件不再写它。
 3. **起栈前核对 Isaac 前提**（`require_images`）：场景有 `isaac` 条目且 stage 已建、render venv 在。stage 带 `source.json`（MJCF 的 sha256）时，场景被重建后拒绝旧 stage。
-4. 录像脚本改名 `scripts/render_isaac_videos.sh`，stage 与曝光取运行场景的 `isaac` 条目，不再写死 warehouse。
-5. 被 runbook 复制的模板（warehouse 基线、`crate_table30_record`、`bottle_simple_200`）改成当前格式；其余历史文件保持原样，由迁移读取。
+4. **`box_platform` 的 Isaac stage 从 MJCF 生成**（`scripts/build_isaac_primitive_scene.py`：可见的非机器人盒子 → USD Cube + 材质，目标物体按 body 系单独一层），另加一块灰地面（MuJoCo 的地面平面不可见）。曝光固定 ISO 20、关自动曝光：自动曝光随帧适应，镜像按需渲与数据集连续渲会不一样；ISO 20 与自动曝光的对比度接近（ego 均值 120 vs 89）。
+5. 录像脚本改名 `scripts/render_isaac_videos.sh`，stage 与曝光取运行场景的 `isaac` 条目，不再写死 warehouse。
+6. 四份被 runbook 复制的模板（warehouse 基线、`box_platform_default`、`crate_table30_record`、`bottle_simple_200`）改成当前格式；其余历史文件保持原样，由迁移读取。
 
 ### 被否决的方案（及原因）
 
 - 方案 A（字段不动，只在起栈时核对）：改动小，但字段名和作用范围不符，协作者会以为它只管评测。
 - 把来源放进 `scene` 或 `embodiment` 块：scene 可以是无名目录（Isaac 需要名字），embodiment 管机器人和模型契约；单独一块最直白。
 - `isaac` 配实时采集时静默改成 offline：会改掉文件明写的采集行为，按规矩拒绝并说明。
+- box_platform 用自动曝光：画面最好看，但时间上自适应，破坏训练图与评测图同源。
 
 ### 未决（不是决策）
 
-- 按需渲与连续渲是否同图（TODO 4.7.9.8）仍未验证。
+- box_platform 的 Isaac 路线只做了冒烟（`box_platform_isaac_smoke_20260927`：5 局采集 1 成功 → Isaac 补渲 → convert → Isaac 录像 → 镜像 50/50），没有训练和闭环；单集的对齐审计因样本太少 FAIL（2 次测量 1 次 +1 帧，200 集 warehouse 同一项 95–96% 通过）。
+- Isaac 的灰地面是 MuJoCo 画面里没有的东西；两边图像本来就不混用，但手压进地面时 Isaac 会被地面挡住（镜像冒烟里机器人无人驱动倒地时出现）。
+- 按需渲与连续渲是否同图（TODO 4.7.9.8）仍未验证，两个场景都是。

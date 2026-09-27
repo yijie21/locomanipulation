@@ -37,7 +37,7 @@ diff configs/experiments/box_room_grasp_baseline_20260924.yaml configs/experimen
 |---|---|---|
 | `name` | 运行目录 `outputs/runs/<name>/` | 同名运行的实验文件被改过会拒绝启动 |
 | `backend.render` | 采集时 sim 渲不渲相机 | **目前用 `offline`**：旧 `warehouse` 纸箱一整块网格超过 MuJoCo 单块 2²⁰ 顶点门槛，实时渲染 sim 只剩 0.35×、机器人走快约 3 倍（2026-09-24 实时 0/20）；`warehouse_textured` 拆成 9 块，实时栈 RTF 未测（TODO 4.7.7） |
-| `images.source` | 策略看到的图由谁渲：`mujoco` \| `isaac`，训练和闭环评测同一个 | `isaac` 要 `backend.render: offline`、场景有 Isaac stage（`configs/scenes.yaml` 的 `isaac` 条目，现有 `warehouse_textured`）和第二张卡；评测时 sim 渲不渲由它决定。冲突的组合**加载时就拒绝**；旧文件的 `eval.image_source` 读作它 |
+| `images.source` | 策略看到的图由谁渲：`mujoco` \| `isaac`，训练和闭环评测同一个 | `isaac` 要 `backend.render: offline`、场景有 Isaac stage（`configs/scenes.yaml` 的 `isaac` 条目，现有 `warehouse_textured`、`box_platform`）和第二张卡；评测时 sim 渲不渲由它决定。冲突的组合**加载时就拒绝**；旧文件的 `eval.image_source` 读作它 |
 | `collect.record` | 录不录 LeRobot 数据 | 基线是 `false`（只采 manifest 和轨迹，调参数用）。要出训练数据改成 `true`，并跑 §5 的渲相机一步 |
 | `collect.batch_rounds` / `max_batches` | 每批尝试几局 / 最多几批 | 批内一定跑满；要正好跑 N 局就 `batch_rounds: N`、`max_batches: 1`（和 [双臂 §5](bimanual.md) 同一套规则），录制时 `train.holdout` 也要小于 N |
 | `collect.successes` | 保留多少条成功 | 批间的验收门槛；不够时采集非零退出，但记录照样保留 |
@@ -144,6 +144,7 @@ bash scripts/render_isaac_videos.sh outputs/runs/my_box --traces outputs/runs/my
 
 ## 9. 进一步阅读
 
+- [默认配置与参数范围](box_grasp_envelope.md)：台上抓箱的默认配置 `box_platform_default_20260927`，成功率随箱子尺寸、台边距离、起点朝向/横移、箱子偏角的变化，以及布场景该怎么取值；方法在[场景能力扫参](scene_sweep.md)。
 - [Blender 场景](blender_scenes.md)：房间和纸箱资产怎么从 Blender 出到 MuJoCo / Isaac、尺寸、已知问题。
 - [离线渲染](rendering.md#离线渲染backendrender-offline)：`backend.render offline` 的实现和限制。
 - [双臂](bimanual.md) / [双臂详解](bimanual_design.md)：同一条管线的完整说明和专家设计。

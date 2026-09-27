@@ -333,3 +333,30 @@ def test_target_steering_still_chases_the_lateral_offset():
 def test_walk_steer_rejects_unknown_choice():
     with pytest.raises(ValueError, match="walk_steer"):
         CrateVisualConfig(walk_steer="sideways")
+
+
+def test_facing_correction_aims_at_the_centre_or_squares_to_the_grasp_line():
+    from locomani.tasks.crate.perception import CrateEstimate
+    from locomani.tasks.crate.visual_approach import facing_correction
+
+    points = [[0.0, 0.2, 0.0], [0.0, -0.2, 0.0]]  # object-local grasp points across the walk-in (left, right)
+    seen = CrateEstimate(np.array([0.5, 0.1, 0.0]), np.eye(3), 0.0, None, {})
+    assert facing_correction("none", seen, points) == 0.0
+    assert facing_correction("centre", seen, points) == pytest.approx(np.arctan2(0.1, 0.5))
+    assert facing_correction("box_yaw", seen, points) == pytest.approx(0.0, abs=1e-9)  # square already
+    turned = CrateEstimate(
+        np.array([0.5, 0.0, 0.0]), Rotation.from_euler("z", 10, degrees=True).as_matrix(), 0.0, None, {}
+    )
+    assert facing_correction("box_yaw", turned, points) == pytest.approx(np.radians(10))
+    # the grasp line's normal has two senses; the one nearest to straight ahead is taken
+    flipped = CrateEstimate(
+        np.array([0.5, 0.0, 0.0]), Rotation.from_euler("z", 190, degrees=True).as_matrix(), 0.0, None, {}
+    )
+    assert facing_correction("box_yaw", flipped, points) == pytest.approx(np.radians(10))
+    assert facing_correction("centre", None, points) == 0.0
+
+
+def test_ready_after_brake_choices():
+    CrateVisualConfig(ready_after_brake="quick")
+    with pytest.raises(ValueError, match="ready_after_brake"):
+        CrateVisualConfig(ready_after_brake="fast")

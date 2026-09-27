@@ -211,7 +211,7 @@
     - [x] 4.7.10.4 （用户选 B：顶层 `images.source`，`run_context.migrate_images` / `evaluation_of` / `require_images`；四份模板改新格式）方案 A：保留 `eval.image_source`，起栈/加载时一次核对上面三条 + render venv；方案 B：挪成 run 级字段（如顶层 `images.source`），eval 渲染方式由它推出，带版本迁移
     - [x] 4.7.10.5 给 `box_platform` 建 Isaac stage 并登记（`scripts/build_isaac_primitive_scene.py`，ISO 20，`source.json` 钉 MJCF）；录像脚本改名 `render_isaac_videos.sh` 并按运行场景取 stage（2026-09-27）
     - [x] 4.7.10.6 冒烟 `box_platform_isaac_smoke_20260927`：采集 5 局 1 成功 → MuJoCo 补渲按来源拒绝 → Isaac 补渲 → convert（单集对齐审计 2 次测量 FAIL，样本太少）→ Isaac 并排录像 → 镜像 50/50、渲染 p50 89 ms、状态年龄 11 ms；warehouse 录像回归像素差 1.5–2.3/255（2026-09-27）
-    - [~] 4.7.10.7 提交（用户 2026-09-27 定分两批）：`images.source`、迁移、录像脚本改名、文档、三份模板已提交推送；`scripts/build_isaac_primitive_scene.py`、`scenes.yaml` 的 box_platform `isaac` 条目、`box_platform_default` / 冒烟实验文件、文档里 box_platform 的 Isaac 提法随 6.9 一起提交（它们依赖扫参会话未提交的 `box_platform_scene.py`）
+    - [x] 4.7.10.7 提交（用户 2026-09-27 定分两批，第二批随 6.9.1）：`images.source`、迁移、录像脚本改名、文档、三份模板已提交推送（`356d806`）；`scripts/build_isaac_primitive_scene.py`、`scenes.yaml` 的 box_platform `isaac` 条目、`box_platform_default` / 冒烟实验文件、文档里 box_platform 的 Isaac 提法随 6.9 一起提交（它们依赖扫参会话未提交的 `box_platform_scene.py`）
 - [~] 4.8 协作者采集仍摔倒：核实用户的猜测"自编 SONIC deploy 二进制没同步到文档"（用户 2026-09-24）
   - [x] 4.8.1 静态核对（2026-09-24）：本机 9 个 deploy 二进制全部从只存在本机的 `lockstep-port` 分支编出（上游 1983e888 + 6 个未推送的本地提交 + 工作树补丁）；setup.md 的做法（clone 上游 main 不钉版本，现为 b042411，再打 4 个补丁）本机从没编过、跑过。文档版缺 SONIC_AUTO_START/`--default-motion`（每个 eval 栈都要，上游静默忽略未知参数）、DDS domain（`sonic_dds_domain.patch` 已打不上上游 main）、planner 初始化超时 10 s（上游 5 s）。已排除：SONIC 权重与 HF 逐字节一致；肩 roll 默认角两边编进去的都是 ±0.2；上游 1983e888 之后的 deploy 改动默认不改行为。MuJoCo 不钉版本，新装会是 3.14（本仓库在 3.11.0 上测）
   - [ ] 4.8.2 向协作者要证据：run 的 `deploy_receipts.jsonl`、上游 commit、`mujoco.__version__`、每局失败字符串和摔倒阶段、是采集还是闭环评测、同时跑几个实例、`scripts/cpu_headroom.sh`、deploy.log 里有没有 `Planner initialization timeout`——2026-09-25 协作者按新 setup 重编后仍 `initial_stance_unstable`；init token 假设已排除（文件已入库，双臂采集不读）；已给出要收的清单（deploy.log、sim.log、manifest、visual log、deploy_receipts、stack_env、mujoco 版本、cpu_headroom）——2026-09-25 本机从零按文档装一遍 30 局零开局失败（4.6.1），文档化的安装本身可排除
@@ -281,4 +281,5 @@
 - [x] 6.6 第 3 步（2026-09-27）：安全范围内所有起点维度同时随机 + quick，4 几何 × 15 局 = 24/60 = 0.40（区间 0.29–0.53），叠加没有再掉；视频 `outputs/videos/box_range_quick_20260927.zip`（24 段）。warehouse 场景怎么落地待用户定
 - [x] 6.7 刹车后 arm preparation 缩短（2026-09-27，见 6.4.4.10/11）：quick 7.9 s 成功率不变，设为默认路径
 - [x] 6.8 双臂抓箱默认版本（用户 2026-09-27）：`configs/experiments/box_platform_default_20260927.yaml` + 场景名 `box_platform`（`outputs/scene/box_platform`），文档 `docs/box_grasp_envelope.md`，README / docs/README / warehouse §8 已索引
-- [ ] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
+- [~] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
+  - [x] 6.9.1 扫参会话代码（12 个旋钮、`sweep.py`、`box_platform_scene.py`、30 个实验文件、两份扫参配置、文档）与 box_platform 的 Isaac stage 一起提交推送（用户 2026-09-27）

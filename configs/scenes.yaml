@@ -31,3 +31,14 @@ warehouse_textured:  # the same room rebuilt from the published pack after 0bf8e
 walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SONIC locomotion; camera walk_follow
   dir: outputs/scene/walk
   build: python -m locomani.tasks.walk.scene outputs/scene/walk
+
+box_platform:  # a 10 cm solid platform on the blue floor with the warehouse carton's contacts (0.45 x 0.32 x 0.60 m, 1 cm walls, 1.2 kg), no room: the scene capability sweep's centre cell and the bimanual box grasp default since 2026-09-27 (docs/box_grasp_envelope.md)
+  dir: outputs/scene/box_platform
+  example: configs/experiments/box_platform_default_20260927.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform --width 0.45 --length 0.32 --height 0.60
+  isaac:  # primitive boxes from the MJCF plus a grey ground (MuJoCo draws none); source.json pins the MJCF it was built from
+    dir: box_platform
+    build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/build_isaac_primitive_scene.py outputs/scene/box_platform
+    # fixed exposure: auto-exposure adapts over frames, so the mirror's on-demand pictures and the dataset's continuous
+    # ones would differ; ISO 20 keeps auto's contrast (ego mean 120 vs 89/255; outputs/renders/box_platform_isaac_check_20260927)
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=20]
