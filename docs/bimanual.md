@@ -93,19 +93,19 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 整条线一条命令跑完，或者一个阶段一个终端，方便中间插手工检查：
 
 ```bash
-bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 1 --line bimanual   # 整条线，无人值守
+bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 0 --line bimanual   # 整条线，无人值守
 # 采集两个终端；起栈脚本两条线共用，按 task.plugin 冻结各自的场景
-bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --gpu 1   # 物流房间纸箱见本节末
-bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 1
+bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --gpu 0   # 物流房间纸箱见本节末
+bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 0
 bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
-bash scripts/train.sh        outputs/runs/my_crate --gpu 1      # 训练
+bash scripts/train.sh        outputs/runs/my_crate --gpu 0      # 训练
 # 开环评测（可选，不起栈）
 bash scripts/open_loop_eval.sh --model-path outputs/runs/my_crate/model/checkpoint-3000 \
   --dataset-path outputs/runs/my_crate/val_dataset --out-dir outputs/runs/my_crate/eval/open_loop
 # 闭环评测：三个终端，和单臂同构；这条线每批重起的是 deploy，不是整个栈
-bash scripts/start_stack.sh eval            outputs/runs/my_crate --gpu 1
-bash scripts/run_vla_server.sh              outputs/runs/my_crate --gpu 1
-bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 1
+bash scripts/start_stack.sh eval            outputs/runs/my_crate --gpu 0
+bash scripts/run_vla_server.sh              outputs/runs/my_crate --gpu 0
+bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 0
 ```
 
 > **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /

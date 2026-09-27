@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 from locomani.pipeline import batches, run_context
@@ -180,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     run_context.require_deploy_patches(cfg)
     # The instance's port block and the scene the sim is showing. The subprocess this used to be
     # was handed exactly this as its whole environment.
-    os.environ.update({k: str(v) for k, v in stack.env.items()})
+    run_context.adopt_stack_env(stack)
     prepare.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
     inputs = inputs_path(run_dir)
     state = batches.resume_state(inputs)  # only finished batches count; an unfinished one reruns

@@ -326,7 +326,20 @@ class Stack:
         with log.open("ab") as f:
             f.write(f"\n===== {name} start {time.strftime('%FT%TZ', time.gmtime())} =====\n".encode())
             f.write(("COMMAND " + json.dumps(argv) + "\n").encode())
-            proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+            # stdin is /dev/null, never the starter's terminal: the deploy's input thread does a
+            # blocking read(STDIN_FILENO) every frame for its keyboard shortcuts, and on a tty that
+            # read waits for a keypress -- so the 'start' command from the agent was never
+            # consumed, the policy never engaged, and every round failed [stand] with the robot
+            # limp on the floor (2026-09-25; only when start_stack.sh ran in an interactive shell).
+            proc = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
         self.pids[name] = proc.pid
         self._procs[name] = proc
         if self._record:

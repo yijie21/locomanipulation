@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 from locomani.pipeline import batches, run_context
@@ -208,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     # The instance's port block and the scene the sim is showing. The subprocess this used to be
     # was handed exactly this as its whole environment; in-process it has to be assigned, before
     # any client is opened and after `privileged_pub` stopped freezing ports at import.
-    os.environ.update({k: str(v) for k, v in stack.env.items()})
+    run_context.adopt_stack_env(stack)
     prepare.prepare(cfg, run_dir)  # idempotent: the stack starter normally got here first
     collect_root.mkdir(parents=True, exist_ok=True)
     prepare.trace_root(run_dir).mkdir(parents=True, exist_ok=True)

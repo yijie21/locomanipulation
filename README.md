@@ -57,16 +57,16 @@ git lfs pull  # 下载新场景的网格、贴图、USD 和 Blender 源文件
 export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 仅原作者机器；新机器按安装第 3 步打补丁后不要这行
 
 # 无人值守跑完整条线：采集 → 转换 → 训练 → 闭环评测
-bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 1
+bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml --gpu 0
 # 或者一个阶段一个终端；采集是两个：起录制栈 / 跑 agent（每个脚本都吃 --dry-run）
-bash scripts/start_stack.sh collect          configs/experiments/bottle_simple_200.yaml --gpu 1
-bash scripts/single_arm/run_agent_server.sh  configs/experiments/bottle_simple_200.yaml --gpu 1
+bash scripts/start_stack.sh collect          configs/experiments/bottle_simple_200.yaml --gpu 0
+bash scripts/single_arm/run_agent_server.sh  configs/experiments/bottle_simple_200.yaml --gpu 0
 bash scripts/convert_data.sh outputs/runs/bottle_simple_200   # 不用卡
-bash scripts/train.sh        outputs/runs/bottle_simple_200 --gpu 1
+bash scripts/train.sh        outputs/runs/bottle_simple_200 --gpu 0
 # 闭环评测三个终端：栈 / 策略服务 / 跑局
-bash scripts/start_stack.sh eval             outputs/runs/bottle_simple_200 --gpu 1
-bash scripts/run_vla_server.sh               outputs/runs/bottle_simple_200 --gpu 1
-bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gpu 1
+bash scripts/start_stack.sh eval             outputs/runs/bottle_simple_200 --gpu 0
+bash scripts/run_vla_server.sh               outputs/runs/bottle_simple_200 --gpu 0
+bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gpu 0
 ```
 
 每个脚本都是十几行 bash、一个 `exec`，直接调功能代码，没有一层套一层；`run_overnight.sh` 是**唯一**

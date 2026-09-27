@@ -232,7 +232,7 @@ def evaluate_run(args):
     )
     # The instance's port block and the scene, before anything opens a client. The subprocess this
     # used to be was handed exactly this as its whole environment; in-process it is assigned.
-    os.environ.update({k: str(v) for k, v in stack.env.items()})
+    run_context.adopt_stack_env(stack)
     run_vla_server.wait_for_server(evaluation.policy_port)
 
     # Fill in what the driver used to pass on a command line, then run the evaluation below.

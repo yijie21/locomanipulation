@@ -99,7 +99,7 @@ diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
 整条线一条命令跑完，或者一个阶段一个终端，方便中间插手工检查：
 
 ```bash
-bash scripts/run_overnight.sh configs/experiments/my_line.yaml --gpu 1   # 整条线，无人值守
+bash scripts/run_overnight.sh configs/experiments/my_line.yaml --gpu 0   # 整条线，无人值守
 # 采集两个终端：起录制栈（起完即退）/ 跑 agent server（专家 + 批次循环 + resume，跑完自己收栈）
 bash scripts/start_stack.sh collect         configs/experiments/my_line.yaml --gpu 0
 bash scripts/single_arm/run_agent_server.sh configs/experiments/my_line.yaml --gpu 0
@@ -109,9 +109,9 @@ bash scripts/train.sh        outputs/runs/my_line --gpu 0      # 训练
 bash scripts/open_loop_eval.sh --model-path outputs/runs/my_line/model/checkpoint-10000 \
   --dataset-path outputs/runs/my_line/val_dataset --out-dir outputs/runs/my_line/eval/open_loop  
 # 闭环评测：三个终端。栈 / 策略服务 / 跑局
-bash scripts/start_stack.sh eval             outputs/runs/my_line --gpu 1
-bash scripts/run_vla_server.sh               outputs/runs/my_line --gpu 1
-bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 1
+bash scripts/start_stack.sh eval             outputs/runs/my_line --gpu 0
+bash scripts/run_vla_server.sh               outputs/runs/my_line --gpu 0
+bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 0
 ```
 
 **命令行只有 6 个参数**，其余一切都在实验文件里：
