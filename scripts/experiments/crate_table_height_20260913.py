@@ -19,6 +19,23 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def placed(root, name):
+    """The body and the element holding its world pose.
+
+    MuJoCo >= 3.14 writes an attached body as <frame pos=...><body/></frame>;
+    older versions folded the frame's pose into the body itself.
+    """
+    for holder in root.find("worldbody"):
+        if holder.tag == "body" and holder.get("name") == name:
+            return holder, holder
+        if holder.tag == "frame":
+            body = holder.find(f"body[@name='{name}']")
+            if body is not None:
+                assert len(holder) == 1 and not body.get("pos") and not body.get("quat")
+                return body, holder
+    raise ValueError(f"no top-level body {name!r}")
+
+
 def prepare(source, destination, height=0.55):
     if not np.isfinite(height) or not 0.04 < height <= 0.62:
         raise ValueError("height must be above the 4 cm tabletop thickness and at most 0.62 m")
@@ -31,15 +48,15 @@ def prepare(source, destination, height=0.55):
     xml = source / "scene_locomani.xml"
     tree = ET.parse(xml)
     root = tree.getroot()
-    body = root.find(f"./worldbody/body[@name='{table['body']}']")
+    body, body_pose = placed(root, table["body"])
     top = body.find(f"geom[@name='{table['body']}_top']")
-    basket = root.find(f"./worldbody/body[@name='{crate['body']}']")
-    assert body.get("pos") == "0 0 0.31"
-    assert not any(body.get(k) for k in ("quat", "euler", "axisangle", "xyaxes", "zaxis"))
+    _, basket = placed(root, crate["body"])
+    assert body_pose.get("pos") == "0 0 0.31"
+    assert not any(body_pose.get(k) for k in ("quat", "euler", "axisangle", "xyaxes", "zaxis"))
     assert np.allclose(np.fromstring(top.get("pos"), sep=" "), [0, 0, 0.29])
     assert float(top.get("size").split()[2]) == 0.02
     assert len(list(body)) == 3 and basket is not None
-    body.set("pos", f"0 0 {height / 2:.15g}")
+    body_pose.set("pos", f"0 0 {height / 2:.15g}")
     top.set("pos", f"0 0 {height / 2 - 0.02:.15g}")
     mesh_names = [g.get("mesh") for g in body.findall("geom") if g.get("mesh")]
     assert len(mesh_names) == 2
