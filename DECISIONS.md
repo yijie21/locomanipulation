@@ -755,3 +755,47 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - lockstep W0 能否复现墙钟成绩；W0 过不了，lockstep 数字不能当现实的替身。
 - 按需渲与连续渲是否同图（4.7.9.8）。
 - 双臂 blocking 循环的补帧（4.7.6.1.2.11）是否先做。
+
+## 2026-09-27/28 文档按外部读者复查；补渲只渲成功局；lockstep + Isaac 评测实现并校准
+
+### 目标与约束的变化
+
+- 用户要求以非本仓库开发者的眼光复查全部文档，起因是 warehouse.md 的 `run_isaac_mirror.sh ... --gpu 1` 没有说明。
+- 用户要求 Isaac 渲染（以及随后的 MuJoCo 补渲）不再渲失败局。
+- 用户要求按调整后的顺序实现 lockstep + Isaac 评测计划"直到完成"，能解决的问题自己解决、解决不了再报告。
+
+### 决策
+
+1. **runbook 里每条命令写清：是什么进程、参数选了什么（为什么要第二张卡）、看到哪行算就绪、怎么停**；多终端流程用终端分工表（warehouse §6.2）。
+   各页反复出现却没人定义的词集中放进 `docs/reference/glossary.md`，各页链接它而不是各写一遍。runbook 行数都顶在 lint 上限，腾地方靠合并折行。
+2. **`render_isaac_videos.sh` 默认只渲成功局**（`run_context.successful_traces` 按判这一局的 manifest：采集读 `manifest_NN.jsonl` 的 `label`，评测读 `closed_loop.manifest.jsonl` 的 `video`），
+   `--all` 全渲、点名 label 只渲那几局。一局 Isaac 约 2 分钟，cap120 那种运行 950 局里 745 局是失败局。
+3. **MuJoCo 补渲 `render_dataset_cameras.sh` 也只渲成功局**（`pending` 一律跳过 `discarded_episode_indices`，去掉 `kept_only` 开关）；
+   同时 converter 拒绝 marker 没列的局（`render_dataset_cameras.unrendered`），否则 `--include-discarded` 会把黑色占位帧静默训进去。
+4. **lockstep 计划的实施顺序改为 W1 → W2 → W0 → W3 → W4 → W5**：W0 要在双臂 lockstep 客户端（W1）上跑，唯一的 checkpoint 用 Isaac 图训练，又要先有 W2。
+5. **双臂评测有两个时钟，`eval.client: blocking | lockstep`**；lockstep 在 `tasks/crate/vla_lockstep.py`，与墙钟共用 `vla_rounds.RoundScore` 判分。
+   局前准备按 tick 计数，第一次 reset 前先站 250 tick（lockstep 坑 4）；每次推理带 `policy.seed`。
+6. **Isaac 图由镜像按冻结时刻的特权状态 `seq` 渲**（`render(seq=)`，最新状态不是它就报错），所以图与本体状态是同一瞬间。冻结的 lockstep sim 每 0.5 s 重发最新状态（同一 seq），
+   否则镜像在栈之后起就永远等不到第一条状态。
+7. **间隙语义是一个开关 `eval.gap: continue | hold`**，墙钟和 lockstep 都用：continue 续走旧块（墙钟由 `GapFeeder` 线程续发），hold 定在最后一帧（2026-09-27 之前的墙钟循环）。
+   W0 的"复刻墙钟"就是 lockstep + `hold` + 墙钟实测跳帧分布，不需要单独的"图晚 95 ms"模式：墙钟里图与本体状态本来就是同一时刻取的，多出来的只是间隙长度。
+8. **目标模型的推理延迟取 L = 2 帧**（墙钟 713 块扣掉 Isaac 渲染后 710 块是 2 帧），相机延迟 C = 0，等部署相机定了再设。
+9. **修掉 lockstep 自 2026-09-02 以来的三处老化**：`lockstep_vendor` 挪进 `locomani/backends/sonic/`（原在 `src/teleop_free`，没人放进路径）；lockstep deploy 不传 `--planner-file`；
+   offline 的 lockstep sim 在服务前就建特权发布器和 episode 服务器（否则起栈与镜像都死锁）。
+10. **校准判据沿用 2026-09-02 的**（McNemar p > 0.05、成功率差 ≤ 8 点、失败构成逐项差 ≤ 10 点）。结果：墙钟 hold 81/100 vs lockstep 复刻 83/100，p = 0.86，逐项差 ≤ 3——**通过**；
+    lockstep 数字可以当作"同一时间模型下墙钟会得到的数字"。目标模型 88/100（对墙钟 p = 0.27），墙钟 continue 83/100（p = 0.85）。
+11. **评测对照用只评测的运行目录副本**（`outputs/lockstep_eval_20260927/make_runs.py`：原运行的 config + 改过的 eval 块 + 指向原 checkpoint 的 train 条目），不动原运行目录。
+
+### 被否决的方案（及原因）
+
+- 为了"同 seed 逐位复现"关掉 MuJoCo 的多重采样（`vis.quality.offsamples = 0`）：评测图就与训练图不同源；且 Isaac 图本来也不逐位确定。接受"时间模型一致、不逐帧复现"。
+- 保留 MuJoCo 补渲的失败局给 `--include-discarded`：那些局 convert 默认不读，白渲；改为 converter 显式拒绝未渲的局。
+- 局前准备直接复用 `LockstepClock.hold_frames`：reset 在 hold 中途开新 session 时它不重新 prime，剩下的 tick 发给未 prime 的 deploy；改为 `Session.stand` 每 10 tick 检查并重新 prime。
+- 用 `until ! pgrep -f "...";` 等上一臂结束再起下一臂：zsh 自己的命令行匹配，永远不退出，下一臂从未启动；改为等栈的状态文件消失的队列脚本。
+- 把墙钟 `gap: continue` 当作改进推广：100 局 83 vs 81 无差别，续发线程抢 GIL 让观测 + 推理从 70 ms 升到 95 ms、新块一半从第 5 帧接入，抵掉了参考连续的好处。保留为默认只因它不让参考定住。
+
+### 未决（不是决策）
+
+- 默认 `eval.client` 是否改成 `lockstep`（TODO 4.7.11.7）；目标模型 88 与复刻 83 之差是"间隙续走"还是"延迟少 2 帧"（4.7.11.6）。
+- 相机延迟 C 取多少，取决于部署硬件。
+- 本次实现未提交（4.7.11.8）。
