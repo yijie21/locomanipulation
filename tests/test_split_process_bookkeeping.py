@@ -42,18 +42,23 @@ def _experiment(name: str) -> dict:
 
 def test_the_bimanual_eval_stack_engages_itself_because_its_rounds_run_clean(tmp_path):
     cfg = _experiment("crate_table30_record.yaml")
-    assert cfg["eval"]["client"] == "blocking"  # the pin that made EvalConfig read it as "not clean"
+    cfg["eval"]["client"] = "blocking"  # the pin that made EvalConfig read it as "not clean"
+    cfg["eval"]["latency_frames"] = None
     spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
-    assert spec.auto_start is True
+    assert spec.auto_start is True and spec.lockstep is False
     assert spec.encoder is False
     assert spec.settings()["SONIC_AUTO_START"] == "1"
     assert spec.default_motion == "neutral_kick_R_001__A543"
+    # the line's own file runs lockstep since 2026-09-28: the same clean start, plus the step server
+    assert run_stack.eval_spec(_experiment("crate_table30_record.yaml"), tmp_path, tmp_path / "scene", "1").lockstep
 
 
 def test_the_single_arm_eval_stack_still_follows_its_client(tmp_path):
     cfg = _experiment("bottle_simple_200.yaml")
     spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
-    assert spec.auto_start is (cfg["eval"].get("client", "async") == "async")
+    client = cfg["eval"].get("client", "async")
+    assert spec.lockstep is (client == "lockstep")
+    assert spec.auto_start is (client in ("async", "lockstep"))
     assert (spec.default_motion is not None) is spec.auto_start
 
 
