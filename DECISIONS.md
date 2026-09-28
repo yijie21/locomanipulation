@@ -907,3 +907,20 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 ### 未决（不是决策）
 - 7.7.1.1：包装 coupled，还是给 simple 加闭合几何旋钮。
 - 7.8.1：IDLE 挪步式小位移 primitive，还是抓取后不做站直回拉。
+
+## 2026-09-28（傍晚）7.7.1.1 / 7.8.1 按用户定的 A 路做完：coupled 已包装，小步 = `nudge`
+
+### 决策
+1. **coupled 策略进 skills 管路**靠三处修补而不是新适配器：`round_phases_approach` 的 `.walking` 用 `getattr`（只有 whole_body / simple 有）、
+   `RecoverableGraspPolicy` / `ReadyGraspPolicy.walk_tick` 收下走近阶段的关键字、`approach` 前置放行 `strategy ∈ {simple, coupled}`。主线的 coupled + visible_expert 本来就会在这三处崩（§4 之后没再跑过）。
+2. **小步走法是定时脉冲 `nudge`**，不是连续命令也不是 waypoint：0.5 s 脉冲从不冲出但单脉冲 0–12 cm，0.7 s 触发整步（掉 2 摔 1）；默认 0.5 s、≤ 6 次、容差 0.05。
+3. **put_down 松手后手指贴壁不判失败**（记 `hand_contact_after_release`）：箱子已静止在台面；`back_m` 0.04 → 0.08。
+4. 掌系滑动容差暴露为 `approach(drift_max)` / `place(palm_drift_max)`，但 0.05 不是解：coupled 的握持在原地转向就滑。
+
+### 被否决的方案（及原因）
+- 为 coupled 写独立适配器：三处修补后原阶段函数直接可用；重复代码通不过 deletion test。
+- 继续调脉冲时长：0.5 与 0.7 之间没有既不整步又能走的区间（量化）。
+
+### 未决（不是决策）
+- 7.7.1.2：coupled 自己的走近站位（§4 的 creep 站位）vs simple 闭合几何旋钮。
+- 7.8.1.1：planner 侧小步（waypoint 输入）vs 抓取后不做站直回拉。

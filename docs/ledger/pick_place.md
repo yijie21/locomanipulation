@@ -193,3 +193,23 @@ TODO 7.7.1。基线 = §8 第三轮 `skills_pickplace_viabasket3_20260928`（`bo
   第一局就在 `_phase_approach` 里抛 `CoupledGraspPolicy has no attribute 'walking'`——skills 的 approach 只包了 `simple` 专家的阶段，coupled 的走近读的是另一套策略字段。
   现在 `approach` 的前置直接拒绝 `reach.strategy != simple` 的 profile（`check: profile`），登记已撤。
 - **7.7.1 到此的状态**：三个 simple 旋钮各 10 局都没动两个失败族；能救罐头的 `coupled` 策略需要单独包装（design §9 第二步"把抓取核心搬进 catalogue"的范围），本会话不做。
+
+## §12 `coupled` 策略经 skills 管路（7.7.1.1 走 A）：包装、10 局、掌系滑动容差（2026-09-28 下午）
+
+包装 = 三处修补：`round_phases_approach` 读 `ctx.coordinated.walking` 改为 `getattr`（只有 whole_body / simple 有），
+`RecoverableGraspPolicy.walk_tick` / `ReadyGraspPolicy.walk_tick` 接受走近阶段传的关键字（`edge_distance` 等，忽略），
+`approach` 前置放行 `reach.strategy ∈ {simple, coupled}`。profile `pick_place_coupled` = `skills_pick_place_20260928.yaml` 的 task 块（§4 的配置）。
+plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–309（与 §8/§11 同）。
+
+| 运行 | 旋钮 | grasp | place（到 place 的局） | 失败 |
+|---|---|---|---|---|
+| `skills_can_coupled_pilot10b_20260928` | — | **5/10** | 2/5 | grasp：`visible expert: stand infeasible, no reposition` ×3（停位深 0.24–0.26 / 横 −0.28…−0.30）、局部对齐扰动 ×1、抬起时翻倒 ×1；持罐走向篮子时**掌系滑 3.2–3.7 cm** ×2（守卫 3 cm）、place carry-over 滑 3.6 cm ×1 |
+| `skills_can_coupled_drift05_pilot10_20260928` | 持物 approach 与 place 的掌系容差 0.03 → 0.05 | **2/10** | 1/2 | grasp：`local alignment disturbed target or base` ×5、抬起 0 m ×1；持罐 approach(basket) **转向中掉罐** ×3（容差放宽后掉在原地 slow_walk 转向里，不是走动里） |
+
+- 管路通了：coupled 抓 → 持罐 approach(basket) → place 两局全程成功（罐头离篮心 1.6 cm）。
+- 两个失败族与 simple 不同：(1) coupled 的 visible 版在停位上更挑（3/10 "stand infeasible"），走近用的是 simple 的守线刹车站位，不是 §4 当时的 creep 站位；
+  (2) coupled 握持的罐头在走动中掌系滑 3.2–3.7 cm，正好压在守卫 3 cm 上（bottle 的 simple 握持 < 1 cm）——容差从此在 `approach(drift_max)` / `place(palm_drift_max)` 里可调，第二行是 0.05 的对照。
+- 容差 0.05 没帮助：同 seed 下 grasp 从 5/10 掉到 2/10（`local alignment disturbed` 取代了 `stand infeasible`——coupled 的抓取对同一站位的逐局差异敏感），
+  到达 place 的两局里 1 局成功；持罐转向时掉罐 3 局说明 coupled 握持在原地 slow_walk 转向下就会滑，放宽阈值只是把失败挪后。
+- **7.7.1.1 到此**：coupled 已包进 skills 管路并能全程跑（2/10、1/10），但它带来的是另外两个失败族（停位挑剔 / 握持在转向中滑），不是罐头的解。
+  两条线各自的失败证据都在 trace 的 `stats` 与 `[tag]` 里；下一步要么给 coupled 单独的走近站位（§4 当时的 creep 站位），要么回到闭合几何旋钮——待用户定。

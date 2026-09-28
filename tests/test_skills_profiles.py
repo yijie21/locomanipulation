@@ -13,6 +13,7 @@ def test_profile_sources_lists_exactly_three_profiles():
         "can_entry15",
         "can_descend05",
         "can_overshoot0",
+        "pick_place_coupled",
     }
 
 

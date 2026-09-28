@@ -507,3 +507,152 @@ class NavigateTo:
         if why is None and watch is not None and not watch.load_ok(s)[0]:
             why = "[carry] load not held at arrival"
         return Outcome(why is None, why or "", duration_s=session.clock() - t0, metrics=metrics)
+
+
+class Nudge:
+    """Move the pelvis a few centimetres with timed SLOW_WALK pulses, facing held, braking and re-measuring between them.
+
+    The v1.1 planner has no centimetre translation: `walk_to` to a 0.15 m goal walks 0.7-1.5 m (2026-09-28, crate ledger)
+    and a slow continuous command moves nothing for a second and then 18 cm (walk_micro_v11_20260923). What is
+    repeatable is a short pulse at 0.35 (0.5-0.6 s: 12-18 cm) followed by a brake, so this primitive pulses toward the
+    residual, brakes to a standstill, measures again, and stops within `tol` or after `max_pulses`. Pulses shorten as
+    the residual shrinks. With a load the `LoadWatch` rule runs on every tick. Defaults from the 2026-09-28 box runs
+    (crate ledger): 0.5 s pulses never overshot (0/9) but deliver 0-12 cm each, 0.7 s pulses triggered full strides
+    (21-77 cm: 2 drops, 1 fall in 11), so 0.5 s with up to 6 pulses and a 5 cm tolerance.
+    """
+
+    name = "nudge"
+    requires = WALKING
+    yields = None
+
+    def __init__(self, palm_offset=None, sleep=None):
+        self._palm_offset = palm_offset or _palm_offset_default()
+        self._sleep = sleep if sleep is not None else _sleep_default
+
+    def preconditions(
+        self,
+        session: Session,
+        *,
+        relative,
+        tol: float = 0.05,
+        speed: float = 0.35,
+        pulse_s: float = 0.5,
+        max_pulses: int = 6,
+        timeout: float = 15.0,
+        drift_max: float = 0.03,
+        contact_gap_s: float = 0.3,
+        lift_floor_m: float = 0.06,
+    ) -> list[Violation]:
+        out = []
+        if len(relative) != 2:
+            out.append(Violation("relative", len(relative), (2, 2), "[forward, left] m in the heading frame"))
+        elif float(np.hypot(*relative)) > NUDGE_MAX:
+            out.append(
+                Violation(
+                    "relative", float(np.hypot(*relative)), (0.0, NUDGE_MAX), "longer moves are walk_to / carry_to"
+                )
+            )
+        if session.held is not None:
+            if session.arm_owner is not ArmOwner.PLANNER_FROZEN:
+                out.append(Violation("held", session.held.key, note="nudge with a load from planner_frozen"))
+            out.extend(load_violations(session))
+        if pulse_s <= 0 or speed <= 0 or max_pulses < 1:
+            out.append(Violation("args", None, note="pulse_s > 0, speed > 0, max_pulses >= 1"))
+        return out
+
+    def run(
+        self,
+        session: Session,
+        *,
+        relative,
+        tol: float = 0.05,
+        speed: float = 0.35,
+        pulse_s: float = 0.5,
+        max_pulses: int = 6,
+        timeout: float = 15.0,
+        drift_max: float = 0.03,
+        contact_gap_s: float = 0.3,
+        lift_floor_m: float = 0.06,
+    ) -> Outcome:
+        from locomani.backends.sonic.agent_server import LocomotionMode
+
+        t0 = session.clock()
+        p = session.stack
+        s0 = p.obs()
+        yaw0 = float(p.pelvis_yaw(s0))
+        start_xy = np.asarray(p.pelvis_xy(s0), dtype=float)
+        target = relative_target(start_xy, yaw0, None, relative)
+        facing = (float(np.cos(yaw0)), float(np.sin(yaw0)), 0.0)
+        session.record.enter("nudge", relative=[float(v) for v in relative])
+        watch = None
+        if session.held is not None:
+            watch = LoadWatch(
+                p,
+                session.held,
+                self._palm_offset,
+                drift_max=drift_max,
+                contact_gap_s=contact_gap_s,
+                lift_floor_m=lift_floor_m,
+            )
+        pulses, why = [], None
+        for k in range(max_pulses):
+            s = p.obs()
+            err = target - np.asarray(p.pelvis_xy(s), dtype=float)
+            d = float(np.linalg.norm(err))
+            if d <= tol:
+                break
+            dur = pulse_s if d >= 0.12 else pulse_s * 0.6  # a shorter pulse for the last few centimetres
+            direction = err / max(d, 1e-6)
+            end = session.clock() + dur
+            while session.clock() < end:
+                s = p.obs()
+                if s.get("fallen"):
+                    why = "[nudge] fell"
+                    break
+                if watch is not None and watch(s, d) is False:
+                    why = watch.why
+                    break
+                p.cmd.frame(
+                    mode=LocomotionMode.SLOW_WALK,
+                    speed=speed,
+                    movement=(direction[0], direction[1], 0.0),
+                    facing=facing,
+                )
+                self._sleep(DT)
+            if why:
+                break
+            still, brake_end = None, session.clock() + 3.0
+            while session.clock() < brake_end:
+                s = p.obs()
+                p.cmd.frame(mode=LocomotionMode.IDLE, facing=facing)
+                v = float(np.linalg.norm(np.asarray(s["pelvis"].get("vel", (0.0, 0.0))[:2], dtype=float)))
+                still = (still or session.clock()) if v < 0.06 else None
+                if still is not None and session.clock() - still >= 0.25:
+                    break
+                self._sleep(DT)
+            d_after = float(np.linalg.norm(target - np.asarray(p.pelvis_xy(p.obs()), dtype=float)))
+            pulses.append([k, round(dur, 2), round(d, 3), round(d_after, 3)])
+            if session.clock() - t0 > timeout:
+                why = "[nudge] timed out"
+                break
+        s = p.obs()
+        session.stance = None
+        final = float(np.linalg.norm(target - np.asarray(p.pelvis_xy(s), dtype=float)))
+        metrics = dict(pulses=pulses, final_error_m=final, yaw_drift_rad=_wrap(float(p.pelvis_yaw(s)) - yaw0))
+        if watch is not None:
+            metrics.update(watch.metrics())
+        if why is None and watch is not None and not watch.load_ok(s)[0]:
+            why = "[carry] load not held at arrival"
+        if why is None and final > tol:
+            why = f"[nudge] {final * 100:.1f} cm off after {len(pulses)} pulses"
+        return Outcome(why is None, why or "", duration_s=session.clock() - t0, metrics=metrics)
+
+
+NUDGE_MAX = 0.40  # m; a nudge is a stance correction, not a walk
+DT = 0.02
+
+
+def _sleep_default(seconds: float) -> None:
+    import time
+
+    time.sleep(seconds)

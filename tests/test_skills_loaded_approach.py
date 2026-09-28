@@ -84,7 +84,7 @@ class Carry:
     def __init__(self, stack, ok=True, drift=(0.0, 0.0)):
         self.stack, self.ok, self.asked, self.drift, self.relatives = stack, ok, None, np.asarray(drift, float), []
 
-    def run(self, session, *, xy=None, relative=None, stop_dist=0.08, timeout=30.0, turn_first=True):
+    def run(self, session, *, xy=None, relative=None, stop_dist=0.08, timeout=30.0, turn_first=True, drift_max=0.03):
         if relative is not None:  # a correction: move in the current heading frame, exactly
             self.relatives.append((list(relative), turn_first))
             c, sn = np.cos(self.stack.yaw), np.sin(self.stack.yaw)
@@ -178,10 +178,10 @@ def test_approach_refuses_a_profile_whose_strategy_is_not_wrapped():
     from locomani.skills.catalogue import build_catalogue
 
     profiles = load_profiles()
-    coupled = NS(hands="single", config=NS(reach=NS(strategy="coupled")))
+    coupled = NS(hands="single", config=NS(reach=NS(strategy="image_servo")))
     stack = Stack()
     s = Session(stack=stack, scene=SceneModel(META), arm_owner=ArmOwner.PLANNER_SWING, heading=0.0)
     approach = BottleApproach({**profiles, "coupled": coupled}, carry=Carry(stack), stand=stand_for_basket)
     ex = Executor(s, build_catalogue(profiles={**profiles, "coupled": coupled}, approach_single=approach))
     entry = ex.step("approach", {"target": "soup_can", "profile": "coupled"})
-    assert entry["rejected"][0]["check"] == "profile" and "only simple" in entry["rejected"][0]["note"]
+    assert entry["rejected"][0]["check"] == "profile" and "wrapped are" in entry["rejected"][0]["note"]

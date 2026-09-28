@@ -262,7 +262,7 @@ def _phase_approach(ctx: RoundContext):
 
         def request_stop(state, reason, observation_wall_time):
             nonlocal brake_x, brake_e, trace
-            walk = None if ctx.coordinated is None else ctx.coordinated.walking
+            walk = getattr(ctx.coordinated, "walking", None)  # only the whole-body / simple experts walk with a plan
             idle_call_monotonic_before_s = time.monotonic()
             idle_call_wall_before_s = time.time()
             p.cmd.frame(mode=LocomotionMode.IDLE, facing=ctx.fv)
@@ -327,7 +327,9 @@ def _phase_approach(ctx: RoundContext):
             reachable = rm.margin(rel, "right", cap=MARGIN_STOP + 0.01) >= MARGIN_STOP
             selected_stop_edge = ctx.reach_config.visible_brake_edge
             if VISIBLE:
-                walk = None if ctx.coordinated is None else ctx.coordinated.walking
+                walk = getattr(
+                    ctx.coordinated, "walking", None
+                )  # only the whole-body / simple experts walk with a plan
                 if walk is not None and walk.chosen_stop_edge is not None:
                     selected_stop_edge = walk.chosen_stop_edge
                 visible_depth, _ = _visible_depth_measurement(ctx, state, rel)
@@ -410,7 +412,9 @@ def _phase_approach(ctx: RoundContext):
             if guard is not None:
                 mv, speed = guard.direction(p.pelvis_xy(state), aim_xy, ctx.fv), guard.walk_speed
             elif VISIBLE and ctx.reach_config.visible_decel_band > 0:
-                walk = None if ctx.coordinated is None else ctx.coordinated.walking
+                walk = getattr(
+                    ctx.coordinated, "walking", None
+                )  # only the whole-body / simple experts walk with a plan
                 speed = _visible_command_speed(
                     control_depth,
                     edge_now,

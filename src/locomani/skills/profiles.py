@@ -194,6 +194,8 @@ PROFILE_SOURCES: dict[str, tuple[str, str]] = {
     "can_entry15": ("experiment", "configs/experiments/skills_can_entry15_20260928.yaml"),
     "can_descend05": ("experiment", "configs/experiments/skills_can_descend05_20260928.yaml"),
     "can_overshoot0": ("experiment", "configs/experiments/skills_can_overshoot0_20260928.yaml"),
+    # the pick_place line's own task block (coupled strategy, ledger §4 10/10) as a profile for the same can
+    "pick_place_coupled": ("experiment", "configs/experiments/skills_pick_place_20260928.yaml"),
 }
 
 

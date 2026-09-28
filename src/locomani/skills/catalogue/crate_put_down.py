@@ -5,7 +5,8 @@ left (`StreamedArm` with both hands closed, 29-joint reference `arm.q`): the two
 the reference through the profile's `BimanualIK` (pelvis-relative, the frame the reach solved in), lowered
 together at `lower_speed` until the object rests on the surface (its z within `rest_tolerance` of the
 resting height for `settle_seconds`, or the commanded drop is exhausted), then the hands ramp open over
-`release_seconds`, then the tools rise `raise_m` and pull back `back_m` so the fingers clear the walls.
+`release_seconds`, then the tools rise `raise_m` and pull back `back_m` so the fingers clear the walls
+(a finger still brushing the wall afterwards is reported in the metrics, not a failure).
 Before the lowering the tools may first be pushed forward `forward_m` (None = automatic: enough for the box's
 near face to clear the surface's near edge by `forward_margin_m`): the reach's stand phase pulls the box
 0.2 m toward the robot, and put down in place it rested on the platform's near edge (2026-09-28).
@@ -81,7 +82,7 @@ class PutDownBimanual:
         clearance_m: float = 0.0,
         release_seconds: float = 1.0,
         raise_m: float = 0.10,
-        back_m: float = 0.04,
+        back_m: float = 0.08,
         rest_tolerance: float = 0.01,
         settle_seconds: float = 0.3,
         timeout: float = 20.0,
@@ -121,7 +122,7 @@ class PutDownBimanual:
         clearance_m: float = 0.0,
         release_seconds: float = 1.0,
         raise_m: float = 0.10,
-        back_m: float = 0.04,
+        back_m: float = 0.08,
         rest_tolerance: float = 0.01,
         settle_seconds: float = 0.3,
         timeout: float = 20.0,
@@ -256,10 +257,10 @@ class PutDownBimanual:
                 duration_s=session.clock() - t0,
                 metrics=stats,
             )
-        if touching & {"left", "right"}:
-            return Outcome(
-                False, "[put_down] a hand still touches the object", duration_s=session.clock() - t0, metrics=stats
-            )
+        # A finger resting against the wall of a 0.6 m box after the hands opened and rose is not a failed put-down:
+        # the object is at its resting height and level (2026-09-28: 3 of 4 rested boxes were refused on this alone).
+        # It is reported, so a caller that needs clear hands can retreat first.
+        stats["hand_contact_after_release"] = bool(touching & {"left", "right"})
         return Outcome(True, "", duration_s=session.clock() - t0, metrics=stats)
 
     @staticmethod

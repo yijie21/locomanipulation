@@ -37,7 +37,9 @@ class RecoverableGraspPolicy(ReadyGraspPolicy):
             attempts=[], max_attempts=self.config.recovery_attempts, budget_s=self.config.recovery_timeout
         )
 
-    def walk_tick(self, state):
+    def walk_tick(
+        self, state, **_navigation
+    ):  # the approach phase passes the simple expert's walk context; unused here
         return self._push(state, retracted_q() if self.retracted else ready_q())
 
     def expired(self):

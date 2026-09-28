@@ -104,7 +104,7 @@ def palm_offset_of(stack):
 
 
 def session(stack, owner=ArmOwner.PLANNER_FROZEN, held=True):
-    s = Session(stack=stack, scene=None, arm_owner=owner, heading=0.0)
+    s = Session(stack=stack, scene=None, arm_owner=owner, heading=0.0, clock=lambda: stack.t)  # the fake's clock
     if held:
         s.held = HeldObject("water_bottle", ("right",), {"right": np.zeros(3)}, start_z=0.8)
         s.hands["right"] = 1.0
@@ -208,3 +208,64 @@ def test_load_watch_rules():
     state["t"] = 0.5
     assert bim(state, 0.8) is False and bim.why == "[carry] load dropped"
     assert bim.metrics()["min_load_z"] == pytest.approx(0.5)
+
+
+class PulseStack(WalkStack):
+    """SLOW_WALK frames move the pelvis `gain` m per frame along `movement`; IDLE frames stop it."""
+
+    def __init__(self, gain=0.007, **kw):
+        super().__init__(**kw)
+        self.gain, self.frames = gain, []
+        self.vel = np.zeros(2)
+        self.cmd = SimpleNamespace(frame=self.frame)
+
+    def frame(self, mode=None, movement=(0, 0, 0), facing=(1, 0, 0), speed=-1.0, **kw):
+        self.frames.append((getattr(mode, "name", mode), tuple(np.round(movement[:2], 3)), speed))
+        self.t += 0.02
+        if getattr(mode, "name", mode) == "SLOW_WALK":
+            self.pos = self.pos + self.gain * np.asarray(movement[:2], dtype=float)
+            self.vel = self.gain / 0.02 * np.asarray(movement[:2], dtype=float)
+        else:
+            self.vel = np.zeros(2)
+
+    def state(self):
+        s = super().state()
+        s["pelvis"]["vel"] = [*self.vel, 0.0]
+        return s
+
+
+def nudge_catalogue(stack):
+    from locomani.skills.catalogue.locomotion import Nudge
+
+    palm = palm_offset_of(stack)
+    return build_catalogue(profiles={}, nudge=Nudge(palm_offset=palm, sleep=lambda _s: None))
+
+
+def test_nudge_pulses_and_brakes_to_the_target():
+    stack = PulseStack()
+    s = session(stack, owner=ArmOwner.PLANNER_SWING, held=False)
+    entry = Executor(s, nudge_catalogue(stack)).step("nudge", {"relative": [0.15, 0.0], "tol": 0.04})
+    assert entry["outcome"]["ok"], entry
+    m = entry["outcome"]["metrics"]
+    assert m["final_error_m"] <= 0.04 and 1 <= len(m["pulses"]) <= 6 and m["pulses"][0][1] == 0.5
+    modes = [f[0] for f in stack.frames]
+    assert "SLOW_WALK" in modes and modes[-1] == "IDLE"  # every pulse ends in a brake
+    assert all(f[2] == 0.35 for f in stack.frames if f[0] == "SLOW_WALK") and s.stance is None
+
+
+def test_nudge_with_a_load_keeps_the_watch_and_refuses_long_moves():
+    stack = PulseStack()
+    s = session(stack)
+    entry = Executor(s, nudge_catalogue(stack)).step("nudge", {"relative": [0.0, -0.10]})
+    assert entry["outcome"]["ok"] and entry["outcome"]["metrics"]["max_drift_m"] == 0.0
+    entry = Executor(session(stack), nudge_catalogue(stack)).step("nudge", {"relative": [0.6, 0.0]})
+    assert entry["rejected"][0]["check"] == "relative"
+    entry = Executor(session(stack, owner=ArmOwner.PLANNER_SWING), nudge_catalogue(stack)).step(
+        "nudge", {"relative": [0.1, 0.0]}
+    )
+    assert entry["rejected"][0]["check"] == "held"
+    stuck = PulseStack(gain=0.0)  # the planner does not move: report the residual, do not claim arrival
+    entry = Executor(session(stuck, held=False), nudge_catalogue(stuck)).step(
+        "nudge", {"relative": [0.15, 0.0], "max_pulses": 2}
+    )
+    assert not entry["outcome"]["ok"] and entry["outcome"]["reason"].startswith("[nudge] 15.0 cm off after 2 pulses")

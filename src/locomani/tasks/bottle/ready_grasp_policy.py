@@ -251,7 +251,9 @@ class ReadyGraspPolicy:
         self.arm.q = checked
         return True
 
-    def walk_tick(self, state):
+    def walk_tick(
+        self, state, **_navigation
+    ):  # the approach phase passes the simple expert's walk context; unused here
         return self._push(state, ready_q())
 
     def finish(self, *, grip_world, squat_hint, ghost):

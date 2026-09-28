@@ -26,6 +26,7 @@ from locomani.skills.contract import Outcome, Violation
 from locomani.skills.session import ArmOwner, HeldObject, Session, Stance, needs_heading, stance_violations
 
 TURN_TOL = 0.16  # the spawn phase's tolerance for facing the table normal
+WRAPPED_STRATEGIES = frozenset({"simple", "coupled"})  # bottle strategies the approach/grasp adapters have run live
 CORRECT_TOL = 0.05  # loaded approach: residual (m) between the target's pelvis-frame position and the aimed one
 
 
@@ -163,16 +164,20 @@ class BottleApproach:
             from locomani.tasks.bottle.ready_grasp_policy import prepare_ready
         self._phases, self._prepare_ready = phases, prepare_ready
 
-    def preconditions(self, session: Session, *, target: str, profile: str) -> list[Violation]:
+    def preconditions(self, session: Session, *, target: str, profile: str, drift_max: float = 0.03) -> list[Violation]:
         out = []
         prof = self._profiles.get(profile)
         if prof is None or prof.hands != "single":
             out.append(Violation("profile", profile, note="single-arm approach needs a single-hand profile"))
-        elif getattr(prof.config.reach, "strategy", "simple") != "simple":
-            # the adapters wrap the simple expert's phases; the coupled strategy's walk reads policy fields
-            # (`walking`) the guard walk does not have (pick_place ledger §11, 2026-09-28)
+        elif getattr(prof.config.reach, "strategy", "simple") not in WRAPPED_STRATEGIES:
+            # the adapters run the round's navigate/approach phases and `execute_grasp`; these two strategies
+            # are the ones measured through them (pick_place ledger §11-12, 2026-09-28)
             out.append(
-                Violation("profile", profile, note=f"strategy {prof.config.reach.strategy!r}: only simple is wrapped")
+                Violation(
+                    "profile",
+                    profile,
+                    note=f"strategy {prof.config.reach.strategy!r}: wrapped are {sorted(WRAPPED_STRATEGIES)}",
+                )
             )
         if target not in session.scene.objects:
             out.append(Violation("target", target, note=f"known: {sorted(session.scene.objects)}"))
@@ -189,9 +194,9 @@ class BottleApproach:
                 out.append(v)
         return out
 
-    def run(self, session: Session, *, target: str, profile: str) -> Outcome:
+    def run(self, session: Session, *, target: str, profile: str, drift_max: float = 0.03) -> Outcome:
         if session.held is not None:
-            return self._loaded(session, target=target, profile=profile)
+            return self._loaded(session, target=target, profile=profile, drift_max=drift_max)
         t0 = session.clock()
         p = session.stack
         ctx = self._context(session, self._profiles[profile], target)
@@ -238,7 +243,7 @@ class BottleApproach:
         metrics = {"park": session.record.metrics.get("park"), "first_stop": session.record.metrics.get("first_stop")}
         return Outcome(True, "", duration_s=session.clock() - t0, metrics=metrics, produced=stance)
 
-    def _loaded(self, session: Session, *, target: str, profile: str) -> Outcome:
+    def _loaded(self, session: Session, *, target: str, profile: str, drift_max: float = 0.03) -> Outcome:
         """Carry the load to the target's planned stand, face the table normal, write the stance."""
         t0 = session.clock()
         p, meta, cfg = session.stack, session.scene.meta, self._profiles[profile].config
@@ -260,7 +265,7 @@ class BottleApproach:
             c, sn = np.cos(psi), np.sin(psi)
             stand = obj_xy - np.array([c * want[0] - sn * want[1], sn * want[0] + c * want[1]])
         session.record.enter("approach.carry", target=target, stand=stand.tolist(), psi=float(psi))
-        out = self._carry.run(session, xy=stand, stop_dist=0.06, timeout=30.0)
+        out = self._carry.run(session, xy=stand, stop_dist=0.06, timeout=30.0, drift_max=drift_max)
         if not out.ok:
             return Outcome(
                 False,
@@ -268,7 +273,7 @@ class BottleApproach:
                 duration_s=session.clock() - t0,
                 metrics=out.metrics,
             )
-        watch = LoadWatch(p, session.held, self._carry._palm_offset)
+        watch = LoadWatch(p, session.held, self._carry._palm_offset, drift_max=drift_max)
         state = p.obs()
         if abs(_wrap(p.pelvis_yaw(state) - psi)) > TURN_TOL:
             session.record.enter("approach.face", psi=float(psi))
@@ -293,6 +298,7 @@ class BottleApproach:
                 stop_dist=0.04,
                 timeout=10.0,
                 turn_first=False,
+                drift_max=drift_max,
             )
             corrections.append([residual.round(3).tolist(), bool(out.ok)])
             if not out.ok:
@@ -425,7 +431,9 @@ class Place:
             from locomani.tasks.bottle.place_phase import _phase_place as place
         self._place, self._arm_factory = place, arm_factory or _planner_arm
 
-    def preconditions(self, session: Session, *, container: str, profile: str, side: str = "right") -> list[Violation]:
+    def preconditions(
+        self, session: Session, *, container: str, profile: str, side: str = "right", palm_drift_max: float = 0.03
+    ) -> list[Violation]:
         out = []
         prof = self._profiles.get(profile)
         if prof is None or prof.hands != "single":
@@ -443,7 +451,9 @@ class Place:
             out.append(Violation("view", None, note="container not in the ego view"))
         return out
 
-    def run(self, session: Session, *, container: str, profile: str, side: str = "right") -> Outcome:
+    def run(
+        self, session: Session, *, container: str, profile: str, side: str = "right", palm_drift_max: float = 0.03
+    ) -> Outcome:
         t0 = session.clock()
         p, meta, cfg = session.stack, session.scene.meta, self._profiles[profile].config
         key = session.held.key
@@ -458,7 +468,7 @@ class Place:
             surf_a=meta["surfaces"][meta["objects"][container].get("surface", "A")],
             meta=meta,
             execution=session.record,
-            palm_drift_max=0.03,
+            palm_drift_max=float(palm_drift_max),
             coordinated=SimpleNamespace(arm=arm),
         )
         session.arm = arm

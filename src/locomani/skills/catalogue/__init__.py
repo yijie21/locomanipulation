@@ -13,7 +13,7 @@ from locomani.skills.catalogue.arms import HandBack, Ready, Release, TakeOver
 from locomani.skills.catalogue.bottle import BottleApproach, GraspSingle, Place
 from locomani.skills.catalogue.crate import CrateApproach, GraspBimanual
 from locomani.skills.catalogue.crate_put_down import PutDownBimanual
-from locomani.skills.catalogue.locomotion import CarryTo, NavigateTo, Retreat, TurnTo, WalkTo
+from locomani.skills.catalogue.locomotion import CarryTo, NavigateTo, Nudge, Retreat, TurnTo, WalkTo
 from locomani.skills.catalogue.pending import PENDING, Unimplemented, pending_entries
 from locomani.skills.contract import Violation
 from locomani.skills.session import ArmOwner
@@ -33,6 +33,7 @@ RUNNABLE = (
     "carry_to",
     "navigate_to",
     "put_down_bimanual",
+    "nudge",
 )
 
 
@@ -52,14 +53,23 @@ class Approach:
             return None
         return self._single if prof.hands == "single" else self._bimanual
 
-    def preconditions(self, session, *, target: str, profile: str):
+    def preconditions(self, session, *, target: str, profile: str, drift_max: float = 0.03):
         impl = self._pick(profile)
         if impl is None:
             return [Violation("profile", profile, note=f"known: {sorted(self._profiles)}")]
-        return impl.preconditions(session, target=target, profile=profile)
+        extra = {"drift_max": drift_max} if _accepts(impl, "drift_max") else {}
+        return impl.preconditions(session, target=target, profile=profile, **extra)
 
-    def run(self, session, *, target: str, profile: str):
-        return self._pick(profile).run(session, target=target, profile=profile)
+    def run(self, session, *, target: str, profile: str, drift_max: float = 0.03):
+        impl = self._pick(profile)
+        extra = {"drift_max": drift_max} if _accepts(impl, "drift_max") else {}
+        return impl.run(session, target=target, profile=profile, **extra)
+
+
+def _accepts(prim, arg: str) -> bool:
+    import inspect
+
+    return arg in inspect.signature(prim.run).parameters
 
 
 def build_catalogue(profiles: dict | None = None, **overrides) -> dict:
@@ -88,6 +98,7 @@ def build_catalogue(profiles: dict | None = None, **overrides) -> dict:
         "carry_to": CarryTo(),
         "navigate_to": NavigateTo(),
         "put_down_bimanual": PutDownBimanual(profiles),
+        "nudge": Nudge(),
     }
     entries.update(pending)
     entries.update(overrides)
@@ -105,6 +116,7 @@ __all__ = [
     "GraspSingle",
     "HandBack",
     "NavigateTo",
+    "Nudge",
     "Place",
     "PutDownBimanual",
     "Ready",
