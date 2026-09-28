@@ -545,6 +545,25 @@ def _is_resample_ripple(prof: dict, peak: int) -> bool:
     return prof[peak] / mirror < RIPPLE_ASYMMETRY
 
 
+# Below this many wrist-camera measurements the majority test cannot tell jitter from delay: the off-zero
+# minority is episode-scoped (one episode's camera latency moves both of its wrist measurements), so two
+# episodes -- the smoke runs' training sets -- fail it whenever one of them jitters by a frame (2026-09-28,
+# crate_smoke: {-1: 1, 0: 2, 1: 1}). A genuine delay still shows there: the 3- and 5-frame injections moved
+# the median to the shift and left at most 2.5% at lag 0.
+MAJORITY_MIN = 10
+
+
+def video_aligned(lags) -> bool:
+    """The wrist cameras show the table's motion at lag 0: a majority at 0 with median 0 (few: |median| <= 1, one at 0)."""
+    if not lags:
+        return False
+    lags = np.asarray(lags)
+    med, at_zero = float(np.median(lags)), float(np.mean(lags == 0))
+    if len(lags) < MAJORITY_MIN:
+        return bool(abs(med) <= 1 and at_zero > 0)
+    return bool(med == 0 and at_zero > 0.5)
+
+
 def pass_alignment(root, info, eps, r, n_eps):
     """Measure the video/table lag, and the action/state lag."""
     print("\n[4/4] alignment")
@@ -608,10 +627,11 @@ def pass_alignment(root, info, eps, r, n_eps):
     # the report, which is why the outliers are listed rather than summarised
     # into a pass.
     r.check(
-        bool(med == 0 and at_zero > 0.5),
+        video_aligned(lags),
         f"video vs table: {len(lags)} wrist-camera measurements, "
         f"{at_zero * 100:.0f}% at lag 0 (median {med:+.0f}), "
-        f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}",
+        f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}"
+        + ("" if len(lags) >= MAJORITY_MIN else f" (fewer than {MAJORITY_MIN}: judged on the median alone)"),
     )
     off = [(ep, cam, lag) for (ep, cam), lag in zip(pairs, lags) if lag != 0]
     if off:
