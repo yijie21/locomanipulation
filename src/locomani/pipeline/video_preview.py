@@ -20,7 +20,9 @@ from pathlib import Path
 
 CAP = 500_000  # bytes, AGENTS.md hard cap
 CRFS = (32, 34, 36, 38)  # past 38 the carton print in a 1280-wide side-by-side stops being legible; split instead
-MAX_PARTS = 8
+# 16: a closed-loop round that runs its whole budget renders ~99 s of side-by-side with insets, which took 11 parts
+# of ~9 s (179-454 KB each, warehouse_smoke 2026-09-28); 8 failed every such round. Past 16 parts, lower the width.
+MAX_PARTS = 16
 
 
 def probe(path: Path) -> tuple[float, int, float]:
