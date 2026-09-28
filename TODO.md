@@ -356,6 +356,6 @@
 - [x] 9.5 三条线的冒烟按新 runbook 真跑一遍，把用时、产物、日志字样填进 runbook（2026-09-28；记录 `outputs/docs_smoke_20260928/`）：bottle 12 分钟、crate 8 分钟、warehouse 40 分钟（含 14 分钟评测录像），三条闭环都是 lockstep 0/2
   - [x] 9.5.1 冒烟抓出并修掉的问题：小数据集的视频对齐检查误判（`check_dataset`，`ffc3806`）；bottle 策略端口 5590 撞实例 1 的端口（改 5710，`ffc3806`）；单臂评测的 encoder 检查看全机的 deploy（`d290a36`）；评测结束后每局重启过的 deploy 成了孤儿进程（`Stack.down`，`a29924b`）；`crate_eval` 产物契约从没对过真运行（`7041ef0`）；长局的预览切不进 8 段（上限改 16）
 - [x] 9.6 重写 README（文档清单）、三份 runbook（只写命令、做什么、得到什么）、新建 `docs/running.md` 和 `docs/warehouse_design.md`、`setup.md` 改成"命令 + 做什么 + 验证"且命令逐条不变、`docs/README.md` 改为历史与开发者索引、规则移到 `docs/agents/doc-ownership.md`、`ROADMAP.md` 归档、`reference/runbook.md` 并入 `running.md`；失效链接全修（2026-09-28）
-- [ ] 9.7 推送：等用户看过新文档
+- [x] 9.7 推送（用户 2026-09-28）：merge 了 henry-zhao 的两个提交（`--backbone-path` 移到 `running.md`），`4a3c0f3` 已推到 origin/main
 - [ ] 9.8 下一轮（等用户认可新 runbook 的写法）：详解页、`rendering.md`、`scalebfm.md` 按同样的写法重写
 

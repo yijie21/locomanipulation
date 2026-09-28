@@ -1,6 +1,6 @@
 # STATE — 2026-09-28（会话：文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep；三条线冒烟实跑）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`。远端停在 `f5cbee3`；本地的提交都没推送（TODO 9.7，等用户看过新文档）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 origin/main（`4a3c0f3`，含 henry-zhao 的两个提交的 merge）。
 没有运行中的栈、渲染或镜像。另一个检出目录 `locomanipulation-loco_agent`（`outputs/`、`third_party/` 是指向本仓库的软链接）的会话会在实例 1、GPU 1 上起栈，起本仓库的栈前先查实例锁和 `pids.current`。
 
 ## 这次做了什么（TODO 第 9 节；DECISIONS 2026-09-28 最后一节）
@@ -20,7 +20,7 @@
 ## 待验证 / 卡点
 
 - 未验证：bottle 的 lockstep 和墙钟对照（单臂实现 09-02 校准未过；TODO 9.3），要等下一个 bottle checkpoint。
-- 待用户：看新文档；认可后推送（9.7），再按同样写法重写详解页、`rendering.md`、`scalebfm.md`（9.8）。
+- 待用户：看新文档；认可后按同样写法重写详解页、`rendering.md`、`scalebfm.md`（9.8）。
 - 上一会话留下：四边线 compact 采集（TODO 8.6.4）仍待用户定两个问题；新 stage 下 checkpoint-5000 的 Isaac 评测是否偏离 81/83/88（TODO 7.2）。
 
 ## 关键命令
@@ -30,5 +30,5 @@ cd /workspace/code/locomanipulation && . scripts/paths.sh
 cat /sys/fs/cgroup/pids.current; timeout 30 bash scripts/cpu_headroom.sh 8; nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
 bash outputs/docs_smoke_20260928/smoke_line.sh crate_smoke bimanual        # 一条线的冒烟（第三个参数给 Isaac 的卡）；FROM=eval 只重跑评测
 python3 scripts/artifact_contract.py check outputs/runs/<run> crate_eval   # bottle_eval / crate_collect / ...
-# 提交：make check → 按文件名 add（不要 -A）→ git commit -- <文件> → fetch 确认远端无新提交 → push（等用户说）
+# 提交：make check → 按文件名 add（不要 -A）→ git commit -- <文件> → fetch；远端有新提交就 merge（不 rebase，TODO 里记着提交哈希）→ push
 ```
