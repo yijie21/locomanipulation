@@ -3,16 +3,29 @@
 # A name, once given, never points at a different directory: a run's config.yaml keeps the NAME, and
 # a later stage re-resolves it through this file. A rebuilt or changed scene gets a new name.
 # `scene: {dir: ...}` still works for a directory without a name. `example` is an experiment that uses
-# the scene; `build` is how to make it when no experiment does yet. `isaac` (optional) names the scene's
-# Isaac stage; only a scene that has one can run with `images.source: isaac` (training and evaluation images).
+# the scene; `build` is how to make it, run by `bash scripts/build_scene.sh <name>` from the repository root with
+# scripts/paths.sh sourced ($VENV_SIM_PY; $USD_PY is a python with `pxr`). `isaac` (optional) names the scene's
+# Isaac stage, built by `build_scene.sh <name> --isaac`; only a scene that has one can run with
+# `images.source: isaac` (training and evaluation images).
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
   dir: outputs/scene/sim_lowcom
   example: configs/experiments/bottle_simple_200.yaml
+  # outputs/scene/sim from the shipped pack with the bottle-only table, then the copy with the bottle's centre of
+  # mass 5 cm lower that the bottle line runs
+  build: >-
+    SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom
+    --preset bottle_only --harden-pads --object-com-drop 0.05
 
 crate:  # the same blue floor, both arms, a crate on a table
   dir: outputs/scene/crate_table30_depth04
-  example: configs/experiments/crate_env2_so45.yaml
+  example: configs/experiments/crate_table30_record.yaml
+  # the crate 4 cm further back on the table (XML and reset metadata both), then the table lowered to 0.30 m
+  build: >-
+    "$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual_depth04 --crate-setback 0.04 &&
+    "$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py
+    outputs/scene/crate_bimanual_depth04 outputs/scene/crate_table30_depth04 --height 0.30
 
 warehouse:  # the scanned logistics room, both arms, a cardboard box; new runs use warehouse_textured (the 2026-09-24 grasp baseline)
   dir: outputs/box_rim_execution_20260920/scene_reverse_camera
@@ -24,13 +37,13 @@ warehouse_textured:  # the same room rebuilt from the published pack after 0bf8e
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured
   isaac:  # its Isaac stage and the look every Isaac render of it applies (render_isaac_videos.sh, the dataset re-render, the eval mirror)
     dir: warehouse_textured  # under $ISAAC_ASSETS/scene
-    build: python3 scripts/build_isaac_warehouse_scene.py
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py
     # auto-exposure off, film ISO 30: with it on the robot's 0.2 greys rendered 108/255 (docs/rendering.md, warehouse)
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
 
 walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SONIC locomotion; camera walk_follow
   dir: outputs/scene/walk
-  build: python -m locomani.tasks.walk.scene outputs/scene/walk
+  build: $VENV_SIM_PY -m locomani.tasks.walk.scene outputs/scene/walk
 
 box_platform:  # a 10 cm solid platform on the blue floor with the warehouse carton's contacts (0.45 x 0.32 x 0.60 m, 1 cm walls, 1.2 kg), no room: the scene capability sweep's centre cell and the bimanual box grasp default since 2026-09-27 (docs/box_grasp_envelope.md)
   dir: outputs/scene/box_platform
@@ -55,7 +68,7 @@ warehouse_box_45x32x33:  # the room's own carton size
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33 --width 0.45 --length 0.32 --height 0.33
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: the warehouse_textured look (its isaac entry)
     dir: warehouse_box_45x32x33
-    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
 
 warehouse_box_45x20x33:
@@ -64,7 +77,7 @@ warehouse_box_45x20x33:
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x33 --width 0.45 --length 0.20 --height 0.33
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
     dir: warehouse_box_45x20x33
-    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
 
 warehouse_box_45x32x18:
@@ -73,7 +86,7 @@ warehouse_box_45x32x18:
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x18 --width 0.45 --length 0.32 --height 0.18
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
     dir: warehouse_box_45x32x18
-    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
 
 warehouse_box_45x20x18:
@@ -82,5 +95,5 @@ warehouse_box_45x20x18:
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x18 --width 0.45 --length 0.20 --height 0.18
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
     dir: warehouse_box_45x20x18
-    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]

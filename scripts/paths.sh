@@ -21,6 +21,13 @@ unset _lm_self
 
 export LOCOMANI_WORKSPACE="${LOCOMANI_WORKSPACE:-/workspace}"
 
+# This machine's own settings, kept out of Git (e.g. a SONIC_DEPLOY_ROOT that points at a deploy
+# built elsewhere). Read before the defaults below so what it sets wins; a fresh clone has none.
+if [ -f "$LOCOMANI_WORKSPACE/locomani.local.sh" ]; then
+    # shellcheck disable=SC1091
+    . "$LOCOMANI_WORKSPACE/locomani.local.sh"
+fi
+
 # Inside the repo — derived, not configurable.
 export SONIC_ROOT="$LOCOMANI_ROOT/third_party/GR00T-WholeBodyControl"
 export VENV_SIM_PY="$SONIC_ROOT/.venv_sim/bin/python"
@@ -34,6 +41,11 @@ export SONIC_DEPLOY_ROOT="${SONIC_DEPLOY_ROOT:-$SONIC_ROOT/gear_sonic_deploy}"
 # A token is a checkpoint-private latent -- see docs/reference/silent_failures.md.
 export SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"
 export LOCOMANI_SRC="$LOCOMANI_ROOT/src/locomani"
+# locomani is not pip-installed: every python that imports it finds it through src/ (added once).
+case ":${PYTHONPATH:-}:" in
+    *":$LOCOMANI_ROOT/src:"*) ;;
+    *) export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" ;;
+esac
 export LOCOMANI_STACK="$LOCOMANI_ROOT/scripts/stack"
 export LOCOMANI_OUTPUTS="$LOCOMANI_ROOT/outputs"
 
@@ -61,6 +73,9 @@ export SIMPLE_PIN="${SIMPLE_PIN:-6d10628794d9c7de4596b4f2afb2c054a637c2bc}"
 # to lift its pin. Point RENDER_PY at another venv and nothing else changes.
 export RENDER_PY="${RENDER_PY:-$SIMPLE_ROOT/.venv/bin/python}"
 export ISAAC_ASSETS="${ISAAC_ASSETS:-$LOCOMANI_ROOT/assets/isaac}"
+# A python with `pxr` (pip install usd-core) for the Isaac stage builders in configs/scenes.yaml. They only
+# write USD text, so neither Isaac nor the render venv is needed (and neither has a bare pxr).
+export USD_PY="${USD_PY:-python3}"
 export ROBOT_MJCF="${ROBOT_MJCF:-$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1.xml}"
 
 # Logs + exporter sessions for instance $1 (default $INSTANCE, default 0).
