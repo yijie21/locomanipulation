@@ -5,7 +5,7 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 
 ## 1. 和 crate 的三处不同
 
-1. 场景：扫描来的物流房间，托盘上放一个纸箱（`scene.name: warehouse_textured`）。旧名 `warehouse` 是贴图之前建的，纸箱没有贴图，只留给旧运行。
+1. 场景：扫描来的物流房间，托盘上放一个纸箱。默认实验用 `warehouse_box_45x32x33`：由 `warehouse_textured` 生成，另外记下托盘每条边的走入朝向、边外空地 `clear_m` 和第三视角机位，所以每局可以从四条边中任选一条走入（`task.visual.start_edges`，runbook §2）。旧名 `warehouse` 是贴图之前建的，纸箱没有贴图，只留给旧运行。
 2. 采集时仿真不渲染相机（`backend.render: offline`），只记录物理状态和每帧的 `qpos`（trace）。
 3. 转换之前多一步"补渲"：按 trace 把数据集的三路相机图渲出来。
 
@@ -27,7 +27,7 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 
 `images.source` 决定策略看到的图由谁渲：`mujoco` 和物理用同一个 MuJoCo 模型；`isaac` 用 Isaac Sim 的 RTX 渲染，光照和材质更接近真实。训练集和闭环评测必须用同一个，区别见[图像来源](rendering.md#图像来源imagessource)。
 
-`isaac` 需要：`backend.render: offline`；装好 Isaac（[安装第 7 步](setup.md)）；场景的 Isaac 版本（`bash scripts/build_scene.sh warehouse_textured --isaac`）；第二张卡。Isaac 渲一次三路相机约 0.1 秒，和仿真放在同一张卡上会拖慢仿真。冲突的组合在加载配置时就会被拒绝；旧文件里的 `eval.image_source` 按 `images.source` 读取。
+`isaac` 需要：`backend.render: offline`；装好 Isaac（[安装第 7 步](setup.md)）；场景的 Isaac 版本（`bash scripts/build_scene.sh warehouse_box_45x32x33 --isaac`）；第二张卡。Isaac 渲一次三路相机约 0.1 秒，和仿真放在同一张卡上会拖慢仿真。冲突的组合在加载配置时就会被拒绝；旧文件里的 `eval.image_source` 按 `images.source` 读取。
 
 ## 5. 评测前要核对的几项
 
@@ -53,7 +53,7 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 
 ## 7. 做对照实验
 
-- 调参基线是 `configs/experiments/box_room_grasp_baseline_20260924.yaml`：不录制，20 局（seed 7000–7019）成功 6 局。成功指抬起、躯干直立、后退 0.3 m 箱子不掉。
+- 调参基线是 `configs/experiments/box_room_grasp_baseline_20260924.yaml`：不录制，20 局（seed 7000–7019）成功 6 局。成功指抬起、躯干直立、后退 0.3 m 箱子不掉。它每局从同一个地方开始，不是现在默认的四边随机；四边随机下的对照从 `warehouse_edges_prep_compact_20260928` 复制（不录制，40 局保留 17，seed 91000 起；台账 2026-09-28），它的 `task` 和默认实验的完全相同。
 - 基线文件本身不改。新实验复制它，只改 `name` 和一个参数。
 - 同一份代码跑 10 局，成功数能在 2 到 7 之间波动，所以对照一律跑 20 局，两边用同一组 seed。
 - 专家参数（`task.visual.*`）的含义查[配置字段表](reference/config_fields.md)，历次改动的效果查 [DECISIONS](../DECISIONS.md)。

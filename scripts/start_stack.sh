@@ -33,7 +33,7 @@ set -u
 cd "$LOCOMANI_ROOT" || exit 1
 
 usage() {
-    echo "usage: $(basename "$0") collect|eval <experiment.yaml|run-dir> [--gpu N] [--name NAME] [--dry-run]" >&2
+    echo "usage: $(basename "$0") collect|eval <experiment.yaml|run-dir> [--gpu N|N,M|all] [--lanes N|auto] [--name NAME] [--dry-run]" >&2
     exit 1
 }
 case "${1:-}" in

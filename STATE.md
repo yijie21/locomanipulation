@@ -1,6 +1,6 @@
 # STATE — 2026-09-28（会话：文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep；三条线冒烟实跑；已推送）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步（`686d507`；之后只有这次 handoff 提交）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步：handoff 提交 `7135a83` 之后是 warehouse 四边默认采集 + 双臂并行通道的提交（TODO 10、11），均已推送。
 没有运行中的栈、渲染或镜像（本会话的都已收掉）。另一个检出目录 `locomanipulation-loco_agent`（`outputs/`、`third_party/` 是指向本仓库的软链接）
 的会话会在实例 1、GPU 1 上起栈；GPU 1 上还常驻一个与本项目无关的 `depth_server.py`（约 3.7 GB）。
 
@@ -22,6 +22,8 @@
 - 已确认：冒烟抓出的六个问题都修了并有测试（TODO 9.5.1；理由见 DECISIONS）。
 - 已确认：建场景的命令（含 henry-zhao 改过的降桌高脚本）输出到临时目录，与现有 `outputs/scene/` 去掉路径后逐字相同。
 - 已确认：文档链接和锚点全部能解析（改写前就断的 8 个也修了）；`make check` 通过。
+- 已确认：warehouse 默认采集改为四边随机（`warehouse_smoke` / `warehouse_200`，场景 `warehouse_box_45x32x33`），采集前打印摆放设置；固定起点是 `*_fixed_start`（TODO 第 10 节）。冒烟采集实跑 4 局保留 2 条。
+- 已确认：双臂线采集默认并行（通道 = 一个栈 + 一个跑局进程），`start_stack.sh collect` 按空闲 CPU / 线程数 / 显存 / 实例定通道数并打印；warehouse 冒烟 2 条通道 8 局保留 5 条、RTF 0.974–0.996（TODO 第 11 节）。
 
 ## 待验证 / 卡点
 

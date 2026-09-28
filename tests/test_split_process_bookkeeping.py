@@ -245,10 +245,8 @@ def test_a_failed_bimanual_batch_is_timed_as_a_failure_and_the_run_goes_on(tmp_p
     monkeypatch.setattr(expert, "run", Mock(side_effect=SystemExit("[crate] scene is not painted")))
     stack = _recording_stack(None, os.getpid())
     stack.spec = StackSpec(record=False)
-    state = dict(sessions=[], manifests=[], kept=0, batches=0)
-
     with capfd.disabled():  # pytest's own capture swaps the fds the stage log tees
-        manifest = collect.run_batch(cfg, tmp_path, stack, state)  # does not raise
+        manifest = collect.run_batch(cfg, tmp_path, stack, 0)  # does not raise
 
     assert manifest == tmp_path / "manifest_00.jsonl"
     (row,) = [json.loads(r) for r in (tmp_path / "timings.jsonl").read_text().splitlines()]

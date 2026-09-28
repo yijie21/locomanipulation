@@ -125,6 +125,7 @@ def experiment(sweep: dict, cell: dict, instance: int) -> dict:
     cfg["name"] = run_name(sweep, cell)
     cfg["scene"] = {"dir": str(scene_dir(sweep, values).relative_to(ROOT))}
     cfg["collect"]["instance"] = int(instance)
+    cfg["collect"]["lanes"] = 1  # the sweep runs one loop per instance itself; a cell spreading into lanes takes theirs
     return cfg
 
 

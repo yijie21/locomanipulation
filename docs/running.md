@@ -89,18 +89,39 @@ diff configs/experiments/bottle_simple_smoke.yaml configs/experiments/my_run.yam
 
 ## 6. 并行
 
-- 并行就是再开一个终端，换一张卡、换一个实例（`collect.instance`）。同一张卡上只能跑一个仿真。
-- 下面两个端口是整台机器共享的，并行时要改：
+**双臂线（crate、warehouse）的采集默认并行。** 一条“通道”（lane）是一个仿真栈加一个跑局进程，每条通道占一个实例。`start_stack.sh collect` 先量这台机器现在的空闲资源，据此决定开几条通道、各放在哪张卡和哪个实例上，然后逐个起栈，结果写进 `<运行>/collect/lanes.json`。起栈时和 `run_agent_server.sh` 开始第一局前，都会打印开了几条通道：
+
+```
+collect: 2 lanes in parallel -- one stack and one driver process each (instance 2 on GPU 0, instance 3 on GPU 1)
+  what fits: cpu 2 (10.8 cores free / 4 per lane); pids 2 (1594 free / 760 per lane); gpu 8 (...); instances 8 (...)
+```
+
+通道数取下面几项里最小的一个（`src/locomani/pipeline/lanes.py`）：
+
+| 资源 | 一条通道按多少算 | 依据 |
+|---|---|---|
+| CPU（容器配额 15.36 核，减去正在用的） | 录制且不渲染 4 核；实时渲染 10 核 | 2026-09-28 实测一条 warehouse 通道平均 +2.6 核，90 分位 +3.7 核 |
+| 进程数（上限 3840，留 200） | 录制：200 + 140 × `collect.batch_rounds`；不录制：400 | exporter 每录一局增加约 130 个线程，每批重启后清零；每批 4 局约 760，每批 10 局约 1600 |
+| 每张卡的空闲显存 | 录制且不渲染 2000 MiB；实时渲染 6000 MiB | 实测一条通道约 1.5 GB |
+| 每张卡的仿真数 | 不渲染（`backend.render: offline`）最多 4 个；实时渲染 1 个 | 两个实时渲染的仿真放在同一张卡上，会让 deploy 丢状态 |
+| 空闲实例 | 实例 0–9 中没有栈、没加锁、端口没被占的 | 别的程序也会占端口，比如 Unreal 编辑器占了实例 0 的整段端口 |
+
+- 默认用机器上所有的卡；`--gpu 0` 或 `--gpu 0,1` 只用这些卡，通道轮流分到每张卡上。第一条通道优先放在 `collect.instance` 上。
+- 只开一条通道：`start_stack.sh collect ... --lanes 1`，或在实验文件里写 `collect.lanes: 1`。写数字 N 表示“最多 N 条”。只开一条时和以前完全一样：栈只起在 `collect.instance` 上，这个实例被占就报错。
+- 所有通道共用同一个运行目录。第 k 批的种子仍是 `seed0 + 100 × k`，不管哪条通道去跑。已保留的条数够了就不再开新批，但已经在跑的批会跑完，所以最后保留的条数可能多于 `collect.successes`。中断后重跑同一条命令，中断时所有没跑完的批会从头再跑。
+- 单臂线（bottle）还是一条通道，`--gpu` 只取第一张卡。`run_overnight.sh` 的双臂线采集默认用所有卡（`--collect-gpu`、`--lanes` 可以改）。场景扫参的每个格子固定一条通道，因为扫参自己按实例开了多个循环。
+- 手工关栈时，要把 `lanes.json` 里的每个实例都关掉：`bash scripts/stop_stack.sh --instance <实例>`。
+
+**别的并行方式**：再开一个终端，换一张卡、换一个实例（`collect.instance`），跑另一个实验。下面两个端口是整台机器共享的，这时要改：
 
 | 端口 | 谁用 | 怎么改 | 不改会怎样 |
 |---|---|---|---|
 | 29500 | 训练（`train.sh` 里的 torchrun） | 在第二个终端里 `export PORT=29540` | 训练报 `EADDRINUSE` 退出 |
 | `eval.policy_port` | 策略服务 | 改实验文件的 `eval.policy_port` | 策略服务报 `ZMQError: Address already in use` |
 
-另外，5555–5622 是实例 0–4 的仿真端口（每个实例占 10 个号），策略服务的端口不能落在这个范围里。三条主线的实验文件用 5700（crate、warehouse）和 5710（bottle），同时评测 crate 和 warehouse 时把其中一个改掉。
+另外，5555–5672 是实例 0–9 的仿真端口（每个实例占 10 个号），策略服务的端口不能落在这个范围里。三条主线的实验文件用 5700（crate、warehouse）和 5710（bottle），同时评测 crate 和 warehouse 时把其中一个改掉。
 
-- 容器的进程数上限是 3840。录制栈按 1800 预留（几乎全是 exporter），不录制的栈按 400 预留，所以最多同时跑两个录制栈。
-- 起一个栈要 8 个空闲 CPU 核；资源不够时脚本拒绝启动并说明原因（`not enough headroom`）。CPU 被占满时仿真变慢，专家的定时动作会成批失败，看起来像机器人出了问题。
+资源不够时脚本拒绝启动并说明原因（`not enough headroom`）。CPU 被占满时仿真变慢，专家的定时动作会成批失败，看起来像机器人出了问题。
 
 ## 7. 查看一次运行留下的记录
 

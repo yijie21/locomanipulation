@@ -6,16 +6,23 @@ with the -y edge, robot start facing +y) with the free floor warehouse_box_scene
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from locomani.sim.scene_edges import round_edge
-from locomani.tasks.crate.expert import facing_edge, start_placement
+from locomani.tasks.crate.collect import layout_reminder
+from locomani.tasks.crate.config import CrateTaskConfig
+from locomani.tasks.crate.expert import facing_edge, layout_lines, start_placement
 from locomani.tasks.crate.visual_approach import approach_heading, edge_distance, near_edge
-from locomani.tasks.crate.visual_config import CrateVisualConfig
+from locomani.tasks.crate.visual_config import RANGE_FIELDS, CrateVisualConfig
+
+ROOT = Path(__file__).resolve().parents[1]
 
 EDGES = {
     "ym": {"heading_deg": 90.0, "clear_m": 1.285, "video_camera": "edge_ym"},
@@ -170,3 +177,75 @@ def test_the_renderers_recover_the_edge_from_the_first_recorded_yaw(side):
         assert round_edge(META, qpos)["side"] == side
         assert round_edge(META, qpos)["video_camera"] == f"edge_{side}"
     assert round_edge({**META, "surfaces": {"A": {}}}, [0, 0, 0, 1, 0, 0, 0]) is None
+
+
+def test_the_layout_reminder_names_every_edge_and_the_start_cap_the_draw_uses():
+    lines = layout_lines(META, FOUR)
+    assert "xm, xp, ym, yp" in lines[0]
+    # min(start_edge_max, clear_m - start_clearance): the cap test_every_edge_... holds the draw to
+    assert "0.6 m up to xm 0.862 / xp 0.798 / ym 1.035 / yp 1.379 m" in lines[1]
+    assert "heading -20..20 deg" in lines[2] and "lateral -0.08..0 m" in lines[2]
+    assert "setback 0..0.025 m" in lines[3] and "yaw 0..3.5 deg" in lines[3] and "along the edge -1..1" in lines[3]
+
+
+def test_the_layout_reminder_of_the_fixed_start_says_one_place_and_only_the_jitter():
+    fixed = CrateVisualConfig(start_pose="scene", start_advance=-0.25, position_jitter=0.02, yaw_jitter_deg=5.0)
+    walk_in, robot, box = layout_lines(META, fixed)
+    assert "one place" in walk_in and "-0.25 m" in walk_in
+    assert robot.split(maxsplit=1)[1] == "facing the walk-in, on the box centre line"
+    assert box.split(maxsplit=1)[1] == "jitter +-0.02 m, yaw jitter +-5 deg"
+
+
+def _warehouse_cfg(name):
+    return yaml.safe_load((ROOT / "configs" / "experiments" / f"{name}.yaml").read_text())
+
+
+def _reminder(tmp_path, name):
+    (tmp_path / "scene_meta.json").write_text(json.dumps(META))
+    cfg = _warehouse_cfg(name)
+    return layout_reminder(cfg, CrateTaskConfig.from_dict(cfg["task"]), tmp_path)
+
+
+def test_the_default_warehouse_collection_announces_four_edges_and_the_one_place_option(tmp_path):
+    lines = _reminder(tmp_path, "warehouse_smoke")
+    assert "scene warehouse_box_45x32x33, 2 kept wanted" in lines[0]
+    assert "xm, xp, ym, yp" in lines[1]
+    assert "*_fixed_start" in lines[-1]
+
+
+def test_the_fixed_start_collection_announces_one_place_and_the_four_edge_default(tmp_path):
+    lines = _reminder(tmp_path, "warehouse_smoke_fixed_start")
+    assert "one place" in lines[1]
+    assert "all four edges" in lines[-1]
+
+
+def test_a_diagnostic_expert_gets_no_reminder(tmp_path):
+    cfg = _warehouse_cfg("warehouse_smoke")
+    cfg["task"]["expert"] = "carry"
+    assert layout_reminder(cfg, CrateTaskConfig.from_dict(cfg["task"]), tmp_path) == []
+
+
+PLACEMENT = {
+    "start_edge_min",
+    "start_edge_max",
+    "start_pose",
+    "position_jitter",
+    "yaw_jitter_deg",
+    "start_edge_tolerance",
+    *RANGE_FIELDS,
+    "start_edges",
+    "start_clearance",
+}
+
+
+@pytest.mark.parametrize("name", ["warehouse_smoke", "warehouse_200"])
+def test_the_fixed_start_option_differs_from_the_default_in_placement_only(name):
+    default, fixed = _warehouse_cfg(name), _warehouse_cfg(f"{name}_fixed_start")
+    assert fixed["name"] == f"{name}_fixed_start"
+    visual = [cfg["task"].pop("visual") for cfg in (default, fixed)]
+    assert {k: v for k, v in default.items() if k != "name"} == {k: v for k, v in fixed.items() if k != "name"}
+    assert {k: v for k, v in visual[0].items() if k not in PLACEMENT} == {
+        k: v for k, v in visual[1].items() if k not in PLACEMENT
+    }
+    assert visual[0]["start_edges"] == ["xm", "xp", "ym", "yp"] and visual[0]["start_pose"] == "sampled"
+    assert "start_edges" not in visual[1] and visual[1]["start_pose"] == "scene"

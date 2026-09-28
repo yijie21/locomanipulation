@@ -361,3 +361,23 @@
 - [ ] 9.9 删冒烟的大产物：`/workspace` 只剩 26 GB（98%）。`outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}/model/`（各约 24 GB，10 步的 checkpoint，没有用处）和 `outputs/docs_smoke_20260928/try2/`（24 GB，第一次失败的 bottle 冒烟）。按 AGENTS 规则 2026-09-29 11:45 之后才能删，用户说可以就提前删；运行目录其余文件（manifest、日志、录像）保留作 runbook 数字的证据
 - [ ] 9.10 `crate_table30_record`（crate 的完整规模）还没在 lockstep 下跑过；runbook 里它的数字是 09-15 墙钟 71/100
 
+
+## 10. warehouse 默认采集改为四边随机；采集前打印设置；固定起点作为选项（用户 2026-09-28；DECISIONS 同日）
+
+- [x] 10.1 `warehouse_smoke` / `warehouse_200` 改为四边线 compact 版（场景 `warehouse_box_45x32x33`）；新建 `warehouse_{smoke,200}_fixed_start`（只改摆放）（2026-09-28）
+- [x] 10.2 `collect.py` 在第一局前打印摆放设置（`expert.layout_lines`），终端里等 10 秒；`--dry-run` 也打印；测试在 `test_four_edge_placement.py`（2026-09-28）
+- [x] 10.3 文档：`warehouse.md` §1–2、§9–10，`warehouse_design.md` §1、§4、§7，`box_grasp_envelope.md` §4，`rendering.md` 场景清单，README 表（2026-09-28）
+- [x] 10.3.1 实跑核对（2026-09-28）：`warehouse_smoke` 以运行名 `warehouse_smoke_edges_20260928` 跑采集，第一局前打印的设置与 dry-run 相同；4 局抽到 yp、yp、xm、xm，保留 2 条（另两局 `lost_attachment`、`reach_stalled`），栈正常关闭；录像与 ≤500 KB 预览在该运行的 `videos/`、`previews/`。非终端运行（nohup），所以 10 秒等待这条分支没有实跑
+- [ ] 10.4 本机的 `outputs/runs/warehouse_smoke` 是按旧配置跑的，照 runbook 用同名重跑会报 `config.yaml differs`。待用户定：删掉旧运行目录（9.9 已计划删它的 `model/`），还是在 runbook 里写明换 `--name`
+- [ ] 10.5 `warehouse_200` 在四边随机下还没有按完整规模跑过（按 17/40 估计，约 470 局保留 200 条）
+
+## 11. 双臂线采集默认并行（通道）；开跑前判断资源、打印通道数（用户 2026-09-28；DECISIONS 同日）
+
+- [x] 11.1 实测一条 warehouse 通道的成本（2026-09-28，`outputs/warehouse_parallel_20260928`）：CPU 平均 +2.6 核、90 分位 +3.7 核，显存 +1.5 GB，线程数 +180 起、每录一局约 +130，4 局一批峰值 +715；RTF 0.993
+- [x] 11.2 `pipeline/lanes.py`（计划、每项资源允许几条、`lanes.json`）、`stack.instance_busy`（栈、锁、端口被占）、`run_stack` 起多个栈、`collect.py` 每条通道一个进程、`batches` 按编号领取批次（文件锁）；扫参格子固定一条；`run_overnight.sh` 支持 `--collect-gpu` / `--lanes` 并在失败时关掉所有通道的栈（2026-09-28）
+- [x] 11.2.1 实跑核对（2026-09-28）：`warehouse_smoke` 以运行名 `warehouse_smoke_lanes_20260928` 按 runbook 两条命令（不带 `--gpu`）跑，计划 2 条通道（实例 2 / GPU 0、实例 3 / GPU 1；实例 0 的端口被 Unreal 编辑器占着、实例 1 是 loco_agent 的栈，都被跳过），两批同时跑，8 局保留 5 条，每局 RTF 0.974–0.996，容器线程峰值 3279/3840；随后 Isaac 补渲 5 集、convert 4 训练 + 1 验证通过，两条通道的 session 与 manifest 配对正确
+- [x] 11.3 测试 `tests/test_collection_lanes.py`（计算、分卡、领批、续跑、session 接管、端口占用）（2026-09-28）
+- [x] 11.4 文档：`running.md` §6 重写，`warehouse.md` / `bimanual.md` / `box_grasp_envelope.md` 的采集命令去掉 `--gpu 0`，术语表加“通道”，change map（2026-09-28）
+- [ ] 11.5 单臂线（bottle）的并行采集：驱动器不同，本次没做
+- [ ] 11.6 实时渲染的通道（crate）成本没有实测，沿用旧单栈预算（10 核、6000 MiB、一张卡一条）；这台机器上 crate 目前只能开一条
+- [ ] 11.7 两条以上通道的产出率是否与单条相同，只跑了一次冒烟（8 局保留 5 条，RTF 0.974–0.996）；完整规模下要按产出率和 RTF 再核一次

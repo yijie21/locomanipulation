@@ -7,6 +7,8 @@
 #
 # --isaac-gpu: an experiment with `images.source: isaac` renders its dataset cameras in Isaac and is
 # evaluated through the Isaac mirror, both on this card (the stack, training and policy stay on --gpu).
+# --collect-gpu / --lanes: the bimanual line collects in parallel lanes (src/locomani/pipeline/lanes.py), as many
+# as the machine fits, spread over every card by default; --lanes 1 collects in one. The single-arm line uses --gpu.
 #
 # THIS IS THE ONLY SCRIPT IN scripts/ THAT CALLS OTHER SCRIPTS. Everything else is flat: one bash,
 # one exec, one python entry. Read the stage scripts to understand the pipeline -- read this one
@@ -23,11 +25,13 @@ set -u
 . "$(dirname "$0")/paths.sh"
 cd "$LOCOMANI_ROOT" || exit 1
 
-EXPERIMENT=""; GPU="0"; ISAAC_GPU=""; LINE="single_arm"; FROM="collect"; TO="eval"
+EXPERIMENT=""; GPU="0"; ISAAC_GPU=""; LINE="single_arm"; FROM="collect"; TO="eval"; COLLECT_GPU=""; LANES=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --gpu)  GPU="${2:?--gpu needs a value}"; shift 2 ;;
         --isaac-gpu) ISAAC_GPU="${2:?--isaac-gpu needs a value}"; shift 2 ;;
+        --collect-gpu) COLLECT_GPU="${2:?--collect-gpu needs N, N,M or all}"; shift 2 ;;
+        --lanes) LANES="${2:?--lanes needs a number or auto}"; shift 2 ;;
         --line) LINE="${2:?--line needs single_arm or bimanual}"; shift 2 ;;
         --from) FROM="${2:?--from needs collect|convert|train|eval}"; shift 2 ;;
         --to)   TO="${2:?--to needs collect|convert|train|eval}"; shift 2 ;;
@@ -35,7 +39,7 @@ while [ $# -gt 0 ]; do
         *) EXPERIMENT="$1"; shift ;;
     esac
 done
-[ -n "$EXPERIMENT" ] || { echo "usage: $(basename "$0") <experiment.yaml> [--gpu N] [--isaac-gpu N] [--line single_arm|bimanual] [--from STAGE] [--to STAGE]" >&2; exit 1; }
+[ -n "$EXPERIMENT" ] || { echo "usage: $(basename "$0") <experiment.yaml> [--gpu N] [--isaac-gpu N] [--collect-gpu N,M|all] [--lanes N|auto] [--line single_arm|bimanual] [--from STAGE] [--to STAGE]" >&2; exit 1; }
 case "$LINE" in single_arm|bimanual) : ;; *) echo "--line must be single_arm or bimanual" >&2; exit 1 ;; esac
 
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
@@ -66,10 +70,19 @@ sys.exit(0 if entry and entry.get('kept', 0) >= wanted else 1)" "$RUN" "$EXPERIM
 }
 if wanted collect && ! collected; then
     echo "=== collect ==="
-    bash "$LOCOMANI_ROOT/scripts/start_stack.sh" collect "$EXPERIMENT" --gpu "$GPU" || exit 1
-    INSTANCE=$("$VENV_SIM_PY" -c "
-import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))['collect']['instance'])" "$EXPERIMENT")
-    trap 'bash "$LOCOMANI_ROOT/scripts/stop_stack.sh" --instance "$INSTANCE" 2>/dev/null' EXIT
+    # The bimanual line collects in lanes spread over every card unless --collect-gpu says otherwise; the
+    # single-arm line runs one stack, on --gpu.
+    [ -n "$COLLECT_GPU" ] || { [ "$LINE" = bimanual ] && COLLECT_GPU=all || COLLECT_GPU="$GPU"; }
+    bash "$LOCOMANI_ROOT/scripts/start_stack.sh" collect "$EXPERIMENT" --gpu "$COLLECT_GPU" ${LANES:+--lanes "$LANES"} || exit 1
+    # every lane's instance (collect/lanes.json), else the one stack's
+    INSTANCES=$("$VENV_SIM_PY" -c "
+import json, pathlib, sys, yaml
+lanes = pathlib.Path(sys.argv[1]) / 'collect' / 'lanes.json'
+if lanes.exists():
+    print(' '.join(str(lane['instance']) for lane in json.loads(lanes.read_text())['lanes']))
+else:
+    print(yaml.safe_load(open(sys.argv[2]))['collect']['instance'])" "$RUN" "$EXPERIMENT")
+    trap 'for i in $INSTANCES; do bash "$LOCOMANI_ROOT/scripts/stop_stack.sh" --instance "$i" 2>/dev/null; done' EXIT
     bash "$LOCOMANI_ROOT/scripts/$LINE/run_agent_server.sh" "$EXPERIMENT" --gpu "$GPU" || exit 1
     trap - EXIT
 fi

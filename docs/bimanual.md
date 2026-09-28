@@ -25,11 +25,11 @@ bash scripts/build_scene.sh crate
 ## 2. 采集
 
 ```bash
-bash scripts/start_stack.sh collect configs/experiments/crate_smoke.yaml --gpu 0
-bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_smoke.yaml --gpu 0
+bash scripts/start_stack.sh collect configs/experiments/crate_smoke.yaml
+bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_smoke.yaml
 ```
 
-做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。第二条运行视觉专家：一局接一局让机器人走近、抓筐、抬起，保留成功的局。每批 3 局一定跑满，保留够 2 条就不再开新批；结束时关掉仿真栈。
+做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。它先按这台机器的空闲资源决定并行开几条通道（每条一个栈、一个跑局进程），并打印出来；crate 采集时仿真要实时渲染相机，一张卡只放一条通道，所以通道数最多等于卡数（[运行机制](running.md#6-并行)，`--lanes 1` 只开一条）。第二条在每条通道上运行视觉专家：一局接一局让机器人走近、抓筐、抬起，保留成功的局。每批 3 局一定跑满，保留够 2 条就不再开新批；结束时关掉所有仿真栈。
 得到什么：运行目录 `outputs/runs/crate_smoke/`，里面有 `config.yaml`、每局成败 `manifest_00.jsonl`、每局录像 `videos/`、每局状态轨迹 `trace/`（双臂的这些文件在运行目录顶层）。起栈约 45 秒；采集约 2 分钟，一局约 20 秒（冒烟实测 3 局保留 2 条，失败的一局是 `basket_tilt`，筐抬起时倾斜过大）。每局的结果打印在 `visual_00.log` 里。
 
 ## 3. 转换

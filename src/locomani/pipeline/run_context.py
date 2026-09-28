@@ -244,14 +244,15 @@ def checkpoint_of(run_dir: Path) -> Path:
     return Path(entry["checkpoint"])
 
 
-def measure(gpu: str | None = None) -> dict:
-    """Cores in use (1 s cgroup delta), pids in the container, free MiB on the card."""
+def measure(gpu: str | None = None, *, seconds: float = 1.0) -> dict:
+    """Cores in use (cgroup delta over `seconds`; 0 skips it), pids in the container, free MiB on the card."""
     live: dict = {}
     try:
         cpu = Path("/sys/fs/cgroup/cpu.stat")
-        first = int(cpu.read_text().split()[1])
-        time.sleep(1.0)
-        live["cores"] = round((int(cpu.read_text().split()[1]) - first) / 1e6, 2)
+        if seconds > 0:
+            first = int(cpu.read_text().split()[1])
+            time.sleep(seconds)
+            live["cores"] = round((int(cpu.read_text().split()[1]) - first) / 1e6 / seconds, 2)
         live["pids"] = int(Path("/sys/fs/cgroup/pids.current").read_text())
         quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
         live["quota"] = float(os.cpu_count() or 16) if quota == "max" else float(quota) / float(period)

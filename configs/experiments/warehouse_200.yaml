@@ -1,10 +1,10 @@
 # The warehouse line at full size: 200 kept episodes of the logistics-room carton grasp, Isaac pictures for the
 #   policy (the dataset cameras re-rendered after collection, the closed loop through the Isaac mirror), 10,000
 #   training steps, 100 closed-loop rounds on the lockstep clock. docs/warehouse.md runs it.
-# box_room_grasp_200_cap120_20260925 (the first warehouse VLA: open-loop MSE 0.00123 at checkpoint-5000, closed loop
-#   81/100 wall clock and 88/100 lockstep on the Isaac mirror, ledger crate.md 2026-09-27) with two changes only:
-#   images.source at the top level (the current format) and the lockstep eval clock (every VLA evaluation since
-#   2026-09-28). Collection: cap120 kept 204 of 950 rounds (yield 0.22); batches of 10, at most 120.
+# Layout -- the warehouse default since 2026-09-28 (user): the four-edge line, as warehouse_smoke. Not run at this
+#   size yet; at the room's 17/40 about 470 rounds keep 200 (batches of 10, at most 120). The first warehouse VLA,
+#   box_room_grasp_200_cap120_20260925 (204 kept of 950; closed loop 81/100 wall clock, 88/100 lockstep), started
+#   every round from one place: warehouse_200_fixed_start has that layout with the current expert.
 name: warehouse_200
 task:
   plugin: crate
@@ -29,9 +29,9 @@ task:
     pose_source: assisted
     waist_pitch_max: 0.4
     palm_pitch_deg: 60.0
-    start_edge_min: 1.2
-    start_edge_max: 1.5
-    start_pose: scene
+    start_edge_min: 0.6
+    start_edge_max: 2.0
+    start_pose: sampled
     start_advance: -0.25
     walk_speed: 0.25
     walk_speed_min: 0.25
@@ -46,8 +46,8 @@ task:
     stand_seconds: 5.0
     upright_tolerance_deg: 12.0
     stand_off: 0.5
-    position_jitter: 0.02
-    yaw_jitter_deg: 5.0
+    position_jitter: 0.0
+    yaw_jitter_deg: 0.0
     pregrasp_above: 0.08
     approach_speed: 0.16
     joint_speed: 0.7
@@ -82,11 +82,34 @@ task:
     stand_forward_min: 0.35
     capture_across: 0.035
     close_trigger: contact
-    contact_along: 0.09  # what box_room_grasp_contact_20260924 ran with (the field appeared after that run, default 0.13 untested alone)
-    contact_overdrive: 0.0  # 0.03 was a negative result (2/20): the deeper descent deflects the pads 4-8 cm across
+    contact_along: 0.09
+    contact_overdrive: 0.0
     close_target: -0.06
     box_grasp_below_rim: 0.01
-    retreat_distance: 0.3
+    retreat_distance: 0.0
+    start_edge_tolerance: 0.05
+    start_yaw_range_deg:
+    - -20.0
+    - 20.0
+    start_lateral_range:
+    - -0.08
+    - 0.0
+    object_setback_range:  # envelope §3.2: 0-2.5 cm is 0.31, >= 2.5 cm falls to 0.24
+    - 0.0
+    - 0.025
+    object_yaw_range_deg:  # envelope §3.2: only 0..+3.5 deg stays >= 0.30 (0.31); -3.5..0 is 0.18
+    - 0.0
+    - 3.5
+    lateral_hold_common_mode: false
+    ready_after_brake: compact
+    ready_blend_seconds: 1.5
+    ready_hold_seconds: 0.0
+    reanchor_hold_seconds: 0.3
+    start_edges: [xm, xp, ym, yp]
+    start_clearance: 0.25  # start distance <= the edge's free floor (scene surfaces.A.edges clear_m) - 0.25
+    object_along_range:  # anywhere along the edge the box fits
+    - -1.0
+    - 1.0
   wall_feature: rail
   wall_walk: false
   gripper_gear: 250.0
@@ -105,7 +128,7 @@ embodiment:
   gr00t_tag: unitree_g1_sonic
   gr00t_modality_config: configs/gr00t_sonic_3cam_bimanual.py
 scene:
-  name: warehouse_textured
+  name: warehouse_box_45x32x33
   cases: null
 images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac
   source: isaac

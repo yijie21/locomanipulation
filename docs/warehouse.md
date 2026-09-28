@@ -1,6 +1,6 @@
 # warehouse：物流房间双臂抓纸箱
 
-机器人在物流房间里走到托盘前，双手扣住纸箱沿，抬起、站直。策略看到的相机图由 Isaac Sim 渲染，所以要 2 张 GPU：GPU 0 跑仿真、训练和策略，GPU 1 跑 Isaac。
+机器人在物流房间里从托盘四条边中随机一条走近（也可以固定从一个地方开始，见 §2），双手扣住纸箱沿，抬起、站直。策略看到的相机图由 Isaac Sim 渲染，所以要 2 张 GPU：GPU 0 跑仿真、训练和策略，GPU 1 跑 Isaac。
 下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 40 分钟（其中评测录像约 14 分钟，可以不渲）。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
 和 crate 用同一套脚本，不同的是：采集时仿真不渲染相机，转换前要用 Isaac 补渲；评测时另开一个 Isaac 进程出图。原因和细节见 [warehouse 详解](warehouse_design.md)；改参数、并行、重跑见[运行机制](running.md)。
 
@@ -17,22 +17,39 @@
 
 ```bash
 bash scripts/build_scene.sh warehouse_textured
-bash scripts/build_scene.sh warehouse_textured --isaac
+bash scripts/build_scene.sh warehouse_box_45x32x33
+bash scripts/build_scene.sh warehouse_box_45x32x33 --isaac
 ```
 
-做什么：第一条从仓库自带的资产包建 MuJoCo 场景 `outputs/scene/warehouse_textured`；第二条建同一个房间给 Isaac 用的版本，写到 `assets/isaac/scene/warehouse_textured/`，需要一个带 `pxr` 的 Python（`pip install usd-core`，用 `USD_PY` 指定）。
-得到什么：`outputs/scene/warehouse_textured/scene_locomani.xml` 和 `assets/isaac/scene/warehouse_textured/scene.usda`。两条各几秒。
+做什么：第一条从仓库自带的资产包建物流房间 `outputs/scene/warehouse_textured`；第二条以它为底，量出托盘四条边外的空地，写进场景 `outputs/scene/warehouse_box_45x32x33`（纸箱尺寸与房间原来的相同：宽 0.45 × 长 0.32 × 高 0.33 m），下面的采集用这个场景；第三条建这个场景给 Isaac 用的版本，写到 `assets/isaac/scene/warehouse_box_45x32x33/`，需要一个带 `pxr` 的 Python（`pip install usd-core`，用 `USD_PY` 指定）。
+得到什么：`outputs/scene/warehouse_box_45x32x33/scene_locomani.xml` 和 `assets/isaac/scene/warehouse_box_45x32x33/scene.usda`。每条几秒到一分钟。
 
 ## 2. 采集
 
 ```bash
-bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml --gpu 0
-bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.yaml --gpu 0
+bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml
+bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.yaml
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/warehouse_smoke
 ```
 
-做什么：第一条起仿真栈，起好就返回。第二条运行视觉专家：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批，结束时关掉仿真栈。第三条（可选）从每局的状态轨迹渲出第三视角录像，画面里半透明的品红夹爪是专家给的抓取目标。
-得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每局成败 `manifest_00.jsonl`、状态轨迹 `trace/`、录像 `videos/`。起栈约 40 秒；采集约 3 分钟，一局约 35 秒（冒烟实测 4 局保留 2 条，另外两局是 `reach_stalled`）；录像约 15 秒。
+做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批（已经在跑的批会跑完），结束时关掉所有仿真栈。第三条（可选）从每局的状态轨迹渲出第三视角录像，画面里半透明的品红夹爪是专家给的抓取目标；每局按走入的那条边选机位。
+得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每批一个的逐局成败 `manifest_NN.jsonl`、状态轨迹 `trace/`、录像 `videos/`、通道安排 `collect/lanes.json`。每条通道起栈约 40 秒；采集约 3 分钟，一局约 35 秒；录像约 15 秒。
+
+**每局从哪里开始（默认：四边随机）。** 每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：起点离台边 0.6 m 到“这条边外的空地 − 0.25 m”（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m；房间的货架和墙没有碰撞体，起点不能放进去），起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧），纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
+同样设置在房间里实测保留 17/40（[双臂台账](ledger/crate.md) 2026-09-28）。第二条命令开始第一局之前，会把这份设置打印出来：
+
+```
+collect: scene warehouse_box_45x32x33, 2 kept wanted in batches of 4 rounds (at most 3). Each round draws (task.visual):
+  walk-in  toward one of the platform's edges xm, xp, ym, yp, drawn each round
+  start    0.6 m up to xm 0.862 / xp 0.798 / ym 1.035 / yp 1.379 m before that edge (its free floor - 0.25 m)
+  robot    heading -20..20 deg off the walk-in, lateral -0.08..0 m (+ = left of the box centre line)
+  box      setback 0..0.025 m, yaw 0..3.5 deg, along the edge -1..1 of the room it leaves
+  from one place only, as warehouse collected before: its *_fixed_start experiment (docs/warehouse.md §2)
+```
+
+在终端里运行时，打印后等 10 秒才开始第一局，这时按 Ctrl-C 就不会录下任何一局，仿真栈也会一起关掉。不看这份打印，也可以先加 `--dry-run` 运行第二条命令，它只打印、不启动。
+
+**只从一个地方开始。** 要像 2026-09-28 之前那样，每局都从同一个位置出发（场景自带的起点，在 −y 边前方，往后退 0.25 m；纸箱在原位，只加 ±2 cm、±5° 的抖动），就把上面三条命令里的实验文件换成 `configs/experiments/warehouse_smoke_fixed_start.yaml`，运行名随之变成 `warehouse_smoke_fixed_start`。后面几步的 `outputs/runs/warehouse_smoke` 也要换成它。完整规模对应 `warehouse_200_fixed_start.yaml`。这两份文件和默认文件相比，只有摆放方式不同，专家参数完全一样。场景仍用 `warehouse_box_45x32x33`。
 
 ## 3. 补渲相机
 
@@ -118,11 +135,11 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 
 ## 9. 只有一张卡
 
-把实验文件复制一份，`images.source` 改成 `mujoco`，策略就改看 MuJoCo 渲的图。这时第 1 步只跑第一条；第 3 步换成 `bash scripts/render_dataset_cameras.sh outputs/runs/<名字> --gpu 0`；闭环评测不起终端 2 的镜像；`run_overnight.sh` 去掉 `--isaac-gpu 1`。训练集和评测必须用同一种图。
+把实验文件复制一份，`images.source` 改成 `mujoco`，策略就改看 MuJoCo 渲的图。这时第 1 步不跑第三条；第 3 步换成 `bash scripts/render_dataset_cameras.sh outputs/runs/<名字> --gpu 0`；闭环评测不起终端 2 的镜像；`run_overnight.sh` 去掉 `--isaac-gpu 1`。训练集和评测必须用同一种图。
 
 ## 10. 接下来
 
-- 完整规模：把 `warehouse_smoke` 换成 `warehouse_200`（200 条数据、1 万步训练、100 局评测）。同样设置的 `box_room_grasp_200_cap120_20260925` 实测：950 局保留 204 条（产出率 0.22），一局约 45 秒；训练到 5000 步停下，开环 MSE 0.00123，Isaac 镜像下闭环 100 局墙钟 81、lockstep 88（[双臂台账](ledger/crate.md) 2026-09-27）。
+- 完整规模：把 `warehouse_smoke` 换成 `warehouse_200`（200 条数据、1 万步训练、100 局评测）。四边随机还没有按这个规模跑过，按 17/40 估计，保留 200 条约需 470 局。只从一个地方开始的 `box_room_grasp_200_cap120_20260925`（当时的专家，刹车后准备手臂较慢，成功要求后退 0.3 m）实测：950 局保留 204 条（产出率 0.22），一局约 45 秒；训练到 5000 步停下，开环 MSE 0.00123，Isaac 镜像下闭环 100 局墙钟 81、lockstep 88（[双臂台账](ledger/crate.md) 2026-09-27）。
 - 调专家参数做对照实验：从 `box_room_grasp_baseline_20260924` 复制，做法见 [warehouse 详解第 7 节](warehouse_design.md#7-做对照实验)。
 - 台上纸箱、四边线、Blender 场景这些支线：见 [warehouse 详解第 8 节](warehouse_design.md#8-相关的支线)。
 - 每一轮的实测数字：[双臂台账](ledger/crate.md)。

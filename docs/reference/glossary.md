@@ -25,7 +25,8 @@
 | 词 | 意思 |
 |---|---|
 | 栈（stack） | 仿真时常驻的一组进程：sim + deploy，录制时再加 exporter。`start_stack.sh` 起（起完即退，栈留在后台），驱动脚本跑完替你收，异常时 `stop_stack.sh --instance N` 手动收 |
-| 实例（instance） | `collect.instance`：一个编号对应一组端口和一个 exporter 目录。并行 = 多个实例，每张卡最多一个仿真 |
+| 实例（instance） | 一个编号对应一组端口和一个 exporter 目录；`collect.instance` 是第一个栈用的实例。不渲染的仿真一张卡最多 4 个，实时渲染的 1 个 |
+| 通道（lane） | 双臂线并行采集的单位：一个栈加一个跑局进程，各占一个实例。`start_stack.sh collect` 按空闲资源定开几条，写进 `collect/lanes.json`，起栈和开跑前都会打印（[运行机制](../running.md#6-并行)） |
 | sim | MuJoCo 仿真进程（`src/locomani/sim/run_sim_locomani.py`）：跑物理，发布状态和（`live` 时）相机图 |
 | SONIC | NVIDIA GR00T-WholeBodyControl 里的人形全身控制策略；默认 checkpoint `policy/sonic_v1_1`（[安装](../setup.md)第 2 步） |
 | deploy | SONIC 的 C++ 控制器（`g1_deploy_onnx_ref`，安装第 3 步编译并打补丁）：把运动指令变成关节目标发给 sim |

@@ -261,9 +261,7 @@ def facing_edge(meta, cfg, rng):
     Call it once per round, before anything reads the walk-in."""
     if not cfg.start_edges:
         return meta
-    edges = target_surface(meta).get("edges")
-    if not edges:
-        raise ValueError("visual.start_edges needs a scene whose target surface lists its edges (warehouse_box_scene)")
+    edges = _surface_edges(meta)
     sides = cfg.start_edges
     side = sides[0] if len(sides) == 1 else sides[int(rng.integers(len(sides)))]
     edge = edges[side]
@@ -273,6 +271,19 @@ def facing_edge(meta, cfg, rng):
             f"with start_clearance {cfg.start_clearance}"
         )
     return {**meta, "approach": {"side": side, **edge}}
+
+
+def _surface_edges(meta):
+    """The target surface's `edges` (side -> heading, free floor, camera), which visual.start_edges draws from."""
+    edges = target_surface(meta).get("edges")
+    if not edges:
+        raise ValueError("visual.start_edges needs a scene whose target surface lists its edges (warehouse_box_scene)")
+    return edges
+
+
+def _start_distance_max(cfg, edge) -> float:
+    """Farthest sampled start before the edge, m: start_edge_max, capped on a drawn edge at its free floor."""
+    return cfg.start_edge_max if edge is None else min(cfg.start_edge_max, edge["clear_m"] - cfg.start_clearance)
 
 
 def _home_offset(meta):
@@ -313,10 +324,7 @@ def start_placement(reset, meta, cfg, rng):
         start_xy = base + cfg.start_advance * np.array([np.cos(heading), np.sin(heading)])
         start_distance = edge_distance(meta, start_xy)
     else:
-        top = cfg.start_edge_max
-        if "approach" in meta:
-            top = min(top, meta["approach"]["clear_m"] - cfg.start_clearance)
-        start_distance = float(rng.uniform(cfg.start_edge_min, top))
+        start_distance = float(rng.uniform(cfg.start_edge_min, _start_distance_max(cfg, meta.get("approach"))))
         start_xy = initial_robot_xy(meta, start_distance)
     axis = np.array([np.cos(heading), np.sin(heading)])
     left = np.array([-axis[1], axis[0]])
@@ -349,6 +357,49 @@ def start_placement(reset, meta, cfg, rng):
         "object_yaw_offset_deg": object_yaw,
         **({"edge": meta["approach"]["side"], "object_along_m": along} if "approach" in meta else {}),
     }
+
+
+def layout_lines(meta, cfg) -> list[str]:
+    """What facing_edge and start_placement draw each round, in words, from the same fields and scene edges: the
+    reminder a collection prints before its first round (locomani.tasks.crate.collect). Ranges that draw nothing
+    are left out."""
+
+    def span(bounds, unit):
+        low, high = (round(float(v), 3) for v in bounds)
+        return f"{low:g}{unit}" if low == high else f"{low:g}..{high:g}{unit}"
+
+    if cfg.start_edges:
+        edges = _surface_edges(meta)
+        tops = " / ".join(f"{side} {round(_start_distance_max(cfg, edges[side]), 3):g}" for side in cfg.start_edges)
+        where = [
+            f"walk-in  toward one of the platform's edges {', '.join(cfg.start_edges)}, drawn each round",
+            f"start    {cfg.start_edge_min:g} m up to {tops} m before that edge "
+            f"(its free floor - {cfg.start_clearance:g} m)",
+        ]
+    elif cfg.start_pose == "scene":
+        where = [f"walk-in  from one place: the scene's robot start, moved {cfg.start_advance:+g} m along its heading"]
+    else:
+        start = span((cfg.start_edge_min, cfg.start_edge_max), " m")
+        where = [f"walk-in  the scene's own side, start {start} before it"]
+    robot = [
+        f"heading {span(cfg.start_yaw_range_deg, ' deg')} off the walk-in" if any(cfg.start_yaw_range_deg) else "",
+        f"lateral {span(cfg.start_lateral_range, ' m')} (+ = left of the box centre line)"
+        if any(cfg.start_lateral_range)
+        else "",
+    ]
+    box = [
+        f"setback {span(cfg.object_setback_range, ' m')}" if any(cfg.object_setback_range) else "",
+        f"yaw {span(cfg.object_yaw_range_deg, ' deg')}" if any(cfg.object_yaw_range_deg) else "",
+        f"along the edge {span(cfg.object_along_range, '')} of the room it leaves"
+        if any(cfg.object_along_range)
+        else "",
+        f"jitter +-{cfg.position_jitter:g} m" if cfg.position_jitter else "",
+        f"yaw jitter +-{cfg.yaw_jitter_deg:g} deg" if cfg.yaw_jitter_deg else "",
+    ]
+    return where + [
+        f"robot    {', '.join(filter(None, robot)) or 'facing the walk-in, on the box centre line'}",
+        f"box      {', '.join(filter(None, box)) or 'at its scene pose'}",
+    ]
 
 
 def reset_ready(p, reset, meta, cfg, rng, solver, *, whole_body=False):

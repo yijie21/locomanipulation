@@ -1,10 +1,14 @@
 #!/bin/bash
-# Drive bimanual collection: attach to the stack terminal 1 started, run batch after batch.
+# Drive bimanual collection: attach to the stacks terminal 1 started, run batch after batch in every lane.
 #
-#   bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_table30_record.yaml --gpu 1
+#   bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_table30_record.yaml
 #
 # Terminal 2 of two; terminal 1 is:
-#   bash scripts/start_stack.sh collect <same yaml> --gpu 1
+#   bash scripts/start_stack.sh collect <same yaml>
+#
+# Terminal 1 decided how many lanes (one stack + one driver process each) fit on this machine and wrote them to
+# <run>/collect/lanes.json (src/locomani/pipeline/lanes.py); this runs one driver process per lane and prints the
+# count before the first round.
 #
 # "Agent server" is what this is: the scripted stand-in for the Pico teleop server
 # (src/locomani/backends/sonic/agent_server.py), driving the robot from privileged simulator state
