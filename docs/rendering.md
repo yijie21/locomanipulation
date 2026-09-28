@@ -66,7 +66,7 @@ flowchart TD
 两个补渲脚本和镜像用同一组相机（ego + 左右腕，`CAMERA_CONFIGS`）；Isaac 补渲和镜像还是同一个渲染函数
 （`IsaacView`）、同一个 stage、同一组曝光设置（`configs/scenes.yaml` 的 `rtx_settings`），所以"同一个状态 → 同一张图"。
 convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 配 `backend.render: live`）
-加载实验文件时就拒绝。完整命令见 [warehouse §5–§6](warehouse.md#5-跑)。
+加载实验文件时就拒绝。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步。
 
 ## 采集时记录什么
 
@@ -90,7 +90,7 @@ convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就�
 视频、trace 和 session 是独立产物：有 MP4 不代表有可重渲的完整状态，
 有 trace 也不代表已经生成可训练的数据。轨迹写入失败可能只产生警告，
 开始重渲前要检查文件实际存在。各任务目录和录制边界见
-[单臂](single_arm.md#8-产物)、[双臂](bimanual.md#7-产物)、
+[单臂](single_arm.md#6-看结果)、[双臂](bimanual_design.md#产物和日志)、
 [pick-and-place](single_arm_design.md#四pick-and-place-这条变体)。
 
 ## Isaac 怎样重现同一段动作
@@ -377,7 +377,7 @@ deploy 按墙钟推进参考，机器人走得比指令快约 3 倍；离线后�
 - 录制时 exporter 存黑色占位帧，数据集的三路相机在转换前由 `scripts/render_dataset_cameras.sh` 从 trace 渲出（只渲成功局，
   失败局留占位帧；convert 本就不读它们，`--include-discarded` 转换未渲的局会被拒），
   `images.source: isaac` 的运行改由 `scripts/render_dataset_cameras_isaac.sh` 用 Isaac 渲（同样只渲成功局，另外只渲 25 Hz 取到的行）
-  （[跑法](warehouse.md#5-跑)）；没渲过、或渲染器与 `images.source` 不一致的离线运行 convert 会拒绝。
+  （[跑法](warehouse.md#3-补渲相机)）；没渲过、或渲染器与 `images.source` 不一致的离线运行 convert 会拒绝。
   VLA 闭环评测的图像走下节的 Isaac 镜像，MuJoCo 物理照样 `offline`。
 - 渲染慢先查最大的单块显示网格（`max(model.mesh_facenum)`）：超过 349,525 面就无损拆块，不减面，见 [Blender 场景](blender_scenes.md#7-常见错误对照)。
 

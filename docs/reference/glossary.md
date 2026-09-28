@@ -6,8 +6,10 @@
 
 | 词 | 意思 |
 |---|---|
-| 线（line） | 一种任务的整套流程：单臂抓瓶、双臂抓篮、warehouse 抓纸箱……每条线一页 runbook（[README](../../README.md#功能与文档)）。脚本只分两套：`scripts/single_arm/`、`scripts/bimanual/`（warehouse 用后者，`run_overnight.sh --line bimanual`） |
+| 线（line） | 一种任务从建场景到评测的整套流程。主线有三条：bottle（单臂抓瓶）、crate（双臂抓筐）、warehouse（双臂抓纸箱），每条一页 runbook（[README](../../README.md#三条主线)）。脚本只分两套：`scripts/single_arm/` 给 bottle，`scripts/bimanual/` 给 crate 和 warehouse（`run_overnight.sh --line bimanual`） |
 | 实验文件 | `configs/experiments/<name>.yaml`，一次运行读的**全部**配置，没有继承；新实验 = 复制一份改几行 |
+| `locomani.local.sh` | `$LOCOMANI_WORKSPACE/locomani.local.sh`：这台机器专用、不进 Git 的设置（例如 deploy 编在别处时的 `SONIC_DEPLOY_ROOT`），`scripts/paths.sh` 先读它 |
+| 场景名 | 实验文件里的 `scene.name`，在 `configs/scenes.yaml` 里查到场景目录和构建命令；`bash scripts/build_scene.sh <场景名>` 按它建场景 |
 | 运行目录 | `outputs/runs/<name>/`。开跑时把实验文件逐字节复制成 `config.yaml`，之后每个阶段只读这份副本 |
 | 阶段（stage） | `collect`（采集）→ `convert`（转成数据集）→ `train`（微调）→ `eval`（评测）。产物已存在的阶段自动跳过，重跑就删掉它的产物 |
 | 局 / 批 | 局（round、episode）：从重置到判成败的一次尝试。批：连续若干局（`collect.batch_rounds`），录制时对应一个 session |
@@ -16,6 +18,7 @@
 | ghost | 专家命令的抓取目标，录像里画成半透明品红夹爪；只在第三视角，不进训练图 |
 | case bank | 一组固定的开局条件（`scene.cases`），对照实验用它保证两边跑的是同一批 case |
 | holdout | `train.holdout`：转换时留作验证集（`val_dataset/`）的集数，不参与训练 |
+| 冒烟（smoke） | 用最小的规模把每一步都跑一遍，只检查流程通不通、产物齐不齐，不衡量效果。三条主线的冒烟实验文件是 `bottle_simple_smoke`、`crate_smoke`、`warehouse_smoke` |
 
 ## 仿真栈里的进程
 
@@ -32,7 +35,7 @@
 | exporter | 上游的数据录制进程，录制时随栈启动，把相机、状态、动作写成 session |
 | session | exporter 的一次录制目录（在 `$LOCOMANI_TMP` 下，对应关系记在 `<run>/collect/inputs.json`），每批一个，是 convert 的输入 |
 | priv_seq | exporter 每行数据记下的特权状态 `seq`，据此把数据集的行对回 trace 里的同一时刻 |
-| lockstep | 仿真时钟：sim 和 deploy 只在评测进程请求时走一个 tick（`eval.client: lockstep`，双臂），拍照、推理时世界冻结，推理延迟按帧模拟；对照是按墙钟跑的 `blocking`（[时间模型](../bimanual_design.md#评测的时间模型墙钟与-lockstep)） |
+| lockstep | 评测用的仿真时钟（`eval.client: lockstep`，2026-09-28 起三条主线的默认）：sim 和 deploy 只在评测进程要求时前进一步，拍照、渲染和推理时仿真暂停，推理延迟按帧模拟。对照是按墙钟跑的 `blocking` 和 `async`（[运行机制](../running.md#8-评测的时钟)、[时间模型](../bimanual_design.md#评测的时间模型墙钟与-lockstep)） |
 | RTF | 实时比 = 仿真时间 ÷ 墙钟时间。deploy 按墙钟推进参考，RTF 低于约 0.9 时机器人会"走得比指令快"，定时阶段被误判失败 |
 
 ## 专家、策略与评测
@@ -63,5 +66,5 @@
 
 | 词 | 意思 |
 |---|---|
-| runbook / 详解 / 台账 | 怎么跑（`docs/<线>.md`）/ 为什么这么设计（`*_design.md`）/ 哪天跑出什么数（`docs/ledger/`） |
+| runbook / 运行机制 / 详解 / 台账 | 每条线跑哪些命令（`docs/<线>.md`）；三条线共用的运行规则（`docs/running.md`）；为什么这样设计（`*_design.md`）；哪天跑出什么数（`docs/ledger/`） |
 | STATE / TODO / DECISIONS | 仓库根的当前进度与卡点 / 任务账本（编号如 4.7.7 指这里）/ 每次决策的理由与被否决的方案 |

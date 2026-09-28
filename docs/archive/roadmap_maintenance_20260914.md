@@ -1,7 +1,9 @@
 # Repository maintenance roadmap
 
-Delivery and evidence: [maintenance completion](handoff/maintenance-completion.md).
-Earlier research plans remain in [the archive](archive/roadmap_20260912.md); their
+> 归档于 2026-09-28：自 2026-09-14 起未再更新。相对链接已按新位置修正。
+
+Delivery and evidence: [maintenance completion](../handoff/maintenance-completion.md).
+Earlier research plans remain in [the archive](roadmap_20260912.md); their
 claims and priorities require evidence before reuse.
 
 | Work | Status and acceptance evidence |
@@ -22,4 +24,4 @@ Crate scene redesign remains separate future work; this delivery does not tune i
 control or acceptance thresholds. Size advisories locate remaining complex control
 routines; they are not a claim that every function has been rewritten.
 
-Workflow rules: [first delivery](handoff/agent-workflow-20260914.md). All four guideline follow-ups: [completion and measured limits](handoff/agent-guideline-completion-20260914.md).
+Workflow rules: [first delivery](../handoff/agent-workflow-20260914.md). All four guideline follow-ups: [completion and measured limits](../handoff/agent-guideline-completion-20260914.md).

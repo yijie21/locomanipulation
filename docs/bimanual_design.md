@@ -17,7 +17,7 @@
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
-| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](single_arm_design.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
+| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](#五双臂闭环评测器)） |
 
 当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
 仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
@@ -72,7 +72,7 @@
 
 ### 运行
 
-在 [采集指南](bimanual_design.md#2-环境与场景) 中构建场景并运行单次尝试或批量配置。
+在 [采集指南](bimanual.md#1-建场景每台机器一次) 中构建场景并运行单次尝试或批量配置。
 该指南管理启动命令、GPU/实例选择、[桌面高度验证过程](bimanual_design.md#table-height-validation) 和所需的 POSE 所有权补丁。
 本部分解释场景和来源处理。
 
@@ -167,7 +167,7 @@ SONIC v1.1 为其编码器预留 46 个未来帧；仅发送过去的样本使�
 ego、左腕和右腕用于可见性检查及动作审查。相机 MP4 按名义 25 FPS 保存，
 时序测量应读 JSON 时间戳；第三人称原片使用仿真时间。
 发送记录不是控制器已经执行的证明，POSE 包含未来参考帧，不能把它们直接当作当前训练 action。
-字段和对齐限制见 [观测与动作记录](bimanual_design.md#outputs-and-limits)。
+字段和对齐限制见 [观测与动作记录](#输出和限制)。
 
 验收应核对实际初始距离、完整走近过程、双手接触、真实离桌抬升及恢复直立后的持物状态。
 停止到俯身、试提到站直之间的停顿和抖动需要结合视频与物理时间测量；
@@ -314,7 +314,7 @@ settle，矛头转向 planner 模式。
 和单臂 trace 对齐。**注意采样仍是每 chunk 一次（约 0.73 s）**，
 所以 trace 本身仍看不见 0.3 s 的瞬态——瞬态要看 `takeover` 那两个采样。
 
-### 评测的时间模型：墙钟与 lockstep（2026-09-27）
+### 评测的时间模型：墙钟与 lockstep
 
 策略每看一次（拍照 + 推理）都要时间。现实里拍照几乎是瞬时的，推理约 70 ms，这期间机器人在执行上一块动作。
 墙钟评测里 Isaac 渲三路相机还要约 95 ms，这段时间世界照走——现实里并不存在；而且这条线原来的 blocking 循环在
@@ -395,7 +395,7 @@ crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initi
 `task.visual.retreat_distance` > 0 时成功局接着跑，`RetreatWatch` 记策略是否带着箱子沿走入轴后退了这么远
 （采集成功的后半段；manifest 的 `retreat` / `retreat_ok`，`closed_loop.json` 的 `retreated`）。
 2026-09-27 之前摆放是合成桌子的副本（机器人偏航 0、物体 π/2、名字写死 `blue_crate`），在物流房间里朝向错 90°。
-图像来源是整次运行的 `images.source`（`mujoco` | `isaac`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`、`box_platform`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
+图像来源是整次运行的 `images.source`（`mujoco` | `isaac`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`、`box_platform`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-评测)。
 观测构造与策略连接在 `vla_obs.py` 里按 `TaskSchema` 切换（`ObsBuilder(schema=SONIC_CRATE)`、
 `PolicyLink.get_chunk_bimanual`），策略服务的 modality 与 `SONIC_CRATE` 不一致会直接拒绝。
 
@@ -531,3 +531,46 @@ flowchart TD
 - **下探是参考点在降,不是手在降。**参考以 0.04 m/s 匀速下降到"底"(顶下 5 cm),手跟不跟得上由三个判据看:
   `contact`(手被箱沿顶住不再下降)是主判据,`seated`(垫心确实进到顶下 1.5 cm 且横向居中)是毫米级备用,
   `floor`(参考到底 0.5 s)是兜底、且要求手真在顶上——pilot 23 r5 从 0.30 m 站位闭合时双垫离顶 26–33 mm,夹的是空气。
+
+## 七、运行细节（2026-09-28 从 crate runbook 移来）
+
+crate runbook 只写命令和结果；下面是它原来夹在命令之间的说明。warehouse 特有的部分在 [warehouse 详解](warehouse_design.md)。
+
+### 场景为什么分两步建
+
+`bash scripts/build_scene.sh crate` 跑的是两条命令：先用 `bimanual_scene --crate-setback 0.04` 建 `crate_bimanual_depth04`，再用 `crate_table_height_20260913.py` 把桌子降到 0.30 m，得到 `crate_table30_depth04`。
+
+- 降桌高和选控制参数是两件事：低桌的配置文件不改桌面几何，所以桌高必须在场景里改。
+- `--crate-setback 0.04` 同时改 XML 里的初始位置和重置用的元数据，任务 JSON 代替不了它。此前 runbook 漏写了这 4 cm，建出的场景和实验对不上（[复现核对](handoff/crate-reproduction-20260914.md)）。
+- 双臂场景只读安装第 4 步装好的源资产，和 `outputs/scene/sim` 建成什么样无关（2026-09-25 核对过逐字节相同）。所以这里不要再跑不带 `SCENE_PRESET` 的 `install_scene.sh`，它会把 bottle 用的 `outputs/scene/sim` 重建成多物体桌。
+
+### 专家
+
+`task.expert` 选专家：`visual` 是正式采集用的视觉专家；`wall` 和 `carry` 是诊断专家（第六节图 ②）。
+
+### 评测器读哪些字段
+
+`eval` 块整份交给评测器，但它只实现了其中一部分：`rounds`、`seed`、`policy_port`、`execution_horizon`、`budget_s`、`initial_token`、`client`、`gap`、`latency_frames`、`latency_dist`、`camera_frames`，图像来源取整次运行的 `images.source`。`client` 只能是 `blocking` 或 `lockstep`，写别的会在启动前报错。其余字段写进 `eval/ignored_eval_fields.json`，可以直接对比"声明了什么"和"实际用了什么"。起点、夹爪下限和后退一列取自 `task.visual`（第五节）。
+
+### 产物和日志
+
+- 采集的 `manifest_NN.jsonl`、`videos/`、`trace/` 在运行目录顶层；bottle 放在 `collect/` 下。
+- `trace/<局>_ghost.npz` 是专家命令的抓取目标，第三视角画 ghost 夹爪用；走近阶段就失败的局没有这个文件。
+- manifest 每行有 `task`、`produced`、`ok`；成功局还有 `execution.metrics.training_tail.end_seq`（进入直立持物验收的帧号），转换时按它裁掉验收尾段。
+- 训练用 `configs/gr00t_sonic_3cam_bimanual.py`：60 维状态、66 维动作、三路相机。
+- 采集日志按专家命名（`visual_NN.log`），不是 `collect_NN.log`。开局是否站稳看 manifest 每行的 `placement.initial_stance_ready`；为 `false` 的局以 `initial_stance_unstable` 失败。
+- `collect.record: true` 时，每批一个 exporter session，写在 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，记在 `collect/inputs.json` 的 `sessions` 里，和 `manifests` 一一对应。
+
+### 数据检查必须带 `--run-dir`
+
+`check_dataset` 带 `--run-dir` 时，按 exporter 记下的 `priv_seq` 从本次运行的 `trace/` 取箱子的世界高度，判断"合爪后抬起"。不带它，检查器只能用骨盆坐标系的位姿列；躯干直立时，这一列会把 20 cm 的真实抬升读成几厘米（2026-09-14 验证批：按世界高度 7/7 通过，按骨盆坐标只判出 2/7）。
+
+### 报错与原因
+
+| 现象 | 原因与处理 |
+|---|---|
+| 场景和别人的实验对不上 | 建场景时漏了 `--crate-setback 0.04`，或者没降桌高 |
+| 采集非零退出，但录像还在 | 保留数没到 `successes`（[运行机制](running.md#采集什么时候停)），已采的记录是完整的 |
+| 一整批只跑了几局就结束 | 专家抛了异常，整批中止。在 `visual_NN.log` 里搜 `Traceback` |
+| 第三个录制栈起不来或段错误 | 进程数上限（[运行机制](running.md#6-并行)） |
+| 评测开局动作突变 | 2026-09-18 已修：回合之间不再交还 planner，稳定阶段跑在 token 通道上。此前底盘在这段里漂移中位 0.09 m、最大 0.83 m。要复现旧行为加 `--no-clean` |

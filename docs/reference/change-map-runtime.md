@@ -28,4 +28,4 @@ switches migrate only at the version-1 JSON boundary. GymRuntime and VlaConfig c
 RTC diagnostics retain scoped instrumentation hooks. The gym-options report covers
 its parser; child receipts and delivery tests cover subprocess settings.
 
-Next migrations: [ROADMAP](../ROADMAP.md). Launch commands: [runbook](runbook.md).
+Past maintenance scope: [roadmap (archived)](../archive/roadmap_maintenance_20260914.md). Launch commands: [running](../running.md) and the three line runbooks.

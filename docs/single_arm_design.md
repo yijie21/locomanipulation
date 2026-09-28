@@ -30,7 +30,7 @@
 | 项目 | 要求 | 核对方法 |
 |---|---|---|
 | SONIC 权重 | `policy/sonic_v1_1`（`scripts/paths.sh` 默认） | 运行目录 `deploy_receipts.jsonl` |
-| deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-c-deploy必需) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
+| deploy 二进制 | 按 [安装指南第 3 步](setup.md#3-编译-deploy) 编译，含 POSE ownership 与夹爪交接补丁 | 同上的 capability 标记 |
 | 场景 | `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，回显 `finger pads HARDENED`；`simple` 线还要按 [runbook §1](single_arm.md) 再建 `outputs/scene/sim_lowcom` | 实验文件的 `scene.dir` 指向哪个，就核对那个目录的 `scene_meta.json` |
 | 任务配置 | 实验文件的 `task` 块，不改字段；默认 `bottle_simple_200`（`approach_stop: guard`）。下表 2026-09-14 的数字来自更早的 `configs/task/bottle_whole_body.yaml`（2026-09-15 起 `visible_brake_depth` 为 0.31，此前 0.40；见下表第二行） | 运行目录 `task_config.json`、`config_snapshot.json` |
 | 采集配方 | `configs/experiments/<name>.yaml`（全展开，一次运行读的每个值都在里面） | 运行目录 `config.yaml`（逐字节副本）、`collect/inputs.json` |
@@ -829,7 +829,7 @@ CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
 
 exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
 `$LOCOMANI_TMP/p03_i<N>/outputs/`（`--record` 在实例 N 上录制，见
-[双臂采集](bimanual_design.md#录制成正式训练数据)）。转成 LeRobot v2.1
+[双臂采集](bimanual_design.md#三观测动作渲染与其他双臂场景)）。转成 LeRobot v2.1
 (格式对齐 `hojjunekim/g1_sonic_orange_to_plate_locomani`,含 29-DoF 关节状态 +
 64 维 SONIC motion latent + 三路 25fps 视频):
 
@@ -1043,7 +1043,7 @@ parquet 列里**——像素在 mp4 里,靠帧号对齐,parquet 不存引用。
 
 三路 RGB(`ego_view` 头显视角、`left_wrist`/`right_wrist` 手腕相机),和
 `info.json.fps` 一致(转换器统一重采样到 `DST_FPS`,**2026-08-28 起是 25fps**,
-理由见 [ROADMAP](ROADMAP.md#已做dst_fps--25消掉重采样的-10-hz-伪影2026-08-28);
+理由见 [旧路线图](archive/roadmap_20260912.md#已做dst_fps--25消掉重采样的-10-hz-伪影2026-08-28);
 更早转出来的数据集是 30fps)。每个视频的帧数必须等于对应
 parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parquet 行数"要测的。
 
@@ -1405,3 +1405,65 @@ flowchart TD
 每关节每 tick 最多 0.01 rad;`arm._push` 发 17 维上身 + 手指 + IDLE 帧。控制的是**罐心**而不是掌心,所以抓取时的握偏
 不进放置误差。
 
+
+## 九、运行细节（2026-09-28 从 bottle runbook 移来）
+
+bottle runbook 只写命令和结果；下面是它原来夹在命令之间的说明，按主题归到这里。
+
+### 两个场景目录
+
+- `bash scripts/build_scene.sh bottle` 先用 `SCENE_PRESET=bottle_only` 重建 `outputs/scene/sim`（一张空桌加一个水瓶），再在它的基础上建 `outputs/scene/sim_lowcom`：瓶子重心下移 5 cm。`bottle_simple_*` 系列实验用的是后者（`scene.name: bottle`）。
+- 核对 `outputs/scene/sim` 的目标池：`"$VENV_SIM_PY" -c 'import json; print(json.load(open("outputs/scene/sim/scene_meta.json"))["target_pool"])'`，结果里要有 `water_bottle`；`install_scene.sh` 结束时会回显 `finger pads HARDENED`。
+- 两个目录在 `outputs/scene/` 下并存。实验文件用 `scene.name`（查 `configs/scenes.yaml`）或 `scene.dir` 选其中一个。
+
+### 现有的 bottle 实验文件
+
+- `bottle_simple_smoke`：冒烟，2 条数据、10 步训练、2 局评测。
+- `bottle_simple_200`：完整规模，200 条数据、1 万步训练、100 局评测。
+- `bottle_simple_gate8_20260925`：8 局固定开局库（`configs/cases/`），做闸门对照，钉住旧的走近方式 `approach_stop: visible`。旧版 `bottle_simple_gate8` 读的开局库在没有入库的 `outputs/` 下。
+- `pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 与 bottle 用同一套 `tasks/bottle/collect.py` 和 `eval_closed_loop.py`，只是实验文件的 `task.plugin`、`task.goal`、`task.place` 和场景不同，命令完全一样（第四节）。
+
+### 读日志
+
+- 采集：`collect_NN.log` 里每局以 `EPISODE OK` 或带标签的失败原因结尾；开局是否站稳看每局的 `stand drift` 行和 `[stand]` 开头的失败原因。
+- 训练：`train.log` 里有 loss；存档时打印 `Copying experiment config directory`。
+- 评测：`eval/serve.log` 出现 `listening` 才表示策略服务起来了；逐局的失败阶段和标签只在 `eval/closed_loop.manifest.jsonl` 里。
+
+### 报错与原因
+
+| 现象 | 原因与处理 |
+|---|---|
+| `needs patches/sonic_hand_ownership.patch` | deploy 没打补丁。按[安装第 3 步](setup.md)一次打全三个 deploy 补丁并重新编译，不要只打这一个；deploy 编在别处时在 `$LOCOMANI_WORKSPACE/locomani.local.sh` 里设 `SONIC_DEPLOY_ROOT`。这个检查在起任何进程之前执行 |
+| 100 局全卡在 `[stand]` | `eval.initial_token` 和训练数据的开局姿势不一致 |
+| `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认动作，这一局机器人整局不动，数据作废，重跑这一局。2026-09-18 实测十局里出现过一次 |
+
+### 录制用哪个实例
+
+`collect.record` 为真时，`run_stack.py` 给栈设 `RECORD_INSTANCE=1`，exporter 在这次运行的实例上启动。bottle 和双臂两条线都走这条路径（双臂闸门跑在实例 2），并行仍按卡分。
+
+### lockstep 评测尚未校准
+
+2026-09-28 起 bottle 的闭环评测也默认用 lockstep（[运行机制第 8 节](running.md#8-评测的时钟)）。bottle 用的是单臂评测器里较早的 lockstep 实现（`backends/sonic/lockstep_client.py`），它在 2026-09-02 的校准里没有通过：墙钟 46/100，lockstep 32/100，lockstep 的失败局大多停得太远（[台账](ledger/bottle.md)）。之后专家和 SONIC 版本都换过，这条路径还没有重新和墙钟对照，要等下一个 bottle checkpoint（TODO 9.3）。
+
+### 手工起栈跑一局
+
+不经过流水线、只看一局动作时用（不录制）。在仓库根目录：
+
+```bash
+export INSTANCE=0
+. scripts/paths.sh
+export CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0
+export SIM_VIS=none SCENE_RANDOM=0
+TASK=configs/task/bottle_visible.yaml
+PROMPT="pick up the water bottle"
+export LOCOMANI_SIM_DIR="$LOCOMANI_ROOT/outputs/scene/sim"
+SIM_VIDEO_DIR="$LOCOMANI_ROOT/outputs/bottle_manual/videos" \
+  python -m locomani.stack.cli up --instance "$INSTANCE" --gpu 0 --prompt "$PROMPT"
+"$VENV_SIM_PY" -u -m locomani.tasks.bottle.grasp_gym \
+  --task-config "$TASK" --rounds 1 --seed 30000 --video-include-init \
+  --manifest outputs/bottle_manual/manifest.jsonl
+python -m locomani.stack.cli down --instance "$INSTANCE"
+```
+
+pick-and-place 把 `TASK` 换成 `configs/task/pick_place.yaml`，`PROMPT` 换成 `"pick up the red can and put it in the basket"`，`LOCOMANI_SIM_DIR` 换成 `$LOCOMANI_ROOT/outputs/scene/pick_place`，并用另一个输出目录。
+不加 `--record` 时不录制；实例 0 仍会起 exporter，可能留下一个空 session。要保留成功局就给 `grasp_gym` 加 `--record`，再把 `$LOCOMANI_TMP/p03/outputs` 下的 session 和 manifest 配对。

@@ -21,20 +21,24 @@ SPAWNS = "tests/fixtures/interpreter_spawns.json"
 GUIDES = {
     "AGENTS.md": 80,
     "CLAUDE.md": 12,
-    "README.md": 100,
+    # 2026-09-28 reader-facing rewrite: README is the document list, each runbook only the commands, what they do
+    # and what they produce; shared mechanics live in running.md, everything else in the line's design page.
+    "README.md": 80,
     "STATE.md": 60,
-    "docs/ROADMAP.md": 60,
-    "docs/README.md": 80,
-    "docs/single_arm.md": 210,
-    "docs/bimanual.md": 210,
+    "docs/README.md": 60,
+    "docs/single_arm.md": 130,
+    "docs/bimanual.md": 130,
     "docs/warehouse.md": 150,
+    "docs/running.md": 180,
+    "docs/setup.md": 420,
+    "docs/warehouse_design.md": 120,
+    "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,
     "docs/reference/change-map-bottle.md": 45,
     "docs/reference/change-map-crate.md": 35,
     "docs/reference/change-map-runtime.md": 45,
     "docs/reference/change-map-rendering.md": 35,
     "docs/reference/standards.md": 100,
-    "docs/reference/runbook.md": 100,
     "docs/agents/session-workflow.md": 50,
     "docs/handoff/agent-maintenance-plan.md": 120,
 }
@@ -48,7 +52,7 @@ BYTE_BUDGETS = {"docs/reference/change-map.md": 3000}
 # README prints the quickstart, so it has to name commands that exist. It was NOT checked
 # until 2026-09-22, which is how it kept printing `scripts/collect_data.sh` for a whole
 # refactor after that script was deleted.
-COMMAND_DOCUMENTS = ("README.md", "docs/single_arm.md", "docs/bimanual.md", "docs/warehouse.md")
+COMMAND_DOCUMENTS = ("README.md", "docs/single_arm.md", "docs/bimanual.md", "docs/warehouse.md", "docs/running.md")
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
 

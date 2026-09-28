@@ -28,7 +28,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 
 成功局样片：`outputs/videos/box_range_quick_20260927.zip`（24 段，quick，全维度随机）、`outputs/videos/box_safe_range_20260927.zip`（11 段，扫参里按维度挑的）。
 
-出训练数据、训练和评测：命令与核对表同 [warehouse §5–§6](warehouse.md#6-训练与评测)（把 `my_box` 换成本运行）。图像两种都能选（`images.source`）：`mujoco` 补渲用 `scripts/render_dataset_cameras.sh`、评测时 sim 自己出图；`isaac` 另要本场景的 Isaac stage（`configs/scenes.yaml` 里 `box_platform` 的 `isaac.build`，从 MJCF 的盒子生成，另加一块 MuJoCo 没画的灰地面）、补渲用 `_isaac.sh`、评测开镜像，`backend.render` 保持 `offline`。`eval.initial_token` 用 `configs/deployment/warehouse_initial_token.json`（本配置 60 局的开局手臂与它差 ≤ 0.03 rad，与 crate 那份差 0.6 rad）。判据 `retreat_distance 0`，闭环没有"后退"一列。冒烟：`box_platform_isaac_smoke_20260927`（采集 → Isaac 补渲 → convert → Isaac 录像 → 镜像 50/50）。
+出训练数据、训练和评测：命令同 [warehouse runbook](warehouse.md) 第 3–6 步（把 `warehouse_smoke` 换成本运行），评测前的核对表见 [warehouse 详解](warehouse_design.md#5-评测前要核对的几项)。图像两种都能选（`images.source`）：`mujoco` 补渲用 `scripts/render_dataset_cameras.sh`、评测时 sim 自己出图；`isaac` 另要本场景的 Isaac stage（`configs/scenes.yaml` 里 `box_platform` 的 `isaac.build`，从 MJCF 的盒子生成，另加一块 MuJoCo 没画的灰地面）、补渲用 `_isaac.sh`、评测开镜像，`backend.render` 保持 `offline`。`eval.initial_token` 用 `configs/deployment/warehouse_initial_token.json`（本配置 60 局的开局手臂与它差 ≤ 0.03 rad，与 crate 那份差 0.6 rad）。判据 `retreat_distance 0`，闭环没有"后退"一列。冒烟：`box_platform_isaac_smoke_20260927`（采集 → Isaac 补渲 → convert → Isaac 录像 → 镜像 50/50）。
 
 ## 2. 参数定义与符号
 

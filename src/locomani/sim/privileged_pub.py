@@ -929,7 +929,7 @@ class PoseSidecar:
          "objects": {key: [x,y,z,qw,qx,qy,qz]}}
 
     Both clocks on purpose: the exporter's parquet timestamps live on a
-    different clock, and alignment is an offline problem (docs/ROADMAP.md).
+    different clock, and alignment is an offline problem (docs/archive/roadmap_maintenance_20260914.md).
     Fail-safe by design -- every entry point swallows its own errors, because
     a broken sidecar must cost a warning, never an episode.
     """

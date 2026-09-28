@@ -25,9 +25,9 @@ then only its relevant row; follow actual callers and dependencies as needed.
    [live-validation requirements](standards.md#checks) for physical behavior changes.
 4. Update the affected domain row when an entry, config owner or test changes.
    Add a row for a new capability in that domain; add a domain only for a distinct
-   ownership boundary. Maintain the [owning document](../README.md#documentation-ownership)
+   ownership boundary. Maintain the [owning document](../agents/doc-ownership.md)
    alongside the change. Report actual evidence and limits using the
    [completion criteria](../agents/session-workflow.md#completion).
 
 Domain maps are navigation, not experimental certification. Do not copy parameter
-defaults into them; use the linked config. Launch commands: [runbook](runbook.md).
+defaults into them; use the linked config. Launch commands: [running](../running.md) and the three line runbooks.

@@ -904,3 +904,26 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **刹车后不重锚（`reanchor_after_brake: false`）**：再省 2.2 s，但 14/40、下探卡住 7 → 13，与 09-27 "压得越狠卡住越多"同向；要定需每组约 200 局。字段保留、默认开。
 - **边停边抬手**（最后一步刹车时就抬）：要改走近循环，09-23 走路时抬手 6/10 局手指扎进箱子。
 - **把 quick 的 28 条并进 compact 数据集**：见决策 3。
+
+## 2026-09-28 文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep
+
+目标与约束
+- 用户：README 和各页写得太多、入口太多；仓库的主功能只有三条线（bottle 单臂、crate 双臂、warehouse 双臂）的采集、训练、评测，其余是支线。跑的时候只想知道跑哪些命令、每条命令做什么、会得到什么；设计和逻辑想细究时自己去找。中文表达要改得地道。
+- 经一轮逐项确认（grilling，Q1–Q25）定下下面的结构。
+
+决策
+1. **README 是给人看的唯一文档清单**：三条主线的表格，然后按"通用 / 各主线详解 / 支线 / 已结束的专题实验 / 台账与开发"列出其余每篇文档，每篇一句话说明用途（用户要求，不用点进去才知道是干什么的）。`docs/README.md` 只留历史记录和开发者入口；原来那段英文的文档归属规则移到 `docs/agents/doc-ownership.md`。
+2. **runbook 统一骨架**：开头三行写做什么、要几张卡、冒烟跑完多久；然后是每个新终端先执行、建场景、采集、转换、训练、评测、看结果、常见报错、接下来。每条命令后面写"做什么"和"得到什么"。正文按冒烟规模写，完整规模在页尾一行。
+3. **三份 runbook 里重复的运行机制合并到 `docs/running.md`**；各线特有的设计和坑移到详解页（warehouse 新建 `warehouse_design.md`）；带日期的经过留在台账和 DECISIONS。文件名不改（`single_arm.md` 等被引用 20 多次），标题改成 bottle / crate / warehouse。
+4. **warehouse 主线走 Isaac 出图**（用户选 a）：两张卡，页尾一节"只有一张卡"说明怎样换成 MuJoCo 图。
+5. **所有 VLA 闭环评测默认 lockstep**（用户："渲染的时候 simulation 停止，渲染完了再继续，所有场景都这样"）：`EvalConfig.client` 默认 `lockstep`、`latency_frames` 2、`camera_frames` 0、`gap` continue，即 09-27 校准的目标模型（88/100）。三条主线的实验文件都改成它；带日期的历史实验文件不动。采集不是 VLA 推理，仍按墙钟。
+6. **bottle 的 lockstep 先用、后校准**：单臂的 lockstep 实现 09-02 校准未过（墙钟 46 vs lockstep 32），现在没有 bottle checkpoint 可测；冒烟证明能跑，校准记为 TODO 9.3。
+7. **为缩短命令做三处小改动**：`paths.sh` 导出 `PYTHONPATH`；本机专用设置（如 `SONIC_DEPLOY_ROOT`）放到仓库外的 `$LOCOMANI_WORKSPACE/locomani.local.sh`；`scripts/build_scene.sh <场景名>` 读 `configs/scenes.yaml` 的 `build`。每个新终端只剩 `. scripts/paths.sh` 一行，三条线建场景都是一条命令。
+8. **`setup.md` 只改说明、不改命令**：每一步写命令、做什么、怎么验证，踩坑挪到页尾；新旧两版的命令用脚本逐条比对，完全相同（只把克隆本仓库的三行从 README 挪进来）。
+9. **不做无上下文复现**（用户）；详解页、`rendering.md`、`scalebfm.md`、台账这次不重写，只写入挪过来的内容并修链接（TODO 9.8）。
+
+被否决的方案
+- **把支线文档挪进子目录**：它们被引用 4–46 次，有的在代码里，挪目录只换来"看着整齐"。
+- **三批未提交的改动按 hunk 拆成三个提交**：第一批新增的 `vla_lockstep.py` 调用第三批的 `expert.facing_edge`，`build_isaac_warehouse_scene.py` 和 `mujoco_render.py` 混着第二、三批，拆开的中间提交跑不起来；合成一个提交，说明里分三批列清楚（`291cdeb`）。
+- **冒烟跑中等规模（能看到非零成功率）**：一条线要好几个小时；冒烟只证明流程通，完整规模的已知结果写在页尾。
+- **在原地重建场景来验证建场景的命令**：`outputs/` 被另一个检出目录（`locomanipulation-loco_agent`）软链接共用，重建会覆盖别的会话在用的场景；改为把同样的命令输出到临时目录，XML 与元数据去掉路径后和现有场景逐字相同。

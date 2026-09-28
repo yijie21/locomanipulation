@@ -4,7 +4,7 @@
 # box_room_grasp_200_cap120_20260925 (the first warehouse VLA: open-loop MSE 0.00123 at checkpoint-5000, closed loop
 #   81/100 wall clock and 88/100 lockstep on the Isaac mirror, ledger crate.md 2026-09-27) with two changes only:
 #   images.source at the top level (the current format) and the lockstep eval clock (every VLA evaluation since
-#   2026-09-28). Collection: yield about 0.30, so 200 kept take roughly 700 rounds; batches of 10, at most 120.
+#   2026-09-28). Collection: cap120 kept 204 of 950 rounds (yield 0.22); batches of 10, at most 120.
 name: warehouse_200
 task:
   plugin: crate

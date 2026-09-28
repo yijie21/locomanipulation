@@ -25,7 +25,7 @@
 | `sim_video.py` | 第三人称录像(ego + 双腕画中画、6D 线框盒、坐标读数) |
 | `sim_vis.py` | `SIM_VIS` 开关的解析(见[可视化开关](#可视化开关)) |
 | `tasks/bottle/place_phase.py` | pick-and-place 的 place 阶段(raise / turn-to-band / carry-over / descend / release / retreat / verify),由 `BottleTaskConfig.goal` 接在 lift 之后;`tasks/pick_place/` 只是注册 |
-| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径约定)) |
+| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
 | `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](../single_arm_design.md#转完先查一遍强烈建议)) |
@@ -99,12 +99,12 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 
 | 变量 | 默认 | 谁读 | 作用 |
 |---|---|---|---|
-| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](../setup.md#0-路径约定) |
+| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](../setup.md#0-路径) |
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `locomani.stack.cli up` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `locomani.stack.cli up` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `none`(2026-09-10 前是 `full`) | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `TF_DATASET_FPS` | `30` | vla_round | 闭环回放的发布帧率,**必须等于 checkpoint 训练数据的 fps**。转换器 2026-08-28 起写 25,所以用重转数据训出来的 checkpoint 要 `--set backend.dataset_fps=25`(2026-09 起环境变量 `TF_DATASET_FPS` 不再被读取,只有 `SonicBackendConfig.dataset_fps`);不匹配不会报错,只是动作按错速度回放 |
-| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../single_arm_design.md#6-调整任务) |
+| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../single_arm_design.md#调整任务) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../single_arm_design.md#相机与动作) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**单臂采集必须用 `0`**:stack manager 在 instance≠0 且未设 `RECORD_INSTANCE=1` 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`collect` 命令采不出任何 session;crate 的采集可设 `collect.instance=<N>` 来改变实例。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |

@@ -231,7 +231,7 @@
     - [x] 4.7.11.5 W5 文档与模板（2026-09-28 完成：warehouse.md §6.1、bimanual.md §6、bimanual_design §五、rendering.md、术语表、change map、全部实验文件加 `gap` / `camera_frames`；计划第 10 节是实施记录）
     - [ ] 4.7.11.6 可选：分开两个效应——lockstep `hold` + L = 2 一臂（目标模型 88 与复刻 83 之差是"间隙续走"还是"延迟少 2 帧"）；要逐位复现就得评测图和训练图都关 MuJoCo 多重采样
     - [ ] 4.7.11.7 待用户定：默认 `eval.client` 要不要改成 `lockstep`（校准已过；目标模型 88 vs 墙钟 81 未显著）
-    - [ ] 4.7.11.8 未提交（待用户说）：lockstep 实现（`vla_lockstep.py`、`GapFeeder`、镜像按 seq、三处 lockstep 老化修复）+ 测试 + 文档 + 115 份实验文件加 `gap` / `camera_frames`；`make check` 通过（2026-09-28）
+    - [x] 4.7.11.8 已提交（`291cdeb`，三批合成一个提交，2026-09-28）：未提交（待用户说）：lockstep 实现（`vla_lockstep.py`、`GapFeeder`、镜像按 seq、三处 lockstep 老化修复）+ 测试 + 文档 + 115 份实验文件加 `gap` / `camera_frames`；`make check` 通过（2026-09-28）
     - [ ] 4.7.11.9 可选：10 个只评测的运行目录 `outputs/runs/{ls,wc}_*_20260927`（每个约 120 MB）用完可删，删前按规矩在 STATE 记 24 h
 - [~] 4.8 协作者采集仍摔倒：核实用户的猜测"自编 SONIC deploy 二进制没同步到文档"（用户 2026-09-24）
   - [x] 4.8.1 静态核对（2026-09-24）：本机 9 个 deploy 二进制全部从只存在本机的 `lockstep-port` 分支编出（上游 1983e888 + 6 个未推送的本地提交 + 工作树补丁）；setup.md 的做法（clone 上游 main 不钉版本，现为 b042411，再打 4 个补丁）本机从没编过、跑过。文档版缺 SONIC_AUTO_START/`--default-motion`（每个 eval 栈都要，上游静默忽略未知参数）、DDS domain（`sonic_dds_domain.patch` 已打不上上游 main）、planner 初始化超时 10 s（上游 5 s）。已排除：SONIC 权重与 HF 逐字节一致；肩 roll 默认角两边编进去的都是 ±0.2；上游 1983e888 之后的 deploy 改动默认不改行为。MuJoCo 不钉版本，新装会是 3.14（本仓库在 3.11.0 上测）
@@ -322,7 +322,7 @@
   - [x] 7.3.2 `locomani.pipeline.video_preview`：CRF 32→38 阶梯 + 按帧边界分段 + 自检；接进 `render_isaac_videos.sh`；5 个测试 (2026-09-28)
   - [ ] 7.3.3 重新生成 `box_room_grasp_200_cap120_20260925/eval/previews_isaac/` 里 3 个超限的旧预览（已问用户，未回复）
   - [ ] 7.3.4 待用户定：长局分段多时，阶梯里要不要加降宽（比如 960）
-- [ ] 7.4 提交本会话改动（等用户说）。`docs/rendering.md`、`docs/warehouse.md` 里混有 lockstep 未提交的改动，提交时要和 4.7.11.8 一起处理
+- [x] 7.4 已提交（`291cdeb`，与 4.7.11.8、8.12 合成一个提交，2026-09-28）。提交本会话改动（等用户说）。`docs/rendering.md`、`docs/warehouse.md` 里混有 lockstep 未提交的改动，提交时要和 4.7.11.8 一起处理
 
 ## 8. 四边线：warehouse 平台四条边随机走入，按 envelope ≥ 30% 的范围随机（用户 2026-09-28；台账 `crate.md` 2026-09-28 两节）
 
@@ -344,4 +344,18 @@
 - [ ] 8.9 可选：checkpoint-5000（只见过 ym）在四边分布上评测 100 局，看窄数据换边后掉多少
 - [ ] 8.10 仿真实时录像（`SIM_VIDEO_DIR`）仍只用一个固定机位；四边线目前只按离线渲染跑
 - [ ] 8.11 2026-09-29 之后删试建副本 `outputs/experiments/warehouse_edges_20260928/trial_45x20x18`（107 MB）
-- [ ] 8.12 提交第三批改动（四边线代码、配置、文档；与前两批混改的文件按 hunk 拆）——等用户说
+- [x] 8.12 提交第三批改动（四边线代码、配置、文档）：`291cdeb`（2026-09-28）。没有按 hunk 拆：第一批新增的 `vla_lockstep.py` 直接调用第三批的 `expert.facing_edge`，拆开的中间提交跑不起来
+
+## 9. 文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep（用户 2026-09-28；DECISIONS 同日）
+
+- [x] 9.1 先提交三批未提交的改动（`291cdeb`，见 8.12）（2026-09-28）
+- [x] 9.2 代码：`paths.sh` 导出 `PYTHONPATH` 并读 `$LOCOMANI_WORKSPACE/locomani.local.sh`；`scripts/build_scene.sh <场景名> [--isaac]` 读 `configs/scenes.yaml` 的 `build`（`6783a9f`）；`eval.client` 默认 `lockstep` + `latency_frames` 2，bottle 评测栈按 client 起 lockstep（`4b8180b`）（2026-09-28）
+- [ ] 9.3 bottle 的 lockstep 评测和墙钟对照：下一个 bottle checkpoint 出来后，同一 checkpoint 墙钟 vs lockstep 各 100 局。单臂的 lockstep 实现 2026-09-02 校准未过（46 vs 32），之后没重测
+  - [ ] 9.3.1 如果仍不过：把单臂评测改用双臂那套已校准的 lockstep 实现（`tasks/crate/vla_lockstep.py`）
+- [x] 9.4 实验文件：`bottle_simple_smoke` / `bottle_simple_200` / `crate_table30_record` 改 lockstep；新建 `crate_smoke`、`warehouse_smoke`、`warehouse_200`（`6712067`）（2026-09-28）
+- [x] 9.5 三条线的冒烟按新 runbook 真跑一遍，把用时、产物、日志字样填进 runbook（2026-09-28；记录 `outputs/docs_smoke_20260928/`）：bottle 12 分钟、crate 8 分钟、warehouse 40 分钟（含 14 分钟评测录像），三条闭环都是 lockstep 0/2
+  - [x] 9.5.1 冒烟抓出并修掉的问题：小数据集的视频对齐检查误判（`check_dataset`，`ffc3806`）；bottle 策略端口 5590 撞实例 1 的端口（改 5710，`ffc3806`）；单臂评测的 encoder 检查看全机的 deploy（`d290a36`）；评测结束后每局重启过的 deploy 成了孤儿进程（`Stack.down`，`a29924b`）；`crate_eval` 产物契约从没对过真运行（`7041ef0`）；长局的预览切不进 8 段（上限改 16）
+- [x] 9.6 重写 README（文档清单）、三份 runbook（只写命令、做什么、得到什么）、新建 `docs/running.md` 和 `docs/warehouse_design.md`、`setup.md` 改成"命令 + 做什么 + 验证"且命令逐条不变、`docs/README.md` 改为历史与开发者索引、规则移到 `docs/agents/doc-ownership.md`、`ROADMAP.md` 归档、`reference/runbook.md` 并入 `running.md`；失效链接全修（2026-09-28）
+- [ ] 9.7 推送：等用户看过新文档
+- [ ] 9.8 下一轮（等用户认可新 runbook 的写法）：详解页、`rendering.md`、`scalebfm.md` 按同样的写法重写
+
