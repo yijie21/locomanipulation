@@ -1,49 +1,49 @@
-# STATE — 2026-09-28（会话：文档复查 → 只渲成功局 → lockstep + Isaac 评测实现与 100 局校准）
+# STATE — 2026-09-28（会话：primitive 契约设计 → `skills` 包 → 四个黑盒包装 → 真栈回归 → `carry_to`）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `f5cbee3`（只渲成功局）。
-**未提交**：lockstep + Isaac 评测的全部实现、测试、文档，以及 115 份实验文件加 `gap` / `camera_frames`（TODO 4.7.11.8，待用户说提交）。
-`src/teleop_free/lockstep_vendor` → `src/locomani/backends/sonic/lockstep_vendor` 是 **已暂存** 的 `git mv`：只提交别的文件时用 `git commit -- <文件>`，否则会把它带进去。
-没有运行中的栈、镜像、训练或渲染；GPU1 上约 3.7 GB 是别的项目的。
+工作目录 `/workspace/code/locomanipulation-loco_agent`（worktree），分支 `loco_agent`，基于 `9955487`。
+上一份 STATE（lockstep + Isaac 评测，`main` 分支那条线）在 `9955487` 里，那条线的未提交改动在主目录 `/workspace/code/locomanipulation`，本 worktree 不碰。
+**未提交**：本会话全部代码与文档（`git status` 列出的 22 个路径；TODO 7.12）。
+没有运行中的栈；GPU1 上约 3.7 GB 是别的项目的。`outputs/` 是指向主目录 outputs 的符号链接，**stage by name，永远不要 `git add -A`**。
 
-## 工作树
+## 当前进度（细节在设计文档 `docs/handoff/primitive-contracts-design-20260928.md` §9a、台账 bottle §40–41 / pick_place §7 / crate 末节）
 
-- 未跟踪、与本项目无关、不要提交：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
-- 运行 `box_room_grasp_200_cap120_20260925` 的 `config.yaml` 被手改（`eval.rounds: 10`、warehouse token），`summary.json` 手补 train 条目；原件 `*.bak_20260927`。
-- 对照用的 10 个只评测运行目录 `outputs/runs/{ls,wc}_*_20260927`（原运行的 config + 改过的 eval 块，train 条目指向原 checkpoint），各约 120 MB。
-
-## 当前进度（数字在台账 crate.md 2026-09-27 末节、计划 `docs/handoff/lockstep-isaac-eval-plan-20260927.md` 第 10 节）
-
-- 已确认：双臂评测有两个时钟 `eval.client: blocking | lockstep`，间隙语义 `eval.gap: continue | hold`，lockstep 另有 `latency_frames` / `latency_dist` / `camera_frames`。
-- 已确认：lockstep 下 Isaac 图按冻结时刻的 seq 渲，84/84 块 seq 相符；每周期 18 帧 = 36 tick，特权 seq 与 deploy 状态序号各进 36（请求之间世界不动）。
-- 已确认（checkpoint-5000，Isaac 图，seed 6000–6099，各 100 局）：墙钟 hold **81**、墙钟 continue **83**、lockstep 复刻墙钟 **83**、lockstep 目标模型（L = 2）**88**。
-- 已确认：lockstep 校准通过——墙钟 81 vs 复刻 83，不一致 14 : 16，p = 0.86，失败构成逐项差 ≤ 3；2026-09-02 的"停得远"签名没出现。
-- 已确认：目标模型 vs 墙钟 88 vs 81，p = 0.27，100 局判不动；墙钟 continue 无差别（续发线程让观测 + 推理 70 → 95 ms）。
-- 已确认：同 seed 的 lockstep 局不逐位复现，原因是 MuJoCo 默认 4× 多重采样（同一状态渲两次腕图差 1–2 灰度级）；局前 332 tick 和策略服务端（同观测同 seed）都逐位相同。
-- 已确认：`render_isaac_videos.sh` 与两个数据集补渲都只渲成功局（已推送 `f5cbee3`）；converter 拒绝未补渲的局。
-- 已确认：`make check` 通过（含新测试 `tests/test_crate_lockstep_eval.py` 14 个）。
+- 已确认：设计文档定稿，D1–D7 按推荐值定（DECISIONS 2026-09-28 节 1–17）。粒度是"技能"不是"阶段"；profile 把走近参数和抓取参数绑在一起。
+- 已确认：`src/locomani/skills/` 建好：session / contract / profiles / scene_model / executor / catalogue；78 个 CPU 测试 + 全仓 `make check` 通过。
+- 已确认：四个黑盒都包了。单臂 approach / grasp_single / place 调 bottle 原阶段函数（构造 `RoundContext`，站位用 `plan_for_target + sample_stand`）；
+  双臂把 `run_attempt` 每拍逻辑纯提取到 `tasks/crate/attempt.py`，`handoff()` 留在 `expert.py`，29 个双臂离线测试不改一行通过。
+- 已确认（真栈，`scripts/plan_episode.py`，GPU1 / instance 1）：bottle plan 3/3 + 10 局 9/10；pick_place plan 1/3；warehouse plan 1/3。三条线的通道交接都走通。
+- 已确认：`carry_to` 实现并测量（持瓶）：直走/倒退 1–2 m 漂移 < 1 cm（6/6）；90° 转再走 3/3；180° 转 IDLE 0/2、两次 90° 1/2、SLOW_WALK 4/4 → 默认 `turn_first + slow_walk`。
+- 已确认：`grasp_single` 产出 FROZEN（`SimpleGraspPolicy.execute()` 自己交还流）；`place` 跑在 PlannerArm 上，不需要 `take_over`。
 
 ## 卡点 / 待验证
 
-- 待验证：88 与 83 之差来自"间隙续走"还是"延迟少 2 帧"（4.7.11.6，要加一臂 lockstep `hold` + L = 2）。
-- 假设：相机延迟 C = 0；真实值取决于部署硬件。
-- 待验证：按需渲与连续渲是否同图（4.7.9.8），lockstep 不消除这个问题。
+- 待验证：`simple` 抓罐头 + place 的标定（1/3：合爪无接触 ×1、carry-over 伺服差 17.5 cm ×1）；§4 的 10/10 是 `coupled` 策略。
+- 待验证：warehouse plan 与采集入口 0.30 的对照（只有 3 局）。
+- 假设：`carry_to` 的双臂守卫（高度底线 + 双手接触）可用——只在假栈上测过，持箱没量。
+- 假设：转向段不需要守卫（`turn_to` 无回调，转完查一次）。
+- 已知坑：shell 里 `source scripts/paths.sh` 会导出 instance 0 的端口，agent 对错 deploy 说话（症状 "did not stabilise after reset" + "no body_q_target"）；入口已按 `--instance` 钉端口，启动时**不要 source paths.sh**。
+- 已知：`approach` / `walk_to` 拒绝持物状态，所以"抓 → 搬 → 到容器前"的 plan 在 `approach(bin)` 处断（TODO 7.7）。
 
-## 下一步（编号见 `TODO.md`，顺序等用户定）
+## 下一步（TODO）
 
-- **4.7.11.8**：提交并推送 lockstep 实现（等用户说）。
-- **4.7.11.7**：默认 `eval.client` 是否改成 `lockstep`。
-- **4.7.6.1.2.6**："后退"一列怎么改（训练数据不含后退段）。
+1. 7.7 跨位置搬运回归：放行持物的 approach，标定 place。
+2. 7.11 warehouse plan 10 局对照。
+3. 7.12 提交本会话代码（先 `make check`）。
 
 ## 关键路径与命令
 
 ```bash
-cd /workspace/code/locomanipulation && . scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src" TMPDIR=/workspace/tmp
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
-find /workspace/tmp -maxdepth 2 -name stack.json          # 有输出 = 有栈在跑；停栈后等 ≥ 20 s 再起
-E=outputs/lockstep_eval_20260927                          # 对照工具：make_runs.py 建只评测的运行、queue.sh 串行跑、compare_arms.py 配对比较
-"$VENV_SIM_PY" $E/make_runs.py NAME client=lockstep gap=hold latency_frames=2 rounds=100 images=isaac   # 新建一臂
-bash $E/queue.sh 0 1 NAME                                 # GPU0 栈+策略、GPU1 镜像；INST=1 跑实例 1；建 $E/STOP 在当前臂后停
-python3 $E/compare_arms.py wc_hold100_20260927 NAME       # 成功率、失败构成、跳帧、同 seed McNemar
-"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out x.json [--inference-only]
-# 提交：make check → 按文件名 add（不要 -A）→ git commit → fetch 确认远端无新提交 → push
+cd /workspace/code/locomanipulation-loco_agent
+export SONIC_DEPLOY_ROOT="$PWD/outputs/bottle_continuous_20260914/deploy" PYTHONPATH="$PWD/src"   # 不要 source scripts/paths.sh
+PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
+$PY scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 1 --rounds 3 --dry-run
+$PY -u scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 1 --rounds 10 --seed 100 --name <run>
+$PY -u scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 1 --rounds 3 --plan configs/plans/bottle_carry_turn180slow.json --name <run>
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 3 --name <run>   # approach→grasp→place
+$PY -u scripts/plan_episode.py configs/experiments/box_centre_base_20260927.yaml --gpu 1 --instance 1 --rounds 3 --name <run>     # 双臂
+make test TESTS="tests/test_skills_*.py tests/test_crate_visual_execution.py"; make check
 ```
+
+- 起栈前查：`nvidia-smi`、5 秒 CPU 采样（`/sys/fs/cgroup/cpu.stat`，配额 15.36 核，> 11 核在忙就别起）、`/workspace/tmp/p03_i1/stack.json` 是否存在。
+- 每次运行产物：`outputs/runs/<run>/skills/{manifest.jsonl,agent_trace_NN.jsonl,round_NN/}`、`videos/`（入口自 carry 运行起录像）。
+- 预览：`outputs/videos/skills_carry_20260928/`；plan 文件：`configs/plans/`。

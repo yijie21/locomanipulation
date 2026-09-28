@@ -304,3 +304,16 @@
 - [x] 6.8 双臂抓箱默认版本（用户 2026-09-27）：`configs/experiments/box_platform_default_20260927.yaml` + 场景名 `box_platform`（`outputs/scene/box_platform`），文档 `docs/box_grasp_envelope.md`，README / docs/README / warehouse §8 已索引
 - [~] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
   - [x] 6.9.1 扫参会话代码（12 个旋钮、`sweep.py`、`box_platform_scene.py`、30 个实验文件、两份扫参配置、文档）与 box_platform 的 Isaac stage 一起提交推送（用户 2026-09-27）
+- [~] 7 agent 可拼接的 primitive（`src/locomani/skills/`，设计 `docs/handoff/primitive-contracts-design-20260928.md`，2026-09-28）
+  - [x] 7.1 session / contract / profiles / scene_model / executor + 目录 7 个适配器 + 占位；`tests/test_skills_*.py` 41 个通过；未提交
+  - [x] 7.2 包出四个黑盒（2026-09-28）：approach 按 profile 分派、grasp_single、grasp_bimanual、place；双臂每拍逻辑抽到 `tasks/crate/attempt.py`；78 个测试通过，未上真栈
+  - [~] 7.3 回归（2026-09-28）：bottle plan 10 局 9/10（台账 bottle §40）；pick_place plan 冒烟 1/3（pick_place §7，`simple`+place 未标定）；warehouse plan 冒烟 1/3（crate 台账末节）；三条线管路通，warehouse 的 10 局对照待跑
+  - [ ] 7.4 前置带宽回放：在已录 trace 上跑 `preconditions`，报成功局误拒 / 失败局放行
+  - [x] 7.5 `carry_to`（2026-09-28）：冻结上身 + walk_to + 持物守卫；持瓶直走/倒退 1–2 m 漂移 < 1 cm（6/6），走动中急转 3 cm 掉（0/2），180° 转 IDLE 0/2、SLOW_WALK 4/4 → 默认 turn_first + slow_walk；台账 bottle §41。持箱未量
+  - [~] 7.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器接线待做（2026-09-03 Q8/Q9）
+  - [ ] 7.7 跨位置搬运回归：`approach` / `walk_to` 放行持物状态（走近改用 carry 的守卫）；`place` 标定（先量 place 前站位深度，再定加 approach(basket) 还是调 band_x）
+  - [ ] 7.8 `put_down_bimanual`（占位，无任何一条线实现过）；持箱 carry 测量（双臂守卫只在假栈上测过）
+  - [ ] 7.9 `navigate_to` primitive：沿 `Navigator.waypoint()` 分段走，持物时段间转向走 carry 的 slow_walk 规则
+  - [ ] 7.10 新物体标定流程：新 experiment yaml → 10 局 pilot → 按失败族调一个旋钮 → gate 对照；profile 按物体几何自动落位没有机制
+  - [ ] 7.11 warehouse plan 10 局对照（现在只有 3 局 1/3）；其余运行导出预览视频
+  - [ ] 7.12 提交本会话代码（skills 包、attempt.py 提取、plan_episode.py、台账）

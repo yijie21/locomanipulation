@@ -799,3 +799,58 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 默认 `eval.client` 是否改成 `lockstep`（TODO 4.7.11.7）；目标模型 88 与复刻 83 之差是"间隙续走"还是"延迟少 2 帧"（4.7.11.6）。
 - 相机延迟 C 取多少，取决于部署硬件。
 - 本次实现未提交（4.7.11.8）。
+
+## 2026-09-28 primitive 契约与 session 对象：`skills` 包搭起
+
+### 目标与约束的变化
+
+- 用户要一组 agent 可拼接的 primitive，让 agent 在场景里自己发现任务（如"把桌上的垃圾扔进垃圾桶"）并拼出成功 episode；问现有单臂 / 双臂专家能否提炼。
+- 判断：能，但粒度是"技能"不是"阶段"——两条线的抓取核心各是一个连续参考流，按阶段切开会切掉被调顺的连续性。设计在 `docs/handoff/primitive-contracts-design-20260928.md`。
+
+### 决策（D1–D7，用户按推荐值定）
+
+1. **包名 `src/locomani/skills/`**，不复用 `primitives/`（那层是运动学与刹车几何）。`skills → tasks` 单向；抓取核心先包后迁。
+2. **profile 混配硬拒绝**：`approach` 把 profile 名写进 `Stance`，`grasp_*` 前置检查一致。理由：warehouse 的六个开关是补偿链（guard 刹车 → lifted 抬手 → staged 路径 → contact 触发），不能各自独立选。
+3. **前置允许特权状态**（2026-09-03 Q4 已定；采集不是部署）。
+4. **黑盒内重试保留，executor 不加隐式恢复**：恢复决策是 agent 的事（Q11），层间重试会抹掉它的贡献。
+5. **`hand_back` / `take_over` 是独立 primitive**：agent 要显式在持物流态与行走态之间切换；`walk_to` 的前置依赖它。
+6. **`carry_to` 先测再写**：接口占位标 unvalidated；先量持瓶 / 持箱走 1–2 m 的掌系漂移与脱手。
+7. **单臂只右手**：前置 `side == "right"`；左手是新校准。
+8. **executor 的门**：名字在目录里 → 参数在 `run` 签名里 → `arm_owner ∈ requires` → `preconditions` 为空，才进 `run`；拒绝与结果都是一条 trace（`agent_trace.jsonl`）。primitive 报成功但留下不一致的 session 是 bug，直接 raise。
+9. **`GraspProfile` 带真实 `config`**：包装专家的 primitive 拿 dataclass 整个用，不从三个映射重建（重建时缺 `reanchor_hold_seconds` 这类字段）。
+
+### 被否决的方案（及原因）
+
+- 按阶段抽 primitive（reach / entry / close / lift 各一个）：它们共用 `SupportedMotion` / `CoordinatedReach` 的滤波、姿态先验和反馈冻结状态，切开就是另一套控制器。
+- 直接用早期 LEGS 风格的 `Primitives.reach/grasp`：仓库已经试过，SONIC 自带腕 IK 达不到抓取精度，专家只留了它的 walk_to / turn_to。
+- executor 只收 `Primitive` 对象、不收名字和参数（实现子代理的第一版）：agent 的 JSON 计划需要按名字和参数校验、拒绝未知项并落盘，否则 Q9 的"全部输入输出落盘"没有落点。
+
+10. **四个黑盒的包装方式（同日下午）**：单臂 approach / grasp_single / place 直接调 bottle 的阶段函数（构造一个 `RoundContext`，站位用 `plan_for_target` + `sample_stand` 算，不再采样出生点）；
+    双臂把 `run_attempt` 的每拍逻辑纯提取到 `tasks/crate/attempt.py`（`TickSource`、`walk_step`、`reach_step`、`record_tick`、`guard_track`），对象构造和 `handoff()` 留在 `expert.py`，
+    离线测试对 `expert.*` 的 monkeypatch 原样有效（29 个双臂离线测试不改一行通过）。
+11. **`yields` 允许 frozenset**：approach 在 guard 模式产出 SWING、depth 模式产出 FROZEN，一个 primitive 两个合法终态；executor 检查"属于集合"。
+12. **grasp_single 产出 FROZEN，不是 POSE 流**：`SimpleGraspPolicy.execute()` 在自己的 finally 里交还流，包装不改它；`place` 跑在 PlannerArm 上（`place_phase` 的写法），要求 FROZEN，不需要 `take_over`。
+13. **skills 的 `ready` 永远走 `after_brake=True`**：`ready_after_brake=full` 是 episode 起始序列（reset_pose、pin 释放、start_control），是 reset 不是 primitive。
+14. **去掉 session 不变量里对 `arm.hands` 的"闭合"启发式**：Dex1 的闭合值是负的（close_target −0.06），`> 0` 判错；只核对 `session.hands` 与 `held`。
+
+15. **plan 入口 `scripts/plan_episode.py` 自己起栈、自己选实例**：默认 instance 1（避开录制栈），无 exporter，每局 teleport 到规划站位后 1.2 m（不采样出生抖动），
+    判据从任务模板编译（有 goal）或"结束时持有目标"（无 goal）。第一次真栈运行 3/3 失败在 spawn，原因是 shell 里 source 的 `paths.sh` 导出了 instance 0 的端口；
+    入口现在先把 `instance_ports(n)` 整块钉进环境再 import 任何 sonic 模块。
+16. **真栈证据**：bottle plan 3/3 + 10 局 9/10（台账 bottle §40），与采集入口的 10/10 在 10 局噪声内。
+
+17. **`carry_to` = 上身冻结的规划器行走 + 持物守卫，转向先原地转**（2026-09-28）：单臂守卫用掌系漂移 3 cm + 接触，双臂用 retreat 的高度底线 + 双手接触。
+    测量：直走/倒退 1–2 m 漂移 < 1 cm（6/6）；`walk_to` 边走边翻 facing 0.4 s 内漂 3 cm（0/2）；90° 原地转再走 3/3；180° 转 IDLE 一次 0/2、两次 90° 1/2、
+    SLOW_WALK 一次 4/4。所以默认 `turn_first=True, turn_mode=slow_walk`，`face_target=True` 只作原始行为保留。`relative=[前, 左]` 让 plan 不必知道世界坐标。
+
+### 未决（不是决策）
+
+- 持箱（双臂）的 carry 没有量；`carry_to` 的双臂守卫只在假栈上测过。
+- pick_place plan 冒烟 1/3（`simple` 抓罐头 + place 未标定；局 1 carry-over 伺服差 17.5 cm）；warehouse plan 冒烟 1/3（失败族 basket_tilt / reach_stalled 与采集入口相同）。
+- claude -p 规划器（Q8/Q9）还没接到入口上；现在 plan 是文件或从任务推出的默认序列。
+
+### 被否决的方案（补充，2026-09-28 下午）
+
+- 用 `walk_to(face_target=True)` 持物走向目标：边走边翻朝向，0.4 s 内掌系漂移 0.01 → 3.0 cm（0/2），只作原始行为保留。
+- `carry_to` 内部用 IDLE 模式原地转 180°：0/2，两次 90° 也只 1/2；改为 SLOW_WALK 一次转（4/4）。
+- session 不变量里用 `arm.hands > 0` 判"闭合"：Dex1 闭合值为负，误报；只核对 `session.hands` 与 `held`。
+- 把剩余工作按"避障导航、新物体标定"优先：两者都不是当前 plan 跑不通的原因（三个场景直线无障碍；标定是每物体一次的实验），排在跨位置搬运回归之后。
