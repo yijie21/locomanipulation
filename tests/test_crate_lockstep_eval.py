@@ -217,7 +217,7 @@ def test_the_evaluator_delivers_a_lockstep_block_to_the_rounds(tmp_path):
     assert (args.client, args.gap, driver.lockstep_argv(args)) == ("blocking", "hold", [])
 
     no_latency = tmp_path / "no_latency.json"
-    EvalConfig(client="lockstep").dump(no_latency)
+    EvalConfig(client="lockstep", latency_frames=None).dump(no_latency)
     with pytest.raises(SystemExit):
         driver.parse_args(_ckpt(tmp_path) + ["--eval-config", str(no_latency)])
 

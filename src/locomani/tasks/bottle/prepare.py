@@ -50,9 +50,13 @@ def trace_root(run_dir: Path) -> Path:
 
 
 def eval_backend(evaluation) -> dict:
-    """The eval stack's backend block, as `EvalConfig` validated it.
+    """The eval stack's backend block, as `EvalConfig` validated it, lockstep when the client is.
 
     `EvalConfig` already ties `clean_deploy` to `client == "async"`, which is exactly the pairing
-    `eval_closed_loop` installs its commander by, so this line takes the block unchanged.
+    `eval_closed_loop` installs its commander by. The lockstep client needs the sim's step server
+    and the deploy's `--sim-lockstep`, which `backend.lockstep.enabled` starts (stack/manager.py);
+    `eval_closed_loop` derives the same flag from the client, so the stack is started to match it
+    rather than trusting a second copy of the decision in the file (as the crate line does).
     """
-    return evaluation.backend.to_dict()
+    block = evaluation.backend.to_dict()
+    return {**block, "lockstep": {**block["lockstep"], "enabled": evaluation.client == "lockstep"}}

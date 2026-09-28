@@ -1,7 +1,12 @@
 """Closed-loop eval knobs (decision 8, refactor step 3 item 3).
 
 Every field's default equals `eval_closed_loop.py`'s old argparse default, so
-a run with no config file behaves identically to before this module existed.
+a run with no config file behaves identically to before this module existed --
+except the clock: since 2026-09-28 (user ruling) every VLA evaluation runs
+lockstep, the world frozen while the policy's images are rendered and its chunk
+inferred, so `client` defaults to "lockstep" with the calibrated target model
+(`latency_frames` 2, `camera_frames` 0, `gap` continue: 88/100 on the warehouse
+line, ledger crate.md 2026-09-27). The old default was "async".
 `backend` nests a `SonicBackendConfig`; eval_closed_loop.py builds the actual
 per-client backend config (no_encoder/clean_deploy/lockstep.enabled) from it
 and hands it to `pipeline/stack.export_env` -- see the module docstring there.
@@ -21,7 +26,7 @@ SCHEMA_VERSION = 1
 class EvalConfig(VlaConfig):
     rounds: int = 20  # --fresh: rounds to run, sampled fresh from the collection distribution
     seed: int = 1000  # --seed: round-sampling seed, deliberately disjoint from the collection's seeds
-    client: str = field(default="async", metadata={"choices": ("async", "lockstep", "blocking")})  # --client
+    client: str = field(default="lockstep", metadata={"choices": ("async", "lockstep", "blocking")})  # --client
     replan_interval: float = 0.4  # --replan-interval: async client seconds between chunk requests
     execution_horizon: int = 16  # --execution-horizon: blocking client chunk steps per replan
     policy_port: int = 5590  # --policy-port: serve_policy.py's port
@@ -33,7 +38,8 @@ class EvalConfig(VlaConfig):
     # Set it to 1 only to diagnose a struggling stack, never to produce a result.
     stand_retries: int = 0  # --stand-retries: 0 or 1, reset retries after a stand-stage failure
     latency_dist: str | None = None  # --latency-dist: empirical latency distribution JSON (lockstep client)
-    latency_frames: int | None = None  # --latency-frames: fixed simulated inference latency, frames (lockstep client)
+    latency_frames: int | None = 2  # --latency-frames: fixed simulated inference latency, frames (lockstep client);
+    # null it to draw from `latency_dist` instead (setting both is refused: the fixed value would silently win)
     camera_frames: int = 0  # lockstep (bimanual): camera delay frames added to the inference latency before adoption
     # (0 until the deployment camera is chosen; docs/bimanual_design.md, time model)
     gap: str = field(default="continue", metadata={"choices": ("continue", "hold")})  # bimanual: look+think gap
@@ -76,6 +82,11 @@ class EvalConfig(VlaConfig):
         object.__setattr__(self, "backend", replace(self.backend, clean_deploy=self.client == "async"))
         if self.camera_frames < 0:
             raise ValueError("EvalConfig: camera_frames counts frames of delay, it cannot be negative")
+        if self.latency_dist and self.latency_frames is not None:
+            raise ValueError(
+                "EvalConfig: latency_dist and latency_frames are both set; the fixed latency_frames would win "
+                "silently -- set latency_frames: null to use the distribution"
+            )
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

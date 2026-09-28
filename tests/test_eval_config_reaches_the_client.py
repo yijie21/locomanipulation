@@ -136,3 +136,25 @@ def test_the_image_source_reaches_every_wall_clock_observation_builder():
         assert "ObsBuilder(task, image_source=config.image_source)" in (src / client).read_text()
     rounds = (src / "tasks/crate/vla_rounds.py").read_text()
     assert "image_source=args.image_source" in rounds
+
+
+def test_every_eval_defaults_to_the_lockstep_target_model():
+    """2026-09-28 (user ruling): the world is frozen while images render and the chunk is inferred, in every
+    scene. The default is the calibrated target model; a distribution has to null the fixed latency first."""
+    from locomani.tasks.bottle import prepare as bottle
+    from locomani.tasks.crate import prepare as crate
+
+    default = EvalConfig()
+    assert (default.client, default.latency_frames, default.camera_frames, default.gap) == (
+        "lockstep",
+        2,
+        0,
+        "continue",
+    )
+    assert default.backend.clean_deploy is False
+    for line in (bottle, crate):
+        assert line.eval_backend(default)["lockstep"]["enabled"] is True
+        assert line.eval_backend(EvalConfig(client="blocking"))["lockstep"]["enabled"] is False
+    assert EvalConfig(latency_frames=None, latency_dist="d.json").latency_dist == "d.json"
+    with pytest.raises(ValueError, match="both set"):
+        EvalConfig(latency_dist="d.json")
