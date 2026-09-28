@@ -38,13 +38,14 @@ def test_every_stage_has_a_contract():
     assert set(NAMES) == set(CRITICAL)
 
 
-def test_an_unverified_contract_says_so():
-    """crate_eval was written from the old path's layout and has never been checked against a run.
+def test_the_bimanual_eval_contract_was_checked_against_a_run():
+    """crate_eval was written from the old path's layout and wanted two files the flat evaluator never writes.
 
-    The bimanual checkpoint was deleted before the flat script existed, so the first real bimanual
-    evaluation is what confirms this one -- until then the file has to admit it.
+    crate_smoke (2026-09-28) was the first bimanual evaluation checked against it; the file now says so.
     """
-    assert "UNVERIFIED" in json.loads((CONTRACTS / "crate_eval.json").read_text())["note"]
+    doc = json.loads((CONTRACTS / "crate_eval.json").read_text())
+    assert "VERIFIED 2026-09-28" in doc["note"] and "crate_smoke" in doc["recorded_from"]
+    assert "eval.log" not in {e["pattern"] for e in doc["required"]}
 
 
 @pytest.mark.parametrize("name", NAMES)
