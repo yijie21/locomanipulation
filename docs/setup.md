@@ -71,7 +71,7 @@ $ python3 src/locomani/paths.py
 
 装好以后，每个新终端先执行 `. scripts/paths.sh`。它设置所有路径变量，并把 `src/` 加进 `PYTHONPATH`。
 
-这台机器特有、又不该进 Git 的设置，写在 `$LOCOMANI_WORKSPACE/locomani.local.sh` 里，`scripts/paths.sh` 会先读它。例如 deploy 编译在别处时写 `export SONIC_DEPLOY_ROOT=<那个目录>`，带 `pxr` 的 Python 不是 `python3` 时写 `export USD_PY=<那个 python>`。
+这台机器特有、又不该进 Git 的设置，写在 `$LOCOMANI_WORKSPACE/locomani.local.sh` 里，`scripts/paths.sh` 会先读它。例如 deploy 编译在别处时写 `export SONIC_DEPLOY_ROOT=<那个目录>`，带 `pxr` 的 Python 既不是 `python3` 也不是 Blender 自带的那个时写 `export USD_PY=<那个 python>`。
 
 其他可以单独改的位置（默认都在 `$LOCOMANI_WORKSPACE` 下）：
 
@@ -302,7 +302,7 @@ bash scripts/setup_render_runtime.sh --deep
 bash scripts/build_isaac_assets.sh
 ```
 
-做什么：装好带 Isaac Sim 的 Python 环境（`$RENDER_PY`），打上本仓库的补丁，并生成机器人的 USD。纸箱场景的 Isaac 版本在 [warehouse runbook](warehouse.md) 第 1 步建，需要一个带 `pxr` 的 Python（`pip install usd-core`，用 `USD_PY` 指定）。
+做什么：装好带 Isaac Sim 的 Python 环境（`$RENDER_PY`），打上本仓库的补丁，并生成机器人的 USD。纸箱场景的 Isaac 版本在 [warehouse runbook](warehouse.md) 第 1 步建，需要一个带 `pxr` 的 Python（`python3` 或 Blender 自带的即可，否则 `pip install usd-core` 或用 `USD_PY` 指定）。
 
 验证：
 

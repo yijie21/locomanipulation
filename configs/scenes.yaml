@@ -4,8 +4,8 @@
 # a later stage re-resolves it through this file. A rebuilt or changed scene gets a new name.
 # `scene: {dir: ...}` still works for a directory without a name. `example` is an experiment that uses
 # the scene; `build` is how to make it, run by `bash scripts/build_scene.sh <name>` from the repository root with
-# scripts/paths.sh sourced ($VENV_SIM_PY; $USD_PY is a python with `pxr`). `isaac` (optional) names the scene's
-# Isaac stage, built by `build_scene.sh <name> --isaac`; only a scene that has one can run with
+# scripts/paths.sh sourced ($VENV_SIM_PY; $USD_PY is a python with `pxr`, found by build_scene.sh). `isaac` (optional)
+# names the scene's Isaac stage, built by `build_scene.sh <name> --isaac`; only a scene that has one can run with
 # `images.source: isaac` (training and evaluation images).
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table

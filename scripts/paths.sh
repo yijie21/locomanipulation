@@ -73,9 +73,28 @@ export SIMPLE_PIN="${SIMPLE_PIN:-6d10628794d9c7de4596b4f2afb2c054a637c2bc}"
 # to lift its pin. Point RENDER_PY at another venv and nothing else changes.
 export RENDER_PY="${RENDER_PY:-$SIMPLE_ROOT/.venv/bin/python}"
 export ISAAC_ASSETS="${ISAAC_ASSETS:-$LOCOMANI_ROOT/assets/isaac}"
-# A python with `pxr` (pip install usd-core) for the Isaac stage builders in configs/scenes.yaml. They only
-# write USD text, so neither Isaac nor the render venv is needed (and neither has a bare pxr).
-export USD_PY="${USD_PY:-python3}"
+# A python with `pxr` for the Isaac stage builders in configs/scenes.yaml. They only write USD text, so neither
+# Isaac nor the render venv is needed (and neither has a bare pxr: Kit loads it). Empty means "let
+# locomani_usd_python probe"; set it (locomani.local.sh) only when the probe picks wrong or finds nothing.
+export USD_PY="${USD_PY:-}"
+
+# The python `pxr` imports in: the first of $USD_PY, python3 (pip install usd-core) and the python bundled with the
+# `blender` on PATH (Blender ships pxr) that imports it. $USD_PY is checked too, not trusted: a shell that sourced an
+# older paths.sh still carries its `python3` default. Prints nothing (and fails) when none imports it.
+locomani_usd_python() {
+    _lm_blender="$(command -v blender 2>/dev/null || true)"
+    _lm_seen=""
+    for _lm_py in "${USD_PY:-}" python3 "${_lm_blender:+$(dirname "$(readlink -f "$_lm_blender")")}"/*/python/bin/python3*; do
+        [ -n "$_lm_py" ] && [ "$_lm_py" != "$_lm_seen" ] || continue
+        if command -v "$_lm_py" >/dev/null 2>&1 && "$_lm_py" -c "import pxr" >/dev/null 2>&1; then
+            echo "$_lm_py"; unset _lm_blender _lm_py _lm_seen; return 0
+        fi
+        [ -n "$_lm_seen" ] || [ -z "${USD_PY:-}" ] || echo "USD_PY=$USD_PY has no pxr module; trying the others" >&2
+        _lm_seen="$_lm_py"
+    done
+    unset _lm_blender _lm_py _lm_seen
+    return 1
+}
 export ROBOT_MJCF="${ROBOT_MJCF:-$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1.xml}"
 
 # Logs + exporter sessions for instance $1 (default $INSTANCE, default 0).

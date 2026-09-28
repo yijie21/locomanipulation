@@ -41,4 +41,14 @@ PY
 )
 echo "+ $CMD"
 [ "$DRY" = 1 ] && exit 0
+case "$CMD" in
+    *'$USD_PY'*)  # the Isaac stage builders need a python with pxr; python3 has none unless usd-core is installed
+        USD_PY=$(locomani_usd_python) || {
+            echo "no python with the pxr module: pip install usd-core into python3, or export USD_PY=<such a python>" \
+                "(Blender's bundled python has one) in \$LOCOMANI_WORKSPACE/locomani.local.sh" >&2
+            exit 1
+        }
+        export USD_PY
+        echo "  USD_PY=$USD_PY" ;;
+esac
 exec bash -c "set -eu; $CMD"

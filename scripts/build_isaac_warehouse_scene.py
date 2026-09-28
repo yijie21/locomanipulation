@@ -39,6 +39,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -116,7 +117,13 @@ def main() -> int:
     ap.add_argument("--assets", default=os.environ.get("ISAAC_ASSETS", "assets/isaac"))
     ap.add_argument("--scene", type=Path, default=None, help="MuJoCo scene dir whose carton size the stage takes")
     args = ap.parse_args()
-    from pxr import Usd  # noqa: PLC0415
+    try:
+        from pxr import Usd  # noqa: PLC0415
+    except ImportError:
+        raise SystemExit(
+            f"{sys.executable} has no pxr module: pip install usd-core into it, or run this with a python that has one "
+            "(scripts/build_scene.sh <scene> --isaac picks one; USD_PY overrides)"
+        ) from None
 
     scene_xml = args.scene / "scene_locomani.xml" if args.scene else None
     scale = carton_scale(scene_xml) if scene_xml else [1.0, 1.0, 1.0]
