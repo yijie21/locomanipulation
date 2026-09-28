@@ -542,11 +542,22 @@ class Stack:
         return dict(self.env)
 
     def down(self) -> None:
-        """Kill every child by process group, wait for the ports, drop the state file and the lock."""
+        """Kill every child by process group, wait for the ports, drop the state file and the lock.
+
+        The children are this object's pids AND the state file's: a child restarted by another process's
+        attached Stack (the bottle gym's per-round `deploy.restart()`) is recorded only in the file. Reading
+        only this object's pids killed the dead first deploy, deleted the file and orphaned the live one on
+        the instance's ports (bottle smoke of 2026-09-28).
+        """
+        recorded: dict[str, int] = {}
+        if self.state_path.exists():
+            try:
+                recorded = {k: int(v) for k, v in json.loads(self.state_path.read_text()).get("pids", {}).items()}
+            except (OSError, ValueError):
+                recorded = {}
         for name in reversed(self.CHILDREN):
-            pid = self.pids.get(name)
-            if pid:
-                _kill_group(pid, proc=self._procs.pop(name, None))
+            for pid in dict.fromkeys(p for p in (self.pids.get(name), recorded.get(name)) if p):
+                _kill_group(pid, proc=self._procs.pop(name, None) if pid == self.pids.get(name) else None)
         ports = self.spec.ports()
         _wait(lambda: not any(_port_open(p) for p in ports.values()), 15)
         self.pids = {}
