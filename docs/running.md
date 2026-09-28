@@ -62,6 +62,7 @@ diff configs/experiments/bottle_simple_smoke.yaml configs/experiments/my_run.yam
 | `--dry-run` | 只打印将要执行的命令和环境变量，不写任何文件。建场景、起栈、采集、转换、训练、评测的脚本都支持；`run_overnight.sh`、`open_loop_eval.sh` 和出录像的脚本不支持 |
 | `--until-kept N` | 只有 `bimanual/run_agent_server.sh` 有：保留到 N 条后，在当前这批结束时暂停；去掉它再跑同一条命令就接着采 |
 | `--line bimanual` | 只有 `run_overnight.sh` 有：用双臂的专家和评测（crate、warehouse）；不给就是 bottle |
+| `--backbone-path DIR` | 只有 `run_vla_server.sh` 和 `open_loop_eval.sh` 有：在别的机器（例如集群）上训练的 checkpoint，记录的视觉语言骨干路径在本机不存在，用它指向本机的副本，例如 `~/Checkpoints/Cosmos-Reason2-2B` |
 | `--isaac-gpu N` | 只有 `run_overnight.sh` 有：`images.source: isaac` 时，Isaac 补渲和镜像用哪张卡 |
 | `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`、`convert`、`train`、`eval` 中的一段 |
 
@@ -131,7 +132,7 @@ diff configs/experiments/bottle_simple_smoke.yaml configs/experiments/my_run.yam
 
 - `--model-path` 是 checkpoint 目录，`--dataset-path` 是 `val_dataset/`，`--out-dir` 是输出目录；两个路径给反了，会在加载模型之前报错。
 - 输出 `metrics.json`（每条轨迹和平均的 MSE、MAE）、`plots/`（每条轨迹一张图）和 `run.log`。
-- 在集群上训练的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`。
+- 在集群上训练的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`，闭环评测的策略服务 `run_vla_server.sh` 也一样。
 
 ## 10. 其他入口
 
