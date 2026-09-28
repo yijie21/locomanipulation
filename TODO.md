@@ -304,3 +304,44 @@
 - [x] 6.8 双臂抓箱默认版本（用户 2026-09-27）：`configs/experiments/box_platform_default_20260927.yaml` + 场景名 `box_platform`（`outputs/scene/box_platform`），文档 `docs/box_grasp_envelope.md`，README / docs/README / warehouse §8 已索引
 - [~] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
   - [x] 6.9.1 扫参会话代码（12 个旋钮、`sweep.py`、`box_platform_scene.py`、30 个实验文件、两份扫参配置、文档）与 box_platform 的 Isaac stage 一起提交推送（用户 2026-09-27）
+
+## 7. Isaac 画质（用户 2026-09-28：Isaac 渲染不如 Blender，是设置还是版本？）
+
+- [~] 7.1 诊断并修复 Isaac 与 Blender 的画质差距  ← 来源: 会话 2026-09-28；台账 `docs/ledger/blender_scenes.md` 第 2 节
+  - [x] 7.1.1 两边配置对比（Cycles 1024 spp / AgX / 3840 vs Real-Time / FXAA / 640）、Blender 材质审计、Isaac 5.1 与 6.0 渲染改动调研 (2026-09-28)
+  - [x] 7.1.2 A/B 6 组（Real-Time / PathTracing × 640 / 1280，外加屏蔽法线两组），`outputs/experiments/isaac_render_quality_ab_20260928/` (2026-09-28)
+  - [x] 7.1.3 修法线：`blender_to_usd.py` 断开高度图；`build_isaac_warehouse_scene.py` 用 over 屏蔽单通道 normal；`warehouse_textured` stage 已重建 (2026-09-28)
+  - [x] 7.1.4 `render_isaac_videos.sh` 默认 `--size 1280x960`，加 `--path-trace`；`mujoco_render` 按需放大离屏缓冲；GPU0 实跑验证 (2026-09-28)
+  - [x] 7.1.5 核查 VLA 图像输入：任意渲染尺寸都进模型为 352×256、88 token，不改数据集相机 (2026-09-28)
+  - [ ] 7.1.6 程序化材质（36 个 Bump、15 个程序化底色）烘焙成贴图：先要给 88% 没 UV 的物体展 UV；做不做等用户定
+  - [ ] 7.1.7 可选：给 `--path-trace` 重调 filmIso（比 Real-Time 亮约 10/255）
+  - [ ] 7.1.8 可选：评估 Isaac 6.0（RT 2.0），前提是渲染运行时能脱离 SIMPLE 的 4.5 锁定
+- [ ] 7.2 待验证：新 stage（去掉噪点）下，checkpoint-5000 的 Isaac 评测是否偏离 81/83/88；数据集要不要按新 stage 重新补渲（问题：画面变了，策略受不受影响）
+- [~] 7.3 side-by-side 预览压到 500 KB 以内
+  - [x] 7.3.1 手工压两段验证视频，放在 `previews_share_20260928/`（1280 版 3 段，路径追踪版 1 段）(2026-09-28)
+  - [x] 7.3.2 `locomani.pipeline.video_preview`：CRF 32→38 阶梯 + 按帧边界分段 + 自检；接进 `render_isaac_videos.sh`；5 个测试 (2026-09-28)
+  - [ ] 7.3.3 重新生成 `box_room_grasp_200_cap120_20260925/eval/previews_isaac/` 里 3 个超限的旧预览（已问用户，未回复）
+  - [ ] 7.3.4 待用户定：长局分段多时，阶梯里要不要加降宽（比如 960）
+- [ ] 7.4 提交本会话改动（等用户说）。`docs/rendering.md`、`docs/warehouse.md` 里混有 lockstep 未提交的改动，提交时要和 4.7.11.8 一起处理
+
+## 8. 四边线：warehouse 平台四条边随机走入，按 envelope ≥ 30% 的范围随机（用户 2026-09-28；台账 `crate.md` 2026-09-28 两节）
+
+- [x] 8.1 第 1 步：四种尺寸纸箱场景 `warehouse_box_45x{32,20}x{33,18}`（`warehouse_box_scene.py`；每边 `clear_m` + `edge_<边>` 机位）（2026-09-28）
+- [x] 8.2 第 2 步：四个 Isaac stage（`build_isaac_warehouse_scene.py --scene`），MuJoCo/Isaac 轮廓 ≤ 3 px（2026-09-28）
+- [x] 8.3 第 3 步：每局抽边（`visual.start_edges` / `start_clearance` / `object_along_range`，`expert.facing_edge`），旧配置 A/B 逐位相同；录像按边换机位（`sim/scene_edges.py`）（2026-09-28）
+- [x] 8.4 第 4 步：实验文件（按边 pilot ×4、按尺寸 pilot ×3、采集 ×4）（2026-09-28）
+- [x] 8.5 第 5 步：pilot 29/70 = 0.41，无 0–1/10 的边或尺寸；录像 `outputs/videos/warehouse_edges_pilots_20260928.zip`（2026-09-28）
+- [~] 8.6 正式采集，每种尺寸 100 条（用户 2026-09-28）
+  - [x] 8.6.1 `collect --until-kept N`（暂停可续采）（2026-09-28）
+  - [x] 8.6.2 quick 版每种先采 ≥ 5 条 + Isaac 并排视频 `outputs/videos/warehouse_edges_first5_isaac_20260928.zip`（7/10/5/6 条）（2026-09-28）
+  - [-] 8.6.3 quick 版续采到 100 —— 改用 compact（8.7），quick 的 28 条保留不并入
+  - [ ] 8.6.4 compact 版采集 `warehouse_edges_compact_<尺寸>_20260928`：待用户定是否先每种 5 条 + Isaac 视频，以及训练图像用 MuJoCo 还是 Isaac（现 mujoco；GPU1 已空）
+  - [ ] 8.6.5 采满后：补渲数据集相机 → convert（四个运行合成一个数据集的步骤还没有）
+- [x] 8.7 刹车后准备手臂缩短（用户：停得太久）：`ready_after_brake compact` 17/40 vs quick 19/40，准备 8.7 → 4.9 s；用户定为双臂采集默认（`box_platform_default_20260928`）（2026-09-28）
+  - [-] 8.7.1 刹车后不重锚 `reanchor_after_brake: false` —— 14/40、卡住 7 → 13，不采用；要定需每组约 200 局
+  - [ ] 8.7.2 可选：边停边抬手（刹车最后一步就抬），要改走近循环；09-23 走路时抬手 6/10 局扎进箱子
+- [ ] 8.8 数据规模对照：400 条全量 vs 按尺寸均衡抽 200 条，各训 2 个种子，四边分布闭环各 100 局（用户认可的方案，采满后做）
+- [ ] 8.9 可选：checkpoint-5000（只见过 ym）在四边分布上评测 100 局，看窄数据换边后掉多少
+- [ ] 8.10 仿真实时录像（`SIM_VIDEO_DIR`）仍只用一个固定机位；四边线目前只按离线渲染跑
+- [ ] 8.11 2026-09-29 之后删试建副本 `outputs/experiments/warehouse_edges_20260928/trial_45x20x18`（107 MB）
+- [ ] 8.12 提交第三批改动（四边线代码、配置、文档；与前两批混改的文件按 hunk 拆）——等用户说

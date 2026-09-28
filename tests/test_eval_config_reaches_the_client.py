@@ -1,6 +1,7 @@
 """Resolved evaluation settings reach real consumers without shared mutable flags."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -108,13 +109,21 @@ def test_the_async_client_engages_the_deploy_it_then_refuses_to_command():
         assert EvalConfig.from_dict({"client": other}).backend.clean_deploy is False
 
 
-def test_the_image_source_is_a_closed_choice_and_the_mirror_needs_a_wall_clock_client():
+def test_the_image_source_is_a_closed_choice_and_isaac_now_runs_on_either_clock():
     assert EvalConfig().image_source == "mujoco"
     assert EvalConfig().with_overrides(["image_source=isaac"]).image_source == "isaac"
     with pytest.raises(ValueError, match="not in"):
         EvalConfig().with_overrides(["image_source=unreal"])
-    with pytest.raises(ValueError, match="wall-clock client"):
-        EvalConfig.from_dict({"client": "lockstep", "image_source": "isaac"})
+    # 2026-09-27: the bimanual lockstep client asks the mirror for the frozen boundary's seq, so the pairing
+    # that was refused at load is the plan's target model; the single-arm evaluator still refuses it (below).
+    both = EvalConfig.from_dict({"client": "lockstep", "image_source": "isaac", "latency_frames": 2})
+    assert (both.client, both.image_source, both.gap, both.camera_frames) == ("lockstep", "isaac", "continue", 0)
+    with pytest.raises(ValueError, match="not in"):
+        EvalConfig().with_overrides(["gap=skip"])
+    with pytest.raises(ValueError, match="negative"):
+        EvalConfig.from_dict({"camera_frames": -1})
+    single_arm = (Path(__file__).resolve().parents[1] / "src/locomani/pipeline/eval_closed_loop.py").read_text()
+    assert "implemented by the bimanual evaluator only" in single_arm
 
 
 def test_the_image_source_reaches_every_wall_clock_observation_builder():

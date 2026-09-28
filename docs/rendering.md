@@ -65,8 +65,8 @@ flowchart TD
 
 两个补渲脚本和镜像用同一组相机（ego + 左右腕，`CAMERA_CONFIGS`）；Isaac 补渲和镜像还是同一个渲染函数
 （`IsaacView`）、同一个 stage、同一组曝光设置（`configs/scenes.yaml` 的 `rtx_settings`），所以"同一个状态 → 同一张图"。
-convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 配 `backend.render: live`
-或 `eval.client: lockstep`）加载实验文件时就拒绝。完整命令见 [warehouse §5–§6](warehouse.md#5-跑)。
+convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 配 `backend.render: live`）
+加载实验文件时就拒绝。完整命令见 [warehouse §5–§6](warehouse.md#5-跑)。
 
 ## 采集时记录什么
 
@@ -226,26 +226,36 @@ warehouse 走另一条路，结果仍是 `stage.py` 期望的目录布局，重�
 
 ```bash
 python3 scripts/build_isaac_warehouse_scene.py     # 需要 pxr（pip install usd-core，或任一 Isaac/Blender python）
+python3 scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18   # 换尺寸的纸箱：缩放取自该 MuJoCo 场景，label 取目录名，source.json 钉住它的 MJCF
 bash scripts/render_isaac_videos.sh outputs/runs/<run>   # 每局：mujoco_render → isaac_render → 并排 → previews_isaac/；stage 与曝光取运行场景的 isaac 条目
+bash scripts/render_isaac_videos.sh outputs/runs/<run> --path-trace <label>   # 给人看的一局：Isaac 侧改路径追踪（见下）
 bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<run>/eval/state_trace --out outputs/runs/<run>/eval --insets
 ```
 
-- 只渲成功局：每局约 2 分钟，失败的采集局也进不了数据集。成败读判这一局的 manifest——`<run>/trace` 读运行的 `manifest_NN.jsonl`
+- 只渲成功局：每局几分钟（见下「画质」），失败的采集局也进不了数据集。成败读判这一局的 manifest——`<run>/trace` 读运行的 `manifest_NN.jsonl`
   （`label`），评测的 `state_trace` 读旁边的 `closed_loop.manifest.jsonl`（`video`），没有任何一行点名的 trace（中断批次）也跳过；
   开头打印 `rendering N of M traces`。`--all` 渲全部 trace，命令末尾点名 label 就只渲那几局（`run_context.successful_traces`）。
 
 - `scene.usda` 把 `assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc` 的 `/root` 引用到 `/World/room`，停用其中的 `env_light`
   （RTX 不认它的 EXR，见 blender_scenes.md）和静态纸箱；`assemble_stage` 于是补 dome + 平行光。
+- 两层都屏蔽了 14 条「单通道贴图 → `normal`」连接：v1 USDC 早于 `blender_to_usd.py` 的高度图修复（blender_scenes.md §2 表末行），
+  不屏蔽时实时渲染里每个照片纸箱满面白色噪点。改了构建器就重跑它（`assets/isaac/` 不入库），用任一带 pxr 的 python，例如 Blender 自带的
+  `<blender 目录>/5.2/python/bin/python3.13`；三个 venv 都没有 pxr。
 - `usd/nor_cal_box/` 是可动纸箱：同样引用 `/root` 但停用其余 237 个子 prim。只引用纸箱 prim 会丢掉 `/root/_materials` 的绑定
   （纸箱渲成素灰，日志里一串 `_ReportErrors ... material:binding`）。sidecar 的 `offset_pos = (0, 0.39, −0.371)` 把烘在世界坐标里的网格
   挪到 MJCF body 原点（底面中心），之后 `sync_replay` 直接用 body 位姿。
 - 机器人仍是 MJCF 导入的 `g1_dex1.usda`；`--scene-xml` 用 `outputs/scene/warehouse_textured/scene_locomani.xml`（见 blender_scenes.md：旧 `warehouse` 场景的纸箱没贴图）。
 - 机位：`mujoco_render --azimuth 225 --distance 2.2`。默认 2.5 m / 135° 在南侧隔断外面，两边都只渲到墙。
+- 四边线场景（`warehouse_box_45x*`，`scene_meta` 带 `surfaces.A.edges`）：225 是"从 −y 边走入"时的机位，其余边按该局走入方向转同样的角度（xm 135、xp 315、yp 45），机器人在每条边都从前右方被拍到。哪条边由 trace 第一行机器人的偏航认出（`sim/scene_edges.py`；起点偏角被限制在 ±45° 内）。
 - 曝光：`isaac_render --rtx-setting`（新，可重复，`路径=值`）；批处理默认关自动曝光、`filmIso` 30。房间由 5 块 24828 强度的天花板 RectLight
   和自发光灯板照亮（USDC 里 1200× 增益已烘入），dome/平行光强度改了没有像素变化；默认自动曝光 + ACES 把机器人 0.2 灰抬到 108/255、0.7 灰推到 212，
   头/躯干比 0.51（MuJoCo 0.23）。ISO 30 后躯干 139 对 MuJoCo 136、头/躯干 0.36；剩余差距是白房间的间接光，MuJoCo 没有全局光。
   `tonemap/op=0`（Clamp）全帧饱和，`op=1`（Linear）比 ACES 更平，都不用。
 - 2026-09-24 首次跑通：房间贴图、纸箱印字、机器人（含头）在 Isaac 里都完整，机位与 MuJoCo 逐帧一致。
+- 画质（2026-09-28 A/B，台账 blender_scenes.md 第 2 节）：两个渲染器都按 `--size` 出图，默认 1280×960（640×480 下纸箱印字和机器人边缘锯齿）。
+  Isaac 侧默认 RTX Real-Time，与数据集补渲、评测镜像同一个渲染器，1280×960 约 110 ms/帧。
+  `--path-trace` 改成 PathTracing（64 spp + OptiX 降噪）：有间接光和软接触阴影，1280×960 约 1.5 s/帧（640×480 约 0.43 s），
+  平均亮度比 Real-Time 调出来的 ISO 高约 10/255。只用于给人看，不进数据。
 
 ## EmbodiedGen 背景如何进入 Isaac
 
@@ -399,7 +409,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
   eval 栈还写 `<run>/eval/state_trace/`，同 seq 的图可以事后离线重渲（一致性闸门 4.7.9.8 的输入）。
 - **eval sim 渲不渲由 `images.source` 推出**（`run_context.evaluation_of`）：`mujoco` → `live`（策略只能从发相机流的 sim 读 MuJoCo 图），`isaac` → `offline`；实验文件写了矛盾的 `eval.backend.render` 加载即拒。有 Isaac stage 的场景：`warehouse_textured`（Blender USDC）、`box_platform`（`scripts/build_isaac_primitive_scene.py` 从 MJCF 的盒子生成，ISO 20）。
 - **首次真实闭环**（2026-09-27，warehouse checkpoint-5000，10 局）：渲染 p50 95 ms、图像对应状态年龄 p50 11 ms、观测 → 动作 p50 166 ms，9/10 抬起（台账 crate.md 2026-09-27 末节）。
-- `client: lockstep` 不能配 Isaac（lockstep 的图像由 step 回复里的 MuJoCo 边界渲染提供），配置加载时拒绝。要让 Isaac 渲图时世界冻结、推理延迟按帧模拟，计划见 [lockstep + Isaac 评测计划](handoff/lockstep-isaac-eval-plan-20260927.md)。
+- **lockstep 下的镜像**（2026-09-27，双臂）：`eval.client: lockstep` 时 sim 和 deploy 按 tick 推进，渲图期间世界冻结，渲染耗时不再计入世界时间。客户端带上冻结那一刻的特权状态 seq（`{"op": "render", "seq": N}`），镜像只渲这一条，最新状态不是它就报错；冻结的 sim 每 0.5 s 重发一次最新状态（同一 seq），所以镜像在栈之后起也拿得到第一条状态。单臂评测器不实现这个组合，配置了就拒绝。时间模型见 [双臂详解 §五](bimanual_design.md#评测的时间模型墙钟与-lockstep)，计划与验收见 [lockstep + Isaac 评测计划](handoff/lockstep-isaac-eval-plan-20260927.md)。
 - **做了什么、还没做什么**（训练图是否也走 Isaac、一致性闸门、真实闭环、分支对账）：[镜像状态索引](handoff/isaac-vla-mirror-20260925.md)。
 
 ## 当前接通范围与限制
@@ -427,6 +437,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 实时 MuJoCo 录像可在场景的 `scene_meta.json` 中设置 `"video_camera": "reverse_room"`
 等 XML 相机名，使用固定机位。未指定时保持骨盆跟踪视角；小房间中应先检查
 跟踪机位是否落到墙外。固定机位只影响录像主画面，腕部和第一视角小窗保持原相机。
+四边线场景每条边另有一个固定机位 `edge_<边>`：`scripts/render_trace_videos.py` 按每局 trace 第一行的机器人偏航选边、换机位；仿真实时录像（`SIM_VIDEO_DIR`）仍只用 `video_camera`，四边线按离线渲染跑。
 
 导出任何任务的视频、提供播放链接或打包 ZIP 前，必须满足
 [AGENTS 的视频大小规则](../AGENTS.md#shared-resources-and-artifacts)。
@@ -448,6 +459,12 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 3. 每个文件都要检查实际字节数、完整解码、起止画面，以及与原片的时长差
    （只允许重采样到输出帧率时的一帧舍入差）。超限就继续压缩。
    长视频若无法兼顾上限和可辨识性，拆成编号连续片段，覆盖原片完整时间范围并明确标注。
+
+   第 2、3 步已实现为 `python -m locomani.pipeline.video_preview <原片> <输出前缀>`（只依赖标准库和 ffmpeg）：
+   - 宽度默认 1280、帧率默认 10，都不超过原片。
+   - CRF 按 32→38 逐级提高；到 38 仍超限，就拆成 `<前缀>_partKofN.mp4`，每段在帧边界上连续切开。
+   - 每个文件都检查字节数、完整解码和时长；同前缀的旧预览会先删除。
+   - 起止画面仍需人工看一眼。`render_isaac_videos.sh` 的 `previews_isaac/` 就是这样生成的。
 4. 播放页面和回复链接指向合格预览。ZIP 仅包含这些预览和必要的小型说明文件；
    打包后再次核对成员和总体积，并报告单片范围及 ZIP 大小。历史原片和旧大包保留作审计。
 

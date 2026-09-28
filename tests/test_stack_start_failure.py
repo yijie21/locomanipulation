@@ -120,6 +120,10 @@ def test_spec_builds_the_deploy_command_from_explicit_fields(tmp_path):
     )
     assert argv[argv.index("--zmq-port") + 1] == "5576" and env["CUDA_VISIBLE_DEVICES"] == "1"
     assert env["MUJOCO_EGL_DEVICE_ID"] == "1" and env["LOCOMANI_SIM_DIR"].startswith("/")
+    # a lockstep deploy exits at init when handed a planner model ("--sim-lockstep does not permit a planner model")
+    assert "--planner-file" not in argv
+    wall, _, _ = Stack(StackSpec(deploy_root=str(root), policy="policy/p"))._deploy_argv()
+    assert "--planner-file" in wall and "--sim-lockstep" not in wall
     with pytest.raises(RuntimeError, match="model_decoder.onnx"):
         Stack(StackSpec(deploy_root=str(root), policy="policy/missing"))._deploy_argv()
 

@@ -15,7 +15,7 @@ from typing import Any
 from gear_sonic.utils.mujoco_sim.unitree_sdk2py_bridge import UnitreeSdk2Bridge
 from unitree_sdk2py.utils.crc import CRC
 
-from lockstep_vendor.lockstep import CommandSnapshot, LockstepAck
+from locomani.backends.sonic.lockstep_vendor.lockstep import CommandSnapshot, LockstepAck
 
 
 class _LowStatePublisherProxy:

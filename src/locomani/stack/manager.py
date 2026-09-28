@@ -375,9 +375,11 @@ class Stack:
         if s.encoder:
             argv += ["--encoder-file", f"{s.policy}/model_encoder.onnx"]
         ports = s.ports()
+        if not s.lockstep:
+            # A --sim-lockstep deploy refuses a planner model: the planner runs on its own wall-clock thread, which
+            # the simulation clock never starts (docs/archive/lockstep.md, pitfall 1).
+            argv += ["--planner-file", "planner/target_vel/V2/planner_sonic.onnx"]
         argv += [
-            "--planner-file",
-            "planner/target_vel/V2/planner_sonic.onnx",
             "--input-type",
             "zmq_manager",
             "--output-type",

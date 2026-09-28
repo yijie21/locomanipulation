@@ -1,49 +1,60 @@
-# STATE — 2026-09-28（会话：文档复查 → 只渲成功局 → lockstep + Isaac 评测实现与 100 局校准）
+# STATE — 2026-09-28（会话：四边线采集——场景、Isaac stage、每局抽边、pilot、首批 5 条、准备手臂 compact 定为默认）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `f5cbee3`（只渲成功局）。
-**未提交**：lockstep + Isaac 评测的全部实现、测试、文档，以及 115 份实验文件加 `gap` / `camera_frames`（TODO 4.7.11.8，待用户说提交）。
-`src/teleop_free/lockstep_vendor` → `src/locomani/backends/sonic/lockstep_vendor` 是 **已暂存** 的 `git mv`：只提交别的文件时用 `git commit -- <文件>`，否则会把它带进去。
-没有运行中的栈、镜像、训练或渲染；GPU1 上约 3.7 GB 是别的项目的。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`。远端停在 `f5cbee3`，本地多出若干 handoff 提交。
+**三批改动都未提交，混在一个工作树里**（提交等用户说，TODO 7.4 / 4.7.11.8 / 8.12）：
+- 第一批 lockstep + Isaac 评测：实现、测试、文档，以及 115 份实验文件加了 `gap` / `camera_frames`。
+- 第二批 Isaac 画质与预览（`blender_to_usd.py`、`render_isaac_videos.sh`、`pipeline/video_preview.py` 等）。
+- 第三批四边线（本会话）：新文件 `tasks/crate/warehouse_box_scene.py`、`sim/scene_edges.py`、`tests/test_{warehouse_box_scene,four_edge_placement}.py`，
+  以及 22 份 `configs/experiments/{box_platform_default,warehouse_edges_*}_20260928.yaml`。改动在 expert、visual_approach、visual_config、
+  box_platform_scene（`resize_carton`）、collect（`--until-kept`）、两个评测 `run_round`、两个渲染入口、`scenes.yaml`、文档和台账。
+- 与前两批混改、要按 hunk 拆：`build_isaac_warehouse_scene.py`、`mujoco_render.py`、`vla_{rounds,lockstep}.py`、`docs/{rendering,warehouse,single_arm}.md`、change-map ×2、两份测试。
+- `src/teleop_free/lockstep_vendor` → `src/locomani/backends/sonic/lockstep_vendor` 是**已暂存**的 `git mv`。只提交别的文件时用`git commit -- <文件>`，否则会把它带进去。
+
+已确认：没有运行中的栈、渲染或镜像，实例锁 0–4 全空，GPU0 空；GPU1 约 5.8 GB 在用（JeVLA 训练约 07:30 起已停）。
 
 ## 工作树
 
 - 未跟踪、与本项目无关、不要提交：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
-- 运行 `box_room_grasp_200_cap120_20260925` 的 `config.yaml` 被手改（`eval.rounds: 10`、warehouse token），`summary.json` 手补 train 条目；原件 `*.bak_20260927`。
-- 对照用的 10 个只评测运行目录 `outputs/runs/{ls,wc}_*_20260927`（原运行的 config + 改过的 eval 块，train 条目指向原 checkpoint），各约 120 MB。
+- cap120 运行的 `config.yaml` 被手改过（原件 `*.bak_20260927`）；`outputs/runs/{ls,wc}_*_20260927` 是 10 个只评测的对照目录。
+- 本会话的运行：`outputs/runs/warehouse_edges_pilot_*_20260928`（7 个 pilot）、`warehouse_edges_prep_*_20260928`（3 组 A/B），
+  以及 `warehouse_edges_<尺寸>_20260928`（quick 版，已暂停在 7/10/5/6 条，保留、不并入训练集）。
+- 2026-09-29 后可删：`outputs/experiments/warehouse_edges_20260928/trial_45x20x18`（107 MB，TODO 8.11）。
 
-## 当前进度（数字在台账 crate.md 2026-09-27 末节、计划 `docs/handoff/lockstep-isaac-eval-plan-20260927.md` 第 10 节）
+## 当前进度（四边线，TODO 第 8 节；台账 `docs/ledger/crate.md` 2026-09-28 两节；DECISIONS 2026-09-28 两节）
 
-- 已确认：双臂评测有两个时钟 `eval.client: blocking | lockstep`，间隙语义 `eval.gap: continue | hold`，lockstep 另有 `latency_frames` / `latency_dist` / `camera_frames`。
-- 已确认：lockstep 下 Isaac 图按冻结时刻的 seq 渲，84/84 块 seq 相符；每周期 18 帧 = 36 tick，特权 seq 与 deploy 状态序号各进 36（请求之间世界不动）。
-- 已确认（checkpoint-5000，Isaac 图，seed 6000–6099，各 100 局）：墙钟 hold **81**、墙钟 continue **83**、lockstep 复刻墙钟 **83**、lockstep 目标模型（L = 2）**88**。
-- 已确认：lockstep 校准通过——墙钟 81 vs 复刻 83，不一致 14 : 16，p = 0.86，失败构成逐项差 ≤ 3；2026-09-02 的"停得远"签名没出现。
-- 已确认：目标模型 vs 墙钟 88 vs 81，p = 0.27，100 局判不动；墙钟 continue 无差别（续发线程让观测 + 推理 70 → 95 ms）。
-- 已确认：同 seed 的 lockstep 局不逐位复现，原因是 MuJoCo 默认 4× 多重采样（同一状态渲两次腕图差 1–2 灰度级）；局前 332 tick 和策略服务端（同观测同 seed）都逐位相同。
-- 已确认：`render_isaac_videos.sh` 与两个数据集补渲都只渲成功局（已推送 `f5cbee3`）；converter 拒绝未补渲的局。
-- 已确认：`make check` 通过（含新测试 `tests/test_crate_lockstep_eval.py` 14 个）。
+- 已确认：四个场景（每边空地 ym 1.29 / yp 1.63 / xm 1.11 / xp 1.05 m）与 Isaac stage 轮廓差 ≤ 3 px（台账 `blender_scenes.md` 第 3 节）。
+- 已确认：每局抽边的代码对旧配置不改变任何行为（4 份配置 × 200 个种子逐位相同）；12 局真实摆放骨盆离房间网格 ≥ 0.34 m。
+- 已确认：pilot 29/70 = 0.41，按边 xm 6/15、xp 5/13、ym 11/19、yp 7/23，每局 RTF 0.99–1.00。
+  假设（10 局分不开）：各边、各尺寸的成功率相同。
+- 已确认：quick 版每种先采 ≥ 5 条，Isaac 视频 `outputs/videos/warehouse_edges_first5_isaac_20260928.zip`；pilot 录像 `..._pilots_20260928.zip`。
+- 已确认：compact 17/40 vs quick 19/40（p = 0.83），准备 8.7 → 4.9 s；用户定为双臂采集默认，写在实验文件里，dataclass 仍是 full（`make check` 通过）。
 
 ## 卡点 / 待验证
 
-- 待验证：88 与 83 之差来自"间隙续走"还是"延迟少 2 帧"（4.7.11.6，要加一臂 lockstep `hold` + L = 2）。
-- 假设：相机延迟 C = 0；真实值取决于部署硬件。
-- 待验证：按需渲与连续渲是否同图（4.7.9.8），lockstep 不消除这个问题。
+- 待用户定：compact 版正式采集前，是否先每种 5 条并出 Isaac 视频；训练图像用 MuJoCo 还是 Isaac。
+  现为 `images.source: mujoco`，采集一开始就写进运行目录的配置；GPU1 已空。
+- 未做：四个尺寸的运行合成一个训练集的步骤还没有，convert 目前一次只处理一个运行（TODO 8.6.5）。
+- 待验证：compact 在 10 cm 平台上没单独测过（envelope 的 24/60 是 quick）。
+- 待验证（上一会话留下）：新 stage 下 checkpoint-5000 的 Isaac 评测是否偏离 81/83/88（TODO 7.2）。
 
-## 下一步（编号见 `TODO.md`，顺序等用户定）
+## 下一步（编号见 `TODO.md`）
 
-- **4.7.11.8**：提交并推送 lockstep 实现（等用户说）。
-- **4.7.11.7**：默认 `eval.client` 是否改成 `lockstep`。
-- **4.7.6.1.2.6**："后退"一列怎么改（训练数据不含后退段）。
+- **8.6.4**：用 compact 采集 `warehouse_edges_compact_<尺寸>_20260928`，每种 100 条，GPU0 实例 0 串行，约 8–9 小时（先问上面两个问题）。
+- **8.12 / 7.4**：提交三批改动（等用户说）。
+- **8.8**：采满后做数据规模对照（全量 400 条 vs 均衡抽 200 条，各 2 个训练种子）。
 
 ## 关键路径与命令
 
 ```bash
 cd /workspace/code/locomanipulation && . scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src" TMPDIR=/workspace/tmp
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
-find /workspace/tmp -maxdepth 2 -name stack.json          # 有输出 = 有栈在跑；停栈后等 ≥ 20 s 再起
-E=outputs/lockstep_eval_20260927                          # 对照工具：make_runs.py 建只评测的运行、queue.sh 串行跑、compare_arms.py 配对比较
-"$VENV_SIM_PY" $E/make_runs.py NAME client=lockstep gap=hold latency_frames=2 rounds=100 images=isaac   # 新建一臂
-bash $E/queue.sh 0 1 NAME                                 # GPU0 栈+策略、GPU1 镜像；INST=1 跑实例 1；建 $E/STOP 在当前臂后停
-python3 $E/compare_arms.py wc_hold100_20260927 NAME       # 成功率、失败构成、跳帧、同 seed McNemar
-"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out x.json [--inference-only]
-# 提交：make check → 按文件名 add（不要 -A）→ git commit → fetch 确认远端无新提交 → push
+export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 这台机器上采集要用打过补丁的 deploy
+timeout 30 bash scripts/cpu_headroom.sh 5; nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
+# 一种尺寸的采集（录制只能用实例 0）；加 --until-kept 5 就先采 5 条暂停，去掉它再跑同一条命令即续采
+E=configs/experiments/warehouse_edges_compact_45x32x33_20260928.yaml
+bash scripts/start_stack.sh collect "$E" --gpu 0 && bash scripts/bimanual/run_agent_server.sh "$E" --gpu 0 --until-kept 5
+# 首批 5 条 + Isaac 视频的整条流程脚本（改其中的配置名即可复用）：outputs/experiments/warehouse_edges_20260928/first5.sh
+bash scripts/render_isaac_videos.sh outputs/runs/<run> --gpu 1 --insets [label...]   # 不给 label 就渲全部成功局
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/<run>   # 每局按边换机位
+/venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/<新场景>              # 新尺寸的 Isaac stage（要 pxr）
+# 提交：make check → 按文件名 add（不要 -A）→ git commit -- <文件> → fetch 确认远端无新提交 → push
 ```

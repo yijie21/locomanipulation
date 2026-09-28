@@ -358,5 +358,8 @@ def test_facing_correction_aims_at_the_centre_or_squares_to_the_grasp_line():
 
 def test_ready_after_brake_choices():
     CrateVisualConfig(ready_after_brake="quick")
+    CrateVisualConfig(ready_after_brake="compact", reanchor_after_brake=False, ready_hold_seconds=0.0)
+    with pytest.raises(ValueError, match="reanchor_after_brake"):
+        CrateVisualConfig(reanchor_after_brake=False)  # full re-anchors in its own sequence
     with pytest.raises(ValueError, match="ready_after_brake"):
         CrateVisualConfig(ready_after_brake="fast")

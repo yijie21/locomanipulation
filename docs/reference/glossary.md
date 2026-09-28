@@ -32,6 +32,7 @@
 | exporter | 上游的数据录制进程，录制时随栈启动，把相机、状态、动作写成 session |
 | session | exporter 的一次录制目录（在 `$LOCOMANI_TMP` 下，对应关系记在 `<run>/collect/inputs.json`），每批一个，是 convert 的输入 |
 | priv_seq | exporter 每行数据记下的特权状态 `seq`，据此把数据集的行对回 trace 里的同一时刻 |
+| lockstep | 仿真时钟：sim 和 deploy 只在评测进程请求时走一个 tick（`eval.client: lockstep`，双臂），拍照、推理时世界冻结，推理延迟按帧模拟；对照是按墙钟跑的 `blocking`（[时间模型](../bimanual_design.md#评测的时间模型墙钟与-lockstep)） |
 | RTF | 实时比 = 仿真时间 ÷ 墙钟时间。deploy 按墙钟推进参考，RTF 低于约 0.9 时机器人会"走得比指令快"，定时阶段被误判失败 |
 
 ## 专家、策略与评测

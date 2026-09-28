@@ -195,3 +195,92 @@ def test_session_prime_recording_contains_reset_and_full_prime(tmp_path, monkeyp
     assert events.index("start_control") < events.index(("idle", 2.5))
     assert report["resets"][0]["reset_id"] == "session_prime"
     assert report["resets"][0]["label"] == "probe_session_prime_reset"
+
+
+def _after_brake_run(monkeypatch, **cfg_overrides):
+    """prepare_stationary_ready's after-brake path on fakes; returns (events, phases, arm)."""
+    events, phases = [], []
+    state = {
+        "seq": 0,
+        "t": 0.0,
+        "joints": np.full(29, 0.1),
+        "pelvis": {"pos": [0.0, 0.0, 0.76], "quat": [1.0, 0.0, 0.0, 0.0], "vel": [0.0, 0.0, 0.0], "yaw": 0.0},
+    }
+
+    class Command:
+        def hold(self, seconds, **_kwargs):
+            events.append(("idle", seconds))
+
+    class Primitives:
+        cmd = Command()
+        hold_yaw = None
+
+        def obs(self):
+            state["t"] += 0.1
+            return state
+
+    class PlannerArm:
+        def __init__(self, *_args, **_kwargs):
+            self.q, self.starts = np.full(29, 0.25), []
+
+        def start(self, **kwargs):
+            self.starts.append(kwargs)
+
+        def _push(self, _q):
+            events.append("push")
+
+        def hold(self, seconds):
+            events.append(("arm_hold", seconds))
+
+    cfg = SimpleNamespace(
+        walk_timeout=3.0,
+        vision_timeout=0.7,
+        upright_tolerance_deg=12.0,
+        settle_seconds=0.2,
+        ready_pose="forward",
+        ready_blend_seconds=1.5,
+        ready_hold_seconds=0.0,
+        reanchor_hold_seconds=0.3,
+        reanchor_after_brake=True,
+    )
+    compact = cfg_overrides.pop("compact", True)
+    for key, value in cfg_overrides.items():
+        setattr(cfg, key, value)
+    monkeypatch.setattr(expert, "PlannerArm", PlannerArm)
+    monkeypatch.setattr(expert, "reanchor", lambda _p: events.append("reanchor"))
+    monkeypatch.setattr(expert.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
+    solver = SimpleNamespace(solve=lambda *_a, **_k: SimpleNamespace(joints=np.full(29, 9.0)))
+    arm, _report = expert.prepare_stationary_ready(
+        Primitives(),
+        None,
+        cfg,
+        solver,
+        placement=lambda _reset_id: None,
+        whole_body=True,
+        on_phase=lambda name, details: phases.append((name, details)),
+        after_brake=True,
+        compact=compact,
+    )
+    return events, phases, arm
+
+
+def test_compact_takes_the_walking_arms_over_at_once_and_does_not_sleep(monkeypatch):
+    events, phases, arm = _after_brake_run(monkeypatch)
+    assert arm.starts[0]["settle_seconds"] == 0.0  # no 0.6 s seed hold
+    np.testing.assert_allclose(arm.starts[0]["upper_reference"][:3], np.full(3, 0.1))  # the measured waist
+    assert not [e for e in events if isinstance(e, tuple) and e[0] == "sleep"]  # no post-placement landing sleep
+    assert events[: events.index(("arm_hold", 0.0))].count("push") == 75  # 1.5 s blend at 50 Hz
+    assert ["reanchor", ("idle", 0.3)] == events[:2]
+    assert "prepared_placement_settled" not in [name for name, _d in phases]
+
+
+def test_reanchor_after_brake_false_skips_the_toggle_and_its_idle(monkeypatch):
+    events, phases, _arm = _after_brake_run(monkeypatch, reanchor_after_brake=False)
+    assert "reanchor" not in events and not [e for e in events if isinstance(e, tuple) and e[0] == "idle"]
+    assert "reanchor_started" not in [name for name, _d in phases]
+
+
+def test_quick_keeps_its_seed_hold_and_sleep(monkeypatch):
+    events, _phases, arm = _after_brake_run(monkeypatch, compact=False)
+    assert arm.starts[0] == {}
+    assert ("sleep", 0.3) in events

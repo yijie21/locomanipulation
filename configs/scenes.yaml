@@ -34,7 +34,7 @@ walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SON
 
 box_platform:  # a 10 cm solid platform on the blue floor with the warehouse carton's contacts (0.45 x 0.32 x 0.60 m, 1 cm walls, 1.2 kg), no room: the scene capability sweep's centre cell and the bimanual box grasp default since 2026-09-27 (docs/box_grasp_envelope.md)
   dir: outputs/scene/box_platform
-  example: configs/experiments/box_platform_default_20260927.yaml
+  example: configs/experiments/box_platform_default_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform --width 0.45 --length 0.32 --height 0.60
   isaac:  # primitive boxes from the MJCF plus a grey ground (MuJoCo draws none); source.json pins the MJCF it was built from
     dir: box_platform
@@ -42,3 +42,45 @@ box_platform:  # a 10 cm solid platform on the blue floor with the warehouse car
     # fixed exposure: auto-exposure adapts over frames, so the mirror's on-demand pictures and the dataset's continuous
     # ones would differ; ISO 20 keeps auto's contrast (ego mean 120 vs 89/255; outputs/renders/box_platform_isaac_check_20260927)
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=20]
+
+# The four-edge warehouse line (2026-09-28): warehouse_textured with the carton rebuilt at one of the envelope's four
+# >= 40% sizes (docs/box_grasp_envelope.md §3.1; 0.45 m wide, grip height 0.54 / 0.69 m on the 0.371 m platform) by
+# locomani.tasks.crate.warehouse_box_scene: photo meshes scaled (the photographs stretch with them), 1 cm walls and a
+# solid 1.2 kg inertia rebuilt as box_platform does, front face on the -y edge. Each adds surfaces.A.edges: per side
+# (xm/xp/ym/yp) the walk-in heading, clear_m (free floor out from the edge, measured against the room's meshes, which
+# do not collide) and a camera edge_<side> (reverse_room turned to that side). Room, robot and platform unchanged.
+warehouse_box_45x32x33:  # the room's own carton size
+  dir: outputs/scene/warehouse_box_45x32x33
+  example: configs/experiments/warehouse_edges_compact_45x32x33_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33 --width 0.45 --length 0.32 --height 0.33
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: the warehouse_textured look (its isaac entry)
+    dir: warehouse_box_45x32x33
+    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+
+warehouse_box_45x20x33:
+  dir: outputs/scene/warehouse_box_45x20x33
+  example: configs/experiments/warehouse_edges_compact_45x20x33_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x33 --width 0.45 --length 0.20 --height 0.33
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
+    dir: warehouse_box_45x20x33
+    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+
+warehouse_box_45x32x18:
+  dir: outputs/scene/warehouse_box_45x32x18
+  example: configs/experiments/warehouse_edges_compact_45x32x18_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x18 --width 0.45 --length 0.32 --height 0.18
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
+    dir: warehouse_box_45x32x18
+    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+
+warehouse_box_45x20x18:
+  dir: outputs/scene/warehouse_box_45x20x18
+  example: configs/experiments/warehouse_edges_compact_45x20x18_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x18 --width 0.45 --length 0.20 --height 0.18
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
+    dir: warehouse_box_45x20x18
+    build: /venv/main/bin/python scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]

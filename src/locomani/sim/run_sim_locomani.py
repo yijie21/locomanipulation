@@ -58,8 +58,12 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
     surface_bodies = [v["body"] for v in meta.get("surfaces", {}).values()]
     original = DefaultEnv.update_reward
 
-    def update_reward(self):
-        original(self)
+    def ensure_privileged(self):
+        """The privileged publisher, episode server, recorder and state trace, built on first use.
+
+        Under the wall clock the first update_reward builds them within a tick of start. Under lockstep the
+        first tick waits for a client, while the stack's readiness check (`[episode] :`, an offline sim) and
+        the Isaac mirror (its first state) wait for these: the runner builds them before serving."""
         pub = getattr(self, "_privileged_pub", None)
         if pub is None:
             pub = PrivilegedPublisher(self.mj_model, self.mj_data, object_bodies, surfaces=surface_bodies)
@@ -88,6 +92,11 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
                 from locomani.pipeline.sim_video import LiveOverlay
 
                 self._live_overlay = LiveOverlay(self.mj_model)
+        return pub
+
+    def update_reward(self):
+        original(self)
+        pub = ensure_privileged(self)
         self._episode_ctl.poll()
         if getattr(self, "_recorder", None) is not None:
             self._recorder.frame(self.mj_data)
@@ -101,6 +110,7 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             self._state_trace.frame(self.mj_data, seq)
 
     DefaultEnv.update_reward = update_reward
+    DefaultEnv.ensure_privileged = ensure_privileged
 
 
 def _install_loop_timing_probe(report_every: int = 100) -> None:

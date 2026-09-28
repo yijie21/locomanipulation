@@ -58,6 +58,31 @@ def _drop_unreferenced_assets(root: ET.Element) -> None:
             asset.remove(element)
 
 
+def resize_carton(body: ET.Element, *, width: float, length: float, height: float, wall: float) -> dict:
+    """Rebuild the carton body's inertia (a solid BOX_MASS box) and its five collision walls; returns the walls.
+
+    The carton's local x is across the walk-in (the two walls the hands grip), y along it, z up from the floor
+    centre at the body origin. The walls are `name: (pos, size)`, so a caller can recolour them."""
+    hx, hy, hz = width / 2, length / 2, height / 2
+    WALL = wall / 2  # half thickness
+    for child in body.findall("inertial"):
+        body.remove(child)
+    inertia = [BOX_MASS / 12 * (a * a + b * b) for a, b in ((length, height), (width, height), (width, length))]
+    body.insert(1, ET.Element("inertial", pos=_vec([0, 0, hz]), mass=str(BOX_MASS), diaginertia=_vec(inertia)))
+    walls = {
+        "nor_cal_floor": ([0, 0, WALL], [hx, hy, WALL]),
+        "nor_cal_xp": ([hx - WALL, 0, hz], [WALL, hy, hz]),
+        "nor_cal_xm": ([-(hx - WALL), 0, hz], [WALL, hy, hz]),
+        "nor_cal_yp": ([0, hy - WALL, hz], [hx, WALL, hz]),
+        "nor_cal_ym": ([0, -(hy - WALL), hz], [hx, WALL, hz]),
+    }
+    for name, (pos, size) in walls.items():
+        geom = body.find(f"geom[@name='{name}']")
+        geom.set("pos", _vec(pos))
+        geom.set("size", _vec(size))
+    return walls
+
+
 def build(
     out_dir: Path,
     *,
@@ -94,27 +119,14 @@ def build(
 
     # The carton's local x is across the walk-in and y along it (yaw 0 in the room, walk-in +y).
     hx, hy, hz = width / 2, length / 2, height / 2
-    WALL = wall / 2  # half thickness
     body = world.find(f"body[@name='{BOX_BODY}']")
     box_xy = near + axis * hy
     body.set("pos", _vec([box_xy[0], box_xy[1], platform_top]))
     for child in list(body):
-        if child.tag == "inertial" or (child.tag == "geom" and (child.get("name") or "").startswith("nor_cal_vis_")):
+        if child.tag == "geom" and (child.get("name") or "").startswith("nor_cal_vis_"):
             body.remove(child)
-    inertia = [BOX_MASS / 12 * (a * a + b * b) for a, b in ((length, height), (width, height), (width, length))]
-    body.insert(1, ET.Element("inertial", pos=_vec([0, 0, hz]), mass=str(BOX_MASS), diaginertia=_vec(inertia)))
-    walls = {
-        "nor_cal_floor": ([0, 0, WALL], [hx, hy, WALL]),
-        "nor_cal_xp": ([hx - WALL, 0, hz], [WALL, hy, hz]),
-        "nor_cal_xm": ([-(hx - WALL), 0, hz], [WALL, hy, hz]),
-        "nor_cal_yp": ([0, hy - WALL, hz], [hx, WALL, hz]),
-        "nor_cal_ym": ([0, -(hy - WALL), hz], [hx, WALL, hz]),
-    }
-    for name, (pos, size) in walls.items():
-        geom = body.find(f"geom[@name='{name}']")
-        geom.set("pos", _vec(pos))
-        geom.set("size", _vec(size))
-        geom.set("rgba", BOX_RGBA)
+    for name in resize_carton(body, width=width, length=length, height=height, wall=wall):
+        body.find(f"geom[@name='{name}']").set("rgba", BOX_RGBA)
     ET.SubElement(world, "camera", VIDEO_CAMERA)
     _drop_unreferenced_assets(root)
 

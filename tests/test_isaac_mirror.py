@@ -153,3 +153,25 @@ def test_the_mirror_refuses_a_run_whose_policy_would_never_ask_it(tmp_path):
     (tmp_path / "config.yaml").write_text(json.dumps({"eval": {"client": "async"}, "collect": {"instance": 0}}))
     with pytest.raises(SystemExit, match="images.source is 'mujoco'"):
         M.main([str(tmp_path), "--gpu", "1", "--dry-run"])
+
+
+def test_a_lockstep_request_names_the_boundary_state_and_the_mirror_renders_exactly_it(mirror):
+    """The lockstep client asks for the frozen boundary's seq: a stale newest state is waited for, a newer one is
+    an error -- the world must not have moved while the policy looked."""
+    port, box = mirror
+    box["state"] = state(4)
+    client = M.MirrorClient(port, timeout_ms=3000)
+    try:
+        images, header = client.render(seq=4)
+        assert header["seq"] == 4
+        assert client.render(seq=3) is None and "the world moved" in client.last_error
+    finally:
+        client.close()
+
+
+def test_the_mirror_waits_for_a_boundary_state_still_in_flight():
+    states = iter([state(5), state(5), state(6)])
+    got, why = M.state_at(lambda: next(states, state(6)), 6, wait_s=1.0)
+    assert why is None and got["seq"] == 6
+    got, why = M.state_at(lambda: state(5), 6, wait_s=0.05)
+    assert got is None and "never arrived" in why

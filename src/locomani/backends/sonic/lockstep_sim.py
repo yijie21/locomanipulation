@@ -19,7 +19,7 @@ Protocol (msgpack over ZMQ REP):
                                 "right": [7]|null, "frame_index": int}, ...],
      "ticks_per_frame": 2, "want_obs": bool}
         -> {"ok": true, "ticks": n, "time": mj_time, "sim_step": seq,
-            "fallen": bool, "images": {"ego_view": u8[H,W,3], ...}}
+            "priv_seq": int, "fallen": bool, "images": {"ego_view": u8[H,W,3], ...} | null}
         Each frame is held for `ticks_per_frame` control ticks (a 25 fps
         chunk frame = 2 x 20 ms ticks). token null = LOCKSTEP_NO_ACTION: the
         deploy runs its planner input instead (how the scripted spawn /
@@ -39,6 +39,10 @@ ResetLockstepSession.
 Images come back IN the reply, rendered at the frozen boundary, so the
 policy's observation is exactly the state its chunk will be applied to. The
 async 5555 publisher keeps running for the stack's own readiness checks.
+A `backend.render offline` sim renders nothing (`images` is null): its policy
+images come from the Isaac mirror, which renders the privileged state whose
+seq the reply names as `priv_seq` -- the boundary's own, since nothing ticks
+between requests.
 """
 
 from __future__ import annotations
@@ -53,6 +57,7 @@ from locomani.backends.sonic.config import DEFAULT_BACKEND, LockstepConfig
 
 LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
 CONTROL_DT = 0.02
+IDLE_RESEND_MS = 500  # the privileged state is re-sent (same seq) this often while no request comes
 
 
 def enabled() -> bool:
@@ -69,7 +74,7 @@ def install(sim_module) -> None:
     the bridge, and DefaultEnv.prepare_obs is what the barrier validates
     (`proprio["time"]` must be the exact mjData.time).
     """
-    from lockstep_vendor.lockstep_unitree_bridge import LockstepUnitreeBridge
+    from locomani.backends.sonic.lockstep_vendor.lockstep_unitree_bridge import LockstepUnitreeBridge
 
     base_sim = sim_module
 
@@ -97,7 +102,8 @@ class LockstepRunner:
     def __init__(self, simulator, zmq_port: int, out_port: int, *, config: LockstepConfig = DEFAULT_BACKEND.lockstep):
         import zmq
         from gear_sonic.utils.teleop.zmq.zmq_planner_sender import pack_pose_message
-        from lockstep_vendor.lockstep import LockstepBarrier, LockstepTimeout
+
+        from locomani.backends.sonic.lockstep_vendor.lockstep import LockstepBarrier, LockstepTimeout
 
         self.sim = simulator
         self.env = simulator.sim_env
@@ -257,8 +263,10 @@ class LockstepRunner:
         if self._ticks % self._img_every == 0:
             self.env.update_render_caches()
 
-    def _render(self) -> dict:
+    def _render(self) -> dict | None:
         caches = self.env.update_render_caches()
+        if caches is None:  # backend.render offline: no renderer, the Isaac mirror draws the policy's images
+            return None
         return {
             k[: -len("_image")]: np.ascontiguousarray(v, dtype=np.uint8)
             for k, v in caches.items()
@@ -278,7 +286,19 @@ class LockstepRunner:
         for _ in range(60):
             self.env.update_render_caches()
             time.sleep(0.03)
+        # An offline sim has no image to announce itself with: the stack waits for the episode server instead,
+        # and the Isaac mirror for a first state. Both exist only once update_reward has run, which here would
+        # wait for a client that in turn waits for them.
+        ensure = getattr(self.env, "ensure_privileged", None)
+        if ensure is not None:
+            ensure().publish()
         while True:
+            if not self.rep.poll(IDLE_RESEND_MS):
+                # frozen between requests: repeat the boundary's state for subscribers that joined late
+                pub = getattr(self.env, "_privileged_pub", None)
+                if pub is not None:
+                    pub.resend()
+                continue
             req = msgpack.unpackb(self.rep.recv(), object_hook=mnp.decode, raw=False)
             try:
                 rep = self._handle(req)
@@ -355,10 +375,16 @@ class LockstepRunner:
             "sim_step": int(self.barrier.sim_step_seq),
             "session": int(self.barrier.session_id or 0),
             "fallen": bool(getattr(self.env, "fall", False)),
+            "priv_seq": self._priv_seq(),
         }
         if req.get("want_obs"):
             rep["images"] = self._render()
         return rep
+
+    def _priv_seq(self) -> int | None:
+        """The seq of the privileged state this boundary published (update_reward, the tick's last hook)."""
+        pub = getattr(self.env, "_privileged_pub", None)
+        return None if pub is None else pub.last_seq
 
 
 def run(simulator, zmq_port: int, out_port: int) -> None:

@@ -256,3 +256,13 @@ def test_the_eval_stack_writes_state_traces_for_offline_renders(tmp_path):
     cfg = _experiment("crate_table30_record.yaml")
     spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
     assert spec.env["SIM_STATE_TRACE_DIR"] == str(tmp_path / "eval" / "state_trace")
+
+
+def test_until_kept_lowers_the_target_and_never_raises_it():
+    from locomani.tasks.crate.collect import collect_target
+
+    assert collect_target(100, None) == 100
+    assert collect_target(100, 5) == 5
+    assert collect_target(3, 5) == 3  # a pause past the run's own target is just the run
+    with pytest.raises(SystemExit, match="at least 1"):
+        collect_target(100, 0)

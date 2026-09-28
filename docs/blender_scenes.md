@@ -97,7 +97,7 @@ blender --background assets/blender/<room>.blend \
 
 产出 `outputs/scene/<name>/<room>.usdc` + `textures/`,**几何、材质、相机、灯光都带过来**。
 
-它同时修掉 Blender USD 导出器的四处单位错误。每一处都是渲出来才发现的:
+它同时修掉 Blender USD 导出器的五处错误(四处单位 + 一处法线接错)。每一处都是渲出来才发现的:
 
 | 项 | 导出值 | 症状 |
 |---|---|---|
@@ -105,6 +105,7 @@ blender --background assets/blender/<room>.blend \
 | 灯光 `intensity` | 瓦特(20.69) | 画面几乎全黑,需要 ~1200 倍 |
 | 曲线 `widths` | `2.0`,而舞台单位是米 | **一根地面走线渲染成 2 米宽的灰飘带** |
 | `DomeLight` 环境贴图 | 一张纯色 EXR | RTX 报 `MirroredBall environment format not supported yet` 后**整个环境光失效**,背光的角落全黑 |
+| Bump 节点的灰度高度图 | 直接接进 `UsdPreviewSurface.normal`(scale 2 / bias −1) | 高度值 0.50 ± 0.03 → 法线约为零向量、逐 texel 翻号,**每个照片纸箱满面白色噪点**;UsdPreviewSurface 没有 bump 输入,脚本断开这条连接(程序化 Bump 导出器本来就全丢) |
 
 灯光强度**不写进 USD**,见 §4 的"已知未解决"。
 
@@ -213,7 +214,8 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$VENV_SIM_PY" \
 | `ModuleNotFoundError: locomani` | Blender 的 Python 看不到仓库 | `export PYTHONPATH="$LOCOMANI_ROOT/src"` 后再跑 |
 | `.blend` 只有 130 字节 / 打开报损坏 | LFS 指针没拉 | `git lfs pull` |
 | 贴图缺失（粉色/黑色面） | .blend 引用了作者机器上的路径 | 在 Blender 里 Pack Resources 后重存；仓库房间的修复见资产包 `rebuild_blender_scene.py` |
-| Isaac 里画面全黑 / 取景跑偏 / 2 米宽灰带 | Blender USD 导出器的单位错误 | `blender_to_usd.py` 已修四处（§2 表）；灯光增益在渲染时给，不写进 USD |
+| Isaac 里画面全黑 / 取景跑偏 / 2 米宽灰带 | Blender USD 导出器的单位错误 | `blender_to_usd.py` 已修（§2 表）；灯光增益在渲染时给，不写进 USD |
+| Isaac 实时渲染里纸箱表面满是白色噪点 | 高度图被导出成法线贴图（§2 表末行） | 新导出由 `blender_to_usd.py` 断开；已打包的 v1 USDC 早于这个修复，由 `build_isaac_warehouse_scene.py` 在引用层屏蔽，重跑它即可 |
 | `build_mujoco_scene.py` 报 `FileNotFoundError: .../<name>_mj/scene_locomani.xml` | `--base` 指向了还没生成的输出文件 | `--base outputs/scene/crate_table30_depth04/scene_locomani.xml`（§3） |
 | `build_mujoco_scene.py` 报 `texture_map.json` 不存在 | 导出脚本不产贴图 | 按 §3 从资产包拷入 `textures/` 和 `texture_map.json` |
 | 加载 XML 报 `repeated name 'room_00' in mesh` | 旧版构建脚本在自己的输出上重复叠加 | 脚本已改为可重复运行；用正确的 `--base` 重新生成一次 |

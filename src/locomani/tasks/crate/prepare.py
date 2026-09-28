@@ -128,12 +128,15 @@ def scene_name(cfg: dict, run_dir: Path) -> Path:
 
 
 def eval_backend(evaluation) -> dict:
-    """The eval stack's backend block: always a clean deploy, whatever `client` says.
+    """The eval stack's backend block: always a clean deploy, and a lockstep one for `client: lockstep`.
 
-    `EvalConfig` ties `clean_deploy` to `client == "async"`, but this line's evaluator pins
-    `client="blocking"` AND runs its rounds clean (`vla_rounds --clean`, the default): a commander
-    that drops every planner command, including the start that would engage the deploy. Only
-    SONIC_AUTO_START engages it then. Taking the block unchanged started a deploy nothing engaged
-    -- `eval_crate_closed_loop --attach` now refuses that pairing too (2026-09-23).
+    `EvalConfig` ties `clean_deploy` to `client == "async"`, but this line's evaluator runs `blocking` or
+    `lockstep` AND runs its rounds clean (`vla_rounds --clean`, the default): a commander that drops every
+    planner command, including the start that would engage the deploy. Only SONIC_AUTO_START engages it then.
+    Taking the block unchanged started a deploy nothing engaged -- `eval_crate_closed_loop --attach` now refuses
+    that pairing too (2026-09-23). The lockstep client needs the sim's step server and the deploy's
+    `--sim-lockstep`, which `backend.lockstep.enabled` starts (stack/manager.py).
     """
-    return {**evaluation.backend.to_dict(), "clean_deploy": True}
+    block = evaluation.backend.to_dict()
+    lockstep = {**block["lockstep"], "enabled": evaluation.client == "lockstep"}
+    return {**block, "clean_deploy": True, "lockstep": lockstep}

@@ -3,7 +3,14 @@
 import math
 from dataclasses import dataclass
 
-RANGE_FIELDS = ("start_yaw_range_deg", "start_lateral_range", "object_setback_range", "object_yaw_range_deg")
+RANGE_FIELDS = (
+    "start_yaw_range_deg",
+    "start_lateral_range",
+    "object_setback_range",
+    "object_yaw_range_deg",
+    "object_along_range",
+)
+EDGE_SIDES = ("xm", "xp", "ym", "yp")
 
 
 @dataclass(frozen=True)
@@ -34,6 +41,16 @@ class CrateVisualConfig:
         0.0,
         0.0,
     )  # target yaw offset, degrees (+ = counter-clockwise from above), on top of yaw_jitter_deg
+    # The four-edge line (2026-09-28): each round walks in toward one side of the target surface. Needs a scene whose
+    # surface lists its `edges` (locomani.tasks.crate.warehouse_box_scene) and start_pose sampled.
+    start_edges: tuple[
+        str, ...
+    ] = ()  # sides to draw from, uniformly (xm/xp/ym/yp: the -x/+x/-y/+y side); the target is carried to the drawn edge, its offset from its own edge and its yaw turned with the walk-in. () = the scene's robot_start walk-in, nothing drawn
+    start_clearance: float = 0.25  # start_edges: the start distance is capped at the edge's free floor (`clear_m`, to the room's racks and walls, which do not collide) minus this, m
+    object_along_range: tuple[float, float] = (
+        0.0,
+        0.0,
+    )  # target moved along the near edge, as a fraction of the room the edge leaves it (edge half length - the box's half width; -1..1, + = left of the walk-in); the robot start moves with it, so start_lateral_range stays relative to the target
     walk_speed: float = 0.35  # maximum SONIC approach speed command, metres/second
     walk_speed_min: float = (
         0.35  # smallest approach command; the deploy does not step below ~0.3, so a lower floor is a dead command
@@ -84,12 +101,13 @@ class CrateVisualConfig:
     face_timeout: float = (
         6.0  # face_after_brake: seconds allowed for the turn; a timed-out turn holds the heading it reached
     )
-    ready_after_brake: str = "full"  # approach_stop=guard, arm preparation after the brake: full = the episode-start sequence (rest arms, planner re-entry, 1.5 s + 0.4 s + 1.5 s holds, heading re-anchor, 3 s hold, then the READY blend), 13.5 s per round; quick = the robot is already standing, so only the heading re-anchor the POSE stream needs (+1 s to let its twitch die), then the same READY blend and quiet admission, ~7 s. The 6 s of holds were written for a teleported reset, not for a stance the walk just delivered (2026-09-27)
+    ready_after_brake: str = "full"  # approach_stop=guard, arm preparation after the brake: full = the episode-start sequence (rest arms, planner re-entry, 1.5 s + 0.4 s + 1.5 s holds, heading re-anchor, 3 s hold, then the READY blend), 13.5 s per round; quick = the robot is already standing, so only the heading re-anchor the POSE stream needs (+1 s to let its twitch die), then the same READY blend and quiet admission, ~7 s. The 6 s of holds were written for a teleported reset, not for a stance the walk just delivered (2026-09-27); compact = quick without its fixed waits (2026-09-28: the hands stood still 3.9 s before the blend and 2.4 s after it, 8.7 s brake-to-reach): the planner arm takes over the walking arms at once instead of a 0.6 s seed hold, no 0.3 s post-placement sleep, and the blend/hold/re-anchor durations are the knobs below. The bimanual collection default since 2026-09-28 is compact with blend 1.5, hold 0, re-anchor 0.3 (box_platform_default_20260928); the dataclass stays full because 53 historical guard experiment files leave this unset
     ready_blend_seconds: float = 2.5  # arm preparation: seconds of the smooth blend from the walking arms to the READY pose (125 frames at 50 Hz historically)
     ready_hold_seconds: float = 1.2  # arm preparation: seconds the READY pose is held before the POSE stream takes over
     reanchor_hold_seconds: float = (
         1.0  # ready_after_brake=quick: IDLE seconds after the heading re-anchor, for its twitch to die
     )
+    reanchor_after_brake: bool = True  # ready_after_brake quick/compact: re-anchor the heading after the brake (a POSE toggle, ~1.6 s + reanchor_hold_seconds). The episode start already re-anchors (stand_up) and the guard walk never leaves the planner, so whether the second one is needed is what false tests (2026-09-28)
     lateral_hold_common_mode: bool = False  # with lateral_hold_below_rim: the hold removes only the DIFFERENTIAL across-wall change (a hand's minus the pair's mean), so the pair may still shift together. In 278 stalled sweep rounds (2026-09-27) the pair had drifted 3-5 cm to one side during the descend (0.5 cm at its start) with the hold freezing the correction; a common shift keeps the wall between each hand's pads (jaw 9.5 cm, wall 1 cm) and moves the approaching pads AWAY from the faces
     lateral_hold_below_rim: bool = False  # staged reach, descent only: once a measured grip point is within 1 cm of the rim top or below it, its across-wall feedback stops changing. A pad against a wall face is blocked; the correction otherwise winds up to tracking_cap and shoves the wall until the box tips (2026-09-24)
     ready_pose: str = "forward"  # arms readied in place after a guard brake (prepare_stationary_ready): forward = the historical pose, tool points 0.38 m ahead at pelvis height (fingertips 0.42 m: on the warehouse box's near wall at stances under 0.51 m, 2026-09-24); lifted = tool points at ready_tool with the palm pitched ready_pitch_deg, solved by IK from the walking arms with the waist locked -- the forearms fold up, so it needs elbow_min_deg below 0
@@ -157,11 +175,26 @@ class CrateVisualConfig:
             raise ValueError("visual.start_pose must be sampled or scene")
         if self.face_after_brake not in ("none", "centre", "box_yaw"):
             raise ValueError("visual.face_after_brake must be none, centre or box_yaw")
-        if self.ready_after_brake not in ("full", "quick"):
-            raise ValueError("visual.ready_after_brake must be full or quick")
+        if self.ready_after_brake not in ("full", "quick", "compact"):
+            raise ValueError("visual.ready_after_brake must be full, quick or compact")
+        if not self.reanchor_after_brake and self.ready_after_brake == "full":
+            raise ValueError(
+                "visual.reanchor_after_brake false needs ready_after_brake quick or compact (full re-anchors)"
+            )
+        if self.start_edges:
+            if any(side not in EDGE_SIDES for side in self.start_edges) or len(set(self.start_edges)) != len(
+                self.start_edges
+            ):
+                raise ValueError(f"visual.start_edges must be distinct sides from {EDGE_SIDES}")
+            if self.start_pose != "sampled":
+                raise ValueError("visual.start_edges needs start_pose sampled (the scene's robot_start faces one side)")
+            if max(abs(v) for v in self.start_yaw_range_deg) >= 45:
+                # render_trace_videos and the Isaac tracking shot recover a round's edge from its start yaw
+                raise ValueError("visual.start_edges needs start_yaw_range_deg within (-45, 45)")
         for name, value in vars(self).items():
             if name in (
                 "pose_source",
+                "start_edges",
                 "close_trigger",
                 "hold_frame",
                 "stand_lateral_gate",
@@ -178,7 +211,12 @@ class CrateVisualConfig:
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError(f"visual.{name} must be a finite number")
                 continue
-            if name in ("descend_z_guard", "lateral_hold_below_rim", "lateral_hold_common_mode"):
+            if name in (
+                "descend_z_guard",
+                "lateral_hold_below_rim",
+                "lateral_hold_common_mode",
+                "reanchor_after_brake",
+            ):
                 if not isinstance(value, bool):
                     raise ValueError(f"visual.{name} must be a boolean")
                 continue
@@ -224,6 +262,8 @@ class CrateVisualConfig:
             raise ValueError("visual.start_edge_min/max must define an interval within [0.5, 2.5] metres")
         if self.object_setback_range[0] < 0:
             raise ValueError("visual.object_setback_range must not move the target past the near edge (low >= 0)")
+        if not -1 <= self.object_along_range[0] <= self.object_along_range[1] <= 1:
+            raise ValueError("visual.object_along_range is a fraction of the edge's free half length, within [-1, 1]")
         for name in (
             "stand_off",
             "stand_lateral_tolerance",

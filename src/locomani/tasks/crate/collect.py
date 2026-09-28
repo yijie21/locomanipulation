@@ -24,7 +24,8 @@ that mattered -- but converting them to a `run(...)` like `expert.py`'s is the c
 
 Interrupted runs continue: `collect/inputs.json` records which batches finished and what they
 kept, and rerunning the same name reruns the unfinished batch from its start
-(`batches.resume_state`).
+(`batches.resume_state`). `--until-kept N` pauses a run on purpose at the first batch end with N kept (exit 0);
+the same command without it carries on.
 """
 
 from __future__ import annotations
@@ -35,6 +36,13 @@ from pathlib import Path
 
 from locomani.pipeline import batches, run_context
 from locomani.stack import Stack
+
+
+def collect_target(successes: int, until_kept: int | None) -> int:
+    """How many kept episodes this invocation collects to: collect.successes, or fewer under --until-kept."""
+    if until_kept is not None and until_kept < 1:
+        raise SystemExit("--until-kept must be at least 1")
+    return successes if until_kept is None else min(successes, until_kept)
 
 
 def profile_of(cfg: dict, run_dir: Path, *, frozen: bool):
@@ -179,6 +187,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--gpu", default="0")
     ap.add_argument("--name", default=None, help="run directory name; the experiment's own name by default")
     ap.add_argument("--keep-stack", action="store_true", help="leave the stack running when the run ends")
+    ap.add_argument(
+        "--until-kept",
+        type=int,
+        default=None,
+        help="pause once this many episodes are kept, at the end of that batch; the run stays resumable: the same "
+        "command without it continues toward collect.successes (a first look before the long collection)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print what would run, start nothing")
     args = ap.parse_args(argv)
 
@@ -219,10 +234,9 @@ def main(argv: list[str] | None = None) -> int:
     rule = collect.get(
         "stop_rule"
     )  # a run that measures a success rate: stop once it is decided (batches.stop_verdict)
+    target = collect_target(collect["successes"], args.until_kept)
     try:
-        while (
-            state["kept"] < collect["successes"] and state["batches"] < collect["max_batches"] and not state.get("stop")
-        ):
+        while state["kept"] < target and state["batches"] < collect["max_batches"] and not state.get("stop"):
             manifest = run_batch(cfg, run_dir, stack, state)
             batches.wait_saved(state["sessions"][-1], manifest)  # before the next batch or stack.down() kills it
             state["kept"] += batches.kept_in(manifest, bool(collect["record"]))
@@ -257,6 +271,12 @@ def main(argv: list[str] | None = None) -> int:
         **({"stop": state.get("stop")} if rule else {}),
     )
     if state["kept"] < collect["successes"] and not state.get("stop"):
+        if state["kept"] >= target:  # --until-kept: summary.json says kept < successes, so nothing treats it as done
+            print(
+                f"collect: paused at {state['kept']}/{collect['successes']} kept (--until-kept {args.until_kept}); "
+                f"the same command without it continues -> {run_dir}"
+            )
+            return 0
         raise SystemExit(f"stopped at {state['kept']}/{collect['successes']} kept after {state['batches']} batches")
     print(f"collect: {state['kept']} kept in {state['batches']} batches -> {run_dir}")
     return 0

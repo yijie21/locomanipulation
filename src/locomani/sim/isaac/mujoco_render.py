@@ -16,6 +16,7 @@ back from the scene's GL camera, so the two renderers agree by construction.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -26,6 +27,7 @@ sys.path.insert(
 )  # reach src/ for `python src/locomani/sim/isaac/<mod>.py`
 
 from locomani.sim.isaac.replay import MujocoReplay  # noqa: E402
+from locomani.sim.scene_edges import round_edge  # noqa: E402
 
 TRACK = dict(distance=2.5, azimuth=135.0, elevation=-20.0)
 
@@ -120,12 +122,22 @@ def main(argv=None) -> None:
         print(f"ghost trace: {len(ghost)} rows for {len(qpos)} states")
     replay = MujocoReplay(args.scene_xml, model=model)
     model = replay.model
+    # The scenes' offscreen buffer is 960x720 (<visual><global offwidth/offheight>); Renderer refuses a larger frame.
+    model.vis.global_.offwidth = max(model.vis.global_.offwidth, args.width)
+    model.vis.global_.offheight = max(model.vis.global_.offheight, args.height)
     renderer = mujoco.Renderer(model, height=args.height, width=args.width)
     cam = mujoco.MjvCamera()
     mujoco.mjv_defaultCamera(cam)
     cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
     cam.trackbodyid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
     cam.distance, cam.azimuth, cam.elevation = args.distance, args.azimuth, args.elevation
+    # A four-edge scene: the azimuth is the shot of a round walking in +y (the warehouse's own side) and turns with
+    # the round's edge, so every side is filmed from the same place relative to the robot.
+    meta_path = os.path.join(os.path.dirname(os.path.abspath(args.scene_xml)), "scene_meta.json")
+    edge = round_edge(json.load(open(meta_path)), qpos[0]) if os.path.exists(meta_path) else None
+    if edge is not None:
+        cam.azimuth += edge["heading_deg"] - 90.0
+        print(f"edge {edge['side']}: tracking azimuth {cam.azimuth:.0f}")
     vopt = mujoco.MjvOption()
     mujoco.mjv_defaultOption(vopt)
     vopt.geomgroup[4] = 1 if ghost is not None else 0  # ghost hands only when asked (the insets never show them)

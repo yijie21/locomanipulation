@@ -37,7 +37,6 @@ def test_lockstep_runner_passes_config_to_the_barrier_and_jitter_state(monkeypat
 
     from locomani.backends.sonic.lockstep_sim import LockstepRunner
 
-    monkeypatch.syspath_prepend(str(Path("src/teleop_free").resolve()))
     monkeypatch.setattr(zmq.Context, "instance", lambda: Mock())
     monkeypatch.setattr(threading.Thread, "start", lambda self: None)
     config = LockstepConfig(ack_timeout=2.5, warmup_ticks=9, cmd_delay=2, jitter=True, jitter_seed=17)

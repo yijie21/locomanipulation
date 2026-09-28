@@ -34,6 +34,11 @@ class EvalConfig(VlaConfig):
     stand_retries: int = 0  # --stand-retries: 0 or 1, reset retries after a stand-stage failure
     latency_dist: str | None = None  # --latency-dist: empirical latency distribution JSON (lockstep client)
     latency_frames: int | None = None  # --latency-frames: fixed simulated inference latency, frames (lockstep client)
+    camera_frames: int = 0  # lockstep (bimanual): camera delay frames added to the inference latency before adoption
+    # (0 until the deployment camera is chosen; docs/bimanual_design.md, time model)
+    gap: str = field(default="continue", metadata={"choices": ("continue", "hold")})  # bimanual: look+think gap
+    # continue: the running chunk's next frames, as a real robot; hold: nothing, the deploy clamps its last frame
+    # (the bimanual wall-clock loop before 2026-09-27)
     restart_deploy: bool = True  # --set restart_deploy=false: skip the per-round deploy restart, as collection
     # does since 2026-09-10 (ledger bottle §11). Default True keeps every historical eval's protocol; the two
     # paths establish the deploy heading anchor differently (fresh start_control vs hold+reanchor), which is
@@ -69,10 +74,8 @@ class EvalConfig(VlaConfig):
         received tokens and not one `Loop timing` line.
         """
         object.__setattr__(self, "backend", replace(self.backend, clean_deploy=self.client == "async"))
-        if self.image_source == "isaac" and self.client == "lockstep":
-            # The lockstep step reply carries MuJoCo images rendered at the frozen boundary; the mirror
-            # renders the live sim on request, which a stepped sim does not have between steps.
-            raise ValueError("EvalConfig: image_source 'isaac' needs a wall-clock client, not client 'lockstep'")
+        if self.camera_frames < 0:
+            raise ValueError("EvalConfig: camera_frames counts frames of delay, it cannot be negative")
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)

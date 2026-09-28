@@ -49,6 +49,8 @@ from locomani.tasks.crate.visual_approach import (
     initial_robot_xy,
     near_edge,
     scene_object_yaw,
+    surface_edge,
+    target_surface,
 )
 from locomani.tasks.crate.visual_low_reach import VisualLowReach
 from locomani.tasks.crate.visual_policy import ExpertCommand, VisualCratePolicy
@@ -137,6 +139,7 @@ def prepare_stationary_ready(
     on_phase: Callable[[str, dict], None] | None = None,
     heading: float = 0.0,
     after_brake: bool = False,
+    compact: bool = False,
 ):
     """Run the visual expert's stationary controller preparation and admission.
 
@@ -144,7 +147,10 @@ def prepare_stationary_ready(
     diagnostics use the original controller sequence without inventing a crate
     or maintaining another ready-state initializer. ``after_brake`` (visual.ready_after_brake=quick) skips the
     teleported-reset part of stand_up: the walk just delivered a standing, controlled stance, and all the POSE
-    stream needs before the READY blend is a heading re-anchor at the yaw the brake left.
+    stream needs before the READY blend is a heading re-anchor at the yaw the brake left (visual.reanchor_after_brake).
+    ``compact`` (visual.ready_after_brake=compact) also drops the waits that serve nothing after a brake: the planner
+    arm takes the walking arms over at once (their measured pose is the reference) instead of its 0.6 s seed hold,
+    and the no-op placement gets no 0.3 s landing sleep.
     """
 
     def phase(name: str, **details) -> None:
@@ -154,15 +160,20 @@ def prepare_stationary_ready(
     if after_brake:
         p.hold_yaw = float(heading)
         facing = (float(np.cos(heading)), float(np.sin(heading)), 0.0)
-        phase("reanchor_started", after_brake=True)
-        reanchor(p)
-        p.cmd.hold(cfg.reanchor_hold_seconds, mode=LocomotionMode.IDLE, facing=facing)
-        phase("reanchor_complete", after_s=cfg.reanchor_hold_seconds)
+        if cfg.reanchor_after_brake:
+            phase("reanchor_started", after_brake=True)
+            reanchor(p)
+            p.cmd.hold(cfg.reanchor_hold_seconds, mode=LocomotionMode.IDLE, facing=facing)
+            phase("reanchor_complete", after_s=cfg.reanchor_hold_seconds)
     else:
         stand_up(p, reset, placement=placement, whole_body=whole_body, phase=phase, heading=heading)
     arm = PlannerArm(p, "right", send_vel=False, left_guard=False)
-    arm.start()
-    phase("planner_arm_started", settle_seconds="default")
+    if compact:
+        arm.start(upper_reference=upper_body_from_mj(np.asarray(p.obs()["joints"], dtype=float)), settle_seconds=0.0)
+        phase("planner_arm_started", settle_seconds=0.0)
+    else:
+        arm.start()
+        phase("planner_arm_started", settle_seconds="default")
 
     # The original visual expert's ready pose and transition are deliberately
     # kept here as one owner. Whole-body operation overrides the solver's
@@ -197,8 +208,9 @@ def prepare_stationary_ready(
         # Establish the sampled episode only after the ready reference exists.
         phase("reset_commanded", reset_id="prepared_placement")
         placement("prepared_placement")
-        time.sleep(0.3)
-        phase("prepared_placement_settled", duration_s=0.3)
+        if not compact:
+            time.sleep(0.3)
+            phase("prepared_placement_settled", duration_s=0.3)
         arm.start(upper_reference=upper_body_from_mj(ready.joints), settle_seconds=0.0)
         phase("planner_reference_reseeded", settle_seconds=0.0)
 
@@ -240,22 +252,71 @@ def _draw(rng, bounds) -> float:
     return low if low == high else float(rng.uniform(low, high))
 
 
+def facing_edge(meta, cfg, rng):
+    """The round's view of the scene: `meta` with the walk-in turned to one of `cfg.start_edges` (visual.start_edges).
+
+    The drawn side lands in `meta["approach"]` (its heading, free floor and camera from the scene's surface `edges`),
+    which approach_heading -- and through it every edge, axis and distance of the round -- reads. Draws only when
+    more than one side is named, so a config without start_edges keeps its rng stream and gets `meta` back as is.
+    Call it once per round, before anything reads the walk-in."""
+    if not cfg.start_edges:
+        return meta
+    edges = target_surface(meta).get("edges")
+    if not edges:
+        raise ValueError("visual.start_edges needs a scene whose target surface lists its edges (warehouse_box_scene)")
+    sides = cfg.start_edges
+    side = sides[0] if len(sides) == 1 else sides[int(rng.integers(len(sides)))]
+    edge = edges[side]
+    if edge["clear_m"] - cfg.start_clearance < cfg.start_edge_min:
+        raise ValueError(
+            f"edge {side}: {edge['clear_m']} m of free floor leaves no start at start_edge_min {cfg.start_edge_min} "
+            f"with start_clearance {cfg.start_clearance}"
+        )
+    return {**meta, "approach": {"side": side, **edge}}
+
+
+def _home_offset(meta):
+    """World xy from the target's scene pose to the same pose on the round's edge, and the yaw that turns it there.
+
+    The target keeps its offset from its own edge (along the walk-in and across it) and its yaw relative to the
+    walk-in; (0, 0) and 0 when the round faces the scene's own side."""
+    if "approach" not in meta:
+        return np.zeros(2), 0.0
+    scene = {k: v for k, v in meta.items() if k != "approach"}
+    turn = approach_heading(meta) - approach_heading(scene)
+    if abs(np.sin(turn / 2)) < 1e-12:
+        return np.zeros(2), 0.0
+    surface = target_surface(meta)
+    obj = np.asarray(meta["objects"][target_key(meta)]["init_pos"][:2], dtype=float)
+    edge0, axis0, _half = surface_edge(surface, approach_heading(scene))
+    edge1, axis1, _half = surface_edge(surface, approach_heading(meta))
+    left0, left1 = np.array([-axis0[1], axis0[0]]), np.array([-axis1[1], axis1[0]])
+    home = edge1 + axis1 * (axis0 @ (obj - edge0)) + left1 * (left0 @ (obj - edge0))
+    return home - obj, float(turn)
+
+
 def start_placement(reset, meta, cfg, rng):
     """The sampled episode's reset: object jitter and yaw, robot start pose. Returns (placement, its record).
 
-    The layout ranges (start_yaw/start_lateral/object_setback/object_yaw) draw after the historical draws and
-    only when open, so a config without them places exactly as before."""
+    The layout ranges (start_yaw/start_lateral/object_setback/object_yaw, then object_along) draw after the
+    historical draws and only when open, so a config without them places exactly as before. A round turned to
+    another edge (facing_edge) carries the target there first and caps the start distance at that edge's free
+    floor."""
     jitter = rng.uniform(-cfg.position_jitter, cfg.position_jitter, size=2)
     # The object keeps the scene's own yaw (pi/2 in the synthetic table scenes,
     # 0 in the logistics room: long axis across the walk-in either way).
     yaw = scene_object_yaw(meta) + np.radians(rng.uniform(-cfg.yaw_jitter_deg, cfg.yaw_jitter_deg))
     heading = approach_heading(meta)
     base = np.asarray(meta["robot_start"]["xy"], dtype=float)
+    home, turn = _home_offset(meta)
     if cfg.start_pose == "scene":
         start_xy = base + cfg.start_advance * np.array([np.cos(heading), np.sin(heading)])
         start_distance = edge_distance(meta, start_xy)
     else:
-        start_distance = float(rng.uniform(cfg.start_edge_min, cfg.start_edge_max))
+        top = cfg.start_edge_max
+        if "approach" in meta:
+            top = min(top, meta["approach"]["clear_m"] - cfg.start_clearance)
+        start_distance = float(rng.uniform(cfg.start_edge_min, top))
         start_xy = initial_robot_xy(meta, start_distance)
     axis = np.array([np.cos(heading), np.sin(heading)])
     left = np.array([-axis[1], axis[0]])
@@ -263,9 +324,13 @@ def start_placement(reset, meta, cfg, rng):
     lateral = _draw(rng, cfg.start_lateral_range)
     setback = _draw(rng, cfg.object_setback_range)
     object_yaw = _draw(rng, cfg.object_yaw_range_deg)
-    start_xy = start_xy + lateral * left
-    object_dxy = jitter + setback * axis
-    yaw += np.radians(object_yaw)
+    along = _draw(rng, cfg.object_along_range)
+    if along:
+        box = meta["objects"][target_key(meta)].get("box") or {"half_extent": (0.0, 0.0)}
+        along *= surface_edge(target_surface(meta), heading)[2] - float(box["half_extent"][0])
+    start_xy = start_xy + (lateral + along) * left
+    object_dxy = home + jitter + setback * axis + along * left
+    yaw += turn + np.radians(object_yaw)
 
     def placement(_reset_id: str) -> None:
         reset.reset(
@@ -282,6 +347,7 @@ def start_placement(reset, meta, cfg, rng):
         "start_lateral_m": lateral,
         "object_setback_m": setback,
         "object_yaw_offset_deg": object_yaw,
+        **({"edge": meta["approach"]["side"], "object_along_m": along} if "approach" in meta else {}),
     }
 
 
@@ -389,6 +455,7 @@ def box_front_line(state, key, box, axis):
 
 def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record=False, scene_xml=None):
     cfg = config.visual
+    meta = facing_edge(meta, cfg, rng)  # the round's walk-in (visual.start_edges); everything below reads it
     # The run's own scene, not the one `locomani.paths` froze when it was imported: an
     # in-process caller attaches to a stack and only then learns which run it is serving
     # (docs/handoff/flat-functional-scripts-20260922.md).
@@ -684,7 +751,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             last_camera_received = last_progress_wall = time.time()
                             continue
                         # Guard stance is quiet: ready the arms in place, as the walk scene did after its brake
-                        # (a no-op placement keeps the robot where the brake left it). Blocks for ~10 s.
+                        # (a no-op placement keeps the robot where the brake left it). Blocks 8.7 s quick, less compact.
                         print(f"[{label}] arm preparation at {now - started:.2f}s", flush=True)
                         arm, prepared = prepare_stationary_ready(
                             p,
@@ -694,7 +761,8 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             placement=lambda _reset_id: None,
                             whole_body=True,
                             heading=heading,
-                            after_brake=cfg.ready_after_brake == "quick",
+                            after_brake=cfg.ready_after_brake in ("quick", "compact"),
+                            compact=cfg.ready_after_brake == "compact",
                         )
                         placement["arm_preparation"] = dict(
                             initial_stance_ready=prepared["initial_stance_ready"],

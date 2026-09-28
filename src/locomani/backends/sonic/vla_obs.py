@@ -119,9 +119,9 @@ class ObsBuilder:
         if s is not None:
             self._last_proprio = s
 
-    def _render(self) -> bool:
-        """Ask the mirror for this instant's images; False (and why, printed) if it could not."""
-        got = self.mirror.render()
+    def _render(self, seq: int | None = None) -> bool:
+        """Ask the mirror for this instant's images (state `seq` when given); False (and why, printed) if not."""
+        got = self.mirror.render() if seq is None else self.mirror.render(seq)
         if got is None:
             print(f"[vla] isaac mirror: {self.mirror.last_error}", flush=True)
             return False
@@ -141,16 +141,23 @@ class ObsBuilder:
             time.sleep(0.05)
         return False
 
-    def build(self) -> dict | None:
+    def build(self, *, images: dict | None = None, seq: int | None = None) -> dict | None:
+        """The policy's observation from the newest proprioception and images.
+
+        A lockstep round passes what the frozen boundary provides: `images`, the MuJoCo cameras its step reply
+        carried (taken over the stream, whose newest frame can predate the boundary), or `seq`, the boundary's
+        privileged state for the Isaac mirror to render."""
         from gear_sonic.utils.data_collection.transforms import (
             compute_projected_gravity,
         )
         from scipy.spatial.transform import Rotation as R
 
         self._poll()
+        if images is not None:
+            self._last_img = images
         if self._last_proprio is None:
             return None
-        if self.mirror is not None and not self._render():
+        if self.mirror is not None and images is None and not self._render(seq):
             return None
         if self._last_img is None:
             return None
@@ -191,6 +198,26 @@ class ObsBuilder:
             obs[f"video.{key}"] = img[None].astype(np.uint8)
         self.schema.validate_observation(obs)
         return obs
+
+    def settle_proprio(self, after_index: int | None, timeout: float = 2.0, quiet: float = 0.01) -> dict:
+        """The deploy's newest state once it is past entry `after_index` and nothing newer has come for `quiet` s.
+
+        Under lockstep the deploy publishes one state per tick and nothing between steps, so this is the last
+        tick's state however late its message arrives; under the wall clock it is simply the newest."""
+        end = time.time() + timeout
+        last_change = None
+        seen = None
+        while time.time() < end:
+            self._poll()
+            pr = self._last_proprio
+            index = None if pr is None else pr.get("index")
+            if index != seen:
+                seen, last_change = index, time.time()
+            fresh = pr is not None and (after_index is None or (index is not None and index > after_index))
+            if fresh and time.time() - last_change >= quiet:
+                return pr
+            time.sleep(0.001)
+        raise RuntimeError(f"the deploy's state never moved past entry {after_index} within {timeout} s")
 
     def close(self):
         try:

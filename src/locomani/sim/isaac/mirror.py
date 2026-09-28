@@ -15,7 +15,10 @@ cameras, one request per 0.4 s on GPU1: p50 89 / p90 108 ms (docs/ledger/crate.m
 
 Protocol, REQ/REP on TF_ISAAC_MIRROR_PORT. The request is one JSON frame, {"op": "render"} or
 {"op": "ping"}; the reply is a JSON header frame and, for a render, one raw uint8 HxWx3 frame per
-stream in the header's order:
+stream in the header's order. A render may name the state it wants, {"op": "render", "seq": N}: a
+lockstep client (tasks/crate/vla_lockstep.py) asks for the frozen boundary's own state, so its images and
+its proprioception are one instant by construction. The mirror waits up to SEQ_WAIT_S for that state to
+arrive and refuses a newer one -- the world must not move while the policy looks:
 
     {"ok": true, "seq": int, "t": sim s, "state_wall": unix s, "state_age_s": s, "render_ms": ms,
      "streams": [...], "shapes": {stream: [h, w, 3]}}
@@ -46,6 +49,7 @@ import zmq
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
 STREAMS = tuple(CAMERA_CONFIGS)
+SEQ_WAIT_S = 1.0  # a lockstep boundary's state is published before its step returns; this covers the hop
 
 
 def _header(**fields) -> bytes:
@@ -94,16 +98,35 @@ def render_reply(view, state: dict | None, nq: int) -> tuple[list[bytes], dict]:
     return [json.dumps(header).encode(), *frames], header
 
 
+def state_at(latest_state, seq: int, wait_s: float = SEQ_WAIT_S) -> tuple[dict | None, str | None]:
+    """The privileged state numbered `seq`: (state, None), or (None, why not)."""
+    end = time.monotonic() + wait_s
+    state = latest_state()
+    while state is None or int(state.get("seq", -1)) < seq:
+        if time.monotonic() > end:
+            newest = None if state is None else state.get("seq")
+            return None, f"state {seq} never arrived within {wait_s} s (newest {newest})"
+        time.sleep(0.001)
+        state = latest_state() or state
+    if int(state["seq"]) != seq:
+        return None, f"asked for state {seq} but the newest is {state['seq']}: the world moved while it waited"
+    return state, None
+
+
 def handle(request: bytes, view, latest_state, nq: int) -> tuple[list[bytes], dict]:
     """One request -> (reply frames, the header when a render happened, else {})."""
     try:
-        op = json.loads(request).get("op")
+        req = json.loads(request)
+        op = req.get("op")
     except (ValueError, AttributeError):
         return error_reply("a request is one JSON object with an 'op'"), {}
     if op == "ping":
         return [_header(ok=True, streams=list(STREAMS))], {}
     if op == "render":
-        return render_reply(view, latest_state(), nq)
+        if req.get("seq") is None:
+            return render_reply(view, latest_state(), nq)
+        state, why = state_at(latest_state, int(req["seq"]))
+        return (error_reply(why), {}) if why else render_reply(view, state, nq)
     return error_reply(f"unknown op {op!r}; the mirror answers 'render' and 'ping'"), {}
 
 
@@ -137,8 +160,8 @@ class MirrorClient:
         self.sock.setsockopt(zmq.LINGER, 0)
         self.sock.connect(self.addr)
 
-    def _ask(self, op: str) -> list[bytes] | None:
-        self.sock.send(_header(op=op))
+    def _ask(self, op: str, **fields) -> list[bytes] | None:
+        self.sock.send(_header(op=op, **fields))
         if not self.sock.poll(self.timeout_ms):
             self.sock.close(0)
             self._open()
@@ -154,8 +177,9 @@ class MirrorClient:
     def ping(self) -> bool:
         return self._ask("ping") is not None
 
-    def render(self) -> tuple[dict, dict] | None:
-        frames = self._ask("render")
+    def render(self, seq: int | None = None) -> tuple[dict, dict] | None:
+        """Images of the newest state, or of state `seq` exactly (a lockstep boundary)."""
+        frames = self._ask("render") if seq is None else self._ask("render", seq=int(seq))
         if frames is None:
             return None
         header = json.loads(frames[0])

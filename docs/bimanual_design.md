@@ -314,6 +314,43 @@ settle，矛头转向 planner 模式。
 和单臂 trace 对齐。**注意采样仍是每 chunk 一次（约 0.73 s）**，
 所以 trace 本身仍看不见 0.3 s 的瞬态——瞬态要看 `takeover` 那两个采样。
 
+### 评测的时间模型：墙钟与 lockstep（2026-09-27）
+
+策略每看一次（拍照 + 推理）都要时间。现实里拍照几乎是瞬时的，推理约 70 ms，这期间机器人在执行上一块动作。
+墙钟评测里 Isaac 渲三路相机还要约 95 ms，这段时间世界照走——现实里并不存在；而且这条线原来的 blocking 循环在
+间隙里一帧不发，deploy 把参考钳在最后一帧，新动作块再跳过开头约 4 帧接上。计划与实测来源见
+[lockstep + Isaac 评测计划](handoff/lockstep-isaac-eval-plan-20260927.md)。现在有两个时钟可选（`eval.client`）：
+
+| | `blocking`（墙钟，`tasks/crate/vla_rounds.py`） | `lockstep`（仿真时钟，`tasks/crate/vla_lockstep.py`） |
+|---|---|---|
+| 世界怎么走 | sim 和 deploy 各按墙钟 50 Hz 走 | 每个 tick 都由评测进程请求；两次请求之间什么都不动 |
+| 拍照 + 推理期间 | 世界照走；`gap: continue`（默认）由 `GapFeeder` 续发正在执行那块的后续帧，`hold` 什么都不发（2026-09-27 之前的行为） | 世界冻结；本体状态取 deploy 最后一个 tick 的，图取冻结那一刻：MuJoCo 图随 step 回复带回，Isaac 图按那一刻的特权状态 seq 向镜像要（镜像核对 seq，不符即报错） |
+| 推理延迟 | 真实耗时，新块从 `latency_index(耗时)` 起接入 | 模拟：`latency_frames`（固定 L 帧）或 `latency_dist`（按分布抽），另加 `camera_frames`（C 帧）；世界按旧块续走（`gap: continue`）或停在最后一帧（`hold`）L + C 帧，新块从第 L + C 号起接入 |
+| 渲染耗时 | 计入世界时间 | 不计入 |
+| 起栈 | 普通 eval 栈 | `backend.lockstep.enabled`：sim `LOCKSTEP=1`、deploy `--sim-lockstep`（无 planner 模型）、`SONIC_AUTO_START`；`prepare.eval_backend` 按 `client` 设 |
+
+一个 lockstep 周期（帧 = 一个 25 fps token = 两个 50 Hz tick，H = `execution_horizon`）：
+执行新块第 D..D+H−1 帧 → 冻结，观测 → 冻结，推理 → 续走 D 帧（D = L + C）→ 接入下一块第 D 号。
+局前准备（摆放、3 s 站立、token 姿态）全部按 tick 数，第一次 reset 前先站 250 tick（lockstep 下 INIT 斜坡会让没接管的机器人摔倒，
+[归档](archive/lockstep.md)坑 4）。每次推理带 `policy.seed`，服务端按它播种扩散噪声。
+
+`latency_dist` 从墙钟评测的逐块记录生成：
+
+```bash
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out wall.json                    # 墙钟实际跳帧（复刻墙钟）
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out infer.json --inference-only   # 扣掉 Isaac 渲染，只剩推理
+```
+
+`box_room_grasp_200_cap120_20260925` 的 713 个块：墙钟跳帧 4 帧 634 次、3 帧 46、5 帧 32、6 帧 1；扣掉渲染后 2 帧 710 次。
+
+**不能逐位复现的原因**：MuJoCo 默认 4× 多重采样（`vis.quality.offsamples`）下，同一状态在同一进程里渲三次，腕部相机就差 1–2 个灰度级；
+关掉多重采样则进程内、跨进程都逐位相同。lockstep 的局前 332 个 tick（含 reset、站立、token 姿态）两次运行逐位相同，第一次观测的本体状态相同、
+ego 图相同，只有两路腕图差 1 个灰度级，策略由此给出差一个量化步（1/16）的 token，之后轨迹分叉。策略服务端对同一观测 + 同一 seed 输出逐位相同。
+Isaac 图本来也不逐位确定（同一状态两次渲染平均差 1.5–2.3/255）。所以 lockstep 给的是"时间模型一致"，不是"逐帧复现"。
+
+**校准与对照**（2026-09-27，checkpoint-5000，Isaac 图，同一组 100 个 seed，[台账](ledger/crate.md)）：墙钟 `hold` 81/100，lockstep 复刻墙钟 83/100
+（McNemar p = 0.86，失败构成逐项差 ≤ 3）——lockstep 能当墙钟的替身；lockstep 目标模型（渲染不占世界时间、推理 2 帧续走）88/100（对墙钟 p = 0.27）；墙钟 `gap: continue` 83/100（p = 0.85，续发线程让推理慢一帧，抵掉了参考连续的好处）。
+
 
 
 单臂闭环的 crate 版本（2026-09-15）。经 `scripts/bimanual/run_vla_inference.sh`（`task.plugin=crate`
