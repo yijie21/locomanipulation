@@ -1,0 +1,6 @@
+[
+ {"primitive": "approach", "args": {"target": "nor_cal_box", "profile": "warehouse_box"}},
+ {"primitive": "ready", "args": {"profile": "warehouse_box"}},
+ {"primitive": "grasp_bimanual", "args": {"target": "nor_cal_box", "profile": "warehouse_box"}},
+ {"primitive": "put_down_bimanual", "args": {"profile": "warehouse_box", "forward_m": 0.0}}
+]

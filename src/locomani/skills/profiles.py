@@ -188,7 +188,10 @@ STANCE_BANDS: dict[str, dict] = {
 # full experiment YAML (loaded for its task: block alone).
 PROFILE_SOURCES: dict[str, tuple[str, str]] = {
     "crate_low_table": ("task_profile", "crate_visual_low_reach"),
-    "warehouse_box": ("experiment", "configs/experiments/box_centre_base_20260927.yaml"),
+    # box_centre_base_20260927 with stand_forward_min 0.50: the stand no longer pulls the held box back over the
+    # platform edge, so put_down_bimanual rests it in place (8/8, crate ledger 2026-09-28). The collection line's
+    # own file keeps 0.35; this is the skills-side choice (TODO 7.8.1.1 route B).
+    "warehouse_box": ("experiment", "configs/experiments/skills_box_fwd50_20260928.yaml"),
     "bottle_simple": ("experiment", "configs/experiments/bottle_simple_200.yaml"),
     # 7.7.1 calibration variants for the soup can (docs/skills.md §5): one knob each over bottle_simple
     "can_entry15": ("experiment", "configs/experiments/skills_can_entry15_20260928.yaml"),
@@ -196,6 +199,8 @@ PROFILE_SOURCES: dict[str, tuple[str, str]] = {
     "can_overshoot0": ("experiment", "configs/experiments/skills_can_overshoot0_20260928.yaml"),
     # the pick_place line's own task block (coupled strategy, ledger §4 10/10) as a profile for the same can
     "pick_place_coupled": ("experiment", "configs/experiments/skills_pick_place_20260928.yaml"),
+    # 7.8.1.1 route B: the warehouse box held out over the platform through the stand (stand_forward_min 0.50)
+    "warehouse_box_fwd50": ("experiment", "configs/experiments/skills_box_fwd50_20260928.yaml"),
 }
 
 

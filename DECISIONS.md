@@ -924,3 +924,16 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 ### 未决（不是决策）
 - 7.7.1.2：coupled 自己的走近站位（§4 的 creep 站位）vs simple 闭合几何旋钮。
 - 7.8.1.1：planner 侧小步（waypoint 输入）vs 抓取后不做站直回拉。
+
+## 2026-09-28（傍晚 2）7.7.1.2 / 7.8.1.1 按建议做完：coupled 原地放置；站直不回拉
+
+### 决策
+1. **coupled 的默认 plan 不插 `approach(goal)`**：§4 的抓取率本来就是 10/19，coupled 差的只是放置，而它从不持罐走路——原地放置 3/4，持罐走近后 2/5。`default_plan` 按 profile 的 `reach.strategy` 选。
+2. **箱子留在台面上方靠 `stand_forward_min` 0.50，不靠挪步**：8/8 放稳过判据，抓取率不变。skills 的 `warehouse_box` profile 改读 `skills_box_fwd50_20260928.yaml`；采集线的 0.35 不动（要推回去先跑 20 局基线）。
+
+### 被否决的方案（及原因）
+- coupled 的 creep 走近站位：`_creep_to_band` 已无调用者，§4 用的也是 visible expert 的站位；抓取率差异不在站位。
+- planner 侧小步（waypoint 输入）：要换私有 deploy 且 09-23 量过身体只跟 35–55%；B 路一个字段就够。
+
+### 未决（不是决策）
+- coupled 抓罐头 ~50% 的两个失败族（局部对齐扰动、stand infeasible）是否值得单独立项。

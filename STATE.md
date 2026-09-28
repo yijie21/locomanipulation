@@ -6,7 +6,7 @@
 
 ## 本会话做了什么（细节：设计文档 §9b、台账 pick_place §8–9 / crate 末节、DECISIONS 2026-09-28（晚））
 
-- 已确认：TODO 7.4 / 7.6 / 7.7 / 7.9 / 7.10 / 7.11 / 7.12 / 7.8.2 / 7.8.1 / 7.7.1.1 关闭；剩 7.7.1.2（coupled 的走近站位 vs simple 闭合旋钮）与 7.8.1.1（planner 侧小步）两个待用户定。
+- 已确认：TODO 第 7 节全部关闭（7.7.1.2：coupled 原地放置 3/4，默认 plan 不再持罐走近；7.8.1.1：`stand_forward_min` 0.50 后 put_down 8/8 放稳过判据，skills `warehouse_box` profile 改读 fwd50 配置）。
 - 已确认（真栈，GPU1 / instance 1，`scripts/plan_episode.py`）：
   - 持物 `approach(basket)` → `place`：三轮 10 局。抓取站位版 2/6、放置带中心版 1/7、**中心 + 残差修正版 3/6**（容器 6/6 进放置带）；对照直接 place 0/5。
   - warehouse plan `approach → ready → grasp_bimanual` **4/10**（采集入口 6/20，同噪声带）。
@@ -23,7 +23,7 @@
 
 ## 卡点 / 待验证
 
-- 待用户定：7.7.1.2（coupled 自己的 creep 走近站位，或 simple 闭合几何旋钮）；7.8.1.1（planner 侧小步 / 抓取后不回拉）。
+- 已知：coupled 抓罐头 ~50% 是它自己的失败族（局部对齐扰动、stand infeasible），与 §4 的 10/19 一致；要提高抓取率是另一个题。
 - 已知：持箱 carry 的下滑不是转向问题（memory `bimanual-carry-creep`）。
 - 假设：`put_down_bimanual` 的下放高度只按场景表面顶算；搬到台面之外的地方放（地面）没有表面项，需要给 `surface` 一个"floor"。
 - 已知：warehouse plan 运行无视频（`backend.render: offline`）；pick_place 运行有，预览在 `outputs/videos/skills_batch2_20260928/`。
@@ -31,7 +31,7 @@
 
 ## 下一步（TODO）
 
-1. 7.7.1.2 与 7.8.1.1，先由用户定方向。
+1. 第 7 节没有剩余项；可选：把 `stand_forward_min` 0.50 推回采集线（需 20 局基线对照）。
 2. Q11 失败注入的 paired 比较设计（agent 只在失败恢复上有不可替代的贡献；3 局冒烟里没有可恢复的失败）。
 3. put_down 的地面放置（`surface` 没有 floor 项）。
 

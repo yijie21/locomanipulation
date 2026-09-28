@@ -196,6 +196,9 @@ def test_agent_round_runs_until_done(tmp_path):
         ("place", "basket"),
     ]
     assert plan_episode.default_plan(SceneModel(META), {"target": "soup_can"}, "other")[0]["args"]["profile"] == "other"
+    coupled = {"c": SimpleNamespace(config=SimpleNamespace(reach=SimpleNamespace(strategy="coupled")))}
+    direct = plan_episode.default_plan(SceneModel(META), {"target": "soup_can", "goal": "basket"}, "c", coupled)
+    assert [st["primitive"] for st in direct] == ["approach", "grasp_single", "place"]
     assert isinstance(SimpleNamespace(), object)
 
 

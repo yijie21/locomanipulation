@@ -49,7 +49,7 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
 | `grasp_single(target, profile, side)` | `side=right` | swing → frozen | 走 profile 的 `reach.strategy`：`simple`（bottle 10 局 9/10）或 `coupled`（罐头，pick_place §12）；其余策略在 `approach` 前置被拒 |
 | `ready(profile)` / `grasp_bimanual(target, profile)` | — | → frozen / frozen → pose_stream | 双臂原地抬手；协同伸抓到 hold |
 | `place(container, profile, side)` | — | frozen → frozen | 抬、转到放置带、送、降、松、抬开、后退、验收 |
-| `put_down_bimanual(profile, surface, lower_speed, release_seconds, raise_m, back_m)` | `surface` 默认物体原表面 | pose_stream → pose_stream | 双手同步下放到表面静止高度 → 松手 → 抬开；判据只看物体（高度、倾角、无手接触）。**首个实现，2026-09-28 真栈样本见台账** |
+| `put_down_bimanual(profile, surface, forward_m, lower_speed, release_seconds, raise_m, back_m)` | `surface` 默认物体原表面；`forward_m` 默认按台面近沿自动算 | pose_stream → pose_stream | 双手同步下放到表面静止高度 → 松手 → 抬开；判据只看物体（高度、倾角），松手后手指贴壁只记指标。`warehouse_box` profile 的 `stand_forward_min` 0.50 让箱子留在台面上方，之后 `forward_m: 0` 直接放 8/8（crate 台账） |
 | `carry_to(xy \| relative, ...)` | `turn_first=true, turn_mode=slow_walk, drift_max=0.03` | frozen → frozen | 上身冻结走直线，方位差 > 0.2 rad 先原地转；持物守卫每拍查（单臂掌系漂移 < 3 cm + 接触；双臂高度底线 + 双手接触） |
 | `navigate_to(xy \| target, stand_off, step, ...)` | `stand_off=0.6, step=0.45` | swing/frozen → 不变 | 沿占用图的距离场分段走；空手每段边走边朝向路点，持物每段先转（slow_walk）再守线走 |
 | `walk_to(xy)` / `turn_to(yaw, mode)` / `retreat(distance)` | — | — | 直走（持物时自动走 `carry_to` 的守卫）；原地转（< 9° 不准）；持物倒退 |

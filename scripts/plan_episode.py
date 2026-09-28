@@ -54,10 +54,14 @@ def parse(argv):
     return ap.parse_args(argv)
 
 
-def default_plan(scene, task: dict, profile: str | None = None) -> list[dict]:
+def default_plan(scene, task: dict, profile: str | None = None, profiles: dict | None = None) -> list[dict]:
+    """The obvious plan for the task. A coupled single-arm profile places from the grasp stand (its measured
+    geometry, pick_place ledger §12: 3/4 there vs 2/5 after a carried approach); the simple one walks to the goal first."""
     target = task.get("target") or scene.meta.get("target_object")
     obj = scene.objects[target]
     profile = profile or scene.profile_for(target)
+    prof = (profiles or {}).get(profile)
+    strategy = getattr(getattr(getattr(prof, "config", None), "reach", None), "strategy", "simple")
     if obj.bimanual:
         steps = [
             {"primitive": "approach", "args": {"target": target, "profile": profile}},
@@ -70,7 +74,8 @@ def default_plan(scene, task: dict, profile: str | None = None) -> list[dict]:
             {"primitive": "grasp_single", "args": {"target": target, "profile": profile}},
         ]
         if task.get("goal"):
-            steps.append({"primitive": "approach", "args": {"target": task["goal"], "profile": profile}})
+            if strategy != "coupled":
+                steps.append({"primitive": "approach", "args": {"target": task["goal"], "profile": profile}})
             steps.append({"primitive": "place", "args": {"container": task["goal"], "profile": profile}})
     return steps
 
@@ -238,13 +243,13 @@ def main(argv=None) -> int:
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
     task = cfg["task"]
     scene = SceneModel(meta)
-    steps = json.loads(args.plan.read_text()) if args.plan else default_plan(scene, task, args.profile)
+    profiles = load_profiles()
+    steps = json.loads(args.plan.read_text()) if args.plan else default_plan(scene, task, args.profile, profiles)
     if args.profile:  # a calibration profile replaces the plan's profile arguments wholesale (docs/skills.md §5)
         for step in steps:
             if "profile" in step.get("args", {}):
                 step["args"]["profile"] = args.profile
     text, _ = criterion_for(scene, task, steps)
-    profiles = load_profiles()
     print(
         f"[plan] run {run_dir}\n[plan] scene {scene_dir}\n[plan] task: {text}\n"
         + (

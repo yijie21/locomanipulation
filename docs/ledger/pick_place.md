@@ -205,6 +205,7 @@ plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–
 |---|---|---|---|---|
 | `skills_can_coupled_pilot10b_20260928` | — | **5/10** | 2/5 | grasp：`visible expert: stand infeasible, no reposition` ×3（停位深 0.24–0.26 / 横 −0.28…−0.30）、局部对齐扰动 ×1、抬起时翻倒 ×1；持罐走向篮子时**掌系滑 3.2–3.7 cm** ×2（守卫 3 cm）、place carry-over 滑 3.6 cm ×1 |
 | `skills_can_coupled_drift05_pilot10_20260928` | 持物 approach 与 place 的掌系容差 0.03 → 0.05 | **2/10** | 1/2 | grasp：`local alignment disturbed target or base` ×5、抬起 0 m ×1；持罐 approach(basket) **转向中掉罐** ×3（容差放宽后掉在原地 slow_walk 转向里，不是走动里） |
+| `skills_can_coupled_direct10_20260928`（7.7.1.2 走 A：coupled 用自己的放置几何——**不持罐走近，原地转向放置**，plan `pick_place_direct.json`） | — | 4/10 | **3/4** | grasp：局部对齐扰动 ×4、stand infeasible ×1、抬起 −0.7 cm ×1；place：carry-over 掌系滑 3.1 cm ×1 |
 
 - 管路通了：coupled 抓 → 持罐 approach(basket) → place 两局全程成功（罐头离篮心 1.6 cm）。
 - 两个失败族与 simple 不同：(1) coupled 的 visible 版在停位上更挑（3/10 "stand infeasible"），走近用的是 simple 的守线刹车站位，不是 §4 当时的 creep 站位；
@@ -213,3 +214,6 @@ plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–
   到达 place 的两局里 1 局成功；持罐转向时掉罐 3 局说明 coupled 握持在原地 slow_walk 转向下就会滑，放宽阈值只是把失败挪后。
 - **7.7.1.1 到此**：coupled 已包进 skills 管路并能全程跑（2/10、1/10），但它带来的是另外两个失败族（停位挑剔 / 握持在转向中滑），不是罐头的解。
   两条线各自的失败证据都在 trace 的 `stats` 与 `[tag]` 里；下一步要么给 coupled 单独的走近站位（§4 当时的 creep 站位），要么回到闭合几何旋钮——待用户定。
+- **7.7.1.2（走 A）**：§4 的 10/19 抓取率本来就是 53%，skills 里 coupled 抓取 4–5/10 与之一致；差在放置——§4 从不持罐走路。
+  coupled 原地放置 3/4（持罐走近后 2/5、容差放宽后 1/2），所以 coupled 的默认 plan 不再插 `approach(goal)`（`default_plan` 按 profile 的 `reach.strategy` 选）。
+  抓取侧的 50% 是 coupled 自己的失败族（局部对齐扰动罐头、stand infeasible），与 §4 相同，不属于本项。
