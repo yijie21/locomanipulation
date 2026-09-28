@@ -51,7 +51,6 @@ import dataclasses
 import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -270,6 +269,25 @@ def main(argv=None):
     return _evaluate(args)
 
 
+def instance_deploy_cmdline(instance: int) -> str | None:
+    """The command line of `instance`'s own deploy, or None when that instance has no live deploy.
+
+    Until 2026-09-28 this was `pgrep -af g1_deploy_onnx_ref` over the whole machine, so another
+    session's collection deploy (WITH its encoder, on instance 1) refused a clean evaluation on
+    instance 0 -- the bottle smoke of the documentation rewrite, the first time two stacks overlapped.
+    """
+    from locomani.stack import Stack
+
+    try:
+        pid = Stack.attach(instance).pids.get("deploy")
+    except FileNotFoundError:
+        return None
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+    except (OSError, TypeError):
+        return None
+
+
 def _evaluate(args):
     cfg = EvalConfig.load(args.config) if args.config else EvalConfig()
     if args.set_:
@@ -302,9 +320,9 @@ def _evaluate(args):
     if not link.ping():
         sys.exit(f"no policy server on :{cfg.policy_port} -- start tools/serve_policy.py (Isaac-GR00T venv) first")
 
-    dep = subprocess.run(["pgrep", "-af", "g1_deploy" + "_onnx_ref"], capture_output=True, text=True).stdout
-    if not dep.strip():
-        sys.exit("deploy is not running -- bring the stack up with NO_ENCODER=1 bash scripts/stack/start_stack.sh")
+    dep = instance_deploy_cmdline(int(os.environ.get("INSTANCE", "0")))
+    if not dep:
+        sys.exit("deploy is not running -- bring the stack up: bash scripts/start_stack.sh eval <run-dir>")
     if "--encoder-file" in dep:
         sys.exit(
             "deploy is running WITH its encoder. Token streaming will "

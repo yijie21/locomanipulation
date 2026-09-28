@@ -158,3 +158,23 @@ def test_every_eval_defaults_to_the_lockstep_target_model():
     assert EvalConfig(latency_frames=None, latency_dist="d.json").latency_dist == "d.json"
     with pytest.raises(ValueError, match="both set"):
         EvalConfig(latency_dist="d.json")
+
+
+def test_the_encoder_preflight_reads_only_its_own_instances_deploy(tmp_path, monkeypatch):
+    """2026-09-28: a machine-wide pgrep found another session's encoder deploy and refused a clean evaluation."""
+    import json as _json
+
+    from locomani import paths
+    from locomani.pipeline import eval_closed_loop as E
+
+    monkeypatch.setattr(paths, "TMP", str(tmp_path))
+    assert E.instance_deploy_cmdline(0) is None  # no stack on this instance
+    root = Path(paths.session_root(0))
+    root.mkdir(parents=True)
+    spec = {"instance": 0, "gpu": "0", "scene_dir": "s", "prompt": "p", "record": False}
+    import os as _os
+
+    (root / "stack.json").write_text(_json.dumps({"spec": spec, "pids": {"deploy": _os.getpid()}}))
+    own = E.instance_deploy_cmdline(0)
+    assert own and "pytest" in own  # this process stands in for the instance's deploy
+    assert E.instance_deploy_cmdline(1) is None  # another instance's stack is not ours
