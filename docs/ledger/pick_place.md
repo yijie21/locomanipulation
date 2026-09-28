@@ -169,3 +169,27 @@ TODO 7.9。plan `configs/plans/pick_place_navigate.json`（approach → grasp_si
 | 2 | **navigate_to OK**：7 段路点、走 2.57 m（绕桌角）、其中 4 段先 slow_walk 转向再走、掌系最大漂移 0.8 cm、距离场剩 0.10 m |
 
 - 持物分段走法（每段转向 + 守线走）在一个样本上成立；判据按 plan 末尾 primitive 选（持物即可），否则会被"没放进篮子"判 FAIL（第一版就是）。
+
+## §11 `simple` 抓罐头 + place 标定：按 docs/skills.md §5 流程一次一个旋钮（2026-09-28 下午）
+
+TODO 7.7.1。基线 = §8 第三轮 `skills_pickplace_viabasket3_20260928`（`bottle_simple`，seed 300–309）：grasp 6/10，place 3/6。每个变体是 `bottle_simple_200.yaml` 的
+复制件改一个旋钮（`configs/experiments/skills_can_*_20260928.yaml`，profile 名登记在 `PROFILE_SOURCES`），同 plan、同 seed，`--profile <名>`。
+`grasp_single` 的 trace 从这轮起带 simple 策略的 `stats`（entries / failure 证据）。
+
+| profile | 旋钮 | grasp | place（到 place 的局） | 失败 |
+|---|---|---|---|---|
+| `bottle_simple`（基线） | — | 6/10 | 3/6 | grasp：无双侧接触 ×2、抓倒 ×2；place：descent timeout 6–9 cm ×2、raise 4.7 cm short ×1 |
+| `can_entry15` | `entry_lateral_tolerance_m` 0.025 → 0.015 | 7/10（1 局站位 out of reach 未到抓） | 3/6 | grasp：无双侧接触 ×2、抓倒 ×1；place：**raise timed out 13.5 / 16.7 cm short** ×2、descent timeout 6.2 cm ×1 |
+| `can_descend05` | `v_descend` 0.1 → 0.05、`descend_timeout` 4 → 8 | 6/10 | 2/6 | grasp：无双侧接触 ×3、抓倒 ×1；place：descent timeout 6.0 / 9.9 cm ×2，**82 / 94 cm** ×2（下降中罐头掉出、量到地上）——减速没帮助，负结果 |
+| `can_overshoot0` | `entry_overshoot_m` 0.02 → 0.0 | 4/9（1 局站位 out of reach） | 0/4 | grasp：无双侧接触 ×3、抓倒 ×2；place：descent timeout 5.7–7.7 cm ×3、掌系滑 3.8 cm ×1。stats 里罐心仍在工具点前 0.7–1.1 cm——过冲不是深度的来源，负结果 |
+
+- **横向容差不是抓取失败的原因**：`can_entry15` 的 stats 里所有 "无双侧接触" 局在合爪前都 `aligned=True`、横向偏差 ≤ 1.5 cm；共同点是罐心在工具点**前方** 0.8–1.0 cm
+  （`offset_in_palm[0]`），即罐头比瓶子更深地进到指根——罐头直径 6.1 cm、瓶子 4.5 cm，同样的 2 cm 进入过冲对罐头太多。下一个旋钮因此是 `entry_overshoot_m`。
+- place 的 "raise timed out N cm short" 是第二个失败族：抬到悬停高度的物体伺服（`v_travel` 0.15、`carry_timeout` 6 s）根本没把罐头抬起来（差 13–17 cm）；与 descent timeout 同为 PlannerArm 上物体伺服的跟踪问题。
+
+- **三个旋钮都没动这两个失败族**（grasp 6/10 → 7/10、6/10、4/9；place 3/6 → 3/6、2/6、0/4，都在 10 局噪声内或更差）。证据指向旋钮够不着的地方：
+  合爪前对准、罐头还是没有双侧垫接触，是 6.1 cm 罐身与 Dex1 指垫的闭合几何（`close_target` / 接触判定），不是进入；place 的 xy 漂移是 PlannerArm 上物体伺服的跟踪。
+  §4 的 10/10 用的是 `coupled` 策略。试着把 `skills_pick_place_20260928.yaml` 的 task 块登记成 profile（`pick_place_coupled`）跑同一 plan：
+  第一局就在 `_phase_approach` 里抛 `CoupledGraspPolicy has no attribute 'walking'`——skills 的 approach 只包了 `simple` 专家的阶段，coupled 的走近读的是另一套策略字段。
+  现在 `approach` 的前置直接拒绝 `reach.strategy != simple` 的 profile（`check: profile`），登记已撤。
+- **7.7.1 到此的状态**：三个 simple 旋钮各 10 局都没动两个失败族；能救罐头的 `coupled` 策略需要单独包装（design §9 第二步"把抓取核心搬进 catalogue"的范围），本会话不做。

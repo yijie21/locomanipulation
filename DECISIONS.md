@@ -889,3 +889,21 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - `simple` 抓罐头 + place 的标定（grasp 5–6/10、place 后 carry-over 伺服 7–12 cm 偏、掌系滑 3 cm）：7.10 流程的第一个对象，本会话没调。
 - 持箱 carry 180° 转 3/6、直走不转的对照结果见 crate 台账；要不要把双臂 carry 默认改成"不转、倒退"待看数据。
 - warehouse plan 运行没有视频（`backend.render: offline`，sim 不出图）；要视频得走 crate 线自己的录制。
+
+## 2026-09-28（下午）三个标定项：数据说旋钮够不着，停在机制上
+
+### 决策
+1. **7.8.2 持箱 carry 默认不改**（`turn_first=True`）：倒退不转 8/12 vs 转 180° 3/6，但两种走法箱子都以约 2 cm/s 下滑（1 m 掉 3–9.5 cm）；是冻结上身下的捏持蠕变，不是转向。持箱 ≤ 1 m 可用，更远要中途重抬或带反馈的 POSE 流搬运（未立项）。
+2. **7.8.1 put_down 加 `forward_m`（默认按台面近沿 + 5 cm 自动算），但不作为解**：臂前送 1/3（伸臂松捏持）、腿前送 carry 3/11（`walk_to` 走不了 0.15 m）。放下本身 8/10 放稳；缺的是 ≤ 0.2 m 的小步走法。
+3. **7.7.1 三个 simple 单旋钮 pilot 全部负结果**（横向容差 0.015、下降减速、进入过冲 0），按 docs/skills.md §5 流程各 10 局同 seed；`grasp_single` 的 trace 从此带策略 stats。
+   证据：合爪前已对准、罐心在工具点前 0.7–1.1 cm——失败在 6.1 cm 罐身与指垫的闭合几何、以及 PlannerArm 物体伺服的跟踪。
+4. **`approach` 拒绝 `reach.strategy != simple` 的 profile**：coupled 策略没被包装（走近读 `walking` 字段），登记成 profile 会在第一局抛异常；宁可前置拒绝。
+5. 场景判据 `put <obj> on <surface>` 看箱底与箱心（容差 2 cm），不看原点。
+
+### 被否决的方案（及原因）
+- 把 `pick_place_coupled` 登记成 profile 直接跑：抛异常；包装 coupled 是 design §9 第二步的事。
+- 用 `walk_to` 做 0.15 m 前送：planner 小位移量化，冲出 0.7–1.5 m。
+
+### 未决（不是决策）
+- 7.7.1.1：包装 coupled，还是给 simple 加闭合几何旋钮。
+- 7.8.1：IDLE 挪步式小位移 primitive，还是抓取后不做站直回拉。

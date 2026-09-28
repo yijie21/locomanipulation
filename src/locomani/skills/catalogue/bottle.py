@@ -168,6 +168,12 @@ class BottleApproach:
         prof = self._profiles.get(profile)
         if prof is None or prof.hands != "single":
             out.append(Violation("profile", profile, note="single-arm approach needs a single-hand profile"))
+        elif getattr(prof.config.reach, "strategy", "simple") != "simple":
+            # the adapters wrap the simple expert's phases; the coupled strategy's walk reads policy fields
+            # (`walking`) the guard walk does not have (pick_place ledger §11, 2026-09-28)
+            out.append(
+                Violation("profile", profile, note=f"strategy {prof.config.reach.strategy!r}: only simple is wrapped")
+            )
         if target not in session.scene.objects:
             out.append(Violation("target", target, note=f"known: {sorted(session.scene.objects)}"))
         elif session.held is None and not session.scene.objects[target].single_hand_graspable:
@@ -390,7 +396,8 @@ class GraspSingle:
         finally:
             BottleApproach._close(ctx)
             session.arm, session.arm_owner, session.stance = None, ArmOwner.PLANNER_FROZEN, session.stance
-        metrics = {"visibility": result.visibility}
+        stats = dict(getattr(ctx.coordinated, "stats", None) or {})  # the simple policy's phase/entry/failure evidence
+        metrics = {"visibility": result.visibility, "stats": stats}
         if not result.ok:
             return Outcome(False, f"[grasp] {result.why}", duration_s=session.clock() - t0, metrics=metrics)
         s = p.obs()

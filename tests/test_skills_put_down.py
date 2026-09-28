@@ -45,7 +45,7 @@ class FakeSolver:
 class StreamedArm:  # the class name is what the session invariant and the precondition key on
     def __init__(self, z0):
         self.q = np.zeros(29)
-        self.q[0] = z0
+        self.q[0], self.q[1] = z0, 0.3  # tool z and tool x of the reference (FakeSolver reads them back)
         self.hands = {"left": np.full(7, 0.5, dtype=np.float32), "right": np.full(7, 0.5, dtype=np.float32)}
         self._stream_released, self.pushes = False, []
 
@@ -56,9 +56,9 @@ class StreamedArm:  # the class name is what the session invariant and the preco
 class Stack:
     """The object follows the commanded tool z down to the rest height; contact holds while the hands are closed."""
 
-    def __init__(self, arm, drop_fails=False, tilt=0.0):
-        self.arm, self.drop_fails, self.tilt, self.t = arm, drop_fails, tilt, 0.0
-        self.z_offset = 0.10  # object origin above the reference tool z at grasp
+    def __init__(self, arm, drop_fails=False, tilt=0.0, xy=(0.0, 0.0)):
+        self.arm, self.drop_fails, self.tilt, self.t, self.xy = arm, drop_fails, tilt, 0.0, list(xy)
+        self.z_offset, self.pushed = 0.10, 0.0  # object origin above the reference tool z at grasp; x pushed so far
         self.quat = [np.cos(np.radians(tilt) / 2), np.sin(np.radians(tilt) / 2), 0.0, 0.0]
 
     def obs(self):
@@ -70,9 +70,13 @@ class Stack:
                 t=self.t, fallen=False, objects={"blue_crate": dict(pos=[0, 0, z + 0.05], quat=self.quat, touching=[])}
             )
         touching = [] if open_hands else ["left", "right"]
-        return dict(
-            t=self.t, fallen=False, objects={"blue_crate": dict(pos=[0, 0, z], quat=self.quat, touching=touching)}
-        )
+        x = self.xy[0] + (float(self.arm.q[1]) - 0.3 if not open_hands else self.pushed)  # rides the tool x while held
+        self.pushed = x - self.xy[0]
+        pos = [x, self.xy[1], z]
+        return dict(t=self.t, fallen=False, objects={"blue_crate": dict(pos=pos, quat=self.quat, touching=touching)})
+
+    def pelvis_yaw(self, s=None):
+        return 0.0
 
 
 def session(stack, arm):
@@ -135,3 +139,20 @@ def test_put_down_refusals():
     frozen.arm_owner = ArmOwner.PLANNER_FROZEN
     entry = executor(frozen).step("put_down_bimanual", {"profile": "warehouse_box"})
     assert entry["rejected"][0]["check"] == "arm_owner"
+
+
+def test_put_down_pushes_the_box_out_over_the_edge_first():
+    arm = StreamedArm(z0=REST_Z)
+    stack = Stack(arm, xy=(-0.45, 0.0))  # near face at -0.65, platform near edge at -0.50: 0.20 m short
+    s = session(stack, arm)
+    entry = executor(s).step("put_down_bimanual", {"profile": "warehouse_box", "release_seconds": 0.2})
+    assert entry["outcome"]["ok"], entry
+    m = entry["outcome"]["metrics"]
+    assert abs(m["forward_m"] - 0.20) < 1e-9 and abs(m["pushed_m"] - 0.20) < 1e-9
+    assert [e["stage"] for e in s.record.events][:2] == ["put_down.forward", "put_down.lower"]
+    explicit = session(Stack(arm := StreamedArm(z0=REST_Z)), arm)
+    entry = executor(explicit).step(
+        "put_down_bimanual", {"profile": "warehouse_box", "forward_m": 0.0, "release_seconds": 0.2}
+    )
+    assert entry["outcome"]["ok"] and entry["outcome"]["metrics"]["forward_m"] == 0.0
+    assert "put_down.forward" not in [e["stage"] for e in explicit.record.events]

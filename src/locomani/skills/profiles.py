@@ -168,7 +168,7 @@ def _load_experiment_profile(name: str, relpath: str) -> GraspProfile:
     plugin = task.get("plugin")
     if plugin == "crate":
         return _crate_profile(name, relpath, CrateTaskConfig.from_dict(task))
-    if plugin == "bottle":
+    if plugin in ("bottle", "pick_place"):  # pick_place is the bottle line's task with a goal (pipeline/lines.py)
         return _bottle_profile(name, relpath, BottleTaskConfig.from_dict(task))
     raise ValueError(f"{relpath}: unsupported task.plugin {plugin!r} for a grasp profile")
 
@@ -190,6 +190,10 @@ PROFILE_SOURCES: dict[str, tuple[str, str]] = {
     "crate_low_table": ("task_profile", "crate_visual_low_reach"),
     "warehouse_box": ("experiment", "configs/experiments/box_centre_base_20260927.yaml"),
     "bottle_simple": ("experiment", "configs/experiments/bottle_simple_200.yaml"),
+    # 7.7.1 calibration variants for the soup can (docs/skills.md §5): one knob each over bottle_simple
+    "can_entry15": ("experiment", "configs/experiments/skills_can_entry15_20260928.yaml"),
+    "can_descend05": ("experiment", "configs/experiments/skills_can_descend05_20260928.yaml"),
+    "can_overshoot0": ("experiment", "configs/experiments/skills_can_overshoot0_20260928.yaml"),
 }
 
 

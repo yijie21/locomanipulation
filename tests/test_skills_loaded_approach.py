@@ -170,3 +170,18 @@ def test_loaded_approach_refusals():
     s.arm_owner, s.heading = ArmOwner.PLANNER_FROZEN, None
     entry = executor(s, Carry(stack)).step("approach", {"target": "basket", "profile": "bottle_simple"})
     assert [v["check"] for v in entry["rejected"]] == ["heading"]
+
+
+def test_approach_refuses_a_profile_whose_strategy_is_not_wrapped():
+    from types import SimpleNamespace as NS
+
+    from locomani.skills.catalogue import build_catalogue
+
+    profiles = load_profiles()
+    coupled = NS(hands="single", config=NS(reach=NS(strategy="coupled")))
+    stack = Stack()
+    s = Session(stack=stack, scene=SceneModel(META), arm_owner=ArmOwner.PLANNER_SWING, heading=0.0)
+    approach = BottleApproach({**profiles, "coupled": coupled}, carry=Carry(stack), stand=stand_for_basket)
+    ex = Executor(s, build_catalogue(profiles={**profiles, "coupled": coupled}, approach_single=approach))
+    entry = ex.step("approach", {"target": "soup_can", "profile": "coupled"})
+    assert entry["rejected"][0]["check"] == "profile" and "only simple" in entry["rejected"][0]["note"]

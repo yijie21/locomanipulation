@@ -84,6 +84,8 @@ profile 把走近参数和抓取参数绑在一起（设计 §6），场景按�
 2. `--profile <新名> --rounds 10` 跑一次 pilot（10 局是这个仓库的 pilot 规模，见 [标准](reference/standards.md#evidence)）。
 3. 看 `manifest.jsonl` 的 `why` 按 `[tag]` 分族；**每次只改一个旋钮**（走近：`stand_off` / `guard_*`；抓取：`entry_*` / `close_*`），再 10 局。
 4. 与原线的 gate 对照（`scripts/gate.py compare <line>`）不退步后才把新 profile 写成默认。
+   已走过一遍的例子（罐头，2026-09-28，[pick_place §11](ledger/pick_place.md)）：`can_entry15` / `can_descend05` / `can_overshoot0` /
+   `pick_place_coupled` 四个 profile 各改一处，`--profile <名>` 同 seed 10 局；`grasp_single` 的 trace 里 `metrics.stats` 带 simple 策略的进入 / 失败证据，先看它再选旋钮。
 5. 站位准入带：`STANCE_BANDS`（`profiles.py`）默认全开。要不要收，先跑回放：
 
 ```bash

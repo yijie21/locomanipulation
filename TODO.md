@@ -312,10 +312,11 @@
   - [x] 7.5 `carry_to`（2026-09-28）：冻结上身 + walk_to + 持物守卫；持瓶直走/倒退 1–2 m 漂移 < 1 cm（6/6），走动中急转 3 cm 掉（0/2），180° 转 IDLE 0/2、SLOW_WALK 4/4 → 默认 turn_first + slow_walk；台账 bottle §41。持箱未量
   - [x] 7.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器 `skills/planner.py` + `--agent` 接线（2026-09-28 晚：JSON schema 结构化输出、每局一个会话、`agent_io_NN.jsonl`；真栈冒烟见 pick_place 台账 §8）
   - [x] 7.7 跨位置搬运回归（2026-09-28 晚）：`walk_to` 持物走 `carry_to` 守卫；单臂 `approach` 持物 = carry 到放置带中心站位 + 原地转向 + 残差修正 + 写站位；默认 plan 加 `approach(goal)`。真栈三轮（pick_place 台账 §8）：容器进带 6/6，place 3/6；对照直接 place 0/5。place 前站位深度不是主因——`simple` 抓罐头后 place 的 carry-over / 下降伺服（7–12 cm 偏、掌系滑 3 cm）是下一个标定对象（7.10 流程），未调
-    - [ ] 7.7.1 `simple` 抓罐头 + place 标定：grasp 5–6/10（合爪无双侧接触 / 抓倒），place 后 descent timeout 6–12 cm；先对 `palm_frame_offset` 与 place 伺服基准，再按 7.10 流程一次一个旋钮（待用户定）
+    - [~] 7.7.1 `simple` 抓罐头 + place 标定（2026-09-28 下午，pick_place 台账 §11）：按 7.10 流程跑了三个单旋钮 pilot（`entry_lateral_tolerance` 0.015、`v_descend` 0.05 + 8 s、`entry_overshoot` 0）各 10 局，grasp 7/10、6/10、4/9 与 place 3/6、2/6、0/4 均不优于基线 6/10、3/6；trace 的 stats 表明合爪前已对准、罐心在工具点前 0.7–1.1 cm，失败在 6.1 cm 罐身与 Dex1 指垫的闭合几何和 PlannerArm 物体伺服的跟踪，旋钮够不着。`coupled` 策略（§4 10/10）没被 skills 包装（approach 抛 `walking` 缺失，现已在前置拒绝）
+      - [ ] 7.7.1.1 包装 `coupled` 策略为第二个单臂 profile（design §9 第二步：抓取核心搬进 catalogue），或给 simple 加罐头的闭合几何旋钮（`close_target` / 指垫接触判定）（待用户定）
   - [~] 7.8 `put_down_bimanual` 首个实现（`catalogue/crate_put_down.py`，2026-09-28 晚；假栈测试 4 个）：真栈 7 个样本 6 次把箱子放稳（≤ 0.7 cm、≤ 2.5°）；持箱 carry 180° 转 + 1 m 3/6（crate 台账末节）
-    - [ ] 7.8.1 put_down 前送：站直阶段把箱子拉近约 0.2 m，原地放下箱心越过台面近沿 5 cm（搁在沿上）；下放前工具点前移（`forward_m`）或按近沿算前送量，再 10 局（待用户定）
-    - [ ] 7.8.2 持箱 carry 默认走法：转 180° 掉 3/6（转中 1、走中滑落 2）；看 `carryback_noturn` 对照后定要不要默认不转、倒退（待用户定）
+    - [~] 7.8.1 put_down 前送（2026-09-28 下午）：臂前送 `forward_m`（自动按台面近沿 + 5 cm）1/3——伸臂让捏持松开；腿前送（`carry_to(relative=[+0.15,0])` + `put_down(forward_m=0)`）carry 3/11——`walk_to` 把 0.15 m 走成 0.7–1.5 m 撞台面（小位移量化），走对的局能放稳过判据。**卡在小步走法**：需要 IDLE 挪步式 ≤ 0.2 m 位移 primitive，或抓取后不做站直回拉（待用户定）
+    - [x] 7.8.2 持箱 carry 默认走法（2026-09-28 下午）：倒退不转 8/12 vs 转 180° 3/6，但两种走法箱子都在走动中以约 2 cm/s 下滑（1 m 掉 3–9.5 cm），瓶颈是冻结上身下的捏持蠕变而非转向；默认不改（`turn_first=True`）；持箱超过 1 m 要中途重抬或带反馈的 POSE 流搬运（未立项）
   - [x] 7.9 `navigate_to`（2026-09-28 晚）：沿 `Navigator.waypoint()` 分段走，空手朝路点、持物先 slow_walk 转再守线走；假栈 7 个测试；真栈持罐 1 局 7 段 2.57 m 漂移 0.8 cm（pick_place 台账 §10）；空手真栈未跑
   - [x] 7.10 新物体标定流程（2026-09-28）：写在 `docs/skills.md` §5（新 profile 登记 `PROFILE_SOURCES` → `plan_episode.py --profile` 10 局 pilot → 按失败族改一个旋钮 → gate 对照 → 回放定带）；按几何自动落位仍无机制，文档里明说没有
   - [x] 7.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）

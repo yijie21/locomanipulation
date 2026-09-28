@@ -239,6 +239,10 @@ def main(argv=None) -> int:
     task = cfg["task"]
     scene = SceneModel(meta)
     steps = json.loads(args.plan.read_text()) if args.plan else default_plan(scene, task, args.profile)
+    if args.profile:  # a calibration profile replaces the plan's profile arguments wholesale (docs/skills.md §5)
+        for step in steps:
+            if "profile" in step.get("args", {}):
+                step["args"]["profile"] = args.profile
     text, _ = criterion_for(scene, task, steps)
     profiles = load_profiles()
     print(

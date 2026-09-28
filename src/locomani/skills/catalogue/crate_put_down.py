@@ -6,6 +6,9 @@ the reference through the profile's `BimanualIK` (pelvis-relative, the frame the
 together at `lower_speed` until the object rests on the surface (its z within `rest_tolerance` of the
 resting height for `settle_seconds`, or the commanded drop is exhausted), then the hands ramp open over
 `release_seconds`, then the tools rise `raise_m` and pull back `back_m` so the fingers clear the walls.
+Before the lowering the tools may first be pushed forward `forward_m` (None = automatic: enough for the box's
+near face to clear the surface's near edge by `forward_margin_m`): the reach's stand phase pulls the box
+0.2 m toward the robot, and put down in place it rested on the platform's near edge (2026-09-28).
 Every pushed frame re-solves the arms from the previous solution; the legs and waist stay where the
 reference had them. No feedback on the measured tool points: the object is on the surface when its own
 height says so, which is the verdict, not the hands' positions.
@@ -20,6 +23,9 @@ from locomani.skills.contract import Outcome, Violation
 from locomani.skills.session import ArmOwner, Session
 
 DT = 0.02  # the POSE stream's frame period (backends/sonic/primitives_tuning.DT)
+FORWARD_SPEED = 0.05  # m/s of tool travel while pushing the box out over the surface
+REACH_ERROR_MAX = 0.03  # m of solver residual at which the forward push stops (the arms are at their reach)
+FORWARD_MAX = 0.25  # m; more than this is not a push, it is a walk (carry_to first)
 
 
 def _hand_open():
@@ -32,6 +38,21 @@ def resting_height(scene, key: str, surface: str) -> float:
     """World z of the object's origin when its box bottom sits on the surface top."""
     obj, surf = scene.objects[key], scene.surfaces[surface]
     return float(surf.top - obj.centre[2] + obj.half_extent[2])
+
+
+def auto_forward(session, key: str, surface: str, margin: float, state: dict) -> float:
+    """Metres the box must move along the heading for its near face to clear the surface's near edge by `margin`.
+
+    Both edges are projected on the heading axis (the walk-in axis); the box is taken as axis-aligned with it.
+    """
+    p, scene = session.stack, session.scene
+    yaw = float(p.pelvis_yaw(state))
+    h = np.array([np.cos(yaw), np.sin(yaw)])
+    surf, obj = scene.surfaces[surface], scene.objects[key]
+    edge = float(np.asarray(surf.xy) @ h - (abs(h[0]) * surf.half_extent[0] + abs(h[1]) * surf.half_extent[1]))
+    centre = np.asarray(state["objects"][key]["pos"][:2], dtype=float) + np.asarray(obj.centre[:2], dtype=float)
+    near_face = float(centre @ h - (abs(h[0]) * obj.half_extent[0] + abs(h[1]) * obj.half_extent[1]))
+    return float(np.clip(edge + margin - near_face, 0.0, FORWARD_MAX))
 
 
 def tilt_deg(quat_wxyz) -> float:
@@ -64,6 +85,8 @@ class PutDownBimanual:
         rest_tolerance: float = 0.01,
         settle_seconds: float = 0.3,
         timeout: float = 20.0,
+        forward_m: float | None = None,
+        forward_margin_m: float = 0.05,
     ) -> list[Violation]:
         out = []
         prof = self._profiles.get(profile)
@@ -82,8 +105,10 @@ class PutDownBimanual:
         arm = session.arm
         if arm is None or type(arm).__name__ != "StreamedArm" or getattr(arm, "_stream_released", False):
             out.append(Violation("arm", type(arm).__name__ if arm else None, note="needs the live POSE stream"))
-        if lower_speed <= 0 or raise_m < 0 or release_seconds <= 0:
-            out.append(Violation("args", None, note="lower_speed > 0, raise_m >= 0, release_seconds > 0"))
+        if lower_speed <= 0 or raise_m < 0 or release_seconds <= 0 or (forward_m is not None and forward_m < 0):
+            out.append(
+                Violation("args", None, note="lower_speed > 0, raise_m >= 0, release_seconds > 0, forward_m >= 0")
+            )
         return out
 
     def run(
@@ -100,6 +125,8 @@ class PutDownBimanual:
         rest_tolerance: float = 0.01,
         settle_seconds: float = 0.3,
         timeout: float = 20.0,
+        forward_m: float | None = None,
+        forward_margin_m: float = 0.05,
     ) -> Outcome:
         t0 = session.clock()
         p, arm, key = session.stack, session.arm, session.held.key
@@ -114,10 +141,18 @@ class PutDownBimanual:
         q = np.asarray(arm.q, dtype=float).copy()
         posture = q.copy()
         tools0, rots0 = solver.tool_poses(q)
-        session.record.enter("put_down.lower", drop_m=drop, rest_z=rest_z, surface=surface)
-        stats = dict(drop_m=drop, rest_z=rest_z, lowered_m=0.0, min_tilt_deg=0.0, max_tilt_deg=0.0)
+        forward = forward_m if forward_m is not None else auto_forward(session, key, surface, forward_margin_m, s)
+        stats = dict(
+            drop_m=drop,
+            rest_z=rest_z,
+            forward_m=float(forward),
+            pushed_m=0.0,
+            lowered_m=0.0,
+            min_tilt_deg=0.0,
+            max_tilt_deg=0.0,
+        )
 
-        def push(targets):
+        def push(targets) -> float:
             nonlocal q
             sol = solver.solve(q, targets, rots0, iterations=8, posture=posture, posture_weight=0.01)
             q = np.asarray(sol.joints, dtype=float)
@@ -125,6 +160,7 @@ class PutDownBimanual:
             arm._push(q)
             if self._sleep is not None:
                 self._sleep(DT)
+            return float(np.max(np.asarray(sol.errors))) if np.size(sol.errors) else 0.0
 
         def watch(state) -> str | None:
             if state.get("fallen"):
@@ -134,6 +170,26 @@ class PutDownBimanual:
             if tilt > cfg.max_tilt_deg:
                 return f"[put_down] box tilted {tilt:.0f} deg"
             return None
+
+        # 0. push the box out over the surface (the stand phase pulled it toward the robot)
+        if forward > 0:
+            session.record.enter("put_down.forward", forward_m=float(forward))
+            n = max(1, int(round(forward / FORWARD_SPEED / DT)))
+            pushed = 0.0
+            for k in range(1, n + 1):
+                s = p.obs()
+                why = watch(s)
+                if why:
+                    return self._fail(session, why, stats, t0)
+                if not {"left", "right"} <= set(s["objects"][key].get("touching") or ()):
+                    return self._fail(session, "[put_down] load dropped while pushing forward", stats, t0)
+                err = push(tools0 + np.array([k / n * forward, 0.0, 0.0]))
+                if err > REACH_ERROR_MAX:  # the arms are out of reach: lower from here
+                    break
+                pushed = k / n * forward
+            tools0 = tools0 + np.array([pushed, 0.0, 0.0])
+            stats["pushed_m"] = float(pushed)
+        session.record.enter("put_down.lower", drop_m=drop, rest_z=rest_z, surface=surface)
 
         # 1. lower until the object rests
         n = max(1, int(round(max(drop / lower_speed, 0.5) / DT)))

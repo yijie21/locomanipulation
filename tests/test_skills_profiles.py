@@ -6,7 +6,14 @@ from locomani.skills.profiles import PROFILE_SOURCES, GraspProfile, load_profile
 
 
 def test_profile_sources_lists_exactly_three_profiles():
-    assert set(PROFILE_SOURCES) == {"crate_low_table", "warehouse_box", "bottle_simple"}
+    assert set(PROFILE_SOURCES) == {
+        "crate_low_table",
+        "warehouse_box",
+        "bottle_simple",
+        "can_entry15",
+        "can_descend05",
+        "can_overshoot0",
+    }
 
 
 def test_load_profiles_returns_one_graspprofile_per_source():
