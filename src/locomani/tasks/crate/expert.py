@@ -29,6 +29,15 @@ from locomani.sim import ports
 from locomani.sim.dataset_cameras import PlaceholderCamera
 from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.assisted_guidance import AssistedGuidance
+from locomani.tasks.crate.attempt import (
+    TickSource,
+    WalkState,
+    guard_track,
+    markers_step,
+    reach_step,
+    record_tick,
+    walk_step,
+)
 from locomani.tasks.crate.bimanual_ik import BimanualIK
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.coordinated_reach import CoordinatedReach, CoordinatedTarget
@@ -387,6 +396,43 @@ def box_front_line(state, key, box, axis):
     return float(axis @ centre - abs(local[0]) * hx - abs(local[1]) * hy)
 
 
+def handoff(p, model, cfg, config, solver, coordinated_target, *, assisted, geometry, ghost, label):
+    """Enter the POSE stream holding the planner pose and build the reach controller. -> (arm, low)."""
+    arm = StreamedArm(
+        p,
+        "right",
+        ik=model,
+        left_guard=False,
+        preview=(
+            PosePreview(acceleration=cfg.joint_acceleration, joint_limits=(solver.lo, solver.hi)) if assisted else None
+        ),
+    )
+    arm.start(hold_planner_pose=True)
+    handoff_state = p.obs()
+    if assisted:
+        low = CoordinatedReach(
+            solver,
+            config,
+            handoff_state,
+            reference_joints=arm.q,
+            reference_quaternion=arm.root_quat,
+            target=coordinated_target,
+        )
+        ghost.start(label)
+        low.ghost = ghost
+    else:
+        low = VisualLowReach(
+            solver,
+            geometry,
+            config,
+            handoff_state["joints"],
+            handoff_state["pelvis"]["quat"],
+            reference_joints=arm.q,
+            reference_quaternion=arm.root_quat,
+        )
+    return arm, low
+
+
 def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record=False, scene_xml=None):
     cfg = config.visual
     # The run's own scene, not the one `locomani.paths` froze when it was imported: an
@@ -409,6 +455,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     rim_above_grasp = cfg.box_grasp_below_rim if target_meta.get("box") else GRASP_BELOW_RIM_M
     # The closing gate's across-wall band: the crate bar's 1.8 cm unless the config widens it (visual.capture_across).
     capture_region = RimRegion(across=cfg.capture_across) if cfg.capture_across > 0 else RimRegion()
+    coordinated_target = CoordinatedTarget(
+        object_key=key, grasp_points_local=grasp_points, rim_above_grasp=rim_above_grasp, region=capture_region
+    )
     geometry = {"grasp_points": grasp_points} if assisted else meta["crate_visual"]
     dataset_kind = (
         "ordinary_crate_assisted_low_reach_video_pilot"
@@ -505,171 +554,62 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         p.cmd.key("c")
         produced = True
     started = time.time()
-    estimate, last_image_time = None, 0.0
-    last_camera_received = last_command_time = started
+    last_command_time = started
     last_motion = {"movement": np.zeros(3), "speed": -1.0}
-    last_phase, reason, error = None, "no_camera_frames", None
+    reason, error = "no_camera_frames", None
     final, final_wall = initial, started
-    last_control_time = None
-    images, message = None, None
-    last_simulation_time, last_progress_wall = float(initial["t"]) if assisted else 0.0, started
+    ticks = TickSource(
+        p,
+        camera,
+        perception,
+        target_cache,
+        recorder,
+        cfg,
+        assisted=assisted,
+        solver=solver,
+        initial=initial,
+        started=started,
+    )
+    walk = WalkState(
+        p=p,
+        approach=approach,
+        arm=arm,
+        guard=guard,
+        preparation=preparation,
+        solver=solver,
+        cfg=cfg,
+        assisted=assisted,
+        perception=perception,
+        stand_attempts=stand_attempts,
+        probe_factory=lambda raw, joints: CoordinatedReach(
+            solver,
+            config,
+            raw,
+            reference_joints=joints,
+            reference_quaternion=raw["pelvis"]["quat"],
+            target=coordinated_target,
+        ),
+        ticks=ticks,
+        last_motion=last_motion,
+    )
     try:
-        while (
-            float(final["t"]) - float(initial["t"]) if assisted else time.time() - started
-        ) < cfg.walk_timeout + cfg.timeout_seconds + 2:
-            now = time.time()
-            raw = p.obs()
-            final, final_wall = (
-                raw,
-                time.time(),
-            )  # evaluate the observed attempt, before mode exit or video finalization
-            motion_clock = {"motion_time": float(raw["t"])} if assisted else {}
-            if assisted:
-                if raw["t"] < last_simulation_time:
-                    reason = "simulation_clock_reversed"
-                    break
-                if raw["t"] > last_simulation_time:
-                    last_simulation_time, last_progress_wall = float(raw["t"]), now
-                elif now - last_progress_wall > cfg.vision_timeout:
-                    reason = "simulation_stalled"
-                    break
-            if raw["fallen"]:
-                reason = "external_fall_abort"
-                break
-            if assisted and raw["t"] == last_control_time:
-                time.sleep(0.002)
+        while ticks.elapsed() < cfg.walk_timeout + cfg.timeout_seconds + 2:
+            tick = ticks.next()
+            if tick is None:
                 continue  # no new physical sample: do not append a contradictory held pose
-            last_control_time = raw.get("t")
-            incoming = camera.read()
-            # Freshness is judged against `now`, so sample it AFTER the read: a frame stamped even 0.1 ms after
-            # `now` fails the reach's `0 <= now - timestamp` and that tick is "waiting_for_vision". The live
-            # stream stamps in the sim, before this loop; the placeholder stamps at the read, after the `now`
-            # above, and at the reach's 66-125 ms ticks every read re-stamped -- the reach clock never advanced
-            # in any offline run (2026-09-23/24).
-            now = time.time()
-            fresh_image = False
-            if incoming is not None and {"ego_view", "left_wrist", "right_wrist"} <= set(incoming["images"]):
-                last_camera_received = now
-                stamp = max(float(v) for v in incoming["timestamps"].values())
-                if now - min(float(v) for v in incoming["timestamps"].values()) > cfg.vision_timeout:
-                    reason = "stale_camera_abort"
-                    break
-                fresh_image = stamp != last_image_time
-                if fresh_image:
-                    message, images = incoming, incoming["images"]
-                    last_image_time = stamp
-                    estimate = perception.update(images, raw if assisted else np.asarray(raw["joints"]), stamp)
-                    if assisted:
-                        target_cache.update(estimate, raw)
-            if now - last_camera_received > cfg.vision_timeout:
-                reason = "camera_unavailable"
+            if isinstance(tick, str):
+                reason = tick
                 break
-            if assisted:
-                estimate = target_cache.at(raw)
-            joints = np.asarray(raw["joints"], dtype=float)
-            measured, rotations = solver.tool_poses(joints)
-            recorder.context = dict(
-                state_seq=raw.get("seq"),
-                simulation_time=raw.get("t"),
-                state_wall_time=raw.get("wall"),
-                image_frame=(recorder.frames if fresh_image else recorder.frames - 1) if images is not None else None,
-                image_timestamp=last_image_time or None,
-                phase=last_phase or "walk",
-            )
-            if (not assisted and not fresh_image) or images is None:
-                arm._push(arm.q, **({} if low is not None else last_motion))
+            if tick.hold_only:
+                arm._push(arm.q, **({} if low is not None else walk.last_motion))
                 continue
-            openings = np.array([2 * (np.mean(raw["palms"][side]["hand_q"][:2]) + 0.023) for side in ("left", "right")])
+            raw, now = tick.raw, tick.now
             navigation = None
             if approach is not None:
-                target = (
-                    ApproachTarget(
-                        estimate.position,
-                        estimate.timestamp,
-                        "visible_simulation_pose" if assisted else "full_rgb_pose",
-                    )
-                    if estimate is not None
-                    else None
-                    if assisted
-                    else perception.approach_target(images, joints, stamp)
-                )
-                brake_now = False
-                if guard is not None:
-                    landed, front, stride = guard["watch"].update(raw, np.zeros(2), guard["axis"])
-                    brake_now, used = guard["rule"].should_brake(
-                        landed, front, stride, guard["watch"].last_strides, guard["line"]
-                    )
-                    if brake_now and guard["brake"] is None:
-                        guard["brake"] = dict(front_ankle_to_line=guard["line"] - front, stride=used, t=raw.get("t"))
-                nav = approach.step(
-                    now,
-                    target,
-                    raw["pelvis"]["quat"],
-                    grasp_pose_available=estimate is not None,
-                    **({"base_velocity": raw["pelvis"]["vel"]} if assisted else {}),
-                    **motion_clock,
-                    guard_brake=brake_now,
-                )
-                admission = None
-                if nav.ready and assisted and guard is None:
-                    probe = CoordinatedReach(
-                        solver,
-                        config,
-                        raw,
-                        reference_joints=joints,
-                        reference_quaternion=raw["pelvis"]["quat"],
-                        target=CoordinatedTarget(
-                            object_key=key,
-                            grasp_points_local=grasp_points,
-                            rim_above_grasp=rim_above_grasp,
-                            region=capture_region,
-                        ),
-                    )
-                    check = probe.step(now, estimate, raw, openings, **motion_clock)
-                    admission = probe.diagnostics
-                    if check.reason == "unsupported_assisted_reach":
-                        if approach.retry_closer():
-                            nav = approach.step(
-                                now, target, raw["pelvis"]["quat"], grasp_pose_available=True, **motion_clock
-                            )
-                        else:
-                            nav = replace(nav, ready=False, reason="approach_unsupported_reach")
-                arm.mode = LocomotionMode.SLOW_WALK if nav.speed > 0 else LocomotionMode.IDLE
-                yaw = p.pelvis_yaw(raw)
-                if nav.facing_offset:
-                    # Turn in place: re-aim the held planner heading at the target
-                    # from the CURRENT yaw. The new heading stays held afterwards.
-                    face = yaw + nav.facing_offset
-                    arm._face = (float(np.cos(face)), float(np.sin(face)), 0.0)
-                direction = nav.direction.copy()
-                direction[:2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]] @ direction[:2]
-                if guard is not None and nav.speed > 0:
-                    direction = np.array([*guard["axis"], 0.0])  # world walk-in axis, as diag_brake walks
-                q, velocity = (
-                    (joints.copy() if guard is not None else arm.q.copy(), np.zeros(29))
-                    if preparation is None
-                    else preparation.step(float(raw["t"]), estimate)
-                )
-                arm.q = q
-                recorder.context["phase"] = nav.phase
-                last_motion = {"movement": direction, "speed": nav.speed if nav.speed > 0 else -1.0}
-                arm._push(q, reference_velocity=velocity, **last_motion)
-                positions, reference_rotations = solver.tool_poses(q)
-                command = ExpertCommand(positions, reference_rotations, 0.0, nav.phase, nav.reason, bool(nav.reason))
-                navigation = {
-                    "target": None if target is None else target.position,
-                    "source": None if target is None else target.source,
-                    "movement": direction,
-                    "speed": nav.speed,
-                    "facing_offset": nav.facing_offset,
-                    "relative_speed": approach.relative_speed,
-                    "angular_speed": approach.angular_speed,
-                    "ready": nav.ready,
-                    "reach_admission": admission,
-                    "stand_attempts": list(stand_attempts),
-                }
+                walk.arm = arm
+                command, navigation, nav = walk_step(tick, walk)
                 if nav.ready:
-                    approach = None
+                    approach = walk.approach = None
             elif whole_body:
                 if low is None:
                     if isinstance(arm, HangingWalk):
@@ -677,11 +617,11 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                             # Square up to the box before the arms come out: a start offset or a turned box
                             # becomes a heading change, which the walk-in tolerates and the reach does not.
                             print(f"[{label}] turn at {now - started:.2f}s", flush=True)
-                            seen = target_cache.at(raw) or estimate
+                            seen = target_cache.at(raw) or tick.estimate
                             turn_record = face_target(p, arm, cfg, seen, raw, grasp_points)
                             heading = turn_record["heading"]
                             placement["turn"] = turn_record
-                            last_camera_received = last_progress_wall = time.time()
+                            ticks.touch()
                             continue
                         # Guard stance is quiet: ready the arms in place, as the walk scene did after its brake
                         # (a no-op placement keeps the robot where the brake left it). Blocks for ~10 s.
@@ -703,163 +643,69 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                         if not prepared["initial_stance_ready"]:
                             reason = "arm_preparation_unstable"
                             break
-                        last_camera_received = last_progress_wall = time.time()
+                        ticks.touch()
                         continue
                     # Body planning needs a currently admitted visible target.
-                    if estimate is None:
+                    if tick.estimate is None:
                         arm._push(arm.q)
                         continue
                     recorder.context["phase"] = "handoff"
-                    if fresh_image:
+                    if tick.fresh_image:
                         recorder.append(
-                            images,
+                            tick.images,
                             dict(
                                 wall_time=now,
-                                image_timestamps=message["timestamps"],
+                                image_timestamps=tick.message["timestamps"],
                                 state_seq=raw.get("seq"),
                                 simulation_time=raw.get("t"),
-                                joints=joints,
+                                joints=tick.joints,
                                 base_quaternion=raw["pelvis"]["quat"],
                                 base_position=raw["pelvis"]["pos"],
                                 reference_joints=arm.q,
                                 phase="handoff",
                             ),
                         )
-                    arm = StreamedArm(
+                    arm, low = handoff(
                         p,
-                        "right",
-                        ik=model,
-                        left_guard=False,
-                        preview=(
-                            PosePreview(acceleration=cfg.joint_acceleration, joint_limits=(solver.lo, solver.hi))
-                            if assisted
-                            else None
-                        ),
+                        model,
+                        cfg,
+                        config,
+                        solver,
+                        coordinated_target,
+                        assisted=assisted,
+                        geometry=geometry,
+                        ghost=ghost,
+                        label=label,
                     )
-                    arm.start(hold_planner_pose=True)
-                    handoff_state = p.obs()
-                    if assisted:
-                        low = CoordinatedReach(
-                            solver,
-                            config,
-                            handoff_state,
-                            reference_joints=arm.q,
-                            reference_quaternion=arm.root_quat,
-                            target=CoordinatedTarget(
-                                object_key=key,
-                                grasp_points_local=grasp_points,
-                                rim_above_grasp=rim_above_grasp,
-                                region=capture_region,
-                            ),
-                        )
-                        ghost.start(label)
-                        low.ghost = ghost
-                    else:
-                        low = VisualLowReach(
-                            solver,
-                            geometry,
-                            config,
-                            handoff_state["joints"],
-                            handoff_state["pelvis"]["quat"],
-                            reference_joints=arm.q,
-                            reference_quaternion=arm.root_quat,
-                        )
                     continue  # reacquire RGB/encoders after the bounded mode handoff
-                body_command = (
-                    low.step(now, estimate, raw, openings, **motion_clock)
-                    if assisted
-                    else low.step(now, estimate, joints, raw["pelvis"]["quat"], openings)
-                )
-                q = body_command.joints
-                closed = np.zeros_like(HAND_OPEN)
-                closed[:2] = cfg.close_target
-                arm.hands = {
-                    side: HAND_OPEN + body_command.closure * (closed - HAND_OPEN) for side in ("left", "right")
-                }
-                arm.q, arm.root_quat = q, body_command.root_quaternion
-                recorder.context["phase"] = body_command.phase
-                if not body_command.finished or body_command.reason == "completed":
-                    arm._push(
-                        q,
-                        reference_velocity=body_command.velocity,
-                        **({"reference_time": raw["t"]} if assisted else {}),
-                    )
-                points, attitudes = solver.tool_poses(q)
-                command = ExpertCommand(
-                    points,
-                    attitudes,
-                    body_command.closure,
-                    body_command.phase,
-                    body_command.reason,
-                    body_command.finished,
+                command = reach_step(
+                    tick, arm=arm, low=low, solver=solver, cfg=cfg, assisted=assisted, recorder=recorder
                 )
             else:
-                command = policy.step(now, estimate, measured, rotations, openings)
-                correction = np.clip(
-                    cfg.tracking_gain * (command.positions - measured), -cfg.tracking_cap, cfg.tracking_cap
+                command = markers_step(
+                    tick,
+                    arm=arm,
+                    policy=policy,
+                    reference=reference,
+                    solver=solver,
+                    cfg=cfg,
+                    last_command_time=last_command_time,
                 )
-                solution = solver.solve(
-                    joints, command.positions + correction, command.rotations, iterations=18, posture=arm.q
-                )
-                q = reference.step(solution.joints, now - last_command_time)
-                closed = np.zeros_like(HAND_OPEN)
-                closed[:2] = cfg.close_target
-                arm.hands = {side: HAND_OPEN + command.closure * (closed - HAND_OPEN) for side in ("left", "right")}
-                arm.q = q
-                arm._push(q)
             last_command_time = now
-            if guard is not None:
-                past = guard["watch"].frontmost_low(raw, np.zeros(2), guard["axis"]) - guard["line"]
-                guard["closest"] = max(guard["closest"], past)
-                if isinstance(arm, HangingWalk):
-                    past = guard["watch"].frontmost_low(raw, np.zeros(2), guard["axis"], top=body_top) - guard["line"]
-                    guard["walk_closest"] = max(guard["walk_closest"], past)
-            if command.phase != last_phase:
+            guard_track(guard, raw, hanging=isinstance(arm, HangingWalk), body_top=body_top)
+            if command.phase != ticks.last_phase:
                 print(f"[{label}] {command.phase} at {now - started:.2f}s", flush=True)
-                last_phase = command.phase
-            if fresh_image:
-                recorder.append(
-                    images,
-                    {
-                        "wall_time": now,
-                        "image_timestamps": message["timestamps"],
-                        "state_seq": raw.get("seq"),
-                        "state_wall_time": raw.get("wall"),
-                        "simulation_time": raw.get("t"),
-                        "motion_clock": "simulation" if assisted else "wall",
-                        "joints": joints,
-                        "base_quaternion": raw["pelvis"]["quat"],
-                        "base_position": raw["pelvis"]["pos"],
-                        "base_velocity": raw["pelvis"].get("vel"),
-                        "guidance": perception.diagnostics if assisted else {"pose_source": "rgb_markers"},
-                        "navigation": navigation,
-                        "hand_openings": openings,
-                        "reference_joints": q,
-                        "command_id": recorder.command_count - 1,
-                        "root_reference": None
-                        if low is None
-                        else dict(quaternion=arm.root_quat, velocity=low.velocity),
-                        "low_reach": None if low is None else low.diagnostics,
-                        "tool_reference": command.positions,
-                        "closure": command.closure,
-                        "phase": command.phase,
-                        "reason": command.reason,
-                        "vision": None
-                        if estimate is None
-                        else {
-                            "source": "simulation" if assisted else "rgb_markers",
-                            "position": estimate.position,
-                            "rotation": estimate.rotation,
-                            "reprojection_px": estimate.reprojection_px,
-                            "detections": estimate.detections,
-                        },
-                    },
+                ticks.last_phase = command.phase
+            if tick.fresh_image:
+                record_tick(
+                    recorder, tick, command, navigation, low=low, arm=arm, perception=perception, assisted=assisted
                 )
             if assisted and command.phase == "hold" and recorder.training_tail is None:
                 recorder.mark_training_end(raw)
             if command.finished:
                 reason = command.reason
                 break
+        final, final_wall = ticks.final, ticks.final_wall
         if reason == "completed" and cfg.retreat_distance > 0 and isinstance(arm, StreamedArm):
             print(f"[{label}] retreat at {time.time() - started:.2f}s", flush=True)
             reason, retreat_record, final = retreat(p, arm, cfg, key, heading, float(initial["objects"][key]["pos"][2]))

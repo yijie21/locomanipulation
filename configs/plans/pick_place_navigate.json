@@ -1,0 +1,5 @@
+[
+ {"primitive": "approach", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "grasp_single", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "navigate_to", "args": {"xy": [1.2, -1.6], "stop_dist": 0.15, "timeout": 60}}
+]

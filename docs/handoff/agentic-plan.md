@@ -4,6 +4,9 @@
 本文只记**决定**和它们之间的依赖,不记证据(证据在 memory 与 docs 里)。
 未写代码。
 
+后续:primitive 契约、session 对象与目录在 [primitive-contracts-design-20260928.md](primitive-contracts-design-20260928.md),
+它把本文 §3 的 primitive 集合落到 `simple` 单臂、`visual` 双臂和 warehouse 三条现成线上。
+
 ## 0. 目标
 
 **任务扩展**(不是数据质量、不是省人力、不是论文 claim)。抓瓶子单任务

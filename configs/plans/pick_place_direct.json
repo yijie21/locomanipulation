@@ -1,0 +1,5 @@
+[
+ {"primitive": "approach", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "grasp_single", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "place", "args": {"container": "basket", "profile": "bottle_simple"}}
+]

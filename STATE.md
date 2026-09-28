@@ -1,34 +1,35 @@
-# STATE — 2026-09-28（会话：primitive 契约设计 → `skills` 包 → 四个黑盒包装 → 真栈回归 → `carry_to`）
+# STATE — 2026-09-28 晚（会话：TODO 7 推到底 —— 持物走近、放下、导航、准入带回放、`claude -p` 规划器、warehouse 对照）
 
-工作目录 `/workspace/code/locomanipulation-loco_agent`（worktree），分支 `loco_agent`，基于 `9955487`。
-上一份 STATE（lockstep + Isaac 评测，`main` 分支那条线）在 `9955487` 里，那条线的未提交改动在主目录 `/workspace/code/locomanipulation`，本 worktree 不碰。
-**未提交**：本会话全部代码与文档（`git status` 列出的 22 个路径；TODO 7.12）。
-没有运行中的栈；GPU1 上约 3.7 GB 是别的项目的。`outputs/` 是指向主目录 outputs 的符号链接，**stage by name，永远不要 `git add -A`**。
+工作目录 `/workspace/code/locomanipulation-loco_agent`（worktree），分支 `loco_agent`，基于 `079619f`。
+上一份 STATE（`skills` 包搭起、四个黑盒包装、`carry_to` 测量）在 `079619f`。`outputs/` 是指向主目录 outputs 的符号链接，**stage by name，永远不要 `git add -A`**。
+没有运行中的栈（最后一个队列运行结束后 `plan_episode.py` 自己收栈）；GPU1 上约 8 GB 是别的项目的。
 
-## 当前进度（细节在设计文档 `docs/handoff/primitive-contracts-design-20260928.md` §9a、台账 bottle §40–41 / pick_place §7 / crate 末节）
+## 本会话做了什么（细节：设计文档 §9b、台账 pick_place §8–9 / crate 末节、DECISIONS 2026-09-28（晚））
 
-- 已确认：设计文档定稿，D1–D7 按推荐值定（DECISIONS 2026-09-28 节 1–17）。粒度是"技能"不是"阶段"；profile 把走近参数和抓取参数绑在一起。
-- 已确认：`src/locomani/skills/` 建好：session / contract / profiles / scene_model / executor / catalogue；78 个 CPU 测试 + 全仓 `make check` 通过。
-- 已确认：四个黑盒都包了。单臂 approach / grasp_single / place 调 bottle 原阶段函数（构造 `RoundContext`，站位用 `plan_for_target + sample_stand`）；
-  双臂把 `run_attempt` 每拍逻辑纯提取到 `tasks/crate/attempt.py`，`handoff()` 留在 `expert.py`，29 个双臂离线测试不改一行通过。
-- 已确认（真栈，`scripts/plan_episode.py`，GPU1 / instance 1）：bottle plan 3/3 + 10 局 9/10；pick_place plan 1/3；warehouse plan 1/3。三条线的通道交接都走通。
-- 已确认：`carry_to` 实现并测量（持瓶）：直走/倒退 1–2 m 漂移 < 1 cm（6/6）；90° 转再走 3/3；180° 转 IDLE 0/2、两次 90° 1/2、SLOW_WALK 4/4 → 默认 `turn_first + slow_walk`。
-- 已确认：`grasp_single` 产出 FROZEN（`SimpleGraspPolicy.execute()` 自己交还流）；`place` 跑在 PlannerArm 上，不需要 `take_over`。
+- 已确认：TODO 7.4 / 7.6 / 7.7 / 7.10 / 7.11 关闭，7.8 / 7.9 有首个实现与真栈样本，7.12 = 本次提交。
+- 已确认（真栈，GPU1 / instance 1，`scripts/plan_episode.py`）：
+  - 持物 `approach(basket)` → `place`：三轮 10 局。抓取站位版 2/6、放置带中心版 1/7、**中心 + 残差修正版 3/6**（容器 6/6 进放置带）；对照直接 place 0/5。
+  - warehouse plan `approach → ready → grasp_bimanual` **4/10**（采集入口 6/20，同噪声带）。
+  - `put_down_bimanual` 7 个样本 6 次放稳（≤ 0.7 cm、≤ 2.5°）；判据改看箱底后唯一样本暴露：站直把箱子拉近 0.2 m，原地放下搁在台面近沿（TODO 7.8.1 前送）。
+  - 持箱 `carry_to`（180° slow_walk 转 + 1 m）3/6；不转倒退 1 m 2/2（TODO 7.8.2 默认走法待定）。
+  - `navigate_to` 持罐 1 局：7 段 2.57 m 绕桌角，漂移 0.8 cm（pick_place §10）；空手真栈未跑。
+  - `--agent`（`claude -p`，sonnet）3 局：管路通，每局 10 次调用 200–300 s，失败都是物理失败（抓倒、掉罐）。
+- 已确认：准入带回放 932 条站位——任何深度 / 横向带都不分成功与失败，`STANCE_BANDS` 全开。
+- 已确认：`make check` 通过（提交前再跑一次）；`tests/test_skills_*.py` 100+ 个 CPU 测试。
 
 ## 卡点 / 待验证
 
-- 待验证：`simple` 抓罐头 + place 的标定（1/3：合爪无接触 ×1、carry-over 伺服差 17.5 cm ×1）；§4 的 10/10 是 `coupled` 策略。
-- 待验证：warehouse plan 与采集入口 0.30 的对照（只有 3 局）。
-- 假设：`carry_to` 的双臂守卫（高度底线 + 双手接触）可用——只在假栈上测过，持箱没量。
-- 假设：转向段不需要守卫（`turn_to` 无回调，转完查一次）。
-- 已知坑：shell 里 `source scripts/paths.sh` 会导出 instance 0 的端口，agent 对错 deploy 说话（症状 "did not stabilise after reset" + "no body_q_target"）；入口已按 `--instance` 钉端口，启动时**不要 source paths.sh**。
-- 已知：`approach` / `walk_to` 拒绝持物状态，所以"抓 → 搬 → 到容器前"的 plan 在 `approach(bin)` 处断（TODO 7.7）。
+- 待标定：`simple` 抓罐头（5–6/10）与其后的 place（descent timeout 6–12 cm、掌系滑 3 cm）——TODO 7.7.1，按 docs/skills.md §5 流程一次一个旋钮。
+- 待用户定：双臂 carry 默认要不要改成"不转、倒退"（转 3/6 vs 倒退 2/2）；put_down 前送量（7.8.1）。
+- 假设：`put_down_bimanual` 的下放高度只按场景表面顶算；搬到台面之外的地方放（地面）没有表面项，需要给 `surface` 一个"floor"。
+- 已知：warehouse plan 运行无视频（`backend.render: offline`）；pick_place 运行有，预览在 `outputs/videos/skills_batch2_20260928/`。
+- 已知坑（沿用）：不要 `source scripts/paths.sh`；Bash 后台任务 600 s 上限会杀队列，用 `nohup setsid` + 日志 Monitor。
 
 ## 下一步（TODO）
 
-1. 7.7 跨位置搬运回归：放行持物的 approach，标定 place。
-2. 7.11 warehouse plan 10 局对照。
-3. 7.12 提交本会话代码（先 `make check`）。
+1. 7.7.1 `simple` 罐头抓取 + place 标定（10 局 pilot，一次一个旋钮）。
+2. Q11 失败注入的 paired 比较设计（agent 只在失败恢复上有不可替代的贡献；3 局冒烟里没有可恢复的失败）。
+3. 双臂 carry 默认走法（7.8.2）、put_down 前送（7.8.1）与地面放置。
 
 ## 关键路径与命令
 
@@ -36,14 +37,12 @@
 cd /workspace/code/locomanipulation-loco_agent
 export SONIC_DEPLOY_ROOT="$PWD/outputs/bottle_continuous_20260914/deploy" PYTHONPATH="$PWD/src"   # 不要 source scripts/paths.sh
 PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
-$PY scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 1 --rounds 3 --dry-run
-$PY -u scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 1 --rounds 10 --seed 100 --name <run>
-$PY -u scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 1 --rounds 3 --plan configs/plans/bottle_carry_turn180slow.json --name <run>
-$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 3 --name <run>   # approach→grasp→place
-$PY -u scripts/plan_episode.py configs/experiments/box_centre_base_20260927.yaml --gpu 1 --instance 1 --rounds 3 --name <run>     # 双臂
-make test TESTS="tests/test_skills_*.py tests/test_crate_visual_execution.py"; make check
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 10 --seed 300 --plan configs/plans/pick_place_via_basket.json --name <run>
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 3 --agent --name <run>
+$PY -u scripts/plan_episode.py configs/experiments/box_centre_base_20260927.yaml --gpu 1 --instance 1 --rounds 10 --seed 7000 --plan configs/plans/warehouse_put_down.json --name <run>
+$PY scripts/replay_preconditions.py --out outputs/analysis/precondition_replay_<日期>
+make test TESTS="tests/test_skills_*.py"; make check
 ```
 
-- 起栈前查：`nvidia-smi`、5 秒 CPU 采样（`/sys/fs/cgroup/cpu.stat`，配额 15.36 核，> 11 核在忙就别起）、`/workspace/tmp/p03_i1/stack.json` 是否存在。
-- 每次运行产物：`outputs/runs/<run>/skills/{manifest.jsonl,agent_trace_NN.jsonl,round_NN/}`、`videos/`（入口自 carry 运行起录像）。
-- 预览：`outputs/videos/skills_carry_20260928/`；plan 文件：`configs/plans/`。
+- 起栈前查：`nvidia-smi`、5 秒 CPU 采样（配额 15.36 核）、`/workspace/tmp/p03_i1/stack.json` 是否存在。
+- 每次运行产物：`outputs/runs/<run>/skills/{manifest.jsonl,agent_trace_NN.jsonl[,agent_io_NN.jsonl]}`、`videos/`。plan 文件：`configs/plans/`。

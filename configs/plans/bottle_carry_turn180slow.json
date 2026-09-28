@@ -1,0 +1,34 @@
+[
+ {
+  "primitive": "approach",
+  "args": {
+   "target": "water_bottle",
+   "profile": "bottle_simple"
+  }
+ },
+ {
+  "primitive": "grasp_single",
+  "args": {
+   "target": "water_bottle",
+   "profile": "bottle_simple"
+  }
+ },
+ {
+  "primitive": "turn_to",
+  "args": {
+   "yaw": 1.5708,
+   "tol": 0.2,
+   "mode": "slow_walk"
+  }
+ },
+ {
+  "primitive": "carry_to",
+  "args": {
+   "relative": [
+    1.5,
+    0.0
+   ],
+   "timeout": 45
+  }
+ }
+]

@@ -101,3 +101,71 @@ bottle_visible.json、seed 29000、10 局、release policy、instance 0 / GPU1,�
 [gate] bottle: PASS (16/16)
 ```
 
+
+## §7 skills 目录三步 plan（approach → grasp_single → place）冒烟：1/3（2026-09-28）
+
+入口 `scripts/plan_episode.py`，实验 `configs/experiments/skills_pick_place_20260928.yaml`（= `pick_place.yaml`，场景改为
+`outputs/scene/pick_place`，不录制），profile `bottle_simple`（**`simple` 抓取，不是本台账此前的 `coupled` / `ready_grasp_baseline`**），
+GPU1 / instance 1，seed 200–202。`place` 跑在自建的 PlannerArm 上（`place_phase._phase_place` 原样）。
+
+| 局 | 结果 | approach 停位 | 各 primitive |
+|---|---|---|---|
+| 0 | FAIL `[grasp] simple no bilateral pad contact after the close` | 0.37 / −0.18 m | approach 9 s → grasp 10 s |
+| 1 | FAIL `[place] not over the container at the descent timeout (xy 17.5 cm)` | 0.32 / −0.19 m | approach 9 s → grasp 13 s → place 9 s；turn 后容器在骨盆系 x 0.43 y −0.04 |
+| 2 | OK，罐头离篮心 7.3 cm，篮子 ego 可见 100% | 0.41 / −0.24 m | approach 8 s → grasp 15 s → place 19 s；下降超时 xy 4.5 cm 仍释放；撤手抬升差 30 cm 超时 |
+
+- 结论是**管路通了、标定没做**：`simple` 抓罐头和 `simple` 之后接 place 都是第一次跑，三局三种结局。
+  §4 的 10/10 是 `coupled` 策略 + 当时的 place 参数；这里换了抓取策略、站位规划（`stand_plan` 无抖动）和握持偏移来源。
+- 局 1 的 17.5 cm 是 carry-over 伺服没把罐头送到篮心（turn 后容器 x 0.43 m，比 §4 的 0.35–0.38 m 远），局 2 的 4.5 cm 超时释放也偏远；
+  下一步先量 place 前的站位深度，再决定是 `place` 前加一步 `approach(basket)` 还是调 `band_x`。
+- 无录像（运行用的入口还没接 `SIM_VIDEO_DIR`）。逐 primitive 记录在 `outputs/runs/skills_smoke_pickplace_20260928/skills/`。
+
+## §8 持物 `approach(basket)` 接 `place`：站位从抓取站改成放置带中心（2026-09-28）
+
+TODO 7.7。入口 `scripts/plan_episode.py`，plan `configs/plans/pick_place_via_basket.json`（approach → grasp_single → **approach(basket)** → place），
+`skills_pick_place_20260928.yaml`，GPU1 / instance 1，seed 300–309。持物 approach = `carry_to` 到站位（上身冻结、掌系漂移守卫）+ 原地 slow_walk 转向桌法线，
+写 `Stance`（容器在骨盆系的深度 / 横向）。
+
+| 运行 | 站位来源 | 到 place 的局 | place OK | 容器停位（深度 / 横向，m） | 失败 |
+|---|---|---|---|---|---|
+| `skills_pickplace_viabasket_20260928` | `stand_plan` 的抓取站（右手抓取几何） | 6/10（4 局 `[grasp] simple no bilateral pad contact`） | 2/6 | 0.26–0.42 / **−0.23…−0.32** | `[turn] container not in the placing band` ×3（y −0.15…−0.20 剩余）、`[place] descent timeout xy 8.5 cm` ×1 |
+| `skills_pickplace_viabasket2_20260928` | 放置带中心（`band_x`/`band_y` 均值 = 0.35 / −0.11），`carry_to` 停距 0.06 | 7/10（3 局 grasp 失败） | 1/7 | 0.32–0.43 / **−0.19…−0.38**（瞄的是 −0.11：原地 slow_walk 转向漂移 0.1–0.27 m） | `[turn]` ×2、`[place] descent timeout` 7.8 / 34.2 cm ×2、`[approach] load slipped 3.4 cm`（转向中）×1 |
+| `skills_pickplace_viabasket3_20260928` | 放置带中心 + 转向后残差修正（`carry_to(relative, turn_first=False)` ≤ 2 次，`CORRECT_TOL` 0.05） | 6/10（4 局 grasp 失败） | **3/6** | **0.33–0.39 / −0.08…−0.16**（6/6 进带；修正前残差 6–29 cm，修正 1–2 次） | `[place] descent timeout` 6.0 / 9.0 cm ×2、`[carry] raise timed out 4.7 cm short` ×1 |
+| `skills_pickplace_direct10_20260928`（对照，§7 的三步 plan） | 无：抓完原地 place | 5/10（5 局 grasp 失败） | 0/5 | 转向段自己能把容器收到 x 0.33–0.35 / y −0.02…−0.09（带内） | `[place] descent timeout` 7.3 / 11.8 / 11.7 cm ×3、`[retreat] object moved 6 cm after release` ×1、`[carry] raise timed out 6 cm short` ×1 |
+
+- 抓取站把容器放在右手抓取的横向（−0.2 m 左右），而 place 的转向段要它落在 `band_y` [−0.16, −0.06] 里：第一轮 3/6 在转向段 8 s 超时。
+  第二轮把站位瞄到放置带中心，但**原地 slow_walk 转向本身漂移**，容器仍落在 −0.19…−0.38；`_loaded` 现在在转向后量残差、
+  用 `carry_to(relative, turn_first=False)` 最多补两次（`CORRECT_TOL` 0.05）：第三轮 6/6 把容器送进放置带（横向 −0.08…−0.16），转向段不再超时，place 3/6。
+- **place 前站位深度不是主因**：直接 place 的对照里转向段自己就把容器收进带内（x 0.33–0.35 / y −0.02…−0.09），
+  之后仍是 `descent timeout` 7–12 cm（carry-over / 下降伺服没把罐头送到篮心），与 §7 局 1 同族。§4 的 10/10 是 `coupled` 抓取 + 当时的握持偏移；
+  `simple` 抓罐头后的握持几何（`palm_frame_offset`）和 place 的伺服基准还没对过——这是 7.10 流程里"按失败族调一个旋钮"的第一个对象，本会话没调。
+- 抓取本身 6/10：`simple` 抓罐头的 "合爪无双侧接触" 是这条线的主失败族（§7 也见），与走近 / 放置无关，属于 7.10 的标定项。
+
+## §9 `claude -p` 规划器接真栈冒烟：`--agent`，3 局（2026-09-28）
+
+TODO 7.6。`skills_agent_smoke_20260928`：`skills_pick_place_20260928.yaml`，`--agent --agent-model sonnet --max-steps 10`，seed 300–302。
+每局一个 `claude -p` 会话（`--json-schema` 结构化输出、`--tools ""`、`--session-id` / `--resume`），请求 = 任务 + 菜单 + 目录手册 + 特权状态文本 + session 快照 + 上一条 trace；
+全部落在 `skills/agent_io_NN.jsonl`。
+
+| 局 | 调用数 / 用时 | agent 的序列 | 结果 |
+|---|---|---|---|
+| 0 | 10 / 306 s | approach(profile **pick_place** → 拒) → approach → grasp_single（合爪无接触）→ approach ×3（`[gym] object toppled during the settle`：罐头已被上一次抓倒）→ grasp_single（拒：无准备好的策略）→ navigate_to(stand_off 1.0，成功退开）→ approach（`[stand] out of reach`）→ turn_to | FAIL（罐头倒了，物理上不可恢复） |
+| 1 | 10 / 217 s | approach(profile **simple** → 拒) → approach → grasp_single OK → place（`[carry] object slipped 3.2 cm`，罐头掉了）→ approach ×2（toppled）→ grasp_single（拒）→ approach → navigate_to → approach | FAIL |
+| 2 | 10 / 196 s | approach(profile **soup_can** → 拒) → approach → grasp_single OK → place（`[carry] slipped 3.0 cm`）→ approach ×3（toppled / `[stand] neutral waist not delivered`）→ grasp_single（拒）→ approach ×2 | FAIL |
+
+- **管路通了**：JSON 进出、被拒调用带 `check` 回传、agent 读到后改参数重来（两局的第一次都猜错 profile 名，第二次就用了目录里的名字）。
+  之后已把可用 profile 名列进请求（`profiles` 字段）。
+- 每次调用 8–65 s（sonnet，含思考），一局 10 次约 4–5 min；采集时用 4 s/次的估计（2026-09-03 Q8）已过时。
+- 3 局里 2 局 grasp 成功后 place 的 carry-over 段掉罐（掌系滑 3.0–3.2 cm，与 §8 直接 place 的失败同源）；失败都是物理失败（抓倒、掉落），agent 的重试没有可恢复的路径——这正是 Q11"注入失败 paired 比较"要设计的地方，不在本次范围。
+
+## §10 `navigate_to` 持罐冒烟（2026-09-28）
+
+TODO 7.9。plan `configs/plans/pick_place_navigate.json`（approach → grasp_single → **navigate_to(xy [1.2, −1.6])**，桌边另一侧 1 m 多外），
+`skills_navigate_smoke2_20260928`，seed 310–313。第一版（`skills_navigate_smoke_20260928`，目标 = 篮子周围 0.6 m 环）站位本来就在环里，0 段即"到"，不算样本。
+
+| 局 | 结果 |
+|---|---|
+| 0、1、3 | grasp 失败（合爪无接触 ×2、抬起时失接触 ×1），没到 navigate |
+| 2 | **navigate_to OK**：7 段路点、走 2.57 m（绕桌角）、其中 4 段先 slow_walk 转向再走、掌系最大漂移 0.8 cm、距离场剩 0.10 m |
+
+- 持物分段走法（每段转向 + 守线走）在一个样本上成立；判据按 plan 末尾 primitive 选（持物即可），否则会被"没放进篮子"判 FAIL（第一版就是）。

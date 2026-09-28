@@ -3811,3 +3811,48 @@ pose / hand ownership）并编译，sha 472ed2b，放在 `outputs/deploy_docbuil
 - **未解决**：`lifted_ready` 插值中途手指先前扫 6–8 cm（参考轨迹约 3 cm + 跟踪滞后 4–5 cm：抬到 40% 时右肩后摆少
   0.06–0.13 rad、肘少折至多 0.14 rad）；最近两局抬手时离桌边 6 mm / 1.2 cm，0 越线。守线余量没有算这一段，收紧守线前要先处理（TODO 5.4.1.1、5.6）。
 - 预览：`outputs/videos/bottle_simple_guard{,_straight,_lifted}_20260925/`；逐局记录在 manifest 的 `simple.guard`、`simple.ready`。
+
+## 40. skills 目录的 approach → grasp_single 经 plan 入口在真栈上跑：9/10（2026-09-28）
+
+入口 `scripts/plan_episode.py`（TODO 7.6）：起栈（instance 1、GPU1、无 exporter）→ prime → 每局按规划站位 teleport（`stand_plan`，
+无出生抖动，站位后 1.2 m）→ `skills.Executor` 跑 JSON plan → 判据 → `skills/manifest.jsonl` + `agent_trace_NN.jsonl`。
+profile `bottle_simple`（= `bottle_simple_200.yaml` 的 `reach.simple` + guard），场景 `sim_lowcom`，deploy 根 `outputs/bottle_continuous_20260914/deploy`。
+
+| 运行 | 局数 | OK | 失败 | approach 停位（对物体深度 / 横向） | 每局用时 |
+|---|---|---|---|---|---|
+| `skills_smoke_bottle_20260928b`（seed 0–2） | 3 | 3 | — | 0.42–0.46 / −0.18…−0.22 m | 31–34 s |
+| `skills_bottle_pilot10_20260928`（seed 100–109） | 10 | 9 | `[grasp] simple bottle knocked before the close` ×1 | 0.34–0.49 / −0.05…−0.23 m | 29–33 s |
+
+- 对照：同一条线的采集入口 `bottle_simple_200` 前 10 个 seed 10/10（§39）；10 局批次本身有 ±2 局波动，9/10 在噪声内。
+  失败族"合爪前碰倒瓶子"是这条线已知的（§39 的 lifted 版本也出现过）。
+- 每个 primitive 的时长稳定：approach 8–14 s，grasp_single 12–14 s；失败局 grasp 8 s 就退出。
+- 第一次跑 `skills_smoke_bottle_20260928` 3/3 失败在 spawn（"did not stabilise after reset" + "no body_q_target"）：
+  shell 里 source 了 `scripts/paths.sh`，它在 `INSTANCE` 未设时导出 instance 0 的 `TF_*` 端口，agent 进程对着 5556 发命令而
+  deploy 在 5566。入口现在先按 `--instance` 把整块端口钉进环境。其他会话的 instance 0 采集在我起栈前 30 s 已结束，没有互相干扰。
+- 这两次运行没有录像（`SIM_VIDEO_DIR` 补丁第一次没打上）；入口从下一次运行起每局 `start_video/end_video`。
+
+## 41. `carry_to`：持瓶行走的漂移测量与实现（2026-09-28）
+
+`carry_to` = 上身冻结（PLANNER_FROZEN_UPPER_BODY，手保持闭合）+ `Primitives.walk_to` + 每拍持物守卫（单臂：掌系偏移相对抓取时的漂移 < 3 cm
+且该手接触物体；双臂：物体高度 ≥ 抓取高度 + 6 cm 且双手接触，接触闪断容忍 0.3 s）。plan：approach → grasp_single → carry_to，
+`bottle_simple`，`sim_lowcom`，GPU1 / instance 1，seed 400。
+
+| 运行 | 走法 | 局数 | OK | 走过 | 最大掌系漂移 | 漂移中位 |
+|---|---|---|---|---|---|---|
+| `skills_carry_back1_20260928` | 朝向不变，倒退 1 m | 3 | 3 | 0.94–0.98 m | 0.29–0.81 cm | 0.1–0.4 cm |
+| `skills_carry_back2_20260928` | 朝向不变，倒退 2 m | 3 | 3 | 1.99–2.05 m | 0.29–0.71 cm | 0.1–0.4 cm |
+| `skills_carry_turn1_20260928` | `walk_to(face_target=True)`：边走边把朝向翻 180° | 3 | 0 | 0.06 m | **3.0 / 3.2 cm**（另 1 局抓取失败） | — |
+| `skills_carry_turnto1_20260928` | 先 `turn_to(180°)` 原地转（IDLE），再前行 1.5 m —— 站位朝向 −90°，**实际转 90°** | 3 | 3 | 1.44–1.46 m | 0.37–0.50 cm | — |
+| `skills_carry_default15_20260928` | `carry_to(relative=[−1.5,0])` 内部先 IDLE 原地转 **180°** 再走 | 3 | 0 | 0.26 m / 转中丢 | 3.2 cm / 转中丢（另 1 局抓取失败） | — |
+| `skills_carry_turn2x90_20260928` | 两次 `turn_to` 各 90°（IDLE），再前行 1.5 m | 3 | 1 | 1.43 m | 0.35 cm；另 1 局第二次转完已 3.9 cm、1 局抓取失败 | — |
+| `skills_carry_turn180slow_20260928` | `turn_to(180°, mode=slow_walk)` 一次转，再前行 1.5 m | 3 | 1 | 1.46 m | 0.55 cm；另 2 局在 approach / grasp 失败，没到 carry | — |
+| `skills_carry_turn180slow6_20260928`（seed 600–605） | 同上 | 6 | 3 | 1.44–1.50 m | 0.31–0.91 cm；到 carry 的 3 局全保住；另 3 局在 approach（站位远 ×2）/ grasp 失败 | — |
+
+- 直走和倒退不掉：1–2 m 漂移 < 1 cm，和 2026-09-03 M0 的 0.4–1.3 cm 一致；`PALM_DRIFT_MAX` 3 cm 作为行走守卫余量够。
+- 掉的是**转向**，且和转幅有关：90° 原地转 3/3 不掉；180° 转持瓶到 carry 的 5 次里 2 次保住（IDLE 一次转 0/2、两次 90° 1/2、SLOW_WALK 1/1），
+  丢的都在转的过程中或转完的第一步（掌系漂移 3.2–3.9 cm）。`walk_to(face_target=True)` 边走边翻朝向最差，0.4 s 内 0.01 → 3.0 cm。
+- 因此 `carry_to` 默认 `turn_first=True`：目标方位与当前朝向差 > 0.2 rad 时先 `turn_to`，再 `walk_to(face_target=False, face_yaw=方位)`；
+  `turn_mode` 默认 `slow_walk`（180° 转到 carry 的 4/4 保住，漂移 0.3–0.9 cm；IDLE 一次转 0/2、两次 90° 1/2），`face_target=True` 保留为原始行为（已知会滑）。
+- 转向段没有守卫（`turn_to` 无回调），转完立刻查一次持物；转中丢的会报 `[carry] load lost while turning`。
+- 这一天的 approach 失败偏多（seed 600–605 里站位远 ×2），是这条线自己的 `[stand] arrival left the object out of reach`，与 carry 无关。
+- 预览：`outputs/videos/skills_carry_20260928/back2_round00.mp4`（305 KB）、`turn1_round00.mp4`（265 KB）。原片在各运行目录 `videos/`。

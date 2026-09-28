@@ -1,0 +1,27 @@
+[
+ {
+  "primitive": "approach",
+  "args": {
+   "target": "water_bottle",
+   "profile": "bottle_simple"
+  }
+ },
+ {
+  "primitive": "grasp_single",
+  "args": {
+   "target": "water_bottle",
+   "profile": "bottle_simple"
+  }
+ },
+ {
+  "primitive": "carry_to",
+  "args": {
+   "relative": [
+    -2.0,
+    0.0
+   ],
+   "face_target": false,
+   "timeout": 45
+  }
+ }
+]

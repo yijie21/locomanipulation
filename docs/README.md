@@ -47,6 +47,7 @@ versioned documents reachable here, without requiring conversation history or pr
 | SONIC 单臂（含 pick-and-place、bottle_visual） | [单臂](single_arm.md) | [单臂详解](single_arm_design.md) | [台账](ledger/bottle.md) |
 | SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂](bimanual.md) | [双臂详解](bimanual_design.md) | [台账](ledger/crate.md) |
 | SONIC 双臂抓纸箱（物流房间；台上默认配置 `box_platform`） | [warehouse](warehouse.md) | [默认配置、成功率随参数的变化、取值](box_grasp_envelope.md)；方法 [scene_sweep](scene_sweep.md) | [台账](ledger/crate.md) |
+| 可拼接的技能（plan 入口、`claude -p` 规划器、新物体标定） | [skills](skills.md) | [primitive 契约设计](handoff/primitive-contracts-design-20260928.md) | [bottle §40–41](ledger/bottle.md)、[pick_place §7–8](ledger/pick_place.md)、[crate 末节](ledger/crate.md) |
 | ScaleBFM 后端 | [ScaleBFM](scalebfm.md) | 同页 | [台账](ledger/scalebfm.md) |
 
 三份 runbook 按同一顺序维护：**准备 → 一次运行=一份实验文件 → 新建实验 → 每次都要改的字段 → 跑 → 产物 → 排错 → 进一步阅读**。新 case 放进所属的线；新线沿用此结构。
@@ -76,5 +77,4 @@ A newer claim or a retraction has no automatic evidentiary priority. Retain orig
 records, link corrections, and state the exact scope of any newly verified observation.
 
 历史记录：G1 修正 reset 后的同14组重跑见 [本次结果与视频](handoff/g1-ghost-reach-fixed-reset-repeat-20260920.md)：当时4组reach成功、9组超时、1组初始化倒地，启动同步问题尚未解决；当前状态见上方可达实验与本轮证据。
-
 G1 [原 expert 实跑与任务录像起点修正](handoff/g1-original-expert-task-boundary-20260920.md)：原版行走抓取成功；当前单组reach视频3.92秒，从站稳状态直接开始，准备诊断另存。前轮证据见 [同14组重录](handoff/g1-shared-expert-ready-repeat-20260920.md)。

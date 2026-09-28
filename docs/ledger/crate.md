@@ -640,3 +640,41 @@ H0.60 × L0.20 这一格 3/15 偏低（第 1 步是 13/30），15 局的散布�
 "后退 0.3 m"一列 9/9 都是 timeout：训练数据按 `--trim-verification-tail` 在 hold 开始处裁掉，后退段不在数据里，这一列对本 checkpoint 不可测。
 两者口径不同（策略只判抬起 + 持 2 s；专家还要直立持 5 s + 后退），10 局也不足以下结论（同一份代码 10 局之间曾差出 2/10 到 7/10），100 局待跑。
 录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_isaac_20260927.zip`（Isaac 第三视角 + Isaac ego/双腕小窗，与镜像同一 stage 和曝光，`render_isaac_videos.sh --traces eval/state_trace --insets`（当时叫 render_isaac_warehouse.sh）从每局 qpos 轨迹事后渲，一局 2–3.5 min）；早先的 MuJoCo 版 `..._closed_loop10_20260927.zip` 留作对照。
+
+## skills 目录的 approach → ready → grasp_bimanual 经 plan 入口在真栈上跑：1/3（2026-09-28）
+
+入口 `scripts/plan_episode.py`，实验 `box_centre_base_20260927.yaml`（场景 `W0.45_L0.32_H0.6`，render offline → 占位相机），
+profile `warehouse_box`（guard 刹车 / lifted 抬手 / staged 路径 / contact 触发），GPU1 / instance 1，seed 300–302，不录制。
+每局：`start_placement` + `stand_up` → approach（`attempt.walk_step` 循环 + 守线刹车）→ ready（`prepare_stationary_ready`
+after_brake）→ grasp_bimanual（`expert.handoff` + `attempt.reach_step` 循环 + `evaluate`）→ 成功后 `hand_back`。
+
+| 局 | 结果 | approach | ready | grasp_bimanual |
+|---|---|---|---|---|
+| 0 | OK（hold 通过，hand_back 0 s） | 11 s | 7 s | 16 s |
+| 1 | FAIL `[reach] basket_tilt` | 8 s | 8 s | 13 s |
+| 2 | FAIL `[reach] reach_stalled` | 8 s | 8 s | 10 s |
+
+- 两个失败族都是这条线已有的（2026-09-24 基线 6/20 里 stall 8/20）；3 局分不出与采集入口 0.30 的差别，只证明四段拼接在真栈上走得通，
+  每段的通道交接（SWING → FROZEN → POSE 流 → FROZEN）与 executor 的不变量检查一致。
+- 逐 primitive 记录、ghost 轨迹在 `outputs/runs/skills_smoke_warehouse_20260928/skills/round_NN/`。
+
+## skills 目录第二批：warehouse plan 10 局对照、`put_down_bimanual` 首个实现、持箱 `carry_to`（2026-09-28 晚）
+
+TODO 7.8 / 7.11。入口 `scripts/plan_episode.py`，实验 `box_centre_base_20260927.yaml`（场景 `W0.45_L0.32_H0.6`），profile `warehouse_box`，
+GPU1 / instance 1，seed 7000–7009（put_down 第二轮 7010–7019）。
+
+| 运行 | plan | 到最后一步的局 | OK | 失败 |
+|---|---|---|---|---|
+| `skills_warehouse_pilot10_20260928` | approach → ready → grasp_bimanual | 10 | **4/10** | `lost_attachment` ×4、`reach_stalled`、`stand_not_delivered` |
+| `skills_warehouse_putdown10_20260928` | … → **put_down_bimanual** | 6（4 局 reach 失败） | put_down 自身 **5/6**；plan 判据 0/10（判据错，见下） | `[put_down] load dropped while lowering` ×1 |
+| `skills_warehouse_putdown10b_20260928` | 同上，判据修后 | 1（seed 7010–7019 这批 reach 9/10 失败：`reach_stalled` ×4、`lost_attachment` ×4、`unstable_hold`） | put_down 自身 1/1（z 误差 0.4 cm、倾角 1.6°、双手离开）；plan 判据 0/1 | `[put_on] centre xy [0.03, −0.61] is 0.05 m outside the surface footprint`：站直阶段把箱子拉向自己约 0.2 m，原地放下时箱心已越过台面近沿 5 cm（箱子半宽 0.16，近半悬空），只是搁在沿上 |
+| `skills_warehouse_carry10_20260928` | … → hand_back → **carry_to(relative [−1, 0])**（先 slow_walk 原地转 180° 再走 1 m） | 6（4 局 reach 失败） | carry **3/6** | `load lost while turning` ×1、`load dropped`（走 0.55 / 0.87 m 后箱子滑到 0.10 / 0.20 m）×2 |
+| `skills_warehouse_carryback_noturn10_20260928` | 同上但 `turn_first=false`（朝向不变倒退 1 m，即 retreat 的走法） | 2（这批 reach 8/10 失败） | carry **2/2**（倒退 0.95 / 1.04 m，箱高 0.25 → 0.19 / 0.27 → 0.23 m，守卫底线 0.16） | — |
+
+- **对照采集入口**（同 yaml 的采集基线 6/20 = 0.30；扫参台账里 quick 版 26/60）：plan 入口 4/10 在同一噪声带里，通道交接不改成功率（10 局 pilot 分不出 ±2 局，见 2026-09-07 规则）。
+- **put_down 本身可用**：5/6 把箱子放回台面（终态高度误差 ≤ 0.7 cm，倾角 ≤ 2.5°，双手离开），每次 8–10 s；下放过程箱子最大倾角 5–7.5°。
+  失败的 1 局在开始下放前双手接触就丢了（reach 交付的 hold 不稳）。第一轮 plan 判据全 FAIL 是判据的错：`put <obj> on <surface>` 用物体原点 z 与表面顶比，
+  而纸箱原点在底面（`box.centre` z 0.3、半高 0.3），已改成看箱底（`scene_model.py`，容差 2 cm），第二轮见上表。
+- **put_down 要先把箱子送回台面上方再放**：hold 结束时箱子被站直阶段拉近约 0.2 m，原地下放会搁在近沿（第二轮唯一样本）；第一版没有前送项（下一步 7.8.1：下放前工具点前移 `forward_m`，或按表面近沿算前送量）。
+- **持箱 carry 比持瓶差**：180° 转 + 1 m 走 3/6（瓶子 4/4）；掉的两局箱子在走动中沿双手向下滑（高度 0.27 → 0.10 / 0.20 m，
+  守卫底线 = 抓取高度 + 6 cm）。不转倒退的对照 2/2 保住（样本少，但与 retreat 0.3 m 的经验一致）；双臂 carry 要不要默认『不转、倒退』待用户定（TODO 7.8.2）。

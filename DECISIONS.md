@@ -854,3 +854,38 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - `carry_to` 内部用 IDLE 模式原地转 180°：0/2，两次 90° 也只 1/2；改为 SLOW_WALK 一次转（4/4）。
 - session 不变量里用 `arm.hands > 0` 判"闭合"：Dex1 闭合值为负，误报；只核对 `session.hands` 与 `held`。
 - 把剩余工作按"避障导航、新物体标定"优先：两者都不是当前 plan 跑不通的原因（三个场景直线无障碍；标定是每物体一次的实验），排在跨位置搬运回归之后。
+
+## 2026-09-28（晚）skills 第二批：持物走近、放下、导航、准入带、`claude -p` 规划器
+
+### 目标与约束的变化
+- TODO 7 一次推到底：7.4–7.10 全部落代码 + 文档，真栈只做 10 局 pilot / 3 局冒烟，不做 20 局验收。
+- 真栈队列串行跑在 GPU1 / instance 1；Bash 后台任务 600 s 上限会杀队列，改 `nohup setsid` + 日志 Monitor。
+
+### 决策
+1. **持物走近 = carry 到站位 + 原地转向 + 残差修正**（`BottleApproach._loaded`）：guard 走近把手臂交给行走策略会甩掉物体，持物不能走它。
+   站位对容器瞄放置带中心（`band_x`/`band_y` 均值），不是抓取站（抓取站把容器放在右手侧 −0.2 m，转向段 8 s 收不回来，3/6）。
+   原地 slow_walk 转向本身漂 0.1–0.27 m，所以转完量残差，用 `carry_to(relative, turn_first=False)` 最多补两次。
+2. **`walk_to` 持物直接走 `carry_to`**，不再拒绝：agent 不该为"同一个走法"记两个名字；`carry_to` 保留为显式入口。
+3. **`put_down_bimanual` 只看物体判成败**（高度、倾角、无手接触），不做手部反馈：第一版 5/6 放回台面（≤ 0.7 cm、≤ 2.5°）。
+   `put <obj> on <surface>` 判据改看箱底而不是原点（纸箱原点在底面，原判据把 5 局成功放下全判 FAIL），容差 2 cm。
+4. **`navigate_to` 沿距离场分段走**：空手每段 `walk_to(face_target=True)`；持物每段先 slow_walk 转再守线走（边走边转 0/2 掉瓶的教训）。
+   持物守卫抽成 `LoadWatch`，四个走动 primitive 共用一份规则。
+5. **站位准入带保持全开**：932 条已录站位回放，bottle / warehouse 的成功与失败在深度、横向上完全重叠（中位 0.324 vs 0.325、0.436 vs 0.454），
+   任何上界都同时误拒成功局；`STANCE_BANDS` 留着，`stance_violations` 与回放脚本是以后新线的工具。
+6. **规划器是纯 JSON 进出的 `claude -p`**（Q8/Q9 照旧）：`--json-schema` 结构化输出、`--tools ""`、每局一个会话 `--resume`；
+   请求带目录手册、可用 profile 名、特权状态文本；`claude` 出错即 `abort` 带原因，不让局崩。3 局冒烟管路通；每次调用 8–65 s（sonnet），Q8 的 4 s 估计作废。
+7. **plan 的判据按最后一个 primitive 选**：以 `place` 结束才用 `put X in C`；`put_down_bimanual` 结束用箱底上台面；carry / navigate 结束看持物。
+   否则 navigate 冒烟被"没放进篮子"判 FAIL，看不到 primitive 自己的结果。
+8. **新物体标定没有自动机制**，只写流程（docs/skills.md §5：登记 profile → `--profile` 10 局 → 按失败族改一个旋钮 → gate → 回放定带）。
+
+### 被否决的方案（及原因）
+- 持物走近复用 guard 走近（`HangingWalk`）：手臂交给行走策略即松开。
+- `navigate_to` 直接调 `Primitives.navigate`：它边走边转（steering arc），持物会滑；分段后转向可交给 slow_walk。
+- `put_down` 在 `CoordinatedReach` 里加 "lower" 相位：黑盒包装期不改专家；独立的下放循环用同一个 `BimanualIK` 就够第一版。
+- 给 bottle_simple 设深度带 ≤ 0.43（拒 9/96 失败）：同时拒 22/233 成功，不划算。
+- Agent SDK / 带工具的执行者：Q9 已否，agent 不能碰控制流。
+
+### 未决（不是决策）
+- `simple` 抓罐头 + place 的标定（grasp 5–6/10、place 后 carry-over 伺服 7–12 cm 偏、掌系滑 3 cm）：7.10 流程的第一个对象，本会话没调。
+- 持箱 carry 180° 转 3/6、直走不转的对照结果见 crate 台账；要不要把双臂 carry 默认改成"不转、倒退"待看数据。
+- warehouse plan 运行没有视频（`backend.render: offline`，sim 不出图）；要视频得走 crate 线自己的录制。

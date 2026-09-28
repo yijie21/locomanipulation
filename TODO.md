@@ -304,16 +304,19 @@
 - [x] 6.8 双臂抓箱默认版本（用户 2026-09-27）：`configs/experiments/box_platform_default_20260927.yaml` + 场景名 `box_platform`（`outputs/scene/box_platform`），文档 `docs/box_grasp_envelope.md`，README / docs/README / warehouse §8 已索引
 - [~] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
   - [x] 6.9.1 扫参会话代码（12 个旋钮、`sweep.py`、`box_platform_scene.py`、30 个实验文件、两份扫参配置、文档）与 box_platform 的 Isaac stage 一起提交推送（用户 2026-09-27）
-- [~] 7 agent 可拼接的 primitive（`src/locomani/skills/`，设计 `docs/handoff/primitive-contracts-design-20260928.md`，2026-09-28）
+- [~] 7 agent 可拼接的 primitive（`src/locomani/skills/`，设计 `docs/handoff/primitive-contracts-design-20260928.md`，2026-09-28；晚上第二批见 §9b。剩 7.7.1 / 7.8.1 / 7.8.2 三个待用户定的标定项）
   - [x] 7.1 session / contract / profiles / scene_model / executor + 目录 7 个适配器 + 占位；`tests/test_skills_*.py` 41 个通过；未提交
   - [x] 7.2 包出四个黑盒（2026-09-28）：approach 按 profile 分派、grasp_single、grasp_bimanual、place；双臂每拍逻辑抽到 `tasks/crate/attempt.py`；78 个测试通过，未上真栈
   - [~] 7.3 回归（2026-09-28）：bottle plan 10 局 9/10（台账 bottle §40）；pick_place plan 冒烟 1/3（pick_place §7，`simple`+place 未标定）；warehouse plan 冒烟 1/3（crate 台账末节）；三条线管路通，warehouse 的 10 局对照待跑
-  - [ ] 7.4 前置带宽回放：在已录 trace 上跑 `preconditions`，报成功局误拒 / 失败局放行
+  - [x] 7.4 前置带宽回放（2026-09-28）：`scripts/replay_preconditions.py` + `STANCE_BANDS` / `stance_violations`；932 条已录站位（skills trace 43、bottle 采集 286、warehouse 603）上任何深度 / 横向带都不分成功与失败（bottle 深度中位 0.324 vs 0.325，warehouse 0.436 vs 0.454），带保持全开；报告 `outputs/analysis/precondition_replay_20260928/report.md`
   - [x] 7.5 `carry_to`（2026-09-28）：冻结上身 + walk_to + 持物守卫；持瓶直走/倒退 1–2 m 漂移 < 1 cm（6/6），走动中急转 3 cm 掉（0/2），180° 转 IDLE 0/2、SLOW_WALK 4/4 → 默认 turn_first + slow_walk；台账 bottle §41。持箱未量
-  - [~] 7.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器接线待做（2026-09-03 Q8/Q9）
-  - [ ] 7.7 跨位置搬运回归：`approach` / `walk_to` 放行持物状态（走近改用 carry 的守卫）；`place` 标定（先量 place 前站位深度，再定加 approach(basket) 还是调 band_x）
-  - [ ] 7.8 `put_down_bimanual`（占位，无任何一条线实现过）；持箱 carry 测量（双臂守卫只在假栈上测过）
-  - [ ] 7.9 `navigate_to` primitive：沿 `Navigator.waypoint()` 分段走，持物时段间转向走 carry 的 slow_walk 规则
-  - [ ] 7.10 新物体标定流程：新 experiment yaml → 10 局 pilot → 按失败族调一个旋钮 → gate 对照；profile 按物体几何自动落位没有机制
-  - [ ] 7.11 warehouse plan 10 局对照（现在只有 3 局 1/3）；其余运行导出预览视频
-  - [ ] 7.12 提交本会话代码（skills 包、attempt.py 提取、plan_episode.py、台账）
+  - [x] 7.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器 `skills/planner.py` + `--agent` 接线（2026-09-28 晚：JSON schema 结构化输出、每局一个会话、`agent_io_NN.jsonl`；真栈冒烟见 pick_place 台账 §8）
+  - [x] 7.7 跨位置搬运回归（2026-09-28 晚）：`walk_to` 持物走 `carry_to` 守卫；单臂 `approach` 持物 = carry 到放置带中心站位 + 原地转向 + 残差修正 + 写站位；默认 plan 加 `approach(goal)`。真栈三轮（pick_place 台账 §8）：容器进带 6/6，place 3/6；对照直接 place 0/5。place 前站位深度不是主因——`simple` 抓罐头后 place 的 carry-over / 下降伺服（7–12 cm 偏、掌系滑 3 cm）是下一个标定对象（7.10 流程），未调
+    - [ ] 7.7.1 `simple` 抓罐头 + place 标定：grasp 5–6/10（合爪无双侧接触 / 抓倒），place 后 descent timeout 6–12 cm；先对 `palm_frame_offset` 与 place 伺服基准，再按 7.10 流程一次一个旋钮（待用户定）
+  - [~] 7.8 `put_down_bimanual` 首个实现（`catalogue/crate_put_down.py`，2026-09-28 晚；假栈测试 4 个）：真栈 7 个样本 6 次把箱子放稳（≤ 0.7 cm、≤ 2.5°）；持箱 carry 180° 转 + 1 m 3/6（crate 台账末节）
+    - [ ] 7.8.1 put_down 前送：站直阶段把箱子拉近约 0.2 m，原地放下箱心越过台面近沿 5 cm（搁在沿上）；下放前工具点前移（`forward_m`）或按近沿算前送量，再 10 局（待用户定）
+    - [ ] 7.8.2 持箱 carry 默认走法：转 180° 掉 3/6（转中 1、走中滑落 2）；看 `carryback_noturn` 对照后定要不要默认不转、倒退（待用户定）
+  - [x] 7.9 `navigate_to`（2026-09-28 晚）：沿 `Navigator.waypoint()` 分段走，空手朝路点、持物先 slow_walk 转再守线走；假栈 7 个测试；真栈持罐 1 局 7 段 2.57 m 漂移 0.8 cm（pick_place 台账 §10）；空手真栈未跑
+  - [x] 7.10 新物体标定流程（2026-09-28）：写在 `docs/skills.md` §5（新 profile 登记 `PROFILE_SOURCES` → `plan_episode.py --profile` 10 局 pilot → 按失败族改一个旋钮 → gate 对照 → 回放定带）；按几何自动落位仍无机制，文档里明说没有
+  - [x] 7.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）
+  - [x] 7.12 提交本会话代码（2026-09-28 晚：skills 包 + 第二批 primitive、attempt.py 提取、plan_episode.py `--agent`/`--profile`、回放脚本、docs/skills.md、台账、plan 文件；`make check` 通过）

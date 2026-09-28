@@ -14,6 +14,7 @@
 | 单臂 | 走近桌子、单手抓瓶；含 pick-and-place 变体 | [单臂](docs/single_arm.md) | [单臂详解](docs/single_arm_design.md) |
 | 双臂 | 视觉指导走近、俯身抓篮、抬起并站直 | [双臂](docs/bimanual.md) | [双臂详解](docs/bimanual_design.md) |
 | 双臂抓纸箱（物流房间 / 台上） | 双臂扣住纸箱沿、抬起、站直；仿真时不渲染，数据集相机事后从轨迹补渲（MuJoCo 或 Isaac 出图）；默认配置与布局参数范围 | [warehouse](docs/warehouse.md) | [默认配置与参数范围](docs/box_grasp_envelope.md) |
+| 可拼接的技能（agent） | 三条线切成 primitive（走近、抓、搬、放、放下），固定 plan 或 `claude -p` 逐步规划，executor 查前置、写 trace；新物体标定流程 | [skills](docs/skills.md) | [primitive 契约设计](docs/handoff/primitive-contracts-design-20260928.md) |
 | 可迁移双臂抓箱 | 箱沿抓点规划、原 expert 仿真执行、固定站姿五维可达搜索 | [规划与执行](docs/box_rim_planning.md) | [可达实验](docs/bimanual_reachability.md) |
 | 导入 Blender 场景 | 物流间纸箱场景的 MuJoCo / Isaac 资产、Blender 导入与尺寸说明 | [Blender 场景](docs/blender_scenes.md) | 同页 |
 | 使用 ScaleBFM | 独立于 SONIC 的视觉抓瓶采集与评测路线 | [ScaleBFM](docs/scalebfm.md) | 同页 |
@@ -96,5 +97,4 @@ bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_200 --gp
 `scripts/` 是每个阶段一个的扁平 bash（采集 / 转换 / 训练 / 评测 / `run_overnight.sh`），`src/locomani/` 是仿真、任务、专家和栈管理（`stack/`）代码，`configs/experiments/` 是全展开的实验文件、`configs/{task,backend,eval}/` 是按名字引用的 profile 库，`assets/` 是随仓库提供的资产。
 `third_party/` 存放另行安装的上游依赖，`outputs/` 存放运行产物，两者都不上传 Git。
 完整文档目录见 [文档索引](docs/README.md)，后续计划见 [路线图](docs/ROADMAP.md)；文档里反复出现的名词（栈、deploy、exporter、trace、token、镜像……）见 [术语表](docs/reference/glossary.md)。
-
 需要修改代码或贡献功能时，从 [开发入口 AGENTS.md](AGENTS.md) 开始。已知文件的局部修改可直接进入；归属不明或新增功能时查 [代码导航](docs/reference/change-map.md)，改变接口或配置格式时查 [开发规范](docs/reference/standards.md)。
