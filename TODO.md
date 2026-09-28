@@ -307,7 +307,7 @@
 - [~] 7 agent 可拼接的 primitive（`src/locomani/skills/`，设计 `docs/handoff/primitive-contracts-design-20260928.md`，2026-09-28；晚上第二批见 §9b。剩 7.7.1 / 7.8.1 / 7.8.2 三个待用户定的标定项）
   - [x] 7.1 session / contract / profiles / scene_model / executor + 目录 7 个适配器 + 占位；`tests/test_skills_*.py` 41 个通过；未提交
   - [x] 7.2 包出四个黑盒（2026-09-28）：approach 按 profile 分派、grasp_single、grasp_bimanual、place；双臂每拍逻辑抽到 `tasks/crate/attempt.py`；78 个测试通过，未上真栈
-  - [~] 7.3 回归（2026-09-28）：bottle plan 10 局 9/10（台账 bottle §40）；pick_place plan 冒烟 1/3（pick_place §7，`simple`+place 未标定）；warehouse plan 冒烟 1/3（crate 台账末节）；三条线管路通，warehouse 的 10 局对照待跑
+  - [x] 7.3 回归（2026-09-28）：bottle plan 10 局 9/10（台账 bottle §40）；pick_place plan 冒烟 1/3（pick_place §7，`simple`+place 未标定）；warehouse plan 冒烟 1/3（crate 台账末节）；三条线管路通，warehouse 的 10 局对照 4/10 已跑（7.11）
   - [x] 7.4 前置带宽回放（2026-09-28）：`scripts/replay_preconditions.py` + `STANCE_BANDS` / `stance_violations`；932 条已录站位（skills trace 43、bottle 采集 286、warehouse 603）上任何深度 / 横向带都不分成功与失败（bottle 深度中位 0.324 vs 0.325，warehouse 0.436 vs 0.454），带保持全开；报告 `outputs/analysis/precondition_replay_20260928/report.md`
   - [x] 7.5 `carry_to`（2026-09-28）：冻结上身 + walk_to + 持物守卫；持瓶直走/倒退 1–2 m 漂移 < 1 cm（6/6），走动中急转 3 cm 掉（0/2），180° 转 IDLE 0/2、SLOW_WALK 4/4 → 默认 turn_first + slow_walk；台账 bottle §41。持箱未量
   - [x] 7.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器 `skills/planner.py` + `--agent` 接线（2026-09-28 晚：JSON schema 结构化输出、每局一个会话、`agent_io_NN.jsonl`；真栈冒烟见 pick_place 台账 §8）
