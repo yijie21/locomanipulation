@@ -304,3 +304,25 @@
 - [x] 6.8 双臂抓箱默认版本（用户 2026-09-27）：`configs/experiments/box_platform_default_20260927.yaml` + 场景名 `box_platform`（`outputs/scene/box_platform`），文档 `docs/box_grasp_envelope.md`，README / docs/README / warehouse §8 已索引
 - [~] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
   - [x] 6.9.1 扫参会话代码（12 个旋钮、`sweep.py`、`box_platform_scene.py`、30 个实验文件、两份扫参配置、文档）与 box_platform 的 Isaac stage 一起提交推送（用户 2026-09-27）
+
+## 10. Unreal（URLab）替代 Isaac 渲染（分支 `loco_unreal`；用户 2026-09-28 定；DECISIONS 2026-09-28 URLab 一节）
+
+- [x] 10.1 可行性（只替代 Isaac 角色）+ 安装 UE 5.7.4 到 `/workspace/ue_57`（2026-09-28）
+  - [x] 10.1.1 `/workspace` A 类清理（+47 GB）、UE 压缩包校验后删除（2026-09-28）
+- [x] 10.2 冒烟：headless 启动、导入 G1、puppet 回放（2026-09-28）
+  - [x] 10.2.1 插件补丁 `include_cameras: "fresh"`：0/50 旧姿态、单相机 54–67 ms（`patches/urlab_fresh_capture.*`，2026-09-28）
+  - [x] 10.2.2 机器人头部白带 / 白盘：近裁剪 1 mm → 2 cm 后 warehouse 头部相机不再出现（2026-09-28；纯机器人关卡未重测）
+- [x] 10.3 warehouse 关卡：Blender 烘焙 → glTF → UE，6 盏 RectLight、固定曝光、强制 Lumen（2026-09-28）
+  - [x] 10.3.1 锯齿：非 2 的幂贴图缩放 + 截图开 TSR + camera cut（2026-09-28）
+  - [ ] 10.3.2 天花板灯板在 Unreal 里是暗的（Isaac 会发光），查自发光材质
+  - [ ] 10.3.3 对照 Cycles 参考图标定曝光和色调（`WAREHOUSE_EXPOSURE_OFFSET`；AgX 与 UE filmic 不同）
+- [x] 10.4 G1 外观：`mujoco` 预设（MJCF 原色，sRGB→linear，非金属），用户确认（2026-09-28）
+  - [-] 10.4.1 `metal` 预设（统一反光银色）：用户否决，不像真实 G1
+  - [ ] 10.4.2 可选：外壳粗糙度调到 0.2–0.25 或压暗底色，靠近 MuJoCo 的高光感（待用户定）
+- [x] 10.5 一局闭环 VLA 用 Unreal 图（seed 6000，lockstep，1/1 ok）+ ego/腕部 MuJoCo 对照（2026-09-28）
+- [x] 10.6 同一局第三视角 Unreal / Isaac / MuJoCo 三路视频（`reverse_room`，2026-09-28）
+- [ ] 10.7 取图速度：3 相机截 8 张每次 679 ms（Isaac 95 ms）；扫 `urlab.FreshCaptureRepeats`（2–8）与画质的关系
+- [ ] 10.8 用 Unreal 图跑 100 局 lockstep 评测，与 Isaac 88/100 比（checkpoint 是 Isaac 训练的，属于分布偏移）
+- [ ] 10.9 正式接入 `images.source: unreal`：镜像进 src、run_overnight 接线、数据集用 Unreal 补渲、重新训练
+- [ ] 10.10 提交分支代码：9 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
+- [ ] 10.11 URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存

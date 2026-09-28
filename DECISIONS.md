@@ -799,3 +799,49 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 默认 `eval.client` 是否改成 `lockstep`（TODO 4.7.11.7）；目标模型 88 与复刻 83 之差是"间隙续走"还是"延迟少 2 帧"（4.7.11.6）。
 - 相机延迟 C 取多少，取决于部署硬件。
 - 本次实现未提交（4.7.11.8）。
+
+## 2026-09-28 Unreal（URLab）只替代 Isaac 的渲染角色；warehouse 从 Blender 直导；G1 外观用 MJCF 原色（分支 loco_unreal）
+
+目标：Isaac 渲染质量不够，试用 URLab（MuJoCo 嵌入 UE 5.7 的插件）出策略看到的图。约束：URLab 只替代 Isaac 镜像和补渲，物理、SONIC deploy、VLA 服务端、lockstep 都不动。
+
+### 决策
+
+- **URLab 只做渲染（puppet 模式）：** sim 推 qpos，URLab 出图，不走它的 direct / live 物理。
+  理由：URLab 不跑 VLA 和 SONIC，deploy 必须留在外部；把物理搬进去要重写 sim 侧的桥接、reset、夹爪 PD 和成功判定，lockstep 校准和 81/83/88 也会作废。
+- **插件打补丁，加 `include_cameras: "fresh"`（`patches/urlab_fresh_capture.{patch,md}`）。**
+  - 理由：原版的 `"sync"` 回读的是正在进行中的那次读回，推姿态后等 100 ms 以内约一半的图还是上一个姿态；非 live 模式下相机 ZMQ 推流又被暂停。
+  - 补丁的做法：截图放在 `AAMjManager` 的 Tick 队列里、在姿态生效后的下一帧执行；第一张做 camera cut，打开 TSR，重复截 8 张让 Lumen 收敛。
+  - 各处理由：用 `AsyncTask(GameThread)` 会死锁；同一帧截图会带上一姿态的运动矢量，TSR 把机器人拖出重影；场景截图默认关 TemporalAA，退回 FXAA 会有锯齿；每帧自动截图加按需截图会把 GPU 卡死，所以相机第一次按需截图后改为只按需截。
+  - 同一补丁还改了两处 URLab 原有问题：视场角从垂直换算成水平；近裁剪面从 1 mm 改为 2 cm，和 MuJoCo / Isaac 一致，否则头部相机拍到头壳内部。
+- **warehouse 房间从 `logistics_room.blend` 直接导入，做成 UE 静态关卡。**
+  - 流程：Cycles 把程序化材质烘焙成贴图，按材质合并网格，导出 glTF，Interchange 导入；6 盏面光重建成 RectLight；自发光乘 683 lm/W。机器人和纸箱仍走 URLab 的 MJCF 导入。
+  - 理由：USD 和 glTF 都会丢程序化节点，烘焙能保住；房间不需要物理。坐标核对过：Blender 世界 = MuJoCo 世界 = URLab 的 (x, −y, z)·100 cm。
+- **固定曝光，补偿值 = log2(1.2·2^exposure/683) = −9.40；后处理体积强制 Lumen GI 和反射。**
+  理由：UE 的手动 `auto_exposure_bias` 是补偿值（正数变亮），不是 EV100；场景截图不继承项目默认的 Lumen，不强制就完全没有间接光。
+- **导出前把非 2 的幂贴图缩放到 2 的幂，照片材质断开 Bump→Normal。**
+  理由：UE 对非 2 的幂贴图不生成 mip，缩小时锯齿和噪点严重；glTF 导出器把高度图当法线贴图写出，渲染成满屏噪点。
+- **G1 外观用 MJCF 原色，即材质脚本的 `mujoco` 预设。**
+  - 做法：0.7 外壳、0.2 头/脚/关节/夹爪；颜色从 sRGB 换算到线性，非金属，粗糙度 0.35 / 0.5。
+  - 理由：用户确认 MuJoCo 渲出的这套外观是对的。URLab 原来把 rgba 当线性值用，0.2 显示成 0.48，整台发白。
+  - 依据：URLab 的 G1 网格和我们的逐字节相同（37/37）；Unitree 官方 Isaac USD 也只有两种灰、没有贴图；hero.png 那台就是同一套网格，靠的是作者自己配的材质和灯光。
+- **编辑器用 `taskset -c 28-31` 限 4 核；看守脚本在容器 5 秒平均用满 14 核以上、或 GPU 100% 且日志 90 秒无输出时杀掉 UE。**
+  理由：不限核时首次编译着色器 30 秒内打满 15.36 核配额，另一会话 A/B 实验的 seed 91009 那对局受到干扰。
+- **Unreal 镜像先做成实验脚本 `unreal_mirror_20260928.py`，对外和 Isaac 镜像协议完全相同。**
+  理由：评测代码零改动即可验证；正式的 `images.source: unreal` 等验证完再进 src。
+
+### 被否决的方案
+
+- **全部搬进 URLab（direct 模式物理）：** 见上面第一条的理由。
+- **推姿态后固定等 200 ms 再用 `"sync"` 取图：** 等待时间是猜的，每次约 220 ms，而且依赖编辑器帧率。
+- **用 URLab 自带的 Python 客户端的 camera warmup 和推流：** 客户端（7 月版）和插件（8 月版）版本不一致，`set_camera_streaming` 在插件端是 unknown_op。
+- **看守脚本按"单个窗口限流 > 2 s"杀 UE：** 误报。UE 完全不在时，采集栈自己也有 1–2.4 s 的限流（平均只用 2–4 核），当时 RTF 仍在 0.985–1.01。改成按平均用量判断。
+- **经 MJCF 导入房间：** 每种材质只剩一种颜色或一张贴图，没有法线细节，灯光也不对。
+- **G1 统一做成反光银色金属（`metal` 预设）：** 用户否决，不像真实 G1。
+- **找"更真实的 G1 资产"：** 公开资产（Unitree 的 URDF/MJCF/USD、URLab 自带）都是同一套只有两种灰的 CAD 网格，换资产解决不了外观问题。
+- **`-ExecutePythonScript` 驱动编辑器：** 脚本跑完编辑器就退出，而 URLab 导入的蓝图不写盘。改为 `-ExecCmds` 加常驻的 TCP 命令服务（`/workspace/ue_57/ue_cmd_server.py`），setup 和回放在同一个编辑器会话里做。
+- **UE 的 Python remote execution（组播）：** 容器的 `lo` 没有 MULTICAST，连不上。
+
+### 未决（不是决策）
+
+- 是否正式把 `images.source` 换成 unreal：要用 Unreal 重渲数据集再训练。checkpoint-5000 是 Isaac 训练的，用 Unreal 图评测属于分布偏移。
+- 取图速度：3 相机、截 8 张时每次 679 ms，Isaac 是 95 ms。截图张数和画质的平衡点还没调。

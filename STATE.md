@@ -1,49 +1,82 @@
-# STATE — 2026-09-28（会话：文档复查 → 只渲成功局 → lockstep + Isaac 评测实现与 100 局校准）
+# STATE — 2026-09-28（分支 `loco_unreal`：Unreal / URLab 替代 Isaac 渲染）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，已推送到 `f5cbee3`（只渲成功局）。
-**未提交**：lockstep + Isaac 评测的全部实现、测试、文档，以及 115 份实验文件加 `gap` / `camera_frames`（TODO 4.7.11.8，待用户说提交）。
-`src/teleop_free/lockstep_vendor` → `src/locomani/backends/sonic/lockstep_vendor` 是 **已暂存** 的 `git mv`：只提交别的文件时用 `git commit -- <文件>`，否则会把它带进去。
-没有运行中的栈、镜像、训练或渲染；GPU1 上约 3.7 GB 是别的项目的。
+工作目录 `/workspace/code/locomanipulation-loco_unreal`（worktree），分支 `loco_unreal`，基于 `9955487`，落后 main（main 已到 `7135a83`，STATE 归别的会话管）。
+主仓库 `/workspace/code/locomanipulation` 的 STATE / TODO 不在这里维护；本文件只管这条分支。
 
-## 工作树
+**未提交**（等用户说，TODO 10.10）：`scripts/experiments/unreal_{export_mjcf,smoke,warehouse_bake,warehouse_level,robot_materials,clear_import,g1_lookdev,mirror,trace_video}_20260928.py`、`patches/urlab_fresh_capture.{patch,md}`。
+`assets/hero.png` 是用户放的 URLab 主页图，不要提交。
+没有运行中的 UE、镜像或策略服务。GPU0 空闲；GPU1 上约 5 GB 是别的项目的。实例 1 上有另一个会话的采集栈（`/workspace/tmp/p03_i1/stack.json`），不要动。
 
-- 未跟踪、与本项目无关、不要提交：`.serena/`、`node_modules/`、`package*.json`、`uv.lock`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`。
-- 运行 `box_room_grasp_200_cap120_20260925` 的 `config.yaml` 被手改（`eval.rounds: 10`、warehouse token），`summary.json` 手补 train 条目；原件 `*.bak_20260927`。
-- 对照用的 10 个只评测运行目录 `outputs/runs/{ls,wc}_*_20260927`（原运行的 config + 改过的 eval 块，train 条目指向原 checkpoint），各约 120 MB。
+## 当前进度
 
-## 当前进度（数字在台账 crate.md 2026-09-27 末节、计划 `docs/handoff/lockstep-isaac-eval-plan-20260927.md` 第 10 节）
+- 已确认：UE 5.7.4 在本容器可以无显示器运行（Vulkan，`-RenderOffscreen`）。首次编译着色器 389 s，之后 10 s 启动。
+- 已确认：插件补丁 `"fresh"` 取图后，交替两个姿态 0/50 张拿到旧姿态。纯机器人关卡单相机 54–67 ms；warehouse 3 相机截 8 张 679 ms/次；第三视角 1280×960 单相机 276 ms/帧。
+- 已确认：warehouse 从 Blender 烘焙导入，UE 里的包围盒与 (x, −y, z)·100 的坐标完全一致；锯齿和噪点经非 2 的幂贴图缩放 + TSR + camera cut 后明显减轻。
+- 已确认：URLab 自带的 G1 与我们的 G1 是同一套网格（37/37 逐字节相同）。hero.png 的外观来自材质和灯光。用户认可 `mujoco` 预设。
+- 已确认：一局闭环 VLA 看 Unreal 图，seed 6000、lockstep、latency 2，1/1 ok。运行目录 `/workspace/code/locomanipulation/outputs/runs/unreal_eval_20260928`，实例 2。
+- 已确认：同一局第三视角的 Unreal / Isaac / MuJoCo 三路视频已出，逐帧对齐（739 帧，59.1 s）。
+- 假设：一局成功不说明 Unreal 图对这个 checkpoint 没影响（它是用 Isaac 图训练的）。要 100 局才能判断（TODO 10.8）。
 
-- 已确认：双臂评测有两个时钟 `eval.client: blocking | lockstep`，间隙语义 `eval.gap: continue | hold`，lockstep 另有 `latency_frames` / `latency_dist` / `camera_frames`。
-- 已确认：lockstep 下 Isaac 图按冻结时刻的 seq 渲，84/84 块 seq 相符；每周期 18 帧 = 36 tick，特权 seq 与 deploy 状态序号各进 36（请求之间世界不动）。
-- 已确认（checkpoint-5000，Isaac 图，seed 6000–6099，各 100 局）：墙钟 hold **81**、墙钟 continue **83**、lockstep 复刻墙钟 **83**、lockstep 目标模型（L = 2）**88**。
-- 已确认：lockstep 校准通过——墙钟 81 vs 复刻 83，不一致 14 : 16，p = 0.86，失败构成逐项差 ≤ 3；2026-09-02 的"停得远"签名没出现。
-- 已确认：目标模型 vs 墙钟 88 vs 81，p = 0.27，100 局判不动；墙钟 continue 无差别（续发线程让观测 + 推理 70 → 95 ms）。
-- 已确认：同 seed 的 lockstep 局不逐位复现，原因是 MuJoCo 默认 4× 多重采样（同一状态渲两次腕图差 1–2 灰度级）；局前 332 tick 和策略服务端（同观测同 seed）都逐位相同。
-- 已确认：`render_isaac_videos.sh` 与两个数据集补渲都只渲成功局（已推送 `f5cbee3`）；converter 拒绝未补渲的局。
-- 已确认：`make check` 通过（含新测试 `tests/test_crate_lockstep_eval.py` 14 个）。
+## 下一步（编号见 `TODO.md` 第 10 节，顺序等用户定）
+
+- **10.7**：取图速度。扫 `urlab.FreshCaptureRepeats`（2–8），看画质和耗时。
+- **10.3.2 / 10.3.3**：天花板灯板不发光；对照 Cycles 标定曝光。
+- **10.8**：Unreal 图 100 局评测，对比 Isaac 88/100。
 
 ## 卡点 / 待验证
 
-- 待验证：88 与 83 之差来自"间隙续走"还是"延迟少 2 帧"（4.7.11.6，要加一臂 lockstep `hold` + L = 2）。
-- 假设：相机延迟 C = 0；真实值取决于部署硬件。
-- 待验证：按需渲与连续渲是否同图（4.7.9.8），lockstep 不消除这个问题。
+- 待验证：天花板灯板为什么是暗的（glTF 的 emissive_strength 乘 683 已设，但 Lumen 截图里不亮）。
+- 待验证：纯机器人关卡里的白盘，在近裁剪改成 2 cm 后是否也消失（只在 warehouse 里验证过）。
+- 已确认的坑：URLab 导入的蓝图不写盘。每次开编辑器都要先 clear 再 setup，然后跑材质脚本（TODO 10.11）。
+- 已确认的坑：`dynamic.xml` 里多余的世界相机会每帧渲染，直到被截过一次。镜像脚本启动时会先把所有相机截一次。
 
-## 下一步（编号见 `TODO.md`，顺序等用户定）
+## 产物位置
 
-- **4.7.11.8**：提交并推送 lockstep 实现（等用户说）。
-- **4.7.11.7**：默认 `eval.client` 是否改成 `lockstep`。
-- **4.7.6.1.2.6**："后退"一列怎么改（训练数据不含后退段）。
+- UE 安装和工程：`/workspace/ue_57/`
+  - `UE_5.7.4/` 引擎
+  - `projects/URLabSmoke/` 宿主工程；插件在 `Plugins/UnrealRoboticsLab`，分支 `loco-fresh-capture`
+  - `urlab_bridge/.venv` 是 Python 客户端，mujoco 3.10.0
+- 导出的 MJCF：`outputs/unreal_warehouse_20260928/mjcf/`
+  - `dynamic.xml` 是机器人 + 纸箱 + 三个数据集相机 + `reverse_room`（1280×960）
+  - `scene.xml` 是 MuJoCo 参考用的完整场景
+- Blender 房间：`outputs/unreal_warehouse_20260928/room/`（`room.glb`、`room_scene.json`、`bake_report.json`）
+- 结果：`outputs/unreal_warehouse_20260928/`
+  - `v13/summary.png`、`g1_lookdev/g1_dex1_unreal_vs_mujoco.png`
+  - `vla_round/{keyframes.jpg, unreal_vs_mujoco_preview_part{1,2}of2.mp4}`
+  - `vla_round/third_person/previews/{unreal,isaac,mujoco}_third_person.mp4` 和 `three_way.mp4`
 
-## 关键路径与命令
+## 关键命令
 
 ```bash
-cd /workspace/code/locomanipulation && . scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src" TMPDIR=/workspace/tmp
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"
-find /workspace/tmp -maxdepth 2 -name stack.json          # 有输出 = 有栈在跑；停栈后等 ≥ 20 s 再起
-E=outputs/lockstep_eval_20260927                          # 对照工具：make_runs.py 建只评测的运行、queue.sh 串行跑、compare_arms.py 配对比较
-"$VENV_SIM_PY" $E/make_runs.py NAME client=lockstep gap=hold latency_frames=2 rounds=100 images=isaac   # 新建一臂
-bash $E/queue.sh 0 1 NAME                                 # GPU0 栈+策略、GPU1 镜像；INST=1 跑实例 1；建 $E/STOP 在当前臂后停
-python3 $E/compare_arms.py wc_hold100_20260927 NAME       # 成功率、失败构成、跳帧、同 seed McNemar
-"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out x.json [--inference-only]
-# 提交：make check → 按文件名 add（不要 -A）→ git commit → fetch 确认远端无新提交 → push
+. /workspace/ue_57/ue_env.sh      # HOME/TMPDIR 放到 /workspace；UE_ROOT、UE_PROJECT、BRIDGE_PY
+cd /workspace/code/locomanipulation-loco_unreal
+# 1. 编辑器：限 4 核（taskset 28-31）+ 看守；常驻的 TCP 命令服务 :18801；GPU 号作为参数
+UE_EXEC_CMDS="py /workspace/ue_57/ue_cmd_server.py" bash /workspace/ue_57/guarded_editor.sh 0 > /workspace/ue_57/logs/guard.log 2>&1 &
+until grep -q 'uecmd\] listening' /workspace/ue_57/logs/editor_run.log; do sleep 2; done
+# 2. 每次开编辑器：清掉旧导入 → 导入机器人 + 纸箱到 warehouse → 材质
+M=$PWD/outputs/unreal_warehouse_20260928/mjcf
+python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_clear_import_20260928.py
+"$BRIDGE_PY" scripts/experiments/unreal_smoke_20260928.py setup --xml $M/dynamic.xml --existing-level /Game/Levels/Warehouse
+python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_robot_materials_20260928.py
+# 3a. 闭环：栈 + 策略服务起来后，用 Unreal 镜像替代 Isaac 镜像（端口取自栈的 TF_PRIVILEGED_PORT / TF_ISAAC_MIRROR_PORT）
+MUJOCO_GL=egl "$BRIDGE_PY" scripts/experiments/unreal_mirror_20260928.py --sim-scene <run>/warehouse_textured/scene_locomani.xml \
+    --privileged-port 5601 --mirror-port 5578 --out <run>/eval/unreal
+# 3b. 离线：某局 trace 的第三视角（Unreal | MuJoCo）
+MUJOCO_GL=egl "$BRIDGE_PY" scripts/experiments/unreal_trace_video_20260928.py --xml $M/scene.xml \
+    --trace <run>/eval/state_trace/<label>_state_trace.npz --trace-joints $M/scene_joints.json --camera reverse_room --out <dir>
+# 重建 warehouse 关卡（改了 Blender 烘焙之后）
+WAREHOUSE_DIR=$PWD/outputs/unreal_warehouse_20260928/room UE_EXEC_CMDS="py /workspace/ue_57/ue_cmd_server.py, py $PWD/scripts/experiments/unreal_warehouse_level_20260928.py" \
+    bash /workspace/ue_57/guarded_editor.sh 0 > /workspace/ue_57/logs/guard.log 2>&1 &
+# 改插件后重编（先杀 UE）
+bash "$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh" URLabSmokeEditor Linux Development "-Project=$UE_PROJECT" -WaitMutex
+# 停 UE：用 kill -KILL（SIGTERM 会 segfault，不影响）；不要 pkill -f 带自身命令行的模式
+for p in $(pgrep -f '^/workspace/ue_57/UE_5.7.4/'); do kill -KILL $p; done
 ```
+
+一局 Unreal 闭环评测的完整流程（建运行目录、起栈、策略服务、镜像、跑局）照这次的做法：
+
+1. `make_runs.py unreal_eval_20260928 collect.instance=2 ... policy_port=5720 images=isaac`
+2. `start_stack.sh eval`
+3. `run_vla_server.sh`
+4. 起 Unreal 镜像
+5. `scripts/bimanual/run_vla_inference.sh`
