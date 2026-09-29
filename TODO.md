@@ -329,5 +329,7 @@
   - [x] 8.3 配对 10 局 `move_target` +0.60 m（2026-09-29，pick_place 台账 §13，报告 `outputs/analysis/injection_20260929/report.md`）：plan **0/10**（全 `[grasp]`）vs agent **0/10**，p = 1.0；但 agent **5/10 重新抓起**（决策链 approach! → navigate_to → turn_to → approach → grasp_single，release 清旧 held 也对），重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐，3/10 贴桌沿 `turn_to` 把罐头扫下桌，2/10 用完 16 次调用。Q11 的"显著高于脚本"没出现，卡在 primitive 不在决策
     - [ ] 8.3.1 恢复路径缺的 primitive（待用户定优先级）：持物横移不转向（`carry_to` 加 strafe，或 place 前倒退-转-前进）；`navigate_to` 目标点离桌沿留 ≥ 0.3 m；`turn_to` 贴桌沿先收臂；`nudge` 不清 `stance`（或 grasp 允许 nudge 后的小位移）
     - [ ] 8.3.2 `approach` 只修深度不修横向：0.6 m 横向偏移下 2.5 s 报 `[stand] arrival left the object out of reach`；要么 approach 先横移到 `stand_plan` 站位，要么文档写明它的前置是"大致正对目标"
-  - [ ] 8.4 `drop_held` 同样两臂 10 局（2026-09-29 队列中：`inj_drop_plan10_20260929` → `inj_drop_agent10_20260929`）
+  - [x] 8.4 `drop_held` 两臂 10 局（2026-09-29，台账 §13 末，报告 `outputs/analysis/injection_drop_20260929/`）：注入只在抓起后触发，基线抓取 ~50% → 各臂 5 个注入、3 个配对；plan 0/10（注入后 5/5 `[approach] load lost while turning`），agent 0/10、注入后重抓 2/5，第一反应 5/5 直接 `place`（信 `held` 不信场景），重抓后又在持罐搬运里滑 3.3 cm
+    - [ ] 8.4.1 配对数按"触发数"跑：`--rounds` 改成跑到 N 个注入触发为止（或 `--until-injected N`），否则抓取率把配对数砍半
+    - [ ] 8.4.2 待用户定：系统提示要不要加"session 快照可能过期，以场景特权状态为准"——加了是给提示，不加是测对账能力
   - [ ] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）

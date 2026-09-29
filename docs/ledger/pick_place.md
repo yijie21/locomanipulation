@@ -246,3 +246,16 @@ plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–
   (2) `navigate_to` 把机器人停在罐头正旁、离桌沿 0.1–0.15 m，接着 `turn_to` 原地转向时手臂扫过桌面把罐头扫到地上（3/10）；(3) 每次 `nudge` 都清 `stance`，agent 再抓就被拒，来回消耗 2–4 次调用，两局用完预算。
 
 也就是说 Q11 的"agent OK 率显著高于脚本"在这个注入上**没有出现**，但不是 agent 选错，而是恢复路径需要的两个动作（持物横移不转向、贴桌沿转向不扫桌面）目前没有 primitive 能做。要让配对比较有区分度，先补 primitive：持物侧移（`carry_to` 加 `strafe`，不转向）或 place 前的转向改为倒退-转-前进；`navigate_to` 目标点离桌沿留 ≥ 0.3 m；`turn_to` 在桌沿附近先收臂。
+
+**配对 10 局 `drop_held`（seed 300–309，抓起后罐头回到 `init_pos`，报告 `outputs/analysis/injection_drop_20260929/report.md`）**：
+
+| 臂 | 触发注入的局 | 任务 OK | 注入后重新抓起 | 注入后第一步 |
+|---|---|---|---|---|
+| plan `inj_drop_plan10_20260929` | 5/10（其余 5 局抓取本身失败，注入没触发） | 0/10 | — | 持罐 `approach(basket)` 5/5 报 `[approach] load lost while turning` |
+| agent `inj_drop_agent10_20260929` | 5/10 | 0/10 | 2/5（seed 305、306） | **5/5 直接 `place`**——相信 session 的 `held` 而不是场景里罐头已在桌面（z 0.69、离手 0.23–0.32 m）；`place` 的持物守卫报 `[carry] object slipped 3.x cm` 后才重新走近 |
+
+两臂都触发的只有 3 对（300、301、305），p = 1.0。重抓的两局之后 `place` 又报 `[carry] object slipped 3.3–3.4 cm`（与 move_target 一样卡在持罐转向 / 搬运）。
+
+- 注入只在抓取成功后触发，而基线抓取 ~50%，所以 10 局只得 5 个注入、3 个配对；要 10 个配对得按"触发数"而不是局数跑（TODO 8.4.1）。
+- agent 第一反应 5/5 是 `place`：请求里 `session.held` 说拿着，`scene.objects.soup_can` 说在桌上，它信了前者。系统提示没说"session 可能过期，以场景为准"；要不要加这句是 prompt 设计问题（agentic-plan Q4 的特权状态就是给它对账用的），加了就是给提示，不加就是在测它的对账能力——待用户定（TODO 8.4.2）。
+- `drop_held` 的 `moved_m` 是 xy，看 `moved_z_m`（−0.23…−0.32 m）才是掉落量。
