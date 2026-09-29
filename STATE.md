@@ -6,9 +6,8 @@
 
 ## 磁盘（先处理）
 
-- 已确认：`/workspace` 只剩 19 GB（99%）。
-- 计划删除（TODO 9.9，上一会话写明）：`outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}/model/`（各约 24 GB）和
-  `outputs/docs_smoke_20260928/try2/`（24 GB），**2026-09-29 11:45 之后**；用户同意可提前。运行目录其余文件保留。
+- 已确认：2026-09-29 06:40 UTC 用户说提前删，已删四个冒烟 `model/`（共 96 GB，TODO 9.9，清单和日志在 `outputs/cleanup_20260929/`），
+  `/workspace` 空闲 170 GB。B 类（扫参 observations 等约 70 GB）待用户定；根分区 `/` 只剩约 11 MB，没清。
 - 本会话产物约 1 GB + exporter session 1.2 GB（TODO 11.9 列了路径）：最早 2026-09-30 02:00 UTC 可删，待用户同意；
   `outputs/runs/warehouse_smoke_lanes_20260928` 的 manifest 与 `collect/` 是并行通道的证据，保留。
 
@@ -39,7 +38,6 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- **9.9**：2026-09-29 11:45 之后删冒烟的 `model/` 和 `try2/`（磁盘只剩 19 GB）。
 - **10.4**：问用户旧 `outputs/runs/warehouse_smoke` 怎么处理。
 - **10.5 / 11.7**：用户同意后按默认（四边 + 自动通道）跑 `warehouse_200` 采集，顺带核对多通道产出率。
 
@@ -55,6 +53,5 @@ bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml --n
 bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.yaml --name <run>
 # 驱动被强杀后关掉所有通道的栈
 for i in $(python3 -c "import json,sys;print(' '.join(str(l['instance']) for l in json.load(open(sys.argv[1]))['lanes']))" outputs/runs/<run>/collect/lanes.json); do bash scripts/stop_stack.sh --instance $i; done
-du -sh outputs/runs/*_smoke/model outputs/docs_smoke_20260928/try2             # 9.9 要删的东西
 # 提交：make check → 按文件名 add（不要 -A）→ git commit → fetch；远端有新提交就 merge（不 rebase，TODO 里记着提交哈希）→ push
 ```
