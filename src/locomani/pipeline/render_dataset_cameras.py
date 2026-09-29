@@ -123,6 +123,46 @@ def require_rendered(cfg: dict, sessions: list[str]) -> None:
         )
 
 
+def unfilmed(traces, sessions: list[str], renderer: str) -> list[tuple[str, int, str | None]]:
+    """(session, episode, label) of every kept episode whose third-person video `renderer` has not filmed.
+
+    Kept is what convert reads (`pending`'s rule: failed rounds never); the video is `<label>.mp4` in
+    `third_person.video_dir`, one per round, so an episode whose manifest row names no label cannot have one.
+    """
+    from locomani.pipeline.third_person import video_dir
+
+    films = video_dir(traces.run, renderer)
+    out = []
+    for s in sessions:
+        skip = discarded(Path(s))
+        for ep in recorded_episodes(Path(s)):
+            if ep in skip:
+                continue
+            label = traces.label(s, ep)
+            if not label or not (films / f"{label}.mp4").exists():
+                out.append((s, ep, label))
+    return out
+
+
+def require_filmed(run_dir: Path, cfg: dict, sessions: list[str]) -> None:
+    """Convert's guard for the third-person videos: an Isaac or Unreal run ships its renderer's, never MuJoCo's.
+
+    MuJoCo's stay optional (a live run records them, an offline one renders them with
+    scripts/render_trace_videos.py); the Isaac and Unreal fills film every kept episode they fill."""
+    if cfg.get("backend", {}).get("render") != "offline" or expected_renderer(cfg) == "mujoco":
+        return
+    from locomani.pipeline.world_lift import RunTraces
+
+    want = expected_renderer(cfg)
+    missing = unfilmed(RunTraces(run_dir), sessions, want)
+    if missing:
+        raise SystemExit(
+            f"images.source {want}: {len(missing)} kept episode(s) have no {want} third-person video "
+            f"(first {missing[0][2] or 'an unlabelled round'}); run scripts/{RENDER_SCRIPT[want]} <run> again, "
+            f"it films the filled episodes that lack one"
+        )
+
+
 def episode_length(session: Path, ep: int) -> int:
     return next(
         json.loads(line)["length"]

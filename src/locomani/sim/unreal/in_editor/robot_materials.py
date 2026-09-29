@@ -22,6 +22,9 @@ Metallic, Roughness) actually wired, re-parents every instance of one URLab impo
         robot light grey            metallic 0.85  roughness 0.35  base colour 0.62
         robot dark                  metallic 0.35  roughness 0.45  base colour sRGB -> linear
     all: carton (MI_nor_cal_*) metallic 0 roughness 0.85; anything else metallic 0 roughness 0.6, sRGB -> linear.
+    The third-person video's ghost grippers (export_mjcf.GHOST_MATERIAL) get their own translucent master,
+    /Game/Loco/M_LocoGhost: the ghost colour (GHOST_BASE, linear) lit, with 0.4 of it emissive as the Isaac ghost,
+    at GHOST_OPACITY; build_level passes the three from locomani.sim.isaac.ghost.
 
 MJCF rgba is a display (sRGB) value -- MuJoCo's renderer applies no gamma -- while Unreal's BaseColor parameter is
 linear, so URLab's straight copy shows 0.2 as 0.48: the G1's black head and joints come out mid grey and the
@@ -66,6 +69,10 @@ PRESET = globals().get("PRESET", "unitree")
 SILVER, DARK = PRESETS[PRESET]["silver"], PRESETS[PRESET]["dark"]
 CARDBOARD = {"metallic": 0.0, "roughness": 0.85}
 OTHER = {"metallic": 0.0, "roughness": 0.6}
+GHOST_MATERIAL = globals().get("GHOST_MATERIAL", "loco_ghost")
+GHOST_BASE = globals().get("GHOST_BASE", [1.0, 0.0144, 0.5225])
+GHOST_OPACITY = globals().get("GHOST_OPACITY", 0.6)
+GHOST_MASTER = "/Game/Loco/M_LocoGhost"
 
 eal = unreal.EditorAssetLibrary
 mel = unreal.MaterialEditingLibrary
@@ -106,13 +113,52 @@ def build_master():
     return m
 
 
+def build_ghost_master():
+    existing = unreal.load_asset(GHOST_MASTER)
+    if existing is not None:
+        return existing
+    folder, name = GHOST_MASTER.rsplit("/", 1)
+    m = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+        name, folder, unreal.Material, unreal.MaterialFactoryNew()
+    )
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+    m.set_editor_property("translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
+    color = mel.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -700, -200)
+    color.set_editor_property("parameter_name", "BaseColor")
+    mel.connect_material_property(color, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    glow = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -700, 50)
+    glow.set_editor_property("r", 0.4)
+    mul = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -400, 0)
+    mel.connect_material_expressions(color, "", mul, "A")
+    mel.connect_material_expressions(glow, "", mul, "B")
+    mel.connect_material_property(mul, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    opacity = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -400, 250)
+    opacity.set_editor_property("parameter_name", "Opacity")
+    mel.connect_material_property(opacity, "", unreal.MaterialProperty.MP_OPACITY)
+    rough = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -400, 400)
+    rough.set_editor_property("r", 0.6)
+    mel.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    mel.recompile_material(m)
+    eal.save_loaded_asset(m)
+    return m
+
+
 master = build_master()
+ghost_master = build_ghost_master()
 counts = collections.Counter()
 for path in eal.list_assets(f"/Game/MuJoCoImports/{URLAB_ASSET}_ue_Assets", recursive=False, include_folder=False):
     mi = eal.load_asset(path)
     if not isinstance(mi, unreal.MaterialInstanceConstant):
         continue
     name = mi.get_name()
+    if GHOST_MATERIAL in name:
+        mi.set_editor_property("parent", ghost_master)
+        mel.set_material_instance_vector_parameter_value(mi, "BaseColor", unreal.LinearColor(*GHOST_BASE, 1.0))
+        mel.set_material_instance_scalar_parameter_value(mi, "Opacity", GHOST_OPACITY)
+        mel.update_material_instance(mi)
+        eal.save_loaded_asset(mi)
+        counts["ghost"] += 1
+        continue
     # URLab reuses an existing instance on re-import, so read the imported colour once and keep it as metadata:
     # a second run must not convert an already converted colour (0.2 -> 0.033 -> 0.0026 happened)
     src = eal.get_metadata_tag(mi, SRC_TAG)

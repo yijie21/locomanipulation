@@ -28,25 +28,9 @@ sys.path.insert(
 
 from locomani.sim.isaac.replay import MujocoReplay  # noqa: E402
 from locomani.sim.scene_edges import round_edge  # noqa: E402
+from locomani.sim.third_person_shot import gl_camera_pose  # noqa: E402
 
 TRACK = dict(distance=2.5, azimuth=135.0, elevation=-20.0)
-
-
-def gl_camera_pose(scene):
-    """World pose of the scene's (monocular average of the two) GL cameras."""
-    from scipy.spatial.transform import Rotation as R
-
-    cams = [scene.camera[i] for i in range(2)]
-    pos = np.mean([np.asarray(c.pos) for c in cams], axis=0)
-    fwd = np.asarray(cams[0].forward, dtype=float)
-    fwd /= np.linalg.norm(fwd)
-    up = np.asarray(cams[0].up, dtype=float)
-    up -= fwd * (up @ fwd)
-    up /= np.linalg.norm(up)
-    right = np.cross(fwd, up)
-    m = np.stack([right, up, -fwd], axis=1)  # columns = camera x, y, z (USD: -Z looks)
-    qx, qy, qz, qw = R.from_matrix(m).as_quat()
-    return pos, np.array([qw, qx, qy, qz])
 
 
 def _make_insets(model, width: int, height: int):

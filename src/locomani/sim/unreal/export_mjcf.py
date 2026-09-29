@@ -1,5 +1,5 @@
 """A scene's moving part as a self-contained MJCF folder for URLab's importer: the robot, the target object and
-the three dataset cameras, nothing the Unreal level brings itself.
+the three dataset cameras, nothing the Unreal level brings itself -- plus what the third-person video needs.
 
 URLab builds its Blueprint from an MJCF on disk and resolves meshes relative to the XML, so every mesh and texture
 the scene references is copied into <out>/assets/ and the paths rewritten. Dropped: the world geoms (the room and
@@ -7,6 +7,13 @@ the platform are the level's baked meshes), the MJCF lights (the level has the B
 collision-only geoms, every world camera (a camera URLab imports renders each frame until it is first captured;
 the four-edge scenes carry four) and the com_marker debug site (URLab draws it as a large white sphere). The
 dataset cameras get their `CAMERA_CONFIGS` resolution explicitly, which URLab's render targets take.
+
+The third-person video (`view_render.film`) is a moving world camera plus ghost grippers, and URLab moves only
+what the import's qpos holds, so three free-joint bodies are added, parked 5 m under the floor at qpos0:
+`RIG` carries the camera `FILM_CAMERA` at the scene's shot fovy (`third_person_shot.scene_fovy`) and the video's
+size, and each `GHOSTS` body carries its gripper's visual meshes (`ghost.hand_parts`, the Isaac ghost's own
+offsets) on copies of the meshes under the material `GHOST_MATERIAL`, so the level can make them translucent
+magenta without touching the robot's (`in_editor/robot_materials.py`). The views map these joints themselves.
 
 The XML is named after the level (`<out>/<level>.xml`), since URLab names the Blueprint after the file:
 /Game/MuJoCoImports/<level>. The joints are written to <level>_joints.json for a reader who maps by name.
@@ -20,9 +27,17 @@ from pathlib import Path
 
 import mujoco
 
+from locomani.pipeline import sim_video
+from locomani.sim import third_person_shot
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
+from locomani.sim.isaac import ghost
 
 ROBOT_ROOT = "pelvis"
+RIG = "loco_third_person_rig"  # body and free joint
+FILM_CAMERA = "loco_third_person"  # not the body's name: URLab renames a camera that shares one ("..._rig2")
+GHOSTS = {"left": "loco_ghost_left", "right": "loco_ghost_right"}  # body and free joint, per ghost.SIDES
+GHOST_MATERIAL = "loco_ghost"
+PARK = (0.0, 0.0, -5.0)
 
 
 def _subtree(spec, root: str) -> set[str]:
@@ -76,6 +91,34 @@ def strip_to_dynamic(spec, target_body: str) -> None:
     _drop_unused_assets(spec)
 
 
+def _parked_body(spec, name: str):
+    body = spec.worldbody.add_body(name=name, pos=list(PARK))
+    body.add_freejoint(name=name)
+    body.explicitinertial = True
+    body.mass, body.inertia = 1e-3, [1e-6, 1e-6, 1e-6]
+    return body
+
+
+def add_film_bodies(spec, scene_model, fovy: float) -> None:
+    """The third-person camera rig and the two ghost grippers, as free bodies parked under the floor."""
+    cam = _parked_body(spec, RIG).add_camera(name=FILM_CAMERA, fovy=fovy)
+    cam.resolution = [sim_video.WIDTH, sim_video.HEIGHT]
+    rgba = [*ghost.GHOST_RGB, ghost.GHOST_ALPHA]
+    spec.add_material(name=GHOST_MATERIAL, rgba=rgba)
+    for side in ghost.SIDES:
+        parts = ghost.hand_parts(scene_model, side)
+        if not parts:
+            raise SystemExit(f"the scene has no {side} gripper meshes to make a ghost of")
+        body = _parked_body(spec, GHOSTS[side])
+        for k, (mesh, rel_pos, rel_quat) in enumerate(parts):
+            src = spec.mesh(mesh)
+            copy = spec.add_mesh(name=f"{GHOSTS[side]}_{mesh}", file=src.file)
+            copy.scale, copy.refpos, copy.refquat = src.scale, src.refpos, src.refquat
+            g = body.add_geom(name=f"{GHOSTS[side]}_{k}", type=mujoco.mjtGeom.mjGEOM_MESH, meshname=copy.name)
+            g.pos, g.quat, g.material, g.rgba = rel_pos.tolist(), rel_quat.tolist(), GHOST_MATERIAL, rgba
+            g.contype = g.conaffinity = 0
+
+
 def localise_assets(spec, src_dir: Path, asset_dir: Path) -> None:
     """Copy each referenced mesh/texture file into asset_dir (unique names) and point the spec at it."""
     asset_dir.mkdir(parents=True, exist_ok=True)
@@ -97,8 +140,11 @@ def export(scene_dir: Path, out: Path, level: str) -> dict:
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
     target = meta["objects"][meta["target_object"]]["body"]
     scene_xml = scene_dir / "scene_locomani.xml"
+    scene_model = mujoco.MjModel.from_xml_path(str(scene_xml))
+    fovy = third_person_shot.scene_fovy(scene_model, meta)
     spec = mujoco.MjSpec.from_file(str(scene_xml))
     strip_to_dynamic(spec, target)
+    add_film_bodies(spec, scene_model, fovy)
     if out.exists():
         shutil.rmtree(out)
     localise_assets(spec, scene_xml.parent, out / "assets")
@@ -113,4 +159,5 @@ def export(scene_dir: Path, out: Path, level: str) -> dict:
     ]
     (out / f"{level}_joints.json").write_text(json.dumps({"nq": model.nq, "joints": joints}, indent=1))
     cams = [model.camera(i).name for i in range(model.ncam)]
-    return {"xml": str(xml_path), "nq": model.nq, "nmesh": model.nmesh, "cameras": cams, "target": target}
+    film = {"camera": FILM_CAMERA, "fovy": fovy, "size": [sim_video.WIDTH, sim_video.HEIGHT]}
+    return {"xml": str(xml_path), "nq": model.nq, "nmesh": model.nmesh, "cameras": cams, "target": target, "film": film}

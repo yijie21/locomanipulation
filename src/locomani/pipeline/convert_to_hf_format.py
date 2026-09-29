@@ -510,6 +510,12 @@ def main():
         "its --task-prompt is fixed for a whole session.",
     )
     ap.add_argument(
+        "--third-person-dir",
+        default=None,
+        help="a renderer's third-person videos (<run>/videos_<renderer>/, one <label>.mp4 per kept round), "
+        "joined by the manifest label; without it they come from the videos/ beside each --manifest",
+    )
+    ap.add_argument(
         "--holdout",
         type=int,
         default=0,
@@ -740,7 +746,11 @@ def main():
         if args.manifest and it["si"] in mans:
             joined = mans[it["si"]]
             clip = third_person_source(
-                args.manifest[it["si"]], joined[it["src_ep"]], list(joined).index(it["src_ep"]), len(joined)
+                args.manifest[it["si"]],
+                joined[it["src_ep"]],
+                list(joined).index(it["src_ep"]),
+                len(joined),
+                videos_dir=args.third_person_dir,
             )
             if clip is not None:
                 link_third_person(clip, sink.out / "third_person" / f"episode_{new_ep:06d}.mp4")

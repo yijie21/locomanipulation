@@ -13,15 +13,22 @@ requests are 0.4 s apart and the dataset's rows would otherwise depend on the ro
 The editor must hold the scene's level (`build_level`) and be in its render defaults (`editor.require_render_defaults`);
 the view loads the level, sets the capture count and starts PIE itself. `close()` stops PIE before it lets go of
 the bridge (editor.stop_pie says why).
+
+The import also carries the third-person video's camera rig and ghost grippers (`export_mjcf`), free bodies parked
+under the floor; `film` places them for its own capture (`view_render.film`).
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import mujoco
 import numpy as np
 
+from locomani import paths
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
-from locomani.sim.unreal import editor
+from locomani.sim.unreal import editor, export_mjcf
 
 WIDTH = {0: 7, 1: 4, 2: 1, 3: 1}  # mjtJoint: free, ball, slide, hinge
 
@@ -36,9 +43,24 @@ def sim_joint(name: str, sim_names) -> str | None:
     return max(hits, key=len) if hits else None
 
 
+FILM_JOINTS = (export_mjcf.RIG, *export_mjcf.GHOSTS.values())
+
+
+def film_joints(urlab_model) -> dict[str, int]:
+    """`{rig or ghost joint: URLab qpos adr}` of the import's third-person bodies (export_mjcf); {} in a level
+    built before they existed."""
+    out = {}
+    for j in range(urlab_model.njnt):
+        key = sim_joint(urlab_model.joint(j).name, FILM_JOINTS)
+        if key is not None:
+            out[key] = int(urlab_model.jnt_qposadr[j])
+    return out
+
+
 def qpos_map(sim_model, urlab_model) -> list[tuple[int, int, int]]:
     """(sim adr, URLab adr, width) per URLab joint. URLab prefixes names with its actor, so match by suffix;
-    a URLab joint the sim does not have means the level was built from another scene."""
+    a URLab joint the sim does not have means the level was built from another scene. The third-person bodies
+    (`film_joints`) are the view's own and stay out of it."""
     sim = {
         sim_model.joint(j).name: (int(sim_model.jnt_qposadr[j]), WIDTH[int(sim_model.jnt_type[j])])
         for j in range(sim_model.njnt)
@@ -46,6 +68,8 @@ def qpos_map(sim_model, urlab_model) -> list[tuple[int, int, int]]:
     out = []
     for j in range(urlab_model.njnt):
         name = urlab_model.joint(j).name
+        if sim_joint(name, FILM_JOINTS) is not None:
+            continue
         key = sim_joint(name, sim)
         if key is None:
             raise SystemExit(f"URLab joint {name!r} is not in the sim scene: the level was built from another scene")
@@ -60,6 +84,7 @@ class UnrealView:
     def __init__(self, scene_xml: str, level_path: str, repeats: int, streams=tuple(CAMERA_CONFIGS), log=print):
         self.streams = tuple(streams)
         self.log = log
+        self.level_path = level_path
         editor.load_level(level_path)
         editor.checked(
             editor.uecmd(f"unreal.SystemLibrary.execute_console_command(None, 'urlab.FreshCaptureRepeats {repeats}')")
@@ -88,6 +113,7 @@ class UnrealView:
         sim = mujoco.MjModel.from_xml_path(str(scene_xml))
         self.nq = sim.nq
         self.map = qpos_map(sim, client.model)
+        self.film_adr = film_joints(client.model)  # left at qpos0, parked under the floor, except while filming
         self.data = client.data
         log(f"unreal view: level {level_path}, {repeats} captures a request, cameras {self.cameras}")
 
@@ -145,6 +171,51 @@ class UnrealView:
             if img.shape != want:
                 raise SystemExit(f"stream {k}: URLab renders {img.shape}, the dataset wants {want}; rebuild the level")
         return 2
+
+    def film_setup(self, width: int, height: int, fovy: float) -> None:
+        """Check the level carries the third-person rig and ghosts, at this shot. The level's `source.json` records
+        the fovy and size its camera was imported with (URLab's model carries no cameras to read them from)."""
+        rebuild = "rebuild it: bash scripts/build_scene.sh <scene> --unreal"
+        found = [n for n in self.all_cameras if n.split("/")[-1].endswith(export_mjcf.FILM_CAMERA)]
+        missing = [j for j in FILM_JOINTS if j not in self.film_adr]
+        if len(found) != 1 or missing:
+            raise SystemExit(
+                f"level {self.level_path} has no third-person camera and ghost grippers (cameras {self.all_cameras}, "
+                f"missing joints {missing}): it was built before them; {rebuild}"
+            )
+        level = self.level_path.rsplit("/", 1)[-1]
+        film = json.loads((Path(paths.UNREAL_ASSETS) / level / "source.json").read_text()).get("film") or {}
+        if film.get("size") != [width, height] or abs(film.get("fovy", 0.0) - fovy) > 1e-3:
+            raise SystemExit(
+                f"level {self.level_path} films {film.get('size')} at fovy {film.get('fovy')}, the scene's shot is "
+                f"{[width, height]} at {fovy:g}; {rebuild}"
+            )
+        self.film_camera = found[0]
+        self.film_size = (height, width, 3)
+
+    def film_warm_up(self, qpos, camera, ghosts) -> int:
+        """Capture the first filmed state once; returns 1 (every capture is fresh, nothing to settle)."""
+        self.film(qpos, camera, ghosts)
+        return 1
+
+    def film(self, qpos, camera, ghosts) -> np.ndarray:
+        """The third-person picture of this state: `camera` (pos, wxyz quat, -Z forward), `ghosts` (pos [2,3],
+        quat [2,4]) as `ghost_trace.ghost_poses` gives them, left then right. The rig and the ghosts are placed
+        for this capture only: every other request carries them parked, so no dataset picture shows a ghost."""
+        for name, (pos, quat) in zip(FILM_JOINTS, [camera, *zip(*ghosts)]):
+            adr = self.film_adr[name]
+            self.data.qpos[adr : adr + 3], self.data.qpos[adr + 3 : adr + 7] = pos, quat
+        try:
+            self.push(qpos)
+            img = self.grab({"third_person": self.film_camera})["third_person"]
+        finally:
+            for adr in self.film_adr.values():
+                self.data.qpos[adr : adr + 7] = self.client.model.qpos0[adr : adr + 7]
+        if img.shape != self.film_size:
+            raise SystemExit(
+                f"the level's third-person camera renders {img.shape}, the video is {self.film_size}; rebuild the level"
+            )
+        return img
 
     def close(self) -> None:
         """Stop PIE, then let go of the bridge (close() alone would switch a running PIE back to live)."""

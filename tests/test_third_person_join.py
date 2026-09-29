@@ -68,3 +68,34 @@ def test_the_clip_is_hardlinked_so_a_dataset_costs_no_extra_disk(tmp_path):
     assert os.stat(dst).st_ino == os.stat(src).st_ino
     link_third_person(src, dst)  # idempotent: conversion may be re-run over an existing dataset
     assert dst.read_bytes() == src.read_bytes()
+
+
+def test_a_renderers_videos_join_by_label_and_never_fall_back_to_mujocos(tmp_path):
+    from locomani.pipeline.third_person import video_dir
+
+    assert video_dir(tmp_path, "mujoco") == tmp_path / "videos"
+    films = video_dir(tmp_path, "isaac")
+    assert films == tmp_path / "videos_isaac"
+    for directory in (tmp_path / "videos", films):
+        directory.mkdir()
+    (tmp_path / "videos" / "visual_crate_s7000_00.mp4").write_bytes(b"mujoco")
+    (tmp_path / "videos" / "visual_crate_s7000_01.mp4").write_bytes(b"mujoco")
+    (films / "visual_crate_s7000_00.mp4").write_bytes(b"isaac")
+    manifest = tmp_path / "manifest_00.jsonl"
+    manifest.write_text("")
+    kept = {"produced": True, "label": "visual_crate_s7000_00"}
+    assert third_person_source(manifest, kept, 0, 2, videos_dir=films).read_bytes() == b"isaac"
+    unfilmed = {"produced": True, "label": "visual_crate_s7000_01"}
+    assert third_person_source(manifest, unfilmed, 1, 2, videos_dir=films) is None
+    assert third_person_source(manifest, {"produced": True}, 0, 1, videos_dir=films) is None
+
+
+def test_convert_is_handed_the_directory_of_the_renderer_that_drew_the_cameras(tmp_path):
+    from locomani.pipeline.run_convert import convert_argv
+
+    entry = {"sessions": ["s"], "manifests": ["m"]}
+    for source, want in (("mujoco", None), ("isaac", "videos_isaac"), ("unreal", "videos_unreal")):
+        cfg = {"backend": {"render": "offline"}, "images": {"source": source}, "train": {"holdout": 1}}
+        argv = [str(a) for a in convert_argv(entry, cfg, tmp_path / "train_dataset", tmp_path / "val_dataset")]
+        got = argv[argv.index("--third-person-dir") + 1] if "--third-person-dir" in argv else None
+        assert got == (None if want is None else str(tmp_path / want))

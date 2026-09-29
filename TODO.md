@@ -442,7 +442,9 @@
   - [x] 12.9.11 （2026-09-29 已改：默认 `$UNREAL_ROOT/levels`，paths.sh / paths.py 一致，有测试 `tests/test_unreal_paths.py`；本机 5 个目录挪到 `/workspace/ue_57/levels/`，用主 checkout 的场景核对 5 个关卡都通过；setup.md 排错那条已改）`$UNREAL_ASSETS` 默认在检出目录下（`assets/unreal/`），关卡却在全机共用的宿主工程里：关卡是 loco_unreal worktree 建的，主 checkout 的 `assets/unreal/` 为空，从主 checkout 起 `images.source: unreal` 会报 `source.json` 缺失（5 个场景的哈希与主 checkout 的场景一致）。建议默认改到 `$UNREAL_ROOT` 下；已转给 loco_unreal 会话
   - [x] 12.9.12 warehouse runbook 里 Isaac 和 Unreal 平行（用户 2026-09-29：Unreal 不该是排在第 10 节的附加功能，读者一开始就选渲染器）：开头加"先选渲染器"对照表；第 1、3 步和第 6 步终端 2 两种命令并排；原第 10 节删掉。新增 `warehouse_smoke_unreal.yaml`、`warehouse_200_unreal.yaml`，与默认只差 `images.source` 和 `name`（`tests/test_image_source.py`）；页面上限 170 → 195；两份文件加载、Unreal 前置检查、找到关卡都通过
   - [ ] 12.9.13 按 setup 第 8 步和 warehouse runbook 的 Unreal 列，从零实跑一次冒烟（无上下文的读者照文档做）；目前只有 loco_unreal 会话在本机从 `setup_unreal.sh` 起验证过，引擎下载、Unreal 数据的完整采集到评测没有照文档跑过
-  - [ ] 12.9.14 待用户定：Unreal 运行的第三视角观看录像仍由 Isaac 渲（`render_isaac_videos.sh`）；Unreal 的 trace 视频还是实验脚本 `scripts/experiments/unreal_trace_video_20260928.py`，要不要接成正式脚本
+  - [~] 12.9.14 待用户定：Unreal 运行的第三视角观看录像仍由 Isaac 渲（`render_isaac_videos.sh`）；Unreal 的 trace 视频还是实验脚本 `scripts/experiments/unreal_trace_video_20260928.py`，要不要接成正式脚本
+    - [x] 12.9.14.1 （2026-09-29 用户：采集导出的第三视角录像要和数据集相机同一个渲染器）补渲脚本接着用同一个 Isaac / Unreal 画每个成功局的第三视角录像到 `videos_<渲染器>/`，机位 = MuJoCo 录像的 `round_camera`，带 ghost，小窗取补渲好的数据集帧；convert 只从那里取、缺了拒绝。实跑：Isaac 8 局（warehouse_5ep_20260929）、Unreal 2 局（warehouse_film_unreal_20260929），均已 convert；未提交
+    - [ ] 12.9.14.2 评测的第三视角录像（第 6 步 `render_isaac_videos.sh`）仍两种都由 Isaac 渲；Unreal 关卡只重建了 `warehouse_box_45x32x33`，另 4 个关卡补渲第三视角时会报 rebuild
   - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
 - [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存

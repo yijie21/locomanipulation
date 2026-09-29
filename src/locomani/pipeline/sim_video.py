@@ -135,6 +135,20 @@ def _draw_label(scn, pos, text: str, rgba) -> None:
     scn.ngeom += 1
 
 
+def paste_insets(frame: np.ndarray, insets: dict) -> None:
+    """Lay the dataset cameras over a WIDTH x HEIGHT frame, in place: `{camera name: image}` at each INSETS entry's
+    size, in the frame's own channel order. A camera missing from `insets` is left out, as a scene without it is."""
+    for cam_name, label, w, h, x, y in INSETS:
+        if cam_name not in insets:
+            continue
+        frame[y : y + h, x : x + w] = insets[cam_name]
+        # Hairline so it reads as a separate view, and a label because
+        # three insets are no longer self-evident.
+        cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h), (255, 255, 255), 1)
+        for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+            cv2.putText(frame, label, (x + 6, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick, cv2.LINE_AA)
+
+
 def recording_camera(model, track_body: str = "pelvis", camera_name: str | None = None):
     """Use an explicit scene camera, or the historical pelvis tracking view."""
     cam = mujoco.MjvCamera()
@@ -182,7 +196,7 @@ class VideoRecorder:
         # skipped: an older scene, or a run with WRIST_CAMS=0, still records
         # a video with the ego inset alone.
         self.insets = []
-        for cam_name, label, w, h, x, y in INSETS:
+        for cam_name, _label, w, h, _x, _y in INSETS:
             cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam_name)
             if cid < 0:
                 continue
@@ -190,7 +204,7 @@ class VideoRecorder:
             mujoco.mjv_defaultCamera(cam)
             cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
             cam.fixedcamid = cid
-            self.insets.append((mujoco.Renderer(model, height=h, width=w), cam, label, w, h, x, y))
+            self.insets.append((cam_name, mujoco.Renderer(model, height=h, width=w), cam))
 
         self.pose_names, self.pose_bids, self.pose_boxes = [], [], []
         for n in POSE_BODIES if sim_vis.enabled("bbox") or sim_vis.enabled("readout") else ():
@@ -227,17 +241,14 @@ class VideoRecorder:
             _draw_boxes(scn, data, self.pose_boxes)
         # MuJoCo renders RGB; OpenCV writes BGR.
         frame = self.renderer.render()[:, :, ::-1].copy()
-        for rend, cam, label, w, h, x, y in self.insets:
+        insets = {}
+        for cam_name, rend, cam in self.insets:
             # Default options (no group 4), no bbox overlay: the insets mirror
             # what the VLA will actually see, and debug art stays in the
             # tracking view behind them.
             rend.update_scene(data, camera=cam)
-            frame[y : y + h, x : x + w] = rend.render()[:, :, ::-1]
-            # Hairline so it reads as a separate view, and a label because
-            # three insets are no longer self-evident.
-            cv2.rectangle(frame, (x - 1, y - 1), (x + w, y + h), (255, 255, 255), 1)
-            for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
-                cv2.putText(frame, label, (x + 6, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thick, cv2.LINE_AA)
+            insets[cam_name] = rend.render()[:, :, ::-1]
+        paste_insets(frame, insets)
         # Pelvis-frame position readout — the numbers the dataset records.
         if self.pelvis_bid >= 0 and sim_vis.enabled("readout"):
             rp = data.xmat[self.pelvis_bid].reshape(3, 3)

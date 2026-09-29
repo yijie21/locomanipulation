@@ -21,8 +21,8 @@ import mujoco
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from locomani.pipeline.sim_video import VideoRecorder, recording_camera  # noqa: E402
-from locomani.sim.scene_edges import round_edge  # noqa: E402
+from locomani.pipeline.sim_video import VideoRecorder  # noqa: E402
+from locomani.sim.third_person_shot import round_camera  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -60,10 +60,8 @@ def main(argv=None) -> int:
             raise SystemExit(f"{trace.name}: qpos width {qpos.shape[1]} != scene nq {model.nq}")
         label = trace.name.removesuffix("_state_trace.npz")
         table = load_ghost_trace(str(ghost_files[label])) if ghost_ids is not None and label in ghost_files else None
-        # A four-edge scene films each round from its edge's camera (the robot's first yaw names the edge).
-        edge = round_edge(meta, qpos[0])
-        if edge is not None:
-            recorder.cam = recording_camera(model, camera_name=edge["video_camera"])
+        # The shot Isaac and Unreal film too: a four-edge scene's round from its edge's camera.
+        recorder.cam = round_camera(model, meta, qpos[0])
         recorder.start(label)
         for q, seq in zip(qpos, seqs):
             data.qpos[:] = q

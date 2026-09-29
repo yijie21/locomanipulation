@@ -7,6 +7,8 @@
 scene's Isaac stage and look (`run_context.isaac_scene`) -- the object and settings the eval mirror serves the
 policy from. Which rows, which sessions and the marker (`renderer: isaac` plus the look) are
 `locomani.sim.view_render`, shared with the Unreal re-render; this module owns Kit's lifetime.
+Then the same view films every filled episode's third-person video that is missing (`view_render.film`,
+`<run>/videos_isaac/`), after all the dataset images: filming stops the dataset cameras.
 """
 
 from __future__ import annotations
@@ -43,12 +45,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     traces, todo = planned
     total = sum(len(v) for v in todo.values())
+    films = len(view_render.film_todo(traces, list(todo), "isaac")) + total
     print(
         f"{run_dir.name}: {total} kept episode(s) to render in {len(todo)} finished session(s) "
-        f"of {len(traces.sessions)}, Isaac stage {isaac['dir']}",
+        f"of {len(traces.sessions)}, then {films} third-person video(s), Isaac stage {isaac['dir']}",
         flush=True,
     )
-    if args.dry_run or not total:
+    if args.dry_run or not films:
         return 0
 
     # before Kit starts: it takes the card from CUDA_VISIBLE_DEVICES
@@ -66,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
             stage_cfg, scene_xml, tuple(CAMERA_CONFIGS), isaac["rtx_settings"], log=lambda m: print(m, flush=True)
         )
         view_render.fill(view, traces, todo, "isaac", look, log=lambda m: print(m, flush=True))
+        filming = view_render.film_todo(traces, list(todo), "isaac")
+        view_render.film(view, traces, filming, "isaac", log=lambda m: print(m, flush=True))
     except BaseException:
         import sys
         import traceback

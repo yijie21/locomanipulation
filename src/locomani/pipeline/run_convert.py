@@ -31,8 +31,9 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
-from locomani.pipeline.render_dataset_cameras import require_rendered
+from locomani.pipeline.render_dataset_cameras import expected_renderer, require_filmed, require_rendered
 from locomani.pipeline.stages import Stage
+from locomani.pipeline.third_person import video_dir
 
 ROOT = Path(paths.REPO)
 
@@ -59,11 +60,15 @@ def collected(run_dir: Path) -> dict:
 
 
 def convert_argv(entry: dict, cfg: dict, train_ds: Path, val_ds: Path) -> list:
+    # The third-person videos come from the renderer that drew the dataset cameras; MuJoCo's sit beside the manifests.
+    renderer = expected_renderer(cfg)
+    films = [] if renderer == "mujoco" else ["--third-person-dir", video_dir(train_ds.parent, renderer)]
     return [
         DATA_PY, CONVERTER,
         "--sessions", *entry["sessions"],
         "--manifest", *entry["manifests"],
         "--trim-verification-tail",
+        *films,
         "--out", train_ds,
         "--holdout", str(cfg["train"]["holdout"]),
         "--holdout-out", val_ds,
@@ -91,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     run_context.require_train_split(cfg)
     entry = collected(run_dir)
     require_rendered(cfg, entry["sessions"])
+    require_filmed(run_dir, cfg, entry["sessions"])
     train_ds, val_ds = run_dir / "train_dataset", run_dir / "val_dataset"
     stage = Stage(run_dir)
 
