@@ -77,7 +77,11 @@ convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就�
 与 MuJoCo 录像逐帧对齐。品红 ghost 夹爪只画在主画面；三个小窗是数据集里补渲好的三路相机画面（解码后缩小），不另渲。
 Isaac 在补渲完所有局后再挂第三视角相机和 ghost，并停掉三路数据集相机的渲染，所以数据集画面不受影响；Unreal 的关卡导入里多了一个
 带相机的自由刚体和两只 ghost 夹爪（`sim/unreal/export_mjcf.py`），平时停在地板下 5 m，只在拍第三视角那一次摆到位。
-convert 对 Isaac / Unreal 运行只从 `videos_<渲染器>/` 取录像，缺了就拒绝，从不退回 MuJoCo 的 `videos/`。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步；Unreal 的编辑器、关卡与坑见
+convert 对 Isaac / Unreal 运行只从 `videos_<渲染器>/` 取录像，缺了就拒绝，从不退回 MuJoCo 的 `videos/`。
+评测录像同样按渲染器（2026-09-29 用户定）：`mujoco` 由 eval sim 实时录到 `eval/videos/`；`isaac` / `unreal` 事后用
+`scripts/render_eval_videos_{isaac,unreal}.sh` 渲到 `eval/videos_<渲染器>/`（`view_render.film_eval`），机位和版式与采集录像相同。
+评测不录数据集，所以小窗由同一个渲染器按每一帧的状态现渲（就是镜像给策略的那种图）；Isaac 渲完小窗才能挂第三视角相机，
+所以先把所有局的小窗渲完，再逐局拍第三视角。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步；Unreal 的编辑器、关卡与坑见
 [Unreal 交接文档](handoff/unreal-urlab-20260928.md)。
 
 ## 采集时记录什么
@@ -252,7 +256,7 @@ python3 scripts/build_isaac_warehouse_scene.py     # 需要 pxr（pip install us
 python3 scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18   # 换尺寸的纸箱：缩放取自该 MuJoCo 场景，label 取目录名加 `_env`，source.json 钉住它的 MJCF
 bash scripts/render_isaac_videos.sh outputs/runs/<run>   # 每局：mujoco_render → isaac_render → 并排 → previews_isaac/；stage 与曝光取运行场景的 isaac 条目
 bash scripts/render_isaac_videos.sh outputs/runs/<run> --path-trace <label>   # 给人看的一局：Isaac 侧改路径追踪（见下）
-bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<run>/eval/state_trace --out outputs/runs/<run>/eval --insets
+bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<run>/eval/state_trace --out outputs/runs/<run>/eval --insets   # 评测的 MuJoCo|Isaac 对照；正式的评测录像见「图像来源」
 ```
 
 - 只渲成功局：每局几分钟（见下「画质」），失败的采集局也进不了数据集。成败读判这一局的 manifest——`<run>/trace` 读运行的 `manifest_NN.jsonl`

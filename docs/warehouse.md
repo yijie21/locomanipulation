@@ -15,8 +15,9 @@ Isaac 和 Unreal 只在出图上不同，物理、专家、采集、转换、训
 | 第 1 步建场景 | 建 Isaac stage | 起编辑器，建 Unreal 关卡 |
 | 第 3 步补渲 | `render_dataset_cameras_isaac.sh` | `render_dataset_cameras_unreal.sh` |
 | 第 6 步终端 2 的镜像 | `run_isaac_mirror.sh` | `run_unreal_mirror.sh` |
+| 第 6 步评测录像 | `render_eval_videos_isaac.sh` | `render_eval_videos_unreal.sh` |
 
-下面每一步里和渲染器有关的命令，两种都写了。其余命令按 Isaac 的运行名写；用 Unreal 时，把实验文件和 `outputs/runs/warehouse_smoke` 换成上表 Unreal 那一列的。数据集里每局的第三视角录像由所选渲染器在第 3 步画；第 6 步评测的第三视角录像两种都由 Isaac 渲。
+下面每一步里和渲染器有关的命令，两种都写了。其余命令按 Isaac 的运行名写；用 Unreal 时，把实验文件和 `outputs/runs/warehouse_smoke` 换成上表 Unreal 那一列的。第三视角录像也由所选渲染器画：采集的在第 3 步，评测的在第 6 步最后。
 
 ## 0. 每个新终端先执行
 
@@ -143,13 +144,14 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/warehouse_smoke/model/c
 
 得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、每局状态轨迹 `eval/state_trace/`、镜像每次渲染的记录 `eval/isaac_mirror.jsonl`（Unreal 是 `eval/unreal_mirror.jsonl`）。起栈、策略服务、镜像各约 20 秒；两局约 2.5 分钟。`eval/rounds_00.log` 里每局一行，例如 `[crate-vla] round 0: FAIL [vla] walk: never closer than 1.06 m (70 s)`。
 
-评测时仿真不录像。要看评测录像（第三视角，带第一视角和双腕小窗），事后渲：
+评测时仿真不录像。要看评测录像，事后用所选渲染器渲，画面和第 3 步的采集录像一样（同一机位、第一视角和双腕小窗，小窗是镜像给策略的那种图；评测没有 ghost）。第一条是 Isaac，第二条是 Unreal（用第 1 步起的编辑器，所以不带 `--gpu`）：
 
 ```bash
-bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces outputs/runs/warehouse_smoke/eval/state_trace --out outputs/runs/warehouse_smoke/eval --insets --gpu 1 --all
+bash scripts/render_eval_videos_isaac.sh outputs/runs/warehouse_smoke --gpu 1 --all
+bash scripts/render_eval_videos_unreal.sh outputs/runs/warehouse_smoke_unreal --all
 ```
 
-默认只渲成功局，`--all` 连失败局一起渲。冒烟的两局各约 10 分钟（估计：一局 99 秒的画面，1280×960，Isaac 侧按 2× 超采样渲）。原片在 `eval/isaac/<局>/side_by_side.mp4`；`eval/previews_isaac/` 里是压到每个文件 500 KB 以内的预览，长的局切成几段（冒烟每局 11 段）。
+默认只渲成功局，`--all` 连失败局一起渲；重跑只补没渲的局。原片在 `eval/videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`），`eval/previews_isaac/`（`previews_unreal/`）里是压到每个文件 500 KB 以内的预览。先渲每局的三路相机做小窗，再渲第三视角：冒烟一局 99 秒的画面，Isaac 约 6.5 分钟（小窗 260 s + 录像 134 s），Unreal 约 6.6 分钟（270 s + 128 s），2026-09-29 实测；预览每局切成 2–4 段。
 
 熟悉以后可以一条命令跑完第 2–6 步（不含开环评测和录像）：`bash scripts/run_overnight.sh configs/experiments/warehouse_smoke.yaml --gpu 0 --render-gpu 1 --line bimanual`。用 Unreal 时换成 `warehouse_smoke_unreal.yaml`，编辑器没开会自动在 `--render-gpu` 那张卡上开。
 
@@ -163,7 +165,7 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 | 采集每局的成败和原因 | `manifest_NN.jsonl` 的 `ok` 和 `why` |
 | 采集录像 | 全部局的 MuJoCo 预览 `videos/`（第 2 步第三条）；成功局用所选渲染器画的 `videos_isaac/` 或 `videos_unreal/`（第 3 步） |
 | 闭环每局的成败、失败阶段 | `eval/rounds_00.log` 每局一行；`eval/closed_loop.manifest.jsonl` |
-| 闭环录像 | `eval/previews_isaac/`（第 6 步最后一条命令渲的） |
+| 闭环录像 | `eval/previews_isaac/` 或 `eval/previews_unreal/`（第 6 步最后一条命令渲的） |
 
 ## 8. 常见报错
 

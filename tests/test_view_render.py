@@ -198,3 +198,61 @@ def test_the_insets_are_the_filled_frames_of_the_first_parquet_row_at_or_past_ea
     assert set(got) == {c["mjcf_name"] for c in CAMERA_CONFIGS.values()}
     for images in got.values():
         assert [round(float(img.mean()) / 20) for img in images] == [3, 7, 11]
+
+
+# --- a closed-loop evaluation's rounds (film_eval) -----------------------------------------------------------------
+
+
+def eval_run(tmp_path):
+    run = tmp_path / "run"
+    traces = FilmTraces(run)  # scene/ and a 12-row trace L with its ghosts
+    (run / "eval" / "state_trace").mkdir(parents=True)
+    for label in ("crate_vla_000", "crate_vla_001"):
+        (run / "eval" / "state_trace" / f"{label}_state_trace.npz").hardlink_to(run / "trace" / "L_state_trace.npz")
+    rows = [{"video": "crate_vla_000", "ok": False}, {"video": "crate_vla_001", "ok": True}]
+    (run / "eval" / "closed_loop.manifest.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return run, traces.scene_dir
+
+
+def test_eval_rounds_are_the_successful_ones_unless_all_and_never_a_filmed_one(tmp_path):
+    run, _scene = eval_run(tmp_path)
+    assert R.eval_rounds(run, "unreal", every=False) == ["crate_vla_001"]
+    assert R.eval_rounds(run, "unreal", every=True) == ["crate_vla_000", "crate_vla_001"]
+    (run / "eval" / "videos_unreal").mkdir()
+    (run / "eval" / "videos_unreal" / "crate_vla_001.mp4").write_bytes(b"x")
+    assert R.eval_rounds(run, "unreal", every=True) == ["crate_vla_000"]
+
+
+class EvalView(FilmView):
+    """Renders the dataset cameras until film_setup, as the Isaac view (which cannot switch back) must."""
+
+    def __init__(self):
+        super().__init__()
+        self.rendered = []
+
+    def warm_up(self, qpos):
+        assert self.setup is None
+
+    def render(self, qpos):
+        assert self.setup is None, "a dataset render after film_setup"
+        self.rendered.append(round(float(qpos[0]), 3))
+        return {k: np.full((c["height"], c["width"], 3), 60, np.uint8) for k, c in CAMERA_CONFIGS.items()}
+
+
+def test_film_eval_renders_every_rounds_insets_first_then_films_and_leaves_videos_and_previews(tmp_path, monkeypatch):
+    run, scene = eval_run(tmp_path)
+    made = []
+    import locomani.pipeline.video_preview as vp
+
+    monkeypatch.setattr(vp, "make_previews", lambda src, stem: made.append((src.name, stem)) or [(src, 0.0, 1.0)])
+    view = EvalView()
+    R.film_eval(view, run, scene, ["crate_vla_000", "crate_vla_001"], "unreal", log=lambda m: None)
+    assert view.rendered == [0.3, 0.7, 1.1] * 2  # both rounds' dataset cameras, before any filming
+    assert [x for x, _g in view.filmed] == [0.3, 0.7, 1.1] * 2
+    out = run / "eval" / "videos_unreal"
+    for label in ("crate_vla_000", "crate_vla_001"):
+        assert (out / f"{label}.mp4").exists()
+    assert not (out / "insets").exists()  # the pass-1 videos go once their round is filmed
+    assert made == [
+        (f"{label}.mp4", run / "eval" / "previews_unreal" / label) for label in ("crate_vla_000", "crate_vla_001")
+    ]

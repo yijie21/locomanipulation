@@ -19,7 +19,7 @@ many times larger and ``grab`` box-averages back to the dataset resolution.
 
 The caller owns Kit: start it with ``stage.start_app(cfg)`` before building a
 view, and on failure ``os._exit(1)`` BEFORE ``app.close()`` -- close() ends the
-process itself with status 0.
+process itself with status 0. ``run_in_kit`` does both for a run's Isaac look.
 
 ``film_setup`` turns a view that has done its dataset work into the renderer of
 the run's third-person video (``view_render.film``): one more world camera at
@@ -31,6 +31,9 @@ dataset images.
 """
 
 from __future__ import annotations
+
+import os
+import sys
 
 import numpy as np
 
@@ -201,3 +204,23 @@ class IsaacView:
         if got is None:
             raise RuntimeError("Isaac returned a missing or stale third-person picture for this state")
         return np.ascontiguousarray(got["third_person"])
+
+
+def run_in_kit(scene_xml: str, isaac: dict, gpu, work, log=print) -> None:
+    """Start Kit on card `gpu`, build the view of the run's Isaac look (`run_context.isaac_scene`) over the dataset
+    streams and call `work(view)`. A failure prints its traceback and exits 1 before Kit's close, which would exit
+    0; after a success Kit's close ends the process, so nothing after this call runs."""
+    os.environ.update(CUDA_VISIBLE_DEVICES=str(gpu), OMNI_KIT_ACCEPT_EULA="YES")  # Kit takes the card at start
+    cfg = S.StageCfg(
+        scene_dir=isaac["dir"], robot_mjcf=scene_xml, absolute_camera=True, supersample=isaac["supersample"]
+    )
+    app = S.start_app(cfg)
+    try:
+        work(IsaacView(cfg, scene_xml, tuple(CAMERA_CONFIGS), isaac["rtx_settings"], log=log))
+    except BaseException:
+        import traceback
+
+        traceback.print_exc()
+        sys.stdout.flush()
+        os._exit(1)  # NOT app.close() first: it ends the process with status 0
+    app.close()

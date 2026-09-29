@@ -14,13 +14,11 @@ Then the same view films every filled episode's third-person video that is missi
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
 from locomani.sim import view_render
-from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
 ROOT = Path(paths.REPO)
 
@@ -54,31 +52,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run or not films:
         return 0
 
-    # before Kit starts: it takes the card from CUDA_VISIBLE_DEVICES
-    os.environ.update(CUDA_VISIBLE_DEVICES=str(args.gpu), OMNI_KIT_ACCEPT_EULA="YES")
-    from locomani.sim.isaac import stage as S
-    from locomani.sim.isaac.view import IsaacView
+    from locomani.sim.isaac.view import run_in_kit
 
-    scene_xml = str(traces.scene_dir / "scene_locomani.xml")
-    stage_cfg = S.StageCfg(
-        scene_dir=isaac["dir"], robot_mjcf=scene_xml, absolute_camera=True, supersample=isaac["supersample"]
-    )
-    app = S.start_app(stage_cfg)
-    try:
-        view = IsaacView(
-            stage_cfg, scene_xml, tuple(CAMERA_CONFIGS), isaac["rtx_settings"], log=lambda m: print(m, flush=True)
-        )
-        view_render.fill(view, traces, todo, "isaac", look, log=lambda m: print(m, flush=True))
-        filming = view_render.film_todo(traces, list(todo), "isaac")
-        view_render.film(view, traces, filming, "isaac", log=lambda m: print(m, flush=True))
-    except BaseException:
-        import sys
-        import traceback
+    def work(view):
+        log = lambda m: print(m, flush=True)  # noqa: E731
+        view_render.fill(view, traces, todo, "isaac", look, log=log)
+        view_render.film(view, traces, view_render.film_todo(traces, list(todo), "isaac"), "isaac", log=log)
 
-        traceback.print_exc()
-        sys.stdout.flush()
-        os._exit(1)  # NOT app.close() first: it ends the process with status 0
-    app.close()
+    run_in_kit(str(traces.scene_dir / "scene_locomani.xml"), isaac, args.gpu, work, log=lambda m: print(m, flush=True))
     return 0
 
 

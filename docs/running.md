@@ -137,7 +137,7 @@ collect: 2 lanes in parallel -- one stack and one driver process each (instance 
 | `eval/eval_config.json` | 实际交给评测程序的配置 |
 
 - 比较多次运行：`cat outputs/runs/*/summary.json`。
-- 检查某个阶段的产物是否齐全：`python scripts/artifact_contract.py check outputs/runs/<名字> bottle_eval`。bottle 用 `bottle_collect`、`bottle_convert`、`bottle_train`、`bottle_eval`，crate 和 warehouse 用 `crate_collect`、`crate_eval`。warehouse 评测时不录像，它的录像渲到 `eval/previews_isaac/`，所以 `crate_eval` 里 `eval/videos` 一项对 warehouse 总是报缺，其余各项照常检查。
+- 检查某个阶段的产物是否齐全：`python scripts/artifact_contract.py check outputs/runs/<名字> bottle_eval`。bottle 用 `bottle_collect`、`bottle_convert`、`bottle_train`、`bottle_eval`，crate 和 warehouse 用 `crate_collect`、`crate_eval`。warehouse 评测时不录像，它的录像事后渲到 `eval/videos_isaac/` 或 `eval/videos_unreal/`，所以 `crate_eval` 里 `eval/videos` 一项对 warehouse 总是报缺，其余各项照常检查。
 - 光看退出码不能说明跑完了，要看 `summary.json` 里有没有这一阶段的条目、产物在不在。
 
 ## 8. 评测的时钟

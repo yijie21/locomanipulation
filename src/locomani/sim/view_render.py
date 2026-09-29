@@ -27,6 +27,10 @@ same rows -- what the policy trains on, decoded, never a second render. A view f
 fovy)`, `film_warm_up` and `film(qpos, (cam_pos, cam_quat), (ghost_pos, ghost_quat)) -> HxWx3 uint8`; the ghosts
 are in that picture only. The videos land in `<run>/videos_<renderer>/<label>.mp4` (`third_person.video_dir`),
 which convert links into the dataset's `third_person/`; an episode that has one is not filmed again.
+
+`film_eval` films a closed-loop evaluation's rounds the same way (user, 2026-09-29: the evaluation's video is drawn
+by the renderer that drew the policy's pictures), into `<run>/eval/videos_<renderer>/`. An evaluation records no
+dataset, so its insets are the view's own `render` of each filmed row -- what the eval mirror serves the policy.
 """
 
 from __future__ import annotations
@@ -214,6 +218,44 @@ def inset_frames(traces, session: Path, ep: int, info: dict, rows) -> dict:
     return out
 
 
+def film_round(view, model, meta: dict, trace: Path, insets, dest: Path, renderer: str, log=print) -> None:
+    """One round's third-person video into `dest`: the view films every recorded row of `trace` (`film_setup` done)
+    with the ghosts of the `_ghost.npz` beside it, and `insets` gives each filmed row's `{mjcf camera: image}`."""
+    from locomani.sim import third_person_shot as shot
+    from locomani.tasks.crate.ghost_trace import ghost_poses, load_ghost_trace
+
+    t0 = time.time()
+    npz = np.load(trace)
+    qpos, seq = np.asarray(npz["qpos"]), np.asarray(npz["seq"])
+    rows = list(shot.film_rows(len(qpos)))
+    cam_pos, cam_quat = shot.camera_poses(model, qpos[rows], shot.round_camera(model, meta, qpos[0]))
+    ghost_file = trace.with_name(trace.name.replace("_state_trace.npz", "_ghost.npz"))
+    table = load_ghost_trace(str(ghost_file)) if ghost_file.exists() else {}  # none (an eval round): parked
+    size = (sim_video.HEIGHT, sim_video.WIDTH, 3)
+    tmp = dest.with_suffix(".rendering.mp4")
+    writer = encoder(tmp, sim_video.WIDTH, sim_video.HEIGHT, sim_video.FPS)
+    renders = []
+    for k, (t, row_insets) in enumerate(zip(rows, insets(rows), strict=True)):
+        ghosts = ghost_poses(table, int(seq[t]))
+        if k == 0:
+            view.film_warm_up(qpos[t], (cam_pos[k], cam_quat[k]), ghosts)
+        r0 = time.perf_counter()
+        frame = np.array(view.film(qpos[t], (cam_pos[k], cam_quat[k]), ghosts), dtype=np.uint8)
+        renders.append((time.perf_counter() - r0) * 1e3)
+        if frame.shape != size:
+            raise SystemExit(f"{renderer} filmed a {frame.shape} frame, the video is {size}")
+        sim_video.paste_insets(frame, row_insets)
+        writer.stdin.write(frame.tobytes())
+    writer.stdin.close()
+    if writer.wait() != 0:
+        raise SystemExit(f"ffmpeg failed on {tmp}")
+    os.replace(tmp, dest)
+    log(
+        f"  third-person {dest.name}, {len(rows)} frames in {time.time() - t0:.0f} s "
+        f"(p50 {np.percentile(renders, 50):.0f} ms)"
+    )
+
+
 def film(view, traces, todo: list, renderer: str, log=print) -> None:
     """Film every (session, episode, label) of `todo` through `view` into `third_person.video_dir(run, renderer)`."""
     if not todo:
@@ -221,43 +263,117 @@ def film(view, traces, todo: list, renderer: str, log=print) -> None:
     import mujoco
 
     from locomani.sim import third_person_shot as shot
-    from locomani.tasks.crate.ghost_trace import ghost_poses, load_ghost_trace
 
     out_dir = video_dir(traces.run, renderer)
     out_dir.mkdir(parents=True, exist_ok=True)
     model = mujoco.MjModel.from_xml_path(str(traces.scene_dir / "scene_locomani.xml"))
     meta = json.loads((traces.scene_dir / "scene_meta.json").read_text())
-    size = (sim_video.HEIGHT, sim_video.WIDTH, 3)
     view.film_setup(sim_video.WIDTH, sim_video.HEIGHT, shot.scene_fovy(model, meta))
     for session, ep, label in todo:
-        t0 = time.time()
         info = json.loads((session / "meta" / "info.json").read_text())
-        npz = np.load(traces.trace_dir / f"{label}_state_trace.npz")
-        qpos, seq = np.asarray(npz["qpos"]), np.asarray(npz["seq"])
-        rows = list(shot.film_rows(len(qpos)))
-        cam_pos, cam_quat = shot.camera_poses(model, qpos[rows], shot.round_camera(model, meta, qpos[0]))
-        ghost_file = traces.trace_dir / f"{label}_ghost.npz"
-        table = load_ghost_trace(str(ghost_file)) if ghost_file.exists() else {}  # none: parked out of sight
-        insets = inset_frames(traces, session, ep, info, rows)
-        tmp = out_dir / f"{label}.rendering.mp4"
-        writer = encoder(tmp, sim_video.WIDTH, sim_video.HEIGHT, sim_video.FPS)
-        renders = []
-        for k, t in enumerate(rows):
-            ghosts = ghost_poses(table, int(seq[t]))
-            if k == 0:
-                view.film_warm_up(qpos[t], (cam_pos[k], cam_quat[k]), ghosts)
-            r0 = time.perf_counter()
-            frame = np.array(view.film(qpos[t], (cam_pos[k], cam_quat[k]), ghosts), dtype=np.uint8)
-            renders.append((time.perf_counter() - r0) * 1e3)
-            if frame.shape != size:
-                raise SystemExit(f"{renderer} filmed a {frame.shape} frame, the video is {size}")
-            sim_video.paste_insets(frame, {name: images[k] for name, images in insets.items()})
-            writer.stdin.write(frame.tobytes())
-        writer.stdin.close()
-        if writer.wait() != 0:
-            raise SystemExit(f"ffmpeg failed on {tmp}")
-        os.replace(tmp, out_dir / f"{label}.mp4")
-        log(
-            f"  {session.name} episode {ep}: third-person {label}.mp4, {len(rows)} frames in {time.time() - t0:.0f} s "
-            f"(p50 {np.percentile(renders, 50):.0f} ms)"
-        )
+
+        def insets(rows, session=session, ep=ep, info=info):
+            frames = inset_frames(traces, session, ep, info, rows)
+            return ({name: images[k] for name, images in frames.items()} for k in range(len(rows)))
+
+        log(f"  {session.name} episode {ep}:")
+        film_round(view, model, meta, traces.trace_dir / f"{label}_state_trace.npz", insets, out_dir / f"{label}.mp4",
+                   renderer, log)  # fmt: skip
+
+
+# --- a closed-loop evaluation's rounds ------------------------------------------------------------------------------
+
+
+def eval_rounds(run_dir: Path, renderer: str, every: bool) -> list[str]:
+    """The evaluation rounds to film: those `closed_loop.manifest.jsonl` judged successful, or every traced round
+    with `every`; a round `renderer` has filmed already is left out."""
+    from locomani.pipeline.run_context import successful_traces
+
+    traces = Path(run_dir) / "eval" / "state_trace"
+    if every:
+        labels = sorted(p.name.removesuffix("_state_trace.npz") for p in traces.glob("*_state_trace.npz"))
+    else:
+        labels = successful_traces(Path(run_dir), traces)
+    done = video_dir(Path(run_dir) / "eval", renderer)
+    return [label for label in labels if not (done / f"{label}.mp4").exists()]
+
+
+def _render_insets(view, trace: Path, dest: Path) -> None:
+    """Pass 1 of `film_eval`: the dataset cameras at every filmed row of `trace`, at their inset sizes, one video each
+    in `dest` -- the pictures the eval mirror would have served the policy for those states."""
+    import cv2
+
+    from locomani.sim import third_person_shot as shot
+
+    qpos = np.asarray(np.load(trace)["qpos"])
+    rows = list(shot.film_rows(len(qpos)))
+    sizes = {name: (w, h) for name, _label, w, h, _x, _y in sim_video.INSETS}
+    cams = {k: CAMERA_CONFIGS[k]["mjcf_name"] for k in STREAMS if CAMERA_CONFIGS[k]["mjcf_name"] in sizes}
+    tmp = dest.with_name(dest.name + ".rendering")
+    tmp.mkdir(parents=True, exist_ok=True)
+    writers = {k: encoder(tmp / f"{name}.mp4", *sizes[name], sim_video.FPS) for k, name in cams.items()}
+    view.warm_up(qpos[rows[0]])
+    for t in rows:
+        images = view.render(qpos[t])
+        for k, name in cams.items():
+            writers[k].stdin.write(cv2.resize(images[k], sizes[name], interpolation=cv2.INTER_AREA).tobytes())
+    for k, w in writers.items():
+        w.stdin.close()
+        if w.wait() != 0:
+            raise SystemExit(f"ffmpeg failed on {tmp / cams[k]}.mp4")
+    os.replace(tmp, dest)
+
+
+def _read_insets(directory: Path, n_rows: int):
+    """The per-row `{mjcf camera: image}` of `_render_insets`' videos, streamed."""
+    import cv2
+
+    caps = {p.stem: cv2.VideoCapture(str(p)) for p in sorted(directory.glob("*.mp4"))}
+    for _ in range(n_rows):
+        row = {}
+        for name, cap in caps.items():
+            ok, bgr = cap.read()
+            if not ok:
+                raise SystemExit(f"{directory / name}.mp4 ends before the {n_rows} filmed rows")
+            row[name] = bgr[..., ::-1]
+        yield row
+    for cap in caps.values():
+        cap.release()
+
+
+def film_eval(view, run_dir: Path, scene_dir: Path, labels: list[str], renderer: str, log=print) -> None:
+    """Film evaluation rounds into `<run>/eval/videos_<renderer>/<label>.mp4`, with ≤ 500 KB previews in
+    `<run>/eval/previews_<renderer>/`. An evaluation records no dataset, so the insets are rendered here: pass 1
+    renders every round's dataset cameras (`view.render`, before `film_setup`, which Isaac cannot undo) into
+    `videos_<renderer>/insets/<label>/`, pass 2 films the rounds and deletes them."""
+    if not labels:
+        return
+    import shutil
+
+    import mujoco
+
+    from locomani.pipeline.video_preview import make_previews
+    from locomani.sim import third_person_shot as shot
+
+    run_dir = Path(run_dir)
+    traces = run_dir / "eval" / "state_trace"
+    out_dir = video_dir(run_dir / "eval", renderer)
+    for label in labels:
+        dest = out_dir / "insets" / label
+        if not dest.is_dir():
+            t0 = time.time()
+            _render_insets(view, traces / f"{label}_state_trace.npz", dest)
+            log(f"  {label}: dataset cameras for the insets in {time.time() - t0:.0f} s")
+    model = mujoco.MjModel.from_xml_path(str(scene_dir / "scene_locomani.xml"))
+    meta = json.loads((scene_dir / "scene_meta.json").read_text())
+    view.film_setup(sim_video.WIDTH, sim_video.HEIGHT, shot.scene_fovy(model, meta))
+    for label in labels:
+        dest = out_dir / f"{label}.mp4"
+        pending = out_dir / "insets" / label
+        film_round(view, model, meta, traces / f"{label}_state_trace.npz",
+                   lambda rows, pending=pending: _read_insets(pending, len(rows)), dest, renderer, log)  # fmt: skip
+        shutil.rmtree(pending)
+        if not any(pending.parent.iterdir()):
+            pending.parent.rmdir()
+        written = make_previews(dest, run_dir / "eval" / f"previews_{renderer}" / label)
+        log(f"  {label}: previews {', '.join(f'{p.name} {p.stat().st_size} B' for p, _s, _t in written)}")
