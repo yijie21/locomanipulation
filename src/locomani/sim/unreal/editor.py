@@ -1,9 +1,15 @@
 """The running Unreal editor, from the URLab bridge venv: Python inside it, its level, its render defaults.
 
 The editor (`scripts/start_unreal.sh`) runs `in_editor/cmd_server.py`, which executes Python sent over TCP
-127.0.0.1:CMD_PORT on the game thread and replies with its stdout. URLab's own bridge (ZMQ, :5559) moves the
-robot and returns the cameras; this module covers what the bridge cannot: loading a level, checking the render
-defaults, running the in-editor scripts. One editor per machine: both ports are fixed.
+127.0.0.1:CMD_PORT on the game thread and replies with its stdout. URLab's own bridge (ZMQ) moves the robot and
+returns the cameras; this module covers what the bridge cannot: loading a level, checking the render defaults,
+running the in-editor scripts. One editor per machine: the ports are fixed.
+
+URLab's ports all derive from one PortBase (patches/urlab_fresh_capture.patch): state = base, control = base+1,
+info = base+2, cameras from base+3, step RPC = base+4. The plugin reads it from its
+`Config/LocalUnrealRoboticsLab.ini` ([BridgeServer] PortBase, default 5800) and so does `port_base()` here, so
+there is one number. 5800 keeps the editor off the MuJoCo stacks' blocks (instance i: 5555-5558 + 10i and
+5580-5582 + 10i); upstream's 5555-5559 were instance 0's and broke its stack (Address already in use, 2026-09-28).
 
     "$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_engine_version())'
     "$BRIDGE_PY" -m locomani.sim.unreal.editor -f src/locomani/sim/unreal/in_editor/no_nanite.py
@@ -19,6 +25,25 @@ from pathlib import Path
 CMD_PORT = 18801
 URLAB_HOST = "tcp://127.0.0.1"
 IN_EDITOR = Path(__file__).resolve().parent / "in_editor"
+PORT_BASE = 5800  # the patched plugin's default
+
+
+def plugin_ini() -> Path:
+    from locomani import paths
+
+    return Path(paths.UE_PROJECT).parent / "Plugins" / "UnrealRoboticsLab" / "Config" / "LocalUnrealRoboticsLab.ini"
+
+
+def port_base(ini: Path | None = None) -> int:
+    """The plugin's PortBase: its INI's [BridgeServer] PortBase, else the patched default."""
+    import configparser
+
+    parser = configparser.ConfigParser(strict=False)
+    ini = ini or plugin_ini()
+    if ini.is_file():
+        parser.read(ini)
+    return parser.getint("BridgeServer", "PortBase", fallback=PORT_BASE)
+
 
 _RENDER_DEFAULTS = """
 sub = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
@@ -100,7 +125,16 @@ def connect(*, local_model: bool):
     """A URLab bridge client; with `local_model` it carries the editor's MuJoCo model (PIE must be running)."""
     from urlab_client import URLabClient
 
-    client = URLabClient(URLAB_HOST, local_model=local_model, recv_timeout_ms=60000)
+    base = port_base()
+    client = URLabClient(
+        URLAB_HOST,
+        step_port=base + 4,
+        state_port=base,
+        ctrl_port=base + 1,
+        info_port=base + 2,
+        local_model=local_model,
+        recv_timeout_ms=60000,
+    )
     try:
         client.connect()
     except ValueError:  # the handshake before PIE carries no model

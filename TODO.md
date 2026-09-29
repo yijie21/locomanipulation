@@ -435,6 +435,8 @@
   - [x] 12.9.4 关卡：warehouse_textured 与四个 warehouse_box_* 各建一个（房间关卡 save-as + 该场景导入），逐场景对 MuJoCo 出图核对，纸箱尺寸与位置一致，每次 121–148 ms（`outputs/unreal_images_source_20260929/`；2026-09-29）
   - [x] 12.9.5 端到端：warehouse_smoke_edges_20260928 的测试副本 Unreal 补渲 2 集（每集约 80 s，p50 139 ms）→ convert 通过；把来源改成 isaac 后 convert 拒绝；`run_overnight.sh --from eval` 3 局 lockstep 闭环 3/3（Isaac 训练的 checkpoint-5000，分布偏移；镜像 330 次 p50 137 ms，327 次观测的图像 seq 全等于边界 seq）（2026-09-29）
   - [x] 12.9.7 从零安装：`setup_unreal.sh` 装进一个空的 UNREAL_ROOT（引擎用本机已解压的，下载要 Epic 登录）8.5 分钟，起编辑器、建房间关卡和 warehouse_textured 关卡、出图核对都通过，出图与本机安装差 1.2–1.5（JPEG）。中途修了两处：URLab 导入要的网格预处理 Python 包与 `LocalUnrealRoboticsLab.ini`、重建房间时编辑器正开着它会崩（2026-09-29）
+  - [x] 12.9.8 main 审核 30cb422 的阻塞项：URLab 原版端口 5555–5559（相机从 5558 往上）与实例 0 撞车。插件补丁加 `PortBase`（默认 5800，插件 ini 可改），所有端口由它派生；客户端 `editor.port_base` 读同一 ini；setup 写入 ini。实测：编辑器常驻、PIE 时只占 5800–5806 和 18801，实例 0 的 `run_overnight --from eval` 起栈、镜像在 :5558 服务，无端口冲突；2 局跑完 1/2（第 2 局伸手后没合爪，策略行为，Isaac checkpoint 分布偏移），250 次观测图像 seq 全对，出图 p50 142 ms（`outputs/runs/unreal_instance0_eval_20260929`；2026-09-29）
+  - [x] 12.9.9 审核的非阻塞项：`start_unreal.sh` 查编辑器实际在哪张卡（nvidia-smi 按 pid 找显存最大的卡），已在跑的编辑器卡号不符就报错；`--gpu` 是 Vulkan 序号，本机与 nvidia-smi 序号一致（`--gpu 1` 时主要上下文 1.5 GB 在 GPU1）；`view.qpos_map` 改为精确匹配优先、否则取最长的后缀匹配（`tests/test_unreal_view.py`）（2026-09-29）
   - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
 - [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存

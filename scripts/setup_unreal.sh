@@ -85,5 +85,7 @@ uv pip install --python "$BRIDGE_PY" --no-deps -e "$BRIDGE_DIR"
 uv pip install --python "$BRIDGE_PY" "mujoco==3.10.0" "pyzmq>=25" "numpy>=1.26" "msgpack>=1.0" "gymnasium>=1.0" pyyaml \
     "trimesh==5.1.0" "scipy==1.18.1" "networkx==3.7" "pillow==12.3.0"
 "$BRIDGE_PY" -c "import mujoco, urlab_client, yaml, trimesh, scipy, networkx, PIL; print('bridge ok: mujoco', mujoco.__version__)"
-printf '[PythonSettings]\nPythonPath=%s\n' "$BRIDGE_PY" > "$PLUGIN/Config/LocalUnrealRoboticsLab.ini"
+# PortBase: every plugin port derives from it (the patch; state = base ... step RPC = base + 4); 5800 is clear of
+# the MuJoCo stacks' instance blocks. locomani.sim.unreal.editor reads the same file.
+printf '[PythonSettings]\nPythonPath=%s\n\n[BridgeServer]\nPortBase=5800\n' "$BRIDGE_PY" > "$PLUGIN/Config/LocalUnrealRoboticsLab.ini"
 echo "done: bash scripts/start_unreal.sh --gpu N"

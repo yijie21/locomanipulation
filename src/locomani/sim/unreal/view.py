@@ -26,6 +26,16 @@ from locomani.sim.unreal import editor
 WIDTH = {0: 7, 1: 4, 2: 1, 3: 1}  # mjtJoint: free, ball, slide, hinge
 
 
+def sim_joint(name: str, sim_names) -> str | None:
+    """The sim joint a URLab joint `name` is: the same name, else the LONGEST sim name it ends with after "_" or "/"
+    (URLab prefixes its actor). The longest, not the first: with both `hip_joint` and `left_hip_joint` in the sim,
+    `g1_left_hip_joint` is the second."""
+    if name in sim_names:
+        return name
+    hits = [k for k in sim_names if name.endswith("_" + k) or name.endswith("/" + k)]
+    return max(hits, key=len) if hits else None
+
+
 def qpos_map(sim_model, urlab_model) -> list[tuple[int, int, int]]:
     """(sim adr, URLab adr, width) per URLab joint. URLab prefixes names with its actor, so match by suffix;
     a URLab joint the sim does not have means the level was built from another scene."""
@@ -36,7 +46,7 @@ def qpos_map(sim_model, urlab_model) -> list[tuple[int, int, int]]:
     out = []
     for j in range(urlab_model.njnt):
         name = urlab_model.joint(j).name
-        key = next((k for k in sim if name == k or name.endswith("_" + k) or name.endswith("/" + k)), None)
+        key = sim_joint(name, sim)
         if key is None:
             raise SystemExit(f"URLab joint {name!r} is not in the sim scene: the level was built from another scene")
         adr, width = sim[key]

@@ -1203,6 +1203,10 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - `setup_unreal.sh` 按 `scripts/unreal/host/` 建宿主工程，克隆 URLab `efbc5e2` 并打仓库里的补丁，编译，建客户端 venv（mujoco 3.10.0）。
   - 路径变量 `UNREAL_ROOT`、`UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`、`UNREAL_ASSETS` 写进 paths.sh / paths.py。本机用 `/workspace/locomani.local.sh` 指到 `/workspace/ue_57`。
   - 引擎要 Epic 账号登录才能下载，只能手动。
+- **URLab 的端口全部由插件 ini 的 `PortBase` 派生，默认 5800（main 审核 30cb422 时提出的阻塞项）。**
+  - 状态 = base，控制 = +1，info = +2，相机从 +3 起，step RPC = +4。补丁改插件，客户端 `editor.port_base` 读同一个 ini，只有一个数。
+  - 理由：原版写死 5555–5559（相机从 5558 往上找），正是实例 0 的端口段，而 warehouse 的实验文件都用实例 0。编辑器又是常驻的，只改 `images.source` 就会撞车。
+  - 被否决：加载时拒绝 `unreal` 配实例 0。这只是绕开冲突，还得让每份实验文件换实例。
 - **`run_overnight.sh` 的渲染卡参数改名 `--render-gpu`，旧名 `--isaac-gpu` 照收。**
   理由：一个参数就够了，因为同一次运行只会用一种渲染器。
 

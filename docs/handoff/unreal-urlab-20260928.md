@@ -16,7 +16,7 @@
   `run_unreal_mirror.sh`、`render_dataset_cameras_unreal.sh`、`setup_unreal.sh`（宿主工程模板 `scripts/unreal/host/`）、
   `scripts/unreal/warehouse_bake.py`（在 Blender 里烘焙房间）
 - 本机安装 `$UNREAL_ROOT=/workspace/ue_57`（`/workspace/locomani.local.sh` 指过去；按 setup 装的机器默认 `third_party/unreal/`）：
-  - `UE_5.7.4/` 引擎；`projects/URLabSmoke/` 宿主工程（插件 `Plugins/UnrealRoboticsLab` 在本地分支 `loco-fresh-capture`，提交 `58c8a98` = `efbc5e2` + 补丁）
+  - `UE_5.7.4/` 引擎；`projects/URLabSmoke/` 宿主工程（插件 `Plugins/UnrealRoboticsLab` 在本地分支 `loco-fresh-capture`，提交 `58c8a98`（取图模式）、`923b689`（端口），合起来 = `efbc5e2` + 补丁）
   - `urlab_bridge/.venv` 客户端（`$BRIDGE_PY`，mujoco 3.10.0）；`logs/`（`editor_run.log`、`guard.log`）；`backups/`（房间原 Nanite 网格、原 ini）
   - 关卡：`/Game/Levels/Warehouse` 是房间关卡（无机器人）；每个场景一个 `/Game/Levels/<场景名>`（2026-09-29 建了 warehouse_textured 和四个 warehouse_box_*）
 - 每个场景导出的 MJCF 和 `source.json`（场景 XML 的哈希）：`assets/unreal/<场景名>/`
@@ -59,6 +59,7 @@ git -C "$(dirname "$UE_PROJECT")/Plugins/UnrealRoboticsLab" diff efbc5e2 > patch
   - 验证：重启编辑器后不重新导入，和刚导入时的图差 0.5–0.7，跨会话噪声底是 0.65–1.1（`outputs/unreal_persist_20260929/`）。插件崩溃后重启也一样能直接用。
   - URLab 经 Interchange 导入，默认会开 Nanite，所以重新导入后仍要跑去 Nanite。
 - **不要复制关卡资产再打开（`EditorAssetLibrary.duplicate_asset`）：编辑器直接退出。** 副本 World 留在内存，Map_Load 的泄漏检查是致命错误（EditorServer.cpp:2524，2026-09-29）。`build_level` 改为打开房间关卡、`save_map` 另存、再打开副本。
+- **URLab 原版的端口和实例 0 撞车（2026-09-29 已修）。** 原版写死 5555–5559（相机从 5558 往上找），正是实例 0 的端口段；编辑器常驻时实例 0 的栈报 `Address already in use`。补丁让所有端口从插件 ini 的 `[BridgeServer] PortBase` 派生（默认 5800：状态 5800、控制 5801、info 5802、相机从 5803、step RPC 5804），客户端 `editor.connect` 读同一个 ini。实测：编辑器在 PIE 时占 5800–5806 和 18801，实例 0 的栈和 lockstep 评测同时正常。
 - **URLab 的导入要在一个 Python 里跑网格预处理（trimesh、scipy、networkx、Pillow）。** 插件从自己的 `Config/LocalUnrealRoboticsLab.ini`（`PythonPath=`）找这个 Python；没有就弹窗问要不要装进 UE 自带的 Python，无人值守的编辑器会自动取消，导入失败（`ImportAssetsAutomated returned no objects`）。`setup_unreal.sh` 把这几个包装进客户端 venv，并写好这个 ini。
 - **删掉编辑器正开着的关卡会让编辑器崩溃**（`ULevelInstanceSubsystem::OnAssetsPreDelete`）。宿主工程一启动就打开房间关卡，所以 `in_editor/warehouse_level.py` 重建房间前会先切到引擎的空地图。
 - **glTF 母材质不渲自发光（2026-09-29 已修，TODO 12.3.2）。** 天花板灯板原先只是被照亮的漫反射面。关卡脚本现在把自发光材质换成 `M_LocoEmissive`，见台账 `docs/ledger/blender_scenes.md` 第 7 节。

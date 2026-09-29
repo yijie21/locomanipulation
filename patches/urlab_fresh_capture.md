@@ -38,8 +38,16 @@ Found while bringing up the warehouse level, 2026-09-28:
   override `DynamicGlobalIlluminationMethod = Lumen`: scene captures ignore the project default and otherwise render no GI.
 - **TSR.** Scene captures turn TemporalAA off by default, which drops the project's TSR to FXAA (aliased edges and
   text). The first on-demand capture turns the `TemporalAA` and `AntiAliasing` show flags on.
+- **Ports (2026-09-29).** Upstream binds the state PUB on 5555, control/info on 5556/5557, cameras from 5558 up and
+  the step RPC on 5559: the port block of the locomanipulation MuJoCo stack instance 0, whose stack then fails with
+  `Address already in use` while the editor runs (2026-09-28). Every port now derives from `PortBase` (default 5800;
+  `[BridgeServer] PortBase` in `Config/LocalUnrealRoboticsLab.ini`, which `StepPort` / `StatePort` still override):
+  state = base, control = base+1, info = base+2, cameras from base+3 (the legacy 5558 camera default is remapped),
+  step RPC = base+4. `locomani.sim.unreal.editor.port_base` reads the same INI for the client. Checked: an instance-0
+  stack and a lockstep eval next to a resident editor in PIE (editor on 5800-5806, 18801).
 
-Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`.
+Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`, `BridgeServerConfig.h`,
+`BridgeServerConfigUtils.{h,cpp}` and the two bridge-config test files.
 
 **Measured with the patch.**
 - Robot-only level, 3 cameras, 1 capture per request: 0/50 stale at 0 ms wait, p50 54-67 ms. The Isaac mirror takes 95 ms.

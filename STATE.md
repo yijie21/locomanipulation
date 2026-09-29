@@ -26,7 +26,7 @@
 
 ## Isaac 新外观 + `images.source: unreal`（`loco_unreal`；TODO 第 12 节，DECISIONS 2026-09-29 各节）
 
-- 已确认：G1 用 Unitree 官方材质；warehouse（含四边线）stage `*_env`、按 Blender 标；`box_platform_srgb`；2× 超采样。旧 stage 别删；新外观不重训（用户定），新旧评测数字不可直接比。已确认（12.9，分支 `loco_unreal`，未合回 main）：`images.source: unreal` 已接通。warehouse_textured 和四个 warehouse_box_* 各有关卡，补渲 + convert 和 3 局 lockstep 闭环（3/3，Isaac 训练的 checkpoint，分布偏移）都实跑过。还没用 Unreal 图训练（12.9.6）。命令见 [handoff](docs/handoff/unreal-urlab-20260928.md)；Unreal 编辑器占着实例 0 的端口 5555–5562，Unreal 渲染时栈用别的实例。
+- 已确认：G1 用 Unitree 官方材质；warehouse（含四边线）stage `*_env`、按 Blender 标；`box_platform_srgb`；2× 超采样。旧 stage 别删；新外观不重训（用户定），新旧评测数字不可直接比。已确认（12.9，分支 `loco_unreal`，未合回 main）：`images.source: unreal` 已接通。warehouse_textured 和四个 warehouse_box_* 各有关卡，补渲 + convert 和 3 局 lockstep 闭环（3/3，Isaac 训练的 checkpoint，分布偏移）都实跑过。还没用 Unreal 图训练（12.9.6）。命令见 [handoff](docs/handoff/unreal-urlab-20260928.md)；URLab 的端口已挪到 5800–5812（插件补丁的 PortBase），编辑器常驻时实例 0 的栈照常可用。
 
 ## 待验证 / 卡点
 

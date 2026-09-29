@@ -82,14 +82,11 @@ def require_render_defaults() -> None:
 
 
 def connect(host: str, *, local_model: bool):
-    from urlab_client import URLabClient
+    """The production client (locomani.sim.unreal.editor.connect): the patched plugin's ports derive from its
+    PortBase (5800 since 2026-09-29), not upstream's 5555-5559; `host` is kept for the callers."""
+    from locomani.sim.unreal import editor
 
-    client = URLabClient(host, local_model=local_model, recv_timeout_ms=60000)
-    try:
-        client.connect()
-    except ValueError as exc:  # first discover before PIE carries no model
-        print(f"[connect] {exc}")
-    return client
+    return editor.connect(local_model=local_model)
 
 
 def cmd_setup(args) -> None:

@@ -1,3 +1,40 @@
+diff --git a/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp b/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
+index dacea2d..f1bbf1e 100644
+--- a/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
++++ b/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
+@@ -43,6 +43,12 @@ void LoadFromIni(FURLabBridgeServerConfig& Out)
+ 
+ 	if (File.GetBool(SectionName, TEXT("AutoStart"), TmpBool))
+ 		Out.bAutoStart = TmpBool;
++	if (File.GetInt(SectionName, TEXT("PortBase"), TmpInt))
++	{
++		Out.PortBase = TmpInt;
++		Out.StatePort = TmpInt;
++		Out.StepPort = TmpInt + 4;
++	}
+ 	if (File.GetInt(SectionName, TEXT("StepPort"), TmpInt))
+ 		Out.StepPort = TmpInt;
+ 	if (File.GetInt(SectionName, TEXT("StatePort"), TmpInt))
+@@ -60,6 +66,7 @@ void SaveToIni(const FURLabBridgeServerConfig& In)
+ 	File.Read(Path); // preserve other sections / unknown keys
+ 
+ 	File.SetString(SectionName, TEXT("AutoStart"), In.bAutoStart ? TEXT("True") : TEXT("False"));
++	File.SetInt64(SectionName, TEXT("PortBase"), In.PortBase);
+ 	File.SetInt64(SectionName, TEXT("StepPort"), In.StepPort);
+ 	File.SetInt64(SectionName, TEXT("StatePort"), In.StatePort);
+ 	File.SetString(SectionName, TEXT("StopOnPIEEnd"), In.bStopOnPIEEnd ? TEXT("True") : TEXT("False"));
+@@ -67,4 +74,11 @@ void SaveToIni(const FURLabBridgeServerConfig& In)
+ 	File.Dirty = true;
+ 	File.Write(Path);
+ }
++int32 GetPortBase()
++{
++	FURLabBridgeServerConfig Config;
++	LoadFromIni(Config);
++	return Config.PortBase;
++}
++
+ } // namespace URLabBridgeServerConfigUtils
 diff --git a/Source/URLab/Private/Bridge/RpcDispatcher.cpp b/Source/URLab/Private/Bridge/RpcDispatcher.cpp
 index 9758d6f..bfa16f7 100644
 --- a/Source/URLab/Private/Bridge/RpcDispatcher.cpp
@@ -143,14 +180,15 @@ index 9758d6f..bfa16f7 100644
  		{
  			TArray<float> Pixels = Cam->ConsumeFloatPixels();
 diff --git a/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp b/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
-index 6bb9663..31c27ee 100644
+index 6bb9663..09e3323 100644
 --- a/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
 +++ b/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
-@@ -41,6 +41,32 @@
+@@ -41,6 +41,33 @@
  #include "MuJoCo/Core/MjArticulation.h"
  #include "MuJoCo/Utils/MjOrientationUtils.h"
  #include "zmq.h"
 +#include "HAL/IConsoleManager.h"
++#include "Bridge/BridgeServerConfigUtils.h"
 +
 +namespace
 +{
@@ -179,7 +217,7 @@ index 6bb9663..31c27ee 100644
  
  // ---------------------------------------------------------------------------
  // FCameraZmqWorker
-@@ -261,7 +287,7 @@ void UMjCamera::OnRegister()
+@@ -261,7 +288,7 @@ void UMjCamera::OnRegister()
  	Super::OnRegister();
  	if (CaptureComponent)
  	{
@@ -188,7 +226,7 @@ index 6bb9663..31c27ee 100644
  	}
  }
  
-@@ -388,7 +414,7 @@ void UMjCamera::TickComponent(float DeltaTime, ELevelTick TickType,
+@@ -388,7 +415,7 @@ void UMjCamera::TickComponent(float DeltaTime, ELevelTick TickType,
  
  	// Always refresh PendingPixels while streaming; include_cameras consumes it
  	// without enabling ZMQ/SHM broadcast (those flags only gate the workers below).
@@ -197,7 +235,7 @@ index 6bb9663..31c27ee 100644
  	{
  		RequestReadback();
  	}
-@@ -427,7 +453,7 @@ void UMjCamera::SetupRenderTarget()
+@@ -427,7 +454,7 @@ void UMjCamera::SetupRenderTarget()
  	// geometry can intrude on the frustum and produce black-on-black frames
  	// when the camera is mounted inside a body shell.
  	CaptureComponent->bOverride_CustomNearClippingPlane = true;
@@ -206,7 +244,21 @@ index 6bb9663..31c27ee 100644
  
  	switch (CaptureMode)
  	{
-@@ -587,7 +613,7 @@ void UMjCamera::SetStreamingEnabled(bool bEnable)
+@@ -552,7 +579,12 @@ void UMjCamera::SetStreamingEnabled(bool bEnable)
+ 
+ 			const FIntPoint Res(resolution.Num() > 0 ? resolution[0] : 0,
+ 				resolution.Num() > 1 ? resolution[1] : 0);
+-			ZmqWorker = new FCameraZmqWorker(ZmqEndpoint, Topic, Res);
++			// The component default (and every imported camera that kept it) names 5558; that legacy port moves
++			// with PortBase to PortBase + 3, so the cameras stay clear of the ports a PortBase avoids.
++			const FString Endpoint = ZmqEndpoint == TEXT("tcp://0.0.0.0:5558")
++				? FString::Printf(TEXT("tcp://0.0.0.0:%d"), URLabBridgeServerConfigUtils::GetPortBase() + 3)
++				: ZmqEndpoint;
++			ZmqWorker = new FCameraZmqWorker(Endpoint, Topic, Res);
+ 			WorkerThread = FRunnableThread::Create(ZmqWorker, TEXT("CameraZmqWorkerThread"), 0, TPri_BelowNormal);
+ 		}
+ 
+@@ -587,7 +619,7 @@ void UMjCamera::SetStreamingEnabled(bool bEnable)
  		}
  		if (CaptureComponent)
  		{
@@ -215,7 +267,7 @@ index 6bb9663..31c27ee 100644
  
  			// CRITICAL: SetVisibility(true) must be called to allow the component
  			// to dispatch scene capture updates. bHiddenInGame alone is not sufficient —
-@@ -747,6 +773,53 @@ void UMjCamera::RequestReadback()
+@@ -747,6 +779,53 @@ void UMjCamera::RequestReadback()
  	ReadbackFence.BeginFence();
  }
  
@@ -269,7 +321,7 @@ index 6bb9663..31c27ee 100644
  bool UMjCamera::IsReadbackReady() const
  {
  	return bReadbackComplete;
-@@ -1007,6 +1080,6 @@ void UMjCamera::ImportFromXml(const FXmlNode* Node, const FMjCompilerSettings& C
+@@ -1007,6 +1086,6 @@ void UMjCamera::ImportFromXml(const FXmlNode* Node, const FMjCompilerSettings& C
  
  	if (CaptureComponent)
  	{
@@ -278,10 +330,64 @@ index 6bb9663..31c27ee 100644
  	}
  }
 diff --git a/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp b/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp
-index 1023d38..7cb1b8a 100644
+index 1023d38..6c7ad74 100644
 --- a/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp
 +++ b/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp
-@@ -494,7 +494,22 @@ void AAMjManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+@@ -44,6 +44,7 @@
+ #include "MuJoCo/Core/MjSimulationState.h"
+ #include "Utils/URLabLogging.h"
+ #include "Bridge/BridgeServerProvider.h"
++#include "Bridge/BridgeServerConfigUtils.h"
+ #if WITH_EDITOR
+ #include "Misc/MessageDialog.h"
+ #endif
+@@ -188,7 +189,8 @@ void AAMjManager::BeginPlay()
+ 		// transports; manager only owns publish/subscribe streams.
+ 		BridgeServer = NewObject<UURLabBridgeServer>(this, TEXT("BridgeServer"));
+ 		BridgeServer->SetOwnedByManager(true);
+-		BridgeServer->Start();          // ZMQ on tcp://0.0.0.0:5559
++		BridgeServer->Start(FString::Printf(TEXT("tcp://0.0.0.0:%d"),
++			URLabBridgeServerConfigUtils::GetPortBase() + 4)); // step RPC on PortBase + 4
+ 		BridgeServer->EnsureShmBound(); // SHM under "live"
+ 	}
+ 	BridgeServer->RegisterManager(this);
+@@ -199,17 +201,19 @@ void AAMjManager::BeginPlay()
+ 	// owns streaming; bridge owns RPC.
+ 	{
+ 		UE_LOG(LogURLab, Log, TEXT("[AAMjManager] Creating manager-owned streaming transports"));
++		const int32 PortBase = URLabBridgeServerConfigUtils::GetPortBase();
+ 
+ 		UURLabZmqPublishTransport* Broadcaster = NewObject<UURLabZmqPublishTransport>(
+ 			this, TEXT("AutoZmqBroadcaster"));
+ 		if (Broadcaster)
+ 		{
+ 			Broadcaster->SetOwningManager(this);
++			Broadcaster->ZmqEndpoint = FString::Printf(TEXT("tcp://0.0.0.0:%d"), PortBase);
+ 			if (Broadcaster->TransportInit())
+ 			{
+ 				ManagerOwnedPublishTransports.Add(Broadcaster);
+ 				UE_LOG(LogURLab, Log,
+-					TEXT("[AAMjManager] Created UURLabZmqPublishTransport (tcp://0.0.0.0:5555)"));
++					TEXT("[AAMjManager] Created UURLabZmqPublishTransport (%s)"), *Broadcaster->ZmqEndpoint);
+ 			}
+ 		}
+ 
+@@ -231,11 +235,13 @@ void AAMjManager::BeginPlay()
+ 		if (Subscriber)
+ 		{
+ 			Subscriber->SetOwningManager(this);
++			Subscriber->ControlEndpoint = FString::Printf(TEXT("tcp://0.0.0.0:%d"), PortBase + 1);
++			Subscriber->InfoEndpoint = FString::Printf(TEXT("tcp://0.0.0.0:%d"), PortBase + 2);
+ 			if (Subscriber->TransportInit())
+ 			{
+ 				ManagerOwnedSubscribeTransports.Add(Subscriber);
+ 				UE_LOG(LogURLab, Log,
+-					TEXT("[AAMjManager] Created UURLabZmqSubscribeTransport (tcp://127.0.0.1:5556)"));
++					TEXT("[AAMjManager] Created UURLabZmqSubscribeTransport (%s)"), *Subscriber->ControlEndpoint);
+ 			}
+ 		}
+ 	}
+@@ -494,7 +500,22 @@ void AAMjManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
  void AAMjManager::Tick(float DeltaTime)
  {
  	Super::Tick(DeltaTime);
@@ -304,6 +410,48 @@ index 1023d38..7cb1b8a 100644
  	if (!PhysicsEngine || !PhysicsEngine->IsInitialized())
  	{
  		return;
+diff --git a/Source/URLab/Public/Bridge/BridgeServerConfig.h b/Source/URLab/Public/Bridge/BridgeServerConfig.h
+index 56a1819..4c1de66 100644
+--- a/Source/URLab/Public/Bridge/BridgeServerConfig.h
++++ b/Source/URLab/Public/Bridge/BridgeServerConfig.h
+@@ -23,13 +23,20 @@ struct URLAB_API FURLabBridgeServerConfig
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
+ 	bool bAutoStart = true;
+ 
++	/** First of the plugin's TCP ports: state PUB = base, control SUB = base+1, info = base+2, cameras from
++	 *  base+3 (each probes upward for a free port), step RPC = base+4. INI key PortBase; StepPort / StatePort
++	 *  keys still override those two. Default 5800, clear of the 5555-5672 blocks the locomanipulation MuJoCo
++	 *  stacks use (upstream bound 5555-5559 and 5558+ for cameras, colliding with instance 0). */
++	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
++	int32 PortBase = 5800;
++
+ 	/** TCP port for the request/reply step RPC channel. */
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
+-	int32 StepPort = 5559;
++	int32 StepPort = 5804;
+ 
+ 	/** TCP port for the state PUB channel. */
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
+-	int32 StatePort = 5555;
++	int32 StatePort = 5800;
+ 
+ 	/** When true, EndPlay tears the server down even if it was started by
+ 	 *  the editor subsystem. Default false: an editor-spawned server stays
+diff --git a/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h b/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h
+index 6406935..8f2adee 100644
+--- a/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h
++++ b/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h
+@@ -17,6 +17,10 @@ URLAB_API FString GetIniPath();
+  *  default value from the struct. Missing file is treated as all-default. */
+ URLAB_API void LoadFromIni(FURLabBridgeServerConfig& Out);
+ 
++/** The configured PortBase (the INI's, else the struct default): the manager's streams and the cameras
++ *  derive their ports from it. */
++URLAB_API int32 GetPortBase();
++
+ /** Write the full [BridgeServer] section to the INI. Creates the file /
+  *  parent directories if missing. */
+ URLAB_API void SaveToIni(const FURLabBridgeServerConfig& In);
 diff --git a/Source/URLab/Public/Bridge/RpcDispatcher.h b/Source/URLab/Public/Bridge/RpcDispatcher.h
 index b1c63fd..14e16ce 100644
 --- a/Source/URLab/Public/Bridge/RpcDispatcher.h
@@ -384,3 +532,49 @@ index 8368df5..dd4a711 100644
  	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mujoco Physics|Objects")
  	TArray<UMjQuickConvertComponent*> m_MujocoComponents;
  
+diff --git a/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp b/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp
+index 7cf82a2..17e284d 100644
+--- a/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp
++++ b/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp
+@@ -77,8 +77,8 @@ bool FMjBridgeServerConfigDefaults::RunTest(const FString& Parameters)
+ {
+ 	FURLabBridgeServerConfig Cfg;
+ 	TestTrue(TEXT("AutoStart default"), Cfg.bAutoStart);
+-	TestEqual(TEXT("StepPort default"), Cfg.StepPort, 5559);
+-	TestEqual(TEXT("StatePort default"), Cfg.StatePort, 5555);
++	TestEqual(TEXT("StepPort default"), Cfg.StepPort, 5804);
++	TestEqual(TEXT("StatePort default"), Cfg.StatePort, 5800);
+ 	TestFalse(TEXT("StopOnPIEEnd default"), Cfg.bStopOnPIEEnd);
+ 
+ 	// Round-trip vs missing path: leaves struct at defaults.
+@@ -87,7 +87,7 @@ bool FMjBridgeServerConfigDefaults::RunTest(const FString& Parameters)
+ 	LoadFrom(Path, Cfg);
+ 
+ 	TestTrue(TEXT("Missing INI: AutoStart unchanged"), Cfg.bAutoStart);
+-	TestEqual(TEXT("Missing INI: StepPort unchanged"), Cfg.StepPort, 5559);
++	TestEqual(TEXT("Missing INI: StepPort unchanged"), Cfg.StepPort, 5804);
+ 	return true;
+ }
+ 
+@@ -148,7 +148,7 @@ bool FMjBridgeServerConfigPartial::RunTest(const FString& Parameters)
+ 	LoadFrom(Path, Cfg);
+ 
+ 	TestEqual(TEXT("StepPort honoured"), Cfg.StepPort, 7777);
+-	TestEqual(TEXT("StatePort default kept"), Cfg.StatePort, 5555);
++	TestEqual(TEXT("StatePort default kept"), Cfg.StatePort, 5800);
+ 	TestTrue(TEXT("AutoStart default kept"), Cfg.bAutoStart);
+ 	TestFalse(TEXT("StopOnPIEEnd default kept"), Cfg.bStopOnPIEEnd);
+ 	return true;
+diff --git a/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp b/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp
+index a4737f5..fa531f0 100644
+--- a/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp
++++ b/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp
+@@ -99,7 +99,7 @@ bool FMjBridgeServerSubsystemConfigLoaded::RunTest(const FString& Parameters)
+ 
+ 	const FURLabBridgeServerConfig& C = Sub->GetConfig();
+ 
+-	// Defaults are documented: StepPort=5559, StatePort=5555, AutoStart=true,
++	// Defaults are documented: StepPort=5804, StatePort=5800 (PortBase 5800), AutoStart=true,
+ 	// StopOnPIEEnd=false. The user can override via INI; if they have, the
+ 	// values should still be sensible (positive ports).
+ 	TestTrue(TEXT("StepPort is a plausible TCP port"),
