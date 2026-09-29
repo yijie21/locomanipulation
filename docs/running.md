@@ -34,7 +34,7 @@ diff configs/experiments/bottle_simple_smoke.yaml configs/experiments/my_run.yam
 | `collect.record` | 是否录制训练数据 | `false` 只打分、留录像，不产出数据集，比录制快 |
 | `collect.instance` | 用哪个实例（一组端口和一个 exporter 目录） | 同时跑的两个运行要用不同实例 |
 | `scene.name` | 用哪个场景 | 名字在 `configs/scenes.yaml` 里查；`scene.dir` 直接给目录，两者只能给一个 |
-| `images.source` | 策略看到的相机图由谁渲：`mujoco` 或 `isaac` | 训练集和闭环评测用同一个；区别见[图像来源](rendering.md#图像来源imagessource) |
+| `images.source` | 策略看到的相机图由谁渲：`mujoco`、`isaac` 或 `unreal` | 训练集和闭环评测用同一个；区别见[图像来源](rendering.md#图像来源imagessource) |
 | `train.steps` / `save_steps` | 训练步数 / 每隔多少步存一个 checkpoint | `save_steps` 大于 `steps` 时一个 checkpoint 都存不下 |
 | `train.holdout` | 留几条做验证集 | 必须小于保留条数，否则训练集为空；设 0 就没有验证集，也就不能做开环评测 |
 | `eval.rounds` / `eval.seed` | 闭环评测跑几局 / 评测的随机种子 | 20 局只能分辨成倍的差别，100 局才能分辨 10 个百分点 |

@@ -132,7 +132,7 @@ embodiment:
 scene:
   name: warehouse_box_45x32x33
   cases: null
-images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac
+images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac | unreal
   source: isaac
 backend:
   no_encoder: false

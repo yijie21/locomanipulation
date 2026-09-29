@@ -341,7 +341,7 @@ $ "$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_eng
 "$BRIDGE_PY" -m locomani.sim.unreal.build_level --room outputs/unreal_room_bake
 ```
 
-做什么：第一条用 Blender 5.x（`<blender>` 是它的可执行文件）把物流房间的程序化材质烘成贴图，连同灯光导出成 `room.glb` 和 `room_scene.json`，约 7 分钟。第二条在运行中的编辑器里把它建成房间关卡 `/Game/Levels/Warehouse`。成功时命令正常退出，烘焙目录里的 `unreal_level_report.json` 写着 `"ok": true`；失败时命令报错退出。之后每个场景的关卡在 [warehouse runbook](warehouse.md) 第 10 节建，哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
+做什么：第一条用 Blender 5.x（`<blender>` 是它的可执行文件）把物流房间的程序化材质烘成贴图，连同灯光导出成 `room.glb` 和 `room_scene.json`，约 7 分钟。第二条在运行中的编辑器里把它建成房间关卡 `/Game/Levels/Warehouse`。成功时命令正常退出，烘焙目录里的 `unreal_level_report.json` 写着 `"ok": true`；失败时命令报错退出。之后每个场景的关卡在 [warehouse runbook](warehouse.md) 第 1 步建，哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
 
 ## 安装排错与说明
 

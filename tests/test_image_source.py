@@ -180,3 +180,15 @@ def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_other
         assert unreal.get("unsupported") or unreal.get("level") == name, name
         if "level" in unreal:
             assert unreal["build"] == f"$BRIDGE_PY -m locomani.sim.unreal.build_level {name}"
+
+
+@pytest.mark.parametrize("name", ["warehouse_smoke", "warehouse_200"])
+def test_the_unreal_warehouse_runs_differ_from_the_isaac_default_in_the_image_source_only(name):
+    # docs/warehouse.md offers Isaac and Unreal side by side: choosing a renderer is choosing one of these two files,
+    # so nothing but who draws the pictures may differ
+    experiments = run_context.ROOT / "configs" / "experiments"
+    isaac, unreal = (yaml.safe_load((experiments / f"{n}.yaml").read_text()) for n in (name, f"{name}_unreal"))
+    assert (isaac["images"], unreal["images"]) == ({"source": "isaac"}, {"source": "unreal"})
+    assert unreal["name"] == f"{name}_unreal"
+    rest = [{k: v for k, v in cfg.items() if k not in ("name", "images")} for cfg in (isaac, unreal)]
+    assert rest[0] == rest[1]

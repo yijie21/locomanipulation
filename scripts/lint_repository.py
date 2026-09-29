@@ -28,7 +28,7 @@ GUIDES = {
     "docs/README.md": 60,
     "docs/single_arm.md": 130,
     "docs/bimanual.md": 130,
-    "docs/warehouse.md": 170,  # 2026-09-29: + "改用 Unreal 出图" as its own section, not squeezed into one line
+    "docs/warehouse.md": 195,  # 2026-09-29: Isaac and Unreal side by side wherever the renderer matters (user)
     "docs/running.md": 180,
     "docs/setup.md": 440,  # 2026-09-29: + step 8 (Unreal) in the steps' format and its troubleshooting
     "docs/warehouse_design.md": 120,
