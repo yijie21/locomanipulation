@@ -21,7 +21,7 @@ bash scripts/build_scene.sh warehouse_box_45x32x33
 bash scripts/build_scene.sh warehouse_box_45x32x33 --isaac
 ```
 
-做什么：第一条从仓库自带的资产包建物流房间 `outputs/scene/warehouse_textured`；第二条以它为底，量出托盘四条边外的空地，写进场景 `outputs/scene/warehouse_box_45x32x33`（纸箱尺寸与房间原来的相同：宽 0.45 × 长 0.32 × 高 0.33 m），下面的采集用这个场景；第三条建这个场景给 Isaac 用的版本，写到 `assets/isaac/scene/warehouse_box_45x32x33_env/`，需要一个带 `pxr` 的 Python（`pip install usd-core`，用 `USD_PY` 指定）。
+做什么：第一条从仓库自带的资产包建物流房间 `outputs/scene/warehouse_textured`；第二条以它为底，量出托盘四条边外的空地，写进场景 `outputs/scene/warehouse_box_45x32x33`（纸箱尺寸与房间原来的相同：宽 0.45 × 长 0.32 × 高 0.33 m），下面的采集用这个场景；第三条建这个场景给 Isaac 用的版本，写到 `assets/isaac/scene/warehouse_box_45x32x33_env/`，需要一个带 `pxr` 的 Python：脚本自动在 `python3` 和 PATH 上 `blender` 自带的 Python 里找，都没有就 `pip install usd-core` 或用 `USD_PY` 指定。
 得到什么：`outputs/scene/warehouse_box_45x32x33/scene_locomani.xml` 和 `assets/isaac/scene/warehouse_box_45x32x33_env/scene.usda`。每条几秒到一分钟。
 
 ## 2. 采集
