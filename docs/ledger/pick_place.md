@@ -217,3 +217,32 @@ plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–
 - **7.7.1.2（走 A）**：§4 的 10/19 抓取率本来就是 53%，skills 里 coupled 抓取 4–5/10 与之一致；差在放置——§4 从不持罐走路。
   coupled 原地放置 3/4（持罐走近后 2/5、容差放宽后 1/2），所以 coupled 的默认 plan 不再插 `approach(goal)`（`default_plan` 按 profile 的 `reach.strategy` 选）。
   抓取侧的 50% 是 coupled 自己的失败族（局部对齐扰动罐头、stand infeasible），与 §4 相同，不属于本项。
+
+## §13 Q11 失败注入配对比较：`move_target`（2026-09-29）
+
+注入层见 [skills §7](../skills.md#7-失败注入与配对比较q11-验收)。plan `pick_place_via_basket.json`（profile `bottle_simple`），seed 300 起，GPU1 / instance 1。
+
+**注入有效性**（plan 臂，3 局）：
+
+| 注入 | 结果 | 说明 |
+|---|---|---|
+| `move_target` 横向 −0.17 m（`inj_move_plan3_20260929`） | 1/3，失败是 `[grasp] no bilateral pad contact`、`[carry] raise timed out` | **不是有效注入**：`grasp_single` 开始时按物体当前位姿重新规划（trace `plan.grip` 已是挪后的位置），0.17 m 在臂包络内，局 0 抓起并放进篮子 |
+| `move_target` 沿桌沿 +0.60 m（罐头到 y = +0.32，`inj_move60_plan3_20260929`） | 见下 | 出臂包络；再走近仍从同一桌沿（`plan_for_target` 的边由 `init_pos` 定，站位按当前位置算） |
+
+往桌子深处挪不可恢复（站位会落到桌面内），所以只沿桌沿挪。
+
+**配对 10 局（seed 300–309，`move_target` +0.60 m，报告 `outputs/analysis/injection_20260929/report.md`）**：
+
+| 臂 | 任务 OK | 注入后重新抓起 | 每局调用 | 失败去向 |
+|---|---|---|---|---|
+| plan `inj_move60_plan10_20260929` | **0/10** | 0/10（不会恢复） | 2 | 全在 `[grasp]`（entry 对不上 ×8、support reference ×2） |
+| agent `inj_move60_agent10_20260929`（sonnet，`--max-steps 16`） | **0/10** | **5/10** | 6–16（中位 12） | 重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐；3 局在重新站位的原地转向把罐头扫下桌；2 局用完 16 次调用 |
+
+符号检验 p = 1.0（没有不一致对）。结论分两层：
+
+- **决策层通了**：agent 每局都从 `[grasp]` 失败 + 特权状态里罐头的新位置推出"罐头不在原处"，走 `approach!（横向不修）→ navigate_to（到罐头旁）→ turn_to（转回朝桌）→ approach → grasp_single`，5/10 重新抓起；一次 `release` 清掉旧 `held`（round 0、9）也是对的。它还发现了两个 primitive 事实：
+  `approach` 只修深度不修横向（0.6 m 横向偏移下 2.5 s 报 `[stand] arrival left the object out of reach`）；`nudge` 是量化脉冲，横向 0.1–0.3 m 修不出（与 7.8.1 一致）。
+- **primitive 层挡住了任务**：(1) 重抓后的站位在罐头新位置（y = +0.32），篮子在 y = 0，持罐 `approach(basket)` 要先 slow_walk 转 ~90°，simple 握持在转向中掉罐 5/5（§12 已知的"握持转向滑"，现在成了恢复路径的必经点）；
+  (2) `navigate_to` 把机器人停在罐头正旁、离桌沿 0.1–0.15 m，接着 `turn_to` 原地转向时手臂扫过桌面把罐头扫到地上（3/10）；(3) 每次 `nudge` 都清 `stance`，agent 再抓就被拒，来回消耗 2–4 次调用，两局用完预算。
+
+也就是说 Q11 的"agent OK 率显著高于脚本"在这个注入上**没有出现**，但不是 agent 选错，而是恢复路径需要的两个动作（持物横移不转向、贴桌沿转向不扫桌面）目前没有 primitive 能做。要让配对比较有区分度，先补 primitive：持物侧移（`carry_to` 加 `strafe`，不转向）或 place 前的转向改为倒退-转-前进；`navigate_to` 目标点离桌沿留 ≥ 0.3 m；`turn_to` 在桌沿附近先收臂。

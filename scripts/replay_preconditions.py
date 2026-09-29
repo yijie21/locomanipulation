@@ -42,9 +42,9 @@ def rows_from_skills_run(run: Path) -> list[dict]:
         stance = None
         for e in entries:
             outcome = e.get("outcome")
-            if e["primitive"] == "approach" and outcome and outcome.get("ok") and outcome.get("produced"):
+            if e.get("primitive") == "approach" and outcome and outcome.get("ok") and outcome.get("produced"):
                 stance = outcome["produced"]
-            elif e["primitive"] in GRASP_STEPS and stance is not None:
+            elif e.get("primitive") in GRASP_STEPS and stance is not None:
                 rejected = e.get("rejected")
                 ok = bool(outcome and outcome.get("ok"))
                 rows.append(

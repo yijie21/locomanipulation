@@ -14,7 +14,10 @@ round loop's spawn, without its sampling jitter), the calls through `skills.Exec
 from the privileged state, one manifest line and one `agent_trace_NN.jsonl`, one video. The stack is this
 process's (instance/GPU from the arguments), brought down at the end unless `--keep-stack`. No exporter,
 no recording: this is the regression / smoke entry. `--profile` overrides the profile the scene picks for
-the target (a new object's calibration, docs/skills.md).
+the target (a new object's calibration, docs/skills.md). `--inject` names a JSON failure injection
+(`skills/injection.py`): a world event fired once per round after the first successful call of a named
+primitive, identical for the fixed plan and the agent on the same seed (agentic-plan Q11; docs/skills.md
+§7); `scripts/injection_report.py` pairs the two runs.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ def parse(argv):
     ap.add_argument("--max-steps", type=int, default=12, help="agent mode: primitive calls per round before abort")
     ap.add_argument("--profile", default=None, help="profile name for the target instead of the scene's choice")
     ap.add_argument("--spawn-off", type=float, default=1.2, help="single-arm: metres behind the planned stand")
+    ap.add_argument("--inject", type=Path, default=None, help="JSON failure injection (configs/injections/)")
     ap.add_argument("--keep-stack", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved plan, scene and stack; start nothing")
     return ap.parse_args(argv)
@@ -80,7 +84,20 @@ def default_plan(scene, task: dict, profile: str | None = None, profiles: dict |
     return steps
 
 
-def agent_round(executor, planner, session, scene, steps_max: int, log) -> list[dict]:
+def scripted_round(executor, steps: list[dict], injector=None) -> list[dict]:
+    """`Executor.run_plan` with the injector between calls: stops at the first rejected or failed step."""
+    entries = []
+    for step in steps:
+        entry = executor.step(step["primitive"], step.get("args"))
+        entries.append(entry)
+        if "rejected" in entry or not entry["outcome"]["ok"]:
+            break
+        if injector is not None:
+            injector.after(entry, executor)
+    return entries
+
+
+def agent_round(executor, planner, session, scene, steps_max: int, log, injector=None) -> list[dict]:
     """Ask, execute, feed back, until the planner says done/abort, the round fails, or `steps_max` calls."""
     from locomani.skills.planner import scene_view
     from locomani.skills.session import snapshot
@@ -97,6 +114,8 @@ def agent_round(executor, planner, session, scene, steps_max: int, log) -> list[
             break
         last = executor.step(decision["next"], decision.get("args"))
         entries.append(last)
+        if injector is not None:
+            injector.after(last, executor)  # the agent is not told; the next ask shows the state
         if (
             "outcome" in last
             and not last["outcome"]["ok"]
@@ -250,13 +269,19 @@ def main(argv=None) -> int:
             if "profile" in step.get("args", {}):
                 step["args"]["profile"] = args.profile
     text, _ = criterion_for(scene, task, steps)
+    injection = None
+    if args.inject:
+        from locomani.skills.injection import load_injection
+
+        injection = load_injection(args.inject)
     print(
         f"[plan] run {run_dir}\n[plan] scene {scene_dir}\n[plan] task: {text}\n"
         + (
             f"[plan] agent: claude -p ({args.agent_model}), up to {args.max_steps} calls"
             if args.agent
             else f"[plan] steps {json.dumps(steps)}"
-        ),
+        )
+        + (f"\n[plan] inject {injection}" if injection else ""),
         flush=True,
     )
     if args.dry_run:
@@ -277,13 +302,13 @@ def main(argv=None) -> int:
     env = stack.up()
     os.environ.update(env)
     try:
-        return rounds(args, cfg, run_dir, meta, scene, steps, profiles)
+        return rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection)
     finally:
         if not args.keep_stack:
             stack.down()
 
 
-def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
+def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> int:
     import numpy as np
 
     from locomani.backends.sonic.agent_server import LocomotionMode
@@ -293,6 +318,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
     from locomani.sim.privileged_pub import EpisodeControlClient
     from locomani.skills import Executor, Session, snapshot
     from locomani.skills.catalogue import build_catalogue
+    from locomani.skills.injection import Injector
     from locomani.tasks.bottle import reach_map
     from locomani.tasks.bottle.grasp_gym import start_control_once
 
@@ -341,6 +367,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
                 directory=out / f"round_{rnd:02d}",
             )
             executor = Executor(session, build_catalogue(profiles), trace_path=out / f"agent_trace_{rnd:02d}.jsonl")
+            injector = Injector(injection, log=p.log) if injection is not None else None
             session.record.enter("spawn")
             if bimanual:
                 ok, why = spawn_bimanual(session, p, reset, meta, profile, rng=rng, log=p.log)
@@ -368,7 +395,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
                         catalogue=executor.catalogue,
                         profiles=profiles,
                     )
-                    entries = agent_round(executor, planner, session, scene, args.max_steps, p.log)
+                    entries = agent_round(executor, planner, session, scene, args.max_steps, p.log, injector)
                     ok, why = criterion(p.obs(), session)
                     if (
                         ok
@@ -378,7 +405,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
                     ):
                         ok, why = False, "[plan] agent aborted: " + entries[-1]["reason"][6:]
                 else:
-                    entries = executor.run_plan(steps)
+                    entries = scripted_round(executor, steps, injector)
                     last = entries[-1] if entries else None
                     if last is None or "rejected" in last:
                         ok, why = False, "[plan] " + (json.dumps(last["rejected"]) if last else "empty plan")
@@ -395,6 +422,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
                 pass
             row = dict(
                 round=rnd,
+                seed=args.seed + rnd,
                 ok=bool(ok),
                 why=why,
                 task=text,
@@ -402,6 +430,8 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles) -> int:
                 completed=[e["primitive"] for e in entries if "outcome" in e and e["outcome"]["ok"]],
                 agent=bool(planner is not None),
                 agent_calls=planner.calls if planner is not None else None,
+                injection=injector.fired if injector is not None else None,
+                injected=bool(injector is not None and injector.fired is not None),
                 seconds=round(time.time() - t0, 1),
                 session=executor.session
                 and __import__("locomani.skills.session", fromlist=["snapshot"]).snapshot(session),

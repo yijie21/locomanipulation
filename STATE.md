@@ -1,39 +1,26 @@
-# STATE — 2026-09-28 傍晚（会话：TODO 7 推到底 + 标定项 7.7.1 / 7.8.1 / 7.8.2，用户定 7.7.1.1 / 7.8.1 走 A）
+# STATE — 2026-09-29（会话：Q11 失败注入 paired 比较，TODO 8；上一份 STATE 见 `1a2a588`）
 
-工作目录 `/workspace/code/locomanipulation-loco_agent`（worktree），分支 `loco_agent`，基于 `079619f`。
-上一份 STATE（`skills` 包搭起、四个黑盒包装、`carry_to` 测量）在 `079619f`。`outputs/` 是指向主目录 outputs 的符号链接，**stage by name，永远不要 `git add -A`**。
-没有运行中的栈（最后一个队列运行结束后 `plan_episode.py` 自己收栈）；GPU1 上约 8 GB 是别的项目的。
+工作目录 `/workspace/code/locomanipulation-loco_agent`（worktree），分支 `loco_agent`。`outputs/` 是指向主目录 outputs 的符号链接，**stage by name，永远不要 `git add -A`**。
+**运行中**：`drop_held` 配对队列（scratchpad `queue_drop.sh`：`inj_drop_plan10_20260929` → `inj_drop_agent10_20260929`，GPU1 / instance 1，约 1 h），结果没写进台账 §13 前不要起别的栈。
 
-## 本会话做了什么（细节：设计文档 §9b、台账 pick_place §8–9 / crate 末节、DECISIONS 2026-09-28（晚））
+## 本会话做了什么（细节：docs/skills.md §7、pick_place 台账 §13、TODO 8）
 
-- 已确认：TODO 第 7 节全部关闭（7.7.1.2：coupled 原地放置 3/4，默认 plan 不再持罐走近；7.8.1.1：`stand_forward_min` 0.50 后 put_down 8/8 放稳过判据，skills `warehouse_box` profile 改读 fwd50 配置）。
-- 已确认（真栈，GPU1 / instance 1，`scripts/plan_episode.py`）：
-  - 持物 `approach(basket)` → `place`：三轮 10 局。抓取站位版 2/6、放置带中心版 1/7、**中心 + 残差修正版 3/6**（容器 6/6 进放置带）；对照直接 place 0/5。
-  - warehouse plan `approach → ready → grasp_bimanual` **4/10**（采集入口 6/20，同噪声带）。
-  - `put_down_bimanual` 7 个样本 6 次放稳（≤ 0.7 cm、≤ 2.5°）；判据改看箱底后唯一样本暴露：站直把箱子拉近 0.2 m，原地放下搁在台面近沿（TODO 7.8.1 前送）。
-  - 持箱 `carry_to`（180° slow_walk 转 + 1 m）3/6；不转倒退 1 m 2/2（TODO 7.8.2 默认走法待定）。
-  - `navigate_to` 持罐 1 局：7 段 2.57 m 绕桌角，漂移 0.8 cm（pick_place §10）；空手真栈未跑。
-  - `--agent`（`claude -p`，sonnet）3 局：管路通，每局 10 次调用 200–300 s，失败都是物理失败（抓倒、掉罐）。
-- 已确认：准入带回放 932 条站位——任何深度 / 横向带都不分成功与失败，`STANCE_BANDS` 全开。
-- 已确认（下午，标定三项）：
-  - 7.7.1 罐头：三个 simple 单旋钮 pilot 都不优于基线（grasp 6/10、place 3/6）；`coupled` 已包装（三处修补）并全程跑通 2/10（grasp 5/10、持罐走动掌系滑 3.2–3.7 cm）；容差 0.05 对照 1/10（转向中掉罐 ×3）。
-  - 7.8.1 放下前送：臂前送 1/3、`walk_to` 腿前送 3/11（冲 0.7–1.5 m）；新 `nudge`（脉冲挪步）三个变体 60 局：到位 13/29，**到位后 put_down 12/13 放稳**。厘米级平移是 v1.1 planner 量化，脉冲时长调不出（0.5 s 不动、0.7 s 整步）。
-  - 7.8.2 持箱 carry：倒退不转 8/12 vs 转 3/6，但两种都以约 2 cm/s 下滑（蠕变）；默认不改，持箱 ≤ 1 m 可用。
-- 已确认：`make check` 通过（提交前再跑一次）；`tests/test_skills_*.py` 100+ 个 CPU 测试。
+- 已确认：TODO 7 无剩余项；立 TODO 8（Q11）。注入层 `src/locomani/skills/injection.py`（`move_target` / `drop_held`，某 primitive 第一次成功后 `pin_object` 0.5 s 再松开，一局一次，agent 不被告知）、`plan_episode.py --inject`、`Executor.note`、manifest 记 `seed`/`injection`/`injected`、`scripts/injection_report.py`（按 seed 配对、精确符号检验、恢复段归类、`regrasped`）、6 个 CPU 测试、`configs/injections/`。
+- 已确认（真栈）：`move_target` 横向 0.17 m **无效**（`grasp_single` 开始时按当前位姿重规划；1/3，失败是基线族）；沿桌沿 +0.60 m 有效（plan 0/3、0/10 全 `[grasp]`）。
+- 已确认（配对 10 局，seed 300–309）：plan 0/10 vs agent 0/10（p = 1.0），agent **5/10 重新抓起**；重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐（simple 握持转向滑），3/10 贴桌沿 `turn_to` 扫罐下桌，2/10 用完 16 次调用。Q11 的区分度卡在 primitive：持物横移、贴桌沿转向、`nudge` 清 stance、`approach` 不修横向（TODO 8.3.1 / 8.3.2，待用户定）。
+- 未提交：以上代码 + 文档（`make check` 待跑）。
 
 ## 卡点 / 待验证
 
-- 已知：coupled 抓罐头 ~50% 是它自己的失败族（局部对齐扰动、stand infeasible），与 §4 的 10/19 一致；要提高抓取率是另一个题。
-- 已知：持箱 carry 的下滑不是转向问题（memory `bimanual-carry-creep`）。
-- 假设：`put_down_bimanual` 的下放高度只按场景表面顶算；搬到台面之外的地方放（地面）没有表面项，需要给 `surface` 一个"floor"。
-- 已知：warehouse plan 运行无视频（`backend.render: offline`）；pick_place 运行有，预览在 `outputs/videos/skills_batch2_20260928/`。
-- 已知坑（沿用）：不要 `source scripts/paths.sh`；Bash 后台任务 600 s 上限会杀队列，用 `nohup setsid` + 日志 Monitor。
+- `drop_held` 配对结果（队列中）。预期 plan 臂在持罐 `approach(basket)` 报 `[approach] load dropped`；agent 要先 `release` 再重抓——重抓后同样要持罐转向，可能同样掉罐。
+- 已知：`nudge` 会清 `stance`，agent 每次 nudge 后再抓都被拒；是否让 grasp 容忍 nudge 后的小位移待用户定。
+- 已知坑（沿用）：`pgrep -f` / `pkill -f` 在 shell 链里自匹配（本会话两次中招：等待循环永不退出、pkill 杀掉自己的 shell）；用脚本文件 + `grep -v pgrep`。
 
 ## 下一步（TODO）
 
-1. 第 7 节没有剩余项；可选：把 `stand_forward_min` 0.50 推回采集线（需 20 局基线对照）。
-2. Q11 失败注入的 paired 比较设计（agent 只在失败恢复上有不可替代的贡献；3 局冒烟里没有可恢复的失败）。
-3. put_down 的地面放置（`surface` 没有 floor 项）。
+1. `drop_held` 配对落地后写台账 §13、关 8.4；`make check`；提交。
+2. 8.3.1 / 8.3.2 待用户定：补哪个 primitive 才能让配对比较有区分度（推荐先做持物横移不转向 + `navigate_to` 离桌沿 0.3 m）。
+3. 8.5 未做：推机器人 / 施力需要 sim 侧 xfrc 命令；放置点被占需要第三个物体。
 
 ## 关键路径与命令
 
@@ -41,12 +28,11 @@
 cd /workspace/code/locomanipulation-loco_agent
 export SONIC_DEPLOY_ROOT="$PWD/outputs/bottle_continuous_20260914/deploy" PYTHONPATH="$PWD/src"   # 不要 source scripts/paths.sh
 PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
-$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 10 --seed 300 --plan configs/plans/pick_place_via_basket.json --name <run>
-$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 3 --agent --name <run>
-$PY -u scripts/plan_episode.py configs/experiments/box_centre_base_20260927.yaml --gpu 1 --instance 1 --rounds 10 --seed 7000 --plan configs/plans/warehouse_put_down.json --name <run>
-$PY scripts/replay_preconditions.py --out outputs/analysis/precondition_replay_<日期>
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 10 --seed 300 --plan configs/plans/pick_place_via_basket.json --inject configs/injections/pick_place_move_target.json --name <run>
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 10 --seed 300 --agent --max-steps 16 --inject configs/injections/pick_place_move_target.json --name <run>
+$PY scripts/injection_report.py --plan <plan run> --agent <agent run> --out outputs/analysis/injection_<日期>
 make test TESTS="tests/test_skills_*.py"; make check
 ```
 
-- 起栈前查：`nvidia-smi`、5 秒 CPU 采样（配额 15.36 核）、`/workspace/tmp/p03_i1/stack.json` 是否存在。
-- 每次运行产物：`outputs/runs/<run>/skills/{manifest.jsonl,agent_trace_NN.jsonl[,agent_io_NN.jsonl]}`、`videos/`。plan 文件：`configs/plans/`。
+- 起栈前查：`nvidia-smi`、`pgrep -af scripts/plan_episode.py | grep -v pgrep`、`/workspace/tmp/p03_i1/stack.json`。
+- 每次运行产物：`outputs/runs/<run>/skills/{manifest.jsonl,agent_trace_NN.jsonl[,agent_io_NN.jsonl]}`、`videos/`；注入事件是 trace 里的 `{"event":"injection"}` 行。

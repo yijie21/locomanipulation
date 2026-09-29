@@ -323,3 +323,11 @@
   - [x] 7.10 新物体标定流程（2026-09-28）：写在 `docs/skills.md` §5（新 profile 登记 `PROFILE_SOURCES` → `plan_episode.py --profile` 10 局 pilot → 按失败族改一个旋钮 → gate 对照 → 回放定带）；按几何自动落位仍无机制，文档里明说没有
   - [x] 7.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）
   - [x] 7.12 提交本会话代码（2026-09-28 晚：skills 包 + 第二批 primitive、attempt.py 提取、plan_episode.py `--agent`/`--profile`、回放脚本、docs/skills.md、台账、plan 文件；`make check` 通过）
+- [ ] 8 Q11 验收：失败注入 paired 比较（agent 唯一不可替代的贡献是失败后的决策；2026-09-29 立项）
+  - [x] 8.1 注入层（2026-09-29）：`skills/injection.py`（`move_target` / `drop_held`，某 primitive 第一次成功后钉物体 0.5 s 再松开，一局一次，agent 不被告知）、`plan_episode.py --inject`、`Executor.note`、manifest 记 `seed` / `injection` / `injected`；`scripts/injection_report.py` 按 seed 配对、精确符号检验、恢复段按第一步归类；`tests/test_skills_injection.py` 6 个；注入文件 `configs/injections/pick_place_{move_target,drop_held}.json`；docs/skills.md §7
+  - [x] 8.2 注入有效性（2026-09-29）：横向 −0.17 m **无效**（`grasp_single` 开始时按当前位姿重规划，臂包络内，1/3 且失败是基线族）；沿桌沿 +0.60 m 有效（plan 臂 0/3，全在 `[grasp]`）；pick_place 台账 §13
+  - [x] 8.3 配对 10 局 `move_target` +0.60 m（2026-09-29，pick_place 台账 §13，报告 `outputs/analysis/injection_20260929/report.md`）：plan **0/10**（全 `[grasp]`）vs agent **0/10**，p = 1.0；但 agent **5/10 重新抓起**（决策链 approach! → navigate_to → turn_to → approach → grasp_single，release 清旧 held 也对），重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐，3/10 贴桌沿 `turn_to` 把罐头扫下桌，2/10 用完 16 次调用。Q11 的"显著高于脚本"没出现，卡在 primitive 不在决策
+    - [ ] 8.3.1 恢复路径缺的 primitive（待用户定优先级）：持物横移不转向（`carry_to` 加 strafe，或 place 前倒退-转-前进）；`navigate_to` 目标点离桌沿留 ≥ 0.3 m；`turn_to` 贴桌沿先收臂；`nudge` 不清 `stance`（或 grasp 允许 nudge 后的小位移）
+    - [ ] 8.3.2 `approach` 只修深度不修横向：0.6 m 横向偏移下 2.5 s 报 `[stand] arrival left the object out of reach`；要么 approach 先横移到 `stand_plan` 站位，要么文档写明它的前置是"大致正对目标"
+  - [ ] 8.4 `drop_held` 同样两臂 10 局（2026-09-29 队列中：`inj_drop_plan10_20260929` → `inj_drop_agent10_20260929`）
+  - [ ] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）

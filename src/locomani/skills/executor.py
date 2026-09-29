@@ -75,6 +75,10 @@ class Executor:
     def abort(self, reason: str) -> dict:
         return self._trace({"primitive": "abort", "reason": reason, "session": snapshot(self.session)})
 
+    def note(self, event: dict) -> dict:
+        """Trace something that happened between calls (a failure injection); not a primitive entry."""
+        return self._trace({**event, "session": snapshot(self.session)})
+
     def _trace(self, entry: dict) -> dict:
         self.session.trace.append(entry)
         if self.trace_path is not None:

@@ -101,3 +101,36 @@ $PY scripts/replay_preconditions.py --out outputs/analysis/precondition_replay_<
 
 真栈结果按线记在台账：单臂 [bottle §40–41](ledger/bottle.md)、pick_place [§7–8](ledger/pick_place.md)、纸箱 [crate 末节](ledger/crate.md)。
 离线测试 `make test TESTS="tests/test_skills_*.py"`（CPU，假栈）。
+
+## 7. 失败注入与配对比较（Q11 验收）
+
+agent 在正常局里的选择一个枚举器也能做（[agentic 决策 §2](handoff/agentic-plan.md)）；它唯一不可替代的贡献是**失败之后的决策**，
+而自然失败率凑不出统计量，所以失败要注入。`--inject <json>` 让 runner 在**某个 primitive 第一次成功之后**触发一次世界事件
+（`src/locomani/skills/injection.py`，走 sim 的 `pin_object`：钉住 `settle_s` 秒再松开），固定 plan 与 agent 在同一 seed 上吃到同一事件，
+谁都不会被告知——agent 只看到下一次请求里的特权状态（物体位置、接触）和 session 快照（`drop_held` 后 `held` 仍是旧值，本体感觉也会这么说）。
+
+| kind | 触发后 | 做什么 | 固定 plan 的下场 | agent 要做的 |
+|---|---|---|---|---|
+| `move_target` | `approach(target)` | 物体沿世界 xy 挪 `offset_m`，高度姿态不变 | `grasp_single` 抓空 | 再 `approach` 再抓 |
+| `drop_held` | `grasp_single` | 物体回到场景 `init_pos + offset_m`（直立） | 持物 `approach(goal)` 报 `[approach] load dropped` | `release` 清掉旧 `held`，再走近、再抓 |
+
+推机器人（走偏）和对负载施力还没有 sim 侧命令，没做。注入文件在 `configs/injections/`。
+
+```bash
+# 两臂同 seed、同注入；plan 臂不会恢复，是对照
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 10 --seed 300 \
+    --plan configs/plans/pick_place_via_basket.json --inject configs/injections/pick_place_move_target.json --name <plan run>
+$PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.yaml --gpu 1 --instance 1 --rounds 10 --seed 300 \
+    --agent --max-steps 16 --inject configs/injections/pick_place_move_target.json --name <agent run>
+$PY scripts/injection_report.py --plan <plan run> --agent <agent run> --out outputs/analysis/injection_<日期>
+```
+
+- **做什么**：`injection_report.py` 按 seed 配对两份 `manifest.jsonl`，只数两臂都真的触发了注入的局；给出配对 OK 数、不一致对
+  （只有 agent 过 / 只有 plan 过）与精确双侧符号检验 p 值，并把 agent 在事件之后的调用串（`名!` 失败、`名?` 被拒）按第一步归类。
+- **产物**：trace 里多一行 `{"event": "injection", "before", "commanded", "after", "moved_m", ...}`；manifest 多 `seed`、`injection`、`injected`；
+  报告 `report.md` + `pairs.json`。
+- **先验一次注入有效**：先跑 plan 臂 3 局，确认注入后固定 plan 确实失败（不失败的注入不是注入），再花 agent 调用。
+- 注意：agent 恢复一次至少要 4–6 次调用（`release → approach → grasp_single → approach → place`），`--max-steps` 按 16 起。
+- 2026-09-29 第一轮结果（[pick_place §13](ledger/pick_place.md)）：`move_target` 横向 0.17 m 被 `grasp_single` 吸收（它开始时按物体当前位姿重规划），
+  沿桌沿 0.60 m 才有效；配对 10 局 plan 0/10、agent 0/10 但 agent 5/10 重新抓起，之后全部在持罐转向时掉罐。
+  agent 摸出来的 primitive 事实：`approach` 只修深度不修横向；`nudge` 是量化脉冲且会清 `stance`；`navigate_to` 贴桌沿停、随后的 `turn_to` 会扫桌。
