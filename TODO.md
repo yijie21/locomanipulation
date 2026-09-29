@@ -370,6 +370,8 @@
 - [x] 10.3.1 实跑核对（2026-09-28）：`warehouse_smoke` 以运行名 `warehouse_smoke_edges_20260928` 跑采集，第一局前打印的设置与 dry-run 相同；4 局抽到 yp、yp、xm、xm，保留 2 条（另两局 `lost_attachment`、`reach_stalled`），栈正常关闭；录像与 ≤500 KB 预览在该运行的 `videos/`、`previews/`。非终端运行（nohup），所以 10 秒等待这条分支没有实跑
 - [ ] 10.4 本机的 `outputs/runs/warehouse_smoke` 是按旧配置跑的，照 runbook 用同名重跑会报 `config.yaml differs`。待用户定：删掉旧运行目录（9.9 已计划删它的 `model/`），还是在 runbook 里写明换 `--name`
 - [ ] 10.5 `warehouse_200` 在四边随机下还没有按完整规模跑过（按 17/40 估计，约 470 局保留 200 条）
+- [x] 10.6 提交并推送：`4dd5649`（与第 11 节同一个提交；推送时一并推了 `7135a83`）（2026-09-28）
+- [ ] 10.7 待验证：终端里“打印后等 10 秒”这条分支没实跑过（两次实跑都是 nohup，非终端）；下次在终端里跑采集时看一眼
 
 ## 11. 双臂线采集默认并行（通道）；开跑前判断资源、打印通道数（用户 2026-09-28；DECISIONS 同日）
 
@@ -381,3 +383,6 @@
 - [ ] 11.5 单臂线（bottle）的并行采集：驱动器不同，本次没做
 - [ ] 11.6 实时渲染的通道（crate）成本没有实测，沿用旧单栈预算（10 核、6000 MiB、一张卡一条）；这台机器上 crate 目前只能开一条
 - [ ] 11.7 两条以上通道的产出率是否与单条相同，只跑了一次冒烟（8 局保留 5 条，RTF 0.974–0.996）；完整规模下要按产出率和 RTF 再核一次
+- [x] 11.8 提交并推送：`4dd5649`（2026-09-28）
+- [ ] 11.9 本会话留下的小产物（共约 1 GB，可随 9.9 一起删，需先在 STATE 写明 24 小时）：`outputs/runs/{warehouse_smoke_edges,warehouse_smoke_lanes,warehouse_lane_cost,warehouse_lane_cost_i3,warehouse_lane_cost_i3b}_20260928`、`outputs/warehouse_parallel_20260928`（测量脚本与采样）、`outputs/warehouse_edges_default_20260928`；exporter session 在 `/workspace/tmp/p03_i2`、`p03_i3`（1.2 GB）。`warehouse_smoke_lanes_20260928` 的 5 集是并行通道的证据，删前留 manifest 与 `collect/`
+- [ ] 11.10 旧资源闸门 `run_context.NEEDS["collect"]`（1800 线程、8 核）仍用于单臂线和 `--lanes` 之前起的栈；是否按 11.1 的实测改小，待定（单臂 exporter 没量过）

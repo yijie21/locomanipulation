@@ -1,50 +1,57 @@
-# STATE — 2026-09-28（会话：文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep；三条线冒烟实跑；已推送）
+# STATE — 2026-09-29（会话：warehouse 默认四边采集 + 采集前提醒；双臂线并行采集通道；已推送）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步：handoff 提交 `7135a83` 之后是 warehouse 四边默认采集 + 双臂并行通道的提交（TODO 10、11），均已推送。
-没有运行中的栈、渲染或镜像（本会话的都已收掉）。另一个检出目录 `locomanipulation-loco_agent`（`outputs/`、`third_party/` 是指向本仓库的软链接）
-的会话会在实例 1、GPU 1 上起栈；GPU 1 上还常驻一个与本项目无关的 `depth_server.py`（约 3.7 GB）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步于 `4dd5649`（之后只有这次 handoff 提交）。
+已确认：本会话起的栈、Isaac 补渲都已收掉；2026-09-29 01:49 UTC 实例端口 5555–5699 没有任何程序监听，GPU0 2 MiB、GPU1 3698 MiB。
+别的会话：`locomanipulation-loco_agent` 检出目录会在实例 1、GPU 1 起栈；GPU 1 常驻无关的 `depth_server.py`（约 3.7 GB）；
+2026-09-28 Unreal 编辑器（URLab 冒烟）占过实例 0 的整段端口 5555–5562，那时在实例 0 起的栈 deploy 报 `Address already in use`。
 
 ## 磁盘（先处理）
 
-- 已确认：`/workspace` 只剩 26 GB（98%）。本会话的冒烟产物约 97 GB：三个冒烟运行的 `model/` 各约 24 GB，
-  `outputs/docs_smoke_20260928/try2/` 24 GB。都是 10 步的 checkpoint，没有用处。
-- 计划删除（TODO 9.9）：上面这些 `model/` 目录和 `try2/`，**2026-09-29 11:45 之后**（AGENTS：删 outputs 要在 STATE 提前 24 小时写明）；
-  用户同意可以提前删。运行目录里其余文件（manifest、日志、录像、`eval/`）保留，它们是 runbook 里数字的证据。
-- 上一会话留下：2026-09-29 后可删 `outputs/experiments/warehouse_edges_20260928/trial_45x20x18`（107 MB，TODO 8.11）。
+- 已确认：`/workspace` 只剩 19 GB（99%）。
+- 计划删除（TODO 9.9，上一会话写明）：`outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}/model/`（各约 24 GB）和
+  `outputs/docs_smoke_20260928/try2/`（24 GB），**2026-09-29 11:45 之后**；用户同意可提前。运行目录其余文件保留。
+- 本会话产物约 1 GB + exporter session 1.2 GB（TODO 11.9 列了路径）：最早 2026-09-30 02:00 UTC 可删，待用户同意；
+  `outputs/runs/warehouse_smoke_lanes_20260928` 的 manifest 与 `collect/` 是并行通道的证据，保留。
 
-## 当前进度（TODO 第 9 节；DECISIONS 2026-09-28 最后两节）
+## 当前进度（TODO 第 10、11 节；DECISIONS 2026-09-28 最后两节）
 
-- 已确认：文档重组、lockstep 默认、`paths.sh` / `build_scene.sh`、冒烟和完整规模实验文件都已提交并推送（9.1–9.7）。
-  这台机器的 `SONIC_DEPLOY_ROOT`、`USD_PY` 在 `/workspace/locomani.local.sh`（不进 Git）。
-- 已确认：三条线按新 runbook 的命令从采集跑到闭环评测。bottle 12 分钟、crate 8 分钟、warehouse 40 分钟（含 14 分钟评测录像），
-  闭环都是 lockstep 0/2（10 步的模型，预期如此）。运行 `outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}`，
-  驱动脚本和日志 `outputs/docs_smoke_20260928/`。
-- 已确认：冒烟抓出的六个问题都修了并有测试（TODO 9.5.1；理由见 DECISIONS）。
-- 已确认：建场景的命令（含 henry-zhao 改过的降桌高脚本）输出到临时目录，与现有 `outputs/scene/` 去掉路径后逐字相同。
-- 已确认：文档链接和锚点全部能解析（改写前就断的 8 个也修了）；`make check` 通过。
-- 已确认：warehouse 默认采集改为四边随机（`warehouse_smoke` / `warehouse_200`，场景 `warehouse_box_45x32x33`），采集前打印摆放设置；固定起点是 `*_fixed_start`（TODO 第 10 节）。冒烟采集实跑 4 局保留 2 条。
-- 已确认：双臂线采集默认并行（通道 = 一个栈 + 一个跑局进程），`start_stack.sh collect` 按空闲 CPU / 线程数 / 显存 / 实例定通道数并打印；warehouse 冒烟 2 条通道 8 局保留 5 条、RTF 0.974–0.996（TODO 第 11 节）。
+- 已确认（10）：warehouse 默认采集是四边随机——`warehouse_smoke` / `warehouse_200` 用 `warehouse_edges_compact_45x32x33_20260928`
+  的 task 块，场景 `warehouse_box_45x32x33`；只从一个地方开始的是 `warehouse_{smoke,200}_fixed_start`（只差摆放，有测试）。
+  采集第一局前打印摆放设置（`expert.layout_lines`）。实跑 `warehouse_smoke_edges_20260928`：4 局抽到 yp/xm 两边，保留 2 条。
+- 已确认（11）：双臂线采集默认并行。`start_stack.sh collect` 用 `pipeline/lanes.py` 量空闲 CPU（3 秒）、线程数、每卡显存、
+  空闲实例（`stack.instance_busy` 查栈、锁、端口），定通道数、打印、逐个起栈、写 `collect/lanes.json`；`run_agent_server.sh`
+  通道 0 在本进程，其余 spawn 子进程；批次在文件锁下按编号领取（`batches.claim_batch/finish_batch`）。
+- 已确认（11.1 实测，脚本在 `outputs/warehouse_parallel_20260928/`）：一条 warehouse 通道 CPU 平均 +2.6 / p90 +3.7 核、显存 +1.5 GB、线程 +180 起每录一局约 +130。
+- 已确认（11.2.1）：`warehouse_smoke_lanes_20260928` 两条通道（实例 2/GPU0、实例 3/GPU1）8 局保留 5 条，RTF 0.974–0.996，
+  容器线程峰值 3279/3840；Isaac 补渲 5 集 + convert（4 训练 + 1 验证）通过，两条通道的 session/manifest 配对正确。
 
 ## 待验证 / 卡点
 
-- 待验证：bottle 的 lockstep 评测和墙钟对照（单臂实现 09-02 校准未过：墙钟 46 vs lockstep 32）。要等下一个 bottle checkpoint（9.3）。
-- 待验证：crate 完整规模（`crate_table30_record`）在 lockstep 下的成功率，runbook 里只有 09-15 墙钟 71/100（9.10）。
-- 待用户：看新文档；认可后按同样写法重写详解页、`rendering.md`、`scalebfm.md`（9.8）。
-- 上一会话留下、未动：四边线 compact 采集（8.6.4）待用户定两个问题；新 stage 下 checkpoint-5000 的 Isaac 评测是否偏离 81/83/88（7.2）。
+- 待验证（10.7）：终端里“打印后等 10 秒再开第一局”这条分支没实跑过（两次实跑都是 nohup）。
+- 待验证（11.7）：多通道的产出率是否与单通道相同，只有 8 局冒烟；完整规模要按产出率和 RTF 再核。
+- 假设（11.6）：crate 这种实时渲染通道的成本沿用旧单栈预算（10 核、6000 MiB、一卡一条），没实测；这台机器上 crate 目前只开得出一条。
+- 待用户（10.4）：本机 `outputs/runs/warehouse_smoke` 是旧配置跑的，按 runbook 同名重跑会报 `config.yaml differs`——删旧目录还是文档写换 `--name`。
+- 待定（11.10）：旧单栈闸门（1800 线程、8 核）仍管单臂线和没有 `lanes.json` 的栈，是否按实测改小。
+- 上一会话留下：9.3 bottle lockstep 对照；9.10 crate 完整规模 lockstep；9.8 新文档写法待认可；8.6.4 四边 compact 采集待定；7.2；8.11 可删 trial 目录。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **9.9**：删冒烟的 `model/` 和 `try2/`（到时间或用户同意后）。
-- **9.8**：用户认可后，按新写法重写详解页、`rendering.md`、`scalebfm.md`。
-- **8.6.4**：四边线 compact 采集（先问用户）。
+- **9.9**：2026-09-29 11:45 之后删冒烟的 `model/` 和 `try2/`（磁盘只剩 19 GB）。
+- **10.4**：问用户旧 `outputs/runs/warehouse_smoke` 怎么处理。
+- **10.5 / 11.7**：用户同意后按默认（四边 + 自动通道）跑 `warehouse_200` 采集，顺带核对多通道产出率。
 
 ## 关键路径与命令
 
 ```bash
 cd /workspace/code/locomanipulation && . scripts/paths.sh     # 路径、PYTHONPATH，并读 /workspace/locomani.local.sh
 df -h /workspace; cat /sys/fs/cgroup/pids.current; timeout 30 bash scripts/cpu_headroom.sh 8; nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
-bash outputs/docs_smoke_20260928/smoke_line.sh crate_smoke bimanual            # 一条线的冒烟；第三个参数是 Isaac 的卡；FROM=eval 只重跑评测
-python3 scripts/artifact_contract.py check outputs/runs/<run> crate_eval       # 或 bottle_eval / crate_collect ...
+# 通道计划：只打印、不起栈（每项资源允许几条、跳过了哪些实例）
+bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml --dry-run --name plan_check
+# 默认采集（所有卡、自动通道）；--lanes 1 = 旧行为；--gpu 0,1 限卡；*_fixed_start = 只从一个地方开始
+bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml --name <run>
+bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.yaml --name <run>
+# 驱动被强杀后关掉所有通道的栈
+for i in $(python3 -c "import json,sys;print(' '.join(str(l['instance']) for l in json.load(open(sys.argv[1]))['lanes']))" outputs/runs/<run>/collect/lanes.json); do bash scripts/stop_stack.sh --instance $i; done
 du -sh outputs/runs/*_smoke/model outputs/docs_smoke_20260928/try2             # 9.9 要删的东西
-# 提交：make check → 按文件名 add（不要 -A）→ git commit -- <文件> → fetch；远端有新提交就 merge（不 rebase，TODO 里记着提交哈希）→ push
+# 提交：make check → 按文件名 add（不要 -A）→ git commit → fetch；远端有新提交就 merge（不 rebase，TODO 里记着提交哈希）→ push
 ```
