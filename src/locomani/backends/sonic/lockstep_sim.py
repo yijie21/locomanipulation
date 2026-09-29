@@ -265,7 +265,7 @@ class LockstepRunner:
 
     def _render(self) -> dict | None:
         caches = self.env.update_render_caches()
-        if caches is None:  # backend.render offline: no renderer, the Isaac mirror draws the policy's images
+        if caches is None:  # backend.render offline: no renderer, a mirror (Isaac or Unreal) draws the policy's images
             return None
         return {
             k[: -len("_image")]: np.ascontiguousarray(v, dtype=np.uint8)

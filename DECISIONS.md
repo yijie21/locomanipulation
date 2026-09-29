@@ -1178,3 +1178,46 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 - **四边线保持旧外观（ISO 30、关 `env_light`）**：同一个房间会有两种外观，warehouse_textured 的运行和四边线的运行图像分布不同，而两边都没有需要保护的 checkpoint。
 - **只对 warehouse_textured 的无 `--scene` 默认 label 加 `_env`，`--scene` 的仍用场景名**：那样重建四边线的 stage 就会原名换灯。
+
+## 2026-09-29 images.source: unreal：Unreal 接成第三个图像来源；镜像协议与按视图补渲提成共用模块；每个场景一个关卡（分支 loco_unreal）
+
+背景：用户定把 Unreal 接成 `images.source` 的第三个值（TODO 12.9），main 会话转交本会话。用户给的做法：采集、转换、训练、评测的命令都不变，开关只决定由谁补渲数据集相机、由谁当评测镜像；`scenes.yaml` 给场景加 `unreal` 条目，没有关卡的场景写明不支持并在加载时拒绝；镜像进 src，配启动脚本；新写 Unreal 数据集补渲；`run_overnight` 按来源选；README 不加行，rendering.md 表格加一列，setup.md 加可选一步，warehouse.md 只加一句。
+
+- **客户端侧不区分 Isaac 和 Unreal。** 两个镜像说同一个协议、占同一个端口（`TF_ISAAC_MIRROR_PORT`）。
+  - 协议、请求处理和 `MirrorClient` 从 `sim/isaac/mirror.py` 提到 `sim/mirror.py`，并在那里定义 `MIRRORED_SOURCES = ("isaac", "unreal")`。
+  - `ObsBuilder`、lockstep 的取图、`vla_rounds` 的选项、单臂 lockstep 的限制都按"是否镜像类来源"判断。
+  - 理由：已有协议本来就只要求视图有 `render(qpos)`；复制一份给 Unreal 会让两边的 seq 等待、错误回复慢慢分叉。实验版 Unreal 镜像就没实现按 seq 取图，lockstep 只是碰巧对上。
+- **按视图补渲数据集提成 `sim/view_render.py`（选行、选 session、marker、渲染器和外观核对），Isaac 和 Unreal 各自只管渲染器的生命周期。**
+  - marker 记 `renderer` 和外观：Isaac 记 stage、RTX 设置、超采样；Unreal 记关卡、截图遍数。
+  - 同一 session 不许两个渲染器或两套外观混着补。
+- **每个场景一个 Unreal 关卡 `/Game/Levels/<场景名>`：房间关卡 `/Game/Levels/Warehouse` 另存为一份，再导入该场景的机器人、纸箱和三路数据集相机。**
+  - `build_level` 做的事：导出 MJCF，丢掉世界相机（四边线场景带 4 个，URLab 导入后会每帧渲染），按 `CAMERA_CONFIGS` 写相机分辨率；然后导入、上 G1 材质、去 Nanite，蓝图和关卡都存盘。
+  - `source.json` 记场景 XML 的哈希，`unreal_scene` 据此拒绝用别的场景建的关卡。
+  - 理由：四边线的纸箱尺寸不同；URLab 按 XML 文件名命名蓝图，同名导入会互相覆盖。
+- **Unreal 补渲每行都用 fresh 模式（先切镜头，再截 `repeats` 遍），和镜像一样。**
+  理由：stream 模式的画面带着前几帧的历史，补出来的图就不再只由当行状态决定。代价约 130 ms 一行，一集约 80 s。
+- **编辑器是常驻的一个进程，由 `scripts/start_unreal.sh --gpu N` 起（选卡在这里），看守脚本进仓库。**
+  - 渲染方（镜像、补渲、建关卡）自己开场景的关卡、设截图遍数、起停 PIE。
+  - 退出时先停 PIE 再断开，因为断开会把插件切回 live，PIE 在跑时插件出过段错误。
+- **Unreal 安装按仓库文件复现，除引擎本身。**
+  - `setup_unreal.sh` 按 `scripts/unreal/host/` 建宿主工程，克隆 URLab `efbc5e2` 并打仓库里的补丁，编译，建客户端 venv（mujoco 3.10.0）。
+  - 路径变量 `UNREAL_ROOT`、`UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`、`UNREAL_ASSETS` 写进 paths.sh / paths.py。本机用 `/workspace/locomani.local.sh` 指到 `/workspace/ue_57`。
+  - 引擎要 Epic 账号登录才能下载，只能手动。
+- **URLab 的端口全部由插件 ini 的 `PortBase` 派生，默认 5800（main 审核 30cb422 时提出的阻塞项）。**
+  - 状态 = base，控制 = +1，info = +2，相机从 +3 起，step RPC = +4。补丁改插件，客户端 `editor.port_base` 读同一个 ini，只有一个数。
+  - 理由：原版写死 5555–5559（相机从 5558 往上找），正是实例 0 的端口段，而 warehouse 的实验文件都用实例 0。编辑器又是常驻的，只改 `images.source` 就会撞车。
+  - 被否决：加载时拒绝 `unreal` 配实例 0。这只是绕开冲突，还得让每份实验文件换实例。
+- **`run_overnight.sh` 的渲染卡参数改名 `--render-gpu`，旧名 `--isaac-gpu` 照收。**
+  理由：一个参数就够了，因为同一次运行只会用一种渲染器。
+
+### 被否决的方案（及原因）
+
+- **复制关卡资产（`EditorAssetLibrary.duplicate_asset`）再打开副本：** 编辑器直接退出。副本 World 留在内存，Map_Load 的泄漏检查是致命错误（EditorServer.cpp:2524）。改为打开房间关卡、`save_map` 另存，再打开副本。
+- **所有场景共用一个关卡、导入时换纸箱：** 不同尺寸的纸箱是不同的 MJCF，重导入要几十秒。评测和补渲在同一编辑器里切场景时就得来回导入，关卡和数据的对应也没法用哈希核对。
+- **Unreal 补渲用 stream 模式省时间（35 ms 一行）：** 图不再只由当行状态决定，和镜像的 fresh 图也不是同一个函数。
+- **编辑器由每个渲染脚本自己起、用完就关：** 首次起要编译着色器（几分钟），之后也要约 15 秒；关卡和 DDC 都在常驻进程里，常驻更省。
+
+### 未决（不是决策）
+
+- 还没有用 Unreal 图训练过（TODO 12.9.6）。3/3 闭环用的是 Isaac 训练的 checkpoint，属于分布偏移，不能和 Isaac 的数字比。
+- 插件段错误（TODO 12.17）的因果没查清；现在各脚本都先停 PIE 再断开。

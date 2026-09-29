@@ -49,6 +49,7 @@ from locomani.backends.sonic.vla_config import NEAR_M
 from locomani.backends.sonic.vla_obs import ObsBuilder, PolicyLink
 from locomani.backends.sonic.vla_round import latency_index
 from locomani.schema import SONIC_CRATE
+from locomani.sim.mirror import MIRRORED_SOURCES
 from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.evaluation import evaluate
@@ -500,9 +501,9 @@ def main(argv=None):
     ap.add_argument("--trace-dir", type=Path)
     ap.add_argument(
         "--image-source",
-        choices=("mujoco", "isaac"),
+        choices=("mujoco", *MIRRORED_SOURCES),
         default="mujoco",
-        help="the policy's camera images: the sim's MuJoCo stream, or the Isaac mirror (EvalConfig.image_source)",
+        help="the policy's camera images: the sim's MuJoCo stream, or the Isaac / Unreal mirror (EvalConfig.image_source)",
     )
     ap.add_argument(
         "--client",

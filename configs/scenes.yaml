@@ -7,7 +7,12 @@
 # scripts/paths.sh sourced ($VENV_SIM_PY; $USD_PY is a python with `pxr`). `isaac` (optional) names the scene's
 # Isaac stage, built by `build_scene.sh <name> --isaac`; only a scene that has one can run with
 # `images.source: isaac` (training and evaluation images). Its look is `rtx_settings` plus `supersample` (cameras
-# render N times larger, box-averaged back; default 1).
+# render N times larger, box-averaged back; default 1). `unreal` names the scene's Unreal level for
+# `images.source: unreal`, built by `build_scene.sh <name> --unreal` inside a running editor (scripts/start_unreal.sh):
+# the Blender-baked room level (scripts/unreal/warehouse_level.py) plus this scene's robot and carton imported
+# through URLab. Its look is the room level's post-process volume plus `repeats` (captures per request; Lumen and
+# TSR converge over frames: 1 is 2-3/255 darker than 8, docs/handoff/unreal-urlab-20260928.md). A scene with no
+# level says why in `unreal: {unsupported: ...}`, and an experiment asking for Unreal on it is refused at load.
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
   dir: outputs/scene/sim_lowcom
@@ -18,6 +23,7 @@ bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
     SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
     "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom
     --preset bottle_only --harden-pads --object-com-drop 0.05
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 crate:  # the same blue floor, both arms, a crate on a table
   dir: outputs/scene/crate_table30_depth04
@@ -27,10 +33,12 @@ crate:  # the same blue floor, both arms, a crate on a table
     "$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual_depth04 --crate-setback 0.04 &&
     "$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py
     outputs/scene/crate_bimanual_depth04 outputs/scene/crate_table30_depth04 --height 0.30
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 warehouse:  # the scanned logistics room, both arms, a cardboard box; new runs use warehouse_textured (the 2026-09-24 grasp baseline)
   dir: outputs/box_rim_execution_20260920/scene_reverse_camera
   example: configs/experiments/box_room_20260922.yaml
+  unreal: {unsupported: "the pre-texture scene (one plain-colour carton mesh); new runs use warehouse_textured, which has a level"}
 
 warehouse_textured:  # the same room rebuilt from the published pack after 0bf8eed: the carton carries its 9 per-material geoms and 6 photo textures; `warehouse` (built 2026-09-20 from the pre-texture logistics_mujoco) has one plain-colour carton mesh. Robot, surfaces, objects, nq identical; ngeom 121 -> 129
   dir: outputs/scene/warehouse_textured
@@ -48,10 +56,15 @@ warehouse_textured:  # the same room rebuilt from the published pack after 0bf8e
     # cameras render at 2x and box-average back: RTX realtime anti-aliases with FXAA only, so small print blurs and
     # shelf grids shimmer; structural similarity to Blender 0.89-0.94 -> 0.93-0.96 (docs/ledger/blender_scenes.md section 5)
     supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_textured  # /Game/Levels/warehouse_textured in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_textured
 
 walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SONIC locomotion; camera walk_follow
   dir: outputs/scene/walk
   build: $VENV_SIM_PY -m locomani.tasks.walk.scene outputs/scene/walk
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 box_platform:  # a 10 cm solid platform on the blue floor with the warehouse carton's contacts (0.45 x 0.32 x 0.60 m, 1 cm walls, 1.2 kg), no room: the scene capability sweep's centre cell and the bimanual box grasp default since 2026-09-27 (docs/box_grasp_envelope.md)
   dir: outputs/scene/box_platform
@@ -64,6 +77,7 @@ box_platform:  # a 10 cm solid platform on the blue floor with the warehouse car
     # ones would differ; ISO 20 keeps auto's contrast (ego mean 120 vs 89/255; outputs/renders/box_platform_isaac_check_20260927)
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=20]
     supersample: 2  # as warehouse_textured
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 # The four-edge warehouse line (2026-09-28): warehouse_textured with the carton rebuilt at one of the envelope's four
 # >= 40% sizes (docs/box_grasp_envelope.md §3.1; 0.45 m wide, grip height 0.54 / 0.69 m on the 0.371 m platform) by
@@ -83,6 +97,10 @@ warehouse_box_45x32x33:  # the room's own carton size
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
     supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x33  # /Game/Levels/warehouse_box_45x32x33 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x33
 
 warehouse_box_45x20x33:
   dir: outputs/scene/warehouse_box_45x20x33
@@ -93,6 +111,10 @@ warehouse_box_45x20x33:
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
     supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x20x33  # /Game/Levels/warehouse_box_45x20x33 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x33
 
 warehouse_box_45x32x18:
   dir: outputs/scene/warehouse_box_45x32x18
@@ -103,6 +125,10 @@ warehouse_box_45x32x18:
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
     supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x18  # /Game/Levels/warehouse_box_45x32x18 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x18
 
 warehouse_box_45x20x18:
   dir: outputs/scene/warehouse_box_45x20x18
@@ -113,3 +139,7 @@ warehouse_box_45x20x18:
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
     supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x20x18  # /Game/Levels/warehouse_box_45x20x18 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x18

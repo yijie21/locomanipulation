@@ -7,7 +7,7 @@
 ## 磁盘（先处理）
 
 - 已确认：2026-09-29 用户说删，已删 A 类（四个冒烟 `model/`，96 GB）和 B 类（65 个扫参运行和 cap120 的 `observations/`、EmbodiedGen 的
-  sam-3d 权重、旧专家 `datasets/`，69 GB；TODO 9.9、9.9.1，清单和日志在 `outputs/cleanup_20260929/`），`/workspace` 空闲 239 GB。根分区 `/` 只剩约 11 MB，没清。
+  sam-3d 权重、旧专家 `datasets/`，69 GB；TODO 9.9、9.9.1，清单和日志在 `outputs/cleanup_20260929/`），`/workspace` 空闲 239 GB。根分区 `/`（32 GB）06:00 一度只剩 11 MB，06:45 别处清掉后回到 GB 级（07:50 空闲 7.5 GB）；跑 Isaac、UE、pytest 前把 TMPDIR 指到 `/workspace`。
 - 本会话产物约 1 GB + exporter session 1.2 GB（TODO 11.9 列了路径）：最早 2026-09-30 02:00 UTC 可删，待用户同意；
   `outputs/runs/warehouse_smoke_lanes_20260928` 的 manifest 与 `collect/` 是并行通道的证据，保留。
 
@@ -23,9 +23,9 @@
 - 已确认（11.2.1）：`warehouse_smoke_lanes_20260928` 两条通道（实例 2/GPU0、实例 3/GPU1）8 局保留 5 条，RTF 0.974–0.996，
   容器线程峰值 3279/3840；Isaac 补渲 5 集 + convert（4 训练 + 1 验证）通过，两条通道的 session/manifest 配对正确。
 
-## Isaac 新外观 + Unreal 实验（`loco_unreal` 2026-09-29 合入；TODO 第 12 节，DECISIONS 2026-09-29 合并一节）
+## Isaac 新外观 + `images.source: unreal`（`loco_unreal`；TODO 第 12 节，DECISIONS 2026-09-29 各节）
 
-- 已确认：G1 用 Unitree 官方材质；warehouse（含四边线）stage `*_env`、按 Blender 标；`box_platform_srgb`；2× 超采样。旧 stage 别删；新外观不重训（用户定），新旧评测数字不可直接比。Unreal 见 [handoff](docs/handoff/unreal-urlab-20260928.md)；它的编辑器占着实例 0 端口 5555–5562 时，实例 0 起的栈 deploy 报 `Address already in use`（2026-09-28）。
+- 已确认：G1 用 Unitree 官方材质；warehouse（含四边线）stage `*_env`、按 Blender 标；`box_platform_srgb`；2× 超采样。旧 stage 别删；新外观不重训（用户定），新旧评测数字不可直接比。已确认（12.9，分支 `loco_unreal`，未合回 main）：`images.source: unreal` 已接通。warehouse_textured 和四个 warehouse_box_* 各有关卡，补渲 + convert 和 3 局 lockstep 闭环（3/3，Isaac 训练的 checkpoint，分布偏移）都实跑过。还没用 Unreal 图训练（12.9.6）。命令见 [handoff](docs/handoff/unreal-urlab-20260928.md)；URLab 的端口已挪到 5800–5812（插件补丁的 PortBase），编辑器常驻时实例 0 的栈照常可用。
 
 ## 待验证 / 卡点
 

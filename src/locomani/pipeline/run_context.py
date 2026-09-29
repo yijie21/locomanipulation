@@ -26,6 +26,7 @@ from pathlib import Path
 import yaml
 
 from locomani import paths
+from locomani.sim.mirror import MIRRORED_SOURCES
 
 ROOT = Path(paths.REPO)
 RUNS = ROOT / "outputs" / "runs"
@@ -67,6 +68,7 @@ def open_run(experiment: Path | str, name: str | None = None, *, write: bool = T
     """
     experiment = Path(experiment)
     cfg = resolve_scene(migrate_images(yaml.safe_load(experiment.read_text())))
+    unreal_support(cfg)
     cfg["name"] = name or cfg["name"]
     run_dir = RUNS / cfg["name"]
     if not write:
@@ -84,15 +86,15 @@ def load_run_config(run_dir: Path) -> dict:
     path = Path(run_dir) / "config.yaml"
     if not path.exists():
         raise SystemExit(f"{path} is missing; this directory was not opened by a stage script")
-    return resolve_scene(migrate_images(yaml.safe_load(path.read_text())))
+    return unreal_support(resolve_scene(migrate_images(yaml.safe_load(path.read_text()))))
 
 
-IMAGE_SOURCES = ("mujoco", "isaac")
+IMAGE_SOURCES = ("mujoco", *MIRRORED_SOURCES)
 
 
 def eval_render(source: str) -> str:
     """The eval sim's `backend.render` for an image source: the policy reads MuJoCo frames only from a sim that
-    renders them; with Isaac the mirror draws them and the sim renders nothing."""
+    renders them; with Isaac or Unreal the mirror draws them and the sim renders nothing."""
     return "live" if source == "mujoco" else "offline"
 
 
@@ -100,15 +102,15 @@ def migrate_images(cfg: dict) -> dict:
     """Bring the experiment's image source to the current format and check it; returns `cfg`, changed in place.
 
     The current format (2026-09-27) says once, at run level, which renderer draws the policy's pictures:
-    `images: {source: mujoco | isaac}`. It decides the dataset cameras (collection records MuJoCo frames or
+    `images: {source: mujoco | isaac | unreal}`. It decides the dataset cameras (collection records MuJoCo frames or
     leaves placeholders for a re-render, and convert checks which renderer filled them), the eval sim's
     rendering and where the closed loop's images come from. The historical format has no `images` block and
     said it as `eval.image_source`, although collection and convert read it too; such a file -- every run
     copy before that date -- is read as that source, and its eval sim renders what the source needs.
 
     Refused here, where every stage reads its configuration, so no stage starts on a pairing none can serve:
-    `eval.image_source` beside an `images` block; `isaac` with a live collection (it records MuJoCo frames,
-    the Isaac re-render leaves them in place and convert's check never runs, so training and evaluation see
+    `eval.image_source` beside an `images` block; `isaac` or `unreal` with a live collection (it records MuJoCo
+    frames, the re-render leaves them in place and convert's check never runs, so training and evaluation see
     different renderers); and, in the current format, an `eval.backend.render` other than the source's.
     """
     evaluation = cfg.get("eval") or {}
@@ -121,10 +123,10 @@ def migrate_images(cfg: dict) -> dict:
     if not isinstance(images, dict) or set(images) != {"source"} or images["source"] not in IMAGE_SOURCES:
         raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}}}, not {images!r}")
     source = images["source"]
-    if source == "isaac" and (cfg.get("backend") or {}).get("render", "live") != "offline":
+    if source != "mujoco" and (cfg.get("backend") or {}).get("render", "live") != "offline":
         raise SystemExit(
-            "images.source isaac needs backend.render: offline -- a live collection records MuJoCo frames, which "
-            "the Isaac re-render leaves in place, so the policy would train on MuJoCo and be evaluated on Isaac"
+            f"images.source {source} needs backend.render: offline -- a live collection records MuJoCo frames, which "
+            f"the {source} re-render leaves in place, so the policy would train on MuJoCo and be evaluated on {source}"
         )
     rendered = (evaluation.get("backend") or {}).get("render")
     if historical and rendered is not None:
@@ -149,18 +151,26 @@ def evaluation_of(cfg: dict):
 
 
 def require_images(cfg: dict) -> None:
-    """Before a stack starts: an Isaac run needs its scene's Isaac stage and the render venv on this machine."""
-    if cfg["images"]["source"] != "isaac":
-        return
-    isaac_scene(cfg)
-    if not os.access(paths.RENDER_PY, os.X_OK):
-        raise SystemExit(
-            f"images.source isaac renders in the render venv, and {paths.RENDER_PY} is not there: "
-            "docs/setup.md step 7 (scripts/setup_render_runtime.sh)"
-        )
+    """Before a stack starts: an Isaac run needs its scene's Isaac stage and the render venv on this machine, an
+    Unreal run its scene's built Unreal level and the URLab bridge venv."""
+    source = cfg["images"]["source"]
+    if source == "isaac":
+        isaac_scene(cfg)
+        if not os.access(paths.RENDER_PY, os.X_OK):
+            raise SystemExit(
+                f"images.source isaac renders in the render venv, and {paths.RENDER_PY} is not there: "
+                "docs/setup.md step 7 (scripts/setup_render_runtime.sh)"
+            )
+    elif source == "unreal":
+        unreal_scene(cfg)
+        if not os.access(paths.BRIDGE_PY, os.X_OK):
+            raise SystemExit(
+                f"images.source unreal talks to the editor from the URLab bridge venv, and {paths.BRIDGE_PY} is not "
+                "there: docs/setup.md, the optional Unreal step (scripts/setup_unreal.sh)"
+            )
 
 
-def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
+def resolve_scene(cfg: dict, registry: Path | None = None) -> dict:
     """Turn `scene: {name: warehouse}` into the `scene.dir` every consumer reads; returns `cfg`.
 
     Resolved here, where both the experiment and a run's copy are read, so no consumer knows names
@@ -171,14 +181,14 @@ def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
         return cfg
     if scene.get("dir"):
         raise SystemExit(f"scene gives both name {scene['name']!r} and dir {scene['dir']!r}; give one")
-    names = yaml.safe_load(Path(registry).read_text())
+    names = yaml.safe_load(Path(registry or SCENES).read_text())
     if scene["name"] not in names:
-        raise SystemExit(f"no scene called {scene['name']!r}; {registry} names {', '.join(sorted(names))}")
+        raise SystemExit(f"no scene called {scene['name']!r}; {registry or SCENES} names {', '.join(sorted(names))}")
     scene["dir"] = names[scene["name"]]["dir"]
     return cfg
 
 
-def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
+def isaac_scene(cfg: dict, registry: Path | None = None) -> dict:
     """The run's scene as Isaac renders it: `{"dir": <Isaac stage dir>, "rtx_settings": [...], "supersample": N}`.
 
     From the scene's `isaac` entry in `configs/scenes.yaml`, so every Isaac renderer of a scene --
@@ -187,9 +197,9 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
     name = (cfg.get("scene") or {}).get("name")
     if not name:
         raise SystemExit("an Isaac render needs the run's scene by name (scene: {name: ...}, configs/scenes.yaml)")
-    entry = (yaml.safe_load(Path(registry).read_text()).get(name) or {}).get("isaac")
+    entry = (yaml.safe_load(Path(registry or SCENES).read_text()).get(name) or {}).get("isaac")
     if not entry:
-        raise SystemExit(f"scene {name!r} has no Isaac stage: add an `isaac` entry for it in {registry}")
+        raise SystemExit(f"scene {name!r} has no Isaac stage: add an `isaac` entry for it in {registry or SCENES}")
     stage = Path(paths.ISAAC_ASSETS) / "scene" / entry["dir"]
     if not (stage / "scene.usda").is_file():
         build = entry.get("build") or "its builder"
@@ -206,6 +216,61 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
     if not isinstance(supersample, int) or isinstance(supersample, bool) or supersample < 1:
         raise SystemExit(f"scene {name!r}: isaac.supersample must be a whole number >= 1, not {supersample!r}")
     return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or []), "supersample": supersample}
+
+
+def unreal_entry(name: str, registry: Path | None = None) -> dict:
+    """Scene `name`'s `unreal` entry in the registry; refuses a scene with none or an unsupported one."""
+    entry = (yaml.safe_load(Path(registry or SCENES).read_text()).get(name) or {}).get("unreal")
+    if not entry:
+        raise SystemExit(f"scene {name!r} has no Unreal level: add an `unreal` entry for it in {registry or SCENES}")
+    if "unsupported" in entry:
+        raise SystemExit(f"scene {name!r} cannot use images.source unreal: {entry['unsupported']}")
+    return entry
+
+
+def _unreal_entry(cfg: dict, registry: Path | None) -> tuple[str, dict]:
+    name = (cfg.get("scene") or {}).get("name")
+    if not name:
+        raise SystemExit("an Unreal render needs the run's scene by name (scene: {name: ...}, configs/scenes.yaml)")
+    return name, unreal_entry(name, registry)
+
+
+def unreal_support(cfg: dict, registry: Path | None = None) -> dict:
+    """At load: an `images.source: unreal` run's scene must have an Unreal level in the registry; returns `cfg`.
+
+    Only the registry is read here -- whether the level is built on this machine is `unreal_scene`'s question,
+    asked before anything renders (`require_images`, the mirror, the re-render)."""
+    if cfg["images"]["source"] == "unreal":
+        _unreal_entry(cfg, registry)
+    return cfg
+
+
+def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
+    """The run's scene as Unreal renders it: `{"level": <name>, "level_path": /Game/Levels/<name>, "repeats": N}`.
+
+    From the scene's `unreal` entry in `configs/scenes.yaml`, so the dataset re-render and the eval mirror load the
+    same level and capture it the same way. `repeats` is `urlab.FreshCaptureRepeats`, the captures each request
+    accumulates (Lumen and TSR converge over frames). The level must be built in the host project ($UE_PROJECT)
+    from this very scene: its builder records the scene XML's hash in `$UNREAL_ASSETS/<level>/source.json`.
+    """
+    name, entry = _unreal_entry(cfg, registry)
+    level = entry["level"]
+    repeats = entry.get("repeats", 8)
+    if not isinstance(repeats, int) or isinstance(repeats, bool) or not 1 <= repeats <= 64:
+        raise SystemExit(f"scene {name!r}: unreal.repeats must be a whole number in 1-64, not {repeats!r}")
+    build = entry.get("build") or "its builder"
+    umap = Path(paths.UE_PROJECT).parent / "Content" / "Levels" / f"{level}.umap"
+    if not umap.is_file():
+        raise SystemExit(f"{umap} is missing; build the Unreal level of scene {name!r}: {build}")
+    source = Path(paths.UNREAL_ASSETS) / level / "source.json"
+    if not source.is_file():
+        raise SystemExit(f"{source} is missing; the level was not built by the builder: {build}")
+    if cfg["scene"].get("dir"):
+        built = json.loads(source.read_text()).get("scene_xml_sha256")
+        xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
+        if xml.is_file() and built != hashlib.sha256(xml.read_bytes()).hexdigest():
+            raise SystemExit(f"Unreal level {level!r} was built from another {xml}; rebuild it: {build}")
+    return {"level": level, "level_path": f"/Game/Levels/{level}", "repeats": repeats}
 
 
 def successful_traces(run_dir: Path, traces: Path) -> list[str]:

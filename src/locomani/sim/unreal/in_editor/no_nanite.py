@@ -5,12 +5,12 @@ DefaultEngine.ini. Nanite shadows run a fixed per-face pass for every shadowed l
 warehouse however little moves; without them a capture costs 3.9 ms instead of 23.9, and the images differ only
 on edges (outputs/unreal_render_speed_20260928/i_nanite_shadows).
 
-Run after every URLab import (unreal_smoke_20260928.py setup), before the first bridge request starts PIE:
+Run after every URLab import (build_level.py runs it), before the first bridge request starts PIE:
 Interchange's default pipeline builds Nanite, and the import is rebuilt every session. The room meshes are
 saved non-Nanite already (the level script turns Nanite off at import), so for them this is a no-op.
-The mirror and the trace video refuse to render until it has run (unreal_smoke_20260928.require_render_defaults).
+The mirror and the trace video refuse to render until it has run (editor.require_render_defaults).
 
-    python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_no_nanite_20260928.py
+    "$BRIDGE_PY" -m locomani.sim.unreal.editor -f src/locomani/sim/unreal/in_editor/no_nanite.py
 
 SCOPE "robot" (prepend SCOPE = "robot") reproduces the 12.7.4.1 diagnostic: the robot only, the carton keeps
 Nanite, nothing saved.

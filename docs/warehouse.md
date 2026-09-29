@@ -136,6 +136,7 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 ## 9. 只有一张卡
 
 把实验文件复制一份，`images.source` 改成 `mujoco`，策略就改看 MuJoCo 渲的图。这时第 1 步不跑第三条；第 3 步换成 `bash scripts/render_dataset_cameras.sh outputs/runs/<名字> --gpu 0`；闭环评测不起终端 2 的镜像；`run_overnight.sh` 去掉 `--isaac-gpu 1`。训练集和评测必须用同一种图。
+改用 Unreal 出图：`images.source` 写 `unreal`（要先装[安装](setup.md)第 8 步），第 3 步换成 `render_dataset_cameras_unreal.sh`，终端 2 换成 `run_unreal_mirror.sh`，两者都在 `bash scripts/start_unreal.sh --gpu 1` 起的编辑器里渲。
 
 ## 10. 接下来
 

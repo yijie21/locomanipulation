@@ -1,6 +1,7 @@
-"""Unreal editor Python: build the warehouse level from the Blender export (unreal_warehouse_bake_20260928.py).
+"""Unreal editor Python: build the warehouse level from the Blender export (scripts/unreal/warehouse_bake.py).
 
-Runs inside the editor (PythonScriptPlugin); inputs come from the environment:
+Runs inside the editor (PythonScriptPlugin); inputs are module-level names the sender sets (editor.run_file), or
+the environment:
 
     WAREHOUSE_DIR   the bake output: room.glb + room_scene.json
     WAREHOUSE_LEVEL level asset path (default /Game/Levels/Warehouse)
@@ -8,15 +9,15 @@ Runs inside the editor (PythonScriptPlugin); inputs come from the environment:
     WAREHOUSE_EXPOSURE_OFFSET  stops added to the computed exposure compensation (calibration; default 0)
     WAREHOUSE_EMISSIVE_ONLY=1  load the existing level and only (re)build its emissive materials (stop PIE first)
 
-    WAREHOUSE_DIR=<abs> bash /workspace/ue_57/run_editor.sh 1 \
-        -ExecutePythonScript=<abs>/scripts/experiments/unreal_warehouse_level_20260928.py
+    bash scripts/start_unreal.sh --gpu 0
+    WAREHOUSE_DIR=<abs bake dir> "$BRIDGE_PY" -m locomani.sim.unreal.build_level --room <abs bake dir>
 
-What it builds (the MuJoCo robot and carton come later through URLab, see unreal_smoke_20260928.py setup):
+What it builds (the MuJoCo robot and carton come later through URLab, see build_level.py):
 
 - the room: room.glb imported through Interchange (one static mesh per Blender material, world coordinates) and
   placed at the origin; Blender world = MuJoCo world, and URLab maps MuJoCo (x, y, z) m to Unreal (x, -y, z) cm.
   Nanite is turned off on every mesh (Interchange builds it by default): Nanite shadows cost 13 ms per capture
-  here, see unreal_no_nanite_20260928.py;
+  here, see no_nanite.py;
 - the six Blender area lights as Rect Lights, photometric: 1 Blender W = K = 683 lm (radiometric watts at the
   555 nm efficacy), so an emissive strength s becomes s * K nits, on our own emissive material (the glTF master
   renders no emissive, see emissive_materials);
@@ -40,8 +41,15 @@ from pathlib import Path
 import unreal
 
 K_LM_PER_W = 683.0
-DIR = Path(os.environ["WAREHOUSE_DIR"])
-LEVEL = os.environ.get("WAREHOUSE_LEVEL", "/Game/Levels/Warehouse")
+
+
+def _opt(name, default=None):
+    """An option: a module-level name set by the sender (editor.run_file), else the environment."""
+    return globals().get(name, os.environ.get(name, default))
+
+
+DIR = Path(_opt("WAREHOUSE_DIR"))
+LEVEL = _opt("WAREHOUSE_LEVEL", "/Game/Levels/Warehouse")
 ASSETS = "/Game/Warehouse/Room"
 EMISSIVE_MASTER = "/Game/Loco/M_LocoEmissive"
 LUMEN_DIFFUSE_COLOR_BOOST = 4.0  # place_exposure
@@ -63,6 +71,9 @@ def to_ue_dir(v):
 def new_level():
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     if unreal.EditorAssetLibrary.does_asset_exist(LEVEL):
+        # deleting the level the editor has open segfaults it (ULevelInstanceSubsystem::OnAssetsPreDelete, 2026-09-29),
+        # and the host project opens the room level at startup: step onto the engine's empty map first
+        les.load_level("/Engine/Maps/Entry")
         unreal.EditorAssetLibrary.delete_asset(LEVEL)
     if not les.new_level(LEVEL):
         raise RuntimeError(f"new_level({LEVEL}) failed")
@@ -222,7 +233,7 @@ def place_lights(scene):
 
 def place_exposure(scene):
     exposure = scene["render"]["exposure"]
-    offset = float(os.environ.get("WAREHOUSE_EXPOSURE_OFFSET", "0"))
+    offset = float(_opt("WAREHOUSE_EXPOSURE_OFFSET", "0"))
     bias = math.log2(1.2 * 2.0**exposure / K_LM_PER_W) + offset
     eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     for a in eas.get_all_level_actors():
@@ -259,7 +270,7 @@ def main():
     report = {}
     try:
         scene = json.loads((DIR / "room_scene.json").read_text())
-        if os.environ.get("WAREHOUSE_EMISSIVE_ONLY") == "1":
+        if str(_opt("WAREHOUSE_EMISSIVE_ONLY")) == "1":
             les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
             les.load_level(LEVEL)
             world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
@@ -269,7 +280,7 @@ def main():
             report["ok"] = True
             (DIR / "unreal_emissive_report.json").write_text(json.dumps(report, indent=1))
             return
-        if os.environ.get("WAREHOUSE_EXPOSURE_ONLY") == "1":
+        if str(_opt("WAREHOUSE_EXPOSURE_ONLY")) == "1":
             les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
             les.load_level(LEVEL)
             report["exposure_bias"] = place_exposure(scene)

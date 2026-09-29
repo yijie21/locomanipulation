@@ -1,10 +1,12 @@
 #!/bin/bash
 # Build a scene by the name experiment files use (configs/scenes.yaml): runs that entry's `build`, or with
-# --isaac its Isaac stage's `isaac.build`, from the repository root. Once per machine; the result lands in the
-# entry's `dir` (outputs/scene/...) or under assets/isaac/scene/.
+# --isaac its Isaac stage's `isaac.build`, or with --unreal its Unreal level's `unreal.build`, from the repository
+# root. Once per machine; the result lands in the entry's `dir` (outputs/scene/...), under assets/isaac/scene/,
+# or in the Unreal host project (scripts/start_unreal.sh first: the level is built inside the running editor).
 #
 #   bash scripts/build_scene.sh bottle
 #   bash scripts/build_scene.sh warehouse_textured --isaac
+#   bash scripts/build_scene.sh warehouse_textured --unreal
 #   bash scripts/build_scene.sh crate --dry-run
 #
 # The commands live in the registry, next to the directory they make, so a runbook, an error message and this
@@ -18,13 +20,14 @@ NAME="" PART=build DRY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --isaac) PART=isaac ;;
+        --unreal) PART=unreal ;;
         --dry-run) DRY=1 ;;
-        -*) echo "usage: $(basename "$0") <scene name> [--isaac] [--dry-run]" >&2; exit 1 ;;
+        -*) echo "usage: $(basename "$0") <scene name> [--isaac | --unreal] [--dry-run]" >&2; exit 1 ;;
         *) NAME="$1" ;;
     esac
     shift
 done
-[ -n "$NAME" ] || { echo "usage: $(basename "$0") <scene name> [--isaac] [--dry-run]" >&2; exit 1; }
+[ -n "$NAME" ] || { echo "usage: $(basename "$0") <scene name> [--isaac | --unreal] [--dry-run]" >&2; exit 1; }
 
 CMD=$("$VENV_SIM_PY" - "$NAME" "$PART" <<'PY'
 import sys, yaml
@@ -32,9 +35,11 @@ name, part = sys.argv[1:]
 scenes = yaml.safe_load(open("configs/scenes.yaml"))
 if name not in scenes:
     sys.exit(f"no scene called {name!r}; configs/scenes.yaml names {', '.join(sorted(scenes))}")
-entry = scenes[name] if part == "build" else (scenes[name].get("isaac") or {})
+entry = scenes[name] if part == "build" else (scenes[name].get(part) or {})
+if entry.get("unsupported"):
+    sys.exit(f"scene {name!r} has no Unreal level: {entry['unsupported']}")
 if not entry.get("build"):
-    what = "Isaac stage" if part == "isaac" else "build command"
+    what = {"isaac": "Isaac stage", "unreal": "Unreal level"}.get(part, "build command")
     sys.exit(f"scene {name!r} has no {what} in configs/scenes.yaml")
 print(entry["build"])
 PY

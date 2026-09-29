@@ -38,8 +38,16 @@ Found while bringing up the warehouse level, 2026-09-28:
   override `DynamicGlobalIlluminationMethod = Lumen`: scene captures ignore the project default and otherwise render no GI.
 - **TSR.** Scene captures turn TemporalAA off by default, which drops the project's TSR to FXAA (aliased edges and
   text). The first on-demand capture turns the `TemporalAA` and `AntiAliasing` show flags on.
+- **Ports (2026-09-29).** Upstream binds the state PUB on 5555, control/info on 5556/5557, cameras from 5558 up and
+  the step RPC on 5559: the port block of the locomanipulation MuJoCo stack instance 0, whose stack then fails with
+  `Address already in use` while the editor runs (2026-09-28). Every port now derives from `PortBase` (default 5800;
+  `[BridgeServer] PortBase` in `Config/LocalUnrealRoboticsLab.ini`, which `StepPort` / `StatePort` still override):
+  state = base, control = base+1, info = base+2, cameras from base+3 (the legacy 5558 camera default is remapped),
+  step RPC = base+4. `locomani.sim.unreal.editor.port_base` reads the same INI for the client. Checked: an instance-0
+  stack and a lockstep eval next to a resident editor in PIE (editor on 5800-5806, 18801).
 
-Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`.
+Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`, `BridgeServerConfig.h`,
+`BridgeServerConfigUtils.{h,cpp}` and the two bridge-config test files.
 
 **Measured with the patch.**
 - Robot-only level, 3 cameras, 1 capture per request: 0/50 stale at 0 ms wait, p50 54-67 ms. The Isaac mirror takes 95 ms.
@@ -50,7 +58,7 @@ Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`.
 - Where a capture's ~23 ms goes: ProfileGPU of an editor frame after a pose change shows ShadowDepths 14 ms of 18. Each
   of the warehouse's six RectLights re-renders a 1024^2 Nanite cube shadow map (6 faces x ~0.36 ms). With the lights'
   shadows off a capture costs 4.2 ms, but the image loses every contact shadow. The robot is not the cost: with its
-  meshes non-Nanite (`scripts/experiments/unreal_no_nanite_20260928.py` with SCOPE "robot") a capture still costs 23-25 ms, and the
+  meshes non-Nanite (`src/locomani/sim/unreal/in_editor/no_nanite.py` with SCOPE "robot") a capture still costs 23-25 ms, and the
   robot's share of the shadow pass is 0.3 ms. The rest (13.3 ms) is the Nanite cube pass. For every face of every
   shadowed light, UE runs the whole Nanite shadow pipeline (`ShadowDepthRendering.cpp`, "Nanite Cubemap"). A cache
   mode only hides static geometry; it never skips the pass. That costs ~0.37 ms per face, 36 faces, whatever is
@@ -73,7 +81,7 @@ The host project needs these in `Config/`:
 - `DefaultEditorSettings.ini`: `bThrottleCPUWhenNotForeground=False`. A headless editor is never foreground and drops to about 9 fps.
 - `DefaultEngine.ini` `[ConsoleVariables]`: `urlab.FreshCaptureRepeats`, `urlab.CameraNearClipCm=2.0` and
   `r.Shadow.Nanite=0` (render default since 2026-09-28, together with non-Nanite meshes: run
-  `scripts/experiments/unreal_no_nanite_20260928.py` after every URLab import).
+  `src/locomani/sim/unreal/in_editor/no_nanite.py` after every URLab import).
 
 Apply and rebuild:
 

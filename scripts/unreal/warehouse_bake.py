@@ -14,7 +14,7 @@ Photograph materials keep their images; their height-map bump is unlinked before
 exporter (like the USD one) writes the Bump's height image as a normal map, which renders as speckle.
 
     CUDA_VISIBLE_DEVICES=1 taskset -c 24-31 /workspace/tools/blender/blender --background \
-        assets/blender/logistics_room.blend --python scripts/experiments/unreal_warehouse_bake_20260928.py -- \
+        assets/blender/logistics_room.blend --python scripts/unreal/warehouse_bake.py -- \
         outputs/unreal_warehouse_20260928/room [texel_mm=3] [samples=8]
 """
 

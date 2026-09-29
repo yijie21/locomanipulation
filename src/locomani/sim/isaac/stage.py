@@ -199,7 +199,7 @@ def _mjcf_mesh_colours(mjcf_path: str, log=print) -> dict:
 # outputs/isaac_g1_colour_20260929/g1_looks_compare.jpg); being metal, the
 # shells take on the room, so they read darker against the warehouse's dark
 # floor and shelves. Unreal uses the same values
-# (scripts/experiments/unreal_robot_materials_20260928.py, preset "unitree").
+# (src/locomani/sim/unreal/in_editor/robot_materials.py, preset "unitree").
 G1_LOOKS = {
     "shell": {
         "diffuse_color_constant": (0.75, 0.75, 0.76),

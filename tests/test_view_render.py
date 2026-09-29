@@ -1,4 +1,4 @@
-"""The Isaac dataset-camera stage: which rows it renders, which sessions it touches, what lands in the videos.
+"""The view-based dataset-camera stage (locomani.sim.view_render, Isaac and Unreal): which rows it renders, which sessions it touches, what lands in the videos.
 
 Kit is not needed: the view and the video encoder are fakes, the way test_isaac_view drives the view.
 """
@@ -8,8 +8,8 @@ import json
 import numpy as np
 
 from locomani.pipeline.world_lift import resample_selection
+from locomani.sim import view_render as R
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
-from locomani.sim.isaac import render_dataset_cameras as R
 
 
 def test_rendered_rows_cover_every_prefix_the_verification_trim_can_keep():

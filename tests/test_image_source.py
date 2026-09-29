@@ -37,13 +37,17 @@ def test_the_eval_sim_renders_what_the_source_needs():
     assert (mujoco.image_source, mujoco.backend.render) == ("mujoco", "live")
     isaac = run_context.evaluation_of(_run(images={"source": "isaac"}))
     assert (isaac.image_source, isaac.backend.render) == ("isaac", "offline")
+    unreal = run_context.evaluation_of(_run(images={"source": "unreal"}))
+    assert (unreal.image_source, unreal.backend.render) == ("unreal", "offline")
 
 
 @pytest.mark.parametrize(
     "cfg, message",
     [
         (_run(images={"source": "isaac"}, eval={"image_source": "isaac"}), "old spelling"),
-        (_run(images={"source": "unreal"}), "images must be"),
+        (_run(images={"source": "blender"}), "images must be"),
+        (_run(images={"source": "unreal"}, backend={"render": "live"}), "backend.render: offline"),
+        (_run(images={"source": "unreal"}, eval={"backend": {"render": "live"}}), "contradicts"),
         (_run(images={"source": "isaac", "gpu": 1}), "images must be"),
         (_run(images={"source": "isaac"}, backend={"render": "live"}), "backend.render: offline"),
         (_run(images={"source": "isaac"}, backend={}), "backend.render: offline"),  # live is the default
@@ -94,3 +98,85 @@ def test_a_stage_built_from_another_scene_is_refused(tmp_path, monkeypatch):
     (scene / "scene_locomani.xml").write_text("<mujoco><!-- another box --></mujoco>")
     with pytest.raises(SystemExit, match="built from another"):
         run_context.isaac_scene(cfg, registry)
+
+
+REGISTRY = {
+    "room": {"dir": "outputs/scene/room", "unreal": {"level": "room", "repeats": 8, "build": "build_level room"}},
+    "floor": {"dir": "outputs/scene/floor", "unreal": {"unsupported": "no Blender room"}},
+    "plain": {"dir": "outputs/scene/plain"},
+}
+
+
+def test_an_unreal_experiment_on_a_scene_without_a_level_is_refused_at_load(tmp_path, monkeypatch):
+    registry = tmp_path / "scenes.yaml"
+    registry.write_text(yaml.safe_dump(REGISTRY))
+    monkeypatch.setattr(run_context, "SCENES", registry)
+    experiment = tmp_path / "exp.yaml"
+    for scene, message in (
+        ("floor", "cannot use images.source unreal: no Blender room"),
+        ("plain", "has no Unreal level"),
+    ):
+        experiment.write_text(
+            yaml.safe_dump({"name": "exp", "scene": {"name": scene}, **_run(images={"source": "unreal"})})
+        )
+        with pytest.raises(SystemExit, match=message):
+            run_context.open_run(experiment, write=False)
+    # a level in the registry is enough at load; whether it is built on this machine is asked before rendering
+    experiment.write_text(
+        yaml.safe_dump({"name": "exp", "scene": {"name": "room"}, **_run(images={"source": "unreal"})})
+    )
+    assert run_context.open_run(experiment, write=False)[0]["images"]["source"] == "unreal"
+    experiment.write_text(
+        yaml.safe_dump({"name": "exp", "scene": {"name": "floor"}, **_run(images={"source": "isaac"})})
+    )
+    run_context.open_run(experiment, write=False)  # other sources do not read the unreal entry
+
+
+def test_an_unreal_run_needs_its_level_built_from_this_scene(tmp_path, monkeypatch):
+    import hashlib
+    import json
+
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    (scene / "scene_locomani.xml").write_text("<mujoco/>")
+    project = tmp_path / "host" / "Host.uproject"
+    registry = tmp_path / "scenes.yaml"
+    registry.write_text(yaml.safe_dump({**REGISTRY, "room": {**REGISTRY["room"], "dir": str(scene)}}))
+    monkeypatch.setattr(run_context.paths, "UE_PROJECT", str(project))
+    monkeypatch.setattr(run_context.paths, "UNREAL_ASSETS", str(tmp_path / "assets"))
+    cfg = {"images": {"source": "unreal"}, "scene": {"name": "room", "dir": str(scene)}}
+    with pytest.raises(
+        SystemExit, match="room.umap is missing; build the Unreal level of scene 'room': build_level room"
+    ):
+        run_context.unreal_scene(cfg, registry)
+    umap = project.parent / "Content" / "Levels" / "room.umap"
+    umap.parent.mkdir(parents=True)
+    umap.write_bytes(b"")
+    with pytest.raises(SystemExit, match="source.json is missing"):
+        run_context.unreal_scene(cfg, registry)
+    source = tmp_path / "assets" / "room" / "source.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({"scene_xml_sha256": hashlib.sha256(b"<mujoco/>").hexdigest()}))
+    assert run_context.unreal_scene(cfg, registry) == {"level": "room", "level_path": "/Game/Levels/room", "repeats": 8}
+    (scene / "scene_locomani.xml").write_text("<mujoco><!-- another carton --></mujoco>")
+    with pytest.raises(SystemExit, match="built from another"):
+        run_context.unreal_scene(cfg, registry)
+
+
+@pytest.mark.parametrize("repeats", [0, 65, 2.5, True])
+def test_the_unreal_capture_count_is_a_whole_number_the_plugin_accepts(tmp_path, repeats):
+    registry = tmp_path / "scenes.yaml"
+    registry.write_text(yaml.safe_dump({"room": {"dir": "x", "unreal": {"level": "room", "repeats": repeats}}}))
+    with pytest.raises(SystemExit, match="unreal.repeats"):
+        run_context.unreal_scene({"images": {"source": "unreal"}, "scene": {"name": "room"}}, registry)
+
+
+def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_others_have_none():
+    scenes = yaml.safe_load(run_context.SCENES.read_text())
+    levels = {name for name, entry in scenes.items() if "level" in (entry.get("unreal") or {})}
+    assert levels == {name for name in scenes if name.startswith("warehouse_")}
+    for name, entry in scenes.items():
+        unreal = entry.get("unreal") or {}
+        assert unreal.get("unsupported") or unreal.get("level") == name, name
+        if "level" in unreal:
+            assert unreal["build"] == f"$BRIDGE_PY -m locomani.sim.unreal.build_level {name}"

@@ -31,9 +31,9 @@ linear, and stay.
 
 Re-run after every URLab import (the instances are regenerated):
 
-    python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_robot_materials_20260928.py
+    "$BRIDGE_PY" -m locomani.sim.unreal.editor -f src/locomani/sim/unreal/in_editor/robot_materials.py
     (URLAB_ASSET below names the import; the command server passes no environment, so another preset is chosen by
-    prefixing the source: python3 uepy.py "PRESET = 'metal'; exec(open('<this file>').read())")
+    prefixing the source: editor.run_file(<this file>, PRESET="metal", URLAB_ASSET="<level>"))
 """
 
 import collections
@@ -45,7 +45,7 @@ def srgb_to_linear(v):
     return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
 
 
-URLAB_ASSET = "dynamic"
+URLAB_ASSET = globals().get("URLAB_ASSET", "dynamic")
 MASTER = "/Game/Loco/M_LocoPBR"
 SRC_TAG = "loco_imported_base_color"
 PRESETS = {
