@@ -251,7 +251,8 @@ def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
     From the scene's `unreal` entry in `configs/scenes.yaml`, so the dataset re-render and the eval mirror load the
     same level and capture it the same way. `repeats` is `urlab.FreshCaptureRepeats`, the captures each request
     accumulates (Lumen and TSR converge over frames). The level must be built in the host project ($UE_PROJECT)
-    from this very scene: its builder records the scene XML's hash in `$UNREAL_ASSETS/<level>/source.json`.
+    from this very scene: its builder records the scene XML's hash in `$UNREAL_ASSETS/<level>/source.json`
+    (default `$UNREAL_ROOT/levels`: one place per machine, whichever checkout built the level).
     """
     name, entry = _unreal_entry(cfg, registry)
     level = entry["level"]

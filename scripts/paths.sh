@@ -105,8 +105,10 @@ export UNREAL_ROOT="${UNREAL_ROOT:-$LOCOMANI_ROOT/third_party/unreal}"
 export UE_ENGINE="${UE_ENGINE:-$UNREAL_ROOT/UE_5.7.4}"
 export UE_PROJECT="${UE_PROJECT:-$UNREAL_ROOT/host/URLabHost.uproject}"
 export BRIDGE_PY="${BRIDGE_PY:-$UNREAL_ROOT/bridge/.venv/bin/python}"
-# Per-scene MJCF exports the levels were built from (gitignored, like assets/isaac/).
-export UNREAL_ASSETS="${UNREAL_ASSETS:-$LOCOMANI_ROOT/assets/unreal}"
+# Per level: the MJCF export it was built from and its source.json (the scene XML's hash). Beside the host project
+# that holds the levels, not in a checkout: the levels are the machine's, and every checkout must find their records
+# (under $LOCOMANI_ROOT a level built from a worktree was unknown to the main checkout, 2026-09-29).
+export UNREAL_ASSETS="${UNREAL_ASSETS:-$UNREAL_ROOT/levels}"
 export ROBOT_MJCF="${ROBOT_MJCF:-$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1.xml}"
 
 # Logs + exporter sessions for instance $1 (default $INSTANCE, default 0).

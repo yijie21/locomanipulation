@@ -19,7 +19,7 @@
   - `UE_5.7.4/` 引擎；`projects/URLabSmoke/` 宿主工程（插件 `Plugins/UnrealRoboticsLab` 在本地分支 `loco-fresh-capture`，提交 `58c8a98`（取图模式）、`923b689`（端口），合起来 = `efbc5e2` + 补丁）
   - `urlab_bridge/.venv` 客户端（`$BRIDGE_PY`，mujoco 3.10.0）；`logs/`（`editor_run.log`、`guard.log`）；`backups/`（房间原 Nanite 网格、原 ini）
   - 关卡：`/Game/Levels/Warehouse` 是房间关卡（无机器人）；每个场景一个 `/Game/Levels/<场景名>`（2026-09-29 建了 warehouse_textured 和四个 warehouse_box_*）
-- 每个场景导出的 MJCF 和 `source.json`（场景 XML 的哈希）：`assets/unreal/<场景名>/`
+- 每个场景导出的 MJCF 和 `source.json`（场景 XML 的哈希）：`$UNREAL_ASSETS/<场景名>/`，默认 `$UNREAL_ROOT/levels/`，本机是 `/workspace/ue_57/levels/`（2026-09-29 从 worktree 的 `assets/unreal/` 挪来，TODO 12.9.11）
 - 实验脚本（诊断用）：`scripts/experiments/unreal_{smoke,trace_video,capture_bench,pose_set,g1_lookdev,export_mjcf}_20260928.py`
 - 09-28/29 的测速、A/B、对 Blender 标定：`outputs/unreal_render_speed_20260928/`、`outputs/unreal_blender_match_20260929/`；
   接成开关时的验证：`outputs/unreal_images_source_20260929/`

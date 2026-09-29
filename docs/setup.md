@@ -430,7 +430,7 @@ done
 - 一台机器只开一个编辑器：它的端口是固定的（URLab 用 5800–5806，命令服务用 18801），都避开了仿真栈的端口。编辑器已在另一张卡上运行时，`start_unreal.sh` 会拒绝，先 `stop_unreal.sh`。
 - 编辑器和编译只用最后 4 个核（`--cpus` 或 `UE_CPUS` 可改），因为容器的 CPU 配额和仿真栈共用。看守脚本在 CPU 打满或 GPU 卡死时会杀掉编辑器，原因写在 `$UNREAL_ROOT/logs/guard.log`。
 - 已经装在别处的机器，在 `locomani.local.sh` 里设 `UNREAL_ROOT`（或分别设 `UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`）。
-- 关卡建在编辑器的宿主工程里，建关卡时用的场景副本记在 `$UNREAL_ASSETS/<关卡>/source.json`（默认 `assets/unreal/`，不进 Git）；换一个检出目录用时，把 `UNREAL_ASSETS` 指到建关卡的那个目录，或者重建关卡。
+- 关卡建在编辑器的宿主工程里，建关卡时用的场景副本记在 `$UNREAL_ASSETS/<关卡>/source.json`（默认 `$UNREAL_ROOT/levels/`，和宿主工程放在一起）。哪个检出目录建的关卡，别的检出目录都能用；场景改过之后要重建关卡，否则会被拒绝。
 
 ### 哪些步骤验证过
 

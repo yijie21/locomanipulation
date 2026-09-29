@@ -25,8 +25,6 @@ __pycache__/
 # Converted Isaac USD caches only; shared source assets live in tracked assets/scene/.
 # Rebuilt by scripts/build_isaac_assets.sh from the installed scene and tracked sources.
 assets/isaac/
-# Per-scene MJCF exports the Unreal levels are built from (src/locomani/sim/unreal/build_level.py).
-assets/unreal/
 MUJOCO_LOG.TXT
 
 # never track these paths, symlink or directory (2026-09-09 incident: a worktree symlink named outputs was committed and the merge replaced the data directory)

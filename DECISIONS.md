@@ -1201,7 +1201,7 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - 退出时先停 PIE 再断开，因为断开会把插件切回 live，PIE 在跑时插件出过段错误。
 - **Unreal 安装按仓库文件复现，除引擎本身。**
   - `setup_unreal.sh` 按 `scripts/unreal/host/` 建宿主工程，克隆 URLab `efbc5e2` 并打仓库里的补丁，编译，建客户端 venv（mujoco 3.10.0）。
-  - 路径变量 `UNREAL_ROOT`、`UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`、`UNREAL_ASSETS` 写进 paths.sh / paths.py。本机用 `/workspace/locomani.local.sh` 指到 `/workspace/ue_57`。
+  - 路径变量 `UNREAL_ROOT`、`UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`、`UNREAL_ASSETS` 写进 paths.sh / paths.py。`UNREAL_ASSETS`（每个关卡的 MJCF 导出和 `source.json`）默认 `$UNREAL_ROOT/levels`，和宿主工程放在一起：关卡是全机共用的，记录也得共用。原来放在检出目录下，worktree 建的关卡主 checkout 找不到（TODO 12.9.11，main 审核时发现）。本机用 `/workspace/locomani.local.sh` 指到 `/workspace/ue_57`。
   - 引擎要 Epic 账号登录才能下载，只能手动。
 - **URLab 的端口全部由插件 ini 的 `PortBase` 派生，默认 5800（main 审核 30cb422 时提出的阻塞项）。**
   - 状态 = base，控制 = +1，info = +2，相机从 +3 起，step RPC = +4。补丁改插件，客户端 `editor.port_base` 读同一个 ini，只有一个数。
