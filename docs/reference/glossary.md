@@ -56,12 +56,16 @@
 | 词 | 意思 |
 |---|---|
 | `backend.render` | `live`：采集时 sim 实时渲相机；`offline`：不渲，只留物理和 trace，数据集相机先存黑色占位帧 |
-| 补渲 | convert 之前按 trace 给离线录制的 session 渲出数据集相机，覆盖占位帧（`render_dataset_cameras.sh` / `_isaac.sh`）；只渲成功局，失败局 convert 不读 |
-| `images.source` | 策略看到的相机图由 `mujoco` 还是 `isaac` 渲；训练和闭环评测同一个（[图像来源](../rendering.md#图像来源imagessource)） |
+| 补渲 | convert 之前按 trace 给离线录制的 session 渲出数据集相机，覆盖占位帧（`render_dataset_cameras.sh` / `_isaac.sh` / `_unreal.sh`）；只渲成功局，失败局 convert 不读 |
+| `images.source` | 策略看到的相机图由 `mujoco`、`isaac` 还是 `unreal` 渲；训练和闭环评测同一个（[图像来源](../rendering.md#图像来源imagessource)） |
 | Isaac / SIMPLE | Isaac Sim 4.5：NVIDIA 的 RTX 渲染器，本仓库只用它出图，物理始终在 MuJoCo。它的 Python 环境借 SIMPLE 仓库的 venv（`$RENDER_PY`，安装第 7 步） |
 | Isaac stage | 场景给 Isaac 用的 USD 版本，在 `assets/isaac/scene/<名字>/`，由 `configs/scenes.yaml` 该场景 `isaac.build` 的命令生成 |
 | `IsaacView` | Isaac 出三路相机图（ego + 左右腕）的那个类（`src/locomani/sim/isaac/view.py`），Isaac 补渲和镜像共用 |
-| 镜像（Isaac mirror） | 闭环评测时单独一张卡上的 Isaac 进程（`run_isaac_mirror.sh`）：策略要观测时，把 sim 此刻的状态渲成相机图（[机制](../rendering.md#vla-闭环的-isaac-画面按需镜像)） |
+| 镜像（mirror） | 闭环评测时在另一张卡上出图的进程，Isaac 的是 `run_isaac_mirror.sh`，Unreal 的是 `run_unreal_mirror.sh`：策略要观测时，把 sim 此刻的状态渲成相机图。两者用同一个协议、同一个端口，策略端不区分（[机制](../rendering.md#vla-闭环的-isaac-画面按需镜像)） |
+| Unreal / URLab | Unreal Engine 5.7：`images.source: unreal` 时出图的第二种渲染器，物理照样在 MuJoCo。URLab 是把 MuJoCo 模型导进 Unreal 的插件，本仓库给它打了补丁（`patches/urlab_fresh_capture.patch`），只用来按给定的状态摆姿态、截图（安装第 8 步） |
+| Unreal 编辑器 | 一台机器开一个、常驻的 Unreal 进程（`start_unreal.sh --gpu N` 起，`stop_unreal.sh` 关），Unreal 的补渲和镜像都连它出图；`--gpu` 选的就是 Unreal 渲图的卡 |
+| Unreal 关卡 | 场景给 Unreal 用的版本：Blender 烘焙的房间关卡，再导入该场景的机器人、纸箱和三路相机；由 `configs/scenes.yaml` 该场景 `unreal.build` 的命令建在编辑器里。没有关卡的场景在条目里写明不支持 |
+| `$BRIDGE_PY` | 和 Unreal 编辑器通信的 Python 环境（安装第 8 步建），Unreal 的补渲、镜像、建关卡都在它里面跑 |
 
 ## 文档
 

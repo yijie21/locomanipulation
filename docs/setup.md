@@ -16,7 +16,7 @@
 | 5 | GR00T 训练环境 | 要训练或评测 VLA（三条主线都要） | 按上游 README |
 | 6 | conda 训练环境、EmbodiedGen | 只有训练 SONIC 本身或重新生成场景才要 | 1 小时以上 |
 | 7 | Isaac 渲染环境 | warehouse（Isaac 出图）和 Isaac 重渲 | 约 20 GB 下载 |
-| 8 | Unreal 渲染环境（可选） | 只有实验文件写 `images.source: unreal` 才要 | 引擎约 26 GB 下载，编译约 15 分钟 |
+| 8 | Unreal 渲染环境（可选） | 只有实验文件写 `images.source: unreal` 才要 | 引擎约 26 GB 下载，编译约 9 分钟 |
 
 做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 7 步。
 
@@ -318,22 +318,30 @@ $ ls assets/isaac/robot/g1_dex1.usda
 只有实验文件写 `images.source: unreal`（[rendering.md](rendering.md#图像来源imagessource)）才需要；物理照样在 MuJoCo。装在 `$UNREAL_ROOT`（默认 `third_party/unreal/`）。
 
 ```bash
-# 1) 引擎：Epic 只给登录账号下载 Linux 版。在 https://www.unrealengine.com/linux 下载
-#    Linux_Unreal_Engine_5.7.4.zip（约 26 GB，解开 69 GB），解到 $UE_ENGINE。不要 5.8
-. scripts/paths.sh; mkdir -p "$UE_ENGINE" && unzip -q Linux_Unreal_Engine_5.7.4.zip -d "$UE_ENGINE"
-# 2) 宿主工程 + 打补丁的 URLab 插件 + 编译 + 客户端 venv（约 15 分钟，只用 4 个核）
+. scripts/paths.sh
+mkdir -p "$UE_ENGINE" && unzip -q <下载目录>/Linux_Unreal_Engine_5.7.4.zip -d "$UE_ENGINE"
 bash scripts/setup_unreal.sh
-# 3) 起常驻编辑器（--gpu 选它渲染的卡）；验证：打印 5.7.4-...
-bash scripts/start_unreal.sh --gpu 1
-"$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_engine_version())'
-# 4) 房间关卡（一次）和每个场景的关卡；<烘焙目录> 由 Blender 跑 scripts/unreal/warehouse_bake.py 得到
-"$BRIDGE_PY" -m locomani.sim.unreal.build_level --room <烘焙目录>
-bash scripts/build_scene.sh warehouse_textured --unreal
 ```
 
-做什么：`setup_unreal.sh` 按 `scripts/unreal/host/` 建宿主工程（出图默认值写在它的配置里：阴影不走 Nanite、每次取图截 8 遍、
-不向 Epic 上传崩溃报告），克隆 URLab 插件（`efbc5e2` + `patches/urlab_fresh_capture.patch`）并编译，建客户端 venv
-（`$BRIDGE_PY`：Python 3.12、mujoco 3.10.0）。哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
+做什么：第一条把 Unreal 引擎解到 `$UE_ENGINE`。Linux 版只给登录的 Epic 账号下载，要先在 https://www.unrealengine.com/linux 手动下载 `Linux_Unreal_Engine_5.7.4.zip`（约 26 GB，解开 69 GB）。第二条先按 `scripts/unreal/host/` 建宿主工程，出图默认值写在它的配置里：阴影不走 Nanite、每次取图截 8 遍、不向 Epic 上传崩溃报告。然后克隆 URLab 插件（`efbc5e2`），打上 `patches/urlab_fresh_capture.patch` 并编译。最后建和编辑器通信的 Python 环境 `$BRIDGE_PY`（Python 3.12、mujoco 3.10.0）。它约 9 分钟，只用最后 4 个核；中途失败就重跑，做完的步骤会跳过。
+
+验证：
+
+```console
+$ bash scripts/start_unreal.sh --gpu 1
+unreal editor ready on GPU 1 (log ...)
+$ "$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_engine_version())'
+5.7.4-...
+```
+
+编辑器起来以后，建一次房间关卡（每台机器一次）。先装好 Blender 5.x，做法见 [Blender 场景](blender_scenes.md#1-环境需要什么不需要什么)：
+
+```bash
+<blender> --background assets/blender/logistics_room.blend --python scripts/unreal/warehouse_bake.py -- outputs/unreal_room_bake
+"$BRIDGE_PY" -m locomani.sim.unreal.build_level --room outputs/unreal_room_bake
+```
+
+做什么：第一条用 Blender 5.x（`<blender>` 是它的可执行文件）把物流房间的程序化材质烘成贴图，连同灯光导出成 `room.glb` 和 `room_scene.json`，约 7 分钟。第二条在运行中的编辑器里把它建成房间关卡 `/Game/Levels/Warehouse`。成功时命令正常退出，烘焙目录里的 `unreal_level_report.json` 写着 `"ok": true`；失败时命令报错退出。之后每个场景的关卡在 [warehouse runbook](warehouse.md) 第 10 节建，哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
 
 ## 安装排错与说明
 
@@ -415,6 +423,15 @@ done
 - 机器上已经有一份 SIMPLE：`ln -s <那个目录> third_party/SIMPLE`，或者 `export SIMPLE_ROOT=<那个目录>`。`RENDER_PY` 默认跟着 `SIMPLE_ROOT/.venv`，也可以指向别的装了 isaacsim 的环境（[原因](rendering.md)）。
 - 桌子和台面的源网格由第 4 步装好；房间背景随 Git 提供（`assets/scene/empty_room_world.ply.gz`）。更新代码后重跑 `build_isaac_assets.sh`，新的缓存键会触发重建（[资产构建](rendering.md#资产构建)）。
 
+### Unreal 渲染环境
+
+- 引擎只能手动下载（要登录 Epic 账号），`setup_unreal.sh` 找不到 `$UE_ENGINE` 下的编辑器就停下。版本用 5.7.4，不要用 5.8，它的 Vulkan 渲染有回退。
+- `--gpu` 是 Vulkan 的设备编号，和 `nvidia-smi` 的编号不一定相同。`start_unreal.sh` 起好后会按 `nvidia-smi` 核对，不一致就报错并关掉编辑器，这时换一个 `--gpu` 值。
+- 一台机器只开一个编辑器：它的端口是固定的（URLab 用 5800–5806，命令服务用 18801），都避开了仿真栈的端口。编辑器已在另一张卡上运行时，`start_unreal.sh` 会拒绝，先 `stop_unreal.sh`。
+- 编辑器和编译只用最后 4 个核（`--cpus` 或 `UE_CPUS` 可改），因为容器的 CPU 配额和仿真栈共用。看守脚本在 CPU 打满或 GPU 卡死时会杀掉编辑器，原因写在 `$UNREAL_ROOT/logs/guard.log`。
+- 已经装在别处的机器，在 `locomani.local.sh` 里设 `UNREAL_ROOT`（或分别设 `UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`）。
+- 关卡建在编辑器的宿主工程里，建关卡时用的场景副本记在 `$UNREAL_ASSETS/<关卡>/source.json`（默认 `assets/unreal/`，不进 Git）；换一个检出目录用时，把 `UNREAL_ASSETS` 指到建关卡的那个目录，或者重建关卡。
+
 ### 哪些步骤验证过
 
-2026-09-25 做过一次从零复现：一个没有上下文的 agent 只照文档装完第 0–4 步，采集 bottle 7/10、crate 8/10、warehouse 3/10 成功，开局失败和摔倒都是 0。第 5、7 步没有在干净的机器上验证过。系统层面的几样东西作者机器的镜像本来就有，干净机器上要自己确认：`/usr/local/cuda` 下的 CUDA 13、MuJoCo 用的 NVIDIA EGL、转换用的 ffmpeg。
+2026-09-25 做过一次从零复现：一个没有上下文的 agent 只照文档装完第 0–4 步，采集 bottle 7/10、crate 8/10、warehouse 3/10 成功，开局失败和摔倒都是 0。第 5、7 步没有在干净的机器上验证过。第 8 步 2026-09-29 在一个空的 `$UNREAL_ROOT` 里从 `setup_unreal.sh` 做到出图：`setup_unreal.sh` 用了 8.5 分钟，起编辑器、建房间关卡和 `warehouse_textured` 关卡、出图都通过。引擎用的是本机已解开的那份，下载和解压两步没验证。系统层面的几样东西作者机器的镜像本来就有，干净机器上要自己确认：`/usr/local/cuda` 下的 CUDA 13、MuJoCo 用的 NVIDIA EGL、转换用的 ffmpeg。

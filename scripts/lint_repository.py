@@ -28,9 +28,9 @@ GUIDES = {
     "docs/README.md": 60,
     "docs/single_arm.md": 130,
     "docs/bimanual.md": 130,
-    "docs/warehouse.md": 150,
+    "docs/warehouse.md": 170,  # 2026-09-29: + "改用 Unreal 出图" as its own section, not squeezed into one line
     "docs/running.md": 180,
-    "docs/setup.md": 420,
+    "docs/setup.md": 440,  # 2026-09-29: + step 8 (Unreal) in the steps' format and its troubleshooting
     "docs/warehouse_design.md": 120,
     "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,

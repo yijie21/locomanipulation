@@ -63,7 +63,7 @@ diff configs/experiments/bottle_simple_smoke.yaml configs/experiments/my_run.yam
 | `--until-kept N` | 只有 `bimanual/run_agent_server.sh` 有：保留到 N 条后，在当前这批结束时暂停；去掉它再跑同一条命令就接着采 |
 | `--line bimanual` | 只有 `run_overnight.sh` 有：用双臂的专家和评测（crate、warehouse）；不给就是 bottle |
 | `--backbone-path DIR` | 只有 `run_vla_server.sh` 和 `open_loop_eval.sh` 有：在别的机器（例如集群）上训练的 checkpoint，记录的视觉语言骨干路径在本机不存在，用它指向本机的副本，例如 `~/Checkpoints/Cosmos-Reason2-2B` |
-| `--isaac-gpu N` | 只有 `run_overnight.sh` 有：`images.source: isaac` 时，Isaac 补渲和镜像用哪张卡 |
+| `--render-gpu N` | 只有 `run_overnight.sh` 有：`images.source` 是 `isaac` 或 `unreal` 时，补渲和镜像用哪张卡（Unreal 是它的编辑器那张卡）。旧名 `--isaac-gpu` 照收 |
 | `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`、`convert`、`train`、`eval` 中的一段 |
 
 ## 4. 跳过、续跑与重跑

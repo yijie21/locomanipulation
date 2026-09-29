@@ -60,12 +60,12 @@ flowchart TD
 | 采集时 sim 出不出图 | `backend.render: live` 实时出；`offline` 不出，事后补 | 必须 `offline`，采集时不出图 | 同 `isaac` |
 | 数据集相机（convert 之前） | `offline` 时由 `render_dataset_cameras.sh` 从 trace 补渲（只渲成功局） | 由 `render_dataset_cameras_isaac.sh` 用 Isaac 从 trace 补渲（只渲成功局、只渲 25 Hz 取到的行） | 由 `render_dataset_cameras_unreal.sh` 在运行中的编辑器里补渲（同上；每行约 130 ms） |
 | 闭环评测时策略的图 | eval sim 自己实时渲（eval 栈强制 `live`） | eval sim 不渲（强制 `offline`），另起 [Isaac 镜像](#vla-闭环的-isaac-画面按需镜像)，策略要图时按 sim 此刻的状态渲 | 同 `isaac`，镜像是 `run_unreal_mirror.sh`（同一协议、同一端口） |
-| 额外需要 | — | [安装](setup.md)第 7 步；场景在 `configs/scenes.yaml` 有 `isaac` 条目且已建 stage；第二张 GPU | [安装](setup.md)里可选的 Unreal 一步；`bash scripts/start_unreal.sh --gpu N` 起编辑器；场景有 `unreal` 条目且关卡已建（`build_scene.sh <场景> --unreal`） |
+| 额外需要 | — | [安装](setup.md)第 7 步；场景在 `configs/scenes.yaml` 有 `isaac` 条目且已建 stage；第二张 GPU | [安装](setup.md)第 8 步；`bash scripts/start_unreal.sh --gpu N` 起编辑器；场景有 `unreal` 条目且关卡已建（`build_scene.sh <场景> --unreal`）；第二张 GPU |
 | 能用的场景 | 全部 | `warehouse_textured`、`warehouse_box_45x*`、`box_platform` | `warehouse_textured`、`warehouse_box_45x*`；其余场景没有房间可烘焙，条目里写明不支持，加载实验文件时就拒绝 |
 
 补渲脚本和镜像用同一组相机（ego + 左右腕，`CAMERA_CONFIGS`）；同一渲染器的补渲和镜像还是同一个渲染对象
 （`IsaacView` / `UnrealView`）、同一份场景、同一组外观设置（Isaac：`configs/scenes.yaml` 的 `rtx_settings` 和 `supersample`；
-Unreal：关卡里的后处理体积和 `repeats`），所以"同一个状态 → 同一张图"。行的选取、占位帧的覆盖和 marker 是两者共用的
+Unreal：关卡里的后处理体积和 `repeats`），所以同一个状态对应同一张图。行的选取、占位帧的覆盖和 marker 是两者共用的
 `src/locomani/sim/view_render.py`，镜像协议是共用的 `src/locomani/sim/mirror.py`。
 convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 或 `unreal` 配 `backend.render: live`）
 加载实验文件时就拒绝。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步；Unreal 的编辑器、关卡与坑见
@@ -417,8 +417,8 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 
 - **起法。** 镜像从栈的状态文件取场景和端口，先等到 sim 的第一条特权状态，所以要在终端 1 之后起；Kit 启动先打印几百行警告，
   出现 `isaac mirror listening on :<端口>` 才就绪。终端 4 会等策略服务的端口，但**不等镜像**，要看到这一行再起，否则每局
-  `[vla] isaac mirror: no reply`。`--gpu` 是 Isaac 的卡，与栈同卡时打印 WARNING（渲染和 sim 抢卡）。输出在前台终端，
-  Ctrl-C 停；`run_overnight.sh --isaac-gpu N` 把它放到后台、写 `<run>/eval/isaac_mirror.log`，等到 `listening` 才起跑局。
+  `[vla] mirror: no reply from the mirror`。`--gpu` 是 Isaac 的卡，与栈同卡时打印 WARNING（渲染和 sim 抢卡）。输出在前台终端，
+  Ctrl-C 停；`run_overnight.sh --render-gpu N` 把它放到后台、写 `<run>/eval/isaac_mirror.log`，等到 `listening` 才起跑局。
 
 - **物理不等渲染。** sim 每个控制 tick 在特权状态流上发布完整 qpos（与 state trace 同 seq 的那一行，JSON 浮点逐位还原）；
   镜像只在策略要观测时渲一帧最新状态，所以渲染再慢也只让图像晚到，不会让物理和 deploy 的墙钟错开。
