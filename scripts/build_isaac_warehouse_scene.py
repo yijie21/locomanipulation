@@ -4,9 +4,8 @@
 The crate/bottle scenes are assembled by scripts/build_isaac_assets.sh from table meshes and a PLY room;
 a Blender room already ships as one USDC with materials, so this writes two small USD layers around it:
 
-    <assets>/scene/<label>/scene.usda                 /World/room -> the USDC's /root, with its env DomeLight
-                                                      (RTX rejects the exported EXR) and the static carton
-                                                      deactivated; stage.assemble_stage then adds dome + sun
+    <assets>/scene/<label>/scene.usda                 /World/room -> the USDC's /root with the static carton
+                                                      deactivated; its env DomeLight stays on
     <assets>/scene/<label>/usd/nor_cal_box/           the movable carton: the same /root with every other
         nor_cal_box.usd, nor_cal_box.json             child deactivated, so its /root/_materials bindings still
                                                       resolve, plus the body->geom offset for sync_replay
@@ -17,6 +16,15 @@ wires those in, and the v1 USDC predates blender_to_usd.py dropping them. Left i
 (0.50 +- 0.03) become an about-zero normal whose sign flips texel to texel, and every carton renders under white
 speckle (2026-09-28, docs/ledger/blender_scenes.md).
 
+The env DomeLight is Blender's world light (colour 0.76/0.81/0.88, strength 0.12, x1200 like the area lights).
+The published USDC carries it colour-only -- Blender's 465-byte EXR, which RTX rejects, is already cleared
+(assets/scene/logistics_room_box_v1/README.md) -- so it renders as is, and stage.assemble_stage, which adds a
+generic dome + sun only to a stage without a dome or distant light, leaves the room to Blender's own lights. Until
+2026-09-29 it was deactivated on the stale EXR reason and replaced by that generic pair (labels warehouse_textured
+and warehouse_box_*, kept for runs that rendered with them); in this closed room the swap moves the frame mean by
+0.1/255 (docs/ledger/blender_scenes.md, section 4). Every label this builder writes now ends in `_env`, so a
+rebuild can never swap the light under a stage name a run already rendered with.
+
 Why the offset: the Blender carton mesh is baked in world coordinates at the scene's rest pose (floor centre
 at (0, -0.39, 0.371)); the MJCF body nor_cal_box_object has its origin at that floor centre. The json's
 offset_pos moves the mesh so the wrapper origin is the body origin; stage.py applies it.
@@ -24,13 +32,13 @@ offset_pos moves the mesh so the wrapper origin is the body origin; stage.py app
 A resized carton (`--scene`, a four-edge scene from locomani.tasks.crate.warehouse_box_scene): the stage is the same
 room with the carton's mesh scale read from that MuJoCo scene, so both draw one box. The scale applies to the baked
 world coordinates before the offset, so the offset scales with it; source.json records the MJCF's sha256, and
-run_context.isaac_scene refuses the stage once that scene changes.
+run_context.isaac_scene refuses the stage once that scene changes. Its label is the scene's name plus `_env`.
 
 Needs the `pxr` module (pip install usd-core, or any Isaac/Blender python) to list the room's children.
 
     python3 scripts/build_isaac_warehouse_scene.py [--usdc assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc]
-                                                   [--label warehouse_textured] [--assets $ISAAC_ASSETS]
-                                                   [--scene outputs/scene/warehouse_box_45x20x18]  (label: its name)
+                                                   [--label warehouse_textured_env] [--assets $ISAAC_ASSETS]
+                                                   [--scene outputs/scene/warehouse_box_45x20x18]  (label: <name>_env)
 """
 
 from __future__ import annotations
@@ -112,7 +120,9 @@ def blocked_normal_overs(shaders: list[str], pad: str) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--usdc", default="assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc")
-    ap.add_argument("--label", default=None, help="default: the --scene directory's name, else warehouse_textured")
+    ap.add_argument(
+        "--label", default=None, help="default: the --scene directory's name + _env, else warehouse_textured_env"
+    )
     ap.add_argument("--assets", default=os.environ.get("ISAAC_ASSETS", "assets/isaac"))
     ap.add_argument("--scene", type=Path, default=None, help="MuJoCo scene dir whose carton size the stage takes")
     args = ap.parse_args()
@@ -120,7 +130,7 @@ def main() -> int:
 
     scene_xml = args.scene / "scene_locomani.xml" if args.scene else None
     scale = carton_scale(scene_xml) if scene_xml else [1.0, 1.0, 1.0]
-    args.label = args.label or (args.scene.resolve().name if args.scene else "warehouse_textured")
+    args.label = args.label or (args.scene.resolve().name + "_env" if args.scene else "warehouse_textured_env")
     usdc = Path(args.usdc).resolve()
     stage = Usd.Stage.Open(str(usdc))
     children = [c.GetName() for c in stage.GetPrimAtPath("/root").GetChildren()]
@@ -141,8 +151,8 @@ def main() -> int:
             "    metersPerUnit = 1",
             '    upAxis = "Z"',
             f'    doc = "{args.label}: the Blender-exported logistics room as /World/room (generated by '
-            "scripts/build_isaac_warehouse_scene.py). The USDC env DomeLight and the static carton are "
-            'deactivated; stage.assemble_stage adds dome + distant lights and drives the carton from usd/nor_cal_box."',
+            "scripts/build_isaac_warehouse_scene.py). The static carton is deactivated and driven from "
+            'usd/nor_cal_box; the USDC env DomeLight (Blender world light) stays on."',
             ")",
             "",
             'def Xform "World"',
@@ -151,7 +161,6 @@ def main() -> int:
             f"        references = @{usdc}@</root>",
             "    )",
             "    {",
-            "    " + over_inactive(ENV_LIGHT).replace("\n", "\n    "),
             "    " + over_inactive(CARTON).replace("\n", "\n    "),
             *blocked_normal_overs(heights, "        "),
             "    }",

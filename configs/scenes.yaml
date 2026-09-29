@@ -6,7 +6,8 @@
 # the scene; `build` is how to make it, run by `bash scripts/build_scene.sh <name>` from the repository root with
 # scripts/paths.sh sourced ($VENV_SIM_PY; $USD_PY is a python with `pxr`). `isaac` (optional) names the scene's
 # Isaac stage, built by `build_scene.sh <name> --isaac`; only a scene that has one can run with
-# `images.source: isaac` (training and evaluation images).
+# `images.source: isaac` (training and evaluation images). Its look is `rtx_settings` plus `supersample` (cameras
+# render N times larger, box-averaged back; default 1).
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
   dir: outputs/scene/sim_lowcom
@@ -36,10 +37,17 @@ warehouse_textured:  # the same room rebuilt from the published pack after 0bf8e
   example: configs/experiments/box_room_grasp_baseline_20260924.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured
   isaac:  # its Isaac stage and the look every Isaac render of it applies (render_isaac_videos.sh, the dataset re-render, the eval mirror)
-    dir: warehouse_textured  # under $ISAAC_ASSETS/scene
+    dir: warehouse_textured_env  # under $ISAAC_ASSETS/scene; Blender's world light on (warehouse_textured had it off)
     build: $USD_PY scripts/build_isaac_warehouse_scene.py
-    # auto-exposure off, film ISO 30: with it on the robot's 0.2 greys rendered 108/255 (docs/rendering.md, warehouse)
-    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+    # matched to the Blender Cycles stills (reverse_room + two head cameras, docs/ledger/blender_scenes.md sections 4, 6):
+    # auto-exposure off (with it on, light intensities have no effect); film ISO 80 (ISO 30 was matched to MuJoCo's
+    # robot torso, half Blender's floor brightness); indirect diffuse x2 stands in for Cycles' 12 bounces against RTX's
+    # 2 (bounce-lit ceiling 151 -> 176 of Blender's 183); tonemap op 4 (Hejl-Hable) sits nearer Blender's AgX than
+    # ACES (op 6). Grey error vs Blender 11.1 -> 6.9, render time unchanged
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    # cameras render at 2x and box-average back: RTX realtime anti-aliases with FXAA only, so small print blurs and
+    # shelf grids shimmer; structural similarity to Blender 0.89-0.94 -> 0.93-0.96 (docs/ledger/blender_scenes.md section 5)
+    supersample: 2
 
 walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SONIC locomotion; camera walk_follow
   dir: outputs/scene/walk
@@ -50,11 +58,12 @@ box_platform:  # a 10 cm solid platform on the blue floor with the warehouse car
   example: configs/experiments/box_platform_default_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform --width 0.45 --length 0.32 --height 0.60
   isaac:  # primitive boxes from the MJCF plus a grey ground (MuJoCo draws none); source.json pins the MJCF it was built from
-    dir: box_platform
-    build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/build_isaac_primitive_scene.py outputs/scene/box_platform
+    dir: box_platform_srgb  # MJCF colours converted sRGB -> linear (2026-09-29); box_platform took them as linear, a near-white carton
+    build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/build_isaac_primitive_scene.py outputs/scene/box_platform --label box_platform_srgb
     # fixed exposure: auto-exposure adapts over frames, so the mirror's on-demand pictures and the dataset's continuous
     # ones would differ; ISO 20 keeps auto's contrast (ego mean 120 vs 89/255; outputs/renders/box_platform_isaac_check_20260927)
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=20]
+    supersample: 2  # as warehouse_textured
 
 # The four-edge warehouse line (2026-09-28): warehouse_textured with the carton rebuilt at one of the envelope's four
 # >= 40% sizes (docs/box_grasp_envelope.md §3.1; 0.45 m wide, grip height 0.54 / 0.69 m on the 0.371 m platform) by
@@ -66,34 +75,41 @@ warehouse_box_45x32x33:  # the room's own carton size
   dir: outputs/scene/warehouse_box_45x32x33
   example: configs/experiments/warehouse_edges_compact_45x32x33_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33 --width 0.45 --length 0.32 --height 0.33
-  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: the warehouse_textured look (its isaac entry)
-    dir: warehouse_box_45x32x33
+  # its Isaac stage: the room stage with this carton's mesh scale; source.json pins the MJCF. Look: the warehouse_textured
+  # look (its isaac entry; tests/test_run_context.py holds them equal). The stages without `_env` (built 2026-09-28,
+  # Blender's world light off, ISO 30) stay in the asset cache for runs that rendered with them
+  isaac:
+    dir: warehouse_box_45x32x33_env
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33
-    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
 
 warehouse_box_45x20x33:
   dir: outputs/scene/warehouse_box_45x20x33
   example: configs/experiments/warehouse_edges_compact_45x20x33_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x33 --width 0.45 --length 0.20 --height 0.33
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
-    dir: warehouse_box_45x20x33
+    dir: warehouse_box_45x20x33_env
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33
-    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
 
 warehouse_box_45x32x18:
   dir: outputs/scene/warehouse_box_45x32x18
   example: configs/experiments/warehouse_edges_compact_45x32x18_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x18 --width 0.45 --length 0.32 --height 0.18
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
-    dir: warehouse_box_45x32x18
+    dir: warehouse_box_45x32x18_env
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18
-    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
 
 warehouse_box_45x20x18:
   dir: outputs/scene/warehouse_box_45x20x18
   example: configs/experiments/warehouse_edges_compact_45x20x18_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x18 --width 0.45 --length 0.20 --height 0.18
   isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
-    dir: warehouse_box_45x20x18
+    dir: warehouse_box_45x20x18_env
     build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18
-    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2

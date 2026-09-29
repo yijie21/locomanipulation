@@ -987,3 +987,197 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **同一进程里用线程跑多条通道**：端口和场景是进程级的环境变量，做不到。
 - **沿用旧闸门的 1800 线程预算**：它是按每批 10 局量出来的，今天的机器上连一条 4 局一批的录制通道都会被拒（1850 + 1800 > 3640），实测只需要约 760。
 - **某个栈起不来时，用已经起好的几条接着跑**：运行时的通道数和打印的不一致，这正是本仓库最常见的“配置只落实了一半”的失败形态。
+
+## 2026-09-28 Unreal（URLab）只替代 Isaac 的渲染角色；warehouse 从 Blender 直导；G1 外观用 MJCF 原色（分支 loco_unreal）
+
+目标：Isaac 渲染质量不够，试用 URLab（MuJoCo 嵌入 UE 5.7 的插件）出策略看到的图。约束：URLab 只替代 Isaac 镜像和补渲，物理、SONIC deploy、VLA 服务端、lockstep 都不动。
+
+### 决策
+
+- **URLab 只做渲染（puppet 模式）：** sim 推 qpos，URLab 出图，不走它的 direct / live 物理。
+  理由：URLab 不跑 VLA 和 SONIC，deploy 必须留在外部；把物理搬进去要重写 sim 侧的桥接、reset、夹爪 PD 和成功判定，lockstep 校准和 81/83/88 也会作废。
+- **插件打补丁，加 `include_cameras: "fresh"`（`patches/urlab_fresh_capture.{patch,md}`）。**
+  - 理由：原版的 `"sync"` 回读的是正在进行中的那次读回，推姿态后等 100 ms 以内约一半的图还是上一个姿态；非 live 模式下相机 ZMQ 推流又被暂停。
+  - 补丁的做法：截图放在 `AAMjManager` 的 Tick 队列里、在姿态生效后的下一帧执行；第一张做 camera cut，打开 TSR，重复截 8 张让 Lumen 收敛。
+  - 各处理由：用 `AsyncTask(GameThread)` 会死锁；同一帧截图会带上一姿态的运动矢量，TSR 把机器人拖出重影；场景截图默认关 TemporalAA，退回 FXAA 会有锯齿；每帧自动截图加按需截图会把 GPU 卡死，所以相机第一次按需截图后改为只按需截。
+  - 同一补丁还改了两处 URLab 原有问题：视场角从垂直换算成水平；近裁剪面从 1 mm 改为 2 cm，和 MuJoCo / Isaac 一致，否则头部相机拍到头壳内部。
+- **warehouse 房间从 `logistics_room.blend` 直接导入，做成 UE 静态关卡。**
+  - 流程：Cycles 把程序化材质烘焙成贴图，按材质合并网格，导出 glTF，Interchange 导入；6 盏面光重建成 RectLight；自发光乘 683 lm/W。机器人和纸箱仍走 URLab 的 MJCF 导入。
+  - 理由：USD 和 glTF 都会丢程序化节点，烘焙能保住；房间不需要物理。坐标核对过：Blender 世界 = MuJoCo 世界 = URLab 的 (x, −y, z)·100 cm。
+- **固定曝光，补偿值 = log2(1.2·2^exposure/683) = −9.40；后处理体积强制 Lumen GI 和反射。**
+  理由：UE 的手动 `auto_exposure_bias` 是补偿值（正数变亮），不是 EV100；场景截图不继承项目默认的 Lumen，不强制就完全没有间接光。
+- **导出前把非 2 的幂贴图缩放到 2 的幂，照片材质断开 Bump→Normal。**
+  理由：UE 对非 2 的幂贴图不生成 mip，缩小时锯齿和噪点严重；glTF 导出器把高度图当法线贴图写出，渲染成满屏噪点。
+- **G1 外观用 MJCF 原色，即材质脚本的 `mujoco` 预设。**
+  - 做法：0.7 外壳、0.2 头/脚/关节/夹爪；颜色从 sRGB 换算到线性，非金属，粗糙度 0.35 / 0.5。
+  - 理由：用户确认 MuJoCo 渲出的这套外观是对的。URLab 原来把 rgba 当线性值用，0.2 显示成 0.48，整台发白。
+  - 依据：URLab 的 G1 网格和我们的逐字节相同（37/37）；Unitree 官方 Isaac USD 也只有两种灰、没有贴图；hero.png 那台就是同一套网格，靠的是作者自己配的材质和灯光。
+- **编辑器用 `taskset -c 28-31` 限 4 核；看守脚本在容器 5 秒平均用满 14 核以上、或 GPU 100% 且日志 90 秒无输出时杀掉 UE。**
+  理由：不限核时首次编译着色器 30 秒内打满 15.36 核配额，另一会话 A/B 实验的 seed 91009 那对局受到干扰。
+- **Unreal 镜像先做成实验脚本 `unreal_mirror_20260928.py`，对外和 Isaac 镜像协议完全相同。**
+  理由：评测代码零改动即可验证；正式的 `images.source: unreal` 等验证完再进 src。
+
+### 被否决的方案
+
+- **全部搬进 URLab（direct 模式物理）：** 见上面第一条的理由。
+- **推姿态后固定等 200 ms 再用 `"sync"` 取图：** 等待时间是猜的，每次约 220 ms，而且依赖编辑器帧率。
+- **用 URLab 自带的 Python 客户端的 camera warmup 和推流：** 客户端（7 月版）和插件（8 月版）版本不一致，`set_camera_streaming` 在插件端是 unknown_op。
+- **看守脚本按"单个窗口限流 > 2 s"杀 UE：** 误报。UE 完全不在时，采集栈自己也有 1–2.4 s 的限流（平均只用 2–4 核），当时 RTF 仍在 0.985–1.01。改成按平均用量判断。
+- **经 MJCF 导入房间：** 每种材质只剩一种颜色或一张贴图，没有法线细节，灯光也不对。
+- **G1 统一做成反光银色金属（`metal` 预设）：** 用户否决，不像真实 G1。
+- **找"更真实的 G1 资产"：** 公开资产（Unitree 的 URDF/MJCF/USD、URLab 自带）都是同一套只有两种灰的 CAD 网格，换资产解决不了外观问题。
+- **`-ExecutePythonScript` 驱动编辑器：** 脚本跑完编辑器就退出，而 URLab 导入的蓝图不写盘。改为 `-ExecCmds` 加常驻的 TCP 命令服务（`/workspace/ue_57/ue_cmd_server.py`），setup 和回放在同一个编辑器会话里做。
+- **UE 的 Python remote execution（组播）：** 容器的 `lo` 没有 MULTICAST，连不上。
+
+### 未决（不是决策）
+
+- 是否正式把 `images.source` 换成 unreal：要用 Unreal 重渲数据集再训练。checkpoint-5000 是 Isaac 训练的，用 Unreal 图评测属于分布偏移。
+- 取图速度：3 相机、截 8 张时每次 679 ms，Isaac 是 95 ms。截图张数和画质的平衡点还没调。
+
+## 2026-09-28 Unreal 出图提速：视频按仿真时间补渲；插件加 stream 模式；默认全部网格非 Nanite + `r.Shadow.Nanite=0`（分支 loco_unreal）
+
+目标变化：用户指出 lockstep 评测的 ego / 腕部视频一顿一顿。推理时 sim 等渲染没问题，但成片要流畅。随后目标扩展到把 Unreal 取图降到和 Isaac 同一量级。
+
+### 决策
+
+- **观看用视频一律按 state trace 的仿真时间补渲，不用镜像给策略的输入帧拼。**
+  理由：lockstep 下镜像只在策略取图时渲，一局 52 s 只有 71 张（约 1.4 张/秒），等待被录成跳帧。trace 每 0.02 s 一行，补渲后是连续的 25 fps。
+- **插件新增 `include_cameras: "stream"`。** 做法是和姿态同一 tick 取图，只渲 1 遍，不做 camera cut。trace 视频默认用这个模式，第一帧用 `"fresh"` 预热。
+  - 理由：连续帧相邻只差 40 ms，TSR / Lumen 的历史可以沿运动矢量接着用，和游戏一样。
+  - 结果：642 → 139 ms/帧。和 8 遍版相比差 2.1–2.2，同一姿态渲两次本身差 0.8–1.1，看不出拖影。
+- **闭环镜像保持 `"fresh"`：** 每次 camera cut，渲 `urlab.FreshCaptureRepeats` 遍。
+  理由：两次取图之间姿态跳约 0.7 s，历史帧没用。
+- **插件改成先渲完所有请求的相机，再统一同步回读。**
+  理由：每台相机渲完立刻回读会让 GPU 和 CPU 串行互等。每张 1 遍时 194 → 154 ms。
+- **默认：全部网格非 Nanite，且 `r.Shadow.Nanite=0`（用户定）。**
+  - 理由：这组相机每次取图约 24 ms，其中 13.3 ms 是 Nanite 立方体阴影的固定开销。引擎对每盏投影灯的每个面都跑一遍 Nanite 阴影管线，缓存只把静态网格隐藏掉，并不跳过这一步（`ShadowDepthRendering.cpp`），所以每面约 0.37 ms，6 灯 × 6 面，不论画没画东西。
+  - 去掉以后：每次取图 3.9 ms，三相机 fresh×8 640 → 124 ms（Isaac 88–96），stream 35 ms。画面只在边缘差 1.4（38 dB），阴影形状一致。
+  - 落地方式：cvar 写进宿主工程 `DefaultEngine.ini`；房间网格存盘为非 Nanite，关卡脚本导入时就关掉；机器人和纸箱每次导入后跑 `unreal_no_nanite_20260928.py`。
+  - 镜像和 trace 视频启动时调 `require_render_defaults()` 检查，没跑那一步就拒绝出图。理由是 URLab 经 Interchange 导入，默认会开 Nanite，漏跑会静默回到慢且画面不同的状态，这正是本仓库"配置半生效"的失效形态。
+- **编辑器视口保持开着（建议，用户未明确表态，见 TODO 12.7.6）。**
+  理由：在无 Nanite 默认下关视口不省时间（131 vs 131 ms），却会让收敛状态偏移（两张 64 遍参考图差 0.86，间接光约暗 2/255）。两种设置的收敛质量相同：8 遍离各自参考 1.25 / 1.30。
+- **Unreal 图的对照一律同一编辑器会话渲两次，用这两次的差当噪声底（`unreal_pose_set_20260928.py`）。**
+  理由：跨会话的差本身就有 0.65–1.1。拿跨会话数字当噪声底，曾经把"关视口有真实影响"误判成"在噪声内"。
+
+### 被否决的方案（及原因）
+
+- **机器人网格改非 Nanite：** 实测无收益（23–25 ms vs 22 ms），机器人只占阴影 0.3 ms。当时的判断是"房间几何重画"，也错了，真正原因是上面说的 Nanite 每面固定开销。
+- **虚拟阴影贴图（VSM）：** 开启后第一次按需取图 GPU 就卡死，复现了。
+- **运行时改 `r.ShadowQuality`：** 编辑器崩溃，引擎断言。
+- **只设 `r.Shadow.Nanite 0`、网格仍保留 Nanite：** Nanite 网格完全不投影，画面差 14–17。
+- **关掉灯光阴影 / 只留 1–2 盏灯投影：** 接触阴影全没，画面不可接受。在无 Nanite 默认下阴影只剩 0.29 ms，这条已无必要。
+- **自建 view family 绕开 scene capture（为了用上阴影缓存）：** 普通视图的缓存也省不掉 Nanite 每面的固定开销。无 Nanite 后阴影只剩 0.29 ms，三相机共享阴影也几乎没有收益，约 1 天的插件工作不值得。
+- **硬件光追阴影：** 要重编着色器，Linux/Vulkan 下稳定性未知。无 Nanite 默认已经解决问题，没做。
+- **改引擎让 scene capture 走阴影缓存（`ShadowSetup.cpp` 的 `!bAnyViewIsSceneCapture`）：** 这是安装版引擎，改 Renderer 模块要源码编译整个 UE。而且缓存本身也省不掉 Nanite 的固定开销。
+- **加大 `r.Shadow.WholeSceneShadowCacheMb`（150 → 600）：** 实测无变化，缓存本来就生效了。
+
+### 未决（不是决策）
+
+- 闭环每张 8 遍是否必要：无 Nanite 下 1 遍 48 ms，8 遍 124 ms。要按"离 64 遍参考的距离"扫 1–8 遍再定（TODO 12.7.7）。
+- 已跑的那 1 局 Unreal 评测和之前的视频是 Nanite 版，与新默认有边缘级差异。100 局评测（12.8）用新默认。
+
+## 2026-09-29 G1 外观改用 Unitree 官方 Isaac 资产的材质，Isaac 和 Unreal 用同一组数值（分支 loco_unreal）
+
+背景：用户看 Isaac 图，觉得 G1 整体偏灰，夹爪应该是黑的却是白的，让我查网上 Isaac 专用的 G1 资产。
+
+- **两个渲染器都用 Unitree `unitree_sim_isaaclab_usds` 里 `g1_29dof_with_dex1_rev_1_0.usd` 的两种材质（用户定）。**
+  - 外壳是拉丝金属：线性反照率 0.675，metallic 1，roughness 0.75。
+  - 头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指接近黑色：反照率 0.011，metallic 0.42。
+  - 由 MJCF rgba 决定用哪种：≥ 0.6 用外壳，< 0.4 用深色，正好是官方资产里深色的那几个件。
+  - 落地：Isaac 是 `stage.G1_LOOKS`；Unreal 是 `unreal_robot_materials_20260928.py` 的 `unitree` 预设，已设为默认。
+  - 理由：同一套 CAD 网格，官方资产给的才是真实 G1 的配色。用户在"官方金属"和"同反照率的漆"两版之间选了金属。
+- **Isaac 的颜色表同时按 body 名查。**
+  理由：importer 按 body 名给可视 prim 命名。只按网格名查时，4 根 Dex1 手指全落到默认的近白色，这就是"夹爪是白的"。有测试 `tests/test_isaac_robot_colours.py`。
+- 取代 2026-09-28 的"G1 外观用 MJCF 原色（`mujoco` 预设）"。那一版的 sRGB→线性转换是对的，但 MJCF 的 0.7 / 0.2 本身偏灰。
+
+- **Isaac warehouse 的曝光改按 Blender 标：`filmIso` 30 → 80（用户定）。**
+  理由：ISO 30 是 09-24 按 MuJoCo 的机器人躯干亮度标的，房间只有 Blender 的一半亮（地面 39 对 80）。ISO 80 时墙、地面、纸箱都和 Blender 的 Cycles 参考图一致，平均绝对差 59 → 17（`docs/ledger/blender_scenes.md` 第 4 节）。
+- **Isaac warehouse 打开 Blender 的环境光（用户定）。**
+  - 做法：`build_isaac_warehouse_scene.py` 不再停用 `env_light`，新 stage 标签是 `warehouse_textured_env`。旧的 `warehouse_textured` 留在共享资产缓存里，给用它渲过的运行和 main 上的会话。
+  - builder 用的是 main 的版本（带高度图法线屏蔽和 `--scene`），在它上面改的。
+  - 实测：在封闭房间里，换掉通用的 dome + sun 只差 0.1/255。所以这一改是为了和 Blender 一致，不是为了亮度。
+
+- **Isaac warehouse 加两项 RTX 设置：间接光 ×2（`/rtx/indirectDiffuse/scalingFactor=2.0`），色调映射从 ACES 换成 Hejl–Hable（`/rtx/post/tonemap/op=4`）。**
+  - 理由：天花板只靠反射光照亮，Cycles 12 次反弹、RTX 实时模式 2 次，所以偏暗。在三台 Blender 参考相机上，灰度平均绝对差 11.1 → 6.9，天花板 151 → 176（Blender 183），墙、地面、纸箱仍在 Blender 的 ±8 以内，耗时不变。
+  - 这是按用户"尽可能还原 Blender"的方向做的，台账 `blender_scenes.md` 第 6 节。
+- **不把 Unreal 的烘焙贴图搬进 Isaac。**
+  理由：量下来在 640×480 看不出程序化纹理的缺失——地面是照片材质，墙在 Blender 里几乎是平的，Isaac 的细节在各区域都不比 Blender 少。多出来的是锯齿颗粒，属于抗锯齿问题（TODO 12.4.4.3）。
+
+### 被否决的方案
+
+- **MJCF 原色做 sRGB→线性（`mujoco` 预设）：** 用户认为仍偏灰。
+- **官方反照率做成非金属漆：** 外壳更亮（机器人外壳中位数 135 / 143 对金属 96 / 116），但用户选了官方金属。
+- **整份换成官方 USD：** 网格相同，换了要重做关节名映射和状态同步，收益只有材质。
+- **Isaac Sim 自带的 G1（整台一种银色金属 0.451）/ GR00T 的 `g1_43dof.usd`（vMaterials 阳极氧化铝，MDL 指向 NVIDIA nucleus，离线解析不了）：** 不如 Unitree 自己的 Dex1 版贴近实物。
+
+- **增加 RTX 实时模式的反弹次数（`/rtx/indirectDiffuse/maxBounces` 2 → 4、8）：** 天花板只到 135–148，不如直接放大间接光。
+- **其他色调映射（Reinhard、Modified Reinhard、HableUc2、Iray）：** 与 Blender 的差都比 ACES 大。
+- **路径追踪：** 12 次反弹、64 spp 时差 7.7，和选中的设置相当，但慢得多、有噪点，不适合闭环和数据集。
+
+### 未决（不是决策）
+
+- 现有 Isaac 训练的 checkpoint 看的是发白的旧外观，新外观是分布偏移。重新训练前，评测数字不能和旧数字直接比。
+- warehouse 的曝光 ISO 30 是按旧外观调的，没有重调。
+
+## 2026-09-29 Isaac 用 2× 超采样、新外观不重训；Unreal 关视口和崩溃上报、导入存盘、灯板换自发光材质、Lumen 增益 4（分支 loco_unreal）
+
+背景：用户看完本分支的工作清单后，定了四项，并要求把发现了但没修的三处都修掉（Unreal 灯板暗和曝光、box_platform 方块发白、URLab 蓝图不写盘）。
+
+- **Isaac 抗锯齿用 2× 超采样（用户定）。** 每个相机按 2 倍分辨率渲，按 2×2 块平均缩回，FXAA 保留。
+  - 落地：`configs/scenes.yaml` 的 `isaac.supersample: 2`，warehouse_textured 和 box_platform 都用。`run_context.isaac_scene` 读它；镜像、数据集补渲、`render_isaac_videos.sh` 三处共用；缩小的是 `stage.downsample`。
+  - 理由：逐帧确定，镜像的按需渲染和数据集的连续渲染是同一张图（TAA 做不到）；对 Blender 的结构相似度 0.89–0.94 → 0.93–0.96。
+  - 代价实测 2.2 倍（三路相机 95 → 209 ms），用户做决定时我给的估计是 1.4 倍。
+- **新外观不重训（用户定）。** 现有 Isaac checkpoint 看的是旧外观，照用。
+- **box_platform 的盒子颜色从 sRGB 转成线性，新 stage `box_platform_srgb`。** 和机器人是同一个错误：MJCF rgba 是显示值，RTX 按线性读。旧 `box_platform` 留在共享缓存里，给用它渲过的运行。
+- **Unreal 编辑器视口默认关（用户定：画质没影响就关）。**
+  - 理由：`ShowFlag.*` 只作用于编辑器和游戏视口，不作用于 URLab 截图（引擎里只有这两个视口客户端调用 `EngineShowFlagOverride`）。收敛质量相同：对 64 遍参考，开 1.25、关 1.30。空闲 GPU 占用 28 → 11 %。
+  - 代价：间接光照区域暗约 2/255。
+  - 落地：`ShowFlag.*` 是作弊类 cvar，工程 ini 设不了，改在 `/workspace/ue_57/ue_cmd_server.py` 启动时设；`require_render_defaults` 检查它。
+- **Unreal 崩溃不再上报 Epic（用户定）。** 宿主工程 `DefaultEditorSettings.ini` 设 `bSendUnattendedBugReports=False`（顺带关了 `bSendUsageData`）。编辑器以 `-unattended` 运行，这个值为 False 时引擎根本不启动 CrashReportClient。
+- **URLab 导入后把蓝图存盘；编辑器启动直接打开 warehouse 关卡。** 插件只在内存里建蓝图，所以原先每次开编辑器都要重新导入。现在只在 MJCF 变了时才重新导入。
+- **灯板改用自建的自发光材质 `M_LocoEmissive`。** Interchange 的 glTF 母材质在截图里不渲自发光：强度设 0、2049、20490 nit，画面都一样。
+- **Unreal 曝光不改；关卡体积加 `lumen_diffuse_color_boost` 4。**
+  - 曝光：物理推算的 −9.40 下，墙和地面与 Blender 只差 0–2。
+  - 天花板只靠反弹光照亮：Lumen 90，Blender 174。增益 4 后 114，平均绝对差 23.1 → 17.4（台账 `blender_scenes.md` 第 7 节）。
+  - 剩下的差距（天花板比 Blender 暗约 60）用户接受，不再调。
+- **Unreal 截图默认 8 遍（用户定）。** 宿主工程的 `urlab.FreshCaptureRepeats=8` 不变，闭环、数据集和视频都用它。
+  理由：1 遍离 64 遍收敛图 3.4–3.9、整体偏暗 2–3；8 遍 1.2–1.4，每次取图 137 ms。
+
+### 被否决的方案（及原因）
+
+- **Isaac 用 TAA 或 DLAA：** TAA 依赖前几帧，镜像（跳变后只渲 2 步）和数据集（连续帧）会不一样；DLAA 这样切换出来是噪点。
+- **把 `ShowFlag.Rendering=0` 写进工程 ini：** 引擎拒绝（作弊类 cvar 只允许写在引擎的 ConsoleVariables.ini）；也不改引擎安装目录里的文件。
+- **在 PIE 里直接改相机的后处理来扫参数：** 读回值对，但截图不变，之后插件崩了两次。改为停 PIE、改关卡体积、再启动 PIE。
+- **Unreal 用 `indirect_lighting_intensity`、更高的 Lumen 质量档或表面缓存分辨率补天花板：** 截图里都没有作用（变化 ≤ 1）。
+- **增益 6：** 只比 4 多 6 级天花板，而且超出界面上的常用范围。
+- **Unreal 整体提亮曝光：** +0.5 档天花板到 119，但地面 79 → 109（Blender 80）。
+
+### 未决（不是决策）
+
+- URLab 插件在 `close()` 切回 live 等情况下段错误，因果未查（TODO 12.17）。
+
+## 2026-09-29 loco_unreal 合入 main：四边线换新外观、构建器的 label 一律带 `_env`、路径追踪不叠超采样
+
+背景：分支 `loco_unreal`（Isaac 新外观 + Unreal 实验）由它的会话请求合入 main，冲突处留了三个问题给 main 定。分支比 main 落后 17 个提交，其间 main 加了四边线的四个场景 `warehouse_box_*`，stage 由同一个 builder 用 `--scene` 建。
+
+### 决策
+
+- **四边线的四个场景换成 warehouse_textured 的新外观**：ISO 80、间接光 ×2、Hejl–Hable、`supersample: 2`，stage 打开 `env_light`。
+  - 理由：它们的注释本来就写"沿用 warehouse_textured 的外观"，新外观不重训是用户定的，四边线也还没有正式数据集和 checkpoint（只有冒烟），现在换没有代价。
+  - `tests/test_run_context.py` 新增一条：四个场景的 `rtx_settings` / `supersample` 必须与 warehouse_textured 相同、stage 名是 `<场景名>_env`，以后改外观不会只改一半。
+- **`build_isaac_warehouse_scene.py` 写的 label 一律带 `_env`**：不给 `--label` 时，`--scene` 的默认 label 是场景目录名加 `_env`。
+  - 理由：`scenes.yaml` 的规则是"重建的东西换新名"。按原来的默认，重建会在同一个名字下把 `env_light` 从关换成开，用旧 stage 渲过的运行就对不上了。
+  - 旧 stage（`warehouse_textured`、`warehouse_box_<尺寸>`，关着 `env_light`）留在 `assets/isaac/scene/`。四个 `_env` stage 已建，和旧的只差 `env_light` 那一处 `over`，纸箱网格和缩放逐字节相同。
+- **`render_isaac_videos.sh` 的实时渲染照用场景的 `supersample`，`--path-trace` 时改为 1。**
+  - 理由：视频和数据集、镜像用同一种外观，看视频时看到的就是策略看到的样子。路径追踪每像素 64 个样本，本身就抗锯齿，再叠 2× 会把每帧 1.5 s 变成约 6 s。
+  - 代价：1280×960 的主画面实际按 2560×1920 渲，实测见 TODO 12.19.2。
+- **编号**：分支的 TODO 第 10 节改为第 12 节，台账 `blender_scenes.md` 的分支第 2–6 节顺延为第 4–8 节；引用这些编号的地方都随之改了。STATE 用 main 的版本，加一段指向这条线。
+
+### 被否决的方案
+
+- **四边线保持旧外观（ISO 30、关 `env_light`）**：同一个房间会有两种外观，warehouse_textured 的运行和四边线的运行图像分布不同，而两边都没有需要保护的 checkpoint。
+- **只对 warehouse_textured 的无 `--scene` 默认 label 加 `_env`，`--scene` 的仍用场景名**：那样重建四边线的 stage 就会原名换灯。
+
+### 未决（不是决策）
+
+- 视频超过数据集分辨率（1280×960 起）时要不要跳过超采样：现在不跳，代价见 TODO 12.19.2；要跳的话在 `render_isaac_videos.sh` 按 `--size` 判断。

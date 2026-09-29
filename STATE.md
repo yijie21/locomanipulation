@@ -2,8 +2,7 @@
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步于 `4dd5649`（之后只有这次 handoff 提交）。
 已确认：本会话起的栈、Isaac 补渲都已收掉；2026-09-29 01:49 UTC 实例端口 5555–5699 没有任何程序监听，GPU0 2 MiB、GPU1 3698 MiB。
-别的会话：`locomanipulation-loco_agent` 检出目录会在实例 1、GPU 1 起栈；GPU 1 常驻无关的 `depth_server.py`（约 3.7 GB）；
-2026-09-28 Unreal 编辑器（URLab 冒烟）占过实例 0 的整段端口 5555–5562，那时在实例 0 起的栈 deploy 报 `Address already in use`。
+别的会话：`locomanipulation-loco_agent` 检出目录会在实例 1、GPU 1 起栈；GPU 1 常驻无关的 `depth_server.py`（约 3.7 GB）。
 
 ## 磁盘（先处理）
 
@@ -24,6 +23,10 @@
 - 已确认（11.1 实测，脚本在 `outputs/warehouse_parallel_20260928/`）：一条 warehouse 通道 CPU 平均 +2.6 / p90 +3.7 核、显存 +1.5 GB、线程 +180 起每录一局约 +130。
 - 已确认（11.2.1）：`warehouse_smoke_lanes_20260928` 两条通道（实例 2/GPU0、实例 3/GPU1）8 局保留 5 条，RTF 0.974–0.996，
   容器线程峰值 3279/3840；Isaac 补渲 5 集 + convert（4 训练 + 1 验证）通过，两条通道的 session/manifest 配对正确。
+
+## Isaac 新外观 + Unreal 实验（`loco_unreal` 2026-09-29 合入；TODO 第 12 节，DECISIONS 2026-09-29 合并一节）
+
+- 已确认：G1 用 Unitree 官方材质；warehouse（含四边线）stage `*_env`、按 Blender 标；`box_platform_srgb`；2× 超采样。旧 stage 别删；新外观不重训（用户定），新旧评测数字不可直接比。Unreal 见 [handoff](docs/handoff/unreal-urlab-20260928.md)；它的编辑器占着实例 0 端口 5555–5562 时，实例 0 起的栈 deploy 报 `Address already in use`（2026-09-28）。
 
 ## 待验证 / 卡点
 

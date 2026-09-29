@@ -131,6 +131,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH=VALUE",
         help="the scene's carb settings (--state-trace), as isaac_render takes them; time the look that ships",
     )
+    ap.add_argument(
+        "--supersample", type=int, default=1, help="the scene's isaac.supersample; time the look that ships"
+    )
     ap.add_argument("--session", default="")
     ap.add_argument("--episode", type=int, default=0)
     ap.add_argument("--sidecar", default="")
@@ -169,6 +172,7 @@ def main(argv=None) -> None:
         width=args.width,
         height=args.height,
         absolute_camera=bool(args.state_trace),
+        supersample=args.supersample,
     )
 
     app = S.start_app(cfg)
@@ -217,6 +221,7 @@ def main(argv=None) -> None:
             "state_trace": args.state_trace,
             "settle_steps": S.SETTLE_STEPS,
             "rtx_settings": args.rtx_setting,
+            "supersample": args.supersample,
             "resolution": [args.width, args.height],
             "action_rate_hz": CONTROL_HZ,
             "scene_dir": S.scene_dir(cfg),

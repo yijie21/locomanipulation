@@ -1,7 +1,7 @@
 # warehouse：物流房间双臂抓纸箱
 
 机器人在物流房间里从托盘四条边中随机一条走近（也可以固定从一个地方开始，见 §2），双手扣住纸箱沿，抬起、站直。策略看到的相机图由 Isaac Sim 渲染，所以要 2 张 GPU：GPU 0 跑仿真、训练和策略，GPU 1 跑 Isaac。
-下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 40 分钟（其中评测录像约 14 分钟，可以不渲）。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
+下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 50 分钟（其中评测录像约 20 分钟，可以不渲）。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
 和 crate 用同一套脚本，不同的是：采集时仿真不渲染相机，转换前要用 Isaac 补渲；评测时另开一个 Isaac 进程出图。原因和细节见 [warehouse 详解](warehouse_design.md)；改参数、并行、重跑见[运行机制](running.md)。
 
 ## 0. 每个新终端先执行
@@ -21,8 +21,8 @@ bash scripts/build_scene.sh warehouse_box_45x32x33
 bash scripts/build_scene.sh warehouse_box_45x32x33 --isaac
 ```
 
-做什么：第一条从仓库自带的资产包建物流房间 `outputs/scene/warehouse_textured`；第二条以它为底，量出托盘四条边外的空地，写进场景 `outputs/scene/warehouse_box_45x32x33`（纸箱尺寸与房间原来的相同：宽 0.45 × 长 0.32 × 高 0.33 m），下面的采集用这个场景；第三条建这个场景给 Isaac 用的版本，写到 `assets/isaac/scene/warehouse_box_45x32x33/`，需要一个带 `pxr` 的 Python（`pip install usd-core`，用 `USD_PY` 指定）。
-得到什么：`outputs/scene/warehouse_box_45x32x33/scene_locomani.xml` 和 `assets/isaac/scene/warehouse_box_45x32x33/scene.usda`。每条几秒到一分钟。
+做什么：第一条从仓库自带的资产包建物流房间 `outputs/scene/warehouse_textured`；第二条以它为底，量出托盘四条边外的空地，写进场景 `outputs/scene/warehouse_box_45x32x33`（纸箱尺寸与房间原来的相同：宽 0.45 × 长 0.32 × 高 0.33 m），下面的采集用这个场景；第三条建这个场景给 Isaac 用的版本，写到 `assets/isaac/scene/warehouse_box_45x32x33_env/`，需要一个带 `pxr` 的 Python（`pip install usd-core`，用 `USD_PY` 指定）。
+得到什么：`outputs/scene/warehouse_box_45x32x33/scene_locomani.xml` 和 `assets/isaac/scene/warehouse_box_45x32x33_env/scene.usda`。每条几秒到一分钟。
 
 ## 2. 采集
 
@@ -58,7 +58,7 @@ bash scripts/render_dataset_cameras_isaac.sh outputs/runs/warehouse_smoke --gpu 
 ```
 
 做什么：采集时仿真没有出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用 Isaac 把成功局的三路相机（第一视角和左右手腕）渲出来，替换占位图。
-得到什么：录制数据里成功局的相机帧被替换。每局约 1 分钟（Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
+得到什么：录制数据里成功局的相机帧被替换。每局约 3 分钟（三路相机按 2× 超采样渲，每次约 0.21 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
 
 ## 4. 转换
 
@@ -105,7 +105,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/warehouse_smoke/model/c
 bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces outputs/runs/warehouse_smoke/eval/state_trace --out outputs/runs/warehouse_smoke/eval --insets --gpu 1 --all
 ```
 
-默认只渲成功局，`--all` 连失败局一起渲。冒烟的两局各约 7 分钟（一局 99 秒的画面，1280×960）。原片在 `eval/isaac/<局>/side_by_side.mp4`；`eval/previews_isaac/` 里是压到每个文件 500 KB 以内的预览，长的局切成几段（冒烟每局 11 段）。
+默认只渲成功局，`--all` 连失败局一起渲。冒烟的两局各约 10 分钟（一局 99 秒的画面，1280×960，Isaac 侧按 2× 超采样渲）。原片在 `eval/isaac/<局>/side_by_side.mp4`；`eval/previews_isaac/` 里是压到每个文件 500 KB 以内的预览，长的局切成几段（冒烟每局 11 段）。
 
 熟悉以后可以一条命令跑完第 2–6 步（不含开环评测和录像）：`bash scripts/run_overnight.sh configs/experiments/warehouse_smoke.yaml --gpu 0 --isaac-gpu 1 --line bimanual`。
 

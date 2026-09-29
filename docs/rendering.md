@@ -64,7 +64,7 @@ flowchart TD
 | 能用的场景 | 全部 | `warehouse_textured`、`warehouse_box_45x*`、`box_platform` |
 
 两个补渲脚本和镜像用同一组相机（ego + 左右腕，`CAMERA_CONFIGS`）；Isaac 补渲和镜像还是同一个渲染函数
-（`IsaacView`）、同一个 stage、同一组曝光设置（`configs/scenes.yaml` 的 `rtx_settings`），所以"同一个状态 → 同一张图"。
+（`IsaacView`）、同一个 stage、同一组外观设置（`configs/scenes.yaml` 的 `rtx_settings` 和 `supersample`），所以"同一个状态 → 同一张图"。
 convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 配 `backend.render: live`）
 加载实验文件时就拒绝。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步。
 
@@ -183,6 +183,16 @@ bash scripts/setup_render_runtime.sh --deep
 | 水瓶、篮子等可动物体 | 本次 MJCF 引用的可视网格、缩放与材质 → 同一场景缓存中的 `usd/<object>/` |
 | 房间背景 | 生成的背景源，或仓库自带 `assets/scene/empty_room_world.ply.gz` → 场景 USD |
 
+机器人的材质不在 USD 缓存里，改材质不需要重建资产：每次组装 stage 时，`stage.assemble_stage` 给机器人绑两种 OmniPBR 材质（`stage.G1_LOOKS`）。
+- 数值取自 Unitree 官方的 Isaac Lab 资产 `unitree_sim_isaaclab_usds` 里的 `g1_29dof_with_dex1_rev_1_0.usd`：浅色壳反照率 0.68（线性）；深色件 0.011，接近黑色，metallic 0.42。
+- 深色件是头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指。这正好是 MJCF 里 rgba < 0.4 的那些网格，所以由 MJCF 颜色决定用哪种材质。
+- 和官方一样，外壳是拉丝金属：metallic 1，roughness 0.75。金属会映出周围环境，所以在 warehouse 的深色地面和黑货架旁边，外壳比同反照率的漆暗一些。
+  用户 2026-09-29 在两者之间选了金属。对照静帧和视频见 `outputs/isaac_g1_colour_20260929/`。
+- Unreal 用同一组数值（`unreal_robot_materials_20260928.py` 的 `unitree` 预设）。
+- MJCF 的 rgba 不能直接当颜色用：它是显示值（MuJoCo 不做 gamma），RTX 却按线性值读。2026-09-29 之前就是直接用的，0.2 显示成 0.48，整台发白。URLab 导入是同一个问题。
+- 另一个同期修掉的问题：importer 按 body 名给可视 prim 命名（`left_dex1_finger_1_link`），而颜色表原先只按网格名查（`Dex1_finger_link_1`）。结果 4 根 Dex1 手指全落到默认的近白色。
+- 材质改动会同时改变镜像、数据集补渲和视频里的机器人像素。之前用 Isaac 图训练的 checkpoint 看的是发白的旧外观。
+
 先执行 `bash scripts/install_scene.sh` 安装仓库的 `assets/scene_locomani_v1.tar.gz`，
 再按任务指南准备对应场景。桌面网格/贴图和 [压缩房间源](../assets/scene/README.md)
 随仓库提供，不需要从另一台机器复制 `outputs/`。
@@ -226,7 +236,7 @@ warehouse 走另一条路，结果仍是 `stage.py` 期望的目录布局，重�
 
 ```bash
 python3 scripts/build_isaac_warehouse_scene.py     # 需要 pxr（pip install usd-core，或任一 Isaac/Blender python）
-python3 scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18   # 换尺寸的纸箱：缩放取自该 MuJoCo 场景，label 取目录名，source.json 钉住它的 MJCF
+python3 scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18   # 换尺寸的纸箱：缩放取自该 MuJoCo 场景，label 取目录名加 `_env`，source.json 钉住它的 MJCF
 bash scripts/render_isaac_videos.sh outputs/runs/<run>   # 每局：mujoco_render → isaac_render → 并排 → previews_isaac/；stage 与曝光取运行场景的 isaac 条目
 bash scripts/render_isaac_videos.sh outputs/runs/<run> --path-trace <label>   # 给人看的一局：Isaac 侧改路径追踪（见下）
 bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<run>/eval/state_trace --out outputs/runs/<run>/eval --insets
@@ -236,8 +246,10 @@ bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<ru
   （`label`），评测的 `state_trace` 读旁边的 `closed_loop.manifest.jsonl`（`video`），没有任何一行点名的 trace（中断批次）也跳过；
   开头打印 `rendering N of M traces`。`--all` 渲全部 trace，命令末尾点名 label 就只渲那几局（`run_context.successful_traces`）。
 
-- `scene.usda` 把 `assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc` 的 `/root` 引用到 `/World/room`，停用其中的 `env_light`
-  （RTX 不认它的 EXR，见 blender_scenes.md）和静态纸箱；`assemble_stage` 于是补 dome + 平行光。
+- `scene.usda` 把 `assets/scene/logistics_room_box_v1/isaac/logistics_room_box.usdc` 的 `/root` 引用到 `/World/room`，停用其中的静态纸箱。
+  `env_light` 是 Blender 的环境光，保持打开：USDC 里它已修成纯色 dome，RTX 不认的 EXR 已清掉。stage 里有了 dome，`assemble_stage` 就不再补通用的 dome + 平行光。
+  构建器写的 label 一律带 `_env`：当前 stage 是 `warehouse_textured_env` 和四边线的 `warehouse_box_<尺寸>_env`。2026-09-29 以前的
+  `warehouse_textured`、`warehouse_box_<尺寸>` 关着 `env_light`，留给用它们渲过的运行；在这个封闭房间里两者只差 0.1/255。
 - 两层都屏蔽了 14 条「单通道贴图 → `normal`」连接：v1 USDC 早于 `blender_to_usd.py` 的高度图修复（blender_scenes.md §2 表末行），
   不屏蔽时实时渲染里每个照片纸箱满面白色噪点。改了构建器就重跑它（`assets/isaac/` 不入库），用任一带 pxr 的 python，例如 Blender 自带的
   `<blender 目录>/5.2/python/bin/python3.13`；三个 venv 都没有 pxr。
@@ -247,13 +259,20 @@ bash scripts/render_isaac_videos.sh outputs/runs/<run> --traces outputs/runs/<ru
 - 机器人仍是 MJCF 导入的 `g1_dex1.usda`；`--scene-xml` 用 `outputs/scene/warehouse_textured/scene_locomani.xml`（见 blender_scenes.md：旧 `warehouse` 场景的纸箱没贴图）。
 - 机位：`mujoco_render --azimuth 225 --distance 2.2`。默认 2.5 m / 135° 在南侧隔断外面，两边都只渲到墙。
 - 四边线场景（`warehouse_box_45x*`，`scene_meta` 带 `surfaces.A.edges`）：225 是"从 −y 边走入"时的机位，其余边按该局走入方向转同样的角度（xm 135、xp 315、yp 45），机器人在每条边都从前右方被拍到。哪条边由 trace 第一行机器人的偏航认出（`sim/scene_edges.py`；起点偏角被限制在 ±45° 内）。
-- 曝光：`isaac_render --rtx-setting`（新，可重复，`路径=值`）；批处理默认关自动曝光、`filmIso` 30。房间由 5 块 24828 强度的天花板 RectLight
+- 曝光：`isaac_render --rtx-setting`（新，可重复，`路径=值`）；批处理默认关自动曝光、`filmIso` 80、间接光 ×2、Hejl–Hable 色调映射（2026-09-29 起，按 Blender 标，见下）。房间由 5 块 24828 强度的天花板 RectLight
   和自发光灯板照亮（USDC 里 1200× 增益已烘入），dome/平行光强度改了没有像素变化；默认自动曝光 + ACES 把机器人 0.2 灰抬到 108/255、0.7 灰推到 212，
   头/躯干比 0.51（MuJoCo 0.23）。ISO 30 后躯干 139 对 MuJoCo 136、头/躯干 0.36；剩余差距是白房间的间接光，MuJoCo 没有全局光。
+  这些数都是在 2026-09-29 颜色修正之前量的（见"资产构建"）。
+  2026-09-29 改为按 Blender 的 Cycles 参考图标定（`reverse_room` 相机）：ISO 30 时地面 39 对 Blender 80，ISO 80 时墙、地面、纸箱都和 Blender 一致，平均绝对差 59 → 17。
+  天花板只靠反射光照亮，RTX 实时模式只有 2 次反弹，所以偏暗（151 对 183）。再加两项设置：间接光 ×2（`/rtx/indirectDiffuse/scalingFactor=2.0`），色调映射从 ACES 换成 Hejl–Hable（`/rtx/post/tonemap/op=4`）。
+  加上以后天花板 176，灰度平均绝对差 11.1 → 6.9，耗时不变。见 [台账](ledger/blender_scenes.md) 第 4、6 节。
+- 抗锯齿：RTX 实时模式只有 FXAA（1 spp），小字糊、货架网格闪。2026-09-29 起每个相机按 2 倍分辨率渲、再按 2×2 块平均缩回
+  （`configs/scenes.yaml` 的 `isaac.supersample: 2`，用户定；`stage.downsample`）。镜像、数据集补渲、`render_isaac_videos.sh` 三处读同一个值。
+  对 Blender 的结构相似度 0.89–0.94 → 0.93–0.96（台账第 5 节）；代价是三路相机每次 95 → 209 ms（GPU0，`IsaacView`），不是先前估的 1.4 倍。
   `tonemap/op=0`（Clamp）全帧饱和，`op=1`（Linear）比 ACES 更平，都不用。
 - 2026-09-24 首次跑通：房间贴图、纸箱印字、机器人（含头）在 Isaac 里都完整，机位与 MuJoCo 逐帧一致。
 - 画质（2026-09-28 A/B，台账 blender_scenes.md 第 2 节）：两个渲染器都按 `--size` 出图，默认 1280×960（640×480 下纸箱印字和机器人边缘锯齿）。
-  Isaac 侧默认 RTX Real-Time，与数据集补渲、评测镜像同一个渲染器，1280×960 约 110 ms/帧。
+  Isaac 侧默认 RTX Real-Time，与数据集补渲、评测镜像同一个渲染器，也用场景的 `supersample`（`--path-trace` 时不用）：1280×960 在 1× 下约 110 ms/帧，2× 下带小窗的整局约慢 1.7 倍（2026-09-29 一局实测，TODO 12.19.2）。
   `--path-trace` 改成 PathTracing（64 spp + OptiX 降噪）：有间接光和软接触阴影，1280×960 约 1.5 s/帧（640×480 约 0.43 s），
   平均亮度比 Real-Time 调出来的 ISO 高约 10/255。只用于给人看，不进数据。
 
@@ -401,13 +420,14 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 - **物理不等渲染。** sim 每个控制 tick 在特权状态流上发布完整 qpos（与 state trace 同 seq 的那一行，JSON 浮点逐位还原）；
   镜像只在策略要观测时渲一帧最新状态，所以渲染再慢也只让图像晚到，不会让物理和 deploy 的墙钟错开。
 - **不改延迟补偿。** 客户端先读本体状态、再向镜像要图，图像与状态是同一时刻；渲染时间落在 `vla_client` 从 t0
-  到出 chunk 的计时里，被现有补偿覆盖。warehouse 三路相机按需渲染 p50 89 / p90 108 ms（GPU1，台账 crate.md 2026-09-24）。
+  到出 chunk 的计时里，被现有补偿覆盖。warehouse 三路相机按需渲染 p50 89 / p90 108 ms（GPU1，台账 crate.md 2026-09-24）；
+  2026-09-29 起 2× 超采样，p50 218 / p90 267 ms（GPU0，间隔 0.4 s 的按需渲染）。
 - **镜像只认 eval 栈。** 它从栈的状态文件取场景和端口（`TF_ISAAC_MIRROR_PORT` = 5558 + 10·instance），
   场景的 Isaac stage 与曝光取自 `configs/scenes.yaml` 的 `isaac` 条目；现有 `warehouse_textured`、四个 `warehouse_box_45x*` 和 `box_platform`。
   qpos 长度对不上（栈跑的是别的场景）或 sim 没发 qpos，请求直接报错，客户端这一局记为 observation stream dropped。
 - **记录**：每次渲染的 seq、状态年龄、渲染耗时写进 `<run>/eval/isaac_mirror.jsonl`；单臂客户端的延迟记录、双臂的 `eval/traces/round_NNN.json` 每行另有 `image`（那一块动作所用图的 seq 与状态年龄）。
   eval 栈还写 `<run>/eval/state_trace/`，同 seq 的图可以事后离线重渲（一致性闸门 4.7.9.8 的输入）。
-- **eval sim 渲不渲由 `images.source` 推出**（`run_context.evaluation_of`）：`mujoco` → `live`（策略只能从发相机流的 sim 读 MuJoCo 图），`isaac` → `offline`；实验文件写了矛盾的 `eval.backend.render` 加载即拒。有 Isaac stage 的场景：`warehouse_textured`（Blender USDC）、`box_platform`（`scripts/build_isaac_primitive_scene.py` 从 MJCF 的盒子生成，ISO 20）。
+- **eval sim 渲不渲由 `images.source` 推出**（`run_context.evaluation_of`）：`mujoco` → `live`（策略只能从发相机流的 sim 读 MuJoCo 图），`isaac` → `offline`；实验文件写了矛盾的 `eval.backend.render` 加载即拒。有 Isaac stage 的场景：`warehouse_textured`（Blender USDC）、`box_platform`（`scripts/build_isaac_primitive_scene.py` 从 MJCF 的盒子生成，ISO 20；stage `box_platform_srgb`：MJCF 颜色先从 sRGB 转成线性，2026-09-29 之前的 `box_platform` 直接当线性用，纸箱近白）。
 - **首次真实闭环**（2026-09-27，warehouse checkpoint-5000，10 局）：渲染 p50 95 ms、图像对应状态年龄 p50 11 ms、观测 → 动作 p50 166 ms，9/10 抬起（台账 crate.md 2026-09-27 末节）。
 - **lockstep 下的镜像**（2026-09-27，双臂）：`eval.client: lockstep` 时 sim 和 deploy 按 tick 推进，渲图期间世界冻结，渲染耗时不再计入世界时间。客户端带上冻结那一刻的特权状态 seq（`{"op": "render", "seq": N}`），镜像只渲这一条，最新状态不是它就报错；冻结的 sim 每 0.5 s 重发一次最新状态（同一 seq），所以镜像在栈之后起也拿得到第一条状态。单臂评测器不实现这个组合，配置了就拒绝。时间模型见 [双臂详解 §五](bimanual_design.md#评测的时间模型墙钟与-lockstep)，计划与验收见 [lockstep + Isaac 评测计划](handoff/lockstep-isaac-eval-plan-20260927.md)。
 - **做了什么、还没做什么**（训练图是否也走 Isaac、一致性闸门、真实闭环、分支对账）：[镜像状态索引](handoff/isaac-vla-mirror-20260925.md)。
