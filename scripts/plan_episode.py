@@ -53,6 +53,12 @@ def parse(argv):
     ap.add_argument("--profile", default=None, help="profile name for the target instead of the scene's choice")
     ap.add_argument("--spawn-off", type=float, default=1.2, help="single-arm: metres behind the planned stand")
     ap.add_argument("--inject", type=Path, default=None, help="JSON failure injection (configs/injections/)")
+    ap.add_argument(
+        "--until-injected",
+        type=int,
+        default=None,
+        help="with --inject: keep adding rounds until this many fired (--rounds is then the cap)",
+    )
     ap.add_argument("--keep-stack", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved plan, scene and stack; start nothing")
     return ap.parse_args(argv)
@@ -82,6 +88,14 @@ def default_plan(scene, task: dict, profile: str | None = None, profiles: dict |
                 steps.append({"primitive": "approach", "args": {"target": task["goal"], "profile": profile}})
             steps.append({"primitive": "place", "args": {"container": task["goal"], "profile": profile}})
     return steps
+
+
+def more_rounds(done: int, injected: int, rounds: int, until_injected: int | None) -> bool:
+    """Another round? Plain runs stop at `rounds`; `--until-injected N` runs until N injections fired, capped at
+    `rounds` (the injection fires only after a successful primitive, so a 50 % grasp rate halves the pair count)."""
+    if done >= rounds:
+        return False
+    return until_injected is None or injected < until_injected
 
 
 def scripted_round(executor, steps: list[dict], injector=None) -> list[dict]:
@@ -346,7 +360,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
             camera = PlaceholderCamera()
     p, reset = Primitives(meta=meta), EpisodeControlClient()
     scene.reach = reach_map.ReachMap()
-    wins = 0
+    wins, injected, rnd = 0, 0, 0
     try:
         p.cmd.reset_pose()
         reset.pin_arms()
@@ -355,7 +369,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
         robot_nom = np.array(p.obs()["pelvis"]["pos"][:2])
         start_control_once(p)
         p.cmd.hold(2.5, mode=LocomotionMode.IDLE)
-        for rnd in range(args.rounds):
+        while more_rounds(rnd, injected, args.rounds, args.until_injected):
             t0 = time.time()
             rng = np.random.default_rng(args.seed + rnd)
             session = Session(
@@ -437,11 +451,13 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                 and __import__("locomani.skills.session", fromlist=["snapshot"]).snapshot(session),
             )
             wins += int(ok)
+            injected += int(row["injected"])
+            rnd += 1
             with (out / "manifest.jsonl").open("a") as f:
                 f.write(json.dumps(row, default=float) + "\n")
-            print(f"[plan] round {rnd}: {'OK' if ok else 'FAIL'} {why} ({row['seconds']} s)", flush=True)
+            print(f"[plan] round {row['round']}: {'OK' if ok else 'FAIL'} {why} ({row['seconds']} s)", flush=True)
             p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
-        print(f"[plan] {wins}/{args.rounds} OK -> {out / 'manifest.jsonl'}", flush=True)
+        print(f"[plan] {wins}/{rnd} OK ({injected} injected) -> {out / 'manifest.jsonl'}", flush=True)
     finally:
         for client in (camera, reset, p):
             if client is not None:
@@ -449,7 +465,7 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                     client.close()
                 except Exception:  # noqa: BLE001
                     pass
-    return 0 if wins == args.rounds else 1
+    return 0 if wins == rnd else 1
 
 
 if __name__ == "__main__":

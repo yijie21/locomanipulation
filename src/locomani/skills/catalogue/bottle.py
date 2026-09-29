@@ -28,6 +28,9 @@ from locomani.skills.session import ArmOwner, HeldObject, Session, Stance, needs
 TURN_TOL = 0.16  # the spawn phase's tolerance for facing the table normal
 WRAPPED_STRATEGIES = frozenset({"simple", "coupled"})  # bottle strategies the approach/grasp adapters have run live
 CORRECT_TOL = 0.05  # loaded approach: residual (m) between the target's pelvis-frame position and the aimed one
+STRAFE_MAX = 1.2  # loaded approach: within this of the stand and already facing the table, walk there without turning
+LATERAL_TOL = 0.12  # approach: a stand more than this off the approach line is walked to first (holding the facing)
+LEAD_BACK = 0.60  # approach: the pre-walk aims this far behind the stand along the table normal
 
 
 def _wrap(a: float) -> float:
@@ -209,6 +212,14 @@ class BottleApproach:
                 return Outcome(False, "[stand] could not face the table", duration_s=session.clock() - t0)
         session.heading = ctx.psi
         p.hold_yaw = ctx.psi
+        prewalk = self._prewalk(session, ctx)
+        if prewalk is not None and not prewalk["ok"]:
+            return Outcome(
+                False,
+                "[stand] could not reach the approach line",
+                duration_s=session.clock() - t0,
+                metrics=dict(prewalk=prewalk),
+            )
         if not self._prepare_ready(p, arms=False):
             return Outcome(False, "[stand] neutral waist not delivered", duration_s=session.clock() - t0)
         try:
@@ -241,7 +252,36 @@ class BottleApproach:
         session.hands = {"left": 0.0, "right": 0.0}
         session.scratch["bottle"] = ctx
         metrics = {"park": session.record.metrics.get("park"), "first_stop": session.record.metrics.get("first_stop")}
+        if prewalk is not None:
+            metrics["prewalk"] = prewalk
         return Outcome(True, "", duration_s=session.clock() - t0, metrics=metrics, produced=stance)
+
+    @staticmethod
+    def _prewalk(session: Session, ctx) -> dict | None:
+        """The guard walk closes depth, not a lateral offset: with the stand more than LATERAL_TOL off the approach
+        line (2026-09-29, ledger §13: a 0.6 m sideways move ended 2.5 s later in "arrival left the object out of
+        reach"), walk to a lead point LEAD_BACK behind the stand first, holding the table normal as the facing."""
+        stand = getattr(ctx, "spawn_xy", None)
+        if stand is None:
+            return None
+        p = session.stack
+        stand = np.asarray(stand, dtype=float)[:2]
+        fv = np.array([np.cos(ctx.psi), np.sin(ctx.psi)])
+        perp = np.array([-fv[1], fv[0]])
+        here = np.asarray(p.pelvis_xy(p.obs()), dtype=float)
+        lateral = float(np.dot(here - stand, perp))
+        if abs(lateral) <= LATERAL_TOL:
+            return None
+        lead = stand - LEAD_BACK * fv
+        session.record.enter("approach.prewalk", lateral=lateral, lead=lead.tolist())
+        ok = bool(p.walk_to(lead, stop_dist=0.10, timeout=15.0, face_target=False, face_yaw=float(ctx.psi)))
+        after = np.asarray(p.pelvis_xy(p.obs()), dtype=float)
+        return {
+            "ok": ok,
+            "lateral_m": lateral,
+            "lead": lead.round(3).tolist(),
+            "residual_m": float(np.dot(after - stand, perp)),
+        }
 
     def _loaded(self, session: Session, *, target: str, profile: str, drift_max: float = 0.03) -> Outcome:
         """Carry the load to the target's planned stand, face the table normal, write the stance."""
@@ -264,8 +304,17 @@ class BottleApproach:
             want = np.array([float(np.mean(cfg.place.band_x)), float(np.mean(cfg.place.band_y))])
             c, sn = np.cos(psi), np.sin(psi)
             stand = obj_xy - np.array([c * want[0] - sn * want[1], sn * want[0] + c * want[1]])
-        session.record.enter("approach.carry", target=target, stand=stand.tolist(), psi=float(psi))
-        out = self._carry.run(session, xy=stand, stop_dist=0.06, timeout=30.0, drift_max=drift_max)
+        # Already facing this table edge and within STRAFE_MAX of the stand: walk there holding the facing instead
+        # of turning with the load (2026-09-29, ledger §13: 7/7 recovered grasps were lost in that turn).
+        here = np.asarray(p.pelvis_xy(state), dtype=float)
+        strafe = bool(
+            abs(_wrap(float(p.pelvis_yaw(state)) - float(psi))) <= TURN_TOL
+            and float(np.linalg.norm(stand - here)) <= STRAFE_MAX
+        )
+        session.record.enter("approach.carry", target=target, stand=stand.tolist(), psi=float(psi), strafe=strafe)
+        out = self._carry.run(
+            session, xy=stand, stop_dist=0.06, timeout=30.0, turn_first=not strafe, drift_max=drift_max
+        )
         if not out.ok:
             return Outcome(
                 False,
@@ -320,7 +369,7 @@ class BottleApproach:
             quiet=True,
         )
         session.stance = stance
-        metrics = dict(out.metrics, rel=rel[:2].tolist(), stand=stand.tolist(), corrections=corrections)
+        metrics = dict(out.metrics, rel=rel[:2].tolist(), stand=stand.tolist(), corrections=corrections, strafe=strafe)
         return Outcome(True, "", duration_s=session.clock() - t0, metrics=metrics, produced=stance)
 
     @staticmethod

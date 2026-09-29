@@ -46,6 +46,9 @@ Rules:
 - Profiles bind approach and grasp parameters: use the profile the task menu names for the target.
 - Objects: positions are given in the pelvis frame (x forward, y left, z up, metres) and in the world.
 - With something held, walk with carry_to / navigate_to (arms frozen), not the free walk.
+- The session snapshot is proprioception: what the last primitive left there. The scene block is the
+  simulator's ground truth. When they disagree (e.g. `held` names an object the scene shows resting on a
+  surface, far from the hand), trust the scene, fix the session first (release), then continue.
 """
 
 

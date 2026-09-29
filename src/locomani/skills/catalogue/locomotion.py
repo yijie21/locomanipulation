@@ -22,7 +22,40 @@ def _wrap(a: float) -> float:
 
 
 WALKING = frozenset({ArmOwner.PLANNER_SWING, ArmOwner.PLANNER_FROZEN})
+EDGE_CLEAR = 0.25  # m; turn_to refuses closer to a surface footprint (the hanging hands sweep the table top)
+EDGE_MARGIN = 0.30  # m; navigate_to keeps a point goal at least this far outside every surface footprint
 TURN_MODES = frozenset({"idle", "slow_walk"})  # Primitives.turn_to's mode: IDLE re-aims in place, SLOW_WALK steps round
+
+
+def surface_clearance(xy, surfaces) -> tuple[float, str | None]:
+    """Distance from a world xy to the nearest surface footprint (negative inside), and that surface's key."""
+    best, key = np.inf, None
+    for k, surf in (surfaces or {}).items():
+        d = np.abs(np.asarray(xy, dtype=float) - np.asarray(surf.xy, dtype=float)) - np.asarray(
+            surf.half_extent, dtype=float
+        )
+        outside = float(np.linalg.norm(np.maximum(d, 0.0)))
+        dist = outside if outside > 0 else float(np.max(d))
+        if dist < best:
+            best, key = dist, k
+    return best, key
+
+
+def clear_of_surfaces(xy, surfaces, margin: float) -> np.ndarray:
+    """`xy` pushed out of every surface footprint to at least `margin` along the nearest edge's normal.
+
+    2026-09-29 (pick_place ledger §13): the agent aimed `navigate_to` 0.10-0.15 m from the table edge and the
+    turn that followed swept the can off the table 3/10; a goal is a place to stand, not a place to lean."""
+    out = np.asarray(xy, dtype=float).copy()
+    for surf in (surfaces or {}).values():
+        c, h = np.asarray(surf.xy, dtype=float), np.asarray(surf.half_extent, dtype=float)
+        d = np.abs(out - c) - h  # per-axis distance outside the footprint
+        if np.max(d) > 0 and float(np.linalg.norm(np.maximum(d, 0.0))) >= margin:
+            continue
+        ax = int(np.argmax(d))  # the least-penetrated axis is the nearest edge
+        sign = 1.0 if out[ax] >= c[ax] else -1.0
+        out[ax] = c[ax] + sign * (h[ax] + margin)
+    return out
 
 
 def _turn_mode(name: str):
@@ -32,24 +65,40 @@ def _turn_mode(name: str):
 
 
 class TurnTo:
-    """Rotate on the spot to a world yaw and hold it as the new heading anchor."""
+    """Rotate on the spot to a world yaw and hold it as the new heading anchor; refused within `edge_clear` m of a surface."""
 
     name = "turn_to"
     requires = WALKING
     yields = None  # unchanged
 
-    def preconditions(self, session: Session, *, yaw: float, tol: float = 0.15, mode: str = "idle") -> list[Violation]:
+    def preconditions(
+        self, session: Session, *, yaw: float, tol: float = 0.15, mode: str = "idle", edge_clear: float = EDGE_CLEAR
+    ) -> list[Violation]:
         out = []
         v = needs_heading(session)
         if v is not None:
             out.append(v)
+        surfaces = getattr(session.scene, "surfaces", None)
+        if surfaces and hasattr(session.stack, "pelvis_xy"):
+            dist, key = surface_clearance(session.stack.pelvis_xy(session.stack.obs()), surfaces)
+            if dist < edge_clear:
+                out.append(
+                    Violation(
+                        "edge_clearance",
+                        round(dist, 3),
+                        (edge_clear, None),
+                        f"pelvis {dist:.2f} m from surface {key}: a turn here sweeps the table; nudge or walk away first",
+                    )
+                )
         if tol < 0.15:
             out.append(Violation("tol", tol, (0.15, None), "the controller's heading dead zone is 7-8 deg"))
         if mode not in TURN_MODES:
             out.append(Violation("mode", mode, note=f"one of {sorted(TURN_MODES)}"))
         return out
 
-    def run(self, session: Session, *, yaw: float, tol: float = 0.15, mode: str = "idle") -> Outcome:
+    def run(
+        self, session: Session, *, yaw: float, tol: float = 0.15, mode: str = "idle", edge_clear: float = EDGE_CLEAR
+    ) -> Outcome:
         t0 = session.clock()
         session.record.enter("turn_to", yaw=float(yaw), mode=mode)
         session.stack.hold_yaw = float(yaw)
@@ -208,7 +257,7 @@ def _palm_offset_default():
 
 
 class CarryTo:
-    """Walk to a world xy with the upper body frozen and the load watched every tick.
+    """Walk to a world xy with the upper body frozen and the load watched every tick; `turn_first=False` strafes (holds the facing).
 
     The legs are the planner's (`Primitives.walk_to`); the arms stay pinned where the hand-back left them
     (PLANNER_FROZEN_UPPER_BODY keeps the last 17-joint reference and the closed hands). The load rule is
@@ -351,7 +400,7 @@ def turn_with_load(p, watch: LoadWatch, bearing: float, tol: float, mode: str) -
 
 
 class NavigateTo:
-    """Walk to a world xy (or a ring around an object) through the scene's occupancy map, one waypoint at a time.
+    """Walk to a world xy (or a ring around an object) through the occupancy map; a point goal is kept `edge_margin` m off every surface.
 
     The route is `Navigator`'s geodesic field (`Primitives.planner`, built from `scene_meta` when the stack has a
     map): each segment steers at `waypoint(here, step)` and is walked with `Primitives.walk_to`. Free-handed, the
@@ -382,6 +431,7 @@ class NavigateTo:
         drift_max: float = 0.03,
         contact_gap_s: float = 0.3,
         lift_floor_m: float = 0.06,
+        edge_margin: float = EDGE_MARGIN,
     ) -> list[Violation]:
         out = []
         if getattr(session.stack, "planner", None) is None:
@@ -415,17 +465,21 @@ class NavigateTo:
         drift_max: float = 0.03,
         contact_gap_s: float = 0.3,
         lift_floor_m: float = 0.06,
+        edge_margin: float = EDGE_MARGIN,
     ) -> Outcome:
         t0 = session.clock()
         p, nav = session.stack, session.stack.planner
         s = p.obs()
         here = np.asarray(p.pelvis_xy(s), dtype=float)
         start_xy = here.copy()
+        goal_moved = 0.0
         if target is not None:
             goal = np.asarray(s["objects"][target]["pos"][:2], dtype=float)
             planned = nav.set_goal_ring(goal, max(stand_off - 0.07, 0.0), stand_off + 0.07, here_xy=here)
         else:
-            goal = np.asarray(xy, dtype=float)
+            asked = np.asarray(xy, dtype=float)
+            goal = clear_of_surfaces(asked, getattr(session.scene, "surfaces", None), edge_margin)
+            goal_moved = float(np.linalg.norm(goal - asked))
             planned = nav.set_goal_point(goal, here_xy=here)
         session.record.enter("navigate_to", goal=goal.tolist(), target=target)
         if not planned or (not nav.reachable(here) and not (nav.replan(here) and nav.reachable(here))):
@@ -500,6 +554,8 @@ class NavigateTo:
         p.hold_yaw = session.heading
         metrics = dict(
             segments=segments,
+            goal=goal.round(3).tolist(),
+            goal_moved_m=goal_moved,
             walked_m=float(np.linalg.norm(np.asarray(p.pelvis_xy(s), dtype=float) - start_xy)),
             field_left_m=float(nav.distance_at(np.asarray(p.pelvis_xy(s), dtype=float))),
             **(watch.metrics() if watch is not None else {}),
@@ -510,7 +566,7 @@ class NavigateTo:
 
 
 class Nudge:
-    """Move the pelvis a few centimetres with timed SLOW_WALK pulses, facing held, braking and re-measuring between them.
+    """Move the pelvis a few centimetres with timed SLOW_WALK pulses, facing held; an approach's stance is re-measured, not cleared.
 
     The v1.1 planner has no centimetre translation: `walk_to` to a 0.15 m goal walks 0.7-1.5 m (2026-09-28, crate ledger)
     and a slow continuous command moves nothing for a second and then 18 cm (walk_micro_v11_20260923). What is
@@ -636,9 +692,11 @@ class Nudge:
                 why = "[nudge] timed out"
                 break
         s = p.obs()
-        session.stance = None
+        session.stance = remeasured_stance(session, s)
         final = float(np.linalg.norm(target - np.asarray(p.pelvis_xy(s), dtype=float)))
         metrics = dict(pulses=pulses, final_error_m=final, yaw_drift_rad=_wrap(float(p.pelvis_yaw(s)) - yaw0))
+        if session.stance is not None:
+            metrics["stance"] = {"depth_m": session.stance.depth_m, "lateral_m": session.stance.lateral_m}
         if watch is not None:
             metrics.update(watch.metrics())
         if why is None and watch is not None and not watch.load_ok(s)[0]:
@@ -646,6 +704,24 @@ class Nudge:
         if why is None and final > tol:
             why = f"[nudge] {final * 100:.1f} cm off after {len(pulses)} pulses"
         return Outcome(why is None, why or "", duration_s=session.clock() - t0, metrics=metrics)
+
+
+def remeasured_stance(session: Session, state: dict):
+    """The approach's `Stance` with depth / lateral / yaw error re-read from where the pelvis is now.
+
+    A nudge is a stance correction (2026-09-29, pick_place ledger §13: clearing the stance cost the agent two
+    calls per nudge, because the grasp was then refused for want of an approach). The prepared grasp policy
+    (`session.scratch["bottle"]`) survives, so the grasp that follows plans from the object's live pose."""
+    from dataclasses import replace
+
+    stance, p = session.stance, session.stack
+    if stance is None or not hasattr(p, "world_to_root") or stance.target not in (state.get("objects") or {}):
+        return None
+    rel = np.asarray(p.world_to_root(state["objects"][stance.target]["pos"], state), dtype=float)
+    yaw_err = stance.yaw_err_rad
+    if session.heading is not None:
+        yaw_err = _wrap(float(p.pelvis_yaw(state)) - float(session.heading))
+    return replace(stance, depth_m=float(rel[0]), lateral_m=float(rel[1]), yaw_err_rad=float(yaw_err))
 
 
 NUDGE_MAX = 0.40  # m; a nudge is a stance correction, not a walk
