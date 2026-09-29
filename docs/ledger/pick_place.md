@@ -259,3 +259,18 @@ plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–
 - 注入只在抓取成功后触发，而基线抓取 ~50%，所以 10 局只得 5 个注入、3 个配对；要 10 个配对得按"触发数"而不是局数跑（TODO 8.4.1）。
 - agent 第一反应 5/5 是 `place`：请求里 `session.held` 说拿着，`scene.objects.soup_can` 说在桌上，它信了前者。系统提示没说"session 可能过期，以场景为准"；要不要加这句是 prompt 设计问题（agentic-plan Q4 的特权状态就是给它对账用的），加了就是给提示，不加就是在测它的对账能力——待用户定（TODO 8.4.2）。
 - `drop_held` 的 `moved_m` 是 xy，看 `moved_z_m`（−0.23…−0.32 m）才是掉落量。
+
+**第二轮（2026-09-29 晚，8.3.1 / 8.3.2 / 8.4.1 / 8.4.2 之后；`--until-injected 10`）**
+
+| 注入 | plan 臂 | agent 臂 | 配对 | agent 重抓 | 报告 |
+|---|---|---|---|---|---|
+| `move_target` +0.60 m | `inj2_move_plan_20260929b` 0/11（10 触发） | `inj2_move_agent_20260929b` 0/10（10 触发） | 9 | 3/9 | `outputs/analysis/injection2_move_20260929/` |
+| `drop_held` | `inj2_drop_plan_20260929b` 0/20（10 触发；注入后 8/10 `[approach] load lost while turning`、2/10 slipped） | 未跑（蠕变机制确认后停掉队列，省 agent 调用） | — | — | — |
+| `move_target`（8.3.4 后 agent 重跑，跑 3 局即停） | 同上 plan 臂 | `inj3_move_agent_20260929c` 0/3 | 2 | 2/3 | `outputs/analysis/injection3_move_20260929/`；两次重抓都是 `place` 被 `placing_band` 拒 → 想 8 s → 罐头从冻结握持掉落 → `release` |
+
+- **恢复链缩短了**：`approach` 自带横向预走（`prewalk` lateral −0.57～−0.63 m，残差 −0.09 m）后，agent 两次调用就重新站好并抓起（第一轮要 5–6 次）；提示规则让它不再先抓空一次（round 0 直接从场景看出罐头挪了）。
+- **但重抓后 100% 掉罐，机制不是转向而是等待**：4/4 重抓后 agent 直接 `place`（basket 在骨盆系 (0.42, −0.43～−0.50)，带外），`place` 起步 1.2 s 内报 `[carry] object slipped 3.0–3.5 cm`；
+  这 3 cm 是 agent 想下一步的 5–8 s 里滑掉的（无 primitive 在跑）——0.4–0.5 cm/s，正是 MuJoCo 抓握蠕变（memory `mujoco-grip-creep`）。第三轮 round 0 更直接：`place` 被 `placing_band` 拒绝、agent 想 8 s，罐头就从冻结握持里掉到桌上（z 0.95 → 0.65），全程没动过。
+  固定 plan 抓完 < 1 s 就搬，所以 6/6 进带（§8）；agent 每步 6–9 s，握持撑不到下一步。第一轮"7/7 在持罐转向时掉"多半也是同一机制（转向前已滑 3 cm，LoadWatch 在转完第一次检查时报）。
+- 由此 8.3.4 的两处（`STRAFE_YAW`、`placing_band`）方向对但不解决问题：在等待里滑掉的罐头，横移也救不回。
+- **结论**：Q11 配对比较在"抓着东西跨过一次决策"的任务上无法区分 agent 与脚本，直到三选一（8.3.5，待用户定）：(a) sim 侧把指垫接触调硬（memory 说只有这条治蠕变；会改物理，采集数据一致性要重看）；(b) 藏掉决策延迟（Q5 的"提前规划"：primitive 执行中就问下一步，或用 haiku 把 6–9 s 压到 3–4 s，仍 > 1 s）；(c) executor 在两次调用之间跑"保持"步（更深的合爪设定点、或周期性重抬），效果未测。

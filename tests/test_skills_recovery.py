@@ -70,7 +70,7 @@ class Stack:
             "fallen": False,
             "pelvis": {"pos": [*self.pos, 0.79], "yaw": self.yaw, "vel": [0.0, 0.0, 0.0]},
             "objects": {
-                "soup_can": {"pos": self.can.tolist(), "touching": ["table"], "quat": [1, 0, 0, 0]},
+                "soup_can": {"pos": self.can.tolist(), "touching": ["right", "table"], "quat": [1, 0, 0, 0]},
                 "basket": {"pos": [-0.34, 0.0, 0.698], "touching": [], "quat": [1, 0, 0, 0]},
             },
         }
@@ -229,7 +229,7 @@ def loaded_session(stack):
     "stand, expect_turn_first", [(stand_same_edge, False), (stand_other_edge, True)], ids=["same-edge", "other-edge"]
 )
 def test_loaded_approach_strafes_when_already_facing_the_edge(stand, expect_turn_first):
-    stack = Stack(pos=(-0.85, 0.32), yaw=0.0)  # re-grasped at the moved can, basket 0.3 m to the right
+    stack = Stack(pos=(-0.85, 0.32), yaw=0.3)  # re-grasped at the moved can (body wrapped 0.3 rad), basket to the right
     s = loaded_session(stack)
     carry = Carry(stack)
     profiles = load_profiles()
@@ -240,7 +240,8 @@ def test_loaded_approach_strafes_when_already_facing_the_edge(stand, expect_turn
     assert carry.asked[0][2] is expect_turn_first  # the decision is made before the carry
     if not expect_turn_first:
         assert entry["outcome"]["ok"], entry
-        assert entry["outcome"]["metrics"]["strafe"] is True and stack.calls == []  # no turn at all
+        assert entry["outcome"]["metrics"]["strafe"] is True
+        assert stack.calls == [("turn_to", 0.0)]  # only the small facing correction after the strafe, never before
 
 
 # ---- free approach walks to the approach line first --------------------------------------------------------------
@@ -290,3 +291,29 @@ def test_more_rounds_until_injected_and_prompt_rule():
     assert [more_rounds(i, 0, 3, None) for i in range(4)] == [True, True, True, False]
     assert more_rounds(5, 2, 30, 3) and not more_rounds(5, 3, 30, 3) and not more_rounds(30, 1, 30, 3)
     assert "trust the scene" in SYSTEM
+
+
+# ---- place refuses a container outside the placing band ----------------------------------------------------------
+
+
+def test_place_refuses_a_container_outside_the_placing_band():
+    from locomani.skills.catalogue.bottle import Place, placing_band_violation
+
+    profiles = load_profiles()
+    prof = profiles["bottle_simple"]
+    stack = Stack(pos=(-0.75, 0.43), yaw=0.0)  # at the moved can's stand: the basket is 0.41 m ahead, 0.43 m right
+    s = Session(stack=stack, scene=scene(), arm_owner=ArmOwner.PLANNER_FROZEN, heading=0.0)
+    s.held = HeldObject("soup_can", ("right",), {"right": np.zeros(3)}, start_z=0.69)
+    s.hands["right"] = 1.0
+    state = stack.obs()
+    state["objects"]["basket"]["cam"] = [0.0, 0.0]
+    stack.obs = lambda: state
+    v = placing_band_violation(s, prof, "basket", state, 0.10)
+    assert v is not None and v.check == "placing_band" and v.measured == pytest.approx([0.41, -0.43], abs=0.01)
+    entry = Executor(s, {"place": Place(profiles)}).step("place", {"container": "basket", "profile": "bottle_simple"})
+    assert [x["check"] for x in entry["rejected"]] == ["placing_band"]
+    stack.pos = np.array([-0.69, 0.11])  # inside band_x [0.26, 0.44] x band_y [-0.16, -0.06]
+    assert placing_band_violation(s, prof, "basket", state, 0.10) is None
+    coupled = profiles["pick_place_coupled"]
+    stack.pos = np.array([-0.75, 0.43])
+    assert placing_band_violation(s, coupled, "basket", state, 0.10) is None  # coupled places from its grasp stand

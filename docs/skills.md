@@ -140,3 +140,6 @@ $PY scripts/injection_report.py --plan <plan run> --agent <agent run> --out outp
   `navigate_to` 的点目标推到离每个台面 ≥ 0.30 m（`edge_margin`）；`turn_to` 离台面 < 0.25 m 时拒绝（`edge_clearance`）；`nudge` 重新量 stance 而不是清掉；
   空手 `approach` 站位偏离走近线 > 0.12 m 时先横移到站位后 0.6 m 的引导点再走。系统提示加了一条：session 快照是本体感觉、场景是真值，冲突时先 `release` 再继续（8.4.2）。
 - `--until-injected N`：跑到 N 次注入触发为止（`--rounds` 变成上限），配对数不再被基线抓取率砍半（8.4.1）。
+- 第二轮 `move_target`（plan 0/9、agent 0/9、重抓 3/9）暴露的两处，已改：抓完身体带 0.35 rad 的 wrap，横移判据从 0.16 放到 0.6 rad（`STRAFE_YAW`）；
+  `place` 自己会转身搬到容器，简单握持在那一转里滑，所以 `place` 现在要求容器在 profile 放置带内（骨盆系 `band_x × band_y` ± 0.10 m，`placing_band` 违规），
+  带外先 `approach(container)`；coupled profile 原地放置，免检。

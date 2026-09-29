@@ -29,8 +29,12 @@ TURN_TOL = 0.16  # the spawn phase's tolerance for facing the table normal
 WRAPPED_STRATEGIES = frozenset({"simple", "coupled"})  # bottle strategies the approach/grasp adapters have run live
 CORRECT_TOL = 0.05  # loaded approach: residual (m) between the target's pelvis-frame position and the aimed one
 STRAFE_MAX = 1.2  # loaded approach: within this of the stand and already facing the table, walk there without turning
+STRAFE_YAW = (
+    0.6  # rad; "facing the table" for the strafe: the simple grasp wraps the body up to 0.35 rad toward the object
+)
 LATERAL_TOL = 0.12  # approach: a stand more than this off the approach line is walked to first (holding the facing)
 LEAD_BACK = 0.60  # approach: the pre-walk aims this far behind the stand along the table normal
+BAND_TOL = 0.10  # place: the container may sit this far outside the profile's placing band; farther is approach's job
 
 
 def _wrap(a: float) -> float:
@@ -308,7 +312,7 @@ class BottleApproach:
         # of turning with the load (2026-09-29, ledger §13: 7/7 recovered grasps were lost in that turn).
         here = np.asarray(p.pelvis_xy(state), dtype=float)
         strafe = bool(
-            abs(_wrap(float(p.pelvis_yaw(state)) - float(psi))) <= TURN_TOL
+            abs(_wrap(float(p.pelvis_yaw(state)) - float(psi))) <= STRAFE_YAW
             and float(np.linalg.norm(stand - here)) <= STRAFE_MAX
         )
         session.record.enter("approach.carry", target=target, stand=stand.tolist(), psi=float(psi), strafe=strafe)
@@ -320,7 +324,7 @@ class BottleApproach:
                 False,
                 out.reason.replace("[carry]", "[approach]", 1),
                 duration_s=session.clock() - t0,
-                metrics=out.metrics,
+                metrics=dict(out.metrics, strafe=strafe),
             )
         watch = LoadWatch(p, session.held, self._carry._palm_offset, drift_max=drift_max)
         state = p.obs()
@@ -467,6 +471,31 @@ class GraspSingle:
         return Outcome(True, "", duration_s=session.clock() - t0, metrics=metrics, produced=held)
 
 
+def placing_band_violation(session: Session, prof, container: str, state: dict, tol: float) -> Violation | None:
+    """`place` turns and carries to the container itself, and that loaded turn is where the simple hold slips
+    (2026-09-29, pick_place ledger §13 round 2: 4/4 recovered grasps lost in place's carry when the basket sat
+    0.3-0.5 m to the side). So the container has to be inside the profile's placing band (pelvis frame, band_x x
+    band_y, `tol` slack) before place runs; `approach(container)` puts it there, strafing on the same edge.
+    A coupled profile places from its grasp stand by design (7.7.1.2) and is exempt."""
+    place_cfg = getattr(prof.config, "place", None)
+    if place_cfg is None or getattr(getattr(prof.config, "reach", None), "strategy", "simple") == "coupled":
+        return None
+    if not hasattr(session.stack, "world_to_root") or container not in (state.get("objects") or {}):
+        return None
+    rel = np.asarray(session.stack.world_to_root(state["objects"][container]["pos"], state), dtype=float)
+    lo = (place_cfg.band_x[0] - tol, place_cfg.band_y[0] - tol)
+    hi = (place_cfg.band_x[1] + tol, place_cfg.band_y[1] + tol)
+    if lo[0] <= rel[0] <= hi[0] and lo[1] <= rel[1] <= hi[1]:
+        return None
+    return Violation(
+        "placing_band",
+        [round(float(rel[0]), 3), round(float(rel[1]), 3)],
+        (list(lo), list(hi)),
+        f"{container} is outside the placing band (pelvis frame x,y); approach({container}) first: it walks there "
+        "holding the facing, place would turn with the load",
+    )
+
+
 class Place:
     """Raise, turn to the container, carry over, descend, release, lift away, back off, verify (place_phase)."""
 
@@ -495,9 +524,13 @@ class Place:
             out.append(Violation("container", container, note="not a container in this scene"))
         elif held is not None and container == held.key:
             out.append(Violation("container", container, note="cannot place an object into itself"))
-        cam = session.stack.obs()["objects"].get(container, {}).get("cam") if obj is not None else None
+        state = session.stack.obs()
+        cam = state["objects"].get(container, {}).get("cam") if obj is not None else None
         if cam is None:
             out.append(Violation("view", None, note="container not in the ego view"))
+        band = placing_band_violation(session, prof, container, state, BAND_TOL) if obj is not None and prof else None
+        if band is not None:
+            out.append(band)
         return out
 
     def run(
