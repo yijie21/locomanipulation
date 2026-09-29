@@ -29,14 +29,18 @@ EDITOR_BIN="$UE_ENGINE/Engine/Binaries/Linux/UnrealEditor"
 CMD_SERVER="$LOCOMANI_ROOT/src/locomani/sim/unreal/in_editor/cmd_server.py"
 kill_ue() { pkill -KILL -f "^$UE_ENGINE/Engine/Binaries/Linux/"; }
 
+# -nocef: no embedded Chromium (CEF). It is only the editor's web views, which nothing here opens, and on a desktop
+# host it aborted the editor at startup: a Chromium CHECK ends in int3, so the process dies of SIGTRAP right after
+# "LogCEFBrowser: CEF GPU acceleration enabled", outside UE's crash handler (SRA0889, 2026-09-29).
 # shellcheck disable=SC2086  # UE_EXTRA_ARGS is a word list
 taskset -c "$UE_CPUS" nice -n 19 "$EDITOR_BIN" "$UE_PROJECT" \
-    -RenderOffscreen -vulkan -graphicsadapter="$GPU" \
+    -RenderOffscreen -vulkan -graphicsadapter="$GPU" -nocef \
     -unattended -nosplash -nosound -stdout -FullStdOutLogOutput -log \
     -LocalDataCachePath="$UNREAL_ROOT/ddc" ${UE_EXTRA_ARGS:-} "-ExecCmds=py $CMD_SERVER" > "$LOG" 2>&1 &
 ED=$!
 echo "editor started pid $ED on GPU $GPU, cores $UE_CPUS, at $(date -u +%T)"
-read -r quota period < /sys/fs/cgroup/cpu.max 2>/dev/null || quota=max
+# no cpu.max = no quota (a bare host, not a container); the redirect is silenced before it is opened
+read -r quota period 2>/dev/null < /sys/fs/cgroup/cpu.max || quota=max
 limit=$([ "$quota" = max ] && echo 0 || awk -v q="$quota" -v p="$period" 'BEGIN{printf "%.2f", 0.9 * q / p}')
 bad=0
 u_prev=$(awk '/^usage_usec/{print $2}' /sys/fs/cgroup/cpu.stat 2>/dev/null || echo 0)
