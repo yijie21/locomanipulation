@@ -443,6 +443,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 | `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_videos.sh`（Isaac 并排） |
 | Isaac 图像作为 VLA 闭环的输入 | 已实现按需镜像（`images.source: isaac` + `scripts/run_isaac_mirror.sh`，见[上文](#vla-闭环的-isaac-画面按需镜像)）；warehouse checkpoint-5000 已真实闭环 10 局（台账 crate.md 2026-09-27）；专家仍读 MuJoCo |
 | Isaac 图作为 VLA 训练图 | 已实现：`images.source: isaac` 的运行在 convert 前跑 `scripts/render_dataset_cameras_isaac.sh`，把 Isaac 图写进 session 替换占位帧（见[图像来源](#图像来源imagessource)） |
+| Unreal（URLab）代替 Isaac 出图 | **实验中，还不能用 `images.source` 选择**：只有 warehouse 房间做了关卡，按需镜像和 trace 视频是 `scripts/experiments/unreal_*` 实验脚本，还没有 Unreal 的数据集补渲；UE 和插件补丁装在 git 外面。命令和坑见 [Unreal 交接文档](handoff/unreal-urlab-20260928.md)，接成开关是 TODO 12.9 |
 
 补渲之外的 Isaac 画面（并排预览、`isaac_render` 直接渲的 ego）只用于检查。要让训练用 Isaac 图，走上面的补渲，
 不要手工替换 session 里的视频：补渲按 exporter 每行记下的 seq 取状态，并在 session 里记下渲染器，convert 据此核对来源。

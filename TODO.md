@@ -428,6 +428,7 @@
     - [x] 12.7.7.1 闭环和数据集用几遍（现默认 8）：用户 2026-09-29 定 8 遍（宿主工程 `urlab.FreshCaptureRepeats=8`，不改） `urlab.FreshCaptureRepeats`（1/2/4/8）：各对 64 遍参考（`unreal_pose_set_20260928.py`），定闭环遍数（1 遍 48 ms、8 遍 124 ms、Isaac 88–96）
 - [ ] 12.8 用 Unreal 图跑 100 局 lockstep 评测，与 Isaac 88/100 比（checkpoint 是 Isaac 训练的，属于分布偏移）；用无 Nanite 默认（已跑的 1 局是 Nanite 版）
 - [ ] 12.9 正式接入 `images.source: unreal`：镜像进 src、run_overnight 接线、数据集用 Unreal 补渲、重新训练
+  - 用户 2026-09-29 定：由 loco_unreal 会话做（这个会话已发任务说明）。做法是 `images.source` 加第三个值 `unreal`，采集、转换、训练、评测命令都不变；`scenes.yaml` 给场景加 `unreal` 条目（与 `isaac` 并列）；文档不加 README 主线：`rendering.md` 图像来源表加一列、`setup.md` 加可选安装步骤、warehouse runbook 只加一句怎么改用
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
 - [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存
 - [x] 12.12 （用户 2026-09-29 定：关掉；已关：宿主工程 `DefaultEditorSettings.ini` 的 `bSendUnattendedBugReports=False`、`bSendUsageData=False`，`GetIni` 读回合并值 False，之后两次崩溃都没生成崩溃报告）UE 崩溃时 CrashReportClient 自动把报告上传到 Epic（2026-09-28 编辑器崩溃时已传一份）；是否在宿主工程配置里关掉（待用户定）
@@ -442,4 +443,4 @@
 - [-] 12.18 （放弃：用户 2026-09-29 接受现在的天花板亮度）Unreal 天花板仍比 Blender 暗 60（114 对 174）：Lumen 的反弹只有 Cycles 的一半左右，增益再往上收益很小；可试色调曲线（Isaac 换 Hejl–Hable 有效）或接受（待用户定）
 - [~] 12.19 合入 main（分支会话 2026-09-29 请求；DECISIONS 2026-09-29 合并一节）：冲突 9 个文件已解；四边线换新外观、四个 `warehouse_box_<尺寸>_env` stage 已建；`make lint` 通过
   - [ ] 12.19.1 推送 origin/main：待用户说
-  - [ ] 12.19.2 视频是否对 ≥ 1280×960 的尺寸跳过超采样（待用户定）。实测（`outputs/merge_check_loco_unreal_20260929/`，GPU0，`warehouse_smoke_edges_20260928` 的 `visual_crate_s7000_01`，22.5 s 画面、281 帧、带小窗）：整条 5.0 分钟，Isaac 286 s，约 1.0 s/帧；main 台账第 2 节 1× 时 66 s 画面 249 s、约 0.6 s/帧，约 1.7 倍。`docs/warehouse.md` 的录像 7 → 10 分钟、补渲 1 → 3 分钟、总计 40 → 50 分钟是按这组数和 209 ms/次推算的，下次冒烟实跑时核对
+  - [x] 12.19.2 视频是否对 ≥ 1280×960 的尺寸跳过超采样——用户 2026-09-29 定：不跳，视频照用场景的 2×。实测（`outputs/merge_check_loco_unreal_20260929/`，GPU0，`warehouse_smoke_edges_20260928` 的 `visual_crate_s7000_01`，22.5 s 画面、281 帧、带小窗）：整条 5.0 分钟，Isaac 286 s，约 1.0 s/帧；main 台账第 2 节 1× 时 66 s 画面 249 s、约 0.6 s/帧，约 1.7 倍。`docs/warehouse.md` 的录像 7 → 10 分钟、补渲 1 → 3 分钟、总计 40 → 50 分钟是按这组数和 209 ms/次推算的，下次冒烟实跑时核对
