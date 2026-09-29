@@ -1230,3 +1230,28 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - 理由：沿用 `_fixed_start` 的做法（一个变体一份完整的实验文件）；让读者复制后自己改 `images.source`，还要自己起名字，runbook 里的命令就没法照抄。
 - 被否决：命令行覆盖 `images.source`。一次运行由一份完整的实验文件决定（DECISIONS 2026-09-17），加覆盖参数会让运行目录里的副本和命令行不一致。
 
+
+## 2026-09-29 /workspace 清理：主 checkout 删 165 GB（用户定）；合入与推送的做法
+
+背景：`/workspace` 只剩 22 GB（98%），主 checkout 占约 295 GB（`outputs/` 196、`third_party/` 86、`datasets/` 8）。
+
+### 决策
+
+- **A 类（96 GB），用户同意提前删：** 三个 10 步冒烟模型 `outputs/runs/*_smoke/model/`，以及 `docs_smoke_20260928/try2` 里的那一个。
+  - 理由：10 步的 checkpoint 不会抓，没有用处；STATE 早已登记（TODO 9.9）。
+  - `try2` 的其余约 0.3 GB 留着，是 runbook 数字的证据。
+- **B 类（69 GB），用户说"都删掉吧"：**
+  - 65 个扫参和对照运行的 `observations/`：结论已进台账，manifest、trace、视频、日志都保留。
+  - `box_room_grasp_200_cap120_20260925/observations`：这 200 条从此不能再补渲，要用新外观或 Unreal 重训就得重新采集。它的 `checkpoint-5000` 和 `train_dataset` 保留。
+  - `third_party/EmbodiedGen/weights/sam-3d-objects`：只在重新生成场景时用，可以重新下载。
+  - `datasets/` 里的旧专家数据：09-25 已定作废。只留 `g1_locomani_cover400_train/meta/`，因为 `rtc/transition_events.py` 读它的 `info.json`。
+- **删法：** 按明确的路径清单用脚本删，脚本拒绝软链接、清单外的路径和解析到仓库外的路径。清单、脚本和日志在 `outputs/cleanup_20260929/`。
+  - 理由：09-09 那次 `git add -A` 事故之后的规矩；清单也是删了什么的记录。
+- **合入与推送：** 分支先由 main 审核，发现问题退回分支会话修，修完再合；推送前 fetch，远端有新提交就 merge（这次是 henry-zhao 的 bfe95bb），不 rebase；推送要用户每次说。
+
+### 被否决的方案
+
+- **删 `third_party/SIMPLE/.venv`（20 GB）、`GR00T-WholeBodyControl`（20 GB）、`Isaac-GR00T`（16 GB）：** 分别是 Isaac 的运行环境、仿真与 deploy、训练环境，都在用。
+- **删 `third_party/SIMPLE/data`（12 GB）：** 没查清哪些部分还在用，没列入。
+- **删 09-28 的四边线 pilot 和 `skills_*` 运行：** `loco_agent` 会话还在往后者里写。
+- **第一次审核时先合 30cb422、端口问题以后再修：** 默认的 warehouse 实验文件用实例 0，编辑器常驻时评测起不来，"只改 `images.source`"这件事对默认文件根本不成立，所以作为阻塞项退回。

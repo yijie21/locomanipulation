@@ -1,57 +1,51 @@
-# STATE — 2026-09-29（会话：warehouse 默认四边采集 + 采集前提醒；双臂线并行采集通道；已推送）
+# STATE — 2026-09-29（会话：loco_unreal 两次合入 + `images.source: unreal`；Unreal 文档按规范重写；/workspace 清理 165 GB；已推送）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步于 `4dd5649`（之后只有这次 handoff 提交）。
-已确认：本会话起的栈、Isaac 补渲都已收掉；2026-09-29 01:49 UTC 实例端口 5555–5699 没有任何程序监听，GPU0 2 MiB、GPU1 3698 MiB。
-别的会话：`locomanipulation-loco_agent` 检出目录会在实例 1、GPU 1 起栈；GPU 1 常驻无关的 `depth_server.py`（约 3.7 GB）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，与 origin/main 同步于 `fc28d1d`（之后只有这次 handoff 提交）。
+已确认（08:37 UTC）：本会话起的 Isaac 渲染都已结束；Unreal 编辑器没在运行。GPU0 空闲（2 MiB）。
+GPU1 已占 26 GB，全是别的项目：`depth_server.py` 3.7 GB、`loco_agent` 的 bottle 进程 1.5 GB、`SimpleRoboJev` 三个视觉进程共约 17.8 GB。在 GPU1 上跑 Isaac 或 Unreal 之前先看 `nvidia-smi`。
+别的会话：`locomanipulation-loco_agent` 在实例 1、GPU 1 起栈；`locomanipulation-loco_unreal`（worktree）负责 Unreal 线，它的 `loco_unreal` 分支已全部合进 main。
 
-## 磁盘（先处理）
+## 磁盘
 
-- 已确认：2026-09-29 用户说删，已删 A 类（四个冒烟 `model/`，96 GB）和 B 类（65 个扫参运行和 cap120 的 `observations/`、EmbodiedGen 的
-  sam-3d 权重、旧专家 `datasets/`，69 GB；TODO 9.9、9.9.1，清单和日志在 `outputs/cleanup_20260929/`），`/workspace` 空闲 239 GB。根分区 `/`（32 GB）06:00 一度只剩 11 MB，06:45 别处清掉后回到 GB 级（07:50 空闲 7.5 GB）；跑 Isaac、UE、pytest 前把 TMPDIR 指到 `/workspace`。
-- 本会话产物约 1 GB + exporter session 1.2 GB（TODO 11.9 列了路径）：最早 2026-09-30 02:00 UTC 可删，待用户同意；
-  `outputs/runs/warehouse_smoke_lanes_20260928` 的 manifest 与 `collect/` 是并行通道的证据，保留。
+- 已确认：本会话删了 A 类 96 GB、B 类 69 GB（TODO 9.9、9.9.1；DECISIONS 2026-09-29 清理一节；清单和日志在 `outputs/cleanup_20260929/`）。`/workspace` 空闲 236 GB。
+- 已确认：根分区 `/` 只有 32 GB，08:37 空闲 6.1 GB，还在往下掉（06:00 一度只剩 11 MB，当时 Isaac 和工具都写不进去）。跑 Isaac、UE、pytest 之前把 `TMPDIR` 指到 `/workspace`。
+- 待用户：上一会话的小产物（TODO 11.9，约 1 GB + 1.2 GB）最早 2026-09-30 02:00 UTC 可删；`outputs/merge_check_loco_unreal_20260929/`（66 MB）是否保留（12.19.4）。
 
-## 当前进度（TODO 第 10、11 节；DECISIONS 2026-09-28 最后两节）
+## 当前进度（TODO 第 12 节；DECISIONS 2026-09-29 各节）
 
-- 已确认（10）：warehouse 默认采集是四边随机——`warehouse_smoke` / `warehouse_200` 用 `warehouse_edges_compact_45x32x33_20260928`
-  的 task 块，场景 `warehouse_box_45x32x33`；只从一个地方开始的是 `warehouse_{smoke,200}_fixed_start`（只差摆放，有测试）。
-  采集第一局前打印摆放设置（`expert.layout_lines`）。实跑 `warehouse_smoke_edges_20260928`：4 局抽到 yp/xm 两边，保留 2 条。
-- 已确认（11）：双臂线采集默认并行。`start_stack.sh collect` 用 `pipeline/lanes.py` 量空闲 CPU（3 秒）、线程数、每卡显存、
-  空闲实例（`stack.instance_busy` 查栈、锁、端口），定通道数、打印、逐个起栈、写 `collect/lanes.json`；`run_agent_server.sh`
-  通道 0 在本进程，其余 spawn 子进程；批次在文件锁下按编号领取（`batches.claim_batch/finish_batch`）。
-- 已确认（11.1 实测，脚本在 `outputs/warehouse_parallel_20260928/`）：一条 warehouse 通道 CPU 平均 +2.6 / p90 +3.7 核、显存 +1.5 GB、线程 +180 起每录一局约 +130。
-- 已确认（11.2.1）：`warehouse_smoke_lanes_20260928` 两条通道（实例 2/GPU0、实例 3/GPU1）8 局保留 5 条，RTF 0.974–0.996，
-  容器线程峰值 3279/3840；Isaac 补渲 5 集 + convert（4 训练 + 1 验证）通过，两条通道的 session/manifest 配对正确。
-
-## Isaac 新外观 + `images.source: unreal`（`loco_unreal`；TODO 第 12 节，DECISIONS 2026-09-29 各节）
-
-- 已确认：G1 用 Unitree 官方材质；warehouse（含四边线）stage `*_env`、按 Blender 标；`box_platform_srgb`；2× 超采样。旧 stage 别删；新外观不重训（用户定），新旧评测数字不可直接比。已确认（12.9，分支 `loco_unreal`，未合回 main）：`images.source: unreal` 已接通。warehouse_textured 和四个 warehouse_box_* 各有关卡，补渲 + convert 和 3 局 lockstep 闭环（3/3，Isaac 训练的 checkpoint，分布偏移）都实跑过。还没用 Unreal 图训练（12.9.6）。命令见 [handoff](docs/handoff/unreal-urlab-20260928.md)；URLab 的端口已挪到 5800–5812（插件补丁的 PortBase），编辑器常驻时实例 0 的栈照常可用。
+- 已确认：Isaac 新外观已在 main 上。
+  - G1 用 Unitree 官方材质；所有 Isaac 场景 2× 超采样，视频也不跳过（用户定）。
+  - warehouse 按 Blender 标定，stage 用 `warehouse_textured_env`，四边线用 `warehouse_box_<尺寸>_env`；`build_isaac_warehouse_scene.py` 写的 label 一律带 `_env`；box_platform 用 `box_platform_srgb`。
+  - 旧 stage 别删。新外观不重训（用户定），新旧评测数字不能直接比。
+- 已确认：`images.source: unreal` 已接通并推送。
+  - 有关卡的场景：`warehouse_textured` 和四个 `warehouse_box_*`，关卡记录在 `$UNREAL_ROOT/levels`（本机 `/workspace/ue_57/levels`）。从主 checkout 调 `unreal_scene`，5 个关卡都通过哈希核对。
+  - URLab 端口在 5800–5806 和 18801，不和仿真栈冲突。
+  - 实跑过（loco_unreal 会话）：补渲 2 集加 convert；实例 0 上 lockstep 闭环 3/3 和 1/2。用的是 Isaac 训练的 checkpoint，属于分布偏移。
+- 已确认：warehouse runbook 里 Isaac 和 Unreal 平行（开头"先选渲染器"，第 1、3、6 步两种命令并排）。选渲染器就是选实验文件：`warehouse_{smoke,200}_unreal.yaml`，有测试守着。setup 第 8 步、术语表、`--render-gpu` 都已按规范写。
 
 ## 待验证 / 卡点
 
-- 待验证（10.7）：终端里“打印后等 10 秒再开第一局”这条分支没实跑过（两次实跑都是 nohup）。
-- 待验证（11.7）：多通道的产出率是否与单通道相同，只有 8 局冒烟；完整规模要按产出率和 RTF 再核。
-- 假设（11.6）：crate 这种实时渲染通道的成本沿用旧单栈预算（10 核、6000 MiB、一卡一条），没实测；这台机器上 crate 目前只开得出一条。
-- 待用户（10.4）：本机 `outputs/runs/warehouse_smoke` 是旧配置跑的，按 runbook 同名重跑会报 `config.yaml differs`——删旧目录还是文档写换 `--name`。
-- 待定（11.10）：旧单栈闸门（1800 线程、8 核）仍管单臂线和没有 `lanes.json` 的栈，是否按实测改小。
-- 上一会话留下：9.3 bottle lockstep 对照；9.10 crate 完整规模 lockstep；9.8 新文档写法待认可；8.6.4 四边 compact 采集待定；7.2；8.11 可删 trial 目录。
+- 待验证（12.19.3）：runbook 里 Isaac 补渲每局约 3 分钟、录像每局约 10 分钟、全程约 50 分钟，这些是按 2× 超采样估计的，还没整条实跑。
+- 待验证（12.9.13）：没人照文档从零跑过 Unreal（引擎下载、完整采集到评测）。
+- 未做（12.9.6，待用户安排）：用 Unreal 补渲的数据重新训练；在那之前 Unreal 评测数字不能和 Isaac 比。12.8（Unreal 100 局评测）同理。
+- 待用户定（12.9.14）：Unreal 运行的第三视角录像仍由 Isaac 渲；Unreal 的 trace 视频还是实验脚本。
+- 已确认：cap120 的 `observations/` 已删，那 200 条不能再补渲；要用新外观或 Unreal 重训就得重新采集。
+- 上一会话留下：10.7、11.7、11.6、10.4、11.10（四边线采集和并行通道的验证与待定项），以及 9.3、9.10、9.8、8.6.4、7.2、8.11。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **10.4**：问用户旧 `outputs/runs/warehouse_smoke` 怎么处理。
-- **10.5 / 11.7**：用户同意后按默认（四边 + 自动通道）跑 `warehouse_200` 采集，顺带核对多通道产出率。
+- **12.19.3 / 12.9.13**：下一次 warehouse 冒烟（Isaac 或 Unreal）照 runbook 跑，核对估计耗时，顺带检验 Unreal 文档。
+- **12.9.6**：用户安排后，用 `warehouse_200_unreal.yaml` 采集、Unreal 补渲、训练、评测。
+- **10.4 / 11.9**：问用户旧 `outputs/runs/warehouse_smoke` 怎么处理，以及小产物何时删。
 
 ## 关键路径与命令
 
 ```bash
-cd /workspace/code/locomanipulation && . scripts/paths.sh     # 路径、PYTHONPATH，并读 /workspace/locomani.local.sh
-df -h /workspace; cat /sys/fs/cgroup/pids.current; timeout 30 bash scripts/cpu_headroom.sh 8; nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
-# 通道计划：只打印、不起栈（每项资源允许几条、跳过了哪些实例）
-bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml --dry-run --name plan_check
-# 默认采集（所有卡、自动通道）；--lanes 1 = 旧行为；--gpu 0,1 限卡；*_fixed_start = 只从一个地方开始
-bash scripts/start_stack.sh collect configs/experiments/warehouse_smoke.yaml --name <run>
-bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.yaml --name <run>
-# 驱动被强杀后关掉所有通道的栈
-for i in $(python3 -c "import json,sys;print(' '.join(str(l['instance']) for l in json.load(open(sys.argv[1]))['lanes']))" outputs/runs/<run>/collect/lanes.json); do bash scripts/stop_stack.sh --instance $i; done
-# 提交：make check → 按文件名 add（不要 -A）→ git commit → fetch；远端有新提交就 merge（不 rebase，TODO 里记着提交哈希）→ push
+cd /workspace/code/locomanipulation && . scripts/paths.sh
+df -h / /workspace; nvidia-smi --query-gpu=index,memory.used --format=csv,noheader; export TMPDIR=/workspace/tmp
+# Unreal：起编辑器、建关卡、看实验文件解析（只打印不起栈）
+bash scripts/start_unreal.sh --gpu 1; bash scripts/build_scene.sh warehouse_box_45x32x33 --unreal
+bash scripts/run_overnight.sh configs/experiments/warehouse_smoke_unreal.yaml --gpu 0 --render-gpu 1 --line bimanual
+bash scripts/stop_unreal.sh
+# 提交：make check → 按文件名 add（不要 -A）→ commit → fetch，远端有新提交就 merge（不 rebase）→ 用户说了才 push
 ```

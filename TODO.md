@@ -441,6 +441,8 @@
   - [x] 12.9.10 读者文档按规范补齐（用户 2026-09-29 问"有 follow 之前的规范吗"）：`running.md` 参数表和另外三处旧名 `--isaac-gpu` 改成 `--render-gpu`；warehouse runbook 的 Unreal 从"只有一张卡"里的一句话拆成第 10 节"改用 Unreal 出图"（代码块、做什么、得到什么），常见报错加两行，补渲和录像耗时标成估计；setup 第 8 步按第 7 步的格式写（验证块、Blender 烘焙和建房间关卡两条命令），安装排错加"Unreal 渲染环境"一节；术语表的镜像条目改成两种渲染器，新增 Unreal / URLab、编辑器、关卡、`$BRIDGE_PY`。页面上限 warehouse 150 → 170、setup 420 → 440（`scripts/lint_repository.py`），不为凑上限压缩。无上下文的子代理按新读者读过一遍，命令、参数、日志原文都与代码核对一致，它指出的 5 处卡点和 3 处写法已改
   - [x] 12.9.11 （2026-09-29 已改：默认 `$UNREAL_ROOT/levels`，paths.sh / paths.py 一致，有测试 `tests/test_unreal_paths.py`；本机 5 个目录挪到 `/workspace/ue_57/levels/`，用主 checkout 的场景核对 5 个关卡都通过；setup.md 排错那条已改）`$UNREAL_ASSETS` 默认在检出目录下（`assets/unreal/`），关卡却在全机共用的宿主工程里：关卡是 loco_unreal worktree 建的，主 checkout 的 `assets/unreal/` 为空，从主 checkout 起 `images.source: unreal` 会报 `source.json` 缺失（5 个场景的哈希与主 checkout 的场景一致）。建议默认改到 `$UNREAL_ROOT` 下；已转给 loco_unreal 会话
   - [x] 12.9.12 warehouse runbook 里 Isaac 和 Unreal 平行（用户 2026-09-29：Unreal 不该是排在第 10 节的附加功能，读者一开始就选渲染器）：开头加"先选渲染器"对照表；第 1、3 步和第 6 步终端 2 两种命令并排；原第 10 节删掉。新增 `warehouse_smoke_unreal.yaml`、`warehouse_200_unreal.yaml`，与默认只差 `images.source` 和 `name`（`tests/test_image_source.py`）；页面上限 170 → 195；两份文件加载、Unreal 前置检查、找到关卡都通过
+  - [ ] 12.9.13 按 setup 第 8 步和 warehouse runbook 的 Unreal 列，从零实跑一次冒烟（无上下文的读者照文档做）；目前只有 loco_unreal 会话在本机从 `setup_unreal.sh` 起验证过，引擎下载、Unreal 数据的完整采集到评测没有照文档跑过
+  - [ ] 12.9.14 待用户定：Unreal 运行的第三视角观看录像仍由 Isaac 渲（`render_isaac_videos.sh`）；Unreal 的 trace 视频还是实验脚本 `scripts/experiments/unreal_trace_video_20260928.py`，要不要接成正式脚本
   - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
 - [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存
@@ -454,6 +456,8 @@
   - [ ] 12.16.2 （用户 2026-09-29：现在不改）是否挪进仓库 `docs/` 并在 README 文档列表加一行（`outputs/` 被 git 忽略；待用户定）
 - [ ] 12.17 URLab 插件段错误（2026-09-29 两次）：客户端 `close()` 切回 live 后 `UURLabZmqPublishTransport::PostStep` 空指针；另一次在前一个客户端不 `close()` 就退出、下一个客户端发 `hello` 时。两次之前都在 PIE 里改过相机后处理（已不这么做），因果未查；镜像和视频脚本结尾都调 `close()`
 - [-] 12.18 （放弃：用户 2026-09-29 接受现在的天花板亮度）Unreal 天花板仍比 Blender 暗 60（114 对 174）：Lumen 的反弹只有 Cycles 的一半左右，增益再往上收益很小；可试色调曲线（Isaac 换 Hejl–Hable 有效）或接受（待用户定）
-- [~] 12.19 合入 main（分支会话 2026-09-29 请求；DECISIONS 2026-09-29 合并一节）：冲突 9 个文件已解；四边线换新外观、四个 `warehouse_box_<尺寸>_env` stage 已建；`make lint` 通过
-  - [ ] 12.19.1 推送 origin/main：待用户说
+- [x] 12.19 （2026-09-29 完成：第一次合并 4caadb5，第二次 `images.source: unreal` 合并 b2fd13f，之后快进 5c12f26，均已推送）合入 main（分支会话 2026-09-29 请求；DECISIONS 2026-09-29 合并一节）：冲突 9 个文件已解；四边线换新外观、四个 `warehouse_box_<尺寸>_env` stage 已建；`make lint` 通过
+  - [x] 12.19.1 （2026-09-29 用户说推送，已推送；origin/main 现为 fc28d1d）推送 origin/main：待用户说
   - [x] 12.19.2 视频是否对 ≥ 1280×960 的尺寸跳过超采样——用户 2026-09-29 定：不跳，视频照用场景的 2×。实测（`outputs/merge_check_loco_unreal_20260929/`，GPU0，`warehouse_smoke_edges_20260928` 的 `visual_crate_s7000_01`，22.5 s 画面、281 帧、带小窗）：整条 5.0 分钟，Isaac 286 s，约 1.0 s/帧；main 台账第 2 节 1× 时 66 s 画面 249 s、约 0.6 s/帧，约 1.7 倍。`docs/warehouse.md` 的录像 7 → 10 分钟、补渲 1 → 3 分钟、总计 40 → 50 分钟是按这组数和 209 ms/次推算的，下次冒烟实跑时核对
+  - [ ] 12.19.3 下次 warehouse 冒烟实跑时核对 runbook 里按 2× 超采样估计的耗时：Isaac 补渲每局约 3 分钟、评测录像每局约 10 分钟、全程约 50 分钟（页面上标着"估计"，实测后改成实测值）
+  - [ ] 12.19.4 待用户定：`outputs/merge_check_loco_unreal_20260929/`（66 MB，合并后 `_env` stage 的实渲核对）是否保留
