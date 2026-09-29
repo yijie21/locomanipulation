@@ -15,8 +15,9 @@
 
 ## 卡点 / 待验证
 
-- 已知：配对数受基线抓取率限制（8.4.1）；agent 对 `held` 过期的对账靠 place 的守卫报错才发生（8.4.2 待用户定）。
-- 已知：`nudge` 会清 `stance`，agent 每次 nudge 后再抓都被拒；是否让 grasp 容忍 nudge 后的小位移待用户定。
+- 已确认：8.3.4 的两处（`STRAFE_YAW`、`placing_band`）方向对但救不了在等待里滑掉的罐头；配对比较在"抓着东西跨过一次决策"的任务上无法区分 agent 与脚本，直到 8.3.5 定下。
+- 假设（未测）：第一轮"7/7 在持罐转向时掉"也是同一蠕变机制（转向前已滑 3 cm）；executor 保持步（深合爪 / 周期重抬）能否压住蠕变未测。
+- 已知：`kill -INT` 停不掉 `plan_episode.py`（claude -p 子进程吞了信号），要按 pid TERM runner / sim / deploy 三个进程。
 - 已知坑（沿用）：`pgrep -f` / `pkill -f` 在 shell 链里自匹配（本会话两次中招：等待循环永不退出、pkill 杀掉自己的 shell）；用脚本文件 + `grep -v pgrep`。
 
 ## 下一步（TODO）
