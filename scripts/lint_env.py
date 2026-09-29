@@ -79,6 +79,12 @@ WHITELIST = {
     "SIMPLE_PIN",
     "RENDER_PY",
     "ISAAC_ASSETS",
+    # The Unreal install (images.source unreal), resolved in paths.py like the Isaac render paths above.
+    "UNREAL_ROOT",
+    "UE_ENGINE",
+    "UE_PROJECT",
+    "BRIDGE_PY",
+    "UNREAL_ASSETS",
     "SCENE_META",
     "SCENE_XML",
     "TF_FRAME_AUDIT_PATH",

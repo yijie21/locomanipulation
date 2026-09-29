@@ -52,21 +52,24 @@ flowchart TD
 ## 图像来源（images.source）
 
 实验文件的 `images.source` 决定**策略看到的相机图由哪个渲染器画**。训练集和闭环评测永远用同一个：
-换了渲染器，策略面对的就是训练里没见过的画面。物理、控制和专家都不受它影响——专家不看 Isaac 图，Isaac 只出图。
+换了渲染器，策略面对的就是训练里没见过的画面。物理、控制和专家都不受它影响——专家不看 Isaac / Unreal 图，它们只出图。
 
-| | `mujoco` | `isaac` |
-|---|---|---|
-| 画面 | MuJoCo 自带的 OpenGL 渲染，与物理同一个模型 | Isaac Sim RTX 渲染同一时刻的状态，场景另有一份 USD（Isaac stage），光照和材质更接近真实 |
-| 采集时 sim 出不出图 | `backend.render: live` 实时出；`offline` 不出，事后补 | 必须 `offline`，采集时不出图 |
-| 数据集相机（convert 之前） | `offline` 时由 `render_dataset_cameras.sh` 从 trace 补渲（只渲成功局） | 由 `render_dataset_cameras_isaac.sh` 用 Isaac 从 trace 补渲（只渲成功局、只渲 25 Hz 取到的行） |
-| 闭环评测时策略的图 | eval sim 自己实时渲（eval 栈强制 `live`） | eval sim 不渲（强制 `offline`），另起 [Isaac 镜像](#vla-闭环的-isaac-画面按需镜像)，策略要图时按 sim 此刻的状态渲 |
-| 额外需要 | — | [安装](setup.md)第 7 步；场景在 `configs/scenes.yaml` 有 `isaac` 条目且已建 stage；第二张 GPU |
-| 能用的场景 | 全部 | `warehouse_textured`、`warehouse_box_45x*`、`box_platform` |
+| | `mujoco` | `isaac` | `unreal` |
+|---|---|---|---|
+| 画面 | MuJoCo 自带的 OpenGL 渲染，与物理同一个模型 | Isaac Sim RTX 渲染同一时刻的状态，场景另有一份 USD（Isaac stage），光照和材质更接近真实 | Unreal 5.7（URLab 插件）渲染同一时刻的状态：Blender 烘焙的房间关卡，Lumen 全局光照 |
+| 采集时 sim 出不出图 | `backend.render: live` 实时出；`offline` 不出，事后补 | 必须 `offline`，采集时不出图 | 同 `isaac` |
+| 数据集相机（convert 之前） | `offline` 时由 `render_dataset_cameras.sh` 从 trace 补渲（只渲成功局） | 由 `render_dataset_cameras_isaac.sh` 用 Isaac 从 trace 补渲（只渲成功局、只渲 25 Hz 取到的行） | 由 `render_dataset_cameras_unreal.sh` 在运行中的编辑器里补渲（同上；每行约 130 ms） |
+| 闭环评测时策略的图 | eval sim 自己实时渲（eval 栈强制 `live`） | eval sim 不渲（强制 `offline`），另起 [Isaac 镜像](#vla-闭环的-isaac-画面按需镜像)，策略要图时按 sim 此刻的状态渲 | 同 `isaac`，镜像是 `run_unreal_mirror.sh`（同一协议、同一端口） |
+| 额外需要 | — | [安装](setup.md)第 7 步；场景在 `configs/scenes.yaml` 有 `isaac` 条目且已建 stage；第二张 GPU | [安装](setup.md)里可选的 Unreal 一步；`bash scripts/start_unreal.sh --gpu N` 起编辑器；场景有 `unreal` 条目且关卡已建（`build_scene.sh <场景> --unreal`） |
+| 能用的场景 | 全部 | `warehouse_textured`、`warehouse_box_45x*`、`box_platform` | `warehouse_textured`、`warehouse_box_45x*`；其余场景没有房间可烘焙，条目里写明不支持，加载实验文件时就拒绝 |
 
-两个补渲脚本和镜像用同一组相机（ego + 左右腕，`CAMERA_CONFIGS`）；Isaac 补渲和镜像还是同一个渲染函数
-（`IsaacView`）、同一个 stage、同一组外观设置（`configs/scenes.yaml` 的 `rtx_settings` 和 `supersample`），所以"同一个状态 → 同一张图"。
-convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 配 `backend.render: live`）
-加载实验文件时就拒绝。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步。
+补渲脚本和镜像用同一组相机（ego + 左右腕，`CAMERA_CONFIGS`）；同一渲染器的补渲和镜像还是同一个渲染对象
+（`IsaacView` / `UnrealView`）、同一份场景、同一组外观设置（Isaac：`configs/scenes.yaml` 的 `rtx_settings` 和 `supersample`；
+Unreal：关卡里的后处理体积和 `repeats`），所以"同一个状态 → 同一张图"。行的选取、占位帧的覆盖和 marker 是两者共用的
+`src/locomani/sim/view_render.py`，镜像协议是共用的 `src/locomani/sim/mirror.py`。
+convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 或 `unreal` 配 `backend.render: live`）
+加载实验文件时就拒绝。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步；Unreal 的编辑器、关卡与坑见
+[Unreal 交接文档](handoff/unreal-urlab-20260928.md)。
 
 ## 采集时记录什么
 
@@ -188,7 +191,7 @@ bash scripts/setup_render_runtime.sh --deep
 - 深色件是头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指。这正好是 MJCF 里 rgba < 0.4 的那些网格，所以由 MJCF 颜色决定用哪种材质。
 - 和官方一样，外壳是拉丝金属：metallic 1，roughness 0.75。金属会映出周围环境，所以在 warehouse 的深色地面和黑货架旁边，外壳比同反照率的漆暗一些。
   用户 2026-09-29 在两者之间选了金属。对照静帧和视频见 `outputs/isaac_g1_colour_20260929/`。
-- Unreal 用同一组数值（`unreal_robot_materials_20260928.py` 的 `unitree` 预设）。
+- Unreal 用同一组数值（`src/locomani/sim/unreal/in_editor/robot_materials.py` 的 `unitree` 预设）。
 - MJCF 的 rgba 不能直接当颜色用：它是显示值（MuJoCo 不做 gamma），RTX 却按线性值读。2026-09-29 之前就是直接用的，0.2 显示成 0.48，整台发白。URLab 导入是同一个问题。
 - 另一个同期修掉的问题：importer 按 body 名给可视 prim 命名（`left_dex1_finger_1_link`），而颜色表原先只按网格名查（`Dex1_finger_link_1`）。结果 4 根 Dex1 手指全落到默认的近白色。
 - 材质改动会同时改变镜像、数据集补渲和视频里的机器人像素。之前用 Isaac 图训练的 checkpoint 看的是发白的旧外观。
@@ -443,7 +446,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 | `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_videos.sh`（Isaac 并排） |
 | Isaac 图像作为 VLA 闭环的输入 | 已实现按需镜像（`images.source: isaac` + `scripts/run_isaac_mirror.sh`，见[上文](#vla-闭环的-isaac-画面按需镜像)）；warehouse checkpoint-5000 已真实闭环 10 局（台账 crate.md 2026-09-27）；专家仍读 MuJoCo |
 | Isaac 图作为 VLA 训练图 | 已实现：`images.source: isaac` 的运行在 convert 前跑 `scripts/render_dataset_cameras_isaac.sh`，把 Isaac 图写进 session 替换占位帧（见[图像来源](#图像来源imagessource)） |
-| Unreal（URLab）代替 Isaac 出图 | **实验中，还不能用 `images.source` 选择**：只有 warehouse 房间做了关卡，按需镜像和 trace 视频是 `scripts/experiments/unreal_*` 实验脚本，还没有 Unreal 的数据集补渲；UE 和插件补丁装在 git 外面。命令和坑见 [Unreal 交接文档](handoff/unreal-urlab-20260928.md)，接成开关是 TODO 12.9 |
+| Unreal（URLab）出策略的图 | 已接通（2026-09-29）：`images.source: unreal`，命令见[图像来源](#图像来源imagessource)；有关卡的场景是 `warehouse_textured` 和四个 `warehouse_box_45x*`。验证过数据集补渲 + convert（2 集）和 3 局 lockstep 闭环（3/3，用的是 Isaac 训练的 checkpoint-5000，所以存在分布偏移，这个数字不能和 Isaac 的直接比）；还没有用 Unreal 图训练过。安装见 [setup.md](setup.md) 第 8 步，编辑器和坑见 [Unreal 交接文档](handoff/unreal-urlab-20260928.md) |
 
 补渲之外的 Isaac 画面（并排预览、`isaac_render` 直接渲的 ego）只用于检查。要让训练用 Isaac 图，走上面的补渲，
 不要手工替换 session 里的视频：补渲按 exporter 每行记下的 seq 取状态，并在 session 里记下渲染器，convert 据此核对来源。

@@ -112,8 +112,9 @@ def test_the_async_client_engages_the_deploy_it_then_refuses_to_command():
 def test_the_image_source_is_a_closed_choice_and_isaac_now_runs_on_either_clock():
     assert EvalConfig().image_source == "mujoco"
     assert EvalConfig().with_overrides(["image_source=isaac"]).image_source == "isaac"
+    assert EvalConfig().with_overrides(["image_source=unreal"]).image_source == "unreal"  # TODO 12.9, 2026-09-29
     with pytest.raises(ValueError, match="not in"):
-        EvalConfig().with_overrides(["image_source=unreal"])
+        EvalConfig().with_overrides(["image_source=blender"])
     # 2026-09-27: the bimanual lockstep client asks the mirror for the frozen boundary's seq, so the pairing
     # that was refused at load is the plan's target model; the single-arm evaluator still refuses it (below).
     both = EvalConfig.from_dict({"client": "lockstep", "image_source": "isaac", "latency_frames": 2})

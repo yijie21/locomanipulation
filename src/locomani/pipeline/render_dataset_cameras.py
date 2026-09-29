@@ -21,10 +21,10 @@ Episodes done are recorded in `<session>/meta/offline_render.json`, so a re-run 
 offline run while any episode it reads still has its placeholder frames -- black frames would otherwise train
 silently (the converter reuses the last decoded frame when one is missing, and black frames decode fine).
 
-The marker also names its `renderer`. `locomani.sim.isaac.render_dataset_cameras` fills the same placeholders
-with Isaac pictures, and a run whose policy is evaluated on Isaac images (`images.source: isaac`) is
-converted only from Isaac-rendered sessions, every other offline run only from MuJoCo-rendered ones: training
-and closed-loop images must be one function of the state (DECISIONS 2026-09-24).
+The marker also names its `renderer`. `locomani.sim.isaac.render_dataset_cameras` and
+`locomani.sim.unreal.render_dataset_cameras` fill the same placeholders with Isaac / Unreal pictures (both through
+`locomani.sim.view_render`), and a run is converted only from sessions its `images.source` renderer filled:
+training and closed-loop images must be one function of the state (DECISIONS 2026-09-24).
 """
 
 from __future__ import annotations
@@ -89,6 +89,14 @@ def renderer_of(session: Path) -> str | None:
     return json.loads(marker.read_text()).get("renderer", "mujoco") if marker.exists() else None
 
 
+# The script that fills an offline run's placeholders, per `images.source`.
+RENDER_SCRIPT = {
+    "mujoco": "render_dataset_cameras.sh",
+    "isaac": "render_dataset_cameras_isaac.sh",
+    "unreal": "render_dataset_cameras_unreal.sh",
+}
+
+
 def expected_renderer(cfg: dict) -> str:
     """The renderer the dataset's images must come from: the run's `images.source`, which the closed loop uses too."""
     return run_context.migrate_images(cfg)["images"]["source"]
@@ -99,7 +107,7 @@ def require_rendered(cfg: dict, sessions: list[str]) -> None:
     if cfg.get("backend", {}).get("render") != "offline":
         return
     want = expected_renderer(cfg)
-    script = "render_dataset_cameras_isaac.sh" if want == "isaac" else "render_dataset_cameras.sh"
+    script = RENDER_SCRIPT[want]
     wrong = sorted(Path(s).name for s in sessions if renderer_of(Path(s)) not in (None, want))
     if wrong:
         raise SystemExit(
@@ -187,10 +195,11 @@ def main(argv: list[str] | None = None) -> int:
     if not cfg.get("collect", {}).get("record", True):
         print(f"{run_dir.name}: collect.record is false; no exporter session was recorded, nothing to render")
         return 0
-    if expected_renderer(cfg) != "mujoco":
+    source = expected_renderer(cfg)
+    if source != "mujoco":
         raise SystemExit(
-            f"{run_dir.name}: images.source is isaac, so its dataset cameras are Isaac's to render: "
-            "scripts/render_dataset_cameras_isaac.sh"
+            f"{run_dir.name}: images.source is {source}, so its dataset cameras are {source}'s to render: "
+            f"scripts/{RENDER_SCRIPT[source]}"
         )
     from locomani.pipeline.world_lift import RunTraces
 

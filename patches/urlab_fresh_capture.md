@@ -50,7 +50,7 @@ Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`.
 - Where a capture's ~23 ms goes: ProfileGPU of an editor frame after a pose change shows ShadowDepths 14 ms of 18. Each
   of the warehouse's six RectLights re-renders a 1024^2 Nanite cube shadow map (6 faces x ~0.36 ms). With the lights'
   shadows off a capture costs 4.2 ms, but the image loses every contact shadow. The robot is not the cost: with its
-  meshes non-Nanite (`scripts/experiments/unreal_no_nanite_20260928.py` with SCOPE "robot") a capture still costs 23-25 ms, and the
+  meshes non-Nanite (`src/locomani/sim/unreal/in_editor/no_nanite.py` with SCOPE "robot") a capture still costs 23-25 ms, and the
   robot's share of the shadow pass is 0.3 ms. The rest (13.3 ms) is the Nanite cube pass. For every face of every
   shadowed light, UE runs the whole Nanite shadow pipeline (`ShadowDepthRendering.cpp`, "Nanite Cubemap"). A cache
   mode only hides static geometry; it never skips the pass. That costs ~0.37 ms per face, 36 faces, whatever is
@@ -73,7 +73,7 @@ The host project needs these in `Config/`:
 - `DefaultEditorSettings.ini`: `bThrottleCPUWhenNotForeground=False`. A headless editor is never foreground and drops to about 9 fps.
 - `DefaultEngine.ini` `[ConsoleVariables]`: `urlab.FreshCaptureRepeats`, `urlab.CameraNearClipCm=2.0` and
   `r.Shadow.Nanite=0` (render default since 2026-09-28, together with non-Nanite meshes: run
-  `scripts/experiments/unreal_no_nanite_20260928.py` after every URLab import).
+  `src/locomani/sim/unreal/in_editor/no_nanite.py` after every URLab import).
 
 Apply and rebuild:
 

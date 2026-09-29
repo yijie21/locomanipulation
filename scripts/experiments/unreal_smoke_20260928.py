@@ -72,7 +72,7 @@ def require_render_defaults() -> None:
         raise SystemExit(f"[render-defaults] cannot ask the editor (ue_cmd_server on :18801): {exc}") from exc
     problems = []
     if int(count):
-        problems.append(f"{count} Nanite meshes ({names}): run scripts/experiments/unreal_no_nanite_20260928.py")
+        problems.append(f"{count} Nanite meshes ({names}): run src/locomani/sim/unreal/in_editor/no_nanite.py")
     if int(shadow):
         problems.append(f"r.Shadow.Nanite {shadow}: the host project's DefaultEngine.ini sets 0")
     if int(viewport):

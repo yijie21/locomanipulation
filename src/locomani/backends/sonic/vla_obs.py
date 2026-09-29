@@ -13,6 +13,7 @@ import numpy as np
 from locomani.backends.sonic.sonic_token import snap
 from locomani.backends.sonic.vla_config import DEFAULT_VLA, LIFT_M, NEAR_M, STALL_ABORT_M, VlaConfig
 from locomani.schema import SONIC_BOTTLE
+from locomani.sim.mirror import MIRRORED_SOURCES
 
 
 def _tstart_view(p, st, obj_key, prelude, gx=0.80, gy=0.90):
@@ -85,12 +86,12 @@ class ObsBuilder:
 
         state_port = int(os.environ.get("TF_OUT_PORT", 5557))
         # `VlaConfig.image_source`. "mujoco": the sim's camera stream, read whenever it has a new frame.
-        # "isaac": the Isaac mirror renders the sim's newest state on each build(), after the
-        # proprioception is read, so the images and the state are the same instant.
+        # "isaac" / "unreal": that renderer's mirror (one protocol, locomani.sim.mirror) renders the sim's newest
+        # state on each build(), after the proprioception is read, so the images and the state are the same instant.
         self.cam = self.mirror = None
-        if image_source == "isaac":
+        if image_source in MIRRORED_SOURCES:
             from locomani.sim import ports
-            from locomani.sim.isaac.mirror import MirrorClient
+            from locomani.sim.mirror import MirrorClient
 
             self.mirror = MirrorClient(ports.isaac_mirror())
         elif image_source == "mujoco":
@@ -99,7 +100,7 @@ class ObsBuilder:
             cam_port = int(os.environ.get("TF_CAMERA_PORT", 5555))
             self.cam = ComposedCameraClientSensor(server_ip="localhost", port=cam_port)
         else:
-            raise ValueError(f"image_source {image_source!r} is neither 'mujoco' nor 'isaac'")
+            raise ValueError(f"image_source {image_source!r} is not 'mujoco', 'isaac' or 'unreal'")
         self.image_meta = None  # the mirror's reply header for the images the last build() used
         self.state = ZMQStateSubscriber(host="localhost", port=state_port)
         self.rm = get_g1_robot_model()
@@ -123,7 +124,7 @@ class ObsBuilder:
         """Ask the mirror for this instant's images (state `seq` when given); False (and why, printed) if not."""
         got = self.mirror.render() if seq is None else self.mirror.render(seq)
         if got is None:
-            print(f"[vla] isaac mirror: {self.mirror.last_error}", flush=True)
+            print(f"[vla] mirror: {self.mirror.last_error}", flush=True)
             return False
         self._last_img, self.image_meta = got
         return True

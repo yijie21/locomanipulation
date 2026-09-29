@@ -33,6 +33,7 @@ import numpy as np
 from locomani.backends.sonic import initial_pose
 from locomani.backends.sonic.agent_server import HAND_OPEN
 from locomani.backends.sonic.sonic_token import GRIPPER_MAX, expand_hands, hand_from_gripper
+from locomani.sim.mirror import MIRRORED_SOURCES
 from locomani.tasks.crate.expert import facing_edge, start_placement
 from locomani.tasks.crate.visual_approach import approach_heading
 from locomani.tasks.crate.vla_rounds import CLOSE_THRESHOLD, RoundScore, takeover_sample
@@ -155,7 +156,7 @@ class Latency:
 def observe(sess: Session, obs_src, rep: dict, image_source: str, last_index):
     """The policy's observation at the boundary `rep` closed; (obs, trace fields, the deploy state's index)."""
     proprio = obs_src.settle_proprio(last_index)
-    if image_source == "isaac":
+    if image_source in MIRRORED_SOURCES:
         obs = obs_src.build(seq=rep["priv_seq"])
     else:
         if rep.get("images") is None:
@@ -163,7 +164,7 @@ def observe(sess: Session, obs_src, rep: dict, image_source: str, last_index):
         obs = obs_src.build(images=rep["images"])
     if obs is None:
         raise RuntimeError("observation incomplete at the boundary")
-    image = obs_src.image_meta if image_source == "isaac" else None
+    image = obs_src.image_meta if image_source in MIRRORED_SOURCES else None
     fields = dict(boundary_seq=rep.get("priv_seq"), proprio_index=proprio.get("index"))
     if image is not None:
         fields["image"] = {k: image.get(k) for k in ("seq", "t", "state_age_s", "render_ms")}

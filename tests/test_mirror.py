@@ -1,4 +1,4 @@
-"""The Isaac mirror's request loop and client (locomani.sim.isaac.mirror), without Kit.
+"""The mirror protocol's request loop and client (locomani.sim.mirror) and the Isaac server's run check, without Kit.
 
 The server half is driven with a stand-in view: what is under test is the protocol -- which
 state a render uses, what an error looks like, that a client survives a mirror that never
@@ -13,8 +13,9 @@ import numpy as np
 import pytest
 import zmq
 
+from locomani.sim import mirror as M
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
-from locomani.sim.isaac import mirror as M
+from locomani.sim.isaac import mirror as isaac_mirror
 
 NQ = 5
 
@@ -152,7 +153,7 @@ def test_a_client_outlives_a_mirror_that_never_answered():
 def test_the_mirror_refuses_a_run_whose_policy_would_never_ask_it(tmp_path):
     (tmp_path / "config.yaml").write_text(json.dumps({"eval": {"client": "async"}, "collect": {"instance": 0}}))
     with pytest.raises(SystemExit, match="images.source is 'mujoco'"):
-        M.main([str(tmp_path), "--gpu", "1", "--dry-run"])
+        isaac_mirror.main([str(tmp_path), "--gpu", "1", "--dry-run"])
 
 
 def test_a_lockstep_request_names_the_boundary_state_and_the_mirror_renders_exactly_it(mirror):

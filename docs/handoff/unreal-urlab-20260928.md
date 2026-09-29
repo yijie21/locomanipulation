@@ -1,96 +1,66 @@
-# Unreal（URLab）渲染线：产物、命令、坑（分支 `loco_unreal`，2026-09-28）
+# Unreal（URLab）渲染线：产物、命令、坑（2026-09-28 起；2026-09-29 接成 `images.source: unreal`）
 
 `STATE.md` 只写进度和下一步，本文件放可以直接照抄执行的命令和路径。
-决策与被否决的方案见 `DECISIONS.md` 的 2026-09-28、2026-09-29 各两节，待办见 `TODO.md` 第 12 节（2026-09-29 合入 main 时由第 10 节改号，台账 `blender_scenes.md` 的分支各节同时顺延为第 4–8 节）。
+决策与被否决的方案见 `DECISIONS.md` 2026-09-28、2026-09-29 各节，待办见 `TODO.md` 第 12 节。
+怎么选 Unreal 出图、和 Isaac 的对照见 [rendering.md](../rendering.md#图像来源imagessource)；安装见 [setup.md](../setup.md) 第 8 步。
 
-## 产物位置
+## 代码与产物位置
 
-- UE：`/workspace/ue_57/`
-  - `UE_5.7.4/` 是引擎
-  - `projects/URLabSmoke/` 是宿主工程：
-    - `Config/DefaultEngine.ini`：`r.Shadow.Nanite=0`、`urlab.FreshCaptureRepeats=8`、`urlab.CameraNearClipCm=2.0`；
-      `EditorStartupMap=/Game/Levels/Warehouse`，编辑器一启动就打开 warehouse 关卡（2026-09-29）
-    - `Config/DefaultEditorSettings.ini`：`bSendUnattendedBugReports=False`、`bSendUsageData=False`，崩溃报告不再上传 Epic（2026-09-29）
-    - 编辑器视口关闭（`ShowFlag.Rendering 0`）由 `/workspace/ue_57/ue_cmd_server.py` 在启动时设。`ShowFlag.*` 是作弊类 cvar，工程 ini 设不了
-    - 插件在 `Plugins/UnrealRoboticsLab`，分支 `loco-fresh-capture`；改动未提交，补丁在 `patches/urlab_fresh_capture.patch`
-  - `urlab_bridge/.venv` 是 Python 客户端，mujoco 3.10.0
-  - `logs/`：`editor_run.log`、`guard.log`
-  - `backups/`：房间原 Nanite 网格、原 `DefaultEngine.ini`
-- MJCF：`outputs/unreal_warehouse_20260928/mjcf/`
-  - `dynamic.xml`：机器人 + 纸箱 + 三个数据集相机 + `reverse_room`（1280×960）
-  - `scene.xml`：MuJoCo 参考用的完整场景
-- Blender 房间：`outputs/unreal_warehouse_20260928/room/`（`room.glb`、`room_scene.json`）
-- 视频：`outputs/unreal_warehouse_20260928/vla_round/`
-  - `unreal_vs_mujoco_preview_part{1,2}of2.mp4`：镜像实时取的图，约 1.4 张/秒，一顿一顿
-  - `dataset_cams/`：trace 补渲 8 遍，Nanite
-  - `dataset_cams_stream/`：stream，Nanite
-  - `dataset_cams_default/`：现默认（无 Nanite + stream，42 ms/帧）
-  - `third_person/previews/`：Unreal / Isaac / MuJoCo 第三视角
-- 测速与 A/B：`outputs/unreal_render_speed_20260928/`
-  - 各配置的 `bench.json`
-  - `i_nanite_shadows/`：无 Nanite 的耗时 + 画面 A/B；另有 `ue_up.sh`，一键开编辑器 + 导入
-  - `j_viewport_quality/summary.txt`：视口开/关各对 64 遍参考
-  - `k_default_check/`：默认生效的验证
+- 正式代码 `src/locomani/sim/unreal/`（在 `$BRIDGE_PY` 里跑）：
+  - `editor.py`：向运行中的编辑器发 Python（TCP :18801）、开关卡、查出图默认值（无 Nanite 网格、`r.Shadow.Nanite 0`、视口关）
+  - `view.py`：`UnrealView`，镜像和数据集补渲共用的出图对象（每次 fresh，截 `repeats` 遍）
+  - `mirror.py` / `render_dataset_cameras.py`：评测镜像、数据集补渲；协议和补渲流程与 Isaac 共用（`sim/mirror.py`、`sim/view_render.py`）
+  - `export_mjcf.py` / `build_level.py`：场景 → 机器人 + 纸箱 + 三路数据集相机的 MJCF → 该场景的关卡
+  - `in_editor/`：在编辑器里跑的脚本（命令服务、清导入、G1 材质、去 Nanite、房间关卡）
+- 脚本：`scripts/start_unreal.sh` / `stop_unreal.sh`（`scripts/unreal/editor_guard.sh` 看守：限 4 核、CPU 打满或 GPU 卡死就杀）、
+  `run_unreal_mirror.sh`、`render_dataset_cameras_unreal.sh`、`setup_unreal.sh`（宿主工程模板 `scripts/unreal/host/`）、
+  `scripts/unreal/warehouse_bake.py`（在 Blender 里烘焙房间）
+- 本机安装 `$UNREAL_ROOT=/workspace/ue_57`（`/workspace/locomani.local.sh` 指过去；按 setup 装的机器默认 `third_party/unreal/`）：
+  - `UE_5.7.4/` 引擎；`projects/URLabSmoke/` 宿主工程（插件 `Plugins/UnrealRoboticsLab` 在本地分支 `loco-fresh-capture`，提交 `58c8a98` = `efbc5e2` + 补丁）
+  - `urlab_bridge/.venv` 客户端（`$BRIDGE_PY`，mujoco 3.10.0）；`logs/`（`editor_run.log`、`guard.log`）；`backups/`（房间原 Nanite 网格、原 ini）
+  - 关卡：`/Game/Levels/Warehouse` 是房间关卡（无机器人）；每个场景一个 `/Game/Levels/<场景名>`（2026-09-29 建了 warehouse_textured 和四个 warehouse_box_*）
+- 每个场景导出的 MJCF 和 `source.json`（场景 XML 的哈希）：`assets/unreal/<场景名>/`
+- 实验脚本（诊断用）：`scripts/experiments/unreal_{smoke,trace_video,capture_bench,pose_set,g1_lookdev,export_mjcf}_20260928.py`
+- 09-28/29 的测速、A/B、对 Blender 标定：`outputs/unreal_render_speed_20260928/`、`outputs/unreal_blender_match_20260929/`；
+  接成开关时的验证：`outputs/unreal_images_source_20260929/`
 
 ## 关键命令
 
 ```bash
-. /workspace/ue_57/ue_env.sh
-cd /workspace/code/locomanipulation-loco_unreal
-M=$PWD/outputs/unreal_warehouse_20260928/mjcf
-T=/workspace/code/locomanipulation/outputs/runs/unreal_eval_20260928/eval/state_trace/crate_vla_000_state_trace.npz
-# 1. 编辑器（4 核 + 看守，TCP 命令服务 :18801）：杀旧的（连看守一起）→ 起 → 等就绪
-for p in $(pgrep -f '^bash /workspace/ue_57/guarded_editor.sh') $(pgrep -f '^/workspace/ue_57/UE_5.7.4/'); do kill -KILL $p; done
-UE_EXEC_CMDS="py /workspace/ue_57/ue_cmd_server.py" bash /workspace/ue_57/guarded_editor.sh 0 > /workspace/ue_57/logs/guard.log 2>&1 &
-until grep -q 'uecmd\] listening' /workspace/ue_57/logs/editor_run.log; do sleep 2; done
-# 2. 只在 MJCF（dynamic.xml）变了时重新导入：清旧导入 → 导入机器人 + 纸箱 → 材质 → 去 Nanite（不跑最后这步，镜像和视频拒绝出图）。
-#    setup 会把蓝图存盘（2026-09-29 起），所以平时开编辑器就能直接出图，不用再跑这一步
-python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_clear_import_20260928.py
-"$BRIDGE_PY" scripts/experiments/unreal_smoke_20260928.py setup --xml $M/dynamic.xml --existing-level /Game/Levels/Warehouse
-python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_robot_materials_20260928.py
-python3 /workspace/ue_57/uepy.py -f scripts/experiments/unreal_no_nanite_20260928.py
-# 3a. 闭环：栈 + 策略服务起来后，用 Unreal 镜像替代 Isaac 镜像（端口取栈的 TF_PRIVILEGED_PORT / TF_ISAAC_MIRROR_PORT）
-MUJOCO_GL=egl "$BRIDGE_PY" scripts/experiments/unreal_mirror_20260928.py --sim-scene <run>/warehouse_textured/scene_locomani.xml \
-    --privileged-port 5601 --mirror-port 5578 --out <run>/eval/unreal
-# 3b. 某局 trace 按仿真时间补渲（上 Unreal、下 MuJoCo），默认 --mode stream；第三视角用 --camera reverse_room
-MUJOCO_GL=egl "$BRIDGE_PY" scripts/experiments/unreal_trace_video_20260928.py --xml $M/scene.xml --trace $T \
-    --trace-joints $M/scene_joints.json --camera head_camera,left_wrist,right_wrist --stride 2 --out <dir>
-# 4. 测速：模式:相机:遍数
-"$BRIDGE_PY" scripts/experiments/unreal_capture_bench_20260928.py --trace $T --trace-joints $M/scene_joints.json \
-    --configs fresh:all:1 fresh:all:8 stream:all:1 --out <dir>
-# 5. 画面 A/B：同一会话每种设置渲两次（a、b）当噪声底；--repeats 64 作收敛参考
-"$BRIDGE_PY" scripts/experiments/unreal_pose_set_20260928.py render --trace $T --trace-joints $M/scene_joints.json --out <dir> --tag x_a [--cvar ...] [--repeats N]
-"$BRIDGE_PY" scripts/experiments/unreal_pose_set_20260928.py compare --out <dir> --tags x_a x_b y_a [--ref ref64]
-# GPU profile：发 ProfileGPU，从 editor_run.log 读表
-python3 /workspace/ue_57/uepy.py "unreal.SystemLibrary.execute_console_command(None, 'ProfileGPU')"
-# 改插件后重编（先杀 UE），约 25 s；改完重新生成补丁
-bash "$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh" URLabSmokeEditor Linux Development "-Project=$UE_PROJECT" -WaitMutex
-git -C "$URLAB_ROOT" diff efbc5e2 > patches/urlab_fresh_capture.patch
-# 只改现有关卡的自发光材质或后处理体积（先停 PIE；变量名见脚本开头，WAREHOUSE_EMISSIVE_ONLY / WAREHOUSE_EXPOSURE_ONLY）
-python3 /workspace/ue_57/uepy.py "import os; os.environ.update(WAREHOUSE_DIR='$PWD/outputs/unreal_warehouse_20260928/room', WAREHOUSE_EXPOSURE_ONLY='1')
-try: exec(open('$PWD/scripts/experiments/unreal_warehouse_level_20260928.py').read(), {'__name__': '__main__'})
-finally: os.environ.pop('WAREHOUSE_EXPOSURE_ONLY')"
+. scripts/paths.sh
+bash scripts/start_unreal.sh --gpu 1                     # 常驻编辑器；已在跑就直接返回
+bash scripts/build_scene.sh warehouse_textured --unreal  # 场景 MJCF 变了才重建；建好的关卡存盘，重开编辑器不用再导入
+bash scripts/render_dataset_cameras_unreal.sh outputs/runs/<run>        # 数据集补渲（convert 之前）
+bash scripts/run_unreal_mirror.sh outputs/runs/<run>                    # 评测镜像（栈起来之后、跑局之前）
+bash scripts/run_overnight.sh <实验.yaml> --gpu 0 --render-gpu 1 --line bimanual   # 整条线，按 images.source 选渲染器
+bash scripts/stop_unreal.sh
+# 在编辑器里跑 Python / 一个编辑器侧脚本
+"$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_engine_version())'
+"$BRIDGE_PY" -m locomani.sim.unreal.editor -f src/locomani/sim/unreal/in_editor/no_nanite.py
+# 房间关卡（只在改了 Blender 烘焙之后）；只改它的自发光或后处理体积：把 WAREHOUSE_EMISSIVE_ONLY / WAREHOUSE_EXPOSURE_ONLY 设为 1
+"$BRIDGE_PY" -m locomani.sim.unreal.build_level --room outputs/unreal_warehouse_20260928/room
 # 对 Blender 参考图标定（reverse_room；每个候选重启一次 PIE）
 "$BRIDGE_PY" outputs/unreal_blender_match_20260929/match.py --tag <tag> --candidates base 'b4:lumen_diffuse_color_boost=4'
-# 重建 warehouse 关卡（改了 Blender 烘焙之后；导入时已关 Nanite）
-WAREHOUSE_DIR=$PWD/outputs/unreal_warehouse_20260928/room UE_EXEC_CMDS="py /workspace/ue_57/ue_cmd_server.py, py $PWD/scripts/experiments/unreal_warehouse_level_20260928.py" \
-    bash /workspace/ue_57/guarded_editor.sh 0 > /workspace/ue_57/logs/guard.log 2>&1 &
+# 诊断（实验脚本）：trace 视频（默认 stream）、测速、同一会话画面 A/B（--repeats 64 作收敛参考）、GPU profile
+"$BRIDGE_PY" scripts/experiments/unreal_trace_video_20260928.py --xml <scene.xml> --trace <npz> --trace-joints <json> --camera reverse_room --out <dir>
+"$BRIDGE_PY" scripts/experiments/unreal_capture_bench_20260928.py --trace <npz> --trace-joints <json> --configs fresh:all:8 --out <dir>
+"$BRIDGE_PY" scripts/experiments/unreal_pose_set_20260928.py render --trace <npz> --trace-joints <json> --out <dir> --tag x_a
+"$BRIDGE_PY" -m locomani.sim.unreal.editor "unreal.SystemLibrary.execute_console_command(None, 'ProfileGPU')"
+# 改插件后重编（先 stop_unreal），约 25 s；改完重新生成补丁
+bash "$UE_ENGINE/Engine/Build/BatchFiles/Linux/Build.sh" URLabSmokeEditor Linux Development "-Project=$UE_PROJECT" -WaitMutex
+git -C "$(dirname "$UE_PROJECT")/Plugins/UnrealRoboticsLab" diff efbc5e2 > patches/urlab_fresh_capture.patch
 ```
-
-一局 Unreal 闭环评测的完整流程：
-1. `make_runs.py <run> collect.instance=2 ... policy_port=5720 images=isaac`
-2. `start_stack.sh eval`
-3. `run_vla_server.sh`
-4. 上面第 1、2、3a 步起 Unreal 镜像
-5. `scripts/bimanual/run_vla_inference.sh`
 
 ## 已确认的坑
 
 - **URLab 导入的蓝图原先不写盘（2026-09-29 已修，TODO 12.11）。**
   - 原因：插件的 `ImportXmlSync` 只在内存里建蓝图；网格和材质实例由后面的步骤存盘，关卡由 `save_level` 存。下次开编辑器，关卡里的机器人 actor 就没有类了。
-  - 现在 `unreal_smoke_20260928.py setup` 导入后会把 `/Game/MuJoCoImports/<xml 名>` 存盘。
+  - 现在 `build_level` 导入后会把 `/Game/MuJoCoImports/<关卡名>` 存盘。
   - 验证：重启编辑器后不重新导入，和刚导入时的图差 0.5–0.7，跨会话噪声底是 0.65–1.1（`outputs/unreal_persist_20260929/`）。插件崩溃后重启也一样能直接用。
   - URLab 经 Interchange 导入，默认会开 Nanite，所以重新导入后仍要跑去 Nanite。
+- **不要复制关卡资产再打开（`EditorAssetLibrary.duplicate_asset`）：编辑器直接退出。** 副本 World 留在内存，Map_Load 的泄漏检查是致命错误（EditorServer.cpp:2524，2026-09-29）。`build_level` 改为打开房间关卡、`save_map` 另存、再打开副本。
+- **URLab 的导入要在一个 Python 里跑网格预处理（trimesh、scipy、networkx、Pillow）。** 插件从自己的 `Config/LocalUnrealRoboticsLab.ini`（`PythonPath=`）找这个 Python；没有就弹窗问要不要装进 UE 自带的 Python，无人值守的编辑器会自动取消，导入失败（`ImportAssetsAutomated returned no objects`）。`setup_unreal.sh` 把这几个包装进客户端 venv，并写好这个 ini。
+- **删掉编辑器正开着的关卡会让编辑器崩溃**（`ULevelInstanceSubsystem::OnAssetsPreDelete`）。宿主工程一启动就打开房间关卡，所以 `in_editor/warehouse_level.py` 重建房间前会先切到引擎的空地图。
 - **glTF 母材质不渲自发光（2026-09-29 已修，TODO 12.3.2）。** 天花板灯板原先只是被照亮的漫反射面。关卡脚本现在把自发光材质换成 `M_LocoEmissive`，见台账 `docs/ledger/blender_scenes.md` 第 7 节。
 - **客户端 `close()` 会把插件切回 live，插件偶发段错误。** 崩溃点在 `UURLabZmqPublishTransport::PostStep` 的空指针，2026-09-29 出现过。
   - 另一次崩溃是在前一个脚本不调 `close()` 就退出之后，下一个客户端发 `hello` 时。

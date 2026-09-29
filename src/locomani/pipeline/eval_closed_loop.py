@@ -299,10 +299,12 @@ def _evaluate(args):
         not cfg.rtc or cfg.client != "async" or cfg.ensemble_n != 1 or not cfg.transition_decoder
     ):
         raise SystemExit("transition_commit=true requires rtc=true, client=async, ensemble_n=1, transition_decoder set")
-    if cfg.client == "lockstep" and cfg.image_source == "isaac":
+    if cfg.client == "lockstep" and cfg.image_source != "mujoco":
         # The single-arm lockstep round takes its images from the step reply (MuJoCo, at the boundary); only the
-        # bimanual one asks the Isaac mirror for the boundary's state (tasks/crate/vla_lockstep.py).
-        raise SystemExit("client=lockstep with image_source=isaac is implemented by the bimanual evaluator only")
+        # bimanual one asks the mirror (Isaac or Unreal) for the boundary's state (tasks/crate/vla_lockstep.py).
+        raise SystemExit(
+            f"client=lockstep with image_source={cfg.image_source} is implemented by the bimanual evaluator only"
+        )
     if cfg.gap != "continue" or cfg.camera_frames:
         raise SystemExit(
             f"gap={cfg.gap!r} camera_frames={cfg.camera_frames} are bimanual-evaluator knobs; the single-arm "

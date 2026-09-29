@@ -27,7 +27,7 @@ import zmq
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS  # noqa: E402
-from locomani.sim.isaac.mirror import MirrorClient  # noqa: E402
+from locomani.sim.mirror import MirrorClient  # noqa: E402
 from locomani.stack import Stack  # noqa: E402
 
 

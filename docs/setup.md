@@ -16,6 +16,7 @@
 | 5 | GR00T 训练环境 | 要训练或评测 VLA（三条主线都要） | 按上游 README |
 | 6 | conda 训练环境、EmbodiedGen | 只有训练 SONIC 本身或重新生成场景才要 | 1 小时以上 |
 | 7 | Isaac 渲染环境 | warehouse（Isaac 出图）和 Isaac 重渲 | 约 20 GB 下载 |
+| 8 | Unreal 渲染环境（可选） | 只有实验文件写 `images.source: unreal` 才要 | 引擎约 26 GB 下载，编译约 15 分钟 |
 
 做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 7 步。
 
@@ -311,6 +312,28 @@ $ . scripts/paths.sh; "$RENDER_PY" -c "import importlib.metadata as m; print(m.v
 4.5.0.0
 $ ls assets/isaac/robot/g1_dex1.usda
 ```
+
+## 8. Unreal 渲染环境（可选，只给 `images.source: unreal`）
+
+只有实验文件写 `images.source: unreal`（[rendering.md](rendering.md#图像来源imagessource)）才需要；物理照样在 MuJoCo。装在 `$UNREAL_ROOT`（默认 `third_party/unreal/`）。
+
+```bash
+# 1) 引擎：Epic 只给登录账号下载 Linux 版。在 https://www.unrealengine.com/linux 下载
+#    Linux_Unreal_Engine_5.7.4.zip（约 26 GB，解开 69 GB），解到 $UE_ENGINE。不要 5.8
+. scripts/paths.sh; mkdir -p "$UE_ENGINE" && unzip -q Linux_Unreal_Engine_5.7.4.zip -d "$UE_ENGINE"
+# 2) 宿主工程 + 打补丁的 URLab 插件 + 编译 + 客户端 venv（约 15 分钟，只用 4 个核）
+bash scripts/setup_unreal.sh
+# 3) 起常驻编辑器（--gpu 选它渲染的卡）；验证：打印 5.7.4-...
+bash scripts/start_unreal.sh --gpu 1
+"$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_engine_version())'
+# 4) 房间关卡（一次）和每个场景的关卡；<烘焙目录> 由 Blender 跑 scripts/unreal/warehouse_bake.py 得到
+"$BRIDGE_PY" -m locomani.sim.unreal.build_level --room <烘焙目录>
+bash scripts/build_scene.sh warehouse_textured --unreal
+```
+
+做什么：`setup_unreal.sh` 按 `scripts/unreal/host/` 建宿主工程（出图默认值写在它的配置里：阴影不走 Nanite、每次取图截 8 遍、
+不向 Epic 上传崩溃报告），克隆 URLab 插件（`efbc5e2` + `patches/urlab_fresh_capture.patch`）并编译，建客户端 venv
+（`$BRIDGE_PY`：Python 3.12、mujoco 3.10.0）。哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
 
 ## 安装排错与说明
 

@@ -76,6 +76,18 @@ export ISAAC_ASSETS="${ISAAC_ASSETS:-$LOCOMANI_ROOT/assets/isaac}"
 # A python with `pxr` (pip install usd-core) for the Isaac stage builders in configs/scenes.yaml. They only
 # write USD text, so neither Isaac nor the render venv is needed (and neither has a bare pxr).
 export USD_PY="${USD_PY:-python3}"
+#
+# --- Unreal rendering (only for `images.source: unreal`; docs/setup.md, the optional Unreal step) ---
+# One directory holds the Unreal install: the engine (UE 5.7.4), the host project with the URLab plugin,
+# the bridge venv (python + urlab_client + mujoco 3.10.0, URLab's pin) and the editor's HOME, caches and logs.
+# scripts/setup_unreal.sh builds it; a machine with an existing install points these at it
+# ($LOCOMANI_WORKSPACE/locomani.local.sh).
+export UNREAL_ROOT="${UNREAL_ROOT:-$LOCOMANI_ROOT/third_party/unreal}"
+export UE_ENGINE="${UE_ENGINE:-$UNREAL_ROOT/UE_5.7.4}"
+export UE_PROJECT="${UE_PROJECT:-$UNREAL_ROOT/host/URLabHost.uproject}"
+export BRIDGE_PY="${BRIDGE_PY:-$UNREAL_ROOT/bridge/.venv/bin/python}"
+# Per-scene MJCF exports the levels were built from (gitignored, like assets/isaac/).
+export UNREAL_ASSETS="${UNREAL_ASSETS:-$LOCOMANI_ROOT/assets/unreal}"
 export ROBOT_MJCF="${ROBOT_MJCF:-$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1.xml}"
 
 # Logs + exporter sessions for instance $1 (default $INSTANCE, default 0).

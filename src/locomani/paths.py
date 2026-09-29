@@ -122,6 +122,14 @@ RENDER_PY = os.environ.get("RENDER_PY", os.path.join(SIMPLE_ROOT, ".venv", "bin"
 # Converted USD assets. Ticket 03 moves the build under assets/isaac/; until
 # then the first-light assets still live where they were generated.
 ISAAC_ASSETS = os.environ.get("ISAAC_ASSETS", os.path.join(REPO, "assets", "isaac"))
+# --- Unreal rendering (images.source unreal) -----------------------------------
+# Mirrors scripts/paths.sh: the Unreal install (engine, host project with URLab, bridge venv) and the per-scene
+# MJCF exports its levels were built from.
+UNREAL_ROOT = os.environ.get("UNREAL_ROOT", os.path.join(REPO, "third_party", "unreal"))
+UE_ENGINE = os.environ.get("UE_ENGINE", os.path.join(UNREAL_ROOT, "UE_5.7.4"))
+UE_PROJECT = os.environ.get("UE_PROJECT", os.path.join(UNREAL_ROOT, "host", "URLabHost.uproject"))
+BRIDGE_PY = os.environ.get("BRIDGE_PY", os.path.join(UNREAL_ROOT, "bridge", ".venv", "bin", "python"))
+UNREAL_ASSETS = os.environ.get("UNREAL_ASSETS", os.path.join(REPO, "assets", "unreal"))
 # The robot-only MJCF the render articulation is imported from. NOT the scene
 # XML: the scene changes per batch, the robot does not, so they are built and
 # cached separately (scripts/build_isaac_assets.sh).
