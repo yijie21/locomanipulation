@@ -359,6 +359,7 @@
 - [x] 9.7 推送（用户 2026-09-28）：merge 了 henry-zhao 的两个提交（`--backbone-path` 移到 `running.md`），`4a3c0f3` 已推到 origin/main
 - [ ] 9.8 下一轮（等用户认可新 runbook 的写法）：详解页、`rendering.md`、`scalebfm.md` 按同样的写法重写
 - [x] 9.9 （2026-09-29 用户说提前删，已删：三个 `outputs/runs/*_smoke/model/` 和 `try2/run_bottle_simple_smoke/model/`，共 96 GB；try2 里其余约 0.3 GB 的日志、数据集留着作证据；清单、脚本、日志在 `outputs/cleanup_20260929/`；`/workspace` 空闲 77 → 170 GB）删冒烟的大产物：`/workspace` 只剩 26 GB（98%）。`outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}/model/`（各约 24 GB，10 步的 checkpoint，没有用处）和 `outputs/docs_smoke_20260928/try2/`（24 GB，第一次失败的 bottle 冒烟）。按 AGENTS 规则 2026-09-29 11:45 之后才能删，用户说可以就提前删；运行目录其余文件（manifest、日志、录像）保留作 runbook 数字的证据
+  - [x] 9.9.1 （用户 2026-09-29 说"都删掉吧"，已删 69 GB，`/workspace` 空闲 170 → 239 GB；清单 `B_delete_manifest.txt`、脚本、日志在 `outputs/cleanup_20260929/`）B 类：① 65 个扫参和对照运行（`box_envelope_s1/s2_*`、`box_centre_*`、`box_yaw*`、`box_lat*`、`box_range_quick_*`、`box_room_grasp_10ep_20260925`）的 `observations/`，31.7 GB，manifest、trace、视频、日志留着；② `box_room_grasp_200_cap120_20260925/observations`，17.2 GB——这 200 条不能再补渲，要用新外观或 Unreal 重训就得重采，`train_dataset` 和 `checkpoint-5000` 留着；③ `third_party/EmbodiedGen/weights/sam-3d-objects`，12.3 GB，要用时重新下载；④ `datasets/` 旧专家数据 8 GB，只留 `g1_locomani_cover400_train/meta/`（`rtc/transition_events.py` 读它的 `info.json`）
 - [ ] 9.10 `crate_table30_record`（crate 的完整规模）还没在 lockstep 下跑过；runbook 里它的数字是 09-15 墙钟 71/100
 
 

@@ -6,8 +6,8 @@
 
 ## 磁盘（先处理）
 
-- 已确认：2026-09-29 06:40 UTC 用户说提前删，已删四个冒烟 `model/`（共 96 GB，TODO 9.9，清单和日志在 `outputs/cleanup_20260929/`），
-  `/workspace` 空闲 170 GB。B 类（扫参 observations 等约 70 GB）待用户定；根分区 `/` 只剩约 11 MB，没清。
+- 已确认：2026-09-29 用户说删，已删 A 类（四个冒烟 `model/`，96 GB）和 B 类（65 个扫参运行和 cap120 的 `observations/`、EmbodiedGen 的
+  sam-3d 权重、旧专家 `datasets/`，69 GB；TODO 9.9、9.9.1，清单和日志在 `outputs/cleanup_20260929/`），`/workspace` 空闲 239 GB。根分区 `/` 只剩约 11 MB，没清。
 - 本会话产物约 1 GB + exporter session 1.2 GB（TODO 11.9 列了路径）：最早 2026-09-30 02:00 UTC 可删，待用户同意；
   `outputs/runs/warehouse_smoke_lanes_20260928` 的 manifest 与 `collect/` 是并行通道的证据，保留。
 
