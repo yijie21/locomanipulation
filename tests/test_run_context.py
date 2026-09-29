@@ -214,13 +214,28 @@ def test_isaac_scene_reads_the_stage_and_look_from_the_scene_registry(tmp_path, 
     assert run_common.isaac_scene({"scene": {"name": "room"}}, registry) == {
         "dir": str(stage),
         "rtx_settings": ["/rtx/a=1"],
+        "supersample": 1,
     }
+    for bad in (0, 1.5, True):
+        registry.write_text(yaml.safe_dump({"room": {"isaac": {"dir": "room_usd", "supersample": bad}}}))
+        with pytest.raises(SystemExit, match="supersample"):
+            run_common.isaac_scene({"scene": {"name": "room"}}, registry)
 
 
 def test_the_warehouse_isaac_entry_is_the_look_its_renders_were_calibrated_with():
+    # 2026-09-29: matched to the Blender Cycles stills -- ISO 80 (was 30 against MuJoCo's robot torso), Blender's world
+    # light on (stage warehouse_textured_env), indirect diffuse x2 and the Hejl-Hable tonemap for the bounce-lit
+    # ceiling, docs/ledger/blender_scenes.md sections 2 and 4
     entry = yaml.safe_load(run_common.SCENES.read_text())["warehouse_textured"]["isaac"]
-    assert entry["dir"] == "warehouse_textured"
-    assert entry["rtx_settings"] == ["/rtx/post/histogram/enabled=false", "/rtx/post/tonemap/filmIso=30"]
+    assert entry["dir"] == "warehouse_textured_env"
+    assert entry["rtx_settings"] == [
+        "/rtx/post/histogram/enabled=false",
+        "/rtx/post/tonemap/filmIso=80",
+        "/rtx/indirectDiffuse/scalingFactor=2.0",
+        "/rtx/post/tonemap/op=4",
+    ]
+    # 2x supersampling over FXAA, docs/ledger/blender_scenes.md section 3 (user 2026-09-29)
+    assert entry["supersample"] == 2
 
 
 def _rounds(path: Path, rows: list[dict]) -> None:

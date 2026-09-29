@@ -14,7 +14,8 @@ Everything Isaac needs comes out of one ``mj_forward`` on the given qpos
 each camera's world pose. The cameras are the ones MuJoCo publishes
 (``dataset_cameras.CAMERA_CONFIGS``: same MJCF camera, same resolution), mounted as
 top-level prims and re-posed every frame, which is why a frame costs
-``stage.SETTLE_STEPS`` renders.
+``stage.SETTLE_STEPS`` renders. With ``cfg.supersample`` > 1 they render that
+many times larger and ``grab`` box-averages back to the dataset resolution.
 
 The caller owns Kit: start it with ``stage.start_app(cfg)`` before building a
 view, and on failure ``os._exit(1)`` BEFORE ``app.close()`` -- close() ends the
@@ -52,6 +53,7 @@ class IsaacView:
 
         self.streams = tuple(streams)
         self.log = log
+        self.supersample = cfg.supersample
         self.stage = S.assemble_stage(cfg, log)
         S.apply_rtx_settings(rtx_settings, log)
         self.world = S.make_world()
@@ -93,7 +95,7 @@ class IsaacView:
         if missing:
             self.log(f"view: missing/stale streams {missing}")
             return None
-        return {k: np.ascontiguousarray(v[..., :3]) for k, v in got.items()}
+        return {k: np.ascontiguousarray(S.downsample(v[..., :3], self.supersample)) for k, v in got.items()}
 
     def render(self, qpos, qvel=None) -> dict:
         """The images of this state. Raises rather than return a partial set."""

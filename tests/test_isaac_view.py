@@ -70,10 +70,11 @@ class _Sensor:
         return {"rendering_frame": self.world.tick, "rgba": np.full((2, 3, 4), self.world.tick, np.uint8)}
 
 
-def _view(dead_wrist=lambda tick: False):
+def _view(dead_wrist=lambda tick: False, supersample=1):
     view = V.IsaacView.__new__(V.IsaacView)
     view.world = _World()
     view.log = lambda *_: None
+    view.supersample = supersample
     view.cameras = {
         "ego_view": ("head_camera", _Sensor(view.world)),
         "right_wrist": ("right_wrist", _Sensor(view.world, dead_wrist)),
@@ -87,6 +88,23 @@ def test_render_returns_every_stream_as_rgb_from_the_last_settle_step():
     assert set(images) == {"ego_view", "right_wrist"}
     assert images["ego_view"].shape == (2, 3, 3)
     assert images["ego_view"][0, 0, 0] == 2  # SETTLE_STEPS = 2: the second step's frame
+
+
+def test_supersampled_streams_come_back_box_averaged_to_the_dataset_size():
+    view = _view(supersample=2)
+    tile = np.array([[0, 10], [20, 31]], np.uint8)[..., None].repeat(4, axis=2)
+    for _name, sensor in view.cameras.values():
+        sensor.get_current_frame = lambda w=view.world: {"rendering_frame": w.tick, "rgba": np.tile(tile, (2, 3, 1))}
+    images = view.render(np.zeros(3))
+    assert images["ego_view"].shape == (2, 3, 3)
+    assert (images["ego_view"] == 15).all()  # (0 + 10 + 20 + 31) / 4 = 15.25
+
+
+def test_downsample_refuses_a_size_that_is_not_a_multiple():
+    with pytest.raises(ValueError):
+        V.S.downsample(np.zeros((5, 4, 3), np.uint8), 2)
+    image = np.arange(24, dtype=np.uint8).reshape(2, 4, 3)
+    assert V.S.downsample(image, 1) is image
 
 
 def test_render_raises_instead_of_returning_a_partial_set():

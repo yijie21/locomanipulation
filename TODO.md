@@ -314,15 +314,47 @@
   - [x] 10.2.2 机器人头部白带 / 白盘：近裁剪 1 mm → 2 cm 后 warehouse 头部相机不再出现（2026-09-28；纯机器人关卡未重测）
 - [x] 10.3 warehouse 关卡：Blender 烘焙 → glTF → UE，6 盏 RectLight、固定曝光、强制 Lumen（2026-09-28）
   - [x] 10.3.1 锯齿：非 2 的幂贴图缩放 + 截图开 TSR + camera cut（2026-09-28）
-  - [ ] 10.3.2 天花板灯板在 Unreal 里是暗的（Isaac 会发光），查自发光材质
-  - [ ] 10.3.3 对照 Cycles 参考图标定曝光和色调（`WAREHOUSE_EXPOSURE_OFFSET`；AgX 与 UE filmic 不同）
+  - [x] 10.3.2 （用户 2026-09-29 要求修；2026-09-29 已修：Interchange 的 glTF 母材质在截图里不渲自发光，关卡脚本 `emissive_materials` 换成自建 `M_LocoEmissive`，灯板 167 → 230，Blender 238；台账 blender_scenes.md 第 5 节）天花板灯板在 Unreal 里是暗的（Isaac 会发光），查自发光材质
+  - [x] 10.3.3 （用户 2026-09-29 要求修；2026-09-29：曝光按物理推算的 −9.40 不用改，墙和地面与 Blender 差 0–2；天花板差在反弹光，关卡体积加 `lumen_diffuse_color_boost` 4，天花板 90 → 114，平均绝对差 23.1 → 17.4；台账第 5 节）对照 Cycles 参考图标定曝光和色调（`WAREHOUSE_EXPOSURE_OFFSET`；AgX 与 UE filmic 不同）
 - [x] 10.4 G1 外观：`mujoco` 预设（MJCF 原色，sRGB→linear，非金属），用户确认（2026-09-28）
   - [-] 10.4.1 `metal` 预设（统一反光银色）：用户否决，不像真实 G1
-  - [ ] 10.4.2 可选：外壳粗糙度调到 0.2–0.25 或压暗底色，靠近 MuJoCo 的高光感（待用户定）
+  - [-] 10.4.2 可选：外壳粗糙度调到 0.2–0.25 或压暗底色，靠近 MuJoCo 的高光感——被 10.4.3 取代
+  - [x] 10.4.3 改用 Unitree 官方 Isaac 资产（`unitree_sim_isaaclab_usds` G1 + Dex1）的材质：拉丝金属外壳、近黑的头/关节/夹爪；Isaac `stage.G1_LOOKS` 与 Unreal `unitree` 预设同值，另修 Isaac 的 Dex1 手指落到近白默认色（用户 2026-09-29，DECISIONS 2026-09-29）
+  - [x] 10.4.4 warehouse 曝光（Isaac ISO 30、Unreal 曝光偏置）按新外观复核（2026-09-29：Isaac 见 .1/.2/.4，Unreal 见 10.3.3）
+    - [x] 10.4.4.1 Isaac 曝光改按 Blender 标：现在的 ISO 30 是按 MuJoCo 躯干标的，整体比 Blender 暗（地面 39 对 80）；ISO 60–80 最接近（平均绝对差 59 → 17–24）。改了会改变策略看到的图像分布，要和 10.4.5 重训一起定——用户定改 ISO 80（2026-09-29，`configs/scenes.yaml`；台账 blender_scenes.md 第 2 节）
+    - [x] 10.4.4.2 `build_isaac_warehouse_scene.py` 关 `env_light` 的理由（EXR）已过时，USDC 已修成纯色 dome；实测影响 0.1——用户定打开，新 stage `warehouse_textured_env`（2026-09-29）
+    - [x] 10.4.4.4 天花板偏暗：间接光 ×2 + Hejl–Hable 色调映射，天花板 151 → 176（Blender 183），平均绝对差 11.1 → 6.9，耗时不变（2026-09-29，台账 blender_scenes.md 第 4 节）
+    - [-] 10.4.4.5 把 Unreal 的烘焙贴图搬进 Isaac（放弃：640×480 下看不出程序化纹理的缺失，Isaac 多的是锯齿，归 10.4.4.3；2026-09-29）
+    - [x] 10.4.4.3 （用户 2026-09-29 定：2× 超采样；已落地：`scenes.yaml` 的 `isaac.supersample: 2`（warehouse_textured、box_platform），镜像、数据集补渲、视频三处统一读，`stage.downsample`；实测代价 2.2 倍而非估的 1.4 倍，三路相机 95 → 209 ms；`outputs/isaac_ssaa_20260929/`）Isaac 抗锯齿：现在只有 FXAA（`/rtx/post/aa/op = 2`，1 spp），小字糊、货架网格闪。对 Blender 的结构相似度：FXAA 0.94，2× 超采样 + FXAA 0.96，TAA 0.96（但只在静止相机上攒了 24 帧），DLSS/DLAA 这样切换出来是噪点。建议 2× 超采样（逐帧确定，镜像和数据集同图），代价约 1.4×（待用户定；`outputs/isaac_blender_match_20260929/aa_crops.jpg`，2026-09-29）
+  - [-] 10.4.5 新外观下重渲数据集并重训；旧 Isaac checkpoint 看的是发白的旧外观（放弃：用户 2026-09-29 定新外观不重训）
 - [x] 10.5 一局闭环 VLA 用 Unreal 图（seed 6000，lockstep，1/1 ok）+ ego/腕部 MuJoCo 对照（2026-09-28）
+  - [x] 10.5.1 ego/腕部对照视频一顿一顿（镜像只在策略取图时渲，约 1.4 张/秒）：改由 state trace 按仿真时间补渲，25 fps，1477 帧无重复帧（`vla_round/dataset_cams/`，用户 2026-09-28）
 - [x] 10.6 同一局第三视角 Unreal / Isaac / MuJoCo 三路视频（`reverse_room`，2026-09-28）
-- [ ] 10.7 取图速度：3 相机截 8 张每次 679 ms（Isaac 95 ms）；扫 `urlab.FreshCaptureRepeats`（2–8）与画质的关系
-- [ ] 10.8 用 Unreal 图跑 100 局 lockstep 评测，与 Isaac 88/100 比（checkpoint 是 Isaac 训练的，属于分布偏移）
+- [~] 10.7 取图速度：3 相机截 8 张每次 679 ms（Isaac 95 ms）；扫 `urlab.FreshCaptureRepeats`（2–8）与画质的关系
+  - [x] 10.7.1 剖析（2026-09-28，`outputs/unreal_render_speed_20260928/`）：每次 capture 约 23 ms，其中阴影 14 ms（6 盏 RectLight 各重画 1024² Nanite 立方体阴影，不缓存）；关灯光阴影 4.2 ms 但接触阴影全没；编辑器视口每 tick 自己渲一遍（关掉 fixed 等待少约 35 ms）
+  - [x] 10.7.2 插件 `"stream"` 模式（连续序列：同 tick 取图、1 遍、不 camera cut）+ 三相机先渲后统一回读；trace 视频 642 → 139 ms/帧，与 8 遍差 2.1–2.2（同图两次 0.8–1.1、单遍 3.5），无拖影（`vla_round/dataset_cams_stream/`，2026-09-28）
+  - [-] 10.7.3 虚拟阴影贴图（VSM）：开了第一次按需取图就 GPU 卡死，复现（2026-09-28）；运行时改 `r.ShadowQuality` 崩编辑器
+  - [x] 10.7.4 阴影降本（待用户定）：只留 1–2 盏灯投影 / 机器人网格改非 Nanite / 硬件光追阴影（要开 `r.RayTracing` 重编着色器）——由 10.7.4.4/10.7.4.5 解决（无 Nanite 默认，阴影 14.3 → 0.29 ms，2026-09-28）；少灯投影 / 光追 / 自建 view family 不再需要，理由见 DECISIONS 2026-09-28 Unreal 出图提速
+    - [x] 10.7.4.1 机器人非 Nanite（`unreal_no_nanite_20260928.py` SCOPE robot，原名 `unreal_robot_nanite_20260928.py`）：每次 capture 23–25 ms，同会话基线 22 ms，无收益；画面差 0.95–1.17（噪声内）。阴影 13.5 ms 里机器人只占 0.3 ms，13.3 ms 是房间静态 Nanite 几何的 36 个立方体面。根因：引擎 `ShadowSetup.cpp:4333` 只要有 scene capture 视图就不用阴影缓存（`!bAnyViewIsSceneCapture`），每次 capture 都整场重画（2026-09-28，`outputs/unreal_render_speed_20260928/g_robot_non_nanite/`）
+    - [x] 10.7.4.2 方案 3（自建 view family 不走 scene capture）的前提检查：普通视图也不用阴影缓存——编辑器自己的视口，停掉 PIE、场景完全不动，6 个立方体阴影仍每帧重画（14.3 ms）；`r.Shadow.WholeSceneShadowCacheMb` 150→600 无变化；RHI 条件满足（VK_EXT_shader_viewport_index_layer 已加载）。原因未查明；同日较早一次空闲帧 3.4 ms 且无阴影 pass，是线索（2026-09-28）（结论有误，更正见 10.7.4.3）
+    - [x] 10.7.4.3 查普通视图不缓存阴影的原因（限时约 1 h）；决定方案 3 能拿到的是「缓存 + 三相机共享」还是只有「三相机共享」（待用户定）——原因（2026-09-28）：普通视图其实用了缓存（profile 里是 `WholeScene MovablePrimitives`，每盏灯 0.04 ms），但引擎对每盏投影灯的 6 个面都跑一遍 Nanite 阴影管线（`ShadowDepthRendering.cpp` 1753–1865 行，只按 mobility 隐藏、不跳过），每面固定约 0.37 ms，6 盏灯合计 13.3 ms，与画没画东西无关。所以方案 3 的缓存省不掉这 13 ms，只剩三相机共享
+    - [x] 10.7.4.4 阴影不走 Nanite：房间 + 纸箱 + 机器人全部非 Nanite，启动时 `r.Shadow.Nanite=0`，测每次 capture 耗时，并做同姿态画面 A/B（待用户定）——结果（2026-09-28，`outputs/unreal_render_speed_20260928/i_nanite_shadows/`）：阴影 14.3 → 0.29 ms，GPU 帧 18.3 → 3.8 ms；每次 capture 23.9 → 3.9 ms；三相机 fresh×8 640 → 138 ms，fresh×1 146 → 48 ms，stream 117 → 35 ms。画面与现状差 1.35–1.47（38 dB；同设置重复 0.39–0.48），只在边缘（地砖缝、箱边、字）；阴影形状一致。只设 `r.Shadow.Nanite 0`、网格仍 Nanite 不可用：Nanite 网格不投影，差 14–17
+    - [x] 10.7.4.5 是否把「全部网格非 Nanite + `r.Shadow.Nanite=0`」设为默认：DefaultEngine.ini 加 cvar；房间资产存盘为非 Nanite 或每次开编辑器跑 `SCOPE=all`；之后的 Unreal 图（评测、补渲）都用它（用户 2026-09-28 定为默认）——已落地：`DefaultEngine.ini` 加 `r.Shadow.Nanite=0`；房间网格存盘为非 Nanite（备份 `/workspace/ue_57/backups/`），关卡脚本导入时即关 Nanite；每次导入后跑 `unreal_no_nanite_20260928.py`（原 `unreal_robot_nanite`，默认 SCOPE all）；镜像和 trace 视频启动时检查，有 Nanite 网格或 cvar 不为 0 就拒绝。两次全新会话验证：三相机 fresh×8 124 ms、stream 35 ms，与 allnn 同图（跨会话差 0.65–0.73）（`k_default_check/`）
+  - [x] 10.7.5 待验证：`ShowFlag.Rendering 0` 关视口后取图差 1.1–1.3，略高于同图噪声 0.8–1.1；看图确认再决定是否默认关——已验证（2026-09-28，`outputs/unreal_render_speed_20260928/h_viewport_off_ab/`，12 个姿态 × ON/OFF/ON/OFF）：ON 与 OFF 差 0.74–1.30（最大 3.4），同设置重复只差 0.26–0.36；锐度不变（不是贴图 mip）；OFF 时间接光区域（箱内、阴影里的地面）偏暗约 2/255，直射高光不变，像 Lumen 全局光照收敛少了（机制未验证）
+  - [x] 10.7.6 （用户 2026-09-29：对画质没影响就关；已关：`ShowFlag.*` 只作用于编辑器 / 游戏视口，不作用于截图；作弊类 cvar，工程 ini 设不了，由 `/workspace/ue_57/ue_cmd_server.py` 启动时设 0，`require_render_defaults` 检查；空闲 GPU 28 → 11 %）是否默认关编辑器视口（省约 35 ms/请求，画面按上条会变）：定下后所有 Unreal 出图统一用同一设置（待用户定）——质量已测（2026-09-28，`j_viewport_quality/`，各自对 64 遍收敛参考）：开 8 遍离参考 1.25，关 8 遍离参考 1.30，收敛质量相同；两个 64 遍参考之间差 0.86（腕部相机 0.9–1.1、头部 0.5），小于 8 遍本身离收敛的 1.25。全非 Nanite 下关视口不再省时间（131 vs 131 ms），Nanite 下省 20–35 ms；建议保持开（无 Nanite 下关了不省时间），用户未明确表态
+  - [x] 10.7.7 （用户 2026-09-29 问：为什么不是渲一遍就够；已测：对 64 遍参考 1 遍 3.4–3.9 且整体偏暗 2–3、8 遍 1.2–1.4；1 遍 56–64 ms、8 遍 137 ms；handoff 文档"截图遍数"表，`outputs/unreal_repeats_20260929/`）无 Nanite 默认下扫
+    - [x] 10.7.7.1 闭环和数据集用几遍（现默认 8）：用户 2026-09-29 定 8 遍（宿主工程 `urlab.FreshCaptureRepeats=8`，不改） `urlab.FreshCaptureRepeats`（1/2/4/8）：各对 64 遍参考（`unreal_pose_set_20260928.py`），定闭环遍数（1 遍 48 ms、8 遍 124 ms、Isaac 88–96）
+- [ ] 10.8 用 Unreal 图跑 100 局 lockstep 评测，与 Isaac 88/100 比（checkpoint 是 Isaac 训练的，属于分布偏移）；用无 Nanite 默认（已跑的 1 局是 Nanite 版）
 - [ ] 10.9 正式接入 `images.source: unreal`：镜像进 src、run_overnight 接线、数据集用 Unreal 补渲、重新训练
-- [ ] 10.10 提交分支代码：9 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
-- [ ] 10.11 URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存
+- [x] 10.10 （2026-09-29 用户说提交，已随 10.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
+- [x] 10.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存
+- [x] 10.12 （用户 2026-09-29 定：关掉；已关：宿主工程 `DefaultEditorSettings.ini` 的 `bSendUnattendedBugReports=False`、`bSendUsageData=False`，`GetIni` 读回合并值 False，之后两次崩溃都没生成崩溃报告）UE 崩溃时 CrashReportClient 自动把报告上传到 Epic（2026-09-28 编辑器崩溃时已传一份）；是否在宿主工程配置里关掉（待用户定）
+- [x] 10.13 （2026-09-29 已提交到插件本地分支 `loco-fresh-capture` 的 `58c8a98`，未推送；与补丁逐字节一致）插件改动（fresh / stream / 统一回读）只在插件仓库工作区里，未提交到插件分支 `loco-fresh-capture`；`patches/urlab_fresh_capture.patch` 是唯一记录（随 10.10 一起定）
+- [x] 10.14 （2026-09-29 用户说提交，已提交）提交 2026-09-29 会话的改动（等用户说）：`src/locomani/sim/isaac/stage.py`（G1_LOOKS、按 body 名查颜色）、`configs/scenes.yaml`（warehouse：新 stage + ISO 80 + 间接光 ×2 + Hejl–Hable）、`scripts/build_isaac_warehouse_scene.py`（取自 main 的版本再改 env_light，合并时以它为准）、`scripts/render_isaac_videos.sh` 注释、`scripts/experiments/unreal_robot_materials_20260928.py`（`unitree` 预设）、`tests/test_isaac_robot_colours.py`（新）、`tests/test_run_context.py`、`docs/rendering.md`、`docs/ledger/blender_scenes.md` 第 2–4 节
+  - [x] 10.14.1 （已提交；仓库外那几项不进 git）同日第二轮（超采样、box_platform 颜色、Unreal 四项）加的文件：`src/locomani/sim/isaac/{stage,view,mirror,render_dataset_cameras,isaac_render,bench_render}.py`、`src/locomani/pipeline/run_context.py`、`scripts/build_isaac_primitive_scene.py`、`tests/test_isaac_primitive_scene.py`（新）、`tests/test_isaac_view.py`、`docs/warehouse.md`、`docs/handoff/unreal-urlab-20260928.md`、台账第 5–6 节；未跟踪的实验脚本 `unreal_smoke` / `unreal_warehouse_level` 也改了。仓库外（不进 git）：`/workspace/ue_57/ue_cmd_server.py`、宿主工程 `Config/DefaultEngine.ini`（`EditorStartupMap`）和 `Config/DefaultEditorSettings.ini`（崩溃上报）
+- [x] 10.15 （用户 2026-09-29 要求修；已修：先把 sRGB 转成线性，新 stage `box_platform_srgb`，旧 `box_platform` 留在共享缓存；测试 `tests/test_isaac_primitive_scene.py`；台账第 6 节）`scripts/build_isaac_primitive_scene.py`（box_platform）同样把 MJCF rgba 直接当线性 `diffuseColor`，方块偏白；未改（2026-09-29 发现）
+- [~] 10.16 工作流文档「用 grill-me + handoff 跑完一项工作」：在线版 https://claude.ai/code/artifact/659f6f44-4e6b-43ba-84c4-1bb8cad09618，离线版 `outputs/workflow_doc_20260929/`（2026-09-29）
+  - [ ] 10.16.1 （用户 2026-09-29：现在不改）grill 那节用的是按实际决策重写的示范；保留还是换成 09-28 整理文档那次真实的 grill 记录（待用户定，在线文档里有评论）
+  - [ ] 10.16.2 （用户 2026-09-29：现在不改）是否挪进仓库 `docs/` 并在 README 文档列表加一行（`outputs/` 被 git 忽略；待用户定）
+- [ ] 10.17 URLab 插件段错误（2026-09-29 两次）：客户端 `close()` 切回 live 后 `UURLabZmqPublishTransport::PostStep` 空指针；另一次在前一个客户端不 `close()` 就退出、下一个客户端发 `hello` 时。两次之前都在 PIE 里改过相机后处理（已不这么做），因果未查；镜像和视频脚本结尾都调 `close()`
+- [-] 10.18 （放弃：用户 2026-09-29 接受现在的天花板亮度）Unreal 天花板仍比 Blender 暗 60（114 对 174）：Lumen 的反弹只有 Cycles 的一半左右，增益再往上收益很小；可试色调曲线（Isaac 换 Hejl–Hable 有效）或接受（待用户定）

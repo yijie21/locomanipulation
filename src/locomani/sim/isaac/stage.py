@@ -60,6 +60,22 @@ class StageCfg:
     # result. Left visible it covered the lower right quarter of the frame as
     # a grey dome (2026-09-07, once the reference split let it compose at all).
     hidden_visuals: tuple = ("torso_link/head_link_visual",)
+    # Cameras render at this multiple of their resolution and `downsample` box-averages back. RTX realtime
+    # anti-aliases with FXAA only (1 spp): small print blurs and shelf grids shimmer. 2x against the Blender
+    # stills: structural similarity 0.89-0.94 -> 0.93-0.96 (docs/ledger/blender_scenes.md section 3). Per scene,
+    # `isaac.supersample` in configs/scenes.yaml.
+    supersample: int = 1
+
+
+def downsample(image: np.ndarray, factor: int) -> np.ndarray:
+    """Box-average an HxWxC uint8 image rendered at `factor` times its size back down."""
+    if factor == 1:
+        return image
+    h, w, c = image.shape
+    if h % factor or w % factor:
+        raise ValueError(f"{w}x{h} is not a multiple of the supersample factor {factor}")
+    blocks = image.reshape(h // factor, factor, w // factor, factor, c).astype(np.float32)
+    return np.rint(blocks.mean(axis=(1, 3))).astype(np.uint8)
 
 
 def start_app(cfg: StageCfg, headless: bool = True):
@@ -120,22 +136,33 @@ def xml_text(path: str) -> str:
 
 
 def _mjcf_mesh_colours(mjcf_path: str, log=print) -> dict:
-    """{mesh asset name: (r, g, b)} from the MJCF's own geom rgba.
+    """{mesh asset name: (r, g, b)} from the MJCF's own geom rgba, plus
+    {body name: (r, g, b)} for bodies whose visual meshes share one colour.
 
     Visual geoms win over collision ones when a mesh appears in both, and a
     fully transparent rgba is ignored -- those are the alpha-0 collision
     proxies, and taking their colour would paint a visible mesh with an
     invisible geom's value.
+
+    The body keys exist because the importer names a link's visual prim after
+    the BODY: /visuals/left_dex1_finger_1_link references the mesh asset
+    Dex1_finger_link_1, so a lookup by mesh name alone missed all four Dex1
+    fingers and they rendered in the near-white fallback (2026-09-29).
     """
     import re
 
     out: dict = {}
+    body_rgb: dict = {}
     try:
         xml = open(mjcf_path).read()
     except Exception as e:  # noqa: BLE001
         log(f"WARNING no MJCF colours ({mjcf_path}): {e}")
         return out
-    for g in re.finditer(r"<geom[^>]*>", xml):
+    body = None
+    for g in re.finditer(r'<body name="([^"]+)"|<geom[^>]*>', xml):
+        if g.group(1):
+            body = g.group(1)
+            continue
         a = g.group(0)
         mesh = re.search(r'mesh="([^"]+)"', a)
         rgba = re.search(r'rgba="([^"]+)"', a)
@@ -148,7 +175,45 @@ def _mjcf_mesh_colours(mjcf_path: str, log=print) -> dict:
         name = mesh.group(1)
         if name not in out or (visual and not out[name][1]):
             out[name] = (tuple(vals[:3]), visual)
-    return {k: v[0] for k, v in out.items()}
+        if visual and body:
+            body_rgb.setdefault(body, set()).add(tuple(vals[:3]))
+    colours = {k: v[0] for k, v in out.items()}
+    for b, rgbs in body_rgb.items():
+        if b not in colours and len(rgbs) == 1:
+            colours[b] = next(iter(rgbs))
+    return colours
+
+
+# The G1's two materials, copied from Unitree's own Isaac Lab asset for the G1
+# with Dex1 (huggingface.co/datasets/unitreerobotics/unitree_sim_isaaclab_usds,
+# assets/robots/g1-29dof_wholebody_dex1/g1_29dof_with_dex1_rev_1_0.usd:
+# DefaultMaterial on the shells, material_CAD1EE on the dark parts). Its dark
+# set -- head, pelvis, hip pitch, ankle roll, Dex1 base and fingers -- is the
+# MJCF's rgba < 0.4 set, so the MJCF colour picks the material.
+# The MJCF rgba itself is not usable as a colour here: it is a display value
+# (MuJoCo applies no gamma), which RTX reads as linear, so its 0.2 came out
+# as 0.48 and the head, joints and gripper rendered mid grey (2026-09-29).
+# OmniPBR multiplies diffuse_color_constant by diffuse_tint: the shells are
+# 0.68 linear brushed metal and the dark parts 0.011, near black. The user
+# chose these over the same albedo as non-metallic paint (2026-09-29,
+# outputs/isaac_g1_colour_20260929/g1_looks_compare.jpg); being metal, the
+# shells take on the room, so they read darker against the warehouse's dark
+# floor and shelves. Unreal uses the same values
+# (scripts/experiments/unreal_robot_materials_20260928.py, preset "unitree").
+G1_LOOKS = {
+    "shell": {
+        "diffuse_color_constant": (0.75, 0.75, 0.76),
+        "diffuse_tint": (0.9, 0.9, 0.91),
+        "metallic_constant": 1.0,
+        "reflection_roughness_constant": 0.75,
+        "specular_level": 0.25,
+    },
+    "dark": {
+        "diffuse_color_constant": (0.05796, 0.0587, 0.06178),
+        "diffuse_tint": (0.18533, 0.16887, 0.16887),
+        "metallic_constant": 0.42,
+    },
+}
 
 
 def assemble_stage(cfg: StageCfg, log=print):
@@ -207,22 +272,23 @@ def assemble_stage(cfg: StageCfg, log=print):
     # 0.3, the pelvis 0.2. Everything came out the same near-white, and the
     # dark housing that visually joins the forearm to the jaws vanished against
     # a bright room -- reported as "the connection between the arm and the
-    # gripper disappeared", which is what it looks like. Colours now come from
-    # the MJCF, one material per distinct rgba.
+    # gripper disappeared", which is what it looks like. The MJCF's rgba now
+    # decides which of Unitree's two materials a mesh gets (G1_LOOKS).
     colours = _mjcf_mesh_colours(cfg.robot_mjcf or paths.SCENE_XML, log)
     mats, n_bound, n_default = {}, 0, 0
 
     def material_for(rgb):
-        key = tuple(round(c, 4) for c in rgb)
+        key = "shell" if sum(rgb) / 3 >= 0.6 else "dark"
         if key not in mats:
-            mp = Sdf.Path("/World/Looks/g1_%s" % "_".join(f"{int(c * 255):03d}" for c in key))
+            mp = Sdf.Path(f"/World/Looks/g1_{key}")
             mt = UsdShade.Material.Define(stage, mp)
             sh = UsdShade.Shader.Define(stage, mp.AppendChild("shader"))
-            sh.CreateIdAttr("UsdPreviewSurface")
-            sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*key))
-            sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.55)
-            sh.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.1)
-            mt.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
+            sh.SetSourceAsset(Sdf.AssetPath("OmniPBR.mdl"), "mdl")
+            sh.SetSourceAssetSubIdentifier("OmniPBR", "mdl")
+            for name, value in G1_LOOKS[key].items():
+                vtype = Sdf.ValueTypeNames.Color3f if isinstance(value, tuple) else Sdf.ValueTypeNames.Float
+                sh.CreateInput(name, vtype).Set(Gf.Vec3f(*value) if isinstance(value, tuple) else value)
+            mt.CreateSurfaceOutput("mdl").ConnectToSource(sh.ConnectableAPI(), "out")
             mats[key] = mt
         return mats[key]
 
@@ -416,7 +482,7 @@ def apply_rtx_settings(items, log=print) -> None:
     """Apply `PATH=VALUE` carb settings after the stage is assembled; bool/int/float parsed, else string.
 
     For per-scene look settings the renderer configuration does not cover -- the warehouse
-    turns auto-exposure off (/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30,
+    turns auto-exposure off (/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80,
     scripts/render_isaac_videos.sh). Every renderer of a scene must apply the same list, or
     the offline dataset and the live mirror stop being the same picture.
     """
@@ -524,7 +590,8 @@ def mount_camera(stage, cfg: StageCfg, cam_spec, log=print):
     cam_prim.GetVerticalApertureAttr().Set(ap_v)
     cam_prim.GetHorizontalApertureAttr().Set(ap_v * cfg.width / cfg.height)
 
-    sensor = SensorCamera(prim_path=cam_path, resolution=(cfg.width, cfg.height))
+    ss = cfg.supersample
+    sensor = SensorCamera(prim_path=cam_path, resolution=(cfg.width * ss, cfg.height * ss))
     sensor.initialize()
     return sensor, cam_path
 
@@ -545,11 +612,13 @@ def mount_inset_cameras(stage, cfg: StageCfg, specs: dict, log=print) -> dict:
     frame, since RTX render cost scales with viewport pixel count.
 
     `specs` is `{camera_name: (pos, quat, fovy, width, height)}` (wxyz quat,
-    degrees fovy); returns `{camera_name: (sensor, cam_path)}`.
+    degrees fovy); returns `{camera_name: (sensor, cam_path)}`. The sensors render
+    at `cfg.supersample` times that size; `downsample` brings them back.
     """
     from isaacsim.sensors.camera import Camera as SensorCamera
     from pxr import Gf, Sdf, UsdGeom
 
+    ss = cfg.supersample
     out = {}
     for cam_name, (cam_pos, cam_quat, cam_fovy, width, height) in specs.items():
         cam_path = f"/World/inset_{cam_name}"
@@ -563,10 +632,10 @@ def mount_inset_cameras(stage, cfg: StageCfg, specs: dict, log=print) -> dict:
         ap_v = 2 * focal * np.tan(np.deg2rad(cam_fovy) / 2)
         cam_prim.GetVerticalApertureAttr().Set(ap_v)
         cam_prim.GetHorizontalApertureAttr().Set(ap_v * width / height)
-        sensor = SensorCamera(prim_path=cam_path, resolution=(width, height))
+        sensor = SensorCamera(prim_path=cam_path, resolution=(width * ss, height * ss))
         sensor.initialize()
         out[cam_name] = (sensor, cam_path)
-        log(f"inset camera [{cam_name}]: {cam_path} res=({width}x{height}) fovy={cam_fovy}")
+        log(f"inset camera [{cam_name}]: {cam_path} res=({width}x{height}) x{ss} fovy={cam_fovy}")
     return out
 
 

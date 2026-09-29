@@ -179,7 +179,7 @@ def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
 
 
 def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
-    """The run's scene as Isaac renders it: `{"dir": <Isaac stage dir>, "rtx_settings": [...]}`.
+    """The run's scene as Isaac renders it: `{"dir": <Isaac stage dir>, "rtx_settings": [...], "supersample": N}`.
 
     From the scene's `isaac` entry in `configs/scenes.yaml`, so every Isaac renderer of a scene --
     the offline re-render and the eval mirror -- loads the same stage with the same look.
@@ -202,7 +202,10 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
         xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
         if xml.is_file() and built != hashlib.sha256(xml.read_bytes()).hexdigest():
             raise SystemExit(f"{stage} was built from another {xml}; rebuild it: {entry.get('build')}")
-    return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or [])}
+    supersample = entry.get("supersample", 1)
+    if not isinstance(supersample, int) or isinstance(supersample, bool) or supersample < 1:
+        raise SystemExit(f"scene {name!r}: isaac.supersample must be a whole number >= 1, not {supersample!r}")
+    return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or []), "supersample": supersample}
 
 
 def successful_traces(run_dir: Path, traces: Path) -> list[str]:

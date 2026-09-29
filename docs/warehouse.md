@@ -17,7 +17,7 @@ export PYTHONPATH="$LOCOMANI_ROOT/src"
 **策略图用 Isaac 渲（`images.source: isaac`，§4）还要三样**；`mujoco` 的运行只有 §5 最后一条的并排预览要它们：
 1. 安装指南第 7 步：装有 Isaac Sim 4.5 的 Python（`$RENDER_PY`）和机器人 USD（`bash scripts/build_isaac_assets.sh --robot-only`）。
 2. 场景的 **Isaac stage**，即 Isaac 读的 USD 场景，写到 `assets/isaac/scene/<名字>/`：warehouse 跑 `python3 scripts/build_isaac_warehouse_scene.py`（要 `pxr`：`pip install usd-core`），`box_platform` 跑 `configs/scenes.yaml` 里它的 `isaac.build`。
-3. 第二张 GPU 专给 Isaac：它渲一次三路相机约 0.1 s，和仿真同卡会抢 sim 的算力。
+3. 第二张 GPU 专给 Isaac：它渲一次三路相机约 0.2 s（2× 超采样，[rendering.md](rendering.md)），和仿真同卡会抢 sim 的算力。
 
 ## 2. 一次运行 = 一份实验文件
 

@@ -118,8 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     sessions = [Path(s) for s in finished_sessions(run_dir, traces.sessions)]
     for session in sessions:
         marker = session / MARKER
-        if marker.exists() and json.loads(marker.read_text()).get("renderer", "mujoco") != "isaac":
-            raise SystemExit(f"{session.name}: its placeholders were filled by another renderer; not mixing")
+        if marker.exists():
+            done = json.loads(marker.read_text())
+            if done.get("renderer", "mujoco") != "isaac":
+                raise SystemExit(f"{session.name}: its placeholders were filled by another renderer; not mixing")
+            if (done.get("rtx_settings"), done.get("supersample", 1)) != (isaac["rtx_settings"], isaac["supersample"]):
+                raise SystemExit(f"{session.name}: its episodes were rendered with another Isaac look; not mixing")
     todo = {s: pending(s) for s in sessions}
     total = sum(len(v) for v in todo.values())
     print(
@@ -136,7 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     from locomani.sim.isaac.view import IsaacView
 
     scene_xml = str(traces.scene_dir / "scene_locomani.xml")
-    stage_cfg = S.StageCfg(scene_dir=isaac["dir"], robot_mjcf=scene_xml, absolute_camera=True)
+    stage_cfg = S.StageCfg(
+        scene_dir=isaac["dir"], robot_mjcf=scene_xml, absolute_camera=True, supersample=isaac["supersample"]
+    )
     app = S.start_app(stage_cfg)
     try:
         streams = tuple(CAMERA_CONFIGS)
@@ -157,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
                     "renderer": "isaac",
                     "isaac_stage": isaac["dir"],
                     "rtx_settings": isaac["rtx_settings"],
+                    "supersample": isaac["supersample"],
                     "rows": "world_lift.resample_selection; the rows between repeat the one before",
                     "receipts": {},
                 }

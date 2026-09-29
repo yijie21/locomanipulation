@@ -14,8 +14,11 @@ stage is written straight from the compiled MJCF, as two small USD layers:
     <assets>/scene/<label>/source.json             the MJCF's sha256: run_context.isaac_scene refuses a stage built
                                                    from another scene (a rebuilt box, a moved platform)
 
-Colours are the geoms' rgba as UsdPreviewSurface materials. No lights: stage.assemble_stage adds its dome and
-sun when the scene brings none. The look (exposure) is the scene's `isaac.rtx_settings` in configs/scenes.yaml.
+Colours are the geoms' rgba as UsdPreviewSurface materials, converted from sRGB to linear: an MJCF rgba is a display
+value (MuJoCo applies no gamma) and RTX reads diffuseColor as linear, so taken as-is the carton's 0.86/0.78/0.62
+rendered near white (2026-09-29; the robot's colours had the same fault, stage.G1_LOOKS). No lights:
+stage.assemble_stage adds its dome and sun when the scene brings none. The look (exposure) is the scene's
+`isaac.rtx_settings` in configs/scenes.yaml.
 
     third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/build_isaac_primitive_scene.py \\
         outputs/scene/box_platform [--label box_platform] [--assets $ISAAC_ASSETS]
@@ -32,7 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
-GROUND_RGB = (0.32, 0.32, 0.34)  # a matte concrete grey; MuJoCo draws no floor at all
+GROUND_RGB = (0.32, 0.32, 0.34)  # linear already: a matte concrete grey chosen in Isaac; MuJoCo draws no floor at all
 GROUND_HALF = (10.0, 10.0, 0.01)  # m; top face at z = 0, where the MJCF plane is
 ROUGHNESS = 0.8
 BOX, PLANE = 6, 0  # mjtGeom
@@ -81,12 +84,18 @@ def _cube(name: str, pos, quat, half, material: str, indent: str) -> str:
     )
 
 
+def srgb_to_linear(rgb) -> tuple:
+    """An sRGB display colour (0-1 per channel) as the linear value a renderer's albedo takes."""
+    return tuple(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb)
+
+
 def _key(rgb) -> str:
     return "m_" + "_".join(f"{int(round(c * 255)):03d}" for c in rgb)
 
 
 def scene_boxes(scene_xml: Path, target_body: str):
-    """(static, movable): visible non-robot boxes as (name, pos, quat, half, rgb), static in world, movable in body frame.
+    """(static, movable): visible non-robot boxes as (name, pos, quat, half, linear rgb), static in world, movable in
+    body frame.
 
     Robot geoms (the pelvis's subtree) are the robot USD's. Any other visible geom that is not a box is refused:
     this builder draws primitives only, and a silently missing object would be a scene the policy never trained on.
@@ -110,7 +119,7 @@ def scene_boxes(scene_xml: Path, target_body: str):
         if under(body, pelvis) or model.geom_rgba[g][3] == 0:
             continue
         name = model.geom(g).name or f"geom_{g}"
-        rgb = tuple(float(c) for c in model.geom_rgba[g][:3])
+        rgb = tuple(round(c, 5) for c in srgb_to_linear(float(c) for c in model.geom_rgba[g][:3]))
         if model.geom_type[g] != BOX:
             raise SystemExit(f"{scene_xml}: visible geom {name!r} is type {model.geom_type[g]}, not a box")
         half = model.geom_size[g].tolist()

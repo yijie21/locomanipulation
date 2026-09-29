@@ -208,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         scene_xml=str(scene_xml),
         isaac_scene=isaac["dir"],
         rtx_settings=isaac["rtx_settings"],
+        supersample=isaac["supersample"],
         streams=list(STREAMS),
         privileged_port=ports["TF_PRIVILEGED_PORT"],
         mirror_port=ports["TF_ISAAC_MIRROR_PORT"],
@@ -231,7 +232,12 @@ def _run(run_dir: Path, plan: dict) -> int:
 
     log_path = run_dir / "eval" / "isaac_mirror.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg = S.StageCfg(scene_dir=plan["isaac_scene"], robot_mjcf=plan["scene_xml"], absolute_camera=True)
+    cfg = S.StageCfg(
+        scene_dir=plan["isaac_scene"],
+        robot_mjcf=plan["scene_xml"],
+        absolute_camera=True,
+        supersample=plan["supersample"],
+    )
     app = S.start_app(cfg)
     try:
         view = IsaacView(cfg, plan["scene_xml"], plan["streams"], plan["rtx_settings"])
