@@ -72,7 +72,15 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/$RUN.yaml
 
 ## 3. 补渲相机
 
-采集时仿真不出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选渲染器渲出成功局的三路相机（第一视角和左右手腕），替换占位图。Isaac：
+采集时仿真不出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选渲染器渲出成功局的三路相机（第一视角和左右手腕），替换占位图。
+
+MuJoCo（`images.source` 是 `mujoco` 的运行，即[第 10 节](#10-只有一张卡)那份复制出来的实验文件）：
+
+```bash
+bash scripts/render_dataset_cameras.sh outputs/runs/$RUN --gpu 0
+```
+
+Isaac：
 
 ```bash
 bash scripts/render_dataset_cameras_isaac.sh outputs/runs/$RUN --gpu 1
@@ -80,6 +88,7 @@ bash scripts/render_dataset_cameras_isaac.sh outputs/runs/$RUN --gpu 1
 
 做什么：在 GPU 1 上起 Isaac，逐局补渲，渲完退出。
 得到什么：成功局的相机帧被替换，每局打印一行 `episode 2: 907 renders for 1838 rows` 这样的统计。冒烟 11 条约 26 分钟。
+
 
 Unreal：
 
@@ -89,6 +98,9 @@ bash scripts/render_dataset_cameras_unreal.sh outputs/runs/$RUN
 
 做什么：在第 1 步起的编辑器里逐局补渲；编辑器所在的卡由 `start_unreal.sh` 定，所以这里不带 `--gpu`。
 得到什么：同 Isaac。冒烟 8 条约 11 分钟。
+
+做什么：不起仿真栈，在 `--gpu` 那张卡上用 EGL 离屏渲染，按每行数据用到的仿真时刻从状态轨迹渲出三路相机，写回占位图。
+得到什么：同 Isaac。三种渲染器同一次运行只能用一种：补渲脚本和 `images.source` 不一致会拒绝，convert 也只认这一种。
 
 ## 4. 转换
 
