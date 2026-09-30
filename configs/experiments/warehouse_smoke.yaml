@@ -1,6 +1,6 @@
-# The warehouse line's smoke run: two kept episodes (one of them held out), Isaac pictures, ten training steps,
-#   two closed-loop rounds through the Isaac mirror. warehouse_200 with only those numbers changed; docs/warehouse.md
-#   runs it. It tests that every stage runs and leaves its files, never that the policy is any good: ten training steps
+# The warehouse line's smoke run: ten kept episodes (one of them held out), collected in batches of 10 rounds, at most 2
+#   (20 rounds kept 11 and 8 on 2026-09-30, so it can fall short), Isaac pictures, ten training steps, two closed-loop
+#   rounds through the Isaac mirror. warehouse_200 with only those numbers changed; docs/warehouse.md runs it. It tests that every stage runs and leaves its files, never that the policy is any good: ten training steps
 #   make a checkpoint that does not grasp, so the closed loop scores 0 of 2 -- that is the expected result.
 # Layout -- the warehouse default since 2026-09-28 (user): the four-edge line on the room's own carton size. Each round
 #   walks in toward one of the platform's four edges with the ranges that each kept >= 0.30 alone

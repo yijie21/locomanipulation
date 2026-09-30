@@ -1,7 +1,7 @@
 # warehouse_smoke with Unreal (URLab) drawing the policy's pictures instead of Isaac: the dataset cameras re-rendered by
 #   scripts/render_dataset_cameras_unreal.sh and the closed loop through scripts/run_unreal_mirror.sh, both in the
 #   editor scripts/start_unreal.sh runs. Only `images.source` and the name differ from warehouse_smoke (tests/test_image_source.py);
-#   docs/warehouse.md shows both renderers side by side. The third-person review videos stay Isaac's.
+#   docs/warehouse.md shows both renderers side by side. scripts/render_third_person.sh draws its third-person videos with Unreal.
 name: warehouse_smoke_unreal
 task:
   plugin: crate

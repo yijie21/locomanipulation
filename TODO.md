@@ -447,7 +447,7 @@
     - [x] 12.9.14.2 （2026-09-29 用户：评测录像也按渲染器统一）`render_eval_videos_{isaac,unreal}.sh` → `view_render.film_eval`：先渲每局三路相机做小窗，再拍第三视角，到 `eval/videos_<渲染器>/` 与 `eval/previews_<渲染器>/`；runbook 第 6 步改用它们（`render_isaac_videos.sh` 留作 MuJoCo|Isaac 对照）
     - [~] 12.9.14.3 （2026-09-30 关卡部分已做：另 4 个关卡已重建，逐个验证相机图与第三视角；机位部分未做）Unreal 关卡只重建了 `warehouse_box_45x32x33`，另 4 个关卡渲第三视角时会报 rebuild；MuJoCo 实时录像（`SIM_VIDEO_DIR`，`mujoco` 运行的评测录像）四边线仍用 `video_camera`，不是每局的边机位
     - [-] 12.9.14.4 （2026-09-30 放弃：用户说协作者要的是一条独立命令，不是实验文件开关；见 12.9.14.6）（2026-09-30 用户：第三视角可选）实验文件 `images.third_person`（默认 true，`run_context.third_person`）：false 时补渲不画、convert 不要求、`mujoco` 运行的仿真不实时录；六个现行 warehouse 实验文件写明 true
-    - [~] 12.9.14.5 （2026-09-30 已采 `warehouse_smoke_20260930` 11/20 条、Isaac 补渲 2/11 时用户叫停，等第三视角改完再接着跑；队列 `outputs/warehouse_smoke_timing_20260930/queue.sh`）`docs/warehouse.md` 的冒烟规模文字仍是旧的（2 条、每批 4 局），`warehouse_smoke.yaml` 已是 10 条、每批 10 局、最多 2 批（22c1fda），耗时估计要按新规模重测
+    - [x] 12.9.14.5 （2026-09-30 两个渲染器整条实跑完，runbook 的规模和耗时按实测改写；计时 `outputs/warehouse_smoke_timing_20260930/timing.tsv`；另发现冒烟 20 局可能凑不够 10 条，Unreal 那次 8/10，`run_overnight.sh` 会停在采集——配置是用户定的，待用户定是否调 `max_batches`）（2026-09-30 已采 `warehouse_smoke_20260930` 11/20 条、Isaac 补渲 2/11 时用户叫停，等第三视角改完再接着跑；队列 `outputs/warehouse_smoke_timing_20260930/queue.sh`）`docs/warehouse.md` 的冒烟规模文字仍是旧的（2 条、每批 4 局），`warehouse_smoke.yaml` 已是 10 条、每批 10 局、最多 2 批（22c1fda），耗时估计要按新规模重测
     - [x] 12.9.14.6 （2026-09-30 用户：协作者要一条命令，跑了就独立渲第三视角）`scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--dry-run] [局名]` 按 `images.source` 选 venv（MuJoCo/Isaac/Unreal）→ `sim/render_third_person.py` → `view_render.film_rounds`；补渲不再画、convert 不再要求（有就链接）；`images.third_person` 撤掉（旧运行副本里的键读取时丢弃）；`render_eval_videos_*` 并入 `--eval`；新增 `sim/mujoco_view.py`。三种渲染器各实跑验证
   - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
@@ -465,5 +465,5 @@
 - [x] 12.19 （2026-09-29 完成：第一次合并 4caadb5，第二次 `images.source: unreal` 合并 b2fd13f，之后快进 5c12f26，均已推送）合入 main（分支会话 2026-09-29 请求；DECISIONS 2026-09-29 合并一节）：冲突 9 个文件已解；四边线换新外观、四个 `warehouse_box_<尺寸>_env` stage 已建；`make lint` 通过
   - [x] 12.19.1 （2026-09-29 用户说推送，已推送；origin/main 现为 fc28d1d）推送 origin/main：待用户说
   - [x] 12.19.2 视频是否对 ≥ 1280×960 的尺寸跳过超采样——用户 2026-09-29 定：不跳，视频照用场景的 2×。实测（`outputs/merge_check_loco_unreal_20260929/`，GPU0，`warehouse_smoke_edges_20260928` 的 `visual_crate_s7000_01`，22.5 s 画面、281 帧、带小窗）：整条 5.0 分钟，Isaac 286 s，约 1.0 s/帧；main 台账第 2 节 1× 时 66 s 画面 249 s、约 0.6 s/帧，约 1.7 倍。`docs/warehouse.md` 的录像 7 → 10 分钟、补渲 1 → 3 分钟、总计 40 → 50 分钟是按这组数和 209 ms/次推算的，下次冒烟实跑时核对
-  - [ ] 12.19.3 下次 warehouse 冒烟实跑时核对 runbook 里按 2× 超采样估计的耗时：Isaac 补渲每局约 3 分钟、评测录像每局约 10 分钟、全程约 50 分钟（页面上标着"估计"，实测后改成实测值）
+  - [x] 12.19.3 （2026-09-30 冒烟规模按新配置实跑，见 12.9.14.5） 下次 warehouse 冒烟实跑时核对 runbook 里按 2× 超采样估计的耗时：Isaac 补渲每局约 3 分钟、评测录像每局约 10 分钟、全程约 50 分钟（页面上标着"估计"，实测后改成实测值）
   - [ ] 12.19.4 待用户定：`outputs/merge_check_loco_unreal_20260929/`（66 MB，合并后 `_env` stage 的实渲核对）是否保留

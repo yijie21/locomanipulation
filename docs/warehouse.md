@@ -1,7 +1,7 @@
 # warehouse：物流房间双臂抓纸箱
 
 机器人在物流房间里从托盘四条边中随机一条走近（也可以固定从一个地方开始，见 §2），双手扣住纸箱沿，抬起、站直。策略看到的相机图由 Isaac Sim 或 Unreal 渲染，二选一（见下面的"先选渲染器"），所以要 2 张 GPU：GPU 0 跑仿真、训练和策略，GPU 1 跑渲染器。
-下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 50 分钟（其中评测录像约 20 分钟，可以不渲；这两个数是按 2× 超采样估计的，还没整条实跑过）。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
+下面按冒烟规模写（10 条数据，其中 1 条留作验证；10 步训练；2 局评测）。2026-09-30 照这一页整条实跑：从采集到评测，Isaac 约 50 分钟（其中补渲约 26 分钟），Unreal 约 31 分钟（这次只保留了 8 条）；第 7 步的第三视角录像另算，采集和评测的都渲，Isaac 约 20 分钟、Unreal 约 18 分钟。每批 10 局、最多 2 批，两次实跑 20 局分别保留 11 条和 8 条，可能凑不够 10 条（见第 2 步）。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
 和 crate 用同一套脚本，不同的是：采集时仿真不渲染相机，转换前要用渲染器补渲；评测时另开一个渲染器的进程出图。原因和细节见 [warehouse 详解](warehouse_design.md)；改参数、并行、重跑见[运行机制](running.md)。
 
 ## 先选渲染器
@@ -64,14 +64,14 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.ya
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/warehouse_smoke
 ```
 
-做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批（已经在跑的批会跑完），结束时关掉所有仿真栈。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，全部局（含失败局）都渲，只给人看；用所选渲染器画第三视角录像和 Isaac 版回放见第 7 步。
-得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每批一个的逐局成败 `manifest_NN.jsonl`、状态轨迹 `trace/`、录像 `videos/`、通道安排 `collect/lanes.json`。每条通道起栈约 40 秒；采集约 3 分钟，一局约 35 秒；录像约 15 秒。
+做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 10 局一定跑满，保留够 10 条就不再开新批（已经在跑的批会跑完），最多 2 批，结束时关掉所有仿真栈。2 批跑完还不够 10 条时，打印 `stopped at 8/10 kept after 2 batches` 这样的一行并以非零状态结束；已采的照样能接着做第 3 步起的各步，只是数据少几条。`run_overnight.sh` 遇到这种情况会停在采集，重跑也不会多采；要凑够，复制实验文件把 `collect.max_batches` 调大，换运行名重采。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，全部局（含失败局）都渲，只给人看；用所选渲染器画第三视角录像和 Isaac 版回放见第 7 步。
+得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每批一个的逐局成败 `manifest_NN.jsonl`、状态轨迹 `trace/`、录像 `videos/`、通道安排 `collect/lanes.json`。起栈约 40 秒。每批 10 局的通道要约 1600 个进程，2026-09-30 本机只开出 1 条，20 局约 12.5 分钟（一局约 37 秒）；录像（20 局）约 45 秒。
 
 **每局从哪里开始（默认：四边随机）。** 每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：起点离台边 0.6 m 到“这条边外的空地 − 0.25 m”（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m；房间的货架和墙没有碰撞体，起点不能放进去），起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧），纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
 同样设置在房间里实测保留 17/40（[双臂台账](ledger/crate.md) 2026-09-28）。第二条命令开始第一局之前，会把这份设置打印出来：
 
 ```
-collect: scene warehouse_box_45x32x33, 2 kept wanted in batches of 4 rounds (at most 3). Each round draws (task.visual):
+collect: scene warehouse_box_45x32x33, 10 kept wanted in batches of 10 rounds (at most 2). Each round draws (task.visual):
   walk-in  toward one of the platform's edges xm, xp, ym, yp, drawn each round
   start    0.6 m up to xm 0.862 / xp 0.798 / ym 1.035 / yp 1.379 m before that edge (its free floor - 0.25 m)
   robot    heading -20..20 deg off the walk-in, lateral -0.08..0 m (+ = left of the box centre line)
@@ -94,7 +94,7 @@ bash scripts/render_dataset_cameras_isaac.sh outputs/runs/warehouse_smoke --gpu 
 ```
 
 做什么：在 GPU 1 上起 Isaac，逐局补渲，渲完退出。
-得到什么：录制数据里成功局的相机帧被替换。相机帧的 mp4 不在运行目录下，而在采集时的 session 目录里（路径列在 `collect/inputs.json` 的 `sessions`）：`<session>/videos/chunk-000/observation.images.<ego_view|left_wrist|right_wrist>/episode_NNNNNN.mp4`，渲过的几 MB，失败局仍是 100 多 KB 的黑帧；`<session>/meta/offline_render.json` 记着是谁渲的。一次运行的相机只能由 `images.source` 指定的那个渲染器填，换一个会被拒绝。补渲每局约 2–3 分钟（2026-09-29 实测 8 局 121–162 s，每次 0.20 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
+得到什么：录制数据里成功局的相机帧被替换。相机帧的 mp4 不在运行目录下，而在采集时的 session 目录里（路径列在 `collect/inputs.json` 的 `sessions`）：`<session>/videos/chunk-000/observation.images.<ego_view|left_wrist|right_wrist>/episode_NNNNNN.mp4`，渲过的几 MB，失败局仍是 100 多 KB 的黑帧；`<session>/meta/offline_render.json` 记着是谁渲的。一次运行的相机只能由 `images.source` 指定的那个渲染器填，换一个会被拒绝。补渲每局约 2.5 分钟，冒烟 11 条共约 26 分钟（2026-09-30 实测每局 135–163 s，每次 0.21 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
 
 Unreal：
 
@@ -103,7 +103,7 @@ bash scripts/render_dataset_cameras_unreal.sh outputs/runs/warehouse_smoke_unrea
 ```
 
 做什么：在第 1 步起的编辑器里逐局补渲，用的是编辑器所在的卡，所以不带 `--gpu`。
-得到什么：和 Isaac 一样打印每局统计，每次约 140 ms，每局约 80 秒（2026-09-29 实测 2 局）。
+得到什么：和 Isaac 一样打印每局统计，每次约 130 ms，每局 74–93 秒，冒烟 8 条共约 11 分钟（2026-09-30 实测）。
 
 ## 4. 转换
 
@@ -112,7 +112,7 @@ bash scripts/convert_data.sh outputs/runs/warehouse_smoke
 ```
 
 做什么：把录制的数据转成 LeRobot 数据集，按 `train.holdout` 留出验证集，并检查数据。不用 GPU。
-得到什么：`train_dataset/` 和 `val_dataset/`。约 40 秒。转换前跑过第 7 步的命令的话，每条数据的第三视角录像会链接进数据集的 `third_person/episode_N.mp4`；没跑就没有这个目录，转换照常。
+得到什么：`train_dataset/` 和 `val_dataset/`。约 2–4 分钟，大部分在重编码视频（2026-09-30 实测：Isaac 11 条 4.2 分钟，Unreal 8 条 1.8 分钟）。转换前跑过第 7 步的命令的话，每条数据的第三视角录像会链接进数据集的 `third_person/episode_N.mp4`；没跑就没有这个目录，转换照常。
 
 ## 5. 训练
 
@@ -120,7 +120,7 @@ bash scripts/convert_data.sh outputs/runs/warehouse_smoke
 bash scripts/train.sh outputs/runs/warehouse_smoke --gpu 0
 ```
 
-得到什么：`model/checkpoint-10/`，日志在 `train.log`。约 1 分钟；`model/` 占约 24 GB 磁盘。
+得到什么：`model/checkpoint-10/`，日志在 `train.log`。约 1.3 分钟（实测 74–80 秒）；`model/` 占 24 GB 磁盘。
 
 ## 6. 评测
 
@@ -131,7 +131,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/warehouse_smoke/model/c
   --dataset-path outputs/runs/warehouse_smoke/val_dataset --out-dir outputs/runs/warehouse_smoke/eval/open_loop
 ```
 
-得到什么：`eval/open_loop/metrics.json`（每条轨迹的 MSE、MAE）和 `plots/`。约 30 秒；冒烟模型的 MSE 约 0.07。
+得到什么：`eval/open_loop/metrics.json`（每条轨迹的 MSE、MAE）和 `plots/`。约 20 秒；冒烟模型的 MSE 约 0.08（2026-09-30 实测 0.076）。
 
 闭环评测：需要三个终端，按顺序启动：
 
@@ -143,7 +143,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/warehouse_smoke/model/c
 | 2 | Unreal：`bash scripts/run_unreal_mirror.sh outputs/runs/warehouse_smoke_unreal` | Unreal 镜像，作用同上；在第 1 步起的编辑器里渲，所以不带 `--gpu` | 打印 `unreal mirror listening on` 才算好；评测结束后按 Ctrl-C |
 | 3 | `bash scripts/bimanual/run_vla_inference.sh outputs/runs/warehouse_smoke --gpu 0` | 逐局重置场景、让策略控制机器人、记录成败 | 跑完 `eval.rounds` 局后关掉仿真栈并退出 |
 
-得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、每局状态轨迹 `eval/state_trace/`、镜像每次渲染的记录 `eval/isaac_mirror.jsonl`（Unreal 是 `eval/unreal_mirror.jsonl`）。起栈、策略服务、镜像各约 20 秒；两局约 2.5 分钟。`eval/rounds_00.log` 里每局一行，例如 `[crate-vla] round 0: FAIL [vla] walk: never closer than 1.06 m (70 s)`。
+得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、每局状态轨迹 `eval/state_trace/`、镜像每次渲染的记录 `eval/isaac_mirror.jsonl`（Unreal 是 `eval/unreal_mirror.jsonl`）。起栈、策略服务、镜像各约 20 秒；两局约 3–4 分钟（先跑一局热身，每局 75–100 秒；2026-09-30 实测 Isaac 3.8 分钟、Unreal 3 分钟）。`eval/rounds_00.log` 里每局一行，例如 `[crate-vla] round 0: FAIL [vla] walk: never closer than 1.06 m (70 s)`。
 
 评测时仿真不录像。要看评测录像，用第 7 步的命令加 `--eval`（Isaac 和 Unreal 同一条）：
 
@@ -151,7 +151,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/warehouse_smoke/model/c
 bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --gpu 1 --eval --all
 ```
 
-画面和采集的第三视角录像一样（同一机位、第一视角和双腕小窗，小窗是镜像给策略的那种图；评测没有 ghost）。默认只渲成功局，冒烟的两局都失败，所以加 `--all`。原片在 `eval/videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`），`eval/previews_isaac/`（`previews_unreal/`）里是压到每个文件 500 KB 以内的预览，每局切成 2–4 段。先渲小窗再渲第三视角：冒烟一局 99 秒的画面，Isaac 约 6.5 分钟（小窗 260 s + 录像 134 s），Unreal 约 6 分钟（235–270 s + 102–128 s），2026-09-29/30 实测。
+画面和采集的第三视角录像一样（同一机位、第一视角和双腕小窗，小窗是镜像给策略的那种图；评测没有 ghost）。默认只渲成功局，冒烟的两局都失败，所以加 `--all`。原片在 `eval/videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`），`eval/previews_isaac/`（`previews_unreal/`）里是压到每个文件 500 KB 以内的预览，每局切成 2–5 段。先渲小窗再渲第三视角：冒烟两局，Isaac 约 13 分钟（每局小窗 225–243 s + 录像 123 s），Unreal 约 14 分钟（每局 223–285 s + 130–140 s），2026-09-30 实测。
 
 熟悉以后可以一条命令跑完第 2–6 步（不含开环评测和录像）：`bash scripts/run_overnight.sh configs/experiments/warehouse_smoke.yaml --gpu 0 --render-gpu 1 --line bimanual`。用 Unreal 时换成 `warehouse_smoke_unreal.yaml`，编辑器没开会自动在 `--render-gpu` 那张卡上开。
 
@@ -167,7 +167,7 @@ bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --gpu 1
 
 做什么：按实验文件的 `images.source` 选渲染器（Isaac、Unreal 或 MuJoCo，Isaac 和 Unreal 用和补渲、镜像同一套画面），给每个成功局画一段第三视角录像：机位和下面 MuJoCo 回放相同（四边线场景每局按走入的那条边选），半透明品红夹爪是专家给的抓取目标，三个小窗是第一视角和双腕。补渲过的局，小窗直接取数据集里补渲好的画面；没补渲的局，先由同一个渲染器把小窗渲出来。`--gpu` 是 Isaac 或 MuJoCo 用的卡；Unreal 用第 1 步起的编辑器，所在的卡由 `start_unreal.sh` 定。
 参数：`--eval` 渲闭环评测的轨迹（第 6 步）而不是采集的；`--all` 连失败局一起渲；命令末尾写局名只渲那几局；`--dry-run` 只打印要渲哪些局、写到哪里。已经渲过的局会跳过，重跑只补缺的。
-得到什么：`videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`，MuJoCo 是 `videos/`；加 `--eval` 时在 `eval/` 下面），`previews_isaac/` 里是压到每个文件 500 KB 以内的预览。要让录像随数据集导出，在第 4 步转换之前跑。每局约 40 秒（Isaac，每帧 0.11 s；Unreal 约 30 秒），没补渲的局另加小窗约 75 秒；Isaac 启动另需约 20 秒。2026-09-30 实测。
+得到什么：`videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`，MuJoCo 是 `videos/`；加 `--eval` 时在 `eval/` 下面），`previews_isaac/` 里是压到每个文件 500 KB 以内的预览。要让录像随数据集导出，在第 4 步转换之前跑。冒烟实测（2026-09-30）：Isaac 11 局 7.5 分钟（每局 36–44 秒，每帧 0.11 s），Unreal 8 局 3.6 分钟（每局 22–31 秒）；没补渲的局另加小窗，Isaac 每局约 75 秒；Isaac 启动另需约 20 秒。
 
 下面两条命令是另外两种回放。
 
@@ -178,7 +178,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 ```
 
 做什么：不起仿真栈，加载运行目录里的场景副本，把每条轨迹的关节位置逐帧写回 MuJoCo，用场景的录像相机出图，每局按走入的那条边选机位；有 `<局>_ghost.npz` 的局，画面里半透明的品红夹爪是专家给的抓取目标。成功和失败的局都渲。
-得到什么：`videos/<局>.mp4`，每条轨迹一个。约 15 秒。渲评测的轨迹：加 `--traces outputs/runs/warehouse_smoke/eval/state_trace --out outputs/runs/warehouse_smoke/eval/videos`。
+得到什么：`videos/<局>.mp4`，每条轨迹一个。冒烟的 20 局约 45 秒。渲评测的轨迹：加 `--traces outputs/runs/warehouse_smoke/eval/state_trace --out outputs/runs/warehouse_smoke/eval/videos`。
 
 Isaac，和数据集同一套画面，左 MuJoCo 右 Isaac 并排：
 
@@ -187,7 +187,7 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --gpu 1 --inset
 ```
 
 做什么：先由 MuJoCo 渲跟踪机位并记下相机轨迹，再让 Isaac 在这个场景的 stage 上沿同一条相机轨迹渲，最后并排拼起来；`--insets` 另加一遍第一视角和双腕小窗，时间翻倍。默认只渲成功局（按 manifest 判），`--all` 全渲，命令行末尾写局名只渲那几局；`--stride 4` 是每 4 行轨迹渲一帧。渲评测的轨迹就是第 6 步最后那条命令（`--traces .../eval/state_trace --out .../eval`）。
-得到什么：`isaac/<局>/side_by_side.mp4` 原片，`isaac/<局>/ego_isaac.mp4` 只有 Isaac 的第一视角，`previews_isaac/` 里是压到每个文件 500 KB 以内、可直接发的预览，长的局切成几段。1280×960、2× 超采样下每局约 10 分钟。
+得到什么：`isaac/<局>/side_by_side.mp4` 原片，`isaac/<局>/ego_isaac.mp4` 只有 Isaac 的第一视角，`previews_isaac/` 里是压到每个文件 500 KB 以内、可直接发的预览，长的局切成几段。1280×960、2× 超采样、带 `--insets` 时，一局 24 秒的采集局约 4 分钟（2026-09-30 实测），耗时和局长成正比。
 
 Unreal：用上面那条一条命令的录像，没有和 MuJoCo 并排的回放。`scripts/experiments/unreal_trace_video_20260928.py` 能在编辑器里按轨迹渲单局并和 MuJoCo 并排，但它针对 2026-09-28 的手工导入（要 `--trace-joints` 关节表，导入里要有对应相机，先关 Nanite），不是这里的一步；要用先读它的文件头。
 
