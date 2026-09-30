@@ -87,6 +87,12 @@ def test_render_episode_renders_the_picked_rows_and_repeats_them_between(tmp_pat
         assert list(video.read_bytes()) == [10, 10, 11, 11, 13, 13, 14]
 
 
+def test_fill_does_not_open_a_session_with_nothing_pending(tmp_path):
+    gone = tmp_path / "gone"  # never created: an empty batch's session whose instance root was cleaned
+    R.fill(FakeView(), FakeTraces([0], [0]), {gone: []}, "isaac", {})
+    assert not gone.exists()
+
+
 # --- the third-person video (film) ---------------------------------------------------------------------------------
 
 SHOT_SCENE = (

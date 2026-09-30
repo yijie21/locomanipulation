@@ -208,7 +208,8 @@ def _reminder(tmp_path, name):
 
 def test_the_default_warehouse_collection_announces_four_edges_and_the_one_place_option(tmp_path):
     lines = _reminder(tmp_path, "warehouse_smoke")
-    assert "scene warehouse_box_45x32x33, 2 kept wanted" in lines[0]
+    kept = _warehouse_cfg("warehouse_smoke")["collect"]["successes"]  # the smoke's shape is the user's (22c1fda)
+    assert f"scene warehouse_box_45x32x33, {kept} kept wanted" in lines[0]
     assert "xm, xp, ym, yp" in lines[1]
     assert "*_fixed_start" in lines[-1]
 

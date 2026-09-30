@@ -337,11 +337,11 @@ $ "$BRIDGE_PY" -m locomani.sim.unreal.editor 'print(unreal.SystemLibrary.get_eng
 编辑器起来以后，建一次房间关卡（每台机器一次）。先装好 Blender 5.x，做法见 [Blender 场景](blender_scenes.md#1-环境需要什么不需要什么)：
 
 ```bash
-<blender> --background assets/blender/logistics_room.blend --python scripts/unreal/warehouse_bake.py -- outputs/unreal_room_bake
+blender --background assets/blender/logistics_room.blend --python scripts/unreal/warehouse_bake.py -- outputs/unreal_room_bake
 "$BRIDGE_PY" -m locomani.sim.unreal.build_level --room outputs/unreal_room_bake
 ```
 
-做什么：第一条用 Blender 5.x（`<blender>` 是它的可执行文件）把物流房间的程序化材质烘成贴图，连同灯光导出成 `room.glb` 和 `room_scene.json`，约 7 分钟。第二条在运行中的编辑器里把它建成房间关卡 `/Game/Levels/Warehouse`。成功时命令正常退出，烘焙目录里的 `unreal_level_report.json` 写着 `"ok": true`；失败时命令报错退出。之后每个场景的关卡在 [warehouse runbook](warehouse.md) 第 1 步建，哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
+做什么：第一条用 PATH 上的 Blender 5.x（`blender`，装法见上面链接的页面；不在 PATH 上就写它的完整路径）把物流房间的程序化材质烘成贴图，连同灯光导出成 `room.glb` 和 `room_scene.json`，约 7 分钟。第二条在运行中的编辑器里把它建成房间关卡 `/Game/Levels/Warehouse`。成功时命令正常退出，烘焙目录里的 `unreal_level_report.json` 写着 `"ok": true`；失败时命令报错退出。之后每个场景的关卡在 [warehouse runbook](warehouse.md) 第 1 步建，哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
 
 ## 安装排错与说明
 

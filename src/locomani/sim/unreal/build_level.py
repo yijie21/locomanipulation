@@ -70,6 +70,15 @@ print("level", unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_edi
 
 
 def build_room(bake_dir: Path) -> None:
+    # Checked here, not in the editor: there the missing file is a traceback from the script and a second one from
+    # the report it cannot write into the missing directory (a bake step skipped, 2026-09-29).
+    missing = [f for f in ("room.glb", "room_scene.json") if not (bake_dir / f).is_file()]
+    if missing:
+        raise SystemExit(
+            f"{bake_dir} is not a Blender bake ({', '.join(missing)} missing): bake the room first, blender"
+            " --background assets/blender/logistics_room.blend --python scripts/unreal/warehouse_bake.py --"
+            f" {bake_dir} (docs/setup.md, the Unreal step)"
+        )
     editor.stop_pie()
     report_path = bake_dir / "unreal_level_report.json"
     report_path.unlink(missing_ok=True)  # the script writes it last: an old one must not read as this run's

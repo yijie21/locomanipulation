@@ -583,7 +583,26 @@ def main():
             f"--manifest takes one file per --sessions entry ({len(args.manifest)} vs {len(args.sessions)})"
         )
 
-    streams = video_streams(json.load(open(Path(args.sessions[0]) / "meta/info.json")))
+    # A session directory can be gone when every round of its batch failed before the exporter recorded anything
+    # (its instance root was cleaned after the run; warehouse_smoke batch 01, 2026-09-29): the manifest then lists no
+    # produced round and there is nothing to convert. Any other missing session is an error, never a silent drop.
+    present = []
+    for si, sess in enumerate(args.sessions):
+        if Path(sess).is_dir():
+            present.append(si)
+            continue
+        produced = len(load_manifest(args.manifest[si])) if args.manifest else None
+        if produced:
+            raise SystemExit(
+                f"[session] {sess} is missing, but {Path(args.manifest[si]).name} says it produced {produced} "
+                "episode(s); restore the session or re-collect this batch."
+            )
+        if produced is None:
+            raise SystemExit(f"[session] {sess} is missing and no --manifest vouches that it recorded nothing.")
+        print(f"[session] {Path(sess).name}: directory gone and its manifest produced no episode; skipped")
+    if not present:
+        raise SystemExit("no session directory exists")
+    streams = video_streams(json.load(open(Path(args.sessions[present[0]]) / "meta/info.json")))
     if not streams:
         raise SystemExit("no observation.images.* features in the first session")
     print(f"video streams: {', '.join(s.split('.')[-1] for s in streams)}")
@@ -594,6 +613,8 @@ def main():
     # a bad way to find out.
     items, src_info, mans = [], None, {}
     for si, sess in enumerate(args.sessions):
+        if si not in present:
+            continue
         sess = Path(sess)
         info = json.load(open(sess / "meta/info.json"))
         src_info = src_info or info
@@ -646,6 +667,8 @@ def main():
 
     schemas = {}
     for si, sess in enumerate(args.sessions):
+        if si not in present:
+            continue
         cols = tuple(
             sorted(
                 c
