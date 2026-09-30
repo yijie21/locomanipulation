@@ -1,0 +1,35 @@
+name: saturn
+type: robot
+exports:
+  ETHER_ROBOT_URDF:      urdf/g1_comp_dex1_1_backpack.urdf
+  ETHER_ROBOT_CALIB_DIR: calibration
+  ETHER_LIVOX_CONFIG:    sensors/MID360_config.json
+optional:
+  - ETHER_LIVOX_CONFIG
+
+# Robot-specific runtime environment variables exported to robot-config.bash.
+# Add only values that differ per robot (identity, serial numbers, sensor overrides).
+# Shared deployment defaults belong in ether-onboard/config/settings.env.
+runtime:
+  ETHER_ROBOT_MAKE: unitree
+  ETHER_ROBOT_MODEL: G1-EDU-U2
+  ETHER_ROBOT_MODEL_NUMBER: "14491"
+  ETHER_ROBOT_MANUFACTURER_SERIAL_NUMBER: E21D6000Q5AAKA03
+  ETHER_ROBOT_MANUFACTURE_DATE: "20260510"
+  ETHER_ROBOT_INSTANCE: saturn
+
+  # D435 is plugged into orin computer
+  D435_HEAD_SERIAL: "344422071022"
+  D435_HEAD_NAME: d435_head
+
+  # D455 is plugged into thor computer
+  D455_HEAD_SERIAL: "242422302279"
+  D455_HEAD_NAME: d455_head
+
+  # D405 is plugged into thor computer
+  D405_WRIST_LEFT_SERIAL: "352122271203"
+  D405_WRIST_LEFT_NAME: d405_left_wrist
+
+  # D405 is plugged into thor computer
+  D405_WRIST_RIGHT_SERIAL: "335122271428"
+  D405_WRIST_RIGHT_NAME: d405_right_wrist
