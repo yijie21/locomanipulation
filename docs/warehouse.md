@@ -64,7 +64,7 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.ya
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/warehouse_smoke
 ```
 
-做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批（已经在跑的批会跑完），结束时关掉所有仿真栈。第三条（可选）从每局的状态轨迹渲出第三视角录像，画面里半透明的品红夹爪是专家给的抓取目标；每局按走入的那条边选机位。
+做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批（已经在跑的批会跑完），结束时关掉所有仿真栈。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，Isaac 版和说明见第 7 步。
 得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每批一个的逐局成败 `manifest_NN.jsonl`、状态轨迹 `trace/`、录像 `videos/`、通道安排 `collect/lanes.json`。每条通道起栈约 40 秒；采集约 3 分钟，一局约 35 秒；录像约 15 秒。
 
 **每局从哪里开始（默认：四边随机）。** 每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：起点离台边 0.6 m 到“这条边外的空地 − 0.25 m”（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m；房间的货架和墙没有碰撞体，起点不能放进去），起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧），纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
@@ -94,7 +94,7 @@ bash scripts/render_dataset_cameras_isaac.sh outputs/runs/warehouse_smoke --gpu 
 ```
 
 做什么：在 GPU 1 上起 Isaac，逐局补渲，渲完退出。
-得到什么：录制数据里成功局的相机帧被替换。每局约 3 分钟（估计：三路相机按 2× 超采样渲，每次约 0.21 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
+得到什么：录制数据里成功局的相机帧被替换。这些 mp4 不在运行目录下，而在采集时的 session 目录里（路径列在 `collect/inputs.json` 的 `sessions`）：`<session>/videos/chunk-000/observation.images.<ego_view|left_wrist|right_wrist>/episode_NNNNNN.mp4`，渲过的几 MB，失败局仍是 100 多 KB 的黑帧；`<session>/meta/offline_render.json` 记着是谁渲的。一次运行的相机只能由 `images.source` 指定的那个渲染器填，换一个会被拒绝。每局约 3 分钟（估计：三路相机按 2× 超采样渲，每次约 0.21 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
 
 Unreal：
 
@@ -155,7 +155,33 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 
 熟悉以后可以一条命令跑完第 2–6 步（不含开环评测和录像）：`bash scripts/run_overnight.sh configs/experiments/warehouse_smoke.yaml --gpu 0 --render-gpu 1 --line bimanual`。用 Unreal 时换成 `warehouse_smoke_unreal.yaml`，编辑器没开会自动在 `--render-gpu` 那张卡上开。
 
-## 7. 看结果
+## 7. 第三视角回放视频
+
+采集和评测都不录第三视角。每局的状态轨迹（采集是 `trace/<局>_state_trace.npz`，闭环评测是 `eval/state_trace/`）记录了每次仿真发布时的全部关节位置，回放它就能事后从任意机位出图。这和第 3 步的相机是两回事：数据集相机是策略要看的图，一次运行只能由一个渲染器填；回放视频只给人看，同一次采集的轨迹可以分别用 MuJoCo 和 Isaac 渲，互不影响，也不用重采。
+
+MuJoCo，先看动作对不对：
+
+```bash
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/warehouse_smoke
+```
+
+做什么：不起仿真栈，加载运行目录里的场景副本，把每条轨迹的关节位置逐帧写回 MuJoCo，用场景的录像相机出图，每局按走入的那条边选机位；有 `<局>_ghost.npz` 的局，画面里半透明的品红夹爪是专家给的抓取目标。成功和失败的局都渲。
+得到什么：`videos/<局>.mp4`，每条轨迹一个。约 15 秒。渲评测的轨迹：加 `--traces outputs/runs/warehouse_smoke/eval/state_trace --out outputs/runs/warehouse_smoke/eval/videos`。
+
+Isaac，和数据集同一套画面，左 MuJoCo 右 Isaac 并排：
+
+```bash
+bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --gpu 1 --insets
+```
+
+做什么：先由 MuJoCo 渲跟踪机位并记下相机轨迹，再让 Isaac 在这个场景的 stage 上沿同一条相机轨迹渲，最后并排拼起来；`--insets` 另加一遍第一视角和双腕小窗，时间翻倍。默认只渲成功局（按 manifest 判），`--all` 全渲，命令行末尾写局名只渲那几局；`--stride 4` 是每 4 行轨迹渲一帧。渲评测的轨迹就是第 6 步最后那条命令（`--traces .../eval/state_trace --out .../eval`）。
+得到什么：`isaac/<局>/side_by_side.mp4` 原片，`isaac/<局>/ego_isaac.mp4` 只有 Isaac 的第一视角，`previews_isaac/` 里是压到每个文件 500 KB 以内、可直接发的预览，长的局切成几段。1280×960、2× 超采样下每局约 10 分钟。
+
+Unreal：流水线里没有 Unreal 的回放视频，第 6 步的评测录像用 Unreal 时也由 Isaac 渲。`scripts/experiments/unreal_trace_video_20260928.py` 能在编辑器里按轨迹渲单局并和 MuJoCo 并排，但它针对 2026-09-28 的手工导入（要 `--trace-joints` 关节表，导入里要有对应相机，先关 Nanite），不是这里的一步；要用先读它的文件头。
+
+一张卡的机器：仿真栈关掉以后，上面两条命令的 `--gpu`、`MUJOCO_EGL_DEVICE_ID`、`CUDA_VISIBLE_DEVICES` 都写 0 即可。
+
+## 8. 看结果
 
 路径相对于 `outputs/runs/<名字>/`：
 
@@ -163,11 +189,11 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 |---|---|
 | 每一步的汇总（保留数、成功率、checkpoint） | `summary.json` |
 | 采集每局的成败和原因 | `manifest_NN.jsonl` 的 `ok` 和 `why` |
-| 采集录像 | `videos/`（第 2 步第三条命令渲的） |
+| 采集录像 | `videos/`（MuJoCo，第 7 步）；`isaac/<局>/side_by_side.mp4` 和 `previews_isaac/`（Isaac，第 7 步） |
 | 闭环每局的成败、失败阶段 | `eval/rounds_00.log` 每局一行；`eval/closed_loop.manifest.jsonl` |
-| 闭环录像 | `eval/previews_isaac/`（第 6 步最后一条命令渲的） |
+| 闭环录像 | `eval/previews_isaac/`（第 6 步最后一条命令渲的，机制见第 7 步） |
 
-## 8. 常见报错
+## 9. 常见报错
 
 | 报错 | 处理 |
 |---|---|
@@ -182,11 +208,11 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 
 更多报错和评测前要核对的项见 [warehouse 详解](warehouse_design.md)。
 
-## 9. 只有一张卡
+## 10. 只有一张卡
 
 Isaac 和 Unreal 都要第二张卡。只有一张卡时，把实验文件复制一份，`images.source` 改成 `mujoco`，策略就改看 MuJoCo 渲的图。这时第 1 步不跑第三条；第 3 步换成 `bash scripts/render_dataset_cameras.sh outputs/runs/<名字> --gpu 0`；闭环评测不起终端 2 的镜像；`run_overnight.sh` 去掉 `--render-gpu 1`。训练集和评测必须用同一种图。
 
-## 10. 接下来
+## 11. 接下来
 
 - 完整规模：把 `warehouse_smoke` 换成 `warehouse_200`（200 条数据、1 万步训练、100 局评测），Unreal 是 `warehouse_200_unreal`。四边随机还没有按这个规模跑过，按 17/40 估计，保留 200 条约需 470 局。只从一个地方开始的 `box_room_grasp_200_cap120_20260925`（当时的专家，刹车后准备手臂较慢，成功要求后退 0.3 m）实测：950 局保留 204 条（产出率 0.22），一局约 45 秒；训练到 5000 步停下，开环 MSE 0.00123，Isaac 镜像下闭环 100 局墙钟 81、lockstep 88（[双臂台账](ledger/crate.md) 2026-09-27）。
 - 调专家参数做对照实验：从 `box_room_grasp_baseline_20260924` 复制，做法见 [warehouse 详解第 7 节](warehouse_design.md#7-做对照实验)。
