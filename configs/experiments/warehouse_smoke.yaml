@@ -158,9 +158,9 @@ backend:
     jitter_seed: 0
     no_seed: false
 collect:
-  successes: 2
-  batch_rounds: 4
-  max_batches: 3
+  successes: 10
+  batch_rounds: 10
+  max_batches: 2
   seed0: 7000
   instance: 0
   record: true
