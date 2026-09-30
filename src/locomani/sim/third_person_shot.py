@@ -1,8 +1,9 @@
 """The third-person shot of a recorded round, for whichever renderer draws it.
 
-A run's third-person video is one camera over one round, drawn by the renderer its `images.source` names: MuJoCo
-(`scripts/render_trace_videos.py`, or the live sim's `SIM_VIDEO_DIR`), Isaac or Unreal (`locomani.sim.view_render`
-`film`). The camera is chosen here once, so the three agree by construction:
+A run's third-person video is one camera over one round, drawn by the renderer its `images.source` names
+(`scripts/render_third_person.sh` -> `locomani.sim.view_render.film_rounds`; MuJoCo's replay
+`scripts/render_trace_videos.py` films the same shot). The camera is chosen here once, so the renderers agree by
+construction:
 
     round_camera   the scene's shot for one round: a four-edge scene films each round from its edge's camera
                    (the robot's first yaw names the edge), another scene from its `video_camera`, else the recorder's

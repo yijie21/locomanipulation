@@ -19,18 +19,14 @@ other row repeats the rendered row before it, 20 ms older (the live camera trail
 Only finished batches (`collect/inputs.json` `batches`) are touched, so this can run beside a collection that
 is still recording, and be rerun until the run is done.
 
-`film` then draws each filled episode's third-person video with the same view (user, 2026-09-29: the video that
-ships with the dataset is drawn by the renderer that drew its cameras): the round's shot
-(`locomani.sim.third_person_shot`, the camera MuJoCo's `render_trace_videos.py` films) at every `sim_video.EVERY_NTH`-th
-trace row, the ghost grippers of `<label>_ghost.npz` in it, and as insets the dataset's own filled frames of the
-same rows -- what the policy trains on, decoded, never a second render. A view films with `film_setup(width, height,
-fovy)`, `film_warm_up` and `film(qpos, (cam_pos, cam_quat), (ghost_pos, ghost_quat)) -> HxWx3 uint8`; the ghosts
-are in that picture only. The videos land in `<run>/videos_<renderer>/<label>.mp4` (`third_person.video_dir`),
-which convert links into the dataset's `third_person/`; an episode that has one is not filmed again.
-
-`film_eval` films a closed-loop evaluation's rounds the same way (user, 2026-09-29: the evaluation's video is drawn
-by the renderer that drew the policy's pictures), into `<run>/eval/videos_<renderer>/`. An evaluation records no
-dataset, so its insets are the view's own `render` of each filmed row -- what the eval mirror serves the policy.
+The run's third-person video is drawn by the same views, but only when asked for, by its own command
+(`scripts/render_third_person.sh` -> `locomani.sim.render_third_person`; user, 2026-09-29/30): `film_rounds` films
+each round's shot (`locomani.sim.third_person_shot`, the camera MuJoCo's `render_trace_videos.py` films) at every
+`sim_video.EVERY_NTH`-th trace row, with the ghost grippers of `<label>_ghost.npz` and the dataset cameras as insets.
+The insets are the episode's filled dataset frames when this renderer filled them (`filled_insets`, what the policy
+trains on, decoded), else the view renders them itself. A view films with `film_setup(width, height, fovy)`,
+`film_warm_up` and `film(qpos, (cam_pos, cam_quat), (ghost_pos, ghost_quat)) -> HxWx3 uint8`; the ghosts are in that
+picture only.
 """
 
 from __future__ import annotations
@@ -50,10 +46,9 @@ from locomani.pipeline.render_dataset_cameras import (
     episode_length,
     expected_renderer,
     pending,
-    unfilmed,
+    renderer_of,
     video_path,
 )
-from locomani.pipeline.third_person import video_dir
 from locomani.pipeline.world_lift import resample_selection
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
@@ -175,18 +170,31 @@ def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None
             )
 
 
-def film_todo(traces, sessions: list[Path], renderer: str) -> list[tuple[Path, int, str]]:
-    """(session, episode, label) of the filled episodes of `sessions` that have no `renderer` third-person video yet;
-    an episode not filled yet waits, since its insets are its filled frames."""
-    todo = []
-    for s, ep, label in unfilmed(traces, [str(s) for s in sessions], renderer):
-        marker = Path(s) / MARKER
-        if not marker.exists() or ep not in json.loads(marker.read_text())["episodes"]:
+def filled_insets(run_dir: Path, renderer: str, labels) -> dict:
+    """`{label: insets(rows)}` for the collection rounds among `labels` whose dataset cameras `renderer` filled: each
+    filmed row's `{mjcf camera: image}` decoded from the episode's own videos (`inset_frames`). A round not filled by
+    this renderer, or whose session is gone, is not in it: `film_rounds` renders its insets."""
+    from locomani.pipeline.world_lift import RunTraces
+
+    try:
+        traces = RunTraces(run_dir)
+    except (FileNotFoundError, ValueError):
+        return {}
+    wanted, out = set(labels), {}
+    for session in map(Path, traces.sessions):
+        if not (session / MARKER).exists() or renderer_of(session) != renderer:
             continue
-        if not label:
-            raise SystemExit(f"{Path(s).name} episode {ep}: its manifest row names no label, so no trace to film")
-        todo.append((Path(s), ep, label))
-    return todo
+        info = json.loads((session / "meta" / "info.json").read_text())
+        for ep in json.loads((session / MARKER).read_text())["episodes"]:
+            label = traces.label(str(session), ep)
+            if label in wanted:
+
+                def insets(rows, session=session, ep=ep, info=info):
+                    frames = inset_frames(traces, session, ep, info, rows)
+                    return ({name: images[k] for name, images in frames.items()} for k in range(len(rows)))
+
+                out[label] = insets
+    return out
 
 
 def inset_frames(traces, session: Path, ep: int, info: dict, rows) -> dict:
@@ -258,51 +266,9 @@ def film_round(view, model, meta: dict, trace: Path, insets, dest: Path, rendere
     )
 
 
-def film(view, traces, todo: list, renderer: str, log=print) -> None:
-    """Film every (session, episode, label) of `todo` through `view` into `third_person.video_dir(run, renderer)`."""
-    if not todo:
-        return
-    import mujoco
-
-    from locomani.sim import third_person_shot as shot
-
-    out_dir = video_dir(traces.run, renderer)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    model = mujoco.MjModel.from_xml_path(str(traces.scene_dir / "scene_locomani.xml"))
-    meta = json.loads((traces.scene_dir / "scene_meta.json").read_text())
-    view.film_setup(sim_video.WIDTH, sim_video.HEIGHT, shot.scene_fovy(model, meta))
-    for session, ep, label in todo:
-        info = json.loads((session / "meta" / "info.json").read_text())
-
-        def insets(rows, session=session, ep=ep, info=info):
-            frames = inset_frames(traces, session, ep, info, rows)
-            return ({name: images[k] for name, images in frames.items()} for k in range(len(rows)))
-
-        log(f"  {session.name} episode {ep}:")
-        film_round(view, model, meta, traces.trace_dir / f"{label}_state_trace.npz", insets, out_dir / f"{label}.mp4",
-                   renderer, log)  # fmt: skip
-
-
-# --- a closed-loop evaluation's rounds ------------------------------------------------------------------------------
-
-
-def eval_rounds(run_dir: Path, renderer: str, every: bool) -> list[str]:
-    """The evaluation rounds to film: those `closed_loop.manifest.jsonl` judged successful, or every traced round
-    with `every`; a round `renderer` has filmed already is left out."""
-    from locomani.pipeline.run_context import successful_traces
-
-    traces = Path(run_dir) / "eval" / "state_trace"
-    if every:
-        labels = sorted(p.name.removesuffix("_state_trace.npz") for p in traces.glob("*_state_trace.npz"))
-    else:
-        labels = successful_traces(Path(run_dir), traces)
-    done = video_dir(Path(run_dir) / "eval", renderer)
-    return [label for label in labels if not (done / f"{label}.mp4").exists()]
-
-
 def _render_insets(view, trace: Path, dest: Path) -> None:
-    """Pass 1 of `film_eval`: the dataset cameras at every filmed row of `trace`, at their inset sizes, one video each
-    in `dest` -- the pictures the eval mirror would have served the policy for those states."""
+    """Pass 1 of `film_rounds`: the dataset cameras at every filmed row of `trace`, at their inset sizes, one video
+    each in `dest` -- the pictures the eval mirror serves the policy for those states."""
     import cv2
 
     from locomani.sim import third_person_shot as shot
@@ -343,12 +309,14 @@ def _read_insets(directory: Path, n_rows: int):
         cap.release()
 
 
-def film_eval(view, run_dir: Path, scene_dir: Path, labels: list[str], renderer: str, log=print) -> None:
-    """Film evaluation rounds into `<run>/eval/videos_<renderer>/<label>.mp4`, with ≤ 500 KB previews in
-    `<run>/eval/previews_<renderer>/`. An evaluation records no dataset, so the insets are rendered here: pass 1
-    renders every round's dataset cameras (`view.render`, before `film_setup`, which Isaac cannot undo) into
-    `videos_<renderer>/insets/<label>/`, pass 2 films the rounds and deletes them."""
-    if not labels:
+def film_rounds(
+    view, scene_dir: Path, rounds: list, renderer: str, out_dir: Path, previews_dir: Path, log=print
+) -> None:
+    """Film `rounds` -- (label, state trace, insets(rows) or None) -- through `view` into `out_dir/<label>.mp4`, each
+    with <= 500 KB previews in `previews_dir/<label>*.mp4`. A round without insets gets them rendered first: pass 1
+    renders its dataset cameras (`view.render`, before `film_setup`, which Isaac cannot undo) into
+    `out_dir/insets/<label>/`, kept across an interrupted run; pass 2 films every round and deletes them."""
+    if not rounds:
         return
     import shutil
 
@@ -357,25 +325,23 @@ def film_eval(view, run_dir: Path, scene_dir: Path, labels: list[str], renderer:
     from locomani.pipeline.video_preview import make_previews
     from locomani.sim import third_person_shot as shot
 
-    run_dir = Path(run_dir)
-    traces = run_dir / "eval" / "state_trace"
-    out_dir = video_dir(run_dir / "eval", renderer)
-    for label in labels:
-        dest = out_dir / "insets" / label
-        if not dest.is_dir():
+    staged = out_dir / "insets"
+    for label, trace, insets in rounds:
+        if insets is None and not (staged / label).is_dir():
             t0 = time.time()
-            _render_insets(view, traces / f"{label}_state_trace.npz", dest)
+            _render_insets(view, trace, staged / label)
             log(f"  {label}: dataset cameras for the insets in {time.time() - t0:.0f} s")
     model = mujoco.MjModel.from_xml_path(str(scene_dir / "scene_locomani.xml"))
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
     view.film_setup(sim_video.WIDTH, sim_video.HEIGHT, shot.scene_fovy(model, meta))
-    for label in labels:
+    for label, trace, insets in rounds:
         dest = out_dir / f"{label}.mp4"
-        pending = out_dir / "insets" / label
-        film_round(view, model, meta, traces / f"{label}_state_trace.npz",
-                   lambda rows, pending=pending: _read_insets(pending, len(rows)), dest, renderer, log)  # fmt: skip
-        shutil.rmtree(pending)
-        if not any(pending.parent.iterdir()):
-            pending.parent.rmdir()
-        written = make_previews(dest, run_dir / "eval" / f"previews_{renderer}" / label)
+        if insets is None:
+            insets = lambda rows, pending=staged / label: _read_insets(pending, len(rows))  # noqa: E731
+        film_round(view, model, meta, trace, insets, dest, renderer, log)
+        if (staged / label).is_dir():
+            shutil.rmtree(staged / label)
+        written = make_previews(dest, previews_dir / label)
         log(f"  {label}: previews {', '.join(f'{p.name} {p.stat().st_size} B' for p, _s, _t in written)}")
+    if staged.is_dir() and not any(staged.iterdir()):
+        staged.rmdir()

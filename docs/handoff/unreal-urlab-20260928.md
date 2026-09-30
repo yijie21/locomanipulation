@@ -12,7 +12,7 @@
   - `mirror.py` / `render_dataset_cameras.py`：评测镜像、数据集补渲；协议和补渲流程与 Isaac 共用（`sim/mirror.py`、`sim/view_render.py`）
   - `export_mjcf.py` / `build_level.py`：场景 → 机器人 + 纸箱 + 三路数据集相机的 MJCF → 该场景的关卡。2026-09-29 起导入里还有第三视角录像用的
     自由刚体相机 `loco_third_person_rig`（fovy 取场景机位，720×540）和两只 ghost 夹爪（材质 `/Game/Loco/M_LocoGhost`，半透明），平时停在地板下 5 m；
-    `source.json` 的 `film` 记下相机的 fovy 和尺寸。之前建的关卡补渲第三视角时报 `rebuild`，重建即可（镜像和数据集补渲不受影响）
+    `source.json` 的 `film` 记下相机的 fovy 和尺寸。之前建的关卡跑第三视角命令（`scripts/render_third_person.sh`）时报 `rebuild`，重建即可（镜像和数据集补渲不受影响）
   - `in_editor/`：在编辑器里跑的脚本（命令服务、清导入、G1 材质、去 Nanite、房间关卡）
 - 脚本：`scripts/start_unreal.sh` / `stop_unreal.sh`（`scripts/unreal/editor_guard.sh` 看守：限 4 核、CPU 打满或 GPU 卡死就杀）、
   `run_unreal_mirror.sh`、`render_dataset_cameras_unreal.sh`、`setup_unreal.sh`（宿主工程模板 `scripts/unreal/host/`）、

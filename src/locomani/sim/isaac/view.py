@@ -22,7 +22,7 @@ view, and on failure ``os._exit(1)`` BEFORE ``app.close()`` -- close() ends the
 process itself with status 0. ``run_in_kit`` does both for a run's Isaac look.
 
 ``film_setup`` turns a view that has done its dataset work into the renderer of
-the run's third-person video (``view_render.film``): one more world camera at
+the run's third-person video (``view_render.film_rounds``): one more world camera at
 the video's size, the ghost grippers (``ghost.add_isaac``), the head mesh shown
 again (it is hidden only for the ego camera that sits inside it), and the
 dataset cameras' render products stopped, since the video's insets are the

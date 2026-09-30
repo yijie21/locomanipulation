@@ -10,10 +10,11 @@ carried into the dataset so an episode can be watched by index instead of by
 hunting for a timestamped filename in `videos_NN/`.
 
 It is drawn by the renderer that draws the dataset cameras, the run's
-`images.source` (user, 2026-09-29): MuJoCo's go to `<run>/videos/` (the live
-sim's `SIM_VIDEO_DIR`, or `scripts/render_trace_videos.py` from the traces),
-Isaac's and Unreal's to `<run>/videos_<renderer>/` (`sim/view_render.py`
-`film`, run by the dataset fill), one `<label>.mp4` per kept round.
+`images.source` (user, 2026-09-29), and only on request: one command,
+`scripts/render_third_person.sh` (user, 2026-09-30), writes `<label>.mp4` per
+round to `video_dir` -- MuJoCo's `<run>/videos/` (where a live sim's
+`SIM_VIDEO_DIR` records too), Isaac's and Unreal's `<run>/videos_<renderer>/`.
+Convert links what is there; a run without them converts all the same.
 """
 
 import os

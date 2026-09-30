@@ -102,8 +102,7 @@ def migrate_images(cfg: dict) -> dict:
     """Bring the experiment's image source to the current format and check it; returns `cfg`, changed in place.
 
     The current format (2026-09-27) says once, at run level, which renderer draws the policy's pictures:
-    `images: {source: mujoco | isaac | unreal}`, and since 2026-09-30 optionally whether that renderer also draws
-    the run's third-person video (`third_person`, read through `third_person`). It decides the dataset cameras (collection records MuJoCo frames or
+    `images: {source: mujoco | isaac | unreal}`. It decides the dataset cameras (collection records MuJoCo frames or
     leaves placeholders for a re-render, and convert checks which renderer filled them), the eval sim's
     rendering and where the closed loop's images come from. The historical format has no `images` block and
     said it as `eval.image_source`, although collection and convert read it too; such a file -- every run
@@ -121,16 +120,12 @@ def migrate_images(cfg: dict) -> dict:
     elif "image_source" in evaluation:
         raise SystemExit("eval.image_source is the old spelling of images.source; give the source only in `images`")
     images = cfg["images"]
-    if (
-        not isinstance(images, dict)
-        or not {"source"} <= set(images) <= {"source", "third_person"}
-        or images["source"] not in IMAGE_SOURCES
-        or not isinstance(images.get("third_person", True), bool)
-    ):
-        raise SystemExit(
-            f"images must be {{source: {' | '.join(IMAGE_SOURCES)}, third_person: true | false (optional)}}, "
-            f"not {images!r}"
-        )
+    if isinstance(images, dict):
+        # `images.third_person` (4144452, 2026-09-30, pushed) switched the fill's filming; the fill no longer films
+        # (scripts/render_third_person.sh does, on request), so either value means what no key means now
+        images.pop("third_person", None)
+    if not isinstance(images, dict) or set(images) != {"source"} or images["source"] not in IMAGE_SOURCES:
+        raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}}}, not {images!r}")
     source = images["source"]
     if source != "mujoco" and (cfg.get("backend") or {}).get("render", "live") != "offline":
         raise SystemExit(
@@ -146,17 +141,6 @@ def migrate_images(cfg: dict) -> dict:
             f"{eval_render(source)!r}: leave it out or give that"
         )
     return cfg
-
-
-def third_person(cfg: dict) -> bool:
-    """Whether the run draws its third-person video (`images.third_person`, default true; user, 2026-09-30).
-
-    With `images.source` isaac or unreal the dataset fill films every kept episode after its cameras
-    (`sim.view_render.film`) and convert requires those videos; with mujoco the live sim records one per round
-    (`SIM_VIDEO_DIR`, collection and evaluation). False skips all of it -- the run ships no third-person video
-    unless one is rendered by hand (`scripts/render_trace_videos.py`, `render_eval_videos_*.sh`).
-    """
-    return migrate_images(cfg)["images"].get("third_person", True)
 
 
 def evaluation_of(cfg: dict):

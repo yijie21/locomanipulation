@@ -15,9 +15,8 @@ Isaac 和 Unreal 只在出图上不同，物理、专家、采集、转换、训
 | 第 1 步建场景 | 建 Isaac stage | 起编辑器，建 Unreal 关卡 |
 | 第 3 步补渲 | `render_dataset_cameras_isaac.sh` | `render_dataset_cameras_unreal.sh` |
 | 第 6 步终端 2 的镜像 | `run_isaac_mirror.sh` | `run_unreal_mirror.sh` |
-| 第 6 步评测录像 | `render_eval_videos_isaac.sh` | `render_eval_videos_unreal.sh` |
 
-下面每一步里和渲染器有关的命令，两种都写了。其余命令按 Isaac 的运行名写；用 Unreal 时，把实验文件和 `outputs/runs/warehouse_smoke` 换成上表 Unreal 那一列的。第三视角录像也由所选渲染器画：采集的在第 3 步，评测的在第 6 步最后。
+下面每一步里和渲染器有关的命令，两种都写了。其余命令按 Isaac 的运行名写；用 Unreal 时，把实验文件和 `outputs/runs/warehouse_smoke` 换成上表 Unreal 那一列的。第三视角录像是可选的：第 7 步的一条命令按所选渲染器画，Isaac 和 Unreal 同一条。
 
 ## 0. 每个新终端先执行
 
@@ -65,7 +64,7 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.ya
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/warehouse_smoke
 ```
 
-做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批（已经在跑的批会跑完），结束时关掉所有仿真栈。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，全部局（含失败局）都渲，只给人看；随数据集导出的第三视角录像由第 3 步用所选渲染器画，Isaac 版回放和说明见第 7 步。
+做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 4 局一定跑满，保留够 2 条就不再开新批（已经在跑的批会跑完），结束时关掉所有仿真栈。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，全部局（含失败局）都渲，只给人看；用所选渲染器画第三视角录像和 Isaac 版回放见第 7 步。
 得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每批一个的逐局成败 `manifest_NN.jsonl`、状态轨迹 `trace/`、录像 `videos/`、通道安排 `collect/lanes.json`。每条通道起栈约 40 秒；采集约 3 分钟，一局约 35 秒；录像约 15 秒。
 
 **每局从哪里开始（默认：四边随机）。** 每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：起点离台边 0.6 m 到“这条边外的空地 − 0.25 m”（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m；房间的货架和墙没有碰撞体，起点不能放进去），起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧），纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
@@ -88,14 +87,14 @@ collect: scene warehouse_box_45x32x33, 2 kept wanted in batches of 4 rounds (at 
 
 ## 3. 补渲相机
 
-采集时仿真没有出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选的渲染器把成功局的三路相机（第一视角和左右手腕）渲出来，替换占位图；再用同一个渲染器画每个成功局的第三视角录像，机位和第 2 步第三条相同，带品红 ghost 夹爪，三路相机的小窗取自刚渲好的数据集画面（不要录像就在实验文件里写 `images.third_person: false`，见第 7 步）。Isaac：
+采集时仿真没有出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选的渲染器把成功局的三路相机（第一视角和左右手腕）渲出来，替换占位图。这一步不画第三视角录像，要的话另跑第 7 步的命令。Isaac：
 
 ```bash
 bash scripts/render_dataset_cameras_isaac.sh outputs/runs/warehouse_smoke --gpu 1
 ```
 
 做什么：在 GPU 1 上起 Isaac，逐局补渲，渲完退出。
-得到什么：录制数据里成功局的相机帧被替换，每个成功局的第三视角录像在 `videos_isaac/<局>.mp4`（见第 7 步）。相机帧的 mp4 不在运行目录下，而在采集时的 session 目录里（路径列在 `collect/inputs.json` 的 `sessions`）：`<session>/videos/chunk-000/observation.images.<ego_view|left_wrist|right_wrist>/episode_NNNNNN.mp4`，渲过的几 MB，失败局仍是 100 多 KB 的黑帧；`<session>/meta/offline_render.json` 记着是谁渲的。一次运行的相机只能由 `images.source` 指定的那个渲染器填，换一个会被拒绝。补渲每局约 2–3 分钟（2026-09-29 实测 8 局 121–162 s，每次 0.20 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计；全部补完后再画录像，每局约 40 秒（每帧 0.11 s）。
+得到什么：录制数据里成功局的相机帧被替换。相机帧的 mp4 不在运行目录下，而在采集时的 session 目录里（路径列在 `collect/inputs.json` 的 `sessions`）：`<session>/videos/chunk-000/observation.images.<ego_view|left_wrist|right_wrist>/episode_NNNNNN.mp4`，渲过的几 MB，失败局仍是 100 多 KB 的黑帧；`<session>/meta/offline_render.json` 记着是谁渲的。一次运行的相机只能由 `images.source` 指定的那个渲染器填，换一个会被拒绝。补渲每局约 2–3 分钟（2026-09-29 实测 8 局 121–162 s，每次 0.20 s；Isaac 启动另需约 20 秒），打印 `episode 2: 907 renders for 1838 rows` 这样的每局统计。
 
 Unreal：
 
@@ -104,7 +103,7 @@ bash scripts/render_dataset_cameras_unreal.sh outputs/runs/warehouse_smoke_unrea
 ```
 
 做什么：在第 1 步起的编辑器里逐局补渲，用的是编辑器所在的卡，所以不带 `--gpu`。
-得到什么：和 Isaac 一样打印每局统计，每次约 140 ms，每局约 80 秒；录像在 `videos_unreal/<局>.mp4`，每局约 20 秒（2026-09-29 实测 2 局）。
+得到什么：和 Isaac 一样打印每局统计，每次约 140 ms，每局约 80 秒（2026-09-29 实测 2 局）。
 
 ## 4. 转换
 
@@ -113,7 +112,7 @@ bash scripts/convert_data.sh outputs/runs/warehouse_smoke
 ```
 
 做什么：把录制的数据转成 LeRobot 数据集，按 `train.holdout` 留出验证集，并检查数据。不用 GPU。
-得到什么：`train_dataset/` 和 `val_dataset/`。约 40 秒。每条数据的第三视角录像在数据集的 `third_person/episode_N.mp4`，取自第 3 步所选渲染器画的那份（`images.source: mujoco` 时是 `videos/`）；缺了就拒绝转换，`images.third_person: false` 时不要求、也没有这个目录。
+得到什么：`train_dataset/` 和 `val_dataset/`。约 40 秒。转换前跑过第 7 步的命令的话，每条数据的第三视角录像会链接进数据集的 `third_person/episode_N.mp4`；没跑就没有这个目录，转换照常。
 
 ## 5. 训练
 
@@ -146,14 +145,13 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/warehouse_smoke/model/c
 
 得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、每局状态轨迹 `eval/state_trace/`、镜像每次渲染的记录 `eval/isaac_mirror.jsonl`（Unreal 是 `eval/unreal_mirror.jsonl`）。起栈、策略服务、镜像各约 20 秒；两局约 2.5 分钟。`eval/rounds_00.log` 里每局一行，例如 `[crate-vla] round 0: FAIL [vla] walk: never closer than 1.06 m (70 s)`。
 
-评测时仿真不录像。要看评测录像，事后用所选渲染器渲，画面和第 3 步的采集录像一样（同一机位、第一视角和双腕小窗，小窗是镜像给策略的那种图；评测没有 ghost）。第一条是 Isaac，第二条是 Unreal（用第 1 步起的编辑器，所以不带 `--gpu`）：
+评测时仿真不录像。要看评测录像，用第 7 步的命令加 `--eval`（Isaac 和 Unreal 同一条）：
 
 ```bash
-bash scripts/render_eval_videos_isaac.sh outputs/runs/warehouse_smoke --gpu 1 --all
-bash scripts/render_eval_videos_unreal.sh outputs/runs/warehouse_smoke_unreal --all
+bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --gpu 1 --eval --all
 ```
 
-默认只渲成功局，`--all` 连失败局一起渲；重跑只补没渲的局。原片在 `eval/videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`），`eval/previews_isaac/`（`previews_unreal/`）里是压到每个文件 500 KB 以内的预览。先渲每局的三路相机做小窗，再渲第三视角：冒烟一局 99 秒的画面，Isaac 约 6.5 分钟（小窗 260 s + 录像 134 s），Unreal 约 6.6 分钟（270 s + 128 s），2026-09-29 实测；预览每局切成 2–4 段。
+画面和采集的第三视角录像一样（同一机位、第一视角和双腕小窗，小窗是镜像给策略的那种图；评测没有 ghost）。默认只渲成功局，冒烟的两局都失败，所以加 `--all`。原片在 `eval/videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`），`eval/previews_isaac/`（`previews_unreal/`）里是压到每个文件 500 KB 以内的预览，每局切成 2–4 段。先渲小窗再渲第三视角：冒烟一局 99 秒的画面，Isaac 约 6.5 分钟（小窗 260 s + 录像 134 s），Unreal 约 6 分钟（235–270 s + 102–128 s），2026-09-29/30 实测。
 
 熟悉以后可以一条命令跑完第 2–6 步（不含开环评测和录像）：`bash scripts/run_overnight.sh configs/experiments/warehouse_smoke.yaml --gpu 0 --render-gpu 1 --line bimanual`。用 Unreal 时换成 `warehouse_smoke_unreal.yaml`，编辑器没开会自动在 `--render-gpu` 那张卡上开。
 
@@ -161,17 +159,17 @@ bash scripts/render_eval_videos_unreal.sh outputs/runs/warehouse_smoke_unreal --
 
 采集和评测时仿真都不录第三视角。每局的状态轨迹（采集是 `trace/<局>_state_trace.npz`，闭环评测是 `eval/state_trace/`）记录了每次仿真发布时的全部关节位置，回放它就能事后从任意机位出图。这和第 3 步的相机是两回事：数据集相机是策略要看的图，一次运行只能由一个渲染器填；回放视频只给人看，同一次采集的轨迹可以分别用 MuJoCo 和 Isaac 渲，互不影响，也不用重采。
 
-随数据集导出的第三视角录像（转换后在数据集的 `third_person/`）是其中一种回放，由所选渲染器画：第 3 步补渲完相机后，同一个 Isaac 或 Unreal 接着给每个成功局画一段，到 `videos_isaac/` 或 `videos_unreal/`，机位与下面 MuJoCo 回放相同，带 ghost 夹爪，三个小窗是补渲好的数据集画面；评测的由第 6 步最后的命令画。下面两条命令是另外的回放。
+**用所选渲染器画（一条命令）。** 第三视角录像是可选的，别的步骤都不需要它；要看的时候跑：
 
-**不要第三视角录像。** 它是可选的，由实验文件里的开关决定，默认开：
-
-```yaml
-images:
-  source: isaac
-  third_person: false   # 默认 true
+```bash
+bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --gpu 1
 ```
 
-做什么：第 3 步只补渲三路相机，不画第三视角（Isaac 每局省约 40 秒、Unreal 约 20 秒，200 局约省 2 小时和 1 小时）；第 4 步转换不再要求这些录像，数据集里没有 `third_person/`。`images.source: mujoco` 的运行里，采集和评测的仿真也不再实时录像。第 6 步最后的评测录像本来就要手工跑，不受它影响。开关要在采集之前写进实验文件；已经开始的运行，改了实验文件会被拒绝（`config.yaml differs from`），要换运行名（`--name`）。关掉以后仍可以随时用下面的回放命令看某几局。
+做什么：按实验文件的 `images.source` 选渲染器（Isaac、Unreal 或 MuJoCo，Isaac 和 Unreal 用和补渲、镜像同一套画面），给每个成功局画一段第三视角录像：机位和下面 MuJoCo 回放相同（四边线场景每局按走入的那条边选），半透明品红夹爪是专家给的抓取目标，三个小窗是第一视角和双腕。补渲过的局，小窗直接取数据集里补渲好的画面；没补渲的局，先由同一个渲染器把小窗渲出来。`--gpu` 是 Isaac 或 MuJoCo 用的卡；Unreal 用第 1 步起的编辑器，所在的卡由 `start_unreal.sh` 定。
+参数：`--eval` 渲闭环评测的轨迹（第 6 步）而不是采集的；`--all` 连失败局一起渲；命令末尾写局名只渲那几局；`--dry-run` 只打印要渲哪些局、写到哪里。已经渲过的局会跳过，重跑只补缺的。
+得到什么：`videos_isaac/<局>.mp4`（Unreal 是 `videos_unreal/`，MuJoCo 是 `videos/`；加 `--eval` 时在 `eval/` 下面），`previews_isaac/` 里是压到每个文件 500 KB 以内的预览。要让录像随数据集导出，在第 4 步转换之前跑。每局约 40 秒（Isaac，每帧 0.11 s；Unreal 约 30 秒），没补渲的局另加小窗约 75 秒；Isaac 启动另需约 20 秒。2026-09-30 实测。
+
+下面两条命令是另外两种回放。
 
 MuJoCo，先看动作对不对：
 
@@ -191,7 +189,7 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --gpu 1 --inset
 做什么：先由 MuJoCo 渲跟踪机位并记下相机轨迹，再让 Isaac 在这个场景的 stage 上沿同一条相机轨迹渲，最后并排拼起来；`--insets` 另加一遍第一视角和双腕小窗，时间翻倍。默认只渲成功局（按 manifest 判），`--all` 全渲，命令行末尾写局名只渲那几局；`--stride 4` 是每 4 行轨迹渲一帧。渲评测的轨迹就是第 6 步最后那条命令（`--traces .../eval/state_trace --out .../eval`）。
 得到什么：`isaac/<局>/side_by_side.mp4` 原片，`isaac/<局>/ego_isaac.mp4` 只有 Isaac 的第一视角，`previews_isaac/` 里是压到每个文件 500 KB 以内、可直接发的预览，长的局切成几段。1280×960、2× 超采样下每局约 10 分钟。
 
-Unreal：Unreal 的第三视角录像就是上面说的第 3 步和第 6 步那两种，没有和 MuJoCo 并排的回放。`scripts/experiments/unreal_trace_video_20260928.py` 能在编辑器里按轨迹渲单局并和 MuJoCo 并排，但它针对 2026-09-28 的手工导入（要 `--trace-joints` 关节表，导入里要有对应相机，先关 Nanite），不是这里的一步；要用先读它的文件头。
+Unreal：用上面那条一条命令的录像，没有和 MuJoCo 并排的回放。`scripts/experiments/unreal_trace_video_20260928.py` 能在编辑器里按轨迹渲单局并和 MuJoCo 并排，但它针对 2026-09-28 的手工导入（要 `--trace-joints` 关节表，导入里要有对应相机，先关 Nanite），不是这里的一步；要用先读它的文件头。
 
 一张卡的机器：仿真栈关掉以后，上面两条命令的 `--gpu`、`MUJOCO_EGL_DEVICE_ID`、`CUDA_VISIBLE_DEVICES` 都写 0 即可。
 
@@ -203,9 +201,9 @@ Unreal：Unreal 的第三视角录像就是上面说的第 3 步和第 6 步那�
 |---|---|
 | 每一步的汇总（保留数、成功率、checkpoint） | `summary.json` |
 | 采集每局的成败和原因 | `manifest_NN.jsonl` 的 `ok` 和 `why` |
-| 采集录像 | 所选渲染器画的成功局 `videos_isaac/` 或 `videos_unreal/`（第 3 步）；回放：`videos/`（MuJoCo）、`isaac/<局>/side_by_side.mp4` 和 `previews_isaac/`（Isaac），见第 7 步 |
+| 采集录像 | 所选渲染器画的 `videos_isaac/` 或 `videos_unreal/`；回放：`videos/`（MuJoCo）、`isaac/<局>/side_by_side.mp4` 和 `previews_isaac/`（Isaac）；都是第 7 步 |
 | 闭环每局的成败、失败阶段 | `eval/rounds_00.log` 每局一行；`eval/closed_loop.manifest.jsonl` |
-| 闭环录像 | `eval/previews_isaac/` 或 `eval/previews_unreal/`（第 6 步最后一条命令渲的，机制见第 7 步） |
+| 闭环录像 | `eval/previews_isaac/` 或 `eval/previews_unreal/`（第 7 步的命令加 `--eval`） |
 
 ## 9. 常见报错
 
@@ -216,8 +214,7 @@ Unreal：Unreal 的第三视角录像就是上面说的第 3 步和第 6 步那�
 | 转换报 `still hold black placeholder frames` | 漏了第 3 步补渲 |
 | 评测每局报 `mirror: no reply from the mirror` 或 `camera/state streams never became ready` | 镜像没起来或还没就绪。看终端 2，等它打印 `isaac mirror listening on`（Unreal 是 `unreal mirror listening on`）再起终端 3 |
 | `an Unreal editor is already running` 后面跟着 `not` 和卡号 | 编辑器开在另一张卡上。`bash scripts/stop_unreal.sh` 后用要的卡重开 |
-| 补渲报 `has no third-person camera and ghost grippers` | Unreal 关卡建于 2026-09-29 加入第三视角之前：`bash scripts/build_scene.sh <场景> --unreal` 重建 |
-| 转换报 `have no isaac third-person video`（或 `unreal`） | 重跑第 3 步，它只补画缺的录像（不要录像的运行要在采集前写 `images.third_person: false`，见第 7 步） |
+| 第三视角命令报 `has no third-person camera and ghost grippers` | Unreal 关卡建于 2026-09-29 加入第三视角之前：`bash scripts/build_scene.sh <场景> --unreal` 重建 |
 | `cannot use images.source unreal` | 这个场景没有 Unreal 关卡（`configs/scenes.yaml` 的 `unreal` 条目写了原因），只有物流房间的场景能用 |
 | `config.yaml differs from` | 同名运行的实验文件被改过。加 `--name` 换个运行名 |
 | 失败大多是 `reach_stalled`、`lost_attachment` | 这是这条线目前主要的失败形态（手停在箱沿上方、合爪后脱开），不是环境问题 |

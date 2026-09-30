@@ -59,7 +59,7 @@ flowchart TD
 | 画面 | MuJoCo 自带的 OpenGL 渲染，与物理同一个模型 | Isaac Sim RTX 渲染同一时刻的状态，场景另有一份 USD（Isaac stage），光照和材质更接近真实 | Unreal 5.7（URLab 插件）渲染同一时刻的状态：Blender 烘焙的房间关卡，Lumen 全局光照 |
 | 采集时 sim 出不出图 | `backend.render: live` 实时出；`offline` 不出，事后补 | 必须 `offline`，采集时不出图 | 同 `isaac` |
 | 数据集相机（convert 之前） | `offline` 时由 `render_dataset_cameras.sh` 从 trace 补渲（只渲成功局） | 由 `render_dataset_cameras_isaac.sh` 用 Isaac 从 trace 补渲（只渲成功局、只渲 25 Hz 取到的行） | 由 `render_dataset_cameras_unreal.sh` 在运行中的编辑器里补渲（同上；每行约 130 ms） |
-| 数据集的第三视角录像（`third_person/`） | `live` 时 sim 实时录（`SIM_VIDEO_DIR`），`offline` 时 `scripts/render_trace_videos.py` 从 trace 渲，都在 `<run>/videos/` | 补渲脚本在同一个 Isaac 里接着画每个成功局，在 `<run>/videos_isaac/` | 同 `isaac`，在 `<run>/videos_unreal/`；关卡要带第三视角相机和 ghost 夹爪（2026-09-29 起的 `build_level`） |
+| 第三视角录像（可选，`scripts/render_third_person.sh`） | 画到 `<run>/videos/`（`live` 的 sim 自己也实时录到这里，已有的局跳过） | 用同一个 Isaac 画到 `<run>/videos_isaac/` | 在运行中的编辑器里画到 `<run>/videos_unreal/`；关卡要带第三视角相机和 ghost 夹爪（2026-09-29 起的 `build_level`） |
 | 闭环评测时策略的图 | eval sim 自己实时渲（eval 栈强制 `live`） | eval sim 不渲（强制 `offline`），另起 [Isaac 镜像](#vla-闭环的-isaac-画面按需镜像)，策略要图时按 sim 此刻的状态渲 | 同 `isaac`，镜像是 `run_unreal_mirror.sh`（同一协议、同一端口） |
 | 额外需要 | — | [安装](setup.md)第 7 步；场景在 `configs/scenes.yaml` 有 `isaac` 条目且已建 stage；第二张 GPU | [安装](setup.md)第 8 步；`bash scripts/start_unreal.sh --gpu N` 起编辑器；场景有 `unreal` 条目且关卡已建（`build_scene.sh <场景> --unreal`）；第二张 GPU |
 | 能用的场景 | 全部 | `warehouse_textured`、`warehouse_box_45x*`、`box_platform` | `warehouse_textured`、`warehouse_box_45x*`；其余场景没有房间可烘焙，条目里写明不支持，加载实验文件时就拒绝 |
@@ -71,19 +71,18 @@ Unreal：关卡里的后处理体积和 `repeats`），所以同一个状态对�
 convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 或 `unreal` 配 `backend.render: live`）
 加载实验文件时就拒绝。
 
-随数据集导出的第三视角录像也由 `images.source` 的渲染器画（用户 2026-09-29 定）。三种渲染器用同一个机位：
-`src/locomani/sim/third_person_shot.py` 的 `round_camera`（四边线场景按每局走入的边选 `edge_<边>`，别的场景用 `video_camera`，
-都没有就跟随骨盆），相机每一帧的位姿由 MuJoCo 算好交给 Isaac / Unreal；帧取 trace 每 4 行一帧（12.5 fps，720×540），
-与 MuJoCo 录像逐帧对齐。品红 ghost 夹爪只画在主画面；三个小窗是数据集里补渲好的三路相机画面（解码后缩小），不另渲。
-Isaac 在补渲完所有局后再挂第三视角相机和 ghost，并停掉三路数据集相机的渲染，所以数据集画面不受影响；Unreal 的关卡导入里多了一个
-带相机的自由刚体和两只 ghost 夹爪（`sim/unreal/export_mjcf.py`），平时停在地板下 5 m，只在拍第三视角那一次摆到位。
-convert 对 Isaac / Unreal 运行只从 `videos_<渲染器>/` 取录像，缺了就拒绝，从不退回 MuJoCo 的 `videos/`。
-录像是可选的（2026-09-30 用户定）：实验文件写 `images.third_person: false` 时，补渲只填三路相机、不画第三视角，convert 也不再要求；
-`mujoco` 运行的仿真不再实时录像（采集和评测都是）。开关只在 `run_context.third_person` 读一处，默认 `true`。
-评测录像同样按渲染器（2026-09-29 用户定）：`mujoco` 由 eval sim 实时录到 `eval/videos/`；`isaac` / `unreal` 事后用
-`scripts/render_eval_videos_{isaac,unreal}.sh` 渲到 `eval/videos_<渲染器>/`（`view_render.film_eval`），机位和版式与采集录像相同。
-评测不录数据集，所以小窗由同一个渲染器按每一帧的状态现渲（就是镜像给策略的那种图）；Isaac 渲完小窗才能挂第三视角相机，
-所以先把所有局的小窗渲完，再逐局拍第三视角。完整命令见 [warehouse runbook](warehouse.md) 第 3–6 步；Unreal 的编辑器、关卡与坑见
+第三视角录像也由 `images.source` 的渲染器画（用户 2026-09-29 定），而且是可选的，只在跑这一条命令时画（用户 2026-09-30 定）：
+`bash scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--dry-run] [局名...]`。它按 `images.source` 选渲染器的 venv，
+入口是 `src/locomani/sim/render_third_person.py`，画面由 `view_render.film_rounds` 出。采集、补渲、转换、评测都不需要它。
+三种渲染器用同一个机位：`src/locomani/sim/third_person_shot.py` 的 `round_camera`（四边线场景按每局走入的边选 `edge_<边>`，别的场景用
+`video_camera`，都没有就跟随骨盆），相机每一帧的位姿由 MuJoCo 算好交给渲染器；帧取 trace 每 4 行一帧（12.5 fps，720×540），与 MuJoCo
+回放逐帧对齐。品红 ghost 夹爪只画在主画面。三个小窗：这个渲染器补渲过的采集局，取数据集里补渲好的画面（解码后缩小）；其余的局
+（没补渲的、评测的）由同一个渲染器按每一帧的状态现渲，就是镜像给策略的那种图。Isaac 挂上第三视角相机后不能再渲数据集相机，
+所以先把要现渲的小窗全部渲完，再逐局拍第三视角。Unreal 的关卡导入里有一个带相机的自由刚体和两只 ghost 夹爪
+（`sim/unreal/export_mjcf.py`），平时停在地板下 5 m，只在拍第三视角那一次摆到位；MuJoCo 用同样的 mocap 相机和 ghost
+（`sim/mujoco_view.py`）。录像写到 `videos_<渲染器>/`（MuJoCo 是 `videos/`，`--eval` 时在 `eval/` 下），预览在 `previews_<渲染器>/`。
+convert 只从这个目录取录像链接进数据集的 `third_person/`，有就链接、没有就不链接，从不退回别的渲染器的；所以要随数据集导出，就在
+convert 之前跑。完整命令见 [warehouse runbook](warehouse.md) 第 3–7 步；Unreal 的编辑器、关卡与坑见
 [Unreal 交接文档](handoff/unreal-urlab-20260928.md)。
 
 ## 采集时记录什么
@@ -245,7 +244,7 @@ bash scripts/build_isaac_assets.sh --snapshot "$SNAPSHOT"
 （`CoordinatedReach.ghost` → `tasks/crate/ghost_trace.py`）。`scripts/render_trace_videos.py` 发现该文件就把半透明品红夹爪放在目标位姿上，
 目标每次微调都能在视频里看到它动。**只画在第三人称跟踪视角**（geom group 4 只对主相机打开）；ego 和左右腕相机的画中画用默认选项渲染，
 永远不含 ghost，VLA 数据不受影响。Isaac 重渲（`render_isaac_videos.sh`）发现同名文件时把 `--ghost-trace` 传给两个渲染器，同样只在主画面。
-Isaac / Unreal 补渲时画的数据集第三视角录像（`view_render.film`）也读它，ghost 同样只在主画面：Isaac 挂在 stage 上，Unreal 是关卡导入里的两个自由刚体。
+`scripts/render_third_person.sh` 画的第三视角录像（`view_render.film_rounds`）也读它，ghost 同样只在主画面：Isaac 挂在 stage 上，Unreal 是关卡导入里的两个自由刚体。
 没有 `_ghost.npz` 的旧 run 渲染时没有 ghost（不能事后重建当时的目标）。
 
 ## warehouse（Blender 房间）的 Isaac 重渲
@@ -459,7 +458,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 | 基于 trace 的 Isaac 离线重渲 | 已实现；双臂有受管并排脚本 |
 | `backend.render: offline` + trace 出 MuJoCo 视频 | 已实现；仅双臂 assisted 专家，见[上一节](#离线渲染backendrender-offline) |
 | `collect` 的 `RENDER_BACKEND=isaac` | **仅打印计划，没有启动重渲**；旧指南把它描述成自动追加阶段，现已更正 |
-| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_videos.sh`（Isaac 并排）；随数据集的第三视角录像由补渲脚本按 `images.source` 画（见[图像来源](#图像来源imagessource)） |
+| `collect` 阶段自动追加 Isaac 重渲 | 当前没有该阶段，采集完显式调用 `scripts/render_trace_videos.py`（MuJoCo）/ `scripts/render_isaac_videos.sh`（Isaac 并排）；按 `images.source` 画的第三视角录像用 `scripts/render_third_person.sh`（见[图像来源](#图像来源imagessource)） |
 | Isaac 图像作为 VLA 闭环的输入 | 已实现按需镜像（`images.source: isaac` + `scripts/run_isaac_mirror.sh`，见[上文](#vla-闭环的-isaac-画面按需镜像)）；warehouse checkpoint-5000 已真实闭环 10 局（台账 crate.md 2026-09-27）；专家仍读 MuJoCo |
 | Isaac 图作为 VLA 训练图 | 已实现：`images.source: isaac` 的运行在 convert 前跑 `scripts/render_dataset_cameras_isaac.sh`，把 Isaac 图写进 session 替换占位帧（见[图像来源](#图像来源imagessource)） |
 | Unreal（URLab）出策略的图 | 已接通（2026-09-29）：`images.source: unreal`，命令见[图像来源](#图像来源imagessource)；有关卡的场景是 `warehouse_textured` 和四个 `warehouse_box_45x*`。验证过数据集补渲 + convert（2 集）和 3 局 lockstep 闭环（3/3，用的是 Isaac 训练的 checkpoint-5000，所以存在分布偏移，这个数字不能和 Isaac 的直接比）；还没有用 Unreal 图训练过。安装见 [setup.md](setup.md) 第 8 步，编辑器和坑见 [Unreal 交接文档](handoff/unreal-urlab-20260928.md) |

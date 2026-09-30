@@ -8,7 +8,7 @@ collision-only geoms, every world camera (a camera URLab imports renders each fr
 the four-edge scenes carry four) and the com_marker debug site (URLab draws it as a large white sphere). The
 dataset cameras get their `CAMERA_CONFIGS` resolution explicitly, which URLab's render targets take.
 
-The third-person video (`view_render.film`) is a moving world camera plus ghost grippers, and URLab moves only
+The third-person video (`view_render.film_rounds`) is a moving world camera plus ghost grippers, and URLab moves only
 what the import's qpos holds, so three free-joint bodies are added, parked 5 m under the floor at qpos0:
 `RIG` carries the camera `FILM_CAMERA` at the scene's shot fovy (`third_person_shot.scene_fovy`) and the video's
 size, and each `GHOSTS` body carries its gripper's visual meshes (`ghost.hand_parts`, the Isaac ghost's own

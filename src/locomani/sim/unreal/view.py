@@ -15,7 +15,7 @@ the view loads the level, sets the capture count and starts PIE itself. `close()
 the bridge (editor.stop_pie says why).
 
 The import also carries the third-person video's camera rig and ghost grippers (`export_mjcf`), free bodies parked
-under the floor; `film` places them for its own capture (`view_render.film`).
+under the floor; `film` places them for its own capture (`view_render.film_rounds`).
 """
 
 from __future__ import annotations

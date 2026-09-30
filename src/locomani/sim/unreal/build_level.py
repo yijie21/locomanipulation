@@ -147,7 +147,7 @@ def build(name: str) -> dict:
         "level": level_path,
         "room_level": ROOM_LEVEL,
         "blueprint": asset,
-        "film": exported["film"],  # the third-person camera the import carries (view_render.film checks it)
+        "film": exported["film"],  # the third-person camera the import carries (UnrealView.film_setup checks it)
         "builder": "locomani.sim.unreal.build_level",
         "built": time.strftime("%Y-%m-%d %H:%M:%S"),
         "seconds": round(time.time() - t0, 1),

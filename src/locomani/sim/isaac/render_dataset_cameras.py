@@ -7,9 +7,7 @@
 scene's Isaac stage and look (`run_context.isaac_scene`) -- the object and settings the eval mirror serves the
 policy from. Which rows, which sessions and the marker (`renderer: isaac` plus the look) are
 `locomani.sim.view_render`, shared with the Unreal re-render; this module owns Kit's lifetime.
-Then, unless the run sets `images.third_person: false`, the same view films every filled episode's third-person
-video that is missing (`view_render.film`, `<run>/videos_isaac/`), after all the dataset images: filming stops the
-dataset cameras.
+The run's third-person videos are a separate, optional command (`scripts/render_third_person.sh`).
 """
 
 from __future__ import annotations
@@ -44,23 +42,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     traces, todo = planned
     total = sum(len(v) for v in todo.values())
-    filming = run_context.third_person(cfg)  # images.third_person: the renderer films the kept episodes too
-    films = len(view_render.film_todo(traces, list(todo), "isaac")) + total if filming else 0
     print(
         f"{run_dir.name}: {total} kept episode(s) to render in {len(todo)} finished session(s) "
-        f"of {len(traces.sessions)}, then {films if filming else 'no (images.third_person false)'} third-person video(s), Isaac stage {isaac['dir']}",
+        f"of {len(traces.sessions)}, Isaac stage {isaac['dir']}",
         flush=True,
     )
-    if args.dry_run or not (total or films):
+    if args.dry_run or not total:
         return 0
 
     from locomani.sim.isaac.view import run_in_kit
 
     def work(view):
-        log = lambda m: print(m, flush=True)  # noqa: E731
-        view_render.fill(view, traces, todo, "isaac", look, log=log)
-        if filming:
-            view_render.film(view, traces, view_render.film_todo(traces, list(todo), "isaac"), "isaac", log=log)
+        view_render.fill(view, traces, todo, "isaac", look, log=lambda m: print(m, flush=True))
 
     run_in_kit(str(traces.scene_dir / "scene_locomani.xml"), isaac, args.gpu, work, log=lambda m: print(m, flush=True))
     return 0
