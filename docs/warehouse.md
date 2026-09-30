@@ -88,7 +88,7 @@ collect: scene warehouse_box_45x32x33, 2 kept wanted in batches of 4 rounds (at 
 
 ## 3. 补渲相机
 
-采集时仿真没有出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选的渲染器把成功局的三路相机（第一视角和左右手腕）渲出来，替换占位图；再用同一个渲染器画每个成功局的第三视角录像，机位和第 2 步第三条相同，带品红 ghost 夹爪，三路相机的小窗取自刚渲好的数据集画面。Isaac：
+采集时仿真没有出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选的渲染器把成功局的三路相机（第一视角和左右手腕）渲出来，替换占位图；再用同一个渲染器画每个成功局的第三视角录像，机位和第 2 步第三条相同，带品红 ghost 夹爪，三路相机的小窗取自刚渲好的数据集画面（不要录像就在实验文件里写 `images.third_person: false`，见第 7 步）。Isaac：
 
 ```bash
 bash scripts/render_dataset_cameras_isaac.sh outputs/runs/warehouse_smoke --gpu 1
@@ -113,7 +113,7 @@ bash scripts/convert_data.sh outputs/runs/warehouse_smoke
 ```
 
 做什么：把录制的数据转成 LeRobot 数据集，按 `train.holdout` 留出验证集，并检查数据。不用 GPU。
-得到什么：`train_dataset/` 和 `val_dataset/`。约 40 秒。每条数据的第三视角录像在数据集的 `third_person/episode_N.mp4`，取自第 3 步所选渲染器画的那份（`images.source: mujoco` 时是 `videos/`）；缺了就拒绝转换。
+得到什么：`train_dataset/` 和 `val_dataset/`。约 40 秒。每条数据的第三视角录像在数据集的 `third_person/episode_N.mp4`，取自第 3 步所选渲染器画的那份（`images.source: mujoco` 时是 `videos/`）；缺了就拒绝转换，`images.third_person: false` 时不要求、也没有这个目录。
 
 ## 5. 训练
 
@@ -163,6 +163,16 @@ bash scripts/render_eval_videos_unreal.sh outputs/runs/warehouse_smoke_unreal --
 
 随数据集导出的第三视角录像（转换后在数据集的 `third_person/`）是其中一种回放，由所选渲染器画：第 3 步补渲完相机后，同一个 Isaac 或 Unreal 接着给每个成功局画一段，到 `videos_isaac/` 或 `videos_unreal/`，机位与下面 MuJoCo 回放相同，带 ghost 夹爪，三个小窗是补渲好的数据集画面；评测的由第 6 步最后的命令画。下面两条命令是另外的回放。
 
+**不要第三视角录像。** 它是可选的，由实验文件里的开关决定，默认开：
+
+```yaml
+images:
+  source: isaac
+  third_person: false   # 默认 true
+```
+
+做什么：第 3 步只补渲三路相机，不画第三视角（Isaac 每局省约 40 秒、Unreal 约 20 秒，200 局约省 2 小时和 1 小时）；第 4 步转换不再要求这些录像，数据集里没有 `third_person/`。`images.source: mujoco` 的运行里，采集和评测的仿真也不再实时录像。第 6 步最后的评测录像本来就要手工跑，不受它影响。开关要在采集之前写进实验文件；已经开始的运行，改了实验文件会被拒绝（`config.yaml differs from`），要换运行名（`--name`）。关掉以后仍可以随时用下面的回放命令看某几局。
+
 MuJoCo，先看动作对不对：
 
 ```bash
@@ -206,8 +216,8 @@ Unreal：Unreal 的第三视角录像就是上面说的第 3 步和第 6 步那�
 | 转换报 `still hold black placeholder frames` | 漏了第 3 步补渲 |
 | 评测每局报 `mirror: no reply from the mirror` 或 `camera/state streams never became ready` | 镜像没起来或还没就绪。看终端 2，等它打印 `isaac mirror listening on`（Unreal 是 `unreal mirror listening on`）再起终端 3 |
 | `an Unreal editor is already running` 后面跟着 `not` 和卡号 | 编辑器开在另一张卡上。`bash scripts/stop_unreal.sh` 后用要的卡重开 |
-| 补渲报 `has no third-person camera and ghost grippers` | Unreal 关卡建于 2026-09-29 加入第三视角之前：`bash scripts/build_scene.sh warehouse_box_45x32x33 --unreal` 重建 |
-| 转换报 `have no isaac third-person video`（或 `unreal`） | 重跑第 3 步，它只补画缺的录像 |
+| 补渲报 `has no third-person camera and ghost grippers` | Unreal 关卡建于 2026-09-29 加入第三视角之前：`bash scripts/build_scene.sh <场景> --unreal` 重建 |
+| 转换报 `have no isaac third-person video`（或 `unreal`） | 重跑第 3 步，它只补画缺的录像（不要录像的运行要在采集前写 `images.third_person: false`，见第 7 步） |
 | `cannot use images.source unreal` | 这个场景没有 Unreal 关卡（`configs/scenes.yaml` 的 `unreal` 条目写了原因），只有物流房间的场景能用 |
 | `config.yaml differs from` | 同名运行的实验文件被改过。加 `--name` 换个运行名 |
 | 失败大多是 `reach_stalled`、`lost_attachment` | 这是这条线目前主要的失败形态（手停在箱沿上方、合爪后脱开），不是环境问题 |

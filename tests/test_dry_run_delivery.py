@@ -340,6 +340,15 @@ def test_the_round_video_directory_is_delivered(evaluated):
     assert "SIM_VIDEO_DIR=" in out and "eval/videos" in out
 
 
+def test_without_third_person_videos_no_stack_records_one(tmp_path):
+    """`images.third_person: false`: neither the collection nor the evaluation sim is handed a video directory."""
+    cfg = yaml.safe_load((EXPERIMENTS / "bottle_simple_200.yaml").read_text())
+    cfg["images"]["third_person"] = False
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump(cfg))
+    (tmp_path / "summary.json").write_text(json.dumps({"train": {"checkpoint": "/tmp/model/checkpoint-10000"}}))
+    assert "SIM_VIDEO_DIR" not in _module("run_stack", str(tmp_path), "--mode", "eval", "--gpu", "2")
+
+
 def test_the_opening_token_and_the_checkpoint_are_delivered(evaluated):
     cfg, out = evaluated
     assert cfg["eval"]["initial_token"] in out  # must match the pose the training data opens in

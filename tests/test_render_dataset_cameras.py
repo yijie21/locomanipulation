@@ -119,3 +119,8 @@ def test_an_isaac_or_unreal_run_converts_only_with_every_kept_episode_filmed_by_
     require_filmed(tmp_path, isaac, [str(session)])
     mujoco_run = migrate_images({"backend": {"render": "offline"}, "images": {"source": "mujoco"}})
     require_filmed(tmp_path / "nowhere", mujoco_run, [str(session)])  # MuJoCo's videos stay optional
+    (tmp_path / "videos_isaac" / "a.mp4").unlink()
+    off = migrate_images({"backend": {"render": "offline"}, "images": {"source": "isaac", "third_person": False}})
+    require_filmed(tmp_path, off, [str(session)])  # turned off: nothing is required
+    with pytest.raises(SystemExit, match="1 kept episode"):
+        require_filmed(tmp_path, isaac, [str(session)])

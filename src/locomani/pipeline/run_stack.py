@@ -62,7 +62,7 @@ def collect_spec(
         run_dir=run_dir,
         gpu=gpu,
         scene_dir=scene,
-        video_dir=collect_root / "videos",
+        video_dir=collect_root / "videos" if run_context.third_person(cfg) else None,
         record=bool(cfg["collect"]["record"]),
     )
     env = {**spec.env, **{k: str(v) for k, v in extra.items()}}
@@ -132,7 +132,7 @@ def eval_spec(cfg: dict, run_dir: Path, scene: Path, gpu: str):
         gpu=gpu,
         backend=line_of(cfg).eval_backend(evaluation),
         scene_dir=scene,
-        video_dir=run_dir / "eval" / "videos",
+        video_dir=run_dir / "eval" / "videos" if run_context.third_person(cfg) else None,
         record=False,
     )
     # Per-round qpos traces, so a round can be rendered afterwards (backend.render offline writes no video)

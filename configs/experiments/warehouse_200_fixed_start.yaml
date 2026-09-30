@@ -111,6 +111,7 @@ scene:
   cases: null
 images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac | unreal
   source: isaac
+  third_person: true  # the same renderer also draws the third-person video (step 3 films the kept rounds); false skips it
 backend:
   no_encoder: false
   render: offline

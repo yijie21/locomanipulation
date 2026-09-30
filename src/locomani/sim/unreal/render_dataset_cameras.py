@@ -10,8 +10,9 @@ the eval mirror serves the policy from. Which rows, which sessions and the marke
 level and the capture count) are `locomani.sim.view_render`, shared with the Isaac re-render. Every rendered row
 is a fresh capture of its own pose (camera cut, `repeats` captures), as a mirror request is, so a picture does
 not depend on the rows before it; about 130 ms a row, and only the rows convert keeps are rendered.
-Then the same view films every filled episode's third-person video that is missing (`view_render.film`,
-`<run>/videos_unreal/`); the level must carry the camera rig and ghosts (`export_mjcf`), or it asks for a rebuild.
+Then, unless the run sets `images.third_person: false`, the same view films every filled episode's third-person
+video that is missing (`view_render.film`, `<run>/videos_unreal/`); the level must carry the camera rig and ghosts
+(`export_mjcf`), or it asks for a rebuild.
 """
 
 from __future__ import annotations
@@ -41,13 +42,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     traces, todo = planned
     total = sum(len(v) for v in todo.values())
-    films = len(view_render.film_todo(traces, list(todo), "unreal")) + total
+    filming = run_context.third_person(cfg)  # images.third_person: the renderer films the kept episodes too
+    films = len(view_render.film_todo(traces, list(todo), "unreal")) + total if filming else 0
     print(
         f"{run_dir.name}: {total} kept episode(s) to render in {len(todo)} finished session(s) "
-        f"of {len(traces.sessions)}, then {films} third-person video(s), Unreal level {unreal['level_path']}",
+        f"of {len(traces.sessions)}, then {films if filming else 'no (images.third_person false)'} third-person video(s), Unreal level {unreal['level_path']}",
         flush=True,
     )
-    if args.dry_run or not films:
+    if args.dry_run or not (total or films):
         return 0
 
     from locomani.sim.unreal.view import UnrealView
@@ -56,8 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     view = UnrealView(scene_xml, unreal["level_path"], unreal["repeats"], log=lambda m: print(m, flush=True))
     try:
         view_render.fill(view, traces, todo, "unreal", look, log=lambda m: print(m, flush=True))
-        filming = view_render.film_todo(traces, list(todo), "unreal")
-        view_render.film(view, traces, filming, "unreal", log=lambda m: print(m, flush=True))
+        if filming:
+            todo_films = view_render.film_todo(traces, list(todo), "unreal")
+            view_render.film(view, traces, todo_films, "unreal", log=lambda m: print(m, flush=True))
     finally:
         view.close()
     return 0

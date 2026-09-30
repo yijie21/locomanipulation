@@ -78,6 +78,8 @@ convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就�
 Isaac 在补渲完所有局后再挂第三视角相机和 ghost，并停掉三路数据集相机的渲染，所以数据集画面不受影响；Unreal 的关卡导入里多了一个
 带相机的自由刚体和两只 ghost 夹爪（`sim/unreal/export_mjcf.py`），平时停在地板下 5 m，只在拍第三视角那一次摆到位。
 convert 对 Isaac / Unreal 运行只从 `videos_<渲染器>/` 取录像，缺了就拒绝，从不退回 MuJoCo 的 `videos/`。
+录像是可选的（2026-09-30 用户定）：实验文件写 `images.third_person: false` 时，补渲只填三路相机、不画第三视角，convert 也不再要求；
+`mujoco` 运行的仿真不再实时录像（采集和评测都是）。开关只在 `run_context.third_person` 读一处，默认 `true`。
 评测录像同样按渲染器（2026-09-29 用户定）：`mujoco` 由 eval sim 实时录到 `eval/videos/`；`isaac` / `unreal` 事后用
 `scripts/render_eval_videos_{isaac,unreal}.sh` 渲到 `eval/videos_<渲染器>/`（`view_render.film_eval`），机位和版式与采集录像相同。
 评测不录数据集，所以小窗由同一个渲染器按每一帧的状态现渲（就是镜像给策略的那种图）；Isaac 渲完小窗才能挂第三视角相机，

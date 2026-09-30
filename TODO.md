@@ -445,7 +445,9 @@
   - [x] 12.9.14 （2026-09-29 用户定：按渲染器统一）待用户定：Unreal 运行的第三视角观看录像仍由 Isaac 渲（`render_isaac_videos.sh`）；Unreal 的 trace 视频还是实验脚本 `scripts/experiments/unreal_trace_video_20260928.py`，要不要接成正式脚本
     - [x] 12.9.14.1 （2026-09-29 用户：采集导出的第三视角录像要和数据集相机同一个渲染器）补渲脚本接着用同一个 Isaac / Unreal 画每个成功局的第三视角录像到 `videos_<渲染器>/`，机位 = MuJoCo 录像的 `round_camera`，带 ghost，小窗取补渲好的数据集帧；convert 只从那里取、缺了拒绝。实跑：Isaac 8 局（warehouse_5ep_20260929）、Unreal 2 局（warehouse_film_unreal_20260929），均已 convert；未提交
     - [x] 12.9.14.2 （2026-09-29 用户：评测录像也按渲染器统一）`render_eval_videos_{isaac,unreal}.sh` → `view_render.film_eval`：先渲每局三路相机做小窗，再拍第三视角，到 `eval/videos_<渲染器>/` 与 `eval/previews_<渲染器>/`；runbook 第 6 步改用它们（`render_isaac_videos.sh` 留作 MuJoCo|Isaac 对照）
-    - [ ] 12.9.14.3 Unreal 关卡只重建了 `warehouse_box_45x32x33`，另 4 个关卡渲第三视角时会报 rebuild；MuJoCo 实时录像（`SIM_VIDEO_DIR`，`mujoco` 运行的评测录像）四边线仍用 `video_camera`，不是每局的边机位
+    - [~] 12.9.14.3 （2026-09-30 关卡部分已做：另 4 个关卡已重建，逐个验证相机图与第三视角；机位部分未做）Unreal 关卡只重建了 `warehouse_box_45x32x33`，另 4 个关卡渲第三视角时会报 rebuild；MuJoCo 实时录像（`SIM_VIDEO_DIR`，`mujoco` 运行的评测录像）四边线仍用 `video_camera`，不是每局的边机位
+    - [x] 12.9.14.4 （2026-09-30 用户：第三视角可选）实验文件 `images.third_person`（默认 true，`run_context.third_person`）：false 时补渲不画、convert 不要求、`mujoco` 运行的仿真不实时录；六个现行 warehouse 实验文件写明 true
+    - [ ] 12.9.14.5 `docs/warehouse.md` 的冒烟规模文字仍是旧的（2 条、每批 4 局），`warehouse_smoke.yaml` 已是 10 条、每批 10 局、最多 2 批（22c1fda），耗时估计要按新规模重测
   - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
 - [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存

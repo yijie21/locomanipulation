@@ -148,8 +148,11 @@ def require_filmed(run_dir: Path, cfg: dict, sessions: list[str]) -> None:
     """Convert's guard for the third-person videos: an Isaac or Unreal run ships its renderer's, never MuJoCo's.
 
     MuJoCo's stay optional (a live run records them, an offline one renders them with
-    scripts/render_trace_videos.py); the Isaac and Unreal fills film every kept episode they fill."""
+    scripts/render_trace_videos.py); the Isaac and Unreal fills film every kept episode they fill, unless the run
+    turned the videos off (`images.third_person: false`), when nothing is required."""
     if cfg.get("backend", {}).get("render") != "offline" or expected_renderer(cfg) == "mujoco":
+        return
+    if not run_context.third_person(cfg):
         return
     from locomani.pipeline.world_lift import RunTraces
 

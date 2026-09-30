@@ -49,6 +49,8 @@ def test_the_eval_sim_renders_what_the_source_needs():
         (_run(images={"source": "unreal"}, backend={"render": "live"}), "backend.render: offline"),
         (_run(images={"source": "unreal"}, eval={"backend": {"render": "live"}}), "contradicts"),
         (_run(images={"source": "isaac", "gpu": 1}), "images must be"),
+        (_run(images={"source": "isaac", "third_person": "no"}), "images must be"),
+        (_run(images={"source": "isaac", "third_person": None}), "images must be"),
         (_run(images={"source": "isaac"}, backend={"render": "live"}), "backend.render: offline"),
         (_run(images={"source": "isaac"}, backend={}), "backend.render: offline"),  # live is the default
         (_run(eval={"image_source": "isaac"}, backend={"render": "live"}), "backend.render: offline"),
@@ -188,7 +190,26 @@ def test_the_unreal_warehouse_runs_differ_from_the_isaac_default_in_the_image_so
     # so nothing but who draws the pictures may differ
     experiments = run_context.ROOT / "configs" / "experiments"
     isaac, unreal = (yaml.safe_load((experiments / f"{n}.yaml").read_text()) for n in (name, f"{name}_unreal"))
-    assert (isaac["images"], unreal["images"]) == ({"source": "isaac"}, {"source": "unreal"})
+    assert (isaac["images"]["source"], unreal["images"]["source"]) == ("isaac", "unreal")
+    assert {k: v for k, v in isaac["images"].items() if k != "source"} == {
+        k: v for k, v in unreal["images"].items() if k != "source"
+    }  # the third-person switch alike
     assert unreal["name"] == f"{name}_unreal"
     rest = [{k: v for k, v in cfg.items() if k not in ("name", "images")} for cfg in (isaac, unreal)]
     assert rest[0] == rest[1]
+
+
+def test_third_person_is_on_unless_the_run_turns_it_off():
+    assert run_context.third_person(_run(images={"source": "isaac"}))  # the default, and every copy before 09-30
+    assert run_context.third_person(_run())  # the historical format too
+    assert not run_context.third_person(_run(images={"source": "unreal", "third_person": False}))
+    cfg = _run(images={"source": "isaac", "third_person": False})
+    run_context.migrate_images(cfg)
+    assert cfg["images"] == {"source": "isaac", "third_person": False}  # checked, not rewritten
+
+
+def test_the_current_warehouse_files_state_the_switch():
+    for name in ("warehouse_smoke", "warehouse_smoke_unreal", "warehouse_smoke_fixed_start", "warehouse_200",
+                 "warehouse_200_unreal", "warehouse_200_fixed_start"):  # fmt: skip
+        cfg = yaml.safe_load((run_context.ROOT / "configs" / "experiments" / f"{name}.yaml").read_text())
+        assert cfg["images"]["third_person"] is True, name
