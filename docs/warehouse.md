@@ -50,7 +50,7 @@ bash scripts/build_scene.sh warehouse_box_45x32x33 --isaac
 Unreal：
 
 ```bash
-bash scripts/start_unreal.sh --gpu 1
+bash scripts/start_unreal.sh --gpu 0
 bash scripts/build_scene.sh warehouse_box_45x32x33 --unreal
 ```
 
@@ -74,21 +74,23 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/$RUN.yaml
 
 采集时仿真不出图，录下的相机帧是黑色占位图。这一步按状态轨迹，用所选渲染器渲出成功局的三路相机（第一视角和左右手腕），替换占位图。
 
-MuJoCo（`images.source` 是 `mujoco` 的运行，即[第 10 节](#10-只有一张卡)那份复制出来的实验文件）：
+MuJoCo（`images.source` 是 `mujoco` 的运行，即[第 11 节](#11-只有一张卡)那份复制出来的实验文件）：
 
 ```bash
 bash scripts/render_dataset_cameras.sh outputs/runs/$RUN --gpu 0
 ```
 
+做什么：不起仿真栈，在 `--gpu` 那张卡上用 EGL 离屏渲染，按每行数据用到的仿真时刻从状态轨迹渲出三路相机，写回占位图。
+得到什么：同 Isaac。三种渲染器同一次运行只能用一种：补渲脚本和 `images.source` 不一致会拒绝，convert 也只认这一种。
+
 Isaac：
 
 ```bash
-bash scripts/render_dataset_cameras_isaac.sh outputs/runs/$RUN --gpu 1
+bash scripts/render_dataset_cameras_isaac.sh outputs/runs/$RUN --gpu 0
 ```
 
 做什么：在 GPU 1 上起 Isaac，逐局补渲，渲完退出。
 得到什么：成功局的相机帧被替换，每局打印一行 `episode 2: 907 renders for 1838 rows` 这样的统计。冒烟 11 条约 26 分钟。
-
 
 Unreal：
 
@@ -98,9 +100,6 @@ bash scripts/render_dataset_cameras_unreal.sh outputs/runs/$RUN
 
 做什么：在第 1 步起的编辑器里逐局补渲；编辑器所在的卡由 `start_unreal.sh` 定，所以这里不带 `--gpu`。
 得到什么：同 Isaac。冒烟 8 条约 11 分钟。
-
-做什么：不起仿真栈，在 `--gpu` 那张卡上用 EGL 离屏渲染，按每行数据用到的仿真时刻从状态轨迹渲出三路相机，写回占位图。
-得到什么：同 Isaac。三种渲染器同一次运行只能用一种：补渲脚本和 `images.source` 不一致会拒绝，convert 也只认这一种。
 
 ## 4. 转换
 
@@ -169,7 +168,17 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 做什么：把每局的状态轨迹逐帧写回 MuJoCo，从同一机位出图，成功和失败的局都渲。
 得到什么：`videos/<局>.mp4`，20 局约 45 秒。渲评测的局要加 `--traces outputs/runs/$RUN/eval/state_trace --out outputs/runs/$RUN/eval/videos`。
 
-## 8. 看结果
+## 8. 收尾
+
+```bash
+bash scripts/stop_unreal.sh
+bash scripts/stop_stack.sh --instance N # 中途被打断而还挂着
+```
+
+做什么：关掉第 1 步起的 Unreal 编辑器；用 Isaac 时没有编辑器，跳过。采集和闭环评测的仿真栈在各自命令结束时已经自己关掉；中途被打断而还挂着的，用 `bash scripts/stop_stack.sh --instance N`（N 是起栈时打印的实例号）。
+得到什么：打印 `unreal editor stopped`，`nvidia-smi` 里不再有 UnrealEditor 进程。
+
+## 9. 看结果
 
 路径相对于 `outputs/runs/$RUN/`：
 
@@ -181,7 +190,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 | 闭环每局的成败、失败阶段 | `eval/rounds_00.log` 每局一行；`eval/closed_loop.manifest.jsonl` |
 | 闭环录像 | `eval/previews_isaac/` 或 `eval/previews_unreal/`（第 7 步加 `--eval`） |
 
-## 9. 常见报错
+## 10. 常见报错
 
 | 报错 | 处理 |
 |---|---|
@@ -197,11 +206,11 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 
 更多报错和评测前要核对的项见 [warehouse 详解](warehouse_design.md)。
 
-## 10. 只有一张卡
+## 11. 只有一张卡
 
 Isaac 和 Unreal 都要第二张卡。只有一张卡时，把实验文件复制一份，`images.source` 改成 `mujoco`，`RUN` 设成新文件的名字，策略就改看 MuJoCo 渲的图。这时第 1 步不建渲染器的版本；第 3 步换成 `bash scripts/render_dataset_cameras.sh outputs/runs/$RUN --gpu 0`；闭环评测不起终端 2；`run_overnight.sh` 去掉 `--render-gpu 1`；第 7 步的 `--gpu` 写 0。训练集和评测必须用同一种图。
 
-## 11. 接下来
+## 12. 接下来
 
 - 完整规模：`RUN=warehouse_200`（200 条数据、1 万步训练、100 局评测），Unreal 是 `warehouse_200_unreal`。按 40 局保留 17 条的产出率估计，保留 200 条约需 470 局。
 - 调专家参数做对照实验：见 [warehouse 详解第 7 节](warehouse_design.md#7-做对照实验)。
