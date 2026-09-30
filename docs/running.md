@@ -105,6 +105,7 @@ collect: 2 lanes in parallel -- one stack and one driver process each (instance 
 | 每张卡的空闲显存 | 录制且不渲染 2000 MiB；实时渲染 6000 MiB | 实测一条通道约 1.5 GB |
 | 每张卡的仿真数 | 不渲染（`backend.render: offline`）最多 4 个；实时渲染 1 个 | 两个实时渲染的仿真放在同一张卡上，会让 deploy 丢状态 |
 | 空闲实例 | 实例 0–9 中没有栈、没加锁、端口没被占的 | 别的程序也会占端口，比如 Unreal 编辑器占了实例 0 的整段端口 |
+| 系统内存 | **不算**（规划器不量它） | 一条录制通道常驻约 5 GB：仿真进程 2.9 GB、exporter 1–1.4 GB、deploy 0.3 GB（2026-09-29 SRA0889 实测）。容器里 CPU 配额先把通道数压下来，所以够用；没有 cgroup 配额的桌面机上 CPU 一行不限制，只剩显存在算，32 GB 内存、swap 2 GB 的机器被开出 4 条，第一局刚开始驱动进程就被内核 OOM 杀掉，终端只打印一个 `Killed`。这样的机器写 `--lanes 1`，起栈前 `free -h` 的可用内存要有“通道数 × 5 GB” |
 
 - 默认用机器上所有的卡；`--gpu 0` 或 `--gpu 0,1` 只用这些卡，通道轮流分到每张卡上。第一条通道优先放在 `collect.instance` 上。
 - 只开一条通道：`start_stack.sh collect ... --lanes 1`，或在实验文件里写 `collect.lanes: 1`。写数字 N 表示“最多 N 条”。只开一条时和以前完全一样：栈只起在 `collect.instance` 上，这个实例被占就报错。

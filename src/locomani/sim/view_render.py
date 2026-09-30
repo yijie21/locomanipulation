@@ -127,6 +127,8 @@ def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
 def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None:
     """Render every pending episode in `todo` through `view`, recording each in its session's marker."""
     for session, eps in todo.items():
+        if not eps:  # nothing to render, so nothing to open: a batch of rounds that failed before recording leaves a
+            continue  # session that may be gone by now (warehouse_smoke batch 01, its instance root cleaned, 2026-09-29)
         info = json.loads((session / "meta" / "info.json").read_text())
         keys = [f.split(".")[-1] for f in info["features"] if f.startswith("observation.images.")]
         if sorted(keys) != sorted(STREAMS):

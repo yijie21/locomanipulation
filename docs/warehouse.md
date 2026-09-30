@@ -81,6 +81,8 @@ collect: scene warehouse_box_45x32x33, 2 kept wanted in batches of 4 rounds (at 
 
 在终端里运行时，打印后等 10 秒才开始第一局，这时按 Ctrl-C 就不会录下任何一局，仿真栈也会一起关掉。不看这份打印，也可以先加 `--dry-run` 运行第二条命令，它只打印、不启动。
 
+**通道数（`--lanes`）。** 一条通道是一套仿真栈加一个跑局进程，并行只改变速度、不改变数据；几条通道由第一条命令按空闲资源决定，但它不算系统内存，一条通道常驻约 5 GB。没有 cgroup CPU 配额的桌面机（如 32 GB 内存的 SRA0889）会被开出 4 条并在第一局被内核杀掉，这样的机器写 `--lanes 1` 或在实验文件里写 `collect.lanes: 1`（[运行机制](running.md#6-并行)）。
+
 **只从一个地方开始。** 要像 2026-09-28 之前那样，每局都从同一个位置出发（场景自带的起点，在 −y 边前方，往后退 0.25 m；纸箱在原位，只加 ±2 cm、±5° 的抖动），就把上面三条命令里的实验文件换成 `configs/experiments/warehouse_smoke_fixed_start.yaml`，运行名随之变成 `warehouse_smoke_fixed_start`。后面几步的 `outputs/runs/warehouse_smoke` 也要换成它。完整规模对应 `warehouse_200_fixed_start.yaml`。这两份文件和默认文件相比，只有摆放方式不同，专家参数完全一样。场景仍用 `warehouse_box_45x32x33`。
 
 ## 3. 补渲相机
@@ -170,6 +172,7 @@ bash scripts/render_isaac_videos.sh outputs/runs/warehouse_smoke --traces output
 | 报错 | 处理 |
 |---|---|
 | `not enough headroom` | 机器上的 CPU、进程数或显存不够，脚本拒绝启动。等别的任务结束（[运行机制](running.md#6-并行)） |
+| 第二条命令刚开第一局就退出，终端只有一个 `Killed` | 内存不够，被内核杀掉了：通道开多了（见第 2 步“通道数”）。先 `bash scripts/stop_stack.sh --instance N` 收掉还挂着的栈（N 是起栈时打印的实例号），再用 `--lanes 1` 重来；中断的批会从头再跑 |
 | 转换报 `still hold black placeholder frames` | 漏了第 3 步补渲 |
 | 评测每局报 `mirror: no reply from the mirror` 或 `camera/state streams never became ready` | 镜像没起来或还没就绪。看终端 2，等它打印 `isaac mirror listening on`（Unreal 是 `unreal mirror listening on`）再起终端 3 |
 | `an Unreal editor is already running` 后面跟着 `not` 和卡号 | 编辑器开在另一张卡上。`bash scripts/stop_unreal.sh` 后用要的卡重开 |
