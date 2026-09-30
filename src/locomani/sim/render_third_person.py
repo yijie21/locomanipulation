@@ -1,6 +1,7 @@
 """A run's third-person videos, drawn by the renderer of its `images.source`: one command, run whenever wanted.
 
-    bash scripts/render_third_person.sh outputs/runs/<run> [--gpu 1] [--eval] [--all] [--dry-run] [labels...]
+    bash scripts/render_third_person.sh outputs/runs/<run> [--gpu 1] [--eval] [--all] [--side-by-side] [--dry-run]
+        [labels...]
 
 `scripts/render_third_person.sh` runs this in the renderer's venv (MuJoCo: VENV_SIM_PY, Isaac: RENDER_PY, Unreal:
 BRIDGE_PY). No stage runs it: collection, the dataset fill and convert work without it (user, 2026-09-30). Each round
@@ -18,12 +19,21 @@ dataset's `third_person/` when they exist, so run this before convert to ship th
 Insets: a collection round whose dataset cameras this renderer filled shows those frames (`view_render.filled_insets`);
 any other round renders them first. The renderer is the view the dataset fill and the eval mirror use: Isaac's stage
 and look on --gpu (Kit), Unreal's level in the running editor (its card: `start_unreal.sh --gpu`), MuJoCo on --gpu.
+
+--side-by-side (Isaac or Unreal) also writes `<label>_vs_mujoco.mp4` beside each video: the MuJoCo replay of the
+same trace on the left, this renderer's video on the right. Both film the same shot at the same rows
+(`render_trace_videos.py` and `view_render.film_round` share `third_person_shot`), so the halves agree frame for frame
+and any difference is the renderer's; a pair whose frame counts differ is refused. A missing MuJoCo half is rendered
+first by `render_trace_videos.py` into MuJoCo's directory (`videos/`, `eval/videos/`), on --gpu. Previews go to
+`previews_<renderer>/<label>_vs_mujoco*.mp4` (not `_side_by_side`: `render_isaac_videos.sh`'s tracking-shot previews
+have that name in `previews_isaac/`, and a preview replaces every earlier file of its name).
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 from pathlib import Path
 
 from locomani import paths
@@ -51,6 +61,45 @@ def chosen_rounds(run_dir: Path, evaluation: bool, every: bool, labels: list[str
     return traced if every else run_context.successful_traces(run_dir, traces)
 
 
+def replay_in_mujoco(run_dir: Path, evaluation: bool, labels: list[str], gpu: str) -> None:
+    """MuJoCo's replay of `labels` into MuJoCo's video directory: `render_trace_videos.py`, the replay the runbook's
+    MuJoCo command writes. Its venv, not this one: this process is the renderer's (Kit, or URLab's bridge)."""
+    base = run_dir / "eval" if evaluation else run_dir
+    env = dict(os.environ, MUJOCO_GL="egl", MUJOCO_EGL_DEVICE_ID=str(gpu), CUDA_VISIBLE_DEVICES=str(gpu))
+    argv = [paths.VENV_SIM_PY, str(ROOT / "scripts/render_trace_videos.py"), str(run_dir)]
+    argv += ["--traces", str(traces_dir(run_dir, evaluation)), "--out", str(video_dir(base, "mujoco")), *labels]
+    subprocess.run(argv, env=env, check=True)
+
+
+def frame_count(video: Path) -> int:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
+         "stream=nb_read_packets", "-of", "csv=p=0", str(video)],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    return int(out.strip())
+
+
+def side_by_side(left: Path, right: Path, dest: Path, previews: Path, log=print) -> None:
+    """`left` beside `right` into `dest`, and its previews; the two must be the same shot, frame for frame."""
+    from locomani.pipeline.video_preview import make_previews
+
+    counts = frame_count(left), frame_count(right)
+    if counts[0] != counts[1]:
+        raise SystemExit(f"{left} has {counts[0]} frames and {right} {counts[1]}: not the same rows of one trace")
+    tmp = dest.with_suffix(".stacking.mp4")
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(left), "-i", str(right), "-filter_complex",
+         "[0:v][1:v]hstack=inputs=2", "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p", "-an", str(tmp)],
+        check=True,
+    )  # fmt: skip
+    os.replace(tmp, dest)
+    written = make_previews(dest, previews / dest.stem)
+    log(
+        f"  {dest.name}: {counts[0]} frames; previews {', '.join(f'{p.name} {p.stat().st_size} B' for p, _s, _t in written)}"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", type=Path, help="the run directory")
@@ -58,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--gpu", default="1", help="the card Isaac or MuJoCo renders on (Unreal: the editor's card)")
     ap.add_argument("--eval", action="store_true", help="the closed-loop evaluation's rounds, not the collection's")
     ap.add_argument("--all", action="store_true", help="every traced round, not only the successful ones")
+    ap.add_argument(
+        "--side-by-side",
+        action="store_true",
+        help="also write <round>_vs_mujoco.mp4: MuJoCo's replay (left) beside this renderer's video (right)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="say what would be filmed, film nothing")
     args = ap.parse_intermixed_args(argv)
 
@@ -77,7 +131,31 @@ def main(argv: list[str] | None = None) -> int:
         f"into {out_dir.relative_to(run_dir.parent)} ({len(labels) - len(todo)} of {len(labels)} already filmed)",
         flush=True,
     )
-    if args.dry_run or not todo:
+    pairs, replay = [], []
+    if args.side_by_side:
+        if renderer == "mujoco":
+            raise SystemExit("--side-by-side puts MuJoCo beside another renderer; this run's images.source is mujoco")
+        mujoco_dir = video_dir(base, "mujoco")
+        pairs = [label for label in labels if not (out_dir / f"{label}_vs_mujoco.mp4").exists()]
+        replay = [label for label in pairs if not (mujoco_dir / f"{label}.mp4").exists()]
+        print(
+            f"  side by side: {len(pairs)} to stack, {len(replay)} MuJoCo replay(s) to render first into "
+            f"{mujoco_dir.relative_to(run_dir.parent)}",
+            flush=True,
+        )
+    if args.dry_run or not (todo or pairs):
+        return 0
+    if replay:
+        replay_in_mujoco(run_dir, args.eval, replay, args.gpu)
+    log = lambda m: print(m, flush=True)  # noqa: E731
+
+    def stack_pairs():
+        for label in pairs:
+            left, right = video_dir(base, "mujoco") / f"{label}.mp4", out_dir / f"{label}.mp4"
+            side_by_side(left, right, out_dir / f"{label}_vs_mujoco.mp4", previews, log=log)
+
+    if not todo:
+        stack_pairs()
         return 0
     if renderer == "mujoco":  # before mujoco is imported: it picks the GL backend at import, the card at context
         os.environ.update(MUJOCO_GL="egl", MUJOCO_EGL_DEVICE_ID=str(args.gpu), CUDA_VISIBLE_DEVICES=str(args.gpu))
@@ -89,10 +167,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  insets: {len(filled)} round(s) from the filled dataset, {len(todo) - len(filled)} rendered", flush=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     scene_xml = str(scene_dir / "scene_locomani.xml")
-    log = lambda m: print(m, flush=True)  # noqa: E731
 
     def work(view):
         view_render.film_rounds(view, scene_dir, rounds, renderer, out_dir, previews, log=log)
+        stack_pairs()  # inside: Isaac's Kit ends the process when it closes
 
     if renderer == "isaac":
         from locomani.sim.isaac.view import run_in_kit

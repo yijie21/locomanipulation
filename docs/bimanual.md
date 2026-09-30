@@ -1,7 +1,7 @@
 # crate：双臂抓筐
 
 机器人看着筐走到矮桌前，俯身用双手抓起筐，再抬起、站直。整条线只用 1 张 GPU。
-下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 8 分钟。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
+下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 8 分钟。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。耗时是 2026-09-28 照这一页实跑的结果。
 改参数、并行、重跑某一步见[运行机制](running.md)；设计和更多细节见 [crate 详解](bimanual_design.md)；名词见[术语表](reference/glossary.md)。
 
 ## 0. 每个新终端先执行
@@ -29,8 +29,8 @@ bash scripts/start_stack.sh collect configs/experiments/crate_smoke.yaml
 bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_smoke.yaml
 ```
 
-做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。它先按这台机器的空闲资源决定并行开几条通道（每条一个栈、一个跑局进程），并打印出来；crate 采集时仿真要实时渲染相机，一张卡只放一条通道，所以通道数最多等于卡数（[运行机制](running.md#6-并行)，`--lanes 1` 只开一条）。第二条在每条通道上运行视觉专家：一局接一局让机器人走近、抓筐、抬起，保留成功的局。每批 3 局一定跑满，保留够 2 条就不再开新批；结束时关掉所有仿真栈。
-得到什么：运行目录 `outputs/runs/crate_smoke/`，里面有 `config.yaml`、每局成败 `manifest_00.jsonl`、每局录像 `videos/`、每局状态轨迹 `trace/`（双臂的这些文件在运行目录顶层）。起栈约 45 秒；采集约 2 分钟，一局约 20 秒（冒烟实测 3 局保留 2 条，失败的一局是 `basket_tilt`，筐抬起时倾斜过大）。每局的结果打印在 `visual_00.log` 里。
+做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。它先按空闲资源决定并行开几条通道（每条一个栈、一个跑局进程）并打印出来，`--lanes 1` 只开一条（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家：一局接一局让机器人走近、抓筐、抬起，保留成功的局。每批 3 局一定跑满，保留够 2 条就不再开新批；结束时关掉所有仿真栈。
+得到什么：运行目录 `outputs/runs/crate_smoke/`，里面有 `config.yaml`、每局成败 `manifest_00.jsonl`、每局录像 `videos/`、每局状态轨迹 `trace/`（双臂的这些文件在运行目录顶层）。起栈约 45 秒；采集约 2 分钟。每局的结果打印在 `visual_00.log` 里。
 
 ## 3. 转换
 
@@ -71,6 +71,15 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/crate_smoke/model/check
 
 得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、每局状态轨迹 `eval/state_trace/`。起栈和策略服务各约 25 秒；两局约 2.5 分钟。`eval/rounds_00.log` 里每局一行，例如 `[crate-vla] round 0: FAIL [vla] walk: never closer than 1.41 m (71 s)`；评测进程最后打印 `eval: 0/2`。
 
+评测时仿真不录像。要看录像（可选），从状态轨迹渲：
+
+```bash
+MUJOCO_GL=egl "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/crate_smoke \
+  --traces outputs/runs/crate_smoke/eval/state_trace --out outputs/runs/crate_smoke/eval/videos
+```
+
+得到什么：`eval/videos/<局>.mp4`，每局一个。两局约 15 秒。
+
 熟悉以后可以一条命令跑完第 2–5 步（不含开环评测）：`bash scripts/run_overnight.sh configs/experiments/crate_smoke.yaml --gpu 0 --line bimanual`。已经有产物的步骤会被跳过。
 
 ## 6. 看结果
@@ -83,7 +92,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/crate_smoke/model/check
 | 采集每局的成败和原因 | `manifest_NN.jsonl`；日志是 `visual_NN.log` |
 | 采集录像 | `videos/` |
 | 闭环每局的成败、失败阶段 | `eval/closed_loop.manifest.jsonl` |
-| 闭环录像 | 评测时不录，事后从轨迹渲：`MUJOCO_GL=egl "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/<名字> --traces outputs/runs/<名字>/eval/state_trace --out outputs/runs/<名字>/eval/videos` |
+| 闭环录像 | `eval/videos/`（第 5 步最后那条命令） |
 | 产物是否齐全 | `python scripts/artifact_contract.py check outputs/runs/<名字> crate_eval` |
 
 ## 7. 常见报错
@@ -100,7 +109,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/crate_smoke/model/check
 
 ## 8. 接下来
 
-- 完整规模：把 `crate_smoke` 换成 `crate_table30_record`（20 条数据、3000 步训练、100 局评测）。2026-09-21 实测采 20 局保留 15 条，没到 20 条时采集以非零状态退出，已采的记录保留。参考：2026-09-15 用 200 条数据训练的模型，墙钟闭环 71/100（[双臂台账](ledger/crate.md)）。
+- 完整规模：把 `crate_smoke` 换成 `crate_table30_record`（20 条数据、3000 步训练、100 局评测）。采 20 局约保留 15 条；不到 20 条时采集以非零状态结束，已采的照样能做后面各步。
 - 改参数：复制一份实验文件再改，常改的字段见[运行机制第 2 节](running.md#2-常改的字段)。
 - 物流房间里抓纸箱用同一套脚本，但场景和出图方式不同，单独一页：[warehouse](warehouse.md)。
 - 为什么这样设计、试过什么：[crate 详解](bimanual_design.md)；每一轮的实测数字：[双臂台账](ledger/crate.md)。

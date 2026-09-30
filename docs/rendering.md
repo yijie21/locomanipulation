@@ -72,7 +72,7 @@ convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就�
 加载实验文件时就拒绝。
 
 第三视角录像也由 `images.source` 的渲染器画（用户 2026-09-29 定），而且是可选的，只在跑这一条命令时画（用户 2026-09-30 定）：
-`bash scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--dry-run] [局名...]`。它按 `images.source` 选渲染器的 venv，
+`bash scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--side-by-side] [--dry-run] [局名...]`。它按 `images.source` 选渲染器的 venv，
 入口是 `src/locomani/sim/render_third_person.py`，画面由 `view_render.film_rounds` 出。采集、补渲、转换、评测都不需要它。
 三种渲染器用同一个机位：`src/locomani/sim/third_person_shot.py` 的 `round_camera`（四边线场景按每局走入的边选 `edge_<边>`，别的场景用
 `video_camera`，都没有就跟随骨盆），相机每一帧的位姿由 MuJoCo 算好交给渲染器；帧取 trace 每 4 行一帧（12.5 fps，720×540），与 MuJoCo
@@ -81,6 +81,9 @@ convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就�
 所以先把要现渲的小窗全部渲完，再逐局拍第三视角。Unreal 的关卡导入里有一个带相机的自由刚体和两只 ghost 夹爪
 （`sim/unreal/export_mjcf.py`），平时停在地板下 5 m，只在拍第三视角那一次摆到位；MuJoCo 用同样的 mocap 相机和 ghost
 （`sim/mujoco_view.py`）。录像写到 `videos_<渲染器>/`（MuJoCo 是 `videos/`，`--eval` 时在 `eval/` 下），预览在 `previews_<渲染器>/`。
+`--side-by-side`（Isaac、Unreal）另写 `<局>_vs_mujoco.mp4`：左边是 `render_trace_videos.py` 的 MuJoCo 回放，右边是这个渲染器的录像。
+两边同机位、同一组行，帧数不同就拒绝；缺的 MuJoCo 回放先用 `.venv_sim` 渲（跨 venv，渲染器进程里没有它的 MuJoCo）。名字不用
+`_side_by_side`，因为 `previews_isaac/` 里 `render_isaac_videos.sh` 的跟拍并排预览已经叫这个，同名预览会被替换。
 convert 只从这个目录取录像链接进数据集的 `third_person/`，有就链接、没有就不链接，从不退回别的渲染器的；所以要随数据集导出，就在
 convert 之前跑。完整命令见 [warehouse runbook](warehouse.md) 第 3–7 步；Unreal 的编辑器、关卡与坑见
 [Unreal 交接文档](handoff/unreal-urlab-20260928.md)。

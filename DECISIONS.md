@@ -1310,3 +1310,17 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **Isaac 或 Unreal 运行缺第三视角录像时，改用 MuJoCo 的 `videos/`**：违背"和策略的图同一个渲染器"。
 - **Unreal 的相机和 ghost 用 mocap 刚体**：URLab 的 puppet 模式只推 qpos，mocap 位姿不在 qpos 里。
 - **每局都现渲小窗**：补渲过的局重复渲染，每局多约 75 秒（Isaac）；数据集里已经有完全相同的图。
+
+## 2026-09-30 三个 runbook 只留命令、一句解释和总耗时；warehouse 的 Unreal 在每一步都和 Isaac 平行（用户，一轮问答定）
+
+- **每条命令的解释是硬规则**：做什么一句（什么进程、哪张卡、何时返回或怎么停），得到什么一句（主要产物、总耗时），可选参数各一行。随机范围、通道数、session 目录、回放原理、带日期的历史数字，移到各线的详解页（`warehouse_design.md` 第 10 节）或已有的 `running.md`。
+  - 理由：用户指出 warehouse.md 的解释又长回来了。09-28 定的"只要命令和简要解释"没有可检查的尺子，每次加功能都在命令后面补一段。
+- **耗时只写每步总数**，页首一句写明是哪天照这一页实跑的（warehouse 2026-09-30，bottle、crate 2026-09-28）。逐局、逐帧的拆分进详解页。
+- **行数上限改成改写后的实际行数加约 10%**（warehouse 215、bimanual 125、single_arm 115，`lint_repository.py`）。上次是靠抬高上限容纳新增的解释。
+- **warehouse 用运行名变量**：第 0 步设 `RUN=warehouse_smoke`（Unreal 是 `warehouse_smoke_unreal`），共用命令都写 `$RUN`；和渲染器有关的命令在同一步里并排两条。
+  - 理由：共用命令写死 Isaac 的名字、再用一句话让 Unreal 读者自己替换，这正是"Unreal 不平行"的来源之一。bottle、crate 没有二选一，照旧写死名字。
+- **第 7 节只留 `render_third_person.sh` 一条（Isaac、Unreal 同一条）和 MuJoCo 快速回放**。新增 `--side-by-side`：左边 MuJoCo 回放，右边所选渲染器，同一机位逐帧对齐，写成 `<局>_vs_mujoco.mp4`。`render_isaac_videos.sh`（跟拍机位、路径追踪）移出 runbook，留在 `rendering.md`。
+  - 理由：第 7 节不平行，是因为只有 Isaac 有并排回放。用户选了"给 Unreal 也做一个"；两边用同一个机位，并排只要拼接，不用新写渲染，而且一条命令就对两个渲染器都成立。
+  - 被否决：照搬 `render_isaac_videos.sh` 写一个 Unreal 版。两份脚本各自维护，第 7 节仍是两条渲染器专用命令。
+  - 名字不用 `_side_by_side`：`previews_isaac/` 里跟拍并排的预览已经叫这个，第一次实跑时同名预览把它们替换掉了（已从原片重建）。
+- 验证：`--side-by-side` 在两份冒烟（`warehouse_smoke_20260930`、`warehouse_smoke_unreal_20260930`）上实跑，Isaac 11 局约 50 秒，Unreal 8 局连同先渲 MuJoCo 回放约 1 分钟；Isaac 另实跑一局"先拍再拼"（Kit 关闭即退出进程）。warehouse 每条命令代入两个 `$RUN` 跑了 `--dry-run`：不报错，或只报设计好的拒绝（渲染器不符、镜像要先起评测栈）。bottle、crate 的命令没变，没有重跑冒烟。

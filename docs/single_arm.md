@@ -1,7 +1,7 @@
 # bottle：单臂抓瓶
 
 机器人走到桌前，停稳后单手抓起桌上的水瓶。整条线只用 1 张 GPU。
-下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 12 分钟。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
+下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 12 分钟。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。耗时是 2026-09-28 照这一页实跑的结果。
 改参数、并行、重跑某一步见[运行机制](running.md)；设计和更多细节见 [bottle 详解](single_arm_design.md)；名词见[术语表](reference/glossary.md)。
 
 ## 0. 每个新终端先执行
@@ -30,7 +30,7 @@ bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_sm
 ```
 
 做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。第二条运行专家：一局接一局让机器人走近、抓瓶，保留成功的局；保留够 2 条后结束，并关掉仿真栈。
-得到什么：运行目录 `outputs/runs/bottle_simple_smoke/`，里面有实验文件的副本 `config.yaml`、每局成败 `collect/manifest_00.jsonl`、每局录像 `collect/videos/`。起栈约 45 秒（deploy 第一次启动还要多约 10 分钟构建 TensorRT engine）；采集约 1.5 分钟，一局约 45 秒，日志 `collect_00.log` 里每局以 `EPISODE OK` 结尾。
+得到什么：运行目录 `outputs/runs/bottle_simple_smoke/`，里面有实验文件的副本 `config.yaml`、每局成败 `collect/manifest_00.jsonl`、每局录像 `collect/videos/`。起栈约 45 秒（deploy 第一次启动还要多约 10 分钟构建 TensorRT engine）；采集约 1.5 分钟，日志 `collect_00.log` 里每局以 `EPISODE OK` 结尾。
 
 ## 3. 转换
 
@@ -69,7 +69,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/bottle_simple_smoke/mod
 | 1 | `bash scripts/run_vla_server.sh outputs/runs/bottle_simple_smoke --gpu 0` | 策略服务：加载 checkpoint，收观测、回动作 | 打印 `listening`；一直运行，评测结束后按 Ctrl-C |
 | 2 | `bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_smoke --gpu 0` | 逐局重置场景、让策略控制机器人、记录成败 | 跑完 `eval.rounds` 局后关掉仿真栈并退出 |
 
-得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、录像 `eval/videos/`。起栈和策略服务各约 25 秒；两局约 7 分钟（lockstep 下渲染和推理时仿真暂停，一局的墙钟时间是仿真时间的 2 倍多）。`eval.log` 末尾打印 `closed loop: 0/2`，每局的失败原因写在 `why` 里，例如 `[vla] walk: never closer than 1.07 m`。
+得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、录像 `eval/videos/`。起栈和策略服务各约 25 秒；两局约 7 分钟。`eval.log` 末尾打印 `closed loop: 0/2`，每局的失败原因写在 `why` 里，例如 `[vla] walk: never closer than 1.07 m`。
 
 熟悉以后可以一条命令跑完第 2–5 步（不含开环评测）：`bash scripts/run_overnight.sh configs/experiments/bottle_simple_smoke.yaml --gpu 0`。已经有产物的步骤会被跳过。
 
@@ -99,7 +99,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/bottle_simple_smoke/mod
 
 ## 8. 接下来
 
-- 完整规模：把上面命令里的 `bottle_simple_smoke` 换成 `bottle_simple_200`（200 条数据、1 万步训练、100 局评测）。采集约 300 局保留 200 条（2026-09-16 实测产出率 0.67，一局约 45 秒）；100 局 lockstep 评测按冒烟的速度约 6 小时。现行专家采的数据还没有完整训练和闭环评测过的结果。
+- 完整规模：把上面命令里的 `bottle_simple_smoke` 换成 `bottle_simple_200`（200 条数据、1 万步训练、100 局评测）。采集约 300 局保留 200 条，一局约 45 秒；100 局评测约 6 小时。
 - 改参数：复制一份实验文件再改，常改的字段见[运行机制第 2 节](running.md#2-常改的字段)。
 - 同一套命令也能跑 pick-and-place（`pick_place`，右手抓罐头放进篮子），只换实验文件和场景，见 [bottle 详解第四节](single_arm_design.md#四pick-and-place-这条变体)。
 - 为什么这样设计、试过什么：[bottle 详解](single_arm_design.md)；每一轮的实测数字：[bottle 台账](ledger/bottle.md)。

@@ -73,3 +73,34 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 | 转换报 `rendered by another renderer` | session 补渲用的渲染器和 `images.source` 不一致。训练图必须和评测图同源，换 `name` 重采 |
 | 起栈报 `the training set would be empty`，或转换报 `leaves none of` | `train.holdout` 不小于能保留的条数。调小 `train.holdout`（0 表示不留验证集）：起栈时被拒的，改完同名重起；转换时才被拒的，配置已经冻结在运行目录里，只能换 `name` 重采 |
 | 起栈报缺 POSE 补丁 | deploy 没打补丁，或者 `SONIC_DEPLOY_ROOT` 指错了（[安装第 3 步](setup.md)） |
+
+## 10. 运行细节（2026-09-30 从 runbook 移来）
+
+### 每局从哪里开始
+
+默认每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：
+- 起点离台边 0.6 m 到"这条边外的空地 − 0.25 m"（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m）。房间的货架和墙没有碰撞体，起点不能放进去。
+- 起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧）。
+- 纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
+
+同样设置在房间里实测保留 17/40（[双臂台账](ledger/crate.md) 2026-09-28）。`run_agent_server.sh` 开始第一局之前把这份设置打印出来；在终端里运行时，打印后等 10 秒才开始，这时按 Ctrl-C 不会录下任何一局，仿真栈也一起关掉。加 `--dry-run` 只打印、不启动。
+
+`*_fixed_start` 实验（`warehouse_smoke_fixed_start`、`warehouse_200_fixed_start`）按 2026-09-28 之前的方式摆放：每局从场景自带的起点出发（在 −y 边前方，往后退 0.25 m），纸箱在原位，只加 ±2 cm、±5° 的抖动。它们和默认文件只有摆放方式不同，专家参数完全一样，场景仍是 `warehouse_box_45x32x33`。
+
+### 通道数
+
+一条通道是一套仿真栈加一个跑局进程，并行只改变速度、不改变数据。`start_stack.sh collect` 按空闲 CPU、进程数、显存和实例决定开几条，但不算系统内存，而一条通道常驻约 5 GB。没有 cgroup CPU 配额的桌面机（如 32 GB 内存的 SRA0889）会被开出 4 条，并在第一局被内核杀掉；这样的机器写 `--lanes 1`，或在实验文件里写 `collect.lanes: 1`。被杀后重来时，中断的批从头再跑。本机每批 10 局的通道要约 1600 个进程，2026-09-30 只开得出 1 条（[运行机制](running.md#6-并行)）。
+
+### 3 批采不够
+
+3 批跑完还不够 `collect.successes` 条时，采集打印 `stopped at 8/10 kept after 3 batches` 这样的一行并以非零状态结束。已采的照样能接着补渲、转换、训练，只是数据少几条。`run_overnight.sh` 遇到这种情况停在采集，重跑也不会多采；要凑够，就复制实验文件、把 `collect.max_batches` 调大、换运行名重采。2026-09-30 两次实跑，20 局分别保留 11 条和 8 条，所以冒烟允许第三批（多约 6 分钟）。
+
+### 补渲写到哪里
+
+相机帧的 mp4 不在运行目录下，而在采集时的 session 目录里（路径列在 `collect/inputs.json` 的 `sessions`）：`<session>/videos/chunk-000/observation.images.<ego_view|left_wrist|right_wrist>/episode_NNNNNN.mp4`。渲过的几 MB，失败局仍是 100 多 KB 的黑帧；`<session>/meta/offline_render.json` 记着是谁渲的。2026-09-30 实测：Isaac 每局 135–163 s（每次 0.21 s，启动另需约 20 秒），Unreal 每局 74–93 s（每次约 130 ms）。
+
+### 录像的画面
+
+- 状态轨迹（采集是 `trace/<局>_state_trace.npz`，闭环评测是 `eval/state_trace/`）记录了每次仿真发布时的全部关节位置，回放它就能事后从任意机位出图。这和第 3 节的数据集相机是两回事：数据集相机是策略要看的图，一次运行只能由一个渲染器填；回放录像只给人看，同一份轨迹可以分别用 MuJoCo 和各个渲染器渲，也不用重采。
+- `render_third_person.sh` 的机位、ghost 和小窗见[仿真与渲染](rendering.md#图像来源imagessource)。评测局的小窗由渲染器按每一帧的状态现渲，就是镜像给策略的那种图；评测没有 ghost。长的局预览切成 2–5 段。2026-09-30 冒烟两局评测：Isaac 每局小窗 225–243 s 加录像 123 s，Unreal 每局 223–285 s 加 130–140 s。
+- Isaac 另有跟拍机位、可开路径追踪的并排视频 `render_isaac_videos.sh`，用法见[仿真与渲染](rendering.md#warehouseblender-房间的-isaac-重渲)。

@@ -66,3 +66,37 @@ def test_a_dry_run_names_the_renderer_directory_and_skips_what_is_filmed(
     assert T.main([str(run), "--dry-run", *flags]) == 0
     printed = capsys.readouterr().out
     assert f"into {where} " in printed and "(1 of " in printed
+
+
+def test_side_by_side_plans_the_pairs_and_the_missing_mujoco_halves(tmp_path, capsys, monkeypatch):
+    from locomani.pipeline import run_context
+
+    monkeypatch.setattr(run_context, "unreal_scene", lambda cfg: {"level_path": "/Game/Levels/x"})
+    run = _run(tmp_path, "unreal")
+    (run / "videos").mkdir()
+    (run / "videos" / "r0.mp4").write_bytes(b"x")  # MuJoCo half of r0 already there
+    assert T.main([str(run), "--side-by-side", "--dry-run"]) == 0
+    assert "side by side: 2 to stack, 1 MuJoCo replay(s) to render first into run/videos" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="images.source is mujoco"):
+        T.main([str(_run(tmp_path / "m", "mujoco")), "--side-by-side", "--dry-run"])
+
+
+def _clip(path: Path, frames: int) -> Path:
+    import subprocess
+
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=64x48:rate=12.5:duration={frames / 12.5}",
+         "-frames:v", str(frames), "-pix_fmt", "yuv420p", str(path)],
+        check=True,
+    )  # fmt: skip
+    return path
+
+
+def test_side_by_side_stacks_two_videos_of_the_same_rows_and_refuses_others(tmp_path):
+    left, right = _clip(tmp_path / "l.mp4", 25), _clip(tmp_path / "r.mp4", 25)
+    dest, previews = tmp_path / "x_vs_mujoco.mp4", tmp_path / "previews"
+    T.side_by_side(left, right, dest, previews, log=lambda m: None)
+    assert T.frame_count(dest) == 25
+    assert [p.name for p in previews.iterdir()] == ["x_vs_mujoco.mp4"]
+    with pytest.raises(SystemExit, match="not the same rows"):
+        T.side_by_side(left, _clip(tmp_path / "short.mp4", 20), tmp_path / "y.mp4", previews, log=lambda m: None)

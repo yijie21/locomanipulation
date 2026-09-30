@@ -5,6 +5,7 @@
 #   bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --gpu 1           # collection: kept rounds
 #   bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --gpu 1 --eval    # closed-loop rounds
 #   bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --all --dry-run   # every round; plan only
+#   bash scripts/render_third_person.sh outputs/runs/warehouse_smoke --side-by-side    # + MuJoCo beside it
 #
 # Writes <run>/videos_<renderer>/<round>.mp4 (<run>/eval/... with --eval; MuJoCo: videos/) and previews <= 500 KB in
 # previews_<renderer>/; a filmed round is skipped on a rerun. Run it before convert_data.sh to ship the collection's
@@ -15,7 +16,7 @@ set -u
 . "$(dirname "$0")/paths.sh"
 cd "$LOCOMANI_ROOT" || exit 1
 
-[ $# -ge 1 ] || { echo "usage: $(basename "$0") <run-dir> [--gpu N] [--eval] [--all] [--dry-run] [rounds...]" >&2; exit 1; }
+[ $# -ge 1 ] || { echo "usage: $(basename "$0") <run-dir> [--gpu N] [--eval] [--all] [--side-by-side] [--dry-run] [rounds...]" >&2; exit 1; }
 
 export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 SOURCE=$("$VENV_SIM_PY" -c '

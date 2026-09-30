@@ -43,5 +43,10 @@
     "source": "src/locomani/tasks/crate/reach_envelope/boundary_search.py",
     "interpreter": "same-interpreter",
     "reason": "reach-envelope boundary search, spawns its own worker in the same venv. Same as floor_scene: a real instance, diagnostic path, no gate"
+  },
+  {
+    "source": "src/locomani/sim/render_third_person.py",
+    "interpreter": "venv_sim",
+    "reason": "--side-by-side renders a missing MuJoCo half with scripts/render_trace_videos.py in .venv_sim; this process runs in the renderer's venv (RENDER_PY for Isaac's Kit, BRIDGE_PY for Unreal), so a venv boundary"
   }
 ]

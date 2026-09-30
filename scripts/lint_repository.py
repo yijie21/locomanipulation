@@ -26,9 +26,11 @@ GUIDES = {
     "README.md": 80,
     "STATE.md": 60,
     "docs/README.md": 60,
-    "docs/single_arm.md": 130,
-    "docs/bimanual.md": 130,
-    "docs/warehouse.md": 240,  # 2026-09-29: Isaac and Unreal side by side wherever the renderer matters; + §7 third-person replay videos (user)
+    # 2026-09-30 (user): the three runbooks cut back to commands, one-sentence explanations and step totals; each cap
+    # is its page's length then plus about 10%. Details move to the design page, not into a raised cap.
+    "docs/single_arm.md": 115,
+    "docs/bimanual.md": 125,
+    "docs/warehouse.md": 215,
     "docs/running.md": 180,
     "docs/setup.md": 440,  # 2026-09-29: + step 8 (Unreal) in the steps' format and its troubleshooting
     "docs/warehouse_design.md": 120,
