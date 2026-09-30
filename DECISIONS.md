@@ -1255,3 +1255,58 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **删 `third_party/SIMPLE/data`（12 GB）：** 没查清哪些部分还在用，没列入。
 - **删 09-28 的四边线 pilot 和 `skills_*` 运行：** `loco_agent` 会话还在往后者里写。
 - **第一次审核时先合 30cb422、端口问题以后再修：** 默认的 warehouse 实验文件用实例 0，编辑器常驻时评测起不来，"只改 `images.source`"这件事对默认文件根本不成立，所以作为阻塞项退回。
+
+
+## 2026-09-29/30 第三视角录像按 `images.source` 的渲染器画，只在跑一条独立命令时画（用户）；冒烟最多 3 批
+
+背景：用户先要 warehouse 采 5 集，并看 MuJoCo、Isaac、Unreal 三种渲染的第三视角。当时只有 MuJoCo 录像进数据集，Isaac 只有并排录像，Unreal 只有实验脚本；三者机位不同，Unreal 没有 ghost 夹爪。
+
+### 决策
+
+- **第三视角录像由 `images.source` 的渲染器画，采集和评测都是（用户 2026-09-29）。**
+  - 理由：用户要"跟 ego、双腕同一种渲染"。策略看的是哪个渲染器的图，给人看的第三视角就用哪个。
+- **三种渲染器同一个机位：`sim/third_person_shot.py` 的 `round_camera`。**
+  - 四边线场景用每局走入那条边的 `edge_<边>`；别的场景用 `video_camera`；都没有就跟随骨盆。
+  - 每帧相机位姿由 MuJoCo 的 `mjv_updateScene` 算出，交给渲染器；帧取 trace 每 4 行一帧（12.5 fps，720×540）。
+  - 理由：`render_trace_videos.py` 本来就用这个机位，三路逐帧对齐。
+  - 核对：MuJoCo 用这个位姿重渲，与原录像只差编码噪声。
+- **Unreal 的相机和 ghost 是导入里的自由刚体（`export_mjcf`），平时停在地板下 5 m。**
+  - 理由：URLab 只按导入的 qpos 摆东西。数据集关卡本身就带着它们，不用另建一个关卡。
+  - ghost 用网格副本和单独材质，这样能单独做半透明，不影响机器人材质。
+  - 核对：ghost 摆在手腕位姿时与真夹爪重合，误差 0 mm。
+- **小窗有两个来源。**
+  - 这个渲染器补渲过的局，取数据集里的帧，也就是策略训练用的图。
+  - 其余的局（没补渲的、评测的），由同一个视图现渲，也就是镜像给策略的图。
+  - Isaac 挂上第三视角相机后不能再渲数据集相机，所以先把所有要现渲的小窗渲完，再逐局拍第三视角。
+- **一条独立命令 `scripts/render_third_person.sh <run> [--gpu] [--eval] [--all] [--dry-run] [局名]`（用户 2026-09-30：协作者要的是这个）。**
+  - bash 只按 `images.source` 选 venv，其余在 `sim/render_third_person.py` → `view_render.film_rounds`。
+  - 新增 `sim/mujoco_view.py`，`mujoco` 运行也用同一条命令。
+  - 补渲只填三路相机。convert 只从 `videos_<渲染器>/` 取录像：有就链接，没有不要求，也从不改用别的渲染器的录像。
+  - 已渲过的局跳过，所以重跑能续上。
+- **USD 的 `MakeVisible()` 不能用来撤销 `MakeInvisible`，要把 visibility 设回 `inherited`。**
+  - 理由：机器人层的 `/visuals` 本身是隐藏的。对一个子节点调 `MakeVisible()` 会把整个 scope 显示出来，同时把其余子节点全部设成隐藏。
+  - 后果：第一版 Isaac 录像里整台机器人只剩头；这些录像已删掉重渲。
+- **`build_level` 先去 Nanite，再上材质。**
+  - 理由：Nanite 网格配半透明材质，编辑器下一帧就断言崩溃（NaniteShading IsSupportedBlendMode）。
+- **合入 henry-zhao 的提交（包括他新写的 runbook 第 7 步"第三视角回放视频"）时，两边的意图都保留。**
+  - 他那节里"采集和评测都不录第三视角""Unreal 没有回放"两句已不成立，按事实改了。
+  - origin/main 自带两处检查失败：一个 README 片段没按 ruff 格式化；一个测试里写死了冒烟保留"2 条"。这两处在合并提交里修了，合并信息里写明。
+- **`warehouse_smoke` 的 `max_batches` 从 2 改为 3（用户 2026-09-30）。** 三份冒烟文件一起改，因为有测试要求它们一致。
+  - 理由：两批 20 局实测保留 11 条和 8 条，凑不够时 `run_overnight.sh` 停在采集。第三批多约 6 分钟。
+- **runbook 的冒烟耗时改用 2026-09-30 两种渲染器整条实跑的数字。**
+  - 计时明细在 `outputs/warehouse_smoke_timing_20260930/timing.tsv`。
+  - 两次运行名都带日期，因为 `warehouse_smoke` 这个名字已被旧运行占用（TODO 10.4 待用户定）。
+
+### 被否决的方案
+
+- **实验文件开关 `images.third_person`**（`4144452`，已推送，`5b869dd` 撤回）。
+  - 否决理由：用户说协作者要的是一条跑了就出录像的独立命令，不是采集前要写进配置、跑到一半改不了的开关。
+  - 这个开关还把录像绑在补渲步骤上。
+  - 撤回后，带这个键的旧运行副本照样能读，读的时候把键丢掉。
+- **补渲时顺带画第三视角、convert 缺录像就拒绝**（`7f8f4b5` 的做法）：同上。不需要录像的人也得为它花时间，只要一局没画就整次转换失败。
+- **按渲染器分开的评测录像脚本 `render_eval_videos_{isaac,unreal}.sh`**（`b4cddc1`）：已并入那一条命令的 `--eval`，一条命令就够了。
+- **单独建一个带机位的 `<场景>_video` Unreal 关卡**（09-29 的实验脚本）：会和数据集关卡分叉；而且当时 ghost 缺失，需要另建。
+- **统一用 Isaac 的跟随机位**（09-29 三路对比视频用过）：要么 MuJoCo 回放改机位，要么 Unreal 另做移动相机。最终统一用 MuJoCo 录像已有的边机位。
+- **Isaac 或 Unreal 运行缺第三视角录像时，改用 MuJoCo 的 `videos/`**：违背"和策略的图同一个渲染器"。
+- **Unreal 的相机和 ghost 用 mocap 刚体**：URLab 的 puppet 模式只推 qpos，mocap 位姿不在 qpos 里。
+- **每局都现渲小窗**：补渲过的局重复渲染，每局多约 75 秒（Isaac）；数据集里已经有完全相同的图。

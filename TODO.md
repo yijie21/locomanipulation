@@ -467,3 +467,8 @@
   - [x] 12.19.2 视频是否对 ≥ 1280×960 的尺寸跳过超采样——用户 2026-09-29 定：不跳，视频照用场景的 2×。实测（`outputs/merge_check_loco_unreal_20260929/`，GPU0，`warehouse_smoke_edges_20260928` 的 `visual_crate_s7000_01`，22.5 s 画面、281 帧、带小窗）：整条 5.0 分钟，Isaac 286 s，约 1.0 s/帧；main 台账第 2 节 1× 时 66 s 画面 249 s、约 0.6 s/帧，约 1.7 倍。`docs/warehouse.md` 的录像 7 → 10 分钟、补渲 1 → 3 分钟、总计 40 → 50 分钟是按这组数和 209 ms/次推算的，下次冒烟实跑时核对
   - [x] 12.19.3 （2026-09-30 冒烟规模按新配置实跑，见 12.9.14.5） 下次 warehouse 冒烟实跑时核对 runbook 里按 2× 超采样估计的耗时：Isaac 补渲每局约 3 分钟、评测录像每局约 10 分钟、全程约 50 分钟（页面上标着"估计"，实测后改成实测值）
   - [ ] 12.19.4 待用户定：`outputs/merge_check_loco_unreal_20260929/`（66 MB，合并后 `_env` stage 的实渲核对）是否保留
+- [~] 12.20 2026-09-29/30 会话留下的运行与产物（DECISIONS 2026-09-29/30 第三视角一节）
+  - [x] 12.20.1 （2026-09-29）warehouse 默认设置采 5 集（`outputs/runs/warehouse_5ep_20260929`，20 局保留 8）；MuJoCo / Isaac / Unreal 三种第三视角、统一机位的三路并排预览（`outputs/videos/warehouse_5ep_20260929/`）
+  - [x] 12.20.2 （2026-09-30）5 个 Unreal 关卡按带相机刚体和 ghost 的导入重建，逐个验证（`outputs/unreal_levels_rebuild_20260930/all_levels.jpg`）
+  - [ ] 12.20.3 待用户定：删哪些（规矩：删前 STATE 写明 24 小时）。10 步冒烟模型三份各 24 GB：`outputs/runs/{warehouse_smoke_20260930,warehouse_smoke_unreal_20260930,warehouse_film_unreal_20260929}/model`；小的测试副本 `outputs/runs/film_{mujoco_test_20260930,eval_isaac_test_20260929}`（共 0.3 GB）；实验脚本目录 `outputs/{warehouse_5ep_20260929,warehouse_film_unreal_20260929}`（其中 `unreal_third_person.py`、`unreal_tracking_ghost.py` 已被 `render_third_person.sh` 取代）
+  - [ ] 12.20.4 可选：按 `max_batches: 3` 再跑一次冒烟采集，确认 20 局不够时第三批能补齐（第三批约 6 分钟；runbook 的耗时是 2 批时实测的）
