@@ -361,6 +361,8 @@
 - [x] 9.9 （2026-09-29 用户说提前删，已删：三个 `outputs/runs/*_smoke/model/` 和 `try2/run_bottle_simple_smoke/model/`，共 96 GB；try2 里其余约 0.3 GB 的日志、数据集留着作证据；清单、脚本、日志在 `outputs/cleanup_20260929/`；`/workspace` 空闲 77 → 170 GB）删冒烟的大产物：`/workspace` 只剩 26 GB（98%）。`outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}/model/`（各约 24 GB，10 步的 checkpoint，没有用处）和 `outputs/docs_smoke_20260928/try2/`（24 GB，第一次失败的 bottle 冒烟）。按 AGENTS 规则 2026-09-29 11:45 之后才能删，用户说可以就提前删；运行目录其余文件（manifest、日志、录像）保留作 runbook 数字的证据
   - [x] 9.9.1 （用户 2026-09-29 说"都删掉吧"，已删 69 GB，`/workspace` 空闲 170 → 239 GB；清单 `B_delete_manifest.txt`、脚本、日志在 `outputs/cleanup_20260929/`）B 类：① 65 个扫参和对照运行（`box_envelope_s1/s2_*`、`box_centre_*`、`box_yaw*`、`box_lat*`、`box_range_quick_*`、`box_room_grasp_10ep_20260925`）的 `observations/`，31.7 GB，manifest、trace、视频、日志留着；② `box_room_grasp_200_cap120_20260925/observations`，17.2 GB——这 200 条不能再补渲，要用新外观或 Unreal 重训就得重采，`train_dataset` 和 `checkpoint-5000` 留着；③ `third_party/EmbodiedGen/weights/sam-3d-objects`，12.3 GB，要用时重新下载；④ `datasets/` 旧专家数据 8 GB，只留 `g1_locomani_cover400_train/meta/`（`rtc/transition_events.py` 读它的 `info.json`）
 - [ ] 9.10 `crate_table30_record`（crate 的完整规模）还没在 lockstep 下跑过；runbook 里它的数字是 09-15 墙钟 71/100
+- [x] 9.11 （2026-09-30，`34fcd13`，用户问答定）三个 runbook 只留命令、做什么一句、得到什么一句、每步总耗时；移出的内容进详解页（`warehouse_design.md` 第 10 节）；行数上限降到实际加约 10%（warehouse 215、bimanual 125、single_arm 115）
+  - [ ] 9.11.1 可选：隔离环境里的新读者照新 warehouse.md 跑一遍（这次没做，只做了 `--dry-run` 和改动部分的实跑）
 
 
 ## 10. warehouse 默认采集改为四边随机；采集前打印设置；固定起点作为选项（用户 2026-09-28；DECISIONS 同日）
@@ -449,6 +451,7 @@
     - [-] 12.9.14.4 （2026-09-30 放弃：用户说协作者要的是一条独立命令，不是实验文件开关；见 12.9.14.6）（2026-09-30 用户：第三视角可选）实验文件 `images.third_person`（默认 true，`run_context.third_person`）：false 时补渲不画、convert 不要求、`mujoco` 运行的仿真不实时录；六个现行 warehouse 实验文件写明 true
     - [x] 12.9.14.5 （2026-09-30 两个渲染器整条实跑完，runbook 的规模和耗时按实测改写；计时 `outputs/warehouse_smoke_timing_20260930/timing.tsv`；另发现冒烟 20 局可能凑不够 10 条，Unreal 那次 8/10，`run_overnight.sh` 会停在采集；用户 2026-09-30 定 `max_batches` 2 → 3，三份冒烟文件一起改）（2026-09-30 已采 `warehouse_smoke_20260930` 11/20 条、Isaac 补渲 2/11 时用户叫停，等第三视角改完再接着跑；队列 `outputs/warehouse_smoke_timing_20260930/queue.sh`）`docs/warehouse.md` 的冒烟规模文字仍是旧的（2 条、每批 4 局），`warehouse_smoke.yaml` 已是 10 条、每批 10 局、最多 2 批（22c1fda），耗时估计要按新规模重测
     - [x] 12.9.14.6 （2026-09-30 用户：协作者要一条命令，跑了就独立渲第三视角）`scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--dry-run] [局名]` 按 `images.source` 选 venv（MuJoCo/Isaac/Unreal）→ `sim/render_third_person.py` → `view_render.film_rounds`；补渲不再画、convert 不再要求（有就链接）；`images.third_person` 撤掉（旧运行副本里的键读取时丢弃）；`render_eval_videos_*` 并入 `--eval`；新增 `sim/mujoco_view.py`。三种渲染器各实跑验证
+    - [x] 12.9.14.7 （2026-09-30，`34fcd13`）warehouse runbook 每一步 Unreal 与 Isaac 平行：第 0 步 `RUN=`，共用命令写 `$RUN`；第 7 节只留 `render_third_person.sh`（两个渲染器同一条）和 MuJoCo 快速回放；新增 `--side-by-side` 写 `<局>_vs_mujoco.mp4`（左 MuJoCo 右渲染器，同机位逐帧对齐），两份冒烟实跑；`render_isaac_videos.sh` 移出 runbook
   - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
 - [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
 - [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存
@@ -471,4 +474,15 @@
   - [x] 12.20.1 （2026-09-29）warehouse 默认设置采 5 集（`outputs/runs/warehouse_5ep_20260929`，20 局保留 8）；MuJoCo / Isaac / Unreal 三种第三视角、统一机位的三路并排预览（`outputs/videos/warehouse_5ep_20260929/`）
   - [x] 12.20.2 （2026-09-30）5 个 Unreal 关卡按带相机刚体和 ghost 的导入重建，逐个验证（`outputs/unreal_levels_rebuild_20260930/all_levels.jpg`）
   - [ ] 12.20.3 待用户定：删哪些（规矩：删前 STATE 写明 24 小时）。10 步冒烟模型三份各 24 GB：`outputs/runs/{warehouse_smoke_20260930,warehouse_smoke_unreal_20260930,warehouse_film_unreal_20260929}/model`；小的测试副本 `outputs/runs/film_{mujoco_test_20260930,eval_isaac_test_20260929}`（共 0.3 GB）；实验脚本目录 `outputs/{warehouse_5ep_20260929,warehouse_film_unreal_20260929}`（其中 `unreal_third_person.py`、`unreal_tracking_ghost.py` 已被 `render_third_person.sh` 取代）
+  - [ ] 12.20.5 待用户定：09-30 下午新增的产物删不删（小）：两份冒烟运行里的 `*_vs_mujoco.mp4` 和预览、Isaac 冒烟多出的一局失败局第三视角 `visual_crate_s7000_00`、`outputs/docs_warehouse_rewrite_20260930/`
   - [ ] 12.20.4 可选：按 `max_batches: 3` 再跑一次冒烟采集，确认 20 局不够时第三批能补齐（第三批约 6 分钟；runbook 的耗时是 2 批时实测的）
+
+## 13. 真机 URDF（saturn，cheng.zhao 2026-09-29 提供；DECISIONS 2026-09-30 回退一节）
+
+- [-] 13.1 （2026-09-30 放弃：用户说协作者给错了 URDF；代码全部回退，改动存 `outputs/g1_urdf_compare_20260930/saturn_urdf_work.patch`）按 `assets/unitree_G1` 生成 saturn 模型、`build_sim_scene.py --robot saturn`、场景 `bottle_saturn`、SONIC + bottle 专家试跑
+  - [x] 13.1.1 （2026-09-30）两份模型对比：29 个关节同名同序同轴同限位，腿完全一致；腰 rev 1.0、5010 腕、背包和云台 +0.86 kg、踝/腰力矩 50 → 35（`outputs/g1_urdf_compare_20260930/compare.txt`）
+  - [x] 13.1.2 （2026-09-30）试跑：D435 视野 0/10（开局视野门）；saturn 身体 + stock 相机 6/10、不倒；stock 9/10
+- [ ] 13.2 待协作者：给正确的真机 URDF。来了以后先 `git apply --check` 那份 patch，再跑 `make_dex1_model.py`（它会拿 URDF 自检）
+- [ ] 13.3 待用户/协作者确认：云台上的 ego 相机是 D435 还是 D455，以及真机内参（patch 里按 D435 常用值 fx = fy = 615，fovy 42.6）
+- [ ] 13.4 待用户定：仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
+- [ ] 13.5 待用户定：saturn 产物删不删（约 180 MB：`outputs/scene/sim_lowcom_saturn*`、`outputs/runs/bottle_{saturn,saturn_stockcam,stock}_pilot_20260930`；patch 所在的 `outputs/g1_urdf_compare_20260930/` 要留）；删前在 STATE 写明 24 小时

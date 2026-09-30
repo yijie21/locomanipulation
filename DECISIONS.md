@@ -1324,3 +1324,25 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - 被否决：照搬 `render_isaac_videos.sh` 写一个 Unreal 版。两份脚本各自维护，第 7 节仍是两条渲染器专用命令。
   - 名字不用 `_side_by_side`：`previews_isaac/` 里跟拍并排的预览已经叫这个，第一次实跑时同名预览把它们替换掉了（已从原片重建）。
 - 验证：`--side-by-side` 在两份冒烟（`warehouse_smoke_20260930`、`warehouse_smoke_unreal_20260930`）上实跑，Isaac 11 局约 50 秒，Unreal 8 局连同先渲 MuJoCo 回放约 1 分钟；Isaac 另实跑一局"先拍再拼"（Kit 关闭即退出进程）。warehouse 每条命令代入两个 `$RUN` 跑了 `--dry-run`：不报错，或只报设计好的拒绝（渲染器不符、镜像要先起评测栈）。bottle、crate 的命令没变，没有重跑冒烟。
+
+## 2026-09-30 真机 URDF（saturn）试接入后整体回退（用户）；runbook 改写补记两条否决项
+
+- **目标变化：暂时不用 cheng.zhao 给的真机 URDF**（`assets/unitree_G1`，henry-zhao 的 `21a85af`）。用户说协作者给错了文件；仿真继续用 SONIC 自带的 G1 接 Dex1（`make_dex1_model.py` 的 stock 模型）。
+  - 已做的 saturn 接入全部回退，没有提交过。改动存成 `outputs/g1_urdf_compare_20260930/saturn_urdf_work.patch`（16 个文件，在 `34fcd13` 上 `git apply --check` 通过）。
+  - `assets/unitree_G1` 本身留在仓库里：删它要在 main 上另提交，归用户或协作者定。
+- **和那份 URDF 无关、用户确认过的真机事实**：
+  - 踝关节力矩的固件上限是 35 N·m；仿真的 stock 模型是 50。
+  - VLA 的第一视角是头顶云台上的相机（用户起初说是头部里的 D435，后来更正）。URDF 和 robot.yaml 都说云台上是 D455，用户称它 D435；型号未定，决定内参（D435 竖直视场约 42.6°，D455 约 65°）。真机内参没给过。
+- **正确的 URDF 来了再接时，沿用这些做法**（都在 patch 里）：
+  - saturn 模型是在 stock dex1 模型上写入 URDF 的数值（运动学、质量、力矩上限、网格、相机），不是直接编译 URDF。理由：执行器和传感器的顺序、关节的 armature/damping/frictionloss、脚底碰撞盒都不变，SONIC 的仿真桥不用改；生成时拿 URDF 自检（正运动学误差 < 1e-6 mm，质量、力矩上限一致）。
+  - 另起一个机器人模型、由场景选（`build_sim_scene.py --robot`），不覆盖 third_party 里的默认模型。理由：那个文件被这台机器上所有 checkout、正在跑的栈和 Isaac/Unreal 的机器人导入共用，覆盖等于一次改掉所有东西，还让已有标定失效。
+  - 力矩上限从场景自己的执行器读（`scene_lib.motor_effort_limits`），不再从 WBC yaml 的 43 项列表切。
+  - 头部云台锁在零位，不加关节。理由：加关节会让 qpos 编号后移，Unreal 关卡也会报不认识的关节。
+- **被否决的方案**：
+  - 直接用 MuJoCo 编译 URDF 当仿真模型：URDF 里没有执行器和关节阻尼，碰撞体和 SONIC 调过的不同，执行器顺序也要重排。
+  - 就地覆盖 `g1_29dof_with_dex1.xml`：见上。
+  - ego 相机用头部里的 D435：用户更正为云台相机。两者位置差 4–5 cm、俯角差 0.3°，在 bottle 场景里看到的几乎一样（瓶子开局都在画面上缘外）。
+- **在那份（错的）URDF 上量到的，只作参考**：SONIC 驱动加重的身体 10 局不倒；bottle 专家在 D435 视野下 0/10，都卡在开局视野门；换回 stock 相机 6/10，stock 身体 9/10（两者物体位置不同，不是配对比较，p = 0.30）。产物在 `outputs/g1_urdf_compare_20260930/`、`outputs/scene/sim_lowcom_saturn*`、三个 `outputs/runs/bottle_*_pilot_20260930`。
+- **runbook 改写（同日上一节）补记的否决项**：
+  - MuJoCo（单卡）升成和 Isaac、Unreal 平行的第三列：这次只解决 Unreal 不平行；也没有 mujoco 版的实验文件，没实跑过。仍是第 10 节的一小段。
+  - 三页冒烟从头重跑、或让隔离环境里的新读者照着跑：bottle、crate 的命令没变，warehouse 只改了写法和第 7 节，只验证改动部分；整条重跑要几个小时的卡时间。
