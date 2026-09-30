@@ -137,7 +137,7 @@ backend:
 collect:
   successes: 10
   batch_rounds: 10
-  max_batches: 2
+  max_batches: 3
   seed0: 7000
   instance: 0
   record: true

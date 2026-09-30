@@ -1,7 +1,7 @@
 # warehouse：物流房间双臂抓纸箱
 
 机器人在物流房间里从托盘四条边中随机一条走近（也可以固定从一个地方开始，见 §2），双手扣住纸箱沿，抬起、站直。策略看到的相机图由 Isaac Sim 或 Unreal 渲染，二选一（见下面的"先选渲染器"），所以要 2 张 GPU：GPU 0 跑仿真、训练和策略，GPU 1 跑渲染器。
-下面按冒烟规模写（10 条数据，其中 1 条留作验证；10 步训练；2 局评测）。2026-09-30 照这一页整条实跑：从采集到评测，Isaac 约 50 分钟（其中补渲约 26 分钟），Unreal 约 31 分钟（这次只保留了 8 条）；第 7 步的第三视角录像另算，采集和评测的都渲，Isaac 约 20 分钟、Unreal 约 18 分钟。每批 10 局、最多 2 批，两次实跑 20 局分别保留 11 条和 8 条，可能凑不够 10 条（见第 2 步）。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
+下面按冒烟规模写（10 条数据，其中 1 条留作验证；10 步训练；2 局评测）。2026-09-30 照这一页整条实跑：从采集到评测，Isaac 约 50 分钟（其中补渲约 26 分钟），Unreal 约 31 分钟（这次只保留了 8 条）；第 7 步的第三视角录像另算，采集和评测的都渲，Isaac 约 20 分钟、Unreal 约 18 分钟。每批 10 局、最多 3 批：实跑时两批 20 局分别保留了 11 条和 8 条，所以允许第三批（多约 6 分钟）；3 批仍不够时见第 2 步。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。
 和 crate 用同一套脚本，不同的是：采集时仿真不渲染相机，转换前要用渲染器补渲；评测时另开一个渲染器的进程出图。原因和细节见 [warehouse 详解](warehouse_design.md)；改参数、并行、重跑见[运行机制](running.md)。
 
 ## 先选渲染器
@@ -64,14 +64,14 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_smoke.ya
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/warehouse_smoke
 ```
 
-做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 10 局一定跑满，保留够 10 条就不再开新批（已经在跑的批会跑完），最多 2 批，结束时关掉所有仿真栈。2 批跑完还不够 10 条时，打印 `stopped at 8/10 kept after 2 batches` 这样的一行并以非零状态结束；已采的照样能接着做第 3 步起的各步，只是数据少几条。`run_overnight.sh` 遇到这种情况会停在采集，重跑也不会多采；要凑够，复制实验文件把 `collect.max_batches` 调大，换运行名重采。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，全部局（含失败局）都渲，只给人看；用所选渲染器画第三视角录像和 Isaac 版回放见第 7 步。
+做什么：第一条按这台机器的空闲 CPU、进程数、显存和实例，决定并行开几条通道（一个仿真栈加一个跑局进程），打印出来并逐个起栈，起好就返回；只要一条就加 `--lanes 1`，只用某张卡就加 `--gpu 0`（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家，开始前再打印一次通道数：一局接一局让机器人走近、扣住箱沿、抬起，保留成功的局；每批 10 局一定跑满，保留够 10 条就不再开新批（已经在跑的批会跑完），最多 3 批，结束时关掉所有仿真栈。3 批跑完还不够 10 条时，打印 `stopped at 8/10 kept after 3 batches` 这样的一行并以非零状态结束；已采的照样能接着做第 3 步起的各步，只是数据少几条。`run_overnight.sh` 遇到这种情况会停在采集，重跑也不会多采；要凑够，复制实验文件把 `collect.max_batches` 调大，换运行名重采。第三条（可选）从每局的状态轨迹渲出 MuJoCo 的第三视角回放，全部局（含失败局）都渲，只给人看；用所选渲染器画第三视角录像和 Isaac 版回放见第 7 步。
 得到什么：运行目录 `outputs/runs/warehouse_smoke/`，里面有每批一个的逐局成败 `manifest_NN.jsonl`、状态轨迹 `trace/`、录像 `videos/`、通道安排 `collect/lanes.json`。起栈约 40 秒。每批 10 局的通道要约 1600 个进程，2026-09-30 本机只开出 1 条，20 局约 12.5 分钟（一局约 37 秒）；录像（20 局）约 45 秒。
 
 **每局从哪里开始（默认：四边随机）。** 每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：起点离台边 0.6 m 到“这条边外的空地 − 0.25 m”（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m；房间的货架和墙没有碰撞体，起点不能放进去），起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧），纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
 同样设置在房间里实测保留 17/40（[双臂台账](ledger/crate.md) 2026-09-28）。第二条命令开始第一局之前，会把这份设置打印出来：
 
 ```
-collect: scene warehouse_box_45x32x33, 10 kept wanted in batches of 10 rounds (at most 2). Each round draws (task.visual):
+collect: scene warehouse_box_45x32x33, 10 kept wanted in batches of 10 rounds (at most 3). Each round draws (task.visual):
   walk-in  toward one of the platform's edges xm, xp, ym, yp, drawn each round
   start    0.6 m up to xm 0.862 / xp 0.798 / ym 1.035 / yp 1.379 m before that edge (its free floor - 0.25 m)
   robot    heading -20..20 deg off the walk-in, lateral -0.08..0 m (+ = left of the box centre line)
