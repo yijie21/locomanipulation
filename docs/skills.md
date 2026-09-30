@@ -41,6 +41,11 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
 
 `--dry-run` 只打印解析出的 plan、场景和栈参数，不起任何进程；换实验文件或 plan 后先跑一次它。
 
+`--think-s 8` 让固定 plan 在每次成功调用后停 8 s（agent 一次决策的时长），停顿走 `Executor.idle`（§4）；
+持单手物体时 trace 多一行 `{"event": "think", "drift_m", "drift_rate_cm_s", "dz_m", "touching_end", ...}`，qpos 流存 `skills/think_<局>_<第几次>.npz`。
+`--think-silent` 停顿期间什么都不发，复现 agent runner 的空档：deploy 在 1 s 收不到规划器消息后释放冻结上身和手指命令，
+手里的东西 ~1 s 后被甩掉（[pick_place §14](ledger/pick_place.md)）。
+
 ## 3. 目录（agent 能调什么）
 
 | primitive | 参数（省略取默认） | 从哪个通道进 → 出 | 做什么 / 状态 |
@@ -70,6 +75,7 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
   第一次 `--session-id`，之后 `--resume`），把任务、场景菜单（`scene.instances()`）、目录（每个 primitive 的参数与默认值）、
   特权状态文本（物体在骨盆系与世界系的位置、距离、接触、是否在 ego 视野）和 session 快照发给它；它回一个 `{"next", "args", "rationale"}`；
   executor 执行后把那条 trace 回给它，直到它答 `done` / `abort` 或到 `--max-steps`。成败仍由 sim 判据算，agent 说了不算。
+  等它回答的 5–9 s 里 runner 用 `Executor.idle` 按 50 Hz 重发当前命令（规划器手臂：IDLE、朝向锁等待开始时的骨盆 yaw；流式手臂：重推当前参考）；不发的话 deploy 1 s 后释放冻结上身和手指命令，手里的东西被甩掉（[pick_place §14](ledger/pick_place.md)）。注入的 settle 等待走同一个 `idle`。
 - **参数**：`--agent-model` 是 `claude` 的模型别名（`sonnet` 默认，`opus`、`haiku`）；`--max-steps` 每局最多几次调用。
 - **产物**：除 §2 的文件外每局多一份 `skills/agent_io_NN.jsonl`（每次请求、回复、耗时、用量、错误），manifest 里 `agent: true`、`agent_calls`。
 - **前提**：机器上装了 Claude Code 并已登录（`claude --version`）；一次调用约 5–15 s。`claude` 失败（超时、非零退出、不合 schema）
@@ -143,3 +149,7 @@ $PY scripts/injection_report.py --plan <plan run> --agent <agent run> --out outp
 - 第二轮 `move_target`（plan 0/9、agent 0/9、重抓 3/9）暴露的两处，已改：抓完身体带 0.35 rad 的 wrap，横移判据从 0.16 放到 0.6 rad（`STRAFE_YAW`）；
   `place` 自己会转身搬到容器，简单握持在那一转里滑，所以 `place` 现在要求容器在 profile 放置带内（骨盆系 `band_x × band_y` ± 0.10 m，`placing_band` 违规），
   带外先 `approach(container)`；coupled profile 原地放置，免检。
+- **2026-09-29 晚的更正**（[pick_place §14](ledger/pick_place.md)）：上面三轮里"持罐转向掉""place 起步滑 3 cm"都不是握持问题，
+  是 agent 想的 5–9 s 里 runner 不发帧，deploy 1 s 规划器超时后甩掉手臂；这三轮 agent 臂的结果作废。保活后持罐停 8 s 只漂 0.6–1.2 cm。
+- 第四轮（保活后两臂重跑，[pick_place §15](ledger/pick_place.md)）：`move_target` plan 0/10 vs agent 3/10（重抓 5/10），`drop_held` 配对 0/5 vs 1/5；
+  合计不一致对 4 : 0，p = 0.125。重抓的罐头跨思考不再掉；剩下的失败在重抓本身、走近、`nudge` 的量化和 `place` 内部。

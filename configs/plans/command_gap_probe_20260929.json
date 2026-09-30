@@ -1,0 +1,15 @@
+[
+ {"primitive": "approach", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "nudge", "args": {"relative": [-0.10, 0.0]}},
+ {"primitive": "approach", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "walk_to", "args": {"xy": [-1.4, -0.3]}},
+ {"primitive": "turn_to", "args": {"yaw": 0.8}},
+ {"primitive": "walk_to", "args": {"xy": [-1.4, 0.3]}},
+ {"primitive": "turn_to", "args": {"yaw": 0.0}},
+ {"primitive": "navigate_to", "args": {"target": "soup_can"}},
+ {"primitive": "turn_to", "args": {"yaw": 0.0}},
+ {"primitive": "approach", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "grasp_single", "args": {"target": "soup_can", "profile": "bottle_simple"}},
+ {"primitive": "release", "args": {}},
+ {"primitive": "approach", "args": {"target": "soup_can", "profile": "bottle_simple"}}
+]

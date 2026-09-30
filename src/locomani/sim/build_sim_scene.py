@@ -148,6 +148,9 @@ PAD_CONDIM = 4
 # and bimanual_scene.py's, which re-opened the emitted XML and hardened it again
 # unconditionally with the stiffer numbers -- so the crate scene was hardened
 # twice and the single-arm scene usually not at all.
+# Only solimp tells the two apart in the running sim: it steps at 200 Hz (gear_sonic
+# SIMULATE_DT 0.005) and MuJoCo's refsafe raises any solref time constant below
+# 2 * dt = 0.01 to 0.01, so 0.004 and 0.002 are the same contact (2026-09-29).
 PAD_LEVELS = {
     # The agentic branch's L1 set, which carried a bottle 24.7 s with 0.8 cm of
     # drift (docs/handoff/agentic-plan.md §8).

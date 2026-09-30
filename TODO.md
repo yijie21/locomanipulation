@@ -330,9 +330,16 @@
     - [x] 8.3.1 恢复路径的 primitive（2026-09-29，用户定全做）：持物 `approach(goal)` 同桌沿 + 1.2 m 内 → `carry_to(turn_first=False)` 横移不转向；`navigate_to` 点目标推到离台面 ≥ 0.30 m（`clear_of_surfaces`）；`turn_to` 离台面 < 0.25 m 拒绝（`edge_clearance`，收臂没有已验证的姿态，改成拒绝让 agent 先退）；`nudge` 用 `remeasured_stance` 重量 stance 不清；`tests/test_skills_recovery.py`
     - [x] 8.3.2（2026-09-29）：空手 `approach` 站位偏离走近线 > 0.12 m 时先 `walk_to` 站位后 0.6 m 的引导点（face_yaw 锁桌法线）再跑原相位；`metrics.prewalk`
     - [x] 8.3.3 第二轮配对（2026-09-29；第三轮 agent 臂跑 3 局确认蠕变机制后停掉，drop_held agent 臂未跑——8.3.5 未定前不再烧调用）：`move_target` plan 0/11（10 触发）vs agent 0/10（10 触发），9 对，agent 重抓 3/9——恢复链缩到 2 次调用（`approach` 自带横向预走 + 提示规则让它不再浪费一次抓空），但 4 次重抓后 agent 都直接 `place`，`place` 自己的搬运转向滑罐 4/4；报告 `outputs/analysis/injection2_move_20260929/`。`drop_held` plan 臂跑完即停（agent 臂改用 8.3.4 后的代码重跑，队列 `queue_round3.sh`：`inj3_move_agent_20260929c`、`inj3_drop_agent_20260929c`）
-    - [ ] 8.3.5 待用户定（决定性）：重抓后的罐头在 agent 想下一步的 5–8 s 里以 0.4–0.5 cm/s 滑出冻结握持（第三轮 round 0：`place` 被拒、想 8 s、罐头无动作掉桌），固定 plan < 1 s 接手所以不受影响。三选一：(a) sim 指垫接触调硬（唯一治蠕变，改物理）；(b) 藏延迟（Q5 提前规划 / haiku 3–4 s，仍 > 1 s）；(c) executor 两次调用间跑"保持"（更深合爪 / 周期重抬，未测）。定了才值得再跑配对
+    - [x] 8.3.5 待用户定（决定性）：重抓后的罐头在 agent 想下一步的 5–8 s 里以 0.4–0.5 cm/s 滑出冻结握持（第三轮 round 0：`place` 被拒、想 8 s、罐头无动作掉桌），固定 plan < 1 s 接手所以不受影响。三选一：(a) sim 指垫接触调硬（唯一治蠕变，改物理）；(b) 藏延迟（Q5 提前规划 / haiku 3–4 s，仍 > 1 s）；(c) executor 两次调用间跑"保持"（更深合爪 / 周期重抬，未测）。定了才值得再跑配对
+      - [x] 8.3.5.1 用户选 (a)（2026-09-29 晚）；先量蠕变就推翻了前提（pick_place 台账 §14）：掉罐是 deploy 的 1 s 规划器超时（`zmq_manager.hpp` `PLANNER_TIMEOUT`，释放冻结上身和手指命令），runner 在 agent 想的时候不发帧。`plan_episode.py --think-s 8`：静默 4/4 在 ~1 s 掉罐，保活 0/14 掉、蠕变 0.10 cm/s；§13 三轮 agent 掉罐都对得上
+      - [x] 8.3.5.2 (a) 本身：`crate` 档指垫 0.06 vs `object` 0.10 cm/s，0/12 vs 0/14 掉，任务 1/10 vs 2/10（噪声内）；不改默认场景。solref 在 200 Hz sim 里被 refsafe 钳到 0.01，两档只差 solimp；离线回放台对更硬一侧不可信
+      - [x] 8.3.5.3（用户定做，2026-09-29 晚）：`Executor.idle` 保活，`agent_round` 在 `claude -p` 回答期间、注入 settle 期间都走它；Q11 第四轮（pick_place 台账 §15）：move_target plan 0/10 vs agent 3/10（p 0.25，重抓 5/10），drop_held 配对 0/5 vs 1/5（重抓 3/9），合计不一致对 4 : 0、p 0.125；重抓后的罐头每次思考后都还在手里（1 例浅抓除外）
+      - [x] 8.3.5.4 用户定保留（2026-09-29 晚）：8.3.1 持物横移、8.3.4 `STRAFE_YAW` / `placing_band`；第四轮 agent 重抓后都是 `placing_band` 拒 → approach(basket) → place（台账 §15）
+      - [x] 8.3.5.5 定位（2026-09-29 晚，台账 §15a）：不是 nudge / walk_to / turn_to / navigate_to，是空手 `approach` 内两段不发帧——刹车后 `settle_for_admission`（0.49–0.87 s）和起步前建 `SimpleGraspPolicy` + 首次 edge_guard（0.45–0.73 s）；负载下被拉过 1 s。两段都在手里没东西时，超时无后果
+        - [x] 8.3.5.5.1 用户定不修（2026-09-30）：两段都在空手 `approach` 里，超时无后果；不改 bottle 采集专家与 commander。若以后持物路径出现同类静默，用 `scripts/experiments/command_gap_probe_20260929.py` 定位
     - [x] 8.3.4（2026-09-29）：`STRAFE_YAW` 0.6 rad（抓完身体 wrap 0.35 rad 时仍横移不转向；drop plan 臂 round 2 因此走了转向）；`place` 前置 `placing_band`（容器在 `band_x × band_y` ± 0.10 m 内，否则先 `approach(container)`；coupled 免检）
   - [x] 8.4 `drop_held` 两臂 10 局（2026-09-29，台账 §13 末，报告 `outputs/analysis/injection_drop_20260929/`）：注入只在抓起后触发，基线抓取 ~50% → 各臂 5 个注入、3 个配对；plan 0/10（注入后 5/5 `[approach] load lost while turning`），agent 0/10、注入后重抓 2/5，第一反应 5/5 直接 `place`（信 `held` 不信场景），重抓后又在持罐搬运里滑 3.3 cm
     - [x] 8.4.1（2026-09-29）：`--until-injected N`（`--rounds` 为上限），`more_rounds()`；manifest 总结行印触发数
     - [x] 8.4.2（2026-09-29，用户定加）：系统提示加"session 快照是本体感觉、场景是真值，冲突先 release"；从此配对比较测的是"有提示下的恢复"，第一轮（无提示）结果留在台账 §13 作对照
+  - [ ] 8.6 待用户定：Q11 下一步——加配对数（每种注入 20 对以上）、先提高 `grasp_single` / `place` 成功率，还是就此收尾写结论（台账 §15：方向一致 4 : 0，p 0.125）
   - [ ] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）

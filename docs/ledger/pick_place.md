@@ -274,3 +274,86 @@ plan `pick_place_via_basket.json`，`--profile pick_place_coupled`，seed 300–
   固定 plan 抓完 < 1 s 就搬，所以 6/6 进带（§8）；agent 每步 6–9 s，握持撑不到下一步。第一轮"7/7 在持罐转向时掉"多半也是同一机制（转向前已滑 3 cm，LoadWatch 在转完第一次检查时报）。
 - 由此 8.3.4 的两处（`STRAFE_YAW`、`placing_band`）方向对但不解决问题：在等待里滑掉的罐头，横移也救不回。
 - **结论**：Q11 配对比较在"抓着东西跨过一次决策"的任务上无法区分 agent 与脚本，直到三选一（8.3.5，待用户定）：(a) sim 侧把指垫接触调硬（memory 说只有这条治蠕变；会改物理，采集数据一致性要重看）；(b) 藏掉决策延迟（Q5 的"提前规划"：primitive 执行中就问下一步，或用 haiku 把 6–9 s 压到 3–4 s，仍 > 1 s）；(c) executor 在两次调用之间跑"保持"步（更深的合爪设定点、或周期性重抬），效果未测。
+- **更正（2026-09-29 晚，§14）**：上面的蠕变机制是错的。掉罐是 deploy 的 1 s 规划器超时：agent 想的时候 runner 什么都不发，1 s 后 deploy 释放冻结上身与手指命令，手臂甩回默认姿态，罐头落地（第二轮 round 0 下一次请求里罐头 z 0.03）。`place` 的 "slipped 3.0 cm" 以它自己的起点为参考，是在已掉的罐头旁动手臂越过阈值。真实蠕变约 0.1 cm/s。
+
+## §14 持物跨过一次决策：deploy 规划器超时，不是指垫蠕变（TODO 8.3.5，2026-09-29 晚）
+
+用户按 §13 的结论选 (a) 把指垫调硬。先量蠕变：`plan_episode.py --think-s 8` 让固定 plan 在每次成功调用后停 8 s
+（agent 的决策延迟），每拍记罐头的掌系漂移、接触，存 qpos 流（`think_NN_K.npz`）。同 seed 400–409、`pick_place_via_basket.json`、
+`bottle_simple` profile、GPU1 / instance 1。
+
+| 运行 | 停顿 | 指垫 | 持物停顿 | 掉落 | 蠕变 cm/s 中位（范围） | 任务 OK | 抓起 | 失败族 |
+|---|---|---|---|---|---|---|---|---|
+| `think8_base_20260929`（6 局后停） | 静默（`--think-silent` 的行为） | `object` | 4 | **4** | — | 0/6 | 4/6 | `[grasp]` 2、`[approach] load slipped`（罐已在地上）4 |
+| `think8_keep_20260929` | 保活（IDLE 帧 50 Hz，朝向锁停顿开始时） | `object` | 14 | 0 | 0.10（0.08–0.17） | 2/10 | 7/10 | `[grasp]` 3、`[place]` 2、`[retreat]` 1、`[carry]` 1、`placing_band` 拒 1 |
+| `think8_padcrate_20260929` | 保活 | `crate`（`outputs/scene/pick_place_padcrate`） | 12 | 0 | 0.06（0.03–0.09） | 1/10 | 6/10 | `[grasp]` 4、`[place]` 4、`[carry]` 1 |
+
+- **机制**：静默组 4/4 在停顿开始后 0.96–1.08 s 掉罐，之前掌系漂移 < 1 mm（一局 7 mm）。qpos 流里右臂在 0.1 s 内从持物姿态甩到
+  （肩 roll −0.25、肩 yaw 0.58、肘 1.05），罐头飞出落地（dz −0.90～−0.95 m）。deploy `include/input_interface/zmq_manager.hpp`
+  的 `PLANNER_TIMEOUT` 1000 ms：没有新的规划器消息就置 `has_upper_body_control_ = false`、`has_hand_joints_ = false`、IDLE；
+  `deploy.log` 打 `[ZMQManager] Planner timeout (100x ms)`（静默组 395 条）。我们的 commander 只在调用方 `frame/hold` 时发帧，没有保活线程。
+- **§13 的 agent 轮次是同一件事**：`inj2_move_agent_20260929b` round 0 抓完后第一次请求里罐头在手（z 0.937，touching right），
+  agent 想 5.7 s，`place` 1.2 s 报 slipped 3.0 cm，下一次请求里罐头在地上（z 0.03，离手 0.56 m）。`place` 的 `_Watch` 以它自己的起点为参考。
+  所以 §13 第一轮"持罐转向掉 5/5"、第二轮"place 起步滑 4/4"、第三轮"想 8 s 掉桌"都是超时，不是转向、不是蠕变；
+  8.3.1 的持物横移和 8.3.4 的 `STRAFE_YAW` / `placing_band` 是按错的机制加的（保活组 round 8 就是被 `placing_band` 拒掉的固定 plan）。
+- **(a) 的结果**：`crate` 档（solimp 0.995/0.9999）把蠕变从 0.10 降到 0.06 cm/s；两组都 0 掉落，任务与抓取率在 10 局噪声内（2/10 vs 1/10、7/10 vs 6/10），
+  失败都在抓取和放置本身。按 0.1 cm/s，持罐跨三次决策（~25 s）漂 ~2.5 cm，每个 primitive 的守卫以自己的起点为参考，不会因此触发。
+  **结论：指垫不是瓶颈，不改默认场景**；`pick_place_padcrate` 场景与 `configs/experiments/skills_pick_place_padcrate_20260929.yaml` 留作证据。
+- **solref 在跑的 sim 里不起作用**：sim 200 Hz（`SIMULATE_DT` 0.005），MuJoCo refsafe 把时间常数抬到 ≥ 2·dt = 0.01 s，`object` 的 0.004 与
+  `crate` 的 0.002 都是 0.01（玩具模型：0.01 / 0.004 / 0.002 蠕变相同；蠕变 ∝ 1 − solimp d0）。两档只差 solimp。
+- **离线回放台**（`scripts/experiments/pad_creep_replay_20260929.py`，机器人按 qpos 流运动学驱动、手指按 deploy 的 PD、罐头自由）：
+  基线参数 0.24–0.49 cm/s（现场 0.11，偏高 2–4 倍）；四组更硬的 solimp 在台上全部 1–2 s 掉罐，一组数值发散——而 `crate` 档在现场稳，
+  所以台对"更硬"一侧不可信，只作排序用；结果在 `outputs/analysis/pad_creep_20260929/`。
+- **未验证**：primitive 内部有没有 > 1 s 不发帧的空档（静默组 395 条超时远多于 4 次停顿；保活组 14 次持物停顿 0 掉落，说明至少持物段没有）；
+  注入层 `pin_object` 的 0.5 s 加上前后开销是否跨过 1 s（注入时手臂在行走策略手里，影响未知）。
+
+## §15 Q11 第四轮配对：runner 保活之后（TODO 8.3.5.3，2026-09-29 晚）
+
+§14 之后 `Executor.idle` 在 `claude -p` 回答期间、注入 settle 期间按 50 Hz 重发当前命令（`agent_round` 把提问放进工作线程，
+ZMQ 留在主线程）。两臂都在同一份代码上重跑（含 8.3.1 / 8.3.4 的 primitive），seed 300 起，`--until-injected 10`（上限 24 局），
+sonnet、`--max-steps 16`，GPU1 / instance 1，顺序跑（队列 `outputs/runs/q11_round4_queue_20260929.sh`）。
+
+| 注入 | plan 臂 | agent 臂 | 配对（两臂都触发） | 不一致对 agent : plan | p | agent 注入后重抓 |
+|---|---|---|---|---|---|---|
+| `move_target` +0.60 m | `inj4_move_plan_20260929d` 0/10（10 触发，全 `[grasp]`） | `inj4_move_agent_20260929d` **3/10**（10 触发） | 10 | 3 : 0 | 0.25 | 5/10 |
+| `drop_held` | `inj4_drop_plan_20260929d` 0/19（10 触发，全 `[approach] load dropped`） | `inj4_drop_agent_20260929d` 1/24（9 触发，注入局 1/9） | 5 | 1 : 0 | 1.0 | 3/9 |
+
+两种注入合计不一致对 4 : 0，双侧符号检验 p = 0.125。报告 `outputs/analysis/injection4_move_20260929/`、`injection4_drop_20260929/`；
+预览 `outputs/videos/q11_round4_20260929/`（agent seed 301 恢复并放进篮子 367 KB；plan seed 301 抓空 123 KB）。
+
+- **保活生效**：move agent 臂的 deploy 段 1 次规划器超时，drop agent 臂 3 次、都在最后一局（第 23 局，手里没东西，时间由 `Loop timing` 行数换算），
+  前三轮 agent 臂是 110 / 84 / 22 次。所有重抓起来的罐头在每一次思考（6–16 s，最多连续 6 次提问、约 45 s）后都还在手里，只有一例例外：
+  drop 第 14 局抓在 z 0.84（其他局 0.88–1.07），一次 7.4 s 思考里掉了，那段时间没有超时——浅抓的真实滑落。
+- **agent 的恢复链**：move 第 1 局 `approach → [注入] → approach（自带横移预走）→ grasp_single → place?（placing_band）→ approach(basket) → place` 7 次调用完成；
+  drop 注入后第一步 9/9 是 `release`（8.4.2 的提示规则，第一轮是 5/5 `place`）。
+- **4 个 agent 成功里 2 个不干净**：move 第 5 局 `place` 报 "not over the container" 后 `release`、drop 第 2 局 `place` 报 slipped 3.3 cm，罐头都自己落进了篮子，判据算成功。
+- **重抓之后丢罐的地方**：`place` 内部（slipped 3.3 cm、raise 差 18.8 cm）、持物横移（move 第 3 局 3 s 内 1 → 3.4 cm 的行走滑移）。不在思考里。
+- **大多数 agent 失败根本没走到持物**：重新走近后的抓取失败（no bilateral pad contact，然后 "object toppled"）、`approach` 拒绝或失败
+  （neutral waist not delivered、clearance、arrival out of reach）、`nudge` 6 次脉冲后仍偏 8–15 cm、调用用完。
+- **结论**：保活之后配对比较测到的是决策——方向一致（4 : 0，agent 只赢不输），但每种注入 10 对以内、primitive 自身成功率（抓 ~50%、持物走近后放 ~50%）
+  压住上限，统计不显著。要缩小 p，得加配对数或提高 `grasp_single` / `place` 的成功率，不是改提示。
+- **仍开放**：drop agent 第 23 局的 3 次超时说明 agent 才用的 primitive（`navigate_to` / `walk_to` / `turn_to` / `nudge` 之一）内部有 > 1 s 不发帧的空档；
+  这局手里没东西，没影响结果，但持物时会甩掉（TODO 8.3.5.5 改回开放）。
+
+### §15a 规划器超时的来源：空手 `approach` 内部两段不发帧（TODO 8.3.5.5，2026-09-29 晚）
+
+探针 `scripts/experiments/command_gap_probe_20260929.py`（= `plan_episode.py` + 每次发送打时间戳 + 静默 > 0.3 s 时每 0.1 s 抓一次主线程栈，
+fixed plan 失败也继续跑）+ `configs/plans/command_gap_probe_20260929.json`（仿第 23 局：approach / nudge / walk_to / turn_to / navigate_to /
+grasp_single / release 各几次），GPU0（空闲）/ instance 1，4 局，`outputs/runs/gap_probe_20260929b/skills/command_gaps.jsonl`。
+第一次启动 `gap_probe_wrongports_20260929` 作废：探针在 `plan_episode.main` 钉端口之前 import 了 `agent_server`，commander 连到实例 0，每局起不来。
+
+| 静默位置（栈） | 次数 | 长度 | 那时手里 |
+|---|---|---|---|
+| `approach` 刹车后：`_phase_approach` → `SimpleGraspPolicy.settle_for_admission`（`simple_policy.py:442`，只 `obs()` + `edge_guard.band_gap`，最长等 `stand_settle_timeout_s` 4 s）及其后的收尾 | 13 | 0.49–0.87 s（另 2 次 1.21 / 1.31 s 是局末最后一个 approach 连着局末记账） | 空；guard walk 下手臂归行走策略，手张开 |
+| `approach` 起步前：`_prepare_grasp_policy` → `SimpleGraspPolicy.__init__`（arm IK、transport_guard、assisted_target）+ 首次 `edge_guard` 几何 | 12 | 0.45–0.73 s | 空 |
+| `grasp_single` 内 `_lift_ready` → `bimanual_ik.solve`（POSE 流，规划器不计时） | 1 | 0.32 s | — |
+| 局间（spawn、`end_video`） | 若干 | 0.3–3.3 s | 空（不在 primitive 内） |
+
+- 这个 stack 的 deploy 记 2 次超时，对应上面 2 次 ≥ 1 s。primitive 内部在空闲 GPU 上最长 0.87 s，没过 1 s；`nudge` / `walk_to` / `turn_to` / `navigate_to` 每拍都发帧，
+  `Navigator` 的调用是毫秒级（离线计时 set_goal / replan ≤ 2.5 ms）。
+- 对上 agent 臂的 4 次超时：drop agent 第 23 局 3 次前面都是 SLOW_WALK 0.25 → IDLE，0.25 就是 guard walk 的 `walk_speed`（`simple_config.py:73`），即刹车后的 settle 段；
+  move agent 1 次前面是 `walk_to` 到达的 IDLE，即下一个 `approach` 的起步段。第 23 局那几分钟 sim 出图从 ~30 Hz 掉到 ~24 Hz（GPU1 上别的项目启动了 UnrealEditor），
+  0.5–0.9 s 的段被拉过 1 s——这是推断（没有那几分钟的栈），但位置由探针确定。
+- **影响**：两段都只在空手 `approach` 里（持物的 `approach` 走 `_loaded` 路径，不经过这两段）；那时手臂归行走策略、手张开，deploy 超时后的 IDLE + 放开上身 / 手指控制没有可丢的东西。
+  持物路径（持物 approach、place、carry、nudge）在 think8_keep、inj4 两个 plan 臂和两个 agent 臂里没有记到超时。
+- **决定（用户，2026-09-30）：不修。** 不在这两段补发帧，也不在 commander 加后台保活（两者都改 bottle 采集线的共用代码）。

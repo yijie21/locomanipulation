@@ -65,6 +65,8 @@ META = {
 
 
 class Stack:
+    cmd = SimpleNamespace(frame=lambda **kw: None)  # agent_round commands while the planner answers
+
     def obs(self):
         return {
             "fallen": False,

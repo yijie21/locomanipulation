@@ -17,7 +17,9 @@ no recording: this is the regression / smoke entry. `--profile` overrides the pr
 the target (a new object's calibration, docs/skills.md). `--inject` names a JSON failure injection
 (`skills/injection.py`): a world event fired once per round after the first successful call of a named
 primitive, identical for the fixed plan and the agent on the same seed (agentic-plan Q11; docs/skills.md
-§7); `scripts/injection_report.py` pairs the two runs.
+§7); `scripts/injection_report.py` pairs the two runs. `--think-s` gives a fixed plan an agent's decision
+latency: the runner waits that long after every successful call, re-sending the current command (or nothing,
+`--think-silent`), and traces what a single-arm load did meanwhile (TODO 8.3.5).
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -58,6 +61,19 @@ def parse(argv):
         type=int,
         default=None,
         help="with --inject: keep adding rounds until this many fired (--rounds is then the cap)",
+    )
+    ap.add_argument(
+        "--think-s",
+        type=float,
+        default=0.0,
+        help="fixed plan: wait this long after every successful call, as an agent's decision does (claude -p "
+        "answers in 5-9 s); a single-arm load's palm-frame drift is traced as a `think` event",
+    )
+    ap.add_argument(
+        "--think-silent",
+        action="store_true",
+        help="with --think-s: send nothing during the wait (the agent runner's gap; the deploy times the planner "
+        "out after 1 s) instead of re-sending the current command",
     )
     ap.add_argument("--keep-stack", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved plan, scene and stack; start nothing")
@@ -98,17 +114,62 @@ def more_rounds(done: int, injected: int, rounds: int, until_injected: int | Non
     return until_injected is None or injected < until_injected
 
 
-def scripted_round(executor, steps: list[dict], injector=None) -> list[dict]:
-    """`Executor.run_plan` with the injector between calls: stops at the first rejected or failed step."""
+def scripted_round(
+    executor, steps: list[dict], injector=None, think_s: float = 0.0, capture=None, keepalive: bool = True
+) -> list[dict]:
+    """`Executor.run_plan` with the injector between calls: stops at the first rejected or failed step.
+    `think_s` > 0 waits after every successful call (`think`); `capture(k)` names the k-th wait's npz."""
     entries = []
-    for step in steps:
+    for k, step in enumerate(steps):
         entry = executor.step(step["primitive"], step.get("args"))
         entries.append(entry)
         if "rejected" in entry or not entry["outcome"]["ok"]:
             break
         if injector is not None:
             injector.after(entry, executor)
+        if think_s > 0:
+            think(executor, think_s, capture(k) if capture is not None else None, keepalive=keepalive)
     return entries
+
+
+def think(executor, seconds: float, npz: Path | None = None, keepalive: bool = True) -> dict:
+    """An agent's decision latency between two calls, through `Executor.idle` (`keepalive=False` is the agent
+    runner's old gap, which the deploy times out on after 1 s). With a single-arm load, trace its palm-frame
+    drift and contact, and keep the configuration stream (sim time + qpos) in `npz`."""
+    import numpy as np
+
+    from locomani.skills.catalogue.locomotion import LoadWatch
+    from locomani.tasks.bottle.grasp_gym import palm_frame_offset
+
+    session = executor.session
+    p, held = session.stack, session.held
+    watch = LoadWatch(p, held, palm_frame_offset) if held is not None and len(held.sides) == 1 else None
+    rows, qpos = [], []
+
+    def record(s):
+        if watch is None:
+            return
+        _ok, drift = watch.load_ok(s)
+        obj = s["objects"][held.key]
+        rows.append([float(s["t"]), drift, float(obj["pos"][2]), held.sides[0] in (obj.get("touching") or ())])
+        qpos.append([float(s["t"]), *s["qpos"]])
+
+    executor.idle(seconds, keepalive=keepalive, on_tick=record)
+    event = {"event": "think", "seconds": seconds, "keepalive": keepalive, "held": None if held is None else held.key}
+    if rows:
+        t0, t1 = rows[0][0], rows[-1][0]
+        event.update(
+            drift_m=round(rows[-1][1], 4),
+            max_drift_m=round(watch.max_drift_m, 4),
+            drift_rate_cm_s=round(100 * rows[-1][1] / max(t1 - t0, 1e-3), 3),
+            dz_m=round(rows[-1][2] - rows[0][2], 4),
+            touching_end=bool(rows[-1][3]),
+            samples=[[round(r[0] - t0, 2), round(r[1], 4), round(r[2], 4)] for r in rows[:: max(1, len(rows) // 40)]],
+        )
+        if npz is not None:
+            np.savez_compressed(npz, qpos=np.asarray(qpos), drift=np.asarray([r[:3] for r in rows]))
+            event["npz"] = str(npz)
+    return executor.note(event)
 
 
 def agent_round(executor, planner, session, scene, steps_max: int, log, injector=None) -> list[dict]:
@@ -117,27 +178,34 @@ def agent_round(executor, planner, session, scene, steps_max: int, log, injector
     from locomani.skills.session import snapshot
 
     entries, last = [], None
-    for _ in range(steps_max):
-        state = session.stack.obs()
-        decision = planner.next_step(
-            session=snapshot(session), scene=scene_view(session.stack, scene, state), last=last
-        )
-        log(f"[agent] -> {decision['next']} {json.dumps(decision.get('args') or {})} ({decision['rationale'][:120]})")
-        if decision["next"] in ("done", "abort"):
-            entries.append(executor.abort(decision["next"] + ": " + decision["rationale"]))
-            break
-        last = executor.step(decision["next"], decision.get("args"))
-        entries.append(last)
-        if injector is not None:
-            injector.after(last, executor)  # the agent is not told; the next ask shows the state
-        if (
-            "outcome" in last
-            and not last["outcome"]["ok"]
-            and last["outcome"]["reason"].startswith(("[carry]", "[put_down]"))
-        ):
-            continue  # the agent may recover; a fallen robot ends below through the criterion
-        if session.stack.obs().get("fallen"):
-            break
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        for _ in range(steps_max):
+            state = session.stack.obs()
+            # claude -p answers in 5-9 s; this thread keeps commanding meanwhile (Executor.idle), the ZMQ
+            # sockets stay on it, and only the subprocess wait runs in the worker
+            ask = pool.submit(
+                planner.next_step, session=snapshot(session), scene=scene_view(session.stack, scene, state), last=last
+            )
+            executor.idle(ask.done)
+            decision = ask.result()
+            log(
+                f"[agent] -> {decision['next']} {json.dumps(decision.get('args') or {})} ({decision['rationale'][:120]})"
+            )
+            if decision["next"] in ("done", "abort"):
+                entries.append(executor.abort(decision["next"] + ": " + decision["rationale"]))
+                break
+            last = executor.step(decision["next"], decision.get("args"))
+            entries.append(last)
+            if injector is not None:
+                injector.after(last, executor)  # the agent is not told; the next ask shows the state
+            if (
+                "outcome" in last
+                and not last["outcome"]["ok"]
+                and last["outcome"]["reason"].startswith(("[carry]", "[put_down]"))
+            ):
+                continue  # the agent may recover; a fallen robot ends below through the criterion
+            if session.stack.obs().get("fallen"):
+                break
     return entries
 
 
@@ -295,7 +363,12 @@ def main(argv=None) -> int:
             if args.agent
             else f"[plan] steps {json.dumps(steps)}"
         )
-        + (f"\n[plan] inject {injection}" if injection else ""),
+        + (f"\n[plan] inject {injection}" if injection else "")
+        + (
+            f"\n[plan] think {args.think_s:g} s after every call ({'silent' if args.think_silent else 'keepalive'})"
+            if args.think_s and not args.agent
+            else ""
+        ),
         flush=True,
     )
     if args.dry_run:
@@ -381,7 +454,8 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                 directory=out / f"round_{rnd:02d}",
             )
             executor = Executor(session, build_catalogue(profiles), trace_path=out / f"agent_trace_{rnd:02d}.jsonl")
-            injector = Injector(injection, log=p.log) if injection is not None else None
+            # the settle waits keep commanding: the drop_held event fires with the load in a frozen hand
+            injector = Injector(injection, log=p.log, sleep=executor.idle) if injection is not None else None
             session.record.enter("spawn")
             if bimanual:
                 ok, why = spawn_bimanual(session, p, reset, meta, profile, rng=rng, log=p.log)
@@ -419,7 +493,14 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                     ):
                         ok, why = False, "[plan] agent aborted: " + entries[-1]["reason"][6:]
                 else:
-                    entries = scripted_round(executor, steps, injector)
+                    entries = scripted_round(
+                        executor,
+                        steps,
+                        injector,
+                        think_s=args.think_s,
+                        capture=lambda k, r=rnd: out / f"think_{r:02d}_{k}.npz",
+                        keepalive=not args.think_silent,
+                    )
                     last = entries[-1] if entries else None
                     if last is None or "rejected" in last:
                         ok, why = False, "[plan] " + (json.dumps(last["rejected"]) if last else "empty plan")

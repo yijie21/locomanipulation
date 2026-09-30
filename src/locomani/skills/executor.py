@@ -5,17 +5,26 @@ primitive accepts, the session's arm owner must be one the primitive starts from
 own `preconditions` must be empty. Only then does `run` execute. A rejected call and a completed call
 are both one entry in `session.trace` and one JSON line in the trace file; the agent reads that entry.
 A primitive that reports success but leaves the session inconsistent is a bug, so that raises.
+
+Between calls the stack must not go quiet: the deploy drops the frozen upper body and the hand command after
+1 s without a planner message (zmq_manager.hpp PLANNER_TIMEOUT), and a held load leaves the hand (pick_place
+ledger §14). `idle` is the executor's wait -- an agent's decision, an injection's settle -- and keeps the
+current command alive.
 """
 
 from __future__ import annotations
 
 import inspect
 import json
-from collections.abc import Mapping
+import math
+import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from locomani.skills.contract import Outcome, Primitive, Violation, _plain
-from locomani.skills.session import Session, invariant_violations, snapshot
+from locomani.skills.session import ArmOwner, Session, invariant_violations, snapshot
+
+KEEPALIVE_HZ = 50.0  # the rate every primitive's own loop commands at
 
 
 class Executor:
@@ -74,6 +83,41 @@ class Executor:
 
     def abort(self, reason: str) -> dict:
         return self._trace({"primitive": "abort", "reason": reason, "session": snapshot(self.session)})
+
+    def idle(
+        self,
+        until: float | Callable[[], bool],
+        *,
+        keepalive: bool = True,
+        on_tick: Callable[[dict], None] | None = None,
+    ) -> None:
+        """Wait between calls: `until` seconds, or until `until()` is true. With `keepalive` the arm owner's
+        current command is re-sent at `KEEPALIVE_HZ`: a planner-owned arm gets IDLE facing the pelvis yaw at the
+        start of the wait (the frozen upper body and the hands ride along in the commander's state), a streamed
+        arm re-pushes its reference. `keepalive=False` sends nothing (the gap the deploy times out on).
+        `on_tick(state)` sees every observation of the wait."""
+        p = self.session.stack
+        if callable(until):
+            done = until
+        else:
+            deadline = time.monotonic() + float(until)
+            done = lambda: time.monotonic() >= deadline  # noqa: E731
+        streamed = self.session.arm_owner is ArmOwner.POSE_STREAM and hasattr(self.session.arm, "hold")
+        facing = None
+        if keepalive and not streamed:
+            yaw = float(p.pelvis_yaw(p.obs()))
+            facing = (math.cos(yaw), math.sin(yaw), 0.0)
+        dt = 1.0 / KEEPALIVE_HZ
+        while not done():
+            t0 = time.monotonic()
+            if keepalive:
+                if streamed:
+                    self.session.arm.hold(dt)
+                else:
+                    p.cmd.frame(facing=facing)  # frame's default mode is IDLE
+            if on_tick is not None:
+                on_tick(p.obs())
+            time.sleep(max(0.0, dt - (time.monotonic() - t0)))
 
     def note(self, event: dict) -> dict:
         """Trace something that happened between calls (a failure injection); not a primitive entry."""
