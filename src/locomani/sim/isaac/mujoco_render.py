@@ -35,7 +35,7 @@ TRACK = dict(distance=2.5, azimuth=135.0, elevation=-20.0)
 
 def _make_insets(model, width: int, height: int):
     """The live recorder's three insets (sim_video.INSETS), scaled from its
-    720x540 frame to this render's size; a camera the scene lacks is skipped."""
+    WIDTH x HEIGHT frame to this render's size; a camera the scene lacks is skipped."""
     import mujoco
 
     from locomani.pipeline import sim_video as sv
@@ -64,8 +64,8 @@ def main(argv=None) -> None:
     ap.add_argument("--state-trace", required=True)
     ap.add_argument("--scene-xml", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--width", type=int, default=640)
-    ap.add_argument("--height", type=int, default=480)
+    ap.add_argument("--width", type=int, default=1280)
+    ap.add_argument("--height", type=int, default=960)
     ap.add_argument("--fps", type=int, default=50, help="rate of the recorded states")
     ap.add_argument("--stride", type=int, default=4)
     ap.add_argument(

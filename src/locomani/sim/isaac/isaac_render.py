@@ -83,8 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
         "the CURRENT working scene, which is only right if no "
         "batch has rebuilt it since",
     )
-    ap.add_argument("--width", type=int, default=640)
-    ap.add_argument("--height", type=int, default=480)
+    ap.add_argument("--width", type=int, default=1280)
+    ap.add_argument("--height", type=int, default=960)
     ap.add_argument("--fps", type=int, default=50)
     ap.add_argument("--stride", type=int, default=1, help="render every Nth frame (2 halves wall time)")
     ap.add_argument("--torso-prim", default="/World/scene/torso_link", help="prim the head camera parents to")

@@ -20,13 +20,13 @@ import numpy as np
 
 from locomani.sim import sim_vis
 
-WIDTH, HEIGHT = 720, 540
+WIDTH, HEIGHT = 1280, 960
 # A close-up inset, because the wide shot cannot answer the question the videos
-# exist for. At the tracking camera's 2.5 m the hand is roughly 40x40 px of
+# exist for. At the tracking camera's 2.5 m the hand is roughly 70x70 px of
 # translucent magenta — the ghost's geometry is a correct copy of the gripper
 # (verified by overlaying it on the real hand, agreement 14-42 mm) but at that
 # size no silhouette survives. The inset watches the wrist from 0.55 m.
-INSET_W, INSET_H = 288, 216
+INSET_W, INSET_H = 480, 360
 # Every inset is a camera the DATASET records, rendered with default
 # visualisation options — so what a reviewer checks is what the VLA is
 # actually trained on, not a debug view of it. Laid out around the edges so
@@ -38,7 +38,7 @@ INSET_W, INSET_H = 288, 216
 # The wrist pair is smaller because there are two of them and because the
 # tracking shot is the thing being watched; they are there to answer "what
 # did the gripper see when it missed", which does not need to be large.
-WRIST_W, WRIST_H = 240, 180
+WRIST_W, WRIST_H = 400, 300
 INSETS = (
     ("head_camera", "ego", INSET_W, INSET_H, WIDTH - INSET_W - 8, HEIGHT - INSET_H - 8),
     ("left_wrist", "L wrist", WRIST_W, WRIST_H, 8, 8),
@@ -179,6 +179,9 @@ class VideoRecorder:
         os.makedirs(out_dir, exist_ok=True)
 
         self.cam = recording_camera(model, track_body, camera_name)
+        # The scenes' offscreen buffer is 960x720; Renderer refuses a frame larger than it.
+        model.vis.global_.offwidth = max(model.vis.global_.offwidth, WIDTH)
+        model.vis.global_.offheight = max(model.vis.global_.offheight, HEIGHT)
         self.renderer = mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
 
         # Debug visuals (ghost hand, grip bead, reach cloud) live in geom

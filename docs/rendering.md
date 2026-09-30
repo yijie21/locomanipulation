@@ -75,7 +75,7 @@ convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就�
 `bash scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--side-by-side] [--dry-run] [局名...]`。它按 `images.source` 选渲染器的 venv，
 入口是 `src/locomani/sim/render_third_person.py`，画面由 `view_render.film_rounds` 出。采集、补渲、转换、评测都不需要它。
 三种渲染器用同一个机位：`src/locomani/sim/third_person_shot.py` 的 `round_camera`（四边线场景按每局走入的边选 `edge_<边>`，别的场景用
-`video_camera`，都没有就跟随骨盆），相机每一帧的位姿由 MuJoCo 算好交给渲染器；帧取 trace 每 4 行一帧（12.5 fps，720×540），与 MuJoCo
+`video_camera`，都没有就跟随骨盆），相机每一帧的位姿由 MuJoCo 算好交给渲染器；帧取 trace 每 4 行一帧（12.5 fps，1280×960），与 MuJoCo
 回放逐帧对齐。品红 ghost 夹爪只画在主画面。三个小窗：这个渲染器补渲过的采集局，取数据集里补渲好的画面（解码后缩小）；其余的局
 （没补渲的、评测的）由同一个渲染器按每一帧的状态现渲，就是镜像给策略的那种图。Isaac 挂上第三视角相机后不能再渲数据集相机，
 所以先把要现渲的小窗全部渲完，再逐局拍第三视角。Unreal 的关卡导入里有一个带相机的自由刚体和两只 ghost 夹爪
