@@ -13,7 +13,7 @@ Rounds: the collection's (`<run>/trace`, judged by the batch manifests) into `<r
 --eval the closed loop's (`<run>/eval/state_trace`, judged by `closed_loop.manifest.jsonl`) into
 `<run>/eval/videos_<renderer>/` -- MuJoCo's directory is plain `videos/`, where its live sim records. Successful
 rounds by default, every traced round with --all, or the labels given; a round with a video is skipped, so a rerun
-resumes. Previews <= 500 KB go to `previews_<renderer>/` beside. Convert links the collection's videos into the
+resumes -- unless the video is not `sim_video.WIDTH` x `HEIGHT` (filmed before the size changed): it is filmed again. Previews <= 500 KB go to `previews_<renderer>/` beside. Convert links the collection's videos into the
 dataset's `third_person/` when they exist, so run this before convert to ship them in the dataset.
 
 Insets: a collection round whose dataset cameras this renderer filled shows those frames (`view_render.filled_insets`);
@@ -80,10 +80,34 @@ def frame_count(video: Path) -> int:
     return int(out.strip())
 
 
+def video_size(video: Path) -> tuple[int, int] | None:
+    """(width, height) of a video's first stream; None when ffprobe cannot read the file."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0",
+         str(video)],
+        capture_output=True, text=True,
+    )  # fmt: skip
+    try:
+        width, height = out.stdout.strip().split(",")
+        return int(width), int(height)
+    except ValueError:
+        return None
+
+
+def is_filmed(video: Path, size: tuple[int, int]) -> bool:
+    """A video is there at the current picture size (one ffprobe cannot read counts as filmed)."""
+    return video.exists() and video_size(video) in (None, size)
+
+
 def side_by_side(left: Path, right: Path, dest: Path, previews: Path, log=print) -> None:
     """`left` beside `right` into `dest`, and its previews; the two must be the same shot, frame for frame."""
     from locomani.pipeline.video_preview import make_previews
 
+    sizes = video_size(left), video_size(right)
+    if sizes[0] is None or sizes[0] != sizes[1]:
+        raise SystemExit(
+            f"{left} is {sizes[0]} and {right} {sizes[1]}: not the same picture size; film the stale one again"
+        )
     counts = frame_count(left), frame_count(right)
     if counts[0] != counts[1]:
         raise SystemExit(f"{left} has {counts[0]} frames and {right} {counts[1]}: not the same rows of one trace")
@@ -118,11 +142,17 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = (args.run if args.run.is_absolute() else ROOT / args.run).resolve()
     cfg = run_context.load_run_config(run_dir)
     renderer = expected_renderer(cfg)
+    if renderer == "mujoco":  # before mujoco is imported: it picks the GL backend at import, the card at context
+        os.environ.update(MUJOCO_GL="egl", MUJOCO_EGL_DEVICE_ID=str(args.gpu), CUDA_VISIBLE_DEVICES=str(args.gpu))
+    from locomani.pipeline import sim_video
+
+    size = (sim_video.WIDTH, sim_video.HEIGHT)
     scene_dir = Path(line_of(cfg).scene_name(cfg, run_dir))
     base = run_dir / "eval" if args.eval else run_dir
     out_dir, previews = video_dir(base, renderer), base / f"previews_{renderer}"
     labels = chosen_rounds(run_dir, args.eval, args.all, args.labels)
-    todo = [label for label in labels if not (out_dir / f"{label}.mp4").exists()]
+    todo = [label for label in labels if not is_filmed(out_dir / f"{label}.mp4", size)]
+    stale = [label for label in todo if (out_dir / f"{label}.mp4").exists()]
     where = {"isaac": lambda: f"Isaac stage {run_context.isaac_scene(cfg)['dir']} on GPU {args.gpu}",
              "unreal": lambda: f"Unreal level {run_context.unreal_scene(cfg)['level_path']} in the running editor",
              "mujoco": lambda: f"MuJoCo on GPU {args.gpu}"}[renderer]()  # fmt: skip
@@ -136,13 +166,16 @@ def main(argv: list[str] | None = None) -> int:
         if renderer == "mujoco":
             raise SystemExit("--side-by-side puts MuJoCo beside another renderer; this run's images.source is mujoco")
         mujoco_dir = video_dir(base, "mujoco")
-        pairs = [label for label in labels if not (out_dir / f"{label}_vs_mujoco.mp4").exists()]
-        replay = [label for label in pairs if not (mujoco_dir / f"{label}.mp4").exists()]
+        pairs = [label for label in labels if not is_filmed(out_dir / f"{label}_vs_mujoco.mp4", (2 * size[0], size[1]))]
+        replay = [label for label in pairs if not is_filmed(mujoco_dir / f"{label}.mp4", size)]
+        stale += [label for label in replay if (mujoco_dir / f"{label}.mp4").exists()]
         print(
             f"  side by side: {len(pairs)} to stack, {len(replay)} MuJoCo replay(s) to render first into "
             f"{mujoco_dir.relative_to(run_dir.parent)}",
             flush=True,
         )
+    if stale:
+        print(f"  {len(stale)} earlier video(s) are not {size[0]}x{size[1]} and are filmed again", flush=True)
     if args.dry_run or not (todo or pairs):
         return 0
     if replay:
@@ -157,8 +190,6 @@ def main(argv: list[str] | None = None) -> int:
     if not todo:
         stack_pairs()
         return 0
-    if renderer == "mujoco":  # before mujoco is imported: it picks the GL backend at import, the card at context
-        os.environ.update(MUJOCO_GL="egl", MUJOCO_EGL_DEVICE_ID=str(args.gpu), CUDA_VISIBLE_DEVICES=str(args.gpu))
     from locomani.sim import view_render
 
     filled = {} if args.eval else view_render.filled_insets(run_dir, renderer, todo)

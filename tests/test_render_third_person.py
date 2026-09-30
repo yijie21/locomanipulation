@@ -81,11 +81,12 @@ def test_side_by_side_plans_the_pairs_and_the_missing_mujoco_halves(tmp_path, ca
         T.main([str(_run(tmp_path / "m", "mujoco")), "--side-by-side", "--dry-run"])
 
 
-def _clip(path: Path, frames: int) -> Path:
+def _clip(path: Path, frames: int, size: str = "64x48") -> Path:
     import subprocess
 
+    path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=64x48:rate=12.5:duration={frames / 12.5}",
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size={size}:rate=12.5:duration={frames / 12.5}",
          "-frames:v", str(frames), "-pix_fmt", "yuv420p", str(path)],
         check=True,
     )  # fmt: skip
@@ -100,3 +101,22 @@ def test_side_by_side_stacks_two_videos_of_the_same_rows_and_refuses_others(tmp_
     assert [p.name for p in previews.iterdir()] == ["x_vs_mujoco.mp4"]
     with pytest.raises(SystemExit, match="not the same rows"):
         T.side_by_side(left, _clip(tmp_path / "short.mp4", 20), tmp_path / "y.mp4", previews, log=lambda m: None)
+    with pytest.raises(SystemExit, match="not the same picture size"):
+        T.side_by_side(
+            left, _clip(tmp_path / "tall.mp4", 25, "64x96"), tmp_path / "z.mp4", previews, log=lambda m: None
+        )
+
+
+def test_a_video_at_another_size_than_the_current_one_is_filmed_again(tmp_path, capsys, monkeypatch):
+    from locomani.pipeline import run_context, sim_video
+
+    monkeypatch.setattr(run_context, "unreal_scene", lambda cfg: {"level_path": "/Game/Levels/x"})
+    run = _run(tmp_path, "unreal")
+    _clip(run / "videos" / "r0.mp4", 4)  # a MuJoCo replay from before the size changed
+    _clip(run / "videos_unreal" / "r0.mp4", 4, f"{sim_video.WIDTH}x{sim_video.HEIGHT}")  # this renderer's, current
+    _clip(run / "videos_unreal" / "r2.mp4", 4)  # this renderer's, stale
+    assert T.main([str(run), "--side-by-side", "--dry-run"]) == 0
+    printed = capsys.readouterr().out
+    assert "1 collection round(s) to film" in printed and "(1 of 2 already filmed)" in printed
+    assert "side by side: 2 to stack, 2 MuJoCo replay(s) to render first" in printed
+    assert f"2 earlier video(s) are not {sim_video.WIDTH}x{sim_video.HEIGHT} and are filmed again" in printed
