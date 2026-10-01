@@ -1,4 +1,4 @@
-# STATE — 2026-10-01（会话：G1 材质改成 v4a，Isaac 与 Unreal 共用 `robot_look.py`；5 个 Unreal 关卡已按新外观和 1280×960 重建；改动未提交）
+# STATE — 2026-10-01（会话：G1 材质改成 v4a，Isaac 与 Unreal 共用 `robot_look.py`；5 个 Unreal 关卡已按新外观和 1280×960 重建；已推送 `f7eadec`）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。已确认：`34fcd13` 已推送，与 origin/main 同步（上午的 handoff `c8c9675` 一起推出）；之后只有这次 handoff 提交。
 已确认（09-30 下午）：本会话没有留下在跑的仿真栈、Isaac 或 Unreal 编辑器，GPU0 空闲。GPU1 约 23 GB 是别的项目（`SimpleRoboJev` 的批量评测、`depth_server`），会涨会落；上 GPU1 前先看 `nvidia-smi`。
@@ -12,7 +12,7 @@
 
 ## 当前进度
 
-- 未提交（工作区，基于 `c966ee1` = origin/main；DECISIONS 2026-10-01 材质一节）：G1 材质只在 `src/locomani/sim/robot_look.py` 定义（`g1_gloss_20261001`）。外壳 roughness 0.45；深色件为黑塑料，metallic 0、底色 0.03。
+- 已推送（`f7eadec`，基于 `c966ee1`；DECISIONS 2026-10-01 材质一节）：G1 材质只在 `src/locomani/sim/robot_look.py` 定义（`g1_gloss_20261001`）。外壳 roughness 0.45；深色件为黑塑料，metallic 0、底色 0.03。
   - Isaac 的 `G1_LOOKS` 由它生成；Unreal 关卡建时写入，`source.json` 记 `robot_look`，对不上 `unreal_scene` 就拒绝；两种数据集补渲标记都记 `robot_look`。
   - 已确认：本机 5 个 Unreal 关卡已用新代码重建（新外观、第三视角 1280×960；旧 `source.json` 备份在 `outputs/g1_look_v4a_check_20261001/levels_before/`）。别的 checkout 若还是旧代码，不检查外观，会直接用新外观的关卡。
   - 已确认：Isaac、Unreal 各实渲一局第三视角（含三路相机小窗），对比图在 `outputs/g1_look_v4a_check_20261001/`。Isaac 的深色件仍比 Unreal 亮（镜面反射差异，见 DECISIONS）。
