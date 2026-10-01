@@ -1,7 +1,7 @@
 """Closed-loop VLA rounds for the crate: the bimanual counterpart of vla_round.py.
 
 Runs inside a token-only stack (NO_ENCODER=1) that eval_crate_closed_loop.py
-started, one process per batch, exactly like the visual expert. Each round:
+started, one call of `run` per batch in the evaluator's process, like the visual expert. Each round:
 
   1. placement -- the visual expert's own sampling (`expert.start_placement`:
      its start pose, object jitter and yaw, along the scene's walk-in heading),
@@ -377,7 +377,7 @@ def main(argv=None):
         "--round-offset",
         type=int,
         default=0,
-        help="number of rounds already run in this evaluation. The batch loop runs one process per "
+        help="number of rounds already run in this evaluation. The batch loop calls `run` once per "
         "batch, each numbering its rounds from zero, so without this every batch overwrote the "
         "previous batch's traces: a 100-round evaluation kept 10 of them",
     )
@@ -399,12 +399,49 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.rounds < 1:
         ap.error("--rounds must be positive")
-    initial_pose.INIT_TOKEN_FILE = str(args.initial_token_file)
-    config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
+    run(
+        CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig(),
+        rounds=args.rounds,
+        seed=args.seed,
+        manifest=args.manifest,
+        initial_token_file=args.initial_token_file,
+        policy_port=args.policy_port,
+        execution_horizon=args.execution_horizon,
+        budget_s=args.budget_s,
+        dataset_fps=args.dataset_fps,
+        trace_dir=args.trace_dir,
+        image_source=args.image_source,
+        clean=args.clean,
+        round_offset=args.round_offset,
+    )
+
+
+def run(
+    config: CrateTaskConfig,
+    *,
+    rounds: int,
+    seed: int,
+    manifest: Path,
+    initial_token_file,
+    policy_port: int = 5700,
+    execution_horizon: int = 16,
+    budget_s: float = 90.0,
+    dataset_fps: float = 25.0,
+    trace_dir: Path | None = None,
+    image_source: str = "mujoco",
+    clean: bool = True,
+    round_offset: int = 0,
+) -> None:
+    """One batch of rounds on the stack this process has adopted (`run_context.adopt_env`).
+
+    The evaluator calls this once per batch in its own process (2026-10-01), so what is opened here is closed
+    here: a clean clock left running would keep publishing into the next batch's restarted deploy.
+    """
+    initial_pose.INIT_TOKEN_FILE = str(initial_token_file)
     meta = json.loads(Path(paths.SCENE_META).read_text())
-    link = PolicyLink(port=args.policy_port)
+    link = PolicyLink(port=policy_port)
     if not link.ping():
-        raise SystemExit(f"no policy server on :{args.policy_port}")
+        raise SystemExit(f"no policy server on :{policy_port}")
     modalities = link.identity()["modalities"]
     for kind in ("video", "state", "action"):
         if list(modalities[kind]) != list(getattr(SONIC_CRATE, f"{kind}_keys")):
@@ -412,7 +449,7 @@ def main(argv=None):
                 f"policy server {kind} schema differs from the crate observation contract: {modalities[kind]}"
             )
     clock = None
-    if args.clean:
+    if clean:
         # Keep the deploy in streamed mode for the whole batch, on a standing token.
         # Without this every round ends with `exit_streamed()` -- a planner command --
         # so the NEXT round's 3.4 s settle runs in planner mode, where IDLE drifts at
@@ -437,17 +474,17 @@ def main(argv=None):
     else:
         p = Primitives()
     reset = EpisodeControlClient()
-    obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=args.image_source)
-    if args.trace_dir is not None:
-        args.trace_dir.mkdir(parents=True, exist_ok=True)
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=image_source)
+    if trace_dir is not None:
+        trace_dir.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        warm_up(p, reset, meta, config, np.random.default_rng([args.seed, 0xB1A5]))
-        for index in range(args.rounds):
-            seed = args.seed + index
+        warm_up(p, reset, meta, config, np.random.default_rng([seed, 0xB1A5]))
+        for index in range(rounds):
+            round_seed = seed + index
             started = time.time()
             # the sim's overview mp4 under SIM_VIDEO_DIR and its state trace; numbered across batches like the traces
-            label = f"crate_vla_{index + args.round_offset:03d}"
+            label = f"crate_vla_{index + round_offset:03d}"
             reset.start_video(label)
             result = run_round(
                 p,
@@ -456,26 +493,24 @@ def main(argv=None):
                 link,
                 meta,
                 config,
-                np.random.default_rng(seed),
+                np.random.default_rng(round_seed),
                 task=config.prompt,
-                budget_s=args.budget_s,
-                execution_horizon=args.execution_horizon,
-                dataset_fps=args.dataset_fps,
-                trace_path=None
-                if args.trace_dir is None
-                else args.trace_dir / f"round_{index + args.round_offset:03d}.json",
+                budget_s=budget_s,
+                execution_horizon=execution_horizon,
+                dataset_fps=dataset_fps,
+                trace_path=None if trace_dir is None else trace_dir / f"round_{index + round_offset:03d}.json",
             )
             reset.end_video()
             row = dict(
                 round=index,
-                seed=seed,
+                seed=round_seed,
                 task=config.prompt,
                 target=target_key(meta),
                 video=label,
                 wall_seconds=time.time() - started,
                 **result,
             )
-            with args.manifest.open("a") as handle:
+            with manifest.open("a") as handle:
                 handle.write(json.dumps(row) + "\n")
             print(
                 f"[crate-vla] round {index}: {'OK' if row['ok'] else 'FAIL'} {row['why']} ({row['wall_seconds']:.0f} s)",
@@ -483,6 +518,12 @@ def main(argv=None):
             )
     finally:
         obs_src.close()
+        if clock is not None:
+            clock.stop()
+        reset.close()
+        p.close()
+        link.sock.close(linger=0)
+        link.ctx.term()
 
 
 if __name__ == "__main__":

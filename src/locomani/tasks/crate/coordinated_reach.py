@@ -329,9 +329,25 @@ class CoordinatedReach:
             seed=self.x + np.clip(self.v, vlo, vhi) * dt,
             bounds=(lo, hi),
             posture=self.posture,
+            # TODO 2.4.10.20: a heavier pull of the 14 arm joints toward the admission solve's pose pins the elbow /
+            # wrist-pitch null space the reach otherwise drifts along (the solver's own weight is 0.04 on all 29)
+            posture_weights=(
+                None
+                if self.posture is None or cfg.reach_arm_posture_weight <= 0
+                else np.r_[np.full(15, 0.04), np.full(14, cfg.reach_arm_posture_weight)]
+            ),
             torso_rotation=self.torso_target,
             iterations=6,
-            hand_rotation_weight=cfg.reach_rotation_weight,
+            # The staged reach to the pregrasp point may trade palm attitude for position (TODO 2.4.10.13: the
+            # wrist cameras only need the box in descend); align and descend keep the full weight.
+            hand_rotation_weight=(
+                cfg.reach_rotation_weight_transit
+                if self.phase == "reach" and cfg.reach_rotation_weight_transit >= 0
+                else cfg.reach_rotation_weight
+            ),
+            continuity_reference=self.x,
+            continuity_dt=max(dt, 1e-3),
+            continuity_weight=cfg.reach_continuity_weight,
         )
         next_x = self.body.seed.copy()
         self.v = (next_x - self.x) / dt

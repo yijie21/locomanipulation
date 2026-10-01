@@ -8,6 +8,13 @@ its spread is what a calibrated brake margin cannot remove.
 
 The sim writes one qpos trace per trial (SIM_STATE_TRACE_DIR, label brake_<speed>_<i>) for the renderer.
 
+Every trial also records the gait phase at the brake (`brake_phase`: time since the last foot landing over
+the last step period) and how far the robot's frontmost low-body point got past the marker (`frontmost_*`).
+`--phase-brake c0,a,b` brakes on that phase instead of a landing (TODO 3.14.1): IDLE the tick the pelvis is
+within c0 + a cos(2 pi phase) + b sin(2 pi phase) + --margin of the marker. Fit the band as frontmost settled
+point minus pelvis at the brake (`frontmost_final_past_marker + marker - brake_fwd`), so the marker is a line. A scene that starts the robot at a non-zero
+heading re-anchors the planner first (`--reanchor auto`), or every first step turned it ~90 deg (TODO 2.4.10.9).
+
     LOCOMANI_SIM_DIR=outputs/scene/walk python -m locomani.backends.sonic.diag_brake --out <dir>  (live stack)
 Touch <out>/STOP to end after the current trial; results.json is rewritten after every trial.
 """
@@ -24,6 +31,7 @@ import numpy as np
 
 from locomani import paths
 from locomani.backends.sonic.primitives import DT, LocomotionMode, Primitives
+from locomani.backends.sonic.streamed_arm import reanchor as reanchor_planner
 from locomani.primitives.foot_watch import FootWatch, GuardBrake
 from locomani.sim.privileged_pub import EpisodeControlClient
 
@@ -50,6 +58,8 @@ def trial(
     resquare=0.0,
     waypoint=None,
     timeout_s=40.0,
+    phase_brake=None,
+    reanchor="auto",
 ):
     """`guard` = dict(extra, margin, stride0): the marker is then a LINE the body must not cross. At every
     foot landing the stop after one more stride is predicted as front ankle + stride + extra (`extra` =
@@ -67,6 +77,18 @@ def trial(
     if s["fallen"]:
         return dict(fell="reset")
     yaw0 = float(p.pelvis_yaw(s))
+    reanchored = bool(
+        reanchor == "on" or (reanchor == "auto" and abs(yaw0) > np.radians(5))
+    )  # plain bool: results.json
+    if reanchored:
+        # The deploy's heading anchor is wherever its streamed session last started; without a re-anchor at
+        # this yaw the planner reads the held facing in that frame and turns the robot ~90 deg in the warehouse
+        reanchor_planner(p)
+        p.cmd.hold(3.0, mode=LocomotionMode.IDLE, facing=(float(np.cos(yaw0)), float(np.sin(yaw0)), 0.0))
+        s = p.obs()
+        if s["fallen"]:
+            return dict(fell="reanchor")
+        yaw0 = float(p.pelvis_yaw(s))
     h = np.array([np.cos(yaw0), np.sin(yaw0)])
     n = np.array([-h[1], h[0]])
     fv = (h[0], h[1], 0.0)
@@ -76,6 +98,8 @@ def trial(
     reset.start_video(label)
     recent = deque(maxlen=SIM_HZ // 2)  # (seq, forward) over the last 0.5 simulated s
     brake, pending = None, None
+    landings = []  # seq of every foot landing, for the gait phase
+    frontmost = -np.inf  # frontmost low-body point past the marker, max over the trial
     moved, still_since = False, None
     rounds, target = [], None if waypoint is None else (marker, 0.0, 0.0, waypoint["id"] * 10)
     try:
@@ -88,6 +112,17 @@ def trial(
             recent.append((s["seq"], fwd))
             trigger = fwd >= marker
             landed, front, stride = watch.update(s, xy0, h)
+            frontmost = max(frontmost, watch.frontmost_low(s, xy0, h) - marker)
+            if landed:
+                landings.append(s["seq"])
+            phase = None
+            if len(landings) >= 2:
+                period = max(landings[-1] - landings[-2], 1)
+                phase = ((s["seq"] - landings[-1]) / period) % 1.0
+            if phase_brake is not None:
+                c0, a1, b1, margin = phase_brake
+                band = c0 if phase is None else c0 + a1 * np.cos(2 * np.pi * phase) + b1 * np.sin(2 * np.pi * phase)
+                trigger = fwd + band >= marker - margin
             if waypoint is not None:
                 # WAYPOINT_TARGET_V1: the planner walks to the latched target itself; "brake" = the moment the
                 # pelvis has been still for 1 s after moving (or the timeout), then the target is cleared
@@ -120,7 +155,12 @@ def trial(
                     lat=float((p.pelvis_xy(s) - xy0) @ n),
                     speed=(f1 - f0) * SIM_HZ / max(q1 - q0, 1),
                 )
-                brake.update(front_ankle=front, stride=stride)
+                brake.update(front_ankle=front, stride=stride, phase=phase)
+                if len(landings) >= 2:
+                    brake.update(
+                        since_landing_s=(s["seq"] - landings[-1]) / SIM_HZ,
+                        step_period_s=(landings[-1] - landings[-2]) / SIM_HZ,
+                    )
                 break
             if waypoint is None and s["seq"] - first > timeout_s * SIM_HZ:
                 return dict(fell=None, timeout=True, fwd=fwd)
@@ -144,6 +184,7 @@ def trial(
             s = p.obs()
             if s["fallen"]:
                 return dict(fell="brake")
+            frontmost = max(frontmost, watch.frontmost_low(s, xy0, h) - marker)
         extra = dict(stagger_settled=stagger(watch, s, h), pelvis_settled=float((p.pelvis_xy(s) - xy0) @ h))
         if resquare > 0:
             # B: a mode change is one of the three things that make a static mode replan (planner_onnx.md,
@@ -179,6 +220,12 @@ def trial(
         seconds_to_still=(brake["seq"] - first_seq) / SIM_HZ,
         waypoint_rounds=rounds,
         brake_stride=brake.get("stride"),
+        brake_phase=brake.get("phase"),
+        brake_since_landing_s=brake.get("since_landing_s"),
+        brake_step_period_s=brake.get("step_period_s"),
+        frontmost_max_past_marker=float(frontmost),
+        frontmost_final_past_marker=float(watch.frontmost_low(s, xy0, h) - marker),
+        reanchored=reanchored,
         yaw_deg=float(np.degrees((p.pelvis_yaw(s) - yaw0 + np.pi) % (2 * np.pi) - np.pi)),
     )
 
@@ -208,9 +255,23 @@ def main(argv=None) -> int:
     ap.add_argument("--margin", type=float, default=0.03, help="guard: clearance kept before the line (m)")
     ap.add_argument(
         "--stride-mode",
-        choices=("floor", "recent2"),
+        choices=("floor", "recent2", "alternate"),
         default="floor",
-        help="guard stride prediction: floor = max(last stride, stride0); recent2 = max of the last two strides",
+        help="guard stride prediction: floor = max(last stride, stride0); recent2 = max of the last two strides; "
+        "alternate = 0.08 after a stride of 0.15 or more, else 0.23 (foot_watch.GuardBrake)",
+    )
+    ap.add_argument(
+        "--phase-brake",
+        default=None,
+        metavar="C0,A,B",
+        help="brake on the gait phase instead: IDLE once the pelvis is within C0 + A cos(2 pi phase) + B "
+        "sin(2 pi phase) + --margin of the marker (m); phase = time since the last landing / last step period",
+    )
+    ap.add_argument(
+        "--reanchor",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="re-anchor the planner's heading after the reset; auto = when the start yaw is over 5 deg from 0",
     )
     ap.add_argument("--stride0", type=float, default=0.14, help="guard: stride assumed until two landings are seen (m)")
     ap.add_argument(
@@ -274,6 +335,10 @@ def main(argv=None) -> int:
                         rounds=a.waypoint_rounds,
                         tol=a.waypoint_tol,
                     ),
+                    phase_brake=None
+                    if a.phase_brake is None
+                    else [float(x) for x in a.phase_brake.split(",")] + [a.margin],
+                    reanchor=a.reanchor,
                 )
             )
             rows.append(r)

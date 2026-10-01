@@ -138,12 +138,20 @@ class GuardBrake:
     extra: float = 0.20
     margin: float = 0.03
     stride0: float = 0.14
-    stride_mode: str = "floor"  # floor: max(last stride, stride0); recent2: max of the last two strides
+    # floor: max(last stride, stride0); recent2: max of the last two strides; alternate: the 0.25 gait alternates
+    # a long step (~0.21) and a short one (<= 0.07), so predict alt_short after a stride of at least alt_split and
+    # alt_long after a shorter one (2026-09-24: `floor` over-predicts the step after a long one by 0.12-0.17 m)
+    stride_mode: str = "floor"
+    alt_short: float = 0.08
+    alt_long: float = 0.23
+    alt_split: float = 0.15
 
     def should_brake(self, landed: bool, front: float, stride, last_strides, line: float) -> tuple[bool, float]:
         """(brake now, the stride used). `front` and `line` are distances along the same axis."""
         if self.stride_mode == "recent2":
             used = max(last_strides) if len(last_strides) >= 2 else self.stride0
+        elif self.stride_mode == "alternate":
+            used = self.stride0 if stride is None else (self.alt_short if stride >= self.alt_split else self.alt_long)
         else:
             used = self.stride0 if stride is None else max(stride, self.stride0)
         return bool(landed and front + used + self.extra >= line - self.margin), float(used)

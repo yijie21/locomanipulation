@@ -1,6 +1,6 @@
 # 重构计划：bash 直接调功能脚本（2026-09-22）
 
-`/grilling` 访谈结果，16 条决策。阶段 1–3 已落地，阶段 4–8 未开始（见「阶段」与「进度」）。
+`/grilling` 访谈结果，16 条决策。阶段 1–8 已于 2026-09-22 全部落地（见「阶段」与「进度」）；遗留项见根目录 TODO 1.14–1.20。
 
 ## Problem Statement
 
@@ -206,3 +206,21 @@
   `reach_envelope/boundary_search.py`——都是这次重构删掉的同一形状，活在诊断路径上、没有闸门可验证，
   先入清单不改。另外 `eval_crate_closed_loop → vla_rounds` 是同 venv spawn，理由是它要跑在
   每批重启的那个栈的环境里；要改需要一个双臂 checkpoint，磁盘上没有。
+- **2026-10-01 遗留 1.15**：那 3 处 `sys.executable` spawn 改成进程内调用——`bimanual_scene.main(argv)` 调
+  `build_sim_scene.main(argv)`，`floor_scene` 调 `bimanual_scene.main`，`boundary_search` 直接调 `generate_joint_bank`。
+  `build_sim_scene.main` 退出时把 `--seed` / `--table-top` 改过的 `scene_lib` 常量还原，同进程下一次构建不继承。
+  验证：新旧两条路径各建 3 个场景（默认、`--seed 3 --table-top 0.45`、floor），另在同一进程里先 seeded 再默认，
+  `scene_locomani.xml` / `scene_meta.json` 逐字节一致；`_write_group` 写出的 bank 与脚本对同一 `sampling.json` 的输出一致。
+  清单里 `same-interpreter` 三条删除。
+- **2026-10-01 遗留 1.16–1.18**：
+  - `eval_crate_closed_loop` 不再 spawn `vla_rounds`：每批先 `run_context.adopt_env(栈环境)`，再 import 并调
+    `vla_rounds.run(config, ...)`。顺序不能反：import 时 IK 就按 `locomani.paths` 当时的场景建模型，`adopt_sim_dir`
+    会拒绝移走已被持有的场景（第一次实跑就是这么失败的，有回归测试）。闸门是 cap120 checkpoint-5000 在实例 2 上
+    同 seed 各跑 10 局：旧路径 4/10、新路径 5/10，逐 seed 不一致 1 : 2，产物文件集合相同。
+  - `bimanual_wall` / `bimanual_carry`：`main` 只解析，`run(config, ...)` 干活。dump 目录和 ghost trace 改走回合上下文，
+    `global DUMP_DIR` / `GHOST_TRACE` 删除；`prepare.expert_argv` 和 `collect.diagnostic_argv` 随之删除。
+    这一步只有单元测试，没有实跑。
+  - 「不在范围」那一节说的两套评测器：轮次循环仍是两份（单臂是 grasp_gym 自己的循环，双臂是 `vla_rounds` 分批 +
+    批间重启 deploy），循环之外的运行目录准入、收栈、写 summary 和打分合进 `pipeline/closed_loop.py`。
+    47 份历史 manifest 用新旧代码打分，逐字段相同。
+  - `interpreter_spawns.json` 只剩 4 条：3 条是跨到 gr00t venv 的边界，1 条是栈自己的子进程。

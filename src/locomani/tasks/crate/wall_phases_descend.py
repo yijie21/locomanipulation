@@ -7,7 +7,7 @@ statement reordered, no constant changed.
 Same circular-import note as wall_phases.py: this module must not import
 `locomani.tasks.crate.bimanual_wall` at its own top level (nothing here
 needs it at import time); every module constant and helper (`wall_point`,
-`errs_of`, `hand_txt`, `crate_tilt_deg`, `rot_z`, `rot_y`, `OBJ`, `DUMP_DIR`,
+`errs_of`, `hand_txt`, `crate_tilt_deg`, `rot_z`, `rot_y`, `OBJ`,
 ...) is a deferred, in-function import instead.
 """
 
@@ -31,7 +31,6 @@ def _phase_descend(ctx: WallRoundContext) -> dict | None:
         CONTACT_STALL_S,
         DESCEND_SPEED,
         DESCEND_TIMEOUT,
-        DUMP_DIR,
         FLOOR_DWELL,
         GRIP_BELOW,
         HOVER_ABOVE,
@@ -115,8 +114,8 @@ def _phase_descend(ctx: WallRoundContext) -> dict | None:
     ctx.m["capture_err_mm"] = {sd: [round(v * 1000, 1) for v in e[sd]] for sd in e}
     ctx.m["close_trigger"] = close_trigger
     ctx.m["descend_s"] = round(time.time() - t0, 1)
-    if DUMP_DIR:
-        with open(os.path.join(DUMP_DIR, f"wall_end_round{rnd}.json"), "w") as f:
+    if ctx.dump_dir:
+        with open(os.path.join(ctx.dump_dir, f"wall_end_round{rnd}.json"), "w") as f:
             json.dump(
                 {
                     "round": rnd,

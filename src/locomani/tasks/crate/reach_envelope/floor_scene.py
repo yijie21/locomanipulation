@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from locomani import paths
+from locomani.tasks.crate import bimanual_scene
 
 KEEP_WORLDBODY = {"geom": {"floor"}, "light": None, "body": {"pelvis"}, "camera": None}  # None = keep all of that tag
 OVERVIEW = {
@@ -75,11 +73,7 @@ def main(argv=None) -> int:
     parser.add_argument("out_dir", type=Path)
     args = parser.parse_args(argv)
     out = args.out_dir.resolve()
-    subprocess.run(
-        [sys.executable, "-m", "locomani.tasks.crate.bimanual_scene", str(out)],
-        check=True,
-        cwd=paths.REPO,
-    )
+    bimanual_scene.main([str(out)])
     result = strip_to_floor(out)
     print(
         f"[floor_scene] removed {len(result['removed'])} worldbody entries; nq={result['nq']} nv={result['nv']} -> {result['scene_xml']}"

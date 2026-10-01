@@ -93,6 +93,7 @@ class VisualApproach:
         self.stand_attempts = []
         self.depth_retries = 0
         self.quiet_points = []
+        self.back_until = None  # guard re-walk: the target depth (m) at which backing off ends
 
     def _tighten_stop(self):
         """Halve the remaining braking allowance; never command a stop past stand_off."""
@@ -119,7 +120,21 @@ class VisualApproach:
         cfg = self.config
         if cfg.approach_stop == "guard":
             point = np.mean(self.quiet_points, axis=0)
-            self.stand_attempts.append(dict(depth_m=float(point[0]), lateral_m=float(point[1]), accepted=True))
+            attempt = dict(depth_m=float(point[0]), lateral_m=float(point[1]), accepted=True)
+            # The guard stance cannot be walked closer (the line ends the walk), but each walk-in lands at an
+            # independent depth: back off and walk in again (TODO 2.4.10.23.2).
+            if (
+                cfg.guard_rewalk_depth > 0
+                and round(float(point[0]), 3) > cfg.guard_rewalk_depth
+                and self.depth_retries < cfg.stand_depth_retries
+            ):
+                self.depth_retries += 1
+                attempt["accepted"] = False
+                self.stand_attempts.append(attempt)
+                self.phase, self.quiet_since, self.quiet_points = "back", None, []
+                self.back_until = float(point[0]) + cfg.guard_rewalk_back
+                return False
+            self.stand_attempts.append(attempt)
             return True
         # Judge the stance on the quiet interval's mean, not one pose sample:
         # millimetre pose jitter must not decide a re-walk any more than it
@@ -184,6 +199,11 @@ class VisualApproach:
             self.relative_velocity += min(1, dt / 0.4) * (velocity - self.relative_velocity)
             self.relative_speed = float(np.linalg.norm(self.relative_velocity))
         self.position = point.copy()
+        if self.phase == "back":
+            if point[0] < self.back_until:
+                return self._back_command(reason)
+            self._walk_again()
+            self.started = now  # each guard walk-in gets the whole walk_timeout
         aligned = abs(point[1]) < cfg.stand_lateral_tolerance
         depth_only = cfg.stand_lateral_gate == "turn" or cfg.walk_steer == "depth"
         if cfg.approach_stop == "guard":
@@ -211,9 +231,16 @@ class VisualApproach:
             self.quiet_points = self.quiet_points + [point[:2].copy()] if quiet else []
             ready = self.quiet_since is not None and now - self.quiet_since >= cfg.settle_seconds
             if ready and not self._stance_converged():
+                if self.phase == "back":
+                    self.started = now
+                    return self._back_command(reason)
                 return self._walk_command(point, reason)
             return ApproachCommand(self.phase, np.zeros(3), ready=ready, reason=reason)
         return self._walk_command(point, reason)
+
+    def _back_command(self, reason):
+        """Guard re-walk: straight back along the body heading at the guard's constant speed (`phase` back)."""
+        return ApproachCommand("back", np.array([-1.0, 0.0, 0.0]), self.config.walk_speed, reason=reason)
 
     def _walk_command(self, point, reason):
         cfg = self.config

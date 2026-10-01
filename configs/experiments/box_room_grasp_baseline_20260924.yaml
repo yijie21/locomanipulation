@@ -3,6 +3,8 @@
 #   stand_forward_min 0.35 (per tick), hold_frame pelvis + hold_seconds 1 / tolerance 0.05, retreat_distance 0.3,
 #   close_trigger contact. Success = lift + upright torso + 0.3 m retreat with the load held. Scene warehouse_textured.
 #   Copy this file and change ONE knob per experiment; keep this one unchanged.
+#   Since 2026-10-01 the expert default visual.reach_rotation_weight_transit is 0.2 and this file does not set it,
+#   so it now runs with 0.2; its recorded 6/20 (and the 2026-10-01 rerun, s2_base_20261001) ran at -1.
 name: box_room_grasp_baseline_20260924
 task:
   plugin: crate

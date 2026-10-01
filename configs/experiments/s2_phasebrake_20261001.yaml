@@ -1,0 +1,206 @@
+# TODO 3.14.1: warehouse pilot of the phase brake -- 0.55 walk-in braking on the gait phase, band fit in the walk scene at the same 0.6 m run-up, started 1.03 m out (the edge's free floor is 1.285 m).
+# Copy of box_room_grasp_baseline_20260924.yaml (single-edge warehouse, user 2026-10-01); only the lines
+# marked `# changed` differ.
+# The warehouse bimanual grasp baseline fixed on 2026-09-24 (user decision): identical to box_room_grasp_contact_20260924, 6/20.
+#   Stack on close06: close_target -0.06 (grip force), capture_across 0.035, lift_pitch_follow_gain 0.6 / cap 12,
+#   stand_forward_min 0.35 (per tick), hold_frame pelvis + hold_seconds 1 / tolerance 0.05, retreat_distance 0.3,
+#   close_trigger contact. Success = lift + upright torso + 0.3 m retreat with the load held. Scene warehouse_textured.
+#   Copy this file and change ONE knob per experiment; keep this one unchanged.
+name: s2_phasebrake_20261001
+task:
+  plugin: crate
+  expert: visual
+  carry:
+    reach_control: whole_body
+    waist_dofs: all
+    settle_seconds: 0.3
+    joint_speed: 0.7
+    joint_acceleration: 2.0
+    waist_pitch_max: 0.52
+    pelvis_height: null
+    height_speed: 0.04
+    pelvis_pitch_max: 0.85
+    pelvis_height_min: 0.55
+    base_anchor: measured
+    com_shift_max: 0.11
+    com_free_radius: 0.1
+    knee_max: 1.5
+    pelvis_forward_max: 0.35
+  visual:
+    reach_rotation_weight_transit: -1.0  # pinned 2026-10-01 when the default became 0.2: what this arm ran
+    guard_phase_band: [0.3468, 0.0469, -0.0046]  # changed (absent before: the dataclass default)
+    guard_brake: phase  # changed (absent before: the dataclass default)
+    pose_source: assisted
+    waist_pitch_max: 0.4
+    palm_pitch_deg: 60.0
+    start_edge_min: 1.2
+    start_edge_max: 1.5
+    start_pose: scene
+    start_advance: -0.40  # changed (was -0.25)
+    walk_speed: 0.55  # changed (was 0.25)
+    walk_speed_min: 0.55  # changed (was 0.25)
+    walk_brake_margin: 0.1
+    walk_timeout: 30.0
+    settle_seconds: 0.2
+    stand_lateral_tolerance: 0.14
+    walk_steer: depth
+    stand_depth_tolerance: 0.04
+    stand_depth_retries: 2
+    lift_seconds: 4.0
+    stand_seconds: 5.0
+    upright_tolerance_deg: 12.0
+    stand_off: 0.5
+    position_jitter: 0.02
+    yaw_jitter_deg: 5.0
+    pregrasp_above: 0.08
+    approach_speed: 0.16
+    joint_speed: 0.7
+    joint_acceleration: 2.0
+    palm_rotation_speed: 0.6
+    palm_align_tolerance_deg: 10.0
+    tracking_gain: 1.0
+    tracking_cap: 0.15
+    align_tolerance: 0.018
+    close_seconds: 0.8
+    probe_height: 0.025
+    lift_height: 0.1
+    hold_seconds: 1.0
+    hold_position_tolerance: 0.05
+    hold_frame: pelvis
+    timeout_seconds: 35.0
+    vision_timeout: 0.7
+    reprojection_px: 4.0
+    max_tilt_deg: 15.0
+    approach_stop: guard
+    guard_extra: 0.2
+    guard_margin: 0.113  # changed (was 0.03)
+    guard_stride0: 0.14
+    reach_path: staged
+    ready_pose: lifted
+    elbow_min_deg: -60.0
+    lateral_hold_below_rim: true
+    descend_align_tolerance: 0.015
+    orientation_gain: 1.0
+    lift_pitch_follow_gain: 0.6
+    lift_pitch_follow_cap_deg: 12.0
+    stand_forward_min: 0.35
+    capture_across: 0.035
+    close_trigger: contact
+    contact_along: 0.09  # what box_room_grasp_contact_20260924 ran with (the field appeared after that run, default 0.13 untested alone)
+    contact_overdrive: 0.0  # 0.03 was a negative result (2/20): the deeper descent deflects the pads 4-8 cm across
+    close_target: -0.06
+    box_grasp_below_rim: 0.01
+    retreat_distance: 0.3
+  wall_feature: rail
+  wall_walk: false
+  gripper_gear: 250.0
+  couple_fingers: true
+  crate_setback: 0.0
+  crate_setback_levels_m: []
+  crate_yaw_levels_deg: []
+  crate_dy_range_m:
+  - -0.08
+  - 0.08
+  scene_preset: box_bimanual
+  prompt: pick up the box
+  deploy_self_heal_rounds: 2
+embodiment:
+  name: g1_bimanual
+  gr00t_tag: unitree_g1_sonic
+  gr00t_modality_config: configs/gr00t_sonic_3cam_bimanual.py
+scene:
+  name: warehouse_textured
+  cases: null
+images:  # which renderer draws the policy's pictures, in the dataset and the closed loop alike: mujoco | isaac (isaac needs backend.render offline, the scene's Isaac stage and a second card; docs/warehouse.md §4)
+  source: mujoco
+backend:
+  no_encoder: false
+  render: offline
+  hand: dex1
+  upper_slew_deg: 2.0
+  grip_delay: 0
+  obs_dump: null
+  replace: false
+  wrist_cams: true
+  sim_vis: none
+  scene_random: false
+  dataset_fps: 30.0
+  clean_deploy: false
+  eval_parallel: false
+  sonic_dds_domain: null
+  lockstep:
+    enabled: false
+    ack_timeout: 5.0
+    warmup_ticks: 60
+    cmd_delay: 0
+    jitter: false
+    jitter_seed: 0
+    no_seed: false
+collect:
+  successes: 10  # changed (was 20)
+  batch_rounds: 10  # changed (was 20)
+  max_batches: 1
+  seed0: 7000
+  instance: 3  # changed (was 0)
+  record: false
+  gym_env: []
+  stack_env: []
+train:
+  steps: 3000
+  save_steps: 3000
+  holdout: 10
+  gpus: 1
+  global_batch: 64
+  squat_max: 4096
+  base_model: null
+eval:
+  backend:
+    no_encoder: true
+    hand: dex1
+    upper_slew_deg: 2.0
+    grip_delay: 0
+    obs_dump: null
+    replace: false
+    wrist_cams: true
+    sim_vis: none
+    scene_random: false
+    dataset_fps: 25.0
+    clean_deploy: false
+    eval_parallel: false
+    sonic_dds_domain: null
+    lockstep:
+      enabled: false
+      ack_timeout: 5.0
+      warmup_ticks: 60
+      cmd_delay: 0
+      jitter: false
+      jitter_seed: 0
+      no_seed: false
+  budget_s: 90.0
+  ensemble_n: 1
+  ensemble_m: 0.3
+  rtc: false
+  transition_commit: false
+  transition_decoder: null
+  grip_gain: 1.0
+  snap: true
+  stall_abort_s: 0.0
+  rounds: 100
+  seed: 6000
+  client: blocking
+  replan_interval: 0.4
+  execution_horizon: 16
+  policy_port: 5700
+  stand_retries: 1
+  latency_dist: null
+  latency_frames: null
+  restart_deploy: true
+  resume: false
+  force_resume: false
+  spawn_edge:
+  - 1.2
+  - 1.5
+  task: pick up the crate
+  target: crate
+  video_include_init: true
+  initial_token: configs/deployment/warehouse_initial_token.json  # this line's own first frames (2026-09-27); crate_initial_token.json is 0.6 rad off at the shoulder yaw

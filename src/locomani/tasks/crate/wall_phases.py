@@ -65,6 +65,8 @@ class WallRoundContext:
     video_label: str
     m: dict
     config: CrateTaskConfig = field(default_factory=CrateTaskConfig)
+    dump_dir: str = ""  # end-of-descend state dumps go here; "" = none (was bimanual_wall.DUMP_DIR)
+    ghost: Any = None  # ghost_trace.GhostTargetTrace or None (was bimanual_wall.GHOST_TRACE)
 
     # -- filled in by _phase_reset, read by later phases -------------------
     surf: dict = None  # meta["surfaces"]["A"], read by _phase_stand
@@ -308,9 +310,7 @@ def _phase_stand(ctx: WallRoundContext) -> dict | None:
     ramp = ctx.ramp
     p.cmd.stream_mode = StreamMode.PLANNER_FROZEN_UPPER_BODY
     ctx.arms = BimanualArms(p)
-    from locomani.tasks.crate import bimanual_wall as _bw
-
-    ctx.arms.ghost = _bw.GHOST_TRACE
+    ctx.arms.ghost = ctx.ghost
     arms = ctx.arms
     for sd in ("left", "right"):  # no overhead branch (wall pilot 5: +65 cm)
         a = ARM_IDX[sd]

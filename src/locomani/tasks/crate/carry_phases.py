@@ -47,6 +47,7 @@ class CarryRoundContext:
     m: dict
     config: CrateCarryConfig = DEFAULT_CARRY
     motion_recording: Any = None
+    dump_dir: str = ""  # servo-end and motion dumps go here; "" = none (was bimanual_carry.DUMP_DIR)
 
     # -- filled in by _phase_reset, read by later phases -------------------
     surf: dict = None  # meta["surfaces"]["A"], read by _phase_approach
@@ -441,7 +442,6 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
         ACROSS_TOL,
         ADVANCE_PER_TICK,
         ALONG_TOL,
-        DUMP_DIR,
         HEIGHT_TOL,
         HEIGHT_TOL_BELOW,
         LEAD_CAP,
@@ -613,7 +613,7 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
     ctx.m["capture_err_mm"] = {sd: [round(v * 1000, 1) for v in errs[sd]] for sd in errs}
     # diagnostic dump of the servo end state: measured joints + last command +
     # crate pose + contact links, for an offline FK / contact reconstruction
-    if DUMP_DIR:
+    if ctx.dump_dir:
         dump = {
             "round": rnd,
             "joints_meas": [float(v) for v in s["joints"]],
@@ -627,7 +627,7 @@ def _phase_grasp(ctx: CarryRoundContext) -> dict | None:
             "y_hat": [float(v) for v in y_hat],
             "errs_mm": ctx.m["capture_err_mm"],
         }
-        path = os.path.join(DUMP_DIR, f"{ctx.video_label}_servo_end.json")
+        path = os.path.join(ctx.dump_dir, f"{ctx.video_label}_servo_end.json")
         with open(path, "x") as f:
             json.dump(dump, f, indent=1)
         log(f"[dump] {path}  touch_links {s['objects'][OBJ].get('touch_links')}")

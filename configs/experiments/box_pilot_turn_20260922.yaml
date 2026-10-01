@@ -21,6 +21,7 @@ task:
     base_anchor: measured
   visual:
     pose_source: assisted
+    box_grasp_below_rim: 0.025  # pinned 2026-10-01 when the dataclass default became 0.01: what this pilot ran
     waist_pitch_max: 0.4
     palm_pitch_deg: 60.0
     start_edge_min: 1.2

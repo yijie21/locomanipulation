@@ -126,4 +126,4 @@ def test_the_image_source_reaches_every_wall_clock_observation_builder():
     for client in ("backends/sonic/vla_client.py", "backends/sonic/vla_round.py"):
         assert "ObsBuilder(task, image_source=config.image_source)" in (src / client).read_text()
     rounds = (src / "tasks/crate/vla_rounds.py").read_text()
-    assert "image_source=args.image_source" in rounds
+    assert "ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=image_source)" in rounds

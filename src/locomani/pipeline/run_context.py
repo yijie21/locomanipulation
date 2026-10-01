@@ -370,7 +370,12 @@ def adopt_stack_env(stack) -> None:
     the ports are read when used, but `locomani.paths` resolved the scene at import, so it is
     re-pointed here too -- before anything builds an IK model from it.
     """
-    os.environ.update({k: str(v) for k, v in stack.env.items()})
+    adopt_env(stack.env)
+
+
+def adopt_env(env) -> None:
+    """`adopt_stack_env` for a stack known only by the environment `stack.start_stack` returned."""
+    os.environ.update({k: str(v) for k, v in env.items()})
     if os.environ.get("LOCOMANI_SIM_DIR"):
         paths.adopt_sim_dir(os.environ["LOCOMANI_SIM_DIR"])
 

@@ -2,9 +2,9 @@
 
 The crate counterpart of run_learn_pilot.py's eval stage: start a token-only
 stack on the chosen instance/GPU, serve the checkpoint with the bimanual
-modality config on its own port, run `locomani.tasks.crate.vla_rounds` inside
-that stack's environment in batches (the stack restarts per batch, as every
-crate pilot does), stop everything, and aggregate the manifest into
+modality config on its own port, run `locomani.tasks.crate.vla_rounds` in this
+process on that stack's environment in batches (the stack restarts per batch, as
+every crate pilot does), stop everything, and aggregate the manifest into
 closed_loop.json with the same fields the single-arm evaluation reports.
 
     .venv_sim/bin/python -m locomani.pipeline.eval_crate_closed_loop \\
@@ -22,7 +22,6 @@ import argparse
 import dataclasses
 import hashlib
 import json
-import math
 import shutil
 import subprocess
 import time
@@ -32,43 +31,23 @@ from pathlib import Path
 from locomani import paths, profiles
 from locomani.backends.sonic.config import SonicBackendConfig
 from locomani.pipeline import run_vla_server, stack
+from locomani.pipeline.closed_loop import score
 from locomani.pipeline.provenance import file_digests, write_config_snapshot
 from locomani.pipeline.stages import Stage
 from locomani.tasks.crate.config import CrateTaskConfig
 
 ROOT = Path(paths.REPO)
 SRC = ROOT / "src/locomani"
-SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 MODALITY = ROOT / "configs/gr00t_sonic_3cam_bimanual.py"
 DEFAULT_TOKEN = ROOT / "configs/deployment/crate_initial_token.json"
 DEFAULT_TASK_GROUP = "crate_visual_low_reach"  # configs/task/crate_visual_low_reach.yaml
 
 
-def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    if n == 0:
-        return 0.0, 0.0
-    p = k / n
-    d = 1 + z * z / n
-    c = (p + z * z / (2 * n)) / d
-    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    return max(0.0, c - h), min(1.0, c + h)
-
-
-def failure_stage(why: str) -> str:
-    return why.split(":")[0].replace("[vla] ", "") if "[vla]" in why else "pre-vla"
-
-
 def aggregate(manifest: Path) -> dict:
     rows = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
-    ok = sum(1 for r in rows if r.get("ok"))
-    stages = Counter(failure_stage(r.get("why", "")) for r in rows if not r.get("ok"))
     result = dict(
-        rounds=len(rows),
-        successes=ok,
-        success_rate=ok / len(rows) if rows else 0.0,
-        wilson95=wilson(ok, len(rows)),
-        failure_stages=dict(stages),
+        score(rows),  # one definition with the single-arm evaluator (pipeline/closed_loop.py)
         why=dict(Counter(r.get("why", "")[:70] for r in rows if not r.get("ok"))),
     )
     # Lifted rounds of a config with visual.retreat_distance also walk back (vla_rounds.RetreatWatch): the
@@ -252,73 +231,33 @@ def evaluate_run(args):
     """Evaluate the run `args.run` names, filling the options in from the run itself.
 
     This is what `run_eval_bimanual.py` was until 2026-09-22. The rounds below attach the stack
-    (`--attach`) and restart its deploy between batches; this function checks the stack is this
-    run's, admits the evaluation against what the stack already holds, and takes the stack down
-    at the end -- as the single-arm evaluator does. Until 2026-09-23 it did none of the three: the
-    headroom check charged the stack's own cores a second time, and an unattended run left the
-    stack up after its rounds.
+    (`--attach`) and restart its deploy between batches. The admission (this run's stack, the
+    deploy patches, the headroom left beside what the stack already holds), the teardown and the
+    summary are `pipeline/closed_loop.py`, shared with the single-arm evaluator (TODO 1.18).
     """
-    from locomani.pipeline import run_context
+    from locomani.pipeline import closed_loop
     from locomani.tasks.crate import prepare
 
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
-    cfg = run_context.load_run_config(run_dir)
-    from locomani.pipeline.eval_config import EvalConfig
-
-    evaluation = run_context.evaluation_of(cfg)
-    ev = run_dir / "eval"
-    collect = cfg["collect"]
-
     if args.dry_run:
-        run_context.checkpoint_of(run_dir)
-        run_context.show_config("eval", evaluation.to_dict())
-        print(f"\n  attaches to instance {collect['instance']}, policy port {evaluation.policy_port}")
-        return 0
-
-    checkpoint = run_context.checkpoint_of(run_dir)
-    from locomani.stack import Stack
-
-    try:
-        stack = Stack.attach(int(collect["instance"]))
-    except FileNotFoundError:
-        raise SystemExit(
-            f"no stack on instance {collect['instance']}; start one in another terminal:\n"
-            f"  bash scripts/start_stack.sh eval {args.run} --gpu {args.gpu}"
-        )
-    run_context.require_stack_of(stack, run_dir, "eval")
-    run_context.require_headroom(  # an evaluation runs no exporter; the live stack is already paid for
-        "eval", gpu=args.gpu, record=False, already=run_context.group_threads(stack.pids.values())
-    )
-    ev.mkdir(parents=True, exist_ok=True)
-    evaluation.dump(ev / "eval_config.json")
+        return closed_loop.show(run_dir)
+    run = closed_loop.attach(run_dir, args.run, args.gpu)
 
     args.attach = True  # the stack and the policy server are already up, in the other terminals
-    args.checkpoint = checkpoint
-    args.scene = prepare.scene_name(cfg, run_dir)
-    args.out = ev
+    args.checkpoint = run.checkpoint
+    args.scene = prepare.scene_name(run.cfg, run_dir)
+    args.out = run.ev
     args.config = run_dir / "task_config.json"
-    args.eval_config = ev / "eval_config.json"
-    args.batch_rounds = collect["batch_rounds"]  # deploy restart cadence, as the crate pilots
-    args.instance = int(collect["instance"])
+    args.eval_config = run.ev / "eval_config.json"
+    args.batch_rounds = run.cfg["collect"]["batch_rounds"]  # deploy restart cadence, as the crate pilots
+    args.instance = run.instance
     args.serve_gpu = args.gpu
     apply_eval_config(argparse.ArgumentParser(), args)
     try:
         _evaluate(args)
     finally:
-        if not args.keep_stack:
-            try:  # re-read the state file: the rounds restarted the deploy, so its pid is new
-                Stack.attach(args.instance).down()
-            except FileNotFoundError:
-                pass  # already down
-
-    result = json.loads((ev / "closed_loop.json").read_text())
-    run_context.summarise(
-        run_dir,
-        "eval",
-        checkpoint=str(checkpoint),
-        **{k: result[k] for k in ("rounds", "successes", "success_rate", "retreated") if k in result},
-    )
-    print(f"eval: {result.get('successes')}/{result.get('rounds')} -> {ev / 'closed_loop.json'}")
+        closed_loop.finish(run, keep_stack=args.keep_stack)
+    closed_loop.record(run)
     return 0
 
 
@@ -342,12 +281,8 @@ def _evaluate(args):
     if not scene.exists():
         shutil.copytree(args.scene, scene)
     task_cfg = CrateTaskConfig.load(args.config) if args.config else profiles.load("task", DEFAULT_TASK_GROUP)
-    # vla_rounds.py runs in a separate process (a fresh stack's venv) and reads --config as a JSON
-    # path (CrateTaskConfig.load); when no explicit path was given, dump the resolved YAML-group
-    # config so that subprocess boundary still gets a real file.
-    config_path = args.config if args.config else out / "task_config.json"
-    if not args.config:
-        task_cfg.dump(config_path)
+    if not args.config:  # the record of what was evaluated when it came from the YAML group
+        task_cfg.dump(out / "task_config.json")
     # clean_deploy gives the child SONIC_AUTO_START (stack/manager.py:199), so the deploy
     # engages itself and no planner command is needed to start it. Paired with --clean below:
     # ledger/bottle.md:9 calls a planner settle before enter_streamed the `degraded` deploy,
@@ -416,39 +351,33 @@ def _evaluate(args):
                     name=f"start_stack_{tag}",
                     receipt_path=out / "deploy_receipts.jsonl",
                 )
+            # In this process since 2026-10-01 (TODO 1.16). It used to be a `.venv_sim` child of this
+            # `.venv_sim` process, handed `env` as its whole environment; adopting `env` is the same hand-off
+            # (the crate collection does it the same way), and `vla_rounds.run` closes its clients and clock.
+            # Adopt BEFORE importing vla_rounds: its imports build the IK from the scene `locomani.paths`
+            # names, and adopt_sim_dir refuses to move a scene a module already holds (the gate's first try).
+            from locomani.pipeline import run_context
+
+            run_context.adopt_env(env)
+            from locomani.tasks.crate import vla_rounds
+
+            batch = dict(
+                rounds=rounds,
+                seed=args.seed + b * args.batch_rounds,
+                manifest=manifest,
+                initial_token_file=args.initial_token_file,
+                policy_port=args.port,
+                execution_horizon=args.execution_horizon,
+                budget_s=args.budget_s,
+                trace_dir=out / "traces",
+                image_source=args.image_source,
+                clean=args.clean,
+                round_offset=b * args.batch_rounds,
+            )
             try:
-                stage.check(
-                    f"rounds_{tag}",
-                    [
-                        SIM,
-                        "-m",
-                        "locomani.tasks.crate.vla_rounds",
-                        "--rounds",
-                        rounds,
-                        "--seed",
-                        args.seed + b * args.batch_rounds,
-                        "--manifest",
-                        manifest,
-                        "--config",
-                        config_path,
-                        "--policy-port",
-                        args.port,
-                        "--execution-horizon",
-                        args.execution_horizon,
-                        "--budget-s",
-                        args.budget_s,
-                        "--initial-token-file",
-                        args.initial_token_file,
-                        "--trace-dir",
-                        out / "traces",
-                        "--image-source",
-                        args.image_source,
-                        *([] if args.clean else ["--no-clean"]),
-                        "--round-offset",
-                        b * args.batch_rounds,
-                    ],
-                    env=env,
-                )
+                stage.record_config(f"rounds_{tag}", dict(batch, config=task_cfg.to_dict()), env=env)
+                with stage.timed(f"rounds_{tag}"):
+                    vla_rounds.run(task_cfg, **batch)
             finally:
                 if not args.attach:
                     stack.stop_instance(args.instance, runner=stage.run)

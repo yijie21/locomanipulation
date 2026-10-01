@@ -321,9 +321,10 @@ settle，矛头转向 planner 模式。
 token-only 栈（`NO_ENCODER=1`，每批重启，与 crate pilot 一致）、用
 `configs/gr00t_sonic_3cam_bimanual.py` 在自己的端口（默认 5700，避开实例端口块；
 单臂评测的策略端口 5590 正是实例 1 的键盘端口，所以单臂评测运行期间双臂评测要用
-`--instance 2`）起策略服务、在栈环境里运行 `locomani.tasks.crate.vla_rounds`，
-最后把 manifest 聚合成 `closed_loop.json`（字段与单臂相同：`successes`、
-`success_rate`、`wilson95`、`failure_stages`）。
+`--instance 2`）起策略服务、每批在本进程里接过栈的环境后调 `locomani.tasks.crate.vla_rounds.run`
+（2026-10-01 前是每批一个子进程），最后把 manifest 聚合成 `closed_loop.json`（字段与单臂相同：
+`successes`、`success_rate`、`wilson95`、`failure_stages`，由两个评测器共用的
+`pipeline/closed_loop.py` 算；运行目录模式的准入、收栈、写 summary 也在那里）。
 
 每批**先跑一局不录像的热身回合**（`vla_rounds.warm_up`，约 10 s）。deploy 进程的第一局
 必然经过它参考动作的第 0 帧半蹲（膝 0.67、骨盆 0.755 m），并在切到 streamed 的瞬间

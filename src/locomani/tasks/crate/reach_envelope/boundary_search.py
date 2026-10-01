@@ -11,13 +11,13 @@ plan n : write round_<n>/bank.json and one ghost-reach request per shard from th
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 
 from locomani import paths
+from locomani.tasks.crate.joint_reach_sampling import generate_joint_bank
 
 STEP, X_MIN, X_MAX = 0.05, 0.20, 0.80
 POS_TOL = 0.02  # bracket on best hand position error; orientation is recorded, not gated
@@ -281,17 +281,9 @@ def _write_group(n, g, gd, anchors, envelope):
         "anchors": anchors[1:],
     }
     json.dump(sampling, open(gd / "sampling.json", "w"), indent=1)
-    subprocess.run(
-        [
-            sys.executable,
-            str(Path(paths.REPO) / "scripts/generate_joint_reach_bank.py"),
-            str(gd / "sampling.json"),
-            "--output",
-            str(gd / "bank.json"),
-        ],
-        check=True,
-        cwd=paths.REPO,
-    )
+    with open(gd / "bank.json", "w") as stream:  # what scripts/generate_joint_reach_bank.py writes for a grid
+        json.dump(generate_joint_bank(sampling), stream, indent=2, ensure_ascii=False)
+        stream.write("\n")
     for shard, spec in enumerate(_state["SHARDS"]):
         d = gd / f"shard_{shard}"
         d.mkdir(exist_ok=True)

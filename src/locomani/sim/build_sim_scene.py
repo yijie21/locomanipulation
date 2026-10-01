@@ -13,6 +13,7 @@ sim at the XML with `ROBOT_SCENE` (base_sim.py:146) and the agent at the JSON.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
@@ -333,8 +334,19 @@ def lower_object_com(spec, model, meta, drop_m: float) -> dict:
     )
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv=None) -> None:
+    """Build once. `--seed` / `--table-top` work by mutating scene_lib's module constants; they are put back
+    on the way out, so an in-process caller (bimanual_scene.main) does not hand them to the next build."""
+    saved = copy.deepcopy((scene_lib.SURFACE_TARGET_TOP, scene_lib.PRIMITIVE_OBJECTS))
+    try:
+        _build(parse_args(argv))
+    finally:
+        for live, before in zip((scene_lib.SURFACE_TARGET_TOP, scene_lib.PRIMITIVE_OBJECTS), saved):
+            live.clear()
+            live.update(before)
+
+
+def _build(args) -> None:
     # Absolute: run_sim_locomani.py resolves ROBOT_SCENE against GEAR_SONIC_ROOT,
     # so a relative path in the metadata would point inside the SONIC tree.
     scene_root = os.path.abspath(args.scene_root)

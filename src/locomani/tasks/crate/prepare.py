@@ -77,20 +77,6 @@ def prepare_scene(src: Path, out: Path, task_cfg: CrateTaskConfig, expert: str, 
     return scene
 
 
-def expert_argv(
-    expert: str, task_cfg_path: Path, manifest: Path, rounds: int, seed: int, *, record: bool, trace_dir=None
-) -> list:
-    """The expert's own command line (the flags the retired pilot passed)."""
-    script, prefix = EXPERTS[expert]
-    argv = [paths.VENV_SIM_PY, "-u", Path(paths.SRC) / script, "--rounds", str(rounds), "--seed", str(seed)]
-    if record:
-        argv.append("--record")
-    argv += ["--manifest", manifest, "--label", f"{prefix}_s{seed}", "--config", task_cfg_path]
-    if trace_dir is not None and expert == "wall":
-        argv += ["--ghost-trace", str(trace_dir)]
-    return argv
-
-
 def prepare(cfg: dict, run_dir: Path) -> Path:
     """Freeze the scene and the expert's config for a bimanual run; returns the scene copy.
 

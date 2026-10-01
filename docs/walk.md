@@ -42,4 +42,9 @@ export PYTHONPATH="$LOCOMANI_ROOT/src"
 | waypoint 结尾、过量下发（2026-09-24） | `--waypoint slow --marker 0.9/1.2/1.5 --waypoint-rounds 0`，deploy `outputs/deploy_waypoint_20260923`，`outputs/diagnostics/waypoint_end_*_20260924` | 本体走目标的 0.64/0.64/0.71，停位散布 3.7/5.0/6.4 cm 随目标放大，~4.5 s 就停；折到 0.9 m 线：0.9 目标骨盆 −32 cm（与守线同），1.2 目标 −13 cm 但最前点 10/10 越线 +5 ± 2.7。比例不稳、没有守线，不能替代守线；脚错开 10 cm，09-23 的 3.9 cm 不复现 |
 | planner 路点 | [路点补丁](../patches/sonic_waypoint_target.md)，`diag_brake.py --waypoint` | 停得很齐，但本体只走到目标的 35–55%，不能用作位置控制 |
 
+| 守线步长模型 `alternate`（2026-10-01，TODO 2.4.10.23.3） | `diag_brake --guard --speeds 0.25 --marker 0.9 --extra 0.20 --stride-mode alternate`（`visual.guard_stride_mode`），`outputs/diagnostics/brake_guard025_alternate_20261001` | 30/30 不越线、0 摔，但骨盆停在线前 37.9 ± 4.8 cm，比 floor 的 34.3 ± 3.4 更远：并步后预测 0.23 比 floor 的 0.14 保守，抵掉了大步后多走的那步 |
+| 按步态相位刹车（2026-10-01，TODO 3.14.1） | 标定 `diag_brake --speeds 0.55 --marker 1.40`（40 局，标记处刹车、相位随机），拟合 `scripts/experiments/fit_phase_band_20261001.py`；验证 `--phase-brake c0,a,b --margin M`；专家里是 `visual.guard_brake phase` + `guard_phase_band` | 0.55 稳态：带距（刹车时骨盆到最终最前点）38.6 ± 3.7 cm，相位一次谐波留一法残差 sd 2.4、最差 6.4 cm；余量取 3 + 6.4 cm 后 30/30 不越线、0 摔，最前点停在线前 10.3 ± 3.3 cm（最近 5.3），守线 0.25 是 15.5 ± 2.6。`outputs/diagnostics/brake_055_{phasecal,phasebrake}_20261001` |
+| 相位刹车在短助跑下（2026-10-01） | 同上，`--marker 0.60` 标定、`--marker 1.03` 验证（= warehouse 这条边起点 1.03 m，空地只有 1.285 m） | 助跑 0.6 m 不到稳态：带距残差 sd 5.6、最差 8.3 cm；20 局最前点 −12.4 ± 8.8 cm、1/20 越线 3.3 cm，均值和守线 0.25 一样、散布大三倍；仓库 10 局 1/10。相位刹车只在助跑 ≥ 1 m 时比守线好。`outputs/diagnostics/brake_055_{phasecal_run060,phasebrake_run060}_20261001` |
+| 非零起始朝向（2026-10-01，TODO 2.4.10.9） | `diag_brake --reanchor auto\|on\|off`（默认 auto：复位后偏航离 0 超过 5° 先重锚 planner 朝向） | warehouse 起始朝向 90°：off 2/2 局 40 s 超时不前进；auto 3/3 走到 0.3 m 标记，横向 ≤ 3 cm，`outputs/diagnostics/reanchor_{off,auto}_20261001` |
+
 `diag_*` 都要求栈已经起在 walk 场景上：各 `.sh` 会自己起栈、收栈，只用 instance 0。

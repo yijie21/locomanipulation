@@ -140,7 +140,6 @@ LEVEL_GAIN = 1.0
 LEVEL_CAP = 0.02
 LEVEL_LP = 0.15
 HOLD_S = 2.0
-DUMP_DIR = ""  # set from --manifest's directory in main(); servo-end state dumps
 # Closed target for the crate scene: bimanual_scene.py widens the finger travel
 # to -0.023 so the pad faces meet; the shared HAND_CLOSED (-0.020) would stop
 # 5.8 mm short of that and leave an off-centre bar touched by one pad only.
@@ -350,6 +349,7 @@ def run_round(
     video_label: str,
     record: bool = False,
     config: CrateCarryConfig = DEFAULT_CARRY,
+    dump_dir: str = "",
 ) -> dict:
     """One round's five phases (carry_phases.py / carry_phases_lift.py),
     threaded through a CarryRoundContext.
@@ -369,6 +369,7 @@ def run_round(
         video_label=video_label,
         m={"round": rnd, "ok": False, "why": "", "produced": False},
         config=config,
+        dump_dir=dump_dir,
     )
     from locomani.tasks.crate.carry_crouch import _phase_crouch
     from locomani.tasks.crate.carry_whole_body import _phase_whole_body
@@ -392,8 +393,8 @@ def run_round(
             if result is not None:
                 return result
             if phase is _phase_reset:
-                if DUMP_DIR:
-                    ctx.motion_recording = MotionRecording(Path(DUMP_DIR) / f"{video_label}_motion.jsonl", ctx.t_video)
+                if dump_dir:
+                    ctx.motion_recording = MotionRecording(Path(dump_dir) / f"{video_label}_motion.jsonl", ctx.t_video)
                 if record:
                     round_runner.start_recording(p, ctx.m)
     finally:
@@ -403,8 +404,6 @@ def run_round(
 
 
 def main(argv=None) -> None:
-    from functools import partial
-
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument(
@@ -429,20 +428,49 @@ def main(argv=None) -> None:
         cfg = cfg.with_overrides(args.set_)
     if args.record and cfg.carry.reach_control == "whole_body":
         ap.error("whole_body is a motion pilot; full-pose VLA action export is not validated")
+    # Script-vs-package double copy (see bimanual_wall.main): carry_phases*.py import this
+    # module by its package name; make that name resolve to the running module so there is
+    # one copy of its classes and constants.
+    sys.modules.setdefault("locomani.tasks.crate.bimanual_carry", sys.modules[__name__])
+    run(
+        cfg,
+        rounds=args.rounds,
+        seed=args.seed,
+        manifest=args.manifest,
+        label=args.label,
+        record=args.record,
+        scene_dir=args.scene_dir,
+    )
+
+
+def run(
+    cfg: CrateTaskConfig,
+    *,
+    rounds: int,
+    seed: int,
+    manifest: str = "",
+    label: str = "bimanual",
+    record: bool = False,
+    scene_dir=None,
+) -> None:
+    """One batch of carry rounds on the stack this process talks to (tasks/crate/collect.py calls it per batch).
+
+    The manifest's directory receives the servo-end and motion dumps; it reaches the phases on the round
+    context, not through a module global, so one batch cannot hand it to the next (TODO 1.17).
+    """
+    from functools import partial
+
+    if record and cfg.carry.reach_control == "whole_body":
+        raise SystemExit("whole_body is a motion pilot; full-pose VLA action export is not validated")
     if cfg.carry.reach_control == "whole_body":
         require_pose_ownership()
-    # Script-vs-package double copy (see bimanual_wall.main): carry_phases*.py import this
-    # module by its package name; make that name resolve to the running module so the
-    # globals set below (DUMP_DIR) are the ones the phases read.
-    sys.modules.setdefault("locomani.tasks.crate.bimanual_carry", sys.modules[__name__])
     inst = ports.instance()
     # One formula, in locomani.sim.ports: this used to carry its own copy of the
     # bases, a third one after start_stack.sh's and every module-level fallback's.
     for k in ("TF_SONIC_PORT", "TF_OUT_PORT", "TF_KEYBOARD_PORT", "TF_PRIVILEGED_PORT", "TF_EPISODE_PORT"):
         os.environ.setdefault(k, str(ports.port(k)))
-    global DUMP_DIR
-    DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
-    scene_meta = f"{args.scene_dir}/scene_meta.json" if args.scene_dir else paths.SCENE_META
+    dump_dir = os.path.dirname(os.path.abspath(manifest)) if manifest else ""
+    scene_meta = f"{scene_dir}/scene_meta.json" if scene_dir else paths.SCENE_META
     meta = json.load(open(scene_meta))
     if meta.get("target_object") != OBJ:
         raise SystemExit(
@@ -451,30 +479,34 @@ def main(argv=None) -> None:
             f"and point LOCOMANI_SIM_DIR at it"
         )
     print(f"[bimanual] instance {inst}, scene {scene_meta}, task config {cfg.to_dict()}")
-    if args.record:
+    if record:
         # The same refusal grasp_gym makes: the exporter only exists on instance 0,
         # so a --record run anywhere else finishes every round and writes nothing.
         ports.require_exporter("--record")
     p = Primitives(meta=meta)
     reset = EpisodeControlClient()
-    round_runner.prime(p, reset)
-    # Shared with bimanual_wall.py (round_runner.py). This loop used to be a
-    # copy that had drifted: no deploy self-heal, so one LowState trip turned
-    # every remaining round into "[stand] did not stabilise".
-    round_runner.run_rounds(
-        p,
-        reset,
-        meta,
-        run_round=partial(run_round, config=cfg.carry),
-        rng=np.random.default_rng(args.seed),
-        rounds=args.rounds,
-        label=args.label,
-        tag="bimanual",
-        manifest=args.manifest,
-        record=args.record,
-        self_heal_rounds=cfg.deploy_self_heal_rounds,
-        instance=inst,
-    )
+    try:
+        round_runner.prime(p, reset)
+        # Shared with bimanual_wall.py (round_runner.py). This loop used to be a
+        # copy that had drifted: no deploy self-heal, so one LowState trip turned
+        # every remaining round into "[stand] did not stabilise".
+        round_runner.run_rounds(
+            p,
+            reset,
+            meta,
+            run_round=partial(run_round, config=cfg.carry, dump_dir=dump_dir),
+            rng=np.random.default_rng(seed),
+            rounds=rounds,
+            label=label,
+            tag="bimanual",
+            manifest=manifest,
+            record=record,
+            self_heal_rounds=cfg.deploy_self_heal_rounds,
+            instance=inst,
+        )
+    finally:  # called once per batch in one process: the next batch opens its own
+        reset.close()
+        p.close()
 
 
 if __name__ == "__main__":

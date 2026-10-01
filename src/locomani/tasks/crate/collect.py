@@ -98,9 +98,16 @@ def run_batch(cfg: dict, run_dir: Path, stack: Stack, state: dict) -> Path:
                     render=cfg.get("backend", {}).get("render", "live"),
                 )
             else:
-                rc = diagnostic(chosen).main(diagnostic_argv(cfg, run_dir, batch))
-                if rc:
-                    raise SystemExit(rc)
+                diagnostic(chosen).run(
+                    config,
+                    rounds=plan["rounds"],
+                    seed=plan["seed"],
+                    manifest=str(manifest),
+                    label=plan["label"],
+                    record=plan["record"],
+                    scene_dir=str(plan["scene_dir"]),
+                    **({"ghost_trace": str(prepare.trace_root(run_dir))} if chosen == "wall" else {}),
+                )
     except (Exception, SystemExit) as error:
         # This line has always recorded a failing batch rather than ending the run: a batch can
         # end on a failed round with the run still live. The subprocess form of this was a
@@ -112,28 +119,10 @@ def run_batch(cfg: dict, run_dir: Path, stack: Stack, state: dict) -> Path:
 
 
 def diagnostic(expert_name: str):
-    """The module for a diagnostic expert. In this process -- only its CLI is still the seam."""
+    """The module for a diagnostic expert; its `run(config, ...)` takes the batch plan's values (TODO 1.17)."""
     from locomani.tasks.crate import bimanual_carry, bimanual_wall
 
     return {"wall": bimanual_wall, "carry": bimanual_carry}[expert_name]
-
-
-def diagnostic_argv(cfg: dict, run_dir: Path, batch: int) -> list:
-    """The diagnostic's own options, built by the same function the old driver used."""
-    from locomani.tasks.crate import prepare
-
-    collect = cfg["collect"]
-    argv = prepare.expert_argv(
-        cfg["task"]["expert"],
-        run_dir / "task_config.json",
-        prepare.collect_root(run_dir) / f"manifest_{batch:02d}.jsonl",
-        collect["batch_rounds"],
-        collect["seed0"] + 100 * batch,
-        record=bool(collect["record"]),
-        trace_dir=prepare.trace_root(run_dir),
-    )
-    # Drop the interpreter and the script: this process IS the interpreter.
-    return [str(a) for a in argv[3:]] + ["--scene-dir", str(prepare.scene_name(cfg, run_dir))]
 
 
 # A round that measures the stack, not the layout: the reset never produced a task, or the process or its clock broke.

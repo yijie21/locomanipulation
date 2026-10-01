@@ -126,16 +126,6 @@ def gym_options(
     )
 
 
-def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    if n == 0:
-        return 0.0, 1.0
-    p = k / n
-    d = 1 + z * z / n
-    c = (p + z * z / (2 * n)) / d
-    h = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5) / d
-    return c - h, c + h
-
-
 def round_outcomes(rows):
     """One row per round: the attempt the round ended on.
 
@@ -190,76 +180,38 @@ def evaluate_run(args):
 
     This is what `run_eval_single_arm.py` was until 2026-09-22. It is not a separate process any
     more -- the rounds run in THIS one, so there is no argv to assemble for them and no second
-    place for the environment to differ (docs/handoff/flat-functional-scripts-20260922.md).
+    place for the environment to differ (docs/handoff/flat-functional-scripts-20260922.md). The
+    admission, the stack teardown and the summary are `pipeline/closed_loop.py`, shared with the
+    bimanual evaluator.
     """
-    from locomani.pipeline import run_context, run_vla_server
+    from locomani.pipeline import closed_loop, run_context, run_vla_server
     from locomani.pipeline.stages import Stage
-    from locomani.stack import Stack
 
     run_dir = args.run if args.run.is_absolute() else REPO / args.run
-    cfg_file = run_context.load_run_config(run_dir)
-    evaluation = run_context.evaluation_of(cfg_file)  # validated here, so a bad field fails first
-    ev = run_dir / "eval"
-    instance = int(cfg_file["collect"]["instance"])
-
     if args.dry_run:
-        run_context.checkpoint_of(run_dir)
-        run_context.show_config("eval", evaluation.to_dict())
-        print(f"\n  attaches to instance {instance}, policy port {evaluation.policy_port}")
-        return 0
-
-    if (ev / "closed_loop.json").exists():
-        raise SystemExit(f"{ev / 'closed_loop.json'} exists; move the finished evaluation aside before rerunning")
-    checkpoint = run_context.checkpoint_of(run_dir)
-    run_context.require_deploy_patches(cfg_file)
-    ev.mkdir(parents=True, exist_ok=True)
-    evaluation.dump(ev / "eval_config.json")
-
-    try:
-        stack = Stack.attach(instance)
-    except FileNotFoundError:
-        raise SystemExit(
-            f"no stack on instance {instance}; start one in another terminal:\n"
-            f"  bash scripts/start_stack.sh eval {args.run} --gpu {args.gpu}"
-        )
-    run_context.require_stack_of(stack, run_dir, "eval")
-    # Attach FIRST, then ask only for what the running stack does not already hold. The collection
-    # driver got this on 2026-09-21; the evaluation path never did, and with the stack and the
-    # policy server both up it was refused for the 8 cores its own stack was already using
-    # (7.68 in use + 8 needed > 15.36). An evaluation runs no exporter, hence record=False.
-    run_context.require_headroom(
-        "eval", gpu=args.gpu, record=False, already=run_context.group_threads(stack.pids.values())
-    )
+        return closed_loop.show(run_dir)
+    run = closed_loop.attach(run_dir, args.run, args.gpu)
     # The instance's port block and the scene, before anything opens a client. The subprocess this
     # used to be was handed exactly this as its whole environment; in-process it is assigned.
-    run_context.adopt_stack_env(stack)
-    run_vla_server.wait_for_server(evaluation.policy_port)
+    run_context.adopt_stack_env(run.stack)
+    run_vla_server.wait_for_server(run.evaluation.policy_port)
 
     # Fill in what the driver used to pass on a command line, then run the evaluation below.
-    args.config = ev / "eval_config.json"
+    args.config = run.ev / "eval_config.json"
     args.set_ = list(args.set_) + ["backend.dataset_fps=25"]  # the stack is pinned to the dataset's rate
     args.reach_config = args.reach_config or str(run_dir / "reach_config.json")
-    args.initial_token_file = args.initial_token_file or (REPO / cfg_file["eval"]["initial_token"])
-    args.out = str(ev / "closed_loop.json")
-    args.trace_dir = str(ev / "traces")
+    args.initial_token_file = args.initial_token_file or (REPO / run.cfg["eval"]["initial_token"])
+    args.out = str(run.ev / "closed_loop.json")
+    args.trace_dir = str(run.ev / "traces")
 
     stage = Stage(run_dir)
-    stage.record_config("eval", evaluation.to_dict(), env=dict(stack.env))
+    stage.record_config("eval", run.evaluation.to_dict(), env=dict(run.stack.env))
     try:
         with stage.timed("eval"):
             _evaluate(args)
     finally:
-        if not args.keep_stack:
-            stack.down()
-
-    result = json.loads((ev / "closed_loop.json").read_text())
-    run_context.summarise(
-        run_dir,
-        "eval",
-        checkpoint=str(checkpoint),
-        **{k: result[k] for k in ("rounds", "successes", "success_rate") if k in result},
-    )
-    print(f"eval: {result.get('successes')}/{result.get('rounds')} -> {ev / 'closed_loop.json'}")
+        closed_loop.finish(run, keep_stack=args.keep_stack)
+    closed_loop.record(run)
     return 0
 
 
@@ -482,21 +434,16 @@ def _evaluate(args):
     # --- aggregate ----------------------------------------------------------
     attempts = [json.loads(l) for l in manifest.read_text().splitlines() if l.strip()]
     rows = round_outcomes(attempts)
-    n = len(rows)
-    k = sum(1 for r in rows if r["ok"])
-    lo, hi = wilson(k, n)
-    stages = {}
-    for r in rows:
-        if r["ok"]:
-            continue
-        why = r.get("why", "")
-        stage = why.split(":")[0].replace("[vla] ", "") if "[vla]" in why else "pre-vla"
-        stages[stage] = stages.get(stage, 0) + 1
+    from locomani.pipeline.closed_loop import score
+
+    scored = score(rows)  # one definition with the bimanual evaluator
+    n, k, stages = scored["rounds"], scored["successes"], scored["failure_stages"]
+    lo, hi = scored["wilson95"]
 
     results = dict(
         rounds=n,
         successes=k,
-        success_rate=k / n if n else 0.0,
+        success_rate=scored["success_rate"],
         wilson95=[lo, hi],
         # Kept so a run that needed many re-teleports to get going is still
         # visible: it says the stack was struggling, not that the policy was.

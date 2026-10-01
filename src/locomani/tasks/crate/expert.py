@@ -479,7 +479,12 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         edge_xy, walk_axis = near_edge(meta)
         guard = dict(
             watch=FootWatch(scene_xml),
-            rule=GuardBrake(extra=cfg.guard_extra, margin=cfg.guard_margin, stride0=cfg.guard_stride0),
+            rule=GuardBrake(
+                extra=cfg.guard_extra,
+                margin=cfg.guard_margin,
+                stride0=cfg.guard_stride0,
+                stride_mode=cfg.guard_stride_mode,
+            ),
             axis=walk_axis,
             line=float(walk_axis @ edge_xy),
             closest=-np.inf,  # frontmost low-body point relative to the line, max over the attempt (+ = crossed)
@@ -593,7 +598,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         last_motion=last_motion,
     )
     try:
-        while ticks.elapsed() < cfg.walk_timeout + cfg.timeout_seconds + 2:
+        # a guard re-walk gives every walk-in its own walk_timeout (VisualApproach), so the round's budget grows with it
+        walk_ins = 1 + (cfg.stand_depth_retries if guard is not None and cfg.guard_rewalk_depth > 0 else 0)
+        while ticks.elapsed() < walk_ins * cfg.walk_timeout + cfg.timeout_seconds + 2:
             tick = ticks.next()
             if tick is None:
                 continue  # no new physical sample: do not append a contradictory held pose

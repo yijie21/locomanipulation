@@ -49,13 +49,24 @@ class CrateVisualConfig:
     )
     guard_margin: float = 0.03  # guard: clearance kept before the line, m
     guard_stride0: float = 0.14  # guard: floor on the predicted next stride, m
-    box_grasp_below_rim: float = 0.025  # grasp point depth under the rim for scenes whose target carries a `box` (the cardboard box); the crate's bar ignores it. 0.01 in the warehouse: 0.025 put the Dex1 palm on the 1 cm wall top (2026-09-23)
+    guard_stride_mode: str = "floor"  # guard: next-stride prediction (primitives/foot_watch.GuardBrake): floor = max(last stride, guard_stride0); alternate = 0.08 after a stride of 0.15 or more, else 0.23 -- the 0.25 gait alternates a ~0.21 step and a <= 0.07 one, and floor over-predicts the step after a long one by 0.12-0.17 m (TODO 2.4.10.23.3)
+    box_grasp_below_rim: float = 0.01  # grasp point depth under the rim for scenes whose target carries a `box` (the cardboard box); the crate's bar uses grasp_region.GRASP_BELOW_RIM_M (0.025) instead. 0.025 put the Dex1 palm on the 1 cm wall top (2026-09-23); 0.03 pushed the box 6/10 (2026-09-24), 0.02 lost to 0.01 15/30 vs 10/30 (2026-09-27); default 0.01 since 2026-10-01, which every warehouse file already set (TODO 2.4.9)
     retreat_distance: float = 0.0  # after a completed hold: walk this far backward holding the load, m; 0 = end at the hold. Success then requires the load still held after the retreat
     retreat_speed: float = 0.35  # SLOW_WALK speed command for the retreat
     retreat_timeout: float = 10.0  # simulated seconds allowed for the retreat
     walk_steer: str = "target"  # target: steer the movement at the planned stance (depth and lateral); depth: walk straight ahead on the body heading and stop on depth alone, the lateral residual left to the reach (2026-09-23: target steering turned the last 0.1 s of the walk up to 50 deg sideways and scattered the stance)
     stand_depth_tolerance: float = 0.04  # metres past stand_off a quiet stance may rest before re-walking
-    stand_depth_retries: int = 2  # re-walks allowed when the quiet stance is farther than the tolerance
+    stand_depth_retries: int = 2  # re-walks allowed when the quiet stance is farther than the tolerance (approach_stop=depth) or than guard_rewalk_depth (guard)
+    guard_brake: str = "landing"  # approach_stop=guard: landing = brake at the foot landing after which one more stride would carry the body past the line (GuardBrake); phase = brake on any tick once the pelvis plus guard_phase_band(gait phase) reaches the line minus guard_margin -- needs a steady gait, measured at 0.55 with >= 1.0 m run-up (TODO 3.14.1)
+    guard_phase_band: tuple[float, float, float] = (
+        0.0,
+        0.0,
+        0.0,
+    )  # guard_brake=phase: c0, a, b of the settled frontmost low-body point ahead of the pelvis at the brake, c0 + a cos(2 pi phase) + b sin(2 pi phase), m; phase = time since the last foot landing / last step period. Fit from diag_brake's walk-scene trials (docs/walk.md)
+    guard_rewalk_depth: float = 0.0  # approach_stop=guard: a quiet stance farther than this (pelvis to box centre along the walk-in, m) backs off guard_rewalk_back and walks in again, up to stand_depth_retries times; 0 = off. The guard walk cannot be steered closer, but each walk-in lands at an independent depth, and the warehouse yield falls from 0.41 at < 0.44 m to 0.20 at 0.48-0.52 and 0.03 beyond (1013 rounds, 2026-09-25; TODO 2.4.10.23.2)
+    guard_rewalk_back: float = (
+        0.4  # guard re-walk: how far to back off before walking in again, m (by the target's measured depth)
+    )
     lift_seconds: float = 4.0  # lift ramp duration; assisted standing overlaps after the measured probe
     stand_seconds: float = 5.0  # attached recovery duration after the measured probe, seconds
     upright_tolerance_deg: float = 12.0  # measured torso lean allowed at successful completion
@@ -100,6 +111,9 @@ class CrateVisualConfig:
     )  # lifted ready: tool point forward / lateral (mirrored) / up from the pelvis, metres; fingertips stay within 0.20 m of the pelvis through the blend from the walking arms
     ready_pitch_deg: float = 30.0  # lifted ready: palm pitch below level; the reach slerps it to palm_pitch_deg
     elbow_min_deg: float = 5.0  # elbow floor in both reach solvers (BimanualIK, WholeBodyIK); G1 elbow 0 = forearm level, negative folds it up (range -60). 5 since 2026-09-12; the lifted ready pose needs -60 (its solve misses by 5-10 cm at 5)
+    reach_arm_posture_weight: float = 0.0  # assisted CoordinatedReach: posture-prior weight of the 14 arm joints toward the admission solve's pose (the other 15 keep the solver's 0.04); 0 = the solver's 0.04 on all. The commanded elbow and wrist pitch trade off along the null space through the descend, sd 15 deg at correlation -0.9 (TODO 2.4.10.20; the continuity damping did not touch it, 2026-10-01)
+    reach_continuity_weight: float = 0.0  # assisted CoordinatedReach: whole-body IK residual weight x (x - previous solution) / dt, a damping prior on every base and joint coordinate; 0 = off. Each tick re-solves from a seed carried forward at the last velocity in 6 iterations, and the null space (elbow vs wrist pitch, which leave the hand where it is) swapped anti-phase: elbow reference sd 9-15 deg, correlation -0.95..-0.98, while the hand target moved 0.2 cm per tick (user saw the arms shake, 2026-09-24; TODO 2.4.10.20)
+    reach_rotation_weight_transit: float = 0.2  # assisted CoordinatedReach: the hand orientation weight while the hands travel to the pregrasp point (phase reach); -1 = reach_rotation_weight. The user's question (2026-09-24): the wrist cameras need the box only in descend, so the transit may give up palm attitude for position (TODO 2.4.10.13). Single-edge warehouse, 20 rounds x 2 seeds: 0.2 19/40 vs -1 10/40 (discordant 13 : 4, p 0.049); the default since 2026-10-01 (user). Not measured on the crate basket or box_platform
     reach_rotation_weight: float = 0.6  # assisted CoordinatedReach: whole-body IK weight on hand orientation (rad) against hand position (10 per metre); 0.6 trades ~10 deg for 1 cm, and at long reach gave up 10-20 deg of palm pitch (2026-09-23)
     orientation_gain: float = 0.0  # assisted CoordinatedReach: fraction of the filtered predicted-vs-measured palm rotation added to the commanded attitude; 0 = none. SONIC tracked the palm pitch 8-14 deg flat at long reach (2026-09-23)
     orientation_cap_deg: float = 20.0  # largest palm-attitude correction the orientation feedback may apply, degrees
@@ -159,6 +173,10 @@ class CrateVisualConfig:
             raise ValueError("visual.face_after_brake must be none, centre or box_yaw")
         if self.ready_after_brake not in ("full", "quick"):
             raise ValueError("visual.ready_after_brake must be full or quick")
+        if self.guard_stride_mode not in ("floor", "recent2", "alternate"):
+            raise ValueError("visual.guard_stride_mode must be floor, recent2 or alternate")
+        if self.guard_brake not in ("landing", "phase"):
+            raise ValueError("visual.guard_brake must be landing or phase")
         for name, value in vars(self).items():
             if name in (
                 "pose_source",
@@ -172,9 +190,17 @@ class CrateVisualConfig:
                 "ready_pose",
                 "face_after_brake",
                 "ready_after_brake",
+                "guard_stride_mode",
+                "guard_brake",
             ):
                 continue
-            if name in ("start_advance", "reach_feedforward_forward", "reach_feedforward_up", "close_target"):
+            if name in (
+                "start_advance",
+                "reach_feedforward_forward",
+                "reach_feedforward_up",
+                "close_target",
+                "reach_rotation_weight_transit",
+            ):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError(f"visual.{name} must be a finite number")
                 continue
@@ -192,6 +218,16 @@ class CrateVisualConfig:
                     or value[0] > value[1]
                 ):
                     raise ValueError(f"visual.{name} must be two finite numbers (low, high) with low <= high")
+                continue
+            if name == "guard_phase_band":
+                if (
+                    isinstance(value, (str, bytes))
+                    or len(value) != 3
+                    or any(
+                        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in value
+                    )
+                ):
+                    raise ValueError("visual.guard_phase_band must be three finite numbers (c0, a, b)")
                 continue
             if name == "ready_tool":
                 if (
@@ -211,6 +247,8 @@ class CrateVisualConfig:
                 raise ValueError(f"visual.{name} must be a finite non-negative number")
         if not 0 <= self.waist_pitch_max <= 0.52:
             raise ValueError("visual.waist_pitch_max must be in [0, 0.52]")
+        if self.reach_continuity_weight > 0.2:  # the bottle line's bound on its own velocity prior
+            raise ValueError("visual.reach_continuity_weight must be within [0, 0.2]")
         for name in ("stand_depth_retries", "descend_retries", "reseat_retries"):
             if not isinstance(getattr(self, name), int) or isinstance(getattr(self, name), bool):
                 raise ValueError(f"visual.{name} must be an integer")

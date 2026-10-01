@@ -157,9 +157,16 @@ def walk_step(tick: Tick, w: WalkState):
     guard = w.guard
     if guard is not None:
         landed, front, stride = guard["watch"].update(raw, np.zeros(2), guard["axis"])
-        brake_now, used = guard["rule"].should_brake(landed, front, stride, guard["watch"].last_strides, guard["line"])
-        if brake_now and guard["brake"] is None:
-            guard["brake"] = dict(front_ankle_to_line=guard["line"] - front, stride=used, t=raw.get("t"))
+        if getattr(w.cfg, "guard_brake", "landing") == "phase":
+            brake_now, used = phase_brake(guard, raw, landed, w.cfg)
+        else:
+            brake_now, used = guard["rule"].should_brake(
+                landed, front, stride, guard["watch"].last_strides, guard["line"]
+            )
+        if brake_now and getattr(w.approach, "phase", "walk") == "walk":  # not while a guard re-walk backs off
+            brake = dict(front_ankle_to_line=guard["line"] - front, stride=used, t=raw.get("t"))
+            guard["brake"] = guard["brake"] or brake  # the first walk-in's, as before the guard re-walk
+            guard.setdefault("brakes", []).append(brake)  # every walk-in's (TODO 2.4.10.23.2)
     nav = w.approach.step(
         now,
         target,
@@ -190,7 +197,8 @@ def walk_step(tick: Tick, w: WalkState):
     direction = nav.direction.copy()
     direction[:2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]] @ direction[:2]
     if guard is not None and nav.speed > 0:
-        direction = np.array([*guard["axis"], 0.0])  # world walk-in axis, as diag_brake walks
+        # world walk-in axis, as diag_brake walks; backwards for a guard re-walk's backing off
+        direction = np.array([*guard["axis"], 0.0]) * (-1.0 if nav.phase == "back" else 1.0)
     q, velocity = (
         (joints.copy() if guard is not None else arm.q.copy(), np.zeros(29))
         if w.preparation is None
@@ -215,6 +223,22 @@ def walk_step(tick: Tick, w: WalkState):
         "stand_attempts": list(w.stand_attempts),
     }
     return command, navigation, nav
+
+
+def phase_brake(guard: dict, raw: dict, landed: bool, cfg) -> tuple[bool, float]:
+    """visual.guard_brake=phase (TODO 3.14.1): brake on any tick once the pelvis plus the phase-dependent band reaches
+    the line minus the margin. The band is where the frontmost low-body point settles ahead of the pelvis after an
+    IDLE at that gait phase (time since the last foot landing / the last step period). -> (brake now, band used)."""
+    times = guard.setdefault("landing_t", [])
+    if landed:
+        times.append(float(raw["t"]))
+    c0, a1, b1 = cfg.guard_phase_band
+    band = c0
+    if len(times) >= 2:
+        phase = ((float(raw["t"]) - times[-1]) / max(times[-1] - times[-2], 1e-3)) % 1.0
+        band = c0 + a1 * np.cos(2 * np.pi * phase) + b1 * np.sin(2 * np.pi * phase)
+    pelvis = float(np.asarray(raw["pelvis"]["pos"][:2]) @ guard["axis"])
+    return bool(pelvis + band >= guard["line"] - cfg.guard_margin), float(band)
 
 
 def reach_step(tick: Tick, *, arm, low, solver, cfg, assisted: bool, recorder):

@@ -49,11 +49,67 @@ def test_guard_approach_walks_straight_at_constant_speed_and_settles_on_the_brak
     assert ready.ready and approach.stand_attempts[-1]["accepted"]
 
 
+def test_guard_rewalk_backs_off_a_far_stance_and_walks_in_again():
+    """TODO 2.4.10.23.2: a quiet guard stance past guard_rewalk_depth backs off guard_rewalk_back (by the target's
+    measured depth) and walks in again on a fresh brake, at most stand_depth_retries times; a near one is accepted."""
+    cfg = CrateVisualConfig(
+        approach_stop="guard",
+        walk_speed=0.25,
+        walk_speed_min=0.25,
+        settle_seconds=0.1,
+        guard_rewalk_depth=0.50,
+        guard_rewalk_back=0.40,
+        stand_depth_retries=1,
+        walk_timeout=1.0,
+    )
+    approach = VisualApproach(cfg)
+    t = [0.0]
+
+    def tick(depth, brake=False):
+        t[0] += 0.02
+        return approach.step(
+            t[0],
+            ApproachTarget(np.array([depth, 0.0, 0]), t[0], "visible"),
+            [1, 0, 0, 0],
+            grasp_pose_available=True,
+            base_velocity=[0, 0, 0],
+            guard_brake=brake,
+        )
+
+    tick(0.9)
+    assert tick(0.55, brake=True).phase == "settle"
+    nav = None
+    for _ in range(20):
+        nav = tick(0.55)
+        if nav.phase != "settle":
+            break
+    assert nav.phase == "back" and nav.speed == 0.25 and np.allclose(nav.direction, [-1, 0, 0]) and not nav.ready
+    assert len(approach.stand_attempts) == 1 and not approach.stand_attempts[0]["accepted"]
+    assert approach.stand_attempts[0]["depth_m"] == pytest.approx(0.55)
+    for _ in range(40):  # 0.55 + 0.40 not yet reached; by now the first walk-in started > walk_timeout ago
+        nav = tick(0.80)
+        assert nav.phase == "back" and nav.reason == ""
+    again = tick(0.95)
+    assert again.phase == "walk" and np.allclose(again.direction, [1, 0, 0]) and again.reason == ""
+    for _ in range(20):  # each walk-in gets its own walk_timeout
+        assert tick(0.70).reason == ""
+    assert tick(0.56, brake=True).phase == "settle"
+    for _ in range(20):
+        nav = tick(0.56)
+        if nav.ready:
+            break
+    # the retry budget is spent: the second far stance is taken
+    assert nav.ready and approach.stand_attempts[-1]["accepted"] and len(approach.stand_attempts) == 2
+    assert approach.stand_attempts[-1]["depth_m"] == pytest.approx(0.56)
+
+
 def test_box_grasp_depth_is_configurable_and_the_crate_bar_ignores_it():
     box = {"box": {"half_extent": [0.225, 0.16, 0.165], "centre": [0, 0, 0.165]}}
     assert grasp_points_for(box, 0.01)[0][2] == pytest.approx(0.33 - 0.01)
     assert grasp_points_for(box)[0][2] == pytest.approx(0.33 - 0.025)
     assert grasp_points_for({}, 0.01) == grasp_points_for({})
+    # the box default is the warehouse's measured 0.01 (TODO 2.4.9); the crate bar keeps its 0.025 constant
+    assert CrateVisualConfig().box_grasp_below_rim == pytest.approx(0.01)
     with pytest.raises(ValueError, match="approach_stop"):
         CrateVisualConfig(approach_stop="sometimes")
 
@@ -201,3 +257,40 @@ def test_placeholder_stamp_is_the_read_time_so_now_must_be_sampled_after_the_rea
     stamp = camera.read()["timestamps"]["ego_view"]
     after = time.time()
     assert before <= stamp <= after  # a `now` sampled before the read rejects the frame; one sampled after admits it
+
+
+def test_alternate_stride_mode_predicts_the_short_step_after_a_long_one():
+    """TODO 2.4.10.23.3: after a long stride the next one is short, so the brake may wait one more landing."""
+    rule = GuardBrake(extra=0.20, margin=0.03, stride0=0.14, stride_mode="alternate")
+    line = 1.0
+    # front 0.60 after a 0.21 stride: predicted 0.60 + 0.08 + 0.20 = 0.88 < 0.97 -> walk on (floor would brake: 1.01)
+    assert rule.should_brake(True, 0.60, 0.21, [0.05, 0.21], line) == (False, 0.08)
+    assert GuardBrake(extra=0.20, margin=0.03, stride0=0.14).should_brake(True, 0.60, 0.21, [0.05, 0.21], line)[0]
+    # after a short stride the long one comes: 0.60 + 0.23 + 0.20 = 1.03 -> brake
+    assert rule.should_brake(True, 0.60, 0.05, [0.21, 0.05], line) == (True, 0.23)
+    assert rule.should_brake(True, 0.50, None, [], line) == (False, 0.14)  # no stride seen yet: stride0
+
+
+def test_phase_brake_uses_the_band_at_the_current_gait_phase():
+    """TODO 3.14.1: brake once pelvis + c0 + a cos(2 pi phase) + b sin(2 pi phase) reaches line - margin."""
+    from types import SimpleNamespace
+
+    from locomani.tasks.crate.attempt import phase_brake
+
+    cfg = SimpleNamespace(guard_phase_band=(0.25, 0.05, 0.0), guard_margin=0.03)
+    guard = dict(axis=np.array([1.0, 0.0]), line=1.0)
+
+    def raw(t, x):
+        return {"t": t, "pelvis": {"pos": [x, 0.0, 0.79]}}
+
+    assert phase_brake(guard, raw(0.0, 0.60), True, cfg) == (False, 0.25)  # one landing: no phase yet, c0
+    phase_brake(guard, raw(0.5, 0.62), True, cfg)  # second landing: step period 0.5 s
+    # just after a landing (phase 0): band 0.30 -> 0.66 + 0.30 = 0.96 < 0.97
+    assert phase_brake(guard, raw(0.5, 0.66), False, cfg) == (False, pytest.approx(0.30))
+    # half a step later (phase 0.5): band 0.20 -> 0.78 + 0.20 = 0.98 >= 0.97
+    brake, band = phase_brake(guard, raw(0.75, 0.78), False, cfg)
+    assert brake and band == pytest.approx(0.20)
+    with pytest.raises(ValueError, match="guard_phase_band"):
+        CrateVisualConfig(guard_phase_band=(0.2, 0.1))
+    with pytest.raises(ValueError, match="guard_brake"):
+        CrateVisualConfig(guard_brake="sometimes")

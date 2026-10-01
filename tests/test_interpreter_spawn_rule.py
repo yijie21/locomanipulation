@@ -84,7 +84,7 @@ def test_every_allow_listed_spawn_still_exists_and_carries_a_reason():
 
 
 def test_the_boundary_crossings_are_the_ones_we_expect():
-    """The gr00t venv is the real boundary; the same-interpreter entries are the debt that is left."""
+    """The gr00t venv is the real boundary; no same-interpreter debt is left."""
     by_interpreter = {}
     for row in ALLOWED:
         by_interpreter.setdefault(row["interpreter"], set()).add(Path(row["source"]).name)
@@ -93,9 +93,5 @@ def test_the_boundary_crossings_are_the_ones_we_expect():
         "run_vla_server.py",
         "eval_crate_closed_loop.py",
     }
-    # Diagnostics only: nothing on a collection or evaluation path spawns its own venv again.
-    assert by_interpreter["same-interpreter"] == {
-        "bimanual_scene.py",
-        "floor_scene.py",
-        "boundary_search.py",
-    }
+    # The last three (scene builders, boundary search) became in-process calls on 2026-10-01.
+    assert "same-interpreter" not in by_interpreter

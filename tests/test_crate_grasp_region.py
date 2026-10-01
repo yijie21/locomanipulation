@@ -38,7 +38,6 @@ def test_carry_consumer_closes_at_valid_rim_offset_without_recentering(monkeypat
     clock = [0.0]
     monkeypatch.setattr(carry_phases, "time", SimpleNamespace(time=lambda: clock[0]))
     monkeypatch.setattr(carry, "SERVO_TIMEOUT", 0.4)
-    monkeypatch.setattr(carry, "DUMP_DIR", "")
     centres = dict(left=np.array([0.4, 0.1933, 0.445]), right=np.array([0.4, -0.1933, 0.445]))
     crate_rotation = Rotation.from_euler("z", 90, degrees=True)
     wrist = Rotation.from_euler("y", 60, degrees=True).as_matrix()
@@ -67,6 +66,7 @@ def test_carry_consumer_closes_at_valid_rim_offset_without_recentering(monkeypat
     )
     ctx = SimpleNamespace(
         p=SimpleNamespace(obs=observe),
+        dump_dir="",
         log=lambda *a: None,
         rnd=0,
         arms=arms,

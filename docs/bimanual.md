@@ -79,8 +79,8 @@ diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.
 
 分两层，容易只记住一层：
 
-- **批内**：`batch_rounds` 局一定跑满。双臂专家只接 `--rounds`（`crate/prepare.py:expert_argv`），
-  `--until-ok` 根本不传给它——**除非专家崩了**，异常会向上抛并中止整批。
+- **批内**：`batch_rounds` 局一定跑满。双臂专家只接局数（`tasks/crate/collect.py:batch_plan` 的 `rounds`），
+  没有 `--until-ok` 这一项——**除非专家崩了**，异常会向上抛并中止整批。
 - **批间**：`successes` 是**活判据**。`tasks/crate/collect.py` 主循环的条件是
   `kept < successes and batches < max_batches`，够了就不再开新批（单臂同一行，这不是双臂特性）。
 

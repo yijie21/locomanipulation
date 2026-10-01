@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 
 import mujoco
@@ -37,6 +36,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 )  # reach src/ for `python src/locomani/tasks/crate/bimanual_scene.py`
 from locomani import paths  # noqa: E402
+from locomani.sim import build_sim_scene  # noqa: E402
 from locomani.sim.build_sim_scene import PAD_CONDIM, PAD_PRIORITY, harden_finger_pads  # noqa: E402
 from locomani.tasks.crate.config import DEFAULT_CRATE_TASK  # noqa: E402
 
@@ -123,7 +123,7 @@ def harden_pads(xml_path: str) -> int:
     return n
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("out_dir")
     parser.add_argument("--seed", type=int)
@@ -142,7 +142,7 @@ def main() -> None:
     parser.add_argument(
         "--table-top", type=float, default=0.62, help="table height, m (0.62 shipped; 0.371 = the logistics pallet)"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not 0 <= args.crate_setback <= 0.20:
         parser.error("--crate-setback must be within 0..0.20 m")
     out = os.path.abspath(args.out_dir)
@@ -156,8 +156,6 @@ def main() -> None:
     # only --table-top needs passing here (decision 8: build_sim_scene.py's
     # CLI, not env).
     build_argv = [
-        sys.executable,
-        os.path.join(paths.SRC, "sim", "build_sim_scene.py"),
         os.path.join(paths.OUTPUTS, "scene"),
         out,
         "--preset",
@@ -167,7 +165,7 @@ def main() -> None:
     ]
     if args.seed is not None:
         build_argv += ["--seed", str(args.seed)]
-    subprocess.run(build_argv, check=True)
+    build_sim_scene.main(build_argv)
     xml = os.path.join(out, "scene_locomani.xml")
     print(
         f"[bimanual_scene] finger pads hardened: {harden_pads(xml)} geoms, gripper gear {GRIPPER_GEAR:.0f}, fingers coupled {COUPLE_FINGERS}, range {FINGER_RANGE} -> {xml}"

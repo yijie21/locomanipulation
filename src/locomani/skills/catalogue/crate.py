@@ -159,7 +159,12 @@ class CrateApproach:
             edge_xy, walk_axis = near_edge_for(meta, key)
             guard = dict(
                 watch=expert.FootWatch(paths.SCENE_XML),
-                rule=expert.GuardBrake(extra=cfg.guard_extra, margin=cfg.guard_margin, stride0=cfg.guard_stride0),
+                rule=expert.GuardBrake(
+                    extra=cfg.guard_extra,
+                    margin=cfg.guard_margin,
+                    stride0=cfg.guard_stride0,
+                    stride_mode=cfg.guard_stride_mode,
+                ),
                 axis=walk_axis,
                 line=float(walk_axis @ edge_xy),
                 closest=-np.inf,

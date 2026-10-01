@@ -211,11 +211,6 @@ REACH_POSTURE_W = 0.02
 # waypoint and walk in again, so the data holds "stopped wrong -> corrected"
 # rather than only clean stands. The crate-disturbed check still rejects.
 WALK_ATTEMPTS = 3
-DUMP_DIR = ""
-# --ghost-trace DIR: ghost_trace.GhostTargetTrace writing <label>_ghost.npz per
-# round (the IK's aimed wrist poses, by state seq) for the rendered videos'
-# ghost hands. wall_phases attaches it to each round's BimanualArms.
-GHOST_TRACE = None
 
 
 def wall_frame(s):
@@ -269,6 +264,8 @@ def run_round(
     record: bool = False,
     *,
     config: CrateTaskConfig = DEFAULT_CRATE_TASK,
+    dump_dir: str = "",
+    ghost=None,
 ) -> dict:
     """One round's six phases (wall_phases.py / wall_phases_descend.py),
     threaded through a WallRoundContext.
@@ -287,6 +284,8 @@ def run_round(
         video_label=video_label,
         m={"round": rnd, "ok": False, "why": "", "produced": False},
         config=config,
+        dump_dir=dump_dir,
+        ghost=ghost,
     )
     for phase in (_phase_reset, _phase_stand, _phase_hover, _phase_descend, _phase_close, _phase_lift):
         result = phase(ctx)
@@ -312,8 +311,6 @@ from locomani.primitives.g1_joints import ARM_MJ as ARM_IDX  # noqa: E402
 
 
 def main(argv=None) -> None:
-    from functools import partial
-
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument(
@@ -342,11 +339,42 @@ def main(argv=None) -> None:
     # below would never reach the phases (crate GPU gate 2026-09-10: wall_walk=true
     # ran the ready-stand variant). Alias the package name to this module first.
     sys.modules.setdefault("locomani.tasks.crate.bimanual_wall", sys.modules[__name__])
+    run(
+        cfg,
+        rounds=args.rounds,
+        seed=args.seed,
+        manifest=args.manifest,
+        label=args.label,
+        record=args.record,
+        scene_dir=args.scene_dir,
+        ghost_trace=args.ghost_trace,
+    )
+
+
+def run(
+    cfg: CrateTaskConfig,
+    *,
+    rounds: int,
+    seed: int,
+    manifest: str = "",
+    label: str = "wall",
+    record: bool = False,
+    scene_dir=None,
+    ghost_trace: str = "",
+) -> None:
+    """One batch of wall rounds on the stack this process talks to (tasks/crate/collect.py calls it per batch).
+
+    The dump directory and the ghost trace reach the phases on the round context, not through module
+    globals (TODO 1.17).
+    """
+    from functools import partial
+
     # FEATURE/WALK (and FEATURE's derived DEPTH_AXIS/WALL_AXIS/WALL_Y/NEAR_X/
     # CRATE_YAW_DELTA/GRIP_BELOW) default from DEFAULT_CRATE_TASK at module
-    # load; a --config/--set here overrides them the same way any other
-    # caller would (module-level assignment), so wall_phases.py's deferred
+    # load; `cfg` overrides them the same way any other caller would
+    # (module-level assignment), so wall_phases.py's deferred
     # `from bimanual_wall import WALK` etc. (read fresh each round) see it.
+    # Every one is set on every call, so a batch cannot inherit the previous one's.
     global FEATURE, WALK, DEPTH_AXIS, WALL_AXIS, WALL_Y, NEAR_X, CRATE_YAW_DELTA, GRIP_BELOW
     global CRATE_SETBACK_LEVELS, CRATE_YAW_LEVELS_DEG
     FEATURE, WALK = cfg.wall_feature, cfg.wall_walk
@@ -358,43 +386,49 @@ def main(argv=None) -> None:
     # bases, a third one after start_stack.sh's and every module-level fallback's.
     for k in ("TF_SONIC_PORT", "TF_OUT_PORT", "TF_KEYBOARD_PORT", "TF_PRIVILEGED_PORT", "TF_EPISODE_PORT"):
         os.environ.setdefault(k, str(ports.port(k)))
-    global DUMP_DIR
-    DUMP_DIR = os.path.dirname(os.path.abspath(args.manifest)) if args.manifest else ""
-    scene_meta = f"{args.scene_dir}/scene_meta.json" if args.scene_dir else paths.SCENE_META
+    dump_dir = os.path.dirname(os.path.abspath(manifest)) if manifest else ""
+    scene_meta = f"{scene_dir}/scene_meta.json" if scene_dir else paths.SCENE_META
     meta = json.load(open(scene_meta))
     if meta.get("target_object") != OBJ:
         raise SystemExit(f"{scene_meta} is not the crate scene")
     print(f"[wall] instance {inst}, scene {scene_meta}, task config {cfg.to_dict()}")
-    if args.record:
+    if record:
         # The same refusal grasp_gym makes: the exporter only exists on instance 0,
         # so a --record run anywhere else finishes every round and writes nothing.
         ports.require_exporter("--record")
-    p = Primitives(meta=meta)
-    reset = EpisodeControlClient()
-    round_runner.prime(p, reset)
-    global GHOST_TRACE
-    if args.ghost_trace:
+    # ghost_trace.GhostTargetTrace writing <label>_ghost.npz per round (the IK's aimed wrist
+    # poses, by state seq) for the rendered videos' ghost hands; wall_phases attaches it to
+    # each round's BimanualArms.
+    ghost = None
+    if ghost_trace:
         from locomani.tasks.crate.ghost_trace import GhostTargetTrace
 
-        GHOST_TRACE = GhostTargetTrace(args.ghost_trace, arms_offset())
-    # The round loop, the manifest, the deploy self-heal and the exporter keys
-    # live in round_runner.py -- bimanual_carry.py had a near-identical copy of
-    # the first two, no copy of the third, and neither had the fourth.
-    round_runner.run_rounds(
-        p,
-        reset,
-        meta,
-        run_round=partial(run_round, config=cfg),
-        rng=np.random.default_rng(args.seed),
-        rounds=args.rounds,
-        label=args.label,
-        tag="wall",
-        manifest=args.manifest,
-        record=args.record,
-        self_heal_rounds=cfg.deploy_self_heal_rounds,
-        instance=inst,
-        ghost=GHOST_TRACE,
-    )
+        ghost = GhostTargetTrace(ghost_trace, arms_offset())
+    p = Primitives(meta=meta)
+    reset = EpisodeControlClient()
+    try:
+        round_runner.prime(p, reset)
+        # The round loop, the manifest, the deploy self-heal and the exporter keys
+        # live in round_runner.py -- bimanual_carry.py had a near-identical copy of
+        # the first two, no copy of the third, and neither had the fourth.
+        round_runner.run_rounds(
+            p,
+            reset,
+            meta,
+            run_round=partial(run_round, config=cfg, dump_dir=dump_dir, ghost=ghost),
+            rng=np.random.default_rng(seed),
+            rounds=rounds,
+            label=label,
+            tag="wall",
+            manifest=manifest,
+            record=record,
+            self_heal_rounds=cfg.deploy_self_heal_rounds,
+            instance=inst,
+            ghost=ghost,
+        )
+    finally:  # called once per batch in one process: the next batch opens its own
+        reset.close()
+        p.close()
 
 
 if __name__ == "__main__":
