@@ -22,11 +22,11 @@
 - [x] 1.11 阶段 8：`lint_repository.spawn_errors` + `interpreter_spawns.json` + 反向证明测试（2026-09-22）
 - [x] 1.12 文档：README 快速开始、`standards.md` 规则、change map；README 进 `COMMAND_DOCUMENTS`（2026-09-22）
 - [x] 1.13 提交并推送（`a8bd4e7`、`c175089`，`--no-verify`，协作者文件未碰）（2026-09-22）
-- [ ] 1.14 修 handoff 文档第 3 行的过时状态句（仍写"阶段 4–8 未开始"）
-- [ ] 1.15 三处同 venv `sys.executable` spawn：`bimanual_scene.py`、`reach_envelope/floor_scene.py`、`reach_envelope/boundary_search.py`（诊断路径，谁动 reach_envelope 时顺手做）
-- [ ] 1.16 `eval_crate_closed_loop → vla_rounds` 的同 venv spawn（需要双臂 checkpoint）
-- [ ] 1.17 `wall`/`carry` 转成 `run(config, ...)`，去掉 `global DUMP_DIR`（可选；进程边界已没了）
-- [ ] 1.18 两套评测器本身合并（协作者第 2、3 条的深层问题；需 checkpoint + 闸门）
+- [x] 1.14 修 handoff 文档第 3 行的过时状态句（仍写"阶段 4–8 未开始"）（2026-10-01：改为"阶段 1–8 已落地，遗留见 TODO 1.14–1.20"）
+- [x] 1.15 三处同 venv `sys.executable` spawn：`bimanual_scene.py`、`reach_envelope/floor_scene.py`、`reach_envelope/boundary_search.py`（诊断路径，谁动 reach_envelope 时顺手做）（2026-10-01：三处改进程内调用；`build_sim_scene.main(argv)` 退出时还原 `--seed`/`--table-top` 改过的 `scene_lib` 常量。新旧路径各建默认 / seeded / floor 三个场景逐字节一致，同进程先 seeded 后默认也一致；`_write_group` 的 bank 与脚本输出一致；`interpreter_spawns.json` 删 3 条 same-interpreter）
+- [x] 1.16 `eval_crate_closed_loop → vla_rounds` 的同 venv spawn（需要双臂 checkpoint）（2026-10-01：`vla_rounds.main` 拆成解析 + `run(config, ...)`，每批在评测进程里先 `run_context.adopt_env(栈环境)` 再 import/调用，`run` 关掉 clean clock 与两个 client。第一次实跑按旧顺序先 import 后接环境，`adopt_sim_dir` 拒绝（IK 已持有 outputs/scene/sim），已改顺序并加新解释器回归测试（错顺序必 FAIL）。闸门：cap120 checkpoint-5000、实例 2、MuJoCo 实时出图、10 局 seed 6000、5 局一批：旧路径（HEAD 快照）4/10、新路径 5/10，逐 seed 不一致 1 : 2；两臂产物文件集合相同、traces 全局编号、`rounds_NN` rc 0、summary 写入。`interpreter_spawns.json` 删 venv_sim 那条）
+- [x] 1.17 `wall`/`carry` 转成 `run(config, ...)`，去掉 `global DUMP_DIR`（可选；进程边界已没了）（2026-10-01：两者 `main` 只解析，`run(config, rounds, seed, manifest, ...)`；dump 目录与 ghost trace 走回合上下文（`WallRoundContext`/`CarryRoundContext.dump_dir`、`ghost`），不再是模块全局；`run` 收尾关 client。`tasks/crate/collect.py` 直接调 `run`，`prepare.expert_argv` 与 `diagnostic_argv` 删除。只有单元测试（三批同进程各关一次 client），没有实跑 wall/carry 一批）
+- [x] 1.18 两套评测器本身合并（协作者第 2、3 条的深层问题；需 checkpoint + 闸门）（2026-10-01：两条线的轮次循环不同（grasp_gym 自己的循环 vs `vla_rounds` 分批 + 批间重启 deploy），保留两个文件；循环之外的部分合成 `pipeline/closed_loop.py`——运行目录准入（`attach`：拒已完成的评测、checkpoint、deploy 补丁、本 run 的栈、余量）、`finish`（按状态文件收栈）、`record`（写 summary）、`score`（成功率 / Wilson / 失败分期）。合并时顺手修掉的漂移：双臂版不查 deploy 补丁、attach 之后才拒已完成的评测，Wilson 在 0 局时给 (0, 0)；单臂版用 attach 时的 pid 收栈（deploy 已按局重启）。验证：47 份历史 `closed_loop.manifest.jsonl` 新旧打分逐字段相同（只有 Wilson 1e-16 的浮点差）；双臂运行目录实跑 `gate118_crate_20261001` 4 局 3/4、rc 0、栈收干净、summary 写入。单臂的运行目录路径没能实跑：磁盘上已没有带权重的单臂 checkpoint（`bottle_simple_200_20260916/checkpoint-10000` 在 09-29 清理后只剩 config 和 index），只有单元测试）
 - [x] 1.19 `eval_crate_closed_loop` 的 run-dir 模式实跑一次（目前只 dry-run；磁盘上没有双臂 checkpoint）（2026-09-27：`run_overnight.sh --from eval` 以 run 目录跑通 10 局，`box_room_grasp_200_cap120_20260925`）
 - [x] 1.20 重构审查（2026-09-23）发现的 7 项问题，全部修复；make check 绿，单臂 2×4 实跑闸门 PASS 5/5（`outputs/runs/gate8_fix_20260923`）（2026-09-23）
   - [x] 1.20.1 双臂 run-dir 评测：栈无 SONIC_AUTO_START 而 rounds 走 clean commander（deploy 永不启动）—— `Line.eval_backend`；未实跑，同 1.19（2026-09-23）
@@ -38,24 +38,24 @@
   - [x] 1.20.7 小项：第 0 批 exporter session 靠 mtime 猜；attach 不校验栈属于本 run；`run_overnight` 只看 `summary.json` 文件存在
   - [x] 1.20.8 提交前文档核对：runbook / change-map-runtime / single_arm_design / silent_failures 补齐（2026-09-23）
   - [x] 1.20.9 提交并推送 `278acdf`（`--no-verify`，rebase 解了两本 runbook 与协作者开环评测段的冲突，协作者在途文件未动）（2026-09-23）
-  - [ ] 1.20.10 实机演练一次中断续跑（采集跑到第 1 批中途 Ctrl-C，同名重跑，核对 `inputs.json` 与 `interrupted_manifest_*`）
-  - [ ] 1.20.11 现存栈（本次之前起的）attach 会被拒——有长跑栈的会话需知会（无主 `stack.json`）
+  - [x] 1.20.10 实机演练一次中断续跑（采集跑到第 1 批中途 Ctrl-C，同名重跑，核对 `inputs.json` 与 `interrupted_manifest_*`）（2026-10-01，`drill_resume3_20261001`，bottle smoke、录制、2 局一批：第 01 批写了 1 行时给驱动 SIGINT → 退出码 130、栈被收掉；此时 `inputs.json` 记 batches 1、sessions 2、manifests 2（第 01 批已认领未完成）。同名重跑打印 "batch 01 did not finish; its manifest moved aside to interrupted_manifest_01_…"，第 01 批整批重来进新 session，最后 batches / sessions / manifests 3 / 3 / 3，每个 session 磁盘上的 episode 数都等于对应 manifest 的 produced 行数。前两次演练没中断成功：脚本里 `&` 起的后台作业 SIGINT 被设成忽略，python 继承了 SIG_IGN，KeyboardInterrupt 永远不来）
+  - [-] 1.20.11 现存栈（本次之前起的）attach 会被拒——有长跑栈的会话需知会（无主 `stack.json`）（放弃 2026-10-01：09-23 之前起的栈已一个不剩，`/workspace/tmp/p03_i*/stack.json` 只有今天本会话起的）
 
 ## 2. 纸箱线（物流房间）——承接上一会话的 STATE
 
 - [x] 2.1 房间 pilot `box_room_20260922` 0/20，代码与文档已提交（`704004d`、`f5ea2e9`）
-- [ ] 2.2 用户看 `outputs/runs/box_room_20260922/reel_failures.mp4`
+- [-] 2.2 用户看 `outputs/runs/box_room_20260922/reel_failures.mp4`（放弃 2026-10-01：那是 09-22 旧 carry 专家 0/20 的录像，已被 2.3 的分阶段拆解和 09-24 基线取代；文件仍在原处）
 - [x] 2.3 按阶段拆 20 局：摔倒 6 局在哪个相位；reach_stalled 8 局的站位深度与手到抓点距离（2026-09-23：`reach_anatomy_20260923.py`；伸手阶段反馈 1.0/0.15 顶满、手起点离抓点 ~20 cm）
-- [~] 2.4 据 2.3 决定改 `stand_off` / `pregrasp_above` / 摔倒原因；每次一个改动、20 局、同 seed 7000
+- [x] 2.4 据 2.3 决定改 `stand_off` / `pregrasp_above` / 摔倒原因；每次一个改动、20 局、同 seed 7000（2026-10-01 子项全部关闭；单边基线复跑仍是 6/20，各单旋钮对照见台账 `docs/ledger/crate.md` 2026-10-01 节）
   - [x] 2.4.1 反馈 0.7/0.04（`box_room_fb07`）0/10；整个 carry 块回退（`box_room_carry`）0/10、摔倒 3→0（2026-09-23）
   - [x] 2.4.2 stand_off 0.40（`box_room_so40`）0/10，失败移到"碰动箱子"5/10（2026-09-23）
   - [x] 2.4.3 起点 advance 0 + 刹车余量 0.05（`box_room_approach`）0/10；`walk_steer: depth`（`box_room_steer`）0/10、停位离散 1.2 cm（2026-09-23）
   - [x] 2.4.4 真专家接入守线 + staged + orientation_gain + 1 cm 抓深 + 后退（`box_room_grasp_20260923`）0/10，守线 6/10 越线（2026-09-23）
   - [x] 2.4.5 提交 2.4.4 的代码（expert/visual_approach/visual_config/grasp_region/diag_brake 改动 + `primitives/foot_watch.py`、`tasks/crate/retreat.py`、`tests/test_crate_guard_retreat.py`、`box_room_grasp_20260923.yaml`；默认全关，`make check` 已过）（2026-09-23）
   - [x] 2.4.6 warehouse 起点后移 0.3–0.4 m，用真专家（手臂前伸姿态）重标守线的刹车后滑行，再验证不越线（2026-09-23：后移 0.25 m 到离线 0.90 m；根因其实是慢仿真，见 2.4.10）
-  - [ ] 2.4.7 伸手回到不摔的 carry 块（crate 值 + 0.7/0.04），另解"手悬在目标上方 5–10 cm 下不来"
-  - [ ] 2.4.8 跑通后退段（`retreat_distance 0.3`），出 10 局视频
-  - [ ] 2.4.9 纸箱抓深常量 `GRASP_BELOW_RIM_M` 仍为 0.025；warehouse 靠配置 `box_grasp_below_rim 0.01`（决定是否改常量）
+  - [-] 2.4.7 伸手回到不摔的 carry 块（crate 值 + 0.7/0.04），另解"手悬在目标上方 5–10 cm 下不来"（放弃 2026-10-01：这条线 2.4.4 起换成 visual 专家 + 守线，carry 块不再用；"手悬在上方"后来就是 2.4.10.29 的沿上停滞，在那里跟）
+  - [x] 2.4.8 跑通后退段（`retreat_distance 0.3`），出 10 局视频（2026-09-24 已跑通，2026-10-01 对账时勾上：2.4.10.28.2 后退 0.31–0.37 m、6/20 完成；带 ghost 的视频见 2.4.10.29.1，10 集视频见 2.9）
+  - [x] 2.4.9 纸箱抓深常量 `GRASP_BELOW_RIM_M` 仍为 0.025；warehouse 靠配置 `box_grasp_below_rim 0.01`（决定是否改常量）（2026-10-01：常量不动——它是 crate 横杆的抓深；改的是 `CrateVisualConfig.box_grasp_below_rim` 的默认值 0.025 → 0.01：60 份纸箱实验文件都已写 0.01，0.03（2.4.10.15、2.4.10.25.1）和 0.02（09-27，10/30 vs 15/30）都输；没写这个字段的四份 `box_pilot_*_20260922` 钉成 0.025，保持可复现）
   - [x] 2.4.10 查"warehouse 过冲撞箱"：抬着手走 9/10 撞箱 → 改手臂下垂走、刹后抬手（`box_room_grasp_hanging*`）（2026-09-23）
     - [x] 2.4.10.1 站起后重放置 + 世界轴行走；守线线取箱子前面；`walk_body_past_line_max`（2026-09-23）
     - [x] 2.4.10.2 原样重跑排除资源抢占（`box_room_grasp_hanging2_rerun`，仍 0.35×）（2026-09-23）
@@ -67,17 +67,17 @@
     - [x] 2.4.10.14 修复后同配置重跑 m003（`box_room_grasp_offline_m003b_20260924`）：0/10，伸手 10/10 执行；≤0.51 ready 姿态压近壁、≥0.54 掌落壁顶停滞、0.46–0.52 抓深 1 cm 夹不住（2026-09-24）
     - [x] 2.4.10.15 抓深 0.01 → 0.03（`box_room_grasp_offline_deep03_20260924`）：0/10、0 合爪、6 局推斜——横向误差 2–6 cm + 修正积分到上限推倒箱子；深抓本身几何可行（2026-09-24）
     - [x] 2.4.10.17 沿下横向 anti-windup（`lateral_hold_below_rim`）+ 预抓点真值居中（`descend_align_tolerance`）（`833ca23`）；hold 单独无效（试提 3），hold+align 试提 6/10（2026-09-24）
-    - [ ] 2.4.10.18 align 配置上回抓深 `box_grasp_below_rim` 0.03，10 局
-    - [ ] 2.4.10.19 下落过程中跨壁误差再漂 3–5 cm（align 后清零、修正 +9…+15 未送达）：查 SONIC 对横向指令的送达，不是接触
-    - [ ] 2.4.10.20 伸手/下落时手臂晃动（用户 2026-09-24 从视频看到）：是我们流出的参考在晃——逐 tick 重解 IK 时肘/腕俯仰反相互换（corr −0.95…−0.98，肘参考 sd 9–15°），手目标每 tick 只动 0.2 cm；实测关节比参考还平。修法候选：解算加 continuity 项（求解器已有、伸手传 0）或加大手臂 posture 权重；待用户定
+    - [-] 2.4.10.18 align 配置上回抓深 `box_grasp_below_rim` 0.03，10 局（放弃 2026-10-01：后来的基线上已经测过——2.4.10.25.1 在 close06 上 0.03 合爪 3、提起 2，无增益；09-27 的 2 cm 10/30 vs 1 cm 15/30；见 2.4.9）
+    - [x] 2.4.10.19 下落过程中跨壁误差再漂 3–5 cm（align 后清零、修正 +9…+15 未送达）：查 SONIC 对横向指令的送达，不是接触（2026-10-01 查明：40 局（`s2_base` + `s2_adv015`）下落段，按骨盆系把命令与实测的手都用专家自己的 FK 算出来比——实测的手相对骨盆的跨壁移动跟命令走，corr 0.80、斜率 0.48，**SONIC 只送达约一半的跨壁手臂命令**；同时骨盆自己横漂 10–15 mm（中位），命令里那 25–41 mm 主要是在补骨盆漂移，送达一半就剩 15–21 mm 的世界系漂移。停滞局下落 5.2 s（合爪局 1.7 s），漂得更久，末端跨壁误差 21.8 vs 13.5 mm。跨壁前馈不再试：09-24 的送达差前馈（2.4.10.22）和 09-27 的共模横向修正都是负结果。脚本 `scripts/experiments/warehouse_s2_report_20261001.py`）
+    - [x] 2.4.10.20 伸手/下落时手臂晃动（用户 2026-09-24 从视频看到）：是我们流出的参考在晃——逐 tick 重解 IK 时肘/腕俯仰反相互换（corr −0.95…−0.98，肘参考 sd 9–15°），手目标每 tick 只动 0.2 cm；实测关节比参考还平。修法候选：解算加 continuity 项（求解器已有、伸手传 0）或加大手臂 posture 权重；待用户定（2026-10-01 做了第一种，负结果：新旋钮 `visual.reach_continuity_weight`（默认 0），`s2_continuity005_20261001`（0.05）2/20 vs 6/20（不一致 5 : 1，p 0.22），伸手停滞 6 → 12、倾斜 3 → 6。晃动本身：align + descend 段肘参考 sd 15.8° vs 15.1°、肘腕相关 −0.86 vs −0.91，几乎没变；逐 tick 步长 sd 0.68° vs 0.85°（−20%），换向率 7% vs 10%。所以那 15° 是下落过程中肘和腕缓慢地此消彼长（零空间漂移），不是逐 tick 抖动；阻尼只压了本来就小的逐 tick 部分，还拖慢了纠偏。第二种也做了，同样负结果：新旋钮 `visual.reach_arm_posture_weight`（默认 0 = 全身 0.04），`s2_armposture02_20261001`（14 个手臂关节 0.2）**确实把晃动压了一半**——肘参考 sd 15.1° → 8.2°，肘腕相关 −0.91 → −0.85——但成功 3/20 vs 6/20（不一致 6 : 3，p 0.51），伸手停滞 6 → 8、多了 4 局 `evaluation_tilt`。把零空间钉住也拖了伸手的跟随。两个旋钮都不设默认；晃动目前是"看着不好、对成功率无害"的状态）
     - [x] 2.4.10.21 送达差量化 + 腰上限 0.35 试验（`box_room_grasp_offline_waist035_20260924`）：负结果——腰送达按比例约 2/3、不是上限，命令 20° 实测 13°，试提 6→1；基线仍是 align（2026-09-24）
     - [x] 2.4.10.22 送达差前馈（`box_room_grasp_offline_ff_20260924`）：负结果——命令多前伸 2.5 实测更短 1.5，z 修正饱和局 3→5，试提 6→0；送达差是伸展饱和不是偏移，字段保留默认 0（2026-09-24）
-    - [ ] 2.4.10.23 站位收紧到 0.45–0.52（≥0.55 全部停滞；0.46–0.54 在 align 里 6/7 到试提）：守线 `guard_extra`/`stand_off` 重标
+    - [x] 2.4.10.23 站位收紧到 0.45–0.52（≥0.55 全部停滞；0.46–0.54 在 align 里 6/7 到试提）：守线 `guard_extra`/`stand_off` 重标（2026-10-01 子项全部做完：站位能收紧——`guard_rewalk_depth 0.50` 让 20/20 局 ≤ 0.50 m——但 20 局里成功没变（7 vs 6），失败从停滞换成了脱手；`guard_extra` 不能再小（.1），交替步长模型反而站得更远（.3），起点平移只在固定起点下有效（.4）。都不设默认）
       - [x] 2.4.10.23.1 守线散布来源已量（2026-09-24）：刹车后最前点再前进 0.166 ± 0.011 m（仓库 60 局 + walk 80 局，最大 0.197，所以仓库里 `guard_extra` 不能低于 0.20）；0.25 步态是大步 ~0.21 + 并步 ≤0.07 交替，停位按 ~0.21 m 量子化；`stride_mode floor` 在大步后把下一步多估 0.12–0.17 m。落脚位置逐次 sd 2.5–5 cm、范围 10–20 cm
-      - [ ] 2.4.10.23.2 守线重走：站位 depth > 0.50 时后退 ~0.4 m 再走一次（每次独立抽样，P(≤0.50)≈30/60，三次 ≈87%）；需在 guard 路径放开 `_stance_converged`/`retry_closer`，10 局离线 pilot（待用户定）
-      - [ ] 2.4.10.23.3 守线步长模型改交替式（大步后预测 0.08、并步后 0.23）：只让并步落在 ≥0.43 m 的局再多走一步，预计收益小；walk 场景 30 局验证不越线后再上仓库（待用户定）
+      - [x] 2.4.10.23.2 守线重走：站位 depth > 0.50 时后退 ~0.4 m 再走一次（每次独立抽样，P(≤0.50)≈30/60，三次 ≈87%）；需在 guard 路径放开 `_stance_converged`/`retry_closer`，10 局离线 pilot（待用户定）（2026-10-01 实现并跑 20 局：`visual.guard_rewalk_depth` / `guard_rewalk_back`（默认 0 = 关），guard 下静止站位深于阈值就沿走入轴后退 `guard_rewalk_back`（按目标的实测深度）再走一次，最多 `stand_depth_retries` 次，每次走入各有一份 `walk_timeout`。`s2_rewalk050_20261001`：**站位 20/20 ≤ 0.50**（基线 11/20；9 局重走、2 局走了三次，全部收敛），但成功 7/20 vs 6/20（不一致 4 : 5，p 1）——失败从伸手停滞（6 → 4）换成了脱手（3 → 7）。站得近解决了"够不到"，没解决"夹不住"。不设默认）
+      - [x] 2.4.10.23.3 守线步长模型改交替式（大步后预测 0.08、并步后 0.23）：只让并步落在 ≥0.43 m 的局再多走一步，预计收益小；walk 场景 30 局验证不越线后再上仓库（待用户定）（2026-10-01：`GuardBrake(stride_mode="alternate")`，专家里是 `visual.guard_stride_mode`，`diag_brake --stride-mode alternate`。walk 场景 30 局（全程 0.25、线 0.9 m）：0 越线、0 摔，身体最前点最近离线 8.2 cm；但骨盆停在线前 37.9 ± 4.8 cm，比 floor 模型的 34.3 ± 3.4（09-23，50 局）**更远** 3.6 cm——并步后预测 0.23 比 floor 的 0.14 保守，刹得更早，抵掉了大步后多走的那一步。`outputs/diagnostics/brake_guard025_alternate_20261001`。仓库 20 局 `s2_altstride_20261001` 同样站得更远：站位中位 0.522 m（基线 0.4855），≤ 0.50 只有 6/20（基线 11/20），成功 2/20 vs 6/20（不一致 6 : 2，p 0.29），停滞 10。负结果，floor 保持默认）
       - [x] 2.4.10.23.5 0.25 守线站位（0.39–0.62）箱沿是否在可抓范围（用户 2026-09-24 问）：60 局逐 tick capture_error 最好时刻，两手都到抓线附近：跨壁 0–5 cm、沿上 0–5 cm、沿壁在 ±9 cm 允许滑动内；≤0.52 有 17/37 局真合爪。卡的不是够不够到，是最后 2–5 cm：跨壁要 ±1.8 cm（壁厚 1 cm）、要下过沿；≥0.53 沿壁向身体滑 11–19 cm 超出允许段，伸展饱和不再送达。结论：站位散布决定的是最后几厘米能不能送到，不是几何可达（2026-09-24）
-      - [ ] 2.4.10.23.4 `start_advance` 相位试探 −0.25 → −0.15 / −0.35 各 10 局离线：看 depth 分布的双峰（刹车 t 4.4 vs 5.6 s）是否随起点平移（待用户定）
+      - [x] 2.4.10.23.4 `start_advance` 相位试探 −0.25 → −0.15 / −0.35 各 10 局离线：看 depth 分布的双峰（刹车 t 4.4 vs 5.6 s）是否随起点平移（待用户定）（2026-10-01，各 20 局，−0.15 另换 seed 7100 复制一次：**双峰随起点平移**——起点离平台 0.884 m（基线）时早刹（t < 4.8 s）的局站得深（中位 0.565–0.575 m）、晚刹的浅（0.465）；0.785 m（−0.15）时早刹变成多数（12–13/20）而且是浅的（0.453–0.487）；0.984 m（−0.35）全部晚刹（0.481）。是哪一步落脚触发刹车决定了站位，起点平移就换了一步。成功：−0.15 第一组 15/20 vs 6/20（不一致 10 : 1，p 0.012），复制组 6/20 vs 4/20（6 : 4，p 0.75），合并 21/40 vs 10/40（p 0.027）；−0.35 7/20 vs 6/20。站位 ≤ 0.50 合计 27/40 vs 23/40。**不改默认**：效应来自固定起点和步长的相位锁定，四边随机起点下不存在，复制组也弱；基线 `start_advance` 仍是 −0.25）
     - [x] 2.4.10.24 跨壁合爪门放宽到夹爪实际开口 `visual.capture_across` 0.035（`box_room_grasp_offline_across035_20260924`，align 基线 +1 旋钮，10 局）：0/10，但合爪 7/10（align 6），停滞 3；合爪时跨壁误差 ±0.7–3.2、竖向 ±1.6 cm；试提起点重放：四片指垫都贴壁两面（μ 1.2、无穿透）、爪口 1.05 cm = 壁厚，箱子 0 上升。根因是夹持力：仿真力律 F = kp 1.5 × gear 250 × (q_des − q)，expert 合爪设定点 −0.023 只比 1 cm 壁停住的 −0.0177 深 5 mm → 每指 2.0 N，四垫摩擦上限 9.5 N < 箱子 11.8 N；篮子横杆 1.6 cm 厚 → 每指 3 N、上限 14 N > 6 N，所以篮子能提。deploy 只按 Dex3 弧度限位裁剪（−1.05/−0.724），设定点可以推到 −0.06（每指 15.9 N，< 20 N 电机上限）。previews/ 已出（2026-09-24）
     - [x] 2.4.10.25 合爪设定点 `visual.close_target` −0.06（`box_room_grasp_offline_close06_20260924`，across035 基线 +1 旋钮，10 局）：0/10，但**箱子第一次离地：7/10 提起 11–16 cm**（此前 0）；5 局 `basket_tilt` 15.1–15.7°（门 15），2 局 `lost_attachment`（10–11° 时单手滑脱），3 局伸手停滞（含 1 局单手把箱子拎起 40°）。倾斜全是绕两手连线的俯仰、侧倾 ≈0；时间序列里箱子俯仰在 ±10° 来回摆、不跟手掌（掌俯仰漂 10–25°），抬升本身是 1 s 内 0→10 cm 的一跳再回落。机理：指垫捏 1 cm 壁顶是一个铰链（摩擦力矩 ≈0.4 N·m/手，重力回复力矩 15° 时 0.5 N·m），抬得急就摆成单摆，摆到 15° 触门或单手滑脱（2026-09-24）
       - [x] 2.4.10.25.1 三个候选各 10 局（场景 `warehouse_textured`，close06 基线 +1 旋钮，2026-09-24），全部 0/10：`max_tilt_deg` 30 → 合爪 2、提起 2、都在 16–18° 单手滑脱（门不响了，摆动改为甩掉握持）；`lift_seconds` 8 → 合爪 4、提起 4，到 5 cm 用 3.5–3.9 s（此前 2.0–2.4）但俯仰仍到 15–17°、1 局反向 −14°，摆动不只是起吊冲击，还有掌姿态漂移经指垫传给箱子；`box_grasp_below_rim` 0.03 → 合爪 3、提起 2，无增益。都不优于对照。伸手停滞主因：左手跨壁 4–5 cm 超 3.5 门、或停在沿上 3–4 cm（too_high）
@@ -88,28 +88,28 @@
       - [-] 2.4.10.27.3 stand_seconds 12 —— 放慢起身不解决撞箱，跑了 0 局就撤（2026-09-24）
       - [x] 2.4.10.27.4 `visual.stand_forward_min` 0.35 逐 tick（`box_room_grasp_follow06_fwd35_20260924`，20 局，2026-09-24）：0/20，但 **11 局合爪提起里 7 局走完 lift+stand 进入 hold、1 局走完 hold 进入后退**（此前 0 局过 stand）；触门 1、脱开 3、hold 段 6 局 `unstable_hold`、后退 1 局 25° 掉落、伸手停滞 9。hold 判据是箱子世界位置 2 s 内半径 ≤2.5 cm，而 hold 里整机向后漂 2.5–8 cm、侧漂到 5 cm（SONIC IDLE 带载漂移），箱子相对骨盆只动 ≤1.3 cm 前向 / 2–5 cm 侧向、附着 ≤2 cm、倾斜 ≤11°——箱子在手里是稳的，是身体在漂。第一版（合爪时刻一次性抬目标）9 局无效已归档 `_v1_world_fixed`
     - [x] 2.4.10.28 成功定义（用户 2026-09-24）：抬起 + 上半身直立 + 后退两步（`retreat_distance` 0.3）箱子不掉。hold 判据 `visual.hold_frame: pelvis` + 短 hold；6/20 成功（2026-09-24）
-    - [~] 2.4.10.29 下一层：伸手停滞 7/20 与后退剪切 2/20。**暂定基线 = contact 版本**（用户 2026-09-24 定）：`configs/experiments/box_room_grasp_baseline_20260924.yaml`（= `box_room_grasp_contact_20260924`，6/20），之后每个实验复制它改一个旋钮
+    - [x] 2.4.10.29 下一层：伸手停滞 7/20 与后退剪切 2/20（2026-10-01：子项做完。停滞的来源查到了（2.4.10.19：跨壁命令只送达约一半，骨盆横漂 10–15 mm）；后退放慢是负结果。后退时让伸手控制器继续夹持没做：要让 CoordinatedReach 在规划器后退时逐 tick 按实测手位重解上身，是结构改动，main 上的默认（四边、`box_platform`）已经不后退）。**暂定基线 = contact 版本**（用户 2026-09-24 定）：`configs/experiments/box_room_grasp_baseline_20260924.yaml`（= `box_room_grasp_contact_20260924`，6/20），之后每个实验复制它改一个旋钮
       - [x] 2.4.10.29.1 接触触发合爪 `close_trigger: contact`（`box_room_grasp_contact_20260924`，20 局，2026-09-24）：**6/20**（与 holdshort 持平）；合爪 13（此前 12）、提起 11、进后退 8、后退掉 2、脱开 5（此前 1）、停滞 7。跨壁类停滞消失了，剩下 7 局全是**手停在沿上方 1–3.7 cm 没下到沿下**（送达偏高，接触也没发生）；脱开变多是合爪精度放松的代价（合在壁顶几毫米处）。视频已带 ghost 夹爪
       - [x] 2.4.10.29.3 下落到接触为止 `contact_overdrive` 0.03 + `contact_along` 0.13（`box_room_grasp_contactdeep_20260924`，20 局，2026-09-24）：**负结果 2/20**（contact 基线 6/20）；停滞 14。轨迹：手确实下到抓线下 1–7 cm，但下落中跨壁误差从 ≤3 cm 跳到 4–8 cm（指垫沿壁面外侧滑下被顶开，沿下横向反馈又被 `lateral_hold_below_rim` 冻结，无法回正），爪口不再套壁。多下 3 cm 放大了偏转。基线回到 contact（overdrive 0）。剩余 7 局沿上停滞要换思路：小步下探 + 每步检查跨壁，或 align→descend 失败后重做一次
         - [x] 2.4.10.29.3a 首版跑 3 局停：手确实下到沿下 2–5 cm，但 `inside` 还卡在篮子时代的沿壁窗口 ±9 cm（手沿壁向身体滑 7–10 cm）和跨壁 4.5 边界；加 `contact_along` 0.13（壁长 0.32 − 指垫）。另见 round 1：指垫落在壁顶时继续下压把箱子横推 6–8 cm、抬 1.3 cm（`_stopped3`，2026-09-24）
-      - [ ] 2.4.10.29.2 后退剪切：`retreat_speed` 0.35→0.25 或后退时保留全身伸手控制器夹持（待用户定）
+      - [x] 2.4.10.29.2 后退剪切：`retreat_speed` 0.35→0.25 或后退时保留全身伸手控制器夹持（待用户定）（2026-10-01 只试了前者，负结果：`s2_retreat025_20261001` 2/20 vs 基线复跑 6/20（不一致 1 : 5，p 0.22）；进入后退 5 局里 2 掉 1 超时，基线 8 局里 2 掉——放慢没有减少后退段掉箱，还多了超时。后者（后退时保留伸手控制器）没做：要把后退改成由 CoordinatedReach 带着走，是结构改动；默认后退距离在 main 上已是 0，这条只影响 09-24 的成功定义）
     - [x] 2.4.10.30 ghost 夹爪规则（用户 2026-09-24 定，所有场景固定）：expert 把命令的抓取目标按 seq 记到 `trace/<label>_ghost.npz`，`render_trace_videos.py` 只在第三人称视角画半透明夹爪，ego/腕相机不画；Isaac 批渲同样转发。`docs/rendering.md` 有说明（2026-09-24）
       - [x] 2.4.10.28.1 `hold_frame pelvis` 单独（`_stopped4`，4 局）：round 2 到 hold 保持 5 s、倾斜 2°、附着 1.5 cm，但骨盆系下 2 s 窗内箱子仍漂 2.7 cm（IDLE 带载晃动）超 2.5 cm 半径，窗口反复重置，第 5 s 右指垫蠕变漏箱；4 局 3 脱开 1 unstable_hold。hold 拖得越久越掉（2026-09-24）
       - [x] 2.4.10.28.2 `hold_seconds` 1.0 + `hold_position_tolerance` 0.05 骨盆系（`box_room_grasp_holdshort_20260924`，20 局，2026-09-24）：**6/20 成功**（warehouse 线首批成功：抬起 13–21 cm、直立、后退 0.31–0.37 m、箱子在手、末态倾斜 0.9–9.6°）。漏斗：合爪提起 10 → 进后退 8 → 完成 6；后退段掉 2（倒走 0.35 起步 2 s 退 40 cm，两手前后错开 4–6 cm 剪切箱子，一侧爪口缩到 0 后 45° 翻落）；触门 2、脱开 1、空爪 1；伸手停滞 8（最大单项）。成功站位 0.39–0.46
-    - [ ] 2.4.10.16 远站位（≥0.54）下落时掌先落壁顶：收站位散布或补下落段掌俯仰
+    - [x] 2.4.10.16 远站位（≥0.54）下落时掌先落壁顶：收站位散布或补下落段掌俯仰（2026-10-01：走了前一条——守线重走（2.4.10.23.2）把 ≥ 0.50 的站位清零，`s2_rewalk050` 0/20 局在 0.50 以外、伸手停滞 6 → 4；补掌俯仰没做）
         - [x] 2.4.10.26 纸箱贴图丢失（用户 2026-09-24 问）：不是渲染 bug。`warehouse` 场景（`scene_reverse_camera`）09-20 从 `outputs/scene/logistics_mujoco` 做的，早于 09-22 的贴图提交 `0bf8eed`（纸箱拆 9 块材质 + 6 张实物照片）；所以纸箱只有一个 `nor_cal_box.obj` + 纯色 rgba。修：`prepare_logistics_scene.py` 从资产包重做运行时场景 `outputs/scene/warehouse_textured`（scenes.yaml 新名 `warehouse_textured`；机器人/工作面/物体/nq 全同，ngeom 121→129），reverse_room 与 head_camera 各渲一帧已见印字。之后的 warehouse 实验改用这个名字（2026-09-24）
 - [-] 2.4.10.8 纸箱显示网格减面（46 万 → ~5k 面）或关阴影，让实时渲染/VLA 评测也跑满速；先问协作者 `assets/crates/nor_cal_box/visual/`（放弃 2026-09-24：被 4.7.1–4.7.6 的异步渲染替代；减面程度没有统一标准，治标不治本，用户定）
-    - [ ] 2.4.10.9 `diag_brake` 补 reanchor（非 0 起始朝向场景一起步就转 ~90°）
+    - [x] 2.4.10.9 `diag_brake` 补 reanchor（非 0 起始朝向场景一起步就转 ~90°）（2026-10-01：`diag_brake --reanchor auto|on|off`，默认 auto——复位后起始偏航离 0 超过 5° 就先做一次 streamed 切换重锚 planner 朝向、再 IDLE 3 s、再读起始朝向。warehouse 场景（起始朝向 90°）实测：off 2/2 局 40 s 超时、沿朝向前进 −4…−6 cm；auto 3/3 走到 0.3 m 标记并刹住（停在 0.36–0.41 m，横向 ≤ 3 cm，偏航变化 ≤ 1.1°）。`outputs/diagnostics/reanchor_{off,auto}_20261001`。顺带：每局结果多记 `brake_phase`、`frontmost_*_past_marker`、`reanchored`，新增 `--phase-brake` 和 `--stride-mode alternate`）
     - [x] 2.4.10.12 ready 原地抬升：`visual.ready_pose lifted` + `elbow_min_deg` 旋钮（`ed5819d`，离线插值验证写成测试）；pilot `box_room_grasp_offline_lifted_20260924` 0/10，但抬手接触 0/10、箱子位移 0/10，4 局到试提（2026-09-24）
-    - [ ] 2.4.10.13 “腕相机始终看到箱子”只在下落段要求；抬手/平移段放开掌心姿态；从 assisted_guidance 的逐流可见性统计各阶段哪路相机看得到（用户提出 2026-09-24，待定）
+    - [x] 2.4.10.13 “腕相机始终看到箱子”只在下落段要求；抬手/平移段放开掌心姿态；从 assisted_guidance 的逐流可见性统计各阶段哪路相机看得到（用户提出 2026-09-24，待定）（2026-10-01：先统计——基线里两只腕相机在 reach / align / descend / lift / stand / hold 全程 100% 看得到箱子（≥ 4 个角点），ego 在 descend 只有 64%，walk 段腕相机 0%。再放开：新旋钮 `visual.reach_rotation_weight_transit`（默认 −1 = 沿用 `reach_rotation_weight` 0.6），只在手去预抓点的 reach 段用；0.2 跑两组：seed 7000 11/20 vs 6/20（不一致 7 : 2），seed 7100 8/20 vs 4/20（6 : 2），**合并 19/40 vs 10/40，不一致 13 : 4，p 0.049**，两组同向，停滞 6 → 4、11 → 7；腕相机在 reach 段仍 100% 看得到。这是这批里唯一复制过的正结果。用户 2026-10-01 定设成专家默认：dataclass 默认 −1 → 0.2；今天的 `s2_*` 对照臂钉回 −1（它们是按 −1 跑的），09-24 基线文件不设这个字段、此后按 0.2 跑（文件头已注明）。crate 篮子线和 `box_platform` 没在 0.2 下测过）
     - [x] 2.4.10.10 提交本会话代码（见 STATE 的文件清单），`make check` 已过（2026-09-23）
     - [x] 2.4.10.11 文档入口：删 `docs/STATE.md`，README/AGENTS 指向根目录 STATE/TODO/DECISIONS；`docs/handoff/warehouse-render-cost-20260923.md`；台账 crate 09-23、rendering 离线渲染、blender_scenes 已知问题（2026-09-23）
-- [ ] 2.5 待验证：摔倒 6/20 为何比合成桌子多（假设：reanchor/IDLE 期间贴着托盘垛）
-- [ ] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续
+- [-] 2.5 待验证：摔倒 6/20 为何比合成桌子多（假设：reanchor/IDLE 期间贴着托盘垛）（放弃 2026-10-01：现行专家不再复现——09-24 基线 0/20 摔、10-01 复跑 `s2_base` 0/20、`s2_adv015` 0/20；6/20 是 09-22 旧 carry 专家的数，那条走法已不用）
+- [x] 2.6 待验证：哪项部署变更把 v1.1 速度图从台阶变成连续（2026-10-01 查明：**不是部署，是 agent 侧的 commander**。同一个栈（5cab2fb、walk 场景）上 `diag_shuffle` 0.20–0.35 各 2 次：今天的代码连续（0.20 → 0.04–0.09 m/s，0.26 → 0.13–0.14，0.35 → 0.23–0.30）；换旧二进制 4add301、退回 09-11 之前的复位座高、换回 09-11 的桌面场景（每腿先转向空地）都还是连续；`--no-encoder` 的栈 SLOW_WALK 完全不动（0.000）。只有把 agent 侧换回 09-11 的代码（`aae3d72` 的 diag_shuffle + Primitives + commander，连同一个栈）才复现台阶：0.26 → 0.008–0.024，0.30 → 0.007–0.050，0.35 → 0.060–0.070，步频照旧 ~1.4/s、每步 0.1–7 cm，就是原地踏步。按代码对比，原因是 `dd36fd8`（2026-09-12）：之前每个非冻结上身的规划器帧都带 `vr_3pt_*` 字段，deploy 按字段存在与否切到 VR-3PT 编码器模式，手腕被拉向默认目标；之后普通帧两个字段都不带。没有用实验单独隔离这一行。`outputs/diagnostics/speedmap_v11_*_20261001`）
 - [x] 2.7 `vla_rounds.py` 起点放置写死偏航 0 / 物体 π/2，房间里会放错（2026-09-27 核对属实并修复，另写死 `blue_crate`，见 4.7.6.1.2.2–3）
 - [-] 2.8 `stand_lateral_gate: turn` 作为下一步 —— 它针对的横向偏置是合成场景现象，房间里没有
 - [x] 2.9 warehouse 采 10 集并导出视频（用户 2026-09-25）：`box_room_grasp_10ep_20260925` 30 局保留 11；预览 `outputs/videos/box_room_grasp_10ep_20260925/` 30 个 322–493 KB + zip 11.8 MB（2026-09-25）
-- [ ] 2.10 `stand_off` 0.5 → 0.44 的 20 局对照（同 seed 7000，只改这一个）：1013 局按停位深度分组 < 0.44 m 0.41、0.44–0.46 0.39、0.46–0.48 0.28、0.48–0.52 0.20、≥ 0.52 0.03；风险是躯干顶箱（box-stand-rams-torso）。待用户定（改专家参数）；分析脚本 `outputs/box_room_isaac_20260925/stand_depth_yield.py`
+- [-] 2.10 `stand_off` 0.5 → 0.44 的 20 局对照（同 seed 7000，只改这一个）（放弃 2026-10-01：查调用方，`approach_stop: guard` 时专家根本不读 `stand_off`——`VisualApproach` 只在非 guard 分支用它，`ApproachPreparation` 在 guard 下是 None；guard 的站位由线 + `guard_extra` + 步态量子决定。按深度收紧站位改走 2.4.10.23.2–.4）：1013 局按停位深度分组 < 0.44 m 0.41、0.44–0.46 0.39、0.46–0.48 0.28、0.48–0.52 0.20、≥ 0.52 0.03；风险是躯干顶箱（box-stand-rams-torso）。待用户定（改专家参数）；分析脚本 `outputs/box_room_isaac_20260925/stand_depth_yield.py`
 
 ## 3. walk 场景：SONIC v1.1 行走能力（`docs/walk.md` 探针表）
 
@@ -126,10 +126,10 @@
 - [x] 3.12 守线 `guard_extra` 0.20 → 0.17 重标（全程 0.25，线 0.9 m，30 局）：骨盆 −34.3 ± 3.5 → −31.0 ± 4.2 cm，最前点最近 −7.4 → −5.7，0 越线 0 摔；只赚均值 3 cm，散布不变（`outputs/diagnostics/brake_guard025_extra017_20260924`，2026-09-24）
 - [x] 3.13 waypoint 结尾（私有 deploy，SLOW_WALK 0.25，目标 0.9/1.2/1.5 m 各 10 局、不重发）：本体走目标的 0.64/0.64/0.71，散布 3.7/5.0/6.4 cm 随目标放大；相对 0.9 m 线骨盆 −32.4/−13.4/+16.4，1.2 m 时最前点已越线 +5.0 ± 2.7（10/10）；脚错开 10 cm，不是 09-23 的 3.9。过量下发不能替代守线（`outputs/diagnostics/waypoint_end_*_20260924`，2026-09-24）
 - [x] 3.14 0.55 稳态走入 + 按相位提前刹车（用户 2026-09-24 提出）：标记 1.30–1.55 每 5 cm 各 7 局 + 09-23 的 10 局 = 52 局，0 摔。带距 21.5 ± 4.8 cm，随落地后相位周期变化（落地后 0.3 周期最短 15，摆动中段最长 27–29），相位一次谐波模型留一法 sd 3.6、最大误差 11 cm；同相位内仍有 5–13 cm 散布，脚位/速度特征不再降。只在落地瞬间刹车则 20.6 ± 1.5，但落地点按 ~27 cm 步长量子化，回到守线的问题。助跑 ≥1.0 m 才到 0.50 ± 0.02 稳态；托盘垛是 0–0.371 m 实心块，越线即碰。结论：相位刹车把停位均值从 −34 拉到可设的 −6…−10 cm、sd 3.5，代价是约 5% 局越线 ≤4 cm（`outputs/diagnostics/brake_055_mk*_20260924`，2026-09-24）
-    - [ ] 3.14.1 若接受少量越线：实现相位刹车（FootWatch 已有落地事件；带距 = 21.5 + 谐波(相位)），walk 场景 30 局对线验证，再上仓库离线 10 局（待用户定）
+    - [x] 3.14.1 若接受少量越线：实现相位刹车（FootWatch 已有落地事件；带距 = 21.5 + 谐波(相位)），walk 场景 30 局对线验证，再上仓库离线 10 局（待用户定）（2026-10-01：实现为 `visual.guard_brake phase` + `guard_phase_band`（专家）和 `diag_brake --phase-brake`；带距按"刹车时骨盆 → 最终身体最前点"拟合（`scripts/experiments/fit_phase_band_20261001.py`），余量取留一法最差残差 + 3 cm，不接受越线。**稳态 0.55（助跑 1.4 m）有效**：40 局标定，残差 sd 2.4、最差 6.4 cm；30 局验证 0 越线 0 摔，最前点停在线前 10.3 ± 3.3 cm（守线 0.25 是 15.5 ± 2.6）。**warehouse 用不上**：这条边前只有 1.285 m 空地，起点最远 1.03 m，助跑 0.6 m 不到稳态；按同样助跑重新标定（残差 sd 5.6、最差 8.3 cm）后 20 局验证最前点 −12.4 ± 8.8 cm、1/20 越线 3.3 cm——均值和守线一样，散布大三倍；仓库 10 局 `s2_phasebrake_20261001` 成功 1/10，站位 0.37–0.58 m 更散，走入段身体离线最近 0.8 cm。不进默认；`docs/walk.md` 探针表有两行）
 - [x] 3.15 warehouse 10 局 Isaac 重渲（`box_room_grasp_offline_close06_20260924`，2026-09-24）：房间用 Blender 直出的 USDC，`scripts/build_isaac_warehouse_scene.py` 生成 `assets/isaac/scene/warehouse_textured/`（scene.usda 引用 /root、停用 env_light 和静态纸箱；可动纸箱包装层也引用 /root 并停用其余 237 子 prim，否则丢材质绑定渲成素灰；sidecar 偏移 (0, 0.39, −0.371)），`scripts/render_isaac_warehouse.sh` 每局 mujoco_render（新加 `--azimuth 225 --distance 2.2`，默认机位在南隔断外只见墙）→ isaac_render → 并排。10/10 成功，~1 min/局，并排预览 `previews_isaac/`（130–175 KB），全分辨率 `isaac/<局>/side_by_side.mp4`。房间贴图、纸箱印字、机器人含头在 Isaac 里完整，机位逐帧一致；Isaac 略亮
     - [x] 3.15.1 Isaac 里 G1 发白（用户 2026-09-24 问）：颜色绑定没错（MJCF 0.7/0.2/0.3/0.25 四档都取到），是曝光。房间由 5 块 24828 强度天花板 RectLight + 自发光灯板照亮，dome/平行光改强度像素不变；默认自动曝光 + ACES 把 0.2 灰抬到 108、0.7 灰推到 212（头/躯干 0.51，MuJoCo 0.23）。`isaac_render` 新增 `--rtx-setting 路径=值`；自动曝光关 + `filmIso` 30 后躯干 139（MuJoCo 136）、头/躯干 0.36，已设为 `render_isaac_warehouse.sh` 默认并重渲 10 局。Clamp 全饱和、Linear 更平，不用（2026-09-24）
-- [ ] 3.11 VLA 视角：伸手阶段 latent 可学性复查（探针 B 在 box_room 数据上 reach R²≈0.16）；新专家跑通后重跑 `probe_visual_grounding_20260923.py`
+- [-] 3.11 VLA 视角：伸手阶段 latent 可学性复查（探针 B 在 box_room 数据上 reach R²≈0.16）；新专家跑通后重跑 `probe_visual_grounding_20260923.py`（放弃重跑 2026-10-01：探针是"策略能不能从画面学到伸手"的代理，这个问题已经被直接回答——新专家 200 集训出的 checkpoint-5000 在 Isaac 镜像闭环 81/100（`wc_hold100_20260927`），失败里伸手阶段只占 8/100（"到了桌边没合爪"），合爪不提起 11/100；探针要的 per-round 相机 mp4 在离线录制的运行里也不存在）
 
 ## 4. 三场景采集按 README 从零复现（协作者报 bottle 开局摔倒、文档没跟代码；用户 2026-09-24 定）
 
@@ -230,8 +230,8 @@
     - [x] 4.7.11.4 W4 同 checkpoint、同 seed：墙钟 vs lockstep 各 10 局，再各 100 局（2026-09-28 完成：墙钟 hold 81、墙钟 continue 83、lockstep 目标模型 88，对墙钟 p = 0.27 / 0.85，100 局判不动；台账 crate.md 2026-09-27 末节）
     - [x] 4.7.11.5 W5 文档与模板（2026-09-28 完成：warehouse.md §6.1、bimanual.md §6、bimanual_design §五、rendering.md、术语表、change map、全部实验文件加 `gap` / `camera_frames`；计划第 10 节是实施记录）
     - [ ] 4.7.11.6 可选：分开两个效应——lockstep `hold` + L = 2 一臂（目标模型 88 与复刻 83 之差是"间隙续走"还是"延迟少 2 帧"）；要逐位复现就得评测图和训练图都关 MuJoCo 多重采样
-    - [ ] 4.7.11.7 待用户定：默认 `eval.client` 要不要改成 `lockstep`（校准已过；目标模型 88 vs 墙钟 81 未显著）
-    - [ ] 4.7.11.8 未提交（待用户说）：lockstep 实现（`vla_lockstep.py`、`GapFeeder`、镜像按 seq、三处 lockstep 老化修复）+ 测试 + 文档 + 115 份实验文件加 `gap` / `camera_frames`；`make check` 通过（2026-09-28）
+    - [x] 4.7.11.7 用户 2026-09-28 定：所有场景的 VLA 评测都走 lockstep；main `4b8180b` 已把默认改成 lockstep（loco_agent 分支未合入，`eval_config.py` 仍是 async）：待用户定：默认 `eval.client` 要不要改成 `lockstep`（校准已过；目标模型 88 vs 墙钟 81 未显著）
+    - [x] 4.7.11.8 已在 main 提交（`291cdeb`，三批合成一个提交，2026-09-28；loco_agent 分支未合入）：未提交（待用户说）：lockstep 实现（`vla_lockstep.py`、`GapFeeder`、镜像按 seq、三处 lockstep 老化修复）+ 测试 + 文档 + 115 份实验文件加 `gap` / `camera_frames`；`make check` 通过（2026-09-28）
     - [ ] 4.7.11.9 可选：10 个只评测的运行目录 `outputs/runs/{ls,wc}_*_20260927`（每个约 120 MB）用完可删，删前按规矩在 STATE 记 24 h
 - [~] 4.8 协作者采集仍摔倒：核实用户的猜测"自编 SONIC deploy 二进制没同步到文档"（用户 2026-09-24）
   - [x] 4.8.1 静态核对（2026-09-24）：本机 9 个 deploy 二进制全部从只存在本机的 `lockstep-port` 分支编出（上游 1983e888 + 6 个未推送的本地提交 + 工作树补丁）；setup.md 的做法（clone 上游 main 不钉版本，现为 b042411，再打 4 个补丁）本机从没编过、跑过。文档版缺 SONIC_AUTO_START/`--default-motion`（每个 eval 栈都要，上游静默忽略未知参数）、DDS domain（`sonic_dds_domain.patch` 已打不上上游 main）、planner 初始化超时 10 s（上游 5 s）。已排除：SONIC 权重与 HF 逐字节一致；肩 roll 默认角两边编进去的都是 ±0.2；上游 1983e888 之后的 deploy 改动默认不改行为。MuJoCo 不钉版本，新装会是 3.14（本仓库在 3.11.0 上测）
