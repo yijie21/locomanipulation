@@ -26,7 +26,7 @@ from locomani.skills.session import ArmOwner, Session
 DT = 0.02  # the POSE stream's frame period (backends/sonic/primitives_tuning.DT)
 FORWARD_SPEED = 0.05  # m/s of tool travel while pushing the box out over the surface
 REACH_ERROR_MAX = 0.03  # m of solver residual at which the forward push stops (the arms are at their reach)
-FORWARD_MAX = 0.25  # m; more than this is not a push, it is a walk (carry_to first)
+FORWARD_MAX = 0.25  # m; more than this is not a push, it is a walk (walk_to first)
 
 
 def _hand_open():

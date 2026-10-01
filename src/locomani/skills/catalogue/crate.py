@@ -123,7 +123,11 @@ class CrateApproach:
         if session.camera is None:
             out.append(Violation("camera", None, note="the bimanual line admits the target through the cameras"))
         if session.held is not None:
-            out.append(Violation("held", session.held.key, note="approach walks; carry_to is unvalidated"))
+            out.append(
+                Violation(
+                    "held", session.held.key, note="the bimanual approach walks free-handed; with a load use walk_to"
+                )
+            )
         return out
 
     def run(self, session: Session, *, target: str, profile: str) -> Outcome:

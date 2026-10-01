@@ -77,7 +77,7 @@ class Stack:
 
 
 class Carry:
-    """A carry_to stand-in that teleports the stack to the stand (plus a drift) and records what it was asked."""
+    """A loaded walk_to stand-in that teleports the stack to the stand (plus a drift) and records what it was asked."""
 
     _palm_offset = staticmethod(lambda state, key, side: np.array([0.18, 0.0, 0.0]))
 
@@ -91,10 +91,10 @@ class Carry:
             self.stack.pos = self.stack.pos + np.array(
                 [c * relative[0] - sn * relative[1], sn * relative[0] + c * relative[1]]
             )
-            session.record.enter("carry_to", target=self.stack.pos.tolist())
+            session.record.enter("walk_to.carry", target=self.stack.pos.tolist())
             return Outcome(True, "", metrics={"walked_m": float(np.hypot(*relative))})
         self.asked = np.asarray(xy, dtype=float)
-        session.record.enter("carry_to", target=self.asked.tolist())
+        session.record.enter("walk_to.carry", target=self.asked.tolist())
         if not self.ok:
             return Outcome(False, "[carry] load dropped", metrics={"walked_m": 0.1})
         self.stack.pos = self.asked + self.drift  # the standing turn drifts the pelvis
@@ -133,7 +133,7 @@ def test_loaded_approach_carries_faces_and_writes_the_stance():
     assert st.target == "basket" and st.profile == "bottle_simple" and s.heading == np.pi / 2
     assert abs(st.depth_m - 0.35) < 1e-6 and abs(st.lateral_m + 0.11) < 1e-6  # container 0.35 ahead, 0.11 right
     assert s.arm_owner is ArmOwner.PLANNER_FROZEN and s.held is not None
-    assert [e["stage"] for e in s.record.events] == ["approach.carry", "carry_to", "approach.face"]
+    assert [e["stage"] for e in s.record.events] == ["approach.carry", "walk_to.carry", "approach.face"]
     assert entry["outcome"]["metrics"]["max_drift_m"] == 0.004 and entry["outcome"]["metrics"]["corrections"] == []
 
 

@@ -149,7 +149,7 @@ def test_planner_failure_becomes_abort(tmp_path):
 
 def test_catalogue_manual_and_scene_view():
     rows = {row["name"]: row for row in catalogue_manual(build_catalogue(profiles={}))}
-    assert rows["carry_to"]["args"]["turn_mode"] == "slow_walk" and rows["approach"]["args"]["target"] == "required"
+    assert rows["walk_to"]["args"]["turn_mode"] == "slow_walk" and rows["approach"]["args"]["target"] == "required"
     assert (
         rows["grasp_single"]["starts_from"] == ["planner_swing"] and rows["grasp_single"]["yields"] == "planner_frozen"
     )
@@ -235,7 +235,7 @@ def test_criterion_for_put_down_plans():
     assert check(resting, s)[1].startswith("[put_down] still held")
     s.held = None
     assert check({"fallen": False, "objects": {"blue_crate": {"pos": [-0.3, 0.0, 0.9]}}}, s)[0] is False
-    text, check = plan_episode.criterion_for(scene, {"target": "blue_crate"}, [{"primitive": "carry_to", "args": {}}])
+    text, check = plan_episode.criterion_for(scene, {"target": "blue_crate"}, [{"primitive": "walk_to", "args": {}}])
     assert text == "pick up blue crate" and check(resting, s)[1].startswith("[hold]")
     goal_task = {"target": "soup_can", "goal": "basket"}
     text, _ = plan_episode.criterion_for(SceneModel(META), goal_task, [{"primitive": "place", "args": {}}])

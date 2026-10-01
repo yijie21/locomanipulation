@@ -1031,3 +1031,21 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 ### 未决（不是决策）
 - `reach_rotation_weight_transit 0.2` 在 crate 篮子线、`box_platform` 和 main 的四边线上没测过。
+
+## 2026-10-01 skills 目录去重：`carry_to` 并入 `walk_to`，删除 `retreat`
+
+用户问 15 个技能是不是很多重复，定先做两处不改行为的合并（目录 15 → 13）。
+
+### 决策（含理由）
+1. **`carry_to` 并入 `walk_to`**：持物的 `walk_to` 原本就是直接调 `CarryTo.run`，同一段代码两个名字，agent 两个都在用
+   （agent 运行的 trace 里 `walk_to` 16 次、`carry_to` 1 次）。现在一个名字：空手直走，持物时冻结上身 + `LoadWatch`；
+   持物参数（`LOAD_ARGS`）空手传入以 `load_args` 拒绝，而不是悄悄忽略。`relative` 两种状态都收。
+   默认 `stop_dist` 取 0.05（原 `walk_to`，agent 的持物 `walk_to` 一直是这个值）；原 `carry_to` 的 0.08 写进
+   用到它的 10 个 `configs/plans/*.json`，trace 阶段名 `carry_to` → `walk_to.carry`，失败标签 `[carry]` 不变。
+2. **删除 `retreat`**：它包的是 crate 线旧的 `tasks/crate/retreat.retreat`，持物守卫和 `walk_to` 的双臂规则是同一条
+   （高度底线 0.06 m + 双手接触）；2250 条真栈 skills 调用里一次都没出现，plan 文件也没用。后退 = `hand_back` +
+   `walk_to(relative=[-d, 0], turn_first=false)`（crate 台账 2026-09-28 测过的倒退不转走法）。`tasks/crate/retreat.py`
+   本身保留，采集专家还在用。
+
+### 被否决的方案（及原因）
+- 把 `take_over` / `hand_back` 也藏进 executor（目录 → 11）：等于推翻 D5，待用户定。

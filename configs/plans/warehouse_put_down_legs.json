@@ -3,7 +3,7 @@
  {"primitive": "ready", "args": {"profile": "warehouse_box"}},
  {"primitive": "grasp_bimanual", "args": {"target": "nor_cal_box", "profile": "warehouse_box"}},
  {"primitive": "hand_back", "args": {}},
- {"primitive": "carry_to", "args": {"relative": [0.15, 0.0], "turn_first": false, "stop_dist": 0.04, "timeout": 15}},
+ {"primitive": "walk_to", "args": {"relative": [0.15, 0.0], "turn_first": false, "stop_dist": 0.04, "timeout": 15}},
  {"primitive": "take_over", "args": {}},
  {"primitive": "put_down_bimanual", "args": {"profile": "warehouse_box", "forward_m": 0.0}}
 ]

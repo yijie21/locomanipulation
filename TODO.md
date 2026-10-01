@@ -326,6 +326,7 @@
   - [x] 7.10 新物体标定流程（2026-09-28）：写在 `docs/skills.md` §5（新 profile 登记 `PROFILE_SOURCES` → `plan_episode.py --profile` 10 局 pilot → 按失败族改一个旋钮 → gate 对照 → 回放定带）；按几何自动落位仍无机制，文档里明说没有
   - [x] 7.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）
   - [x] 7.12 提交本会话代码（2026-09-28 晚：skills 包 + 第二批 primitive、attempt.py 提取、plan_episode.py `--agent`/`--profile`、回放脚本、docs/skills.md、台账、plan 文件；`make check` 通过）
+  - [x] 7.13 目录去重（用户 2026-10-01 定）：`carry_to` 并入 `walk_to`（持物时同名走冻结上身 + 持物守卫，持物参数空手传入拒绝），删除 `retreat`（= `hand_back` + `walk_to(relative=[-d, 0], turn_first=false)`）；目录 15 → 13，10 个 plan 文件改名并写明原 `carry_to` 的 `stop_dist` 0.08；理由见 DECISIONS 2026-10-01 第二节。`take_over` / `hand_back` 是否藏进 executor 待用户定
 - [~] 8 Q11 验收：失败注入 paired 比较（agent 唯一不可替代的贡献是失败后的决策；2026-09-29 立项）
   - [x] 8.1 注入层（2026-09-29）：`skills/injection.py`（`move_target` / `drop_held`，某 primitive 第一次成功后钉物体 0.5 s 再松开，一局一次，agent 不被告知）、`plan_episode.py --inject`、`Executor.note`、manifest 记 `seed` / `injection` / `injected`；`scripts/injection_report.py` 按 seed 配对、精确符号检验、恢复段按第一步归类；`tests/test_skills_injection.py` 6 个；注入文件 `configs/injections/pick_place_{move_target,drop_held}.json`；docs/skills.md §7
   - [x] 8.2 注入有效性（2026-09-29）：横向 −0.17 m **无效**（`grasp_single` 开始时按当前位姿重规划，臂包络内，1/3 且失败是基线族）；沿桌沿 +0.60 m 有效（plan 臂 0/3，全在 `[grasp]`）；pick_place 台账 §13

@@ -1,15 +1,13 @@
-"""Locomotion primitives: turn in place, free walk, backward retreat with a load, carry, navigate.
+"""Locomotion primitives: turn in place, walk (free or with a load), navigate, nudge.
 
-Each adapter wraps one existing entry (`Primitives.turn_to` / `walk_to` / the `Navigator` field,
-`tasks/crate/retreat.retreat`) and translates the session in and the result out; the wrapped code is
-unchanged. Dependencies are injected through the constructor so a test drives the adapter with a fake stack.
-`LoadWatch` is the one per-tick load rule every walking-with-a-load primitive shares (carry_to,
-navigate_to, and walk_to / approach when something is held).
+Each adapter wraps one existing entry (`Primitives.turn_to` / `walk_to` / the `Navigator` field) and
+translates the session in and the result out; the wrapped code is unchanged. Dependencies are injected
+through the constructor so a test drives the adapter with a fake stack. `LoadWatch` is the one per-tick
+load rule every walking-with-a-load primitive shares (walk_to, navigate_to, nudge and approach when
+something is held).
 """
 
 from __future__ import annotations
-
-from types import SimpleNamespace
 
 import numpy as np
 
@@ -110,93 +108,8 @@ class TurnTo:
         return Outcome(ok, reason, duration_s=session.clock() - t0, metrics={"yaw": float(yaw)})
 
 
-class WalkTo:
-    """Straight planner walk to a pelvis xy. With a load it is `carry_to` (frozen upper body, load watched)."""
-
-    name = "walk_to"
-    requires = WALKING
-    yields = None
-
-    def __init__(self, carry=None):
-        self._carry = carry or CarryTo()
-
-    def preconditions(self, session: Session, *, xy, stop_dist: float = 0.05, timeout: float = 30.0) -> list[Violation]:
-        out = []
-        if session.held is not None:
-            if session.arm_owner is not ArmOwner.PLANNER_FROZEN:
-                out.append(
-                    Violation("held", session.held.key, note="walk with a load from planner_frozen (hand_back first)")
-                )
-            out.extend(self._carry.preconditions(session, xy=xy, stop_dist=stop_dist, timeout=timeout))
-        if len(xy) != 2:
-            out.append(Violation("xy", len(xy), (2, 2), "world xy"))
-        return out
-
-    def run(self, session: Session, *, xy, stop_dist: float = 0.05, timeout: float = 30.0) -> Outcome:
-        if session.held is not None:
-            return self._carry.run(session, xy=xy, stop_dist=stop_dist, timeout=timeout)
-        t0 = session.clock()
-        session.record.enter("walk_to", xy=[float(v) for v in xy])
-        ok = bool(session.stack.walk_to(np.asarray(xy, dtype=float), stop_dist=stop_dist, timeout=timeout))
-        session.stance = None
-        reason = "" if ok else "[walk] walk_to did not arrive"
-        return Outcome(ok, reason, duration_s=session.clock() - t0)
-
-
-class Retreat:
-    """Hand the streamed arm back as it is and walk backward along the heading with the load held.
-
-    Wraps `tasks/crate/retreat.retreat`; the wrapped function itself performs the hand-back, so this
-    primitive enters on the POSE stream and yields the frozen planner channel.
-    """
-
-    name = "retreat"
-    requires = frozenset({ArmOwner.POSE_STREAM})
-    yields = ArmOwner.PLANNER_FROZEN
-
-    def __init__(self, retreat_fn=None):
-        if retreat_fn is None:
-            from locomani.tasks.crate.retreat import retreat as retreat_fn
-        self._retreat = retreat_fn
-
-    def preconditions(
-        self, session: Session, *, distance: float, speed: float = 0.25, timeout: float = 20.0, lift_height: float = 0.1
-    ) -> list[Violation]:
-        out = []
-        v = needs_heading(session)
-        if v is not None:
-            out.append(v)
-        if session.held is None:
-            out.append(Violation("held", None, note="retreat checks the load; nothing is held"))
-        elif session.held.start_z is None:
-            out.append(Violation("held.start_z", None, note="the load floor is relative to the grasp height"))
-        if distance <= 0:
-            out.append(Violation("distance", distance, (0.0, None)))
-        return out
-
-    def run(
-        self, session: Session, *, distance: float, speed: float = 0.25, timeout: float = 20.0, lift_height: float = 0.1
-    ) -> Outcome:
-        t0 = session.clock()
-        session.record.enter("retreat", distance=float(distance))
-        cfg = SimpleNamespace(
-            retreat_distance=float(distance),
-            retreat_speed=float(speed),
-            retreat_timeout=float(timeout),
-            lift_height=lift_height,
-        )
-        reason, diag, _state = self._retreat(
-            session.stack, session.arm, cfg, session.held.key, session.heading, session.held.start_z
-        )
-        session.arm = None  # retreat() released the stream with preserve_reference=True
-        session.arm_owner = ArmOwner.PLANNER_FROZEN
-        session.stance = None
-        ok = reason == "completed"
-        return Outcome(ok, "" if ok else f"[retreat] {reason}", duration_s=session.clock() - t0, metrics=dict(diag))
-
-
 class LoadWatch:
-    """The per-tick load rule of every walk with something held (design §5 carry_to; bottle ledger §41).
+    """The per-tick load rule of every walk with something held (design §5; bottle ledger §41).
 
     Single arm: the palm-frame offset of the object must stay within `drift_max` of where the grasp left it and
     that hand must keep touching it. Bimanual: the object stays at least `lift_floor_m` above its grasp height
@@ -256,55 +169,58 @@ def _palm_offset_default():
     return palm_frame_offset
 
 
-class CarryTo:
-    """Walk to a world xy with the upper body frozen and the load watched every tick; `turn_first=False` strafes (holds the facing).
+LOAD_ARGS = ("turn_first", "turn_tol", "turn_mode", "face_target", "drift_max", "contact_gap_s", "lift_floor_m")
 
-    The legs are the planner's (`Primitives.walk_to`); the arms stay pinned where the hand-back left them
-    (PLANNER_FROZEN_UPPER_BODY keeps the last 17-joint reference and the closed hands). The load rule is
-    the single-arm line's palm-frame drift (`PALM_DRIFT_MAX`, a standing criterion until measured here) or
-    the crate line's retreat rule (height floor + both hands touching, contact flicker tolerated).
-    `relative=[forward, left]` in the current heading frame is accepted instead of `xy`.
 
-    Heading changes are made standing, before the walk (`turn_first`, via `Primitives.turn_to`), and the walk
-    then holds that line (`face_yaw`). Measured 2026-09-28 with the bottle (docs/ledger/bottle.md §41): straight
-    or backward 1-2 m, drift 0.3-0.8 cm (6/6); a 90 deg IDLE turn then 1.5 m, 3/3; a 180 deg turn is where the
-    load goes -- IDLE in one go 0/2, two IDLE 90 deg steps 1/2, SLOW_WALK in one go 4/4 (drift 0.3-0.9 cm) --
-    hence `turn_mode="slow_walk"`. `walk_to` flipping the facing while walking (`face_target=True`) slipped
-    3 cm within 0.4 s (0/2) and is kept only as the raw behaviour.
+class WalkTo:
+    """Planner walk to a world xy or `relative=[forward, left]`; holding something, the arms stay frozen and the load is watched every tick.
+
+    The legs are the planner's (`Primitives.walk_to`). Free-handed the walk faces its target as it goes, and the
+    load arguments (`LOAD_ARGS`) are refused. With something held (from planner_frozen) the arms stay pinned
+    where the hand-back left them (PLANNER_FROZEN_UPPER_BODY keeps the last 17-joint reference and the closed
+    hands) and `LoadWatch` runs on every tick: the single-arm line's palm-frame drift (`PALM_DRIFT_MAX`, a
+    standing criterion until measured here) or the crate line's retreat rule (height floor + both hands
+    touching, contact flicker tolerated). `relative` is in the current heading frame; backing away with a box
+    after `hand_back` is `relative=[-d, 0], turn_first=False`.
+
+    With a load, heading changes are made standing, before the walk (`turn_first`, via `Primitives.turn_to`),
+    and the walk then holds that line (`face_yaw`); `turn_first=False` strafes (holds the facing). Measured
+    2026-09-28 with the bottle (docs/ledger/bottle.md §41): straight or backward 1-2 m, drift 0.3-0.8 cm (6/6);
+    a 90 deg IDLE turn then 1.5 m, 3/3; a 180 deg turn is where the load goes -- IDLE in one go 0/2, two IDLE
+    90 deg steps 1/2, SLOW_WALK in one go 4/4 (drift 0.3-0.9 cm) -- hence `turn_mode="slow_walk"`. Flipping
+    the facing while walking (`face_target=True`) slipped 3 cm within 0.4 s (0/2) and is kept only as the raw
+    behaviour. Until 2026-10-01 the loaded walk was its own primitive, `carry_to`, with `stop_dist` 0.08; the
+    plans in configs/plans/ that used it pass 0.08 explicitly.
     """
 
-    name = "carry_to"
-    requires = frozenset({ArmOwner.PLANNER_FROZEN})
-    yields = ArmOwner.PLANNER_FROZEN
+    name = "walk_to"
+    requires = WALKING
+    yields = None
 
     def __init__(self, palm_offset=None):
         self._palm_offset = palm_offset or _palm_offset_default()
 
     def preconditions(
-        self,
-        session: Session,
-        *,
-        xy=None,
-        relative=None,
-        stop_dist: float = 0.08,
-        timeout: float = 30.0,
-        turn_first: bool = True,
-        turn_tol: float = 0.2,
-        turn_mode: str = "slow_walk",
-        face_target: bool = False,
-        drift_max: float = 0.03,
-        contact_gap_s: float = 0.3,
-        lift_floor_m: float = 0.06,
+        self, session: Session, *, xy=None, relative=None, stop_dist: float = 0.05, timeout: float = 30.0, **load
     ) -> list[Violation]:
         out = []
-        v = needs_heading(session)
-        if v is not None:
-            out.append(v)
-        out.extend(load_violations(session))
         if (xy is None) == (relative is None):
             out.append(Violation("target", None, note="give exactly one of xy (world) or relative ([forward, left] m)"))
         elif len(xy if xy is not None else relative) != 2:
             out.append(Violation("target", None, note="two coordinates"))
+        if session.held is None:
+            if load:
+                out.append(Violation("load_args", ", ".join(sorted(load)), note="these apply only with something held"))
+            return out
+        if session.arm_owner is not ArmOwner.PLANNER_FROZEN:
+            out.append(
+                Violation("held", session.held.key, note="walk with a load from planner_frozen (hand_back first)")
+            )
+        v = needs_heading(session)
+        if v is not None:
+            out.append(v)
+        out.extend(load_violations(session))
+        turn_mode = load.get("turn_mode", "slow_walk")
         if turn_mode not in TURN_MODES:
             out.append(Violation("turn_mode", turn_mode, note=f"one of {sorted(TURN_MODES)}"))
         return out
@@ -315,7 +231,7 @@ class CarryTo:
         *,
         xy=None,
         relative=None,
-        stop_dist: float = 0.08,
+        stop_dist: float = 0.05,
         timeout: float = 30.0,
         turn_first: bool = True,
         turn_tol: float = 0.2,
@@ -327,11 +243,19 @@ class CarryTo:
     ) -> Outcome:
         t0 = session.clock()
         p = session.stack
+        if session.held is None:
+            if relative is not None:
+                s0 = p.obs()
+                xy = relative_target(np.asarray(p.pelvis_xy(s0), dtype=float), float(p.pelvis_yaw(s0)), None, relative)
+            session.record.enter("walk_to", xy=[float(v) for v in xy])
+            ok = bool(p.walk_to(np.asarray(xy, dtype=float), stop_dist=stop_dist, timeout=timeout))
+            session.stance = None
+            return Outcome(ok, "" if ok else "[walk] walk_to did not arrive", duration_s=session.clock() - t0)
         s0 = p.obs()
         yaw0 = float(p.pelvis_yaw(s0))
         start_xy = np.asarray(p.pelvis_xy(s0), dtype=float)
         target = relative_target(start_xy, yaw0, xy, relative)
-        session.record.enter("carry_to", target=target.tolist(), face_target=face_target)
+        session.record.enter("walk_to.carry", target=target.tolist(), face_target=face_target)
         watch = LoadWatch(
             p,
             session.held,
@@ -405,7 +329,7 @@ class NavigateTo:
     The route is `Navigator`'s geodesic field (`Primitives.planner`, built from `scene_meta` when the stack has a
     map): each segment steers at `waypoint(here, step)` and is walked with `Primitives.walk_to`. Free-handed, the
     segment faces its waypoint as it walks (`face_target=True`, the `navigate` behaviour). With a load the segment
-    follows carry_to's measured rule: turn standing first (SLOW_WALK, `turn_tol`), then walk the segment holding
+    follows walk_to's loaded rule: turn standing first (SLOW_WALK, `turn_tol`), then walk the segment holding
     that line with `LoadWatch` on every tick; walking while turning is what slipped the bottle (ledger §41).
     """
 
@@ -603,11 +527,7 @@ class Nudge:
         if len(relative) != 2:
             out.append(Violation("relative", len(relative), (2, 2), "[forward, left] m in the heading frame"))
         elif float(np.hypot(*relative)) > NUDGE_MAX:
-            out.append(
-                Violation(
-                    "relative", float(np.hypot(*relative)), (0.0, NUDGE_MAX), "longer moves are walk_to / carry_to"
-                )
-            )
+            out.append(Violation("relative", float(np.hypot(*relative)), (0.0, NUDGE_MAX), "longer moves are walk_to"))
         if session.held is not None:
             if session.arm_owner is not ArmOwner.PLANNER_FROZEN:
                 out.append(Violation("held", session.held.key, note="nudge with a load from planner_frozen"))

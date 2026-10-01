@@ -14,14 +14,15 @@
   }
  },
  {
-  "primitive": "carry_to",
+  "primitive": "walk_to",
   "args": {
    "relative": [
     -1.0,
     0.0
    ],
    "face_target": false,
-   "timeout": 30
+   "timeout": 30,
+   "stop_dist": 0.08
   }
  }
 ]

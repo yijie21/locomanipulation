@@ -10,7 +10,7 @@ import pytest
 from locomani.skills import ArmOwner, Executor, HeldObject, Session
 from locomani.skills.catalogue import PENDING, RUNNABLE, build_catalogue
 from locomani.skills.catalogue.arms import HandBack, Ready, Release, TakeOver
-from locomani.skills.catalogue.locomotion import CarryTo, Retreat, TurnTo, WalkTo
+from locomani.skills.catalogue.locomotion import TurnTo, WalkTo
 from locomani.skills.profiles import load_profiles
 
 
@@ -121,30 +121,6 @@ def test_release_opens_on_either_channel_and_clears_held():
     assert ex.step("release", {})["outcome"]["ok"] and ("release", "right", 1.0) in s.stack.calls
 
 
-@pytest.mark.parametrize("reason,ok", [("completed", True), ("retreat_dropped", False)])
-def test_retreat_hands_back_inside_and_reports_the_load(reason, ok):
-    seen = {}
-
-    def fake_retreat(p, arm, cfg, key, heading, start_z):
-        seen.update(key=key, heading=heading, start_z=start_z, distance=cfg.retreat_distance)
-        arm.stop(preserve_reference=True)
-        return reason, {"walked": 0.3}, {}
-
-    held = HeldObject(key="box", sides=("left", "right"), grip_in_palm={}, start_z=0.31)
-    s = session(owner=ArmOwner.POSE_STREAM, arm=StreamedArm(None, "right"), held=held, heading=1.0)
-    entry = executor(s, retreat=Retreat(retreat_fn=fake_retreat)).step("retreat", {"distance": 0.3})
-    assert entry["outcome"]["ok"] is ok and seen == dict(key="box", heading=1.0, start_z=0.31, distance=0.3)
-    assert s.arm_owner is ArmOwner.PLANNER_FROZEN and s.arm is None
-    if not ok:
-        assert entry["outcome"]["reason"].startswith("[retreat]")
-
-
-def test_retreat_needs_a_load_with_its_grasp_height():
-    s = session(owner=ArmOwner.POSE_STREAM, arm=StreamedArm(None, "right"))
-    entry = executor(s, retreat=Retreat(retreat_fn=lambda *a: None)).step("retreat", {"distance": 0.3})
-    assert "held" in [v["check"] for v in entry["rejected"]]
-
-
 def test_ready_uses_the_bimanual_profile_and_rejects_the_single_arm_one():
     profiles = load_profiles()
     seen = {}
@@ -225,15 +201,15 @@ def carry_prim(slip_at=None):
         k = s["_k"]
         return np.array([0.0, 0.0, 0.05 if slip_at is not None and k >= slip_at else 0.0])
 
-    return CarryTo(palm_offset=offset)
+    return WalkTo(palm_offset=offset)
 
 
-def test_carry_to_relative_target_walks_with_the_load_and_reports_drift():
+def test_walk_to_with_a_load_takes_a_relative_target_and_reports_drift():
     held = HeldObject(key="box", sides=("right",), grip_in_palm={}, start_z=0.9)
     s = session(owner=ArmOwner.PLANNER_FROZEN, held=held, heading=0.0)
     s.stack = CarryStack()
     s.hands["right"] = 1.0
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"relative": [-1.0, 0.0]})
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"relative": [-1.0, 0.0]})
     assert entry["outcome"]["ok"], entry
     # a target behind the robot: turn in place first (180 deg), then walk holding that line
     assert s.stack.calls[-2] == ("turn_to", round(np.pi, 3)) and s.stack.calls[-1] == (
@@ -251,39 +227,45 @@ def test_carry_to_relative_target_walks_with_the_load_and_reports_drift():
         and len(m["samples"]) >= 5
     )
     s.stack.calls.clear()
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"relative": [1.0, 0.0]})
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"relative": [1.0, 0.0]})
     assert entry["outcome"]["ok"] and s.stack.calls == [("walk_to", (0.0, 0.0), False, 0.0)]  # ahead: no turn
 
 
-def test_carry_to_aborts_on_palm_slip_and_on_lost_contact():
+def test_walk_to_with_a_load_aborts_on_palm_slip_and_on_lost_contact():
     held = HeldObject(key="box", sides=("right",), grip_in_palm={}, start_z=0.9)
     s = session(owner=ArmOwner.PLANNER_FROZEN, held=held, heading=0.0)
     s.stack, s.hands["right"] = CarryStack(), 1.0
-    entry = executor(s, carry_to=carry_prim(slip_at=3)).step("carry_to", {"xy": [1.0, 0.0]})
+    entry = executor(s, walk_to=carry_prim(slip_at=3)).step("walk_to", {"xy": [1.0, 0.0]})
     assert entry["outcome"]["ok"] is False and "slipped" in entry["outcome"]["reason"]
     s = session(owner=ArmOwner.PLANNER_FROZEN, held=held, heading=0.0)
     s.stack, s.hands["right"] = CarryStack(drop_at=1, ticks=8), 1.0
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"xy": [1.0, 0.0], "contact_gap_s": 0.25})
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"xy": [1.0, 0.0], "contact_gap_s": 0.25})
     assert entry["outcome"]["ok"] is False and "dropped" in entry["outcome"]["reason"]
 
 
-def test_carry_to_bimanual_uses_the_height_floor_and_both_hands():
+def test_walk_to_with_a_bimanual_load_uses_the_height_floor_and_both_hands():
     held = HeldObject(key="box", sides=("left", "right"), grip_in_palm={}, start_z=0.40)
     s = session(owner=ArmOwner.PLANNER_FROZEN, held=held, heading=0.0)
     s.stack = CarryStack(bimanual=True)
     s.hands = {"left": 1.0, "right": 1.0}
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"xy": [1.0, 0.0]})
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"xy": [1.0, 0.0]})
     assert entry["outcome"]["ok"] and entry["outcome"]["metrics"]["min_load_z"] == 0.5
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"xy": [1.0, 0.0], "lift_floor_m": 0.2})
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"xy": [1.0, 0.0], "lift_floor_m": 0.2})
     assert entry["outcome"]["ok"] is False and "dropped" in entry["outcome"]["reason"]
 
 
-def test_carry_to_rejections():
-    s = session(owner=ArmOwner.PLANNER_FROZEN, heading=0.0)
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"xy": [1.0, 0.0]})
-    assert "held" in [v["check"] for v in entry["rejected"]]
+def test_walk_to_free_handed_takes_a_relative_target_and_refuses_the_load_arguments():
+    s = session(owner=ArmOwner.PLANNER_SWING, heading=0.0)
+    s.stack = CarryStack()
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"relative": [-1.0, 0.0]})
+    assert entry["outcome"]["ok"] and s.stack.calls == [("walk_to", (-1.0, 0.0), True, None)]  # faces as it walks
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"xy": [1.0, 0.0], "turn_first": False})
+    assert entry["rejected"][0]["check"] == "load_args" and entry["rejected"][0]["measured"] == "turn_first"
+
+
+def test_walk_to_rejections():
     held = HeldObject(key="box", sides=("right",), grip_in_palm={}, start_z=0.9)
     s = session(owner=ArmOwner.PLANNER_FROZEN, held=held, heading=0.0)
     s.hands["right"] = 1.0
-    entry = executor(s, carry_to=carry_prim()).step("carry_to", {"xy": [1.0, 0.0], "relative": [1.0, 0.0]})
+    entry = executor(s, walk_to=carry_prim()).step("walk_to", {"xy": [1.0, 0.0], "relative": [1.0, 0.0]})
     assert entry["rejected"][0]["check"] == "target"

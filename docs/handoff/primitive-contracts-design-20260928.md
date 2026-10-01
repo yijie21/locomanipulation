@@ -143,6 +143,8 @@ class Primitive(Protocol):
 
 ## 5. 目录
 
+> 2026-10-01 更新：`carry_to` 并入 `walk_to`（持物时同一个名字走冻结上身 + 持物守卫），`retreat` 删除（持箱后退 = `hand_back` + `walk_to(relative=[-d, 0], turn_first=false)`）；目录现为 13 个。下表保留设计时的写法。
+
 | primitive | 前置（`requires` / 检查） | 后置（`yields` / session 变化） | 来源代码 | 状态 |
 |---|---|---|---|---|
 | `approach(target, profile)` | SWING 或 FROZEN；目标在 `scene`；到前沿 ≤ `start_edge_max` | 同进入通道；写 `stance`（含 `profile`）；`heading` 锚定 | crate `VisualApproach` + `HangingWalk` + `GuardBrake`（`primitives/foot_watch.py`，两线共用）；bottle `EdgeGuard`；`face_target` | 抽取：把"桌边线"泛化成 `scene` 给的前沿线（crate 已有 `box_front_line`） |

@@ -1,4 +1,4 @@
-"""walk_to with a load (delegates to carry_to), navigate_to over a fake distance field, LoadWatch rules."""
+"""walk_to with a load, navigate_to over a fake distance field, LoadWatch rules."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from locomani.skills import ArmOwner, Executor, HeldObject, Session
 from locomani.skills.catalogue import build_catalogue
-from locomani.skills.catalogue.locomotion import CarryTo, LoadWatch, NavigateTo, WalkTo
+from locomani.skills.catalogue.locomotion import LoadWatch, NavigateTo, WalkTo
 
 
 class FakeNav:
@@ -115,8 +115,7 @@ def catalogue(stack):
     palm = palm_offset_of(stack)
     return build_catalogue(
         profiles={},
-        walk_to=WalkTo(carry=CarryTo(palm_offset=palm)),
-        carry_to=CarryTo(palm_offset=palm),
+        walk_to=WalkTo(palm_offset=palm),
         navigate_to=NavigateTo(palm_offset=palm),
     )
 
@@ -126,7 +125,7 @@ def test_walk_to_with_a_load_is_the_carried_walk():
     s = session(stack)
     entry = Executor(s, catalogue(stack)).step("walk_to", {"xy": [1.0, 0.0]})
     assert entry["outcome"]["ok"], entry
-    assert [e["stage"] for e in s.record.events] == ["carry_to"]
+    assert [e["stage"] for e in s.record.events] == ["walk_to.carry"]
     assert entry["outcome"]["metrics"]["max_drift_m"] == 0.0 and s.stance is None
     assert s.arm_owner is ArmOwner.PLANNER_FROZEN
 

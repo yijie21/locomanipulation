@@ -10,7 +10,7 @@ place phase drives a `PlannerArm` (frozen channel), so `place` runs from that sa
 `take_over` before it.
 
 With something held, `approach` is not the guard walk (that hands the arms to the walking policy and would
-swing the load): it is `carry_to` to the stand the round sampler would draw for the target, then a standing
+swing the load): it is the loaded `walk_to` to the stand the round sampler would draw for the target, then a standing
 turn to the table normal, and it writes the same `Stance`. That is the "walk to the container" step a
 cross-surface pick-and-place needs before `place` (TODO 7.7).
 """
@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from locomani.skills.catalogue.locomotion import CarryTo, LoadWatch, load_violations, turn_with_load
+from locomani.skills.catalogue.locomotion import LoadWatch, WalkTo, load_violations, turn_with_load
 from locomani.skills.contract import Outcome, Violation
 from locomani.skills.session import ArmOwner, HeldObject, Session, Stance, needs_heading, stance_violations
 
@@ -160,7 +160,7 @@ class BottleApproach:
         stand=None,
     ):
         self._profiles, self._context = profiles, context
-        self._carry = carry or CarryTo(palm_offset=palm_offset)
+        self._carry = carry or WalkTo(palm_offset=palm_offset)
         self._stand_plan = stand or stand_plan
         if phases is None:
             from locomani.tasks.bottle.round_phases import _phase_navigate

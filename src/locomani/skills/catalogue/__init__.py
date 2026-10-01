@@ -13,7 +13,7 @@ from locomani.skills.catalogue.arms import HandBack, Ready, Release, TakeOver
 from locomani.skills.catalogue.bottle import BottleApproach, GraspSingle, Place
 from locomani.skills.catalogue.crate import CrateApproach, GraspBimanual
 from locomani.skills.catalogue.crate_put_down import PutDownBimanual
-from locomani.skills.catalogue.locomotion import CarryTo, NavigateTo, Nudge, Retreat, TurnTo, WalkTo
+from locomani.skills.catalogue.locomotion import NavigateTo, Nudge, TurnTo, WalkTo
 from locomani.skills.catalogue.pending import PENDING, Unimplemented, pending_entries
 from locomani.skills.contract import Violation
 from locomani.skills.session import ArmOwner
@@ -21,7 +21,6 @@ from locomani.skills.session import ArmOwner
 RUNNABLE = (
     "turn_to",
     "walk_to",
-    "retreat",
     "ready",
     "take_over",
     "hand_back",
@@ -30,7 +29,6 @@ RUNNABLE = (
     "grasp_single",
     "grasp_bimanual",
     "place",
-    "carry_to",
     "navigate_to",
     "put_down_bimanual",
     "nudge",
@@ -82,7 +80,6 @@ def build_catalogue(profiles: dict | None = None, **overrides) -> dict:
     entries = {
         "turn_to": TurnTo(),
         "walk_to": WalkTo(),
-        "retreat": Retreat(),
         "ready": Ready(profiles),
         "take_over": TakeOver(),
         "hand_back": HandBack(),
@@ -95,7 +92,6 @@ def build_catalogue(profiles: dict | None = None, **overrides) -> dict:
         "grasp_single": GraspSingle(profiles),
         "grasp_bimanual": GraspBimanual(profiles),
         "place": Place(profiles),
-        "carry_to": CarryTo(),
         "navigate_to": NavigateTo(),
         "put_down_bimanual": PutDownBimanual(profiles),
         "nudge": Nudge(),
@@ -110,7 +106,6 @@ __all__ = [
     "RUNNABLE",
     "Approach",
     "BottleApproach",
-    "CarryTo",
     "CrateApproach",
     "GraspBimanual",
     "GraspSingle",
@@ -121,7 +116,6 @@ __all__ = [
     "PutDownBimanual",
     "Ready",
     "Release",
-    "Retreat",
     "TakeOver",
     "TurnTo",
     "Unimplemented",

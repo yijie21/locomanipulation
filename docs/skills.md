@@ -50,14 +50,14 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
 
 | primitive | 参数（省略取默认） | 从哪个通道进 → 出 | 做什么 / 状态 |
 |---|---|---|---|
-| `approach(target, profile)` | — | swing/frozen → swing（guard 走近）或 frozen（持物） | 单臂：朝桌法线、守线刹车、写站位；双臂：走入 + 刹车。**持物时**：`carry_to` 到目标的规划站位再原地转向桌法线（放置前走到容器） |
+| `approach(target, profile)` | — | swing/frozen → swing（guard 走近）或 frozen（持物） | 单臂：朝桌法线、守线刹车、写站位；双臂：走入 + 刹车。**持物时**：持物 `walk_to` 到目标的规划站位再原地转向桌法线（放置前走到容器） |
 | `grasp_single(target, profile, side)` | `side=right` | swing → frozen | 走 profile 的 `reach.strategy`：`simple`（bottle 10 局 9/10）或 `coupled`（罐头，pick_place §12）；其余策略在 `approach` 前置被拒 |
 | `ready(profile)` / `grasp_bimanual(target, profile)` | — | → frozen / frozen → pose_stream | 双臂原地抬手；协同伸抓到 hold |
 | `place(container, profile, side)` | — | frozen → frozen | 抬、转到放置带、送、降、松、抬开、后退、验收 |
 | `put_down_bimanual(profile, surface, forward_m, lower_speed, release_seconds, raise_m, back_m)` | `surface` 默认物体原表面；`forward_m` 默认按台面近沿自动算 | pose_stream → pose_stream | 双手同步下放到表面静止高度 → 松手 → 抬开；判据只看物体（高度、倾角），松手后手指贴壁只记指标。`warehouse_box` profile 的 `stand_forward_min` 0.50 让箱子留在台面上方，之后 `forward_m: 0` 直接放 8/8（crate 台账） |
-| `carry_to(xy \| relative, ...)` | `turn_first=true, turn_mode=slow_walk, drift_max=0.03` | frozen → frozen | 上身冻结走直线，方位差 > 0.2 rad 先原地转；持物守卫每拍查（单臂掌系漂移 < 3 cm + 接触；双臂高度底线 + 双手接触） |
+| `walk_to(xy \| relative, ...)` | `stop_dist=0.05`；持物时另有 `turn_first=true, turn_mode=slow_walk, drift_max=0.03` | swing/frozen → 不变（持物须 frozen） | 直走，`relative` 是当前朝向下的 `[前, 左]`。空手边走边朝向目标；**持物时**上身冻结，方位差 > 0.2 rad 先原地转再守线走，持物守卫每拍查（单臂掌系漂移 < 3 cm + 接触；双臂高度底线 + 双手接触）。持物参数空手传入会以 `load_args` 被拒。持箱后退 = `hand_back` 后 `walk_to(relative=[-d, 0], turn_first=false)`。2026-10-01 前持物走路是单独的 `carry_to`（默认 `stop_dist` 0.08），`retreat` 是 crate 线后退的包装；两者已并入/删除 |
 | `navigate_to(xy \| target, stand_off, step, ...)` | `stand_off=0.6, step=0.45` | swing/frozen → 不变 | 沿占用图的距离场分段走；空手每段边走边朝向路点，持物每段先转（slow_walk）再守线走 |
-| `walk_to(xy)` / `turn_to(yaw, mode)` / `retreat(distance)` | — | — | 直走（持物时自动走 `carry_to` 的守卫）；原地转（< 9° 不准）；持物倒退 |
+| `turn_to(yaw, mode)` | — | swing/frozen → 不变 | 原地转（< 9° 不准）；离台面 < 0.25 m 拒绝 |
 | `nudge(relative, tol, pulse_s, max_pulses)` | `tol=0.04, speed=0.35, pulse_s=0.5, max_pulses=4` | swing/frozen → 不变 | ≤ 0.4 m 的站位修正：定时 SLOW_WALK 脉冲 → 刹停 → 量残差，逐次缩短；v1.1 没有厘米级平移，`walk_to` 走 0.15 m 会冲 0.7–1.5 m。持物时带守卫 |
 | `take_over(side)` / `hand_back()` / `release(sides)` | — | frozen ↔ pose_stream | 通道切换；松手 |
 
@@ -142,7 +142,7 @@ $PY scripts/injection_report.py --plan <plan run> --agent <agent run> --out outp
 - 2026-09-29 第一轮结果（[pick_place §13](ledger/pick_place.md)）：`move_target` 横向 0.17 m 被 `grasp_single` 吸收（它开始时按物体当前位姿重规划），
   沿桌沿 0.60 m 才有效；配对 10 局 plan 0/10、agent 0/10 但 agent 5/10 重新抓起，之后全部在持罐转向时掉罐。
   agent 摸出来的 primitive 事实：`approach` 只修深度不修横向；`nudge` 是量化脉冲且会清 `stance`；`navigate_to` 贴桌沿停、随后的 `turn_to` 会扫桌。
-- 2026-09-29 第二轮前补的 primitive（TODO 8.3.1 / 8.3.2）：持物 `approach(goal)` 已面向同一桌沿且站位在 1.2 m 内时**不转向直接横移**（`carry_to(turn_first=False)`）；
+- 2026-09-29 第二轮前补的 primitive（TODO 8.3.1 / 8.3.2）：持物 `approach(goal)` 已面向同一桌沿且站位在 1.2 m 内时**不转向直接横移**（持物 `walk_to(turn_first=False)`，当时叫 `carry_to`）；
   `navigate_to` 的点目标推到离每个台面 ≥ 0.30 m（`edge_margin`）；`turn_to` 离台面 < 0.25 m 时拒绝（`edge_clearance`）；`nudge` 重新量 stance 而不是清掉；
   空手 `approach` 站位偏离走近线 > 0.12 m 时先横移到站位后 0.6 m 的引导点再走。系统提示加了一条：session 快照是本体感觉、场景是真值，冲突时先 `release` 再继续（8.4.2）。
 - `--until-injected N`：跑到 N 次注入触发为止（`--rounds` 变成上限），配对数不再被基线抓取率砍半（8.4.1）。
