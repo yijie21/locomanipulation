@@ -482,7 +482,28 @@
 - [-] 13.1 （2026-09-30 放弃：用户说协作者给错了 URDF；代码全部回退，改动存 `outputs/g1_urdf_compare_20260930/saturn_urdf_work.patch`）按 `assets/unitree_G1` 生成 saturn 模型、`build_sim_scene.py --robot saturn`、场景 `bottle_saturn`、SONIC + bottle 专家试跑
   - [x] 13.1.1 （2026-09-30）两份模型对比：29 个关节同名同序同轴同限位，腿完全一致；腰 rev 1.0、5010 腕、背包和云台 +0.86 kg、踝/腰力矩 50 → 35（`outputs/g1_urdf_compare_20260930/compare.txt`）
   - [x] 13.1.2 （2026-09-30）试跑：D435 视野 0/10（开局视野门）；saturn 身体 + stock 相机 6/10、不倒；stock 9/10
-- [ ] 13.2 待协作者：给正确的真机 URDF。来了以后先 `git apply --check` 那份 patch，再跑 `make_dex1_model.py`（它会拿 URDF 自检）
+- [~] 13.2 待协作者：给正确的真机 URDF。来了以后先 `git apply --check` 那份 patch，再跑 `make_dex1_model.py`（它会拿 URDF 自检）
+  - [x] 13.2.1 （2026-10-01）henry 推了无背包版 `c966ee1`：`assets/unitee_G1/urdf/g1_comp_new_hip_dex1_1.urdf`（目录名少个 r；robot.yaml 叫 mars）；旧 saturn 文件移到 `assets/unitree_G1_backpack`。MuJoCo 多角度渲染在 `outputs/g1_urdf_render_20261001/`（总重 34.85 kg，stock 35.87；云台上是 D455，D435 固定在脸部）
+  - [ ] 13.2.2 待用户确认 mars 这份是不是对的；确认后在当前 HEAD 打 saturn patch（2026-10-01 在 `1e6380e` 上 `git apply --check` 通过），把生成器指向新 URDF
+  - [ ] 13.2.3 mars URDF 没有腕部相机（robot.yaml 有两台 D405 的序列号，URDF 和 meshes 里都没有，calibration 只有 livox→D435）。仿真要加腕部相机，需 henry 给 D405 的安装位姿/外参、支架 CAD 或手腕照片（已向用户提议代写消息，用户未回复）
 - [ ] 13.3 待用户/协作者确认：云台上的 ego 相机是 D435 还是 D455，以及真机内参（patch 里按 D435 常用值 fx = fy = 615，fovy 42.6）
 - [ ] 13.4 待用户定：仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
 - [ ] 13.5 待用户定：saturn 产物删不删（约 180 MB：`outputs/scene/sim_lowcom_saturn*`、`outputs/runs/bottle_{saturn,saturn_stockcam,stock}_pilot_20260930`；patch 所在的 `outputs/g1_urdf_compare_20260930/` 要留）；删前在 STATE 写明 24 小时
+
+## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
+
+- [x] 14.1 （2026-10-01）对比 hero 与我们 Isaac / Unreal 的机器人：主因是外壳 roughness 0.75、深色件参数、无贴图、白房间平光和分辨率（`outputs/g1_look_vs_hero_20261001/`）
+- [x] 14.2 （2026-10-01）Unreal 里一次改一项的 A/B：v1 粗糙度 0.35/0.45、v2 黑塑料、v3 侧光 40k–400k cd、v4a/v4b 组合；另测光滑法线、32 次采样（`outputs/g1_look_ab_20261001/ab_sheet.png`）
+- [x] 14.3 （2026-10-01，`f7eadec` 已推送）用户选 v4a，四路画面（ego、左右腕、第三视角）和 Isaac 都用：`src/locomani/sim/robot_look.py` 一处定义，关卡 `source.json` 与两种补渲标记记 `robot_look`
+  - [x] 14.3.1 （2026-10-01）本机 5 个 Unreal 关卡按新外观和 1280×960 重建
+  - [x] 14.3.2 （2026-10-01）Isaac、Unreal 各实渲一局第三视角带小窗（`outputs/g1_look_v4a_check_20261001/`）
+- [ ] 14.4 待用户定：Isaac 深色件比 Unreal 亮（腕部相机夹爪顶板 136/255，Unreal 近黑；底色 0 也只到 108，间接光 ×1 是 135）。要不要只给 Isaac 单独压暗（目前两边数值相同，按用户"同一套设定"）
+- [ ] 14.5 待验证：新外观下的数据集补渲（`render_dataset_cameras_{isaac,unreal}.sh`）和评测镜像没单独实跑；只跑了第三视角（它的小窗走同一个 view）
+- [ ] 14.6 待用户安排：09-30 及以前的数据集和 checkpoint 都是旧外观；要用新外观就得重新补渲/重训（与 12.9.6 一起排）
+- [ ] 14.7 待用户定：本次产物删不删（共约 220 MB：`outputs/g1_look_ab_20261001` 46 MB、`g1_look_v4a_check_20261001` 35 MB、`g1_look_vs_hero_20261001`、`g1_urdf_render_20261001` 134 MB）；删前在 STATE 写明 24 小时
+
+## 15. 协作者（henry-zhao）的推送
+
+- [x] 15.1 （2026-10-01）origin/main 上 henry 的 6 个提交（`5e9c613`…`c966ee1`）快进合入 main；用户 2026-10-01 说"merge 掉 henry 的修改"时已无可合并内容（PR #1–#3 的提交也都在 main 里）
+- [x] 15.2 （2026-10-01，随 `f7eadec`）`assets/unitee_G1/README.md` 的 Python 代码块按 ruff 格式化：origin/main 原本过不了 `make check`
+- [ ] 15.3 可选：GitHub 上 PR #1–#3 若仍显示打开，在网页上关掉（本机没有 `gh`，看不到状态）
