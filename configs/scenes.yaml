@@ -11,7 +11,8 @@
 # `images.source: unreal`, built by `build_scene.sh <name> --unreal` inside a running editor (scripts/start_unreal.sh):
 # the Blender-baked room level (scripts/unreal/warehouse_level.py) plus this scene's robot and carton imported
 # through URLab. Its look is the room level's post-process volume plus `repeats` (captures per request; Lumen and
-# TSR converge over frames: 1 is 2-3/255 darker than 8, docs/handoff/unreal-urlab-20260928.md). A scene with no
+# TSR converge over frames: 1 is 2-3/255 darker than 8, docs/handoff/unreal-urlab-20260928.md). The robot's
+# materials are not per scene: both renderers take src/locomani/sim/robot_look.py. A scene with no
 # level says why in `unreal: {unsupported: ...}`, and an experiment asking for Unreal on it is refused at load.
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table

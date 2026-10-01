@@ -4,39 +4,30 @@ URLab's M_MuJoCo_Master takes BaseColor from the MJCF rgba but, without textures
 and Roughness in a constant 0.5: its "Metallic"/"Roughness" scalar parameters are not connected, so no instance
 can change them and every G1 part renders as matte grey plastic (white under the room lights). This builds
 /Game/Loco/M_LocoPBR, a drop-in master with URLab's parameter names (BaseColor, BaseColorTexture, bUseTexture,
-Metallic, Roughness) actually wired, re-parents every instance of one URLab import to it, and applies a preset:
+Metallic, Roughness) actually wired, re-parents every instance of one URLab import to it, and sets:
 
-    "unitree" (default, user 2026-09-29): Unitree's own Isaac Lab asset for the G1 with Dex1
-    (huggingface.co/datasets/unitreerobotics/unitree_sim_isaaclab_usds, g1_29dof_with_dex1_rev_1_0.usd), the same
-    values as the Isaac renderer's stage.G1_LOOKS -- brushed-metal shells and a near-black head, joints and gripper.
-    Base colours are OmniPBR's diffuse_color_constant x diffuse_tint, already linear; the dark roughness is
-    OmniPBR's default, which that material leaves unset:
-        robot light grey (>= 0.6)   metallic 1     roughness 0.75  base colour (0.675, 0.675, 0.692)
-        robot dark (< 0.4)          metallic 0.42  roughness 0.5   base colour (0.0107, 0.0099, 0.0104)
-    "mujoco": the look of the MJCF itself, the default until 2026-09-29 -- Unitree's two colours (0.7 shells, 0.2
-    head/feet/joints/grippers) as painted, non-metallic surfaces with a specular sheen, which is what MuJoCo draws
-    (g1_source/hero_vs_urlab_g1_meshes.png). The user found it too grey, the gripper not black enough:
-        robot light grey (>= 0.6)   metallic 0     roughness 0.35  base colour sRGB -> linear
-        robot dark (< 0.4)          metallic 0     roughness 0.5   base colour sRGB -> linear
-    "metal": the first attempt, rejected 2026-09-28 (a uniform reflective silver, not the real G1):
-        robot light grey            metallic 0.85  roughness 0.35  base colour 0.62
-        robot dark                  metallic 0.35  roughness 0.45  base colour sRGB -> linear
-    all: carton (MI_nor_cal_*) metallic 0 roughness 0.85; anything else metallic 0 roughness 0.6, sRGB -> linear.
+    robot light grey (>= 0.6)   SILVER  } the robot look, `locomani.sim.robot_look` (SHELL, DARK), which build_level
+    robot dark (< 0.4)          DARK    } passes in: the values Isaac's stage.G1_LOOKS binds, {base, metallic, roughness}
+    carton (MI_nor_cal_*)       metallic 0  roughness 0.85
+    anything else               metallic 0  roughness 0.6   base colour sRGB -> linear
     The third-person video's ghost grippers (export_mjcf.GHOST_MATERIAL) get their own translucent master,
     /Game/Loco/M_LocoGhost: the ghost colour (GHOST_BASE, linear) lit, with 0.4 of it emissive as the Isaac ghost,
     at GHOST_OPACITY; build_level passes the three from locomani.sim.isaac.ghost.
 
+Earlier robot looks, for the record (robot_look's docstring has the current one's history): "metal", rejected
+2026-09-28 (a uniform silver: light grey metallic 0.85 roughness 0.35 base 0.62, dark metallic 0.35 roughness 0.45);
+"mujoco", until 2026-09-29 (the MJCF colours as non-metallic paint, light grey roughness 0.35, dark 0.5: too grey,
+the gripper not black); "unitree", 2026-09-29 to 2026-10-01 (Unitree's Isaac Lab asset: light grey metallic 1
+roughness 0.75 base 0.675, dark metallic 0.42 roughness 0.5 base 0.0107).
+
 MJCF rgba is a display (sRGB) value -- MuJoCo's renderer applies no gamma -- while Unreal's BaseColor parameter is
 linear, so URLab's straight copy shows 0.2 as 0.48: the G1's black head and joints come out mid grey and the
-whole robot reads white. A preset either sets a robot colour directly (a linear PBR value) or, with base None,
-converts the imported one; the carton's colours are Blender Principled values (blender_to_mujoco.py), already
-linear, and stay.
+whole robot reads white. The robot look sets the robot's colours directly (linear PBR values); the carton's colours
+are Blender Principled values (blender_to_mujoco.py), already linear, and stay.
 
-Re-run after every URLab import (the instances are regenerated):
+build_level runs this after every URLab import (the instances are regenerated); by hand, with the globals it passes:
 
-    "$BRIDGE_PY" -m locomani.sim.unreal.editor -f src/locomani/sim/unreal/in_editor/robot_materials.py
-    (URLAB_ASSET below names the import; the command server passes no environment, so another preset is chosen by
-    prefixing the source: editor.run_file(<this file>, PRESET="metal", URLAB_ASSET="<level>"))
+    editor.run_file(<this file>, URLAB_ASSET="<level>", SILVER=robot_look.SHELL, DARK=robot_look.DARK)
 """
 
 import collections
@@ -51,22 +42,9 @@ def srgb_to_linear(v):
 URLAB_ASSET = globals().get("URLAB_ASSET", "dynamic")
 MASTER = "/Game/Loco/M_LocoPBR"
 SRC_TAG = "loco_imported_base_color"
-PRESETS = {
-    "unitree": {
-        "silver": {"metallic": 1.0, "roughness": 0.75, "base": (0.675, 0.675, 0.6916)},
-        "dark": {"metallic": 0.42, "roughness": 0.5, "base": (0.01074, 0.00991, 0.01043)},
-    },
-    "mujoco": {
-        "silver": {"metallic": 0.0, "roughness": 0.35, "base": None},
-        "dark": {"metallic": 0.0, "roughness": 0.5, "base": None},
-    },
-    "metal": {
-        "silver": {"metallic": 0.85, "roughness": 0.35, "base": (0.62, 0.62, 0.62)},
-        "dark": {"metallic": 0.35, "roughness": 0.45, "base": None},
-    },
-}
-PRESET = globals().get("PRESET", "unitree")
-SILVER, DARK = PRESETS[PRESET]["silver"], PRESETS[PRESET]["dark"]
+SILVER, DARK = globals().get("SILVER"), globals().get("DARK")  # the robot look: the caller's, no default of its own
+if SILVER is None or DARK is None:
+    raise RuntimeError("robot_materials.py takes the robot look from its caller (SILVER, DARK): run it via build_level")
 CARDBOARD = {"metallic": 0.0, "roughness": 0.85}
 OTHER = {"metallic": 0.0, "roughness": 0.6}
 GHOST_MATERIAL = globals().get("GHOST_MATERIAL", "loco_ghost")
@@ -190,4 +168,4 @@ for path in eal.list_assets(f"/Game/MuJoCoImports/{URLAB_ASSET}_ue_Assets", recu
     mel.update_material_instance(mi)
     eal.save_loaded_asset(mi)
     counts[kind] += 1
-print(f"[materials] master {MASTER}, preset {PRESET}: {dict(counts)}")
+print(f"[materials] master {MASTER}, robot silver {SILVER} dark {DARK}: {dict(counts)}")

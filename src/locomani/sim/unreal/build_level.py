@@ -11,10 +11,10 @@ and its bounce boost (`in_editor/warehouse_level.py`, docs/ledger/blender_scenes
 moving part imported through URLab: the export of `export_mjcf` (robot, carton, the three dataset cameras, the
 third-person camera rig and ghost grippers), named after the level, so the Blueprint is /Game/MuJoCoImports/<level>.
 Then Nanite off on every mesh (`in_editor/no_nanite`; before the materials, whose translucent ghost a Nanite mesh
-cannot draw), the G1 materials (`in_editor/robot_materials`, preset unitree, the Unitree Isaac asset's values, as
-Isaac's), the level and the Blueprint saved: the next editor session opens it ready to render, without importing again.
-`$UNREAL_ASSETS/<level>/source.json` records the scene XML's hash; `run_context.unreal_scene` refuses a level
-built from another scene. Rebuilding replaces the level and its import.
+cannot draw), the G1 materials (`in_editor/robot_materials` with `locomani.sim.robot_look`, the values Isaac binds),
+the level and the Blueprint saved: the next editor session opens it ready to render, without importing again.
+`$UNREAL_ASSETS/<level>/source.json` records the scene XML's hash and the robot look's name; `run_context.unreal_scene`
+refuses a level built from another scene or with another look. Rebuilding replaces the level and its import.
 
 The room level is built once per install from the Blender bake (scripts/unreal/warehouse_bake.py, in Blender):
 `--room <bake dir>` runs `in_editor/warehouse_level.py` on it.
@@ -31,6 +31,7 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
+from locomani.sim import robot_look
 from locomani.sim.isaac import ghost
 from locomani.sim.unreal import editor, export_mjcf
 
@@ -135,7 +136,8 @@ def build(name: str) -> dict:
     }
     # Nanite off first: the import is Nanite, and a Nanite mesh under the ghosts' translucent material kills the
     # editor on its next frame (NaniteShading.cpp IsSupportedBlendMode, 2026-09-29)
-    for script, extra in (("no_nanite.py", {}), ("robot_materials.py", {"URLAB_ASSET": level, **ghost_look})):
+    materials = {"URLAB_ASSET": level, "SILVER": robot_look.SHELL, "DARK": robot_look.DARK, **ghost_look}
+    for script, extra in (("no_nanite.py", {}), ("robot_materials.py", materials)):
         print("[build_level]", editor.checked(editor.run_file(editor.IN_EDITOR / script, **extra)).strip(), flush=True)
     editor.checked(editor.uecmd("unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()"))
     editor.require_render_defaults()
@@ -148,6 +150,7 @@ def build(name: str) -> dict:
         "room_level": ROOM_LEVEL,
         "blueprint": asset,
         "film": exported["film"],  # the third-person camera the import carries (UnrealView.film_setup checks it)
+        "robot_look": robot_look.NAME,  # the materials robot_materials.py set (run_context.unreal_scene checks it)
         "builder": "locomani.sim.unreal.build_level",
         "built": time.strftime("%Y-%m-%d %H:%M:%S"),
         "seconds": round(time.time() - t0, 1),

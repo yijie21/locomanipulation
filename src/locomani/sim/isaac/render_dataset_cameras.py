@@ -17,7 +17,7 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
-from locomani.sim import view_render
+from locomani.sim import robot_look, view_render
 
 ROOT = Path(paths.REPO)
 
@@ -33,7 +33,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = run_context.load_run_config(run_dir)
     isaac = run_context.isaac_scene(cfg) if cfg.get("backend", {}).get("render") == "offline" else None
     look = (
-        {"isaac_stage": isaac["dir"], "rtx_settings": isaac["rtx_settings"], "supersample": isaac["supersample"]}
+        {
+            "isaac_stage": isaac["dir"],
+            "rtx_settings": isaac["rtx_settings"],
+            "supersample": isaac["supersample"],
+            "robot_look": robot_look.NAME,  # stage.G1_LOOKS
+        }
         if isaac
         else {}
     )

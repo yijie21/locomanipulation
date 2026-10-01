@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from locomani import paths
+from locomani.sim import robot_look
 
 
 @dataclass
@@ -184,35 +185,22 @@ def _mjcf_mesh_colours(mjcf_path: str, log=print) -> dict:
     return colours
 
 
-# The G1's two materials, copied from Unitree's own Isaac Lab asset for the G1
-# with Dex1 (huggingface.co/datasets/unitreerobotics/unitree_sim_isaaclab_usds,
-# assets/robots/g1-29dof_wholebody_dex1/g1_29dof_with_dex1_rev_1_0.usd:
-# DefaultMaterial on the shells, material_CAD1EE on the dark parts). Its dark
-# set -- head, pelvis, hip pitch, ankle roll, Dex1 base and fingers -- is the
-# MJCF's rgba < 0.4 set, so the MJCF colour picks the material.
-# The MJCF rgba itself is not usable as a colour here: it is a display value
-# (MuJoCo applies no gamma), which RTX reads as linear, so its 0.2 came out
-# as 0.48 and the head, joints and gripper rendered mid grey (2026-09-29).
-# OmniPBR multiplies diffuse_color_constant by diffuse_tint: the shells are
-# 0.68 linear brushed metal and the dark parts 0.011, near black. The user
-# chose these over the same albedo as non-metallic paint (2026-09-29,
-# outputs/isaac_g1_colour_20260929/g1_looks_compare.jpg); being metal, the
-# shells take on the room, so they read darker against the warehouse's dark
-# floor and shelves. Unreal uses the same values
-# (src/locomani/sim/unreal/in_editor/robot_materials.py, preset "unitree").
+# The G1's two materials as OmniPBR inputs: `locomani.sim.robot_look`, which
+# Unreal's levels are built with too. The MJCF colour picks the material
+# (shell >= 0.6, the dark set below). It is not usable as a colour itself: it
+# is a display value (MuJoCo applies no gamma), which RTX reads as linear, so
+# its 0.2 came out as 0.48 and the head, joints and gripper rendered mid grey
+# (2026-09-29). OmniPBR reads diffuse_color_constant as linear and multiplies
+# it by diffuse_tint, left at its white default; its specular_level (default
+# 0.5) is Unreal's Specular (default 0.5), so the two renderers take the same
+# three numbers.
 G1_LOOKS = {
-    "shell": {
-        "diffuse_color_constant": (0.75, 0.75, 0.76),
-        "diffuse_tint": (0.9, 0.9, 0.91),
-        "metallic_constant": 1.0,
-        "reflection_roughness_constant": 0.75,
-        "specular_level": 0.25,
-    },
-    "dark": {
-        "diffuse_color_constant": (0.05796, 0.0587, 0.06178),
-        "diffuse_tint": (0.18533, 0.16887, 0.16887),
-        "metallic_constant": 0.42,
-    },
+    key: {
+        "diffuse_color_constant": tuple(material["base"]),
+        "metallic_constant": material["metallic"],
+        "reflection_roughness_constant": material["roughness"],
+    }
+    for key, material in (("shell", robot_look.SHELL), ("dark", robot_look.DARK))
 }
 
 

@@ -203,15 +203,19 @@ bash scripts/setup_render_runtime.sh --deep
 | 水瓶、篮子等可动物体 | 本次 MJCF 引用的可视网格、缩放与材质 → 同一场景缓存中的 `usd/<object>/` |
 | 房间背景 | 生成的背景源，或仓库自带 `assets/scene/empty_room_world.ply.gz` → 场景 USD |
 
-机器人的材质不在 USD 缓存里，改材质不需要重建资产：每次组装 stage 时，`stage.assemble_stage` 给机器人绑两种 OmniPBR 材质（`stage.G1_LOOKS`）。
-- 数值取自 Unitree 官方的 Isaac Lab 资产 `unitree_sim_isaaclab_usds` 里的 `g1_29dof_with_dex1_rev_1_0.usd`：浅色壳反照率 0.68（线性）；深色件 0.011，接近黑色，metallic 0.42。
+机器人的材质不在 USD 缓存里，改材质不需要重建 Isaac 资产：每次组装 stage 时，`stage.assemble_stage` 给机器人绑两种 OmniPBR 材质（`stage.G1_LOOKS`）。
+- 数值只在 `src/locomani/sim/robot_look.py` 一处定义，Isaac 和 Unreal 用同一组：外壳 metallic 1、roughness 0.45、底色 0.675（线性）；深色件按黑塑料，metallic 0、roughness 0.35、底色 0.03。
 - 深色件是头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指。这正好是 MJCF 里 rgba < 0.4 的那些网格，所以由 MJCF 颜色决定用哪种材质。
-- 和官方一样，外壳是拉丝金属：metallic 1，roughness 0.75。金属会映出周围环境，所以在 warehouse 的深色地面和黑货架旁边，外壳比同反照率的漆暗一些。
-  用户 2026-09-29 在两者之间选了金属。对照静帧和视频见 `outputs/isaac_g1_colour_20260929/`。
-- Unreal 用同一组数值（`src/locomani/sim/unreal/in_editor/robot_materials.py` 的 `unitree` 预设）。
-- MJCF 的 rgba 不能直接当颜色用：它是显示值（MuJoCo 不做 gamma），RTX 却按线性值读。2026-09-29 之前就是直接用的，0.2 显示成 0.48，整台发白。URLab 导入是同一个问题。
+- 这组值是用户 2026-10-01 在 A/B 里选的（`outputs/g1_look_ab_20261001/ab_sheet.png` 的 v4a）。底子是 Unitree 官方 Isaac Lab 资产 `g1_29dof_with_dex1_rev_1_0.usd`（2026-09-29 起用），在它上面改了两处：
+  - 外壳 roughness 0.75 → 0.45。0.75 时金属把环境糊成一片灰，看着像喷漆；0.45 能看出反射。没有再往下调，原因有两个：Unreal 的 Lumen 只对 roughness < 0.4 的表面单独追踪反射；低于约 0.5 时，720×540 的画面里外壳会起细颗粒。重算法线、加到 32 次采样都消不掉这种颗粒。
+  - 深色件由 metallic 0.42 改成黑塑料。原来几乎只反射它自己近黑的底色，头盔没有高光。
+  - 加侧面硬光的方案也试了，被否决：它让白色房间整体过曝，并不能让机器人显得更立体。
+- Unreal 的材质在建关卡时写进关卡（`build_level` → `in_editor/robot_materials.py`）。关卡的 `source.json` 记下外观名 `robot_look.NAME`；外观名对不上的关卡，`run_context.unreal_scene` 会拒绝并提示重建。所以改了 `robot_look.py` 之后要重建所有关卡：`bash scripts/build_scene.sh <scene> --unreal`。
+- 数值相同不等于画面完全相同：Isaac 里深色件比 Unreal 亮一截（腕部相机里的夹爪顶板约 136/255，Unreal 接近黑色）。底色调到 0 也只降到 108，所以主要是黑色表面的镜面反射映出了白色房间，两个渲染器的反射算法不同（DECISIONS 2026-10-01）。
+- 两个渲染器的数据集补渲标记里都记了 `robot_look`。一个会话补渲到一半时外观变了，剩下的部分会被拒绝补渲，不会和已补的混在一起。2026-10-01 之前补渲的会话没有这个字段，也按"另一种外观"处理。
+- MJCF 的 rgba 不能直接当颜色用：它是显示值（MuJoCo 不做 gamma），RTX 和 Unreal 却按线性值读。2026-09-29 之前就是直接用的，0.2 显示成 0.48，整台发白。
 - 另一个同期修掉的问题：importer 按 body 名给可视 prim 命名（`left_dex1_finger_1_link`），而颜色表原先只按网格名查（`Dex1_finger_link_1`）。结果 4 根 Dex1 手指全落到默认的近白色。
-- 材质改动会同时改变镜像、数据集补渲和视频里的机器人像素。之前用 Isaac 图训练的 checkpoint 看的是发白的旧外观。
+- 材质改动会同时改变镜像、数据集补渲和视频里的机器人像素。2026-10-01 之前的 checkpoint 看的是旧外观（09-29 之前是发白的那种）；拿它们在新外观下评测，图像分布就变了。
 
 先执行 `bash scripts/install_scene.sh` 安装仓库的 `assets/scene_locomani_v1.tar.gz`，
 再按任务指南准备对应场景。桌面网格/贴图和 [压缩房间源](../assets/scene/README.md)

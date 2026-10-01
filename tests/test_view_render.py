@@ -171,6 +171,26 @@ def test_only_rounds_this_renderer_filled_take_their_insets_from_the_dataset(tmp
     assert R.filled_insets(traces.run, "isaac", ["other"]) == {}
 
 
+def test_a_session_drawn_with_another_robot_look_is_never_topped_up(tmp_path, monkeypatch):
+    import pytest
+
+    import locomani.pipeline.world_lift as world_lift
+    from locomani.sim import robot_look
+
+    traces, session = film_run(tmp_path, filled=False)
+    traces.sessions = [str(session)]
+    monkeypatch.setattr(world_lift, "RunTraces", lambda run: traces)
+    cfg = {"backend": {"render": "offline"}, "images": {"source": "isaac"}}
+    look = {"isaac_stage": "stage", "robot_look": robot_look.NAME}
+    marker = {"episodes": [0], "renderer": "isaac", "isaac_stage": "stage"}
+    for old in ({}, {"robot_look": "unitree_20260929"}):  # a marker from before robot_look, and another look
+        (session / R.MARKER).write_text(json.dumps({**marker, **old}))
+        with pytest.raises(SystemExit, match="another isaac look .*robot_look"):
+            R.plan(traces.run, cfg, "isaac", look)
+    (session / R.MARKER).write_text(json.dumps({**marker, "robot_look": robot_look.NAME}))
+    assert list(R.plan(traces.run, cfg, "isaac", look)[1]) == [session]
+
+
 def test_the_insets_are_the_filled_frames_of_the_first_parquet_row_at_or_past_each_filmed_row(tmp_path):
     import cv2
 

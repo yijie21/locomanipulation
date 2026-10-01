@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from locomani.pipeline import run_context
+from locomani.sim import robot_look
 
 
 def _run(**blocks) -> dict:
@@ -156,8 +157,15 @@ def test_an_unreal_run_needs_its_level_built_from_this_scene(tmp_path, monkeypat
         run_context.unreal_scene(cfg, registry)
     source = tmp_path / "assets" / "room" / "source.json"
     source.parent.mkdir(parents=True)
-    source.write_text(json.dumps({"scene_xml_sha256": hashlib.sha256(b"<mujoco/>").hexdigest()}))
+    built = {"scene_xml_sha256": hashlib.sha256(b"<mujoco/>").hexdigest(), "robot_look": robot_look.NAME}
+    source.write_text(json.dumps(built))
     assert run_context.unreal_scene(cfg, registry) == {"level": "room", "level_path": "/Game/Levels/room", "repeats": 8}
+    # a level built before robot_look existed, or with another one, draws another robot than Isaac does
+    for look in (None, "unitree_20260929"):
+        source.write_text(json.dumps({**built, "robot_look": look}))
+        with pytest.raises(SystemExit, match=f"carries the robot look {look}, not {robot_look.NAME}.*build_level room"):
+            run_context.unreal_scene(cfg, registry)
+    source.write_text(json.dumps(built))
     (scene / "scene_locomani.xml").write_text("<mujoco><!-- another carton --></mujoco>")
     with pytest.raises(SystemExit, match="built from another"):
         run_context.unreal_scene(cfg, registry)

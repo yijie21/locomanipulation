@@ -7,7 +7,7 @@
 (`scripts/start_unreal.sh`, which chooses the GPU) with the scene's level built. The pictures come from
 `view.UnrealView` on the scene's level and capture count (`run_context.unreal_scene`) -- the object and settings
 the eval mirror serves the policy from. Which rows, which sessions and the marker (`renderer: unreal` plus the
-level and the capture count) are `locomani.sim.view_render`, shared with the Isaac re-render. Every rendered row
+level, the capture count and the robot look) are `locomani.sim.view_render`, shared with the Isaac re-render. Every rendered row
 is a fresh capture of its own pose (camera cut, `repeats` captures), as a mirror request is, so a picture does
 not depend on the rows before it; about 130 ms a row, and only the rows convert keeps are rendered.
 The run's third-person videos are a separate, optional command (`scripts/render_third_person.sh`).
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from locomani import paths
 from locomani.pipeline import run_context
-from locomani.sim import view_render
+from locomani.sim import robot_look, view_render
 
 ROOT = Path(paths.REPO)
 
@@ -34,7 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
     cfg = run_context.load_run_config(run_dir)
     unreal = run_context.unreal_scene(cfg) if cfg.get("backend", {}).get("render") == "offline" else None
-    look = {"unreal_level": unreal["level_path"], "repeats": unreal["repeats"]} if unreal else {}
+    look = (  # the level carries robot_look.NAME: unreal_scene checked it
+        {"unreal_level": unreal["level_path"], "repeats": unreal["repeats"], "robot_look": robot_look.NAME}
+        if unreal
+        else {}
+    )
     planned = view_render.plan(run_dir, cfg, "unreal", look)
     if planned is None:
         return 0

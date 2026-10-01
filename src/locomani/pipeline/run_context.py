@@ -26,6 +26,7 @@ from pathlib import Path
 import yaml
 
 from locomani import paths
+from locomani.sim import robot_look
 from locomani.sim.mirror import MIRRORED_SOURCES
 
 ROOT = Path(paths.REPO)
@@ -255,8 +256,9 @@ def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
     From the scene's `unreal` entry in `configs/scenes.yaml`, so the dataset re-render and the eval mirror load the
     same level and capture it the same way. `repeats` is `urlab.FreshCaptureRepeats`, the captures each request
     accumulates (Lumen and TSR converge over frames). The level must be built in the host project ($UE_PROJECT)
-    from this very scene: its builder records the scene XML's hash in `$UNREAL_ASSETS/<level>/source.json`
-    (default `$UNREAL_ROOT/levels`: one place per machine, whichever checkout built the level).
+    from this very scene and with the robot look Isaac binds (`locomani.sim.robot_look`): its builder records the
+    scene XML's hash and the look's name in `$UNREAL_ASSETS/<level>/source.json` (default `$UNREAL_ROOT/levels`: one
+    place per machine, whichever checkout built the level).
     """
     name, entry = _unreal_entry(cfg, registry)
     level = entry["level"]
@@ -270,11 +272,16 @@ def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
     source = Path(paths.UNREAL_ASSETS) / level / "source.json"
     if not source.is_file():
         raise SystemExit(f"{source} is missing; the level was not built by the builder: {build}")
+    built = json.loads(source.read_text())
     if cfg["scene"].get("dir"):
-        built = json.loads(source.read_text()).get("scene_xml_sha256")
         xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
-        if xml.is_file() and built != hashlib.sha256(xml.read_bytes()).hexdigest():
+        if xml.is_file() and built.get("scene_xml_sha256") != hashlib.sha256(xml.read_bytes()).hexdigest():
             raise SystemExit(f"Unreal level {level!r} was built from another {xml}; rebuild it: {build}")
+    if built.get("robot_look") != robot_look.NAME:
+        raise SystemExit(
+            f"Unreal level {level!r} carries the robot look {built.get('robot_look')}, not {robot_look.NAME} "
+            f"(locomani.sim.robot_look, what Isaac binds); rebuild it: {build}"
+        )
     return {"level": level, "level_path": f"/Game/Levels/{level}", "repeats": repeats}
 
 
