@@ -4,7 +4,7 @@ This repository contains robot configuration files, URDF models, and calibration
 
 ## Overview
 
-- **Current Branch**: `saturn` - Unitree G1-EDU-U2 robot instance
+- **Current Branch**: `Mars` - Unitree G1-EDU-U2 robot instance
 - **Robot Model**: G1-EDU-U2 (Unitree)
 - **Serial Number**: E21D6000Q5AAKA03
 - **Manufacture Date**: 2026-05-10
@@ -14,7 +14,7 @@ This repository contains robot configuration files, URDF models, and calibration
 ```
 ether-robot-assets/
 ├── urdf/                          # Robot URDF models
-│   ├── g1_comp_dex1_1_backpack.urdf   # Main robot URDF file
+│   ├── g1_comp_new_hip_dex1_1.urdf   # Main robot URDF file
 │   └── meshes/                    # 3D mesh files for visualization
 ├── calibration/                   # Robot calibration data
 ├── robot.yaml                     # Robot configuration and exports
