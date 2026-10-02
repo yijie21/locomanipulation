@@ -532,6 +532,10 @@ def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
             # poses (stock contour: 120), 2 of them near standing (outputs/mars_model_check_20261002).
             collision = [g for g in old if g.get("group") != "1"]
             assert [g.get("mesh") for g in collision] == ["pelvis_contour_link"], f"{name}: expected the stock contour"
+            # Coloured like mars's pelvis (Unitree's pelvis_ver0529, all dark), not the stock contour's light grey:
+            # MuJoCo draws collision geoms, and the light hull showed through the new pelvis as a white box.
+            for g in collision:
+                g.set("rgba", visual[0].get("rgba"))
         for g in old:
             body.remove(g)
         first_body = next((k for k, el in enumerate(body) if el.tag in ("body", "camera", "site")), len(body))

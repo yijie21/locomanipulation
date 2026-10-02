@@ -124,7 +124,7 @@
       <inertial pos="0 0 -0.07605" quat="1 0 -0.000399148 0" mass="3.813" diaginertia="0.010549 0.0093089 0.0079184" />
       <joint name="floating_base_joint" type="free" />
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="mars_pelvis_ver0529" />
-      <geom type="mesh" rgba="0.7 0.7 0.7 1" mesh="pelvis_contour_link" />
+      <geom type="mesh" rgba="0.2 0.2 0.2 1" mesh="pelvis_contour_link" />
       <body name="left_hip_pitch_link" pos="0 0.064452 -0.1027">
         <inertial pos="0.002741 0.047791 -0.02606" quat="0.954862 0.293964 0.0302556 0.030122" mass="1.35" diaginertia="0.00181517 0.00153422 0.00116212" />
         <joint name="left_hip_pitch_joint" class="leg_motor" pos="0 0 0" axis="0 1 0" range="-2.5307 2.8798" actuatorfrcrange="-88 88" />
@@ -213,12 +213,12 @@
             <geom pos="0.0039635 0 -0.044" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="head_link" />
             <geom pos="0.0039635 0 -0.047" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="mars_head_servo_link" />
             <geom pos="0.0344815 0 0.47786" quat="0.9998 0 0.0199827 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="mars_head_pan_link" />
-            <geom pos="0.0644774 0 0.489671" quat="0.998135 0 0.061046 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.7 0.7 0.7 1" mesh="mars_head_tilt_link" />
+            <geom pos="0.0644774 0 0.489671" quat="0.998135 0 0.061046 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="mars_head_tilt_link" />
             <geom type="mesh" rgba="0.7 0.7 0.7 1" mesh="torso_link_rev_1_0" />
             <geom pos="0.0039635 0 -0.044" quat="1 0 0 0" type="mesh" rgba="0.2 0.2 0.2 1" mesh="logo_link" />
             <geom pos="0.0039635 0 -0.044" type="mesh" rgba="0.2 0.2 0.2 1" mesh="head_link" />
             <geom pos="0.0039635 0 -0.047" quat="1 0 0 0" type="mesh" rgba="0.2 0.2 0.2 1" mesh="mars_head_servo_link" />
-            <geom size="0.015 0.05" pos="0.0930351 0 0.476089" quat="0.705788 0.705788 0.0431661 -0.0431661" type="cylinder" rgba="0.7 0.7 0.7 1" />
+            <geom size="0.015 0.05" pos="0.0930351 0 0.476089" quat="0.705788 0.705788 0.0431661 -0.0431661" type="cylinder" rgba="0.2 0.2 0.2 1" />
             <site name="imu" pos="-0.03959 -0.00224 0.14792" size="0.01" />
             <camera name="head_camera" pos="0.101742 0.015 0.464945" quat="0.668582 0.230213 -0.230213 -0.668582" fovy="65" />
             <body name="left_shoulder_pitch_link" pos="0.0039563 0.10022 0.24778" quat="0.990264 0.139201 1.38722e-05 -9.86868e-05">

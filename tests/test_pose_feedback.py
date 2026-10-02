@@ -85,7 +85,6 @@ class PoseFeedbackTests(unittest.TestCase):
         from locomani.tasks.bottle import execution as sr
 
         state = json.loads((Path(__file__).parent / "fixtures/crouched_pregrasp.json").read_text())
-        state["wall"] = time.time()
         state["palms"]["left"]["pos"] = (np.array(state["objects"]["water_bottle"]["pos"]) + [1.0, 0.0, 0.0]).tolist()
         robot = SimpleNamespace(
             cmd=SimpleNamespace(left_hand=np.zeros(7), right_hand=np.zeros(7)),
@@ -94,6 +93,9 @@ class PoseFeedbackTests(unittest.TestCase):
         )
         arm = sr.PlannerArm(robot, "right", ik=scene_ik())
         arm.guard = "water_bottle"
+        # Stamped after the IK model loads (0.19 s for the mars fixture, near the guard's 0.2 s staleness limit),
+        # so the observation is current when the guard reads it.
+        state["wall"] = time.time()
         q = np.array(state["joints"])
         np.testing.assert_array_equal(arm._guard_left(q.copy(), observed=state), q)
         robot.obs.assert_not_called()
