@@ -361,6 +361,7 @@ def _mars_geoms(
     for name in links:
         pos, rot = frame(name)
         link = by_name[name]
+        link_rgba = None  # the link's first visual colour, which its collision geoms take
         for tag, out in (("visual", visual), ("collision", collision)):
             for el in link.findall(tag):
                 origin = el.find("origin")
@@ -371,9 +372,8 @@ def _mars_geoms(
                 shape = el.find("geometry")[0]
                 g = ET.Element("geom")
                 if shape.tag == "mesh":
-                    stem = os.path.splitext(os.path.basename(shape.get("filename")))[0]
                     g.set("type", "mesh")
-                    g.set("mesh", f"mars_{stem}")
+                    g.set("mesh", mars_mesh_name(shape.get("filename")))
                     meshes.add(shape.get("filename"))
                 elif shape.tag == "cylinder":
                     g.set("type", "cylinder")
@@ -392,11 +392,32 @@ def _mars_geoms(
                     color = mat.find("color") if mat is not None else None
                     rgba = color.get("rgba") if color is not None else materials.get(mat.get("name"), SHELL_RGBA)
                     g.set("rgba", mesh_rgba(shape.get("filename") or "", rgba) if shape.tag == "mesh" else rgba)
+                    link_rgba = link_rgba or g.get("rgba")
                 else:
-                    g.set("rgba", SHELL_RGBA)
+                    # Collision geoms are group 0, which MuJoCo's cameras draw too (the stock robot's are as well):
+                    # coloured like the link's visual, so a MuJoCo picture shows the robot_look colour, not a
+                    # light-grey collision hull over a dark part.
+                    g.set("rgba", link_rgba or SHELL_RGBA)
                 _set_pose(g, pos + rot @ o_pos, rot @ o_rot)
                 out.append(g)
     return visual, collision, meshes
+
+
+def mars_mesh_name(filename: str) -> str:
+    """The MuJoCo mesh name of a URDF mesh file.
+
+    A file byte-identical to the stock robot's file of the same name (30 of the
+    URDF's 41: legs, shoulders, elbows, the rev 1.0 waist and torso, the Dex1)
+    keeps the stock mesh name, so code that picks geoms by mesh name -- the
+    bottle guard's grasp envelope (`Dex1_base_link`), the Isaac stage's visual
+    split -- reads mars as it reads stock. The rest (pelvis, 5010 wrists, head
+    bracket, D405 and its mount) are named mars_<file stem>.
+    """
+    base = os.path.basename(filename)
+    stock = f"{G1}/meshes/{base}"
+    src = f"{os.path.dirname(MARS_URDF)}/{filename}"
+    same = os.path.isfile(stock) and open(stock, "rb").read() == open(src, "rb").read()
+    return os.path.splitext(base)[0] if same else f"mars_{os.path.splitext(base)[0]}"
 
 
 def mars_mesh_scales() -> dict[str, str]:
@@ -533,12 +554,20 @@ def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
     # Mesh assets: the URDF's files, and none of the stock robot's that nothing references any more.
     asset = root.find("asset")
     scales = mars_mesh_scales()
+    have = {m.get("name") for m in asset.findall("mesh")}
+    stock_dir = os.path.dirname(mesh_dir)  # model_data/g1/meshes, absolute in a packaged scene, "" in the model
     for filename in sorted(meshes):
-        stem = os.path.splitext(os.path.basename(filename))[0]
-        attrs = dict(name=f"mars_{stem}", file=f"{mesh_dir}/{os.path.basename(filename)}")
+        name, base = mars_mesh_name(filename), os.path.basename(filename)
+        if name in have:
+            continue  # a stock mesh the tree already carries
+        if name.startswith("mars_"):
+            attrs = dict(name=name, file=f"{mesh_dir}/{base}")
+        else:
+            attrs = dict(name=name, file=f"{stock_dir}/{base}" if stock_dir else base)
         if scales[filename] != "1 1 1":
             attrs["scale"] = scales[filename]
         ET.SubElement(asset, "mesh", attrs)
+        have.add(name)
     used_meshes = {g.get("mesh") for g in root.iter("geom") if g.get("mesh")}
     for m in list(asset.findall("mesh")):
         if m.get("name") not in used_meshes:

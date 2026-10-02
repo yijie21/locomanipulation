@@ -100,13 +100,27 @@ def test_mars_colours_sort_into_the_robot_look(mars_xml):
     for g in root.iter("geom"):
         if g.get("group") == "1" and g.get("mesh"):
             rgba.setdefault(g.get("mesh"), set()).add(g.get("rgba"))
+    fingers = {"Dex1_finger_link_1", "Dex1_finger_link_2"}  # the stock finger geoms, kept with their colours
     for mesh, colours in rgba.items():
         assert len(colours) == 1, mesh
-        if mesh.startswith("mars_"):
+        if mesh not in fingers:
             assert colours <= {M.SHELL_RGBA, M.DARK_RGBA}, mesh
     for stem in robot_look.DARK_MESHES:
-        assert rgba[f"mars_{stem}"] == {M.DARK_RGBA}, stem
-    assert rgba["mars_torso_link_rev_1_0"] == {M.SHELL_RGBA}
+        (filename,) = [f for f in os.listdir(f"{os.path.dirname(M.MARS_URDF)}/meshes") if f.startswith(f"{stem}.")]
+        assert rgba[M.mars_mesh_name(f"meshes/{filename}")] == {M.DARK_RGBA}, stem
+    assert rgba["torso_link_rev_1_0"] == {M.SHELL_RGBA}
+    # collision geoms (group 0, drawn by MuJoCo's cameras) wear their link's visual colour
+    for body in root.iter("body"):
+        if body.get("name", "").endswith("wrist_yaw_link"):
+            assert {g.get("rgba") for g in body.findall("geom") if g.get("group") != "1"} == {M.DARK_RGBA}
+
+
+def test_meshes_identical_to_the_stock_files_keep_the_stock_names():
+    """Code that picks geoms by mesh name (the bottle guard's Dex1_base_link envelope) reads mars as stock."""
+    assert M.mars_mesh_name("meshes/Dex1_base_link.STL") == "Dex1_base_link"
+    assert M.mars_mesh_name("meshes/left_knee_link.STL") == "left_knee_link"
+    assert M.mars_mesh_name("meshes/left_wrist_yaw_link_5010.STL") == "mars_left_wrist_yaw_link_5010"
+    assert M.mars_mesh_name("meshes/pelvis_ver0529.STL") == "mars_pelvis_ver0529"
 
 
 def test_the_d405_mounts_collide(mars_xml):
