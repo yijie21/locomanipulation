@@ -327,7 +327,7 @@
   - [x] 7.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）
   - [x] 7.12 提交本会话代码（2026-09-28 晚：skills 包 + 第二批 primitive、attempt.py 提取、plan_episode.py `--agent`/`--profile`、回放脚本、docs/skills.md、台账、plan 文件；`make check` 通过）
   - [x] 7.13 目录去重（用户 2026-10-01 定）：`carry_to` 并入 `walk_to`（持物时同名走冻结上身 + 持物守卫，持物参数空手传入拒绝），删除 `retreat`（= `hand_back` + `walk_to(relative=[-d, 0], turn_first=false)`）；目录 15 → 13，10 个 plan 文件改名并写明原 `carry_to` 的 `stop_dist` 0.08；理由见 DECISIONS 2026-10-01 第二节。`take_over` / `hand_back` 是否藏进 executor 待用户定
-- [~] 8 Q11 验收：失败注入 paired 比较（agent 唯一不可替代的贡献是失败后的决策；2026-09-29 立项）
+- [x] 8 Q11 验收：失败注入 paired 比较（agent 唯一不可替代的贡献是失败后的决策；2026-09-29 立项）
   - [x] 8.1 注入层（2026-09-29）：`skills/injection.py`（`move_target` / `drop_held`，某 primitive 第一次成功后钉物体 0.5 s 再松开，一局一次，agent 不被告知）、`plan_episode.py --inject`、`Executor.note`、manifest 记 `seed` / `injection` / `injected`；`scripts/injection_report.py` 按 seed 配对、精确符号检验、恢复段按第一步归类；`tests/test_skills_injection.py` 6 个；注入文件 `configs/injections/pick_place_{move_target,drop_held}.json`；docs/skills.md §7
   - [x] 8.2 注入有效性（2026-09-29）：横向 −0.17 m **无效**（`grasp_single` 开始时按当前位姿重规划，臂包络内，1/3 且失败是基线族）；沿桌沿 +0.60 m 有效（plan 臂 0/3，全在 `[grasp]`）；pick_place 台账 §13
   - [x] 8.3 配对 10 局 `move_target` +0.60 m（2026-09-29，pick_place 台账 §13，报告 `outputs/analysis/injection_20260929/report.md`）：plan **0/10**（全 `[grasp]`）vs agent **0/10**，p = 1.0；但 agent **5/10 重新抓起**（决策链 approach! → navigate_to → turn_to → approach → grasp_single，release 清旧 held 也对），重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐，3/10 贴桌沿 `turn_to` 把罐头扫下桌，2/10 用完 16 次调用。Q11 的"显著高于脚本"没出现，卡在 primitive 不在决策
@@ -345,5 +345,5 @@
   - [x] 8.4 `drop_held` 两臂 10 局（2026-09-29，台账 §13 末，报告 `outputs/analysis/injection_drop_20260929/`）：注入只在抓起后触发，基线抓取 ~50% → 各臂 5 个注入、3 个配对；plan 0/10（注入后 5/5 `[approach] load lost while turning`），agent 0/10、注入后重抓 2/5，第一反应 5/5 直接 `place`（信 `held` 不信场景），重抓后又在持罐搬运里滑 3.3 cm
     - [x] 8.4.1（2026-09-29）：`--until-injected N`（`--rounds` 为上限），`more_rounds()`；manifest 总结行印触发数
     - [x] 8.4.2（2026-09-29，用户定加）：系统提示加"session 快照是本体感觉、场景是真值，冲突先 release"；从此配对比较测的是"有提示下的恢复"，第一轮（无提示）结果留在台账 §13 作对照
-  - [ ] 8.6 待用户定：Q11 下一步——加配对数（每种注入 20 对以上）、先提高 `grasp_single` / `place` 成功率，还是就此收尾写结论（台账 §15：方向一致 4 : 0，p 0.125）
-  - [ ] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）
+  - [x] 8.6 待用户定：Q11 下一步——加配对数（每种注入 20 对以上）、先提高 `grasp_single` / `place` 成功率，还是就此收尾写结论（台账 §15：方向一致 4 : 0，p 0.125）（用户 2026-10-02 定：收尾，不再跑；结论写在 pick_place 台账 §16）
+  - [-] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）（搁置 2026-10-02：Q11 线收尾，用户定）

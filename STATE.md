@@ -22,8 +22,7 @@
 ## 下一步（TODO 编号）
 
 1. 2.4.10.13.1：在 crate 篮子线 / `box_platform` 上各 20 局对照 0.2 vs −1。
-2. 8.6 待用户定：Q11 下一步（加配对数 / 先提 `grasp_single`、`place` 成功率 / 收尾写结论）。
-3. 8.5：推机器人 / 施力需要 sim 侧 xfrc 命令；放置点被占需要第三个物体。
+2. Q11 已收尾（2026-10-02，pick_place 台账 §16；8.6 关闭、8.5 搁置）。新工作在分支 `scene_discovery`（worktree `../locomanipulation-scene_discovery`），计划见该分支的 `docs/handoff/scene-discovery-plan-20261002.md`。
 
 ## 卡点与坑
 

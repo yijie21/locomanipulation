@@ -357,3 +357,14 @@ grasp_single / release 各几次），GPU0（空闲）/ instance 1，4 局，`ou
 - **影响**：两段都只在空手 `approach` 里（持物的 `approach` 走 `_loaded` 路径，不经过这两段）；那时手臂归行走策略、手张开，deploy 超时后的 IDLE + 放开上身 / 手指控制没有可丢的东西。
   持物路径（持物 approach、place、carry、nudge）在 think8_keep、inj4 两个 plan 臂和两个 agent 臂里没有记到超时。
 - **决定（用户，2026-09-30）：不修。** 不在这两段补发帧，也不在 commander 加后台保活（两者都改 bottle 采集线的共用代码）。
+
+## §16 Q11 收尾（用户 2026-10-02 定，不再跑）
+
+- **结论**：runner 保活之后，配对比较测到的是失败后的决策。两种注入方向一致：`move_target` plan 0/10 vs agent 3/10，
+  `drop_held` 配对 0/5 vs 1/5；不一致对合计 4 : 0（全部只有 agent 过），双侧符号检验 p = 0.125，**不显著**。
+- **为什么到此为止**：上限卡在 primitive 自身——`grasp_single` 抓罐头 ~50 %、持物走近后 `place` ~50 %；agent 的失败多数发生在
+  拿到东西之前（重抓失败、`approach` 拒绝、`nudge` 量化）。加配对数或改提示词都推不动这个上限，要先提高这两个 primitive 的成功率。
+- **以后若重开**：先把 `grasp_single`（罐头）和 `place` 各提到 ≥ 8/10，再每种注入跑 ≥ 20 对；推机器人 / 对负载施力需要 sim 侧施力命令
+  （TODO 8.5，搁置）。三轮作废的教训（deploy 1 s 规划器超时）见 §14，保活已在 `Executor.idle`。
+- 工作转向 scene_discovery（场景 → 自动发现任务 → 技能组装采集 → VLA），见 `docs/handoff/scene-discovery-plan-20261002.md`（分支 `scene_discovery`）。
+
