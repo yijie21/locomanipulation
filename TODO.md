@@ -500,6 +500,7 @@
   - [ ] 13.6.5 第 3 步（用户看完第 2 步再做）：mars 的 Isaac 机器人资产（按机器人名分开存）、warehouse `_mars` 的 Isaac 场景与 Unreal 关卡（`scenes.yaml` 现写 unsupported 指向这里）、各实渲一局、补渲冒烟
   - [ ] 13.6.6 第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝
   - [ ] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
+  - [x] 13.6.9 （2026-10-02，`ed26ed2`，用户：和 stock 相同的部位外观一致）逐部件比对颜色：除手腕（有意涂黑）外相同部位一致。改两处：云台俯仰支架涂黑（头部原有一根白横条）；骨盆保留的 stock 碰撞外壳改成骨盆色（MuJoCo 画碰撞体，白壳透出）。骨盆本体是新件 `pelvis_ver0529`，Unitree 官方 URDF 也是全黑，未改（对比图 `outputs/mars_look_compare_20261002/`）
   - [ ] 13.6.8 可选：`outputs/scene/hand_points_dex1.npy` 仍是 stock 手（mars 多了 D405 支架，最低点只在少数姿态差 >0.2 cm，最大 6 cm）；bottle 用它算手离桌高度
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
