@@ -1364,3 +1364,21 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - 所以灰色主要不是漫反射，而是这块黑色电介质的镜面反射（F0 0.04）映出了白色房间。两个渲染器的反射算法不同（RTX 实时模式 vs Lumen），得到的亮度不一样。
   - 旧的 `unitree` 外观在 Isaac 里也是这样。按用户要求两边用同一组数值，没有给 Isaac 单独调暗。
 - **后果**：2026-10-01 之前的数据集和 checkpoint 看到的都是旧外观（09-29 到 10-01 是 `unitree` 外观，09-29 之前是发白的）。镜像现在画新外观，拿旧 checkpoint 评测，图像分布就变了。Unreal 的 5 个关卡要重建，origin 上 1280×960 的第三视角本来也要求重建。
+
+## 2026-10-02 mars（henry 带腕部相机的真机 URDF）设为 bottle / warehouse 的默认机器人（用户，逐项问答定）
+
+- **目标变化**：用 henry 的 `cb3ae2f`（`assets/unitree_G1_with_wrist_camera`，robot.yaml 名 mars）做 bottle 和 warehouse 两条线的默认机器人，Isaac、Unreal 的机器人一起换。09-30 回退的 saturn 做法整体沿用（见 2026-09-30 一节）。
+- **决策**：
+  - 新场景另起名字，原名不动：`bottle_mars`、`warehouse_textured_mars`、`box_platform_mars`、四个 `warehouse_box_*_mars`。"默认"指示例实验、runbook 和文档改用这些名字。理由：`configs/scenes.yaml` 的规矩是一个名字永远指向同一个目录，旧运行的后续阶段按名字重新解析场景。被否决：原名改指 mars、另加 stock 名（用户先选过，发现与这条规矩冲突后改选新名）。
+  - 生成：`make_dex1_model.apply_mars` 把 URDF 的运动学、质量、力矩上限、网格、相机写进 stock dex1 树；warehouse 的场景包内嵌机器人，由 `prepare_logistics_scene.py --robot mars` 在生成时整段改写，场景包本身不动。被否决：重导场景包、warehouse 改由 `build_sim_scene.py` 搭。
+  - 运动学、质量、力矩全按 URDF（踝和腰 roll/pitch 35、髋 roll 139、腕 pitch/yaw 13.4 N·m）。理由：默认就是真机。
+  - 保留 stock 的：执行器顺序、关节阻尼、脚底碰撞盒、夹爪关节名和手指几何、相机名、骨盆碰撞（URDF 骨盆网格的凸包在 3000 个随机髋部姿态里碰髋 roll 706 次，stock 轮廓 120 次，站姿附近 2 次）。与 stock 文件逐字节相同的 30 个网格保留 stock 网格名（bottle 防护按网格名放行 `Dex1_base_link`，改名后误判过一局）。
+  - 相机：ego 用云台上的 D455，云台俯仰锁 +4.71°，光轴正好是 stock ego 的 52° 俯角（用户："和之前相机能看到的角度差不多"）；腕部相机在 URDF 的 D405 位姿。URDF 目录里没有内参（calibration 只有 livox→D435 外参，`mjmodel.mjb` 无相机），视场用规格书值、按 4:3 保留竖直视场：D455 fovy 65、D405 fovy 58。相机名不变，靠 `scene_meta.json` 的 `robot` 区分。
+  - D405 支架参与碰撞（真机会撞）。
+  - 外观：手腕三节、Dex1 底座、D405 支架画黑（用户确认真机如此，`robot_look.DARK_MESHES`）；手指沿用 stock 颜色；D405 机身、云台、D455 按颜色阈值分。外观名 `robot_look.NAME` 不改：stock 的数值没变，改名会让现有 5 个 Unreal 关卡全部被拒（问答时说过要改名，实施时改为不改，mars 由 `robot` 字段区分）。
+  - `scene_meta.json` 记 `robot`；Isaac/Unreal 的 `source.json` 和补渲标记也要记，对不上就拒绝（未做，TODO 13.6.6）。
+  - 几何测试样例换成 mars 机器人。stock 场景只在 MuJoCo 跑配对对照，不做 Isaac/Unreal 版本。
+  - 验收：bottle、warehouse 各 10 局配对试跑，按阶段看有无明显退步；第 2 步后停下给用户看再建 Isaac/Unreal。真机内参确认前不大规模采数据。
+- **实测（`outputs/mars_pilots_20261002/`）**：
+  - bottle：stock 9/10，mars 9/10（各一局不同的失败）。
+  - warehouse：stock 6/10，mars 0/10（reach_stalled 7）。单变量对照（各 10 局，同种子）：腕力矩 5、支架不碰撞、stock 相机、stock 质量、stock 运动学、踝 50 都是 0/10；全部力矩恢复 stock 3/10；只把腰 roll/pitch 恢复 50 是 5/10。35 N·m 下每局腰俯仰塌到约 35°（限位 29.8°），stock 抓箱时最大 20–25°；stock 成功姿势光重力就要腰俯仰 p95 39、最大 41 N·m。warehouse 怎么办待用户定（TODO 13.6.4）。

@@ -482,13 +482,23 @@
 - [-] 13.1 （2026-09-30 放弃：用户说协作者给错了 URDF；代码全部回退，改动存 `outputs/g1_urdf_compare_20260930/saturn_urdf_work.patch`）按 `assets/unitree_G1` 生成 saturn 模型、`build_sim_scene.py --robot saturn`、场景 `bottle_saturn`、SONIC + bottle 专家试跑
   - [x] 13.1.1 （2026-09-30）两份模型对比：29 个关节同名同序同轴同限位，腿完全一致；腰 rev 1.0、5010 腕、背包和云台 +0.86 kg、踝/腰力矩 50 → 35（`outputs/g1_urdf_compare_20260930/compare.txt`）
   - [x] 13.1.2 （2026-09-30）试跑：D435 视野 0/10（开局视野门）；saturn 身体 + stock 相机 6/10、不倒；stock 9/10
-- [~] 13.2 待协作者：给正确的真机 URDF。来了以后先 `git apply --check` 那份 patch，再跑 `make_dex1_model.py`（它会拿 URDF 自检）
+- [x] 13.2 （2026-10-02，用户定为默认机器人）待协作者：给正确的真机 URDF。来了以后先 `git apply --check` 那份 patch，再跑 `make_dex1_model.py`（它会拿 URDF 自检）
   - [x] 13.2.1 （2026-10-01）henry 推了无背包版 `c966ee1`：`assets/unitee_G1/urdf/g1_comp_new_hip_dex1_1.urdf`（目录名少个 r；robot.yaml 叫 mars）；旧 saturn 文件移到 `assets/unitree_G1_backpack`。MuJoCo 多角度渲染在 `outputs/g1_urdf_render_20261001/`（总重 34.85 kg，stock 35.87；云台上是 D455，D435 固定在脸部）
-  - [ ] 13.2.2 待用户确认 mars 这份是不是对的；确认后在当前 HEAD 打 saturn patch（2026-10-01 在 `1e6380e` 上 `git apply --check` 通过），把生成器指向新 URDF
-  - [ ] 13.2.3 mars URDF 没有腕部相机（robot.yaml 有两台 D405 的序列号，URDF 和 meshes 里都没有，calibration 只有 livox→D435）。仿真要加腕部相机，需 henry 给 D405 的安装位姿/外参、支架 CAD 或手腕照片（已向用户提议代写消息，用户未回复）
-- [ ] 13.3 待用户/协作者确认：云台上的 ego 相机是 D435 还是 D455，以及真机内参（patch 里按 D435 常用值 fx = fy = 615，fovy 42.6）
-- [ ] 13.4 待用户定：仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
+  - [x] 13.2.2 （2026-10-02，`62ed89f`、`81ef9cd`）用 henry 带腕部相机的 `cb3ae2f`（`assets/unitree_G1_with_wrist_camera`）：saturn patch 改名 mars，`make_dex1_model.py` 写出 `g1_29dof_with_dex1_mars.xml`，自检 FK 3e-7 mm、35.02 kg；7 个 `*_mars` 场景（DECISIONS 2026-10-02）
+  - [x] 13.2.3 （2026-10-02，`cb3ae2f` 带了 D405 支架和位姿）mars URDF 没有腕部相机（robot.yaml 有两台 D405 的序列号，URDF 和 meshes 里都没有，calibration 只有 livox→D435）。仿真要加腕部相机，需 henry 给 D405 的安装位姿/外参、支架 CAD 或手腕照片（已向用户提议代写消息，用户未回复）
+- [~] 13.3 （2026-10-02 用户：用云台上的 D455，俯仰锁 +4.71° 对齐原 52° 俯角；内参仓库里没有，先用规格值 D455 fovy 65、D405 fovy 58）待用户/协作者确认：云台上的 ego 相机是 D435 还是 D455，以及真机内参（patch 里按 D435 常用值 fx = fy = 615，fovy 42.6）
+- [x] 13.4 （2026-10-02 用户：mars 全按 URDF，踝/腰 35、髋 roll 139、腕 13.4；stock 场景不变）仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
 - [ ] 13.5 待用户定：saturn 产物删不删（约 180 MB：`outputs/scene/sim_lowcom_saturn*`、`outputs/runs/bottle_{saturn,saturn_stockcam,stock}_pilot_20260930`；patch 所在的 `outputs/g1_urdf_compare_20260930/` 要留）；删前在 STATE 写明 24 小时
+
+- [~] 13.6 mars 设为 bottle / warehouse 默认机器人（用户 2026-10-02；DECISIONS 同日一节）
+  - [x] 13.6.1 （2026-10-02）第 1 步：生成器、7 个 `*_mars` 场景、`scene_meta.json` 记 `robot`、力矩上限从场景执行器读、几何测试样例换 mars；全量测试过
+  - [x] 13.6.2 （2026-10-02）第 2 步：配对 10 局试跑（`outputs/mars_pilots_20261002/`）。bottle stock 9/10、mars 9/10（修网格名后重跑）；warehouse stock 6/10、mars 0/10
+  - [x] 13.6.3 （2026-10-02）warehouse 退步定位：9 组单变量对照，只有腰 roll/pitch 35 → 50 N·m 救回（5/10）；35 N·m 下腰俯仰塌到 ~35°（关节限位 29.8°），stock 抓箱姿势静力矩 p95 39 N·m
+  - [ ] 13.6.4 待用户定：warehouse 怎么处理腰 35 N·m（见 STATE）
+  - [ ] 13.6.5 第 3 步（用户看完第 2 步再做）：mars 的 Isaac 机器人资产（按机器人名分开存）、warehouse `_mars` 的 Isaac 场景与 Unreal 关卡（`scenes.yaml` 现写 unsupported 指向这里）、各实渲一局、补渲冒烟
+  - [ ] 13.6.6 第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝
+  - [ ] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
+  - [ ] 13.6.8 可选：`outputs/scene/hand_points_dex1.npy` 仍是 stock 手（mars 多了 D405 支架，最低点只在少数姿态差 >0.2 cm，最大 6 cm）；bottle 用它算手离桌高度
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 
@@ -506,4 +516,5 @@
 
 - [x] 15.1 （2026-10-01）origin/main 上 henry 的 6 个提交（`5e9c613`…`c966ee1`）快进合入 main；用户 2026-10-01 说"merge 掉 henry 的修改"时已无可合并内容（PR #1–#3 的提交也都在 main 里）
 - [x] 15.2 （2026-10-01，随 `f7eadec`）`assets/unitee_G1/README.md` 的 Python 代码块按 ruff 格式化：origin/main 原本过不了 `make check`
+- [x] 15.4 （2026-10-02，`577ce78`）合入 henry 的 `cb3ae2f`（新增 `assets/unitree_G1_with_wrist_camera`，backpack 目录改名 `unitree_G1_with_backpack`）。他的 `mjmodel.mjb` 是 MuJoCo 3.10 编的旧模型（无相机、无 D405），`mjmodel.xml` 是空文件；README 的文件名和序列号与 robot.yaml 对不上；README 代码块按 ruff 格式化
 - [ ] 15.3 可选：GitHub 上 PR #1–#3 若仍显示打开，在网页上关掉（本机没有 `gh`，看不到状态）
