@@ -22,7 +22,7 @@
 ## 下一步（TODO 编号）
 
 1. 2.4.10.13.1：在 crate 篮子线 / `box_platform` 上各 20 局对照 0.2 vs −1。
-2. Q11 已收尾（2026-10-02，pick_place 台账 §16；8.6 关闭、8.5 搁置）。新工作在分支 `scene_discovery`（worktree `../locomanipulation-scene_discovery`），计划见该分支的 `docs/handoff/scene-discovery-plan-20261002.md`。
+2. Q11 已收尾（2026-10-02，pick_place 台账 §16）。**本分支 `scene_discovery`**：Demo 1 第 0 周，TODO 9.4–9.8（`--record`、场景文件格式、ADT 转换、能力说明、查重）；计划 `docs/handoff/scene-discovery-plan-20261002.md`。ADT 数据在 `/workspace/datasets/adt/`。
 
 ## 卡点与坑
 

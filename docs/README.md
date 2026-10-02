@@ -47,7 +47,7 @@ versioned documents reachable here, without requiring conversation history or pr
 | SONIC 单臂（含 pick-and-place、bottle_visual） | [单臂](single_arm.md) | [单臂详解](single_arm_design.md) | [台账](ledger/bottle.md) |
 | SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂](bimanual.md) | [双臂详解](bimanual_design.md) | [台账](ledger/crate.md) |
 | SONIC 双臂抓纸箱（物流房间；台上默认配置 `box_platform`） | [warehouse](warehouse.md) | [默认配置、成功率随参数的变化、取值](box_grasp_envelope.md)；方法 [scene_sweep](scene_sweep.md) | [台账](ledger/crate.md) |
-| 可拼接的技能（plan 入口、`claude -p` 规划器、新物体标定） | [skills](skills.md) | [primitive 契约设计](handoff/primitive-contracts-design-20260928.md) | [bottle §40–41](ledger/bottle.md)、[pick_place §7–8](ledger/pick_place.md)、[crate 末节](ledger/crate.md) |
+| 可拼接的技能（plan 入口、`claude -p` 规划器、新物体标定） | [skills](skills.md) | [primitive 契约设计](handoff/primitive-contracts-design-20260928.md)；在其上的场景 → 自动发现任务 → 采集（进行中）：[scene_discovery 决策](handoff/scene-discovery-plan-20261002.md) | [bottle §40–41](ledger/bottle.md)、[pick_place §7–8](ledger/pick_place.md)、[crate 末节](ledger/crate.md) |
 | ScaleBFM 后端 | [ScaleBFM](scalebfm.md) | 同页 | [台账](ledger/scalebfm.md) |
 
 三份 runbook 按同一顺序维护：**准备 → 一次运行=一份实验文件 → 新建实验 → 每次都要改的字段 → 跑 → 产物 → 排错 → 进一步阅读**。新 case 放进所属的线；新线沿用此结构。

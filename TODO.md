@@ -347,3 +347,12 @@
     - [x] 8.4.2（2026-09-29，用户定加）：系统提示加"session 快照是本体感觉、场景是真值，冲突先 release"；从此配对比较测的是"有提示下的恢复"，第一轮（无提示）结果留在台账 §13 作对照
   - [x] 8.6 待用户定：Q11 下一步——加配对数（每种注入 20 对以上）、先提高 `grasp_single` / `place` 成功率，还是就此收尾写结论（台账 §15：方向一致 4 : 0，p 0.125）（用户 2026-10-02 定：收尾，不再跑；结论写在 pick_place 台账 §16）
   - [-] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）（搁置 2026-10-02：Q11 线收尾，用户定）
+- [~] 9 scene_discovery Demo 1（纯仿真）：场景文件 → 自动发现任务 → 技能组装采集 → VLA（用户 2026-10-02 定；决策与节奏见 `docs/handoff/scene-discovery-plan-20261002.md`，DECISIONS 2026-10-02）
+  - [x] 9.1 Q11 收尾（`023a31a`，pick_place 台账 §16）
+  - [x] 9.2 worktree `../locomanipulation-scene_discovery`，分支 `scene_discovery`（基于 `023a31a`）
+  - [x] 9.3 ADT 下载：3 条公寓序列的 `main_groundtruth` + 356 个物体模型（4.6 GB）到 `/workspace/datasets/adt/`，sha1 全部校验（`scripts/adt_download.py`）；链接文件移到 `/workspace/datasets/adt/links/`（不进 git）
+  - [ ] 9.4 `plan_episode.py --record`：每局随机一句说法作语言指令，元数据记谓词 / plan / trace，只有谓词判成功的局进 convert；验收 = 抓瓶子固定 plan 20 局与原 bottle 采集线逐字段比对 + 各训一个小模型
+  - [ ] 9.5 场景文件格式（扩展 `scene_meta.json`：物体字段带出处、台面、房间、随机化规格）与目标谓词库
+  - [ ] 9.6 ADT → 场景转换：核实 `ApartmentEnv` 是否房间外壳（轴向、俯视图）；物体 glb → MuJoCo（碰撞体凸分解）+ Isaac/Unreal；Claude 估质量 / 摩擦 + 掉落测试；渲染器二选一（plan 决策 16）
+  - [ ] 9.7 能力说明文件（从已测包络整理：伸手高度与距离、桌面高度、下蹲 0.28 m、夹爪 9.5 cm / ~20 N、双手箱宽、行走限制）+ 程序可行性检查
+  - [ ] 9.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点
