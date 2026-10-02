@@ -19,6 +19,11 @@ NAME `unitree_20260929`: shells roughness 0.75; dark set metallic 0.42, base 0.0
   near-black base colour, so the head had no highlight.
 A hard side key light was tried too and rejected: it washed out the white room rather than shaping the robot.
 
+The mars robot (make_dex1_model.py, the lab's real G1) is drawn the same way, its meshes sorted by the colour the
+generator writes: DARK_MESHES dark whatever the URDF colours them (user, 2026-10-02: on the real robot the 5010 wrist,
+the Dex1 base and the D405 mount are black; the URDF has the wrist white and the Dex1 base pale lavender), the rest
+by the URDF colour's brightness. Its fingers keep the stock model's geoms and colours.
+
 Changing a value changes the policy's pictures. A checkpoint trained before the change saw the older look, so
 change NAME along with the values.
 """
@@ -26,3 +31,11 @@ change NAME along with the values.
 NAME = "g1_gloss_20261001"
 SHELL = {"base": (0.675, 0.675, 0.6916), "metallic": 1.0, "roughness": 0.45}
 DARK = {"base": (0.03, 0.03, 0.03), "metallic": 0.0, "roughness": 0.35}
+# URDF mesh file stems (assets/unitree_G1_with_wrist_camera/urdf/meshes) drawn dark.
+DARK_MESHES = frozenset(
+    {
+        *(f"{side}_wrist_{part}_link_5010" for side in ("left", "right") for part in ("roll", "pitch", "yaw")),
+        "Dex1_base_link",
+        "unitree_dex1-1_d405_wrist_mount",
+    }
+)

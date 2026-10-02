@@ -182,7 +182,8 @@ def test_the_unreal_capture_count_is_a_whole_number_the_plugin_accepts(tmp_path,
 def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_others_have_none():
     scenes = yaml.safe_load(run_context.SCENES.read_text())
     levels = {name for name, entry in scenes.items() if "level" in (entry.get("unreal") or {})}
-    assert levels == {name for name in scenes if name.startswith("warehouse_")}
+    # the mars warehouse scenes get their levels with TODO 13.6; until then they say why they have none
+    assert levels == {name for name in scenes if name.startswith("warehouse_") and not name.endswith("_mars")}
     for name, entry in scenes.items():
         unreal = entry.get("unreal") or {}
         assert unreal.get("unsupported") or unreal.get("level") == name, name

@@ -30,7 +30,7 @@ class MujocoView:
 
         spec = mujoco.MjSpec.from_file(scene_xml)
         for side in G.SIDES:
-            scene_lib.add_ghost_hand(spec, side, alpha=G.GHOST_ALPHA, name=G.NAMES[side])
+            scene_lib.add_ghost_hand(spec, side, alpha=G.GHOST_ALPHA, name=G.NAMES[side], robot_xml=scene_xml)
         rig = spec.worldbody.add_body(name=RIG, pos=[0, 0, -5])
         rig.mocap = True
         rig.add_camera(name=CAMERA)

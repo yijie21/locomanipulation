@@ -24,6 +24,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )  # reach src/ for `python src/locomani/sim/build_sim_scene.py`
 from locomani.sim import scene_lib  # noqa: E402
+from locomani.sim.make_dex1_model import MARS_EGO_FOVY  # noqa: E402
 
 
 def _footprint(model, data, body_id: int):
@@ -184,8 +185,12 @@ EGO_CAM_QUAT = (0.668835, 0.230083, -0.230336, -0.668332)
 EGO_CAM_FOVY = 70.0
 
 
-def _aim_ego_camera(spec) -> None:
+def _aim_ego_camera(spec, robot: str = "stock") -> None:
     """Re-aim the robot's ego camera on the SPEC, not on the emitted XML.
+
+    Only the stock camera is re-aimed. mars's is the real robot's D455 on the
+    head's pan/tilt bracket, which make_dex1_model.py already poses (tilted to
+    the stock aim's 52 deg pitch) and gives its field of view.
 
     This used to be a str.replace over spec.to_xml() whose pattern spelled the
     camera element out attribute by attribute, pos before quat. MuJoCo 3.12
@@ -202,6 +207,8 @@ def _aim_ego_camera(spec) -> None:
     Setting it on the spec is order-independent by construction. It is also how
     the wrist cameras were always done (scene_lib.py, add_camera + c.fovy).
     """
+    if robot == "mars":
+        return
     for cam in spec.cameras:
         if cam.name == EGO_CAM_NAME:
             # The stock model orients this camera with EULER, and whichever
@@ -221,7 +228,7 @@ def _aim_ego_camera(spec) -> None:
     )
 
 
-def _check_ego_camera(model) -> None:
+def _check_ego_camera(model, robot: str = "stock") -> None:
     """Verify the aim on the COMPILED model. Cheap, and it is the whole dataset.
 
     Checked against the model rather than the XML text on purpose: the bug this
@@ -233,6 +240,12 @@ def _check_ego_camera(model) -> None:
         raise SystemExit(f"[scene] {EGO_CAM_NAME} missing from the compiled model")
     fovy = float(model.cam_fovy[cid])
     quat = [float(v) for v in model.cam_quat[cid]]
+    if robot == "mars":
+        if abs(fovy - MARS_EGO_FOVY) > 1e-6:
+            raise SystemExit(
+                f"[scene] mars's ego camera has fovy {fovy}, not the D455's {MARS_EGO_FOVY}: rerun make_dex1_model.py"
+            )
+        return
     bad = abs(fovy - EGO_CAM_FOVY) > 1e-6 or any(abs(a - b) > 1e-4 for a, b in zip(quat, EGO_CAM_QUAT))
     if bad:
         raise SystemExit(
@@ -291,6 +304,14 @@ def parse_args(argv=None):
         "so this flag only matters when building a crate scene through this CLI directly.",
     )
     ap.add_argument(
+        "--robot",
+        default="stock",
+        choices=sorted(scene_lib.ROBOT_SCENES),
+        help="the robot model: stock (SONIC's G1 with the Dex1 grafted on) or mars (the lab's real G1, "
+        "from assets/unitree_G1_with_wrist_camera; ego camera the D455 on the head's pan/tilt bracket, wrist "
+        "cameras the D405s). Both come from make_dex1_model.py",
+    )
+    ap.add_argument(
         "--preset",
         default="",
         help="narrow what goes on the table (was SCENE_PRESET); see scene_lib.SCENE_PRESETS",
@@ -344,7 +365,7 @@ def main() -> None:
         scene_lib.SURFACE_TARGET_TOP["dining_table"] = args.table_top
         print(f"[scene] table top pinned to {args.table_top:.3f} m by --table-top")
 
-    spec, meta = scene_lib.build(scene_root, freeze_objects=False, preset=args.preset)
+    spec, meta = scene_lib.build(scene_root, freeze_objects=False, preset=args.preset, robot=args.robot)
     model = spec.compile()  # fail here rather than at sim start-up
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
@@ -357,9 +378,9 @@ def main() -> None:
         lowered = lower_object_com(spec, model, meta, args.object_com_drop)
         meta["objects"][meta["target_object"]]["inertial"] = lowered
         print(f"[scene] target centre of mass lowered by {args.object_com_drop:.3f} m: {lowered}")
-    _aim_ego_camera(spec)  # BEFORE to_xml(): see the note in there
+    _aim_ego_camera(spec, args.robot)  # BEFORE to_xml(): see the note in there
     model = spec.compile()  # re-compile so the check below sees the aim
-    _check_ego_camera(model)
+    _check_ego_camera(model, args.robot)
     xml_text = spec.to_xml()
     with open(xml_path, "w") as f:
         f.write(xml_text)

@@ -41,7 +41,26 @@ CRATE_SETBACK = 0.0  # CrateTaskConfig.crate_setback's default; see its use in b
 SONIC_SCENE = f"{paths.REPO}/third_party/GR00T-WholeBodyControl/gear_sonic/data/robot_model/model_data/g1/" + (
     "scene_31dof.xml" if HAND == "dex1" else "scene_43dof.xml"
 )
+# The robot a scene is built on (build_sim_scene.py --robot). stock: SONIC's G1
+# with the gripper HAND names; mars: the lab's real G1 from its URDF
+# (assets/unitree_G1_with_wrist_camera), Dex1 only, with its own ego and wrist
+# cameras. Both come from make_dex1_model.py.
+ROBOT_SCENES = {
+    "stock": SONIC_SCENE,
+    "mars": f"{paths.REPO}/third_party/GR00T-WholeBodyControl/gear_sonic/data/robot_model/model_data/g1/"
+    "scene_31dof_mars.xml",
+}
 NUM_HAND_MOTORS = 2 if HAND == "dex1" else 7
+
+
+def motor_effort_limits(scene_xml: str) -> list[float]:
+    """Each motor's torque limit (its ctrlrange bound), in actuator order: the order of the sim bridge's torques."""
+    motors = list(ET.parse(scene_xml).getroot().find("actuator"))  # <general> once MjSpec has written the scene
+    want = 29 + 2 * NUM_HAND_MOTORS
+    if len(motors) != want:
+        raise SystemExit(f"{scene_xml}: {len(motors)} motors, the robot has {want}")
+    return [float(m.get("ctrlrange").split()[1]) for m in motors]
+
 
 # --- global arrangement (the part EmbodiedGen cannot express) ---------------
 SURFACE_A_XY = (0.0, 0.0)
@@ -794,7 +813,11 @@ WRIST_CAM_AIM = (0.1515, 0.0, 0.010)  # what the quat above looks at
 
 
 def add_wrist_cameras(spec, verbose: bool = True) -> int:
-    """One camera per wrist, named to match the exporter's feature keys."""
+    """One camera per wrist, named to match the exporter's feature keys.
+
+    A robot model that brings its own (mars: the D405s, make_dex1_model.py)
+    keeps them; the pose and field of view below are the stock robot's.
+    """
     n = 0
     for side in ("left", "right"):
         try:
@@ -804,6 +827,11 @@ def add_wrist_cameras(spec, verbose: bool = True) -> int:
         if body is None:
             if verbose:
                 print(f"  wrist camera: no {side}_wrist_yaw_link, skipped")
+            continue
+        own = [c for c in body.cameras if c.name == f"{side}_wrist"]
+        if own:
+            if verbose:
+                print(f"  wrist camera: {side}_wrist is the robot's own (fovy {own[0].fovy:.0f})")
             continue
         c = body.add_camera()
         c.name = f"{side}_wrist"
@@ -827,7 +855,9 @@ GHOST_MARKER_R = 0.022
 GHOST_PARK = (0.0, 0.0, -5.0)  # out of sight until a plan places it
 
 
-def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA, name: str = GHOST_BODY):
+def add_ghost_hand(
+    spec, side: str = "right", alpha: float = GHOST_ALPHA, name: str = GHOST_BODY, robot_xml: str = SONIC_SCENE
+):
     """A see-through copy of the hand, as a mocap body.
 
     The videos show where the hand ended up but not where it was *aimed*, so a
@@ -841,9 +871,10 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA, name: 
 
     The link transforms are read from a throwaway compile of the robot with the
     fingers open, then baked in as fixed geom offsets — the ghost is one rigid
-    body, not an articulated hand.
+    body, not an articulated hand. `robot_xml` is a scene with the robot `spec`
+    carries: the ghost reuses its meshes by name.
     """
-    probe = mujoco.MjSpec.from_file(SONIC_SCENE)
+    probe = mujoco.MjSpec.from_file(robot_xml)
     _absolutise_assets(probe, probe.meshdir)
     pm = probe.compile()
     pd = mujoco.MjData(pm)
@@ -933,7 +964,7 @@ def add_ghost_hand(spec, side: str = "right", alpha: float = GHOST_ALPHA, name: 
     return n + 1
 
 
-def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, preset: str = ""):
+def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, preset: str = "", robot: str = "stock"):
     """Compose the scene. Returns (spec, meta).
 
     freeze_objects=True strips the objects' free joints — right for a static
@@ -943,7 +974,13 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
     build_sim_scene.py's `--preset`, decision 8; was SCENE_PRESET). Resolved
     here rather than by editing the module globals, so the default scene is
     exactly what it has always been unless a preset names otherwise.
+
+    `robot` names the robot model (ROBOT_SCENES); the scene records it as meta["robot"].
     """
+    if robot not in ROBOT_SCENES:
+        raise SystemExit(f"unknown robot {robot!r}; have {sorted(ROBOT_SCENES)}")
+    if robot == "mars" and HAND != "dex1":
+        raise SystemExit(f"robot mars has Dex1 grippers; backend.hand is {HAND!r}")
     layout = json.load(open(f"{scene_root}/layout/layout.json"))
     mjcf_root = f"{scene_root}/mjcf"
 
@@ -962,7 +999,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
             f"mesh {sorted(meshes) or '[]'}"
         )
 
-    spec = mujoco.MjSpec.from_file(SONIC_SCENE)
+    spec = mujoco.MjSpec.from_file(ROBOT_SCENES[robot])
     # The robot's own meshes are relative to the SONIC model dir; the composed
     # XML gets written elsewhere, so they need absolutising as well.
     _absolutise_assets(spec, spec.meshdir)
@@ -980,6 +1017,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
         "target_pool": pool or list(TARGET_POOL),
         "object_phrase": phrases,
         "goal_object": preset.get("goal_object", GOAL_OBJECT),
+        "robot": robot,
         "robot_start": {
             "xy": list(ROBOT_START_XY),
             "yaw_deg": ROBOT_START_YAW_DEG,
@@ -1186,7 +1224,7 @@ def build(scene_root: str, freeze_objects: bool = True, verbose: bool = True, pr
     pelvis.quat = [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]
 
     add_wrist_cameras(spec, verbose)
-    n_ghost = add_ghost_hand(spec)
+    n_ghost = add_ghost_hand(spec, robot_xml=ROBOT_SCENES[robot])
     if verbose:
         print(f"  ghost hand: {n_ghost} geoms (mocap, no collision)")
 

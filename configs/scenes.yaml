@@ -144,3 +144,51 @@ warehouse_box_45x20x18:
     level: warehouse_box_45x20x18  # /Game/Levels/warehouse_box_45x20x18 in the host project ($UE_PROJECT)
     repeats: 8
     build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x18
+
+# The mars scenes (2026-10-02, user: the lab's real G1 is the default robot of the bottle and warehouse lines). Each is
+# its stock namesake on the robot make_dex1_model.py writes from henry's URDF (assets/unitree_G1_with_wrist_camera):
+# the URDF's kinematics, masses and torque limits (ankles and waist roll/pitch 35 N m, hip roll 139, wrists 13.4),
+# a D405 mount on each gripper that collides, the ego camera the D455 on the head's pan/tilt bracket (held tilted so
+# its pitch is the stock aim's 52 deg, fovy 65) and the wrist cameras the D405s (fovy 58); fields of view are the
+# datasheets', no calibration shipped. Joints, actuators, sensors and camera names are the stock robot's, so the
+# SONIC bridge, the experts and the datasets see the same interface. scene_meta.json records `robot: mars`. The stock
+# names keep pointing at the stock robot (a name never changes its directory).
+bottle_mars:  # bottle on the mars robot
+  dir: outputs/scene/sim_lowcom_mars
+  example: configs/experiments/bottle_mars_pilot_20261002.yaml
+  build: >-
+    SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom_mars
+    --preset bottle_only --harden-pads --object-com-drop 0.05 --robot mars
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+warehouse_textured_mars:  # warehouse_textured on the mars robot: the pack's robot rewritten by make_dex1_model.apply_mars
+  dir: outputs/scene/warehouse_textured_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured_mars --robot mars
+  unreal: {unsupported: "no level for the mars robot yet (TODO 13.6): build_level has not been run on it"}
+
+box_platform_mars:  # box_platform on the mars robot
+  dir: outputs/scene/box_platform_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform_mars --width 0.45 --length 0.32 --height 0.60 --source outputs/scene/warehouse_textured_mars
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+warehouse_box_45x32x33_mars:  # warehouse_box_45x32x33 on the mars robot
+  dir: outputs/scene/warehouse_box_45x32x33_mars
+  example: configs/experiments/warehouse_mars_pilot_20261002.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33_mars --width 0.45 --length 0.32 --height 0.33 --source outputs/scene/warehouse_textured_mars
+  unreal: {unsupported: "no level for the mars robot yet (TODO 13.6): build_level has not been run on it"}
+
+warehouse_box_45x20x33_mars:  # warehouse_box_45x20x33 on the mars robot
+  dir: outputs/scene/warehouse_box_45x20x33_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x33_mars --width 0.45 --length 0.20 --height 0.33 --source outputs/scene/warehouse_textured_mars
+  unreal: {unsupported: "no level for the mars robot yet (TODO 13.6): build_level has not been run on it"}
+
+warehouse_box_45x32x18_mars:  # warehouse_box_45x32x18 on the mars robot
+  dir: outputs/scene/warehouse_box_45x32x18_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x18_mars --width 0.45 --length 0.32 --height 0.18 --source outputs/scene/warehouse_textured_mars
+  unreal: {unsupported: "no level for the mars robot yet (TODO 13.6): build_level has not been run on it"}
+
+warehouse_box_45x20x18_mars:  # warehouse_box_45x20x18 on the mars robot
+  dir: outputs/scene/warehouse_box_45x20x18_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x18_mars --width 0.45 --length 0.20 --height 0.18 --source outputs/scene/warehouse_textured_mars
+  unreal: {unsupported: "no level for the mars robot yet (TODO 13.6): build_level has not been run on it"}

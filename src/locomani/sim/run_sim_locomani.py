@@ -286,12 +286,11 @@ def main(config: SimLoopConfig) -> None:
     wbc_config["NUM_HAND_MOTORS"] = _sl.NUM_HAND_MOTORS
     wbc_config["NUM_HAND_JOINTS"] = _sl.NUM_HAND_MOTORS
     if _sl.NUM_HAND_MOTORS == 2:
-        # The 43-entry effort list interleaves 7 dex3 hand efforts after
-        # each arm ([legs+waist 15][l-arm 7][l-hand 7][r-arm 7][r-hand 7]);
-        # dex1 has 2 prismatic fingers per hand (URDF effort 20 N).
-        e = wbc_config["motor_effort_limit_list"]
-        assert len(e) == 43, len(e)
-        wbc_config["motor_effort_limit_list"] = e[:22] + [20.0, 20.0] + e[29:36] + [20.0, 20.0]
+        # The torque limits are the robot model's own. For the stock robot they
+        # equal the WBC yaml's 43-entry list with dex1's 2 fingers (URDF effort
+        # 20 N) in place of dex3's 7; mars's are its URDF's (ankles and waist
+        # roll/pitch 35 N m, hip roll 139, wrist pitch/yaw 13.4).
+        wbc_config["motor_effort_limit_list"] = _sl.motor_effort_limits(scene_xml)
     # Parallel instances: each sim+deploy pair gets its own DDS domain so
     # their unitree channels never cross on lo. Pairs with the deploy's
     # SONIC_DDS_DOMAIN patch. Receiving end of the shell boundary (decision 8):

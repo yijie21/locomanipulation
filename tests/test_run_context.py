@@ -175,7 +175,9 @@ def test_a_scene_name_resolves_to_its_directory_in_the_run_and_its_copy(tmp_path
 def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     names = yaml.safe_load(run_common.SCENES.read_text())
     boxes = {f"warehouse_box_45x{length}x{height}" for length in (20, 32) for height in (18, 33)}
-    assert set(names) == {"bottle", "crate", "warehouse", "warehouse_textured", "walk", "box_platform", *boxes}
+    stock = {"bottle", "crate", "warehouse", "warehouse_textured", "walk", "box_platform", *boxes}
+    mars = {"bottle_mars", "warehouse_textured_mars", "box_platform_mars", *(f"{box}_mars" for box in boxes)}
+    assert set(names) == stock | mars
     for entry in names.values():
         assert "example" in entry or "build" in entry
         if "example" in entry:
@@ -186,7 +188,9 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
 
 
 def test_an_unknown_or_doubly_given_scene_is_refused():
-    with pytest.raises(SystemExit, match="bottle, box_platform, crate, walk, warehouse"):
+    with pytest.raises(
+        SystemExit, match="bottle, bottle_mars, box_platform, box_platform_mars, crate, walk, warehouse"
+    ):
         run_common.resolve_scene({"scene": {"name": "blue"}})
     with pytest.raises(SystemExit, match="give one"):
         run_common.resolve_scene({"scene": {"name": "crate", "dir": "outputs/scene/sim"}})
@@ -244,9 +248,9 @@ def test_the_four_edge_warehouse_scenes_render_with_the_warehouse_look():
     # 2026-09-28 stages without it stay for the runs that rendered with them)
     scenes = yaml.safe_load(run_common.SCENES.read_text())
     look = {k: scenes["warehouse_textured"]["isaac"][k] for k in ("rtx_settings", "supersample")}
-    boxes = [name for name in scenes if name.startswith("warehouse_box_")]
+    boxes = [name for name in scenes if name.startswith("warehouse_box_") and not name.endswith("_mars")]
     assert len(boxes) == 4
-    for name in boxes:
+    for name in boxes:  # the mars boxes have no Isaac stage yet (TODO 13.6)
         entry = scenes[name]["isaac"]
         assert {k: entry[k] for k in look} == look, name
         assert entry["dir"] == f"{name}_env"

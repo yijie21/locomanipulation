@@ -91,9 +91,9 @@ import mujoco
 import yaml
 
 # Load robot configuration
-with open('robot.yaml', 'r') as f:
+with open("robot.yaml", "r") as f:
     config = yaml.safe_load(f)
-    urdf_path = config['exports']['ETHER_ROBOT_URDF']
+    urdf_path = config["exports"]["ETHER_ROBOT_URDF"]
 
 # Load URDF with MuJoCo
 model = mujoco.MjSpec.from_string(urdf_text).compile()
