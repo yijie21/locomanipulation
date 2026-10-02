@@ -495,7 +495,8 @@
   - [x] 13.6.2 （2026-10-02）第 2 步：配对 10 局试跑（`outputs/mars_pilots_20261002/`）。bottle stock 9/10、mars 9/10（修网格名后重跑）；warehouse stock 6/10、mars 0/10
   - [x] 13.6.3 （2026-10-02）warehouse 退步定位：9 组单变量对照，只有腰 roll/pitch 35 → 50 N·m 救回（5/10）；35 N·m 下腰俯仰塌到 ~35°（关节限位 29.8°），stock 抓箱姿势静力矩 p95 39 N·m
     - [x] 13.6.3.1 （2026-10-02，用户问手为何抖）手抖也是腰 35 N·m：warehouse mars 手相对躯干高频抖 9.4 mm RMS、约 4 Hz、主要在肩 pitch（stock 2.8）；腰俯仰高通速度 1.26 rad/s（stock 0.13），4.7% 的时间顶在限位上反弹。腰 50 → 2.9 mm、0.12 rad/s；腕 5、质量、运动学、踝 50 都不消除；bottle mars 3.1 mm（`outputs/mars_pilots_20261002/jitter/jitter.md`）
-  - [ ] 13.6.4 待用户定：warehouse 怎么处理腰 35 N·m（见 STATE）
+  - [x] 13.6.4 （2026-10-02 用户：腰改 50 再试）mars 腰 roll/pitch 改 50 N·m（`make_dex1_model.MARS_EFFORT_OVERRIDES`，URDF 和 Unitree 官方都是 35，踝仍 35），7 个场景重建。warehouse 重跑 `warehouse_mars_pilot_20261002c`：6/10（stock 6/10），手抖 2.8 mm（= stock）
+    - [ ] 13.6.4.1 待查：mars 的 4 局失败全是 lost_attachment，且都在箱子已抬起 4–14 cm、倾 6–13° 后一只手脱开（3 局右手）；stock 的 2 局 lost_attachment 都在抬起前（rise 0）。可能是 D405 支架、手腕 13.4 N·m 或手臂运动学；需腰 50 下的单变量对照
   - [ ] 13.6.5 第 3 步（用户看完第 2 步再做）：mars 的 Isaac 机器人资产（按机器人名分开存）、warehouse `_mars` 的 Isaac 场景与 Unreal 关卡（`scenes.yaml` 现写 unsupported 指向这里）、各实渲一局、补渲冒烟
   - [ ] 13.6.6 第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝
   - [ ] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）

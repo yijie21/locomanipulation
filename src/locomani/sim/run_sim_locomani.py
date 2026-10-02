@@ -288,8 +288,9 @@ def main(config: SimLoopConfig) -> None:
     if _sl.NUM_HAND_MOTORS == 2:
         # The torque limits are the robot model's own. For the stock robot they
         # equal the WBC yaml's 43-entry list with dex1's 2 fingers (URDF effort
-        # 20 N) in place of dex3's 7; mars's are its URDF's (ankles and waist
-        # roll/pitch 35 N m, hip roll 139, wrist pitch/yaw 13.4).
+        # 20 N) in place of dex3's 7; mars's are its URDF's (ankles 35 N m,
+        # hip roll 139, wrist pitch/yaw 13.4) but the waist at 50
+        # (make_dex1_model.MARS_EFFORT_OVERRIDES).
         wbc_config["motor_effort_limit_list"] = _sl.motor_effort_limits(scene_xml)
     # Parallel instances: each sim+deploy pair gets its own DDS domain so
     # their unitree channels never cross on lo. Pairs with the deploy's

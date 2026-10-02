@@ -1382,3 +1382,4 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **实测（`outputs/mars_pilots_20261002/`）**：
   - bottle：stock 9/10，mars 9/10（各一局不同的失败）。
   - warehouse：stock 6/10，mars 0/10（reach_stalled 7）。单变量对照（各 10 局，同种子）：腕力矩 5、支架不碰撞、stock 相机、stock 质量、stock 运动学、踝 50 都是 0/10；全部力矩恢复 stock 3/10；只把腰 roll/pitch 恢复 50 是 5/10。35 N·m 下每局腰俯仰塌到约 35°（限位 29.8°），stock 抓箱时最大 20–25°；stock 成功姿势光重力就要腰俯仰 p95 39、最大 41 N·m。warehouse 怎么办待用户定（TODO 13.6.4）。
+- **追加（同日，用户）**：mars 的腰 roll/pitch 改用 50 N·m（`make_dex1_model.MARS_EFFORT_OVERRIDES`），其余力矩仍按 URDF。理由：35 N·m 下 warehouse 0/10、手抖 9.4 mm；35 是 URDF 和 Unitree 官方 `g1_29dof_mode_15_with_dex1_1.urdf` 的值，SONIC 自带模型是 50。代价：仿真的腰比真机描述文件强，专家的前倾姿势（腰俯仰约 39 N·m）在真机上可能撑不住。重跑 warehouse 6/10（stock 6/10），手抖 2.8 mm；mars 的 4 局失败都是抬起后单手脱开，待查（TODO 13.6.4.1）。被否决（暂缓）：改专家少弯腰。

@@ -147,7 +147,8 @@ warehouse_box_45x20x18:
 
 # The mars scenes (2026-10-02, user: the lab's real G1 is the default robot of the bottle and warehouse lines). Each is
 # its stock namesake on the robot make_dex1_model.py writes from henry's URDF (assets/unitree_G1_with_wrist_camera):
-# the URDF's kinematics, masses and torque limits (ankles and waist roll/pitch 35 N m, hip roll 139, wrists 13.4),
+# the URDF's kinematics, masses and torque limits (ankles 35 N m, hip roll 139, wrists 13.4; the waist roll/pitch 50,
+# not the URDF's 35: make_dex1_model.MARS_EFFORT_OVERRIDES),
 # a D405 mount on each gripper that collides, the ego camera the D455 on the head's pan/tilt bracket (held tilted so
 # its pitch is the stock aim's 52 deg, fovy 65) and the wrist cameras the D405s (fovy 58); fields of view are the
 # datasheets', no calibration shipped. Joints, actuators, sensors and camera names are the stock robot's, so the

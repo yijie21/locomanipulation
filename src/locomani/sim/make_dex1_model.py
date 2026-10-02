@@ -210,8 +210,9 @@ def build_stock() -> ET.ElementTree:
 #     35; pitch axis on it, stock 19 mm higher); shoulders 10 mm higher
 #   - 5010 wrists: wrist yaw 5 mm further out, pitch/yaw effort 13.4 N m
 #     (stock 5)
-#   - effort limits: ankles and waist roll/pitch 35 N m (confirmed as the
-#     firmware limit, 2026-09-30; stock 50), hip roll 139 (stock 88)
+#   - effort limits: ankles and waist roll/pitch 35 N m (the ankles'
+#     confirmed as the firmware limit, 2026-09-30; stock 50), hip roll 139
+#     (stock 88); the waist is overridden, see MARS_EFFORT_OVERRIDES
 #   - masses: 35.02 kg overall (stock 35.87): torso lighter, the head's
 #     pan/tilt bracket 1.73 kg, wrist pitch +0.2 kg, each D405 mount 0.1 kg
 #   - the D405 mounts collide (a ring round the Dex1 base and the camera's box)
@@ -246,6 +247,24 @@ MARS_WRIST_LINKS = {"left": "d405_left_wrist_link", "right": "d405_right_wrist_l
 # one.
 MARS_EGO_FOVY = 65.0
 MARS_WRIST_FOVY = 58.0
+# Torque limits (N m) the sim uses instead of the URDF's. The waist roll/pitch
+# is 35 in the URDF and in Unitree's own g1_29dof_mode_15_with_dex1_1.urdf,
+# SONIC's stock model 50. At 35 the warehouse expert's two-handed box lift went
+# 0/10 (stock 6/10): its lean needs ~39 N m of waist pitch against gravity
+# (p95 of the stock pilot), the torso sagged onto the 29.8 deg pitch limit and
+# bounced, and the hands shook 9.4 mm RMS at ~4 Hz. At 50, 5/10 and 2.9 mm
+# (outputs/mars_pilots_20261002). User, 2026-10-02: run the waist at 50.
+MARS_EFFORT_OVERRIDES = {"waist_roll_joint": 50.0, "waist_pitch_joint": 50.0}
+
+
+def mars_effort(urdf_joint: ET.Element) -> str:
+    """A joint's torque limit in the mars model: MARS_EFFORT_OVERRIDES, else the URDF's effort."""
+    name = urdf_joint.get("name")
+    return (
+        _fmt([MARS_EFFORT_OVERRIDES[name]]) if name in MARS_EFFORT_OVERRIDES else urdf_joint.find("limit").get("effort")
+    )
+
+
 # The colours the generator writes, so both renderers sort each mesh by its MJCF
 # colour into robot_look's shell or dark set (Isaac: mean >= 0.6 is shell;
 # Unreal: grey >= 0.6 silver, < 0.4 dark, anything else a third, plain look).
@@ -519,7 +538,7 @@ def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
         for k, g in enumerate(visual + collision):
             body.insert(first_body + k, g)
 
-    # Joint limits and the actuators' torque limits from the URDF.
+    # Joint limits and the actuators' torque limits from the URDF (torque: but MARS_EFFORT_OVERRIDES).
     for j in pelvis.iter("joint"):
         if j.get("type") == "free":
             continue
@@ -529,11 +548,12 @@ def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
         assert np.allclose(axis, [float(v) for v in j.get("axis", "0 0 1").split()]), f"{j.get('name')}: axis differs"
         limit = u.find("limit")
         j.set("range", f"{limit.get('lower')} {limit.get('upper')}")
-        j.set("actuatorfrcrange", f"-{limit.get('effort')} {limit.get('effort')}")
+        effort = mars_effort(u)
+        j.set("actuatorfrcrange", f"-{effort} {effort}")
     for motor in root.find("actuator"):
         if "_hand_" in motor.get("joint"):
             continue  # gripper ctrl is in the deploy's hand units, scaled by gear (see GEAR)
-        effort = joints[motor.get("joint")].find("limit").get("effort")
+        effort = mars_effort(joints[motor.get("joint")])
         motor.set("ctrlrange", f"-{effort} {effort}")
 
     # The cameras at the URDF's camera frames, and the torso IMU site.
@@ -584,7 +604,7 @@ def build_mars(stock: ET.ElementTree) -> ET.ElementTree:
 
 
 def check_mars(xml_path: str = MARS_XML, seed: int = 0) -> dict:
-    """A written mars robot (model or scene) against the URDF: forward kinematics of every body, mass, torque limits.
+    """A written mars robot (model or scene) against the URDF: FK of every body, mass, torque limits (mars_effort).
 
     Raises on any mismatch; returns the worst errors for the log.
     """
@@ -617,7 +637,7 @@ def check_mars(xml_path: str = MARS_XML, seed: int = 0) -> dict:
     for a in range(sim.nu):
         name = sim.joint(sim.actuator_trnid[a, 0]).name
         if "_hand_" not in name:
-            effort = float(joints[name].find("limit").get("effort"))
+            effort = float(mars_effort(joints[name]))
             assert np.allclose(sim.actuator_ctrlrange[a], [-effort, effort]), f"{name}: ctrlrange != URDF effort"
     return {"fk_worst_mm": worst_mm, "mass_kg": mass[0]}
 

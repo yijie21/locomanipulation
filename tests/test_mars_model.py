@@ -64,6 +64,7 @@ def test_mars_is_driven_like_the_stock_robot(mars_xml):
     limits = {mars.actuator(a).name: mars.actuator_ctrlrange[a, 1] for a in range(mars.nu)}
     assert limits["left_ankle_pitch"] == 35.0  # the firmware limit
     assert limits["left_hip_roll"] == 139.0 and limits["right_wrist_yaw"] == 13.4
+    assert limits["waist_pitch"] == limits["waist_roll"] == 50.0  # MARS_EFFORT_OVERRIDES; the URDF says 35
 
 
 def _pitch_deg(model, data, cam_id):
