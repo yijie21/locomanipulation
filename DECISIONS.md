@@ -1383,3 +1383,18 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - bottle：stock 9/10，mars 9/10（各一局不同的失败）。
   - warehouse：stock 6/10，mars 0/10（reach_stalled 7）。单变量对照（各 10 局，同种子）：腕力矩 5、支架不碰撞、stock 相机、stock 质量、stock 运动学、踝 50 都是 0/10；全部力矩恢复 stock 3/10；只把腰 roll/pitch 恢复 50 是 5/10。35 N·m 下每局腰俯仰塌到约 35°（限位 29.8°），stock 抓箱时最大 20–25°；stock 成功姿势光重力就要腰俯仰 p95 39、最大 41 N·m。warehouse 怎么办待用户定（TODO 13.6.4）。
 - **追加（同日，用户）**：mars 的腰 roll/pitch 改用 50 N·m（`make_dex1_model.MARS_EFFORT_OVERRIDES`），其余力矩仍按 URDF。理由：35 N·m 下 warehouse 0/10、手抖 9.4 mm；35 是 URDF 和 Unitree 官方 `g1_29dof_mode_15_with_dex1_1.urdf` 的值，SONIC 自带模型是 50。代价：仿真的腰比真机描述文件强，专家的前倾姿势（腰俯仰约 39 N·m）在真机上可能撑不住。重跑 warehouse 6/10（stock 6/10），手抖 2.8 mm；mars 的 4 局失败都是抬起后单手脱开，待查（TODO 13.6.4.1）。被否决（暂缓）：改专家少弯腰。
+
+## 2026-10-03 mars 外观与 stock 对齐（头顶相机银白、骨盆银色）；35 N·m 是 Unitree 官方数值
+
+- **目标变化**：用户要求 mars 与 stock 相同的部位外观一致。
+- **决策**：
+  - 骨盆 `pelvis_ver0529`（腿和上身之间的三角件）画外壳银色。新增 `robot_look.SHELL_MESHES`，与 `DARK_MESHES` 相对，按网格名强制为外壳色。理由：用户指定。URDF 和 Unitree 官方 URDF 都把它画成黑色，所以必须靠名单覆盖，不能按 URDF 颜色走。
+  - 骨盆保留的 stock 碰撞外壳（`pelvis_contour_link`）取骨盆可视网格的颜色。理由：MuJoCo 的相机也画碰撞体（第 0 组），颜色不同的外壳会从骨盆里透出来，之前就透出过一个白盒。
+  - 碰撞体一律取所在部件第一块可视网格的颜色（10-02 已做）。理由同上，手腕和 D405 支架才能在 MuJoCo 画面里也显示为黑色。
+  - 头顶云台上的 D455（`head_tilt_link`）保持 URDF 的银白色。理由：用户确认真机如此。
+- **被否决的方案**：
+  - 把头顶相机涂黑（`ed26ed2` 做过，`239b7f1` 撤回）。理由：用户说"头部发白"指的不是它，真机相机是银白色。下个会话不要再把"头部发白"理解成这台相机。
+  - 骨盆按 URDF 画黑（`ed26ed2` 的做法）。理由：用户要求银色，和 stock 的浅色骨盆外圈一致。
+- **事实（已确认，影响以后决策）**：
+  - 腰 roll/pitch 和踝 35 N·m、髋 roll 139、腕 13.4 是 Unitree 官方 `unitree_ros` 的 `g1_29dof_mode_15_with_dex1_1.urdf`（`assets/dex1/`）里的数值；SONIC 自带模型是 50/50/88/5，用的是另一套腰和躯干网格（带 `waist_support_link`，不是 `rev_1_0`）。所以仿真的腰用 50 是比真机描述文件更有力的设定（TODO 13.6.11）。
+  - mars 的测试样例场景加载 0.19 秒（stock 0.09 秒），`test_offhand_guard_reuses_current_observation` 的 0.2 秒过期判断因此时好时坏；已改为加载完再打时间戳。

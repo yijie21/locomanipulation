@@ -487,7 +487,7 @@
   - [x] 13.2.2 （2026-10-02，`62ed89f`、`81ef9cd`）用 henry 带腕部相机的 `cb3ae2f`（`assets/unitree_G1_with_wrist_camera`）：saturn patch 改名 mars，`make_dex1_model.py` 写出 `g1_29dof_with_dex1_mars.xml`，自检 FK 3e-7 mm、35.02 kg；7 个 `*_mars` 场景（DECISIONS 2026-10-02）
   - [x] 13.2.3 （2026-10-02，`cb3ae2f` 带了 D405 支架和位姿）mars URDF 没有腕部相机（robot.yaml 有两台 D405 的序列号，URDF 和 meshes 里都没有，calibration 只有 livox→D435）。仿真要加腕部相机，需 henry 给 D405 的安装位姿/外参、支架 CAD 或手腕照片（已向用户提议代写消息，用户未回复）
 - [~] 13.3 （2026-10-02 用户：用云台上的 D455，俯仰锁 +4.71° 对齐原 52° 俯角；内参仓库里没有，先用规格值 D455 fovy 65、D405 fovy 58）待用户/协作者确认：云台上的 ego 相机是 D435 还是 D455，以及真机内参（patch 里按 D435 常用值 fx = fy = 615，fovy 42.6）
-- [x] 13.4 （2026-10-02 用户：mars 全按 URDF，踝/腰 35、髋 roll 139、腕 13.4；stock 场景不变）仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
+- [x] 13.4 （2026-10-02 用户：mars 全按 URDF，踝/腰 35、髋 roll 139、腕 13.4；stock 场景不变；同日用户改为腰 50，见 13.6.4）仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
 - [ ] 13.5 待用户定：saturn 产物删不删（约 180 MB：`outputs/scene/sim_lowcom_saturn*`、`outputs/runs/bottle_{saturn,saturn_stockcam,stock}_pilot_20260930`；patch 所在的 `outputs/g1_urdf_compare_20260930/` 要留）；删前在 STATE 写明 24 小时
 
 - [~] 13.6 mars 设为 bottle / warehouse 默认机器人（用户 2026-10-02；DECISIONS 同日一节）
@@ -502,6 +502,9 @@
   - [ ] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
   - [x] 13.6.9 （2026-10-02，`ed26ed2`，用户：和 stock 相同的部位外观一致）逐部件比对颜色：除手腕（有意涂黑）外相同部位一致。改两处：云台俯仰支架涂黑（头部原有一根白横条；10-03 用户更正：那是头顶的 D455，真机银白，已改回）；骨盆保留的 stock 碰撞外壳改成骨盆色（MuJoCo 画碰撞体，白壳透出）。10-03 用户：骨盆（腿和上身之间的三角件）应为银色，`robot_look.SHELL_MESHES` 把 `pelvis_ver0529` 画成外壳色（URDF 和 Unitree 官方都是黑），碰撞外壳随之同色（对比图 `outputs/mars_look_compare_20261002/`）
   - [ ] 13.6.8 可选：`outputs/scene/hand_points_dex1.npy` 仍是 stock 手（mars 多了 D405 支架，最低点只在少数姿态差 >0.2 cm，最大 6 cm）；bottle 用它算手离桌高度
+  - [ ] 13.6.10 待用户定：先做 13.6.4.1 的腰 50 单变量对照（支架不碰撞、腕 5 N·m，各 10 局约 15 分钟），还是先开始第 3 步（13.6.5）。10-02 已问，用户转去改外观，未答
+  - [ ] 13.6.11 上真机前：专家抱箱前倾要腰俯仰约 39 N·m，Unitree 官方 URDF 腰是 35；改专家少弯腰多屈膝，或向 henry 确认真机腰的固件上限（仿真现在用 50 掩盖了这点）
+  - [ ] 13.6.12 待用户定：本次产物删不删（`outputs/mars_pilots_20261002` 4.1 GB，其中 `scenes_v1`–`v6` 旧版场景和 8 个 `ablate_*` 场景；14 个 `outputs/runs/*_20261002*` 共 7.5 GB；`outputs/g1_wristcam_render_20261002` 122 MB）；删前在 STATE 写明 24 小时
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 
