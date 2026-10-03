@@ -5,6 +5,8 @@ Scene discovery（Demo 1，纯仿真）：设计决策记录（2026-10-02）
 
 分支 `scene_discovery`（worktree `../locomanipulation-scene_discovery`），基于 `loco_agent` 的 `023a31a`（`9d777c9` 加 Q11 收尾）。
 
+格式与能力：[场景文件与任务文件格式](scene-file-format-20261003.md)（TODO 9.5，代码 `src/locomani/scene_discovery/`）；能力说明 `configs/scene_discovery/capability.yaml`（9.7）。
+
 ## 0. 目标
 
 只给一个参数化场景，方法自己发现 G1 能力范围内尽可能多的任务，由任务需求反推缺的原子技能，用技能组装采集数据，

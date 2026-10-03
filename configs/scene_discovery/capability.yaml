@@ -1,0 +1,129 @@
+# What the G1 + Dex1 + SONIC stack can do today, as measured (scene_discovery plan decision 8; TODO 9.7). 2026-10-03.
+#
+# Two readers: Claude reads it when proposing tasks for a scene (so a proposal is grounded before the checker sees it),
+# and the feasibility checker reads the numbers to sort tasks into the three buckets
+# (1 composable now / 2 physically plausible but a skill is missing / 3 out of capability).
+#
+# Every entry carries `status`:
+#   measured      -- run on the live stack, number from the cited source
+#   measured_one  -- measured, but only in the one setting named in `setting`; elsewhere it is an extrapolation
+#   untested      -- plausible, never run; the checker routes tasks that need it to bucket 2, never bucket 1
+#   unavailable   -- the frozen stack cannot do it (decision 12); tasks that need it go to bucket 3
+# and `source` (a repo document; ledgers hold the run names). Numbers are SI: m, kg, N, s, rad unless the key says deg.
+# Change a number only together with a new measurement and its source.
+
+robot:
+  hands: dex1 two-finger parallel gripper on each arm
+  single_arm_side: right # decision D7 of the primitive design: left-hand single-arm grasp is a new calibration, not a mirror
+  body_radius: 0.26 # occupancy-map inflation (src/locomani/primitives/navigator.py BODY_RADIUS)
+  pelvis_height_standing: 0.79
+  ego_camera: {name: head_camera, fovy_deg: 70.0} # src/locomani/sim/build_sim_scene.py EGO_CAM_*
+
+locomotion:
+  speed_command:
+    status: measured
+    dead_at_or_below: 0.15 # no motion
+    noisy: [0.20, 0.50] # delivered 0.07-0.41 m/s, +-0.1 m/s swings
+    clean_from: 0.55 # 0.47-0.69 m/s, near linear
+    source: docs/walk.md (speed ramp 2026-09-23)
+  small_translation:
+    status: measured
+    note: no centimetre translation; walk_to to a 0.15 m goal overshoots to 0.7-1.5 m; use nudge (0.5 s pulses, 0-12 cm each, <= 0.40 m total)
+    nudge_max: 0.40
+    source: docs/walk.md; docs/skills.md (nudge row)
+  turn_in_place:
+    status: measured
+    min_reliable_deg: 9 # turn_to tol >= 0.15 rad; 3-20 deg commands deliver 75-90 %
+    refused_within_of_surface: 0.25 # turn_to EDGE_CLEAR: hanging hands sweep the table top
+    source: docs/walk.md; docs/skills.md
+  brake_before_line:
+    status: measured
+    note: guard brake at walk speed 0.25 never crossed a line in 50/50; pelvis settles 21.0 +- 2.2 cm before it
+    source: docs/walk.md (guard 0.25)
+  navigation:
+    status: measured_one
+    setting: open floor with axis-aligned table boxes, one room; doorways never tried
+    note: navigate_to follows an occupancy-map distance field in 0.45 m segments, stops within 0.10 m on a ring stand_off +- 0.07 around an object
+    source: docs/skills.md (navigate_to row)
+  cross_room:
+    status: untested # bucket 2 ("long-range navigation") per plan decision 9
+
+reach_single_arm:
+  grasp_from_table:
+    status: measured_one
+    setting: table top 0.62 m; upright cylinders 4.5-6.1 cm wide, 14-16 cm tall; object 0.34-0.49 m ahead of the pelvis after approach
+    success: {bottle_4.5cm: 9/10, can_6.1cm: 6/10}
+    source: docs/ledger/bottle.md §40; docs/ledger/pick_place.md §8, §11
+  jaw_opening: 0.095 # a single-hand pick needs the narrower horizontal extent <= this (src/locomani/skills/scene_model.py)
+  object_mass_measured: 0.353 # the bottle; heavier single-hand loads never run
+  grip_force:
+    status: measured
+    note: per finger F = 1.5 x 250 x (setpoint - q), clamped at 20 N; holding force therefore depends on how far the jaw is stopped short of closed
+    source: docs/reference/config_fields.md (gripper gear 250, close_target); docs/ledger/crate.md (close_target -0.06)
+  other_table_heights: {status: untested, note: "only 0.62 m has a measured single-arm grasp; 0.66 m counters exist in the scenes but were not used"}
+  low_surface_or_floor: {status: untested, note: "crouching during a grasp broke the bimanual lift (2/10); see posture.squat"}
+
+reach_bimanual:
+  box_grasp:
+    status: measured
+    width: [0.43, 0.47] # the box dimension between the hands; both sides fail outside
+    length_max: 0.32 # 0.32-0.44 never measured
+    grip_height: [0.54, 0.69] # world height of the grasp points (2.5 cm under the rim)
+    yaw_vs_edge_deg_max: 2
+    setback_from_edge: 0.0
+    mass_measured: 1.2 # nor_cal_box, friction 1.4, 1 cm walls
+    yield: [0.40, 0.45] # lift-and-hold rate inside these ranges
+    source: docs/box_grasp_envelope.md §4
+  crate_grasp:
+    status: measured_one
+    setting: crate 0.40 x 0.27 x 0.17 m with rails, table 0.30 m (rim 0.447 m)
+    stance_max: 0.25 # <= 0.25 m 17/17, 0.26-0.29 m 3/6, >= 0.31 m 0/15
+    source: docs/handoff/g1-capability-envelope-20260921.md (real-scene calibration); docs/ledger/crate.md
+
+carry:
+  single_arm:
+    status: measured
+    straight_or_backward: {distance: [1.0, 2.0], palm_drift_cm: [0.3, 0.8], success: 6/6}
+    turn_180: {slow_walk: 4/4, idle: 0/2} # turn standing with slow_walk; never turn while walking
+    source: docs/ledger/bottle.md §41
+  bimanual_box:
+    status: measured
+    note: the box slides 3-9.5 cm per metre while walking; about 1 m is usable; backward without turning 8/12, 180 deg turn then 1 m 3/6
+    usable_distance: 1.0
+    source: docs/ledger/crate.md (skills batch 2, 2026-09-28)
+
+place:
+  into_container_single_arm:
+    status: measured_one
+    setting: basket 0.30 x 0.21 x 0.15 m on the same 0.62 m table, after a loaded approach to it
+    success: 3/6
+    source: docs/ledger/pick_place.md §8
+  put_down_bimanual:
+    status: measured_one
+    setting: warehouse box onto a 0.10 m platform, stand keeps the box over it (stand_forward_min 0.50)
+    success: 8/8
+    source: docs/skills.md (put_down_bimanual row); docs/ledger/crate.md
+  on_other_surface: {status: untested, note: "place onto a different surface or height than the grasp table"}
+
+posture:
+  squat:
+    status: measured
+    note: in planner mode pelvis height is commandable only in IDLE_SQUAT (static); the streamed whole-body pose can crouch (pelvis measured 0.57 m) and put both hands 0.38-0.43 m ahead at h 0.20 m, but not at h 0.10 m
+    source: docs/handoff/g1-capability-envelope-20260921.md (lowest_h); docs/single_arm_design.md
+  squat_while_grasping:
+    status: measured_one
+    setting: crate on a 0.30 m table, crouch target 0.65 m during the bimanual lift
+    success: 2/10 # lost_attachment x6; same setting without crouch 9/10
+    source: docs/handoff/g1-capability-envelope-20260921.md (real-scene calibration 2026-09-22)
+  waist_lean: {status: measured, note: "checkpoint-bound: of a 29 deg waist request, policy/release delivers 8 deg, sonic_v1_1 21 deg", source: docs/archive/handoff-sonic-replay-20260910.md}
+
+timing:
+  planner_keepalive: {status: measured, note: "the deploy drops the frozen upper body and the hand command after 1 s without a frame; Executor.idle keeps sending", source: docs/skills.md §4}
+
+unavailable: # bucket 3 reasons; extend with a source when one is measured
+  - in-hand reorientation, fine finger work, pressing small buttons (two-finger Dex1; decision 12)
+  - articulated objects -- doors, drawers, lids (no joints in the scene; plan decision 6, round 1)
+  - deformables and liquids -- cloth, pouring, wiping
+  - stairs, kneeling, sitting
+  - left-hand single-arm grasp (primitive design D7)
+  - carrying a bimanual load more than ~1 m (carry.bimanual_box)
