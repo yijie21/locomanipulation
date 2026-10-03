@@ -7,9 +7,14 @@
 `geometry` writes `<out>/scene_file.json` and `<out>/floorplan.png`: walls from horizontal sections of the
 `ApartmentEnv` shell, rooms and spawn regions (`scene_discovery.floorplan`), support surfaces from the upward
 faces of every fixed piece of furniture (`scene_discovery.surfaces`), and every object with its rule-derived
-fields (`scene_discovery.adt`). Fields Claude fills (names, mass, friction, containers, room names) come in the
-next stage; until then the file carries only adt / rule provenance. The output is ADT-derived and stays under
-`outputs/` (plan decision 17).
+fields (`scene_discovery.adt`). `estimate --scene <out>/scene_file.json` then asks Claude (Opus by default) for
+names, mass, friction, containers and room names and applies the rules of `scene_discovery.properties`, in place;
+every exchange is in `<out>/claude_properties.jsonl`, what the rules changed in `<out>/properties_report.json`.
+`mujoco --scene <out>/scene_file.json` writes `<out>/scene_locomani.xml` (robot from `--base`) and
+`<out>/env_only.xml` (no robot, for `scripts/scene_drop_test.py`), meshes under `<out>/mesh/`: the shell and
+furniture as scenery, support surfaces as slabs, every movable object as a hull (containers as five boxes),
+free bodies only for `--free` (default: every graspable movable object resting on a surface). The output is ADT-derived and stays
+under `outputs/` (plan decision 17).
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from locomani.scene_discovery import adt, floorplan, scene_file, surfaces  # noqa: E402
+from locomani.scene_discovery import adt, floorplan, mjcf, properties, scene_file, surfaces  # noqa: E402
 
 DATA = Path("/workspace/datasets/adt")
 SECTION_HEIGHTS = (0.3, 0.6, 0.9, 1.2, 1.5)  # below windows, above skirting; a wall at any of them blocks
@@ -94,6 +99,10 @@ def geometry(args) -> None:
     t0 = time.time()
     capability = yaml.safe_load((REPO / "configs/scene_discovery/capability.yaml").read_text())
     objs = adt.read_sequence(DATA / "sequences" / args.sequence)
+    no_model = sorted(o.name for o in objs if not (DATA / "objects" / o.name / "3d-asset.glb").exists())
+    if no_model:  # the Digital Twin Catalog has no model for a few instances; they cannot exist in the sim
+        print(f"[adt] skipped {len(no_model)} objects without a catalog model: {no_model}", flush=True)
+    objs = [o for o in objs if o.name not in no_model]
     shell = next(o for o in objs if o.name == adt.SHELL)
     objs = [o for o in objs if o.name != adt.SHELL]
     walls, floor_tris, shell_mesh = shell_walls(shell)
@@ -112,7 +121,8 @@ def geometry(args) -> None:
 
     fixed = [o for o in objs if not o.movable]
     blocking = [o for o in fixed if o.world_z()[0] < OBSTACLE_Z[1] and o.world_z()[1] > OBSTACLE_Z[0]]
-    furniture = grid.polygons([hull(o.footprint()) for o in blocking])
+    obstacles = [hull(o.footprint()) for o in blocking]
+    furniture = grid.polygons(obstacles)
     clear = floorplan.clearance(wall_img | furniture | ~floor)  # off the floor is outside the apartment
     spawn = floorplan.spawn_regions(labels, clear, BODY_RADIUS + SPAWN_MARGIN, grid)
 
@@ -217,7 +227,14 @@ def geometry(args) -> None:
         "surfaces": surfs,
         "objects": objects,
         "robot_start": {"xy": start.round(3).tolist(), "yaw_deg": 0.0, "pelvis_z": 0.793},
-        "room": {"bounds": bounds, "walls": walls, "doors": [], "rooms": rooms, "spawn": spawn_named},
+        "room": {
+            "bounds": bounds,
+            "walls": walls,
+            "obstacles": obstacles,
+            "doors": [],
+            "rooms": rooms,
+            "spawn": spawn_named,
+        },
         "randomization": {
             "movable_pool": sorted(k for k, o in objects.items() if o["free"]),
             "placements": {
@@ -276,15 +293,223 @@ def preview(meta, grid, wall_img, labels, path) -> None:
     fig.savefig(path, dpi=90, bbox_inches="tight")
 
 
+FURNITURE_FACES = 60_000  # above this a furniture visual is its hull: MuJoCo only previews, Isaac/Unreal render
+
+
+def colour(mesh: trimesh.Trimesh) -> list[float]:
+    """One RGBA for a MuJoCo preview: the mean of the base-colour texture, else the material's factor."""
+    vis = getattr(mesh, "visual", None)
+    mat = getattr(vis, "material", None)
+    img = getattr(mat, "baseColorTexture", None)
+    if img is not None:
+        arr = np.asarray(img.convert("RGB").resize((32, 32)), dtype=float) / 255.0
+        return [*arr.reshape(-1, 3).mean(axis=0).round(3).tolist(), 1.0]
+    factor = getattr(mat, "baseColorFactor", None)
+    if factor is not None:
+        f = np.asarray(factor, dtype=float).ravel()
+        f = f / 255.0 if f.max() > 1.0 else f
+        return [*f[:3].round(3).tolist(), 1.0]
+    return [0.7, 0.7, 0.7, 1.0]
+
+
+def export(mesh: trimesh.Trimesh, path: Path) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces, process=False).export(path)
+    return str(path)
+
+
+def mujoco(args) -> None:
+    """Scene file -> MJCF: scenery, slabs, static and free objects; the robot tree comes from --base untouched."""
+    import xml.etree.ElementTree as ET
+
+    path = Path(args.scene).resolve()  # MuJoCo resolves mesh files from its own cwd: write absolute paths
+    meta = json.loads(path.read_text())
+    out = path.parent
+    objs = {o.name: o for o in adt.read_sequence(DATA / "sequences" / meta["source"]["sequence"])}
+    missing = sorted(k for k in meta["objects"] if not (DATA / "objects" / k / "3d-asset.glb").exists())
+    if missing:
+        raise SystemExit(f"objects without a catalog model (rebuild the geometry stage, it skips them): {missing}")
+    # default free bodies: graspable movable objects resting on an extracted surface; anything else (in a rack,
+    # inside a cabinet, stacked on another object) has nothing that collides under it and would fall
+    free = set(args.free) if args.free else {
+        k for k, o in meta["objects"].items()
+        if o["semantic"]["movable"] and o["semantic"]["graspable"] != "none" and o.get("surface")
+    }  # fmt: skip
+    tree = ET.parse(args.base)
+    root = tree.getroot()
+    asset, world = root.find("asset"), root.find("worldbody")
+    for el in list(world):
+        if el.tag in ("camera",) or (el.tag == "body" and el.get("name") != "pelvis"):
+            world.remove(el)
+    floor = world.find("geom[@name='floor']")
+    if floor is not None:
+        floor.set("rgba", "0 0 0 0")  # the shell has its own floor mesh; the plane still collides
+    env = ET.SubElement(world, "body", name="adt_env")  # scenery and colliders, so env_only.xml can copy it
+
+    def mesh_asset(name: str, file: str) -> None:
+        ET.SubElement(asset, "mesh", name=name, file=file)
+
+    # the shell: one visual geom per scene-graph part, world frame
+    shell = objs[adt.SHELL]
+    for i, part in enumerate(_parts(shell)):
+        name = f"adt_shell_{i:02d}"
+        mesh_asset(name, export(part, out / "mesh" / f"{name}.obj"))
+        ET.SubElement(env, "geom", name=name, type="mesh", mesh=name, contype="0", conaffinity="0", group="1",
+                      density="0", rgba=mjcf.fmt(colour(part)))  # fmt: skip
+    for key, s in meta["surfaces"].items():
+        sl = mjcf.slab(s)
+        ET.SubElement(env, "geom", name=f"adt_slab_{key}", type="box", pos=mjcf.fmt(sl["pos"]), quat=mjcf.fmt(sl["quat"]),
+                      size=mjcf.fmt(sl["size"]), rgba="0.5 0.5 0.9 0.25", group="3")  # fmt: skip
+    n_free = 0
+    for key, o in sorted(meta["objects"].items()):
+        if key == adt.SHELL:
+            continue
+        a = objs[key]
+        raw = load_mesh(key)
+        rgba = mjcf.fmt(colour(raw))
+        body_mesh = raw.copy()
+        body_mesh.vertices = raw.vertices @ a.body_axes.T  # object frame -> body frame (z up at the initial pose)
+        sem = o["semantic"]
+        if not sem["movable"]:  # furniture: scenery only, contact comes from its surface slabs
+            vis = body_mesh if len(body_mesh.faces) <= FURNITURE_FACES else body_mesh.convex_hull
+            name = f"adt_fix_{key}"
+            mesh_asset(name, export(vis, out / "mesh" / f"{name}.obj"))
+            ET.SubElement(env, "geom", name=name, type="mesh", mesh=name, pos=mjcf.fmt(o["init_pos"]),
+                          quat=mjcf.fmt(o["init_quat"]), contype="0", conaffinity="0", group="1", density="0", rgba=rgba)  # fmt: skip
+            continue
+        hull = body_mesh.convex_hull
+        name = f"adt_obj_{key}"
+        o["mesh"] = export(hull, out / "mesh" / f"{name}.obj")
+        mesh_asset(name, o["mesh"])
+        is_free = key in free
+        o["free"] = is_free
+        parent = ET.SubElement(world, "body", name=f"{key}_object", pos=mjcf.fmt(o["init_pos"]), quat=mjcf.fmt(o["init_quat"])) \
+            if is_free else None  # fmt: skip
+        mu = sem.get("friction", 0.8)
+        friction = mjcf.fmt([mu, 0.005, 0.0001])
+        if is_free:
+            n_free += 1
+            o["body"] = f"{key}_object"
+            ET.SubElement(parent, "freejoint", name=f"{key}_free")
+            inert = mjcf.box_inertia(sem.get("mass_kg", 0.2), o["box"])
+            ET.SubElement(
+                parent,
+                "inertial",
+                mass=str(inert["mass"]),
+                pos=mjcf.fmt(inert["pos"]),
+                diaginertia=mjcf.fmt(inert["diaginertia"]),
+            )
+            holder, at = parent, {}
+        else:
+            holder, at = env, {"pos": mjcf.fmt(o["init_pos"]), "quat": mjcf.fmt(o["init_quat"])}
+        if o.get("container"):
+            ET.SubElement(holder, "geom", name=f"{name}_vis", type="mesh", mesh=name, contype="0", conaffinity="0",
+                          group="1", density="0", rgba=rgba, **at)  # fmt: skip
+            for b in mjcf.container_boxes(o["box"]):
+                pos = b["pos"]
+                if not is_free:  # a static container's boxes are placed in the world frame
+                    rot = adt.quat_to_matrix(o["init_quat"])
+                    pos = (np.asarray(o["init_pos"]) + rot @ np.asarray(pos)).tolist()
+                    extra = {"quat": mjcf.fmt(o["init_quat"])}
+                else:
+                    extra = {}
+                ET.SubElement(holder, "geom", name=f"{name}_{b['name']}", type="box", pos=mjcf.fmt(pos), size=mjcf.fmt(b["size"]),
+                              friction=friction, density="0", group="3", rgba="0.9 0.5 0.2 0.3", **extra)  # fmt: skip
+        else:
+            ET.SubElement(holder, "geom", name=f"{name}_col", type="mesh", mesh=name, friction=friction, density="0",
+                          rgba=rgba, **at)  # fmt: skip
+    meta["scene_xml"] = str(out / "scene_locomani.xml")
+    tree.write(out / "scene_locomani.xml")
+    # the robot-free scene for the drop test, written from scratch: the robot's equalities, actuators, sensors and
+    # contact excludes all name robot elements, so a copy minus the pelvis tree does not compile
+    env_root = ET.Element("mujoco", model="adt_env_only")
+    for tag in ("compiler", "option"):
+        if root.find(tag) is not None:
+            env_root.append(root.find(tag))
+    env_asset = ET.SubElement(env_root, "asset")
+    for el in asset.findall("mesh"):
+        if (el.get("name") or "").startswith("adt_"):
+            env_asset.append(el)
+    env_world = ET.SubElement(env_root, "worldbody")
+    ET.SubElement(env_world, "geom", name="floor", type="plane", size="0 0 0.05")
+    ET.SubElement(env_world, "light", pos="0 0 4", dir="0 0 -1")
+    for el in world.findall("body"):
+        if el.get("name") != "pelvis":
+            env_world.append(el)
+    ET.ElementTree(env_root).write(out / "env_only.xml")
+    path.write_text(json.dumps(meta, indent=1))
+    print(
+        f"[mujoco] {out / 'scene_locomani.xml'}: {len(meta['surfaces'])} slabs, {n_free} free bodies; env_only.xml for the drop test"
+    )
+
+
+def _parts(shell: adt.AdtObject):
+    """The shell's scene-graph geometries in the sim world frame."""
+    scene = trimesh.load(DATA / "objects" / adt.SHELL / "3d-asset.glb")
+    t = np.eye(4)
+    t[:3, :3], t[:3, 3] = shell.rot, shell.pos
+    for node in scene.graph.nodes_geometry:
+        transform, gname = scene.graph[node]
+        part = scene.geometry[gname].copy()
+        part.apply_transform(t @ transform)
+        yield part
+
+
+def estimate(args) -> None:
+    """Claude's fields: object names / mass / friction / containers, then surface names, then room names."""
+    path = Path(args.scene)
+    meta = json.loads(path.read_text())
+    log = path.parent / "claude_properties.jsonl"
+    rows = properties.object_rows(meta)
+    notes, estimates = [], []
+    for k in range(0, len(rows), args.batch):
+        part = rows[k : k + args.batch]
+        reply = properties.ask({"objects": part}, properties.OBJECT_SCHEMA, properties.OBJECT_SYSTEM, args.model, log)
+        estimates.extend(reply["objects"])
+        print(f"[props] objects {k + len(part)}/{len(rows)}", flush=True)
+    notes += properties.apply_objects(meta, estimates)
+    phrase = {key: o["semantic"].get("phrase", key) for key, o in meta["objects"].items()}
+    phrase[properties.SHELL_KEY] = "the apartment's built-in fittings"
+    reply = properties.ask(
+        {"surfaces": properties.surface_rows(meta, phrase)}, properties.SURFACE_SCHEMA, properties.SURFACE_SYSTEM,
+        args.model, log,
+    )  # fmt: skip
+    notes += properties.apply_surfaces(meta, reply["surfaces"])
+    reply = properties.ask(
+        {"rooms": properties.room_rows(meta)}, properties.ROOM_SCHEMA, properties.ROOM_SYSTEM, args.model, log
+    )
+    notes += properties.rename_rooms(meta, reply["rooms"])
+    meta["source"]["properties_by"] = {"model": args.model, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "log": log.name}
+    problems = scene_file.validate(meta)
+    path.write_text(json.dumps(meta, indent=1))
+    (path.parent / "properties_report.json").write_text(json.dumps({"notes": notes, "problems": problems}, indent=1))
+    print(
+        f"[props] {len(notes)} rule notes, {len(problems)} validation problem(s); rooms {sorted(meta['room']['rooms'])}"
+    )
+    for n in notes[:25]:
+        print("   ", n)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="stage", required=True)
     g = sub.add_parser("geometry", help="walls, rooms, spawn, surfaces, objects -> scene_file.json")
     g.add_argument("--sequence", required=True)
     g.add_argument("--out", required=True)
+    e = sub.add_parser("estimate", help="Claude's names, mass, friction, containers, room names (in place)")
+    e.add_argument("--scene", required=True, help="the scene_file.json the geometry stage wrote")
+    e.add_argument("--model", default="opus")
+    e.add_argument("--batch", type=int, default=60)
+    j = sub.add_parser("mujoco", help="MJCF from the scene file (robot from --base)")
+    j.add_argument("--scene", required=True)
+    j.add_argument("--base", default=str(REPO / "outputs/scene/walk/scene_locomani.xml"))
+    j.add_argument(
+        "--free",
+        nargs="*",
+        help="object keys that get a free joint (default: every graspable movable one on a surface)",
+    )
     args = ap.parse_args()
-    if args.stage == "geometry":
-        geometry(args)
+    {"geometry": geometry, "estimate": estimate, "mujoco": mujoco}[args.stage](args)
 
 
 if __name__ == "__main__":

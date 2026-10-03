@@ -92,6 +92,8 @@ def round_loop(args, setup, *, runtime=None) -> None:
             pl = plans[obj_key]
             can_nom, rel_cands, squat_hint = pl.nom, pl.rel_cands, pl.squat_hint
             ax, sgn = pl.ax, pl.sgn
+            if pl.yaw != 0.0:  # this loop slides the target along world axes; scene_discovery tables are turned
+                raise ValueError(f"{obj_key}: round_loop needs an axis-aligned surface, got yaw {pl.yaw:.3f}")
             task = grasp_gym.instruction(pl.phrase)
             # One integer per episode decides the whole look of the scene, so the
             # manifest can record it and a replay can reproduce the exact frame.

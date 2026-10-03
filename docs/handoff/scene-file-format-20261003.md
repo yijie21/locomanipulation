@@ -65,6 +65,7 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 |---|---|---|
 | `bounds` | rule | `{x: [min, max], y: [min, max]}`，整个场景的范围；替换导航里写死的 `ROOM_XLIM` / `ROOM_YLIM` |
 | `walls` | rule | 墙的线段 `[[x0,y0],[x1,y1]]`，从 `ApartmentEnv` 在 0.1–1.5 m 高度切片得到 |
+| `obstacles` | rule | 挡路家具的轮廓多边形（占 0.05–1.8 m 高度带的固定物体，ADT 包围盒的凸包）；导航把它们画进占用图 |
 | `doors` | adt + rule | 门洞线段和对应的门实例（`Apartment_BedroomDoor` 等）；第一轮门按"开着"处理 |
 | `rooms` | rule + claude | `{<名字>: {polygon: [[x, y], ...], name_source: claude}}`：多边形是墙 + 门洞围成的连通区域（规则算），名字由 Claude 按里面的家具起（"kitchen"） |
 | `spawn` | rule | `{<房间>: [多边形, ...]}`，能出生的区域（离墙和家具 ≥ `body_radius` + 余量） |

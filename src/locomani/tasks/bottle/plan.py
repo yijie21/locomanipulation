@@ -32,8 +32,9 @@ class TargetPlan(NamedTuple):
     grip_z: float  # world z of the grip centre
     rel_cands: np.ndarray  # pelvis-frame (x, y) stands that put it in the core
     squat_hint: float | None
-    ax: int  # 0 = x edge, 1 = y edge -- the edge it hugs
+    ax: int  # 0 = x edge, 1 = y edge -- the edge it hugs, in the surface's own frame
     sgn: float  # which side of that axis
+    yaw: float = 0.0  # the surface's yaw: the edge normal in the world is the local one turned by this
 
 
 def resolve_pool(meta: dict, spec: str) -> list[str]:
@@ -79,6 +80,24 @@ def build_rel_candidates(rm: reach_map.ReachMap, z_pf: float) -> np.ndarray:
     return np.asarray(cands)
 
 
+EDGES = {"+x": (0, 1.0), "-x": (0, -1.0), "+y": (1, 1.0), "-y": (1, -1.0)}
+
+
+def nearest_edge(xy, surf: dict) -> tuple[int, float]:
+    """(axis, sign) of the surface edge nearest to `xy`, in the surface's own frame (turned by its `yaw`).
+
+    Only edges the robot can stand at count: a scene_discovery surface lists them in `approach_edges`
+    (an empty list means none, which is an error); the hand-built scenes leave every edge open."""
+    d = np.asarray(xy, dtype=float)[:2] - np.asarray(surf["xy"], dtype=float)
+    c, s = np.cos(-float(surf.get("yaw", 0.0))), np.sin(-float(surf.get("yaw", 0.0)))
+    local = np.array([c * d[0] - s * d[1], s * d[0] + c * d[1]])
+    half = np.asarray(surf.get("half_extent", [0.6, 0.6])[:2], dtype=float)
+    allowed = surf.get("approach_edges")
+    if allowed is not None and not allowed:
+        raise ValueError(f"surface {surf.get('name', '?')} has no edge the robot can stand at")
+    return min((EDGES[e] for e in (allowed or EDGES)), key=lambda e: half[e[0]] - e[1] * local[e[0]])
+
+
 def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap, config=DEFAULT_REACH) -> TargetPlan:
     """Solve the stand plan for one target.
 
@@ -90,17 +109,14 @@ def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap, config=DEFAULT
     from locomani.tasks.bottle.grasp_gym import obj_top
 
     surf = meta["surfaces"][meta["objects"][key].get("surface", "A")]
-    cxy = np.asarray(surf["xy"], dtype=float)
-    half = np.asarray(surf.get("half_extent", [0.6, 0.6])[:2], dtype=float)
+    yaw = float(surf.get("yaw", 0.0))
     nom = np.asarray(meta["objects"][key]["init_pos"][:2], dtype=float)
     grip_z = obj_top(meta, key) - grasping.GRIP_BELOW_RIM
     if config.ready_grasp_recovery:
         obj = meta["objects"][key]
         grip_z = obj["init_pos"][2] + obj["box"].get("center", [0.0, 0.0, 0.0])[2] - config.grip_below_center
 
-    e0 = nom - cxy
-    ax = 0 if abs(abs(e0[0]) - half[0]) < abs(abs(e0[1]) - half[1]) else 1
-    sgn = float(np.sign(e0[ax]))
+    ax, sgn = nearest_edge(nom, surf)
 
     plan_cs = rm.plan_core_stand(float(grip_z - STANDING_PELVIS_Z))
     if plan_cs is not None:
@@ -113,7 +129,7 @@ def plan_for_target(meta: dict, key: str, rm: reach_map.ReachMap, config=DEFAULT
         rel_cands = build_rel_candidates(rm, float(grip_z - STANDING_PELVIS_Z))
         squat_hint = None
     phrase = meta.get("object_phrase", {}).get(key, f"the {key}")
-    return TargetPlan(key, phrase, nom, grip_z, rel_cands, squat_hint, ax, sgn)
+    return TargetPlan(key, phrase, nom, grip_z, rel_cands, squat_hint, ax, sgn, yaw)
 
 
 def sample_object_yaw(fixed=None):

@@ -50,6 +50,7 @@ class SurfaceInfo:
     top: float
     xy: tuple[float, float]
     half_extent: tuple[float, float]
+    yaw: float = 0.0  # scene_discovery surfaces are turned; the hand-built ones are axis-aligned
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,13 @@ class SceneModel:
         phrases = meta.get("object_phrase") or {}
         phrases = phrases if isinstance(phrases, dict) else {}
         self.surfaces = {
-            k: SurfaceInfo(k, float(s["top"]), _t(s["xy"], 2), _t(s.get("flat_half_extent") or s["half_extent"], 2))
+            k: SurfaceInfo(
+                k,
+                float(s["top"]),
+                _t(s["xy"], 2),
+                _t(s.get("flat_half_extent") or s["half_extent"], 2),
+                float(s.get("yaw", 0.0)),
+            )
             for k, s in (meta.get("surfaces") or {}).items()
         }
         self.objects = {}
@@ -118,6 +125,7 @@ class SceneModel:
                 "xy": list(s.xy),
                 "half_extent": list(s.half_extent),
                 "top": s.top,
+                "yaw": s.yaw,
             }
         obj = self.objects[target]
         if obj.half_extent is not None and obj.init_pos is not None:
@@ -205,7 +213,9 @@ class SceneModel:
             if not (s.top - PUT_ON_SLACK_M <= bottom <= s.top + PUT_ON_HEIGHT_M):
                 return False, f"[put_on] underside z {bottom:.3f} not on the top {s.top:.3f} (+{PUT_ON_HEIGHT_M} m)"
             xy = pos[:2] + centre[:2]
-            over = np.abs(xy - np.asarray(s.xy)) - np.asarray(s.half_extent)
+            d = xy - np.asarray(s.xy)
+            c, sn = np.cos(-s.yaw), np.sin(-s.yaw)
+            over = np.abs([c * d[0] - sn * d[1], sn * d[0] + c * d[1]]) - np.asarray(s.half_extent)
             if np.any(over > PUT_ON_SLACK_M):
                 return (
                     False,

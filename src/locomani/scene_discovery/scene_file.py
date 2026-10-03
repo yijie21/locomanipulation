@@ -88,6 +88,9 @@ def _check_room(room, out: list[str]) -> set:
     for i, seg in enumerate(room.get("walls") or ()):
         if not (len(seg) == 2 and all(_is_xy(p) for p in seg)):
             out.append(f"room.walls[{i}] must be [[x0, y0], [x1, y1]]")
+    for i, poly in enumerate(room.get("obstacles") or ()):
+        if len(poly) < 3 or not all(_is_xy(p) for p in poly):
+            out.append(f"room.obstacles[{i}] needs >= 3 [x, y] points")
     rooms = room.get("rooms") or {}
     for name, r in rooms.items():
         poly = (r or {}).get("polygon") or ()

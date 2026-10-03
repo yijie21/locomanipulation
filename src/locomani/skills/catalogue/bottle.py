@@ -72,7 +72,7 @@ def stand_plan(meta: dict, target: str, object_xy, reach_config, rm, rng=None):
     rel, squat_hint = sample_stand(plan, rng if rng is not None else np.random.default_rng(0), reach_config)
     normal = np.zeros(2)
     normal[plan.ax] = -plan.sgn
-    psi = float(np.arctan2(normal[1], normal[0]))
+    psi = float(np.arctan2(normal[1], normal[0])) + plan.yaw  # the surface frame's normal, turned into the world
     c, s = np.cos(psi), np.sin(psi)
     stand = np.asarray(object_xy, dtype=float)[:2] - np.array([c * rel[0] - s * rel[1], s * rel[0] + c * rel[1]])
     return np.asarray(rel, dtype=float), psi, stand, squat_hint

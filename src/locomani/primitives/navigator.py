@@ -69,10 +69,16 @@ class OccupancyMap:
         self,
         meta: dict,
         resolution: float = RESOLUTION,
-        xlim=ROOM_XLIM,
-        ylim=ROOM_YLIM,
+        xlim=None,
+        ylim=None,
         body_radius: float = BODY_RADIUS,
     ):
+        # A v2 scene file (scene_discovery) carries its own bounds, walls and furniture footprints; the
+        # hand-built scenes keep the fixed ROOM_XLIM / ROOM_YLIM box with walls on its border only.
+        room = meta.get("room") or {}
+        bounds = room.get("bounds") or {}
+        xlim = xlim if xlim is not None else bounds.get("x", ROOM_XLIM)
+        ylim = ylim if ylim is not None else bounds.get("y", ROOM_YLIM)
         self.res = resolution
         self.origin = np.array([xlim[0], ylim[0]], dtype=float)
         self.nx = int(np.ceil((xlim[1] - xlim[0]) / resolution))
@@ -86,12 +92,17 @@ class OccupancyMap:
         self.occupied[0, :] = self.occupied[-1, :] = True
         self.occupied[:, 0] = self.occupied[:, -1] = True
 
+        for a, b in room.get("walls") or ():
+            self.add_segment(a, b)
+        for poly in room.get("obstacles") or ():
+            self.add_polygon(poly)
+
         self.surfaces = {}
         for key, surf in meta.get("surfaces", {}).items():
             he = surf.get("half_extent")
             if he is None:
                 continue
-            self.add_box(surf["xy"], he)
+            self.add_box(surf["xy"], he, surf.get("yaw", 0.0))
             self.surfaces[key] = surf
 
         # One transform gives both answers: the hard C-space (anything nearer
@@ -102,18 +113,50 @@ class OccupancyMap:
 
     # -- geometry ----------------------------------------------------------
 
-    def add_box(self, centre, half_extent) -> None:
-        """Mark an axis-aligned footprint occupied.
-
-        The scene's surfaces are attached with UPRIGHT_QUAT, i.e. no yaw, so an
-        axis-aligned box is exact rather than an approximation. Half a cell is
-        added on each side so a footprint never lands between samples.
-        """
+    def add_box(self, centre, half_extent, yaw: float = 0.0) -> None:
+        """Mark a footprint occupied: axis-aligned (the hand-built scenes attach surfaces with no yaw, so
+        this is exact) or turned by `yaw` (scene_discovery surfaces). Half a cell is added on each side so a
+        footprint never lands between samples."""
         c = np.asarray(centre, dtype=float)[:2]
         h = np.asarray(half_extent, dtype=float)[:2] + self.res * 0.5
-        lo = self.clip_cell(self.cell_of(c - h))
-        hi = self.clip_cell(self.cell_of(c + h))
-        self.occupied[lo[0] : hi[0] + 1, lo[1] : hi[1] + 1] = True
+        if yaw == 0.0:
+            lo = self.clip_cell(self.cell_of(c - h))
+            hi = self.clip_cell(self.cell_of(c + h))
+            self.occupied[lo[0] : hi[0] + 1, lo[1] : hi[1] + 1] = True
+            return
+        co, si = np.cos(yaw), np.sin(yaw)
+        corners = np.array([[-h[0], -h[1]], [h[0], -h[1]], [h[0], h[1]], [-h[0], h[1]]]) @ np.array(
+            [[co, si], [-si, co]]
+        )
+        self.add_polygon(corners + c)
+
+    def add_polygon(self, polygon) -> None:
+        """Mark the cells whose centres fall inside a world-xy polygon (even-odd rule)."""
+        poly = np.asarray(polygon, dtype=float)[:, :2]
+        lo = self.clip_cell(self.cell_of(poly.min(axis=0)))
+        hi = self.clip_cell(self.cell_of(poly.max(axis=0)))
+        gx, gy = np.meshgrid(np.arange(lo[0], hi[0] + 1), np.arange(lo[1], hi[1] + 1), indexing="ij")
+        px, py = self.origin[0] + (gx + 0.5) * self.res, self.origin[1] + (gy + 0.5) * self.res
+        inside = np.zeros(gx.shape, dtype=bool)
+        for (x0, y0), (x1, y1) in zip(poly, np.roll(poly, -1, axis=0)):
+            crosses = (y0 > py) != (y1 > py)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                x_at = x0 + (py - y0) * (x1 - x0) / (y1 - y0)
+            inside ^= crosses & (px < x_at)
+        self.occupied[gx[inside], gy[inside]] = True
+
+    def add_segment(self, a, b, thickness: float = 0.10) -> None:
+        """Mark a wall segment occupied, `thickness` wide."""
+        a, b = np.asarray(a, dtype=float)[:2], np.asarray(b, dtype=float)[:2]
+        n = max(2, int(np.ceil(np.linalg.norm(b - a) / (self.res / 2))) + 1)
+        pts = a + np.linspace(0.0, 1.0, n)[:, None] * (b - a)
+        r = int(np.ceil(thickness / 2 / self.res))
+        cells = np.floor((pts - self.origin) / self.res).astype(int)  # cell_of takes one point
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                c = cells + [dx, dy]
+                ok = (c[:, 0] >= 0) & (c[:, 0] < self.nx) & (c[:, 1] >= 0) & (c[:, 1] < self.ny)
+                self.occupied[c[ok, 0], c[ok, 1]] = True
 
     def cell_of(self, xy) -> np.ndarray:
         return np.floor((np.asarray(xy, dtype=float)[:2] - self.origin) / self.res).astype(int)
