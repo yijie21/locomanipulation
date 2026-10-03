@@ -86,6 +86,27 @@ def hull(points) -> list:
     return h.round(4).tolist()
 
 
+def obstacle_polygons(fixed: list) -> list:
+    """Footprints of the fixed objects that occupy the walking height band. Doors are left out: round 1 treats
+    every door as open (format §4), and in MuJoCo a door is scenery without contact anyway."""
+    return [
+        hull(o.footprint())
+        for o in fixed
+        if o.category != "door" and o.world_z()[0] < OBSTACLE_Z[1] and o.world_z()[1] > OBSTACLE_Z[0]
+    ]
+
+
+def obstacles(args) -> None:
+    """Rewrite room.obstacles of an existing scene file with the current rule, keeping every other field."""
+    path = Path(args.scene)
+    meta = json.loads(path.read_text())
+    objs = [o for o in adt.read_sequence(DATA / "sequences" / meta["source"]["sequence"]) if o.name in meta["objects"]]
+    before = len(meta["room"].get("obstacles") or [])
+    meta["room"]["obstacles"] = obstacle_polygons([o for o in objs if o.name != adt.SHELL and not o.movable])
+    path.write_text(json.dumps(meta, indent=1))
+    print(f"[adt] room.obstacles {before} -> {len(meta['room']['obstacles'])} in {path}")
+
+
 def room_at(labels, grid: floorplan.Grid, xy, names: dict):
     col, row = np.floor(grid.to_px(xy)).astype(int)
     r = int(np.ceil(0.6 / grid.res))
@@ -121,8 +142,7 @@ def geometry(args) -> None:
     print(f"[adt] {len(walls)} wall segments, {len(room_ids)} rooms, {len(objs)} objects", flush=True)
 
     fixed = [o for o in objs if not o.movable]
-    blocking = [o for o in fixed if o.world_z()[0] < OBSTACLE_Z[1] and o.world_z()[1] > OBSTACLE_Z[0]]
-    obstacles = [hull(o.footprint()) for o in blocking]
+    obstacles = obstacle_polygons(fixed)
     furniture = grid.polygons(obstacles)
     clear = floorplan.clearance(wall_img | furniture | ~floor)  # off the floor is outside the apartment
     spawn = floorplan.spawn_regions(labels, clear, BODY_RADIUS + SPAWN_MARGIN, grid)
@@ -509,8 +529,10 @@ def main() -> None:
         nargs="*",
         help="object keys that get a free joint (default: every graspable movable one on a surface)",
     )
+    b = sub.add_parser("obstacles", help="rewrite room.obstacles with the current rule (keeps Claude's fields)")
+    b.add_argument("--scene", required=True)
     args = ap.parse_args()
-    {"geometry": geometry, "estimate": estimate, "mujoco": mujoco}[args.stage](args)
+    {"geometry": geometry, "estimate": estimate, "mujoco": mujoco, "obstacles": obstacles}[args.stage](args)
 
 
 if __name__ == "__main__":

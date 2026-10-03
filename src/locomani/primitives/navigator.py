@@ -105,9 +105,14 @@ class OccupancyMap:
             self.add_box(surf["xy"], he, surf.get("yaw", 0.0))
             self.surfaces[key] = surf
 
-        # One transform gives both answers: the hard C-space (anything nearer
-        # than the body radius is illegal) and the soft clearance field the
-        # follower uses to prefer the middle of a gap over grazing an edge.
+        self.recompute()
+
+    def recompute(self) -> None:
+        """Refresh the clearance field after obstacles were added to `occupied`.
+
+        One transform gives both answers: the hard C-space (anything nearer
+        than the body radius is illegal) and the soft clearance field the
+        follower uses to prefer the middle of a gap over grazing an edge."""
         self.clearance = distance_transform_edt(~self.occupied, sampling=self.res).astype(float)
         self.free = self.clearance >= self.body_radius
 

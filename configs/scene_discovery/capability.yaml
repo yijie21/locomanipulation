@@ -44,7 +44,8 @@ locomotion:
     status: measured_one
     setting: open floor with axis-aligned table boxes, one room; doorways never tried
     note: navigate_to follows an occupancy-map distance field in 0.45 m segments, stops within 0.10 m on a ring stand_off +- 0.07 around an object
-    source: docs/skills.md (navigate_to row)
+    route_max_measured: 2.6 # one carried route round a table corner, 7 segments, 2.57 m
+    source: docs/skills.md (navigate_to row); docs/ledger/pick_place.md §10
   cross_room:
     status: untested # bucket 2 ("long-range navigation") per plan decision 9
 
@@ -56,6 +57,12 @@ reach_single_arm:
     source: docs/ledger/bottle.md §40; docs/ledger/pick_place.md §8, §11
   jaw_opening: 0.095 # a single-hand pick needs the narrower horizontal extent <= this (src/locomani/skills/scene_model.py)
   object_mass_measured: 0.353 # the bottle; heavier single-hand loads never run
+  # the measured setting as numbers, for the feasibility checker (scene_discovery.feasibility)
+  support_top_measured: [0.62, 0.62] # table top under every measured single-arm grasp
+  object_width_measured: [0.045, 0.061] # narrower horizontal extent: bottle, soup can
+  object_height_measured: [0.14, 0.16]
+  inboard_measured: [0.04, 0.10] # object centre to the surface edge the robot stands at: bottle line CAN_INBOARD 0.04-0.08, pick_place can 0.10
+  inboard_max: 0.30 # beyond: palm reach <= 0.55 m ahead of the pelvis (g1-capability-envelope) minus the >= 0.21 m the pelvis stops before the edge (walk.md)
   grip_force:
     status: measured
     note: per finger F = 1.5 x 250 x (setpoint - q), clamped at 20 N; holding force therefore depends on how far the jaw is stopped short of closed
@@ -97,11 +104,14 @@ place:
     status: measured_one
     setting: basket 0.30 x 0.21 x 0.15 m on the same 0.62 m table, after a loaded approach to it
     success: 3/6
-    source: docs/ledger/pick_place.md §8
+    rim_height_measured: [0.77, 0.77] # world z of the basket rim
+    opening_measured: [0.28, 0.185] # inner size of the basket; a smaller opening is untested
+    source: docs/ledger/pick_place.md §8; outputs/scene/pick_place/scene_meta.json (basket box)
   put_down_bimanual:
     status: measured_one
     setting: warehouse box onto a 0.10 m platform, stand keeps the box over it (stand_forward_min 0.50)
     success: 8/8
+    support_top_measured: [0.10, 0.10]
     source: docs/skills.md (put_down_bimanual row); docs/ledger/crate.md
   on_other_surface: {status: untested, note: "place onto a different surface or height than the grasp table"}
 
@@ -109,6 +119,7 @@ posture:
   squat:
     status: measured
     note: in planner mode pelvis height is commandable only in IDLE_SQUAT (static); the streamed whole-body pose can crouch (pelvis measured 0.57 m) and put both hands 0.38-0.43 m ahead at h 0.20 m, but not at h 0.10 m
+    hands_lowest: 0.15 # m world; below this no hand position was ever reached (h 0.20 yes, 0.10 no)
     source: docs/handoff/g1-capability-envelope-20260921.md (lowest_h); docs/single_arm_design.md
   squat_while_grasping:
     status: measured_one
