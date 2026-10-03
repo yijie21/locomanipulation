@@ -22,8 +22,10 @@ A hard side key light was tried too and rejected: it washed out the white room r
 The mars robot (make_dex1_model.py, the lab's real G1) is drawn the same way, its meshes sorted by the colour the
 generator writes: DARK_MESHES dark whatever the URDF colours them (user, 2026-10-02: on the real robot the 5010 wrist,
 the Dex1 base and the D405 mount are black; the URDF has the wrist white and the Dex1 base pale lavender), the rest
-by the URDF colour's brightness. Its fingers keep the stock model's geoms and colours. The D455 on top of the head
-(`head_tilt_link`) stays silver-white, as on the real robot (user, 2026-10-03).
+by the URDF colour's brightness. Its fingers keep the stock model's geoms and colours. SHELL_MESHES go the other way,
+silver whatever the URDF says: the pelvis, the triangular part joining the legs to the upper body (user, 2026-10-03;
+dark in the URDF and in Unitree's own). The D455 on top of the head (`head_tilt_link`) stays silver-white, as on the
+real robot (user, 2026-10-03).
 
 Changing a value changes the policy's pictures. A checkpoint trained before the change saw the older look, so
 change NAME along with the values.
@@ -40,3 +42,5 @@ DARK_MESHES = frozenset(
         "unitree_dex1-1_d405_wrist_mount",
     }
 )
+# URDF mesh file stems drawn silver (the shell look).
+SHELL_MESHES = frozenset({"pelvis_ver0529"})

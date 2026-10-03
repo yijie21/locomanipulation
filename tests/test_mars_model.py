@@ -112,7 +112,7 @@ def test_mars_colours_sort_into_the_robot_look(mars_xml):
     assert rgba["torso_link_rev_1_0"] == {M.SHELL_RGBA}
     assert rgba["mars_head_tilt_link"] == {M.SHELL_RGBA}  # the D455 on the head is silver-white on the real robot
     pelvis = next(b for b in root.iter("body") if b.get("name") == "pelvis")
-    assert {g.get("rgba") for g in pelvis.findall("geom")} == {M.DARK_RGBA}  # the kept stock contour too
+    assert {g.get("rgba") for g in pelvis.findall("geom")} == {M.SHELL_RGBA}  # silver (user), the kept contour too
     # collision geoms (group 0, drawn by MuJoCo's cameras) wear their link's visual colour
     for body in root.iter("body"):
         if body.get("name", "").endswith("wrist_yaw_link"):
