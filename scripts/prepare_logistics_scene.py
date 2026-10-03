@@ -82,10 +82,7 @@ def main() -> int:
     platform = ET.SubElement(world, "body", name="logistics_platform", pos="0 0 0")
     platform.append(platform_geom)
     if args.robot == "mars":
-        os.makedirs(make_dex1_model.MARS_MESHES, exist_ok=True)
-        src = os.path.join(os.path.dirname(make_dex1_model.MARS_URDF), "meshes")
-        for m in os.listdir(src):
-            shutil.copy(f"{src}/{m}", f"{make_dex1_model.MARS_MESHES}/{m}")
+        make_dex1_model.write_mars()  # the meshes the scene references (and the robot model) are gitignored
         tree = make_dex1_model.apply_mars(tree, make_dex1_model.MARS_MESHES)
     tree.write(runtime_xml, encoding="unicode")
     if args.robot == "mars":

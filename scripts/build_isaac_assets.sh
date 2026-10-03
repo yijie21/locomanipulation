@@ -86,7 +86,11 @@ fi
 case "$ROBOT" in
     stock) ROBOT_DIR="$ISAAC_ASSETS/robot" ;;
     mars)  ROBOT_DIR="$ISAAC_ASSETS/robot/mars"
-           ROBOT_MJCF="$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1_mars.xml" ;;
+           ROBOT_MJCF="$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1_mars.xml"
+           # Generated, gitignored (third_party/): written here so a fresh checkout builds without a manual step.
+           [ -x "$VENV_SIM_PY" ] || fail "VENV_SIM_PY not executable: $VENV_SIM_PY (the mars MJCF is generated with it)"
+           PYTHONPATH="$LOCOMANI_ROOT/src" "$VENV_SIM_PY" -m locomani.sim.make_dex1_model --mars >/dev/null \
+               || fail "could not generate the mars MJCF (make_dex1_model.py --mars)" ;;
     *)     fail "unknown --robot $ROBOT (stock or mars)" ;;
 esac
 ROBOT_USD="$ROBOT_DIR/g1_dex1.usda"

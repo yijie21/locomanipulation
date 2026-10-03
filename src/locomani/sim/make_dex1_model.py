@@ -664,17 +664,30 @@ def main() -> None:
     with open(f"{G1}/scene_31dof.xml", "w") as f:
         f.write(scene)
     print(f"wrote {out_xml} and scene_31dof.xml")
+    write_mars()
 
+
+def write_mars() -> dict:
+    """Write the mars meshes, robot model and scene under G1 (gitignored, so every checkout regenerates them)."""
     os.makedirs(MARS_MESHES, exist_ok=True)
     src = os.path.join(os.path.dirname(MARS_URDF), "meshes")
     for m in os.listdir(src):
         shutil.copy(f"{src}/{m}", f"{MARS_MESHES}/{m}")
-    build_mars(stock).write(MARS_XML)
+    build_mars(build_stock()).write(MARS_XML)
     scene = open(f"{G1}/scene_43dof.xml").read().replace("g1_29dof_with_hand.xml", os.path.basename(MARS_XML))
     with open(MARS_SCENE, "w") as f:
         f.write(scene)
-    print(f"wrote {MARS_XML} and {os.path.basename(MARS_SCENE)}: {check_mars()}")
+    result = check_mars()
+    print(f"wrote {MARS_XML} and {os.path.basename(MARS_SCENE)}: {result}")
+    return result
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if sys.argv[1:] == ["--mars"]:
+        write_mars()
+    elif sys.argv[1:]:
+        raise SystemExit(f"usage: {sys.argv[0]} [--mars]  (--mars: only the mars model, leaving the stock files alone)")
+    else:
+        main()
