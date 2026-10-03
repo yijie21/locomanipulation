@@ -353,6 +353,7 @@
   - [x] 9.3 ADT 下载：3 条公寓序列的 `main_groundtruth` + 356 个物体模型（4.6 GB）到 `/workspace/datasets/adt/`，sha1 全部校验（`scripts/adt_download.py`）；链接文件移到 `/workspace/datasets/adt/links/`（不进 git）
   - [ ] 9.4 `plan_episode.py --record`：每局随机一句说法作语言指令，元数据记谓词 / plan / trace，只有谓词判成功的局进 convert；验收 = 抓瓶子固定 plan 20 局与原 bottle 采集线逐字段比对 + 各训一个小模型
   - [x] 9.5 场景文件格式（扩展 `scene_meta.json`：物体字段带出处、台面、房间、随机化规格）与目标谓词库（2026-10-03：`docs/handoff/scene-file-format-20261003.md`，用户过目，三处按推荐：台面存 yaw 并改导航/站位、每局只把任务物体和干扰物做自由体、规则切房间 + Claude 命名；`scene_discovery.scene_file.validate/load` + `scene_discovery.predicates.compile_goal`（on/in/held/upright/near/in_room），`tests/test_scene_discovery.py` 7 个）
-  - [ ] 9.6 ADT → 场景转换：核实 `ApartmentEnv` 是否房间外壳（轴向、俯视图）；物体 glb → MuJoCo（碰撞体凸分解）+ Isaac/Unreal；Claude 估质量 / 摩擦 + 掉落测试；渲染器二选一（plan 决策 16）
+  - [~] 9.6 ADT → 场景转换：核实 `ApartmentEnv` 是否房间外壳（轴向、俯视图）；物体 glb → MuJoCo（碰撞体凸分解）+ Isaac/Unreal；Claude 估质量 / 摩擦 + 掉落测试；渲染器二选一（plan 决策 16）
+    - [x] 9.6.1–9.6.3 坐标轴核实、墙与房间、台面（2026-10-03，`scripts/adt_to_scene.py geometry`，跑在 /venv/main；纯几何 `scene_discovery.adt/floorplan/surfaces` 在 sim venv 测试 9 个）：2 个房间（开放式客厅 / 餐厅 / 厨房 room_1、卧室 room_2，门洞 0.9 m 分开）；71 个台面（53 个有可走近的边），含外壳里的厨房台面 0.92 m × 3.1 m，楼梯按"≥3 级逐级一个台阶高"剔除；356 个物体（可移动 215，其中单手可抓 112、双手 1，131 个落在台面上）；校验 0 问题。产物 `outputs/scene_discovery/adt_apartment/{scene_file.json,floorplan.png}`
   - [~] 9.7 能力说明文件（从已测包络整理：伸手高度与距离、桌面高度、下蹲 0.28 m、夹爪 9.5 cm / ~20 N、双手箱宽、行走限制）+ 程序可行性检查（2026-10-03：`configs/scene_discovery/capability.yaml` 写完，每条带 measured / measured_one / untested / unavailable 与出处文档；核对时改正三处出处，并发现流式全身姿态能下蹲（骨盆 0.57 m），不止 IDLE_SQUAT；程序检查待写，依赖 9.6 的转换结果）
   - [ ] 9.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点
