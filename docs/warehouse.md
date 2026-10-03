@@ -39,7 +39,9 @@ bash scripts/build_scene.sh warehouse_box_45x32x33_mars
 做什么：第一条从仓库自带的资产包建物流房间，并把其中的机器人换成 mars。第二条以它为底，量出托盘四条边外的空地，建出采集用的场景（纸箱宽 0.45 × 长 0.32 × 高 0.33 m）。
 得到什么：`outputs/scene/warehouse_box_45x32x33_mars/scene_locomani.xml`。每条几秒到一分钟。
 
-再给所选渲染器建这个场景的版本。Unreal：
+再给所选渲染器建这个场景的版本。
+
+Unreal：
 
 ```bash
 bash scripts/start_unreal.sh --gpu 1
