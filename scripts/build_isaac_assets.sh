@@ -5,8 +5,13 @@
 #   bash scripts/build_isaac_assets.sh                     # robot + the working scene
 #   bash scripts/build_isaac_assets.sh --snapshot <dir>    # scene from a batch snapshot
 #   bash scripts/build_isaac_assets.sh --robot-only
+#   bash scripts/build_isaac_assets.sh --robot-only --robot mars
 #   bash scripts/build_isaac_assets.sh --force             # ignore the caches
 #
+# --robot picks the robot (scene_lib.ROBOT_SCENES): stock (the default; with --snapshot, the snapshot's own
+# scene_meta.json `robot`) is imported from $ROBOT_MJCF into $ISAAC_ASSETS/robot/g1_dex1.usda, any other robot from
+# its generated MJCF (make_dex1_model.py) into $ISAAC_ASSETS/robot/<robot>/g1_dex1.usda. The renderers take the
+# USD of the robot the scene carries (isaac.stage.robot_usd).
 # TWO LAYERS, because they change at different rates:
 #
 #   robot  : imported from the robot-only MJCF ($ROBOT_MJCF). Scene-independent
@@ -25,14 +30,15 @@ set -u
 . "$(dirname "$0")/paths.sh"
 cd "$LOCOMANI_ROOT" || exit 1
 
-SNAPSHOT=""; ROBOT_ONLY=0; FORCE=0; LABEL=""
+SNAPSHOT=""; ROBOT_ONLY=0; FORCE=0; LABEL=""; ROBOT=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --snapshot)   SNAPSHOT="$2"; shift 2 ;;
+        --robot)      ROBOT="$2"; shift 2 ;;
         --label)      LABEL="$2"; shift 2 ;;
         --robot-only) ROBOT_ONLY=1; shift ;;
         --force)      FORCE=1; shift ;;
-        -h|--help)    sed -n '2,9p' "$0"; exit 0 ;;
+        -h|--help)    sed -n '2,15p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -70,7 +76,19 @@ if [ "$ROBOT_ONLY" = 0 ]; then
 fi
 
 # --- robot -------------------------------------------------------------------
-ROBOT_DIR="$ISAAC_ASSETS/robot"
+if [ -z "$ROBOT" ]; then
+    ROBOT=stock
+    if [ -n "$SNAPSHOT" ]; then
+        ROBOT=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("robot", "stock"))' \
+            "$SNAPSHOT/scene_meta.json") || fail "cannot read the robot from $SNAPSHOT/scene_meta.json"
+    fi
+fi
+case "$ROBOT" in
+    stock) ROBOT_DIR="$ISAAC_ASSETS/robot" ;;
+    mars)  ROBOT_DIR="$ISAAC_ASSETS/robot/mars"
+           ROBOT_MJCF="$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1_mars.xml" ;;
+    *)     fail "unknown --robot $ROBOT (stock or mars)" ;;
+esac
 ROBOT_USD="$ROBOT_DIR/g1_dex1.usda"
 [ -f "$ROBOT_MJCF" ] || fail "robot MJCF not found: $ROBOT_MJCF"
 # The key covers the post-processor too: a change to split_visual_refs.py

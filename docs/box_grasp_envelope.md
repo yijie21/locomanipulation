@@ -115,7 +115,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 按这套取值的产出率约 0.40–0.45；要 200 集成功局约 450–500 局，5 个实例并行约 1 小时（不录制 RTF 0.97–0.98）。
 
 **搬回 warehouse 房间前先核一次**：同样的箱子几何在房间里（0.37 m 托盘）基线 26%，这里 43%，差在哪没查（台高、房间、或别的）；
-2026-09-28 起 warehouse 的默认采集（`warehouse_smoke` / `warehouse_200`）是四边随机，每项取 §3 里单独成功率 ≥ 30% 的区间（比上表宽：setback 0–2.5 cm、偏角 0～+3.5°），纸箱 45×32×33，房间里 17/40；只从一个地方开始的是 `*_fixed_start`（[warehouse](warehouse.md) §2）。
+2026-09-28 起 warehouse 的默认采集（`warehouse_smoke` / `warehouse_200`）是四边随机；2026-10-03 起默认换成 mars 机器人的 `warehouse_mars_smoke` / `warehouse_mars_200`，只走 −y 边（`start_edges: [ym]`），其余范围不变。四边线每项取 §3 里单独成功率 ≥ 30% 的区间（比上表宽：setback 0–2.5 cm、偏角 0～+3.5°），纸箱 45×32×33，房间里 17/40；只从一个地方开始的是 `*_fixed_start`（[warehouse](warehouse.md) §2）。
 
 ## 5. 专家层面试过什么（2026-09-27，中心格，基线 28/60 = 0.47）
 

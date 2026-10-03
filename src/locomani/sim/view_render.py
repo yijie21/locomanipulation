@@ -9,8 +9,8 @@ state (DECISIONS 2026-09-24).
 The join is `locomani.pipeline.render_dataset_cameras`'s: each parquet row's priv_seq -> the trace qpos at that
 seq, written over the same placeholder videos in the session and recorded in the same marker, with the renderer's
 name and its `look` (the settings that decide the pixels: Isaac's stage, RTX settings and supersampling; Unreal's
-level and capture passes; in both, the robot's materials, `robot_look.NAME`). A session is never filled by two
-renderers or two looks. Convert takes a run only when its sessions' renderer is the run's `images.source`.
+level and capture passes; in both, the robot's materials, `robot_look.NAME`, and the robot, `robot_look.scene_robot`).
+A session is never filled by two renderers or two looks. Convert takes a run only when its sessions' renderer is the run's `images.source`.
 
 Failed rounds (a session's `discarded_episode_indices`) keep their placeholders, as in the MuJoCo re-render.
 A renderer's frame of the three cameras costs 70-220 ms against MuJoCo's ~3, so one more thing convert never reads
@@ -104,6 +104,10 @@ def render_episode(view, traces, session: Path, ep: int, info: dict, streams) ->
     }
 
 
+# What a look key meant before markers recorded it: one sample, and the stock robot (markers before 2026-10-03).
+MARKER_DEFAULTS = {"supersample": 1, "robot": "stock"}
+
+
 def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
     """What `renderer` has to render in this run: (traces, {session: [episodes]}), or None when nothing applies.
 
@@ -130,7 +134,7 @@ def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
         done = json.loads(marker.read_text())
         if done.get("renderer", "mujoco") != renderer:
             raise SystemExit(f"{session.name}: its placeholders were filled by another renderer; not mixing")
-        other = {k: done.get(k) for k, v in look.items() if done.get(k, 1 if k == "supersample" else None) != v}
+        other = {k: done.get(k) for k, v in look.items() if done.get(k, MARKER_DEFAULTS.get(k)) != v}
         if other:  # a key the marker lacks predates it: robot_look None is a look before 2026-10-01's
             raise SystemExit(
                 f"{session.name}: its episodes were rendered with another {renderer} look ({other}); not mixing"

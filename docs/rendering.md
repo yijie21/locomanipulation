@@ -198,7 +198,7 @@ bash scripts/setup_render_runtime.sh --deep
 
 | 部分 | 来源 → 生成物 |
 |---|---|
-| 机器人 | 已安装的 G1/Dex1 MJCF 与网格 → `assets/isaac/robot/g1_dex1.usda` |
+| 机器人 | 已安装的 G1/Dex1 MJCF 与网格 → `assets/isaac/robot/g1_dex1.usda`（stock）；mars 由 `--robot mars` 从生成的 `g1_29dof_with_dex1_mars.xml` 转出 `assets/isaac/robot/mars/g1_dex1.usda`。渲染时按场景 `scene_meta.json` 的 `robot` 选用 |
 | 桌子、台面、静态道具 | 安装的场景网格/贴图与本次元数据 → `assets/isaac/scene/<label>/scene.usda` |
 | 水瓶、篮子等可动物体 | 本次 MJCF 引用的可视网格、缩放与材质 → 同一场景缓存中的 `usd/<object>/` |
 | 房间背景 | 生成的背景源，或仓库自带 `assets/scene/empty_room_world.ply.gz` → 场景 USD |
@@ -214,6 +214,7 @@ bash scripts/setup_render_runtime.sh --deep
 - 数值相同不等于画面完全相同：Isaac 里深色件比 Unreal 亮一截（腕部相机里的夹爪顶板约 136/255，Unreal 接近黑色）。底色调到 0 也只降到 108，所以主要是黑色表面的镜面反射映出了白色房间，两个渲染器的反射算法不同（DECISIONS 2026-10-01）。
 - 两个渲染器的数据集补渲标记里都记了 `robot_look`。一个会话补渲到一半时外观变了，剩下的部分会被拒绝补渲，不会和已补的混在一起。2026-10-01 之前补渲的会话没有这个字段，也按"另一种外观"处理。
 - MJCF 的 rgba 不能直接当颜色用：它是显示值（MuJoCo 不做 gamma），RTX 和 Unreal 却按线性值读。2026-09-29 之前就是直接用的，0.2 显示成 0.48，整台发白。
+- 机器人本身也按场景走（2026-10-03）：场景的 `scene_meta.json` 记着 `robot`（stock 或 mars，没有这个字段的是 stock）。Isaac 加载这个机器人的 USD，Unreal 关卡从场景导入机器人；stage 和关卡的 `source.json`、补渲标记都记 `robot`，和场景对不上时拒绝渲染，并打印重建命令。
 - 另一个同期修掉的问题：importer 按 body 名给可视 prim 命名（`left_dex1_finger_1_link`），而颜色表原先只按网格名查（`Dex1_finger_link_1`）。结果 4 根 Dex1 手指全落到默认的近白色。
 - 材质改动会同时改变镜像、数据集补渲和视频里的机器人像素。2026-10-01 之前的 checkpoint 看的是旧外观（09-29 之前是发白的那种）；拿它们在新外观下评测，图像分布就变了。
 

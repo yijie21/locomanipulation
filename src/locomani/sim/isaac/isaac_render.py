@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="the built scene for this episode's batch, normally "
         "$ISAAC_ASSETS/scene/<seed>; default <assets>/scene/work",
     )
-    ap.add_argument("--robot-usd", default="", help="default <assets>/robot/g1_dex1.usda")
+    ap.add_argument("--robot-usd", default="", help="default: the USD of the robot the scene carries (stage.robot_usd)")
     ap.add_argument(
         "--scene-xml",
         default=paths.SCENE_XML,

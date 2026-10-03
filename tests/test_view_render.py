@@ -191,6 +191,27 @@ def test_a_session_drawn_with_another_robot_look_is_never_topped_up(tmp_path, mo
     assert list(R.plan(traces.run, cfg, "isaac", look)[1]) == [session]
 
 
+def test_a_session_drawn_with_another_robot_is_never_topped_up(tmp_path, monkeypatch):
+    import pytest
+
+    import locomani.pipeline.world_lift as world_lift
+    from locomani.sim import robot_look
+
+    traces, session = film_run(tmp_path, filled=False)
+    traces.sessions = [str(session)]
+    monkeypatch.setattr(world_lift, "RunTraces", lambda run: traces)
+    cfg = {"backend": {"render": "offline"}, "images": {"source": "unreal"}}
+    marker = {"episodes": [0], "renderer": "unreal", "unreal_level": "lv", "robot_look": robot_look.NAME}
+    # a marker from before the robot was recorded drew the stock robot: it tops up a stock run, never a mars one
+    (session / R.MARKER).write_text(json.dumps(marker))
+    look = {"unreal_level": "lv", "robot_look": robot_look.NAME}
+    assert list(R.plan(traces.run, cfg, "unreal", {**look, "robot": "stock"})[1]) == [session]
+    with pytest.raises(SystemExit, match="another unreal look .*robot"):
+        R.plan(traces.run, cfg, "unreal", {**look, "robot": "mars"})
+    (session / R.MARKER).write_text(json.dumps({**marker, "robot": "mars"}))
+    assert list(R.plan(traces.run, cfg, "unreal", {**look, "robot": "mars"})[1]) == [session]
+
+
 def test_the_insets_are_the_filled_frames_of_the_first_parquet_row_at_or_past_each_filmed_row(tmp_path):
     import cv2
 

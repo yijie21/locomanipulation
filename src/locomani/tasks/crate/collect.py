@@ -92,7 +92,7 @@ def batch_plan(cfg: dict, run_dir: Path, batch: int) -> dict:
 
 def layout_reminder(cfg: dict, config, scene_dir: Path) -> list[str]:
     """What the collection says before its first round: the scene, how much it keeps, what each round's placement
-    draws (expert.layout_lines) and, on a scene with measured edges, where the other warehouse layout is. Only the
+    draws (expert.layout_lines) and, on a scene with measured edges, where the other warehouse layouts are. Only the
     visual expert places anything; a diagnostic gets no reminder."""
     if cfg["task"]["expert"] != "visual":
         return []
@@ -109,10 +109,13 @@ def layout_reminder(cfg: dict, config, scene_dir: Path) -> list[str]:
         f"{collect['batch_rounds']} rounds (at most {collect['max_batches']}). Each round draws (task.visual):",
         *(f"  {line}" for line in layout_lines(meta, config.visual)),
     ]
+    # the warehouse's three layouts: one edge (the default, user 2026-10-03), all four (the stock line's), one place
     if len(config.visual.start_edges) > 1:
-        other = "from one place only, as warehouse collected before: its *_fixed_start experiment"
+        other = "from the ym edge only: the default warehouse_mars_* experiments; from one place: *_fixed_start"
+    elif config.visual.start_edges:
+        other = "from all four edges: the stock warehouse_smoke / warehouse_200; from one place: *_fixed_start"
     elif target_surface(meta).get("edges"):
-        other = "from all four edges: the warehouse default experiments"
+        other = "a sampled start on the ym edge: the default warehouse_mars_* experiments; on all four: warehouse_smoke"
     else:
         return lines
     return [*lines, f"  {other} (docs/warehouse.md §2)"]

@@ -11,7 +11,7 @@ Unitree G1 人形机器人的移动操作仿真：机器人走到目标前、抓
 |---|---|---|---|
 | bottle | 单臂：走到桌前，单手抓起水瓶 | [bottle](docs/single_arm.md) | 1 张卡 |
 | crate | 双臂：走到矮桌前，俯身用双手抓起筐并站直 | [crate](docs/bimanual.md) | 1 张卡 |
-| warehouse | 双臂：在物流房间里从托盘四条边中随机一条走近，双手扣住纸箱沿，抬起并站直 | [warehouse](docs/warehouse.md) | 2 张卡、Isaac |
+| warehouse | 双臂：实验室真机 G1 的模型在物流房间里从托盘的一条边（−y 边）走近，双手扣住纸箱沿，抬起并站直 | [warehouse](docs/warehouse.md) | 2 张卡、Unreal 或 Isaac |
 
 ## 其他文档
 

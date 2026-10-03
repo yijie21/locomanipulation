@@ -15,10 +15,10 @@
 | 4 | 场景源资产 | 所有人 | 5 秒 |
 | 5 | GR00T 训练环境 | 要训练或评测 VLA（三条主线都要） | 按上游 README |
 | 6 | conda 训练环境、EmbodiedGen | 只有训练 SONIC 本身或重新生成场景才要 | 1 小时以上 |
-| 7 | Isaac 渲染环境 | warehouse（Isaac 出图）和 Isaac 重渲 | 约 20 GB 下载 |
-| 8 | Unreal 渲染环境（可选） | 只有实验文件写 `images.source: unreal` 才要 | 引擎约 26 GB 下载，编译约 9 分钟 |
+| 7 | Isaac 渲染环境 | warehouse 选 Isaac 出图时，以及 Isaac 重渲 | 约 20 GB 下载 |
+| 8 | Unreal 渲染环境 | warehouse 默认用它出图（实验文件写 `images.source: unreal`） | 引擎约 26 GB 下载，编译约 9 分钟 |
 
-做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 7 步。
+做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 8 步（Unreal，默认）或第 7 步（Isaac）。
 
 ## 准备
 
@@ -273,7 +273,7 @@ bash scripts/setup_sonic2.sh   # IsaacLab 固定到 v2.3.2 并装 gear_sonic[tra
 
 EmbodiedGen 要自己克隆：`(cd third_party && git clone https://github.com/HorizonRobotics/EmbodiedGen.git)`。这些脚本没有在别的机器上实测过。
 
-## 7. Isaac 渲染环境（warehouse 需要）
+## 7. Isaac 渲染环境（warehouse 选 Isaac 出图时）
 
 本仓库只用 Isaac Sim 出图，物理始终在 MuJoCo。Isaac Sim 4.5 借用 SIMPLE 仓库的 Python 环境，不用 SIMPLE 的代码和数据。
 
@@ -313,9 +313,9 @@ $ . scripts/paths.sh; "$RENDER_PY" -c "import importlib.metadata as m; print(m.v
 $ ls assets/isaac/robot/g1_dex1.usda
 ```
 
-## 8. Unreal 渲染环境（可选，只给 `images.source: unreal`）
+## 8. Unreal 渲染环境（warehouse 默认）
 
-只有实验文件写 `images.source: unreal`（[rendering.md](rendering.md#图像来源imagessource)）才需要；物理照样在 MuJoCo。装在 `$UNREAL_ROOT`（默认 `third_party/unreal/`）。
+实验文件写 `images.source: unreal`（[rendering.md](rendering.md#图像来源imagessource)）时需要，warehouse 的默认运行就是这样；物理照样在 MuJoCo。装在 `$UNREAL_ROOT`（默认 `third_party/unreal/`）。
 
 ```bash
 . scripts/paths.sh
@@ -428,7 +428,7 @@ done
 - 引擎只能手动下载（要登录 Epic 账号），`setup_unreal.sh` 找不到 `$UE_ENGINE` 下的编辑器就停下。版本用 5.7.4，不要用 5.8，它的 Vulkan 渲染有回退。
 - `--gpu` 是 Vulkan 的设备编号，和 `nvidia-smi` 的编号不一定相同。`start_unreal.sh` 起好后会按 `nvidia-smi` 核对，不一致就报错并关掉编辑器，这时换一个 `--gpu` 值。
 - 一台机器只开一个编辑器：它的端口是固定的（URLab 用 5800–5806，命令服务用 18801），都避开了仿真栈的端口。编辑器已在另一张卡上运行时，`start_unreal.sh` 会拒绝，先 `stop_unreal.sh`。
-- 编辑器和编译只用最后 4 个核（`--cpus` 或 `UE_CPUS` 可改），因为容器的 CPU 配额和仿真栈共用。看守脚本在 CPU 打满或 GPU 卡死时会杀掉编辑器，原因写在 `$UNREAL_ROOT/logs/guard.log`。
+- 编辑器和编译只用最后 4 个核（`--cpus` 或 `UE_CPUS` 可改），因为容器的 CPU 配额和仿真栈共用。看守脚本在 CPU 打满或 GPU 卡死时会杀掉编辑器，原因写在 `$UNREAL_ROOT/logs/guard.log`。CPU 打满和 GPU 卡死都按编辑器自己的占用算：别的进程把 CPU 配额或同一张卡跑满、编辑器本身空闲时，不会误杀。
 - 已经装在别处的机器，在 `locomani.local.sh` 里设 `UNREAL_ROOT`（或分别设 `UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`）。
 - 关卡建在编辑器的宿主工程里，建关卡时用的场景副本记在 `$UNREAL_ASSETS/<关卡>/source.json`（默认 `$UNREAL_ROOT/levels/`，和宿主工程放在一起）。哪个检出目录建的关卡，别的检出目录都能用；场景改过之后要重建关卡，否则会被拒绝。
 

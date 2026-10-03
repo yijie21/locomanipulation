@@ -7,9 +7,11 @@
 #
 # Pinned (taskset, nice 19) so it cannot starve SONIC stacks: the container's CPU quota is shared, and throttling
 # the cgroup throttles every process in it; its first shader compile otherwise fills 15 cores within 30 s
-# (2026-09-28). Saturated = average use above 90 % of the quota over 5 s, twice in a row; throttled time alone is
-# no signal, the stacks' bursty thread pools are throttled 1-2.4 s per 5 s with no UE running. GPU hang = the GPU
-# pegged at >= 95 % while the editor log is silent for 90 s (a virtual-shadow-map hang, 2026-09-28).
+# (2026-09-28). Saturated = average use above 90 % of the quota over 5 s, twice in a row, with the editor's own
+# processes using at least one core of it; throttled time alone is
+# no signal, the stacks' bursty thread pools are throttled 1-2.4 s per 5 s with no UE running. GPU hang = the
+# editor's own processes at >= 95 % of the GPU (nvidia-smi pmon; the whole card where pmon is missing) while the
+# editor log is silent for 90 s (a virtual-shadow-map hang, 2026-09-28).
 # The editor runs in_editor/cmd_server.py (Python over TCP 18801, the editor viewport off) and loads nothing else.
 set -u
 # shellcheck disable=SC1091
@@ -43,15 +45,41 @@ echo "editor started pid $ED on GPU $GPU, cores $UE_CPUS, at $(date -u +%T)"
 read -r quota period 2>/dev/null < /sys/fs/cgroup/cpu.max || quota=max
 limit=$([ "$quota" = max ] && echo 0 || awk -v q="$quota" -v p="$period" 'BEGIN{printf "%.2f", 0.9 * q / p}')
 bad=0
+# CPU seconds (in clock ticks) of every UE process: utime + stime, fields 14 and 15 of /proc/<pid>/stat
+ue_ticks() {
+  local p t=0
+  for p in $(pgrep -f "^$UE_ENGINE/Engine/Binaries/Linux/"); do
+    t=$((t + $(awk '{print $14 + $15}' "/proc/$p/stat" 2>/dev/null || echo 0)))
+  done
+  echo $t
+}
+HZ=$(getconf CLK_TCK)
 u_prev=$(awk '/^usage_usec/{print $2}' /sys/fs/cgroup/cpu.stat 2>/dev/null || echo 0)
+t_prev=$(ue_ticks)
 while kill -0 $ED 2>/dev/null; do
   sleep 5
   u=$(awk '/^usage_usec/{print $2}' /sys/fs/cgroup/cpu.stat 2>/dev/null || echo 0)
   used=$(awk -v d=$((u - u_prev)) 'BEGIN{printf "%.2f", d / 5e6}'); u_prev=$u
-  if awk -v x="$used" -v l="$limit" 'BEGIN{exit !(l > 0 && x > l)}'; then bad=$((bad+1)); echo "saturated: ${used} cores ($bad)"; else bad=0; fi
+  t=$(ue_ticks)
+  mine=$(awk -v d=$((t - t_prev)) -v hz="$HZ" 'BEGIN{printf "%.2f", d / hz / 5}'); t_prev=$t
+  # saturated and the editor is part of it (>= 1 core): an idle editor frees nothing when killed, and the
+  # container's other users (a convert, another project) saturated it under an idle editor (killed 2026-10-03 17:32)
+  if awk -v x="$used" -v l="$limit" -v m="$mine" 'BEGIN{exit !(l > 0 && x > l && m >= 1)}'; then
+    bad=$((bad+1)); echo "saturated: ${used} cores, the editor ${mine} ($bad)"
+  else bad=0; fi
   if [ $bad -ge 2 ]; then echo "KILLING UE: container saturated"; kill_ue; break; fi
-  util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits -i "$GPU" 2>/dev/null | tr -d ' ')
   age=$(( $(date +%s) - $(stat -c %Y "$LOG") ))
-  if [ "${util:-0}" -ge 95 ] && [ $age -ge 90 ]; then echo "KILLING UE: GPU $GPU at ${util}% with log silent ${age}s (hang)"; kill_ue; break; fi
+  if [ $age -ge 90 ]; then
+    # the editor's own share of the card (nvidia-smi pmon, its processes' SM %): the card is shared, and another
+    # project pegging it while the idle editor's log is quiet read as a hang (killed 2026-10-03 16:51 mid-smoke).
+    # Without pmon, the whole card's utilisation, as before.
+    ue_pids=" $(pgrep -d ' ' -f "^$UE_ENGINE/Engine/Binaries/Linux/") "
+    # a process with no sample in pmon's window shows "-": it used nothing, 0 %
+    util=$(nvidia-smi pmon -c 1 -s u -i "$GPU" 2>/dev/null |
+      awk -v p="$ue_pids" '/^# gpu/ {ok = 1} $1 !~ /^#/ && index(p, " " $2 " ") && $4 ~ /^[0-9]+$/ {s += $4} END {if (ok) print s + 0}')
+    what="the editor's processes"
+    [ -n "$util" ] || { util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits -i "$GPU" 2>/dev/null | tr -d ' '); what="the card"; }
+    if [ "${util:-0}" -ge 95 ]; then echo "KILLING UE: GPU $GPU at ${util}% ($what) with log silent ${age}s (hang)"; kill_ue; break; fi
+  fi
 done
 wait $ED 2>/dev/null; echo "editor exited at $(date -u +%T)"

@@ -29,7 +29,14 @@ real robot (user, 2026-10-03).
 
 Changing a value changes the policy's pictures. A checkpoint trained before the change saw the older look, so
 change NAME along with the values.
+
+Which robot a scene carries is `scene_robot`: both renderers take their robot from it (Isaac the robot USD built for
+that robot, Unreal the level imported from that scene), record it in their `source.json` and dataset-camera
+markers, and `run_context` refuses a stage or level built for another robot.
 """
+
+import json
+from pathlib import Path
 
 NAME = "g1_gloss_20261001"
 SHELL = {"base": (0.675, 0.675, 0.6916), "metallic": 1.0, "roughness": 0.45}
@@ -44,3 +51,10 @@ DARK_MESHES = frozenset(
 )
 # URDF mesh file stems drawn silver (the shell look).
 SHELL_MESHES = frozenset({"pelvis_ver0529"})
+
+
+def scene_robot(scene_dir) -> str:
+    """The robot a MuJoCo scene directory is built on: its scene_meta.json `robot` (scene_lib.ROBOT_SCENES).
+    Scenes built before 2026-10-02 record none and carry the stock robot."""
+    meta = Path(scene_dir) / "scene_meta.json"
+    return json.loads(meta.read_text()).get("robot", "stock") if meta.is_file() else "stock"

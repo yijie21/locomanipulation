@@ -5,7 +5,7 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 
 ## 1. 和 crate 的三处不同
 
-1. 场景：扫描来的物流房间，托盘上放一个纸箱。默认实验用 `warehouse_box_45x32x33`：由 `warehouse_textured` 生成，另外记下托盘每条边的走入朝向、边外空地 `clear_m` 和第三视角机位，所以每局可以从四条边中任选一条走入（`task.visual.start_edges`，runbook §2）。旧名 `warehouse` 是贴图之前建的，纸箱没有贴图，只留给旧运行。
+1. 场景：扫描来的物流房间，托盘上放一个纸箱。默认实验用 `warehouse_box_45x32x33`：由 `warehouse_textured` 生成，另外记下托盘每条边的走入朝向、边外空地 `clear_m` 和第三视角机位，所以每局可以从任一条边走入（`task.visual.start_edges`，runbook §2）；2026-10-03 起默认只走 −y 边。旧名 `warehouse` 是贴图之前建的，纸箱没有贴图，只留给旧运行。
 2. 采集时仿真不渲染相机（`backend.render: offline`），只记录物理状态和每帧的 `qpos`（trace）。
 3. 转换之前多一步"补渲"：按 trace 把数据集的三路相机图渲出来。
 
@@ -25,9 +25,9 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 
 ## 4. MuJoCo 图还是 Isaac 图
 
-`images.source` 决定策略看到的图由谁渲：`mujoco` 和物理用同一个 MuJoCo 模型；`isaac` 用 Isaac Sim 的 RTX 渲染，光照和材质更接近真实。训练集和闭环评测必须用同一个，区别见[图像来源](rendering.md#图像来源imagessource)。
+`images.source` 决定策略看到的图由谁渲：`mujoco` 和物理用同一个 MuJoCo 模型；`unreal` 用 Unreal 编辑器（URLab）渲，`isaac` 用 Isaac Sim 的 RTX 渲，光照和材质都更接近真实。2026-10-03 起 runbook 默认用 `unreal`（用户定）。训练集和闭环评测必须用同一个，区别见[图像来源](rendering.md#图像来源imagessource)。
 
-`isaac` 需要：`backend.render: offline`；装好 Isaac（[安装第 7 步](setup.md)）；场景的 Isaac 版本（`bash scripts/build_scene.sh warehouse_box_45x32x33 --isaac`）；第二张卡。Isaac 渲一次三路相机约 0.1 秒，和仿真放在同一张卡上会拖慢仿真。冲突的组合在加载配置时就会被拒绝；旧文件里的 `eval.image_source` 按 `images.source` 读取。
+`isaac` 需要：`backend.render: offline`；装好 Isaac（[安装第 7 步](setup.md)）；场景的 Isaac 版本（`bash scripts/build_scene.sh warehouse_box_45x32x33_mars --isaac`）；第二张卡。`unreal` 的条件相同，只是换成装好 Unreal（[安装第 8 步](setup.md)）和场景的关卡（`--unreal`）。Isaac 渲一次三路相机约 0.1 秒，和仿真放在同一张卡上会拖慢仿真。冲突的组合在加载配置时就会被拒绝；旧文件里的 `eval.image_source` 按 `images.source` 读取。
 
 ## 5. 评测前要核对的几项
 
@@ -78,14 +78,14 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 
 ### 每局从哪里开始
 
-默认每局从托盘四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上，机器人从这条边前方走过来。每个随机量的范围，都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：
-- 起点离台边 0.6 m 到"这条边外的空地 − 0.25 m"（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m）。房间的货架和墙没有碰撞体，起点不能放进去。
+默认（`warehouse_mars_*`，2026-10-03 用户定）每局都从托盘的 −y 边（`ym`）走过来：`task.visual.start_edges: [ym]`。stock 的 `warehouse_smoke`、`warehouse_200` 仍是 2026-09-28 的四边线，每局从四条边（`xm/xp/ym/yp`）中随机抽一条，纸箱搬到这条边上。两者的其他随机量相同，范围都是单独改这一项时成功率仍不低于 30% 的区间（[双臂抓箱的参数范围](box_grasp_envelope.md) §3）：
+- 起点离台边 0.6 m 到"这条边外的空地 − 0.25 m"（ym 1.04 m；四边线另有 xm 0.86、xp 0.80、yp 1.38 m）。房间的货架和墙没有碰撞体，起点不能放进去。
 - 起点朝向 ±20°，起点横移 −8～0 cm（机器人在箱子中线右侧）。
 - 纸箱离台边 0–2.5 cm、偏角 0～+3.5°，沿边位置在整条边上任意取。
 
-同样设置在房间里实测保留 17/40（[双臂台账](ledger/crate.md) 2026-09-28）。`run_agent_server.sh` 开始第一局之前把这份设置打印出来；在终端里运行时，打印后等 10 秒才开始，这时按 Ctrl-C 不会录下任何一局，仿真栈也一起关掉。加 `--dry-run` 只打印、不启动。
+四边线在房间里实测保留 17/40，其中 −y 边 11/19（stock，[双臂台账](ledger/crate.md) 2026-09-28）；mars 在四边线上的冒烟 30 局保留 9 条（2026-10-03），只走 −y 边的 mars 还没实跑。`run_agent_server.sh` 开始第一局之前把这份设置打印出来；在终端里运行时，打印后等 10 秒才开始，这时按 Ctrl-C 不会录下任何一局，仿真栈也一起关掉。加 `--dry-run` 只打印、不启动。
 
-`*_fixed_start` 实验（`warehouse_smoke_fixed_start`、`warehouse_200_fixed_start`）按 2026-09-28 之前的方式摆放：每局从场景自带的起点出发（在 −y 边前方，往后退 0.25 m），纸箱在原位，只加 ±2 cm、±5° 的抖动。它们和默认文件只有摆放方式不同，专家参数完全一样，场景仍是 `warehouse_box_45x32x33`。
+`*_fixed_start` 实验（mars 的 `warehouse_mars_smoke_fixed_start`，stock 的 `warehouse_smoke_fixed_start`、`warehouse_200_fixed_start`）按 2026-09-28 之前的方式摆放：每局从场景自带的起点出发（在 −y 边前方，往后退 0.25 m），纸箱在原位，只加 ±2 cm、±5° 的抖动。它们和默认文件只有摆放方式不同，专家参数完全一样，场景也相同。
 
 ### 通道数
 
@@ -104,3 +104,13 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 - 状态轨迹（采集是 `trace/<局>_state_trace.npz`，闭环评测是 `eval/state_trace/`）记录了每次仿真发布时的全部关节位置，回放它就能事后从任意机位出图。这和第 3 节的数据集相机是两回事：数据集相机是策略要看的图，一次运行只能由一个渲染器填；回放录像只给人看，同一份轨迹可以分别用 MuJoCo 和各个渲染器渲，也不用重采。
 - `render_third_person.sh` 的机位、ghost 和小窗见[仿真与渲染](rendering.md#图像来源imagessource)。评测局的小窗由渲染器按每一帧的状态现渲，就是镜像给策略的那种图；评测没有 ghost。长的局预览切成 2–5 段。2026-09-30 冒烟两局评测：Isaac 每局小窗 225–243 s 加录像 123 s，Unreal 每局 223–285 s 加 130–140 s。
 - Isaac 另有跟拍机位、可开路径追踪的并排视频 `render_isaac_videos.sh`，用法见[仿真与渲染](rendering.md#warehouseblender-房间的-isaac-重渲)。
+
+## 11. mars 机器人
+
+2026-10-03 起这条线用 mars（用户定）：实验室真机 G1 的模型，由 `make_dex1_model.py` 按协作者给的 URDF（`assets/unitree_G1_with_wrist_camera`）生成，第一视角是头顶云台上的 D455，腕部相机是 D405。关节、执行器和相机名都和原来的 stock 机器人相同，所以专家、SONIC 和数据集格式不变。场景名带 `_mars`；不带的名字仍是 stock 机器人，旧的运行和 checkpoint 都是 stock 的。要在 stock 上跑 runbook：第 1 步的场景名去掉 `_mars`，运行名用 `warehouse_smoke`、`warehouse_200`（Isaac 版）或加 `_unreal` 的 Unreal 版；它们仍从四条边走入。
+
+- 力矩按 URDF，只有腰 roll/pitch 用 50 N·m，不用 URDF 的 35。35 时专家抱箱前倾要的力矩超过上限，腰塌到限位上来回弹，10 局成功 0 局、手抖 9.4 mm；50 时 10 局成功 6 局，和 stock 同种子的 6/10 一样（`outputs/mars_pilots_20261002/`）。SONIC 训练时腰也是 50。真机腰的固件上限还没确认，专家的姿势在真机上可能撑不住（TODO 13.6.11）。
+- 成功率相同，失败方式不同：mars 的 4 局失败都是箱子抬起后一只手脱开，stock 是抬起前脱开或手停在箱沿上方。原因未查（TODO 13.6.4.1）。
+- 2026-10-03 照 runbook 跑 `warehouse_mars_smoke` 到转换（当时还是四边线，运行目录改名为 `warehouse_mars_smoke_4edges_20261003`）：30 局保留 9 条（三批各 4、1、4），失败是 reach_stalled 9、lost_attachment 8、basket_tilt 4；stock 在 2026-09-30 的两次是 20 局保留 11 条和 8 条。只有这一次，分不清是机器人的差别还是批间波动。
+- 相机视场用规格书的值（D455 竖直 65°、D405 58°），真机标定到了要换。
+- Unreal 关卡从场景导入机器人；Isaac 把 `assets/isaac/robot/mars/g1_dex1.usda` 加到房间的 stage 上。两者都在 `source.json` 里记下机器人，和场景的 `scene_meta.json` 对不上就拒绝渲染；补渲的标记也记机器人，同一个 session 不会混着两个机器人的图。

@@ -248,9 +248,9 @@ def test_the_four_edge_warehouse_scenes_render_with_the_warehouse_look():
     # 2026-09-28 stages without it stay for the runs that rendered with them)
     scenes = yaml.safe_load(run_common.SCENES.read_text())
     look = {k: scenes["warehouse_textured"]["isaac"][k] for k in ("rtx_settings", "supersample")}
-    boxes = [name for name in scenes if name.startswith("warehouse_box_") and not name.endswith("_mars")]
-    assert len(boxes) == 4
-    for name in boxes:  # the mars boxes have no Isaac stage yet (TODO 13.6)
+    boxes = [name for name in scenes if name.startswith("warehouse_box_")]
+    assert len(boxes) == 8  # four carton sizes, on the stock and on the mars robot
+    for name in boxes:
         entry = scenes[name]["isaac"]
         assert {k: entry[k] for k in look} == look, name
         assert entry["dir"] == f"{name}_env"

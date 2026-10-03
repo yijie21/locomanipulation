@@ -1398,3 +1398,25 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **事实（已确认，影响以后决策）**：
   - 腰 roll/pitch 和踝 35 N·m、髋 roll 139、腕 13.4 是 Unitree 官方 `unitree_ros` 的 `g1_29dof_mode_15_with_dex1_1.urdf`（`assets/dex1/`）里的数值；SONIC 自带模型是 50/50/88/5，用的是另一套腰和躯干网格（带 `waist_support_link`，不是 `rev_1_0`）。所以仿真的腰用 50 是比真机描述文件更有力的设定（TODO 13.6.11）。
   - mars 的测试样例场景加载 0.19 秒（stock 0.09 秒），`test_offhand_guard_reuses_current_observation` 的 0.2 秒过期判断因此时好时坏；已改为加载完再打时间戳。
+
+## 2026-10-03 warehouse 线换成 mars 机器人，Unreal 作默认出图（用户）
+
+- **目标变化**：用户："现在只改 warehouse 这条线，保证这条线中的机器人资产建好，unreal 关卡建好，unreal 作为默认的渲染数据来源"。bottle、crate 本次不动（同日先问过三条线一起切，用户选只做 warehouse）。
+- **决策**：
+  - runbook 用新的实验文件：`warehouse_mars_smoke`、`warehouse_mars_200`（Unreal），`warehouse_mars_smoke_isaac`、`warehouse_mars_200_isaac`（Isaac），`warehouse_mars_smoke_fixed_start`（Unreal）。默认渲染器不加后缀，另一个加 `_isaac`。理由：`warehouse_smoke` 已有运行目录，改原文件会被 `config.yaml differs` 拒绝，而且一个名字的意思不该变；stock 的文件全部保留。
+  - Isaac 机器人资产按机器人分开存：stock 仍是 `assets/isaac/robot/g1_dex1.usda`，mars 在 `assets/isaac/robot/mars/`（`build_isaac_assets.sh --robot mars`，`scenes.yaml` 的 `isaac.build` 先跑它）。`stage.robot_usd` 按场景 `scene_meta.json` 的 `robot` 选。stage 本身不含机器人，四个 mars stage 是房间加纸箱，look 与 stock 相同。
+  - Isaac stage、Unreal 关卡的 `source.json` 和两种补渲标记都记 `robot`，`run_context._require_robot` 对不上就拒绝（TODO 13.6.6）。没有这个字段的旧文件按 stock 读，旧关卡和旧数据照常可用。
+  - `warehouse_textured_mars` 不建关卡，只作四个 mars 纸箱场景的底，`unsupported` 写明。
+  - `scripts/unreal/editor_guard.sh` 的卡死判断改看编辑器自己的 GPU 占用（`nvidia-smi pmon`，没有 pmon 时退回整卡）。理由：本机 GPU 1 和别的项目共用，冒烟采集时它们把整卡跑到 96%，空闲编辑器日志 97 秒没写，被当成卡死杀掉，补渲连不上编辑器。CPU 打满的判断同理加了一条：编辑器自己要用到至少 1 个核才算（17:32 转换和别的项目把配额用到 14.4 核，空闲编辑器被杀）。
+  - runbook 里 `start_unreal.sh --gpu 0` 改为 `--gpu 1`，Isaac 补渲 `--gpu 0` 改为 `--gpu 1`：正文一直写渲染器在 GPU 1，命令和它不一致。
+- **范围（同日，用户）**：不训练、不评测，只要采集流程（runbook 第 1–4 步）的代码和文档合规。冒烟跑到转换为止，第 5–7 步的命令只改了文字、没有实跑。
+- **被否决的方案**：原文件 `warehouse_smoke` 等改指 mars（理由同上）；Isaac 版 mars 暂不建（用户要"机器人资产建好"，仓库里这个词指 Isaac 机器人 USD，TODO 13.6.5）。
+
+## 2026-10-03 warehouse 默认只从托盘 −y 边（ym）走入（用户）
+
+- **目标变化**：用户："双臂采集的默认设置是从 warehouse 的墙的一边开始初始化，而不是从四面墙"，选"只走一条边、其余仍随机"（另一选项是 `*_fixed_start` 的固定起点），边用 ym。
+- **决策**：`warehouse_mars_smoke`、`warehouse_mars_200` 及两个 `_isaac` 版改 `task.visual.start_edges: [ym]`；起点距离（0.6 m 到 ym 空地 − 0.25 = 1.035 m）、朝向 ±20°、横移、纸箱 setback/偏角/沿边位置的范围都不变。stock 的 `warehouse_smoke`、`warehouse_200` 保持四边，作为 09-28 四边线的记录。理由：ym 是场景自带起点所在的边，09-28 分边试跑合并 ym 11/19，四边里最高。
+- 当天四边配置跑过的 `outputs/runs/warehouse_mars_smoke` 改名为 `warehouse_mars_smoke_4edges_20261003`（没删），让 runbook 的运行名能直接用，不撞 `config.yaml differs`。
+- `collect.layout_reminder` 的提示行原来说"四边是默认"，改为按当前文件说出另外两种摆放。
+- 未验证：只走 ym 的 mars 没实跑采集，只用 `--dry-run` 看了每局摆放（全部 ym，起点上限 1.035 m）。
+

@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
             "rtx_settings": isaac["rtx_settings"],
             "supersample": isaac["supersample"],
             "robot_look": robot_look.NAME,  # stage.G1_LOOKS
+            "robot": robot_look.scene_robot(ROOT / cfg["scene"]["dir"]),  # stage.robot_usd
         }
         if isaac
         else {}

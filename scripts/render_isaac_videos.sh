@@ -24,7 +24,8 @@
 # --out <run>/eval --insets; --insets adds the ego + wrist cameras (a separate pass, about twice the time).
 # The stage and its look (`isaac.rtx_settings`, `isaac.supersample`) come from the run's scene through
 # run_context.isaac_scene, as the eval mirror and the dataset re-render read them (--path-trace drops the supersample);
-# the scene xml defaults to the run's own scene copy. The robot USD is the cached assets/isaac/robot/g1_dex1.usda (scripts/build_isaac_assets.sh --robot-only).
+# the scene xml defaults to the run's own scene copy. The robot USD is the cached one of the robot that scene carries
+# (assets/isaac/robot/g1_dex1.usda for stock, assets/isaac/robot/<robot>/ otherwise; scripts/build_isaac_assets.sh --robot-only --robot <robot>).
 # The tracking camera is front-right (azimuth 225, 2.2 m): in the warehouse the recorder's default 2.5 m / 135 shot
 # sits behind the south partition and both renderers see a wall (2026-09-24). Each scene's exposure is explained in
 # configs/scenes.yaml (warehouse ISO 80, matched to the Blender still, box_platform ISO 20 under the default dome and sun).

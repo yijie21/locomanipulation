@@ -150,6 +150,7 @@ def build(name: str) -> dict:
         "room_level": ROOM_LEVEL,
         "blueprint": asset,
         "film": exported["film"],  # the third-person camera the import carries (UnrealView.film_setup checks it)
+        "robot": robot_look.scene_robot(scene_dir),  # the robot the import carries (run_context.unreal_scene checks it)
         "robot_look": robot_look.NAME,  # the materials robot_materials.py set (run_context.unreal_scene checks it)
         "builder": "locomani.sim.unreal.build_level",
         "built": time.strftime("%Y-%m-%d %H:%M:%S"),

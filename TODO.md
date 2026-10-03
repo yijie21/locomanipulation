@@ -497,9 +497,17 @@
     - [x] 13.6.3.1 （2026-10-02，用户问手为何抖）手抖也是腰 35 N·m：warehouse mars 手相对躯干高频抖 9.4 mm RMS、约 4 Hz、主要在肩 pitch（stock 2.8）；腰俯仰高通速度 1.26 rad/s（stock 0.13），4.7% 的时间顶在限位上反弹。腰 50 → 2.9 mm、0.12 rad/s；腕 5、质量、运动学、踝 50 都不消除；bottle mars 3.1 mm（`outputs/mars_pilots_20261002/jitter/jitter.md`）
   - [x] 13.6.4 （2026-10-02 用户：腰改 50 再试）mars 腰 roll/pitch 改 50 N·m（`make_dex1_model.MARS_EFFORT_OVERRIDES`，URDF 和 Unitree 官方都是 35，踝仍 35），7 个场景重建。warehouse 重跑 `warehouse_mars_pilot_20261002c`：6/10（stock 6/10），手抖 2.8 mm（= stock）
     - [ ] 13.6.4.1 待查：mars 的 4 局失败全是 lost_attachment，且都在箱子已抬起 4–14 cm、倾 6–13° 后一只手脱开（3 局右手）；stock 的 2 局 lost_attachment 都在抬起前（rise 0）。可能是 D405 支架、手腕 13.4 N·m 或手臂运动学；需腰 50 下的单变量对照
-  - [ ] 13.6.5 第 3 步（用户看完第 2 步再做）：mars 的 Isaac 机器人资产（按机器人名分开存）、warehouse `_mars` 的 Isaac 场景与 Unreal 关卡（`scenes.yaml` 现写 unsupported 指向这里）、各实渲一局、补渲冒烟
-  - [ ] 13.6.6 第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝
-  - [ ] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
+  - [~] 13.6.5 第 3 步（用户看完第 2 步再做）：mars 的 Isaac 机器人资产（按机器人名分开存）、warehouse `_mars` 的 Isaac 场景与 Unreal 关卡（`scenes.yaml` 现写 unsupported 指向这里）、各实渲一局、补渲冒烟
+    - [x] 13.6.5.1 （2026-10-03，用户：只改 warehouse，Unreal 作默认）`assets/isaac/robot/mars/g1_dex1.usda`（`build_isaac_assets.sh --robot mars`）、四个 `warehouse_box_*_mars_env` stage、四个 `warehouse_box_*_mars` Unreal 关卡已建；`warehouse_textured_mars` 不建关卡
+    - [x] 13.6.5.2 （2026-10-03）Unreal 冒烟 `warehouse_mars_smoke` 照 runbook 跑第 1–4 步（`outputs/mars_assets_20261003/smoke/`）：采集 30 局保留 9 条，Unreal 补渲 9 局（标记 `robot: mars`），转换 8+1 条。用户：不训练、不评测，只要采集流程的代码和文档合规；第 5–7 步没跑
+    - [ ] 13.6.5.4 待用户定：mars 冒烟保留 9/30，stock 09-30 是 11/20、8/20；要不要同种子配对重跑分清是机器人还是波动
+    - [x] 13.6.5.5 （2026-10-03，用户）默认摆放改为只走 −y 边：`warehouse_mars_smoke`、`_200` 及 `_isaac` 的 `start_edges: [ym]`；stock 文件仍四边；`collect.layout_reminder` 改说三种摆放；四边那次冒烟的运行目录改名 `warehouse_mars_smoke_4edges_20261003`
+    - [ ] 13.6.5.6 只走 ym 的 mars 采集还没实跑（只 `--dry-run` 核了摆放）；stock 的 ym 边 09-28 是 11/19
+    - [ ] 13.6.5.3 Isaac 版 mars 实渲一局（只建了资产）
+  - [x] 13.6.6 （2026-10-03）第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝（`run_context._require_robot`；旧文件无字段按 stock）
+  - [~] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
+    - [x] 13.6.7.1 （2026-10-03）warehouse.md 改用 `warehouse_mars_smoke`（Unreal 默认）/`_isaac`；README、setup、glossary、rendering、warehouse_design §11 跟着改
+    - [ ] 13.6.7.2 bottle（single_arm.md）、crate 还是 stock（用户 10-03 只要 warehouse；crate 还没有 mars 场景）
   - [x] 13.6.9 （2026-10-02，`ed26ed2`，用户：和 stock 相同的部位外观一致）逐部件比对颜色：除手腕（有意涂黑）外相同部位一致。改两处：云台俯仰支架涂黑（头部原有一根白横条；10-03 用户更正：那是头顶的 D455，真机银白，已改回）；骨盆保留的 stock 碰撞外壳改成骨盆色（MuJoCo 画碰撞体，白壳透出）。10-03 用户：骨盆（腿和上身之间的三角件）应为银色，`robot_look.SHELL_MESHES` 把 `pelvis_ver0529` 画成外壳色（URDF 和 Unitree 官方都是黑），碰撞外壳随之同色（对比图 `outputs/mars_look_compare_20261002/`）
   - [ ] 13.6.8 可选：`outputs/scene/hand_points_dex1.npy` 仍是 stock 手（mars 多了 D405 支架，最低点只在少数姿态差 >0.2 cm，最大 6 cm）；bottle 用它算手离桌高度
   - [ ] 13.6.10 待用户定：先做 13.6.4.1 的腰 50 单变量对照（支架不碰撞、腕 5 N·m，各 10 局约 15 分钟），还是先开始第 3 步（13.6.5）。10-02 已问，用户转去改外观，未答

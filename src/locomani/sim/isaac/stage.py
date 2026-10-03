@@ -31,7 +31,8 @@ class StageCfg:
 
     The asset layout is the one scripts/build_isaac_assets.sh produces:
 
-        $ISAAC_ASSETS/robot/g1_dex1.usda          one build, scene-independent
+        $ISAAC_ASSETS/robot/g1_dex1.usda          the stock robot, one build, scene-independent
+        $ISAAC_ASSETS/robot/<robot>/g1_dex1.usda  any other robot (mars), `build_isaac_assets.sh --robot <robot>`
         $ISAAC_ASSETS/scene/<label>/scene.usda    one build per scene_meta hash
         $ISAAC_ASSETS/scene/<label>/usd/<obj>/    the objects that scene refs
 
@@ -41,7 +42,7 @@ class StageCfg:
 
     assets: str = paths.ISAAC_ASSETS
     scene_dir: str = ""  # default: <assets>/scene/work
-    robot_usd: str = ""  # default: <assets>/robot/g1_dex1.usda
+    robot_usd: str = ""  # default: the robot robot_mjcf's scene carries (robot_usd())
     robot_mjcf: str = ""  # colours come from here; default paths.SCENE_XML
     width: int = 640
     height: int = 480
@@ -98,8 +99,19 @@ def scene_dir(cfg: StageCfg) -> str:
     return os.path.abspath(cfg.scene_dir or os.path.join(cfg.assets, "scene", "work"))
 
 
+def scene_robot(cfg: StageCfg) -> str:
+    """The robot the scene of `robot_mjcf` carries (robot_look.scene_robot)."""
+    return robot_look.scene_robot(os.path.dirname(os.path.abspath(cfg.robot_mjcf or paths.SCENE_XML)))
+
+
 def robot_usd(cfg: StageCfg) -> str:
-    return os.path.abspath(cfg.robot_usd or os.path.join(cfg.assets, "robot", "g1_dex1.usda"))
+    """`robot_usd`, else the USD build_isaac_assets.sh wrote for the scene's robot: the stock robot keeps the
+    original <assets>/robot/g1_dex1.usda, any other robot has <assets>/robot/<robot>/. Taking it from the scene
+    is what keeps a mars scene from being drawn with the stock robot."""
+    if cfg.robot_usd:
+        return os.path.abspath(cfg.robot_usd)
+    robot = scene_robot(cfg)
+    return os.path.abspath(os.path.join(cfg.assets, "robot", *(() if robot == "stock" else (robot,)), "g1_dex1.usda"))
 
 
 def _mjcf_multi_mesh_bodies(mjcf_path: str) -> set:
@@ -211,12 +223,11 @@ def assemble_stage(cfg: StageCfg, log=print):
 
     base = os.path.join(scene_dir(cfg), "scene.usda")
     rob = robot_usd(cfg)
+    builds = {"scene": "[--snapshot <batch scene dir>]", "robot": f"--robot-only --robot {scene_robot(cfg)}"}
     for path, what in ((base, "scene"), (rob, "robot")):
         if not os.path.exists(path):
             raise SystemExit(
-                f"missing {what} USD: {path}\n"
-                f"  build it: bash scripts/build_isaac_assets.sh "
-                f"[--snapshot <batch scene dir>]"
+                f"missing {what} USD: {path}\n  build it: bash scripts/build_isaac_assets.sh {builds[what]}"
             )
     ctx = omni.usd.get_context()
     ctx.open_stage(base)

@@ -30,3 +30,25 @@ def test_unreal_levels_are_built_with_the_robot_look_and_record_it():
     # robot_materials.py has no numbers of its own
     assert '"SILVER": robot_look.SHELL, "DARK": robot_look.DARK' in source
     assert '"robot_look": robot_look.NAME' in source  # source.json, which run_context.unreal_scene checks
+    assert '"robot": robot_look.scene_robot(scene_dir)' in source  # and the robot the import carries
+
+
+def test_a_scene_names_its_robot_and_old_scenes_are_stock(tmp_path):
+    assert robot_look.scene_robot(tmp_path) == "stock"  # no scene_meta.json
+    (tmp_path / "scene_meta.json").write_text('{"objects": {}}')
+    assert robot_look.scene_robot(tmp_path) == "stock"  # built before 2026-10-02
+    (tmp_path / "scene_meta.json").write_text('{"robot": "mars"}')
+    assert robot_look.scene_robot(tmp_path) == "mars"
+
+
+def test_isaac_draws_the_robot_usd_of_the_robot_the_scene_carries(tmp_path):
+    from locomani.sim.isaac import stage
+
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    cfg = stage.StageCfg(assets=str(tmp_path / "isaac"), robot_mjcf=str(scene / "scene_locomani.xml"))
+    assert stage.robot_usd(cfg) == str(tmp_path / "isaac" / "robot" / "g1_dex1.usda")  # stock: the original place
+    (scene / "scene_meta.json").write_text('{"robot": "mars"}')
+    assert stage.robot_usd(cfg) == str(tmp_path / "isaac" / "robot" / "mars" / "g1_dex1.usda")
+    cfg.robot_usd = str(tmp_path / "given.usda")
+    assert stage.robot_usd(cfg) == str(tmp_path / "given.usda")

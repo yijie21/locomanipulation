@@ -96,6 +96,12 @@ def test_a_stage_built_from_another_scene_is_refused(tmp_path, monkeypatch):
     sha = hashlib.sha256(b"<mujoco/>").hexdigest()
     (stage / "source.json").write_text(json.dumps({"scene_xml_sha256": sha}))
     assert run_context.isaac_scene(cfg, registry)["dir"] == str(stage)
+    # the stage records its scene's robot (none: stock); the renderer adds that robot's USD to it
+    (scene / "scene_meta.json").write_text(json.dumps({"robot": "mars"}))
+    with pytest.raises(SystemExit, match="built for the stock robot, the scene carries mars; rebuild it: b.sh"):
+        run_context.isaac_scene(cfg, registry)
+    (stage / "source.json").write_text(json.dumps({"scene_xml_sha256": sha, "robot": "mars"}))
+    assert run_context.isaac_scene(cfg, registry)["dir"] == str(stage)
     (scene / "scene_locomani.xml").write_text("<mujoco><!-- another box --></mujoco>")
     with pytest.raises(SystemExit, match="built from another"):
         run_context.isaac_scene(cfg, registry)
@@ -165,7 +171,16 @@ def test_an_unreal_run_needs_its_level_built_from_this_scene(tmp_path, monkeypat
         source.write_text(json.dumps({**built, "robot_look": look}))
         with pytest.raises(SystemExit, match=f"carries the robot look {look}, not {robot_look.NAME}.*build_level room"):
             run_context.unreal_scene(cfg, registry)
+    # the robot: a level records the one its scene carries (none recorded: stock, built before 2026-10-02)
+    source.write_text(json.dumps({**built, "robot": "mars"}))
+    with pytest.raises(SystemExit, match="built for the mars robot, the scene carries stock.*build_level room"):
+        run_context.unreal_scene(cfg, registry)
+    (scene / "scene_meta.json").write_text(json.dumps({"robot": "mars"}))
+    assert run_context.unreal_scene(cfg, registry)["level"] == "room"
     source.write_text(json.dumps(built))
+    with pytest.raises(SystemExit, match="built for the stock robot, the scene carries mars"):
+        run_context.unreal_scene(cfg, registry)
+    (scene / "scene_meta.json").unlink()
     (scene / "scene_locomani.xml").write_text("<mujoco><!-- another carton --></mujoco>")
     with pytest.raises(SystemExit, match="built from another"):
         run_context.unreal_scene(cfg, registry)
@@ -182,8 +197,8 @@ def test_the_unreal_capture_count_is_a_whole_number_the_plugin_accepts(tmp_path,
 def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_others_have_none():
     scenes = yaml.safe_load(run_context.SCENES.read_text())
     levels = {name for name, entry in scenes.items() if "level" in (entry.get("unreal") or {})}
-    # the mars warehouse scenes get their levels with TODO 13.6; until then they say why they have none
-    assert levels == {name for name in scenes if name.startswith("warehouse_") and not name.endswith("_mars")}
+    # warehouse_textured_mars is only the base the four mars boxes are built from; it says so
+    assert levels == {name for name in scenes if name.startswith("warehouse_") and name != "warehouse_textured_mars"}
     for name, entry in scenes.items():
         unreal = entry.get("unreal") or {}
         assert unreal.get("unsupported") or unreal.get("level") == name, name
@@ -191,14 +206,23 @@ def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_other
             assert unreal["build"] == f"$BRIDGE_PY -m locomani.sim.unreal.build_level {name}"
 
 
-@pytest.mark.parametrize("name", ["warehouse_smoke", "warehouse_200"])
-def test_the_unreal_warehouse_runs_differ_from_the_isaac_default_in_the_image_source_only(name):
+@pytest.mark.parametrize(
+    "isaac_name, unreal_name",
+    [
+        ("warehouse_smoke", "warehouse_smoke_unreal"),
+        ("warehouse_200", "warehouse_200_unreal"),
+        # the mars runs, the ones docs/warehouse.md runs, have Unreal as the default (user, 2026-10-03)
+        ("warehouse_mars_smoke_isaac", "warehouse_mars_smoke"),
+        ("warehouse_mars_200_isaac", "warehouse_mars_200"),
+    ],
+)
+def test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only(isaac_name, unreal_name):
     # docs/warehouse.md offers Isaac and Unreal side by side: choosing a renderer is choosing one of these two files,
     # so nothing but who draws the pictures may differ
     experiments = run_context.ROOT / "configs" / "experiments"
-    isaac, unreal = (yaml.safe_load((experiments / f"{n}.yaml").read_text()) for n in (name, f"{name}_unreal"))
+    isaac, unreal = (yaml.safe_load((experiments / f"{n}.yaml").read_text()) for n in (isaac_name, unreal_name))
     assert (isaac["images"], unreal["images"]) == ({"source": "isaac"}, {"source": "unreal"})
-    assert unreal["name"] == f"{name}_unreal"
+    assert (isaac["name"], unreal["name"]) == (isaac_name, unreal_name)
     rest = [{k: v for k, v in cfg.items() if k not in ("name", "images")} for cfg in (isaac, unreal)]
     assert rest[0] == rest[1]
 

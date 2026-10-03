@@ -34,8 +34,13 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
     cfg = run_context.load_run_config(run_dir)
     unreal = run_context.unreal_scene(cfg) if cfg.get("backend", {}).get("render") == "offline" else None
-    look = (  # the level carries robot_look.NAME: unreal_scene checked it
-        {"unreal_level": unreal["level_path"], "repeats": unreal["repeats"], "robot_look": robot_look.NAME}
+    look = (  # the level carries robot_look.NAME and the scene's robot: unreal_scene checked both
+        {
+            "unreal_level": unreal["level_path"],
+            "repeats": unreal["repeats"],
+            "robot_look": robot_look.NAME,
+            "robot": robot_look.scene_robot(ROOT / cfg["scene"]["dir"]),
+        }
         if unreal
         else {}
     )

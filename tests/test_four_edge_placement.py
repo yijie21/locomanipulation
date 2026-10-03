@@ -206,18 +206,34 @@ def _reminder(tmp_path, name):
     return layout_reminder(cfg, CrateTaskConfig.from_dict(cfg["task"]), tmp_path)
 
 
-def test_the_default_warehouse_collection_announces_four_edges_and_the_one_place_option(tmp_path):
+def test_the_default_warehouse_collection_walks_in_from_the_ym_edge_and_names_the_other_layouts(tmp_path):
+    # the default is the mars runs from one edge, ym (user, 2026-10-03); the draw is otherwise the four-edge line's
+    for name in (
+        "warehouse_mars_smoke",
+        "warehouse_mars_smoke_isaac",
+        "warehouse_mars_200",
+        "warehouse_mars_200_isaac",
+    ):
+        assert _warehouse_cfg(name)["task"]["visual"]["start_edges"] == ["ym"], name
+    lines = _reminder(tmp_path, "warehouse_mars_smoke")
+    kept = _warehouse_cfg("warehouse_mars_smoke")["collect"]["successes"]  # the smoke's shape is the user's (22c1fda)
+    assert f"scene warehouse_box_45x32x33_mars, {kept} kept wanted" in lines[0]
+    assert "edges ym, drawn" in lines[1] and "0.6 m up to ym 1.035 m" in lines[2]
+    assert "all four edges" in lines[-1] and "*_fixed_start" in lines[-1]
+
+
+def test_the_stock_warehouse_collection_keeps_four_edges_and_names_the_other_layouts(tmp_path):
     lines = _reminder(tmp_path, "warehouse_smoke")
-    kept = _warehouse_cfg("warehouse_smoke")["collect"]["successes"]  # the smoke's shape is the user's (22c1fda)
-    assert f"scene warehouse_box_45x32x33, {kept} kept wanted" in lines[0]
+    assert "scene warehouse_box_45x32x33," in lines[0]
     assert "xm, xp, ym, yp" in lines[1]
-    assert "*_fixed_start" in lines[-1]
+    assert "ym edge only" in lines[-1] and "*_fixed_start" in lines[-1]
 
 
-def test_the_fixed_start_collection_announces_one_place_and_the_four_edge_default(tmp_path):
-    lines = _reminder(tmp_path, "warehouse_smoke_fixed_start")
-    assert "one place" in lines[1]
-    assert "all four edges" in lines[-1]
+def test_the_fixed_start_collection_announces_one_place_and_the_sampled_layouts(tmp_path):
+    for name in ("warehouse_smoke_fixed_start", "warehouse_mars_smoke_fixed_start"):
+        lines = _reminder(tmp_path, name)
+        assert "one place" in lines[1]
+        assert "on the ym edge" in lines[-1] and "on all four" in lines[-1], name
 
 
 def test_a_diagnostic_expert_gets_no_reminder(tmp_path):

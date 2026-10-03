@@ -31,8 +31,9 @@ offset_pos moves the mesh so the wrapper origin is the body origin; stage.py app
 
 A resized carton (`--scene`, a four-edge scene from locomani.tasks.crate.warehouse_box_scene): the stage is the same
 room with the carton's mesh scale read from that MuJoCo scene, so both draw one box. The scale applies to the baked
-world coordinates before the offset, so the offset scales with it; source.json records the MJCF's sha256, and
-run_context.isaac_scene refuses the stage once that scene changes. Its label is the scene's name plus `_env`.
+world coordinates before the offset, so the offset scales with it; source.json records the MJCF's sha256 and the
+scene's robot, and run_context.isaac_scene refuses the stage once that scene changes. Its label is the scene's name
+plus `_env`. The robot is not part of the stage: the renderer adds the robot USD of the scene's robot.
 
 Needs the `pxr` module (pip install usd-core, or any Isaac/Blender python) to list the room's children.
 
@@ -221,6 +222,9 @@ def main() -> int:
             "builder": "scripts/build_isaac_warehouse_scene.py",
             "built": time.strftime("%Y-%m-%d %H:%M:%S"),
             "carton_scale": scale,
+            # the robot is not in the stage: the renderer adds the robot USD of the scene's robot
+            # (isaac.stage.robot_usd), and run_context.isaac_scene checks this against the scene
+            "robot": json.loads((args.scene / "scene_meta.json").read_text()).get("robot", "stock"),
         }
         (out / "source.json").write_text(json.dumps(source, indent=1) + "\n")
     print(

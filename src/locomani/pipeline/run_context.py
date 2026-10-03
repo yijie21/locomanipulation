@@ -213,14 +213,25 @@ def isaac_scene(cfg: dict, registry: Path | None = None) -> dict:
     # would otherwise be rendered with the old geometry while physics runs the new one.
     source = stage / "source.json"
     if source.is_file() and cfg["scene"].get("dir"):
-        built = json.loads(source.read_text()).get("scene_xml_sha256")
+        built = json.loads(source.read_text())
         xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
-        if xml.is_file() and built != hashlib.sha256(xml.read_bytes()).hexdigest():
+        if xml.is_file() and built.get("scene_xml_sha256") != hashlib.sha256(xml.read_bytes()).hexdigest():
             raise SystemExit(f"{stage} was built from another {xml}; rebuild it: {entry.get('build')}")
+        _require_robot(f"Isaac stage {stage}", built, cfg, entry.get("build"))
     supersample = entry.get("supersample", 1)
     if not isinstance(supersample, int) or isinstance(supersample, bool) or supersample < 1:
         raise SystemExit(f"scene {name!r}: isaac.supersample must be a whole number >= 1, not {supersample!r}")
     return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or []), "supersample": supersample}
+
+
+def _require_robot(what: str, built: dict, cfg: dict, build) -> None:
+    """A stage or level records the robot of the scene it was built from (absent: stock, built before 2026-10-02);
+    refuse it for a scene that carries another robot. The scene hash already pins this; the robot says what is wrong."""
+    want = robot_look.scene_robot(ROOT / cfg["scene"]["dir"])
+    if built.get("robot", "stock") != want:
+        raise SystemExit(
+            f"{what} was built for the {built.get('robot', 'stock')} robot, the scene carries {want}; rebuild it: {build}"
+        )
 
 
 def unreal_entry(name: str, registry: Path | None = None) -> dict:
@@ -257,8 +268,8 @@ def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
     same level and capture it the same way. `repeats` is `urlab.FreshCaptureRepeats`, the captures each request
     accumulates (Lumen and TSR converge over frames). The level must be built in the host project ($UE_PROJECT)
     from this very scene and with the robot look Isaac binds (`locomani.sim.robot_look`): its builder records the
-    scene XML's hash and the look's name in `$UNREAL_ASSETS/<level>/source.json` (default `$UNREAL_ROOT/levels`: one
-    place per machine, whichever checkout built the level).
+    scene XML's hash, the scene's robot and the look's name in `$UNREAL_ASSETS/<level>/source.json` (default
+    `$UNREAL_ROOT/levels`: one place per machine, whichever checkout built the level).
     """
     name, entry = _unreal_entry(cfg, registry)
     level = entry["level"]
@@ -277,6 +288,7 @@ def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
         xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
         if xml.is_file() and built.get("scene_xml_sha256") != hashlib.sha256(xml.read_bytes()).hexdigest():
             raise SystemExit(f"Unreal level {level!r} was built from another {xml}; rebuild it: {build}")
+        _require_robot(f"Unreal level {level!r}", built, cfg, build)
     if built.get("robot_look") != robot_look.NAME:
         raise SystemExit(
             f"Unreal level {level!r} carries the robot look {built.get('robot_look')}, not {robot_look.NAME} "
