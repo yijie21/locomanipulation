@@ -22,7 +22,7 @@
 ## 下一步（TODO 编号）
 
 1. 2.4.10.13.1：在 crate 篮子线 / `box_platform` 上各 20 局对照 0.2 vs −1。
-2. Q11 已收尾（2026-10-02，pick_place 台账 §16）。**本分支 `scene_discovery`**：Demo 1 第 0 周，TODO 9.4–9.8（`--record`、场景文件格式、ADT 转换、能力说明、查重）；计划 `docs/handoff/scene-discovery-plan-20261002.md`。ADT 数据在 `/workspace/datasets/adt/`。
+2. Q11 已收尾（2026-10-02，pick_place 台账 §16）。**本分支 `scene_discovery`**：Demo 1 第 0 周；9.5、9.6 完成（ADT 公寓 → `outputs/scene_discovery/adt_apartment/`，渲染器 Isaac，舞台在主仓库 `assets/isaac/scene/adt_apartment`），剩 9.7 程序检查、9.4 `--record`、9.8 查重；计划 `docs/handoff/scene-discovery-plan-20261002.md`。ADT 数据在 `/workspace/datasets/adt/`。
 
 ## 卡点与坑
 

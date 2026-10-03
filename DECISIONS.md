@@ -1057,3 +1057,19 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 输入是带出处的场景描述文件（ADT 公寓是第一份），任务 = 目标谓词 + 多句说法，能力说明文件 + Claude 提议 + 程序检查分三桶；
 采集用 Claude 写的固定 plan（试跑 ≥ 3/10 放行），新技能按缺口报告排序（2–3 个人造、1 个 Claude 尝试，同一门槛）；
 栈全部冻结；每轮 ≤ 25 任务 × 100 局、2 个种子；ADT 衍生物不进 git（许可禁止分发）。Q11 同日收尾（pick_place 台账 §16）。
+
+## 2026-10-03 scene_discovery：渲染器定为 Isaac；ADT 公寓转换完成（TODO 9.6）
+
+### 决策（含理由）
+1. **训练与评测图用 Isaac，不测 Unreal**（用户定，plan 决策 16 的结果）：Isaac 在 ADT 公寓上过了两条硬标准——进程显存峰值 12.8 GB，
+   与 GPU1 上别的项目的 10 GB 同卡放得下；三路相机一帧 p50 0.148 s——贴图还原用户看过图后接受。Unreal 的 `images.source unreal`
+   只在 main / loco_unreal 上，本分支要用它得合并 main（69 个提交），会把 mars 机器人默认值一起带进来，违背决策 12（栈冻结在 stock G1）。
+2. **封闭场景自带室内灯**（`scene_discovery.usd_scene`）：`stage.assemble_stage` 只在场景没有灯时加穹顶光和平行光，这两种光进不了
+   有墙有顶的公寓，第一次渲染全黑。每个房间天花板下按 2.5 m 网格放球形灯，强度在文本层里调，不必重导 4.5 GB 的 USDC。
+3. **默认自由体只给"能抓且落在台面上"的物体**：试过给所有能抓的物体（112 个），不在台面上的 48 个有 47 个直接掉下去——
+   架子格子、柜子里、叠在别的物体上，底下没有碰撞体。台面上的 64 个里 48 个 2 s 内停住，`semantic.drop_test.ok` 记录，任务只用通过的。
+4. **场景文件仍叫 `scene_meta.json`**：栈、Isaac 舞台和 `object_keys` 都按这个名字在场景 xml 旁边找；v2 是它的超集，旧读取方不受影响。
+
+### 工具上的教训
+- `pkill -f <串>` 会连带杀掉命令行里含同一个串的监视脚本（这次 Monitor 退出码 144）；停进程按 pid 或用只匹配解释器路径的正则。
+- worktree 里 `assets/isaac` 不存在（不进 git），Isaac 脚本要显式 `ISAAC_ASSETS=/workspace/code/locomanipulation/assets/isaac`。
