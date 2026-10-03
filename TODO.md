@@ -503,16 +503,26 @@
     - [ ] 13.6.5.4 待用户定：mars 冒烟保留 9/30，stock 09-30 是 11/20、8/20；要不要同种子配对重跑分清是机器人还是波动
     - [x] 13.6.5.5 （2026-10-03，用户）默认摆放改为只走 −y 边：`warehouse_mars_smoke`、`_200` 及 `_isaac` 的 `start_edges: [ym]`；stock 文件仍四边；`collect.layout_reminder` 改说三种摆放；四边那次冒烟的运行目录改名 `warehouse_mars_smoke_4edges_20261003`
     - [ ] 13.6.5.6 只走 ym 的 mars 采集还没实跑（只 `--dry-run` 核了摆放）；stock 的 ym 边 09-28 是 11/19
+    - [ ] 13.6.5.7 runbook 第 5–7 步（训练、开环/闭环评测、第三视角）在 mars 上没跑（用户 10-03：暂不训练）；09-30 只在 stock 上跑过
+    - [ ] 13.6.5.8 可选：runbook 常见报错补一行 `REFUSING TO START: a GPU already has`（别的项目占卡 > 4 GB 时 `train.sh` 拒绝，10-03 冒烟卡在这里 10 分钟）
     - [ ] 13.6.5.3 Isaac 版 mars 实渲一局（只建了资产）
   - [x] 13.6.6 （2026-10-03）第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝（`run_context._require_robot`；旧文件无字段按 stock）
   - [~] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
     - [x] 13.6.7.1 （2026-10-03）warehouse.md 改用 `warehouse_mars_smoke`（Unreal 默认）/`_isaac`；README、setup、glossary、rendering、warehouse_design §11 跟着改
     - [ ] 13.6.7.2 bottle（single_arm.md）、crate 还是 stock（用户 10-03 只要 warehouse；crate 还没有 mars 场景）
+    - [x] 13.6.7.3 （2026-10-03，用户：提交并 push）`4db7deb` 连同之前 12 个本地提交推到 origin/main（`cb3ae2f..4db7deb`）
   - [x] 13.6.9 （2026-10-02，`ed26ed2`，用户：和 stock 相同的部位外观一致）逐部件比对颜色：除手腕（有意涂黑）外相同部位一致。改两处：云台俯仰支架涂黑（头部原有一根白横条；10-03 用户更正：那是头顶的 D455，真机银白，已改回）；骨盆保留的 stock 碰撞外壳改成骨盆色（MuJoCo 画碰撞体，白壳透出）。10-03 用户：骨盆（腿和上身之间的三角件）应为银色，`robot_look.SHELL_MESHES` 把 `pelvis_ver0529` 画成外壳色（URDF 和 Unitree 官方都是黑），碰撞外壳随之同色（对比图 `outputs/mars_look_compare_20261002/`）。10-03 用户先要 D405 本体黑，查明 Unreal 画面里的灰格子方块是 D405 的碰撞盒（mars 碰撞体 alpha 1 被导出，URLab 用 UE 默认 `BasicShapeMaterial` 画基本几何体）而非相机本体，改回银色；`export_mjcf.strip_to_dynamic` 现在丢掉有可视体的 body 上的碰撞 geom。同日用户：MuJoCo/Isaac 画面里支架后背有个黑框凹陷，也是这个碰撞盒；参照 `assets/unitree_G1_with_wrist_camera_new`（URDF 不给支架碰撞体、网格相同），`_mars_geoms` 把支架的碰撞基本体放到 group 3：仍碰撞，相机不画。之后 Unreal 里 D405 背面仍显内凹：是 URLab `clean_meshes.py` 导出 GLB 的平滑法线跨过 90° 棱（背面法线均值 0.84、离散 0.69），不是几何；补丁按 30° 拆分顶点后 0.998/0.13（`patches/urlab_fresh_capture.patch`）
   - [ ] 13.6.8 可选：`outputs/scene/hand_points_dex1.npy` 仍是 stock 手（mars 多了 D405 支架，最低点只在少数姿态差 >0.2 cm，最大 6 cm）；bottle 用它算手离桌高度
   - [ ] 13.6.10 待用户定：先做 13.6.4.1 的腰 50 单变量对照（支架不碰撞、腕 5 N·m，各 10 局约 15 分钟），还是先开始第 3 步（13.6.5）。10-02 已问，用户转去改外观，未答
-  - [ ] 13.6.11 上真机前：专家抱箱前倾要腰俯仰约 39 N·m，Unitree 官方 URDF 腰是 35；改专家少弯腰多屈膝，或向 henry 确认真机腰的固件上限（仿真现在用 50 掩盖了这点）
+  - [~] 13.6.11 上真机前：专家抱箱前倾要腰俯仰约 39 N·m，Unitree 官方 URDF 腰是 35；改专家少弯腰多屈膝，或向 henry 确认真机腰的固件上限（仿真现在用 50 掩盖了这点）
+    - [x] 13.6.11.1 （2026-10-03，用户问真机遥操能弯 80° 且手不抖）静态腰俯仰负载（mars 模型）：前倾 80° 手垂向地面 36 N·m；30° 手前伸托 1.2 kg 箱 41；专家 10 局 p95 44（29% 的帧 > 35）（`outputs/mars_pilots_20261002/waist_load/`）
+    - [x] 13.6.11.2 （2026-10-03）仿真弯腰测试 bend80（各 1 次）：腰 50 手垂地 76° 纹丝不动；腰 50 手前伸、腰 35 两种都 2–4 Hz 塌到限位、手抖 4–31 mm；无摔倒（`outputs/mars_pilots_20261002/bend80/bend80.md`）
+    - [x] 13.6.11.3 （2026-10-03）抖动机制（`bend80/osc.py`）：髋压前倾 → 腰力矩到截断 → 截断后无刚度无阻尼 → 0.1 s 塌到限位、骨盆反踢 → 弹回负载 < 截断处 → 重复；腰 kp 只有 28.5 N·m/rad
+    - [x] 13.6.11.4 （2026-10-03）50 N·m 的来源：SONIC 训练配置与训练 URDF（rev 1.0 几何）都是 50，即 2×5020（单台 25）；Unitree 所有 rev 1.0 文件写 35；deploy 不截断力矩，真机上限由固件定
+    - [ ] 13.6.11.5 待协作者：真机保持弯腰（手垂地 80° 和前倾 50° 手前伸托箱）时 LowState 13/14 号电机的 `tau_est`，定腰的固件上限
+    - [ ] 13.6.11.6 可选：腰 50、手水平前伸时能稳住的最大前倾（静态估算约 60°，未实测）
   - [ ] 13.6.12 待用户定：本次产物删不删（`outputs/mars_pilots_20261002` 4.1 GB，其中 `scenes_v1`–`v6` 旧版场景和 8 个 `ablate_*` 场景；14 个 `outputs/runs/*_20261002*` 共 7.5 GB；`outputs/g1_wristcam_render_20261002` 122 MB）；删前在 STATE 写明 24 小时
+    - [ ] 13.6.12.1 10-03 新增产物：`outputs/runs/warehouse_mars_smoke_4edges_20261003` 712 MB、`outputs/runs/bend80_mars_w{50,35}_20261003` 共 314 MB、`outputs/mars_assets_20261003` 2 MB、`outputs/mars_pilots_20261002/bend80` 3 MB；删前在 STATE 写明 24 小时
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 
