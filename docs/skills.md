@@ -30,7 +30,7 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
     --plan configs/plans/pick_place_via_basket.json --name <run>
 ```
 
-- **做什么**：起栈（这个进程自己的，`--instance` 的端口块，无 exporter）→ 每局按规划站位 teleport → 按 plan 逐个调 primitive → 用任务判据
+- **做什么**：起栈（这个进程自己的，`--instance` 的端口块；不加 `--record` 时无 exporter）→ 每局按规划站位 teleport → 按 plan 逐个调 primitive → 用任务判据
   （`task.goal` 有值时是模板判据 `put X in C`，否则"末了还持着目标"）判成败 → 写 `outputs/runs/<run>/skills/manifest.jsonl`、
   `agent_trace_NN.jsonl`、`videos/round_NN.mp4`。
 - **参数**：实验文件给场景、后端和任务（`task.target` / `task.goal`）；`--plan` 是 JSON 列表 `[{"primitive": 名, "args": {...}}, ...]`
@@ -40,6 +40,20 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
   `python3 -c "import json;[print(json.loads(l)['round'],json.loads(l)['ok'],json.loads(l)['why']) for l in open('outputs/runs/<run>/skills/manifest.jsonl')]"`。
 
 `--dry-run` 只打印解析出的 plan、场景和栈参数，不起任何进程；换实验文件或 plan 后先跑一次它。
+
+**录成训练数据（`--record`）**：
+
+```bash
+$PY -u scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml --gpu 1 --instance 0 --rounds 20 --seed 100 --record --name <run>
+bash scripts/convert_data.sh outputs/runs/<run>
+```
+
+- **做什么**：栈带 exporter 起（只有 instance 0 录得了）；每局 spawn 稳定后开录，判据成立就存、否则丢；成功局在最后一个 primitive
+  自己打的 `training_tail` 处截（没有就取 plan 结束处），转换时切掉之后的验证段。指令取实验文件 `task.prompts` 里按局抽的一句，没有就用判据文字。
+- **得到什么**：exporter 会话（`/workspace/tmp/p03/outputs/<时间>`）+ `outputs/runs/<run>/collect/manifest_00.jsonl` + summary 的 `collect` 项，
+  `convert_data.sh` 照常转。`--agent`、`--inject`、`--think-s` 与 `--record` 互斥（思考停顿和注入的世界事件不该进训练数据）。
+- **与 bottle 采集线的差别**（2026-10-03，各转一份逐字段比，`scripts/experiments/record_parity_20261003.py`）：37 个字段、帧率、指令文字一致；
+  plan 的局在抓起抬稳处结束，采集线多一段后退两步（中位时长 23.0 s vs 25.4 s），spawn 在规划站位、无采集线的横向 / 朝向抖动。
 
 `--think-s 8` 让固定 plan 在每次成功调用后停 8 s（agent 一次决策的时长），停顿走 `Executor.idle`（§4）；
 持单手物体时 trace 多一行 `{"event": "think", "drift_m", "drift_rate_cm_s", "dz_m", "touching_end", ...}`，qpos 流存 `skills/think_<局>_<第几次>.npz`。

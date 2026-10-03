@@ -14,7 +14,12 @@ round loop's spawn, without its sampling jitter), the calls through `skills.Exec
 from the privileged state, one manifest line and one `agent_trace_NN.jsonl`, one video. The stack is this
 process's (instance/GPU from the arguments), brought down at the end unless `--keep-stack`. No exporter,
 no recording: this is the regression / smoke entry. `--profile` overrides the profile the scene picks for
-the target (a new object's calibration, docs/skills.md). `--inject` names a JSON failure injection
+the target (a new object's calibration, docs/skills.md). `--record` makes it a collection entry instead
+(scene_discovery plan decision 13): the stack runs the exporter (instance 0, the only one that records), every
+round is an episode that starts after the spawn settles ('c') and is saved when the task criterion holds ('c')
+or discarded ('x'), and `<run>/collect/manifest_00.jsonl` + the run summary's `collect` entry pair that episode
+with its instruction -- one of the task's `prompts`, drawn per round, or the criterion text -- so
+`scripts/convert_data.sh <run>` converts it like any collection run. `--inject` names a JSON failure injection
 (`skills/injection.py`): a world event fired once per round after the first successful call of a named
 primitive, identical for the fixed plan and the agent on the same seed (agentic-plan Q11; docs/skills.md
 §7); `scripts/injection_report.py` pairs the two runs. `--think-s` gives a fixed plan an agent's decision
@@ -75,9 +80,25 @@ def parse(argv):
         help="with --think-s: send nothing during the wait (the agent runner's gap; the deploy times the planner "
         "out after 1 s) instead of re-sending the current command",
     )
+    ap.add_argument(
+        "--record",
+        action="store_true",
+        help="record every round as a training episode (exporter on instance 0); fixed plans only",
+    )
     ap.add_argument("--keep-stack", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved plan, scene and stack; start nothing")
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    if args.record:
+        # what a training episode may contain is decided here, once: a think pause would be idle frames the
+        # dataset has to cut (agentic-plan Q5, not built), an injection is a world event no policy should imitate
+        refused = [
+            flag for flag, on in (("--agent", args.agent), ("--inject", args.inject), ("--think-s", args.think_s)) if on
+        ]
+        if refused:
+            ap.error(f"--record collects with fixed plans only; drop {', '.join(refused)}")
+        if args.instance != 0:
+            ap.error("--record needs --instance 0: only instance 0 runs the exporter")
+    return args
 
 
 def default_plan(scene, task: dict, profile: str | None = None, profiles: dict | None = None) -> list[dict]:
@@ -372,7 +393,10 @@ def main(argv=None) -> int:
         flush=True,
     )
     if args.dry_run:
-        print(f"[plan] stack: instance {args.instance} gpu {args.gpu} no exporter; rounds {args.rounds}")
+        exporter = "exporter -> collect/manifest_00.jsonl" if args.record else "no exporter"
+        print(f"[plan] stack: instance {args.instance} gpu {args.gpu} {exporter}; rounds {args.rounds}")
+        if args.record:
+            print(f"[plan] instructions: {cfg['task'].get('prompts') or [text]}")
         return 0
 
     from locomani.stack.manager import Stack, spec_from_config
@@ -381,21 +405,84 @@ def main(argv=None) -> int:
     video_dir.mkdir(parents=True, exist_ok=True)
     spec = dataclasses.replace(
         spec_from_config(
-            cfg, run_dir=run_dir, gpu=args.gpu, scene_dir=str(scene_dir), record=False, video_dir=video_dir
+            cfg, run_dir=run_dir, gpu=args.gpu, scene_dir=str(scene_dir), record=args.record, video_dir=video_dir
         ),
         instance=args.instance,
     )
     stack = Stack(spec, run_dir=run_dir, mode="collect")
     env = stack.up()
     os.environ.update(env)
+    recording = None
+    if args.record:
+        from locomani.pipeline import batches
+
+        collect_root = run_dir / "collect"
+        collect_root.mkdir(parents=True, exist_ok=True)
+        recording = Recording(batches.open_exporter_session(stack, collect_root, 0), collect_root / "manifest_00.jsonl")
     try:
-        return rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection)
+        code = rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection, recording)
+        if recording is not None:
+            recording.finish(run_dir)  # before stack.down(): the exporter may still be writing the last episode
+        return code
     finally:
         if not args.keep_stack:
             stack.down()
 
 
-def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> int:
+class Recording:
+    """One exporter session and its manifest: what makes this run convertible (`scripts/convert_data.sh`)."""
+
+    TAIL_HOLD_S = 1.0  # a plan-end training_tail must sit inside the recorded frames, not on the last one
+    SAVE_HOLD_S = 4.0  # as the bottle line: let the exporter write before the next spawn
+
+    def __init__(self, session: str, manifest: Path):
+        self.session, self.manifest = session, manifest
+        self.rows: list[dict] = []
+
+    def start(self, p) -> None:
+        p.cmd.key("c")  # IDLE -> RECORDING; the first frame is the first frame of the task
+
+    def stop(self, p, session, ok: bool, facing) -> None:
+        """Save a success ('c'), discard a failure ('x'). A success gets the training_tail the converter trims
+        at: the last primitive's own (grasp_single and place set one before their verification hold), else
+        the plan's end."""
+        from locomani.backends.sonic.agent_server import LocomotionMode
+
+        if ok:
+            if "training_tail" not in session.record.metrics:
+                session.record.metrics["training_tail"] = dict(end_seq=int(p.obs()["seq"]), reason="plan_end")
+                p.cmd.hold(self.TAIL_HOLD_S, mode=LocomotionMode.IDLE, facing=facing)
+            p.cmd.key("c")
+            p.cmd.hold(self.SAVE_HOLD_S, mode=LocomotionMode.IDLE, facing=facing)
+        else:
+            p.cmd.key("x")
+            p.cmd.hold(2.0, mode=LocomotionMode.IDLE, facing=facing)
+
+    def write(self, row: dict) -> None:
+        self.rows.append(row)
+        with self.manifest.open("a") as f:
+            f.write(json.dumps(row, default=float) + "\n")
+
+    def finish(self, run_dir: Path) -> None:
+        from locomani.pipeline import batches, run_context
+
+        batches.wait_saved(self.session, self.manifest)
+        kept = batches.kept_in(self.manifest, True)
+        run_context.summarise(
+            run_dir,
+            "collect",
+            attempts=len(self.rows),
+            kept=kept,
+            batches=1,
+            yield_rate=round(kept / len(self.rows), 3) if self.rows else 0.0,
+            failures=sorted({str(r.get("why") or "")[:70] for r in self.rows if not r.get("ok")}),
+            sessions=[self.session],
+            manifests=[str(self.manifest)],
+        )
+        print(f"[plan] recorded {kept} episode(s) -> {self.session}", flush=True)
+
+
+def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None, recording=None) -> int:
     import numpy as np
 
     from locomani.backends.sonic.agent_server import LocomotionMode
@@ -473,6 +560,15 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                     log=p.log,
                 )
             entries = []
+            prompt = text
+            recorded = False
+            if ok and recording is not None:
+                # its own stream, so recording does not shift the spawn draws of `rng` and a recorded run
+                # meets the same scenes as an unrecorded one with the same seed
+                prompts = task.get("prompts") or [text]
+                prompt = str(np.random.default_rng([args.seed + rnd, 1]).choice(prompts))
+                recording.start(p)
+                recorded = True
             if ok:
                 reset.start_video(f"round_{rnd:02d}")
                 if planner is not None:
@@ -509,6 +605,9 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                     else:
                         state = p.obs()
                         ok, why = criterion(state, session)
+            if recorded:
+                yaw = float(p.pelvis_yaw(p.obs()))
+                recording.stop(p, session, bool(ok), (float(np.cos(yaw)), float(np.sin(yaw)), 0.0))
             if session.arm_owner.value == "pose_stream":
                 executor.step("hand_back")  # leave the planner in charge before the next spawn
             try:
@@ -520,7 +619,13 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
                 seed=args.seed + rnd,
                 ok=bool(ok),
                 why=why,
-                task=text,
+                task=prompt,  # the converter's per-episode instruction
+                criterion=text,
+                target=target,
+                attempt=0,
+                produced=recorded,
+                plan=steps if planner is None else None,
+                execution=session.record.snapshot() if recorded else None,
                 steps=[e["primitive"] for e in entries],
                 completed=[e["primitive"] for e in entries if "outcome" in e and e["outcome"]["ok"]],
                 agent=bool(planner is not None),
@@ -536,6 +641,8 @@ def rounds(args, cfg, run_dir, meta, scene, steps, profiles, injection=None) -> 
             rnd += 1
             with (out / "manifest.jsonl").open("a") as f:
                 f.write(json.dumps(row, default=float) + "\n")
+            if recording is not None:
+                recording.write(row)
             print(f"[plan] round {row['round']}: {'OK' if ok else 'FAIL'} {why} ({row['seconds']} s)", flush=True)
             p.cmd.hold(2.0, mode=LocomotionMode.IDLE)
         print(f"[plan] {wins}/{rnd} OK ({injected} injected) -> {out / 'manifest.jsonl'}", flush=True)
