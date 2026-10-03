@@ -139,3 +139,16 @@ def test_edge_guard_reads_its_parameters_from_the_simple_config():
     guard = EdgeGuard(_robot(), facing_edge([0, 0], [0.5, 0.5], [0, 1]), 0.70, cfg)
     record = guard.record()
     assert record["brake"] is None and record["final"] is None and record["realised_extra_m"] is None
+
+
+def test_a_turned_table_brakes_at_its_own_edge():
+    import numpy as np
+
+    from locomani.tasks.bottle.edge_guard import facing_edge
+
+    # a 1.2 x 0.4 m table turned 90 deg: walking +y meets the edge 0.6 m from the centre, not 0.2
+    edge = facing_edge([0.0, 0.0], [0.6, 0.2], [0.0, 1.0], yaw=float(np.pi / 2))
+    assert np.allclose(edge.axis, [0.0, 1.0]) and abs(edge.line + 0.6) < 1e-9
+    assert abs(edge.clearance([0.0, -1.0]) - 0.4) < 1e-9
+    axis_aligned = facing_edge([0.0, 0.0], [0.6, 0.2], [0.0, 1.0])
+    assert abs(axis_aligned.line + 0.2) < 1e-9  # yaw 0 keeps the hand-built scenes' answer

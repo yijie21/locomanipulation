@@ -63,3 +63,12 @@ def test_put_on_judges_a_turned_table_in_its_own_frame():
     assert check(on) == (True, "")
     assert not check(off)[0]
     assert scene.front_line("T")["yaw"] == pytest.approx(np.pi / 2)
+
+
+def test_edge_distance_reads_the_table_frame():
+    from locomani.skills.catalogue.bottle import surfaces_edge_distance
+
+    d = surfaces_edge_distance({"surfaces": {"T": dict(TABLE, yaw=float(np.pi / 2))}})
+    assert d([0.0, 0.8]) == pytest.approx(0.2)  # the turned 1.2 m side runs along y
+    assert d([0.4, 0.0]) == pytest.approx(0.2)
+    assert surfaces_edge_distance({"surfaces": {"T": TABLE}})([0.0, 0.8]) == pytest.approx(0.6)

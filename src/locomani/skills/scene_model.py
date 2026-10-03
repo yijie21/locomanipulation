@@ -95,7 +95,8 @@ class SceneModel:
             box = o.get("box") or {}
             self.objects[k] = ObjectInfo(
                 key=k,
-                phrase=phrases.get(k, k.replace("_", " ")),
+                # a scene_discovery file carries Claude's phrase per object; the hand-built scenes a top-level map
+                phrase=phrases.get(k) or (o.get("semantic") or {}).get("phrase") or k.replace("_", " "),
                 half_extent=_t(box.get("half_extent"), 3),
                 centre=_t(box.get("centre"), 3) or ((0.0, 0.0, 0.0) if box else None),
                 wall=float(box.get("wall", 0.01)),

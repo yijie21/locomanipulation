@@ -86,15 +86,21 @@ class AdtObject:
         return np.array([x, np.cross(z, x), z])
 
     def body(self) -> dict:
-        """init_quat, box (half_extent, centre) and upright_axis in the body frame."""
+        """The sim body: its origin at the box centre (what every hand-built scene has and the grasp code assumes:
+        `obj_top` is init_pos z + half height, `box.centre` is read under another spelling and so is always 0).
+        Returns init_pos (world), init_quat, half_extent, centre [0, 0, 0], upright_axis, and `mesh_offset`: what
+        to add to a mesh's vertices once they are in the body axes, so the ADT origin (often the base) moves."""
         a = self.body_axes
         body = self.corners() @ a.T
         lo, hi = body.min(axis=0), body.max(axis=0)
+        centre = (hi + lo) / 2  # in the body axes, relative to the ADT origin
         return {
+            "init_pos": (self.pos + self.rot @ (a.T @ centre)).round(4).tolist(),
             "init_quat": matrix_to_quat(self.rot @ a.T),
             "half_extent": ((hi - lo) / 2).round(4).tolist(),
-            "centre": ((hi + lo) / 2).round(4).tolist(),
+            "centre": [0.0, 0.0, 0.0],
             "upright_axis": (a @ self.up_local).round(4).tolist(),
+            "mesh_offset": (-centre).round(5).tolist(),
         }
 
     def footprint(self) -> np.ndarray:

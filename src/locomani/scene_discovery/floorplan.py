@@ -129,6 +129,7 @@ def approach_edges(
     standoff: float = 0.05,
     own: np.ndarray | None = None,
     max_overhang: float = 0.6,
+    runup: float = 0.0,
 ) -> list:
     """Edges of a surface rectangle ({xy, half_extent, yaw}) with room for the robot in front of them.
 
@@ -153,8 +154,9 @@ def approach_edges(
             past = 0.0
             while own is not None and past < max_overhang and _cell(own, grid, edge + out_dir * past, False):
                 past += grid.res
-            probe = edge + out_dir * (past + body_radius + standoff)
-            if _cell(clear, grid, probe, 0.0) >= body_radius:
+            # the stand, and every 0.2 m of run-up behind it (the single-arm approach starts 0.6-1.2 m back)
+            depths = past + body_radius + standoff + np.arange(0.0, runup + 1e-9, 0.2)
+            if all(_cell(clear, grid, edge + out_dir * d, 0.0) >= body_radius for d in depths):
                 ok += 1
         if ok >= 3:
             out.append(name)

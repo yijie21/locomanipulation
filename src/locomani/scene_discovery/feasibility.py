@@ -204,6 +204,10 @@ class Checker:
             return None
         if hands == "single":
             c = self.cap["reach_single_arm"]
+            grip = float(self.objects[x]["init_pos"][2] + self.box(x)[1][2])  # the bottle line grips at the centre
+            lo, hi = c["grip_height_accepted"]
+            if not lo <= grip <= hi:
+                out.append(Check(step, "grip_height", UNTESTED, round(grip, 3), [lo, hi], "grasp_single.grip_height"))
             width, height = float(2 * min(half[:2])), float(2 * half[2])
             out.append(self._range(step, "support_top", support, c["support_top_measured"], "grasp_single.support_top"))
             size_ok = _range(width, c["object_width_measured"], 0.005) and _range(

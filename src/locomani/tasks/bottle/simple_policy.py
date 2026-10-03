@@ -375,7 +375,7 @@ class SimpleGraspPolicy:
         p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
         p.cmd.upper_body = None
         p.cmd.set_upper_body_vel(None)
-        edge = facing_edge(surface["xy"], surface["half_extent"], heading)
+        edge = facing_edge(surface["xy"], surface["half_extent"], heading, float(surface.get("yaw", 0.0)))
         self.edge_guard = EdgeGuard(self.ik.model, edge, float(self.task.target.surface_top), self.simple)
         self.stats["prepare_walk"] = dict(arms="walking policy", edge_axis=edge.axis.tolist(), edge_line=edge.line)
 

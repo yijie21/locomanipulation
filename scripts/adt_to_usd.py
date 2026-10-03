@@ -83,7 +83,8 @@ def main() -> None:
         clear()
         o = objs[key]
         _, roots = import_glb(key)
-        to_body = matrix(o.body_axes @ a2s.T)
+        # the MuJoCo body frame: z up at the initial pose, origin at the box centre (adt.AdtObject.body)
+        to_body = matrix(o.body_axes @ a2s.T, o.body()["mesh_offset"])
         for r in roots:
             r.matrix_world = to_body @ r.matrix_world
         export(out / "usd" / key / f"{key}.usd")

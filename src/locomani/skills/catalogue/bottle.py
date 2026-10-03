@@ -44,14 +44,20 @@ def _wrap(a: float) -> float:
 def surfaces_edge_distance(meta: dict):
     """grasp_gym's signed clearance to the nearest table footprint (negative inside), over every surface."""
     rects = [
-        (np.asarray(s["xy"][:2], dtype=float), np.asarray(s.get("half_extent", [0.6, 0.6])[:2], dtype=float))
+        (
+            np.asarray(s["xy"][:2], dtype=float),
+            np.asarray(s.get("half_extent", [0.6, 0.6])[:2], dtype=float),
+            float(s.get("yaw", 0.0)),  # scene_discovery surfaces are turned; the hand-built ones are not
+        )
         for s in meta["surfaces"].values()
     ]
 
     def edge_dist(xy):
         best = np.inf
-        for rc, rh in rects:
-            dxy = np.abs(np.asarray(xy, dtype=float)[:2] - rc) - rh
+        for rc, rh, yaw in rects:
+            d = np.asarray(xy, dtype=float)[:2] - rc
+            c, sn = np.cos(-yaw), np.sin(-yaw)
+            dxy = np.abs([c * d[0] - sn * d[1], sn * d[0] + c * d[1]]) - rh
             out = np.maximum(dxy, 0.0)
             best = min(best, float(np.hypot(out[0], out[1])) if (dxy > 0).any() else float(max(dxy)))
         return best

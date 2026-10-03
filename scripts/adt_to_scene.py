@@ -52,6 +52,7 @@ SUPPORT_SKIP = frozenset(
     }
 )  # drawer tops sit inside their cabinet
 BODY_RADIUS = 0.26  # navigator.BODY_RADIUS
+RUNUP = 0.6  # m of clear floor an approach edge needs behind the stand: the shortest spawn the plan runner takes
 SPAWN_MARGIN = 0.15
 
 
@@ -96,15 +97,47 @@ def obstacle_polygons(fixed: list) -> list:
     ]
 
 
-def obstacles(args) -> None:
-    """Rewrite room.obstacles of an existing scene file with the current rule, keeping every other field."""
+def refresh(args) -> None:
+    """Recompute the rule-derived object poses, room obstacles and surface approach edges of a scene file in place.
+
+    Everything else -- Claude's names and estimates, the drop test, the MuJoCo indices -- is kept, which a rerun
+    of `geometry` would discard. Use it after changing OBSTACLE_Z, RUNUP or the approach-edge rule."""
     path = Path(args.scene)
     meta = json.loads(path.read_text())
-    objs = [o for o in adt.read_sequence(DATA / "sequences" / meta["source"]["sequence"]) if o.name in meta["objects"]]
-    before = len(meta["room"].get("obstacles") or [])
-    meta["room"]["obstacles"] = obstacle_polygons([o for o in objs if o.name != adt.SHELL and not o.movable])
+    objs = {
+        o.name: o
+        for o in adt.read_sequence(DATA / "sequences" / meta["source"]["sequence"])
+        if o.name in meta["objects"]
+    }
+    shell = objs.pop(adt.SHELL)
+    walls, floor_tris, _shell_mesh = shell_walls(shell)
+    grid = floorplan.Grid(meta["room"]["bounds"])
+    wall_img = grid.segments(walls, thickness=0.10)
+    floor = grid.triangles(floor_tris)
+    before = (
+        len(meta["room"].get("obstacles") or []),
+        sum(bool(s.get("approach_edges")) for s in meta["surfaces"].values()),
+    )
+    meta["room"]["obstacles"] = obstacle_polygons([o for o in objs.values() if not o.movable])
+    for key, o in objs.items():  # the body frame rule (origin at the box centre, adt.AdtObject.body)
+        b = o.body()
+        meta["objects"][key]["init_pos"] = b["init_pos"]
+        meta["objects"][key]["init_quat"] = b["init_quat"]
+        meta["objects"][key]["box"].update(half_extent=b["half_extent"], centre=b["centre"])
+    clear = floorplan.clearance(wall_img | grid.polygons(meta["room"]["obstacles"]) | ~floor)
+    changed = []
+    for key, s in meta["surfaces"].items():
+        of = s.get("of_object")
+        own = wall_img if of == adt.SHELL else grid.polygons([hull(objs[of].footprint())])
+        edges = floorplan.approach_edges(s, clear, grid, BODY_RADIUS, own=own, runup=RUNUP)
+        if edges != s.get("approach_edges"):
+            changed.append(f"{key}: {s.get('approach_edges')} -> {edges}")
+        s["approach_edges"] = edges
     path.write_text(json.dumps(meta, indent=1))
-    print(f"[adt] room.obstacles {before} -> {len(meta['room']['obstacles'])} in {path}")
+    after = (len(meta["room"]["obstacles"]), sum(bool(s["approach_edges"]) for s in meta["surfaces"].values()))
+    print(f"[adt] obstacles {before[0]} -> {after[0]}, approachable surfaces {before[1]} -> {after[1]} in {path}")
+    for line in changed:
+        print("   ", line)
 
 
 def room_at(labels, grid: floorplan.Grid, xy, names: dict):
@@ -163,7 +196,7 @@ def geometry(args) -> None:
     for o, regions, own in candidates:
         for i, r in enumerate(regions):
             key = f"{o.name}__{i}"
-            r_edges = floorplan.approach_edges(r, clear, grid, BODY_RADIUS, own=own)
+            r_edges = floorplan.approach_edges(r, clear, grid, BODY_RADIUS, own=own, runup=RUNUP)
             surfs[key] = {
                 "name": f"{o.category} {o.name}",
                 "xy": r["xy"],
@@ -188,7 +221,7 @@ def geometry(args) -> None:
     objects = {}
     for o in [shell] + objs:
         b = o.body()
-        centre_world = o.pos + o.rot @ (o.body_axes.T @ np.asarray(b["centre"]))
+        centre_world = np.asarray(b["init_pos"])
         underside = o.world_z()[0]
         on = None
         best = 0.05
@@ -219,7 +252,7 @@ def geometry(args) -> None:
             del sem["room"], prov["room"]
         objects[o.name] = {
             "surface": on,
-            "init_pos": o.pos.round(4).tolist(),
+            "init_pos": b["init_pos"],
             "init_quat": b["init_quat"],
             "height": round(2 * b["half_extent"][2], 4),
             "box": {"half_extent": b["half_extent"], "centre": b["centre"]},
@@ -362,6 +395,10 @@ def mujoco(args) -> None:
     for el in list(world):
         if el.tag in ("camera",) or (el.tag == "body" and el.get("name") != "pelvis"):
             world.remove(el)
+    pelvis = world.find("body[@name='pelvis']")
+    x, y = meta["robot_start"]["xy"]
+    # qpos0 is the reset's nominal pose and the plan runner's spawn origin: put it in the free spawn region
+    pelvis.set("pos", mjcf.fmt([x, y, meta["robot_start"].get("pelvis_z", 0.793)]))
     floor = world.find("geom[@name='floor']")
     if floor is not None:
         floor.set("rgba", "0 0 0 0")  # the shell has its own floor mesh; the plane still collides
@@ -378,6 +415,7 @@ def mujoco(args) -> None:
         ET.SubElement(env, "geom", name=name, type="mesh", mesh=name, contype="0", conaffinity="0", group="1",
                       density="0", rgba=mjcf.fmt(colour(part)))  # fmt: skip
     for key, s in meta["surfaces"].items():
+        s["body"] = "adt_env"  # every slab lives in the env body: contacts with it read as furniture contacts
         sl = mjcf.slab(s)
         ET.SubElement(env, "geom", name=f"adt_slab_{key}", type="box", pos=mjcf.fmt(sl["pos"]), quat=mjcf.fmt(sl["quat"]),
                       size=mjcf.fmt(sl["size"]), rgba="0.5 0.5 0.9 0.25", group="3")  # fmt: skip
@@ -389,7 +427,8 @@ def mujoco(args) -> None:
         raw = load_mesh(key)
         rgba = mjcf.fmt(colour(raw))
         body_mesh = raw.copy()
-        body_mesh.vertices = raw.vertices @ a.body_axes.T  # object frame -> body frame (z up at the initial pose)
+        # object frame -> body frame: z up at the initial pose, origin at the box centre (adt.AdtObject.body)
+        body_mesh.vertices = raw.vertices @ a.body_axes.T + np.asarray(a.body()["mesh_offset"])
         sem = o["semantic"]
         if not sem["movable"]:  # furniture: scenery only, contact comes from its surface slabs
             vis = body_mesh if len(body_mesh.faces) <= FURNITURE_FACES else body_mesh.convex_hull
@@ -529,10 +568,10 @@ def main() -> None:
         nargs="*",
         help="object keys that get a free joint (default: every graspable movable one on a surface)",
     )
-    b = sub.add_parser("obstacles", help="rewrite room.obstacles with the current rule (keeps Claude's fields)")
+    b = sub.add_parser("refresh", help="recompute obstacles and approach edges in place (keeps Claude's fields)")
     b.add_argument("--scene", required=True)
     args = ap.parse_args()
-    {"geometry": geometry, "estimate": estimate, "mujoco": mujoco, "obstacles": obstacles}[args.stage](args)
+    {"geometry": geometry, "estimate": estimate, "mujoco": mujoco, "refresh": refresh}[args.stage](args)
 
 
 if __name__ == "__main__":

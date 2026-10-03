@@ -19,7 +19,7 @@ from locomani.primitives.foot_watch import FootWatch, GuardBrake
 
 @dataclass(frozen=True)
 class TableEdge:
-    """A straight edge of an axis-aligned table footprint: `axis` points across it into the table, `line` is its
+    """A straight edge of a table footprint: `axis` (a unit vector) points across it into the table, `line` is its
     coordinate along `axis` from the world origin. clearance = line - axis . p, positive on the robot's side."""
 
     axis: np.ndarray
@@ -29,12 +29,17 @@ class TableEdge:
         return float(self.line - self.axis @ np.asarray(xy, dtype=float)[:2])
 
 
-def facing_edge(centre_xy, half_extent, heading) -> TableEdge:
-    """The edge of the footprint the heading walks into: the one whose outward normal is most opposed to it."""
-    heading = np.asarray(heading, dtype=float)[:2]
-    k = int(np.argmax(np.abs(heading)))
-    axis = np.zeros(2)
-    axis[k] = np.sign(heading[k])
+def facing_edge(centre_xy, half_extent, heading, yaw: float = 0.0) -> TableEdge:
+    """The edge of the footprint the heading walks into: the one whose outward normal is most opposed to it.
+
+    `yaw` turns the footprint (scene_discovery surfaces); the hand-built scenes' tables are axis-aligned, yaw 0."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    rot = np.array([[c, -s], [s, c]])
+    local = rot.T @ np.asarray(heading, dtype=float)[:2]
+    k = int(np.argmax(np.abs(local)))
+    axis_local = np.zeros(2)
+    axis_local[k] = np.sign(local[k])
+    axis = rot @ axis_local
     return TableEdge(axis, float(axis @ np.asarray(centre_xy, dtype=float)[:2]) - float(half_extent[k]))
 
 

@@ -54,8 +54,9 @@ SCENE_DIR = paths.SIM_DIR
 
 
 def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
-    object_bodies = {k: v["body"] for k, v in meta["objects"].items()}
-    surface_bodies = [v["body"] for v in meta.get("surfaces", {}).values()]
+    # a scene_discovery file lists every object of the room; only the free ones are bodies in this build
+    object_bodies = {k: v["body"] for k, v in meta["objects"].items() if v.get("body")}
+    surface_bodies = sorted({v["body"] for v in meta.get("surfaces", {}).values() if v.get("body")})
     original = DefaultEnv.update_reward
 
     def update_reward(self):

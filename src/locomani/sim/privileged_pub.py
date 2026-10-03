@@ -410,6 +410,8 @@ class EpisodeControlServer:
         # qpos address of each free object, and of the robot's floating base.
         self.obj_qadr = {}
         for name, info in meta["objects"].items():
+            if not info.get("body"):  # scenery in a scene_discovery build
+                continue
             bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, info["body"])
             if bid < 0:
                 continue

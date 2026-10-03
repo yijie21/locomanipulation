@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 
-SKILL_GAPS = frozenset({"place_on_surface.single", "place_into.bimanual", "reorient"})
+# the skill refuses these before the robot moves (or there is no skill): a pilot cannot measure them
+SKILL_GAPS = frozenset({"place_on_surface.single", "place_into.bimanual", "reorient", "grasp_single.grip_height"})
 SCALE = {  # what counts as one unit of extrapolation per check (m, kg)
     "support_top": 0.10,
     "object_size": 0.03,

@@ -84,7 +84,8 @@ def test_a_bottle_like_pick_from_the_measured_table_is_bucket_1():
 
 def test_each_untested_dimension_names_its_gap():
     assert gaps_of(["held(book)"])[:2] == (2, ["grasp_single.object_size"])
-    assert gaps_of(["held(high_bottle)"])[:2] == (2, ["grasp_single.support_top"])
+    # 0.90 m table: grip at 0.98 m, above what the skill plans for (0.66-0.89) -- a skill gap, not just a height
+    assert gaps_of(["held(high_bottle)"])[:2] == (2, ["grasp_single.grip_height", "grasp_single.support_top"])
     bucket, gaps, *_ = gaps_of(["in(bottle, bin)"])  # a floor bin: rim 0.54 m, opening 0.22 x 0.16 < the basket's
     assert bucket == 2 and {"place_into.rim_height", "place_into.opening"} <= set(gaps)
     assert gaps_of(["on(bottle, HIGH)"])[1] == ["place_on_surface.single"]
@@ -146,3 +147,16 @@ def test_unstable_objects_are_no_template_and_a_shelf_container_is_reached_at_it
     assert (
         route.outcome == "ok" and 1.5 < route.measured < 2.6
     )  # table edge to HIGH's -y edge, not a ring round the mug
+
+
+def test_pilot_groups_split_envelope_gaps_from_skill_gaps():
+    from locomani.scene_discovery import pilot_groups
+
+    c = checker()
+    results = [
+        c.check(t).to_dict() for t in [{"id": "a", "goal": ["held(book)"]}, {"id": "b", "goal": ["held(high_bottle)"]}]
+    ]
+    groups = {tuple(g["gaps"]): g for g in pilot_groups.groups(results)}
+    assert groups[("grasp_single.object_size",)]["pilotable"]
+    high = groups[("grasp_single.grip_height", "grasp_single.support_top")]
+    assert not high["pilotable"] and high["skill_gaps"] == ["grasp_single.grip_height"]

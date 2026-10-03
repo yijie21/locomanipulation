@@ -122,3 +122,12 @@ def test_stairs_drop_and_a_two_level_counter_stays():
     ]
     kept = surfaces.drop_stairs(steps + counter)
     assert [r["top"] for r in kept] == [0.92, 0.73, 0.88]
+
+
+def test_an_edge_needs_a_runup_not_just_a_stand():
+    grid, walls, _ = plan()
+    rect = {"xy": [6.0, 2.0], "half_extent": [0.4, 0.3], "yaw": 0.0}  # a cart in the right room
+    chair = grid.polygons([[[4.35, 1.7], [4.85, 1.7], [4.85, 2.3], [4.35, 2.3]]])  # 0.75 m off its -x edge
+    clear = floorplan.clearance(walls | chair)
+    assert "-x" in floorplan.approach_edges(rect, clear, grid, body_radius=0.26)
+    assert "-x" not in floorplan.approach_edges(rect, clear, grid, body_radius=0.26, runup=0.6)

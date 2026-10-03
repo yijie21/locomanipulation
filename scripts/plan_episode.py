@@ -242,6 +242,10 @@ def spawn_single(session, p, reset, meta, target, profile, *, robot_nom, spawn_o
     init_xy = np.asarray(meta["objects"][target]["init_pos"][:2], dtype=float)
     _rel, psi, stand, _hint = stand_plan(meta, target, init_xy, profile.config.reach, session.scene.reach)
     fv2 = np.array([np.cos(psi), np.sin(psi)])
+    if meta.get("room"):  # a scene_discovery room: walls and furniture behind the stand
+        spawn_off = clear_spawn_off(meta, stand, fv2, spawn_off)
+        if spawn_off is None:
+            return False, "[stand] no clear spawn behind the planned stand"
     spawn = stand - spawn_off * fv2
     p.cmd.stream_mode = StreamMode.PLANNER_VR_3PT
     p.cmd.upper_body = None
@@ -284,6 +288,37 @@ def spawn_single(session, p, reset, meta, target, profile, *, robot_nom, spawn_o
     p.hold_yaw = float(psi)
     log(f"[plan] spawn {np.round(spawn, 2)} psi {np.degrees(psi):.0f} deg -> settled {np.round(p.pelvis_xy(s), 2)}")
     return True, ""
+
+
+SPAWN_OFFS = (1.2, 1.0, 0.8, 0.6)  # m behind the stand, longest first: the approach was calibrated from 1.2
+
+
+def clear_spawn_off(meta, stand, fv2, wanted: float, _maps={}) -> float | None:  # noqa: B006  (per-scene cache)
+    """The longest spawn distance (from `wanted` down to 0.6 m) the robot can stand at and walk in from.
+
+    The spawn itself must be free in the inflated map (the body fits there). The straight walk to the stand is
+    checked against the raw footprints only, and not over its last 0.15 m: a stand is a pelvis pose 0.2-0.3 m
+    from the table edge, inside the inflation by design (navigator docstring), and the guard walk brakes there."""
+    import numpy as np
+
+    from locomani.primitives.navigator import OccupancyMap
+
+    key = id(meta)
+    if key not in _maps:
+        _maps[key] = OccupancyMap(meta)
+    occ = _maps[key]
+
+    def blocked(xy) -> bool:
+        c = occ.cell_of(xy)
+        return not occ.in_bounds(c) or bool(occ.occupied[c[0], c[1]])
+
+    for off in (o for o in SPAWN_OFFS if o <= wanted + 1e-9):
+        if not occ.is_free(stand - off * fv2):
+            continue
+        walk = [stand - d * fv2 for d in np.arange(off, 0.15, -occ.res)]
+        if not any(blocked(xy) for xy in walk):
+            return off
+    return None
 
 
 def spawn_bimanual(session, p, reset, meta, profile, *, rng, log):
