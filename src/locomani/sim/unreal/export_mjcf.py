@@ -77,9 +77,19 @@ def strip_to_dynamic(spec, target_body: str) -> None:
         spec.delete(c)
     for light in list(spec.lights):
         spec.delete(light)
+    # Coloured collision geoms (the mars robot's wear their link's colour so MuJoCo's own cameras draw them; the stock
+    # G1 has a few shoulder and ankle primitives) go too where the body has visuals: URLab draws a primitive geom as
+    # an engine shape in its default grey checker material, and the mars wrist's D405 collision box boxed the
+    # camera in (2026-10-03).
     for g in list(spec.geoms):
         if g.rgba[3] == 0:
             spec.delete(g)
+    for body in spec.bodies:
+        geoms = list(body.geoms)
+        if any(not (g.contype or g.conaffinity) for g in geoms):
+            for g in geoms:
+                if g.contype or g.conaffinity:
+                    spec.delete(g)
     for site in list(spec.sites):
         if site.name == "com_marker":
             spec.delete(site)

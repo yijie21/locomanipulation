@@ -76,3 +76,23 @@ def test_the_import_carries_a_parked_camera_rig_at_the_shot_and_two_ghosts_that_
             real = next(h for h in range(m.ngeom) if m.geom_dataid[h] == m.mesh(mesh).id)
             assert np.allclose(d.geom_xpos[g], d.geom_xpos[real], atol=1e-9)
             assert np.allclose(d.geom_xmat[g], d.geom_xmat[real], atol=1e-9)
+
+
+def test_collision_geoms_stay_out_of_the_import_where_the_body_has_visuals(tmp_path):
+    """URLab draws a primitive collision geom as an engine shape in its default grey checker material: the mars
+    wrist's D405 collision box (link-coloured, alpha 1) boxed the camera in. A body drawn only by its colliders (the
+    target box here) keeps them."""
+    scene_dir = scene(tmp_path / "scene")
+    xml = (scene_dir / "scene_locomani.xml").read_text()
+    xml = xml.replace(
+        '<geom type="mesh" mesh="left_palm" group="1"/>',
+        '<geom type="mesh" mesh="left_palm" group="1" contype="0" conaffinity="0"/>'
+        '<geom type="box" size="0.021 0.021 0.013" pos="0.09 0 0.06" rgba="0.2 0.2 0.2 1"/>'
+        '<geom type="mesh" mesh="left_palm" rgba="0.2 0.2 0.2 1"/>',
+    )
+    (scene_dir / "scene_locomani.xml").write_text(xml)
+    m = mujoco.MjModel.from_xml_path(X.export(scene_dir, tmp_path / "out", "lvl")["xml"])
+    wrist = [g for g in range(m.ngeom) if m.geom_bodyid[g] == m.body("left_wrist_yaw_link").id]
+    assert [int(m.geom_type[g]) for g in wrist] == [mujoco.mjtGeom.mjGEOM_MESH] and not m.geom_contype[wrist[0]]
+    box = [g for g in range(m.ngeom) if m.geom_bodyid[g] == m.body("box").id]
+    assert len(box) == 1 and m.geom_contype[box[0]]  # its only geom collides: kept, or the target would vanish
