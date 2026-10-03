@@ -4,13 +4,14 @@
     /venv/main/bin/python scripts/adt_to_scene.py geometry \\
         --sequence Apartment_release_clean_seq131_M1292 --out outputs/scene_discovery/adt_apartment
 
-`geometry` writes `<out>/scene_file.json` and `<out>/floorplan.png`: walls from horizontal sections of the
+`geometry` writes `<out>/scene_meta.json` (a v2 scene file keeps the legacy name, which the stack and the Isaac
+stage look for next to the scene xml) and `<out>/floorplan.png`: walls from horizontal sections of the
 `ApartmentEnv` shell, rooms and spawn regions (`scene_discovery.floorplan`), support surfaces from the upward
 faces of every fixed piece of furniture (`scene_discovery.surfaces`), and every object with its rule-derived
-fields (`scene_discovery.adt`). `estimate --scene <out>/scene_file.json` then asks Claude (Opus by default) for
+fields (`scene_discovery.adt`). `estimate --scene <out>/scene_meta.json` then asks Claude (Opus by default) for
 names, mass, friction, containers and room names and applies the rules of `scene_discovery.properties`, in place;
 every exchange is in `<out>/claude_properties.jsonl`, what the rules changed in `<out>/properties_report.json`.
-`mujoco --scene <out>/scene_file.json` writes `<out>/scene_locomani.xml` (robot from `--base`) and
+`mujoco --scene <out>/scene_meta.json` writes `<out>/scene_locomani.xml` (robot from `--base`) and
 `<out>/env_only.xml` (no robot, for `scripts/scene_drop_test.py`), meshes under `<out>/mesh/`: the shell and
 furniture as scenery, support surfaces as slabs, every movable object as a hull (containers as five boxes),
 free bodies only for `--free` (default: every graspable movable object resting on a surface). The output is ADT-derived and stays
@@ -249,9 +250,9 @@ def geometry(args) -> None:
     problems = scene_file.validate(meta)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "scene_file.json").write_text(json.dumps(meta, indent=1))
+    (out / "scene_meta.json").write_text(json.dumps(meta, indent=1))
     preview(meta, grid, wall_img, labels, out / "floorplan.png")
-    print(f"[adt] wrote {out / 'scene_file.json'} in {time.time() - t0:.0f} s; {len(problems)} validation problem(s)")
+    print(f"[adt] wrote {out / 'scene_meta.json'} in {time.time() - t0:.0f} s; {len(problems)} validation problem(s)")
     for p in problems[:20]:
         print("   ", p)
 
@@ -493,11 +494,11 @@ def estimate(args) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="stage", required=True)
-    g = sub.add_parser("geometry", help="walls, rooms, spawn, surfaces, objects -> scene_file.json")
+    g = sub.add_parser("geometry", help="walls, rooms, spawn, surfaces, objects -> scene_meta.json")
     g.add_argument("--sequence", required=True)
     g.add_argument("--out", required=True)
     e = sub.add_parser("estimate", help="Claude's names, mass, friction, containers, room names (in place)")
-    e.add_argument("--scene", required=True, help="the scene_file.json the geometry stage wrote")
+    e.add_argument("--scene", required=True, help="the scene_meta.json the geometry stage wrote")
     e.add_argument("--model", default="opus")
     e.add_argument("--batch", type=int, default=60)
     j = sub.add_parser("mujoco", help="MJCF from the scene file (robot from --base)")

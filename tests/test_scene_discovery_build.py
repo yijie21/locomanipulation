@@ -45,3 +45,18 @@ def test_the_drop_test_tells_a_resting_object_from_a_sliding_one():
     result = drop_test.settle(mujoco.MjModel.from_xml_string(XML), seconds=1.0)
     assert result["rests_object"]["ok"] and result["rests_object"]["moved_m"] < 0.01
     assert not result["slides_object"]["ok"] and result["slides_object"]["moved_m"] > drop_test.MOVE_MAX
+
+
+def test_interior_lights_sit_inside_each_room_under_the_ceiling():
+    from locomani.scene_discovery import usd_scene
+
+    rooms = {
+        "kitchen": {"polygon": [[0, 0], [5, 0], [5, 4], [0, 4]]},
+        "hall": {"polygon": [[5, 0], [6, 0], [6, 4], [5, 4]]},  # narrower than one grid step: still gets none
+    }
+    points = usd_scene.light_points(rooms, spacing=2.5)
+    assert [p[0] for p in points] == ["kitchen"] * 4
+    assert all(0 < x < 5 and 0 < y < 4 for _r, x, y in points)
+    text = usd_scene.scene_usda("/abs/apartment.usdc", points, intensity=1000)
+    assert text.count("def SphereLight") == 4 and "references = @/abs/apartment.usdc@</root>" in text
+    assert f"({points[0][1]}, {points[0][2]}, {usd_scene.HEIGHT})" in text

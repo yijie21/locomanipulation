@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drop test of a built scene file, and its MuJoCo indices written back (TODO 9.6.5). Runs in the sim venv.
 
-    $VENV_SIM_PY scripts/scene_drop_test.py --scene outputs/scene_discovery/adt_apartment/scene_file.json
+    $VENV_SIM_PY scripts/scene_drop_test.py --scene outputs/scene_discovery/adt_apartment/scene_meta.json
 
 Loads `<scene dir>/env_only.xml` (no robot) with the sim's MuJoCo, lets every free object settle for
 `--seconds`, and records per object `semantic.drop_test = {moved_m, tilt_deg, final_z, penetration_m, ok}`
