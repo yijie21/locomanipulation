@@ -419,6 +419,12 @@ def _mars_geoms(
                     # coloured like the link's visual, so a MuJoCo picture shows the robot_look colour, not a
                     # light-grey collision hull over a dark part.
                     g.set("rgba", link_rgba or SHELL_RGBA)
+                    if name.endswith("_d405_wrist_mount_link"):
+                        # The mount's box and disc stand proud of the mesh and boxed the D405 in on camera (user,
+                        # 2026-10-03: the mount's back is flat, as in unitree_G1_with_wrist_camera_new, which
+                        # carries no collision for it). Group 3 keeps them colliding but out of every camera's
+                        # default groups 0-2.
+                        g.set("group", "3")
                 _set_pose(g, pos + rot @ o_pos, rot @ o_rot)
                 out.append(g)
     return visual, collision, meshes

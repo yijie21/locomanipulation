@@ -18,7 +18,7 @@
   - `make_dex1_model.py` 写出 `g1_29dof_with_dex1_mars.xml`（自检：FK 误差 3e-7 mm，质量 35.02 kg）；`prepare_logistics_scene.py --robot mars` 改写 warehouse 场景包里的机器人。
   - 力矩：按 URDF（踝 35、髋 roll 139、腕 13.4），但腰 roll/pitch 用 50（`MARS_EFFORT_OVERRIDES`，用户定；URDF 和 Unitree 官方都是 35）。
   - 相机：ego 是 D455（俯仰 52°、fovy 65），腕部是 D405（fovy 58），都是规格值，没有标定。
-  - 外观：手腕三节、Dex1 底座、D405 支架画黑；D405 本体银色（10-03 曾改黑又改回：Unreal 里看到的灰格子不是它，是罩着它的碰撞盒）；头顶 D455 银白；骨盆银色（`robot_look.SHELL_MESHES`）；碰撞体取所在部件的颜色。外观名仍是 `g1_gloss_20261001`。
+  - 外观：手腕三节、Dex1 底座、D405 支架画黑；D405 本体银色（10-03 曾改黑又改回：Unreal 里看到的灰格子不是它，是罩着它的碰撞盒）；支架的碰撞圆盘和盒子在 group 3，相机不画（10-03 用户：支架后背要平，参照 `assets/unitree_G1_with_wrist_camera_new`，那份 URDF 没给支架碰撞体；物理仍碰撞）；Unreal 里 D405 背面曾呈内凹：URLab 的 `clean_meshes.py` 把 STL 转 GLB 时顶点合并后导出平均法线，平面被着色成枕形，补丁加了按 30° 棱角拆分顶点（`patches/urlab_fresh_capture.patch`，插件分支已提交，下次导入自动重生成 GLB）；头顶 D455 银白；骨盆银色（`robot_look.SHELL_MESHES`）；碰撞体取所在部件的颜色。外观名仍是 `g1_gloss_20261001`。
   - 已确认：7 个场景和测试样例都按最新提交 `b46e0ce` 重建；全量测试通过；stock 模型重新生成后逐字节不变。10-03：Unreal 导出不再带碰撞体（`export_mjcf.strip_to_dynamic`，mars 的碰撞体 alpha 1，腕部 D405 碰撞盒以 UE 默认灰格子材质罩住相机）；mars 模型和 `outputs/scene/warehouse_textured_mars`、`warehouse_box_45x32x33_mars` 已重建，`assets/isaac/robot/mars` 已删；Unreal 关卡待用户重建后重渲。
 - 已确认（13.6.2–13.6.4，`outputs/mars_pilots_20261002/`）：配对 10 局，bottle stock 9/10、mars 9/10；warehouse 腰 35 时 0/10，腰 50 时 6/10 = stock。mars 的 4 局失败都是抬起后单手脱开，原因待查（13.6.4.1）。
 

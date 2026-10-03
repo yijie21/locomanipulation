@@ -1,3 +1,20 @@
+diff --git a/Scripts/clean_meshes.py b/Scripts/clean_meshes.py
+index 33d7c0d..6ef14dd 100644
+--- a/Scripts/clean_meshes.py
++++ b/Scripts/clean_meshes.py
+@@ -67,6 +67,12 @@ def clean_mesh(mesh):
+         )
+     mesh.fix_normals()
+ 
++    # Split the vertices again along hard edges (> 30 deg between faces). merge_vertices made every edge share
++    # its vertices, and the exported vertex normals then average across a 90 deg edge, so a flat face shades
++    # as a concave pillow in Unreal -- plain on a metallic part such as a camera body (locomanipulation,
++    # 2026-10-03). Curved surfaces keep their smooth shading.
++    mesh = trimesh.graph.smooth_shade(mesh, angle=np.radians(30))
++
+     # Rotate -90 degrees around X for GLTF Y-up -> Unreal Z-up
+     rotation_matrix = trimesh.transformations.rotation_matrix(-np.radians(90), [1, 0, 0])
+     mesh.apply_transform(rotation_matrix)
 diff --git a/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp b/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
 index dacea2d..f1bbf1e 100644
 --- a/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp

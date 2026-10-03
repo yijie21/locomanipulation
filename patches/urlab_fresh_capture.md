@@ -46,8 +46,14 @@ Found while bringing up the warehouse level, 2026-09-28:
   step RPC = base+4. `locomani.sim.unreal.editor.port_base` reads the same INI for the client. Checked: an instance-0
   stack and a lockstep eval next to a resident editor in PIE (editor on 5800-5806, 18801).
 
+- **Flat faces (2026-10-03).** `Scripts/clean_meshes.py` (the STL/OBJ to GLB step of every import) merged vertices
+  and exported the averaged vertex normals, so across a 90 deg edge a flat face shaded as a concave pillow -- the
+  mars robot's metallic D405 body looked dented from the head camera. After `fix_normals` the script now splits the
+  vertices along edges sharper than 30 deg (`trimesh.graph.smooth_shade`); curved surfaces stay smooth. The
+  script's mtime stales every GLB, so the next import regenerates them.
+
 Files: `RpcDispatcher.{h,cpp}`, `AMjManager.{h,cpp}`, `MjCamera.{h,cpp}`, `BridgeServerConfig.h`,
-`BridgeServerConfigUtils.{h,cpp}` and the two bridge-config test files.
+`BridgeServerConfigUtils.{h,cpp}`, the two bridge-config test files and `Scripts/clean_meshes.py`.
 
 **Measured with the patch.**
 - Robot-only level, 3 cameras, 1 capture per request: 0/50 stale at 0 ms wait, p50 54-67 ms. The Isaac mirror takes 95 ms.

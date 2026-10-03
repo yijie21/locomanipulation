@@ -137,6 +137,14 @@ def test_the_d405_mounts_collide(mars_xml):
             if mars.geom_bodyid[g] == body and mars.geom_contype[g]
         )
         assert shapes == ["mjGEOM_BOX", "mjGEOM_CYLINDER", "mjGEOM_MESH", "mjGEOM_MESH"], side
+        # the mount's primitives collide but stay out of the cameras' default groups 0-2: drawn, the box encased
+        # the D405 and showed as a black frame with the camera's back sunk in it (user, 2026-10-03)
+        drawn = {
+            mujoco.mjtGeom(mars.geom_type[g]).name
+            for g in range(mars.ngeom)
+            if mars.geom_bodyid[g] == body and mars.geom_group[g] <= 2
+        }
+        assert drawn == {"mjGEOM_MESH"}, side
 
 
 def test_torque_limits_are_the_scene_motors_in_actuator_order(tmp_path):
