@@ -1419,6 +1419,7 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 当天四边配置跑过的 `outputs/runs/warehouse_mars_smoke` 改名为 `warehouse_mars_smoke_4edges_20261003`（没删），让 runbook 的运行名能直接用，不撞 `config.yaml differs`。
 - `collect.layout_reminder` 的提示行原来说"四边是默认"，改为按当前文件说出另外两种摆放。
 - 未验证：只走 ym 的 mars 没实跑采集，只用 `--dry-run` 看了每局摆放（全部 ym，起点上限 1.035 m）。
+- 2026-10-04：henry 的 `f156df1`（提交说明只写加入新 URDF）把 `warehouse_mars_smoke` 改回四边，注释仍写只走 ym；用户：改回去，还是只走单边。同时用户把 `docs/warehouse.md` 的行数上限从 220 放宽到 300（`lint_repository.py`）。
 
 
 ## 2026-10-03 mars 腰部：弯腰测试、抖动机制、50 N·m 的来源（事实，供 13.6.11 决策用）

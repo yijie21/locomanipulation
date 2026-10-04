@@ -30,7 +30,7 @@ GUIDES = {
     # is its page's length then plus about 10%. Details move to the design page, not into a raised cap.
     "docs/single_arm.md": 115,
     "docs/bimanual.md": 125,
-    "docs/warehouse.md": 220,  # 2026-09-30: + step 8 wrap-up (stop_unreal.sh; user)
+    "docs/warehouse.md": 300,  # 2026-10-04 (user): raised from 220 (2026-09-30: + step 8 wrap-up, stop_unreal.sh)
     "docs/running.md": 180,
     "docs/setup.md": 440,  # 2026-09-29: + step 8 (Unreal) in the steps' format and its troubleshooting
     "docs/warehouse_design.md": 120,

@@ -17,7 +17,7 @@
   - `editor_guard.sh` 只按编辑器自己的 GPU/CPU 判卡死和打满；计数在空载下测过，没在编辑器真卡死时测过。
 - 已确认（13.6.11.1–4）：腰抖动的机制和 50 N·m 的来源已查清（DECISIONS 腰部一节）；仿真设置没查出错。
 - 已确认（13.6.2–13.6.4）：配对 10 局 bottle 9/10 = stock；warehouse 腰 50 时 6/10 = stock。mars 失败都是抬起后单手脱开（13.6.4.1）。
-- 已确认（henry 10-03，`33e8cd8`..`5ff2d7c`，10-04 rebase 合入）：mars 的 MJCF 和网格缺失时由 `make_dex1_model.write_mars()` 生成，`build_isaac_assets.sh` 与 `prepare_logistics_scene.py` 先调它；Unreal 导出丢掉有可视体的 body 上的碰撞 geom（`export_mjcf.strip_to_dynamic`，腕部 D405 曾被碰撞盒以 UE 默认灰格子罩住）；D405 支架的碰撞圆盘和盒子放 group 3，仍碰撞、相机不画（参照新增的 `assets/unitree_G1_with_wrist_camera_new`）；URLab 补丁按 30° 棱角拆分顶点，Unreal 里 D405 背面不再呈内凹（`patches/urlab_fresh_capture.patch`）。
+- 已确认（henry 10-03，`33e8cd8`..`5ff2d7c`，10-04 rebase 合入）：mars 的 MJCF 和网格缺失时由 `make_dex1_model.write_mars()` 生成，`build_isaac_assets.sh` 与 `prepare_logistics_scene.py` 先调它；Unreal 导出丢掉有可视体的 body 上的碰撞 geom（`export_mjcf.strip_to_dynamic`，腕部 D405 曾被碰撞盒以 UE 默认灰格子罩住）；D405 支架的碰撞圆盘和盒子放 group 3，仍碰撞、相机不画（参照新增的 `assets/unitree_G1_with_wrist_camera_new`）；URLab 补丁按 30° 棱角拆分顶点，Unreal 里 D405 背面不再呈内凹（`patches/urlab_fresh_capture.patch`）。合入时他的提交带着 3 处检查失败，10-04 已修（用户）：`f156df1` 把 `warehouse_mars_smoke` 的 `start_edges` 改回四边（已改回 `[ym]`），新 README 没过 ruff format，`docs/warehouse.md` 超 220 行（上限放宽到 300）。
   - 待重建（本机）：henry 记的“mars 模型与 `warehouse_textured_mars`、`warehouse_box_45x32x33_mars` 已重建，`assets/isaac/robot/mars` 已删，Unreal 关卡待重建后重渲”是在他的克隆上；本机这两个场景目录 10-03 13:23 UTC、Isaac 机器人 USD 16:42 UTC，都早于他的提交（21:30 UTC 起），仍是旧外观。
 
 ## 待验证 / 卡点

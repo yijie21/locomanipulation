@@ -108,7 +108,7 @@ task:
     ready_blend_seconds: 1.5
     ready_hold_seconds: 0.0
     reanchor_hold_seconds: 0.3
-    start_edges: [xm, xp, ym, yp]  # the -y edge only (user, 2026-10-03): the sampled start, box placement and ranges as the four-edge
+    start_edges: [ym]  # the -y edge only (user, 2026-10-03): the sampled start, box placement and ranges as the four-edge
     # line's, but every round walks in from ym; the stock warehouse_smoke / warehouse_200 keep all four edges
     start_clearance: 0.25  # start distance <= the edge's free floor (scene surfaces.A.edges clear_m) - 0.25
     object_along_range:  # anywhere along the edge the box fits
