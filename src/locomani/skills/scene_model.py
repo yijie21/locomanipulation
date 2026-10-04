@@ -51,6 +51,7 @@ class SurfaceInfo:
     xy: tuple[float, float]
     half_extent: tuple[float, float]
     yaw: float = 0.0  # scene_discovery surfaces are turned; the hand-built ones are axis-aligned
+    phrase: str = ""  # scene_discovery surfaces carry Claude's phrase; "" = the key, underscores as spaces
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ class SceneModel:
                 _t(s["xy"], 2),
                 _t(s.get("flat_half_extent") or s["half_extent"], 2),
                 float(s.get("yaw", 0.0)),
+                str(s.get("phrase") or k.replace("_", " ")),
             )
             for k, s in (meta.get("surfaces") or {}).items()
         }
@@ -173,7 +175,7 @@ class SceneModel:
                     TaskInstance("put <obj> in <container>", a.obj, a.target, "in", self.profile_for(a.obj), text)
                 )
             elif a.kind == "put_on":
-                text = f"put {self.objects[a.obj].phrase} on {a.target.replace('_', ' ')}"
+                text = f"put {self.objects[a.obj].phrase} on {self.surfaces[a.target].phrase}"
                 out.append(TaskInstance("put <obj> on <surface>", a.obj, a.target, "on", self.profile_for(a.obj), text))
         return out
 

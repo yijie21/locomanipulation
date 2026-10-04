@@ -12,7 +12,9 @@ place phase drives a `PlannerArm` (frozen channel), so `place` runs from that sa
 With something held, `approach` is not the guard walk (that hands the arms to the walking policy and would
 swing the load): it is the loaded `walk_to` to the stand the round sampler would draw for the target, then a standing
 turn to the table normal, and it writes the same `Stance`. That is the "walk to the container" step a
-cross-surface pick-and-place needs before `place` (TODO 7.7).
+cross-surface pick-and-place needs before `place` (TODO 7.7). A loaded approach to a *surface* picks a free spot
+on its nearest open edge (`surface_spot.py`) and aims the placing band at it; `put_down_single.py` puts the load
+down there through the same place phase (docs/handoff/put-down-single-20261003.md).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from locomani.skills.catalogue.locomotion import LoadWatch, WalkTo, load_violations, turn_with_load
+from locomani.skills.catalogue.surface_spot import is_surface, surface_occupants, surface_spot
 from locomani.skills.contract import Outcome, Violation
 from locomani.skills.session import ArmOwner, HeldObject, Session, Stance, needs_heading, stance_violations
 
@@ -192,7 +195,12 @@ class BottleApproach:
                     note=f"strategy {prof.config.reach.strategy!r}: wrapped are {sorted(WRAPPED_STRATEGIES)}",
                 )
             )
-        if target not in session.scene.objects:
+        if is_surface(session.scene, target):
+            if session.held is None:
+                out.append(
+                    Violation("target", target, note="a surface is approached holding something, to put_down_single it")
+                )
+        elif target not in session.scene.objects:
             out.append(Violation("target", target, note=f"known: {sorted(session.scene.objects)}"))
         elif session.held is None and not session.scene.objects[target].single_hand_graspable:
             out.append(Violation("target", target, note="not single-hand graspable (bimanual, container or too wide)"))
@@ -208,6 +216,7 @@ class BottleApproach:
         return out
 
     def run(self, session: Session, *, target: str, profile: str, drift_max: float = 0.03) -> Outcome:
+        session.scratch.pop("spot", None)  # a put-down spot belongs to the approach that chose it
         if session.held is not None:
             return self._loaded(session, target=target, profile=profile, drift_max=drift_max)
         t0 = session.clock()
@@ -294,15 +303,49 @@ class BottleApproach:
         }
 
     def _loaded(self, session: Session, *, target: str, profile: str, drift_max: float = 0.03) -> Outcome:
-        """Carry the load to the target's planned stand, face the table normal, write the stance."""
+        """Carry the load to the target's planned stand, face the table normal, write the stance. A surface target
+        is aimed at a free spot on it, kept in `session.scratch["spot"]` for put_down_single."""
         t0 = session.clock()
         p, meta, cfg = session.stack, session.scene.meta, self._profiles[profile].config
+        state = p.obs()
+        spot = None
+        if is_surface(session.scene, target):
+            here = np.asarray(p.pelvis_xy(state), dtype=float)
+            spot = surface_spot(meta, target, here, session.held.key, surface_occupants(meta, target, state))
+            if spot is None:
+                return Outcome(
+                    False,
+                    f"[approach] no clear spot on {target} along its nearest open edge",
+                    duration_s=session.clock() - t0,
+                )
+            psi = spot["psi"]
+            aim = np.array([*spot["xy"], float(meta["surfaces"][target]["top"])])
+            want = np.array([float(np.mean(cfg.place.band_x)), float(np.mean(cfg.place.band_y))])
+            c, sn = np.cos(psi), np.sin(psi)
+            stand = aim[:2] - np.array([c * want[0] - sn * want[1], sn * want[0] + c * want[1]])
+            point = lambda _s: aim  # noqa: E731
+            session.record.enter("approach.spot", surface=target, spot=aim.tolist(), inboard=spot["inboard"])
+        else:
+            stand, psi, want = self._object_stand(session, target, cfg, state)
+            point = lambda s: s["objects"][target]["pos"]  # noqa: E731
+        # Already facing this table edge and within STRAFE_MAX of the stand: walk there holding the facing instead
+        # of turning with the load (2026-09-29, ledger §13: 7/7 recovered grasps were lost in that turn).
+        here = np.asarray(p.pelvis_xy(state), dtype=float)
+        strafe = bool(
+            abs(_wrap(float(p.pelvis_yaw(state)) - float(psi))) <= STRAFE_YAW
+            and float(np.linalg.norm(stand - here)) <= STRAFE_MAX
+        )
+        session.record.enter("approach.carry", target=target, stand=stand.tolist(), psi=float(psi), strafe=strafe)
+        return self._carry_to_stand(session, target, profile, stand, psi, want, point, strafe, drift_max, spot, t0)
+
+    def _object_stand(self, session: Session, target: str, cfg, state: dict):
+        """(stand, psi, want) for an object target: the round sampler's stand, or the placing band for a container."""
+        meta = session.scene.meta
         rm = session.scene.reach
         if rm is None:
             from locomani.tasks.bottle import reach_map
 
             rm = session.scene.reach = reach_map.ReachMap()
-        state = p.obs()
         obj_xy = np.asarray(state["objects"][target]["pos"][:2], dtype=float)
         _rel, psi, stand, _hint = self._stand_plan(meta, target, obj_xy, cfg.reach, rm)
         stand = np.asarray(stand, dtype=float)
@@ -314,14 +357,11 @@ class BottleApproach:
             want = np.array([float(np.mean(cfg.place.band_x)), float(np.mean(cfg.place.band_y))])
             c, sn = np.cos(psi), np.sin(psi)
             stand = obj_xy - np.array([c * want[0] - sn * want[1], sn * want[0] + c * want[1]])
-        # Already facing this table edge and within STRAFE_MAX of the stand: walk there holding the facing instead
-        # of turning with the load (2026-09-29, ledger §13: 7/7 recovered grasps were lost in that turn).
-        here = np.asarray(p.pelvis_xy(state), dtype=float)
-        strafe = bool(
-            abs(_wrap(float(p.pelvis_yaw(state)) - float(psi))) <= STRAFE_YAW
-            and float(np.linalg.norm(stand - here)) <= STRAFE_MAX
-        )
-        session.record.enter("approach.carry", target=target, stand=stand.tolist(), psi=float(psi), strafe=strafe)
+        return stand, psi, want
+
+    def _carry_to_stand(self, session, target, profile, stand, psi, want, point, strafe, drift_max, spot, t0):
+        """The loaded walk, the standing turn and up to two corrections; `point(state)` is the aimed world point."""
+        p = session.stack
         out = self._carry.run(
             session, xy=stand, stop_dist=0.06, timeout=30.0, turn_first=not strafe, drift_max=drift_max
         )
@@ -346,7 +386,7 @@ class BottleApproach:
         corrections = []
         for _ in range(2):
             state = p.obs()
-            rel = np.asarray(p.world_to_root(state["objects"][target]["pos"], state), dtype=float)
+            rel = np.asarray(p.world_to_root(point(state), state), dtype=float)
             residual = rel[:2] - want
             if float(np.hypot(*residual)) <= CORRECT_TOL:
                 break
@@ -369,7 +409,7 @@ class BottleApproach:
                 )
             session.heading, p.hold_yaw = float(psi), float(psi)
         state = p.obs()
-        rel = np.asarray(p.world_to_root(state["objects"][target]["pos"], state), dtype=float)
+        rel = np.asarray(p.world_to_root(point(state), state), dtype=float)
         stance = Stance(
             target=target,
             profile=profile,
@@ -380,6 +420,14 @@ class BottleApproach:
         )
         session.stance = stance
         metrics = dict(out.metrics, rel=rel[:2].tolist(), stand=stand.tolist(), corrections=corrections, strafe=strafe)
+        if spot is not None:
+            session.scratch["spot"] = {
+                "surface": target,
+                "xy": [float(v) for v in spot["xy"]],
+                "psi": float(psi),
+                "inboard": float(spot["inboard"]),
+            }
+            metrics["spot"] = session.scratch["spot"]
         return Outcome(True, "", duration_s=session.clock() - t0, metrics=metrics, produced=stance)
 
     @staticmethod
@@ -489,6 +537,11 @@ def placing_band_violation(session: Session, prof, container: str, state: dict, 
     if not hasattr(session.stack, "world_to_root") or container not in (state.get("objects") or {}):
         return None
     rel = np.asarray(session.stack.world_to_root(state["objects"][container]["pos"], state), dtype=float)
+    return band_violation(place_cfg, rel, tol, container)
+
+
+def band_violation(place_cfg, rel, tol: float, what: str) -> Violation | None:
+    """`placing_band` when the pelvis-frame point `rel` is outside band_x x band_y by more than `tol`."""
     lo = (place_cfg.band_x[0] - tol, place_cfg.band_y[0] - tol)
     hi = (place_cfg.band_x[1] + tol, place_cfg.band_y[1] + tol)
     if lo[0] <= rel[0] <= hi[0] and lo[1] <= rel[1] <= hi[1]:
@@ -497,7 +550,7 @@ def placing_band_violation(session: Session, prof, container: str, state: dict, 
         "placing_band",
         [round(float(rel[0]), 3), round(float(rel[1]), 3)],
         (list(lo), list(hi)),
-        f"{container} is outside the placing band (pelvis frame x,y); approach({container}) first: it walks there "
+        f"{what} is outside the placing band (pelvis frame x,y); approach({what}) first: it walks there "
         "holding the facing, place would turn with the load",
     )
 

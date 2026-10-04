@@ -98,7 +98,7 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 
 | 谓词 | 判定（仿真真值） | 现有代码 |
 |---|---|---|
-| `on(X, S)` | X 底面在 S 顶面上方 `PUT_ON_HEIGHT_M` 内、xy 在 S 轮廓里 | `SceneModel` 的 put-on 判据 |
+| `on(X, S)` | X 底面在 S 顶面上方 `PUT_ON_HEIGHT_M` 内、xy 在 S 轮廓里 | `SceneModel` 的 put-on 判据；plan 以 `put_down_single` 结束时另要求手里没东西、手不碰 X（`plan_episode.criterion_for`） |
 | `in(X, C)` | X 在 C 的开口内、低于沿 | `place_phase.in_container` |
 | `held(X)` | X 离开原台面且与手接触 | 现有"末了还持着目标"判据 |
 | `upright(X)` | X 的 `upright_axis` 与世界 z 夹角 < 15° | 新 |

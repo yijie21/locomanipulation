@@ -127,6 +127,15 @@ place:
     support_top_measured: [0.10, 0.10]
     source: docs/skills.md (put_down_bimanual row); docs/ledger/crate.md
   on_other_surface: {status: untested, note: "place onto a different surface or height than the grasp table"}
+  on_surface_single: # put_down_single (built by Claude, scene_discovery decision 11); approach(surface) + put_down_single
+    status: measured_one
+    setting: coffee canister 8.2 x 12.3 x 19.6 cm, 0.6 kg, held by the simple grasp, carried ~0.7 m from a 0.70 m cart onto a 0.52 m round table (radius 0.25 m, one open edge), ADT apartment
+    success: 12/20 # of the first 20 rounds with a held grasp (acceptance gate >= 10/20); v6, 2026-10-03
+    failures: {loaded_turn_dropped: 3, base_moved_spot_out_of_band: 2, slipped_at_handover: 1, squat_set_base_back: 2}
+    support_top_measured: [0.52, 0.52]
+    object_height_measured: [0.196, 0.196]
+    squat_used: [0.11, 0.18] # m; the release is below the standing hand reach, so every success squatted
+    source: docs/handoff/put-down-single-20261003.md; outputs/runs/sd_put_down_accept_v6_20261003_b* (ADT-derived, not in git)
 
 posture:
   squat:

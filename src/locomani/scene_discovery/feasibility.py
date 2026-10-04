@@ -343,10 +343,18 @@ class Checker:
                     "put_down_bimanual.support_top",
                 )
             )
-        else:
-            out.append(
-                Check(step, "skill", UNTESTED, gap="place_on_surface.single")
-            )  # `place` only puts into containers
+        else:  # put_down_single (docs/handoff/put-down-single-20261003.md); without a measurement it is a skill gap
+            p = self.cap["place"].get("on_surface_single")
+            if p is None or p.get("status") == "untested":
+                out.append(Check(step, "skill", UNTESTED, gap="place_on_surface.single"))
+                return
+            top = self.surfaces[s]["top"]
+            out.append(self._range(step, "support_top", top, p["support_top_measured"], "place_on_surface.support_top"))
+            height = float(2 * self.box(x)[0][2])
+            out.append(self._range(step, "object_height", height, p["object_height_measured"], "place_on_surface.object_height", 0.01))  # fmt: skip
+            low = self.cap["posture"]["squat"]["hands_lowest"]
+            if top < low:
+                out.append(Check(step, "hand_height", BLOCKED, round(top, 3), low, why="the top is below the lowest hand position ever reached"))  # fmt: skip
 
     # -- tasks ----------------------------------------------------------------------------------
     def check(self, task: dict) -> Result:

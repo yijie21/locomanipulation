@@ -24,7 +24,7 @@
 | `scene_random.py` | 逐局重掷场景外观(颜色、光照、地面),直接改 `mjModel`,不重建场景 |
 | `sim_video.py` | 第三人称录像(ego + 双腕画中画、6D 线框盒、坐标读数) |
 | `sim_vis.py` | `SIM_VIS` 开关的解析(见[可视化开关](#可视化开关)) |
-| `tasks/bottle/place_phase.py` | pick-and-place 的 place 阶段(raise / turn-to-band / carry-over / descend / release / retreat / verify),由 `BottleTaskConfig.goal` 接在 lift 之后;`tasks/pick_place/` 只是注册 |
+| `tasks/bottle/place_phase.py` | pick-and-place 的 place 阶段(raise / turn-to-band / carry-over / descend / release / retreat / verify),由 `BottleTaskConfig.goal` 接在 lift 之后;`tasks/pick_place/` 只是注册。技能层 `place` 与 `put_down_single` 也跑它:ctx 带 `surface` + `spot` 时走 `_SurfaceGeometry`(放到台面,低处先蹲) |
 | `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径约定)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |

@@ -34,7 +34,7 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
   （`task.goal` 有值时是模板判据 `put X in C`，否则"末了还持着目标"）判成败 → 写 `outputs/runs/<run>/skills/manifest.jsonl`、
   `agent_trace_NN.jsonl`、`videos/round_NN.mp4`。
 - **参数**：实验文件给场景、后端和任务（`task.target` / `task.goal`）；`--plan` 是 JSON 列表 `[{"primitive": 名, "args": {...}}, ...]`
-  （现成的在 `configs/plans/`）；不给 `--plan` 就按任务推：单手目标 `approach → grasp_single [→ approach(goal) → place]`，
+  （现成的在 `configs/plans/`）；不给 `--plan` 就按任务推：单手目标 `approach → grasp_single [→ approach(goal) → place]`（`goal` 是台面时 `→ approach(goal) → put_down_single(goal)`），
   双手目标 `approach → ready → grasp_bimanual`；`--seed` 是第 0 局的物体朝向种子，逐局 +1；`--profile` 用别的 profile 名替换场景为目标选的那个（§5）。
 - **就绪与停**：日志出现 `[plan] round 0:` 就在跑；`Ctrl-C` 或跑完都会收栈（`--keep-stack` 留着）。看结果：
   `python3 -c "import json;[print(json.loads(l)['round'],json.loads(l)['ok'],json.loads(l)['why']) for l in open('outputs/runs/<run>/skills/manifest.jsonl')]"`。
@@ -64,10 +64,11 @@ bash scripts/convert_data.sh outputs/runs/<run>
 
 | primitive | 参数（省略取默认） | 从哪个通道进 → 出 | 做什么 / 状态 |
 |---|---|---|---|
-| `approach(target, profile)` | — | swing/frozen → swing（guard 走近）或 frozen（持物） | 单臂：朝桌法线、守线刹车、写站位；双臂：走入 + 刹车。**持物时**：持物 `walk_to` 到目标的规划站位再原地转向桌法线（放置前走到容器） |
+| `approach(target, profile)` | — | swing/frozen → swing（guard 走近）或 frozen（持物） | 单臂：朝桌法线、守线刹车、写站位；双臂：走入 + 刹车。**持物时**：持物 `walk_to` 到目标的规划站位再原地转向桌法线（放置前走到容器）。`target` 是**台面**时只能持物：在最近的可走近边上选一个空位（离边 0.12 m，物体外接圆留 3 cm，避开台面上的物体），把放置带对准它，留给 `put_down_single` |
 | `grasp_single(target, profile, side)` | `side=right` | swing → frozen | 走 profile 的 `reach.strategy`：`simple`（bottle 10 局 9/10）或 `coupled`（罐头，pick_place §12）；其余策略在 `approach` 前置被拒 |
 | `ready(profile)` / `grasp_bimanual(target, profile)` | — | → frozen / frozen → pose_stream | 双臂原地抬手；协同伸抓到 hold |
 | `place(container, profile, side)` | — | frozen → frozen | 抬、转到放置带、送、降、松、抬开、后退、验收 |
+| `put_down_single(surface, profile, side, drop_m)` | `side=right, drop_m=0.01` | frozen → frozen | 放到台面上：刹停后把放置点定在台面上离放置带中心最近的空闲点（`approach(surface)` 选的空位只是走近的目标），那个点还在带外时用定时慢走脉冲（0.35、0.5 s、刹停再量，同 `nudge`）挪近、在持物高度送到放置点上方、放置点低于站姿手够得到的高度时原地蹲下（规划器 IDLE_SQUAT，手掌保持不动）、竖直降到落稳、松、抬手、站起、后退、验收（物体在台面上、直立 ≤ 20°、松手后没被扫动、手不碰）。验收 12/20（抓取成功后走近台面 + 放下，罐子放到 0.52 m 圆桌），实测与失败分布见 [单手放到台面](handoff/put-down-single-20261003.md) |
 | `put_down_bimanual(profile, surface, forward_m, lower_speed, release_seconds, raise_m, back_m)` | `surface` 默认物体原表面；`forward_m` 默认按台面近沿自动算 | pose_stream → pose_stream | 双手同步下放到表面静止高度 → 松手 → 抬开；判据只看物体（高度、倾角），松手后手指贴壁只记指标。`warehouse_box` profile 的 `stand_forward_min` 0.50 让箱子留在台面上方，之后 `forward_m: 0` 直接放 8/8（crate 台账） |
 | `walk_to(xy \| relative, ...)` | `stop_dist=0.05`；持物时另有 `turn_first=true, turn_mode=slow_walk, drift_max=0.03` | swing/frozen → 不变（持物须 frozen） | 直走，`relative` 是当前朝向下的 `[前, 左]`。空手边走边朝向目标；**持物时**上身冻结，方位差 > 0.2 rad 先原地转再守线走，持物守卫每拍查（单臂掌系漂移 < 3 cm + 接触；双臂高度底线 + 双手接触）。持物参数空手传入会以 `load_args` 被拒。持箱后退 = `hand_back` 后 `walk_to(relative=[-d, 0], turn_first=false)`。2026-10-01 前持物走路是单独的 `carry_to`（默认 `stop_dist` 0.08），`retreat` 是 crate 线后退的包装；两者已并入/删除 |
 | `navigate_to(xy \| target, stand_off, step, ...)` | `stand_off=0.6, step=0.45` | swing/frozen → 不变 | 沿占用图的距离场分段走；空手每段边走边朝向路点，持物每段先转（slow_walk）再守线走 |

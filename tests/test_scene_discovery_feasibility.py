@@ -88,7 +88,31 @@ def test_each_untested_dimension_names_its_gap():
     assert gaps_of(["held(high_bottle)"])[:2] == (2, ["grasp_single.grip_height", "grasp_single.support_top"])
     bucket, gaps, *_ = gaps_of(["in(bottle, bin)"])  # a floor bin: rim 0.54 m, opening 0.22 x 0.16 < the basket's
     assert bucket == 2 and {"place_into.rim_height", "place_into.opening"} <= set(gaps)
-    assert gaps_of(["on(bottle, HIGH)"])[1] == ["place_on_surface.single"]
+    # since 2026-10-03 put_down_single is measured on one setting (0.52 m top, a 19.6 cm canister): a 16 cm bottle
+    # onto a 0.90 m top is outside it on both counts, a range gap now, not a missing skill
+    assert gaps_of(["on(bottle, HIGH)"])[1] == ["place_on_surface.object_height", "place_on_surface.support_top"]
+
+
+def test_a_measured_surface_put_down_is_checked_by_its_range():
+    cap = copy.deepcopy(CAP)
+    cap["place"]["on_surface_single"] = {
+        "status": "measured_one",
+        "support_top_measured": [0.90, 0.90],
+        "object_height_measured": [0.14, 0.20],
+    }
+    r = feasibility.Checker(copy.deepcopy(META), cap).check({"id": "t", "goal": ["on(bottle, HIGH)"]})
+    assert not [g for g in r.gaps if g.startswith("place_on_surface")]
+    cap["place"]["on_surface_single"] = {"status": "untested"}  # unmeasured: the missing skill, as before 2026-10-03
+    r = feasibility.Checker(copy.deepcopy(META), cap).check({"id": "t", "goal": ["on(bottle, HIGH)"]})
+    assert [g for g in r.gaps if g.startswith("place_on_surface")] == ["place_on_surface.single"]
+    cap["place"]["on_surface_single"] = {
+        "status": "measured_one",
+        "support_top_measured": [0.90, 0.90],
+        "object_height_measured": [0.14, 0.20],
+    }
+    cap["place"]["on_surface_single"]["support_top_measured"] = [0.52, 0.52]
+    r = feasibility.Checker(copy.deepcopy(META), cap).check({"id": "t", "goal": ["on(bottle, HIGH)"]})
+    assert [g for g in r.gaps if g.startswith("place_on_surface")] == ["place_on_surface.support_top"]
 
 
 def test_hard_limits_block():
@@ -126,11 +150,15 @@ def test_templates_and_the_gap_ranking():
     tasks = feasibility.templates(META)
     ids = {t["id"] for t in tasks}
     assert "put_bottle_in_basket" in ids and "put_bottle_on_WALLED" not in ids and "pick_basket" not in ids
-    c = checker()
+    unmeasured = copy.deepcopy(CAP)  # the capability before put_down_single was measured (2026-10-03)
+    unmeasured["place"]["on_surface_single"] = {"status": "untested"}
+    c = feasibility.Checker(copy.deepcopy(META), unmeasured)
     ranking = feasibility.gap_ranking([c.check(t) for t in tasks])
     by = {d["gap"]: d for d in ranking}
     assert by["place_on_surface.single"]["unlocks_alone"] >= 1
     assert ranking == sorted(ranking, key=lambda d: (-d["unlocks_alone"], -d["in_tasks"], d["gap"]))
+    now = {d["gap"] for d in feasibility.gap_ranking([checker().check(t) for t in tasks])}
+    assert "place_on_surface.single" not in now and "place_on_surface.support_top" in now
 
 
 def test_unstable_objects_are_no_template_and_a_shelf_container_is_reached_at_its_shelf_edge():

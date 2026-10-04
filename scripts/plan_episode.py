@@ -103,7 +103,8 @@ def parse(argv):
 
 def default_plan(scene, task: dict, profile: str | None = None, profiles: dict | None = None) -> list[dict]:
     """The obvious plan for the task. A coupled single-arm profile places from the grasp stand (its measured
-    geometry, pick_place ledger §12: 3/4 there vs 2/5 after a carried approach); the simple one walks to the goal first."""
+    geometry, pick_place ledger §12: 3/4 there vs 2/5 after a carried approach); the simple one walks to the goal first.
+    A goal that is a surface walks to a spot on it and puts the object down there (put_down_single)."""
     target = task.get("target") or scene.meta.get("target_object")
     obj = scene.objects[target]
     profile = profile or scene.profile_for(target)
@@ -120,7 +121,11 @@ def default_plan(scene, task: dict, profile: str | None = None, profiles: dict |
             {"primitive": "approach", "args": {"target": target, "profile": profile}},
             {"primitive": "grasp_single", "args": {"target": target, "profile": profile}},
         ]
-        if task.get("goal"):
+        goal = task.get("goal")
+        if goal and goal in scene.surfaces and goal not in scene.objects:
+            steps.append({"primitive": "approach", "args": {"target": goal, "profile": profile}})
+            steps.append({"primitive": "put_down_single", "args": {"surface": goal, "profile": profile}})
+        elif goal:
             if strategy != "coupled":
                 steps.append({"primitive": "approach", "args": {"target": task["goal"], "profile": profile}})
             steps.append({"primitive": "place", "args": {"container": task["goal"], "profile": profile}})
@@ -291,12 +296,17 @@ def spawn_single(session, p, reset, meta, target, profile, *, robot_nom, spawn_o
 
 
 SPAWN_OFFS = (1.2, 1.0, 0.8, 0.6)  # m behind the stand, longest first: the approach was calibrated from 1.2
+# m from every surface edge: the hanging hands reach ~0.25 m to the side and standing up drifts the pelvis 0.11-0.19 m
+# (2026-10-03: a canister spawn 0.295 m from the round table settled with the right hand over its plate, and the
+# approach's clearance check stopped 3/3 rounds at the first tick; docs/handoff/put-down-single-20261003.md §4)
+SPAWN_EDGE_CLEAR = 0.45
 
 
 def clear_spawn_off(meta, stand, fv2, wanted: float, _maps={}) -> float | None:  # noqa: B006  (per-scene cache)
     """The longest spawn distance (from `wanted` down to 0.6 m) the robot can stand at and walk in from.
 
-    The spawn itself must be free in the inflated map (the body fits there). The straight walk to the stand is
+    The spawn itself must be free in the inflated map (the body fits there) and SPAWN_EDGE_CLEAR from every
+    surface edge (the hands fit there after the stand-up drift). The straight walk to the stand is
     checked against the raw footprints only, and not over its last 0.15 m: a stand is a pelvis pose 0.2-0.3 m
     from the table edge, inside the inflation by design (navigator docstring), and the guard walk brakes there."""
     import numpy as np
@@ -307,13 +317,16 @@ def clear_spawn_off(meta, stand, fv2, wanted: float, _maps={}) -> float | None: 
     if key not in _maps:
         _maps[key] = OccupancyMap(meta)
     occ = _maps[key]
+    from locomani.skills.catalogue.bottle import surfaces_edge_distance
+
+    edge = surfaces_edge_distance(meta)
 
     def blocked(xy) -> bool:
         c = occ.cell_of(xy)
         return not occ.in_bounds(c) or bool(occ.occupied[c[0], c[1]])
 
     for off in (o for o in SPAWN_OFFS if o <= wanted + 1e-9):
-        if not occ.is_free(stand - off * fv2):
+        if not occ.is_free(stand - off * fv2) or edge(stand - off * fv2) < SPAWN_EDGE_CLEAR:
             continue
         walk = [stand - d * fv2 for d in np.arange(off, 0.15, -occ.res)]
         if not any(blocked(xy) for xy in walk):
@@ -339,17 +352,26 @@ def spawn_bimanual(session, p, reset, meta, profile, *, rng, log):
 
 def criterion_for(scene, task: dict, steps: list[dict] | None = None):
     """The task's success predicate over the privileged state: the template criterion when a goal is set and
-    the plan ends in a place; "resting on the surface, nothing held" when it ends in put_down_bimanual; else
-    "holding the target" (a carry / navigate plan is judged on the load, not on the goal)."""
+    the plan ends in a place / put_down_single (a surface goal also needs the hand empty and off the object);
+    "resting on the surface, nothing held" when it ends in put_down_bimanual; else "holding the target"
+    (a carry / navigate plan is judged on the load, not on the goal)."""
     from locomani.skills.scene_model import TaskInstance
 
     target = task.get("target") or scene.meta["target_object"]
     goal = task.get("goal")
     last = steps[-1] if steps else None
-    if goal and (last is None or last["primitive"] in ("place", "release", "abort")):
+    if goal and (last is None or last["primitive"] in ("place", "put_down_single", "release", "abort")):
         inst = next(i for i in scene.instances() if (i.obj, i.target) == (target, goal))
         check = scene.criterion(inst)
-        return inst.text, lambda state, session: check(state)
+        if inst.kind != "on":
+            return inst.text, lambda state, session: check(state)
+
+        def put_on(state, session):  # "on" accepts the underside up to 0.30 m above the top: a held object passes
+            if session.held is not None or (state["objects"][target].get("touching") or ()):
+                return False, "[put_on] still in the hand at the end of the plan"
+            return check(state)
+
+        return inst.text, put_on
     if last is not None and last["primitive"] == "put_down_bimanual":
         surface = last.get("args", {}).get("surface") or scene.objects[target].on_surface
         phrase = scene.objects[target].phrase

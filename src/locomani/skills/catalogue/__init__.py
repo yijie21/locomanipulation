@@ -1,8 +1,8 @@
 """The primitive catalogue: name -> Primitive, built once per process.
 
 `build_catalogue(profiles)` returns the entries of the design's §5 table. Runnable adapters wrap existing
-code (locomotion, arm-channel transitions, the bottle line's approach / grasp_single / place, the crate
-line's approach / grasp_bimanual, put_down_bimanual); `approach` dispatches on the profile's hand count and,
+code (locomotion, arm-channel transitions, the bottle line's approach / grasp_single / place / put_down_single,
+the crate line's approach / grasp_bimanual, put_down_bimanual); `approach` dispatches on the profile's hand count and,
 with something held, becomes a carried walk to the target's stand. `pending.py` holds any entry declared
 but not built (none at the moment); the executor rejects those with an `unimplemented` violation.
 """
@@ -15,6 +15,7 @@ from locomani.skills.catalogue.crate import CrateApproach, GraspBimanual
 from locomani.skills.catalogue.crate_put_down import PutDownBimanual
 from locomani.skills.catalogue.locomotion import NavigateTo, Nudge, TurnTo, WalkTo
 from locomani.skills.catalogue.pending import PENDING, Unimplemented, pending_entries
+from locomani.skills.catalogue.put_down_single import PutDownSingle
 from locomani.skills.contract import Violation
 from locomani.skills.session import ArmOwner
 
@@ -31,6 +32,7 @@ RUNNABLE = (
     "place",
     "navigate_to",
     "put_down_bimanual",
+    "put_down_single",
     "nudge",
 )
 
@@ -94,6 +96,7 @@ def build_catalogue(profiles: dict | None = None, **overrides) -> dict:
         "place": Place(profiles),
         "navigate_to": NavigateTo(),
         "put_down_bimanual": PutDownBimanual(profiles),
+        "put_down_single": PutDownSingle(profiles),
         "nudge": Nudge(),
     }
     entries.update(pending)
@@ -114,6 +117,7 @@ __all__ = [
     "Nudge",
     "Place",
     "PutDownBimanual",
+    "PutDownSingle",
     "Ready",
     "Release",
     "TakeOver",
