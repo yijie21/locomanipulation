@@ -184,3 +184,22 @@ def test_the_urdf_edits_each_apply_once():
         assert 'type="fixed"' in M._hold(text, joint, 0.1).split(f'<joint name="{joint}"')[1].split(">")[0]
     with pytest.raises(AssertionError):
         M._sub_once(r"no such thing", "", text)
+
+
+def test_the_render_ghosts_copy_the_scene_robot_own_wrist_meshes():
+    """ghost.inject_mujoco probes the scene itself, not SONIC_SCENE: a mars scene names its wrist meshes mars_*, and
+    a ghost authored from the stock names failed to compile (render_trace_videos on warehouse_mars_smoke, 2026-10-04)."""
+    from geometry_fixture import DIRECTORY
+
+    from locomani.sim.isaac import ghost
+
+    model, ids = ghost.inject_mujoco(str(DIRECTORY / "scene_locomani.xml"))
+    for side, name in ghost.NAMES.items():
+        body = model.body(name).id
+        assert model.body_mocapid[body] == ids[side]
+        meshes = {
+            model.mesh(model.geom_dataid[g]).name
+            for g in range(model.ngeom)
+            if model.geom_bodyid[g] == body and model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
+        }
+        assert {f"mars_{side}_wrist_yaw_link_5010", "mars_d405", "Dex1_base_link"} <= meshes, side

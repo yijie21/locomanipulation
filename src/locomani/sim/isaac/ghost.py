@@ -61,7 +61,8 @@ def inject_mujoco(scene_xml: str):
 
     spec = mujoco.MjSpec.from_file(scene_xml)
     for side in SIDES:
-        scene_lib.add_ghost_hand(spec, side, alpha=GHOST_ALPHA, name=NAMES[side])
+        # the scene's own robot is the probe: a mars scene names its wrist meshes mars_*, not as SONIC_SCENE does
+        scene_lib.add_ghost_hand(spec, side, alpha=GHOST_ALPHA, name=NAMES[side], robot_xml=scene_xml)
     model = spec.compile()
     ids = {}
     for side in SIDES:
