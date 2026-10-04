@@ -1,31 +1,37 @@
 """The G1's materials in every renderer that draws the policy's pictures and the videos: Isaac and Unreal, one source.
 
 Two PBR materials (linear base colour, metallic, roughness), picked per mesh by its MJCF colour: the light-grey
-shells (rgba >= 0.6), and the dark set -- head, pelvis, hip pitch, ankle roll, Dex1 base and fingers (rgba < 0.4).
+shells (rgba >= 0.6), and the dark set -- head, pelvis, hip pitch, ankle roll, Dex1 base and fingers (rgba < 0.4;
+mars adds its waist motors).
 Isaac binds them as OmniPBR whenever it assembles a stage (`isaac.stage.G1_LOOKS`). Unreal writes them into the
 level's material instances when it builds the level (`unreal.build_level` -> `in_editor/robot_materials.py`). The
 level's `source.json` records NAME, and `run_context.unreal_scene` refuses a level built with another look. NAME is
 also part of the dataset-camera marker's look in both renderers, so `view_render.plan` never fills one session with
 two looks.
 
-The values (user, 2026-10-01; A/B against the URLab hero still in outputs/g1_look_ab_20261001/ab_sheet.png, variant
-v4a) start from Unitree's Isaac Lab asset for the G1 with Dex1, the look of 2026-09-29 (`g1_29dof_with_dex1_rev_1_0.usd`,
-NAME `unitree_20260929`: shells roughness 0.75; dark set metallic 0.42, base 0.011, roughness 0.5). Two changes:
-- The shells' roughness drops 0.75 -> 0.45. At 0.75 the metal blurs the room into flat grey paint; at 0.45 it
-  reflects. Two reasons for not going lower. Unreal's Lumen traces dedicated reflection rays only below 0.4. Below
-  about 0.5 the shells speckle at the video's 720x540 (0.35 speckles more than 0.45). Neither recomputed smooth
-  normals nor 32 captures removed the speckle.
-- The dark set becomes black plastic (metallic 0, base 0.03, roughness 0.35). At metallic 0.42 it mirrored its own
-  near-black base colour, so the head had no highlight.
+The shell values (user, 2026-10-04) match a photo of the lab's real robot, assets/mars_real_model.jpg: metallic 0.75,
+roughness 0.6, a neutral base 0.45. Matched in Unreal over 19 variants (outputs/mars_shell_match_20261004/) by two
+exposure-free measures on a front portrait like the photo: each silver part's brightness over a white wall's in the
+same picture (photo 0.62-0.83), and how uniform the surface is. At metallic 1 the arms mirror the room's dark floor
+and shelves as mottled streaks, 1.5-2x the photo's surface variation, which the ego view shows on the forearms;
+raising roughness alone keeps the streaks, and metallic 0.5 reads as white plastic. Roughness 0.5 looks the same as
+0.6. Before (2026-10-01 to 2026-10-04, NAME `g1_gloss_20261001`, A/B against the URLab hero in
+outputs/g1_look_ab_20261001/ab_sheet.png, variant v4a): shells metallic 1, roughness 0.45, base 0.675. That started
+from Unitree's Isaac Lab asset for the G1 with Dex1, the look of 2026-09-29 (`g1_29dof_with_dex1_rev_1_0.usd`, NAME
+`unitree_20260929`: shells roughness 0.75; dark set metallic 0.42, base 0.011, roughness 0.5). Unreal's Lumen traces
+dedicated reflection rays only below roughness 0.4, and below about 0.5 the shells speckled at 720x540.
+The dark set is black plastic (metallic 0, base 0.03, roughness 0.35, since 2026-10-01). At metallic 0.42 it mirrored
+its own near-black base colour, so the head had no highlight.
 A hard side key light was tried too and rejected: it washed out the white room rather than shaping the robot.
 
 The mars robot (make_dex1_model.py, the lab's real G1) is drawn the same way, its meshes sorted by the colour the
-generator writes: DARK_MESHES dark whatever the URDF colours them (user, 2026-10-02: on the real robot the 5010 wrist,
-the Dex1 base and the D405 mount are black; the URDF has the wrist white and the Dex1 base pale lavender), the rest
-by the URDF colour's brightness. Its fingers keep the stock model's geoms and colours. SHELL_MESHES go the other way,
-silver whatever the URDF says: the pelvis, the triangular part joining the legs to the upper body (user, 2026-10-03;
-dark in the URDF and in Unitree's own). The D455 on top of the head (`head_tilt_link`) stays silver-white, as on the
-real robot (user, 2026-10-03).
+generator writes: DARK_MESHES dark whatever the URDF colours them, the rest by the URDF colour's brightness. On the
+real robot the Dex1 base and the D405 mount are black (user, 2026-10-02; the URDF has the Dex1 base pale lavender),
+and so are the waist yaw and roll motors (user, 2026-10-04, from the photo; white in the URDF). The pelvis keeps its
+URDF colour, dark, as in the photo (silver from 2026-10-03 to 2026-10-04). The 5010 wrist (the forearm) is silver
+like the stock robot's arm (user, 2026-10-04; it was black from 2026-10-02). Its fingers keep the stock model's geoms
+and colours. The D455 on top of the head (`head_tilt_link`) stays silver-white, as on the real robot (user,
+2026-10-03).
 
 Changing a value changes the policy's pictures. A checkpoint trained before the change saw the older look, so
 change NAME along with the values.
@@ -38,19 +44,13 @@ markers, and `run_context` refuses a stage or level built for another robot.
 import json
 from pathlib import Path
 
-NAME = "g1_gloss_20261001"
-SHELL = {"base": (0.675, 0.675, 0.6916), "metallic": 1.0, "roughness": 0.45}
+NAME = "g1_satin_20261004"
+SHELL = {"base": (0.45, 0.45, 0.45), "metallic": 0.75, "roughness": 0.6}
 DARK = {"base": (0.03, 0.03, 0.03), "metallic": 0.0, "roughness": 0.35}
 # URDF mesh file stems (assets/unitree_G1_with_wrist_camera/urdf/meshes) drawn dark.
 DARK_MESHES = frozenset(
-    {
-        *(f"{side}_wrist_{part}_link_5010" for side in ("left", "right") for part in ("roll", "pitch", "yaw")),
-        "Dex1_base_link",
-        "unitree_dex1-1_d405_wrist_mount",
-    }
+    {"Dex1_base_link", "unitree_dex1-1_d405_wrist_mount", "waist_yaw_link_rev_1_0", "waist_roll_link_rev_1_0"}
 )
-# URDF mesh file stems drawn silver (the shell look).
-SHELL_MESHES = frozenset({"pelvis_ver0529"})
 
 
 def scene_robot(scene_dir) -> str:

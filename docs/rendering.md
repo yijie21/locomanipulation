@@ -204,9 +204,10 @@ bash scripts/setup_render_runtime.sh --deep
 | 房间背景 | 生成的背景源，或仓库自带 `assets/scene/empty_room_world.ply.gz` → 场景 USD |
 
 机器人的材质不在 USD 缓存里，改材质不需要重建 Isaac 资产：每次组装 stage 时，`stage.assemble_stage` 给机器人绑两种 OmniPBR 材质（`stage.G1_LOOKS`）。
-- 数值只在 `src/locomani/sim/robot_look.py` 一处定义，Isaac 和 Unreal 用同一组：外壳 metallic 1、roughness 0.45、底色 0.675（线性）；深色件按黑塑料，metallic 0、roughness 0.35、底色 0.03。
-- 深色件是头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指。这正好是 MJCF 里 rgba < 0.4 的那些网格，所以由 MJCF 颜色决定用哪种材质。
-- 这组值是用户 2026-10-01 在 A/B 里选的（`outputs/g1_look_ab_20261001/ab_sheet.png` 的 v4a）。底子是 Unitree 官方 Isaac Lab 资产 `g1_29dof_with_dex1_rev_1_0.usd`（2026-09-29 起用），在它上面改了两处：
+- 数值只在 `src/locomani/sim/robot_look.py` 一处定义，Isaac 和 Unreal 用同一组：外壳 metallic 0.75、roughness 0.6、底色 0.45（线性，中性灰）；深色件按黑塑料，metallic 0、roughness 0.35、底色 0.03。
+- 深色件是头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指，mars 另有腰部两个电机。这正好是 MJCF 里 rgba < 0.4 的那些网格，所以由 MJCF 颜色决定用哪种材质。
+- 外壳的数值是 2026-10-04 按真机照片 `assets/mars_real_model.jpg` 定的（`outputs/mars_shell_match_20261004/`，19 组对比）：用"银色部位亮度 ÷ 同一画面白墙亮度"和表面均匀度去比，避开曝光差别。metallic 1 时手臂把深色地面和货架映成斑驳的条纹，ego 画面里小臂最明显；只加大 roughness 去不掉，metallic 0.5 又像白塑料。
+- 之前（2026-10-01 到 10-04，外观名 `g1_gloss_20261001`）外壳是 metallic 1、roughness 0.45、底色 0.675，是用户在 A/B 里选的（`outputs/g1_look_ab_20261001/ab_sheet.png` 的 v4a）。底子是 Unitree 官方 Isaac Lab 资产 `g1_29dof_with_dex1_rev_1_0.usd`（2026-09-29 起用），在它上面改了两处：
   - 外壳 roughness 0.75 → 0.45。0.75 时金属把环境糊成一片灰，看着像喷漆；0.45 能看出反射。没有再往下调，原因有两个：Unreal 的 Lumen 只对 roughness < 0.4 的表面单独追踪反射；低于约 0.5 时，720×540 的画面里外壳会起细颗粒。重算法线、加到 32 次采样都消不掉这种颗粒。
   - 深色件由 metallic 0.42 改成黑塑料。原来几乎只反射它自己近黑的底色，头盔没有高光。
   - 加侧面硬光的方案也试了，被否决：它让白色房间整体过曝，并不能让机器人显得更立体。

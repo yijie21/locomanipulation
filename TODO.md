@@ -523,6 +523,10 @@
     - [ ] 13.6.11.6 可选：腰 50、手水平前伸时能稳住的最大前倾（静态估算约 60°，未实测）
   - [ ] 13.6.12 待用户定：本次产物删不删（`outputs/mars_pilots_20261002` 4.1 GB，其中 `scenes_v1`–`v6` 旧版场景和 8 个 `ablate_*` 场景；14 个 `outputs/runs/*_20261002*` 共 7.5 GB；`outputs/g1_wristcam_render_20261002` 122 MB）；删前在 STATE 写明 24 小时
     - [ ] 13.6.12.1 10-03 新增产物：`outputs/runs/warehouse_mars_smoke_4edges_20261003` 712 MB、`outputs/runs/bend80_mars_w{50,35}_20261003` 共 314 MB、`outputs/mars_assets_20261003` 2 MB、`outputs/mars_pilots_20261002/bend80` 3 MB；删前在 STATE 写明 24 小时
+  - [x] 13.6.13 （2026-10-04，用户：新 URDF 的手臂是黑的，旧的是银色，改成银色）三节 5010 手腕（小臂）从 `robot_look.DARK_MESHES` 去掉，按 URDF 的白色画外壳银；Dex1 底座、D405 支架仍黑。mars 模型、7 个 `*_mars` 场景、几何样例已重建（差别只有手腕 rgba 和 henry 的支架 group 3；旧场景在 `/workspace/tmp/mars_scenes_before_20261004`）；对比图 `outputs/mars_arm_silver_20261004/`
+    - [x] 13.6.13.1 （2026-10-04，随 13.6.14 一起重建）4 个 `warehouse_box_*_mars` Unreal 关卡要重建（场景哈希变了，运行会拒绝旧关卡并给出重建命令）；Isaac 机器人 USD 按 MJCF 哈希缓存，下次用到时自动重建
+  - [x] 13.6.14 （2026-10-04，用户：反光太强，按真机照片 `assets/mars_real_model.jpg` 调）外壳 metallic 0.75、roughness 0.6、底色 0.45，外观名 `g1_satin_20261004`（stock 与 mars 共用）；mars 腰部两个电机加入 `DARK_MESHES`，骨盆按 URDF 画黑（`SHELL_MESHES` 删除）。19 组对比 `outputs/mars_shell_match_20261004/`；7 个 mars 场景、几何样例已重建，本机 9 个 Unreal 关卡 10-04 重建（旧场景在 `/workspace/tmp/mars_scenes_silver_pelvis_20261004`）
+    - [ ] 13.6.14.1 Isaac 版没有对着照片看过（数值相同，但 14.4 记过 Isaac 深色件偏亮；外壳在 Isaac 里的样子未核）
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 

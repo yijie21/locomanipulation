@@ -364,12 +364,10 @@ def _set_pose(el: ET.Element, pos: np.ndarray, rot: np.ndarray) -> None:
 
 
 def mesh_rgba(filename: str, urdf_rgba: str) -> str:
-    """The colour a mars mesh is drawn in: robot_look's dark and shell parts so, the rest by the URDF colour's brightness."""
+    """The colour a mars mesh is drawn in: robot_look's dark parts dark, the rest by the URDF colour's brightness."""
     stem = os.path.splitext(os.path.basename(filename))[0]
     if stem in robot_look.DARK_MESHES:
         return DARK_RGBA
-    if stem in robot_look.SHELL_MESHES:
-        return SHELL_RGBA
     return SHELL_RGBA if np.mean([float(v) for v in urdf_rgba.split()[:3]]) >= 0.6 else DARK_RGBA
 
 
@@ -540,7 +538,7 @@ def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
             # poses (stock contour: 120), 2 of them near standing (outputs/mars_model_check_20261002).
             collision = [g for g in old if g.get("group") != "1"]
             assert [g.get("mesh") for g in collision] == ["pelvis_contour_link"], f"{name}: expected the stock contour"
-            # Coloured like mars's pelvis visual (robot_look.SHELL_MESHES), not left as the stock contour's own
+            # Coloured like mars's pelvis visual (dark, as on the real robot), not left as the stock contour's own
             # colour: MuJoCo draws collision geoms, so a differently coloured hull shows through the pelvis.
             for g in collision:
                 g.set("rgba", visual[0].get("rgba"))

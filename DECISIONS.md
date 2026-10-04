@@ -1433,3 +1433,22 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - 50 N·m 的来源：SONIC 训练配置（`gear_sonic/.../robots/g1.py`，改自 BeyondMimic）和训练 URDF `main.urdf`（rev 1.0 腰几何）都是 50，即 2 台 5020 × 25；Unitree 旧版 `g1_29dof.urdf` 50、所有 rev 1.0 文件 35。所以是 SONIC 训练时的腰比 Unitree 描述文件强，不是我们设错。deploy 只发目标角和 kp/kd，不截断力矩，真机上限由固件定，没人确认过腰的。
 - **被否决的方案**：把 30 局 / 更多重复当作必要再下结论——用户只要机制解释，未扩大试验；"仿真设置不对"的假设被上面的检查排除。
 - 真机核对办法见 TODO 13.6.11.5（协作者记 13/14 号电机 `tau_est`）。
+
+## 2026-10-04 mars 小臂（5010 手腕）改银色（用户）
+
+- **目标变化**：用户："新的 urdf 的手臂是黑色的，但是旧的 urdf 是银色的，把新的 urdf 的手臂颜色改成银色"。
+- **决策**：`robot_look.DARK_MESHES` 去掉左右三节 `*_wrist_{roll,pitch,yaw}_link_5010`，只留 Dex1 底座和 D405 支架；手腕按 URDF 自身的白色（0.7）画外壳银，碰撞体随之同色。推翻 2026-10-02 "真机 5010 手腕是黑的" 那一条。外观名 `robot_look.NAME` 不改，同 10-03 骨盆改银色的做法（mars 还没有训练过的 checkpoint）。
+- **事实**：重建后 7 个 `*_mars` 场景和几何样例与旧版只差手腕 rgba 0.2→0.7（以及 henry 10-03 的支架碰撞体 group 3）；MuJoCo 对比图 `outputs/mars_arm_silver_20261004/compare_{before,after}.png`。
+- **未做**：4 个 Unreal 关卡没重建（场景哈希不符时运行会拒绝）；10-03 mars 冒烟数据集是黑手腕外观。
+
+## 2026-10-04 外壳材质按真机照片调成缎面银；mars 腰部电机和骨盆改黑（用户）
+
+- **目标变化**：用户觉得银色金属反光太强（ego 画面里的手臂），给了真机照片 `assets/mars_real_model.jpg`，要求外壳材质尽量接近；又按照片把腰部电机和骨盆改回黑色。
+- **决策**：
+  - `robot_look.SHELL` 改为 metallic 0.75、roughness 0.6、底色 0.45（中性灰，原来略偏蓝）；外观名 `NAME` 由 `g1_gloss_20261001` 改为 `g1_satin_20261004`。stock 和 mars 共用这组值，Isaac 和 Unreal 也共用。理由：照片里是同一种外壳；用户选"最接近图片的一个"。
+  - mars 的 `waist_yaw_link_rev_1_0`、`waist_roll_link_rev_1_0` 加入 `robot_look.DARK_MESHES`（URDF 画白，照片里是黑）；骨盆不再强制银色，按 URDF 的深色画，`SHELL_MESHES` 删除。推翻 2026-10-03 的"骨盆银色"。
+- **怎么比的**：Unreal 里摆和照片相近的正面机位，19 组（metallic 0.5/0.75/1.0 × roughness 0.5/0.6 × 底色 0.45/0.55/0.675，加原生产值）；曝光不同，所以只比"银色部位亮度 ÷ 同画面白墙亮度"（照片 0.62–0.83）和表面均匀度（变异系数）。结果和脚本在 `outputs/mars_shell_match_20261004/`（`best_sheet.png`、`scores.json`）。
+- **事实**：metallic 1 时小臂、大腿的变异系数是照片的 1.5–2 倍（映出深色地面和货架）；只加大 roughness 消不掉；metallic 0.5 均匀但偏白像塑料。选中组的肩部偏亮约 25%，胸口所有组都偏亮，是灯光位置所致。roughness 0.5 与 0.6 看不出差别。
+- **被否决的方案**：metallic 1 + roughness 0.6 + 底色 0.55（亮度分最好，但斑驳仍在）；metallic 0.5（像白塑料）。
+- **影响**：所有 Unreal 关卡要按新外观名重建（本机 9 个已重建）；mars 的 Isaac 机器人 USD 按 MJCF 哈希自动重建；之前补渲的数据集是旧外观。
+

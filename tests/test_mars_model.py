@@ -111,12 +111,19 @@ def test_mars_colours_sort_into_the_robot_look(mars_xml):
         assert rgba[M.mars_mesh_name(f"meshes/{filename}")] == {M.DARK_RGBA}, stem
     assert rgba["torso_link_rev_1_0"] == {M.SHELL_RGBA}
     assert rgba["mars_head_tilt_link"] == {M.SHELL_RGBA}  # the D455 on the head is silver-white on the real robot
+    for side in ("left", "right"):  # the 5010 wrist (forearm) is silver like the stock arm (user, 2026-10-04)
+        for part in ("roll", "pitch", "yaw"):
+            assert rgba[f"mars_{side}_wrist_{part}_link_5010"] == {M.SHELL_RGBA}
+    for stem in ("waist_yaw_link_rev_1_0", "waist_roll_link_rev_1_0"):  # black on the real robot (photo, 2026-10-04)
+        assert rgba[stem] == {M.DARK_RGBA}, stem
     pelvis = next(b for b in root.iter("body") if b.get("name") == "pelvis")
-    assert {g.get("rgba") for g in pelvis.findall("geom")} == {M.SHELL_RGBA}  # silver (user), the kept contour too
+    # black as in the photo of the real robot, the kept stock contour too
+    assert {g.get("rgba") for g in pelvis.findall("geom")} == {M.DARK_RGBA}
     # collision geoms (group 0, drawn by MuJoCo's cameras) wear their link's visual colour
-    for body in root.iter("body"):
-        if body.get("name", "").endswith("wrist_yaw_link"):
-            assert {g.get("rgba") for g in body.findall("geom") if g.get("group") != "1"} == {M.DARK_RGBA}
+    for side in ("left", "right"):
+        body = next(b for b in root.iter("body") if b.get("name") == f"{side}_wrist_yaw_link")
+        collision = {g.get("mesh"): g.get("rgba") for g in body.findall("geom") if g.get("group") is None}
+        assert collision == {f"mars_{side}_wrist_yaw_link_5010": M.SHELL_RGBA, "Dex1_base_link": M.DARK_RGBA}
 
 
 def test_meshes_identical_to_the_stock_files_keep_the_stock_names():
