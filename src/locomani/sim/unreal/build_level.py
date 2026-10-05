@@ -115,6 +115,11 @@ def build(name: str) -> dict:
         editor.checked(editor.run_file(editor.IN_EDITOR / "clear_import.py", URLAB_ASSET=level)).strip(),
         flush=True,
     )
+    from urlab_client import client as urlab_rpc
+
+    # urlab_client waits 120 s for import_xml; a mars scene's ghost grippers (d405, wrist mount) took 135 s on the
+    # editor's 4 cores (2026-10-04) and the client gave up while the editor finished. import_xml takes no timeout.
+    urlab_rpc._OP_TIMEOUTS_S["import_xml"] = 600.0
     client = editor.connect(local_model=False)
     client.scene.load_level(level_path)
     client.scene.ensure_manager()
