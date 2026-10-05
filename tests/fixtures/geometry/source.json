@@ -1,4 +1,4 @@
 {
-  "source_scene_sha256": "a141b76078645c0961db19504c1c9100a0346c151c271a40300bb11826ed14d1",
+  "source_scene_sha256": "575c31e32069ddf8b34a45cbb2923f9f575d244dad516810ecc847fb3bf081a9",
   "transformation": "Inline each mesh convex hull, remove textures/materials. Retain bodies, joints, collisions and inertial values. Kinematic fixture, not a rendering or dynamics reference."
 }

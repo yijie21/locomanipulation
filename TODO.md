@@ -526,7 +526,8 @@
   - [x] 13.6.13 （2026-10-04，用户：新 URDF 的手臂是黑的，旧的是银色，改成银色）三节 5010 手腕（小臂）从 `robot_look.DARK_MESHES` 去掉，按 URDF 的白色画外壳银；Dex1 底座、D405 支架仍黑。mars 模型、7 个 `*_mars` 场景、几何样例已重建（差别只有手腕 rgba 和 henry 的支架 group 3；旧场景在 `/workspace/tmp/mars_scenes_before_20261004`）；对比图 `outputs/mars_arm_silver_20261004/`
     - [x] 13.6.13.1 （2026-10-04，随 13.6.14 一起重建）4 个 `warehouse_box_*_mars` Unreal 关卡要重建（场景哈希变了，运行会拒绝旧关卡并给出重建命令）；Isaac 机器人 USD 按 MJCF 哈希缓存，下次用到时自动重建
   - [x] 13.6.14 （2026-10-04，用户：反光太强，按真机照片 `assets/mars_real_model.jpg` 调）外壳 metallic 0.75、roughness 0.6、底色 0.45，外观名 `g1_satin_20261004`（stock 与 mars 共用）；mars 腰部两个电机加入 `DARK_MESHES`，骨盆按 URDF 画黑（`SHELL_MESHES` 删除）。19 组对比 `outputs/mars_shell_match_20261004/`；7 个 mars 场景、几何样例已重建，本机 9 个 Unreal 关卡 10-04 重建（旧场景在 `/workspace/tmp/mars_scenes_silver_pelvis_20261004`）
-    - [ ] 13.6.14.1 Isaac 版没有对着照片看过（数值相同，但 14.4 记过 Isaac 深色件偏亮；外壳在 Isaac 里的样子未核）
+    - [x] 13.6.14.1 （2026-10-05）Isaac 与 Unreal、MuJoCo 同机位对比（`outputs/robot_look_3renderers_20261005/sheet.png`）：Isaac 外壳与 Unreal 接近；4 个 mars Isaac stage 已重建
+    - [x] 13.6.14.2 （2026-10-05，用户）MuJoCo 外观对齐：mars 外壳 rgba 0.7 → 0.62（DECISIONS 2026-10-05）；7 个 mars 场景、几何样例、4 个 mars Unreal 关卡与 Isaac stage 已重建。MuJoCo ego 手臂仍约 25% 过曝（头灯）
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 

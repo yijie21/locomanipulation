@@ -268,7 +268,13 @@ def mars_effort(urdf_joint: ET.Element) -> str:
 # The colours the generator writes, so both renderers sort each mesh by its MJCF
 # colour into robot_look's shell or dark set (Isaac: mean >= 0.6 is shell;
 # Unreal: grey >= 0.6 silver, < 0.4 dark, anything else a third, plain look).
-SHELL_RGBA = "0.7 0.7 0.7 1"
+# MuJoCo draws them as they are, with no metallic: at the URDF's 0.7 the shell
+# read near-white beside the Unreal satin look; 0.62, just clear of the 0.6
+# cut, came closest of 0.7-0.52 on robot/wall brightness and uniformity
+# (outputs/robot_look_3renderers_20261005; lower drifts dark on the chest and
+# arms). A MuJoCo material's specular changed nothing: the scene's lights
+# carry almost none.
+SHELL_RGBA = "0.62 0.62 0.62 1"
 DARK_RGBA = "0.2 0.2 0.2 1"
 # MuJoCo camera axes in a ROS camera_link frame (x forward, y left, z up): the
 # camera looks along -z, x is image right, y is image up.

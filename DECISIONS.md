@@ -1452,3 +1452,11 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **被否决的方案**：metallic 1 + roughness 0.6 + 底色 0.55（亮度分最好，但斑驳仍在）；metallic 0.5（像白塑料）。
 - **影响**：所有 Unreal 关卡要按新外观名重建（本机 9 个已重建）；mars 的 Isaac 机器人 USD 按 MJCF 哈希自动重建；之前补渲的数据集是旧外观。
 
+## 2026-10-05 三个渲染器的机器人外观对齐：Isaac 已随 robot_look，MuJoCo 的 mars 外壳 rgba 0.7 → 0.62（用户）
+
+- **目标变化**：用户问 warehouse 的 Isaac、MuJoCo 是否也按 Unreal 的新外观改了，没改就改，再把三个版本渲出来看。
+- **事实**：Isaac 每次组装 stage 时从 `robot_look` 读 SHELL/DARK（`isaac.stage.G1_LOOKS`），数值自动是新的；机器人 USD 按 MJCF 颜色分外壳/深色，重建 4 个 mars stage 后小臂银、腰部和骨盆黑。MuJoCo 没有 metallic/roughness，只画 MJCF 的 rgba；加 MuJoCo material 的 specular/shininess 画面不变（场景灯几乎不带 specular）。
+- **决策**：mars 生成器的外壳色 `make_dex1_model.SHELL_RGBA` 0.7 → 0.62。0.7–0.52 的扫描里，0.62 在"机器人/白墙亮度 + 均匀度"上最接近 Unreal（更低则胸口和手臂偏暗）；0.62 仍在 Isaac/Unreal 外壳判定线 0.6 之上，两者画面不受影响。stock 的 MJCF（SONIC 自带，0.7）没改。
+- **被否决的方案**：调暗 MuJoCo 头灯（ego 手臂的过曝只降到 25%，整场景变暗，分数更差）；外壳 rgba 0.55（亮度最接近，但跌破 0.6 判定线，Isaac/Unreal 会把外壳当成第三类）。
+- **仍有差别**：MuJoCo 的 ego 画面里近处手臂仍有约 25% 像素过曝（头灯直射），Unreal 没有；这是 MuJoCo 光照模型的限制。对比图 `outputs/robot_look_3renderers_20261005/sheet.png`。
+
