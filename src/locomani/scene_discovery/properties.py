@@ -95,11 +95,14 @@ several functions gets one name joining them. Names must be unique."""
 
 
 def ask(prompt: dict, schema: dict, system: str, model: str, log_path: Path | None, timeout_s: float = 600.0) -> dict:
-    """One `claude -p` exchange with structured output; raises on failure (a property pass is not optional)."""
-    argv = ["claude", "-p", json.dumps(prompt), "--output-format", "json", "--json-schema", json.dumps(schema),
+    """One `claude -p` exchange with structured output; raises on failure (a property pass is not optional).
+    The prompt goes on stdin: a task proposal with the checker's verdicts passes the 128 KB argv limit."""
+    argv = ["claude", "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
             "--tools", "", "--model", model, "--system-prompt", system]  # fmt: skip
     t0 = time.time()
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s, check=False)
+    proc = subprocess.run(
+        argv, input=json.dumps(prompt), capture_output=True, text=True, timeout=timeout_s, check=False
+    )
     reply = json.loads(proc.stdout) if proc.stdout.strip() else {}
     out = reply.get("structured_output")
     if log_path is not None:

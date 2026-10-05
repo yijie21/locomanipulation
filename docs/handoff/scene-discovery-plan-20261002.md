@@ -75,6 +75,7 @@ Scene discovery（Demo 1，纯仿真）：设计决策记录（2026-10-02）
 深度 / 重量 / 距离上用）和**技能缺口**（没有技能能做，目前只有"单手把东西放到台面上"`place_on_surface.single`，挡住 1664 个任务）。
 范围缺口按维度挑代表任务用现有技能试跑 10 局，结果写回 `capability.yaml`，整组随之转第 1 桶或第 3 桶；技能缺口进决策 11 的造技能排序。
 分组与代表任务在 `outputs/scene_discovery/adt_apartment/feasibility/pilot_groups.json`（ADT 衍生，不进 git）。
+2026-10-05：单手抓取改成按实测设定**整体**匹配（`capability.yaml grasp_settings`：瓶子线 + 通过 3/10 的咖啡罐试跑），低于 3/10 的试跑记成失败区域（`grasp_failures`：深够 `deep_reach`、深处低位入手 `deep_entry`，是技能缺口，不再试跑），抓 / 放点上方 0.60 m 内有别的台面板记 `*.covered`；第 1 桶 0 → 2（拿起咖啡罐、放到圆桌），可试跑 264 → 85（TODO 9.12.8、9.9.9）。Claude 提任务的循环（决策 8）：`scripts/scene_discover_tasks.py`（`scene_discovery.proposals`），第一次 Opus 运行 49 个任务、桶 2/38/9（TODO 9.10，DECISIONS 2026-10-05）。
 
 ## 5. 已知风险
 

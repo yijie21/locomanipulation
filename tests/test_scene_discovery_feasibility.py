@@ -188,3 +188,55 @@ def test_pilot_groups_split_envelope_gaps_from_skill_gaps():
     assert groups[("grasp_single.object_size",)]["pilotable"]
     high = groups[("grasp_single.grip_height", "grasp_single.support_top")]
     assert not high["pilotable"] and high["skill_gaps"] == ["grasp_single.grip_height"]
+
+
+def _envelope_meta():
+    meta = copy.deepcopy(META)
+    meta["surfaces"]["CART"] = surface([2.0, 2.0], 0.70, [0.21, 0.15])  # the canister pilot's cart: 0.70 m, -y edge
+    o = meta["objects"]
+    o["canister"] = obj([2.0, 1.934], 0.70, [0.041, 0.0615, 0.098], mass=0.6, surface="CART")  # centre 8.4 cm in
+    o["cart_bottle"] = obj([2.1, 1.934], 0.70, [0.0225, 0.0225, 0.08], surface="CART")
+    o["deep_can"] = obj([0.0, -0.03], 0.62, [0.0225, 0.0225, 0.08])  # 0.27 m in: past the apple pilot
+    o["short_deep"] = obj([0.2, -0.14], 0.62, [0.03, 0.03, 0.05])  # 0.16 m in, grip 5 cm over the top: the plant
+    o["tall_deep"] = obj([-0.2, -0.14], 0.62, [0.0225, 0.0225, 0.10])  # 0.16 m in, grip 10 cm over the top
+    return meta
+
+
+def test_a_passing_pilot_is_a_setting_matched_whole():
+    meta = _envelope_meta()
+    r = feasibility.Checker(meta, CAP).check({"id": "t", "goal": ["held(canister)"]})
+    assert r.bucket() == 1, (r.gaps, r.blocked)
+    assert {c.setting for c in r.checks if c.setting} == {"adt_canister_cart"}
+    # the bottle line's object on the canister's cart: each value was measured, the combination never was
+    bucket, gaps, *_ = gaps_of(["held(cart_bottle)"], meta)
+    assert bucket == 2 and gaps == ["grasp_single.support_top"]
+
+
+def test_a_grasp_at_least_as_hard_as_a_failed_pilot_carries_its_skill_gap():
+    from locomani.scene_discovery import pilot_groups
+
+    meta = _envelope_meta()
+    assert "grasp_single.deep_reach" in gaps_of(["held(deep_can)"], meta)[1]
+    assert "grasp_single.deep_entry" in gaps_of(["held(short_deep)"], meta)[1]
+    tall = gaps_of(["held(tall_deep)"], meta)[1]  # as deep, but gripped higher than either failed pilot
+    assert "grasp_single.deep_entry" not in tall and "grasp_single.inboard" in tall
+    assert pilot_groups.is_skill_gap("grasp_single.deep_reach") and pilot_groups.is_skill_gap("grasp_single.deep_entry")
+
+
+def test_a_spot_under_another_surface_is_outside_every_measured_setting():
+    meta = _envelope_meta()
+    meta["surfaces"]["SHELF"] = surface([0.0, 0.0], 0.92, [0.5, 0.3])  # a board 0.28 m over the measured table
+    assert "grasp_single.covered" in gaps_of(["held(bottle)"], meta)[1]
+    assert "place_on_surface.covered" in gaps_of(["on(canister, T)"], meta)[1]
+    assert "place_into.covered" in gaps_of(["in(canister, basket)"], meta)[1]
+    meta["surfaces"]["SHELF"]["top"] = 1.50  # 0.86 m up: open enough
+    assert gaps_of(["held(bottle)"], meta)[:2] == (1, [])
+
+
+def test_upright_beside_a_move_is_a_constraint_on_the_move():
+    meta = _envelope_meta()
+    assert gaps_of(["on(canister, T)", "upright(canister)"], meta)[3] == ""  # set it down standing: not invalid
+    assert "place_into.upright" in gaps_of(["in(bottle, basket)", "upright(bottle)"], meta)[1]
+    assert gaps_of(["upright(bottle)"], meta)[3] == "upright(bottle): already upright"  # nothing moves it
+    meta["objects"]["bottle"]["init_quat"] = [0.7071, 0.7071, 0, 0]  # lying on its side
+    assert "reorient" in gaps_of(["on(bottle, CART)", "upright(bottle)"], meta)[1]

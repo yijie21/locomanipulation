@@ -368,3 +368,16 @@ grasp_single / release 各几次），GPU0（空闲）/ instance 1，4 局，`ou
   （TODO 8.5，搁置）。三轮作废的教训（deploy 1 s 规划器超时）见 §14，保活已在 `Executor.idle`。
 - 工作转向 scene_discovery（场景 → 自动发现任务 → 技能组装采集 → VLA），见 `docs/handoff/scene-discovery-plan-20261002.md`（分支 `scene_discovery`）。
 
+
+## §17 `place_phase` 改动后放进容器的回归（scene_discovery TODO 9.12.10，2026-10-05）
+
+`put_down_single`（`4da2bba`）改了 `place_phase`（台面几何分支、`_servo` 的 `until` / `level` / 日志），放进容器只有单元测试。按 §8 第三轮原样重跑：
+`skills_pick_place_20260928.yaml` + `configs/plans/pick_place_via_basket.json`，seed 300–309，GPU1 / instance 1，运行 `sd_place_regress_20261005`。
+
+| | 抓取 | place | 端到端 | place 失败 |
+|---|---|---|---|---|
+| §8 `skills_pickplace_viabasket3_20260928` | 6/10 | 3/6 | 3/10 | `descent timeout` 6.0 / 9.0 cm、`raise timed out` ×1 |
+| `sd_place_regress_20261005` | 6/10 | **3/6** | 3/10 | `not over the container at the descent timeout` xy 6.5 / 7.4 / 9.0 cm |
+
+- 结论：放进容器没被改坏；失败是 §8 的同一族（下降超时时罐头离篮心 6–9 cm），只是新日志措辞更具体。抓取失败 4 局：碰倒 ×2、合爪无双侧接触 ×1、抬起丢接触 ×1，也是 §8 的族。
+- 10 局区分不了 ±1 局的差别（memory：10 局试跑测不出这条线）；这里只用来排除"改坏了"这种大退化。

@@ -46,3 +46,21 @@ def test_spawn_keeps_the_hands_clear_of_a_table_beside_it():
     # from its corner; 0.6 m (0.54 m away) is the first that clears it
     near = meta(0.55)
     assert plan_episode.clear_spawn_off(near, stand, fv2, 1.2, _maps={id(near): OpenFloor()}) == 0.6
+
+
+def test_an_object_that_fits_the_jaw_one_way_spawns_with_its_long_side_along_the_approach():
+    psi = 0.7
+    canister = [0.041, 0.0615, 0.098]  # long side along body y
+    rng = np.random.default_rng(0)
+    for _ in range(200):
+        yaw = plan_episode.spawn_object_yaw(canister, psi, rng)
+        long_side = yaw + np.pi / 2
+        a = np.degrees(np.angle(np.exp(2j * (long_side - psi)))) / 2  # either way round
+        assert abs(a) <= plan_episode.SINGLE_AXIS_YAW_DEG + 1e-9
+    # a bottle fits either way: one uniform draw, as before (seeded runs of the bottle lines replay unchanged)
+    assert plan_episode.spawn_object_yaw([0.03, 0.03, 0.07], psi, np.random.default_rng(5)) == float(
+        np.random.default_rng(5).uniform(-np.pi, np.pi)
+    )
+    assert plan_episode.spawn_object_yaw(None, psi, np.random.default_rng(5)) == float(
+        np.random.default_rng(5).uniform(-np.pi, np.pi)
+    )

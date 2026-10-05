@@ -35,7 +35,7 @@ $PY -u scripts/plan_episode.py configs/experiments/skills_pick_place_20260928.ya
   `agent_trace_NN.jsonl`、`videos/round_NN.mp4`。
 - **参数**：实验文件给场景、后端和任务（`task.target` / `task.goal`）；`--plan` 是 JSON 列表 `[{"primitive": 名, "args": {...}}, ...]`
   （现成的在 `configs/plans/`）；不给 `--plan` 就按任务推：单手目标 `approach → grasp_single [→ approach(goal) → place]`（`goal` 是台面时 `→ approach(goal) → put_down_single(goal)`），
-  双手目标 `approach → ready → grasp_bimanual`；`--seed` 是第 0 局的物体朝向种子，逐局 +1；`--profile` 用别的 profile 名替换场景为目标选的那个（§5）。
+  双手目标 `approach → ready → grasp_bimanual`；`--seed` 是第 0 局的物体朝向种子，逐局 +1（朝向均匀随机；底面只有一边放得进夹爪的物体，如 8.2 × 12.3 cm 的咖啡罐，长边限制在走近方向 ±20° 内，`spawn_object_yaw`）；`--profile` 用别的 profile 名替换场景为目标选的那个（§5）。
 - **就绪与停**：日志出现 `[plan] round 0:` 就在跑；`Ctrl-C` 或跑完都会收栈（`--keep-stack` 留着）。看结果：
   `python3 -c "import json;[print(json.loads(l)['round'],json.loads(l)['ok'],json.loads(l)['why']) for l in open('outputs/runs/<run>/skills/manifest.jsonl')]"`。
 

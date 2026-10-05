@@ -235,6 +235,24 @@ def agent_round(executor, planner, session, scene, steps_max: int, log, injector
     return entries
 
 
+SINGLE_AXIS_YAW_DEG = 20.0  # capability.yaml reach_single_arm.grasp_yaw: |a| <= 20 deg 6/9, 20-40 2/5, > 40 0/18
+
+
+def spawn_object_yaw(half_extent, psi: float, rng) -> float:
+    """The target's spawn yaw: uniform, except for an object that fits the open jaw one way only (the coffee canister,
+    8.2 x 12.3 cm), whose long side is kept within SINGLE_AXIS_YAW_DEG of the approach heading `psi`, either way
+    round -- the existing grasp closes across whatever faces it and never holds the long side (TODO 9.12.11)."""
+    import numpy as np
+
+    from locomani.skills.scene_model import DEX1_OPENING_M
+
+    if half_extent is None or 2 * max(float(half_extent[0]), float(half_extent[1])) <= DEX1_OPENING_M:
+        return float(rng.uniform(-np.pi, np.pi))
+    a = np.radians(rng.uniform(-SINGLE_AXIS_YAW_DEG, SINGLE_AXIS_YAW_DEG)) + np.pi * int(rng.integers(2))
+    long_side = 0.0 if half_extent[0] >= half_extent[1] else np.pi / 2  # body-frame direction of the long side
+    return float(np.angle(np.exp(1j * (psi + a - long_side))))
+
+
 def spawn_single(session, p, reset, meta, target, profile, *, robot_nom, spawn_off, rng, log):
     """The bottle round's spawn (round_phases._phase_spawn_and_settle) at the planned stand, no jitter."""
     import numpy as np
@@ -261,7 +279,7 @@ def spawn_single(session, p, reset, meta, target, profile, *, robot_nom, spawn_o
     p.cmd.reset_pose()
     reset.pin_arms()
     reset.set_ghost()
-    object_yaw = float(rng.uniform(-np.pi, np.pi))
+    object_yaw = spawn_object_yaw((meta["objects"][target].get("box") or {}).get("half_extent"), psi, rng)
     reset.reset(
         objects={target: {"dxy": [0.0, 0.0], "yaw": object_yaw}},
         robot={"dxy": [float(v) for v in spawn - robot_nom], "yaw": float(psi)},
@@ -291,7 +309,10 @@ def spawn_single(session, p, reset, meta, target, profile, *, robot_nom, spawn_o
         return False, f"[stand] walked {drift:.2f} m off the spawn while standing up"
     session.heading = float(psi)
     p.hold_yaw = float(psi)
-    log(f"[plan] spawn {np.round(spawn, 2)} psi {np.degrees(psi):.0f} deg -> settled {np.round(p.pelvis_xy(s), 2)}")
+    log(
+        f"[plan] spawn {np.round(spawn, 2)} psi {np.degrees(psi):.0f} deg -> settled {np.round(p.pelvis_xy(s), 2)}"
+        f", {target} yaw {np.degrees(object_yaw):.0f} deg"
+    )
     return True, ""
 
 

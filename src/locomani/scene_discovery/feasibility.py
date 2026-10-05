@@ -8,6 +8,12 @@ steps a robot would take -- `in(X, C)`: pick X, carry it to C, put it in -- and 
     untested  no hard limit is crossed, but nothing like it was ever run; names a gap (`grasp_single.support_top`)
     blocked   a hard limit is crossed (too big for the jaw, no room to stand, outside the hand's reach); names why
 
+A single-hand grasp is matched against the measured settings whole (`reach_single_arm.grasp_settings`): its checks
+come from the setting it misses on fewest dimensions, and they all pass only inside one setting. A grasp at least as
+hard as a failed pilot (`grasp_failures`) carries that failure's skill gap. Every measured grasp and put-down had
+nothing above it; a spot under another surface's slab closer than `overhead.open_above` (a bookcase or cabinet cell)
+is outside them all. Only the extracted surfaces count: they are the furniture's collision geometry in MuJoCo.
+
 Bucket 3 = any blocked check; bucket 2 = any untested (the strict rule the user approved: an extrapolation never
 counts as composable); bucket 1 = everything ok. `bucket(..., policy="pilot")` is the alternative where untested
 tasks are attempted and the pilot decides (decision 10); both are reported, the choice is the user's.
@@ -21,6 +27,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from locomani.scene_discovery import predicates
+from locomani.scene_discovery.mjcf import SLAB
 from locomani.scene_discovery.scene_file import to_surface_frame
 
 OK, UNTESTED, BLOCKED = "ok", "untested", "blocked"
@@ -28,6 +35,7 @@ TOL = 0.02  # m; a measured point setting (one table height) counts within this
 UPRIGHT_DEG = 15.0
 FLOOR_OBSTACLE_TOP = 0.3  # m; a static object whose underside is below this stands on the floor and blocks walking
 STAND_OUT = 0.10  # m past the body radius from an edge: where a stand is taken for route checks
+COVER_PAD = 0.05  # m round a slab above: about half the hand's width
 
 
 @dataclass
@@ -39,6 +47,7 @@ class Check:
     bound: object = None
     gap: str = ""  # untested: the capability that would have to be measured or built
     why: str = ""  # blocked: the hard limit
+    setting: str = ""  # the measured setting the value was compared with (single-hand grasps)
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v not in ("", None)}
@@ -136,6 +145,32 @@ class Checker:
         half, _ = self.box(key)
         return self.xy(key), float(np.hypot(*half[:2]) + 0.26 + STAND_OUT)
 
+    def headroom(self, surface: str, points) -> float:
+        """Least clearance from `surface`'s top up to the underside of another surface's slab over any of `points`
+        (world xy); inf when nothing is above them."""
+        top, least = self.surfaces[surface]["top"], np.inf
+        for key, other in self.surfaces.items():
+            gap = float(other["top"]) - SLAB - top
+            if key == surface or gap <= 0 or gap >= least:
+                continue
+            half = np.asarray(other["half_extent"], dtype=float) + COVER_PAD  # the slab's size (mjcf.slab)
+            if any(np.all(np.abs(to_surface_frame(p, other)) <= half) for p in points):
+                least = gap
+        return least
+
+    def spots(self, surface: str, n: int = 5) -> list:
+        """An n x n grid over `surface` in world xy: where a put-down could land."""
+        s = self.surfaces[surface]
+        half = np.asarray(s["half_extent"], dtype=float)
+        c, sn = np.cos(s.get("yaw", 0.0)), np.sin(s.get("yaw", 0.0))
+        grid = [(u * half[0], v * half[1]) for u in np.linspace(-1, 1, n) for v in np.linspace(-1, 1, n)]
+        return [np.asarray(s["xy"], dtype=float) + np.array([c * a - sn * b, sn * a + c * b]) for a, b in grid]
+
+    def _overhead(self, step, surface: str, points, gap: str) -> Check:
+        h, bound = self.headroom(surface, points), self.cap["overhead"]["open_above"]
+        return Check(step, "headroom", OK if h >= bound else UNTESTED, None if np.isinf(h) else round(h, 3), bound,
+                     "" if h >= bound else gap)  # fmt: skip
+
     # -- routes ---------------------------------------------------------------------------------
     def navigator(self):
         if self._nav is None:
@@ -202,29 +237,35 @@ class Checker:
         if stand is None:
             out.append(Check(step, "approach_edge", BLOCKED, s_key, why="no edge of its surface has room to stand"))
             return None
+        kind = "single" if hands == "single" else "bimanual"
+        out.append(self._overhead(step, s_key, [self.xy(x)], f"grasp_{kind}.covered"))
         if hands == "single":
             c = self.cap["reach_single_arm"]
             grip = float(self.objects[x]["init_pos"][2] + self.box(x)[1][2])  # the bottle line grips at the centre
             lo, hi = c["grip_height_accepted"]
             if not lo <= grip <= hi:
                 out.append(Check(step, "grip_height", UNTESTED, round(grip, 3), [lo, hi], "grasp_single.grip_height"))
-            width, height = float(2 * min(half[:2])), float(2 * half[2])
-            out.append(self._range(step, "support_top", support, c["support_top_measured"], "grasp_single.support_top"))
-            size_ok = _range(width, c["object_width_measured"], 0.005) and _range(
-                height, c["object_height_measured"], 0.01
-            )
-            out.append(Check(step, "object_size", OK if size_ok else UNTESTED, [round(width, 3), round(height, 3)],
-                             [c["object_width_measured"], c["object_height_measured"]], "" if size_ok else "grasp_single.object_size"))  # fmt: skip
             mass = float(sem.get("mass_kg", 0.0))
+            limits = []
             limit = 2 * 20.0 * float(sem.get("friction", 0.5)) / 9.81  # both pads at the 20 N clamp
             if mass > limit:
-                out.append(Check(step, "mass", BLOCKED, round(mass, 3), round(limit, 3), why="heavier than the jaw can hold at its force clamp"))  # fmt: skip
-            else:
-                out.append(self._max(step, "mass", mass, c["object_mass_measured"], "grasp_single.mass", tol=0.0))
+                limits.append(Check(step, "mass", BLOCKED, round(mass, 3), round(limit, 3), why="heavier than the jaw can hold at its force clamp"))  # fmt: skip
             if inboard > c["inboard_max"]:
-                out.append(Check(step, "inboard", BLOCKED, round(inboard, 3), c["inboard_max"], why="beyond the hand's reach from the edge"))  # fmt: skip
-            else:
-                out.append(self._range(step, "inboard", inboard, c["inboard_measured"], "grasp_single.inboard"))
+                limits.append(Check(step, "inboard", BLOCKED, round(inboard, 3), c["inboard_max"], why="beyond the hand's reach from the edge"))  # fmt: skip
+            for f in c.get("grasp_failures") or ():
+                if inboard >= f["inboard_min"] and grip - support <= f.get("grip_above_support_max", np.inf):
+                    out.append(Check(step, f["name"], UNTESTED, [round(inboard, 3), round(grip - support, 3)],
+                                     f["pilots"], f["gap"]))  # fmt: skip
+            dims = {
+                "support_top": support,
+                "object_size": (float(2 * min(half[:2])), float(2 * half[2])),
+                "mass": mass,
+                "inboard": inboard,
+            }
+            blocked = {k.name for k in limits}
+            out.extend(
+                limits + [k for k in self._grasp_setting(step, dims, c["grasp_settings"]) if k.name not in blocked]
+            )
         else:
             c = self.cap["reach_bimanual"]["box_grasp"]
             dims = sorted((2 * half[:2]).tolist())
@@ -316,6 +357,8 @@ class Checker:
         if hands == "bimanual":
             out.append(Check(step, "skill", UNTESTED, gap="place_into.bimanual"))
             return
+        if self.objects[c].get("surface") is not None:
+            out.append(self._overhead(step, self.objects[c]["surface"], [self.xy(c)], "place_into.covered"))
         p = self.cap["place"]["into_container_single_arm"]
         out.append(self._range(step, "rim_height", self.top(c), p["rim_height_measured"], "place_into.rim_height"))
         measured = np.sort(np.asarray(p["opening_measured"], dtype=float))
@@ -332,6 +375,7 @@ class Checker:
             out.append(Check(step, "fits", BLOCKED, why="the surface is smaller than the object"))
             return
         hands = (self.objects[x].get("semantic") or {}).get("graspable")
+        out.append(self._overhead(step, s, self.spots(s), f"{'put_down_bimanual' if hands == 'bimanual' else 'place_on_surface'}.covered"))  # fmt: skip
         if hands == "bimanual":
             p = self.cap["place"]["put_down_bimanual"]
             out.append(
@@ -364,6 +408,8 @@ class Checker:
         except ValueError as exc:
             r.invalid = str(exc)
             return r
+        # upright(X) beside a move of X is a constraint on that move ("set it down standing"), not a reorientation
+        moves = {p.args[0]: p.name for p in map(predicates.parse, task["goal"]) if p.name in ("in", "on", "held")}
         for text in task["goal"]:
             p = predicates.parse(text)
             if p.name in ("in", "on", "held"):
@@ -380,16 +426,50 @@ class Checker:
                     continue
                 (self.place_into if p.name == "in" else self.put_on)(x, target, r.checks)
             elif p.name == "upright":
-                q = self.objects[p.args[0]]["init_quat"]
-                axis = (self.objects[p.args[0]].get("semantic") or {}).get("upright_axis") or (0, 0, 1)
+                x = p.args[0]
+                q = self.objects[x]["init_quat"]
+                axis = (self.objects[x].get("semantic") or {}).get("upright_axis") or (0, 0, 1)
                 up = predicates._rotate(q, np.asarray(axis, dtype=float) / np.linalg.norm(axis))
-                if np.degrees(np.arccos(np.clip(up[2], -1, 1))) < UPRIGHT_DEG:
+                standing = np.degrees(np.arccos(np.clip(up[2], -1, 1))) < UPRIGHT_DEG
+                moved = moves.get(x)
+                if not standing:  # nothing measured stands an object up; a put-down keeps the grasp's tilt
+                    r.checks.append(Check(f"reorient({x})", "skill", UNTESTED, gap="reorient"))
+                elif moved is None:  # standing and nothing moves it: the goal already holds
                     r.invalid = f"{text}: already upright"
                     return r
-                r.checks.append(Check(f"reorient({p.args[0]})", "skill", UNTESTED, gap="reorient"))
+                elif moved == "in":  # the container release was never checked for tilt
+                    r.checks.append(Check(f"place({x})", "keeps_upright", UNTESTED, gap="place_into.upright"))
+                else:  # held, or set down by a put-down (put_down_single lands at 0.3-0.4 deg, put_down_bimanual <= 2.5)
+                    r.checks.append(Check(f"{moved}({x})", "keeps_upright", OK))
             else:  # near / in_room: the robot (or a carried object) going somewhere
                 r.checks.append(Check(f"{p.name}{p.args}", "skill", UNTESTED, gap=f"goal.{p.name}"))
         return r
+
+    def _grasp_setting(self, step, dims: dict, settings: list) -> list[Check]:
+        """Checks against the measured setting the grasp misses on fewest dimensions (ties: the first listed)."""
+        best = None
+        for s in settings:
+            width, height = dims["object_size"]
+            size_ok = _range(width, s["object_width"], 0.005) and _range(height, s["object_height"], 0.01)
+            checks = [
+                self._range(step, "support_top", dims["support_top"], s["support_top"], "grasp_single.support_top"),
+                Check(
+                    step,
+                    "object_size",
+                    OK if size_ok else UNTESTED,
+                    [round(width, 3), round(height, 3)],
+                    [s["object_width"], s["object_height"]],
+                    "" if size_ok else "grasp_single.object_size",
+                ),  # fmt: skip
+                self._max(step, "mass", dims["mass"], s["mass_max"], "grasp_single.mass", tol=0.0),
+                self._range(step, "inboard", dims["inboard"], s["inboard"], "grasp_single.inboard"),
+            ]
+            for k in checks:
+                k.setting = s["name"]
+            misses = sum(k.outcome != OK for k in checks)
+            if best is None or misses < best[0]:
+                best = (misses, checks)
+        return best[1]
 
     def _range(self, step, name, value, lo_hi, gap, tol: float = TOL) -> Check:
         ok = _range(float(value), lo_hi, tol)
