@@ -157,9 +157,9 @@ backend:
     jitter_seed: 0
     no_seed: false
 collect:
-  successes: 200
-  batch_rounds: 10
-  max_batches: 120
+  successes: 550
+  batch_rounds: 20
+  max_batches: 100
   seed0: 7000
   instance: 0
   record: true
@@ -168,7 +168,7 @@ collect:
 train:
   steps: 10000
   save_steps: 5000
-  holdout: 10
+  holdout: 20
   gpus: 1
   global_batch: 64
   squat_max: 4096
