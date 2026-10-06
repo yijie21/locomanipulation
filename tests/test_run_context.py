@@ -177,7 +177,8 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     boxes = {f"warehouse_box_45x{length}x{height}" for length in (20, 32) for height in (18, 33)}
     stock = {"bottle", "crate", "warehouse", "warehouse_textured", "walk", "box_platform", *boxes}
     mars = {"bottle_mars", "warehouse_textured_mars", "box_platform_mars", *(f"{box}_mars" for box in boxes)}
-    assert set(names) == stock | mars
+    d435 = {"bottle_mars_d435", "warehouse_textured_mars_d435", "warehouse_box_45x32x33_mars_d435"}  # face camera
+    assert set(names) == stock | mars | d435
     for entry in names.values():
         assert "example" in entry or "build" in entry
         if "example" in entry:
@@ -189,7 +190,8 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
 
 def test_an_unknown_or_doubly_given_scene_is_refused():
     with pytest.raises(
-        SystemExit, match="bottle, bottle_mars, box_platform, box_platform_mars, crate, walk, warehouse"
+        SystemExit,
+        match="bottle, bottle_mars, bottle_mars_d435, box_platform, box_platform_mars, crate, walk, warehouse",
     ):
         run_common.resolve_scene({"scene": {"name": "blue"}})
     with pytest.raises(SystemExit, match="give one"):
@@ -249,7 +251,7 @@ def test_the_four_edge_warehouse_scenes_render_with_the_warehouse_look():
     scenes = yaml.safe_load(run_common.SCENES.read_text())
     look = {k: scenes["warehouse_textured"]["isaac"][k] for k in ("rtx_settings", "supersample")}
     boxes = [name for name in scenes if name.startswith("warehouse_box_")]
-    assert len(boxes) == 8  # four carton sizes, on the stock and on the mars robot
+    assert len(boxes) == 9  # four carton sizes, on the stock and on the mars robot; one also with mars's D435 ego
     for name in boxes:
         entry = scenes[name]["isaac"]
         assert {k: entry[k] for k in look} == look, name

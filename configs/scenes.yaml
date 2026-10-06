@@ -150,7 +150,7 @@ warehouse_box_45x20x18:
 # the URDF's kinematics, masses and torque limits (ankles 35 N m, hip roll 139, wrists 13.4; the waist roll/pitch 50,
 # not the URDF's 35: make_dex1_model.MARS_EFFORT_OVERRIDES),
 # a D405 mount on each gripper that collides, the ego camera the D455 on the head's pan/tilt bracket (held tilted so
-# its pitch is the stock aim's 52 deg, fovy 65) and the wrist cameras the D405s (fovy 58); fields of view are the
+# its pitch is the stock aim's 52 deg, fovy 65; the *_mars_d435 scenes below use the D435 fixed in the face) and the wrist cameras the D405s (fovy 58); fields of view are the
 # datasheets', no calibration shipped. Joints, actuators, sensors and camera names are the stock robot's, so the
 # SONIC bridge, the experts and the datasets see the same interface. scene_meta.json records `robot: mars`. The stock
 # names keep pointing at the stock robot (a name never changes its directory). The four warehouse_box_*_mars scenes
@@ -229,3 +229,36 @@ warehouse_box_45x20x18_mars:  # warehouse_box_45x20x18 on the mars robot
     level: warehouse_box_45x20x18_mars  # /Game/Levels/warehouse_box_45x20x18_mars in the host project ($UE_PROJECT)
     repeats: 8
     build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x18_mars
+
+# The same scenes with the ego camera (head_camera) the D435 fixed in mars's face instead of the D455 on the
+# pan/tilt bracket (user, 2026-10-06: switch the ego view between the two when collecting). Built with
+# --ego-camera d435_head, recorded as scene_meta.json `ego_camera`; everything else is the namesake's. The D435 frame
+# is the URDF's d435_head_link, 47.6 deg below the torso's horizontal, fovy 42 (the datasheet's 69 x 42 colour field
+# at 4:3): a narrower view than the D455's 65, so the experts' framing was calibrated on the other camera.
+# A run picks its camera by the scene name: configs/experiments/warehouse_mars_smoke_d435.yaml.
+bottle_mars_d435:  # bottle_mars with the D435 ego camera
+  dir: outputs/scene/sim_lowcom_mars_d435
+  build: >-
+    SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom_mars_d435
+    --preset bottle_only --harden-pads --object-com-drop 0.05 --robot mars --ego-camera d435_head
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+warehouse_textured_mars_d435:  # warehouse_textured_mars with the D435 ego camera
+  dir: outputs/scene/warehouse_textured_mars_d435
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured_mars_d435 --robot mars --ego-camera d435_head
+  unreal: {unsupported: "the base warehouse_box_45x32x33_mars_d435 is built from; runs use that, which has a level"}
+
+warehouse_box_45x32x33_mars_d435:  # warehouse_box_45x32x33_mars with the D435 ego camera
+  dir: outputs/scene/warehouse_box_45x32x33_mars_d435
+  example: configs/experiments/warehouse_mars_smoke_d435.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33_mars_d435 --width 0.45 --length 0.32 --height 0.33 --source outputs/scene/warehouse_textured_mars_d435
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF and the robot. Look: the warehouse_textured look (as warehouse_box_45x32x33), the mars robot USD added
+    dir: warehouse_box_45x32x33_mars_d435_env
+    build: bash scripts/build_isaac_assets.sh --robot-only --robot mars && $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33_mars_d435
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot (mars) and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x33_mars_d435  # /Game/Levels/warehouse_box_45x32x33_mars_d435 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x33_mars_d435

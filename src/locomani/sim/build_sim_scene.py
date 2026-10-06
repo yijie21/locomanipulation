@@ -24,7 +24,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )  # reach src/ for `python src/locomani/sim/build_sim_scene.py`
 from locomani.sim import scene_lib  # noqa: E402
-from locomani.sim.make_dex1_model import MARS_EGO_FOVY  # noqa: E402
+from locomani.sim.make_dex1_model import MARS_EGO_DEFAULT, MARS_EGO_FOVY, MARS_EGO_LINKS, mars_ego_camera  # noqa: E402
 
 
 def _footprint(model, data, body_id: int):
@@ -185,12 +185,13 @@ EGO_CAM_QUAT = (0.668835, 0.230083, -0.230336, -0.668332)
 EGO_CAM_FOVY = 70.0
 
 
-def _aim_ego_camera(spec, robot: str = "stock") -> None:
+def _aim_ego_camera(spec, robot: str = "stock", ego_camera: str | None = None) -> None:
     """Re-aim the robot's ego camera on the SPEC, not on the emitted XML.
 
-    Only the stock camera is re-aimed. mars's is the real robot's D455 on the
-    head's pan/tilt bracket, which make_dex1_model.py already poses (tilted to
-    the stock aim's 52 deg pitch) and gives its field of view.
+    stock: the stock aim below. mars: the real robot's head camera `ego_camera`
+    (make_dex1_model.MARS_EGO_LINKS: the D455 on the pan/tilt bracket by
+    default, tilted to the stock aim's 52 deg pitch, or the D435 in the face),
+    at its URDF frame and datasheet field of view (mars_ego_camera).
 
     This used to be a str.replace over spec.to_xml() whose pattern spelled the
     camera element out attribute by attribute, pos before quat. MuJoCo 3.12
@@ -208,6 +209,14 @@ def _aim_ego_camera(spec, robot: str = "stock") -> None:
     the wrist cameras were always done (scene_lib.py, add_camera + c.fovy).
     """
     if robot == "mars":
+        pos, rot, fovy = mars_ego_camera(ego_camera or MARS_EGO_DEFAULT)
+        quat = np.zeros(4)
+        mujoco.mju_mat2Quat(quat, rot.flatten())
+        cam = spec.camera(EGO_CAM_NAME)
+        if cam is None or cam.parent.name != "torso_link":
+            raise SystemExit(f"[scene] mars has no {EGO_CAM_NAME!r} on torso_link: rerun make_dex1_model.py")
+        cam.alt.type = mujoco.mjtOrientation.mjORIENTATION_QUAT
+        cam.pos, cam.quat, cam.fovy = pos.tolist(), quat.tolist(), fovy
         return
     for cam in spec.cameras:
         if cam.name == EGO_CAM_NAME:
@@ -228,7 +237,7 @@ def _aim_ego_camera(spec, robot: str = "stock") -> None:
     )
 
 
-def _check_ego_camera(model, robot: str = "stock") -> None:
+def _check_ego_camera(model, robot: str = "stock", ego_camera: str | None = None) -> None:
     """Verify the aim on the COMPILED model. Cheap, and it is the whole dataset.
 
     Checked against the model rather than the XML text on purpose: the bug this
@@ -241,10 +250,9 @@ def _check_ego_camera(model, robot: str = "stock") -> None:
     fovy = float(model.cam_fovy[cid])
     quat = [float(v) for v in model.cam_quat[cid]]
     if robot == "mars":
-        if abs(fovy - MARS_EGO_FOVY) > 1e-6:
-            raise SystemExit(
-                f"[scene] mars's ego camera has fovy {fovy}, not the D455's {MARS_EGO_FOVY}: rerun make_dex1_model.py"
-            )
+        want = MARS_EGO_FOVY[ego_camera or MARS_EGO_DEFAULT]
+        if abs(fovy - want) > 1e-6:
+            raise SystemExit(f"[scene] mars's ego camera has fovy {fovy}, not {ego_camera}'s {want}")
         return
     bad = abs(fovy - EGO_CAM_FOVY) > 1e-6 or any(abs(a - b) > 1e-4 for a, b in zip(quat, EGO_CAM_QUAT))
     if bad:
@@ -308,8 +316,16 @@ def parse_args(argv=None):
         default="stock",
         choices=sorted(scene_lib.ROBOT_SCENES),
         help="the robot model: stock (SONIC's G1 with the Dex1 grafted on) or mars (the lab's real G1, "
-        "from assets/unitree_G1_with_wrist_camera; ego camera the D455 on the head's pan/tilt bracket, wrist "
+        "from assets/unitree_G1_with_wrist_camera; ego camera the D455 on the head's pan/tilt bracket or, with "
+        "--ego-camera d435_head, the D435 in the face, wrist "
         "cameras the D405s). Both come from make_dex1_model.py",
+    )
+    ap.add_argument(
+        "--ego-camera",
+        choices=sorted(MARS_EGO_LINKS),
+        default=None,
+        help=f"mars only: which head camera is the ego view (head_camera); default {MARS_EGO_DEFAULT}, the D455 on "
+        "the pan/tilt bracket; d435_head is the D435 fixed in the face. Recorded as scene_meta.json `ego_camera`",
     )
     ap.add_argument(
         "--preset",
@@ -365,7 +381,12 @@ def main() -> None:
         scene_lib.SURFACE_TARGET_TOP["dining_table"] = args.table_top
         print(f"[scene] table top pinned to {args.table_top:.3f} m by --table-top")
 
+    if args.ego_camera and args.robot != "mars":
+        raise SystemExit(f"--ego-camera picks one of mars's head cameras; robot {args.robot} has one ego camera")
+    ego_camera = (args.ego_camera or MARS_EGO_DEFAULT) if args.robot == "mars" else None
     spec, meta = scene_lib.build(scene_root, freeze_objects=False, preset=args.preset, robot=args.robot)
+    if ego_camera:
+        meta["ego_camera"] = ego_camera
     model = spec.compile()  # fail here rather than at sim start-up
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
@@ -378,9 +399,9 @@ def main() -> None:
         lowered = lower_object_com(spec, model, meta, args.object_com_drop)
         meta["objects"][meta["target_object"]]["inertial"] = lowered
         print(f"[scene] target centre of mass lowered by {args.object_com_drop:.3f} m: {lowered}")
-    _aim_ego_camera(spec, args.robot)  # BEFORE to_xml(): see the note in there
+    _aim_ego_camera(spec, args.robot, ego_camera)  # BEFORE to_xml(): see the note in there
     model = spec.compile()  # re-compile so the check below sees the aim
-    _check_ego_camera(model, args.robot)
+    _check_ego_camera(model, args.robot, ego_camera)
     xml_text = spec.to_xml()
     with open(xml_path, "w") as f:
         f.write(xml_text)

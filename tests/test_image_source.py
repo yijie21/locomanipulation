@@ -197,8 +197,9 @@ def test_the_unreal_capture_count_is_a_whole_number_the_plugin_accepts(tmp_path,
 def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_others_have_none():
     scenes = yaml.safe_load(run_context.SCENES.read_text())
     levels = {name for name, entry in scenes.items() if "level" in (entry.get("unreal") or {})}
-    # warehouse_textured_mars is only the base the four mars boxes are built from; it says so
-    assert levels == {name for name in scenes if name.startswith("warehouse_") and name != "warehouse_textured_mars"}
+    # warehouse_textured_mars(_d435) is only the base the mars boxes are built from; it says so
+    bases = {"warehouse_textured_mars", "warehouse_textured_mars_d435"}
+    assert levels == {name for name in scenes if name.startswith("warehouse_") and name not in bases}
     for name, entry in scenes.items():
         unreal = entry.get("unreal") or {}
         assert unreal.get("unsupported") or unreal.get("level") == name, name

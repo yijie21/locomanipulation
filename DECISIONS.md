@@ -1460,3 +1460,13 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **被否决的方案**：调暗 MuJoCo 头灯（ego 手臂的过曝只降到 25%，整场景变暗，分数更差）；外壳 rgba 0.55（亮度最接近，但跌破 0.6 判定线，Isaac/Unreal 会把外壳当成第三类）。
 - **仍有差别**：MuJoCo 的 ego 画面里近处手臂仍有约 25% 像素过曝（头灯直射），Unreal 没有；这是 MuJoCo 光照模型的限制。对比图 `outputs/robot_look_3renderers_20261005/sheet.png`。
 
+## 2026-10-06 mars 的第一视角可选头部两台相机：云台 D455（默认）或脸上 D435（用户）
+
+- **目标变化**：用户："把机器人头上的非云台相机也作为一个 ego_view 的可选项，采集 ego_view 的时候可以在云台相机和机器人本身的相机之间切换"。
+- **决策**：
+  - 选哪台相机是场景的属性，不是运行时开关。场景构建器加 `--ego-camera {d455_head,d435_head}`（名字取自真机 `robot.yaml`），把 `head_camera` 摆到所选相机的 URDF 坐标系上，记进 `scene_meta.json` 的 `ego_camera`；默认 `d455_head`，生成结果与之前逐字节相同。新场景 `bottle_mars_d435`、`warehouse_textured_mars_d435`、`warehouse_box_45x32x33_mars_d435`（后者有 Isaac stage 和 Unreal 关卡），示例实验文件 `warehouse_mars_smoke_d435`。运行靠场景名选相机。
+  - 理由：`head_camera` 在 46 个文件里被读（仿真出图、专家判断目标是否在画面里、三个渲染器、视频小窗）；放在场景里，它们全部自动跟着换，Isaac stage 和 Unreal 关卡又按场景 XML 哈希核对，不会出现半套配置（仓库常见的失败形态）。
+  - D435 位姿用 URDF 的 `d435_head_link`（躯干坐标系下俯 47.6°），竖直视场 42°（规格书彩色 69°×42°，按 4:3 保留竖直视场，同 D455/D405 的做法）。
+- **被否决的方案**：每个场景里放两台相机、由实验文件挑哪台当 `ego_view`——要把相机名传给 46 处读取者，任何一处漏掉就是专家看一台、数据录另一台；Unreal 关卡还得多导入一台相机。
+- **事实**：`calibration/` 里的 livox→D435 外参按"livox 坐标系 = mid360_link 绕 x 翻转"解读时，D435 下俯 49.7°、位置与 URDF 差 7.8 cm；livox 坐标系 URDF 没给，这个解读未核实，所以没用。D435 视野窄：伸手和合爪阶段手臂和箱沿基本出画，只剩托盘前沿和脚（`outputs/ego_d435_20261006/ego_d455_vs_d435.png`，三个渲染器一致）。专家是在 D455 上调的。2026-10-06 在 `warehouse_box_45x32x33_mars_d435` 上采 10 局保留 5 局（`outputs/runs/warehouse_mars_d435_check_20261006`），整条采集流程能跑通；没有同种子的 D455 对照。
+

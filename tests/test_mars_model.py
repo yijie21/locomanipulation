@@ -81,8 +81,9 @@ def test_mars_cameras_are_the_urdf_cameras(mars_xml):
     mujoco.mj_forward(mars, ds)
     mujoco.mj_forward(urdf, du)
     ps, pu = mars.body("pelvis").id, urdf.body("pelvis").id
-    cams = {"head_camera": M.MARS_EGO_LINK, **{f"{s}_wrist": link for s, link in M.MARS_WRIST_LINKS.items()}}
-    assert M.MARS_EGO_LINK == "d455_head_link"  # on the tilt bracket, not d435_head_link in the face
+    cams = {"head_camera": M.MARS_EGO_LINKS[M.MARS_EGO_DEFAULT]}
+    cams.update({f"{s}_wrist": link for s, link in M.MARS_WRIST_LINKS.items()})
+    assert cams["head_camera"] == "d455_head_link"  # by default on the tilt bracket, not d435_head_link in the face
     for cam_name, link in cams.items():
         cam, body = mars.camera(cam_name).id, urdf.body(link).id
         assert np.allclose(ds.cam_xpos[cam] - ds.xpos[ps], du.xpos[body] - du.xpos[pu], atol=1e-6), cam_name
@@ -90,8 +91,44 @@ def test_mars_cameras_are_the_urdf_cameras(mars_xml):
         assert np.allclose(look, du.xmat[body].reshape(3, 3)[:, 0], atol=1e-6), cam_name  # along the link's x
     head = mars.camera("head_camera").id
     assert _pitch_deg(mars, ds, head) == pytest.approx(52.0, abs=0.05)  # the stock aim's pitch
-    assert mars.cam_fovy[head] == M.MARS_EGO_FOVY == 65.0
+    assert mars.cam_fovy[head] == M.MARS_EGO_FOVY["d455_head"] == 65.0
     assert mars.cam_fovy[mars.camera("left_wrist").id] == M.MARS_WRIST_FOVY == 58.0
+
+
+def test_the_d435_ego_camera_is_the_urdf_d435_in_both_scene_paths():
+    """--ego-camera d435_head (user, 2026-10-06): head_camera at d435_head_link, fovy 42, whether the scene is
+    rewritten by apply_mars (prepare_logistics_scene.py) or composed from the robot model and re-aimed on the spec
+    (build_sim_scene.py)."""
+    from locomani.sim import build_sim_scene
+
+    if not os.path.isdir(M.MARS_MESHES):
+        pytest.skip("mars meshes not copied: run make_dex1_model.py")
+    path = f"{M.G1}/test_mars_d435_{os.getpid()}.xml"
+    M.apply_mars(M.build_stock(), os.path.basename(M.MARS_MESHES), "d435_head").write(path)
+    try:
+        mars = mujoco.MjModel.from_xml_path(path)
+    finally:
+        os.remove(path)
+    urdf = M.mars_urdf_model(fuse=False)
+    ds, du = mujoco.MjData(mars), mujoco.MjData(urdf)
+    mujoco.mj_forward(mars, ds)
+    mujoco.mj_forward(urdf, du)
+    head, d435 = mars.camera("head_camera").id, urdf.body("d435_head_link").id
+    offset = du.xpos[d435] - du.xpos[urdf.body("pelvis").id]
+    assert np.allclose(ds.cam_xpos[head] - ds.xpos[mars.body("pelvis").id], offset, atol=1e-6)
+    assert np.allclose(-ds.cam_xmat[head].reshape(3, 3)[:, 2], du.xmat[d435].reshape(3, 3)[:, 0], atol=1e-6)
+    assert _pitch_deg(mars, ds, head) == pytest.approx(47.6, abs=0.05)
+    assert mars.cam_fovy[head] == M.MARS_EGO_FOVY["d435_head"] == 42.0
+
+    spec = mujoco.MjSpec.from_file(scene_lib.ROBOT_SCENES["mars"])
+    build_sim_scene._aim_ego_camera(spec, "mars", "d435_head")
+    composed = spec.compile()
+    build_sim_scene._check_ego_camera(composed, "mars", "d435_head")
+    cam = composed.camera("head_camera").id
+    assert np.allclose(composed.cam_pos[cam], mars.cam_pos[head], atol=1e-6)
+    assert np.allclose(np.abs(composed.cam_quat[cam] @ mars.cam_quat[head]), 1.0, atol=1e-9)
+    with pytest.raises(SystemExit, match="unknown ego camera"):
+        M.mars_ego_camera("d415_head")
 
 
 def test_mars_colours_sort_into_the_robot_look(mars_xml):

@@ -19,6 +19,7 @@
 - 已确认（13.6.2–13.6.4）：配对 10 局 bottle 9/10 = stock；warehouse 腰 50 时 6/10 = stock。mars 失败都是抬起后单手脱开（13.6.4.1）。
 - 已确认（henry 10-03，`33e8cd8`..`5ff2d7c`，10-04 rebase 合入）：mars 的 MJCF 和网格缺失时由 `make_dex1_model.write_mars()` 生成，`build_isaac_assets.sh` 与 `prepare_logistics_scene.py` 先调它；Unreal 导出丢掉有可视体的 body 上的碰撞 geom（`export_mjcf.strip_to_dynamic`，腕部 D405 曾被碰撞盒以 UE 默认灰格子罩住）；D405 支架的碰撞圆盘和盒子放 group 3，仍碰撞、相机不画（参照新增的 `assets/unitree_G1_with_wrist_camera_new`）；URLab 补丁按 30° 棱角拆分顶点，Unreal 里 D405 背面不再呈内凹（`patches/urlab_fresh_capture.patch`）。合入时他的提交带着 3 处检查失败，10-04 已修（用户）：`f156df1` 把 `warehouse_mars_smoke` 的 `start_edges` 改回四边（已改回 `[ym]`），新 README 没过 ruff format，`docs/warehouse.md` 超 220 行（上限放宽到 300）。
   - 已确认（10-04，用户）：mars 小臂改银色；外壳按真机照片改为缎面银（metallic 0.75、roughness 0.6、底色 0.45，外观名 `g1_satin_20261004`，stock 共用）；mars 腰部电机和骨盆画黑（DECISIONS 2026-10-04 两节）。mars 模型、7 个 `*_mars` 场景、几何样例已重建，本机 9 个 Unreal 关卡 10-04 按新外观名重建；协作者 pull 后要自己重建（见提交说明）；Isaac 机器人 USD 下次用到时按 MJCF 哈希自动重建，Isaac 外观没对照片核过（13.6.14.1）。
+  - 已确认（10-06，用户）：第一视角可选脸上的 D435（场景 `*_mars_d435`，实验 `warehouse_mars_smoke_d435`，DECISIONS 2026-10-06）；本机已建场景、Isaac stage、Unreal 关卡。D435 上专家产出率未测（13.6.15.1）。
 
 ## 待验证 / 卡点
 

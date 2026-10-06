@@ -29,7 +29,7 @@
 | 通道（lane） | 双臂线并行采集的单位：一个栈加一个跑局进程，各占一个实例。`start_stack.sh collect` 按空闲资源定开几条，写进 `collect/lanes.json`，起栈和开跑前都会打印（[运行机制](../running.md#6-并行)） |
 | sim | MuJoCo 仿真进程（`src/locomani/sim/run_sim_locomani.py`）：跑物理，发布状态和（`live` 时）相机图 |
 | SONIC | NVIDIA GR00T-WholeBodyControl 里的人形全身控制策略；默认 checkpoint `policy/sonic_v1_1`（[安装](../setup.md)第 2 步） |
-| stock、mars | 仿真里的两种 G1 模型。stock 是 SONIC 自带的 G1 接上 Dex1 夹爪；mars 是实验室真机 G1，按协作者给的 URDF 生成，带头顶 D455 和腕部 D405 相机。场景名带 `_mars` 的是 mars，warehouse 线 2026-10-03 起默认用它（[warehouse 详解](../warehouse_design.md#11-mars-机器人)） |
+| stock、mars | 仿真里的两种 G1 模型。stock 是 SONIC 自带的 G1 接上 Dex1 夹爪；mars 是实验室真机 G1，按协作者给的 URDF 生成，带头顶云台 D455（第一视角，也可换成脸上的 D435）和腕部 D405 相机。场景名带 `_mars` 的是 mars，warehouse 线 2026-10-03 起默认用它（[warehouse 详解](../warehouse_design.md#11-mars-机器人)） |
 | deploy | SONIC 的 C++ 控制器（`g1_deploy_onnx_ref`，安装第 3 步编译并打补丁）：把运动指令变成关节目标发给 sim |
 | planner / POSE / token | deploy 的三种输入。planner：方向、速度、模式（站、走、蹲）这类高层指令，由 deploy 内的规划器生成全身动作；POSE：直接流式给全身姿态参考，专家伸手、抓取时用；token：SONIC 的 64 维离散运动码，VLA 的动作就是 token + 夹爪 |
 | initial_token | `eval.initial_token`：策略接管那一刻 deploy 保持的姿势（一个 token 文件），必须与训练数据的开局一致 |

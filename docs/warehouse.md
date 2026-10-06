@@ -72,6 +72,7 @@ bash scripts/bimanual/run_agent_server.sh configs/experiments/$RUN.yaml
 可选参数：第一条加 `--lanes 1` 只开一条通道，加 `--gpu 0` 只用这张卡；内存小的机器要写 `--lanes 1`。第二条加 `--dry-run` 只打印每局怎么摆放，不开跑。
 3 批跑完仍不够 10 条时，第二条以非零状态结束，已采的照样能做后面各步。每局的摆放范围、通道数和怎么补够见[详解第 10 节](warehouse_design.md#10-运行细节2026-09-30-从-runbook-移来)。
 要每局都从同一个地方出发：`RUN=warehouse_mars_smoke_fixed_start`（只有 Unreal 版）。要像 stock 线那样四条边轮流走入，把实验文件里的 `task.visual.start_edges` 改成 `[xm, xp, ym, yp]`，换个运行名。
+第一视角默认是头顶云台上的 D455。要换成脸上固定的 D435：`RUN=warehouse_mars_smoke_d435`（只有 Unreal 版），第 1 步的场景名换成 `warehouse_textured_mars_d435` 和 `warehouse_box_45x32x33_mars_d435`，Unreal 关卡也建这个场景的。D435 视野比 D455 窄（竖直 42° 对 65°），专家是在 D455 上调的。
 
 ## 3. 补渲相机
 

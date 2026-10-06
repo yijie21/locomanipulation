@@ -235,17 +235,21 @@ MARS_MESHES = f"{G1}/meshes/mars"  # the URDF's meshes are copied here
 # pitch, so the ego view keeps the reach it was calibrated on (user,
 # 2026-10-02: "about what the old camera saw").
 MARS_HELD_JOINTS = {"head_pan_joint": 0.0, "head_tilt_joint": 0.0822}
-# The ego camera is the D455 on the pan/tilt bracket (user, 2026-10-02; the
-# D435 is fixed in the face, d435_head_link). The frame is used as it is: the
-# URDF gives no imager offset for it.
-MARS_EGO_LINK = "d455_head_link"
+# The ego camera (head_camera) is one of the head's two RealSenses, picked when
+# a scene is built and recorded as its scene_meta.json `ego_camera` (user,
+# 2026-10-06), named as robot.yaml names them: d455_head, the D455 on the
+# pan/tilt bracket and the default (user, 2026-10-02), or d435_head, the D435
+# fixed in the face (d435_head_link, 47.6 deg below the torso's horizontal).
+# Each frame is used as it is: the URDF gives no imager offset for either.
+MARS_EGO_LINKS = {"d455_head": "d455_head_link", "d435_head": "d435_head_link"}
+MARS_EGO_DEFAULT = "d455_head"
 MARS_WRIST_LINKS = {"left": "d405_left_wrist_link", "right": "d405_right_wrist_link"}
 # No intrinsics ship with the URDF (its calibration/ has only livox -> D435
-# extrinsics), so the fields of view are Intel's datasheet values with the
-# 640x480 (4:3) stream keeping the sensor's vertical field: D455 colour 90 x 65
-# deg, D405 87 x 58 deg. Replace them with the robot's calibration once it has
-# one.
-MARS_EGO_FOVY = 65.0
+# extrinsics, in a livox frame the URDF does not name), so the fields of view
+# are Intel's datasheet values with the 640x480 (4:3) stream keeping the
+# sensor's vertical field: D455 colour 90 x 65 deg, D435 colour 69 x 42, D405
+# 87 x 58. Replace them with the robot's calibration once it has one.
+MARS_EGO_FOVY = {"d455_head": 65.0, "d435_head": 42.0}
 MARS_WRIST_FOVY = 58.0
 # Torque limits (N m) the sim uses instead of the URDF's. The waist roll/pitch
 # is 35 in the URDF and in Unitree's own g1_29dof_mode_15_with_dex1_1.urdf,
@@ -459,16 +463,30 @@ def mars_mesh_scales() -> dict[str, str]:
     return out
 
 
-def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
+def mars_ego_camera(ego_camera: str = MARS_EGO_DEFAULT) -> tuple[np.ndarray, np.ndarray, float]:
+    """head_camera as one of MARS_EGO_LINKS: its position and rotation (MuJoCo camera axes) in torso_link, and fovy."""
+    if ego_camera not in MARS_EGO_LINKS:
+        raise SystemExit(f"unknown ego camera {ego_camera!r}; mars has {sorted(MARS_EGO_LINKS)}")
+    full = mars_urdf_model(fuse=False)
+    data = mujoco.MjData(full)
+    mujoco.mj_forward(full, data)
+    torso, cam = full.body("torso_link").id, full.body(MARS_EGO_LINKS[ego_camera]).id
+    t_rot = data.xmat[torso].reshape(3, 3)
+    pos = t_rot.T @ (data.xpos[cam] - data.xpos[torso])
+    return pos, t_rot.T @ data.xmat[cam].reshape(3, 3) @ _CAMERA_IN_LINK, MARS_EGO_FOVY[ego_camera]
+
+
+def apply_mars(tree: ET.ElementTree, mesh_dir: str, ego_camera: str = MARS_EGO_DEFAULT) -> ET.ElementTree:
     """`tree` with its robot made mars: the URDF's kinematics, inertia, meshes, effort limits and cameras.
 
     `tree` holds the stock dex1 robot (bodies pelvis down, its actuators); it
     may hold a scene round it, which is left alone. The URDF's mesh assets are
     written as `mesh_dir`/<file>: "mars" for the robot model (meshdir is
     model_data/g1/meshes), an absolute path in a packaged scene. Cameras: the
-    ego camera head_camera on torso_link, and a <side>_wrist camera on each
-    wrist_yaw_link, re-posed if the tree has one (a packaged scene) and added if
-    not (the robot model, where scene_lib.add_wrist_cameras then keeps it).
+    ego camera head_camera on torso_link at `ego_camera` (mars_ego_camera), and
+    a <side>_wrist camera on each wrist_yaw_link, re-posed if the tree has one
+    (a packaged scene) and added if not (the robot model, where
+    scene_lib.add_wrist_cameras then keeps it).
     """
     tree = copy.deepcopy(tree)
     root = tree.getroot()
@@ -574,15 +592,15 @@ def apply_mars(tree: ET.ElementTree, mesh_dir: str) -> ET.ElementTree:
 
     # The cameras at the URDF's camera frames, and the torso IMU site.
     torso = body_els["torso_link"]
-    cams = [("torso_link", "head_camera", MARS_EGO_LINK, MARS_EGO_FOVY)] + [
-        (f"{side}_wrist_yaw_link", f"{side}_wrist", link, MARS_WRIST_FOVY) for side, link in MARS_WRIST_LINKS.items()
-    ]
-    for body, cam_name, link, fovy in cams:
+    cams = {("torso_link", "head_camera"): mars_ego_camera(ego_camera)}
+    for side, link in MARS_WRIST_LINKS.items():
+        c_pos, c_rot = frame_in(f"{side}_wrist_yaw_link")(link)
+        cams[(f"{side}_wrist_yaw_link", f"{side}_wrist")] = (c_pos, c_rot @ _CAMERA_IN_LINK, MARS_WRIST_FOVY)
+    for (body, cam_name), (c_pos, c_rot, fovy) in cams.items():
         cam = body_els[body].find(f"camera[@name='{cam_name}']")
         if cam is None:
             cam = ET.SubElement(body_els[body], "camera", dict(name=cam_name))
-        c_pos, c_rot = frame_in(body)(link)
-        _set_pose(cam, c_pos, c_rot @ _CAMERA_IN_LINK)
+        _set_pose(cam, c_pos, c_rot)
         cam.set("fovy", _fmt([fovy]))
     imu_pos, _ = frame_in("torso_link")("imu_in_torso")
     torso.find("site[@name='imu']").set("pos", _fmt(imu_pos))
