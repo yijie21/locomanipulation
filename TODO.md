@@ -550,3 +550,14 @@
 - [x] 15.2 （2026-10-01，随 `f7eadec`）`assets/unitee_G1/README.md` 的 Python 代码块按 ruff 格式化：origin/main 原本过不了 `make check`
 - [x] 15.4 （2026-10-02，`577ce78`）合入 henry 的 `cb3ae2f`（新增 `assets/unitree_G1_with_wrist_camera`，backpack 目录改名 `unitree_G1_with_backpack`）。他的 `mjmodel.mjb` 是 MuJoCo 3.10 编的旧模型（无相机、无 D405），`mjmodel.xml` 是空文件；README 的文件名和序列号与 robot.yaml 对不上；README 代码块按 ruff 格式化
 - [ ] 15.3 可选：GitHub 上 PR #1–#3 若仍显示打开，在网页上关掉（本机没有 `gh`，看不到状态）
+
+## 16. 仿真数据零样本上真机：GR00T + SONIC（用户 2026-10-06，逐项问答定；DECISIONS 同日；设计 `docs/handoff/real-robot-sim2real-plan-20261006.md`）
+
+- [x] 16.1 （2026-10-06）T1：`dataset.fps` 字段（25 | 50）贯穿 `run_context.migrate_dataset` → `run_convert --fps` → `convert_to_hf_format` → `world_lift.resample_selection`；Isaac/Unreal 补渲按它决定渲哪些行，标记记 `dataset_fps`，`render_dataset_cameras.serves` 决定渲过的 session 能否服务某个转换（50 服务 25，25 不服务 50）；`eval_closed_loop` 遇到非 25 的运行拒绝（lockstep 的 `RATE = 25` 写死，16.7）
+- [x] 16.2 （2026-10-06）T2：`src_real_robot/` 推理客户端（`real_robot.inference`，官方结构；`observation`、`chunk`、`gripper`、`policy_client`），`run_inference.sh`，runbook `src_real_robot/README.md`，`UPSTREAM.md` 钉 WBC v1.1 a0732b6；测试 `tests/test_real_robot_client.py`。只做了本机冒烟（真实 pinocchio 模型拼 60 维观测、protocol v4 打包），没连过机器人或策略服务器
+- [ ] 16.3 T3：转换器写 Dex1 单位：`teleop.*_hand_joints` 第 0 维按 `real_robot.gripper.sim_m_to_dex1` 映射（命令低于 −0.02 截到 0），`observation.state` 手 7 维广播映射后的指爪位置（第 4、5 维均值）；与客户端共用一个映射函数
+- [ ] 16.4 T4：新运行 `warehouse_mars_200_50hz`（复制实验文件加 `dataset: {fps: 50}`，运行目录复制 collect 条目、manifest、trace、场景；删 74 个 session 的 `meta/offline_render.json`）→ Unreal 全行补渲（约 25 h 单卡）→ 转换 → 训练；同源数据留 25 fps 版本作对照
+- [ ] 16.5 T5：sim2sim：官方结构客户端对接本仓库 MuJoCo 栈（`--hand-wire sim`），核对延迟补偿与跳帧行为；仿真桥若改读 Dex1 单位则用 `dex1_to_sim_m`
+- [ ] 16.6 T6（需真机）：核对相机服务器三路 key 与 `g1_debug` 手字段；`]` + `i` 手动验 Dex1 方向（5.5 开、0 闭）；按 D13 跑 10 局（起点 0.6–1.0 m，30 s，骨盆到箱心 ≤ 0.6 m 且站稳 2 s）
+- [ ] 16.7 T7（未排期）：50 Hz 的 lockstep 闭环评测（`tasks/crate/vla_lockstep.py` RATE/TICKS、`latency_frames`、1 s blend 都按 25 写）
+- [ ] 16.8 预先存在、与本次无关的测试失败（本机）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow

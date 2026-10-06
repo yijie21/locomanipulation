@@ -10,6 +10,8 @@ import pytest
 # Every test imports `locomani.*` by its qualified package path (refactor step 4a);
 # this is the one place "src" goes on sys.path instead of each test file doing it.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+# The real-robot client (src_real_robot/, `real_robot.*`) is imported the same way.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src_real_robot"))
 
 SIM_TEST_FILES = {"test_ready_pilot.py"}
 # test_visual_training / test_visual_validation import gr00t + omegaconf + pandas (the GR00T venv), the

@@ -1470,3 +1470,12 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **被否决的方案**：每个场景里放两台相机、由实验文件挑哪台当 `ego_view`——要把相机名传给 46 处读取者，任何一处漏掉就是专家看一台、数据录另一台；Unreal 关卡还得多导入一台相机。
 - **事实**：`calibration/` 里的 livox→D435 外参按"livox 坐标系 = mid360_link 绕 x 翻转"解读时，D435 下俯 49.7°、位置与 URDF 差 7.8 cm；livox 坐标系 URDF 没给，这个解读未核实，所以没用。D435 视野窄：伸手和合爪阶段手臂和箱沿基本出画，只剩托盘前沿和脚（`outputs/ego_d435_20261006/ego_d455_vs_d435.png`，三个渲染器一致）。专家是在 D455 上调的。2026-10-06 在 `warehouse_box_45x32x33_mars_d435` 上采 10 局保留 5 局（`outputs/runs/warehouse_mars_d435_check_20261006`），整条采集流程能跑通；没有同种子的 D455 对照。
 
+
+## 2026-10-06 仿真数据零样本上真机：数据集 50 fps、官方客户端结构、Dex1 原始单位（用户，逐项问答定）
+
+- **目标**：用 warehouse 双臂抓箱的仿真数据微调 GR00T N1.7，不采真机训练数据，按官方 GR00T-WholeBodyControl 的推理客户端结构部署到实验室真机 G1（Dex1、头部 D455、双腕 D405）。第一门槛是走到箱子前不摔。全文见 `docs/handoff/real-robot-sim2real-plan-20261006.md`。
+- **事实**：官方 SONIC 流程的 50 Hz 是控制与数据集网格，相机 30 fps 被重复铺到网格上；GR00T 不以 fps 为条件，只读帧索引偏移；`UNITREE_G1_SONIC` 预训练先验是 20 ms 一步；本仓库原始录制本来就是 50 Hz，25 是转换时抽的。真机 toy-bear 数据集与仿真数据集布局一致，只有夹爪不同：真机 Dex1 命令 0 闭 / 5.5 开写在 7 维第 0 维、状态广播到 7 维；仿真是米制、两指位、方向相反。官方 v1.1 代码没有任何 Dex1 分支。
+- **决策**（D1–D13 见设计文档）：数据集改 50 fps 用现有 session 重转、Unreal 每行独立补渲；三路相机；state 保持 60 维，手 7 维槽位填 Dex1 的 1 维值广播（真机 exporter 自己的记法）；action 66 维；夹爪统一 Dex1 原始单位；发给真机的 hand 字段广播 7 维；部署代码放 `src_real_robot/` 只 vendor 客户端、复用 third_party 的 gear_sonic 与 checkpoint、GR00T 服务器复用 `src/gr00t`；真机 C++ 由用户自行编译带 Dex1 驱动的 1.1，我们不替换；真机相机服务器复用现有；toy-bear 数据集只做对照；上真机前先 sim2sim。
+- **实现（本次）**：`dataset.fps` 成为运行字段（`run_context.migrate_dataset`，旧文件读 25；只接受整除 50 的 25、50，30 的 2,1,2 抽帧是 2026-08-28 查出的 10 Hz 伪影），`run_convert` 以 `--fps` 传给转换器，`world_lift.resample_selection(n, fps)` 一处决定行选择；Isaac/Unreal 补渲标记记 `dataset_fps`，`render_dataset_cameras.serves` 规定 50 渲的服务 25 转换、25 渲的不服务 50（此前 50 转换会静默用重复帧）；一个 session 的渲染率由第一次填充定；MuJoCo 补渲每行都渲、记 50。`eval_closed_loop` 遇到非 25 的运行拒绝，因为 lockstep 客户端按 25 数帧。`src_real_robot/real_robot/`：`inference`（官方的异步推理线程、`round(延迟×发布率)` 跳帧、键盘、v4 打包不变）、`observation`（60 维，eef_state 用 exporter 同一套 FK）、`chunk`（FSQ snap、Dex1 换算）、`gripper`（米制↔Dex1、线上字段 dex1 广播 / sim 两指位）、`policy_client`（本仓库 `serve_policy` 的扁平协议，核对 `identity`）。
+- **被否决**：25 Hz 训练直接 `TF_DATASET_FPS=25` 部署（技术上可行，但与预训练先验和官方 0.8 s 视野不一致）；对 FSQ 离散 token 插值到 50 Hz（无意义）；只用 ego 一路（用户要三路）；夹爪归一化到 [0,1] 或保留米制在客户端换算（用户选真机原始单位，模型输出即命令）；整份复制两个上游仓库（6.5 GB，不能跟踪）；在真机上替换 C++（没有 Dex1 驱动代码）。
+- **已知残余差距**：仿真 50 fps 每行独立画面而真机约一半重复帧；sim2sim 的 C++ 与真机那份不同源；真机 Dex1 驱动读 7 维的哪一维未知，靠广播规避；真机相机内参未提供。

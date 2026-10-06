@@ -35,6 +35,7 @@
 ## 交接与归档
 
 - `handoff/`：各阶段的交接记录和计划，文件名带日期。
+- [仿真数据零样本上真机的设计](handoff/real-robot-sim2real-plan-20261006.md)：数据集 50 fps、官方推理客户端结构、Dex1 单位、`src_real_robot/` 的结构与后续任务（2026-10-06）。
 - [归档索引](archive/INDEX.md)：冻结的原始报告和被取代的入口文档，包括 2026-09-14 的[维护路线图](archive/roadmap_maintenance_20260914.md)。
 - [第一次迁移](handoff/agent-maintenance-plan.md)、[维护交付](handoff/maintenance-completion.md)、[规范审计与探针](handoff/agent-guideline-completion-20260914.md)。
 

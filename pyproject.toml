@@ -21,7 +21,7 @@ ignore = ["E731", "E741", "F401", "F841"]
 "src/locomani/sim/make_hand_points.py" = ["E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["locomani"]
+known-first-party = ["locomani", "real_robot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
