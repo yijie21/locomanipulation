@@ -1464,7 +1464,7 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 - **目标变化**：用户："把机器人头上的非云台相机也作为一个 ego_view 的可选项，采集 ego_view 的时候可以在云台相机和机器人本身的相机之间切换"。
 - **决策**：
-  - 选哪台相机是场景的属性，不是运行时开关。场景构建器加 `--ego-camera {d455_head,d435_head}`（名字取自真机 `robot.yaml`），把 `head_camera` 摆到所选相机的 URDF 坐标系上，记进 `scene_meta.json` 的 `ego_camera`；默认 `d455_head`，生成结果与之前逐字节相同。新场景 `bottle_mars_d435`、`warehouse_textured_mars_d435`、`warehouse_box_45x32x33_mars_d435`（后者有 Isaac stage 和 Unreal 关卡），示例实验文件 `warehouse_mars_smoke_d435`。运行靠场景名选相机。
+  - 选哪台相机是场景的属性，不是运行时开关。场景构建器加 `--ego-camera {d455_head,d435_head}`（名字取自真机 `robot.yaml`），把 `head_camera` 摆到所选相机的 URDF 坐标系上，记进 `scene_meta.json` 的 `ego_camera`；默认 `d455_head`，生成结果与之前逐字节相同。新场景 `bottle_mars_d435`、`warehouse_textured_mars_d435`、`warehouse_box_45x32x33_mars_d435`（后者有 Isaac stage 和 Unreal 关卡），示例实验文件 `warehouse_mars_smoke_d435`（同日用户：改名 `warehouse_mars_smoke_d435_unreal`，并加 `_d435_isaac`、`_d435_mujoco`）。运行靠场景名选相机。
   - 理由：`head_camera` 在 46 个文件里被读（仿真出图、专家判断目标是否在画面里、三个渲染器、视频小窗）；放在场景里，它们全部自动跟着换，Isaac stage 和 Unreal 关卡又按场景 XML 哈希核对，不会出现半套配置（仓库常见的失败形态）。
   - D435 位姿用 URDF 的 `d435_head_link`（躯干坐标系下俯 47.6°），竖直视场 42°（规格书彩色 69°×42°，按 4:3 保留竖直视场，同 D455/D405 的做法）。
 - **被否决的方案**：每个场景里放两台相机、由实验文件挑哪台当 `ego_view`——要把相机名传给 46 处读取者，任何一处漏掉就是专家看一台、数据录另一台；Unreal 关卡还得多导入一台相机。

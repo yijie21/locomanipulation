@@ -1,10 +1,11 @@
-# warehouse_mars_smoke with the ego view (ego_view, head_camera) from the D435 fixed in mars's face instead of the
-# D455 on the head's pan/tilt bracket (user, 2026-10-06: switch between the two when collecting). The scene is the
+# warehouse_mars_smoke (Unreal pictures) with the ego view (ego_view, head_camera) from the D435 fixed in mars's face
+# instead of the D455 on the head's pan/tilt bracket (user, 2026-10-06: switch between the two when collecting; the
+# name says the renderer, as its _isaac and _mujoco siblings do). The scene is the
 # whole difference: warehouse_box_45x32x33_mars_d435 is warehouse_box_45x32x33_mars built with --ego-camera d435_head
 # (configs/scenes.yaml), so the sim's camera, the experts' framing and every renderer read the same camera. The D435
 # sees less than the D455 (fovy 42 against 65, pitched 47.6 deg down against 52) and the experts were tuned on the
 # D455; the yield is not measured beyond the one-episode check of 2026-10-06. Everything else is warehouse_mars_smoke's.
-name: warehouse_mars_smoke_d435
+name: warehouse_mars_smoke_d435_unreal
 task:
   plugin: crate
   expert: visual

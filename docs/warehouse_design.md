@@ -113,5 +113,5 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 - 成功率相同，失败方式不同：mars 的 4 局失败都是箱子抬起后一只手脱开，stock 是抬起前脱开或手停在箱沿上方。原因未查（TODO 13.6.4.1）。
 - 2026-10-03 照 runbook 跑 `warehouse_mars_smoke` 到转换（当时还是四边线，运行目录改名为 `warehouse_mars_smoke_4edges_20261003`）：30 局保留 9 条（三批各 4、1、4），失败是 reach_stalled 9、lost_attachment 8、basket_tilt 4；stock 在 2026-09-30 的两次是 20 局保留 11 条和 8 条。只有这一次，分不清是机器人的差别还是批间波动。
 - 相机视场用规格书的值（D455 竖直 65°、D405 58°），真机标定到了要换。
-- 第一视角可换成脸上固定的 D435（用户 2026-10-06）：建场景时加 `--ego-camera d435_head`，记进 `scene_meta.json` 的 `ego_camera`；场景名带 `_d435`，实验文件 `warehouse_mars_smoke_d435`。位姿是 URDF 的 `d435_head_link`（下俯 47.6°），竖直视场 42°（规格书 69°×42°）。仿真出图、专家判断目标是否在画面里、三个渲染器都读同一个 `head_camera`，所以换的是场景，不是运行时的开关。
+- 第一视角可换成脸上固定的 D435（用户 2026-10-06）：建场景时加 `--ego-camera d435_head`，记进 `scene_meta.json` 的 `ego_camera`；场景名带 `_d435`，实验文件 `warehouse_mars_smoke_d435_unreal`、`_d435_isaac`、`_d435_mujoco`，各自与同渲染器的 D455 文件只差场景。位姿是 URDF 的 `d435_head_link`（下俯 47.6°），竖直视场 42°（规格书 69°×42°）。仿真出图、专家判断目标是否在画面里、三个渲染器都读同一个 `head_camera`，所以换的是场景，不是运行时的开关。
 - Unreal 关卡从场景导入机器人；Isaac 把 `assets/isaac/robot/mars/g1_dex1.usda` 加到房间的 stage 上。两者都在 `source.json` 里记下机器人，和场景的 `scene_meta.json` 对不上就拒绝渲染；补渲的标记也记机器人，同一个 session 不会混着两个机器人的图。

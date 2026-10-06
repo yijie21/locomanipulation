@@ -215,6 +215,7 @@ def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_other
         # the mars runs, the ones docs/warehouse.md runs, have Unreal as the default (user, 2026-10-03)
         ("warehouse_mars_smoke_isaac", "warehouse_mars_smoke"),
         ("warehouse_mars_200_isaac", "warehouse_mars_200"),
+        ("warehouse_mars_smoke_d435_isaac", "warehouse_mars_smoke_d435_unreal"),
     ],
 )
 def test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only(isaac_name, unreal_name):
@@ -225,6 +226,28 @@ def test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only(isa
     assert (isaac["images"], unreal["images"]) == ({"source": "isaac"}, {"source": "unreal"})
     assert (isaac["name"], unreal["name"]) == (isaac_name, unreal_name)
     rest = [{k: v for k, v in cfg.items() if k not in ("name", "images")} for cfg in (isaac, unreal)]
+    assert rest[0] == rest[1]
+
+
+@pytest.mark.parametrize(
+    "d455_name, d435_name",
+    [
+        ("warehouse_mars_smoke", "warehouse_mars_smoke_d435_unreal"),
+        ("warehouse_mars_smoke_isaac", "warehouse_mars_smoke_d435_isaac"),
+        ("warehouse_mars_smoke_mujoco", "warehouse_mars_smoke_d435_mujoco"),
+    ],
+)
+def test_every_renderer_has_a_d435_ego_run_that_differs_in_the_scene_only(d455_name, d435_name):
+    # the D435 ego view is chosen by the scene (user, 2026-10-06: on Unreal, Isaac and MuJoCo alike), so each
+    # renderer's D435 run is its D455 run with the _d435 scene and nothing else; the D435 runs name their renderer
+    experiments = run_context.ROOT / "configs" / "experiments"
+    d455, d435 = (yaml.safe_load((experiments / f"{n}.yaml").read_text()) for n in (d455_name, d435_name))
+    assert (d455["name"], d435["name"]) == (d455_name, d435_name)
+    assert (d455["scene"].pop("name"), d435["scene"].pop("name")) == (
+        "warehouse_box_45x32x33_mars",
+        "warehouse_box_45x32x33_mars_d435",
+    )
+    rest = [{k: v for k, v in cfg.items() if k != "name"} for cfg in (d455, d435)]
     assert rest[0] == rest[1]
 
 
