@@ -554,10 +554,11 @@
 ## 16. 仿真数据零样本上真机：GR00T + SONIC（用户 2026-10-06，逐项问答定；DECISIONS 同日；设计 `docs/handoff/real-robot-sim2real-plan-20261006.md`）
 
 - [x] 16.1 （2026-10-06）T1：`dataset.fps` 字段（25 | 50）贯穿 `run_context.migrate_dataset` → `run_convert --fps` → `convert_to_hf_format` → `world_lift.resample_selection`；Isaac/Unreal 补渲按它决定渲哪些行，标记记 `dataset_fps`，`render_dataset_cameras.serves` 决定渲过的 session 能否服务某个转换（50 服务 25，25 不服务 50）；`eval_closed_loop` 遇到非 25 的运行拒绝（lockstep 的 `RATE = 25` 写死，16.7）
-- [x] 16.2 （2026-10-06）T2：`src_real_robot/` 推理客户端（`real_robot.inference`，官方结构；`observation`、`chunk`、`gripper`、`policy_client`），`run_inference.sh`，runbook `src_real_robot/README.md`，`UPSTREAM.md` 钉 WBC v1.1 a0732b6；测试 `tests/test_real_robot_client.py`。只做了本机冒烟（真实 pinocchio 模型拼 60 维观测、protocol v4 打包），没连过机器人或策略服务器
+- [x] 16.2 （2026-10-06）T2：`src/real_robot/` 推理客户端（`real_robot.inference`，官方结构；`observation`、`chunk`、`gripper`、`policy_client`），`scripts/run_real_robot_inference.sh`，runbook `src/real_robot/README.md`，`UPSTREAM.md` 钉 WBC v1.1 a0732b6；测试 `tests/test_real_robot_client.py`。只做了本机冒烟（真实 pinocchio 模型拼 60 维观测、protocol v4 打包），没连过机器人或策略服务器
 - [ ] 16.3 T3：转换器写 Dex1 单位：`teleop.*_hand_joints` 第 0 维按 `real_robot.gripper.sim_m_to_dex1` 映射（命令低于 −0.02 截到 0），`observation.state` 手 7 维广播映射后的指爪位置（第 4、5 维均值）；与客户端共用一个映射函数
 - [ ] 16.4 T4：新运行 `warehouse_mars_200_50hz`（复制实验文件加 `dataset: {fps: 50}`，运行目录复制 collect 条目、manifest、trace、场景；删 74 个 session 的 `meta/offline_render.json`）→ Unreal 全行补渲（约 25 h 单卡）→ 转换 → 训练；同源数据留 25 fps 版本作对照
 - [ ] 16.5 T5：sim2sim：官方结构客户端对接本仓库 MuJoCo 栈（`--hand-wire sim`），核对延迟补偿与跳帧行为；仿真桥若改读 Dex1 单位则用 `dex1_to_sim_m`
 - [ ] 16.6 T6（需真机）：核对相机服务器三路 key 与 `g1_debug` 手字段；`]` + `i` 手动验 Dex1 方向（5.5 开、0 闭）；按 D13 跑 10 局（起点 0.6–1.0 m，30 s，骨盆到箱心 ≤ 0.6 m 且站稳 2 s）
 - [ ] 16.7 T7（未排期）：50 Hz 的 lockstep 闭环评测（`tasks/crate/vla_lockstep.py` RATE/TICKS、`latency_frames`、1 s blend 都按 25 写）
+- [x] 16.9 （2026-10-06，用户）客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`（`src/` 已在每个 PYTHONPATH 上，和 `src/gr00t` 同级），启动脚本改为 `scripts/run_real_robot_inference.sh`，`src_real_robot/` 删除
 - [ ] 16.8 预先存在、与本次无关的测试失败（本机）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow

@@ -1,6 +1,6 @@
 # 真机部署：GR00T 策略 + SONIC 控制器跑在 G1 上
 
-把本仓库训练出的 GR00T checkpoint 部署到实验室的真机 G1（29 自由度、Dex1 夹爪、头部 D455 和双腕 D405）。推理客户端的结构是 NVIDIA 官方的 `run_vla_inference.py`（来源见 [UPSTREAM.md](UPSTREAM.md)），观测和动作格式是本仓库数据集的。设计和决策见[设计文档](../docs/handoff/real-robot-sim2real-plan-20261006.md)。
+把本仓库训练出的 GR00T checkpoint 部署到实验室的真机 G1（29 自由度、Dex1 夹爪、头部 D455 和双腕 D405）。推理客户端的结构是 NVIDIA 官方的 `run_vla_inference.py`（来源见 [UPSTREAM.md](UPSTREAM.md)），观测和动作格式是本仓库数据集的。设计和决策见[设计文档](../../docs/handoff/real-robot-sim2real-plan-20261006.md)。
 
 需要三台角色，可以是同一台机器：机器人本体的控制电脑（跑 SONIC C++ deploy 和相机服务器）、一台 GPU 机器（跑策略服务器）、一台跑本客户端的机器（装了 SONIC 的 `.venv_sim`）。
 
@@ -8,7 +8,7 @@
 
 - 机器人上已装好并验证过：带 Dex1 驱动的 SONIC C++ deploy（1.1）、三相机服务器（key 为 `ego_view`、`left_wrist`、`right_wrist`，640×480）。本仓库不替换这两样。
 - 机器人侧的 ZMQ 端口沿用官方默认：状态 `g1_debug` 5557、相机 5555、动作 `pose` 5556、键盘 5580。换了端口就在下面的命令里传对应参数。
-- 本机已完成[安装](../docs/setup.md)第 0–4 步（SONIC 的 `.venv_sim`）。策略服务器那台机器要第 5 步（GR00T 训练环境）。
+- 本机已完成[安装](../../docs/setup.md)第 0–4 步（SONIC 的 `.venv_sim`）。策略服务器那台机器要第 5 步（GR00T 训练环境）。
 
 ## 1. 起策略服务器（GPU 机器）
 
@@ -26,7 +26,7 @@ bash scripts/run_vla_server.sh outputs/runs/<run> --gpu 0
 ## 3. 起客户端
 
 ```bash
-bash src_real_robot/run_inference.sh --host <策略服务器地址> --camera-host <机器人地址> --state-zmq-host <机器人地址> \
+bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera-host <机器人地址> --state-zmq-host <机器人地址> \
     --init-token-file configs/deployment/warehouse_initial_token.json --prompt "pick up the box"
 ```
 

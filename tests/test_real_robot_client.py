@@ -1,4 +1,4 @@
-"""The real-robot inference client (src_real_robot): gripper units, observation assembly, chunk replay, CLI defaults.
+"""The real-robot inference client (src/real_robot): gripper units, observation assembly, chunk replay, CLI defaults.
 
 No sockets, no gear_sonic: the robot model is a fake with the exporter's 43-joint layout and FK interface.
 """

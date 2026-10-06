@@ -53,7 +53,7 @@
 | D5 | action = motion_token 64 + 左右夹爪各 1 维 = 66 维 | 仓库现有 `SONIC_CRATE` 布局 |
 | D6 | 夹爪统一用真机 Dex1 原始单位：0 = 闭，5.5 = 开 | 模型输出即机器人命令；真机数据集可直接对照 |
 | D7 | 发给真机的 7 维 hand 字段把 1 维值广播到全部 7 维 | 真机驱动读哪一维未知；广播对任一维都正确 |
-| D8 | 部署用官方客户端的结构，允许修改；代码放 `src_real_robot/`，只 vendor 客户端，`gear_sonic` 依赖按安装版本导入；GR00T 策略服务器复用 `src/gr00t`（本仓库 `serve_policy.py`） | 6.5 GB 的上游树不能跟踪；两份 GR00T 副本会分叉 |
+| D8 | 部署用官方客户端的结构，允许修改；代码放 `src/real_robot/`，只 vendor 客户端，`gear_sonic` 依赖按安装版本导入；GR00T 策略服务器复用 `src/gr00t`（本仓库 `serve_policy.py`） | 6.5 GB 的上游树不能跟踪；两份 GR00T 副本会分叉 |
 | D9 | 真机 C++ 由用户自行编译带 Dex1 驱动的 SONIC 1.1；我们不替换机器人侧 | 机器人侧代码不可见 |
 | D10 | 真机相机复用机器人上已验证的三相机服务器（D455 头部 30 fps，双 D405 30 fps） | 录过 toy-bear 数据集，key 与分辨率已对上 |
 | D11 | 真机 toy-bear 数据集只做格式和分布对照，不进训练，不写 loader | 任务不同，进训练会模糊归因 |
@@ -88,25 +88,24 @@
 
 ### 4.4 夹爪单位（后续，见第 7 节 T3）
 
-转换器把仿真的米制映射到 Dex1 单位：线性 −0.02 m → 0、+0.0245 m → 5.5，命令低于下界截断到 0；写入 `teleop.*_hand_joints` 第 0 维（动作）并广播到 `observation.state` 的手 7 维（状态，取第 4、5 维均值后映射）。映射函数与客户端的逆映射同源（`src_real_robot/real_robot/gripper.py`）。
+转换器把仿真的米制映射到 Dex1 单位：线性 −0.02 m → 0、+0.0245 m → 5.5，命令低于下界截断到 0；写入 `teleop.*_hand_joints` 第 0 维（动作）并广播到 `observation.state` 的手 7 维（状态，取第 4、5 维均值后映射）。映射函数与客户端的逆映射同源（`src/real_robot/gripper.py`）。
 
 ## 5. 训练
 
 GR00T N1.7（`src/gr00t`，上游 376ba890），`unitree_g1_sonic` tag，`configs/gr00t_sonic_3cam_bimanual.py`（视频 3 路、state 60、action 66，horizon 40）。50 fps 下 chunk 0.8 s。训练命令不变（`scripts/train.sh <run>`）。
 
-## 6. 部署：`src_real_robot/`
+## 6. 部署：`src/real_robot/`
 
 ```
-src_real_robot/
+src/real_robot/                        （与 src/gr00t 同级；src/ 已在每个 PYTHONPATH 上）
   README.md            怎么在真机上跑（runbook）
   UPSTREAM.md          vendor 来源：GR00T-WholeBodyControl v1.1 a0732b6；复用的 gear_sonic 模块清单
-  run_inference.sh     用 SONIC 的 .venv_sim 启动客户端
-  real_robot/
-    inference.py       客户端主循环（官方结构：异步推理线程、延迟补偿、键盘命令、50 Hz 发布）
-    observation.py     观测拼装：60 维 state（手 7 维广播 Dex1 值、eef_state 由 FK 算出）、三路图像、prompt
-    chunk.py           chunk 播放：snap、延迟补偿索引、逐 tick 取 token 与夹爪
-    gripper.py         夹爪单位：模型输出单位 → Dex1 → 线上 hand 字段（真机广播 7 维 / 仿真米制两指）
-    policy_client.py   和本仓库 serve_policy.py 的扁平观测协议（msgpack + ZMQ）
+  inference.py         客户端主循环（官方结构：异步推理线程、延迟补偿、键盘命令、50 Hz 发布）
+  observation.py       观测拼装：60 维 state（手 7 维广播 Dex1 值、eef_state 由 FK 算出）、三路图像、prompt
+  chunk.py             chunk 播放：snap、延迟补偿索引、逐 tick 取 token 与夹爪
+  gripper.py           夹爪单位：模型输出单位 → Dex1 → 线上 hand 字段（真机广播 7 维 / 仿真米制两指）
+  policy_client.py     和本仓库 serve_policy.py 的扁平观测协议（msgpack + ZMQ）
+scripts/run_real_robot_inference.sh    用 SONIC 的 .venv_sim 启动客户端
 ```
 
 数据流：
@@ -140,7 +139,7 @@ robot C++ (pose v4 :5556) ◀─ chunk.py ◀─ gripper.py ◀─────�
 | 编号 | 任务 | 状态 |
 |---|---|---|
 | T1 | `dataset.fps` 字段贯穿转换、补渲、审计；闭环评测在非 25 Hz 运行上明确拒绝 | 本次交付 |
-| T2 | `src_real_robot/` 推理客户端与单元测试 | 本次交付 |
+| T2 | `src/real_robot/` 推理客户端与单元测试（2026-10-06 同日从 `src_real_robot/` 移入） | 本次交付 |
 | T3 | 转换器的夹爪单位映射（4.4）与 state 手 7 维广播 | 后续 |
 | T4 | 新运行 `warehouse_mars_200_50hz`：全行补渲、转换、训练；25 fps 对照 | 后续 |
 | T5 | sim2sim：仿真桥接受 Dex1 单位（`--hand-wire sim` 的逆映射）；官方客户端结构对接 MuJoCo 栈 | 后续 |

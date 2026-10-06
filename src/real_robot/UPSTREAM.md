@@ -9,8 +9,8 @@ The client is a restructuring of NVIDIA's VLA inference runner from GR00T-WholeB
 
 ## What is vendored and what is imported
 
-Only the client logic is rewritten here (`real_robot/`). Everything it stands on is imported at run time from the
-`gear_sonic` package installed in SONIC's `.venv_sim` (`run_inference.sh`), at the same commit:
+Only the client logic is rewritten here (`src/real_robot/`). Everything it stands on is imported at run time from the
+`gear_sonic` package installed in SONIC's `.venv_sim` (`scripts/run_real_robot_inference.sh`), at the same commit:
 
 | imported module | used for |
 |---|---|

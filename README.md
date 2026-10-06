@@ -28,7 +28,7 @@ Unitree G1 人形机器人的移动操作仿真：机器人走到目标前、抓
 - [bottle 详解](docs/single_arm_design.md)：专家的控制逻辑、观测与动作、训练和评测的细节、数据集格式。
 - [crate 详解](docs/bimanual_design.md)：视觉专家的信息来源与连续控制、双臂闭环评测器、评测的时间模型。
 - [warehouse 详解](docs/warehouse_design.md)：和 crate 的不同之处、补渲、MuJoCo 图与 Isaac 图、评测前要核对的项、对照实验的做法。
-- [真机部署](src_real_robot/README.md)：把训练出的 checkpoint 通过官方结构的推理客户端部署到真机 G1（GR00T + SONIC），参数、键盘和 sim2sim 用法。
+- [真机部署](src/real_robot/README.md)：把训练出的 checkpoint 通过官方结构的推理客户端部署到真机 G1（GR00T + SONIC），参数、键盘和 sim2sim 用法。
 
 **支线**：不在三条主线上，但还在用。
 

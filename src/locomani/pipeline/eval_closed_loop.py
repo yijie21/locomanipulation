@@ -238,13 +238,13 @@ def evaluate_run(args):
     args.config = ev / "eval_config.json"
     # The stack is pinned to the dataset's rate. The lockstep clients count frames at 25 (tasks/crate/vla_lockstep
     # RATE, latency_frames, the 1 s blends), so a dataset stored at another rate has no closed-loop evaluation
-    # here yet; it is exercised through the official-client path (src_real_robot, sim2sim) -- see
+    # here yet; it is exercised through the official-client path (src/real_robot, sim2sim) -- see
     # docs/handoff/real-robot-sim2real-plan-20261006.md.
     fps = run_context.dataset_fps(cfg_file)
     if fps != 25:
         raise SystemExit(
             f"dataset.fps is {fps}: the closed-loop evaluation counts frames at 25 fps and would replay this "
-            "checkpoint at the wrong speed; evaluate it through src_real_robot (sim2sim)"
+            "checkpoint at the wrong speed; evaluate it through the real-robot client (scripts/run_real_robot_inference.sh, sim2sim)"
         )
     args.set_ = list(args.set_) + [f"backend.dataset_fps={fps}"]
     args.reach_config = args.reach_config or str(run_dir / "reach_config.json")

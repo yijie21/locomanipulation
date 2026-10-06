@@ -1,7 +1,7 @@
 """Run a GR00T checkpoint on the real G1 through the SONIC C++ deploy.
 
-    bash src_real_robot/run_inference.sh --host <policy server> --init-token-file configs/deployment/warehouse_initial_token.json
-    bash src_real_robot/run_inference.sh --help
+    bash scripts/run_real_robot_inference.sh --host <policy server> --init-token-file configs/deployment/warehouse_initial_token.json
+    bash scripts/run_real_robot_inference.sh --help
 
 NVIDIA's `gear_sonic/scripts/run_vla_inference.py`, restructured (UPSTREAM.md): robot state over ZMQ from the C++
 deploy (`g1_debug`), images from the camera server, the policy over ZMQ REQ/REP, latent actions back to the deploy as
