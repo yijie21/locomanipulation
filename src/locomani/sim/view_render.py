@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
-from locomani.pipeline import sim_video
+from locomani.pipeline import run_context, sim_video
 from locomani.pipeline.render_dataset_cameras import (
     MARKER,
     RENDER_SCRIPT,
@@ -46,19 +46,21 @@ from locomani.pipeline.render_dataset_cameras import (
     episode_length,
     expected_renderer,
     pending,
+    rendered_fps,
     renderer_of,
+    serves,
     video_path,
 )
-from locomani.pipeline.world_lift import resample_selection
+from locomani.pipeline.world_lift import DST_FPS, resample_selection
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
 STREAMS = tuple(CAMERA_CONFIGS)
 
 
-def rendered_rows(length: int) -> set[int]:
-    """The rows convert will read from an episode of `length` rows, whatever prefix its verification trim keeps:
-    the pick of a prefix is a prefix of the whole episode's pick."""
-    return set(resample_selection(length).tolist())
+def rendered_rows(length: int, fps: int = DST_FPS) -> set[int]:
+    """The rows a convert at `fps` will read from an episode of `length` rows, whatever prefix its verification
+    trim keeps: the pick of a prefix is a prefix of the whole episode's pick. At 50 that is every row."""
+    return set(resample_selection(length, fps).tolist())
 
 
 def finished_sessions(run_dir: Path, sessions: list[str]) -> list[str]:
@@ -67,8 +69,9 @@ def finished_sessions(run_dir: Path, sessions: list[str]) -> list[str]:
     return sessions[: json.loads(inputs.read_text())["batches"]] if inputs.exists() else sessions
 
 
-def render_episode(view, traces, session: Path, ep: int, info: dict, streams) -> dict:
-    """Render one episode's cameras over its placeholders; returns its receipt."""
+def render_episode(view, traces, session: Path, ep: int, info: dict, streams, dataset_fps: int = DST_FPS) -> dict:
+    """Render one episode's cameras over its placeholders, every row a `dataset_fps` convert picks; returns its
+    receipt."""
     t0 = time.time()
     priv = traces.priv_seq(str(session), ep)
     length = episode_length(session, ep)
@@ -76,7 +79,7 @@ def render_episode(view, traces, session: Path, ep: int, info: dict, streams) ->
         raise SystemExit(f"{session.name} episode {ep}: {len(priv)} priv_seq rows but {length} parquet rows")
     trace, idx = traces.trace_rows(str(session), ep, priv, hold_tail=True)
     qpos = np.asarray(trace["qpos"])
-    wanted = rendered_rows(length)
+    wanted = rendered_rows(length, dataset_fps)
     view.warm_up(qpos[idx[0]])
     fps = info["fps"]
     tmp = {k: video_path(session, info, f"observation.images.{k}", ep).with_suffix(".rendering.mp4") for k in streams}
@@ -104,19 +107,24 @@ def render_episode(view, traces, session: Path, ep: int, info: dict, streams) ->
     }
 
 
-# What a look key meant before markers recorded it: one sample, and the stock robot (markers before 2026-10-03).
-MARKER_DEFAULTS = {"supersample": 1, "robot": "stock"}
+# What a look key meant before markers recorded it: one sample, the stock robot (markers before 2026-10-03) and
+# the 25 fps datasets of the day (before 2026-10-06).
+MARKER_DEFAULTS = {"supersample": 1, "robot": "stock", "dataset_fps": DST_FPS}
 
 
 def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
     """What `renderer` has to render in this run: (traces, {session: [episodes]}), or None when nothing applies.
 
-    Refuses a run whose `images.source` is another renderer's, and a session another renderer or another look
-    has started filling -- convert would then read a dataset drawn by two functions of the state.
+    `look` gains the run's `dataset.fps`: which rows get a picture of their own is part of what decides the
+    pixels. Refuses a run whose `images.source` is another renderer's, and a session another renderer or another
+    look has started filling -- convert would then read a dataset drawn by two functions of the state. A session
+    drawn for a faster dataset serves this one (`render_dataset_cameras.serves`); one drawn for a slower dataset
+    has to be drawn again, every row, after its marker is removed.
     """
     if cfg.get("backend", {}).get("render") != "offline":
         print(f"{run_dir.name}: backend.render is live; the cameras were recorded, nothing to render")
         return None
+    look = dict(look, dataset_fps=run_context.dataset_fps(run_context.migrate_dataset(cfg)))
     source = expected_renderer(cfg)
     if source != renderer:
         raise SystemExit(
@@ -134,7 +142,15 @@ def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
         done = json.loads(marker.read_text())
         if done.get("renderer", "mujoco") != renderer:
             raise SystemExit(f"{session.name}: its placeholders were filled by another renderer; not mixing")
-        other = {k: done.get(k) for k, v in look.items() if done.get(k, MARKER_DEFAULTS.get(k)) != v}
+        drawn_fps = rendered_fps(session)
+        if not serves(drawn_fps, look["dataset_fps"]):
+            raise SystemExit(
+                f"{session.name}: its episodes were drawn for a {drawn_fps} fps dataset and dataset.fps is "
+                f"{look['dataset_fps']}; remove {session / MARKER} to draw every row again"
+            )
+        other = {
+            k: done.get(k) for k, v in look.items() if k != "dataset_fps" and done.get(k, MARKER_DEFAULTS.get(k)) != v
+        }
         if other:  # a key the marker lacks predates it: robot_look None is a look before 2026-10-01's
             raise SystemExit(
                 f"{session.name}: its episodes were rendered with another {renderer} look ({other}); not mixing"
@@ -143,7 +159,10 @@ def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
 
 
 def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None:
-    """Render every pending episode in `todo` through `view`, recording each in its session's marker."""
+    """Render every pending episode in `todo` through `view`, recording each in its session's marker.
+
+    A session keeps the dataset rate its marker was opened with (`plan` checked it serves the run's), so every
+    episode of a session is drawn for the same rows; a new session takes `look["dataset_fps"]`."""
     for session, eps in todo.items():
         if not eps:  # nothing to render, so nothing to open: a batch of rounds that failed before recording leaves a
             continue  # session that may be gone by now (warehouse_smoke batch 01, its instance root cleaned, 2026-09-29)
@@ -152,6 +171,7 @@ def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None
         if sorted(keys) != sorted(STREAMS):
             raise SystemExit(f"{session.name}: image streams {keys}, {renderer} renders {list(STREAMS)}")
         marker = session / MARKER
+        fps = rendered_fps(session) if marker.exists() else look["dataset_fps"]
         state = (
             json.loads(marker.read_text())
             if marker.exists()
@@ -161,12 +181,12 @@ def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None
                 "scene": str(traces.scene_dir),
                 "renderer": renderer,
                 **look,
-                "rows": "world_lift.resample_selection; the rows between repeat the one before",
+                "rows": f"world_lift.resample_selection at {fps} fps; the rows between repeat the one before",
                 "receipts": {},
             }
         )
         for ep in eps:
-            receipt = render_episode(view, traces, session, ep, info, STREAMS)
+            receipt = render_episode(view, traces, session, ep, info, STREAMS, fps)
             state["episodes"].append(ep)
             state["held_tail_rows"][str(ep)] = receipt["held_tail_rows"]
             state["receipts"][str(ep)] = receipt

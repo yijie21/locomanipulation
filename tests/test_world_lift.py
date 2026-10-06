@@ -17,6 +17,42 @@ def test_resample_selection_is_the_nearest_row_pick_the_converter_uses(n):
     assert np.all(np.diff(sel) == 2) if n > 2 else True
 
 
+@pytest.mark.parametrize("n", [1, 2, 3, 50, 1183])
+def test_a_50_fps_dataset_keeps_every_source_row(n):
+    np.testing.assert_array_equal(resample_selection(n, 50), np.arange(n))
+    np.testing.assert_array_equal(resample_selection(n, 25), resample_selection(n))  # the default is 25
+
+
+def test_a_rate_that_does_not_divide_the_source_is_refused():
+    # 30 fps picked rows 2,1,2 apart: a 10 Hz line the robot never performed (2026-08-28)
+    with pytest.raises(ValueError, match="does not divide"):
+        resample_selection(100, 30)
+
+
+def test_run_traces_pick_rows_at_the_runs_dataset_rate(tmp_path):
+    run, session = tmp_path / "run", tmp_path / "session"
+    (run / "scene").mkdir(parents=True)
+    (run / "trace").mkdir()
+    (session / "priv_seq").mkdir(parents=True)
+    (run / "scene/scene_meta.json").write_text(
+        json.dumps({"target_object": "crate", "objects": {"crate": {"qpos_adr": 5}}})
+    )
+    (run / "inputs.json").write_text(
+        json.dumps({"sessions": [str(session)], "manifests": [str(run / "manifest_00.jsonl")]})
+    )
+    (run / "manifest_00.jsonl").write_text(json.dumps({"label": "b", "produced": True}) + "\n")
+    qpos = np.zeros((30, 9))
+    qpos[:, 7] = 0.3 + 0.01 * np.arange(30)
+    np.savez(run / "trace/b_state_trace.npz", seq=np.arange(100, 130), qpos=qpos)
+    (session / "priv_seq/episode_000000.json").write_text(json.dumps({"priv_seq": list(range(110, 118))}))
+    assert RunTraces(run).fps == 25  # a run directory without a config copy is a historical one
+    np.testing.assert_allclose(RunTraces(run).world_z(str(session), 0), 0.3 + 0.01 * np.array([10, 12, 14, 16]))
+    (run / "config.yaml").write_text("dataset:\n  fps: 50\n")
+    assert RunTraces(run).fps == 50
+    np.testing.assert_allclose(RunTraces(run).world_z(str(session), 0), 0.3 + 0.01 * np.arange(10, 18))
+    assert RunTraces(run, fps=25).fps == 25  # a caller that knows the dataset's rate says so
+
+
 def test_world_z_joins_manifest_label_priv_seq_and_trace(tmp_path):
     run, session = tmp_path / "run", tmp_path / "session"
     (run / "scene").mkdir(parents=True)

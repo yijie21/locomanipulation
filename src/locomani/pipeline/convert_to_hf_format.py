@@ -2,7 +2,8 @@
 matches hojjunekim/g1_sonic_orange_to_plate_locomani exactly.
 
 Reference deltas vs the raw exporter output (fps-50, 32 features):
-  * fps 30 (rows resampled by nearest source frame, video re-encoded frame-exact)
+  * fps 25 or 50 (`--fps`, the run's `dataset.fps`: rows picked from the 50 Hz
+    source -- every second row, or every row -- video re-encoded frame-exact)
   * two extra columns:
       observation.state_psi0  f32[15] = eef_state (pos/quat x2) rotated into the
                                         initial-heading (psi0) frame + delta_heading
@@ -46,7 +47,7 @@ from locomani.pipeline.recording_density import check_recording_density  # noqa:
 from locomani.pipeline.render_dataset_cameras import unrendered
 from locomani.pipeline.third_person import link_third_person, third_person_source
 from locomani.pipeline.verification_tail import training_prefix_length  # noqa: E402
-from locomani.pipeline.world_lift import DST_FPS, SRC_FPS, resample_selection  # noqa: E402
+from locomani.pipeline.world_lift import DATASET_RATES, DST_FPS, SRC_FPS, resample_selection  # noqa: E402
 from locomani.schema import SONIC_MODALITY
 
 # Fallback only. It is what every episode gets when no --manifest is given,
@@ -130,15 +131,19 @@ def check_manifest(rows, src_eps, discarded, sess_name):
 # 15 Hz and was already folding at 30 fps. So this trades 0.75 points of extra
 # aliasing for a measured artefact.
 #
-# 50 fps is the option that dominates on signal fidelity (no resampling at all,
-# and NVIDIA's own client is 50 on both sides) but it is a different change:
-# 1.67x the frames, and an action chunk of 16 frames stops meaning 533 ms and
-# starts meaning 320 ms, so the horizon has to be re-tuned.
+# 50 fps keeps every row (no resampling at all, and NVIDIA's own client is 50 on
+# both sides, as is the UNITREE_G1_SONIC pretraining); a 40-step action chunk
+# then means 0.8 s instead of 1.6 s, the official deploy's horizon. Since
+# 2026-10-06 the rate is the run's `dataset.fps` (run_context.migrate_dataset),
+# handed here as --fps; 25 stays the default for every run from before.
 #
-# CHANGING THIS IS A TWO-PLACE EDIT: the deploy has to publish at the same rate
-# or motions replay at the wrong speed. See TF_DATASET_FPS in vla_round.py.
-# SRC_FPS / DST_FPS / resample_selection are imported above from world_lift: one 50->25 row pick
-# shared by the converter and check_dataset --run-dir, so the two cannot drift.
+# THE RATE IS READ IN THREE PLACES THAT MUST AGREE: this converter, the
+# Isaac / Unreal re-render (only the picked rows get a picture of their own;
+# render_dataset_cameras.serves checks the marker against --fps) and the deploy,
+# which has to publish at the same rate or motions replay at the wrong speed
+# (TF_DATASET_FPS in vla_round.py; eval_closed_loop refuses a non-25 run).
+# SRC_FPS / resample_selection are imported above from world_lift: one row pick
+# shared by the converter, the re-render and check_dataset --run-dir.
 
 W, H = 640, 480
 
@@ -236,7 +241,7 @@ def compute_psi0_columns(df):
     return state, act
 
 
-def convert_video(src, dst, sel_idx):
+def convert_video(src, dst, sel_idx, fps=DST_FPS):
     cap = cv2.VideoCapture(str(src))
     proc = subprocess.Popen(
         [
@@ -251,7 +256,7 @@ def convert_video(src, dst, sel_idx):
             "-s",
             f"{W}x{H}",
             "-r",
-            str(DST_FPS),
+            str(fps),
             "-i",
             "-",
             "-c:v",
@@ -296,8 +301,8 @@ def _video_job(job):
     ~550 MB for a 600-frame episode -- so the stats must be computed here;
     shipping frames back through the pool would cost more than the encode.
     """
-    vsrc, vdst, sel = job
-    return video_stats(convert_video(Path(vsrc), Path(vdst), np.asarray(sel)))
+    vsrc, vdst, sel, fps = job
+    return video_stats(convert_video(Path(vsrc), Path(vdst), np.asarray(sel), fps))
 
 
 def feat_stats(arr):
@@ -443,14 +448,14 @@ def finalize(sink, src_info, args, feats_extra=True):
     for st in sink.streams:
         vi = feats.get(st, {})
         if vi.get("info"):
-            vi["info"]["video.fps"] = float(DST_FPS)
+            vi["info"]["video.fps"] = float(args.fps)
     modality = json.loads(json.dumps(MODALITY))
     modality["video"] = {st.split(".")[-1]: {"original_key": st} for st in sink.streams}
 
     info_out = dict(src_info)
     info_out.update(
         {
-            "fps": DST_FPS,
+            "fps": args.fps,
             "total_episodes": sink.new_ep,
             "total_frames": total_frames,
             "total_tasks": max(1, len(sink.task_ids)),
@@ -462,7 +467,7 @@ def finalize(sink, src_info, args, feats_extra=True):
             "script_config": {
                 "source": "locomani/pipeline/convert_to_hf_format.py",
                 "sessions": [str(s) for s in args.sessions],
-                "resample": f"{SRC_FPS}->{DST_FPS} nearest",
+                "resample": f"{SRC_FPS}->{args.fps} nearest",
                 "holdout": args.holdout,
                 "holdout_seed": args.holdout_seed,
             },
@@ -525,6 +530,14 @@ def main():
         "own -- DatasetFactory.build asserts eval_strategy "
         "== 'no' -- so the split has to happen here.",
     )
+    ap.add_argument(
+        "--fps",
+        type=int,
+        default=DST_FPS,
+        help=f"the dataset's rate, the run's dataset.fps: one of {DATASET_RATES}. Rows are PICKED from the "
+        f"{SRC_FPS} Hz source, so the rate has to divide {SRC_FPS} (default {DST_FPS}: every second row; "
+        f"{SRC_FPS}: every row)",
+    )
     ap.add_argument("--holdout-out", default=None, help="where the held-out episodes go (required with --holdout)")
     ap.add_argument("--holdout-seed", type=int, default=0, help="seed for the holdout draw; recorded in info.json")
     ap.add_argument(
@@ -576,6 +589,10 @@ def main():
 
     if args.holdout and not args.holdout_out:
         raise SystemExit("--holdout needs --holdout-out")
+    if args.fps not in DATASET_RATES:
+        raise SystemExit(
+            f"--fps {args.fps} is not one of {DATASET_RATES}; the rate has to divide the {SRC_FPS} Hz source"
+        )
     if args.trim_verification_tail and (not args.manifest or args.drop_idle or args.include_discarded):
         ap.error("--trim-verification-tail requires manifests, successful episodes, and no --drop-idle")
     if args.manifest and len(args.manifest) != len(args.sessions):
@@ -617,6 +634,11 @@ def main():
             continue
         sess = Path(sess)
         info = json.load(open(sess / "meta/info.json"))
+        if int(info["fps"]) != SRC_FPS:
+            raise SystemExit(
+                f"[session] {sess.name} was recorded at {info['fps']} Hz, not the {SRC_FPS} Hz the row pick "
+                f"assumes (exporter --data-collection-frequency); do not convert this session."
+            )
         src_info = src_info or info
         discarded = set(info.get("discarded_episode_indices", []))
         pqs = sorted((sess / "data/chunk-000").glob("episode_*.parquet"))
@@ -643,11 +665,13 @@ def main():
             kept_eps.append(src_ep)
             items.append({"si": si, "sess": sess, "src_ep": src_ep, "pq": pq})
         check_recording_density(sess, kept_eps)
-        black = unrendered(sess, kept_eps)
+        black = unrendered(sess, kept_eps, args.fps)
         if black:
             raise SystemExit(
-                f"[render] {sess.name}: episodes {black} still hold black placeholder frames (offline recording; "
-                "only successful rounds are rendered). Drop --include-discarded, or render them first."
+                f"[render] {sess.name}: episodes {black} hold frames no {args.fps} fps convert may read -- black "
+                "placeholders (offline recording; only successful rounds are rendered), or pictures drawn for a "
+                "slower dataset, where half the rows repeat the picture before them. Drop --include-discarded, "
+                "or render them first (for a slower render: remove meta/offline_render.json and render again)."
             )
 
     # Every session must describe the same columns. info.json is copied from
@@ -746,8 +770,8 @@ def main():
                 table = table.take(pa.array(np.flatnonzero(keep)))
                 print(f"    idle filter: dropped {dropped} of {len(keep)} frames ({dropped / len(keep) * 100:.0f}%)")
         n50 = table.num_rows
-        sel = resample_selection(n50)
-        n30 = len(sel)
+        sel = resample_selection(n50, args.fps)
+        n30 = len(sel)  # the converted row count (the name is from the 30 fps days)
         sub = table.take(pa.array(sel))
 
         pdf = sub.select(
@@ -777,7 +801,7 @@ def main():
             )
             if clip is not None:
                 link_third_person(clip, sink.out / "third_person" / f"episode_{new_ep:06d}.mp4")
-        sub = set_col(sub, "timestamp", (np.arange(n30) / DST_FPS).astype(np.float32), pa.float32())
+        sub = set_col(sub, "timestamp", (np.arange(n30) / args.fps).astype(np.float32), pa.float32())
         sub = set_col(sub, "frame_index", np.arange(n30, dtype=np.int64), pa.int64())
         sub = set_col(sub, "episode_index", np.full(n30, new_ep, dtype=np.int64), pa.int64())
         sub = set_col(sub, "index", np.arange(sink.global_index, sink.global_index + n30, dtype=np.int64), pa.int64())
@@ -801,15 +825,15 @@ def main():
                 # `stats` is appended to ep_stats below and filled in after the
                 # pool runs -- same dict object, so order of ep_stats is
                 # unaffected by which video finishes first.
-                pending.append((stats, st, str(vsrc), str(vdst), sel))
+                pending.append((stats, st, str(vsrc), str(vdst), sel, args.fps))
             else:
-                stats[st] = video_stats(convert_video(vsrc, vdst, sel))
+                stats[st] = video_stats(convert_video(vsrc, vdst, sel, args.fps))
         sink.ep_stats.append({"episode_index": new_ep, "stats": stats})
         sink.episodes.append({"episode_index": new_ep, "tasks": [ep_task], "length": n30})
         tag = "val " if sink is val else "train"
         print(
             f"[{tag} {new_ep:3d}] {sess.name}/ep{src_ep}: {n50} rows "
-            f'@{SRC_FPS}Hz -> {n30} @{DST_FPS}Hz  task[{ti}] "{ep_task}"'
+            f'@{SRC_FPS}Hz -> {n30} @{args.fps}Hz  task[{ti}] "{ep_task}"'
         )
         sink.new_ep += 1
         sink.global_index += n30
@@ -820,8 +844,8 @@ def main():
 
         print(f"videos: {len(pending)} clips on {jobs} workers")
         with mp.get_context("fork").Pool(jobs) as pool:
-            out = pool.map(_video_job, [(p[2], p[3], p[4]) for p in pending], chunksize=1)
-        for (st_dict, st, _, _, _), vs in zip(pending, out):
+            out = pool.map(_video_job, [(p[2], p[3], p[4], p[5]) for p in pending], chunksize=1)
+        for (st_dict, st, _, _, _, _), vs in zip(pending, out):
             st_dict[st] = vs
 
     finalize(train, src_info, args)

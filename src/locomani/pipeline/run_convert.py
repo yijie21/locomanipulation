@@ -71,6 +71,7 @@ def convert_argv(entry: dict, cfg: dict, train_ds: Path, val_ds: Path) -> list:
         "--trim-verification-tail",
         *films,
         "--out", train_ds,
+        "--fps", str(run_context.dataset_fps(run_context.migrate_dataset(cfg))),
         "--holdout", str(cfg["train"]["holdout"]),
         "--holdout-out", val_ds,
         "--jobs", "4",

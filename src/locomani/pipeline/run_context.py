@@ -68,7 +68,7 @@ def open_run(experiment: Path | str, name: str | None = None, *, write: bool = T
     nothing behind, not even the directory it would have claimed.
     """
     experiment = Path(experiment)
-    cfg = resolve_scene(migrate_images(yaml.safe_load(experiment.read_text())))
+    cfg = resolve_scene(migrate_images(migrate_dataset(yaml.safe_load(experiment.read_text()))))
     unreal_support(cfg)
     cfg["name"] = name or cfg["name"]
     run_dir = RUNS / cfg["name"]
@@ -87,10 +87,33 @@ def load_run_config(run_dir: Path) -> dict:
     path = Path(run_dir) / "config.yaml"
     if not path.exists():
         raise SystemExit(f"{path} is missing; this directory was not opened by a stage script")
-    return unreal_support(resolve_scene(migrate_images(yaml.safe_load(path.read_text()))))
+    return unreal_support(resolve_scene(migrate_images(migrate_dataset(yaml.safe_load(path.read_text())))))
 
 
 IMAGE_SOURCES = ("mujoco", *MIRRORED_SOURCES)
+DATASET_RATES = (25, 50)  # == world_lift.DATASET_RATES (tested); both divide the exporter's 50 Hz
+HISTORICAL_DATASET_FPS = 25  # what every run converted before the block existed (2026-10-06) was stored at
+
+
+def migrate_dataset(cfg: dict) -> dict:
+    """Bring the experiment's dataset rate to the current format and check it; returns `cfg`, changed in place.
+
+    The current format (2026-10-06) says once, at run level, the rate the LeRobot dataset is stored at:
+    `dataset: {fps: 25 | 50}`. Convert picks that many rows a second from the exporter's 50 Hz sessions, the
+    Isaac / Unreal re-render draws exactly those rows, and the audit's trace lookup follows the same pick. A file
+    without the block -- every run copy before that date -- is read as 25, the rate they were converted at.
+    Other rates are refused: the rate has to divide 50, or the stored stream is not uniform (`world_lift`)."""
+    if "dataset" not in cfg:
+        cfg["dataset"] = {"fps": HISTORICAL_DATASET_FPS}
+    dataset = cfg["dataset"]
+    if not isinstance(dataset, dict) or set(dataset) != {"fps"} or dataset["fps"] not in DATASET_RATES:
+        raise SystemExit(f"dataset must be {{fps: {' | '.join(map(str, DATASET_RATES))}}}, not {dataset!r}")
+    return cfg
+
+
+def dataset_fps(cfg: dict) -> int:
+    """The rate the run's dataset is stored at, after `migrate_dataset`."""
+    return int(cfg["dataset"]["fps"])
 
 
 def eval_render(source: str) -> str:

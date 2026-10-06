@@ -171,6 +171,7 @@ def test_the_session_manifest_pairing_is_delivered_in_order(converted):
 def test_the_holdout_and_modality_reach_the_converter(converted):
     cfg, out = converted
     assert f"--holdout {cfg['train']['holdout']}" in out
+    assert "--fps 25" in out  # an experiment file without a `dataset` block is a 25 fps run (migrate_dataset)
     assert cfg["embodiment"]["gr00t_modality_config"] in out
     assert cfg["embodiment"]["gr00t_tag"].upper() in out
 

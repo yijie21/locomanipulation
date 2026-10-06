@@ -40,6 +40,7 @@ import numpy as np
 
 from locomani import paths
 from locomani.pipeline import run_context
+from locomani.pipeline.world_lift import DST_FPS, SRC_FPS
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
 ROOT = Path(paths.REPO)
@@ -70,15 +71,19 @@ def pending(session: Path) -> list[int]:
     return [e for e in recorded_episodes(session) if e not in done and e not in skip]
 
 
-def unrendered(session: Path, episodes: list[int]) -> list[int]:
-    """Of `episodes`, the ones an offline session's render stage has not filled: the converter's last check.
+def unrendered(session: Path, episodes: list[int], fps: int = DST_FPS) -> list[int]:
+    """Of `episodes`, the ones an offline session's render stage has not filled for an `fps` dataset: the
+    converter's last check.
 
     `pending` skips failed rounds, so an episode convert takes beyond `run_convert`'s set (`--include-discarded`)
-    still holds black frames, which decode fine and would train silently. A session with no marker is
-    live-recorded, or offline and unrendered, which `require_rendered` refuses before convert starts."""
+    still holds black frames, which decode fine and would train silently. A session drawn for a slower dataset
+    (`serves`) has every episode unfilled for this one. A session with no marker is live-recorded, or offline
+    and unrendered, which `require_rendered` refuses before convert starts."""
     marker = Path(session) / MARKER
     if not marker.exists():
         return []
+    if not serves(rendered_fps(Path(session)), fps):
+        return list(episodes)
     rendered = set(json.loads(marker.read_text())["episodes"])
     return [ep for ep in episodes if ep not in rendered]
 
@@ -87,6 +92,25 @@ def renderer_of(session: Path) -> str | None:
     """Who filled the session's placeholders; markers written before the Isaac stage existed are MuJoCo's."""
     marker = session / MARKER
     return json.loads(marker.read_text()).get("renderer", "mujoco") if marker.exists() else None
+
+
+def rendered_fps(session: Path) -> int | None:
+    """The dataset rate the session's placeholders were filled for: the rows a convert at that rate picks each
+    have a picture of their own, the rows between repeat the one before. MuJoCo renders every row (50); an Isaac
+    or Unreal marker from before the key existed (2026-10-06) was drawn for the 25 fps datasets of its day."""
+    marker = session / MARKER
+    if not marker.exists():
+        return None
+    done = json.loads(marker.read_text())
+    historical = SRC_FPS if done.get("renderer", "mujoco") == "mujoco" else DST_FPS
+    return int(done.get("dataset_fps", historical))
+
+
+def serves(rendered: int, wanted: int) -> bool:
+    """Do pictures drawn for a `rendered` fps dataset serve a convert at `wanted` fps? Only when every row the
+    convert picks was drawn: 50 serves 25 (convert keeps the even rows), 25 does not serve 50 (half the rows
+    would train on the picture before them, silently -- the frames decode fine)."""
+    return rendered % wanted == 0
 
 
 # The script that fills an offline run's placeholders, per `images.source`.
@@ -113,6 +137,15 @@ def require_rendered(cfg: dict, sessions: list[str]) -> None:
         raise SystemExit(
             f"images.source asks for {want} images, but session(s) {wrong} were rendered by another renderer; "
             f"re-collect, or render into fresh sessions with scripts/{script}"
+        )
+    fps = run_context.dataset_fps(run_context.migrate_dataset(cfg))
+    drawn = {Path(s).name: rendered_fps(Path(s)) for s in sessions}
+    slow = sorted(name for name, at in drawn.items() if at is not None and not serves(at, fps))
+    if slow:
+        raise SystemExit(
+            f"dataset.fps {fps}: session(s) {slow} were rendered for a {min(drawn[n] for n in slow)} fps dataset, "
+            f"so rows a {fps} fps convert picks repeat the picture before them; remove each session's "
+            f"{MARKER} and run scripts/{script} <run> again to draw every row"
         )
     left = {s: pending(Path(s)) for s in sessions}
     if any(left.values()):
@@ -230,7 +263,13 @@ def main(argv: list[str] | None = None) -> int:
         state = (
             json.loads(marker.read_text())
             if marker.exists()
-            else {"episodes": [], "held_tail_rows": {}, "scene": str(traces.scene_dir), "renderer": "mujoco"}
+            else {
+                "episodes": [],
+                "held_tail_rows": {},
+                "scene": str(traces.scene_dir),
+                "renderer": "mujoco",
+                "dataset_fps": SRC_FPS,  # every row drawn: serves a convert at any dataset rate
+            }
         )
         if state.get("renderer", "mujoco") != "mujoco":
             raise SystemExit(f"{session.name}: its placeholders are being filled by {state['renderer']}; not mixing")

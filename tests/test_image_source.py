@@ -257,3 +257,14 @@ def test_the_withdrawn_third_person_switch_is_read_as_nothing():
     for value in (True, False):
         cfg = run_context.migrate_images(_run(images={"source": "isaac", "third_person": value}))
         assert cfg["images"] == {"source": "isaac"}
+
+
+def test_the_dataset_rate_is_read_once_at_load_and_defaults_to_the_historical_25():
+    # `dataset.fps` (2026-10-06): convert's row pick, the re-render's rows and the audit's trace lookup all read it
+    cfg = run_context.migrate_dataset(_run())
+    assert cfg["dataset"] == {"fps": 25} and run_context.dataset_fps(cfg) == 25
+    assert run_context.migrate_dataset(cfg) is cfg  # idempotent: every stage may call it
+    assert run_context.dataset_fps(run_context.migrate_dataset(_run(dataset={"fps": 50}))) == 50
+    for bad in ({"fps": 30}, {"fps": 25, "codec": "h264"}, 25):  # 30 does not divide 50; no other fields
+        with pytest.raises(SystemExit, match="dataset must be"):
+            run_context.migrate_dataset(_run(dataset=bad))

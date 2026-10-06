@@ -25,6 +25,7 @@ FILES = sorted(EXPERIMENTS.glob("*.yaml"))
 TASK_SCHEMA = {"bottle": BottleTaskConfig, "pick_place": BottleTaskConfig, "crate": CrateTaskConfig}
 BLOCKS = {"name", "task", "embodiment", "scene", "backend", "collect", "train", "eval"}
 IMAGES = "images"  # the current format's run-level image source; a file without it is the historical format
+DATASET = "dataset"  # the dataset's rate (`fps: 25 | 50`); a file without it is a 25 fps run (migrate_dataset)
 
 
 def load(path: Path) -> dict:
@@ -39,8 +40,10 @@ def test_there_are_experiments():
 def test_file_is_self_contained(path):
     cfg = load(path)
     assert cfg["name"] == path.stem, "the run name is the file name, so a run directory names its recipe"
-    assert set(cfg) - {IMAGES} == BLOCKS, f"unexpected or missing blocks: {(set(cfg) - {IMAGES}) ^ BLOCKS}"
+    present = set(cfg) - {IMAGES, DATASET}
+    assert present == BLOCKS, f"unexpected or missing blocks: {present ^ BLOCKS}"
     assert "defaults" not in cfg, "an expanded file composes nothing"
+    run_context.migrate_dataset(cfg)  # a declared rate is one convert accepts
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)

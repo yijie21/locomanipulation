@@ -31,19 +31,43 @@ from pathlib import Path
 
 import numpy as np
 
-SRC_FPS, DST_FPS = 50, 25  # keep in step with convert_to_hf_format (tested)
+SRC_FPS = 50  # the exporter's recording rate (`--data-collection-frequency`), one row per 50 Hz control tick
+DST_FPS = 25  # the dataset rate every run converted before `dataset.fps` existed (2026-10-06) was stored at
+DATASET_RATES = (25, 50)  # the rates `dataset.fps` accepts; both divide SRC_FPS, see resample_selection
 EDGE_TICKS = 2  # exporter rows allowed to lead/trail the trace, mapped to the edge sample
 
 
-def resample_selection(n_source: int) -> np.ndarray:
-    """The converter's 50 -> 25 Hz nearest-row pick, row indices into the source."""
-    n_out = int(np.floor((n_source - 1) * DST_FPS / SRC_FPS)) + 1
-    return np.clip(np.round(np.arange(n_out) * SRC_FPS / DST_FPS).astype(int), 0, n_source - 1)
+def resample_selection(n_source: int, dst_fps: int = DST_FPS) -> np.ndarray:
+    """The converter's row pick from a 50 Hz episode to `dst_fps`: row indices into the source.
+
+    The video frames are discrete 50 Hz renders and the state stays aligned with them, so a stored sample can
+    only be PICKED from the source rows, never interpolated. A uniform stored stream therefore needs a rate that
+    divides 50 (25 keeps every second row, 50 every row); 30 did not, and its 2,1,2 spacing was a 10 Hz line the
+    robot never performed (2026-08-28). Any other rate is refused here, the one pick convert, the re-render and
+    the audit's trace lookup all share."""
+    if SRC_FPS % dst_fps:
+        raise ValueError(f"dataset fps {dst_fps} does not divide the {SRC_FPS} Hz source; use one of {DATASET_RATES}")
+    return np.arange(0, n_source, SRC_FPS // dst_fps, dtype=int)
+
+
+def run_dataset_fps(run_dir) -> int:
+    """The rate a run's dataset is stored at: its `dataset.fps` (a run copy without the block is historical, 25)."""
+    from locomani.pipeline import run_context
+
+    path = Path(run_dir) / "config.yaml"
+    if not path.exists():
+        return DST_FPS
+    import yaml
+
+    return run_context.dataset_fps(run_context.migrate_dataset(yaml.safe_load(path.read_text())))
 
 
 class RunTraces:
-    def __init__(self, run_dir):
+    def __init__(self, run_dir, fps: int | None = None):
         self.run = Path(run_dir)
+        # The dataset rate the converter picked rows at, so `world_z` lines up with the converted rows: the run's
+        # own `dataset.fps` unless the caller knows better (a test's bare run directory has no config).
+        self.fps = run_dataset_fps(self.run) if fps is None else int(fps)
         inputs_path = self.run / "collect" / "inputs.json"  # stage layout
         if not inputs_path.exists():
             inputs_path = self.run / "inputs.json"  # crate pilot layout
@@ -143,6 +167,6 @@ class RunTraces:
         """World z of the target object for every converted row of one episode."""
         priv = self.priv_seq(session, source_episode)
         priv = priv[: kept_rows if kept_rows is not None else len(priv)]
-        seqs = priv[resample_selection(len(priv))]
+        seqs = priv[resample_selection(len(priv), self.fps)]
         trace, idx = self.trace_rows(session, source_episode, seqs)
         return np.asarray(trace["qpos"])[idx, self.qpos_adr + 2].astype(float)

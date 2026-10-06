@@ -17,6 +17,7 @@ def test_rendered_rows_cover_every_prefix_the_verification_trim_can_keep():
     full = R.rendered_rows(101)
     for kept in (1, 2, 37, 100, 101):
         assert set(resample_selection(kept).tolist()) <= full
+    assert R.rendered_rows(101, 50) == set(range(101))  # a 50 fps dataset reads every row
 
 
 def test_only_finished_batches_are_touched(tmp_path):
@@ -87,10 +88,60 @@ def test_render_episode_renders_the_picked_rows_and_repeats_them_between(tmp_pat
         assert list(video.read_bytes()) == [10, 10, 11, 11, 13, 13, 14]
 
 
+def test_a_50_fps_dataset_gets_a_picture_of_its_own_on_every_row(tmp_path, monkeypatch):
+    session = tmp_path / "session"
+    (session / "meta").mkdir(parents=True)
+    (session / "meta" / "episodes.jsonl").write_text(json.dumps({"episode_index": 3, "length": 7}) + "\n")
+    info = {"fps": 50, "chunks_size": 1000, "video_path": "videos/{video_key}/episode_{episode_index:06d}.mp4"}
+    monkeypatch.setattr(R, "encoder", FakeEncoder)
+    view = FakeView()
+    receipt = R.render_episode(
+        view,
+        FakeTraces([10, 10, 11, 12, 13, 14, 15], [10, 11, 12, 13, 14]),
+        session,
+        3,
+        info,
+        tuple(CAMERA_CONFIGS),
+        50,
+    )
+    # every row is picked; a repeated seq (rows 0 and 1) renders once, the held tail (row 6) is row 5's sample
+    assert view.rendered == [10.0, 11.0, 12.0, 13.0, 14.0] and receipt["renders"] == 5
+    video = session / "videos/observation.images.ego_view/episode_000003.mp4"
+    assert list(video.read_bytes()) == [10, 10, 11, 12, 13, 14, 14]
+
+
 def test_fill_does_not_open_a_session_with_nothing_pending(tmp_path):
     gone = tmp_path / "gone"  # never created: an empty batch's session whose instance root was cleaned
-    R.fill(FakeView(), FakeTraces([0], [0]), {gone: []}, "isaac", {})
+    R.fill(FakeView(), FakeTraces([0], [0]), {gone: []}, "isaac", {"dataset_fps": 25})
     assert not gone.exists()
+
+
+def test_fill_records_the_dataset_rate_and_a_session_keeps_the_rate_it_was_opened_with(tmp_path, monkeypatch):
+    session = tmp_path / "session"
+    (session / "meta").mkdir(parents=True)
+    (session / "meta" / "episodes.jsonl").write_text(
+        "".join(json.dumps({"episode_index": ep, "length": 7}) + "\n" for ep in (0, 1))
+    )
+    (session / "meta" / "info.json").write_text(
+        json.dumps(
+            {
+                "fps": 50,
+                "chunks_size": 1000,
+                "video_path": "videos/{video_key}/episode_{episode_index:06d}.mp4",
+                "features": {f"observation.images.{k}": {} for k in CAMERA_CONFIGS},
+            }
+        )
+    )
+    monkeypatch.setattr(R, "encoder", FakeEncoder)
+    traces = FakeTraces([10, 10, 11, 12, 13, 14, 15], [10, 11, 12, 13, 14])
+    traces.scene_dir = tmp_path / "scene"
+    R.fill(FakeView(), traces, {session: [0]}, "unreal", {"unreal_level": "L", "dataset_fps": 50})
+    marker = json.loads((session / R.MARKER).read_text())
+    assert marker["dataset_fps"] == 50 and marker["receipts"]["0"]["renders"] == 5 and "50 fps" in marker["rows"]
+    # a later run at 25 fps tops the session up: its episodes are still drawn for 50, the session's own rate
+    R.fill(FakeView(), traces, {session: [1]}, "unreal", {"unreal_level": "L", "dataset_fps": 25})
+    marker = json.loads((session / R.MARKER).read_text())
+    assert marker["dataset_fps"] == 50 and marker["receipts"]["1"]["renders"] == 5
 
 
 # --- the third-person video (film) ---------------------------------------------------------------------------------
@@ -189,6 +240,28 @@ def test_a_session_drawn_with_another_robot_look_is_never_topped_up(tmp_path, mo
             R.plan(traces.run, cfg, "isaac", look)
     (session / R.MARKER).write_text(json.dumps({**marker, "robot_look": robot_look.NAME}))
     assert list(R.plan(traces.run, cfg, "isaac", look)[1]) == [session]
+
+
+def test_a_session_drawn_for_a_slower_dataset_is_drawn_again_not_topped_up(tmp_path, monkeypatch):
+    import pytest
+
+    import locomani.pipeline.world_lift as world_lift
+    from locomani.sim import robot_look
+
+    traces, session = film_run(tmp_path, filled=False)
+    traces.sessions = [str(session)]
+    monkeypatch.setattr(world_lift, "RunTraces", lambda run: traces)
+    look = {"isaac_stage": "stage", "robot_look": robot_look.NAME, "robot": "stock"}
+    marker = {"episodes": [0], "renderer": "isaac", "isaac_stage": "stage", "robot_look": robot_look.NAME}
+    at_25 = {"backend": {"render": "offline"}, "images": {"source": "isaac"}}  # no dataset block: 25
+    at_50 = {**at_25, "dataset": {"fps": 50}}
+    (session / R.MARKER).write_text(json.dumps(marker))  # drawn before the key existed: 25
+    assert list(R.plan(traces.run, at_25, "isaac", look)[1]) == [session]
+    with pytest.raises(SystemExit, match="drawn for a 25 fps dataset and dataset.fps is 50; remove"):
+        R.plan(traces.run, at_50, "isaac", look)
+    (session / R.MARKER).write_text(json.dumps({**marker, "dataset_fps": 50}))
+    assert list(R.plan(traces.run, at_50, "isaac", look)[1]) == [session]
+    assert list(R.plan(traces.run, at_25, "isaac", look)[1]) == [session]  # every row drawn serves the even rows
 
 
 def test_a_session_drawn_with_another_robot_is_never_topped_up(tmp_path, monkeypatch):
