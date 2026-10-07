@@ -242,6 +242,38 @@ def test_a_session_drawn_with_another_robot_look_is_never_topped_up(tmp_path, mo
     assert list(R.plan(traces.run, cfg, "isaac", look)[1]) == [session]
 
 
+def test_a_fresh_session_is_filled_at_the_rate_plan_read_from_the_run(tmp_path, monkeypatch):
+    """The entry points hand `fill` the look `plan` returns: a session no renderer has opened takes its rows from
+    the run's `dataset.fps`. Passing the caller's own look raised KeyError 'dataset_fps' on the first episode of
+    warehouse_mars_50 (2026-10-07), in both the Unreal and the Isaac entry point."""
+    import locomani.pipeline.world_lift as world_lift
+
+    run = tmp_path / "run"
+    session = run / "session"
+    (session / "meta").mkdir(parents=True)
+    (session / "meta" / "episodes.jsonl").write_text(json.dumps({"episode_index": 0, "length": 7}) + "\n")
+    (session / "meta" / "info.json").write_text(
+        json.dumps(
+            {
+                "fps": 50,
+                "chunks_size": 1000,
+                "video_path": "videos/{video_key}/episode_{episode_index:06d}.mp4",
+                "features": {f"observation.images.{k}": {} for k in CAMERA_CONFIGS},
+            }
+        )
+    )
+    traces = FakeTraces([10, 10, 11, 12, 13, 14, 15], [10, 11, 12, 13, 14])
+    traces.run, traces.scene_dir, traces.sessions = run, tmp_path / "scene", [str(session)]
+    monkeypatch.setattr(world_lift, "RunTraces", lambda run: traces)
+    monkeypatch.setattr(R, "encoder", FakeEncoder)
+    cfg = {"backend": {"render": "offline"}, "images": {"source": "unreal"}, "dataset": {"fps": 50}}
+    planned_traces, todo, look = R.plan(run, cfg, "unreal", {"unreal_level": "L"})
+    assert todo == {session: [0]} and look == {"unreal_level": "L", "dataset_fps": 50}
+    R.fill(FakeView(), planned_traces, todo, "unreal", look)
+    marker = json.loads((session / R.MARKER).read_text())
+    assert marker["dataset_fps"] == 50 and marker["receipts"]["0"]["renders"] == 5
+
+
 def test_a_session_drawn_for_a_slower_dataset_is_drawn_again_not_topped_up(tmp_path, monkeypatch):
     import pytest
 

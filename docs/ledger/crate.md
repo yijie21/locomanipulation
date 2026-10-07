@@ -710,3 +710,19 @@ H0.60 × L0.20 这一格 3/15 偏低（第 1 步是 13/30），15 局的散布�
 **判定**：compact 省 3.8 s、每局省 3.9 s，成功率看不出代价，可以用于采集；不重锚再省 2.2 s，趋势变差，不采用，要定需每组约 200 局。
 "边停边抬手"（刹车最后一步就开始抬）没做：要改走近循环，且 09-23 走路时抬手 6/10 局手指扎进箱子。
 配对录像 `outputs/videos/warehouse_edges_prep_ab_20260928.zip`（7 个摆放 × 3 组，21 段，每段 ≤ 497,068 B）。
+
+## 2026-10-07 warehouse mars 50 条采集（用户）：照 runbook 第 1–4 步，Unreal，50 fps
+
+运行 `warehouse_mars_50`（实验文件 `configs/experiments/warehouse_mars_50.yaml`，即 `warehouse_mars_smoke` 只改运行名、`collect` 保留 50 条每批 10 局最多 25 批、`train` 和 `eval.rounds`），只走 ym 边，D455 第一视角，`images.camera_delay` 打开。
+
+| 步 | 结果 | 用时 |
+|---|---|---|
+| 1 建场景 | 场景已存在，两条命令拒绝覆盖（runbook 已补这一情况）；另建一份比对，`scene_locomani.xml` 完全相同。Unreal 编辑器 GPU 1，关卡 35 s，`robot` 是 mars | 约 1 分钟 |
+| 2 采集 | 1 条通道（进程数只够一条）。120 局保留 50 条（42%）；失败 reach_stalled 23、lost_attachment 23、basket_tilt 17、stand_not_delivered 3，其余 4 种各 1 | 75 分钟，每局约 37 s |
+| 3 Unreal 补渲 | 第一次在第一条就报 `KeyError: 'dataset_fps'` 退出（`view_render.plan` 把运行的帧率加进 look 却没交给 `fill`，新 session 必崩，Isaac 入口同样；已修，加了测试）。重跑 50 条全部渲完，每条约 670–830 张图对 1150–1420 行，每张 p50 126 ms | 80 分钟，每条约 95 s |
+| 4 转换 | 训练集 45 条 53,800 行、验证集 5 条 5,575 行，50 fps；两边审计各 32 项全过 | 9 分钟 |
+
+- 采集的保留率 42% 高于 2026-10-03 mars 冒烟的 9/30（四边线），也只有这一次。
+- 审计只查了 stock 和 2cam 两个档：`check_dataset.bimanual` 按任务文本里有没有 `crate` 判断双臂，warehouse 的任务是 `pick up the box`，所以真正训练用的 3cam_bimanual 档没被检查。手工核对过：modality 里 state 8 组 46 维、action 三组 66 维、三路相机都在。
+- 运行目录 3.1 GB。各步日志在 `outputs/collect_logs_warehouse_mars_50/`。
+

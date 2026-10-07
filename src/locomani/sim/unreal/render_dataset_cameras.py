@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     planned = view_render.plan(run_dir, cfg, "unreal", look)
     if planned is None:
         return 0
-    traces, todo = planned
+    traces, todo, look = planned  # look now carries the run's dataset.fps, which fill opens a session at
     total = sum(len(v) for v in todo.values())
     print(
         f"{run_dir.name}: {total} kept episode(s) to render in {len(todo)} finished session(s) "

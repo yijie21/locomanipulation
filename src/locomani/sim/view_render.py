@@ -124,10 +124,11 @@ def delay_look(cfg: dict) -> dict:
 
 
 def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
-    """What `renderer` has to render in this run: (traces, {session: [episodes]}), or None when nothing applies.
+    """What `renderer` has to render in this run: (traces, {session: [episodes]}, look), or None when nothing
+    applies.
 
-    `look` gains the run's `dataset.fps`: which rows get a picture of their own is part of what decides the
-    pixels. Refuses a run whose `images.source` is another renderer's, and a session another renderer or another
+    The returned `look` is the caller's plus the run's `dataset.fps`: which rows get a picture of their own is part
+    of what decides the pixels, and `fill` opens a new session at that rate, so it is the look to hand `fill`. Refuses a run whose `images.source` is another renderer's, and a session another renderer or another
     look has started filling -- convert would then read a dataset drawn by two functions of the state. A session
     drawn for a faster dataset serves this one (`render_dataset_cameras.serves`); one drawn for a slower dataset
     has to be drawn again, every row, after its marker is removed.
@@ -166,7 +167,7 @@ def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
             raise SystemExit(
                 f"{session.name}: its episodes were rendered with another {renderer} look ({other}); not mixing"
             )
-    return traces, {s: pending(s) for s in sessions}
+    return traces, {s: pending(s) for s in sessions}, look
 
 
 def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None:

@@ -38,6 +38,7 @@ bash scripts/build_scene.sh warehouse_box_45x32x33_mars
 
 做什么：第一条从仓库自带的资产包建物流房间，并把其中的机器人换成 mars。第二条以它为底，量出托盘四条边外的空地，建出采集用的场景（纸箱宽 0.45 × 长 0.32 × 高 0.33 m）。
 得到什么：`outputs/scene/warehouse_box_45x32x33_mars/scene_locomani.xml`。每条几秒到一分钟。
+这台机器已经建过的话，两条都会打印 `refusing to replace existing` 加场景目录并以非零状态退出，不会覆盖；直接用已有的场景，往下做即可。要重建，先删掉 `outputs/scene/` 下对应的目录。
 
 再给所选渲染器建这个场景的版本。
 
@@ -207,7 +208,7 @@ bash scripts/stop_stack.sh --instance N # 中途被打断而还挂着
 | `cannot use images.source unreal` | 这个场景没有 Unreal 关卡，只有物流房间的场景能用 |
 | `the scene carries mars` | 关卡或 Isaac stage 是给另一个机器人建的。按报错末尾打印的命令重建 |
 | `config.yaml differs from` | 同名运行的实验文件被改过。加 `--name` 换个运行名 |
-| 失败大多是 `reach_stalled`、`lost_attachment` | 这是这条线目前主要的失败形态（手停在箱沿上方、合爪后脱开），不是环境问题 |
+| 失败大多是 `reach_stalled`、`lost_attachment`、`basket_tilt` | 这是这条线目前主要的失败形态（手停在箱沿上方、合爪后脱开、抬起时箱子倾斜过大），不是环境问题 |
 
 更多报错和评测前要核对的项见 [warehouse 详解](warehouse_design.md)。
 
