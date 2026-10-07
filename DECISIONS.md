@@ -1492,6 +1492,7 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **被否决**：25 Hz 训练直接 `TF_DATASET_FPS=25` 部署（技术上可行，但与预训练先验和官方 0.8 s 视野不一致）；对 FSQ 离散 token 插值到 50 Hz（无意义）；只用 ego 一路（用户要三路）；夹爪归一化到 [0,1] 或保留米制在客户端换算（用户选真机原始单位，模型输出即命令）；整份复制两个上游仓库（6.5 GB，不能跟踪）；在真机上替换 C++（没有 Dex1 驱动代码）。
 - **已知残余差距**：仿真 50 fps 每行独立画面而真机约一半重复帧；sim2sim 的 C++ 与真机那份不同源；真机 Dex1 驱动读 7 维的哪一维未知，靠广播规避；真机相机内参未提供。
 - **追加（同日，用户）**：客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`，README 与 UPSTREAM 随包走（`src/gr00t` 的先例），启动脚本改为 `scripts/run_real_robot_inference.sh`；`src_real_robot/` 删除。理由：`src/` 已在每个 PYTHONPATH 上，不必再多一个源码根。
+- **追加（2026-10-07，henry `dc3b909`，分支 `henry-dev`，同日合入 main）**：真机部署的服务器和客户端改为照搬官方。服务器换成 `src/real_robot/run_gr00t_server.py`（照 Isaac-GR00T 的 `gr00t/eval/run_gr00t_server.py`：tyro、`Gr00tPolicy` 或 `ReplayPolicy`，多 `identity`、`--backbone-path`、`--denoising-steps`；启动脚本 `scripts/run_gr00t_server.sh`），真机不再走仿真评测的 `serve_policy.py`（RTC、种子、运行目录查找真机都用不上）。客户端 `inference.py` 按官方 `run_vla_inference.py` 逐函数重写，延迟补偿、推理触发、去前缀直接 import 官方 `vla_utils`；调官方标准的 `get_action`（嵌套观测），扁平的 `get_action_raw` 不再用；`policy_client.py` 是官方 `PolicyClient` 的同协议副本（`.venv_sim` 没有 gr00t）。保留的差异不变（三相机、60 维、Dex1 广播、FSQ snap、运行自己的初始 token、服务器不可达或字段顺序不符即退出）。`--no-snap` 改名 `--no-snap-tokens`。合入时核对：单元测试 15 个通过、服务器 `--help` 在 Isaac-GR00T venv 里能起；没有加载过真实 checkpoint，没连过仿真栈或真机。
 
 ## 2026-10-07 warehouse mars 线的频率与时序对齐官方 GR00T + SONIC（用户，逐项问答定）
 

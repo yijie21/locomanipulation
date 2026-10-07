@@ -53,7 +53,7 @@
 | D5 | action = motion_token 64 + 左右夹爪各 1 维 = 66 维 | 仓库现有 `SONIC_CRATE` 布局 |
 | D6 | 夹爪统一用真机 Dex1 原始单位：0 = 闭，5.5 = 开 | 模型输出即机器人命令；真机数据集可直接对照 |
 | D7 | 发给真机的 7 维 hand 字段把 1 维值广播到全部 7 维 | 真机驱动读哪一维未知；广播对任一维都正确 |
-| D8 | 部署用官方客户端的结构，允许修改；代码放 `src/real_robot/`，只 vendor 客户端，`gear_sonic` 依赖按安装版本导入；GR00T 策略服务器复用 `src/gr00t`（本仓库 `serve_policy.py`） | 6.5 GB 的上游树不能跟踪；两份 GR00T 副本会分叉 |
+| D8 | 部署用官方客户端的结构，允许修改；代码放 `src/real_robot/`，只 vendor 客户端，`gear_sonic` 依赖按安装版本导入；GR00T 策略服务器复用 `src/gr00t`（2026-10-07 起是 `src/real_robot/run_gr00t_server.py`，照 Isaac-GR00T 官方的 `run_gr00t_server.py`；此前是仿真评测的 `serve_policy.py`） | 6.5 GB 的上游树不能跟踪；两份 GR00T 副本会分叉 |
 | D9 | 真机 C++ 由用户自行编译带 Dex1 驱动的 SONIC 1.1；我们不替换机器人侧 | 机器人侧代码不可见 |
 | D10 | 真机相机复用机器人上已验证的三相机服务器（D455 头部 30 fps，双 D405 30 fps） | 录过 toy-bear 数据集，key 与分辨率已对上 |
 | D11 | 真机 toy-bear 数据集只做格式和分布对照，不进训练，不写 loader | 任务不同，进训练会模糊归因 |
@@ -102,17 +102,19 @@ src/real_robot/                        （与 src/gr00t 同级；src/ 已在每�
   UPSTREAM.md          vendor 来源：GR00T-WholeBodyControl v1.1 a0732b6；复用的 gear_sonic 模块清单
   inference.py         客户端主循环（官方结构：异步推理线程、延迟补偿、键盘命令、50 Hz 发布）
   observation.py       观测拼装：60 维 state（手 7 维广播 Dex1 值、eef_state 由 FK 算出）、三路图像、prompt
-  chunk.py             chunk 播放：snap、延迟补偿索引、逐 tick 取 token 与夹爪
+  chunk.py             一个 chunk：snap 到码本、夹爪换成 Dex1 单位，逐 tick 取 token 与夹爪（延迟补偿和推理触发直接用官方 vla_utils）
   gripper.py           夹爪单位：模型输出单位 → Dex1 → 线上 hand 字段（真机广播 7 维 / 仿真米制两指）
-  policy_client.py     和本仓库 serve_policy.py 的扁平观测协议（msgpack + ZMQ）
+  policy_client.py     Isaac-GR00T 官方 PolicyClient 的同协议副本（SONIC 的 .venv_sim 没有 gr00t），多一个 identity
+  run_gr00t_server.py  策略服务器，照 Isaac-GR00T 官方 gr00t/eval/run_gr00t_server.py（2026-10-07，henry dc3b909）
 scripts/run_real_robot_inference.sh    用 SONIC 的 .venv_sim 启动客户端
+scripts/run_gr00t_server.sh            用 Isaac-GR00T 的 .venv 启动策略服务器
 ```
 
 数据流：
 
 ```
 robot C++ (g1_debug :5557) ─┐
-camera server (:5555) ──────┼─ observation.py ─ policy_client ─▶ serve_policy.py (GPU 机, :5590)
+camera server (:5555) ──────┼─ observation.py ─ policy_client ─▶ run_gr00t_server.py (GPU 机, :5590)
 prompt ─────────────────────┘                                        │ 40 × (64 token + 2 gripper)
                                                                      ▼
 robot C++ (pose v4 :5556) ◀─ chunk.py ◀─ gripper.py ◀────────────────┘
@@ -127,7 +129,7 @@ robot C++ (pose v4 :5556) ◀─ chunk.py ◀─ gripper.py ◀─────�
 | 手的 state 取 `hand_q[0]` 广播到 schema 给的宽度 | D4；去掉 Dex3 耦合 hack |
 | 夹爪 1 维 → Dex1 单位 → 7 维广播发出 | D6、D7；`--gripper-units sim_m` 兼容米制 checkpoint，`--hand-wire sim` 兼容仿真桥 |
 | token 做 FSQ snap | 和仓库评测一致（`sonic_token.snap`）；官方只做 |x| > 1.25 丢弃 |
-| 对接本仓库 `serve_policy.py` 的 `get_action_raw` 扁平协议 | 服务器核对 checkpoint 的 modality 与配置一致并报 `identity` |
+| 调官方标准的 `get_action`（嵌套的 (B, T, …) 观测），服务器多一个 `identity`；客户端启动时核对字段顺序，服务器不可达或不符就退出（官方只警告） | 字段顺序错了模型照样出动作，只是全错；真机上要在动之前拦住。2026-10-06 版用的是 `serve_policy.py` 的 `get_action_raw` 扁平协议，10-07 换成官方接口（henry `dc3b909`） |
 | 初始 token 可选数据集 medoid 文件 | 官方常量是前倾姿势，不在我们数据分布里（`initial_pose.py`） |
 
 不变：50 Hz 发布、40 horizon、2.5 Hz 推理、`round(delay × rate)` 延迟补偿、键盘命令（p 暂停、k 启停 C++、i 初始姿势、t 改 prompt）、protocol v4 打包（`pack_pose_message`）、`ComposedCameraClientSensor`、`ZMQStateSubscriber`。
@@ -139,7 +141,7 @@ robot C++ (pose v4 :5556) ◀─ chunk.py ◀─ gripper.py ◀─────�
 | 编号 | 任务 | 状态 |
 |---|---|---|
 | T1 | `dataset.fps` 字段贯穿转换、补渲、审计；闭环评测在非 25 Hz 运行上明确拒绝 | 本次交付 |
-| T2 | `src/real_robot/` 推理客户端与单元测试（2026-10-06 同日从 `src_real_robot/` 移入） | 本次交付 |
+| T2 | `src/real_robot/` 推理客户端与单元测试（2026-10-06 同日从 `src_real_robot/` 移入；10-07 henry `dc3b909` 按官方客户端逐函数重写，并加官方式策略服务器 `run_gr00t_server.py`） | 本次交付 |
 | T3 | 转换器的夹爪单位映射（4.4）与 state 手 7 维广播 | 后续 |
 | T4 | 新运行 `warehouse_mars_200_50hz`：全行补渲、转换、训练；25 fps 对照 | 后续 |
 | T5 | sim2sim：仿真桥接受 Dex1 单位（`--hand-wire sim` 的逆映射）；官方客户端结构对接 MuJoCo 栈 | 后续 |

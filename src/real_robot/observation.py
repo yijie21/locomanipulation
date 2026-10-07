@@ -1,14 +1,16 @@
 """The policy's observation from the robot's state message and the camera server's images.
 
-Flat keys, the wire format of this repository's policy server (`locomani.pipeline.serve_policy` `get_action_raw`):
-`state.<group>` (1, D) float32 for every group of the schema, `video.<camera>` (1, H, W, 3) uint8 and the prompt
-under `annotation.human.task_description`. The groups are the dataset's (`locomani.schema`): the seven joint groups
+`build_observation` writes the dataset's flat keys and checks them against the schema: `state.<group>` (1, D)
+float32 for every group of the schema, `video.<camera>` (1, H, W, 3) uint8 and the prompt under
+`annotation.human.task_description`. `to_policy_observation` nests that into what Isaac-GR00T's `get_action` takes
+(`{"video": {k: (B, T, H, W, 3)}, "state": {k: (B, T, D)}, "language": {k: [[str]]}}`, B = T = 1), the format
+NVIDIA's client sends. The groups are the dataset's (`locomani.schema`): the seven joint groups
 of the 43-joint URDF order, `projected_gravity`, and the wrist poses from forward kinematics -- the same pinocchio
 model and frames the exporter used to write `observation.eef_state`, so what the policy sees on the robot is what
 it saw in training. The hand groups carry the Dex1 scalar (`real_robot.gripper.hand_state`).
 
-Differences from NVIDIA's `prepare_observation_from_sensors`: three cameras under the dataset's own keys (no
-`wrist_view` rename), the wrist poses, the hand groups, and no Dex3 left-hand coupling hack.
+Differences from NVIDIA's `prepare_observation_from_sensors` (which calls these): three cameras under the dataset's
+own keys (no `wrist_view` rename), the wrist poses, the hand groups, and no Dex3 left-hand coupling hack.
 """
 
 from __future__ import annotations
@@ -97,3 +99,16 @@ def build_observation(
     obs["annotation.human.task_description"] = prompt
     schema.validate_observation(obs)
     return obs
+
+
+def to_policy_observation(flat: dict) -> dict:
+    """The flat observation as Isaac-GR00T's `Gr00tPolicy.get_action` takes it: a time axis of one after the
+    batch axis, modalities nested, the prompt as `[[text]]` under its full key."""
+    nested = {"video": {}, "state": {}, "language": {}}
+    for key, value in flat.items():
+        modality, _, name = key.partition(".")
+        if modality in ("video", "state"):
+            nested[modality][name] = np.asarray(value)[:, None]
+        else:
+            nested["language"][key] = [[value]]
+    return nested

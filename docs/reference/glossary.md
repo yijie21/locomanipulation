@@ -48,7 +48,7 @@
 | VLA / GR00T | 视觉-语言-动作策略；本仓库微调 NVIDIA 的 GR00T（训练代码在 `src/gr00t/`），输入相机图、本体状态和指令，输出动作块 |
 | LeRobot 数据集 | Hugging Face LeRobot 格式（parquet + mp4），convert 的产物、GR00T 的训练输入；格式见 [单臂详解](../single_arm_design.md) |
 | 动作块（action chunk） | 策略一次输出的连续多步动作，执行一段后再问下一块 |
-| 策略服务（policy server） | `run_vla_server.sh`：加载 checkpoint，收观测、回动作块，端口 `eval.policy_port` |
+| 策略服务（policy server） | `run_vla_server.sh`：加载 checkpoint，收观测、回动作块，端口 `eval.policy_port`。真机部署用的是另一个：`run_gr00t_server.sh`（照 Isaac-GR00T 官方，见 `src/real_robot/README.md`） |
 | 跑局（rounds driver） | `<线>/run_vla_inference.sh`：逐局重置、让策略控制机器人、记成败，跑完收栈 |
 | 开环 / 闭环评测 | 开环：在验证集上逐帧比较策略预测与示范动作（`open_loop_eval.sh`），不起仿真。闭环：策略真的在仿真里控制机器人跑完整局 |
 
