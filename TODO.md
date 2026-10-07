@@ -564,7 +564,7 @@
 - [ ] 16.5 T5：sim2sim：官方结构客户端对接本仓库 MuJoCo 栈（`--hand-wire sim`），核对延迟补偿与跳帧行为；仿真桥若改读 Dex1 单位则用 `dex1_to_sim_m`
 - [ ] 16.6 T6（需真机）：核对相机服务器三路 key 与 `g1_debug` 手字段；`]` + `i` 手动验 Dex1 方向（5.5 开、0 闭）；按 D13 跑 10 局（起点 0.6–1.0 m，30 s，骨盆到箱心 ≤ 0.6 m 且站稳 2 s）
 - [~] 16.7 T7（2026-10-07 实现，DECISIONS 同日）：50 Hz 的 lockstep 闭环评测按官方客户端：节拍从 `dataset.fps` 读（50：一步 1 拍，动作块 40，执行 20 拍再推理，块尾保持，第一块不混合；25 不变）；评测图按 `camera_delay` 变旧（仿真保留状态历史，MuJoCo 与镜像按序号渲旧状态）；推理延迟按 `latency_dist` 每块抽，先用 lockstep 实测的 `serve_policy` 耗时；`eval_closed_loop` 放行 50 fps 的双臂 lockstep；warehouse mars smoke 系列实验文件改 50 fps。已验证（`outputs/t7_lockstep50_smoke_20261007/`，25 fps 旧 checkpoint 只验机制）：24 拍一周期、图晚 40–60 ms、实测延迟分布 `configs/eval/latency_serve_policy_50fps_20261007.json`
-    - [ ] 16.7.1 Isaac/Unreal 镜像按携带状态渲的路径上真实镜像跑一次（现只有单元测试）
+    - [x] 16.7.1 （2026-10-07）Isaac/Unreal 镜像按携带状态渲：真实镜像各 2 局通过，取图 seq 全在镜像渲染记录里、无一等于冻结时刻（`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/`，DECISIONS 2026-10-07）
     - [ ] 16.7.2 有了 50 fps checkpoint（16.4）后跑策略层面的评测；T5 后把延迟分布换成真实链路的
 - [x] 16.9 （2026-10-06，用户）客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`（`src/` 已在每个 PYTHONPATH 上，和 `src/gr00t` 同级），启动脚本改为 `scripts/run_real_robot_inference.sh`，`src_real_robot/` 删除
 - [ ] 16.8 预先存在、与本次无关的测试失败（本机）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow

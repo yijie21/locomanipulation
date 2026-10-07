@@ -21,7 +21,7 @@
   - 已确认（10-04，用户）：mars 小臂改银色；外壳按真机照片改为缎面银（metallic 0.75、roughness 0.6、底色 0.45，外观名 `g1_satin_20261004`，stock 共用）；mars 腰部电机和骨盆画黑（DECISIONS 2026-10-04 两节）。mars 模型、7 个 `*_mars` 场景、几何样例已重建，本机 9 个 Unreal 关卡 10-04 按新外观名重建；协作者 pull 后要自己重建（见提交说明）；Isaac 机器人 USD 下次用到时按 MJCF 哈希自动重建，Isaac 外观没对照片核过（13.6.14.1）。
   - 已确认（10-06，用户）：第一视角可选脸上的 D435（场景 `*_mars_d435`，实验 `warehouse_mars_smoke_d435_unreal`、`_d435_isaac`、`_d435_mujoco`，DECISIONS 2026-10-06）；本机已建场景、Isaac stage、Unreal 关卡。D435 上专家产出率未测（13.6.15.1）。
   - 已确认（10-06，用户）：warehouse mars 线补渲的图比状态晚 20–63 ms（`images.camera_delay`，DECISIONS 2026-10-06）；数值待真机测（13.6.16.1），没训练验证效果（13.6.16.3）。
-  - 已确认（10-07，用户，DECISIONS 2026-10-07）：warehouse mars 线频率与时序对齐官方 GR00T + SONIC。smoke 系列 7 个实验文件改 50 fps；lockstep 评测按官方客户端节拍（一行一拍、执行 20 拍再推理、第一块不混合），评测图按 `camera_delay` 变旧，推理延迟按本机实测分布抽。真实栈冒烟只验了机制（`outputs/t7_lockstep50_smoke_20261007/`）；镜像路径和策略层面未验（16.7.1、16.7.2）。D2 推翻（T4 补渲带延迟，约 15 h）。未提交。
+  - 已确认（10-07，用户，DECISIONS 2026-10-07）：warehouse mars 线频率与时序对齐官方 GR00T + SONIC。smoke 系列 7 个实验文件改 50 fps；lockstep 评测按官方客户端节拍（一行一拍、执行 20 拍再推理、第一块不混合），评测图按 `camera_delay` 变旧，推理延迟按本机实测分布抽。真实栈冒烟只验了机制（`outputs/t7_lockstep50_smoke_20261007/`；`804f962` 已推送）；Isaac/Unreal 镜像路径 10-07 在真实镜像上验过（16.7.1）；策略层面未验（16.7.2，等 50 fps checkpoint）。D2 推翻（T4 补渲带延迟，约 15 h）。本机这两次检查后没有留下栈、策略服务、镜像或 Unreal 编辑器。
 
 - 已确认（10-06，分支 `henry-dev`，设计 `docs/handoff/real-robot-sim2real-plan-20261006.md`，DECISIONS 2026-10-06 零样本一节）：数据集帧率成为运行字段 `dataset.fps`（25 | 50；旧文件读 25），转换、Isaac/Unreal 补渲（标记记 `dataset_fps`，25 渲的不服务 50 转换）、审计查表都读它；闭环评测遇到非 25 的运行明确拒绝。`src/real_robot/` 新增真机推理客户端（启动脚本 `scripts/run_real_robot_inference.sh`）（官方 `run_vla_inference.py` 结构，三相机、60 维 state、Dex1 单位、7 维广播），单元测试 `tests/test_real_robot_client.py`；只在本机用真实 pinocchio 模型做过观测拼装的冒烟，没连过机器人。后续 T3–T7 见 TODO 第 16 节。
 
