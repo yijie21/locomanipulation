@@ -577,3 +577,4 @@
 - [ ] 16.11 提交钩子在合并提交 `e6d7e80` 的第一次提交时失败一次（`make: *** test Error 1`），重跑通过，前后两次全量 `make check` 也都过；没抓到是哪个测试（输出被截断）。再出现时保留完整日志，查是不是不稳定的测试
 - [x] 16.12 （2026-10-07，用户）SONIC 两条线 state 改回官方 46 维，去掉两腕位姿 14 维（DECISIONS 同日）；旧 53/60 维 checkpoint 不能再服务或评测，16.4 按 46 维训练
     - [ ] 16.12.1 告诉 henry：真机客户端的 state 改成 46 维，`real_robot.observation` 不再做腕部 FK
+- [ ] 16.13 核对真机 C++ 是否按官方 `b042411` 的 `vla_inference.md` 把踝关节俯仰电机 Kp、Kd 放大 1.5 倍（`--motor-kp-scale 4,10=1.5`、`--motor-kd-scale 4,10=1.5`）；本地仿真 deploy 分支 `lockstep-port` 没有这个参数（`docs/official_comparison.md`）

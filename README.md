@@ -22,6 +22,7 @@ Unitree G1 人形机器人的移动操作仿真：机器人走到目标前、抓
 - [仿真与渲染](docs/rendering.md)：MuJoCo 和 Isaac 各管什么，怎样用 Isaac 重渲已录的动作，评测时的 Isaac 镜像，怎样导出视频。
 - [术语表](docs/reference/glossary.md)：文档里反复出现的词，例如 deploy、exporter、trace、token。
 - [配置字段表](docs/reference/config_fields.md)：实验文件里每个字段的含义和默认值，由代码自动生成。
+- [与官方教程的对照](docs/official_comparison.md)：数据采集、训练、推理三步和 NVIDIA 官方 SONIC + GR00T 教程哪里一样、哪里不一样、为什么不一样。
 
 **各主线的详解**：为什么这样设计、试过什么被否掉、runbook 里省略的细节。
 
