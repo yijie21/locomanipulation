@@ -329,16 +329,27 @@ settle，矛头转向 planner 模式。
 | 渲染耗时 | 计入世界时间 | 不计入 |
 | 起栈 | 普通 eval 栈 | `backend.lockstep.enabled`：sim `LOCKSTEP=1`、deploy `--sim-lockstep`（无 planner 模型）、`SONIC_AUTO_START`；`prepare.eval_backend` 按 `client` 设 |
 
-一个 lockstep 周期（帧 = 一个 25 fps token = 两个 50 Hz tick，H = `execution_horizon`）：
+一个 lockstep 周期（帧 = 数据集的一行：25 fps 是一个 token 持续两个 50 Hz tick，50 fps 是一个 tick；H = `execution_horizon`）：
 执行新块第 D..D+H−1 帧 → 冻结，观测 → 冻结，推理 → 续走 D 帧（D = L + C）→ 接入下一块第 D 号。
 局前准备（摆放、3 s 站立、token 姿态）全部按 tick 数，第一次 reset 前先站 250 tick（lockstep 下 INIT 斜坡会让没接管的机器人摔倒，
 [归档](archive/lockstep.md)坑 4）。每次推理带 `policy.seed`，服务端按它播种扩散噪声。
 
-`latency_dist` 从墙钟评测的逐块记录生成：
+节拍由运行的 `dataset.fps` 定（评测器以 `--dataset-fps` 传给 `vla_rounds`）。50 fps 的运行按官方客户端
+`run_vla_inference.py` 走（DECISIONS 2026-10-07）：第一块不混合，站在初始 token 上等到它，从补偿后的序号直接接管（官方 `i` 键的
+1 s 混合对应局前 3 s 的 token 姿态）；每块固定执行 H 帧，越过块尾就保持最后一帧，同官方序号钳在 39。warehouse mars 的 smoke 系列取
+H = 20（新块接入 0.4 s 后再推理，同官方 2.5 Hz）。25 fps 的运行保持原样（1 s 混合、接入段在块尾截断），历史基线照样复现。
+
+运行设了 `images.camera_delay` 时，评测的图和训练图一样变旧：每局按种子抽一个延迟和 30 fps 拍摄相位（`camera_delay.episode_draw`，
+补渲每集用的同一个函数），每次观测取 `camera_delay.camera_seq` 指出的更早状态来渲，本体状态仍取冻结那一刻。lockstep sim 保留最近
+64 个 tick 的状态（`observe` 请求）：MuJoCo 图由 sim 从那份状态渲出，Isaac/Unreal 由客户端把那份状态交给镜像渲。设了它就不能再设
+`camera_frames`。逐局记录在 trace 的 `camera_delay` 与每行 `image.age_ms`。
+
+`latency_dist` 从评测的逐块记录生成；`--fps` 写进文件，lockstep 拒绝帧率不符的文件（没有这一项的旧文件按 25）：
 
 ```bash
 "$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out wall.json                    # 墙钟实际跳帧（复刻墙钟）
 "$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out infer.json --inference-only   # 扣掉 Isaac 渲染，只剩推理
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out infer50.json --inference-only --fps 50  # lockstep 评测：每行的 infer_s（服务端耗时）
 ```
 
 `box_room_grasp_200_cap120_20260925` 的 713 个块：墙钟跳帧 4 帧 634 次、3 帧 46、5 帧 32、6 帧 1；扣掉渲染后 2 帧 710 次。

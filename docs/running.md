@@ -147,6 +147,7 @@ collect: 2 lanes in parallel -- one stack and one driver process each (instance 
 - 默认是 lockstep（`eval.client: lockstep`）：拍照、渲染和推理的时候仿真暂停，算完再继续。推理延迟按 `latency_frames` 帧模拟（默认 2 帧），这期间机器人继续执行上一个动作块。这样渲染快慢不会影响成功率。
 - 另外两种是按墙钟跑的 `blocking`（crate、warehouse）和 `async`（bottle），只在复现 2026-09-28 之前的结果时使用。
 - warehouse 上已经校准过：同一个 checkpoint，墙钟 81/100，lockstep 复刻墙钟的延迟 83/100，默认设置 88/100。bottle 的 lockstep 还没有和墙钟对照过。
+- 数据集 50 fps 的运行（warehouse mars 的 smoke 系列）按官方 GR00T + SONIC 客户端的节拍：一行一个 20 ms 控制拍，新块接入 0.4 s 后再推理；设了 `images.camera_delay` 的运行，评测时的图也和训练图一样变旧（DECISIONS 2026-10-07）。
 - 细节见[双臂详解的时间模型一节](bimanual_design.md#评测的时间模型墙钟与-lockstep)。
 
 ## 9. 开环评测

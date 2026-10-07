@@ -22,7 +22,8 @@ warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、
 - 两个补渲脚本都只渲成功局。失败局保留占位帧，因为转换不读它们；硬要 `--include-discarded` 会被拒绝。两个脚本都可以重跑，已经渲过的局会跳过。
 - Isaac 版只渲从 50 Hz 降到 25 Hz 后保留的行，用的是闭环镜像同一个渲染函数（`IsaacView`，同一个 Isaac 场景、同一个曝光），所以训练图和评测图出自同一个渲染器。它只处理已经跑完的批，可以在采集还在进行时先在另一张卡上跑，采集结束后再跑一次补齐。
 - 转换会核对 session 是哪个渲染器补的，和 `images.source` 不一致就拒绝。
-- mars 线的补渲图比状态晚 20–63 ms，模拟真机相机（`images.camera_delay`，[渲染说明](rendering.md#图像来源imagessource)）。
+- mars 线的补渲图比状态晚 20–63 ms，模拟真机相机（`images.camera_delay`，[渲染说明](rendering.md#图像来源imagessource)）；lockstep 评测的图按同一模型变旧。
+- mars 的 smoke 系列数据集 50 fps，评测按官方客户端的节拍（一行一拍，新块接入 0.4 s 后再推理；DECISIONS 2026-10-07）；`warehouse_mars_200` 是已做的 25 fps 运行。
 
 ## 4. MuJoCo 图还是 Isaac 图
 

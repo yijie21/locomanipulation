@@ -47,7 +47,7 @@
 | 编号 | 决策 | 理由 |
 |---|---|---|
 | D1 | 数据集改为 50 fps，用现有 50 Hz 原始 session 重转，不重采 | 对齐预训练先验和官方部署；源数据已是 50 Hz |
-| D2 | 50 fps 数据的图像每行独立补渲（Unreal），不用重复帧 | 用户选择；真机 D455 本身可到 90 fps |
+| D2 | ~~50 fps 数据的图像每行独立补渲（Unreal），不用重复帧~~ 2026-10-07 推翻：按官方 30 fps 相机加延迟（`images.camera_delay`），见 DECISIONS 2026-10-07 | 真机部署用 30 fps 相机服务器（D10） |
 | D3 | 三路相机 ego + left_wrist + right_wrist | 和仓库训练、评测一致；官方客户端加两路订阅 |
 | D4 | state 保持仓库的 60 维布局；手的 7 维槽位填 Dex1 的 1 维开合值广播 | 真机 exporter 自己就是这样记的（2.2）；modality 配置不改 |
 | D5 | action = motion_token 64 + 左右夹爪各 1 维 = 66 维 | 仓库现有 `SONIC_CRATE` 布局 |

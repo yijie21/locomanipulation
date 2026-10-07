@@ -41,7 +41,7 @@ class EvalConfig(VlaConfig):
     latency_frames: int | None = 2  # --latency-frames: fixed simulated inference latency, frames (lockstep client);
     # null it to draw from `latency_dist` instead (setting both is refused: the fixed value would silently win)
     camera_frames: int = 0  # lockstep (bimanual): camera delay frames added to the inference latency before adoption
-    # (0 until the deployment camera is chosen; docs/bimanual_design.md, time model)
+    # (refused beside images.camera_delay, which ages the pictures themselves; docs/bimanual_design.md, time model)
     gap: str = field(default="continue", metadata={"choices": ("continue", "hold")})  # bimanual: look+think gap
     # continue: the running chunk's next frames, as a real robot; hold: nothing, the deploy clamps its last frame
     # (the bimanual wall-clock loop before 2026-09-27)

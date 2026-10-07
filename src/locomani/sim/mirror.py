@@ -16,7 +16,10 @@ request is one JSON frame, {"op": "render"} or {"op": "ping"}; the reply is a JS
 render, one raw uint8 HxWx3 frame per stream in the header's order. A render may name the state it wants,
 {"op": "render", "seq": N}: a lockstep client (tasks/crate/vla_lockstep.py) asks for the frozen boundary's own
 state, so its images and its proprioception are one instant by construction. The mirror waits up to SEQ_WAIT_S
-for that state to arrive and refuses a newer one -- the world must not move while the policy looks:
+for that state to arrive and refuses a newer one -- the world must not move while the policy looks. Or the render
+carries the state itself, {"op": "render", "state": {"seq", "t", "wall", "qpos"}}: a lockstep client whose
+pictures are as late as a real camera's (`images.camera_delay`, 2026-10-07) draws an earlier state, which the
+sim keeps (`lockstep_sim` `observe`) and this stream, CONFLATEd to the newest, does not:
 
     {"ok": true, "seq": int, "t": sim s, "state_wall": unix s, "state_age_s": s, "render_ms": ms,
      "streams": [...], "shapes": {stream: [h, w, 3]}}
@@ -118,6 +121,8 @@ def handle(request: bytes, view, latest_state, nq: int) -> tuple[list[bytes], di
     if op == "ping":
         return [_header(ok=True, streams=list(STREAMS))], {}
     if op == "render":
+        if req.get("state") is not None:
+            return render_reply(view, req["state"], nq)
         if req.get("seq") is None:
             return render_reply(view, latest_state(), nq)
         state, why = state_at(latest_state, int(req["seq"]))
@@ -172,9 +177,16 @@ class MirrorClient:
     def ping(self) -> bool:
         return self._ask("ping") is not None
 
-    def render(self, seq: int | None = None) -> tuple[dict, dict] | None:
-        """Images of the newest state, or of state `seq` exactly (a lockstep boundary)."""
-        frames = self._ask("render") if seq is None else self._ask("render", seq=int(seq))
+    def render(self, seq: int | None = None, state: dict | None = None) -> tuple[dict, dict] | None:
+        """Images of the newest state, of state `seq` exactly (a lockstep boundary), or of `state` itself
+        ({"seq", "t", "wall", "qpos"}: an earlier state the lockstep sim kept)."""
+        if state is not None:
+            state = dict(state, qpos=[float(v) for v in state["qpos"]])
+            frames = self._ask("render", state=state)
+        elif seq is not None:
+            frames = self._ask("render", seq=int(seq))
+        else:
+            frames = self._ask("render")
         if frames is None:
             return None
         header = json.loads(frames[0])

@@ -134,6 +134,8 @@ embodiment:
 scene:
   name: warehouse_box_45x32x33_mars
   cases: null
+dataset:  # 50 fps, NVIDIA's grid: one row per 50 Hz control tick, chunk 40 rows = 0.8 s (DECISIONS 2026-10-07)
+  fps: 50
 images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac | unreal
   source: unreal
   # the dataset's pictures as late as a real camera's (user, 2026-10-06; pipeline/camera_delay.py): each row drawn from
@@ -191,7 +193,7 @@ eval:
     wrist_cams: true
     sim_vis: none
     scene_random: false
-    dataset_fps: 25.0
+    dataset_fps: 50.0
     clean_deploy: false
     eval_parallel: false
     sonic_dds_domain: null
@@ -217,11 +219,13 @@ eval:
   seed: 6000
   client: lockstep  # every VLA evaluation runs lockstep since 2026-09-28: the world waits for rendering and inference
   replan_interval: 0.4
-  execution_horizon: 16
+  execution_horizon: 20  # NVIDIA's client: the next inference 0.4 s after a chunk is adopted
   policy_port: 5700
   stand_retries: 1
-  latency_dist: null
-  latency_frames: 2  # the calibrated target model: 2 frames of inference, the old chunk continued meanwhile
+  # serve_policy's round trip measured in lockstep on this machine, ticks at 50 fps (3: 132, 4: 31, 5: 1 of 164 chunks;
+  # DECISIONS 2026-10-07); replace with the real robot link's distribution after sim2sim (TODO 16.5)
+  latency_dist: configs/eval/latency_serve_policy_50fps_20261007.json
+  latency_frames: null
   camera_frames: 0
   gap: continue
   restart_deploy: true

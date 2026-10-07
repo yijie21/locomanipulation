@@ -522,6 +522,10 @@ def main(argv=None):
     ap.add_argument("--latency-dist", help="lockstep: latency distribution JSON (vla_lockstep latency-dist)")
     ap.add_argument("--camera-frames", type=int, default=0, help="lockstep: camera delay frames (EvalConfig)")
     ap.add_argument(
+        "--camera-delay",
+        help="lockstep: the run's images.camera_delay as JSON; each observation's pictures show an earlier state",
+    )
+    ap.add_argument(
         "--no-policy-seed",
         action="store_true",
         help="lockstep: leave the server's diffusion noise unseeded (backend.lockstep.no_seed)",
@@ -529,8 +533,14 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.rounds < 1:
         ap.error("--rounds must be positive")
-    if args.client == "blocking" and (args.latency_frames is not None or args.latency_dist or args.camera_frames):
-        ap.error("--latency-frames/--latency-dist/--camera-frames simulate latency on the lockstep clock only")
+    if args.client == "blocking" and (
+        args.latency_frames is not None or args.latency_dist or args.camera_frames or args.camera_delay
+    ):
+        ap.error(
+            "--latency-frames/--latency-dist/--camera-frames/--camera-delay simulate latency on the lockstep clock only"
+        )
+    if args.client == "blocking" and args.dataset_fps != 25:
+        ap.error(f"--dataset-fps {args.dataset_fps:g}: the wall-clock loop's clean clock counts 25 fps frames")
     initial_pose.INIT_TOKEN_FILE = str(args.initial_token_file)
     config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     meta = json.loads(Path(paths.SCENE_META).read_text())

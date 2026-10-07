@@ -1492,3 +1492,19 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **被否决**：25 Hz 训练直接 `TF_DATASET_FPS=25` 部署（技术上可行，但与预训练先验和官方 0.8 s 视野不一致）；对 FSQ 离散 token 插值到 50 Hz（无意义）；只用 ego 一路（用户要三路）；夹爪归一化到 [0,1] 或保留米制在客户端换算（用户选真机原始单位，模型输出即命令）；整份复制两个上游仓库（6.5 GB，不能跟踪）；在真机上替换 C++（没有 Dex1 驱动代码）。
 - **已知残余差距**：仿真 50 fps 每行独立画面而真机约一半重复帧；sim2sim 的 C++ 与真机那份不同源；真机 Dex1 驱动读 7 维的哪一维未知，靠广播规避；真机相机内参未提供。
 - **追加（同日，用户）**：客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`，README 与 UPSTREAM 随包走（`src/gr00t` 的先例），启动脚本改为 `scripts/run_real_robot_inference.sh`；`src_real_robot/` 删除。理由：`src/` 已在每个 PYTHONPATH 上，不必再多一个源码根。
+
+## 2026-10-07 warehouse mars 线的频率与时序对齐官方 GR00T + SONIC（用户，逐项问答定）
+
+- **目标**：仿真数据、训练、闭环评测在频率与时序上与官方 GR00T-WholeBodyControl（`run_data_exporter.py`、`run_vla_inference.py`，`b042411`）和 Isaac-GR00T 的 `unitree_g1_sonic`（`51d4c89`）一致，为零样本上真机（2026-10-06 一节）去掉训练、评测、真机三处的时序差异。
+- **事实（读官方代码）**：官方只有一个主时钟：SONIC 的 50 Hz。exporter 每 20 ms 取各路"最新值"成一行，相机（OAK 30 fps）没有新帧就沿用上一张，约 40% 行图像重复；相机消息带时间戳但不存，不插值、不按时间戳对齐、不建模相机延迟（真机训练和部署走同一条链路，滞后天然一致）。推理客户端：异步线程，新块到达时从第 `round(推理耗时 × 50)` 步开始（`calculate_latency_compensated_index`），块用完停在第 40 步；上一块到达 0.4 s 后再触发推理（`should_trigger_new_inference`）；块之间不融合，N1.7 的 RTC 只是模型底层原语，官方部署指南写明没接入服务端/客户端。`i` 键 1 s 混合到初始 token；策略开始后新块直接接管，没有混合进第一块。官方仿真按真实时间 sleep，没有 lockstep。
+- **决策**：
+  1. 50 fps 数据集的图按官方方式出：30 fps 相机加延迟（`images.camera_delay`），约 40% 行图像重复。**推翻 2026-10-06 的 D2**（每行独立补渲）：D10 定了真机用现有 30 fps 相机服务器，部署时就是 30 fps，"D455 可到 90 fps"不成立；且 Unreal 补渲次数降到约 3/5（T4 约 25 h → 约 15 h）。
+  2. 正式评测保留 lockstep（2026-09-28 不变），节拍与参数按官方：50 fps 运行一步 = 1 个控制拍、动作块 40、新块执行 20 拍（0.4 s）后再推理、块用完保持最后一步；第一块不混合（官方 `i` 的 1 s 混合对应我们 prelude 里站在初始 token 上的 3 s）。真实时间下用官方结构客户端（`src/real_robot`）跑一次 sim2sim 作验证（T5），不作正式评测。
+  3. 评测时的图用训练同一个延迟模型变旧：每局抽一个延迟和 30 fps 拍摄相位（`camera_delay` 的同一函数，按局种子），观测时渲"当前减延迟"之前最近一次拍摄时刻的状态；关节状态仍取当前。`camera_frames`（把相机延迟折成多跳几帧）与 `camera_delay` 同时设拒绝。
+  4. 推理延迟每块从实测分布按种子抽（`latency_dist`）。先用本机 `serve_policy` 在 lockstep 里量到的往返耗时，T5 后换真实链路的分布。不在 lockstep 里直接用本次实测耗时：会把评测机当时的 GPU 负载带进结果。
+  5. 范围只限 warehouse mars 线（smoke 系列实验文件改 `dataset: {fps: 50}`；`warehouse_mars_200` 记录的是已做的 25 fps 运行，不改，T4 另建 `_50hz`）。lockstep 从运行的 `dataset.fps` 读节拍，25 fps 运行行为不变、历史基线可复现。
+  6. 三台相机共用一个拍摄时钟；真机实测三台相机之间的时间差（官方相机服务器 `--test-latency` 二维码工具，13.6.16.1）明显时再拆。
+- **有意不对齐**：官方 exporter 的状态重复行（社区 fork issue 实测 17%，时间戳全是 20 ms 看不出来）是缺陷，我们每行带序号，不照搬；真实时间评测只作验证；FSQ snap 与初始 token 沿用 2026-10-06 D8 与设计文档第 6 节。
+- **待真机或协作者**：三台相机的帧率、端到端延迟和相互时间差（13.6.16.1）；真实部署链路的推理延迟分布（T5）；50 与 25 fps 的差别由 25 fps 对照 checkpoint 回答（T4）。
+- **实现（同日，T7）**：`tasks/crate/vla_lockstep.py` 节拍从运行的 `dataset.fps` 读（评测器 `--dataset-fps` → `vla_rounds`；`ticks_per_frame`），50 fps 走官方调度（第一块不混合、每块固定执行 `execution_horizon` 帧、块尾保持）；`Camera` 按 `camera_delay.episode_draw`（键 `lockstep/<seed>`）与新的 `camera_delay.camera_seq` 取观测图的状态；lockstep sim 保留最近 64 个 tick 的状态，新增 `observe` 请求（MuJoCo 从副本 MjData 渲，镜像协议新增按请求携带的状态渲）；每行记 `infer_s`（服务端往返墙钟时间），`latency-dist` 能从 lockstep trace 生成并写入 `fps`，帧率不符的分布文件被拒；评测器拒绝 50 fps 配墙钟客户端、`camera_delay` 配 `camera_frames`、`eval.backend.dataset_fps` 与 `dataset.fps` 不符。warehouse mars smoke 系列 7 个文件：`dataset: {fps: 50}`、`execution_horizon: 20`、`latency_dist: configs/eval/latency_serve_policy_50fps_20261007.json`。
+- **事实（已确认，`outputs/t7_lockstep50_smoke_20261007/`）**：用 25 fps 的 `box_room_grasp_200_cap120_20260925` checkpoint 在实例 1 / GPU 0 的真实 lockstep 栈上按 50 fps 跑 2 遍 × 2 局（成功率无意义，只验机制）：每个周期 24 拍（跳 4 + 执行 20）；观测图比冻结时刻晚 40–60 ms，全部落在模型范围（抽到的延迟 + 至多一个 30 fps 帧 + 一拍）；两遍的边界 seq 与图像 seq 完全相同。服务端往返 65–100 ms（中位 69 ms），按 50 fps 取整：3 拍 132 次、4 拍 31、5 拍 1（164 块），即上面的分布文件。两遍轨迹从第一块起就不同，旧的 25 fps 路径（不带 camera_delay）对照两遍同样从第一块起不同：是 `docs/bimanual_design.md` 已记的 MuJoCo 4× 多重采样腕部图差一个灰度级，不是本次改动带来的。Isaac/Unreal 镜像按状态渲的路径只有单元测试，没有上真实镜像跑过。

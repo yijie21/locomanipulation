@@ -12,9 +12,10 @@ before t - latency, drawn from the last 50 Hz state at or before it. So a pictur
 its row (20-63 ms with the values above), never newer than the one before it, and the same row of the same episode
 always draws the same state (the draw is seeded by the session and episode). Without the key nothing moves.
 
-Only the dataset's offline re-render reads it: a live collection records the sim's own frames, which nothing
-re-draws (run_context.migrate_images refuses the pair), and the closed loop renders the state it observes (its
-camera delay is `eval.camera_frames`, frames before adoption).
+The dataset's offline re-render reads it (a live collection records the sim's own frames, which nothing re-draws:
+run_context.migrate_images refuses the pair), and so does the lockstep closed loop (2026-10-07, user: the policy
+sees pictures as old in evaluation as in training): `camera_seq` gives, per observation, the state its pictures are
+drawn from, by the same per-episode draw keyed by the round's seed (`tasks/crate/vla_lockstep.py`).
 """
 
 from __future__ import annotations
@@ -68,6 +69,20 @@ def episode_draw(delay: CameraDelay, key: str) -> tuple[float, float]:
     return float(latency), float(phase)
 
 
+def _wanted_seq(t, latency: float, phase: float, fps: float):
+    """The 50 Hz state seq at or before the last capture at or before `t - latency` on a `fps` clock of `phase`."""
+    period = 1.0 / fps
+    capture = phase + np.floor((t - latency - phase) / period + 1e-9) * period
+    return np.floor(capture / TICK_S + 1e-9).astype(np.int64)
+
+
+def camera_seq(delay: CameraDelay, draw: tuple[float, float], seq: int) -> int:
+    """The closed loop's form: the privileged seq whose state the pictures show when the policy looks at state
+    `seq` (one seq per 20 ms control tick, as in the trace), under the episode's `draw` (`episode_draw`)."""
+    latency, phase = draw
+    return int(min(_wanted_seq(seq * TICK_S, latency, phase, delay.fps), seq))
+
+
 def delayed_rows(delay: CameraDelay | None, tseq: np.ndarray, idx: np.ndarray, key: str) -> tuple[np.ndarray, dict]:
     """Per row, the trace index its pictures are drawn from, and the episode's draw for the marker.
 
@@ -77,10 +92,8 @@ def delayed_rows(delay: CameraDelay | None, tseq: np.ndarray, idx: np.ndarray, k
     if delay is None:
         return idx, {}
     latency, phase = episode_draw(delay, key)
-    period = 1.0 / delay.fps
     t = np.asarray(tseq, dtype=np.float64)[idx] * TICK_S
-    capture = phase + np.floor((t - latency - phase) / period + 1e-9) * period
-    want = np.floor(capture / TICK_S + 1e-9).astype(np.int64)
+    want = _wanted_seq(t, latency, phase, delay.fps)
     cam = np.clip(np.searchsorted(tseq, want, side="right") - 1, 0, None)
     cam = np.minimum(cam, idx)  # never a newer state than the row's own
     age_ms = (t - np.asarray(tseq, dtype=np.float64)[cam] * TICK_S) * 1e3

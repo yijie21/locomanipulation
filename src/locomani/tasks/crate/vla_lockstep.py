@@ -3,7 +3,8 @@
 `vla_rounds.py --client lockstep` runs these instead of the wall-clock loop, inside a stack started with
 `backend.lockstep.enabled` (sim LOCKSTEP=1, deploy --sim-lockstep, docs/archive/lockstep.md). Every tick of the
 sim and the deploy happens because this process asked for it, so nothing moves between two requests. One cycle
-(docs/handoff/lockstep-isaac-eval-plan-20260927.md §5; a frame is one 25 fps token, two 50 Hz ticks):
+(docs/handoff/lockstep-isaac-eval-plan-20260927.md §5; a frame is one dataset row: at 25 fps one token held two
+50 Hz ticks, at 50 fps one tick):
 
     execute   chunk[D .. D+H-1]                  the world advances H frames; the reply names the boundary
     observe   world frozen                       deploy proprioception + images of the boundary state: the step
@@ -17,7 +18,18 @@ sim and the deploy happens because this process asked for it, so nothing moves b
 So the renderer's time never enters the world (Isaac takes ~95 ms a picture, a camera nearly none), while the
 inference latency still does, as frames. The prelude -- placement, the 3 s stand, the token posture -- counts ticks
 instead of sleeping, and the policy's diffusion noise is seeded per inference, so a round with MuJoCo images
-replays bit for bit. The verdict is `vla_rounds.RoundScore`, on simulation time.
+replays bit for bit when the cameras render without multisampling; under MuJoCo's default 4x MSAA the wrist images
+differ by a grey level and the rounds part from the first chunk (docs/bimanual_design.md, time model; seen again
+2026-10-07 at 25 and 50 fps alike). The verdict is `vla_rounds.RoundScore`, on simulation time.
+
+A 50 fps run follows NVIDIA's client (`gear_sonic/scripts/run_vla_inference.py`; DECISIONS 2026-10-07): the first
+chunk takes over from the standing token at its latency-compensated index with no blend (their `i` blend to the
+initial token is our prelude's 3 s on it), and a chunk is always played `execution_horizon` frames, holding its last
+frame past its end, as their index clamps at the horizon. A 25 fps run keeps the 2026-09 cycle (the 1 s blend, the
+adopted span cut at the chunk's end), so its baselines replay. With `images.camera_delay` the pictures are as late
+as a real camera's: each observation draws them from the earlier state `pipeline.camera_delay.camera_seq` names,
+by the per-round draw the dataset's re-render uses per episode (`Camera`), while the proprioception stays the
+boundary's.
 """
 
 from __future__ import annotations
@@ -33,19 +45,29 @@ import numpy as np
 from locomani.backends.sonic import initial_pose
 from locomani.backends.sonic.agent_server import HAND_OPEN
 from locomani.backends.sonic.sonic_token import GRIPPER_MAX, expand_hands, hand_from_gripper
+from locomani.pipeline import camera_delay
+from locomani.pipeline.world_lift import SRC_FPS
 from locomani.sim.mirror import MIRRORED_SOURCES
 from locomani.tasks.crate.expert import facing_edge, start_placement
 from locomani.tasks.crate.visual_approach import approach_heading
 from locomani.tasks.crate.vla_rounds import CLOSE_THRESHOLD, RoundScore, takeover_sample
 
-RATE = 25  # dataset frames per second: one token per frame
-TICKS = 2  # 50 Hz control ticks per frame
+RATE = 25  # dataset frames per second of every run before `dataset.fps` (2026-10-06): one token per frame
+TICKS = 2  # 50 Hz control ticks per frame at RATE
+OFFICIAL_RATE = 50  # a run at this rate follows NVIDIA's client (module docstring)
 ENGAGE_TICKS = 250  # before the first reset: the INIT ramp is 150 ticks, and a policy not yet engaged falls over
 SETTLE_TICKS = 20  # vla_rounds.place's 0.4 s after the reset request
 STAND_TICKS = 150  # vla_rounds.place's 3 s IDLE hold, which the clean commander spends on the standing token
 TOKEN_POSE_TICKS = 150  # initial_pose.prepare_token_pose's 3 s on the token
 AFTER_TICKS = 50  # vla_rounds.run_round's closing 1 s hold
 ARM_TOLERANCE = 0.30  # prepare_token_pose's ready-arm check, rad
+
+
+def ticks_per_frame(rate: int) -> int:
+    """The 50 Hz control ticks one dataset frame lasts at `rate` frames per second."""
+    if rate <= 0 or SRC_FPS % rate:
+        raise SystemExit(f"a lockstep round at {rate} fps: the rate must divide the {SRC_FPS} Hz control clock")
+    return SRC_FPS // rate
 
 
 class Session:
@@ -56,7 +78,7 @@ class Session:
     tick is asked for here, so a round is a function of its seed.
     """
 
-    def __init__(self):
+    def __init__(self, ticks: int = TICKS):
         from locomani.backends.sonic import agent_server
         from locomani.backends.sonic.lockstep_client import LockstepClock, LockstepLink, lockstep_commander_class
         from locomani.backends.sonic.primitives import Primitives
@@ -72,10 +94,11 @@ class Session:
         self.p = Primitives(commander=lockstep_commander_class(self.clock)())
         self.init_tok = self.clock.init_tok
         self.open_hands = expand_hands(GRIPPER_MAX)  # (left, right), what LockstepClock stands on
+        self.ticks = ticks  # control ticks per dataset frame (`ticks_per_frame`)
 
     def step(self, frames, want_obs: bool = False) -> dict:
-        """`frames` [(token, left7, right7)], each held TICKS ticks; the reply of the boundary after the last."""
-        rep = self.clock._tick(frames, TICKS, want_obs=want_obs)
+        """`frames` [(token, left7, right7)], each held `ticks` ticks; the reply of the boundary after the last."""
+        rep = self.clock._tick(frames, self.ticks, want_obs=want_obs)
         if not self.clock.primed:
             raise RuntimeError(f"the deploy session changed mid-round ({rep.get('session')}): a reset or a restart")
         return rep
@@ -153,9 +176,51 @@ class Latency:
         return inference, inference + self.camera
 
 
-def observe(sess: Session, obs_src, rep: dict, image_source: str, last_index):
-    """The policy's observation at the boundary `rep` closed; (obs, trace fields, the deploy state's index)."""
+class Camera:
+    """A round's camera under `images.camera_delay`: the earlier state each observation's pictures show. One draw
+    of latency and capture phase per round, keyed by the round's seed, by the function the dataset's re-render
+    draws per episode (`camera_delay.episode_draw`)."""
+
+    def __init__(self, delay: camera_delay.CameraDelay, seed: int):
+        self.delay = delay
+        self.draw = camera_delay.episode_draw(delay, f"lockstep/{seed}")
+
+    def seq(self, boundary: int) -> int:
+        return camera_delay.camera_seq(self.delay, self.draw, boundary)
+
+    def record(self) -> dict:
+        latency, phase = self.draw
+        return dict(self.delay.spec(), latency_draw_ms=round(latency * 1e3, 1), phase_ms=round(phase * 1e3, 1))
+
+
+def observe(sess: Session, obs_src, rep: dict, image_source: str, last_index, camera: Camera | None = None):
+    """The policy's observation at the boundary `rep` closed; (obs, trace fields, the deploy state's index). With
+    a `camera` the pictures show the earlier state it names (the sim keeps it: `LockstepLink.observe`)."""
     proprio = obs_src.settle_proprio(last_index)
+    if camera is not None:
+        boundary = rep["priv_seq"]
+        seq = camera.seq(boundary)
+        got = sess.link.observe(seq)
+        meta = None
+        if image_source in MIRRORED_SOURCES:
+            rendered = obs_src.mirror.render(state={k: got[k] for k in ("seq", "t", "wall", "qpos")})
+            if rendered is None:
+                raise RuntimeError(f"the mirror did not render state {seq}: {obs_src.mirror.last_error}")
+            images, meta = rendered
+            obs_src.image_meta = meta
+        else:
+            images = got.get("images")
+            if images is None:
+                raise RuntimeError(
+                    "the lockstep sim returned no images: its eval stack renders offline (images.source?)"
+                )
+        obs = obs_src.build(images=images)
+        if obs is None:
+            raise RuntimeError("observation incomplete at the boundary")
+        image = dict(seq=seq, age_ms=round((boundary - seq) * 1e3 / SRC_FPS, 1))
+        if meta is not None:
+            image["render_ms"] = meta.get("render_ms")
+        return obs, dict(boundary_seq=boundary, proprio_index=proprio.get("index"), image=image), proprio.get("index")
     if image_source in MIRRORED_SOURCES:
         obs = obs_src.build(seq=rep["priv_seq"])
     else:
@@ -173,14 +238,18 @@ def observe(sess: Session, obs_src, rep: dict, image_source: str, last_index):
     return obs, fields, proprio.get("index")
 
 
+def frame_indices(start: int, count: int, length: int) -> np.ndarray:
+    """The chunk indices `count` frames from `start` play: past the chunk's end its last frame is held."""
+    return np.minimum(np.arange(start, start + count), length - 1)
+
+
 def chunk_frames(chunk, start: int, count: int, low: float) -> list:
     """`count` wire frames of `chunk` (token, left, right) from index `start`, holding its last frame past the end."""
     tok, left, right = chunk
-    out = []
-    for j in range(start, start + count):
-        jj = min(j, len(tok) - 1)
-        out.append((tok[jj], hand_from_gripper(left[jj], low), hand_from_gripper(right[jj], low)))
-    return out
+    return [
+        (tok[j], hand_from_gripper(left[j], low), hand_from_gripper(right[j], low))
+        for j in frame_indices(start, count, len(tok))
+    ]
 
 
 def run_round(
@@ -200,6 +269,8 @@ def run_round(
     image_source: str,
     seed_policy: bool,
     obs_dump: Path | None = None,
+    rate: int = RATE,
+    camera: Camera | None = None,
 ):
     meta = facing_edge(meta, cfg.visual, rng)  # the round's walk-in, as the collection expert draws it
     placement, why = prelude(sess, reset, meta, cfg, rng)
@@ -210,15 +281,28 @@ def run_round(
     low = cfg.visual.close_target  # the closed end the expert commanded, which the policy was trained on
     left_open, right_open = sess.open_hands
     stand_frame = (sess.init_tok, left_open, right_open)
-    budget_f = int(budget_s * RATE)
-    record = dict(clock="lockstep", gap=gap, latency_source=latency.dist.get("source"), camera_frames=latency.camera)
+    official = rate == OFFICIAL_RATE
+    budget_f = int(budget_s * rate)
+    record = dict(
+        clock="lockstep",
+        gap=gap,
+        rate=rate,
+        latency_source=latency.dist.get("source"),
+        camera_frames=latency.camera,
+        camera_delay=None if camera is None else camera.record(),
+    )
 
     calls = []
+    timing = {}
 
     def infer(obs):
         if seed_policy:  # the server seeds its diffusion noise with this: a MuJoCo-image round replays exactly
             obs["policy.seed"] = int(rng.integers(0, 2**31 - 1))
+        t0 = time.perf_counter()
         tok, left, right = link.get_chunk_bimanual(obs)
+        # the policy server's wall time, never the world's: what `latency-dist` builds the next distribution from
+        # (DECISIONS 2026-10-07: drawn, not measured live, so a round replays)
+        timing["infer_s"] = round(time.perf_counter() - t0, 4)
         if obs_dump is not None:  # backend.obs_dump: what the policy saw and answered, one file per inference
             obs_dump.mkdir(parents=True, exist_ok=True)
             arrays = {k: np.asarray(v) for k, v in obs.items() if not isinstance(v, str)}
@@ -236,38 +320,52 @@ def run_round(
     try:
         rep = sess.step([stand_frame], want_obs=True)  # a boundary to look from
         initial = sess.state_at(rep["priv_seq"])
-        obs, _, index = observe(sess, obs_src, rep, image_source, None)
+        obs, _, index = observe(sess, obs_src, rep, image_source, None, camera)
         tok0, left0, right0 = infer(obs)
         _, d0 = latency.draw("first")
-        # the deploy stands on the standing token while the first chunk is computed, then the 1 s blend into it:
-        # the wall-clock prelude (vla_rounds.run_round), in frames
-        l0, r0 = hand_from_gripper(left0[0], low), hand_from_gripper(right0[0], low)
-        blend = [((1 - a) * sess.init_tok + a * np.asarray(tok0[0]), l0, r0) for a in np.arange(1, RATE + 1) / RATE]
-        rep = sess.step([stand_frame] * d0 + blend, want_obs=True)
-        f = 0
         score = RoundScore(p, meta, cfg, initial, 0.0)
-        running, last = ((tok0, left0, right0), 0), blend[-1]
+        if official:
+            # NVIDIA's client: the deploy holds the standing token until the first chunk arrives, which then plays
+            # from its latency-compensated index -- no blend into it
+            first = frame_indices(d0, execution_horizon, len(tok0))
+            if np.min(np.minimum(left0[first], right0[first])) < CLOSE_THRESHOLD:
+                score.commanded_close = True
+            adopted = chunk_frames((tok0, left0, right0), d0, execution_horizon, low)
+            rep = sess.step([stand_frame] * d0 + adopted, want_obs=True)
+            f = d0 + execution_horizon
+            running, last = ((tok0, left0, right0), d0 + execution_horizon), adopted[-1]
+        else:
+            # the deploy stands on the standing token while the first chunk is computed, then the 1 s blend into
+            # it: the wall-clock prelude (vla_rounds.run_round), in frames
+            l0, r0 = hand_from_gripper(left0[0], low), hand_from_gripper(right0[0], low)
+            blend = [((1 - a) * sess.init_tok + a * np.asarray(tok0[0]), l0, r0) for a in np.arange(1, rate + 1) / rate]
+            rep = sess.step([stand_frame] * d0 + blend, want_obs=True)
+            f = 0
+            running, last = ((tok0, left0, right0), 0), blend[-1]
         while f < budget_f:
-            obs, fields, index = observe(sess, obs_src, rep, image_source, index)
+            obs, fields, index = observe(sess, obs_src, rep, image_source, index, camera)
             tok, left, right = infer(obs)
             inference, d = latency.draw("steady")
             waiting = chunk_frames(*running, d, low) if gap == "continue" else [last] * d
-            n = max(1, min(execution_horizon, len(tok) - d))
+            # official: a chunk plays `execution_horizon` frames whatever its length; 25 fps: cut at its end
+            n = execution_horizon if official else max(1, min(execution_horizon, len(tok) - d))
+            played = frame_indices(d, n, len(tok))
             adopted = chunk_frames((tok, left, right), d, n, low)
-            if any(min(left[j], right[j]) < CLOSE_THRESHOLD for j in range(d, d + n)):
+            if np.min(np.minimum(left[played], right[played])) < CLOSE_THRESHOLD:
                 score.commanded_close = True
             rep = sess.step(waiting + adopted, want_obs=True)
             f += d + n
             running, last = ((tok, left, right), d + n), adopted[-1]
             done = score.check(
                 sess.state_at(rep["priv_seq"]),
-                f / RATE,
+                f / rate,
                 frame=f,
-                left_grip=float(np.min(left[d : d + n])),
-                right_grip=float(np.min(right[d : d + n])),
+                left_grip=float(np.min(left[played])),
+                right_grip=float(np.min(right[played])),
                 inference_frames=inference,
                 skip=d,
                 gap_frames=d,
+                infer_s=timing["infer_s"],
                 **fields,
             )
             if done or rep.get("fallen"):
@@ -280,7 +378,7 @@ def run_round(
         return dict(ok=False, why=why or "[vla] lockstep: no boundary", placement=placement)
     if why is not None:
         score.why = why
-    return score.result(placement, f / RATE, trace_path, **record)
+    return score.result(placement, f / rate, trace_path, **record)
 
 
 def run_batch(args, config, meta, link) -> None:
@@ -292,9 +390,18 @@ def run_batch(args, config, meta, link) -> None:
     from locomani.sim.privileged_pub import EpisodeControlClient
     from locomani.tasks.crate.grasp_region import target_key
 
+    rate = int(args.dataset_fps)
     dist = load_latency_dist(args.latency_dist, args.latency_frames)
+    if args.latency_dist and int(dist.get("fps", RATE)) != rate:
+        raise SystemExit(
+            f"{args.latency_dist} counts frames at {dist.get('fps', RATE)} fps (a file without `fps` is 25) and this "
+            f"run's dataset is {rate}: rebuild it with `vla_lockstep latency-dist --fps {rate}`"
+        )
+    delay = camera_delay.parse(json.loads(args.camera_delay)) if args.camera_delay else None
+    if delay is not None and args.camera_frames:
+        raise SystemExit("camera_frames and images.camera_delay both delay the pictures; the run sets camera_delay")
     obs_dump = Path(DEFAULT_BACKEND.obs_dump) if DEFAULT_BACKEND.obs_dump else None
-    sess = Session()
+    sess = Session(ticks_per_frame(rate))
     sess.link.begin()  # a fresh session: after a deploy restart the old one would only time out
     reset = EpisodeControlClient()
     obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=args.image_source)
@@ -329,6 +436,8 @@ def run_batch(args, config, meta, link) -> None:
                 image_source=args.image_source,
                 seed_policy=not args.no_policy_seed,
                 obs_dump=obs_dump,
+                rate=rate,
+                camera=None if delay is None else Camera(delay, seed),
             )
             reset.end_video()
             row = dict(
@@ -351,17 +460,24 @@ def run_batch(args, config, meta, link) -> None:
         obs_src.close()
 
 
-def latency_dist(trace_dir: Path, *, inference_only: bool, fps: float = RATE) -> dict:
-    """A `latency_dist` measured on wall-clock rounds (`<eval>/traces/round_*.json`).
+def latency_dist(trace_dir: Path, *, inference_only: bool, fps: int = RATE) -> dict:
+    """A `latency_dist` measured on evaluation rounds (`<eval>/traces/round_*.json`), in frames at `fps`.
 
     Wall-clock (default): the frames each chunk actually skipped (`skip`), observation, rendering and inference
     together -- what a lockstep run needs to reproduce the wall-clock loop (plan W0). `inference_only`: the same
-    latency without the Isaac render (`image.render_ms`), in frames by NVIDIA's rounding -- the target model's L.
+    latency without the Isaac render (`image.render_ms`), in frames by NVIDIA's rounding -- the target model's L. A
+    lockstep round's row records the policy server's own time (`infer_s`, the world frozen meanwhile), which is
+    already inference only (DECISIONS 2026-10-07: the next run draws from it). The file records `fps`; a lockstep
+    run refuses one counted at another rate.
     """
     frames = []
     for path in sorted(Path(trace_dir).glob("round_*.json")):
         for row in json.loads(path.read_text()).get("trace", []):
-            if inference_only:
+            if "infer_s" in row:
+                if not inference_only:
+                    raise SystemExit(f"{path} is a lockstep round: its skips are drawn, measure with --inference-only")
+                frames.append(int(np.round(row["infer_s"] * fps)))
+            elif inference_only:
                 render = ((row.get("image") or {}).get("render_ms") or 0.0) / 1e3
                 frames.append(int(np.round(max(0.0, row["latency_s"] - render) * fps)))
             else:
@@ -369,7 +485,7 @@ def latency_dist(trace_dir: Path, *, inference_only: bool, fps: float = RATE) ->
     if not frames:
         raise SystemExit(f"no chunk rows in {trace_dir}/round_*.json")
     kind = "inference only (render removed)" if inference_only else "wall-clock skip"
-    return {"first": frames, "steady": frames, "source": f"{trace_dir} ({kind}, {len(frames)} chunks)"}
+    return {"first": frames, "steady": frames, "fps": int(fps), "source": f"{trace_dir} ({kind}, {len(frames)} chunks)"}
 
 
 def main(argv=None) -> int:
@@ -378,11 +494,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Lockstep helpers for the crate evaluation.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("latency-dist", help="write a latency_dist JSON from wall-clock round traces")
-    d.add_argument("traces", type=Path, help="<eval>/traces of a wall-clock evaluation")
+    d.add_argument("traces", type=Path, help="<eval>/traces of an evaluation (wall clock, or lockstep's infer_s)")
     d.add_argument("--out", type=Path, required=True)
     d.add_argument("--inference-only", action="store_true", help="drop the Isaac render time: the target model")
+    d.add_argument("--fps", type=int, default=RATE, help="the dataset rate of the runs that will draw from it")
     args = ap.parse_args(argv)
-    dist = latency_dist(args.traces, inference_only=args.inference_only)
+    dist = latency_dist(args.traces, inference_only=args.inference_only, fps=args.fps)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(dist, indent=1))
     counts = {k: dist["steady"].count(k) for k in sorted(set(dist["steady"]))}

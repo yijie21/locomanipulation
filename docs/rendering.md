@@ -70,7 +70,7 @@ Unreal：关卡里的后处理体积和 `repeats`），所以同一个状态对�
 `src/locomani/sim/view_render.py`，镜像协议是共用的 `src/locomani/sim/mirror.py`。
 convert 查 session 是哪个渲染器补的，与 `images.source` 不一致就拒绝；矛盾的配置（如 `isaac` 或 `unreal` 配 `backend.render: live`）
 
-补渲的图可以比状态晚，像真机相机那样（用户 2026-10-06）：`images.camera_delay: {fps: 30, latency_ms: [20, 30]}`。每局随机一个 20–30 ms 的延迟和 30 fps 的拍摄相位，每行的图改用那一刻之前最近一次拍摄的状态来渲，所以图比状态晚 20–63 ms，而且时间上不会倒退。同一局重渲结果相同。三个渲染器的补渲都读它（`pipeline/camera_delay.py`），补渲标记记下这组值，一个 session 不会混两种延迟；转换时数据审计按它算出的平均滞后（25 fps 数据集约 1.3 帧，50 fps 约 2.6 帧）检查视频和关节的对齐。只作用于离线补渲：实时采集录的是仿真自己的帧，配了会被拒绝；闭环评测仍渲当前状态，相机延迟在评测里另由 `eval.camera_frames` 表示。warehouse mars 线的实验文件都已打开它；数值是估计，真机还没测。
+补渲的图可以比状态晚，像真机相机那样（用户 2026-10-06）：`images.camera_delay: {fps: 30, latency_ms: [20, 30]}`。每局随机一个 20–30 ms 的延迟和 30 fps 的拍摄相位，每行的图改用那一刻之前最近一次拍摄的状态来渲，所以图比状态晚 20–63 ms，而且时间上不会倒退。同一局重渲结果相同。三个渲染器的补渲都读它（`pipeline/camera_delay.py`），补渲标记记下这组值，一个 session 不会混两种延迟；转换时数据审计按它算出的平均滞后（25 fps 数据集约 1.3 帧，50 fps 约 2.6 帧）检查视频和关节的对齐。只作用于离线补渲：实时采集录的是仿真自己的帧，配了会被拒绝；lockstep 闭环评测按同一模型让观测图变旧（2026-10-07，[双臂详解的时间模型一节](bimanual_design.md#评测的时间模型墙钟与-lockstep)），此时不能再设 `eval.camera_frames`。warehouse mars 线的实验文件都已打开它；数值是估计，真机还没测。
 加载实验文件时就拒绝。
 
 第三视角录像也由 `images.source` 的渲染器画（用户 2026-09-29 定），而且是可选的，只在跑这一条命令时画（用户 2026-09-30 定）：

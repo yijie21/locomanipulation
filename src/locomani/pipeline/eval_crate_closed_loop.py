@@ -187,6 +187,18 @@ def parse_args(argv=None):
         "5590 is instance 1's keyboard port",
     )
     ap.add_argument("--execution-horizon", type=int, default=16)
+    ap.add_argument(
+        "--dataset-fps",
+        type=int,
+        default=25,
+        help="the rate the checkpoint's dataset was stored at (a run's dataset.fps): 50 plays one row per control "
+        "tick, NVIDIA's client (vla_lockstep), lockstep only",
+    )
+    ap.add_argument(
+        "--camera-delay",
+        default=None,
+        help="the run's images.camera_delay as JSON: the closed loop's pictures as late as the dataset's (lockstep)",
+    )
     ap.add_argument("--budget-s", type=float, default=90.0)
     ap.add_argument("--initial-token-file", type=Path, default=DEFAULT_TOKEN)
     ap.add_argument(
@@ -232,11 +244,33 @@ def parse_args(argv=None):
     return args
 
 
+def check_timing(args) -> None:
+    """Refuse a dataset rate or a camera delay this evaluation would not deliver (DECISIONS 2026-10-07)."""
+    from locomani.pipeline import camera_delay
+
+    if args.dataset_fps != 25 and args.client != "lockstep":
+        raise SystemExit(
+            f"dataset.fps {args.dataset_fps}: only the lockstep client plays other rates; the wall-clock loop "
+            "counts 25 fps frames"
+        )
+    if args.camera_delay is None:
+        return
+    camera_delay.parse(json.loads(args.camera_delay))
+    if args.client != "lockstep":
+        raise SystemExit("images.camera_delay ages the closed loop's pictures on the lockstep clock only")
+    if args.camera_frames:
+        raise SystemExit(
+            "camera_frames and images.camera_delay both delay the pictures; with camera_delay set camera_frames is 0"
+        )
+
+
 def lockstep_argv(args) -> list:
     """The simulated-latency flags vla_rounds takes for a lockstep client (none for the wall clock)."""
     if args.client != "lockstep":
         return []
-    argv = ["--camera-frames", args.camera_frames]
+    argv = ["--camera-frames", args.camera_frames, "--dataset-fps", args.dataset_fps]
+    if args.camera_delay is not None:
+        argv += ["--camera-delay", args.camera_delay]
     if args.latency_frames is not None:
         argv += ["--latency-frames", args.latency_frames]
     if args.latency_dist:
@@ -338,6 +372,15 @@ def evaluate_run(args):
     args.batch_rounds = collect["batch_rounds"]  # deploy restart cadence, as the crate pilots
     args.instance = int(collect["instance"])
     args.serve_gpu = args.gpu
+    # the run's own rate and camera, which the rounds play and draw by (DECISIONS 2026-10-07)
+    args.dataset_fps = run_context.dataset_fps(cfg)
+    delay = cfg["images"].get("camera_delay")
+    args.camera_delay = None if delay is None else json.dumps(delay)
+    if float(evaluation.backend.dataset_fps) != args.dataset_fps:
+        raise SystemExit(
+            f"eval.backend.dataset_fps is {evaluation.backend.dataset_fps:g} and dataset.fps {args.dataset_fps}: "
+            "set the eval block's to the dataset's"
+        )
     apply_eval_config(argparse.ArgumentParser(), args)
     try:
         _evaluate(args)
@@ -370,6 +413,7 @@ def main(argv=None):
 
 
 def _evaluate(args):
+    check_timing(args)
     out = args.out.resolve()
     manifest = out / "closed_loop.manifest.jsonl"
     if manifest.exists():
@@ -391,7 +435,7 @@ def _evaluate(args):
     # which executes walking tokens at ~1/3. This line had been degraded in every round.
     backend = SonicBackendConfig(
         no_encoder=True,
-        dataset_fps=25.0,
+        dataset_fps=float(args.dataset_fps),
         clean_deploy=args.clean,
         lockstep=LockstepConfig(enabled=args.client == "lockstep"),
     )
@@ -520,8 +564,14 @@ def _evaluate(args):
         budget_s=args.budget_s,
         client=args.client,
         gap=args.gap,
+        dataset_fps=args.dataset_fps,
         **(
-            dict(latency_frames=args.latency_frames, latency_dist=args.latency_dist, camera_frames=args.camera_frames)
+            dict(
+                latency_frames=args.latency_frames,
+                latency_dist=args.latency_dist,
+                camera_frames=args.camera_frames,
+                camera_delay=None if args.camera_delay is None else json.loads(args.camera_delay),
+            )
             if args.client == "lockstep"
             else {}
         ),

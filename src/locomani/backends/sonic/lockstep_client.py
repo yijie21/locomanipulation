@@ -92,6 +92,13 @@ class LockstepLink:
             raise RuntimeError(f"lockstep step: {rep.get('error')}")
         return rep
 
+    def observe(self, seq: int) -> dict:
+        """The state the sim published as `seq` (one of its last ticks) and its MuJoCo cameras (lockstep_sim)."""
+        rep = self._call({"cmd": "observe", "seq": int(seq)})
+        if not rep.get("ok"):
+            raise RuntimeError(f"lockstep observe: {rep.get('error')}")
+        return rep
+
 
 class LockstepClock:
     """The agent's side of the simulation clock, outside the VLA round.
