@@ -1,7 +1,7 @@
 # STATE — 2026-10-07（会话：mars 外观与 D435、训练图加相机延迟、频率时序对齐官方 GR00T + SONIC、T7、合入 henry-dev）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认：到 `e6d7e80`（合入 henry-dev）为止都已推到 origin/main；之后只有本次 handoff 提交，未推送。
+已确认（10-07）：到 `f13199f`（state 改回官方 46 维）为止都已推到 origin/main。
 已确认（10-07 收尾时）：本机没有留下仿真栈、策略服务、镜像或 Unreal 编辑器。GPU1 上常驻别的项目的 depth_server 约 3.7 GB；SimpleRoboJev 的进程时有时无。
 别的会话：henry-zhao 直接推 origin/main 或 `henry-dev`，推送不跑钩子，可能自带检查失败（记忆 origin-main-can-carry-failing-checks）。
 
