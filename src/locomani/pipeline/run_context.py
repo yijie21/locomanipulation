@@ -26,6 +26,7 @@ from pathlib import Path
 import yaml
 
 from locomani import paths
+from locomani.pipeline import camera_delay
 from locomani.sim import robot_look
 from locomani.sim.mirror import MIRRORED_SOURCES
 
@@ -148,9 +149,19 @@ def migrate_images(cfg: dict) -> dict:
         # `images.third_person` (4144452, 2026-09-30, pushed) switched the fill's filming; the fill no longer films
         # (scripts/render_third_person.sh does, on request), so either value means what no key means now
         images.pop("third_person", None)
-    if not isinstance(images, dict) or set(images) != {"source"} or images["source"] not in IMAGE_SOURCES:
-        raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}}}, not {images!r}")
+    if (
+        not isinstance(images, dict)
+        or "source" not in images
+        or set(images) - {"source", "camera_delay"}
+        or images["source"] not in IMAGE_SOURCES
+    ):
+        raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}[, camera_delay: ...]}}, not {images!r}")
     source = images["source"]
+    if camera_delay.parse(images.get("camera_delay")) and (cfg.get("backend") or {}).get("render", "live") != "offline":
+        raise SystemExit(
+            "images.camera_delay ages the offline re-render's pictures, and a live collection records the sim's own "
+            "frames, which nothing re-draws: give backend.render offline, or leave camera_delay out"
+        )
     if source != "mujoco" and (cfg.get("backend") or {}).get("render", "live") != "offline":
         raise SystemExit(
             f"images.source {source} needs backend.render: offline -- a live collection records MuJoCo frames, which "

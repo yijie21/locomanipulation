@@ -553,19 +553,25 @@ def _is_resample_ripple(prof: dict, peak: int) -> bool:
 MAJORITY_MIN = 10
 
 
-def video_aligned(lags) -> bool:
-    """The wrist cameras show the table's motion at lag 0: a majority at 0 with median 0 (few: |median| <= 1, one at 0)."""
+def video_aligned(lags, expected: float = 0.0) -> bool:
+    """The wrist cameras show the table's motion at lag 0: a majority at 0 with median 0 (few: |median| <= 1, one at 0).
+
+    `expected` > 0: the run aged its pictures on purpose (images.camera_delay, camera_delay.mean_lag_frames), so the
+    median has to sit within a frame of that -- a delay that is there and is the one asked for. A run without it
+    still fails at median 0 (the 3- and 5-frame injections above moved the median by the whole shift)."""
     if not lags:
         return False
     lags = np.asarray(lags)
     med, at_zero = float(np.median(lags)), float(np.mean(lags == 0))
+    if expected:
+        return bool(abs(med - expected) <= 1)
     if len(lags) < MAJORITY_MIN:
         return bool(abs(med) <= 1 and at_zero > 0)
     return bool(med == 0 and at_zero > 0.5)
 
 
-def pass_alignment(root, info, eps, r, n_eps):
-    """Measure the video/table lag, and the action/state lag."""
+def pass_alignment(root, info, eps, r, n_eps, expected_lag: float = 0.0):
+    """Measure the video/table lag, and the action/state lag; `expected_lag` frames is the run's camera delay."""
     print("\n[4/4] alignment")
     if cv2 is None:
         r.note("cv2 not importable, skipping")
@@ -627,11 +633,20 @@ def pass_alignment(root, info, eps, r, n_eps):
     # the report, which is why the outliers are listed rather than summarised
     # into a pass.
     r.check(
-        video_aligned(lags),
-        f"video vs table: {len(lags)} wrist-camera measurements, "
+        video_aligned(lags, expected_lag),
+        (
+            f"video vs table, expected {expected_lag:+.1f} frames (images.camera_delay): "
+            if expected_lag
+            else "video vs table: "
+        )
+        + f"{len(lags)} wrist-camera measurements, "
         f"{at_zero * 100:.0f}% at lag 0 (median {med:+.0f}), "
         f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}"
-        + ("" if len(lags) >= MAJORITY_MIN else f" (fewer than {MAJORITY_MIN}: judged on the median alone)"),
+        + (
+            ""
+            if expected_lag or len(lags) >= MAJORITY_MIN
+            else f" (fewer than {MAJORITY_MIN}: judged on the median alone)"
+        ),
     )
     off = [(ep, cam, lag) for (ep, cam), lag in zip(pairs, lags) if lag != 0]
     if off:
@@ -669,6 +684,13 @@ def main():
         "ambiguous, instead of failing",
     )
     ap.add_argument(
+        "--video-lag",
+        type=float,
+        default=0.0,
+        help="frames the dataset's pictures trail its state on purpose (the run's images.camera_delay; run_convert "
+        "passes camera_delay.mean_lag_frames): the video/table alignment then expects that median instead of 0",
+    )
+    ap.add_argument(
         "--run-dir",
         help="the pilot run directory (inputs.json, trace/, scene copy) that produced the dataset's "
         "sessions: the grasp pass then judges the object's rise in WORLD z from the state trace "
@@ -693,7 +715,7 @@ def main():
         run = RunTraces(args.run_dir)
     pass_grasp(root, info, eps, r, run)
     if not args.quick:
-        pass_alignment(root, info, eps, r, args.align_episodes)
+        pass_alignment(root, info, eps, r, args.align_episodes, args.video_lag)
 
     print(f"\n{r.passed} passed, {r.failed} failed")
     sys.exit(1 if r.failed else 0)

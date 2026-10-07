@@ -223,7 +223,8 @@ def test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only(isa
     # so nothing but who draws the pictures may differ
     experiments = run_context.ROOT / "configs" / "experiments"
     isaac, unreal = (yaml.safe_load((experiments / f"{n}.yaml").read_text()) for n in (isaac_name, unreal_name))
-    assert (isaac["images"], unreal["images"]) == ({"source": "isaac"}, {"source": "unreal"})
+    assert (isaac["images"].pop("source"), unreal["images"].pop("source")) == ("isaac", "unreal")
+    assert isaac["images"] == unreal["images"]  # the rest of the block (camera_delay) is the same
     assert (isaac["name"], unreal["name"]) == (isaac_name, unreal_name)
     rest = [{k: v for k, v in cfg.items() if k not in ("name", "images")} for cfg in (isaac, unreal)]
     assert rest[0] == rest[1]

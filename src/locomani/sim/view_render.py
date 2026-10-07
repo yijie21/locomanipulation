@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
-from locomani.pipeline import run_context, sim_video
+from locomani.pipeline import camera_delay, run_context, sim_video
 from locomani.pipeline.render_dataset_cameras import (
     MARKER,
     RENDER_SCRIPT,
@@ -69,15 +69,18 @@ def finished_sessions(run_dir: Path, sessions: list[str]) -> list[str]:
     return sessions[: json.loads(inputs.read_text())["batches"]] if inputs.exists() else sessions
 
 
-def render_episode(view, traces, session: Path, ep: int, info: dict, streams, dataset_fps: int = DST_FPS) -> dict:
+def render_episode(
+    view, traces, session: Path, ep: int, info: dict, streams, dataset_fps: int = DST_FPS, delay=None
+) -> dict:
     """Render one episode's cameras over its placeholders, every row a `dataset_fps` convert picks; returns its
-    receipt."""
+    receipt. `delay` (camera_delay.CameraDelay) draws each row from an earlier state, as a real camera's picture."""
     t0 = time.time()
     priv = traces.priv_seq(str(session), ep)
     length = episode_length(session, ep)
     if len(priv) != length:
         raise SystemExit(f"{session.name} episode {ep}: {len(priv)} priv_seq rows but {length} parquet rows")
     trace, idx = traces.trace_rows(str(session), ep, priv, hold_tail=True)
+    idx, draw = camera_delay.delayed_rows(delay, np.asarray(trace["seq"]), idx, f"{session.name}/{ep}")
     qpos = np.asarray(trace["qpos"])
     wanted = rendered_rows(length, dataset_fps)
     view.warm_up(qpos[idx[0]])
@@ -104,12 +107,20 @@ def render_episode(view, traces, session: Path, ep: int, info: dict, streams, da
         "render_ms_p50": round(float(np.percentile(renders, 50)), 1),
         "held_tail_rows": int(np.sum(priv > np.asarray(trace["seq"])[-1])),
         "seconds": round(time.time() - t0, 1),
+        **({"camera_delay": draw} if draw else {}),
     }
 
 
-# What a look key meant before markers recorded it: one sample, the stock robot (markers before 2026-10-03) and
-# the 25 fps datasets of the day (before 2026-10-06).
-MARKER_DEFAULTS = {"supersample": 1, "robot": "stock", "dataset_fps": DST_FPS}
+# What a look key meant before markers recorded it: one sample, the stock robot (markers before 2026-10-03), the
+# 25 fps datasets of the day and pictures in step with the state (both before 2026-10-06).
+MARKER_DEFAULTS = {"supersample": 1, "robot": "stock", "dataset_fps": DST_FPS, "camera_delay": None}
+
+
+def delay_look(cfg: dict) -> dict:
+    """The look key of the run's `images.camera_delay`: part of every renderer's look, so a session is never
+    filled with two delays, and the value `fill` draws its rows by."""
+    delay = camera_delay.parse((cfg.get("images") or {}).get("camera_delay"))
+    return {"camera_delay": delay.spec() if delay else None}
 
 
 def plan(run_dir: Path, cfg: dict, renderer: str, look: dict):
@@ -163,6 +174,9 @@ def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None
 
     A session keeps the dataset rate its marker was opened with (`plan` checked it serves the run's), so every
     episode of a session is drawn for the same rows; a new session takes `look["dataset_fps"]`."""
+    delay = camera_delay.parse(look.get("camera_delay"))
+    if delay:
+        log(f"  {camera_delay.describe(delay)}")
     for session, eps in todo.items():
         if not eps:  # nothing to render, so nothing to open: a batch of rounds that failed before recording leaves a
             continue  # session that may be gone by now (warehouse_smoke batch 01, its instance root cleaned, 2026-09-29)
@@ -186,7 +200,7 @@ def fill(view, traces, todo: dict, renderer: str, look: dict, log=print) -> None
             }
         )
         for ep in eps:
-            receipt = render_episode(view, traces, session, ep, info, STREAMS, fps)
+            receipt = render_episode(view, traces, session, ep, info, STREAMS, fps, delay)
             state["episodes"].append(ep)
             state["held_tail_rows"][str(ep)] = receipt["held_tail_rows"]
             state["receipts"][str(ep)] = receipt

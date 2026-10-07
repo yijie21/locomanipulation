@@ -39,7 +39,7 @@ from pathlib import Path
 import numpy as np
 
 from locomani import paths
-from locomani.pipeline import run_context
+from locomani.pipeline import camera_delay, run_context
 from locomani.pipeline.world_lift import DST_FPS, SRC_FPS
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
@@ -180,8 +180,9 @@ def encoder(dst: Path, width: int, height: int, fps: int) -> subprocess.Popen:
     )  # fmt: skip
 
 
-def render_episode(traces, session: Path, ep: int, info: dict, model, data, renderers) -> int:
-    """Render one episode's cameras over its placeholders; returns how many tail rows held the last trace sample."""
+def render_episode(traces, session: Path, ep: int, info: dict, model, data, renderers, delay=None) -> tuple[int, dict]:
+    """Render one episode's cameras over its placeholders; returns how many tail rows held the last trace sample
+    and the episode's camera-delay draw. `delay` (camera_delay.CameraDelay) draws each row from an earlier state."""
     import mujoco
 
     priv = traces.priv_seq(str(session), ep)
@@ -190,6 +191,7 @@ def render_episode(traces, session: Path, ep: int, info: dict, model, data, rend
         raise SystemExit(f"{session.name} episode {ep}: {len(priv)} priv_seq rows but {length} parquet rows")
     trace, idx = traces.trace_rows(str(session), ep, priv, hold_tail=True)
     held = int(np.sum(priv > np.asarray(trace["seq"])[-1]))
+    idx, draw = camera_delay.delayed_rows(delay, np.asarray(trace["seq"]), idx, f"{session.name}/{ep}")
     qpos = np.asarray(trace["qpos"])
     fps = info["fps"]
     tmp = {k: video_path(session, info, f"observation.images.{k}", ep).with_suffix(".rendering.mp4") for k in renderers}
@@ -210,7 +212,7 @@ def render_episode(traces, session: Path, ep: int, info: dict, model, data, rend
         if w.wait() != 0:
             raise SystemExit(f"ffmpeg failed on {tmp[k]}")
         os.replace(tmp[k], video_path(session, info, f"observation.images.{k}", ep))
-    return held
+    return held, draw
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -252,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
 
     model = mujoco.MjModel.from_xml_path(str(traces.scene_dir / "scene_locomani.xml"))
     data = mujoco.MjData(model)
+    delay = camera_delay.parse(cfg["images"].get("camera_delay"))
+    print(f"  {camera_delay.describe(delay)}", flush=True)
     for session, eps in todo.items():
         info = json.loads((session / "meta" / "info.json").read_text())
         keys = [f.split(".")[-1] for f in info["features"] if f.startswith("observation.images.")]
@@ -269,15 +273,23 @@ def main(argv: list[str] | None = None) -> int:
                 "scene": str(traces.scene_dir),
                 "renderer": "mujoco",
                 "dataset_fps": SRC_FPS,  # every row drawn: serves a convert at any dataset rate
+                "camera_delay": delay.spec() if delay else None,
             }
         )
         if state.get("renderer", "mujoco") != "mujoco":
             raise SystemExit(f"{session.name}: its placeholders are being filled by {state['renderer']}; not mixing")
+        if state.get("camera_delay") != (delay.spec() if delay else None):
+            raise SystemExit(
+                f"{session.name}: its episodes were rendered with camera_delay {state.get('camera_delay')}, "
+                f"this run asks for {delay.spec() if delay else None}; not mixing"
+            )
         for ep in eps:
             t0 = time.time()
-            held = render_episode(traces, session, ep, info, model, data, renderers)
+            held, draw = render_episode(traces, session, ep, info, model, data, renderers, delay)
             state["episodes"].append(ep)
             state["held_tail_rows"][str(ep)] = held
+            if draw:
+                state.setdefault("camera_delay_draws", {})[str(ep)] = draw
             marker.write_text(json.dumps(state, indent=1))
             print(
                 f"  {session.name} episode {ep}: {len(keys)} cameras in {time.time() - t0:.0f} s, "

@@ -529,8 +529,12 @@
     - [x] 13.6.14.1 （2026-10-05）Isaac 与 Unreal、MuJoCo 同机位对比（`outputs/robot_look_3renderers_20261005/sheet.png`）：Isaac 外壳与 Unreal 接近；4 个 mars Isaac stage 已重建
     - [x] 13.6.14.2 （2026-10-05，用户）MuJoCo 外观对齐：mars 外壳 rgba 0.7 → 0.62（DECISIONS 2026-10-05）；7 个 mars 场景、几何样例、4 个 mars Unreal 关卡与 Isaac stage 已重建。MuJoCo ego 手臂仍约 25% 过曝（头灯）
   - [x] 13.6.15 （2026-10-06，用户）第一视角可选脸上的 D435：`--ego-camera d435_head`，场景 `*_mars_d435`（bottle、warehouse_textured、warehouse_box_45x32x33），示例 `warehouse_mars_smoke_d435_unreal`、`_d435_isaac`、`_d435_mujoco`（10-06 用户：三个渲染器都有，Unreal 版由 `warehouse_mars_smoke_d435` 改名）；本机三个场景、Isaac stage、Unreal 关卡已建，三个渲染器对比 `outputs/ego_d435_20261006/`
-    - [ ] 13.6.15.1 D435 上的专家产出率只跑过一次：2026-10-06 10 局保留 5（失败 basket_tilt 3、unstable_hold、reach_stalled、lost_attachment 各 1；`outputs/runs/warehouse_mars_d435_check_20261006`），没有同种子对照 D455；伸手/合爪阶段手臂出画
+    - [ ] 13.6.15.1 D435 上的专家产出率只跑过一次：2026-10-06 10 局保留 4（失败 basket_tilt 3、unstable_hold、reach_stalled、lost_attachment 各 1；`outputs/runs/warehouse_mars_d435_check_20261006`），没有同种子对照 D455；伸手/合爪阶段手臂出画
     - [ ] 13.6.15.2 待协作者：D435 真机内参、外参所用的 livox 坐标系定义（13.3）
+  - [x] 13.6.16 （2026-10-06，用户）训练图加相机延迟：`images.camera_delay`，三个渲染器的离线补渲都读，审计按预期滞后检查；warehouse mars 线 9 个实验文件打开 `{fps: 30, latency_ms: [20, 30]}`（DECISIONS 2026-10-06）。验证 `outputs/camera_delay_check_20261006/`
+    - [ ] 13.6.16.1 待协作者：真机三台相机的帧率和"画面比关节状态晚多少"，测到后替换 30 fps / 20–30 ms
+    - [ ] 13.6.16.2 闭环评测的观测图也按同一模型变旧（现在只有 `eval.camera_frames`）
+    - [ ] 13.6.16.3 训一对有/无延迟的模型比较（未做，效果未知）
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 

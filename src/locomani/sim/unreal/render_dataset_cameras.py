@@ -40,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             "repeats": unreal["repeats"],
             "robot_look": robot_look.NAME,
             "robot": robot_look.scene_robot(ROOT / cfg["scene"]["dir"]),
+            **view_render.delay_look(cfg),
         }
         if unreal
         else {}

@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
             "supersample": isaac["supersample"],
             "robot_look": robot_look.NAME,  # stage.G1_LOOKS
             "robot": robot_look.scene_robot(ROOT / cfg["scene"]["dir"]),  # stage.robot_usd
+            **view_render.delay_look(cfg),
         }
         if isaac
         else {}

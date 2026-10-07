@@ -30,7 +30,7 @@ import os
 from pathlib import Path
 
 from locomani import paths
-from locomani.pipeline import run_context
+from locomani.pipeline import camera_delay, run_context
 from locomani.pipeline.render_dataset_cameras import expected_renderer, require_rendered
 from locomani.pipeline.stages import Stage
 from locomani.pipeline.third_person import video_dir
@@ -112,7 +112,13 @@ def main(argv: list[str] | None = None) -> int:
         if label == "val" and not cfg["train"]["holdout"]:
             continue  # holdout 0 keeps every episode for training, and there is no split to audit
         commands.append((f"stats_{label}", stats_argv(dataset, cfg)))
-        commands.append((f"audit_{label}", [DATA_PY, AUDIT, dataset, "--run-dir", run_dir]))
+        lag = camera_delay.mean_lag_frames(
+            camera_delay.parse(cfg["images"].get("camera_delay")),
+            run_context.dataset_fps(run_context.migrate_dataset(cfg)),
+        )
+        commands.append(
+            (f"audit_{label}", [DATA_PY, AUDIT, dataset, "--run-dir", run_dir, "--video-lag", f"{lag:.2f}"])
+        )
 
     if args.dry_run:
         for name, command in commands:

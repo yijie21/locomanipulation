@@ -113,6 +113,10 @@ scene:
   cases: null
 images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac | unreal
   source: unreal
+  # the dataset's pictures as late as a real camera's (user, 2026-10-06; pipeline/camera_delay.py): each row drawn from
+  # the state 20-63 ms before it -- a 30 fps capture clock and a 20-30 ms latency per episode, unmeasured on the real
+  # robot yet. The offline re-render only: the closed loop still renders the state it observes.
+  camera_delay: {fps: 30, latency_ms: [20, 30]}
 backend:
   no_encoder: false
   render: offline
