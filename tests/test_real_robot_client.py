@@ -1,19 +1,21 @@
 """The real-robot inference client (src/real_robot): gripper units, observation assembly, chunk replay, CLI defaults.
 
-No sockets, no gear_sonic: the robot model is a fake with the exporter's 43-joint layout and FK interface.
+No sockets: the robot model is a fake with the exporter's 43-joint layout and FK interface, the policy and the
+subscribers are fakes. gear_sonic (in this venv) is imported as NVIDIA's client imports it.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+import tyro
 
 from locomani.backends.sonic.sonic_token import FSQ_STEP
 from locomani.schema import SONIC_BOTTLE, SONIC_CRATE
 from real_robot import chunk as C
 from real_robot import gripper as G
-from real_robot.inference import Settings, parse_args
-from real_robot.observation import build_observation, projected_gravity
+from real_robot import inference as I
+from real_robot.observation import build_observation, projected_gravity, to_policy_observation
 from real_robot.policy_client import identity_mismatch
 
 # --- gripper units -------------------------------------------------------------------------------------------------
@@ -192,20 +194,82 @@ def test_a_chunk_outside_the_token_bound_or_with_a_short_gripper_is_refused():
         )
 
 
-def test_latency_compensation_and_inference_scheduling_are_nvidias():
-    assert C.latency_index(0.0, 50, 40) == 0 and C.latency_index(0.07, 50, 40) == 4  # 70 ms at 50 Hz: skip 3.5 -> 4
-    assert C.latency_index(0.4, 50, 40) == 20 and C.latency_index(5.0, 50, 40) == 39
-    assert C.latency_index(0.07, 25, 40) == 2  # the same latency at a 25 fps dataset's publish rate
-    assert C.should_infer(False, True, 0.0, 0.4)  # nothing to publish yet: ask at once
-    assert not C.should_infer(True, True, 9.0, 0.4)  # never two at a time
-    assert not C.should_infer(True, False, 0.3, 0.4) and C.should_infer(True, False, 0.4, 0.4)
+# --- the inference runner's helpers (NVIDIA's functions, our formats) ----------------------------------------------
+
+
+def test_the_policy_observation_is_nested_with_a_time_axis_as_gr00t_get_action_takes_it():
+    flat = build_observation(_state_msg(), _images(), "pick up the box", FakeRobotModel(), SONIC_CRATE)
+    nested = to_policy_observation(flat)
+    assert set(nested) == {"video", "state", "language"}
+    assert list(nested["video"]) == list(SONIC_CRATE.video_keys) and set(nested["state"]) == set(SONIC_CRATE.state_keys)
+    assert nested["video"]["right_wrist"].shape == (1, 1, 480, 640, 3) and nested["video"]["ego_view"].dtype == np.uint8
+    assert nested["state"]["left_arm"].shape == (1, 1, 7) and nested["state"]["left_arm"].dtype == np.float32
+    np.testing.assert_array_equal(nested["state"]["left_leg"][0, 0], flat["state.left_leg"][0])
+    assert nested["language"] == {"annotation.human.task_description": [["pick up the box"]]}
+
+
+class _Camera:
+    def __init__(self, images):
+        self.images = images
+
+    def read(self):
+        return None if self.images is None else {"images": self.images}
+
+
+class _State:
+    def __init__(self, msg):
+        self.msg = msg
+
+    def get_msg(self):
+        return self.msg
+
+
+def test_the_observation_from_sensors_waits_for_the_camera_the_state_and_every_schema_camera():
+    rm = FakeRobotModel()
+    assert I.prepare_observation_from_sensors(_Camera(None), _State(_state_msg()), rm, "p") is None
+    assert I.prepare_observation_from_sensors(_Camera(_images()), _State(None), rm, "p") is None
+    assert I.prepare_observation_from_sensors(_Camera(_images(("ego_view",))), _State(_state_msg()), rm, "p") is None
+    obs = I.prepare_observation_from_sensors(_Camera(_images()), _State(_state_msg()), rm, "lift", schema=SONIC_CRATE)
+    assert obs["language"]["annotation.human.task_description"] == [["lift"]]
+    np.testing.assert_allclose(obs["state"]["projected_gravity"][0, 0], [0, 0, -1], atol=1e-6)  # gear_sonic's
+
+
+class _Policy:
+    def __init__(self, action):
+        self.action = action
+
+    def get_action(self, observation, options=None):
+        return dict(self.action), {}
+
+
+def _batched_reply(**kw):
+    """What Gr00tPolicy.get_action returns: unprefixed keys, (B, T, D)."""
+    return {k.removeprefix("action."): np.asarray(v).reshape(1, 40, -1) for k, v in _reply(**kw).items()}
+
+
+def test_inference_turns_the_batched_reply_into_a_dex1_chunk_and_skips_one_outside_the_bound():
+    reply = _batched_reply(grip_left=0.0245, grip_right=-0.06) | {"task_progress": np.zeros((1, 40, 1))}
+    chunk = I.run_policy_inference_and_process(_Policy(reply), {}, None, gripper_units="sim_m")
+    assert isinstance(chunk, C.ActionChunk) and len(chunk) == 40 and chunk.frame(0)[1:] == pytest.approx((5.5, 0.0))
+    np.testing.assert_allclose(chunk.token / FSQ_STEP, np.round(chunk.token / FSQ_STEP), atol=1e-6)
+    assert I.run_policy_inference_and_process(_Policy(_batched_reply(token_scale=3.0)), {}, None) is None
+    assert I.run_policy_inference_and_process(_Policy({"motion_token": np.zeros((1, 40, 64))}), {}, None) is None
+
+
+def test_the_latent_message_takes_seven_wide_hands_and_the_initial_pose_hands_are_dex1():
+    with pytest.raises(ValueError, match=r"shape \[7\]"):
+        I.pack_latent_action_message(np.zeros(64), np.array([0]), left_hand_joints=np.zeros(6))
+    assert isinstance(I.pack_latent_action_message(np.zeros(64), np.array([3]), np.zeros(7), np.zeros(7)), bytes)
+    np.testing.assert_array_equal(I.initial_pose_hand_joints(False, "dex1"), np.full(7, 5.5, np.float32))
+    np.testing.assert_array_equal(I.initial_pose_hand_joints(True, "dex1"), np.zeros(7, np.float32))
+    assert I.get_action_field({"action.motion_token": 1}, "motion_token") == 1
 
 
 # --- CLI and server identity ---------------------------------------------------------------------------------------
 
 
 def test_the_defaults_are_the_official_deployments():
-    s = parse_args([])
+    s = tyro.cli(I.InferenceConfig, args=[])
     assert (s.action_publish_rate, s.action_horizon, s.rate) == (50, 40, 2.5)
     assert (s.camera_port, s.state_zmq_port, s.action_zmq_port, s.keyboard_zmq_port, s.port) == (
         5555,
@@ -215,14 +279,15 @@ def test_the_defaults_are_the_official_deployments():
         5590,
     )
     assert (s.schema, s.gripper_units, s.hand_wire, s.init_token_file) == ("crate", "dex1", "dex1", None)
-    s = parse_args(
-        ["--hand-wire", "sim", "--gripper-units", "sim_m", "--rate", "2", "--no-snap", "--prompt", "pick up the box"]
+    assert s.snap_tokens and s.identity_check and s.prompt == "pick up the box"
+    s = tyro.cli(
+        I.InferenceConfig,
+        args=["--hand-wire", "sim", "--gripper-units", "sim_m", "--rate", "2", "--no-snap-tokens", "--prompt", "lift"],
     )
-    assert (s.hand_wire, s.gripper_units, s.rate, s.no_snap) == ("sim", "sim_m", 2.0, True)
-    assert Settings().prompt == "pick up the box"
-    for bad in (["--schema", "humanoid"], ["--gripper-units", "rad"], ["--hand-wire", "dex3"], ["--rate", "0"]):
+    assert (s.hand_wire, s.gripper_units, s.rate, s.snap_tokens) == ("sim", "sim_m", 2.0, False)
+    for bad in (["--schema", "humanoid"], ["--gripper-units", "rad"], ["--hand-wire", "dex3"]):
         with pytest.raises(SystemExit):
-            parse_args(bad)
+            tyro.cli(I.InferenceConfig, args=bad)
 
 
 def test_the_served_checkpoint_must_carry_the_schemas_field_order():

@@ -1,9 +1,10 @@
-"""One action chunk from the policy, and how the publish loop walks it.
+"""One action chunk from the policy, in the form the publish loop replays it.
 
-NVIDIA's client (`run_vla_inference.py`) replays a chunk one action per publish tick and, when a new chunk lands,
-skips the actions that went stale while inference ran: `round(delay * publish_rate)`, clipped to the horizon. That
-is kept exactly. What the chunk holds is this repository's action format: the 64-wide SONIC token, snapped to the
-FSQ codebook (`locomani.backends.sonic.sonic_token`), and one gripper scalar per hand, converted to Dex1 units.
+NVIDIA's client (`run_vla_inference.py`) keeps the policy's action dict and indexes it every publish tick; latency
+compensation and inference scheduling are its own `vla_utils` functions, which `real_robot.inference` imports.
+What differs is what a chunk holds, this repository's action format: the 64-wide SONIC token, snapped to the FSQ
+codebook (`locomani.backends.sonic.sonic_token`), and one gripper scalar per hand, converted to Dex1 units once
+per chunk instead of once per tick.
 """
 
 from __future__ import annotations
@@ -34,8 +35,8 @@ class ActionChunk:
 
     @classmethod
     def from_policy(cls, out: dict, *, gripper_units: str, snap_tokens: bool = True) -> ActionChunk:
-        """The server's `get_action_raw` reply (`action.motion_token` (T, 64), `action.left_gripper` /
-        `action.right_gripper` (T,) or (T, 1)) as one chunk. Raises ValueError on a token outside the bound, which
+        """The policy's action, prefixed or not (`motion_token` (T, 64) or (1, T, 64), `left_gripper` /
+        `right_gripper` (T,), (T, 1) or (1, T, 1)) as one chunk. Raises ValueError on a token outside the bound, which
         the caller skips the way NVIDIA's client does."""
         token = action_field(out, "motion_token").astype(np.float64)
         if token.ndim == 3:
@@ -59,19 +60,3 @@ class ActionChunk:
         """(token, left Dex1, right Dex1) at `index`, held at the last action past the horizon."""
         i = int(np.clip(index, 0, len(self) - 1))
         return self.token[i], float(self.left[i]), float(self.right[i])
-
-
-def latency_index(inference_delay_s: float, publish_rate_hz: float, horizon: int) -> int:
-    """Where to enter a chunk that took `inference_delay_s` to arrive: the actions already stale are skipped.
-    NVIDIA's `calculate_latency_compensated_index`, unchanged."""
-    return int(np.clip(np.round(inference_delay_s * publish_rate_hz), 0, horizon - 1))
-
-
-def should_infer(have_chunk: bool, worker_busy: bool, since_last_s: float, interval_s: float) -> bool:
-    """NVIDIA's `should_trigger_new_inference`: at once without a chunk, never while one is being computed,
-    otherwise every `interval_s`."""
-    if not have_chunk:
-        return True
-    if worker_busy:
-        return False
-    return since_last_s >= interval_s
