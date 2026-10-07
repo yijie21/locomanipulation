@@ -535,6 +535,8 @@
     - [ ] 13.6.16.1 待协作者：真机三台相机的帧率和"画面比关节状态晚多少"，测到后替换 30 fps / 20–30 ms
     - [x] 13.6.16.2 闭环评测的观测图也按同一模型变旧：2026-10-07 随 16.7 实现（lockstep；`camera_frames` 与它同设被拒）
     - [ ] 13.6.16.3 训一对有/无延迟的模型比较（未做，效果未知）
+  - [ ] 13.6.17 待用户定：10-04–10-07 产物删不删（删前在 STATE 写明 24 小时）：`outputs/runs/camdelay_check_{a_nodelay,b_delay}` 各 345 MB（延迟检查用的副本）、`outputs/t7_lockstep50_smoke_20261007` 566 MB、`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007` 各 216 MB、`/workspace/tmp/mars_scenes_{before_20261004,silver_pelvis_20261004,shell070_20261005}` 各 535 MB（换外观前的旧场景）。`/workspace` 剩 97 GB（91%）
+  - [ ] 13.6.18 待用户定：warehouse mars 的 11 个实验文件顶层 `backend.dataset_fps: 30.0` 与 `dataset.fps`（25/50）不一致；采集不读它（评测块里那份才被读），改成和 `dataset.fps` 相同还是删掉
 
 ## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
 
@@ -553,12 +555,15 @@
 - [x] 15.1 （2026-10-01）origin/main 上 henry 的 6 个提交（`5e9c613`…`c966ee1`）快进合入 main；用户 2026-10-01 说"merge 掉 henry 的修改"时已无可合并内容（PR #1–#3 的提交也都在 main 里）
 - [x] 15.2 （2026-10-01，随 `f7eadec`）`assets/unitee_G1/README.md` 的 Python 代码块按 ruff 格式化：origin/main 原本过不了 `make check`
 - [x] 15.4 （2026-10-02，`577ce78`）合入 henry 的 `cb3ae2f`（新增 `assets/unitree_G1_with_wrist_camera`，backpack 目录改名 `unitree_G1_with_backpack`）。他的 `mjmodel.mjb` 是 MuJoCo 3.10 编的旧模型（无相机、无 D405），`mjmodel.xml` 是空文件；README 的文件名和序列号与 robot.yaml 对不上；README 代码块按 ruff 格式化
+- [x] 15.5 （2026-10-07，`a0f05af`）rebase 到 henry 10-06 的 5 个提交（`1094808`…`eb984fd`，含 `dataset.fps` 与 `src/real_robot/`）：`view_render`、`render_dataset_cameras`、STATE、TODO、change map 冲突，两边都保留；`camera_delay` 的预期滞后改按运行的 `dataset.fps` 算；他新加的 `_d435_{isaac,mujoco}` 也开相机延迟
+- [x] 15.6 （2026-10-07，`e6d7e80`）合入 `henry-dev` 的 `dc3b909`（官方式 `run_gr00t_server.py` 与按官方逐函数重写的真机客户端），无冲突；同一提交把还写着 `serve_policy` / `get_action_raw` 的设计文档、DECISIONS 追加条、TODO 16.2、change map、术语表、running.md、README 更新
 - [ ] 15.3 可选：GitHub 上 PR #1–#3 若仍显示打开，在网页上关掉（本机没有 `gh`，看不到状态）
 
 ## 16. 仿真数据零样本上真机：GR00T + SONIC（用户 2026-10-06，逐项问答定；DECISIONS 同日；设计 `docs/handoff/real-robot-sim2real-plan-20261006.md`）
 
 - [x] 16.1 （2026-10-06）T1：`dataset.fps` 字段（25 | 50）贯穿 `run_context.migrate_dataset` → `run_convert --fps` → `convert_to_hf_format` → `world_lift.resample_selection`；Isaac/Unreal 补渲按它决定渲哪些行，标记记 `dataset_fps`，`render_dataset_cameras.serves` 决定渲过的 session 能否服务某个转换（50 服务 25，25 不服务 50）；`eval_closed_loop` 遇到非 25 的运行拒绝（lockstep 的 `RATE = 25` 写死，16.7）
 - [x] 16.2 （2026-10-06）T2：`src/real_robot/` 推理客户端（`real_robot.inference`，官方结构；`observation`、`chunk`、`gripper`、`policy_client`），`scripts/run_real_robot_inference.sh`，runbook `src/real_robot/README.md`，`UPSTREAM.md` 钉 WBC v1.1 a0732b6；测试 `tests/test_real_robot_client.py`。只做了本机冒烟（真实 pinocchio 模型拼 60 维观测、protocol v4 打包），没连过机器人或策略服务器。2026-10-07 henry `dc3b909`（`henry-dev`，同日合入）按官方逐函数重写客户端、调官方 `get_action`，策略服务器换成官方式 `src/real_robot/run_gr00t_server.py`（`scripts/run_gr00t_server.sh`）；仍没加载过真实 checkpoint
+    - [ ] 16.2.1 用真实 checkpoint 起 `scripts/run_gr00t_server.sh`，让 `run_real_robot_inference.sh` 在本机连上它（不上真机）：核对 `identity`、嵌套观测、40 步 chunk 和 Dex1 换算；henry 只用占位策略试过
 - [ ] 16.3 T3：转换器写 Dex1 单位：`teleop.*_hand_joints` 第 0 维按 `real_robot.gripper.sim_m_to_dex1` 映射（命令低于 −0.02 截到 0），`observation.state` 手 7 维广播映射后的指爪位置（第 4、5 维均值）；与客户端共用一个映射函数
 - [ ] 16.4 T4：新运行 `warehouse_mars_200_50hz`（复制实验文件加 `dataset: {fps: 50}`，运行目录复制 collect 条目、manifest、trace、场景；删 74 个 session 的 `meta/offline_render.json`）→ Unreal 补渲（按 2026-10-07 决策 1 带 `camera_delay`，约 3/5 的行出新图，约 15 h 单卡；推翻 D2）→ 转换 → 训练；同源数据留 25 fps 版本作对照
 - [ ] 16.5 T5：sim2sim：官方结构客户端对接本仓库 MuJoCo 栈（`--hand-wire sim`），核对延迟补偿与跳帧行为；仿真桥若改读 Dex1 单位则用 `dex1_to_sim_m`
@@ -567,4 +572,6 @@
     - [x] 16.7.1 （2026-10-07）Isaac/Unreal 镜像按携带状态渲：真实镜像各 2 局通过，取图 seq 全在镜像渲染记录里、无一等于冻结时刻（`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/`，DECISIONS 2026-10-07）
     - [ ] 16.7.2 有了 50 fps checkpoint（16.4）后跑策略层面的评测；T5 后把延迟分布换成真实链路的
 - [x] 16.9 （2026-10-06，用户）客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`（`src/` 已在每个 PYTHONPATH 上，和 `src/gr00t` 同级），启动脚本改为 `scripts/run_real_robot_inference.sh`，`src_real_robot/` 删除
-- [ ] 16.8 预先存在、与本次无关的测试失败（本机）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow
+- [x] 16.8 （2026-10-07 本机 `make check` 全量通过，三条只在 henry 的机器上失败：没有 `outputs/scene/`、`.venv_sim` 缺 pyarrow；`warehouse_mars_200` 两个文件 `eb984fd` 后又一致）预先存在、与本次无关的测试失败（henry 的机器）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow
+- [ ] 16.10 告诉 henry：2026-10-07 推翻了他设计文档的 D2（50 fps 数据集改按 30 fps 相机加延迟出图，T4 补渲带 `camera_delay`），见 DECISIONS 2026-10-07 与提交 `804f962`
+- [ ] 16.11 提交钩子在合并提交 `e6d7e80` 的第一次提交时失败一次（`make: *** test Error 1`），重跑通过，前后两次全量 `make check` 也都过；没抓到是哪个测试（输出被截断）。再出现时保留完整日志，查是不是不稳定的测试

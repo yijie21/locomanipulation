@@ -1510,3 +1510,18 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **实现（同日，T7）**：`tasks/crate/vla_lockstep.py` 节拍从运行的 `dataset.fps` 读（评测器 `--dataset-fps` → `vla_rounds`；`ticks_per_frame`），50 fps 走官方调度（第一块不混合、每块固定执行 `execution_horizon` 帧、块尾保持）；`Camera` 按 `camera_delay.episode_draw`（键 `lockstep/<seed>`）与新的 `camera_delay.camera_seq` 取观测图的状态；lockstep sim 保留最近 64 个 tick 的状态，新增 `observe` 请求（MuJoCo 从副本 MjData 渲，镜像协议新增按请求携带的状态渲）；每行记 `infer_s`（服务端往返墙钟时间），`latency-dist` 能从 lockstep trace 生成并写入 `fps`，帧率不符的分布文件被拒；评测器拒绝 50 fps 配墙钟客户端、`camera_delay` 配 `camera_frames`、`eval.backend.dataset_fps` 与 `dataset.fps` 不符。warehouse mars smoke 系列 7 个文件：`dataset: {fps: 50}`、`execution_horizon: 20`、`latency_dist: configs/eval/latency_serve_policy_50fps_20261007.json`。
 - **事实（已确认，`outputs/t7_lockstep50_smoke_20261007/`）**：用 25 fps 的 `box_room_grasp_200_cap120_20260925` checkpoint 在实例 1 / GPU 0 的真实 lockstep 栈上按 50 fps 跑 2 遍 × 2 局（成功率无意义，只验机制）：每个周期 24 拍（跳 4 + 执行 20）；观测图比冻结时刻晚 40–60 ms，全部落在模型范围（抽到的延迟 + 至多一个 30 fps 帧 + 一拍）；两遍的边界 seq 与图像 seq 完全相同。服务端往返 65–100 ms（中位 69 ms），按 50 fps 取整：3 拍 132 次、4 拍 31、5 拍 1（164 块），即上面的分布文件。两遍轨迹从第一块起就不同，旧的 25 fps 路径（不带 camera_delay）对照两遍同样从第一块起不同：是 `docs/bimanual_design.md` 已记的 MuJoCo 4× 多重采样腕部图差一个灰度级，不是本次改动带来的。Isaac/Unreal 镜像按状态渲的路径同日在真实镜像上验过（见下条）。
 - **事实（已确认，TODO 16.7.1，`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/`）**：按 runbook 的四步（eval 栈、策略服务、镜像、`bimanual/run_vla_inference.sh`）在 `warehouse_box_45x32x33_mars_d435` 上各跑 2 局，实验文件是 `warehouse_mars_smoke_d435_{isaac,unreal}` 的拷贝（50 fps、`camera_delay`、实测延迟分布），checkpoint 借 25 fps 的旧模型，成功率无意义。两个镜像各渲 88 次，trace 里每个观测的取图 seq 都在镜像的渲染记录里，且没有一个等于冻结时刻的 seq（镜像自己的状态流只有冻结时刻那一条，所以渲的确实是请求带来的状态）；图晚 40–60 ms，周期 23–24 拍（跳 3–4 + 执行 20）。渲一次 Isaac p50 218 ms、Unreal p50 122 ms，lockstep 下都不计入仿真时间。
+
+## 2026-10-07 对齐官方时被否决的方案（补记，同日问答）
+
+上面"warehouse mars 线的频率与时序对齐官方"一节的六条决策，每条都有被否决的另一边，补在这里，免得下次重提：
+
+- **50 fps 数据集每行独立渲染（原 D2）**：否决。真机部署用现有 30 fps 相机服务器（D10），训练图每行独立而部署时约 40% 重复，是分布差；渲染还多约 2/3（T4 约 25 h 对 15 h）。
+- **正式评测改真实时间（直接用 `src/real_robot` 客户端连仿真栈）**：否决。不能复现；Isaac/Unreal 渲一张 120–220 ms 会混进世界时间；推翻 2026-09-28 "评测一律 lockstep"（当时墙钟标定不可靠）。只保留为一次 sim2sim 验证（T5）。
+- **保留 `camera_frames`（相机延迟折成多跳几帧）**：否决。它只改总延迟，不让图比本体状态旧，训练里有的"状态新、图旧"错位评测里没有，量不到策略对它是否敏感。现在两者同设被拒。
+- **推理延迟：固定帧数**：否决，块交接时跳步永远一样，没有官方的抖动；**在 lockstep 里直接用本次实测耗时（同官方）**：否决，会把评测机当时的 GPU 负载（常有别的项目）带进结果，丢掉复现性。选按种子从实测分布抽。
+- **所有线（bottle、crate、stock warehouse）统一改 50 fps**：否决。历史基线（VLA 第 1–4 轮等）全部失去可比性，Isaac/Unreal 补渲过的 25 fps 数据集服务不了 50 fps，每条线都要全行重渲。只改 warehouse mars 线，lockstep 按运行的 `dataset.fps` 两种都支持。
+- **三台相机各自独立的拍摄时钟和延迟（结构上最像官方）**：暂不做。Isaac/Unreal 一次调用出三路图，拆成按相机渲染要多到 3 倍（T4 回到 25–45 h）；腕部 30 ms 错位影响多大没有数据。真机用 `--test-latency` 测出相机间时间差明显时再改。
+- **照搬官方 exporter 的状态重复行**：否决，是官方缺陷（社区 fork issue 实测 17%，时间戳看不出），我们每行带序号。
+- **把 GR00T N1.7 的 RTC 接进来**：本次不做。官方部署指南写明 RTC 只是模型底层原语、没接入服务端/客户端；官方 VLA 流程也没用它。
+
+合并 henry-dev（`dc3b909`，合并提交 `e6d7e80`）时的取舍：真机部署改用官方式 `run_gr00t_server.py` 与官方 `get_action`，不再走仿真的 `serve_policy.py` / `get_action_raw`；仿真评测仍用 `serve_policy.py`（RTC、种子、运行目录查找真机用不上，仿真要）。两套服务器并存是有意的，不是重复（2026-10-06 一节的追加条）。

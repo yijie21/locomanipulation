@@ -1,56 +1,59 @@
-# STATE — 2026-10-03（会话：warehouse 线换 mars + Unreal 默认 + 只走 ym 边；已推送 `4db7deb`）
+# STATE — 2026-10-07（会话：mars 外观与 D435、训练图加相机延迟、频率时序对齐官方 GR00T + SONIC、T7、合入 henry-dev）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`。已确认：`4db7deb` 连同之前 12 个本地提交已推到 origin/main（handoff 提交之后本地会再领先 1 个）。
-已确认（10-03 收尾时）：没有留下仿真栈、Unreal 编辑器或训练进程。两张卡上常有别的项目（SimpleRoboJev 5.9 GB 进程时有时无、depth_server 3.7 GB 在 GPU1）；`train.sh` 在别人占 > 4 GB 时拒绝启动。
-别的会话：henry-zhao 直接推 origin/main，推送不跑钩子，他的提交可能自带检查失败。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`。
+已确认：到 `e6d7e80`（合入 henry-dev）为止都已推到 origin/main；之后只有本次 handoff 提交，未推送。
+已确认（10-07 收尾时）：本机没有留下仿真栈、策略服务、镜像或 Unreal 编辑器。GPU1 上常驻别的项目的 depth_server 约 3.7 GB；SimpleRoboJev 的进程时有时无。
+别的会话：henry-zhao 直接推 origin/main 或 `henry-dev`，推送不跑钩子，可能自带检查失败（记忆 origin-main-can-carry-failing-checks）。
 
 ## 磁盘
 
-- 已确认：`/workspace` 空闲约 125 GB；根分区 `/` 约 1.8 GB。跑 Isaac、UE、pytest 前 `export TMPDIR=/workspace/tmp`。
-- 待用户：11.9、12.19.4、12.20.3、12.20.5、13.5、13.6.12（含 13.6.12.1 本次新增约 1 GB）、14.7 的删除都没定；要删先在这里写明 24 小时。
+- 已确认（10-07）：`/workspace` 剩 97 GB（91%），根分区 `/` 剩 1.6 GB。跑 Isaac、UE、pytest 前 `export TMPDIR=/workspace/tmp`。
+- 待用户：11.9、12.19.4、12.20.3、12.20.5、13.5、13.6.12、13.6.12.1、13.6.17（本次新增约 3.2 GB）、14.7 的删除都没定；要删先在这里写明 24 小时。
 
 ## 当前进度
 
-- 已确认（DECISIONS 2026-10-03）：warehouse 线默认是 mars + Unreal + 只走 ym 边。runbook 用 `warehouse_mars_smoke`（Isaac 版 `_isaac`，完整规模 `warehouse_mars_200`）；stock 的 `warehouse_smoke` 等保留、仍四边。
-  - mars 的 Isaac 机器人 USD（`assets/isaac/robot/mars/`）、4 个 Isaac stage、4 个 Unreal 关卡已建；stage、关卡、补渲标记都记 `robot`，对不上拒绝。
-  - 照 runbook 跑到转换（当时四边）：30 局保留 9 条，Unreal 补渲 9 局（标记 `robot: mars`），转换 8+1 条（`outputs/runs/warehouse_mars_smoke_4edges_20261003`）。
-  - `editor_guard.sh` 只按编辑器自己的 GPU/CPU 判卡死和打满；计数在空载下测过，没在编辑器真卡死时测过。
-- 已确认（13.6.11.1–4）：腰抖动的机制和 50 N·m 的来源已查清（DECISIONS 腰部一节）；仿真设置没查出错。
-- 已确认（13.6.2–13.6.4）：配对 10 局 bottle 9/10 = stock；warehouse 腰 50 时 6/10 = stock。mars 失败都是抬起后单手脱开（13.6.4.1）。
-- 已确认（henry 10-03，`33e8cd8`..`5ff2d7c`，10-04 rebase 合入）：mars 的 MJCF 和网格缺失时由 `make_dex1_model.write_mars()` 生成，`build_isaac_assets.sh` 与 `prepare_logistics_scene.py` 先调它；Unreal 导出丢掉有可视体的 body 上的碰撞 geom（`export_mjcf.strip_to_dynamic`，腕部 D405 曾被碰撞盒以 UE 默认灰格子罩住）；D405 支架的碰撞圆盘和盒子放 group 3，仍碰撞、相机不画（参照新增的 `assets/unitree_G1_with_wrist_camera_new`）；URLab 补丁按 30° 棱角拆分顶点，Unreal 里 D405 背面不再呈内凹（`patches/urlab_fresh_capture.patch`）。合入时他的提交带着 3 处检查失败，10-04 已修（用户）：`f156df1` 把 `warehouse_mars_smoke` 的 `start_edges` 改回四边（已改回 `[ym]`），新 README 没过 ruff format，`docs/warehouse.md` 超 220 行（上限放宽到 300）。
-  - 已确认（10-04，用户）：mars 小臂改银色；外壳按真机照片改为缎面银（metallic 0.75、roughness 0.6、底色 0.45，外观名 `g1_satin_20261004`，stock 共用）；mars 腰部电机和骨盆画黑（DECISIONS 2026-10-04 两节）。mars 模型、7 个 `*_mars` 场景、几何样例已重建，本机 9 个 Unreal 关卡 10-04 按新外观名重建；协作者 pull 后要自己重建（见提交说明）；Isaac 机器人 USD 下次用到时按 MJCF 哈希自动重建，Isaac 外观没对照片核过（13.6.14.1）。
-  - 已确认（10-06，用户）：第一视角可选脸上的 D435（场景 `*_mars_d435`，实验 `warehouse_mars_smoke_d435_unreal`、`_d435_isaac`、`_d435_mujoco`，DECISIONS 2026-10-06）；本机已建场景、Isaac stage、Unreal 关卡。D435 上专家产出率未测（13.6.15.1）。
-  - 已确认（10-06，用户）：warehouse mars 线补渲的图比状态晚 20–63 ms（`images.camera_delay`，DECISIONS 2026-10-06）；数值待真机测（13.6.16.1），没训练验证效果（13.6.16.3）。
-  - 已确认（10-07，用户，DECISIONS 2026-10-07）：warehouse mars 线频率与时序对齐官方 GR00T + SONIC。smoke 系列 7 个实验文件改 50 fps；lockstep 评测按官方客户端节拍（一行一拍、执行 20 拍再推理、第一块不混合），评测图按 `camera_delay` 变旧，推理延迟按本机实测分布抽。真实栈冒烟只验了机制（`outputs/t7_lockstep50_smoke_20261007/`；`804f962` 已推送）；Isaac/Unreal 镜像路径 10-07 在真实镜像上验过（16.7.1）；策略层面未验（16.7.2，等 50 fps checkpoint）。D2 推翻（T4 补渲带延迟，约 15 h）。本机这两次检查后没有留下栈、策略服务、镜像或 Unreal 编辑器。
-
-- 已确认（10-06，分支 `henry-dev`，设计 `docs/handoff/real-robot-sim2real-plan-20261006.md`，DECISIONS 2026-10-06 零样本一节）：数据集帧率成为运行字段 `dataset.fps`（25 | 50；旧文件读 25），转换、Isaac/Unreal 补渲（标记记 `dataset_fps`，25 渲的不服务 50 转换）、审计查表都读它；闭环评测遇到非 25 的运行明确拒绝。`src/real_robot/` 新增真机推理客户端（启动脚本 `scripts/run_real_robot_inference.sh`）（官方 `run_vla_inference.py` 结构，三相机、60 维 state、Dex1 单位、7 维广播），单元测试 `tests/test_real_robot_client.py`；只在本机用真实 pinocchio 模型做过观测拼装的冒烟，没连过机器人。后续 T3–T7 见 TODO 第 16 节。
+- 已确认（DECISIONS 2026-10-04/05）：机器人外观是缎面银 `g1_satin_20261004`，三个渲染器一致（MuJoCo 外壳 rgba 0.62）；mars 小臂银色、腰部电机和骨盆黑。
+- 已确认（DECISIONS 2026-10-06）：mars 第一视角可选脸上的 D435（场景 `*_mars_d435`，实验 `warehouse_mars_smoke_d435_{unreal,isaac,mujoco}`）。D435 检查采集 10 局保留 4（不是曾报的 5）。
+- 已确认（DECISIONS 2026-10-06，`a0f05af`）：离线补渲的训练图按真机相机变旧：`images.camera_delay: {fps: 30, latency_ms: [20, 30]}`，warehouse mars 线 9 个实验文件打开；审计按 `dataset.fps` 算预期滞后（25 fps 约 1.3 帧，50 fps 约 2.6 帧）。数值是估计（13.6.16.1）。
+- 已确认（DECISIONS 2026-10-07 两节，`804f962`）：warehouse mars 线的频率时序对齐官方。
+  - smoke 系列 7 个实验文件改 `dataset.fps: 50`、`execution_horizon: 20`、`latency_dist: configs/eval/latency_serve_policy_50fps_20261007.json`（本机 serve_policy 实测，3/4/5 拍 = 132/31/1 块）。`warehouse_mars_200` 是已做的 25 fps 运行，不改。
+  - lockstep 评测按运行的 `dataset.fps` 定节拍：50 时一行一拍、第一块不混合、执行 20 拍再推理、块尾保持；25 不变。
+  - 评测图用训练同一延迟模型变旧（`vla_lockstep.Camera`、sim `observe`、镜像按携带状态渲）；`camera_frames` 与 `camera_delay` 同设被拒。
+  - 已确认：真实栈只验了机制（25 fps 旧 checkpoint，成功率无意义）：24 拍一周期、图晚 40–60 ms（`outputs/t7_lockstep50_smoke_20261007/`）；Isaac、Unreal 镜像按携带状态渲各 2 局通过（`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/`，`613681e`）。
+  - 已确认：同 seed 两遍 MuJoCo 轨迹从第一块起就分叉，25 fps 旧路径对照也一样，原因是已记录的 MuJoCo 4× 多重采样（腕部图差一个灰度级），不是本次改动。
+  - 未验证：策略层面（要 50 fps checkpoint，16.4 → 16.7.2）。
+- 已确认（`e6d7e80`）：合入 henry-dev `dc3b909`：真机部署用官方式 `src/real_robot/run_gr00t_server.py`（`scripts/run_gr00t_server.sh`）和按官方逐函数重写的客户端（调 `get_action`）。单元测试 15 个过、服务器 `--help` 能起；未加载过真实 checkpoint，没连过仿真栈或真机（16.2.1、16.5、16.6）。
+- 已确认（henry 设计 D2 被推翻）：50 fps 数据集按 30 fps 相机加延迟出图，T4 的 Unreal 补渲带 `camera_delay`，约 15 h 单卡。henry 还不知道（16.10）。
 
 ## 待验证 / 卡点
 
-- 待验证（13.6.5.6）：只走 ym 的 mars 采集没实跑，只 `--dry-run` 核了摆放（全部 ym，起点 0.6–1.035 m）。
-- 待验证（13.6.5.7）：runbook 第 5–7 步在 mars 上没跑（用户：暂不训练）；13.6.5.3 Isaac 版 mars 没实渲。
-- 待用户（13.6.5.4）：mars 四边冒烟 9/30，stock 09-30 是 11/20、8/20；分不清是机器人还是波动。
-- 风险（13.6.11）：真机腰固件上限未知；专家抱箱要腰约 44 N·m（p95），真机若是 35 会塌、手抖。待协作者 13.6.11.5。
-- 待协作者（13.3）：D455 / D405 真机内参。未做：bottle、crate 仍是 stock（13.6.7.2）。
-- 同前未结：14.4、14.5、9.11.1、12.9.13、12.20.4、12.9.6。
+- 待验证（16.11）：合并提交时钩子测试失败一次，重跑与前后两次全量 `make check` 都过；是哪个测试未知。假设是不稳定测试，未证实。
+- 待用户（13.6.18）：warehouse mars 11 个实验文件顶层 `backend.dataset_fps: 30.0` 与 `dataset.fps` 不一致（采集不读它）。
+- 待协作者：真机三台相机的帧率、端到端延迟、相互时间差（13.6.16.1，可用官方相机服务器 `--test-latency`）；D455/D405/D435 内参（13.3、13.6.15.2）；腰固件力矩上限（13.6.11.5）。
+- 待验证（同前未结）：13.6.5.6 只走 ym 的 mars 采集没实跑；13.6.5.7 mars 上 runbook 第 5–7 步没跑；13.6.15.1 D435 产出率无同种子 D455 对照；14.4、14.5、9.11.1、12.9.13、12.20.4、12.9.6。
 
 ## 下一步（编号见 `TODO.md`）
 
-- **13.6.5.6**：按 runbook 跑一次只走 ym 的 `warehouse_mars_smoke` 第 2–4 步（约 40 分钟），看保留率。
-- **13.6.4.1**：腰 50 下的单变量对照（支架不碰撞、腕 5 N·m），查 mars 抬起后单手脱开。
-- **13.6.11.5**：请协作者在真机上记腰 13/14 号电机的 `tau_est`。
+- **16.4**：新运行 `warehouse_mars_200_50hz`：复制运行目录、删补渲标记、Unreal 全量补渲（带 `camera_delay`，约 15 h，开渲前看 GPU 与 STATE）→ 转换 → 训练；留 25 fps 对照。
+- **16.2.1**：用真实 checkpoint 起 `run_gr00t_server.sh`，客户端在本机连上核对（不上真机）。
+- **16.5**：sim2sim：官方结构客户端连本仓库 MuJoCo 栈（`--hand-wire sim`），之后把 T7 的延迟分布换成这条链路实测的。
 
 ## 关键路径与命令
 
 ```bash
 cd /workspace/code/locomanipulation && . scripts/paths.sh && export TMPDIR=/workspace/tmp MUJOCO_GL=egl
-nvidia-smi --query-compute-apps=pid,gpu_uuid,used_memory --format=csv,noheader; cat /sys/fs/cgroup/pids.current
-# warehouse 冒烟（默认 mars、Unreal、只走 ym）：照 docs/warehouse.md；编辑器开在 GPU 1
-bash scripts/start_unreal.sh --gpu 1
-bash scripts/bimanual/run_agent_server.sh configs/experiments/warehouse_mars_smoke.yaml --dry-run   # 先看每局摆放
-# 本次的队列脚本（重试 pid/显存不足）：outputs/mars_assets_20261003/smoke{,_tail}.sh，日志 smoke/queue.log
-bash scripts/build_scene.sh warehouse_box_45x32x33_mars --isaac    # mars 机器人 USD + stage
-bash scripts/build_scene.sh warehouse_box_45x32x33_mars --unreal   # 首次导入可能 zmq.error.Again，重跑即可
-PYTHONPATH=src $VENV_SIM_PY outputs/mars_pilots_20261002/bend80/osc.py   # 弯腰抖动分析（另有 analyse.py、waist_load/）
-# 提交：按文件名 add（zsh 下变量不分词，用数组；不要 -A，别带上 assets/hero.png）→ commit（钩子跑全量检查）→ 用户说了才 push
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader; ss -ltn | grep -E ':(55[5-9][0-9]|5700) '
+make check                                                     # 全量检查（ruff、lint、pytest -x）；提交钩子也跑它
+# warehouse 闭环评测（runbook docs/warehouse.md 第 6 步；$RUN 的 eval 块决定 lockstep 节拍与延迟）
+bash scripts/start_stack.sh eval outputs/runs/$RUN --gpu 0
+bash scripts/run_vla_server.sh outputs/runs/$RUN --gpu 0
+bash scripts/run_isaac_mirror.sh outputs/runs/$RUN --gpu 1    # 或 start_unreal.sh --gpu 1 后 run_unreal_mirror.sh
+bash scripts/bimanual/run_vla_inference.sh outputs/runs/$RUN --gpu 0
+# 本次的检查脚本（四步串起来、收尾先杀子进程）：outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/check_run.sh
+# 延迟分布：从 lockstep 评测 traces 生成（每行 infer_s）
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out x.json --inference-only --fps 50
+# 真机/sim2sim（src/real_robot/README.md）
+CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/runs/<run>/model/checkpoint-<step>
+bash scripts/run_real_robot_inference.sh --host localhost --init-token-file configs/deployment/warehouse_initial_token.json [--hand-wire sim]
+# 提交：按文件名 add（不要 -A，别带上 assets/hero.png、.serena、node_modules）→ commit → 用户说了才 push
 ```
