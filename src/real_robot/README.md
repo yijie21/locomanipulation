@@ -66,7 +66,7 @@ bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera
 | `--action-publish-rate` | 50 | 每秒向 deploy 发几个 token。要和训练数据的 `dataset.fps` 一致，否则动作按错误速度回放 |
 | `--action-horizon` | 40 | checkpoint 每次预测的步数 |
 | `--rate` | 2.5 | 每秒请求几次推理；新 chunk 到达时跳过推理期间已过期的步 |
-| `--schema` | crate | `crate`：ego + 双腕、60 维 state、token + 两只夹爪；`bottle`：ego + 右腕、单夹爪 |
+| `--schema` | crate | `crate`：ego + 双腕相机、token + 两只夹爪；`bottle`：ego + 右腕相机、单夹爪；state 都是官方 46 维 |
 | `--gripper-units` | dex1 | checkpoint 预测和观测夹爪的单位。`dex1`：0 闭、5.5 开（目标格式）；`sim_m`：仿真米制（转换器改写夹爪单位之前训出的 checkpoint） |
 | `--hand-wire` | dex1 | deploy 读 hand 字段的方式。`dex1`：值广播到 7 维（真机）；`sim`：米制写在两个指爪位（本仓库的仿真桥，做 sim2sim 时用） |
 | `--init-token-file` | 无 | 运行的 `eval.initial_token` 文件。不给就用 NVIDIA 的站立 token，它是前倾姿势，不在我们的数据分布里 |

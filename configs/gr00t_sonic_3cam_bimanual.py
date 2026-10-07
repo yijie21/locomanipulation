@@ -1,8 +1,8 @@
-"""Modality config for the two-handed crate task: 3 cameras, both wrists, 66-D action.
+"""Modality config for the two-handed crate task: 3 cameras (ego + both wrists), 46-D state, 66-D action.
 
-Derived from gr00t_sonic_2cam.py; the three departures there stand, and
-each of the three changes here undoes one of its *single-hand* measurements
-because the crate task invalidates the measurement, not the reasoning.
+Derived from gr00t_sonic_2cam.py; its two departures stand, and each change
+here undoes one of its *single-hand* measurements because the crate task
+invalidates the measurement, not the reasoning.
 
 1. video: + left_wrist
    2cam dropped left_wrist because over 23,103 bottle frames the left arm
@@ -11,11 +11,11 @@ because the crate task invalidates the measurement, not the reasoning.
    episode the bar fills the left-wrist view exactly as the bottle fills the
    right one. The per-hand alignment error is what each wrist camera is for.
 
-2. state: 53 -> 60, adding the left wrist's pose
-   left_wrist_pos + left_wrist_abs_quat are already declared in the dataset's
-   modality.json (observation.eef_state 0:7); no re-conversion. Same argument
-   as the right wrist in 2cam: FK of the robot's own encoders, available on
-   hardware, not privileged.
+2. state: the built-in 46, as in 2cam (2026-10-07, DECISIONS)
+   Until 2026-10-07 this selected both wrist poses (60). They are FK of the
+   joint angles already in state and were removed to match NVIDIA's SONIC +
+   GR00T recipe; the dataset's modality.json still declares them
+   (observation.eef_state), so restoring them needs no re-conversion.
 
 3. action: 65 -> 66, motion_token + left_gripper + right_gripper
    The left jaw is now a real action. `left_gripper` slices component 0 of
@@ -60,9 +60,7 @@ _cfg["video"] = ModalityConfig(
     modality_keys=list(SONIC_CRATE.video_keys),
 )
 
-# Same layout as gr00t_sonic_2cam.py for 0..53, then the left wrist. The
-# positional comments are the CONCATENATED state, not raw observation.state
-# columns -- see 2cam for why they differ.
+# Same layout as gr00t_sonic_2cam.py: the built-in 0..45 byte for byte.
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
     modality_keys=list(SONIC_CRATE.state_keys),
@@ -81,7 +79,7 @@ _cfg["action"] = ModalityConfig(
 
 MODALITY_CONFIGS[_TAG] = _cfg
 
-_dims = {"state": 60, "action": 66}
+_dims = {"state": 46, "action": 66}
 print(
     f"[sonic_3cam_bimanual] {_TAG}: video={_cfg['video'].modality_keys} "
     f"state={_dims['state']} action={_dims['action']} "

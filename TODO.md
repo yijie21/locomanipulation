@@ -575,3 +575,5 @@
 - [x] 16.8 （2026-10-07 本机 `make check` 全量通过，三条只在 henry 的机器上失败：没有 `outputs/scene/`、`.venv_sim` 缺 pyarrow；`warehouse_mars_200` 两个文件 `eb984fd` 后又一致）预先存在、与本次无关的测试失败（henry 的机器）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow
 - [ ] 16.10 告诉 henry：2026-10-07 推翻了他设计文档的 D2（50 fps 数据集改按 30 fps 相机加延迟出图，T4 补渲带 `camera_delay`），见 DECISIONS 2026-10-07 与提交 `804f962`
 - [ ] 16.11 提交钩子在合并提交 `e6d7e80` 的第一次提交时失败一次（`make: *** test Error 1`），重跑通过，前后两次全量 `make check` 也都过；没抓到是哪个测试（输出被截断）。再出现时保留完整日志，查是不是不稳定的测试
+- [x] 16.12 （2026-10-07，用户）SONIC 两条线 state 改回官方 46 维，去掉两腕位姿 14 维（DECISIONS 同日）；旧 53/60 维 checkpoint 不能再服务或评测，16.4 按 46 维训练
+    - [ ] 16.12.1 告诉 henry：真机客户端的 state 改成 46 维，`real_robot.observation` 不再做腕部 FK

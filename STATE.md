@@ -24,6 +24,7 @@
   - 未验证：策略层面（要 50 fps checkpoint，16.4 → 16.7.2）。
 - 已确认（`e6d7e80`）：合入 henry-dev `dc3b909`：真机部署用官方式 `src/real_robot/run_gr00t_server.py`（`scripts/run_gr00t_server.sh`）和按官方逐函数重写的客户端（调 `get_action`）。单元测试 15 个过、服务器 `--help` 能起；未加载过真实 checkpoint，没连过仿真栈或真机（16.2.1、16.5、16.6）。
 - 已确认（henry 设计 D2 被推翻）：50 fps 数据集按 30 fps 相机加延迟出图，T4 的 Unreal 补渲带 `camera_delay`，约 15 h 单卡。henry 还不知道（16.10）。
+- 已确认（DECISIONS 2026-10-07，16.12）：SONIC 两条线 state 改回官方 46 维（去掉两腕位姿）；数据集不用重转；此前的 53/60 维 checkpoint 不能再服务或评测；16.4 按 46 维训练。
 
 ## 待验证 / 卡点
 

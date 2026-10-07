@@ -398,7 +398,7 @@ checkpoint 只能走这条手动命令。
 每局：采集专家自己的摆放 `expert.start_placement`（按 `task.visual.*` 与场景的走入朝向；`eval.spawn_edge` 不读）
 → `prepare_token_pose` 用 `eval.initial_token`（训练数据首帧 token 的量化均值 + 首帧手臂关节，**每条线自己的**：
 crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initial_token.json`，两者肩部差 0.6 rad）
-把机器人带到数据的开局姿势 → 阻塞式 chunk 循环：三路相机 + 60 维状态 → token [40,64] 与左右夹爪
+把机器人带到数据的开局姿势 → 阻塞式 chunk 循环：三路相机 + 46 维状态 → token [40,64] 与左右夹爪
 [40] → 每次发 `--execution-horizon`（默认 16）帧，两只手各自展开，下限取 `task.visual.close_target`
 （warehouse −0.06；单臂的 −0.02 每指只剩约 2 N）→ 判定用 crate 专家自己的
 `evaluation.evaluate`（抬升 ≥ 0.6×`lift_height`、倾角 < `max_tilt_deg`、双手同时接触），
@@ -568,7 +568,7 @@ crate runbook 只写命令和结果；下面是它原来夹在命令之间的说
 - 采集的 `manifest_NN.jsonl`、`videos/`、`trace/` 在运行目录顶层；bottle 放在 `collect/` 下。
 - `trace/<局>_ghost.npz` 是专家命令的抓取目标，第三视角画 ghost 夹爪用；走近阶段就失败的局没有这个文件。
 - manifest 每行有 `task`、`produced`、`ok`；成功局还有 `execution.metrics.training_tail.end_seq`（进入直立持物验收的帧号），转换时按它裁掉验收尾段。
-- 训练用 `configs/gr00t_sonic_3cam_bimanual.py`：60 维状态、66 维动作、三路相机。
+- 训练用 `configs/gr00t_sonic_3cam_bimanual.py`：46 维状态（与官方相同，2026-10-07 起不再带两腕位姿）、66 维动作、三路相机。
 - 采集日志按专家命名（`visual_NN.log`），不是 `collect_NN.log`。开局是否站稳看 manifest 每行的 `placement.initial_stance_ready`；为 `false` 的局以 `initial_stance_unstable` 失败。
 - `collect.record: true` 时，每批一个 exporter session，写在 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，记在 `collect/inputs.json` 的 `sessions` 里，和 `manifests` 一一对应。
 

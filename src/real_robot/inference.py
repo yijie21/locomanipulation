@@ -15,9 +15,9 @@ Uses a PolicyClient (ZMQ REQ/REP, the Isaac-GR00T wire format; `real_robot.polic
 PolicyServer (`scripts/run_gr00t_server.sh`).
 
 What differs from upstream is this repository's data format: the observation is the dataset's (three cameras under
-their own keys, the 60-d state with wrist poses, `real_robot.observation`), the action is a SONIC token snapped to
-the FSQ codebook plus one Dex1 gripper scalar per hand (`real_robot.chunk`), broadcast to the 7-wide hand field
-(`real_robot.gripper`). The served checkpoint's field order is checked against the schema before anything moves.
+their own keys, NVIDIA's 46-d state with the Dex1 scalar in the hand groups, `real_robot.observation`), the action
+is a SONIC token snapped to the FSQ codebook plus one Dex1 gripper scalar per hand (`real_robot.chunk`), broadcast
+to the 7-wide hand field (`real_robot.gripper`). The served checkpoint's field order is checked against the schema before anything moves.
 
 Keyboard commands (received via ZMQ from the standalone keyboard publisher):
   p  -> pause / resume the policy loop
@@ -126,8 +126,8 @@ class InferenceConfig:
     """Embodiment tag for policy inference."""
 
     schema: Literal["crate", "bottle"] = "crate"
-    """Observation and action format: crate (ego + both wrists, 60-d state, token + two grippers) or bottle
-    (ego + right wrist, one gripper)."""
+    """Observation and action format: crate (ego + both wrist cameras, token + two grippers) or bottle
+    (ego + right wrist camera, one gripper); both take the 46-d state."""
 
     gripper_units: Literal["dex1", "sim_m"] = "dex1"
     """Gripper units the checkpoint predicts and observes: dex1 (0 closed .. 5.5 open) or sim_m (simulator metres,
@@ -262,8 +262,8 @@ def prepare_observation_from_sensors(
     """Read sensors and prepare observation for the VLA policy.
 
     Upstream splits the 43-joint q into joint groups and adds projected gravity; this builds the dataset's
-    observation instead (`real_robot.observation.build_observation`: the same groups plus wrist poses and the Dex1
-    hand state, checked against `schema`) and nests it the way upstream's is nested.
+    observation instead (`real_robot.observation.build_observation`: the same groups with the Dex1 hand state,
+    checked against `schema`) and nests it the way upstream's is nested.
 
     Returns:
         observation dict, or None if sensor data not yet available.
@@ -391,7 +391,7 @@ def main(config: InferenceConfig):
     initial_motion_token = load_initial_token(config.init_token_file)
     pause_loop = True
 
-    # the exporter's model (features_sonic_vla.get_g1_robot_model): the same FK the dataset's eef_state came from
+    # the exporter's model (features_sonic_vla.get_g1_robot_model): the 43-joint URDF order the dataset's groups use
     robot_model = instantiate_g1_robot_model(waist_location="lower_and_upper_body")
 
     n1_policy = PolicyClient(host=config.host, port=config.port)

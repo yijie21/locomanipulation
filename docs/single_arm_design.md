@@ -371,7 +371,7 @@ exporter 默认记录 ego、左腕、右腕；该任务复用单臂 schema，
 |---|---|
 | Base model | `nvidia/GR00T-N1.7-3B`,embodiment `unitree_g1_sonic`(projector **slot 11**,公开权重里该槽为空,从随机初始化训) |
 | 视觉输入 | 2 路 RGB:`ego_view` + `right_wrist`,crop 230 → 256×256。**不用** left_wrist(左臂全程不动,纯静态贴图);这份历史配方用的是 `configs/gr00t_sonic_2cam.py`,不是当前 `g1_single_arm` embodiment 的默认 `gr00t_sonic_3cam.py`(见本页“训练端”的 modality 表) |
-| State | **53 维** = 官方 46 + right_wrist_pos 3 + right_wrist_abs_quat 4(FK 腕位姿,pelvis 系,真机可得非特权)。绝对 yaw 类(root_orientation 等)**刻意不进** —— 随机出生 yaw 下它是查表捷径 |
+| State | **53 维**(bottle200 训练时;2026-10-07 起当前配置改回官方 46 维) = 官方 46 + right_wrist_pos 3 + right_wrist_abs_quat 4(FK 腕位姿,pelvis 系,真机可得非特权)。绝对 yaw 类(root_orientation 等)**刻意不进** —— 随机出生 yaw 下它是查表捷径 |
 | Action | **65 维** = motion_token 64 + right_gripper 1。左手 7 维 std 恒为 0、右手 7 维 rank-1,官方 78 里其余 13 维是常数,留着只会稀释指标 |
 | Action horizon | 40 步 chunk @30 Hz(1.33 s);推理去噪 4 步 |
 | 语言 | 单指令;SONIC 的语言键是 `annotation.human.task_description` |
@@ -515,7 +515,7 @@ token nMSE 选,平票取**更早**的那个。bottle200 实测 nMSE 0.314 → 0.
 | modality | modality_keys | 维度 |
 |---|---|---|
 | `video` | `ego_view`、`right_wrist`(丢弃 `left_wrist`) | 2 路 |
-| `state` | `left_leg`、`right_leg`、`waist`、`left_arm`、`right_arm`、`left_hand`、`right_hand`、`projected_gravity`、`right_wrist_pos`、`right_wrist_abs_quat` | 53 |
+| `state` | `left_leg`、`right_leg`、`waist`、`left_arm`、`right_arm`、`left_hand`、`right_hand`、`projected_gravity`(与官方相同) | 46 |
 | `action` | `motion_token`、`right_gripper`,`delta_indices=range(40)`(预测 40 步的 action chunk) | 65 |
 
 这些 `modality_keys` 名字必须能在数据集的 `meta/modality.json` 里按名字找到
@@ -1059,8 +1059,8 @@ parquet 的行数——这正是 structure 审计里"抽检视频帧数 == parqu
 
 | 用途 | state | action | 相机 |
 |---|---|---|---|
-| 本仓库单臂 `gr00t_sonic_2cam.py` | 53 = 43 关节 + 3 重力 + 7 右腕位姿 | 65 = 64 token + 1 右夹爪 | ego、右腕 |
-| 本仓库双臂 `gr00t_sonic_3cam_bimanual.py` | 60 = 单臂 state + 7 左腕位姿 | 66 = 64 token + 左右夹爪各 1 | ego、左右腕 |
+| 本仓库单臂 `gr00t_sonic_2cam.py` | 46 = 43 关节 + 3 重力(同官方) | 65 = 64 token + 1 右夹爪 | ego、右腕 |
+| 本仓库双臂 `gr00t_sonic_3cam_bimanual.py` | 46(同官方) | 66 = 64 token + 左右夹爪各 1 | ego、左右腕 |
 | 上游 stock `unitree_g1_sonic` | 46 = 43 关节 + 3 重力 | 78 = 64 token + 两组 7 维手部字段 | 由 stock 配置选择 |
 
 单臂右夹爪两个滑轨共用一个标量，左夹爪保持张开。

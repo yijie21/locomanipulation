@@ -47,7 +47,7 @@ bash scripts/convert_data.sh outputs/runs/crate_smoke
 bash scripts/train.sh outputs/runs/crate_smoke --gpu 0
 ```
 
-做什么：用训练集微调 GR00T（三路相机、60 维状态、66 维动作）。
+做什么：用训练集微调 GR00T（三路相机、官方 46 维状态、66 维动作）。
 得到什么：`model/checkpoint-10/`，日志在 `train.log`。约 1 分钟；`model/` 占约 24 GB 磁盘。
 
 ## 5. 评测

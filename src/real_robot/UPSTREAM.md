@@ -19,7 +19,7 @@ Only the client logic is rewritten here (`src/real_robot/`). Everything it stand
 | `gear_sonic.utils.data_collection.zmq_state_subscriber.ZMQStateSubscriber` | the deploy's `g1_debug` state (CONFLATE) |
 | `gear_sonic.utils.data_collection.keyboard_subscriber.ZMQKeyboardSubscriber` | keyboard commands |
 | `gear_sonic.utils.data_collection.transforms.compute_projected_gravity` | the `projected_gravity` state group |
-| `gear_sonic.data.robot_model.instantiation.g1.instantiate_g1_robot_model` | the 43-joint model and wrist FK (the exporter's) |
+| `gear_sonic.data.robot_model.instantiation.g1.instantiate_g1_robot_model` | the 43-joint model (the exporter's) |
 | `gear_sonic.utils.teleop.zmq.zmq_planner_sender.pack_pose_message`, `build_command_message` | protocol v4 and start/stop |
 | `gear_sonic.utils.inference.initial_poses.LATENT_INITIAL_MOTION_TOKEN` | the default initial token |
 
@@ -51,8 +51,8 @@ Same layout and names: the tyro `InferenceConfig` (upstream's fields and default
 ## Changed, and why (docs/handoff/real-robot-sim2real-plan-20261006.md, section 6)
 
 - Three cameras under the dataset's keys (`right_wrist`, not `wrist_view`).
-- The 60-d state of `locomani.schema.SONIC_CRATE`: wrist poses from FK (upstream sends 43 + 3 only); hand groups
-  carry the Dex1 scalar; the Dex3 left-hand coupling hack is gone.
+- The state is upstream's 46-d (43 joints + projected gravity, `locomani.schema.SONIC_STATE_KEYS`); the hand
+  groups carry the Dex1 scalar; the Dex3 left-hand coupling hack is gone.
 - Actions are token + one Dex1 gripper scalar per hand (upstream: token + two 7-d Dex3 hands); the scalar is
   broadcast to the 7-wide wire field. Tokens are snapped to the FSQ codebook.
   The chunk is converted once when it arrives (`chunk.ActionChunk`) instead of indexed in the raw dict every tick.

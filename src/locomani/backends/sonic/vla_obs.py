@@ -79,7 +79,6 @@ class ObsBuilder:
     """Assemble the policy's flat observation from the live stack."""
 
     def __init__(self, task: str, schema=SONIC_BOTTLE, image_source: str = "mujoco"):
-        from gear_sonic.data.features_sonic_vla import get_g1_robot_model
         from gear_sonic.utils.data_collection.zmq_state_subscriber import (
             ZMQStateSubscriber,
         )
@@ -103,10 +102,9 @@ class ObsBuilder:
             raise ValueError(f"image_source {image_source!r} is not 'mujoco', 'isaac' or 'unreal'")
         self.image_meta = None  # the mirror's reply header for the images the last build() used
         self.state = ZMQStateSubscriber(host="localhost", port=state_port)
-        self.rm = get_g1_robot_model()
         self.task = task
-        # Which TaskSchema this observation serves: SONIC_BOTTLE (two cameras,
-        # right wrist, 53-d) or SONIC_CRATE (three cameras, both wrists, 60-d).
+        # Which TaskSchema this observation serves: SONIC_BOTTLE (ego + right wrist
+        # cameras) or SONIC_CRATE (ego + both wrist cameras); both take the stock 46-d state.
         self.schema = schema
         self._last_img = None
         self._last_proprio = None
@@ -151,7 +149,6 @@ class ObsBuilder:
         from gear_sonic.utils.data_collection.transforms import (
             compute_projected_gravity,
         )
-        from scipy.spatial.transform import Rotation as R
 
         self._poll()
         if images is not None:
@@ -168,14 +165,6 @@ class ObsBuilder:
         rh = np.asarray(pr["right_hand_q"], dtype=np.float64)
         base_quat = np.asarray(pr["base_quat"], dtype=np.float64)
 
-        whole = self.rm.get_configuration_from_actuated_joints(
-            body_actuated_joint_values=body, left_hand_actuated_joint_values=lh, right_hand_actuated_joint_values=rh
-        )
-        self.rm.cache_forward_kinematics(whole)
-        pl = self.rm.frame_placement(self.rm.supplemental_info.hand_frame_names["right"])
-        rw_pos = pl.translation[:3]
-        rw_quat = R.from_matrix(pl.rotation).as_quat(scalar_first=True)
-
         f32 = lambda a: np.asarray(a, dtype=np.float32).reshape(1, -1)  # noqa: E731
         obs = {
             "state.left_leg": f32(body[0:6]),
@@ -186,14 +175,8 @@ class ObsBuilder:
             "state.left_hand": f32(lh),
             "state.right_hand": f32(rh),
             "state.projected_gravity": f32(compute_projected_gravity(base_quat)),
-            "state.right_wrist_pos": f32(rw_pos),
-            "state.right_wrist_abs_quat": f32(rw_quat),
             "annotation.human.task_description": self.task,
         }
-        if "left_wrist_pos" in self.schema.state_keys:
-            pl_left = self.rm.frame_placement(self.rm.supplemental_info.hand_frame_names["left"])
-            obs["state.left_wrist_pos"] = f32(pl_left.translation[:3])
-            obs["state.left_wrist_abs_quat"] = f32(R.from_matrix(pl_left.rotation).as_quat(scalar_first=True))
         for key in self.schema.video_keys:
             img = np.asarray(self._last_img[key])
             obs[f"video.{key}"] = img[None].astype(np.uint8)

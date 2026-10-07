@@ -65,21 +65,10 @@ GROUPS = {
 }
 
 
-class Placement:
-    def __init__(self, translation, rotation):
-        self.translation, self.rotation = np.asarray(translation, float), np.asarray(rotation, float)
-
-
 class FakeRobotModel:
-    """The exporter's model as the client uses it: URDF-order q, joint groups, FK of the two wrist frames."""
+    """The exporter's model as the client uses it: URDF-order q and joint groups (no FK: the state has no wrist pose)."""
 
     num_joints = 43
-
-    class supplemental_info:
-        hand_frame_names = {"left": "left_wrist_yaw_link", "right": "right_wrist_yaw_link"}
-
-    def __init__(self):
-        self.fk_q = None
 
     def get_configuration_from_actuated_joints(
         self, body_actuated_joint_values, left_hand_actuated_joint_values, right_hand_actuated_joint_values
@@ -92,16 +81,6 @@ class FakeRobotModel:
 
     def get_joint_group_indices(self, name):
         return list(GROUPS[name])
-
-    def cache_forward_kinematics(self, q):
-        self.fk_q = np.asarray(q, float)
-
-    def frame_placement(self, name):
-        assert self.fk_q is not None, "FK before the placement"
-        side = 1.0 if name.startswith("left") else -1.0
-        # a 90 degree yaw about z: quaternion (w, x, y, z) = (cos 45, 0, 0, sin 45)
-        rot = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-        return Placement([0.3, side * 0.2, 1.0 + self.fk_q[15]], rot)
 
 
 def _state_msg(hand_value=5.39):
@@ -133,9 +112,7 @@ def test_the_observation_is_the_crate_schema_in_flat_keys():
     np.testing.assert_allclose(obs["state.left_hand"], [np.full(7, 5.39)], rtol=1e-6)  # the Dex1 scalar broadcast
     np.testing.assert_allclose(obs["state.right_hand"], [np.full(7, 2.695)], rtol=1e-6)
     np.testing.assert_allclose(obs["state.projected_gravity"], [[0, 0, -1]])
-    np.testing.assert_allclose(obs["state.left_wrist_pos"], [[0.3, 0.2, 1.15]], rtol=1e-6)
-    np.testing.assert_allclose(obs["state.right_wrist_pos"], [[0.3, -0.2, 1.15]], rtol=1e-6)
-    np.testing.assert_allclose(obs["state.right_wrist_abs_quat"], [[np.sqrt(0.5), 0, 0, np.sqrt(0.5)]], atol=1e-6)
+    assert sum(obs[f"state.{k}"].shape[-1] for k in SONIC_CRATE.state_keys) == 46  # NVIDIA's state, nothing added
     assert obs["video.right_wrist"].shape == (1, 480, 640, 3) and obs["video.right_wrist"].dtype == np.uint8
     assert obs["video.right_wrist"][0, 0, 0, 0] == 2 and obs["annotation.human.task_description"] == "pick up the box"
     for value in obs.values():
@@ -147,7 +124,7 @@ def test_the_observation_waits_for_every_camera_the_schema_needs():
     assert build_observation(_state_msg(), _images(("ego_view",)), "p", FakeRobotModel(), SONIC_CRATE) is None
     bottle = build_observation(_state_msg(), _images(("ego_view", "right_wrist")), "p", FakeRobotModel(), SONIC_BOTTLE)
     assert set(k for k in bottle if k.startswith("video.")) == {"video.ego_view", "video.right_wrist"}
-    assert "state.left_wrist_pos" not in bottle and "state.right_wrist_pos" in bottle
+    assert {k for k in bottle if k.startswith("state.")} == {f"state.{k}" for k in SONIC_BOTTLE.state_keys}
 
 
 def test_a_metres_checkpoint_sees_the_simulators_hand_layout():
@@ -299,5 +276,8 @@ def test_the_served_checkpoint_must_carry_the_schemas_field_order():
         }
     }
     assert identity_mismatch(served, SONIC_CRATE) == {}
-    assert set(identity_mismatch(served, SONIC_BOTTLE)) == {"video", "state", "action"}
+    assert set(identity_mismatch(served, SONIC_BOTTLE)) == {"video", "action"}  # one state for both tasks
     assert set(identity_mismatch({}, SONIC_CRATE)) == {"video", "state", "action"}
+    # a checkpoint trained before 2026-10-07 carries the 60-d state with both wrist poses
+    old = {"modalities": dict(served["modalities"], state=list(SONIC_CRATE.state_keys) + ["right_wrist_pos"])}
+    assert set(identity_mismatch(old, SONIC_CRATE)) == {"state"}

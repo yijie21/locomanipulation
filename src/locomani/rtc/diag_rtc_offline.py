@@ -44,8 +44,6 @@ def synth_obs(seed: int = 0) -> dict:
         "state.left_hand": f32(7),
         "state.right_hand": f32(7),
         "state.projected_gravity": np.asarray([[0, 0, -1]], dtype=np.float32),
-        "state.right_wrist_pos": f32(3),
-        "state.right_wrist_abs_quat": np.asarray([[1, 0, 0, 0]], dtype=np.float32),
         "annotation.human.task_description": "pick up the water bottle",
         "video.ego_view": r.integers(0, 255, (1, 256, 256, 3), dtype=np.uint8),
         "video.right_wrist": r.integers(0, 255, (1, 256, 256, 3), dtype=np.uint8),

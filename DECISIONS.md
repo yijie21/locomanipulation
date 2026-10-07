@@ -1525,3 +1525,11 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **把 GR00T N1.7 的 RTC 接进来**：本次不做。官方部署指南写明 RTC 只是模型底层原语、没接入服务端/客户端；官方 VLA 流程也没用它。
 
 合并 henry-dev（`dc3b909`，合并提交 `e6d7e80`）时的取舍：真机部署改用官方式 `run_gr00t_server.py` 与官方 `get_action`，不再走仿真的 `serve_policy.py` / `get_action_raw`；仿真评测仍用 `serve_policy.py`（RTC、种子、运行目录查找真机用不上，仿真要）。两套服务器并存是有意的，不是重复（2026-10-06 一节的追加条）。
+
+## 2026-10-07 SONIC 两条线的 state 改回官方 46 维，去掉腕位姿（用户）
+
+- **决策**：`SONIC_BOTTLE`、`SONIC_CRATE` 的 state 都改成 Isaac-GR00T 内置 `unitree_g1_sonic` 的 8 组 46 维（左右腿、腰、左右臂、左右手、`projected_gravity`，顺序同官方），共用 `locomani.schema.SONIC_STATE_KEYS`。去掉的是 `right_wrist_pos/abs_quat`（单臂 53 的来源）和 `left_wrist_pos/abs_quat`（双臂 60 的来源）共 14 维。推翻 2026-10-06 "state 保持 60 维"。
+- **理由**：对齐官方 SONIC + GR00T 教程。这 14 维是同一组关节角做 FK 算出的骨盆系腕位姿，不带新信息；加它们的理由（替网络省掉学 FK）只是推理，没有任何运行量过 46 对 53/60。
+- **不变**：相机（3 路）、动作（token + 夹爪标量，66/65）、手 7 维填 Dex1 标量广播，这些仍与官方不同。`SONIC_MODALITY` 与数据集 `modality.json` 仍声明腕位姿（菜单不是选择），`observation.eef_state` 照写，所以已有数据集不用重转，恢复只改选择。ScaleBFM 的 `VISUAL_BOTTLE`（91 维）不在本次范围，保留右腕位姿。
+- **后果**：此前训练的 SONIC checkpoint（53 或 60 维）不能再用当前配置服务或评测：`serve_policy` 启动时报 "server state configuration differs from checkpoint metadata"，lockstep 评测和真机客户端核对字段顺序后退出。16.4 的新运行按 46 维训练。
+- **实现**：`schema.py`；`configs/gr00t_sonic_{2cam,3cam_bimanual}.py` 只改注释和打印；仿真 `ObsBuilder` 与真机 `real_robot.observation` 去掉腕部 FK；`replay_obs`、`diag_rtc_offline` 的观测键；`check_dataset` 的 2cam/3cam 档按 46 查，bfm 档保留 53；测试从 vendored `embodiment_configs.py` 读官方 state 组钉住顺序。

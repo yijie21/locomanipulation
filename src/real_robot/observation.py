@@ -4,13 +4,12 @@
 float32 for every group of the schema, `video.<camera>` (1, H, W, 3) uint8 and the prompt under
 `annotation.human.task_description`. `to_policy_observation` nests that into what Isaac-GR00T's `get_action` takes
 (`{"video": {k: (B, T, H, W, 3)}, "state": {k: (B, T, D)}, "language": {k: [[str]]}}`, B = T = 1), the format
-NVIDIA's client sends. The groups are the dataset's (`locomani.schema`): the seven joint groups
-of the 43-joint URDF order, `projected_gravity`, and the wrist poses from forward kinematics -- the same pinocchio
-model and frames the exporter used to write `observation.eef_state`, so what the policy sees on the robot is what
-it saw in training. The hand groups carry the Dex1 scalar (`real_robot.gripper.hand_state`).
+NVIDIA's client sends. The groups are the dataset's (`locomani.schema`), NVIDIA's 46-d state: the seven joint
+groups of the 43-joint URDF order and `projected_gravity`. The hand groups carry the Dex1 scalar
+(`real_robot.gripper.hand_state`).
 
 Differences from NVIDIA's `prepare_observation_from_sensors` (which calls these): three cameras under the dataset's
-own keys (no `wrist_view` rename), the wrist poses, the hand groups, and no Dex3 left-hand coupling hack.
+own keys (no `wrist_view` rename), the hand groups, and no Dex3 left-hand coupling hack.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from real_robot.gripper import dex1_state, hand_state
 
 BODY_GROUPS = ("left_leg", "right_leg", "waist", "left_arm", "right_arm")  # read from the URDF-order q
 HAND_GROUPS = {"left_hand": "left_hand_q", "right_hand": "right_hand_q"}
-WRIST_GROUPS = {"left": ("left_wrist_pos", "left_wrist_abs_quat"), "right": ("right_wrist_pos", "right_wrist_abs_quat")}
 
 
 def projected_gravity(base_quat) -> np.ndarray:
@@ -34,17 +32,6 @@ def projected_gravity(base_quat) -> np.ndarray:
     r21 = 2.0 * (y * z + w * x)
     r22 = 1.0 - 2.0 * (x * x + y * y)
     return np.array([-r20, -r21, -r22], dtype=np.float64)
-
-
-def wrist_pose(robot_model, side: str) -> tuple[np.ndarray, np.ndarray]:
-    """(position, quaternion w-first) of one wrist frame after `cache_forward_kinematics`, as the exporter writes
-    `observation.eef_state` (`run_data_exporter`, scipy `as_quat(scalar_first=True)`)."""
-    from scipy.spatial.transform import Rotation as R
-
-    placement = robot_model.frame_placement(robot_model.supplemental_info.hand_frame_names[side])
-    return np.asarray(placement.translation[:3], dtype=np.float64), R.from_matrix(placement.rotation).as_quat(
-        scalar_first=True
-    )
 
 
 def build_observation(
@@ -86,14 +73,6 @@ def build_observation(
             )
         elif group == "projected_gravity":
             obs["state.projected_gravity"] = f32(gravity(state_msg["base_quat"]))
-    wanted_sides = [side for side, groups in WRIST_GROUPS.items() if any(g in schema.state_keys for g in groups)]
-    if wanted_sides:
-        robot_model.cache_forward_kinematics(whole)
-        for side in wanted_sides:
-            pos, quat = wrist_pose(robot_model, side)
-            pos_key, quat_key = WRIST_GROUPS[side]
-            obs[f"state.{pos_key}"] = f32(pos)
-            obs[f"state.{quat_key}"] = f32(quat)
     for key in schema.video_keys:
         obs[f"video.{key}"] = np.asarray(images[key])[None].astype(np.uint8)
     obs["annotation.human.task_description"] = prompt

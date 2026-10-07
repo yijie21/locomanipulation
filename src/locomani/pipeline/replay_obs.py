@@ -62,8 +62,6 @@ STATE_KEYS = (
     "state.left_hand",
     "state.right_hand",
     "state.projected_gravity",
-    "state.right_wrist_pos",
-    "state.right_wrist_abs_quat",
 )
 VIDEO_KEYS = ("video.ego_view", "video.right_wrist")
 # Where each state group lives in the dataset's 43-wide observation.state. NOT
@@ -126,7 +124,6 @@ def dataset_observations(ds: Path, episode: int, frames: list[int], task: str) -
         raise SystemExit(f"no parquet for episode {episode} under {ds}")
     table = pq.read_table(pqs[0])
     state = np.stack(table["observation.state"].to_pylist())
-    eef = np.stack(table["observation.eef_state"].to_pylist())
     grav = np.stack(table["observation.projected_gravity"].to_pylist())
     expert_grip = np.stack(table["teleop.right_hand_joints"].to_pylist())[:, 0]
 
@@ -138,8 +135,6 @@ def dataset_observations(ds: Path, episode: int, frames: list[int], task: str) -
     for i in frames:
         obs = {k: f32(state[i, a:b]) for k, (a, b) in DATASET_STATE_SLICES.items()}
         obs["state.projected_gravity"] = f32(grav[i])
-        obs["state.right_wrist_pos"] = f32(eef[i, 7:10])
-        obs["state.right_wrist_abs_quat"] = f32(eef[i, 10:14])
         obs["annotation.human.task_description"] = task
         for key, path in videos.items():
             obs[key] = decode_frame(path, i)[None].astype(np.uint8)

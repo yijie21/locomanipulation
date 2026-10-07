@@ -59,14 +59,18 @@ SONIC_STATE_DIM, SONIC_ACTION_DIM = 46, 78
 # because modality.json stays a superset (a menu, not a selection), so both
 # layouts have to resolve. Checking only the stock one would pass a dataset
 # that cannot be trained on, and checking only ours would let the menu rot.
-LOCAL_STATE = SONIC_STATE + ["right_wrist_pos", "right_wrist_abs_quat"]
+# The state is the stock 46 since 2026-10-07 (the wrist poses were dropped).
+LOCAL_STATE = SONIC_STATE
 LOCAL_ACTION = ["motion_token", "right_gripper"]
-LOCAL_STATE_DIM, LOCAL_ACTION_DIM = 53, 65
+LOCAL_STATE_DIM, LOCAL_ACTION_DIM = SONIC_STATE_DIM, 65
 LOCAL_VIDEO = ["ego_view", "right_wrist"]
-# The crate line (configs/gr00t_sonic_3cam_bimanual.py): both wrist poses in the
-# state, both gripper scalars in the action, all three cameras.
-CRATE_STATE = LOCAL_STATE + ["left_wrist_pos", "left_wrist_abs_quat"]
-CRATE_STATE_DIM = LOCAL_STATE_DIM + 7
+# The crate line (configs/gr00t_sonic_3cam_bimanual.py): the same state, both
+# gripper scalars in the action, all three cameras.
+CRATE_STATE = SONIC_STATE
+CRATE_STATE_DIM = SONIC_STATE_DIM
+# ScaleBFM datasets keep the right wrist's pose in the state (53).
+BFM_STATE = SONIC_STATE + ["right_wrist_pos", "right_wrist_abs_quat"]
+BFM_STATE_DIM = SONIC_STATE_DIM + 7
 CRATE_ACTION = ["motion_token", "left_gripper", "right_gripper"]
 CRATE_ACTION_DIM = LOCAL_ACTION_DIM + 1
 CRATE_VIDEO = ["ego_view", "left_wrist", "right_wrist"]
@@ -250,7 +254,7 @@ def pass_modality(root, r):
     if "action.bfm" in t.column_names:
         # ScaleBFM datasets (scalebfm/record_bottle.py): same 53-d state, 19-d action
         # (configs/gr00t_bfm_2cam.py). The SONIC token profiles do not apply.
-        profiles = (("bfm", "state", LOCAL_STATE, LOCAL_STATE_DIM), ("bfm", "action", ["bfm", "right_gripper"], 19))
+        profiles = (("bfm", "state", BFM_STATE, BFM_STATE_DIM), ("bfm", "action", ["bfm", "right_gripper"], 19))
         r.note("action.bfm present: auditing the bfm_2cam profile instead of stock/2cam")
     else:
         profiles = (
@@ -264,7 +268,7 @@ def pass_modality(root, r):
                 ("3cam_bimanual", "state", CRATE_STATE, CRATE_STATE_DIM),
                 ("3cam_bimanual", "action", CRATE_ACTION, CRATE_ACTION_DIM),
             )
-            r.note("crate task: also auditing the 3cam_bimanual profile (both wrists, both grippers)")
+            r.note("crate task: also auditing the 3cam_bimanual profile (both wrist cameras, both grippers)")
     for label, grp, want, want_dim in profiles:
         missing = [k for k in want if k not in mod.get(grp, {})]
         r.check(
