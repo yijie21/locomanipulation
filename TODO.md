@@ -565,7 +565,9 @@
 - [x] 16.2 （2026-10-06）T2：`src/real_robot/` 推理客户端（`real_robot.inference`，官方结构；`observation`、`chunk`、`gripper`、`policy_client`），`scripts/run_real_robot_inference.sh`，runbook `src/real_robot/README.md`，`UPSTREAM.md` 钉 WBC v1.1 a0732b6；测试 `tests/test_real_robot_client.py`。只做了本机冒烟（真实 pinocchio 模型拼 60 维观测、protocol v4 打包），没连过机器人或策略服务器。2026-10-07 henry `dc3b909`（`henry-dev`，同日合入）按官方逐函数重写客户端、调官方 `get_action`，策略服务器换成官方式 `src/real_robot/run_gr00t_server.py`（`scripts/run_gr00t_server.sh`）；仍没加载过真实 checkpoint
     - [ ] 16.2.1 用真实 checkpoint 起 `scripts/run_gr00t_server.sh`，让 `run_real_robot_inference.sh` 在本机连上它（不上真机）：核对 `identity`、嵌套观测、40 步 chunk 和 Dex1 换算；henry 只用占位策略试过
 - [ ] 16.3 T3：转换器写 Dex1 单位：`teleop.*_hand_joints` 第 0 维按 `real_robot.gripper.sim_m_to_dex1` 映射（命令低于 −0.02 截到 0），`observation.state` 手 7 维广播映射后的指爪位置（第 4、5 维均值）；与客户端共用一个映射函数
+    - [ ] 16.3.1 `dex1_to_sim_m` 闭端截在 −0.02 m，warehouse 线闭合目标是 −0.06（−0.02 拿不起箱子）：Dex1 0 要换回线自己的闭合目标，16.5 的仿真桥同样（DECISIONS 2026-10-08；方向维持 0 闭 5.5 开）
 - [ ] 16.4 T4：新运行 `warehouse_mars_200_50hz`（复制实验文件加 `dataset: {fps: 50}`，运行目录复制 collect 条目、manifest、trace、场景；删 74 个 session 的 `meta/offline_render.json`）→ Unreal 补渲（按 2026-10-07 决策 1 带 `camera_delay`，约 3/5 的行出新图，约 15 h 单卡；推翻 D2）→ 转换 → 训练；同源数据留 25 fps 版本作对照
+    - [ ] 16.4.1 本机没有 `outputs/runs/warehouse_mars_200`，要在采集它的机器上做；步骤见 `docs/migrate_old_data.md` 第 3 节，代码要含 `6a6bd10`（否则补渲第一局 `KeyError: 'dataset_fps'`）
 - [ ] 16.5 T5：sim2sim：官方结构客户端对接本仓库 MuJoCo 栈（`--hand-wire sim`），核对延迟补偿与跳帧行为；仿真桥若改读 Dex1 单位则用 `dex1_to_sim_m`
 - [ ] 16.6 T6（需真机）：核对相机服务器三路 key 与 `g1_debug` 手字段；`]` + `i` 手动验 Dex1 方向（5.5 开、0 闭）；按 D13 跑 10 局（起点 0.6–1.0 m，30 s，骨盆到箱心 ≤ 0.6 m 且站稳 2 s）
 - [~] 16.7 T7（2026-10-07 实现，DECISIONS 同日）：50 Hz 的 lockstep 闭环评测按官方客户端：节拍从 `dataset.fps` 读（50：一步 1 拍，动作块 40，执行 20 拍再推理，块尾保持，第一块不混合；25 不变）；评测图按 `camera_delay` 变旧（仿真保留状态历史，MuJoCo 与镜像按序号渲旧状态）；推理延迟按 `latency_dist` 每块抽，先用 lockstep 实测的 `serve_policy` 耗时；`eval_closed_loop` 放行 50 fps 的双臂 lockstep；warehouse mars smoke 系列实验文件改 50 fps。已验证（`outputs/t7_lockstep50_smoke_20261007/`，25 fps 旧 checkpoint 只验机制）：24 拍一周期、图晚 40–60 ms、实测延迟分布 `configs/eval/latency_serve_policy_50fps_20261007.json`
@@ -578,3 +580,16 @@
 - [x] 16.12 （2026-10-07，用户）SONIC 两条线 state 改回官方 46 维，去掉两腕位姿 14 维（DECISIONS 同日）；旧 53/60 维 checkpoint 不能再服务或评测，16.4 按 46 维训练
     - [ ] 16.12.1 告诉 henry：真机客户端的 state 改成 46 维，`real_robot.observation` 不再做腕部 FK
 - [ ] 16.13 核对真机 C++ 是否按官方 `b042411` 的 `vla_inference.md` 把踝关节俯仰电机 Kp、Kd 放大 1.5 倍（`--motor-kp-scale 4,10=1.5`、`--motor-kd-scale 4,10=1.5`）；本地仿真 deploy 分支 `lockstep-port` 没有这个参数（`docs/official_comparison.md`）
+- [x] 16.14 （2026-10-07，用户）与官方教程的对照文档 `docs/official_comparison.md`，README"通用"给入口；取代 08-28 审计，B1 颜色增强核对与教程相同（`84f0fe7`，DECISIONS 2026-10-08）
+    - [ ] 16.14.1 待用户：训练配置向教程靠——批 32（现 64）、20000 步（现 10000），只改 `train` 块；两项都没做过对照
+    - [ ] 16.14.2 `docs/archive/INDEX.md`（3 个）和 `docs/archive/official_parity_audit.md`（1 个）有既有坏链接，修好后加"已被取代"注
+- [~] 16.15 （2026-10-07，用户）`warehouse_mars_50`：照 runbook 第 1–4 步采 50 条（120 局保留 50，Unreal，50 fps，带相机延迟）；训练集 45 条、验证集 5 条，审计全过（台账 crate.md 2026-10-07，`6a6bd10`）
+    - [x] 16.15.1 （2026-10-07）补渲 `KeyError: 'dataset_fps'`：`view_render.plan` 返回 look，入口交给 `fill`，加测试（`6a6bd10`）
+    - [x] 16.15.2 （2026-10-07）runbook 第 1 步补"场景已建过会拒绝覆盖"，常见报错补 `basket_tilt`
+    - [ ] 16.15.3 训练（`bash scripts/train.sh outputs/runs/warehouse_mars_50 --gpu 0`，1 万步）和闭环评测（100 局，Unreal 镜像）；这会是第一个 46 维、50 fps、带相机延迟的 checkpoint，可供 16.7.2、16.2.1
+    - [ ] 16.15.4 待用户：`check_dataset.bimanual` 按任务文本含 `crate` 判断双臂，warehouse（`pick up the box`）的 3cam_bimanual 档没被审计；本次手工核对过 state 46、action 66、三路相机
+- [x] 16.16 （2026-10-07，用户）旧数据迁移文档 `docs/migrate_old_data.md`，README 顶部提示；`running.md` 的 `dataset.fps` 行改为 crate/warehouse lockstep 接受 50（`b8f5e9c`，DECISIONS 2026-10-08）
+    - [ ] 16.16.1 待验证：实时录制运行按 50 fps 转换，审计 "action vs state" 中位 +0 帧不过（`crate_smoke` 只 1 条；25 fps 时 +3）；在完整数据上复查
+    - [ ] 16.16.2 可选：一条命令从旧运行派生 50 fps 新运行的脚本（现在是文档里的手工命令，要同时改 `summary.json` 和 `collect/inputs.json` 时容易漏）
+    - [ ] 16.16.3 告诉同事（henry）：旧数据按迁移文档处理，不用重新采集；代码要含 `6a6bd10`
+    - [ ] 16.16.4 `docs/migrate_old_data.md` 第 1 节写实时录制的图"约 33 Hz"（按代码推的），实测 50 fps 数据集里不同画面约 30.3 Hz；改成实测值，原因待查

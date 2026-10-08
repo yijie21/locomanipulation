@@ -1533,3 +1533,19 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **不变**：相机（3 路）、动作（token + 夹爪标量，66/65）、手 7 维填 Dex1 标量广播，这些仍与官方不同。`SONIC_MODALITY` 与数据集 `modality.json` 仍声明腕位姿（菜单不是选择），`observation.eef_state` 照写，所以已有数据集不用重转，恢复只改选择。ScaleBFM 的 `VISUAL_BOTTLE`（91 维）不在本次范围，保留右腕位姿。
 - **后果**：此前训练的 SONIC checkpoint（53 或 60 维）不能再用当前配置服务或评测：`serve_policy` 启动时报 "server state configuration differs from checkpoint metadata"，lockstep 评测和真机客户端核对字段顺序后退出。16.4 的新运行按 46 维训练。
 - **实现**：`schema.py`；`configs/gr00t_sonic_{2cam,3cam_bimanual}.py` 只改注释和打印；仿真 `ObsBuilder` 与真机 `real_robot.observation` 去掉腕部 FK；`replay_obs`、`diag_rtc_offline` 的观测键；`check_dataset` 的 2cam/3cam 档按 46 查，bfm 档保留 53；测试从 vendored `embodiment_configs.py` 读官方 state 组钉住顺序。
+
+## 2026-10-08 官方教程对照文档、夹爪方向维持、warehouse_mars_50 采集、旧数据迁移（用户；工作在 2026-10-07 做）
+
+- **目标**：用户要求数据采集、训练、推理逐项对齐 NVIDIA 官方 SONIC + GR00T 教程，并把对照、旧数据怎么迁移写成 GitHub 上的文档（README 给入口）。
+- **决策：Dex1 夹爪方向维持 0 闭、5.5 开（用户）**。理由：Unitree `dex1_1_service` 标定要求手动闭紧、标定后读数约 0；`xr_teleoperate` 的 `Dex1_1_Gripper_Controller` 把手指张开距离 5–7 映射到 0–5.4，注释称 0 是闭合位置；toy-bear 真机数据张开时停在 5.39–5.43。
+  - **否决**：按用户最初所说"真机 0 开、5.5 闭"把 `real_robot/gripper.py` 方向反过来。和以上三处来源矛盾，真机也没验证过；方向错了策略要夹时夹爪会张开。真机验证仍是 16.6。
+  - 和方向无关的已知问题：`dex1_to_sim_m` 闭端截在 −0.02 m，warehouse 线要 −0.06 才拿得起箱子；16.3、16.5 要改成按线的闭合目标（TODO 16.3.1）。
+- **决策：对照文档 `docs/official_comparison.md` 取代 2026-08-28 的 `docs/archive/official_parity_audit.md`**，README"通用"一节给入口。08-28 的 B1（颜色增强未传参）关闭：不传 `--color-jitter-params` 时用基座模型 `processor_config.json` 的默认值，与教程数值（0.3/0.4/0.5/0.08）完全相同，基座模型和本仓库 checkpoint 都核对过。
+  - **否决**：在归档审计和 `docs/archive/INDEX.md` 里加"已被取代"注。这两个文件有 4 个既有坏链接，提交钩子检查改动过的文档时会失败；取代关系只写在新文档开头（TODO 16.14.2）。
+- **决策：`configs/experiments/warehouse_mars_50.yaml`** 照 `docs/running.md` 第 1 节复制 `warehouse_mars_smoke`，只改运行名、`collect`（保留 50，每批 10 局，最多 25 批：按 10-03 mars 冒烟 9/30 估约 170 局，留余量）、`train`（10000 步，每 5000 存一次，留 5 条，同 `warehouse_mars_200`）、`eval.rounds: 100`。
+- **事实（已确认，`6a6bd10`）**：884a181 起 Unreal、Isaac 补渲对没有补渲标记的新 session 必崩（`KeyError: 'dataset_fps'`）：`view_render.plan` 把运行的帧率加进 look 去核对，却只返回 `(traces, todo)`，入口把自己的 look 交给 `fill`。修法：`plan` 一并返回 look，入口交给 `fill`；测试从 `plan` 走到 `fill`。之前的冒烟没暴露，因为那些 session 都有旧标记。
+- **决策：旧数据不重新采集（`docs/migrate_old_data.md`，README 顶部提示）**。理由：对齐只改了转换、补渲、训练选择和评测，采集链路（专家、仿真、SONIC、exporter、起栈和跑局脚本）没动，exporter 一直按 50 Hz 写每一行。做法：从旧运行派生新运行目录（运行的 `config.yaml` 开跑后不改，旧数据集保留可作对照），实时录制的只按 50 fps 重新转换，离线出图的删补渲标记、加 `camera_delay`、重渲后再转换。
+  - **否决**：给实时录制的运行加 `images.camera_delay`。录下的图是仿真自己出的，不能重画，`run_context` 会拒绝。
+  - **事实（已确认，试验踩到）**：补渲按 `collect/inputs.json` 找 session，转换按 `summary.json`；只改 `summary.json` 时补渲会改写共用的原始 session。试验时改写了 `warehouse_edges_45x20x18_20260928` 的原始 session（18 个视频加标记），已用渲染前的副本逐字节恢复。文档写明两处路径都要改。
+  - **事实（已确认）**：实时录制按 50 fps 转换，`crate_smoke` 训练集 407 帧变 814 帧，39% 的帧与上一帧相同，不同画面约 30.3 Hz（实测）。按代码推算仿真每 6 个 5 ms 步发一次图、约 33 Hz，与实测不符，原因没查；`docs/migrate_old_data.md` 第 1 节写的"约 33 Hz"要改成实测值（TODO 16.16.4）。
+  - **待验证**：同一次审计"action vs state"中位 +0 帧不过（25 fps 时 +3 帧）；只有 1 条，`warehouse_mars_50` 的 45 条是 +4 帧通过（TODO 16.16.1）。
