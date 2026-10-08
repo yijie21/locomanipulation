@@ -728,7 +728,7 @@
       - 实验文件已备好：`outputs/scene_discovery/adt_apartment_mars/experiments/p4_canister_on_round_table_unreal.yaml`（`images.source: unreal`、`backend.render: offline`、50 fps、相机延迟）
     - [ ] 19.18.7 双臂技能（`skills/catalogue/crate.py`）不读 `visual.ready_after_brake`，自带 ready；main 09-28 起采集默认 compact、10-03 起 warehouse 在 mars 上只从 ym 边走入。技能的双臂线没在 mars / 新默认上跑过（原 17.11 的 4/10 是 stock、`warehouse_textured`）
     - [x] 19.18.9 快进到 main（2026-10-08，用户定；`6f4d645`，之后 STATE 两个提交），没推送
-    - [ ] 19.18.10 推送 origin/main（main 比 origin 多 39 个提交；待用户说）
+    - [x] 19.18.10 推送 origin/main（用户 2026-10-08：全部推送，43 个提交，`b8f5e9c..d6a8208`；推前查过：没有 outputs / third_party / datasets 路径、没有大于 5 MB 的文件、没有 ADT 签名链接）
     - [x] 19.18.11 删三个旧 worktree（2026-10-08，用户）：先 unlink 数据软链接再 `git worktree remove --force`；主目录 `outputs/` 核对完好
     - [ ] 19.18.12 可选：删已合入的分支 `scene_discovery-sync`、`scene_discovery`、`loco_agent`（`git branch -d`；tag `scene_discovery-pre-sync` 保留）——待用户定
     - [ ] 19.18.13 loco_agent 那个 Claude 会话（pid 962611）还开着，工作目录已删：用户在那个终端退出它

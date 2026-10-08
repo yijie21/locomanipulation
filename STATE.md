@@ -1,7 +1,7 @@
 # STATE — 2026-10-08（会话：SIMPLE 论文调研、19.8 查重、warehouse 手臂规划 CuRobo → mink，已叫停）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-08）：到 `b8f5e9c` 为止都已推到 origin/main；main 现在比 origin 多 41 个提交（含本会话 `75ad611` 和 handoff），**未推送**，等用户说（TODO 19.18.10）。
+已确认（10-08 下午）：用户让全部推送，origin/main = main = `d6a8208`，没有未推送的提交（19.18.10 完成）。
 已确认（10-08 收尾时）：本机没有本会话留下的仿真栈、Unreal 编辑器、排队脚本或 CuRobo / mink 进程；GPU1 上常驻别的项目的 depth_server 约 3.7 GB，SimpleRoboJev 的 6 GB worker 会来来去去（记忆 shared-cards-other-projects）。
 已确认：loco_agent 那个 Claude 会话（pid 962611）的工作目录已删，用户在那个终端退出它（19.18.13）。henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
