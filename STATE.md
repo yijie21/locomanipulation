@@ -1,8 +1,8 @@
 # STATE — 2026-10-08（会话：state 改回官方 46 维、官方教程对照文档、warehouse_mars_50 采集、旧数据迁移文档）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-进行中（10-08）：`scene_discovery`（loco_agent 会话的 skills / Q11 / scene_discovery 工作）合入 main，做在分支 `scene_discovery-sync`（worktree `/workspace/code/locomanipulation-scene_discovery-sync`；合入前的分支打了 tag `scene_discovery-pre-sync`）：`10b3895` 合并、`0fcceaf` 改用 mars + Unreal、之后一个文档提交。**还没快进到 main、没推送，等用户定**。分支的 TODO 7/8/9 改编号为 17/18/19。
-已确认（10-08）：到 `b8f5e9c` 为止都已推到 origin/main；之后只有本次 handoff 提交，未推送。
+已确认（10-08）：`scene_discovery`（loco_agent 会话的 skills / Q11 / scene_discovery 工作）已快进合入 main（用户定，**未推送**）：`10b3895` 合并、`0fcceaf` 改用 mars + Unreal、`6f4d645` 文档；合入前的分支是 tag `scene_discovery-pre-sync`，做合并的 worktree `/workspace/code/locomanipulation-scene_discovery-sync`（分支 `scene_discovery-sync`）可删。分支的 TODO 7/8/9 改编号为 17/18/19。
+已确认（10-08）：到 `b8f5e9c` 为止都已推到 origin/main；之后的 handoff 提交和 scene_discovery 合入（共 38 个提交）都未推送，推送等用户说。
 已确认（10-08 收尾时）：本机没有留下仿真栈、策略服务、镜像或 Unreal 编辑器（`stop_unreal.sh` 已跑）。GPU1 上常驻别的项目的 depth_server 约 3.7 GB。
 别的会话：henry-zhao 直接推 origin/main 或 `henry-dev`，推送不跑钩子，可能自带检查失败（记忆 origin-main-can-carry-failing-checks）。
 
