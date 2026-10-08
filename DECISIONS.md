@@ -1974,3 +1974,15 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - `capability.yaml` 的实测都在 stock 机器人上；mars 的包络没重测，检查器的分桶对 mars 未验证（TODO 19.18.5）。
   - Isaac 舞台 `adt_apartment` 只对应 stock 场景；mars 没有 Isaac 舞台。
   - 双臂技能不读 `visual.ready_after_brake`，没在 mars / main 的新默认上跑过（TODO 19.18.7）。
+
+## 2026-10-08（续）scene_discovery 快进进 main 不推送、删旧 worktree、内存事故与回归的做法
+
+- **决策（用户）：先快进到 main，不推送**；mars 抓取问题（TODO 19.18.8）不作为合入的前提。理由：合并前后同机同 seed 回归看不出差别（pick_place 台账 §18），mars 上的失败是标定问题、不是合并带来的；推送另等用户说。
+  - **否决**：等 mars 抓取修好再合。分支越晚合落后越多，main 同期还在改评测和数据格式。
+- **决策（用户）：删三个旧 worktree**（`-scene_discovery-sync`、`-scene_discovery`、`-loco_agent`），**分支和 tag 保留**（都已在 main 里，`scene_discovery-pre-sync` 指合入前的分支头 `a73cf0c`）。删之前先逐个 `unlink` 每个 worktree 的 `outputs` / `third_party` / `datasets` 软链接、确认里面一个软链接都不剩，再 `git worktree remove --force`。理由：这三个软链接指向主目录 160 GB 的数据（2026-09-09 的事故就是软链接被当成目录处理）。
+- **决策：apartment 的 Unreal 房间做法写在 `unreal.room_build`，`unreal.build` 只是 `build_level <name>`**。
+  - **否决**：把烘焙、建房间、建关卡三步串成一条 `unreal.build`。`build_scene.sh --unreal` 和 `test_image_source` 都约定 `unreal.build` 就是 `build_level <name>`，而且只改了 MuJoCo 场景时只需重导入、不必重烘房间。
+- **事实（已确认）**：04:06–07:02 容器内存打满（上限 91 GB；Unreal 编辑器 24 GB + 两个 ADT 栈各约 16 GB + 提交钩子的整套测试 + 别的项目常驻约 15 GB），`memory.pressure` full avg300 到 74%，所有进程近乎停住，两边 SONIC deploy 都死了。
+  - **决策**：这段时间的局作废、单独重跑，不和正常时段的数字放在一起；以后 ADT 栈一次只跑一个，起栈或编辑器前先看 `/sys/fs/cgroup/memory.current`。
+  - **否决**：为了省时间把合并前 / 合并后 / mars 三组试跑和 Unreal 编辑器并行跑。省下的时间远小于三小时停顿，而且停顿期间的结果只能作废。
+- **决策：回归用"同机同日同 seed、合并前后各跑一遍"对照**，不和分支上历史的数字比。理由：同一 seed 两次跑结果也会不同（pick_place 第 0 局 10-05 成、今天合并前败、合并后成），历史数字混进了机器负载的差别。10 局一组只用来排除大退化。
