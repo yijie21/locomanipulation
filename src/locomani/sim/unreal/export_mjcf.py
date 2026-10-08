@@ -1,5 +1,8 @@
-"""A scene's moving part as a self-contained MJCF folder for URLab's importer: the robot, the target object and
-the three dataset cameras, nothing the Unreal level brings itself -- plus what the third-person video needs.
+"""A scene's moving part as a self-contained MJCF folder for URLab's importer: the robot, every free body and the
+three dataset cameras, nothing the Unreal level brings itself -- plus what the third-person video needs.
+
+The free bodies are what moves besides the robot: the warehouse carton, and in a scene_discovery apartment every
+object that can be picked up (`moving_bodies`); the rest of the room is the level's baked meshes.
 
 URLab builds its Blueprint from an MJCF on disk and resolves meshes relative to the XML, so every mesh and texture
 the scene references is copied into <out>/assets/ and the paths rewritten. Dropped: the world geoms (the room and
@@ -64,10 +67,19 @@ def _drop_unused_assets(spec) -> None:
             spec.delete(t)
 
 
-def strip_to_dynamic(spec, target_body: str) -> None:
-    """Keep the robot and target subtrees with the dataset cameras; drop world geoms and cameras, lights,
+def moving_bodies(spec) -> list[str]:
+    """The world's free bodies other than the robot: the ones URLab must move."""
+    return [
+        b.name
+        for b in spec.worldbody.bodies
+        if b.name != ROBOT_ROOT and any(j.type == mujoco.mjtJoint.mjJNT_FREE for j in b.joints)
+    ]
+
+
+def strip_to_dynamic(spec, moving: list[str]) -> None:
+    """Keep the robot and the `moving` subtrees with the dataset cameras; drop world geoms and cameras, lights,
     invisible geoms and the com_marker site."""
-    keep = _subtree(spec, ROBOT_ROOT) | _subtree(spec, target_body)
+    keep = _subtree(spec, ROBOT_ROOT).union(*(_subtree(spec, b) for b in moving))
     for b in list(spec.worldbody.bodies):
         if b.name not in keep:
             spec.delete(b)
@@ -148,12 +160,12 @@ def localise_assets(spec, src_dir: Path, asset_dir: Path) -> None:
 def export(scene_dir: Path, out: Path, level: str) -> dict:
     """Write `<out>/<level>.xml` (+ assets/, joints) from the scene directory; returns a summary."""
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
-    target = meta["objects"][meta["target_object"]]["body"]
     scene_xml = scene_dir / "scene_locomani.xml"
     scene_model = mujoco.MjModel.from_xml_path(str(scene_xml))
     fovy = third_person_shot.scene_fovy(scene_model, meta)
     spec = mujoco.MjSpec.from_file(str(scene_xml))
-    strip_to_dynamic(spec, target)
+    moving = moving_bodies(spec)
+    strip_to_dynamic(spec, moving)
     add_film_bodies(spec, scene_model, fovy)
     if out.exists():
         shutil.rmtree(out)
@@ -170,4 +182,4 @@ def export(scene_dir: Path, out: Path, level: str) -> dict:
     (out / f"{level}_joints.json").write_text(json.dumps({"nq": model.nq, "joints": joints}, indent=1))
     cams = [model.camera(i).name for i in range(model.ncam)]
     film = {"camera": FILM_CAMERA, "fovy": fovy, "size": [sim_video.WIDTH, sim_video.HEIGHT]}
-    return {"xml": str(xml_path), "nq": model.nq, "nmesh": model.nmesh, "cameras": cams, "target": target, "film": film}
+    return {"xml": str(xml_path), "nq": model.nq, "nmesh": model.nmesh, "cameras": cams, "moving": moving, "film": film}

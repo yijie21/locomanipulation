@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -38,3 +40,16 @@ def test_the_level_records_default_beside_the_unreal_install_in_both_path_files(
         check=True,
     ).stdout.strip()
     assert py == sh == "/opt/ue/levels"
+
+
+def test_a_scene_level_copies_its_own_room_level_and_the_warehouse_by_default():
+    """The apartment's level is a copy of its own room (scenes.yaml `unreal.room_level`), imported into its own asset
+    directory so building it never replaces the warehouse room's meshes."""
+    from locomani.sim.unreal import build_level
+
+    assert build_level.room_level(None) == (build_level.ROOM_LEVEL, {})
+    path, options = build_level.room_level("AdtApartment")
+    assert path == "/Game/Levels/AdtApartment"
+    assert options == {"WAREHOUSE_LEVEL": path, "WAREHOUSE_ASSETS": "/Game/Rooms/AdtApartment"}
+    entry = yaml.safe_load((ROOT / "configs/scenes.yaml").read_text())["adt_apartment_mars"]["unreal"]
+    assert entry["room_level"] == "AdtApartment" and "--room-level AdtApartment" in entry["room_build"]

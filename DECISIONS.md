@@ -1954,3 +1954,23 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
   - **事实（已确认，试验踩到）**：补渲按 `collect/inputs.json` 找 session，转换按 `summary.json`；只改 `summary.json` 时补渲会改写共用的原始 session。试验时改写了 `warehouse_edges_45x20x18_20260928` 的原始 session（18 个视频加标记），已用渲染前的副本逐字节恢复。文档写明两处路径都要改。
   - **事实（已确认）**：实时录制按 50 fps 转换，`crate_smoke` 训练集 407 帧变 814 帧，39% 的帧与上一帧相同，不同画面约 30.3 Hz（实测）。按代码推算仿真每 6 个 5 ms 步发一次图、约 33 Hz，与实测不符，原因没查；`docs/migrate_old_data.md` 第 1 节写的"约 33 Hz"要改成实测值（TODO 16.16.4）。
   - **待验证**：同一次审计"action vs state"中位 +0 帧不过（25 fps 时 +3 帧）；只有 1 条，`warehouse_mars_50` 的 45 条是 +4 帧通过（TODO 16.16.1）。
+
+## 2026-10-08 scene_discovery 合入 main；改用 mars + Unreal（用户）
+
+- **背景**：分支 `scene_discovery`（loco_agent 会话的 skills / Q11 / scene_discovery，`a73cf0c`）从 `9955487`（2026-09-28）分出，领先 33、落后 main 100 个提交。用户要求合入 main 并直接适配新代码，场景线换成 mars 机器人 + Unreal 出图。
+- **决策：在新 worktree 里先把 main 合进分支，再快进回 main**（分支 `scene_discovery-sync`，合入前打 tag `scene_discovery-pre-sync`）。用 merge 不用 rebase：rebase 要在 33 个提交上逐个重解冲突，还会改掉交接文档引用的提交号；与 2026-09-28 "推送用 merge" 一致。
+- **决策：合并提交只解冲突，适配另起提交**，方便单独回退。
+- **冲突的解法**（`10b3895`）：
+  - 双臂评测器保留 main 的"每批一个子进程"（`vla_rounds` 的 `main()`，带 main 加的 lockstep / 50 fps / 相机延迟参数）；分支的进程内 `vla_rounds.run`（原 TODO 1.16）不要：要真栈验证它需要一个 46 维 checkpoint，本机现在没有。分支抽出的公共准入 / 收尾 / 统计（`pipeline/closed_loop.py`，原 TODO 1.18）在 main 的两个评测器上重做。
+  - TODO：分支的 7/8/9 和 main 同期新开的 7/8/9 撞号，分支的改为 17/18/19，节首写明旧号；代码注释和 `docs/skills.md` 里的 "TODO 7/8/9.x" 一并改。
+  - DECISIONS、crate 台账：两边按日期穿插，一节不丢。
+- **事实（已确认）**：合并时文本不冲突、但跑起来会崩的一处：`tasks/crate/collect.py` 的 `run_batch` 用了 `prepare`，main 删掉了它的 import（ruff F821）。已补。
+- **决策：场景 `adt_apartment_mars`**：几何与 Claude 估属性两步与机器人无关，沿用 `adt_apartment` 的场景文件；`mujoco` 一步加 `--robot mars`（`make_dex1_model.apply_mars`，`check_mars` 过）。名字登记在 `configs/scenes.yaml`，目录、实验文件、房间烘焙仍只在 `outputs/`（决策 17）。
+- **决策：自由体用自己的扫描网格画**（每个 glb 几何体一个 OBJ + ≤1024 的底色贴图，超过 30 万面的拆开），凸包只管碰撞（group 3）。理由：Unreal 只能经 URLab 从 MJCF 导入会动的物体，原来的凸包 + 平均色在 Unreal 里就是一块色块，比 Isaac（直接读 glb）差得多；顺带 MuJoCo 自己的图也对。物理不变（视觉 geom 不碰撞、密度 0）。
+- **决策：Unreal 房间关卡按场景**：`scenes.yaml` 的 `unreal.room_level`（默认仍是 warehouse）；`build_level --room <bake> --room-level <名>` 把房间导进 `/Game/Rooms/<名>`，不动 warehouse 的资产。公寓的烘焙由 `scripts/adt_to_usd.py --unreal` 出：自由体以外的物体按世界位姿合进 `room.glb`（变换写进网格，贴图 ≤1024），每个房间天花板下按 2.5 m 网格放 0.5 m 面光（65 W、曝光 −0.25，取自 warehouse 烘焙）。`export_mjcf` 改为导出全部自由体（warehouse 场景只有纸箱一个，导出不变）。
+- **事实（已确认，2026-10-08）**：Unreal 关卡 `adt_apartment_mars` 建成（房间 400 个静态网格、12 盏面光；导入机器人 + 64 个自由体，105 s）。同一状态 Unreal 与 MuJoCo 三路相机并排，几何对齐，物体贴图正确：`outputs/renders/adt_mars_check_20261008/unreal_vs_mujoco_{spawn,facing_canister}.png`。曝光沿用 warehouse 的值，没有参照图校准；灯下木地板偏亮。
+- **事实（已确认）**：单臂技能那条路径上，合并前后的代码只差注释里的 TODO 号、一句报错文字和栈管理的记账（`instance_busy`、`down()` 读状态文件）；仿真的电机力矩表由场景 XML 读出，对 stock 场景与旧写死的列表逐项相同（手指 20 N）。
+- **未决**：
+  - `capability.yaml` 的实测都在 stock 机器人上；mars 的包络没重测，检查器的分桶对 mars 未验证（TODO 19.18.5）。
+  - Isaac 舞台 `adt_apartment` 只对应 stock 场景；mars 没有 Isaac 舞台。
+  - 双臂技能不读 `visual.ready_after_brake`，没在 mars / main 的新默认上跑过（TODO 19.18.7）。

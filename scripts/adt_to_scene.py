@@ -11,11 +11,14 @@ faces of every fixed piece of furniture (`scene_discovery.surfaces`), and every 
 fields (`scene_discovery.adt`). `estimate --scene <out>/scene_meta.json` then asks Claude (Opus by default) for
 names, mass, friction, containers and room names and applies the rules of `scene_discovery.properties`, in place;
 every exchange is in `<out>/claude_properties.jsonl`, what the rules changed in `<out>/properties_report.json`.
-`mujoco --scene <out>/scene_meta.json` writes `<out>/scene_locomani.xml` (robot from `--base`) and
-`<out>/env_only.xml` (no robot, for `scripts/scene_drop_test.py`), meshes under `<out>/mesh/`: the shell and
-furniture as scenery, support surfaces as slabs, every movable object as a hull (containers as five boxes),
-free bodies only for `--free` (default: every graspable movable object resting on a surface). The output is ADT-derived and stays
-under `outputs/` (plan decision 17).
+`mujoco --scene <out>/scene_meta.json` writes `<out>/scene_locomani.xml` (robot from `--base`, made the lab's
+real G1 with `--robot mars`, `make_dex1_model.apply_mars`) and `<out>/env_only.xml` (no robot, for
+`scripts/scene_drop_test.py`), meshes under `<out>/mesh/`: the shell and furniture as scenery, support surfaces as
+slabs, every movable object as a hull (containers as five boxes), free bodies only for `--free` (default: every
+graspable movable object resting on a surface). A free body is drawn with its own textured mesh (`free_visuals`);
+its hull only collides. A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
+estimate stages do not depend on the robot) and run this stage there. The output is ADT-derived and stays under
+`outputs/` (plan decision 17).
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from locomani.scene_discovery import adt, floorplan, mjcf, properties, scene_file, surfaces  # noqa: E402
+from locomani.sim import make_dex1_model  # noqa: E402
 
 DATA = Path("/workspace/datasets/adt")
 SECTION_HEIGHTS = (0.3, 0.6, 0.9, 1.2, 1.5)  # below windows, above skirting; a wall at any of them blocks
@@ -366,6 +370,55 @@ def colour(mesh: trimesh.Trimesh) -> list[float]:
     return [0.7, 0.7, 0.7, 1.0]
 
 
+# MuJoCo renders a mesh over 349,525 faces about 12x slower (2^20 indices): split, not decimate
+FACES_PER_MESH = 300_000
+TEXTURE_MAX = 1024  # px; the dataset cameras are 640 wide and a free object fills a fraction of them
+
+
+def free_visuals(key: str, a: adt.AdtObject, out: Path) -> list[dict]:
+    """A free body's own meshes in its body frame, for a visual geom each: `{name, obj, png | None, rgba}`.
+
+    The glb's geometries (graph transforms applied) moved like the hull (`AdtObject.body`), written as OBJ with
+    texture coordinates, and the base-colour texture as a PNG at most TEXTURE_MAX wide; a geometry without one keeps
+    the preview colour. Its hull is the collision shape (group 3), so MuJoCo's cameras, the Unreal import
+    (`unreal.export_mjcf` drops colliding geoms of a body that has visuals) and Isaac (which loads the glb itself)
+    all draw the object as scanned.
+    """
+    scene = trimesh.load(DATA / "objects" / key / "3d-asset.glb")
+    geoms = scene.dump() if isinstance(scene, trimesh.Scene) else [scene]
+    offset = np.asarray(a.body()["mesh_offset"], dtype=float)
+    parts = []
+    for g, geom in enumerate(geoms):
+        verts = np.asarray(geom.vertices) @ a.body_axes.T + offset
+        uv = getattr(geom.visual, "uv", None)
+        img = getattr(getattr(geom.visual, "material", None), "baseColorTexture", None)
+        png = None
+        if img is not None and uv is not None:
+            png = out / "mesh" / f"adt_vis_{key}_{g}.png"
+            img = img.convert("RGB")
+            if max(img.size) > TEXTURE_MAX:
+                img = img.resize((TEXTURE_MAX, TEXTURE_MAX * img.size[1] // img.size[0]))
+            png.parent.mkdir(parents=True, exist_ok=True)
+            img.save(png)
+        faces = np.asarray(geom.faces)
+        for c, start in enumerate(range(0, len(faces), FACES_PER_MESH)):
+            chunk = faces[start : start + FACES_PER_MESH]
+            used, local = np.unique(chunk, return_inverse=True)
+            name = f"adt_vis_{key}_{g}_{c}"
+            obj = out / "mesh" / f"{name}.obj"
+            lines = [f"v {x:.6f} {y:.6f} {z:.6f}" for x, y, z in verts[used]]
+            if png is not None:
+                lines += [f"vt {u:.6f} {v:.6f}" for u, v in np.asarray(uv)[used]]
+                lines += [f"f {i + 1}/{i + 1} {j + 1}/{j + 1} {k + 1}/{k + 1}" for i, j, k in local.reshape(-1, 3)]
+            else:
+                lines += [f"f {i + 1} {j + 1} {k + 1}" for i, j, k in local.reshape(-1, 3)]
+            obj.write_text("\n".join(lines) + "\n")
+            parts.append(
+                {"name": name, "obj": str(obj), "png": None if png is None else str(png), "rgba": colour(geom)}
+            )
+    return parts
+
+
 def export(mesh: trimesh.Trimesh, path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces, process=False).export(path)
@@ -390,6 +443,12 @@ def mujoco(args) -> None:
         if o["semantic"]["movable"] and o["semantic"]["graspable"] != "none" and o.get("surface")
     }  # fmt: skip
     tree = ET.parse(args.base)
+    if args.ego_camera and args.robot != "mars":
+        raise SystemExit(f"--ego-camera picks one of mars's head cameras; robot {args.robot} has one ego camera")
+    ego_camera = (args.ego_camera or make_dex1_model.MARS_EGO_DEFAULT) if args.robot == "mars" else None
+    if args.robot == "mars":
+        make_dex1_model.write_mars()  # the meshes the scene references (and the robot model) are gitignored
+        tree = make_dex1_model.apply_mars(tree, make_dex1_model.MARS_MESHES, ego_camera)
     root = tree.getroot()
     asset, world = root.find("asset"), root.find("worldbody")
     for el in list(world):
@@ -451,6 +510,15 @@ def mujoco(args) -> None:
             n_free += 1
             o["body"] = f"{key}_object"
             ET.SubElement(parent, "freejoint", name=f"{key}_free")
+            for part in free_visuals(key, a, out):
+                vis = {"rgba": mjcf.fmt(part["rgba"])}
+                if part["png"]:
+                    ET.SubElement(asset, "texture", name=part["name"], type="2d", file=part["png"])
+                    ET.SubElement(asset, "material", name=part["name"], texture=part["name"])
+                    vis = {"material": part["name"]}
+                mesh_asset(part["name"], part["obj"])
+                ET.SubElement(parent, "geom", name=part["name"], type="mesh", mesh=part["name"], contype="0",
+                              conaffinity="0", group="1", density="0", **vis)  # fmt: skip
             inert = mjcf.box_inertia(sem.get("mass_kg", 0.2), o["box"])
             ET.SubElement(
                 parent,
@@ -463,8 +531,9 @@ def mujoco(args) -> None:
         else:
             holder, at = env, {"pos": mjcf.fmt(o["init_pos"]), "quat": mjcf.fmt(o["init_quat"])}
         if o.get("container"):
-            ET.SubElement(holder, "geom", name=f"{name}_vis", type="mesh", mesh=name, contype="0", conaffinity="0",
-                          group="1", density="0", rgba=rgba, **at)  # fmt: skip
+            if not is_free:  # a free container is drawn by its free_visuals
+                ET.SubElement(holder, "geom", name=f"{name}_vis", type="mesh", mesh=name, contype="0", conaffinity="0",
+                              group="1", density="0", rgba=rgba, **at)  # fmt: skip
             for b in mjcf.container_boxes(o["box"]):
                 pos = b["pos"]
                 if not is_free:  # a static container's boxes are placed in the world frame
@@ -477,9 +546,15 @@ def mujoco(args) -> None:
                               friction=friction, density="0", group="3", rgba="0.9 0.5 0.2 0.3", **extra)  # fmt: skip
         else:
             ET.SubElement(holder, "geom", name=f"{name}_col", type="mesh", mesh=name, friction=friction, density="0",
-                          rgba=rgba, **at)  # fmt: skip
+                          rgba=rgba, **({"group": "3"} if is_free else {}), **at)  # fmt: skip
     meta["scene_xml"] = str(out / "scene_locomani.xml")
+    meta["robot"] = args.robot  # robot_look.scene_robot; the Unreal level and Isaac stage builders record it
+    meta.pop("ego_camera", None)
+    if ego_camera:
+        meta["ego_camera"] = ego_camera
     tree.write(out / "scene_locomani.xml")
+    if args.robot == "mars":
+        make_dex1_model.check_mars(str(out / "scene_locomani.xml"))
     # the robot-free scene for the drop test, written from scratch: the robot's equalities, actuators, sensors and
     # contact excludes all name robot elements, so a copy minus the pelvis tree does not compile
     env_root = ET.Element("mujoco", model="adt_env_only")
@@ -563,6 +638,8 @@ def main() -> None:
     j = sub.add_parser("mujoco", help="MJCF from the scene file (robot from --base)")
     j.add_argument("--scene", required=True)
     j.add_argument("--base", default=str(REPO / "outputs/scene/walk/scene_locomani.xml"))
+    j.add_argument("--robot", choices=("stock", "mars"), default="stock", help="mars: the lab's real G1 (apply_mars)")
+    j.add_argument("--ego-camera", choices=("d455_head", "d435_head"), default=None, help="mars only: the ego camera")
     j.add_argument(
         "--free",
         nargs="*",

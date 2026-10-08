@@ -4,10 +4,12 @@
     bash scripts/build_scene.sh warehouse_textured --unreal              # = the scene's `unreal.build`:
     "$BRIDGE_PY" -m locomani.sim.unreal.build_level warehouse_textured
     "$BRIDGE_PY" -m locomani.sim.unreal.build_level --room <bake dir>    # the room level itself, once per install
+    "$BRIDGE_PY" -m locomani.sim.unreal.build_level --room <bake dir> --room-level AdtApartment   # another room
 
-A scene's level (`configs/scenes.yaml`, `unreal.level`) is a copy of the room level ROOM_LEVEL -- the Blender-baked
-logistics room with its six area lights, emissive panels and the post-process volume that fixes exposure, Lumen
-and its bounce boost (`in_editor/warehouse_level.py`, docs/ledger/blender_scenes.md section 7) -- with the scene's
+A scene's level (`configs/scenes.yaml`, `unreal.level`) is a copy of its room level (`unreal.room_level`, default
+ROOM_LEVEL) -- the Blender-baked logistics room with its six area lights, emissive panels and the post-process volume
+that fixes exposure, Lumen and its bounce boost (`in_editor/warehouse_level.py`, docs/ledger/blender_scenes.md
+section 7), or a scene_discovery apartment baked the same way (scripts/adt_to_usd.py --unreal) -- with the scene's
 moving part imported through URLab: the export of `export_mjcf` (robot, carton, the three dataset cameras, the
 third-person camera rig and ghost grippers), named after the level, so the Blueprint is /Game/MuJoCoImports/<level>.
 Then Nanite off on every mesh (`in_editor/no_nanite`; before the materials, whose translucent ghost a Nanite mesh
@@ -17,7 +19,8 @@ the level and the Blueprint saved: the next editor session opens it ready to ren
 refuses a level built from another scene or with another look. Rebuilding replaces the level and its import.
 
 The room level is built once per install from the Blender bake (scripts/unreal/warehouse_bake.py, in Blender):
-`--room <bake dir>` runs `in_editor/warehouse_level.py` on it.
+`--room <bake dir>` runs `in_editor/warehouse_level.py` on it; `--room-level NAME` builds /Game/Levels/NAME with its
+meshes under /Game/Rooms/NAME instead, leaving the warehouse's alone.
 """
 
 from __future__ import annotations
@@ -42,6 +45,15 @@ def srgb_to_linear(v: float) -> float:
 
 
 ROOM_LEVEL = "/Game/Levels/Warehouse"  # in_editor/warehouse_level.py's default WAREHOUSE_LEVEL
+
+
+def room_level(name: str | None) -> tuple[str, dict]:
+    """A room level's asset path and the in-editor options that build it: the warehouse by default."""
+    if not name:
+        return ROOM_LEVEL, {}
+    path = f"/Game/Levels/{name}"
+    return path, {"WAREHOUSE_LEVEL": path, "WAREHOUSE_ASSETS": f"/Game/Rooms/{name}"}
+
 
 _COPY_ROOM = """
 # Open the room level, save it under the scene's name (save_map) and open that copy. Copying the asset instead
@@ -70,7 +82,7 @@ print("level", unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_edi
 """
 
 
-def build_room(bake_dir: Path) -> None:
+def build_room(bake_dir: Path, name: str | None = None) -> None:
     # Checked here, not in the editor: there the missing file is a traceback from the script and a second one from
     # the report it cannot write into the missing directory (a bake step skipped, 2026-09-29).
     missing = [f for f in ("room.glb", "room_scene.json") if not (bake_dir / f).is_file()]
@@ -84,7 +96,9 @@ def build_room(bake_dir: Path) -> None:
     report_path = bake_dir / "unreal_level_report.json"
     report_path.unlink(missing_ok=True)  # the script writes it last: an old one must not read as this run's
     out = editor.checked(
-        editor.run_file(editor.IN_EDITOR / "warehouse_level.py", WAREHOUSE_DIR=str(bake_dir.resolve()))
+        editor.run_file(
+            editor.IN_EDITOR / "warehouse_level.py", WAREHOUSE_DIR=str(bake_dir.resolve()), **room_level(name)[1]
+        )
     )
     print(out.strip())
     if not report_path.is_file():
@@ -98,6 +112,7 @@ def build(name: str) -> dict:
     entry = run_context.unreal_entry(name)
     level = entry["level"]
     level_path = f"/Game/Levels/{level}"
+    room, _ = room_level(entry.get("room_level"))
     scene_dir = run_context.ROOT / run_context.resolve_scene({"scene": {"name": name}})["scene"]["dir"]
     out = Path(paths.UNREAL_ASSETS) / level
     t0 = time.time()
@@ -107,7 +122,7 @@ def build(name: str) -> dict:
     editor.stop_pie()
     print(
         "[build_level]",
-        editor.checked(editor.uecmd(_COPY_ROOM.format(src=ROOM_LEVEL, dst=level_path))).strip(),
+        editor.checked(editor.uecmd(_COPY_ROOM.format(src=room, dst=level_path))).strip(),
         flush=True,
     )
     print(
@@ -152,7 +167,7 @@ def build(name: str) -> dict:
         "scene_xml": str(xml.resolve()),
         "scene_xml_sha256": hashlib.sha256(xml.read_bytes()).hexdigest(),
         "level": level_path,
-        "room_level": ROOM_LEVEL,
+        "room_level": room,
         "blueprint": asset,
         "film": exported["film"],  # the third-person camera the import carries (UnrealView.film_setup checks it)
         "robot": robot_look.scene_robot(scene_dir),  # the robot the import carries (run_context.unreal_scene checks it)
@@ -169,9 +184,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scene", nargs="?", help="a scene name with an `unreal` entry in configs/scenes.yaml")
     ap.add_argument("--room", type=Path, help="build the room level from this Blender bake directory instead")
+    ap.add_argument("--room-level", default=None, help="with --room: the room level's name (default: the warehouse)")
     args = ap.parse_args(argv)
     if args.room:
-        build_room(args.room)
+        build_room(args.room, args.room_level)
         return 0
     if not args.scene:
         ap.error("give a scene name, or --room <bake dir>")

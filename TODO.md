@@ -710,3 +710,11 @@
   - [ ] 19.16 第二个新技能选哪个（决策 11，待用户定）：49 个提议任务里 32 个缺技能，几乎都是抓取。按挡住的任务数：抓取高度 28（台面高度 0.91–0.99 m 8 个、肩高 1.11–1.15 m 8 个、低于 0.66 m 且多在有顶格子里 12 个；模板空间 882）、深处低位入手 13（模板 433）、深够 1（模板 88）、放到指定物体旁 1。我推荐先做台面高度抓取（不蹲、不钻格子，对现有抓取改动最小），再延到肩高
     - [ ] 19.16.1 扁平物体（钱包、车钥匙、木勺、平躺香蕉，厚 1.5–3.8 cm，8 个任务）实际要"从上往下捏"，检查器只记成 `grasp_single.object_size`（范围缺口，会被当成可试跑）；是否加一条按厚度判的技能缺口，待定
   - [x] 19.17 报告 doc「公寓场景任务发现」（2026-10-05，用户要求）：https://claude.ai/code/artifact/132adcd3-de5d-4ff1-99ba-1bc683f47549 ，两页（正文七节 + 流程图；任务清单 49 行）；私有，含 ADT 衍生任务清单，Meta 答复（9.11）前不分享到团队外
+  - [~] 19.18 合入 main 并改用 mars + Unreal（用户 2026-10-08；DECISIONS 2026-10-08）：分支 `scene_discovery-sync`（worktree `../locomanipulation-scene_discovery-sync`），合入前的分支打 tag `scene_discovery-pre-sync`
+    - [x] 19.18.1 合并 main（`10b3895`）：16 个冲突；分支编号 7/8/9 改为 17/18/19；`make check` 全过
+    - [x] 19.18.2 mars 场景 `adt_apartment_mars`（`adt_to_scene.py mujoco --robot mars`；64 个自由体换成带贴图的扫描网格，凸包只管碰撞）；`check_mars` 过；MuJoCo 渲染核对 `outputs/renders/adt_mars_check_20261008/`
+    - [~] 19.18.3 Unreal：`export_mjcf` 导出全部自由体；`build_level --room-level`；`adt_to_usd.py --unreal` 烘焙房间；建关卡并出一张核对图
+    - [ ] 19.18.4 回归：合并后的代码与合并前（`scene_discovery-pre-sync`）同机同 seed 对照（bottle、pick_place、p4），再在 mars 上跑 p4
+    - [ ] 19.18.5 `capability.yaml` 的实测都是 stock 机器人上的；mars 的伸手 / 抓取包络要重测后检查器才可信（19.7）
+    - [ ] 19.18.6 冒烟：mars + Unreal 上录几局 → Unreal 补渲 → 转换（19.14.1 的前半段）
+    - [ ] 19.18.7 双臂技能（`skills/catalogue/crate.py`）不读 `visual.ready_after_brake`，自带 ready；main 09-28 起采集默认 compact、10-03 起 warehouse 在 mars 上只从 ym 边走入。技能的双臂线没在 mars / 新默认上跑过（原 17.11 的 4/10 是 stock、`warehouse_textured`）

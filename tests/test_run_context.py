@@ -178,7 +178,8 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     stock = {"bottle", "crate", "warehouse", "warehouse_textured", "walk", "box_platform", *boxes}
     mars = {"bottle_mars", "warehouse_textured_mars", "box_platform_mars", *(f"{box}_mars" for box in boxes)}
     d435 = {"bottle_mars_d435", "warehouse_textured_mars_d435", "warehouse_box_45x32x33_mars_d435"}  # face camera
-    assert set(names) == stock | mars | d435
+    scene_discovery = {"adt_apartment_mars"}  # ADT-derived: built under outputs/, nothing in git
+    assert set(names) == stock | mars | d435 | scene_discovery
     for entry in names.values():
         assert "example" in entry or "build" in entry
         if "example" in entry:

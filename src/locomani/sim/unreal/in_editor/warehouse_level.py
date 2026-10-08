@@ -5,6 +5,8 @@ the environment:
 
     WAREHOUSE_DIR   the bake output: room.glb + room_scene.json
     WAREHOUSE_LEVEL level asset path (default /Game/Levels/Warehouse)
+    WAREHOUSE_ASSETS where the room's meshes and materials are imported (default /Game/Warehouse/Room); another
+                    room (a scene_discovery apartment, build_level --room-level) takes its own directory
     WAREHOUSE_EXPOSURE_ONLY=1  load the existing level and only (re)set the exposure volume
     WAREHOUSE_EXPOSURE_OFFSET  stops added to the computed exposure compensation (calibration; default 0)
     WAREHOUSE_EMISSIVE_ONLY=1  load the existing level and only (re)build its emissive materials (stop PIE first)
@@ -50,7 +52,7 @@ def _opt(name, default=None):
 
 DIR = Path(_opt("WAREHOUSE_DIR"))
 LEVEL = _opt("WAREHOUSE_LEVEL", "/Game/Levels/Warehouse")
-ASSETS = "/Game/Warehouse/Room"
+ASSETS = _opt("WAREHOUSE_ASSETS", "/Game/Warehouse/Room")
 EMISSIVE_MASTER = "/Game/Loco/M_LocoEmissive"
 LUMEN_DIFFUSE_COLOR_BOOST = 4.0  # place_exposure
 
@@ -295,7 +297,7 @@ def main():
         report["lights"] = place_lights(scene)
         report["exposure_bias"] = place_exposure(scene)
         les.save_current_level()
-        unreal.EditorAssetLibrary.save_directory("/Game/Warehouse")
+        unreal.EditorAssetLibrary.save_directory(ASSETS.rsplit("/", 1)[0])
         report["level"] = LEVEL
         report["ok"] = True
         log(f"saved {LEVEL}")

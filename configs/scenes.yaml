@@ -9,7 +9,8 @@
 # `images.source: isaac` (training and evaluation images). Its look is `rtx_settings` plus `supersample` (cameras
 # render N times larger, box-averaged back; default 1). `unreal` names the scene's Unreal level for
 # `images.source: unreal`, built by `build_scene.sh <name> --unreal` inside a running editor (scripts/start_unreal.sh):
-# the Blender-baked room level (scripts/unreal/warehouse_level.py) plus this scene's robot and carton imported
+# the Blender-baked room level (`room_level`, default the warehouse's; in_editor/warehouse_level.py) plus this scene's
+# robot and free bodies imported
 # through URLab. Its look is the room level's post-process volume plus `repeats` (captures per request; Lumen and
 # TSR converge over frames: 1 is 2-3/255 darker than 8, docs/handoff/unreal-urlab-20260928.md). The robot's
 # materials are not per scene: both renderers take src/locomani/sim/robot_look.py. A scene with no
@@ -263,3 +264,29 @@ warehouse_box_45x32x33_mars_d435:  # warehouse_box_45x32x33_mars with the D435 e
     level: warehouse_box_45x32x33_mars_d435  # /Game/Levels/warehouse_box_45x32x33_mars_d435 in the host project ($UE_PROJECT)
     repeats: 8
     build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x33_mars_d435
+
+# scene_discovery (TODO 19): the Aria Digital Twin apartment, on the mars robot, rendered by Unreal (user, 2026-10-08;
+# until then stock robot + Isaac, DECISIONS 2026-10-03). ADT-derived, so the directory, its experiments and the room
+# bake stay under outputs/ (non-commercial licence, plan decision 17): `outputs/scene_discovery/adt_apartment` is the
+# geometry and estimate stages' scene file (scripts/adt_to_scene.py; the estimate asks Claude, so it is not rerun
+# here), and this scene is its `mujoco` stage on mars, with every free object drawn with its own textured mesh. The
+# Unreal level is a copy of the apartment's own room level (`room_level`, built once by `room_build`: its meshes and
+# ceiling lights baked by scripts/adt_to_usd.py --unreal) with the robot and the 64 free objects imported; after a
+# change to the MuJoCo scene only, `build` rebuilds the import alone.
+adt_apartment_mars:
+  dir: outputs/scene_discovery/adt_apartment_mars
+  build: >-
+    mkdir -p outputs/scene_discovery/adt_apartment_mars &&
+    cp outputs/scene_discovery/adt_apartment/scene_meta.json outputs/scene_discovery/adt_apartment_mars/ &&
+    /venv/main/bin/python scripts/adt_to_scene.py mujoco --scene outputs/scene_discovery/adt_apartment_mars/scene_meta.json --robot mars
+  unreal:
+    level: adt_apartment_mars  # /Game/Levels/adt_apartment_mars in the host project ($UE_PROJECT)
+    room_level: AdtApartment  # /Game/Levels/AdtApartment, meshes under /Game/Rooms/AdtApartment
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level adt_apartment_mars
+    # the room level, once per machine before `build` (the warehouse's is docs/setup.md's Unreal step): the Blender
+    # bake of every object but the free ones, then the level from it
+    room_build: >-
+      blender --background --python scripts/adt_to_usd.py -- --unreal
+      outputs/scene_discovery/adt_apartment_mars/scene_meta.json outputs/scene_discovery/adt_apartment_mars/unreal_room &&
+      $BRIDGE_PY -m locomani.sim.unreal.build_level --room outputs/scene_discovery/adt_apartment_mars/unreal_room --room-level AdtApartment

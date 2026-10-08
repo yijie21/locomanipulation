@@ -65,6 +65,7 @@ Scene discovery（Demo 1，纯仿真）：设计决策记录（2026-10-02）
 | 分支 | 何时 | 规则 |
 |---|---|---|
 | 渲染器 | ✓ 2026-10-03 | **Isaac**（用户定，未测 Unreal：它只在 main 上，合并会带进 mars 机器人）；12.8 GB / 0.15 s 三路一帧，GPU1 与别的项目同卡放得下 |
+| 渲染器与机器人（改定） | ✓ 2026-10-08 | **Unreal + mars**（用户定，合入 main 时）：场景 `adt_apartment_mars`（`configs/scenes.yaml`），房间关卡由 `scripts/adt_to_usd.py --unreal` 烘焙、`build_level --room-level AdtApartment` 建；Isaac 舞台 `adt_apartment` 只对应 stock 场景，留作对照（DECISIONS 2026-10-08） |
 | `ApartmentEnv` 是否就是房间外壳 | ✓ 2026-10-03 | 是：截面取墙、地板网格界定室内（入户门洞会让"从边界泛洪"漏到室外） |
 | Claude 尝试写哪个技能 | ✓ 2026-10-03 | 用户定"单手放到台面"`put_down_single`；验收 12/20 通过（[记录](put-down-single-20261003.md)） |
 

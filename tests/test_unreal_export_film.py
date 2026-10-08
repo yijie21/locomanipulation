@@ -96,3 +96,20 @@ def test_collision_geoms_stay_out_of_the_import_where_the_body_has_visuals(tmp_p
     assert [int(m.geom_type[g]) for g in wrist] == [mujoco.mjtGeom.mjGEOM_MESH] and not m.geom_contype[wrist[0]]
     box = [g for g in range(m.ngeom) if m.geom_bodyid[g] == m.body("box").id]
     assert len(box) == 1 and m.geom_contype[box[0]]  # its only geom collides: kept, or the target would vanish
+
+
+def test_every_free_body_is_exported_not_only_the_target(tmp_path):
+    """A scene_discovery apartment has 64 free objects and no fixed target: any of them can be picked up or knocked,
+    and URLab moves only what the import holds. The room's fixed geometry stays out (the level bakes it)."""
+    scene_dir = scene(tmp_path / "scene")
+    xml = (scene_dir / "scene_locomani.xml").read_text()
+    xml = xml.replace(
+        '<camera name="edge_ym"',
+        '<body name="cup" pos="0.5 0.5 0.4"><freejoint name="cup_free"/><geom type="box" size="0.03 0.03 0.05"/></body>'
+        '<body name="shelf" pos="2 0 0"><geom type="box" size="0.3 0.1 0.5"/></body><camera name="edge_ym"',
+    )
+    (scene_dir / "scene_locomani.xml").write_text(xml)
+    exported = X.export(scene_dir, tmp_path / "out", "lvl")
+    assert exported["moving"] == ["box", "cup"]
+    m = mujoco.MjModel.from_xml_path(exported["xml"])
+    assert m.body("cup").id > 0 and mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "shelf") == -1

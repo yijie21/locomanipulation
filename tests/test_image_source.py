@@ -199,7 +199,11 @@ def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_other
     levels = {name for name, entry in scenes.items() if "level" in (entry.get("unreal") or {})}
     # warehouse_textured_mars(_d435) is only the base the mars boxes are built from; it says so
     bases = {"warehouse_textured_mars", "warehouse_textured_mars_d435"}
-    assert levels == {name for name in scenes if name.startswith("warehouse_") and name not in bases}
+    # and the scene_discovery apartment, on its own room level (unreal.room_level, built by unreal.room_build)
+    apartments = {"adt_apartment_mars"}
+    assert levels == {name for name in scenes if name.startswith("warehouse_") and name not in bases} | apartments
+    for name in apartments:
+        assert "--room-level " + scenes[name]["unreal"]["room_level"] in scenes[name]["unreal"]["room_build"]
     for name, entry in scenes.items():
         unreal = entry.get("unreal") or {}
         assert unreal.get("unsupported") or unreal.get("level") == name, name
