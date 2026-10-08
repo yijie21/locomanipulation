@@ -165,6 +165,8 @@ class CrateVisualConfig:
     vision_timeout: float = 0.7  # stop advancing when the last valid RGB estimate is older
     reprojection_px: float = 4.0  # maximum RMS marker reprojection residual
     max_tilt_deg: float = 15.0  # observed basket tilt limit during lifting
+    collision_guard: str = "off"  # assisted CoordinatedReach, align and descend: off = the intended grip targets go to the whole-body solve as they are; mink = a kinematic shadow of the waist and arms (collision_guard.py, needs mink + qpsolvers[daqp]) first tracks them under a collision-avoidance limit against every non-robot collision geom, and its grip points and palm attitudes are what the solve gets. The descend's intended path put a finger or the palm into a carton wall in 33/119 warehouse_mars_50 rounds (2026-10-08, TODO 20)
+    collision_guard_clearance: float = 0.003  # collision_guard mink: smallest distance, m, between the hand's bounding boxes (each 0.4-11 mm outside the real shape) and an obstacle
 
     def __post_init__(self):
         if self.pose_source not in ("markers", "assisted"):
@@ -199,6 +201,8 @@ class CrateVisualConfig:
             raise ValueError("visual.guard_stride_mode must be floor, recent2 or alternate")
         if self.guard_brake not in ("landing", "phase"):
             raise ValueError("visual.guard_brake must be landing or phase")
+        if self.collision_guard not in ("off", "mink"):
+            raise ValueError("visual.collision_guard must be off or mink")
         if self.start_edges:
             if any(side not in EDGE_SIDES for side in self.start_edges) or len(set(self.start_edges)) != len(
                 self.start_edges
@@ -225,6 +229,7 @@ class CrateVisualConfig:
                 "ready_after_brake",
                 "guard_stride_mode",
                 "guard_brake",
+                "collision_guard",
             ):
                 continue
             if name in (

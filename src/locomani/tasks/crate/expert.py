@@ -513,7 +513,9 @@ def box_front_line(state, key, box, axis):
     return float(axis @ centre - abs(local[0]) * hx - abs(local[1]) * hy)
 
 
-def handoff(p, model, cfg, config, solver, coordinated_target, *, assisted, geometry, ghost, label):
+def handoff(
+    p, model, cfg, config, solver, coordinated_target, *, assisted, geometry, ghost, label, collision_guard=None
+):
     """Enter the POSE stream holding the planner pose and build the reach controller. -> (arm, low)."""
     arm = StreamedArm(
         p,
@@ -537,6 +539,7 @@ def handoff(p, model, cfg, config, solver, coordinated_target, *, assisted, geom
         )
         ghost.start(label)
         low.ghost = ghost
+        low.collision_guard = collision_guard
     else:
         low = VisualLowReach(
             solver,
@@ -663,6 +666,17 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
     # Ghost-hands rule (2026-09-24): every run records the commanded grip targets next to its state trace so the
     # third-person video can draw them as translucent grippers (never the ego/wrist views).
     ghost = GhostTargetTrace(str(directory.parent / "trace"), solver.offset)
+    collision_guard = None
+    if assisted and cfg.collision_guard == "mink":
+        from locomani.tasks.crate.collision_guard import HandCollisionGuard
+
+        collision_guard = HandCollisionGuard(
+            scene_xml,
+            tool_offset=solver.offset,
+            joint_limits=(solver.lo, solver.hi),
+            joint_speed=cfg.joint_speed,
+            clearance=cfg.collision_guard_clearance,
+        )
     target_cache = VisibleTarget()
     preparation = ApproachPreparation(solver, cfg, arm.q) if assisted and whole_body and guard is None else None
     # The transport journals every reference send, even during mode priming.
@@ -802,6 +816,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                         geometry=geometry,
                         ghost=ghost,
                         label=label,
+                        collision_guard=collision_guard,
                     )
                     continue  # reacquire RGB/encoders after the bounded mode handoff
                 command = reach_step(

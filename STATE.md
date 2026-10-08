@@ -2,7 +2,7 @@
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-08）：到 `b8f5e9c` 为止都已推到 origin/main；之后 39 个提交（warehouse 线的 handoff、scene_discovery 合入、STATE）都**未推送**，推送等用户说（TODO 19.18.10）。
-已确认（10-08 收尾时）：本机没有我留下的仿真栈、Unreal 编辑器或排队脚本（stack 实例 0 / 1 已按状态文件收掉，`stop_unreal.sh` 已跑）。GPU1 上常驻别的项目的 depth_server 约 3.7 GB。
+已确认（10-08 收尾时）：本机没有我留下的仿真栈、Unreal 编辑器或排队脚本（stack 实例 0 / 1 已按状态文件收掉，`stop_unreal.sh` 已跑）。GPU1 上常驻别的项目的 depth_server 约 3.7 GB。 TODO 20 的手臂规划线（CuRobo → mink 碰撞约束，`visual.collision_guard` 默认 off，20 局配对 off 9/20、mink 7/20）已由用户叫停，没有留下栈或进程（DECISIONS 2026-10-08 最后一节）。
 已确认：loco_agent 那个 Claude 会话（pid 962611）还开着，它的工作目录 `../locomanipulation-loco_agent` 已删，里面再跑命令会失败；用户在那个终端退出它（19.18.13）。
 别的会话：henry-zhao 直接推 origin/main 或 `henry-dev`，推送不跑钩子，可能自带检查失败（记忆 origin-main-can-carry-failing-checks）。
 

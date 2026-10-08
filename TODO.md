@@ -678,7 +678,9 @@
     - [x] 19.6.6 导航与站位读场景文件（2026-10-03）：`OccupancyMap` 读 `room.bounds/walls/obstacles` 与台面 `yaw`（手工场景不变）；`plan.nearest_edge` 在台面自身坐标系里只在 `approach_edges` 中选边，`stand_plan` 的朝向加上台面 yaw；`SceneModel` 的 put-on 判据与 `front_line` 带 yaw；`round_loop` 遇到转角台面直接报错（它沿世界轴滑动目标）。`tests/test_scene_discovery_consumers.py` 4 个，现有 skills / bottle CLI 测试照常通过
   - [x] 19.7 能力说明文件（从已测包络整理：伸手高度与距离、桌面高度、下蹲 0.28 m、夹爪 9.5 cm / ~20 N、双手箱宽、行走限制）+ 程序可行性检查（2026-10-03：`configs/scene_discovery/capability.yaml` 写完，每条带 measured / measured_one / untested / unavailable 与出处文档；核对时改正三处出处，并发现流式全身姿态能下蹲（骨盆 0.57 m），不止 IDLE_SQUAT；程序检查 2026-10-03 完成，见 9.7.1）
     - [x] 19.7.1 程序可行性检查（2026-10-03，`scene_discovery.feasibility` + `scripts/scene_feasibility.py`，测试 8 个）：每个目标谓词展开成抓 / 搬 / 放三步，每步按 capability.yaml 判 ok / untested（记缺口名）/ blocked（记硬限制）；路线用场景导航图的真实绕行距离。ADT 公寓模板空间（48 个跌落测试通过的可抓物体 × 容器 / 台面 / 拿起）3747 个任务：**严格规则第 1 桶 0 个**，第 2 桶 1990，第 3 桶 1757（够不着的深度 935、台面前没地方站 316、容器在墙架 / 挂钩上 264、放不进 191、容器沿低于手能到的最低处 144、走不到 88）；按"试跑规则"（未测的也去试，试跑定生死）第 1 桶 1990。最简单的缺口组合是"物体尺寸 + 台面高度"（拿起香蕉等 5 个），没有哪个缺口单独补上能解锁任务。修了检查器两处：起点站位开逃生通道、架子上的容器在它所在台面的边上站；场景里门不再算障碍（第一轮按开着，MuJoCo 里门本来无碰撞），新增 `adt_to_scene.py obstacles` 只重写障碍不动 Claude 的字段（这份文件此前没有家具障碍，现 117 个）。产物 `outputs/scene_discovery/adt_apartment/feasibility/`
-  - [ ] 19.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点
+  - [x] 19.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点（2026-10-08：**Level 3 中度重叠**，7 条检索、238 篇、精读 7 篇，过程在仓库根 `step1.md`–`step7.md`，PDF 在 `papers/`（都未跟踪）。"缺口驱动的技能增长"已被 Agentic Skill Discovery（arXiv 2405.15019）写明，AutoRT（2401.12963）已有 LLM 把提议任务分给可用采集策略或按本体拒绝；站得住的差异 = 实测能力包络 + 程序检查 + 三桶 + 按解锁数 / 成本排序 + 人形全身移动操作数据训 VLA。决策 #1 的措辞待用户定）
+    - [ ] 19.8.1 决策 #1 改写措辞（待用户定）：差异从"缺口驱动的技能增长"收窄到"实测包络 + 程序检查 + 成本排序 + 人形"
+    - [ ] 19.8.2 让差异站稳的对照：只让 Claude 判可行（ASD / AutoRT 做法）vs 程序检查，量"判可行的任务实际能执行几个"
   - [~] 19.10 Claude 提任务 + 程序检查反馈循环（决策 8；第 2 周）：现在第 2 桶是模板枚举出来的（`feasibility.templates`），Claude 读场景文件 + capability.yaml 提任务、检查结果回给它修改的那一环还没写（2026-10-05 循环已写并实跑一次：`scene_discovery.proposals` + `scripts/scene_discover_tasks.py`，Opus 3 次调用、5.32 USD、20.5 min，`outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/`：49 个任务（客餐厨 32、卧室 17），三轮桶 2/25/13 → 2/32/11 → 2/38/9，修订把第 3 桶往第 2 桶推、没造出新的第 1 桶；第 1 桶就是模板空间里那 2 个（都找到了），49 个里只有 2 个在模板空间之外（带 near）；可试跑 6 个，5 个是咖啡罐放到别处。第一次运行 `opus_20261005_upright_bug` 作废：检查器把"搬过去并立着"里的 upright 判成"已经立着"无效（15/39），已修）
     - [ ] 19.10.1 Claude 给第 1 桶任务写固定 plan（决策 10：试跑 3 局验谓词、10 局 ≥ 3/10）：现在第 1 桶的 2 个任务 plan_episode 的 `default_plan` 已覆盖且实跑过（拿起 4/10、放到圆桌 12/20），等第 1 桶变多再做
     - [ ] 19.10.2 任务文件 → 运行：`plan_episode` 现在按实验文件的 `target` + `goal`（一个物体、一个台面或容器）判成败，谓词库 `compile_goal` 没接进来；`tasks.jsonl` 的一行（谓词合取、说法、`upright` 约束）还不能直接跑或录（9.14.1 之前要有）
@@ -729,3 +731,19 @@
     - [x] 19.18.11 删三个旧 worktree（2026-10-08，用户）：先 unlink 数据软链接再 `git worktree remove --force`；主目录 `outputs/` 核对完好
     - [ ] 19.18.12 可选：删已合入的分支 `scene_discovery-sync`、`scene_discovery`、`loco_agent`（`git branch -d`；tag `scene_discovery-pre-sync` 保留）——待用户定
     - [ ] 19.18.13 loco_agent 那个 Claude 会话（pid 962611）还开着，工作目录已删：用户在那个终端退出它
+
+## 20. warehouse 手臂规划：CuRobo 与 mink 的对照（用户 2026-10-08；SIMPLE 论文调研之后；同日用户叫停，DECISIONS 2026-10-08 最后一节）
+
+脚本 `scripts/experiments/curobo_warehouse_20261008/`、`scripts/experiments/mink_warehouse_20261008/`；输出 `outputs/curobo_warehouse_20261008/`、`outputs/mink_warehouse_20261008/`；数据是 `warehouse_mars_50` 的 120 局（119 局有伸手段）。
+
+- [x] 20.1 专家自己的路线查碰撞（2026-10-08，`cases.py` / `hand_pose.py` / `ghost_path.py`）：标称抓取位姿（沿下 1 cm）离箱壁 11.4 mm，119 局都不碰；抓深只在手绕夹爪轴外偏时可行（2 cm 偏 −10～−40°，3 cm 偏 −20～−30°）。专家的预抓路线（ghost，未加跟踪修正）伸手、对齐段 0/119 碰壁，下降段 33/119 碰（手指或掌压进壁顶，多在下降开头，抓点跨壁偏 4–6 cm）；碰壁的局成功 8/33，不碰 42/86（相关，未证因果）
+- [x] 20.2 距离判据：MuJoCo 3.11 的 `mj_geomDistance` 对分开的网格偶尔返回 0.0（11520 对里 100 对，平移 20 µm 即得真值），还出现过 +11.4 mm 报成 −11.4 mm；改用表面采样到盒子的符号距离（`cases.Surfaces`，约 2 mm 精度，1 cm 壁穿透读数饱和在 −5 mm）
+- [-] 20.3 CuRobo（0.7.4，SIMPLE 的 venv）对照：mars 模型自拟合内切球 722 个（CuRobo 自带拟合漏 14–30 mm；0.7.4 自碰撞上限 1024 球），FK 与 MuJoCo 逐关节一致。我们的 IK 跑完 238 个请求（119 局 × 两种起点 × 3 种抓法）；CuRobo 跑了 61 个后用户叫停（每次成功规划约 27 s：722 球走慢速自碰撞核、关了 CUDA graph、整条轨迹精调）。已完成的 25 局里两边可解的局几乎重合（CuRobo 多 0–3 局，没有 IK 能解而 CuRobo 不能的），失败主要是够不着；部分日志 `curobo_plan_stopped_partial.log`
+- [x] 20.4 mink（1.3.0，装在 `outputs/mink_warehouse_20261008/pylib`，没动 `.venv_sim`）离线跟踪专家的对齐 + 下降预抓目标，只动腰 + 双臂 17 个关节，手用盒子代理几何（比真实外形保守 0.4–11 mm）：
+  - mink 1.3.0 的 `CollisionAvoidanceLimit` 上界单位错（QP 变量是位移 Δq，上界按速度写，dt 0.03 s 时放宽 33 倍，实测一步从 +12.5 mm 走到 −15.4 mm），改成乘 dt 的子类 `displacement_collision_limit`
+  - 世界静止（身体和箱子停在对齐开始时）：不加约束 101/119 碰壁，加约束 16/119；到位（< 1 cm）115 → 108；既不碰又到位 94/119
+  - 身体和箱子按实测轨迹每帧写入：加约束仍 40/119 碰壁（身体晃动和被撞动的箱子把手推进壁里，只动手臂来不及），既不碰又到位 59/119
+  - 每帧（4 次 QP）2.1 ms（加约束）/ 1.0 ms（不加），够 50 Hz
+- [x] 20.5 （用户 2026-10-08）mink 碰撞约束接进 `CoordinatedReach` 的对齐 + 下降段（`visual.collision_guard: mink`，`src/locomani/tasks/crate/collision_guard.py`，默认 off），真栈 20 局配对：关 9/20、mink 7/20（只有关成功 6、只有 mink 成功 4，p 0.75）；卡箱沿 6 → 3、进入合爪 14 → 17，脱手 0 → 4，合爪时跨壁误差 24 → 34 mm。同配置同 seed 的 `warehouse_mars_50` 是 3/20，20 局量不出这个差别。实测的手两组都只有 2/20 压进箱壁 > 1 mm。台账 `docs/ledger/crate.md` 2026-10-08 最后一节
+  - [-] 20.5.1 （用户 2026-10-08：这条线先停）可选：只约束掌和 Dex1 底座、不约束手指（检验"手指被推开 → 跨壁误差变大 → 脱手"的猜测），或加局数到每组 60 以上
+- [-] 20.6 （用户 2026-10-08：这条线先停）可选：向 mink 报 `CollisionAvoidanceLimit` 上界单位问题（对外发布，需用户同意）

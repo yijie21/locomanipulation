@@ -102,6 +102,7 @@ class CoordinatedReach:
         self.feedforward = np.zeros(3)
         self.rotation_feedback = np.zeros((2, 3))  # filtered predicted-vs-measured palm rotation vectors (world)
         self.ghost = None  # GhostTargetTrace: every commanded (pre-feedback) grip target + palm attitude, by state seq
+        self.collision_guard = None  # HandCollisionGuard (visual.collision_guard mink): filters align/descend targets
         self._seq = None
         self.contact_sides = ()  # hands the privileged state reports touching the target object this tick
         self.best_error, self.progress_time = np.inf, None
@@ -121,6 +122,20 @@ class CoordinatedReach:
 
     def enter(self, phase):
         self.phase, self.elapsed, self.ready_since = phase, 0.0, None
+        if phase == "align" and self.collision_guard is not None:
+            self.collision_guard.reset()  # the shadow restarts from the measured arms at every (re)alignment
+
+    def guarded(self, tools, attitudes, state, dt):
+        """visual.collision_guard: the intended grip targets and palm attitudes as the guard's shadow could reach
+        them without a hand meeting an obstacle; unchanged without a guard."""
+        if self.collision_guard is None:
+            return tools, attitudes
+        grips, rotations, clearance = self.collision_guard.filter(tools, attitudes, state, dt)
+        self.diagnostics.update(
+            guard_clearance=clearance,
+            guard_shift=np.linalg.norm(grips - np.asarray(tools), axis=1),
+        )
+        return grips, rotations
 
     def retry(self, kind, now, after):
         """Try the descend again instead of ending the round on `after`: `descend` backs up to the pregrasp point
@@ -542,7 +557,8 @@ class CoordinatedReach:
                 self.align_residual = across.copy()
                 self.start_descend(targets, first)
                 return self.result()
-            self.advance(first + self.feedforward, self.attitudes, tools, control_dt, tool_rotations)
+            first, attitudes = self.guarded(first, self.attitudes, state, control_dt)
+            self.advance(first + self.feedforward, attitudes, tools, control_dt, tool_rotations)
         if self.phase == "descend":
             # Same capture and stall rules as the direct reach, including reach_only probes that never close.
             if self.target.reach_only:
@@ -563,6 +579,7 @@ class CoordinatedReach:
             else:
                 u, _ = blend(self.elapsed, self.descend_duration)
                 commanded = self.descend_from + u * (goal - self.descend_from)
+                commanded, attitudes = self.guarded(commanded, self.attitudes, state, control_dt)
                 hold = None
                 if cfg.lateral_hold_below_rim:
                     below = tools[:, 2] <= targets[:, 2] + self.target.rim_above_grasp + 0.01
@@ -571,7 +588,7 @@ class CoordinatedReach:
                     self.diagnostics.update(lateral_hold=below, across_common_mode=float(np.mean(across)))
                 self.advance(
                     commanded + self.feedforward,
-                    self.attitudes,
+                    attitudes,
                     tools,
                     control_dt,
                     tool_rotations,

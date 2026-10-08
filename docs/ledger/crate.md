@@ -819,3 +819,27 @@ GPU1 / instance 1，seed 7000–7009（put_down 第二轮 7010–7019）。
 - 审计只查了 stock 和 2cam 两个档：`check_dataset.bimanual` 按任务文本里有没有 `crate` 判断双臂，warehouse 的任务是 `pick up the box`，所以真正训练用的 3cam_bimanual 档没被检查。手工核对过：modality 里 state 8 组 46 维、action 三组 66 维、三路相机都在。
 - 运行目录 3.1 GB。各步日志在 `outputs/collect_logs_warehouse_mars_50/`。
 
+
+## 2026-10-08 align + descend 加 mink 碰撞约束（`visual.collision_guard: mink`）：20 局配对，没有看出改善
+
+问题来自 TODO 20：专家下降段的预期手部路线在 `warehouse_mars_50` 的 119 局里有 33 局压进箱壁（离线，`scripts/experiments/curobo_warehouse_20261008/ghost_path.py`），离线用 mink 带碰撞约束跟踪同一路线，世界静止时碰壁 101 → 16 局（TODO 20.4）。这一节是真栈对照。
+
+- 实现：`src/locomani/tasks/crate/collision_guard.py`（腰 + 双臂的运动学影子，每帧写入实测骨盆、腿和箱子位姿，用 mink 跟踪对齐 / 下降段的预期抓点，手按每个碰撞几何的外接盒子算，离箱壁和托盘至少 3 mm；再把影子的抓点和掌姿交给原来的全身求解，反馈不变）。`CoordinatedReach.guarded`，`expert.run_attempt` 在 `visual.collision_guard: mink` 时建。修了 mink 1.3.0 与 MuJoCo 3.11 的三处问题（`mj_geomDistance` 的 0.0 和符号反转、mink 碰撞上界单位错、低于最小距离时不回退），见模块说明。离线回放 119 局每帧 1.5 ms（p99 2.3 ms）。测试 `tests/test_collision_guard.py`（需要 mink，否则跳过）。
+- 运行：`warehouse_mars_guard_off_20261008` / `warehouse_mars_guard_mink_20261008`（`configs/experiments/`，都是 `warehouse_mars_50` 只改名字和 `collect`：20 局、seed 7000–7009 和 7100–7109、不录制、各一条通道）。两边同时跑在实例 1 / 2、GPU 0，实时比 1.00 / 1.05；mink 装在 `outputs/mink_warehouse_20261008/pylib`（`--no-deps`），队列 `outputs/mink_warehouse_20261008/live/run_pair.sh`。第一次起栈时 `start_stack collect` 给第一组开了三条通道、占了第二组的实例，两组都停掉重来（旧目录挪到 `live/aborted_3lanes_run_*`），之后加 `collect.lanes: 1`。
+
+| | 关 | mink |
+|---|---|---|
+| 成功 | 9/20 | 7/20 |
+| reach_stalled | 6 | 3 |
+| lost_attachment | 0 | 4 |
+| basket_tilt | 5 | 5 |
+| empty_gripper | 0 | 1 |
+| 进入合爪的局 | 14 | 17 |
+| 合爪时抓点比目标低（中位） | 3.1 mm | 7.6 mm |
+| 合爪时跨壁误差（两手较大者，中位） | 24.2 mm | 33.6 mm |
+| 对齐 + 下降段实测手压进箱壁 > 1 mm | 2 | 2 |
+
+- 配对（同 seed）：都成功 3，只有关的成功 6，只有 mink 的成功 4，符号检验 p = 0.75。
+- 噪声：同一配置同一组 seed，`warehouse_mars_50`（录制、带 exporter）是 3/20，这次关的一组是 9/20，20 局里只有 14 局结局相同。20 局的配对量不出几局的差别（记忆 ten-round-pilots-cannot-measure-this-line 的同一问题，20 局也一样）。
+- 读法：真栈上实测的手本来就很少压进箱壁（两组都是 2/20 超过 1 mm），离线看到的 33/119 是预期路线，不是实际的手。mink 组卡在箱沿上方的少了（6 → 3），进入合爪的多了（14 → 17），但脱手多了（0 → 4）。合爪时跨壁误差变大，一个可能的机制是约束把手指从壁面推开了；没有验证。
+- 结论：这个改动在 warehouse 上没有带来可测的提升，默认保持 `off`。
