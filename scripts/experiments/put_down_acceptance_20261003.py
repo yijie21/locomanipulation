@@ -1,4 +1,4 @@
-"""put_down_single acceptance (TODO 9.12.2, docs/handoff/put-down-single-20261003.md §3): from the run traces.
+"""put_down_single acceptance (TODO 19.12.2, docs/handoff/put-down-single-20261003.md §3): from the run traces.
 
     python3 scripts/experiments/put_down_acceptance_20261003.py outputs/runs/sd_put_down_p4_*
 

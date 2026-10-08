@@ -195,7 +195,7 @@ PROFILE_SOURCES: dict[str, tuple[str, str]] = {
     "crate_low_table": ("task_profile", "crate_visual_low_reach"),
     # box_centre_base_20260927 with stand_forward_min 0.50: the stand no longer pulls the held box back over the
     # platform edge, so put_down_bimanual rests it in place (8/8, crate ledger 2026-09-28). The collection line's
-    # own file keeps 0.35; this is the skills-side choice (TODO 7.8.1.1 route B).
+    # own file keeps 0.35; this is the skills-side choice (TODO 17.8.1.1 route B).
     "warehouse_box": ("experiment", "configs/experiments/skills_box_fwd50_20260928.yaml"),
     "bottle_simple": ("experiment", "configs/experiments/bottle_simple_200.yaml"),
     # 7.7.1 calibration variants for the soup can (docs/skills.md §5): one knob each over bottle_simple

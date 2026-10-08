@@ -26,6 +26,9 @@ from pathlib import Path
 import yaml
 
 from locomani import paths
+from locomani.pipeline import camera_delay
+from locomani.sim import robot_look
+from locomani.sim.mirror import MIRRORED_SOURCES
 
 ROOT = Path(paths.REPO)
 RUNS = ROOT / "outputs" / "runs"
@@ -66,7 +69,8 @@ def open_run(experiment: Path | str, name: str | None = None, *, write: bool = T
     nothing behind, not even the directory it would have claimed.
     """
     experiment = Path(experiment)
-    cfg = resolve_scene(migrate_images(yaml.safe_load(experiment.read_text())))
+    cfg = resolve_scene(migrate_images(migrate_dataset(yaml.safe_load(experiment.read_text()))))
+    unreal_support(cfg)
     cfg["name"] = name or cfg["name"]
     run_dir = RUNS / cfg["name"]
     if not write:
@@ -84,15 +88,38 @@ def load_run_config(run_dir: Path) -> dict:
     path = Path(run_dir) / "config.yaml"
     if not path.exists():
         raise SystemExit(f"{path} is missing; this directory was not opened by a stage script")
-    return resolve_scene(migrate_images(yaml.safe_load(path.read_text())))
+    return unreal_support(resolve_scene(migrate_images(migrate_dataset(yaml.safe_load(path.read_text())))))
 
 
-IMAGE_SOURCES = ("mujoco", "isaac")
+IMAGE_SOURCES = ("mujoco", *MIRRORED_SOURCES)
+DATASET_RATES = (25, 50)  # == world_lift.DATASET_RATES (tested); both divide the exporter's 50 Hz
+HISTORICAL_DATASET_FPS = 25  # what every run converted before the block existed (2026-10-06) was stored at
+
+
+def migrate_dataset(cfg: dict) -> dict:
+    """Bring the experiment's dataset rate to the current format and check it; returns `cfg`, changed in place.
+
+    The current format (2026-10-06) says once, at run level, the rate the LeRobot dataset is stored at:
+    `dataset: {fps: 25 | 50}`. Convert picks that many rows a second from the exporter's 50 Hz sessions, the
+    Isaac / Unreal re-render draws exactly those rows, and the audit's trace lookup follows the same pick. A file
+    without the block -- every run copy before that date -- is read as 25, the rate they were converted at.
+    Other rates are refused: the rate has to divide 50, or the stored stream is not uniform (`world_lift`)."""
+    if "dataset" not in cfg:
+        cfg["dataset"] = {"fps": HISTORICAL_DATASET_FPS}
+    dataset = cfg["dataset"]
+    if not isinstance(dataset, dict) or set(dataset) != {"fps"} or dataset["fps"] not in DATASET_RATES:
+        raise SystemExit(f"dataset must be {{fps: {' | '.join(map(str, DATASET_RATES))}}}, not {dataset!r}")
+    return cfg
+
+
+def dataset_fps(cfg: dict) -> int:
+    """The rate the run's dataset is stored at, after `migrate_dataset`."""
+    return int(cfg["dataset"]["fps"])
 
 
 def eval_render(source: str) -> str:
     """The eval sim's `backend.render` for an image source: the policy reads MuJoCo frames only from a sim that
-    renders them; with Isaac the mirror draws them and the sim renders nothing."""
+    renders them; with Isaac or Unreal the mirror draws them and the sim renders nothing."""
     return "live" if source == "mujoco" else "offline"
 
 
@@ -100,15 +127,15 @@ def migrate_images(cfg: dict) -> dict:
     """Bring the experiment's image source to the current format and check it; returns `cfg`, changed in place.
 
     The current format (2026-09-27) says once, at run level, which renderer draws the policy's pictures:
-    `images: {source: mujoco | isaac}`. It decides the dataset cameras (collection records MuJoCo frames or
+    `images: {source: mujoco | isaac | unreal}`. It decides the dataset cameras (collection records MuJoCo frames or
     leaves placeholders for a re-render, and convert checks which renderer filled them), the eval sim's
     rendering and where the closed loop's images come from. The historical format has no `images` block and
     said it as `eval.image_source`, although collection and convert read it too; such a file -- every run
     copy before that date -- is read as that source, and its eval sim renders what the source needs.
 
     Refused here, where every stage reads its configuration, so no stage starts on a pairing none can serve:
-    `eval.image_source` beside an `images` block; `isaac` with a live collection (it records MuJoCo frames,
-    the Isaac re-render leaves them in place and convert's check never runs, so training and evaluation see
+    `eval.image_source` beside an `images` block; `isaac` or `unreal` with a live collection (it records MuJoCo
+    frames, the re-render leaves them in place and convert's check never runs, so training and evaluation see
     different renderers); and, in the current format, an `eval.backend.render` other than the source's.
     """
     evaluation = cfg.get("eval") or {}
@@ -118,13 +145,27 @@ def migrate_images(cfg: dict) -> dict:
     elif "image_source" in evaluation:
         raise SystemExit("eval.image_source is the old spelling of images.source; give the source only in `images`")
     images = cfg["images"]
-    if not isinstance(images, dict) or set(images) != {"source"} or images["source"] not in IMAGE_SOURCES:
-        raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}}}, not {images!r}")
+    if isinstance(images, dict):
+        # `images.third_person` (4144452, 2026-09-30, pushed) switched the fill's filming; the fill no longer films
+        # (scripts/render_third_person.sh does, on request), so either value means what no key means now
+        images.pop("third_person", None)
+    if (
+        not isinstance(images, dict)
+        or "source" not in images
+        or set(images) - {"source", "camera_delay"}
+        or images["source"] not in IMAGE_SOURCES
+    ):
+        raise SystemExit(f"images must be {{source: {' | '.join(IMAGE_SOURCES)}[, camera_delay: ...]}}, not {images!r}")
     source = images["source"]
-    if source == "isaac" and (cfg.get("backend") or {}).get("render", "live") != "offline":
+    if camera_delay.parse(images.get("camera_delay")) and (cfg.get("backend") or {}).get("render", "live") != "offline":
         raise SystemExit(
-            "images.source isaac needs backend.render: offline -- a live collection records MuJoCo frames, which "
-            "the Isaac re-render leaves in place, so the policy would train on MuJoCo and be evaluated on Isaac"
+            "images.camera_delay ages the offline re-render's pictures, and a live collection records the sim's own "
+            "frames, which nothing re-draws: give backend.render offline, or leave camera_delay out"
+        )
+    if source != "mujoco" and (cfg.get("backend") or {}).get("render", "live") != "offline":
+        raise SystemExit(
+            f"images.source {source} needs backend.render: offline -- a live collection records MuJoCo frames, which "
+            f"the {source} re-render leaves in place, so the policy would train on MuJoCo and be evaluated on {source}"
         )
     rendered = (evaluation.get("backend") or {}).get("render")
     if historical and rendered is not None:
@@ -149,18 +190,26 @@ def evaluation_of(cfg: dict):
 
 
 def require_images(cfg: dict) -> None:
-    """Before a stack starts: an Isaac run needs its scene's Isaac stage and the render venv on this machine."""
-    if cfg["images"]["source"] != "isaac":
-        return
-    isaac_scene(cfg)
-    if not os.access(paths.RENDER_PY, os.X_OK):
-        raise SystemExit(
-            f"images.source isaac renders in the render venv, and {paths.RENDER_PY} is not there: "
-            "docs/setup.md step 7 (scripts/setup_render_runtime.sh)"
-        )
+    """Before a stack starts: an Isaac run needs its scene's Isaac stage and the render venv on this machine, an
+    Unreal run its scene's built Unreal level and the URLab bridge venv."""
+    source = cfg["images"]["source"]
+    if source == "isaac":
+        isaac_scene(cfg)
+        if not os.access(paths.RENDER_PY, os.X_OK):
+            raise SystemExit(
+                f"images.source isaac renders in the render venv, and {paths.RENDER_PY} is not there: "
+                "docs/setup.md step 7 (scripts/setup_render_runtime.sh)"
+            )
+    elif source == "unreal":
+        unreal_scene(cfg)
+        if not os.access(paths.BRIDGE_PY, os.X_OK):
+            raise SystemExit(
+                f"images.source unreal talks to the editor from the URLab bridge venv, and {paths.BRIDGE_PY} is not "
+                "there: docs/setup.md, the optional Unreal step (scripts/setup_unreal.sh)"
+            )
 
 
-def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
+def resolve_scene(cfg: dict, registry: Path | None = None) -> dict:
     """Turn `scene: {name: warehouse}` into the `scene.dir` every consumer reads; returns `cfg`.
 
     Resolved here, where both the experiment and a run's copy are read, so no consumer knows names
@@ -171,15 +220,15 @@ def resolve_scene(cfg: dict, registry: Path = SCENES) -> dict:
         return cfg
     if scene.get("dir"):
         raise SystemExit(f"scene gives both name {scene['name']!r} and dir {scene['dir']!r}; give one")
-    names = yaml.safe_load(Path(registry).read_text())
+    names = yaml.safe_load(Path(registry or SCENES).read_text())
     if scene["name"] not in names:
-        raise SystemExit(f"no scene called {scene['name']!r}; {registry} names {', '.join(sorted(names))}")
+        raise SystemExit(f"no scene called {scene['name']!r}; {registry or SCENES} names {', '.join(sorted(names))}")
     scene["dir"] = names[scene["name"]]["dir"]
     return cfg
 
 
-def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
-    """The run's scene as Isaac renders it: `{"dir": <Isaac stage dir>, "rtx_settings": [...]}`.
+def isaac_scene(cfg: dict, registry: Path | None = None) -> dict:
+    """The run's scene as Isaac renders it: `{"dir": <Isaac stage dir>, "rtx_settings": [...], "supersample": N}`.
 
     From the scene's `isaac` entry in `configs/scenes.yaml`, so every Isaac renderer of a scene --
     the offline re-render and the eval mirror -- loads the same stage with the same look.
@@ -187,9 +236,9 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
     name = (cfg.get("scene") or {}).get("name")
     if not name:
         raise SystemExit("an Isaac render needs the run's scene by name (scene: {name: ...}, configs/scenes.yaml)")
-    entry = (yaml.safe_load(Path(registry).read_text()).get(name) or {}).get("isaac")
+    entry = (yaml.safe_load(Path(registry or SCENES).read_text()).get(name) or {}).get("isaac")
     if not entry:
-        raise SystemExit(f"scene {name!r} has no Isaac stage: add an `isaac` entry for it in {registry}")
+        raise SystemExit(f"scene {name!r} has no Isaac stage: add an `isaac` entry for it in {registry or SCENES}")
     stage = Path(paths.ISAAC_ASSETS) / "scene" / entry["dir"]
     if not (stage / "scene.usda").is_file():
         build = entry.get("build") or "its builder"
@@ -198,11 +247,88 @@ def isaac_scene(cfg: dict, registry: Path = SCENES) -> dict:
     # would otherwise be rendered with the old geometry while physics runs the new one.
     source = stage / "source.json"
     if source.is_file() and cfg["scene"].get("dir"):
-        built = json.loads(source.read_text()).get("scene_xml_sha256")
+        built = json.loads(source.read_text())
         xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
-        if xml.is_file() and built != hashlib.sha256(xml.read_bytes()).hexdigest():
+        if xml.is_file() and built.get("scene_xml_sha256") != hashlib.sha256(xml.read_bytes()).hexdigest():
             raise SystemExit(f"{stage} was built from another {xml}; rebuild it: {entry.get('build')}")
-    return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or [])}
+        _require_robot(f"Isaac stage {stage}", built, cfg, entry.get("build"))
+    supersample = entry.get("supersample", 1)
+    if not isinstance(supersample, int) or isinstance(supersample, bool) or supersample < 1:
+        raise SystemExit(f"scene {name!r}: isaac.supersample must be a whole number >= 1, not {supersample!r}")
+    return {"dir": str(stage), "rtx_settings": list(entry.get("rtx_settings") or []), "supersample": supersample}
+
+
+def _require_robot(what: str, built: dict, cfg: dict, build) -> None:
+    """A stage or level records the robot of the scene it was built from (absent: stock, built before 2026-10-02);
+    refuse it for a scene that carries another robot. The scene hash already pins this; the robot says what is wrong."""
+    want = robot_look.scene_robot(ROOT / cfg["scene"]["dir"])
+    if built.get("robot", "stock") != want:
+        raise SystemExit(
+            f"{what} was built for the {built.get('robot', 'stock')} robot, the scene carries {want}; rebuild it: {build}"
+        )
+
+
+def unreal_entry(name: str, registry: Path | None = None) -> dict:
+    """Scene `name`'s `unreal` entry in the registry; refuses a scene with none or an unsupported one."""
+    entry = (yaml.safe_load(Path(registry or SCENES).read_text()).get(name) or {}).get("unreal")
+    if not entry:
+        raise SystemExit(f"scene {name!r} has no Unreal level: add an `unreal` entry for it in {registry or SCENES}")
+    if "unsupported" in entry:
+        raise SystemExit(f"scene {name!r} cannot use images.source unreal: {entry['unsupported']}")
+    return entry
+
+
+def _unreal_entry(cfg: dict, registry: Path | None) -> tuple[str, dict]:
+    name = (cfg.get("scene") or {}).get("name")
+    if not name:
+        raise SystemExit("an Unreal render needs the run's scene by name (scene: {name: ...}, configs/scenes.yaml)")
+    return name, unreal_entry(name, registry)
+
+
+def unreal_support(cfg: dict, registry: Path | None = None) -> dict:
+    """At load: an `images.source: unreal` run's scene must have an Unreal level in the registry; returns `cfg`.
+
+    Only the registry is read here -- whether the level is built on this machine is `unreal_scene`'s question,
+    asked before anything renders (`require_images`, the mirror, the re-render)."""
+    if cfg["images"]["source"] == "unreal":
+        _unreal_entry(cfg, registry)
+    return cfg
+
+
+def unreal_scene(cfg: dict, registry: Path | None = None) -> dict:
+    """The run's scene as Unreal renders it: `{"level": <name>, "level_path": /Game/Levels/<name>, "repeats": N}`.
+
+    From the scene's `unreal` entry in `configs/scenes.yaml`, so the dataset re-render and the eval mirror load the
+    same level and capture it the same way. `repeats` is `urlab.FreshCaptureRepeats`, the captures each request
+    accumulates (Lumen and TSR converge over frames). The level must be built in the host project ($UE_PROJECT)
+    from this very scene and with the robot look Isaac binds (`locomani.sim.robot_look`): its builder records the
+    scene XML's hash, the scene's robot and the look's name in `$UNREAL_ASSETS/<level>/source.json` (default
+    `$UNREAL_ROOT/levels`: one place per machine, whichever checkout built the level).
+    """
+    name, entry = _unreal_entry(cfg, registry)
+    level = entry["level"]
+    repeats = entry.get("repeats", 8)
+    if not isinstance(repeats, int) or isinstance(repeats, bool) or not 1 <= repeats <= 64:
+        raise SystemExit(f"scene {name!r}: unreal.repeats must be a whole number in 1-64, not {repeats!r}")
+    build = entry.get("build") or "its builder"
+    umap = Path(paths.UE_PROJECT).parent / "Content" / "Levels" / f"{level}.umap"
+    if not umap.is_file():
+        raise SystemExit(f"{umap} is missing; build the Unreal level of scene {name!r}: {build}")
+    source = Path(paths.UNREAL_ASSETS) / level / "source.json"
+    if not source.is_file():
+        raise SystemExit(f"{source} is missing; the level was not built by the builder: {build}")
+    built = json.loads(source.read_text())
+    if cfg["scene"].get("dir"):
+        xml = ROOT / cfg["scene"]["dir"] / "scene_locomani.xml"
+        if xml.is_file() and built.get("scene_xml_sha256") != hashlib.sha256(xml.read_bytes()).hexdigest():
+            raise SystemExit(f"Unreal level {level!r} was built from another {xml}; rebuild it: {build}")
+        _require_robot(f"Unreal level {level!r}", built, cfg, build)
+    if built.get("robot_look") != robot_look.NAME:
+        raise SystemExit(
+            f"Unreal level {level!r} carries the robot look {built.get('robot_look')}, not {robot_look.NAME} "
+            f"(locomani.sim.robot_look, what Isaac binds); rebuild it: {build}"
+        )
+    return {"level": level, "level_path": f"/Game/Levels/{level}", "repeats": repeats}
 
 
 def successful_traces(run_dir: Path, traces: Path) -> list[str]:
@@ -244,14 +370,15 @@ def checkpoint_of(run_dir: Path) -> Path:
     return Path(entry["checkpoint"])
 
 
-def measure(gpu: str | None = None) -> dict:
-    """Cores in use (1 s cgroup delta), pids in the container, free MiB on the card."""
+def measure(gpu: str | None = None, *, seconds: float = 1.0) -> dict:
+    """Cores in use (cgroup delta over `seconds`; 0 skips it), pids in the container, free MiB on the card."""
     live: dict = {}
     try:
         cpu = Path("/sys/fs/cgroup/cpu.stat")
-        first = int(cpu.read_text().split()[1])
-        time.sleep(1.0)
-        live["cores"] = round((int(cpu.read_text().split()[1]) - first) / 1e6, 2)
+        if seconds > 0:
+            first = int(cpu.read_text().split()[1])
+            time.sleep(seconds)
+            live["cores"] = round((int(cpu.read_text().split()[1]) - first) / 1e6 / seconds, 2)
         live["pids"] = int(Path("/sys/fs/cgroup/pids.current").read_text())
         quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
         live["quota"] = float(os.cpu_count() or 16) if quota == "max" else float(quota) / float(period)

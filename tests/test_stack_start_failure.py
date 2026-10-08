@@ -120,6 +120,10 @@ def test_spec_builds_the_deploy_command_from_explicit_fields(tmp_path):
     )
     assert argv[argv.index("--zmq-port") + 1] == "5576" and env["CUDA_VISIBLE_DEVICES"] == "1"
     assert env["MUJOCO_EGL_DEVICE_ID"] == "1" and env["LOCOMANI_SIM_DIR"].startswith("/")
+    # a lockstep deploy exits at init when handed a planner model ("--sim-lockstep does not permit a planner model")
+    assert "--planner-file" not in argv
+    wall, _, _ = Stack(StackSpec(deploy_root=str(root), policy="policy/p"))._deploy_argv()
+    assert "--planner-file" in wall and "--sim-lockstep" not in wall
     with pytest.raises(RuntimeError, match="model_decoder.onnx"):
         Stack(StackSpec(deploy_root=str(root), policy="policy/missing"))._deploy_argv()
 
@@ -170,3 +174,29 @@ def test_the_image_marker_is_read_from_this_run_s_section_of_the_shared_log(runt
 
     publishes = True
     stack.up()
+
+
+def test_down_also_kills_a_deploy_another_process_restarted(runtime, monkeypatch):
+    """2026-09-28: the evaluator attached before the rounds; the gym's per-round restart (its own attached Stack)
+    recorded a new deploy only in the state file, and the evaluator's down() orphaned it."""
+    spec = StackSpec(instance=139, record=False)
+    owner = Stack(spec)
+    monkeypatch.setattr(owner, "_start_sim", lambda: _sleeping_child(owner, "sim"))
+    monkeypatch.setattr(owner, "_start_deploy", lambda: _sleeping_child(owner, "deploy"))
+    monkeypatch.setattr(manager, "_wait", lambda pred, timeout, interval=1.0: True)
+    owner.up()
+    evaluator = Stack.attach(139)  # holds the first deploy's pid from here on
+    restarter = Stack.attach(139)
+    restarter._procs = owner._procs
+    monkeypatch.setattr(restarter, "_start_deploy", lambda: _sleeping_child(restarter, "deploy"))
+    monkeypatch.setattr(manager, "_wait", _real_wait)
+    assert restarter.restart_deploy()
+    fresh = json.loads(owner.state_path.read_text())["pids"]["deploy"]
+    assert fresh != evaluator.pids["deploy"] and _group_alive(fresh)
+    evaluator.down()
+    deadline = time.time() + 5
+    while time.time() < deadline and _group_alive(fresh):
+        for child in restarter._procs.values():
+            child.poll()  # reap: in this one-process test the killed deploy is our zombie until then
+        time.sleep(0.1)
+    assert not _group_alive(fresh) and not owner.state_path.exists()

@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="the built scene for this episode's batch, normally "
         "$ISAAC_ASSETS/scene/<seed>; default <assets>/scene/work",
     )
-    ap.add_argument("--robot-usd", default="", help="default <assets>/robot/g1_dex1.usda")
+    ap.add_argument("--robot-usd", default="", help="default: the USD of the robot the scene carries (stage.robot_usd)")
     ap.add_argument(
         "--scene-xml",
         default=paths.SCENE_XML,
@@ -83,8 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
         "the CURRENT working scene, which is only right if no "
         "batch has rebuilt it since",
     )
-    ap.add_argument("--width", type=int, default=640)
-    ap.add_argument("--height", type=int, default=480)
+    ap.add_argument("--width", type=int, default=1280)
+    ap.add_argument("--height", type=int, default=960)
     ap.add_argument("--fps", type=int, default=50)
     ap.add_argument("--stride", type=int, default=1, help="render every Nth frame (2 halves wall time)")
     ap.add_argument("--torso-prim", default="/World/scene/torso_link", help="prim the head camera parents to")
@@ -104,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
         "the picture, the tonemapper renormalises every frame) and /rtx/post/tonemap/op=0 (Clamp, MuJoCo-like linear "
         "response; 5 = ACES default). Measured 2026-09-24 on the warehouse: auto-exposure lifted the robot's 0.2 "
         "greys to 108/255 and pushed 0.7 to 212, a head/torso ratio of 0.51 against MuJoCo's 0.23",
+    )
+    ap.add_argument(
+        "--supersample",
+        type=int,
+        default=1,
+        help="render every camera at N times its size and box-average back (the scene's isaac.supersample)",
     )
     ap.add_argument("--debug-cam", action="store_true", help="save a third-person still every 200 frames")
     ap.add_argument(
@@ -241,6 +247,7 @@ def main(argv=None) -> None:
         # same qpos rendered by MuJoCo and by Isaac disagreed by a
         # whole-image translation until this was tied together.
         absolute_camera=bool(args.cam_traj or args.state_trace),
+        supersample=args.supersample,
     )
     app = S.start_app(cfg)
     # SimulationApp.close() terminates the process itself, and it does so with
@@ -460,7 +467,7 @@ def _render(
             if rgba is None:
                 log(f"frame {t}: empty rgba")
                 continue
-            frame = cv2.cvtColor(rgba[..., :3], cv2.COLOR_RGB2BGR)
+            frame = cv2.cvtColor(S.downsample(rgba[..., :3], cfg.supersample), cv2.COLOR_RGB2BGR)
             if main_dir is not None:
                 cv2.imwrite(os.path.join(main_dir, f"{len(written_ts):06d}.png"), frame)
             else:
@@ -542,7 +549,7 @@ def _render(
                 if frame is None:
                     raise RuntimeError(f"frame {t}: missing main-pass image")
                 for cam_name, (label, w, h, x, y) in inset_layout.items():
-                    _paste_inset(frame, grabbed[cam_name], label, w, h, x, y)
+                    _paste_inset(frame, S.downsample(grabbed[cam_name][..., :3], cfg.supersample), label, w, h, x, y)
                 vw.write(frame)
                 written += 1
                 if t % 200 == 0:

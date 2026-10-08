@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A built ADT scene file -> the Isaac scene layout (TODO 9.6.5; docs/rendering.md "资产构建"). Runs inside Blender.
+"""A built ADT scene file -> the Isaac scene layout (TODO 19.6.5; docs/rendering.md "资产构建"). Runs inside Blender.
 
     blender --background --python scripts/adt_to_usd.py -- \\
         outputs/scene_discovery/adt_apartment/scene_meta.json $ISAAC_ASSETS/scene/adt_apartment

@@ -34,8 +34,6 @@ def _obs(**over):
         "state.left_hand": np.zeros((1, 7), np.float32),
         "state.right_hand": np.zeros((1, 7), np.float32),
         "state.projected_gravity": np.zeros((1, 3), np.float32),
-        "state.right_wrist_pos": np.zeros((1, 3), np.float32),
-        "state.right_wrist_abs_quat": np.zeros((1, 4), np.float32),
         "annotation.human.task_description": "pick up the water bottle",
         "video.ego_view": np.zeros((1, 4, 4, 3), np.uint8),
         "video.right_wrist": np.zeros((1, 4, 4, 3), np.uint8),

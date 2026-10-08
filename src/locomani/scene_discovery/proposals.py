@@ -1,4 +1,4 @@
-"""Claude proposes a scene's tasks; the feasibility checker answers; Claude revises (plan decision 8, TODO 9.10).
+"""Claude proposes a scene's tasks; the feasibility checker answers; Claude revises (plan decision 8, TODO 19.10).
 
 `discover` is the loop. Claude reads the scene (rooms, surfaces, the objects a task can use) and the measured
 capability (`configs/scene_discovery/capability.yaml`, written for this reader) and proposes tasks as goal

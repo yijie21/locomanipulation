@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sort a scene's tasks into the three buckets and rank the gaps (TODO 9.7; scene_discovery.feasibility). Sim venv.
+"""Sort a scene's tasks into the three buckets and rank the gaps (TODO 19.7; scene_discovery.feasibility). Sim venv.
 
     $VENV_SIM_PY scripts/scene_feasibility.py --scene outputs/scene_discovery/adt_apartment/scene_meta.json \\
         [--tasks tasks.jsonl] [--out <dir>]

@@ -58,6 +58,22 @@
       "scale": 0.9999999757856136,
       "mesh": "/workspace/code/locomanipulation/assets/robocasa/bottled_water_1/model.xml",
       "bimanual": false,
+      "container": false,
+      "inertial": {
+        "body": "water_bottle_object",
+        "mass": 0.3528464707783201,
+        "com_before": [
+          7.555500699349059e-06,
+          -0.0003855148561681625,
+          -0.002197362142352774
+        ],
+        "com_after": [
+          7.555500699349059e-06,
+          -0.0003855148561681625,
+          -0.05219736214235278
+        ],
+        "com_drop_m": 0.05
+      },
       "body_id": 37,
       "qpos_adr": 40,
       "free": true,
@@ -91,6 +107,7 @@
     "water_bottle": "the water bottle"
   },
   "goal_object": "plate",
+  "robot": "mars",
   "robot_start": {
     "xy": [
       -1.5,
@@ -99,8 +116,8 @@
     "yaw_deg": 0.0,
     "pelvis_z": 0.793
   },
-  "scene_xml": "/workspace/code/locomanipulation/outputs/scene/sim/scene_locomani.xml",
+  "scene_xml": "/workspace/code/locomanipulation/outputs/scene/sim_lowcom_mars/scene_locomani.xml",
   "nbody": 39,
-  "ngeom": 126,
+  "ngeom": 138,
   "nq": 47
 }

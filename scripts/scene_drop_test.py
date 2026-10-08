@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drop test of a built scene file, and its MuJoCo indices written back (TODO 9.6.5). Runs in the sim venv.
+"""Drop test of a built scene file, and its MuJoCo indices written back (TODO 19.6.5). Runs in the sim venv.
 
     $VENV_SIM_PY scripts/scene_drop_test.py --scene outputs/scene_discovery/adt_apartment/scene_meta.json
 

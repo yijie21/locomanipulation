@@ -1,4 +1,4 @@
-"""Round-1 envelope pilots (TODO 9.9): per pilot, success and where each failure happened, from the run manifests.
+"""Round-1 envelope pilots (TODO 19.9): per pilot, success and where each failure happened, from the run manifests.
 
     python3 scripts/experiments/pilot_summary_20261003.py outputs/runs/sd_pilot_*_20261003b > summary.md
 

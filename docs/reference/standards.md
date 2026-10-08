@@ -93,8 +93,8 @@ Keep the root guide, change map and STATE within the checked reading budgets.
 Link task-specific details. The document index distinguishes current navigation from
 historical evidence; tutorials do not certify experiments they recount. Generate
 field tables from configuration code. Commands must point to existing entries.
-Place new material using [documentation ownership](../README.md#documentation-ownership)
-and finish code/documentation updates through the [change workflow](change-map.md#change-workflow).
+Place new material using [documentation ownership](../agents/doc-ownership.md)
+and finish code/documentation updates through the [change workflow](change-map.md#making-a-change).
 
 Use isolated worktrees and reviewable commits. Preserve other sessions' work and
 stage explicit paths. Resource/artifact rules are in [AGENTS](../../AGENTS.md).

@@ -13,6 +13,7 @@ import numpy as np
 from locomani.backends.sonic.sonic_token import snap
 from locomani.backends.sonic.vla_config import DEFAULT_VLA, LIFT_M, NEAR_M, STALL_ABORT_M, VlaConfig
 from locomani.schema import SONIC_BOTTLE
+from locomani.sim.mirror import MIRRORED_SOURCES
 
 
 def _tstart_view(p, st, obj_key, prelude, gx=0.80, gy=0.90):
@@ -78,19 +79,18 @@ class ObsBuilder:
     """Assemble the policy's flat observation from the live stack."""
 
     def __init__(self, task: str, schema=SONIC_BOTTLE, image_source: str = "mujoco"):
-        from gear_sonic.data.features_sonic_vla import get_g1_robot_model
         from gear_sonic.utils.data_collection.zmq_state_subscriber import (
             ZMQStateSubscriber,
         )
 
         state_port = int(os.environ.get("TF_OUT_PORT", 5557))
         # `VlaConfig.image_source`. "mujoco": the sim's camera stream, read whenever it has a new frame.
-        # "isaac": the Isaac mirror renders the sim's newest state on each build(), after the
-        # proprioception is read, so the images and the state are the same instant.
+        # "isaac" / "unreal": that renderer's mirror (one protocol, locomani.sim.mirror) renders the sim's newest
+        # state on each build(), after the proprioception is read, so the images and the state are the same instant.
         self.cam = self.mirror = None
-        if image_source == "isaac":
+        if image_source in MIRRORED_SOURCES:
             from locomani.sim import ports
-            from locomani.sim.isaac.mirror import MirrorClient
+            from locomani.sim.mirror import MirrorClient
 
             self.mirror = MirrorClient(ports.isaac_mirror())
         elif image_source == "mujoco":
@@ -99,13 +99,12 @@ class ObsBuilder:
             cam_port = int(os.environ.get("TF_CAMERA_PORT", 5555))
             self.cam = ComposedCameraClientSensor(server_ip="localhost", port=cam_port)
         else:
-            raise ValueError(f"image_source {image_source!r} is neither 'mujoco' nor 'isaac'")
+            raise ValueError(f"image_source {image_source!r} is not 'mujoco', 'isaac' or 'unreal'")
         self.image_meta = None  # the mirror's reply header for the images the last build() used
         self.state = ZMQStateSubscriber(host="localhost", port=state_port)
-        self.rm = get_g1_robot_model()
         self.task = task
-        # Which TaskSchema this observation serves: SONIC_BOTTLE (two cameras,
-        # right wrist, 53-d) or SONIC_CRATE (three cameras, both wrists, 60-d).
+        # Which TaskSchema this observation serves: SONIC_BOTTLE (ego + right wrist
+        # cameras) or SONIC_CRATE (ego + both wrist cameras); both take the stock 46-d state.
         self.schema = schema
         self._last_img = None
         self._last_proprio = None
@@ -119,11 +118,11 @@ class ObsBuilder:
         if s is not None:
             self._last_proprio = s
 
-    def _render(self) -> bool:
-        """Ask the mirror for this instant's images; False (and why, printed) if it could not."""
-        got = self.mirror.render()
+    def _render(self, seq: int | None = None) -> bool:
+        """Ask the mirror for this instant's images (state `seq` when given); False (and why, printed) if not."""
+        got = self.mirror.render() if seq is None else self.mirror.render(seq)
         if got is None:
-            print(f"[vla] isaac mirror: {self.mirror.last_error}", flush=True)
+            print(f"[vla] mirror: {self.mirror.last_error}", flush=True)
             return False
         self._last_img, self.image_meta = got
         return True
@@ -141,16 +140,22 @@ class ObsBuilder:
             time.sleep(0.05)
         return False
 
-    def build(self) -> dict | None:
+    def build(self, *, images: dict | None = None, seq: int | None = None) -> dict | None:
+        """The policy's observation from the newest proprioception and images.
+
+        A lockstep round passes what the frozen boundary provides: `images`, the MuJoCo cameras its step reply
+        carried (taken over the stream, whose newest frame can predate the boundary), or `seq`, the boundary's
+        privileged state for the Isaac mirror to render."""
         from gear_sonic.utils.data_collection.transforms import (
             compute_projected_gravity,
         )
-        from scipy.spatial.transform import Rotation as R
 
         self._poll()
+        if images is not None:
+            self._last_img = images
         if self._last_proprio is None:
             return None
-        if self.mirror is not None and not self._render():
+        if self.mirror is not None and images is None and not self._render(seq):
             return None
         if self._last_img is None:
             return None
@@ -159,14 +164,6 @@ class ObsBuilder:
         lh = np.asarray(pr["left_hand_q"], dtype=np.float64)
         rh = np.asarray(pr["right_hand_q"], dtype=np.float64)
         base_quat = np.asarray(pr["base_quat"], dtype=np.float64)
-
-        whole = self.rm.get_configuration_from_actuated_joints(
-            body_actuated_joint_values=body, left_hand_actuated_joint_values=lh, right_hand_actuated_joint_values=rh
-        )
-        self.rm.cache_forward_kinematics(whole)
-        pl = self.rm.frame_placement(self.rm.supplemental_info.hand_frame_names["right"])
-        rw_pos = pl.translation[:3]
-        rw_quat = R.from_matrix(pl.rotation).as_quat(scalar_first=True)
 
         f32 = lambda a: np.asarray(a, dtype=np.float32).reshape(1, -1)  # noqa: E731
         obs = {
@@ -178,19 +175,33 @@ class ObsBuilder:
             "state.left_hand": f32(lh),
             "state.right_hand": f32(rh),
             "state.projected_gravity": f32(compute_projected_gravity(base_quat)),
-            "state.right_wrist_pos": f32(rw_pos),
-            "state.right_wrist_abs_quat": f32(rw_quat),
             "annotation.human.task_description": self.task,
         }
-        if "left_wrist_pos" in self.schema.state_keys:
-            pl_left = self.rm.frame_placement(self.rm.supplemental_info.hand_frame_names["left"])
-            obs["state.left_wrist_pos"] = f32(pl_left.translation[:3])
-            obs["state.left_wrist_abs_quat"] = f32(R.from_matrix(pl_left.rotation).as_quat(scalar_first=True))
         for key in self.schema.video_keys:
             img = np.asarray(self._last_img[key])
             obs[f"video.{key}"] = img[None].astype(np.uint8)
         self.schema.validate_observation(obs)
         return obs
+
+    def settle_proprio(self, after_index: int | None, timeout: float = 2.0, quiet: float = 0.01) -> dict:
+        """The deploy's newest state once it is past entry `after_index` and nothing newer has come for `quiet` s.
+
+        Under lockstep the deploy publishes one state per tick and nothing between steps, so this is the last
+        tick's state however late its message arrives; under the wall clock it is simply the newest."""
+        end = time.time() + timeout
+        last_change = None
+        seen = None
+        while time.time() < end:
+            self._poll()
+            pr = self._last_proprio
+            index = None if pr is None else pr.get("index")
+            if index != seen:
+                seen, last_change = index, time.time()
+            fresh = pr is not None and (after_index is None or (index is not None and index > after_index))
+            if fresh and time.time() - last_change >= quiet:
+                return pr
+            time.sleep(0.001)
+        raise RuntimeError(f"the deploy's state never moved past entry {after_index} within {timeout} s")
 
     def close(self):
         try:

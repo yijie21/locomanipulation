@@ -83,56 +83,38 @@ SONIC_MODALITY = {
     "annotation": {"human.task_description": {"original_key": "task_index"}},
 }
 
+# Isaac-GR00T's built-in unitree_g1_sonic state (gr00t/configs/data/embodiment_configs.py), 46 wide, in its
+# order. Both SONIC tasks select exactly this; the wrist poses stay in the modality menu but are not selected.
+SONIC_STATE_KEYS = (
+    "left_leg",
+    "right_leg",
+    "waist",
+    "left_arm",
+    "right_arm",
+    "left_hand",
+    "right_hand",
+    "projected_gravity",
+)
+
 SONIC_BOTTLE = TaskSchema(
     modality_config_path="configs/gr00t_sonic_2cam.py",
     video_keys=("ego_view", "right_wrist"),
-    state_keys=(
-        "left_leg",
-        "right_leg",
-        "waist",
-        "left_arm",
-        "right_arm",
-        "left_hand",
-        "right_hand",
-        "projected_gravity",
-        "right_wrist_pos",
-        "right_wrist_abs_quat",
-    ),
+    state_keys=SONIC_STATE_KEYS,
     action_keys=("motion_token", "right_gripper"),
 )
 
 SONIC_CRATE = TaskSchema(
     modality_config_path="configs/gr00t_sonic_3cam_bimanual.py",
     video_keys=("ego_view", "left_wrist", "right_wrist"),
-    state_keys=(
-        "left_leg",
-        "right_leg",
-        "waist",
-        "left_arm",
-        "right_arm",
-        "left_hand",
-        "right_hand",
-        "projected_gravity",
-        "right_wrist_pos",
-        "right_wrist_abs_quat",
-        "left_wrist_pos",
-        "left_wrist_abs_quat",
-    ),
+    state_keys=SONIC_STATE_KEYS,
     action_keys=("motion_token", "left_gripper", "right_gripper"),
 )
 
 VISUAL_BOTTLE = TaskSchema(
     modality_config_path="configs/gr00t_bfm_visual_2cam.py",
     video_keys=("ego_view", "right_wrist"),
-    state_keys=(
-        "left_leg",
-        "right_leg",
-        "waist",
-        "left_arm",
-        "right_arm",
-        "left_hand",
-        "right_hand",
-        "projected_gravity",
+    state_keys=SONIC_STATE_KEYS
+    + (
         "right_wrist_pos",
         "right_wrist_abs_quat",
         "robot_velocity",

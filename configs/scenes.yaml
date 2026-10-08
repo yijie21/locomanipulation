@@ -3,42 +3,263 @@
 # A name, once given, never points at a different directory: a run's config.yaml keeps the NAME, and
 # a later stage re-resolves it through this file. A rebuilt or changed scene gets a new name.
 # `scene: {dir: ...}` still works for a directory without a name. `example` is an experiment that uses
-# the scene; `build` is how to make it when no experiment does yet. `isaac` (optional) names the scene's
-# Isaac stage; only a scene that has one can run with `images.source: isaac` (training and evaluation images).
+# the scene; `build` is how to make it, run by `bash scripts/build_scene.sh <name>` from the repository root with
+# scripts/paths.sh sourced ($VENV_SIM_PY; $USD_PY is a python with `pxr`, found by build_scene.sh). `isaac` (optional)
+# names the scene's Isaac stage, built by `build_scene.sh <name> --isaac`; only a scene that has one can run with
+# `images.source: isaac` (training and evaluation images). Its look is `rtx_settings` plus `supersample` (cameras
+# render N times larger, box-averaged back; default 1). `unreal` names the scene's Unreal level for
+# `images.source: unreal`, built by `build_scene.sh <name> --unreal` inside a running editor (scripts/start_unreal.sh):
+# the Blender-baked room level (scripts/unreal/warehouse_level.py) plus this scene's robot and carton imported
+# through URLab. Its look is the room level's post-process volume plus `repeats` (captures per request; Lumen and
+# TSR converge over frames: 1 is 2-3/255 darker than 8, docs/handoff/unreal-urlab-20260928.md). The robot's
+# materials are not per scene: both renderers take src/locomani/sim/robot_look.py. A scene with no
+# level says why in `unreal: {unsupported: ...}`, and an experiment asking for Unreal on it is refused at load.
 
 bottle:  # MuJoCo's own blue floor, single arm, bottle on a table
   dir: outputs/scene/sim_lowcom
   example: configs/experiments/bottle_simple_200.yaml
+  # outputs/scene/sim from the shipped pack with the bottle-only table, then the copy with the bottle's centre of
+  # mass 5 cm lower that the bottle line runs
+  build: >-
+    SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom
+    --preset bottle_only --harden-pads --object-com-drop 0.05
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 crate:  # the same blue floor, both arms, a crate on a table
   dir: outputs/scene/crate_table30_depth04
-  example: configs/experiments/crate_env2_so45.yaml
+  example: configs/experiments/crate_table30_record.yaml
+  # the crate 4 cm further back on the table (XML and reset metadata both), then the table lowered to 0.30 m
+  build: >-
+    "$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene outputs/scene/crate_bimanual_depth04 --crate-setback 0.04 &&
+    "$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py
+    outputs/scene/crate_bimanual_depth04 outputs/scene/crate_table30_depth04 --height 0.30
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 warehouse:  # the scanned logistics room, both arms, a cardboard box; new runs use warehouse_textured (the 2026-09-24 grasp baseline)
   dir: outputs/box_rim_execution_20260920/scene_reverse_camera
   example: configs/experiments/box_room_20260922.yaml
+  unreal: {unsupported: "the pre-texture scene (one plain-colour carton mesh); new runs use warehouse_textured, which has a level"}
 
 warehouse_textured:  # the same room rebuilt from the published pack after 0bf8eed: the carton carries its 9 per-material geoms and 6 photo textures; `warehouse` (built 2026-09-20 from the pre-texture logistics_mujoco) has one plain-colour carton mesh. Robot, surfaces, objects, nq identical; ngeom 121 -> 129
   dir: outputs/scene/warehouse_textured
   example: configs/experiments/box_room_grasp_baseline_20260924.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured
   isaac:  # its Isaac stage and the look every Isaac render of it applies (render_isaac_videos.sh, the dataset re-render, the eval mirror)
-    dir: warehouse_textured  # under $ISAAC_ASSETS/scene
-    build: python3 scripts/build_isaac_warehouse_scene.py
-    # auto-exposure off, film ISO 30: with it on the robot's 0.2 greys rendered 108/255 (docs/rendering.md, warehouse)
-    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=30]
+    dir: warehouse_textured_env  # under $ISAAC_ASSETS/scene; Blender's world light on (warehouse_textured had it off)
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py
+    # matched to the Blender Cycles stills (reverse_room + two head cameras, docs/ledger/blender_scenes.md sections 4, 6):
+    # auto-exposure off (with it on, light intensities have no effect); film ISO 80 (ISO 30 was matched to MuJoCo's
+    # robot torso, half Blender's floor brightness); indirect diffuse x2 stands in for Cycles' 12 bounces against RTX's
+    # 2 (bounce-lit ceiling 151 -> 176 of Blender's 183); tonemap op 4 (Hejl-Hable) sits nearer Blender's AgX than
+    # ACES (op 6). Grey error vs Blender 11.1 -> 6.9, render time unchanged
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    # cameras render at 2x and box-average back: RTX realtime anti-aliases with FXAA only, so small print blurs and
+    # shelf grids shimmer; structural similarity to Blender 0.89-0.94 -> 0.93-0.96 (docs/ledger/blender_scenes.md section 5)
+    supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_textured  # /Game/Levels/warehouse_textured in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_textured
 
 walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SONIC locomotion; camera walk_follow
   dir: outputs/scene/walk
-  build: python -m locomani.tasks.walk.scene outputs/scene/walk
+  build: $VENV_SIM_PY -m locomani.tasks.walk.scene outputs/scene/walk
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
 box_platform:  # a 10 cm solid platform on the blue floor with the warehouse carton's contacts (0.45 x 0.32 x 0.60 m, 1 cm walls, 1.2 kg), no room: the scene capability sweep's centre cell and the bimanual box grasp default since 2026-09-27 (docs/box_grasp_envelope.md)
   dir: outputs/scene/box_platform
-  example: configs/experiments/box_platform_default_20260927.yaml
+  example: configs/experiments/box_platform_default_20260928.yaml
   build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform --width 0.45 --length 0.32 --height 0.60
   isaac:  # primitive boxes from the MJCF plus a grey ground (MuJoCo draws none); source.json pins the MJCF it was built from
-    dir: box_platform
-    build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/build_isaac_primitive_scene.py outputs/scene/box_platform
+    dir: box_platform_srgb  # MJCF colours converted sRGB -> linear (2026-09-29); box_platform took them as linear, a near-white carton
+    build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/build_isaac_primitive_scene.py outputs/scene/box_platform --label box_platform_srgb
     # fixed exposure: auto-exposure adapts over frames, so the mirror's on-demand pictures and the dataset's continuous
     # ones would differ; ISO 20 keeps auto's contrast (ego mean 120 vs 89/255; outputs/renders/box_platform_isaac_check_20260927)
     rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=20]
+    supersample: 2  # as warehouse_textured
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+# The four-edge warehouse line (2026-09-28): warehouse_textured with the carton rebuilt at one of the envelope's four
+# >= 40% sizes (docs/box_grasp_envelope.md §3.1; 0.45 m wide, grip height 0.54 / 0.69 m on the 0.371 m platform) by
+# locomani.tasks.crate.warehouse_box_scene: photo meshes scaled (the photographs stretch with them), 1 cm walls and a
+# solid 1.2 kg inertia rebuilt as box_platform does, front face on the -y edge. Each adds surfaces.A.edges: per side
+# (xm/xp/ym/yp) the walk-in heading, clear_m (free floor out from the edge, measured against the room's meshes, which
+# do not collide) and a camera edge_<side> (reverse_room turned to that side). Room, robot and platform unchanged.
+warehouse_box_45x32x33:  # the room's own carton size
+  dir: outputs/scene/warehouse_box_45x32x33
+  example: configs/experiments/warehouse_edges_compact_45x32x33_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33 --width 0.45 --length 0.32 --height 0.33
+  # its Isaac stage: the room stage with this carton's mesh scale; source.json pins the MJCF. Look: the warehouse_textured
+  # look (its isaac entry; tests/test_run_context.py holds them equal). The stages without `_env` (built 2026-09-28,
+  # Blender's world light off, ISO 30) stay in the asset cache for runs that rendered with them
+  isaac:
+    dir: warehouse_box_45x32x33_env
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x33  # /Game/Levels/warehouse_box_45x32x33 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x33
+
+warehouse_box_45x20x33:
+  dir: outputs/scene/warehouse_box_45x20x33
+  example: configs/experiments/warehouse_edges_compact_45x20x33_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x33 --width 0.45 --length 0.20 --height 0.33
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
+    dir: warehouse_box_45x20x33_env
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x20x33  # /Game/Levels/warehouse_box_45x20x33 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x33
+
+warehouse_box_45x32x18:
+  dir: outputs/scene/warehouse_box_45x32x18
+  example: configs/experiments/warehouse_edges_compact_45x32x18_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x18 --width 0.45 --length 0.32 --height 0.18
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
+    dir: warehouse_box_45x32x18_env
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x18  # /Game/Levels/warehouse_box_45x32x18 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x18
+
+warehouse_box_45x20x18:
+  dir: outputs/scene/warehouse_box_45x20x18
+  example: configs/experiments/warehouse_edges_compact_45x20x18_20260928.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x18 --width 0.45 --length 0.20 --height 0.18
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF. Look: as warehouse_box_45x32x33
+    dir: warehouse_box_45x20x18_env
+    build: $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x20x18  # /Game/Levels/warehouse_box_45x20x18 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x18
+
+# The mars scenes (2026-10-02, user: the lab's real G1 is the default robot of the bottle and warehouse lines). Each is
+# its stock namesake on the robot make_dex1_model.py writes from henry's URDF (assets/unitree_G1_with_wrist_camera):
+# the URDF's kinematics, masses and torque limits (ankles 35 N m, hip roll 139, wrists 13.4; the waist roll/pitch 50,
+# not the URDF's 35: make_dex1_model.MARS_EFFORT_OVERRIDES),
+# a D405 mount on each gripper that collides, the ego camera the D455 on the head's pan/tilt bracket (held tilted so
+# its pitch is the stock aim's 52 deg, fovy 65; the *_mars_d435 scenes below use the D435 fixed in the face) and the wrist cameras the D405s (fovy 58); fields of view are the
+# datasheets', no calibration shipped. Joints, actuators, sensors and camera names are the stock robot's, so the
+# SONIC bridge, the experts and the datasets see the same interface. scene_meta.json records `robot: mars`. The stock
+# names keep pointing at the stock robot (a name never changes its directory). The four warehouse_box_*_mars scenes
+# render in both renderers, with the warehouse look: Isaac adds the mars robot USD to the room stage
+# (build_isaac_assets.sh --robot mars, its `isaac.build` builds it once), Unreal imports the scene's own robot into the
+# level; both record `robot` in source.json, and run_context refuses a stage or level built for another robot.
+# The warehouse runbook runs on these scenes, with Unreal as its default renderer (user, 2026-10-03).
+bottle_mars:  # bottle on the mars robot
+  dir: outputs/scene/sim_lowcom_mars
+  example: configs/experiments/bottle_mars_pilot_20261002.yaml
+  build: >-
+    SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom_mars
+    --preset bottle_only --harden-pads --object-com-drop 0.05 --robot mars
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+warehouse_textured_mars:  # warehouse_textured on the mars robot: the pack's robot rewritten by make_dex1_model.apply_mars
+  dir: outputs/scene/warehouse_textured_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured_mars --robot mars
+  unreal: {unsupported: "the base the four warehouse_box_*_mars scenes are built from; runs use those, which have levels"}
+
+box_platform_mars:  # box_platform on the mars robot
+  dir: outputs/scene/box_platform_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform_mars --width 0.45 --length 0.32 --height 0.60 --source outputs/scene/warehouse_textured_mars
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+warehouse_box_45x32x33_mars:  # warehouse_box_45x32x33 on the mars robot
+  dir: outputs/scene/warehouse_box_45x32x33_mars
+  example: configs/experiments/warehouse_mars_smoke.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33_mars --width 0.45 --length 0.32 --height 0.33 --source outputs/scene/warehouse_textured_mars
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF and the robot. Look: the warehouse_textured look (as warehouse_box_45x32x33), the mars robot USD added
+    dir: warehouse_box_45x32x33_mars_env
+    build: bash scripts/build_isaac_assets.sh --robot-only --robot mars && $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33_mars
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot (mars) and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x33_mars  # /Game/Levels/warehouse_box_45x32x33_mars in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x33_mars
+
+warehouse_box_45x20x33_mars:  # warehouse_box_45x20x33 on the mars robot
+  dir: outputs/scene/warehouse_box_45x20x33_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x33_mars --width 0.45 --length 0.20 --height 0.33 --source outputs/scene/warehouse_textured_mars
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF and the robot. Look: as warehouse_box_45x32x33, the mars robot USD added
+    dir: warehouse_box_45x20x33_mars_env
+    build: bash scripts/build_isaac_assets.sh --robot-only --robot mars && $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x33_mars
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot (mars) and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x20x33_mars  # /Game/Levels/warehouse_box_45x20x33_mars in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x33_mars
+
+warehouse_box_45x32x18_mars:  # warehouse_box_45x32x18 on the mars robot
+  dir: outputs/scene/warehouse_box_45x32x18_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x18_mars --width 0.45 --length 0.32 --height 0.18 --source outputs/scene/warehouse_textured_mars
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF and the robot. Look: as warehouse_box_45x32x33, the mars robot USD added
+    dir: warehouse_box_45x32x18_mars_env
+    build: bash scripts/build_isaac_assets.sh --robot-only --robot mars && $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x18_mars
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot (mars) and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x18_mars  # /Game/Levels/warehouse_box_45x32x18_mars in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x18_mars
+
+warehouse_box_45x20x18_mars:  # warehouse_box_45x20x18 on the mars robot
+  dir: outputs/scene/warehouse_box_45x20x18_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x20x18_mars --width 0.45 --length 0.20 --height 0.18 --source outputs/scene/warehouse_textured_mars
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF and the robot. Look: as warehouse_box_45x32x33, the mars robot USD added
+    dir: warehouse_box_45x20x18_mars_env
+    build: bash scripts/build_isaac_assets.sh --robot-only --robot mars && $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x20x18_mars
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot (mars) and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x20x18_mars  # /Game/Levels/warehouse_box_45x20x18_mars in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x20x18_mars
+
+# The same scenes with the ego camera (head_camera) the D435 fixed in mars's face instead of the D455 on the
+# pan/tilt bracket (user, 2026-10-06: switch the ego view between the two when collecting). Built with
+# --ego-camera d435_head, recorded as scene_meta.json `ego_camera`; everything else is the namesake's. The D435 frame
+# is the URDF's d435_head_link, 47.6 deg below the torso's horizontal, fovy 42 (the datasheet's 69 x 42 colour field
+# at 4:3): a narrower view than the D455's 65, so the experts' framing was calibrated on the other camera.
+# A run picks its camera by the scene name: configs/experiments/warehouse_mars_smoke_d435_{unreal,isaac,mujoco}.yaml
+# (Unreal, Isaac, MuJoCo pictures; each differs from its D455 namesake in the scene only).
+bottle_mars_d435:  # bottle_mars with the D435 ego camera
+  dir: outputs/scene/sim_lowcom_mars_d435
+  build: >-
+    SCENE_PRESET=bottle_only bash scripts/install_scene.sh &&
+    "$VENV_SIM_PY" src/locomani/sim/build_sim_scene.py outputs/scene outputs/scene/sim_lowcom_mars_d435
+    --preset bottle_only --harden-pads --object-com-drop 0.05 --robot mars --ego-camera d435_head
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
+warehouse_textured_mars_d435:  # warehouse_textured_mars with the D435 ego camera
+  dir: outputs/scene/warehouse_textured_mars_d435
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene/warehouse_textured_mars_d435 --robot mars --ego-camera d435_head
+  unreal: {unsupported: "the base warehouse_box_45x32x33_mars_d435 is built from; runs use that, which has a level"}
+
+warehouse_box_45x32x33_mars_d435:  # warehouse_box_45x32x33_mars with the D435 ego camera
+  dir: outputs/scene/warehouse_box_45x32x33_mars_d435
+  example: configs/experiments/warehouse_mars_smoke_d435_unreal.yaml
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.tasks.crate.warehouse_box_scene outputs/scene/warehouse_box_45x32x33_mars_d435 --width 0.45 --length 0.32 --height 0.33 --source outputs/scene/warehouse_textured_mars_d435
+  isaac:  # the room stage with this carton's mesh scale; source.json pins the MJCF and the robot. Look: the warehouse_textured look (as warehouse_box_45x32x33), the mars robot USD added
+    dir: warehouse_box_45x32x33_mars_d435_env
+    build: bash scripts/build_isaac_assets.sh --robot-only --robot mars && $USD_PY scripts/build_isaac_warehouse_scene.py --scene outputs/scene/warehouse_box_45x32x33_mars_d435
+    rtx_settings: [/rtx/post/histogram/enabled=false, /rtx/post/tonemap/filmIso=80, /rtx/indirectDiffuse/scalingFactor=2.0, /rtx/post/tonemap/op=4]
+    supersample: 2
+  unreal:  # the room level with this scene's robot (mars) and carton imported; look: the room's volume, 8 captures a request
+    level: warehouse_box_45x32x33_mars_d435  # /Game/Levels/warehouse_box_45x32x33_mars_d435 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level warehouse_box_45x32x33_mars_d435

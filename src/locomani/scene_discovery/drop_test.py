@@ -1,4 +1,4 @@
-"""Settle every free body of a robot-free scene and report which ones do not stay put (TODO 9.6.5).
+"""Settle every free body of a robot-free scene and report which ones do not stay put (TODO 19.6.5).
 
 An object placed at its ADT pose on a 2 cm slab, with Claude's mass and friction and a hull collider, should
 not move. One that does (slides off a tilted top, pops out of an initial penetration, tips over, falls through)

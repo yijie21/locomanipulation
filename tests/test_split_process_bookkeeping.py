@@ -42,18 +42,23 @@ def _experiment(name: str) -> dict:
 
 def test_the_bimanual_eval_stack_engages_itself_because_its_rounds_run_clean(tmp_path):
     cfg = _experiment("crate_table30_record.yaml")
-    assert cfg["eval"]["client"] == "blocking"  # the pin that made EvalConfig read it as "not clean"
+    cfg["eval"]["client"] = "blocking"  # the pin that made EvalConfig read it as "not clean"
+    cfg["eval"]["latency_frames"] = None
     spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
-    assert spec.auto_start is True
+    assert spec.auto_start is True and spec.lockstep is False
     assert spec.encoder is False
     assert spec.settings()["SONIC_AUTO_START"] == "1"
     assert spec.default_motion == "neutral_kick_R_001__A543"
+    # the line's own file runs lockstep since 2026-09-28: the same clean start, plus the step server
+    assert run_stack.eval_spec(_experiment("crate_table30_record.yaml"), tmp_path, tmp_path / "scene", "1").lockstep
 
 
 def test_the_single_arm_eval_stack_still_follows_its_client(tmp_path):
     cfg = _experiment("bottle_simple_200.yaml")
     spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
-    assert spec.auto_start is (cfg["eval"].get("client", "async") == "async")
+    client = cfg["eval"].get("client", "async")
+    assert spec.lockstep is (client == "lockstep")
+    assert spec.auto_start is (client in ("async", "lockstep"))
     assert (spec.default_motion is not None) is spec.auto_start
 
 
@@ -240,10 +245,8 @@ def test_a_failed_bimanual_batch_is_timed_as_a_failure_and_the_run_goes_on(tmp_p
     monkeypatch.setattr(expert, "run", Mock(side_effect=SystemExit("[crate] scene is not painted")))
     stack = _recording_stack(None, os.getpid())
     stack.spec = StackSpec(record=False)
-    state = dict(sessions=[], manifests=[], kept=0, batches=0)
-
     with capfd.disabled():  # pytest's own capture swaps the fds the stage log tees
-        manifest = collect.run_batch(cfg, tmp_path, stack, state)  # does not raise
+        manifest = collect.run_batch(cfg, tmp_path, stack, 0)  # does not raise
 
     assert manifest == tmp_path / "manifest_00.jsonl"
     (row,) = [json.loads(r) for r in (tmp_path / "timings.jsonl").read_text().splitlines()]
@@ -256,3 +259,13 @@ def test_the_eval_stack_writes_state_traces_for_offline_renders(tmp_path):
     cfg = _experiment("crate_table30_record.yaml")
     spec = run_stack.eval_spec(cfg, tmp_path, tmp_path / "scene", "1")
     assert spec.env["SIM_STATE_TRACE_DIR"] == str(tmp_path / "eval" / "state_trace")
+
+
+def test_until_kept_lowers_the_target_and_never_raises_it():
+    from locomani.tasks.crate.collect import collect_target
+
+    assert collect_target(100, None) == 100
+    assert collect_target(100, 5) == 5
+    assert collect_target(3, 5) == 3  # a pause past the run's own target is just the run
+    with pytest.raises(SystemExit, match="at least 1"):
+        collect_target(100, 0)

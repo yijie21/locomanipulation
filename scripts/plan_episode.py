@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a primitive plan against a live stack, one episode per round (design §7; TODO 7.6).
+"""Run a primitive plan against a live stack, one episode per round (design §7; TODO 17.6).
 
     $VENV_SIM_PY scripts/plan_episode.py configs/experiments/bottle_simple_200.yaml \\
         --gpu 1 --instance 1 --rounds 3 --name skills_smoke_bottle_20260928 [--plan plan.json | --agent]
@@ -24,7 +24,7 @@ with its instruction -- one of the task's `prompts`, drawn per round, or the cri
 primitive, identical for the fixed plan and the agent on the same seed (agentic-plan Q11; docs/skills.md
 §7); `scripts/injection_report.py` pairs the two runs. `--think-s` gives a fixed plan an agent's decision
 latency: the runner waits that long after every successful call, re-sending the current command (or nothing,
-`--think-silent`), and traces what a single-arm load did meanwhile (TODO 8.3.5).
+`--think-silent`), and traces what a single-arm load did meanwhile (TODO 18.3.5).
 """
 
 from __future__ import annotations
@@ -241,7 +241,7 @@ SINGLE_AXIS_YAW_DEG = 20.0  # capability.yaml reach_single_arm.grasp_yaw: |a| <=
 def spawn_object_yaw(half_extent, psi: float, rng) -> float:
     """The target's spawn yaw: uniform, except for an object that fits the open jaw one way only (the coffee canister,
     8.2 x 12.3 cm), whose long side is kept within SINGLE_AXIS_YAW_DEG of the approach heading `psi`, either way
-    round -- the existing grasp closes across whatever faces it and never holds the long side (TODO 9.12.11)."""
+    round -- the existing grasp closes across whatever faces it and never holds the long side (TODO 19.12.11)."""
     import numpy as np
 
     from locomani.skills.scene_model import DEX1_OPENING_M

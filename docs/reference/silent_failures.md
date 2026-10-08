@@ -25,7 +25,7 @@
 | `sim_video.py` | 第三人称录像(ego + 双腕画中画、6D 线框盒、坐标读数) |
 | `sim_vis.py` | `SIM_VIS` 开关的解析(见[可视化开关](#可视化开关)) |
 | `tasks/bottle/place_phase.py` | pick-and-place 的 place 阶段(raise / turn-to-band / carry-over / descend / release / retreat / verify),由 `BottleTaskConfig.goal` 接在 lift 之后;`tasks/pick_place/` 只是注册。技能层 `place` 与 `put_down_single` 也跑它:ctx 带 `surface` + `spot` 时走 `_SurfaceGeometry`(放到台面,低处先蹲) |
-| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径约定)) |
+| `paths.py` / `scripts/paths.sh` | 全仓库唯一的绝对路径来源(见[路径约定](../setup.md#0-路径)) |
 | `scene_lib.py` / `build_sim_scene.py` | 场景构建:物体、桌高、腕上相机、目标池都在这里 |
 | `tools/convert_to_hf_format.py` | exporter 原始 session → LeRobot v2.1 |
 | `tools/check_dataset.py` | **转完先跑这个**:结构 / modality / 抓取因果 / 时序对齐,四段审计([怎么用](../single_arm_design.md#转完先查一遍强烈建议)) |
@@ -99,12 +99,12 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 
 | 变量 | 默认 | 谁读 | 作用 |
 |---|---|---|---|
-| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](../setup.md#0-路径约定) |
+| `LOCOMANI_WORKSPACE` | `/workspace` | 全部 | 仓库外路径的根,见[路径约定](../setup.md#0-路径) |
 | `SIM_VIDEO_DIR` | 未设 | sim | 设了才录第三人称视频。**必须在 `locomani.stack.cli up` 之前 export,且必须是绝对路径**——sim 进程的 cwd 是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,相对路径会写到那边去 |
 | `SIM_ONSCREEN` | `0` | sim | `1` 开一个实时 MuJoCo 窗口(跟拍 pelvis)。**必须在 `locomani.stack.cli up` 之前 export**,需要真的 `$DISPLAY`。grasp_gym.py 只是连过去的客户端,不管渲染,所以这个开关在 sim 这边,不在 gym 那边 |
 | `SIM_VIS` | `none`(2026-09-10 前是 `full`) | sim + gym | 调试可视化开关,见[下一节](#可视化开关) |
 | `TF_DATASET_FPS` | `30` | vla_round | 闭环回放的发布帧率,**必须等于 checkpoint 训练数据的 fps**。转换器 2026-08-28 起写 25,所以用重转数据训出来的 checkpoint 要 `--set backend.dataset_fps=25`(2026-09 起环境变量 `TF_DATASET_FPS` 不再被读取,只有 `SonicBackendConfig.dataset_fps`);不匹配不会报错,只是动作按错速度回放 |
-| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../single_arm_design.md#6-调整任务) |
+| `SCENE_RANDOM` | `0` | sim | **默认关**(外观固定)。`1` 每局重掷颜色/光照/地面,见[外观](../single_arm_design.md#调整任务) |
 | `WRIST_CAMS` | `1` | sim + exporter | `0` 只录 ego 一路,见[相机](../single_arm_design.md#相机与动作) |
 | `SCENE_SEED` | 未设 | `build_sim_scene.py` | 重建时重掷桌高与物体尺寸 |
 | `INSTANCE` | `0` | 全部 | 端口块 + DDS domain,多实例并行。**单臂采集必须用 `0`**:stack manager 在 instance≠0 且未设 `RECORD_INSTANCE=1` 时跳过 exporter(`[3/3] data exporter — skipped (instance 1 records no episodes)`),`collect` 命令采不出任何 session;crate 的采集可设 `collect.instance=<N>` 来改变实例。**而且 gym 不跟随 `INSTANCE`**:stack 挪到 5565/5566/5591 之后 grasp_gym 仍然绑 :5556、等 :5581,10 秒后 `no privileged state on :5581`。要换实例得把 `TF_*` 端口一起 export,光给 `INSTANCE` 不够。想避开别人又要采集,正确做法是 **instance 0 + `CUDA_VISIBLE_DEVICES=<另一块卡>`**——实例号只管端口和 exporter,GPU 是独立变量(2026-09-10) |
@@ -142,7 +142,6 @@ SONIC 的候选替代 controller,单进程、无 stack、无墙钟;教程 [scale
 | 在进程 cmdline 里做**子串**匹配(pgrep -f 同类) | 匹配到把整条命令当参数的 shell / 祖先进程 | `pkill -f` 杀掉发起它的 shell(exit 144,两次);watchdog 把两个健康 sim 判成 gone —— 换成扫 /proc 也一样,针在祖先的 cmdline 里。免疫的是**匹配结构**:模式必须是独立的 argv 元素,shell 把命令塞进单个 `-c` 参数时过不了 |
 | 两个 runner 同一秒抢同一 instance 的端口块 | 两边都打印 "stack up",rc 0 | 一边的 gym 报 `Address already in use :5556`,另一边每局 1 s 报 `teleport landed 1.85 m off`(2026-09-10,pick-place session 与 session 29)。端口检查是 TOCTOU;2026-09-10 起 `locomani.stack.cli up` 用 `/workspace/tmp/locomani_locks/instance_<i>.lock` 上 `flock -n`,锁的 fd 被 sim/deploy/exporter 继承,任一存活就拒绝第二个栈(退出码 3,打印持有者),全部死掉自动释放;`locomani.stack.cli down` 只杀本 instance 的进程(按 comm=python + 环境里的 `TF_CAMERA_PORT` 匹配)。起栈前仍要读 STATE 的 RUNNING 行 |
 | `build_sim_scene.py` 不带 `--harden-pads` 重建(或 `HARDEN_PADS=0 install_scene.sh`) | 场景正常,指面回到软接触 | 持物几秒后蠕变滑脱(2026-09-14:同 20 seed 软垫 5 次滑脱、硬垫 0 次);`install_scene.sh` 回显 `finger pads HARDENED`,或看 XML 里 `dex1_col_1` 有没有 `priority="1"` |
-| 两次命令之间 > 1 s 不发规划器帧(agent 想下一步、长计算、`time.sleep`) | 什么都不报;下一个 primitive 的守卫报 `load slipped` / `load lost while turning`,像握持或转向滑 | deploy `PLANNER_TIMEOUT` 1 s 释放冻结上身和手指命令,手臂 0.1 s 甩回默认姿态,手里的东西 ~1 s 被甩掉(2026-09-29,pick_place 台账 §14:静默 4/4 掉、保活 0/14);`deploy.log` 搜 `Planner timeout`,或看掉落窗口里的手臂关节 |
 | place 伺服按 `upper_ref.MAX_STEP`(2°/tick)限幅 | 手臂看着在动 | 冗余 IK(腰 + 臂)逐拍换姿态,持物滑脱 3–4 cm,像接触蠕变;`place_trace` 10 Hz 漂移曲线能分辨(2026-09-10) |
 | **用 A checkpoint 的 token 喂 B checkpoint 的 decoder** | 数字全在合法范围,图照跑 | token 是 **checkpoint 私有的 FSQ latent**。两个 checkpoint 的码本完全相同(都是 1/16 网格、`[−1.0, 0.9375]`,2026-09-11 实测),所以任何"取值合法 / 在网格上 / 在训练分布内"的检查都过 —— 变的是**含义**。2026-09-11 默认切到 `policy/sonic_v1_1` 之后:此前所有数据集(`action.motion_token`)与 GR00T checkpoint 都是 release 空间的,拿去 v1.1 部署是安静的胡话;离线 `eval_open_loop` / `sonic_decoder` 的"度数"指标同理。要复现旧数字就 `SONIC_POLICY=policy/release` 整条链一起切。运行记录里已经写进 `config_snapshot.json` 的 `sonic_policy` 字段(2026-09-11 起) |
 | 离线 encoder 的观测布局写死成某个 checkpoint 的 | 图照跑,返回 64 个数 | v1.1 的 encoder 输入是 **1751** 维、anchor 块叫 `motion_anchor_orientation_heading_10frame_step5`(偏移 584,**orientation_mode 1**:左乘的是机器人 heading 而不是整个 base 四元数);release 是 1762 / 偏移 601 / mode 0。维度对不上时 `SonicEncoder` 会直接抛错,但**偏移和 anchor 算法对不上不会** —— 所以 `sonic_encoder.py` 现在从 checkpoint 自己的 `observation_config.yaml` 读布局(`EncoderLayout.from_config`),并按 anchor 块名字选 heading 与否,不再写死 |

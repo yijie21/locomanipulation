@@ -21,22 +21,36 @@ class ApproachCommand:
 
 
 def approach_heading(meta):
-    """World yaw of the walk-in, radians: the scene's `robot_start` heading.
+    """World yaw of the walk-in, radians: the round's edge (`approach`, set by expert.facing_edge), else the
+    scene's `robot_start` heading.
 
     0 in the synthetic table scenes (the robot walks +x), pi/2 in the logistics
     room (it walks +y toward the platform). Every placement below is expressed
     along this axis so one expert runs in both.
     """
+    if "approach" in meta:
+        return float(np.radians(meta["approach"]["heading_deg"]))
     return float(np.radians((meta.get("robot_start") or {}).get("yaw_deg", 0.0)))
+
+
+def target_surface(meta):
+    """The scene_meta surface the target object stands on."""
+    return meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
+
+
+def surface_edge(surface, heading):
+    """Centre of the surface edge a walk-in at world yaw `heading` (radians) meets, the unit walk-in axis, and the
+    edge's half length (the surface is an axis-aligned rectangle, `flat_half_extent`)."""
+    axis = np.array([np.cos(heading), np.sin(heading)])
+    reach = abs(axis[0]) * surface["flat_half_extent"][0] + abs(axis[1]) * surface["flat_half_extent"][1]
+    half = abs(axis[1]) * surface["flat_half_extent"][0] + abs(axis[0]) * surface["flat_half_extent"][1]
+    return np.asarray(surface["xy"][:2], dtype=float) - axis * reach, axis, float(half)
 
 
 def near_edge(meta):
     """Centre of the target surface's edge facing the walk-in, and the unit walk-in axis."""
-    surface = meta["surfaces"][meta["objects"][meta.get("target_object") or "blue_crate"]["surface"]]
-    heading = approach_heading(meta)
-    axis = np.array([np.cos(heading), np.sin(heading)])
-    reach = abs(axis[0]) * surface["flat_half_extent"][0] + abs(axis[1]) * surface["flat_half_extent"][1]
-    return np.asarray(surface["xy"][:2], dtype=float) - axis * reach, axis
+    edge, axis, _half = surface_edge(target_surface(meta), approach_heading(meta))
+    return edge, axis
 
 
 def initial_robot_xy(meta, distance):

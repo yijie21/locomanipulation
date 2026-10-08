@@ -93,7 +93,7 @@ scene:
 
 # the collection stack. no_encoder is false: without the encoder the deploy silently drops the
 # planner's arm and crouch references, which is what a scripted expert steers with
-images:  # which renderer draws the policy's pictures, in the dataset and the closed loop alike: mujoco | isaac (isaac needs backend.render offline, the scene's Isaac stage and a second card; docs/warehouse.md §4)
+images:  # which renderer draws the policy's pictures, in the dataset and the closed loop alike: mujoco | isaac (isaac needs backend.render offline, the scene's Isaac stage and a second card; docs/warehouse_design.md §4)
   source: mujoco
 backend:
   no_encoder: false
@@ -157,7 +157,7 @@ eval:
     eval_parallel: false
     sonic_dds_domain: null
     lockstep:
-      enabled: false
+      enabled: true
       ack_timeout: 5.0
       warmup_ticks: 60
       cmd_delay: 0
@@ -175,13 +175,15 @@ eval:
   stall_abort_s: 0.0
   rounds: 100
   seed: 6000
-  client: blocking  # the crate evaluator implements only this; it refuses any other value
+  client: lockstep  # every VLA evaluation runs lockstep since 2026-09-28: the world waits for rendering and inference
   replan_interval: 0.4
   execution_horizon: 16
   policy_port: 5700
   stand_retries: 1
   latency_dist: null
-  latency_frames: null
+  latency_frames: 2  # the calibrated target model: 2 frames of inference, the old chunk continued meanwhile
+  camera_frames: 0
+  gap: continue
   restart_deploy: true
   resume: false
   force_resume: false

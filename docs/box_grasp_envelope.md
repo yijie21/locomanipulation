@@ -5,15 +5,15 @@
 
 ## 1. 默认版本
 
-`configs/experiments/box_platform_default_20260927.yaml`，场景名 `box_platform`（`configs/scenes.yaml`）：
+`configs/experiments/box_platform_default_20260928.yaml`，场景名 `box_platform`（`configs/scenes.yaml`）。2026-09-28 起双臂采集默认用 compact 准备手臂（用户定，DECISIONS 同日）；此前的 quick 版是 `box_platform_default_20260927`：
 
 | 项 | 值 | 来源 |
 |---|---|---|
 | 场景 | 蓝地板 + 10 cm 实心台 + 纸箱 0.45（宽）× 0.32（长）× 0.60（高）m，1 cm 壁、1.2 kg、摩擦 1.4，贴台边、偏角 0，无障碍物 | 扫参中心格；箱子物理与 warehouse 纸箱相同 |
-| 专家 | warehouse 的 visual 专家（`box_room_grasp_200_cap120_20260925` 的全部旋钮）+ `ready_after_brake: quick` | 刹车后准备手臂 13.3 → 7.9 s，成功率不变（26/60 vs 28/60） |
+| 专家 | warehouse 的 visual 专家（`box_room_grasp_200_cap120_20260925` 的全部旋钮）+ `ready_after_brake: compact`（抬臂 1.5 s、不保持、重锚后 0.3 s） | 刹车后准备手臂 13.3 → 7.9 s（quick）→ 4.9 s（compact，房间四边 17/40 vs quick 19/40，配对 p = 0.83） |
 | 每局随机 | 起点离台边 0.6–2.0 m、朝向 ±20°、横移 −8～0 cm | 第 2 步各维单独测出的范围 |
 | 判据 | 抬起 + 躯干直立 + 保持 1 s（`retreat_distance 0`） | 用户 2026-09-26 定 |
-| 实测 | 全维度同时随机 **24/60 = 0.40**（区间 0.29–0.53），四种箱子几何 6/15、5/15、3/15、10/15 | `box_range_quick_*_20260927` |
+| 实测 | 全维度同时随机 **24/60 = 0.40**（区间 0.29–0.53，quick 版），四种箱子几何 6/15、5/15、3/15、10/15；compact 版在台上没单独测 | `box_range_quick_*_20260927` |
 
 ```bash
 . scripts/paths.sh && export PYTHONPATH="$LOCOMANI_ROOT/src"
@@ -21,14 +21,14 @@ export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"  
 # 场景只建一次（命令同 configs/scenes.yaml 里 box_platform 的 build）
 "$VENV_SIM_PY" -m locomani.tasks.crate.box_platform_scene outputs/scene/box_platform --width 0.45 --length 0.32 --height 0.60
 # 采集（两个终端：起栈 / 跑专家），再从 trace 事后渲录像，写 <run>/videos/
-bash scripts/start_stack.sh collect       configs/experiments/box_platform_default_20260927.yaml --gpu 0
-bash scripts/bimanual/run_agent_server.sh configs/experiments/box_platform_default_20260927.yaml --gpu 0
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/box_platform_default_20260927
+bash scripts/start_stack.sh collect       configs/experiments/box_platform_default_20260928.yaml   # 并行通道数按空闲资源定，见 running.md §6
+bash scripts/bimanual/run_agent_server.sh configs/experiments/box_platform_default_20260928.yaml
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/box_platform_default_20260928
 ```
 
 成功局样片：`outputs/videos/box_range_quick_20260927.zip`（24 段，quick，全维度随机）、`outputs/videos/box_safe_range_20260927.zip`（11 段，扫参里按维度挑的）。
 
-出训练数据、训练和评测：命令与核对表同 [warehouse §5–§6](warehouse.md#6-训练与评测)（把 `my_box` 换成本运行）。图像两种都能选（`images.source`）：`mujoco` 补渲用 `scripts/render_dataset_cameras.sh`、评测时 sim 自己出图；`isaac` 另要本场景的 Isaac stage（`configs/scenes.yaml` 里 `box_platform` 的 `isaac.build`，从 MJCF 的盒子生成，另加一块 MuJoCo 没画的灰地面）、补渲用 `_isaac.sh`、评测开镜像，`backend.render` 保持 `offline`。`eval.initial_token` 用 `configs/deployment/warehouse_initial_token.json`（本配置 60 局的开局手臂与它差 ≤ 0.03 rad，与 crate 那份差 0.6 rad）。判据 `retreat_distance 0`，闭环没有"后退"一列。冒烟：`box_platform_isaac_smoke_20260927`（采集 → Isaac 补渲 → convert → Isaac 录像 → 镜像 50/50）。
+出训练数据、训练和评测：命令同 [warehouse runbook](warehouse.md) 第 3–6 步（把 `warehouse_smoke` 换成本运行），评测前的核对表见 [warehouse 详解](warehouse_design.md#5-评测前要核对的几项)。图像两种都能选（`images.source`）：`mujoco` 补渲用 `scripts/render_dataset_cameras.sh`、评测时 sim 自己出图；`isaac` 另要本场景的 Isaac stage（`configs/scenes.yaml` 里 `box_platform` 的 `isaac.build`，从 MJCF 的盒子生成，另加一块 MuJoCo 没画的灰地面）、补渲用 `_isaac.sh`、评测开镜像，`backend.render` 保持 `offline`。`eval.initial_token` 用 `configs/deployment/warehouse_initial_token.json`（本配置 60 局的开局手臂与它差 ≤ 0.03 rad，与 crate 那份差 0.6 rad）。判据 `retreat_distance 0`，闭环没有"后退"一列。冒烟：`box_platform_isaac_smoke_20260927`（采集 → Isaac 补渲 → convert → Isaac 录像 → 镜像 50/50）。
 
 ## 2. 参数定义与符号
 
@@ -40,8 +40,11 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 | 起点离台边 | `task.visual.start_edge_min / start_edge_max` | 骨盆到台边 |
 | 起点朝向 | `task.visual.start_yaw_range_deg` | 相对走入轴，左转为正；走近时专家仍命令走入轴 |
 | 起点横移 | `task.visual.start_lateral_range` | 相对箱子中线，机器人在**左侧**为正；guard 走法不修横向 |
+| 走入哪条边（四边线） | `task.visual.start_edges` | `xm/xp/ym/yp` = 台子的 −x/+x/−y/+y 边，每局均匀抽一条；箱子随之搬到该边（离边距离和相对走入方向的偏角不变）。要场景带 `surfaces.A.edges`（`warehouse_box_45x*`） |
+| 箱子沿边位置 | `task.visual.object_along_range` | 边留给箱子的半长（边半长 − 箱半宽）的比例，−1～1，走入方向左侧为正；起点跟着平移，所以横移仍相对箱子中线 |
+| 起点离障碍余量 | `task.visual.start_clearance` | 四边线：起点离台边的上限 = 该边空地 `clear_m` − 此值（默认 0.25 m） |
 
-每局的实抽值写在 manifest 的 `placement` 里（`start_yaw_offset_deg`、`start_lateral_m`、`object_setback_m`、`object_yaw_offset_deg`）。
+每局的实抽值写在 manifest 的 `placement` 里（`start_yaw_offset_deg`、`start_lateral_m`、`object_setback_m`、`object_yaw_offset_deg`；四边线另有 `edge`、`object_along_m`）。
 
 ## 3. 成功率随参数的变化
 
@@ -112,7 +115,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 按这套取值的产出率约 0.40–0.45；要 200 集成功局约 450–500 局，5 个实例并行约 1 小时（不录制 RTF 0.97–0.98）。
 
 **搬回 warehouse 房间前先核一次**：同样的箱子几何在房间里（0.37 m 托盘）基线 26%，这里 43%，差在哪没查（台高、房间、或别的）；
-房间里的默认参数仍是 `box_room_grasp_baseline_20260924`（[warehouse](warehouse.md) §2）。
+2026-09-28 起 warehouse 的默认采集（`warehouse_smoke` / `warehouse_200`）是四边随机；2026-10-03 起默认换成 mars 机器人的 `warehouse_mars_smoke` / `warehouse_mars_200`，只走 −y 边（`start_edges: [ym]`），其余范围不变。四边线每项取 §3 里单独成功率 ≥ 30% 的区间（比上表宽：setback 0–2.5 cm、偏角 0～+3.5°），纸箱 45×32×33，房间里 17/40；只从一个地方开始的是 `*_fixed_start`（[warehouse](warehouse.md) §2）。
 
 ## 5. 专家层面试过什么（2026-09-27，中心格，基线 28/60 = 0.47）
 
@@ -130,6 +133,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 | 壁厚 20/30 mm | 场景 | 14/30、27/60；脱手 27 → 7–10% 但卡住 12 → 22–30% | 说明抓持侧可消、落点侧是上限 |
 | 刹车后快速准备手臂 | `ready_after_brake quick` | 26/60，每局省 5.4 s | **默认** |
 | 再压到 5.8 s | `ready_blend/hold/reanchor_*_seconds` | 23/60，单调下降 | 否 |
+| compact（2026-09-28，房间四边） | `ready_after_brake compact` | 17/40 vs quick 19/40（配对 p = 0.83），准备 8.7 → 4.9 s；再去掉刹车后重锚 14/40、2.7 s | **默认**（去重锚：否） |
 
 多次对照里"卡住"和"脱手"的比例互换而总数不变，说明有一批边缘抓取局在两者之间摇摆，看成功率时应合并计。
 
@@ -138,5 +142,5 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 CUDA_VISIBLE_DEVICES=0 "$VENV_SIM_PY" scrip
 - 扫参文件：`configs/sweeps/box_envelope_s1_20260926.yaml`（几何网格）、`box_envelope_s2_20260926.yaml`（逐维链）；跑法见 [scene_sweep](scene_sweep.md) §3；
   报告 `outputs/sweeps/box_envelope_s{1,2}_20260926/report.md`，逐局 `outputs/runs/box_envelope_*`。
 - 专家 A/B：`configs/experiments/box_centre_*_20260927.yaml`、`box_{lat,yaw}*_20260927.yaml`，对比脚本 `outputs/ab_expert_20260927/compare.py`。
-- 新几何：`box_platform_scene --width/--length/--height [--wall]`，再按 `configs/experiments/box_platform_default_20260927.yaml` 改 `scene.dir`。
+- 新几何：`box_platform_scene --width/--length/--height [--wall]`，再按 `configs/experiments/box_platform_default_20260928.yaml` 改 `scene.dir`。
 - 未做：横移方案 B（斜线走近）、下探期位移闸门（②b）、箱子偏角敏感的根因、③ 是否设默认。编号见 `TODO.md` 第 6 节。

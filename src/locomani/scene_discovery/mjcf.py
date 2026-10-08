@@ -1,4 +1,4 @@
-"""Collision and inertia numbers for a scene file's MuJoCo build (TODO 9.6.5); the XML is written by the script.
+"""Collision and inertia numbers for a scene file's MuJoCo build (TODO 19.6.5); the XML is written by the script.
 
 The build follows `scripts/build_mujoco_scene.py`: the room is scenery (no contact), and contact comes from
 simple shapes. A support surface is a 2 cm slab whose top is the surface top, so whatever rests on it rests at

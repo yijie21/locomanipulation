@@ -1,6 +1,6 @@
 # VLA 闭环评测：Isaac 渲图时冻结世界（lockstep + 模拟推理延迟）计划
 
-状态（2026-09-27）：**计划，未开工**。任务编号 [TODO](../../TODO.md) 4.7.11；相关的过渡修复是 4.7.6.1.2.11（blocking 客户端补帧），
+状态（2026-09-27 晚）：**已实现**，W1、W2 验收通过；W0 / W3 / W4 的对照结果见第 10 节。原计划 W0 排第一，实施按 W1 → W2 → W0 → W3 → W4 → W5：W0 要在双臂 lockstep 客户端（W1）上跑，唯一的 checkpoint 用 Isaac 图训练，也要先有 W2。任务编号 [TODO](../../TODO.md) 4.7.11；相关的过渡修复是 4.7.6.1.2.11（blocking 客户端补帧），
 一致性闸门是 4.7.9.8。Isaac 镜像本身的状态见 [镜像状态索引](isaac-vla-mirror-20260925.md)，lockstep 的原始设计与校准见
 [archive/lockstep.md](../archive/lockstep.md)。
 
@@ -127,3 +127,66 @@ bring-up 时六个不报错的坑（archive/lockstep.md）在这里同样适用�
   分析脚本 `eval/analysis/rounds_table.py`，台账 [crate.md](../ledger/crate.md) 2026-09-27 末节。
 - Isaac 渲染耗时：同上镜像日志（按需 p50 95.5 ms）；数据集补渲 `isaac_dataset_render.log`（197 集中位 69.8 ms）。
 - lockstep 设计、校准与坑：[archive/lockstep.md](../archive/lockstep.md)；单臂 blocking 三修复：[bottle 台账](../ledger/bottle.md) 2026-08-31。
+
+## 10. 实施记录（2026-09-27）
+
+### 改了什么
+
+| 工作项 | 位置 | 内容 |
+|---|---|---|
+| 第 0 步（过渡） | `tasks/crate/vla_rounds.py` `GapFeeder` | 墙钟 blocking 循环在等图 + 推理时续发正在执行那块的后续帧（单臂 2026-08-31 的 gap feeder），`eval.gap: continue` 为默认，`hold` 保留旧行为 |
+| 公共判分 | `vla_rounds.RoundScore` | 每块一次的判分、trace 行、后退、失败分类，墙钟与 lockstep 共用；墙钟的计时仍按墙钟秒 |
+| W1 | `tasks/crate/vla_lockstep.py`；`pipeline/eval_crate_closed_loop.py`（`client` 接受 `blocking` / `lockstep`，下发 `gap` / `latency_*` / `camera_frames`）；`tasks/crate/prepare.eval_backend`（`lockstep.enabled` 随 `client`） | 按 tick 的局前准备（摆放 20 + 站立 150 + token 姿态 150 tick，第一次 reset 前先站 250 tick）；每次推理带 `policy.seed` |
+| W2 | `pipeline/eval_config.py`（去掉 lockstep + isaac 的拒绝，单臂评测器仍拒绝）；`backends/sonic/lockstep_sim.py`（offline 时 step 回复不渲图、回复带 `priv_seq`、空闲时每 0.5 s 重发最新特权状态）；`sim/isaac/mirror.py`（`render` 可带 `seq`，只渲这一条）；`backends/sonic/vla_obs.py`（`build(images=, seq=)`、`settle_proprio`） | 图与本体状态取同一个冻结时刻 |
+| W3 | `EvalConfig.gap` / `camera_frames`；`vla_lockstep.Latency`；`vla_lockstep latency-dist`（从墙钟 traces 生成分布，`--inference-only` 扣掉渲染） | 间隙续走旧块 L + C 帧，新块从第 L + C 号接入 |
+
+bring-up 中查出并修掉的三处 lockstep 老化（2026-09-02 之后没人跑过 lockstep）：
+
+1. `lockstep_vendor` 还在 `src/teleop_free/`，没人把它放进路径，lockstep sim 起来就 `No module named 'lockstep_vendor'`（唯一的测试自己加了路径所以一直过）→ 挪进 `locomani/backends/sonic/lockstep_vendor/`。
+2. 起栈总给 deploy 传 `--planner-file`，`--sim-lockstep` 的 deploy 拒绝（`does not permit a planner model`）→ lockstep 下不传。
+3. offline 的 lockstep sim 在第一个 tick 前不建特权发布器和 episode 服务器，而起栈等 `[episode] :`、镜像等第一条状态，第一个 tick 又要等它们 → 死锁；runner 开始服务前先建好并发一条，空闲时重发。
+
+### W1、W2 验收
+
+| 项 | 结果 |
+|---|---|
+| W1 站立 250 tick 后 reset，token 姿态到位 | 通过：热身局和每一局的 `[stand]` 检查都过，每次 reset 开新 session 并重新 prime |
+| W1 同 seed 两次逐位相同（MuJoCo 图） | **不成立，原因已查明**：两次运行的局前 332 个 tick（含 reset、站立、token 姿态）qpos/qvel 逐位相同，第一次观测的本体状态相同、ego 图相同，只有左右腕图差 1 个灰度级，策略由此给出差一个量化步（1/16）的 token，之后分叉。策略服务端对同一观测 + 同一 seed 逐位相同（三次）。离线复现：MuJoCo 默认 4× 多重采样下同一状态在**同一进程**里渲三次，腕图就差 1–2 个灰度级；`vis.quality.offsamples = 0` 时进程内、跨进程都逐位相同。没有改渲染设置（会让评测图与训练图不同） |
+| W1 每个周期 | 18 帧 = 36 tick，特权 seq 与 deploy 状态序号每周期各进 36（两次请求之间世界不动） |
+| W2 图 seq = 冻结时刻 seq | **84/84** 个块相等；渲染 p50 86.8 ms（最大 109）不再计入世界时间；镜像在冻结的 sim 上拿到第一条状态（空闲重发） |
+
+证据：`outputs/runs/ls_w1_mujoco_{a,b,c,d}_20260927`、`ls_w2_isaac_20260927`；比对脚本与观测转储在 `outputs/lockstep_eval_20260927/`（`same_rounds.py`、`diff_obs.py`、`render_determinism.py`、`seed_probe.py`、`obs_c|obs_d/`）。
+
+### 10 局对照（W0 / W3 / 第 0 步，checkpoint-5000，seed 6000–6009，Isaac 图，`budget_s` 90）
+
+| 臂 | 时钟与间隙 | 结果 | 失败 | 后退一列 | 每块跳帧 |
+|---|---|---|---|---|---|
+| `box_room_grasp_200_cap120_20260925`（原有） | 墙钟，`hold` | 9/10 | close 1 | timeout 9 | 4 帧 634、3 帧 46、5 帧 32 |
+| `wc_continue10_20260927` | 墙钟，`continue`（第 0 步） | 8/10 | close 2 | timeout 6、dropped 2 | 4 帧 415、5 帧 314 |
+| `ls_w0_replica10_20260927` | lockstep，`hold`，延迟按墙钟实际跳帧分布（W0 复刻） | 8/10 | reach 1、close 1 | timeout 6、dropped 2 | 4 帧 717、3 帧 34、5 帧 24 |
+| `ls_w3_target10_20260927` | lockstep，`continue`，L = 2、C = 0（目标模型） | 9/10 | close 1 | timeout 9 | 2 帧 811 |
+
+两两配对的不一致局都是 1–2 局，McNemar p = 1.0：10 局分不出差别，结论等 100 局。
+
+**第 0 步的代价**：墙钟下续发线程和观测构建、推理请求在同一个 Python 进程里抢 GIL，观测 + 推理的中位从 70 ms 升到 94 ms
+（延迟 p90 175 → 201 ms），新块从第 5 帧接入的比例从 5% 升到 43%。间隙里参考连续了，但间隙本身长了约一帧。
+lockstep 下没有这个问题（间隙按帧数定）。
+
+### 100 局对照（seed 6000–6099，其余同上；W0 校准与 W4）
+
+| 臂 | 时钟与间隙 | 结果（Wilson 95%） | 失败 | 抬起后 | 每块跳帧 |
+|---|---|---|---|---|---|
+| `wc_hold100_20260927` | 墙钟，`hold`（2026-09-27 之前的循环） | **81/100**（0.72–0.87） | close 11、reach 8 | timeout 69、dropped 12 | 4 帧 7343、3 帧 547、5 帧 266 |
+| `ls_w0_replica100_20260927` | lockstep 复刻墙钟（`hold`，墙钟跳帧分布） | **83/100**（0.74–0.89） | close 11、reach 5、walk 1 | timeout 69、dropped 13 | 4 帧 7079、3 帧 507、5 帧 336 |
+| `ls_w3_target100_20260927` | lockstep 目标模型（`continue`，L = 2、C = 0） | **88/100**（0.80–0.93） | close 7、reach 5 | timeout 72、dropped 15 | 2 帧 8687 |
+| `wc_continue100_20260927` | 墙钟，`continue`（第 0 步） | **83/100**（0.74–0.89） | close 11、reach 6 | timeout 65、dropped 15、budget 3 | 4 帧 3993、5 帧 3928 |
+
+**W0 校准通过**（沿用 2026-09-02 的判据：McNemar p > 0.05、成功率差 ≤ 8 点、失败构成各项差 ≤ 10 点）：墙钟 81 对 lockstep 复刻 83，
+同 seed 不一致 14 : 16，p = 0.86；失败构成 close 11 : 11、reach 8 : 5、walk 0 : 1；抬起后的掉落 12 : 13。2026-09-02 那次（单臂 flow200，46 vs 32，p = 0.049）
+的"lockstep 停得远"签名这里没有：到箱最近距离中位 0.344 / 0.337 m，最近距离 > 0.55 m 的失败局 1/19 / 3/17（那次 50/68）。
+那次的 lockstep 每局 reset 后 deploy 清空观测历史而墙钟不清，且两臂的 deploy 状态不同（见 archive/lockstep.md）；这次两臂都是干净 deploy、同一二进制、同一 Isaac 图，
+lockstep 的冻结与模拟延迟在这个 checkpoint 上复现了墙钟的成绩。所以下面 lockstep 的数字可以当作"同一时间模型下墙钟会得到的数字"来读。
+
+**W4（目标模型 vs 现状）**：88 vs 81，同 seed 不一致 11 : 18，p = 0.27——方向是目标模型好 7 点，100 局判不动。
+失败构成里少掉的是 close（11 → 7）和 reach（8 → 5）。第 0 步（墙钟补帧）83 vs 81，不一致 12 : 14，p = 0.85：参考连续了，但续发线程让观测 + 推理从 70 ms 升到 95 ms、新块一半从第 5 帧接入，净效应为零；墙钟下它不是改进，默认值保留 `continue` 只因它不再让参考定住。延迟从"观测 + 渲染 + 推理"约 4 帧降到"推理"2 帧、间隙里参考连续，两者的效应在这里分不开（要分开得加一臂 lockstep `hold` + L = 2）。
+

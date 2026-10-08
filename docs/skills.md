@@ -157,7 +157,7 @@ $PY scripts/injection_report.py --plan <plan run> --agent <agent run> --out outp
 - 2026-09-29 第一轮结果（[pick_place §13](ledger/pick_place.md)）：`move_target` 横向 0.17 m 被 `grasp_single` 吸收（它开始时按物体当前位姿重规划），
   沿桌沿 0.60 m 才有效；配对 10 局 plan 0/10、agent 0/10 但 agent 5/10 重新抓起，之后全部在持罐转向时掉罐。
   agent 摸出来的 primitive 事实：`approach` 只修深度不修横向；`nudge` 是量化脉冲且会清 `stance`；`navigate_to` 贴桌沿停、随后的 `turn_to` 会扫桌。
-- 2026-09-29 第二轮前补的 primitive（TODO 8.3.1 / 8.3.2）：持物 `approach(goal)` 已面向同一桌沿且站位在 1.2 m 内时**不转向直接横移**（持物 `walk_to(turn_first=False)`，当时叫 `carry_to`）；
+- 2026-09-29 第二轮前补的 primitive（TODO 18.3.1 / 8.3.2）：持物 `approach(goal)` 已面向同一桌沿且站位在 1.2 m 内时**不转向直接横移**（持物 `walk_to(turn_first=False)`，当时叫 `carry_to`）；
   `navigate_to` 的点目标推到离每个台面 ≥ 0.30 m（`edge_margin`）；`turn_to` 离台面 < 0.25 m 时拒绝（`edge_clearance`）；`nudge` 重新量 stance 而不是清掉；
   空手 `approach` 站位偏离走近线 > 0.12 m 时先横移到站位后 0.6 m 的引导点再走。系统提示加了一条：session 快照是本体感觉、场景是真值，冲突时先 `release` 再继续（8.4.2）。
 - `--until-injected N`：跑到 N 次注入触发为止（`--rounds` 变成上限），配对数不再被基线抓取率砍半（8.4.1）。

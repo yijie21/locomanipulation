@@ -15,8 +15,18 @@
     "reason": "serves the checkpoint itself when not given --attach; same gr00t venv boundary as run_vla_server"
   },
   {
+    "source": "src/locomani/pipeline/eval_crate_closed_loop.py",
+    "interpreter": "venv_sim",
+    "reason": "NOT a venv boundary: tasks.crate.vla_rounds runs in the same venv. It is spawned because it must run inside the environment of the stack this evaluator restarts between batches, and the deploy restart is what that isolation is for. Converting it needs a crate checkpoint to verify against; none exists on disk (2026-09-22)"
+  },
+  {
     "source": "src/locomani/stack/manager.py",
     "interpreter": "venv_sim",
     "reason": "the stack's own children (sim, deploy) are long-lived services with their own environment and lifetime, started once and outliving the process that starts them; not a stage calling a function"
+  },
+  {
+    "source": "src/locomani/sim/render_third_person.py",
+    "interpreter": "venv_sim",
+    "reason": "--side-by-side renders a missing MuJoCo half with scripts/render_trace_videos.py in .venv_sim; this process runs in the renderer's venv (RENDER_PY for Isaac's Kit, BRIDGE_PY for Unreal), so a venv boundary"
   }
 ]

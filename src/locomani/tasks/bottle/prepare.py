@@ -31,7 +31,9 @@ def prepare(cfg: dict, run_dir: Path) -> Path:
         source = Path(cfg["scene"]["dir"])
         source = source if source.is_absolute() else ROOT / source
         if not (source / "scene_meta.json").is_file():
-            raise SystemExit(f"no bottle scene at {source}; build it once per machine (docs/single_arm.md, section 1)")
+            raise SystemExit(
+                f"no bottle scene at {source}; build it once per machine: bash scripts/build_scene.sh bottle"
+            )
         shutil.copytree(source, scene)
     task = BottleTaskConfig.from_dict(cfg["task"])
     task.dump(run_dir / "task_config.json")
@@ -50,9 +52,13 @@ def trace_root(run_dir: Path) -> Path:
 
 
 def eval_backend(evaluation) -> dict:
-    """The eval stack's backend block, as `EvalConfig` validated it.
+    """The eval stack's backend block, as `EvalConfig` validated it, lockstep when the client is.
 
     `EvalConfig` already ties `clean_deploy` to `client == "async"`, which is exactly the pairing
-    `eval_closed_loop` installs its commander by, so this line takes the block unchanged.
+    `eval_closed_loop` installs its commander by. The lockstep client needs the sim's step server
+    and the deploy's `--sim-lockstep`, which `backend.lockstep.enabled` starts (stack/manager.py);
+    `eval_closed_loop` derives the same flag from the client, so the stack is started to match it
+    rather than trusting a second copy of the decision in the file (as the crate line does).
     """
-    return evaluation.backend.to_dict()
+    block = evaluation.backend.to_dict()
+    return {**block, "lockstep": {**block["lockstep"], "enabled": evaluation.client == "lockstep"}}

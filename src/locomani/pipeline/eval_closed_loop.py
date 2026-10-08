@@ -51,7 +51,6 @@ import dataclasses
 import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -198,7 +197,17 @@ def evaluate_run(args):
 
     # Fill in what the driver used to pass on a command line, then run the evaluation below.
     args.config = run.ev / "eval_config.json"
-    args.set_ = list(args.set_) + ["backend.dataset_fps=25"]  # the stack is pinned to the dataset's rate
+    # The stack is pinned to the dataset's rate. The lockstep clients count frames at 25 (tasks/crate/vla_lockstep
+    # RATE, latency_frames, the 1 s blends), so a dataset stored at another rate has no closed-loop evaluation
+    # here yet; it is exercised through the official-client path (src/real_robot, sim2sim) -- see
+    # docs/handoff/real-robot-sim2real-plan-20261006.md.
+    fps = run_context.dataset_fps(run.cfg)
+    if fps != 25:
+        raise SystemExit(
+            f"dataset.fps is {fps}: the closed-loop evaluation counts frames at 25 fps and would replay this "
+            "checkpoint at the wrong speed; evaluate it through the real-robot client (scripts/run_real_robot_inference.sh, sim2sim)"
+        )
+    args.set_ = list(args.set_) + [f"backend.dataset_fps={fps}"]
     args.reach_config = args.reach_config or str(run_dir / "reach_config.json")
     args.initial_token_file = args.initial_token_file or (REPO / run.cfg["eval"]["initial_token"])
     args.out = str(run.ev / "closed_loop.json")
@@ -222,6 +231,25 @@ def main(argv=None):
     return _evaluate(args)
 
 
+def instance_deploy_cmdline(instance: int) -> str | None:
+    """The command line of `instance`'s own deploy, or None when that instance has no live deploy.
+
+    Until 2026-09-28 this was `pgrep -af g1_deploy_onnx_ref` over the whole machine, so another
+    session's collection deploy (WITH its encoder, on instance 1) refused a clean evaluation on
+    instance 0 -- the bottle smoke of the documentation rewrite, the first time two stacks overlapped.
+    """
+    from locomani.stack import Stack
+
+    try:
+        pid = Stack.attach(instance).pids.get("deploy")
+    except FileNotFoundError:
+        return None
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+    except (OSError, TypeError):
+        return None
+
+
 def _evaluate(args):
     cfg = EvalConfig.load(args.config) if args.config else EvalConfig()
     if args.set_:
@@ -233,6 +261,17 @@ def _evaluate(args):
         not cfg.rtc or cfg.client != "async" or cfg.ensemble_n != 1 or not cfg.transition_decoder
     ):
         raise SystemExit("transition_commit=true requires rtc=true, client=async, ensemble_n=1, transition_decoder set")
+    if cfg.client == "lockstep" and cfg.image_source != "mujoco":
+        # The single-arm lockstep round takes its images from the step reply (MuJoCo, at the boundary); only the
+        # bimanual one asks the mirror (Isaac or Unreal) for the boundary's state (tasks/crate/vla_lockstep.py).
+        raise SystemExit(
+            f"client=lockstep with image_source={cfg.image_source} is implemented by the bimanual evaluator only"
+        )
+    if cfg.gap != "continue" or cfg.camera_frames:
+        raise SystemExit(
+            f"gap={cfg.gap!r} camera_frames={cfg.camera_frames} are bimanual-evaluator knobs; the single-arm "
+            "clients always continue the old chunk through the inference gap"
+        )
 
     if args.initial_token_file:
         initial_pose.INIT_TOKEN_FILE = str(args.initial_token_file.resolve())
@@ -245,9 +284,9 @@ def _evaluate(args):
     if not link.ping():
         sys.exit(f"no policy server on :{cfg.policy_port} -- start tools/serve_policy.py (Isaac-GR00T venv) first")
 
-    dep = subprocess.run(["pgrep", "-af", "g1_deploy" + "_onnx_ref"], capture_output=True, text=True).stdout
-    if not dep.strip():
-        sys.exit("deploy is not running -- bring the stack up with NO_ENCODER=1 bash scripts/stack/start_stack.sh")
+    dep = instance_deploy_cmdline(int(os.environ.get("INSTANCE", "0")))
+    if not dep:
+        sys.exit("deploy is not running -- bring the stack up: bash scripts/start_stack.sh eval <run-dir>")
     if "--encoder-file" in dep:
         sys.exit(
             "deploy is running WITH its encoder. Token streaming will "

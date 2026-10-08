@@ -4,7 +4,15 @@ import json
 
 import pytest
 
-from locomani.pipeline.render_dataset_cameras import MARKER, pending, renderer_of, require_rendered, unrendered
+from locomani.pipeline.render_dataset_cameras import (
+    MARKER,
+    pending,
+    rendered_fps,
+    renderer_of,
+    require_rendered,
+    serves,
+    unrendered,
+)
 from locomani.pipeline.run_context import migrate_images
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS, PlaceholderCamera, install_exporter_placeholder
 
@@ -77,6 +85,28 @@ def test_training_images_come_from_the_renderer_the_policy_is_evaluated_on(tmp_p
         require_rendered(mujoco_eval, [str(session)])
     with pytest.raises(SystemExit, match="render_dataset_cameras_isaac.sh"):
         require_rendered(isaac_eval, [str(_session(tmp_path / "fresh", {0: 5}))])
+
+
+def test_pictures_serve_a_convert_only_when_every_row_it_picks_was_drawn(tmp_path):
+    # a 50 fps render drew every row, so the 25 fps convert's even rows are there; the reverse leaves half the
+    # rows of a 50 fps dataset showing the picture before them, which trained silently before 2026-10-06
+    assert serves(50, 25) and serves(50, 50) and serves(25, 25) and not serves(25, 50)
+    session = _session(tmp_path, {0: 12, 1: 30})
+    assert rendered_fps(session) is None  # no marker: live frames
+    (session / MARKER).write_text(json.dumps({"episodes": [0, 1], "renderer": "unreal"}))
+    assert rendered_fps(session) == 25  # an Isaac / Unreal marker from before the key: the 25 fps datasets of its day
+    (session / MARKER).write_text(json.dumps({"episodes": [0, 1]}))
+    assert rendered_fps(session) == 50  # MuJoCo renders every row
+    (session / MARKER).write_text(json.dumps({"episodes": [0, 1], "renderer": "unreal", "dataset_fps": 25}))
+    assert unrendered(session, [0, 1], 25) == [] and unrendered(session, [0, 1], 50) == [0, 1]
+    offline = {"backend": {"render": "offline"}, "images": {"source": "unreal"}}
+    require_rendered(dict(offline, dataset={"fps": 25}), [str(session)])
+    with pytest.raises(SystemExit, match="rendered for a 25 fps dataset.*remove each session's meta/offline_render"):
+        require_rendered(dict(offline, dataset={"fps": 50}), [str(session)])
+    (session / MARKER).write_text(json.dumps({"episodes": [0, 1], "renderer": "unreal", "dataset_fps": 50}))
+    require_rendered(dict(offline, dataset={"fps": 50}), [str(session)])
+    require_rendered(dict(offline, dataset={"fps": 25}), [str(session)])  # a faster render serves the slower run
+    require_rendered(offline, [str(session)])  # a run copy without the block is a 25 fps run
 
 
 def test_the_converter_refuses_a_failed_round_it_was_told_to_include(tmp_path):

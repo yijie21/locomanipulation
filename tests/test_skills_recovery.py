@@ -1,4 +1,4 @@
-"""The 2026-09-29 recovery-path fixes (TODO 8.3.1 / 8.3.2): turn_to edge clearance, navigate_to edge margin,
+"""The 2026-09-29 recovery-path fixes (TODO 18.3.1 / 8.3.2): turn_to edge clearance, navigate_to edge margin,
 nudge keeping the stance, the loaded approach strafing on the same edge, the free approach fixing a lateral offset,
 and the runner's until-injected loop."""
 

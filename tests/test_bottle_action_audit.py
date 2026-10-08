@@ -10,7 +10,7 @@ def test_recorded_actions_roundtrip_through_the_deployment_layout():
     hands = np.asarray([expand_hands(g) for g in (0.0245, 0.01, -0.02)])
     result = action_contract(tokens, hands[:, 0], hands[:, 1])
     assert result["passed"]
-    assert (result["model_state_width"], result["model_action_width"]) == (53, 65)
+    assert (result["model_state_width"], result["model_action_width"]) == (46, 65)
     assert result["cameras"] == ["ego_view", "right_wrist"]
     hands[1, 1, 1] = 0  # A second independent jaw command cannot fit the 65-D policy.
     assert not action_contract(tokens, hands[:, 0], hands[:, 1])["passed"]

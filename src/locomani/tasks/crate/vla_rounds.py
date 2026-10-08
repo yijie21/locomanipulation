@@ -1,7 +1,7 @@
 """Closed-loop VLA rounds for the crate: the bimanual counterpart of vla_round.py.
 
 Runs inside a token-only stack (NO_ENCODER=1) that eval_crate_closed_loop.py
-started, one call of `run` per batch in the evaluator's process, like the visual expert. Each round:
+started, one process per batch, exactly like the visual expert. Each round:
 
   1. placement -- the visual expert's own sampling (`expert.start_placement`:
      its start pose, object jitter and yaw, along the scene's walk-in heading),
@@ -11,7 +11,11 @@ started, one call of `run` per batch in the evaluator's process, like the visual
      handed over from the posture its data starts in;
   3. blocking chunk loop -- observation (three cameras, 60-d state) -> policy
      chunk (token [40,64], left/right gripper [40]) -> `execution_horizon`
-     frames published with both hands;
+     frames published with both hands, from the frame the inference latency
+     has reached. While the loop waits for a picture and a chunk, `gap`
+     decides what the robot does: `continue` (default) keeps executing the
+     running chunk (GapFeeder), `hold` sends nothing and the deploy clamps
+     its last frame -- this line's loop until 2026-09-27;
   4. verdict -- the crate expert's own criterion (crate/evaluation.evaluate):
      rise, tilt and BOTH hands touching, sustained for two seconds; the
      bottle line's walk / reach / close failure strings otherwise. With
@@ -21,12 +25,16 @@ started, one call of `run` per batch in the evaluator's process, like the visual
 
 No privileged geometry enters the action: the policy sees only the cameras and
 proprioception; `p.obs()` is used for placement, the verdict and the trace.
+
+`--client lockstep` runs the same rounds on the simulation clock instead
+(`vla_lockstep.py`): the world stands still while the policy looks.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -41,10 +49,11 @@ from locomani.backends.sonic.vla_config import NEAR_M
 from locomani.backends.sonic.vla_obs import ObsBuilder, PolicyLink
 from locomani.backends.sonic.vla_round import latency_index
 from locomani.schema import SONIC_CRATE
+from locomani.sim.mirror import MIRRORED_SOURCES
 from locomani.sim.privileged_pub import EpisodeControlClient
 from locomani.tasks.crate.config import CrateTaskConfig
 from locomani.tasks.crate.evaluation import evaluate
-from locomani.tasks.crate.expert import start_placement
+from locomani.tasks.crate.expert import facing_edge, start_placement
 from locomani.tasks.crate.grasp_region import target_key
 from locomani.tasks.crate.retreat import CONTACT_GAP, SETTLE
 from locomani.tasks.crate.visual_approach import approach_heading
@@ -230,7 +239,168 @@ class RetreatWatch:
         )
 
 
-def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execution_horizon, dataset_fps, trace_path):
+class GapFeeder:
+    """What the robot executes while the loop waits for a picture and a chunk, under `gap: continue`.
+
+    Without it the deploy starves for the whole observation + inference (166 ms p50 with the Isaac mirror, 2026-09-27)
+    and clamps its reference on the last frame it got, then the next chunk starts four frames later: the body chases a
+    frozen reference and then a jump, where the training data's reference is continuous. The single-arm blocking
+    client fixed this on 2026-08-31 (ledger bottle.md, "blocking 客户端三修复"); this is its feeder: a thread keeps
+    publishing the running chunk's next frames at the dataset rate, holding its last, until the new chunk is in hand.
+    The main thread publishes nothing meanwhile, so the commander socket has one writer at a time.
+    """
+
+    def __init__(self, p, dt: float, low: float):
+        self.p, self.dt, self.low = p, dt, low
+        self._stop, self._thread, self._next = None, None, 0
+        self.sent = 0
+
+    def start(self, chunk, j0: int, frame_index: int) -> None:
+        """Feed `chunk` (token, left, right) from its frame `j0`, numbering from `frame_index`."""
+        tok, left, right = chunk
+        stop = threading.Event()
+        self._next, self.sent = frame_index, 0
+
+        def run():
+            j = j0
+            while not stop.is_set():
+                jj = min(j, len(tok) - 1)  # past the chunk's end: hold its last frame
+                lhj, rhj = hand_from_gripper(left[jj], self.low), hand_from_gripper(right[jj], self.low)
+                self.p.cmd.token_frame(tok[jj], right_hand=rhj, left_hand=lhj, frame_index=self._next)
+                self._next += 1
+                self.sent += 1
+                j += 1
+                time.sleep(self.dt)
+
+        self._stop, self._thread = stop, threading.Thread(target=run, daemon=True)
+        self._thread.start()
+
+    def stop(self, frame_index: int) -> int:
+        """Stop feeding; the frame index the main thread continues from."""
+        if self._thread is None:
+            return frame_index
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+        self._thread = None
+        return self._next
+
+
+class RoundScore:
+    """One round's verdict, checked once per chunk: the wall-clock loop and the lockstep one (`vla_lockstep`) share it.
+
+    `now` is whatever clock the loop runs on -- wall seconds here, simulation seconds under lockstep -- and only
+    measures the lift hold; the retreat reads the state's own simulation time.
+    """
+
+    def __init__(self, p, meta, cfg, initial, now: float):
+        self.p, self.meta, self.cfg = p, meta, cfg
+        self.key = target_key(meta)
+        self.initial, self.final, self.t_start = initial, initial, now
+        self.obj0 = np.asarray(p.object_pos(self.key, initial))
+        self.ok, self.why, self.trace = False, "[vla] timeout", []
+        self.commanded_close, self.lifted_at, self.min_dist = False, None, float("inf")
+        self.retreat = None  # RetreatWatch once the lift verdict has held, when the config asks for a retreat
+
+    def check(self, st, now: float, **row) -> bool:
+        """Score the state after one chunk; True when the round is decided. `row` joins the trace line."""
+        p, cfg, key = self.p, self.cfg, self.key
+        self.final = st
+        obj = np.asarray(p.object_pos(key, st))
+        pel = np.asarray(p.pelvis_xy(st))
+        rise = float(obj[2] - self.obj0[2])
+        dist = float(np.linalg.norm(obj[:2] - pel))
+        self.min_dist = min(self.min_dist, dist)
+        verdict = evaluate(
+            self.initial,
+            st,
+            "completed",
+            lift_height=cfg.visual.lift_height,
+            max_tilt_deg=cfg.visual.max_tilt_deg,
+            key=key,
+        )
+        self.trace.append(
+            dict(
+                t=now - self.t_start,
+                rise=rise,
+                dist=dist,
+                tilt_deg=verdict["tilt_deg"],
+                touching=verdict["touching"],
+                fallen=bool(st["fallen"]),
+                pelvis_xy=[float(v) for v in pel],
+                pelvis_yaw=float(p.pelvis_yaw(st)),
+                obj_xy=[float(v) for v in obj[:2]],
+                **row,
+                **posture(st),
+            )
+        )
+        if self.retreat is not None:
+            return self.retreat.update(st, rise, verdict["touching"])
+        if st["fallen"]:
+            self.why = "[vla] fell"
+            return True
+        if verdict["ok"]:
+            if self.lifted_at is None:
+                self.lifted_at = now
+            elif now - self.lifted_at > LIFT_HOLD_S:
+                self.ok, self.why = True, "ok"
+                if cfg.visual.retreat_distance <= 0:
+                    return True
+                self.retreat = RetreatWatch(st, approach_heading(self.meta), cfg.visual)
+        else:
+            self.lifted_at = None
+        return False
+
+    def result(self, placement, seconds: float, trace_path, **extra) -> dict:
+        """The manifest row's verdict fields; writes the per-chunk trace to `trace_path` when given."""
+        p, cfg, key = self.p, self.cfg, self.key
+        if not self.ok and self.why == "[vla] timeout":
+            moved = float(np.linalg.norm(np.asarray(p.object_pos(key, self.final))[:2] - self.obj0[:2]))
+            self.why = classify(self.min_dist, self.commanded_close, moved)
+        verdict = evaluate(
+            self.initial,
+            self.final,
+            "completed" if self.ok else "failed",
+            lift_height=cfg.visual.lift_height,
+            max_tilt_deg=cfg.visual.max_tilt_deg,
+            key=key,
+        )
+        retreat_record = None if self.retreat is None else self.retreat.record()
+        if trace_path is not None:
+            trace_path.write_text(
+                json.dumps(dict(ok=self.ok, why=self.why, retreat=retreat_record, **extra, trace=self.trace))
+            )
+        return dict(
+            ok=self.ok,
+            why=self.why,
+            retreat=retreat_record,
+            retreat_ok=None if self.retreat is None else retreat_record["reason"] == "completed",
+            placement=placement,
+            rise=verdict["rise"],
+            tilt_deg=verdict["tilt_deg"],
+            touching=verdict["touching"],
+            min_dist=self.min_dist,
+            commanded_close=self.commanded_close,
+            seconds=seconds,
+        )
+
+
+def run_round(
+    p,
+    reset,
+    obs_src,
+    link,
+    meta,
+    cfg,
+    rng,
+    *,
+    task,
+    budget_s,
+    execution_horizon,
+    dataset_fps,
+    trace_path,
+    gap="continue",
+):
+    meta = facing_edge(meta, cfg.visual, rng)  # the round's walk-in, as the collection expert draws it
     placement, why = prelude(p, reset, meta, cfg, rng)
     if why is not None:
         return dict(ok=False, why=why, placement=placement)
@@ -238,11 +408,9 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
         return dict(ok=False, why="[vla] camera/state streams never became ready", placement=placement)
 
     dt = 1.0 / dataset_fps
-    key = target_key(meta)
     low = cfg.visual.close_target  # the closed end the expert commanded, which the policy was trained on
     init_tok = initial_pose.initial_token()
     initial = p.obs()
-    obj0 = np.asarray(p.object_pos(key, initial))
     obs = obs_src.build()
     if obs is None:
         return dict(ok=False, why="[vla] observation stream dropped", placement=placement)
@@ -255,111 +423,52 @@ def run_round(p, reset, obs_src, link, meta, cfg, rng, *, task, budget_s, execut
         time.sleep(dt)
 
     t_start = time.time()
-    frame_index, commanded_close, lifted_at, min_dist = 0, False, None, float("inf")
-    ok, why, trace, final = False, "[vla] timeout", [], initial
-    retreat = None  # RetreatWatch once the lift verdict has held, when the config asks for a retreat
+    score = RoundScore(p, meta, cfg, initial, t_start)
+    frame_index = 0
+    feeder = GapFeeder(p, dt, low)
+    running = ((tok0, left0, right0), 0)  # the chunk being executed and its next frame: the blend ended on tok0[0]
     try:
         while time.time() - t_start < budget_s:
+            if gap == "continue":
+                feeder.start(running[0], running[1], frame_index)
             t_obs = time.time()
             obs = obs_src.build()
             if obs is None:
-                why = "[vla] observation stream dropped"
+                frame_index = feeder.stop(frame_index)
+                score.why = "[vla] observation stream dropped"
                 break
             image = obs_src.image_meta  # the Isaac mirror's reply header (seq, state age), None on the MuJoCo stream
             tok, left, right = link.get_chunk_bimanual(obs)
+            frame_index = feeder.stop(frame_index)
             latency = time.time() - t_obs
             skip = latency_index(latency, dataset_fps, len(tok))
             n = max(1, min(execution_horizon, len(tok) - skip))
             for j in range(skip, skip + n):
                 lhj, rhj = hand_from_gripper(left[j], low), hand_from_gripper(right[j], low)
                 if left[j] < CLOSE_THRESHOLD or right[j] < CLOSE_THRESHOLD:
-                    commanded_close = True
+                    score.commanded_close = True
                 p.cmd.token_frame(tok[j], right_hand=rhj, left_hand=lhj, frame_index=frame_index)
                 frame_index += 1
                 time.sleep(dt)
-            st = p.obs()
-            final = st
-            obj = np.asarray(p.object_pos(key, st))
-            pel = np.asarray(p.pelvis_xy(st))
-            rise = float(obj[2] - obj0[2])
-            dist = float(np.linalg.norm(obj[:2] - pel))
-            min_dist = min(min_dist, dist)
-            verdict = evaluate(
-                initial,
-                st,
-                "completed",
-                lift_height=cfg.visual.lift_height,
-                max_tilt_deg=cfg.visual.max_tilt_deg,
-                key=key,
+            running = ((tok, left, right), skip + n)
+            done = score.check(
+                p.obs(),
+                time.time(),
+                left_grip=float(left[skip : skip + n].min()),
+                right_grip=float(right[skip : skip + n].min()),
+                latency_s=round(latency, 4),
+                skip=skip,
+                gap=gap,
+                gap_frames=feeder.sent if gap == "continue" else 0,  # old-chunk frames executed while waiting
+                image=None if image is None else {k: image.get(k) for k in ("seq", "t", "state_age_s", "render_ms")},
             )
-            trace.append(
-                dict(
-                    t=time.time() - t_start,
-                    rise=rise,
-                    dist=dist,
-                    tilt_deg=verdict["tilt_deg"],
-                    touching=verdict["touching"],
-                    fallen=bool(st["fallen"]),
-                    left_grip=float(left[skip : skip + n].min()),
-                    right_grip=float(right[skip : skip + n].min()),
-                    pelvis_xy=[float(v) for v in pel],
-                    pelvis_yaw=float(p.pelvis_yaw(st)),
-                    obj_xy=[float(v) for v in obj[:2]],
-                    latency_s=round(latency, 4),
-                    skip=skip,
-                    image=None
-                    if image is None
-                    else {k: image.get(k) for k in ("seq", "t", "state_age_s", "render_ms")},
-                    **posture(st),
-                )
-            )
-            if retreat is not None:
-                if retreat.update(st, rise, verdict["touching"]):
-                    break
-                continue
-            if st["fallen"]:
-                why = "[vla] fell"
+            if done:
                 break
-            if verdict["ok"]:
-                if lifted_at is None:
-                    lifted_at = time.time()
-                elif time.time() - lifted_at > LIFT_HOLD_S:
-                    ok, why = True, "ok"
-                    if cfg.visual.retreat_distance <= 0:
-                        break
-                    retreat = RetreatWatch(st, approach_heading(meta), cfg.visual)
-            else:
-                lifted_at = None
     finally:
+        feeder.stop(frame_index)  # an exception mid-gap must not leave a thread publishing after exit_streamed
         p.cmd.exit_streamed()
         p.cmd.hold(1.0, mode=LocomotionMode.IDLE)
-    if not ok and why == "[vla] timeout":
-        moved = float(np.linalg.norm(np.asarray(p.object_pos(key, final))[:2] - obj0[:2]))
-        why = classify(min_dist, commanded_close, moved)
-    verdict = evaluate(
-        initial,
-        final,
-        "completed" if ok else "failed",
-        lift_height=cfg.visual.lift_height,
-        max_tilt_deg=cfg.visual.max_tilt_deg,
-        key=key,
-    )
-    retreat_record = None if retreat is None else retreat.record()
-    if trace_path is not None:
-        trace_path.write_text(json.dumps(dict(ok=ok, why=why, retreat=retreat_record, trace=trace)))
-    return dict(
-        ok=ok,
-        why=why,
-        retreat=retreat_record,
-        retreat_ok=None if retreat is None else retreat_record["reason"] == "completed",
-        placement=placement,
-        rise=verdict["rise"],
-        tilt_deg=verdict["tilt_deg"],
-        touching=verdict["touching"],
-        min_dist=min_dist,
-        commanded_close=commanded_close,
-        seconds=time.time() - t_start,
-    )
+    return score.result(placement, time.time() - t_start, trace_path)
 
 
 def main(argv=None):
@@ -377,7 +486,7 @@ def main(argv=None):
         "--round-offset",
         type=int,
         default=0,
-        help="number of rounds already run in this evaluation. The batch loop calls `run` once per "
+        help="number of rounds already run in this evaluation. The batch loop runs one process per "
         "batch, each numbering its rounds from zero, so without this every batch overwrote the "
         "previous batch's traces: a 100-round evaluation kept 10 of them",
     )
@@ -392,64 +501,65 @@ def main(argv=None):
     ap.add_argument("--trace-dir", type=Path)
     ap.add_argument(
         "--image-source",
-        choices=("mujoco", "isaac"),
+        choices=("mujoco", *MIRRORED_SOURCES),
         default="mujoco",
-        help="the policy's camera images: the sim's MuJoCo stream, or the Isaac mirror (EvalConfig.image_source)",
+        help="the policy's camera images: the sim's MuJoCo stream, or the Isaac / Unreal mirror (EvalConfig.image_source)",
+    )
+    ap.add_argument(
+        "--client",
+        choices=("blocking", "lockstep"),
+        default="blocking",
+        help="blocking: this loop, on the wall clock; lockstep: vla_lockstep, on the simulation clock (a lockstep stack)",
+    )
+    ap.add_argument(
+        "--gap",
+        choices=("continue", "hold"),
+        default="continue",
+        help="what the robot executes while the policy looks and thinks: the running chunk's next frames, or "
+        "nothing (the deploy clamps its last frame; this loop before 2026-09-27). EvalConfig.gap",
+    )
+    ap.add_argument("--latency-frames", type=int, help="lockstep: fixed inference latency, frames (EvalConfig)")
+    ap.add_argument("--latency-dist", help="lockstep: latency distribution JSON (vla_lockstep latency-dist)")
+    ap.add_argument("--camera-frames", type=int, default=0, help="lockstep: camera delay frames (EvalConfig)")
+    ap.add_argument(
+        "--camera-delay",
+        help="lockstep: the run's images.camera_delay as JSON; each observation's pictures show an earlier state",
+    )
+    ap.add_argument(
+        "--no-policy-seed",
+        action="store_true",
+        help="lockstep: leave the server's diffusion noise unseeded (backend.lockstep.no_seed)",
     )
     args = ap.parse_args(argv)
     if args.rounds < 1:
         ap.error("--rounds must be positive")
-    run(
-        CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig(),
-        rounds=args.rounds,
-        seed=args.seed,
-        manifest=args.manifest,
-        initial_token_file=args.initial_token_file,
-        policy_port=args.policy_port,
-        execution_horizon=args.execution_horizon,
-        budget_s=args.budget_s,
-        dataset_fps=args.dataset_fps,
-        trace_dir=args.trace_dir,
-        image_source=args.image_source,
-        clean=args.clean,
-        round_offset=args.round_offset,
-    )
-
-
-def run(
-    config: CrateTaskConfig,
-    *,
-    rounds: int,
-    seed: int,
-    manifest: Path,
-    initial_token_file,
-    policy_port: int = 5700,
-    execution_horizon: int = 16,
-    budget_s: float = 90.0,
-    dataset_fps: float = 25.0,
-    trace_dir: Path | None = None,
-    image_source: str = "mujoco",
-    clean: bool = True,
-    round_offset: int = 0,
-) -> None:
-    """One batch of rounds on the stack this process has adopted (`run_context.adopt_env`).
-
-    The evaluator calls this once per batch in its own process (2026-10-01), so what is opened here is closed
-    here: a clean clock left running would keep publishing into the next batch's restarted deploy.
-    """
-    initial_pose.INIT_TOKEN_FILE = str(initial_token_file)
+    if args.client == "blocking" and (
+        args.latency_frames is not None or args.latency_dist or args.camera_frames or args.camera_delay
+    ):
+        ap.error(
+            "--latency-frames/--latency-dist/--camera-frames/--camera-delay simulate latency on the lockstep clock only"
+        )
+    if args.client == "blocking" and args.dataset_fps != 25:
+        ap.error(f"--dataset-fps {args.dataset_fps:g}: the wall-clock loop's clean clock counts 25 fps frames")
+    initial_pose.INIT_TOKEN_FILE = str(args.initial_token_file)
+    config = CrateTaskConfig.load(args.config) if args.config else CrateTaskConfig()
     meta = json.loads(Path(paths.SCENE_META).read_text())
-    link = PolicyLink(port=policy_port)
+    link = PolicyLink(port=args.policy_port)
     if not link.ping():
-        raise SystemExit(f"no policy server on :{policy_port}")
+        raise SystemExit(f"no policy server on :{args.policy_port}")
     modalities = link.identity()["modalities"]
     for kind in ("video", "state", "action"):
         if list(modalities[kind]) != list(getattr(SONIC_CRATE, f"{kind}_keys")):
             raise SystemExit(
                 f"policy server {kind} schema differs from the crate observation contract: {modalities[kind]}"
             )
+    if args.client == "lockstep":
+        from locomani.tasks.crate import vla_lockstep
+
+        vla_lockstep.run_batch(args, config, meta, link)
+        return
     clock = None
-    if clean:
+    if args.clean:
         # Keep the deploy in streamed mode for the whole batch, on a standing token.
         # Without this every round ends with `exit_streamed()` -- a planner command --
         # so the NEXT round's 3.4 s settle runs in planner mode, where IDLE drifts at
@@ -474,17 +584,17 @@ def run(
     else:
         p = Primitives()
     reset = EpisodeControlClient()
-    obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=image_source)
-    if trace_dir is not None:
-        trace_dir.mkdir(parents=True, exist_ok=True)
-    manifest.parent.mkdir(parents=True, exist_ok=True)
+    obs_src = ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=args.image_source)
+    if args.trace_dir is not None:
+        args.trace_dir.mkdir(parents=True, exist_ok=True)
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        warm_up(p, reset, meta, config, np.random.default_rng([seed, 0xB1A5]))
-        for index in range(rounds):
-            round_seed = seed + index
+        warm_up(p, reset, meta, config, np.random.default_rng([args.seed, 0xB1A5]))
+        for index in range(args.rounds):
+            seed = args.seed + index
             started = time.time()
             # the sim's overview mp4 under SIM_VIDEO_DIR and its state trace; numbered across batches like the traces
-            label = f"crate_vla_{index + round_offset:03d}"
+            label = f"crate_vla_{index + args.round_offset:03d}"
             reset.start_video(label)
             result = run_round(
                 p,
@@ -493,24 +603,27 @@ def run(
                 link,
                 meta,
                 config,
-                np.random.default_rng(round_seed),
+                np.random.default_rng(seed),
                 task=config.prompt,
-                budget_s=budget_s,
-                execution_horizon=execution_horizon,
-                dataset_fps=dataset_fps,
-                trace_path=None if trace_dir is None else trace_dir / f"round_{index + round_offset:03d}.json",
+                budget_s=args.budget_s,
+                execution_horizon=args.execution_horizon,
+                dataset_fps=args.dataset_fps,
+                trace_path=None
+                if args.trace_dir is None
+                else args.trace_dir / f"round_{index + args.round_offset:03d}.json",
+                gap=args.gap,
             )
             reset.end_video()
             row = dict(
                 round=index,
-                seed=round_seed,
+                seed=seed,
                 task=config.prompt,
                 target=target_key(meta),
                 video=label,
                 wall_seconds=time.time() - started,
                 **result,
             )
-            with manifest.open("a") as handle:
+            with args.manifest.open("a") as handle:
                 handle.write(json.dumps(row) + "\n")
             print(
                 f"[crate-vla] round {index}: {'OK' if row['ok'] else 'FAIL'} {row['why']} ({row['wall_seconds']:.0f} s)",
@@ -518,12 +631,6 @@ def run(
             )
     finally:
         obs_src.close()
-        if clock is not None:
-            clock.stop()
-        reset.close()
-        p.close()
-        link.sock.close(linger=0)
-        link.ctx.term()
 
 
 if __name__ == "__main__":

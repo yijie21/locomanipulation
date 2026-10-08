@@ -1,4 +1,4 @@
-# Whole-path smoke: one kept episode, ten training steps, two closed-loop rounds. It tests that the
+# Whole-path smoke: two kept episodes (one held out), ten training steps, two closed-loop rounds. It tests that the
 # path runs end to end, never that the policy is any good -- every number here is the smallest one
 # that still exercises the stage, and the checkpoint it leaves is worth nothing but disk.
 #
@@ -331,9 +331,9 @@ backend:
 
 # how much to collect, and in what batches (one stack lifetime per batch)
 collect:
-  successes: 1
+  successes: 2
   batch_rounds: 2
-  max_batches: 2
+  max_batches: 3
   seed0: 40000
   instance: 0
   record: true
@@ -344,7 +344,7 @@ collect:
 train:
   steps: 10
   save_steps: 10
-  holdout: 0  # too few episodes to hold any out
+  holdout: 1
   gpus: 1
   global_batch: 64
   squat_max: 4096
@@ -368,7 +368,7 @@ eval:
     eval_parallel: false
     sonic_dds_domain: null
     lockstep:
-      enabled: false
+      enabled: true
       ack_timeout: 5.0
       warmup_ticks: 60
       cmd_delay: 0
@@ -386,13 +386,15 @@ eval:
   stall_abort_s: 0.0
   rounds: 2
   seed: 6000
-  client: async
+  client: lockstep  # every VLA evaluation runs lockstep since 2026-09-28: the world waits for rendering and inference
   replan_interval: 0.4
   execution_horizon: 16
-  policy_port: 5590
+  policy_port: 5710  # outside every instance's port block (5555-5622 for instances 0-4); 5590 is instance 1's keyboard port
   stand_retries: 0
   latency_dist: null
-  latency_frames: null
+  latency_frames: 2  # the calibrated target model: 2 frames of inference, the old chunk continued meanwhile
+  camera_frames: 0
+  gap: continue
   restart_deploy: true
   resume: false
   force_resume: false

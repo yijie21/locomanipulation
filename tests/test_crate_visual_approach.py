@@ -55,7 +55,9 @@ def test_quiet_stance_is_measured_in_physics_time_when_the_host_slows():
 
 def test_far_visible_pair_guides_approach_without_filling_occluded_markers():
     perception = CratePerception(scene_ik(), {"markers": MARKERS})
-    position = [1.35, 0.025, -0.05]
+    # far, near the top edge of the ego frame: the fixture's mars ego camera (D455, fovy 65) keeps the top pair in
+    # frame to 1.30 m; the stock camera (fovy 70) kept it to 1.45 m, and this test ran at 1.35 m
+    position = [1.25, 0.025, -0.05]
     images, joints = observation(perception, position)
     # Only the top pair is observable from the low, distant view.
     for image in images.values():
@@ -358,5 +360,8 @@ def test_facing_correction_aims_at_the_centre_or_squares_to_the_grasp_line():
 
 def test_ready_after_brake_choices():
     CrateVisualConfig(ready_after_brake="quick")
+    CrateVisualConfig(ready_after_brake="compact", reanchor_after_brake=False, ready_hold_seconds=0.0)
+    with pytest.raises(ValueError, match="reanchor_after_brake"):
+        CrateVisualConfig(reanchor_after_brake=False)  # full re-anchors in its own sequence
     with pytest.raises(ValueError, match="ready_after_brake"):
         CrateVisualConfig(ready_after_brake="fast")

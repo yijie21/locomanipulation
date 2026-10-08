@@ -9,12 +9,17 @@ import json
 import math
 import os
 import shutil
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import mujoco
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))  # `python scripts/prepare_logistics_scene.py` from the repository root
+
+from locomani.sim import make_dex1_model  # noqa: E402
+
 DEFAULT_SOURCE = ROOT / "assets/scene/logistics_room_box_v1/mujoco"
 SONIC_MESHES = ROOT / "third_party/GR00T-WholeBodyControl/gear_sonic/data/robot_model/model_data/g1/meshes"
 
@@ -48,7 +53,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir", type=Path, help="new runtime directory under outputs/")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
+    parser.add_argument(
+        "--robot",
+        default="stock",
+        choices=("stock", "mars"),
+        help="the pack carries SONIC's G1 with Dex1 (stock); mars rewrites it into the lab's real G1 "
+        "(make_dex1_model.apply_mars: kinematics, inertia, meshes, torque limits, the ego and D405 wrist cameras)",
+    )
+    parser.add_argument(
+        "--ego-camera",
+        choices=sorted(make_dex1_model.MARS_EGO_LINKS),
+        default=None,
+        help=f"mars only: which head camera is the ego view (head_camera); default {make_dex1_model.MARS_EGO_DEFAULT}, "
+        "the D455 on the pan/tilt bracket; d435_head is the D435 fixed in the face. Recorded as scene_meta.json "
+        "`ego_camera`",
+    )
     args = parser.parse_args()
+    if args.ego_camera and args.robot != "mars":
+        raise SystemExit(f"--ego-camera picks one of mars's head cameras; robot {args.robot} has one ego camera")
+    ego_camera = args.ego_camera or make_dex1_model.MARS_EGO_DEFAULT
     source = args.source.resolve()
     destination = args.out_dir.resolve()
     if destination.exists():
@@ -69,7 +92,12 @@ def main() -> int:
     world.remove(platform_geom)
     platform = ET.SubElement(world, "body", name="logistics_platform", pos="0 0 0")
     platform.append(platform_geom)
+    if args.robot == "mars":
+        make_dex1_model.write_mars()  # the meshes the scene references (and the robot model) are gitignored
+        tree = make_dex1_model.apply_mars(tree, make_dex1_model.MARS_MESHES, ego_camera)
     tree.write(runtime_xml, encoding="unicode")
+    if args.robot == "mars":
+        make_dex1_model.check_mars(str(runtime_xml))
 
     model = mujoco.MjModel.from_xml_path(str(runtime_xml))
     data = mujoco.MjData(model)
@@ -105,6 +133,8 @@ def main() -> int:
         "target_pool": ["nor_cal_box"],
         "object_phrase": {"nor_cal_box": "open cardboard box"},
         "goal_object": None,
+        "robot": args.robot,
+        **({"ego_camera": ego_camera} if args.robot == "mars" else {}),
         "robot_start": {
             "xy": model.qpos0[:2].tolist(),
             "yaw_deg": yaw_deg,

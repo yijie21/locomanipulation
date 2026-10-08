@@ -1,210 +1,105 @@
-# 单臂：从采集到评测
+# bottle：单臂抓瓶
 
-走近桌子、单手抓瓶（默认走近：手臂自然下垂、0.25 恒速、按桌边守线刹车，停后双手原地抬起再抓，`reach.simple.approach_stop`）。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
-为什么这么设计、试过什么被否掉了，在 [单臂详解](single_arm_design.md)；
-哪天跑出什么数，在 [单臂台账](ledger/bottle.md)；栈、deploy、exporter、token 等名词见 [术语表](reference/glossary.md)。
+机器人走到桌前，停稳后单手抓起桌上的水瓶。整条线只用 1 张 GPU。
+下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 12 分钟。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。耗时是 2026-09-28 照这一页实跑的结果。
+改参数、并行、重跑某一步见[运行机制](running.md)；设计和更多细节见 [bottle 详解](single_arm_design.md)；名词见[术语表](reference/glossary.md)。
 
-## 1. 准备一次
-
-先做完 [安装指南](setup.md) 第 0–4 步（采集和转换只要这些），训练和评测还要第 5 步。以下命令都在仓库根目录的 **Bash** 终端里跑。
-
-**每开一个新终端都要跑前两行**（环境变量不跨终端存活）。第三行**只在原作者机器上**要：那里默认 deploy 树
-没打夹爪补丁，不指过去时任何 collect/eval 都会在起进程之前拒跑 `needs patches/sonic_hand_ownership.patch`；
-新机器第 3 步已经打全三个补丁，不要这行（报这个错就是第 3 步没做完，或 `SONIC_DEPLOY_ROOT` 指到了别处）：
+## 0. 每个新终端先执行
 
 ```bash
 . scripts/paths.sh
-export PYTHONPATH="$LOCOMANI_ROOT/src"
-export SONIC_DEPLOY_ROOT="$LOCOMANI_OUTPUTS/bottle_continuous_20260914/deploy"   # 仅原作者机器；新机器按安装第 3 步打补丁后不要这行
 ```
 
-**每台机器只建一次场景**：
+做什么：设置路径变量，把 `src/` 加进 `PYTHONPATH`，并读入本机的 `locomani.local.sh`。下面的命令都在仓库根目录执行。
+前提：[安装](setup.md)第 0–5 步已经完成。
+
+## 1. 建场景（每台机器一次）
 
 ```bash
-SCENE_PRESET=bottle_only bash scripts/install_scene.sh          # 建 outputs/scene/sim
-"$VENV_SIM_PY" "$LOCOMANI_SRC/sim/build_sim_scene.py" \
-  "$LOCOMANI_ROOT/outputs/scene" "$LOCOMANI_ROOT/outputs/scene/sim_lowcom" \
-  --preset bottle_only --harden-pads --object-com-drop 0.05     # 建 outputs/scene/sim_lowcom
+bash scripts/build_scene.sh bottle
 ```
 
-两个场景**都要建**：`install_scene.sh` 只建前者，`bottle_simple_*.yaml` 用的是后者
-（瓶子重心下移 5 cm）。装完核对：
+做什么：重建 `outputs/scene/sim`（桌上只有一个水瓶），再在它的基础上建 `outputs/scene/sim_lowcom`（瓶子重心下移 5 cm），bottle 的实验用后者。
+得到什么：两个目录，各有 `scene_locomani.xml` 和 `scene_meta.json`；打印的内容里有 `finger pads HARDENED`。几秒钟。
+
+## 2. 采集
 
 ```bash
-"$VENV_SIM_PY" -c 'import json; print(json.load(open("outputs/scene/sim/scene_meta.json"))["target_pool"])'
+bash scripts/start_stack.sh collect configs/experiments/bottle_simple_smoke.yaml --gpu 0
+bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_smoke.yaml --gpu 0
 ```
 
-目标池里要有 `water_bottle`，`install_scene.sh` 会回显 `finger pads HARDENED`。
-用哪个场景由实验文件的 `scene.dir`（或场景名 `scene.name`，名字表 `configs/scenes.yaml`）决定，两者在 `outputs/scene/` 下并存。
+做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。第二条运行专家：一局接一局让机器人走近、抓瓶，保留成功的局；保留够 2 条后结束，并关掉仿真栈。
+得到什么：运行目录 `outputs/runs/bottle_simple_smoke/`，里面有实验文件的副本 `config.yaml`、每局成败 `collect/manifest_00.jsonl`、每局录像 `collect/videos/`。起栈约 45 秒（deploy 第一次启动还要多约 10 分钟构建 TensorRT engine）；采集约 1.5 分钟，日志 `collect_00.log` 里每局以 `EPISODE OK` 结尾。
 
-要训练的新机器（第 5 步装完后）还要跑一次 `bash scripts/link_gr00t_src.sh`——它改的是**训练 venv**
-（`third_party/Isaac-GR00T/.venv`，不是 `$VENV_SIM_PY`），把 `gr00t` 指向 `src/gr00t/`；指错时训练拒跑。
-
-## 2. 一次运行 = 一份实验文件
-
-`configs/experiments/<name>.yaml` 是**完整**的：这次运行读的每一个值都在里面，没有继承也没有组合。
-八个块——`name` + `task` / `embodiment` / `scene` / `backend` / `collect` / `train` / `eval`。
-运行开始时它被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，**下游阶段读的永远是那份副本**。
-
-现有单臂实验：`bottle_simple_200`（200 集 + 10k 步 + 100 局）、`bottle_simple_gate8_20260925`
-（8 局固定 case bank `configs/cases/`，闸门用，钉旧走近 `approach_stop: visible`；旧版 `bottle_simple_gate8` 读的 bank 在未入库的 `outputs/`）、`bottle_simple_smoke`（全链路冒烟）、`pick_place`。
-
-## 3. 新建一次实验
-
-复制一份改几行，就这样：
+## 3. 转换
 
 ```bash
-cp configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
-sed -i 's/^name: .*/name: my_line/' configs/experiments/my_line.yaml
-$EDITOR configs/experiments/my_line.yaml     # 改 §4 表里那几个字段
-diff configs/experiments/bottle_simple_200.yaml configs/experiments/my_line.yaml
+bash scripts/convert_data.sh outputs/runs/bottle_simple_smoke
 ```
 
-顶层 `name` **不缩进**；缩进的那个 `name` 是 `embodiment.name`，改错了不报错，只会让运行
-目录名不变而具身配置错掉。`diff` 出来的行就是两次运行的全部差别。
+做什么：把录制的数据转成 LeRobot 数据集，按 `train.holdout` 留出验证集，并检查数据。不用 GPU。
+得到什么：`train_dataset/`（1 条）和 `val_dataset/`（1 条）。约 30 秒。
 
-## 4. 每次都要改的字段
-
-这里只说字段**控制什么**，不复述默认值。`task`/`backend`/`eval` 的默认值查
-[配置字段表](reference/config_fields.md)；**`collect` 和 `train` 是普通 YAML、没有 dataclass，
-那张表里查不到**，它们的唯一出处是实验文件自身的注释。
-
-| 字段 | 控制什么 | 调大 / 调小意味着 |
-|---|---|---|
-| `name` | 运行目录名 | 同名重跑会接着采，换名字才是另起一份数据 |
-| `collect.successes` | **保留**多少条成功示范 | 数据量。带固定 case bank 时它退化成事后验收门槛（见 §5） |
-| `collect.batch_rounds` | 每批**尝试**几局 | 尝试预算。带 bank 时这才是真正决定跑几局的字段 |
-| `collect.max_batches` | 最多几批 | 批数上限，采不够会明确报错而不是无限跑 |
-| `collect.seed0` | 第一批的采样种子 | 换它就是换一组 case；批次号往后累加 |
-| `collect.record` | 录不录 LeRobot 数据 | `false` 只采样打分不落数据，比录制快很多 |
-| `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: bottle` 就是 `sim_lowcom`，`simple` 线的默认 |
-| `scene.cases` | 固定 case bank 文件 | 非空就是固定对照，见 §5 |
-| `train.steps` | 优化器步数 | 训练时长的主要来源 |
-| `train.save_steps` | 存 checkpoint 的间隔 | 要冒烟就让它等于 `steps`，否则一个 checkpoint 都存不下 |
-| `train.holdout` | 留几集做验证 | 必须**小于**能保留的集数，否则训练集为空。`collect.successes` 和 `batch_rounds × max_batches` 都是上限，起栈时就查；缩短运行时一起调小（0 = 不留验证集）。实际成功得更少时 convert 仍会拒绝 |
-| `eval.rounds` | 闭环评测跑几局 | 20 局只能看出"翻倍级"差异，100 局才判得动 10 个点 |
-| `eval.seed` | 评测的采样种子 | 与采集的 seed 刻意错开 |
-| `eval.policy_port` | policy server 的端口 | 默认 5590，**并行评测必须改**（见 §6） |
-| `eval.initial_token` | 交接时 deploy 举着的姿势 | **必须和训练数据的开局姿势一致**，配错 100 局全卡在 `[stand]` |
-
-## 5. 固定 case bank 的例外
-
-实验文件给了 `scene.cases` 时，"成功够了就停"（`--until-ok`）**不会**传给 gym：整个
-`batch_rounds` 预算必定跑满，`successes` 退化成事后的最低验收门槛。所以
-`bottle_simple_gate8_20260925.yaml`（带 bank）把 `successes` 改成 1 **不会**只采一集——要改的是
-`batch_rounds`。这是有意的：固定 bank 的对照要保留全部尝试，不能成功后重采样填满。
-
-## 6. 跑
-
-整条线一条命令跑完，或者一个阶段一个终端，方便中间插手工检查：
+## 4. 训练
 
 ```bash
-bash scripts/run_overnight.sh configs/experiments/my_line.yaml --gpu 0   # 整条线，无人值守
-# 采集两个终端：起录制栈（起完即退）/ 跑 agent server（专家 + 批次循环 + resume，跑完自己收栈）
-bash scripts/start_stack.sh collect         configs/experiments/my_line.yaml --gpu 0
-bash scripts/single_arm/run_agent_server.sh configs/experiments/my_line.yaml --gpu 0
-bash scripts/convert_data.sh outputs/runs/my_line              # 转换（不用卡）
-bash scripts/train.sh        outputs/runs/my_line --gpu 0      # 训练
- # 开环评测（可选，不起栈）
-bash scripts/open_loop_eval.sh --model-path outputs/runs/my_line/model/checkpoint-10000 \
-  --dataset-path outputs/runs/my_line/val_dataset --out-dir outputs/runs/my_line/eval/open_loop  
-# 闭环评测：三个终端。栈 / 策略服务 / 跑局
-bash scripts/start_stack.sh eval             outputs/runs/my_line --gpu 0
-bash scripts/run_vla_server.sh               outputs/runs/my_line --gpu 0
-bash scripts/single_arm/run_vla_inference.sh outputs/runs/my_line --gpu 0
+bash scripts/train.sh outputs/runs/bottle_simple_smoke --gpu 0
 ```
 
-**命令行只有 6 个参数**，其余一切都在实验文件里：
+做什么：用训练集微调 GR00T。
+得到什么：`model/checkpoint-10/`，日志在 `train.log`。约 1 分钟；`model/` 占约 24 GB 磁盘。
 
-| 参数 | 含义 |
-|---|---|
-| `<experiment.yaml>` | `collect` 阶段的位置参数：从哪份实验文件开一次新运行 |
-| `<run_dir>` | `convert`/`train`/`eval` 的位置参数：接着哪次运行往下做 |
-| `--gpu N` | 用哪张卡。`convert` 不需要 |
-| `--name X` | 运行目录改叫 X（副本里的 `name:` 仍是来源实验的） |
-| `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
-| `--dry-run` | 打印每个阶段将执行的命令和环境变量，**一个字节都不写** |
+## 5. 评测
 
-**开环评测不在这 6 个参数里**：`scripts/open_loop_eval.sh` 是流水线外的独立脚本，跑的是 NVIDIA 官方的
-`open_loop_eval.py`，用具名参数（`--model-path`/`--dataset-path` 传反会在加载模型前就报错），`--steps`
-按最长 episode 自动推导、不会静默截断。产出 `<out-dir>/metrics.json`（逐轨迹与平均 MSE/MAE）、`plots/`
-（每条轨迹一张图）、`run.log`。集群上训的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`；
-`train.holdout` 为 0 时没有 `val_dataset/`。指标含义见 [单臂详解](single_arm_design.md)。
+开环评测（可选）：在验证集上逐帧比较模型预测的动作和示范动作，不起仿真。
 
-**产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目且 kept 够数 / `train_dataset/` / `model/` /
-`eval/closed_loop.json`）。要重跑就**删掉它的产物**——整个续跑故事就这一条，`ls` 一眼看得见。
+```bash
+bash scripts/open_loop_eval.sh --model-path outputs/runs/bottle_simple_smoke/model/checkpoint-10 \
+  --dataset-path outputs/runs/bottle_simple_smoke/val_dataset --out-dir outputs/runs/bottle_simple_smoke/eval/open_loop
+```
 
-**并行是多开一个终端换一张卡**，没有作业文件也没有调度器——**但换卡不够，还要换两个端口**：
+得到什么：`eval/open_loop/metrics.json`（每条轨迹的 MSE、MAE）和 `plots/`。约 30 秒；冒烟模型的 MSE 约 0.04。
 
-| 端口 | 谁的 | 怎么换 | 不换会怎样 |
+闭环评测：让策略在仿真里控制机器人。需要两个终端，按顺序启动：
+
+| 终端 | 命令 | 做什么 | 怎么算好了 |
 |---|---|---|---|
-| 29500 | torchrun（`train.sh`） | `export PORT=29540` | `EADDRINUSE`（端口 29500），train 阶段直接挂 |
-| 5590 | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use`，eval 起不来 |
+| 1 | `bash scripts/start_stack.sh eval outputs/runs/bottle_simple_smoke --gpu 0` | 起评测用的仿真栈（lockstep 时钟，不录制） | 命令返回 |
+| 1 | `bash scripts/run_vla_server.sh outputs/runs/bottle_simple_smoke --gpu 0` | 策略服务：加载 checkpoint，收观测、回动作 | 打印 `listening`；一直运行，评测结束后按 Ctrl-C |
+| 2 | `bash scripts/single_arm/run_vla_inference.sh outputs/runs/bottle_simple_smoke --gpu 0` | 逐局重置场景、让策略控制机器人、记录成败 | 跑完 `eval.rounds` 局后关掉仿真栈并退出 |
 
-两个都**不是每卡一个**，是进程范围的 TCP 端口；采集阶段不受影响（端口按 instance 偏移）。pid 也共享：
-上限 3840，开销几乎全在 exporter（实测 sim + deploy 仅 176），不录制的运行按 400 准入、录制的按 1800。CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 核。
+得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、录像 `eval/videos/`。起栈和策略服务各约 25 秒；两局约 7 分钟。`eval.log` 末尾打印 `closed loop: 0/2`，每局的失败原因写在 `why` 里，例如 `[vla] walk: never closer than 1.07 m`。
 
-```bash
-export PORT=29540                                                                # 终端 2 专用
-bash scripts/run_overnight.sh configs/experiments/bottle_simple_200.yaml  --gpu 0   # 终端 1
-bash scripts/run_overnight.sh configs/experiments/bottle_simple_gate8_20260925.yaml --gpu 1   # 终端 2
-cat outputs/runs/*/summary.json                                  # 比较结果
-```
+熟悉以后可以一条命令跑完第 2–5 步（不含开环评测）：`bash scripts/run_overnight.sh configs/experiments/bottle_simple_smoke.yaml --gpu 0`。已经有产物的步骤会被跳过。
 
-采集内部还有批级续跑：`collect/inputs.json` 只记完成的批次，中断的那批整批重来（半截 manifest 移到
-`interrupted_manifest_NN_*.jsonl`）。`--keep-stack` 留下的栈只给同一 run 同一模式用，别的 run 来 attach 会被拒。
+## 6. 看结果
 
-## 7. 同一套脚本的另外两条线
+路径相对于 `outputs/runs/<名字>/`：
 
-`pick_place`（右手抓罐头放进篮子）和 `bottle_visual` 用**完全一样的 `tasks/bottle/collect.py` +
-`eval_closed_loop.py`**，只差实验文件的 `task.plugin` / `task.goal` / `task.place` 和场景；命令原样适用。
-
-## 8. 产物
-
-路径相对于 `outputs/runs/<name>/`：
-
-| 路径 | 内容 |
+| 看什么 | 在哪里 |
 |---|---|
-| `config.yaml` | 实验文件的逐字节副本，这次运行的 provenance |
-| `summary.json` | 每阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
-| `stack_env.json` | 仿真栈告诉子进程的**全部**环境变量 |
-| `commands.jsonl`、`timings.jsonl` | 每个子进程的命令行与耗时 |
-| `collect/manifest_NN.jsonl`、`collect/videos/`、`collect/state_trace/` | 逐局成败与原因、第三人称录像、物理轨迹。manifest 每批一个文件；录像和轨迹整个 run 共用一个目录（栈跨批不重启） |
-| `train_dataset/`、`val_dataset/` | LeRobot 数据集（`train.holdout` 为 0 时没有验证集） |
-| `train_dataset/third_person/episode_NNNNNN.mp4` | 每集的第三人称录像，**按集号对齐**（硬链接，不占额外磁盘）。不是相机流，不进策略 |
-| `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
-| `eval/closed_loop.json`、`eval/videos/`、`eval/eval_config.json` | 闭环结果、录像、**实际交给评测器的那份配置** |
-| `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里。契约共要求 9 个路径，用下面的命令查全 |
+| 每一步的汇总（保留数、成功率、checkpoint） | `summary.json` |
+| 采集每局的成败和原因 | `collect/manifest_NN.jsonl`；日志 `collect_NN.log` 里每局以 `EPISODE OK` 或失败原因结尾 |
+| 采集录像 | `collect/videos/` |
+| 闭环每局的成败、失败阶段 | `eval/closed_loop.manifest.jsonl`；录像在 `eval/videos/` |
+| 产物是否齐全 | `python scripts/artifact_contract.py check outputs/runs/<名字> bottle_eval` |
 
-**读日志**：`collect_NN.log` 找 `EPISODE OK` 或带标签的失败原因；`train.log` 找 loss 和
-`Copying experiment config directory`（存档时的实际字样）；`eval/serve.log` 里有 `listening`
-才算 policy server 起来了。**光看退出码不算跑完**——要 `summary.json` 里有那一条、产物真的在那里：
+## 7. 常见报错
 
-```bash
-python scripts/artifact_contract.py check outputs/runs/<name> bottle_eval
-```
-
-## 9. 排错
-
-| 症状 | 原因与处理 |
+| 报错 | 处理 |
 |---|---|
-| `needs patches/sonic_hand_ownership.patch` | 要打过补丁的 deploy。按 [安装第 3 步](setup.md) 打三个 deploy 补丁并重编（不要单独打这一个），或改 `SONIC_DEPLOY_ROOT`。这个检查在**起任何进程之前**执行 |
-| `not enough headroom -- cpu/pids/gpu ...` | 资源不足时脚本**拒绝启动并说明原因**。配额打满时仿真掉墙钟，专家的计时阶段会集体失败、看起来像机器人故障 |
-| `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
-| `model/ exists` / `closed_loop.json exists` | 阶段拒绝覆盖已有产物。检查后删掉再重跑 |
-| 100 局全卡在 `[stand]` | `eval.initial_token` 和训练数据的开局姿势不一致（§4 最后一行） |
-| `sim.log` 开头有 `Robot has fallen, height: 0.199 m (not resetting; waiting for an episode reset)` | **正常，每次起栈都有**：sim 起来约 2 s、deploy 还没接管时机器人没人控制，躺到第一局重置才站起来；录像从重置开始，看不到。判断开局是否真的失败看 `collect_NN.log` 每局的 `stand drift` 行和 `[stand] ...` 失败原因 |
-| `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局；实测 2026-09-18 十局里出现一次 |
-| 栈起不来、端口被占 | 先看 §6 的两个端口；栈本身用 `python -m locomani.stack.cli status --instance N`，锁在 `$LOCOMANI_TMP/locomani_locks/` |
-| 阶段"被跳过"但你想重跑 | 删掉它的产物（§6） |
+| `not enough headroom` | 机器上的 CPU、进程数或显存不够，脚本拒绝启动。等别的任务结束，或换一张卡（[运行机制](running.md#6-并行)） |
+| `config.yaml differs from` | 同名运行的实验文件被改过。加 `--name` 换个运行名 |
+| `model/ exists`、`closed_loop.json exists` | 这一步已经有产物，脚本不覆盖。确认不要了就删掉再跑 |
+| `needs patches/sonic_hand_ownership.patch` | deploy 没打补丁，回到[安装第 3 步](setup.md#3-编译-deploy) |
+| 闭环每局都卡在 `[stand]` | `eval.initial_token` 和训练数据的开局姿势不一致 |
 
-手工起停栈用 `python -m locomani.stack.cli up|status|down --instance N`（正常流程不需要）。**录制的实例由起栈那一步决定**：`collect.record` 为真时 `run_stack.py` 给栈设 `RECORD_INSTANCE=1`，导出器就在该实例上起，两条线同一条路径（双臂闸门跑在实例 2）。并行仍按 GPU 分。
-更细的失败形态见 [隐性失败](reference/silent_failures.md)。
+更多报错见 [bottle 详解第九节](single_arm_design.md#九运行细节2026-09-28-从-bottle-runbook-移来)。
 
-## 10. 进一步阅读
+## 8. 接下来
 
-- [单臂详解](single_arm_design.md)：专家设计、控制原则、被否掉的方案。
-- [单臂台账](ledger/bottle.md)：逐轮实测数字与裁定。
-- [配置字段表](reference/config_fields.md)：字段含义与默认值以它为准。
-- [双臂](bimanual.md)：抓篮子那条线，结构与本页逐节对应。
-- [MuJoCo 仿真与 Isaac 渲染](rendering.md)：离线重渲与视频导出。
+- 完整规模：把上面命令里的 `bottle_simple_smoke` 换成 `bottle_simple_200`（200 条数据、1 万步训练、100 局评测）。采集约 300 局保留 200 条，一局约 45 秒；100 局评测约 6 小时。
+- 改参数：复制一份实验文件再改，常改的字段见[运行机制第 2 节](running.md#2-常改的字段)。
+- 同一套命令也能跑 pick-and-place（`pick_place`，右手抓罐头放进篮子），只换实验文件和场景，见 [bottle 详解第四节](single_arm_design.md#四pick-and-place-这条变体)。
+- 为什么这样设计、试过什么：[bottle 详解](single_arm_design.md)；每一轮的实测数字：[bottle 台账](ledger/bottle.md)。

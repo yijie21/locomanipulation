@@ -1,80 +1,44 @@
-# Document index
+# 历史记录与开发者索引
 
-项目功能、安装路线和首次运行示例见 [仓库 README](../README.md)。
+三条主线、通用文档、支线和台账的清单在[仓库 README](../README.md)。这一页只收 README 不列的东西：给开发者的入口，以及按时间留下的交接记录和归档。
 
-## Current development navigation
+## 开发者入口
 
-- [AGENTS](../AGENTS.md): shared entry and resource rules.
-- [Change map](reference/change-map.md): select code/configuration/tests by intent.
-- [Standards](reference/standards.md): architecture and evidence rules.
-- [Session workflow](agents/session-workflow.md): verification scope, completion and handoffs.
-- [Configuration fields](reference/config_fields.md): generated from code. [Runbook](reference/runbook.md): command reference and manual stack operation.
-- One expanded experiment file per run, one flat bash script per stage over one python module, parallelism as a second terminal: each runbook carries this for its own line, and the decisions, the byte A/B evidence and the gate still outstanding are in [the 2026-09-21 refactor](handoff/refactor-flat-bash-20260921.md). The [2026-09-16](handoff/infra-plan-20260916.md) and [2026-09-17](handoff/refactor-flat-scripts-20260917.md) refactors are history.
-- [STATE](../STATE.md): active work, with [TODO](../TODO.md) and [DECISIONS](../DECISIONS.md); [ROADMAP](ROADMAP.md): maintenance scope and status.
+- [AGENTS.md](../AGENTS.md)：改代码的共同约定，从这里开始。
+- [代码导航](reference/change-map.md)：按要改的东西找代码、配置和测试。
+- [开发规范](reference/standards.md)：模块边界、接口和配置约定、证据规则。
+- [会话流程](agents/session-workflow.md)：验证范围、完成标准和交接。
+- [文档维护规则](agents/doc-ownership.md)：每类内容写在哪一页，以及面向读者的页面怎么写。
+- [STATE](../STATE.md)、[TODO](../TODO.md)、[DECISIONS](../DECISIONS.md)：当前进度与卡点、任务账本、每次决策的理由与被否决的方案。
+- 流水线的结构（一次运行一份实验文件、每个阶段一个脚本、并行就是多开终端）怎么定下来的：[2026-09-21 重构](handoff/refactor-flat-bash-20260921.md)；更早的 [2026-09-16](handoff/infra-plan-20260916.md)、[2026-09-17](handoff/refactor-flat-scripts-20260917.md) 两次只作历史。
 
-## Documentation ownership
+## 台账
 
-Each rule has one authoritative home; other documents link to it. Humans and coding
-agents share [AGENTS](../AGENTS.md); [CLAUDE](../CLAUDE.md) points to that same contract.
+每一轮实验的实测数字和结论：[bottle](ledger/bottle.md)、[crate 与 warehouse](ledger/crate.md)、[pick-and-place](ledger/pick_place.md)、[ScaleBFM](ledger/scalebfm.md)、[Blender 场景](ledger/blender_scenes.md)、[上一次重构](ledger/refactor.md)。
 
-| Material to add or change | Owning document / update rule |
-|---|---|
-| Project overview, installation routes and feature-to-guide links | [Root README](../README.md); one row and one canonical guide per task family; keep cases and alternate commands inside that guide |
-| Shared entry or resource rules | `AGENTS.md`; keep it short and point to conditional detail |
-| Code entry, config owner, reference implementation or tests | [Change map](reference/change-map.md); maintain the affected domain row with the code |
-| Module boundaries, interface/config conventions or evidence rules | [Standards](reference/standards.md); link the rule instead of copying it into task guides |
-| Configuration fields and defaults | Owning code; regenerate [field reference](reference/config_fields.md) with `make config-doc` |
-| A term the guides use without explaining (stack, deploy, exporter, trace, token, mirror...) | [Glossary](reference/glossary.md); define it once there and link it instead of re-explaining per guide |
-| **How to run it** -- commands, their arguments, artifacts, troubleshooting | That line's runbook ([single arm](single_arm.md), [bimanual](bimanual.md)); capped at 180 lines, and it never restates a default value that the generated field table owns |
-| **Why it is built this way** -- principles, rejected alternatives, protocols | That line's design page ([single arm](single_arm_design.md), [bimanual](bimanual_design.md)) |
-| **What a run produced on a given day** -- rounds, seeds, success rates | That line's ledger ([bottle](ledger/bottle.md), [crate](ledger/crate.md)) |
-| Cross-task CLI reference, wrappers and manual stack operation | [Runbook](reference/runbook.md); the runbooks own the complete per-line recipes |
-| Verification scope, final check execution and completion criteria | [Session workflow](agents/session-workflow.md); keep Makefile and commit-hook behavior consistent |
-| Active progress, blockers and resources | [STATE](../STATE.md) (written by `/handoff` with TODO and DECISIONS); link detailed work instead of accumulating transcripts |
-| Maintenance scope and status | [ROADMAP](ROADMAP.md); link implementation and validation records |
-| Experiment claims, corrections and completed work | Task ledger or `handoff/`; preserve historical material in `archive/` with evidence links |
+## 排查线索
 
-Update an existing owning document first. Add a document for distinct detail, link it
-from its task guide or this index, and state when to read it. Separate current usage
-from dated experiments; preserve originals and link corrections when evidence changes.
-Follow [the evidence rules](reference/standards.md#evidence). Keep current rules in
-versioned documents reachable here, without requiring conversation history or private memory.
+- [隐性失败](reference/silent_failures.md)：历史上的排查线索，路径和默认值要对照代码逐项核实。
+- [F10：exporter 静默丢帧](handoff/exporter-frame-loss-20260917.md)：仍未关闭，根因没找到；也是 2026-09-17 冷启动走查 11 条发现（F1–F11）的索引。
+- [双臂评测开局的突然动作](handoff/crate-eval-prelude-twitch-20260917.md)：为什么 deploy 的第一局会先蹲下再站起，以及试过但无效的五种修法。
 
-## Task and pipeline detail — read when needed
+## 双臂可达性的历次记录
 
-| 线 | 怎么跑（采集→转换→训练→评测，一页跑完） | 为什么这么设计 | 实测数字 |
-|---|---|---|---|
-| SONIC 单臂（含 pick-and-place、bottle_visual） | [单臂](single_arm.md) | [单臂详解](single_arm_design.md) | [台账](ledger/bottle.md) |
-| SONIC 双臂（视觉抓篮、carry / wall 诊断、回放） | [双臂](bimanual.md) | [双臂详解](bimanual_design.md) | [台账](ledger/crate.md) |
-| SONIC 双臂抓纸箱（物流房间；台上默认配置 `box_platform`） | [warehouse](warehouse.md) | [默认配置、成功率随参数的变化、取值](box_grasp_envelope.md)；方法 [scene_sweep](scene_sweep.md) | [台账](ledger/crate.md) |
-| 可拼接的技能（plan 入口、`claude -p` 规划器、新物体标定） | [skills](skills.md) | [primitive 契约设计](handoff/primitive-contracts-design-20260928.md)；在其上的场景 → 自动发现任务 → 采集（进行中）：[scene_discovery 决策](handoff/scene-discovery-plan-20261002.md) | [bottle §40–41](ledger/bottle.md)、[pick_place §7–8](ledger/pick_place.md)、[crate 末节](ledger/crate.md) |
-| ScaleBFM 后端 | [ScaleBFM](scalebfm.md) | 同页 | [台账](ledger/scalebfm.md) |
+- [G1 能力包络](handoff/g1-capability-envelope-20260921.md)：[双臂前伸包络](reach_envelope.md)那张图的测量与推断。
+- [五维联合实测](handoff/g1-joint-reach-search-20260920.md)：1,277 次尝试、原生复核、倾角对照与独立复测。
+- [早期条件切片](handoff/g1-reachability-atlas-20260920.md)：最初 atlas 的覆盖范围与局限。
+- [平地 ghost 手预览](handoff/g1-reachability-preview-20260920.md)：可达实验的环境和采样范围，只展示目标分布。
+- [14 组动态伸手](handoff/g1-ghost-reach-execution-20260920.md)：6 组成功，8 组在伸手阶段超时；[初始化诊断](handoff/g1-startup-jump-diagnosis-20260920.md)确认了初始化缺陷。
+- [修正重置后的同 14 组重跑](handoff/g1-ghost-reach-fixed-reset-repeat-20260920.md)：4 组成功、9 组超时、1 组初始化倒地，启动同步问题当时没有解决。
+- [原专家实跑与录像起点修正](handoff/g1-original-expert-task-boundary-20260920.md)：原版行走抓取成功；前一轮见[同 14 组重录](handoff/g1-shared-expert-ready-repeat-20260920.md)。
 
-三份 runbook 按同一顺序维护：**准备 → 一次运行=一份实验文件 → 新建实验 → 每次都要改的字段 → 跑 → 产物 → 排错 → 进一步阅读**。新 case 放进所属的线；新线沿用此结构。
-明确区分尝试数与成功数、视频 pilot 与训练数据，以及已实现接口与已验证学习效果。
+## 交接与归档
 
-[双臂前伸包络](reach_envelope.md)是复现 2026-09-21 边界搜索的 runbook（空地场景、`search.json`、双栈逐轮搜索、表/图/视频），[记录](handoff/g1-capability-envelope-20260921.md)里是它的测量与推断；固定站姿下的[双臂可达实验](bimanual_reachability.md)说明 ghost 验证、条件域计算和区间查询；[五维联合实测](handoff/g1-joint-reach-search-20260920.md)记录1,277次尝试、原生复核、倾角对照与独立复测；[早期条件切片](handoff/g1-reachability-atlas-20260920.md)保留原atlas的覆盖限制。可迁移双臂抓箱：[箱体边沿抓点规划](box_rim_planning.md)根据尺寸和实际停车状态生成 ghost；[仿真执行](box_rim_execution.md)说明低速接近、闭合与试提的验证边界。正式采集仍使用现有专家。
+- `handoff/`：各阶段的交接记录和计划，文件名带日期。
+- [技能的接口设计](handoff/primitive-contracts-design-20260928.md)：每个技能的前置条件、参数和返回、计划执行器（2026-09-28）。
+- [scene_discovery 决策](handoff/scene-discovery-plan-20261002.md)、[场景文件格式](handoff/scene-file-format-20261003.md)、[put_down_single 技能](handoff/put-down-single-20261003.md)：从一个场景自动发现任务、补技能、采集数据的设计和第一个新技能（2026-10-02 起）。
+- [仿真数据零样本上真机的设计](handoff/real-robot-sim2real-plan-20261006.md)：数据集 50 fps、官方推理客户端结构、Dex1 单位、`src/real_robot/` 的结构与后续任务（2026-10-06）。
+- [归档索引](archive/INDEX.md)：冻结的原始报告和被取代的入口文档，包括 2026-09-14 的[维护路线图](archive/roadmap_maintenance_20260914.md)。
+- [第一次迁移](handoff/agent-maintenance-plan.md)、[维护交付](handoff/maintenance-completion.md)、[规范审计与探针](handoff/agent-guideline-completion-20260914.md)。
 
-双臂可达实验的环境与采样范围预览见 [G1 平地 ghost hand 预览](handoff/g1-reachability-preview-20260920.md)；预览仅展示目标分布。后续 [14组动态 reach 实验](handoff/g1-ghost-reach-execution-20260920.md) 已完成，6组成功、8组超时仅指 reach 阶段；[后续诊断](handoff/g1-startup-jump-diagnosis-20260920.md) 确认初始化缺陷，整段原地要求未通过。
-
-跨线通用：[安装](setup.md)、[MuJoCo 仿真、Isaac 渲染与视频导出](rendering.md)（含[图像来源 `images.source`](rendering.md#图像来源imagessource)）、[术语表](reference/glossary.md)。
-数据集格式（LeRobot 布局与 schema）各线共用，在 [单臂详解](single_arm_design.md) 里。
-理解在线控制、状态记录和离线重渲如何衔接时，读 [渲染整体流程](rendering.md#整体流程)。
-专家设计、控制协议和对应实验从各采集指南的“进一步阅读”进入。
-
-## Historical evidence and investigations
-
-- Ledgers: [bottle](ledger/bottle.md), [crate](ledger/crate.md),
-  [ScaleBFM](ledger/scalebfm.md), [pick and place](ledger/pick_place.md), [previous refactor](ledger/refactor.md).
-- [Silent-failure notes](reference/silent_failures.md): historical troubleshooting leads; verify against code and evidence.
-- [F10: silent exporter frame loss](handoff/exporter-frame-loss-20260917.md): open, root cause not located; also the index of the 2026-09-17 cold-start walkthrough's eleven findings (F1-F11).
-- [Bimanual eval start-of-round lurch](handoff/crate-eval-prelude-twitch-20260917.md): why the deploy's FIRST round crouches and steps out of it, and the five fixes that did not work.
-- [Archive index](archive/INDEX.md): original reports and superseded entry documents.
-- [First migration](handoff/agent-maintenance-plan.md); [maintenance delivery](handoff/maintenance-completion.md).
-- [Guideline audit and probes](handoff/agent-guideline-completion-20260914.md).
-
-A newer claim or a retraction has no automatic evidentiary priority. Retain original
-records, link corrections, and state the exact scope of any newly verified observation.
-
-历史记录：G1 修正 reset 后的同14组重跑见 [本次结果与视频](handoff/g1-ghost-reach-fixed-reset-repeat-20260920.md)：当时4组reach成功、9组超时、1组初始化倒地，启动同步问题尚未解决；当前状态见上方可达实验与本轮证据。
-G1 [原 expert 实跑与任务录像起点修正](handoff/g1-original-expert-task-boundary-20260920.md)：原版行走抓取成功；当前单组reach视频3.92秒，从站稳状态直接开始，准备诊断另存。前轮证据见 [同14组重录](handoff/g1-shared-expert-ready-repeat-20260920.md)。
+较新的说法或撤回不会自动比旧记录更可信。保留原始记录，链接到更正，并写清新核实的观察适用的范围。

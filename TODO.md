@@ -233,8 +233,8 @@
     - [x] 4.7.11.4 W4 同 checkpoint、同 seed：墙钟 vs lockstep 各 10 局，再各 100 局（2026-09-28 完成：墙钟 hold 81、墙钟 continue 83、lockstep 目标模型 88，对墙钟 p = 0.27 / 0.85，100 局判不动；台账 crate.md 2026-09-27 末节）
     - [x] 4.7.11.5 W5 文档与模板（2026-09-28 完成：warehouse.md §6.1、bimanual.md §6、bimanual_design §五、rendering.md、术语表、change map、全部实验文件加 `gap` / `camera_frames`；计划第 10 节是实施记录）
     - [ ] 4.7.11.6 可选：分开两个效应——lockstep `hold` + L = 2 一臂（目标模型 88 与复刻 83 之差是"间隙续走"还是"延迟少 2 帧"）；要逐位复现就得评测图和训练图都关 MuJoCo 多重采样
-    - [x] 4.7.11.7 用户 2026-09-28 定：所有场景的 VLA 评测都走 lockstep；main `4b8180b` 已把默认改成 lockstep（loco_agent 分支未合入，`eval_config.py` 仍是 async）：待用户定：默认 `eval.client` 要不要改成 `lockstep`（校准已过；目标模型 88 vs 墙钟 81 未显著）
-    - [x] 4.7.11.8 已在 main 提交（`291cdeb`，三批合成一个提交，2026-09-28；loco_agent 分支未合入）：未提交（待用户说）：lockstep 实现（`vla_lockstep.py`、`GapFeeder`、镜像按 seq、三处 lockstep 老化修复）+ 测试 + 文档 + 115 份实验文件加 `gap` / `camera_frames`；`make check` 通过（2026-09-28）
+    - [x] 4.7.11.7 用户 2026-09-28 定：所有场景的 VLA 评测都走 lockstep；main `4b8180b` 已把默认 `eval.client` 改成 `lockstep`（见 §9；校准已过，目标模型 88 vs 墙钟 81 未显著）
+    - [x] 4.7.11.8 已提交（`291cdeb`，三批合成一个提交，2026-09-28）：未提交（待用户说）：lockstep 实现（`vla_lockstep.py`、`GapFeeder`、镜像按 seq、三处 lockstep 老化修复）+ 测试 + 文档 + 115 份实验文件加 `gap` / `camera_frames`；`make check` 通过（2026-09-28）
     - [ ] 4.7.11.9 可选：10 个只评测的运行目录 `outputs/runs/{ls,wc}_*_20260927`（每个约 120 MB）用完可删，删前按规矩在 STATE 记 24 h
 - [~] 4.8 协作者采集仍摔倒：核实用户的猜测"自编 SONIC deploy 二进制没同步到文档"（用户 2026-09-24）
   - [x] 4.8.1 静态核对（2026-09-24）：本机 9 个 deploy 二进制全部从只存在本机的 `lockstep-port` 分支编出（上游 1983e888 + 6 个未推送的本地提交 + 工作树补丁）；setup.md 的做法（clone 上游 main 不钉版本，现为 b042411，再打 4 个补丁）本机从没编过、跑过。文档版缺 SONIC_AUTO_START/`--default-motion`（每个 eval 栈都要，上游静默忽略未知参数）、DDS domain（`sonic_dds_domain.patch` 已打不上上游 main）、planner 初始化超时 10 s（上游 5 s）。已排除：SONIC 权重与 HF 逐字节一致；肩 roll 默认角两边编进去的都是 ±0.2；上游 1983e888 之后的 deploy 改动默认不改行为。MuJoCo 不钉版本，新装会是 3.14（本仓库在 3.11.0 上测）
@@ -307,102 +307,406 @@
 - [x] 6.8 双臂抓箱默认版本（用户 2026-09-27）：`configs/experiments/box_platform_default_20260927.yaml` + 场景名 `box_platform`（`outputs/scene/box_platform`），文档 `docs/box_grasp_envelope.md`，README / docs/README / warehouse §8 已索引
 - [~] 6.9 待用户定：把本会话的代码（12 个旋钮、sweep 工具、场景生成器、文档）提交；③ 是否写进默认配置；同几何房间 26% vs 台上 43% 的差异排查
   - [x] 6.9.1 扫参会话代码（12 个旋钮、`sweep.py`、`box_platform_scene.py`、30 个实验文件、两份扫参配置、文档）与 box_platform 的 Isaac stage 一起提交推送（用户 2026-09-27）
-- [x] 7 agent 可拼接的 primitive（`src/locomani/skills/`，设计 `docs/handoff/primitive-contracts-design-20260928.md`，2026-09-28；第二批见 §9b；标定项 7.7.1 / 7.8.1 / 7.8.2 于 2026-09-28 傍晚全部关闭）
-  - [x] 7.1 session / contract / profiles / scene_model / executor + 目录 7 个适配器 + 占位；`tests/test_skills_*.py` 41 个通过；未提交
-  - [x] 7.2 包出四个黑盒（2026-09-28）：approach 按 profile 分派、grasp_single、grasp_bimanual、place；双臂每拍逻辑抽到 `tasks/crate/attempt.py`；78 个测试通过，未上真栈
-  - [x] 7.3 回归（2026-09-28）：bottle plan 10 局 9/10（台账 bottle §40）；pick_place plan 冒烟 1/3（pick_place §7，`simple`+place 未标定）；warehouse plan 冒烟 1/3（crate 台账末节）；三条线管路通，warehouse 的 10 局对照 4/10 已跑（7.11）
-  - [x] 7.4 前置带宽回放（2026-09-28）：`scripts/replay_preconditions.py` + `STANCE_BANDS` / `stance_violations`；932 条已录站位（skills trace 43、bottle 采集 286、warehouse 603）上任何深度 / 横向带都不分成功与失败（bottle 深度中位 0.324 vs 0.325，warehouse 0.436 vs 0.454），带保持全开；报告 `outputs/analysis/precondition_replay_20260928/report.md`
-  - [x] 7.5 `carry_to`（2026-09-28）：冻结上身 + walk_to + 持物守卫；持瓶直走/倒退 1–2 m 漂移 < 1 cm（6/6），走动中急转 3 cm 掉（0/2），180° 转 IDLE 0/2、SLOW_WALK 4/4 → 默认 turn_first + slow_walk；台账 bottle §41。持箱未量
-  - [x] 7.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器 `skills/planner.py` + `--agent` 接线（2026-09-28 晚：JSON schema 结构化输出、每局一个会话、`agent_io_NN.jsonl`；真栈冒烟见 pick_place 台账 §8）
-  - [x] 7.7 跨位置搬运回归（2026-09-28 晚）：`walk_to` 持物走 `carry_to` 守卫；单臂 `approach` 持物 = carry 到放置带中心站位 + 原地转向 + 残差修正 + 写站位；默认 plan 加 `approach(goal)`。真栈三轮（pick_place 台账 §8）：容器进带 6/6，place 3/6；对照直接 place 0/5。place 前站位深度不是主因——`simple` 抓罐头后 place 的 carry-over / 下降伺服（7–12 cm 偏、掌系滑 3 cm）是下一个标定对象（7.10 流程），未调
-    - [x] 7.7.1 `simple` 抓罐头 + place 标定（2026-09-28 下午→傍晚，pick_place 台账 §11–12；结论见 7.7.1.1 / 7.7.1.2）：按 7.10 流程跑了三个单旋钮 pilot（`entry_lateral_tolerance` 0.015、`v_descend` 0.05 + 8 s、`entry_overshoot` 0）各 10 局，grasp 7/10、6/10、4/9 与 place 3/6、2/6、0/4 均不优于基线 6/10、3/6；trace 的 stats 表明合爪前已对准、罐心在工具点前 0.7–1.1 cm，失败在 6.1 cm 罐身与 Dex1 指垫的闭合几何和 PlannerArm 物体伺服的跟踪，旋钮够不着。`coupled` 策略（§4 10/10）没被 skills 包装（approach 抛 `walking` 缺失，现已在前置拒绝）
-      - [x] 7.7.1.1 包装 `coupled` 策略（用户定走 A，2026-09-28 下午，pick_place 台账 §12）：三处修补（`walking` 用 getattr、`walk_tick` 收关键字、approach 放行 coupled），profile `pick_place_coupled`；全程 2/10（grasp 5/10、place 2/5，持罐走动掌系滑 3.2–3.7 cm）；容差 0.05 对照 1/10（grasp 2/10，转向中掉罐 ×3）。coupled 在 skills 里带来的是"停位挑剔 + 握持转向滑"两族，不是罐头的解
-        - [x] 7.7.1.2（用户定走 A，2026-09-28 傍晚）：§4 的抓取率本来就是 10/19，coupled 差在放置侧——它从不持罐走路。coupled 原地放置 3/4（持罐走近后 2/5）；`default_plan` 对 coupled 不再插 `approach(goal)`。抓取侧 ~50% 是 coupled 自己的失败族，与 §4 一致，不属于本项
-  - [x] 7.8 `put_down_bimanual`（`catalogue/crate_put_down.py`，2026-09-28；7.8.1 / 7.8.2 傍晚关闭：站直不回拉后 8/8 放稳）：真栈 7 个样本 6 次把箱子放稳（≤ 0.7 cm、≤ 2.5°）；持箱 carry 180° 转 + 1 m 3/6（crate 台账末节）
-    - [x] 7.8.1 put_down 前送（用户定走 A，2026-09-28 下午，crate 台账末节）：新 primitive `nudge`（定时 SLOW_WALK 脉冲 + 刹停 + 量残差，持物带守卫）；三个变体 60 局：nudge 到位 13/29（0.5 s 从不冲出但单脉冲 0–12 cm；0.7 s 触发整步 21–77 cm，掉 2 摔 1），**到位后 put_down 12/13 放稳**（z ≤ 0.3 cm、倾 ≤ 0.8°）。"手仍触箱"改记指标不判失败，`back_m` 0.08。臂前送（`forward_m`）1/3 保留为参数。剩下的厘米级平移是 v1.1 planner 的量化，不在旋钮里
-      - [x] 7.8.1.1（用户定走 B，2026-09-28 傍晚）：`stand_forward_min` 0.35 → 0.50（站直时手目标留在骨盆前 0.50 m，箱子不回拉），不挪步直接放：20 局里到 put_down 的 8 局 **8/8 放稳并过判据**，抓取率 8/20 与基线同。skills `warehouse_box` profile 改读 `skills_box_fwd50_20260928.yaml`；采集线配置不动
-    - [x] 7.8.2 持箱 carry 默认走法（2026-09-28 下午）：倒退不转 8/12 vs 转 180° 3/6，但两种走法箱子都在走动中以约 2 cm/s 下滑（1 m 掉 3–9.5 cm），瓶颈是冻结上身下的捏持蠕变而非转向；默认不改（`turn_first=True`）；持箱超过 1 m 要中途重抬或带反馈的 POSE 流搬运（未立项）
-  - [x] 7.9 `navigate_to`（2026-09-28 晚）：沿 `Navigator.waypoint()` 分段走，空手朝路点、持物先 slow_walk 转再守线走；假栈 7 个测试；真栈持罐 1 局 7 段 2.57 m 漂移 0.8 cm（pick_place 台账 §10）；空手真栈未跑
-  - [x] 7.10 新物体标定流程（2026-09-28）：写在 `docs/skills.md` §5（新 profile 登记 `PROFILE_SOURCES` → `plan_episode.py --profile` 10 局 pilot → 按失败族改一个旋钮 → gate 对照 → 回放定带）；按几何自动落位仍无机制，文档里明说没有
-  - [x] 7.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）
-  - [x] 7.12 提交本会话代码（2026-09-28 晚：skills 包 + 第二批 primitive、attempt.py 提取、plan_episode.py `--agent`/`--profile`、回放脚本、docs/skills.md、台账、plan 文件；`make check` 通过）
-  - [x] 7.13 目录去重（用户 2026-10-01 定）：`carry_to` 并入 `walk_to`（持物时同名走冻结上身 + 持物守卫，持物参数空手传入拒绝），删除 `retreat`（= `hand_back` + `walk_to(relative=[-d, 0], turn_first=false)`）；目录 15 → 13，10 个 plan 文件改名并写明原 `carry_to` 的 `stop_dist` 0.08；理由见 DECISIONS 2026-10-01 第二节。`take_over` / `hand_back` 是否藏进 executor 待用户定
-  - [ ] 7.14 `navigate_to(target=物体)` 名字像"走近物体"，但走完不写站位、不能直接抓（agent 曾用它贴桌沿停、随后转身扫掉罐子）：改名，或在目录说明里写清"之后还要 approach"；用户 2026-10-03 未答，待用户定
-- [x] 8 Q11 验收：失败注入 paired 比较（agent 唯一不可替代的贡献是失败后的决策；2026-09-29 立项）
-  - [x] 8.1 注入层（2026-09-29）：`skills/injection.py`（`move_target` / `drop_held`，某 primitive 第一次成功后钉物体 0.5 s 再松开，一局一次，agent 不被告知）、`plan_episode.py --inject`、`Executor.note`、manifest 记 `seed` / `injection` / `injected`；`scripts/injection_report.py` 按 seed 配对、精确符号检验、恢复段按第一步归类；`tests/test_skills_injection.py` 6 个；注入文件 `configs/injections/pick_place_{move_target,drop_held}.json`；docs/skills.md §7
-  - [x] 8.2 注入有效性（2026-09-29）：横向 −0.17 m **无效**（`grasp_single` 开始时按当前位姿重规划，臂包络内，1/3 且失败是基线族）；沿桌沿 +0.60 m 有效（plan 臂 0/3，全在 `[grasp]`）；pick_place 台账 §13
-  - [x] 8.3 配对 10 局 `move_target` +0.60 m（2026-09-29，pick_place 台账 §13，报告 `outputs/analysis/injection_20260929/report.md`）：plan **0/10**（全 `[grasp]`）vs agent **0/10**，p = 1.0；但 agent **5/10 重新抓起**（决策链 approach! → navigate_to → turn_to → approach → grasp_single，release 清旧 held 也对），重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐，3/10 贴桌沿 `turn_to` 把罐头扫下桌，2/10 用完 16 次调用。Q11 的"显著高于脚本"没出现，卡在 primitive 不在决策
-    - [x] 8.3.1 恢复路径的 primitive（2026-09-29，用户定全做）：持物 `approach(goal)` 同桌沿 + 1.2 m 内 → `carry_to(turn_first=False)` 横移不转向；`navigate_to` 点目标推到离台面 ≥ 0.30 m（`clear_of_surfaces`）；`turn_to` 离台面 < 0.25 m 拒绝（`edge_clearance`，收臂没有已验证的姿态，改成拒绝让 agent 先退）；`nudge` 用 `remeasured_stance` 重量 stance 不清；`tests/test_skills_recovery.py`
-    - [x] 8.3.2（2026-09-29）：空手 `approach` 站位偏离走近线 > 0.12 m 时先 `walk_to` 站位后 0.6 m 的引导点（face_yaw 锁桌法线）再跑原相位；`metrics.prewalk`
-    - [x] 8.3.3 第二轮配对（2026-09-29；第三轮 agent 臂跑 3 局确认蠕变机制后停掉，drop_held agent 臂未跑——8.3.5 未定前不再烧调用）：`move_target` plan 0/11（10 触发）vs agent 0/10（10 触发），9 对，agent 重抓 3/9——恢复链缩到 2 次调用（`approach` 自带横向预走 + 提示规则让它不再浪费一次抓空），但 4 次重抓后 agent 都直接 `place`，`place` 自己的搬运转向滑罐 4/4；报告 `outputs/analysis/injection2_move_20260929/`。`drop_held` plan 臂跑完即停（agent 臂改用 8.3.4 后的代码重跑，队列 `queue_round3.sh`：`inj3_move_agent_20260929c`、`inj3_drop_agent_20260929c`）
-    - [x] 8.3.5 待用户定（决定性）：重抓后的罐头在 agent 想下一步的 5–8 s 里以 0.4–0.5 cm/s 滑出冻结握持（第三轮 round 0：`place` 被拒、想 8 s、罐头无动作掉桌），固定 plan < 1 s 接手所以不受影响。三选一：(a) sim 指垫接触调硬（唯一治蠕变，改物理）；(b) 藏延迟（Q5 提前规划 / haiku 3–4 s，仍 > 1 s）；(c) executor 两次调用间跑"保持"（更深合爪 / 周期重抬，未测）。定了才值得再跑配对
-      - [x] 8.3.5.1 用户选 (a)（2026-09-29 晚）；先量蠕变就推翻了前提（pick_place 台账 §14）：掉罐是 deploy 的 1 s 规划器超时（`zmq_manager.hpp` `PLANNER_TIMEOUT`，释放冻结上身和手指命令），runner 在 agent 想的时候不发帧。`plan_episode.py --think-s 8`：静默 4/4 在 ~1 s 掉罐，保活 0/14 掉、蠕变 0.10 cm/s；§13 三轮 agent 掉罐都对得上
-      - [x] 8.3.5.2 (a) 本身：`crate` 档指垫 0.06 vs `object` 0.10 cm/s，0/12 vs 0/14 掉，任务 1/10 vs 2/10（噪声内）；不改默认场景。solref 在 200 Hz sim 里被 refsafe 钳到 0.01，两档只差 solimp；离线回放台对更硬一侧不可信
-      - [x] 8.3.5.3（用户定做，2026-09-29 晚）：`Executor.idle` 保活，`agent_round` 在 `claude -p` 回答期间、注入 settle 期间都走它；Q11 第四轮（pick_place 台账 §15）：move_target plan 0/10 vs agent 3/10（p 0.25，重抓 5/10），drop_held 配对 0/5 vs 1/5（重抓 3/9），合计不一致对 4 : 0、p 0.125；重抓后的罐头每次思考后都还在手里（1 例浅抓除外）
-      - [x] 8.3.5.4 用户定保留（2026-09-29 晚）：8.3.1 持物横移、8.3.4 `STRAFE_YAW` / `placing_band`；第四轮 agent 重抓后都是 `placing_band` 拒 → approach(basket) → place（台账 §15）
-      - [x] 8.3.5.5 定位（2026-09-29 晚，台账 §15a）：不是 nudge / walk_to / turn_to / navigate_to，是空手 `approach` 内两段不发帧——刹车后 `settle_for_admission`（0.49–0.87 s）和起步前建 `SimpleGraspPolicy` + 首次 edge_guard（0.45–0.73 s）；负载下被拉过 1 s。两段都在手里没东西时，超时无后果
-        - [x] 8.3.5.5.1 用户定不修（2026-09-30）：两段都在空手 `approach` 里，超时无后果；不改 bottle 采集专家与 commander。若以后持物路径出现同类静默，用 `scripts/experiments/command_gap_probe_20260929.py` 定位
-    - [x] 8.3.4（2026-09-29）：`STRAFE_YAW` 0.6 rad（抓完身体 wrap 0.35 rad 时仍横移不转向；drop plan 臂 round 2 因此走了转向）；`place` 前置 `placing_band`（容器在 `band_x × band_y` ± 0.10 m 内，否则先 `approach(container)`；coupled 免检）
-  - [x] 8.4 `drop_held` 两臂 10 局（2026-09-29，台账 §13 末，报告 `outputs/analysis/injection_drop_20260929/`）：注入只在抓起后触发，基线抓取 ~50% → 各臂 5 个注入、3 个配对；plan 0/10（注入后 5/5 `[approach] load lost while turning`），agent 0/10、注入后重抓 2/5，第一反应 5/5 直接 `place`（信 `held` 不信场景），重抓后又在持罐搬运里滑 3.3 cm
-    - [x] 8.4.1（2026-09-29）：`--until-injected N`（`--rounds` 为上限），`more_rounds()`；manifest 总结行印触发数
-    - [x] 8.4.2（2026-09-29，用户定加）：系统提示加"session 快照是本体感觉、场景是真值，冲突先 release"；从此配对比较测的是"有提示下的恢复"，第一轮（无提示）结果留在台账 §13 作对照
-  - [x] 8.6 待用户定：Q11 下一步——加配对数（每种注入 20 对以上）、先提高 `grasp_single` / `place` 成功率，还是就此收尾写结论（台账 §15：方向一致 4 : 0，p 0.125）（用户 2026-10-02 定：收尾，不再跑；结论写在 pick_place 台账 §16）
-  - [-] 8.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）（搁置 2026-10-02：Q11 线收尾，用户定）
-- [~] 9 scene_discovery Demo 1（纯仿真）：场景文件 → 自动发现任务 → 技能组装采集 → VLA（用户 2026-10-02 定；决策与节奏见 `docs/handoff/scene-discovery-plan-20261002.md`，DECISIONS 2026-10-02）
-  - [x] 9.1 Q11 收尾（`023a31a`，pick_place 台账 §16）
-  - [x] 9.2 worktree `../locomanipulation-scene_discovery`，分支 `scene_discovery`（基于 `023a31a`）
-  - [x] 9.3 ADT 下载：3 条公寓序列的 `main_groundtruth` + 356 个物体模型（4.6 GB）到 `/workspace/datasets/adt/`，sha1 全部校验（`scripts/adt_download.py`）；链接文件移到 `/workspace/datasets/adt/links/`（不进 git）
-  - [~] 9.4 `plan_episode.py --record`：每局随机一句说法作语言指令，元数据记谓词 / plan / trace，只有谓词判成功的局进 convert；验收 = 抓瓶子固定 plan 20 局与原 bottle 采集线逐字段比对 + 各训一个小模型（2026-10-03 实现：`Recording` 类，`--record` 拒绝 `--agent` / `--inject` / `--think-s`、要求 instance 0；每局 spawn 稳定后 c 开录，判据成立 c 存、否则 x 弃；成功局没有自己的 `training_tail` 时取 plan 结束处；行写进 `collect/manifest_00.jsonl` 并在 summary 记 `collect`，`convert_data.sh` 照常转；测试 `tests/test_plan_episode_record.py` 6 个。实跑 20 局与对照见 9.4.1）
-    - [~] 9.4.1 验收：`sd_record_bottle_plan_20261003`（bottle 默认 plan，20 局，GPU1 / instance 0）与 `bottle_simple_guard_lifted_20260925` 用同一个转换器转出来逐字段比（`scripts/experiments/record_parity_20261003.py`）。2026-10-03：**字段一致**——37 个字段名 / dtype / shape、25 fps、指令"pick up the water bottle"、每个成功局都按 training_tail 截了；20 局 15 存 5 弃，与 manifest 逐行对上；成功率 15/20（抓取 3 败：抬起丢接触 2、合爪前碰倒 1；走近 2 败：腰没回中、停位够不着）。**内容差一处**：采集线的局多一段后退两步（`teleop.planner_movement` x 到 −1.0，plan 的不低于 0），中位时长 25.4 vs 23.0 s；plan 的 spawn 无横向 / 朝向抖动。"各训一个小模型"要占两张卡几小时，待用户定
-      - [ ] 9.4.1.1 "各训一个小模型"对照（plan 录的 15 局 vs bottle 采集线），要占两张卡几小时：待用户定是否做
-  - [~] 9.9 第一轮 C 方案（用户 2026-10-03 定，并同意先跑下列五个抓取试跑）：范围缺口按维度挑代表任务试跑（香蕉 / 0.90 岛台、小花瓶 / 0.39 架底、咖啡罐 / 0.70 推车 0.6 kg、钱包 / 1.12 顶层、梨 / 0.90 岛台深 0.25 m），结果写回 capability.yaml；放置与搬运的代表等抓取结果出来再挑；技能缺口 `place_on_surface.single` 进造技能排序。前置：ADT 场景跑通 plan_episode（实验文件在 outputs 下、出生点取场景文件的 spawn 区）
-    - [x] 9.9.1 ADT 场景接上 plan_episode（2026-10-03）：仿真端读物体 / 台面 body 时跳过只是外观的静态物体（`run_sim_locomani`、`privileged_pub`）；台面 body = `adt_env`；骨盆初始位置放到 `robot_start`；守线刹车的桌沿（`edge_guard.facing_edge`）与离桌距离（`surfaces_edge_distance`）读台面朝向；`SceneModel` 用 Claude 的物体名；`plan_episode` 在场景文件房间里按占用图选出生距离（1.2 → 0.6 m，出生点要站得下、走入直线不穿家具轮廓）。试跑实验文件在 `outputs/scene_discovery/adt_apartment/experiments/`
-    - [x] 9.9.2 **抓取高度是技能硬限制，不是试跑能测的范围**（2026-10-03）：bottle 抓取的 `sample_stand` 只规划下蹲 0.03–0.13 m 的模板，物体中心世界高度只接受 0.66–0.89 m，之外技能在机器人动之前就拒绝。原定五个代表里香蕉 0.93、梨 0.98、钱包 1.14、小花瓶 0.47 都在外面，只有咖啡罐 0.79 在内。能力说明加 `grip_height_accepted`，检查器把它记成技能缺口 `grasp_single.grip_height`：可试跑任务 326 → 72，1606 个任务要先扩抓取高度（与"放到台面"1664 个并列为第一轮造技能的候选）。试跑改为范围内的四个：咖啡罐（推车 0.70 m，0.6 kg）、中号白花瓶（展示柜格子 0.73 m，上有隔板）、青苹果（餐桌 0.75 m，离边 26.5 cm）、小盆栽（同格子）
-    - [x] 9.9.3 可走近的边要有助跑（2026-10-03）：原判定只往外探 0.31 m，推车那一侧 0.5 m 外就是扶手椅（家具在 MuJoCo 里无碰撞，机器人会穿过去）；现要求站位后还有 0.6 m 通道（`approach_edges(runup=0.6)`，`adt_to_scene.py refresh` 原地重算）：可走近台面 53 → 35，模板任务 3747 → 2890（第 2 桶 1241、第 3 桶 1649）。第一次试跑队列（`sd_pilot_p3_coffee_canister_20261003`）因出生点检查拿膨胀图查站位全部秒败，作废
-    - [x] 9.9.4 **物体原点要在包围盒中心**（2026-10-03）：第二次试跑（`*_20261003b`）咖啡罐 / 花瓶 / 盆栽 20 局的抓取全停在 `simple clearance ... adt_env`，失败记录里抓取目标点 z 0.701 = 推车台面——抓取代码按 `init_pos` z 算抓点（`box` 的中心偏移读的是 `center`，场景里写 `centre`，恒为 0），手工场景的物体原点本来就在中心所以看不出来，ADT 物体原点在底部，抓点落到台面上。改转换器而不是 bottle 代码：body 原点放在包围盒中心（`adt.AdtObject.body`，网格与 Isaac 自由体 USD 一起平移），`refresh` 原地更新位姿，测试 `tests/test_scene_discovery_adt.py`。修后咖啡罐第 1 局即成功。苹果 8 局"停位够不着"（物体在骨盆前 0.51–0.62 m）不是这个原因，但站位规划也读抓取高度，所以四个试跑全部重跑（`*_20261003c`）。Isaac 自由体 USD 待重导（`scripts/adt_to_usd.py`）
-    - [x] 9.9.5 四个范围试跑结果（2026-10-03，`*_20261003c`，各 10 局，GPU1 / instance 1，结果写进 capability.yaml `pilots_adt_20261003`）：**咖啡罐 4/10**（推车顶层 0.70 m、开放台面、离边 4 cm、0.6 kg；抓起 4/8，败于抬起丢接触 2、合爪无双侧接触 1、接管时身体过线 1，走近 2 局被预检挡）；**花瓶 0/10、盆栽 1/10**（展示柜格子 0.73 m，上方有隔板：入手时手指扫到柜体 8 / 7 次）；**青苹果 0/10**（餐桌 0.75 m、离边 26.5 cm：走近 10 局全败，停位离物体 0.51–0.62 m 够不着 5、腰没回中 5）。结论：开放台面、离边近的物体在 0.70–0.79 m 抓取中心范围里能抓，成功率与罐头在 0.62 m 桌上的 6/10 同量级；有顶的格子和离边 > 0.2 m 都是现有技能做不到的，分别对应"从有顶格子里取"和"深够"两个新技能需求
-    - [x] 9.9.6 Isaac 自由体 USD 按新原点重导（2026-10-03，`scripts/adt_to_usd.py`，64 个）
-    - [x] 9.9.7 第一个新技能选哪个（决策 11）（用户 2026-10-03 定 A："单手放到台面"，由 Claude 造，见 9.12）：我推荐"单手把东西放到台面上"（`place_on_surface.single`，挡住 1169 个第 2 桶任务中的大多数；现有 `place` 已有抬 / 移 / 降 / 松，改判据与松手高度，成本最低），并作为 Claude 自己造技能的那一个；备选"扩抓取高度"（下蹲抓 2/10，贵）、"从有顶格子里取"、"深够"。待用户定
-    - [-] 9.9.8 咖啡罐（4/10，过 ≥3/10 门槛）是否现在就作为第一轮第一个任务采集，还是等更多任务（用户 2026-10-03 定：等可采任务多了再一起采，现在不采）
-    - [x] 9.9.9 "从有顶格子里取"与"深够"两个新缺口进检查器（现在只在试跑结果里，`capability.yaml pilots_adt_20261003`），重算它们各挡多少任务（2026-10-05：不是"有顶格子"——录像前的 trace 显示花瓶 / 盆栽都是手指 / 腕撞**托着它的那块板**（`adt_env` 只有台面板有碰撞），工具点离板 2–9 cm、伸进 15–16 cm，上方隔板 0.32 m 高；记成失败区域 `grasp_failures`：`deep_entry`（inboard ≥ 0.14 且抓点离板 ≤ 0.08 m）、`deep_reach`（inboard ≥ 0.26；阈值取整到让失败试跑本身落在区域里），按技能缺口处理（不再试跑）；另加头顶检查 `overhead.open_above` 0.60 m（规则，未测）：抓 / 放点上方 0.60 m 内有别的台面板记 `*.covered`。重算：`deep_entry` 433、`deep_reach` 88、`grasp_single.covered` 455、`place_on_surface.covered` 443 个任务；可试跑 264 → 85）
-  - [x] 9.5 场景文件格式（扩展 `scene_meta.json`：物体字段带出处、台面、房间、随机化规格）与目标谓词库（2026-10-03：`docs/handoff/scene-file-format-20261003.md`，用户过目，三处按推荐：台面存 yaw 并改导航/站位、每局只把任务物体和干扰物做自由体、规则切房间 + Claude 命名；`scene_discovery.scene_file.validate/load` + `scene_discovery.predicates.compile_goal`（on/in/held/upright/near/in_room），`tests/test_scene_discovery.py` 7 个）
-  - [x] 9.6 ADT → 场景转换：核实 `ApartmentEnv` 是否房间外壳（轴向、俯视图）；物体 glb → MuJoCo（碰撞体凸分解）+ Isaac/Unreal；Claude 估质量 / 摩擦 + 掉落测试；渲染器二选一（plan 决策 16）
-    - [x] 9.6.1–9.6.3 坐标轴核实、墙与房间、台面（2026-10-03，`scripts/adt_to_scene.py geometry`，跑在 /venv/main；纯几何 `scene_discovery.adt/floorplan/surfaces` 在 sim venv 测试 9 个）：2 个房间（开放式客厅 / 餐厅 / 厨房 room_1、卧室 room_2，门洞 0.9 m 分开）；71 个台面（53 个有可走近的边），含外壳里的厨房台面 0.92 m × 3.1 m，楼梯按"≥3 级逐级一个台阶高"剔除；356 个物体（可移动 215，其中单手可抓 112、双手 1，131 个落在台面上）；校验 0 问题。产物 `outputs/scene_discovery/adt_apartment/{scene_file.json,floorplan.png}`
-    - [x] 9.6.4 Claude 估属性（2026-10-03，`adt_to_scene.py estimate`，Opus 8 次调用 12.4 min / 4.24 USD，`scene_discovery.properties`，测试 4 个）：356 个物体的英文名、质量、摩擦、是否容器，71 个台面名，2 个房间名（`living_dining_kitchen`、`bedroom`）；规则只改 3 处（开口 < 6 cm 的"容器"否掉），校验 0 问题。3 个物体在 ADT 目录里没有模型（BookDeepLearning、DinoToy、Flask），几何阶段改为跳过，这份产物里删掉（`source.pruned`）
-    - [x] 9.6.5a MuJoCo 构建与跌落测试（2026-10-03，`adt_to_scene.py mujoco` + `scripts/scene_drop_test.py`，`scene_discovery.mjcf/drop_test`，测试 3 个）：外壳与家具只有外观，台面是 2 cm 碰撞板，可动物体用凸包（容器用底 + 四壁），惯量按 Claude 质量的实心盒；默认自由体 = 能抓且落在台面上的 64 个（不在台面上的 48 个试过：47 个掉下去，没有碰撞体托着）；2 s 跌落 48/64 停住，不稳的 16 个是会滚的水果、靠不住的立书、展示柜上的两个花瓶，`semantic.drop_test.ok` 记录，任务发现只用通过的
-    - [x] 9.6.5b 渲染器二选一（plan 决策 16）。**Isaac 通过**（2026-10-03，`scripts/adt_to_usd.py`（Blender 把 glb 连 PBR 贴图导出：静态 290 个进 `apartment.usdc`、64 个自由体各一份 USD，4.5 GB 在 `$ISAAC_ASSETS/scene/adt_apartment`）+ `scene_discovery.usd_scene`（每个房间天花板下 2.5 m 网格 12 盏球形灯：公寓封闭，外部穹顶光进不来，第一次全黑）+ `scripts/experiments/adt_render_check_20261003.py`）：三个站位三路相机，场景构建 20 s，进程显存 7.7 → 12.8 GB（GPU1 另有别的项目 10 GB，合计 ~23 GB 放得下），三路一起渲染 p50 0.148 / p90 0.194 s，贴图还原见 `outputs/scene_discovery/adt_apartment/render_check/isaac_only.png`（待用户看）。**Unreal 未测**：`images.source unreal` 只在 main / loco_unreal 上，本分支（基于 loco_agent）没有。**用户 2026-10-03 定：用 Isaac，不测 Unreal**（不合并 main，避免把 mars 机器人带进冻结的栈，决策 12）
-    - [x] 9.6.6 导航与站位读场景文件（2026-10-03）：`OccupancyMap` 读 `room.bounds/walls/obstacles` 与台面 `yaw`（手工场景不变）；`plan.nearest_edge` 在台面自身坐标系里只在 `approach_edges` 中选边，`stand_plan` 的朝向加上台面 yaw；`SceneModel` 的 put-on 判据与 `front_line` 带 yaw；`round_loop` 遇到转角台面直接报错（它沿世界轴滑动目标）。`tests/test_scene_discovery_consumers.py` 4 个，现有 skills / bottle CLI 测试照常通过
-  - [x] 9.7 能力说明文件（从已测包络整理：伸手高度与距离、桌面高度、下蹲 0.28 m、夹爪 9.5 cm / ~20 N、双手箱宽、行走限制）+ 程序可行性检查（2026-10-03：`configs/scene_discovery/capability.yaml` 写完，每条带 measured / measured_one / untested / unavailable 与出处文档；核对时改正三处出处，并发现流式全身姿态能下蹲（骨盆 0.57 m），不止 IDLE_SQUAT；程序检查 2026-10-03 完成，见 9.7.1）
-    - [x] 9.7.1 程序可行性检查（2026-10-03，`scene_discovery.feasibility` + `scripts/scene_feasibility.py`，测试 8 个）：每个目标谓词展开成抓 / 搬 / 放三步，每步按 capability.yaml 判 ok / untested（记缺口名）/ blocked（记硬限制）；路线用场景导航图的真实绕行距离。ADT 公寓模板空间（48 个跌落测试通过的可抓物体 × 容器 / 台面 / 拿起）3747 个任务：**严格规则第 1 桶 0 个**，第 2 桶 1990，第 3 桶 1757（够不着的深度 935、台面前没地方站 316、容器在墙架 / 挂钩上 264、放不进 191、容器沿低于手能到的最低处 144、走不到 88）；按"试跑规则"（未测的也去试，试跑定生死）第 1 桶 1990。最简单的缺口组合是"物体尺寸 + 台面高度"（拿起香蕉等 5 个），没有哪个缺口单独补上能解锁任务。修了检查器两处：起点站位开逃生通道、架子上的容器在它所在台面的边上站；场景里门不再算障碍（第一轮按开着，MuJoCo 里门本来无碰撞），新增 `adt_to_scene.py obstacles` 只重写障碍不动 Claude 的字段（这份文件此前没有家具障碍，现 117 个）。产物 `outputs/scene_discovery/adt_apartment/feasibility/`
-  - [ ] 9.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点
-  - [~] 9.10 Claude 提任务 + 程序检查反馈循环（决策 8；第 2 周）：现在第 2 桶是模板枚举出来的（`feasibility.templates`），Claude 读场景文件 + capability.yaml 提任务、检查结果回给它修改的那一环还没写（2026-10-05 循环已写并实跑一次：`scene_discovery.proposals` + `scripts/scene_discover_tasks.py`，Opus 3 次调用、5.32 USD、20.5 min，`outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/`：49 个任务（客餐厨 32、卧室 17），三轮桶 2/25/13 → 2/32/11 → 2/38/9，修订把第 3 桶往第 2 桶推、没造出新的第 1 桶；第 1 桶就是模板空间里那 2 个（都找到了），49 个里只有 2 个在模板空间之外（带 near）；可试跑 6 个，5 个是咖啡罐放到别处。第一次运行 `opus_20261005_upright_bug` 作废：检查器把"搬过去并立着"里的 upright 判成"已经立着"无效（15/39），已修）
-    - [ ] 9.10.1 Claude 给第 1 桶任务写固定 plan（决策 10：试跑 3 局验谓词、10 局 ≥ 3/10）：现在第 1 桶的 2 个任务 plan_episode 的 `default_plan` 已覆盖且实跑过（拿起 4/10、放到圆桌 12/20），等第 1 桶变多再做
-    - [ ] 9.10.2 任务文件 → 运行：`plan_episode` 现在按实验文件的 `target` + `goal`（一个物体、一个台面或容器）判成败，谓词库 `compile_goal` 没接进来；`tasks.jsonl` 的一行（谓词合取、说法、`upright` 约束）还不能直接跑或录（9.14.1 之前要有）
-    - [ ] 9.10.3 试跑提议里可试跑的 6 个（按外推距离：罐子 → 厨房岛台 0.90 m、→ 垃圾桶、→ 餐桌 0.75 m、→ 门厅长凳、→ 玻璃柜一格，白色大花瓶 → 马桶水箱），各 10 局，结果写回 capability（C 方案的做法，待用户定是否现在跑，约 1 h GPU）
-    - [ ] 9.10.4 主结论 #1 的"任务广度"：Claude 提的任务 47/49 落在程序模板空间里，增量在挑选、说法和缺口说明，不在发现新任务形态；要么扩谓词 / 模板（near、多物体），要么把这点写进查重（9.8）的对比
-  - [ ] 9.11 用户本人：给 projectaria@meta.com 发邮件问公开视频 / 衍生场景的许可（决策 17；2026-10-02 提过，未见回复记录）
-  - [x] 9.12 第一个新技能 `put_down_single`（单手放到台面，用户 2026-10-03 定、由 Claude 造；规格与验收门槛在跑之前写定：`docs/handoff/put-down-single-20261003.md`）
-    - [x] 9.12.1 实现（2026-10-03）：持物 `approach(台面)` 选空位并把放置带对准它（`surface_spot` / `surface_occupants`）；`put_down_single` 复用 `place_phase`（`_SurfaceGeometry`：静止高度、低处先蹲、落稳判定、站在台面上的判据）；`plan_episode` 对 `on(X, 台面)` 默认 plan 与判据；检查器在 `capability.yaml place.on_surface_single` 有实测后按范围判；测试 `test_skills_put_down_single.py` 9 个 + `test_place_phase.py` 5 个 + 检查器 1 个
-    - [x] 9.12.2 验收：咖啡罐 → 小圆桌（0.52 m），抓取成功的前 20 局里走近台面 + 放下都成功 ≥ 10；预算 2 天 / 200 局（到 2026-10-05 18:15 UTC）（2026-10-03：第六版 **12/20 通过**，门槛外 2 局另计共 13/22；六版、171 局、2.3 h，逐版改动与证据在记录 §4）
-    - [x] 9.12.3 验收后写回 `capability.yaml place.on_surface_single`（measured_one），重跑检查器与缺口排序（2026-10-03：可试跑 72 → 264，剩下的技能缺口只有 `grasp_single.grip_height` 882 个；第 3 桶 1630 → 1684；第 1 桶仍 0）
-    - [ ] 9.12.4 蹲会让底盘后移 7–13 cm（第二版 2 局、第六版 2 局），降落够不着：蹲完、降落前按当前位姿再选一次点，或按后移量预先把手送远
-    - [ ] 9.12.5 `approach(台面)` 持物原地转身掉罐 3/20（第六版）：复用的现有持物转身（`turn_with_load`，slow_walk）；看转角与掉的时刻，或改成不转身的横移
-    - [ ] 9.12.6 交接后底盘仍会动（第六版 2 局脉冲拉不回、1 局转动中滑）：脉冲记录里加当时位姿定位；横向脉冲每次只动 0–3 cm
-    - [ ] 9.12.7 "腰没回中"（`[stand] neutral waist not delivered`）在验收里频繁出现（第三版 3 次、第六版 ≥ 2 次），前一局成功、失败、抓取败之后都有，原因未明；不计入门槛但耗预算
-    - [x] 9.12.8 检查器第 1 桶仍是 0：它只认 0.62 m 桌上的抓取实测，罐子在 0.70 m 推车上的抓取试跑（`pilots_adt_20261003`）没有进判据；接上后罐子 → 圆桌这类任务才会进第 1 桶（2026-10-05：capability.yaml 单手抓取改成实测设定列表 `grasp_settings`（瓶子线 + 咖啡罐推车试跑 4/10），检查器按设定**整体**匹配（各维分别测过不等于组合测过）；咖啡罐 inboard 按检查器口径是中心到边 0.084 m（试跑记录的 4 cm 是侧面到边）。第 1 桶 0 → 2：拿起咖啡罐、放到圆桌；放到书柜一格被 9.9.9 的头顶检查挡回第 2 桶）
-    - [x] 9.12.9 成功局预览（2026-10-04）：第六版 13 局成功全部压成预览（30–44 万字节、全长、逐个解码与时长核对），`outputs/scene_discovery/adt_apartment/put_down_v6_success_previews_20261003/` 与同名 `.zip`（4.5 MB）
-    - [x] 9.12.10 放进容器那条线回归：`place_phase` 的改动（几何对象分支、`_servo` 的 `until` / `level` / 日志）对 `place` 只有单元测试，pick_place 跑 10 局对照 §8 的 3/6（2026-10-05：`sd_place_regress_20261005`，同 §8 第三轮的 plan / 配置 / seed 300–309：抓取 6/10、place **3/6**、端到端 3/10，与 §8 的 6/10、3/6 相同；place 失败 3 局都是 `descent timeout` xy 6.5 / 7.4 / 9.0 cm，§8 是 6.0 / 9.0 cm，同族；没有新失败形态）
-    - [x] 9.12.11 现有抓取对罐子朝向很敏感（长边与走近方向夹角 |a| ≤ 20° 抓住 6/9，20–40° 2/5，> 40° 0/18）：咖啡罐采集（9.9.8）前要么限制罐子朝向，要么抓取按窄边选入手方向；capability 里还没记这条（2026-10-05：选了限制朝向——`plan_episode.spawn_object_yaw`：底面只有一边放得进夹爪的物体，长边限制在走近方向 ±20° 内（两侧各一个窗），其余物体照旧均匀随机，原有 seed 的局不变；capability.yaml 记 `grasp_yaw`。抓取按窄边选入手方向没做，是技能改动，未实跑验证新出生朝向下的抓取率）
-  - [ ] 9.13 第一轮采集吞吐（2026-10-05 补记，估算未实测）：`put_down_single` 第六版 80 局抓住 22、端到端成功 13（约 16 %），每局约 48 s；按决策 14（≤ 25 个任务 × 每任务 100 局成功）一个任务约 600 局、单实例约 8 h，25 个任务约 200 h；`--record` 目前要求 instance 0，Isaac 补渲另算（warehouse 实测约 68 s/集）。里程碑 1（第 3–4 周）前要有实测和对策
-    - [ ] 9.13.1 实测：第一批第 1 桶任务各录 10 局，记成功率、每局墙钟、补渲耗时，按实测重算一轮总时长
-    - [ ] 9.13.2 提吞吐的选项（待用户定）：`--record` 放开到其他实例（栈已有 `RECORD_INSTANCE=1`，plan_episode 没接）两卡并行、先提高抓取成功率（9.12.11）、或减每任务局数（改决策 14）
-  - [ ] 9.14 第一轮数据 → VLA-1 的后半段在 ADT 公寓里一步都没跑过（2026-10-05 补记；决策 2 / 13 / 15 / 16；`--record` 只在 bottle 场景做过逐字段比对，9.4.1）
-    - [ ] 9.14.1 冒烟先行：取一个任务约 10 局走通 record → Isaac 补渲 → convert → 短训 → 闭环几局，在正式采集前暴露 ADT 特有的问题
-    - [ ] 9.14.2 Isaac 补渲 ADT 公寓的数据集三路相机（ego + 双腕；`ISAAC_ASSETS` 指主目录），核对与 9.6.5b 渲染检查同图、只渲成功局
-    - [ ] 9.14.3 convert：多任务合一个数据集，每局随机说法进指令字段；留出说法与留出组合在采集前定好、不进训练
-    - [ ] 9.14.4 训练 VLA-1 两个种子（决策 15，从基础模型）
-    - [ ] 9.14.5 ADT 公寓 lockstep + Isaac 闭环评测：同场景随机摆放，"见过的组合 / 留出组合 / 留出说法"三格分开报，每格 ≥ 20 局（决策 2）
-  - [ ] 9.15 `upright_axis` 与场景实际姿态对不上（2026-10-05 发现）：64 个自由体里 26 个按 `upright_axis` 算倾斜 75–125°，但跌落测试里都静止（倾角变化 0.3–11.6°）。书是 ADT 的"正立"= 平放、书在格子里竖着放（90°）；盆栽 2 个、香蕉、钥匙、遥控器、收纳盒等原因未核。后果：检查器给这些物体的 `upright(X)` 记 `reorient` 缺口（Opus 任务里 3 个盆栽任务因此带 `reorient`），运行时 `upright(X)` 判据在成功局也会判失败。待定：按初始姿态重定义"正立"（初始就静止的姿态算正立），或逐类核对后修 `adt.AdtObject.body`；先看一张盆栽 / 书的渲染再定
-  - [ ] 9.16 第二个新技能选哪个（决策 11，待用户定）：49 个提议任务里 32 个缺技能，几乎都是抓取。按挡住的任务数：抓取高度 28（台面高度 0.91–0.99 m 8 个、肩高 1.11–1.15 m 8 个、低于 0.66 m 且多在有顶格子里 12 个；模板空间 882）、深处低位入手 13（模板 433）、深够 1（模板 88）、放到指定物体旁 1。我推荐先做台面高度抓取（不蹲、不钻格子，对现有抓取改动最小），再延到肩高
-    - [ ] 9.16.1 扁平物体（钱包、车钥匙、木勺、平躺香蕉，厚 1.5–3.8 cm，8 个任务）实际要"从上往下捏"，检查器只记成 `grasp_single.object_size`（范围缺口，会被当成可试跑）；是否加一条按厚度判的技能缺口，待定
-  - [x] 9.17 报告 doc「公寓场景任务发现」（2026-10-05，用户要求）：https://claude.ai/code/artifact/132adcd3-de5d-4ff1-99ba-1bc683f47549 ，两页（正文七节 + 流程图；任务清单 49 行）；私有，含 ADT 衍生任务清单，Meta 答复（9.11）前不分享到团队外
+
+## 7. Isaac 画质（用户 2026-09-28：Isaac 渲染不如 Blender，是设置还是版本？）
+
+- [~] 7.1 诊断并修复 Isaac 与 Blender 的画质差距  ← 来源: 会话 2026-09-28；台账 `docs/ledger/blender_scenes.md` 第 2 节
+  - [x] 7.1.1 两边配置对比（Cycles 1024 spp / AgX / 3840 vs Real-Time / FXAA / 640）、Blender 材质审计、Isaac 5.1 与 6.0 渲染改动调研 (2026-09-28)
+  - [x] 7.1.2 A/B 6 组（Real-Time / PathTracing × 640 / 1280，外加屏蔽法线两组），`outputs/experiments/isaac_render_quality_ab_20260928/` (2026-09-28)
+  - [x] 7.1.3 修法线：`blender_to_usd.py` 断开高度图；`build_isaac_warehouse_scene.py` 用 over 屏蔽单通道 normal；`warehouse_textured` stage 已重建 (2026-09-28)
+  - [x] 7.1.4 `render_isaac_videos.sh` 默认 `--size 1280x960`，加 `--path-trace`；`mujoco_render` 按需放大离屏缓冲；GPU0 实跑验证 (2026-09-28)
+  - [x] 7.1.5 核查 VLA 图像输入：任意渲染尺寸都进模型为 352×256、88 token，不改数据集相机 (2026-09-28)
+  - [ ] 7.1.6 程序化材质（36 个 Bump、15 个程序化底色）烘焙成贴图：先要给 88% 没 UV 的物体展 UV；做不做等用户定
+  - [ ] 7.1.7 可选：给 `--path-trace` 重调 filmIso（比 Real-Time 亮约 10/255）
+  - [ ] 7.1.8 可选：评估 Isaac 6.0（RT 2.0），前提是渲染运行时能脱离 SIMPLE 的 4.5 锁定
+- [ ] 7.2 待验证：新 stage（去掉噪点）下，checkpoint-5000 的 Isaac 评测是否偏离 81/83/88；数据集要不要按新 stage 重新补渲（问题：画面变了，策略受不受影响）
+- [~] 7.3 side-by-side 预览压到 500 KB 以内
+  - [x] 7.3.1 手工压两段验证视频，放在 `previews_share_20260928/`（1280 版 3 段，路径追踪版 1 段）(2026-09-28)
+  - [x] 7.3.2 `locomani.pipeline.video_preview`：CRF 32→38 阶梯 + 按帧边界分段 + 自检；接进 `render_isaac_videos.sh`；5 个测试 (2026-09-28)
+  - [ ] 7.3.3 重新生成 `box_room_grasp_200_cap120_20260925/eval/previews_isaac/` 里 3 个超限的旧预览（已问用户，未回复）
+  - [ ] 7.3.4 待用户定：长局分段多时，阶梯里要不要加降宽（比如 960）
+- [x] 7.4 已提交（`291cdeb`，与 4.7.11.8、8.12 合成一个提交，2026-09-28）。提交本会话改动（等用户说）。`docs/rendering.md`、`docs/warehouse.md` 里混有 lockstep 未提交的改动，提交时要和 4.7.11.8 一起处理
+
+## 8. 四边线：warehouse 平台四条边随机走入，按 envelope ≥ 30% 的范围随机（用户 2026-09-28；台账 `crate.md` 2026-09-28 两节）
+
+- [x] 8.1 第 1 步：四种尺寸纸箱场景 `warehouse_box_45x{32,20}x{33,18}`（`warehouse_box_scene.py`；每边 `clear_m` + `edge_<边>` 机位）（2026-09-28）
+- [x] 8.2 第 2 步：四个 Isaac stage（`build_isaac_warehouse_scene.py --scene`），MuJoCo/Isaac 轮廓 ≤ 3 px（2026-09-28）
+- [x] 8.3 第 3 步：每局抽边（`visual.start_edges` / `start_clearance` / `object_along_range`，`expert.facing_edge`），旧配置 A/B 逐位相同；录像按边换机位（`sim/scene_edges.py`）（2026-09-28）
+- [x] 8.4 第 4 步：实验文件（按边 pilot ×4、按尺寸 pilot ×3、采集 ×4）（2026-09-28）
+- [x] 8.5 第 5 步：pilot 29/70 = 0.41，无 0–1/10 的边或尺寸；录像 `outputs/videos/warehouse_edges_pilots_20260928.zip`（2026-09-28）
+- [~] 8.6 正式采集，每种尺寸 100 条（用户 2026-09-28）
+  - [x] 8.6.1 `collect --until-kept N`（暂停可续采）（2026-09-28）
+  - [x] 8.6.2 quick 版每种先采 ≥ 5 条 + Isaac 并排视频 `outputs/videos/warehouse_edges_first5_isaac_20260928.zip`（7/10/5/6 条）（2026-09-28）
+  - [-] 8.6.3 quick 版续采到 100 —— 改用 compact（8.7），quick 的 28 条保留不并入
+  - [ ] 8.6.4 compact 版采集 `warehouse_edges_compact_<尺寸>_20260928`：待用户定是否先每种 5 条 + Isaac 视频，以及训练图像用 MuJoCo 还是 Isaac（现 mujoco；GPU1 已空）
+  - [ ] 8.6.5 采满后：补渲数据集相机 → convert（四个运行合成一个数据集的步骤还没有）
+- [x] 8.7 刹车后准备手臂缩短（用户：停得太久）：`ready_after_brake compact` 17/40 vs quick 19/40，准备 8.7 → 4.9 s；用户定为双臂采集默认（`box_platform_default_20260928`）（2026-09-28）
+  - [-] 8.7.1 刹车后不重锚 `reanchor_after_brake: false` —— 14/40、卡住 7 → 13，不采用；要定需每组约 200 局
+  - [ ] 8.7.2 可选：边停边抬手（刹车最后一步就抬），要改走近循环；09-23 走路时抬手 6/10 局扎进箱子
+- [ ] 8.8 数据规模对照：400 条全量 vs 按尺寸均衡抽 200 条，各训 2 个种子，四边分布闭环各 100 局（用户认可的方案，采满后做）
+- [ ] 8.9 可选：checkpoint-5000（只见过 ym）在四边分布上评测 100 局，看窄数据换边后掉多少
+- [ ] 8.10 仿真实时录像（`SIM_VIDEO_DIR`）仍只用一个固定机位；四边线目前只按离线渲染跑
+- [ ] 8.11 2026-09-29 之后删试建副本 `outputs/experiments/warehouse_edges_20260928/trial_45x20x18`（107 MB）
+- [x] 8.12 提交第三批改动（四边线代码、配置、文档）：`291cdeb`（2026-09-28）。没有按 hunk 拆：第一批新增的 `vla_lockstep.py` 直接调用第三批的 `expert.facing_edge`，拆开的中间提交跑不起来
+
+## 9. 文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep（用户 2026-09-28；DECISIONS 同日）
+
+- [x] 9.1 先提交三批未提交的改动（`291cdeb`，见 8.12）（2026-09-28）
+- [x] 9.2 代码：`paths.sh` 导出 `PYTHONPATH` 并读 `$LOCOMANI_WORKSPACE/locomani.local.sh`；`scripts/build_scene.sh <场景名> [--isaac]` 读 `configs/scenes.yaml` 的 `build`（`6783a9f`）；`eval.client` 默认 `lockstep` + `latency_frames` 2，bottle 评测栈按 client 起 lockstep（`4b8180b`）（2026-09-28）
+- [ ] 9.3 bottle 的 lockstep 评测和墙钟对照：下一个 bottle checkpoint 出来后，同一 checkpoint 墙钟 vs lockstep 各 100 局。单臂的 lockstep 实现 2026-09-02 校准未过（46 vs 32），之后没重测
+  - [ ] 9.3.1 如果仍不过：把单臂评测改用双臂那套已校准的 lockstep 实现（`tasks/crate/vla_lockstep.py`）
+- [x] 9.4 实验文件：`bottle_simple_smoke` / `bottle_simple_200` / `crate_table30_record` 改 lockstep；新建 `crate_smoke`、`warehouse_smoke`、`warehouse_200`（`6712067`）（2026-09-28）
+- [x] 9.5 三条线的冒烟按新 runbook 真跑一遍，把用时、产物、日志字样填进 runbook（2026-09-28；记录 `outputs/docs_smoke_20260928/`）：bottle 12 分钟、crate 8 分钟、warehouse 40 分钟（含 14 分钟评测录像），三条闭环都是 lockstep 0/2
+  - [x] 9.5.1 冒烟抓出并修掉的问题：小数据集的视频对齐检查误判（`check_dataset`，`ffc3806`）；bottle 策略端口 5590 撞实例 1 的端口（改 5710，`ffc3806`）；单臂评测的 encoder 检查看全机的 deploy（`d290a36`）；评测结束后每局重启过的 deploy 成了孤儿进程（`Stack.down`，`a29924b`）；`crate_eval` 产物契约从没对过真运行（`7041ef0`）；长局的预览切不进 8 段（上限改 16）
+- [x] 9.6 重写 README（文档清单）、三份 runbook（只写命令、做什么、得到什么）、新建 `docs/running.md` 和 `docs/warehouse_design.md`、`setup.md` 改成"命令 + 做什么 + 验证"且命令逐条不变、`docs/README.md` 改为历史与开发者索引、规则移到 `docs/agents/doc-ownership.md`、`ROADMAP.md` 归档、`reference/runbook.md` 并入 `running.md`；失效链接全修（2026-09-28）
+- [x] 9.7 推送（用户 2026-09-28）：merge 了 henry-zhao 的两个提交（`--backbone-path` 移到 `running.md`），`4a3c0f3` 已推到 origin/main
+- [ ] 9.8 下一轮（等用户认可新 runbook 的写法）：详解页、`rendering.md`、`scalebfm.md` 按同样的写法重写
+- [x] 9.9 （2026-09-29 用户说提前删，已删：三个 `outputs/runs/*_smoke/model/` 和 `try2/run_bottle_simple_smoke/model/`，共 96 GB；try2 里其余约 0.3 GB 的日志、数据集留着作证据；清单、脚本、日志在 `outputs/cleanup_20260929/`；`/workspace` 空闲 77 → 170 GB）删冒烟的大产物：`/workspace` 只剩 26 GB（98%）。`outputs/runs/{bottle_simple_smoke,crate_smoke,warehouse_smoke}/model/`（各约 24 GB，10 步的 checkpoint，没有用处）和 `outputs/docs_smoke_20260928/try2/`（24 GB，第一次失败的 bottle 冒烟）。按 AGENTS 规则 2026-09-29 11:45 之后才能删，用户说可以就提前删；运行目录其余文件（manifest、日志、录像）保留作 runbook 数字的证据
+  - [x] 9.9.1 （用户 2026-09-29 说"都删掉吧"，已删 69 GB，`/workspace` 空闲 170 → 239 GB；清单 `B_delete_manifest.txt`、脚本、日志在 `outputs/cleanup_20260929/`）B 类：① 65 个扫参和对照运行（`box_envelope_s1/s2_*`、`box_centre_*`、`box_yaw*`、`box_lat*`、`box_range_quick_*`、`box_room_grasp_10ep_20260925`）的 `observations/`，31.7 GB，manifest、trace、视频、日志留着；② `box_room_grasp_200_cap120_20260925/observations`，17.2 GB——这 200 条不能再补渲，要用新外观或 Unreal 重训就得重采，`train_dataset` 和 `checkpoint-5000` 留着；③ `third_party/EmbodiedGen/weights/sam-3d-objects`，12.3 GB，要用时重新下载；④ `datasets/` 旧专家数据 8 GB，只留 `g1_locomani_cover400_train/meta/`（`rtc/transition_events.py` 读它的 `info.json`）
+- [ ] 9.10 `crate_table30_record`（crate 的完整规模）还没在 lockstep 下跑过；runbook 里它的数字是 09-15 墙钟 71/100
+- [x] 9.11 （2026-09-30，`34fcd13`，用户问答定）三个 runbook 只留命令、做什么一句、得到什么一句、每步总耗时；移出的内容进详解页（`warehouse_design.md` 第 10 节）；行数上限降到实际加约 10%（warehouse 215、bimanual 125、single_arm 115）
+  - [ ] 9.11.1 可选：隔离环境里的新读者照新 warehouse.md 跑一遍（这次没做，只做了 `--dry-run` 和改动部分的实跑）
+
+
+## 10. warehouse 默认采集改为四边随机；采集前打印设置；固定起点作为选项（用户 2026-09-28；DECISIONS 同日）
+
+- [x] 10.1 `warehouse_smoke` / `warehouse_200` 改为四边线 compact 版（场景 `warehouse_box_45x32x33`）；新建 `warehouse_{smoke,200}_fixed_start`（只改摆放）（2026-09-28）
+- [x] 10.2 `collect.py` 在第一局前打印摆放设置（`expert.layout_lines`），终端里等 10 秒；`--dry-run` 也打印；测试在 `test_four_edge_placement.py`（2026-09-28）
+- [x] 10.3 文档：`warehouse.md` §1–2、§9–10，`warehouse_design.md` §1、§4、§7，`box_grasp_envelope.md` §4，`rendering.md` 场景清单，README 表（2026-09-28）
+- [x] 10.3.1 实跑核对（2026-09-28）：`warehouse_smoke` 以运行名 `warehouse_smoke_edges_20260928` 跑采集，第一局前打印的设置与 dry-run 相同；4 局抽到 yp、yp、xm、xm，保留 2 条（另两局 `lost_attachment`、`reach_stalled`），栈正常关闭；录像与 ≤500 KB 预览在该运行的 `videos/`、`previews/`。非终端运行（nohup），所以 10 秒等待这条分支没有实跑
+- [ ] 10.4 本机的 `outputs/runs/warehouse_smoke` 是按旧配置跑的，照 runbook 用同名重跑会报 `config.yaml differs`。待用户定：删掉旧运行目录（9.9 已计划删它的 `model/`），还是在 runbook 里写明换 `--name`
+- [ ] 10.5 `warehouse_200` 在四边随机下还没有按完整规模跑过（按 17/40 估计，约 470 局保留 200 条）
+- [x] 10.6 提交并推送：`4dd5649`（与第 11 节同一个提交；推送时一并推了 `7135a83`）（2026-09-28）
+- [ ] 10.7 待验证：终端里“打印后等 10 秒”这条分支没实跑过（两次实跑都是 nohup，非终端）；下次在终端里跑采集时看一眼
+
+## 11. 双臂线采集默认并行（通道）；开跑前判断资源、打印通道数（用户 2026-09-28；DECISIONS 同日）
+
+- [x] 11.1 实测一条 warehouse 通道的成本（2026-09-28，`outputs/warehouse_parallel_20260928`）：CPU 平均 +2.6 核、90 分位 +3.7 核，显存 +1.5 GB，线程数 +180 起、每录一局约 +130，4 局一批峰值 +715；RTF 0.993
+- [x] 11.2 `pipeline/lanes.py`（计划、每项资源允许几条、`lanes.json`）、`stack.instance_busy`（栈、锁、端口被占）、`run_stack` 起多个栈、`collect.py` 每条通道一个进程、`batches` 按编号领取批次（文件锁）；扫参格子固定一条；`run_overnight.sh` 支持 `--collect-gpu` / `--lanes` 并在失败时关掉所有通道的栈（2026-09-28）
+- [x] 11.2.1 实跑核对（2026-09-28）：`warehouse_smoke` 以运行名 `warehouse_smoke_lanes_20260928` 按 runbook 两条命令（不带 `--gpu`）跑，计划 2 条通道（实例 2 / GPU 0、实例 3 / GPU 1；实例 0 的端口被 Unreal 编辑器占着、实例 1 是 loco_agent 的栈，都被跳过），两批同时跑，8 局保留 5 条，每局 RTF 0.974–0.996，容器线程峰值 3279/3840；随后 Isaac 补渲 5 集、convert 4 训练 + 1 验证通过，两条通道的 session 与 manifest 配对正确
+- [x] 11.3 测试 `tests/test_collection_lanes.py`（计算、分卡、领批、续跑、session 接管、端口占用）（2026-09-28）
+- [x] 11.4 文档：`running.md` §6 重写，`warehouse.md` / `bimanual.md` / `box_grasp_envelope.md` 的采集命令去掉 `--gpu 0`，术语表加“通道”，change map（2026-09-28）
+- [ ] 11.5 单臂线（bottle）的并行采集：驱动器不同，本次没做
+- [ ] 11.6 实时渲染的通道（crate）成本没有实测，沿用旧单栈预算（10 核、6000 MiB、一张卡一条）；这台机器上 crate 目前只能开一条
+- [ ] 11.7 两条以上通道的产出率是否与单条相同，只跑了一次冒烟（8 局保留 5 条，RTF 0.974–0.996）；完整规模下要按产出率和 RTF 再核一次
+- [x] 11.8 提交并推送：`4dd5649`（2026-09-28）
+- [ ] 11.9 本会话留下的小产物（共约 1 GB，可随 9.9 一起删，需先在 STATE 写明 24 小时）：`outputs/runs/{warehouse_smoke_edges,warehouse_smoke_lanes,warehouse_lane_cost,warehouse_lane_cost_i3,warehouse_lane_cost_i3b}_20260928`、`outputs/warehouse_parallel_20260928`（测量脚本与采样）、`outputs/warehouse_edges_default_20260928`；exporter session 在 `/workspace/tmp/p03_i2`、`p03_i3`（1.2 GB）。`warehouse_smoke_lanes_20260928` 的 5 集是并行通道的证据，删前留 manifest 与 `collect/`
+- [ ] 11.10 旧资源闸门 `run_context.NEEDS["collect"]`（1800 线程、8 核）仍用于单臂线和 `--lanes` 之前起的栈；是否按 11.1 的实测改小，待定（单臂 exporter 没量过）
+
+## 12. Unreal（URLab）替代 Isaac 渲染（分支 `loco_unreal`，2026-09-29 合入 main；用户 2026-09-28 定；DECISIONS 2026-09-28 URLab 一节）
+
+- [x] 12.1 可行性（只替代 Isaac 角色）+ 安装 UE 5.7.4 到 `/workspace/ue_57`（2026-09-28）
+  - [x] 12.1.1 `/workspace` A 类清理（+47 GB）、UE 压缩包校验后删除（2026-09-28）
+- [x] 12.2 冒烟：headless 启动、导入 G1、puppet 回放（2026-09-28）
+  - [x] 12.2.1 插件补丁 `include_cameras: "fresh"`：0/50 旧姿态、单相机 54–67 ms（`patches/urlab_fresh_capture.*`，2026-09-28）
+  - [x] 12.2.2 机器人头部白带 / 白盘：近裁剪 1 mm → 2 cm 后 warehouse 头部相机不再出现（2026-09-28；纯机器人关卡未重测）
+- [x] 12.3 warehouse 关卡：Blender 烘焙 → glTF → UE，6 盏 RectLight、固定曝光、强制 Lumen（2026-09-28）
+  - [x] 12.3.1 锯齿：非 2 的幂贴图缩放 + 截图开 TSR + camera cut（2026-09-28）
+  - [x] 12.3.2 （用户 2026-09-29 要求修；2026-09-29 已修：Interchange 的 glTF 母材质在截图里不渲自发光，关卡脚本 `emissive_materials` 换成自建 `M_LocoEmissive`，灯板 167 → 230，Blender 238；台账 blender_scenes.md 第 7 节）天花板灯板在 Unreal 里是暗的（Isaac 会发光），查自发光材质
+  - [x] 12.3.3 （用户 2026-09-29 要求修；2026-09-29：曝光按物理推算的 −9.40 不用改，墙和地面与 Blender 差 0–2；天花板差在反弹光，关卡体积加 `lumen_diffuse_color_boost` 4，天花板 90 → 114，平均绝对差 23.1 → 17.4；台账第 7 节）对照 Cycles 参考图标定曝光和色调（`WAREHOUSE_EXPOSURE_OFFSET`；AgX 与 UE filmic 不同）
+- [x] 12.4 G1 外观：`mujoco` 预设（MJCF 原色，sRGB→linear，非金属），用户确认（2026-09-28）
+  - [-] 12.4.1 `metal` 预设（统一反光银色）：用户否决，不像真实 G1
+  - [-] 12.4.2 可选：外壳粗糙度调到 0.2–0.25 或压暗底色，靠近 MuJoCo 的高光感——被 12.4.3 取代
+  - [x] 12.4.3 改用 Unitree 官方 Isaac 资产（`unitree_sim_isaaclab_usds` G1 + Dex1）的材质：拉丝金属外壳、近黑的头/关节/夹爪；Isaac `stage.G1_LOOKS` 与 Unreal `unitree` 预设同值，另修 Isaac 的 Dex1 手指落到近白默认色（用户 2026-09-29，DECISIONS 2026-09-29）
+  - [x] 12.4.4 warehouse 曝光（Isaac ISO 30、Unreal 曝光偏置）按新外观复核（2026-09-29：Isaac 见 .1/.2/.4，Unreal 见 12.3.3）
+    - [x] 12.4.4.1 Isaac 曝光改按 Blender 标：现在的 ISO 30 是按 MuJoCo 躯干标的，整体比 Blender 暗（地面 39 对 80）；ISO 60–80 最接近（平均绝对差 59 → 17–24）。改了会改变策略看到的图像分布，要和 12.4.5 重训一起定——用户定改 ISO 80（2026-09-29，`configs/scenes.yaml`；台账 blender_scenes.md 第 4 节）
+    - [x] 12.4.4.2 `build_isaac_warehouse_scene.py` 关 `env_light` 的理由（EXR）已过时，USDC 已修成纯色 dome；实测影响 0.1——用户定打开，新 stage `warehouse_textured_env`（2026-09-29）
+    - [x] 12.4.4.4 天花板偏暗：间接光 ×2 + Hejl–Hable 色调映射，天花板 151 → 176（Blender 183），平均绝对差 11.1 → 6.9，耗时不变（2026-09-29，台账 blender_scenes.md 第 6 节）
+    - [-] 12.4.4.5 把 Unreal 的烘焙贴图搬进 Isaac（放弃：640×480 下看不出程序化纹理的缺失，Isaac 多的是锯齿，归 12.4.4.3；2026-09-29）
+    - [x] 12.4.4.3 （用户 2026-09-29 定：2× 超采样；已落地：`scenes.yaml` 的 `isaac.supersample: 2`（warehouse_textured、box_platform），镜像、数据集补渲、视频三处统一读，`stage.downsample`；实测代价 2.2 倍而非估的 1.4 倍，三路相机 95 → 209 ms；`outputs/isaac_ssaa_20260929/`）Isaac 抗锯齿：现在只有 FXAA（`/rtx/post/aa/op = 2`，1 spp），小字糊、货架网格闪。对 Blender 的结构相似度：FXAA 0.94，2× 超采样 + FXAA 0.96，TAA 0.96（但只在静止相机上攒了 24 帧），DLSS/DLAA 这样切换出来是噪点。建议 2× 超采样（逐帧确定，镜像和数据集同图），代价约 1.4×（待用户定；`outputs/isaac_blender_match_20260929/aa_crops.jpg`，2026-09-29）
+  - [-] 12.4.5 新外观下重渲数据集并重训；旧 Isaac checkpoint 看的是发白的旧外观（放弃：用户 2026-09-29 定新外观不重训）
+- [x] 12.5 一局闭环 VLA 用 Unreal 图（seed 6000，lockstep，1/1 ok）+ ego/腕部 MuJoCo 对照（2026-09-28）
+  - [x] 12.5.1 ego/腕部对照视频一顿一顿（镜像只在策略取图时渲，约 1.4 张/秒）：改由 state trace 按仿真时间补渲，25 fps，1477 帧无重复帧（`vla_round/dataset_cams/`，用户 2026-09-28）
+- [x] 12.6 同一局第三视角 Unreal / Isaac / MuJoCo 三路视频（`reverse_room`，2026-09-28）
+- [~] 12.7 取图速度：3 相机截 8 张每次 679 ms（Isaac 95 ms）；扫 `urlab.FreshCaptureRepeats`（2–8）与画质的关系
+  - [x] 12.7.1 剖析（2026-09-28，`outputs/unreal_render_speed_20260928/`）：每次 capture 约 23 ms，其中阴影 14 ms（6 盏 RectLight 各重画 1024² Nanite 立方体阴影，不缓存）；关灯光阴影 4.2 ms 但接触阴影全没；编辑器视口每 tick 自己渲一遍（关掉 fixed 等待少约 35 ms）
+  - [x] 12.7.2 插件 `"stream"` 模式（连续序列：同 tick 取图、1 遍、不 camera cut）+ 三相机先渲后统一回读；trace 视频 642 → 139 ms/帧，与 8 遍差 2.1–2.2（同图两次 0.8–1.1、单遍 3.5），无拖影（`vla_round/dataset_cams_stream/`，2026-09-28）
+  - [-] 12.7.3 虚拟阴影贴图（VSM）：开了第一次按需取图就 GPU 卡死，复现（2026-09-28）；运行时改 `r.ShadowQuality` 崩编辑器
+  - [x] 12.7.4 阴影降本（待用户定）：只留 1–2 盏灯投影 / 机器人网格改非 Nanite / 硬件光追阴影（要开 `r.RayTracing` 重编着色器）——由 12.7.4.4/12.7.4.5 解决（无 Nanite 默认，阴影 14.3 → 0.29 ms，2026-09-28）；少灯投影 / 光追 / 自建 view family 不再需要，理由见 DECISIONS 2026-09-28 Unreal 出图提速
+    - [x] 12.7.4.1 机器人非 Nanite（`unreal_no_nanite_20260928.py` SCOPE robot，原名 `unreal_robot_nanite_20260928.py`）：每次 capture 23–25 ms，同会话基线 22 ms，无收益；画面差 0.95–1.17（噪声内）。阴影 13.5 ms 里机器人只占 0.3 ms，13.3 ms 是房间静态 Nanite 几何的 36 个立方体面。根因：引擎 `ShadowSetup.cpp:4333` 只要有 scene capture 视图就不用阴影缓存（`!bAnyViewIsSceneCapture`），每次 capture 都整场重画（2026-09-28，`outputs/unreal_render_speed_20260928/g_robot_non_nanite/`）
+    - [x] 12.7.4.2 方案 3（自建 view family 不走 scene capture）的前提检查：普通视图也不用阴影缓存——编辑器自己的视口，停掉 PIE、场景完全不动，6 个立方体阴影仍每帧重画（14.3 ms）；`r.Shadow.WholeSceneShadowCacheMb` 150→600 无变化；RHI 条件满足（VK_EXT_shader_viewport_index_layer 已加载）。原因未查明；同日较早一次空闲帧 3.4 ms 且无阴影 pass，是线索（2026-09-28）（结论有误，更正见 12.7.4.3）
+    - [x] 12.7.4.3 查普通视图不缓存阴影的原因（限时约 1 h）；决定方案 3 能拿到的是「缓存 + 三相机共享」还是只有「三相机共享」（待用户定）——原因（2026-09-28）：普通视图其实用了缓存（profile 里是 `WholeScene MovablePrimitives`，每盏灯 0.04 ms），但引擎对每盏投影灯的 6 个面都跑一遍 Nanite 阴影管线（`ShadowDepthRendering.cpp` 1753–1865 行，只按 mobility 隐藏、不跳过），每面固定约 0.37 ms，6 盏灯合计 13.3 ms，与画没画东西无关。所以方案 3 的缓存省不掉这 13 ms，只剩三相机共享
+    - [x] 12.7.4.4 阴影不走 Nanite：房间 + 纸箱 + 机器人全部非 Nanite，启动时 `r.Shadow.Nanite=0`，测每次 capture 耗时，并做同姿态画面 A/B（待用户定）——结果（2026-09-28，`outputs/unreal_render_speed_20260928/i_nanite_shadows/`）：阴影 14.3 → 0.29 ms，GPU 帧 18.3 → 3.8 ms；每次 capture 23.9 → 3.9 ms；三相机 fresh×8 640 → 138 ms，fresh×1 146 → 48 ms，stream 117 → 35 ms。画面与现状差 1.35–1.47（38 dB；同设置重复 0.39–0.48），只在边缘（地砖缝、箱边、字）；阴影形状一致。只设 `r.Shadow.Nanite 0`、网格仍 Nanite 不可用：Nanite 网格不投影，差 14–17
+    - [x] 12.7.4.5 是否把「全部网格非 Nanite + `r.Shadow.Nanite=0`」设为默认：DefaultEngine.ini 加 cvar；房间资产存盘为非 Nanite 或每次开编辑器跑 `SCOPE=all`；之后的 Unreal 图（评测、补渲）都用它（用户 2026-09-28 定为默认）——已落地：`DefaultEngine.ini` 加 `r.Shadow.Nanite=0`；房间网格存盘为非 Nanite（备份 `/workspace/ue_57/backups/`），关卡脚本导入时即关 Nanite；每次导入后跑 `unreal_no_nanite_20260928.py`（原 `unreal_robot_nanite`，默认 SCOPE all）；镜像和 trace 视频启动时检查，有 Nanite 网格或 cvar 不为 0 就拒绝。两次全新会话验证：三相机 fresh×8 124 ms、stream 35 ms，与 allnn 同图（跨会话差 0.65–0.73）（`k_default_check/`）
+  - [x] 12.7.5 待验证：`ShowFlag.Rendering 0` 关视口后取图差 1.1–1.3，略高于同图噪声 0.8–1.1；看图确认再决定是否默认关——已验证（2026-09-28，`outputs/unreal_render_speed_20260928/h_viewport_off_ab/`，12 个姿态 × ON/OFF/ON/OFF）：ON 与 OFF 差 0.74–1.30（最大 3.4），同设置重复只差 0.26–0.36；锐度不变（不是贴图 mip）；OFF 时间接光区域（箱内、阴影里的地面）偏暗约 2/255，直射高光不变，像 Lumen 全局光照收敛少了（机制未验证）
+  - [x] 12.7.6 （用户 2026-09-29：对画质没影响就关；已关：`ShowFlag.*` 只作用于编辑器 / 游戏视口，不作用于截图；作弊类 cvar，工程 ini 设不了，由 `/workspace/ue_57/ue_cmd_server.py` 启动时设 0，`require_render_defaults` 检查；空闲 GPU 28 → 11 %）是否默认关编辑器视口（省约 35 ms/请求，画面按上条会变）：定下后所有 Unreal 出图统一用同一设置（待用户定）——质量已测（2026-09-28，`j_viewport_quality/`，各自对 64 遍收敛参考）：开 8 遍离参考 1.25，关 8 遍离参考 1.30，收敛质量相同；两个 64 遍参考之间差 0.86（腕部相机 0.9–1.1、头部 0.5），小于 8 遍本身离收敛的 1.25。全非 Nanite 下关视口不再省时间（131 vs 131 ms），Nanite 下省 20–35 ms；建议保持开（无 Nanite 下关了不省时间），用户未明确表态
+  - [x] 12.7.7 （用户 2026-09-29 问：为什么不是渲一遍就够；已测：对 64 遍参考 1 遍 3.4–3.9 且整体偏暗 2–3、8 遍 1.2–1.4；1 遍 56–64 ms、8 遍 137 ms；handoff 文档"截图遍数"表，`outputs/unreal_repeats_20260929/`）无 Nanite 默认下扫
+    - [x] 12.7.7.1 闭环和数据集用几遍（现默认 8）：用户 2026-09-29 定 8 遍（宿主工程 `urlab.FreshCaptureRepeats=8`，不改） `urlab.FreshCaptureRepeats`（1/2/4/8）：各对 64 遍参考（`unreal_pose_set_20260928.py`），定闭环遍数（1 遍 48 ms、8 遍 124 ms、Isaac 88–96）
+- [ ] 12.8 用 Unreal 图跑 100 局 lockstep 评测，与 Isaac 88/100 比（checkpoint 是 Isaac 训练的，属于分布偏移）；用无 Nanite 默认（已跑的 1 局是 Nanite 版）
+- [~] 12.9 正式接入 `images.source: unreal`：镜像进 src、run_overnight 接线、数据集用 Unreal 补渲、重新训练（用户 2026-09-29 定，main 会话转交本会话；做法与文档形式见 DECISIONS 2026-09-29「images.source: unreal」）
+  - 用户 2026-09-29 定：由 loco_unreal 会话做（这个会话已发任务说明）。做法是 `images.source` 加第三个值 `unreal`，采集、转换、训练、评测命令都不变；`scenes.yaml` 给场景加 `unreal` 条目（与 `isaac` 并列）；文档不加 README 主线：`rendering.md` 图像来源表加一列、`setup.md` 加可选安装步骤、warehouse runbook 只加一句怎么改用
+  - [x] 12.9.1 开关与校验：`images.source` 第三个值 `unreal`（`run_context.IMAGE_SOURCES`，客户端侧 `sim.mirror.MIRRORED_SOURCES`）；`scenes.yaml` 的 `unreal` 条目（关卡、`repeats`、build），无关卡的场景写 `unsupported`，加载实验文件时拒绝；`run_context.unreal_scene` 查关卡已建、且由本场景建（`source.json` 哈希）；也必须 `backend.render: offline`（2026-09-29）
+  - [x] 12.9.2 代码进 src：`src/locomani/sim/unreal/`（editor、view、mirror、render_dataset_cameras、export_mjcf、build_level、in_editor/）；镜像协议提成 `sim/mirror.py`、按视图补渲提成 `sim/view_render.py`，Isaac 和 Unreal 共用；convert 的渲染器核对认 unreal（2026-09-29）
+  - [x] 12.9.3 脚本：`start_unreal.sh` / `stop_unreal.sh`（看守 `scripts/unreal/editor_guard.sh`）、`run_unreal_mirror.sh`、`render_dataset_cameras_unreal.sh`、`build_scene.sh --unreal`、`setup_unreal.sh`（宿主工程模板 `scripts/unreal/host/`）；`run_overnight.sh --render-gpu`（旧名 `--isaac-gpu` 仍可用）按 images.source 选渲染器（2026-09-29）
+  - [x] 12.9.4 关卡：warehouse_textured 与四个 warehouse_box_* 各建一个（房间关卡 save-as + 该场景导入），逐场景对 MuJoCo 出图核对，纸箱尺寸与位置一致，每次 121–148 ms（`outputs/unreal_images_source_20260929/`；2026-09-29）
+  - [x] 12.9.5 端到端：warehouse_smoke_edges_20260928 的测试副本 Unreal 补渲 2 集（每集约 80 s，p50 139 ms）→ convert 通过；把来源改成 isaac 后 convert 拒绝；`run_overnight.sh --from eval` 3 局 lockstep 闭环 3/3（Isaac 训练的 checkpoint-5000，分布偏移；镜像 330 次 p50 137 ms，327 次观测的图像 seq 全等于边界 seq）（2026-09-29）
+  - [x] 12.9.7 从零安装：`setup_unreal.sh` 装进一个空的 UNREAL_ROOT（引擎用本机已解压的，下载要 Epic 登录）8.5 分钟，起编辑器、建房间关卡和 warehouse_textured 关卡、出图核对都通过，出图与本机安装差 1.2–1.5（JPEG）。中途修了两处：URLab 导入要的网格预处理 Python 包与 `LocalUnrealRoboticsLab.ini`、重建房间时编辑器正开着它会崩（2026-09-29）
+  - [x] 12.9.8 main 审核 30cb422 的阻塞项：URLab 原版端口 5555–5559（相机从 5558 往上）与实例 0 撞车。插件补丁加 `PortBase`（默认 5800，插件 ini 可改），所有端口由它派生；客户端 `editor.port_base` 读同一 ini；setup 写入 ini。实测：编辑器常驻、PIE 时只占 5800–5806 和 18801，实例 0 的 `run_overnight --from eval` 起栈、镜像在 :5558 服务，无端口冲突；2 局跑完 1/2（第 2 局伸手后没合爪，策略行为，Isaac checkpoint 分布偏移），250 次观测图像 seq 全对，出图 p50 142 ms（`outputs/runs/unreal_instance0_eval_20260929`；2026-09-29）
+  - [x] 12.9.9 审核的非阻塞项：`start_unreal.sh` 查编辑器实际在哪张卡（nvidia-smi 按 pid 找显存最大的卡），已在跑的编辑器卡号不符就报错；`--gpu` 是 Vulkan 序号，本机与 nvidia-smi 序号一致（`--gpu 1` 时主要上下文 1.5 GB 在 GPU1）；`view.qpos_map` 改为精确匹配优先、否则取最长的后缀匹配（`tests/test_unreal_view.py`）（2026-09-29）
+  - [x] 12.9.10 读者文档按规范补齐（用户 2026-09-29 问"有 follow 之前的规范吗"）：`running.md` 参数表和另外三处旧名 `--isaac-gpu` 改成 `--render-gpu`；warehouse runbook 的 Unreal 从"只有一张卡"里的一句话拆成第 10 节"改用 Unreal 出图"（代码块、做什么、得到什么），常见报错加两行，补渲和录像耗时标成估计；setup 第 8 步按第 7 步的格式写（验证块、Blender 烘焙和建房间关卡两条命令），安装排错加"Unreal 渲染环境"一节；术语表的镜像条目改成两种渲染器，新增 Unreal / URLab、编辑器、关卡、`$BRIDGE_PY`。页面上限 warehouse 150 → 170、setup 420 → 440（`scripts/lint_repository.py`），不为凑上限压缩。无上下文的子代理按新读者读过一遍，命令、参数、日志原文都与代码核对一致，它指出的 5 处卡点和 3 处写法已改
+  - [x] 12.9.11 （2026-09-29 已改：默认 `$UNREAL_ROOT/levels`，paths.sh / paths.py 一致，有测试 `tests/test_unreal_paths.py`；本机 5 个目录挪到 `/workspace/ue_57/levels/`，用主 checkout 的场景核对 5 个关卡都通过；setup.md 排错那条已改）`$UNREAL_ASSETS` 默认在检出目录下（`assets/unreal/`），关卡却在全机共用的宿主工程里：关卡是 loco_unreal worktree 建的，主 checkout 的 `assets/unreal/` 为空，从主 checkout 起 `images.source: unreal` 会报 `source.json` 缺失（5 个场景的哈希与主 checkout 的场景一致）。建议默认改到 `$UNREAL_ROOT` 下；已转给 loco_unreal 会话
+  - [x] 12.9.12 warehouse runbook 里 Isaac 和 Unreal 平行（用户 2026-09-29：Unreal 不该是排在第 10 节的附加功能，读者一开始就选渲染器）：开头加"先选渲染器"对照表；第 1、3 步和第 6 步终端 2 两种命令并排；原第 10 节删掉。新增 `warehouse_smoke_unreal.yaml`、`warehouse_200_unreal.yaml`，与默认只差 `images.source` 和 `name`（`tests/test_image_source.py`）；页面上限 170 → 195；两份文件加载、Unreal 前置检查、找到关卡都通过
+  - [ ] 12.9.13 按 setup 第 8 步和 warehouse runbook 的 Unreal 列，从零实跑一次冒烟（无上下文的读者照文档做）；目前只有 loco_unreal 会话在本机从 `setup_unreal.sh` 起验证过，引擎下载、Unreal 数据的完整采集到评测没有照文档跑过
+  - [x] 12.9.14 （2026-09-29 用户定：按渲染器统一）待用户定：Unreal 运行的第三视角观看录像仍由 Isaac 渲（`render_isaac_videos.sh`）；Unreal 的 trace 视频还是实验脚本 `scripts/experiments/unreal_trace_video_20260928.py`，要不要接成正式脚本
+    - [x] 12.9.14.1 （2026-09-29 用户：采集导出的第三视角录像要和数据集相机同一个渲染器）补渲脚本接着用同一个 Isaac / Unreal 画每个成功局的第三视角录像到 `videos_<渲染器>/`，机位 = MuJoCo 录像的 `round_camera`，带 ghost，小窗取补渲好的数据集帧；convert 只从那里取、缺了拒绝。实跑：Isaac 8 局（warehouse_5ep_20260929）、Unreal 2 局（warehouse_film_unreal_20260929），均已 convert；未提交
+    - [x] 12.9.14.2 （2026-09-29 用户：评测录像也按渲染器统一）`render_eval_videos_{isaac,unreal}.sh` → `view_render.film_eval`：先渲每局三路相机做小窗，再拍第三视角，到 `eval/videos_<渲染器>/` 与 `eval/previews_<渲染器>/`；runbook 第 6 步改用它们（`render_isaac_videos.sh` 留作 MuJoCo|Isaac 对照）
+    - [~] 12.9.14.3 （2026-09-30 关卡部分已做：另 4 个关卡已重建，逐个验证相机图与第三视角；机位部分未做）Unreal 关卡只重建了 `warehouse_box_45x32x33`，另 4 个关卡渲第三视角时会报 rebuild；MuJoCo 实时录像（`SIM_VIDEO_DIR`，`mujoco` 运行的评测录像）四边线仍用 `video_camera`，不是每局的边机位
+    - [-] 12.9.14.4 （2026-09-30 放弃：用户说协作者要的是一条独立命令，不是实验文件开关；见 12.9.14.6）（2026-09-30 用户：第三视角可选）实验文件 `images.third_person`（默认 true，`run_context.third_person`）：false 时补渲不画、convert 不要求、`mujoco` 运行的仿真不实时录；六个现行 warehouse 实验文件写明 true
+    - [x] 12.9.14.5 （2026-09-30 两个渲染器整条实跑完，runbook 的规模和耗时按实测改写；计时 `outputs/warehouse_smoke_timing_20260930/timing.tsv`；另发现冒烟 20 局可能凑不够 10 条，Unreal 那次 8/10，`run_overnight.sh` 会停在采集；用户 2026-09-30 定 `max_batches` 2 → 3，三份冒烟文件一起改）（2026-09-30 已采 `warehouse_smoke_20260930` 11/20 条、Isaac 补渲 2/11 时用户叫停，等第三视角改完再接着跑；队列 `outputs/warehouse_smoke_timing_20260930/queue.sh`）`docs/warehouse.md` 的冒烟规模文字仍是旧的（2 条、每批 4 局），`warehouse_smoke.yaml` 已是 10 条、每批 10 局、最多 2 批（22c1fda），耗时估计要按新规模重测
+    - [x] 12.9.14.6 （2026-09-30 用户：协作者要一条命令，跑了就独立渲第三视角）`scripts/render_third_person.sh <run> [--gpu N] [--eval] [--all] [--dry-run] [局名]` 按 `images.source` 选 venv（MuJoCo/Isaac/Unreal）→ `sim/render_third_person.py` → `view_render.film_rounds`；补渲不再画、convert 不再要求（有就链接）；`images.third_person` 撤掉（旧运行副本里的键读取时丢弃）；`render_eval_videos_*` 并入 `--eval`；新增 `sim/mujoco_view.py`。三种渲染器各实跑验证
+    - [x] 12.9.14.7 （2026-09-30，`34fcd13`）warehouse runbook 每一步 Unreal 与 Isaac 平行：第 0 步 `RUN=`，共用命令写 `$RUN`；第 7 节只留 `render_third_person.sh`（两个渲染器同一条）和 MuJoCo 快速回放；新增 `--side-by-side` 写 `<局>_vs_mujoco.mp4`（左 MuJoCo 右渲染器，同机位逐帧对齐），两份冒烟实跑；`render_isaac_videos.sh` 移出 runbook
+  - [ ] 12.9.6 用 Unreal 补渲的数据集重新训练，再用 Unreal 评测（训练集与评测同一渲染器；待用户安排）
+- [x] 12.10 （2026-09-29 用户说提交，已随 12.14 一起提交）提交分支代码：12 个 `scripts/experiments/unreal_*` 和 `patches/urlab_fresh_capture.*`（等用户说）
+- [x] 12.11 （用户 2026-09-29 要求修；已修：插件 `ImportXmlSync` 只在内存里建蓝图，`unreal_smoke_20260928.py setup` 现在把它存盘，`EditorStartupMap` 设为 warehouse；重启后不重新导入的图与刚导入时差 0.5–0.7，在跨会话噪声内）URLab 导入的蓝图不写盘，每次开编辑器都要重新 clear + setup；查能否保存
+- [x] 12.12 （用户 2026-09-29 定：关掉；已关：宿主工程 `DefaultEditorSettings.ini` 的 `bSendUnattendedBugReports=False`、`bSendUsageData=False`，`GetIni` 读回合并值 False，之后两次崩溃都没生成崩溃报告）UE 崩溃时 CrashReportClient 自动把报告上传到 Epic（2026-09-28 编辑器崩溃时已传一份）；是否在宿主工程配置里关掉（待用户定）
+- [x] 12.13 （2026-09-29 已提交到插件本地分支 `loco-fresh-capture` 的 `58c8a98`，未推送；与补丁逐字节一致）插件改动（fresh / stream / 统一回读）只在插件仓库工作区里，未提交到插件分支 `loco-fresh-capture`；`patches/urlab_fresh_capture.patch` 是唯一记录（随 12.10 一起定）
+- [x] 12.14 （2026-09-29 用户说提交，已提交）提交 2026-09-29 会话的改动（等用户说）：`src/locomani/sim/isaac/stage.py`（G1_LOOKS、按 body 名查颜色）、`configs/scenes.yaml`（warehouse：新 stage + ISO 80 + 间接光 ×2 + Hejl–Hable）、`scripts/build_isaac_warehouse_scene.py`（取自 main 的版本再改 env_light，合并时以它为准）、`scripts/render_isaac_videos.sh` 注释、`scripts/experiments/unreal_robot_materials_20260928.py`（`unitree` 预设）、`tests/test_isaac_robot_colours.py`（新）、`tests/test_run_context.py`、`docs/rendering.md`、`docs/ledger/blender_scenes.md` 第 4–6 节
+  - [x] 12.14.1 （已提交；仓库外那几项不进 git）同日第二轮（超采样、box_platform 颜色、Unreal 四项）加的文件：`src/locomani/sim/isaac/{stage,view,mirror,render_dataset_cameras,isaac_render,bench_render}.py`、`src/locomani/pipeline/run_context.py`、`scripts/build_isaac_primitive_scene.py`、`tests/test_isaac_primitive_scene.py`（新）、`tests/test_isaac_view.py`、`docs/warehouse.md`、`docs/handoff/unreal-urlab-20260928.md`、台账第 7–8 节；未跟踪的实验脚本 `unreal_smoke` / `unreal_warehouse_level` 也改了。仓库外（不进 git）：`/workspace/ue_57/ue_cmd_server.py`、宿主工程 `Config/DefaultEngine.ini`（`EditorStartupMap`）和 `Config/DefaultEditorSettings.ini`（崩溃上报）
+- [x] 12.15 （用户 2026-09-29 要求修；已修：先把 sRGB 转成线性，新 stage `box_platform_srgb`，旧 `box_platform` 留在共享缓存；测试 `tests/test_isaac_primitive_scene.py`；台账第 8 节）`scripts/build_isaac_primitive_scene.py`（box_platform）同样把 MJCF rgba 直接当线性 `diffuseColor`，方块偏白；未改（2026-09-29 发现）
+- [~] 12.16 工作流文档「用 grill-me + handoff 跑完一项工作」：在线版 https://claude.ai/code/artifact/659f6f44-4e6b-43ba-84c4-1bb8cad09618，离线版 `outputs/workflow_doc_20260929/`（2026-09-29）
+  - [ ] 12.16.1 （用户 2026-09-29：现在不改）grill 那节用的是按实际决策重写的示范；保留还是换成 09-28 整理文档那次真实的 grill 记录（待用户定，在线文档里有评论）
+  - [ ] 12.16.2 （用户 2026-09-29：现在不改）是否挪进仓库 `docs/` 并在 README 文档列表加一行（`outputs/` 被 git 忽略；待用户定）
+- [ ] 12.17 URLab 插件段错误（2026-09-29 两次）：客户端 `close()` 切回 live 后 `UURLabZmqPublishTransport::PostStep` 空指针；另一次在前一个客户端不 `close()` 就退出、下一个客户端发 `hello` 时。两次之前都在 PIE 里改过相机后处理（已不这么做），因果未查；镜像和视频脚本结尾都调 `close()`
+- [-] 12.18 （放弃：用户 2026-09-29 接受现在的天花板亮度）Unreal 天花板仍比 Blender 暗 60（114 对 174）：Lumen 的反弹只有 Cycles 的一半左右，增益再往上收益很小；可试色调曲线（Isaac 换 Hejl–Hable 有效）或接受（待用户定）
+- [x] 12.19 （2026-09-29 完成：第一次合并 4caadb5，第二次 `images.source: unreal` 合并 b2fd13f，之后快进 5c12f26，均已推送）合入 main（分支会话 2026-09-29 请求；DECISIONS 2026-09-29 合并一节）：冲突 9 个文件已解；四边线换新外观、四个 `warehouse_box_<尺寸>_env` stage 已建；`make lint` 通过
+  - [x] 12.19.1 （2026-09-29 用户说推送，已推送；origin/main 现为 fc28d1d）推送 origin/main：待用户说
+  - [x] 12.19.2 视频是否对 ≥ 1280×960 的尺寸跳过超采样——用户 2026-09-29 定：不跳，视频照用场景的 2×。实测（`outputs/merge_check_loco_unreal_20260929/`，GPU0，`warehouse_smoke_edges_20260928` 的 `visual_crate_s7000_01`，22.5 s 画面、281 帧、带小窗）：整条 5.0 分钟，Isaac 286 s，约 1.0 s/帧；main 台账第 2 节 1× 时 66 s 画面 249 s、约 0.6 s/帧，约 1.7 倍。`docs/warehouse.md` 的录像 7 → 10 分钟、补渲 1 → 3 分钟、总计 40 → 50 分钟是按这组数和 209 ms/次推算的，下次冒烟实跑时核对
+  - [x] 12.19.3 （2026-09-30 冒烟规模按新配置实跑，见 12.9.14.5） 下次 warehouse 冒烟实跑时核对 runbook 里按 2× 超采样估计的耗时：Isaac 补渲每局约 3 分钟、评测录像每局约 10 分钟、全程约 50 分钟（页面上标着"估计"，实测后改成实测值）
+  - [ ] 12.19.4 待用户定：`outputs/merge_check_loco_unreal_20260929/`（66 MB，合并后 `_env` stage 的实渲核对）是否保留
+- [~] 12.20 2026-09-29/30 会话留下的运行与产物（DECISIONS 2026-09-29/30 第三视角一节）
+  - [x] 12.20.1 （2026-09-29）warehouse 默认设置采 5 集（`outputs/runs/warehouse_5ep_20260929`，20 局保留 8）；MuJoCo / Isaac / Unreal 三种第三视角、统一机位的三路并排预览（`outputs/videos/warehouse_5ep_20260929/`）
+  - [x] 12.20.2 （2026-09-30）5 个 Unreal 关卡按带相机刚体和 ghost 的导入重建，逐个验证（`outputs/unreal_levels_rebuild_20260930/all_levels.jpg`）
+  - [ ] 12.20.3 待用户定：删哪些（规矩：删前 STATE 写明 24 小时）。10 步冒烟模型三份各 24 GB：`outputs/runs/{warehouse_smoke_20260930,warehouse_smoke_unreal_20260930,warehouse_film_unreal_20260929}/model`；小的测试副本 `outputs/runs/film_{mujoco_test_20260930,eval_isaac_test_20260929}`（共 0.3 GB）；实验脚本目录 `outputs/{warehouse_5ep_20260929,warehouse_film_unreal_20260929}`（其中 `unreal_third_person.py`、`unreal_tracking_ghost.py` 已被 `render_third_person.sh` 取代）
+  - [ ] 12.20.5 待用户定：09-30 下午新增的产物删不删（小）：两份冒烟运行里的 `*_vs_mujoco.mp4` 和预览、Isaac 冒烟多出的一局失败局第三视角 `visual_crate_s7000_00`、`outputs/docs_warehouse_rewrite_20260930/`
+  - [ ] 12.20.4 可选：按 `max_batches: 3` 再跑一次冒烟采集，确认 20 局不够时第三批能补齐（第三批约 6 分钟；runbook 的耗时是 2 批时实测的）
+
+## 13. 真机 URDF（saturn，cheng.zhao 2026-09-29 提供；DECISIONS 2026-09-30 回退一节）
+
+- [-] 13.1 （2026-09-30 放弃：用户说协作者给错了 URDF；代码全部回退，改动存 `outputs/g1_urdf_compare_20260930/saturn_urdf_work.patch`）按 `assets/unitree_G1` 生成 saturn 模型、`build_sim_scene.py --robot saturn`、场景 `bottle_saturn`、SONIC + bottle 专家试跑
+  - [x] 13.1.1 （2026-09-30）两份模型对比：29 个关节同名同序同轴同限位，腿完全一致；腰 rev 1.0、5010 腕、背包和云台 +0.86 kg、踝/腰力矩 50 → 35（`outputs/g1_urdf_compare_20260930/compare.txt`）
+  - [x] 13.1.2 （2026-09-30）试跑：D435 视野 0/10（开局视野门）；saturn 身体 + stock 相机 6/10、不倒；stock 9/10
+- [x] 13.2 （2026-10-02，用户定为默认机器人）待协作者：给正确的真机 URDF。来了以后先 `git apply --check` 那份 patch，再跑 `make_dex1_model.py`（它会拿 URDF 自检）
+  - [x] 13.2.1 （2026-10-01）henry 推了无背包版 `c966ee1`：`assets/unitee_G1/urdf/g1_comp_new_hip_dex1_1.urdf`（目录名少个 r；robot.yaml 叫 mars）；旧 saturn 文件移到 `assets/unitree_G1_backpack`。MuJoCo 多角度渲染在 `outputs/g1_urdf_render_20261001/`（总重 34.85 kg，stock 35.87；云台上是 D455，D435 固定在脸部）
+  - [x] 13.2.2 （2026-10-02，`62ed89f`、`81ef9cd`）用 henry 带腕部相机的 `cb3ae2f`（`assets/unitree_G1_with_wrist_camera`）：saturn patch 改名 mars，`make_dex1_model.py` 写出 `g1_29dof_with_dex1_mars.xml`，自检 FK 3e-7 mm、35.02 kg；7 个 `*_mars` 场景（DECISIONS 2026-10-02）
+  - [x] 13.2.3 （2026-10-02，`cb3ae2f` 带了 D405 支架和位姿）mars URDF 没有腕部相机（robot.yaml 有两台 D405 的序列号，URDF 和 meshes 里都没有，calibration 只有 livox→D435）。仿真要加腕部相机，需 henry 给 D405 的安装位姿/外参、支架 CAD 或手腕照片（已向用户提议代写消息，用户未回复）
+- [~] 13.3 （2026-10-02 用户：用云台上的 D455，俯仰锁 +4.71° 对齐原 52° 俯角；内参仓库里没有，先用规格值 D455 fovy 65、D405 fovy 58）待用户/协作者确认：云台上的 ego 相机是 D435 还是 D455，以及真机内参（patch 里按 D435 常用值 fx = fy = 615，fovy 42.6）
+- [x] 13.4 （2026-10-02 用户：mars 全按 URDF，踝/腰 35、髋 roll 139、腕 13.4；stock 场景不变；同日用户改为腰 50，见 13.6.4）仿真踝关节力矩上限 50 N·m 和真机固件 35 N·m 要不要对齐（改了会动所有标定）
+- [ ] 13.5 待用户定：saturn 产物删不删（约 180 MB：`outputs/scene/sim_lowcom_saturn*`、`outputs/runs/bottle_{saturn,saturn_stockcam,stock}_pilot_20260930`；patch 所在的 `outputs/g1_urdf_compare_20260930/` 要留）；删前在 STATE 写明 24 小时
+
+- [~] 13.6 mars 设为 bottle / warehouse 默认机器人（用户 2026-10-02；DECISIONS 同日一节）
+  - [x] 13.6.1 （2026-10-02）第 1 步：生成器、7 个 `*_mars` 场景、`scene_meta.json` 记 `robot`、力矩上限从场景执行器读、几何测试样例换 mars；全量测试过
+  - [x] 13.6.2 （2026-10-02）第 2 步：配对 10 局试跑（`outputs/mars_pilots_20261002/`）。bottle stock 9/10、mars 9/10（修网格名后重跑）；warehouse stock 6/10、mars 0/10
+  - [x] 13.6.3 （2026-10-02）warehouse 退步定位：9 组单变量对照，只有腰 roll/pitch 35 → 50 N·m 救回（5/10）；35 N·m 下腰俯仰塌到 ~35°（关节限位 29.8°），stock 抓箱姿势静力矩 p95 39 N·m
+    - [x] 13.6.3.1 （2026-10-02，用户问手为何抖）手抖也是腰 35 N·m：warehouse mars 手相对躯干高频抖 9.4 mm RMS、约 4 Hz、主要在肩 pitch（stock 2.8）；腰俯仰高通速度 1.26 rad/s（stock 0.13），4.7% 的时间顶在限位上反弹。腰 50 → 2.9 mm、0.12 rad/s；腕 5、质量、运动学、踝 50 都不消除；bottle mars 3.1 mm（`outputs/mars_pilots_20261002/jitter/jitter.md`）
+  - [x] 13.6.4 （2026-10-02 用户：腰改 50 再试）mars 腰 roll/pitch 改 50 N·m（`make_dex1_model.MARS_EFFORT_OVERRIDES`，URDF 和 Unitree 官方都是 35，踝仍 35），7 个场景重建。warehouse 重跑 `warehouse_mars_pilot_20261002c`：6/10（stock 6/10），手抖 2.8 mm（= stock）
+    - [ ] 13.6.4.1 待查：mars 的 4 局失败全是 lost_attachment，且都在箱子已抬起 4–14 cm、倾 6–13° 后一只手脱开（3 局右手）；stock 的 2 局 lost_attachment 都在抬起前（rise 0）。可能是 D405 支架、手腕 13.4 N·m 或手臂运动学；需腰 50 下的单变量对照
+  - [~] 13.6.5 第 3 步（用户看完第 2 步再做）：mars 的 Isaac 机器人资产（按机器人名分开存）、warehouse `_mars` 的 Isaac 场景与 Unreal 关卡（`scenes.yaml` 现写 unsupported 指向这里）、各实渲一局、补渲冒烟
+    - [x] 13.6.5.1 （2026-10-03，用户：只改 warehouse，Unreal 作默认）`assets/isaac/robot/mars/g1_dex1.usda`（`build_isaac_assets.sh --robot mars`）、四个 `warehouse_box_*_mars_env` stage、四个 `warehouse_box_*_mars` Unreal 关卡已建；`warehouse_textured_mars` 不建关卡
+    - [x] 13.6.5.2 （2026-10-03）Unreal 冒烟 `warehouse_mars_smoke` 照 runbook 跑第 1–4 步（`outputs/mars_assets_20261003/smoke/`）：采集 30 局保留 9 条，Unreal 补渲 9 局（标记 `robot: mars`），转换 8+1 条。用户：不训练、不评测，只要采集流程的代码和文档合规；第 5–7 步没跑
+    - [ ] 13.6.5.4 待用户定：mars 冒烟保留 9/30，stock 09-30 是 11/20、8/20；要不要同种子配对重跑分清是机器人还是波动
+    - [x] 13.6.5.5 （2026-10-03，用户）默认摆放改为只走 −y 边：`warehouse_mars_smoke`、`_200` 及 `_isaac` 的 `start_edges: [ym]`；stock 文件仍四边；`collect.layout_reminder` 改说三种摆放；四边那次冒烟的运行目录改名 `warehouse_mars_smoke_4edges_20261003`
+    - [ ] 13.6.5.6 只走 ym 的 mars 采集还没实跑（只 `--dry-run` 核了摆放）；stock 的 ym 边 09-28 是 11/19
+    - [ ] 13.6.5.7 runbook 第 5–7 步（训练、开环/闭环评测、第三视角）在 mars 上没跑（用户 10-03：暂不训练）；09-30 只在 stock 上跑过
+    - [ ] 13.6.5.8 可选：runbook 常见报错补一行 `REFUSING TO START: a GPU already has`（别的项目占卡 > 4 GB 时 `train.sh` 拒绝，10-03 冒烟卡在这里 10 分钟）
+    - [ ] 13.6.5.3 Isaac 版 mars 实渲一局（只建了资产）
+  - [x] 13.6.6 （2026-10-03）第 3 步：Isaac/Unreal 的 `source.json` 与两种补渲标记加 `robot`（Q12），对不上拒绝（`run_context._require_robot`；旧文件无字段按 stock）
+  - [~] 13.6.7 第 4 步：runbook（single_arm.md、warehouse.md）示例改用 `*_mars`、文档、推送（推送前问用户）
+    - [x] 13.6.7.1 （2026-10-03）warehouse.md 改用 `warehouse_mars_smoke`（Unreal 默认）/`_isaac`；README、setup、glossary、rendering、warehouse_design §11 跟着改
+    - [ ] 13.6.7.2 bottle（single_arm.md）、crate 还是 stock（用户 10-03 只要 warehouse；crate 还没有 mars 场景）
+    - [x] 13.6.7.3 （2026-10-03，用户：提交并 push）`4db7deb` 连同之前 12 个本地提交推到 origin/main（`cb3ae2f..4db7deb`）
+  - [x] 13.6.9 （2026-10-02，`ed26ed2`，用户：和 stock 相同的部位外观一致）逐部件比对颜色：除手腕（有意涂黑）外相同部位一致。改两处：云台俯仰支架涂黑（头部原有一根白横条；10-03 用户更正：那是头顶的 D455，真机银白，已改回）；骨盆保留的 stock 碰撞外壳改成骨盆色（MuJoCo 画碰撞体，白壳透出）。10-03 用户：骨盆（腿和上身之间的三角件）应为银色，`robot_look.SHELL_MESHES` 把 `pelvis_ver0529` 画成外壳色（URDF 和 Unitree 官方都是黑），碰撞外壳随之同色（对比图 `outputs/mars_look_compare_20261002/`）。10-03 用户先要 D405 本体黑，查明 Unreal 画面里的灰格子方块是 D405 的碰撞盒（mars 碰撞体 alpha 1 被导出，URLab 用 UE 默认 `BasicShapeMaterial` 画基本几何体）而非相机本体，改回银色；`export_mjcf.strip_to_dynamic` 现在丢掉有可视体的 body 上的碰撞 geom。同日用户：MuJoCo/Isaac 画面里支架后背有个黑框凹陷，也是这个碰撞盒；参照 `assets/unitree_G1_with_wrist_camera_new`（URDF 不给支架碰撞体、网格相同），`_mars_geoms` 把支架的碰撞基本体放到 group 3：仍碰撞，相机不画。之后 Unreal 里 D405 背面仍显内凹：是 URLab `clean_meshes.py` 导出 GLB 的平滑法线跨过 90° 棱（背面法线均值 0.84、离散 0.69），不是几何；补丁按 30° 拆分顶点后 0.998/0.13（`patches/urlab_fresh_capture.patch`）
+  - [ ] 13.6.8 可选：`outputs/scene/hand_points_dex1.npy` 仍是 stock 手（mars 多了 D405 支架，最低点只在少数姿态差 >0.2 cm，最大 6 cm）；bottle 用它算手离桌高度
+  - [ ] 13.6.10 待用户定：先做 13.6.4.1 的腰 50 单变量对照（支架不碰撞、腕 5 N·m，各 10 局约 15 分钟），还是先开始第 3 步（13.6.5）。10-02 已问，用户转去改外观，未答
+  - [~] 13.6.11 上真机前：专家抱箱前倾要腰俯仰约 39 N·m，Unitree 官方 URDF 腰是 35；改专家少弯腰多屈膝，或向 henry 确认真机腰的固件上限（仿真现在用 50 掩盖了这点）
+    - [x] 13.6.11.1 （2026-10-03，用户问真机遥操能弯 80° 且手不抖）静态腰俯仰负载（mars 模型）：前倾 80° 手垂向地面 36 N·m；30° 手前伸托 1.2 kg 箱 41；专家 10 局 p95 44（29% 的帧 > 35）（`outputs/mars_pilots_20261002/waist_load/`）
+    - [x] 13.6.11.2 （2026-10-03）仿真弯腰测试 bend80（各 1 次）：腰 50 手垂地 76° 纹丝不动；腰 50 手前伸、腰 35 两种都 2–4 Hz 塌到限位、手抖 4–31 mm；无摔倒（`outputs/mars_pilots_20261002/bend80/bend80.md`）
+    - [x] 13.6.11.3 （2026-10-03）抖动机制（`bend80/osc.py`）：髋压前倾 → 腰力矩到截断 → 截断后无刚度无阻尼 → 0.1 s 塌到限位、骨盆反踢 → 弹回负载 < 截断处 → 重复；腰 kp 只有 28.5 N·m/rad
+    - [x] 13.6.11.4 （2026-10-03）50 N·m 的来源：SONIC 训练配置与训练 URDF（rev 1.0 几何）都是 50，即 2×5020（单台 25）；Unitree 所有 rev 1.0 文件写 35；deploy 不截断力矩，真机上限由固件定
+    - [ ] 13.6.11.5 待协作者：真机保持弯腰（手垂地 80° 和前倾 50° 手前伸托箱）时 LowState 13/14 号电机的 `tau_est`，定腰的固件上限
+    - [ ] 13.6.11.6 可选：腰 50、手水平前伸时能稳住的最大前倾（静态估算约 60°，未实测）
+  - [ ] 13.6.12 待用户定：本次产物删不删（`outputs/mars_pilots_20261002` 4.1 GB，其中 `scenes_v1`–`v6` 旧版场景和 8 个 `ablate_*` 场景；14 个 `outputs/runs/*_20261002*` 共 7.5 GB；`outputs/g1_wristcam_render_20261002` 122 MB）；删前在 STATE 写明 24 小时
+    - [ ] 13.6.12.1 10-03 新增产物：`outputs/runs/warehouse_mars_smoke_4edges_20261003` 712 MB、`outputs/runs/bend80_mars_w{50,35}_20261003` 共 314 MB、`outputs/mars_assets_20261003` 2 MB、`outputs/mars_pilots_20261002/bend80` 3 MB；删前在 STATE 写明 24 小时
+  - [x] 13.6.13 （2026-10-04，用户：新 URDF 的手臂是黑的，旧的是银色，改成银色）三节 5010 手腕（小臂）从 `robot_look.DARK_MESHES` 去掉，按 URDF 的白色画外壳银；Dex1 底座、D405 支架仍黑。mars 模型、7 个 `*_mars` 场景、几何样例已重建（差别只有手腕 rgba 和 henry 的支架 group 3；旧场景在 `/workspace/tmp/mars_scenes_before_20261004`）；对比图 `outputs/mars_arm_silver_20261004/`
+    - [x] 13.6.13.1 （2026-10-04，随 13.6.14 一起重建）4 个 `warehouse_box_*_mars` Unreal 关卡要重建（场景哈希变了，运行会拒绝旧关卡并给出重建命令）；Isaac 机器人 USD 按 MJCF 哈希缓存，下次用到时自动重建
+  - [x] 13.6.14 （2026-10-04，用户：反光太强，按真机照片 `assets/mars_real_model.jpg` 调）外壳 metallic 0.75、roughness 0.6、底色 0.45，外观名 `g1_satin_20261004`（stock 与 mars 共用）；mars 腰部两个电机加入 `DARK_MESHES`，骨盆按 URDF 画黑（`SHELL_MESHES` 删除）。19 组对比 `outputs/mars_shell_match_20261004/`；7 个 mars 场景、几何样例已重建，本机 9 个 Unreal 关卡 10-04 重建（旧场景在 `/workspace/tmp/mars_scenes_silver_pelvis_20261004`）
+    - [x] 13.6.14.1 （2026-10-05）Isaac 与 Unreal、MuJoCo 同机位对比（`outputs/robot_look_3renderers_20261005/sheet.png`）：Isaac 外壳与 Unreal 接近；4 个 mars Isaac stage 已重建
+    - [x] 13.6.14.2 （2026-10-05，用户）MuJoCo 外观对齐：mars 外壳 rgba 0.7 → 0.62（DECISIONS 2026-10-05）；7 个 mars 场景、几何样例、4 个 mars Unreal 关卡与 Isaac stage 已重建。MuJoCo ego 手臂仍约 25% 过曝（头灯）
+  - [x] 13.6.15 （2026-10-06，用户）第一视角可选脸上的 D435：`--ego-camera d435_head`，场景 `*_mars_d435`（bottle、warehouse_textured、warehouse_box_45x32x33），示例 `warehouse_mars_smoke_d435_unreal`、`_d435_isaac`、`_d435_mujoco`（10-06 用户：三个渲染器都有，Unreal 版由 `warehouse_mars_smoke_d435` 改名）；本机三个场景、Isaac stage、Unreal 关卡已建，三个渲染器对比 `outputs/ego_d435_20261006/`
+    - [ ] 13.6.15.1 D435 上的专家产出率只跑过一次：2026-10-06 10 局保留 4（失败 basket_tilt 3、unstable_hold、reach_stalled、lost_attachment 各 1；`outputs/runs/warehouse_mars_d435_check_20261006`），没有同种子对照 D455；伸手/合爪阶段手臂出画
+    - [ ] 13.6.15.2 待协作者：D435 真机内参、外参所用的 livox 坐标系定义（13.3）
+  - [x] 13.6.16 （2026-10-06，用户）训练图加相机延迟：`images.camera_delay`，三个渲染器的离线补渲都读，审计按预期滞后检查；warehouse mars 线 9 个实验文件打开 `{fps: 30, latency_ms: [20, 30]}`（DECISIONS 2026-10-06）。验证 `outputs/camera_delay_check_20261006/`
+    - [ ] 13.6.16.1 待协作者：真机三台相机的帧率和"画面比关节状态晚多少"，测到后替换 30 fps / 20–30 ms
+    - [x] 13.6.16.2 闭环评测的观测图也按同一模型变旧：2026-10-07 随 16.7 实现（lockstep；`camera_frames` 与它同设被拒）
+    - [ ] 13.6.16.3 训一对有/无延迟的模型比较（未做，效果未知）
+  - [ ] 13.6.17 待用户定：10-04–10-07 产物删不删（删前在 STATE 写明 24 小时）：`outputs/runs/camdelay_check_{a_nodelay,b_delay}` 各 345 MB（延迟检查用的副本）、`outputs/t7_lockstep50_smoke_20261007` 566 MB、`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007` 各 216 MB、`/workspace/tmp/mars_scenes_{before_20261004,silver_pelvis_20261004,shell070_20261005}` 各 535 MB（换外观前的旧场景）。`/workspace` 剩 97 GB（91%）
+  - [ ] 13.6.18 待用户定：warehouse mars 的 11 个实验文件顶层 `backend.dataset_fps: 30.0` 与 `dataset.fps`（25/50）不一致；采集不读它（评测块里那份才被读），改成和 `dataset.fps` 相同还是删掉
+
+## 14. G1 外观追 URLab hero 图（用户 2026-10-01；DECISIONS 2026-10-01 材质一节）
+
+- [x] 14.1 （2026-10-01）对比 hero 与我们 Isaac / Unreal 的机器人：主因是外壳 roughness 0.75、深色件参数、无贴图、白房间平光和分辨率（`outputs/g1_look_vs_hero_20261001/`）
+- [x] 14.2 （2026-10-01）Unreal 里一次改一项的 A/B：v1 粗糙度 0.35/0.45、v2 黑塑料、v3 侧光 40k–400k cd、v4a/v4b 组合；另测光滑法线、32 次采样（`outputs/g1_look_ab_20261001/ab_sheet.png`）
+- [x] 14.3 （2026-10-01，`f7eadec` 已推送）用户选 v4a，四路画面（ego、左右腕、第三视角）和 Isaac 都用：`src/locomani/sim/robot_look.py` 一处定义，关卡 `source.json` 与两种补渲标记记 `robot_look`
+  - [x] 14.3.1 （2026-10-01）本机 5 个 Unreal 关卡按新外观和 1280×960 重建
+  - [x] 14.3.2 （2026-10-01）Isaac、Unreal 各实渲一局第三视角带小窗（`outputs/g1_look_v4a_check_20261001/`）
+- [ ] 14.4 待用户定：Isaac 深色件比 Unreal 亮（腕部相机夹爪顶板 136/255，Unreal 近黑；底色 0 也只到 108，间接光 ×1 是 135）。要不要只给 Isaac 单独压暗（目前两边数值相同，按用户"同一套设定"）
+- [ ] 14.5 待验证：新外观下的数据集补渲（`render_dataset_cameras_{isaac,unreal}.sh`）和评测镜像没单独实跑；只跑了第三视角（它的小窗走同一个 view）
+- [ ] 14.6 待用户安排：09-30 及以前的数据集和 checkpoint 都是旧外观；要用新外观就得重新补渲/重训（与 12.9.6 一起排）
+- [ ] 14.7 待用户定：本次产物删不删（共约 220 MB：`outputs/g1_look_ab_20261001` 46 MB、`g1_look_v4a_check_20261001` 35 MB、`g1_look_vs_hero_20261001`、`g1_urdf_render_20261001` 134 MB）；删前在 STATE 写明 24 小时
+
+## 15. 协作者（henry-zhao）的推送
+
+- [x] 15.1 （2026-10-01）origin/main 上 henry 的 6 个提交（`5e9c613`…`c966ee1`）快进合入 main；用户 2026-10-01 说"merge 掉 henry 的修改"时已无可合并内容（PR #1–#3 的提交也都在 main 里）
+- [x] 15.2 （2026-10-01，随 `f7eadec`）`assets/unitee_G1/README.md` 的 Python 代码块按 ruff 格式化：origin/main 原本过不了 `make check`
+- [x] 15.4 （2026-10-02，`577ce78`）合入 henry 的 `cb3ae2f`（新增 `assets/unitree_G1_with_wrist_camera`，backpack 目录改名 `unitree_G1_with_backpack`）。他的 `mjmodel.mjb` 是 MuJoCo 3.10 编的旧模型（无相机、无 D405），`mjmodel.xml` 是空文件；README 的文件名和序列号与 robot.yaml 对不上；README 代码块按 ruff 格式化
+- [x] 15.5 （2026-10-07，`a0f05af`）rebase 到 henry 10-06 的 5 个提交（`1094808`…`eb984fd`，含 `dataset.fps` 与 `src/real_robot/`）：`view_render`、`render_dataset_cameras`、STATE、TODO、change map 冲突，两边都保留；`camera_delay` 的预期滞后改按运行的 `dataset.fps` 算；他新加的 `_d435_{isaac,mujoco}` 也开相机延迟
+- [x] 15.6 （2026-10-07，`e6d7e80`）合入 `henry-dev` 的 `dc3b909`（官方式 `run_gr00t_server.py` 与按官方逐函数重写的真机客户端），无冲突；同一提交把还写着 `serve_policy` / `get_action_raw` 的设计文档、DECISIONS 追加条、TODO 16.2、change map、术语表、running.md、README 更新
+- [ ] 15.3 可选：GitHub 上 PR #1–#3 若仍显示打开，在网页上关掉（本机没有 `gh`，看不到状态）
+
+## 16. 仿真数据零样本上真机：GR00T + SONIC（用户 2026-10-06，逐项问答定；DECISIONS 同日；设计 `docs/handoff/real-robot-sim2real-plan-20261006.md`）
+
+- [x] 16.1 （2026-10-06）T1：`dataset.fps` 字段（25 | 50）贯穿 `run_context.migrate_dataset` → `run_convert --fps` → `convert_to_hf_format` → `world_lift.resample_selection`；Isaac/Unreal 补渲按它决定渲哪些行，标记记 `dataset_fps`，`render_dataset_cameras.serves` 决定渲过的 session 能否服务某个转换（50 服务 25，25 不服务 50）；`eval_closed_loop` 遇到非 25 的运行拒绝（lockstep 的 `RATE = 25` 写死，16.7）
+- [x] 16.2 （2026-10-06）T2：`src/real_robot/` 推理客户端（`real_robot.inference`，官方结构；`observation`、`chunk`、`gripper`、`policy_client`），`scripts/run_real_robot_inference.sh`，runbook `src/real_robot/README.md`，`UPSTREAM.md` 钉 WBC v1.1 a0732b6；测试 `tests/test_real_robot_client.py`。只做了本机冒烟（真实 pinocchio 模型拼 60 维观测、protocol v4 打包），没连过机器人或策略服务器。2026-10-07 henry `dc3b909`（`henry-dev`，同日合入）按官方逐函数重写客户端、调官方 `get_action`，策略服务器换成官方式 `src/real_robot/run_gr00t_server.py`（`scripts/run_gr00t_server.sh`）；仍没加载过真实 checkpoint
+    - [ ] 16.2.1 用真实 checkpoint 起 `scripts/run_gr00t_server.sh`，让 `run_real_robot_inference.sh` 在本机连上它（不上真机）：核对 `identity`、嵌套观测、40 步 chunk 和 Dex1 换算；henry 只用占位策略试过
+- [ ] 16.3 T3：转换器写 Dex1 单位：`teleop.*_hand_joints` 第 0 维按 `real_robot.gripper.sim_m_to_dex1` 映射（命令低于 −0.02 截到 0），`observation.state` 手 7 维广播映射后的指爪位置（第 4、5 维均值）；与客户端共用一个映射函数
+    - [ ] 16.3.1 `dex1_to_sim_m` 闭端截在 −0.02 m，warehouse 线闭合目标是 −0.06（−0.02 拿不起箱子）：Dex1 0 要换回线自己的闭合目标，16.5 的仿真桥同样（DECISIONS 2026-10-08；方向维持 0 闭 5.5 开）
+- [ ] 16.4 T4：新运行 `warehouse_mars_200_50hz`（复制实验文件加 `dataset: {fps: 50}`，运行目录复制 collect 条目、manifest、trace、场景；删 74 个 session 的 `meta/offline_render.json`）→ Unreal 补渲（按 2026-10-07 决策 1 带 `camera_delay`，约 3/5 的行出新图，约 15 h 单卡；推翻 D2）→ 转换 → 训练；同源数据留 25 fps 版本作对照
+    - [ ] 16.4.1 本机没有 `outputs/runs/warehouse_mars_200`，要在采集它的机器上做；步骤见 `docs/migrate_old_data.md` 第 3 节，代码要含 `6a6bd10`（否则补渲第一局 `KeyError: 'dataset_fps'`）
+- [ ] 16.5 T5：sim2sim：官方结构客户端对接本仓库 MuJoCo 栈（`--hand-wire sim`），核对延迟补偿与跳帧行为；仿真桥若改读 Dex1 单位则用 `dex1_to_sim_m`
+- [ ] 16.6 T6（需真机）：核对相机服务器三路 key 与 `g1_debug` 手字段；`]` + `i` 手动验 Dex1 方向（5.5 开、0 闭）；按 D13 跑 10 局（起点 0.6–1.0 m，30 s，骨盆到箱心 ≤ 0.6 m 且站稳 2 s）
+- [~] 16.7 T7（2026-10-07 实现，DECISIONS 同日）：50 Hz 的 lockstep 闭环评测按官方客户端：节拍从 `dataset.fps` 读（50：一步 1 拍，动作块 40，执行 20 拍再推理，块尾保持，第一块不混合；25 不变）；评测图按 `camera_delay` 变旧（仿真保留状态历史，MuJoCo 与镜像按序号渲旧状态）；推理延迟按 `latency_dist` 每块抽，先用 lockstep 实测的 `serve_policy` 耗时；`eval_closed_loop` 放行 50 fps 的双臂 lockstep；warehouse mars smoke 系列实验文件改 50 fps。已验证（`outputs/t7_lockstep50_smoke_20261007/`，25 fps 旧 checkpoint 只验机制）：24 拍一周期、图晚 40–60 ms、实测延迟分布 `configs/eval/latency_serve_policy_50fps_20261007.json`
+    - [x] 16.7.1 （2026-10-07）Isaac/Unreal 镜像按携带状态渲：真实镜像各 2 局通过，取图 seq 全在镜像渲染记录里、无一等于冻结时刻（`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/`，DECISIONS 2026-10-07）
+    - [ ] 16.7.2 有了 50 fps checkpoint（16.4）后跑策略层面的评测；T5 后把延迟分布换成真实链路的
+- [x] 16.9 （2026-10-06，用户）客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`（`src/` 已在每个 PYTHONPATH 上，和 `src/gr00t` 同级），启动脚本改为 `scripts/run_real_robot_inference.sh`，`src_real_robot/` 删除
+- [x] 16.8 （2026-10-07 本机 `make check` 全量通过，三条只在 henry 的机器上失败：没有 `outputs/scene/`、`.venv_sim` 缺 pyarrow；`warehouse_mars_200` 两个文件 `eb984fd` 后又一致）预先存在、与本次无关的测试失败（henry 的机器）：`test_experiment_files::test_paths_the_file_names_exist` 的 7 个 `*_d435` / `warehouse_edges_*` 场景目录不在 `outputs/scene/`；`test_image_source::test_the_unreal_and_isaac_warehouse_runs_differ_in_the_image_source_only[warehouse_mars_200_isaac-warehouse_mars_200]`（两个文件的 collect/train 块已不同）；`test_check_dataset_proximity` 在 `.venv_sim` 缺 pyarrow
+- [ ] 16.10 告诉 henry：2026-10-07 推翻了他设计文档的 D2（50 fps 数据集改按 30 fps 相机加延迟出图，T4 补渲带 `camera_delay`），见 DECISIONS 2026-10-07 与提交 `804f962`
+- [ ] 16.11 提交钩子在合并提交 `e6d7e80` 的第一次提交时失败一次（`make: *** test Error 1`），重跑通过，前后两次全量 `make check` 也都过；没抓到是哪个测试（输出被截断）。再出现时保留完整日志，查是不是不稳定的测试
+- [x] 16.12 （2026-10-07，用户）SONIC 两条线 state 改回官方 46 维，去掉两腕位姿 14 维（DECISIONS 同日）；旧 53/60 维 checkpoint 不能再服务或评测，16.4 按 46 维训练
+    - [ ] 16.12.1 告诉 henry：真机客户端的 state 改成 46 维，`real_robot.observation` 不再做腕部 FK
+- [ ] 16.13 核对真机 C++ 是否按官方 `b042411` 的 `vla_inference.md` 把踝关节俯仰电机 Kp、Kd 放大 1.5 倍（`--motor-kp-scale 4,10=1.5`、`--motor-kd-scale 4,10=1.5`）；本地仿真 deploy 分支 `lockstep-port` 没有这个参数（`docs/official_comparison.md`）
+- [x] 16.14 （2026-10-07，用户）与官方教程的对照文档 `docs/official_comparison.md`，README"通用"给入口；取代 08-28 审计，B1 颜色增强核对与教程相同（`84f0fe7`，DECISIONS 2026-10-08）
+    - [ ] 16.14.1 待用户：训练配置向教程靠——批 32（现 64）、20000 步（现 10000），只改 `train` 块；两项都没做过对照
+    - [ ] 16.14.2 `docs/archive/INDEX.md`（3 个）和 `docs/archive/official_parity_audit.md`（1 个）有既有坏链接，修好后加"已被取代"注
+- [~] 16.15 （2026-10-07，用户）`warehouse_mars_50`：照 runbook 第 1–4 步采 50 条（120 局保留 50，Unreal，50 fps，带相机延迟）；训练集 45 条、验证集 5 条，审计全过（台账 crate.md 2026-10-07，`6a6bd10`）
+    - [x] 16.15.1 （2026-10-07）补渲 `KeyError: 'dataset_fps'`：`view_render.plan` 返回 look，入口交给 `fill`，加测试（`6a6bd10`）
+    - [x] 16.15.2 （2026-10-07）runbook 第 1 步补"场景已建过会拒绝覆盖"，常见报错补 `basket_tilt`
+    - [ ] 16.15.3 训练（`bash scripts/train.sh outputs/runs/warehouse_mars_50 --gpu 0`，1 万步）和闭环评测（100 局，Unreal 镜像）；这会是第一个 46 维、50 fps、带相机延迟的 checkpoint，可供 16.7.2、16.2.1
+    - [ ] 16.15.4 待用户：`check_dataset.bimanual` 按任务文本含 `crate` 判断双臂，warehouse（`pick up the box`）的 3cam_bimanual 档没被审计；本次手工核对过 state 46、action 66、三路相机
+- [x] 16.16 （2026-10-07，用户）旧数据迁移文档 `docs/migrate_old_data.md`，README 顶部提示；`running.md` 的 `dataset.fps` 行改为 crate/warehouse lockstep 接受 50（`b8f5e9c`，DECISIONS 2026-10-08）
+    - [ ] 16.16.1 待验证：实时录制运行按 50 fps 转换，审计 "action vs state" 中位 +0 帧不过（`crate_smoke` 只 1 条；25 fps 时 +3）；在完整数据上复查
+    - [ ] 16.16.2 可选：一条命令从旧运行派生 50 fps 新运行的脚本（现在是文档里的手工命令，要同时改 `summary.json` 和 `collect/inputs.json` 时容易漏）
+    - [ ] 16.16.3 告诉同事（henry）：旧数据按迁移文档处理，不用重新采集；代码要含 `6a6bd10`
+    - [ ] 16.16.4 `docs/migrate_old_data.md` 第 1 节写实时录制的图"约 33 Hz"（按代码推的），实测 50 fps 数据集里不同画面约 30.3 Hz；改成实测值，原因待查
+
+## 17. agent 可拼接的技能（skills）
+
+分支 `scene_discovery` 上原编号 7（2026-10-08 合入 main 时改为 17，避开 main 同期新开的第 7 节）：本节条目号 17.x 即原来的 7.x，DECISIONS、台账、交接文档和提交信息里写的 7.x 都指这里。
+
+- [x] 17 agent 可拼接的 primitive（`src/locomani/skills/`，设计 `docs/handoff/primitive-contracts-design-20260928.md`，2026-09-28；第二批见 §9b；标定项 7.7.1 / 7.8.1 / 7.8.2 于 2026-09-28 傍晚全部关闭）
+  - [x] 17.1 session / contract / profiles / scene_model / executor + 目录 7 个适配器 + 占位；`tests/test_skills_*.py` 41 个通过；未提交
+  - [x] 17.2 包出四个黑盒（2026-09-28）：approach 按 profile 分派、grasp_single、grasp_bimanual、place；双臂每拍逻辑抽到 `tasks/crate/attempt.py`；78 个测试通过，未上真栈
+  - [x] 17.3 回归（2026-09-28）：bottle plan 10 局 9/10（台账 bottle §40）；pick_place plan 冒烟 1/3（pick_place §7，`simple`+place 未标定）；warehouse plan 冒烟 1/3（crate 台账末节）；三条线管路通，warehouse 的 10 局对照 4/10 已跑（7.11）
+  - [x] 17.4 前置带宽回放（2026-09-28）：`scripts/replay_preconditions.py` + `STANCE_BANDS` / `stance_violations`；932 条已录站位（skills trace 43、bottle 采集 286、warehouse 603）上任何深度 / 横向带都不分成功与失败（bottle 深度中位 0.324 vs 0.325，warehouse 0.436 vs 0.454），带保持全开；报告 `outputs/analysis/precondition_replay_20260928/report.md`
+  - [x] 17.5 `carry_to`（2026-09-28）：冻结上身 + walk_to + 持物守卫；持瓶直走/倒退 1–2 m 漂移 < 1 cm（6/6），走动中急转 3 cm 掉（0/2），180° 转 IDLE 0/2、SLOW_WALK 4/4 → 默认 turn_first + slow_walk；台账 bottle §41。持箱未量
+  - [x] 17.6 `scripts/plan_episode.py` 已写（起栈/prime/spawn/plan/判据/manifest/trace，2026-09-28）；claude -p 规划器 `skills/planner.py` + `--agent` 接线（2026-09-28 晚：JSON schema 结构化输出、每局一个会话、`agent_io_NN.jsonl`；真栈冒烟见 pick_place 台账 §8）
+  - [x] 17.7 跨位置搬运回归（2026-09-28 晚）：`walk_to` 持物走 `carry_to` 守卫；单臂 `approach` 持物 = carry 到放置带中心站位 + 原地转向 + 残差修正 + 写站位；默认 plan 加 `approach(goal)`。真栈三轮（pick_place 台账 §8）：容器进带 6/6，place 3/6；对照直接 place 0/5。place 前站位深度不是主因——`simple` 抓罐头后 place 的 carry-over / 下降伺服（7–12 cm 偏、掌系滑 3 cm）是下一个标定对象（7.10 流程），未调
+    - [x] 17.7.1 `simple` 抓罐头 + place 标定（2026-09-28 下午→傍晚，pick_place 台账 §11–12；结论见 7.7.1.1 / 7.7.1.2）：按 7.10 流程跑了三个单旋钮 pilot（`entry_lateral_tolerance` 0.015、`v_descend` 0.05 + 8 s、`entry_overshoot` 0）各 10 局，grasp 7/10、6/10、4/9 与 place 3/6、2/6、0/4 均不优于基线 6/10、3/6；trace 的 stats 表明合爪前已对准、罐心在工具点前 0.7–1.1 cm，失败在 6.1 cm 罐身与 Dex1 指垫的闭合几何和 PlannerArm 物体伺服的跟踪，旋钮够不着。`coupled` 策略（§4 10/10）没被 skills 包装（approach 抛 `walking` 缺失，现已在前置拒绝）
+      - [x] 17.7.1.1 包装 `coupled` 策略（用户定走 A，2026-09-28 下午，pick_place 台账 §12）：三处修补（`walking` 用 getattr、`walk_tick` 收关键字、approach 放行 coupled），profile `pick_place_coupled`；全程 2/10（grasp 5/10、place 2/5，持罐走动掌系滑 3.2–3.7 cm）；容差 0.05 对照 1/10（grasp 2/10，转向中掉罐 ×3）。coupled 在 skills 里带来的是"停位挑剔 + 握持转向滑"两族，不是罐头的解
+        - [x] 17.7.1.2（用户定走 A，2026-09-28 傍晚）：§4 的抓取率本来就是 10/19，coupled 差在放置侧——它从不持罐走路。coupled 原地放置 3/4（持罐走近后 2/5）；`default_plan` 对 coupled 不再插 `approach(goal)`。抓取侧 ~50% 是 coupled 自己的失败族，与 §4 一致，不属于本项
+  - [x] 17.8 `put_down_bimanual`（`catalogue/crate_put_down.py`，2026-09-28；7.8.1 / 7.8.2 傍晚关闭：站直不回拉后 8/8 放稳）：真栈 7 个样本 6 次把箱子放稳（≤ 0.7 cm、≤ 2.5°）；持箱 carry 180° 转 + 1 m 3/6（crate 台账末节）
+    - [x] 17.8.1 put_down 前送（用户定走 A，2026-09-28 下午，crate 台账末节）：新 primitive `nudge`（定时 SLOW_WALK 脉冲 + 刹停 + 量残差，持物带守卫）；三个变体 60 局：nudge 到位 13/29（0.5 s 从不冲出但单脉冲 0–12 cm；0.7 s 触发整步 21–77 cm，掉 2 摔 1），**到位后 put_down 12/13 放稳**（z ≤ 0.3 cm、倾 ≤ 0.8°）。"手仍触箱"改记指标不判失败，`back_m` 0.08。臂前送（`forward_m`）1/3 保留为参数。剩下的厘米级平移是 v1.1 planner 的量化，不在旋钮里
+      - [x] 17.8.1.1（用户定走 B，2026-09-28 傍晚）：`stand_forward_min` 0.35 → 0.50（站直时手目标留在骨盆前 0.50 m，箱子不回拉），不挪步直接放：20 局里到 put_down 的 8 局 **8/8 放稳并过判据**，抓取率 8/20 与基线同。skills `warehouse_box` profile 改读 `skills_box_fwd50_20260928.yaml`；采集线配置不动
+    - [x] 17.8.2 持箱 carry 默认走法（2026-09-28 下午）：倒退不转 8/12 vs 转 180° 3/6，但两种走法箱子都在走动中以约 2 cm/s 下滑（1 m 掉 3–9.5 cm），瓶颈是冻结上身下的捏持蠕变而非转向；默认不改（`turn_first=True`）；持箱超过 1 m 要中途重抬或带反馈的 POSE 流搬运（未立项）
+  - [x] 17.9 `navigate_to`（2026-09-28 晚）：沿 `Navigator.waypoint()` 分段走，空手朝路点、持物先 slow_walk 转再守线走；假栈 7 个测试；真栈持罐 1 局 7 段 2.57 m 漂移 0.8 cm（pick_place 台账 §10）；空手真栈未跑
+  - [x] 17.10 新物体标定流程（2026-09-28）：写在 `docs/skills.md` §5（新 profile 登记 `PROFILE_SOURCES` → `plan_episode.py --profile` 10 局 pilot → 按失败族改一个旋钮 → gate 对照 → 回放定带）；按几何自动落位仍无机制，文档里明说没有
+  - [x] 17.11 warehouse plan 10 局对照（2026-09-28 晚）：`skills_warehouse_pilot10_20260928` 4/10 vs 采集入口 6/20，同一噪声带（crate 台账末节）；pick_place 运行的预览视频 `outputs/videos/skills_batch2_20260928/`（4 段 ≤ 436 KB）；warehouse plan 运行无视频（render offline）
+  - [x] 17.12 提交本会话代码（2026-09-28 晚：skills 包 + 第二批 primitive、attempt.py 提取、plan_episode.py `--agent`/`--profile`、回放脚本、docs/skills.md、台账、plan 文件；`make check` 通过）
+  - [x] 17.13 目录去重（用户 2026-10-01 定）：`carry_to` 并入 `walk_to`（持物时同名走冻结上身 + 持物守卫，持物参数空手传入拒绝），删除 `retreat`（= `hand_back` + `walk_to(relative=[-d, 0], turn_first=false)`）；目录 15 → 13，10 个 plan 文件改名并写明原 `carry_to` 的 `stop_dist` 0.08；理由见 DECISIONS 2026-10-01 第二节。`take_over` / `hand_back` 是否藏进 executor 待用户定
+  - [ ] 17.14 `navigate_to(target=物体)` 名字像"走近物体"，但走完不写站位、不能直接抓（agent 曾用它贴桌沿停、随后转身扫掉罐子）：改名，或在目录说明里写清"之后还要 approach"；用户 2026-10-03 未答，待用户定
+
+## 18. Q11 验收：失败注入配对比较
+
+分支 `scene_discovery` 上原编号 8（2026-10-08 合入 main 时改为 18，避开 main 同期新开的第 8 节）：本节条目号 18.x 即原来的 8.x，DECISIONS、台账、交接文档和提交信息里写的 8.x 都指这里。
+
+- [x] 18 Q11 验收：失败注入 paired 比较（agent 唯一不可替代的贡献是失败后的决策；2026-09-29 立项）
+  - [x] 18.1 注入层（2026-09-29）：`skills/injection.py`（`move_target` / `drop_held`，某 primitive 第一次成功后钉物体 0.5 s 再松开，一局一次，agent 不被告知）、`plan_episode.py --inject`、`Executor.note`、manifest 记 `seed` / `injection` / `injected`；`scripts/injection_report.py` 按 seed 配对、精确符号检验、恢复段按第一步归类；`tests/test_skills_injection.py` 6 个；注入文件 `configs/injections/pick_place_{move_target,drop_held}.json`；docs/skills.md §7
+  - [x] 18.2 注入有效性（2026-09-29）：横向 −0.17 m **无效**（`grasp_single` 开始时按当前位姿重规划，臂包络内，1/3 且失败是基线族）；沿桌沿 +0.60 m 有效（plan 臂 0/3，全在 `[grasp]`）；pick_place 台账 §13
+  - [x] 18.3 配对 10 局 `move_target` +0.60 m（2026-09-29，pick_place 台账 §13，报告 `outputs/analysis/injection_20260929/report.md`）：plan **0/10**（全 `[grasp]`）vs agent **0/10**，p = 1.0；但 agent **5/10 重新抓起**（决策链 approach! → navigate_to → turn_to → approach → grasp_single，release 清旧 held 也对），重抓后 5/5 在持罐 `approach(basket)` 转向时掉罐，3/10 贴桌沿 `turn_to` 把罐头扫下桌，2/10 用完 16 次调用。Q11 的"显著高于脚本"没出现，卡在 primitive 不在决策
+    - [x] 18.3.1 恢复路径的 primitive（2026-09-29，用户定全做）：持物 `approach(goal)` 同桌沿 + 1.2 m 内 → `carry_to(turn_first=False)` 横移不转向；`navigate_to` 点目标推到离台面 ≥ 0.30 m（`clear_of_surfaces`）；`turn_to` 离台面 < 0.25 m 拒绝（`edge_clearance`，收臂没有已验证的姿态，改成拒绝让 agent 先退）；`nudge` 用 `remeasured_stance` 重量 stance 不清；`tests/test_skills_recovery.py`
+    - [x] 18.3.2（2026-09-29）：空手 `approach` 站位偏离走近线 > 0.12 m 时先 `walk_to` 站位后 0.6 m 的引导点（face_yaw 锁桌法线）再跑原相位；`metrics.prewalk`
+    - [x] 18.3.3 第二轮配对（2026-09-29；第三轮 agent 臂跑 3 局确认蠕变机制后停掉，drop_held agent 臂未跑——8.3.5 未定前不再烧调用）：`move_target` plan 0/11（10 触发）vs agent 0/10（10 触发），9 对，agent 重抓 3/9——恢复链缩到 2 次调用（`approach` 自带横向预走 + 提示规则让它不再浪费一次抓空），但 4 次重抓后 agent 都直接 `place`，`place` 自己的搬运转向滑罐 4/4；报告 `outputs/analysis/injection2_move_20260929/`。`drop_held` plan 臂跑完即停（agent 臂改用 8.3.4 后的代码重跑，队列 `queue_round3.sh`：`inj3_move_agent_20260929c`、`inj3_drop_agent_20260929c`）
+    - [x] 18.3.5 待用户定（决定性）：重抓后的罐头在 agent 想下一步的 5–8 s 里以 0.4–0.5 cm/s 滑出冻结握持（第三轮 round 0：`place` 被拒、想 8 s、罐头无动作掉桌），固定 plan < 1 s 接手所以不受影响。三选一：(a) sim 指垫接触调硬（唯一治蠕变，改物理）；(b) 藏延迟（Q5 提前规划 / haiku 3–4 s，仍 > 1 s）；(c) executor 两次调用间跑"保持"（更深合爪 / 周期重抬，未测）。定了才值得再跑配对
+      - [x] 18.3.5.1 用户选 (a)（2026-09-29 晚）；先量蠕变就推翻了前提（pick_place 台账 §14）：掉罐是 deploy 的 1 s 规划器超时（`zmq_manager.hpp` `PLANNER_TIMEOUT`，释放冻结上身和手指命令），runner 在 agent 想的时候不发帧。`plan_episode.py --think-s 8`：静默 4/4 在 ~1 s 掉罐，保活 0/14 掉、蠕变 0.10 cm/s；§13 三轮 agent 掉罐都对得上
+      - [x] 18.3.5.2 (a) 本身：`crate` 档指垫 0.06 vs `object` 0.10 cm/s，0/12 vs 0/14 掉，任务 1/10 vs 2/10（噪声内）；不改默认场景。solref 在 200 Hz sim 里被 refsafe 钳到 0.01，两档只差 solimp；离线回放台对更硬一侧不可信
+      - [x] 18.3.5.3（用户定做，2026-09-29 晚）：`Executor.idle` 保活，`agent_round` 在 `claude -p` 回答期间、注入 settle 期间都走它；Q11 第四轮（pick_place 台账 §15）：move_target plan 0/10 vs agent 3/10（p 0.25，重抓 5/10），drop_held 配对 0/5 vs 1/5（重抓 3/9），合计不一致对 4 : 0、p 0.125；重抓后的罐头每次思考后都还在手里（1 例浅抓除外）
+      - [x] 18.3.5.4 用户定保留（2026-09-29 晚）：8.3.1 持物横移、8.3.4 `STRAFE_YAW` / `placing_band`；第四轮 agent 重抓后都是 `placing_band` 拒 → approach(basket) → place（台账 §15）
+      - [x] 18.3.5.5 定位（2026-09-29 晚，台账 §15a）：不是 nudge / walk_to / turn_to / navigate_to，是空手 `approach` 内两段不发帧——刹车后 `settle_for_admission`（0.49–0.87 s）和起步前建 `SimpleGraspPolicy` + 首次 edge_guard（0.45–0.73 s）；负载下被拉过 1 s。两段都在手里没东西时，超时无后果
+        - [x] 18.3.5.5.1 用户定不修（2026-09-30）：两段都在空手 `approach` 里，超时无后果；不改 bottle 采集专家与 commander。若以后持物路径出现同类静默，用 `scripts/experiments/command_gap_probe_20260929.py` 定位
+    - [x] 18.3.4（2026-09-29）：`STRAFE_YAW` 0.6 rad（抓完身体 wrap 0.35 rad 时仍横移不转向；drop plan 臂 round 2 因此走了转向）；`place` 前置 `placing_band`（容器在 `band_x × band_y` ± 0.10 m 内，否则先 `approach(container)`；coupled 免检）
+  - [x] 18.4 `drop_held` 两臂 10 局（2026-09-29，台账 §13 末，报告 `outputs/analysis/injection_drop_20260929/`）：注入只在抓起后触发，基线抓取 ~50% → 各臂 5 个注入、3 个配对；plan 0/10（注入后 5/5 `[approach] load lost while turning`），agent 0/10、注入后重抓 2/5，第一反应 5/5 直接 `place`（信 `held` 不信场景），重抓后又在持罐搬运里滑 3.3 cm
+    - [x] 18.4.1（2026-09-29）：`--until-injected N`（`--rounds` 为上限），`more_rounds()`；manifest 总结行印触发数
+    - [x] 18.4.2（2026-09-29，用户定加）：系统提示加"session 快照是本体感觉、场景是真值，冲突先 release"；从此配对比较测的是"有提示下的恢复"，第一轮（无提示）结果留在台账 §13 作对照
+  - [x] 18.6 待用户定：Q11 下一步——加配对数（每种注入 20 对以上）、先提高 `grasp_single` / `place` 成功率，还是就此收尾写结论（台账 §15：方向一致 4 : 0，p 0.125）（用户 2026-10-02 定：收尾，不再跑；结论写在 pick_place 台账 §16）
+  - [-] 18.5 未做：推机器人（走偏）/ 对负载施力需要 sim 侧命令（`EpisodeControlServer` 没有 xfrc 通道）；放置点被占需要第三个物体（pick_place 场景只有罐头和篮子）（搁置 2026-10-02：Q11 线收尾，用户定）
+
+## 19. scene_discovery Demo 1：场景 → 自动发现任务 → 技能采集 → VLA
+
+分支 `scene_discovery` 上原编号 9（2026-10-08 合入 main 时改为 19，避开 main 同期新开的第 9 节）：本节条目号 19.x 即原来的 9.x，DECISIONS、台账、交接文档和提交信息里写的 9.x 都指这里。
+
+- [~] 19 scene_discovery Demo 1（纯仿真）：场景文件 → 自动发现任务 → 技能组装采集 → VLA（用户 2026-10-02 定；决策与节奏见 `docs/handoff/scene-discovery-plan-20261002.md`，DECISIONS 2026-10-02）
+  - [x] 19.1 Q11 收尾（`023a31a`，pick_place 台账 §16）
+  - [x] 19.2 worktree `../locomanipulation-scene_discovery`，分支 `scene_discovery`（基于 `023a31a`）
+  - [x] 19.3 ADT 下载：3 条公寓序列的 `main_groundtruth` + 356 个物体模型（4.6 GB）到 `/workspace/datasets/adt/`，sha1 全部校验（`scripts/adt_download.py`）；链接文件移到 `/workspace/datasets/adt/links/`（不进 git）
+  - [~] 19.4 `plan_episode.py --record`：每局随机一句说法作语言指令，元数据记谓词 / plan / trace，只有谓词判成功的局进 convert；验收 = 抓瓶子固定 plan 20 局与原 bottle 采集线逐字段比对 + 各训一个小模型（2026-10-03 实现：`Recording` 类，`--record` 拒绝 `--agent` / `--inject` / `--think-s`、要求 instance 0；每局 spawn 稳定后 c 开录，判据成立 c 存、否则 x 弃；成功局没有自己的 `training_tail` 时取 plan 结束处；行写进 `collect/manifest_00.jsonl` 并在 summary 记 `collect`，`convert_data.sh` 照常转；测试 `tests/test_plan_episode_record.py` 6 个。实跑 20 局与对照见 9.4.1）
+    - [~] 19.4.1 验收：`sd_record_bottle_plan_20261003`（bottle 默认 plan，20 局，GPU1 / instance 0）与 `bottle_simple_guard_lifted_20260925` 用同一个转换器转出来逐字段比（`scripts/experiments/record_parity_20261003.py`）。2026-10-03：**字段一致**——37 个字段名 / dtype / shape、25 fps、指令"pick up the water bottle"、每个成功局都按 training_tail 截了；20 局 15 存 5 弃，与 manifest 逐行对上；成功率 15/20（抓取 3 败：抬起丢接触 2、合爪前碰倒 1；走近 2 败：腰没回中、停位够不着）。**内容差一处**：采集线的局多一段后退两步（`teleop.planner_movement` x 到 −1.0，plan 的不低于 0），中位时长 25.4 vs 23.0 s；plan 的 spawn 无横向 / 朝向抖动。"各训一个小模型"要占两张卡几小时，待用户定
+      - [ ] 19.4.1.1 "各训一个小模型"对照（plan 录的 15 局 vs bottle 采集线），要占两张卡几小时：待用户定是否做
+  - [~] 19.9 第一轮 C 方案（用户 2026-10-03 定，并同意先跑下列五个抓取试跑）：范围缺口按维度挑代表任务试跑（香蕉 / 0.90 岛台、小花瓶 / 0.39 架底、咖啡罐 / 0.70 推车 0.6 kg、钱包 / 1.12 顶层、梨 / 0.90 岛台深 0.25 m），结果写回 capability.yaml；放置与搬运的代表等抓取结果出来再挑；技能缺口 `place_on_surface.single` 进造技能排序。前置：ADT 场景跑通 plan_episode（实验文件在 outputs 下、出生点取场景文件的 spawn 区）
+    - [x] 19.9.1 ADT 场景接上 plan_episode（2026-10-03）：仿真端读物体 / 台面 body 时跳过只是外观的静态物体（`run_sim_locomani`、`privileged_pub`）；台面 body = `adt_env`；骨盆初始位置放到 `robot_start`；守线刹车的桌沿（`edge_guard.facing_edge`）与离桌距离（`surfaces_edge_distance`）读台面朝向；`SceneModel` 用 Claude 的物体名；`plan_episode` 在场景文件房间里按占用图选出生距离（1.2 → 0.6 m，出生点要站得下、走入直线不穿家具轮廓）。试跑实验文件在 `outputs/scene_discovery/adt_apartment/experiments/`
+    - [x] 19.9.2 **抓取高度是技能硬限制，不是试跑能测的范围**（2026-10-03）：bottle 抓取的 `sample_stand` 只规划下蹲 0.03–0.13 m 的模板，物体中心世界高度只接受 0.66–0.89 m，之外技能在机器人动之前就拒绝。原定五个代表里香蕉 0.93、梨 0.98、钱包 1.14、小花瓶 0.47 都在外面，只有咖啡罐 0.79 在内。能力说明加 `grip_height_accepted`，检查器把它记成技能缺口 `grasp_single.grip_height`：可试跑任务 326 → 72，1606 个任务要先扩抓取高度（与"放到台面"1664 个并列为第一轮造技能的候选）。试跑改为范围内的四个：咖啡罐（推车 0.70 m，0.6 kg）、中号白花瓶（展示柜格子 0.73 m，上有隔板）、青苹果（餐桌 0.75 m，离边 26.5 cm）、小盆栽（同格子）
+    - [x] 19.9.3 可走近的边要有助跑（2026-10-03）：原判定只往外探 0.31 m，推车那一侧 0.5 m 外就是扶手椅（家具在 MuJoCo 里无碰撞，机器人会穿过去）；现要求站位后还有 0.6 m 通道（`approach_edges(runup=0.6)`，`adt_to_scene.py refresh` 原地重算）：可走近台面 53 → 35，模板任务 3747 → 2890（第 2 桶 1241、第 3 桶 1649）。第一次试跑队列（`sd_pilot_p3_coffee_canister_20261003`）因出生点检查拿膨胀图查站位全部秒败，作废
+    - [x] 19.9.4 **物体原点要在包围盒中心**（2026-10-03）：第二次试跑（`*_20261003b`）咖啡罐 / 花瓶 / 盆栽 20 局的抓取全停在 `simple clearance ... adt_env`，失败记录里抓取目标点 z 0.701 = 推车台面——抓取代码按 `init_pos` z 算抓点（`box` 的中心偏移读的是 `center`，场景里写 `centre`，恒为 0），手工场景的物体原点本来就在中心所以看不出来，ADT 物体原点在底部，抓点落到台面上。改转换器而不是 bottle 代码：body 原点放在包围盒中心（`adt.AdtObject.body`，网格与 Isaac 自由体 USD 一起平移），`refresh` 原地更新位姿，测试 `tests/test_scene_discovery_adt.py`。修后咖啡罐第 1 局即成功。苹果 8 局"停位够不着"（物体在骨盆前 0.51–0.62 m）不是这个原因，但站位规划也读抓取高度，所以四个试跑全部重跑（`*_20261003c`）。Isaac 自由体 USD 待重导（`scripts/adt_to_usd.py`）
+    - [x] 19.9.5 四个范围试跑结果（2026-10-03，`*_20261003c`，各 10 局，GPU1 / instance 1，结果写进 capability.yaml `pilots_adt_20261003`）：**咖啡罐 4/10**（推车顶层 0.70 m、开放台面、离边 4 cm、0.6 kg；抓起 4/8，败于抬起丢接触 2、合爪无双侧接触 1、接管时身体过线 1，走近 2 局被预检挡）；**花瓶 0/10、盆栽 1/10**（展示柜格子 0.73 m，上方有隔板：入手时手指扫到柜体 8 / 7 次）；**青苹果 0/10**（餐桌 0.75 m、离边 26.5 cm：走近 10 局全败，停位离物体 0.51–0.62 m 够不着 5、腰没回中 5）。结论：开放台面、离边近的物体在 0.70–0.79 m 抓取中心范围里能抓，成功率与罐头在 0.62 m 桌上的 6/10 同量级；有顶的格子和离边 > 0.2 m 都是现有技能做不到的，分别对应"从有顶格子里取"和"深够"两个新技能需求
+    - [x] 19.9.6 Isaac 自由体 USD 按新原点重导（2026-10-03，`scripts/adt_to_usd.py`，64 个）
+    - [x] 19.9.7 第一个新技能选哪个（决策 11）（用户 2026-10-03 定 A："单手放到台面"，由 Claude 造，见 9.12）：我推荐"单手把东西放到台面上"（`place_on_surface.single`，挡住 1169 个第 2 桶任务中的大多数；现有 `place` 已有抬 / 移 / 降 / 松，改判据与松手高度，成本最低），并作为 Claude 自己造技能的那一个；备选"扩抓取高度"（下蹲抓 2/10，贵）、"从有顶格子里取"、"深够"。待用户定
+    - [-] 19.9.8 咖啡罐（4/10，过 ≥3/10 门槛）是否现在就作为第一轮第一个任务采集，还是等更多任务（用户 2026-10-03 定：等可采任务多了再一起采，现在不采）
+    - [x] 19.9.9 "从有顶格子里取"与"深够"两个新缺口进检查器（现在只在试跑结果里，`capability.yaml pilots_adt_20261003`），重算它们各挡多少任务（2026-10-05：不是"有顶格子"——录像前的 trace 显示花瓶 / 盆栽都是手指 / 腕撞**托着它的那块板**（`adt_env` 只有台面板有碰撞），工具点离板 2–9 cm、伸进 15–16 cm，上方隔板 0.32 m 高；记成失败区域 `grasp_failures`：`deep_entry`（inboard ≥ 0.14 且抓点离板 ≤ 0.08 m）、`deep_reach`（inboard ≥ 0.26；阈值取整到让失败试跑本身落在区域里），按技能缺口处理（不再试跑）；另加头顶检查 `overhead.open_above` 0.60 m（规则，未测）：抓 / 放点上方 0.60 m 内有别的台面板记 `*.covered`。重算：`deep_entry` 433、`deep_reach` 88、`grasp_single.covered` 455、`place_on_surface.covered` 443 个任务；可试跑 264 → 85）
+  - [x] 19.5 场景文件格式（扩展 `scene_meta.json`：物体字段带出处、台面、房间、随机化规格）与目标谓词库（2026-10-03：`docs/handoff/scene-file-format-20261003.md`，用户过目，三处按推荐：台面存 yaw 并改导航/站位、每局只把任务物体和干扰物做自由体、规则切房间 + Claude 命名；`scene_discovery.scene_file.validate/load` + `scene_discovery.predicates.compile_goal`（on/in/held/upright/near/in_room），`tests/test_scene_discovery.py` 7 个）
+  - [x] 19.6 ADT → 场景转换：核实 `ApartmentEnv` 是否房间外壳（轴向、俯视图）；物体 glb → MuJoCo（碰撞体凸分解）+ Isaac/Unreal；Claude 估质量 / 摩擦 + 掉落测试；渲染器二选一（plan 决策 16）
+    - [x] 19.6.1–9.6.3 坐标轴核实、墙与房间、台面（2026-10-03，`scripts/adt_to_scene.py geometry`，跑在 /venv/main；纯几何 `scene_discovery.adt/floorplan/surfaces` 在 sim venv 测试 9 个）：2 个房间（开放式客厅 / 餐厅 / 厨房 room_1、卧室 room_2，门洞 0.9 m 分开）；71 个台面（53 个有可走近的边），含外壳里的厨房台面 0.92 m × 3.1 m，楼梯按"≥3 级逐级一个台阶高"剔除；356 个物体（可移动 215，其中单手可抓 112、双手 1，131 个落在台面上）；校验 0 问题。产物 `outputs/scene_discovery/adt_apartment/{scene_file.json,floorplan.png}`
+    - [x] 19.6.4 Claude 估属性（2026-10-03，`adt_to_scene.py estimate`，Opus 8 次调用 12.4 min / 4.24 USD，`scene_discovery.properties`，测试 4 个）：356 个物体的英文名、质量、摩擦、是否容器，71 个台面名，2 个房间名（`living_dining_kitchen`、`bedroom`）；规则只改 3 处（开口 < 6 cm 的"容器"否掉），校验 0 问题。3 个物体在 ADT 目录里没有模型（BookDeepLearning、DinoToy、Flask），几何阶段改为跳过，这份产物里删掉（`source.pruned`）
+    - [x] 19.6.5a MuJoCo 构建与跌落测试（2026-10-03，`adt_to_scene.py mujoco` + `scripts/scene_drop_test.py`，`scene_discovery.mjcf/drop_test`，测试 3 个）：外壳与家具只有外观，台面是 2 cm 碰撞板，可动物体用凸包（容器用底 + 四壁），惯量按 Claude 质量的实心盒；默认自由体 = 能抓且落在台面上的 64 个（不在台面上的 48 个试过：47 个掉下去，没有碰撞体托着）；2 s 跌落 48/64 停住，不稳的 16 个是会滚的水果、靠不住的立书、展示柜上的两个花瓶，`semantic.drop_test.ok` 记录，任务发现只用通过的
+    - [x] 19.6.5b 渲染器二选一（plan 决策 16）。**Isaac 通过**（2026-10-03，`scripts/adt_to_usd.py`（Blender 把 glb 连 PBR 贴图导出：静态 290 个进 `apartment.usdc`、64 个自由体各一份 USD，4.5 GB 在 `$ISAAC_ASSETS/scene/adt_apartment`）+ `scene_discovery.usd_scene`（每个房间天花板下 2.5 m 网格 12 盏球形灯：公寓封闭，外部穹顶光进不来，第一次全黑）+ `scripts/experiments/adt_render_check_20261003.py`）：三个站位三路相机，场景构建 20 s，进程显存 7.7 → 12.8 GB（GPU1 另有别的项目 10 GB，合计 ~23 GB 放得下），三路一起渲染 p50 0.148 / p90 0.194 s，贴图还原见 `outputs/scene_discovery/adt_apartment/render_check/isaac_only.png`（待用户看）。**Unreal 未测**：`images.source unreal` 只在 main / loco_unreal 上，本分支（基于 loco_agent）没有。**用户 2026-10-03 定：用 Isaac，不测 Unreal**（不合并 main，避免把 mars 机器人带进冻结的栈，决策 12）
+    - [x] 19.6.6 导航与站位读场景文件（2026-10-03）：`OccupancyMap` 读 `room.bounds/walls/obstacles` 与台面 `yaw`（手工场景不变）；`plan.nearest_edge` 在台面自身坐标系里只在 `approach_edges` 中选边，`stand_plan` 的朝向加上台面 yaw；`SceneModel` 的 put-on 判据与 `front_line` 带 yaw；`round_loop` 遇到转角台面直接报错（它沿世界轴滑动目标）。`tests/test_scene_discovery_consumers.py` 4 个，现有 skills / bottle CLI 测试照常通过
+  - [x] 19.7 能力说明文件（从已测包络整理：伸手高度与距离、桌面高度、下蹲 0.28 m、夹爪 9.5 cm / ~20 N、双手箱宽、行走限制）+ 程序可行性检查（2026-10-03：`configs/scene_discovery/capability.yaml` 写完，每条带 measured / measured_one / untested / unavailable 与出处文档；核对时改正三处出处，并发现流式全身姿态能下蹲（骨盆 0.57 m），不止 IDLE_SQUAT；程序检查 2026-10-03 完成，见 9.7.1）
+    - [x] 19.7.1 程序可行性检查（2026-10-03，`scene_discovery.feasibility` + `scripts/scene_feasibility.py`，测试 8 个）：每个目标谓词展开成抓 / 搬 / 放三步，每步按 capability.yaml 判 ok / untested（记缺口名）/ blocked（记硬限制）；路线用场景导航图的真实绕行距离。ADT 公寓模板空间（48 个跌落测试通过的可抓物体 × 容器 / 台面 / 拿起）3747 个任务：**严格规则第 1 桶 0 个**，第 2 桶 1990，第 3 桶 1757（够不着的深度 935、台面前没地方站 316、容器在墙架 / 挂钩上 264、放不进 191、容器沿低于手能到的最低处 144、走不到 88）；按"试跑规则"（未测的也去试，试跑定生死）第 1 桶 1990。最简单的缺口组合是"物体尺寸 + 台面高度"（拿起香蕉等 5 个），没有哪个缺口单独补上能解锁任务。修了检查器两处：起点站位开逃生通道、架子上的容器在它所在台面的边上站；场景里门不再算障碍（第一轮按开着，MuJoCo 里门本来无碰撞），新增 `adt_to_scene.py obstacles` 只重写障碍不动 Claude 的字段（这份文件此前没有家具障碍，现 117 个）。产物 `outputs/scene_discovery/adt_apartment/feasibility/`
+  - [ ] 19.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点
+  - [~] 19.10 Claude 提任务 + 程序检查反馈循环（决策 8；第 2 周）：现在第 2 桶是模板枚举出来的（`feasibility.templates`），Claude 读场景文件 + capability.yaml 提任务、检查结果回给它修改的那一环还没写（2026-10-05 循环已写并实跑一次：`scene_discovery.proposals` + `scripts/scene_discover_tasks.py`，Opus 3 次调用、5.32 USD、20.5 min，`outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/`：49 个任务（客餐厨 32、卧室 17），三轮桶 2/25/13 → 2/32/11 → 2/38/9，修订把第 3 桶往第 2 桶推、没造出新的第 1 桶；第 1 桶就是模板空间里那 2 个（都找到了），49 个里只有 2 个在模板空间之外（带 near）；可试跑 6 个，5 个是咖啡罐放到别处。第一次运行 `opus_20261005_upright_bug` 作废：检查器把"搬过去并立着"里的 upright 判成"已经立着"无效（15/39），已修）
+    - [ ] 19.10.1 Claude 给第 1 桶任务写固定 plan（决策 10：试跑 3 局验谓词、10 局 ≥ 3/10）：现在第 1 桶的 2 个任务 plan_episode 的 `default_plan` 已覆盖且实跑过（拿起 4/10、放到圆桌 12/20），等第 1 桶变多再做
+    - [ ] 19.10.2 任务文件 → 运行：`plan_episode` 现在按实验文件的 `target` + `goal`（一个物体、一个台面或容器）判成败，谓词库 `compile_goal` 没接进来；`tasks.jsonl` 的一行（谓词合取、说法、`upright` 约束）还不能直接跑或录（9.14.1 之前要有）
+    - [ ] 19.10.3 试跑提议里可试跑的 6 个（按外推距离：罐子 → 厨房岛台 0.90 m、→ 垃圾桶、→ 餐桌 0.75 m、→ 门厅长凳、→ 玻璃柜一格，白色大花瓶 → 马桶水箱），各 10 局，结果写回 capability（C 方案的做法，待用户定是否现在跑，约 1 h GPU）
+    - [ ] 19.10.4 主结论 #1 的"任务广度"：Claude 提的任务 47/49 落在程序模板空间里，增量在挑选、说法和缺口说明，不在发现新任务形态；要么扩谓词 / 模板（near、多物体），要么把这点写进查重（9.8）的对比
+  - [ ] 19.11 用户本人：给 projectaria@meta.com 发邮件问公开视频 / 衍生场景的许可（决策 17；2026-10-02 提过，未见回复记录）
+  - [x] 19.12 第一个新技能 `put_down_single`（单手放到台面，用户 2026-10-03 定、由 Claude 造；规格与验收门槛在跑之前写定：`docs/handoff/put-down-single-20261003.md`）
+    - [x] 19.12.1 实现（2026-10-03）：持物 `approach(台面)` 选空位并把放置带对准它（`surface_spot` / `surface_occupants`）；`put_down_single` 复用 `place_phase`（`_SurfaceGeometry`：静止高度、低处先蹲、落稳判定、站在台面上的判据）；`plan_episode` 对 `on(X, 台面)` 默认 plan 与判据；检查器在 `capability.yaml place.on_surface_single` 有实测后按范围判；测试 `test_skills_put_down_single.py` 9 个 + `test_place_phase.py` 5 个 + 检查器 1 个
+    - [x] 19.12.2 验收：咖啡罐 → 小圆桌（0.52 m），抓取成功的前 20 局里走近台面 + 放下都成功 ≥ 10；预算 2 天 / 200 局（到 2026-10-05 18:15 UTC）（2026-10-03：第六版 **12/20 通过**，门槛外 2 局另计共 13/22；六版、171 局、2.3 h，逐版改动与证据在记录 §4）
+    - [x] 19.12.3 验收后写回 `capability.yaml place.on_surface_single`（measured_one），重跑检查器与缺口排序（2026-10-03：可试跑 72 → 264，剩下的技能缺口只有 `grasp_single.grip_height` 882 个；第 3 桶 1630 → 1684；第 1 桶仍 0）
+    - [ ] 19.12.4 蹲会让底盘后移 7–13 cm（第二版 2 局、第六版 2 局），降落够不着：蹲完、降落前按当前位姿再选一次点，或按后移量预先把手送远
+    - [ ] 19.12.5 `approach(台面)` 持物原地转身掉罐 3/20（第六版）：复用的现有持物转身（`turn_with_load`，slow_walk）；看转角与掉的时刻，或改成不转身的横移
+    - [ ] 19.12.6 交接后底盘仍会动（第六版 2 局脉冲拉不回、1 局转动中滑）：脉冲记录里加当时位姿定位；横向脉冲每次只动 0–3 cm
+    - [ ] 19.12.7 "腰没回中"（`[stand] neutral waist not delivered`）在验收里频繁出现（第三版 3 次、第六版 ≥ 2 次），前一局成功、失败、抓取败之后都有，原因未明；不计入门槛但耗预算
+    - [x] 19.12.8 检查器第 1 桶仍是 0：它只认 0.62 m 桌上的抓取实测，罐子在 0.70 m 推车上的抓取试跑（`pilots_adt_20261003`）没有进判据；接上后罐子 → 圆桌这类任务才会进第 1 桶（2026-10-05：capability.yaml 单手抓取改成实测设定列表 `grasp_settings`（瓶子线 + 咖啡罐推车试跑 4/10），检查器按设定**整体**匹配（各维分别测过不等于组合测过）；咖啡罐 inboard 按检查器口径是中心到边 0.084 m（试跑记录的 4 cm 是侧面到边）。第 1 桶 0 → 2：拿起咖啡罐、放到圆桌；放到书柜一格被 9.9.9 的头顶检查挡回第 2 桶）
+    - [x] 19.12.9 成功局预览（2026-10-04）：第六版 13 局成功全部压成预览（30–44 万字节、全长、逐个解码与时长核对），`outputs/scene_discovery/adt_apartment/put_down_v6_success_previews_20261003/` 与同名 `.zip`（4.5 MB）
+    - [x] 19.12.10 放进容器那条线回归：`place_phase` 的改动（几何对象分支、`_servo` 的 `until` / `level` / 日志）对 `place` 只有单元测试，pick_place 跑 10 局对照 §8 的 3/6（2026-10-05：`sd_place_regress_20261005`，同 §8 第三轮的 plan / 配置 / seed 300–309：抓取 6/10、place **3/6**、端到端 3/10，与 §8 的 6/10、3/6 相同；place 失败 3 局都是 `descent timeout` xy 6.5 / 7.4 / 9.0 cm，§8 是 6.0 / 9.0 cm，同族；没有新失败形态）
+    - [x] 19.12.11 现有抓取对罐子朝向很敏感（长边与走近方向夹角 |a| ≤ 20° 抓住 6/9，20–40° 2/5，> 40° 0/18）：咖啡罐采集（9.9.8）前要么限制罐子朝向，要么抓取按窄边选入手方向；capability 里还没记这条（2026-10-05：选了限制朝向——`plan_episode.spawn_object_yaw`：底面只有一边放得进夹爪的物体，长边限制在走近方向 ±20° 内（两侧各一个窗），其余物体照旧均匀随机，原有 seed 的局不变；capability.yaml 记 `grasp_yaw`。抓取按窄边选入手方向没做，是技能改动，未实跑验证新出生朝向下的抓取率）
+  - [ ] 19.13 第一轮采集吞吐（2026-10-05 补记，估算未实测）：`put_down_single` 第六版 80 局抓住 22、端到端成功 13（约 16 %），每局约 48 s；按决策 14（≤ 25 个任务 × 每任务 100 局成功）一个任务约 600 局、单实例约 8 h，25 个任务约 200 h；`--record` 目前要求 instance 0，Isaac 补渲另算（warehouse 实测约 68 s/集）。里程碑 1（第 3–4 周）前要有实测和对策
+    - [ ] 19.13.1 实测：第一批第 1 桶任务各录 10 局，记成功率、每局墙钟、补渲耗时，按实测重算一轮总时长
+    - [ ] 19.13.2 提吞吐的选项（待用户定）：`--record` 放开到其他实例（栈已有 `RECORD_INSTANCE=1`，plan_episode 没接）两卡并行、先提高抓取成功率（9.12.11）、或减每任务局数（改决策 14）
+  - [ ] 19.14 第一轮数据 → VLA-1 的后半段在 ADT 公寓里一步都没跑过（2026-10-05 补记；决策 2 / 13 / 15 / 16；`--record` 只在 bottle 场景做过逐字段比对，9.4.1）
+    - [ ] 19.14.1 冒烟先行：取一个任务约 10 局走通 record → Isaac 补渲 → convert → 短训 → 闭环几局，在正式采集前暴露 ADT 特有的问题
+    - [ ] 19.14.2 Isaac 补渲 ADT 公寓的数据集三路相机（ego + 双腕；`ISAAC_ASSETS` 指主目录），核对与 9.6.5b 渲染检查同图、只渲成功局
+    - [ ] 19.14.3 convert：多任务合一个数据集，每局随机说法进指令字段；留出说法与留出组合在采集前定好、不进训练
+    - [ ] 19.14.4 训练 VLA-1 两个种子（决策 15，从基础模型）
+    - [ ] 19.14.5 ADT 公寓 lockstep + Isaac 闭环评测：同场景随机摆放，"见过的组合 / 留出组合 / 留出说法"三格分开报，每格 ≥ 20 局（决策 2）
+  - [ ] 19.15 `upright_axis` 与场景实际姿态对不上（2026-10-05 发现）：64 个自由体里 26 个按 `upright_axis` 算倾斜 75–125°，但跌落测试里都静止（倾角变化 0.3–11.6°）。书是 ADT 的"正立"= 平放、书在格子里竖着放（90°）；盆栽 2 个、香蕉、钥匙、遥控器、收纳盒等原因未核。后果：检查器给这些物体的 `upright(X)` 记 `reorient` 缺口（Opus 任务里 3 个盆栽任务因此带 `reorient`），运行时 `upright(X)` 判据在成功局也会判失败。待定：按初始姿态重定义"正立"（初始就静止的姿态算正立），或逐类核对后修 `adt.AdtObject.body`；先看一张盆栽 / 书的渲染再定
+  - [ ] 19.16 第二个新技能选哪个（决策 11，待用户定）：49 个提议任务里 32 个缺技能，几乎都是抓取。按挡住的任务数：抓取高度 28（台面高度 0.91–0.99 m 8 个、肩高 1.11–1.15 m 8 个、低于 0.66 m 且多在有顶格子里 12 个；模板空间 882）、深处低位入手 13（模板 433）、深够 1（模板 88）、放到指定物体旁 1。我推荐先做台面高度抓取（不蹲、不钻格子，对现有抓取改动最小），再延到肩高
+    - [ ] 19.16.1 扁平物体（钱包、车钥匙、木勺、平躺香蕉，厚 1.5–3.8 cm，8 个任务）实际要"从上往下捏"，检查器只记成 `grasp_single.object_size`（范围缺口，会被当成可试跑）；是否加一条按厚度判的技能缺口，待定
+  - [x] 19.17 报告 doc「公寓场景任务发现」（2026-10-05，用户要求）：https://claude.ai/code/artifact/132adcd3-de5d-4ff1-99ba-1bc683f47549 ，两页（正文七节 + 流程图；任务清单 49 行）；私有，含 ADT 衍生任务清单，Meta 答复（9.11）前不分享到团队外

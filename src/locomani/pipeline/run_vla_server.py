@@ -9,6 +9,8 @@ stack (`scripts/start_stack.sh eval`), terminal 3 drives the rounds. Ctrl-C here
 Which checkpoint, which modality config and which embodiment tag are read from the run, not passed
 in: they are recorded in the run's own `summary.json` and `config.yaml`, and a second hand-typed
 copy of them is a way for an evaluation to be served by something other than what it says it is.
+The one exception is `--backbone-path`: a checkpoint trained on another machine records a VLM backbone
+directory that does not exist here, and only the person serving it knows where the local copy is.
 
 The server's output is both shown here and appended to `<run>/eval/serve.log`, because the line
 the round driver waits for ("listening") and the load failures worth reading afterwards are the
@@ -58,14 +60,15 @@ def _interrupt(signum, frame) -> None:
     raise KeyboardInterrupt
 
 
-def server_argv(cfg: dict, checkpoint: Path, port: int) -> list:
-    return [
+def server_argv(cfg: dict, checkpoint: Path, port: int, backbone: Path | None = None) -> list:
+    command = [
         TRAIN_PY, SERVER,
         "--model-path", checkpoint,
         "--port", str(port),
         "--modality-config", ROOT / cfg["embodiment"]["gr00t_modality_config"],
         "--embodiment-tag", cfg["embodiment"]["gr00t_tag"].upper(),
     ]  # fmt: skip
+    return command + (["--backbone-path", backbone] if backbone is not None else [])
 
 
 def server_env(gpu: str) -> dict:
@@ -84,14 +87,23 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", type=Path, help="the run directory train wrote")
     ap.add_argument("--gpu", default="0")
+    ap.add_argument(
+        "--backbone-path",
+        type=Path,
+        default=None,
+        help="local Cosmos-Reason2-2B directory for serve_policy, needed when the checkpoint was trained "
+        "on another machine and records a backbone path that does not exist here",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print what would run, start nothing")
     args = ap.parse_args(argv)
+    if args.backbone_path is not None and not (args.backbone_path / "config.json").exists():
+        ap.error(f"no backbone model at {args.backbone_path}")
 
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
     cfg = run_context.load_run_config(run_dir)
     port = run_context.evaluation_of(cfg).policy_port
     checkpoint = run_context.checkpoint_of(run_dir)
-    command = server_argv(cfg, checkpoint, port)
+    command = server_argv(cfg, checkpoint, port, args.backbone_path)
 
     if args.dry_run:
         run_context.show("serve_policy", command, {"CUDA_VISIBLE_DEVICES": args.gpu})

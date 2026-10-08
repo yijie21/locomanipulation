@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Where does the runner stop commanding for > 1 s? (TODO 8.3.5.5)
+"""Where does the runner stop commanding for > 1 s? (TODO 18.3.5.5)
 
     $VENV_SIM_PY -u scripts/experiments/command_gap_probe_20260929.py configs/experiments/skills_pick_place_20260928.yaml \\
         --gpu 1 --instance 1 --rounds 4 --seed 500 --plan configs/plans/command_gap_probe_20260929.json --name <run>

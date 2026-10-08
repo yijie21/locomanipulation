@@ -11,8 +11,8 @@ pytest.importorskip("gear_sonic")
 
 from locomani.backends.sonic.vla_obs import ObsBuilder  # noqa: E402
 from locomani.schema import SONIC_CRATE  # noqa: E402
+from locomani.sim import mirror as M  # noqa: E402
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS  # noqa: E402
-from locomani.sim.isaac import mirror as M  # noqa: E402
 
 PROPRIO = {"body_q": [0.0] * 29, "left_hand_q": [0.0] * 7, "right_hand_q": [0.0] * 7, "base_quat": [1.0, 0, 0, 0]}
 
@@ -76,4 +76,4 @@ def test_a_mirror_that_cannot_answer_drops_the_observation_instead_of_reusing_th
     assert builder.build() is not None
     builder.mirror.fail = True
     assert builder.build() is None
-    assert "isaac mirror: no reply" in capsys.readouterr().out
+    assert "mirror: no reply" in capsys.readouterr().out

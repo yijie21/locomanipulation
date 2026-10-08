@@ -59,8 +59,12 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
     surface_bodies = sorted({v["body"] for v in meta.get("surfaces", {}).values() if v.get("body")})
     original = DefaultEnv.update_reward
 
-    def update_reward(self):
-        original(self)
+    def ensure_privileged(self):
+        """The privileged publisher, episode server, recorder and state trace, built on first use.
+
+        Under the wall clock the first update_reward builds them within a tick of start. Under lockstep the
+        first tick waits for a client, while the stack's readiness check (`[episode] :`, an offline sim) and
+        the Isaac mirror (its first state) wait for these: the runner builds them before serving."""
         pub = getattr(self, "_privileged_pub", None)
         if pub is None:
             pub = PrivilegedPublisher(self.mj_model, self.mj_data, object_bodies, surfaces=surface_bodies)
@@ -89,6 +93,11 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
                 from locomani.pipeline.sim_video import LiveOverlay
 
                 self._live_overlay = LiveOverlay(self.mj_model)
+        return pub
+
+    def update_reward(self):
+        original(self)
+        pub = ensure_privileged(self)
         self._episode_ctl.poll()
         if getattr(self, "_recorder", None) is not None:
             self._recorder.frame(self.mj_data)
@@ -102,6 +111,7 @@ def install_privileged_publisher(meta: dict, default_dof_angles=None) -> None:
             self._state_trace.frame(self.mj_data, seq)
 
     DefaultEnv.update_reward = update_reward
+    DefaultEnv.ensure_privileged = ensure_privileged
 
 
 def _install_loop_timing_probe(report_every: int = 100) -> None:
@@ -277,12 +287,12 @@ def main(config: SimLoopConfig) -> None:
     wbc_config["NUM_HAND_MOTORS"] = _sl.NUM_HAND_MOTORS
     wbc_config["NUM_HAND_JOINTS"] = _sl.NUM_HAND_MOTORS
     if _sl.NUM_HAND_MOTORS == 2:
-        # The 43-entry effort list interleaves 7 dex3 hand efforts after
-        # each arm ([legs+waist 15][l-arm 7][l-hand 7][r-arm 7][r-hand 7]);
-        # dex1 has 2 prismatic fingers per hand (URDF effort 20 N).
-        e = wbc_config["motor_effort_limit_list"]
-        assert len(e) == 43, len(e)
-        wbc_config["motor_effort_limit_list"] = e[:22] + [20.0, 20.0] + e[29:36] + [20.0, 20.0]
+        # The torque limits are the robot model's own. For the stock robot they
+        # equal the WBC yaml's 43-entry list with dex1's 2 fingers (URDF effort
+        # 20 N) in place of dex3's 7; mars's are its URDF's (ankles 35 N m,
+        # hip roll 139, wrist pitch/yaw 13.4) but the waist at 50
+        # (make_dex1_model.MARS_EFFORT_OVERRIDES).
+        wbc_config["motor_effort_limit_list"] = _sl.motor_effort_limits(scene_xml)
     # Parallel instances: each sim+deploy pair gets its own DDS domain so
     # their unitree channels never cross on lo. Pairs with the deploy's
     # SONIC_DDS_DOMAIN patch. Receiving end of the shell boundary (decision 8):

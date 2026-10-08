@@ -1,6 +1,7 @@
 """Resolved evaluation settings reach real consumers without shared mutable flags."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -108,13 +109,22 @@ def test_the_async_client_engages_the_deploy_it_then_refuses_to_command():
         assert EvalConfig.from_dict({"client": other}).backend.clean_deploy is False
 
 
-def test_the_image_source_is_a_closed_choice_and_the_mirror_needs_a_wall_clock_client():
+def test_the_image_source_is_a_closed_choice_and_isaac_now_runs_on_either_clock():
     assert EvalConfig().image_source == "mujoco"
     assert EvalConfig().with_overrides(["image_source=isaac"]).image_source == "isaac"
+    assert EvalConfig().with_overrides(["image_source=unreal"]).image_source == "unreal"  # TODO 12.9, 2026-09-29
     with pytest.raises(ValueError, match="not in"):
-        EvalConfig().with_overrides(["image_source=unreal"])
-    with pytest.raises(ValueError, match="wall-clock client"):
-        EvalConfig.from_dict({"client": "lockstep", "image_source": "isaac"})
+        EvalConfig().with_overrides(["image_source=blender"])
+    # 2026-09-27: the bimanual lockstep client asks the mirror for the frozen boundary's seq, so the pairing
+    # that was refused at load is the plan's target model; the single-arm evaluator still refuses it (below).
+    both = EvalConfig.from_dict({"client": "lockstep", "image_source": "isaac", "latency_frames": 2})
+    assert (both.client, both.image_source, both.gap, both.camera_frames) == ("lockstep", "isaac", "continue", 0)
+    with pytest.raises(ValueError, match="not in"):
+        EvalConfig().with_overrides(["gap=skip"])
+    with pytest.raises(ValueError, match="negative"):
+        EvalConfig.from_dict({"camera_frames": -1})
+    single_arm = (Path(__file__).resolve().parents[1] / "src/locomani/pipeline/eval_closed_loop.py").read_text()
+    assert "implemented by the bimanual evaluator only" in single_arm
 
 
 def test_the_image_source_reaches_every_wall_clock_observation_builder():
@@ -126,4 +136,46 @@ def test_the_image_source_reaches_every_wall_clock_observation_builder():
     for client in ("backends/sonic/vla_client.py", "backends/sonic/vla_round.py"):
         assert "ObsBuilder(task, image_source=config.image_source)" in (src / client).read_text()
     rounds = (src / "tasks/crate/vla_rounds.py").read_text()
-    assert "ObsBuilder(config.prompt, schema=SONIC_CRATE, image_source=image_source)" in rounds
+    assert "image_source=args.image_source" in rounds
+
+
+def test_every_eval_defaults_to_the_lockstep_target_model():
+    """2026-09-28 (user ruling): the world is frozen while images render and the chunk is inferred, in every
+    scene. The default is the calibrated target model; a distribution has to null the fixed latency first."""
+    from locomani.tasks.bottle import prepare as bottle
+    from locomani.tasks.crate import prepare as crate
+
+    default = EvalConfig()
+    assert (default.client, default.latency_frames, default.camera_frames, default.gap) == (
+        "lockstep",
+        2,
+        0,
+        "continue",
+    )
+    assert default.backend.clean_deploy is False
+    for line in (bottle, crate):
+        assert line.eval_backend(default)["lockstep"]["enabled"] is True
+        assert line.eval_backend(EvalConfig(client="blocking"))["lockstep"]["enabled"] is False
+    assert EvalConfig(latency_frames=None, latency_dist="d.json").latency_dist == "d.json"
+    with pytest.raises(ValueError, match="both set"):
+        EvalConfig(latency_dist="d.json")
+
+
+def test_the_encoder_preflight_reads_only_its_own_instances_deploy(tmp_path, monkeypatch):
+    """2026-09-28: a machine-wide pgrep found another session's encoder deploy and refused a clean evaluation."""
+    import json as _json
+
+    from locomani import paths
+    from locomani.pipeline import eval_closed_loop as E
+
+    monkeypatch.setattr(paths, "TMP", str(tmp_path))
+    assert E.instance_deploy_cmdline(0) is None  # no stack on this instance
+    root = Path(paths.session_root(0))
+    root.mkdir(parents=True)
+    spec = {"instance": 0, "gpu": "0", "scene_dir": "s", "prompt": "p", "record": False}
+    import os as _os
+
+    (root / "stack.json").write_text(_json.dumps({"spec": spec, "pids": {"deploy": _os.getpid()}}))
+    own = E.instance_deploy_cmdline(0)
+    assert own and "pytest" in own  # this process stands in for the instance's deploy
+    assert E.instance_deploy_cmdline(1) is None  # another instance's stack is not ours

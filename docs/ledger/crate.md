@@ -641,6 +641,76 @@ H0.60 × L0.20 这一格 3/15 偏低（第 1 步是 13/30），15 局的散布�
 两者口径不同（策略只判抬起 + 持 2 s；专家还要直立持 5 s + 后退），10 局也不足以下结论（同一份代码 10 局之间曾差出 2/10 到 7/10），100 局待跑。
 录像 `outputs/videos/warehouse_ckpt5000_closed_loop10_isaac_20260927.zip`（Isaac 第三视角 + Isaac ego/双腕小窗，与镜像同一 stage 和曝光，`render_isaac_videos.sh --traces eval/state_trace --insets`（当时叫 render_isaac_warehouse.sh）从每局 qpos 轨迹事后渲，一局 2–3.5 min）；早先的 MuJoCo 版 `..._closed_loop10_20260927.zip` 留作对照。
 
+## 2026-09-27 评测时间模型：墙钟 vs lockstep（checkpoint-5000，Isaac 图，seed 6000–6099，各 100 局）
+
+同一 checkpoint（`box_room_grasp_200_cap120_20260925` 的 5000 步），四个只评测的运行目录，只改 `eval.client` / `gap` / 延迟。
+计划、实现和验收在 [lockstep + Isaac 评测计划](../handoff/lockstep-isaac-eval-plan-20260927.md) 第 10 节；证据 `outputs/lockstep_eval_20260927/`。
+
+| 臂 | 时间模型 | 成功（Wilson 95%） | 失败 | 抬起后掉落 |
+|---|---|---|---|---|
+| `wc_hold100_20260927` | 墙钟，等图 + 推理 ~166 ms 期间参考定住，新块跳 4 帧接入（之前的循环） | **81/100**（0.72–0.87） | close 11、reach 8 | 12 |
+| `ls_w0_replica100_20260927` | lockstep 复刻上一行（按墙钟跳帧分布定住、跳帧） | **83/100**（0.74–0.89） | close 11、reach 5、walk 1 | 13 |
+| `ls_w3_target100_20260927` | lockstep 目标模型：拍照渲染不占世界时间，推理 2 帧里续走旧块 | **88/100**（0.80–0.93） | close 7、reach 5 | 15 |
+| `wc_continue100_20260927` | 墙钟，间隙里续发旧块（`gap: continue`） | **83/100**（0.74–0.89） | close 11、reach 6 | 15 |
+
+- **lockstep 校准通过**：墙钟 81 vs 复刻 83，同 seed 不一致 14 : 16，McNemar p = 0.86，失败构成逐项差 ≤ 3；到箱最近距离中位 0.344 vs 0.337 m。
+  2026-09-02 单臂的未过（46 vs 32）与"停得远"签名在这里都没出现。
+- **目标模型 vs 现状**：88 vs 81，不一致 11 : 18，p = 0.27，100 局判不动；少掉的是 close 和 reach。
+- 同一 seed 的 lockstep 局不逐位复现：MuJoCo 默认 4× 多重采样让同一状态两次渲染差 1–2 灰度级（Isaac 图本来也不确定），策略输出因此差一个量化步后分叉。
+- 墙钟下的补帧（`gap: continue`）83 vs 81，不一致 12 : 14，p = 0.85：续发线程抢 GIL，观测 + 推理从 70 ms 升到 95 ms，新块一半从第 5 帧接入，抵掉了参考连续的好处。
+
+
+## 2026-09-28 四边线 pilot：warehouse 房间里从平台四条边走入，按 envelope ≥ 30% 的范围随机
+
+**做了什么**:`warehouse_box_45x*` 场景(房间 + 按尺寸重建的纸箱,每条边测了空地),专家 = `box_platform_default_20260927`
+(quick,判据抬起 + 直立 + 保持 1 s、不后退)。每局抽一条边(`visual.start_edges`),箱子搬到该边、沿边随机、setback 0–2.5 cm、
+偏角 0～+3.5°;起点 0.6 m 到"该边空地 − 0.25 m"、朝向 ±20°、横移 −8～0 cm。7 份 pilot 各 10 局,不录制,GPU0 两条流水线并行
+(旁边有 JeVLA 训练约 4.7 核),每局 RTF 中位 0.99–1.00、最低 0.989。实验文件 `configs/experiments/warehouse_edges_pilot_*_20260928.yaml`,
+逐局 `outputs/runs/warehouse_edges_pilot_*_20260928/`,汇总脚本与表 `outputs/experiments/warehouse_edges_20260928/pilot_report.{py,md,json}`,
+录像预览 `outputs/videos/warehouse_edges_pilots_20260928.zip`(70 段,均 ≤ 499,156 B)。
+
+| pilot | 成功 | 失败原因 | 停位深度中位(m) |
+|---|---|---|---|
+| 边 xm(45x32x33) | 2/10 | lost_attachment 4、basket_tilt 2、stand_not_delivered 1、reach_stalled 1 | 0.481 |
+| 边 xp(45x32x33) | 4/10 | lost_attachment 4、reach_stalled 2 | 0.431 |
+| 边 ym(45x32x33) | 6/10 | reach_stalled 3、lost_attachment 1 | 0.475 |
+| 边 yp(45x32x33) | 4/10 | basket_tilt 2、reach_stalled 2、lost_attachment 2 | 0.481 |
+| 45x20x33(四边) | 3/10 | reach_stalled 3、lost_attachment 3、basket_tilt 1 | 0.404 |
+| 45x32x18(四边) | 4/10 | reach_stalled 2、basket_tilt 2、lost_attachment 1、empty_gripper 1 | 0.453 |
+| 45x20x18(四边) | 6/10 | lost_attachment 3、basket_tilt 1 | 0.445 |
+
+合计 **29/70 = 0.41**;按边合并:xm 6/15、xp 5/13、ym 11/19、yp 7/23。每格 10 局的 95% 区间约 ±30 个百分点,
+没有哪条边或哪个尺寸是 0–1/10;彼此高低 10 局分不出来。
+停位深度按 envelope §3.4 分档:0.39–0.42 为 5/7、0.42–0.45 为 8/15、0.45–0.48 为 6/13、0.48–0.52 为 7/22(平台上 0.08)、≥ 0.52 为 0/3。
+房间里的停位整体偏深(22/70 落在 0.48–0.52),但那一档没有像平台上那样掉光。
+`45x32x18` 第一次起栈被资源闸门拒绝(`cpu: 13.55 cores in use + 5 needed`),等另一条流水线跑完后单独重跑。
+
+## 2026-09-28 刹车后准备手臂再压缩：`ready_after_brake compact`，以及去掉刹车后的朝向重锚
+
+**起因**：用户觉得"站定到抓取"和"手抬起到开始伸手"之间停得太久。28 条四边线成功局：站定→合爪中位 15.6 s，其中准备手臂 8.7 s（8.5–9.1），
+轨迹上手先在走路高度 0.72 m 停 3.9 s（朝向重锚的 POSE 切换 + 1 s 等待 + `PlannerArm.start` 的 0.6 s 静止），抬到 0.90 m 后又停 2.4 s
+（`ready_hold` 1.2 s、空操作后的 `sleep(0.3)`、静止判定、交接 POSE 流）。
+
+**改动**：`visual.ready_after_brake: compact` = quick 去掉两个对刹车后无用的等待（planner arm 直接以测得的走路手臂为参考接管，
+不再静止 0.6 s；空操作 placement 后不再 sleep 0.3 s），抬臂 1.5 s、保持 0、重锚后等待 0.3 s；`visual.reanchor_after_brake: false`
+再去掉刹车后的重锚（回合开始时已重锚过，guard 走法全程在 planner 里）。
+
+**A/B**：45x32x33、四边随机、40 局、三组同种子（同一局同一摆放，可配对），不录制，GPU0 两条并行，RTF ≈ 1。
+`configs/experiments/warehouse_edges_prep_{quick,compact,compact_noreanchor}_20260928.yaml`，汇总 `outputs/experiments/warehouse_edges_20260928/prep_ab_report.{py,md}`。
+
+| 组 | 成功 | 准备手臂（prep→reach 中位） | 站定→合爪（成功局中位） | 一局（成功局） | 卡住 / 脱手 |
+|---|---|---|---|---|---|
+| quick（现行） | 19/40 | 8.68 s | 15.5 s | 28.8 s | 7 / 7 |
+| compact | 17/40 | **4.85 s** | 12.4 s | 24.9 s | 9 / 9 |
+| compact + 不重锚 | 14/40 | **2.66 s** | 9.3 s | 23.7 s | 13 / 10 |
+
+配对（两组都成功 / 仅 quick / 仅新组 / 都失败）：compact 7 / 12 / 10 / 11，McNemar p = 0.83；不重锚 5 / 14 / 9 / 12，p = 0.40。
+同一摆放两次跑的结果本身就一半不一致，40 局分不出 5 个百分点。不重锚没有让身体漂或转：站定→合爪骨盆位移中位 11.9 cm、偏航 1.0°，与 quick 的 12.1 cm、2.3° 同量级；
+但"下探卡住"从 7 升到 13，和 09-27 "压得越狠卡住越多"的方向一致。
+**判定**：compact 省 3.8 s、每局省 3.9 s，成功率看不出代价，可以用于采集；不重锚再省 2.2 s，趋势变差，不采用，要定需每组约 200 局。
+"边停边抬手"（刹车最后一步就开始抬）没做：要改走近循环，且 09-23 走路时抬手 6/10 局手指扎进箱子。
+配对录像 `outputs/videos/warehouse_edges_prep_ab_20260928.zip`（7 个摆放 × 3 组，21 段，每段 ≤ 497,068 B）。
+
 ## skills 目录的 approach → ready → grasp_bimanual 经 plan 入口在真栈上跑：1/3（2026-09-28）
 
 入口 `scripts/plan_episode.py`，实验 `box_centre_base_20260927.yaml`（场景 `W0.45_L0.32_H0.6`，render offline → 占位相机），
@@ -733,3 +803,19 @@ GPU1 / instance 1，seed 7000–7009（put_down 第二轮 7010–7019）。
 - **v1.1 速度图的台阶是 agent 侧造成的**（TODO 2.6）：同一个栈上，旧二进制 4add301、撤回座高修复、桌面场景都还是连续图；
   只有 09-11 的 agent 代码（`aae3d72`）复现台阶（0.26 → 0.008–0.024 m/s，原地踏步）。按代码对比是 `dd36fd8` 之前每帧都带
   `vr_3pt_*` 字段、把 deploy 切进 VR-3PT 编码器模式。`--no-encoder` 的栈 SLOW_WALK 完全不动。`outputs/diagnostics/speedmap_v11_*_20261001`。
+
+## 2026-10-07 warehouse mars 50 条采集（用户）：照 runbook 第 1–4 步，Unreal，50 fps
+
+运行 `warehouse_mars_50`（实验文件 `configs/experiments/warehouse_mars_50.yaml`，即 `warehouse_mars_smoke` 只改运行名、`collect` 保留 50 条每批 10 局最多 25 批、`train` 和 `eval.rounds`），只走 ym 边，D455 第一视角，`images.camera_delay` 打开。
+
+| 步 | 结果 | 用时 |
+|---|---|---|
+| 1 建场景 | 场景已存在，两条命令拒绝覆盖（runbook 已补这一情况）；另建一份比对，`scene_locomani.xml` 完全相同。Unreal 编辑器 GPU 1，关卡 35 s，`robot` 是 mars | 约 1 分钟 |
+| 2 采集 | 1 条通道（进程数只够一条）。120 局保留 50 条（42%）；失败 reach_stalled 23、lost_attachment 23、basket_tilt 17、stand_not_delivered 3，其余 4 种各 1 | 75 分钟，每局约 37 s |
+| 3 Unreal 补渲 | 第一次在第一条就报 `KeyError: 'dataset_fps'` 退出（`view_render.plan` 把运行的帧率加进 look 却没交给 `fill`，新 session 必崩，Isaac 入口同样；已修，加了测试）。重跑 50 条全部渲完，每条约 670–830 张图对 1150–1420 行，每张 p50 126 ms | 80 分钟，每条约 95 s |
+| 4 转换 | 训练集 45 条 53,800 行、验证集 5 条 5,575 行，50 fps；两边审计各 32 项全过 | 9 分钟 |
+
+- 采集的保留率 42% 高于 2026-10-03 mars 冒烟的 9/30（四边线），也只有这一次。
+- 审计只查了 stock 和 2cam 两个档：`check_dataset.bimanual` 按任务文本里有没有 `crate` 判断双臂，warehouse 的任务是 `pick up the box`，所以真正训练用的 3cam_bimanual 档没被检查。手工核对过：modality 里 state 8 组 46 维、action 三组 66 维、三路相机都在。
+- 运行目录 3.1 GB。各步日志在 `outputs/collect_logs_warehouse_mars_50/`。
+

@@ -144,6 +144,34 @@ def _alive(pid: int) -> bool:
         return False
 
 
+def instance_busy(instance: int) -> str | None:
+    """Why `instance` cannot take a new stack now, or None when it can.
+
+    Three things hold an instance: a stack whose state file still has live children, a starter holding its lock,
+    and any program bound to one of its ports -- the Unreal bridge took instance 0's whole block on 2026-09-28,
+    and a stack started there came up with a deploy that died on `Address already in use`."""
+    state = session_root(instance) / "stack.json"
+    if state.exists():
+        try:
+            pids = json.loads(state.read_text()).get("pids", {})
+        except (OSError, ValueError):
+            pids = {}
+        live = {name: int(pid) for name, pid in pids.items() if _alive(int(pid))}
+        if live:
+            return f"runs a stack ({live})"
+    lock = Path(paths.TMP) / "locomani_locks" / f"instance_{instance}.lock"
+    if lock.exists():
+        fd = os.open(lock, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return "its lock is held by a stack starting up"
+        finally:
+            os.close(fd)  # closing drops a lock this probe took
+    bound = sorted(port for port in instance_ports(int(instance)).values() if _port_open(port))
+    return f"ports {bound} are in use" if bound else None
+
+
 def _kill_group(pid: int, grace: float = 2.0, proc: subprocess.Popen | None = None) -> None:
     """TERM then KILL the whole process group a child was started as the leader of; reap it if it is ours."""
     for sig in (signal.SIGTERM, signal.SIGKILL):
@@ -220,12 +248,22 @@ class Stack:
 
     CHILDREN = ("sim", "deploy", "exporter")
 
-    def __init__(self, spec: StackSpec, *, base_env: dict | None = None, record_command=None, run_dir=None, mode=None):
+    def __init__(
+        self,
+        spec: StackSpec,
+        *,
+        base_env: dict | None = None,
+        record_command=None,
+        run_dir=None,
+        mode=None,
+        settings_file: str = "stack_env.json",
+    ):
         self.spec = spec
         self.root = session_root(spec.instance)
         # Where to leave stack_env.json, and -- through the state file -- which run this stack
         # serves: the process that attaches later checks it (`run_context.require_stack_of`).
         self.run_dir = None if run_dir is None else Path(run_dir)
+        self.settings_file = settings_file  # one per stack when a run collects in several lanes
         self.mode = mode  # "collect" / "eval" when a stage started it
         self.session: Path | None = None  # the exporter session the running exporter records into
         self.env = spec.child_env(base_env)
@@ -239,7 +277,7 @@ class Stack:
         if self.run_dir is None:
             return None
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        path = self.run_dir / "stack_env.json"
+        path = self.run_dir / self.settings_file
         path.write_text(json.dumps(self.spec.settings(), indent=1, sort_keys=True))
         return path
 
@@ -375,9 +413,11 @@ class Stack:
         if s.encoder:
             argv += ["--encoder-file", f"{s.policy}/model_encoder.onnx"]
         ports = s.ports()
+        if not s.lockstep:
+            # A --sim-lockstep deploy refuses a planner model: the planner runs on its own wall-clock thread, which
+            # the simulation clock never starts (docs/archive/lockstep.md, pitfall 1).
+            argv += ["--planner-file", "planner/target_vel/V2/planner_sonic.onnx"]
         argv += [
-            "--planner-file",
-            "planner/target_vel/V2/planner_sonic.onnx",
             "--input-type",
             "zmq_manager",
             "--output-type",
@@ -540,11 +580,22 @@ class Stack:
         return dict(self.env)
 
     def down(self) -> None:
-        """Kill every child by process group, wait for the ports, drop the state file and the lock."""
+        """Kill every child by process group, wait for the ports, drop the state file and the lock.
+
+        The children are this object's pids AND the state file's: a child restarted by another process's
+        attached Stack (the bottle gym's per-round `deploy.restart()`) is recorded only in the file. Reading
+        only this object's pids killed the dead first deploy, deleted the file and orphaned the live one on
+        the instance's ports (bottle smoke of 2026-09-28).
+        """
+        recorded: dict[str, int] = {}
+        if self.state_path.exists():
+            try:
+                recorded = {k: int(v) for k, v in json.loads(self.state_path.read_text()).get("pids", {}).items()}
+            except (OSError, ValueError):
+                recorded = {}
         for name in reversed(self.CHILDREN):
-            pid = self.pids.get(name)
-            if pid:
-                _kill_group(pid, proc=self._procs.pop(name, None))
+            for pid in dict.fromkeys(p for p in (self.pids.get(name), recorded.get(name)) if p):
+                _kill_group(pid, proc=self._procs.pop(name, None) if pid == self.pids.get(name) else None)
         ports = self.spec.ports()
         _wait(lambda: not any(_port_open(p) for p in ports.values()), 15)
         self.pids = {}

@@ -1,4 +1,4 @@
-"""ADT apartment through the dataset cameras: does each renderer draw it, what VRAM and time does it cost (TODO 9.6.5b).
+"""ADT apartment through the dataset cameras: does each renderer draw it, what VRAM and time does it cost (TODO 19.6.5b).
 
 Plan decision 16 picks the renderer by three things: it fits beside the other projects already on the card, its
 time per frame, and how ADT's PBR textures come out (the user judges the images). Three stand poses square to

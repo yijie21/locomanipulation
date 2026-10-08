@@ -1,4 +1,4 @@
-"""The Isaac `scene.usda` of a scene_discovery scene: the exported room plus the lights it needs (TODO 9.6.5b).
+"""The Isaac `scene.usda` of a scene_discovery scene: the exported room plus the lights it needs (TODO 19.6.5b).
 
     python -m locomani.scene_discovery.usd_scene <scene dir with scene_meta.json> <isaac scene dir> [--intensity N]
 

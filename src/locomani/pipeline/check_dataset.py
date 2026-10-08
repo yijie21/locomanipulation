@@ -59,14 +59,18 @@ SONIC_STATE_DIM, SONIC_ACTION_DIM = 46, 78
 # because modality.json stays a superset (a menu, not a selection), so both
 # layouts have to resolve. Checking only the stock one would pass a dataset
 # that cannot be trained on, and checking only ours would let the menu rot.
-LOCAL_STATE = SONIC_STATE + ["right_wrist_pos", "right_wrist_abs_quat"]
+# The state is the stock 46 since 2026-10-07 (the wrist poses were dropped).
+LOCAL_STATE = SONIC_STATE
 LOCAL_ACTION = ["motion_token", "right_gripper"]
-LOCAL_STATE_DIM, LOCAL_ACTION_DIM = 53, 65
+LOCAL_STATE_DIM, LOCAL_ACTION_DIM = SONIC_STATE_DIM, 65
 LOCAL_VIDEO = ["ego_view", "right_wrist"]
-# The crate line (configs/gr00t_sonic_3cam_bimanual.py): both wrist poses in the
-# state, both gripper scalars in the action, all three cameras.
-CRATE_STATE = LOCAL_STATE + ["left_wrist_pos", "left_wrist_abs_quat"]
-CRATE_STATE_DIM = LOCAL_STATE_DIM + 7
+# The crate line (configs/gr00t_sonic_3cam_bimanual.py): the same state, both
+# gripper scalars in the action, all three cameras.
+CRATE_STATE = SONIC_STATE
+CRATE_STATE_DIM = SONIC_STATE_DIM
+# ScaleBFM datasets keep the right wrist's pose in the state (53).
+BFM_STATE = SONIC_STATE + ["right_wrist_pos", "right_wrist_abs_quat"]
+BFM_STATE_DIM = SONIC_STATE_DIM + 7
 CRATE_ACTION = ["motion_token", "left_gripper", "right_gripper"]
 CRATE_ACTION_DIM = LOCAL_ACTION_DIM + 1
 CRATE_VIDEO = ["ego_view", "left_wrist", "right_wrist"]
@@ -250,7 +254,7 @@ def pass_modality(root, r):
     if "action.bfm" in t.column_names:
         # ScaleBFM datasets (scalebfm/record_bottle.py): same 53-d state, 19-d action
         # (configs/gr00t_bfm_2cam.py). The SONIC token profiles do not apply.
-        profiles = (("bfm", "state", LOCAL_STATE, LOCAL_STATE_DIM), ("bfm", "action", ["bfm", "right_gripper"], 19))
+        profiles = (("bfm", "state", BFM_STATE, BFM_STATE_DIM), ("bfm", "action", ["bfm", "right_gripper"], 19))
         r.note("action.bfm present: auditing the bfm_2cam profile instead of stock/2cam")
     else:
         profiles = (
@@ -264,7 +268,7 @@ def pass_modality(root, r):
                 ("3cam_bimanual", "state", CRATE_STATE, CRATE_STATE_DIM),
                 ("3cam_bimanual", "action", CRATE_ACTION, CRATE_ACTION_DIM),
             )
-            r.note("crate task: also auditing the 3cam_bimanual profile (both wrists, both grippers)")
+            r.note("crate task: also auditing the 3cam_bimanual profile (both wrist cameras, both grippers)")
     for label, grp, want, want_dim in profiles:
         missing = [k for k in want if k not in mod.get(grp, {})]
         r.check(
@@ -545,8 +549,33 @@ def _is_resample_ripple(prof: dict, peak: int) -> bool:
     return prof[peak] / mirror < RIPPLE_ASYMMETRY
 
 
-def pass_alignment(root, info, eps, r, n_eps):
-    """Measure the video/table lag, and the action/state lag."""
+# Below this many wrist-camera measurements the majority test cannot tell jitter from delay: the off-zero
+# minority is episode-scoped (one episode's camera latency moves both of its wrist measurements), so two
+# episodes -- the smoke runs' training sets -- fail it whenever one of them jitters by a frame (2026-09-28,
+# crate_smoke: {-1: 1, 0: 2, 1: 1}). A genuine delay still shows there: the 3- and 5-frame injections moved
+# the median to the shift and left at most 2.5% at lag 0.
+MAJORITY_MIN = 10
+
+
+def video_aligned(lags, expected: float = 0.0) -> bool:
+    """The wrist cameras show the table's motion at lag 0: a majority at 0 with median 0 (few: |median| <= 1, one at 0).
+
+    `expected` > 0: the run aged its pictures on purpose (images.camera_delay, camera_delay.mean_lag_frames), so the
+    median has to sit within a frame of that -- a delay that is there and is the one asked for. A run without it
+    still fails at median 0 (the 3- and 5-frame injections above moved the median by the whole shift)."""
+    if not lags:
+        return False
+    lags = np.asarray(lags)
+    med, at_zero = float(np.median(lags)), float(np.mean(lags == 0))
+    if expected:
+        return bool(abs(med - expected) <= 1)
+    if len(lags) < MAJORITY_MIN:
+        return bool(abs(med) <= 1 and at_zero > 0)
+    return bool(med == 0 and at_zero > 0.5)
+
+
+def pass_alignment(root, info, eps, r, n_eps, expected_lag: float = 0.0):
+    """Measure the video/table lag, and the action/state lag; `expected_lag` frames is the run's camera delay."""
     print("\n[4/4] alignment")
     if cv2 is None:
         r.note("cv2 not importable, skipping")
@@ -608,10 +637,20 @@ def pass_alignment(root, info, eps, r, n_eps):
     # the report, which is why the outliers are listed rather than summarised
     # into a pass.
     r.check(
-        bool(med == 0 and at_zero > 0.5),
-        f"video vs table: {len(lags)} wrist-camera measurements, "
+        video_aligned(lags, expected_lag),
+        (
+            f"video vs table, expected {expected_lag:+.1f} frames (images.camera_delay): "
+            if expected_lag
+            else "video vs table: "
+        )
+        + f"{len(lags)} wrist-camera measurements, "
         f"{at_zero * 100:.0f}% at lag 0 (median {med:+.0f}), "
-        f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}",
+        f"distribution {dict(zip(uniq.tolist(), counts.tolist()))}"
+        + (
+            ""
+            if expected_lag or len(lags) >= MAJORITY_MIN
+            else f" (fewer than {MAJORITY_MIN}: judged on the median alone)"
+        ),
     )
     off = [(ep, cam, lag) for (ep, cam), lag in zip(pairs, lags) if lag != 0]
     if off:
@@ -649,6 +688,13 @@ def main():
         "ambiguous, instead of failing",
     )
     ap.add_argument(
+        "--video-lag",
+        type=float,
+        default=0.0,
+        help="frames the dataset's pictures trail its state on purpose (the run's images.camera_delay; run_convert "
+        "passes camera_delay.mean_lag_frames): the video/table alignment then expects that median instead of 0",
+    )
+    ap.add_argument(
         "--run-dir",
         help="the pilot run directory (inputs.json, trace/, scene copy) that produced the dataset's "
         "sessions: the grasp pass then judges the object's rise in WORLD z from the state trace "
@@ -673,7 +719,7 @@ def main():
         run = RunTraces(args.run_dir)
     pass_grasp(root, info, eps, r, run)
     if not args.quick:
-        pass_alignment(root, info, eps, r, args.align_episodes)
+        pass_alignment(root, info, eps, r, args.align_episodes, args.video_lag)
 
     print(f"\n{r.passed} passed, {r.failed} failed")
     sys.exit(1 if r.failed else 0)

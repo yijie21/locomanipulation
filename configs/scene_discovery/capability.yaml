@@ -1,4 +1,4 @@
-# What the G1 + Dex1 + SONIC stack can do today, as measured (scene_discovery plan decision 8; TODO 9.7). 2026-10-03.
+# What the G1 + Dex1 + SONIC stack can do today, as measured (scene_discovery plan decision 8; TODO 19.7). 2026-10-03.
 #
 # Two readers: Claude reads it when proposing tasks for a scene (so a proposal is grounded before the checker sees it),
 # and the feasibility checker reads the numbers to sort tasks into the three buckets
@@ -74,7 +74,7 @@ reach_single_arm:
       object_height: [0.196, 0.196]
       mass_max: 0.6
       inboard: [0.084, 0.084] # centre to edge, as the checker measures it (the pilot note's 4 cm is the side's gap)
-      source: TODO 9.9.5, 9.12.8; outputs/runs/sd_pilot_p3_coffee_canister_20261003c (ADT-derived, not in git)
+      source: TODO 19.9.5, 9.12.8; outputs/runs/sd_pilot_p3_coffee_canister_20261003c (ADT-derived, not in git)
   # Pilots below decision 10's 3/10. A task at least as hard on every listed dimension (inboard >= inboard_min and,
   # when given, grip centre <= grip_above_support_max over the support top) inherits the failure: a skill gap, not a
   # range a pilot can still open. Between a passing setting and a failure region a pilot decides.
@@ -85,7 +85,7 @@ reach_single_arm:
       pilots: [apple_on_table]
       success: 0/10
       family: the stand leaves the object 0.51-0.62 m ahead of the pelvis, out of the hand's reach (x5)
-      source: TODO 9.9.5, 9.9.9
+      source: TODO 19.9.5, 9.9.9
     - name: deep_entry
       gap: grasp_single.deep_entry
       inboard_min: 0.14 # the vase 0.1449, the plant 0.157; rounded down so both pilots are inside
@@ -93,7 +93,7 @@ reach_single_arm:
       pilots: [vase_on_shelf, plant_on_shelf]
       success: 1/20
       family: "the transport guard stops the entry: finger or wrist link vs the support slab, tool 2-5 cm over it, reaching 15-16 cm in (x15)"
-      source: TODO 9.9.5, 9.9.9 (the guard's obstacle is adt_env, whose only collision geoms are the surface slabs)
+      source: TODO 19.9.5, 9.9.9 (the guard's obstacle is adt_env, whose only collision geoms are the surface slabs)
   inboard_max: 0.30 # beyond: palm reach <= 0.55 m ahead of the pelvis (g1-capability-envelope) minus the >= 0.21 m the pelvis stops before the edge (walk.md)
   # what the skill code accepts at all, not a measurement: sample_stand only plans grips whose squat drop is 0.03-0.13 m
   # from its FK templates (plus the lower-grip fallback); outside it the skill refuses before the robot moves, so
@@ -105,20 +105,20 @@ reach_single_arm:
     setting: the coffee canister of adt_canister_cart, yaw uniform at spawn; a = long side vs the approach direction
     success: {"|a| <= 20 deg": 6/9, "20-40 deg": 2/5, "> 40 deg": 0/18}
     long_side_vs_approach_deg_max: 20 # plan_episode spawns such objects inside this window (two windows, 180 deg apart)
-    source: docs/handoff/put-down-single-20261003.md §4 (18:50, 18:51); TODO 9.12.11
+    source: docs/handoff/put-down-single-20261003.md §4 (18:50, 18:51); TODO 19.12.11
   grip_force:
     status: measured
     note: per finger F = 1.5 x 250 x (setpoint - q), clamped at 20 N; holding force therefore depends on how far the jaw is stopped short of closed
     source: docs/reference/config_fields.md (gripper gear 250, close_target); docs/ledger/crate.md (close_target -0.06)
   other_table_heights: {status: untested, note: "measured grasps sit on 0.62 m (bottle line) and 0.70 m (one canister); 0.66 m counters exist in the scenes but were not used"}
-  pilots_adt_20261003: # scene_discovery round-1 envelope pilots, ADT apartment, 10 rounds each, profile bottle_simple (TODO 9.9)
+  pilots_adt_20261003: # scene_discovery round-1 envelope pilots, ADT apartment, 10 rounds each, profile bottle_simple (TODO 19.9)
     status: measured_one
     setting: approach -> grasp_single unchanged; objects 6.6-8.3 cm wide, 0.25-0.6 kg; spawn 1.2 m behind the planned stand
     coffee_canister: {support_top: 0.70, open_top: true, inboard: 0.084, width: 0.082, mass: 0.6, success: 4/10, grasp: 4/8}
     vase_on_shelf: {support_top: 0.73, open_top: false, inboard: 0.15, width: 0.083, mass: 0.3, success: 0/10, grasp: 0/8, failure: "guard: right finger 2 link vs the support slab on entry x8 (tool 4-9 cm over it; corrected 2026-10-05, the shelf above is 0.32 m up)"}
     plant_on_shelf: {support_top: 0.73, open_top: false, inboard: 0.16, width: 0.066, mass: 0.25, success: 1/10, grasp: 1/8, failure: "guard: right wrist yaw / finger 1 link vs the support slab on entry x7 (tool 2-5 cm over it; corrected 2026-10-05)"}
     apple_on_table: {support_top: 0.75, open_top: true, inboard: 0.265, width: 0.085, mass: 0.18, success: 0/10, approach: 0/10, failure: "stand left it 0.51-0.62 m ahead x5, waist not neutral x5"}
-    source: outputs/runs/sd_pilot_*_20261003c (ADT-derived, not in git); TODO 9.9.5
+    source: outputs/runs/sd_pilot_*_20261003c (ADT-derived, not in git); TODO 19.9.5
   low_surface_or_floor: {status: untested, note: "crouching during a grasp broke the bimanual lift (2/10); see posture.squat"}
 
 reach_bimanual:
@@ -197,7 +197,7 @@ overhead:
     put_down_single crosses over the spot at carry height before it squats, and the slab above collides in MuJoCo.
     Only extracted surfaces count (they are the furniture's only collision geometry); boards that were not extracted
     are visual-only in MuJoCo and are not seen by this check.
-  source: TODO 9.9.9 (the bookcase cell Bookcase__1 has Bookcase__2's slab 0.30 m above it)
+  source: TODO 19.9.9 (the bookcase cell Bookcase__1 has Bookcase__2's slab 0.30 m above it)
 
 timing:
   planner_keepalive: {status: measured, note: "the deploy drops the frozen upper body and the hand command after 1 s without a frame; Executor.idle keeps sending", source: docs/skills.md §4}

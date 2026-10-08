@@ -4,7 +4,7 @@ Source: `153c8b605046c14fa34282361920be89f60ef7d1:docs/collection.md`.
 Original SHA-256: `f347c6fee45cfed5a107b74ab47056e605d3305e1eeb5a2ba15157ee70eff398`.
 Body preserved below; only relative Markdown links gain `../` for this archive location.
 Historical instructions and conclusions are not current operating rules.
-Current guide: [collection](../collection.md).
+Current guide: [bottle runbook](../single_arm.md) (collection.md was split into the runbooks on 2026-09-18).
 
 ---
 
@@ -126,7 +126,7 @@ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -u \
 
 | 产出 | 路径 | 怎么配 |
 |---|---|---|
-| exporter 原始 session(LeRobot 训练数据:三路视频 + 关节/latent parquet) | `$LOCOMANI_TMP/p03/outputs/<时间戳>/`。一次 `start_stack.sh` 一个 session,这次启动之后跑的所有 episode(不管跑几次 `grasp_gym.py`)都落进同一个目录,直到你 `stop_stack.sh` 再重新 `start_stack.sh` | `LOCOMANI_TMP`(默认 `$LOCOMANI_WORKSPACE/tmp`,见[路径约定](../setup.md#0-路径约定));多实例并行时目录名跟 `INSTANCE` 走 |
+| exporter 原始 session(LeRobot 训练数据:三路视频 + 关节/latent parquet) | `$LOCOMANI_TMP/p03/outputs/<时间戳>/`。一次 `start_stack.sh` 一个 session,这次启动之后跑的所有 episode(不管跑几次 `grasp_gym.py`)都落进同一个目录,直到你 `stop_stack.sh` 再重新 `start_stack.sh` | `LOCOMANI_TMP`(默认 `$LOCOMANI_WORKSPACE/tmp`,见[路径约定](../setup.md#0-路径));多实例并行时目录名跟 `INSTANCE` 走 |
 | 第三人称跟踪录像(`gym_<timestamp>.mp4`,ego + 双腕画中画) | `$SIM_VIDEO_DIR`,不设就完全不录 | `export SIM_VIDEO_DIR=<绝对路径>`,**必须在 `start_stack.sh` 之前**,而且**必须给绝对路径**——sim 进程自己的工作目录是 `third_party/GR00T-WholeBodyControl/`,不是仓库根,给相对路径会悄悄写到 `third_party/GR00T-WholeBodyControl/outputs/sim_video/` 那边去,不是你以为的仓库根 `outputs/sim_video/` |
 | manifest(每次**尝试**一行 JSON:目标、指令、成败、外观 seed、桌高、物体尺寸) | 你用 `--manifest PATH` 指定的路径,`grasp_gym.py` 会自动建好父目录 | `grasp_gym.py --manifest <路径>`。**追加写**(`open(path, "a")`),不会清空旧内容——同一个文件跑多次,新记录接在旧记录后面,统计成功率前检查一下别把几批数据混在了一起 |
 
@@ -261,7 +261,7 @@ JITTER=0.20 PROMPT="pick up the water bottle" \
     bash scripts/collect_pilot.sh 200 water_bottle       # 200 条成功为止
 ```
 
-四个 spawn 参数的含义和取值理由见 [README 快速开始第 3 步](../../README.md#快速开始)
+四个 spawn 参数的含义和取值理由见 [README 快速开始第 3 步](../../README.md)
 那张表;`--spawn-edge` / `--face-object` 的完整语义见
 [grasp_gym.py 的命令行参数](../reference/silent_failures.md#grasp_gympy-的命令行参数)。
 
@@ -291,7 +291,7 @@ convert with (sessions and manifests pair up in this order):
 ```
 
 一个 chunk = 一个 session = 一个 manifest,三者同序 —— 转换器就是按这个配对的,
-错位会被硬校验拦下(见 [dataset.md](../dataset.md#导出-lerobot-v21-并对接-gr00t))。
+错位会被硬校验拦下(见 [dataset.md](../single_arm_design.md#导出-lerobot-v21-并对接-gr00t))。
 
 ### 两个坑
 
@@ -678,14 +678,14 @@ jerk 7.4),这是**重尾**的签名,不是普遍粗糙。三件具体的事:
 ### 由此该做和不该做的
 
 - **不该做**:为"普遍更丝滑"重采 200 局。中位数已经比人类慢,亚度级的打磨还低于
-  label 的量化死区(见 [dataset.md](../dataset.md#action78-维) 的死区表:0.5° 改动动 0–1 维)。
+  label 的量化死区(见 [dataset.md](../single_arm_design.md#数据-schema) 的死区表:0.5° 改动动 0–1 维)。
 - **该做(便宜)**:给 `upper_body_position[17]` 的接管加 ramp。**已做**,见下一节 ——
   实测那个"30°"是 0.33 s 窗口口径,真正的单帧跳变是 **123°**。
 - **该做(便宜,但要重转+重训)**:换掉最近邻重采样。**已做**(2026-08-28,
   `DST_FPS = 25`)—— 25 整除 50,抽帧均匀、图像与状态仍逐帧对齐,伪影消失;代价是
   每局少 17% 的帧,以及 Nyquist 从 15 Hz 降到 12.5 Hz(实测只丢 0.75% 的功率)。
   现有 200 局仍是 30 fps,要吃到得重转 + 重训。见
-  [ROADMAP](../ROADMAP.md#已做dst_fps--25消掉重采样的-10-hz-伪影2026-08-28)。
+  [ROADMAP](roadmap_20260912.md#已做dst_fps--25消掉重采样的-10-hz-伪影2026-08-28)。
 - **要权衡**:`_servo_continuous` 里由特权量触发的离散事件(接触闪避退 5 cm、6 s 卡死
   解锁)同时是不丝滑和不可模仿的,但当初正是它们让"悬停不闭合"消失。去掉会掉脚本
   成功率,得先跑 12 局看崩没崩。
@@ -757,7 +757,7 @@ p90 从 61.5 掉到 28.1 说明尾巴没了 —— 现在每局都以同一个�
 
 最后一行不是新的能量:绝对高频占比是**下降**的(0.343 → 0.251),10 Hz 那条线是
 重采样伪影、幅度没变,底噪降下去之后它相对更突出。它加强而不是削弱了
-[ROADMAP](../ROADMAP.md) 里 `DST_FPS = 25` 那一条。
+[ROADMAP](roadmap_maintenance_20260914.md) 里 `DST_FPS = 25` 那一条。
 
 脚本成功率 12/12,`[gym] arm rise finished at the table` 一次都没打印 —— 抬手全部在
 走路途中完成,没有换来任何一帧站着不动。

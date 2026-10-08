@@ -23,7 +23,7 @@ import json
 from pathlib import Path
 
 from locomani import paths
-from locomani.pipeline import run_context
+from locomani.pipeline import lanes, run_context
 from locomani.pipeline.lines import line_of
 from locomani.pipeline.stages import Stage
 from locomani.stack import Stack, spec_from_config
@@ -37,11 +37,20 @@ def frame_audit_path(collect_root: Path, batch: int) -> Path:
     return collect_root / f"frame_audit_{batch:02d}.jsonl"
 
 
-def collect_spec(cfg: dict, run_dir: Path, scene: Path, collect_root: Path, trace_root: Path, gpu: str):
-    """The recording stack: the exporter's first session pairs with batch 00's manifest."""
+def collect_spec(
+    cfg: dict,
+    run_dir: Path,
+    scene: Path,
+    collect_root: Path,
+    trace_root: Path,
+    gpu: str,
+    lane: lanes.Lane | None = None,
+):
+    """The recording stack: the exporter's first session pairs with batch 00's manifest -- or, for lane k of a run
+    collected in lanes, batch k's, on the lane's own instance and card."""
     extra = {
         "SIM_STATE_TRACE_DIR": str(trace_root),
-        "TF_FRAME_AUDIT_PATH": str(frame_audit_path(collect_root, 0)),
+        "TF_FRAME_AUDIT_PATH": str(frame_audit_path(collect_root, 0 if lane is None else lane.index)),
         "TF_EXPORTER_SCRIPT": str(EXPORTER),
         **dict(kv.split("=", 1) for kv in cfg["collect"].get("gym_env", [])),
         **dict(kv.split("=", 1) for kv in cfg["collect"].get("stack_env", [])),
@@ -56,7 +65,54 @@ def collect_spec(cfg: dict, run_dir: Path, scene: Path, collect_root: Path, trac
         video_dir=collect_root / "videos",
         record=bool(cfg["collect"]["record"]),
     )
-    return dataclasses.replace(spec, env={**spec.env, **{k: str(v) for k, v in extra.items()}})
+    env = {**spec.env, **{k: str(v) for k, v in extra.items()}}
+    if lane is None:
+        return dataclasses.replace(spec, env=env)
+    return dataclasses.replace(spec, env=env, instance=lane.instance, gpu=str(lane.gpu))
+
+
+def start_lanes(cfg: dict, run_dir: Path, line, *, gpus: str | None, want: int | None, dry_run: bool) -> int:
+    """Collection on a line that collects in lanes: plan them on this machine, say so, start one stack per lane.
+
+    The plan is the headroom check -- it is sized from the same measurement the single-stack gate reads -- and
+    `collect/lanes.json` is what the driver attaches to. A stack that fails to start takes the ones already
+    started down with it: a run on fewer lanes than it printed is the half-applied state this repository keeps
+    paying for."""
+    plan = lanes.plan_run(cfg, gpus=gpus, want=want)
+    print("\n".join(plan.describe()), flush=True)
+    collect_root = line.collect_root(run_dir)
+    if dry_run:
+        scene = line.scene_name(cfg, run_dir)  # a dry run names the scene without freezing it
+        # With nothing free now, still say what the first lane's stack would be told: a dry run answers "what is
+        # delivered", which does not depend on this minute's load.
+        shown = plan.lanes or [lanes.Lane(0, int(cfg["collect"].get("instance", 0)), lanes.gpu_list(gpus)[0])]
+        for lane in shown:
+            spec = collect_spec(cfg, run_dir, scene, collect_root, line.trace_root(run_dir), lane.gpu, lane)
+            run_context.show(
+                f"stack_up_collect_lane{lane.index:02d}", ["locomani.stack", "up", str(spec.instance)], spec.settings()
+            )
+        return 0
+    run_context.require_deploy_patches(cfg)  # static, so before the refusal that depends on this minute's load
+    if not plan.lanes:
+        raise SystemExit("collect: not enough headroom for one lane -- see 'what fits' above")
+    scene = line.prepare(cfg, run_dir)
+    collect_root.mkdir(parents=True, exist_ok=True)
+    line.trace_root(run_dir).mkdir(parents=True, exist_ok=True)
+    stage, started = Stage(run_dir), []
+    try:
+        for lane in plan.lanes:
+            spec = collect_spec(cfg, run_dir, scene, collect_root, line.trace_root(run_dir), lane.gpu, lane)
+            name = "stack_env.json" if lane.index == 0 else f"stack_env_lane{lane.index:02d}.json"
+            stack = Stack(spec, record_command=stage.record, run_dir=run_dir, mode="collect", settings_file=name)
+            stack.up()
+            started.append(stack)
+            print(json.dumps(dict(lane=lane.index, instance=spec.instance, gpu=spec.gpu, pids=stack.pids)), flush=True)
+    except BaseException:
+        for stack in started:
+            stack.down()
+        raise
+    lanes.write(run_dir, plan)
+    return 0
 
 
 def eval_spec(cfg: dict, run_dir: Path, scene: Path, gpu: str):
@@ -88,7 +144,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("experiment", type=Path, help="the experiment YAML, or a run directory already opened")
     ap.add_argument("--mode", choices=("collect", "eval"), required=True)
-    ap.add_argument("--gpu", default="0")
+    ap.add_argument(
+        "--gpu",
+        default=None,
+        help="card(s): N, N,M or all. Collection on a line that collects in lanes spreads its lanes over them "
+        "(default all); every other stack runs on the first (default 0)",
+    )
+    ap.add_argument(
+        "--lanes",
+        default=None,
+        help="collection lanes: a number (at most that many) or auto (as many as fit; the default, or collect.lanes)",
+    )
     ap.add_argument("--name", default=None, help="run directory name; the experiment's own name by default")
     ap.add_argument("--dry-run", action="store_true", help="print what would run, start nothing")
     args = ap.parse_args(argv)
@@ -107,6 +173,11 @@ def main(argv: list[str] | None = None) -> int:
     line = line_of(cfg)
     collect_root = line.collect_root(run_dir)
     run_context.require_images(cfg)  # an Isaac run this machine cannot render is refused before anything starts
+    if args.mode == "collect" and line.parallel:
+        return start_lanes(cfg, run_dir, line, gpus=args.gpu, want=lanes.wanted(args.lanes, cfg), dry_run=args.dry_run)
+    if args.lanes not in (None, "1"):
+        print(f"collect: the {line.name} line collects in one lane; --lanes {args.lanes} is ignored", flush=True)
+    args.gpu = lanes.gpu_list(args.gpu or "0")[0]
 
     if args.dry_run:
         scene = line.scene_name(cfg, run_dir)  # a dry run names the scene without freezing it

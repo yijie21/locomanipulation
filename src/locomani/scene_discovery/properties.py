@@ -5,7 +5,7 @@ mass and friction, and says which objects are open containers. Rules then bound 
 where each value came from: mass outside a plausible density for its box is kept but reported, friction is
 clamped, a "container" too small to hold anything is overridden (provenance `rule`), and names repeated
 within a room get a suffix. The drop test that turns `mass_kg` / `friction` provenance into `measured` runs
-after the MuJoCo build (TODO 9.6.5).
+after the MuJoCo build (TODO 19.6.5).
 """
 
 from __future__ import annotations

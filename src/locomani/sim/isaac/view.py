@@ -14,14 +14,26 @@ Everything Isaac needs comes out of one ``mj_forward`` on the given qpos
 each camera's world pose. The cameras are the ones MuJoCo publishes
 (``dataset_cameras.CAMERA_CONFIGS``: same MJCF camera, same resolution), mounted as
 top-level prims and re-posed every frame, which is why a frame costs
-``stage.SETTLE_STEPS`` renders.
+``stage.SETTLE_STEPS`` renders. With ``cfg.supersample`` > 1 they render that
+many times larger and ``grab`` box-averages back to the dataset resolution.
 
 The caller owns Kit: start it with ``stage.start_app(cfg)`` before building a
 view, and on failure ``os._exit(1)`` BEFORE ``app.close()`` -- close() ends the
-process itself with status 0.
+process itself with status 0. ``run_in_kit`` does both for a run's Isaac look.
+
+``film_setup`` turns a view that has done its dataset work into the renderer of
+the run's third-person video (``view_render.film_rounds``): one more world camera at
+the video's size, the ghost grippers (``ghost.add_isaac``), the head mesh shown
+again (it is hidden only for the ego camera that sits inside it), and the
+dataset cameras' render products stopped, since the video's insets are the
+dataset's own filled frames. After it the view films and no longer renders
+dataset images.
 """
 
 from __future__ import annotations
+
+import os
+import sys
 
 import numpy as np
 
@@ -52,6 +64,8 @@ class IsaacView:
 
         self.streams = tuple(streams)
         self.log = log
+        self.cfg = cfg
+        self.supersample = cfg.supersample
         self.stage = S.assemble_stage(cfg, log)
         S.apply_rtx_settings(rtx_settings, log)
         self.world = S.make_world()
@@ -93,7 +107,7 @@ class IsaacView:
         if missing:
             self.log(f"view: missing/stale streams {missing}")
             return None
-        return {k: np.ascontiguousarray(v[..., :3]) for k, v in got.items()}
+        return {k: np.ascontiguousarray(S.downsample(v[..., :3], self.supersample)) for k, v in got.items()}
 
     def render(self, qpos, qvel=None) -> dict:
         """The images of this state. Raises rather than return a partial set."""
@@ -112,19 +126,23 @@ class IsaacView:
         meshes in over the first ~10 rendered frames (isaac_render pilot 21 r00:
         0.8 s of video with only two finger tips visible).
         """
+        return self._settle(lambda: self.push(qpos, qvel), self.grab, "picture")
+
+    def _settle(self, push, grab, what: str) -> int:
+        """`push` then `grab` until `grab` returns pixels and they stop changing; returns the steps spent."""
         steps = 0
         for _ in range(8):
             steps += 1
-            self.push(qpos, qvel)
-            if self.grab() is not None:
+            push()
+            if grab() is not None:
                 break
         else:
-            raise RuntimeError("Isaac camera streams still missing after 8 warm-up steps")
+            raise RuntimeError(f"Isaac {what} still missing after 8 warm-up steps")
         prev, calm = None, 0
         for _ in range(80):
             steps += 1
-            self.push(qpos, qvel)
-            cur = self.grab()
+            push()
+            cur = grab()
             if cur is None:
                 prev, calm = None, 0
                 continue
@@ -132,8 +150,77 @@ class IsaacView:
             quiet = prev is not None and all(float(np.abs(cur[k] - prev[k]).mean()) < 0.5 for k in cur)
             calm = calm + 1 if quiet else 0
             if calm >= 3:
-                self.log(f"view: picture settled after {steps} warm-up steps")
+                self.log(f"view: {what} settled after {steps} warm-up steps")
                 return steps
             prev = cur
-        self.log("view: WARNING picture still changing after 80 extra warm-up steps")
+        self.log(f"view: WARNING {what} still changing after 80 extra warm-up steps")
         return steps
+
+    def film_setup(self, width: int, height: int, fovy: float) -> None:
+        """Mount the third-person camera and the ghost grippers; stop rendering the dataset cameras."""
+        from pxr import UsdGeom
+
+        from locomani.sim.isaac import ghost as G
+
+        spec = {"third_person": (np.zeros(3), np.array([1.0, 0, 0, 0]), fovy, width, height)}
+        self._film = S.mount_inset_cameras(self.stage, self.cfg, spec, self.log)["third_person"][0]
+        self._ghosts = G.add_isaac(self.stage, self.replay.model, self.log)
+        # Undo exactly assemble_stage's MakeInvisible. Not MakeVisible(): the robot layer's /visuals scope is itself
+        # invisible (its prototypes sit at the origin), so MakeVisible would show the scope and author `invisible` on
+        # every other link's visuals -- the instances reference them, and the robot vanished but for its head.
+        for rel in self.cfg.hidden_visuals:
+            UsdGeom.Imageable(self.stage.GetPrimAtPath(f"/visuals/{rel}")).GetVisibilityAttr().Set(
+                UsdGeom.Tokens.inherited
+            )
+        stopped = 0
+        for _name, sensor in self.cameras.values():
+            try:  # a speed-up only: Replicator's own switch, on a private handle of the sensor
+                sensor._render_product.hydra_texture.set_updates_enabled(False)
+                stopped += 1
+            except AttributeError as exc:
+                self.log(f"view: could not stop a dataset camera ({exc}); it renders along")
+        self.log(f"view: filming {width}x{height} fovy {fovy:g}; {stopped} dataset cameras stopped")
+
+    def _film_push(self, qpos, camera, ghosts) -> None:
+        from locomani.sim.isaac import ghost as G
+
+        self.push(qpos)
+        self._film.set_world_pose(position=camera[0], orientation=camera[1], camera_axes="usd")
+        G.set_isaac(self._ghosts, *ghosts)
+
+    def _film_grab(self) -> dict | None:
+        got = S.step_and_grab_all(self.world, {"third_person": self._film})["third_person"]
+        return None if got is None else {"third_person": S.downsample(got[..., :3], self.supersample)}
+
+    def film_warm_up(self, qpos, camera, ghosts) -> int:
+        """Hold the first filmed state until the third-person picture settles (a new shot streams in too)."""
+        return self._settle(lambda: self._film_push(qpos, camera, ghosts), self._film_grab, "third-person picture")
+
+    def film(self, qpos, camera, ghosts) -> np.ndarray:
+        """The third-person picture of this state: `camera` (pos, wxyz quat, -Z forward), `ghosts` (pos [2,3],
+        quat [2,4]) as `ghost_trace.ghost_poses` gives them."""
+        self._film_push(qpos, camera, ghosts)
+        got = self._film_grab()
+        if got is None:
+            raise RuntimeError("Isaac returned a missing or stale third-person picture for this state")
+        return np.ascontiguousarray(got["third_person"])
+
+
+def run_in_kit(scene_xml: str, isaac: dict, gpu, work, log=print) -> None:
+    """Start Kit on card `gpu`, build the view of the run's Isaac look (`run_context.isaac_scene`) over the dataset
+    streams and call `work(view)`. A failure prints its traceback and exits 1 before Kit's close, which would exit
+    0; after a success Kit's close ends the process, so nothing after this call runs."""
+    os.environ.update(CUDA_VISIBLE_DEVICES=str(gpu), OMNI_KIT_ACCEPT_EULA="YES")  # Kit takes the card at start
+    cfg = S.StageCfg(
+        scene_dir=isaac["dir"], robot_mjcf=scene_xml, absolute_camera=True, supersample=isaac["supersample"]
+    )
+    app = S.start_app(cfg)
+    try:
+        work(IsaacView(cfg, scene_xml, tuple(CAMERA_CONFIGS), isaac["rtx_settings"], log=log))
+    except BaseException:
+        import traceback
+
+        traceback.print_exc()
+        sys.stdout.flush()
+        os._exit(1)  # NOT app.close() first: it ends the process with status 0
+    app.close()

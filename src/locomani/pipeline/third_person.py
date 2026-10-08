@@ -4,10 +4,17 @@ Split out of the converter so it can be imported without pandas/pyarrow, the
 same reason `recording_density` is its own module.
 
 This is NOT a dataset camera. It never enters the policy's observation and it
-does not live under `videos/observation.images.*`: it is the pelvis-tracking
-view with the debug visuals on (`pipeline/sim_video.py`), carried into the
-dataset so an episode can be watched by index instead of by hunting for a
-timestamped filename in `videos_NN/`.
+does not live under `videos/observation.images.*`: it is the round's
+third-person shot with the debug visuals on (`sim/third_person_shot.py`),
+carried into the dataset so an episode can be watched by index instead of by
+hunting for a timestamped filename in `videos_NN/`.
+
+It is drawn by the renderer that draws the dataset cameras, the run's
+`images.source` (user, 2026-09-29), and only on request: one command,
+`scripts/render_third_person.sh` (user, 2026-09-30), writes `<label>.mp4` per
+round to `video_dir` -- MuJoCo's `<run>/videos/` (where a live sim's
+`SIM_VIDEO_DIR` records too), Isaac's and Unreal's `<run>/videos_<renderer>/`.
+Convert links what is there; a run without them converts all the same.
 """
 
 import os
@@ -15,12 +22,17 @@ import shutil
 from pathlib import Path
 
 
-def third_person_source(manifest_path, row, position, produced):
-    """The tracking-camera mp4 for one episode, or None when it cannot be joined.
+def video_dir(run_dir, renderer: str) -> Path:
+    """Where `renderer`'s third-person videos of a run are: MuJoCo's `videos/`, another's `videos_<renderer>/`."""
+    return Path(run_dir) / ("videos" if renderer == "mujoco" else f"videos_{renderer}")
+
+
+def third_person_source(manifest_path, row, position, produced, videos_dir=None):
+    """The third-person mp4 for one episode, or None when it cannot be joined.
 
     The overview video is not a dataset camera and never enters the policy's
-    observation -- it is the pelvis-tracking view with the debug visuals on
-    (`pipeline/sim_video.py`), kept so a converted episode can be watched. It
+    observation -- it is the third-person shot with the debug visuals on
+    (`sim/third_person_shot.py`), kept so a converted episode can be watched. It
     lands beside the data rather than under `videos/observation.images.*` for
     exactly that reason.
 
@@ -34,7 +46,14 @@ def third_person_source(manifest_path, row, position, produced):
     Older bottle rows have neither, so that line joins by order -- and only when
     the counts agree exactly, because a silently shifted join would attach the
     wrong video to every episode after the first missing clip.
+
+    `videos_dir` (a renderer's `video_dir`) joins by label only: those videos
+    are filmed per kept round and named after it.
     """
+    if videos_dir is not None:
+        label = row.get("label")
+        clip = Path(videos_dir) / f"{label}.mp4"
+        return clip if label and clip.exists() else None
     manifest = Path(manifest_path)
     videos = manifest.parent / manifest.name.split(".")[0].replace("manifest", "videos")
     per_batch = videos.is_dir()

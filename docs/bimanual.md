@@ -1,210 +1,115 @@
-# 双臂：从采集到评测
+# crate：双臂抓筐
 
-视觉指导走近、俯身抓篮、抬起并站直。**这一页从头到尾能跑完整条线**，不需要跳到别的文档。
-为什么这么设计、试过什么被否掉了，在 [双臂详解](bimanual_design.md)；
-哪天跑出什么数，在 [双臂台账](ledger/crate.md)；栈、deploy、exporter、token 等名词见 [术语表](reference/glossary.md)。
+机器人看着筐走到矮桌前，俯身用双手抓起筐，再抬起、站直。整条线只用 1 张 GPU。
+下面按冒烟规模写（2 条数据、10 步训练、2 局评测），从采集到评测跑完大约 8 分钟。冒烟只检查每一步能不能跑通，训练 10 步的模型不会抓，闭环 0/2 是正常结果。耗时是 2026-09-28 照这一页实跑的结果。
+改参数、并行、重跑某一步见[运行机制](running.md)；设计和更多细节见 [crate 详解](bimanual_design.md)；名词见[术语表](reference/glossary.md)。
 
-和单臂用**同一套扁平脚本**，采集和评测各走自己那条线的功能脚本（`tasks/crate/collect.py` / `eval_crate_closed_loop.py`），
-转换和训练完全共用。结构与 [单臂](single_arm.md) 逐节对应。
-
-## 1. 准备一次
-
-先做完 [安装指南](setup.md) 第 0–4 步（采集和转换只要这些；训练和评测还要第 5 步）。双臂要的
-[POSE ownership 补丁](../patches/sonic_pose_ownership.md) 第 3 步已经打了，不用再单独打；第 4 步也已经把场景源资产装进
-`outputs/scene/`，这里**不要**再跑 `install_scene.sh`——不带 `SCENE_PRESET` 时它会把单臂用的 `outputs/scene/sim` 重建成
-多物体桌（下面的双臂场景只读源资产，与 `outputs/scene/sim` 建成什么样无关，2026-09-25 核对过逐字节相同）。
+## 0. 每个新终端先执行
 
 ```bash
 . scripts/paths.sh
-export PYTHONPATH="$LOCOMANI_ROOT/src"
-
-"$VENV_SIM_PY" -m locomani.tasks.crate.bimanual_scene \
-  outputs/scene/crate_bimanual_depth04 --crate-setback 0.04
-"$VENV_SIM_PY" scripts/experiments/crate_table_height_20260913.py \
-  outputs/scene/crate_bimanual_depth04 outputs/scene/crate_table30_depth04 --height 0.30
 ```
 
-**两步都要跑。** 降桌高和选控制 profile 是两件事，低桌配置文件**不改变桌面几何**。
-`--crate-setback 0.04` 同时改 XML 初始位置和 reset 元数据，**任务 JSON 不能代替它**——
-此前本页漏写这 4 cm，生成的场景与实验对不上（[复现核对](handoff/crate-reproduction-20260914.md)）。
+做什么：设置路径变量，把 `src/` 加进 `PYTHONPATH`，并读入本机的 `locomani.local.sh`。下面的命令都在仓库根目录执行。
+前提：[安装](setup.md)第 0–5 步已经完成。
 
-构建结果包含 `scene_locomani.xml` 和 `scene_meta.json`。
-要训练的新机器（第 5 步装完后）还要跑一次 `bash scripts/link_gr00t_src.sh`（训练 venv 的 `gr00t` 指向 `src/gr00t/`）。
-
-## 2. 一次运行 = 一份实验文件
-
-`configs/experiments/<name>.yaml` 是**完整**的：这次运行读的每一个值都在里面，没有继承也
-没有组合。八个块——`name` + `task` / `embodiment` / `scene` / `backend` / `collect` /
-`train` / `eval`。运行开始时它被**逐字节复制**到 `outputs/runs/<name>/config.yaml`，
-**下游阶段读的永远是那份副本**：跑到一半改实验文件不影响正在跑的运行。
-
-现有双臂实验：`crate_table30_record`（录制线，20 条成功 / 每批 10 局 / 最多 2 批）。
-
-## 3. 新建一次实验
+## 1. 建场景（每台机器一次）
 
 ```bash
-cp configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.yaml
-sed -i 's/^name: .*/name: my_crate/' configs/experiments/my_crate.yaml
-$EDITOR configs/experiments/my_crate.yaml     # 改 §4 表里那几个字段
-diff configs/experiments/crate_table30_record.yaml configs/experiments/my_crate.yaml
+bash scripts/build_scene.sh crate
 ```
 
-顶层 `name` **不缩进**；缩进的那个 `name` 是 `embodiment.name`，改错了不报错，只会让运行
-目录名不变而具身配置错掉。`diff` 出来的行就是两次运行的全部差别。
+做什么：先建 `outputs/scene/crate_bimanual_depth04`（筐在桌上往里挪 4 cm），再把桌子降到 0.30 m，得到 crate 实验用的 `outputs/scene/crate_table30_depth04`。
+得到什么：两个目录，各有 `scene_locomani.xml` 和 `scene_meta.json`。约 3 秒。
 
-## 4. 每次都要改的字段
-
-这里只说字段**控制什么**，不复述默认值。`task`/`backend`/`eval` 的默认值查
-[配置字段表](reference/config_fields.md)；**`collect` 和 `train` 是普通 YAML、没有 dataclass，
-那张表里查不到**，它们的唯一出处是实验文件自身的注释。
-
-| 字段 | 控制什么 | 调大 / 调小意味着 |
-|---|---|---|
-| `name` | 运行目录名 | 同名重跑会接着采，换名字才是另起一份数据 |
-| `collect.batch_rounds` | 每批**尝试**几局 | 批内一定跑满；总局数 = `batch_rounds` × 实际跑了几批，批数由 `successes` 和 `max_batches` 决定，见 §5。要正好跑 N 局，设 `batch_rounds: N`、`max_batches: 1` |
-| `collect.max_batches` | 最多几批 | 每批开一个新的 exporter session，栈跨批不重启；默认整个 visual pilot 用一批 |
-| `collect.successes` | 保留多少条成功 | 在这条线上**只是事后的验收门槛**，见 §5 |
-| `collect.seed0` | 第一批的采样种子 | 换它就是换一组 case |
-| `collect.record` | 录不录 LeRobot 数据 | `false` 只留视频/相机/动作记录，不进转换器 |
-| `collect.instance` | 端口块与 exporter 目录 | 双臂不强制实例 0，可与单臂并行（见 §6） |
-| `task.expert` | 用哪个专家 | `visual` 是本页这条线；`wall` / `carry` 是诊断专家 |
-| `scene.dir` / `scene.name` | 用哪个场景，二选一 | `name: crate` 就是 §1 建的 `outputs/scene/crate_table30_depth04`；`name: warehouse_textured` 是物流房间（旧名 `warehouse` 的纸箱没贴图，只留给旧运行；名字表 `configs/scenes.yaml`） |
-| `train.steps` / `save_steps` | 优化器步数 / 存档间隔 | 要冒烟就让 `save_steps` 等于 `steps`，否则存不下 checkpoint |
-| `train.holdout` | 留几集做验证 | 必须**小于**能保留的集数，否则训练集为空。`collect.successes` 和 `batch_rounds × max_batches` 都是上限，起栈时就查；缩短运行时一起调小（0 = 不留验证集）。实际成功得更少时 convert 仍会拒绝 |
-| `eval.rounds` | 闭环评测跑几局 | 20 局只看得出"翻倍级"差异，100 局才判得动 10 个点 |
-| `eval.seed` | 评测的采样种子 | 与采集的 seed 刻意错开 |
-| `eval.policy_port` | policy server 的端口 | 默认 5590，**并行评测必须改**（见 §6） |
-
-## 5. 双臂没有"成功够了就停"
-
-分两层，容易只记住一层：
-
-- **批内**：`batch_rounds` 局一定跑满。双臂专家只接局数（`tasks/crate/collect.py:batch_plan` 的 `rounds`），
-  没有 `--until-ok` 这一项——**除非专家崩了**，异常会向上抛并中止整批。
-- **批间**：`successes` 是**活判据**。`tasks/crate/collect.py` 主循环的条件是
-  `kept < successes and batches < max_batches`，够了就不再开新批（单臂同一行，这不是双臂特性）。
-
-所以尝试数是 `batch_rounds ×（实际跑了几批）`，不是 `× max_batches`。**要保证跑满 N 批，
-`successes` 必须大于 `batch_rounds × N` 能采到的数量**；反过来把 `successes` 调小只会少跑批。
-预算用尽仍不够时采集阶段非零退出，但失败记录和视频**仍然保留**。
-
-## 6. 跑
-
-整条线一条命令跑完，或者一个阶段一个终端，方便中间插手工检查：
+## 2. 采集
 
 ```bash
-bash scripts/run_overnight.sh configs/experiments/my_crate.yaml --gpu 0 --line bimanual   # 整条线，无人值守
-# 采集两个终端；起栈脚本两条线共用，按 task.plugin 冻结各自的场景
-bash scripts/start_stack.sh collect        configs/experiments/my_crate.yaml --gpu 0   # 物流房间纸箱见本节末
-bash scripts/bimanual/run_agent_server.sh  configs/experiments/my_crate.yaml --gpu 0
-bash scripts/convert_data.sh outputs/runs/my_crate              # 转换（不用卡）
-bash scripts/train.sh        outputs/runs/my_crate --gpu 0      # 训练
-# 开环评测（可选，不起栈）
-bash scripts/open_loop_eval.sh --model-path outputs/runs/my_crate/model/checkpoint-3000 \
-  --dataset-path outputs/runs/my_crate/val_dataset --out-dir outputs/runs/my_crate/eval/open_loop
-# 闭环评测：三个终端，和单臂同构；这条线每批重起的是 deploy，不是整个栈
-bash scripts/start_stack.sh eval            outputs/runs/my_crate --gpu 0
-bash scripts/run_vla_server.sh              outputs/runs/my_crate --gpu 0
-bash scripts/bimanual/run_vla_inference.sh  outputs/runs/my_crate --gpu 0
+bash scripts/start_stack.sh collect configs/experiments/crate_smoke.yaml
+bash scripts/bimanual/run_agent_server.sh configs/experiments/crate_smoke.yaml
 ```
 
-> **`eval` 块整份交给评测器，但这条线只实现了其中一部分。** 它读 `rounds` / `seed` /
-> `policy_port` / `execution_horizon` / `budget_s` / `initial_token`，图像来源取整次运行的 `images.source`（`isaac` 见 [渲染](rendering.md#vla-闭环的-isaac-画面按需镜像)）；
-> `client` 只支持 `blocking`，写别的会**在启动前报错**；其余字段落盘到 `eval/ignored_eval_fields.json`，可直接比对"声明了什么"和"用上了什么"。起点、夹爪下限、后退一列取自 `task.visual`，`initial_token` 必须是本线数据首帧的，见 [双臂详解 §五](bimanual_design.md#五双臂闭环评测器)。
-也可以分阶段跑，方便在中间插手工检查：
+做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。它先按空闲资源决定并行开几条通道（每条一个栈、一个跑局进程）并打印出来，`--lanes 1` 只开一条（[运行机制](running.md#6-并行)）。第二条在每条通道上运行视觉专家：一局接一局让机器人走近、抓筐、抬起，保留成功的局。每批 3 局一定跑满，保留够 2 条就不再开新批；结束时关掉所有仿真栈。
+得到什么：运行目录 `outputs/runs/crate_smoke/`，里面有 `config.yaml`、每局成败 `manifest_00.jsonl`、每局录像 `videos/`、每局状态轨迹 `trace/`（双臂的这些文件在运行目录顶层）。起栈约 45 秒；采集约 2 分钟。每局的结果打印在 `visual_00.log` 里。
 
-**命令行只有 6 个参数**，其余一切都在实验文件里：
+## 3. 转换
 
-| 参数 | 含义 |
-|---|---|
-| `<experiment.yaml>` | `collect` 阶段的位置参数：从哪份实验文件开一次新运行 |
-| `<run_dir>` | `convert`/`train`/`eval` 的位置参数：接着哪次运行往下做 |
-| `--gpu N` | 用哪张卡。`convert` 不需要 |
-| `--name X` | 运行目录改叫 X（副本里的 `name:` 仍是来源实验的） |
-| `--from` / `--to` | 只有 `run_overnight.sh` 有：只跑 `collect`/`convert`/`train`/`eval` 中的一段 |
-| `--dry-run` | 打印每个阶段将执行的命令和环境变量，**一个字节都不写** |
+```bash
+bash scripts/convert_data.sh outputs/runs/crate_smoke
+```
 
-**开环评测不在这 6 个参数里**：`scripts/open_loop_eval.sh` 是流水线外的独立脚本，两条线共用，跑的是 NVIDIA 官方的
-`open_loop_eval.py`，用具名参数（`--model-path`/`--dataset-path` 传反会在加载模型前就报错），`--steps`
-按最长 episode 自动推导、不会静默截断。产出 `<out-dir>/metrics.json`（逐轨迹与平均 MSE/MAE）、`plots/`
-（每条轨迹一张图）、`run.log`。集群上训的 checkpoint 要加 `--backbone-path ~/Checkpoints/Cosmos-Reason2-2B`；
-`train.holdout` 为 0 时没有 `val_dataset/`。指标含义见 [单臂详解](single_arm_design.md)。
+做什么：把录制的数据转成 LeRobot 数据集，裁掉每条末尾的持物验收段，按 `train.holdout` 留出验证集，并检查数据。不用 GPU。
+得到什么：`train_dataset/` 和 `val_dataset/`。约 30 秒。
 
-**产物已存在的阶段自动跳过**（`summary.json` 的 collect 条目且 kept 够数 / `train_dataset/` / `model/` /
-`eval/closed_loop.json`）。要重跑就**删掉它的产物**。同名重跑时中断的那批**整批重来**：半截 manifest 移到
-`interrupted_manifest_NN_*.jsonl`，session 不计入 `collect/inputs.json`。attach 的栈必须是本 run、本模式起的。
+## 4. 训练
 
-**并行**：双臂不强制实例 0，所以可以 GPU 1 / 实例 1 录制，与单臂（GPU 0 / 实例 0）同时跑。
-**同一块 GPU 上不能跑两个仿真。** 容器 pid 上限 3840，开销几乎全在 exporter：实测 sim + deploy 仅
-**176** 个 pid（2269 → 2441），所以不录制的运行按 400 准入、录制的按 1800——**不要并行第三个录制栈**。
-CPU 同理：起栈要 8 核余量，驱动器接到已起的栈上只再要 2 核（栈的 ~5 核已经在用量里；2026-09-22 之前它也被算 8 核，别的会话占 3 核就接不上）。
+```bash
+bash scripts/train.sh outputs/runs/crate_smoke --gpu 0
+```
 
-**换卡还不够，另外两个端口是进程范围的**（采集不受影响，它按 instance 偏移）：
+做什么：用训练集微调 GR00T（三路相机、官方 46 维状态、66 维动作）。
+得到什么：`model/checkpoint-10/`，日志在 `train.log`。约 1 分钟；`model/` 占约 24 GB 磁盘。
 
-| 端口 | 谁的 | 怎么换 | 不换会怎样 |
+## 5. 评测
+
+开环评测（可选）：在验证集上逐帧比较模型预测的动作和示范动作，不起仿真。
+
+```bash
+bash scripts/open_loop_eval.sh --model-path outputs/runs/crate_smoke/model/checkpoint-10 \
+  --dataset-path outputs/runs/crate_smoke/val_dataset --out-dir outputs/runs/crate_smoke/eval/open_loop
+```
+
+得到什么：`eval/open_loop/metrics.json`（每条轨迹的 MSE、MAE）和 `plots/`。约 20 秒；冒烟模型的 MSE 约 0.03。
+
+闭环评测：让策略在仿真里控制机器人。需要两个终端，按顺序启动：
+
+| 终端 | 命令 | 做什么 | 怎么算好了 |
 |---|---|---|---|
-| 29500 | torchrun（`train.sh`） | `export PORT=29540` | `EADDRINUSE`，train 阶段直接挂 |
-| `eval.policy_port`（本线实验文件 5700） | policy server（eval） | 实验文件里改 `eval.policy_port` | `ZMQError: Address already in use` |
+| 1 | `bash scripts/start_stack.sh eval outputs/runs/crate_smoke --gpu 0` | 起评测用的仿真栈（lockstep 时钟，不录制） | 命令返回 |
+| 1 | `bash scripts/run_vla_server.sh outputs/runs/crate_smoke --gpu 0` | 策略服务：加载 checkpoint，收观测、回动作 | 打印 `listening`；一直运行，评测结束后按 Ctrl-C |
+| 2 | `bash scripts/bimanual/run_vla_inference.sh outputs/runs/crate_smoke --gpu 0` | 逐局重置场景、让策略控制机器人、记录成败 | 跑完 `eval.rounds` 局后关掉仿真栈并退出 |
 
-`collect.record=true`（默认）时采集阶段在本实例上起 data exporter，每批一个 session，
-写入 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，并记在
-`<run>/collect/inputs.json` 的 `sessions`，与 `manifests` 同序一一对应。
+得到什么：`eval/closed_loop.json`（冒烟为 0/2）、逐局记录 `eval/closed_loop.manifest.jsonl`、每局状态轨迹 `eval/state_trace/`。起栈和策略服务各约 25 秒；两局约 2.5 分钟。`eval/rounds_00.log` 里每局一行，例如 `[crate-vla] round 0: FAIL [vla] walk: never closer than 1.41 m (71 s)`；评测进程最后打印 `eval: 0/2`。
 
-物流房间抓纸箱是同一条管线，但场景、渲染方式和转换前的一步不同，单独一页：[warehouse](warehouse.md)。
-
-## 7. 产物
-
-路径相对于 `outputs/runs/<name>/`。**采集产物的落点与单臂不同**：
-
-| 路径 | 内容 |
-|---|---|
-| `config.yaml` | 实验文件的逐字节副本 |
-| `summary.json` | 每阶段一条记录：保留数、产出率、失败家族、数据集、checkpoint、成功率 |
-| `manifest_NN.jsonl`、`videos/` | 逐局成败与原因、录像。**在顶层**，单臂在 `collect/` 之下。manifest 每批一个文件，录像整个 run 共用一个目录 |
-| `trace/` | `<局>_state_trace.npz` 状态轨迹，整个 run 共用一个目录；`<局>_ghost.npz` 是命令的抓取目标（第三视角画 ghost 夹爪用），只有进入伸手阶段的局才有，走近阶段就失败的局没有 |
-| `collect/inputs.json` | 批次进度、exporter session 与 manifest 的对应 |
-| `train_dataset/`、`val_dataset/` | LeRobot 数据集 |
-| `train_dataset/third_person/episode_NNNNNN.mp4` | 每集的第三人称录像，**按集号对齐**（硬链接，不占额外磁盘）。不是相机流，不进策略 |
-| `model/checkpoint-<steps>/` | 权重 + 归一化 processor |
-| `eval/closed_loop.json`、`eval/state_trace/` | 闭环结果；每局 qpos 轨迹，录像用 `scripts/render_trace_videos.py <run> --traces <run>/eval/state_trace --out <run>/eval/videos` 事后渲 |
-| `eval/closed_loop.manifest.jsonl` | **逐局记录**——失败阶段与标签只在这里 |
-| `eval/ignored_eval_fields.json` | 这次评测**没有实现**的 `eval` 字段及其值 |
-
-manifest 行带 `task`、`produced`、`ok`，成功局还带
-`execution.metrics.training_tail.end_seq`（进入直立持物验收的序号）——
-转换器按它裁掉验收尾段。训练用 `configs/gr00t_sonic_3cam_bimanual.py`
-（60 维状态、66 维动作、三路相机）。
-
-**读日志**：`visual_NN.log`（日志按 `task.expert` 命名，不是 `collect_NN`）找逐局成败；`train.log` 找 loss 和 `Copying experiment config directory`；`eval/serve.log` 里有 `listening` 才算 policy server 起来了。**光看退出码不算跑完**。产物齐不齐有专门的网：
+评测时仿真不录像。要看录像（可选），从状态轨迹渲：
 
 ```bash
-python scripts/artifact_contract.py check outputs/runs/<name> crate_eval
+MUJOCO_GL=egl "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/crate_smoke \
+  --traces outputs/runs/crate_smoke/eval/state_trace --out outputs/runs/crate_smoke/eval/videos
 ```
 
-## 8. 排错
+得到什么：`eval/videos/<局>.mp4`，每局一个。两局约 15 秒。
 
-| 症状 | 原因与处理 |
+熟悉以后可以一条命令跑完第 2–5 步（不含开环评测）：`bash scripts/run_overnight.sh configs/experiments/crate_smoke.yaml --gpu 0 --line bimanual`。已经有产物的步骤会被跳过。
+
+## 6. 看结果
+
+路径相对于 `outputs/runs/<名字>/`：
+
+| 看什么 | 在哪里 |
 |---|---|
-| 场景与别人的实验对不上 | §1 那 4 cm `--crate-setback`，或桌高那一步没跑 |
-| `not enough headroom -- cpu/pids/gpu ...` | 资源不足时脚本**拒绝启动并说明原因**。配额打满时仿真掉墙钟，专家的计时阶段会集体失败、看起来像机器人故障 |
-| 第三个录制栈起不来 / 段错误 | 容器 pid 上限。每个录制栈按 1800 预算，开销几乎全在 exporter（§6） |
-| `<run>/config.yaml differs from ...` | 同名运行的实验文件被改过。换一个 `--name` |
-| 采集非零退出但视频还在 | `successes` 门槛没达到（§5）。记录是完整的 |
-| 评测开局动作突变 | 已修（2026-09-18）：回合之间不再交还 planner，settle 跑在 token 通道上。此前底盘在 settle 里漂中位 0.09 m、最大 0.83 m。要复现旧行为加 `--no-clean` |
-| `[streamed_arm] POSE switch unconfirmed` | deploy 回落到冻结的默认片段，**这一局机器人整局不动、数据作废**。重跑该局 |
-| 一整批只跑了几局就结束 | 专家抛异常会中止整批（§5）。在 `visual_NN.log` 里搜 `Traceback` |
-| 想确认每局开局站稳了 | 看 `manifest_NN.jsonl` 每行的 `placement.initial_stance_ready`（双臂没有单臂那行 `stand drift`）。为 `false` 的局以 `initial_stance_unstable` 失败；一批里大量出现，多半是停栈后不到 20 s 就重起，deploy 收不到 LowState |
-| 栈起不来、端口被占 | `python -m locomani.stack.cli status --instance N`；锁在 `$LOCOMANI_TMP/locomani_locks/` |
+| 每一步的汇总（保留数、成功率、checkpoint） | `summary.json` |
+| 采集每局的成败和原因 | `manifest_NN.jsonl`；日志是 `visual_NN.log` |
+| 采集录像 | `videos/` |
+| 闭环每局的成败、失败阶段 | `eval/closed_loop.manifest.jsonl` |
+| 闭环录像 | `eval/videos/`（第 5 步最后那条命令） |
+| 产物是否齐全 | `python scripts/artifact_contract.py check outputs/runs/<名字> crate_eval` |
 
-`check_dataset` 一定要带 `--run-dir`：它让审计从本次运行的 `trace/` 按 exporter 的
-`priv_seq` 取箱子的**世界**高度来判"闭合后抬升"。没有它，检查器只能用骨盆坐标系的位姿列，
-而躯干直立时这一列会把 20 cm 的真实抬升读成几厘米（2026-09-14 验证批：世界抬升
-7/7 通过，骨盆系只判出 2/7）。更细的失败形态见 [隐性失败](reference/silent_failures.md)。
+## 7. 常见报错
 
-## 9. 进一步阅读
+| 报错 | 处理 |
+|---|---|
+| `not enough headroom` | 机器上的 CPU、进程数或显存不够，脚本拒绝启动。等别的任务结束，或换一张卡（[运行机制](running.md#6-并行)） |
+| `config.yaml differs from` | 同名运行的实验文件被改过。加 `--name` 换个运行名 |
+| `model/ exists`、`closed_loop.json exists` | 这一步已经有产物，脚本不覆盖。确认不要了就删掉再跑 |
+| 一批里很多局是 `initial_stance_unstable` | 关栈后不到 20 秒就重起了。等 20 秒，确认没有残留的仿真进程再起 |
+| `[streamed_arm] POSE switch unconfirmed` | 这一局机器人整局不动，数据作废，重跑这一局 |
 
-- [双臂详解](bimanual_design.md)：视觉专家的信息来源、连续控制、观测/动作协议、诊断专家。
-- [双臂台账](ledger/crate.md)：逐轮实测数字与裁定。
-- [配置字段表](reference/config_fields.md)：字段含义与默认值以它为准。
-- [单臂](single_arm.md)：抓瓶那条线，结构与本页逐节对应。
-- [MuJoCo 仿真与 Isaac 渲染](rendering.md)：并排视频与离线重渲。
+更多报错见 [crate 详解第七节](bimanual_design.md#七运行细节2026-09-28-从-crate-runbook-移来)。
+
+## 8. 接下来
+
+- 完整规模：把 `crate_smoke` 换成 `crate_table30_record`（20 条数据、3000 步训练、100 局评测）。采 20 局约保留 15 条；不到 20 条时采集以非零状态结束，已采的照样能做后面各步。
+- 改参数：复制一份实验文件再改，常改的字段见[运行机制第 2 节](running.md#2-常改的字段)。
+- 物流房间里抓纸箱用同一套脚本，但场景和出图方式不同，单独一页：[warehouse](warehouse.md)。
+- 为什么这样设计、试过什么：[crate 详解](bimanual_design.md)；每一轮的实测数字：[双臂台账](ledger/crate.md)。

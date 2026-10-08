@@ -21,10 +21,10 @@ Episodes done are recorded in `<session>/meta/offline_render.json`, so a re-run 
 offline run while any episode it reads still has its placeholder frames -- black frames would otherwise train
 silently (the converter reuses the last decoded frame when one is missing, and black frames decode fine).
 
-The marker also names its `renderer`. `locomani.sim.isaac.render_dataset_cameras` fills the same placeholders
-with Isaac pictures, and a run whose policy is evaluated on Isaac images (`images.source: isaac`) is
-converted only from Isaac-rendered sessions, every other offline run only from MuJoCo-rendered ones: training
-and closed-loop images must be one function of the state (DECISIONS 2026-09-24).
+The marker also names its `renderer`. `locomani.sim.isaac.render_dataset_cameras` and
+`locomani.sim.unreal.render_dataset_cameras` fill the same placeholders with Isaac / Unreal pictures (both through
+`locomani.sim.view_render`), and a run is converted only from sessions its `images.source` renderer filled:
+training and closed-loop images must be one function of the state (DECISIONS 2026-09-24).
 """
 
 from __future__ import annotations
@@ -39,7 +39,8 @@ from pathlib import Path
 import numpy as np
 
 from locomani import paths
-from locomani.pipeline import run_context
+from locomani.pipeline import camera_delay, run_context
+from locomani.pipeline.world_lift import DST_FPS, SRC_FPS
 from locomani.sim.dataset_cameras import CAMERA_CONFIGS
 
 ROOT = Path(paths.REPO)
@@ -70,15 +71,19 @@ def pending(session: Path) -> list[int]:
     return [e for e in recorded_episodes(session) if e not in done and e not in skip]
 
 
-def unrendered(session: Path, episodes: list[int]) -> list[int]:
-    """Of `episodes`, the ones an offline session's render stage has not filled: the converter's last check.
+def unrendered(session: Path, episodes: list[int], fps: int = DST_FPS) -> list[int]:
+    """Of `episodes`, the ones an offline session's render stage has not filled for an `fps` dataset: the
+    converter's last check.
 
     `pending` skips failed rounds, so an episode convert takes beyond `run_convert`'s set (`--include-discarded`)
-    still holds black frames, which decode fine and would train silently. A session with no marker is
-    live-recorded, or offline and unrendered, which `require_rendered` refuses before convert starts."""
+    still holds black frames, which decode fine and would train silently. A session drawn for a slower dataset
+    (`serves`) has every episode unfilled for this one. A session with no marker is live-recorded, or offline
+    and unrendered, which `require_rendered` refuses before convert starts."""
     marker = Path(session) / MARKER
     if not marker.exists():
         return []
+    if not serves(rendered_fps(Path(session)), fps):
+        return list(episodes)
     rendered = set(json.loads(marker.read_text())["episodes"])
     return [ep for ep in episodes if ep not in rendered]
 
@@ -87,6 +92,33 @@ def renderer_of(session: Path) -> str | None:
     """Who filled the session's placeholders; markers written before the Isaac stage existed are MuJoCo's."""
     marker = session / MARKER
     return json.loads(marker.read_text()).get("renderer", "mujoco") if marker.exists() else None
+
+
+def rendered_fps(session: Path) -> int | None:
+    """The dataset rate the session's placeholders were filled for: the rows a convert at that rate picks each
+    have a picture of their own, the rows between repeat the one before. MuJoCo renders every row (50); an Isaac
+    or Unreal marker from before the key existed (2026-10-06) was drawn for the 25 fps datasets of its day."""
+    marker = session / MARKER
+    if not marker.exists():
+        return None
+    done = json.loads(marker.read_text())
+    historical = SRC_FPS if done.get("renderer", "mujoco") == "mujoco" else DST_FPS
+    return int(done.get("dataset_fps", historical))
+
+
+def serves(rendered: int, wanted: int) -> bool:
+    """Do pictures drawn for a `rendered` fps dataset serve a convert at `wanted` fps? Only when every row the
+    convert picks was drawn: 50 serves 25 (convert keeps the even rows), 25 does not serve 50 (half the rows
+    would train on the picture before them, silently -- the frames decode fine)."""
+    return rendered % wanted == 0
+
+
+# The script that fills an offline run's placeholders, per `images.source`.
+RENDER_SCRIPT = {
+    "mujoco": "render_dataset_cameras.sh",
+    "isaac": "render_dataset_cameras_isaac.sh",
+    "unreal": "render_dataset_cameras_unreal.sh",
+}
 
 
 def expected_renderer(cfg: dict) -> str:
@@ -99,12 +131,21 @@ def require_rendered(cfg: dict, sessions: list[str]) -> None:
     if cfg.get("backend", {}).get("render") != "offline":
         return
     want = expected_renderer(cfg)
-    script = "render_dataset_cameras_isaac.sh" if want == "isaac" else "render_dataset_cameras.sh"
+    script = RENDER_SCRIPT[want]
     wrong = sorted(Path(s).name for s in sessions if renderer_of(Path(s)) not in (None, want))
     if wrong:
         raise SystemExit(
             f"images.source asks for {want} images, but session(s) {wrong} were rendered by another renderer; "
             f"re-collect, or render into fresh sessions with scripts/{script}"
+        )
+    fps = run_context.dataset_fps(run_context.migrate_dataset(cfg))
+    drawn = {Path(s).name: rendered_fps(Path(s)) for s in sessions}
+    slow = sorted(name for name, at in drawn.items() if at is not None and not serves(at, fps))
+    if slow:
+        raise SystemExit(
+            f"dataset.fps {fps}: session(s) {slow} were rendered for a {min(drawn[n] for n in slow)} fps dataset, "
+            f"so rows a {fps} fps convert picks repeat the picture before them; remove each session's "
+            f"{MARKER} and run scripts/{script} <run> again to draw every row"
         )
     left = {s: pending(Path(s)) for s in sessions}
     if any(left.values()):
@@ -139,8 +180,9 @@ def encoder(dst: Path, width: int, height: int, fps: int) -> subprocess.Popen:
     )  # fmt: skip
 
 
-def render_episode(traces, session: Path, ep: int, info: dict, model, data, renderers) -> int:
-    """Render one episode's cameras over its placeholders; returns how many tail rows held the last trace sample."""
+def render_episode(traces, session: Path, ep: int, info: dict, model, data, renderers, delay=None) -> tuple[int, dict]:
+    """Render one episode's cameras over its placeholders; returns how many tail rows held the last trace sample
+    and the episode's camera-delay draw. `delay` (camera_delay.CameraDelay) draws each row from an earlier state."""
     import mujoco
 
     priv = traces.priv_seq(str(session), ep)
@@ -149,6 +191,7 @@ def render_episode(traces, session: Path, ep: int, info: dict, model, data, rend
         raise SystemExit(f"{session.name} episode {ep}: {len(priv)} priv_seq rows but {length} parquet rows")
     trace, idx = traces.trace_rows(str(session), ep, priv, hold_tail=True)
     held = int(np.sum(priv > np.asarray(trace["seq"])[-1]))
+    idx, draw = camera_delay.delayed_rows(delay, np.asarray(trace["seq"]), idx, f"{session.name}/{ep}")
     qpos = np.asarray(trace["qpos"])
     fps = info["fps"]
     tmp = {k: video_path(session, info, f"observation.images.{k}", ep).with_suffix(".rendering.mp4") for k in renderers}
@@ -169,7 +212,7 @@ def render_episode(traces, session: Path, ep: int, info: dict, model, data, rend
         if w.wait() != 0:
             raise SystemExit(f"ffmpeg failed on {tmp[k]}")
         os.replace(tmp[k], video_path(session, info, f"observation.images.{k}", ep))
-    return held
+    return held, draw
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -187,10 +230,11 @@ def main(argv: list[str] | None = None) -> int:
     if not cfg.get("collect", {}).get("record", True):
         print(f"{run_dir.name}: collect.record is false; no exporter session was recorded, nothing to render")
         return 0
-    if expected_renderer(cfg) != "mujoco":
+    source = expected_renderer(cfg)
+    if source != "mujoco":
         raise SystemExit(
-            f"{run_dir.name}: images.source is isaac, so its dataset cameras are Isaac's to render: "
-            "scripts/render_dataset_cameras_isaac.sh"
+            f"{run_dir.name}: images.source is {source}, so its dataset cameras are {source}'s to render: "
+            f"scripts/{RENDER_SCRIPT[source]}"
         )
     from locomani.pipeline.world_lift import RunTraces
 
@@ -210,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
 
     model = mujoco.MjModel.from_xml_path(str(traces.scene_dir / "scene_locomani.xml"))
     data = mujoco.MjData(model)
+    delay = camera_delay.parse(cfg["images"].get("camera_delay"))
+    print(f"  {camera_delay.describe(delay)}", flush=True)
     for session, eps in todo.items():
         info = json.loads((session / "meta" / "info.json").read_text())
         keys = [f.split(".")[-1] for f in info["features"] if f.startswith("observation.images.")]
@@ -221,15 +267,29 @@ def main(argv: list[str] | None = None) -> int:
         state = (
             json.loads(marker.read_text())
             if marker.exists()
-            else {"episodes": [], "held_tail_rows": {}, "scene": str(traces.scene_dir), "renderer": "mujoco"}
+            else {
+                "episodes": [],
+                "held_tail_rows": {},
+                "scene": str(traces.scene_dir),
+                "renderer": "mujoco",
+                "dataset_fps": SRC_FPS,  # every row drawn: serves a convert at any dataset rate
+                "camera_delay": delay.spec() if delay else None,
+            }
         )
         if state.get("renderer", "mujoco") != "mujoco":
             raise SystemExit(f"{session.name}: its placeholders are being filled by {state['renderer']}; not mixing")
+        if state.get("camera_delay") != (delay.spec() if delay else None):
+            raise SystemExit(
+                f"{session.name}: its episodes were rendered with camera_delay {state.get('camera_delay')}, "
+                f"this run asks for {delay.spec() if delay else None}; not mixing"
+            )
         for ep in eps:
             t0 = time.time()
-            held = render_episode(traces, session, ep, info, model, data, renderers)
+            held, draw = render_episode(traces, session, ep, info, model, data, renderers, delay)
             state["episodes"].append(ep)
             state["held_tail_rows"][str(ep)] = held
+            if draw:
+                state.setdefault("camera_delay_draws", {})[str(ep)] = draw
             marker.write_text(json.dumps(state, indent=1))
             print(
                 f"  {session.name} episode {ep}: {len(keys)} cameras in {time.time() - t0:.0f} s, "

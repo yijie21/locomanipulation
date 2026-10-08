@@ -350,8 +350,21 @@ class PrivilegedPublisher:
         d = self.state()
         d["seq"] = self._seq
         self._seq += 1
-        self.sock.send_string(json.dumps(d))
+        self._last_message = json.dumps(d)
+        self.sock.send_string(self._last_message)
         return d["seq"]
+
+    def resend(self) -> None:
+        """Send the newest message again, same seq. A lockstep sim between requests publishes nothing, and a
+        subscriber that connected after its last tick (the Isaac mirror starting up) would otherwise wait forever
+        for a state that is not going to change."""
+        if getattr(self, "_last_message", None) is not None:
+            self.sock.send_string(self._last_message)
+
+    @property
+    def last_seq(self) -> int | None:
+        """The seq of the newest message sent, None before the first."""
+        return self._seq - 1 if self._seq else None
 
     def close(self) -> None:
         self.sock.close()
@@ -918,7 +931,7 @@ class PoseSidecar:
          "objects": {key: [x,y,z,qw,qx,qy,qz]}}
 
     Both clocks on purpose: the exporter's parquet timestamps live on a
-    different clock, and alignment is an offline problem (docs/ROADMAP.md).
+    different clock, and alignment is an offline problem (docs/archive/roadmap_maintenance_20260914.md).
     Fail-safe by design -- every entry point swallows its own errors, because
     a broken sidecar must cost a warning, never an episode.
     """

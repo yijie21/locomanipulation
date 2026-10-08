@@ -215,5 +215,5 @@ python scripts/artifact_contract.py check outputs/runs/<name> bottle_collect
 - [扁平 Python 脚本重构（2026-09-17）](refactor-flat-scripts-20260917.md)、
   [基础设施重构（2026-09-16）](infra-plan-20260916.md)：本轮不推翻它们的结论。
 - [单臂](../single_arm.md)、[双臂](../bimanual.md) runbook；
-  [通用 runbook](../reference/runbook.md)、[静默失败清单](../reference/silent_failures.md)、
+  [通用 runbook](../running.md)（2026-09-28 并入 running.md）、[静默失败清单](../reference/silent_failures.md)、
   [开发规范](../reference/standards.md)。

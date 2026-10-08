@@ -17,7 +17,7 @@
 | 动作过程 | 走近并准备双手 → 减速、支撑交接 → 协调俯身与伸手 → 闭合、试提 → 抬升并恢复直立 → 持物验收 |
 | 专家输入 | 仿真物体位姿与机器人状态辅助规划，由采集相机的可见性和新鲜度约束动作 |
 | 采集能力 | 完整尝试视频、相机观测、发送的动作参考、物理轨迹和成败记录 |
-| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](single_arm_design.md#双臂-closed-loopsrclocomanipipelineeval_crate_closed_looppy)） |
+| 后续链路 | `collect.record=true` 经 exporter 录制正式 LeRobot episode（第 4 节），转换与审计已验证；闭环评测 `eval_crate_closed_loop.py` 已实现，10k 步模型 71/100（[评测](#五双臂闭环评测器)） |
 
 当前范围是已知篮子/桌面、正面无障碍接近；不保证任意深度可达或通用搬运。
 仿真信息可辅助生成动作，失败接触仍须如实保留。观测、动作与训练边界的详细含义见
@@ -72,7 +72,7 @@
 
 ### 运行
 
-在 [采集指南](bimanual_design.md#2-环境与场景) 中构建场景并运行单次尝试或批量配置。
+在 [采集指南](bimanual.md#1-建场景每台机器一次) 中构建场景并运行单次尝试或批量配置。
 该指南管理启动命令、GPU/实例选择、[桌面高度验证过程](bimanual_design.md#table-height-validation) 和所需的 POSE 所有权补丁。
 本部分解释场景和来源处理。
 
@@ -167,7 +167,7 @@ SONIC v1.1 为其编码器预留 46 个未来帧；仅发送过去的样本使�
 ego、左腕和右腕用于可见性检查及动作审查。相机 MP4 按名义 25 FPS 保存，
 时序测量应读 JSON 时间戳；第三人称原片使用仿真时间。
 发送记录不是控制器已经执行的证明，POSE 包含未来参考帧，不能把它们直接当作当前训练 action。
-字段和对齐限制见 [观测与动作记录](bimanual_design.md#outputs-and-limits)。
+字段和对齐限制见 [观测与动作记录](#输出和限制)。
 
 验收应核对实际初始距离、完整走近过程、双手接触、真实离桌抬升及恢复直立后的持物状态。
 停止到俯身、试提到站直之间的停顿和抖动需要结合视频与物理时间测量；
@@ -314,6 +314,54 @@ settle，矛头转向 planner 模式。
 和单臂 trace 对齐。**注意采样仍是每 chunk 一次（约 0.73 s）**，
 所以 trace 本身仍看不见 0.3 s 的瞬态——瞬态要看 `takeover` 那两个采样。
 
+### 评测的时间模型：墙钟与 lockstep
+
+策略每看一次（拍照 + 推理）都要时间。现实里拍照几乎是瞬时的，推理约 70 ms，这期间机器人在执行上一块动作。
+墙钟评测里 Isaac 渲三路相机还要约 95 ms，这段时间世界照走——现实里并不存在；而且这条线原来的 blocking 循环在
+间隙里一帧不发，deploy 把参考钳在最后一帧，新动作块再跳过开头约 4 帧接上。计划与实测来源见
+[lockstep + Isaac 评测计划](handoff/lockstep-isaac-eval-plan-20260927.md)。现在有两个时钟可选（`eval.client`）：
+
+| | `blocking`（墙钟，`tasks/crate/vla_rounds.py`） | `lockstep`（仿真时钟，`tasks/crate/vla_lockstep.py`） |
+|---|---|---|
+| 世界怎么走 | sim 和 deploy 各按墙钟 50 Hz 走 | 每个 tick 都由评测进程请求；两次请求之间什么都不动 |
+| 拍照 + 推理期间 | 世界照走；`gap: continue`（默认）由 `GapFeeder` 续发正在执行那块的后续帧，`hold` 什么都不发（2026-09-27 之前的行为） | 世界冻结；本体状态取 deploy 最后一个 tick 的，图取冻结那一刻：MuJoCo 图随 step 回复带回，Isaac 图按那一刻的特权状态 seq 向镜像要（镜像核对 seq，不符即报错） |
+| 推理延迟 | 真实耗时，新块从 `latency_index(耗时)` 起接入 | 模拟：`latency_frames`（固定 L 帧）或 `latency_dist`（按分布抽），另加 `camera_frames`（C 帧）；世界按旧块续走（`gap: continue`）或停在最后一帧（`hold`）L + C 帧，新块从第 L + C 号起接入 |
+| 渲染耗时 | 计入世界时间 | 不计入 |
+| 起栈 | 普通 eval 栈 | `backend.lockstep.enabled`：sim `LOCKSTEP=1`、deploy `--sim-lockstep`（无 planner 模型）、`SONIC_AUTO_START`；`prepare.eval_backend` 按 `client` 设 |
+
+一个 lockstep 周期（帧 = 数据集的一行：25 fps 是一个 token 持续两个 50 Hz tick，50 fps 是一个 tick；H = `execution_horizon`）：
+执行新块第 D..D+H−1 帧 → 冻结，观测 → 冻结，推理 → 续走 D 帧（D = L + C）→ 接入下一块第 D 号。
+局前准备（摆放、3 s 站立、token 姿态）全部按 tick 数，第一次 reset 前先站 250 tick（lockstep 下 INIT 斜坡会让没接管的机器人摔倒，
+[归档](archive/lockstep.md)坑 4）。每次推理带 `policy.seed`，服务端按它播种扩散噪声。
+
+节拍由运行的 `dataset.fps` 定（评测器以 `--dataset-fps` 传给 `vla_rounds`）。50 fps 的运行按官方客户端
+`run_vla_inference.py` 走（DECISIONS 2026-10-07）：第一块不混合，站在初始 token 上等到它，从补偿后的序号直接接管（官方 `i` 键的
+1 s 混合对应局前 3 s 的 token 姿态）；每块固定执行 H 帧，越过块尾就保持最后一帧，同官方序号钳在 39。warehouse mars 的 smoke 系列取
+H = 20（新块接入 0.4 s 后再推理，同官方 2.5 Hz）。25 fps 的运行保持原样（1 s 混合、接入段在块尾截断），历史基线照样复现。
+
+运行设了 `images.camera_delay` 时，评测的图和训练图一样变旧：每局按种子抽一个延迟和 30 fps 拍摄相位（`camera_delay.episode_draw`，
+补渲每集用的同一个函数），每次观测取 `camera_delay.camera_seq` 指出的更早状态来渲，本体状态仍取冻结那一刻。lockstep sim 保留最近
+64 个 tick 的状态（`observe` 请求）：MuJoCo 图由 sim 从那份状态渲出，Isaac/Unreal 由客户端把那份状态交给镜像渲。设了它就不能再设
+`camera_frames`。逐局记录在 trace 的 `camera_delay` 与每行 `image.age_ms`。
+
+`latency_dist` 从评测的逐块记录生成；`--fps` 写进文件，lockstep 拒绝帧率不符的文件（没有这一项的旧文件按 25）：
+
+```bash
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out wall.json                    # 墙钟实际跳帧（复刻墙钟）
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out infer.json --inference-only   # 扣掉 Isaac 渲染，只剩推理
+"$VENV_SIM_PY" -m locomani.tasks.crate.vla_lockstep latency-dist <run>/eval/traces --out infer50.json --inference-only --fps 50  # lockstep 评测：每行的 infer_s（服务端耗时）
+```
+
+`box_room_grasp_200_cap120_20260925` 的 713 个块：墙钟跳帧 4 帧 634 次、3 帧 46、5 帧 32、6 帧 1；扣掉渲染后 2 帧 710 次。
+
+**不能逐位复现的原因**：MuJoCo 默认 4× 多重采样（`vis.quality.offsamples`）下，同一状态在同一进程里渲三次，腕部相机就差 1–2 个灰度级；
+关掉多重采样则进程内、跨进程都逐位相同。lockstep 的局前 332 个 tick（含 reset、站立、token 姿态）两次运行逐位相同，第一次观测的本体状态相同、
+ego 图相同，只有两路腕图差 1 个灰度级，策略由此给出差一个量化步（1/16）的 token，之后轨迹分叉。策略服务端对同一观测 + 同一 seed 输出逐位相同。
+Isaac 图本来也不逐位确定（同一状态两次渲染平均差 1.5–2.3/255）。所以 lockstep 给的是"时间模型一致"，不是"逐帧复现"。
+
+**校准与对照**（2026-09-27，checkpoint-5000，Isaac 图，同一组 100 个 seed，[台账](ledger/crate.md)）：墙钟 `hold` 81/100，lockstep 复刻墙钟 83/100
+（McNemar p = 0.86，失败构成逐项差 ≤ 3）——lockstep 能当墙钟的替身；lockstep 目标模型（渲染不占世界时间、推理 2 帧续走）88/100（对墙钟 p = 0.27）；墙钟 `gap: continue` 83/100（p = 0.85，续发线程让推理慢一帧，抵掉了参考连续的好处）。
+
 
 
 单臂闭环的 crate 版本（2026-09-15）。经 `scripts/bimanual/run_vla_inference.sh`（`task.plugin=crate`
@@ -351,7 +399,7 @@ checkpoint 只能走这条手动命令。
 每局：采集专家自己的摆放 `expert.start_placement`（按 `task.visual.*` 与场景的走入朝向；`eval.spawn_edge` 不读）
 → `prepare_token_pose` 用 `eval.initial_token`（训练数据首帧 token 的量化均值 + 首帧手臂关节，**每条线自己的**：
 crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initial_token.json`，两者肩部差 0.6 rad）
-把机器人带到数据的开局姿势 → 阻塞式 chunk 循环：三路相机 + 60 维状态 → token [40,64] 与左右夹爪
+把机器人带到数据的开局姿势 → 阻塞式 chunk 循环：三路相机 + 46 维状态 → token [40,64] 与左右夹爪
 [40] → 每次发 `--execution-horizon`（默认 16）帧，两只手各自展开，下限取 `task.visual.close_target`
 （warehouse −0.06；单臂的 −0.02 每指只剩约 2 N）→ 判定用 crate 专家自己的
 `evaluation.evaluate`（抬升 ≥ 0.6×`lift_height`、倾角 < `max_tilt_deg`、双手同时接触），
@@ -359,7 +407,7 @@ crate `configs/deployment/crate_initial_token.json`、warehouse `warehouse_initi
 `task.visual.retreat_distance` > 0 时成功局接着跑，`RetreatWatch` 记策略是否带着箱子沿走入轴后退了这么远
 （采集成功的后半段；manifest 的 `retreat` / `retreat_ok`，`closed_loop.json` 的 `retreated`）。
 2026-09-27 之前摆放是合成桌子的副本（机器人偏航 0、物体 π/2、名字写死 `blue_crate`），在物流房间里朝向错 90°。
-图像来源是整次运行的 `images.source`（`mujoco` | `isaac`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`、`box_platform`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-训练与评测)。
+图像来源是整次运行的 `images.source`（`mujoco`、`isaac` 或 `unreal`，旧文件的 `eval.image_source` 读作它），由 `run_context.evaluation_of` 交给评测器：它同时定 eval sim 渲不渲（`mujoco` → `live`，`isaac` → `offline` + 镜像），冲突组合加载即拒。有 Isaac stage 的场景：`warehouse_textured`、`box_platform`。逐项核对表与命令见 [warehouse §6](warehouse.md#6-评测)。
 观测构造与策略连接在 `vla_obs.py` 里按 `TaskSchema` 切换（`ObsBuilder(schema=SONIC_CRATE)`、
 `PolicyLink.get_chunk_bimanual`），策略服务的 modality 与 `SONIC_CRATE` 不一致会直接拒绝。
 
@@ -495,3 +543,46 @@ flowchart TD
 - **下探是参考点在降,不是手在降。**参考以 0.04 m/s 匀速下降到"底"(顶下 5 cm),手跟不跟得上由三个判据看:
   `contact`(手被箱沿顶住不再下降)是主判据,`seated`(垫心确实进到顶下 1.5 cm 且横向居中)是毫米级备用,
   `floor`(参考到底 0.5 s)是兜底、且要求手真在顶上——pilot 23 r5 从 0.30 m 站位闭合时双垫离顶 26–33 mm,夹的是空气。
+
+## 七、运行细节（2026-09-28 从 crate runbook 移来）
+
+crate runbook 只写命令和结果；下面是它原来夹在命令之间的说明。warehouse 特有的部分在 [warehouse 详解](warehouse_design.md)。
+
+### 场景为什么分两步建
+
+`bash scripts/build_scene.sh crate` 跑的是两条命令：先用 `bimanual_scene --crate-setback 0.04` 建 `crate_bimanual_depth04`，再用 `crate_table_height_20260913.py` 把桌子降到 0.30 m，得到 `crate_table30_depth04`。
+
+- 降桌高和选控制参数是两件事：低桌的配置文件不改桌面几何，所以桌高必须在场景里改。
+- `--crate-setback 0.04` 同时改 XML 里的初始位置和重置用的元数据，任务 JSON 代替不了它。此前 runbook 漏写了这 4 cm，建出的场景和实验对不上（[复现核对](handoff/crate-reproduction-20260914.md)）。
+- 双臂场景只读安装第 4 步装好的源资产，和 `outputs/scene/sim` 建成什么样无关（2026-09-25 核对过逐字节相同）。所以这里不要再跑不带 `SCENE_PRESET` 的 `install_scene.sh`，它会把 bottle 用的 `outputs/scene/sim` 重建成多物体桌。
+
+### 专家
+
+`task.expert` 选专家：`visual` 是正式采集用的视觉专家；`wall` 和 `carry` 是诊断专家（第六节图 ②）。
+
+### 评测器读哪些字段
+
+`eval` 块整份交给评测器，但它只实现了其中一部分：`rounds`、`seed`、`policy_port`、`execution_horizon`、`budget_s`、`initial_token`、`client`、`gap`、`latency_frames`、`latency_dist`、`camera_frames`，图像来源取整次运行的 `images.source`。`client` 只能是 `blocking` 或 `lockstep`，写别的会在启动前报错。其余字段写进 `eval/ignored_eval_fields.json`，可以直接对比"声明了什么"和"实际用了什么"。起点、夹爪下限和后退一列取自 `task.visual`（第五节）。
+
+### 产物和日志
+
+- 采集的 `manifest_NN.jsonl`、`videos/`、`trace/` 在运行目录顶层；bottle 放在 `collect/` 下。
+- `trace/<局>_ghost.npz` 是专家命令的抓取目标，第三视角画 ghost 夹爪用；走近阶段就失败的局没有这个文件。
+- manifest 每行有 `task`、`produced`、`ok`；成功局还有 `execution.metrics.training_tail.end_seq`（进入直立持物验收的帧号），转换时按它裁掉验收尾段。
+- 训练用 `configs/gr00t_sonic_3cam_bimanual.py`：46 维状态（与官方相同，2026-10-07 起不再带两腕位姿）、66 维动作、三路相机。
+- 采集日志按专家命名（`visual_NN.log`），不是 `collect_NN.log`。开局是否站稳看 manifest 每行的 `placement.initial_stance_ready`；为 `false` 的局以 `initial_stance_unstable` 失败。
+- `collect.record: true` 时，每批一个 exporter session，写在 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，记在 `collect/inputs.json` 的 `sessions` 里，和 `manifests` 一一对应。
+
+### 数据检查必须带 `--run-dir`
+
+`check_dataset` 带 `--run-dir` 时，按 exporter 记下的 `priv_seq` 从本次运行的 `trace/` 取箱子的世界高度，判断"合爪后抬起"。不带它，检查器只能用骨盆坐标系的位姿列；躯干直立时，这一列会把 20 cm 的真实抬升读成几厘米（2026-09-14 验证批：按世界高度 7/7 通过，按骨盆坐标只判出 2/7）。
+
+### 报错与原因
+
+| 现象 | 原因与处理 |
+|---|---|
+| 场景和别人的实验对不上 | 建场景时漏了 `--crate-setback 0.04`，或者没降桌高 |
+| 采集非零退出，但录像还在 | 保留数没到 `successes`（[运行机制](running.md#采集什么时候停)），已采的记录是完整的 |
+| 一整批只跑了几局就结束 | 专家抛了异常，整批中止。在 `visual_NN.log` 里搜 `Traceback` |
+| 第三个录制栈起不来或段错误 | 进程数上限（[运行机制](running.md#6-并行)） |
+| 评测开局动作突变 | 2026-09-18 已修：回合之间不再交还 planner，稳定阶段跑在 token 通道上。此前底盘在这段里漂移中位 0.09 m、最大 0.83 m。要复现旧行为加 `--no-clean` |

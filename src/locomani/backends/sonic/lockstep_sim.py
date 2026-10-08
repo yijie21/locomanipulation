@@ -19,13 +19,22 @@ Protocol (msgpack over ZMQ REP):
                                 "right": [7]|null, "frame_index": int}, ...],
      "ticks_per_frame": 2, "want_obs": bool}
         -> {"ok": true, "ticks": n, "time": mj_time, "sim_step": seq,
-            "fallen": bool, "images": {"ego_view": u8[H,W,3], ...}}
+            "priv_seq": int, "fallen": bool, "images": {"ego_view": u8[H,W,3], ...} | null}
         Each frame is held for `ticks_per_frame` control ticks (a 25 fps
         chunk frame = 2 x 20 ms ticks). token null = LOCKSTEP_NO_ACTION: the
         deploy runs its planner input instead (how the scripted spawn /
         settle / turn phases keep working -- the agent's commander still
         publishes planner frames over the usual PUB socket, the deploy reads
         them in Input() every tick).
+    {"cmd": "observe", "seq": int}
+        -> {"ok": true, "seq": int, "t": mj_time, "wall": unix s, "qpos": f64[nq],
+            "images": {"ego_view": u8[H,W,3], ...} | null}
+        The state the privileged stream published as `seq`, one of the last
+        HISTORY_TICKS ticks, and the MuJoCo cameras rendered from it: a
+        closed loop whose pictures are as late as a real camera's
+        (`images.camera_delay`, 2026-10-07) looks at an earlier state than
+        the boundary. An offline sim returns no images; the client hands
+        `qpos` to the mirror instead.
     {"cmd": "begin"} -> new lockstep session (after a deploy restart).
     {"cmd": "ping"}  -> {"ok": true}
 
@@ -39,6 +48,10 @@ ResetLockstepSession.
 Images come back IN the reply, rendered at the frozen boundary, so the
 policy's observation is exactly the state its chunk will be applied to. The
 async 5555 publisher keeps running for the stack's own readiness checks.
+A `backend.render offline` sim renders nothing (`images` is null): its policy
+images come from the Isaac mirror, which renders the privileged state whose
+seq the reply names as `priv_seq` -- the boundary's own, since nothing ticks
+between requests.
 """
 
 from __future__ import annotations
@@ -46,6 +59,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections import OrderedDict
 
 import numpy as np
 
@@ -53,6 +67,8 @@ from locomani.backends.sonic.config import DEFAULT_BACKEND, LockstepConfig
 
 LOCKSTEP_PORT = int(os.environ.get("TF_LOCKSTEP_PORT", 5583 + 10 * int(os.environ.get("INSTANCE", "0"))))
 CONTROL_DT = 0.02
+IDLE_RESEND_MS = 500  # the privileged state is re-sent (same seq) this often while no request comes
+HISTORY_TICKS = 64  # states `observe` can draw from: 1.28 s, past any camera delay a closed loop models
 
 
 def enabled() -> bool:
@@ -69,7 +85,7 @@ def install(sim_module) -> None:
     the bridge, and DefaultEnv.prepare_obs is what the barrier validates
     (`proprio["time"]` must be the exact mjData.time).
     """
-    from lockstep_vendor.lockstep_unitree_bridge import LockstepUnitreeBridge
+    from locomani.backends.sonic.lockstep_vendor.lockstep_unitree_bridge import LockstepUnitreeBridge
 
     base_sim = sim_module
 
@@ -97,7 +113,8 @@ class LockstepRunner:
     def __init__(self, simulator, zmq_port: int, out_port: int, *, config: LockstepConfig = DEFAULT_BACKEND.lockstep):
         import zmq
         from gear_sonic.utils.teleop.zmq.zmq_planner_sender import pack_pose_message
-        from lockstep_vendor.lockstep import LockstepBarrier, LockstepTimeout
+
+        from locomani.backends.sonic.lockstep_vendor.lockstep import LockstepBarrier, LockstepTimeout
 
         self.sim = simulator
         self.env = simulator.sim_env
@@ -166,6 +183,8 @@ class LockstepRunner:
         self._jseed = config.jitter_seed
         self._jrng = np.random.default_rng(self._jseed)
         self._img_every = max(1, int(round(self.sim.image_dt / CONTROL_DT)))
+        self._history = OrderedDict()  # privileged seq -> the state it published (`observe`)
+        self._scratch = None  # the MjData an earlier state is rendered from, never the live one
 
     # -- wire ---------------------------------------------------------------
     def _send_token(self, token, left, right, envelope) -> None:
@@ -253,17 +272,55 @@ class LockstepRunner:
         # video frame, :5582 reset poll (a reset applied here is what makes
         # the next tick's time go backwards and reopen the session)
         self.env.update_reward()
+        self._remember()
         self._ticks += 1
         if self._ticks % self._img_every == 0:
             self.env.update_render_caches()
 
-    def _render(self) -> dict:
+    def _render(self) -> dict | None:
         caches = self.env.update_render_caches()
+        if caches is None:  # backend.render offline: no renderer, a mirror (Isaac or Unreal) draws the policy's images
+            return None
         return {
             k[: -len("_image")]: np.ascontiguousarray(v, dtype=np.uint8)
             for k, v in caches.items()
             if k.endswith("_image")
         }
+
+    def _remember(self) -> None:
+        """Keep the state this tick published under its privileged seq, for `observe`."""
+        seq = self._priv_seq()
+        if seq is None:
+            return
+        d = self.env.mj_data
+        self._history[seq] = (float(d.time), time.time(), d.qpos.copy(), d.mocap_pos.copy(), d.mocap_quat.copy())
+        while len(self._history) > HISTORY_TICKS:
+            self._history.popitem(last=False)
+
+    def _observe(self, seq: int) -> dict:
+        """The state published as `seq` and the cameras rendered from it (see the module docstring)."""
+        import mujoco
+
+        if seq not in self._history:
+            kept = f"{next(iter(self._history))}..{next(reversed(self._history))}" if self._history else "none"
+            return {"ok": False, "error": f"state {seq} is not among the last {HISTORY_TICKS} ticks (kept {kept})"}
+        t, wall, qpos, mocap_pos, mocap_quat = self._history[seq]
+        if self._scratch is None:
+            self._scratch = mujoco.MjData(self.env.mj_model)
+        scratch = self._scratch
+        scratch.qpos[:] = qpos
+        scratch.mocap_pos[:] = mocap_pos
+        scratch.mocap_quat[:] = mocap_quat
+        mujoco.mj_forward(self.env.mj_model, scratch)
+        # The boundary's own render path (update_render_caches reads env.mj_data), pointed at the scratch copy for
+        # the call, so an earlier state is drawn by exactly the cameras the boundary is; the physics never sees it.
+        live = self.env.mj_data
+        self.env.mj_data = scratch
+        try:
+            images = self._render()
+        finally:
+            self.env.mj_data = live
+        return {"ok": True, "seq": int(seq), "t": t, "wall": wall, "qpos": qpos, "images": images}
 
     # -- server -------------------------------------------------------------
     def run(self) -> None:
@@ -278,7 +335,19 @@ class LockstepRunner:
         for _ in range(60):
             self.env.update_render_caches()
             time.sleep(0.03)
+        # An offline sim has no image to announce itself with: the stack waits for the episode server instead,
+        # and the Isaac mirror for a first state. Both exist only once update_reward has run, which here would
+        # wait for a client that in turn waits for them.
+        ensure = getattr(self.env, "ensure_privileged", None)
+        if ensure is not None:
+            ensure().publish()
         while True:
+            if not self.rep.poll(IDLE_RESEND_MS):
+                # frozen between requests: repeat the boundary's state for subscribers that joined late
+                pub = getattr(self.env, "_privileged_pub", None)
+                if pub is not None:
+                    pub.resend()
+                continue
             req = msgpack.unpackb(self.rep.recv(), object_hook=mnp.decode, raw=False)
             try:
                 rep = self._handle(req)
@@ -324,6 +393,8 @@ class LockstepRunner:
                 "body_joint_index": [int(v) for v in self.env.body_joint_index],
                 "reserve": [int(v) for v in lc.reserve],
             }
+        if cmd == "observe":
+            return self._observe(int(req["seq"]))
         if cmd != "step":
             return {"ok": False, "error": f"unknown cmd {cmd!r}"}
         tpf = int(req.get("ticks_per_frame", 2))
@@ -355,10 +426,16 @@ class LockstepRunner:
             "sim_step": int(self.barrier.sim_step_seq),
             "session": int(self.barrier.session_id or 0),
             "fallen": bool(getattr(self.env, "fall", False)),
+            "priv_seq": self._priv_seq(),
         }
         if req.get("want_obs"):
             rep["images"] = self._render()
         return rep
+
+    def _priv_seq(self) -> int | None:
+        """The seq of the privileged state this boundary published (update_reward, the tick's last hook)."""
+        pub = getattr(self.env, "_privileged_pub", None)
+        return None if pub is None else pub.last_seq
 
 
 def run(simulator, zmq_port: int, out_port: int) -> None:

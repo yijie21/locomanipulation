@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ADT apartment -> scene file v2 (TODO 9.6; docs/handoff/scene-file-format-20261003.md). Runs in /venv/main (trimesh).
+"""ADT apartment -> scene file v2 (TODO 19.6; docs/handoff/scene-file-format-20261003.md). Runs in /venv/main (trimesh).
 
     /venv/main/bin/python scripts/adt_to_scene.py geometry \\
         --sequence Apartment_release_clean_seq131_M1292 --out outputs/scene_discovery/adt_apartment

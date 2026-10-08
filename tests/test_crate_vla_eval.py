@@ -139,7 +139,7 @@ def test_the_whole_eval_block_is_delivered_or_refused_but_never_silently_dropped
     assert driver.parse_args(base + ["--eval-config", str(mirrored)]).image_source == "isaac"
     assert driver.parse_args(base).image_source == "mujoco"  # no run eval block: the sim's own stream
     source = (Path(driver.__file__)).read_text()
-    assert "image_source=args.image_source," in source  # into vla_rounds.run, per batch
+    assert '"--image-source",\n                        args.image_source,' in source
 
     lying = tmp_path / "lying.json"
     EvalConfig(client="async").dump(lying)
@@ -166,15 +166,17 @@ def test_the_crate_trace_carries_the_two_posture_channels_it_was_missing():
 
 
 def test_each_batch_numbers_its_traces_globally_so_they_do_not_overwrite():
-    """A 100-round evaluation kept 10 traces: the batch loop ran one process per batch,
+    """A 100-round evaluation kept 10 traces: the batch loop runs one process per batch,
     each numbering its rounds from zero into one shared `traces/` directory, so batch 1
-    overwrote batch 0. Videos were always per-batch directories; traces were not.
-    The driver half is checked by behaviour in test_each_batch_runs_in_this_process_on_its_own_stack."""
+    overwrote batch 0. Videos were always per-batch directories; traces were not."""
     from locomani import paths
 
     rounds = (Path(paths.REPO) / "src/locomani/tasks/crate/vla_rounds.py").read_text()
     assert '"--round-offset",' in rounds
-    assert 'trace_dir / f"round_{index + round_offset:03d}.json"' in rounds
+    assert 'f"round_{index + args.round_offset:03d}.json"' in rounds
+
+    driver_source = (Path(paths.REPO) / "src/locomani/pipeline/eval_crate_closed_loop.py").read_text()
+    assert '"--round-offset",' in driver_source and "b * args.batch_rounds," in driver_source
 
 
 def test_clean_mode_reaches_both_the_round_loop_and_the_stack():
@@ -189,7 +191,7 @@ def test_clean_mode_reaches_both_the_round_loop_and_the_stack():
 
     driver_source = (Path(paths.REPO) / "src/locomani/pipeline/eval_crate_closed_loop.py").read_text()
     assert "clean_deploy=args.clean" in driver_source
-    assert "clean=args.clean," in driver_source
+    assert '*([] if args.clean else ["--no-clean"]),' in driver_source
     assert "ap.set_defaults(clean=True)" in driver_source  # clean is the default, not the option
 
 
@@ -321,107 +323,3 @@ def test_aggregate_counts_the_retreats_of_the_lifted_rounds(tmp_path):
     assert result["retreat_reasons"] == {"completed": 1, "dropped": 1}
     manifest.write_text(json.dumps(dict(ok=True, why="ok")) + "\n")  # a crate run without a retreat
     assert "retreated" not in driver.aggregate(manifest)
-
-
-def test_each_batch_runs_in_this_process_on_its_own_stack(monkeypatch, tmp_path):
-    """Since 2026-10-01 the rounds are `vla_rounds.run` in the evaluator's process (TODO 1.16), not a
-    `.venv_sim` child per batch: each batch adopts the environment of the stack it just started, and
-    gets its own seed and global round offset."""
-    from locomani.pipeline import run_context
-    from locomani.tasks.crate import vla_rounds
-
-    calls, adopted, started = [], [], []
-
-    def fake_run(config, **batch):
-        calls.append(batch)
-        with batch["manifest"].open("a") as handle:
-            for _ in range(batch["rounds"]):
-                handle.write(json.dumps({"ok": True, "why": ""}) + "\n")
-
-    def fake_start(*_a, **kw):
-        started.append(kw)
-        return {"LOCOMANI_SIM_DIR": kw["extra_env"]["LOCOMANI_SIM_DIR"], "TF_BATCH": str(len(started))}
-
-    monkeypatch.setattr(vla_rounds, "run", fake_run)
-    monkeypatch.setattr(run_context, "adopt_env", lambda env: adopted.append(dict(env)))
-    monkeypatch.setattr(driver.stack, "start_stack", fake_start)
-    monkeypatch.setattr(driver.stack, "stop_instance", lambda *_a, **_kw: None)
-    monkeypatch.setattr(driver, "serve", lambda *_a, **_kw: None)
-    scene, checkpoint = tmp_path / "scene", tmp_path / "ckpt"
-    scene.mkdir()
-    (scene / "scene_meta.json").write_text("{}")
-    checkpoint.mkdir()
-    (checkpoint / "config.json").write_text("{}")
-    args = driver.parse_args(
-        [
-            "--checkpoint", str(checkpoint), "--scene", str(scene), "--out", str(tmp_path / "o"),
-            "--rounds", "5", "--batch-rounds", "2", "--seed", "100", "--no-clean",
-        ]
-    )  # fmt: skip
-    driver._evaluate(args)
-
-    assert [(c["rounds"], c["seed"], c["round_offset"]) for c in calls] == [(2, 100, 0), (2, 102, 2), (1, 104, 4)]
-    assert all(c["clean"] is False and c["image_source"] == "mujoco" for c in calls)
-    assert [env["TF_BATCH"] for env in adopted] == ["1", "2", "3"]
-    assert json.loads((tmp_path / "o" / "closed_loop.json").read_text())["successes"] == 5
-
-
-def test_the_rounds_module_is_imported_after_the_stack_scene_is_adopted(tmp_path):
-    """The 1.16 gate's first try (2026-10-01): importing vla_rounds before adopting the stack's environment
-    built the IK on outputs/scene/sim, and `paths.adopt_sim_dir` refused to move it. A fresh interpreter, as
-    the evaluator is one; the stand-in module records which scene `locomani.paths` named when it was imported."""
-    import subprocess
-    import sys
-    import textwrap
-
-    from locomani import paths
-
-    scene, checkpoint = tmp_path / "scene", tmp_path / "ckpt"
-    scene.mkdir()
-    (scene / "scene_meta.json").write_text("{}")
-    checkpoint.mkdir()
-    (checkpoint / "config.json").write_text("{}")
-    script = textwrap.dedent(
-        f"""
-        import importlib.abc, importlib.util, json, sys
-        from locomani import paths
-        from locomani.pipeline import eval_crate_closed_loop as driver
-
-        seen = {{}}
-
-        class StandIn(importlib.abc.Loader, importlib.abc.MetaPathFinder):
-            def find_spec(self, name, path, target=None):
-                return importlib.util.spec_from_loader(name, self) if name.endswith("crate.vla_rounds") else None
-
-            def create_module(self, spec):
-                return None
-
-            def exec_module(self, module):
-                seen["sim_dir"] = paths.SIM_DIR
-
-                def run(config, **batch):
-                    with batch["manifest"].open("a") as handle:
-                        handle.write(json.dumps({{"ok": True, "why": ""}}) + "\\n")
-
-                module.run = run
-
-        sys.meta_path.insert(0, StandIn())
-        driver.stack.start_stack = lambda *a, **kw: {{"LOCOMANI_SIM_DIR": kw["extra_env"]["LOCOMANI_SIM_DIR"]}}
-        driver.stack.stop_instance = lambda *a, **kw: None
-        driver.serve = lambda *a, **kw: None
-        driver._evaluate(driver.parse_args(
-            ["--checkpoint", "{checkpoint}", "--scene", "{scene}", "--out", "{tmp_path / "o"}", "--rounds", "1"]
-        ))
-        print("SEEN" + json.dumps(seen))
-        """
-    )
-    out = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=paths.REPO,
-        env={**__import__("os").environ, "PYTHONPATH": str(Path(paths.REPO) / "src")},
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    seen = json.loads(out[out.index("SEEN") + 4 :].splitlines()[0])
-    assert seen["sim_dir"] == str(tmp_path / "o" / "scene")

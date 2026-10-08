@@ -12,7 +12,7 @@ place phase drives a `PlannerArm` (frozen channel), so `place` runs from that sa
 With something held, `approach` is not the guard walk (that hands the arms to the walking policy and would
 swing the load): it is the loaded `walk_to` to the stand the round sampler would draw for the target, then a standing
 turn to the table normal, and it writes the same `Stance`. That is the "walk to the container" step a
-cross-surface pick-and-place needs before `place` (TODO 7.7). A loaded approach to a *surface* picks a free spot
+cross-surface pick-and-place needs before `place` (TODO 17.7). A loaded approach to a *surface* picks a free spot
 on its nearest open edge (`surface_spot.py`) and aims the placing band at it; `put_down_single.py` puts the load
 down there through the same place phase (docs/handoff/put-down-single-20261003.md).
 """

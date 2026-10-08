@@ -21,6 +21,13 @@ unset _lm_self
 
 export LOCOMANI_WORKSPACE="${LOCOMANI_WORKSPACE:-/workspace}"
 
+# This machine's own settings, kept out of Git (e.g. a SONIC_DEPLOY_ROOT that points at a deploy
+# built elsewhere). Read before the defaults below so what it sets wins; a fresh clone has none.
+if [ -f "$LOCOMANI_WORKSPACE/locomani.local.sh" ]; then
+    # shellcheck disable=SC1091
+    . "$LOCOMANI_WORKSPACE/locomani.local.sh"
+fi
+
 # Inside the repo — derived, not configurable.
 export SONIC_ROOT="$LOCOMANI_ROOT/third_party/GR00T-WholeBodyControl"
 export VENV_SIM_PY="$SONIC_ROOT/.venv_sim/bin/python"
@@ -34,6 +41,11 @@ export SONIC_DEPLOY_ROOT="${SONIC_DEPLOY_ROOT:-$SONIC_ROOT/gear_sonic_deploy}"
 # A token is a checkpoint-private latent -- see docs/reference/silent_failures.md.
 export SONIC_POLICY="${SONIC_POLICY:-policy/sonic_v1_1}"
 export LOCOMANI_SRC="$LOCOMANI_ROOT/src/locomani"
+# locomani is not pip-installed: every python that imports it finds it through src/ (added once).
+case ":${PYTHONPATH:-}:" in
+    *":$LOCOMANI_ROOT/src:"*) ;;
+    *) export PYTHONPATH="$LOCOMANI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" ;;
+esac
 export LOCOMANI_STACK="$LOCOMANI_ROOT/scripts/stack"
 export LOCOMANI_OUTPUTS="$LOCOMANI_ROOT/outputs"
 
@@ -61,6 +73,42 @@ export SIMPLE_PIN="${SIMPLE_PIN:-6d10628794d9c7de4596b4f2afb2c054a637c2bc}"
 # to lift its pin. Point RENDER_PY at another venv and nothing else changes.
 export RENDER_PY="${RENDER_PY:-$SIMPLE_ROOT/.venv/bin/python}"
 export ISAAC_ASSETS="${ISAAC_ASSETS:-$LOCOMANI_ROOT/assets/isaac}"
+# A python with `pxr` for the Isaac stage builders in configs/scenes.yaml. They only write USD text, so neither
+# Isaac nor the render venv is needed (and neither has a bare pxr: Kit loads it). Empty means "let
+# locomani_usd_python probe"; set it (locomani.local.sh) only when the probe picks wrong or finds nothing.
+export USD_PY="${USD_PY:-}"
+
+# The python `pxr` imports in: the first of $USD_PY, python3 (pip install usd-core) and the python bundled with the
+# `blender` on PATH (Blender ships pxr) that imports it. $USD_PY is checked too, not trusted: a shell that sourced an
+# older paths.sh still carries its `python3` default. Prints nothing (and fails) when none imports it.
+locomani_usd_python() {
+    _lm_blender="$(command -v blender 2>/dev/null || true)"
+    _lm_seen=""
+    for _lm_py in "${USD_PY:-}" python3 "${_lm_blender:+$(dirname "$(readlink -f "$_lm_blender")")}"/*/python/bin/python3*; do
+        [ -n "$_lm_py" ] && [ "$_lm_py" != "$_lm_seen" ] || continue
+        if command -v "$_lm_py" >/dev/null 2>&1 && "$_lm_py" -c "import pxr" >/dev/null 2>&1; then
+            echo "$_lm_py"; unset _lm_blender _lm_py _lm_seen; return 0
+        fi
+        [ -n "$_lm_seen" ] || [ -z "${USD_PY:-}" ] || echo "USD_PY=$USD_PY has no pxr module; trying the others" >&2
+        _lm_seen="$_lm_py"
+    done
+    unset _lm_blender _lm_py _lm_seen
+    return 1
+}
+#
+# --- Unreal rendering (only for `images.source: unreal`; docs/setup.md, the optional Unreal step) ---
+# One directory holds the Unreal install: the engine (UE 5.7.4), the host project with the URLab plugin,
+# the bridge venv (python + urlab_client + mujoco 3.10.0, URLab's pin) and the editor's HOME, caches and logs.
+# scripts/setup_unreal.sh builds it; a machine with an existing install points these at it
+# ($LOCOMANI_WORKSPACE/locomani.local.sh).
+export UNREAL_ROOT="${UNREAL_ROOT:-$LOCOMANI_ROOT/third_party/unreal}"
+export UE_ENGINE="${UE_ENGINE:-$UNREAL_ROOT/UE_5.7.4}"
+export UE_PROJECT="${UE_PROJECT:-$UNREAL_ROOT/host/URLabHost.uproject}"
+export BRIDGE_PY="${BRIDGE_PY:-$UNREAL_ROOT/bridge/.venv/bin/python}"
+# Per level: the MJCF export it was built from and its source.json (the scene XML's hash). Beside the host project
+# that holds the levels, not in a checkout: the levels are the machine's, and every checkout must find their records
+# (under $LOCOMANI_ROOT a level built from a worktree was unknown to the main checkout, 2026-09-29).
+export UNREAL_ASSETS="${UNREAL_ASSETS:-$UNREAL_ROOT/levels}"
 export ROBOT_MJCF="${ROBOT_MJCF:-$SONIC_ROOT/gear_sonic/data/robot_model/model_data/g1/g1_29dof_with_dex1.xml}"
 
 # Logs + exporter sessions for instance $1 (default $INSTANCE, default 0).

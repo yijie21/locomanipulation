@@ -1,7 +1,8 @@
 """The unitree_g1_sonic modality config this project actually trains on.
 
-Three deliberate departures from Isaac-GR00T's built-in slot-11 config
-(gr00t/configs/data/embodiment_configs.py:67). Each is a measurement, not a
+Two deliberate departures from Isaac-GR00T's built-in slot-11 config
+(gr00t/configs/data/embodiment_configs.py:67), video (1) and action (3); the
+state (2) is the built-in one. Each departure is a measurement, not a
 preference -- the numbers below were taken over 23,103 frames of the bottle
 dataset.
 
@@ -17,16 +18,14 @@ dataset.
    are indistinguishable. It would be a third of the vision budget spent on a
    near-static texture.
 
-2. state: 46 -> 53, adding the right wrist's pose
-   right_wrist_pos + right_wrist_abs_quat are already declared in the dataset's
-   modality.json (they slice observation.eef_state), so this needs no
-   re-conversion. They carry no NEW information -- the exporter builds them by
-   forward kinematics from the same joint angles already in state
-   (run_data_exporter.py:656) -- but the error that decides this task is
-   Cartesian, and handing the network an exact FK saves it from learning one.
-   Being FK of the robot's own encoders, it is available on hardware; unlike
-   observation.water_bottle_pose it is not privileged.
-   NOT added, on purpose: root_orientation, init_base_quat, cpp_rotation_offset.
+2. state: the built-in 46, unchanged (2026-10-07, DECISIONS)
+   Until 2026-10-07 this added right_wrist_pos + right_wrist_abs_quat (53).
+   They carried no new information -- the exporter builds them by forward
+   kinematics from the joint angles already in state -- and were removed to
+   match NVIDIA's SONIC + GR00T recipe; no run measured what they bought.
+   They stay declared in the dataset's modality.json (observation.eef_state),
+   so restoring them is a config edit with no re-conversion.
+   Never added: root_orientation, init_base_quat, cpp_rotation_offset.
    All three are world-frame quaternions carrying absolute yaw, and episodes
    spawn at random yaw -- they would let the model index the spawn distribution
    instead of looking. projected_gravity, already in the built-in config, is
@@ -83,8 +82,7 @@ _cfg["video"] = ModalityConfig(
 )
 
 # Order is the layout: the state vector is these groups concatenated in this
-# order, so the first eight entries keep the built-in 0..45 layout byte for
-# byte and the wrist pose extends it to 53.
+# order, the built-in 0..45 layout byte for byte.
 _cfg["state"] = ModalityConfig(
     delta_indices=[0],
     modality_keys=list(SONIC_BOTTLE.state_keys),
@@ -104,7 +102,7 @@ _cfg["action"] = ModalityConfig(
 
 MODALITY_CONFIGS[_TAG] = _cfg
 
-_dims = {"state": 53, "action": 65}
+_dims = {"state": 46, "action": 65}
 print(
     f"[sonic_2cam] {_TAG}: video={_cfg['video'].modality_keys} "
     f"state={_dims['state']} action={_dims['action']} "

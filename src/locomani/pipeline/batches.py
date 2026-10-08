@@ -23,10 +23,18 @@ TWO RULES, because this module is where a deleted driver could quietly grow back
 It answers "which exporter session does this batch record into", "how many episodes did this
 manifest keep", "which batches finished, so where does an interrupted run continue" and, for a run
 that measures a success rate rather than collecting (`collect.stop_rule`), "has it measured enough". Anything that needs to know WHICH expert is running belongs in that expert's line.
+
+A run that collects in several lanes (`locomani.pipeline.lanes`) runs several batches at once, one per lane process.
+They share `inputs.json` through `claim_batch` / `finish_batch`, which hold a file lock: a lane claims the lowest
+batch number nobody has finished or is running (its seed and manifest name follow from the number), and only a
+FINISHED batch enters `sessions` / `manifests`, so those two stay pairs in batch order of finishing and
+`sessions[:batches]` is still "the finished ones" for every reader. Claims in flight sit in `running`.
 """
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import math
 import os
@@ -48,7 +56,7 @@ def alive_exporter(stack: Stack) -> bool:
     return True
 
 
-def open_exporter_session(stack: Stack, collect_root: Path, batch: int) -> str | None:
+def open_exporter_session(stack: Stack, collect_root: Path, batch: int, *, starter_batch: int = 0) -> str | None:
     """The exporter session this batch records into; return it, or None when nothing records.
 
     Batch 0 uses the session the stack starter's exporter already opened. Restarting it there
@@ -62,10 +70,14 @@ def open_exporter_session(stack: Stack, collect_root: Path, batch: int) -> str |
     2026-09-23 batch 0 took the newest directory by mtime, which in a directory every run on the
     instance shares can be the previous run's. A stack whose state predates that has no name to
     offer, and gets a restart instead of a guess.
+
+    `starter_batch` is the batch the starter's exporter was opened for (its frame-audit file is named after it): 0 for
+    a run's one stack, the lane's index for a lane's (`run_stack.collect_spec`); -1 when the starter's session is
+    spent. Only that batch takes the session over.
     """
     if not stack.spec.record:
         return None
-    if batch == 0 and stack.session is not None and alive_exporter(stack):
+    if batch == starter_batch and stack.session is not None and alive_exporter(stack):
         return str(stack.session)
     stack.env["TF_FRAME_AUDIT_PATH"] = str(frame_audit_path(collect_root, batch))
     stack.restart_exporter()  # names the new session and waits until the exporter has opened it
@@ -87,16 +99,69 @@ def resume_state(inputs: Path) -> dict:
         return dict(sessions=[], manifests=[], kept=0, batches=0)
     state = json.loads(inputs.read_text())
     done = int(state["batches"])
-    for manifest in state["manifests"][done:]:
+    # Batches claimed and not finished: the single-lane form listed them past `batches`, the lane form in `running`.
+    unfinished = [(done + i, m) for i, m in enumerate(state["manifests"][done:])]
+    unfinished += [(int(b), claim["manifest"]) for b, claim in sorted(state.pop("running", {}).items())]
+    for batch, manifest in unfinished:
         path = Path(manifest)
         if path.exists():
             aside = path.with_name(f"interrupted_{path.stem}_{time.strftime('%Y%m%d-%H%M%S')}{path.suffix}")
             path.rename(aside)
-            print(f"collect: batch {done:02d} did not finish; its manifest moved aside to {aside.name}", flush=True)
+            print(f"collect: batch {batch:02d} did not finish; its manifest moved aside to {aside.name}", flush=True)
     state["sessions"] = state["sessions"][:done]
     state["manifests"] = state["manifests"][:done]
+    if "numbers" in state:
+        state["numbers"] = state["numbers"][:done]
     inputs.write_text(json.dumps(state, indent=1))
     return state
+
+
+@contextlib.contextmanager
+def locked_state(inputs: Path):
+    """`inputs.json` read, handed over and written back under an exclusive lock: what the lanes share."""
+    inputs = Path(inputs)
+    inputs.parent.mkdir(parents=True, exist_ok=True)
+    with open(inputs.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = (
+            json.loads(inputs.read_text()) if inputs.exists() else dict(sessions=[], manifests=[], kept=0, batches=0)
+        )
+        state.setdefault("numbers", list(range(int(state["batches"]))))  # before lanes, batch k finished k-th
+        state.setdefault("running", {})
+        yield state
+        inputs.write_text(json.dumps(state, indent=1))
+
+
+def claim_batch(inputs: Path, lane: int, *, target: int, max_batches: int, manifest_for) -> int | None:
+    """The batch number this lane runs next, recorded as running; None when the run has what it needs.
+
+    Nothing more is claimed once the finished batches keep `target` episodes, a stop rule decided, or every number
+    below `max_batches` is finished or running. Batches running elsewhere still finish, so a run in several lanes
+    can end with more than `target` kept."""
+    with locked_state(inputs) as state:
+        if state["kept"] >= target or state.get("stop"):
+            return None
+        taken = set(state["numbers"]) | {int(b) for b in state["running"]}
+        batch = next(b for b in range(len(taken) + 1) if b not in taken)
+        if batch >= max_batches:
+            return None
+        state["running"][str(batch)] = dict(lane=lane, manifest=str(manifest_for(batch)))
+        return batch
+
+
+def finish_batch(inputs: Path, batch: int, session: str | None, manifest: Path, kept: int, decide=None) -> dict:
+    """Move a claimed batch to the finished lists; returns the state after it. `decide(state)` (optional) runs under
+    the same lock and returns a stop record for `collect.stop_rule`, or None."""
+    with locked_state(inputs) as state:
+        state["running"].pop(str(batch), None)
+        state["sessions"].append(session)
+        state["manifests"].append(str(manifest))
+        state["numbers"].append(batch)
+        state["kept"] += kept
+        state["batches"] = len(state["manifests"])
+        if decide is not None and not state.get("stop") and (stop := decide(state)):
+            state["stop"] = stop
+        return dict(state)
 
 
 def episodes_on_disk(session: Path) -> int:

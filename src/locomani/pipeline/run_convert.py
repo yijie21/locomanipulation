@@ -30,9 +30,10 @@ import os
 from pathlib import Path
 
 from locomani import paths
-from locomani.pipeline import run_context
-from locomani.pipeline.render_dataset_cameras import require_rendered
+from locomani.pipeline import camera_delay, run_context
+from locomani.pipeline.render_dataset_cameras import expected_renderer, require_rendered
 from locomani.pipeline.stages import Stage
+from locomani.pipeline.third_person import video_dir
 
 ROOT = Path(paths.REPO)
 
@@ -59,12 +60,18 @@ def collected(run_dir: Path) -> dict:
 
 
 def convert_argv(entry: dict, cfg: dict, train_ds: Path, val_ds: Path) -> list:
+    # The third-person videos, where scripts/render_third_person.sh drew them: the renderer that drew the dataset
+    # cameras. Linked when present, never required; MuJoCo's sit beside the manifests.
+    renderer = expected_renderer(cfg)
+    films = [] if renderer == "mujoco" else ["--third-person-dir", video_dir(train_ds.parent, renderer)]
     return [
         DATA_PY, CONVERTER,
         "--sessions", *entry["sessions"],
         "--manifest", *entry["manifests"],
         "--trim-verification-tail",
+        *films,
         "--out", train_ds,
+        "--fps", str(run_context.dataset_fps(run_context.migrate_dataset(cfg))),
         "--holdout", str(cfg["train"]["holdout"]),
         "--holdout-out", val_ds,
         "--jobs", "4",
@@ -105,7 +112,13 @@ def main(argv: list[str] | None = None) -> int:
         if label == "val" and not cfg["train"]["holdout"]:
             continue  # holdout 0 keeps every episode for training, and there is no split to audit
         commands.append((f"stats_{label}", stats_argv(dataset, cfg)))
-        commands.append((f"audit_{label}", [DATA_PY, AUDIT, dataset, "--run-dir", run_dir]))
+        lag = camera_delay.mean_lag_frames(
+            camera_delay.parse(cfg["images"].get("camera_delay")),
+            run_context.dataset_fps(run_context.migrate_dataset(cfg)),
+        )
+        commands.append(
+            (f"audit_{label}", [DATA_PY, AUDIT, dataset, "--run-dir", run_dir, "--video-lag", f"{lag:.2f}"])
+        )
 
     if args.dry_run:
         for name, command in commands:

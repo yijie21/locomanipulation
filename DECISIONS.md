@@ -800,6 +800,282 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - 相机延迟 C 取多少，取决于部署硬件。
 - 本次实现未提交（4.7.11.8）。
 
+## 2026-09-28 Isaac 画质：高度图法线修复、视频默认 1280、预览自动压到 500 KB 内
+
+目标与约束
+- 用户问:Isaac 渲染比 Blender 差,是设置问题还是版本太低?随后要求实现两项:修法线资产,视频默认分辨率提高并把路径追踪做成开关。之后又要求 side-by-side 预览自动压缩。
+- 数据集相机和评测镜像保持 640×480,不改(`CAMERA_CONFIGS`)。给人看的视频必须遵守 AGENTS 的单文件 500,000 字节上限。
+
+决策
+1. **不升级 Isaac,留在 4.5。**
+   - Isaac 5.0/5.1 没有新的写实渲染器。RTX Real-Time 2.0(实时路径追踪 + DLSS)要到 6.0 才是默认,而 6.0 需要 Kit 110 和 Python 3.12,SIMPLE 锁在 4.5。
+   - 换渲染器会改变 checkpoint 的图像分布。
+   - A/B 显示差距主要来自设置和资产,4.5 本身就能做路径追踪。
+2. **纸箱白色噪点按导出器 bug 修,不当渲染器问题处理。**
+   - Blender 导出器把 Bump 节点的灰度高度图接进了 `UsdPreviewSurface.normal`。高度 0.50 ± 0.03,折成法线约为零向量。
+   - 屏蔽这 14 条连接后噪点消失,每帧耗时不变(台账 blender_scenes.md 第 2 节)。
+3. **`blender_to_usd.py` 断开这类连接,不把高度图转成法线贴图。**
+   - UsdPreviewSurface 没有 bump 输入;程序化 Bump 导出器本来就全丢。
+   - 断开就能去掉伪影;转换要多一个生成贴图的步骤,只多一点凹凸细节。
+4. **已打包的 v1 USDC 不重导,改在 `build_isaac_warehouse_scene.py` 生成的两层里用 over 屏蔽。**
+   - 当前 .blend 导出 43 张贴图,v1 有 49 张,重导会改动法线以外的东西。v1 是版本化的 LFS 资产。
+   - 屏蔽规则是"单通道贴图接到 `normal`",不是 14 个写死的名字:切线空间法线贴图一定是三通道,单通道只能是高度图,对任何 Blender 房间都成立。
+5. **`warehouse_textured` 的 Isaac stage 按新构建器原地重建**(`assets/isaac/` 不入库)。
+   - 这会改变数据集补渲和评测镜像的画面,用户在"就按这两项实现"时已被告知。
+   - 81/83/88 这组数是在旧 stage 上测的。旧层备份在 `outputs/experiments/isaac_render_quality_ab_20260928/scene_before_20260928/`。
+6. **`render_isaac_videos.sh` 默认 1280×960 Real-Time,`--path-trace` 只作开关。**
+   - 1280 只要 1.4 倍时间,就解决了印字和边缘的锯齿。
+   - 路径追踪是 Real-Time 耗时的 5.7 倍(640)到 14 倍(1280),平均亮度高约 10/255(ISO 没为它调过)。
+   - Real-Time 与数据集、镜像用同一个渲染器。
+   - `mujoco_render` 改为按需放大离屏缓冲:场景的 offwidth 是 960,不改 1280 直接报错。
+7. **不为 VLA 提高渲染分辨率。**
+   - 实测 checkpoint-5000 的处理链:短边 256 → 中心裁 0.95 → 256 → Qwen smart_resize,每个视角都变成 352×256、88 个 token。
+   - 640 与 1280 源进模型只差平均 0.4/255。
+   - 真正影响策略的是宽高比和画面外观。
+8. **预览压缩做成共享模块 `locomani.pipeline.video_preview`(只依赖标准库和 ffmpeg),脚本调用它。**
+   - 顺序:宽度 1280、10 fps(都不超过原片)→ CRF 从 32 逐级到 38 → 仍超限就按帧边界切成连续的 `_partKofN`。
+   - 每个文件都检查字节数、完整解码和时长;先删同前缀的旧预览。
+   - 帧率以原片为上限:stride 16 的 3.1 fps 源被升到 10 fps 时,分段时长对不上。
+
+否决的方案
+- **升级到 Isaac 5.1**:没有新的写实渲染器,GitHub #273 反而报 5.x 旧实时模式的地面显示问题。
+- **升级到 Isaac 6.0**:暂缓,理由见决策 1,不是永久否决。
+- **给数据或评测默认开路径追踪**:成本 5.7–14 倍,亮度没调,还会改变图像分布。
+- **用 DLSS 或 DLAA 提画质**:`configure_renderer` 早已按"从低分辨率放大、不适合数据集"排除,本次没有重开。
+- **只把高度图连接藏在渲染端,不修导出器**:下一次导出会带回同样的错误。
+- **重导 v1 USDC 替换资产**:43 对 49 张贴图,会引入法线以外的改动(决策 4)。
+- **把程序化材质(36 个 Bump、15 个程序化底色)烘焙成贴图**:本次不做。88% 的物体没有 UV,要先展 UV,工作量大;2026-09-19 已否决烘光照,理由相同。
+- **保留旧预览(整局一个 640×240、CRF 34)**:丢掉了 1280 的清晰度,旧运行里还有 3 个超限。
+- **靠降低预览宽度来压体积**:阶梯里没有降宽,因为 1280 的清晰度正是要展示的。改成 960 已作为选项问用户,未定。
+- **CRF 超过 38**:1280 宽的并排视频里纸箱印字看不清,宁可分段。
+- **估算分段数时乘 1.2 余量**:96 s 那局分出 7 段,实际 6 段就够;`largest` 已经是最差的一段,余量是多算。
+
+## 2026-09-28 四边线：机器人从平台四条边外随机出生，箱子放在对应边上，范围取 envelope ≥ 30%
+
+目标与约束
+- 用户：不再只从 warehouse 平台南边的小范围出发；每局随机选平台一条边，机器人在该边外随机位置出生，箱子放该边台上，
+  所有布局参数在 `box_grasp_envelope.md` 成功率 ≥ 30% 的范围内随机，用来丰富训练数据。
+- 用户逐条定：横移只给 −8～0 cm（机器人在箱子中线右侧）；范围用"我打算用"一列（朝向 ±20°、起点 0.6 m 起、setback 0–2.5 cm、
+  箱子偏角 0～+3.5°）；箱子尺寸离散随机，并重建对应 Isaac stage；先在房间里每边 10 局 pilot；边前有遮挡物就只在遮挡物前方采样。
+  之后定每种尺寸 100 条，先每种 5 条出 Isaac 视频看。
+
+决策
+1. **起点上限 = 该边空地 − 0.25 m**（xm 0.86、xp 0.80、ym 1.04、yp 1.38 m）。房间的墙、货架、推车都没有碰撞体，起点落进去不会被挡、只会穿模；
+   空地由 `warehouse_box_scene` 用水平射线对房间网格实测，写进 `scene_meta.surfaces.A.edges.<边>.clear_m`。最初按包围盒估的墙距偏大，东边还漏了一排货架。
+2. **箱子尺寸取 envelope 网格里 4 个 ≥ 0.40 的格子**：宽 0.45 固定，长 {0.20, 0.32} × 高 {0.18, 0.33}（台高 0.371，抓点 0.54 / 0.69 m）。
+   每种尺寸一个场景（`warehouse_box_45x*`），照片网格非均匀缩放（照片跟着拉伸），碰撞壁与惯量同 `box_platform`（抽成共用 `resize_carton`）。
+3. **每局的边放在 `meta["approach"]`，由 `approach_heading` 统一读**（`expert.facing_edge`，每局在 `run_attempt` 与两个评测 `run_round` 开头调一次）。
+   刹车线、走入方向、起点距离、后退方向原本都从 `approach_heading` 取，一处改动就全部跟着换边；箱子保持它离自己边的距离和相对走入方向的偏角搬到新边。
+   只在 `start_edges` 多于一条时才抽随机数，旧配置 200 个种子的 reset 指令与后续随机流逐位不变（A/B 过 4 份配置）。
+4. **箱子沿边位置用比例（`object_along_range`，−1～1 × (边半长 − 箱半宽)）**，机器人起点随箱子平移，横移因此仍相对箱子中线。两条长短不同的边共用一个范围。
+5. **录像按边换机位，边从 trace 第一帧机器人偏航认出**（`sim/scene_edges.py`；配置限制起点偏角 < 45°）。不从 manifest 读：采集和闭环评测的 trace 不共用 manifest。
+   MuJoCo 录像用该边的固定机位 `edge_<边>`；Isaac 并排视频的跟拍方位角随边旋转（ym 225、xm 135、xp 315、yp 45）。
+6. **场景机位写 `quat` 不写 `xyaxes`**：`isaac.frames.camera_spec` 只读 pos/quat/fovy。
+7. **Isaac stage 的纸箱缩放从 MuJoCo 场景读**（`build_isaac_warehouse_scene.py --scene`），`offset_pos` 同乘缩放，`source.json` 钉住 MJCF 的 sha256；只能用 `/venv/main/bin/python` 跑（唯一装了 pxr 的环境）。
+8. **训练图像暂用 MuJoCo（`images.source: mujoco`）**：当时 GPU1 被 JeVLA 占 28 GB，Isaac 补渲要约 23 GB。用户两次被告知，未表态。
+9. **`collect --until-kept N`**：保住 N 条后在那批结束时暂停（exit 0），同一命令去掉它就续采。为"先看 5 条再采满"而加，运行配置不变，不必改运行名。
+10. **数据规模**：随机维度多了要加数据，但只按"会改变动作或画面"的离散维度算（4 尺寸 × 4 边 = 16 组合），连续小范围随机靠插值；
+    先采每种 100 条（每组合约 25 条），再用全量 vs 均衡抽 200 条、各 2 个训练种子来量数据是否仍是瓶颈（TODO 8.8）。
+
+被否决的方案
+- **机器人在整条边外任意位置出生**（例如站在角落去抓中间的箱子）：横向偏差几十厘米，超出测过的范围，guard 走法不修横向；要先做"斜线走近"。
+- **严格按 envelope 分格取 ≥ 30%**：每格 10–30 局、区间 ±15 个点，0.29/0.30/0.33 分不开；朝向和起点距离按 §4 建议取。
+- **横移 ±8 cm**（用户最初的说法）：+4～+8 只有 0.24、0～+4 只有 0.15，用户随后同意 −8～0。
+- **箱子尺寸逐局连续随机**：纸箱是带照片的网格，每个尺寸要重建场景和 Isaac stage，做不到逐局。
+- **给 `prepare_logistics_scene.py` 加 `--box-size`**：改成从 `warehouse_textured` 派生的新模块，和 `box_platform_scene` 同一做法，不动原场景安装脚本。
+- **起点采到墙为止**：房间里每条边前都有货架或推车，而且没有碰撞。
+- **pilot 三条流水线并行**：JeVLA 占约 4.7 核时，资源闸门给不录制的栈留 5 核，第三条会被拒；实测两条并行 RTF ≈ 1.0。
+
+## 2026-09-28 双臂采集的默认准备手臂改为 compact；四边线按 compact 重采
+
+目标与约束
+- 用户看了四边线前 5 条的 Isaac 视频，觉得"站定到抓取""手抬起到开始伸手"停得太久，要求尽量去掉；随后定：**compact 作为双臂采集的默认专家**。
+- 28 条成功局里站定→合爪中位 15.6 s，其中准备手臂固定 8.7 s，手在 0.72 m 停 3.9 s、抬到 0.90 m 后再停 2.4 s（台账 crate.md 同日）。
+
+决策
+1. **`visual.ready_after_brake: compact` + 抬臂 1.5 s、保持 0、重锚后 0.3 s 是双臂采集的默认。** 房间四边 40 局配对 A/B：17/40 vs quick 19/40（McNemar p = 0.83），
+   准备 8.7 → 4.9 s，每局 28.8 → 24.9 s。默认落在实验文件上：`box_platform_default_20260928`（台上默认）和 `warehouse_edges_compact_<尺寸>_20260928`（四边线采集）。
+2. **dataclass 默认值不改（仍是 full）。** 53 份历史 guard 实验文件没写 `ready_after_brake`，包括出 checkpoint-5000 的 `box_room_grasp_200_cap120_20260925`；
+   改默认会让这些文件悄悄换成另一套准备流程。新实验从默认实验文件复制，而不是依赖 dataclass 默认。
+3. **四边线另起运行名重采，seed 140000–170000+。** 已暂停的 quick 运行 `warehouse_edges_<尺寸>_20260928`（共 28 条）保留在磁盘上，不并入训练集：
+   同一份数据里混两种准备节奏，策略要学两种停顿时长。
+
+被否决的方案
+- **刹车后不重锚（`reanchor_after_brake: false`）**：再省 2.2 s，但 14/40、下探卡住 7 → 13，与 09-27 "压得越狠卡住越多"同向；要定需每组约 200 局。字段保留、默认开。
+- **边停边抬手**（最后一步刹车时就抬）：要改走近循环，09-23 走路时抬手 6/10 局手指扎进箱子。
+- **把 quick 的 28 条并进 compact 数据集**：见决策 3。
+
+## 2026-09-28 文档按"只想跑通的人"重组；所有 VLA 评测默认 lockstep
+
+目标与约束
+- 用户：README 和各页写得太多、入口太多；仓库的主功能只有三条线（bottle 单臂、crate 双臂、warehouse 双臂）的采集、训练、评测，其余是支线。跑的时候只想知道跑哪些命令、每条命令做什么、会得到什么；设计和逻辑想细究时自己去找。中文表达要改得地道。
+- 经一轮逐项确认（grilling，Q1–Q25）定下下面的结构。
+
+决策
+1. **README 是给人看的唯一文档清单**：三条主线的表格，然后按"通用 / 各主线详解 / 支线 / 已结束的专题实验 / 台账与开发"列出其余每篇文档，每篇一句话说明用途（用户要求，不用点进去才知道是干什么的）。`docs/README.md` 只留历史记录和开发者入口；原来那段英文的文档归属规则移到 `docs/agents/doc-ownership.md`。
+2. **runbook 统一骨架**：开头三行写做什么、要几张卡、冒烟跑完多久；然后是每个新终端先执行、建场景、采集、转换、训练、评测、看结果、常见报错、接下来。每条命令后面写"做什么"和"得到什么"。正文按冒烟规模写，完整规模在页尾一行。
+3. **三份 runbook 里重复的运行机制合并到 `docs/running.md`**；各线特有的设计和坑移到详解页（warehouse 新建 `warehouse_design.md`）；带日期的经过留在台账和 DECISIONS。文件名不改（`single_arm.md` 等被引用 20 多次），标题改成 bottle / crate / warehouse。
+4. **warehouse 主线走 Isaac 出图**（用户选 a）：两张卡，页尾一节"只有一张卡"说明怎样换成 MuJoCo 图。
+5. **所有 VLA 闭环评测默认 lockstep**（用户："渲染的时候 simulation 停止，渲染完了再继续，所有场景都这样"）：`EvalConfig.client` 默认 `lockstep`、`latency_frames` 2、`camera_frames` 0、`gap` continue，即 09-27 校准的目标模型（88/100）。三条主线的实验文件都改成它；带日期的历史实验文件不动。采集不是 VLA 推理，仍按墙钟。
+6. **bottle 的 lockstep 先用、后校准**：单臂的 lockstep 实现 09-02 校准未过（墙钟 46 vs lockstep 32），现在没有 bottle checkpoint 可测；冒烟证明能跑，校准记为 TODO 9.3。
+7. **为缩短命令做三处小改动**：`paths.sh` 导出 `PYTHONPATH`；本机专用设置（如 `SONIC_DEPLOY_ROOT`）放到仓库外的 `$LOCOMANI_WORKSPACE/locomani.local.sh`；`scripts/build_scene.sh <场景名>` 读 `configs/scenes.yaml` 的 `build`。每个新终端只剩 `. scripts/paths.sh` 一行，三条线建场景都是一条命令。
+8. **`setup.md` 只改说明、不改命令**：每一步写命令、做什么、怎么验证，踩坑挪到页尾；新旧两版的命令用脚本逐条比对，完全相同（只把克隆本仓库的三行从 README 挪进来）。
+9. **不做无上下文复现**（用户）；详解页、`rendering.md`、`scalebfm.md`、台账这次不重写，只写入挪过来的内容并修链接（TODO 9.8）。
+
+被否决的方案
+- **把支线文档挪进子目录**：它们被引用 4–46 次，有的在代码里，挪目录只换来"看着整齐"。
+- **三批未提交的改动按 hunk 拆成三个提交**：第一批新增的 `vla_lockstep.py` 调用第三批的 `expert.facing_edge`，`build_isaac_warehouse_scene.py` 和 `mujoco_render.py` 混着第二、三批，拆开的中间提交跑不起来；合成一个提交，说明里分三批列清楚（`291cdeb`）。
+- **冒烟跑中等规模（能看到非零成功率）**：一条线要好几个小时；冒烟只证明流程通，完整规模的已知结果写在页尾。
+- **在原地重建场景来验证建场景的命令**：`outputs/` 被另一个检出目录（`locomanipulation-loco_agent`）软链接共用，重建会覆盖别的会话在用的场景；改为把同样的命令输出到临时目录，XML 与元数据去掉路径后和现有场景逐字相同。
+
+## 2026-09-28 冒烟实跑抓出的问题怎么修；推送用 merge
+
+目标与约束
+- 三条主线的冒烟按新 runbook 真跑（上一节决策 2），跑出六个问题；另一个检出目录的会话同时在实例 1、GPU 1 上起栈，暴露了几处"看全机而不是看本实例"的检查。
+
+决策
+1. **视频对齐检查：测量数少于 10 时只看中位数**（`|中位| ≤ 1` 且至少一个落在 0），10 个以上规则不变（中位 0 且过半落在 0）。理由：冒烟的 2 条数据只有 4 个测量，偏移按局成对出现，一局抖一帧就让多数检验失败；而注入实验里 3、5 帧的真实延迟会把中位推到偏移量本身，新规则仍然判失败。
+2. **bottle 的策略端口改为 5710**。理由：5555–5622 是实例 0–4 的仿真端口，5590 正是实例 1 的键盘端口；只要别的会话在实例 1 起栈，bottle 评测就绑不上。crate 和 warehouse 用 5700，同样在范围外。
+3. **单臂评测开局前检查 deploy 带不带 encoder 时，只看本实例 `stack.json` 记下的 deploy**（原来是全机 `pgrep`）。理由：另一个会话的采集 deploy 带 encoder，干净的评测栈被误拒。
+4. **`Stack.down()` 杀"本对象记下的 pid"和"状态文件里的 pid"的并集**。理由：评测进程在跑局前接入栈、保存 pid 快照；bottle 每局重启 deploy 走的是另一个接入对象，只写进状态文件；结束时旧快照只杀了早已死掉的第一个 deploy，删了状态文件，活着的 deploy 成了没人记录的孤儿，占着实例 0 的端口。
+5. **`crate_eval` 产物契约按 crate_smoke 的实际产物重写，并标明已核对**。理由：它 09-17 按重构前的布局写成、从没对过真运行，扁平路径从不写 `eval.log` 和 `eval/deploy_receipts.jsonl`，包括 81/83/88 那几次在内的所有双臂评测都会报缺。warehouse 评测不录像，`eval/videos` 一项对它必然报缺，写进 `running.md`，不把这一项改成可选。
+6. **预览最多切 16 段（原 8 段）**。理由：一局跑满预算的 warehouse 评测约 99 秒并排加小窗，500 KB 以内最少要 11 段（每段约 9 秒、179–454 KB）；8 段的上限让每个这样的局都出不了预览。
+7. **推送前远端多出的提交用 merge 合入，不 rebase**。理由：TODO、STATE、DECISIONS 里记着本地提交的哈希，rebase 会让它们全部失效；仓库以前合远端也一直用 merge。`docs/warehouse.md` 的冲突保留新版，henry-zhao 加的 `--backbone-path` 说明移到 `running.md`，三条线共用一处。
+
+被否决的方案
+- **冒烟改成 10 条以上数据，让对齐检查用原规则**：每条线的冒烟会多出几分钟到十几分钟，而检查的缺陷是真实的（任何小数据集都会误判）。
+- **对所有规模一律放宽对齐检查**：09-06 的注入实验只验证了 40 个测量下"过半落在 0"能分开干净数据和 3 帧延迟；大样本没理由放宽。
+- **bottle 保留 5590，在文档里要求别人不要用实例 1**：约束不住别的会话，端口挪到范围外才是根治。
+- **让重启 deploy 的那个接入对象去更新评测进程里的对象**：两者是不同进程，只能通过状态文件交流，所以在 `down()` 里读文件。
+- **预览降分辨率或提高 CRF 来塞进 8 段**：`video_preview.py` 的注释记着 CRF 超过 38 后纸箱印刷字在 1280 宽下看不清；多切几段不损失画质。
+- **把 `crate_eval` 的 `eval/videos` 改成可选**：评测跑完就应该有录像，warehouse 的例外写清楚即可，不削弱契约。
+
+## 2026-09-28 warehouse 默认采集改为四边随机；采集前打印设置；固定起点作为选项
+
+目标与约束
+- 用户：把四边线（每项取 envelope 单独成功率 ≥ 30% 的区间）作为 warehouse 场景的默认采集设置；采集之前告诉用户将按什么设置开始；不想四边采集时，可以像以前一样只从一个地方开始。代码和文档都要更新。
+
+决策
+1. **默认实验 `warehouse_smoke` / `warehouse_200` 的 `task` 块换成四边线 compact 版，场景换成 `warehouse_box_45x32x33`**，逐字取自 `warehouse_edges_compact_45x32x33_20260928`；`collect`、`train`、`eval`、`images` 块不变。理由：45×32×33 是房间原来的纸箱尺寸，也是 compact 对照（17/40）实测时用的场景和 `task` 块；一个运行只能有一个场景，其余三种尺寸仍各有自己的实验文件。runbook 第 1 步因此多建一个场景和它的 Isaac stage。
+2. **固定起点做成两份实验文件 `warehouse_smoke_fixed_start` / `warehouse_200_fixed_start`**，与默认文件相比只改摆放字段：`start_pose scene`、起点 1.2–1.5 m、`position_jitter` 0.02、`yaw_jitter_deg` 5，去掉四边线和所有布局区间。专家参数保持现在的（compact，成功不要求后退）。一个测试核对"两份文件只差摆放"。理由：实验文件是自足的配方，`<run>/config.yaml` 就是出处；用命令行开关换摆放方式，运行目录里的配置就说不清这次到底怎么跑的。
+3. **采集入口（`tasks/crate/collect.py`）在第一局之前打印这次的摆放设置**：场景、要保留几条、每局抽什么、四边时每条边的起点上限，最后一行给出另一种摆放方式对应的实验文件。文字由 `expert.layout_lines` 生成，它就放在 `start_placement` 旁边，读同样的字段和场景边表，所以打印的就是实际抽样的范围。`--dry-run` 也打印。在终端里运行时，打印后等 10 秒再开始第一局，这期间 Ctrl-C 不会录下任何一局，也会关掉仿真栈。
+
+被否决的方案
+- **打印后问 y/N 等用户确认**：`run_overnight.sh` 和 agent 调用都不是交互式的，会卡住；只在终端里等 10 秒，就给了人停下来的机会。
+- **让起栈（`start_stack.sh`）打印**：起栈脚本不跑专家，每局从第一局开始抽样的是采集入口。
+- **固定起点直接用旧文件 `box_room_grasp_200_cap120_20260925`**：那是旧专家（刹车后 full 准备、成功要求后退 0.3 m），拿它和默认比，会把两处差别混在一起。
+- **默认同时采四种纸箱尺寸**：要改成一个运行多个场景，现有管线不支持；这不是这次的要求。
+
+## 2026-09-28 双臂线采集默认并行：按空闲资源开多条通道，开跑前打印通道数
+
+目标与约束
+- 用户：一张卡一个进程采集太慢；有多张卡时把采集分到多张卡上，一张卡上资源够也可以开多个进程；开跑前要判断 CPU 和 GPU 资源够不够；并行作为默认，每次采集前告诉用户用了多少个进程。
+- 机器的约束：容器 CPU 配额 15.36 核，所有会话合计的线程上限 3840，别的会话也在用卡和实例（今天 Unreal 编辑器占了实例 0 的整段端口，`loco_agent` 在实例 1 起栈）。
+
+决策
+1. **并行的单位是“通道”：一个栈加一个跑局进程，各占一个实例。** 一个进程只能驱动一个栈，因为栈的端口和场景是进程级的环境（`adopt_stack_env`）。通道 0 在 `run_agent_server.sh` 的进程里跑，其余通道各开一个 spawn 子进程（`collect.lane_process`）。所有通道共用一个运行目录。
+2. **开几条通道由 `start_stack.sh collect` 决定**（`pipeline/lanes.py`）：先量空闲 CPU（采样 3 秒）、线程数、每张卡的空闲显存和空闲实例，按一条通道的成本算每项各允许几条，取最小值；然后逐个起栈，写 `collect/lanes.json`。这份计划就是资源闸门，代替单栈闸门。任何一个栈起不来，已经起好的一并关掉，不以少于打印的通道数运行。
+3. **一条通道的成本按实测定**（`outputs/warehouse_parallel_20260928`，一条 warehouse 通道，录制、不渲染）：CPU 平均 +2.6 核、90 分位 +3.7 核，定为 4 核；显存 +1.5 GB，定为 2000 MiB；线程数起栈后 +180，之后 exporter 每录一局增加约 130、每批重启后清零，定为 200 + 140 × `batch_rounds`（每批 10 局约 1600，就是旧闸门“exporter 约 1800”的来历）。实时渲染的通道沿用旧单栈闸门的 CPU 和显存预算，且一张卡只放一个（09-08 两个渲染的仿真同卡，deploy 丢状态）。不渲染的仿真一张卡最多 4 个。
+4. **默认用所有卡、自动定通道数；`--lanes N` 或 `collect.lanes: N` 设上限，`--lanes 1` 与以前完全一样**（栈只起在 `collect.instance`，被占就报错）。通道数是执行资源，和 `--gpu` 一样从命令行给，实际用了几条写在运行目录的 `lanes.json` 里；实验文件里的 `collect.lanes` 只给需要固定的场合用（场景扫参每个格子写 1，因为扫参自己按实例开了多个循环）。
+5. **批次改为按编号领取**：通道在文件锁下领“没完成也没在跑的最小编号”，第 k 批的种子和 manifest 名不变，与哪条通道去跑无关；只有跑完的批进 `sessions` / `manifests`，所以这两个列表仍然两两配对，`sessions[:batches]` 仍然是“已完成的批”（Isaac 补渲、convert、world_lift 都这样读）。在跑的批记在 `running`，中断后重跑时这些批从头再跑。保留条数够了就不再领新批，已经在跑的批跑完，所以可能多保留一些。
+6. **每条通道的第一批接管它的栈起栈时开的 exporter session**：只有当这批的编号等于该 session 为之打开的批（通道 k 对应第 k 批，帧审计文件也按这个编号命名）时才接管，否则重启 exporter。
+7. **起栈时和开跑前都打印通道数和每项资源允许几条**，“what fits” 一行写明是哪项在限制。
+8. **单臂线（bottle）不并行**：它的驱动器不同，本次不改；`--gpu` 给多张卡时只用第一张。
+
+被否决的方案
+- **每条通道一个运行目录，convert 时合并**：convert、Isaac 补渲、world_lift 都要改，还要多一步合并；共用一个运行目录只改采集这一处。
+- **同一进程里用线程跑多条通道**：端口和场景是进程级的环境变量，做不到。
+- **沿用旧闸门的 1800 线程预算**：它是按每批 10 局量出来的，今天的机器上连一条 4 局一批的录制通道都会被拒（1850 + 1800 > 3640），实测只需要约 760。
+- **某个栈起不来时，用已经起好的几条接着跑**：运行时的通道数和打印的不一致，这正是本仓库最常见的“配置只落实了一半”的失败形态。
+
+## 2026-09-28 Unreal（URLab）只替代 Isaac 的渲染角色；warehouse 从 Blender 直导；G1 外观用 MJCF 原色（分支 loco_unreal）
+
+目标：Isaac 渲染质量不够，试用 URLab（MuJoCo 嵌入 UE 5.7 的插件）出策略看到的图。约束：URLab 只替代 Isaac 镜像和补渲，物理、SONIC deploy、VLA 服务端、lockstep 都不动。
+
+### 决策
+
+- **URLab 只做渲染（puppet 模式）：** sim 推 qpos，URLab 出图，不走它的 direct / live 物理。
+  理由：URLab 不跑 VLA 和 SONIC，deploy 必须留在外部；把物理搬进去要重写 sim 侧的桥接、reset、夹爪 PD 和成功判定，lockstep 校准和 81/83/88 也会作废。
+- **插件打补丁，加 `include_cameras: "fresh"`（`patches/urlab_fresh_capture.{patch,md}`）。**
+  - 理由：原版的 `"sync"` 回读的是正在进行中的那次读回，推姿态后等 100 ms 以内约一半的图还是上一个姿态；非 live 模式下相机 ZMQ 推流又被暂停。
+  - 补丁的做法：截图放在 `AAMjManager` 的 Tick 队列里、在姿态生效后的下一帧执行；第一张做 camera cut，打开 TSR，重复截 8 张让 Lumen 收敛。
+  - 各处理由：用 `AsyncTask(GameThread)` 会死锁；同一帧截图会带上一姿态的运动矢量，TSR 把机器人拖出重影；场景截图默认关 TemporalAA，退回 FXAA 会有锯齿；每帧自动截图加按需截图会把 GPU 卡死，所以相机第一次按需截图后改为只按需截。
+  - 同一补丁还改了两处 URLab 原有问题：视场角从垂直换算成水平；近裁剪面从 1 mm 改为 2 cm，和 MuJoCo / Isaac 一致，否则头部相机拍到头壳内部。
+- **warehouse 房间从 `logistics_room.blend` 直接导入，做成 UE 静态关卡。**
+  - 流程：Cycles 把程序化材质烘焙成贴图，按材质合并网格，导出 glTF，Interchange 导入；6 盏面光重建成 RectLight；自发光乘 683 lm/W。机器人和纸箱仍走 URLab 的 MJCF 导入。
+  - 理由：USD 和 glTF 都会丢程序化节点，烘焙能保住；房间不需要物理。坐标核对过：Blender 世界 = MuJoCo 世界 = URLab 的 (x, −y, z)·100 cm。
+- **固定曝光，补偿值 = log2(1.2·2^exposure/683) = −9.40；后处理体积强制 Lumen GI 和反射。**
+  理由：UE 的手动 `auto_exposure_bias` 是补偿值（正数变亮），不是 EV100；场景截图不继承项目默认的 Lumen，不强制就完全没有间接光。
+- **导出前把非 2 的幂贴图缩放到 2 的幂，照片材质断开 Bump→Normal。**
+  理由：UE 对非 2 的幂贴图不生成 mip，缩小时锯齿和噪点严重；glTF 导出器把高度图当法线贴图写出，渲染成满屏噪点。
+- **G1 外观用 MJCF 原色，即材质脚本的 `mujoco` 预设。**
+  - 做法：0.7 外壳、0.2 头/脚/关节/夹爪；颜色从 sRGB 换算到线性，非金属，粗糙度 0.35 / 0.5。
+  - 理由：用户确认 MuJoCo 渲出的这套外观是对的。URLab 原来把 rgba 当线性值用，0.2 显示成 0.48，整台发白。
+  - 依据：URLab 的 G1 网格和我们的逐字节相同（37/37）；Unitree 官方 Isaac USD 也只有两种灰、没有贴图；hero.png 那台就是同一套网格，靠的是作者自己配的材质和灯光。
+- **编辑器用 `taskset -c 28-31` 限 4 核；看守脚本在容器 5 秒平均用满 14 核以上、或 GPU 100% 且日志 90 秒无输出时杀掉 UE。**
+  理由：不限核时首次编译着色器 30 秒内打满 15.36 核配额，另一会话 A/B 实验的 seed 91009 那对局受到干扰。
+- **Unreal 镜像先做成实验脚本 `unreal_mirror_20260928.py`，对外和 Isaac 镜像协议完全相同。**
+  理由：评测代码零改动即可验证；正式的 `images.source: unreal` 等验证完再进 src。
+
+### 被否决的方案
+
+- **全部搬进 URLab（direct 模式物理）：** 见上面第一条的理由。
+- **推姿态后固定等 200 ms 再用 `"sync"` 取图：** 等待时间是猜的，每次约 220 ms，而且依赖编辑器帧率。
+- **用 URLab 自带的 Python 客户端的 camera warmup 和推流：** 客户端（7 月版）和插件（8 月版）版本不一致，`set_camera_streaming` 在插件端是 unknown_op。
+- **看守脚本按"单个窗口限流 > 2 s"杀 UE：** 误报。UE 完全不在时，采集栈自己也有 1–2.4 s 的限流（平均只用 2–4 核），当时 RTF 仍在 0.985–1.01。改成按平均用量判断。
+- **经 MJCF 导入房间：** 每种材质只剩一种颜色或一张贴图，没有法线细节，灯光也不对。
+- **G1 统一做成反光银色金属（`metal` 预设）：** 用户否决，不像真实 G1。
+- **找"更真实的 G1 资产"：** 公开资产（Unitree 的 URDF/MJCF/USD、URLab 自带）都是同一套只有两种灰的 CAD 网格，换资产解决不了外观问题。
+- **`-ExecutePythonScript` 驱动编辑器：** 脚本跑完编辑器就退出，而 URLab 导入的蓝图不写盘。改为 `-ExecCmds` 加常驻的 TCP 命令服务（`/workspace/ue_57/ue_cmd_server.py`），setup 和回放在同一个编辑器会话里做。
+- **UE 的 Python remote execution（组播）：** 容器的 `lo` 没有 MULTICAST，连不上。
+
+### 未决（不是决策）
+
+- 是否正式把 `images.source` 换成 unreal：要用 Unreal 重渲数据集再训练。checkpoint-5000 是 Isaac 训练的，用 Unreal 图评测属于分布偏移。
+- 取图速度：3 相机、截 8 张时每次 679 ms，Isaac 是 95 ms。截图张数和画质的平衡点还没调。
+
+## 2026-09-28 Unreal 出图提速：视频按仿真时间补渲；插件加 stream 模式；默认全部网格非 Nanite + `r.Shadow.Nanite=0`（分支 loco_unreal）
+
+目标变化：用户指出 lockstep 评测的 ego / 腕部视频一顿一顿。推理时 sim 等渲染没问题，但成片要流畅。随后目标扩展到把 Unreal 取图降到和 Isaac 同一量级。
+
+### 决策
+
+- **观看用视频一律按 state trace 的仿真时间补渲，不用镜像给策略的输入帧拼。**
+  理由：lockstep 下镜像只在策略取图时渲，一局 52 s 只有 71 张（约 1.4 张/秒），等待被录成跳帧。trace 每 0.02 s 一行，补渲后是连续的 25 fps。
+- **插件新增 `include_cameras: "stream"`。** 做法是和姿态同一 tick 取图，只渲 1 遍，不做 camera cut。trace 视频默认用这个模式，第一帧用 `"fresh"` 预热。
+  - 理由：连续帧相邻只差 40 ms，TSR / Lumen 的历史可以沿运动矢量接着用，和游戏一样。
+  - 结果：642 → 139 ms/帧。和 8 遍版相比差 2.1–2.2，同一姿态渲两次本身差 0.8–1.1，看不出拖影。
+- **闭环镜像保持 `"fresh"`：** 每次 camera cut，渲 `urlab.FreshCaptureRepeats` 遍。
+  理由：两次取图之间姿态跳约 0.7 s，历史帧没用。
+- **插件改成先渲完所有请求的相机，再统一同步回读。**
+  理由：每台相机渲完立刻回读会让 GPU 和 CPU 串行互等。每张 1 遍时 194 → 154 ms。
+- **默认：全部网格非 Nanite，且 `r.Shadow.Nanite=0`（用户定）。**
+  - 理由：这组相机每次取图约 24 ms，其中 13.3 ms 是 Nanite 立方体阴影的固定开销。引擎对每盏投影灯的每个面都跑一遍 Nanite 阴影管线，缓存只把静态网格隐藏掉，并不跳过这一步（`ShadowDepthRendering.cpp`），所以每面约 0.37 ms，6 灯 × 6 面，不论画没画东西。
+  - 去掉以后：每次取图 3.9 ms，三相机 fresh×8 640 → 124 ms（Isaac 88–96），stream 35 ms。画面只在边缘差 1.4（38 dB），阴影形状一致。
+  - 落地方式：cvar 写进宿主工程 `DefaultEngine.ini`；房间网格存盘为非 Nanite，关卡脚本导入时就关掉；机器人和纸箱每次导入后跑 `unreal_no_nanite_20260928.py`。
+  - 镜像和 trace 视频启动时调 `require_render_defaults()` 检查，没跑那一步就拒绝出图。理由是 URLab 经 Interchange 导入，默认会开 Nanite，漏跑会静默回到慢且画面不同的状态，这正是本仓库"配置半生效"的失效形态。
+- **编辑器视口保持开着（建议，用户未明确表态，见 TODO 12.7.6）。**
+  理由：在无 Nanite 默认下关视口不省时间（131 vs 131 ms），却会让收敛状态偏移（两张 64 遍参考图差 0.86，间接光约暗 2/255）。两种设置的收敛质量相同：8 遍离各自参考 1.25 / 1.30。
+- **Unreal 图的对照一律同一编辑器会话渲两次，用这两次的差当噪声底（`unreal_pose_set_20260928.py`）。**
+  理由：跨会话的差本身就有 0.65–1.1。拿跨会话数字当噪声底，曾经把"关视口有真实影响"误判成"在噪声内"。
+
+### 被否决的方案（及原因）
+
+- **机器人网格改非 Nanite：** 实测无收益（23–25 ms vs 22 ms），机器人只占阴影 0.3 ms。当时的判断是"房间几何重画"，也错了，真正原因是上面说的 Nanite 每面固定开销。
+- **虚拟阴影贴图（VSM）：** 开启后第一次按需取图 GPU 就卡死，复现了。
+- **运行时改 `r.ShadowQuality`：** 编辑器崩溃，引擎断言。
+- **只设 `r.Shadow.Nanite 0`、网格仍保留 Nanite：** Nanite 网格完全不投影，画面差 14–17。
+- **关掉灯光阴影 / 只留 1–2 盏灯投影：** 接触阴影全没，画面不可接受。在无 Nanite 默认下阴影只剩 0.29 ms，这条已无必要。
+- **自建 view family 绕开 scene capture（为了用上阴影缓存）：** 普通视图的缓存也省不掉 Nanite 每面的固定开销。无 Nanite 后阴影只剩 0.29 ms，三相机共享阴影也几乎没有收益，约 1 天的插件工作不值得。
+- **硬件光追阴影：** 要重编着色器，Linux/Vulkan 下稳定性未知。无 Nanite 默认已经解决问题，没做。
+- **改引擎让 scene capture 走阴影缓存（`ShadowSetup.cpp` 的 `!bAnyViewIsSceneCapture`）：** 这是安装版引擎，改 Renderer 模块要源码编译整个 UE。而且缓存本身也省不掉 Nanite 的固定开销。
+- **加大 `r.Shadow.WholeSceneShadowCacheMb`（150 → 600）：** 实测无变化，缓存本来就生效了。
+
+### 未决（不是决策）
+
+- 闭环每张 8 遍是否必要：无 Nanite 下 1 遍 48 ms，8 遍 124 ms。要按"离 64 遍参考的距离"扫 1–8 遍再定（TODO 12.7.7）。
+- 已跑的那 1 局 Unreal 评测和之前的视频是 Nanite 版，与新默认有边缘级差异。100 局评测（12.8）用新默认。
+
 ## 2026-09-28 primitive 契约与 session 对象：`skills` 包搭起
 
 ### 目标与约束的变化
@@ -938,6 +1214,241 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 ### 未决（不是决策）
 - coupled 抓罐头 ~50% 的两个失败族（局部对齐扰动、stand infeasible）是否值得单独立项。
 
+## 2026-09-29 G1 外观改用 Unitree 官方 Isaac 资产的材质，Isaac 和 Unreal 用同一组数值（分支 loco_unreal）
+
+背景：用户看 Isaac 图，觉得 G1 整体偏灰，夹爪应该是黑的却是白的，让我查网上 Isaac 专用的 G1 资产。
+
+- **两个渲染器都用 Unitree `unitree_sim_isaaclab_usds` 里 `g1_29dof_with_dex1_rev_1_0.usd` 的两种材质（用户定）。**
+  - 外壳是拉丝金属：线性反照率 0.675，metallic 1，roughness 0.75。
+  - 头、骨盆、髋俯仰、踝横滚、Dex1 底座和手指接近黑色：反照率 0.011，metallic 0.42。
+  - 由 MJCF rgba 决定用哪种：≥ 0.6 用外壳，< 0.4 用深色，正好是官方资产里深色的那几个件。
+  - 落地：Isaac 是 `stage.G1_LOOKS`；Unreal 是 `unreal_robot_materials_20260928.py` 的 `unitree` 预设，已设为默认。
+  - 理由：同一套 CAD 网格，官方资产给的才是真实 G1 的配色。用户在"官方金属"和"同反照率的漆"两版之间选了金属。
+- **Isaac 的颜色表同时按 body 名查。**
+  理由：importer 按 body 名给可视 prim 命名。只按网格名查时，4 根 Dex1 手指全落到默认的近白色，这就是"夹爪是白的"。有测试 `tests/test_isaac_robot_colours.py`。
+- 取代 2026-09-28 的"G1 外观用 MJCF 原色（`mujoco` 预设）"。那一版的 sRGB→线性转换是对的，但 MJCF 的 0.7 / 0.2 本身偏灰。
+
+- **Isaac warehouse 的曝光改按 Blender 标：`filmIso` 30 → 80（用户定）。**
+  理由：ISO 30 是 09-24 按 MuJoCo 的机器人躯干亮度标的，房间只有 Blender 的一半亮（地面 39 对 80）。ISO 80 时墙、地面、纸箱都和 Blender 的 Cycles 参考图一致，平均绝对差 59 → 17（`docs/ledger/blender_scenes.md` 第 4 节）。
+- **Isaac warehouse 打开 Blender 的环境光（用户定）。**
+  - 做法：`build_isaac_warehouse_scene.py` 不再停用 `env_light`，新 stage 标签是 `warehouse_textured_env`。旧的 `warehouse_textured` 留在共享资产缓存里，给用它渲过的运行和 main 上的会话。
+  - builder 用的是 main 的版本（带高度图法线屏蔽和 `--scene`），在它上面改的。
+  - 实测：在封闭房间里，换掉通用的 dome + sun 只差 0.1/255。所以这一改是为了和 Blender 一致，不是为了亮度。
+
+- **Isaac warehouse 加两项 RTX 设置：间接光 ×2（`/rtx/indirectDiffuse/scalingFactor=2.0`），色调映射从 ACES 换成 Hejl–Hable（`/rtx/post/tonemap/op=4`）。**
+  - 理由：天花板只靠反射光照亮，Cycles 12 次反弹、RTX 实时模式 2 次，所以偏暗。在三台 Blender 参考相机上，灰度平均绝对差 11.1 → 6.9，天花板 151 → 176（Blender 183），墙、地面、纸箱仍在 Blender 的 ±8 以内，耗时不变。
+  - 这是按用户"尽可能还原 Blender"的方向做的，台账 `blender_scenes.md` 第 6 节。
+- **不把 Unreal 的烘焙贴图搬进 Isaac。**
+  理由：量下来在 640×480 看不出程序化纹理的缺失——地面是照片材质，墙在 Blender 里几乎是平的，Isaac 的细节在各区域都不比 Blender 少。多出来的是锯齿颗粒，属于抗锯齿问题（TODO 12.4.4.3）。
+
+### 被否决的方案
+
+- **MJCF 原色做 sRGB→线性（`mujoco` 预设）：** 用户认为仍偏灰。
+- **官方反照率做成非金属漆：** 外壳更亮（机器人外壳中位数 135 / 143 对金属 96 / 116），但用户选了官方金属。
+- **整份换成官方 USD：** 网格相同，换了要重做关节名映射和状态同步，收益只有材质。
+- **Isaac Sim 自带的 G1（整台一种银色金属 0.451）/ GR00T 的 `g1_43dof.usd`（vMaterials 阳极氧化铝，MDL 指向 NVIDIA nucleus，离线解析不了）：** 不如 Unitree 自己的 Dex1 版贴近实物。
+
+- **增加 RTX 实时模式的反弹次数（`/rtx/indirectDiffuse/maxBounces` 2 → 4、8）：** 天花板只到 135–148，不如直接放大间接光。
+- **其他色调映射（Reinhard、Modified Reinhard、HableUc2、Iray）：** 与 Blender 的差都比 ACES 大。
+- **路径追踪：** 12 次反弹、64 spp 时差 7.7，和选中的设置相当，但慢得多、有噪点，不适合闭环和数据集。
+
+### 未决（不是决策）
+
+- 现有 Isaac 训练的 checkpoint 看的是发白的旧外观，新外观是分布偏移。重新训练前，评测数字不能和旧数字直接比。
+- warehouse 的曝光 ISO 30 是按旧外观调的，没有重调。
+
+## 2026-09-29 Isaac 用 2× 超采样、新外观不重训；Unreal 关视口和崩溃上报、导入存盘、灯板换自发光材质、Lumen 增益 4（分支 loco_unreal）
+
+背景：用户看完本分支的工作清单后，定了四项，并要求把发现了但没修的三处都修掉（Unreal 灯板暗和曝光、box_platform 方块发白、URLab 蓝图不写盘）。
+
+- **Isaac 抗锯齿用 2× 超采样（用户定）。** 每个相机按 2 倍分辨率渲，按 2×2 块平均缩回，FXAA 保留。
+  - 落地：`configs/scenes.yaml` 的 `isaac.supersample: 2`，warehouse_textured 和 box_platform 都用。`run_context.isaac_scene` 读它；镜像、数据集补渲、`render_isaac_videos.sh` 三处共用；缩小的是 `stage.downsample`。
+  - 理由：逐帧确定，镜像的按需渲染和数据集的连续渲染是同一张图（TAA 做不到）；对 Blender 的结构相似度 0.89–0.94 → 0.93–0.96。
+  - 代价实测 2.2 倍（三路相机 95 → 209 ms），用户做决定时我给的估计是 1.4 倍。
+- **新外观不重训（用户定）。** 现有 Isaac checkpoint 看的是旧外观，照用。
+- **box_platform 的盒子颜色从 sRGB 转成线性，新 stage `box_platform_srgb`。** 和机器人是同一个错误：MJCF rgba 是显示值，RTX 按线性读。旧 `box_platform` 留在共享缓存里，给用它渲过的运行。
+- **Unreal 编辑器视口默认关（用户定：画质没影响就关）。**
+  - 理由：`ShowFlag.*` 只作用于编辑器和游戏视口，不作用于 URLab 截图（引擎里只有这两个视口客户端调用 `EngineShowFlagOverride`）。收敛质量相同：对 64 遍参考，开 1.25、关 1.30。空闲 GPU 占用 28 → 11 %。
+  - 代价：间接光照区域暗约 2/255。
+  - 落地：`ShowFlag.*` 是作弊类 cvar，工程 ini 设不了，改在 `/workspace/ue_57/ue_cmd_server.py` 启动时设；`require_render_defaults` 检查它。
+- **Unreal 崩溃不再上报 Epic（用户定）。** 宿主工程 `DefaultEditorSettings.ini` 设 `bSendUnattendedBugReports=False`（顺带关了 `bSendUsageData`）。编辑器以 `-unattended` 运行，这个值为 False 时引擎根本不启动 CrashReportClient。
+- **URLab 导入后把蓝图存盘；编辑器启动直接打开 warehouse 关卡。** 插件只在内存里建蓝图，所以原先每次开编辑器都要重新导入。现在只在 MJCF 变了时才重新导入。
+- **灯板改用自建的自发光材质 `M_LocoEmissive`。** Interchange 的 glTF 母材质在截图里不渲自发光：强度设 0、2049、20490 nit，画面都一样。
+- **Unreal 曝光不改；关卡体积加 `lumen_diffuse_color_boost` 4。**
+  - 曝光：物理推算的 −9.40 下，墙和地面与 Blender 只差 0–2。
+  - 天花板只靠反弹光照亮：Lumen 90，Blender 174。增益 4 后 114，平均绝对差 23.1 → 17.4（台账 `blender_scenes.md` 第 7 节）。
+  - 剩下的差距（天花板比 Blender 暗约 60）用户接受，不再调。
+- **Unreal 截图默认 8 遍（用户定）。** 宿主工程的 `urlab.FreshCaptureRepeats=8` 不变，闭环、数据集和视频都用它。
+  理由：1 遍离 64 遍收敛图 3.4–3.9、整体偏暗 2–3；8 遍 1.2–1.4，每次取图 137 ms。
+
+### 被否决的方案（及原因）
+
+- **Isaac 用 TAA 或 DLAA：** TAA 依赖前几帧，镜像（跳变后只渲 2 步）和数据集（连续帧）会不一样；DLAA 这样切换出来是噪点。
+- **把 `ShowFlag.Rendering=0` 写进工程 ini：** 引擎拒绝（作弊类 cvar 只允许写在引擎的 ConsoleVariables.ini）；也不改引擎安装目录里的文件。
+- **在 PIE 里直接改相机的后处理来扫参数：** 读回值对，但截图不变，之后插件崩了两次。改为停 PIE、改关卡体积、再启动 PIE。
+- **Unreal 用 `indirect_lighting_intensity`、更高的 Lumen 质量档或表面缓存分辨率补天花板：** 截图里都没有作用（变化 ≤ 1）。
+- **增益 6：** 只比 4 多 6 级天花板，而且超出界面上的常用范围。
+- **Unreal 整体提亮曝光：** +0.5 档天花板到 119，但地面 79 → 109（Blender 80）。
+
+### 未决（不是决策）
+
+- URLab 插件在 `close()` 切回 live 等情况下段错误，因果未查（TODO 12.17）。
+
+## 2026-09-29 loco_unreal 合入 main：四边线换新外观、构建器的 label 一律带 `_env`、路径追踪不叠超采样
+
+背景：分支 `loco_unreal`（Isaac 新外观 + Unreal 实验）由它的会话请求合入 main，冲突处留了三个问题给 main 定。分支比 main 落后 17 个提交，其间 main 加了四边线的四个场景 `warehouse_box_*`，stage 由同一个 builder 用 `--scene` 建。
+
+### 决策
+
+- **四边线的四个场景换成 warehouse_textured 的新外观**：ISO 80、间接光 ×2、Hejl–Hable、`supersample: 2`，stage 打开 `env_light`。
+  - 理由：它们的注释本来就写"沿用 warehouse_textured 的外观"，新外观不重训是用户定的，四边线也还没有正式数据集和 checkpoint（只有冒烟），现在换没有代价。
+  - `tests/test_run_context.py` 新增一条：四个场景的 `rtx_settings` / `supersample` 必须与 warehouse_textured 相同、stage 名是 `<场景名>_env`，以后改外观不会只改一半。
+- **`build_isaac_warehouse_scene.py` 写的 label 一律带 `_env`**：不给 `--label` 时，`--scene` 的默认 label 是场景目录名加 `_env`。
+  - 理由：`scenes.yaml` 的规则是"重建的东西换新名"。按原来的默认，重建会在同一个名字下把 `env_light` 从关换成开，用旧 stage 渲过的运行就对不上了。
+  - 旧 stage（`warehouse_textured`、`warehouse_box_<尺寸>`，关着 `env_light`）留在 `assets/isaac/scene/`。四个 `_env` stage 已建，和旧的只差 `env_light` 那一处 `over`，纸箱网格和缩放逐字节相同。
+- **`render_isaac_videos.sh` 的实时渲染照用场景的 `supersample`，`--path-trace` 时改为 1。**
+  - 理由：视频和数据集、镜像用同一种外观，看视频时看到的就是策略看到的样子。路径追踪每像素 64 个样本，本身就抗锯齿，再叠 2× 会把每帧 1.5 s 变成约 6 s。
+  - 代价：1280×960 的主画面实际按 2560×1920 渲，实测见 TODO 12.19.2。
+- **视频超过数据集分辨率（1280×960 起）时也不跳过超采样（用户 2026-09-29 定）。** 代价：带小窗的整局约慢 1.7 倍（TODO 12.19.2）。
+- **编号**：分支的 TODO 第 10 节改为第 12 节，台账 `blender_scenes.md` 的分支第 2–6 节顺延为第 4–8 节；引用这些编号的地方都随之改了。STATE 用 main 的版本，加一段指向这条线。
+
+### 被否决的方案
+
+- **四边线保持旧外观（ISO 30、关 `env_light`）**：同一个房间会有两种外观，warehouse_textured 的运行和四边线的运行图像分布不同，而两边都没有需要保护的 checkpoint。
+- **只对 warehouse_textured 的无 `--scene` 默认 label 加 `_env`，`--scene` 的仍用场景名**：那样重建四边线的 stage 就会原名换灯。
+
+## 2026-09-29 images.source: unreal：Unreal 接成第三个图像来源；镜像协议与按视图补渲提成共用模块；每个场景一个关卡（分支 loco_unreal）
+
+背景：用户定把 Unreal 接成 `images.source` 的第三个值（TODO 12.9），main 会话转交本会话。用户给的做法：采集、转换、训练、评测的命令都不变，开关只决定由谁补渲数据集相机、由谁当评测镜像；`scenes.yaml` 给场景加 `unreal` 条目，没有关卡的场景写明不支持并在加载时拒绝；镜像进 src，配启动脚本；新写 Unreal 数据集补渲；`run_overnight` 按来源选；README 不加行，rendering.md 表格加一列，setup.md 加可选一步，warehouse.md 只加一句。
+
+- **客户端侧不区分 Isaac 和 Unreal。** 两个镜像说同一个协议、占同一个端口（`TF_ISAAC_MIRROR_PORT`）。
+  - 协议、请求处理和 `MirrorClient` 从 `sim/isaac/mirror.py` 提到 `sim/mirror.py`，并在那里定义 `MIRRORED_SOURCES = ("isaac", "unreal")`。
+  - `ObsBuilder`、lockstep 的取图、`vla_rounds` 的选项、单臂 lockstep 的限制都按"是否镜像类来源"判断。
+  - 理由：已有协议本来就只要求视图有 `render(qpos)`；复制一份给 Unreal 会让两边的 seq 等待、错误回复慢慢分叉。实验版 Unreal 镜像就没实现按 seq 取图，lockstep 只是碰巧对上。
+- **按视图补渲数据集提成 `sim/view_render.py`（选行、选 session、marker、渲染器和外观核对），Isaac 和 Unreal 各自只管渲染器的生命周期。**
+  - marker 记 `renderer` 和外观：Isaac 记 stage、RTX 设置、超采样；Unreal 记关卡、截图遍数。
+  - 同一 session 不许两个渲染器或两套外观混着补。
+- **每个场景一个 Unreal 关卡 `/Game/Levels/<场景名>`：房间关卡 `/Game/Levels/Warehouse` 另存为一份，再导入该场景的机器人、纸箱和三路数据集相机。**
+  - `build_level` 做的事：导出 MJCF，丢掉世界相机（四边线场景带 4 个，URLab 导入后会每帧渲染），按 `CAMERA_CONFIGS` 写相机分辨率；然后导入、上 G1 材质、去 Nanite，蓝图和关卡都存盘。
+  - `source.json` 记场景 XML 的哈希，`unreal_scene` 据此拒绝用别的场景建的关卡。
+  - 理由：四边线的纸箱尺寸不同；URLab 按 XML 文件名命名蓝图，同名导入会互相覆盖。
+- **Unreal 补渲每行都用 fresh 模式（先切镜头，再截 `repeats` 遍），和镜像一样。**
+  理由：stream 模式的画面带着前几帧的历史，补出来的图就不再只由当行状态决定。代价约 130 ms 一行，一集约 80 s。
+- **编辑器是常驻的一个进程，由 `scripts/start_unreal.sh --gpu N` 起（选卡在这里），看守脚本进仓库。**
+  - 渲染方（镜像、补渲、建关卡）自己开场景的关卡、设截图遍数、起停 PIE。
+  - 退出时先停 PIE 再断开，因为断开会把插件切回 live，PIE 在跑时插件出过段错误。
+- **Unreal 安装按仓库文件复现，除引擎本身。**
+  - `setup_unreal.sh` 按 `scripts/unreal/host/` 建宿主工程，克隆 URLab `efbc5e2` 并打仓库里的补丁，编译，建客户端 venv（mujoco 3.10.0）。
+  - 路径变量 `UNREAL_ROOT`、`UE_ENGINE`、`UE_PROJECT`、`BRIDGE_PY`、`UNREAL_ASSETS` 写进 paths.sh / paths.py。`UNREAL_ASSETS`（每个关卡的 MJCF 导出和 `source.json`）默认 `$UNREAL_ROOT/levels`，和宿主工程放在一起：关卡是全机共用的，记录也得共用。原来放在检出目录下，worktree 建的关卡主 checkout 找不到（TODO 12.9.11，main 审核时发现）。本机用 `/workspace/locomani.local.sh` 指到 `/workspace/ue_57`。
+  - 引擎要 Epic 账号登录才能下载，只能手动。
+- **URLab 的端口全部由插件 ini 的 `PortBase` 派生，默认 5800（main 审核 30cb422 时提出的阻塞项）。**
+  - 状态 = base，控制 = +1，info = +2，相机从 +3 起，step RPC = +4。补丁改插件，客户端 `editor.port_base` 读同一个 ini，只有一个数。
+  - 理由：原版写死 5555–5559（相机从 5558 往上找），正是实例 0 的端口段，而 warehouse 的实验文件都用实例 0。编辑器又是常驻的，只改 `images.source` 就会撞车。
+  - 被否决：加载时拒绝 `unreal` 配实例 0。这只是绕开冲突，还得让每份实验文件换实例。
+- **`run_overnight.sh` 的渲染卡参数改名 `--render-gpu`，旧名 `--isaac-gpu` 照收。**
+  理由：一个参数就够了，因为同一次运行只会用一种渲染器。
+
+### 被否决的方案（及原因）
+
+- **复制关卡资产（`EditorAssetLibrary.duplicate_asset`）再打开副本：** 编辑器直接退出。副本 World 留在内存，Map_Load 的泄漏检查是致命错误（EditorServer.cpp:2524）。改为打开房间关卡、`save_map` 另存，再打开副本。
+- **所有场景共用一个关卡、导入时换纸箱：** 不同尺寸的纸箱是不同的 MJCF，重导入要几十秒。评测和补渲在同一编辑器里切场景时就得来回导入，关卡和数据的对应也没法用哈希核对。
+- **Unreal 补渲用 stream 模式省时间（35 ms 一行）：** 图不再只由当行状态决定，和镜像的 fresh 图也不是同一个函数。
+- **编辑器由每个渲染脚本自己起、用完就关：** 首次起要编译着色器（几分钟），之后也要约 15 秒；关卡和 DDC 都在常驻进程里，常驻更省。
+
+### 未决（不是决策）
+
+- 还没有用 Unreal 图训练过（TODO 12.9.6）。3/3 闭环用的是 Isaac 训练的 checkpoint，属于分布偏移，不能和 Isaac 的数字比。
+- 插件段错误（TODO 12.17）的因果没查清；现在各脚本都先停 PIE 再断开。
+
+## 2026-09-29 warehouse runbook 里 Isaac 和 Unreal 是平行的两个选项，不是附加功能（用户）
+
+- **读者在开头就选渲染器**：runbook 在第 0 步之前加"先选渲染器"一节，用对照表列出两者只在哪几处不同（实验文件、安装步骤、建场景、补渲、评测镜像）。第 1、3 步和第 6 步终端 2 的命令两种并排写；其余命令只写一遍。
+  - 理由：用户指出，把 Unreal 放在第 10 节，读者要读完整个流程才知道能换渲染器，而实际上换的只是出图，和 Isaac 地位相同。
+- **选渲染器就是选实验文件**：`warehouse_smoke_unreal.yaml`、`warehouse_200_unreal.yaml` 与默认文件只差 `images.source` 和 `name`，有测试守着。
+  - 理由：沿用 `_fixed_start` 的做法（一个变体一份完整的实验文件）；让读者复制后自己改 `images.source`，还要自己起名字，runbook 里的命令就没法照抄。
+- 被否决：命令行覆盖 `images.source`。一次运行由一份完整的实验文件决定（DECISIONS 2026-09-17），加覆盖参数会让运行目录里的副本和命令行不一致。
+
+
+## 2026-09-29 /workspace 清理：主 checkout 删 165 GB（用户定）；合入与推送的做法
+
+背景：`/workspace` 只剩 22 GB（98%），主 checkout 占约 295 GB（`outputs/` 196、`third_party/` 86、`datasets/` 8）。
+
+### 决策
+
+- **A 类（96 GB），用户同意提前删：** 三个 10 步冒烟模型 `outputs/runs/*_smoke/model/`，以及 `docs_smoke_20260928/try2` 里的那一个。
+  - 理由：10 步的 checkpoint 不会抓，没有用处；STATE 早已登记（TODO 9.9）。
+  - `try2` 的其余约 0.3 GB 留着，是 runbook 数字的证据。
+- **B 类（69 GB），用户说"都删掉吧"：**
+  - 65 个扫参和对照运行的 `observations/`：结论已进台账，manifest、trace、视频、日志都保留。
+  - `box_room_grasp_200_cap120_20260925/observations`：这 200 条从此不能再补渲，要用新外观或 Unreal 重训就得重新采集。它的 `checkpoint-5000` 和 `train_dataset` 保留。
+  - `third_party/EmbodiedGen/weights/sam-3d-objects`：只在重新生成场景时用，可以重新下载。
+  - `datasets/` 里的旧专家数据：09-25 已定作废。只留 `g1_locomani_cover400_train/meta/`，因为 `rtc/transition_events.py` 读它的 `info.json`。
+- **删法：** 按明确的路径清单用脚本删，脚本拒绝软链接、清单外的路径和解析到仓库外的路径。清单、脚本和日志在 `outputs/cleanup_20260929/`。
+  - 理由：09-09 那次 `git add -A` 事故之后的规矩；清单也是删了什么的记录。
+- **合入与推送：** 分支先由 main 审核，发现问题退回分支会话修，修完再合；推送前 fetch，远端有新提交就 merge（这次是 henry-zhao 的 bfe95bb），不 rebase；推送要用户每次说。
+
+### 被否决的方案
+
+- **删 `third_party/SIMPLE/.venv`（20 GB）、`GR00T-WholeBodyControl`（20 GB）、`Isaac-GR00T`（16 GB）：** 分别是 Isaac 的运行环境、仿真与 deploy、训练环境，都在用。
+- **删 `third_party/SIMPLE/data`（12 GB）：** 没查清哪些部分还在用，没列入。
+- **删 09-28 的四边线 pilot 和 `skills_*` 运行：** `loco_agent` 会话还在往后者里写。
+- **第一次审核时先合 30cb422、端口问题以后再修：** 默认的 warehouse 实验文件用实例 0，编辑器常驻时评测起不来，"只改 `images.source`"这件事对默认文件根本不成立，所以作为阻塞项退回。
+
+
+## 2026-09-29/30 第三视角录像按 `images.source` 的渲染器画，只在跑一条独立命令时画（用户）；冒烟最多 3 批
+
+背景：用户先要 warehouse 采 5 集，并看 MuJoCo、Isaac、Unreal 三种渲染的第三视角。当时只有 MuJoCo 录像进数据集，Isaac 只有并排录像，Unreal 只有实验脚本；三者机位不同，Unreal 没有 ghost 夹爪。
+
+### 决策
+
+- **第三视角录像由 `images.source` 的渲染器画，采集和评测都是（用户 2026-09-29）。**
+  - 理由：用户要"跟 ego、双腕同一种渲染"。策略看的是哪个渲染器的图，给人看的第三视角就用哪个。
+- **三种渲染器同一个机位：`sim/third_person_shot.py` 的 `round_camera`。**
+  - 四边线场景用每局走入那条边的 `edge_<边>`；别的场景用 `video_camera`；都没有就跟随骨盆。
+  - 每帧相机位姿由 MuJoCo 的 `mjv_updateScene` 算出，交给渲染器；帧取 trace 每 4 行一帧（12.5 fps，720×540）。
+  - 理由：`render_trace_videos.py` 本来就用这个机位，三路逐帧对齐。
+  - 核对：MuJoCo 用这个位姿重渲，与原录像只差编码噪声。
+- **Unreal 的相机和 ghost 是导入里的自由刚体（`export_mjcf`），平时停在地板下 5 m。**
+  - 理由：URLab 只按导入的 qpos 摆东西。数据集关卡本身就带着它们，不用另建一个关卡。
+  - ghost 用网格副本和单独材质，这样能单独做半透明，不影响机器人材质。
+  - 核对：ghost 摆在手腕位姿时与真夹爪重合，误差 0 mm。
+- **小窗有两个来源。**
+  - 这个渲染器补渲过的局，取数据集里的帧，也就是策略训练用的图。
+  - 其余的局（没补渲的、评测的），由同一个视图现渲，也就是镜像给策略的图。
+  - Isaac 挂上第三视角相机后不能再渲数据集相机，所以先把所有要现渲的小窗渲完，再逐局拍第三视角。
+- **一条独立命令 `scripts/render_third_person.sh <run> [--gpu] [--eval] [--all] [--dry-run] [局名]`（用户 2026-09-30：协作者要的是这个）。**
+  - bash 只按 `images.source` 选 venv，其余在 `sim/render_third_person.py` → `view_render.film_rounds`。
+  - 新增 `sim/mujoco_view.py`，`mujoco` 运行也用同一条命令。
+  - 补渲只填三路相机。convert 只从 `videos_<渲染器>/` 取录像：有就链接，没有不要求，也从不改用别的渲染器的录像。
+  - 已渲过的局跳过，所以重跑能续上。
+- **USD 的 `MakeVisible()` 不能用来撤销 `MakeInvisible`，要把 visibility 设回 `inherited`。**
+  - 理由：机器人层的 `/visuals` 本身是隐藏的。对一个子节点调 `MakeVisible()` 会把整个 scope 显示出来，同时把其余子节点全部设成隐藏。
+  - 后果：第一版 Isaac 录像里整台机器人只剩头；这些录像已删掉重渲。
+- **`build_level` 先去 Nanite，再上材质。**
+  - 理由：Nanite 网格配半透明材质，编辑器下一帧就断言崩溃（NaniteShading IsSupportedBlendMode）。
+- **合入 henry-zhao 的提交（包括他新写的 runbook 第 7 步"第三视角回放视频"）时，两边的意图都保留。**
+  - 他那节里"采集和评测都不录第三视角""Unreal 没有回放"两句已不成立，按事实改了。
+  - origin/main 自带两处检查失败：一个 README 片段没按 ruff 格式化；一个测试里写死了冒烟保留"2 条"。这两处在合并提交里修了，合并信息里写明。
+- **`warehouse_smoke` 的 `max_batches` 从 2 改为 3（用户 2026-09-30）。** 三份冒烟文件一起改，因为有测试要求它们一致。
+  - 理由：两批 20 局实测保留 11 条和 8 条，凑不够时 `run_overnight.sh` 停在采集。第三批多约 6 分钟。
+- **runbook 的冒烟耗时改用 2026-09-30 两种渲染器整条实跑的数字。**
+  - 计时明细在 `outputs/warehouse_smoke_timing_20260930/timing.tsv`。
+  - 两次运行名都带日期，因为 `warehouse_smoke` 这个名字已被旧运行占用（TODO 10.4 待用户定）。
+
+### 被否决的方案
+
+- **实验文件开关 `images.third_person`**（`4144452`，已推送，`5b869dd` 撤回）。
+  - 否决理由：用户说协作者要的是一条跑了就出录像的独立命令，不是采集前要写进配置、跑到一半改不了的开关。
+  - 这个开关还把录像绑在补渲步骤上。
+  - 撤回后，带这个键的旧运行副本照样能读，读的时候把键丢掉。
+- **补渲时顺带画第三视角、convert 缺录像就拒绝**（`7f8f4b5` 的做法）：同上。不需要录像的人也得为它花时间，只要一局没画就整次转换失败。
+- **按渲染器分开的评测录像脚本 `render_eval_videos_{isaac,unreal}.sh`**（`b4cddc1`）：已并入那一条命令的 `--eval`，一条命令就够了。
+- **单独建一个带机位的 `<场景>_video` Unreal 关卡**（09-29 的实验脚本）：会和数据集关卡分叉；而且当时 ghost 缺失，需要另建。
+- **统一用 Isaac 的跟随机位**（09-29 三路对比视频用过）：要么 MuJoCo 回放改机位，要么 Unreal 另做移动相机。最终统一用 MuJoCo 录像已有的边机位。
+- **Isaac 或 Unreal 运行缺第三视角录像时，改用 MuJoCo 的 `videos/`**：违背"和策略的图同一个渲染器"。
+- **Unreal 的相机和 ghost 用 mocap 刚体**：URLab 的 puppet 模式只推 qpos，mocap 位姿不在 qpos 里。
+- **每局都现渲小窗**：补渲过的局重复渲染，每局多约 75 秒（Isaac）；数据集里已经有完全相同的图。
+
 ## 2026-09-29 Q11 失败注入配对比较（TODO 8）：注入层落地，两轮跑完，卡在蠕变 × 决策延迟
 
 ### 目标与约束的变化
@@ -962,6 +1473,42 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 ### 未决（不是决策）
 - 8.3.5 三选一：sim 指垫接触调硬（唯一治蠕变，改物理）/ 藏决策延迟（Q5 提前规划，或 haiku 3–4 s，仍 > 1 s）/ executor 两次调用间的"保持"步（未测）。建议先用 30 s 干等探针量滑移曲线、试深合爪，30 分钟知道第三条行不行。
+
+## 2026-09-30 三个 runbook 只留命令、一句解释和总耗时；warehouse 的 Unreal 在每一步都和 Isaac 平行（用户，一轮问答定）
+
+- **每条命令的解释是硬规则**：做什么一句（什么进程、哪张卡、何时返回或怎么停），得到什么一句（主要产物、总耗时），可选参数各一行。随机范围、通道数、session 目录、回放原理、带日期的历史数字，移到各线的详解页（`warehouse_design.md` 第 10 节）或已有的 `running.md`。
+  - 理由：用户指出 warehouse.md 的解释又长回来了。09-28 定的"只要命令和简要解释"没有可检查的尺子，每次加功能都在命令后面补一段。
+- **耗时只写每步总数**，页首一句写明是哪天照这一页实跑的（warehouse 2026-09-30，bottle、crate 2026-09-28）。逐局、逐帧的拆分进详解页。
+- **行数上限改成改写后的实际行数加约 10%**（warehouse 215、bimanual 125、single_arm 115，`lint_repository.py`）。上次是靠抬高上限容纳新增的解释。
+- **warehouse 用运行名变量**：第 0 步设 `RUN=warehouse_smoke`（Unreal 是 `warehouse_smoke_unreal`），共用命令都写 `$RUN`；和渲染器有关的命令在同一步里并排两条。
+  - 理由：共用命令写死 Isaac 的名字、再用一句话让 Unreal 读者自己替换，这正是"Unreal 不平行"的来源之一。bottle、crate 没有二选一，照旧写死名字。
+- **第 7 节只留 `render_third_person.sh` 一条（Isaac、Unreal 同一条）和 MuJoCo 快速回放**。新增 `--side-by-side`：左边 MuJoCo 回放，右边所选渲染器，同一机位逐帧对齐，写成 `<局>_vs_mujoco.mp4`。`render_isaac_videos.sh`（跟拍机位、路径追踪）移出 runbook，留在 `rendering.md`。
+  - 理由：第 7 节不平行，是因为只有 Isaac 有并排回放。用户选了"给 Unreal 也做一个"；两边用同一个机位，并排只要拼接，不用新写渲染，而且一条命令就对两个渲染器都成立。
+  - 被否决：照搬 `render_isaac_videos.sh` 写一个 Unreal 版。两份脚本各自维护，第 7 节仍是两条渲染器专用命令。
+  - 名字不用 `_side_by_side`：`previews_isaac/` 里跟拍并排的预览已经叫这个，第一次实跑时同名预览把它们替换掉了（已从原片重建）。
+- 验证：`--side-by-side` 在两份冒烟（`warehouse_smoke_20260930`、`warehouse_smoke_unreal_20260930`）上实跑，Isaac 11 局约 50 秒，Unreal 8 局连同先渲 MuJoCo 回放约 1 分钟；Isaac 另实跑一局"先拍再拼"（Kit 关闭即退出进程）。warehouse 每条命令代入两个 `$RUN` 跑了 `--dry-run`：不报错，或只报设计好的拒绝（渲染器不符、镜像要先起评测栈）。bottle、crate 的命令没变，没有重跑冒烟。
+
+## 2026-09-30 真机 URDF（saturn）试接入后整体回退（用户）；runbook 改写补记两条否决项
+
+- **目标变化：暂时不用 cheng.zhao 给的真机 URDF**（`assets/unitree_G1`，henry-zhao 的 `21a85af`）。用户说协作者给错了文件；仿真继续用 SONIC 自带的 G1 接 Dex1（`make_dex1_model.py` 的 stock 模型）。
+  - 已做的 saturn 接入全部回退，没有提交过。改动存成 `outputs/g1_urdf_compare_20260930/saturn_urdf_work.patch`（16 个文件，在 `34fcd13` 上 `git apply --check` 通过）。
+  - `assets/unitree_G1` 本身留在仓库里：删它要在 main 上另提交，归用户或协作者定。
+- **和那份 URDF 无关、用户确认过的真机事实**：
+  - 踝关节力矩的固件上限是 35 N·m；仿真的 stock 模型是 50。
+  - VLA 的第一视角是头顶云台上的相机（用户起初说是头部里的 D435，后来更正）。URDF 和 robot.yaml 都说云台上是 D455，用户称它 D435；型号未定，决定内参（D435 竖直视场约 42.6°，D455 约 65°）。真机内参没给过。
+- **正确的 URDF 来了再接时，沿用这些做法**（都在 patch 里）：
+  - saturn 模型是在 stock dex1 模型上写入 URDF 的数值（运动学、质量、力矩上限、网格、相机），不是直接编译 URDF。理由：执行器和传感器的顺序、关节的 armature/damping/frictionloss、脚底碰撞盒都不变，SONIC 的仿真桥不用改；生成时拿 URDF 自检（正运动学误差 < 1e-6 mm，质量、力矩上限一致）。
+  - 另起一个机器人模型、由场景选（`build_sim_scene.py --robot`），不覆盖 third_party 里的默认模型。理由：那个文件被这台机器上所有 checkout、正在跑的栈和 Isaac/Unreal 的机器人导入共用，覆盖等于一次改掉所有东西，还让已有标定失效。
+  - 力矩上限从场景自己的执行器读（`scene_lib.motor_effort_limits`），不再从 WBC yaml 的 43 项列表切。
+  - 头部云台锁在零位，不加关节。理由：加关节会让 qpos 编号后移，Unreal 关卡也会报不认识的关节。
+- **被否决的方案**：
+  - 直接用 MuJoCo 编译 URDF 当仿真模型：URDF 里没有执行器和关节阻尼，碰撞体和 SONIC 调过的不同，执行器顺序也要重排。
+  - 就地覆盖 `g1_29dof_with_dex1.xml`：见上。
+  - ego 相机用头部里的 D435：用户更正为云台相机。两者位置差 4–5 cm、俯角差 0.3°，在 bottle 场景里看到的几乎一样（瓶子开局都在画面上缘外）。
+- **在那份（错的）URDF 上量到的，只作参考**：SONIC 驱动加重的身体 10 局不倒；bottle 专家在 D435 视野下 0/10，都卡在开局视野门；换回 stock 相机 6/10，stock 身体 9/10（两者物体位置不同，不是配对比较，p = 0.30）。产物在 `outputs/g1_urdf_compare_20260930/`、`outputs/scene/sim_lowcom_saturn*`、三个 `outputs/runs/bottle_*_pilot_20260930`。
+- **runbook 改写（同日上一节）补记的否决项**：
+  - MuJoCo（单卡）升成和 Isaac、Unreal 平行的第三列：这次只解决 Unreal 不平行；也没有 mujoco 版的实验文件，没实跑过。仍是第 10 节的一小段。
+  - 三页冒烟从头重跑、或让隔离环境里的新读者照着跑：bottle、crate 的命令没变，warehouse 只改了写法和第 7 节，只验证改动部分；整条重跑要几个小时的卡时间。
 
 ## 2026-09-30 8.3.5：掉罐是 deploy 1 s 规划器超时，不是蠕变；保活后 Q11 第四轮 4 : 0
 
@@ -996,6 +1543,24 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 ### 未决（不是决策）
 - TODO 8.6：Q11 下一步——加配对数、先提 `grasp_single` / `place` 成功率，或按"方向一致 4 : 0、p 0.125"收尾。
+
+## 2026-10-01 G1 材质改成 v4a，Isaac 和 Unreal 共用一处定义，数据集三路相机和第三视角都用它（用户）
+
+- **目标变化**：用户看了 URLab 的 hero 图（插件 README 的 `docs/images/hero.png`；本机副本 `assets/hero.png` 未入库），嫌我们的机器人像灰色喷漆。在 Unreal 里一次改一项做了 A/B（`outputs/g1_look_ab_20261001/ab_sheet.png`），选了 v4a。之后 ego、左右腕和第三视角**全部**用它，Isaac 用同一组数值。这次用户明确要连数据集画面一起改，不只是给人看的视频。
+- **决策**：
+  - 数值只在 `src/locomani/sim/robot_look.py` 定义一次（`NAME = g1_gloss_20261001`）：外壳 metallic 1、roughness 0.45、底色 0.675；深色件按黑塑料，metallic 0、roughness 0.35、底色 0.03。Isaac 的 `stage.G1_LOOKS` 由它生成；Unreal 的 `robot_materials.py` 不再自带预设，由 `build_level` 把它传进去。理由：两边各存一份数值，迟早会改了一边忘了另一边。
+  - Unreal 关卡的 `source.json` 记下 `robot_look`。外观名对不上时，`run_context.unreal_scene` 拒绝并提示重建关卡。理由：Unreal 的材质是建关卡时存进去的，代码改了关卡不会跟着变。不检查的话，数据集标记里写的是新外观，画出来的却还是旧的。
+  - 两个渲染器的数据集补渲标记都加了 `robot_look`。`view_render.plan` 拒绝的原因信息里会写出哪一项对不上。没有这个字段的旧标记，按另一种外观处理。理由：材质也决定像素，和 RTX 设置、关卡是一类东西，不能让一个会话混着两种机器人。
+  - 外壳 roughness 选 0.45，不选 0.35：低于约 0.5 时，720×540 的画面里外壳会起颗粒。重算法线后颗粒指标没变（2.41 → 2.41），32 次采样也只从 4.1 降到 3.8。另外，Lumen 只对 roughness < 0.4 的表面单独追踪反射。
+- **被否决的方案**：
+  - 加一盏低角度侧面硬光（40k / 160k / 400k cd）：机器人被打得更白，白纸箱和白墙过曝，出不来 hero 那种明暗对比。
+  - 只改给人看的第三视角视频（拍片时临时切材质）：用户先选过，随后改为全部都用 v4a。
+  - 在 `robot_materials.py` 里保留旧预设（`unitree`、`mujoco`、`metal`）供切换：只在文档里留作记录。要复现旧外观的话，git 里有当时的数值。
+- **数值相同，画面不完全相同（实测，`outputs/g1_look_v4a_check_20261001/`）**：同一局同一时刻，Unreal 腕部相机里夹爪接近黑色，Isaac 里是中灰（夹爪顶板中位数 136/255）。
+  - 底色从 0.03 降到 0：顶板只从 136 变到 108。把 Isaac 的间接光倍率从 2 改回 1：从 136 变到 135。
+  - 所以灰色主要不是漫反射，而是这块黑色电介质的镜面反射（F0 0.04）映出了白色房间。两个渲染器的反射算法不同（RTX 实时模式 vs Lumen），得到的亮度不一样。
+  - 旧的 `unitree` 外观在 Isaac 里也是这样。按用户要求两边用同一组数值，没有给 Isaac 单独调暗。
+- **后果**：2026-10-01 之前的数据集和 checkpoint 看到的都是旧外观（09-29 到 10-01 是 `unitree` 外观，09-29 之前是发白的）。镜像现在画新外观，拿旧 checkpoint 评测，图像分布就变了。Unreal 的 5 个关卡要重建，origin 上 1280×960 的第三视角本来也要求重建。
 
 ## 2026-10-01 TODO 1–3 收尾：重构遗留做完，单边 warehouse 九个旋钮 A/B，相位刹车只在长助跑下成立
 
@@ -1050,6 +1615,25 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 ### 被否决的方案（及原因）
 - 把 `take_over` / `hand_back` 也藏进 executor（目录 → 11）：等于推翻 D5，待用户定。
 
+## 2026-10-02 mars（henry 带腕部相机的真机 URDF）设为 bottle / warehouse 的默认机器人（用户，逐项问答定）
+
+- **目标变化**：用 henry 的 `cb3ae2f`（`assets/unitree_G1_with_wrist_camera`，robot.yaml 名 mars）做 bottle 和 warehouse 两条线的默认机器人，Isaac、Unreal 的机器人一起换。09-30 回退的 saturn 做法整体沿用（见 2026-09-30 一节）。
+- **决策**：
+  - 新场景另起名字，原名不动：`bottle_mars`、`warehouse_textured_mars`、`box_platform_mars`、四个 `warehouse_box_*_mars`。"默认"指示例实验、runbook 和文档改用这些名字。理由：`configs/scenes.yaml` 的规矩是一个名字永远指向同一个目录，旧运行的后续阶段按名字重新解析场景。被否决：原名改指 mars、另加 stock 名（用户先选过，发现与这条规矩冲突后改选新名）。
+  - 生成：`make_dex1_model.apply_mars` 把 URDF 的运动学、质量、力矩上限、网格、相机写进 stock dex1 树；warehouse 的场景包内嵌机器人，由 `prepare_logistics_scene.py --robot mars` 在生成时整段改写，场景包本身不动。被否决：重导场景包、warehouse 改由 `build_sim_scene.py` 搭。
+  - 运动学、质量、力矩全按 URDF（踝和腰 roll/pitch 35、髋 roll 139、腕 pitch/yaw 13.4 N·m）。理由：默认就是真机。
+  - 保留 stock 的：执行器顺序、关节阻尼、脚底碰撞盒、夹爪关节名和手指几何、相机名、骨盆碰撞（URDF 骨盆网格的凸包在 3000 个随机髋部姿态里碰髋 roll 706 次，stock 轮廓 120 次，站姿附近 2 次）。与 stock 文件逐字节相同的 30 个网格保留 stock 网格名（bottle 防护按网格名放行 `Dex1_base_link`，改名后误判过一局）。
+  - 相机：ego 用云台上的 D455，云台俯仰锁 +4.71°，光轴正好是 stock ego 的 52° 俯角（用户："和之前相机能看到的角度差不多"）；腕部相机在 URDF 的 D405 位姿。URDF 目录里没有内参（calibration 只有 livox→D435 外参，`mjmodel.mjb` 无相机），视场用规格书值、按 4:3 保留竖直视场：D455 fovy 65、D405 fovy 58。相机名不变，靠 `scene_meta.json` 的 `robot` 区分。
+  - D405 支架参与碰撞（真机会撞）。
+  - 外观：手腕三节、Dex1 底座、D405 支架画黑（用户确认真机如此，`robot_look.DARK_MESHES`）；手指沿用 stock 颜色；D405 机身、云台、D455 按颜色阈值分。外观名 `robot_look.NAME` 不改：stock 的数值没变，改名会让现有 5 个 Unreal 关卡全部被拒（问答时说过要改名，实施时改为不改，mars 由 `robot` 字段区分）。
+  - `scene_meta.json` 记 `robot`；Isaac/Unreal 的 `source.json` 和补渲标记也要记，对不上就拒绝（未做，TODO 13.6.6）。
+  - 几何测试样例换成 mars 机器人。stock 场景只在 MuJoCo 跑配对对照，不做 Isaac/Unreal 版本。
+  - 验收：bottle、warehouse 各 10 局配对试跑，按阶段看有无明显退步；第 2 步后停下给用户看再建 Isaac/Unreal。真机内参确认前不大规模采数据。
+- **实测（`outputs/mars_pilots_20261002/`）**：
+  - bottle：stock 9/10，mars 9/10（各一局不同的失败）。
+  - warehouse：stock 6/10，mars 0/10（reach_stalled 7）。单变量对照（各 10 局，同种子）：腕力矩 5、支架不碰撞、stock 相机、stock 质量、stock 运动学、踝 50 都是 0/10；全部力矩恢复 stock 3/10；只把腰 roll/pitch 恢复 50 是 5/10。35 N·m 下每局腰俯仰塌到约 35°（限位 29.8°），stock 抓箱时最大 20–25°；stock 成功姿势光重力就要腰俯仰 p95 39、最大 41 N·m。warehouse 怎么办待用户定（TODO 13.6.4）。
+- **追加（同日，用户）**：mars 的腰 roll/pitch 改用 50 N·m（`make_dex1_model.MARS_EFFORT_OVERRIDES`），其余力矩仍按 URDF。理由：35 N·m 下 warehouse 0/10、手抖 9.4 mm；35 是 URDF 和 Unitree 官方 `g1_29dof_mode_15_with_dex1_1.urdf` 的值，SONIC 自带模型是 50。代价：仿真的腰比真机描述文件强，专家的前倾姿势（腰俯仰约 39 N·m）在真机上可能撑不住。重跑 warehouse 6/10（stock 6/10），手抖 2.8 mm；mars 的 4 局失败都是抬起后单手脱开，待查（TODO 13.6.4.1）。被否决（暂缓）：改专家少弯腰。
+
 ## 2026-10-02 scene_discovery Demo 1：场景 → 自动发现任务 → 技能组装采集 → VLA（纯仿真）
 
 用户与我三轮 grilling，19 项全部按推荐定，完整决策树、节奏和待实测分支在 `docs/handoff/scene-discovery-plan-20261002.md`，此处只记要点：
@@ -1057,6 +1641,56 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 输入是带出处的场景描述文件（ADT 公寓是第一份），任务 = 目标谓词 + 多句说法，能力说明文件 + Claude 提议 + 程序检查分三桶；
 采集用 Claude 写的固定 plan（试跑 ≥ 3/10 放行），新技能按缺口报告排序（2–3 个人造、1 个 Claude 尝试，同一门槛）；
 栈全部冻结；每轮 ≤ 25 任务 × 100 局、2 个种子；ADT 衍生物不进 git（许可禁止分发）。Q11 同日收尾（pick_place 台账 §16）。
+
+## 2026-10-03 mars 外观与 stock 对齐（头顶相机银白、骨盆银色）；35 N·m 是 Unitree 官方数值
+
+- **目标变化**：用户要求 mars 与 stock 相同的部位外观一致。
+- **决策**：
+  - 骨盆 `pelvis_ver0529`（腿和上身之间的三角件）画外壳银色。新增 `robot_look.SHELL_MESHES`，与 `DARK_MESHES` 相对，按网格名强制为外壳色。理由：用户指定。URDF 和 Unitree 官方 URDF 都把它画成黑色，所以必须靠名单覆盖，不能按 URDF 颜色走。
+  - 骨盆保留的 stock 碰撞外壳（`pelvis_contour_link`）取骨盆可视网格的颜色。理由：MuJoCo 的相机也画碰撞体（第 0 组），颜色不同的外壳会从骨盆里透出来，之前就透出过一个白盒。
+  - 碰撞体一律取所在部件第一块可视网格的颜色（10-02 已做）。理由同上，手腕和 D405 支架才能在 MuJoCo 画面里也显示为黑色。
+  - 头顶云台上的 D455（`head_tilt_link`）保持 URDF 的银白色。理由：用户确认真机如此。
+- **被否决的方案**：
+  - 把头顶相机涂黑（`ed26ed2` 做过，`239b7f1` 撤回）。理由：用户说"头部发白"指的不是它，真机相机是银白色。下个会话不要再把"头部发白"理解成这台相机。
+  - 骨盆按 URDF 画黑（`ed26ed2` 的做法）。理由：用户要求银色，和 stock 的浅色骨盆外圈一致。
+- **事实（已确认，影响以后决策）**：
+  - 腰 roll/pitch 和踝 35 N·m、髋 roll 139、腕 13.4 是 Unitree 官方 `unitree_ros` 的 `g1_29dof_mode_15_with_dex1_1.urdf`（`assets/dex1/`）里的数值；SONIC 自带模型是 50/50/88/5，用的是另一套腰和躯干网格（带 `waist_support_link`，不是 `rev_1_0`）。所以仿真的腰用 50 是比真机描述文件更有力的设定（TODO 13.6.11）。
+  - mars 的测试样例场景加载 0.19 秒（stock 0.09 秒），`test_offhand_guard_reuses_current_observation` 的 0.2 秒过期判断因此时好时坏；已改为加载完再打时间戳。
+
+## 2026-10-03 warehouse 线换成 mars 机器人，Unreal 作默认出图（用户）
+
+- **目标变化**：用户："现在只改 warehouse 这条线，保证这条线中的机器人资产建好，unreal 关卡建好，unreal 作为默认的渲染数据来源"。bottle、crate 本次不动（同日先问过三条线一起切，用户选只做 warehouse）。
+- **决策**：
+  - runbook 用新的实验文件：`warehouse_mars_smoke`、`warehouse_mars_200`（Unreal），`warehouse_mars_smoke_isaac`、`warehouse_mars_200_isaac`（Isaac），`warehouse_mars_smoke_fixed_start`（Unreal）。默认渲染器不加后缀，另一个加 `_isaac`。理由：`warehouse_smoke` 已有运行目录，改原文件会被 `config.yaml differs` 拒绝，而且一个名字的意思不该变；stock 的文件全部保留。
+  - Isaac 机器人资产按机器人分开存：stock 仍是 `assets/isaac/robot/g1_dex1.usda`，mars 在 `assets/isaac/robot/mars/`（`build_isaac_assets.sh --robot mars`，`scenes.yaml` 的 `isaac.build` 先跑它）。`stage.robot_usd` 按场景 `scene_meta.json` 的 `robot` 选。stage 本身不含机器人，四个 mars stage 是房间加纸箱，look 与 stock 相同。
+  - Isaac stage、Unreal 关卡的 `source.json` 和两种补渲标记都记 `robot`，`run_context._require_robot` 对不上就拒绝（TODO 13.6.6）。没有这个字段的旧文件按 stock 读，旧关卡和旧数据照常可用。
+  - `warehouse_textured_mars` 不建关卡，只作四个 mars 纸箱场景的底，`unsupported` 写明。
+  - `scripts/unreal/editor_guard.sh` 的卡死判断改看编辑器自己的 GPU 占用（`nvidia-smi pmon`，没有 pmon 时退回整卡）。理由：本机 GPU 1 和别的项目共用，冒烟采集时它们把整卡跑到 96%，空闲编辑器日志 97 秒没写，被当成卡死杀掉，补渲连不上编辑器。CPU 打满的判断同理加了一条：编辑器自己要用到至少 1 个核才算（17:32 转换和别的项目把配额用到 14.4 核，空闲编辑器被杀）。
+  - runbook 里 `start_unreal.sh --gpu 0` 改为 `--gpu 1`，Isaac 补渲 `--gpu 0` 改为 `--gpu 1`：正文一直写渲染器在 GPU 1，命令和它不一致。
+- **范围（同日，用户）**：不训练、不评测，只要采集流程（runbook 第 1–4 步）的代码和文档合规。冒烟跑到转换为止，第 5–7 步的命令只改了文字、没有实跑。
+- **被否决的方案**：原文件 `warehouse_smoke` 等改指 mars（理由同上）；Isaac 版 mars 暂不建（用户要"机器人资产建好"，仓库里这个词指 Isaac 机器人 USD，TODO 13.6.5）。
+
+## 2026-10-03 warehouse 默认只从托盘 −y 边（ym）走入（用户）
+
+- **目标变化**：用户："双臂采集的默认设置是从 warehouse 的墙的一边开始初始化，而不是从四面墙"，选"只走一条边、其余仍随机"（另一选项是 `*_fixed_start` 的固定起点），边用 ym。
+- **决策**：`warehouse_mars_smoke`、`warehouse_mars_200` 及两个 `_isaac` 版改 `task.visual.start_edges: [ym]`；起点距离（0.6 m 到 ym 空地 − 0.25 = 1.035 m）、朝向 ±20°、横移、纸箱 setback/偏角/沿边位置的范围都不变。stock 的 `warehouse_smoke`、`warehouse_200` 保持四边，作为 09-28 四边线的记录。理由：ym 是场景自带起点所在的边，09-28 分边试跑合并 ym 11/19，四边里最高。
+- 当天四边配置跑过的 `outputs/runs/warehouse_mars_smoke` 改名为 `warehouse_mars_smoke_4edges_20261003`（没删），让 runbook 的运行名能直接用，不撞 `config.yaml differs`。
+- `collect.layout_reminder` 的提示行原来说"四边是默认"，改为按当前文件说出另外两种摆放。
+- 未验证：只走 ym 的 mars 没实跑采集，只用 `--dry-run` 看了每局摆放（全部 ym，起点上限 1.035 m）。
+- 2026-10-04：henry 的 `f156df1`（提交说明只写加入新 URDF）把 `warehouse_mars_smoke` 改回四边，注释仍写只走 ym；用户：改回去，还是只走单边。同时用户把 `docs/warehouse.md` 的行数上限从 220 放宽到 300（`lint_repository.py`）。
+
+
+## 2026-10-03 mars 腰部：弯腰测试、抖动机制、50 N·m 的来源（事实，供 13.6.11 决策用）
+
+- **起因**：用户问真机腰是不是 35 N·m，协作者用 pico 遥操 SONIC 在真机上能弯到近 80° 且手不抖，怀疑仿真设置错。
+- **结论**：仿真的关节设置没查出错（截断走场景 ctrlrange，armature 0.01、阻尼 0.05、摩擦 0.2、2 ms），抖不抖只取决于静态负载是否超过腰力矩上限，和弯多深无关。腰俯仰关节限位 29.8°，80° 的大部分来自髋；腰的负载由躯干前倾、手伸到哪、手里有没有东西决定。
+- **事实（已确认，`outputs/mars_pilots_20261002/{waist_load,bend80}/`）**：
+  - 静态负载（mars）：80° 手垂地 36 N·m，30° 手前伸托箱 41，50° 手前伸托箱 51，80° 手水平前伸 52。专家录过的 10 局 p95 44，29% 的帧 > 35。
+  - 仿真实测（SONIC v1.1 POSE 流，各 1 次，无负载）：腰 50 手垂地 76° 纹丝不动（0.0 mm）；腰 50 手前伸 13 mm、腰 35 手垂地 4 mm、腰 35 手前伸 31 mm 抖动，都是 2–4 Hz 的松弛振荡：截断后 PD 没有刚度也没有阻尼，躯干 0.1 s 塌到限位，骨盆被反踢 8°，弹回到负载低于截断处，策略再用髋压前倾，周而复始。
+  - 腰 kp = 2×STIFFNESS_5020 = 28.5 N·m/rad，所以扛 36 N·m 时策略把腰目标放在实际角度后方约 73°。
+  - 50 N·m 的来源：SONIC 训练配置（`gear_sonic/.../robots/g1.py`，改自 BeyondMimic）和训练 URDF `main.urdf`（rev 1.0 腰几何）都是 50，即 2 台 5020 × 25；Unitree 旧版 `g1_29dof.urdf` 50、所有 rev 1.0 文件 35。所以是 SONIC 训练时的腰比 Unitree 描述文件强，不是我们设错。deploy 只发目标角和 kp/kd，不截断力矩，真机上限由固件定，没人确认过腰的。
+- **被否决的方案**：把 30 局 / 更多重复当作必要再下结论——用户只要机制解释，未扩大试验；"仿真设置不对"的假设被上面的检查排除。
+- 真机核对办法见 TODO 13.6.11.5（协作者记 13/14 号电机 `tau_est`）。
 
 ## 2026-10-03 scene_discovery：渲染器定为 Isaac；ADT 公寓转换完成（TODO 9.6）
 
@@ -1141,6 +1775,32 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **把放置带收窄到 0.30–0.40**：脉冲停在 0.41 被拒（第三版）；改成 0.30–0.42（近边要留，太近手臂缩不回）。
 - **抓住率低归因于出生点改动**：Fisher p = 0.17 不显著，后来查明由罐子的随机朝向决定（长边对手时夹不住），出生点不背锅。
 
+## 2026-10-04 mars 小臂（5010 手腕）改银色（用户）
+
+- **目标变化**：用户："新的 urdf 的手臂是黑色的，但是旧的 urdf 是银色的，把新的 urdf 的手臂颜色改成银色"。
+- **决策**：`robot_look.DARK_MESHES` 去掉左右三节 `*_wrist_{roll,pitch,yaw}_link_5010`，只留 Dex1 底座和 D405 支架；手腕按 URDF 自身的白色（0.7）画外壳银，碰撞体随之同色。推翻 2026-10-02 "真机 5010 手腕是黑的" 那一条。外观名 `robot_look.NAME` 不改，同 10-03 骨盆改银色的做法（mars 还没有训练过的 checkpoint）。
+- **事实**：重建后 7 个 `*_mars` 场景和几何样例与旧版只差手腕 rgba 0.2→0.7（以及 henry 10-03 的支架碰撞体 group 3）；MuJoCo 对比图 `outputs/mars_arm_silver_20261004/compare_{before,after}.png`。
+- **未做**：4 个 Unreal 关卡没重建（场景哈希不符时运行会拒绝）；10-03 mars 冒烟数据集是黑手腕外观。
+
+## 2026-10-04 外壳材质按真机照片调成缎面银；mars 腰部电机和骨盆改黑（用户）
+
+- **目标变化**：用户觉得银色金属反光太强（ego 画面里的手臂），给了真机照片 `assets/mars_real_model.jpg`，要求外壳材质尽量接近；又按照片把腰部电机和骨盆改回黑色。
+- **决策**：
+  - `robot_look.SHELL` 改为 metallic 0.75、roughness 0.6、底色 0.45（中性灰，原来略偏蓝）；外观名 `NAME` 由 `g1_gloss_20261001` 改为 `g1_satin_20261004`。stock 和 mars 共用这组值，Isaac 和 Unreal 也共用。理由：照片里是同一种外壳；用户选"最接近图片的一个"。
+  - mars 的 `waist_yaw_link_rev_1_0`、`waist_roll_link_rev_1_0` 加入 `robot_look.DARK_MESHES`（URDF 画白，照片里是黑）；骨盆不再强制银色，按 URDF 的深色画，`SHELL_MESHES` 删除。推翻 2026-10-03 的"骨盆银色"。
+- **怎么比的**：Unreal 里摆和照片相近的正面机位，19 组（metallic 0.5/0.75/1.0 × roughness 0.5/0.6 × 底色 0.45/0.55/0.675，加原生产值）；曝光不同，所以只比"银色部位亮度 ÷ 同画面白墙亮度"（照片 0.62–0.83）和表面均匀度（变异系数）。结果和脚本在 `outputs/mars_shell_match_20261004/`（`best_sheet.png`、`scores.json`）。
+- **事实**：metallic 1 时小臂、大腿的变异系数是照片的 1.5–2 倍（映出深色地面和货架）；只加大 roughness 消不掉；metallic 0.5 均匀但偏白像塑料。选中组的肩部偏亮约 25%，胸口所有组都偏亮，是灯光位置所致。roughness 0.5 与 0.6 看不出差别。
+- **被否决的方案**：metallic 1 + roughness 0.6 + 底色 0.55（亮度分最好，但斑驳仍在）；metallic 0.5（像白塑料）。
+- **影响**：所有 Unreal 关卡要按新外观名重建（本机 9 个已重建）；mars 的 Isaac 机器人 USD 按 MJCF 哈希自动重建；之前补渲的数据集是旧外观。
+
+## 2026-10-05 三个渲染器的机器人外观对齐：Isaac 已随 robot_look，MuJoCo 的 mars 外壳 rgba 0.7 → 0.62（用户）
+
+- **目标变化**：用户问 warehouse 的 Isaac、MuJoCo 是否也按 Unreal 的新外观改了，没改就改，再把三个版本渲出来看。
+- **事实**：Isaac 每次组装 stage 时从 `robot_look` 读 SHELL/DARK（`isaac.stage.G1_LOOKS`），数值自动是新的；机器人 USD 按 MJCF 颜色分外壳/深色，重建 4 个 mars stage 后小臂银、腰部和骨盆黑。MuJoCo 没有 metallic/roughness，只画 MJCF 的 rgba；加 MuJoCo material 的 specular/shininess 画面不变（场景灯几乎不带 specular）。
+- **决策**：mars 生成器的外壳色 `make_dex1_model.SHELL_RGBA` 0.7 → 0.62。0.7–0.52 的扫描里，0.62 在"机器人/白墙亮度 + 均匀度"上最接近 Unreal（更低则胸口和手臂偏暗）；0.62 仍在 Isaac/Unreal 外壳判定线 0.6 之上，两者画面不受影响。stock 的 MJCF（SONIC 自带，0.7）没改。
+- **被否决的方案**：调暗 MuJoCo 头灯（ego 手臂的过曝只降到 25%，整场景变暗，分数更差）；外壳 rgba 0.55（亮度最接近，但跌破 0.6 判定线，Isaac/Unreal 会把外壳当成第三类）。
+- **仍有差别**：MuJoCo 的 ego 画面里近处手臂仍有约 25% 像素过曝（头灯直射），Unreal 没有；这是 MuJoCo 光照模型的限制。对比图 `outputs/robot_look_3renderers_20261005/sheet.png`。
+
 ## 2026-10-05 scene_discovery：检查器按实测设定整体匹配，失败试跑记成技能缺口；Claude 提任务的循环跑通
 
 ### 目标与约束的变化
@@ -1204,3 +1864,93 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 
 - 第二个新技能（9.16）：我推荐台面高度抓取（挡住 8 个提议任务，不蹲、不钻格子），用户未定；扁平物体是否另记"从上往下捏"缺口（9.16.1）未定。
 - 26 个物体的 `upright_axis` 与实际姿态对不上（9.15），修法（按初始姿态重定义 / 逐类修 `adt.AdtObject.body`）未定，先看渲染图。
+
+## 2026-10-06 mars 的第一视角可选头部两台相机：云台 D455（默认）或脸上 D435（用户）
+
+- **目标变化**：用户："把机器人头上的非云台相机也作为一个 ego_view 的可选项，采集 ego_view 的时候可以在云台相机和机器人本身的相机之间切换"。
+- **决策**：
+  - 选哪台相机是场景的属性，不是运行时开关。场景构建器加 `--ego-camera {d455_head,d435_head}`（名字取自真机 `robot.yaml`），把 `head_camera` 摆到所选相机的 URDF 坐标系上，记进 `scene_meta.json` 的 `ego_camera`；默认 `d455_head`，生成结果与之前逐字节相同。新场景 `bottle_mars_d435`、`warehouse_textured_mars_d435`、`warehouse_box_45x32x33_mars_d435`（后者有 Isaac stage 和 Unreal 关卡），示例实验文件 `warehouse_mars_smoke_d435`（同日用户：改名 `warehouse_mars_smoke_d435_unreal`，并加 `_d435_isaac`、`_d435_mujoco`）。运行靠场景名选相机。
+  - 理由：`head_camera` 在 46 个文件里被读（仿真出图、专家判断目标是否在画面里、三个渲染器、视频小窗）；放在场景里，它们全部自动跟着换，Isaac stage 和 Unreal 关卡又按场景 XML 哈希核对，不会出现半套配置（仓库常见的失败形态）。
+  - D435 位姿用 URDF 的 `d435_head_link`（躯干坐标系下俯 47.6°），竖直视场 42°（规格书彩色 69°×42°，按 4:3 保留竖直视场，同 D455/D405 的做法）。
+- **被否决的方案**：每个场景里放两台相机、由实验文件挑哪台当 `ego_view`——要把相机名传给 46 处读取者，任何一处漏掉就是专家看一台、数据录另一台；Unreal 关卡还得多导入一台相机。
+- **事实**：`calibration/` 里的 livox→D435 外参按"livox 坐标系 = mid360_link 绕 x 翻转"解读时，D435 下俯 49.7°、位置与 URDF 差 7.8 cm；livox 坐标系 URDF 没给，这个解读未核实，所以没用。D435 视野窄：伸手和合爪阶段手臂和箱沿基本出画，只剩托盘前沿和脚（`outputs/ego_d435_20261006/ego_d455_vs_d435.png`，三个渲染器一致）。专家是在 D455 上调的。2026-10-06 在 `warehouse_box_45x32x33_mars_d435` 上采 10 局保留 4 局（`outputs/runs/warehouse_mars_d435_check_20261006`；提交 a9836a9 的说明误写为 5），整条采集流程能跑通；没有同种子的 D455 对照。
+
+## 2026-10-06 训练图加相机延迟：离线补渲的图比状态晚 20–63 ms（用户）
+
+- **目标变化**：用户问频率同步的通用做法后定：先做"训练图加延迟"，让策略在仿真数据里就见到真机相机的滞后。
+- **决策**：
+  - 新配置 `images.camera_delay: {fps, latency_ms: [low, high]}`（`pipeline/camera_delay.py`）。模型是一台真实相机：每局随机一个延迟（区间内均匀）和一个拍摄相位；第 t 行的图取 t − 延迟 之前最近一次拍摄时刻、该时刻之前最近的 50 Hz 状态来渲。图因此比状态晚"延迟 + 0–1 帧"，时间上不倒退；按 session/局号定种子，重渲结果相同。
+  - 三个渲染器的离线补渲都读它（MuJoCo 走 `pipeline/render_dataset_cameras.py`，Isaac/Unreal 走 `view_render`）；补渲标记记下这组值，同一 session 不混两种延迟，旧标记按"无延迟"处理。实时采集配它会被拒绝（录的是仿真自己的帧，没有地方加延迟）。
+  - 数据审计的"视频 vs 关节"对齐检查原本要求中位数在 0；有延迟时 `run_convert` 传 `--video-lag`（`camera_delay.mean_lag_frames`，30 fps + 20–30 ms 时约 1.29 帧），审计改为要求中位数在它 ±1 帧内。漏加或多加延迟都会失败。
+  - warehouse mars 线 9 个实验文件打开 `{fps: 30, latency_ms: [20, 30]}`（含 henry 10-06 新加的 `warehouse_mars_smoke_d435_isaac`、`_d435_mujoco`）。数值是估计：真机相机帧率和延迟都没测。
+- **被否决的方案**：每行独立随机 1–3 行的延迟（上一轮口头提的）——相邻帧会时间倒退，真机相机不会；改用"固定延迟 + 拍摄时钟"。
+- **事实（已确认，`outputs/camera_delay_check_20261006/`）**：拿 D435 采的 4 局各补渲一份无延迟、一份有延迟（MuJoCo）。逐行把有延迟的帧和无延迟的帧比对，能明确匹配的行里 96–98% 正好落在代码算出的滞后上，其余差一行（画面几乎不动的近似帧）。审计：无延迟 75% 在 0、中位数 0；有延迟中位数 +2 帧；两份分别只在自己的期望下通过。
+- **未做**：闭环评测仍渲当前状态，相机延迟在评测里只有 `eval.camera_frames`（推迟采用新动作块），没有"图比本体旧"；没训练过带延迟的模型，效果未知。
+
+
+## 2026-10-06 仿真数据零样本上真机：数据集 50 fps、官方客户端结构、Dex1 原始单位（用户，逐项问答定）
+
+- **目标**：用 warehouse 双臂抓箱的仿真数据微调 GR00T N1.7，不采真机训练数据，按官方 GR00T-WholeBodyControl 的推理客户端结构部署到实验室真机 G1（Dex1、头部 D455、双腕 D405）。第一门槛是走到箱子前不摔。全文见 `docs/handoff/real-robot-sim2real-plan-20261006.md`。
+- **事实**：官方 SONIC 流程的 50 Hz 是控制与数据集网格，相机 30 fps 被重复铺到网格上；GR00T 不以 fps 为条件，只读帧索引偏移；`UNITREE_G1_SONIC` 预训练先验是 20 ms 一步；本仓库原始录制本来就是 50 Hz，25 是转换时抽的。真机 toy-bear 数据集与仿真数据集布局一致，只有夹爪不同：真机 Dex1 命令 0 闭 / 5.5 开写在 7 维第 0 维、状态广播到 7 维；仿真是米制、两指位、方向相反。官方 v1.1 代码没有任何 Dex1 分支。
+- **决策**（D1–D13 见设计文档）：数据集改 50 fps 用现有 session 重转、Unreal 每行独立补渲；三路相机；state 保持 60 维，手 7 维槽位填 Dex1 的 1 维值广播（真机 exporter 自己的记法）；action 66 维；夹爪统一 Dex1 原始单位；发给真机的 hand 字段广播 7 维；部署代码放 `src_real_robot/` 只 vendor 客户端、复用 third_party 的 gear_sonic 与 checkpoint、GR00T 服务器复用 `src/gr00t`；真机 C++ 由用户自行编译带 Dex1 驱动的 1.1，我们不替换；真机相机服务器复用现有；toy-bear 数据集只做对照；上真机前先 sim2sim。
+- **实现（本次）**：`dataset.fps` 成为运行字段（`run_context.migrate_dataset`，旧文件读 25；只接受整除 50 的 25、50，30 的 2,1,2 抽帧是 2026-08-28 查出的 10 Hz 伪影），`run_convert` 以 `--fps` 传给转换器，`world_lift.resample_selection(n, fps)` 一处决定行选择；Isaac/Unreal 补渲标记记 `dataset_fps`，`render_dataset_cameras.serves` 规定 50 渲的服务 25 转换、25 渲的不服务 50（此前 50 转换会静默用重复帧）；一个 session 的渲染率由第一次填充定；MuJoCo 补渲每行都渲、记 50。`eval_closed_loop` 遇到非 25 的运行拒绝，因为 lockstep 客户端按 25 数帧。`src_real_robot/real_robot/`：`inference`（官方的异步推理线程、`round(延迟×发布率)` 跳帧、键盘、v4 打包不变）、`observation`（60 维，eef_state 用 exporter 同一套 FK）、`chunk`（FSQ snap、Dex1 换算）、`gripper`（米制↔Dex1、线上字段 dex1 广播 / sim 两指位）、`policy_client`（本仓库 `serve_policy` 的扁平协议，核对 `identity`）。
+- **被否决**：25 Hz 训练直接 `TF_DATASET_FPS=25` 部署（技术上可行，但与预训练先验和官方 0.8 s 视野不一致）；对 FSQ 离散 token 插值到 50 Hz（无意义）；只用 ego 一路（用户要三路）；夹爪归一化到 [0,1] 或保留米制在客户端换算（用户选真机原始单位，模型输出即命令）；整份复制两个上游仓库（6.5 GB，不能跟踪）；在真机上替换 C++（没有 Dex1 驱动代码）。
+- **已知残余差距**：仿真 50 fps 每行独立画面而真机约一半重复帧；sim2sim 的 C++ 与真机那份不同源；真机 Dex1 驱动读 7 维的哪一维未知，靠广播规避；真机相机内参未提供。
+- **追加（同日，用户）**：客户端从 `src_real_robot/real_robot/` 移到 `src/real_robot/`，README 与 UPSTREAM 随包走（`src/gr00t` 的先例），启动脚本改为 `scripts/run_real_robot_inference.sh`；`src_real_robot/` 删除。理由：`src/` 已在每个 PYTHONPATH 上，不必再多一个源码根。
+- **追加（2026-10-07，henry `dc3b909`，分支 `henry-dev`，同日合入 main）**：真机部署的服务器和客户端改为照搬官方。服务器换成 `src/real_robot/run_gr00t_server.py`（照 Isaac-GR00T 的 `gr00t/eval/run_gr00t_server.py`：tyro、`Gr00tPolicy` 或 `ReplayPolicy`，多 `identity`、`--backbone-path`、`--denoising-steps`；启动脚本 `scripts/run_gr00t_server.sh`），真机不再走仿真评测的 `serve_policy.py`（RTC、种子、运行目录查找真机都用不上）。客户端 `inference.py` 按官方 `run_vla_inference.py` 逐函数重写，延迟补偿、推理触发、去前缀直接 import 官方 `vla_utils`；调官方标准的 `get_action`（嵌套观测），扁平的 `get_action_raw` 不再用；`policy_client.py` 是官方 `PolicyClient` 的同协议副本（`.venv_sim` 没有 gr00t）。保留的差异不变（三相机、60 维、Dex1 广播、FSQ snap、运行自己的初始 token、服务器不可达或字段顺序不符即退出）。`--no-snap` 改名 `--no-snap-tokens`。合入时核对：单元测试 15 个通过、服务器 `--help` 在 Isaac-GR00T venv 里能起；没有加载过真实 checkpoint，没连过仿真栈或真机。
+
+## 2026-10-07 warehouse mars 线的频率与时序对齐官方 GR00T + SONIC（用户，逐项问答定）
+
+- **目标**：仿真数据、训练、闭环评测在频率与时序上与官方 GR00T-WholeBodyControl（`run_data_exporter.py`、`run_vla_inference.py`，`b042411`）和 Isaac-GR00T 的 `unitree_g1_sonic`（`51d4c89`）一致，为零样本上真机（2026-10-06 一节）去掉训练、评测、真机三处的时序差异。
+- **事实（读官方代码）**：官方只有一个主时钟：SONIC 的 50 Hz。exporter 每 20 ms 取各路"最新值"成一行，相机（OAK 30 fps）没有新帧就沿用上一张，约 40% 行图像重复；相机消息带时间戳但不存，不插值、不按时间戳对齐、不建模相机延迟（真机训练和部署走同一条链路，滞后天然一致）。推理客户端：异步线程，新块到达时从第 `round(推理耗时 × 50)` 步开始（`calculate_latency_compensated_index`），块用完停在第 40 步；上一块到达 0.4 s 后再触发推理（`should_trigger_new_inference`）；块之间不融合，N1.7 的 RTC 只是模型底层原语，官方部署指南写明没接入服务端/客户端。`i` 键 1 s 混合到初始 token；策略开始后新块直接接管，没有混合进第一块。官方仿真按真实时间 sleep，没有 lockstep。
+- **决策**：
+  1. 50 fps 数据集的图按官方方式出：30 fps 相机加延迟（`images.camera_delay`），约 40% 行图像重复。**推翻 2026-10-06 的 D2**（每行独立补渲）：D10 定了真机用现有 30 fps 相机服务器，部署时就是 30 fps，"D455 可到 90 fps"不成立；且 Unreal 补渲次数降到约 3/5（T4 约 25 h → 约 15 h）。
+  2. 正式评测保留 lockstep（2026-09-28 不变），节拍与参数按官方：50 fps 运行一步 = 1 个控制拍、动作块 40、新块执行 20 拍（0.4 s）后再推理、块用完保持最后一步；第一块不混合（官方 `i` 的 1 s 混合对应我们 prelude 里站在初始 token 上的 3 s）。真实时间下用官方结构客户端（`src/real_robot`）跑一次 sim2sim 作验证（T5），不作正式评测。
+  3. 评测时的图用训练同一个延迟模型变旧：每局抽一个延迟和 30 fps 拍摄相位（`camera_delay` 的同一函数，按局种子），观测时渲"当前减延迟"之前最近一次拍摄时刻的状态；关节状态仍取当前。`camera_frames`（把相机延迟折成多跳几帧）与 `camera_delay` 同时设拒绝。
+  4. 推理延迟每块从实测分布按种子抽（`latency_dist`）。先用本机 `serve_policy` 在 lockstep 里量到的往返耗时，T5 后换真实链路的分布。不在 lockstep 里直接用本次实测耗时：会把评测机当时的 GPU 负载带进结果。
+  5. 范围只限 warehouse mars 线（smoke 系列实验文件改 `dataset: {fps: 50}`；`warehouse_mars_200` 记录的是已做的 25 fps 运行，不改，T4 另建 `_50hz`）。lockstep 从运行的 `dataset.fps` 读节拍，25 fps 运行行为不变、历史基线可复现。
+  6. 三台相机共用一个拍摄时钟；真机实测三台相机之间的时间差（官方相机服务器 `--test-latency` 二维码工具，13.6.16.1）明显时再拆。
+- **有意不对齐**：官方 exporter 的状态重复行（社区 fork issue 实测 17%，时间戳全是 20 ms 看不出来）是缺陷，我们每行带序号，不照搬；真实时间评测只作验证；FSQ snap 与初始 token 沿用 2026-10-06 D8 与设计文档第 6 节。
+- **待真机或协作者**：三台相机的帧率、端到端延迟和相互时间差（13.6.16.1）；真实部署链路的推理延迟分布（T5）；50 与 25 fps 的差别由 25 fps 对照 checkpoint 回答（T4）。
+- **实现（同日，T7）**：`tasks/crate/vla_lockstep.py` 节拍从运行的 `dataset.fps` 读（评测器 `--dataset-fps` → `vla_rounds`；`ticks_per_frame`），50 fps 走官方调度（第一块不混合、每块固定执行 `execution_horizon` 帧、块尾保持）；`Camera` 按 `camera_delay.episode_draw`（键 `lockstep/<seed>`）与新的 `camera_delay.camera_seq` 取观测图的状态；lockstep sim 保留最近 64 个 tick 的状态，新增 `observe` 请求（MuJoCo 从副本 MjData 渲，镜像协议新增按请求携带的状态渲）；每行记 `infer_s`（服务端往返墙钟时间），`latency-dist` 能从 lockstep trace 生成并写入 `fps`，帧率不符的分布文件被拒；评测器拒绝 50 fps 配墙钟客户端、`camera_delay` 配 `camera_frames`、`eval.backend.dataset_fps` 与 `dataset.fps` 不符。warehouse mars smoke 系列 7 个文件：`dataset: {fps: 50}`、`execution_horizon: 20`、`latency_dist: configs/eval/latency_serve_policy_50fps_20261007.json`。
+- **事实（已确认，`outputs/t7_lockstep50_smoke_20261007/`）**：用 25 fps 的 `box_room_grasp_200_cap120_20260925` checkpoint 在实例 1 / GPU 0 的真实 lockstep 栈上按 50 fps 跑 2 遍 × 2 局（成功率无意义，只验机制）：每个周期 24 拍（跳 4 + 执行 20）；观测图比冻结时刻晚 40–60 ms，全部落在模型范围（抽到的延迟 + 至多一个 30 fps 帧 + 一拍）；两遍的边界 seq 与图像 seq 完全相同。服务端往返 65–100 ms（中位 69 ms），按 50 fps 取整：3 拍 132 次、4 拍 31、5 拍 1（164 块），即上面的分布文件。两遍轨迹从第一块起就不同，旧的 25 fps 路径（不带 camera_delay）对照两遍同样从第一块起不同：是 `docs/bimanual_design.md` 已记的 MuJoCo 4× 多重采样腕部图差一个灰度级，不是本次改动带来的。Isaac/Unreal 镜像按状态渲的路径同日在真实镜像上验过（见下条）。
+- **事实（已确认，TODO 16.7.1，`outputs/runs/t7_mirror_check_{isaac,unreal}_20261007/`）**：按 runbook 的四步（eval 栈、策略服务、镜像、`bimanual/run_vla_inference.sh`）在 `warehouse_box_45x32x33_mars_d435` 上各跑 2 局，实验文件是 `warehouse_mars_smoke_d435_{isaac,unreal}` 的拷贝（50 fps、`camera_delay`、实测延迟分布），checkpoint 借 25 fps 的旧模型，成功率无意义。两个镜像各渲 88 次，trace 里每个观测的取图 seq 都在镜像的渲染记录里，且没有一个等于冻结时刻的 seq（镜像自己的状态流只有冻结时刻那一条，所以渲的确实是请求带来的状态）；图晚 40–60 ms，周期 23–24 拍（跳 3–4 + 执行 20）。渲一次 Isaac p50 218 ms、Unreal p50 122 ms，lockstep 下都不计入仿真时间。
+
+## 2026-10-07 对齐官方时被否决的方案（补记，同日问答）
+
+上面"warehouse mars 线的频率与时序对齐官方"一节的六条决策，每条都有被否决的另一边，补在这里，免得下次重提：
+
+- **50 fps 数据集每行独立渲染（原 D2）**：否决。真机部署用现有 30 fps 相机服务器（D10），训练图每行独立而部署时约 40% 重复，是分布差；渲染还多约 2/3（T4 约 25 h 对 15 h）。
+- **正式评测改真实时间（直接用 `src/real_robot` 客户端连仿真栈）**：否决。不能复现；Isaac/Unreal 渲一张 120–220 ms 会混进世界时间；推翻 2026-09-28 "评测一律 lockstep"（当时墙钟标定不可靠）。只保留为一次 sim2sim 验证（T5）。
+- **保留 `camera_frames`（相机延迟折成多跳几帧）**：否决。它只改总延迟，不让图比本体状态旧，训练里有的"状态新、图旧"错位评测里没有，量不到策略对它是否敏感。现在两者同设被拒。
+- **推理延迟：固定帧数**：否决，块交接时跳步永远一样，没有官方的抖动；**在 lockstep 里直接用本次实测耗时（同官方）**：否决，会把评测机当时的 GPU 负载（常有别的项目）带进结果，丢掉复现性。选按种子从实测分布抽。
+- **所有线（bottle、crate、stock warehouse）统一改 50 fps**：否决。历史基线（VLA 第 1–4 轮等）全部失去可比性，Isaac/Unreal 补渲过的 25 fps 数据集服务不了 50 fps，每条线都要全行重渲。只改 warehouse mars 线，lockstep 按运行的 `dataset.fps` 两种都支持。
+- **三台相机各自独立的拍摄时钟和延迟（结构上最像官方）**：暂不做。Isaac/Unreal 一次调用出三路图，拆成按相机渲染要多到 3 倍（T4 回到 25–45 h）；腕部 30 ms 错位影响多大没有数据。真机用 `--test-latency` 测出相机间时间差明显时再改。
+- **照搬官方 exporter 的状态重复行**：否决，是官方缺陷（社区 fork issue 实测 17%，时间戳看不出），我们每行带序号。
+- **把 GR00T N1.7 的 RTC 接进来**：本次不做。官方部署指南写明 RTC 只是模型底层原语、没接入服务端/客户端；官方 VLA 流程也没用它。
+
+合并 henry-dev（`dc3b909`，合并提交 `e6d7e80`）时的取舍：真机部署改用官方式 `run_gr00t_server.py` 与官方 `get_action`，不再走仿真的 `serve_policy.py` / `get_action_raw`；仿真评测仍用 `serve_policy.py`（RTC、种子、运行目录查找真机用不上，仿真要）。两套服务器并存是有意的，不是重复（2026-10-06 一节的追加条）。
+
+## 2026-10-07 SONIC 两条线的 state 改回官方 46 维，去掉腕位姿（用户）
+
+- **决策**：`SONIC_BOTTLE`、`SONIC_CRATE` 的 state 都改成 Isaac-GR00T 内置 `unitree_g1_sonic` 的 8 组 46 维（左右腿、腰、左右臂、左右手、`projected_gravity`，顺序同官方），共用 `locomani.schema.SONIC_STATE_KEYS`。去掉的是 `right_wrist_pos/abs_quat`（单臂 53 的来源）和 `left_wrist_pos/abs_quat`（双臂 60 的来源）共 14 维。推翻 2026-10-06 "state 保持 60 维"。
+- **理由**：对齐官方 SONIC + GR00T 教程。这 14 维是同一组关节角做 FK 算出的骨盆系腕位姿，不带新信息；加它们的理由（替网络省掉学 FK）只是推理，没有任何运行量过 46 对 53/60。
+- **不变**：相机（3 路）、动作（token + 夹爪标量，66/65）、手 7 维填 Dex1 标量广播，这些仍与官方不同。`SONIC_MODALITY` 与数据集 `modality.json` 仍声明腕位姿（菜单不是选择），`observation.eef_state` 照写，所以已有数据集不用重转，恢复只改选择。ScaleBFM 的 `VISUAL_BOTTLE`（91 维）不在本次范围，保留右腕位姿。
+- **后果**：此前训练的 SONIC checkpoint（53 或 60 维）不能再用当前配置服务或评测：`serve_policy` 启动时报 "server state configuration differs from checkpoint metadata"，lockstep 评测和真机客户端核对字段顺序后退出。16.4 的新运行按 46 维训练。
+- **实现**：`schema.py`；`configs/gr00t_sonic_{2cam,3cam_bimanual}.py` 只改注释和打印；仿真 `ObsBuilder` 与真机 `real_robot.observation` 去掉腕部 FK；`replay_obs`、`diag_rtc_offline` 的观测键；`check_dataset` 的 2cam/3cam 档按 46 查，bfm 档保留 53；测试从 vendored `embodiment_configs.py` 读官方 state 组钉住顺序。
+
+## 2026-10-08 官方教程对照文档、夹爪方向维持、warehouse_mars_50 采集、旧数据迁移（用户；工作在 2026-10-07 做）
+
+- **目标**：用户要求数据采集、训练、推理逐项对齐 NVIDIA 官方 SONIC + GR00T 教程，并把对照、旧数据怎么迁移写成 GitHub 上的文档（README 给入口）。
+- **决策：Dex1 夹爪方向维持 0 闭、5.5 开（用户）**。理由：Unitree `dex1_1_service` 标定要求手动闭紧、标定后读数约 0；`xr_teleoperate` 的 `Dex1_1_Gripper_Controller` 把手指张开距离 5–7 映射到 0–5.4，注释称 0 是闭合位置；toy-bear 真机数据张开时停在 5.39–5.43。
+  - **否决**：按用户最初所说"真机 0 开、5.5 闭"把 `real_robot/gripper.py` 方向反过来。和以上三处来源矛盾，真机也没验证过；方向错了策略要夹时夹爪会张开。真机验证仍是 16.6。
+  - 和方向无关的已知问题：`dex1_to_sim_m` 闭端截在 −0.02 m，warehouse 线要 −0.06 才拿得起箱子；16.3、16.5 要改成按线的闭合目标（TODO 16.3.1）。
+- **决策：对照文档 `docs/official_comparison.md` 取代 2026-08-28 的 `docs/archive/official_parity_audit.md`**，README"通用"一节给入口。08-28 的 B1（颜色增强未传参）关闭：不传 `--color-jitter-params` 时用基座模型 `processor_config.json` 的默认值，与教程数值（0.3/0.4/0.5/0.08）完全相同，基座模型和本仓库 checkpoint 都核对过。
+  - **否决**：在归档审计和 `docs/archive/INDEX.md` 里加"已被取代"注。这两个文件有 4 个既有坏链接，提交钩子检查改动过的文档时会失败；取代关系只写在新文档开头（TODO 16.14.2）。
+- **决策：`configs/experiments/warehouse_mars_50.yaml`** 照 `docs/running.md` 第 1 节复制 `warehouse_mars_smoke`，只改运行名、`collect`（保留 50，每批 10 局，最多 25 批：按 10-03 mars 冒烟 9/30 估约 170 局，留余量）、`train`（10000 步，每 5000 存一次，留 5 条，同 `warehouse_mars_200`）、`eval.rounds: 100`。
+- **事实（已确认，`6a6bd10`）**：884a181 起 Unreal、Isaac 补渲对没有补渲标记的新 session 必崩（`KeyError: 'dataset_fps'`）：`view_render.plan` 把运行的帧率加进 look 去核对，却只返回 `(traces, todo)`，入口把自己的 look 交给 `fill`。修法：`plan` 一并返回 look，入口交给 `fill`；测试从 `plan` 走到 `fill`。之前的冒烟没暴露，因为那些 session 都有旧标记。
+- **决策：旧数据不重新采集（`docs/migrate_old_data.md`，README 顶部提示）**。理由：对齐只改了转换、补渲、训练选择和评测，采集链路（专家、仿真、SONIC、exporter、起栈和跑局脚本）没动，exporter 一直按 50 Hz 写每一行。做法：从旧运行派生新运行目录（运行的 `config.yaml` 开跑后不改，旧数据集保留可作对照），实时录制的只按 50 fps 重新转换，离线出图的删补渲标记、加 `camera_delay`、重渲后再转换。
+  - **否决**：给实时录制的运行加 `images.camera_delay`。录下的图是仿真自己出的，不能重画，`run_context` 会拒绝。
+  - **事实（已确认，试验踩到）**：补渲按 `collect/inputs.json` 找 session，转换按 `summary.json`；只改 `summary.json` 时补渲会改写共用的原始 session。试验时改写了 `warehouse_edges_45x20x18_20260928` 的原始 session（18 个视频加标记），已用渲染前的副本逐字节恢复。文档写明两处路径都要改。
+  - **事实（已确认）**：实时录制按 50 fps 转换，`crate_smoke` 训练集 407 帧变 814 帧，39% 的帧与上一帧相同，不同画面约 30.3 Hz（实测）。按代码推算仿真每 6 个 5 ms 步发一次图、约 33 Hz，与实测不符，原因没查；`docs/migrate_old_data.md` 第 1 节写的"约 33 Hz"要改成实测值（TODO 16.16.4）。
+  - **待验证**：同一次审计"action vs state"中位 +0 帧不过（25 fps 时 +3 帧）；只有 1 条，`warehouse_mars_50` 的 45 条是 +4 帧通过（TODO 16.16.1）。

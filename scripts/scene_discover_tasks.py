@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude proposes a scene's tasks, the feasibility checker answers, Claude revises (TODO 9.10; plan decision 8).
+"""Claude proposes a scene's tasks, the feasibility checker answers, Claude revises (TODO 19.10; plan decision 8).
 
     $VENV_SIM_PY scripts/scene_discover_tasks.py --scene outputs/scene_discovery/adt_apartment/scene_meta.json \\
         [--model opus] [--iterations 2] [--per-room 30] [--out <dir>]

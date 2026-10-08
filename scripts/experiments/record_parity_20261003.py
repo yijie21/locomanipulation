@@ -1,4 +1,4 @@
-"""Does `plan_episode --record` produce the dataset the bottle collection line does? (TODO 9.4 acceptance)
+"""Does `plan_episode --record` produce the dataset the bottle collection line does? (TODO 19.4 acceptance)
 
     PYTHONPATH=src $VENV_SIM_PY scripts/experiments/record_parity_20261003.py \\
         --plan-run outputs/runs/sd_record_bottle_plan_20261003 \\

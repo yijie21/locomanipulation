@@ -14,8 +14,9 @@ interface, dependency direction or configuration format.
 
 Read [STATE](STATE.md) (open tasks in [TODO](TODO.md), reasons in [DECISIONS](DECISIONS.md))
 when resuming work or using shared compute. Use
-[the document index](docs/README.md) when adding/reorganizing documentation or when
-a task needs historical evidence. Historical experiments are not startup reading.
+[the documentation ownership rules](docs/agents/doc-ownership.md) when adding or
+reorganizing documentation, and [the history index](docs/README.md) when a task needs
+historical evidence. Historical experiments are not startup reading.
 
 ## Make and verify a change
 

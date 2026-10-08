@@ -30,6 +30,7 @@ class Line:
     trace_root: Callable[[Path], Path]  # where the sim writes state traces, and where the expert is told
     scene_name: Callable[[dict, Path], Path]  # what the frozen scene will be called, without freezing it
     eval_backend: Callable[[object], dict]  # the backend block the EVAL stack runs, from the run's EvalConfig
+    parallel: bool = False  # the driver collects in lanes, one stack + driver process each (pipeline.lanes)
 
 
 def _bottle() -> Line:
@@ -55,6 +56,7 @@ def _crate() -> Line:
         trace_root=p.trace_root,
         scene_name=p.scene_name,
         eval_backend=p.eval_backend,
+        parallel=True,
     )
 
 

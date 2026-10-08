@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline grip-creep bench: replay a live hold's robot motion, simulate only the load (TODO 8.3.5).
+"""Offline grip-creep bench: replay a live hold's robot motion, simulate only the load (TODO 18.3.5).
 
     $VENV_SIM_PY scripts/experiments/pad_creep_replay_20260929.py outputs/runs/<run>/skills/think_00_1.npz \\
         --scene outputs/scene/pick_place --variant base --variant solimp=0.999,0.999

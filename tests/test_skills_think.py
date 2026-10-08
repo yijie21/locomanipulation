@@ -1,4 +1,4 @@
-"""`plan_episode.think` (TODO 8.3.5): the fixed plan's stand-in for an agent's decision latency.
+"""`plan_episode.think` (TODO 18.3.5): the fixed plan's stand-in for an agent's decision latency.
 
 The deploy drops the frozen upper body and the hand command after 1 s without a planner message
 (zmq_manager.hpp PLANNER_TIMEOUT), so the wait must keep sending frames unless `--think-silent` asks for the

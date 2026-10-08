@@ -1,0 +1,31 @@
+name: mars
+type: robot
+exports:
+  ETHER_ROBOT_URDF:      urdf/g1_comp_new_hip_dex1_1.urdf
+  ETHER_ROBOT_CALIB_DIR: calibration
+  ETHER_LIVOX_CONFIG:    sensors/MID360_config.json
+optional:
+  - ETHER_LIVOX_CONFIG
+
+# Robot-specific runtime environment variables exported to robot-config.bash.
+# Add only values that differ per robot (identity, serial numbers, sensor overrides).
+# Shared deployment defaults belong in ether-onboard/config/settings.env.
+runtime:
+  ETHER_ROBOT_MAKE: unitree
+  ETHER_ROBOT_MODEL: G1-EDU-U2
+  ETHER_ROBOT_MODEL_NUMBER: "6213"
+  ETHER_ROBOT_MANUFACTURER_SERIAL_NUMBER: "E21D6000P9777888"
+  ETHER_ROBOT_MANUFACTURE_DATE: "20250907"
+  ETHER_ROBOT_INSTANCE: mars
+
+  D435_HEAD_SERIAL: "243322074751"
+  D435_HEAD_NAME: d435_head
+
+  D455_HEAD_SERIAL: "338122303144"
+  D455_HEAD_NAME: d455_head
+
+  D405_WRIST_LEFT_SERIAL: "230322271135"
+  D405_WRIST_LEFT_NAME: d405_left_wrist
+
+  D405_WRIST_RIGHT_SERIAL: "335122270916"
+  D405_WRIST_RIGHT_NAME: d405_right_wrist

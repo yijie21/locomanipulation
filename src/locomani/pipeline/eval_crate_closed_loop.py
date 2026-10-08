@@ -2,9 +2,9 @@
 
 The crate counterpart of run_learn_pilot.py's eval stage: start a token-only
 stack on the chosen instance/GPU, serve the checkpoint with the bimanual
-modality config on its own port, run `locomani.tasks.crate.vla_rounds` in this
-process on that stack's environment in batches (the stack restarts per batch, as
-every crate pilot does), stop everything, and aggregate the manifest into
+modality config on its own port, run `locomani.tasks.crate.vla_rounds` inside
+that stack's environment in batches (the stack restarts per batch, as every
+crate pilot does), stop everything, and aggregate the manifest into
 closed_loop.json with the same fields the single-arm evaluation reports.
 
     .venv_sim/bin/python -m locomani.pipeline.eval_crate_closed_loop \\
@@ -29,7 +29,7 @@ from collections import Counter
 from pathlib import Path
 
 from locomani import paths, profiles
-from locomani.backends.sonic.config import SonicBackendConfig
+from locomani.backends.sonic.config import LockstepConfig, SonicBackendConfig
 from locomani.pipeline import run_vla_server, stack
 from locomani.pipeline.closed_loop import score
 from locomani.pipeline.provenance import file_digests, write_config_snapshot
@@ -38,6 +38,7 @@ from locomani.tasks.crate.config import CrateTaskConfig
 
 ROOT = Path(paths.REPO)
 SRC = ROOT / "src/locomani"
+SIM = ROOT / "third_party/GR00T-WholeBodyControl/.venv_sim/bin/python"
 TRAIN = ROOT / "third_party/Isaac-GR00T/.venv/bin/python"
 MODALITY = ROOT / "configs/gr00t_sonic_3cam_bimanual.py"
 DEFAULT_TOKEN = ROOT / "configs/deployment/crate_initial_token.json"
@@ -60,13 +61,27 @@ def aggregate(manifest: Path) -> dict:
 
 
 # The EvalConfig fields this evaluator actually reads. Everything else in the block
-# is not implemented here: `client` is refused outright because a config that says
-# "async" while the loop runs blocking is exactly the kind of quiet lie the 2026-09-18
-# cold-start run caught (eval_config.json said async, closed_loop.json said blocking),
-# and the rest is written to `ignored_eval_fields.json` so "declared" and "delivered"
-# can be compared without reading this file.
-HONOURED = ("rounds", "seed", "policy_port", "execution_horizon", "budget_s", "initial_token", "image_source")
-PINNED = dict(client="blocking")
+# is not implemented here: a `client` outside CLIENTS is refused outright because a config
+# that says "async" while the loop runs blocking is exactly the kind of quiet lie the
+# 2026-09-18 cold-start run caught (eval_config.json said async, closed_loop.json said
+# blocking), and the rest is written to `ignored_eval_fields.json` so "declared" and
+# "delivered" can be compared without reading this file. The latency fields are delivered
+# to the lockstep client only; a blocking run that sets them is refused by vla_rounds.
+HONOURED = (
+    "rounds",
+    "seed",
+    "policy_port",
+    "execution_horizon",
+    "budget_s",
+    "initial_token",
+    "image_source",
+    "client",
+    "gap",
+    "latency_frames",
+    "latency_dist",
+    "camera_frames",
+)
+CLIENTS = ("blocking", "lockstep")  # vla_rounds (wall clock) and vla_lockstep (simulation clock)
 
 
 def apply_eval_config(ap, args) -> None:
@@ -74,13 +89,20 @@ def apply_eval_config(ap, args) -> None:
     from locomani.pipeline.eval_config import EvalConfig
 
     evaluation = EvalConfig.load(args.eval_config)
-    for field, value in PINNED.items():
-        if getattr(evaluation, field) != value:
-            ap.error(
-                f"{args.eval_config}: {field}={getattr(evaluation, field)!r}, but the crate evaluator only "
-                f"implements {field}={value!r}. Set it in the experiment file rather than letting the run "
-                f"record a value it never used."
-            )
+    if evaluation.client not in CLIENTS:
+        ap.error(
+            f"{args.eval_config}: client={evaluation.client!r}, but the crate evaluator only implements "
+            f"{' / '.join(CLIENTS)}. Set it in the experiment file rather than letting the run record a value it "
+            f"never used."
+        )
+    if evaluation.client == "lockstep" and evaluation.latency_frames is None and not evaluation.latency_dist:
+        ap.error(f"{args.eval_config}: client lockstep needs latency_frames or latency_dist (the inference frames)")
+    args.client = evaluation.client
+    args.gap = evaluation.gap
+    args.latency_frames = evaluation.latency_frames
+    args.latency_dist = evaluation.latency_dist
+    args.camera_frames = evaluation.camera_frames
+    args.no_policy_seed = evaluation.backend.lockstep.no_seed
     args.rounds = evaluation.rounds
     args.seed = evaluation.seed
     args.port = evaluation.policy_port
@@ -91,7 +113,7 @@ def apply_eval_config(ap, args) -> None:
     args.ignored_eval_fields = {
         name: getattr(evaluation, name)
         for name in evaluation.to_dict()
-        if name not in HONOURED and name not in PINNED and name != "schema_version"
+        if name not in HONOURED and name != "schema_version"
     }
 
 
@@ -145,6 +167,18 @@ def parse_args(argv=None):
         "5590 is instance 1's keyboard port",
     )
     ap.add_argument("--execution-horizon", type=int, default=16)
+    ap.add_argument(
+        "--dataset-fps",
+        type=int,
+        default=25,
+        help="the rate the checkpoint's dataset was stored at (a run's dataset.fps): 50 plays one row per control "
+        "tick, NVIDIA's client (vla_lockstep), lockstep only",
+    )
+    ap.add_argument(
+        "--camera-delay",
+        default=None,
+        help="the run's images.camera_delay as JSON: the closed loop's pictures as late as the dataset's (lockstep)",
+    )
     ap.add_argument("--budget-s", type=float, default=90.0)
     ap.add_argument("--initial-token-file", type=Path, default=DEFAULT_TOKEN)
     ap.add_argument(
@@ -164,6 +198,10 @@ def parse_args(argv=None):
     )
     ap.set_defaults(clean=True)
     ap.set_defaults(image_source="mujoco")  # an --eval-config (a run's eval block) may name the Isaac mirror
+    # what an --eval-config sets; without one, the wall-clock loop as it always ran
+    ap.set_defaults(
+        client="blocking", gap="continue", latency_frames=None, latency_dist=None, camera_frames=0, no_policy_seed=False
+    )
     ap.add_argument("--allow-instance-0", action="store_true")
     ap.add_argument(
         "--keep-stack", action="store_true", help="with a run directory: leave the stack running when the rounds end"
@@ -184,6 +222,40 @@ def parse_args(argv=None):
     if args.backbone_path is not None and not (args.backbone_path / "config.json").exists():
         ap.error(f"no backbone model at {args.backbone_path}")
     return args
+
+
+def check_timing(args) -> None:
+    """Refuse a dataset rate or a camera delay this evaluation would not deliver (DECISIONS 2026-10-07)."""
+    from locomani.pipeline import camera_delay
+
+    if args.dataset_fps != 25 and args.client != "lockstep":
+        raise SystemExit(
+            f"dataset.fps {args.dataset_fps}: only the lockstep client plays other rates; the wall-clock loop "
+            "counts 25 fps frames"
+        )
+    if args.camera_delay is None:
+        return
+    camera_delay.parse(json.loads(args.camera_delay))
+    if args.client != "lockstep":
+        raise SystemExit("images.camera_delay ages the closed loop's pictures on the lockstep clock only")
+    if args.camera_frames:
+        raise SystemExit(
+            "camera_frames and images.camera_delay both delay the pictures; with camera_delay set camera_frames is 0"
+        )
+
+
+def lockstep_argv(args) -> list:
+    """The simulated-latency flags vla_rounds takes for a lockstep client (none for the wall clock)."""
+    if args.client != "lockstep":
+        return []
+    argv = ["--camera-frames", args.camera_frames, "--dataset-fps", args.dataset_fps]
+    if args.camera_delay is not None:
+        argv += ["--camera-delay", args.camera_delay]
+    if args.latency_frames is not None:
+        argv += ["--latency-frames", args.latency_frames]
+    if args.latency_dist:
+        argv += ["--latency-dist", ROOT / args.latency_dist]
+    return argv + (["--no-policy-seed"] if args.no_policy_seed else [])
 
 
 def serve_command(args) -> list[str]:
@@ -235,7 +307,7 @@ def evaluate_run(args):
     deploy patches, the headroom left beside what the stack already holds), the teardown and the
     summary are `pipeline/closed_loop.py`, shared with the single-arm evaluator (TODO 1.18).
     """
-    from locomani.pipeline import closed_loop
+    from locomani.pipeline import closed_loop, run_context
     from locomani.tasks.crate import prepare
 
     run_dir = args.run if args.run.is_absolute() else ROOT / args.run
@@ -252,6 +324,15 @@ def evaluate_run(args):
     args.batch_rounds = run.cfg["collect"]["batch_rounds"]  # deploy restart cadence, as the crate pilots
     args.instance = run.instance
     args.serve_gpu = args.gpu
+    # the run's own rate and camera, which the rounds play and draw by (DECISIONS 2026-10-07)
+    args.dataset_fps = run_context.dataset_fps(run.cfg)
+    delay = run.cfg["images"].get("camera_delay")
+    args.camera_delay = None if delay is None else json.dumps(delay)
+    if float(run.evaluation.backend.dataset_fps) != args.dataset_fps:
+        raise SystemExit(
+            f"eval.backend.dataset_fps is {run.evaluation.backend.dataset_fps:g} and dataset.fps {args.dataset_fps}: "
+            "set the eval block's to the dataset's"
+        )
     apply_eval_config(argparse.ArgumentParser(), args)
     try:
         _evaluate(args)
@@ -272,6 +353,7 @@ def main(argv=None):
 
 
 def _evaluate(args):
+    check_timing(args)
     out = args.out.resolve()
     manifest = out / "closed_loop.manifest.jsonl"
     if manifest.exists():
@@ -281,13 +363,22 @@ def _evaluate(args):
     if not scene.exists():
         shutil.copytree(args.scene, scene)
     task_cfg = CrateTaskConfig.load(args.config) if args.config else profiles.load("task", DEFAULT_TASK_GROUP)
-    if not args.config:  # the record of what was evaluated when it came from the YAML group
-        task_cfg.dump(out / "task_config.json")
+    # vla_rounds.py runs in a separate process (a fresh stack's venv) and reads --config as a JSON
+    # path (CrateTaskConfig.load); when no explicit path was given, dump the resolved YAML-group
+    # config so that subprocess boundary still gets a real file.
+    config_path = args.config if args.config else out / "task_config.json"
+    if not args.config:
+        task_cfg.dump(config_path)
     # clean_deploy gives the child SONIC_AUTO_START (stack/manager.py:199), so the deploy
     # engages itself and no planner command is needed to start it. Paired with --clean below:
     # ledger/bottle.md:9 calls a planner settle before enter_streamed the `degraded` deploy,
     # which executes walking tokens at ~1/3. This line had been degraded in every round.
-    backend = SonicBackendConfig(no_encoder=True, dataset_fps=25.0, clean_deploy=args.clean)
+    backend = SonicBackendConfig(
+        no_encoder=True,
+        dataset_fps=float(args.dataset_fps),
+        clean_deploy=args.clean,
+        lockstep=LockstepConfig(enabled=args.client == "lockstep"),
+    )
     stage = Stage(out)
     started = time.time()
     write_config_snapshot(
@@ -314,6 +405,11 @@ def _evaluate(args):
                 raise SystemExit(
                     f"no stack on instance {args.instance}; start one in another terminal:\n"
                     f"  bash scripts/start_stack.sh eval <run> --gpu {args.gpu}"
+                )
+            if live.spec.lockstep != (args.client == "lockstep"):
+                raise SystemExit(
+                    f"the stack on instance {args.instance} runs lockstep={live.spec.lockstep}, but eval.client is "
+                    f"{args.client!r}; restart it: bash scripts/start_stack.sh eval <run> --gpu {args.gpu}"
                 )
             if live.spec.auto_start != args.clean:
                 # Clean rounds drop every planner command, the start included, so only
@@ -351,33 +447,44 @@ def _evaluate(args):
                     name=f"start_stack_{tag}",
                     receipt_path=out / "deploy_receipts.jsonl",
                 )
-            # In this process since 2026-10-01 (TODO 1.16). It used to be a `.venv_sim` child of this
-            # `.venv_sim` process, handed `env` as its whole environment; adopting `env` is the same hand-off
-            # (the crate collection does it the same way), and `vla_rounds.run` closes its clients and clock.
-            # Adopt BEFORE importing vla_rounds: its imports build the IK from the scene `locomani.paths`
-            # names, and adopt_sim_dir refuses to move a scene a module already holds (the gate's first try).
-            from locomani.pipeline import run_context
-
-            run_context.adopt_env(env)
-            from locomani.tasks.crate import vla_rounds
-
-            batch = dict(
-                rounds=rounds,
-                seed=args.seed + b * args.batch_rounds,
-                manifest=manifest,
-                initial_token_file=args.initial_token_file,
-                policy_port=args.port,
-                execution_horizon=args.execution_horizon,
-                budget_s=args.budget_s,
-                trace_dir=out / "traces",
-                image_source=args.image_source,
-                clean=args.clean,
-                round_offset=b * args.batch_rounds,
-            )
             try:
-                stage.record_config(f"rounds_{tag}", dict(batch, config=task_cfg.to_dict()), env=env)
-                with stage.timed(f"rounds_{tag}"):
-                    vla_rounds.run(task_cfg, **batch)
+                stage.check(
+                    f"rounds_{tag}",
+                    [
+                        SIM,
+                        "-m",
+                        "locomani.tasks.crate.vla_rounds",
+                        "--rounds",
+                        rounds,
+                        "--seed",
+                        args.seed + b * args.batch_rounds,
+                        "--manifest",
+                        manifest,
+                        "--config",
+                        config_path,
+                        "--policy-port",
+                        args.port,
+                        "--execution-horizon",
+                        args.execution_horizon,
+                        "--budget-s",
+                        args.budget_s,
+                        "--initial-token-file",
+                        args.initial_token_file,
+                        "--trace-dir",
+                        out / "traces",
+                        "--image-source",
+                        args.image_source,
+                        "--client",
+                        args.client,
+                        "--gap",
+                        args.gap,
+                        *lockstep_argv(args),
+                        *([] if args.clean else ["--no-clean"]),
+                        "--round-offset",
+                        b * args.batch_rounds,
+                    ],
+                    env=env,
+                )
             finally:
                 if not args.attach:
                     stack.stop_instance(args.instance, runner=stage.run)
@@ -395,7 +502,19 @@ def _evaluate(args):
         seed=args.seed,
         execution_horizon=args.execution_horizon,
         budget_s=args.budget_s,
-        client="blocking",
+        client=args.client,
+        gap=args.gap,
+        dataset_fps=args.dataset_fps,
+        **(
+            dict(
+                latency_frames=args.latency_frames,
+                latency_dist=args.latency_dist,
+                camera_frames=args.camera_frames,
+                camera_delay=None if args.camera_delay is None else json.loads(args.camera_delay),
+            )
+            if args.client == "lockstep"
+            else {}
+        ),
         manifest=str(manifest),
         backend=dataclasses.asdict(backend),
     )

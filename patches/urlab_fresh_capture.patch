@@ -1,0 +1,597 @@
+diff --git a/Scripts/clean_meshes.py b/Scripts/clean_meshes.py
+index 33d7c0d..6ef14dd 100644
+--- a/Scripts/clean_meshes.py
++++ b/Scripts/clean_meshes.py
+@@ -67,6 +67,12 @@ def clean_mesh(mesh):
+         )
+     mesh.fix_normals()
+ 
++    # Split the vertices again along hard edges (> 30 deg between faces). merge_vertices made every edge share
++    # its vertices, and the exported vertex normals then average across a 90 deg edge, so a flat face shades
++    # as a concave pillow in Unreal -- plain on a metallic part such as a camera body (locomanipulation,
++    # 2026-10-03). Curved surfaces keep their smooth shading.
++    mesh = trimesh.graph.smooth_shade(mesh, angle=np.radians(30))
++
+     # Rotate -90 degrees around X for GLTF Y-up -> Unreal Z-up
+     rotation_matrix = trimesh.transformations.rotation_matrix(-np.radians(90), [1, 0, 0])
+     mesh.apply_transform(rotation_matrix)
+diff --git a/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp b/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
+index dacea2d..f1bbf1e 100644
+--- a/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
++++ b/Source/URLab/Private/Bridge/BridgeServerConfigUtils.cpp
+@@ -43,6 +43,12 @@ void LoadFromIni(FURLabBridgeServerConfig& Out)
+ 
+ 	if (File.GetBool(SectionName, TEXT("AutoStart"), TmpBool))
+ 		Out.bAutoStart = TmpBool;
++	if (File.GetInt(SectionName, TEXT("PortBase"), TmpInt))
++	{
++		Out.PortBase = TmpInt;
++		Out.StatePort = TmpInt;
++		Out.StepPort = TmpInt + 4;
++	}
+ 	if (File.GetInt(SectionName, TEXT("StepPort"), TmpInt))
+ 		Out.StepPort = TmpInt;
+ 	if (File.GetInt(SectionName, TEXT("StatePort"), TmpInt))
+@@ -60,6 +66,7 @@ void SaveToIni(const FURLabBridgeServerConfig& In)
+ 	File.Read(Path); // preserve other sections / unknown keys
+ 
+ 	File.SetString(SectionName, TEXT("AutoStart"), In.bAutoStart ? TEXT("True") : TEXT("False"));
++	File.SetInt64(SectionName, TEXT("PortBase"), In.PortBase);
+ 	File.SetInt64(SectionName, TEXT("StepPort"), In.StepPort);
+ 	File.SetInt64(SectionName, TEXT("StatePort"), In.StatePort);
+ 	File.SetString(SectionName, TEXT("StopOnPIEEnd"), In.bStopOnPIEEnd ? TEXT("True") : TEXT("False"));
+@@ -67,4 +74,11 @@ void SaveToIni(const FURLabBridgeServerConfig& In)
+ 	File.Dirty = true;
+ 	File.Write(Path);
+ }
++int32 GetPortBase()
++{
++	FURLabBridgeServerConfig Config;
++	LoadFromIni(Config);
++	return Config.PortBase;
++}
++
+ } // namespace URLabBridgeServerConfigUtils
+diff --git a/Source/URLab/Private/Bridge/RpcDispatcher.cpp b/Source/URLab/Private/Bridge/RpcDispatcher.cpp
+index 9758d6f..bfa16f7 100644
+--- a/Source/URLab/Private/Bridge/RpcDispatcher.cpp
++++ b/Source/URLab/Private/Bridge/RpcDispatcher.cpp
+@@ -1050,7 +1050,7 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::HandleStep(const TSharedPtr<FJsonOb
+ 	}
+ 
+ 	// Parse include_cameras: accepts either
+-	//   - object: { "<cam_name>": "sync"|"latest" } -- per-camera mode
++	//   - object: { "<cam_name>": "sync"|"latest"|"fresh"|"stream" } -- per-camera mode
+ 	//   - bool true: all registered cameras at "latest" mode (legacy form)
+ 	//   - false/absent: no cameras
+ 	TMap<FString, ECameraInclude> CameraSpec;
+@@ -1066,6 +1066,10 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::HandleStep(const TSharedPtr<FJsonOb
+ 					ECameraInclude E = ECameraInclude::Latest;
+ 					if (Mode.Equals(TEXT("sync"), ESearchCase::IgnoreCase))
+ 						E = ECameraInclude::Sync;
++					else if (Mode.Equals(TEXT("fresh"), ESearchCase::IgnoreCase))
++						E = ECameraInclude::Fresh;
++					else if (Mode.Equals(TEXT("stream"), ESearchCase::IgnoreCase))
++						E = ECameraInclude::Stream;
+ 					CameraSpec.Add(Kv.Key, E);
+ 				}
+ 			}
+@@ -1605,6 +1609,99 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 		}
+ 	}
+ 
++	// "fresh": push a render snapshot from the current mjData, apply it to the
++	// component transforms on the game thread, then capture and read back each
++	// requested camera there, synchronously. "sync" only waits for whichever
++	// readback the tick already has in flight, which can predate the pose this
++	// request just wrote (a puppet push shows the previous pose ~half the time).
++	// "stream" is the same, for a pose that continues the previous request's (a trace
++	// played at its own rate): one capture that keeps TSR / Lumen history, as a game frame.
++	struct FFreshCapture
++	{
++		TMap<UMjCamera*, TArray<FColor>> Pixels;
++		FEvent* Done = FPlatformProcess::GetSynchEventFromPool(/*bIsManualReset=*/false);
++		~FFreshCapture() { FPlatformProcess::ReturnSynchEventToPool(Done); }
++	};
++	TSharedPtr<FFreshCapture, ESPMode::ThreadSafe> Fresh;
++	{
++		TArray<TWeakObjectPtr<UMjCamera>> FreshCams;
++		bool bStream = true;
++		for (const TPair<FString, ECameraInclude>& Spec : CameraSpec)
++		{
++			UMjCamera** Found = ByName.Find(Spec.Key);
++			const bool bWant = Spec.Value == ECameraInclude::Fresh || Spec.Value == ECameraInclude::Stream;
++			if (bWant && Found && *Found && (*Found)->CaptureMode != EMjCameraMode::Depth)
++			{
++				FreshCams.AddUnique(*Found);
++				bStream &= Spec.Value == ECameraInclude::Stream;
++			}
++		}
++		if (FreshCams.Num() > 0 && Manager->PhysicsEngine)
++		{
++			{
++				FScopeLock Lock(&Manager->PhysicsEngine->CallbackMutex);
++				Manager->PhysicsEngine->PushRenderState();
++			}
++			Fresh = MakeShared<FFreshCapture, ESPMode::ThreadSafe>();
++			TWeakObjectPtr<AAMjManager> WeakMgr(Manager);
++			auto Capture = [WeakMgr, FreshCams, bStream, State = Fresh]()
++			{
++				if (AAMjManager* M = WeakMgr.Get())
++					M->ApplyRenderStateNow();
++				// Every camera renders before the first readback: a readback flushes the GPU, so reading each
++				// camera right after its own capture serialises render and readback per camera.
++				TArray<UMjCamera*> Rendered;
++				for (const TWeakObjectPtr<UMjCamera>& W : FreshCams)
++				{
++					if (UMjCamera* C = W.Get(); C && C->RenderNow(bStream))
++						Rendered.Add(C);
++				}
++				for (UMjCamera* C : Rendered)
++				{
++					TArray<FColor> Px;
++					if (C->ReadNow(Px))
++						State->Pixels.Add(C, MoveTemp(Px));
++				}
++				State->Done->Trigger();
++			};
++			if (IsInGameThread())
++			{
++				Capture();
++			}
++			else if (bStream)
++			{
++				// Same tick as the pose: the robot's previous transform is still the last request's pose, so the
++				// capture's motion vectors carry the step and TSR / Lumen reproject their history along it.
++				Manager->EnqueueTickTask(Capture);
++				if (!Fresh->Done->Wait(FMath::Max(TimeoutMs, 5000)))
++				{
++					UE_LOG(LogURLabNet, Warning, TEXT("[BuildCamerasBlock] stream capture timed out"));
++					Fresh.Reset(); // the game-thread task keeps its own reference
++				}
++			}
++			else
++			{
++				// Tick N applies the pose; tick N+1 captures. The renderer rolls a primitive's previous transform only
++				// at frame start, so capturing in the frame that moved the robot gives it the old pose's motion
++				// vectors for every repeat: TSR and Lumen reproject from there and smear the robot.
++				TWeakObjectPtr<AAMjManager> WeakMgr2(Manager);
++				Manager->EnqueueTickTask([WeakMgr2, Capture]()
++				{
++					if (AAMjManager* M = WeakMgr2.Get())
++					{
++						M->ApplyRenderStateNow();
++						M->EnqueueTickTask(Capture);
++					}
++				});
++				if (!Fresh->Done->Wait(FMath::Max(TimeoutMs, 5000)))
++				{
++					UE_LOG(LogURLabNet, Warning, TEXT("[BuildCamerasBlock] fresh capture timed out"));
++					Fresh.Reset(); // the game-thread task keeps its own reference
++				}
++			}
++		}
++	}
++
+ 	for (const TPair<FString, ECameraInclude>& Spec : CameraSpec)
+ 	{
+ 		UMjCamera** Found = ByName.Find(Spec.Key);
+@@ -1660,6 +1757,19 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 		CamObj->SetNumberField(TEXT("width"), Cam->resolution.Num() > 0 ? Cam->resolution[0] : 0);
+ 		CamObj->SetNumberField(TEXT("height"), Cam->resolution.Num() > 1 ? Cam->resolution[1] : 0);
+ 
++		if (Spec.Value == ECameraInclude::Fresh || Spec.Value == ECameraInclude::Stream)
++		{
++			TArray<FColor>* Px = Fresh ? Fresh->Pixels.Find(Cam) : nullptr;
++			if (!Px || Px->Num() == 0)
++				continue;
++			CamObj->SetStringField(TEXT("dtype"), TEXT("bgra8"));
++			CamObj->SetBoolField(TEXT("fresh"), true);
++			FURLabMsgpackUtil::SetBinaryField(CamObj, TEXT("data"),
++				reinterpret_cast<const uint8*>(Px->GetData()), Px->Num() * sizeof(FColor));
++			Cams->SetObjectField(Spec.Key, CamObj);
++			continue;
++		}
++
+ 		if (Cam->CaptureMode == EMjCameraMode::Depth)
+ 		{
+ 			TArray<float> Pixels = Cam->ConsumeFloatPixels();
+diff --git a/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp b/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
+index 6bb9663..09e3323 100644
+--- a/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
++++ b/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
+@@ -41,6 +41,33 @@
+ #include "MuJoCo/Core/MjArticulation.h"
+ #include "MuJoCo/Utils/MjOrientationUtils.h"
+ #include "zmq.h"
++#include "HAL/IConsoleManager.h"
++#include "Bridge/BridgeServerConfigUtils.h"
++
++namespace
++{
++// MJCF fovy is the VERTICAL field of view; USceneCaptureComponent2D::FOVAngle is HORIZONTAL. Passing fovy
++// straight through zooms every non-square camera in (640x480, fovy 73.74: 73.74 deg wide instead of 90).
++float HorizontalFovDeg(float FovyDeg, const TArray<int32>& Res)
++{
++	if (Res.Num() < 2 || Res[0] <= 0 || Res[1] <= 0)
++		return FovyDeg;
++	const float Aspect = static_cast<float>(Res[0]) / static_cast<float>(Res[1]);
++	return 2.0f * FMath::RadiansToDegrees(FMath::Atan(FMath::Tan(FMath::DegreesToRadians(FovyDeg) * 0.5f) * Aspect));
++}
++
++TAutoConsoleVariable<float> CVarCameraNearClipCm(
++	TEXT("urlab.CameraNearClipCm"), 0.1f,
++	TEXT("Near clip plane of every MjCamera capture, in cm. MuJoCo clips at znear * extent (2 cm for extent 2) "
++		 "and so does our Isaac renderer; 0.1 shows robot geometry right at the lens that neither draws."),
++	ECVF_Default);
++
++TAutoConsoleVariable<int32> CVarFreshCaptureRepeats(
++	TEXT("urlab.FreshCaptureRepeats"), 1,
++	TEXT("Scene captures per \"fresh\" camera request; the last one is read back. >1 lets temporal effects "
++		 "(Lumen, TSR) accumulate while the world is frozen."),
++	ECVF_Default);
++} // namespace
+ 
+ // ---------------------------------------------------------------------------
+ // FCameraZmqWorker
+@@ -261,7 +288,7 @@ void UMjCamera::OnRegister()
+ 	Super::OnRegister();
+ 	if (CaptureComponent)
+ 	{
+-		CaptureComponent->FOVAngle = fovy;
++		CaptureComponent->FOVAngle = HorizontalFovDeg(fovy, resolution);
+ 	}
+ }
+ 
+@@ -388,7 +415,7 @@ void UMjCamera::TickComponent(float DeltaTime, ELevelTick TickType,
+ 
+ 	// Always refresh PendingPixels while streaming; include_cameras consumes it
+ 	// without enabling ZMQ/SHM broadcast (those flags only gate the workers below).
+-	if (bStreamingEnabled && !bReadbackPending)
++	if (bStreamingEnabled && !bReadbackPending && !bOnDemand)
+ 	{
+ 		RequestReadback();
+ 	}
+@@ -427,7 +454,7 @@ void UMjCamera::SetupRenderTarget()
+ 	// geometry can intrude on the frustum and produce black-on-black frames
+ 	// when the camera is mounted inside a body shell.
+ 	CaptureComponent->bOverride_CustomNearClippingPlane = true;
+-	CaptureComponent->CustomNearClippingPlane = 0.1f;
++	CaptureComponent->CustomNearClippingPlane = FMath::Max(0.01f, CVarCameraNearClipCm.GetValueOnGameThread());
+ 
+ 	switch (CaptureMode)
+ 	{
+@@ -552,7 +579,12 @@ void UMjCamera::SetStreamingEnabled(bool bEnable)
+ 
+ 			const FIntPoint Res(resolution.Num() > 0 ? resolution[0] : 0,
+ 				resolution.Num() > 1 ? resolution[1] : 0);
+-			ZmqWorker = new FCameraZmqWorker(ZmqEndpoint, Topic, Res);
++			// The component default (and every imported camera that kept it) names 5558; that legacy port moves
++			// with PortBase to PortBase + 3, so the cameras stay clear of the ports a PortBase avoids.
++			const FString Endpoint = ZmqEndpoint == TEXT("tcp://0.0.0.0:5558")
++				? FString::Printf(TEXT("tcp://0.0.0.0:%d"), URLabBridgeServerConfigUtils::GetPortBase() + 3)
++				: ZmqEndpoint;
++			ZmqWorker = new FCameraZmqWorker(Endpoint, Topic, Res);
+ 			WorkerThread = FRunnableThread::Create(ZmqWorker, TEXT("CameraZmqWorkerThread"), 0, TPri_BelowNormal);
+ 		}
+ 
+@@ -587,7 +619,7 @@ void UMjCamera::SetStreamingEnabled(bool bEnable)
+ 		}
+ 		if (CaptureComponent)
+ 		{
+-			CaptureComponent->FOVAngle = fovy;
++			CaptureComponent->FOVAngle = HorizontalFovDeg(fovy, resolution);
+ 
+ 			// CRITICAL: SetVisibility(true) must be called to allow the component
+ 			// to dispatch scene capture updates. bHiddenInGame alone is not sufficient —
+@@ -747,6 +779,53 @@ void UMjCamera::RequestReadback()
+ 	ReadbackFence.BeginFence();
+ }
+ 
++bool UMjCamera::RenderNow(bool bContinue)
++{
++	check(IsInGameThread());
++	if (!CaptureComponent || !RenderTarget || CaptureMode == EMjCameraMode::Depth)
++		return false;
++	if (!bOnDemand)
++	{
++		bOnDemand = true;
++		CaptureComponent->bCaptureEveryFrame = false;
++		// Lumen and other temporal passes need a persistent view state in a scene capture.
++		CaptureComponent->bAlwaysPersistRenderingState = true;
++		// Scene captures turn TemporalAA off (legacy default, SceneCaptureComponent.cpp), which drops the project's
++		// TSR to FXAA: hard edges and text alias. With it on, the FreshCaptureRepeats captures of the frozen world
++		// are jittered TSR samples.
++		CaptureComponent->ShowFlags.SetTemporalAA(true);
++		CaptureComponent->ShowFlags.SetAntiAliasing(true);
++	}
++	// CaptureScene sends the pending end-of-frame render updates first, so the
++	// transforms just applied from the render snapshot are what gets drawn.
++	if (bContinue)
++	{
++		CaptureComponent->bCameraCutThisFrame = false;
++		CaptureComponent->CaptureScene();
++		return true;
++	}
++	const int32 Repeats = FMath::Clamp(CVarFreshCaptureRepeats.GetValueOnGameThread(), 1, 64);
++	for (int32 i = 0; i < Repeats; ++i)
++	{
++		// The world jumped to a new pose since the last request: a camera cut on the first capture drops TSR and
++		// Lumen screen-space history, so the image holds this pose only (without it TSR ghosts the previous pose
++		// into the robot). The later captures of the frozen world accumulate jittered samples. Reset per capture.
++		CaptureComponent->bCameraCutThisFrame = (i == 0);
++		CaptureComponent->CaptureScene();
++	}
++	return true;
++}
++
++bool UMjCamera::ReadNow(TArray<FColor>& OutPixels)
++{
++	check(IsInGameThread());
++	FTextureRenderTargetResource* Resource = RenderTarget ? RenderTarget->GameThread_GetRenderTargetResource() : nullptr;
++	if (!Resource)
++		return false;
++	// ReadPixels flushes the rendering commands, so the captures queued by RenderNow are included.
++	return Resource->ReadPixels(OutPixels, FReadSurfaceDataFlags(RCM_UNorm, CubeFace_MAX));
++}
++
+ bool UMjCamera::IsReadbackReady() const
+ {
+ 	return bReadbackComplete;
+@@ -1007,6 +1086,6 @@ void UMjCamera::ImportFromXml(const FXmlNode* Node, const FMjCompilerSettings& C
+ 
+ 	if (CaptureComponent)
+ 	{
+-		CaptureComponent->FOVAngle = fovy;
++		CaptureComponent->FOVAngle = HorizontalFovDeg(fovy, resolution);
+ 	}
+ }
+diff --git a/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp b/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp
+index 1023d38..6c7ad74 100644
+--- a/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp
++++ b/Source/URLab/Private/MuJoCo/Core/AMjManager.cpp
+@@ -44,6 +44,7 @@
+ #include "MuJoCo/Core/MjSimulationState.h"
+ #include "Utils/URLabLogging.h"
+ #include "Bridge/BridgeServerProvider.h"
++#include "Bridge/BridgeServerConfigUtils.h"
+ #if WITH_EDITOR
+ #include "Misc/MessageDialog.h"
+ #endif
+@@ -188,7 +189,8 @@ void AAMjManager::BeginPlay()
+ 		// transports; manager only owns publish/subscribe streams.
+ 		BridgeServer = NewObject<UURLabBridgeServer>(this, TEXT("BridgeServer"));
+ 		BridgeServer->SetOwnedByManager(true);
+-		BridgeServer->Start();          // ZMQ on tcp://0.0.0.0:5559
++		BridgeServer->Start(FString::Printf(TEXT("tcp://0.0.0.0:%d"),
++			URLabBridgeServerConfigUtils::GetPortBase() + 4)); // step RPC on PortBase + 4
+ 		BridgeServer->EnsureShmBound(); // SHM under "live"
+ 	}
+ 	BridgeServer->RegisterManager(this);
+@@ -199,17 +201,19 @@ void AAMjManager::BeginPlay()
+ 	// owns streaming; bridge owns RPC.
+ 	{
+ 		UE_LOG(LogURLab, Log, TEXT("[AAMjManager] Creating manager-owned streaming transports"));
++		const int32 PortBase = URLabBridgeServerConfigUtils::GetPortBase();
+ 
+ 		UURLabZmqPublishTransport* Broadcaster = NewObject<UURLabZmqPublishTransport>(
+ 			this, TEXT("AutoZmqBroadcaster"));
+ 		if (Broadcaster)
+ 		{
+ 			Broadcaster->SetOwningManager(this);
++			Broadcaster->ZmqEndpoint = FString::Printf(TEXT("tcp://0.0.0.0:%d"), PortBase);
+ 			if (Broadcaster->TransportInit())
+ 			{
+ 				ManagerOwnedPublishTransports.Add(Broadcaster);
+ 				UE_LOG(LogURLab, Log,
+-					TEXT("[AAMjManager] Created UURLabZmqPublishTransport (tcp://0.0.0.0:5555)"));
++					TEXT("[AAMjManager] Created UURLabZmqPublishTransport (%s)"), *Broadcaster->ZmqEndpoint);
+ 			}
+ 		}
+ 
+@@ -231,11 +235,13 @@ void AAMjManager::BeginPlay()
+ 		if (Subscriber)
+ 		{
+ 			Subscriber->SetOwningManager(this);
++			Subscriber->ControlEndpoint = FString::Printf(TEXT("tcp://0.0.0.0:%d"), PortBase + 1);
++			Subscriber->InfoEndpoint = FString::Printf(TEXT("tcp://0.0.0.0:%d"), PortBase + 2);
+ 			if (Subscriber->TransportInit())
+ 			{
+ 				ManagerOwnedSubscribeTransports.Add(Subscriber);
+ 				UE_LOG(LogURLab, Log,
+-					TEXT("[AAMjManager] Created UURLabZmqSubscribeTransport (tcp://127.0.0.1:5556)"));
++					TEXT("[AAMjManager] Created UURLabZmqSubscribeTransport (%s)"), *Subscriber->ControlEndpoint);
+ 			}
+ 		}
+ 	}
+@@ -494,7 +500,22 @@ void AAMjManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+ void AAMjManager::Tick(float DeltaTime)
+ {
+ 	Super::Tick(DeltaTime);
++	ApplyRenderStateNow();
++	// Drain first: a task may enqueue a follow-up that must run on the NEXT tick.
++	TArray<TFunction<void()>> Ready;
++	TFunction<void()> Task;
++	while (TickTasks.Dequeue(Task))
++	{
++		Ready.Add(MoveTemp(Task));
++	}
++	for (TFunction<void()>& T : Ready)
++	{
++		T();
++	}
++}
+ 
++void AAMjManager::ApplyRenderStateNow()
++{
+ 	if (!PhysicsEngine || !PhysicsEngine->IsInitialized())
+ 	{
+ 		return;
+diff --git a/Source/URLab/Public/Bridge/BridgeServerConfig.h b/Source/URLab/Public/Bridge/BridgeServerConfig.h
+index 56a1819..4c1de66 100644
+--- a/Source/URLab/Public/Bridge/BridgeServerConfig.h
++++ b/Source/URLab/Public/Bridge/BridgeServerConfig.h
+@@ -23,13 +23,20 @@ struct URLAB_API FURLabBridgeServerConfig
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
+ 	bool bAutoStart = true;
+ 
++	/** First of the plugin's TCP ports: state PUB = base, control SUB = base+1, info = base+2, cameras from
++	 *  base+3 (each probes upward for a free port), step RPC = base+4. INI key PortBase; StepPort / StatePort
++	 *  keys still override those two. Default 5800, clear of the 5555-5672 blocks the locomanipulation MuJoCo
++	 *  stacks use (upstream bound 5555-5559 and 5558+ for cameras, colliding with instance 0). */
++	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
++	int32 PortBase = 5800;
++
+ 	/** TCP port for the request/reply step RPC channel. */
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
+-	int32 StepPort = 5559;
++	int32 StepPort = 5804;
+ 
+ 	/** TCP port for the state PUB channel. */
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "URLab|Bridge")
+-	int32 StatePort = 5555;
++	int32 StatePort = 5800;
+ 
+ 	/** When true, EndPlay tears the server down even if it was started by
+ 	 *  the editor subsystem. Default false: an editor-spawned server stays
+diff --git a/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h b/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h
+index 6406935..8f2adee 100644
+--- a/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h
++++ b/Source/URLab/Public/Bridge/BridgeServerConfigUtils.h
+@@ -17,6 +17,10 @@ URLAB_API FString GetIniPath();
+  *  default value from the struct. Missing file is treated as all-default. */
+ URLAB_API void LoadFromIni(FURLabBridgeServerConfig& Out);
+ 
++/** The configured PortBase (the INI's, else the struct default): the manager's streams and the cameras
++ *  derive their ports from it. */
++URLAB_API int32 GetPortBase();
++
+ /** Write the full [BridgeServer] section to the INI. Creates the file /
+  *  parent directories if missing. */
+ URLAB_API void SaveToIni(const FURLabBridgeServerConfig& In);
+diff --git a/Source/URLab/Public/Bridge/RpcDispatcher.h b/Source/URLab/Public/Bridge/RpcDispatcher.h
+index b1c63fd..14e16ce 100644
+--- a/Source/URLab/Public/Bridge/RpcDispatcher.h
++++ b/Source/URLab/Public/Bridge/RpcDispatcher.h
+@@ -55,7 +55,11 @@ public:
+ 	enum class ECameraInclude : uint8
+ 	{
+ 		Sync,
+-		Latest
++		Latest,
++		/** Rendered after this request's pose reached the scene (see BuildCamerasBlock). */
++		Fresh,
++		/** Like Fresh, but the next frame of a continuous sequence: one capture that keeps the temporal history. */
++		Stream
+ 	};
+ 
+ 	FURLabRpcDispatcher();
+diff --git a/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h b/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h
+index 62caefa..6c30d96 100644
+--- a/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h
++++ b/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h
+@@ -269,6 +269,24 @@ public:
+ 	UFUNCTION(BlueprintCallable, Category = "MuJoCo|Camera")
+ 	void RequestReadback();
+ 
++	/**
++	 * @brief Game thread: renders this camera now (queued on the render thread; ReadNow collects it).
++	 *        bContinue: one capture that keeps the temporal history, for the next frame of a continuous
++	 *        sequence; otherwise a camera cut and urlab.FreshCaptureRepeats captures of the frozen world.
++	 *        Independent of the streaming readback state. Not for Depth mode.
++	 */
++	bool RenderNow(bool bContinue);
++
++	/** @brief Game thread: reads back the last RenderNow synchronously (BGRA, row-major); flushes rendering. */
++	bool ReadNow(TArray<FColor>& OutPixels);
++
++private:
++	/** Set by the first RenderNow: the camera stops its per-frame capture and readback and renders only on
++	 *  request. A per-frame capture plus an explicit one in the same frame hung the GPU in a heavy level. */
++	bool bOnDemand = false;
++
++public:
++
+ 	/**
+ 	 * @brief Returns true when the GPU→CPU copy started by RequestReadback() is complete.
+ 	 */
+diff --git a/Source/URLab/Public/MuJoCo/Core/AMjManager.h b/Source/URLab/Public/MuJoCo/Core/AMjManager.h
+index 8368df5..dd4a711 100644
+--- a/Source/URLab/Public/MuJoCo/Core/AMjManager.h
++++ b/Source/URLab/Public/MuJoCo/Core/AMjManager.h
+@@ -24,6 +24,7 @@
+ 
+ #include "MuJoCo/Components/QuickConvert/MjQuickConvertComponent.h"
+ #include "CoreMinimal.h"
++#include "Containers/Queue.h"
+ #include "GameFramework/Actor.h"
+ #include "MuJoCo/Core/MjArticulation.h"
+ #include "MuJoCo/Core/MjPhysicsEngine.h"
+@@ -253,6 +254,21 @@ protected:
+ public:
+ 	virtual void Tick(float DeltaTime) override;
+ 
++	/** Applies the latest render snapshot to every articulation and quick-convert component
++	 *  (game thread). Tick does this each frame; the bridge's "fresh" camera capture calls it
++	 *  directly so the capture sees the pose the request just pushed. */
++	void ApplyRenderStateNow();
++
++	/** Runs `Task` on the game thread at the end of the next Tick (after ApplyRenderStateNow). The bridge's
++	 *  "fresh" capture goes through here rather than AsyncTask(GameThread): an AsyncTask can be pumped inside
++	 *  the engine's own render-thread waits, and a capture that flushes rendering from there deadlocks. */
++	void EnqueueTickTask(TFunction<void()> Task) { TickTasks.Enqueue(MoveTemp(Task)); }
++
++private:
++	TQueue<TFunction<void()>, EQueueMode::Mpsc> TickTasks;
++
++public:
++
+ 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mujoco Physics|Objects")
+ 	TArray<UMjQuickConvertComponent*> m_MujocoComponents;
+ 
+diff --git a/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp b/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp
+index 7cf82a2..17e284d 100644
+--- a/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp
++++ b/Source/URLabEditor/Private/Tests/MjBridgeServerConfigTests.cpp
+@@ -77,8 +77,8 @@ bool FMjBridgeServerConfigDefaults::RunTest(const FString& Parameters)
+ {
+ 	FURLabBridgeServerConfig Cfg;
+ 	TestTrue(TEXT("AutoStart default"), Cfg.bAutoStart);
+-	TestEqual(TEXT("StepPort default"), Cfg.StepPort, 5559);
+-	TestEqual(TEXT("StatePort default"), Cfg.StatePort, 5555);
++	TestEqual(TEXT("StepPort default"), Cfg.StepPort, 5804);
++	TestEqual(TEXT("StatePort default"), Cfg.StatePort, 5800);
+ 	TestFalse(TEXT("StopOnPIEEnd default"), Cfg.bStopOnPIEEnd);
+ 
+ 	// Round-trip vs missing path: leaves struct at defaults.
+@@ -87,7 +87,7 @@ bool FMjBridgeServerConfigDefaults::RunTest(const FString& Parameters)
+ 	LoadFrom(Path, Cfg);
+ 
+ 	TestTrue(TEXT("Missing INI: AutoStart unchanged"), Cfg.bAutoStart);
+-	TestEqual(TEXT("Missing INI: StepPort unchanged"), Cfg.StepPort, 5559);
++	TestEqual(TEXT("Missing INI: StepPort unchanged"), Cfg.StepPort, 5804);
+ 	return true;
+ }
+ 
+@@ -148,7 +148,7 @@ bool FMjBridgeServerConfigPartial::RunTest(const FString& Parameters)
+ 	LoadFrom(Path, Cfg);
+ 
+ 	TestEqual(TEXT("StepPort honoured"), Cfg.StepPort, 7777);
+-	TestEqual(TEXT("StatePort default kept"), Cfg.StatePort, 5555);
++	TestEqual(TEXT("StatePort default kept"), Cfg.StatePort, 5800);
+ 	TestTrue(TEXT("AutoStart default kept"), Cfg.bAutoStart);
+ 	TestFalse(TEXT("StopOnPIEEnd default kept"), Cfg.bStopOnPIEEnd);
+ 	return true;
+diff --git a/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp b/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp
+index a4737f5..fa531f0 100644
+--- a/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp
++++ b/Source/URLabEditor/Private/Tests/MjBridgeServerSubsystemTests.cpp
+@@ -99,7 +99,7 @@ bool FMjBridgeServerSubsystemConfigLoaded::RunTest(const FString& Parameters)
+ 
+ 	const FURLabBridgeServerConfig& C = Sub->GetConfig();
+ 
+-	// Defaults are documented: StepPort=5559, StatePort=5555, AutoStart=true,
++	// Defaults are documented: StepPort=5804, StatePort=5800 (PortBase 5800), AutoStart=true,
+ 	// StopOnPIEEnd=false. The user can override via INI; if they have, the
+ 	// values should still be sensible (positive ports).
+ 	TestTrue(TEXT("StepPort is a plausible TCP port"),

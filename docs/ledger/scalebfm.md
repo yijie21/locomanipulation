@@ -215,7 +215,7 @@ ScaleBFM(上海 AI Lab,arXiv 2607.15163,MIT)是 SONIC 的候选替代 controller
 
 **删除的代码及裁定**(删除于 f8fc71b):crate spike 的 episode/envelope(run_spike.run_round、run_bend、render_*,§1 已记录);v3 18-d 线(run_bottle.run_round、record_bottle、eval_bfm_bottle、bfm_action、augment_bfm_velocity、`configs/gr00t_bfm_{2cam,vel_2cam,vel4_2cam}.py`、`scripts/bfm_pilot.sh`;§3 三个 pilot 0/60,checkpoint 与数据均已删)、run_bottle_v4(0/3,§3)、corner 场景(只为复现 v3/v4 数据集,§4)、run_visual_comparison(已取消 Goal 的驱动,§7)、visual_pelvis_ablation + 其测试(ABCD 数据已丢,§11)、visual_baseline 与 cohort 臂 A(运行的是 outputs/ 下的冻结快照,§13)、harness.main(v3 探针 CLI)、bottle_probe / probe_visual_mode6 / calibrate_visual_reach(一次性探针,产物已丢)、sonic_envelope + `scripts/run_sonic_envelope.sh`(SONIC 对照,与本线无关)。
 
-**没做、留作后续**(见 docs/ROADMAP.md):network.py 757 行(vendored)与 12 个 >80 行函数的尺寸债;collect/eval/video_check 的 CLI 仍带自己的 flag(只有 round.py 完全走 config);这条线的 collect/export/train/eval 仍是自己的驱动,没有并入 `locomani/pipeline`(需要 pipeline 真正通过 Backend seam 调用);`lockstep_vendor/` 仍在 `src/teleop_free/`(SONIC lockstep 用,不属本线)。
+**没做、留作后续**(见 docs/archive/roadmap_maintenance_20260914.md，2026-09-28 从 docs/ROADMAP.md 归档):network.py 757 行(vendored)与 12 个 >80 行函数的尺寸债;collect/eval/video_check 的 CLI 仍带自己的 flag(只有 round.py 完全走 config);这条线的 collect/export/train/eval 仍是自己的驱动,没有并入 `locomani/pipeline`(需要 pipeline 真正通过 Backend seam 调用);`lockstep_vendor/` 仍在 `src/teleop_free/`(SONIC lockstep 用,不属本线)。
 
 (来源: 本仓库 commit a3e2fee / f8fc71b / 51a4d25;重放对照脚本与输出在做这次重组的 session scratchpad,未入库)
 
