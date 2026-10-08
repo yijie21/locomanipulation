@@ -1,43 +1,44 @@
-# STATE — 2026-10-05（会话：第一个新技能 `put_down_single` 造完、验收通过、已提交 `4da2bba`）
+# STATE — 2026-10-05（会话：检查器按实测设定整体匹配、Claude 提任务循环跑通、报告 doc；上一份 STATE 见 `def96be`）
 
 工作目录 `/workspace/code/locomanipulation-scene_discovery`（worktree），分支 `scene_discovery`（基于 `loco_agent` 的 `023a31a`），未推送。
-`outputs/`、`third_party/`、`datasets/` 是指向主目录的符号链接，**stage by name，永远不要 `git add -A`**。
-本会话改动：`git log --oneline 695b531..HEAD`（`4da2bba` + 本次 handoff）；`git diff --stat 695b531 4da2bba` 23 个文件。
-设计与决策：`docs/handoff/scene-discovery-plan-20261002.md`、DECISIONS 2026-10-02 / 10-03 四节；本技能的规格、门槛、六版逐版证据：
-`docs/handoff/put-down-single-20261003.md`。
+`outputs/`、`third_party/`、`datasets/` 是指向主目录的符号链接，**stage by name，永远不要 `git add -A`**。未跟踪的 `.serena/` 不是本线的，别提交。
+本会话改动：`git log --oneline def96be..HEAD`（`06afba2` 代码 / 测试 / 配置 / 文档 + 本次 handoff）；`git diff --stat def96be 06afba2` 15 个文件。
+设计与决策：`docs/handoff/scene-discovery-plan-20261002.md`；DECISIONS 2026-10-05 两节。报告 doc（私有，TODO 9.17）：
+https://claude.ai/code/artifact/132adcd3-de5d-4ff1-99ba-1bc683f47549
 
 ## 进度
 
-- 已确认：用户定第一个新技能 = "单手放到台面"（Claude 造，9.9.7）；咖啡罐暂不采（9.9.8）。
-- 已确认：`put_down_single` 验收 **12/20 通过**（门槛 ≥ 10/20，跑之前写定）：罐子从 0.70 m 推车搬到 0.52 m 圆桌，抓取成功的前 20 局里走近台面 + 放下成功；
-  第六版 80 局（seed 600–679），门槛外 2 局另计共 13/22；六版共 171 局、约 2.3 h。成功局倾角 0.3–0.4°，离点 0.1–3.5 cm。
-- 已确认：capability.yaml `place.on_surface_single` 写回（measured_one）；检查器重跑：可试跑 72 → 264，剩下唯一的技能缺口 `grasp_single.grip_height`（882），
-  第 1 桶仍 0（9.12.8）。改前结果另存 `outputs/scene_discovery/adt_apartment/feasibility/*_20261003_before_put_down.*`。
-- 已确认：`plan_episode` 出生点要离所有台面边沿 ≥ 0.45 m（改了所有 scene_discovery 场景的出生距离，罐子 1.2 → 0.8 m）。
-- 已确认：13 局成功预览在 `outputs/scene_discovery/adt_apartment/put_down_v6_success_previews_20261003/`（+ `.zip`），已逐个核对大小 / 解码 / 时长。
-- 已确认：`make check` 全过；提交时 pre-commit 全量通过。instance 1 已空出，没有运行中的栈。
+- 已确认：TODO 9 补了 9.13（采集吞吐）、9.14（补渲 → 转换 → 训练 → 三格评测），用户 2026-10-05 要求。
+- 已确认：检查器单手抓取按 `capability.yaml grasp_settings` 整体匹配（瓶子线 + 咖啡罐推车 4/10）；失败试跑记成技能缺口
+  （`deep_entry` inboard ≥ 0.14 且抓点离板 ≤ 0.08，`deep_reach` inboard ≥ 0.26）；头顶有板记 `*.covered`。
+  模板空间 2830 个：桶 2 / 1144 / 1684，第 1 桶 = 拿起咖啡罐、罐子放到圆桌；可试跑 85。
+- 已确认：只有一边放得进夹爪的物体，出生朝向限制在长边沿走近方向 ±20°（`plan_episode.spawn_object_yaw`）；单元测试过，**未上栈跑**。
+- 已确认：放进容器回归 `sd_place_regress_20261005` 抓取 6/10、place 3/6，与 pick_place 台账 §8 相同（§17）。
+- 已确认：Claude 提任务循环 `scripts/scene_discover_tasks.py`，Opus 一次运行 `discovery/opus_20261005b/`：49 个任务，
+  按改后阈值重检（`recheck_20261005.json`）桶 2 / 38 / 9；47/49 落在模板空间内。3 次调用 5.32 USD、20.5 min。
+  `opus_20261005_upright_bug` 作废（检查器 upright bug，已修）。
+- 已确认：`make check` 全过；`06afba2` 提交时 pre-commit 全量通过。没有运行中的栈或 discovery 进程（instance 1 空）。
 
 ## 假设 / 待验证
 
-- 待验证：放进容器（`place`）在 `place_phase` 改动后没有实跑过，只有单元测试（9.12.10）。
-- 假设：交接后底盘仍会移动、蹲时后移 7–13 cm 是规划器 IDLE / IDEL_SQUAT 的固有行为（只有 `poses` 与 `place_servo` 的相关性，没隔离）。
-- 未定位："腰没回中"（`[stand] neutral waist not delivered`）在验收里频繁出现，前一局成功 / 失败 / 抓取败之后都有（9.12.7）。
-- 假设：抓住与否主要由罐子随机朝向决定（28 局的分组统计，|a| ≤ 20° 6/9 也有失败，不是唯一因素；9.12.11）。
+- 待验证：±20° 出生朝向能把咖啡罐抓取率从约 0.24 提上去多少（9.12.11 的依据是 28 局分组统计，≤ 20° 也有败局）。
+- 假设：`overhead.open_above` 0.60 m 是规则，没测过。
+- 假设：采集一轮约 200 h（按整局 13/80、每局 48 s 外推，9.13）。
+- 待查：26/64 个自由体的 `upright_axis` 与实际静止姿态差 75–125°（9.15）；书已查清（ADT 正立 = 平放），其余未查。
+  后果：目标里写 `upright(X)` 的局在运行时会误判失败。
+- 我的判断，未测：扁平物体（钱包、钥匙、木勺）要"从上往下捏"（9.16.1）。
 
 ## 下一步（TODO 编号）
 
-1. 9.12.10 pick_place 跑 10 局，确认放进容器没被 `place_phase` 改坏。
-2. 9.12.4 / 9.12.5：蹲后按当前位姿再选点；`approach(台面)` 持物转身掉罐 3/20。
-3. 9.9.9 两个新缺口进检查器；9.8 查重；9.10 Claude 提任务的反馈循环。
+1. 9.10.3：试跑 6 个只缺实测的提议任务（罐子 → 岛台 / 垃圾桶 / 餐桌 / 长凳 / 玻璃柜，大花瓶 → 马桶水箱），各 10 局约 1 h GPU——**待用户定**。
+2. 9.16：第二个新技能（推荐台面高度抓取）——**待用户定**；9.15 先看一张盆栽 / 书的渲染再定修法。
+3. 9.10.2 → 9.14.1：任务文件接上 `plan_episode`（谓词合取 + 说法），再拿"罐子放到圆桌"录约 10 局走通录制 → 补渲 → 转换 → 短训 → 闭环。
 
 ## 卡点与坑
 
-- 停队列：先 TERM 外层脚本，再 TERM runner，再按 `/workspace/tmp/p03_i1/stack.json` 的 pid TERM sim / deploy，杀掉孤儿相机子进程
-  （`ss -ltnp | grep :5565`），把 `stack.json` 挪开。`kill -INT` 停不掉 plan_episode。
-- `pgrep -f <串>` 会匹配到含同一串的监视命令本身（本会话两个 Monitor 因此不退出）；用 pid 或日志判断结束。
-- zsh 里 `rm -f dir/*.png` 在没有匹配时整条命令中止；批处理写成 bash 脚本文件再跑。
-- 验收队列脚本 `outputs/scene_discovery/adt_apartment/put_down_accept_queue_20261003.sh <run 前缀> <seed 起点>`：每批 20 局，抓住 20 局即停。
-- worktree 里没有 `assets/isaac`：Isaac 脚本要 `ISAAC_ASSETS=/workspace/code/locomanipulation/assets/isaac`。根分区小：设 `TMPDIR=/workspace/tmp`。
+- 停队列 / discovery：按 pid TERM 外层脚本 → runner（discovery 的 `claude -p` 子进程另杀）→ `stack.json` 里的 sim / deploy，查 `ss -ltnp | grep :5565`；`kill -INT` 无效。
+- 提交前对新文件跑 `/venv/main/bin/ruff format <files>`；失败区域阈值取整到失败试跑本身落在区域内（浮点边界）。
+- Isaac 脚本要 `ISAAC_ASSETS=/workspace/code/locomanipulation/assets/isaac`；起栈前查 `nvidia-smi`、`stack.json`、`bash scripts/cpu_headroom.sh`（别的项目常占 5–9 核）。
 
 ## 关键路径与命令
 
@@ -45,11 +46,13 @@
 cd /workspace/code/locomanipulation-scene_discovery
 export SONIC_DEPLOY_ROOT=/workspace/code/locomanipulation/outputs/bottle_continuous_20260914/deploy PYTHONPATH=$PWD/src TMPDIR=/workspace/tmp
 PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python    # 不要 source scripts/paths.sh
-E=outputs/scene_discovery/adt_apartment/experiments/p4_canister_on_round_table.yaml   # on(罐子, 圆桌)，ADT 衍生只在 outputs
-$PY scripts/plan_episode.py $E --gpu 1 --instance 1 --rounds 3 --dry-run
-$PY -u scripts/plan_episode.py $E --gpu 1 --instance 1 --rounds 10 --seed 700 --name <run>
-python3 scripts/experiments/put_down_acceptance_20261003.py outputs/runs/<run>*        # 门槛统计 + 失败分族
-$PY scripts/scene_feasibility.py --scene outputs/scene_discovery/adt_apartment/scene_meta.json   # 重跑检查器
-make test TESTS="tests/test_skills_put_down_single.py tests/test_place_phase.py tests/test_plan_episode_spawn.py"; make check
+A=outputs/scene_discovery/adt_apartment                        # ADT 衍生，只在 outputs
+# 检查器（模板空间）：写 $A/feasibility/{tasks.jsonl,summary.json}
+$PY scripts/scene_feasibility.py --scene $A/scene_meta.json
+# Claude 提任务（Opus，约 20 min / 5 USD）：写 <out>/{tasks.jsonl,iteration_NN.jsonl,claude_io.jsonl,report.json}
+$PY -u scripts/scene_discover_tasks.py --scene $A/scene_meta.json --model opus --iterations 2 --per-room 30 --out $A/discovery/<name>
+# 单任务试跑（实验文件在 $A/experiments/，例：罐子放到圆桌）
+$PY -u scripts/plan_episode.py $A/experiments/p4_canister_on_round_table.yaml --gpu 1 --instance 1 --rounds 10 --seed 700 --name <run>
+python3 scripts/experiments/put_down_acceptance_20261003.py outputs/runs/<run>*
+make test TESTS="tests/test_scene_discovery_feasibility.py tests/test_scene_discovery_proposals.py tests/test_plan_episode_spawn.py"; make check
 ```
-起栈前查：`nvidia-smi`、`ls /workspace/tmp/p03*/stack.json`、`ss -ltn | grep -E ':55(5|6)5 '`、5 秒 CPU 采样（配额 15.36 核，> 11 核别起）。
