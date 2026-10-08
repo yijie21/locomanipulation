@@ -681,6 +681,7 @@
   - [x] 19.8 查重（scoop_check + 文献）：RoboGen、GenSim 及之后"LLM 自动生成任务 / 技能 / 数据"的工作，人形方向重点（2026-10-08：**Level 3 中度重叠**，7 条检索、238 篇、精读 7 篇，过程在仓库根 `step1.md`–`step7.md`，PDF 在 `papers/`（都未跟踪）。"缺口驱动的技能增长"已被 Agentic Skill Discovery（arXiv 2405.15019）写明，AutoRT（2401.12963）已有 LLM 把提议任务分给可用采集策略或按本体拒绝；站得住的差异 = 实测能力包络 + 程序检查 + 三桶 + 按解锁数 / 成本排序 + 人形全身移动操作数据训 VLA。决策 #1 的措辞待用户定）
     - [ ] 19.8.1 决策 #1 改写措辞（待用户定）：差异从"缺口驱动的技能增长"收窄到"实测包络 + 程序检查 + 成本排序 + 人形"
     - [ ] 19.8.2 让差异站稳的对照：只让 Claude 判可行（ASD / AutoRT 做法）vs 程序检查，量"判可行的任务实际能执行几个"
+    - [ ] 19.8.3 待用户定：查重留下的仓库根 `step1.md`–`step7.md`（未跟踪）和 `papers/`（7 篇 PDF + 文本，183 MB，有版权，未跟踪）挪到 `outputs/scoop_check_20261008/` 还是删
   - [~] 19.10 Claude 提任务 + 程序检查反馈循环（决策 8；第 2 周）：现在第 2 桶是模板枚举出来的（`feasibility.templates`），Claude 读场景文件 + capability.yaml 提任务、检查结果回给它修改的那一环还没写（2026-10-05 循环已写并实跑一次：`scene_discovery.proposals` + `scripts/scene_discover_tasks.py`，Opus 3 次调用、5.32 USD、20.5 min，`outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/`：49 个任务（客餐厨 32、卧室 17），三轮桶 2/25/13 → 2/32/11 → 2/38/9，修订把第 3 桶往第 2 桶推、没造出新的第 1 桶；第 1 桶就是模板空间里那 2 个（都找到了），49 个里只有 2 个在模板空间之外（带 near）；可试跑 6 个，5 个是咖啡罐放到别处。第一次运行 `opus_20261005_upright_bug` 作废：检查器把"搬过去并立着"里的 upright 判成"已经立着"无效（15/39），已修）
     - [ ] 19.10.1 Claude 给第 1 桶任务写固定 plan（决策 10：试跑 3 局验谓词、10 局 ≥ 3/10）：现在第 1 桶的 2 个任务 plan_episode 的 `default_plan` 已覆盖且实跑过（拿起 4/10、放到圆桌 12/20），等第 1 桶变多再做
     - [ ] 19.10.2 任务文件 → 运行：`plan_episode` 现在按实验文件的 `target` + `goal`（一个物体、一个台面或容器）判成败，谓词库 `compile_goal` 没接进来；`tasks.jsonl` 的一行（谓词合取、说法、`upright` 约束）还不能直接跑或录（9.14.1 之前要有）
@@ -747,3 +748,13 @@
 - [x] 20.5 （用户 2026-10-08）mink 碰撞约束接进 `CoordinatedReach` 的对齐 + 下降段（`visual.collision_guard: mink`，`src/locomani/tasks/crate/collision_guard.py`，默认 off），真栈 20 局配对：关 9/20、mink 7/20（只有关成功 6、只有 mink 成功 4，p 0.75）；卡箱沿 6 → 3、进入合爪 14 → 17，脱手 0 → 4，合爪时跨壁误差 24 → 34 mm。同配置同 seed 的 `warehouse_mars_50` 是 3/20，20 局量不出这个差别。实测的手两组都只有 2/20 压进箱壁 > 1 mm。台账 `docs/ledger/crate.md` 2026-10-08 最后一节
   - [-] 20.5.1 （用户 2026-10-08：这条线先停）可选：只约束掌和 Dex1 底座、不约束手指（检验"手指被推开 → 跨壁误差变大 → 脱手"的猜测），或加局数到每组 60 以上
 - [-] 20.6 （用户 2026-10-08：这条线先停）可选：向 mink 报 `CollisionAvoidanceLimit` 上界单位问题（对外发布，需用户同意）
+
+## 21. SIMPLE（arXiv 2606.08278）调研与可借鉴项（用户 2026-10-08；DECISIONS 2026-10-08 最后两节）
+
+- [x] 21.1 读论文与公开代码（2026-10-08）：公开的自动采集 = 手写 `decompose()` + CuRobo 手臂 + 开环底盘指令，AMO 驱动，数据是 43 维关节动作、不是 SONIC token；走路类运动规划任务、BoDex 抓取合成、CoACD / 跌落求稳定姿态的代码都没放；SONIC 线只有 VR 遥操作和固定动作片段。记忆 `simple-paper-covers-infra-layer`
+- [x] 21.2 跑 SIMPLE 的 `G1WholebodyTabletopGraspMP` 一集（2026-10-08，GPU0）：第 5 次规划才成功（前 4 次 `IK_FAIL`，这个物体只缓存了 2 个右手抓取），3.7 s，不走路；`outputs/simple_tabletop_grasp_mp_20261008/`，预览 `simple_tabletop_grasp_mp_ep0_grid_preview.mp4`（158 KB；原来交付的 1.4 MB 版超了 500 KB 上限，2026-10-08 补做预览）
+- [ ] 21.3 待用户选：从 SIMPLE 借鉴的采集改进（2026-10-08 列出，未定；CuRobo / mink 那条见第 20 节，已停）
+  - [ ] 21.3.1 补渲时按局随机外观（材质、光照、只渲不碰的干扰物），一条轨迹渲 K 份；SIMPLE 表 3 的消融每格只有 10 局，要自己按 2 个种子对照
+  - [ ] 21.3.2 跌落测试列出物体所有稳定姿态，按稳定姿态生成物体、判"正立"（对上 19.15、19.12.11、19.16.1）
+  - [ ] 21.3.3 开局前用站位规划 + `ArmIK` 判可行、不可行就重抽布局（要记录拒绝比例，防止数据分布变窄）
+  - [ ] 21.3.4 物体 / 场景库：SIMPLE 已转好的约 75 个 GraspNet 物体（CoACD 碰撞体 + USD + 稳定姿态）和 HSSD 场景（本地 3.9 GB）；用之前先查许可
