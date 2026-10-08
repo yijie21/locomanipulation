@@ -36,6 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", type=Path, help="the run directory whose eval stack is up")
     ap.add_argument("--dry-run", action="store_true", help="say what would be served, start nothing")
+    ap.add_argument(
+        "--light-scale",
+        type=float,
+        default=1.0,
+        help="multiply every light and emissive panel of the level (view.set_lighting); a lighting-shift "
+        "evaluation, TODO 21.3.1. Recorded on every render in eval/unreal_mirror.jsonl",
+    )
+    ap.add_argument("--light-temperature", type=float, default=None, help="every light at this kelvin")
     args = ap.parse_args(argv)
 
     run_dir = (args.run if args.run.is_absolute() else Path.cwd() / args.run).resolve()
@@ -65,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         privileged_port=ports["TF_PRIVILEGED_PORT"],
         mirror_port=ports["TF_ISAAC_MIRROR_PORT"],
         stack_gpu=str(stack.spec.gpu),
+        lighting={"scale": args.light_scale, "temperature": args.light_temperature},
     )
     if args.dry_run:
         run_context.show_config("unreal_mirror", plan)
@@ -79,7 +88,10 @@ def _run(run_dir: Path, plan: dict) -> int:
     log_path = run_dir / "eval" / "unreal_mirror.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     view = UnrealView(plan["scene_xml"], plan["level"], plan["repeats"], plan["streams"])
+    lighting = plan["lighting"]
     try:
+        if lighting != {"scale": 1.0, "temperature": None}:
+            view.set_lighting(lighting["scale"], lighting["temperature"])
         sub = PrivilegedSubscriber(port=plan["privileged_port"])
         first = sub.wait(30.0)
         problem = state_problem(first, view.nq)  # the check every request gets, once before any request
@@ -94,7 +106,7 @@ def _run(run_dir: Path, plan: dict) -> int:
         with log_path.open("a") as sink:
 
             def record(header):
-                sink.write(json.dumps({**header, "renderer": "unreal"}) + "\n")
+                sink.write(json.dumps({**header, "renderer": "unreal", "lighting": lighting}) + "\n")
                 sink.flush()
 
             try:

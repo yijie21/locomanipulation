@@ -460,6 +460,7 @@ bash scripts/bimanual/run_vla_inference.sh outputs/runs/<run> --gpu 0   # 终端
 - **eval sim 渲不渲由 `images.source` 推出**（`run_context.evaluation_of`）：`mujoco` → `live`（策略只能从发相机流的 sim 读 MuJoCo 图），`isaac` → `offline`；实验文件写了矛盾的 `eval.backend.render` 加载即拒。有 Isaac stage 的场景：`warehouse_textured`（Blender USDC）、`box_platform`（`scripts/build_isaac_primitive_scene.py` 从 MJCF 的盒子生成，ISO 20；stage `box_platform_srgb`：MJCF 颜色先从 sRGB 转成线性，2026-09-29 之前的 `box_platform` 直接当线性用，纸箱近白）。
 - **首次真实闭环**（2026-09-27，warehouse checkpoint-5000，10 局）：渲染 p50 95 ms、图像对应状态年龄 p50 11 ms、观测 → 动作 p50 166 ms，9/10 抬起（台账 crate.md 2026-09-27 末节）。
 - **lockstep 下的镜像**（2026-09-27，双臂）：`eval.client: lockstep` 时 sim 和 deploy 按 tick 推进，渲图期间世界冻结，渲染耗时不再计入世界时间。客户端带上冻结那一刻的特权状态 seq（`{"op": "render", "seq": N}`），镜像只渲这一条，最新状态不是它就报错；冻结的 sim 每 0.5 s 重发一次最新状态（同一 seq），所以镜像在栈之后起也拿得到第一条状态。单臂评测器不实现这个组合，配置了就拒绝。时间模型见 [双臂详解 §五](bimanual_design.md#评测的时间模型墙钟与-lockstep)，计划与验收见 [lockstep + Isaac 评测计划](handoff/lockstep-isaac-eval-plan-20260927.md)。
+- **光照偏移评测（只有 Unreal 镜像）**：`run_unreal_mirror.sh <run> --light-scale 0.4 --light-temperature 3200` 把关卡里 6 盏灯和自发光灯板的强度乘 0.4、灯色改成 3200 K，用来测 checkpoint 换了光照还能不能做（TODO 21.3.1 的前置检查）。只改 PIE 里的世界，关卡文件不动，镜像退出即恢复；不加这两个参数就是关卡原样。每次渲染在 `eval/unreal_mirror.jsonl` 里记 `lighting`。偏移评测的结果和默认光照的结果都写 `eval/`，跑下一组前把上一组的 `eval/` 挪开。各档光照下的样子：`scripts/experiments/light_shift_20261008/lighting_grid.py`。
 - **做了什么、还没做什么**（训练图是否也走 Isaac、一致性闸门、真实闭环、分支对账）：[镜像状态索引](handoff/isaac-vla-mirror-20260925.md)。
 
 ## 当前接通范围与限制

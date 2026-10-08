@@ -14,7 +14,9 @@
 
 ## 当前进度
 
-本会话（TODO 19.8、20、21；DECISIONS 2026-10-08 最后三节）：
+本会话（2026-10-08 下午，TODO 21.3；DECISIONS 末节）：21.3.2 / 21.3.3 不做；21.3.1 直接做，计划 `docs/handoff/appearance-randomization-plan-20261008.md`，之后再测，待用户定评测留出目标。16.15.3 训练停在约 500 步；孤儿 pid 2122899 经用户同意已杀。Unreal 编辑器已关，本会话没有留下 GPU 进程。光照开关（`in_editor/lighting.py`、镜像 `--light-scale/--light-temperature`）已提交，`make check` 过。
+
+上一会话（TODO 19.8、20、21；DECISIONS 2026-10-08 最后三节）：
 - 已确认：SIMPLE 已发表我们的基础设施层，没做 LLM 发现任务 / 写 plan / 按缺口长技能；它的自动采集是 AMO + CuRobo 开环 + 手写分解，SONIC 线没有自动采集（21.1，记忆 simple-paper-covers-infra-layer）。
 - 已确认：19.8 查重 Level 3；"按缺口长技能"已被 Agentic Skill Discovery 写过。决策 #1 改不改措辞**待用户**（19.8.1），计划文档没动。
 - 已确认：warehouse 手臂规划线**用户叫停**。CuRobo 离线对照停在 61/238；mink 碰撞约束 `visual.collision_guard`（默认 off，`75ad611`）真栈 20 局配对 off 9/20、mink 7/20（p 0.75），实测的手两组都只有 2/20 压进箱壁（台账 crate.md 2026-10-08 最后一节，记忆 warehouse-collision-guard-null-result）。
@@ -31,7 +33,7 @@ warehouse mars 线（别的会话 10-07/08，仍有效）：`warehouse_mars_50` 
 - 卡点（19.18.6）：`plan_episode --record` 录的运行补渲不了（缺 `SIM_STATE_TRACE_DIR`、`collect/inputs.json`、场景副本，ADT 场景文件 `target_object` 为空）。冒烟实验文件：`outputs/scene_discovery/adt_apartment_mars/experiments/p4_canister_on_round_table_unreal.yaml`。
 - 待验证：19.18.5（capability.yaml 包络只在 stock 上测过）、19.18.7（双臂技能不读 `ready_after_brake`）、16.16.1、16.11 钩子偶发失败。
 - 假设：mars 上 p4 掉到 1/10 主要是腕部碰撞；另外 5 局与 stock 失败族相同，10 局分不出 mars 是否更差。
-- 待用户：19.8.1、19.8.3、21.3（从 SIMPLE 借鉴哪一项）、19.18.3.1、16.14.1、16.15.4、13.6.18。待协作者：13.6.16.1、13.3、13.6.11.5、16.13。
+- 待用户：19.8.1、19.8.3、21.3.1 留出目标、19.18.3.1、16.14.1、16.15.4、13.6.18。待协作者：13.6.16.1、13.3、13.6.11.5、16.13。
 - 已确认（工具）：MuJoCo 3.11 `mj_geomDistance` 会返回 0.0 和反号；mink 1.3.0 碰撞上界单位错（记忆 mujoco-geomdistance-and-mink-collision-bugs）。
 
 ## 下一步（编号见 `TODO.md`）

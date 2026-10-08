@@ -36,3 +36,26 @@ def test_the_third_person_bodies_are_the_views_own_not_the_scenes():
     assert qpos_map(sim, urlab) == [(0, 0, 1)]
     assert film_joints(urlab) == {name: 1 + 7 * k for k, name in enumerate(FILM_JOINTS)}
     assert film_joints(sim) == {}  # a level built before them: filming asks for a rebuild
+
+
+def test_the_lighting_shift_sends_its_values_and_refuses_a_level_without_lights(monkeypatch):
+    import json
+
+    from locomani.sim.unreal import editor, view
+
+    sent = {}
+
+    def run_file(path, **globals_):
+        sent.update(globals_, path=path.name)
+        return json.dumps({"lights": sent.pop("lights_found"), "panels": []}) + "\n"
+
+    monkeypatch.setattr(editor, "run_file", run_file)
+    v = object.__new__(view.UnrealView)
+    v.level_path, v.log = "/Game/Levels/x", lambda m: None
+    sent["lights_found"] = ["Ceiling panel 0"]
+    assert v.set_lighting(0.4, 3200)["lights"] == ["Ceiling panel 0"]
+    assert sent == {"LIGHT_SCALE": 0.4, "LIGHT_TEMPERATURE": 3200.0, "path": "lighting.py"}
+    sent["lights_found"] = []
+    with pytest.raises(SystemExit, match="no lights"):
+        v.set_lighting(1.0)
+    assert sent["LIGHT_TEMPERATURE"] is None  # None keeps the lights' own colour

@@ -160,6 +160,23 @@ class UnrealView:
         self.push(qpos)
         return self.grab()
 
+    def set_lighting(self, scale: float = 1.0, temperature: float | None = None) -> dict:
+        """Shift the PIE world's lights and emissive panels (`in_editor/lighting.py`): intensities times `scale`,
+        every light at `temperature` kelvin (None keeps their colour). 1 and None are the level as built; the
+        shift ends when PIE stops (`close`). Returns what was changed."""
+        out = editor.checked(
+            editor.run_file(
+                editor.IN_EDITOR / "lighting.py",
+                LIGHT_SCALE=float(scale),
+                LIGHT_TEMPERATURE=None if temperature is None else float(temperature),
+            )
+        )
+        changed = json.loads(out.strip().splitlines()[-1])
+        if not changed["lights"]:
+            raise SystemExit(f"level {self.level_path}: the lighting shift found no lights to change")
+        self.log(f"unreal view: lighting x{scale:g}, {temperature or 'own'} K on {len(changed['lights'])} lights")
+        return changed
+
     def warm_up(self, qpos) -> int:
         """Capture every camera of the import once (each then renders only on request; before its first capture
         a camera renders every frame), render this state once, and check the dataset resolution; returns 2."""

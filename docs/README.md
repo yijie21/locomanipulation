@@ -38,6 +38,7 @@
 - [技能的接口设计](handoff/primitive-contracts-design-20260928.md)：每个技能的前置条件、参数和返回、计划执行器（2026-09-28）。
 - [scene_discovery 决策](handoff/scene-discovery-plan-20261002.md)、[场景文件格式](handoff/scene-file-format-20261003.md)、[put_down_single 技能](handoff/put-down-single-20261003.md)：从一个场景自动发现任务、补技能、采集数据的设计和第一个新技能（2026-10-02 起）。
 - [仿真数据零样本上真机的设计](handoff/real-robot-sim2real-plan-20261006.md)：数据集 50 fps、官方推理客户端结构、Dex1 单位、`src/real_robot/` 的结构与后续任务（2026-10-06）。
+- [warehouse 补渲时随机外观的计划](handoff/appearance-randomization-plan-20261008.md)：随机哪些属性、训练与留出范围、实现步骤、之后怎么测；光照开关已实现（2026-10-08，TODO 21.3.1）。
 - [归档索引](archive/INDEX.md)：冻结的原始报告和被取代的入口文档，包括 2026-09-14 的[维护路线图](archive/roadmap_maintenance_20260914.md)。
 - [第一次迁移](handoff/agent-maintenance-plan.md)、[维护交付](handoff/maintenance-completion.md)、[规范审计与探针](handoff/agent-guideline-completion-20260914.md)。
 
