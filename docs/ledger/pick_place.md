@@ -381,3 +381,30 @@ grasp_single / release 各几次），GPU0（空闲）/ instance 1，4 局，`ou
 
 - 结论：放进容器没被改坏；失败是 §8 的同一族（下降超时时罐头离篮心 6–9 cm），只是新日志措辞更具体。抓取失败 4 局：碰倒 ×2、合爪无双侧接触 ×1、抬起丢接触 ×1，也是 §8 的族。
 - 10 局区分不了 ±1 局的差别（memory：10 局试跑测不出这条线）；这里只用来排除"改坏了"这种大退化。
+
+## §18 合入 main 前后的技能回归，与 mars 上的 p4（scene_discovery TODO 19.18.4，2026-10-08）
+
+同机、同日、同 seed，合并前的代码（tag `scene_discovery-pre-sync` = `a73cf0c`，worktree `../locomanipulation-scene_discovery`）
+与合并后（`scene_discovery-sync` 的 `10b3895`/`0fcceaf`，worktree `../locomanipulation-scene_discovery-sync`）各跑一遍；
+`plan_episode.py`、instance 1、GPU0、deploy 根 `outputs/bottle_continuous_20260914/deploy`。bottle 用 `bottle_simple_200.yaml`
+（seed 100–109，§40 的那组）；pick_place 用 `skills_pick_place_20260928.yaml` + `configs/plans/pick_place_via_basket.json`
+（seed 300–309，§17）；p4 是 `outputs/scene_discovery/adt_apartment/experiments/p4_canister_on_round_table.yaml`（罐子放到圆桌，
+seed 700–709），mars 那行是同一文件只换场景 `adt_apartment_mars`。
+
+| 线 | 合并后 | 合并前 | 之前的记录 |
+|---|---|---|---|
+| bottle（approach → grasp_single） | 7/10（grasp 2、approach 1） | 6/10（stand 2、grasp 2） | §40 9/10（09-28） |
+| pick_place（抓 → 走近篮子 → place） | 2/10（grasp 6、place 2） | 4/10（grasp 3、turn 1、place 2） | §17 3/10（10-05） |
+| p4 罐子 → 圆桌（stock） | 3/10（grasp 3、stand 2、place 2） | 3/10（stand 3、grasp 3、turn 1；`presync_regress_p4_20261008b`） | 第六版验收 80 局端到端 13（`put-down-single` 交接文档） |
+| p4 罐子 → 圆桌（**mars**，合并后） | **1/10**（grasp 6，其中 5 局 `clearance: right_wrist_yaw_link` 碰到罐子；stand 2、approach 1） | — | — |
+
+- 结论：合并前后没有看得出的差别（p4 都是 3/10）；10 局一组判不动小差别。同一 seed 两次跑结果也不同（pick_place 第 0 局：10-05 成、今天合并前败、合并后成），
+  同 seed 三次的抓取成功 4–7/10。
+- 单臂技能路径上合并前后的代码只差注释、一句报错和栈管理的记账；仿真电机力矩表改由场景 XML 读出，stock 场景逐项等于旧的写死列表。
+- **作废**：04:06–07:02 容器内存打满（Unreal 编辑器 24 GB + 两个 ADT 栈各约 16 GB + 提交钩子的测试，上限 91 GB），
+  这段时间的 `presync_regress_p4_20261008`、`sd_unreal_smoke_p4_20261008` 各有一局跑了约 10,500 s、两边 deploy 都死了。
+  p4 合并前那行是 07:20 起单独重跑的 `presync_regress_p4_20261008b`。
+- 背景负载：合并后 p4 与合并前 pick_place 跑时，Blender 烘焙（2 核）和 Unreal 导入房间（4 核）也在跑；各局用时正常（≤ 70 s）。
+- **mars 上新出现的失败**：第 5–9 局抓取前的间隙检查判右腕 `right_wrist_yaw_link` 碰到罐子（stock 上 0 次）。mars 的腕上多了
+  D405 相机支架且参与碰撞（make_dex1_model），抓取几何（`bottle_simple` 的接近方向与站位）是在 stock 上标定的。这是 `capability.yaml`
+  需要在 mars 上重测的直接证据（TODO 19.18.5、19.18.8），不是合并带来的。

@@ -1,7 +1,7 @@
 # STATE — 2026-10-08（会话：state 改回官方 46 维、官方教程对照文档、warehouse_mars_50 采集、旧数据迁移文档）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-进行中（10-08）：`scene_discovery`（loco_agent 会话的 skills / Q11 / scene_discovery 工作）合入 main，在分支 `scene_discovery-sync`（worktree `/workspace/code/locomanipulation-scene_discovery-sync`，合入前的分支打了 tag `scene_discovery-pre-sync`）；分支的 TODO 7/8/9 改编号为 17/18/19，原 STATE 在那个 tag 上。
+进行中（10-08）：`scene_discovery`（loco_agent 会话的 skills / Q11 / scene_discovery 工作）合入 main，做在分支 `scene_discovery-sync`（worktree `/workspace/code/locomanipulation-scene_discovery-sync`；合入前的分支打了 tag `scene_discovery-pre-sync`）：`10b3895` 合并、`0fcceaf` 改用 mars + Unreal、之后一个文档提交。**还没快进到 main、没推送，等用户定**。分支的 TODO 7/8/9 改编号为 17/18/19。
 已确认（10-08）：到 `b8f5e9c` 为止都已推到 origin/main；之后只有本次 handoff 提交，未推送。
 已确认（10-08 收尾时）：本机没有留下仿真栈、策略服务、镜像或 Unreal 编辑器（`stop_unreal.sh` 已跑）。GPU1 上常驻别的项目的 depth_server 约 3.7 GB。
 别的会话：henry-zhao 直接推 origin/main 或 `henry-dev`，推送不跑钩子，可能自带检查失败（记忆 origin-main-can-carry-failing-checks）。
@@ -23,6 +23,10 @@
 - 已确认：试验时误改写过 `warehouse_edges_45x20x18_20260928` 的原始 session，已用副本逐字节恢复（DECISIONS 2026-10-08）。
 
 ## 待验证 / 卡点
+
+- 已确认（pick_place 台账 §18）：合并前后同机同 seed 回归看不出差别（bottle 7 vs 6、pick_place 2 vs 4、p4 3 vs 3，各 10 局）；mars 上 p4 1/10，其中 5 局右腕 D405 支架碰罐子（19.18.8），`capability.yaml` 是 stock 的实测（19.18.5）。
+- 卡点（19.18.6）：`plan_episode --record` 录的运行补渲不了（不设状态轨迹目录、不写 `collect/inputs.json`、不复制场景），所以 mars + Unreal 的录制 → 补渲 → 转换还没走通。
+- 已确认（10-08 04:06–07:02）：容器内存打满（91 GB 上限）三小时，这段时间的局作废；跑 ADT 栈前先看 `memory.current`（记忆 container-memory-91gb-adt-stacks）。
 
 - 待验证（16.16.1）：实时录制按 50 fps 转换时审计 "action vs state" +0 帧不过，只在 1 条的 `crate_smoke` 上见过。
 - 待验证（16.16.4）：实时录制的图实测约 30.3 Hz，代码推算约 33 Hz，迁移文档写的是 33，要改。

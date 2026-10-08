@@ -713,8 +713,14 @@
   - [~] 19.18 合入 main 并改用 mars + Unreal（用户 2026-10-08；DECISIONS 2026-10-08）：分支 `scene_discovery-sync`（worktree `../locomanipulation-scene_discovery-sync`），合入前的分支打 tag `scene_discovery-pre-sync`
     - [x] 19.18.1 合并 main（`10b3895`）：16 个冲突；分支编号 7/8/9 改为 17/18/19；`make check` 全过
     - [x] 19.18.2 mars 场景 `adt_apartment_mars`（`adt_to_scene.py mujoco --robot mars`；64 个自由体换成带贴图的扫描网格，凸包只管碰撞）；`check_mars` 过；MuJoCo 渲染核对 `outputs/renders/adt_mars_check_20261008/`
-    - [~] 19.18.3 Unreal：`export_mjcf` 导出全部自由体；`build_level --room-level`；`adt_to_usd.py --unreal` 烘焙房间；建关卡并出一张核对图
-    - [ ] 19.18.4 回归：合并后的代码与合并前（`scene_discovery-pre-sync`）同机同 seed 对照（bottle、pick_place、p4），再在 mars 上跑 p4
+    - [x] 19.18.3 Unreal：`export_mjcf` 导出全部自由体；`build_level --room-level`；`adt_to_usd.py --unreal` 烘焙房间；关卡 `adt_apartment_mars` 建成，与 MuJoCo 同状态三路并排核对（`outputs/renders/adt_mars_check_20261008/`，`0fcceaf`）
+      - [ ] 19.18.3.1 曝光沿用 warehouse 的数值、没有参照图校准，木地板在灯下偏亮；要不要按 Isaac 那张渲染检查图或照片调，待用户看图定
+    - [x] 19.18.4 回归（pick_place 台账 §18）：同机同 seed，合并后 / 合并前 bottle 7/10 vs 6/10、pick_place 2/10 vs 4/10、p4 3/10 vs 3/10，看不出差别；mars 上 p4 1/10
     - [ ] 19.18.5 `capability.yaml` 的实测都是 stock 机器人上的；mars 的伸手 / 抓取包络要重测后检查器才可信（19.7）
-    - [ ] 19.18.6 冒烟：mars + Unreal 上录几局 → Unreal 补渲 → 转换（19.14.1 的前半段）
+    - [ ] 19.18.8 mars 上单手抓罐子 5/10 在合爪前被间隙检查拦下：右腕 `right_wrist_yaw_link`（带 D405 支架）碰到罐子（stock 上没有）。要在 mars 上重标 `bottle_simple` 的抓取几何，或查支架碰撞体是否比实物大
+    - [ ] 19.18.6 冒烟：mars + Unreal 上录几局 → Unreal 补渲 → 转换（19.14.1 的前半段）。没跑：`plan_episode --record` 录的运行现在补渲不了（Isaac 也一样，分支上从没走通过），缺三样：
+      - [ ] 19.18.6.1 `plan_episode` 起栈不设 `SIM_STATE_TRACE_DIR`（采集栈在 `pipeline/run_stack.py` 设），离线出图没有状态轨迹可补
+      - [ ] 19.18.6.2 不写 `collect/inputs.json`（`world_lift.RunTraces` 和 `view_render.finished_sessions` 读它），只写 `summary.json`
+      - [ ] 19.18.6.3 `RunTraces` 要运行目录下恰好一份场景副本、带 `target_object`；plan 运行不复制场景，ADT 场景文件的 `target_object` 是空的（目标在实验文件的 `task.target`）
+      - 实验文件已备好：`outputs/scene_discovery/adt_apartment_mars/experiments/p4_canister_on_round_table_unreal.yaml`（`images.source: unreal`、`backend.render: offline`、50 fps、相机延迟）
     - [ ] 19.18.7 双臂技能（`skills/catalogue/crate.py`）不读 `visual.ready_after_brake`，自带 ready；main 09-28 起采集默认 compact、10-03 起 warehouse 在 mars 上只从 ym 边走入。技能的双臂线没在 mars / 新默认上跑过（原 17.11 的 4/10 是 stock、`warehouse_textured`）
