@@ -590,6 +590,7 @@
     - [x] 16.15.1 （2026-10-07）补渲 `KeyError: 'dataset_fps'`：`view_render.plan` 返回 look，入口交给 `fill`，加测试（`6a6bd10`）
     - [x] 16.15.2 （2026-10-07）runbook 第 1 步补"场景已建过会拒绝覆盖"，常见报错补 `basket_tilt`
     - [ ] 16.15.3 训练（`bash scripts/train.sh outputs/runs/warehouse_mars_50 --gpu 0`，1 万步）和闭环评测（100 局，Unreal 镜像）；这会是第一个 46 维、50 fps、带相机延迟的 checkpoint，可供 16.7.2、16.2.1
+      - 2026-10-08 起跑（GPU0，1.89 s/步，预计 5.2 h），约 500 步时用户叫停（21.3.1 前置检查取消），没有 checkpoint；仍待做
     - [ ] 16.15.4 待用户：`check_dataset.bimanual` 按任务文本含 `crate` 判断双臂，warehouse（`pick up the box`）的 3cam_bimanual 档没被审计；本次手工核对过 state 46、action 66、三路相机
 - [x] 16.16 （2026-10-07，用户）旧数据迁移文档 `docs/migrate_old_data.md`，README 顶部提示；`running.md` 的 `dataset.fps` 行改为 crate/warehouse lockstep 接受 50（`b8f5e9c`，DECISIONS 2026-10-08）
     - [ ] 16.16.1 待验证：实时录制运行按 50 fps 转换，审计 "action vs state" 中位 +0 帧不过（`crate_smoke` 只 1 条；25 fps 时 +3）；在完整数据上复查
@@ -753,9 +754,20 @@
 
 - [x] 21.1 读论文与公开代码（2026-10-08）：公开的自动采集 = 手写 `decompose()` + CuRobo 手臂 + 开环底盘指令，AMO 驱动，数据是 43 维关节动作、不是 SONIC token；走路类运动规划任务、BoDex 抓取合成、CoACD / 跌落求稳定姿态的代码都没放；SONIC 线只有 VR 遥操作和固定动作片段。记忆 `simple-paper-covers-infra-layer`
 - [x] 21.2 跑 SIMPLE 的 `G1WholebodyTabletopGraspMP` 一集（2026-10-08，GPU0）：第 5 次规划才成功（前 4 次 `IK_FAIL`，这个物体只缓存了 2 个右手抓取），3.7 s，不走路；`outputs/simple_tabletop_grasp_mp_20261008/`，预览 `simple_tabletop_grasp_mp_ep0_grid_preview.mp4`（158 KB；原来交付的 1.4 MB 版超了 500 KB 上限，2026-10-08 补做预览）
-- [ ] 21.3 待用户选：从 SIMPLE 借鉴的采集改进（2026-10-08 列出，未定；CuRobo / mink 那条见第 20 节，已停）
+- [~] 21.3 待用户选：从 SIMPLE 借鉴的采集改进（2026-10-08 列出，未定；CuRobo / mink 那条见第 20 节，已停）
   - [ ] 21.3.1 补渲时按局随机外观（材质、光照、只渲不碰的干扰物），一条轨迹渲 K 份；SIMPLE 表 3 的消融每格只有 10 局，要自己按 2 个种子对照（用户 2026-10-08：做，先写计划之后再测——[计划](docs/handoff/appearance-randomization-plan-20261008.md)：属性表、实现 6 步、A/B 各 2 种子 × 原样 / 留出外观各 100 局；待用户定留出目标）
     - [-] 21.3.1.1 （用户 2026-10-08）前置检查：基线 checkpoint 换光照还能不能做（用户同日叫停：外观泛化本来就是要克服的问题，21.3.1 不论前置结果都做，DECISIONS 2026-10-08 末节）。留下的：Unreal 镜像 `--light-scale` / `--light-temperature`（`in_editor/lighting.py`，只改 PIE，未提交）；候选档 `outputs/light_shift_20261008/`，×0.4 + 3200 K 第一视角均值 105 → 51、箱沿仍清楚。16.15.3 的训练跑到约 500/10000 步停掉，没有 checkpoint
   - [-] 21.3.2 跌落测试列出物体所有稳定姿态，按稳定姿态生成物体、判"正立"（对上 19.15、19.12.11、19.16.1）（用户 2026-10-08：没必要，物体直接摆在桌上；接 21.3.4 物体库并随机翻面时再说，DECISIONS 2026-10-08 末节）
   - [-] 21.3.3 开局前用站位规划 + `ArmIK` 判可行、不可行就重抽布局（要记录拒绝比例，防止数据分布变窄）（用户 2026-10-08：不做。离线拿 `outputs/curobo_warehouse_20261008/eval_baseline_ik.json` 对 `warehouse_mars_50` 119 局结局：实际站位上 IK 误差预测成败 AUC 0.56；最好的切点 ≤ 10 mm 良品率 0.42 → 0.49、丢 19/50 成功局；开局前只知道计划站位，只会更弱。记忆 ik-feasibility-does-not-predict-warehouse-success）
-  - [ ] 21.3.4 物体 / 场景库：SIMPLE 已转好的约 75 个 GraspNet 物体（CoACD 碰撞体 + USD + 稳定姿态）和 HSSD 场景（本地 3.9 GB）；用之前先查许可
+  - [~] 21.3.4 物体 / 场景库：SIMPLE 已转好的约 75 个 GraspNet 物体（CoACD 碰撞体 + USD + 稳定姿态）和 HSSD 场景（本地 3.9 GB）；用之前先查许可
+    - 用户 2026-10-08 定用途：把 GraspNet 物体摆到 bottle 场景的桌上，用 GraspNet 方法合成抓取位姿，交给 bottle 线 SONIC 驱动的同一套专家去抓——证明接上抓取模块后同一套专家逻辑能抓起这些物体。
+    - 事实（2026-10-08 查）：专家的抓取只有"抓点 + 水平进入方向的 yaw、手指水平"（`simple_policy.grasp_rotation`，抓点来自 `TabletopGrasp.grip`）；实测过的只有直立圆柱 4.5–6.1 cm 宽、14–16 cm 高。按稳定姿态算，75 个里 33 个有"窄边 ≤ 9.5 cm 且高 ≥ 8 cm"的姿态（现有侧抓大致够得着），32 个够窄但矮（< 5 cm 8 个、5–8 cm 24 个，要斜抓或从上往下），10 个任何姿态都比夹爪开口宽。`dex_grasp` 是 Dex3 三指手的，用不上；GraspNet-1B 的平行夹爪标注不在本机。
+    - 用户 2026-10-08 定：抓取用 graspnet-baseline 从深度点云预测（B）；机器人直接初始化在桌边、不走路，用我们的 IK 执行模块给的抓取。
+    - 事实（2026-10-08，`scripts/experiments/graspnet_bottle_20261008/orientation_reach.py`，输出 `outputs/graspnet_bottle_20261008/`）：站在桌边、抓点在桌面上 7 cm 时，右臂 + 腰（腰按模型真实限位）的 IK 能到 37 个接近方向里的 27–33 个，且 Dex1 手不碰桌；只有指尖朝机器人、贴桌水平的几个方向到不了。抓点只高 3 cm 时只剩 30° 斜下 10 个方向。没查前臂 / 肘和物体的碰撞，也没查 SONIC 实际能跟多准。
+    - 用户 2026-10-08 加：再跑 SIMPLE 的 CuRobo planner（`simple.mp.curobo.CuRoboPlanner`，0.7.4，SIMPLE 的 venv）和我们的 IK planner 对比。位置在"抓取筛选"之后、"执行"之前：同一批 graspnet 抓取、同一个起始姿态，两个 planner 各出一条到预抓 / 抓取的路线。先离线比（规划成功率、耗时、离桌面和物体的最小间隙、路线长度，沿用 `scripts/experiments/curobo_warehouse_20261008/` 的 `evaluate.py` 格式），再真栈配对比（同物体同 seed）。要做：给 bottle 用的机器人建 CuRobo 配置（stock G1 + Dex1；20.3 只做过 mars），世界用桌面方块 + 物体（网格或点云体素）。
+    - [x] 21.3.4.1 （用户 2026-10-08："直接执行完"）65 个物体各跑 IK 一局、CuRobo 一局，左右对比视频 66 个（≤ 500 KB）在 `outputs/graspnet_bottle_20261008/videos/`。抬起 IK 16/65、CuRobo 15/65；规划耗时中位 1.5 s 对 17 s；失败主要在执行（合爪没夹住、抬起脱手、碰倒）。[记录](docs/handoff/graspnet-bottle-planner-comparison-20261008.md)
+    - [ ] 21.3.4.2 待用户：要比较两个规划器，每个物体多跑几个朝向；执行层的三种失败（合爪未同时接触、抬起脱手、进入碰倒）要不要接着修
+    - [ ] 21.3.4.3 待用户（2026-10-09 提出）：ScaleBFM（mode 1/2）与 SONIC POSE 流 + 我们的 IK，在同一组手部目标（如 65 个物体的预抓位姿，含倾斜姿态）上开环执行，比手的到达误差；09-08 的 84 格对比里 SONIC 走的是 planner 通道，不可比。接入代码 `src/locomani/backends/scalebfm/`，约半天到一天
+    - [ ] 21.3.4.4 可选：CuRobo 候选补齐到固定批量并预热后重测耗时（17 s 里约 10 s 是新批量形状的准备，对比时没补齐，SIMPLE 自己会补齐；估计约 6 s，未实测；`profile_curobo.py`）
+    - [ ] 21.3.4.5 待用户：提交 21.3.4 的实验代码 `scripts/experiments/graspnet_bottle_20261008/`、`docs/handoff/graspnet-bottle-planner-comparison-20261008.md` 和 `docs/README.md` 的索引行（都未提交；README 那行指向未提交的文档）
+    - [ ] 21.3.4.6 待用户：调试运行删不删——`outputs/runs/gnb_obj_*_smoke*`（40 个，682 MB）、`gnb_obj_*_batch1`（10 个，154 MB，代码修正前的第一轮批跑）、`outputs/graspnet_bottle_20261008/videos_full/`（778 MB 全分辨率原片）；`third_party/graspnet-baseline` 8.3 GB 是运行环境，保留
