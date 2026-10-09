@@ -557,18 +557,31 @@ def _is_resample_ripple(prof: dict, peak: int) -> bool:
 MAJORITY_MIN = 10
 
 
-def video_aligned(lags, expected: float = 0.0) -> bool:
+# The slack around an expected camera delay, in seconds: one 25 fps frame, the frame the rule was calibrated with
+# (DECISIONS 2026-10-06, MuJoCo: median +2 against an expected +1.3). The measured median runs ~30 ms over
+# `mean_lag_frames` whatever the rate (warehouse_mars_200 at 50 fps: +4 against +2.6), so a slack counted in
+# frames of the dataset's own rate halved at 50 fps and failed pictures that are the ones asked for.
+ALIGN_TOLERANCE_S = 0.04
+
+
+def align_tolerance_frames(fps: float) -> float:
+    """`ALIGN_TOLERANCE_S` in frames of a dataset at `fps`, never under one frame."""
+    return max(1.0, round(ALIGN_TOLERANCE_S * fps))
+
+
+def video_aligned(lags, expected: float = 0.0, tolerance: float = 1.0) -> bool:
     """The wrist cameras show the table's motion at lag 0: a majority at 0 with median 0 (few: |median| <= 1, one at 0).
 
     `expected` > 0: the run aged its pictures on purpose (images.camera_delay, camera_delay.mean_lag_frames), so the
-    median has to sit within a frame of that -- a delay that is there and is the one asked for. A run without it
-    still fails at median 0 (the 3- and 5-frame injections above moved the median by the whole shift)."""
+    median has to sit within `tolerance` frames of that (`align_tolerance_frames`) -- a delay that is there and is
+    the one asked for. A run without it still fails at median 0 (the 3- and 5-frame injections above moved the
+    median by the whole shift)."""
     if not lags:
         return False
     lags = np.asarray(lags)
     med, at_zero = float(np.median(lags)), float(np.mean(lags == 0))
     if expected:
-        return bool(abs(med - expected) <= 1)
+        return bool(abs(med - expected) <= tolerance)
     if len(lags) < MAJORITY_MIN:
         return bool(abs(med) <= 1 and at_zero > 0)
     return bool(med == 0 and at_zero > 0.5)
@@ -636,10 +649,11 @@ def pass_alignment(root, info, eps, r, n_eps, expected_lag: float = 0.0):
     # constant offset for its whole length. That is a property worth seeing in
     # the report, which is why the outliers are listed rather than summarised
     # into a pass.
+    tolerance = align_tolerance_frames(info["fps"])
     r.check(
-        video_aligned(lags, expected_lag),
+        video_aligned(lags, expected_lag, tolerance),
         (
-            f"video vs table, expected {expected_lag:+.1f} frames (images.camera_delay): "
+            f"video vs table, expected {expected_lag:+.1f} frames +-{tolerance:g} (images.camera_delay): "
             if expected_lag
             else "video vs table: "
         )

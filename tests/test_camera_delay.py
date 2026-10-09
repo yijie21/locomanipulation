@@ -106,3 +106,9 @@ def test_the_audit_expects_the_configured_lag_and_still_refuses_a_missing_one():
     delayed, in_step = [1, 1, 2, 2, 2, 2, 2, 3], [0, 0, 0, 0, 0, 0, 1, 2]  # 2026-10-06's two audits
     assert video_aligned(delayed, expected) and not video_aligned(delayed)
     assert video_aligned(in_step) and not video_aligned(in_step, expected)
+    # the slack is 40 ms at any rate: one frame at 25 fps, two at 50 (warehouse_mars_200's median +4 against +2.6)
+    from locomani.pipeline.check_dataset import align_tolerance_frames
+
+    assert (align_tolerance_frames(25), align_tolerance_frames(50)) == (1.0, 2.0)
+    at_50 = [0, 2, 2, 3, 3, 4, 4, 4, 4, 4, 5, 6]  # 2026-10-09's audit at 50 fps
+    assert video_aligned(at_50, 2 * expected, align_tolerance_frames(50)) and not video_aligned(at_50, 2 * expected)
