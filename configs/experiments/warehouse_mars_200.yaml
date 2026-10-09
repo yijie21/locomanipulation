@@ -131,6 +131,8 @@ embodiment:
 scene:
   name: warehouse_box_45x32x33_mars
   cases: null
+dataset:  # 50 fps, NVIDIA's grid: one row per 50 Hz control tick, chunk 40 rows = 0.8 s (DECISIONS 2026-10-07)
+  fps: 50
 images:  # who draws the policy's pictures, dataset and closed loop alike: mujoco | isaac | unreal
   source: unreal
   # the dataset's pictures as late as a real camera's (user, 2026-10-06; pipeline/camera_delay.py): each row drawn from
@@ -172,7 +174,7 @@ collect:
 train:
   steps: 10000
   save_steps: 5000
-  holdout: 20
+  holdout: 50
   gpus: 1
   global_batch: 64
   squat_max: 4096
@@ -188,7 +190,7 @@ eval:
     wrist_cams: true
     sim_vis: none
     scene_random: false
-    dataset_fps: 25.0
+    dataset_fps: 50.0
     clean_deploy: false
     eval_parallel: false
     sonic_dds_domain: null
