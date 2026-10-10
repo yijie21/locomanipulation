@@ -6,6 +6,8 @@ subscribers are fakes. gear_sonic (in this venv) is imported as NVIDIA's client 
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 import tyro
@@ -255,7 +257,7 @@ def test_the_defaults_are_the_official_deployments():
         5580,
         5590,
     )
-    assert (s.schema, s.gripper_units, s.hand_wire, s.init_token_file) == ("crate", "dex1", "dex1", None)
+    assert (s.schema, s.gripper_units, s.hand_wire, s.init_token_file) == ("crate", "auto", "dex1", None)
     assert s.snap_tokens and s.identity_check and s.prompt == "pick up the box"
     s = tyro.cli(
         I.InferenceConfig,
@@ -281,3 +283,67 @@ def test_the_served_checkpoint_must_carry_the_schemas_field_order():
     # a checkpoint trained before 2026-10-07 carries the 60-d state with both wrist poses
     old = {"modalities": dict(served["modalities"], state=list(SONIC_CRATE.state_keys) + ["right_wrist_pos"])}
     assert set(identity_mismatch(old, SONIC_CRATE)) == {"state"}
+
+
+# --- gripper units from the checkpoint's statistics ----------------------------------------------------------------
+
+
+def test_a_training_range_names_its_gripper_units():
+    assert G.units_of_range([-0.06], [0.0245]) == "sim_m"  # the simulator's metres, jaw loading included
+    assert G.units_of_range([0.0], [5.5]) == "dex1" and G.units_of_range([0.48], [5.43]) == "dex1"
+    for q01, q99 in (([-1.0], [1.0]), ([0.0], [0.3]), ([0.0], [50.0])):  # normalized, half-open, degrees
+        with pytest.raises(ValueError, match="neither"):
+            G.units_of_range(q01, q99)
+
+
+def _identity(ranges):
+    return {"gripper_ranges": {"action": ranges, "state": {}}}
+
+
+def test_the_client_takes_the_checkpoints_gripper_units_and_refuses_a_contradiction():
+    from real_robot.policy_client import resolve_gripper_units
+
+    metres = _identity({k: {"q01": [-0.06], "q99": [0.0245]} for k in ("left_gripper", "right_gripper")})
+    dex1 = _identity({k: {"q01": [0.0], "q99": [5.5]} for k in ("left_gripper", "right_gripper")})
+    assert resolve_gripper_units(metres, "auto") == "sim_m" and resolve_gripper_units(dex1, "auto") == "dex1"
+    assert resolve_gripper_units(metres, "sim_m") == "sim_m" and resolve_gripper_units(dex1, "dex1") == "dex1"
+    with pytest.raises(ValueError, match="contradicts the checkpoint, whose gripper statistics are in sim_m"):
+        resolve_gripper_units(metres, "dex1")  # the mistake that closed both grippers at start
+    with pytest.raises(ValueError, match="contradicts"):
+        resolve_gripper_units(dex1, "sim_m")
+    mixed = _identity(
+        {"left_gripper": {"q01": [-0.06], "q99": [0.0245]}, "right_gripper": {"q01": [0.0], "q99": [5.5]}}
+    )
+    with pytest.raises(ValueError, match="disagree"):
+        resolve_gripper_units(mixed, "auto")
+    # no statistics (a replay server, or a checkpoint without statistics.json): auto cannot guess, explicit passes
+    with pytest.raises(ValueError, match="cannot be inferred"):
+        resolve_gripper_units({"gripper_ranges": None}, "auto")
+    assert resolve_gripper_units({}, "sim_m") == "sim_m"
+    with pytest.raises(ValueError, match="not one of"):
+        resolve_gripper_units(metres, "radians")
+
+
+def test_the_server_reads_the_gripper_ranges_from_the_checkpoints_statistics(tmp_path):
+    from real_robot.statistics import gripper_ranges
+
+    stats = {
+        "unitree_g1_sonic": {
+            "action": {
+                "motion_token": {"q01": [-0.5] * 64, "q99": [0.5] * 64},
+                "left_gripper": {"min": [-0.06], "max": [0.0245], "q01": [-0.06], "q99": [0.0245]},
+                "right_gripper": {"min": [-0.06], "max": [0.0245], "q01": [-0.06], "q99": [0.0245]},
+            },
+            "state": {"left_leg": {"q01": [0] * 6, "q99": [1] * 6}, "left_hand": {"q01": [0] * 7, "q99": [0.0245] * 7}},
+        }
+    }
+    ckpt = tmp_path / "checkpoint-1"
+    (ckpt / "experiment_cfg").mkdir(parents=True)
+    assert gripper_ranges(ckpt, "unitree_g1_sonic") is None  # no statistics at all
+    (ckpt / "experiment_cfg" / "dataset_statistics.json").write_text(json.dumps(stats))  # the training-time copy
+    got = gripper_ranges(ckpt, "unitree_g1_sonic")
+    assert set(got["action"]) == {"left_gripper", "right_gripper"} and set(got["state"]) == {"left_hand"}
+    assert got["action"]["left_gripper"] == {"q01": [-0.06], "q99": [0.0245]}
+    (ckpt / "statistics.json").write_text(json.dumps({"other_robot": {}}))  # the processor's copy lacks the tag
+    assert gripper_ranges(ckpt, "unitree_g1_sonic") == got  # falls through to the training-time copy
+    assert gripper_ranges(ckpt, "other_robot") is None

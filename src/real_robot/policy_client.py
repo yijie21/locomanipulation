@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from locomani.schema import TaskSchema
+from real_robot.gripper import MODEL_UNITS, units_of_range
 
 
 class PolicyClient:
@@ -74,3 +75,35 @@ def identity_mismatch(identity: dict, schema: TaskSchema) -> dict:
     served = identity.get("modalities") or {}
     wanted = {"video": list(schema.video_keys), "state": list(schema.state_keys), "action": list(schema.action_keys)}
     return {kind: (served.get(kind), keys) for kind, keys in wanted.items() if list(served.get(kind) or []) != keys}
+
+
+def resolve_gripper_units(identity: dict, requested: str) -> str:
+    """The gripper units this client must use for the served checkpoint: "dex1" or "sim_m".
+
+    `identity["gripper_ranges"]["action"]` (the server reads it from the checkpoint's statistics) names the units
+    the checkpoint was trained in. `requested` is `--gripper-units`: "auto" takes the checkpoint's; an explicit
+    value is checked against it. ValueError when they disagree, when the keys disagree among themselves, or when
+    "auto" has nothing to read -- each of these used to be a wrong unit on the robot's hands."""
+    if requested not in ("auto", *MODEL_UNITS):
+        raise ValueError(f"gripper units {requested!r} is not one of auto, {', '.join(MODEL_UNITS)}")
+    ranges = (identity.get("gripper_ranges") or {}).get("action") or {}
+    found = {}
+    for key, quantiles in ranges.items():
+        if "q01" in quantiles and "q99" in quantiles:
+            found[key] = units_of_range(quantiles["q01"], quantiles["q99"])
+    if not found:
+        if requested == "auto":
+            raise ValueError(
+                "the server reports no gripper statistics, so the checkpoint's gripper units cannot be inferred; "
+                "pass --gripper-units dex1 or sim_m explicitly"
+            )
+        return requested
+    if len(set(found.values())) != 1:
+        raise ValueError(f"the checkpoint's gripper keys disagree on their units: {found}")
+    inferred = next(iter(found.values()))
+    if requested not in ("auto", inferred):
+        raise ValueError(
+            f"--gripper-units {requested} contradicts the checkpoint, whose gripper statistics are in {inferred} "
+            f"({ {k: ranges[k] for k in found} }); use --gripper-units {inferred} or auto"
+        )
+    return inferred

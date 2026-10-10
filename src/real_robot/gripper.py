@@ -88,3 +88,22 @@ def hand_state(dex1_value: float, width: int, units: str) -> np.ndarray:
     else:
         raise ValueError(f"gripper units {units!r} is not one of {MODEL_UNITS}")
     return state
+
+
+# A checkpoint's gripper range (statistics q01 / q99) names its units. Simulator metres never leave +-0.1; Dex1
+# motor units run 0 .. 5.5 (the robot's state rests near 5.4 open). Anything else is a dataset this client has
+# not seen, and a guess would move the robot's hands by the wrong unit (`real_robot.statistics`).
+SIM_M_BOUND = 0.1
+DEX1_RANGE = (-0.01, 6.0)
+
+
+def units_of_range(q01, q99) -> str:
+    """The gripper units a training range belongs to: "sim_m" or "dex1"; ValueError for a range that is neither."""
+    lo, hi = float(np.min(q01)), float(np.max(q99))
+    if abs(lo) <= SIM_M_BOUND and abs(hi) <= SIM_M_BOUND:
+        return "sim_m"
+    if DEX1_RANGE[0] <= lo and 1.0 <= hi <= DEX1_RANGE[1]:
+        return "dex1"
+    raise ValueError(
+        f"gripper range [{lo:.4g}, {hi:.4g}] is neither simulator metres (|x| <= {SIM_M_BOUND}) nor Dex1 (0 .. 5.5)"
+    )
