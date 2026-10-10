@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/run
 |---|---|---|
 | `--model-path` | 无 | checkpoint 目录（`checkpoint-<step>`，不是运行目录） |
 | `--embodiment-tag` | unitree_g1_sonic | 训练用的 embodiment tag |
-| `--backbone-path` | 无 | 本机 Cosmos-Reason2-2B 目录。checkpoint 在别的机器（集群）上训的，记录的 backbone 路径本机没有时要给 |
+| `--backbone-path` | `$COSMOS_BACKBONE_PATH` | 本机 Cosmos-Reason2-2B 目录。checkpoint 在别的机器（集群）上训的，记录的 backbone 路径本机没有时用它。不给时 `run_gr00t_server.sh` 自动加上 `COSMOS_BACKBONE_PATH`（`scripts/paths.sh`，默认 `~/Checkpoints/Cosmos-Reason2-2B`；权重放在别处就在 `locomani.local.sh` 里改，或直接传 `--backbone-path`） |
 | `--denoising-steps` | 4 | action head 的去噪步数 |
 | `--host` / `--port` | 0.0.0.0 / 5590 | 监听地址 |
 | `--device` | cuda | 选卡用 `CUDA_VISIBLE_DEVICES` |
@@ -83,7 +83,7 @@ bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera
 ## 6. 常见错误
 
 - `PolicyServer not reachable at ...`：第 1 步没起，或 `--host` / `--port` 不对。官方客户端这时只警告；这里直接退出，因为字段顺序要靠服务器来核对。
-- 服务器报 `backbone directory does not exist` 或找不到 `model_name` 指的目录：checkpoint 是别的机器训的，加 `--backbone-path`。
+- 服务器报 `does not exist here; pass backbone_path`：checkpoint 是别的机器训的，而 `COSMOS_BACKBONE_PATH`（默认 `~/Checkpoints/Cosmos-Reason2-2B`）下没有权重，脚本启动时也会先打印一行提示。把权重放到那里，或在 `locomani.local.sh` 里改 `COSMOS_BACKBONE_PATH`，或直接加 `--backbone-path`。
 - 服务器报 `Embodiment tag ... is not supported by this checkpoint`：`--embodiment-tag` 和训练时不一致。
 - `the served checkpoint's field order is not the crate schema's`：checkpoint 不是用 `configs/gr00t_sonic_3cam_bimanual.py` 训的，换 `--schema`，或确认运行目录。
 - 一直打印 `[DEBUG] prepare_observation: waiting for camera msg..` / `waiting for state msg..` / `waiting for cameras [...]`：相机服务器没在发图、`g1_debug` 没有消息，或者缺了方括号里列出的相机 key；检查 `--camera-host`、`--state-zmq-host` 和机器人侧进程。
