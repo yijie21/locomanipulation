@@ -477,3 +477,152 @@ def test_lift_ready_fails_the_round_on_a_missed_solve_or_a_fall():
     with patch("locomani.tasks.bottle.simple_policy.BimanualIK", return_value=solver):
         ok, why = policy._lift_ready()
     assert not ok and why == "simple fell during the ready lift"
+
+
+def _route_states(seconds, *, pelvis=(1.0, 2.0, 0.8), yaw=np.pi / 2):
+    quat = Rotation.from_euler("z", yaw).as_quat()[[3, 0, 1, 2]].tolist()
+    return [
+        dict(
+            t=k * 0.02,
+            seq=k,
+            joints=np.zeros(29),
+            fallen=False,
+            pelvis={"pos": list(pelvis), "quat": quat},
+            objects={"water_bottle": {"pos": [1.0, 2.4, 0.7], "quat": [1.0, 0.0, 0.0, 0.0]}},
+        )
+        for k in range(int(seconds / 0.02) + 4)
+    ]
+
+
+def _route_policy(states, route=None, error=None, errors=(0.0, 0.0)):
+    """A guard-walk policy at the takeover with arm_route curobo: the route service replaced by a mock client, the
+    lifted-ready solve stubbed (the right arm at 0.5 rad) and FK by a stub that returns a fixed wrist pose."""
+    from locomani.primitives.arm_route import Route
+    from locomani.tasks.crate.bimanual_ik import BimanualSolution
+
+    policy = _simple_policy()
+    policy.simple = replace(
+        SimpleGraspConfig(), approach_stop="guard", arm_route="curobo", route_joint_speed=1.0, ready_hold_s=0.2
+    )
+    policy.p.obs = Mock(side_effect=states)
+    policy.task = SimpleNamespace(target=SimpleNamespace(key="water_bottle", body="water_bottle_object"), meta=None)
+    wrist = (np.array([0.20, -0.18, 0.02]), Rotation.from_euler("y", 30, degrees=True).as_matrix())
+    policy.ik = SimpleNamespace(lo=np.full(29, -2.0), hi=np.full(29, 2.0), model=None, fk=Mock(return_value=wrist))
+    policy.arm = SimpleNamespace(q=np.zeros(29), _push=Mock(), hold=Mock())
+    policy._route_client = None
+    policy._route_obstacles = Mock(return_value=[])
+    policy._measured_tools = Mock(return_value=np.zeros((2, 3)))
+    ready = np.zeros(29)
+    ready[15:29] = 0.5
+    solver = Mock()
+    solver.lifted_ready.return_value = BimanualSolution(ready, np.asarray(errors, dtype=float))
+    client = Mock()
+    client.configure.return_value = dict(ok=True, built=False)
+    if error is not None:
+        client.plan_to_joints.side_effect = error
+    else:
+        path = np.linspace(np.zeros(10), np.full(10, 0.3), 16) if route is None else route
+        client.plan_to_joints.return_value = Route(
+            ok=len(path) > 0, index=0 if len(path) else None, path=path, success=(len(path) > 0,), seconds=0.1
+        )
+    return policy, client, solver, ready, wrist
+
+
+def _route_run(policy, client, solver):
+    with (
+        patch("locomani.tasks.bottle.simple_policy.ArmRouteClient", return_value=client),
+        patch("locomani.tasks.bottle.simple_policy.BimanualIK", return_value=solver),
+    ):
+        return policy._route_to_ready()
+
+
+def test_route_takes_the_right_hand_to_its_lifted_ready_pose_and_holds_it():
+    from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
+    from locomani.tasks.bottle.ready_grasp_policy import OFFSET
+    from locomani.tasks.bottle.simple_policy import ROUTE_JOINTS
+    from locomani.tasks.bottle.walking_reach import NATURAL_RIGHT_ARM
+
+    policy, client, solver, ready, wrist = _route_policy(_route_states(1.0))
+    assert _route_run(policy, client, solver) is None
+    tool, pitch, start = solver.lifted_ready.call_args.args  # the same solve as the lifted ready
+    assert tool == (0.16, 0.16, 0.05) and pitch == 30.0
+    np.testing.assert_allclose(policy.ik.fk.call_args.args[0], ready)
+    assert policy.ik.fk.call_args.args[1] == "right"
+    names, lower, upper, retract = client.configure.call_args.args
+    assert names == [MUJOCO_JOINT_NAMES[j] for j in ROUTE_JOINTS]
+    # the waist is held near upright (yaw, roll, pitch floor); the arm keeps its joint limits (here +-2)
+    np.testing.assert_allclose(lower[:3], [-0.25, -0.05, -0.05])
+    np.testing.assert_allclose(upper[:3], [0.25, 0.05, 2.0])
+    np.testing.assert_allclose(lower[3:], -2.0)
+    np.testing.assert_allclose(upper[3:], 2.0)
+    np.testing.assert_allclose(retract, [0.0, 0.0, 0.0, *NATURAL_RIGHT_ARM])
+    start, goal, _ = client.plan_to_joints.call_args.args
+    np.testing.assert_allclose(start, np.zeros(10))
+    # the goal is the lifted-ready solution's own waist and right-arm joints, not a wrist pose
+    np.testing.assert_allclose(goal, ready[list(ROUTE_JOINTS)])
+    client.plan.assert_not_called()
+    raised = np.array(policy.stats["route"]["raised"])  # the solved tool point, on the pelvis at (1, 2, 0.8) facing +y
+    expected = Rotation.from_euler("z", np.pi / 2).as_matrix() @ (wrist[0] + wrist[1] @ OFFSET) + [1.0, 2.0, 0.8]
+    np.testing.assert_allclose(raised, expected, atol=1e-9)
+    pushes = [c.args[0] for c in policy.arm._push.call_args_list]
+    others = [j for j in range(29) if j not in ROUTE_JOINTS]
+    assert all(np.all(p[others] == 0.0) for p in pushes)  # legs and the left arm keep their hang
+    np.testing.assert_allclose(pushes[-1][list(ROUTE_JOINTS)], 0.3)
+    times = [c.kwargs["reference_time"] for c in policy.arm._push.call_args_list]
+    assert times[-1] >= 1.5 * 0.3 / 1.0 + 0.2  # the route, then the hold
+    np.testing.assert_allclose(policy.arm._push.call_args_list[-1].kwargs["reference_velocity"], 0.0, atol=1e-12)
+    assert policy.stats["phases"][-1]["phase"] == "route"
+    assert policy.stats["route"]["ok"] and policy.stats["route"]["seconds"] == pytest.approx(1.5 * 0.3 / 1.0)
+    assert len(policy.stats["route"]["path"]) == 16 and "raised_error_m" in policy.stats["route"]
+
+
+def test_route_fails_the_round_when_the_ready_pose_is_missed():
+    policy, client, solver, _, _ = _route_policy(_route_states(1.0), errors=(0.0, 0.05))
+    ok, why = _route_run(policy, client, solver)
+    assert not ok and why == "simple lifted ready pose missed by the solver"
+    client.plan_to_joints.assert_not_called()
+    policy.arm._push.assert_not_called()
+
+
+def test_route_fails_the_round_without_falling_back():
+    from locomani.primitives.arm_route import RouteServiceError
+
+    policy, client, solver, _, _ = _route_policy(_route_states(1.0), error=RouteServiceError("no reply"))
+    ok, why = _route_run(policy, client, solver)
+    assert not ok and why == "simple route service failed"
+    policy.arm._push.assert_not_called()
+    policy, client, solver, _, _ = _route_policy(_route_states(1.0), route=np.zeros((0, 10)))
+    ok, why = _route_run(policy, client, solver)
+    assert not ok and why == "simple route found no path to the lifted-ready pose"
+    policy.arm._push.assert_not_called()
+
+
+def test_route_stops_on_a_clearance_hit_mid_path():
+    policy, client, solver, _, _ = _route_policy(_route_states(1.0))
+    hits = [SimpleNamespace(clear=True)] * 6 + [
+        SimpleNamespace(clear=False, link="right_elbow_link", obstacle="dining_table")
+    ]
+    policy.guard = SimpleNamespace(check=Mock(side_effect=hits * 50))
+    ok, why = _route_run(policy, client, solver)
+    assert not ok and why == "simple clearance: left:right_elbow_link:dining_table"
+    assert policy.stats["failure"]["phase"] == "route"
+
+
+def test_curobo_route_needs_the_guard_walk():
+    with pytest.raises(ValueError, match="approach_stop guard"):
+        SimpleGraspConfig(arm_route="curobo", approach_stop="visible")
+    assert SimpleGraspConfig().arm_route == "lifted_ready"  # off by default until the A/B in the route plan passes
+
+
+def test_loop_prior_holds_the_left_hang_only_with_the_curobo_route():
+    from locomani.tasks.bottle.simple_policy import LEFT_HANG_HAND_WEIGHT, LEFT_HANG_POSTURE_WEIGHT, loop_prior
+
+    reference = np.linspace(-1.0, 1.0, 29)
+    posture, weights = np.zeros(29), np.full(29, 0.3)
+    same = loop_prior(reference, posture, weights, False)
+    assert same[0] is posture and same[1] is weights and same[2] == (0.35, 1.0)  # the lifted-ready loop is untouched
+    held_posture, held_weights, hands = loop_prior(reference, posture, weights, True)
+    np.testing.assert_allclose(held_posture, reference)
+    np.testing.assert_allclose(held_weights[15:22], LEFT_HANG_POSTURE_WEIGHT)
+    np.testing.assert_allclose(np.delete(held_weights, range(15, 22)), 0.04)  # what the loop already holds everywhere
+    assert hands == (LEFT_HANG_HAND_WEIGHT, 1.0) and LEFT_HANG_HAND_WEIGHT > 0

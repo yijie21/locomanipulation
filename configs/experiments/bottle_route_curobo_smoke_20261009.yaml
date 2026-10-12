@@ -1,0 +1,427 @@
+# docs/handoff/single-arm-curobo-route-plan-20261009.md section 3: bottle_simple_200 (the main line: guard walk +
+# lifted ready) at 40 rounds -- four batches of ten, seeds 40000-40009, 40100-40109, 40200-40209, 40300-40309 --
+# without recording (the A/B compares outcomes and the state traces, not episodes).
+# SMOKE: three rounds of B on instance 4 against a second route service on :5796 (the first is busy replaying).
+# B: arm_route curobo -- one CuRobo route for the waist + right arm from the hang to the pre-grasp, the left
+# hand hanging; needs the route service on TF_CUROBO_PORT (primitives/curobo_service.py).
+#
+# Single-arm bottle: the simple expert on its low-CoM scene -- 200 kept
+# episodes with randomised spawns, a 10k-step finetune, 100 closed-loop rounds. The collection
+# seeds (40000 + 100*batch) stay clear of the frozen gate bank (30700) and the reserved fresh20
+# bank (30900), so neither is ever trained on.
+# Since 2026-09-25 the expert walks in the warehouse way (task.reach.simple.approach_stop guard; pilot
+# bottle_simple_guard_lifted_20260925 10/10 on this file's first ten seeds).
+#
+# This file is complete: every value a run reads is here, with no inheritance and no composition.
+# A new experiment is a copy with a few lines changed. The run copies it verbatim to
+# outputs/runs/<name>/config.yaml, and that copy is the provenance of the run.
+#
+# Only fields something reads are listed. The 2026-09-17 audit dropped embodiment.{arms, state_dim,
+# action_dim, cameras, dataset_kind} and scene.{name, preset}: nothing in the repository read them,
+# and "declared but never read" is the shape this refactor exists to remove. The state/action
+# dimensions and the camera set are defined by the file embodiment.gr00t_modality_config points at,
+# and check_dataset holds the dataset to it.
+name: bottle_route_curobo_smoke_20261009
+
+# the expert's decisions, acceptance gates and failure families; written to task_config.json for the expert process
+task:
+  plugin: bottle
+  reach:
+    schema_version: 2  # the expert refuses a reach config that does not say which contract it is
+    strategy: simple
+    post_min: 0.3
+    post_max: 0.4
+    pre_min: 0.24
+    pre_max: 0.29
+    backshift: 0.08
+    depth_margin: 0.01
+    azimuth_deg: 42.0
+    approach_timeout: 10.0
+    max_drop: 0.13
+    transport_margin: 0.004
+    sweep_joint_step: 0.04
+    transport_guard: true
+    grip_below_center: 0.0
+    arrival_advance: 0.0
+    measured_squat_handover: true
+    timely_capture: true
+    squat_prediction_backshift_ratio: 0.0
+    squat_prediction_drop_shortfall: 0.0
+    recovery_attempts: 0
+    recovery_timeout: 35.0
+    pregrasp_rise: 0.08
+    pregrasp_gap: 0.07
+    local_reach_limit: 0.2
+    visible_expert: true
+    stand_azimuth_deg: 0.0
+    visible_brake_depth: 0.44
+    visible_decel_band: 0.6
+    visible_shuffle_speed: 0.32
+    visible_brake_edge: 0.4
+    image_servo_truth_control: false
+    image_calibration:
+      cap_radius: 0.009498
+      cap_bottom: 0.069377
+      cap_top: 0.08
+      min_cap_pixels: 8
+      precise_wrist_pixels: 250
+      max_fit_error_px: 1.8
+      max_image_age_s: 0.15
+      edge_noise_px: 2.0
+      close_uncertainty_m: 0.01
+      approach_uncertainty_m: 0.15
+      bright_value: 180
+      bright_fraction: 0.1
+    image_control:
+      entry_gap: 0.075
+      finger_reach_past_grip: 0.0426
+      entry_margin: 0.035
+      base_hold_band: 0.04
+      alignment_tolerance: 0.018
+      close_depth: 0.015
+      close_lateral: 0.019
+      close_height: 0.016
+      approach_start_depth: 0.9
+      approach_end_depth: 0.32
+      approach_lateral: 0.195
+      lateral_tolerance: 0.12
+      prealign_depth: 0.44
+      view_elbow: 0.3
+      cartesian_lead: 0.035
+      tracking_gain: 0.7
+      far_yaw_lead: 0.4
+      joint_step: 0.025
+      body_step: 0.001
+      walking_floor: 0.2
+      walking_mid: 0.215
+      walking_mid_depth: 0.65
+      walking_speed: 0.3
+      edge_margin: 0.17
+      edge_lookahead: 0.04
+      ik_position_tolerance: 0.035
+      ik_rotation_tolerance: 0.3
+    whole_body:
+      waist_pitch_max: 0.52
+      pelvis_pitch_max: 0.7
+      pelvis_height_min: 0.65
+      joint_speed: 0.7
+      joint_acceleration: 2.0
+      hand_speed: 0.16
+      close_seconds: 1.2
+      capture_depth_m: 0.0012
+      capture_depth_tolerance_m: 0.005
+      capture_lateral_tolerance_m: 0.012
+      capture_height_tolerance_m: 0.015
+      capture_quiet_seconds: 0.1
+      capture_min_samples: 6
+      capture_position_diameter_max: 0.004
+      capture_drift_speed_max: 0.03
+      capture_rotation_diameter_max: 0.035
+      capture_angular_drift_max: 0.2
+      capture_brake_acceleration: 0.2
+      capture_brake_lookahead_seconds: 0.1
+      capture_terminal_window_seconds: 0.2
+      capture_terminal_max_gap_seconds: 0.05
+      contact_confirm_seconds: 0.1
+      contact_loss_grace_seconds: 0.12
+      contact_recovery_timeout: 0.8
+      contact_speed_max: 0.08
+      tracking_gain: 1.0
+      tracking_correction_dynamics: true
+      tracking_translation_deadband: 0.002
+      tracking_translation_speed: 0.04
+      tracking_translation_acceleration: 0.2
+      tracking_rotation_deadband: 0.015
+      tracking_rotation_speed: 0.15
+      tracking_rotation_acceleration: 0.6
+      ik_velocity_continuity_weight: 0.0
+      comfort_posture: true
+      comfort_waist_weight: 0.12
+      comfort_elbow_wrist_weight: 0.08
+      pose_lowpass_hz: 0.0
+      reach_seconds: 0.0
+      vision_timeout: 1.0
+      walk_plan_hz: 5.0
+      walk_filter_seconds: 0.45
+      walk_clearance: 0.06
+      raise_trigger_px: 36.0
+      natural_walk_prep: true
+      wrist_roi_supervisor: true
+      raise_release_px: 28.0
+      raise_late_depth: 0.78
+      vision_confirm_frames: 2
+      stance_search_span: 0.06
+      stance_candidates: 3
+      pregrasp_gap_min: 0.1
+      pregrasp_gap_max: 0.16
+      pregrasp_lateral_span: 0.04
+      stance_ik_tolerance: 0.025
+      stance_forward_margin_m: 0.18
+      stance_yaw_margin_deg: 16.0
+      stance_waist_yaw_max: 0.1
+      stance_waist_roll_max: 0.05
+      stance_solver_iterations: 40
+      stance_plan_tolerance_m: 0.015
+      stance_plan_yaw_tolerance_deg: 2.0
+      stance_plan_joint_tolerance_rad: 0.08
+      stance_plan_freshness_seconds: 1.0
+      stance_settled_timeout: 3.0
+      walk_stop_acceleration: 0.8
+      walk_stop_latency: 0.1
+      walk_stop_lead_max: 0.1
+      walk_tracking_gap: 0.02
+      find_raise_rate: 0.035
+      find_raise_max: 0.07
+      roi_deadband: 0.1
+      roi_gain: 0.04
+      roi_correction_max: 0.035
+      roi_correction_hz: 2.0
+      lean_max: 1.0
+      walk_joint_speed: 0.7
+      lift_height: 0.06
+      lift_seconds: 5.0
+      loaded_tracking_translation_full_m: 0.015
+      loaded_tracking_translation_stop_m: 0.05
+      loaded_tracking_rotation_full_rad: 0.06
+      loaded_tracking_rotation_stop_rad: 0.18
+      loaded_object_tilt_full_rad: 0.105
+      loaded_object_tilt_stop_rad: 0.262
+      loaded_object_tilt_fail_rad: 0.349
+      loaded_liftoff_rise_m: 0.01
+      loaded_grip_swing_full_rad: 0.035
+      loaded_grip_swing_stop_rad: 0.12
+      loaded_grip_swing_fail_rad: 0.2
+      loaded_orientation_recovery_seconds: 0.4
+    simple:
+      hang_shoulder_pitch_rad: 0.0
+      hang_shoulder_roll_rad: 0.45
+      hang_shoulder_yaw_rad: 0.0
+      hang_elbow_rad: 1.2
+      hang_wrist_roll_rad: 0.0
+      hang_wrist_pitch_rad: 0.0
+      hang_wrist_yaw_rad: 0.0
+      hang_ramp_rad_s: 1.0
+      hang_reached_rad: 0.15
+      hang_prepare_timeout_s: 3.0
+      raise_outboard_m: 0.0
+      stand_settle_s: 0.0
+      stand_settle_timeout_s: 4.0
+      stand_leg_speed_rad_s: 0.5
+      stand_pelvis_speed_m_s: 0.1
+      target_grace_s: 8.0
+      wrap_yaw_per_m: 1.2
+      wrap_yaw_max_rad: 0.35
+      raise_above_grip_m: 0.08
+      raise_table_margin_m: 0.12
+      raise_forward_m: 0.0
+      raise_seconds: 2.0
+      retract_m: 0.1
+      retract_edge_margin_m: 0.08
+      retract_speed_m_s: 0.15
+      pregrasp_back_m: 0.18
+      pregrasp_up_m: 0.0
+      pregrasp_seconds: 2.5
+      settle_tolerance_m: 0.02
+      settle_timeout_s: 1.5
+      dash_speed_m_s: 0.12
+      lateral_correction_speed_m_s: 0.03
+      lateral_correction_max_m: 0.04
+      entry_overshoot_m: 0.02
+      entry_capture_depth_m: 0.01
+      entry_timeout_s: 6.0
+      entry_lateral_tolerance_m: 0.025
+      entry_height_tolerance_m: 0.03
+      entry_attempts: 2
+      retreat_m: 0.08
+      retreat_seconds: 1.0
+      close_seconds: 1.0
+      contact_timeout_s: 0.8
+      lift_height_m: 0.08
+      lift_seconds: 2.0
+      recover_seconds: 1.5
+      min_rise_m: 0.04
+      disturb_limit_m: 0.05
+      lean_max_rad: 0.55
+      approach_stop: guard       # the bottle default since 2026-09-25 (user): walking policy's arms, constant 0.25, GuardBrake at the edge, warehouse lifted ready; visible = the older hanging walk
+      arm_route: curobo       # the route plan's switch (lifted_ready = the 2026-09-25 default)
+      walk_speed: 0.25
+      guard_extra_m: 0.2
+      guard_margin_m: 0.03
+      guard_stride0_m: 0.14
+      guard_band_below_m: 0.12
+      guard_band_above_m: 0.03
+      ready_tool_forward_m: 0.16
+      ready_tool_lateral_m: 0.16
+      ready_tool_up_m: 0.05
+      ready_pitch_deg: 30.0
+      ready_elbow_min_deg: -60.0
+      ready_seconds: 2.5
+      ready_hold_s: 0.3
+  target: water_bottle
+  prompt: pick up the water bottle
+  goal: ''
+  place:
+    hover_clearance: 0.03
+    release_clearance: -0.1
+    band_x:
+    - 0.26
+    - 0.44
+    band_y:
+    - -0.16
+    - -0.06
+    turn_timeout: 8.0
+    carry_timeout: 6.0
+    descend_timeout: 4.0
+    place_tol: 0.03
+    place_tol_late: 0.05
+    v_travel: 0.15
+    v_descend: 0.1
+    release_s: 0.6
+    retreat_up: 0.14
+    back_off: 0.35
+    goal_inner_half:
+    - 0.12
+    - 0.07
+    goal_gap: 0.21
+    goal_move_max: 0.05
+  spawn:
+    edge_range:
+    - 1.1
+    - 1.3
+    face_object: true
+    yaw_err_deg: 20.0
+    lateral: 0.2
+    edge_jitter: 0.2
+  stand_retries: 0
+  restart_deploy: false
+  arm_pin: false
+  pose_sidecar: true
+  video_include_init: false
+  init_token_file: null
+  init_token_official: false
+  arm_channel: planner
+  arm_vel: true
+  left_guard: true
+  one_shot: false
+
+# which GR00T contract the dataset, the finetune and the policy server share
+embodiment:
+  name: g1_single_arm
+  gr00t_tag: unitree_g1_sonic
+  gr00t_modality_config: configs/gr00t_sonic_2cam.py
+
+# the frozen scene directory, copied into the run directory before the first batch
+scene:
+  dir: outputs/scene/sim_lowcom
+  cases: null
+
+# the collection stack. no_encoder is false: without the encoder the deploy silently drops the
+# planner's arm and crouch references, which is what a scripted expert steers with
+images:  # which renderer draws the policy's pictures, in the dataset and the closed loop alike: mujoco | isaac (isaac needs backend.render offline, the scene's Isaac stage and a second card; docs/warehouse_design.md §4)
+  source: mujoco
+backend:
+  no_encoder: false
+  hand: dex1
+  upper_slew_deg: 2.0
+  grip_delay: 0
+  obs_dump: null
+  replace: false
+  wrist_cams: true
+  sim_vis: none
+  scene_random: false
+  dataset_fps: 30.0
+  clean_deploy: false
+  eval_parallel: false
+  sonic_dds_domain: null
+  lockstep:
+    enabled: false
+    ack_timeout: 5.0
+    warmup_ticks: 60
+    cmd_delay: 0
+    jitter: false
+    jitter_seed: 0
+    no_seed: false
+
+# How much to collect, and in what batches (one stack lifetime per batch).
+# These two blocks are plain YAML rather than dataclasses, so they are NOT in
+# docs/reference/config_fields.md -- this is where they are documented.
+collect:
+  successes: 3        # episodes to keep. WITHOUT scene.cases, collection stops as soon as it
+                      # has this many; WITH a fixed bank it is only the acceptance floor and the
+                      # whole batch_rounds budget always runs (see docs/running.md, "采集什么时候停")
+  batch_rounds: 3     # attempts per batch. With a fixed bank this is what decides how many rounds run
+  max_batches: 1      # batch ceiling, so a bad run ends instead of collecting forever
+  seed0: 40000        # first batch's sampling seed; batch k uses seed0 + 100*k
+  instance: 4         # port block for the stack. Only instance 0 runs the exporter, so recording needs 0
+  record: false       # false samples and scores rounds without writing episodes (cheap dry pilots)
+  gym_env: ["TF_CUROBO_PORT=5796"]         # extra KEY=VALUE for the expert process, recorded in commands.jsonl
+  stack_env: []       # extra KEY=VALUE for sim/deploy/exporter
+
+# The finetune; the recipe itself lives in scripts/train_bottle.sh.
+train:
+  steps: 10000        # optimiser steps
+  save_steps: 5000    # checkpoint interval. The run's artifact is model/checkpoint-<steps>, so
+                      # steps must be a multiple of this or the last step saves nowhere
+  holdout: 10         # episodes held out for checkpoint selection. Consumed by CONVERT, not train,
+                      # and it must be < collect.successes or conversion refuses. 0 trains on everything
+  gpus: 1             # >1 switches the recipe to DeepSpeed ZeRO-2
+  global_batch: 64    # batch size summed across gpus
+  squat_max: 4096     # squat-token clamp passed through to the recipe
+  base_model: null    # null starts from GR00T-N1.7-3B; a path resumes from your own checkpoint
+
+# the closed loop. This whole block is handed to the evaluator as one file -- hand-copying
+# fields is what made a 100-round run spawn at 0.7 m while this said 1.1-1.3 m (2026-09-17)
+eval:
+  backend:
+    no_encoder: true
+    hand: dex1
+    upper_slew_deg: 2.0
+    grip_delay: 0
+    obs_dump: null
+    replace: false
+    wrist_cams: true
+    sim_vis: none
+    scene_random: false
+    dataset_fps: 25.0
+    clean_deploy: false
+    eval_parallel: false
+    sonic_dds_domain: null
+    lockstep:
+      enabled: true
+      ack_timeout: 5.0
+      warmup_ticks: 60
+      cmd_delay: 0
+      jitter: false
+      jitter_seed: 0
+      no_seed: false
+  budget_s: 90.0
+  ensemble_n: 1
+  ensemble_m: 0.3
+  rtc: false
+  transition_commit: false
+  transition_decoder: null
+  grip_gain: 1.0
+  snap: true
+  stall_abort_s: 0.0
+  rounds: 100
+  seed: 6000
+  client: lockstep  # every VLA evaluation runs lockstep since 2026-09-28: the world waits for rendering and inference
+  replan_interval: 0.4
+  execution_horizon: 16
+  policy_port: 5710  # outside every instance's port block (5555-5622 for instances 0-4); 5590 is instance 1's keyboard port
+  stand_retries: 0
+  latency_dist: null
+  latency_frames: 2  # the calibrated target model: 2 frames of inference, the old chunk continued meanwhile
+  camera_frames: 0
+  gap: continue
+  restart_deploy: true
+  resume: false
+  force_resume: false
+  spawn_edge:
+  - 1.1
+  - 1.3
+  task: pick up the water bottle
+  target: water_bottle
+  video_include_init: true  # film from the teleport: a [stand] failure ends the round before the
+  # visibility gate, and that is the family with no footage at all otherwise
+  initial_token: configs/deployment/whole_body_initial_token.json

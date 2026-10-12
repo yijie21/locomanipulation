@@ -21,6 +21,9 @@ HAND_X = 0.08
 WORKSPACE_Y = (-0.24, -0.12)
 WAIST_ENVELOPE = (np.array([-0.10, 0.0, 0.0]), np.array([0.10, 0.0, 0.12]))
 ROT_WEIGHT = 1.0
+# The right arm's natural posture: shoulder slightly forward/outboard, flexed elbow, nearly neutral wrist (joints 22-28).
+# The walking reach's posture prior, and the simple expert's CuRobo retract posture (simple_policy.ROUTE_JOINTS).
+NATURAL_RIGHT_ARM = (0.10, -0.30, 0.20, 1.02, 0.0, 0.12, 0.0)
 
 
 class WalkingReach:
@@ -47,10 +50,8 @@ class WalkingReach:
         self.seed = ready_q()
         self.seed[12:15], self.seed[22:29] = self.q[:3], self.q[4::2]
         self.comfortable = self.seed.copy()
-        # Shoulder slightly forward/outboard, flexed elbow, nearly neutral
-        # wrist. This is a posture prior, not a forced tool orientation.
-        natural = np.array([0.10, -0.30, 0.20, 1.02, 0.0, 0.12, 0.0])
-        self.comfortable[22:29] = np.clip(natural, ik.lo[22:29], ik.hi[22:29])
+        # A posture prior, not a forced tool orientation.
+        self.comfortable[22:29] = np.clip(np.array(NATURAL_RIGHT_ARM), ik.lo[22:29], ik.hi[22:29])
         self.relative = self.root = self.rotation = self.raw_relative = None
         self.world_target = None
         self.navigation_rotation = None

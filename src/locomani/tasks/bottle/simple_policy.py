@@ -17,6 +17,7 @@ grasp is made tolerant of that instead of being gated on millimetres.
 
 from __future__ import annotations
 
+import threading
 import time
 from copy import deepcopy
 from dataclasses import replace
@@ -29,18 +30,35 @@ from locomani.backends.sonic.primitives import HAND_CLOSED_RIGHT, HAND_OPEN, Loc
 from locomani.backends.sonic.streamed_arm import StreamedArm
 from locomani.pipeline.provenance import require_pose_ownership
 from locomani.primitives.arm_ik import ArmIK
+from locomani.primitives.arm_route import ArmRouteClient, RouteServiceError, retime_path, sample_path, scene_obstacles
 from locomani.primitives.contacts import bilateral_dex1_contact
+from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
 from locomani.primitives.supported_motion import SupportedMotion
+from locomani.sim import ports
 from locomani.tasks.bottle.assisted_target import BottleTargetObserver
 from locomani.tasks.bottle.edge_guard import EdgeGuard, facing_edge
 from locomani.tasks.bottle.ready_grasp_policy import OFFSET
-from locomani.tasks.bottle.walking_reach import WalkingReach
+from locomani.tasks.bottle.walking_reach import NATURAL_RIGHT_ARM, WalkingReach
 from locomani.tasks.crate.bimanual_ik import BimanualIK
 
 # Arm meshes that legitimately touch the bottle in the middle-pad grasp: the Dex1
 # housing sits 0-4 mm from the held bottle (housing_clearance_review.json, 2026-09-16).
 GRASP_ENVELOPE_MESHES = ("Dex1_base_link",)
-PHASES = ("backoff", "ready", "reach", "settle", "entry", "retreat", "close", "lift", "recover")
+PHASES = ("backoff", "ready", "route", "reach", "settle", "entry", "retreat", "close", "lift", "recover")
+# arm_route curobo: what the route service plans -- the waist and the right arm; the left arm keeps the walking hang
+ROUTE_JOINTS = (12, 13, 14, 22, 23, 24, 25, 26, 27, 28)
+# ... with the waist held near upright: yaw, roll, pitch (lower bound only) as the GraspNet comparison planned
+# (scripts/experiments/graspnet_bottle_20261008/grasp_planned.py WAIST_LIMITS, 2026-10-08). With only the joint limits the
+# routes rolled the waist by a median 0.48 rad (max 0.52, the limit), swinging the hanging left hand into the table guard
+# (bottle_route_curobo_b_20261009: 3 of 4 clearance failures on the left fingers, during the route).
+ROUTE_WAIST_LIMITS = ((-0.25, 0.25), (-0.05, 0.05), (-0.05, None))
+# ... and keeps that hang through the closed loop after the route: held by its joint posture (the hang moves with the
+# torso) rather than by a world point for the hand. Holding the hanging hand at its world point re-bent the left elbow
+# from 1.1 to 0.1 rad while the waist pitched for the reach (smoke bottle_route_curobo_smoke_20261009, 3/3 rounds; the
+# same loop replayed offline). With the prior applied in full, the arm stayed within 0.01 rad and the right hand tracked
+# as before (scripts/experiments/curobo_route_20261009, 2026-10-09).
+LEFT_HANG_POSTURE_WEIGHT = 2.0  # posture residual weight on joints 15-21; every other joint keeps the loop's 0.04
+LEFT_HANG_HAND_WEIGHT = 0.01  # the left hand's position/rotation weight; WholeBodyIK requires a positive one
 CAP_CLEARING_CONTACT_HEIGHT_M = 0.035  # finger/target contact is allowed once the tool is near grip height
 HAND_FORWARD_EXTENT_M = (
     0.05  # hanging Dex1 geometry reaches this far ahead of its tool point (guard reproduction, 2026-09-16)
@@ -282,6 +300,18 @@ def lift_target(ik, motion, offset, rise):
     return ik.data.xpos[motion.body.torso] + frame @ np.asarray(offset, dtype=float) + [0.0, 0.0, float(rise)]
 
 
+def loop_prior(reference, posture, weights, hang_left):
+    """(posture reference, posture weights, hand weights) for the grasp loop's SupportedMotion. The loop never blends
+    its posture prior in, so every joint is held to `reference` at 0.04 and `posture`/`weights` stay inert; with
+    `hang_left` (arm_route curobo) the caller blends this prior in at once, which keeps that inert 0.04 hold everywhere
+    but the left arm, held at its reference joints at LEFT_HANG_POSTURE_WEIGHT while its hand weighs next to nothing."""
+    if not hang_left:
+        return posture, weights, (0.35, 1.0)
+    held = np.full(29, 0.04)
+    held[15:22] = LEFT_HANG_POSTURE_WEIGHT
+    return np.asarray(reference, dtype=float).copy(), held, (LEFT_HANG_HAND_WEIGHT, 1.0)
+
+
 def stance_geometry(ik, joints):
     """Foot separation in the body frame (forward, lateral) from the measured joints."""
     left, _ = ik.body_pose(np.asarray(joints, dtype=float), ANKLE_BODIES["left"])
@@ -317,6 +347,7 @@ class SimpleGraspPolicy:
         self._walk_q = np.asarray(arm_ramp.q, dtype=float).copy()  # ramps to the configured hang during the walk
         self._walk_stamp = None
         self._edge_anchor = None  # (pelvis-to-edge distance, pelvis xy) at the last walk tick that had one
+        self._route_client = None  # arm_route curobo: built on the first route
         self.edge_guard = None  # approach_stop guard: built by prepare_walk, read by the approach loop
         self.context = {}
         self.stats = execution.metrics.setdefault(
@@ -544,6 +575,8 @@ class SimpleGraspPolicy:
 
     def close(self):
         self.target.close()
+        if self._route_client is not None:
+            self._route_client.close()
 
     def _plan(self, state, forward):
         """Grip, wrap direction and pre-grasp from the current measured state."""
@@ -554,14 +587,10 @@ class SimpleGraspPolicy:
         pregrasp = pregrasp_point(grip, direction, self.simple.pregrasp_back_m, self.simple.pregrasp_up_m)
         return grip, direction, pregrasp
 
-    def _lift_ready(self):
-        """approach_stop guard, right after the takeover: the warehouse's lifted ready (crate/expert.py
-        prepare_stationary_ready). One whole-arm pose solved from the walking arms (BimanualIK.lifted_ready), then a
-        smoothstep joint blend with the waist locked and the legs and root held, so the forearms fold up close to the
-        body. A straight Cartesian rise kept the hands where they hung and swung the shoulders out instead (53-68 deg,
-        elbows 13-16 cm outboard; user review of bottle_simple_guard_straight_20260925). None once the hands are up,
-        else the failed round."""
-        p, simple = self.p, self.simple
+    def _ready_solution(self):
+        """The warehouse's lifted ready, solved from the walking arms (BimanualIK.lifted_ready, waist locked at zero):
+        (solution, start, None), or (None, None, the failed round) when the solver misses it."""
+        simple = self.simple
         solver = BimanualIK(
             self.ik,
             waist_pitch_max=self.cfg.waist_pitch_max,
@@ -571,7 +600,7 @@ class SimpleGraspPolicy:
         start = np.asarray(self.arm.q, dtype=float).copy()
         tool = (simple.ready_tool_forward_m, simple.ready_tool_lateral_m, simple.ready_tool_up_m)
         ready = solver.lifted_ready(tool, simple.ready_pitch_deg, start)
-        record = self.stats["ready"] = dict(
+        self.stats["ready"] = dict(
             tool=list(tool),
             pitch_deg=simple.ready_pitch_deg,
             errors_m=ready.errors.tolist(),
@@ -580,7 +609,25 @@ class SimpleGraspPolicy:
         )
         if float(np.max(ready.errors)) > 0.02:
             # The warehouse stops the run here (the pose must be delivered, not approximated); a stand is per round.
-            return self._fail("simple lifted ready pose missed by the solver", errors_m=ready.errors.tolist())
+            return (
+                None,
+                None,
+                self._fail("simple lifted ready pose missed by the solver", errors_m=ready.errors.tolist()),
+            )
+        return ready, start, None
+
+    def _lift_ready(self):
+        """approach_stop guard, right after the takeover: the warehouse's lifted ready (crate/expert.py
+        prepare_stationary_ready). One whole-arm pose solved from the walking arms (BimanualIK.lifted_ready), then a
+        smoothstep joint blend with the waist locked and the legs and root held, so the forearms fold up close to the
+        body. A straight Cartesian rise kept the hands where they hung and swung the shoulders out instead (53-68 deg,
+        elbows 13-16 cm outboard; user review of bottle_simple_guard_straight_20260925). None once the hands are up,
+        else the failed round."""
+        p, simple = self.p, self.simple
+        ready, start, failure = self._ready_solution()
+        if failure is not None:
+            return failure
+        record = self.stats["ready"]
         key = self.task.target.key
         delta = ready.joints - start
         state = p.obs()
@@ -621,6 +668,156 @@ class SimpleGraspPolicy:
                     seconds=stamp - began,
                     tools=self._measured_tools(state).tolist(),
                     joints=np.asarray(state["joints"], dtype=float)[12:29].tolist(),
+                )
+                return None
+
+    def _planning_frame(self, state):
+        pos = np.asarray(state["pelvis"]["pos"], dtype=float)
+        return pos, Primitives._rot(state["pelvis"]["quat"])
+
+    def _route_obstacles(self, state, frame):
+        """The scene's collision world now (arm_route.scene_obstacles): free bodies at their measured poses."""
+        meta = getattr(self.task, "meta", None) or {}
+        body_of = {key: info.get("body") for key, info in (meta.get("objects") or {}).items()}
+        body_of.setdefault(self.task.target.key, self.task.target.body)
+        free = {
+            body_of[key]: (np.asarray(obj["pos"], dtype=float), np.asarray(obj["quat"], dtype=float))
+            for key, obj in state["objects"].items()
+            if body_of.get(key)
+        }
+        return scene_obstacles(self.ik.model, free, *frame)
+
+    def _route_to_ready(self):
+        """arm_route curobo, right after the takeover at the guard stop: the right hand to its lifted-ready pose (the
+        one _lift_ready blends both hands to) by one collision-free joint path for the waist and the right arm, planned
+        by the CuRobo route service against the scene's collision world, streamed on the physical clock with the same
+        per-tick clearance, knock and fall checks, then held ready_hold_s. From there the grasp loop slides to the
+        pre-grasp exactly as after the lifted ready. Replaces _lift_ready (user, 2026-10-09: the in-place raise existed
+        to keep the hands off the table, which the planner now does); the left arm keeps its walking hang. The route
+        used to go straight to the pre-grasp: it needed the waist rolled up to 0.5 rad, which SONIC tracked 5 cm off
+        and swung the hanging left hand into the table guard (route plan section 6, option b). None once the hand is
+        up, else the failed round -- no fallback to the lifted ready."""
+        p, simple = self.p, self.simple
+        joints = list(ROUTE_JOINTS)
+        names = [MUJOCO_JOINT_NAMES[j] for j in joints]
+        lower, upper = self.ik.lo[joints].copy(), self.ik.hi[joints].copy()
+        for k, (lo, hi) in enumerate(ROUTE_WAIST_LIMITS):
+            lower[k] = max(lower[k], lo)
+            upper[k] = upper[k] if hi is None else min(upper[k], hi)
+        retract = np.clip(np.r_[0.0, 0.0, 0.0, NATURAL_RIGHT_ARM], lower, upper)
+        ready, _, failure = self._ready_solution()
+        if failure is not None:
+            return failure
+        # the goal is the lifted-ready joints themselves: a wrist-pose goal was reached with another waist and arm
+        # solution, which the grasp loop's posture prior then carried into the entry (route plan section 6)
+        goal = ready.joints[joints].copy()
+        if np.any(goal < lower - 1e-6) or np.any(goal > upper + 1e-6):
+            return self._fail("simple lifted ready pose outside the route's joint limits", goal=goal.tolist())
+        wrist_p, wrist_r = self.ik.fk(ready.joints, "right")  # the pelvis frame CuRobo plans in
+        raised = wrist_p + wrist_r @ OFFSET
+        state = p.obs()
+        frame = self._planning_frame(state)
+        start = np.asarray(self.arm.q, dtype=float).copy()
+        try:
+            obstacles = self._route_obstacles(state, frame)
+        except ValueError as exc:
+            return self._fail("simple route world could not be built", error=str(exc))
+        record = self.stats["route"] = dict(
+            names=names,
+            start=start[joints].tolist(),
+            lower=lower.tolist(),
+            upper=upper.tolist(),
+            retract=retract.tolist(),
+            goal_joints=goal.tolist(),
+            raised=(frame[0] + frame[1] @ raised).tolist(),
+            ready_reference=ready.joints[joints].tolist(),
+            obstacles=[o.name for o in obstacles],
+        )
+        box, began_wall = {}, time.monotonic()
+
+        def plan():
+            try:
+                if self._route_client is None:
+                    self._route_client = ArmRouteClient(
+                        ports.curobo_route(), plan_timeout_s=simple.route_plan_timeout_s
+                    )
+                box["configure"] = self._route_client.configure(names, lower, upper, retract)
+                box["route"] = self._route_client.plan_to_joints(start[joints], goal, obstacles)
+            except (RouteServiceError, ValueError) as exc:
+                box["error"] = exc
+
+        worker = threading.Thread(target=plan, daemon=True)
+        worker.start()
+        while worker.is_alive():
+            # the deploy drops a channel that is silent for a second: hold the takeover pose while the service plans
+            self.arm.hold(0.1)
+        record.update(plan_wall_s=time.monotonic() - began_wall, configure=box.get("configure"))
+        if "error" in box:
+            return self._fail("simple route service failed", error=str(box["error"]))
+        route = box["route"]
+        record.update(
+            ok=route.ok,
+            service_s=route.seconds,
+            status=route.status,
+            waypoints=len(route.path),
+            rebuilt=route.rebuilt,
+            poisoning=route.poisoning,
+        )
+        if not route.ok:
+            return self._fail("simple route found no path to the lifted-ready pose", status=route.status)
+        path, fraction, total = retime_path(route.path, simple.route_joint_speed)
+        record.update(
+            seconds=total,
+            joint_travel_rad=float(np.abs(np.diff(path, axis=0)).sum(axis=0).max()),
+            # the commanded path itself: the service does not repeat a path across calls, so this is the only copy
+            path=np.round(path, 5).tolist(),
+        )
+        key = self.task.target.key
+        state = p.obs()
+        obj0 = np.asarray(state["objects"][key]["pos"], dtype=float).copy()
+        base = np.asarray(self.arm.q, dtype=float).copy()
+        began = previous = float(state["t"])
+        self.stats["phases"].append(dict(phase="route", t=began, seq=state.get("seq")))
+        self.execution.enter("simple.route")
+        wall_progress = time.monotonic()
+        while True:
+            state = p.obs()
+            stamp = float(state["t"])
+            if stamp == previous:
+                if time.monotonic() - wall_progress > 2.0:
+                    return self._fail("simple physical clock stalled", phase="route")
+                time.sleep(0.005)
+                continue
+            wall_progress = time.monotonic()
+            if stamp < previous or stamp - previous > 0.5:
+                return self._fail("simple physical state clock gap", dt=stamp - previous, phase="route")
+            previous = stamp
+            if state.get("fallen", False):
+                return self._fail("simple fell during the route")
+            moved = float(np.linalg.norm(np.asarray(state["objects"][key]["pos"])[:2] - obj0[:2]))
+            if moved > simple.disturb_limit_m:
+                return self._fail("simple bottle knocked before the close", moved_m=moved, phase="route")
+            q_route, v_route = sample_path(path, fraction, total, stamp - began)
+            q, velocity = base.copy(), np.zeros(29)
+            q[joints], velocity[joints] = q_route, v_route
+            candidate = np.asarray(state["joints"], dtype=float).copy()
+            candidate[12:29] = q[12:29]
+            reason = self._clear(state, candidate, False)
+            if reason:
+                return self._fail(reason, phase="route", progress=(stamp - began) / total)
+            self.arm.q = q
+            self.arm._push(q, reference_velocity=velocity, reference_time=stamp)
+            if stamp - began >= total + simple.ready_hold_s:
+                tool = self._measured_tools(state)[1]
+                # where the route left the hand, against where it was planned to (the raised point, on the pelvis
+                # as it stands now: the stand settles while the hand rises)
+                planned = (
+                    np.asarray(state["pelvis"]["pos"], dtype=float) + Primitives._rot(state["pelvis"]["quat"]) @ raised
+                )
+                record.update(
+                    tool=tool.tolist(),
+                    raised_error_m=float(np.linalg.norm(tool - planned)),
+                    joints=np.asarray(state["joints"], dtype=float)[joints].tolist(),
                 )
                 return None
 
@@ -671,7 +868,8 @@ class SimpleGraspPolicy:
                     band_gap_m=gap,
                     body=self.edge_guard.final["band_body"],
                 )
-            failure = self._lift_ready()
+            self.stats["arm_route"] = simple.arm_route
+            failure = self._route_to_ready() if simple.arm_route == "curobo" else self._lift_ready()
             if failure is not None:
                 return failure
             state = p.obs()
@@ -683,6 +881,8 @@ class SimpleGraspPolicy:
         weights = np.full(29, 0.04)
         weights[12:14] = cfg.comfort_waist_weight
         weights[25:29] = cfg.comfort_elbow_wrist_weight
+        hang_left = guard_walk and simple.arm_route == "curobo"
+        posture, weights, hand_weights = loop_prior(self.arm.q, posture, weights, hang_left)
         motion = SupportedMotion(
             self.ik,
             state,
@@ -690,10 +890,12 @@ class SimpleGraspPolicy:
             self.arm.q,
             self.arm.root_quat,
             tool_offset=OFFSET,
-            hand_weights=(0.35, 1.0),
+            hand_weights=hand_weights,
             posture_reference=posture,
             posture_weights=weights,
         )
+        if hang_left:
+            motion.blend_posture(1.0)
         heading = motion.body.heading
         forward = heading[:, 0]
         grip, direction, pregrasp = self._plan(state, forward)
@@ -729,8 +931,8 @@ class SimpleGraspPolicy:
         path = [backoff_to, raised, pregrasp]
         ready = None
         if guard_walk:
-            # The hands are already up (_lift_ready): the right one slides on from where it measured, the left one
-            # holds its ready point for the whole grasp.
+            # The hands are already up (_lift_ready; with arm_route curobo only the right one): the right one slides on
+            # from where it measured, the left one holds its ready point (or its hang) for the whole grasp.
             ready = actual.copy()
             raised = actual[1].copy()
             path = [raised, pregrasp]
@@ -738,7 +940,10 @@ class SimpleGraspPolicy:
         # hand, no palm swing); they turn level on the slide to the pre-grasp.
         hanging_rotation = Primitives._rot(state["palms"][side]["quat"])
         rotations[1] = hanging_rotation
-        reach_seconds = simple.pregrasp_seconds if guard_walk else simple.raise_seconds + simple.pregrasp_seconds
+        if guard_walk:
+            reach_seconds = simple.pregrasp_seconds
+        else:
+            reach_seconds = simple.raise_seconds + simple.pregrasp_seconds
         raise_arc = polyline_length(path[:-1])
         self.stats["plan"] = dict(
             grip=grip.tolist(),

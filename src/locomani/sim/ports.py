@@ -89,6 +89,12 @@ def isaac_mirror() -> int:
     return port("TF_ISAAC_MIRROR_PORT")
 
 
+def curobo_route() -> int:
+    """The CuRobo arm-route service (primitives/curobo_service.py): one per machine, shared by every instance, so it
+    is not in the instance block. Outside the 555x/558x blocks and the policy servers' 5700+ (2026-10-09)."""
+    return int(os.environ.get("TF_CUROBO_PORT", "5795"))
+
+
 # Every entry point start_stack.sh can launch as the exporter. The default is
 # gear_sonic's run_data_exporter.py; the pipeline overrides TF_EXPORTER_SCRIPT
 # to our run_instance_exporter.py (the collect stage), so

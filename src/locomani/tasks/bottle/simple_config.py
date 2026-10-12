@@ -85,6 +85,13 @@ class SimpleGraspConfig:
     ready_elbow_min_deg: float = -60.0  # guard: elbow floor of the ready solve; the forearms fold above level, which the 5 deg floor of the reach solvers forbids (test_crate_lifted_ready)
     ready_seconds: float = 2.5  # guard: duration of the smoothstep joint blend from the walking arms to the ready pose (the warehouse's 125 frames)
     ready_hold_s: float = 0.3  # guard: both hands held in the ready pose this long before the right hand slides to the pre-grasp; the left one stays there for the whole grasp
+    arm_route: str = field(
+        default="lifted_ready", metadata={"choices": ("lifted_ready", "curobo")}
+    )  # guard only: how the right hand gets from the walking hang to the pre-grasp. lifted_ready = both hands blended up in place, then a straight slide (2026-09-25); curobo = the right hand alone to its lifted-ready pose by one collision-free joint path for the right arm + waist from the CuRobo route service (primitives/curobo_service.py, must be running), the same hold and slide after it, the left hand staying in its hang (user, 2026-10-09; docs/handoff/single-arm-curobo-route-plan-20261009.md)
+    route_joint_speed: float = (
+        0.6  # curobo: peak speed of the most moved joint along the planned path, rad/s (the GraspNet comparison's 0.6)
+    )
+    route_plan_timeout_s: float = 60.0  # curobo: the round fails if the service has not answered a plan by then
 
     def __post_init__(self):
         for f in fields(self):
@@ -187,3 +194,9 @@ class SimpleGraspConfig:
                 "and 0-10 cm above the top, ready hold 0-2 s; the ready pose 0-40 cm ahead, 5-40 cm out, -20..40 cm "
                 "up, palm -10..90 deg, elbow floor -60..5 deg, blend 1-6 s"
             )
+        if self.arm_route == "curobo" and self.approach_stop != "guard":
+            raise ValueError(
+                "simple.arm_route curobo replaces the guard walk's lifted ready; it needs approach_stop guard"
+            )
+        if not (0.2 <= self.route_joint_speed <= 1.5 and 5.0 <= self.route_plan_timeout_s <= 300.0):
+            raise ValueError("simple route must peak at 0.2-1.5 rad/s and time out after 5-300 s")
