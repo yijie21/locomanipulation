@@ -780,6 +780,10 @@
     - [x] 21.3.4.8 （用户 2026-10-09）固定同一个抓取重比：`run_grasp.py --fixed-grasp`，IK 11/65、CuRobo 11/65；开环到预抓误差 3.3 对 4.1 cm（p 0.002）；结果 `outputs/graspnet_bottle_20261008/fixed/`，记录第 5b 节（2026-10-09）
       - [ ] 21.3.4.8.1 待用户：局序抵消重跑——第 1 局（CuRobo）朝向在 58/58 个物体上更顺时针（中位 4.8°），一半物体先跑 CuRobo 可去掉，约 1.2 小时
     - [x] 21.3.4.9 （用户 2026-10-10）并排视频拆成单局、文件名带 `success` / `fail`：`split_videos.py`，`videos_single/` 与 `fixed/videos_single/` 各 130 局，`index.csv` 列失败原因（2026-10-10）
+  - [ ] 21.3.5 待用户（2026-10-12 读 SIMPLE 源码时列出，为导师问"可学之处"）：SIMPLE agent 层值得借的三点，DECISIONS 2026-10-12 有出处
+    - [ ] 21.3.5.1 抓取缓存按物体稳定姿态分键：每个稳定姿态各建一份缓存，在线按实测姿态取最近的一份（现在只有 make_scenes 选的那一个静止姿态，物体被碰倒后候选被桌面检查滤光）
+    - [ ] 21.3.5.2 计划步改成带类型的子任务（参数有名字、可校验），替代现在的原语名字符串 + dict；要回答：对 `skills/contract.py` 的 preconditions 有没有增量
+    - [ ] 21.3.5.3 双臂时第二只手的抓取按第一只手已选的抓取过滤（SIMPLE `store_grasp_key` / 按接近方向筛）；bimanual 线目前没有这一步
 
 ## 22. 单臂主线接 CuRobo 抬手路线（用户 2026-10-09；[计划与验证](docs/handoff/single-arm-curobo-route-plan-20261009.md)；DECISIONS 2026-10-10）
 
@@ -849,6 +853,7 @@
     - [x] 23.2.6.3 A/A 复跑定噪声底（2026-10-10 06:59–07:47）：关 25、18 / 65，开 16、24 / 65；合计 43 对 40 / 130（Fisher p 0.40）；关/关之间翻转 13 + 6，和关/开之间一个量级；任意两批选同一抓取 47–52 / 57。结论：预检排序不改变成功率，规划中位 15.4 / 19.4 s → 4.1 / 4.1 s，p90 60 / 63 → 7.7 / 6.6，最长 129 / 127 → 10 / 9.4；已设为默认（`PRESORT` on，`--presort off` 可关）。汇总 `outputs/graspnet_bottle_20261008/cache/presort_compare.txt`
   - [x] 23.2.9 （用户 2026-10-10）最佳配置（缓存 + 预检 IK，`_presort_b` 第 0 局）65 局带 ghost 夹爪的完整视频：`ghost_overlay.py --tag _presort_b`（58 局有 ghost，7 局没选中抓取）→ `best_videos.py` → `cache/videos_best_full/`（466 MB）+ `cache/videos_best/`（≤ 500 KB，index.csv）（2026-10-10）
   - [~] 23.2.7 运行目录已删（用户 2026-10-10：10-10 新增的 749 个 `gnb_obj_*` 运行目录，`outputs/runs` 158 → 150 GB）；剩下待用户——`outputs/runs/gnb_obj_*_cache`（65 个，2.1 GB）、`gnb_obj_000_cache_smoke`、23.2.6 的 `gnb_obj_*_{presort,cache_b,presort_b}`（195 个，约 2.3 GB）、`cache/replay/`（小）、`presort_b/ghost_rounds/`（配准录像，约 0.5 GB）、`cache/videos_best_full/`（466 MB）；缓存本身 `scenes/obj_*/grasp_cache.npz` 很小，留
+    - 事实（2026-10-12 复核磁盘）：上一行列的 `_cache`、`_presort*` 等运行目录已在那 749 个里删掉；现在还在的是 `gnb_obj_*_{gateA,gateB,highA,highB}`（260 个，2.2 GB）、`gnb_obj_040_demo*`（3 个，20 MB）、`presort_b/ghost_rounds/`（392 MB）、`cache/videos_best_full/`（202 MB）、`demo/` 与 `cache/videos_demo*`（10 MB）；以及 10-08/09 的 `gnb_obj_*`、`_fixed*`、`_batch1`、`_smoke*`（21.3.4.6）
   - [x] 23.2.8 （用户 2026-10-12 commit and push，已提交并推送）提交 23.2 的代码（`grasp_cache.py`、`cache_all.sh`、`cache_summary.py`、`replay_plan.py`、`replay_summary.py`、`presort_compare.py`、`grasp_planned.py` / `run_grasp.py` / `run_batch.sh` 改动）、`docs/handoff/grasp-cache-20261010.md`、`docs/README.md` 索引行
 - [ ] 23.5 方案 D（实验开关，不默认开）：判定抓住后把物体焊到夹爪（weld），用来把位姿问题和接触问题分开看；代价是抬起 / 搬运动力学失真、带载行走的创滑看不到，不进正式采集
 - [-] 23.6 方案 E：每次停下后在线从头优化新抓取（MPC / 采样）——放弃：和 23.2.4 相比没有收益，每局新位姿无法预先验证，接触型 MPC 仍是研究问题
@@ -857,3 +862,5 @@
   - [x] 23.7.2 `install_graspnet.sh`（2026-10-12）：克隆固定提交、扩展补丁、钉版本的 venv、编译 pointnet2 / knn、graspnetAPI、权重、自检；在空目录从零装通（104 s，安装包已在 uv 缓存里，自检 110 grasps），补上了原环境后装的 graspnetAPI 依赖（matplotlib 等），绕开镜像里不可写的 `/.uv` 和 CUDA 13 的 `CUDA_HOME`
   - [x] 23.7.3 冒烟（2026-10-12，实例 1，物体 040）：缓存来源抬起（74 s）；graspnet 服务没开时动手臂前被拒（`graspnet_server`）；graspnet 来源在现在的默认配置（预检、arm pin、闸门）下抬起（80 s，服务 1.6 GB 显存）
   - [ ] 23.7.4 待用户：graspnet 来源在现在的默认配置下两批 65 局（约 40 分钟），给详解第 3 节补一组同执行逻辑的当前对比；现在的对比是 10-10 之前的执行逻辑
+  - [ ] 23.7.5 待用户：`make_scenes.py` 只读 SIMPLE 的 GraspNet 物体集；加一个读任意网格（obj / stl + 质量）的入口，缓存和 runbook 才对任意物体成立（详解第 6 节局限）
+  - [ ] 23.7.6 待用户：缓存只在一个静止姿态下验证（同 21.3.5.1）；物体出生被碰歪时 `no cached grasp fits here`

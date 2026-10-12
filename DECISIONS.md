@@ -2124,3 +2124,30 @@ bash 脚本直接调的就是功能脚本，功能脚本里写的就是能看懂
 - **理由（已确认的数字，同一执行逻辑）**：缓存 25/65 对 graspnet 16/65（配对 18 对 9，p 0.061；缓存同配置重跑 18/65）；没双指接触 9 对 15、抬起脱手 7 对 13；graspnet 两次感知输出 65/65 不同，缓存同一位姿同一组候选；缓存不需要 GPU 服务、单独环境和非商业权重。代价是离线建缓存 5 分钟、每局规划慢 2–3 s。
 - **限制**：预检、arm pin、进入段闸门之后 graspnet 没重测（只有物体 040 一局冒烟抬起），对比停在 10-10 之前的执行逻辑（23.7.4 待用户）。
 - **否决**：在文档里把缓存现在的 32、33/65 直接和 graspnet 的 16/65 并列当优势——执行逻辑不同，不可比。
+
+## 2026-10-12 抓取来源文档与接口交付；提交推送（拆两组 + 合并修 origin 的孪生配置）；SIMPLE agent 问答
+
+### 目标与约束的变化
+- 用户：按文档规则补齐 graspnet 接入后的代码和文档（怎么接入、为什么不用 graspnet、现在方法怎么用、用数据说明优势、可在两者间选择的接口）——见上一节"抓取来源"；之后要求 commit and push。
+- 用户为导师准备 SIMPLE 的说法：问 agent 可学之处、decompose 写死在哪、数采用的 controller、我们的编排有何不同。
+
+### 决策
+- **读者页按支线 runbook 的格式写、两个来源并列**：`docs/object_grasp.md`（开头选择表，每步两条命令）+ `docs/object_grasp_design.md`（原因、数字、接口、局限）；README 支线一行、术语表三条、change map 一行，`lint_repository.py` 把新 runbook 加进 GUIDES（130 / 95 行）和 COMMAND_DOCUMENTS。理由：选项是现有步骤的替代，不是附加步骤（记忆 renderer-options-are-parallel-in-runbooks）。
+- **`install_graspnet.sh` 钉住全部版本，并在空目录从零装通才算交付**：实装找出原环境后补装、没记下来的 graspnetAPI 依赖（matplotlib、autolab-core、cvxopt 等）、镜像的 `UV_*` 指向不可写的 `/.uv`、`CUDA_HOME` 指向 13.0。理由：照搬原会话的命令装不出能用的环境。
+- **就绪检查放在 `preconditions`**（缓存文件存在 / graspnet ping 3 s / 来源名合法），手臂动之前拒绝，原因带修法。理由：之前服务没开时要等到感知那一步才 60 s 超时失败。
+- **提交拆两组**：主线 CuRobo 出路线开关（`0035add`）与 GraspNet + 缓存线（`68ce01c`）分开；三个两线共改的文件（`lint_env.py`、`change-map-bottle.md`、`docs/README.md`）用 `git hash-object` + `update-index` 只暂存各自的部分。理由：两条线互不依赖（主线不 import 缓存线改的 src），回滚和追溯要能单独做。
+- **合并 origin 时修它的孪生配置**：origin `3e261b0` 只改了 `warehouse_mars_200.yaml`（dataset 50 fps、holdout 50、eval dataset_fps 50），没改 `_isaac` 孪生，`tests/test_image_source.py` 在 origin/main 上就是红的；在合并提交里补齐并写明（记忆 origin-main-can-carry-failing-checks）。合并后整树 `make check` 通过才推送（`a2cfb23`）。
+- **未跟踪的来路不明文件不提交**：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、几处 `assets/`。
+
+### 事实（已确认，读 `third_party/SIMPLE` 源码）
+- SIMPLE 的 `MotionPlanAgent`（`agents/mp_agent.py`，56 行）只把 CuRobo 轨迹转成动作队列回放；逻辑在 `agents/mp.py` 的 `synthesize()`：执行前一次规划整局，只在 `PhaseBreakSpec` 处停下重新观测；规划异常 `exit(1)`，失败局丢弃，无重试。
+- `decompose()` 是每个任务手写的定长清单，29 个任务文件有它（`*_mp.py` 12 个是自动采集用）；距离、转角、速度、抬高、手、锁关节都是字面量。能写死是因为随机化把机器人和物体钉在固定点（`robot_region` / `target_region` 的 low = high，只抽物体绕 z ±0.15 rad，`target_stable_indices=[0]`）。我们 10-08 跑过的 `G1WholebodyTabletopGraspMP` 的清单只有站立 → 抓 → 抬 10 cm，走路那串被注释掉。
+- MP 数采的控制器是 AMO（`robots/g1_wholebody.py` 内的 `AMO_Policy`），`g1_tabletop_*` 是无 WBC 的 `pd_joint_pos`；SONIC 只在遥操和回放 agent 与一个 `_sonic` 任务里。Walk/Turn/HeightAdjust 被翻成 8 维速度命令连发若干 tick，走多远是速度乘时间、无里程闭环。
+- 可借鉴三点（未立项，见 TODO 21.3.5）：抓取缓存按物体稳定姿态分键；任务清单用带类型的子任务 Spec；双臂时第二只手按第一只手已选抓取过滤。
+
+### 否决的方案
+- 文档里把缓存现在的 32、33 / 65 和 graspnet 的 16 / 65 并列当优势：执行逻辑不同，不可比（上一节已记）；对比表只用同执行逻辑的 25 对 16。
+- 把"graspnet 两局选中的抓取 0 / 52 相同"当来源的可重复性证据：那组差异混了两个规划器的选法，改用"两次感知输出 65 / 65 不同、候选数相同只有 7"。
+- 一个大提交包住所有待提交改动：两条线混在一起无法单独回滚。
+- 提交时 `git add -A` / 带上未跟踪杂项：记忆 never-git-add-all-with-symlinks。
+- 学 SIMPLE 的批量 GPU 规划与开环回放：CuRobo 已测过不比 IK 快（21.3.4），开环回放弱于我们的闭环专家。
