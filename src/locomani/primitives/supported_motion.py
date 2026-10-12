@@ -56,8 +56,14 @@ class SupportedMotion:
         posture_reference=None,
         posture_weights=None,
         continuity_weight=0.0,
+        joint_limits=None,  # (lo, hi) over the 29 joints, intersected with the model's (the planner's caps)
+        base_range=None,  # WholeBodyIK base_range: freeze the virtual base near the measured pelvis
     ):
-        self.body = WholeBodyIK(ik, state, config, tool_offset=tool_offset, hand_weights=hand_weights, com_weight=20.0)
+        self.body = WholeBodyIK(
+            ik, state, config, tool_offset=tool_offset, hand_weights=hand_weights, com_weight=20.0,
+            joint_limits=joint_limits,
+            base_range=base_range,
+        )  # fmt: skip
         root = Rotation.from_quat(np.asarray(reference_root)[[1, 2, 3, 0]]).as_matrix()
         pitch = Rotation.from_matrix(root).as_euler("xyz")[1]
         self.body.heading = root @ Rotation.from_euler("y", -pitch).as_matrix()
@@ -219,6 +225,13 @@ class SupportedMotion:
     @property
     def root(self):
         return Rotation.from_matrix(self.body.put(self.x)).as_quat()[[3, 0, 1, 2]]
+
+    def anchor_base(self, pelvis_pos, pelvis_quat_wxyz, measured_joints):
+        """Put the virtual base on the measured pelvis and the legs on the measured leg joints (with a frozen
+        base_range the base then stays within it); the arm and waist keep the commanded state."""
+        x = self.body.anchor(pelvis_pos, pelvis_quat_wxyz, np.r_[np.asarray(measured_joints)[:12], self.x[16:]])
+        self.x[:16] = x[:16]
+        self.lo[:4], self.hi[:4] = self.body.lo[:4], self.body.hi[:4]
 
     def step(self, positions, rotations, measured, dt, *, torso_rotation=None, measured_rotations=None):
         if not np.isfinite(dt) or dt <= 0 or dt > 0.5:

@@ -17,6 +17,8 @@ from collections import defaultdict
 WHITELIST = {
     "CUDA_VISIBLE_DEVICES",
     "MUJOCO_EGL_DEVICE_ID",
+    "ARM_PIN_KP",  # run_sim_locomani arm pin gains (TODO 23.4.6.3)
+    "ARM_PIN_KD",
     "MUJOCO_GL",  # render backend (egl/osmesa), the same device category; bottle_visual/round.py records it as provenance
     "INSTANCE",
     "HF_HOME",

@@ -663,12 +663,16 @@ class EpisodeControlServer:
                 # targets with these values — the arm motors run their own
                 # stiff position loop, exactly as real hardware allows,
                 # while the policy keeps the legs and waist.
+                was = tuple(ARM_PIN[k] is not None for k in ("left", "right", "waist"))
                 ARM_PIN["left"] = req.get("left")
                 ARM_PIN["right"] = req.get("right")
                 ARM_PIN["waist"] = req.get("waist")
-                print(
-                    f"[episode] arm pin: L={'on' if ARM_PIN['left'] else 'off'} R={'on' if ARM_PIN['right'] else 'off'}"
-                )
+                now = tuple(ARM_PIN[k] is not None for k in ("left", "right", "waist"))
+                if now != was:  # a per-tick pin (the decoupled-arm grasp) must not log 50 lines a second
+                    print(
+                        f"[episode] arm pin: L={'on' if now[0] else 'off'} R={'on' if now[1] else 'off'} "
+                        f"waist={'on' if now[2] else 'off'}"
+                    )
             elif req.get("cmd") == "pin_object":
                 name, pose = req.get("name"), req.get("pose")
                 if pose is None:
@@ -755,7 +759,7 @@ class EpisodeControlClient:
             json.dumps(
                 {
                     "cmd": "pin_arms",
-                    "waist": list(map(float, waist)) if waist is not None else None,
+                    "waist": [None if v is None else float(v) for v in waist] if waist is not None else None,
                     "left": list(map(float, left)) if left is not None else None,
                     "right": list(map(float, right)) if right is not None else None,
                 }

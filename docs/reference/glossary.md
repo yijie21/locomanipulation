@@ -44,6 +44,9 @@
 
 | 词 | 意思 |
 |---|---|
+| 抓取来源 | [任意物体抓取](../object_grasp.md)这条线的抓取位姿从哪来：`cache`（离线抓取缓存，默认）或 `graspnet`，`run_grasp.py --grasp-source` 选 |
+| 离线抓取缓存（grasp cache） | 每个物体场景目录里的 `grasp_cache.npz`：事先在物体网格上采样、在只有一只手的 MuJoCo 模型里合爪抬起晃动验证过的抓取，每局按测得的物体位姿取用；`grasp_cache.py` 建，`cache_all.sh` 建全部 |
+| graspnet | graspnet-baseline：从深度点云预测平行夹爪抓取的网络，本仓库用它的 RealSense 权重，作为可选的抓取来源，跑在单独的环境里（`install_graspnet.sh` 安装，`servers.sh start graspnet` 开服务） |
 | 专家（expert）/ agent server | 脚本化的"遥操作员"：读特权状态驱动机器人完成任务，产出示范数据（`<线>/run_agent_server.sh`，`task.expert` 选哪一个） |
 | VLA / GR00T | 视觉-语言-动作策略；本仓库微调 NVIDIA 的 GR00T（训练代码在 `src/gr00t/`），输入相机图、本体状态和指令，输出动作块 |
 | LeRobot 数据集 | Hugging Face LeRobot 格式（parquet + mp4），convert 的产物、GR00T 的训练输入；格式见 [单臂详解](../single_arm_design.md) |

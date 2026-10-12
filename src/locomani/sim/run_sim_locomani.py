@@ -391,7 +391,12 @@ def main(config: SimLoopConfig) -> None:
     from locomani.sim.privileged_pub import ARM_PIN
 
     _orig_cbt = DefaultEnv.compute_body_torques
-    PIN_KP, PIN_KD, PIN_TAU_MAX = 120.0, 3.0, 30.0
+    # ARM_PIN_KP / ARM_PIN_KD (env, TODO 23.4.6.3): the arm pin's gains; 120 / 3 left a 0.04-0.065 rad steady error
+    # (1.2 cm at the hand) even with the gravity feed-forward.
+    PIN_KP = float(os.environ.get("ARM_PIN_KP", "120"))
+    PIN_KD = float(os.environ.get("ARM_PIN_KD", "3"))
+    PIN_TAU_MAX = 30.0
+    print(f"[sim] arm pin gains kp {PIN_KP} kd {PIN_KD}")
     ARM_MOTORS = {
         "left": list(range(15, 22)),
         "right": list(range(22, 29)),
@@ -412,14 +417,29 @@ def main(config: SimLoopConfig) -> None:
             if pin is None:
                 continue
             for k, i in enumerate(motors):
+                if pin[k] is None:
+                    continue  # a per-joint release (e.g. waist yaw + roll pinned, pitch left to the policy)
+                dof = self.body_joint_index[i] + self.qvel_offset - 1
                 if br.use_sensor:
                     q = self.mj_data.sensordata[i]
                     dq = self.mj_data.sensordata[i + br.num_body_motor]
                 else:
                     q = self.mj_data.qpos[self.body_joint_index[i] + self.qpos_offset - 1]
-                    dq = self.mj_data.qvel[self.body_joint_index[i] + self.qvel_offset - 1]
-                t = PIN_KP * (pin[k] - q) - PIN_KD * dq
-                tau[i] = max(-PIN_TAU_MAX, min(PIN_TAU_MAX, t))
+                    dq = self.mj_data.qvel[dof]
+                # Gravity / bias feed-forward: a PD alone droops an extended arm by tau_g / kp (~4 deg at kp 120,
+                # 3-5 cm low at the hand, 2026-10-10); the policy learns that offset, a position loop needs it added.
+                bias = float(self.mj_data.qfrc_bias[dof])
+                if side == "waist":
+                    # The waist holds the torso: at the arm pin's kp 120 / 30 N m the lean saturated and the
+                    # hand landed 8-12 cm short and 5 cm high (2026-10-10). Keep the controller's own gains and
+                    # motor limit for these three and only replace the target.
+                    mc = br.low_cmd.motor_cmd[i]
+                    t = mc.kp * (pin[k] - q) - mc.kd * dq + bias
+                    lim = float(self.torque_limit[i])
+                else:
+                    t = PIN_KP * (pin[k] - q) - PIN_KD * dq + bias
+                    lim = PIN_TAU_MAX
+                tau[i] = max(-lim, min(lim, t))
         return tau
 
     DefaultEnv.compute_body_torques = compute_body_torques

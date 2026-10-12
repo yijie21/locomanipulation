@@ -51,6 +51,7 @@ class WholeBodyIK:
         pelvis_forward_max=0.20,
         pelvis_height_target=None,
         elbow_min_deg=5.0,
+        base_range=None,  # (dxy, dz, dpitch): keep the virtual base within this of the measured pelvis pose
     ):
         self.ik = ik
         self.hand_weights = np.asarray(hand_weights, dtype=float)
@@ -117,12 +118,42 @@ class WholeBodyIK:
             config.pelvis_pitch_max,
             ranges[:, 1],
         ]
+        self.base_range = None if base_range is None else tuple(float(v) for v in base_range)
+        if self.base_range is not None:
+            # The closed loop's solutions counted on base motion (forward 20 cm, lateral 15 cm, pitch 0.7 rad) that
+            # the tracking controller delivers only in part: FK of the commanded joints at the measured pelvis
+            # missed the target by 4 cm while the solver's own residual was 0.9 cm (2026-10-10). Freeze the base so
+            # the commanded joints alone place the hand; `anchor` re-centres it on the measured pelvis each tick.
+            self._freeze_base(self.base0, pitch0)
         self.seed = self.initial.copy()
         self.seed[3] = 0.3
         self.seed[4 + np.array([0, 6])] -= 0.3
         self.seed[18] = min(0.45, config.waist_pitch_max)
         self.seed = np.clip(self.seed, self.lo, self.hi)
         self.last_diagnostics = {}
+
+    def _freeze_base(self, pos, pitch):
+        dxy, dz, dpitch = self.base_range
+        self.lo[:4] = [pos[0] - dxy, pos[1] - dxy, pos[2] - dz, pitch - dpitch]
+        self.hi[:4] = [pos[0] + dxy, pos[1] + dxy, pos[2] + dz, pitch + dpitch]
+
+    def anchor(self, pos, quat_wxyz, joints):
+        """Re-centre the virtual base on the measured pelvis pose and the legs on the measured leg joints, and take
+        the feet and the COM reference from there (the support gates then measure only what the solver itself
+        moves, not the controller's drift since construction). Returns the state x to continue from."""
+        rot = Rotation.from_quat(np.asarray(quat_wxyz)[[1, 2, 3, 0]]).as_matrix()
+        pitch = Rotation.from_matrix(rot).as_euler("xyz")[1]
+        self.heading = rot @ Rotation.from_euler("y", -pitch).as_matrix()
+        self.base0 = np.asarray(pos, dtype=float).copy()
+        if self.base_range is not None:
+            self._freeze_base(self.base0, pitch)
+        x = np.r_[self.base0, pitch, np.asarray(joints, dtype=float)]
+        self.put(x)
+        d = self.ik.data
+        self.feet_pos = d.xpos[self.feet].copy()
+        self.feet_rot = d.xmat[self.feet].reshape(2, 3, 3).copy()
+        self.com0 = d.subtree_com[self.pelvis, :2].copy()
+        return x
 
     def put(self, x):
         ik = self.ik

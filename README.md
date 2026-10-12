@@ -40,6 +40,7 @@ Unitree G1 人形机器人的移动操作仿真：机器人走到目标前、抓
 - [场景能力扫参](docs/scene_sweep.md)：上一篇结果的扫参方法和运行命令。
 - [Blender 场景](docs/blender_scenes.md)：把 Blender 做的房间导出成 MuJoCo 和 Isaac 两套场景，物流房间的尺寸和已知问题。
 - [ScaleBFM](docs/scalebfm.md)：不用 SONIC、改用 ScaleBFM 控制器的视觉抓瓶采集与评测。
+- [任意物体抓取](docs/object_grasp.md)：机器人站在桌边，用右手抓起 65 个 GraspNet 物体中的一个；抓取默认来自离线抓取缓存，也可以换成 graspnet 现场预测。为什么默认用缓存、两者的实测对比见[详解](docs/object_grasp_design.md)。
 - [walk 场景](docs/walk.md)：只有一台 G1 的空场景，用来测 SONIC 的行走性能。
 - [可拼接的技能](docs/skills.md)：把三条线的动作切成走近、抓、搬、放、放下等技能，按固定计划或由 Claude 逐步规划来执行；在它之上做“给一个场景，自动发现任务并采集数据”（scene_discovery，进行中）。
 

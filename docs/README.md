@@ -39,6 +39,8 @@
 - [scene_discovery 决策](handoff/scene-discovery-plan-20261002.md)、[场景文件格式](handoff/scene-file-format-20261003.md)、[put_down_single 技能](handoff/put-down-single-20261003.md)：从一个场景自动发现任务、补技能、采集数据的设计和第一个新技能（2026-10-02 起）。
 - [仿真数据零样本上真机的设计](handoff/real-robot-sim2real-plan-20261006.md)：数据集 50 fps、官方推理客户端结构、Dex1 单位、`src/real_robot/` 的结构与后续任务（2026-10-06）。
 - [warehouse 补渲时随机外观的计划](handoff/appearance-randomization-plan-20261008.md)：随机哪些属性、训练与留出范围、实现步骤、之后怎么测；光照开关已实现（2026-10-08，TODO 21.3.1）。
+- [GraspNet 物体上 IK 规划与 SIMPLE 的 CuRobo 规划对比](handoff/graspnet-bottle-planner-comparison-20261008.md)：graspnet-baseline 抓取、bottle 专家执行、65 个物体的左右对比视频（2026-10-08，TODO 21.3.4）；10-09 补了 ghost 和固定抓取对比。
+- [离线抓取缓存替代 graspnet 感知](handoff/grasp-cache-20261010.md)：物体网格上采反向法线抓取、只有手的 MuJoCo 模型合爪抬晃验证、在线按测得位姿变换；65 个物体 × 3 朝向的验收对照 21.3.4（2026-10-10，TODO 23.2）。
 - [单臂主线接 CuRobo 出路线的计划](handoff/single-arm-curobo-route-plan-20261009.md)：去掉原地抬手、CuRobo 避障直达预抓，每一条怎么验证没 bug、有效、不变坏（2026-10-09）；10-10 实现为 `reach.simple.arm_route: curobo`，默认关，关节空间目标两批 71/80 对基线 69/80。
 - [归档索引](archive/INDEX.md)：冻结的原始报告和被取代的入口文档，包括 2026-09-14 的[维护路线图](archive/roadmap_maintenance_20260914.md)。
 - [第一次迁移](handoff/agent-maintenance-plan.md)、[维护交付](handoff/maintenance-completion.md)、[规范审计与探针](handoff/agent-guideline-completion-20260914.md)。

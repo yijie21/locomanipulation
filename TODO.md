@@ -767,7 +767,92 @@
     - 用户 2026-10-08 加：再跑 SIMPLE 的 CuRobo planner（`simple.mp.curobo.CuRoboPlanner`，0.7.4，SIMPLE 的 venv）和我们的 IK planner 对比。位置在"抓取筛选"之后、"执行"之前：同一批 graspnet 抓取、同一个起始姿态，两个 planner 各出一条到预抓 / 抓取的路线。先离线比（规划成功率、耗时、离桌面和物体的最小间隙、路线长度，沿用 `scripts/experiments/curobo_warehouse_20261008/` 的 `evaluate.py` 格式），再真栈配对比（同物体同 seed）。要做：给 bottle 用的机器人建 CuRobo 配置（stock G1 + Dex1；20.3 只做过 mars），世界用桌面方块 + 物体（网格或点云体素）。
     - [x] 21.3.4.1 （用户 2026-10-08："直接执行完"）65 个物体各跑 IK 一局、CuRobo 一局，左右对比视频 66 个（≤ 500 KB）在 `outputs/graspnet_bottle_20261008/videos/`。抬起 IK 16/65、CuRobo 15/65；规划耗时中位 1.5 s 对 17 s；失败主要在执行（合爪没夹住、抬起脱手、碰倒）。[记录](docs/handoff/graspnet-bottle-planner-comparison-20261008.md)
     - [ ] 21.3.4.2 待用户：要比较两个规划器，每个物体多跑几个朝向；执行层的三种失败（合爪未同时接触、抬起脱手、进入碰倒）要不要接着修
+      - 2026-10-10：执行层三种失败的方案列在第 23 节（23.2 位姿缓存 + 验证、23.4 接触）
     - [ ] 21.3.4.3 待用户（2026-10-09 提出）：ScaleBFM（mode 1/2）与 SONIC POSE 流 + 我们的 IK，在同一组手部目标（如 65 个物体的预抓位姿，含倾斜姿态）上开环执行，比手的到达误差；09-08 的 84 格对比里 SONIC 走的是 planner 通道，不可比。接入代码 `src/locomani/backends/scalebfm/`，约半天到一天
-    - [ ] 21.3.4.4 可选：CuRobo 候选补齐到固定批量并预热后重测耗时（17 s 里约 10 s 是新批量形状的准备，对比时没补齐，SIMPLE 自己会补齐；估计约 6 s，未实测；`profile_curobo.py`）
-    - [ ] 21.3.4.5 待用户：提交 21.3.4 的实验代码 `scripts/experiments/graspnet_bottle_20261008/`、`docs/handoff/graspnet-bottle-planner-comparison-20261008.md` 和 `docs/README.md` 的索引行（都未提交；README 那行指向未提交的文档）
+    - [~] 21.3.4.4 可选：CuRobo 候选补齐到固定批量并预热后重测耗时（17 s 里约 10 s 是新批量形状的准备，对比时没补齐，SIMPLE 自己会补齐；估计约 6 s，未实测；`profile_curobo.py`）
+      - 2026-10-09：主线服务（22.2）固定批量 2 + 预热后，单目标请求中位 2.9 s（119 个已存请求重放）；多候选批量没测
+    - [x] 21.3.4.5 （用户 2026-10-12 commit and push，已提交并推送）提交 21.3.4 的实验代码 `scripts/experiments/graspnet_bottle_20261008/`、`docs/handoff/graspnet-bottle-planner-comparison-20261008.md` 和 `docs/README.md` 的索引行（都未提交；README 那行指向未提交的文档）
     - [ ] 21.3.4.6 待用户：调试运行删不删——`outputs/runs/gnb_obj_*_smoke*`（40 个，682 MB）、`gnb_obj_*_batch1`（10 个，154 MB，代码修正前的第一轮批跑）、`outputs/graspnet_bottle_20261008/videos_full/`（778 MB 全分辨率原片）；`third_party/graspnet-baseline` 8.3 GB 是运行环境，保留
+      - 2026-10-10 新增待定：`ghost_rounds/`（740 MB）、`videos_single_full/`（390 MB）、`fixed/`（1.7 GB，含 `videos_full/` 965 MB、`ghost_rounds/` 763 MB）、`outputs/runs/gnb_obj_*_fixed`（1.3 GB）、`*_fixed_oldstance`（284 MB）
+    - [x] 21.3.4.7 （用户 2026-10-09）对比视频补品红 ghost，不重跑：`ghost_overlay.py` 离线配准录像相机再叠 ghost + 右上 2.5 倍放大框；66 个预览重出（2026-10-09）
+      - [x] 21.3.4.7.1 修 GraspNet CuRobo 服务"单候选成功也报错"：10-08 那轮 053、060 的"找不到路线"是它（2026-10-09）
+    - [x] 21.3.4.8 （用户 2026-10-09）固定同一个抓取重比：`run_grasp.py --fixed-grasp`，IK 11/65、CuRobo 11/65；开环到预抓误差 3.3 对 4.1 cm（p 0.002）；结果 `outputs/graspnet_bottle_20261008/fixed/`，记录第 5b 节（2026-10-09）
+      - [ ] 21.3.4.8.1 待用户：局序抵消重跑——第 1 局（CuRobo）朝向在 58/58 个物体上更顺时针（中位 4.8°），一半物体先跑 CuRobo 可去掉，约 1.2 小时
+    - [x] 21.3.4.9 （用户 2026-10-10）并排视频拆成单局、文件名带 `success` / `fail`：`split_videos.py`，`videos_single/` 与 `fixed/videos_single/` 各 130 局，`index.csv` 列失败原因（2026-10-10）
+
+## 22. 单臂主线接 CuRobo 抬手路线（用户 2026-10-09；[计划与验证](docs/handoff/single-arm-curobo-route-plan-20261009.md)；DECISIONS 2026-10-10）
+
+- [x] 22.1 计划与验证方法：每条"没 bug / 有效 / 不明显变坏"三关、A/A 定误报率、40 对配对（2026-10-09）
+- [x] 22.2 第 4 条：CuRobo 服务进 `src/`（`primitives/curobo_service.py`、`arm_route.py`），固定批量 ≥ 2、重置种子、预热、探针 + 重建自愈；119 个请求重放成败 117/119 一致，单目标 54/57 与旧服务实跑相同（2026-10-09）
+- [~] 22.3 第 1 + 2 条：开关 `reach.simple.arm_route: curobo`（默认 lifted_ready），左手下垂
+  - [x] 22.3.1 左臂按关节姿态保持（`loop_prior`），否则闭环把左肘折到 0.1 rad（2026-10-09）
+  - [-] 22.3.2 路线直达预抓（B / B' 33、29；B' 4 局手指贴桌被闸门拦下；腰横滚中位 0.48 rad）——否决，DECISIONS 2026-10-10
+  - [-] 22.3.3 直达预抓 + 腰横滚限 ±0.05（12 个停位 0/12 能规划）——否决
+  - [x] 22.3.4 方案 (b) 抬到原地抬手的抬起位姿（手腕位姿目标）：C / C' 34、34，抬手 0 接触；进入阶段闸门拦下 3 局（2026-10-09）
+  - [x] 22.3.5 改关节空间目标（协议 2）：D / D' 36、35（A / A' 35、34），抬手 76 局 0 接触、0 局 < 1 cm，进入闸门 0 + 1，慢 2 s（2026-10-10）
+  - [ ] 22.3.6 待用户：默认改不改成 curobo；改的话同步 `docs/single_arm.md`、change map、`make config-doc`
+  - [ ] 22.3.7 待验证：`[stand] neutral waist not delivered` 只出现在跑 curobo 的实例 3 / 4（专家开始前），在实例 1 / 2 跑一组 curobo 才能和开关分开
+  - [ ] 22.3.8 可选：`route_joint_speed` 0.6 → 约 1.0，把多出的 2 s 拿回来（要再跑 2 × 40 看跟踪误差）
+- [-] 22.4 第 3 条离线抓取库（用户 2026-10-09：先不做，主线瓶子 / 罐头本来就是已知物体 + 几何抓取模板）
+  - 2026-10-10：GraspNet 物体那条线上重新提出，见 23.2（主线瓶子 / 罐头不受影响）
+- [ ] 22.5 待用户：单臂主线 `comfort_waist_weight` / `comfort_elbow_wrist_weight` 从未生效（`simple_policy` 不调用 `blend_posture`），修不修
+- [x] 22.6 （用户 2026-10-12 commit and push，已提交并推送）提交主线改动（`git status` 里 9 个已改文件 + `primitives/arm_route.py`、`curobo_service.py`、`tests/test_arm_route.py`、`scripts/experiments/curobo_route_20261009/`、`configs/experiments/bottle_route_*`、计划文档）；`make check` 已过（2026-10-09）
+- [ ] 22.7 待用户：本线产物删不删——`outputs/runs/bottle_route_*`（14 个，5.2 GB）、`outputs/curobo_route_20261009/`（4 MB）
+
+
+## 23. 仿真专家的抓取来源：graspnet 感知 → 特权几何 + 物理验证（用户 2026-10-10 提出；本会话讨论，未定）
+
+- 背景（2026-10-10 会话）：用户判断"仿真里有物体全部信息，graspnet 对任意物体合成抓取没必要"。支持的事实：21.3.4 每局重新感知时 graspnet 输出 65/65 不同（站位只差 3 cm）；graspnet 不认识 Dex1，候选质量实际由我们手写的转换 + 过滤层决定；专家本来就是特权教师；SIMPLE 公开代码也只走 BoDex 离线缓存（`detect_grasps` 只有 `pass`）。两轮失败都在执行层（合爪未同时接触 15/19、抬起脱手 13/9、进入碰倒 12/8），但位姿是这些失败的上游。
+- 讨论结论：机器人侧"最方便抓"和物体侧"抓得住"是两个独立判据，只按前者选会选到边缘 / 单指垫接触的位姿；"按实际停下位置动态选"在缓存框架里免费（缓存在物体系，站位变只是换被选中的候选），不需要每局从头合成。领域通用解法 = 离线采样 + 仿真验证（ACRONYM、Dex-Net）+ 在线按可达性选（SIMPLE 缓存、CuRobo goalset）。没有解析法能保证物理可行，仿真本身当裁判是领域答案。
+- [x] 23.1 用户 2026-10-10 定：graspnet 感知抓取暂作备选项，不删；先做方案 A 到验收（2026-10-10）。原题：定 graspnet-baseline 感知抓取是否退出专家线（退出后 `graspnet_server.py` 专用 venv 和深度渲染一并退出；21.3.4 的场景转换、Dex1 转换 + 碰撞过滤、三层排序、IK / CuRobo 规划、闭环执行、ghost 视频都与来源无关，保留）
+- [x] 23.2 方案 A（推荐，用户 2026-10-10 开工，同日跑完验收）：ACRONYM 式离线抓取缓存 + 在线按可达性选
+  - [x] 23.2.1 离线采样：在物体网格上采反向法线点对（Dex1 开口 ≤ 9.5 cm、指垫覆盖 ≥ 1.5 cm），接近方向限定在专家标定过的三层姿态内，过现有 `hand_cloud.py` 碰撞过滤——复用 `grasp_planned.py` `candidates` 的过滤层，只换输入
+    - 2026-10-10 做法（`grasp_cache.py` `sample`）：可视网格面积加权采 20000 面点 + 法线，3000 个起点沿内法线找对侧最近点（离线 3 mm 内、法线夹角 ≤ 30°），闭合轴 = 掌心 y，绕它 12 个接近方向 × 3 个深度；桌面 / 指垫包络 / 手点云净空 / 直线进入净空同 `candidates`；1 cm + 15° 去重。物体 000：1623 对 → 364 个；采样 21 s（最近邻查询加距离上界前 336 s）。没有限定三层姿态——层级在线按朝向算（`_tier`），缓存保留全部
+  - [x] 23.2.2 物理验证：MuJoCo 里把夹爪摆到候选位姿、合爪、抬 10 cm、晃，按保持时间和滑移打分，掉的丢。必须用专家同一套夹爪控制器和接触参数（kp、20 N 钳位、指垫 solref），否则"验证通过"和"专家抓得住"仍是两回事
+    - 2026-10-10 做法（`grasp_cache.py` `HandModel`）：MjSpec 从场景 XML 里把右腕子树（Dex1 底座 + 两指滑动关节 + 指垫接触参数）、物体 body、桌面盒拼成只有手的模型；手指力学照抄仿真：tau = 1.5 (q_des − q) − 0.1 dq，钳 20，gear 250，关节 actuatorfrcrange ±20（deploy `dex3_hands.hpp` sizeCommand 的 kp 1.5 / kd 0.1）；200 Hz；合爪 1.0 s → 0.8 s 内双指接触 → 抬 10 cm 2 s（minjerk）→ 停 1.5 s → 晃 ±2 cm 1.5 Hz 各 2 s（x、y）；score = held ? 1 − slip/2 cm : 0
+    - 踩的坑：手直接挂在 mocap body 下时 mocap 几何体瞬移、速度为零，摩擦带不动物体（0/40）；改成自由腕 + weld 到 mocap；weld solimp 0.95/0.99 时手自重下垂 3 cm、带物 6 cm，吃掉抬升，改 0.9999 后抬起 8–9 cm，和真实仿真成功局 7.4–12.4 cm 一致
+    - 物体 000：300 验证 → 200 held（52 没抬起、41 晃滑、5 晃掉、2 抬掉），每个候选 0.06 s
+  - [x] 23.2.3 缓存按（物体，稳定姿态）存，复用 `make_scenes.py` 的稳定姿态重建；要回答：65 个物体各有多少验证通过的候选、10 个比夹爪宽的物体是否仍无候选
+    - 2026-10-10：`cache_all.sh 12` 65 个场景 5 分钟；每物体 300 个验证（物体 005 只有 26 个）；64/65 有通过的，中位 243/300；009（2.2 cm 高、9.3 cm 宽，超开口）0 个候选。验证失败合计：晃掉 1090、抬掉 897、晃滑 320、没抬起 62、合爪无双指接触 22。场景只有一个稳定姿态（make_scenes 选的），所以缓存按场景存：`scenes/obj_XXX/grasp_cache.npz` + `grasp_cache_summary.json`
+  - [x] 23.2.4 在线选择：真值位姿变换缓存，按 IK 可达 + 关节限位余量 / 可操作度代价选第一个（按实际站位动态选，不重新合成）；CuRobo 侧用 goalset 对整组候选一次批量规划
+    - 2026-10-10：`grasp_planned.cached_candidates`（`run_grasp.py --grasp-source cache`）：只取 held 的，按测得物体位姿变换，重查桌面净空，同一套 `_tier` 分层，层内按验证分；IK 规划器按顺序取第一个能解的（和 graspnet 来源一样，没加关节余量代价——那是 23.3）。冒烟物体 000：80 个合适、46 个第 0 层、第 2 个候选可解、规划 1.2 s、开环到预抓误差 3.1 cm、抬起 9.1 cm（graspnet 线这个物体没抬起）。CuRobo goalset 没做（验收只跑 IK）
+  - [x] 23.2.5 验收（2026-10-10 04:38–05:34 跑完：`ROUNDS=3 EGL_GPU=1 bash run_batch.sh 4 1 0 _cache --grasp-source cache --planners ik --rounds 3 --yaws 3`，运行名 `gnb_obj_XXX_cache`，第 0 局 = 21.3.4 的朝向；汇总 `cache_summary.py` → `outputs/graspnet_bottle_20261008/cache/summary.md`）：同一 65 个物体重跑（每物体多个朝向，见 21.3.4.2），和 21.3.4.1 的 IK 16/65 对比；把失败拆成"验证通过仍失败 = 执行问题"和"位姿问题"两类，决定 23.4 值不值得做
+    - 结果（handoff 第 5 节）：第 0 局（同朝向）缓存 25/65 对 graspnet 16/65，配对只缓存 18 / 只 graspnet 9（p 0.061 单侧）；三局至少一局 45/65 物体；193 局里执行失败 103（碰倒 49、无双指接触 30、抬掉 18）、规划够不到 17、没候选 8。位姿问题已基本排除，剩下在执行层 → 23.4 值得做。副作用：规划耗时中位 20 s（候选 ≤ 80 逐个解），要排序或 goalset（23.2.4 未做部分）
+- [ ] 23.3 方案 B：机器人侧"方便 / 省力"代价的定义与检验——关节限位余量、可操作度、静力矩（腰 + 右臂）；先离线在 21.3.4 的 130 局上算代价和成败的相关性，再决定进不进 23.2.4 的选择代价
+- [ ] 23.4 方案 C：执行侧接触问题（与位姿独立；23.2.5 拆出执行失败占 53% 的局，优先级升到最前）
+  - 2026-10-10 解剖（handoff 第 9 节，260 局）：碰倒 67 = 进入时手相对指令横向偏 3–5 cm（−y 侧、2 号指先碰），低 / 斜抓取为主；无双指接触 47 = 薄（开口 1–2.3 cm → 0.75–2.6 N）+ 矮（指垫擦顶）；抬掉 29 = 轻薄物体；IK 无路 17 = 最矮物体
+  - [x] 23.4.5 （用户 2026-10-10 开工，同日跑完两批）解耦右臂：专家的关节目标照旧给 SONIC 当参考，同时每 tick 送仿真侧 arm pin（`run_grasp.py --arm-pin arm`，`grasp_planned.DECOUPLE`），右臂电机按位置环跟 IK，平衡仍归 SONIC
+    - 事实（2026-10-10）：第一版 pin 让手差 9 cm——三个原因依次修掉：pin 的 PD 没有重力前馈（kp 120 下伸直的臂垂 4° ≈ 3–5 cm，加 `qfrc_bias`）；腰一起 pin 时 IK 的 0.52 rad 前倾被完整交付、躯干 32°、支撑闸门跳（腰 pin 改用控制器增益也不行，21 cm，弃用）；**IK 的右臂构型会把肘和肩偏航连杆压进躯干 8–9 cm**（右肩横滚指令 +0.3..+0.9 rad，策略从来只交付 0.1），闭环的 WholeBodyIK 又不吃 `ik.lo/hi`——加 `RIGHT_SHOULDER_ROLL_MAX` 0.05 并把规划器的关节上限传进 `SupportedMotion(joint_limits=)` 后，pin 的关节跟踪到 0.01–0.04 rad，000 抬起、013 两局 1/2（不 pin 的横向误差 8–11 cm，pin 后 4.6–5.4）
+    - 推论：之前归到 SONIC 跟踪的 3–5 cm 偏差，有一部分是 IK 给了自碰撞的参考、控制器拒绝执行
+    - [x] 23.4.5.1 两批 65 局 `_pinA` / `_pinB`（presort 开、pin 右臂）对 `_presort` / `_presort_b`（2026-10-10 09:45–10:26）：抬起 22、26 对 16、24（合计 48 对 40 / 130，Fisher p 0.19）；碰倒 22 对 35 局（p 0.04）、无双指接触 28 对 25、抬掉 17 对 15；低抓取（离桌 < 6 cm）20/59 对 13/58。进入段"实测手 − 指令"横向误差不变（2.9 对 2.8 cm），高度误差 3.4 → 2.0 cm；pin 后关节跟踪 0.01–0.04 rad、IK 自身手误差 1 cm——剩下的横向偏差来自骨盆 / 躯干在进入时的晃动（IK 按实测骨盆解、手到位前骨盆已动），不在手臂。汇总 `cache/pin_compare.txt`
+    - [x] 23.4.5.2 用户 2026-10-10 定：pin 设为默认（`DECOUPLE on`，`--arm-pin arm`）；`_pinC` 批 26/65
+  - [x] 23.4.6 （用户 2026-10-10）拆骨盆晃动 + 三根杠杆（handoff 第 12 节，三条都否定；基线 `_pinD` 26/65 完好）：轨迹加骨盆位姿（46 列），`sway_decompose.py` 逐 tick 分解 `_pinC` 58 局——骨盆晃动只占 0.2 cm；横向 2.9 cm 的来源是闭环 IK 指望骨盆前移 / 俯仰 / 下沉而 SONIC 没交付（~3.2 cm）、腰偏航没跟上（2.0 cm，0.08 rad）、pin 的 PD 稳态差（1.2 cm，0.04–0.065 rad）；handoff 第 11 节
+    - [-] 23.4.6.1 冻结闭环 IK 的骨盆自由度（用户 2026-10-10 定做）——做了三版都不行，放弃：只收范围时虚拟基座仍锚在构造时的骨盆，等于没冻；每 tick 重锚到实测骨盆 + 实测腿 + 重取脚 / 质心参考后，解算器在腰限位内够不到低目标，SupportedMotion 的跟踪反馈和进入段的横向 shift 积分跑飞（013 目标跑到 108 cm 外）；把实测航向流回 SONIC 还会让偏航正反馈跑 33°。**更正**：分解里的"ik 项"大部分是 SupportedMotion 加在目标上的积分反馈偏置（我离线没减掉），不是骨盆没交付；轨迹已加反馈列（49 列），`sway_decompose.py` 现在把它单独拆出。代码留着（`WholeBodyIK(base_range=)`、`anchor`、`SupportedMotion.anchor_base`、`--base-freeze`，默认 off）
+    - [-] 23.4.6.2 腰偏航 + 横滚 pin（`--arm-pin arm+yaw`，控制器增益，俯仰留给策略）——有害，第一批就停：`_yawA` 11/65（arm pin 三批 22、26、26），碰倒 20 局，骨盆横向晃动 3.9 cm / 13 cm/s（arm pin 1.2 cm / 7 cm/s），反馈偏置 6.8 cm、解算器残差 7 cm；腰偏航 / 横滚是策略用来平衡的自由度，pin 住它们和 SONIC 打架。冒烟里关节项 2.8 → 2.0 cm 的改善没有传到成功率。选项保留，默认 `arm`
+    - [-] 23.4.6.3 pin 增益 120 → 300 / kd 6（`ARM_PIN_KP` / `ARM_PIN_KD` 环境变量，`run_sim_locomani` 读，已进 lint 白名单）——有害，第一批就停：`_kpA` **0/65**（碰倒 23、抬掉 16、无双指接触 19）；关节误差没降（0.054 对 0.049 rad，这是 50 Hz 台阶指令的滞后，不是稳态差），tick 间抖动 +50%，手臂变硬后合爪 / 抬起时指垫失去顺应性。4 局 kp 300 复核也 0/4
+    - 基线核实：`_pinD`（kp 120，当前代码）26/65，arm pin 四批 22、26、26、26；分解（反馈拆出）：解算器目标与实测骨盆 FK 之差 6.2 cm，反馈补 4.5，关节 2.8，骨盆瞬时 0.2
+    - 事实（2026-10-10 12:40–13:04）：追"回归"追了一小时是白费——用"三批都成功的 11 个物体"做快速对照，kp 120 只有 2/6、3/8、7/16、8/16，连把 pinC 之后的改动全回退也 8/16。这是对成功结果做选择后的均值回归（这些物体的真实成功率约 0.6），不是回归；核实基线只能跑整批 65 局（`_pinD`，13:04 起）
+    - 旧 23.4.5.2 原题：pin 要不要设为默认（`--arm-pin arm`，现在默认 off）；下一层是骨盆晃动——轨迹里加骨盆位姿列再解剖，或进入段按实测横向误差闸门（23.4.4）
+  - [x] 23.4.4 （用户 2026-10-10 开工，同日做完：闸门成立、高度优先否定）进入段按实测横向跟踪误差闸门或放慢、横向修正速度 / 上限（3 cm/s / 4 cm）加大；候选排序里优先离桌面高的抓取——要两批起测（每批 ±5 个物体噪声）
+    - [x] 23.4.4.1 进入段闸门 `grasp_planned.ENTRY_GATE`（`--entry-gate on`）：实测掌面横向 / 垫高偏差 > 1.5 cm 时推进停住等横向修正追上，每局最多等 2 s；两批 `_gateA` / `_gateB` 32/64、33/65 = 65/129 对 arm pin 四批 100/260（p 0.017），碰倒 14/129 对 22/130；合爪时偏差不变，变的是到合爪的局数和碰倒数（handoff 第 13 节，`cache/entry_compare.txt`）（2026-10-10）
+      - [x] 23.4.4.1.1 闸门设为默认（用户 2026-10-12：`ENTRY_GATE["on"]` True、`--entry-gate` 默认 on）；修正上限 4 → 6 cm 没试，用户叫停尝试（2026-10-12）
+    - [-] 23.4.4.2 候选优先离桌高 `grasp_planned.PREFER_HIGH`（`--prefer-high on`）：层级内按工具点离桌高度 2 cm 分桶降序，桶内按验证分；两批 `_highA` / `_highB` 24、24/65 = 48/130 对基线 100/260（p 0.83）；只有一半物体换了抓取、中位只高 1.4 cm，换了的反而略差（27 对 36）（放弃：没收益，2026-10-10）
+    - 事实（sway 分解 `_pinD`）：离桌 0–6 cm 抬起 12/30，6–10 cm 5/7，≥ 10 cm 9/18——高度和物体高度混在一起，不是单调
+  - [ ] 23.4.1 CoACD 凸块脊缝导致指垫单点接触：检查"合爪未同时接触"失败局的接触点是否落在凸块交界；可选指垫对原始网格或更细分解
+  - [ ] 23.4.2 抬起脱手（偏重物体，中位 0.14 kg）：按质量和摩擦算需要的夹持力，对照 F = 1.5 × 250 × (setpoint − q) 与 20 N 钳位，定 close_target / 钳位要不要调
+  - [ ] 23.4.3 摩擦与滑移：condim / noslip_iterations / 子步对抬起滑移的影响；指垫蠕变已知 0.1 cm/s（硬化后）
+  - [x] 23.2.6 （用户 2026-10-10 开工，同日做完）规划耗时——缓存候选 ≤ 80 个逐个解，中位 20 s（graspnet 1.5 s）；按 IK 可达先排序
+    - [x] 23.2.6.1 预检排序 `grasp_planned._presort`（`PRESORT`）：每个候选从挂手姿态解抬手点、预抓上方、4 步下降、预抓、抓取；可行（≤ 1.5 cm / 10°）优先于层级，层内保持验证分顺序。离线重放 168 局（`replay_plan.py` / `replay_summary.py` → `cache/replay/summary.md`）：关 9.6 s 中位 / p90 43.6 / 最长 84；直接预检 4.0 / 40.3 / 80；分段 4.5 / 41.3 / 82；分段 + 可行优先 3.6 / 5.6 / 24，选的抓取 167/168 不变（2026-10-10）
+    - 事实：尾部 41 局是第 0 层候选全部在 1 cm 步进路径里失败（抬手段跳分支 15、下降段差 1.7–2.1 cm 14、上方 7），粗预检判它们可行；只能靠"可行优先于层级"绕开。关节余量排序（margin）无收益
+    - [x] 23.2.6.2 在线核实 65 物体 × 1 局 `_presort`：规划中位 15.4 → 4.1 s，p90 60 → 7.7，最长 129 → 10；预检本身 1.9 s；选同一抓取 47/57；抬起 16/65 对 25/65——同一抓取的 47 个物体里 9 个翻成失败、2 个翻成成功（p ≈ 0.07），批内抬起率与规划时长无关（42/46/28/44%），漂移和预抓误差反而更小（2026-10-10）
+    - [x] 23.2.6.3 A/A 复跑定噪声底（2026-10-10 06:59–07:47）：关 25、18 / 65，开 16、24 / 65；合计 43 对 40 / 130（Fisher p 0.40）；关/关之间翻转 13 + 6，和关/开之间一个量级；任意两批选同一抓取 47–52 / 57。结论：预检排序不改变成功率，规划中位 15.4 / 19.4 s → 4.1 / 4.1 s，p90 60 / 63 → 7.7 / 6.6，最长 129 / 127 → 10 / 9.4；已设为默认（`PRESORT` on，`--presort off` 可关）。汇总 `outputs/graspnet_bottle_20261008/cache/presort_compare.txt`
+  - [x] 23.2.9 （用户 2026-10-10）最佳配置（缓存 + 预检 IK，`_presort_b` 第 0 局）65 局带 ghost 夹爪的完整视频：`ghost_overlay.py --tag _presort_b`（58 局有 ghost，7 局没选中抓取）→ `best_videos.py` → `cache/videos_best_full/`（466 MB）+ `cache/videos_best/`（≤ 500 KB，index.csv）（2026-10-10）
+  - [~] 23.2.7 运行目录已删（用户 2026-10-10：10-10 新增的 749 个 `gnb_obj_*` 运行目录，`outputs/runs` 158 → 150 GB）；剩下待用户——`outputs/runs/gnb_obj_*_cache`（65 个，2.1 GB）、`gnb_obj_000_cache_smoke`、23.2.6 的 `gnb_obj_*_{presort,cache_b,presort_b}`（195 个，约 2.3 GB）、`cache/replay/`（小）、`presort_b/ghost_rounds/`（配准录像，约 0.5 GB）、`cache/videos_best_full/`（466 MB）；缓存本身 `scenes/obj_*/grasp_cache.npz` 很小，留
+  - [x] 23.2.8 （用户 2026-10-12 commit and push，已提交并推送）提交 23.2 的代码（`grasp_cache.py`、`cache_all.sh`、`cache_summary.py`、`replay_plan.py`、`replay_summary.py`、`presort_compare.py`、`grasp_planned.py` / `run_grasp.py` / `run_batch.sh` 改动）、`docs/handoff/grasp-cache-20261010.md`、`docs/README.md` 索引行
+- [ ] 23.5 方案 D（实验开关，不默认开）：判定抓住后把物体焊到夹爪（weld），用来把位姿问题和接触问题分开看；代价是抬起 / 搬运动力学失真、带载行走的创滑看不到，不进正式采集
+- [-] 23.6 方案 E：每次停下后在线从头优化新抓取（MPC / 采样）——放弃：和 23.2.4 相比没有收益，每局新位姿无法预先验证，接触型 MPC 仍是研究问题
+- [~] 23.7 文档（用户 2026-10-12 要求，文档和接口同日做完，只剩 23.7.4：读者页 `docs/object_grasp.md`、详解 `docs/object_grasp_design.md`、README 支线一行、术语表三条、代码导航一行、两份 handoff 补默认值变更）：23.1 定下后把结论写进 `docs/handoff/graspnet-bottle-planner-comparison-20261008.md` 或新 handoff，DECISIONS 记"感知式抓取退出专家线"的决定和理由
+  - [x] 23.7.1 抓取来源接口（2026-10-12）：`GraspPlanned(source=)` 显式参数，计划步可用 `source` 覆盖，`record.json` 记 `source`；`run_grasp.py` 默认改为 `--grasp-source cache --planners ik --rounds 1`，`run_batch.sh` 的 `ROUNDS` 默认 1；动手臂前的就绪检查（`grasp_cache` / `graspnet_server` / `grasp_source`），`graspnet_server.py` 加 ping 和 `--graspnet-dir`；`cache_summary.py` / `best_videos.py` 按 tag 分开输出、字幕写来源；`run_one.sh` 尊重 `paths.sh` 选的 deploy
+  - [x] 23.7.2 `install_graspnet.sh`（2026-10-12）：克隆固定提交、扩展补丁、钉版本的 venv、编译 pointnet2 / knn、graspnetAPI、权重、自检；在空目录从零装通（104 s，安装包已在 uv 缓存里，自检 110 grasps），补上了原环境后装的 graspnetAPI 依赖（matplotlib 等），绕开镜像里不可写的 `/.uv` 和 CUDA 13 的 `CUDA_HOME`
+  - [x] 23.7.3 冒烟（2026-10-12，实例 1，物体 040）：缓存来源抬起（74 s）；graspnet 服务没开时动手臂前被拒（`graspnet_server`）；graspnet 来源在现在的默认配置（预检、arm pin、闸门）下抬起（80 s，服务 1.6 GB 显存）
+  - [ ] 23.7.4 待用户：graspnet 来源在现在的默认配置下两批 65 局（约 40 分钟），给详解第 3 节补一组同执行逻辑的当前对比；现在的对比是 10-10 之前的执行逻辑

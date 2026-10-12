@@ -34,6 +34,9 @@ GUIDES = {
     "docs/running.md": 180,
     "docs/setup.md": 440,  # 2026-09-29: + step 8 (Unreal) in the steps' format and its troubleshooting
     "docs/warehouse_design.md": 120,
+    # 2026-10-12: the GraspNet-object line (grasp cache or graspnet), a side line with its own runbook and design page
+    "docs/object_grasp.md": 130,
+    "docs/object_grasp_design.md": 95,
     "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,
     "docs/reference/change-map-bottle.md": 45,
@@ -54,7 +57,14 @@ BYTE_BUDGETS = {"docs/reference/change-map.md": 3000}
 # README prints the quickstart, so it has to name commands that exist. It was NOT checked
 # until 2026-09-22, which is how it kept printing `scripts/collect_data.sh` for a whole
 # refactor after that script was deleted.
-COMMAND_DOCUMENTS = ("README.md", "docs/single_arm.md", "docs/bimanual.md", "docs/warehouse.md", "docs/running.md")
+COMMAND_DOCUMENTS = (
+    "README.md",
+    "docs/single_arm.md",
+    "docs/bimanual.md",
+    "docs/warehouse.md",
+    "docs/running.md",
+    "docs/object_grasp.md",
+)
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
 
