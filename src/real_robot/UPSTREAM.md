@@ -61,7 +61,9 @@ Same layout and names: the tyro `InferenceConfig` (upstream's fields and default
 - `real_robot.policy_client.PolicyClient` instead of `gr00t.policy.server_client.PolicyClient`: SONIC's
   `.venv_sim` has no gr00t. Same wire format and methods, plus `identity`.
 - An unreachable server or a served checkpoint whose field order differs from the schema stops the client before
-  anything is published (upstream warns and carries on). `--no-identity-check` lifts the second.
+  anything is published (upstream warns and carries on). `--no-identity-check` lifts the second. The gripper
+  units are read from the checkpoint's statistics in `identity` (`--gripper-units auto`, `real_robot.statistics`);
+  an explicit value that contradicts them stops the client too.
 - Defaults: policy port 5590 (upstream 5550), the action socket binds `*` (upstream localhost), prompt
   "pick up the box". Added fields: `--schema`, `--gripper-units`, `--hand-wire`, `--snap-tokens`,
   `--identity-check`, `--init-token-file`.
@@ -71,6 +73,7 @@ Same layout and names: the tyro `InferenceConfig` (upstream's fields and default
 Modelled on Isaac-GR00T's `gr00t/eval/run_gr00t_server.py` (https://github.com/NVIDIA/Isaac-GR00T, main; the same file
 is vendored unchanged at `src/gr00t/eval/run_gr00t_server.py`). Kept: the tyro `ServerConfig` and its flag names,
 `Gr00tPolicy` or `ReplayPolicy` (`--dataset-path`), the modality-config loading for replay, `PolicyServer` as a context
-manager with its default endpoints. Changed: one extra endpoint (`identity`), `--backbone-path` and
+manager with its default endpoints. Changed: one extra endpoint (`identity`: file hashes, field order, the gripper
+keys' training ranges), `--backbone-path` and
 `--denoising-steps`, port 5590 and tag `unitree_g1_sonic` by default, no sim policy wrapper. The simulation's
 `locomani.pipeline.serve_policy` (RTC, seeded denoising, run-directory lookup) is not used on the robot.

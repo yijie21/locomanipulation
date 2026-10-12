@@ -8,9 +8,10 @@
 `ServerConfig`, a `Gr00tPolicy` (or a `ReplayPolicy` over a dataset), and `PolicyServer` run as a context
 manager. What differs, and why:
 
-- One more endpoint, `identity`: the checkpoint's file hashes and the field order of each modality, which the
-  client checks against its schema before it starts. The client calls the standard `get_action` with the nested
-  observation, as NVIDIA's `run_vla_inference.py` does.
+- One more endpoint, `identity`: the checkpoint's file hashes, the field order of each modality and the gripper
+  keys' training ranges (`real_robot.statistics`), which the client checks against its schema and its gripper
+  units before it starts. The client calls the standard `get_action` with the nested observation, as NVIDIA's
+  `run_vla_inference.py` does.
 - `--backbone-path` and `--denoising-steps`: a checkpoint trained on the cluster records a backbone directory
   that does not exist here, and the action head is run with the step count the checkpoint was evaluated with.
 - Default port 5590 (5555-5580 are the robot's camera, action, state and keyboard ports), default embodiment
@@ -35,6 +36,7 @@ from gr00t.data.types import ModalityConfig
 from gr00t.policy.gr00t_policy import Gr00tPolicy
 from gr00t.policy.replay_policy import ReplayPolicy
 from gr00t.policy.server_client import PolicyServer
+from real_robot.statistics import gripper_ranges
 
 DEFAULT_MODEL_SERVER_PORT = 5590
 
@@ -131,6 +133,11 @@ def identity_of(config: ServerConfig, policy) -> dict:
     identity["modalities"] = {
         kind: list(value.modality_keys) for kind, value in policy.get_modality_config().items() if kind != "rl_info"
     }
+    # The gripper's training range names its units (simulator metres or Dex1 motor units), which the field names
+    # do not; the client refuses to drive the hands in the wrong unit (real_robot.statistics, policy_client).
+    identity["gripper_ranges"] = (
+        gripper_ranges(config.model_path, config.embodiment_tag.value) if config.model_path is not None else None
+    )
     return identity
 
 
@@ -170,6 +177,7 @@ def main(config: ServerConfig):
 
     identity = identity_of(config, policy)
     print(f"  Modalities: {identity['modalities']}")
+    print(f"  Gripper ranges: {(identity['gripper_ranges'] or {}).get('action')}")
 
     with PolicyServer(policy=policy, host=config.host, port=config.port) as server:
         server.register_endpoint("identity", lambda: identity, requires_input=False)

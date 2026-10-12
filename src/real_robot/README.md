@@ -18,14 +18,14 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/run
 
 服务器是 [run_gr00t_server.py](run_gr00t_server.py)，仿照 NVIDIA Isaac-GR00T 官方的 `gr00t/eval/run_gr00t_server.py`（本仓库原样 vendor 在 `src/gr00t/eval/run_gr00t_server.py`），参数名和官方一致，跑在 Isaac-GR00T 的 `.venv` 里、用本仓库的 `src/gr00t`。真机部署不用仿真评测的 `scripts/run_vla_server.sh`：那个脚本从运行目录读评测配置，带 RTC 和仿真用的种子，真机都用不上。
 
-做什么：加载 checkpoint（modality 配置和字段顺序取 checkpoint 自带的），在 5590 端口提供官方的 `ping`、`get_action`、`reset`、`get_modality_config`，外加一个 `identity`（checkpoint 文件哈希和各 modality 的字段顺序）。客户端和官方一样调 `get_action`，发嵌套的 (B, T, …) 观测。
-得到什么：终端打印 `Modalities: ...` 和 `Server is ready and listening on tcp://0.0.0.0:5590`。客户端启动时会核对 `identity` 报告的字段顺序和 `--schema` 一致，不一致就拒绝启动。
+做什么：加载 checkpoint（modality 配置和字段顺序取 checkpoint 自带的），在 5590 端口提供官方的 `ping`、`get_action`、`reset`、`get_modality_config`，外加一个 `identity`（checkpoint 文件哈希、各 modality 的字段顺序、夹爪和手的训练统计范围）。客户端和官方一样调 `get_action`，发嵌套的 (B, T, …) 观测。
+得到什么：终端打印 `Modalities: ...`、`Gripper ranges: ...` 和 `Server is ready and listening on tcp://0.0.0.0:5590`。客户端启动时会核对 `identity` 报告的字段顺序和 `--schema` 一致，并按夹爪统计范围定夹爪单位，不一致就拒绝启动。
 
 | 参数 | 默认 | 含义 |
 |---|---|---|
 | `--model-path` | 无 | checkpoint 目录（`checkpoint-<step>`，不是运行目录） |
 | `--embodiment-tag` | unitree_g1_sonic | 训练用的 embodiment tag |
-| `--backbone-path` | 无 | 本机 Cosmos-Reason2-2B 目录。checkpoint 在别的机器（集群）上训的，记录的 backbone 路径本机没有时要给 |
+| `--backbone-path` | `$COSMOS_BACKBONE_PATH` | 本机 Cosmos-Reason2-2B 目录。checkpoint 在别的机器（集群）上训的，记录的 backbone 路径本机没有时用它。不给时 `run_gr00t_server.sh` 自动加上 `COSMOS_BACKBONE_PATH`（`scripts/paths.sh`，默认 `~/Checkpoints/Cosmos-Reason2-2B`；权重放在别处就在 `locomani.local.sh` 里改，或直接传 `--backbone-path`） |
 | `--denoising-steps` | 4 | action head 的去噪步数 |
 | `--host` / `--port` | 0.0.0.0 / 5590 | 监听地址 |
 | `--device` | cuda | 选卡用 `CUDA_VISIBLE_DEVICES` |
@@ -67,7 +67,7 @@ bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera
 | `--action-horizon` | 40 | checkpoint 每次预测的步数 |
 | `--rate` | 2.5 | 每秒请求几次推理；新 chunk 到达时跳过推理期间已过期的步 |
 | `--schema` | crate | `crate`：ego + 双腕相机、token + 两只夹爪；`bottle`：ego + 右腕相机、单夹爪；state 都是官方 46 维 |
-| `--gripper-units` | dex1 | checkpoint 预测和观测夹爪的单位。`dex1`：0 闭、5.5 开（目标格式）；`sim_m`：仿真米制（转换器改写夹爪单位之前训出的 checkpoint） |
+| `--gripper-units` | auto | checkpoint 预测和观测夹爪的单位。`auto`：从服务器 `identity` 里 checkpoint 的夹爪统计范围判定（米制在 ±0.1 内，Dex1 在 0 到 5.5）；`dex1`：0 闭、5.5 开（目标格式）；`sim_m`：仿真米制（转换器改写夹爪单位之前训出的 checkpoint）。显式给的值和统计矛盾时拒绝启动 |
 | `--hand-wire` | dex1 | deploy 读 hand 字段的方式。`dex1`：值广播到 7 维（真机）；`sim`：米制写在两个指爪位（本仓库的仿真桥，做 sim2sim 时用） |
 | `--init-token-file` | 无 | 运行的 `eval.initial_token` 文件。不给就用 NVIDIA 的站立 token，它是前倾姿势，不在我们的数据分布里 |
 | `--prompt` | pick up the box | 语言指令；运行中用 `t` 改 |
@@ -83,9 +83,10 @@ bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera
 ## 6. 常见错误
 
 - `PolicyServer not reachable at ...`：第 1 步没起，或 `--host` / `--port` 不对。官方客户端这时只警告；这里直接退出，因为字段顺序要靠服务器来核对。
-- 服务器报 `backbone directory does not exist` 或找不到 `model_name` 指的目录：checkpoint 是别的机器训的，加 `--backbone-path`。
+- 服务器报 `does not exist here; pass backbone_path`：checkpoint 是别的机器训的，而 `COSMOS_BACKBONE_PATH`（默认 `~/Checkpoints/Cosmos-Reason2-2B`）下没有权重，脚本启动时也会先打印一行提示。把权重放到那里，或在 `locomani.local.sh` 里改 `COSMOS_BACKBONE_PATH`，或直接加 `--backbone-path`。
 - 服务器报 `Embodiment tag ... is not supported by this checkpoint`：`--embodiment-tag` 和训练时不一致。
 - `the served checkpoint's field order is not the crate schema's`：checkpoint 不是用 `configs/gr00t_sonic_3cam_bimanual.py` 训的，换 `--schema`，或确认运行目录。
+- `gripper units: --gripper-units dex1 contradicts the checkpoint, whose gripper statistics are in sim_m`：checkpoint 的夹爪是仿真米制（转换器写 Dex1 单位之前训的），去掉 `--gripper-units` 让它自动判，或改成 `sim_m`。反过来同理。`cannot be inferred` 是服务器没报出夹爪统计（回放模式，或 checkpoint 缺 `statistics.json`），这时必须显式给。
 - 一直打印 `[DEBUG] prepare_observation: waiting for camera msg..` / `waiting for state msg..` / `waiting for cameras [...]`：相机服务器没在发图、`g1_debug` 没有消息，或者缺了方括号里列出的相机 key；检查 `--camera-host`、`--state-zmq-host` 和机器人侧进程。
 - `[Warning] action['motion_token'] max (...) > 1.25. Exceeds action bound, skipping.`：策略输出越界，和官方客户端一样整块丢弃；连续出现说明观测格式和训练不一致。
 - `Error in inference: ... must be in observation` 之类的服务器报错：服务器的严格校验发现观测缺 key 或形状不对，多半是 `--schema` 和 checkpoint 不配。

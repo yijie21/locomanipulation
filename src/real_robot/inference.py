@@ -66,7 +66,7 @@ from locomani.schema import SONIC_BOTTLE, SONIC_CRATE
 from real_robot.chunk import TOKEN_BOUND, ActionChunk
 from real_robot.gripper import DEX1_CLOSED, DEX1_OPEN, hand_field
 from real_robot.observation import build_observation, to_policy_observation
-from real_robot.policy_client import PolicyClient, identity_mismatch
+from real_robot.policy_client import PolicyClient, identity_mismatch, resolve_gripper_units
 
 SCHEMAS = {"crate": SONIC_CRATE, "bottle": SONIC_BOTTLE}
 
@@ -129,9 +129,10 @@ class InferenceConfig:
     """Observation and action format: crate (ego + both wrist cameras, token + two grippers) or bottle
     (ego + right wrist camera, one gripper); both take the 46-d state."""
 
-    gripper_units: Literal["dex1", "sim_m"] = "dex1"
+    gripper_units: Literal["auto", "dex1", "sim_m"] = "auto"
     """Gripper units the checkpoint predicts and observes: dex1 (0 closed .. 5.5 open) or sim_m (simulator metres,
-    a checkpoint trained before the converter wrote Dex1 units)."""
+    a checkpoint trained before the converter wrote Dex1 units). auto reads them from the served checkpoint's
+    gripper statistics (`identity`); an explicit value that contradicts them is refused."""
 
     hand_wire: Literal["dex1", "sim"] = "dex1"
     """How the deploy reads the hand fields: dex1 (the value broadcast to all 7 slots, the robot) or sim (metres
@@ -406,9 +407,18 @@ def main(config: InferenceConfig):
             f"PolicyServer not reachable at {config.host}:{config.port}; "
             "start scripts/run_gr00t_server.sh --model-path <checkpoint> first"
         )
-    mismatch = identity_mismatch(n1_policy.identity(), schema)
+    identity = n1_policy.identity()
+    mismatch = identity_mismatch(identity, schema)
     if mismatch and config.identity_check:
         raise SystemExit(f"the served checkpoint's field order is not the {config.schema} schema's: {mismatch}")
+    # The gripper units come from the checkpoint's statistics, not from a flag someone has to remember: the
+    # default dex1 on a metres checkpoint closed both grippers at start and fed the model a state it never saw.
+    try:
+        config.gripper_units = resolve_gripper_units(identity, config.gripper_units)
+    except ValueError as exc:
+        if config.identity_check or config.gripper_units == "auto":
+            raise SystemExit(f"gripper units: {exc}") from exc
+        print(f"[Warning] gripper units: {exc} -- kept {config.gripper_units} (--no-identity-check)", flush=True)
     print_green(f"Schema {config.schema}: cameras {list(schema.video_keys)}, gripper units {config.gripper_units}")
 
     state_subscriber = ZMQStateSubscriber(

@@ -55,6 +55,11 @@ export CONDA_BASE="${CONDA_BASE:-$LOCOMANI_WORKSPACE/miniconda3}"
 export LOCOMANI_CACHE="${LOCOMANI_CACHE:-$LOCOMANI_WORKSPACE/.cache}"
 export LOCOMANI_TMP="${LOCOMANI_TMP:-$LOCOMANI_WORKSPACE/tmp}"
 export LOCOMANI_SECRETS="${LOCOMANI_SECRETS:-$LOCOMANI_WORKSPACE/.secrets}"
+# The local copy of GR00T's VLM backbone (Cosmos-Reason2-2B). A checkpoint records the backbone path training
+# used; one trained on the cluster records a directory that does not exist here, so the real-robot policy
+# server's launcher (scripts/run_gr00t_server.sh) passes --backbone-path with this directory unless given one.
+# Set it in locomani.local.sh when the weights live elsewhere.
+export COSMOS_BACKBONE_PATH="${COSMOS_BACKBONE_PATH:-$HOME/Checkpoints/Cosmos-Reason2-2B}"
 
 # --- Isaac rendering runtime -------------------------------------------------
 #
