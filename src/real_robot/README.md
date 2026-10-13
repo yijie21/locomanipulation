@@ -10,10 +10,14 @@
 - 机器人侧的 ZMQ 端口沿用官方默认：状态 `g1_debug` 5557、相机 5555、动作 `pose` 5556、键盘 5580。换了端口就在下面的命令里传对应参数。
 - 本机已完成[安装](../../docs/setup.md)第 0–4 步（SONIC 的 `.venv_sim`）。策略服务器那台机器要第 5 步（GR00T 训练环境）。
 
-## 1. 起策略服务器（GPU 机器）
+## 1. 起策略服务器（GPU workstation PC）
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/runs/<run>/checkpoint-<step>
+# example
+cd ~/workspace/locomanipulation
+CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh \
+    --model-path ~/Checkpoints/gr00t-locomani-logistic-unreal_20261010_033747/checkpoint-30000
 ```
 
 服务器是 [run_gr00t_server.py](run_gr00t_server.py)，仿照 NVIDIA Isaac-GR00T 官方的 `gr00t/eval/run_gr00t_server.py`（本仓库原样 vendor 在 `src/gr00t/eval/run_gr00t_server.py`），参数名和官方一致，跑在 Isaac-GR00T 的 `.venv` 里、用本仓库的 `src/gr00t`。真机部署不用仿真评测的 `scripts/run_vla_server.sh`：那个脚本从运行目录读评测配置，带 RTC 和仿真用的种子，真机都用不上。
@@ -64,6 +68,8 @@ cd && cd dex1_1_service/bin && ./test_dex1_1_gripper_server -l -r
 sudo systemctl restart dex1_gripper.service
 ```
 
+## 3. SONIC C++ deploy
+
 ```bash
 # Run local workstation
 cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts/setup_env.sh
@@ -71,7 +77,7 @@ cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts
 # wait for "Init done"
 ```
 
-## 3. 起客户端
+## 4. 起客户端
 
 ```bash
 bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera-host <机器人地址> --state-zmq-host <机器人地址> \
@@ -88,7 +94,18 @@ bash scripts/run_real_robot_inference.sh \
 做什么：连接策略服务器，核对 checkpoint 字段顺序；订阅机器人状态和三路相机；在 5556 端口发布 protocol v4 的 token 消息；启动时处于暂停状态。
 得到什么：终端打印 `PolicyServer is reachable.` 和 `Starting the policy loop with language prompt: ...`，暂停期间不断打印 `Pausing...`。放开后每到一个 chunk 打印一行 `New action chunk (prompt: ..., latency: ...)`，每 50 帧打印一行 `ZMQ: Sent latent action`，带帧号、chunk 下标和两只夹爪的值。`--help` 列出全部参数及说明。
 
-键盘（另开一个终端跑 SONIC 的键盘发布器）：
+## 5. 键盘发布器（另开一个终端跑 SONIC 的键盘发布器）：
+
+```bash
+~/workspace/locomanipulation/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -c "
+import zmq
+ctx = zmq.Context(); pub = ctx.socket(zmq.PUB); pub.bind('tcp://localhost:5580')
+print('k=start/stop  i=init pose  p=pause/resume  t <text>=prompt  [ ]=left/right gripper toggle')
+while True:
+    key = input()
+    pub.send_string('prompt:' + key[2:] if key.startswith('t ') else key)
+"
+```
 
 | 键 | 作用 |
 |---|---|
