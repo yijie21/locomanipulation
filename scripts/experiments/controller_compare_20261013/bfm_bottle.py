@@ -10,8 +10,10 @@ round files so bottle_measure.py measures both controllers with the same code.
 * `replay` (B4 B5 B6, and the mode sweep): ScaleBFM tracks what SONIC's body actually did. Reset at SONIC's pelvis
   pose 0.5 s before `ready`, the bottle at its pose then; 2 s blend to SONIC's keypoints; then SONIC's measured
   keypoint trajectory (FK of its recorded state) to the end of its record (handback, the 0.35 m carry back-off and the
-  terminal hold included), the right jaw commanded closed at SONIC's `close`. `--mode` picks which keypoints are targets: 1 wrists, 2 pelvis + wrists, 6 pelvis + shoulders, elbows,
-  wrists, 7 all 14. Hand law = the SONIC line's Dex1 law (kp 1.5, kd 0.1, +-20 N, closed -0.02).
+  terminal hold included), the right jaw commanded closed at SONIC's `close`. `--mode` picks which keypoints are
+  targets: 1 wrists, 2 pelvis + wrists, 6 pelvis + shoulders, elbows, wrists, 7 all 14. With `--carry`, everything
+  after SONIC's handback is ScaleBFM's own carry (carry_profile: the targets of SONIC's carry plans), every keypoint
+  held rigidly in the pelvis frame; only rounds SONIC completed. Hand law = the SONIC line's Dex1 law (kp 1.5, kd 0.1, +-20 N, closed -0.02).
 
     CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src third_party/Isaac-GR00T/.venv/bin/python \\
         scripts/experiments/controller_compare_20261013/bfm_bottle.py --program replay --mode 2 \\
@@ -61,6 +63,8 @@ MODE_BODIES = {
 }
 SETTLE = 2.0
 YAW_TURN_S = 1.5
+CARRY_SPEED = 0.25  # m/s, the bottle line's slow walk
+CARRY_YAW_RATE = 0.5  # rad/s on the spot
 
 
 def slerp(q0, q1, u):
@@ -156,7 +160,7 @@ def walk_round(pol, sim, z, f, a):
     facts = dict(
         f,
         controller="scalebfm",
-        program=f"walk_{round(100 * a.margin)}cm",
+        program=f"walk_{round(100 * a.margin)}cm_v{a.walk_speed:.2f}{a.tag}",
         mode=int(pol.mode.item()),
         events=dict(walk=R.SETTLE_S, brake=R.SETTLE_S + prof.t_dec),
         walk_target=dict(distance=dist, direction=d.tolist(), band_reach=reach, margin=a.margin, speed=a.walk_speed),
@@ -166,10 +170,32 @@ def walk_round(pol, sim, z, f, a):
     return rec.arrays(), facts
 
 
+def carry_profile(kind: str, yaw_from: float):
+    """ScaleBFM's carry after the grasp, the targets of configs/plans/bottle_carry_<kind>.json: (pelvis offset along
+    the start heading (m, + forward), yaw (rad)) as a function of seconds since the carry started, and its length.
+    back1 / back2: hold 1 s, walk backwards 1 / 2 m; turn90 / turn180slow: hold 1 s, turn on the spot to the plan's
+    absolute yaw (0 / +pi/2) at CARRY_YAW_RATE, then 1.5 m forward along the new heading; all walks are trapezoids at
+    CARRY_SPEED. A hold of 3 s ends every carry."""
+    if kind in ("back1", "back2"):
+        prof = Profile(CARRY_SPEED, R.WALK_ACC, 1.0 if kind == "back1" else 2.0)
+        return (lambda s: (-prof.s(s - 1.0), 0.0, yaw_from)), 1.0 + prof.t_end + 3.0
+    turn = R.wrap({"turn90slow": 0.0, "turn180slow": np.pi / 2}[kind] - yaw_from)
+    t_turn = abs(turn) / CARRY_YAW_RATE
+    prof = Profile(CARRY_SPEED, R.WALK_ACC, 1.5)
+
+    def at(s):
+        yaw = yaw_from + turn * R.smoothstep((s - 1.0) / t_turn)
+        return prof.s(s - 1.0 - t_turn), 1.0, yaw  # the walk runs along the NEW heading (flag 1.0)
+
+    return at, 1.0 + t_turn + prof.t_end + 3.0
+
+
 def replay_round(pol, sim, z, f, a, fk):
     t_s = z["t"]
     t0 = f["events"]["ready"] - 0.5
-    t1 = t_s[-1]  # to the end of SONIC's record: handback, the carry back-off and the terminal hold included
+    # to the end of SONIC's record (handback, the carry back-off and the terminal hold included); a carry replaces
+    # everything after SONIC's handback with ScaleBFM's own carry
+    t1 = t_s[-1] if a.carry is None else f["events"]["handback"]
     i0 = int(np.searchsorted(t_s, t0))
     bodies = MODE_BODIES.get(a.mode) or tuple(pol.sel)
     # SONIC's measured keypoints: FK of its recorded state, every tick of the replay span
@@ -208,9 +234,36 @@ def replay_round(pol, sim, z, f, a, fk):
             out[b] = (p0_ + u * (p1 - p0_), slerp(q0_, q1, u))
         return out
 
+    t_end = SETTLE + (t1 - t0)
+    if a.carry is not None:
+        # from the handback on: every keypoint rigidly attached to the pelvis as it was then, the pelvis on the carry
+        pel_end = sonic_at("pelvis", t1 - t0)
+        yaw_c = R.yaw_of(pel_end[1])
+        Rc = R.rot_z(yaw_c)
+        rel = {
+            b: (Rc.T @ (sonic_at(b, t1 - t0)[0] - pel_end[0]), Rc.T @ R.mat(sonic_at(b, t1 - t0)[1])) for b in bodies
+        }
+        carry_at, carry_s = carry_profile(a.carry, yaw_c)
+        replay_ref = ref
+
+        t_carry = t_end  # the carry starts here (t_end grows below; the closure must not read it)
+
+        def ref(t):
+            s_ = t - t_carry
+            if s_ < 0:
+                return replay_ref(t)
+            dist, along_new, yaw = carry_at(s_)
+            if along_new:  # turn first on the spot, then walk along the new heading
+                xy = pel_end[0][:2] + dist * np.array([np.cos(yaw), np.sin(yaw)])
+            else:
+                xy = pel_end[0][:2] + dist * np.array([np.cos(yaw_c), np.sin(yaw_c)])
+            Rn = R.rot_z(yaw)
+            P = np.array([xy[0], xy[1], pel_end[0][2]])
+            return {b: (P + Rn @ rel[b][0], R.quat_wxyz(Rn @ rel[b][1])) for b in bodies}
+
+        t_end += carry_s
     rec = Recorder(sim)
     k, fell = 0, None
-    t_end = SETTLE + (t1 - t0)
     while k * R.DT < t_end:
         t = k * R.DT
         if t - SETTLE >= close_t:
@@ -224,12 +277,16 @@ def replay_round(pol, sim, z, f, a, fk):
         sim.step(pol(sim.state(), fut))
         k += 1
     shift = SETTLE - t0
+    events = {k_: v + shift for k_, v in f["events"].items() if k_ not in ("walk", "brake")}
+    if a.carry is not None:
+        events = {k_: v for k_, v in events.items() if v <= SETTLE + (t1 - t0) + 1e-6}
+        events["carry"] = SETTLE + (t1 - t0)
     facts = dict(
         f,
         controller="scalebfm",
-        program=f"replay_m{a.mode}",
+        program=f"replay_m{a.mode}" if a.carry is None else f"carry_{a.carry}_m{a.mode}",
         mode=a.mode,
-        events={k_: v + shift for k_, v in f["events"].items() if k_ not in ("walk", "brake")},
+        events=events,
         replay=dict(sonic_t0=t0, sonic_t1=t1, bodies=list(bodies)),
         sonic_ok=f["ok"],
         sonic_why=f["why"],
@@ -243,10 +300,17 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--program", choices=("walk", "replay"), required=True)
     ap.add_argument("--mode", type=int, default=2)
+    ap.add_argument(
+        "--carry",
+        choices=("back1", "back2", "turn90slow", "turn180slow"),
+        default=None,
+        help="replay: after SONIC's handback, ScaleBFM's own carry (configs/plans/bottle_carry_<carry>.json targets)",
+    )
     ap.add_argument("--sonic", type=Path, required=True, help="SONIC round files (bottle_states.py)")
     ap.add_argument("--walk-speed", type=float, default=0.25, help="walk: m/s (bottle_simple_200 guard walk_speed)")
     ap.add_argument("--margin", type=float, default=0.03, help="walk: band clearance kept before the edge (m)")
     ap.add_argument("--settle", type=float, default=3.0, help="walk: simulated seconds after the reference stops")
+    ap.add_argument("--tag", default="", help="appended to the walk program's name (e.g. _yaw40 for those rounds)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
@@ -264,6 +328,9 @@ def main(argv=None) -> int:
             break
         if a.program == "replay" and not {"ready", "close"} <= set(f["events"]):
             print(npz.stem, "skipped: SONIC never reached the reach")
+            continue
+        if a.carry is not None and not f["ok"]:
+            print(npz.stem, "skipped: a carry starts from a grasp SONIC completed")
             continue
         w0 = time.time()
         arrays, facts = walk_round(pol, sim, z, f, a) if a.program == "walk" else replay_round(pol, sim, z, f, a, fk)

@@ -18,8 +18,9 @@ decision: SONIC's guard brake, ScaleBFM's reference deceleration), `ready` (arms
 * B6 over [close, close + 1 s]: right-wrist jitter RMS (position minus its 0.2 s centred mean); from close + 1 s to
   lift + 3 s the bottle's largest displacement in the right-wrist frame; lifted = bottle 6 cm above its start for
   2 s (sonic_lift6cm_hold2s_v1).
-* B7 the production carry (`carry_and_verify`: carry pose, 0.35 m back-off, terminal hold): the bottle's largest
-  displacement in the right-wrist frame, the distance backed, and whether the bottle is still 6 cm up at the end.
+* B7 the carry (the production expert's `carry_and_verify`, or `carry` of a carry plan / ScaleBFM's carry) to the
+  record's end: the bottle's largest displacement in the right-wrist frame, the pelvis's net travel and turn, and
+  whether the bottle is still 6 cm up at the end.
 * B8 head camera (fixed on torso_link): angular speed mean / p95 during the walk, the brake (brake - 0.5 .. + 1.5 s)
   and the reach [ready, close].
 
@@ -235,11 +236,27 @@ class Round:
         return out
 
     def b7(self):
-        """The production carry: from `carry_and_verify` (carry pose, 0.35 m back-off, terminal hold) to the record's
-        end, the bottle's largest displacement in the right-wrist frame and whether it is still 6 cm up at the end."""
-        if "carry_and_verify" not in self.ev:
+        """The carry: from `carry_and_verify` (the production expert: carry pose, 0.35 m back-off, terminal hold) or
+        `carry` (a carry plan / ScaleBFM's carry) to the record's end: the bottle's largest displacement in the
+        right-wrist frame, the pelvis's net travel and turn, and whether the bottle is still 6 cm up at the end."""
+        start = self.ev.get("carry_and_verify", self.ev.get("carry"))
+        if start is None:
             return {}
-        h = window(self.t, self.ev["carry_and_verify"], self.t[-1])
+        attempted = self.f.get("steps_attempted")
+        if attempted is not None and not {"walk_to", "turn_to", "carry_to"} & set(attempted):
+            return {}  # a plan round that ended before its carry step (a precondition refused it)
+        p = self.z["pelvis"]
+        if "carry_and_verify" not in self.ev:
+            # a carry: from 0.5 s before the base starts to move (3 cm or 3 deg from its pose at `carry`)
+            i0 = int(np.searchsorted(self.t, start))
+            moved = np.flatnonzero(
+                (np.linalg.norm(p[i0:, :2] - p[i0, :2], axis=1) > 0.03)
+                | (np.abs([wrap(yaw_of(x[3:]) - yaw_of(p[i0, 3:])) for x in p[i0:]]) > np.radians(3))
+            )
+            if not len(moved):
+                return {}
+            start = float(self.t[i0 + moved[0]]) - 0.5
+        h = window(self.t, start, self.t[-1])
         if len(h) < 5:
             return {}
         wr = self.body("right_wrist_yaw_link")
@@ -247,7 +264,8 @@ class Round:
         rel = np.array([mat(wr[i, 3:]).T @ (b[i, :3] - wr[i, :3]) for i in h])
         return dict(
             carry_slip_cm=100 * float(np.max(np.linalg.norm(rel - rel[0], axis=1))),
-            carry_back_cm=100 * float(np.linalg.norm(self.z["pelvis"][h[-1], :2] - self.z["pelvis"][h[0], :2])),
+            carry_back_cm=100 * float(np.linalg.norm(p[h[-1], :2] - p[h[0], :2])),
+            carry_turn_deg=float(np.degrees(abs(wrap(yaw_of(p[h[-1], 3:]) - yaw_of(p[h[0], 3:]))))),
             held_at_end=bool(b[-1, 2] - b[0, 2] > 0.06),
         )
 
@@ -303,8 +321,9 @@ COLUMNS = [
     ("B5", "torso_pitch_max_deg", "躯干最大俯仰 °"),
     ("B6", "close_jitter_rms_mm", "合爪手抖 RMS mm"),
     ("B6", "in_hand_slip_cm", "提起保持掌系滑移 cm"),
-    ("B7", "carry_slip_cm", "后退携带掌系滑移 cm"),
-    ("B7", "carry_back_cm", "后退距离 cm"),
+    ("B7", "carry_slip_cm", "携带掌系滑移 cm"),
+    ("B7", "carry_back_cm", "携带位移 cm"),
+    ("B7", "carry_turn_deg", "携带净转向 |°|"),
     ("B8", "cam_walk_p95_deg_s", "走路相机角速度 p95 °/s"),
     ("B8", "cam_brake_p95_deg_s", "刹车相机角速度 p95 °/s"),
     ("B8", "cam_reach_p95_deg_s", "伸手相机角速度 p95 °/s"),

@@ -140,8 +140,69 @@ def _find(d, key):
     return None
 
 
+def plan_round(trace: Path, row: dict, fk: Fk, program: str) -> tuple[dict, dict]:
+    """A plan_episode round (no sidecar, no expert journal): the sim's own state trace (qpos at 50 Hz, one row per
+    privileged publish) read by joint name; `lift` = the first tick the bottle is 6 cm above its start, which is
+    also where `carry` starts (bottle_measure moves it to the base's motion onset)."""
+    m = fk.m
+    z = np.load(trace)
+    q = z["qpos"]
+    t = (z["seq"] - z["seq"][0]) * 0.02
+    badr = m.jnt_qposadr[m.body("water_bottle_object").jntadr[0]]
+    jaw = m.jnt_qposadr[m.joint("right_hand_gripper_1_joint").id]
+    T = len(t)
+    bottle = q[:, badr : badr + 7]
+    up = np.flatnonzero(bottle[:, 2] - bottle[0, 2] > 0.06)
+    ev = {} if not len(up) else {"lift": float(t[up[0]]), "carry": float(t[up[0]])}
+    arrays = dict(
+        t=t,
+        pelvis=q[:, :7],
+        joints=q[:, fk.qadr],
+        bottle=bottle,
+        cmd_pelvis=np.full((T, 7), np.nan),
+        cmd_wrist=np.full((T, 2, 7), np.nan),
+        jaw=q[:, jaw],
+    )
+    facts = dict(
+        controller="sonic",
+        program=program,
+        scene=str(SCENE.relative_to(REPO)),
+        events=ev,
+        edge=dict(axis=None, line=None),
+        band=None,
+        ok=row.get("ok"),
+        why=row.get("why", ""),
+        steps=row.get("completed"),
+        steps_attempted=row.get("steps"),
+        round=row.get("round"),
+        trace=trace.name,
+    )
+    return arrays, facts
+
+
 def main(argv=None) -> int:
-    run, out = (Path(a) for a in (argv or sys.argv[1:]))
+    argv = list(argv or sys.argv[1:])
+    if argv and argv[0] == "--plan":
+        # bottle_states.py --plan <plan_episode run> <out> <program>
+        run, out, program = Path(argv[1]), Path(argv[2]), argv[3]
+        fk = Fk()
+        rows = [json.loads(line) for line in (run / "skills" / "manifest.jsonl").open()]
+        traces = sorted((run / "trace").glob("*_state_trace.npz"), key=lambda f: f.stat().st_mtime)
+        if len(traces) != len(rows):
+            print(f"{len(traces)} traces for {len(rows)} rounds: pairing by order is unsafe, stopping")
+            return 1
+        for row, tr in zip(rows, traces):
+            arrays, facts = plan_round(tr, row, fk, program)
+            label = f"sonic_{program}_r{row['round']:02d}"
+            save(out, label, arrays, facts)
+            print(label, "ok" if row.get("ok") else row.get("why"), len(arrays["t"]), "ticks", facts["events"])
+        return 0
+    program = "production"
+    if "--program" in argv:  # a production-expert variant (the extrapolation configs): its name in the tables
+        k = argv.index("--program")
+        program = argv[k + 1]
+        del argv[k : k + 2]
+    run, out = (Path(a) for a in argv)
     fk = Fk()
     rows = [json.loads(line) for m in sorted((run / "collect").glob("manifest_*.jsonl")) for line in m.open()]
     sidecars = sorted((run / "collect" / "pose_sidecar").glob("*.jsonl"))
@@ -155,6 +216,7 @@ def main(argv=None) -> int:
             print("no sidecar for round", row["round"], row["attempt"])
             continue
         arrays, facts = sonic_round(s, row, fk)
+        facts["program"] = program
         label = f"sonic_r{row['round']:02d}a{row['attempt']}"
         save(out, label, arrays, facts)
         print(label, "ok" if row["ok"] else row["why"], len(arrays["t"]), "ticks", sorted(facts["events"]))

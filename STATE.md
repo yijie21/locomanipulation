@@ -25,10 +25,9 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- **25.1 否决关已过（10-13）**：W0 + a 80 局 0 摔，h 本机 TensorRT FP32 p99 0.90 ms（FP16 不能用）；计划 §9。
-- **25.2 bottle L1 生产档已出（10-13）**：计划 §10–11，表 `outputs/controller_compare_20261013/bottle/bottle_l1.md`。ScaleBFM 停位散布小 3–8 倍；回放 SONIC 实际动作，在 SONIC 抓起的 6 局全部复现（mode 6）。
-- **待用户 25.2.1**：SONIC 实时率在空闲机器上只有 0.85–0.88，0.9 门槛达不到。
-- 之后：25.2.2 B3 探针 → 25.2.3 外推档 → 25.2.4 W0 重跑 → 25.3 warehouse L1。
+- **25.1 否决关已过、25.2 bottle L1 做完（10-13）**：计划 §9–14，表在 `outputs/controller_compare_20261013/{w0,h,bottle}/`。bottle 上没有致命短板；ScaleBFM 停位和正手可达明显更好（B3 63 对 41），虎口朝右（4 对 11）和伸手时躯干姿态不如 SONIC；0.7 m/s 两边都越线。
+- **下一步 25.3 warehouse L1（mars）**：W1–W8，生产档 ym 边、外推档另三边；SONIC 用 `warehouse_mars_200` 生产专家录制，方法照搬 bottle（同格式状态文件 + ScaleBFM 回放 SONIC 实际动作）。
+- SONIC 实时率作废门槛已改 0.85（用户 10-13）。
 
 ## 未解决 / 卡点
 
