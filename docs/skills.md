@@ -108,6 +108,8 @@ profile 把走近参数和抓取参数绑在一起（设计 §6），场景按�
 4. 与原线的 gate 对照（`scripts/gate.py compare <line>`）不退步后才把新 profile 写成默认。
    已走过一遍的例子（罐头，2026-09-28，[pick_place §11](ledger/pick_place.md)）：`can_entry15` / `can_descend05` / `can_overshoot0` /
    `pick_place_coupled` 四个 profile 各改一处，`--profile <名>` 同 seed 10 局；`grasp_single` 的 trace 里 `metrics.stats` 带 simple 策略的进入 / 失败证据，先看它再选旋钮。
+   mars 机器人上的纸箱（2026-10-13，[控制器对比 §16](handoff/controller-compare-20261013.md)）：`warehouse_box` 是 stock 上调的，在 mars 上 10 局只有 1 局走到携带；
+   `warehouse_box_mars` 读 mars 生产配置的 task 块（只把 `stand_forward_min` 改成 0.50），计划写在 `configs/plans/warehouse_mars_*.json`。它没有成为默认，场景照旧选 `warehouse_box`。
 5. 站位准入带：`STANCE_BANDS`（`profiles.py`）默认全开。要不要收，先跑回放：
 
 ```bash

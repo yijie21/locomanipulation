@@ -206,6 +206,9 @@ PROFILE_SOURCES: dict[str, tuple[str, str]] = {
     "pick_place_coupled": ("experiment", "configs/experiments/skills_pick_place_20260928.yaml"),
     # 7.8.1.1 route B: the warehouse box held out over the platform through the stand (stand_forward_min 0.50)
     "warehouse_box_fwd50": ("experiment", "configs/experiments/skills_box_fwd50_20260928.yaml"),
+    # the mars production expert's task block with stand_forward_min 0.50 (TODO 25.3: the stock warehouse_box reached
+    # the carry in 1/10 rounds on mars)
+    "warehouse_box_mars": ("experiment", "configs/experiments/controller_compare_warehouse_skills_mars_20261013.yaml"),
 }
 
 

@@ -15,6 +15,7 @@ def test_profile_sources_lists_exactly_three_profiles():
         "can_overshoot0",
         "pick_place_coupled",
         "warehouse_box_fwd50",
+        "warehouse_box_mars",
     }
 
 

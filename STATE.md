@@ -26,7 +26,8 @@
 ## 下一步（编号见 `TODO.md`）
 
 - **25.1 否决关已过、25.2 bottle L1 做完（10-13）**：计划 §9–14，表在 `outputs/controller_compare_20261013/{w0,h,bottle}/`。bottle 上没有致命短板；ScaleBFM 停位和正手可达明显更好（B3 63 对 41），虎口朝右（4 对 11）和伸手时躯干姿态不如 SONIC；0.7 m/s 两边都越线。
-- **下一步 25.3 warehouse L1（mars）**：W1–W8，生产档 ym 边、外推档另三边；SONIC 用 `warehouse_mars_200` 生产专家录制，方法照搬 bottle（同格式状态文件 + ScaleBFM 回放 SONIC 实际动作）。
+- **25.3 warehouse L1 做完（10-13）**：计划 §15–17，表在 `outputs/controller_compare_20261013/warehouse/{warehouse_l1.md,extra/}`，视频 `warehouse/videos/`。无致命短板；双手扣箱要夹爪伺服（`--servo pad`），平抬 3–4/8 对 SONIC 6/8；停位散布小 2–17 倍；带载走路两边都差。新增 skills profile `warehouse_box_mars`。
+- **下一步 25.4 复杂动作 C1–C7（mars）**：先下载 G1 重定向 LAFAN1（看磁盘），写 IK 关键帧合成；mode 扫描含 25.3.3（mode 6 对 7）；S1 切换瞬态。
 - SONIC 实时率作废门槛已改 0.85（用户 10-13）。
 
 ## 未解决 / 卡点

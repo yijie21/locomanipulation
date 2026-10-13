@@ -1,0 +1,1 @@
+[{"primitive":"approach","args":{"target":"nor_cal_box","profile":"warehouse_box_mars"}},{"primitive":"ready","args":{"profile":"warehouse_box_mars"}},{"primitive":"grasp_bimanual","args":{"target":"nor_cal_box","profile":"warehouse_box_mars"}},{"primitive":"put_down_bimanual","args":{"profile":"warehouse_box_mars"}}]
