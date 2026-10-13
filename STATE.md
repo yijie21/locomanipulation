@@ -25,8 +25,10 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- **25.1 否决关已过（10-13）**：W0 + a 80 局 0 摔，h 本机 TensorRT FP32 p99 0.90 ms（FP16 不能用）；结果在计划 §9，产物 `outputs/controller_compare_20261013/{w0,h}/`。
-- **25.2 bottle L1（stock）**：B1–B8；SONIC 一侧接实时栈，单独跑。之前先做 25.1.1（`foot_slip` 换接触点速度积分）。
+- **25.1 否决关已过（10-13）**：W0 + a 80 局 0 摔，h 本机 TensorRT FP32 p99 0.90 ms（FP16 不能用）；计划 §9。
+- **25.2 bottle L1 生产档已出（10-13）**：计划 §10–11，表 `outputs/controller_compare_20261013/bottle/bottle_l1.md`。ScaleBFM 停位散布小 3–8 倍；回放 SONIC 实际动作，在 SONIC 抓起的 6 局全部复现（mode 6）。
+- **待用户 25.2.1**：SONIC 实时率在空闲机器上只有 0.85–0.88，0.9 门槛达不到。
+- 之后：25.2.2 B3 探针 → 25.2.3 外推档 → 25.2.4 W0 重跑 → 25.3 warehouse L1。
 
 ## 未解决 / 卡点
 

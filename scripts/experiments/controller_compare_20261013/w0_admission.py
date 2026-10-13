@@ -113,34 +113,49 @@ def feet(sim):
 
 
 class FootWatch:
-    """Per foot: net displacement since start() (`foot_move`, includes deliberate steps) and the horizontal distance
-    the ankle travels while one of its geoms touches the floor (`foot_slip`, sliding in stance)."""
+    """Per foot: net displacement since start() (`foot_move`, includes deliberate steps) and slip in stance
+    (`foot_slip`): over each stance span (floor contact every tick) the horizontal travel of the span's first contact
+    centroid, a point fixed in the foot, from the span's first tick to its last, summed -- bottle_measure.foot_slip's
+    rule, so contact jitter does not accumulate and a heel/toe roll is not slip."""
 
     def __init__(self, sim):
         self.sim = sim
         self.body = [sim.bid[f"{s}_ankle_roll_link"] for s in ("left", "right")]
         self.floor = {g for g in range(sim.m.ngeom) if sim.m.geom_bodyid[g] == 0}
-        self.p0 = self.prev = None
+        self.p0 = None
+        self.span = [None, None]
         self.slip = np.zeros(2)
 
     def start(self):
-        self.p0 = self.prev = feet(self.sim)
+        self.p0 = feet(self.sim)
 
     def tick(self):
         if self.p0 is None:
             return
         d, m = self.sim.d, self.sim.m
-        touch = [False, False]
+        pts = [[], []]
         for c in d.contact[: d.ncon]:
             for g, o in ((c.geom1, c.geom2), (c.geom2, c.geom1)):
                 if o in self.floor and m.geom_bodyid[g] in self.body:
-                    touch[self.body.index(m.geom_bodyid[g])] = True
-        p = feet(self.sim)
-        step = np.linalg.norm(p - self.prev, axis=1)
-        self.slip += np.where(touch, step, 0.0)
-        self.prev = p
+                    pts[self.body.index(m.geom_bodyid[g])].append(c.pos.copy())
+        for k, b in enumerate(self.body):
+            R_, x = d.xmat[b].reshape(3, 3), d.xpos[b]
+            if not pts[k]:
+                self._close(k)
+                continue
+            if self.span[k] is None:
+                local = R_.T @ (np.mean(pts[k], axis=0) - x)
+                self.span[k] = [local, (R_ @ local + x)[:2].copy(), None]
+            self.span[k][2] = (R_ @ self.span[k][0] + x)[:2].copy()
+
+    def _close(self, k):
+        if self.span[k] is not None and self.span[k][2] is not None:
+            self.slip[k] += np.linalg.norm(self.span[k][2] - self.span[k][1])
+        self.span[k] = None
 
     def result(self):
+        for k in range(2):
+            self._close(k)
         return dict(
             foot_move_cm=100 * float(np.max(np.linalg.norm(feet(self.sim) - self.p0, axis=1))),
             foot_slip_cm=100 * float(self.slip.max()),
