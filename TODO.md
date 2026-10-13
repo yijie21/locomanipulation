@@ -880,3 +880,20 @@
   - [ ] 24.6.1 候选后续（待用户）：按包络给每个姿态单独一个前馈常数（`envelope.json` 里已存 `bias_heading_cm`）；包络只在一个物体、两个高度上探的，位置 × 姿态的交叉没扫。
 - [x] 24.7 终点线刹车，SONIC 对 ScaleBFM（用户 2026-10-13 提出；handoff §9）：空地走到 1.5 m 的线再停，0.55 / 0.35 / 0.25 × 10 局；`bfm_brake.py --program marker|plan`、`brake_batch.sh`、`brake_summary.py`，`runtime.Sim` 允许无物体场景，渲染复用 `render_brake_marker_20260923.py`（按行线位置 + 字幕标签）；`tests/test_wbc_brake.py`。越线刹车惯性 ScaleBFM 4.5 ± 0.6 / 2.5 ± 0.6 / 0.5 ± 0.4 cm 对 SONIC 24.7 ± 3.3 / 10.4 ± 4.9 / 4.0 ± 1.4（横向 sd ≤ 1.6 对 4–5 cm，yaw 0.2° 对 2–3°，0.5 s 站稳）；不越线程序两边 0/10 越线，ScaleBFM 脚尖停线前 4–8 cm（sd ≤ 2）对 SONIC 守线 13–22 cm（sd 3.5–12，最差 −2.3）。表 `outputs/wbc_compare_20261012/brake/brake.md`，视频 `brake/videos/`。
   - [ ] 24.7.1 候选后续（待用户）：ScaleBFM plan 停稳比参考终点短 1.6–4.5 cm（0.25 有两局 8–9 cm），加 3 cm 前馈再验；要不要在 65 物体线让 ScaleBFM 真走进去（决策 4 站位不动，是另一条线）。
+
+## 25. SONIC → ScaleBFM 替换评测（用户 2026-10-13 提出；[计划与冻结判据](docs/handoff/controller-compare-20261013.md)；DECISIONS 2026-10-13（续））
+
+替换范围是仿真采集、仿真 VLA 评测和真机部署三处；VLA 学习效果不进判据。L1 原语层过关才移植专家跑 L2；判据开跑前冻结（计划 §2–§4）。
+
+- [ ] 25.1 否决关：W0（mars 上站 30 s、走 1.5 m、弯腰到 0.18 / 0.33 m）、a（腰踝 35 N·m）、h（本机同 TensorRT 版本测推理 p99 下限）；任一不过就停下查原因并汇报。
+- [ ] 25.2 bottle L1（stock）：B1–B8，生产档 + 外推档，每格 10 次。
+- [ ] 25.3 warehouse L1（mars）：W1–W8，生产档 ym 边，外推档另三条边。
+- [ ] 25.4 复杂动作 C1–C7（mars）：先下载 G1 重定向 LAFAN1、写 IK 关键帧合成；mode 扫描（§5）；S1 切换瞬态。
+- [ ] 25.5 扰动 a–g 按计划 §4.6 套用；估计位姿臂（腿运动学 + IMU 估计器，§4.5）。
+- [ ] 25.6 L1 关口判定（计划 §3），结果交用户。
+- [ ] 25.7 移植专家：bottle simple 专家 → ScaleBFM（主臂）；warehouse 四边专家 → ScaleBFM（各段用选出的 mode）；bottle_visual 参考臂有余力再跑。
+- [ ] 25.8 L2：每场景 ≥ 40 局配对，标称档 + 真机组合档（a + b 20 ms + c + f）；SONIC 每局记 RTF，< 0.9 作废重跑。
+- [ ] 25.9 最终判定（计划 §2），结果交用户。
+- [ ] 25.10 ScaleBFM 部署程序（Python + TensorRT，接口同 SONIC deploy）→ sim2sim。
+- [ ] 25.11 真机冒烟（计划 §7 的六步，用户团队操作，SONIC 同日对照）。
+  - [ ] 25.11.1 待用户：机载电脑型号、实验室有没有外部定位（现按没有处理）。
