@@ -86,6 +86,7 @@ cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts
 bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera-host <机器人地址> --state-zmq-host <机器人地址> \
     --init-token-file configs/deployment/warehouse_initial_token.json --prompt "pick up the box"
 # example
+cd /home/henry.zhao/workspace/locomanipulation
 bash scripts/run_real_robot_inference.sh \
     --host localhost \
     --camera-host 192.168.123.164 --camera-port 5555 \
