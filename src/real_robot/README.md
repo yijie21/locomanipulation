@@ -76,6 +76,13 @@ cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts
 ```bash
 bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera-host <机器人地址> --state-zmq-host <机器人地址> \
     --init-token-file configs/deployment/warehouse_initial_token.json --prompt "pick up the box"
+# example
+bash scripts/run_real_robot_inference.sh \
+    --host localhost \
+    --camera-host 192.168.123.164 --camera-port 5555 \
+    --state-zmq-host localhost \
+    --init-token-file configs/deployment/warehouse_initial_token.json \
+    --prompt "pick up the box"
 ```
 
 做什么：连接策略服务器，核对 checkpoint 字段顺序；订阅机器人状态和三路相机；在 5556 端口发布 protocol v4 的 token 消息；启动时处于暂停状态。
