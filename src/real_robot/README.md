@@ -118,7 +118,19 @@ while True:
 
 第一次上真机的顺序：`k` 起控制环，`i` 到初始姿势，用 `]` 和 `i` 看右夹爪是不是 5.5 开、0 闭（方向错了就是 Dex1 驱动读的单位不同，停下来查），再 `p` 放开策略。
 
-## 4. 参数
+## 6. 可选：录制评估数据
+
+```bash
+cd ~/workspace/locomanipulation/third_party/GR00T-WholeBodyControl && source .venv_data_collection/bin/activate
+python gear_sonic/scripts/run_data_exporter.py \
+    --state-zmq-host localhost \
+    --camera-host 192.168.123.164 --camera-port 5555 \
+    --record-wrist-cameras --wrist-camera-sides both \
+    --task-prompt "pick up the box"
+```
+录制时在终端 4 用 c 开始、s 成功结束、f 失败结束。
+
+## 7. 参数
 
 | 参数 | 默认 | 含义 |
 |---|---|---|
@@ -136,11 +148,11 @@ while True:
 | `--action-zmq-host` | * | 动作 PUB socket 绑定的地址。官方是 localhost（客户端和 deploy 同机）；`*` 让另一台机器上的 deploy 也能连 |
 | `--verbose-timing` | 关 | 每帧打印 Telemetry 计时（默认只在一帧超时时打印） |
 
-## 5. sim2sim
+## 8. sim2sim
 
 同一个客户端对接本仓库的 MuJoCo 仿真栈（实例 0 的端口正是上面的默认值）：`bash scripts/start_stack.sh eval` 起栈和相机流，策略服务器照第 1 步（`scripts/run_vla_server.sh <run>` 也提供 `get_action` 和 `identity`，也能用），客户端加 `--hand-wire sim`。仿真桥读米制的指爪位，`--hand-wire sim` 把 Dex1 值换算回去。用 `sim_m` 单位训练的 checkpoint 另加 `--gripper-units sim_m`。
 
-## 6. 常见错误
+## 9. 常见错误
 
 - `PolicyServer not reachable at ...`：第 1 步没起，或 `--host` / `--port` 不对。官方客户端这时只警告；这里直接退出，因为字段顺序要靠服务器来核对。
 - 服务器报 `does not exist here; pass backbone_path`：checkpoint 是别的机器训的，而 `COSMOS_BACKBONE_PATH`（默认 `~/Checkpoints/Cosmos-Reason2-2B`）下没有权重，脚本启动时也会先打印一行提示。把权重放到那里，或在 `locomani.local.sh` 里改 `COSMOS_BACKBONE_PATH`，或直接加 `--backbone-path`。
