@@ -84,6 +84,14 @@ def main() -> int:
     )
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument(
+        "--bias-file", type=Path, default=None,
+        help="TODO 24.3: the wbc_compare probe's bias.json; grasp_planned.BIAS takes --bias-key's bias_m off the planned path",
+    )  # fmt: skip
+    ap.add_argument("--bias-key", default="sonic.all", help="<controller>.<all|central> entry of --bias-file")
+    ap.add_argument(
+        "--hold", type=float, default=None, help="TODO 24.3: seconds held after the lift (grasp_planned.HOLD_S, 1.5)"
+    )
+    ap.add_argument(
         "--yaws", type=int, default=1,
         help="object yaws drawn per object (seed 1000 + id; the first is the 21.3.4 yaw), used one per round, cycling",
     )  # fmt: skip
@@ -128,6 +136,15 @@ def main() -> int:
     grasp_planned.PREFER_HIGH["on"] = args.prefer_high == "on"
     grasp_planned.DECOUPLE["on"] = args.arm_pin != "off"
     grasp_planned.DECOUPLE["waist"] = "yawroll" if args.arm_pin == "arm+yaw" else args.arm_pin == "arm+waist"
+    if args.bias_file is not None:
+        entry = json.loads(args.bias_file.read_text())
+        for key in args.bias_key.split("."):
+            entry = entry[key]
+        grasp_planned.BIAS.update(
+            on=True, m=tuple(float(v) for v in entry["bias_m"]), source=f"{args.bias_file}:{args.bias_key}"
+        )
+    if args.hold is not None:
+        grasp_planned.HOLD_S = float(args.hold)
     yaws = np.random.default_rng(1000 + oid).uniform(-np.pi, np.pi, size=args.yaws).tolist()
     spawned = {"n": 0}
 

@@ -3,6 +3,8 @@
 Input: a diag_brake output directory (results.json + trace/brake_<speed>_<i>_state_trace.npz). The red
 floor line is the marker where IDLE was commanded; subtitles give the speed command, the trial, the
 phase, the 0.5 s pelvis speed, the distance past the marker, and -- once settled -- the carry.
+A row may carry its own `marker` (the ScaleBFM side jitters the run-up, wbc_compare bfm_brake.py) and the
+file its own `phase_labels` {walk, brake, slow} for the subtitles; `target_fwd` rows add the target error.
 Also writes summary.json, including how far the frontmost low-body point (geoms reaching below
 OBSTACLE_TOP) went past the line at worst and after settling.
 
@@ -79,7 +81,8 @@ def compress(full: Path, preview: Path):
 def main() -> int:
     out = Path(sys.argv[1])
     res = json.loads((out / "results.json").read_text())
-    marker = res["marker"]
+    marker0 = res["marker"]
+    labels = {"walk": "行走 SLOW_WALK", "brake": "刹车 IDLE", "slow": "减速", **res.get("phase_labels", {})}
     rows = [r for r in res["rows"] if r.get("fell") is None and "carry" in r]
     model = mujoco.MjModel.from_xml_path(str(SCENE))
     data = mujoco.MjData(model)
@@ -103,12 +106,12 @@ def main() -> int:
             for q in qpos:
                 data.qpos[:] = q
                 mujoco.mj_kinematics(model, data)
-                vals.append(frontmost(model, data, h, x0, robot) - marker)
+                vals.append(frontmost(model, data, h, x0, robot) - r.get("marker", marker0))
             past[r["label"]] = np.array(vals)
         worst = np.array([past[r["label"]].max() for r in mine])
         final = np.array([past[r["label"]][-1] for r in mine])
         carry = np.array([r["carry"] for r in mine])
-        stop = np.array([r["stop_fwd"] - marker for r in mine])
+        stop = np.array([r["stop_fwd"] - r.get("marker", marker0) for r in mine])
         summary[key] = dict(
             n=len(mine),
             falls=sum(1 for r in res["rows"] if tag(r) == key and r.get("fell")),
@@ -124,6 +127,12 @@ def main() -> int:
             crossed=int((worst > 0).sum()),
             stagger_cm=[round(100 * r["stagger"], 1) for r in mine if "stagger" in r],
             stagger_before_resquare_cm=[round(100 * r["stagger_settled"], 1) for r in mine if "stagger_settled" in r],
+            target_err_cm=[
+                round(100 * (r["stop_fwd"] - r["target_fwd"]), 1) for r in mine if r.get("target_fwd") is not None
+            ],
+            still_after_brake_s=[
+                round(r["still_after_brake_s"], 2) for r in mine if r.get("still_after_brake_s") is not None
+            ],
         )
         tmp = out / f"brake_{key}_raw.mp4"
         writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), HZ / EVERY, (W, H))
@@ -133,10 +142,15 @@ def main() -> int:
             heading = yaw_of(qpos[0])
             h = np.array([np.cos(heading), np.sin(heading)])
             xy0 = qpos[0, :2]
+            marker = r.get("marker", marker0)
             fwd = (qpos[:, :2] - xy0) @ h
             v = np.gradient(fwd) * HZ
             v = np.convolve(v, np.ones(HZ // 2) / (HZ // 2), mode="same")
-            braked = np.argmax(fwd >= marker) if (fwd >= marker).any() else len(fwd)
+            braked = (
+                r["brake_seq"]
+                if "brake_seq" in r
+                else (np.argmax(fwd >= marker) if (fwd >= marker).any() else len(fwd))
+            )
             for i in range(0, len(qpos), EVERY):
                 data.qpos[:] = qpos[i]
                 mujoco.mj_forward(model, data)
@@ -145,7 +159,11 @@ def main() -> int:
                 frame = Image.fromarray(renderer.render())
                 d = ImageDraw.Draw(frame)
                 slow = r.get("final_speed") is not None and fwd[i] >= marker - r["final_distance"]
-                phase = "刹车 IDLE" if i >= braked else (f"减速 {r['final_speed']:.2f}" if slow else "行走 SLOW_WALK")
+                phase = (
+                    labels["brake"]
+                    if i >= braked
+                    else (f"{labels['slow']} {r['final_speed']:.2f}" if slow else labels["walk"])
+                )
                 lines = [
                     f"指令速度 {key.replace('to', '→')}   第 {r['i'] + 1}/{len(mine)} 次   {phase}",
                     f"实测速度 {v[i]:+.2f} m/s   身体最前点距红线 {100 * past[r['label']][i]:+.1f} cm",

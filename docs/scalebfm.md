@@ -27,7 +27,7 @@ LeRobot v2.1 数据集 → GR00T 3000 步 checkpoint → 配对闭环评测(§6 
 |---|---|
 | Python | 统一用 `third_party/Isaac-GR00T/.venv/bin/python`(GR00T 训练 venv 里带 torch + mujoco);不同 PyTorch 环境之间观测到过微小重放差异,不要混用 |
 | 模型 | `/workspace/models/scalebfm/humanoid_transformer_m_22200.pt`(HF `WeishuaiZeng/ScaleBFM`,唯一用过的 checkpoint);`assets/scalebfm/{mode_table.pt, model_22200_tensorrt_metadata.json, g1_29dof_fk.xml}`。路径在 `ScaleBfmBackendConfig.checkpoint`,`pipeline/provenance.verify_runtime_assets()` 对它们做哈希 |
-| 场景 | `outputs/scene/sim`(瓶子场景,`scene_meta.json` + MJCF),由 `ScaleBfmBackendConfig.scene_dir` 指定,空串即默认 |
+| 场景 | `outputs/scene/sim`(瓶子场景,`scene_meta.json` + MJCF),由 `ScaleBfmBackendConfig.scene_dir` 指定,空串即默认;`object_name` 在场景里不存在时 `Sim` 不跟踪物体(`crate_b`/`table_top` 为 None),空地 `outputs/scene/walk` 的刹车诊断就这么跑(2026-10-13) |
 | expert(CPU) | `CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OMP_NUM_THREADS=1 PYTHONPATH=src` —— 单线程、软件渲染、不占 GPU,可以在别人的采集栈旁边跑(它没有 SONIC deploy 那种 LowState 保护;但 GPU 上的仿真探针会打断别人的 SONIC 采集,见 §9) |
 | 采集 / 训练(GPU) | `collect.py` 固定 `policy_device="cuda"`、`MUJOCO_GL=egl`;先按 `STATE.md` 核对 GPU 归属 |
 | 测试 / 磁盘 | `make test` 跑 unit tier(`tests/test_visual_*.py`);`test_visual_training.py` / `test_visual_validation.py` 是 torch tier(`pytest --run-torch`)。checkpoint 20 GB 量级,采集前 `df` |
@@ -83,14 +83,15 @@ third_party/Isaac-GR00T/.venv/bin/python -m locomani.tasks.bottle_visual.pipelin
 | `reference.py` | `PoseTransition` / `bounded`:连续腕参考插值与限幅 |
 | `state.py` | 91 维学生 state(`STATE_DIMS`,§6) |
 | `camera.py` | `RobotCameraObserver`:`ego_view`(`head_camera`)+ `right_wrist`,320×240 RGB,带 0.4 s 图像历史 |
-| `config.py` | `ScaleBfmBackendConfig`:`checkpoint` / `scene_dir` / `object_name` / `grip_kp` / `grip_kd`;JSON 在 `configs/backend/scalebfm.yaml` |
+| `config.py` | `ScaleBfmBackendConfig`:`checkpoint` / `scene_dir` / `object_name` / `grip_kp` / `grip_kd` / `grip_clip`;JSON 在 `configs/backend/scalebfm.yaml` |
 
 策略接口(每个 50 Hz tick):`root_quat[1,3,4]`(wxyz)、`base_ang_vel[1,3,3]`、`dof_pos` / `dof_vel` / `last_action`
 `[1,3,29]`(**IsaacLab 关节顺序**,metadata `joint_names`)、`target_pos[1,6,14,3]`、`target_quat[1,6,14,4]`
 (**骨盆系**下 14 个 body 的未来 6 帧目标;mode 2 只有 pelvis / 左腕 / 右腕有效,其余按 `mode_table.pt` mask 掉)、
 `mode_index[1]=2`、`time_offsets[1,6,1]`。输出 29 个 PD 目标。手的目标是 `right_wrist_yaw_link` 位姿,dex1 pad
-中心在腕系 x 方向 `runtime.OFF` = 0.1515 m。夹爪模型不管,`Sim.step` 用 `grip_kp` / `grip_kd` 自己 PD,力限
-`sim.grip_clip`(瓶子 0.6)。更多接口事实见 `docs/archive/scalebfm_spike_handoff_20260908.md`。
+中心在腕系 x 方向 `runtime.OFF` = 0.1515 m。夹爪模型不管,`Sim.step` 用 `grip_kp` / `grip_kd` 自己 PD,ctrl 钳位
+`grip_clip`(配置默认 4.0;瓶子线每局把 `sim.grip_clip` 压到 0.6;SONIC 线的手指律是 1.5 / 0.1 / 20,见
+`scripts/experiments/wbc_compare_20261012/`)。更多接口事实见 `docs/archive/scalebfm_spike_handoff_20260908.md`。
 
 策略的两个已测特性决定了 expert 的形状(§5):**对静态偏差响应弱**——骨盆 / 手离目标 ~10 cm 以内基本不动,
 参考必须带速度并领先身体;**手开环有系统偏差**——早期版本用一个世界系常量 `BIAS` 补,现在 `reference_style=direct`

@@ -90,7 +90,8 @@ def smoothstep(u):
 
 
 class Sim:
-    """Our crate scene, ScaleBFM's PD on the 29 joints, our PD on the grippers."""
+    """Our crate scene (or any scene_locomani.xml with the G1; the tracked object is optional), ScaleBFM's PD on
+    the 29 joints, our PD on the grippers."""
 
     def __init__(self, meta, video=False, backend: ScaleBfmBackendConfig | None = None):
         self.cfg = backend or ScaleBfmBackendConfig()
@@ -124,7 +125,7 @@ class Sim:
         self.gv = np.array([self.m.jnt_dofadr[j] for j in gj])
         self.gact = np.array([next(a for a in range(self.m.nu) if self.m.actuator_trnid[a, 0] == j) for j in gj])
         self.grip_target = np.full(4, GRIP_OPEN)
-        self.grip_clip = 4.0  # ctrl clamp on the gripper PD (x gear 250 N); lower for small objects
+        self.grip_clip = self.cfg.grip_clip  # ctrl clamp on the gripper PD (config.py); callers may lower it per round
         self.bid = {
             n: mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, n)
             for n in (
@@ -136,15 +137,19 @@ class Sim:
                 "right_ankle_roll_link",
             )
         }
-        self.crate_b = mujoco.mj_name2id(
-            self.m, mujoco.mjtObj.mjOBJ_BODY, self.smeta["objects"][self.cfg.object_name]["body"]
-        )
-        self.crate_q = int(self.m.jnt_qposadr[self.m.body_jntadr[self.crate_b]])
-        self.crate0 = np.asarray(self.smeta["objects"][self.cfg.object_name]["init_pos"], dtype=float)
-        self.crate_quat0 = np.asarray(self.smeta["objects"][self.cfg.object_name]["init_quat"], dtype=float)
-        surf = self.smeta["surfaces"]["A"]
-        self.edge_x = float(surf["xy"][0] - surf["flat_half_extent"][0])
-        self.table_top = float(surf["top"])
+        # A scene without the tracked object (the walk scene, outputs/scene/walk) has no crate and no table:
+        # the locomotion diagnostics (wbc_compare brake line, 2026-10-13) run there; crate()/table_top unused.
+        obj = self.smeta["objects"].get(self.cfg.object_name)
+        if obj is None:
+            self.crate_b = self.crate_q = self.crate0 = self.crate_quat0 = None
+        else:
+            self.crate_b = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, obj["body"])
+            self.crate_q = int(self.m.jnt_qposadr[self.m.body_jntadr[self.crate_b]])
+            self.crate0 = np.asarray(obj["init_pos"], dtype=float)
+            self.crate_quat0 = np.asarray(obj["init_quat"], dtype=float)
+        surf = self.smeta["surfaces"].get("A")
+        self.edge_x = None if surf is None else float(surf["xy"][0] - surf["flat_half_extent"][0])
+        self.table_top = None if surf is None else float(surf["top"])
         self.renderer = mujoco.Renderer(self.m, height=480, width=640) if video else None
         self.cam = mujoco.MjvCamera()
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -156,10 +161,11 @@ class Sim:
         self.d.qpos[3:7] = [np.cos(spawn_yaw / 2), 0, 0, np.sin(spawn_yaw / 2)]
         self.d.qpos[self.qadr] = self.default
         self.d.qpos[self.gq] = GRIP_OPEN
-        c = self.crate0.copy()
-        c[1] += crate_dy
-        self.d.qpos[self.crate_q : self.crate_q + 3] = c
-        self.d.qpos[self.crate_q + 3 : self.crate_q + 7] = self.crate_quat0
+        if self.crate_b is not None:
+            c = self.crate0.copy()
+            c[1] += crate_dy
+            self.d.qpos[self.crate_q : self.crate_q + 3] = c
+            self.d.qpos[self.crate_q + 3 : self.crate_q + 7] = self.crate_quat0
         self.d.ctrl[:] = 0
         mujoco.mj_forward(self.m, self.d)
         self.grip_target[:] = GRIP_OPEN

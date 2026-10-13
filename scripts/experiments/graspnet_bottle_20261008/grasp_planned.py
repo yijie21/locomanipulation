@@ -75,11 +75,41 @@ SETTLE_S, SEAT_S, ENTRY_SPEED = 1.2, 0.6, 0.06
 # these targets are wider and the fingers knocked them over at the full dash (objects 002 and 010, 2026-10-08).
 DASH_SPEED = 0.06
 SERVO_STEP_RAD = 0.02  # per physics tick (1 rad/s): an IK branch jump flung a held can off the table (2026-10-08)
+# BIAS (TODO 24.3, the SONIC-vs-ScaleBFM comparison): the controller's open-loop hand delivery error, measured by the
+# wbc_compare probe (outputs/wbc_compare_20261012/probe/bias.json, heading frame forward / left / up, metres), taken
+# off the planned path's pre-grasp and grasp targets so the open-loop approach lands nearer the pre-grasp. Only the
+# planned path: from the settle on, SupportedMotion's tracking feedback already integrates the delivery error, and a
+# constant there would be counted twice. Off = the 10-10 behaviour; run_grasp.py --bias-file switches it on.
+BIAS = {"on": False, "m": (0.0, 0.0, 0.0)}
+
+
+def bias_world(heading_xy) -> np.ndarray:
+    """BIAS in the world for the planning heading (unit xy vector): forward, left, up."""
+    if not BIAS["on"]:
+        return np.zeros(3)
+    hx, hy = np.asarray(heading_xy, dtype=float)[:2] / max(float(np.hypot(*heading_xy[:2])), 1e-9)
+    f, le, u = np.array([hx, hy, 0.0]), np.array([-hy, hx, 0.0]), np.array([0.0, 0.0, 1.0])
+    b = BIAS["m"]
+    return b[0] * f + b[1] * le + b[2] * u
+
+
 # Waist limits of both planners and the servo: StreamedArm's own (yaw +-0.35, roll +-0.15, pitch -0.05..), not the
 # model's +-2.6 rad yaw, which let the solver swing the torso.
 # Narrowed again after CuRobo's first plans parked the waist on all three of those limits (yaw 0.35, roll 0.15, pitch
 # 0.20) and SONIC delivered the hand 13 cm off (object 002, 2026-10-08): roll is held near zero, yaw within 0.25.
 WAIST_LIMITS = {12: (-0.25, 0.25), 13: (-0.05, 0.05), 14: (-0.05, None)}
+# Until 2026-10-12 the narrowing never reached the planner: StreamedArm.__init__ resets joints 12-14 to its own
+# ranges right after _ik_setup, so every batch up to `_wbc` planned (and served) under yaw +-0.35 / roll +-0.15.
+# Re-applied after the takeover since the `_wbc2` baseline (TODO 24.2.2).
+
+
+def apply_waist_limits(ik) -> None:
+    """Narrow the IK's waist ranges to WAIST_LIMITS (idempotent; call again after StreamedArm's reset)."""
+    for j, (lo, hi) in WAIST_LIMITS.items():
+        ik.lo[j] = max(ik.lo[j], lo) if lo is not None else ik.lo[j]
+        ik.hi[j] = min(ik.hi[j], hi) if hi is not None else ik.hi[j]
+
+
 # Where the robot stands for the grasp: the target this far ahead of the pelvis and to its right. Spawn's 4-5 s of
 # planner IDLE drifted the robot 0.11-0.30 m back (object 0.46-0.54 m ahead, out of reach), and the planner kept
 # drifting it ~0.1 m in the 1-2 s before the takeover (object 002, 2026-10-08); so once the pose stream holds the
@@ -433,9 +463,7 @@ class GraspPlanned:
             ik.hi[14] = min(ik.hi[14], WAIST_PITCH_MAX_PINNED)
         if DECOUPLE["on"]:
             ik.hi[23] = min(ik.hi[23], RIGHT_SHOULDER_ROLL_MAX)
-        for j, (lo, hi) in WAIST_LIMITS.items():
-            ik.lo[j] = max(ik.lo[j], lo) if lo is not None else ik.lo[j]
-            ik.hi[j] = min(ik.hi[j], hi) if hi is not None else ik.hi[j]
+        apply_waist_limits(ik)
         self.active = [12, 13, 14, 22, 23, 24, 25, 26, 27, 28]
         self.active_names = [MUJOCO_JOINT_NAMES[i] for i in self.active]
         return ik
@@ -454,9 +482,10 @@ class GraspPlanned:
         presort = None
         if PRESORT["on"]:
             order, presort = self._presort(ik, q0, pel_R, pel_t, [cands[i] for i in order], offset, neutral, table_top)
+        bias_w = bias_world(pel_R[:2, 0])  # BIAS: the open-loop path aims this much past the delivery error
         for ci in order:
             c = cands[ci]
-            Rw, gw = c["R"], c["tool"]
+            Rw, gw = c["R"], c["tool"] - bias_w
             pre_w = gw - PREGRASP_BACK * Rw[:, 0]
             # pelvis frame
             to_p = lambda x: pel_R.T @ (x - pel_t)  # noqa: E731
@@ -624,9 +653,10 @@ class GraspPlanned:
 
     def _plan_curobo_batch(self, q0, pel_R, pel_t, top, table_top, obj_mesh, offset, log):
         pre, gra = [], []
+        bias_w = bias_world(pel_R[:2, 0])
         for c in top:
             R = pel_R.T @ c["R"]
-            tool = pel_R.T @ (c["tool"] - pel_t)
+            tool = pel_R.T @ (c["tool"] - bias_w - pel_t)
             wrist = tool - R @ offset
             pre.append(pose7(wrist - PREGRASP_BACK * R[:, 0], R))
             gra.append(pose7(wrist, R))
@@ -710,6 +740,8 @@ class GraspPlanned:
                 session.reset.pin_arms()  # release the sim-side pin, whatever happened
             record["decoupled_arm"] = dict(DECOUPLE)
             record["entry_gate"] = dict(ENTRY_GATE)
+            record["bias"] = dict(BIAS)
+            record["hold_s"] = HOLD_S
             record["prefer_high"] = dict(PREFER_HIGH)
             record["base_freeze"] = dict(BASE_FREEZE)
             record.update(ok=ok, why=why, seconds=session.clock() - t0)
@@ -732,6 +764,7 @@ class GraspPlanned:
         table_top = float(surf["top"])
         # takeover, as the simple expert takes it
         arm = StreamedArm(p, "right", ik=ik, left_guard=False)
+        apply_waist_limits(ik)  # StreamedArm's reset of joints 12-14 would otherwise undo _ik_setup's narrowing
         arm.preview = PosePreview(
             acceleration=cfg.joint_acceleration, joint_limits=(ik.lo, ik.hi), continuous_handoff=True
         )

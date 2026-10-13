@@ -864,3 +864,19 @@
   - [ ] 23.7.4 待用户：graspnet 来源在现在的默认配置下两批 65 局（约 40 分钟），给详解第 3 节补一组同执行逻辑的当前对比；现在的对比是 10-10 之前的执行逻辑
   - [ ] 23.7.5 待用户：`make_scenes.py` 只读 SIMPLE 的 GraspNet 物体集；加一个读任意网格（obj / stl + 质量）的入口，缓存和 runbook 才对任意物体成立（详解第 6 节局限）
   - [ ] 23.7.6 待用户：缓存只在一个静止姿态下验证（同 21.3.5.1）；物体出生被碰歪时 `no cached grasp fits here`
+
+## 24. SONIC 对 ScaleBFM：65 物体抓取线上的控制器对比（用户 2026-10-12 提出；[计划与第 1 步](docs/handoff/wbc-compare-20261012.md)；DECISIONS 2026-10-12 末节）
+
+只换全身控制器，手程序、抓取、站距、指标两边相同；受控臂 + 一条放开姿态层的 ScaleBFM 臂；结果是诊断和论文资产，不承诺换线。
+
+- [x] 24.1 手指律统一 + 场景适配器（2026-10-12）：`ScaleBfmBackendConfig.grip_clip`；`scripts/experiments/wbc_compare_20261012/bfm_object_scene.py`（SONIC 律配置、`verify_hand`、`stance`、`check`）；65 场景 0 摔 0 合不上，右掌垫垂边偏置 4.2 cm；`tests/test_scalebfm_grip_law.py`。
+- [x] 24.2 开环探针（2026-10-12）：27 格（前 0.30/0.38/0.46 × 左 −0.20/−0.12/−0.04 × z 0.67/0.74/0.81，接近下俯 30°，格间回家），`probe_cells.py` / `bfm_probe.py` / `sonic_probe.py` / `probe_summary.py`；偏置 ScaleBFM (−0.4, +0.3, +1.8) cm、SONIC (−1.2, −4.1, +1.0) cm，减常数后残差 p90 3.0 对 5.2 cm；SONIC 的误差是腰 yaw / roll 只交付一半（handoff §4）。
+  - [x] 24.2.1 用户 2026-10-12：SONIC 不补腰，按决定 2 原样只减常数。
+  - [x] 24.2.2 用户 2026-10-12 定修：`grasp_planned.apply_waist_limits(ik)` 在 `StreamedArm` 接管后再套一次（探针同）；SONIC 探针重跑 23/27 可达、偏置 (−0.5, −2.8, +0.7) cm（宽腰 (−1.2, −4.1, +1.0)），yaw 仍只交付一半；基线 `_wbc2` 48/130 对 `_wbc` 48/129 配对 21 : 21（p = 1）——进入撞倒 19 → 4、预抓误差 2.9 → 2.3 cm，但 IK 无路径 12 → 18、tier 2 选中 19 → 32、合爪无接触 19 → 35：交付精度换可达性，净效零（handoff §8，`compare/sonic_wbc_vs_wbc2.md`）。
+- [x] 24.3 手程序移植（2026-10-12）：`bfm_grasp.py`，接近开环减偏置、settle 起 `SupportedMotion` 同款跟踪反馈 + 同一套 gate / 修正 / 合爪 / 抬 / 保持，放开臂沿用规划器的路径清障拒绝；SONIC 侧 `grasp_planned.BIAS` + `HOLD_S`、`run_grasp.py --bias-file/--hold`；配对冒烟 040 抬起（handoff §5）。
+- [x] 24.4 批次（2026-10-12）：SONIC `_wbc` 48/129（偏置 + 2 s 保持）与对照 `_wbc_nobias` 53/130（p 0.54，偏置对 SONIC 无效）；ScaleBFM 受控臂 `bfm_grasp/paired` 77/130，放开臂 `bfm_grasp/free` 55/130。
+- [x] 24.5 汇总（2026-10-12）：`compare_summary.py` → `compare/{paired,free}.md`（配对表、失败类、三个稳定量）；`compare_videos.py` → `videos/paired/*.mp4` + `reel.mp4`、`videos/free/`。受控臂 SONIC 48 对 ScaleBFM 77，不一致 10 : 39，p < 0.001；见 handoff §7。
+- [x] 24.6 ScaleBFM 姿态交付包络（用户 2026-10-12 定做；handoff §8）：`bfm_attitude_probe.py`（仰角 7 × 偏航 12 × 滚转 2 = 156 姿态 × 2 高度，5 min 不录像）→ `attitude_summary.py` → `probe/scalebfm_attitude/envelope.{json,md}`：可交付 31/156（≤ 5 cm 且 ≤ 15°），全在虎口朝左、偏航 −60..+90°；虎口朝右（滚转 180）一个都没有。受控臂 `paired2`（按 `_wbc2` 配对）SONIC 48 对 ScaleBFM 68 / 129（13 : 33，p = 0.005；`_wbc2` 多选的 tier 2 让 ScaleBFM 从 77 掉到 68）；包络事后分 SONIC 选的抓取：包络内 92% 抬起、外 37%；放开臂 `free2`（`bfm_grasp.py --envelope`）SONIC 48 对 ScaleBFM 104 / 129（3 : 59，p < 0.001；没过滤时 55），预抓误差 p90 14.9 → 5.3 cm，合爪无接触 0。
+  - [ ] 24.6.1 候选后续（待用户）：按包络给每个姿态单独一个前馈常数（`envelope.json` 里已存 `bias_heading_cm`）；包络只在一个物体、两个高度上探的，位置 × 姿态的交叉没扫。
+- [x] 24.7 终点线刹车，SONIC 对 ScaleBFM（用户 2026-10-13 提出；handoff §9）：空地走到 1.5 m 的线再停，0.55 / 0.35 / 0.25 × 10 局；`bfm_brake.py --program marker|plan`、`brake_batch.sh`、`brake_summary.py`，`runtime.Sim` 允许无物体场景，渲染复用 `render_brake_marker_20260923.py`（按行线位置 + 字幕标签）；`tests/test_wbc_brake.py`。越线刹车惯性 ScaleBFM 4.5 ± 0.6 / 2.5 ± 0.6 / 0.5 ± 0.4 cm 对 SONIC 24.7 ± 3.3 / 10.4 ± 4.9 / 4.0 ± 1.4（横向 sd ≤ 1.6 对 4–5 cm，yaw 0.2° 对 2–3°，0.5 s 站稳）；不越线程序两边 0/10 越线，ScaleBFM 脚尖停线前 4–8 cm（sd ≤ 2）对 SONIC 守线 13–22 cm（sd 3.5–12，最差 −2.3）。表 `outputs/wbc_compare_20261012/brake/brake.md`，视频 `brake/videos/`。
+  - [ ] 24.7.1 候选后续（待用户）：ScaleBFM plan 停稳比参考终点短 1.6–4.5 cm（0.25 有两局 8–9 cm），加 3 cm 前馈再验；要不要在 65 物体线让 ScaleBFM 真走进去（决策 4 站位不动，是另一条线）。

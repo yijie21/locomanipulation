@@ -7,3 +7,4 @@ scene_dir: ''
 object_name: water_bottle
 grip_kp: 1.0
 grip_kd: 0.025
+grip_clip: 4.0
