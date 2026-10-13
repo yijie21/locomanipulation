@@ -46,6 +46,9 @@ bash install_scripts/install_camera_server.sh
 
 ```bash
 # Run Unitree G1 robot
+# Connect Unitree G1
+ssh unitree@172.28.36.54 #WIFI
+ssh unitree@192.168.123.164 #Ethernet
 # Calibrate pan-tilt head camera
 sudo systemctl stop g1_comp_servo.service
 cd ~/g1_comp_servo_service/build # then move the camera to the bottom right position
