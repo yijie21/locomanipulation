@@ -34,6 +34,14 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/run
 ## 2. 起机器人侧（机器人控制电脑）
 
 按机器人上现有的流程启动 C++ deploy 和相机服务器。本客户端只要求它们监听上面的端口。
+```bash
+# Run Unitree G1 robot
+~/set_head_camera.sh && sudo systemctl restart dex1_gripper.service
+# Run Unitree G1 robot OR local workstation
+cd ~/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts/setup_env.sh
+./deploy.sh --input-type zmq_manager real --zmq-host 172.28.36.68 --hand-type dex1_1
+# wait for "Init done"
+```
 
 ## 3. 起客户端
 

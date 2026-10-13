@@ -11,12 +11,17 @@ cd "$(dirname "$0")/../../.." || exit 1
 REPO=$PWD
 GN=$(realpath -m "${1:-third_party/graspnet-baseline}")
 API=$(realpath -m "${2:-third_party/graspnetAPI}")
-export TMPDIR=${TMPDIR:-/workspace/tmp}
+export TMPDIR=${TMPDIR:-~/workspace/tmp}
 mkdir -p "$TMPDIR"
 # the image points uv's cache and interpreters at root-owned /.uv; fall back to TMPDIR when they are not writable
 writable() { [ -n "$1" ] && mkdir -p "$1" 2>/dev/null && [ -w "$1" ]; }
 writable "${UV_CACHE_DIR:-}" || export UV_CACHE_DIR=$TMPDIR/uv_cache
 writable "${UV_PYTHON_INSTALL_DIR:-}" || export UV_PYTHON_INSTALL_DIR=$TMPDIR/uv_python
+# behind a TLS-intercepting proxy the proxy's CA is in the system store but not in the venv's certifi, so gdown
+# (requests) and huggingface_hub (httpx) fail with CERTIFICATE_VERIFY_FAILED; trust the system bundle unless told otherwise
+if [ -z "${REQUESTS_CA_BUNDLE:-}${SSL_CERT_FILE:-}" ] && [ -r /etc/ssl/certs/ca-certificates.crt ]; then
+    export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+fi
 # torch 2.7 cu128 refuses to build extensions with any other toolkit (the image's CUDA_HOME is 13.0)
 CUDA=${CUDA_HOME:-}
 "$CUDA/bin/nvcc" --version 2>/dev/null | grep -q "release 12.8" || CUDA=/usr/local/cuda-12.8
@@ -60,7 +65,17 @@ step "5/7 graspnetAPI (without its pinned old dependencies)"
 
 step "6/7 weights logs/checkpoint-rs.tar (RealSense, 12 MB)"
 mkdir -p "$GN/logs"
-[ -s "$GN/logs/checkpoint-rs.tar" ] || "$GN/.venv/bin/gdown" -q 1hd0G8LN6tRpi4742XOTEisbTXNZ-1jmk -O "$GN/logs/checkpoint-rs.tar"
+# networks that filter Google Drive answer with a 302 to a login portal instead of the file; gdown then reports an
+# SSL or HTML error. The only other official source (Baidu Pan) is usually filtered the same way.
+if ! [ -s "$GN/logs/checkpoint-rs.tar" ]; then
+    "$GN/.venv/bin/gdown" -q 1hd0G8LN6tRpi4742XOTEisbTXNZ-1jmk -O "$GN/logs/checkpoint-rs.tar" || {
+        rm -f "$GN/logs/checkpoint-rs.tar"
+        echo "[install_graspnet] could not download checkpoint-rs.tar from Google Drive (blocked network or portal login)."
+        echo "[install_graspnet] fetch it in a browser: https://drive.google.com/file/d/1hd0G8LN6tRpi4742XOTEisbTXNZ-1jmk/view"
+        echo "[install_graspnet] put it at $GN/logs/checkpoint-rs.tar and rerun this script; it resumes here."
+        exit 1
+    }
+fi
 
 step "7/7 selftest on graspnet-baseline's example scene"
 "$PY" -u "$REPO/scripts/experiments/graspnet_bottle_20261008/graspnet_server.py" --selftest --gpu "${GPU:-0}" \
