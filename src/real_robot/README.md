@@ -76,7 +76,7 @@ sudo systemctl restart dex1_gripper.service
 ```bash
 # Run local workstation
 cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts/setup_env.sh
-./deploy.sh --input-type zmq_manager real --zmq-host 172.28.36.68 --hand-type dex1_1
+./deploy.sh --input-type zmq_manager real --zmq-host localhost --hand-type dex1_1
 # wait for "Init done"
 ```
 
