@@ -25,8 +25,8 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- **25.1 否决关**：W0（ScaleBFM 在 mars 上站、走、弯腰）（a 已并入：mars 标称腰 50 N·m）、h（本机 TensorRT 推理 p99）。任一不过就停下查原因、汇报用户。
-- 之后按计划 §8 的顺序：25.2 bottle L1 → 25.3 warehouse L1 → 25.4 C1–C7 / mode 扫描 / S1 → 25.5 扰动 → 25.6 L1 关口交用户。
+- **25.1 否决关已过（10-13）**：W0 + a 80 局 0 摔，h 本机 TensorRT FP32 p99 0.90 ms（FP16 不能用）；结果在计划 §9，产物 `outputs/controller_compare_20261013/{w0,h}/`。
+- **25.2 bottle L1（stock）**：B1–B8；SONIC 一侧接实时栈，单独跑。之前先做 25.1.1（`foot_slip` 换接触点速度积分）。
 
 ## 未解决 / 卡点
 

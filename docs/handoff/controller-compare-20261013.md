@@ -134,3 +134,41 @@ mode 表（`assets/scalebfm/mode_table.pt`）：0 骨盆；1 双腕；2 骨盆 +
 
 - **资源**：ScaleBFM 不录像时吃 CPU（每臂 4–5 核），SONIC 栈实时、单独一条 lane；两边不同时跑（CPU 配额 15.36 核）。开跑前看 STATE、`pgrep`、`nvidia-smi`。
 - **产物**：`outputs/controller_compare_20261013/<项>/`，每项一张表，加左 SONIC、右 ScaleBFM 的并排视频，带幽灵手，预览 ≤ 500 KB。过程和结果写进本文后续章节。
+
+## 9. 25.1 否决关结果（2026-10-13）：W0、a、h 都过
+
+脚本在 `scripts/experiments/controller_compare_20261013/`，产物在 `outputs/controller_compare_20261013/{w0,h}/`。
+
+**W0 + a**（`w0_admission.py`、`w0_batch.sh`、`w0_summary.py`；表 `w0/run2/w0.md`）：ScaleBFM M 22200 在 mars warehouse 场景，力矩 = mars 标称（腰 50、踝 35 N·m，由场景关节限位给出；ScaleBFM 自己的限幅是 50）。**80 局 0 摔**：
+
+| 测试 | 局 | 摔 | 主要读数 |
+|---|---|---|---|
+| 站 30 s（mode 2） | 10 | 0 | 骨盆漂 2.4 ± 0.4 cm，脚外滑 6.1 ± 0.5 cm（见下） |
+| 走 1.5 m 到站位，0.25 / 0.35 / 0.55 m/s | 30 | 0 | 停位 −3.3 / −3.2 / −1.6 cm（sd ≤ 1.9），横向 ≤ 0.9 cm，yaw ≤ 0.4° |
+| 弯腰到 33 cm 箱抓取姿态，mode 2 | 10 | 0 | 躯干俯仰 39.3°（目标 45.1°），腕位误差 7.9 / 9.4 cm、姿态 25 / 16°，腰 pitch 力矩 p95 32 N·m |
+| 弯腰到 18 cm 箱抓取姿态，mode 2 | 10 | 0 | 躯干俯仰 51.2°（目标 58.7°），腕位误差 13.5 / 14.8 cm（sd 6），腰 pitch 力矩 p95 40 N·m（最大 44） |
+| 同上两种箱高，mode 1（只给双腕） | 20 | 0 | 不弯腰：躯干 −9° / +12°，腕位误差 12–15 cm |
+
+做法：
+- **弯腰目标**：SONIC 在 mars 上成功局（`warehouse_mars_guard_off_20261008`，9 局）合爪那一拍的姿态：骨盆高度和倾斜、躯干俯仰、双腕在骨盆航向系里的位姿（`sonic_grasp_posture.py` → `w0/posture_33_mars.json`）。18 cm 箱在 mars 上没跑过，用 stock 的 pilot（`warehouse_edges_pilot_45x32x18_20260928`，4 局，`posture_18_stock.json`）。开环下发，2.5 s 下去、保持 4 s、2.5 s 起来。
+- **重复局要扰动关节**：第一轮（`w0/run1_samejoints/`）10 次站立结果完全相同。平地上，平移、转动站位都是同一局，因为策略看到的是基座系。第二轮起，每局初始 29 个关节加 ±0.03 rad 的均匀扰动（`--jitter-q`）。两轮都是 0 摔。
+
+读数里要带到后面的三件事（都不是否决项）：
+1. **站立时脚往外滑**：两脚间距 30 s 内从 23.7 cm 被慢慢撑到约 40 cm，越往后越慢，脚始终没离地，骨盆不动。stock（`sim_lowcom`、`walk`）和 mars 上一样（6.5 对 6.0 cm），所以不是 mars 带来的，是 ScaleBFM 在我们的 MuJoCo 地面上的站立行为。B5 / B2 要和 SONIC 对比。
+2. **开环够不到 SONIC 的抓取姿态**：mode 2 少弯 6–7°，腕位差 8–15 cm；mode 1 根本不弯腰。这是 W2 / W3 的题（闭环修正和 mode 7 都还没试），不是 W0 的。18 cm 箱时腰 pitch 力矩 p95 40 N·m，超过真机的 35。
+3. **`foot_slip` 只在站立时可信**：它累加脚接触地面时踝关节原点的水平位移，迈步时脚跟、脚尖的部分接触也会算进去，弯腰局里会到 13–35 cm。B5 之前要换成接触点速度积分。
+
+**h**（`h_latency.py`；`h/latency.json`）：一步 = `Policy.__call__` 全程（历史、目标转基座系、网络含内部 FK、拷回主机），在 mars 站立循环里计时 3000 步。本机 RTX 5090 + EPYC 9135：
+
+| 后端 | 平均 | p99 | 最大 | 和 eager 的误差 |
+|---|---|---|---|---|
+| eager CUDA | 5.1 ms | 8.6 ms | 9.2 ms | – |
+| TensorRT FP32（ONNX opset 17 → `tensorrt` 10.15） | 0.88 ms | 0.90 ms | 2.3 ms | 0.001 rad，站满 60 s |
+| TensorRT FP16 | – | – | – | 0.50 rad，第 1010 步摔：**不能用** |
+| eager CPU（16 线程） | 4.6 ms | 12.4 ms | 16.3 ms | – |
+
+本机下限远低于 20 ms。机载电脑型号未知（25.11.1），到真机阶段再在机载电脑上复测 FP32 引擎。导出时有两个坑：
+- 导出要用 CPU 副本：在 CUDA 上导出时，常量折叠会碰到 CPU 上的常量，报设备不一致。
+- 输出不能和输入同名：两个都叫 `action` 时，ONNX 会把输入改名成 `action.1`，引擎里这个输入就一直没喂进去，输出偏 1.4 rad。现在输出叫 `action_out`，遇到改名会直接报错。
+
+**下一步**：25.2 bottle L1（stock）。SONIC 一侧要接实时栈，按 §6 的公平性规则单独跑。
