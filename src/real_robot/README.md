@@ -38,20 +38,34 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/run
 # Install camera server
 cd ~/ether-onboard/third_party/GR00T-WholeBodyControl
 bash install_scripts/install_camera_server.sh
+```
 
+```bash
 # Run Unitree G1 robot
 # Calibrate pan-tilt head camera
 sudo systemctl stop g1_comp_servo.service
 cd ~/g1_comp_servo_service/build # then move the camera to the bottom right position
 ./test_calibration # then wait several seconds, and the camera will pan
 sudo systemctl start g1_comp_servo.service # then wait several seconds, and the camera will tilt
-# set camera 
+# Check camera
+sudo systemctl status composed_camera_server.service
+# Set camera position 
 sudo systemctl stop g1_comp_servo.service
 bash ~/set_head_camera.sh
-# set gripper 
-sudo systemctl restart dex1_gripper.service
+# Launch three camera
+sudo systemctl restart composed_camera_server
+journalctl -u composed_camera_server -n 20 --no-pager   # "All 3 cameras ready" and FPS 
 
-# Run Unitree G1 robot OR local workstation
+# Check gripper
+sudo systemctl status dex1_gripper.service
+cd && cd dex1_1_service/bin && ./test_dex1_1_gripper_server -l -r
+
+# Set gripper 
+sudo systemctl restart dex1_gripper.service
+```
+
+```bash
+# Run local workstation
 cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts/setup_env.sh
 ./deploy.sh --input-type zmq_manager real --zmq-host 172.28.36.68 --hand-type dex1_1
 # wait for "Init done"
