@@ -35,6 +35,10 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/run
 
 按机器人上现有的流程启动 C++ deploy 和相机服务器。本客户端只要求它们监听上面的端口。
 ```bash
+# Install camera server
+cd ~/ether-onboard/third_party/GR00T-WholeBodyControl
+bash install_scripts/install_camera_server.sh
+
 # Run Unitree G1 robot
 # Calibrate pan-tilt head camera
 sudo systemctl stop g1_comp_servo.service
@@ -42,6 +46,7 @@ cd ~/g1_comp_servo_service/build # then move the camera to the bottom right posi
 ./test_calibration # then wait several seconds, and the camera will pan
 sudo systemctl start g1_comp_servo.service # then wait several seconds, and the camera will tilt
 # set camera 
+sudo systemctl stop g1_comp_servo.service
 bash ~/set_head_camera.sh
 # set gripper 
 sudo systemctl restart dex1_gripper.service
