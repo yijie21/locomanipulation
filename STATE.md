@@ -12,11 +12,10 @@
 
 ## 磁盘
 
-- 已确认（10-14 02:50 UTC）：`/workspace` 剩 28 GB（98%）。跑仿真 / pytest / 安装前先 `export TMPDIR=/workspace/tmp`。
-- **计划删除**：用户 10-13 批准，10-13 15:34 UTC 写入 STATE；**最早 2026-10-14 16:00 UTC 执行**（TODO 9.12）。
-  - 约 120 GiB：三个 10 步冒烟 run 的 `model/`；`outputs/deploy_{docbuild_20260924,pinned_20260925}` 和 `.claude/worktrees/` 下的 worktree；10-08 及以前的 run 和 `outputs/fresh_repro_20260925` 里 ≥ 1 MB 的文件；根目录 wandb 和缓存。
-  - 清单和保留项见 `outputs/cleanup_20261013/summary.md`。执行 `bash outputs/cleanup_20261013/apply.sh`，到点前或 SONIC 栈在跑时它会拒绝。
-  - 用户说"执行清理"才跑。22.7 的 CuRobo 产物用户说先不删，不在清单里。
+- 已确认（10-14 03:31 UTC）：`/workspace` 剩 150 GB（86%）。跑仿真 / pytest / 安装前先 `export TMPDIR=/workspace/tmp`。
+- **9.12 清理已执行**（10-14 03:30 UTC，用户当场说不用等 24 小时）：6 个 worktree、三个冒烟 `model/`、8902 个 ≥ 1 MB 文件（47.9 GB），28 → 150 GB。
+  - 记录 `outputs/cleanup_20261013/apply.log`，worktree 删前状态在 `worktree_state/`。`refactor-step1` 的 `outputs` / `third_party` 软链接先 unlink 再删。
+  - `/workspace/tmp/p03/deploy.log` 2.3 GB 截到最后 20 MB（只有两个 9 天前的 `tail -F` 开着它）。22.7 的 CuRobo 产物没动。
 - 更早待用户定的删除：21.3.4.6、11.9、12.19.4、12.20.3、12.20.5、13.5、13.6.12、13.6.12.1、13.6.17、14.7；要删先在这里写明，等 24 小时。
 
 ## 当前进度
@@ -32,9 +31,9 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- 25.9.1 待用户：warehouse 专家要不要按 ScaleBFM 重新调过再比，还是按"专家原样"下结论。
+- 25.9.1：用户定重标、由 agent 闭环来做；方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`，D1–D7 已定，第 0 阶段进行中（25.9.1.2）。
 - 25.9.2 待用户：ScaleBFM 上真机用什么做世界位姿。
-- 9.12：到 10-14 16:00 UTC 以后，用户说了才执行清理。用户没定 25.9 之前不开 25.10。待查 25.8.3（SONIC bottle 一局挂住 12 分钟）。
+- 用户没定 25.9 之前不开 25.10。待查 25.8.3（SONIC bottle 一局挂住 12 分钟）。
 
 ## 未解决 / 卡点
 

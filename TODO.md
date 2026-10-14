@@ -366,7 +366,7 @@
 - [ ] 9.10 `crate_table30_record`（crate 的完整规模）还没在 lockstep 下跑过；runbook 里它的数字是 09-15 墙钟 71/100
 - [x] 9.11 （2026-09-30，`34fcd13`，用户问答定）三个 runbook 只留命令、做什么一句、得到什么一句、每步总耗时；移出的内容进详解页（`warehouse_design.md` 第 10 节）；行数上限降到实际加约 10%（warehouse 215、bimanual 125、single_arm 115）
   - [ ] 9.11.1 可选：隔离环境里的新读者照新 warehouse.md 跑一遍（这次没做，只做了 `--dry-run` 和改动部分的实跑）
-- [ ] 9.12 （用户 2026-10-13 批准报告里的"一"和"二"；STATE 10-13 15:34 UTC 写明，最早 2026-10-14 16:00 UTC 执行）删约 120 GiB：`/workspace` 剩 40 GB（97%）。三个 10 步冒烟检查点 `outputs/runs/{warehouse_smoke_20260930,warehouse_smoke_unreal_20260930,warehouse_film_unreal_20260929}/model`（72 GiB）；两个 deploy worktree `outputs/deploy_{docbuild_20260924,pinned_20260925}` 和 `.claude/worktrees/` 四个已合并的 worktree（先存 diff）；10-08 及以前 run 和 `outputs/fresh_repro_20260925` 的 ≥ 1 MB 文件（约 48 GB；不动 model / train_dataset / val_dataset / skills / grasp_planned / manifest，代码按名引用的 run 整个跳过）；根目录 wandb、缓存。清单、规则、脚本在 `outputs/cleanup_20261013/`（`summary.md`、`apply.sh`）
+- [x] 9.12 （用户 2026-10-13 批准报告里的"一"和"二"；STATE 10-13 15:34 UTC 写明，最早 2026-10-14 16:00 UTC 执行；10-14 03:30 UTC 用户说不用等，已执行，28 → 150 GB，记录 `outputs/cleanup_20261013/apply.log`）删约 120 GiB：`/workspace` 剩 40 GB（97%）。三个 10 步冒烟检查点 `outputs/runs/{warehouse_smoke_20260930,warehouse_smoke_unreal_20260930,warehouse_film_unreal_20260929}/model`（72 GiB）；两个 deploy worktree `outputs/deploy_{docbuild_20260924,pinned_20260925}` 和 `.claude/worktrees/` 四个已合并的 worktree（先存 diff）；10-08 及以前 run 和 `outputs/fresh_repro_20260925` 的 ≥ 1 MB 文件（约 48 GB；不动 model / train_dataset / val_dataset / skills / grasp_planned / manifest，代码按名引用的 run 整个跳过）；根目录 wandb、缓存。清单、规则、脚本在 `outputs/cleanup_20261013/`（`summary.md`、`apply.sh`）
 
 
 ## 10. warehouse 默认采集改为四边随机；采集前打印设置；固定起点作为选项（用户 2026-09-28；DECISIONS 同日）
@@ -916,7 +916,13 @@
   - [ ] 25.8.2 并排视频只做了 warehouse L2 两局（`l2/videos/`）；C1–C7 片段、bottle L2、扰动格都没做（计划 §8 要求每项都有）。
   - [ ] 25.8.3 待查：SONIC bottle L2 第 30 局挂住 12 分钟的原因（站在离瓶子 1.4 m 处、sim 在跑、采集进程不动；py-spy 没有权限，没拿到栈）。
 - [ ] 25.9 最终判定（计划 §2），结果交用户。
-  - [ ] 25.9.1 待用户：L2 主判据不满足——要不要把 warehouse 专家按 ScaleBFM 重新标定（下蹲 / 前倾上限、站位、反馈增益）后再比，还是按"专家原样"出结论。
+  - [ ] 25.9.1 L2 主判据不满足——要不要把 warehouse 专家按 ScaleBFM 重新标定（下蹲 / 前倾上限、站位、反馈增益）后再比，还是按"专家原样"出结论。2026-10-14 用户：重标，由 agent 闭环来做（RSI 第一个实例）；方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`
+    - [x] 25.9.1.1 方案 §10 的 D1–D7（用户 10-14：都按建议；token 上限暂定 400 USD）
+    - [ ] 25.9.1.2 第 0 阶段：SONIC 跑验收池 60 局；快照 / 分叉 + 一致性检查；交接记录；包络表；Gate 脚本 + 字段访问记录；闭环驱动；`rules.md`
+    - [ ] 25.9.1.3 第 1 阶段：诊断，检验"专家是和 SONIC 一起调出来的"假设
+    - [ ] 25.9.1.4 第 2 阶段：无人值守改进闭环（停止条件见方案 §9）
+    - [ ] 25.9.1.5 第 3 阶段：SONIC 跑封存集 80 局，最终候选对 SONIC、对 incumbent
+    - [ ] 25.9.1.6 （可选）第 4 阶段：同预算的 RoboRSI 式扁平闭环对照
   - [ ] 25.9.2 待用户：ScaleBFM 上真机的世界位姿来源（腿运动学 + IMU 在它滑脚时漂 15–40%，计划 §24）：外部定位、视觉里程计，还是把世界锚定的参考改成相对机身。
 - [ ] 25.10 ScaleBFM 部署程序（Python + TensorRT，接口同 SONIC deploy）→ sim2sim。
 - [ ] 25.11 真机冒烟（计划 §7 的六步，用户团队操作，SONIC 同日对照）。
