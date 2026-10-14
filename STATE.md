@@ -32,6 +32,7 @@
 ## 下一步（编号见 `TODO.md`）
 
 - 25.9.1：第 0–3 阶段做完（方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md` §12–16）。封存集 ScaleBFM 重标后 48/80 对 SONIC 30/80（p 0.013），护栏全过；增益几乎全来自第 1 阶段的干预归因（闭环自己只多 2 局）。第 4 阶段（§17）待用户定；25.9 整体判定也待用户（bottle 标称仍 39 对 40）。
+- 25.9.1.7：伸手接了 CuRobo 路线（方案 §18，`visual.reach_route planned`，只在 ScaleBFM 局里）：封存集 48 → 68/80，途中不碰箱子。用前先起服务 `scripts/experiments/scalebfm_warehouse_rsi_20261014/route_service.sh`（GPU 0，端口 5795）。
 - 25.9.2 待用户：ScaleBFM 上真机用什么做世界位姿。
 - 用户没定 25.9 之前不开 25.10。待查 25.8.3（SONIC bottle 一局挂住 12 分钟）。
 

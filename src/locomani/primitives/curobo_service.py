@@ -16,6 +16,10 @@ Messages (JSON, REQ/REP):
     {"cmd": "plan", "start": [n], "goal_joints": [n], "world": {...}}
         -> the same reply for one joint-space goal (MotionGen.plan_single_js, collision-checked like a pose plan)
 
+A plan request may carry `"check_start_validity": false` (default true): CuRobo then plans from a start that already
+touches an obstacle instead of refusing it (MotionGenStatus.INVALID_START_STATE_WORLD_COLLISION). The warehouse reach
+route retries with it once, for a hanging hand already inside its inflated clearance (tasks/crate/reach_route.py).
+
 Poses are in the robot base frame CuRobo plans in (the pelvis); joint vectors follow the request's `names`. `retract` is
 the posture the solvers regularise toward: with none the waist parked on its limits (2026-10-08). It is part of the
 configuration, so a changed retract rebuilds; the GraspNet server kept the first request's start for every later one.
@@ -270,7 +274,12 @@ class RoutePlanner:
                 joint_names=list(self.motion_gen.kinematics.joint_names),
             ),
             Pose(position=torch.tensor(g[:, :3], device="cuda"), quaternion=torch.tensor(g[:, 3:], device="cuda")),
-            MotionGenPlanConfig(enable_finetune_trajopt=False, num_trajopt_seeds=12, max_attempts=10),
+            MotionGenPlanConfig(
+                enable_finetune_trajopt=False,
+                num_trajopt_seeds=12,
+                max_attempts=10,
+                check_start_validity=bool(req.get("check_start_validity", True)),
+            ),
         )
         success = result.success.cpu().numpy().astype(bool).reshape(-1)[:n]
         out = dict(ok=False, index=None, path=[], success=success.tolist(), status=str(result.status))
@@ -306,7 +315,13 @@ class RoutePlanner:
             )
 
         result = self.motion_gen.plan_single_js(
-            state(start), state(goal), MotionGenPlanConfig(enable_finetune_trajopt=False, max_attempts=10)
+            state(start),
+            state(goal),
+            MotionGenPlanConfig(
+                enable_finetune_trajopt=False,
+                max_attempts=10,
+                check_start_validity=bool(req.get("check_start_validity", True)),
+            ),
         )
         ok = bool(result.success.reshape(-1)[0].item())
         out = dict(ok=ok, index=0 if ok else None, path=[], success=[ok], status=str(result.status))

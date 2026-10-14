@@ -120,12 +120,14 @@ class ArmRouteClient:
         """To any of the end-effector `goals` (x, y, z, qw, qx, qy, qz in the planning frame)."""
         return self._plan(start, obstacles, goals=[[float(v) for v in g] for g in goals])
 
-    def plan_to_joints(self, start, goal, obstacles=()) -> Route:
-        """To the joint vector `goal`, in the configured joint order (inside the configured limits)."""
+    def plan_to_joints(self, start, goal, obstacles=(), *, check_start_validity: bool = True) -> Route:
+        """To the joint vector `goal`, in the configured joint order (inside the configured limits). With
+        `check_start_validity` False the service plans from a start that already touches an obstacle."""
         goal = [float(v) for v in goal]
         if self.names is not None and len(goal) != len(self.names):
             raise ValueError(f"goal has {len(goal)} joints, configured {len(self.names)}")
-        return self._plan(start, obstacles, goal_joints=goal)
+        extra = {} if check_start_validity else {"check_start_validity": False}
+        return self._plan(start, obstacles, goal_joints=goal, **extra)
 
     def _plan(self, start, obstacles, **goal) -> Route:
         if self.names is None:

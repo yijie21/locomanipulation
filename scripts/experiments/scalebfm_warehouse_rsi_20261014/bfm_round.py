@@ -7,7 +7,8 @@ The round is 25.7's (controller_compare_20261013/bfm_expert_warehouse.run_round,
       stance: near            # near: stand_off - stand_depth_tolerance (25.7); centre: stand_off
       stance_shift: 0.0       # m added to that stance along the walk-in axis (+ = farther from the box)
       servo: none             # none | pad (25.3's jaw-centre + attitude servo)
-      set: {visual.tracking_gain: 0.5}   # task-config overrides, block.field -> value
+      set: {visual.tracking_gain: 0.5}   # task-config overrides, block.field -> value (visual.reach_route planned:
+                                         # no ready pose, a CuRobo route from the hang; the service must be running)
       reference: {}           # transforms of the expert's whole-body reference (REFERENCE below)
       extensions: {}          # extensions.py hooks by name -> params (new behaviour the loop's Engineer adds)
 * a fork: `--fork PHASE:DELTA` runs the base spec until PHASE (walk | ready | reach) starts and the base spec merged
@@ -249,6 +250,8 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
     """One round from a start state. ctxs: {"base": Context, "fork": Context or None}; fork: the phase the fork's
     context takes over at (None = base throughout)."""
     ctx = ctxs["fork"] if fork == "walk" else ctxs["base"]
+    if ctxs.get("route_planner") is not None:
+        ctxs["route_planner"].last = {}  # this round's plan only
     spec, cfg, solver = ctx.spec, ctx.cfg, ctx.solver
     pol.mode = torch.tensor([ctx.mode], dtype=torch.long, device=pol.mode.device)
     vis = cfg.visual
@@ -333,6 +336,24 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
                 events["settle"] = t
                 take_over("ready")
                 st8["phase"] = "ready"
+                if vis.reach_route == "planned":
+                    # visual.reach_route planned: no ready pose; the reach starts from the hang and its first step
+                    # plans the route to the pregrasp points (CoordinatedReach.plan_route)
+                    take_over("reach")
+                    raw = pub.state()
+                    raw["t"] = t
+                    st8["low"] = CoordinatedReach(
+                        solver,
+                        cfg,
+                        raw,
+                        reference_joints=sim.d.qpos[body.qadr].copy(),
+                        reference_quaternion=np.asarray(raw["pelvis"]["quat"], float),
+                        target=ctx.target,
+                    )
+                    st8["low"].route_planner = ctxs["route_planner"]
+                    events["handoff"] = t
+                    st8["phase"] = "reach"
+            if st8["phase"] == "ready":
                 st8["hold_pose"] = (sim.d.qpos[:3].copy(), yaw_quat(R.yaw_of(sim.d.qpos[3:7])))
                 q_meas = sim.d.qpos[body.qadr].copy()
                 st8["q0"] = q_meas
@@ -380,6 +401,21 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
             raw["t"] = t
             openings = np.array([2 * (np.mean(raw["palms"][s]["hand_q"][:2]) + 0.023) for s in ("left", "right")])
             cmd = st8["low"].step(t, Estimate(raw, KEY, t), raw, openings, motion_time=t)
+            if cmd.finished and cmd.reason in ("route_not_found", "route_goal_unreachable") and "fallback" not in st8:
+                # no planned route (2026-10-14: hanging fingers already on the box's near wall, 1 of 50): this round
+                # goes the old way -- the ready pose in place, then the straight reach -- and the record says so
+                st8["fallback"] = cmd.reason
+                events["route_fallback"] = t
+                st8["phase"] = "ready"
+                st8["hold_pose"] = (sim.d.qpos[:3].copy(), yaw_quat(R.yaw_of(sim.d.qpos[3:7])))
+                st8["q0"] = sim.d.qpos[body.qadr].copy()
+                st8["ready"] = solver.lifted_ready(vis.ready_tool, vis.ready_pitch_deg, st8["q0"]).joints.copy()
+                st8["ready_t"] = t
+                st8["low"] = None
+                cfg = cfg.with_overrides(["visual.reach_route=straight"])
+                vis = cfg.visual
+                k += 1
+                continue
             if cmd.phase not in events:
                 events[cmd.phase] = t
             jaw = HAND_OPEN + cmd.closure * (vis.close_target - HAND_OPEN)
@@ -442,6 +478,13 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
         fields_read=sorted(log.read),
         wall_s=round(time.time() - t_wall, 1),
     )
+    low = st8.get("low")
+    if "fallback" in st8:
+        facts["route"] = dict(ctxs["route_planner"].last, fallback=st8["fallback"])
+    elif low is not None and low.route is not None:  # visual.reach_route planned: the plan and the retimed duration
+        facts["route"] = dict(ctxs["route_planner"].last, duration=round(float(low.route["total"]), 3))
+    elif ctxs["route_planner"] is not None and ctxs["route_planner"].last:
+        facts["route"] = dict(ctxs["route_planner"].last)
     return rec.arrays(), facts
 
 
@@ -474,6 +517,22 @@ def main(argv=None) -> int:
     ctxs = dict(
         base=Context(base, a.config, meta, xml, log), fork=Context(delta, a.config, meta, xml, log) if delta else None
     )
+    ctxs["route_planner"] = None
+    if any(c is not None and c.cfg.visual.reach_route == "planned" for c in (ctxs["base"], ctxs["fork"])):
+        # visual.reach_route planned: the CuRobo route service on TF_CUROBO_PORT (tasks/crate/reach_route.py)
+        from locomani.primitives.arm_route import ArmRouteClient
+        from locomani.sim.ports import curobo_route
+        from locomani.tasks.crate.reach_route import ReachRoutePlanner
+
+        ctx_ = ctxs["fork"] if ctxs["fork"] is not None else ctxs["base"]
+        ctxs["route_planner"] = ReachRoutePlanner(
+            ArmRouteClient(curobo_route(), plan_timeout_s=180.0),
+            mujoco.MjModel.from_xml_path(xml),
+            ctx_.solver.lo,
+            ctx_.solver.hi,
+            {BOX: KEY},
+            clearance=ctx_.cfg.visual.reach_route_clearance,
+        )
     from bfm_bottle import HAND_FORCE, HAND_KD, HAND_KP  # the SONIC grip law (24.1)
 
     bcfg = ScaleBfmBackendConfig(

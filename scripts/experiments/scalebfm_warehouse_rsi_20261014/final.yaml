@@ -1,0 +1,15 @@
+# The loop's final incumbent (TODO 25.9.1 phase 2, gate call 1, hash 272307df4fcb): the 25.7 port + pelvis keypoint floor
+# 0.74 m + descend and reseat retries. Copied from the gate's candidate after the loop stopped.
+name: h1_lift_reseat
+mode: 2
+stance: near
+stance_shift: 0.0
+servo: none
+set:
+  visual.tracking_gain: 0.5
+  visual.descend_retries: 2
+  visual.reseat_retries: 2
+reference: {}
+extensions:
+  pelvis_floor:
+    z: 0.74

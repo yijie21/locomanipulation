@@ -92,6 +92,9 @@ class CrateVisualConfig:
     yaw_jitter_deg: float = 5.0  # visible basket yaw randomisation at reset
     pregrasp_above: float = 0.09  # metres above each grasp point
     reach_path: str = "direct"  # assisted CoordinatedReach: direct = one straight blend from the ready hands to the grasp points; staged = first to a pregrasp point pregrasp_above over each grasp point and pregrasp_back toward the body, then straight down (2026-09-23: direct swept the hands through the warehouse box, 8 of 10 displaced-box rounds had a hand on it)
+    reach_route: str = "straight"  # staged reach, how the hands get to the pregrasp points: straight = a straight Cartesian blend from where they are at the handoff (after the ready pose); planned = along one collision-free joint path for the waist and both arms from the CuRobo route service (primitives/curobo_service.py, must be running; the runner sets CoordinatedReach.route_planner), whose goal is this reach's own whole-body solve at the pregrasp points, tracked by the same closed loop -- the runner then skips the ready pose and the hands rise from their hang in one motion (user, 2026-10-14: natural motion; the straight blend from the hang sweeps the hands through the box in 9 of 10 rounds)
+    reach_route_speed: float = 0.8  # reach_route planned: peak speed of the most moved joint along the planned path, rad/s (smoothstep timing, primitives/arm_route.retime_path)
+    reach_route_clearance: float = 0.015  # reach_route planned: metres every box obstacle grows on each side before planning (tasks/crate/reach_route.py). The hands track the path with a few centimetres of error; at 0 the planned hands came 1.1 cm (median) from the box and the Dex1 fingers brushed its near rim in 11 of 49 rounds, at 0.015 the planned clearance is 3.0 cm with 49 of 50 planned, at 0.025 4.2 cm with 48 of 50 (diagnostic pool, 2026-10-14)
     descend_speed: float = 0.0  # staged reach: Cartesian speed limit of the final straight-down segment, m/s; 0 = approach_speed. The descent undershot the grasp point by 1-3 cm and put the palm on the box rim (2026-09-23)
     descend_z_guard: bool = False  # staged reach, descent only: once a measured grip point is at or below its target height, its z position feedback may no longer grow downward and backs off by the undershoot. The feedback had to cover a ~8 cm model offset (cap 0.15) and then drove the palm 1-3 cm past the grasp point into the box rim (2026-09-23)
     pregrasp_back: float = 0.04  # staged reach: metres the pregrasp point sits toward the body from the grasp point
@@ -179,6 +182,14 @@ class CrateVisualConfig:
             raise ValueError("visual.approach_stop must be depth or guard")
         if self.reach_path not in ("direct", "staged"):
             raise ValueError("visual.reach_path must be direct or staged")
+        if self.reach_route not in ("straight", "planned"):
+            raise ValueError("visual.reach_route must be straight or planned")
+        if self.reach_route == "planned" and self.reach_path != "staged":
+            raise ValueError("visual.reach_route planned plans to the pregrasp points; it needs reach_path staged")
+        if not 0.2 <= self.reach_route_speed <= 2.0:
+            raise ValueError("visual.reach_route_speed must be in [0.2, 2.0] rad/s")
+        if not 0.0 <= self.reach_route_clearance <= 0.1:
+            raise ValueError("visual.reach_route_clearance must be in [0, 0.1] m")
         if self.ready_pose not in ("forward", "lifted"):
             raise ValueError("visual.ready_pose must be forward or lifted")
         if self.ready_pose == "lifted" and self.elbow_min_deg >= 0:
@@ -223,6 +234,7 @@ class CrateVisualConfig:
                 "start_pose",
                 "walk_steer",
                 "reach_path",
+                "reach_route",
                 "approach_stop",
                 "ready_pose",
                 "face_after_brake",

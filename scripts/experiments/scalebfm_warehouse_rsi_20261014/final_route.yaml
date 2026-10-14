@@ -1,0 +1,15 @@
+# The loop's final incumbent (final.yaml) with the CuRobo reach route (user 2026-10-14: natural motion).
+name: final_route_planned
+mode: 2
+stance: near
+stance_shift: 0.0
+servo: none
+set:
+  visual.tracking_gain: 0.5
+  visual.descend_retries: 2
+  visual.reseat_retries: 2
+  visual.reach_route: planned
+reference: {}
+extensions:
+  pelvis_floor:
+    z: 0.74

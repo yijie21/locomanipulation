@@ -103,6 +103,11 @@ class CoordinatedReach:
         self.rotation_feedback = np.zeros((2, 3))  # filtered predicted-vs-measured palm rotation vectors (world)
         self.ghost = None  # GhostTargetTrace: every commanded (pre-feedback) grip target + palm attitude, by state seq
         self.collision_guard = None  # HandCollisionGuard (visual.collision_guard mink): filters align/descend targets
+        # visual.reach_route planned: callable(start_joints, goal_joints, state) -> (T, 29) collision-free joint path
+        # from the reference to the pregrasp solve, or None when there is none (tasks/crate/reach_route.py); set by
+        # the runner, which also skips the ready pose
+        self.route_planner = None
+        self.route = None  # the planned path, its timing and its hand poses, once planned (plan_route)
         self._seq = None
         self.contact_sides = ()  # hands the privileged state reports touching the target object this tick
         self.best_error, self.progress_time = np.inf, None
@@ -237,7 +242,9 @@ class CoordinatedReach:
         correction = Rotation.from_rotvec(angle * axis).as_matrix()
         return np.array([correction @ a for a in self.attitudes])
 
-    def advance(self, targets, attitudes, measured, dt, measured_rotations=None, z_floor=None, hold_across=None):
+    def advance(
+        self, targets, attitudes, measured, dt, measured_rotations=None, z_floor=None, hold_across=None, posture=None
+    ):
         """Rate/acceleration limits belong inside the supported body solve, including hips.
 
         `z_floor` (per hand, world z): the height the measured grip point must not be driven below. A hand at
@@ -247,6 +254,7 @@ class CoordinatedReach:
         otherwise winds up to tracking_cap against it and shoves the wall until the box tips (2026-09-24).
         With visual.lateral_hold_common_mode only the differential part of that change is removed: the pair's
         mean shift stays free, because the stalls of 2026-09-27 were the PAIR drifting 3-5 cm to one side.
+        `posture`: this tick's posture prior instead of the admission solve's (a planned route's joints).
         """
         if dt <= 0:
             return
@@ -343,7 +351,7 @@ class CoordinatedReach:
             attitudes,
             seed=self.x + np.clip(self.v, vlo, vhi) * dt,
             bounds=(lo, hi),
-            posture=self.posture,
+            posture=self.posture if posture is None else posture,
             # TODO 2.4.10.20: a heavier pull of the 14 arm joints toward the admission solve's pose pins the elbow /
             # wrist-pitch null space the reach otherwise drifts along (the solver's own weight is 0.04 on all 29)
             posture_weights=(
@@ -376,6 +384,73 @@ class CoordinatedReach:
             orientation_correction_deg=np.degrees(np.linalg.norm(self.rotation_feedback, axis=1)),
             reference_hand_error=pose.hand_errors,
         )
+
+    def pinned_bounds(self):
+        """The solver's travel bounds with the base held at the measured pelvis, as `advance` holds it while the
+        anchor is not released (carry.base_anchor measured / measured_xy)."""
+        lo, hi = self.travel_lo.copy(), self.travel_hi.copy()
+        anchor = self.config.carry.base_anchor
+        if anchor != "reference" and self.measured_base is not None:
+            n = 2 if anchor == "measured_xy" else 3
+            lo[:n], hi[:n] = self.measured_base[:n] - 0.005, self.measured_base[:n] + 0.005
+        return lo, hi
+
+    def plan_route(self, goal_tools, final_torso, state):
+        """visual.reach_route planned: this reach's own whole-body solve at the pregrasp points (base held, the
+        admission posture as the prior, the final torso and palm attitudes) is the goal; `route_planner` returns a
+        collision-free joint path from the reference to it, which is retimed (arm_route.retime_path, peak
+        visual.reach_route_speed) and turned into hand poses on the start base. Returns a failure reason or ''."""
+        from locomani.primitives.arm_route import retime_path
+
+        cfg = self.config.visual
+        if self.route_planner is None:
+            raise RuntimeError("visual.reach_route planned needs CoordinatedReach.route_planner (the runner sets it)")
+        goal = self.body.solve(
+            goal_tools,
+            self.attitudes,
+            seed=self.x.copy(),
+            bounds=self.pinned_bounds(),
+            posture=self.posture,
+            torso_rotation=final_torso,
+            hand_rotation_weight=cfg.reach_rotation_weight,
+        )
+        self.diagnostics.update(route_goal_hand_error=goal.hand_errors)
+        if max(goal.hand_errors) > 0.02:
+            return "route_goal_unreachable"
+        path = self.route_planner(self.q.copy(), goal.joints.copy(), state)
+        if path is None or len(path) < 2:
+            return "route_not_found"
+        path, fraction, total = retime_path(np.asarray(path, dtype=float), cfg.reach_route_speed)
+        base = self.x[:4].copy()
+        positions, rotations = [], []
+        for q in path:
+            positions.append(self.body.tools(np.r_[base, q]))
+            rotations.append(self.solver.ik.data.xmat[self.body.hands].reshape(2, 3, 3).copy())
+        self.body.put(self.x)
+        self.route = dict(
+            joints=path, fraction=fraction, total=total, positions=np.array(positions), rotations=np.array(rotations)
+        )
+        self.duration = total
+        self.diagnostics.update(route_waypoints=len(path), route_seconds=total)
+        return ""
+
+    def route_sample(self, t):
+        """(hand positions, palm attitudes, joints, path fraction) `t` seconds into the planned route: one smoothstep
+        over the path's joint arc, positions and joints linear and attitudes geodesic between waypoints."""
+        r = self.route
+        u = min(1.0, max(0.0, t / r["total"]))
+        s = 3 * u * u - 2 * u**3
+        k = int(np.clip(np.searchsorted(r["fraction"], s, side="right") - 1, 0, len(r["joints"]) - 2))
+        w = min(1.0, max(0.0, (s - r["fraction"][k]) / max(float(r["fraction"][k + 1] - r["fraction"][k]), 1e-9)))
+        positions = r["positions"][k] + w * (r["positions"][k + 1] - r["positions"][k])
+        joints = r["joints"][k] + w * (r["joints"][k + 1] - r["joints"][k])
+        attitudes = np.array(
+            [
+                a @ Rotation.from_rotvec(w * Rotation.from_matrix(a.T @ b).as_rotvec()).as_matrix()
+                for a, b in zip(r["rotations"][k], r["rotations"][k + 1])
+            ]
+        )
+        return positions, attitudes, joints, s
 
     def pregrasp(self, targets):
         """Staged reach waypoint: pregrasp_above over each grasp point, pregrasp_back toward the body."""
@@ -493,6 +568,10 @@ class CoordinatedReach:
             distance = np.max(np.linalg.norm(first - self.start_tools, axis=1))
             self.duration = max(3.0, 1.875 * distance / cfg.approach_speed)
             self.reach_object = obj_position.copy()
+            if cfg.reach_route == "planned":
+                failure = self.plan_route(first + self.feedforward, final_torso, state)
+                if failure:
+                    return self.result(failure, True)
             self.enter("reach")
         self.diagnostics.update(
             reference_elapsed=self.elapsed, planned_reach_seconds=self.duration, control_interval=control_dt
@@ -515,12 +594,18 @@ class CoordinatedReach:
                     self.closed_targets = self.body.tools(self.x)
                     self.enter("close")
             if self.phase == "reach":
-                u, _ = blend(self.elapsed, self.duration)
-                self.torso_target = self.reach_rotation(u).as_matrix()
                 first = self.pregrasp(targets) if cfg.reach_path == "staged" else targets
-                commanded = self.start_tools + u * (first - self.start_tools)
-                attitudes = np.array([r(u).as_matrix() for r in self.rotations])
-                self.advance(commanded + self.feedforward, attitudes, tools, control_dt, tool_rotations)
+                if self.route is not None:
+                    # the planned path's hand poses (feed-forward already in its goal), its joints as the posture prior
+                    commanded, attitudes, posture, u = self.route_sample(self.elapsed)
+                    self.torso_target = self.reach_rotation(u).as_matrix()
+                    self.advance(commanded, attitudes, tools, control_dt, tool_rotations, posture=posture)
+                else:
+                    u, _ = blend(self.elapsed, self.duration)
+                    self.torso_target = self.reach_rotation(u).as_matrix()
+                    commanded = self.start_tools + u * (first - self.start_tools)
+                    attitudes = np.array([r(u).as_matrix() for r in self.rotations])
+                    self.advance(commanded + self.feedforward, attitudes, tools, control_dt, tool_rotations)
                 if cfg.reach_path == "staged" and self.elapsed >= self.duration:
                     if cfg.descend_align_tolerance > 0:
                         self.align_started = now
