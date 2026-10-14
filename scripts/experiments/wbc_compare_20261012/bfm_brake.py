@@ -41,6 +41,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 WALK_SCENE = REPO / "outputs" / "scene" / "walk"
 HZ = int(round(1 / R.DT))  # 50 policy steps per simulated second = the SONIC sim's privileged-state rate
+# TODO 24.7.1: how far the plan program settled short of its reference end per speed (bfm_plan, 10-13, 10 trials
+# each: 1.6 / 3.6 / 4.5 cm); --ff speed aims this far past the target, interpolated in speed
+FF_SPEEDS, FF_SHORT = (0.25, 0.35, 0.55), (0.045, 0.036, 0.016)
 STILL_V = 0.03  # m/s over 0.5 s: the pelvis counts as still (diag_brake's waypoint rule)
 PHASE_LABELS = {
     "marker": dict(walk="行走 参考前进", brake="刹车 参考冻结在骨盆处", slow="减速"),
@@ -93,13 +96,18 @@ class Profile:
         return float(self.dist) - 0.5 * self.acc * u * u
 
 
-def trial(pol, sim, robot, speed, marker, program, acc, margin, settle, timeout_s, label, trace_dir) -> dict:
+def trial(
+    pol, sim, robot, speed, marker, program, acc, margin, settle, timeout_s, label, trace_dir, ff=0.0, odo=None
+) -> dict:
     start = sim.smeta.get("robot_start", {})
     xy0 = np.asarray(start.get("xy", [0.0, 0.0]), float)
     yaw0 = float(np.radians(start.get("yaw_deg", 0.0)))
     h = np.array([np.cos(yaw0), np.sin(yaw0)])
     n = np.array([-h[1], h[0]])
     sim.reset(xy0, yaw0, 0.0)
+    if odo is not None:
+        mujoco.mj_forward(sim.m, sim.d)
+        odo.reset(sim.d.qpos[:3].copy(), sim.d.qpos[odo.qadr].copy(), sim.d.qpos[3:7].copy())
     refs = R.Refs(pol, sim)
     pol.reset(sim.state())
     pel_q = np.array([np.cos(yaw0 / 2), 0, 0, np.sin(yaw0 / 2)])
@@ -141,7 +149,7 @@ def trial(pol, sim, robot, speed, marker, program, acc, margin, settle, timeout_
             # the walk starts: the standing toe reach (frontmost low point ahead of the pelvis) fixes plan's target
             reach = frontmost_low(sim.m, sim.d, robot, xy0, h) - fwd
             target = None if program == "marker" else marker - reach - margin
-            st8["prof"] = Profile(speed, acc, target)
+            st8["prof"] = Profile(speed, acc, None if target is None else target + ff)
         if st8["prof"] is not None:
             frontmost = max(frontmost, frontmost_low(sim.m, sim.d, robot, xy0, h) - marker)
         if brake is None and st8["prof"] is not None:
@@ -189,6 +197,7 @@ def trial(pol, sim, robot, speed, marker, program, acc, margin, settle, timeout_
         frontmost_final_past_marker=float(frontmost_low(sim.m, sim.d, robot, xy0, h) - marker),
         toe_reach=float(reach),
         target_fwd=target,
+        ff=ff,
         target_err=None if target is None else float(d @ h) - target,
         yaw_deg=float(np.degrees((yaw - yaw0 + np.pi) % (2 * np.pi) - np.pi)),
         sim_s=round(k * R.DT, 2),
@@ -204,17 +213,31 @@ def main(argv=None) -> int:
     ap.add_argument("--jitter", type=float, default=0.10, help="uniform +- jitter of the line per trial (m)")
     ap.add_argument("--acc", type=float, default=R.WALK_ACC, help="reference acceleration / deceleration (m/s^2)")
     ap.add_argument("--margin", type=float, default=0.03, help="plan: clearance kept before the line (m)")
+    ap.add_argument(
+        "--ff", default="0",
+        help="plan: feedforward past the target, metres, or 'speed' = the measured shortfall at that speed (TODO 24.7.1)",
+    )  # fmt: skip
     ap.add_argument("--settle", type=float, default=3.0, help="simulated seconds after the stop before the read")
     ap.add_argument("--timeout", type=float, default=40.0, help="simulated seconds to reach the line")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--perturb", default="", help="sim/perturb.py spec (JSON), TODO 25.5")
+    ap.add_argument(
+        "--odometry", action="store_true",
+        help="ScaleBFM sees the leg-kinematics + IMU pelvis estimate (backends/scalebfm/odometry.py), not the truth (25.5)",
+    )  # fmt: skip
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "trace").mkdir(exist_ok=True)
     cfg = ScaleBfmBackendConfig(scene_dir=str(WALK_SCENE))
     pol = R.Policy(device=a.device, backend=cfg)
-    sim = R.Sim(pol.meta, backend=cfg)
+    sim = R.Sim(pol.meta, backend=cfg, perturb=json.loads(a.perturb) if a.perturb else None)
+    odo = None
+    if a.odometry:
+        from locomani.backends.scalebfm.odometry import attach
+
+        odo = attach(sim, str(WALK_SCENE / "scene_locomani.xml"), pol.meta["joint_names"])
     robot = [g for g in range(sim.m.ngeom) if sim.m.geom_bodyid[g] != 0]
     rng = np.random.default_rng(a.seed)
     rows, falls = [], 0
@@ -243,6 +266,8 @@ def main(argv=None) -> int:
                     a.timeout,
                     label,
                     a.out / "trace",
+                    float(np.interp(speed, FF_SPEEDS, FF_SHORT)) if a.ff == "speed" else float(a.ff),
+                    odo,
                 )
             )
             r["wall_s"] = round(time.time() - t0, 1)
@@ -268,6 +293,9 @@ def main(argv=None) -> int:
                         jitter=a.jitter,
                         acc=a.acc,
                         margin=a.margin,
+                        ff=a.ff,
+                        perturb=a.perturb or None,
+                        odometry=bool(a.odometry),
                         settle_s=a.settle,
                         phase_labels=PHASE_LABELS[a.program],
                         rows=rows,

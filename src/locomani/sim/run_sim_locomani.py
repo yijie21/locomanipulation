@@ -381,6 +381,55 @@ def main(config: SimLoopConfig) -> None:
         band.enable = False
         print("[sim] elastic band disabled")
 
+    # TODO 25.5: sim-side perturbations (sim/perturb.py; off unless LOCOMANI_PERTURB is set) -- the action delay and the
+    # PD gain scale replace the stock PD below the arm pin; the observation noise goes into the LowState the deploy
+    # reads (the privileged state stays exact); pushes are episode-server requests applied every physics step.
+    from locomani.sim import perturb
+
+    sim_env = sim_wrapper.sim.sim_env
+    spec = perturb.from_env()
+    PERT = perturb.Perturbation(spec, 29, float(sim_env.mj_model.opt.timestep))
+    perturb.CURRENT[:] = [PERT]
+    if spec and spec.get("friction") is not None:
+        perturb.set_friction(
+            sim_env.mj_model, float(spec["friction"]), ("left_ankle_roll_link", "right_ankle_roll_link")
+        )
+    print(f"[sim] perturbation {PERT.describe() if spec else 'off'}")
+    _stock_cbt = DefaultEnv.compute_body_torques
+    PELVIS = sim_env.mj_model.body("pelvis").id
+
+    def perturbed_body_torques(self):
+        PERT.tick()
+        perturb.apply_push(self.mj_data, PELVIS)
+        br = self.unitree_bridge
+        if not (PERT.delay_steps or spec and spec.get("gain_scale")) or br is None or not br.low_cmd or br.use_sensor:
+            return _stock_cbt(self)
+        n = br.num_body_motor
+        cmd = PERT.delayed(np.array([[m.q, m.dq, m.kp, m.kd, m.tau] for m in br.low_cmd.motor_cmd[:n]]))
+        idx = np.asarray(self.body_joint_index[:n])
+        q = self.mj_data.qpos[idx + self.qpos_offset - 1]
+        dq = self.mj_data.qvel[idx + self.qvel_offset - 1]
+        return cmd[:, 4] + PERT.gain * cmd[:, 2] * (cmd[:, 0] - q) + PERT.gain * cmd[:, 3] * (cmd[:, 1] - dq)
+
+    DefaultEnv.compute_body_torques = perturbed_body_torques
+    if spec and spec.get("noise"):
+        from gear_sonic.utils.mujoco_sim.unitree_sdk2py_bridge import UnitreeSdk2Bridge
+
+        _stock_publish = UnitreeSdk2Bridge.PublishLowState
+
+        def noisy_publish(self, obs):
+            obs = dict(obs)
+            obs["body_q"] = PERT.noisy("q", obs["body_q"])
+            obs["body_dq"] = PERT.noisy("dq", obs["body_dq"])
+            for key in ("floating_base_vel", "secondary_imu_vel"):
+                if key in obs:
+                    v = np.array(obs[key], dtype=float)
+                    v[3:6] = PERT.noisy("gyro", v[3:6])
+                    obs[key] = v
+            return _stock_publish(self, obs)
+
+        UnitreeSdk2Bridge.PublishLowState = noisy_publish
+
     # Arm pin: give the arm motors their own position loop, on demand. The
     # walking policy will not hold an elbow past ~1.5 rad no matter what
     # reference it is given (its gait prior wins), so the level-forearm

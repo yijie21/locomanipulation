@@ -366,6 +366,7 @@
 - [ ] 9.10 `crate_table30_record`（crate 的完整规模）还没在 lockstep 下跑过；runbook 里它的数字是 09-15 墙钟 71/100
 - [x] 9.11 （2026-09-30，`34fcd13`，用户问答定）三个 runbook 只留命令、做什么一句、得到什么一句、每步总耗时；移出的内容进详解页（`warehouse_design.md` 第 10 节）；行数上限降到实际加约 10%（warehouse 215、bimanual 125、single_arm 115）
   - [ ] 9.11.1 可选：隔离环境里的新读者照新 warehouse.md 跑一遍（这次没做，只做了 `--dry-run` 和改动部分的实跑）
+- [ ] 9.12 （用户 2026-10-13 批准报告里的"一"和"二"；STATE 10-13 15:34 UTC 写明，最早 2026-10-14 16:00 UTC 执行）删约 120 GiB：`/workspace` 剩 40 GB（97%）。三个 10 步冒烟检查点 `outputs/runs/{warehouse_smoke_20260930,warehouse_smoke_unreal_20260930,warehouse_film_unreal_20260929}/model`（72 GiB）；两个 deploy worktree `outputs/deploy_{docbuild_20260924,pinned_20260925}` 和 `.claude/worktrees/` 四个已合并的 worktree（先存 diff）；10-08 及以前 run 和 `outputs/fresh_repro_20260925` 的 ≥ 1 MB 文件（约 48 GB；不动 model / train_dataset / val_dataset / skills / grasp_planned / manifest，代码按名引用的 run 整个跳过）；根目录 wandb、缓存。清单、规则、脚本在 `outputs/cleanup_20261013/`（`summary.md`、`apply.sh`）
 
 
 ## 10. warehouse 默认采集改为四边随机；采集前打印设置；固定起点作为选项（用户 2026-09-28；DECISIONS 同日）
@@ -802,10 +803,12 @@
   - 2026-10-10：GraspNet 物体那条线上重新提出，见 23.2（主线瓶子 / 罐头不受影响）
 - [ ] 22.5 待用户：单臂主线 `comfort_waist_weight` / `comfort_elbow_wrist_weight` 从未生效（`simple_policy` 不调用 `blend_posture`），修不修
 - [x] 22.6 （用户 2026-10-12 commit and push，已提交并推送）提交主线改动（`git status` 里 9 个已改文件 + `primitives/arm_route.py`、`curobo_service.py`、`tests/test_arm_route.py`、`scripts/experiments/curobo_route_20261009/`、`configs/experiments/bottle_route_*`、计划文档）；`make check` 已过（2026-10-09）
-- [ ] 22.7 待用户：本线产物删不删——`outputs/runs/bottle_route_*`（14 个，5.2 GB）、`outputs/curobo_route_20261009/`（4 MB）
+- [ ] 22.7 （用户 2026-10-13：先不删，留着）本线产物删不删——`outputs/runs/bottle_route_*`（14 个，5.2 GB）、`outputs/curobo_route_20261009/`（4 MB）
 
 
-## 23. 仿真专家的抓取来源：graspnet 感知 → 特权几何 + 物理验证（用户 2026-10-10 提出；本会话讨论，未定）
+## 23. 仿真专家的抓取来源：graspnet 感知 → 特权几何 + 物理验证（用户 2026-10-10 提出；2026-10-13 用户定：抓取位姿用物体表面对抓缓存）
+
+- 定了（用户 2026-10-13）：抓取位姿来自物体表面采样的对抓 + 物理验证缓存（23.2 的 `grasp_cache.py`，2026-10-12 起已是默认 `--grasp-source cache`）；graspnet 只留作对照选项，不再往下做（23.7.4 关掉）。23.3 / 23.5 / 23.7.5 / 23.7.6 是缓存框架内的后续，照旧待用户。
 
 - 背景（2026-10-10 会话）：用户判断"仿真里有物体全部信息，graspnet 对任意物体合成抓取没必要"。支持的事实：21.3.4 每局重新感知时 graspnet 输出 65/65 不同（站位只差 3 cm）；graspnet 不认识 Dex1，候选质量实际由我们手写的转换 + 过滤层决定；专家本来就是特权教师；SIMPLE 公开代码也只走 BoDex 离线缓存（`detect_grasps` 只有 `pass`）。两轮失败都在执行层（合爪未同时接触 15/19、抬起脱手 13/9、进入碰倒 12/8），但位姿是这些失败的上游。
 - 讨论结论：机器人侧"最方便抓"和物体侧"抓得住"是两个独立判据，只按前者选会选到边缘 / 单指垫接触的位姿；"按实际停下位置动态选"在缓存框架里免费（缓存在物体系，站位变只是换被选中的候选），不需要每局从头合成。领域通用解法 = 离线采样 + 仿真验证（ACRONYM、Dex-Net）+ 在线按可达性选（SIMPLE 缓存、CuRobo goalset）。没有解析法能保证物理可行，仿真本身当裁判是领域答案。
@@ -857,11 +860,11 @@
   - [x] 23.2.8 （用户 2026-10-12 commit and push，已提交并推送）提交 23.2 的代码（`grasp_cache.py`、`cache_all.sh`、`cache_summary.py`、`replay_plan.py`、`replay_summary.py`、`presort_compare.py`、`grasp_planned.py` / `run_grasp.py` / `run_batch.sh` 改动）、`docs/handoff/grasp-cache-20261010.md`、`docs/README.md` 索引行
 - [ ] 23.5 方案 D（实验开关，不默认开）：判定抓住后把物体焊到夹爪（weld），用来把位姿问题和接触问题分开看；代价是抬起 / 搬运动力学失真、带载行走的创滑看不到，不进正式采集
 - [-] 23.6 方案 E：每次停下后在线从头优化新抓取（MPC / 采样）——放弃：和 23.2.4 相比没有收益，每局新位姿无法预先验证，接触型 MPC 仍是研究问题
-- [~] 23.7 文档（用户 2026-10-12 要求，文档和接口同日做完，只剩 23.7.4：读者页 `docs/object_grasp.md`、详解 `docs/object_grasp_design.md`、README 支线一行、术语表三条、代码导航一行、两份 handoff 补默认值变更）：23.1 定下后把结论写进 `docs/handoff/graspnet-bottle-planner-comparison-20261008.md` 或新 handoff，DECISIONS 记"感知式抓取退出专家线"的决定和理由
+- [x] 23.7 文档（用户 2026-10-12 要求，文档和接口同日做完；剩下的 23.7.4 于 2026-10-13 关掉：读者页 `docs/object_grasp.md`、详解 `docs/object_grasp_design.md`、README 支线一行、术语表三条、代码导航一行、两份 handoff 补默认值变更）：23.1 定下后把结论写进 `docs/handoff/graspnet-bottle-planner-comparison-20261008.md` 或新 handoff，DECISIONS 记"感知式抓取退出专家线"的决定和理由
   - [x] 23.7.1 抓取来源接口（2026-10-12）：`GraspPlanned(source=)` 显式参数，计划步可用 `source` 覆盖，`record.json` 记 `source`；`run_grasp.py` 默认改为 `--grasp-source cache --planners ik --rounds 1`，`run_batch.sh` 的 `ROUNDS` 默认 1；动手臂前的就绪检查（`grasp_cache` / `graspnet_server` / `grasp_source`），`graspnet_server.py` 加 ping 和 `--graspnet-dir`；`cache_summary.py` / `best_videos.py` 按 tag 分开输出、字幕写来源；`run_one.sh` 尊重 `paths.sh` 选的 deploy
   - [x] 23.7.2 `install_graspnet.sh`（2026-10-12）：克隆固定提交、扩展补丁、钉版本的 venv、编译 pointnet2 / knn、graspnetAPI、权重、自检；在空目录从零装通（104 s，安装包已在 uv 缓存里，自检 110 grasps），补上了原环境后装的 graspnetAPI 依赖（matplotlib 等），绕开镜像里不可写的 `/.uv` 和 CUDA 13 的 `CUDA_HOME`
   - [x] 23.7.3 冒烟（2026-10-12，实例 1，物体 040）：缓存来源抬起（74 s）；graspnet 服务没开时动手臂前被拒（`graspnet_server`）；graspnet 来源在现在的默认配置（预检、arm pin、闸门）下抬起（80 s，服务 1.6 GB 显存）
-  - [ ] 23.7.4 待用户：graspnet 来源在现在的默认配置下两批 65 局（约 40 分钟），给详解第 3 节补一组同执行逻辑的当前对比；现在的对比是 10-10 之前的执行逻辑
+  - [-] 23.7.4 （2026-10-13 关掉：用户定抓取来源用缓存，graspnet 的当前对比不再补）原题：graspnet 来源在现在的默认配置下两批 65 局（约 40 分钟），给详解第 3 节补一组同执行逻辑的当前对比；现在的对比是 10-10 之前的执行逻辑
   - [ ] 23.7.5 待用户：`make_scenes.py` 只读 SIMPLE 的 GraspNet 物体集；加一个读任意网格（obj / stl + 质量）的入口，缓存和 runbook 才对任意物体成立（详解第 6 节局限）
   - [ ] 23.7.6 待用户：缓存只在一个静止姿态下验证（同 21.3.5.1）；物体出生被碰歪时 `no cached grasp fits here`
 
@@ -877,9 +880,9 @@
 - [x] 24.4 批次（2026-10-12）：SONIC `_wbc` 48/129（偏置 + 2 s 保持）与对照 `_wbc_nobias` 53/130（p 0.54，偏置对 SONIC 无效）；ScaleBFM 受控臂 `bfm_grasp/paired` 77/130，放开臂 `bfm_grasp/free` 55/130。
 - [x] 24.5 汇总（2026-10-12）：`compare_summary.py` → `compare/{paired,free}.md`（配对表、失败类、三个稳定量）；`compare_videos.py` → `videos/paired/*.mp4` + `reel.mp4`、`videos/free/`。受控臂 SONIC 48 对 ScaleBFM 77，不一致 10 : 39，p < 0.001；见 handoff §7。
 - [x] 24.6 ScaleBFM 姿态交付包络（用户 2026-10-12 定做；handoff §8）：`bfm_attitude_probe.py`（仰角 7 × 偏航 12 × 滚转 2 = 156 姿态 × 2 高度，5 min 不录像）→ `attitude_summary.py` → `probe/scalebfm_attitude/envelope.{json,md}`：可交付 31/156（≤ 5 cm 且 ≤ 15°），全在虎口朝左、偏航 −60..+90°；虎口朝右（滚转 180）一个都没有。受控臂 `paired2`（按 `_wbc2` 配对）SONIC 48 对 ScaleBFM 68 / 129（13 : 33，p = 0.005；`_wbc2` 多选的 tier 2 让 ScaleBFM 从 77 掉到 68）；包络事后分 SONIC 选的抓取：包络内 92% 抬起、外 37%；放开臂 `free2`（`bfm_grasp.py --envelope`）SONIC 48 对 ScaleBFM 104 / 129（3 : 59，p < 0.001；没过滤时 55），预抓误差 p90 14.9 → 5.3 cm，合爪无接触 0。
-  - [ ] 24.6.1 候选后续（待用户）：按包络给每个姿态单独一个前馈常数（`envelope.json` 里已存 `bias_heading_cm`）；包络只在一个物体、两个高度上探的，位置 × 姿态的交叉没扫。
+  - [x] 24.6.1 （用户 2026-10-13 定做，handoff §10）按姿态前馈 `bfm_grasp.py --bias-attitude`：放开臂开环预抓误差中位 3.3 → 2.8 cm、受控臂 2.9 → 3.2 cm，抬起都不变（105 → 105、68 → 67）；不比全局常数好，默认不变。原题：按包络给每个姿态单独一个前馈常数（`envelope.json` 里已存 `bias_heading_cm`）；包络只在一个物体、两个高度上探的，位置 × 姿态的交叉没扫。
 - [x] 24.7 终点线刹车，SONIC 对 ScaleBFM（用户 2026-10-13 提出；handoff §9）：空地走到 1.5 m 的线再停，0.55 / 0.35 / 0.25 × 10 局；`bfm_brake.py --program marker|plan`、`brake_batch.sh`、`brake_summary.py`，`runtime.Sim` 允许无物体场景，渲染复用 `render_brake_marker_20260923.py`（按行线位置 + 字幕标签）；`tests/test_wbc_brake.py`。越线刹车惯性 ScaleBFM 4.5 ± 0.6 / 2.5 ± 0.6 / 0.5 ± 0.4 cm 对 SONIC 24.7 ± 3.3 / 10.4 ± 4.9 / 4.0 ± 1.4（横向 sd ≤ 1.6 对 4–5 cm，yaw 0.2° 对 2–3°，0.5 s 站稳）；不越线程序两边 0/10 越线，ScaleBFM 脚尖停线前 4–8 cm（sd ≤ 2）对 SONIC 守线 13–22 cm（sd 3.5–12，最差 −2.3）。表 `outputs/wbc_compare_20261012/brake/brake.md`，视频 `brake/videos/`。
-  - [ ] 24.7.1 候选后续（待用户）：ScaleBFM plan 停稳比参考终点短 1.6–4.5 cm（0.25 有两局 8–9 cm），加 3 cm 前馈再验；要不要在 65 物体线让 ScaleBFM 真走进去（决策 4 站位不动，是另一条线）。
+  - [x] 24.7.1 （用户 2026-10-13 定做，handoff §10）`bfm_brake.py --ff speed` 按速度补停短量：误差 −1.6 / −3.9 / −4.5 → −0.2 / −0.2 / +0.5 cm，0/30 越线；常数 3 cm 在 0.55 m/s 越线 3/10，不用。原题：ScaleBFM plan 停稳比参考终点短 1.6–4.5 cm（0.25 有两局 8–9 cm），加 3 cm 前馈再验；要不要在 65 物体线让 ScaleBFM 真走进去（决策 4 站位不动，是另一条线）。
 
 ## 25. SONIC → ScaleBFM 替换评测（用户 2026-10-13 提出；[计划与冻结判据](docs/handoff/controller-compare-20261013.md)；DECISIONS 2026-10-13（续））
 
@@ -897,13 +900,21 @@
 - [x] 25.3 warehouse L1（mars）：W1–W8，生产档 ym 边，外推档另三条边。结论见计划 §17：无致命短板（0 摔；SONIC 成功的 5 局 ScaleBFM 都抬起），双手扣箱容易斜（平抬 3–4/8 对 6/8），停位散布小 2–17 倍，带载走路两边都差。
   - [x] 25.3.1 回放双手扣箱要夹爪中心 + 姿态伺服（`bfm_warehouse.py --servo pad`）：开环只抬起 3/8（手腕姿态差 10–30°，夹爪偏 2–9 cm）；L2 移植 warehouse 专家必须带这个闭环（计划 §15、DECISIONS 25.3）。
   - [x] 25.3.2 skills profile `warehouse_box_mars`（mars 生产参数 + stand_forward_min 0.50）：stock profile 在 mars 上 10 局只 1 局进携带；换后携带 3–6 局走到，但 SONIC 全掉（倒退 0/3、转身 0/6）。
-  - [ ] 25.3.3 L2 前：mode 6 和 mode 7 平抬率相同（4/8）、mode 7 箱子更平，在 25.4 的 mode 扫描里再比；合爪判据要看两指都夹住。
-- [ ] 25.4 复杂动作 C1–C7（mars）：先下载 G1 重定向 LAFAN1、写 IK 关键帧合成；mode 扫描（§5）；S1 切换瞬态。
-- [ ] 25.5 扰动 a–g 按计划 §4.6 套用；估计位姿臂（腿运动学 + IMU 估计器，§4.5）。
-- [ ] 25.6 L1 关口判定（计划 §3），结果交用户。
-- [ ] 25.7 移植专家：bottle simple 专家 → ScaleBFM（主臂）；warehouse 四边专家 → ScaleBFM（各段用选出的 mode）；bottle_visual 参考臂有余力再跑。
-- [ ] 25.8 L2：每场景 ≥ 40 局配对，标称档 + 真机组合档（b 20 ms + c + f，力矩按标称）；SONIC 每局记 RTF，< 0.9 作废重跑。
+  - [x] 25.3.3 （10-14）C6 地面搬箱 mode 6 / 7 关键帧都 0/40，mode 3 才 10/10；warehouse 移植专家按 L1 种子选了 mode 2（计划 §20 / §22）。原题：L2 前：mode 6 和 mode 7 平抬率相同（4/8）、mode 7 箱子更平，在 25.4 的 mode 扫描里再比；合爪判据要看两指都夹住。
+- [x] 25.4 （10-14，计划 §18 / §22）复杂动作 C1–C7（mars）：ScaleBFM 选对 mode 后 C1 / C4 / C6 / C7 10/10，SONIC 带关键帧的片段都 0/10；两边都做不到 C2 / C3 / C5；mode 3 / 4 比 mode 2 好得多。原题：先下载 G1 重定向 LAFAN1、写 IK 关键帧合成；mode 扫描（§5）；S1 切换瞬态。
+  - [x] 25.4.1 （10-13）片段库 16 个（`clips.py`，计划 §18）：LAFAN1 镜像 `datasets/lafan1_g1_retarget/`（Unitree 原仓库 404），IK 关键帧在 mars 上合成；C1 最低 0.164 m、C5 前倾 65°（双脚平踩、质心在脚上方时的上限，DECISIONS）。
+  - [x] 25.4.2 （10-13）ScaleBFM 全 mode 扫描 940 局（+S0 50 局）0 摔；SONIC 流式改发完整骨盆姿态（只发偏航那批 C1 连摔 6/6，作废）。
+  - [x] 25.4.3 （10-13）S1：ScaleBFM 加关键点的切换（2→4/6/7）平滑，手腕移 1.6–2.5 cm；去掉肩肘的切换（6/7→2）手腕掉 21 cm；SONIC 交接 1–3 cm（`switch/s1.md`）。L2 每个任务只用一个 mode，没有切换。
+- [x] 25.5 （10-14，计划 §19 / §24）SONIC 怕延迟（40 ms 下 bottle 摔 9/10，warehouse 站不稳），ScaleBFM 不受影响；估计位姿臂：ScaleBFM 用腿运动学 + IMU 后刹车 30/30 越线，两个移植专家都失败——真机世界位姿来源待用户。原题：扰动 a–g 按计划 §4.6 套用；估计位姿臂（腿运动学 + IMU 估计器，§4.5）。
+  - [x] 25.5.1 （10-13）`src/locomani/sim/perturb.py` 两边共用（b c d f g；e 用 `payload_scenes.py` 的场景副本）；腿运动学 + IMU 里程计 `backends/scalebfm/odometry.py`（站立漂移 < 0.2 cm，ScaleBFM 后退滑脚 → 60–90 cm）。计划 §19。
+- [x] 25.6 （10-13，用户指示连续做完，这条线按 §3 自判，计划 §21）L1 关口通过：0 摔、a / h 不否决、§3.4 不成立（warehouse 移植专家弱是专家和 SONIC 一起调出来的问题，记为 L2 风险）。原题：L1 关口判定（计划 §3），结果交用户。
+- [x] 25.7 （10-13，计划 §20）移植专家：bottle simple 专家 → ScaleBFM（主臂）；warehouse 四边专家 → ScaleBFM（各段用选出的 mode）；bottle_visual 参考臂有余力再跑（没跑）。
+  - [x] 25.7.1 （10-13）`bfm_expert_bottle.py`（simple_policy guard 分支）L1 种子 mode 4 10/10 对 SONIC 6/10；`bfm_expert_warehouse.py`（CoordinatedReach 原样）最好 mode 2 + tracking_gain 0.5 2/10 对 SONIC 5/10——专家和 SONIC 一起调出来的（计划 §20，DECISIONS）。bottle_visual 参考臂没跑。
+- [x] 25.8 （10-14，计划 §25）L2：bottle 标称 40 对 39 / 45、组合 2 对 35 / 46；warehouse 标称 20 对 6 / 40（p 0.003）、组合 1 对 4 / 40。主判据不满足（warehouse 专家和 SONIC 一起调出来的），组合档不否决，bottle 标称掉物护栏不过。原题：L2：每场景 ≥ 40 局配对，标称档 + 真机组合档（b 20 ms + c + f，力矩按标称）；SONIC 每局记 RTF，< 0.9 作废重跑。
+  - [x] 25.8.1 （10-13 起跑，10-14 跑完；补跑 `_b` / `_c`，看门狗停过一局，DECISIONS 10-14）SONIC 四批 `controller_compare_l2_{bottle,warehouse}_sonic[_combo]_20261013`（种子 41000 / 47000 起各 40 局），队列 `sonic_l2_p25_queue.sh`；之后 `after_sonic_queue.sh` 自动接 ScaleBFM（`bfm_l2_batch.sh`、`bfm_p25_batch.sh`）和汇总（`p25_l2_post.sh`、`l2_measure.py`）。
 - [ ] 25.9 最终判定（计划 §2），结果交用户。
+  - [ ] 25.9.1 待用户：L2 主判据不满足——要不要把 warehouse 专家按 ScaleBFM 重新标定（下蹲 / 前倾上限、站位、反馈增益）后再比，还是按"专家原样"出结论。
+  - [ ] 25.9.2 待用户：ScaleBFM 上真机的世界位姿来源（腿运动学 + IMU 在它滑脚时漂 15–40%，计划 §24）：外部定位、视觉里程计，还是把世界锚定的参考改成相对机身。
 - [ ] 25.10 ScaleBFM 部署程序（Python + TensorRT，接口同 SONIC deploy）→ sim2sim。
 - [ ] 25.11 真机冒烟（计划 §7 的六步，用户团队操作，SONIC 同日对照）。
   - [ ] 25.11.1 待用户：机载电脑型号、实验室有没有外部定位（现按没有处理）。

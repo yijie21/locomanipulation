@@ -414,6 +414,7 @@ def main(argv=None) -> int:
     ap.add_argument("--only-ok", action="store_true", help="only the rounds SONIC completed")
     ap.add_argument("--tag", default="", help="appended to the program's name")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--perturb", default="", help="sim/perturb.py spec (JSON), TODO 25.5")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     assert not a.pelvis_shift or a.mode == 2, "--pelvis-shift moves only the pelvis keypoint: mode 2"
@@ -425,7 +426,7 @@ def main(argv=None) -> int:
     )
     pol = R.Policy(device=a.device, backend=cfg)
     pol.mode = torch.tensor([a.mode], dtype=torch.long, device=a.device)
-    sim = R.Sim(pol.meta, backend=cfg)
+    sim = R.Sim(pol.meta, backend=cfg, perturb=json.loads(a.perturb) if a.perturb else None)
     if a.box_mass is not None:
         b = sim.crate_b
         sim.m.body_inertia[b] *= a.box_mass / sim.m.body_mass[b]

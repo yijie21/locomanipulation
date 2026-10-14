@@ -18,6 +18,7 @@ WHITELIST = {
     "CUDA_VISIBLE_DEVICES",
     "MUJOCO_EGL_DEVICE_ID",
     "ARM_PIN_KP",  # run_sim_locomani arm pin gains (TODO 23.4.6.3)
+    "LOCOMANI_PERTURB",  # sim/perturb.py: the 25.5 perturbation spec the SONIC sim reads
     "ARM_PIN_KD",
     "MUJOCO_GL",  # render backend (egl/osmesa), the same device category; bottle_visual/round.py records it as provenance
     "INSTANCE",

@@ -1,6 +1,6 @@
 # SONIC → ScaleBFM 替换评测：计划与冻结判据（2026-10-13）
 
-状态（2026-10-13）：计划定稿；25.1 否决关、25.2 bottle L1、25.3 warehouse L1 已做完（§9–17）。35 个决定由用户逐轮拍板（DECISIONS 2026-10-13（续）），任务 [TODO 25](../../TODO.md)。分支 `main`。
+状态（2026-10-14）：25.1–25.8 做完（§9–25）；25.6 关口通过（§21）；L2 主判据不满足（§25），25.9 最终判定待用户。35 个决定由用户逐轮拍板（DECISIONS 2026-10-13（续）），任务 [TODO 25](../../TODO.md)。分支 `main`。
 上一条线是 [TODO 24 控制器对比](wbc-compare-20261012.md)（65 物体抓取 + 终点线刹车），它的脚本 `scripts/experiments/wbc_compare_20261012/` 是这条线的起点。
 
 **冻结规则**：§2、§3 的门槛和致命条件，§4 的判据和格子，在引入本文的那次提交里冻结（`git log --follow` 本文的第一条）。之后只许加测，不许改门槛；要改，先在 DECISIONS 单记一条并写明原因，再改本文。
@@ -390,3 +390,249 @@ ScaleBFM 拿住的局，箱子几乎不滑（≤ 1 cm/m）。抬起时就斜着�
 - **两边都不行的**：带载转 180° 走 1 m（SONIC 0/6、ScaleBFM 1–2/5）；腰 pitch 静态力矩 ~40 N·m 超过真机 35 N·m，这是动作本身的需求。
 - **对 L2 的含义**：移植 warehouse 专家时，必须带夹爪中心 + 姿态闭环（mode 2 或 6），合爪判据要看两指都夹住，不能只看一侧接触。mode 7 平抬率和 mode 6 相同但箱子更平，L2 前在 mode 扫描（25.4）里再比一次。
 - 每格 5–10 局，以上是方向，不是显著性结论。
+
+## 18. 25.4 复杂动作 C1–C7、mode 扫描、S1 的测法（2026-10-13）
+
+**片段库**（`clips.py` → `outputs/controller_compare_20261013/clips/`，16 个，50 Hz，起始骨盆在原点、朝 +x）：
+
+| 片段 | 项 | 来源 | 内容 |
+|---|---|---|---|
+| `L0_walk_forward` | 通用 | LAFAN1 walk1_subject1，分布内 | 向前走 6 s |
+| `C4_side_left` / `_right` / `_backward` / `_turn` | C4 | LAFAN1，分布内（右侧移是左侧移的镜像） | 侧移、后退、原地转 207° |
+| `C4_*_load` | C4 带载 | 同上 + IK 抱箱臂，分布外 | `walk_mars_load12` 场景，两腕各加 0.6 kg |
+| `C1_floor_pick` | C1 | IK 关键帧，分布外 | 右爪到前 0.30、右 0.15 处；双脚平踩、质心在脚上方时最低只到 0.164 m（计划写 0–0.1 m） |
+| `C2_high_reach` | C2 | IK 关键帧 | 右爪到 1.39 m，朝前、上仰 20° |
+| `C3_walk_reach` | C3 | L0 的腿 + 右臂 IK | 边走边抓住一个世界固定点 0.6 s，走动中合爪 |
+| `C5_deep_lean` | C5 | IK 关键帧 | 躯干前倾 65°，右爪伸到桌面另一侧 |
+| `C6_floor_box_lift` | C6 | IK 关键帧 | 双爪扣地面上 0.33 m 高的箱沿，再抬到 0.75 m |
+| `C7_handover` | C7 | IK 关键帧 | 右爪把东西递到中线，左爪在左侧 7 cm 处接，然后右手松开退回 |
+| `S0_stand` | — | 默认站姿 | 站 12 s；推扰 g 的底板 |
+
+IK 用的是 mars 模型上的阻尼最小二乘：双脚位姿固定，质心在两脚中点，加夹爪中心目标，必要时加躯干倾角或骨盆高度。关键帧判据对准参考片段自己的夹爪位姿，名义目标没够到的部分（C1 1.4 cm、C5 6.8 cm）记在片段文件里。
+
+**两边怎么吃片段**：
+- 先站稳，再把片段锚定到站稳后的骨盆位置和偏航上，用 1.5 s smoothstep 从当前姿态过渡到第一帧。
+- ScaleBFM：每拍都给 mars FK 出来的 14 个关键点，看哪些由 mode 决定。每局抖初始条件（xy ±2 cm、偏航 ±3°、关节 ±0.02 rad）。
+- SONIC：流式通道发 29 关节、有限差分速度，加每帧完整的骨盆姿态。deploy 的锚定用完整基座四元数，所以不能只发偏航；第一批只发了偏航，C1 连摔 6/6，作废。
+
+**读数**（`clip_measure.py`，两边同一套）：
+- 摔倒。
+- G-MPKPE：14 个身体点的世界位置误差，和 ScaleBFM 论文同口径。
+- L-MPKPE：相对骨盆、在骨盆朝向系里算。
+- 关键帧：夹爪 ≤ 5 cm 且 ≤ 15°，连续 0.5 s；窗口允许提前 0.25 s、推迟 1 s。
+- 成功 = 不摔，并且关键帧都达成；没有关键帧的片段看 G-MPKPE ≤ 10 cm。
+
+**mode 扫描**（§5）：每个片段把能表达它的 mode 都扫一遍，每个 10 局，按成功率、再按 G-MPKPE 选。
+
+**S1**：
+- ScaleBFM（`bfm_switch.py`）：站着把双爪举到身前预抓位，第 5 s 切换 mode，新加的关键点在切换那一拍用实测姿态的 FK 初始化；每局配一个同抖动、不切换的对照局，读切换后 0.5 s 的变化。
+- SONIC（`sonic_switch.py`）：从 L1 实局里读 planner ↔ 流式交接前后的变化。
+
+## 19. 25.5 扰动和估计位姿的测法（2026-10-13）
+
+**扰动规格两边共用**（`src/locomani/sim/perturb.py`）：SONIC 的 sim 读环境变量 `LOCOMANI_PERTURB`（配置里的 `collect.stack_env`，或在 plan / brake 启动前 export）；ScaleBFM 走 `runtime.Sim(perturb=...)`。
+
+| 扰动 | 规格 | SONIC 跑在 | ScaleBFM 跑在 |
+|---|---|---|---|
+| a 力矩 | mars 标称（腰 50、踝 35 N·m），所有 mars 局本来就是 | — | — |
+| b 动作延迟 | 20 / 40 ms，PD 目标和增益按物理步延迟 | bottle、warehouse 生产档各 10 局（B1 B4 B6 / W1 W3 W4），刹车 | 移植专家跑 L1 种子，刹车（plan，按速度前馈） |
+| c 观测噪声 | 陀螺 ±0.1 rad/s、关节速度 ±0.5 rad/s，均匀，每拍抽 | 生产档、B7、W6 | 同左，带载走路用回放 |
+| d 摩擦 | 地面和脚底 0.4 | 生产档、刹车、C4 片段 | 同左 |
+| e 负载 | 物体质量 ×0.5 / ×1.5（场景副本 `*_m050` / `*_m150`） | 生产档、B7、W6 | 同左 |
+| f PD 增益 | 每个关节乘 U(0.8, 1.2)，每局重抽 | 生产档、C2 片段 | 同左 |
+| g 推扰 | 每 3 s 推一次骨盆，水平随机方向，50–100 N × 0.2 s | B7、W6、S0 站立 | 同左 |
+
+c、g 的幅值计划里没给，这里是这条线定的（DECISIONS 10-13 晚）。SONIC 的生产档配置由 `perturb_configs.py` 从 L1 配置生成（`configs/experiments/controller_compare_p25_*`），带载走路 B7 / W6 用 `bottle_carry_back2` / `warehouse_mars_carry_back1` 计划。整个队列：`sonic_l2_p25_queue.sh`。ScaleBFM 一侧：`bfm_p25_batch.sh`。
+
+**估计位姿臂**（`src/locomani/backends/scalebfm/odometry.py`）：
+- 估计器的输入只有关节编码器和 IMU 姿态。FK 后取鞋底八个角点，最低的那几个算着地；着地的角点在当前估计位置上锚定，骨盆位置由锚定点和当前偏移推出来。
+- `attach()` 让 ScaleBFM 看到的骨盆位置换成这个估计，同时加 c 噪声。只在起点告诉它一次真值。
+- 用它重跑：刹车（plan 程序，按速度前馈）、移植专家的 B1 / W1 走近，和同样加噪声的真值臂对比。
+- SONIC 一侧不做：它的控制器本身不用世界位姿，专家停位两边都用特权状态。
+- 离线核对（25.4 的 ScaleBFM 局）：站着时漂移 < 0.2 cm。后退 2.2 m 漂 60–90 cm，原因是 ScaleBFM 后退时脚在地上滑，着地角点在接触期间就走了 0.75–0.84 m。这个漂移是真机上世界锚定参考要吃的。
+
+## 20. 25.7 移植专家的做法（2026-10-13）
+
+只换控制器：一局从 SONIC 同种子那一局的起点开始（机器人位置、物体位姿、专家自己的走近计划），程序用专家自己的代码和参数，判成也用它自己的规则。
+
+- **bottle**（`bfm_expert_bottle.py`）：照 `simple_policy._run` 的 guard 分支。
+  - 走近：朝计划站点直走，台面带内最前点停在桌边前 `guard_margin_m`，带 24.7.1 的刹车前馈和 25.3 的停后补位。
+  - 举到 ready 位：`BimanualIK.lifted_ready`。
+  - 抓取：SupportedMotion，伸手折线到预抓点（手举起后重规划），等稳定，冲刺入位并横向修正，对不准就退出重进，闭合后看双指接触门，抬起，回正。
+  - 尾段同生产程序：后退 0.35 m，保持 2 s，瓶子在掌系里滑移 < 3 cm、离桌面 > 3 cm 才算成功。
+  - 没移植：参考轨迹的避碰检查 `_clear`。
+- **warehouse**（`bfm_expert_warehouse.py`）：
+  - 走近：站到专家可接受站位带的近端（箱心在骨盆前 `stand_off − stand_depth_tolerance`），guard 线先到就先停。
+  - 举到 ready 位：`lifted_ready` 混合过去，等两腕到位。
+  - 之后专家的 `CoordinatedReach` 原样跑（伸手、对齐、下探、合爪、抬起、站起、保持），自带门控、重试、手部反馈和成功规则；喂它这个 sim 的 `PrivilegedPublisher.state()` 和辅助位姿估计，和 `attempt.reach_step` 在 SONIC 上喂它的东西一样。
+- **专家参考怎么变成 ScaleBFM 的输入**：专家每拍输出 29 关节参考和根姿态，在 IK 的骨盆处做 FK 得到 14 个关键点；未来 6 帧按参考速度外推；用哪些由 mode 决定。手爪按专家的闭合度从 HAND_OPEN 走到闭合值，和 SONIC 一样。
+- **mode 和标定在 L1 种子上选**（L2 用新种子）：
+  - bottle：mode 4 10/10（mode 6 10/10，mode 2 8/10，mode 7 7/10，SONIC 6/10）。
+  - warehouse：mode 2、`visual.tracking_gain` 0.5，2/10（其余组合 0–1/10，mode 6 摔得最多，SONIC 5/10）。
+  - warehouse 专家是和 SONIC 一起调出来的：它指望 SONIC 不交付下蹲、腰只交付一半。ScaleBFM 照着参考做，蹲得更深、倾得更多，于是伸手停滞或箱子倾斜。完整搜索记录在 DECISIONS 10-13 晚。
+
+## 21. 25.6 L1 关口判定（2026-10-13；用户指示连续做完，这条线按冻结的 §3 自己判）
+
+按 §3 四条逐条看：
+
+1. **W0**：25.1 已过，mars 标称参数下 0/80 摔。
+2. **a、h 否决**：
+   - a：ScaleBFM 在 W0、W2、W4、C1、C5、C6 上摔倒都是 0/10。C1、C5、C6 每个 mode 10 局，全 mode 0 摔。
+   - h：TensorRT FP32 p99 0.90 ms（25.1），远低于 20 ms。
+3. **生产档摔倒率不高于 SONIC**：bottle、warehouse 生产档两边都是 0 摔。C1–C7 的 ScaleBFM 全 mode 扫描 990 局 0 摔。
+4. **现有专家要用的动作，ScaleBFM 用任何 mode 都交付不了**：不成立。
+   - bottle：在走进去的站位上能抓，正手可达更好（B3 63 对 41）；移植后的专家 L1 种子 10/10。
+   - warehouse：双手扣箱抬起，ScaleBFM 回放时在 SONIC 成功的 5 局里都抬起来了（25.3）。
+   - warehouse 移植专家只到 2/10，是专家和 SONIC 一起调出来的问题（§20），不是 ScaleBFM 交付不了这个动作。这一条记为 L2 的风险，不当致命短板。
+
+**判定：L1 关口通过**，进入 L2（25.7 / 25.8）。
+
+记下来的"比 SONIC 差但不致命"：
+- 虎口朝右交付不了（24.6）。
+- 双手扣箱容易斜，开环必须加夹爪闭环（25.3）。
+- 去掉肩肘关键点的 mode 切换会让手腕掉约 21 cm（S1）。
+- 腿运动学里程计在 ScaleBFM 滑脚时漂得很厉害（§19）。
+
+## 22. 25.4 的结果（2026-10-13）
+
+表 `outputs/controller_compare_20261013/complex/complex.md`。每格 10 局，两边全程 0 摔：ScaleBFM 全 mode 990 局，SONIC 160 局。
+
+| 片段 | ScaleBFM 最好 mode：成功，G / L-MPKPE cm | mode 2：成功，G / L | SONIC 流式：成功，G / L |
+|---|---|---|---|
+| L0 向前走（分布内） | 4：10/10，4.5 / 2.5 | 10/10，5.1 / 2.8 | 0/10，39.8 / 7.5 |
+| C4 后退 | 4：10/10，6.4 / 2.8 | 10/10，7.0 / 4.0 | 0/10，29.6 / 4.6 |
+| C4 左侧移 | 6：10/10，8.9 / 4.6 | 0/10，10.9 / 5.5 | 0/10，65.9 / 8.0 |
+| C4 右侧移（镜像） | 6：0/10，11.2 / 5.2 | 0/10，11.8 / 4.9 | 0/10，69.0 / 8.1 |
+| C4 原地转 207° | 4：10/10，4.4 / 3.7 | 0/10，10.4 / 7.1 | 0/10，17.1 / 3.6 |
+| C4 带载（后退 / 左 / 右 / 转） | 2、6、6、7：都 10/10，5.8–9.3 / 3.5–6.3 | 10、10、10、2 /10 | 都 0/10，G 23–61 |
+| C1 地面拾取（爪到 0.16 m） | 4：10/10，3.9 / 2.9，关键帧误差中位 1.6 cm | 7/10，4.6 cm | 0/10，6.1 / 5.2，6.6 cm |
+| C2 高处 1.39 m | 7：0/10，2.7 / 2.4 | 0/10；位置 3.7 cm、姿态 14.5° | 0/10，7.1 / 4.9，5.7 cm |
+| C3 边走边抓 | 4：0/10，6.4 / 3.6，5.6 cm | 0/10 | 0/10，46.0 / 9.8，12.3 cm |
+| C5 深弯腰 65° | 4：0/10，6.3 / 5.6，6.2 cm | 0/10；位置 4.5 cm、姿态 34° | 0/10，10.3 / 9.4，28.5 cm |
+| C6 双臂地面搬箱 | 3：10/10，4.9 / 4.2，3.4 cm | 0/10（20/40 关键帧） | 0/10，6.7 / 5.7，6.7 cm |
+| C7 右手递左手 | 3：10/10，5.7 / 5.4，3.5 cm | 0/10（10/20 关键帧） | 0/10，5.9 / 3.5，7.2 cm |
+| S0 站 12 s | 7：10/10，1.8 / 1.6 | 10/10，4.2 / 3.1 | 10/10，3.5 / 0.9 |
+
+读法：
+
+- **能做更多复杂动作**：ScaleBFM 用对了 mode，C1、C4、C6、C7 都 10/10。SONIC 在所有带关键帧的片段上都是 0/10，夹爪离目标 5.7–28.5 cm，C5 深弯腰最差。
+- **SONIC 走路片段的 G-MPKPE 大（17–69 cm），是接口问题，不是跟踪问题**：流式通道只收关节和骨盆姿态，不收骨盆位置，世界系里走多远由它自己的步态决定。它的 L-MPKPE（相对骨盆）3.6–8.1 cm，和 ScaleBFM 是一个量级。用 planner 通道表达 C4 这一组没做。
+- **都做不到的**：
+  - C2 高处够取：位置到了，姿态差 14–30°，卡在 15° 的门槛上。
+  - C3 走动中合爪：手在世界里定不住 0.5 s。
+  - C5 深弯腰：姿态差 31–46°。
+  - 右侧移（镜像片段）：G-MPKPE 刚好超 10 cm。
+- **"最好的 mode 比 mode 2 好多少"（§5）**：
+  - C6、C7 用 mode 3（双腕 + 双踝）10/10，mode 2 0/10。脚的关键点让它在下蹲和递手时不挪脚。
+  - C4 的侧移和转身用 mode 4 / 6，比 mode 2 的 0/10 好。
+  - C1 用 mode 4，比 mode 2 多 3/10。
+  - mode 7 只在 C2 的 G-MPKPE 和带载转身上最好。
+- **25.3.3**：mode 6 和 mode 7 在 C6（双臂地面搬箱）上都是关键帧 0/40，mode 3 / 4 才行。L2 的 warehouse 专家在 L1 种子上选的是 mode 2（§20）。
+
+**S1 切换瞬态**（`switch/s1.md`，每格 10 局，0 摔）：
+- 加关键点的切换（2→4 / 6 / 7）：手腕移 1.6–2.5 cm，骨盆 0.3–0.8 cm。
+- 去掉关键点的切换：
+  - 6 / 7→2：手腕掉约 21 cm。肘和肩不再被约束，手臂落回策略自己的默认姿态。
+  - 0→2：手腕跳 28 cm，因为加进来的手腕目标是切换那一拍的实测位置，但手臂已经在下落。
+- SONIC 交接：warehouse planner→流式，手腕 1.0 cm；bottle 停稳后接管，2.9 cm。
+- L2 每个任务全程只用一个 mode，所以没有切换要测。
+
+## 23. 25.5 / 25.8 的跑法（2026-10-13 晚起）
+
+SONIC 必须独占机器，所以全部 SONIC 批次排成一条队列（实例 0、GPU 0），跑完再接 ScaleBFM 和汇总，整条链不用人管：
+
+```bash
+D=scripts/experiments/controller_compare_20261013
+bash $D/sonic_l2_p25_queue.sh outputs/controller_compare_20261013/sonic_l2_p25.log   # clips0 → l2 → p25 → carry → brake → clips
+bash $D/after_sonic_queue.sh   # 等上面那条结束：重跑 C4 带载片段（SONIC）→ p25_l2_post.sh convert → bfm_l2_batch.sh → bfm_p25_batch.sh → p25_l2_post.sh tables
+```
+
+产物：
+- L2 表：`outputs/controller_compare_20261013/l2/l2.{md,json}`（`l2_measure.py`）。
+- 扰动表：`p25/{bottle/bottle_l1,warehouse/warehouse_p25}.md`，`p25/clips/{f,d04,g}/complex.md`，刹车 `p25/brake/`，估计位姿 `p25/odometry/`。
+- 链路日志：`after.log`。
+
+## 24. 25.5 的结果（2026-10-14）
+
+表 `outputs/controller_compare_20261013/p25/p25.md`（`p25_summary.py`）。生产程序格每格 10 局：SONIC 是生产专家加这一项扰动，ScaleBFM 是 25.7 的移植专家，种子相同（L1 种子）。
+
+| 扰动 | bottle SONIC | bottle ScaleBFM | warehouse SONIC | warehouse ScaleBFM |
+|---|---|---|---|---|
+| 无 | 6/10 | 10/10 | 5/10 | 2/10 |
+| b 延迟 20 ms | 4/10，摔 1 | 9/10 | 1/10 | 4/10 |
+| b 延迟 40 ms | **0/10，摔 9** | 9/10 | **0/10，站不稳**（`initial_stance_unstable`） | 2/10 |
+| c 观测噪声 | 9/10 | 9/10 | 2/10 | 0/10 |
+| d 摩擦 0.4 | 8/10 | 10/10 | 7/10 | 3/10 |
+| f PD 增益 ±20% | 10/10 | 10/10 | 3/10 | 0/10 |
+| e 负载 ×0.5 | 8/10 | 10/10 | 5/10 | 1/10 |
+| e 负载 ×1.5 | 10/10 | 10/10 | 1/10 | 1/10 |
+
+- **延迟是 SONIC 的短板**：
+  - 40 ms 时，bottle 摔 9/10，warehouse 一局都没站稳，终点线刹车连摔 3 次后整批停掉。
+  - 20 ms 时成功率已经掉一半。
+  - ScaleBFM 在 40 ms 下照常完成（bottle 9/10），刹车越线 14/30，最远 5.8 cm，不摔。
+  - 公平性：SONIC 的栈是实时异步的，本身就有 1–5 ms 的 LowState 延迟（deploy 日志）；ScaleBFM 是锁步，自身延迟为 0。加上的延迟两边一样。
+- **其他扰动下 bottle 两边都稳**。warehouse 的 ScaleBFM 本来就弱（§20），扰动下也一直低。
+- **带载走路**（bottle 后退 2 m、warehouse 转 180° + 1 m，抬起的局里拿住几局）：
+  - bottle 两边几乎都拿住；g 推扰下 ScaleBFM 3/5，SONIC 2/2。
+  - warehouse ScaleBFM 2/5（负载 ×0.5 时 5/5，×1.5 时 0/5），SONIC 2/5–4/4。
+  - ScaleBFM 带载走路用的是回放 SONIC 抓取后接自己的搬运程序，和 25.3 一样。
+- **刹车**：
+  - 摩擦 0.4：ScaleBFM 不越线，停位误差 −1.1 ± 1.0 cm；SONIC 越线 1/30。
+  - 延迟 20 ms：ScaleBFM 越线 7/30（最远 1.4 cm），SONIC 3/30（最远 9.5 cm）。
+- **片段**：
+  - 摩擦 0.4 下的 C4：ScaleBFM 8–10/10，SONIC 0/10。和不加扰动时一样，SONIC 的流式通道表达不了世界系平移。
+  - g 推扰下站立：ScaleBFM 10/10，G-MPKPE 5.5 cm；SONIC 4/10，12.5 cm。
+  - f 下的 C2：SONIC 1/10，ScaleBFM 0/10，两边都基本做不到。
+- **估计位姿臂（§4.5）**：ScaleBFM 看到的骨盆位置换成腿运动学 + IMU 的估计，同时加 c 噪声。
+  - 刹车：30/30 越线，停位误差 +23.4 ± 7.8 cm。真值臂（同样加噪声）是 2/30，+0.2 ± 1.5 cm。
+  - 移植专家：bottle 0/10（伸手时把瓶子碰倒），warehouse 10/10 摔倒。真值臂分别是 9/10 和 0/10。
+  - 原因是 ScaleBFM 走路时脚在地上滑，着地角点在接触期间就跟着走，腿运动学估计跟着漂（§19）。
+  - **按 §4.5 的判法，估计位姿下 ScaleBFM 的停位优势不成立，而且比 SONIC 差得多**：SONIC 的控制器本身不用世界位姿。ScaleBFM 上真机，必须另找世界位姿来源（外部定位、视觉里程计），或者把世界锚定的参考改成相对机身的参考。这一条要用户看。
+
+## 25. 25.7 / 25.8 的结果（2026-10-14）
+
+L2 表 `outputs/controller_compare_20261013/l2/l2.md`（`l2_measure.py`）。SONIC 跑生产专家（种子 bottle 41000 起、warehouse 47000 起，各 40 局，再加补跑）；ScaleBFM 跑 25.7 的移植专家，从 SONIC 同一局的起点开始。bottle mode 4；warehouse mode 2，`tracking_gain` 0.5。
+
+| 场景 / 档 | 配对局 | SONIC 成功 | ScaleBFM 成功 | McNemar p | 摔（S / B） | 掉物（S / B） | ego p95 rad/s（S / B） |
+|---|---|---|---|---|---|---|---|
+| bottle 标称 | 45（作废 6） | 40 | 39 | 1.0 | 0 / 0 | 2 / 6 | 0.74 / 0.49 |
+| bottle 组合 | 46（作废 2） | 2 | 35 | < 0.001 | 4 / 0 | 9 / 5 | 3.49 / 0.61 |
+| warehouse 标称 | 40 | 20 | 6 | 0.003 | 0 / 0 | 6 / 3 | 0.49 / 0.57 |
+| warehouse 组合 | 40 | 1 | 4 | 0.375 | 1 / 0 | 7 / 7 | 2.54 / 0.62 |
+
+跑的过程里出过的事（DECISIONS 10-14）：
+- **SONIC bottle 标称档第 30 局挂住**：机器人站在离瓶子 1.4 m 处，sim 还在跑，采集进程不动。手动停掉。
+- **组合档第 38 局又被看门狗停掉**：日志 12 分钟没动。
+- **补跑**：两档各补了一批（`_b` 种子 41100 起，标称档再加 `_c` 41200 起）。
+- **作废**：bottle 实时率 0.844–0.892，低于 0.85 的局按 §6 作废，标称档 6 局、组合档 2 局。warehouse 不录制，实时率约 1.0。
+- **8 局 SONIC 没走完就失败**：组合档里有 8 局 SONIC 在走近之前就失败了（站起时走偏、出生时看不见瓶子），这些局 ScaleBFM 用同一个桌边走近计划。去掉这 8 局，结果是 2 对 28 / 38。
+
+失败类：
+- bottle 标称：ScaleBFM 的 6 局都是"抬起时没把瓶子抬上去"，计入掉物；SONIC 是失去指垫接触 3、对不准 1、站位够不着 1。
+- bottle 组合：SONIC 主要是站位够不着 12，入位超时、闭合后没有双指接触各 5，后退时瓶子掉了 7。
+- warehouse 标称：ScaleBFM 伸手停滞 33；SONIC 失去夹持 7、伸手停滞 5、箱子倾斜 4、试提没夹住 3。
+- warehouse 组合：SONIC 的手臂准备阶段不稳 17，伸手停滞 14。
+
+**对照 §2**（`l2.md` 末尾）：
+- **主判据不满足**：bottle 标称 39 对 40，两边持平；warehouse 标称 6 对 20，ScaleBFM 显著差（p = 0.003）。
+- **护栏**：bottle 标称的掉物 6 对 2，超过 SONIC + 1，不过；其余都过。
+- **组合档否决不成立**：ScaleBFM 在两个场景都比 SONIC 高（bottle 35 对 2，warehouse 4 对 1）。
+
+**怎么读**：
+- warehouse 输在专家，不在控制器。这个专家是和 SONIC 一起调出来的（§20）：ScaleBFM 照着参考做，下蹲、前倾都比 SONIC 实际做到的多，所以伸手停滞。25.3 用回放 SONIC 实际手位的做法，ScaleBFM 在 SONIC 成功的局里都抬起来了。
+- bottle 标称两边一样。组合档（20 ms 延迟 + 噪声 + 增益）SONIC 掉到 2/46，ScaleBFM 35/46，和 25.5 里延迟的结果一致。
+- 第三个限制在 §24 的估计位姿臂。
+- **25.9 的最终判定按计划交用户。**
+
+并排视频（左 SONIC、右 ScaleBFM，对齐在交接时刻，带幽灵手）：`outputs/controller_compare_20261013/l2/videos/warehouse_s47000_{11,00}{,_preview}.mp4`。11 是两边都成功的局，00 是只有 SONIC 成功的局（ScaleBFM 伸手停滞）。预览分别是 213 KB 和 184 KB。
+
+```bash
+D=scripts/experiments/controller_compare_20261013
+python3 $D/p25_summary.py                                  # 25.5 总表
+third_party/GR00T-WholeBodyControl/.venv_sim/bin/python $D/l2_measure.py --out outputs/controller_compare_20261013/l2
+MUJOCO_GL=egl third_party/GR00T-WholeBodyControl/.venv_sim/bin/python $D/warehouse_video.py \
+  outputs/controller_compare_20261013/l2/warehouse/sonic_nominal/states/sonic_s47000_11.npz \
+  outputs/controller_compare_20261013/l2/warehouse/bfm_nominal/bfm_s47000_11.npz --align handoff --before 6 --after 18 \
+  --out outputs/controller_compare_20261013/l2/videos/warehouse_s47000_11.mp4
+```

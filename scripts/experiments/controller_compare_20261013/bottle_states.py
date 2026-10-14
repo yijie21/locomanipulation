@@ -110,6 +110,8 @@ def sonic_round(sidecar: Path, row: dict, fk: Fk) -> tuple[dict, dict]:
         case_id=row["case_id"],
         seconds=row.get("seconds"),
         stand=_find(row, "stand"),
+        # the round's real-time factor (plan §6: < 0.85 voids it), simulated over wall seconds of the sidecar
+        rtf=round(float((t[-1] - t[0]) / max(walls[-1] - walls[0], 1e-6)), 3),
     )
     arrays = dict(
         t=t,
@@ -188,10 +190,18 @@ def main(argv=None) -> int:
         fk = Fk()
         rows = [json.loads(line) for line in (run / "skills" / "manifest.jsonl").open()]
         traces = sorted((run / "trace").glob("*_state_trace.npz"), key=lambda f: f.stat().st_mtime)
-        if len(traces) != len(rows):
+        named = {int(t.stem.split("_")[1]): t for t in traces if t.stem.startswith("round_")}
+        if len(named) == len(traces):  # plan_episode names them round_RR: pair by the round, a missing one is skipped
+            pairs = [(row, named[row["round"]]) for row in rows if row["round"] in named]
+            for row in rows:
+                if row["round"] not in named:
+                    print(f"round {row['round']}: no state trace ({row.get('why')})")
+        elif len(traces) != len(rows):
             print(f"{len(traces)} traces for {len(rows)} rounds: pairing by order is unsafe, stopping")
             return 1
-        for row, tr in zip(rows, traces):
+        else:
+            pairs = list(zip(rows, traces))
+        for row, tr in pairs:
             arrays, facts = plan_round(tr, row, fk, program)
             label = f"sonic_{program}_r{row['round']:02d}"
             save(out, label, arrays, facts)
@@ -201,6 +211,11 @@ def main(argv=None) -> int:
     if "--program" in argv:  # a production-expert variant (the extrapolation configs): its name in the tables
         k = argv.index("--program")
         program = argv[k + 1]
+        del argv[k : k + 2]
+    prefix = "sonic"
+    if "--label-prefix" in argv:  # a make-up batch of the same tier: its rounds must not overwrite the first batch's
+        k = argv.index("--label-prefix")
+        prefix = argv[k + 1]
         del argv[k : k + 2]
     run, out = (Path(a) for a in argv)
     fk = Fk()
@@ -217,7 +232,7 @@ def main(argv=None) -> int:
             continue
         arrays, facts = sonic_round(s, row, fk)
         facts["program"] = program
-        label = f"sonic_r{row['round']:02d}a{row['attempt']}"
+        label = f"{prefix}_r{row['round']:02d}a{row['attempt']}"
         save(out, label, arrays, facts)
         print(label, "ok" if row["ok"] else row["why"], len(arrays["t"]), "ticks", sorted(facts["events"]))
     return 0

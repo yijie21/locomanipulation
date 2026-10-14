@@ -623,6 +623,9 @@ class EpisodeControlServer:
                 print(f"[episode] bad request: {e}")
                 continue
             if req.get("cmd") == "reset":
+                from locomani.sim import perturb
+
+                perturb.on_reset()  # TODO 25.5: a new episode redraws the PD gain scale and empties the delay queue
                 try:
                     self._apply(req)
                 except (TypeError, ValueError) as exc:
@@ -673,6 +676,14 @@ class EpisodeControlServer:
                         f"[episode] arm pin: L={'on' if now[0] else 'off'} R={'on' if now[1] else 'off'} "
                         f"waist={'on' if now[2] else 'off'}"
                     )
+            elif req.get("cmd") == "push":
+                # TODO 25.5 g: a force on the pelvis for `seconds`, applied by run_sim_locomani's torque hook
+                from locomani.sim import perturb
+
+                perturb.request_push(
+                    req.get("force", [0, 0, 0]), float(req.get("seconds", 0.2)), float(self.model.opt.timestep)
+                )
+                print(f"[episode] push {req.get('force')} N for {req.get('seconds')} s")
             elif req.get("cmd") == "pin_object":
                 name, pose = req.get("name"), req.get("pose")
                 if pose is None:
@@ -764,6 +775,12 @@ class EpisodeControlClient:
                     "right": list(map(float, right)) if right is not None else None,
                 }
             )
+        )
+
+    def push(self, force, seconds: float = 0.2) -> None:
+        """Push the pelvis with `force` (N, world xyz) for `seconds` (TODO 25.5 g)."""
+        self.sock.send_string(
+            json.dumps({"cmd": "push", "force": [float(v) for v in force], "seconds": float(seconds)})
         )
 
     def pin_object(self, name: str, pos=None, quat=None) -> None:

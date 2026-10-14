@@ -26,6 +26,7 @@ import torch
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.scalebfm.network import load_policy, quat_apply_inverse, quat_mul_inverse_left
 from locomani.paths import REPO as ROOT
+from locomani.sim import perturb as perturbation
 
 # --- assets ------------------------------------------------------------------
 MODE_TABLE = os.path.join(ROOT, "assets/scalebfm/mode_table.pt")
@@ -93,7 +94,7 @@ class Sim:
     """Our crate scene (or any scene_locomani.xml with the G1; the tracked object is optional), ScaleBFM's PD on
     the 29 joints, our PD on the grippers."""
 
-    def __init__(self, meta, video=False, backend: ScaleBfmBackendConfig | None = None):
+    def __init__(self, meta, video=False, backend: ScaleBfmBackendConfig | None = None, perturb: dict | None = None):
         self.cfg = backend or ScaleBfmBackendConfig()
         scene = self.cfg.scene_path()
         self.m = mujoco.MjModel.from_xml_path(os.path.join(scene, "scene_locomani.xml"))
@@ -150,6 +151,13 @@ class Sim:
         surf = self.smeta["surfaces"].get("A")
         self.edge_x = None if surf is None else float(surf["xy"][0] - surf["flat_half_extent"][0])
         self.table_top = None if surf is None else float(surf["top"])
+        # TODO 25.5: the SONIC sim's perturbations (sim/perturb.py) -- delay / gain scale in step(), noise in state()
+        self.pert = perturbation.Perturbation(perturb, len(jid), self.low_dt) if perturb else None
+        if perturb and perturb.get("friction") is not None:
+            perturbation.set_friction(
+                self.m, float(perturb["friction"]), ("left_ankle_roll_link", "right_ankle_roll_link")
+            )
+        self.pelvis_id = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
         self.renderer = mujoco.Renderer(self.m, height=480, width=640) if video else None
         self.cam = mujoco.MjvCamera()
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -169,17 +177,27 @@ class Sim:
         self.d.ctrl[:] = 0
         mujoco.mj_forward(self.m, self.d)
         self.grip_target[:] = GRIP_OPEN
+        if self.pert is not None:
+            self.pert.redraw()
+            self.pert.queue.clear()
+            self.pert.steps = 0
+            perturbation.PUSH.update(force=None, steps=0)
 
     # -- state ------------------------------------------------------------------
     def state(self):
         d = self.d
-        return dict(
+        st = dict(
             root_pos=d.qpos[:3].copy(),
             root_quat=d.qpos[3:7].copy(),
             ang_vel=d.qvel[3:6].copy(),
             dof_pos=d.qpos[self.qadr].copy(),
             dof_vel=d.qvel[self.vadr].copy(),
         )
+        if self.pert is not None and self.pert.noise:
+            st["ang_vel"] = self.pert.noisy("gyro", st["ang_vel"])
+            st["dof_pos"] = self.pert.noisy("q", st["dof_pos"])
+            st["dof_vel"] = self.pert.noisy("dq", st["dof_vel"])
+        return st
 
     def body(self, name):
         b = self.bid[name]
@@ -198,8 +216,13 @@ class Sim:
     # -- step -------------------------------------------------------------------
     def step(self, tgt):
         d = self.d
+        gain = 1.0 if self.pert is None else self.pert.gain
         for _ in range(self.decim):
-            tau = self.kp * (tgt - d.qpos[self.qadr]) - self.kd * d.qvel[self.vadr]
+            if self.pert is not None:
+                self.pert.tick()
+            perturbation.apply_push(d, self.pelvis_id)
+            q_cmd = tgt if self.pert is None else self.pert.delayed(np.asarray(tgt, dtype=float).copy())
+            tau = gain * self.kp * (q_cmd - d.qpos[self.qadr]) - gain * self.kd * d.qvel[self.vadr]
             d.ctrl[self.act] = np.clip(tau, -self.tlim, self.tlim)
             d.ctrl[self.gact] = np.clip(
                 self.cfg.grip_kp * (self.grip_target - d.qpos[self.gq]) - self.cfg.grip_kd * d.qvel[self.gv],
@@ -207,6 +230,10 @@ class Sim:
                 self.grip_clip,
             )
             mujoco.mj_step(self.m, d)
+
+    def push(self, force, seconds: float = 0.2) -> None:
+        """TODO 25.5 g: `force` (N, world xyz) on the pelvis for `seconds`."""
+        perturbation.request_push(force, seconds, self.low_dt)
 
     def frame(self):
         pel = self.d.xpos[self.bid["pelvis"]]

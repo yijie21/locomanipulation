@@ -93,8 +93,11 @@ def main(argv=None) -> int:
     ap.add_argument("left", type=Path)
     ap.add_argument("right", type=Path)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--before", type=float, default=8.0, help="seconds shown before `close`")
+    ap.add_argument("--before", type=float, default=8.0, help="seconds shown before the aligned event")
     ap.add_argument("--after", type=float, default=9.0, help="seconds shown after `close`")
+    ap.add_argument(
+        "--align", default="close", help="the event both clips are aligned on (handoff when one never closes)"
+    )
     a = ap.parse_args(argv)
     m = mujoco.MjModel.from_xml_path(str(SCENE / "scene_locomani.xml"))
     m.vis.global_.offwidth, m.vis.global_.offheight = max(W, m.vis.global_.offwidth), max(H, m.vis.global_.offheight)
@@ -139,7 +142,7 @@ def main(argv=None) -> int:
     for s in np.arange(-a.before, a.after, 1.0 / FPS):
         tiles = []
         for z, f, v in sides:
-            i = int(np.clip(np.searchsorted(z["t"], f["events"]["close"] + s), 0, len(z["t"]) - 1))
+            i = int(np.clip(np.searchsorted(z["t"], f["events"][a.align] + s), 0, len(z["t"]) - 1))
             tiles.append(v.frame(z["qpos"][i], ghosts_at(z, i)))
         ff.stdin.write(np.hstack(tiles).tobytes())
     ff.stdin.close()

@@ -300,8 +300,9 @@ class Round:
         R_c = np.asarray(c["R"], dtype=float)
         tool_c = np.asarray(c["tool"], dtype=float)
         direction = R_c[:, 0]
-        bias_w = self.bias_w_fn(H)
+        bias_w, bias_src = self.bias_w_fn(H, R_c, self.stance_yaw)
         rec["bias_world_m"] = [float(v) for v in bias_w]
+        rec["bias_source"] = bias_src
         if self.ghost_mocap >= 0:
             sim.d.mocap_pos[self.ghost_mocap] = C.wrist_from_tool(tool_c, R_c)
             sim.d.mocap_quat[self.ghost_mocap] = R.quat_wxyz(R_c)
@@ -528,6 +529,11 @@ def main(argv=None):
     ap.add_argument("--bias", type=Path, default=None, help="probe/bias.json; the scalebfm.<bias-key> constant")
     ap.add_argument("--bias-key", default="all")
     ap.add_argument(
+        "--bias-attitude", type=Path, default=None,
+        help="probe/scalebfm_attitude/envelope.json: aim past the nearest probed attitude's own delivery error "
+        "(bias_heading_cm) when that attitude is deliverable; the --bias constant otherwise (TODO 24.6.1)",
+    )  # fmt: skip
+    ap.add_argument(
         "--envelope", type=Path, default=None,
         help="probe/scalebfm_attitude/envelope.json (attitude_summary.py): --select score/cache skip the candidates whose "
         "palm attitude ScaleBFM did not deliver in the attitude probe (TODO 24.6)",
@@ -546,8 +552,17 @@ def main(argv=None):
     if args.bias is not None:
         bias_m = np.asarray(json.loads(args.bias.read_text())["scalebfm"][args.bias_key]["bias_m"], dtype=float)
 
-    def bias_w_fn(H):
-        return H.T @ bias_m
+    bias_att = C.Envelope(args.bias_attitude) if args.bias_attitude is not None else None
+
+    def bias_w_fn(H, R_grasp, yaw):
+        if bias_att is not None:
+            row, dist = bias_att.nearest(R_grasp, yaw)
+            # only attitudes ScaleBFM delivered: outside the envelope the probe's error is 5-26 cm of scatter, not a
+            # bias (paired3, 10-13: aiming past it worsened the open-loop pre-grasp, p90 11.0 -> 15.3 cm)
+            if dist <= C.GRID_MAX_DEG and row.get("deliverable") and row.get("bias_heading_cm") is not None:
+                tag = f"attitude elev {row['elev']} yaw {row['yaw_dev']} roll {row['roll']} ({dist:.0f} deg)"
+                return H.T @ (np.asarray(row["bias_heading_cm"], dtype=float) / 100), tag
+        return H.T @ bias_m, "constant"
 
     ids = sorted(objects()) if args.objects == "all" else [int(v) for v in args.objects.split(",")]
     args.out.mkdir(parents=True, exist_ok=True)

@@ -253,3 +253,35 @@ BRAKE_OUT=$PWD/$B/sonic_guard bash scripts/experiments/brake_marker_20260923.sh 
   --speeds 0.55,0.35,0.25 --repeats 10                                                              # SONIC 一组（起栈、跑、落栈、渲染）
 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/experiments/wbc_compare_20261012/brake_summary.py --out $B
 ```
+
+## 10. 第 8 步：两处前馈补偿（24.6.1、24.7.1；用户 2026-10-13 定"加前馈"）
+
+**刹车（24.7.1）**：`bfm_brake.py --program plan --ff`。`--ff 0.03` 是 TODO 原提的 3 cm 常数；`--ff speed` 按 §9 实测的停短量（0.55 / 0.35 / 0.25 m/s 各 1.6 / 3.6 / 4.5 cm，`FF_SHORT`）按速度插值。换种子（`--seed 1`）各 10 局，表是停位相对参考终点的误差和脚尖越线：
+
+| 速度 m/s | 不补（对照） | 常数 3 cm | 按速度 |
+|---|---|---|---|
+| 0.55 | −1.6 ± 0.6 cm，0/10 越线 | +1.3 ± 0.7 cm，**3/10 越线**（最远 +0.2 cm） | −0.2 ± 0.7 cm，0/10 |
+| 0.35 | −3.9 ± 0.6，0/10 | −0.9 ± 0.6，0/10 | −0.2 ± 0.6，0/10 |
+| 0.25 | −4.5 ± 1.8（最差 −9.6），0/10 | −0.9 ± 0.7，0/10 | +0.5 ± 0.7（最差 −1.2），0/10 |
+
+按速度前馈把停短量消到 ±0.5 cm 内、0.25 m/s 那种 8–10 cm 的离群也没了，不越线；常数 3 cm 在 0.55 m/s 越线，不用。横向 sd、yaw、站稳时间不变。后续 ScaleBFM 的停位程序用 `--ff speed` 的这张表（同一套参考梯形、同一 `WALK_ACC`）。
+
+**姿态前馈（24.6.1）**：`bfm_grasp.py --bias-attitude envelope.json`，选中抓取的姿态在包络里可交付时，用该姿态自己的 `bias_heading_cm` 代替全局常数，否则仍用常数（第一版对不可交付姿态也用，`paired3` 预抓误差 p90 11.0 → 15.3 cm，改掉）。同样的轮次配对比较（同一抓取）：
+
+| 臂 | 用上姿态前馈的局 | 开环预抓误差中位（常数 → 姿态） | 变好的局 | 抬起 |
+|---|---|---|---|---|
+| 放开臂 `free3` 对 `free2` | 120 | 3.3 → 2.8 cm | 66 / 119 | 105 → 105 |
+| 受控臂 `paired4` 对 `paired2` | 52 | 2.9 → 3.2 cm | 22 / 52 | 48 → 47（全臂 68 → 67） |
+
+结论：按姿态的常数不比全局常数好，抬起率不变。包络只在物体 040 的一个位置、两个高度上探过，误差主要随位置变，姿态常数换到别的站位不成立。默认仍是全局常数（`--bias`），`--bias-attitude` 留作选项。表 `compare/{paired3,paired4,free3}.md`。
+
+```bash
+B=outputs/wbc_compare_20261012
+for v in 0:ff0 0.03:ff3 speed:ffspeed; do CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src OMP_NUM_THREADS=2 third_party/Isaac-GR00T/.venv/bin/python \
+  scripts/experiments/wbc_compare_20261012/bfm_brake.py --program plan --ff ${v%%:*} --seed 1 --out $B/brake_ff/bfm_plan_${v##*:}; done
+bash scripts/experiments/wbc_compare_20261012/bfm_batch.sh 4 1 $B/bfm_grasp/paired4 --select paired --pair-runs _wbc2 \
+  --rounds 2 --yaws 2 --bias $B/probe/bias.json --bias-attitude $B/probe/scalebfm_attitude/envelope.json
+bash scripts/experiments/wbc_compare_20261012/bfm_batch.sh 4 1 $B/bfm_grasp/free3 --select score --envelope $B/probe/scalebfm_attitude/envelope.json \
+  --rounds 2 --yaws 2 --bias $B/probe/bias.json --bias-attitude $B/probe/scalebfm_attitude/envelope.json
+python3 scripts/experiments/wbc_compare_20261012/compare_summary.py --sonic _wbc2 --arm paired4
+```

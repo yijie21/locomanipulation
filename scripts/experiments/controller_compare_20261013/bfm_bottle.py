@@ -284,7 +284,7 @@ def replay_round(pol, sim, z, f, a, fk):
     facts = dict(
         f,
         controller="scalebfm",
-        program=f"replay_m{a.mode}" if a.carry is None else f"carry_{a.carry}_m{a.mode}",
+        program=(f"replay_m{a.mode}" if a.carry is None else f"carry_{a.carry}_m{a.mode}") + a.tag,
         mode=a.mode,
         events=events,
         replay=dict(sonic_t0=t0, sonic_t1=t1, bodies=list(bodies)),
@@ -310,8 +310,12 @@ def main(argv=None) -> int:
     ap.add_argument("--walk-speed", type=float, default=0.25, help="walk: m/s (bottle_simple_200 guard walk_speed)")
     ap.add_argument("--margin", type=float, default=0.03, help="walk: band clearance kept before the edge (m)")
     ap.add_argument("--settle", type=float, default=3.0, help="walk: simulated seconds after the reference stops")
-    ap.add_argument("--tag", default="", help="appended to the walk program's name (e.g. _yaw40 for those rounds)")
+    ap.add_argument("--tag", default="", help="appended to the program's name (e.g. _yaw40 for those rounds)")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--perturb", default="", help="sim/perturb.py spec (JSON), TODO 25.5")
+    ap.add_argument(
+        "--bottle-mass", type=float, default=None, help="kg (inertia scaled with it): perturbation e, TODO 25.5"
+    )
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     cfg = ScaleBfmBackendConfig(
@@ -319,7 +323,11 @@ def main(argv=None) -> int:
     )
     pol = R.Policy(device=a.device, backend=cfg)
     pol.mode = torch.tensor([a.mode], dtype=torch.long, device=a.device)
-    sim = R.Sim(pol.meta, backend=cfg)
+    sim = R.Sim(pol.meta, backend=cfg, perturb=json.loads(a.perturb) if a.perturb else None)
+    if a.bottle_mass is not None:
+        b = sim.crate_b
+        sim.m.body_inertia[b] *= a.bottle_mass / sim.m.body_mass[b]
+        sim.m.body_mass[b] = a.bottle_mass
     fk = Fk()
     for npz in sorted(a.sonic.glob("*.npz")):
         z = dict(np.load(npz))
