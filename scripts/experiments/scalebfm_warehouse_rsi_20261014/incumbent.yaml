@@ -1,0 +1,10 @@
+# The incumbent at the start of TODO 25.9.1: 25.7's port as L2 ran it (DECISIONS "25.7 移植专家的决定") -- mode 2, the near
+# edge of the expert's stance band, no jaw servo, the expert's tracking feedback gain halved.
+name: incumbent_25_7
+mode: 2
+stance: near
+stance_shift: 0.0
+servo: none
+set:
+  visual.tracking_gain: 0.5
+reference: {}

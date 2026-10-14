@@ -8,7 +8,7 @@ cd /workspace/code/locomanipulation || exit 1
 . scripts/paths.sh
 export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0
 POOL=${1:?accept or sealed}
-O=outputs/scalebfm_warehouse_rsi_20261014
+O=outputs/scalebfm_warehouse_rsi_20261014_hidden
 L=${2:-$O/sonic_$POOL.log}
 CFG=configs/experiments/scalebfm_warehouse_rsi_${POOL}_sonic_20261014.yaml
 RUN=outputs/runs/scalebfm_warehouse_rsi_${POOL}_sonic_20261014

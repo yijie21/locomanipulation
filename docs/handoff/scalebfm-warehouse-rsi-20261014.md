@@ -48,6 +48,7 @@
 
 - 起点都由 SONIC 生产程序跑出来，格式和 L2 相同（ScaleBFM 从 SONIC 那一局的起点开始）。验收池在第 0 阶段跑（60 局约 35 min）；封存集到第 3 阶段才跑（80 局约 46 min），闭环期间没有结果可偷看。
 - 验收池的逐局结果由验收门脚本写在 `gate/` 下。闭环结束后 grep 各次 `claude -p` 的 transcript，读过这些路径的那次接受作废。
+  - 实现（10-14，DECISIONS）：验收池、封存集和 `gate/` 都放在闭环目录之外的 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`，在闭环目录里递归搜索碰不到；transcript 按这个目录名 grep。
 
 ## 5. 角色
 
@@ -59,7 +60,7 @@
 | Manager | Claude 主会话（Opus 5.5） | 台账、预算、上一轮验收结果 | 下一步做什么；写台账 |
 | Reviewer | 子 agent，每轮新上下文 | 诊断池的交接记录、轨迹、失败局视频帧、包络表 | 排好序的归因假设，每条带"做哪个干预、预计翻转哪些局" |
 | Prober | 脚本 | Reviewer 指定的干预 | 每局每个干预的结局表 |
-| Engineer | 子 agent，独立 worktree | 被干预证实的归因 | 候选：一份配置 yaml，可选一个代码提交 |
+| Engineer | 子 agent，在主检出里只改两处（见 §7）；被拒就把它改过的文件恢复原样 | 被干预证实的归因 | 候选：一份配置 yaml，可选一份代码补丁 |
 | Gate | 脚本，LLM 不能改判 | 候选 | 接受 / 拒绝的 JSON |
 
 Reviewer 不看 Engineer 的推理，Engineer 不看验收池逐局。Gate 用代码而不用 LLM，因为这个仓库反复出过"配置只生效一半"和"看到数据后改阈值"。
@@ -89,8 +90,8 @@ Reviewer 不看 Engineer 的推理，Engineer 不看验收池逐局。Gate 用�
 
 从保存的状态分叉，每支只改一个量，跑到结局。
 - **分叉点**：走近开始；ready 到位（`CoordinatedReach` 构造之前，配置类干预在这里生效）；descend 开始。
-- **快照**：`MjData`、`Policy.buf`、专家状态机 `st8`（含 `CoordinatedReach` 深拷贝）、记录器、扰动状态。
-- **先过分叉一致性检查**：从快照不加改动地跑下去，10 局里结局和末态都要和原局一致。CUDA 推理不一致就改用 CPU 跑分叉（第 0 阶段量）。
+- **分叉的做法（10-14 改，DECISIONS）**：不存快照，从起点重跑前缀，到分叉点换成干预后的配置。前提是一局只由（起点，配置）决定；这样 IK、专家状态机、ScaleBFM 的历史都不用拷贝。代价是每支多跑一段前缀（一局约 23 s）。
+- **先过分叉一致性检查**：空干预的分叉、换进程、换分片、倒序跑，10 局里结局、结束时刻和逐拍 `qpos` 都要和原局一致；再和 25.7 的逐局结果比（`phase0_checks.sh`）。
 - **第一批干预**：
   - 把参考的下蹲和腰姿限到 SONIC 的实际交付值（直接检验 §2 的假设）；
   - `tracking_gain` 0 / 0.5 / 1.0；
@@ -172,3 +173,57 @@ Reviewer 不看 Engineer 的推理，Engineer 不看验收池逐局。Gate 用�
 | 干预几乎都翻不过来 | §2 的假设不成立，差距在控制器本身（例如双手扣箱时的姿态范围），交回用户 |
 | 验收池涨了、封存集没涨 | 过拟合验收池；报告验收次数，结论只认封存集 |
 | Reviewer 预测命中率低，但干预找到了修法 | 支持"先干预再打补丁"：只靠 LLM 读轨迹会改错地方 |
+
+## 12. 第 0 阶段结果（2026-10-14）
+
+代码在 `scripts/experiments/scalebfm_warehouse_rsi_20261014/`，产物在 `outputs/scalebfm_warehouse_rsi_20261014/`。验收池和 gate 在 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`，闭环角色不能读。
+
+| 部件 | 文件 | 状态 |
+|---|---|---|
+| 验收池 | `sonic_pool.sh accept`，配置 `configs/experiments/scalebfm_warehouse_rsi_accept_sonic_20261014.yaml` | 60 局，种子 49000–49059，04:03–04:38 UTC。SONIC 27/60 成功，实时率 ≥ 0.984 |
+| 诊断池 | `pool_diag/states/` | 50 局：L1 7000–7009 加 L2 47000–47039，用 `warehouse_states.py` 重转，多了一列 `cmd_joints`。`qpos` 和结局与原文件逐拍一致。SONIC 25/50 |
+| 一局 | `bfm_round.py`、`incumbent.yaml` | 25.7 的 `run_round` 逐行照搬。加了候选规格、分叉、`cmd_joints` / `phase` / `reach_err` 三列、字段读取记录，以及默认关闭的扩展钩子 `extensions.py` |
+| 验收门 | `accept_gate.py` | §6.4 原样实现，单测 `tests/test_scalebfm_rsi_gate.py` 10 项。实跑一次（`_hidden/gate_test/`，不计入闭环的验收次数）：候选为增益 1.0，incumbent 60 局、哨兵 5 局一致；第一段 30 对里候选 2、incumbent 5，净胜 −3，拒绝。掉物 9 对 1。整次约 12 min |
+| 交接记录 | `handoff.py` | 两个控制器同一套口径；诊断池的记录在 `diag/incumbent_56bcd198843a/records.jsonl` |
+| 包络 | `envelope.py` | `envelope/{sonic_v1_1,sonic_v1_1_ok,scalebfm_m22200_mode2_incumbent}.json` |
+| 闭环驱动 | `loop.py`、`prompts/`、`rules.md` | 桩模式（不调模型、验收门只做静态检查）跑通一轮。真的 `claude -p` 冒烟一次：Opus 5.5、写工具被禁、看不到个人记忆和 STATE 注入，单次 0.29 USD |
+
+**确定性**（`phase0_checks.sh`，日志 `phase0/checks.log`）：
+
+- **发现**：一个进程里第一局的动作，和同样输入在后面局里的动作差约 6e-8。原因是网络里 TorchScript 函数的第一次调用不融合，之后融合。所以一局的结果取决于它是不是进程里的第一局：冷启动那次，换分片后 50 局里 4 局的结束时刻变了，结局没变。
+- **修法**：`bfm_round.warm_up` 在第一局前先空跑 3 次网络。修完后重跑：
+  - 换进程、换分片、倒序、单进程，10 局逐拍 `qpos` 全一致；
+  - 在 walk、ready、reach 三处做空干预的分叉，10 局全一致；
+  - 在 reach 处做真分叉（增益 1.0）：分叉前逐拍一致，分叉后不同，10/10。
+- **和 25.7 比**：
+  - 增益 0.5，L1 10 局和 L2 40 局：结局全同（2/10、6/40）。逐拍不同的只有各进程的第一局（L1 s7000_00、L2 s47000_00），是上面的冷启动造成的，结局一样。
+  - 增益 1.0，L1：0/10，和 25.7 一致。10 局逐拍都不同，最早从 reach 那一拍差 1e-8 起。失败原因有 5 局不同（25.7 是 `basket_tilt` 3、`lost_attachment` 2、`reach_stalled` 5；现在 `basket_tilt` 5、`reach_stalled` 4、`stand_not_delivered` 1）。
+  - 这组参考是 10-13 下午搜索时临时跑的，存在 `/workspace/tmp`，当时进程里跑过别的组合。逐拍复现不了，只能确认结局计数一致；为什么从 reach 那一拍开始差，没有查。
+
+**包络**（诊断池，交接到合爪，`handoff..close|end`；按帧统计，见 `rules.md` 第 7 条）：
+
+| 轴 | SONIC 交付比 | SONIC 指令 p90 → 实测 p90 | ScaleBFM 交付比 | ScaleBFM 指令 p90 → 实测 p90 |
+|---|---|---|---|---|
+| 腰偏航 | 0.38 | 0.044 → 0.034 rad | 0.17 | 0.042 → 0.046 rad |
+| 腰横滚 | 0.64 | 0.013 → 0.026 rad | 0.44 | 0.056 → 0.020 rad |
+| 腰俯仰 | 0.72 | 0.51 → 0.38 rad | 0.21 | 0.29 → 0.26 rad |
+| 骨盆高度 | 没有参考 | 无 | 1.01 | p10 0.60 m → 0.60 m |
+| 手腕（骨盆系，6 个轴） | 0.81–1.05 | 误差 p90 3.1–4.7 cm | 0.84–1.10 | 误差 p90 3.6–5.4 cm |
+
+**交接记录**（中位数，诊断池 50 局）：
+
+| | 站位距边线 | 伸手时骨盆最低 | 躯干最大前倾 | 伸手用时 |
+|---|---|---|---|---|
+| SONIC 成功 25 | 31.5 cm | 74.9 cm | 47° | 6.4 s |
+| SONIC 失败 25 | 33.0 cm | 74.7 cm | 49° | 6.9 s |
+| ScaleBFM 成功 8 | 26.6 cm | 61.7 cm | 59° | 7.5 s |
+| ScaleBFM 失败 42 | 29.1 cm | 60.6 cm | 59° | 9.1 s |
+
+ScaleBFM 失败 42 局里 40 局是 `reach_stalled`。
+
+- **ScaleBFM 蹲得深**：伸手时骨盆比 SONIC 低约 14 cm（61 对 75 cm）。它照着专家的骨盆参考蹲到 0.60 m，SONIC 的流式通道根本不传骨盆高度。
+- **ScaleBFM 前倾得多**：躯干多倾 10–12°。
+- **腰俯仰交付比低是误读风险**：ScaleBFM 的腰俯仰交付比只有 0.21，但它的身体是靠下蹲和髋来前倾的。这是交付方式不同，不是交付不足。
+- **对 §2 假设的含义**："蹲得深、倾得多"有数据支持；"因此伸手停滞"还没被干预验证，是第 1 阶段的事。
+- **桩测试顺带的一条**：桩测试的干预是在 reach 处把增益改成 1.0，诊断池 50 局上修好 2 局、弄坏 8 局。这是 25.7"增益 0.5 比 1.0 好"在 50 局上的方向，只作方向参考（`rules.md` 第 9 条）。
+

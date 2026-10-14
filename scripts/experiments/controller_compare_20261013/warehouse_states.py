@@ -4,7 +4,8 @@ are measured from, and the SONIC side's converters into it.
 A round file `<label>.npz` holds, at 50 Hz on the simulation clock:
     t (T,), qpos (T,nq) the whole scene state (robot, jaws, box), pelvis (T,7) pos + wxyz, joints (T,29) MuJoCo order,
     box (T,7), cmd_pelvis (T,7) and cmd_wrist (T,2,7) [left, right] commanded poses, cmd_jaw (T,2) commanded jaw
-    targets (NaN where the controller had none)
+    targets (NaN where the controller had none); SONIC production rounds also cmd_joints (T,29), the streamed frame's
+    joints in MuJoCo order (TODO 25.9.1's delivery envelope; NaN while the planner owns the body)
 and `<label>.json` the round's facts: controller, program, scene, events (name -> t), edge {name, axis, line},
 platform_top, box_top, ok, why, rtf. warehouse_measure.py reads only these, so both controllers go through the same
 arithmetic -- the contact counts included, since `qpos` is the full scene state of the same mars model.
@@ -88,6 +89,7 @@ def sonic_round(run: Path, label: str, fk: Fk) -> tuple[dict, dict]:
     t = 0.02 * seq + off
     T = len(t)
     cmd_wrist = np.full((T, 2, 7), np.nan)
+    cmd_joints = np.full((T, 29), np.nan)
     cmd_jaw = np.full((T, 2), np.nan)
     ev = {}
     last_q = last_jaw = None
@@ -107,6 +109,7 @@ def sonic_round(run: Path, label: str, fk: Fk) -> tuple[dict, dict]:
         if last_q is not None:
             fk.put(pelvis[i], last_q)
             cmd_wrist[i] = [fk.pose(w) for w in WRISTS]
+            cmd_joints[i] = last_q
         if last_jaw is not None:
             cmd_jaw[i] = last_jaw
     guard = res.get("guard") or {}
@@ -140,6 +143,7 @@ def sonic_round(run: Path, label: str, fk: Fk) -> tuple[dict, dict]:
         cmd_pelvis=np.full((T, 7), np.nan),
         cmd_wrist=cmd_wrist,
         cmd_jaw=cmd_jaw,
+        cmd_joints=cmd_joints,
     )
     return arrays, facts
 

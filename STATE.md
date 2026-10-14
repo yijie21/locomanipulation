@@ -31,7 +31,7 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- 25.9.1：用户定重标、由 agent 闭环来做；方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`，D1–D7 已定，第 0 阶段进行中（25.9.1.2）。
+- 25.9.1：方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`；第 0 阶段做完（§12），下一步第 1 阶段诊断（25.9.1.3），等用户说开始。验收池在 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`，闭环角色不许读。
 - 25.9.2 待用户：ScaleBFM 上真机用什么做世界位姿。
 - 用户没定 25.9 之前不开 25.10。待查 25.8.3（SONIC bottle 一局挂住 12 分钟）。
 
