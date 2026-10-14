@@ -905,6 +905,7 @@
   - [x] 25.4.1 （10-13）片段库 16 个（`clips.py`，计划 §18）：LAFAN1 镜像 `datasets/lafan1_g1_retarget/`（Unitree 原仓库 404），IK 关键帧在 mars 上合成；C1 最低 0.164 m、C5 前倾 65°（双脚平踩、质心在脚上方时的上限，DECISIONS）。
   - [x] 25.4.2 （10-13）ScaleBFM 全 mode 扫描 940 局（+S0 50 局）0 摔；SONIC 流式改发完整骨盆姿态（只发偏航那批 C1 连摔 6/6，作废）。
   - [x] 25.4.3 （10-13）S1：ScaleBFM 加关键点的切换（2→4/6/7）平滑，手腕移 1.6–2.5 cm；去掉肩肘的切换（6/7→2）手腕掉 21 cm；SONIC 交接 1–3 cm（`switch/s1.md`）。L2 每个任务只用一个 mode，没有切换。
+  - [ ] 25.4.4 可选：SONIC 用 planner 通道（movement / speed / facing）跑 C4 和 L0，和流式通道对比——流式不收骨盆位置，G-MPKPE 17–69 cm 是接口造成的（DECISIONS 10-14）。
 - [x] 25.5 （10-14，计划 §19 / §24）SONIC 怕延迟（40 ms 下 bottle 摔 9/10，warehouse 站不稳），ScaleBFM 不受影响；估计位姿臂：ScaleBFM 用腿运动学 + IMU 后刹车 30/30 越线，两个移植专家都失败——真机世界位姿来源待用户。原题：扰动 a–g 按计划 §4.6 套用；估计位姿臂（腿运动学 + IMU 估计器，§4.5）。
   - [x] 25.5.1 （10-13）`src/locomani/sim/perturb.py` 两边共用（b c d f g；e 用 `payload_scenes.py` 的场景副本）；腿运动学 + IMU 里程计 `backends/scalebfm/odometry.py`（站立漂移 < 0.2 cm，ScaleBFM 后退滑脚 → 60–90 cm）。计划 §19。
 - [x] 25.6 （10-13，用户指示连续做完，这条线按 §3 自判，计划 §21）L1 关口通过：0 摔、a / h 不否决、§3.4 不成立（warehouse 移植专家弱是专家和 SONIC 一起调出来的问题，记为 L2 风险）。原题：L1 关口判定（计划 §3），结果交用户。
@@ -912,6 +913,8 @@
   - [x] 25.7.1 （10-13）`bfm_expert_bottle.py`（simple_policy guard 分支）L1 种子 mode 4 10/10 对 SONIC 6/10；`bfm_expert_warehouse.py`（CoordinatedReach 原样）最好 mode 2 + tracking_gain 0.5 2/10 对 SONIC 5/10——专家和 SONIC 一起调出来的（计划 §20，DECISIONS）。bottle_visual 参考臂没跑。
 - [x] 25.8 （10-14，计划 §25）L2：bottle 标称 40 对 39 / 45、组合 2 对 35 / 46；warehouse 标称 20 对 6 / 40（p 0.003）、组合 1 对 4 / 40。主判据不满足（warehouse 专家和 SONIC 一起调出来的），组合档不否决，bottle 标称掉物护栏不过。原题：L2：每场景 ≥ 40 局配对，标称档 + 真机组合档（b 20 ms + c + f，力矩按标称）；SONIC 每局记 RTF，< 0.9 作废重跑。
   - [x] 25.8.1 （10-13 起跑，10-14 跑完；补跑 `_b` / `_c`，看门狗停过一局，DECISIONS 10-14）SONIC 四批 `controller_compare_l2_{bottle,warehouse}_sonic[_combo]_20261013`（种子 41000 / 47000 起各 40 局），队列 `sonic_l2_p25_queue.sh`；之后 `after_sonic_queue.sh` 自动接 ScaleBFM（`bfm_l2_batch.sh`、`bfm_p25_batch.sh`）和汇总（`p25_l2_post.sh`、`l2_measure.py`）。
+  - [ ] 25.8.2 并排视频只做了 warehouse L2 两局（`l2/videos/`）；C1–C7 片段、bottle L2、扰动格都没做（计划 §8 要求每项都有）。
+  - [ ] 25.8.3 待查：SONIC bottle L2 第 30 局挂住 12 分钟的原因（站在离瓶子 1.4 m 处、sim 在跑、采集进程不动；py-spy 没有权限，没拿到栈）。
 - [ ] 25.9 最终判定（计划 §2），结果交用户。
   - [ ] 25.9.1 待用户：L2 主判据不满足——要不要把 warehouse 专家按 ScaleBFM 重新标定（下蹲 / 前倾上限、站位、反馈增益）后再比，还是按"专家原样"出结论。
   - [ ] 25.9.2 待用户：ScaleBFM 上真机的世界位姿来源（腿运动学 + IMU 在它滑脚时漂 15–40%，计划 §24）：外部定位、视觉里程计，还是把世界锚定的参考改成相对机身。
