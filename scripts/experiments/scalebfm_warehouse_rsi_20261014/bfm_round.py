@@ -15,7 +15,8 @@ The round is 25.7's (controller_compare_20261013/bfm_expert_warehouse.run_round,
   prefix is the same because the round is deterministic (determinism.py checks it), and nothing (IK state, the
   expert's state machine, ScaleBFM's history) has to be copied;
 * more recording: cmd_joints (T,29) the reference joints ScaleBFM's keypoints are FK'd from, phase (T,) index into
-  PHASES, reach_err (T,) CoordinatedReach's max capture error (NaN outside reach / descend);
+  PHASES, capture_err (T,2,3) CoordinatedReach's capture error per hand [across, along, up] in the box frame and
+  feedback (T,2,3) its tracking feedback, both read-only and NaN outside reach / descend;
 * field accounting: facts["fields_read"] lists every task-config field the round read (the gate rejects a candidate
   that sets a field this path never reads).
 The facts keep the start state's description (seed, edge, heading, platform, box) and SONIC's verdict as sonic_ok /
@@ -219,13 +220,14 @@ class Context:
 class Rec(Recorder):
     def __init__(self, sim):
         super().__init__(sim)
-        self.rows.update(cmd_joints=[], phase=[], reach_err=[])
+        self.rows.update(cmd_joints=[], phase=[], capture_err=[], feedback=[])
 
-    def add(self, t, targets, joints=None, phase="walk", reach_err=np.nan):
+    def add(self, t, targets, joints=None, phase="walk", capture=None, feedback=None):
         super().add(t, targets)
         self.rows["cmd_joints"].append(np.full(29, np.nan) if joints is None else np.asarray(joints, float))
         self.rows["phase"].append(PHASES.index(phase))
-        self.rows["reach_err"].append(reach_err)
+        self.rows["capture_err"].append(np.full((2, 3), np.nan) if capture is None else np.asarray(capture, float))
+        self.rows["feedback"].append(np.full((2, 3), np.nan) if feedback is None else np.asarray(feedback, float))
 
 
 def warm_up(pol, sim, body, calls=3):
@@ -304,7 +306,7 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
     while t < TIMEOUT_S:
         t = k * R.DT
         mujoco.mj_forward(sim.m, sim.d)
-        ref_q, err = None, np.nan
+        ref_q, capture, fb = None, None, None
         if st8["phase"] == "walk":
             fut = {}
             for j in pol.fidx:
@@ -393,8 +395,8 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
                 events["end"] = t
                 break
             low = st8["low"]
-            ce = low.diagnostics.get("capture_error")
-            err = float(np.max(ce)) if ce is not None and cmd.phase in ("reach", "descend") else np.nan
+            if cmd.phase in ("reach", "descend") and low.diagnostics.get("capture_error") is not None:
+                capture, fb = np.array(low.diagnostics["capture_error"], float), np.array(low.feedback, float)
             q, root = ctx.reference(cmd.joints, low.x[:3], t=t, phase=cmd.phase, sim=sim, st8=st8)
             fut = futures(body, root, cmd.root_quaternion, q, cmd.velocity, pol.fidx)
             ref_q = q
@@ -405,7 +407,7 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
             k += 1
             continue
         sim.grip_target[:] = jaw
-        rec.add(t, fut, ref_q, st8["phase"], err)
+        rec.add(t, fut, ref_q, st8["phase"], capture, fb)
         if sim.fallen():
             fell = t
             break

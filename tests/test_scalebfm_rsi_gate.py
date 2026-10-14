@@ -96,6 +96,23 @@ class Specs(unittest.TestCase):
             self.assertIn("frozen", (Path(d) / "g" / "ledger.jsonl").read_text())
 
 
+class StopRule(unittest.TestCase):
+    def test_phase3_when_the_incumbent_beats_sonic_by_five(self):
+        import loop
+
+        with tempfile.TemporaryDirectory() as d:
+            old_state, old_sonic = loop.STATE, loop.sonic_accept_ok
+            loop.STATE, loop.sonic_accept_ok = Path(d), lambda: 27
+            try:
+                meta = dict(started_s=__import__("time").time())
+                loop.ledger(dict(step="gate", accepted=True, result=dict(candidate_ok=31)))
+                self.assertIsNone(loop.stop_reason(meta))
+                loop.ledger(dict(step="gate", accepted=True, result=dict(candidate_ok=32)))
+                self.assertIn("phase 3", loop.stop_reason(meta))
+            finally:
+                loop.STATE, loop.sonic_accept_ok = old_state, old_sonic
+
+
 class Fields(unittest.TestCase):
     def test_reads_are_logged_by_dotted_name(self):
         log = FieldLog()

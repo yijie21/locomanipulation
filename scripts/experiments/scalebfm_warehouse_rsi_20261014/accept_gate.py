@@ -8,7 +8,8 @@ Steps (each writes into <gate>/<n>_<candidate hash>/ and stops at the first reje
 3. stage 1: candidate and incumbent on the first 30 starts; reject when the candidate's net wins (b - c) <= 0.
 4. stage 2: the remaining 30.
 5. verdict over all run pairs -- accept iff b - c >= 3, one-sided exact McNemar p <= 0.05, falls <= incumbent + 1,
-   drops <= incumbent + 1, and every field the spec sets was read on the candidate's path (facts["fields_read"]).
+   drops <= incumbent + 1, and every field the spec sets was read on the candidate's path in at least one round
+   (facts["fields_read"]).
 On acceptance the candidate's rounds become the incumbent's (the next gate pairs against them). The verdict JSON is the
 only output a loop role reads; per-round files stay in the gate directory, which no agent may read (§4).
 
@@ -201,7 +202,9 @@ def main(argv=None) -> int:
     cand_out = load_dir(cand_dir)
     t = tally(cand_out, inc_out)
     # 5. verdict
-    unread = sorted(k for k in spec["set"] if not all(k in r["fields_read"] for r in cand_out.values()))
+    # a field must reach the code on this path in at least one round: some are read only on a branch (descend_retries
+    # only after a stall), so "every round" would refuse them; "no round" is the half-applied setting the rule is for
+    unread = sorted(k for k in spec["set"] if not any(k in r["fields_read"] for r in cand_out.values()))
     fails = []
     if t["b"] - t["c"] < MIN_NET:
         fails.append(f"net wins {t['b'] - t['c']} < {MIN_NET}")

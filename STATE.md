@@ -31,7 +31,7 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- 25.9.1：方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`；第 0 阶段做完（§12），下一步第 1 阶段诊断（25.9.1.3），等用户说开始。验收池在 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`，闭环角色不许读。
+- 25.9.1：方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`；第 0、1 阶段做完（§12–14）。第 2 阶段闭环 10-14 起在后台跑（`loop.py status`；停：12 次验收 / 36 h / 400 USD / 比 SONIC 多 5 局）。跑的时候 GPU 1 有 ScaleBFM，别起 SONIC 栈。验收池在 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`，闭环角色不许读。
 - 25.9.2 待用户：ScaleBFM 上真机用什么做世界位姿。
 - 用户没定 25.9 之前不开 25.10。待查 25.8.3（SONIC bottle 一局挂住 12 分钟）。
 

@@ -51,6 +51,7 @@ MAX_GATE_CALLS = 12
 MAX_WALL_H = 36.0
 MAX_REJECT_STREAK = 3
 MAX_HYPOTHESES = 4
+SONIC_MARGIN = 5  # plan §9: stop when the accepted incumbent wins >= SONIC + 5 on the acceptance pool
 PROCS = 4
 SMOKE = "sonic_s7000_04"
 # files the Engineer may change (§7, D2): the extension hooks and the crate task code (default-off fields only)
@@ -136,8 +137,18 @@ def sonic_up() -> bool:
     return bool(r.stdout.strip())
 
 
+def sonic_accept_ok() -> int:
+    """SONIC's successes on the acceptance pool (the driver may read the hidden tree; roles may not)."""
+    return sum(bool(jload(p)["ok"]) for p in (HIDDEN / "pool_accept" / "states").glob("*.json"))
+
+
 def stop_reason(meta: dict) -> str | None:
     es = entries()
+    accepted = [e for e in es if e.get("step") == "gate" and e.get("accepted") and not e.get("void")]
+    if accepted:
+        best, sonic = accepted[-1]["result"]["candidate_ok"], sonic_accept_ok()
+        if best >= sonic + SONIC_MARGIN:
+            return f"the incumbent's {best} acceptance successes reach SONIC's {sonic} + {SONIC_MARGIN}: phase 3"
     gates = [e for e in es if e.get("step") == "gate" and not e.get("void")]
     if len(gates) >= MAX_GATE_CALLS:
         return f"gate calls {len(gates)} >= {MAX_GATE_CALLS}"
@@ -170,6 +181,10 @@ def fill(template: str, **kw) -> str:
     return template
 
 
+class RoleFailed(RuntimeError):
+    pass
+
+
 def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None) -> tuple[dict, dict]:
     """One headless role call; returns (structured output, accounting)."""
     (it_dir / f"{role}_prompt.md").write_text(prompt)
@@ -186,7 +201,12 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
     t0 = time.time()
     r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=REPO, env=env, timeout=4 * 3600)
     (it_dir / f"{role}_raw.json").write_text(r.stdout or r.stderr)
-    out = json.loads(r.stdout)
+    try:
+        out = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        raise RoleFailed(f"{role}: no JSON from claude -p (rc {r.returncode}): {(r.stderr or r.stdout)[-300:]}") from e
+    if out.get("is_error"):
+        raise RoleFailed(f"{role}: {out.get('subtype')} {str(out.get('result'))[-300:]}")
     acct = dict(
         cost_usd=float(out.get("total_cost_usd") or 0.0), session=out.get("session_id"), seconds=round(time.time() - t0)
     )
@@ -212,8 +232,10 @@ def transcript_touches_gate(session: str | None) -> bool:
 # -- steps --------------------------------------------------------------------------------------------------------
 
 
-def run_rounds(spec: Path, out: Path, log: Path, fork: str | None = None, only: list[str] | None = None) -> None:
-    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", CUDA_VISIBLE_DEVICES="1", TMPDIR="/workspace/tmp")
+def run_rounds(
+    spec: Path, out: Path, log: Path, fork: str | None = None, only: list[str] | None = None, gpu: str = "1"
+) -> None:
+    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", CUDA_VISIBLE_DEVICES=gpu, TMPDIR="/workspace/tmp")
     env["NUMPY_MADVISE_HUGEPAGE"] = "0"
     pool = LOOP / "pool_diag" / "states"
     ps = []
@@ -267,7 +289,7 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
     return d
 
 
-def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path) -> list[dict]:
+def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path, gpu: str = "1") -> list[dict]:
     """Each hypothesis's intervention, closed loop from its fork phase, on all diagnostic starts."""
     before = outcomes(base)
     res = []
@@ -276,7 +298,7 @@ def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path) -> list[dict]:
         delta.write_text(json.dumps(h["delta"]))
         out = it_dir / "probe" / h["id"]
         try:
-            run_rounds(Path(inc["path"]), out, it_dir / "prober.log", fork=f"{h['phase']}:{delta}")
+            run_rounds(Path(inc["path"]), out, it_dir / "prober.log", fork=f"{h['phase']}:{delta}", gpu=gpu)
             after = outcomes(out)
         except Exception as e:  # a delta the runner refuses (unknown key, frozen field): recorded, not fatal
             res.append(dict(id=h["id"], error=f"{type(e).__name__}: {e}"))
@@ -310,6 +332,8 @@ def context(inc: dict, extra: dict) -> dict:
         rejected_hashes=sorted(
             {e["hash"] for e in es if e.get("step") == "gate" and not e.get("accepted") and e.get("hash")}
         ),
+        # phase 1's interventions on the diagnostic pool (run by the main session before the loop; plan §13-14)
+        phase1_probes=jload(LOOP / "phase1" / "probe.json", []),
         **extra,
     )
 
@@ -470,7 +494,10 @@ def cmd_run(a) -> int:
             ledger(dict(step="stop", reason=why))
             print("stop:", why)
             return 0
-        why = iterate(n, meta, a.stub)
+        try:
+            why = iterate(n, meta, a.stub)
+        except RoleFailed as e:
+            why = f"role call failed: {e}"
         if why:
             ledger(dict(step="stop", reason=why))
             print("stop:", why)

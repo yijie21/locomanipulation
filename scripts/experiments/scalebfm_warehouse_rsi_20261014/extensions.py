@@ -13,6 +13,8 @@ deterministic (no wall clock, no unseeded randomness).
 
 from __future__ import annotations
 
+import numpy as np
+
 HOOKS: dict[str, dict] = {}
 
 
@@ -25,3 +27,16 @@ def hook(name: str, point: str):
         return fn
 
     return register
+
+
+@hook("pelvis_floor", "futures")
+def pelvis_floor(fut, params, *, t, phase, sim, st8):
+    """Phase 1 (2026-10-14): ScaleBFM's pelvis keypoint never below params["z"] (m, world) while the hand keypoints
+    stay where the expert put them -- SONIC's delivery (its stream carries no pelvis height; it stood at ~0.75 m
+    through the reach) without moving the hands, which the FK-coupled `reference: root_z_min` would."""
+    if "pelvis" not in fut:
+        return fut
+    p, q = fut["pelvis"]
+    p = p.copy()
+    p[:, 2] = np.maximum(p[:, 2], float(params["z"]))
+    return {**fut, "pelvis": (p, q)}

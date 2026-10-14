@@ -9,8 +9,8 @@ Per round (sections absent when the round never got there):
 * ready (at `handoff`): wrist_err_cm (max over the two wrists, commanded vs measured), pelvis_z_cm, torso_pitch_deg;
 * reach (`handoff` to `close`, or to the end when the reach never closed): seconds, the waist joints' commanded and
   delivered p90 (|rad|, where the reference has joints), the commanded and delivered pelvis height minimum (ScaleBFM
-  only: SONIC's stream carries no pelvis reference), wrist tracking error p90 (cm), and ScaleBFM's reach error best /
-  last (cm, CoordinatedReach's capture error);
+  only: SONIC's stream carries no pelvis reference), wrist tracking error p90 (cm), and ScaleBFM's capture error
+  best / last (cm, the worse hand) and the last per-hand [across, along, up];
 * bend / hands / lift: W2, W3, W4 of warehouse_measure.py (torso pitch, pelvis low, waist demand; hand separation,
   drift, pinch; lifted, tilt).
 
@@ -84,11 +84,13 @@ def reach(rd: Round) -> dict:
     out["wrist_track_err_p90_cm"] = (
         r(100 * p90(np.linalg.norm(cmd - meas, axis=2).max(1))) if np.any(np.isfinite(cmd)) else None
     )
-    if "reach_err" in rd.z:
-        e = rd.z["reach_err"][w]
+    if "capture_err" in rd.z:
+        e = np.linalg.norm(rd.z["capture_err"][w], axis=2).max(1)  # the worse hand's distance from its grasp point
         e = e[np.isfinite(e)]
         if len(e):
-            out.update(reach_err_best_cm=r(100 * e.min()), reach_err_last_cm=r(100 * e[-1]))
+            out.update(capture_err_best_cm=r(100 * e.min()), capture_err_last_cm=r(100 * e[-1]))
+            last = rd.z["capture_err"][w][np.isfinite(rd.z["capture_err"][w][:, 0, 0])][-1]
+            out["capture_last_cm"] = np.round(100 * last, 1).tolist()  # per hand [across, along, up]
     return out
 
 
