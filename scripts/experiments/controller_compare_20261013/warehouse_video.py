@@ -82,8 +82,8 @@ def ghosts_at(z, i):
     return out
 
 
-def caption(f):
-    who = "SONIC" if f["controller"] == "sonic" else f"ScaleBFM {f['program']}"
+def caption(f, label=None):
+    who = label or ("SONIC" if f["controller"] == "sonic" else f"ScaleBFM {f['program']}")
     b = f.get("_rise")
     return f"{who}  box rise at end {100 * b:.1f} cm"
 
@@ -98,7 +98,9 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--align", default="close", help="the event both clips are aligned on (handoff when one never closes)"
     )
+    ap.add_argument("--labels", default="", help="left,right captions instead of the controller names")
     a = ap.parse_args(argv)
+    labels = a.labels.split(",") if a.labels else [None, None]
     m = mujoco.MjModel.from_xml_path(str(SCENE / "scene_locomani.xml"))
     m.vis.global_.offwidth, m.vis.global_.offheight = max(W, m.vis.global_.offwidth), max(H, m.vis.global_.offheight)
     for g in range(m.ngeom):  # the room's dressing meshes block every view of the platform: hidden (group 5)
@@ -149,7 +151,7 @@ def main(argv=None) -> int:
     ff.wait()
     font = f"fontfile={FONT}:" if Path(FONT).exists() else ""
     txt = lambda text, x: f"drawtext={font}text='{text}':x={x}:y=8:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.5"
-    vf = ",".join([txt(caption(sides[0][1]), 8), txt(caption(sides[1][1]), W + 8)])
+    vf = ",".join([txt(caption(sides[0][1], labels[0]), 8), txt(caption(sides[1][1], labels[1]), W + 8)])
     subprocess.run(
         [
             "ffmpeg",
