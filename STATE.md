@@ -1,60 +1,49 @@
-# STATE — 2026-10-15 09:20 UTC（25.9.1.6 第 4 阶段做完；25.9 和第 4 阶段的后续待用户）
+# STATE — 2026-10-15 16:10 UTC（RSI 演示改为全 CuRobo，暂停中，等用户说开始；TODO 26.5）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-15 03:25）：origin/main = `a2cfb23`；本地多 18 个提交，**都没推送**（用户没说推）。
-已确认（10-15 11:50）：第 4 阶段四个臂都停了，没有 ScaleBFM 局、SONIC 栈、CuRobo 服务在跑；GPU 0 / 1 空。副本在 `/workspace/code/rsi-phase4/arm-{a,b,a2,b2}`（约 10 GB）。
-已确认：机器 10-14 约 09:44 UTC 重启过一次（原因不明，内核版本变了）；/workspace 上的产物都在。
+已确认（10-15 16:10）：origin/main = `a2cfb23`；本地多 31 个提交，**都没推送**（用户没说推）。
+已确认（10-15 15:40）：没有任何实验在跑（SONIC 栈、ScaleBFM 局、CuRobo 服务、闭环驱动、流水线都已停），GPU 0 / 1 空。用户要求暂停，等他说开始。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
-## 提交
+## 提交与磁盘
 
-- 不是这条线的、来路不明的文件，不提交：`papers/`（含本次下载的 `2610_12424_roborsi.*`）、`node_modules/`、`package*.json`、`uv.lock`、`step1.md`–`step7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`。
-- STATE.md 上限 60 行（`lint_repository.py`）。
+- 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`。STATE.md 上限 60 行。
+- 已确认（10-15）：`/workspace` 剩 122 GB（89%）。跑仿真 / pytest 前先 `export TMPDIR=/workspace/tmp`。副本 `/workspace/code/rsi-phase4/arm-{a,b,a2,b2}` 共约 10 GB，作证据保留。
 
-## 磁盘
+## 当前进度
 
-- 已确认（10-14 13:19）：`/workspace` 剩 135 GB（87%）。跑仿真 / pytest 前先 `export TMPDIR=/workspace/tmp`。
-- 9.12 清理 10-14 03:30 已执行（用户免了 24 小时），记录 `outputs/cleanup_20261013/apply.log`。
-- 更早待用户定的删除：21.3.4.6、11.9、12.19.4、12.20.3、12.20.5、13.5、13.6.12、13.6.12.1、13.6.17、14.7；要删先在这里写明，等 24 小时。
+- 已确认（25.9.1.6，方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md` §17–19）：第 4 阶段每臂跑了两次。
+  - 封存集 80 局：臂 A 68 / 68（两次是同一配置 `root_z_min 0.74` + `carry.base_anchor: reference`，逐拍相同）。
+  - 扁平臂 B 57 / 40；第 2 阶段 final 48；SONIC 30。
+- 已确认（26.1–26.2）：warehouse 对比视频 7 段、进化视频 4 段已导出到 `outputs/rsi_demo_20261015/warehouse/{previews,evolution/previews}/`，都 ≤ 300 KB。
+  - 两边都是**分段式**伸手：先原地抬手，再直线伸。
+- 已确认（26.3.1）：bottle 适配层在 `scripts/experiments/scalebfm_bottle_rsi_20261015/`（方案 `docs/handoff/scalebfm-bottle-rsi-20261015.md`）。
+  - 诊断池 55 局；验收池 60 个起点。SONIC 在这些局上的分段式成败已作废，起点仍可用。
+- 已确认（用户 10-15）：不要分段式抓取，只用 CuRobo 规划；两边都用；bottle 规划到举起位；先 warehouse（DECISIONS 10-15 末节）。
+  - bottle 流水线、SONIC 封存集和刚起的 CuRobo 确定性测试都已停，测试没有结果。
 
-## 当前进度（方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md`）
+## 下一步（编号见 `TODO.md`；用户说开始后才动）
 
-- 已确认：TODO 25.1–25.8 做完（`docs/handoff/controller-compare-20261013.md` §9–25）。L2：bottle 标称 SONIC 40 对 ScaleBFM 39 / 45（掉物 2 对 6，护栏不过）；warehouse 是"专家原样"的 20 对 6 / 40。
-- 已确认（25.9.1，§12–16）：warehouse 专家确实是配合 SONIC 调的。ScaleBFM 照骨盆参考深蹲到约 0.61 m，手下不到箱沿。
-  - 修法是骨盆关键点不低于 0.74 m + descend 重试 2 次 + 重夹 2 次（`final.yaml`）。
-  - 封存集 80 局：ScaleBFM 48 对 SONIC 30（p 0.013），护栏全过。
-  - 增益几乎全来自第 1 阶段主会话的干预归因（9 → 46），闭环自己只多 2 局（p 0.5）。
-- 已确认（25.9.1.7，§18）：伸手接了 CuRobo 路线（`visual.reach_route planned`，`final_route.yaml`），只接在 ScaleBFM 局里，SONIC 生产线没接。
-  - 验收池 45 → 54（p 0.023），封存集 48 → 68（p 0.0001）；途中碰撞 18 → 0 局，一气呵成 11 → 100 / 140 局。
-  - 默认 `straight` 逐拍不变（50/50）。
-- 假设 / 待验证：带路线后"箱子倾斜"大减（11 → 1）的原因没隔离（25.9.1.7.2）；箱子最后举得更低（12 → 8 cm）没查（25.9.1.7.1）。
-- 已确认：封存集已用四次（final、start、phase1_best、final_route），都是事先定的固定配置。
-- 已确认（25.9.1.6，§17、§19）：冷启动两臂在隔离副本 `/workspace/code/rsi-phase4/arm-{a,b}` 里跑完。封存集 A 68、B 57、final 48、SONIC 30；A 对 B 18 / 7（p 0.043），A 模型费 20.7 USD、B 55.8 USD。
-  - A 只改两个现成字段：`root_z_min 0.74` + `carry.base_anchor: reference`。两臂 Reviewer 读轨迹的预测精确度都只有 15–17%，A 靠干预选对。
-  - B 第 6 轮 Engineer 自己跑了 102 局对照才交候选，B 的 57 里含这次实验。每臂只跑了一次。
-
-## 下一步（编号见 `TODO.md`）
-
-- 25.9 待用户：整体判定（warehouse 已过；bottle 标称 39 对 40）。可选的 25.9.3：bottle 专家同法重调。
-- 已确认（25.9.1.6.5，§19.1）：重复一次后，封存集 A 68 / A2 68（同一配置，逐拍相同）、B 57 / B2 40；B 的 Engineer 两次都自己跑闭环对照。
-- 25.9.1.6.6–.8 待用户：A 叠加 CuRobo 路线；RoboRSI 代码行为的臂 C；提示词缺口。
-- 25.9.1.7.3：SONIC 生产线要不要也接路线（实时栈等 6 s 规划，要另外验证）。
+- 26.5.1 CuRobo 路线局的确定性：同一批诊断局单进程 / 双进程交错各跑一遍，逐拍比 qpos。
+- 26.5.2 路线接进 SONIC warehouse 生产专家（`src/locomani/tasks/crate/expert.py:532` 构造 CoordinatedReach），小批量试跑。
+- 26.5.3 warehouse 从"原样移植 + CuRobo"冷启动 RSI，SONIC + CuRobo 跑验收池 / 封存集，导出对比和进化视频。
 
 ## 未解决 / 卡点
 
-- 待用户：25.9、25.9.2（真机位姿来源）、25.9.3、25.11.1、9.13、23.2.7、23.3–23.5、23.7.5、23.7.6、21.3.5、22.3.6–22.3.8、22.5、22.7、21.3.1、19.8.1、19.8.3、16.14.1、16.15.4、13.6.18。
-- 已确认（规则）：SONIC 栈按实时跑，旁边不能跑 ScaleBFM；闭环角色不许读 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`；`pkill -f` 会杀掉命令行里含同样字样的 shell，用 `pgrep -f '[c]urobo_service'` 拿 PID。
-- 已确认：ScaleBFM 每个进程第一局要先 `warm_up`（TorchScript 首次调用差 6e-8），`bfm_round.py` 已带。
+- 待验证：CuRobo 规划是否逐次一致。22.2 时 119 个请求重放有 117 个成败相同，这不等于轨迹逐位相同；不一致的话，验收门的哨兵和配对要先处理。
+- 待验证：SONIC 实时栈接路线时要等约 6 s 规划，腰只交付一半，路线跟得好不好（25.9.1.7.3 = 26.5.2）。
+- 已确认：这台机器上 bottle 栈的实时率不管录不录制都在 0.80–0.86；bottle 池的有效线是 0.80（bottle 方案 §4）。
+- 已确认：`make check` 里 `tests/test_stack_start_failure.py::test_down_kills...` 在全量负载下偶发超时，单独跑 3/3 通过，和本次改动无关。
+- 已确认：auto-memory 的 MEMORY.md 有 201 行，超出加载上限，最后一行会被截掉，要精简。
+- 规则：SONIC 栈在跑时不跑 ScaleBFM；`pkill -f` 会杀掉命令行含同样字样的 shell，杀进程要写进脚本文件里用 `pgrep -f '[x]...'`。
 
 ## 关键路径与命令
 
 ```bash
 cd /workspace/code/locomanipulation && export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0 PYTHONPATH=src OMP_NUM_THREADS=2
-H=scripts/experiments/scalebfm_warehouse_rsi_20261014; O=outputs/scalebfm_warehouse_rsi_20261014; PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
-bash $H/route_service.sh                                           # CuRobo 路线服务（GPU 0，端口 5795），reach_route planned 前必须起
-CUDA_VISIBLE_DEVICES=1 $PY $H/bfm_round.py $O/pool_diag/states --spec $H/final_route.yaml --out /workspace/tmp/x --shard 0/4   # 一组局
-$PY $H/route_eval.py                                               # 带 / 不带路线配对 -> $O/route/eval.md
-$PY $H/sealed.py judge                                             # 封存集 final / start 对 SONIC -> $O/sealed/sealed.md
-$PY $H/loop.py status                                              # 闭环台账（第 2 阶段）
-(cd /workspace/code/rsi-phase4/arm-a && $PY $H/loop.py status)     # 第 4 阶段臂 A；arm-b 同
+PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python; W=scripts/experiments/scalebfm_warehouse_rsi_20261014
+bash $W/route_service.sh /workspace/tmp/route_service.log          # CuRobo 路线服务（GPU 0，5795）；停：pgrep -f '[c]urobo_service'
+bash /workspace/tmp/route_det/run.sh                                # 26.5.1 的确定性测试（规格 /workspace/tmp/route_det/a_route.yaml）
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/experiments/rsi_demo_20261015/compare.py --task warehouse    # 对比视频
+MUJOCO_GL=egl $PY scripts/experiments/rsi_demo_20261015/evolution.py /workspace/code/rsi-phase4/arm-a2 --task warehouse --out outputs/rsi_demo_20261015/warehouse/evolution
 ```
