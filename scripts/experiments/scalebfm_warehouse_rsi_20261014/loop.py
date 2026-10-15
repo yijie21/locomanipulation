@@ -544,11 +544,18 @@ def contaminated(role: str, n: int, leaks: list[str]) -> str:
 
 
 def restore(changed: list[str], saved: dict) -> None:
-    """Put the Engineer's files back as they were before the call (other sessions' edits elsewhere are untouched)."""
+    """Put the Engineer's files back as they were before the call (other sessions' edits elsewhere are untouched).
+    `saved` holds the files that were already modified or untracked; a tracked file that was clean goes back to its
+    committed content, and only a file the Engineer created is removed (phase 4 found the clean tracked case deleted)."""
     for f in changed:
         p = REPO / f
         if f in saved:
             p.write_bytes(saved[f])
+        elif (
+            subprocess.run(["git", "ls-files", "--error-unmatch", "--", f], cwd=REPO, capture_output=True).returncode
+            == 0
+        ):
+            subprocess.run(["git", "checkout", "--", f], cwd=REPO, check=True, capture_output=True)
         elif p.exists():
             p.unlink()
 

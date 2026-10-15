@@ -50,6 +50,34 @@ class Audit(unittest.TestCase):
         self.assertEqual(loop.prompt_file("manager").name, "manager_B.md")
 
 
+class Restore(unittest.TestCase):
+    def test_rejected_edits_go_back_and_tracked_files_survive(self):
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            git = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)  # noqa: E731
+            git("init", "-q")
+            (repo / "clean.py").write_text("committed\n")
+            (repo / "dirty.py").write_text("committed\n")
+            git("add", "clean.py", "dirty.py")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+            (repo / "dirty.py").write_text("someone else's work\n")
+            saved = {"dirty.py": b"someone else's work\n"}  # what the driver saves: files already modified
+            (repo / "clean.py").write_text("engineer\n")
+            (repo / "dirty.py").write_text("engineer\n")
+            (repo / "new.py").write_text("engineer\n")
+            old, loop.REPO = loop.REPO, repo
+            try:
+                loop.restore(["clean.py", "dirty.py", "new.py"], saved)
+            finally:
+                loop.REPO = old
+            self.assertEqual((repo / "clean.py").read_text(), "committed\n")
+            self.assertEqual((repo / "dirty.py").read_text(), "someone else's work\n")
+            self.assertFalse((repo / "new.py").exists())
+
+
 class Scrub(unittest.TestCase):
     def test_cold_plan_stops_before_the_results(self):
         for arm in ("A", "B"):
