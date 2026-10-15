@@ -2,6 +2,11 @@
 
 The result is a geometric reference, not a guarantee that SONIC will track it.
 All robot joint limits come from the loaded model; no object pose is altered.
+
+`jacobian="numeric"` (the default) lets scipy difference the residual: about 34 residual calls per solver iteration,
+~70% of a ScaleBFM warehouse round (profile, 2026-10-15). `jacobian="analytic"` builds the same residual's Jacobian
+from MuJoCo's body Jacobians and computes rotation vectors without scipy's validity checks; it converges to the
+same solutions up to solver tolerance, so rounds are not bit-identical to numeric ones.
 """
 
 from dataclasses import dataclass
@@ -11,6 +16,26 @@ from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
 from locomani.primitives.arm_ik import ArmIK
+
+JACOBIANS = ("numeric", "analytic")
+
+
+def rotvec(m) -> np.ndarray:
+    """Rotation vector of a rotation matrix, as scipy's `as_rotvec`, without its checks (near pi it falls back)."""
+    v = np.array([m[2, 1] - m[1, 2], m[0, 2] - m[2, 0], m[1, 0] - m[0, 1]])
+    c = 0.5 * (m[0, 0] + m[1, 1] + m[2, 2] - 1.0)
+    if c < -0.99:  # the antisymmetric part loses the axis near pi
+        return Rotation.from_matrix(m).as_rotvec()
+    s = 0.5 * np.sqrt(v @ v)
+    return 0.5 * v * (np.arctan2(s, c) / s if s > 1e-12 else 1.0)
+
+
+def log_jacobian(phi) -> np.ndarray:
+    """d rotvec(R) / d(world-frame rotation of R) at rotvec phi: the inverse left Jacobian of SO(3)."""
+    theta = np.sqrt(phi @ phi)
+    k = np.array([[0.0, -phi[2], phi[1]], [phi[2], 0.0, -phi[0]], [-phi[1], phi[0], 0.0]])
+    coef = 1.0 / 12.0 if theta < 1e-6 else 1.0 / theta**2 - (1.0 + np.cos(theta)) / (2.0 * theta * np.sin(theta))
+    return np.eye(3) - 0.5 * k + coef * (k @ k)
 
 
 @dataclass(frozen=True)
@@ -52,7 +77,11 @@ class WholeBodyIK:
         pelvis_height_target=None,
         elbow_min_deg=5.0,
         base_range=None,  # (dxy, dz, dpitch): keep the virtual base within this of the measured pelvis pose
+        jacobian="numeric",  # numeric | analytic (module doc)
     ):
+        if jacobian not in JACOBIANS:
+            raise ValueError(f"jacobian must be one of {JACOBIANS}, not {jacobian!r}")
+        self.jacobian = jacobian
         self.ik = ik
         self.hand_weights = np.asarray(hand_weights, dtype=float)
         if not np.isfinite(com_weight) or com_weight <= 0:
@@ -94,6 +123,10 @@ class WholeBodyIK:
         self.hands = [ik.palm_bid[side] for side in ("left", "right")]
         self.pelvis = m.body("pelvis").id
         self.torso = m.body("torso_link").id
+        base_dof = int(m.jnt_dofadr[int(np.flatnonzero(m.jnt_qposadr == ik.base_qadr)[0])])
+        # x = (base xyz, base pitch, 29 joints) as MuJoCo dofs: the free joint's world-frame translation, its rotation
+        # about the base's own y axis (`put` applies the pitch in the base frame) and the joints' dofs
+        self.columns = np.r_[base_dof + np.arange(3), base_dof + 4, ik.dadr]
         self.offset = np.asarray(tool_offset)
         d.qpos[:] = m.qpos0
         self.initial = np.r_[self.base0, pitch0, self.q0]
@@ -170,6 +203,25 @@ class WholeBodyIK:
         d = self.ik.data
         return np.array([d.xpos[b] + d.xmat[b].reshape(3, 3) @ self.offset for b in self.hands])
 
+    def _com_pull(self, com_shift):
+        """The horizontal COM residual before its weight. Inside the free disc only a tenth of the pull remains, so
+        the solver spends COM margin when the hands need it and otherwise stays central."""
+        if self.com_free_radius > 0:
+            com_norm = np.linalg.norm(com_shift)
+            com_shift = com_shift * (
+                (0.1 * min(com_norm, self.com_free_radius) + max(0.0, com_norm - self.com_free_radius))
+                / max(com_norm, 1e-9)
+            )
+        return com_shift
+
+    def _com_pull_jacobian(self, com_shift) -> np.ndarray:
+        """d `_com_pull` / d com_shift (2 x 2)."""
+        if self.com_free_radius <= 0:
+            return np.eye(2)
+        n, r = max(float(np.linalg.norm(com_shift)), 1e-9), self.com_free_radius
+        h, dh = 0.1 * min(n, r) + max(0.0, n - r), (0.1 if n < r else 1.0)
+        return h / n * np.eye(2) + np.outer(com_shift, com_shift) * (dh / n - h / n**2) / n
+
     def solve(
         self,
         positions,
@@ -206,31 +258,19 @@ class WholeBodyIK:
             if continuity_dt is None or not np.isfinite(continuity_dt) or continuity_dt <= 0:
                 raise ValueError("continuity_dt must be positive and finite")
 
+        analytic = self.jacobian == "analytic"
+        rv = rotvec if analytic else (lambda m: Rotation.from_matrix(m).as_rotvec())
+
         def residual(x):
             points = self.tools(x)
-            foot_rot = np.concatenate(
-                [
-                    Rotation.from_matrix(d.xmat[b].reshape(3, 3) @ r.T).as_rotvec()
-                    for b, r in zip(self.feet, self.feet_rot)
-                ]
-            )
-            hand_rot = np.concatenate(
-                [Rotation.from_matrix(d.xmat[b].reshape(3, 3) @ r.T).as_rotvec() for b, r in zip(self.hands, rotations)]
-            )
+            foot_rot = np.concatenate([rv(d.xmat[b].reshape(3, 3) @ r.T) for b, r in zip(self.feet, self.feet_rot)])
+            hand_rot = np.concatenate([rv(d.xmat[b].reshape(3, 3) @ r.T) for b, r in zip(self.hands, rotations)])
             continuity = (
                 np.empty(0)
                 if continuity_weight == 0
                 else continuity_weight * (x - continuity_reference) / continuity_dt
             )
-            com_shift = d.subtree_com[self.pelvis, :2] - self.com0
-            if self.com_free_radius > 0:
-                # Inside the free disc only a tenth of the pull remains, so the solver
-                # spends COM margin when the hands need it and otherwise stays central.
-                com_norm = np.linalg.norm(com_shift)
-                com_shift = com_shift * (
-                    (0.1 * min(com_norm, self.com_free_radius) + max(0.0, com_norm - self.com_free_radius))
-                    / max(com_norm, 1e-9)
-                )
+            com_shift = self._com_pull(d.subtree_com[self.pelvis, :2] - self.com0)
             return np.r_[
                 20 * (d.xpos[self.feet] - self.feet_pos).ravel(),
                 3 * foot_rot,
@@ -241,13 +281,55 @@ class WholeBodyIK:
                 0.3 * (x[2] - (self.base0[2] if self.pelvis_height_target is None else self.pelvis_height_target)),
                 np.zeros(3)
                 if torso_rotation is None
-                else 1.5 * Rotation.from_matrix(d.xmat[self.torso].reshape(3, 3) @ torso_rotation.T).as_rotvec(),
+                else 1.5 * rv(d.xmat[self.torso].reshape(3, 3) @ torso_rotation.T),
                 continuity,
             ]
 
+        def jacobian(x):
+            """The residual's rows above, d/dx, from MuJoCo's Jacobians at x (analytic mode)."""
+            m, mj, cols = self.ik.model, self.ik._mj, self.columns
+            self.put(x)
+            jp, jr = np.zeros((3, m.nv)), np.zeros((3, m.nv))
+
+            def rot_rows(body, reference, weight):
+                mj.mj_jacBody(m, d, jp, jr, body)
+                return weight * log_jacobian(rotvec(d.xmat[body].reshape(3, 3) @ reference.T)) @ jr[:, cols]
+
+            foot_p = []
+            for b in self.feet:
+                mj.mj_jacBody(m, d, jp, jr, b)
+                foot_p.append(20 * jp[:, cols])
+            foot_r = [rot_rows(b, r, 3.0) for b, r in zip(self.feet, self.feet_rot)]
+            hand_p = []
+            for b, w in zip(self.hands, self.hand_weights):
+                mj.mj_jac(m, d, jp, jr, d.xpos[b] + d.xmat[b].reshape(3, 3) @ self.offset, b)
+                hand_p.append(10 * w * jp[:, cols])
+            hand_r = [
+                rot_rows(b, r, hand_rotation_weight * w) for b, r, w in zip(self.hands, rotations, self.hand_weights)
+            ]
+            jc = np.zeros((3, m.nv))
+            mj.mj_jacSubtreeCom(m, d, jc, self.pelvis)
+            com = self.com_weight * self._com_pull_jacobian(d.subtree_com[self.pelvis, :2] - self.com0) @ jc[:2, cols]
+            posture = np.zeros((29, 33))
+            posture[:, 4:] = np.diag(np.broadcast_to(posture_scale, (29,)))
+            height = np.zeros((1, 33))
+            height[0, 2] = 0.3
+            torso = np.zeros((3, 33)) if torso_rotation is None else rot_rows(self.torso, torso_rotation, 1.5)
+            continuity = np.zeros((0, 33)) if continuity_weight == 0 else continuity_weight / continuity_dt * np.eye(33)
+            return np.vstack([*foot_p, *foot_r, *hand_p, *hand_r, com, posture, height, torso, continuity])
+
         lo, hi = (self.lo, self.hi) if bounds is None else bounds
         x0 = np.clip(self.seed if seed is None else seed, lo, hi)
-        result = least_squares(residual, x0, bounds=(lo, hi), max_nfev=iterations, ftol=1e-6, xtol=1e-6, gtol=1e-6)
+        result = least_squares(
+            residual,
+            x0,
+            jac=jacobian if analytic else "2-point",
+            bounds=(lo, hi),
+            max_nfev=iterations,
+            ftol=1e-6,
+            xtol=1e-6,
+            gtol=1e-6,
+        )
         self.seed = result.x.copy()
         continuity_velocity_error = (
             0.0 if continuity_weight == 0 else float(np.max(np.abs((result.x - continuity_reference) / continuity_dt)))

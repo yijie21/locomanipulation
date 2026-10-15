@@ -503,6 +503,12 @@ def main(argv=None) -> int:
     ap.add_argument("--shard", default="0/1", help="i/n: every n-th start from the i-th, in label order")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--route-cache",
+        default="auto",
+        help="route plans cached by request (primitives/arm_route.py): a directory, off, or auto = route_cache next "
+        "to the start pool (a hidden pool's cache stays hidden)",
+    )
     a = ap.parse_args(argv)
     base = load_spec(a.spec)
     fork_phase, delta = None, None
@@ -518,15 +524,18 @@ def main(argv=None) -> int:
         base=Context(base, a.config, meta, xml, log), fork=Context(delta, a.config, meta, xml, log) if delta else None
     )
     ctxs["route_planner"] = None
+    i, n = (int(x) for x in a.shard.split("/"))
     if any(c is not None and c.cfg.visual.reach_route == "planned" for c in (ctxs["base"], ctxs["fork"])):
-        # visual.reach_route planned: the CuRobo route service on TF_CUROBO_PORT (tasks/crate/reach_route.py)
+        # visual.reach_route planned: the CuRobo route services on TF_CUROBO_PORT(S) (tasks/crate/reach_route.py)
         from locomani.primitives.arm_route import ArmRouteClient
-        from locomani.sim.ports import curobo_route
+        from locomani.sim.ports import curobo_routes
         from locomani.tasks.crate.reach_route import ReachRoutePlanner
 
         ctx_ = ctxs["fork"] if ctxs["fork"] is not None else ctxs["base"]
+        cache = {"off": None, "auto": a.starts.parent / "route_cache"}.get(a.route_cache, Path(a.route_cache))
+        ports = curobo_routes()
         ctxs["route_planner"] = ReachRoutePlanner(
-            ArmRouteClient(curobo_route(), plan_timeout_s=180.0),
+            ArmRouteClient(ports[i % len(ports)], plan_timeout_s=180.0, cache_dir=cache),  # shards spread over them
             mujoco.MjModel.from_xml_path(xml),
             ctx_.solver.lo,
             ctx_.solver.hi,
@@ -547,7 +556,6 @@ def main(argv=None) -> int:
         sim.m, sim.d, {KEY: BOX}, surfaces=[meta["surfaces"]["A"]["body"]], port=56000 + os.getpid() % 3000
     )
     only = set(a.only.split(",")) if a.only else None
-    i, n = (int(x) for x in a.shard.split("/"))
     starts = [p for p in sorted(a.starts.glob("*.npz")) if not only or p.stem in only][i::n]
     for npz in starts:
         z = dict(np.load(npz))

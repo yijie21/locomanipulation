@@ -95,6 +95,13 @@ def curobo_route() -> int:
     return int(os.environ.get("TF_CUROBO_PORT", "5795"))
 
 
+def curobo_routes() -> list[int]:
+    """Every CuRobo route service instance: TF_CUROBO_PORTS (comma-separated), else the one `curobo_route()`. A batch
+    of round processes spreads over them; a client's route cache keeps a re-run's plan whichever one planned it."""
+    ports = os.environ.get("TF_CUROBO_PORTS", "").strip()
+    return [int(p) for p in ports.split(",") if p.strip()] if ports else [curobo_route()]
+
+
 # Every entry point start_stack.sh can launch as the exporter. The default is
 # gear_sonic's run_data_exporter.py; the pipeline overrides TF_EXPORTER_SCRIPT
 # to our run_instance_exporter.py (the collect stage), so

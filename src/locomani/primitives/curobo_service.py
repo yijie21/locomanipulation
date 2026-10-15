@@ -60,6 +60,8 @@ one crashes merging the attempts (`copy_idx` indexes a 0-d tensor; replay of gnb
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import json
 import os
 import tempfile
@@ -123,12 +125,36 @@ def limited_urdf(src: str, dst: str, limits: dict) -> None:
     tree.write(dst)
 
 
+@dataclasses.dataclass(frozen=True)
+class Settings:
+    """MotionGen settings. The defaults are the GraspNet comparison's, under which every route up to 2026-10-15 was
+    planned; `primitive` checks boxes only and refuses a request that carries meshes. `self_collision_opt` False drops
+    the self-collision cost from the optimisation but keeps the self-collision check on the result (a colliding path
+    fails): with the mars model's 722 spheres that cost's kernel was 99.5% of a warehouse route's GPU time
+    (TODO 26.5.5, 2026-10-15)."""
+
+    cuda_graph: bool = False
+    checker: str = "mesh"  # mesh | primitive
+    ik_iters: int = 200
+    trajopt_iters: int = 200
+    self_collision_opt: bool = True
+
+    def __post_init__(self):
+        if self.checker not in ("mesh", "primitive"):
+            raise ValueError(f"checker must be mesh or primitive, not {self.checker!r}")
+        if self.ik_iters < 1 or self.trajopt_iters < 1:
+            raise ValueError("ik_iters and trajopt_iters must be positive")
+
+
 class RoutePlanner:
     """One MotionGen per configuration, warmed up at the fixed batch."""
 
-    def __init__(self, robot_json: str, batch: int, work_dir: str):
-        with open(robot_json) as f:
-            self.robot = json.load(f)["robot_cfg"]
+    def __init__(self, robot_json: str, batch: int, work_dir: str, settings: Settings | None = None):
+        with open(robot_json, "rb") as f:
+            raw = f.read()
+        self.robot = json.loads(raw)["robot_cfg"]
+        self.robot_digest = hashlib.sha256(raw).hexdigest()[:16]
+        self.settings = Settings() if settings is None else settings
         self.batch = int(batch)
         if self.batch < 2:
             raise ValueError("the route service's batch must be at least 2 (CuRobo's batch of one, module doc)")
@@ -179,12 +205,17 @@ class RoutePlanner:
                 TensorDeviceType(),
                 interpolation_dt=0.02,
                 interpolation_steps=1000,
-                collision_checker_type=CollisionCheckerType.MESH,
-                collision_cache={"obb": 10, "mesh": 10},
+                collision_checker_type=(
+                    CollisionCheckerType.PRIMITIVE
+                    if self.settings.checker == "primitive"
+                    else CollisionCheckerType.MESH
+                ),
+                collision_cache={"obb": 10} if self.settings.checker == "primitive" else {"obb": 10, "mesh": 10},
                 collision_activation_distance=0.01,
-                ik_opt_iters=200,
-                grad_trajopt_iters=200,
-                use_cuda_graph=False,
+                ik_opt_iters=self.settings.ik_iters,
+                grad_trajopt_iters=self.settings.trajopt_iters,
+                use_cuda_graph=self.settings.cuda_graph,
+                self_collision_opt=self.settings.self_collision_opt,
             )
         )
         chain = list(self.motion_gen.kinematics.joint_names)
@@ -209,6 +240,11 @@ class RoutePlanner:
         if not self._plan_once(self.canary)["ok"]:
             raise RuntimeError("the warm-up plan failed right after a build")
 
+    def fingerprint(self) -> dict:
+        """Everything besides the request that decides a plan; a client's route cache keys on it."""
+        return dict(settings=dataclasses.asdict(self.settings), batch=self.batch, robot=self.robot_digest,
+                    protocol=PROTOCOL)  # fmt: skip
+
     def rebuild(self) -> None:
         self.key = None
         self.configure(*self.config_args)
@@ -223,6 +259,8 @@ class RoutePlanner:
         from curobo.geom.types import Cuboid, Mesh, WorldConfig
 
         cuboids = [Cuboid(name=c["name"], pose=list(c["pose"]), dims=list(c["dims"])) for c in world.get("cuboids", [])]
+        if world.get("meshes") and self.settings.checker == "primitive":
+            raise ValueError("mesh obstacles need the mesh checker (this service runs --checker primitive)")
         meshes = [
             Mesh(name=m["name"], pose=list(m["pose"]), vertices=m["vertices"], faces=m["faces"])
             for m in world.get("meshes", [])
@@ -338,7 +376,8 @@ def handle(planner: RoutePlanner, req: dict) -> dict:
     t0 = time.time()
     if cmd == "configure":
         built = planner.configure(req["names"], req["lower"], req["upper"], req["retract"])
-        return dict(ok=True, built=built, seconds=time.time() - t0, protocol=PROTOCOL, rebuilds=planner.rebuilds)
+        return dict(ok=True, built=built, seconds=time.time() - t0, protocol=PROTOCOL, rebuilds=planner.rebuilds,
+                    planner=planner.fingerprint())  # fmt: skip
     if cmd == "plan":
         return planner.plan(req)
     raise ValueError(f"unknown cmd {cmd!r}")
@@ -351,12 +390,20 @@ def main(argv=None) -> int:
     ap.add_argument("robot_json")
     ap.add_argument("--port", type=int, default=5795)
     ap.add_argument("--batch", type=int, default=2, help="fixed planning batch, at least 2; requests pad up to it")
+    ap.add_argument("--cuda-graph", action="store_true", help="MotionGen use_cuda_graph (Settings)")
+    ap.add_argument("--checker", choices=("mesh", "primitive"), default=Settings.checker)
+    ap.add_argument("--ik-iters", type=int, default=Settings.ik_iters)
+    ap.add_argument("--trajopt-iters", type=int, default=Settings.trajopt_iters)
+    ap.add_argument("--no-self-collision-opt", action="store_true", help="check, but do not optimise, self-collision")
     args = ap.parse_args(argv)
+    settings = Settings(
+        args.cuda_graph, args.checker, args.ik_iters, args.trajopt_iters, not args.no_self_collision_opt
+    )
     work = tempfile.mkdtemp(prefix="curobo_service_", dir=os.environ.get("TMPDIR"))
-    planner = RoutePlanner(args.robot_json, args.batch, work)
+    planner = RoutePlanner(args.robot_json, args.batch, work, settings)
     sock = zmq.Context().socket(zmq.REP)
     sock.bind(f"tcp://127.0.0.1:{args.port}")
-    print(f"[curobo_service] listening on :{args.port} batch {args.batch} protocol {PROTOCOL}", flush=True)
+    print(f"[curobo_service] listening on :{args.port} batch {args.batch} protocol {PROTOCOL} {settings}", flush=True)
     while True:
         req = json.loads(sock.recv())
         try:

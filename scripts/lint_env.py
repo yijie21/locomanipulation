@@ -49,6 +49,7 @@ WHITELIST = {
     "TF_EPISODE_PORT",
     "TF_ISAAC_MIRROR_PORT",
     "TF_CUROBO_PORT",  # the machine-wide CuRobo arm-route service (sim/ports.curobo_route)
+    "TF_CUROBO_PORTS",  # several route service instances, comma-separated (sim/ports.curobo_routes)
     "TF_LOCKSTEP_PORT",
     "TF_LOCKSTEP_XSUB_PORT",
     "TF_SONIC_PUB_CONNECT",

@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -49,6 +50,7 @@ PLAN = REPO / "docs" / "handoff" / "scalebfm-warehouse-rsi-20261014.md"
 RULES = HERE / "rules.md"
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 sys.path.insert(0, str(HERE))
+import batch  # noqa: E402
 import extensions  # noqa: E402
 from bfm_round import load_spec, spec_hash  # noqa: E402
 
@@ -59,7 +61,11 @@ MAX_WALL_H = 36.0
 MAX_REJECT_STREAK = 3
 MAX_HYPOTHESES = 4
 SONIC_MARGIN = 5  # plan §9: stop when the accepted incumbent wins >= SONIC + 5 on the acceptance pool
-PROCS = 4  # ScaleBFM processes per loop (run --procs); rounds are shard-invariant (phase 0), so only wall time changes
+PROCS = (
+    12  # ScaleBFM processes per loop (run --procs); rounds are shard-invariant (phase 0), so only wall time changes.
+)
+# One loop alone: 12 carry 1.63x the round throughput of 6 at 12 of the container's 15.36 cores, 15 add 9% at 14.6
+# (outputs/rsi_speed_20261015/proc_scaling, 2026-10-15); two loops at once split them
 SMOKE = "sonic_s7000_04"
 # files the Engineer may change (§7, D2): the extension hooks and the crate task code (default-off fields only)
 ENGINEER_PATHS = ("scripts/experiments/scalebfm_warehouse_rsi_20261014/extensions.py", "src/locomani/tasks/crate/")
@@ -301,35 +307,26 @@ def transcript_leaks(session: str | None) -> list[str]:
 # -- steps --------------------------------------------------------------------------------------------------------
 
 
-def run_batch(jobs: list[tuple], log: Path, gpu: str = "1", script: Path | None = None) -> None:
-    """Rounds on the diagnostic pool for several (spec, out, fork, only) jobs. Each job is split into PROCS shards and all
-    shards share one pool of PROCS processes, so the next job's shards start as soon as a slot frees instead of after
-    the previous job's slowest shard. `gpu` may list several devices ("0,1"): each shard goes to the one running the
-    fewest of this batch's processes."""
-    gpus = gpu.split(",")
-    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", TMPDIR="/workspace/tmp")
-    env["NUMPY_MADVISE_HUGEPAGE"] = "0"
-    pool = LOOP / "pool_diag" / "states"
-    queue = []
-    for spec, out, fork, only in jobs:
-        for i in range(PROCS):
-            cmd = [str(SIM_PY), str(script or HERE / "bfm_round.py"), str(pool), "--spec", str(spec), "--out", str(out),
-                   "--shard", f"{i}/{PROCS}"]  # fmt: skip
-            if fork:
-                cmd += ["--fork", fork]
-            if only:
-                cmd += ["--only", ",".join(only)]
-            queue.append(cmd)
-    running: list[tuple[subprocess.Popen, str]] = []
-    with log.open("a") as fh:
-        while queue or running:
-            while queue and len(running) < PROCS:
-                g = min(gpus, key=lambda x: sum(d == x for _, d in running))
-                p = subprocess.Popen(queue.pop(0), cwd=REPO, env={**env, "CUDA_VISIBLE_DEVICES": g}, stdout=fh,
-                                     stderr=subprocess.STDOUT)  # fmt: skip
-                running.append((p, g))
-            time.sleep(0.5)
-            running = [(p, g) for p, g in running if p.poll() is None]
+def run_batch(
+    jobs: list[tuple],
+    log: Path,
+    gpu: str = "1",
+    script: Path | None = None,
+    procs: int | None = None,
+    stop: threading.Event | None = None,
+) -> None:
+    """Rounds on the diagnostic pool for several (spec, out, fork, only) jobs, all in one pool of `procs` (default
+    PROCS) processes (batch.py: small shards, so the next job's rounds start as soon as a slot frees). `gpu` may list
+    several devices ("0,1")."""
+    batch.run_jobs(
+        [batch.Job(spec, out, tuple(only) if only else None, fork) for spec, out, fork, only in jobs],
+        LOOP / "pool_diag" / "states",
+        procs or PROCS,
+        log,
+        gpu,
+        script,
+        stop,
+    )
 
 
 def run_rounds(
@@ -355,8 +352,12 @@ def incumbent() -> dict:
 
 
 def diag_incumbent(inc: dict, it_dir: Path) -> Path:
-    """The incumbent's rounds on the diagnostic pool (once per incumbent) and their handoff records (none in arm B)."""
+    """The incumbent's rounds on the diagnostic pool (once per incumbent) and their handoff records (none in arm B).
+    A candidate's rounds run beside its gate (`after_engineer`); once accepted they are these."""
     d = LOOP / "diag" / f"incumbent_{inc['hash']}"
+    side = LOOP / "diag" / f"candidate_{inc['hash']}"
+    if not d.exists() and side.exists():
+        side.rename(d)
     if len(list(d.glob("bfm_*.json"))) < len(list((LOOP / "pool_diag" / "states").glob("*.json"))):
         run_rounds(Path(inc["path"]), d, it_dir / "prober.log", gpu=GPU)
     rec = d / "records.jsonl"
@@ -580,10 +581,28 @@ def after_engineer(
     ]
     if stub:
         gate_args += ["--dry-run", "--pool", str(LOOP / "pool_diag" / "states")]
+    # the candidate's diagnostic rounds beside the gate, on a share of the processes: if it is accepted they are the
+    # next incumbent's (diag_incumbent) and the next Reviewer does not wait for them; a rejection stops them
+    stop, side = threading.Event(), None
+    if not stub:
+        share = max(1, PROCS * 5 // 12)
+        gate_args[gate_args.index("--procs") + 1] = str(max(1, PROCS - share))
+        pre = LOOP / "diag" / f"candidate_{spec_hash(load_spec(cand))}"
+        side = threading.Thread(
+            target=run_batch,
+            args=([(cand, pre, None, None)], it_dir / "prober.log", GPU),
+            kwargs=dict(procs=share, stop=stop),
+            daemon=True,
+        )
+        side.start()
     r = subprocess.run(gate_args, cwd=REPO, capture_output=True, text=True, env=dict(os.environ, GATE_GPU=GPU))
     (it_dir / "gate.log").write_text(r.stdout + r.stderr)
     verdict = json.loads((gate_dir / "ledger.jsonl").read_text().splitlines()[-1])
     jdump(it_dir / "gate.json", verdict)
+    if side is not None:
+        if not verdict["accepted"]:
+            stop.set()
+        side.join()
     ledger(dict(step="gate", iter=n, accepted=verdict["accepted"], reason=verdict["reason"], hash=verdict["hash"],
                 result=verdict.get("result"), stage1=verdict.get("stage1"), void=void or stub))  # fmt: skip
     if not verdict["accepted"] and changed:
@@ -670,7 +689,7 @@ def main(argv=None) -> int:
     r.add_argument("--arm", choices=("A", "B"), default=None, help="phase 4 (plan §17): A cold, B cold and flat")
     r.add_argument("--gpu", default="1", help="ScaleBFM's GPU for the diagnostic rounds, the probes and the gate")
     r.add_argument(
-        "--procs", type=int, default=4, help="ScaleBFM processes (wall time only; rounds are shard-invariant)"
+        "--procs", type=int, default=None, help="ScaleBFM processes, default PROCS (wall time only; shard-invariant)"
     )
     sub.add_parser("status")
     a = ap.parse_args(argv)
@@ -678,7 +697,7 @@ def main(argv=None) -> int:
     if getattr(a, "state", None):
         STATE = a.state
     if a.cmd == "run":
-        ARM, GPU, PROCS = a.arm, a.gpu, a.procs
+        ARM, GPU, PROCS = a.arm, a.gpu, a.procs or PROCS
     return cmd_run(a) if a.cmd == "run" else cmd_status(a)
 
 

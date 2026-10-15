@@ -342,5 +342,99 @@ class ClientTests(unittest.TestCase):
             client.plan([0], [[0, 0, 0, 1, 0, 0, 0]])
 
 
+class RouteCacheTests(unittest.TestCase):
+    PLANNER = dict(
+        settings=dict(cuda_graph=True, checker="primitive"), batch=2, robot="abc", protocol=arm_route.PROTOCOL
+    )
+
+    def configured(self, replies, cache, planner=PLANNER):
+        fake = FakeService(
+            [dict(ok=True, built=True, seconds=0, protocol=arm_route.PROTOCOL, planner=planner), *replies]
+        )
+        client = ArmRouteClient(fake.port, plan_timeout_s=5, configure_timeout_s=5, cache_dir=cache)
+        client.configure(["j1", "j2"], [-1, -1], [1, 1], [0, 0])
+        return fake, client
+
+    def test_a_repeated_request_is_answered_from_the_cache_with_the_first_path(self):
+        first = dict(ok=True, index=0, path=[[0.0, 0.0], [0.1, 0.2]], success=[True], status="ok", seconds=6.0)
+        with tempfile.TemporaryDirectory() as cache:
+            fake, client = self.configured([first], cache)
+            try:
+                a = client.plan_to_joints([0, 0], [0.1, 0.2], [Box("wall", (0.5, 0, 0, 1, 0, 0, 0), (0.1, 1, 1))])
+                b = client.plan_to_joints([0, 0], [0.1, 0.2], [Box("wall", (0.5, 0, 0, 1, 0, 0, 0), (0.1, 1, 1))])
+            finally:
+                client.close()
+                fake.close()
+            self.assertEqual(len(fake.requests), 2)  # configure + one plan: the repeat never reached the service
+            self.assertFalse(a.cached)
+            self.assertTrue(b.cached)
+            np.testing.assert_array_equal(a.path, b.path)
+            self.assertEqual(b.seconds, 6.0)
+
+    def test_another_start_obstacle_or_planner_is_a_new_request(self):
+        reply = dict(ok=True, index=0, path=[[0.0, 0.0], [0.1, 0.2]], success=[True], status="ok", seconds=1.0)
+        with tempfile.TemporaryDirectory() as cache:
+            fake, client = self.configured([reply, reply, reply], cache)
+            try:
+                client.plan_to_joints([0, 0], [0.1, 0.2])
+                client.plan_to_joints([0, 1e-12], [0.1, 0.2])
+                moved = client.plan_to_joints([0, 0], [0.1, 0.2], [Box("wall", (0.5, 0, 0, 1, 0, 0, 0), (0.1, 1, 1))])
+            finally:
+                client.close()
+                fake.close()
+            self.assertFalse(moved.cached)
+            self.assertEqual(len(fake.requests), 4)
+            other = dict(self.PLANNER, settings=dict(cuda_graph=False, checker="mesh"))
+            fake, client = self.configured([reply], cache, planner=other)
+            try:
+                self.assertFalse(client.plan_to_joints([0, 0], [0.1, 0.2]).cached)
+            finally:
+                client.close()
+                fake.close()
+
+    def test_a_failed_plan_is_cached_too_but_a_service_error_is_not(self):
+        failed = dict(ok=False, index=None, path=[], success=[False], status="INVALID_START_STATE_WORLD_COLLISION",
+                      seconds=2.0)  # fmt: skip
+        with tempfile.TemporaryDirectory() as cache:
+            fake, client = self.configured([dict(ok=False, status="error", error="boom"), failed], cache)
+            try:
+                with self.assertRaisesRegex(RouteServiceError, "boom"):
+                    client.plan_to_joints([0, 0], [0.1, 0.2])
+                self.assertFalse(client.plan_to_joints([0, 0], [0.1, 0.2]).cached)
+                again = client.plan_to_joints([0, 0], [0.1, 0.2])
+            finally:
+                client.close()
+                fake.close()
+            self.assertTrue(again.cached)
+            self.assertFalse(again.ok)
+
+    def test_caching_needs_the_services_planner_fingerprint(self):
+        with tempfile.TemporaryDirectory() as cache:
+            fake = FakeService([dict(ok=True, built=True, seconds=0, protocol=arm_route.PROTOCOL)])
+            client = ArmRouteClient(fake.port, configure_timeout_s=5, cache_dir=cache)
+            try:
+                with self.assertRaisesRegex(RouteServiceError, "fingerprint"):
+                    client.configure(["j"], [-1], [1], [0])
+            finally:
+                client.close()
+                fake.close()
+
+
+class ServiceSettingsTests(unittest.TestCase):
+    def test_the_defaults_are_the_graspnet_settings_and_bad_values_are_refused(self):
+        s = curobo_service.Settings()
+        self.assertEqual((s.cuda_graph, s.checker, s.ik_iters, s.trajopt_iters), (False, "mesh", 200, 200))
+        with self.assertRaises(ValueError):
+            curobo_service.Settings(checker="sdf")
+        with self.assertRaises(ValueError):
+            curobo_service.Settings(trajopt_iters=0)
+
+    def test_several_service_ports_come_from_tf_curobo_ports(self):
+        with patch.dict(os.environ, {"TF_CUROBO_PORTS": "5795, 5796,5797"}, clear=True):
+            self.assertEqual(ports.curobo_routes(), [5795, 5796, 5797])
+        with patch.dict(os.environ, {"TF_CUROBO_PORT": "6001"}, clear=True):
+            self.assertEqual(ports.curobo_routes(), [6001])
+
+
 if __name__ == "__main__":
     unittest.main()

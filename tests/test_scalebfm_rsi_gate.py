@@ -96,6 +96,69 @@ class Specs(unittest.TestCase):
             self.assertIn("frozen", (Path(d) / "g" / "ledger.jsonl").read_text())
 
 
+FAKE_ROUND = """
+import json, sys, pathlib, numpy as np
+a = sys.argv
+out = pathlib.Path(a[a.index("--out") + 1]); out.mkdir(parents=True, exist_ok=True)
+spec = pathlib.Path(a[a.index("--spec") + 1]).read_text()
+only = a[a.index("--only") + 1].split(",")
+i, n = map(int, a[a.index("--shard") + 1].split("/"))
+for label in sorted(only)[i::n]:
+    k = int(label.split("_s")[-1])
+    ok = k < 25 if "tracking_gain: 1.0" in spec else k < 5
+    if "sentinel" in str(out) and DRIFT:
+        ok = not ok
+    t = np.linspace(0, 1, 5)
+    box = np.zeros((5, 7)); box[:, 3] = 1; box[:, 2] = 0.1 * t * ok
+    pelvis = np.zeros((5, 7)); pelvis[:, 2] = 0.75
+    stem = label.replace("sonic", "bfm", 1)
+    np.savez(out / f"{stem}.npz", box=box, pelvis=pelvis)
+    (out / f"{stem}.json").write_text(json.dumps(dict(ok=ok, why="" if ok else "reach_stalled", events=dict(end=20.0),
+                                                      fields_read=["visual.tracking_gain"])))
+"""
+
+
+class GateRun(unittest.TestCase):
+    def gate_on_fake_rounds(self, drift: bool):
+        import functools
+
+        import batch
+
+        d = Path(tempfile.mkdtemp())
+        pool = d / "pool"
+        pool.mkdir()
+        for k in range(gate.STAGE1 + 1):
+            (pool / f"sonic_s{k:02d}.npz").touch()
+        fake = d / "fake_round.py"
+        fake.write_text(f"DRIFT = {drift}\n" + FAKE_ROUND)
+        cand = d / "c.yaml"
+        cand.write_text("set: {visual.tracking_gain: 1.0}\n")
+        saved = batch.SIM_PY, gate.run_jobs
+        batch.SIM_PY, gate.run_jobs = Path(sys.executable), functools.partial(batch.run_jobs, script=fake)
+        try:
+            rc = gate.main(["--candidate", str(cand), "--gate-dir", str(d / "g"), "--pool", str(pool), "--procs", "4"])
+        finally:
+            batch.SIM_PY, gate.run_jobs = saved
+        import json
+        import shutil
+
+        verdict = json.loads((d / "g" / "ledger.jsonl").read_text().splitlines()[-1])
+        shutil.rmtree(d)
+        return rc, verdict
+
+    def test_the_batched_sentinel_and_stage_1_accept_a_clear_winner(self):
+        rc, verdict = self.gate_on_fake_rounds(drift=False)
+        self.assertEqual(rc, 0, verdict["reason"])
+        self.assertEqual((verdict["stage1"]["b"], verdict["stage1"]["c"]), (20, 0))
+        self.assertEqual(verdict["result"]["n"], gate.STAGE1 + 1)
+
+    def test_a_drifting_sentinel_voids_the_call_before_any_tally(self):
+        rc, verdict = self.gate_on_fake_rounds(drift=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("sentinel", verdict["reason"])
+        self.assertNotIn("stage1", verdict)
+
+
 class StopRule(unittest.TestCase):
     def test_phase3_when_the_incumbent_beats_sonic_by_five(self):
         import loop

@@ -75,6 +75,7 @@ class CoordinatedReach:
             pelvis_forward_max=config.carry.pelvis_forward_max,
             pelvis_height_target=config.carry.pelvis_height_target,
             elbow_min_deg=config.visual.elbow_min_deg,
+            jacobian=config.carry.ik_jacobian,
         )
         # The crouch serves the reach; standing up with the load returns the pelvis to its start height.
         self.crouch_height = config.carry.pelvis_height_target

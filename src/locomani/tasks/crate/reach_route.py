@@ -87,6 +87,7 @@ class ReachRoutePlanner:
             status=route.status,
             start_in_collision=start_in_collision,
             clearance=self.clearance,
+            cached=route.cached,
         )
         if not route.ok:
             return None

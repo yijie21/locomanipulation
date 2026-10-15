@@ -10,12 +10,23 @@ docs/handoff/single-arm-curobo-route-plan-20261009.md, SIMPLE's `create_collisio
 outside the robot, boxes as boxes and each body's meshes merged into one mesh (the service caches ten of each), static
 bodies where the model puts them and free bodies where the state says they are now. `retime_path` / `sample_path`
 turn the planned joint path into a smoothstep timing at a joint speed and sample it on the physical clock.
+
+Route cache (`cache_dir`, TODO 26.5.5): the service's plan for a request depends on the requests it answered before
+(curobo_service module doc), so a re-run round (a fork's prefix, a gate sentinel, a candidate re-run) would not get
+its first plan back. With a cache directory the client keys every plan request on its exact content plus the
+configure request and the service's planner fingerprint, answers a repeat from disk and stores each new reply; a
+re-run then gets the identical path, whichever service instance and history planned it first.
 """
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import mujoco
 import numpy as np
@@ -55,6 +66,7 @@ class Route:
     rebuilt: bool = False  # the service found its solvers broken (canary failed) and rebuilt before this answer
     poisoning: bool = False  # this request broke them (curobo_service module doc); the service rebuilt again after it
     world: dict = field(default_factory=dict, repr=False)  # what was sent, for the round record
+    cached: bool = False  # answered from the client's route cache (module doc), not planned now
 
 
 def world_message(obstacles) -> dict:
@@ -77,12 +89,22 @@ def world_message(obstacles) -> dict:
 
 
 class ArmRouteClient:
-    def __init__(self, port: int, *, host: str = "127.0.0.1", configure_timeout_s: float = 180.0, plan_timeout_s=60.0):
+    def __init__(
+        self,
+        port: int,
+        *,
+        host: str = "127.0.0.1",
+        configure_timeout_s: float = 180.0,
+        plan_timeout_s=60.0,
+        cache_dir: str | os.PathLike | None = None,
+    ):
         self.address = f"tcp://{host}:{port}"
         self.configure_timeout_s, self.plan_timeout_s = configure_timeout_s, plan_timeout_s
         self.ctx = zmq.Context.instance()
         self.sock = None
         self.names = None
+        self.cache_dir = None if cache_dir is None else Path(cache_dir)
+        self.cache_scope = None  # the configure request and the service's planner fingerprint, set by configure
 
     def _call(self, req: dict, timeout_s: float) -> dict:
         if self.sock is None:
@@ -113,7 +135,16 @@ class ArmRouteClient:
         )
         if rep.get("protocol") != PROTOCOL:
             raise RouteServiceError(f"route service protocol {rep.get('protocol')}, client {PROTOCOL}")
+        if self.cache_dir is not None and not rep.get("planner"):
+            raise RouteServiceError("the route service sends no planner fingerprint, so its plans cannot be cached")
         self.names = list(names)
+        self.cache_scope = dict(
+            names=self.names,
+            lower=[float(v) for v in lower],
+            upper=[float(v) for v in upper],
+            retract=[float(v) for v in retract],
+            planner=rep.get("planner"),
+        )
         return rep
 
     def plan(self, start, goals, obstacles=()) -> Route:
@@ -136,7 +167,8 @@ class ArmRouteClient:
         if len(start) != len(self.names):
             raise ValueError(f"start has {len(start)} joints, configured {len(self.names)}")
         world = world_message(obstacles)
-        rep = self._call(dict(cmd="plan", start=start, world=world, **goal), self.plan_timeout_s)
+        req = dict(cmd="plan", start=start, world=world, **goal)
+        rep, cached = self._cached(req)
         path = np.asarray(rep.get("path") or np.zeros((0, len(self.names))), dtype=float)
         return Route(
             ok=bool(rep["ok"]),
@@ -148,7 +180,33 @@ class ArmRouteClient:
             rebuilt=bool(rep.get("rebuilt", False)),
             poisoning=bool(rep.get("poisoning", False)),
             world=world,
+            cached=cached,
         )
+
+    def cache_path(self, req: dict) -> Path:
+        key = hashlib.sha256(json.dumps([self.cache_scope, req], sort_keys=True).encode()).hexdigest()
+        return self.cache_dir / key[:2] / f"{key}.json"
+
+    def _cached(self, req: dict) -> tuple[dict, bool]:
+        """(reply, from the cache): the stored reply for this exact request, else the service's, stored."""
+        if self.cache_dir is None:
+            return self._call(req, self.plan_timeout_s), False
+        path = self.cache_path(req)
+        if path.is_file():
+            return json.loads(path.read_text()), True
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Concurrent rounds with the same prefix (probe forks after the reach) send the same request at once: the
+        # per-key lock makes the second wait for the first's reply instead of planning a possibly different one.
+        with open(path.with_suffix(".lock"), "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if path.is_file():
+                return json.loads(path.read_text()), True
+            rep = self._call(req, self.plan_timeout_s)
+            fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+            with os.fdopen(fd, "w") as f:
+                json.dump(rep, f)
+            os.replace(tmp, path)
+        return rep, False
 
     def close(self) -> None:
         if self.sock is not None:

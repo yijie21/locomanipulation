@@ -34,7 +34,13 @@ HIDDEN = Path("outputs/scalebfm_warehouse_rsi_20261014_hidden")
 SCENE = Path("outputs/scene/warehouse_box_45x32x33_mars")
 # The phase-2 loop's code: src unchanged since phase 1's commit; before the CuRobo reach route (5a35010)
 BASE = "e9f0530"
-OVERLAY = ("loop.py", "prompts/engineer.md", "prompts/manager.md", "prompts/phase4")
+OVERLAY = (
+    "loop.py",
+    "batch.py",
+    "prompts/engineer.md",
+    "prompts/manager.md",
+    "prompts/phase4",
+)  # batch.py: loop.py imports it
 DROP = {
     "A": ("phase1.py", "sealed.py", "prompts/reviewer.md"),
     "B": ("phase1.py", "sealed.py", "prompts/reviewer.md", "handoff.py", "envelope.py"),

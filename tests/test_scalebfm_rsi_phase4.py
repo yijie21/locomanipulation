@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts" / "experiments" / "scalebfm_warehouse_rsi_20261014"))
+import batch  # noqa: E402
 import loop  # noqa: E402
 import phase4_sandbox as sandbox  # noqa: E402
 
@@ -119,6 +120,13 @@ class Restore(unittest.TestCase):
             self.assertFalse((repo / "new.py").exists())
 
 
+def pool_of(loop_dir: Path, n: int) -> None:
+    states = loop_dir / "pool_diag" / "states"
+    states.mkdir(parents=True)
+    for i in range(n):
+        (states / f"sonic_s{i:02d}.npz").touch()
+
+
 class Batch(unittest.TestCase):
     def test_all_shards_of_all_jobs_run_and_the_pool_never_exceeds_procs(self):
         import tempfile
@@ -133,13 +141,14 @@ class Batch(unittest.TestCase):
                 "t0 = time.time(); time.sleep(0.3)\n"
                 "import os; (out / shard).write_text(f'{t0} {time.time()} {os.environ[\"CUDA_VISIBLE_DEVICES\"]}')\n"
             )
-            saved = loop.SIM_PY, loop.PROCS, loop.LOOP
-            loop.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 3, d
+            pool_of(d, 6)  # 2 starts per shard: 3 shards per job
+            saved = batch.SIM_PY, loop.PROCS, loop.LOOP
+            batch.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 3, d
             try:
                 jobs = [(d / "spec.yaml", d / f"out{j}", None, None) for j in range(4)]
                 loop.run_batch(jobs, d / "log", script=fake)
             finally:
-                loop.SIM_PY, loop.PROCS, loop.LOOP = saved
+                batch.SIM_PY, loop.PROCS, loop.LOOP = saved
             spans = [tuple(map(float, f.read_text().split()[:2])) for j in range(4) for f in (d / f"out{j}").iterdir()]
             self.assertEqual(len(spans), 4 * 3)
             peak = max(sum(a <= t < b for a, b in spans) for t, _ in spans)
@@ -158,18 +167,50 @@ class Batch(unittest.TestCase):
                 "t0 = time.time(); time.sleep(0.3)\n"
                 "(out / shard).write_text(f'{t0} {time.time()} {os.environ[\"CUDA_VISIBLE_DEVICES\"]}')\n"
             )
-            saved = loop.SIM_PY, loop.PROCS, loop.LOOP
-            loop.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 4, d
+            pool_of(d, 8)  # 4 shards per job
+            saved = batch.SIM_PY, loop.PROCS, loop.LOOP
+            batch.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 4, d
             try:
                 loop.run_batch([(d / "spec.yaml", d / f"out{j}", None, None) for j in range(3)], d / "log", "0,1", fake)
             finally:
-                loop.SIM_PY, loop.PROCS, loop.LOOP = saved
+                batch.SIM_PY, loop.PROCS, loop.LOOP = saved
             runs = [f.read_text().split() for j in range(3) for f in (d / f"out{j}").iterdir()]
             self.assertEqual(len(runs), 3 * 4)
             for g in ("0", "1"):
                 mine = [(float(a), float(b)) for a, b, x in runs if x == g]
                 self.assertTrue(mine)
                 self.assertLessEqual(max(sum(a <= t < b for a, b in mine) for t, _ in mine), 2)
+
+
+class BatchStop(unittest.TestCase):
+    def test_a_stopped_batch_kills_its_shards_and_drops_a_torn_round(self):
+        import tempfile
+        import threading
+        import time
+
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            pool_of(d, 8)
+            fake = d / "slow_round.py"  # never finishes on its own
+            fake.write_text("import time\ntime.sleep(60)\n")
+            out = d / "out"
+            out.mkdir()
+            (out / "bfm_s00.json").write_text('{"ok": tr')  # what a kill during the save leaves
+            (out / "bfm_s01.json").write_text('{"ok": true}')
+            stop, saved = threading.Event(), batch.SIM_PY
+            batch.SIM_PY = Path(sys.executable)
+            try:
+                t0 = time.time()
+                threading.Timer(1.0, stop.set).start()
+                missing = batch.run_jobs(
+                    [batch.Job(d / "spec.yaml", out)], d / "pool_diag" / "states", 4, d / "log", script=fake, stop=stop
+                )
+            finally:
+                batch.SIM_PY = saved
+            self.assertLess(time.time() - t0, 10)
+            self.assertFalse((out / "bfm_s00.json").exists())
+            self.assertTrue((out / "bfm_s01.json").exists())
+            self.assertEqual(len(missing[0]), 6)  # the 8 starts less the two that looked done at the start
 
 
 class Scrub(unittest.TestCase):

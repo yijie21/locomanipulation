@@ -7,6 +7,8 @@ Steps (each writes into <gate>/<n>_<candidate hash>/ and stops at the first reje
    determinism the pairing relies on.
 3. stage 1: candidate and incumbent on the first 30 starts; reject when the candidate's net wins (b - c) <= 0.
 4. stage 2: the remaining 30.
+The incumbent's own rounds (first call per incumbent), the sentinel and stage 1 run as one batch (batch.py), so stage 1
+does not wait for the sentinel's slowest round; the sentinel is still judged first, and a drift voids the call.
 5. verdict over all run pairs -- accept iff b - c >= 3, one-sided exact McNemar p <= 0.05, falls <= incumbent + 1,
    drops <= incumbent + 1, and every field the spec sets was read on the candidate's path in at least one round
    (facts["fields_read"]).
@@ -34,6 +36,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path[:0] = [str(HERE)]
 
+from batch import Job, run_jobs  # noqa: E402
 from bfm_round import load_spec, spec_hash  # noqa: E402
 
 HIDDEN = REPO / "outputs" / "scalebfm_warehouse_rsi_20261014_hidden"  # outside the loop's tree: no role reads it (§4)
@@ -80,26 +83,12 @@ def outcome(npz: Path) -> dict:
     )
 
 
-def run(spec_path: Path, labels: list[str], out: Path, procs: int, log: Path, pool: Path) -> None:
-    """bfm_round.py on the given starts, `procs` shards on GPU 1."""
-    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", CUDA_VISIBLE_DEVICES=os.environ.get("GATE_GPU", "1"))
-    env.setdefault("TMPDIR", "/workspace/tmp")
-    env["NUMPY_MADVISE_HUGEPAGE"] = "0"
-    todo = [x for x in labels if not (out / f"{x.replace('sonic', 'bfm', 1)}.json").exists()]
-    if not todo:
-        return
-    n = min(procs, len(todo))
-    ps = []
-    with log.open("a") as fh:
-        for i in range(n):
-            cmd = [str(SIM_PY), str(HERE / "bfm_round.py"), str(pool), "--spec", str(spec_path), "--out", str(out),
-                   "--only", ",".join(todo), "--shard", f"{i}/{n}"]  # fmt: skip
-            ps.append(subprocess.Popen(cmd, cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT))
-        for p in ps:
-            p.wait()
-    missing = [x for x in todo if not (out / f"{x.replace('sonic', 'bfm', 1)}.json").exists()]
-    if missing:
-        raise RuntimeError(f"{len(missing)} rounds missing after the run (see {log})")
+def run(jobs: list[Job], procs: int, log: Path, pool: Path) -> None:
+    """bfm_round.py for the jobs, one process pool on GATE_GPU (default 1; "0,1" spreads)."""
+    missing = run_jobs(jobs, pool, procs, log, os.environ.get("GATE_GPU", "1"))
+    lost = sum(len(v) for v in missing.values())
+    if lost:
+        raise RuntimeError(f"{lost} rounds missing after the run (see {log})")
 
 
 def tally(cand: dict, inc: dict) -> dict:
@@ -178,12 +167,21 @@ def main(argv=None) -> int:
     work.mkdir(exist_ok=True)
     log = work / "run.log"
     inc_dir = Path(inc["rounds"])
-    # the incumbent's own rounds, once per incumbent
-    run(Path(inc["spec"]), labels, inc_dir, a.procs, log, POOL)
+    sent, cand_dir = work / "sentinel", work / "candidate"
+    (work / "candidate.yaml").write_text(a.candidate.read_text())
+    # the incumbent's own rounds (once per incumbent), 2. the sentinel and 3. stage 1, in one batch
+    run(
+        [
+            Job(Path(inc["spec"]), inc_dir, tuple(labels)),
+            Job(Path(inc["spec"]), sent, tuple(labels[:SENTINELS])),
+            Job(work / "candidate.yaml", cand_dir, tuple(labels[:STAGE1])),
+        ],
+        a.procs,
+        log,
+        POOL,
+    )
     inc_out = load_dir(inc_dir)
     # 2. sentinel
-    sent = work / "sentinel"
-    run(Path(inc["spec"]), labels[:SENTINELS], sent, a.procs, log, POOL)
     again = load_dir(sent)
     drift = [k for k in again if (again[k]["ok"], again[k]["end"]) != (inc_out[k]["ok"], inc_out[k]["end"])]
     if drift:
@@ -191,14 +189,11 @@ def main(argv=None) -> int:
             False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void -- fix first"
         )
     # 3. stage 1
-    cand_dir = work / "candidate"
-    (work / "candidate.yaml").write_text(a.candidate.read_text())
-    run(work / "candidate.yaml", labels[:STAGE1], cand_dir, a.procs, log, POOL)
     t1 = tally(load_dir(cand_dir), inc_out)
     if t1["b"] - t1["c"] <= 0:
         return finish(False, f"stage 1: net wins {t1['b'] - t1['c']} <= 0 on {t1['n']} pairs", stage1=t1)
     # 4. stage 2
-    run(work / "candidate.yaml", labels, cand_dir, a.procs, log, POOL)
+    run([Job(work / "candidate.yaml", cand_dir, tuple(labels))], a.procs, log, POOL)
     cand_out = load_dir(cand_dir)
     t = tally(cand_out, inc_out)
     # 5. verdict

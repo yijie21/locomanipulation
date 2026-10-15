@@ -26,6 +26,7 @@ class CrateCarryConfig:
     pelvis_height_target: float | None = (
         None  # crouch height the solver is pulled toward through reach/close/lift, m; released with the stand
     )
+    ik_jacobian: str = "numeric"  # whole-body solver Jacobian: numeric (scipy differencing) | analytic (MuJoCo's; ~30x fewer residual calls, not bit-identical; primitives/whole_body_ik.py)
 
     def __post_init__(self):
         if self.reach_control not in ("planner", "whole_body"):
@@ -34,8 +35,10 @@ class CrateCarryConfig:
             raise ValueError("carry.waist_dofs must be pitch or all")
         if self.base_anchor not in ("reference", "measured", "measured_xy"):
             raise ValueError("carry.base_anchor must be reference, measured or measured_xy")
+        if self.ik_jacobian not in ("numeric", "analytic"):
+            raise ValueError("carry.ik_jacobian must be numeric or analytic")
         for name, value in vars(self).items():
-            if name in ("reach_control", "waist_dofs", "base_anchor"):
+            if name in ("reach_control", "waist_dofs", "base_anchor", "ik_jacobian"):
                 continue
             if name in ("pelvis_height", "pelvis_height_target") and value is None:
                 continue
