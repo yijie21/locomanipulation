@@ -26,7 +26,9 @@ class Audit(unittest.TestCase):
 
     def test_origin_reads_are_leaks_but_its_third_party_is_not(self):
         pats = loop.leak_patterns()
-        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/origin/STATE.md")], pats), ["origin"])
+        self.assertEqual(
+            loop.leaks_in([tool_use("cat /workspace/code/origin/STATE.md")], pats), ["code_tree", "origin"]
+        )
         venv = tool_use("/workspace/code/origin/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python x.py")
         self.assertEqual(loop.leaks_in([venv], pats), [])
 
@@ -43,10 +45,20 @@ class Audit(unittest.TestCase):
             tool_use("cat /workspace/tmp/rsi_phase4_arm-a/x.py"),
         ]
         self.assertEqual(loop.leaks_in(own, pats), [])
-        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-a2/STATE.md")], pats), ["sibling"])
-        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-b/x")], pats), ["sibling"])
+        self.assertEqual(
+            loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-a2/STATE.md")], pats), ["code_tree", "sibling"]
+        )
+        self.assertEqual(
+            loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-b/x")], pats), ["code_tree", "sibling"]
+        )
         self.assertEqual(loop.leaks_in([tool_use("cat /workspace/tmp/rsi_phase4_A/attrib.py")], pats), ["scratch"])
         self.assertEqual(loop.leaks_in([tool_use("cat /workspace/tmp/p4_table.md")], pats), ["scratch"])
+
+    def test_a_sandbox_in_another_tree_may_not_read_the_earlier_arms(self):
+        loop.REPO = Path("/workspace/code/rsi-curobo/arm-c")
+        pats = loop.leak_patterns()
+        self.assertEqual(loop.leaks_in([tool_use("ls /workspace/code/rsi-curobo/arm-c/outputs")], pats), [])
+        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-a/x")], pats), ["code_tree"])
 
     def test_only_tool_inputs_count(self):
         text = '{"type":"user","message":{"content":"do not read /workspace/code/origin or ~/.claude"}}'

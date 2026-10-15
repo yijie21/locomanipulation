@@ -401,7 +401,12 @@ def run_round(pol, sim, z, f, ctxs, fork, body, pub, log):
             raw["t"] = t
             openings = np.array([2 * (np.mean(raw["palms"][s]["hand_q"][:2]) + 0.023) for s in ("left", "right")])
             cmd = st8["low"].step(t, Estimate(raw, KEY, t), raw, openings, motion_time=t)
-            if cmd.finished and cmd.reason in ("route_not_found", "route_goal_unreachable") and "fallback" not in st8:
+            if (
+                cmd.finished
+                and cmd.reason in ("route_not_found", "route_goal_unreachable")
+                and "fallback" not in st8
+                and vis.reach_route_fallback == "straight"
+            ):
                 # no planned route (2026-10-14: hanging fingers already on the box's near wall, 1 of 50): this round
                 # goes the old way -- the ready pose in place, then the straight reach -- and the record says so
                 st8["fallback"] = cmd.reason

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 import time
 import traceback
 from dataclasses import replace
@@ -193,7 +194,11 @@ def prepare_stationary_ready(
         [np.eye(3), np.eye(3)],
         iterations=160,
     )
-    if whole_body and cfg.ready_pose == "lifted":
+    if whole_body and cfg.reach_route == "planned":
+        # visual.reach_route planned: no ready pose -- the arms stay where they hang and the reach's CuRobo route takes
+        # them to the pregrasp in one motion (tasks/crate/reach_route.py), as the ScaleBFM runner does
+        ready.joints[:] = arm.q
+    elif whole_body and cfg.ready_pose == "lifted":
         ready = lifted_ready(solver, cfg, arm.q)
     elif whole_body:
         ready.joints[:] = 0
@@ -201,6 +206,8 @@ def prepare_stationary_ready(
         ready.joints[22:29] = [-0.35, -0.2, 0, 0.8, 0, 0, 0]
     q0 = arm.q.copy()
     frames = max(1, int(round(cfg.ready_blend_seconds / DT)))  # 125 at the historical 2.5 s
+    if whole_body and cfg.reach_route == "planned":
+        frames = 1  # nothing to blend: the held hang is the reference
     phase("ready_transition_started", frames=frames)
     for k in range(1, frames + 1):
         u = k / frames
@@ -513,8 +520,79 @@ def box_front_line(state, key, box, axis):
     return float(axis @ centre - abs(local[0]) * hx - abs(local[1]) * hy)
 
 
+class StreamedRoute:
+    """CoordinatedReach.route_planner on the real-time stack: the plan runs in a worker thread while this thread keeps
+    re-sending the held reference, because the deploy drops upper-body control after 1 s without a frame
+    (zmq_manager.hpp PLANNER_TIMEOUT, 2026-09-29). `keepalive(state)` gets the planning tick's state: its reference
+    time must stay that tick's, because the reach's own push after the plan carries it and the POSE preview refuses
+    a clock that moves backwards. The route service's reply is what the planner returns."""
+
+    def __init__(self, planner, keepalive):
+        self.planner, self.keepalive = planner, keepalive
+
+    @property
+    def last(self) -> dict:
+        return self.planner.last
+
+    def __call__(self, start, goal, state):
+        box = {}
+
+        def work():
+            try:
+                box["path"] = self.planner(start, goal, state)
+            except BaseException as exc:  # noqa: BLE001 -- re-raised on the caller's thread
+                box["error"] = exc
+
+        worker = threading.Thread(target=work, daemon=True)
+        worker.start()
+        while worker.is_alive():
+            self.keepalive(state)
+            worker.join(DT)
+        if "error" in box:
+            raise box["error"]
+        return box["path"]
+
+
+def route_planner_for(cfg, config, scene_xml, solver, target_meta, key):
+    """visual.reach_route planned: the CuRobo route to the pregrasp (tasks/crate/reach_route.py), else None. The SONIC
+    expert has no segmented fallback, so visual.reach_route_fallback must say none (the ScaleBFM runner reads it)."""
+    if cfg.reach_route != "planned":
+        return None
+    if cfg.reach_route_fallback != "none":
+        raise ValueError(
+            "visual.reach_route planned on SONIC has no straight fallback: set visual.reach_route_fallback none"
+        )
+    if config.carry.reach_control != "whole_body" or cfg.pose_source != "assisted":
+        raise ValueError("visual.reach_route planned needs carry.reach_control whole_body and pose_source assisted")
+    import mujoco
+
+    from locomani.primitives.arm_route import ArmRouteClient
+    from locomani.tasks.crate.reach_route import ReachRoutePlanner
+
+    return ReachRoutePlanner(
+        ArmRouteClient(ports.curobo_route(), plan_timeout_s=60.0),
+        mujoco.MjModel.from_xml_path(scene_xml),
+        solver.lo,
+        solver.hi,
+        {target_meta["body"]: key},
+        clearance=cfg.reach_route_clearance,
+    )
+
+
 def handoff(
-    p, model, cfg, config, solver, coordinated_target, *, assisted, geometry, ghost, label, collision_guard=None
+    p,
+    model,
+    cfg,
+    config,
+    solver,
+    coordinated_target,
+    *,
+    assisted,
+    geometry,
+    ghost,
+    label,
+    collision_guard=None,
+    route_planner=None,
 ):
     """Enter the POSE stream holding the planner pose and build the reach controller. -> (arm, low)."""
     arm = StreamedArm(
@@ -540,6 +618,8 @@ def handoff(
         ghost.start(label)
         low.ghost = ghost
         low.collision_guard = collision_guard
+        if route_planner is not None:
+            low.route_planner = StreamedRoute(route_planner, lambda state: arm._push(arm.q, reference_time=state["t"]))
     else:
         low = VisualLowReach(
             solver,
@@ -580,6 +660,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         object_key=key, grasp_points_local=grasp_points, rim_above_grasp=rim_above_grasp, region=capture_region
     )
     geometry = {"grasp_points": grasp_points} if assisted else meta["crate_visual"]
+    route_planner = route_planner_for(cfg, config, scene_xml, solver, target_meta, key)
     dataset_kind = (
         "ordinary_crate_assisted_low_reach_video_pilot"
         if assisted
@@ -817,6 +898,7 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
                         ghost=ghost,
                         label=label,
                         collision_guard=collision_guard,
+                        route_planner=route_planner,
                     )
                     continue  # reacquire RGB/encoders after the bounded mode handoff
                 command = reach_step(
@@ -904,6 +986,9 @@ def run_attempt(p, reset, camera, meta, config, directory, label, rng, *, record
         )
     if retreat_record is not None:
         result["retreat"] = retreat_record
+    if route_planner is not None:
+        planned = getattr(low, "route", None)
+        result["route"] = dict(route_planner.last, duration=None if planned is None else float(planned["total"]))
     result["stand_attempts"] = list(stand_attempts)
     if getattr(low, "retries", None) is not None:  # CoordinatedReach only; the markers path has no retry
         result["retries"] = dict(low.retries)  # descend re-centres and reseats this round used (visual.*_retries)

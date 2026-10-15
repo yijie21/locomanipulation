@@ -95,6 +95,8 @@ class CrateVisualConfig:
     reach_route: str = "straight"  # staged reach, how the hands get to the pregrasp points: straight = a straight Cartesian blend from where they are at the handoff (after the ready pose); planned = along one collision-free joint path for the waist and both arms from the CuRobo route service (primitives/curobo_service.py, must be running; the runner sets CoordinatedReach.route_planner), whose goal is this reach's own whole-body solve at the pregrasp points, tracked by the same closed loop -- the runner then skips the ready pose and the hands rise from their hang in one motion (user, 2026-10-14: natural motion; the straight blend from the hang sweeps the hands through the box in 9 of 10 rounds)
     reach_route_speed: float = 0.8  # reach_route planned: peak speed of the most moved joint along the planned path, rad/s (smoothstep timing, primitives/arm_route.retime_path)
     reach_route_clearance: float = 0.015  # reach_route planned: metres every box obstacle grows on each side before planning (tasks/crate/reach_route.py). The hands track the path with a few centimetres of error; at 0 the planned hands came 1.1 cm (median) from the box and the Dex1 fingers brushed its near rim in 11 of 49 rounds, at 0.015 the planned clearance is 3.0 cm with 49 of 50 planned, at 0.025 4.2 cm with 48 of 50 (diagnostic pool, 2026-10-14)
+    reach_route_fallback: str = "straight"  # reach_route planned, when no route is found: straight = that round goes the old way (ready pose in place, then the straight reach; the ScaleBFM runner, 2026-10-14) | none = the round fails route_not_found. The SONIC expert has no fallback and requires none (user 2026-10-15: CuRobo only, no segmented reach)
+    reach_route_prior: str = "hang"  # reach_route planned, the whole-body solver's posture prior (WholeBodyIK.q0) for the admission, the route goal and every later phase: hang = the measured hanging arms the reach starts from | lifted = the ready pose the segmented reach lifted to (BimanualIK.lifted_ready at ready_tool / ready_pitch_deg), which the hands never visit. From the hang the solve lands on a deeper waist (SONIC route smoke 2026-10-15: waist pitch p50 0.36 vs 0.21 rad segmented), which SONIC delivers at ~0.6: 0/10
     descend_speed: float = 0.0  # staged reach: Cartesian speed limit of the final straight-down segment, m/s; 0 = approach_speed. The descent undershot the grasp point by 1-3 cm and put the palm on the box rim (2026-09-23)
     descend_z_guard: bool = False  # staged reach, descent only: once a measured grip point is at or below its target height, its z position feedback may no longer grow downward and backs off by the undershoot. The feedback had to cover a ~8 cm model offset (cap 0.15) and then drove the palm 1-3 cm past the grasp point into the box rim (2026-09-23)
     pregrasp_back: float = 0.04  # staged reach: metres the pregrasp point sits toward the body from the grasp point
@@ -184,6 +186,10 @@ class CrateVisualConfig:
             raise ValueError("visual.reach_path must be direct or staged")
         if self.reach_route not in ("straight", "planned"):
             raise ValueError("visual.reach_route must be straight or planned")
+        if self.reach_route_fallback not in ("straight", "none"):
+            raise ValueError("visual.reach_route_fallback must be straight or none")
+        if self.reach_route_prior not in ("hang", "lifted"):
+            raise ValueError("visual.reach_route_prior must be hang or lifted")
         if self.reach_route == "planned" and self.reach_path != "staged":
             raise ValueError("visual.reach_route planned plans to the pregrasp points; it needs reach_path staged")
         if not 0.2 <= self.reach_route_speed <= 2.0:
@@ -235,6 +241,8 @@ class CrateVisualConfig:
                 "walk_steer",
                 "reach_path",
                 "reach_route",
+                "reach_route_fallback",
+                "reach_route_prior",
                 "approach_stop",
                 "ready_pose",
                 "face_after_brake",

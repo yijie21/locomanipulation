@@ -77,6 +77,11 @@ class CoordinatedReach:
             elbow_min_deg=config.visual.elbow_min_deg,
             jacobian=config.carry.ik_jacobian,
         )
+        if config.visual.reach_route == "planned" and config.visual.reach_route_prior == "lifted":
+            # the segmented reach's posture prior without its motion: the hands rise along the route from the hang,
+            # but the admission, the route goal and the later phases regularise toward the lifted ready pose
+            ready = solver.lifted_ready(config.visual.ready_tool, config.visual.ready_pitch_deg, reference_joints)
+            self.body.q0 = np.asarray(ready.joints, dtype=float).copy()
         # The crouch serves the reach; standing up with the load returns the pelvis to its start height.
         self.crouch_height = config.carry.pelvis_height_target
         self.anchor_release = 0.0  # 0 pins the solver base to the measured pelvis; 1 frees it (stand-up)

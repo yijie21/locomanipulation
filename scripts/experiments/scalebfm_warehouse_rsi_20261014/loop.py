@@ -57,7 +57,7 @@ from bfm_round import load_spec, spec_hash  # noqa: E402
 MODEL = os.environ.get("RSI_MODEL", "claude-opus-5-5")
 COST_CAP = float(os.environ.get("RSI_COST_CAP_USD", "400"))
 MAX_GATE_CALLS = 12
-MAX_WALL_H = 36.0
+MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", "36"))
 MAX_REJECT_STREAK = 3
 MAX_HYPOTHESES = 4
 SONIC_MARGIN = 5  # plan §9: stop when the accepted incumbent wins >= SONIC + 5 on the acceptance pool
@@ -281,6 +281,11 @@ def leak_patterns() -> dict[str, str]:
         pats["climb"] = r"third_party/\.\."
         pats["claude_home"] = r"\.claude/|~/\.claude"
         pats["sibling"] = re.escape(str(REPO.parent)) + "/" + rf"(?!{re.escape(REPO.name)}(?:/|\b))"
+        # any other checkout or sandbox beside the origin (an earlier phase's arms hold their ledgers and answers)
+        own = re.escape(str(REPO.relative_to(ORIGIN.parent))) if REPO.is_relative_to(ORIGIN.parent) else "(?!)"
+        pats["code_tree"] = (
+            re.escape(str(ORIGIN.parent)) + "/" + rf"(?!{own}(?:/|\b)|{re.escape(ORIGIN.name)}/third_party)"
+        )
         pats["scratch"] = re.escape(str(SCRATCH_ROOT)) + "/" + rf"(?!{re.escape(role_tmp().name)}(?:/|\b))"
     return pats
 

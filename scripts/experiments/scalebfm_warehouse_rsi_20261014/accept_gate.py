@@ -54,6 +54,8 @@ FROZEN = {
     "visual.object_setback_range", "visual.object_yaw_range_deg", "visual.object_along_range", "visual.position_jitter",
     "visual.yaw_jitter_deg", "visual.lift_height", "visual.hold_seconds", "visual.hold_position_tolerance",
     "visual.hold_frame", "visual.max_tilt_deg", "visual.upright_tolerance_deg", "visual.timeout_seconds",
+    # the all-CuRobo redo (user 2026-10-15: CuRobo only, both controllers; TODO 26.5.6): how the hands get there
+    "visual.reach_route", "visual.reach_route_fallback", "carry.ik_jacobian",
 }  # fmt: skip
 
 
