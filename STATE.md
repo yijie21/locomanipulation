@@ -31,6 +31,7 @@
 - 已确认：封存集已用四次（final、start、phase1_best、final_route），都是事先定的固定配置。
 - 进行中（25.9.1.6，§17.1）：两臂各在隔离副本 `/workspace/code/rsi-phase4/arm-{a,b}` 里冷启动，10-15 03:20 UTC 开跑，预算各 12 次验收 / 36 h / 400 USD。
   - 副本基于 `e9f0530`，剔除第 1–3 阶段答案；两臂诊断池 50 局和主检出逐拍一致（含 GPU 0）。角色读主检出、`~/.claude`、`third_party/..` 就整臂停。
+  - 已确认：臂 A 06:52 停（验收池 52/60 ≥ SONIC 27 + 5，3 次验收，20.73 USD）；封存集 68/80 对 SONIC 30、对 final 48（25 / 5，p 0.0003）。配置只改了 `root_z_min 0.74` + `carry.base_anchor: reference`。臂 B 在跑（验收池 28/60）。
 
 ## 下一步（编号见 `TODO.md`）
 
