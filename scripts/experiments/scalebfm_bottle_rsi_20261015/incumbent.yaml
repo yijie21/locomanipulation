@@ -1,0 +1,7 @@
+# The incumbent at the start of TODO 26.3: L2's bottle port as it ran (controller-compare §25: ScaleBFM mode 4, the
+# simple expert's task.reach from the L2 SONIC config unchanged).
+name: incumbent_l2_port
+mode: 4
+set: {}
+reference: {}
+extensions: {}

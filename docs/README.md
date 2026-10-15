@@ -43,6 +43,7 @@
 - [离线抓取缓存替代 graspnet 感知](handoff/grasp-cache-20261010.md)：物体网格上采反向法线抓取、只有手的 MuJoCo 模型合爪抬晃验证、在线按测得位姿变换；65 个物体 × 3 朝向的验收对照 21.3.4（2026-10-10，TODO 23.2）。
 - [SONIC 对 ScaleBFM 控制器对比](handoff/wbc-compare-20261012.md)：只换全身控制器重跑 65 物体抓取线；五个范围决定、手指律统一、27 格开环探针与偏置常数、手程序移植到 ScaleBFM；结果：受控臂 129 局配对 SONIC 48 对 ScaleBFM 77（p < 0.001），SONIC 的偏置常数和腰限修复都不改成功率；ScaleBFM 的姿态交付包络（156 姿态探针，31 可交付）预测它的成败，按包络选抓取的放开臂 104/129（§8）；空地终点线刹车（§9）：越线惯性 ScaleBFM 0.5–4.5 cm 对 SONIC 4–25 cm，不越线程序脚尖停线前 4–8 对 13–22 cm
 - [ScaleBFM warehouse 专家自主重标定方案](handoff/scalebfm-warehouse-rsi-20261014.md)：TODO 25.9.1，借 RoboRSI 的骨架，补控制器包络、干预归因和配对统计验收三环；三个起点池（诊断 / 验收 / 封存）；待用户定 D1–D7
+- [ScaleBFM bottle 专家自主重标定](handoff/scalebfm-bottle-rsi-20261015.md)：TODO 26.3，warehouse 那套 RSI 闭环换到 bottle 任务的第二个实例；适配层、起点池、停止线（比 SONIC 多成 ≥ 3）和视频导出
 - [SONIC → ScaleBFM 替换评测计划](handoff/controller-compare-20261013.md)：用户逐轮定的 35 个决定与开跑前冻结的判据；范围是仿真采集、仿真评测和真机；L1 原语层（bottle B1–B8、warehouse W0–W8、复杂动作 C1–C7、mode 扫描与切换、真机扰动 a–h、估计位姿）是关口，过了才移植专家跑 L2 配对（每场景 ≥ 40 局）；最后是部署程序和真机冒烟
 - [单臂主线接 CuRobo 出路线的计划](handoff/single-arm-curobo-route-plan-20261009.md)：去掉原地抬手、CuRobo 避障直达预抓，每一条怎么验证没 bug、有效、不变坏（2026-10-09）；10-10 实现为 `reach.simple.arm_route: curobo`，默认关，关节空间目标两批 71/80 对基线 69/80。
 - [归档索引](archive/INDEX.md)：冻结的原始报告和被取代的入口文档，包括 2026-09-14 的[维护路线图](archive/roadmap_maintenance_20260914.md)。

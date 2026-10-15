@@ -948,3 +948,14 @@
 - [ ] 25.10 ScaleBFM 部署程序（Python + TensorRT，接口同 SONIC deploy）→ sim2sim。
 - [ ] 25.11 真机冒烟（计划 §7 的六步，用户团队操作，SONIC 同日对照）。
   - [ ] 25.11.1 待用户：机载电脑型号、实验室有没有外部定位（现按没有处理）。
+
+## 26. RSI 演示视频：RSI 调好的 ScaleBFM 对 SONIC + 进化过程（用户 2026-10-15：MuJoCo 渲染，第二实例用 ScaleBFM + bottle，做到视频全部导出）
+
+- [x] 26.1 warehouse 对比视频：封存集 80 局，臂 A 最终配置对 SONIC；补平滑度指标（躯干角速度、手的 jerk、箱子晃动），按事先定的规则选片（两边都成、只 ScaleBFM 成、一局只 SONIC 成的反例），汇总图 + 并排片段，预览 ≤ 500 KB（2026-10-15：7 段预览 40–280 KB + summary.png，`rsi_demo_20261015/compare.py --task warehouse`；平滑度三项 ScaleBFM 都更低，手部 jerk 差距主要是 SONIC 约 1 mm 的高频抖动）
+- [x] 26.2 warehouse 进化视频：臂 A 的每个关键节点（起点、探针发现、验收接受、终点）在同一组起点上的画面 + 字幕卡 + 成功率曲线（2026-10-15：臂 A2 的 4 段预览 150–240 KB，`evolution.py`）
+- [ ] 26.3 ScaleBFM + bottle 第二实例：RSI 冷启动自动完成，节点视频自动导出
+  - [x] 26.3.1 适配层：bottle 的一局运行程序（同 `bfm_round` 接口：规格、分叉、字段读取记录、扩展钩子）、验收门参数化、提示词按任务参数化（2026-10-15：`scalebfm_bottle_rsi_20261015/`：bottle_round（3 个 L2 起点里 2 个逐位相同）、loop、accept_gate、rules、prompts、sandbox、prep_pools、sealed；单测 `tests/test_scalebfm_bottle_rsi.py`；方案 `docs/handoff/scalebfm-bottle-rsi-20261015.md`）
+  - [~] 26.3.2 起点池：诊断池（已有 bottle L1/L2 局）+ SONIC 跑验收池 60、封存集 80
+  - [ ] 26.3.3 驱动里加节点视频自动导出；冷启动跑闭环到停
+  - [ ] 26.3.4 封存集 + bottle 对比视频 + 进化视频
+- [ ] 26.4 交付：全部预览清单（大小、时长、内容），一个查看页
