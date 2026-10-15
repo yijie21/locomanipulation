@@ -78,6 +78,33 @@ class Restore(unittest.TestCase):
             self.assertFalse((repo / "new.py").exists())
 
 
+class Batch(unittest.TestCase):
+    def test_all_shards_of_all_jobs_run_and_the_pool_never_exceeds_procs(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            fake = d / "fake_round.py"  # records its own start and end; argv: pool --spec S --out O --shard i/n ...
+            fake.write_text(
+                "import sys, time, pathlib\n"
+                "out = pathlib.Path(sys.argv[sys.argv.index('--out') + 1]); out.mkdir(parents=True, exist_ok=True)\n"
+                "shard = sys.argv[sys.argv.index('--shard') + 1].replace('/', 'of')\n"
+                "t0 = time.time(); time.sleep(0.3)\n"
+                "(out / shard).write_text(f'{t0} {time.time()}')\n"
+            )
+            saved = loop.SIM_PY, loop.PROCS, loop.LOOP
+            loop.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 3, d
+            try:
+                jobs = [(d / "spec.yaml", d / f"out{j}", None, None) for j in range(4)]
+                loop.run_batch(jobs, d / "log", script=fake)
+            finally:
+                loop.SIM_PY, loop.PROCS, loop.LOOP = saved
+            spans = [tuple(map(float, f.read_text().split())) for j in range(4) for f in (d / f"out{j}").iterdir()]
+            self.assertEqual(len(spans), 4 * 3)
+            peak = max(sum(a <= t < b for a, b in spans) for t, _ in spans)
+            self.assertLessEqual(peak, 3)
+
+
 class Scrub(unittest.TestCase):
     def test_cold_plan_stops_before_the_results(self):
         for arm in ("A", "B"):

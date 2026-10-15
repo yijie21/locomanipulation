@@ -59,7 +59,7 @@ MAX_WALL_H = 36.0
 MAX_REJECT_STREAK = 3
 MAX_HYPOTHESES = 4
 SONIC_MARGIN = 5  # plan §9: stop when the accepted incumbent wins >= SONIC + 5 on the acceptance pool
-PROCS = 4
+PROCS = 4  # ScaleBFM processes per loop (run --procs); rounds are shard-invariant (phase 0), so only wall time changes
 SMOKE = "sonic_s7000_04"
 # files the Engineer may change (§7, D2): the extension hooks and the crate task code (default-off fields only)
 ENGINEER_PATHS = ("scripts/experiments/scalebfm_warehouse_rsi_20261014/extensions.py", "src/locomani/tasks/crate/")
@@ -278,33 +278,36 @@ def transcript_leaks(session: str | None) -> list[str]:
 # -- steps --------------------------------------------------------------------------------------------------------
 
 
-def run_rounds(
-    spec: Path, out: Path, log: Path, fork: str | None = None, only: list[str] | None = None, gpu: str = "1"
-) -> None:
+def run_batch(jobs: list[tuple], log: Path, gpu: str = "1", script: Path | None = None) -> None:
+    """Rounds on the diagnostic pool for several (spec, out, fork, only) jobs. Each job is split into PROCS shards and all
+    shards share one pool of PROCS processes, so the next job's shards start as soon as a slot frees instead of after
+    the previous job's slowest shard."""
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", CUDA_VISIBLE_DEVICES=gpu, TMPDIR="/workspace/tmp")
     env["NUMPY_MADVISE_HUGEPAGE"] = "0"
     pool = LOOP / "pool_diag" / "states"
-    ps = []
-    with log.open("a") as fh:
+    queue = []
+    for spec, out, fork, only in jobs:
         for i in range(PROCS):
-            cmd = [
-                str(SIM_PY),
-                str(HERE / "bfm_round.py"),
-                str(pool),
-                "--spec",
-                str(spec),
-                "--out",
-                str(out),
-                "--shard",
-                f"{i}/{PROCS}",
-            ]
+            cmd = [str(SIM_PY), str(script or HERE / "bfm_round.py"), str(pool), "--spec", str(spec), "--out", str(out),
+                   "--shard", f"{i}/{PROCS}"]  # fmt: skip
             if fork:
                 cmd += ["--fork", fork]
             if only:
                 cmd += ["--only", ",".join(only)]
-            ps.append(subprocess.Popen(cmd, cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT))
-        for p in ps:
-            p.wait()
+            queue.append(cmd)
+    running: list[subprocess.Popen] = []
+    with log.open("a") as fh:
+        while queue or running:
+            while queue and len(running) < PROCS:
+                running.append(subprocess.Popen(queue.pop(0), cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT))
+            time.sleep(0.5)
+            running = [p for p in running if p.poll() is None]
+
+
+def run_rounds(
+    spec: Path, out: Path, log: Path, fork: str | None = None, only: list[str] | None = None, gpu: str = "1"
+) -> None:
+    run_batch([(spec, out, fork, only)], log, gpu)
 
 
 def outcomes(d: Path) -> dict:
@@ -336,19 +339,25 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
 
 
 def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path, gpu: str = "1") -> list[dict]:
-    """Each hypothesis's intervention, closed loop from its fork phase, on all diagnostic starts."""
+    """Each hypothesis's intervention, closed loop from its fork phase, on all diagnostic starts (one shared pool)."""
     before = outcomes(base)
-    res = []
+    jobs = []
     for h in hyps:
         delta = it_dir / f"delta_{h['id']}.yaml"
         delta.write_text(json.dumps(h["delta"]))
-        out = it_dir / "probe" / h["id"]
-        try:
-            run_rounds(Path(inc["path"]), out, it_dir / "prober.log", fork=f"{h['phase']}:{delta}", gpu=gpu)
-            after = outcomes(out)
-        except Exception as e:  # a delta the runner refuses (unknown key, frozen field): recorded, not fatal
-            res.append(dict(id=h["id"], error=f"{type(e).__name__}: {e}"))
+        jobs.append((Path(inc["path"]), it_dir / "probe" / h["id"], f"{h['phase']}:{delta}", None))
+    try:
+        run_batch(jobs, it_dir / "prober.log", gpu)
+        failed = None
+    except Exception as e:
+        failed = f"{type(e).__name__}: {e}"
+    res = []
+    for h in hyps:
+        if failed:
+            res.append(dict(id=h["id"], error=failed))
             continue
+        # a delta the runner refuses (unknown key, frozen field) exits without rounds: recorded, not fatal
+        after = outcomes(it_dir / "probe" / h["id"])
         if not after:
             res.append(dict(id=h["id"], error="no rounds ran (see prober.log)"))
             continue
@@ -610,13 +619,16 @@ def main(argv=None) -> int:
     r.add_argument("--state", type=Path, default=None, help="loop state directory (tests)")
     r.add_argument("--arm", choices=("A", "B"), default=None, help="phase 4 (plan §17): A cold, B cold and flat")
     r.add_argument("--gpu", default="1", help="ScaleBFM's GPU for the diagnostic rounds, the probes and the gate")
+    r.add_argument(
+        "--procs", type=int, default=4, help="ScaleBFM processes (wall time only; rounds are shard-invariant)"
+    )
     sub.add_parser("status")
     a = ap.parse_args(argv)
-    global STATE, ARM, GPU
+    global STATE, ARM, GPU, PROCS
     if getattr(a, "state", None):
         STATE = a.state
     if a.cmd == "run":
-        ARM, GPU = a.arm, a.gpu
+        ARM, GPU, PROCS = a.arm, a.gpu, a.procs
     return cmd_run(a) if a.cmd == "run" else cmd_status(a)
 
 
