@@ -113,7 +113,7 @@ class Batch(unittest.TestCase):
                 "out = pathlib.Path(sys.argv[sys.argv.index('--out') + 1]); out.mkdir(parents=True, exist_ok=True)\n"
                 "shard = sys.argv[sys.argv.index('--shard') + 1].replace('/', 'of')\n"
                 "t0 = time.time(); time.sleep(0.3)\n"
-                "(out / shard).write_text(f'{t0} {time.time()}')\n"
+                "import os; (out / shard).write_text(f'{t0} {time.time()} {os.environ[\"CUDA_VISIBLE_DEVICES\"]}')\n"
             )
             saved = loop.SIM_PY, loop.PROCS, loop.LOOP
             loop.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 3, d
@@ -122,10 +122,36 @@ class Batch(unittest.TestCase):
                 loop.run_batch(jobs, d / "log", script=fake)
             finally:
                 loop.SIM_PY, loop.PROCS, loop.LOOP = saved
-            spans = [tuple(map(float, f.read_text().split())) for j in range(4) for f in (d / f"out{j}").iterdir()]
+            spans = [tuple(map(float, f.read_text().split()[:2])) for j in range(4) for f in (d / f"out{j}").iterdir()]
             self.assertEqual(len(spans), 4 * 3)
             peak = max(sum(a <= t < b for a, b in spans) for t, _ in spans)
             self.assertLessEqual(peak, 3)
+
+    def test_a_gpu_list_spreads_the_pool_over_the_devices(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            fake = d / "fake_round.py"
+            fake.write_text(
+                "import os, sys, time, pathlib\n"
+                "out = pathlib.Path(sys.argv[sys.argv.index('--out') + 1]); out.mkdir(parents=True, exist_ok=True)\n"
+                "shard = sys.argv[sys.argv.index('--shard') + 1].replace('/', 'of')\n"
+                "t0 = time.time(); time.sleep(0.3)\n"
+                "(out / shard).write_text(f'{t0} {time.time()} {os.environ[\"CUDA_VISIBLE_DEVICES\"]}')\n"
+            )
+            saved = loop.SIM_PY, loop.PROCS, loop.LOOP
+            loop.SIM_PY, loop.PROCS, loop.LOOP = Path(sys.executable), 4, d
+            try:
+                loop.run_batch([(d / "spec.yaml", d / f"out{j}", None, None) for j in range(3)], d / "log", "0,1", fake)
+            finally:
+                loop.SIM_PY, loop.PROCS, loop.LOOP = saved
+            runs = [f.read_text().split() for j in range(3) for f in (d / f"out{j}").iterdir()]
+            self.assertEqual(len(runs), 3 * 4)
+            for g in ("0", "1"):
+                mine = [(float(a), float(b)) for a, b, x in runs if x == g]
+                self.assertTrue(mine)
+                self.assertLessEqual(max(sum(a <= t < b for a, b in mine) for t, _ in mine), 2)
 
 
 class Scrub(unittest.TestCase):

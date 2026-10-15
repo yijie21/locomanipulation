@@ -299,8 +299,10 @@ def transcript_leaks(session: str | None) -> list[str]:
 def run_batch(jobs: list[tuple], log: Path, gpu: str = "1", script: Path | None = None) -> None:
     """Rounds on the diagnostic pool for several (spec, out, fork, only) jobs. Each job is split into PROCS shards and all
     shards share one pool of PROCS processes, so the next job's shards start as soon as a slot frees instead of after
-    the previous job's slowest shard."""
-    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", CUDA_VISIBLE_DEVICES=gpu, TMPDIR="/workspace/tmp")
+    the previous job's slowest shard. `gpu` may list several devices ("0,1"): each shard goes to the one running the
+    fewest of this batch's processes."""
+    gpus = gpu.split(",")
+    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", TMPDIR="/workspace/tmp")
     env["NUMPY_MADVISE_HUGEPAGE"] = "0"
     pool = LOOP / "pool_diag" / "states"
     queue = []
@@ -313,13 +315,16 @@ def run_batch(jobs: list[tuple], log: Path, gpu: str = "1", script: Path | None 
             if only:
                 cmd += ["--only", ",".join(only)]
             queue.append(cmd)
-    running: list[subprocess.Popen] = []
+    running: list[tuple[subprocess.Popen, str]] = []
     with log.open("a") as fh:
         while queue or running:
             while queue and len(running) < PROCS:
-                running.append(subprocess.Popen(queue.pop(0), cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT))
+                g = min(gpus, key=lambda x: sum(d == x for _, d in running))
+                p = subprocess.Popen(queue.pop(0), cwd=REPO, env={**env, "CUDA_VISIBLE_DEVICES": g}, stdout=fh,
+                                     stderr=subprocess.STDOUT)  # fmt: skip
+                running.append((p, g))
             time.sleep(0.5)
-            running = [p for p in running if p.poll() is None]
+            running = [(p, g) for p, g in running if p.poll() is None]
 
 
 def run_rounds(
@@ -358,17 +363,27 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
 
 def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path, gpu: str = "1") -> list[dict]:
     """Each hypothesis's intervention, closed loop from its fork phase, on all diagnostic starts (one shared pool)."""
-    before = outcomes(base)
+    try:
+        run_batch(probe_jobs(hyps, inc, it_dir), it_dir / "prober.log", gpu)
+        failed = None
+    except Exception as e:
+        failed = f"{type(e).__name__}: {e}"
+    return probe_results(hyps, base, it_dir, failed)
+
+
+def probe_jobs(hyps: list[dict], inc: dict, it_dir: Path) -> list[tuple]:
+    """run_batch jobs for the hypotheses' interventions (rounds land in it_dir/probe/<id>)."""
     jobs = []
     for h in hyps:
         delta = it_dir / f"delta_{h['id']}.yaml"
         delta.write_text(json.dumps(h["delta"]))
         jobs.append((Path(inc["path"]), it_dir / "probe" / h["id"], f"{h['phase']}:{delta}", None))
-    try:
-        run_batch(jobs, it_dir / "prober.log", gpu)
-        failed = None
-    except Exception as e:
-        failed = f"{type(e).__name__}: {e}"
+    return jobs
+
+
+def probe_results(hyps: list[dict], base: Path, it_dir: Path, failed: str | None = None) -> list[dict]:
+    """Each hypothesis's flips against the incumbent's diagnostic rounds in `base`, with its prediction hits."""
+    before = outcomes(base)
     res = []
     for h in hyps:
         if failed:
