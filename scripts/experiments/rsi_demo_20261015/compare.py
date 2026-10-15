@@ -46,6 +46,8 @@ class Task:
     why: dict
     starts: tuple = ("reach", "handoff")  # events opening the hand-jerk window (the first one a round has)
     align: str | None = None  # render both rounds aligned on this event (None: the round clock)
+    pre_s: float = 2.0  # with align: seconds shown before the event
+    torso_from: str | None = None  # the torso-shake window opens at this event (None: the whole round)
     note: str = ""
     why_prefix: dict = field(default_factory=dict)
 
@@ -97,7 +99,9 @@ BOTTLE = Task(
         "[grasp]": "抓取失败",
     },  # fmt: skip
     starts=("ready",),
-    align="walk",
+    align="brake",  # exact sim time on both sides (a SONIC trace can start after its walk began)
+    pre_s=6.0,
+    torso_from="ready",
     note="专家由 RSI 闭环冷启动自动重标，人没调参",
 )
 TASKS = {t.name: t for t in (WAREHOUSE, BOTTLE)}
@@ -106,7 +110,12 @@ METRIC_KEYS = ("torso_w_p95", "hand_jerk", "object_w_p95")
 
 def metrics(task: Task) -> tuple:
     return (
-        ("torso_w_p95", "躯干晃动（角速度 p95, rad/s）"),
+        (
+            "torso_w_p95",
+            "躯干晃动（角速度 p95, rad/s）"
+            if task.torso_from is None
+            else f"躯干晃动（{task.torso_from} 起角速度 p95）",
+        ),
         ("hand_jerk", "手部 jerk 中位数（m/s³）"),
         ("object_w_p95", f"{task.obj}晃动（抬起后角速度 p95, rad/s）"),
     )
@@ -133,7 +142,7 @@ def measure(task: Task) -> dict:
             facts = round_facts(p, task.kind, torso)
             row[side] = dict(ok=bool(facts["ok"]), why=f.get("why", "") or "", rise_cm=facts["rise_end_cm"],
                              fell=facts["fell"], dropped=facts["dropped"], file=str(p.relative_to(REPO)),
-                             **dv.smoothness(z, f, kin, task.starts))  # fmt: skip
+                             **dv.smoothness(z, f, kin, task.starts, task.torso_from))  # fmt: skip
         rows[start] = row
         print(start, row["sonic"]["ok"], row["scalebfm"]["ok"], flush=True)
     return rows
@@ -236,7 +245,7 @@ TITLES = {
 def render(task: Task, out: Path, rows: dict, summary: dict, picks: list) -> list[dict]:
     m = dv.scene_model(REPO / "outputs" / "scene" / task.scene)
     made = []
-    clock = "同一起点、两边按开始走的时刻对齐" if task.align == "walk" else "同一起点、同一时钟"
+    clock = {"brake": "同一起点、两边按刹车的时刻对齐", None: "同一起点、同一时钟"}.get(task.align, task.align)
     for i, (cat, start) in enumerate(picks, 1):
         r = rows[start]
         title = dv.card([
@@ -249,7 +258,7 @@ def render(task: Task, out: Path, rows: dict, summary: dict, picks: list) -> lis
         src = out / "clips" / f"{i:02d}_{cat}_{start}.mp4"
         dv.render_pair(m, REPO / r["sonic"]["file"], REPO / r["scalebfm"]["file"], src,
                        [fmt_side(task, "SONIC", r["sonic"]), fmt_side(task, "ScaleBFM + RSI", r["scalebfm"])],
-                       title=title, align=task.align)  # fmt: skip
+                       title=title, align=task.align, pre_s=task.pre_s)  # fmt: skip
         prev = dv.preview(src, out / "previews" / src.stem)
         made.append(dict(category=cat, start=start, source=str(src.relative_to(REPO)),
                          previews=[(str(p.relative_to(REPO)), p.stat().st_size) for p in prev]))  # fmt: skip

@@ -1,7 +1,7 @@
 """TODO 26.3.2 (docs/handoff/scalebfm-bottle-rsi-20261015.md §4): the bottle loop's three start-state pools.
 
 * diag: L1's 10 SONIC rounds (renamed sonic_l1_*, their labels collide with L2's) and L2 nominal's rounds with RTF >= 0.85;
-* accept / sealed: the first 60 / 80 rounds of the SONIC pool runs, in label (seed) order, with RTF >= 0.85; the rest
+* accept / sealed: the first 60 / 80 rounds of the SONIC pool runs, in label (seed) order, with RTF >= 0.80 (plan §4); the rest
   move to pool_<name>/excluded/ (never deleted).
 
     python3 scripts/experiments/scalebfm_bottle_rsi_20261015/prep_pools.py diag|accept|sealed
@@ -18,7 +18,9 @@ REPO = Path(__file__).resolve().parents[3]
 CC = REPO / "outputs" / "controller_compare_20261013"
 LOOP = REPO / "outputs" / "scalebfm_bottle_rsi_20261015"
 HIDDEN = REPO / "outputs" / "scalebfm_bottle_rsi_20261015_hidden"
-RTF_MIN = 0.85
+RTF_MIN = 0.85  # the diagnostic pool keeps L2's rule
+RTF_POOL = 0.80  # accept / sealed (plan §4, 10-15): this machine runs the bottle stack at 0.80-0.86 recorded or not;
+#                  ScaleBFM's start does not depend on it, SONIC's outcome is checked against RTF separately
 SIZE = {"accept": 60, "sealed": 80}
 
 
@@ -52,7 +54,7 @@ def pool(name: str) -> None:
     keep, drop = [], []
     for p in sorted(d.glob("*.npz")):
         rtf = json.loads(p.with_suffix(".json").read_text()).get("rtf")
-        (keep if (rtf is None or rtf >= RTF_MIN) and len(keep) < SIZE[name] else drop).append(p)
+        (keep if (rtf is None or rtf >= RTF_POOL) and len(keep) < SIZE[name] else drop).append(p)
     ex = d.parent / "excluded"
     ex.mkdir(exist_ok=True)
     for p in drop:

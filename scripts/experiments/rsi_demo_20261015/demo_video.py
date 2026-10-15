@@ -106,13 +106,16 @@ def _quat_rots(q: np.ndarray) -> np.ndarray:
     return out.reshape(-1, 3, 3)
 
 
-def smoothness(z: dict, f: dict, kin: Kin, starts=("reach", "handoff")) -> dict:
-    """`starts`: the first of these events that the round has opens the hand-jerk window."""
+def smoothness(z: dict, f: dict, kin: Kin, starts=("reach", "handoff"), torso_from: str | None = None) -> dict:
+    """`starts`: the first of these events that the round has opens the hand-jerk window; `torso_from`: the event the
+    torso window opens at (None: the whole round -- a SONIC bottle trace misses its first seconds, so bottle uses ready)."""
     t = np.asarray(z["t"], float)
     jaws, torso = kin.jaws_and_torso(full_qpos(z, f, kin.m))
     w = _ang_speed(torso, t)
     ev = f["events"]
-    out = dict(torso_w_p95=float(np.percentile(w, 95)))
+    if torso_from is not None and torso_from in ev:
+        w = w[t[1:] >= ev[torso_from]]
+    out = dict(torso_w_p95=float(np.percentile(w, 95)) if len(w) else float("nan"))
     t0 = next((ev[e] for e in starts if e in ev), None)
     if t0 is not None:
         tu = np.arange(t0, t[-1], DT)
@@ -207,7 +210,7 @@ def render_pair(m, left: Path, right: Path, out: Path, captions: list[list[tuple
         z = dict(z, qpos=full_qpos(z, f, m))
         off = float(f["events"][align]) - pre_s if align else 0.0
         sides.append((dict(z, t=np.asarray(z["t"]) - off), view(m, f, z)))
-    t0 = 0.0 if not align else 0.0
+    t0 = 0.0
     t_end = max(float(z["t"][-1]) for z, _ in sides) + tail_s
     strips = np.hstack([caption_strip(c, wv.W) for c in captions])
     w = Writer(out, 2 * wv.W, wv.H + strips.shape[0])
