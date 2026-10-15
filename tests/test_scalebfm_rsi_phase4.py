@@ -50,6 +50,29 @@ class Audit(unittest.TestCase):
         self.assertEqual(loop.prompt_file("manager").name, "manager_B.md")
 
 
+class StructuredOutput(unittest.TestCase):
+    def test_the_last_structured_output_in_the_transcript_is_used(self):
+        import json
+        import tempfile
+
+        def call(name, inp):
+            return json.dumps(
+                {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": name, "input": inp}]}}
+            )
+
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d) / "s.jsonl"
+            t.write_text("\n".join([call("StructuredOutput", {"v": 1}), call("Bash", {"command": "x"}),
+                                     call("StructuredOutput", {"v": 2}), call("Bash", {"command": "y"})]))  # fmt: skip
+            saved = loop.transcript
+            loop.transcript = lambda session: t if session else None
+            try:
+                self.assertEqual(loop.structured_from_transcript("s"), {"v": 2})
+                self.assertIsNone(loop.structured_from_transcript(None))
+            finally:
+                loop.transcript = saved
+
+
 class Restore(unittest.TestCase):
     def test_rejected_edits_go_back_and_tracked_files_survive(self):
         import subprocess

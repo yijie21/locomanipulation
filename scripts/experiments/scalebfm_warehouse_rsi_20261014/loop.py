@@ -236,10 +236,31 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
     )
     acct["usage"] = out.get("usage")
     so = out.get("structured_output")
+    if so is None:  # a later turn (e.g. a background task finishing) printed a result without it: take the last one
+        so = structured_from_transcript(acct["session"])
     if so is None:
-        text = out.get("result", "")
-        so = json.loads(text[text.find("{") : text.rfind("}") + 1])
+        raise RoleFailed(f"{role}: no structured output; result: {str(out.get('result'))[-300:]}")
     return so, acct
+
+
+def transcript(session: str | None) -> Path | None:
+    if not session:
+        return None
+    p = Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(REPO)) / f"{session}.jsonl"
+    return p if p.exists() else None
+
+
+def structured_from_transcript(session: str | None) -> dict | None:
+    """The input of the session's last StructuredOutput tool call."""
+    p = transcript(session)
+    so = None
+    for line in p.open() if p else ():
+        if '"StructuredOutput"' not in line:
+            continue
+        for c in (json.loads(line).get("message") or {}).get("content") or []:
+            if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") == "StructuredOutput":
+                so = c.get("input")
+    return so
 
 
 def leak_patterns() -> dict[str, str]:
@@ -265,11 +286,8 @@ def leaks_in(lines, pats: dict[str, str]) -> list[str]:
 
 def transcript_leaks(session: str | None) -> list[str]:
     """The off-limits paths the role's session named in a tool input (empty: none, or no transcript)."""
-    if not session:
-        return []
-    proj = Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(REPO))
-    p = proj / f"{session}.jsonl"
-    if not p.exists():
+    p = transcript(session)
+    if p is None:
         return []
     with p.open() as fh:
         return leaks_in(fh, leak_patterns())
@@ -491,6 +509,13 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     if stub:
         cand.write_text("mode: 2\nstance: near\nset:\n  visual.tracking_gain: 1.0\n")
     eng, acct = claude("engineer", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_e if stub else None)
+    return after_engineer(n, it_dir, cand, eng, acct, before, saved, review_void, stub)
+
+
+def after_engineer(
+    n: int, it_dir: Path, cand: Path, eng: dict, acct: dict, before: dict, saved: dict, review_void: bool, stub: bool
+) -> str | None:
+    """The rest of an iteration once the Engineer has returned: audit, record, then the gate."""
     after = git_snapshot()
     changed = sorted(
         f for f in set(before) | set(after) if before.get(f) != after.get(f) and not f.startswith("outputs/")

@@ -437,6 +437,7 @@ D7 定的是"第 3 阶段有正结果再排"。现在有了，但 §16 第 3 条
 
 - 04:13 臂 B 审计误报：Reviewer 用 `find -path …_hidden -prune` 跳过隐藏目录，名字出现在工具输入里。查 transcript 后续跑，iter_01 作废（9.03 USD 计入）。
 - 05:44 `restore()` 的 bug：被拒候选改过的干净已跟踪文件被删了，而不是恢复（臂 B 第 3 轮，两个 crate 文件缺了约 1 分钟）。改成 `git checkout`，加单测；两臂重启，中止了刚开始的 Reviewer。
+- 06:33 臂 B 驱动退出：Engineer 交了结构化输出后，后台跑的冒烟局结束又触发一轮，`claude -p` 最后打印的结果里没有结构化输出。改成从 transcript 取最后一次 `StructuredOutput`；用修好的驱动从 iter_04 的 Engineer 之后接着跑（`after_engineer()`），没重跑前面三个角色。
 - 用户 10-15 要求提速：ScaleBFM 进程 4 → 6（`--procs`），探针的各假设共用一个进程池（`run_batch`），在各臂下一个轮次边界重启生效。核对：臂 A iter_01 的 H3、H4 用新代码重跑，100 局结局和逐拍 `qpos` 全同，8.7 min（原来约 12 min）。
 
 ## 18. 接 CuRobo：从下垂直接伸到预抓（用户 2026-10-14：要自然的动作）
