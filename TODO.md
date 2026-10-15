@@ -932,7 +932,7 @@
         - [x] 25.9.1.6.4.1 臂 A（10-15 06:52 停，3 次验收，验收池 52/60，20.73 USD）：封存集 68/80 对 SONIC 30（4 / 42），对 final 48 是 25 / 5（p 0.0003），护栏全过，ego p95 0.359；`phase4_sealed.py`，`sealed/phase4.md`（2026-10-15）
         - [x] 25.9.1.6.4.2 臂 B：封存集 57/80（8 / 35 对 SONIC），对 A 7 / 18（p 0.043），对 final 21 / 12（p 0.16）；第 6 轮 Engineer 自己在诊断池跑了两个变体各 50 局才选出交的版本（§19）（2026-10-15）
       - [x] 25.9.1.6.5 每臂再跑一次，量 LLM 随机性（用户 2026-10-15；§19.1）：A2 封存集 68（和 A 逐拍相同，同一配置），B2 40（B 是 57）；A 对 B2 31 / 3（2026-10-15）
-      - [ ] 25.9.1.6.6 待用户：臂 A 的配置叠加 CuRobo 路线（25.9.1.7），封存集上看是否高于 68
+      - [-] 25.9.1.6.6 待用户：臂 A 的配置叠加 CuRobo 路线（25.9.1.7），封存集上看是否高于 68（2026-10-15 并入 26.5.3：用户要两边都用 CuRobo，RSI 从带路线的起点重跑）
       - [ ] 25.9.1.6.7 待用户：按 RoboRSI 代码行为的臂 C（§17.2：2 种子门、读单局轨迹、12 次工具调用、持久记忆）
       - [ ] 25.9.1.6.8 提示词缺口：Engineer 只说跑一局冒烟、没禁止多跑（臂 B 第 6 轮跑了 102 局）；Reviewer 没规定局名格式
       - [-] 25.9.1.6.9 物理换 MuJoCo Warp / MJX 提速——放弃（用户 2026-10-15）：一局里 `mj_step` 只占约 1%，全身 IK 差分约 70%；MuJoCo Warp 3.16 还是 Alpha、float32、要 mujoco ≥ 3.13（`outputs/mjwarp_eval_20261015/`）
@@ -953,9 +953,15 @@
 
 - [x] 26.1 warehouse 对比视频：封存集 80 局，臂 A 最终配置对 SONIC；补平滑度指标（躯干角速度、手的 jerk、箱子晃动），按事先定的规则选片（两边都成、只 ScaleBFM 成、一局只 SONIC 成的反例），汇总图 + 并排片段，预览 ≤ 500 KB（2026-10-15：7 段预览 40–280 KB + summary.png，`rsi_demo_20261015/compare.py --task warehouse`；平滑度三项 ScaleBFM 都更低，手部 jerk 差距主要是 SONIC 约 1 mm 的高频抖动）
 - [x] 26.2 warehouse 进化视频：臂 A 的每个关键节点（起点、探针发现、验收接受、终点）在同一组起点上的画面 + 字幕卡 + 成功率曲线（2026-10-15：臂 A2 的 4 段预览 150–240 KB，`evolution.py`）
-- [ ] 26.3 ScaleBFM + bottle 第二实例：RSI 冷启动自动完成，节点视频自动导出
+- [-] 26.3 ScaleBFM + bottle 第二实例：RSI 冷启动自动完成，节点视频自动导出（2026-10-15 用户改为全 CuRobo，见 26.5.4；适配层 26.3.1 沿用）
   - [x] 26.3.1 适配层：bottle 的一局运行程序（同 `bfm_round` 接口：规格、分叉、字段读取记录、扩展钩子）、验收门参数化、提示词按任务参数化（2026-10-15：`scalebfm_bottle_rsi_20261015/`：bottle_round（3 个 L2 起点里 2 个逐位相同）、loop、accept_gate、rules、prompts、sandbox、prep_pools、sealed；单测 `tests/test_scalebfm_bottle_rsi.py`；方案 `docs/handoff/scalebfm-bottle-rsi-20261015.md`）
-  - [~] 26.3.2 起点池：诊断池（已有 bottle L1/L2 局）+ SONIC 跑验收池 60、封存集 80
-  - [ ] 26.3.3 驱动里加节点视频自动导出；冷启动跑闭环到停
-  - [ ] 26.3.4 封存集 + bottle 对比视频 + 进化视频
+  - [-] 26.3.2 起点池（用户 2026-10-15 改为全 CuRobo，见 26.5；已有验收池 60 个起点仍可作起点用，SONIC 的分段式成败不再用）：诊断池（已有 bottle L1/L2 局）+ SONIC 跑验收池 60、封存集 80
+  - [-] 26.3.3 驱动里加节点视频自动导出；冷启动跑闭环到停（2026-10-15 改为全 CuRobo，见 26.5.4；`pipeline.sh`、`finish.sh` 留作下次的模板）
+  - [-] 26.3.4 封存集 + bottle 对比视频 + 进化视频（同上，见 26.5.4）
+- [ ] 26.5 （用户 2026-10-15：不要分段式抓取，只用 CuRobo 做规划器；两边都用 CuRobo；bottle 规划到举起位；先 warehouse；暂缓启动，等用户说开始）全 CuRobo 重做对比视频和 RSI 进化视频
+  - [ ] 26.5.1 CuRobo 路线局的确定性：同一批诊断局单进程 / 双进程交错各跑一遍，逐拍比 qpos（验收门的配对和哨兵靠它）
+  - [ ] 26.5.2 warehouse：路线接进 SONIC 生产专家（`expert.py:532` 构造 CoordinatedReach、跳过原地抬手、配 ReachRoutePlanner；25.9.1.7.3），小批量试跑
+  - [ ] 26.5.3 warehouse：从"原样移植 + CuRobo 路线"冷启动 RSI（副本基于 HEAD，`visual.reach_route` 冻结为 planned），SONIC + CuRobo 跑验收池 / 封存集，导出对比和进化视频
+  - [ ] 26.5.4 bottle：ScaleBFM 的 bottle 专家移植 `reach.simple.arm_route: curobo`（规划到举起位，同 22.3.5），SONIC 用同一开关重跑起点池，RSI，导出视频
+- [ ] 26.6 `make check` 跑新代码（`0836c29`、`f62721d` 用 --no-verify 提交，当时 SONIC 独占机器，检查推迟）
 - [ ] 26.4 交付：全部预览清单（大小、时长、内容），一个查看页

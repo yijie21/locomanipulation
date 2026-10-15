@@ -10,9 +10,33 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts" / "experiments" / "scalebfm_bottle_rsi_20261015"))
-import accept_gate as gate  # noqa: E402
-import bottle_round as br  # noqa: E402
+BOTTLE = REPO / "scripts" / "experiments" / "scalebfm_bottle_rsi_20261015"
+
+
+def _load(name: str, path: Path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# The warehouse loop has modules of the same names (accept_gate, extensions): load the bottle ones under their own
+# names and leave the generic names as they were, or whichever test file runs first decides the other's imports
+_saved = {k: sys.modules.pop(k, None) for k in ("extensions", "accept_gate")}
+_path = list(sys.path)  # the bottle modules put their own directory first on sys.path when imported
+sys.path.insert(0, str(BOTTLE))
+try:
+    br = _load("bottle_round", BOTTLE / "bottle_round.py")
+    gate = _load("bottle_accept_gate", BOTTLE / "accept_gate.py")
+finally:
+    sys.path[:] = _path
+    for _k, _v in _saved.items():
+        sys.modules.pop(_k, None)
+        if _v is not None:
+            sys.modules[_k] = _v
 
 
 class Spec(unittest.TestCase):
