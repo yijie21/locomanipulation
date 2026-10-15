@@ -29,7 +29,8 @@
 - ScaleBFM 冷启动（`/workspace/code/rsi-curobo/arm-c`，17:54–20:40，38.3 USD，插手 1 次）：验收池 5 → 21 → 43 停。
   - 封存集：起点 5、终版 54、生产版 SONIC 30；比人工修法 + 路线（68）少 14（p 0.02）。
   - 进化视频 4 段（133–342 KB）：`outputs/rsi_demo_20261015/warehouse_curobo/evolution/previews/`。
-- 路线服务 5795 / 5796 已停。
+- 查看页（私有）：https://claude.ai/artifact/Xu14Az6FoSwbbztBazzyyJ ，源文件 `outputs/rsi_demo_20261015/warehouse_curobo/index.html`。
+- 路线服务 5795 / 5796 已停；机器空闲。
 
 ## 下一步（编号见 `TODO.md`；都待用户定）
 
