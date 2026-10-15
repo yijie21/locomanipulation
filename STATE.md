@@ -1,8 +1,8 @@
-# STATE — 2026-10-14 13:20 UTC（25.9.1 第 0–3 阶段 + CuRobo 伸手路线做完，等用户定 25.9 / 25.9.1.6）
+# STATE — 2026-10-15 03:25 UTC（25.9.1.6 第 4 阶段 A、B 两臂在跑；25.9 待用户）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-14 13:19）：origin/main = `a2cfb23`；本地多 16 个提交，代码最新 `5a35010`，**都没推送**（用户没说推）。
-已确认（10-14 13:19，pgrep / nvidia-smi）：没有 SONIC 栈、ScaleBFM 局、CuRobo 服务、闭环驱动在跑；GPU 0 / 1 空。
+已确认（10-15 03:25）：origin/main = `a2cfb23`；本地多 18 个提交，**都没推送**（用户没说推）。
+已确认（10-15 03:21）：两臂闭环驱动在跑（`loop.py run --arm A --gpu 1`、`--arm B --gpu 0`，各最多 4 个 ScaleBFM 进程，约 4.7 GB 内存 / 进程）。没有 SONIC 栈和 CuRobo 服务。
 已确认：机器 10-14 约 09:44 UTC 重启过一次（原因不明，内核版本变了）；/workspace 上的产物都在。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
@@ -29,16 +29,18 @@
   - 默认 `straight` 逐拍不变（50/50）。
 - 假设 / 待验证：带路线后"箱子倾斜"大减（11 → 1）的原因没隔离（25.9.1.7.2）；箱子最后举得更低（12 → 8 cm）没查（25.9.1.7.1）。
 - 已确认：封存集已用四次（final、start、phase1_best、final_route），都是事先定的固定配置。
+- 进行中（25.9.1.6，§17.1）：两臂各在隔离副本 `/workspace/code/rsi-phase4/arm-{a,b}` 里冷启动，10-15 03:20 UTC 开跑，预算各 12 次验收 / 36 h / 400 USD。
+  - 副本基于 `e9f0530`，剔除第 1–3 阶段答案；两臂诊断池 50 局和主检出逐拍一致（含 GPU 0）。角色读主检出、`~/.claude`、`third_party/..` 就整臂停。
 
 ## 下一步（编号见 `TODO.md`）
 
 - 25.9 待用户：整体判定（warehouse 已过；bottle 标称 39 对 40）。可选的 25.9.3：bottle 专家同法重调。
-- 25.9.1.6 待用户：第 4 阶段，冷启动两臂对照（方案 §17），量无人闭环自己能做到多少。
+- 25.9.1.6：盯两臂到停（`loop.py status`，在副本里跑）；停后补跑 B 的预测（.3），两臂最终配置上封存集（.4），写 §19。
 - 25.9.1.7.3：SONIC 生产线要不要也接路线（实时栈等 6 s 规划，要另外验证）。
 
 ## 未解决 / 卡点
 
-- 待用户：25.9、25.9.1.6、25.9.2（真机位姿来源）、25.9.3、25.11.1、9.13、23.2.7、23.3–23.5、23.7.5、23.7.6、21.3.5、22.3.6–22.3.8、22.5、22.7、21.3.1、19.8.1、19.8.3、16.14.1、16.15.4、13.6.18。
+- 待用户：25.9、25.9.2（真机位姿来源）、25.9.3、25.11.1、9.13、23.2.7、23.3–23.5、23.7.5、23.7.6、21.3.5、22.3.6–22.3.8、22.5、22.7、21.3.1、19.8.1、19.8.3、16.14.1、16.15.4、13.6.18。
 - 已确认（规则）：SONIC 栈按实时跑，旁边不能跑 ScaleBFM；闭环角色不许读 `outputs/scalebfm_warehouse_rsi_20261014_hidden/`；`pkill -f` 会杀掉命令行里含同样字样的 shell，用 `pgrep -f '[c]urobo_service'` 拿 PID。
 - 已确认：ScaleBFM 每个进程第一局要先 `warm_up`（TorchScript 首次调用差 6e-8），`bfm_round.py` 已带。
 
@@ -51,5 +53,6 @@ bash $H/route_service.sh                                           # CuRobo 路�
 CUDA_VISIBLE_DEVICES=1 $PY $H/bfm_round.py $O/pool_diag/states --spec $H/final_route.yaml --out /workspace/tmp/x --shard 0/4   # 一组局
 $PY $H/route_eval.py                                               # 带 / 不带路线配对 -> $O/route/eval.md
 $PY $H/sealed.py judge                                             # 封存集 final / start 对 SONIC -> $O/sealed/sealed.md
-$PY $H/loop.py status                                              # 闭环台账
+$PY $H/loop.py status                                              # 闭环台账（第 2 阶段）
+(cd /workspace/code/rsi-phase4/arm-a && $PY $H/loop.py status)     # 第 4 阶段臂 A；arm-b 同
 ```

@@ -11,11 +11,17 @@ mention voids the iteration's gate call.
 Hard stops (§9), checked before each step: gate calls >= 12, wall clock >= 36 h since the loop started, model cost
 >= COST_CAP USD, 3 consecutive rejections with no new hypothesis, a Manager `stop`, a SONIC stack running.
 
+Phase 4 (plan §17) runs the loop cold, once per arm, each in its own sandbox checkout built by phase4_sandbox.py:
+`--arm A` is this loop without phase 1's results; `--arm B` is the flat loop -- the Reviewer reads the trajectories and
+proposes changes directly, with no Prober, no envelope and no handoff records. In an arm the transcript audit also
+voids a role call that reads the origin checkout or ~/.claude (where the answers are).
+
 Run with the sim venv (the spec loader imports the round's modules):
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     nohup setsid $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/loop.py run > /dev/null 2>&1 &
     $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/loop.py status
     $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/loop.py run --stub --max-iters 1 --state /tmp/x   # plumbing, no model calls
+    $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/loop.py run --arm B --gpu 0   # in an arm's sandbox
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -57,6 +64,16 @@ SMOKE = "sonic_s7000_04"
 # files the Engineer may change (§7, D2): the extension hooks and the crate task code (default-off fields only)
 ENGINEER_PATHS = ("scripts/experiments/scalebfm_warehouse_rsi_20261014/extensions.py", "src/locomani/tasks/crate/")
 GATE_DIR = HIDDEN / "gate"
+# phase 4 (plan §17), set by `run --arm/--gpu`: None is the phase-2 loop
+ARM: str | None = None
+GPU = "1"
+# a sandbox links third_party to the origin checkout; anything else under the origin is off limits in an arm
+ORIGIN = (REPO / "third_party").resolve().parent
+ISOLATION = (
+    "\n\nThis checkout ({REPO}) and your scratch directory ({TMP}) are the whole world for this run. Do not read "
+    "anything outside them: no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
+    "A role call that does is void.\n"
+)
 
 HYPOTHESES_SCHEMA = {
     "type": "object",
@@ -185,13 +202,20 @@ class RoleFailed(RuntimeError):
     pass
 
 
+def role_tmp() -> Path:
+    return Path("/workspace/tmp") / f"rsi_phase4_{ARM}" if ARM else Path("/workspace/tmp")
+
+
 def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None) -> tuple[dict, dict]:
     """One headless role call; returns (structured output, accounting)."""
+    if ARM:
+        prompt += fill(ISOLATION, REPO=REPO, TMP=role_tmp())
     (it_dir / f"{role}_prompt.md").write_text(prompt)
     if stub is not None:
         return stub, dict(cost_usd=0.0, session=None, seconds=0.0)
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_SSE")}
-    env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", TMPDIR="/workspace/tmp")
+    role_tmp().mkdir(parents=True, exist_ok=True)
+    env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", TMPDIR=str(role_tmp()))
     cmd = [
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
@@ -218,15 +242,37 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
     return so, acct
 
 
-def transcript_touches_gate(session: str | None) -> bool:
-    """Did the role's session read anything under gate/ (any tool input naming the path)?"""
+def leak_patterns() -> dict[str, str]:
+    """What a role's tool inputs must not name: the gate's tree always; in an arm also the origin checkout (other than
+    its third_party, which the sandbox links to), a climb out through third_party/.., and ~/.claude."""
+    pats = {"gate": re.escape(HIDDEN.name)}
+    if ARM and ORIGIN != REPO:
+        pats["origin"] = re.escape(str(ORIGIN)) + r"(?!/third_party)"
+        pats["climb"] = r"third_party/\.\."
+        pats["claude_home"] = r"\.claude/|~/\.claude"
+    return pats
+
+
+def leaks_in(lines, pats: dict[str, str]) -> list[str]:
+    """Names of the patterns that occur in a tool_use line of a transcript."""
+    found = set()
+    for line in lines:
+        if '"tool_use"' not in line:
+            continue
+        found |= {k for k, p in pats.items() if re.search(p, line)}
+    return sorted(found)
+
+
+def transcript_leaks(session: str | None) -> list[str]:
+    """The off-limits paths the role's session named in a tool input (empty: none, or no transcript)."""
     if not session:
-        return False
-    proj = Path.home() / ".claude" / "projects" / str(REPO).replace("/", "-")
+        return []
+    proj = Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(REPO))
     p = proj / f"{session}.jsonl"
     if not p.exists():
-        return False
-    return any('"tool_use"' in line and HIDDEN.name in line for line in p.open())
+        return []
+    with p.open() as fh:
+        return leaks_in(fh, leak_patterns())
 
 
 # -- steps --------------------------------------------------------------------------------------------------------
@@ -278,12 +324,12 @@ def incumbent() -> dict:
 
 
 def diag_incumbent(inc: dict, it_dir: Path) -> Path:
-    """The incumbent's rounds on the diagnostic pool (once per incumbent) and their handoff records."""
+    """The incumbent's rounds on the diagnostic pool (once per incumbent) and their handoff records (none in arm B)."""
     d = LOOP / "diag" / f"incumbent_{inc['hash']}"
     if len(list(d.glob("bfm_*.json"))) < len(list((LOOP / "pool_diag" / "states").glob("*.json"))):
-        run_rounds(Path(inc["path"]), d, it_dir / "prober.log")
+        run_rounds(Path(inc["path"]), d, it_dir / "prober.log", gpu=GPU)
     rec = d / "records.jsonl"
-    if not rec.exists():
+    if not rec.exists() and ARM != "B":
         subprocess.run([str(SIM_PY), str(HERE / "handoff.py"), str(LOOP / "pool_diag" / "states"), str(d), "--out", str(rec)],
                        cwd=REPO, check=True, capture_output=True)  # fmt: skip
     return d
@@ -320,7 +366,7 @@ def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path, gpu: str = "1")
 
 def context(inc: dict, extra: dict) -> dict:
     es = entries()
-    return dict(
+    ctx = dict(
         incumbent=inc,
         budget=dict(
             gate_calls=len([e for e in es if e.get("step") == "gate" and not e.get("void")]),
@@ -332,10 +378,11 @@ def context(inc: dict, extra: dict) -> dict:
         rejected_hashes=sorted(
             {e["hash"] for e in es if e.get("step") == "gate" and not e.get("accepted") and e.get("hash")}
         ),
-        # phase 1's interventions on the diagnostic pool (run by the main session before the loop; plan §13-14)
-        phase1_probes=jload(LOOP / "phase1" / "probe.json", []),
         **extra,
     )
+    if ARM is None:  # phase 1's interventions on the diagnostic pool (run by the main session before the loop)
+        ctx["phase1_probes"] = jload(LOOP / "phase1" / "probe.json", [])
+    return ctx
 
 
 SNAPSHOT_SKIP = ("outputs/", "node_modules/", "papers/", ".serena/", "assets/")
@@ -372,37 +419,47 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
         DIAG_INC=base,
         RECORDS=base / "records.jsonl",
         EXTENSIONS=ext or "none yet",
+        GPU=GPU,
     )
     focus = jload(it_dir.parent / "focus.json", {})
     # Reviewer
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, dict(focus=focus)))
-    prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
+    prompt = fill(prompt_file("reviewer").read_text(), CONTEXT=ctx, **common)
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub: tracking gain 1.0", evidence="stub", phase="reach",
                   delta={"set": {"visual.tracking_gain": 1.0}}, predicted_fixed=[], predicted_broken=["sonic_s7000_04"])])  # fmt: skip
     hyps, acct = claude(
         "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
     )
     jdump(it_dir / "hypotheses.json", hyps)
-    review_void = transcript_touches_gate(acct["session"])
-    ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), void=review_void, **acct))
-    # Prober
-    pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
-    jdump(it_dir / "probe.json", pr)
-    ledger(dict(step="probe", iter=n, results=pr))
+    leaks = transcript_leaks(acct["session"])
+    review_void = bool(leaks)
+    ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), void=review_void, leaks=leaks, **acct))
+    if ARM and leaks:
+        return contaminated("reviewer", n, leaks)
+    # Prober (the flat arm has none: the Reviewer's changes go to the gate untested)
+    pr = []
+    if ARM != "B":
+        pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir, gpu=GPU)
+        jdump(it_dir / "probe.json", pr)
+        ledger(dict(step="probe", iter=n, results=pr))
     # Manager
     if sonic_up():
         return "a SONIC stack is running"
     ctx = it_dir / "manager_context.json"
     jdump(ctx, context(inc, dict(hypotheses=hyps, probe=pr)))
-    prompt = fill((HERE / "prompts" / "manager.md").read_text(), CONTEXT=ctx, **common)
+    prompt = fill(prompt_file("manager").read_text(), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
     dec, acct = claude(
         "manager", prompt, MANAGER_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent,Bash", stub_m if stub else None
     )
     jdump(it_dir / "manager.json", dec)
+    leaks = transcript_leaks(acct["session"])
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"), reason=dec["reason"],
-                summary_zh=dec["summary_zh"], escalation=dec.get("escalation"), infeasible=dec.get("infeasible"), **acct))  # fmt: skip
+                summary_zh=dec["summary_zh"], escalation=dec.get("escalation"), infeasible=dec.get("infeasible"),
+                leaks=leaks, **acct))  # fmt: skip
+    if ARM and leaks:
+        return contaminated("manager", n, leaks)
     if dec["decision"] == "stop":
         return "manager: stop"
     if dec["decision"] == "review":
@@ -418,9 +475,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
             inc, dict(hypothesis=chosen, probe=[p for p in pr if p.get("id") == dec.get("hypothesis")], manager=dec)
         ),
     )
-    prompt = fill(
-        (HERE / "prompts" / "engineer.md").read_text(), CONTEXT=ctx, CANDIDATE=cand, ITER=it_dir, SMOKE=SMOKE, **common
-    )
+    prompt = fill(prompt_file("engineer").read_text(), CONTEXT=ctx, CANDIDATE=cand, ITER=it_dir, SMOKE=SMOKE, **common)
     before = git_snapshot()
     saved = {f: (REPO / f).read_bytes() for f in before if (REPO / f).is_file()}
     stub_e = dict(candidate=str(cand), mechanism="stub", files_changed=[], tests="none")
@@ -432,8 +487,13 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
         f for f in set(before) | set(after) if before.get(f) != after.get(f) and not f.startswith("outputs/")
     )
     stray = [f for f in changed if not f.startswith(ENGINEER_PATHS)]
-    void = review_void or transcript_touches_gate(acct["session"])
-    ledger(dict(step="engineer", iter=n, changed=changed, stray=stray, mechanism=eng["mechanism"], void=void, **acct))
+    leaks = transcript_leaks(acct["session"])
+    void = review_void or bool(leaks)
+    ledger(dict(step="engineer", iter=n, changed=changed, stray=stray, mechanism=eng["mechanism"], void=void,
+                leaks=leaks, **acct))  # fmt: skip
+    if ARM and leaks:
+        restore(changed, saved)
+        return contaminated("engineer", n, leaks)
     if stray or not cand.exists():
         restore(changed, saved)
         ledger(
@@ -461,7 +521,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     ]
     if stub:
         gate_args += ["--dry-run", "--pool", str(LOOP / "pool_diag" / "states")]
-    r = subprocess.run(gate_args, cwd=REPO, capture_output=True, text=True)
+    r = subprocess.run(gate_args, cwd=REPO, capture_output=True, text=True, env=dict(os.environ, GATE_GPU=GPU))
     (it_dir / "gate.log").write_text(r.stdout + r.stderr)
     verdict = json.loads((gate_dir / "ledger.jsonl").read_text().splitlines()[-1])
     jdump(it_dir / "gate.json", verdict)
@@ -470,6 +530,17 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     if not verdict["accepted"] and changed:
         restore(changed, saved)
     return None
+
+
+def prompt_file(role: str) -> Path:
+    """The role's prompt: phase 2's, or the arm's own where phase 4 needs one (prompts/phase4/<role>_<arm>.md)."""
+    own = HERE / "prompts" / "phase4" / f"{role}_{ARM}.md"
+    return own if ARM and own.exists() else HERE / "prompts" / f"{role}.md"
+
+
+def contaminated(role: str, n: int, leaks: list[str]) -> str:
+    """In an arm a role that read an off-limits path ends the arm: its later steps would carry what it read."""
+    return f"{role} of iteration {n} named off-limits paths ({', '.join(leaks)}): the arm is contaminated from here"
 
 
 def restore(changed: list[str], saved: dict) -> None:
@@ -484,7 +555,13 @@ def restore(changed: list[str], saved: dict) -> None:
 
 def cmd_run(a) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
-    meta = jload(STATE / "meta.json") or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL)
+    meta = jload(STATE / "meta.json") or dict(
+        started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, arm=ARM, gpu=GPU
+    )
+    if meta.get("arm") != ARM:
+        raise SystemExit(f"{STATE} belongs to arm {meta.get('arm')}, not {ARM}")
+    if ARM and ORIGIN == REPO:
+        raise SystemExit("an arm runs in its sandbox (phase4_sandbox.py), not in the origin checkout")
     jdump(STATE / "meta.json", meta)
     n = len(list(STATE.glob("iter_*")))
     done = 0
@@ -510,7 +587,8 @@ def cmd_run(a) -> int:
 def cmd_status(_a) -> int:
     es = entries()
     meta = jload(STATE / "meta.json", {})
-    print(f"started {meta.get('started')}; entries {len(es)}; cost {sum(e.get('cost_usd', 0) for e in es):.2f} USD")
+    print(f"arm {meta.get('arm')} on GPU {meta.get('gpu')}; started {meta.get('started')}; entries {len(es)}; "
+          f"cost {sum(e.get('cost_usd', 0) for e in es):.2f} USD")  # fmt: skip
     for e in es[-12:]:
         print(json.dumps({k: v for k, v in e.items() if k not in ("usage", "results")}, ensure_ascii=False)[:300])
     return 0
@@ -523,11 +601,15 @@ def main(argv=None) -> int:
     r.add_argument("--max-iters", type=int, default=100)
     r.add_argument("--stub", action="store_true", help="canned role outputs, gate --dry-run: plumbing only")
     r.add_argument("--state", type=Path, default=None, help="loop state directory (tests)")
+    r.add_argument("--arm", choices=("A", "B"), default=None, help="phase 4 (plan §17): A cold, B cold and flat")
+    r.add_argument("--gpu", default="1", help="ScaleBFM's GPU for the diagnostic rounds, the probes and the gate")
     sub.add_parser("status")
     a = ap.parse_args(argv)
-    global STATE
+    global STATE, ARM, GPU
     if getattr(a, "state", None):
         STATE = a.state
+    if a.cmd == "run":
+        ARM, GPU = a.arm, a.gpu
     return cmd_run(a) if a.cmd == "run" else cmd_status(a)
 
 

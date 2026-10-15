@@ -1,6 +1,6 @@
 # ScaleBFM warehouse 专家自主重标定：RSI 闭环方案（TODO 25.9.1，2026-10-14）
 
-状态：第 0–3 阶段做完（§12–16）。封存集上 ScaleBFM（重标后）48/80，SONIC 30/80，p 0.013。第 4 阶段待用户定。分支 `main`。
+状态：第 0–3 阶段做完（§12–16）。封存集上 ScaleBFM（重标后）48/80，SONIC 30/80，p 0.013。第 4 阶段两臂 10-15 开跑（§17.1）。分支 `main`。
 上游：[SONIC → ScaleBFM 替换评测](controller-compare-20261013.md)（§20 移植专家，§25 L2 结果）。借鉴对象 RoboRSI（arXiv 2610.12424，全文 `papers/2610_12424_roborsi.txt`），取舍见 §5。
 
 ## 1. 要回答的问题
@@ -393,7 +393,7 @@ ScaleBFM 失败 42 局里 40 局是 `reach_stalled`。
 - `s48000_01_sonic_vs_final_preview.mp4`：只有 ScaleBFM 成的一局（SONIC `lost_attachment`）。
 - `s48000_03_sonic_vs_final_preview.mp4`：只有 SONIC 成的一局（ScaleBFM `basket_tilt`）。
 
-## 17. 第 4 阶段（未开始，待用户定）
+## 17. 第 4 阶段（用户 10-15：A、B 两臂都跑）
 
 D7 定的是"第 3 阶段有正结果再排"。现在有了，但 §16 第 3 条说明，要排的对照比原来设想的多一臂：
 
@@ -406,6 +406,32 @@ D7 定的是"第 3 阶段有正结果再排"。现在有了，但 §16 第 3 条
 - 封存集已经用过一次（三个固定配置），再用来评 A、B 的最终配置不算调参，可以。
 - 量的东西：每次验收后的验收池成功数曲线、主因是第几轮找到的、Reviewer 预测命中率、花费。
 - 预计墙钟：每轮约 1.5 h；两臂可以错开 GPU 并行，但 SONIC 不用再跑。
+
+### 17.1 实现（10-15）
+
+**隔离**：冷启动的意思是角色碰不到第 1–3 阶段的答案。答案在主检出里到处都有：STATE、TODO、DECISIONS、本文 §12–18、`extensions.py` 的骨盆钩子、`final*.yaml`、`phase1.py`、`outputs/` 下的第 1、2 阶段产物、`~/.claude` 下第 2 阶段角色的 transcript。所以每臂跑在自己的副本里：
+
+- `phase4_sandbox.py` 建副本：`git archive e9f0530`（第 2 阶段跑的代码：src 从第 1 阶段的提交起没变，CuRobo 路线之前），覆盖本检出的驱动和提示词，再剔除上面那些；验收门里一句点名重试字段的注释换成中性说法。§1–§11 原样留下（冻结时写的，加 §0 说明本臂），STATE / TODO / DECISIONS 换成一行说明。
+- 剔除后按标记 grep（骨盆钩子名、配置名、哈希、"重夹"等），剩一处就不建。重试字段本身不算标记：2026-09-27 的配置和文档里就有。
+- 数据复制不链接（链接的 `..` 能爬回主检出的 `outputs/`）：诊断池、验收池、warehouse 场景，臂 A 再加第 0 阶段的包络。只有 `third_party` 是链接。
+- 副本是独立的 git 仓库，只有一个提交：驱动靠它分出 Engineer 改了什么，`git log` 也带不回主检出。
+- 位置：`/workspace/code/rsi-phase4/arm-{a,b}`。每臂有自己的 `outputs/scalebfm_warehouse_rsi_20261014{,_hidden}/`；验收门从 start 起算，第一次调用先跑 start 在验收池上的 60 局。
+
+**审计**：除了第 2 阶段的隐藏目录，角色的工具输入里再出现主检出的路径（`third_party` 除外）、`third_party/..` 或 `~/.claude`，该臂当场停。第 2 阶段只作废那一次验收；臂里不行，因为读到的东西会带进后面每一步。误报由主会话看 transcript 后续跑，记一次插手。
+
+**两臂**：
+
+| | 臂 A | 臂 B |
+|---|---|---|
+| 每轮 | Reviewer → Prober → Manager → Engineer → Gate（同第 2 阶段） | Reviewer → Manager → Engineer → Gate |
+| Reviewer 能读 | 两个控制器的诊断池逐帧状态、交接记录、包络、代码 | 逐帧状态和代码；没有交接记录和包络（`handoff.py`、`envelope.py` 不在副本里） |
+| 提示词 | `prompts/phase4/reviewer_A.md`（第 2 阶段的去掉 §13–14 和 `phase1_probes`）；Manager、Engineer 同第 2 阶段 | `reviewer_B.md`、`manager_B.md`：Reviewer 读完直接提至多 4 条改动，同样写预测；Engineer 同 |
+| GPU | 1 | 0 |
+
+- 两臂同时跑，各 4 个 ScaleBFM 进程。规则、验收门、停止条件（§9，含"比 SONIC 多成 ≥ 5 局"）、预算（验收门 12 次、36 h、400 USD）都相同。
+- 臂 B 的预测命中率：跑完后主会话把 B 每轮的改动当干预补跑在诊断池上打分，结果不回传给 B。
+- 插手：主会话为修基础设施做的改动记进该臂的 `loop/interventions.jsonl`。用户这期间发给主会话的消息不进闭环；只有主会话因此动了某一臂，才记一次。
+- 收尾：各臂最后的 incumbent 上封存集（第五次使用，固定配置），和 SONIC 30、start 9、final 48 配对。另外报验收池曲线、主因（骨盆 / 下蹲、descend 重试）第几轮出现、花费。
 
 ## 18. 接 CuRobo：从下垂直接伸到预抓（用户 2026-10-14：要自然的动作）
 

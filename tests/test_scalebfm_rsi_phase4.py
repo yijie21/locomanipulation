@@ -1,0 +1,74 @@
+"""TODO 25.9.1.6's isolation (docs/handoff/scalebfm-warehouse-rsi-20261014.md §17): the transcript audit that ends an arm
+when a role names an off-limits path, and the sandbox scrub that keeps phase 1-3's answers out of a cold-start arm."""
+
+import sys
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts" / "experiments" / "scalebfm_warehouse_rsi_20261014"))
+import loop  # noqa: E402
+import phase4_sandbox as sandbox  # noqa: E402
+
+
+def tool_use(cmd: str) -> str:
+    return '{"type":"assistant","message":{"content":[{"type":"tool_use","input":{"command":"%s"}}]}}' % cmd
+
+
+class Audit(unittest.TestCase):
+    def setUp(self):
+        self.saved = loop.ARM, loop.ORIGIN, loop.REPO
+        loop.ARM, loop.ORIGIN, loop.REPO = "A", Path("/workspace/code/origin"), Path("/workspace/code/rsi-phase4/arm-a")
+
+    def tearDown(self):
+        loop.ARM, loop.ORIGIN, loop.REPO = self.saved
+
+    def test_origin_reads_are_leaks_but_its_third_party_is_not(self):
+        pats = loop.leak_patterns()
+        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/origin/STATE.md")], pats), ["origin"])
+        venv = tool_use("/workspace/code/origin/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python x.py")
+        self.assertEqual(loop.leaks_in([venv], pats), [])
+
+    def test_climbs_and_home_and_gate_are_leaks(self):
+        pats = loop.leak_patterns()
+        lines = [tool_use("ls third_party/../outputs"), tool_use("cat ~/.claude/projects/x/memory/a.md"),
+                 tool_use("ls outputs/scalebfm_warehouse_rsi_20261014_hidden/gate")]  # fmt: skip
+        self.assertEqual(loop.leaks_in(lines, pats), ["claude_home", "climb", "gate"])
+
+    def test_only_tool_inputs_count(self):
+        text = '{"type":"user","message":{"content":"do not read /workspace/code/origin or ~/.claude"}}'
+        self.assertEqual(loop.leaks_in([text], loop.leak_patterns()), [])
+
+    def test_phase_two_checks_only_the_gate(self):
+        loop.ARM = None
+        self.assertEqual(sorted(loop.leak_patterns()), ["gate"])
+
+    def test_arm_prompts_fall_back_to_phase_two(self):
+        self.assertEqual(loop.prompt_file("reviewer").parent.name, "phase4")
+        self.assertEqual(loop.prompt_file("manager").name, "manager.md")  # arm A keeps phase 2's Manager
+        loop.ARM = "B"
+        self.assertEqual(loop.prompt_file("manager").name, "manager_B.md")
+
+
+class Scrub(unittest.TestCase):
+    def test_cold_plan_stops_before_the_results(self):
+        for arm in ("A", "B"):
+            text = sandbox.cold_plan(arm)
+            self.assertIn(f"## 0. 本次运行（第 4 阶段，臂 {arm}）", text)
+            self.assertIn("## 11.", text)
+            self.assertNotIn("## 12.", text)
+            self.assertIsNone(sandbox.MARKERS.search(text))
+            self.assertLess(text.index("## 0."), text.index("## 1."))
+
+    def test_extensions_keep_the_registry_and_lose_the_hooks(self):
+        src = (REPO / "scripts" / "experiments" / "scalebfm_warehouse_rsi_20261014" / "extensions.py").read_text()
+        out = sandbox.strip_hooks(src)
+        self.assertIn("def hook(", out)
+        self.assertNotIn("\n@hook(", out)  # the docstring still shows how to register one
+        ns = {}
+        exec(compile(out, "extensions.py", "exec"), ns)
+        self.assertEqual(ns["HOOKS"], {})
+
+
+if __name__ == "__main__":
+    unittest.main()
