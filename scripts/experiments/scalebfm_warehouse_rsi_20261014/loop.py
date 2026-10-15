@@ -301,12 +301,15 @@ def leaks_in(lines, pats: dict[str, str]) -> list[str]:
 
 
 def transcript_leaks(session: str | None) -> list[str]:
-    """The off-limits paths the role's session named in a tool input (empty: none, or no transcript)."""
+    """The off-limits paths the role's session named in a tool input (empty: none, or no transcript). The session's own
+    tool-results files (where Claude Code spills a long tool output for the model to read back) are its own output,
+    not ~/.claude content: a Reviewer reading one was flagged and stopped the cold start (2026-10-15)."""
     p = transcript(session)
     if p is None:
         return []
+    own = re.compile(r"[^\"\s]*\.claude/projects/[^\"\s/]+/" + re.escape(str(session)) + r"/tool-results/[^\"\s]*")
     with p.open() as fh:
-        return leaks_in(fh, leak_patterns())
+        return leaks_in((own.sub("", line) for line in fh), leak_patterns())
 
 
 # -- steps --------------------------------------------------------------------------------------------------------

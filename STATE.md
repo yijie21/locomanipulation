@@ -16,8 +16,7 @@
   - 封存集 80 局：臂 A 68 / 68（两次是同一配置 `root_z_min 0.74` + `carry.base_anchor: reference`，逐拍相同）。
   - 扁平臂 B 57 / 40；第 2 阶段 final 48；SONIC 30。
 - 已确认（26.1–26.2）：warehouse 对比视频 7 段、进化视频 4 段已导出到 `outputs/rsi_demo_20261015/warehouse/{previews,evolution/previews}/`，都 ≤ 300 KB。
-- 已确认（26.3.1）：bottle 适配层在 `scripts/experiments/scalebfm_bottle_rsi_20261015/`（方案 `docs/handoff/scalebfm-bottle-rsi-20261015.md`）。
-  - 诊断池 55 局；验收池 60 个起点。SONIC 在这些局上的分段式成败已作废，起点仍可用。
+- 已确认（26.3.1）：bottle 适配层在 `scripts/experiments/scalebfm_bottle_rsi_20261015/`（诊断池 55、验收池 60 个起点仍可用）。
 - 已确认（用户 10-15）：不要分段式抓取，只用 CuRobo 规划；两边都用；bottle 规划到举起位；先 warehouse（DECISIONS 10-15 末节）。
 - 已确认（26.5.5，方案 §20，`outputs/rsi_speed_20261015/`，提交 `6b017b6`）：
   - 路线规划 5.5 → 0.34 s（`--no-self-collision-opt`，50 条路线逐位不变）；路线缓存 + 多服务实例，换分片重跑 12/12 逐拍相同（= 26.5.1）。
@@ -32,7 +31,8 @@
   - 到达姿态腰更弯（俯仰中位 0.36 对分段式 0.21 rad），SONIC 腰只交付约 0.6。
   - 加试（超出约定，是我的判断）：`reach_route_prior: lifted` 1/10；同种子分段式基线 3/10。路线 3 种合计 1/30，腰仍弯（0.38 rad），原因未查清。
   - **按约定停下：不做 SONIC + CuRobo 对比视频。** ScaleBFM 冷启动改用现有起点池，停止条件对生产版 SONIC（验收池 27）。
-- [ ] 冷启动副本 → RSI 闭环 → 封存集 → 进化视频 → 查看页。
+- [~] 冷启动闭环（`/workspace/code/rsi-curobo/arm-c`，17:54 起；起点诊断池 3/50、封存集 5/80）：第 0 轮拒（验收 15，掉物超护栏），第 1 轮接受（验收 21，增益 1 + 姿态上限 40° + 骨盆下限 0.70）；停止线 32。
+- [ ] 封存集终版 → 进化视频 → 查看页。
 
 ## 下一步（编号见 `TODO.md`；用户说开始后才动）
 

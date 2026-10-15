@@ -637,3 +637,37 @@ D7 定的是"第 3 阶段有正结果再排"。现在有了，但 §16 第 3 条
 - 冷启动的配置文件还没建：要在 26.5.3 的副本基线里写死 `carry.ik_jacobian: analytic`、`visual.reach_route: planned`，用 `--gpu 0,1` 起闭环，并在起闭环前 `bash route_service.sh` 再 export 它打印的 `TF_CUROBO_PORTS`。
 - bottle 的闭环驱动（`scalebfm_bottle_rsi_20261015/loop.py`）是复制的旧 `run_batch`，还没换成 `batch.py`（26.5.4 时做）。
 - 规划 0.34 s 也让 SONIC 实时栈等规划的问题小了很多（deploy 1 s 收不到帧会放掉上半身），但 26.5.2 仍要实测。
+
+## 21. 全 CuRobo 重做（TODO 26.5.6，用户 10-15 睡前确认"按建议"）
+
+用户要两样东西：CuRobo 版 SONIC 对 CuRobo 版 ScaleBFM 的搬箱对比视频，和 ScaleBFM 从 0 开始 RSI 进化的视频。约定：SONIC 跟不上路线就先降速到 0.5 rad/s 再试，仍不行就停在这一步写报告、不做对比视频；进化视频照做。过夜上限：墙钟 6 h 或模型费 150 USD。
+
+### 21.1 SONIC 接 CuRobo 路线（26.5.2）：没接成
+
+- **代码**（`expert.py`，默认关闭）：
+  - `visual.reach_route: planned` 时，刹停后不再原地抬手，保持下垂姿态进入 POSE 流。
+  - `CoordinatedReach` 挂上与 ScaleBFM 相同的 `ReachRoutePlanner`（余量 1.5 cm）。
+  - 规划放在工作线程里，主线程按规划那一拍的参考时间持续发帧（`StreamedRoute`）。第一次冒烟时保活帧用了"最新"仿真时间，下一拍推送的时间早于它，POSE 预览报"参考时间倒退"，10 局全部 runtime_error；已修。
+  - 新字段 `visual.reach_route_fallback`：`straight` 时规划失败退回旧路，`none` 时该局失败，SONIC 必须设 `none`。
+  - 新字段 `visual.reach_route_prior`：`hang` 或 `lifted`，见下。
+- **冒烟**（种子 46000 / 46100 各 5 局，2 条采集通道，实时率约 1.0）：
+
+| 变体 | 成功 | 失败 |
+|---|---|---|
+| 分段式（生产版，同种子基线） | 3/10 | 停滞 2、站位 2、倾斜 1、失夹 1、不稳 1 |
+| 路线，下垂姿态先验 | 0/10 | 停滞 4、空爪 3、倾斜 2、失夹 1 |
+| 路线，降速 0.5 rad/s（约定的重试） | 0/10 | 失夹 3、停滞 3、空爪 1、探测不附着 1、站位 1、倾斜 1 |
+| 路线，抬手姿态先验（我加的一次尝试，超出约定） | 1/10 | 倾斜 4、停滞 4、空爪 1 |
+
+- 路线 30 次规划全部成功（0.34–0.38 s），没有摔倒，失败都在路线走完之后。
+- 包络（handoff → close）：走路线时指令的腰俯仰中位 0.36–0.38 rad，分段式是 0.21；SONIC 腰俯仰交付比约 0.62，手在骨盆系里更靠前、更宽。抬手姿态先验没有把腰降下来，原因没查清。
+- **按约定停下**：不做 SONIC + CuRobo 的对比视频。三份冒烟配置和分段式基线配置留在 `configs/experiments/scalebfm_warehouse_{curobo_smoke*,segmented_smoke}_*_20261015.yaml`，记录在 `outputs/scalebfm_warehouse_curobo_20261015/smoke*.log`。
+
+### 21.2 ScaleBFM 冷启动的设置
+
+- 副本 `/workspace/code/rsi-curobo/arm-c`，`curobo_sandbox.py` 从 `000e873` 建。剔除第 1–4 阶段的答案：脚本、终版配置、演示脚本、bottle 实例、方案 §12 以后，STATE / TODO / DECISIONS 换成一行说明。
+- 冻结任务配置 `scalebfm_warehouse_curobo_task_20261015.yaml`：L2 配置加 `reach_route: planned`、`reach_route_fallback: none`、`ik_jacobian: analytic`。这三个字段进了验收门的冻结名单。
+- 池子沿用 §4。起点和 SONIC 怎么伸手无关；SONIC 在池子里的局是生产版（分段式），停止条件对它（验收池 27 + 5）。
+- 闭环：臂 A 流程，提示词、规则、验收门不变；12 进程，GPU 0 和 1，两个路线服务。泄漏审计加了一条：禁止读代码根下除本副本以外的任何目录（第 4 阶段的副本里有答案）。
+- 起点（原样移植 + 路线）：诊断池 3/50（停滞 41），封存集 5/80（停滞 69；生产版 SONIC 30，以前分段式起点 9）。
+- 一处要说明：`visual.reach_route_prior` 的字段说明（`src/` 和 `config_fields.md`）写了 SONIC 冒烟时腰更弯这件事，副本里看得到。这是关于 SONIC 的，不是 ScaleBFM 的答案。

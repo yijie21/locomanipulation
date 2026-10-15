@@ -60,6 +60,22 @@ class Audit(unittest.TestCase):
         self.assertEqual(loop.leaks_in([tool_use("ls /workspace/code/rsi-curobo/arm-c/outputs")], pats), [])
         self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-a/x")], pats), ["code_tree"])
 
+    def test_a_roles_own_spilled_tool_output_is_not_a_leak(self):
+        import tempfile
+        from unittest.mock import patch
+
+        sid = "10133903-debc-4527-b767-82b217be260b"
+        own = tool_use(f"Read /home/u/.claude/projects/-workspace-code-x/{sid}/tool-results/bx104yaw4.txt")
+        other = tool_use("cat /home/u/.claude/projects/-workspace-code-x/memory/MEMORY.md")
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+            fh.write(own + "\n")
+        with patch.object(loop, "transcript", lambda _s: Path(fh.name)):
+            self.assertEqual(loop.transcript_leaks(sid), [])
+            Path(fh.name).write_text(own + "\n" + other + "\n")
+            self.assertEqual(loop.transcript_leaks(sid), ["claude_home"])
+            self.assertEqual(loop.transcript_leaks("another-session"), ["claude_home"])
+        Path(fh.name).unlink()
+
     def test_only_tool_inputs_count(self):
         text = '{"type":"user","message":{"content":"do not read /workspace/code/origin or ~/.claude"}}'
         self.assertEqual(loop.leaks_in([text], loop.leak_patterns()), [])
