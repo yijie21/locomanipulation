@@ -69,6 +69,7 @@ ARM: str | None = None
 GPU = "1"
 # a sandbox links third_party to the origin checkout; anything else under the origin is off limits in an arm
 ORIGIN = (REPO / "third_party").resolve().parent
+SCRATCH_ROOT = Path("/workspace/tmp")
 ISOLATION = (
     "\n\nThis checkout ({REPO}) and your scratch directory ({TMP}) are the whole world for this run. Do not read "
     "anything outside them: no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
@@ -203,7 +204,8 @@ class RoleFailed(RuntimeError):
 
 
 def role_tmp() -> Path:
-    return Path("/workspace/tmp") / f"rsi_phase4_{ARM}" if ARM else Path("/workspace/tmp")
+    """The roles' scratch: one per sandbox (a replicate must not find an earlier run's analysis scripts)."""
+    return SCRATCH_ROOT / f"rsi_phase4_{REPO.name}" if ARM else SCRATCH_ROOT
 
 
 def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None) -> tuple[dict, dict]:
@@ -265,12 +267,15 @@ def structured_from_transcript(session: str | None) -> dict | None:
 
 def leak_patterns() -> dict[str, str]:
     """What a role's tool inputs must not name: the gate's tree always; in an arm also the origin checkout (other than
-    its third_party, which the sandbox links to), a climb out through third_party/.., and ~/.claude."""
+    its third_party, which the sandbox links to), a climb out through third_party/.., ~/.claude, another sandbox next
+    to this one (an earlier run's ledger), and anything under the scratch root but this sandbox's own scratch."""
     pats = {"gate": re.escape(HIDDEN.name)}
     if ARM and ORIGIN != REPO:
         pats["origin"] = re.escape(str(ORIGIN)) + r"(?!/third_party)"
         pats["climb"] = r"third_party/\.\."
         pats["claude_home"] = r"\.claude/|~/\.claude"
+        pats["sibling"] = re.escape(str(REPO.parent)) + "/" + rf"(?!{re.escape(REPO.name)}(?:/|\b))"
+        pats["scratch"] = re.escape(str(SCRATCH_ROOT)) + "/" + rf"(?!{re.escape(role_tmp().name)}(?:/|\b))"
     return pats
 
 

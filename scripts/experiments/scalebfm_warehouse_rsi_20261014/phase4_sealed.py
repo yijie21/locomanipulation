@@ -4,7 +4,7 @@ code (the code its gate accepted it with); `judge` scores every configuration on
 controller-compare §2's warehouse rules (as sealed.py does) and pairs each arm with start, phase1_best and final.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
-    $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/phase4_sealed.py run A --gpu 1
+    $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/phase4_sealed.py run A --gpu 1    # sandbox arm-a; A2 = arm-a2
     $PY scripts/experiments/scalebfm_warehouse_rsi_20261014/phase4_sealed.py judge
 """
 
@@ -27,10 +27,16 @@ POOL = REPO / "outputs" / "scalebfm_warehouse_rsi_20261014_hidden" / "pool_seale
 OUT = REPO / "outputs" / "scalebfm_warehouse_rsi_20261014" / "sealed"
 SANDBOX = Path("/workspace/code/rsi-phase4")
 SCENE = "warehouse_box_45x32x33_mars"
-CONFIGS = ("start", "phase1_best", "final", "phase4_A", "phase4_B")
+REFS = ("start", "phase1_best", "final")
+
+
+def configs() -> list[str]:
+    """The reference configurations, then every phase-4 run (phase4_A, phase4_B, phase4_A2, ...) with 80 rounds."""
+    return [*REFS, *sorted(d.name for d in OUT.glob("phase4_*") if d.is_dir())]
 
 
 def run(arm: str, gpu: str, procs: int) -> None:
+    """`arm` names the sandbox: A is arm-a, A2 is arm-a2."""
     s = SANDBOX / f"arm-{arm.lower()}"
     spec = Path(
         json.loads((s / "outputs" / "scalebfm_warehouse_rsi_20261014_hidden" / "gate" / "incumbent.json").read_text())[
@@ -53,7 +59,7 @@ def run(arm: str, gpu: str, procs: int) -> None:
 
 def judge() -> dict:
     torso = Torso(SCENE)
-    rep = {n: compare(POOL, OUT / n, "box", torso) for n in CONFIGS if len(list((OUT / n).glob("*.npz"))) == 80}
+    rep = {n: compare(POOL, OUT / n, "box", torso) for n in configs() if len(list((OUT / n).glob("*.npz"))) == 80}
     lines = []
     for name, r in rep.items():
         ok, g = r["ok"], r
@@ -68,9 +74,10 @@ def judge() -> dict:
             f"{r['measured']['scalebfm']}; failures {r['why_counts']['scalebfm']}"
         )
     pairs = {}
-    for arm in ("phase4_A", "phase4_B"):
-        for ref in ("start", "phase1_best", "final", "phase4_A"):
-            if arm not in rep or ref not in rep or arm == ref:
+    runs = [n for n in rep if n.startswith("phase4_")]
+    for i, arm in enumerate(runs):
+        for ref in (*REFS, *runs[:i]):
+            if ref not in rep:
                 continue
             a, b = rep[arm]["rounds"], rep[ref]["rounds"]
             keys = sorted(set(a) & set(b))
@@ -93,7 +100,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
-    r.add_argument("arm", choices=("A", "B"))
+    r.add_argument("arm", help="sandbox suffix: A, B, A2, B2, ...")
     r.add_argument("--gpu", default="1")
     r.add_argument("--procs", type=int, default=6)
     sub.add_parser("judge")

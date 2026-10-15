@@ -25,7 +25,7 @@ from loop import start_label  # noqa: E402
 
 
 def sandbox_loop(arm: str):
-    """The arm's own loop module (its REPO, LOOP and extensions are the sandbox's)."""
+    """The arm's own loop module (its REPO, LOOP and extensions are the sandbox's); `arm` is A, B, A2, ..."""
     s = SANDBOX / f"arm-{arm.lower()}"
     spec = importlib.util.spec_from_file_location(f"loop_{arm}", s / REL / "loop.py")
     argv, sys.argv = sys.argv, ["loop.py"]
@@ -45,7 +45,7 @@ def void_iters(arm: str) -> set[int]:
 def shadow(arm: str, gpu: str, procs: int) -> None:
     """All pending iterations' runnable proposals in one run_batch pool (across the listed GPUs), then each scored."""
     loop = sandbox_loop(arm)
-    loop.ARM, loop.GPU, loop.PROCS = arm, gpu, procs
+    loop.ARM, loop.GPU, loop.PROCS = arm[0].upper(), gpu, procs
     hooks = set(loop.extensions.HOOKS)
     skip = void_iters(arm)
     todo, jobs = [], []
@@ -78,7 +78,7 @@ def shadow(arm: str, gpu: str, procs: int) -> None:
 
 def table() -> None:
     rows = []
-    for arm in ("A", "B"):
+    for arm in sorted(d.name.removeprefix("arm-").upper() for d in SANDBOX.glob("arm-*")):
         s = SANDBOX / f"arm-{arm.lower()}" / LOOP
         skip = void_iters(arm)
         for it in sorted(s.glob("iter_*")):
@@ -111,7 +111,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("shadow")
-    r.add_argument("arm", choices=("A", "B"))
+    r.add_argument("arm", help="sandbox suffix: B, B2, ...")
     r.add_argument("--gpu", default="0,1", help="GPUs for the pool, comma-separated")
     r.add_argument("--procs", type=int, default=12, help="ScaleBFM processes across those GPUs (about 4.7 GB RAM each)")
     sub.add_parser("table")

@@ -35,6 +35,18 @@ class Audit(unittest.TestCase):
                  tool_use("ls outputs/scalebfm_warehouse_rsi_20261014_hidden/gate")]  # fmt: skip
         self.assertEqual(loop.leaks_in(lines, pats), ["claude_home", "climb", "gate"])
 
+    def test_other_sandboxes_and_other_scratch_are_leaks(self):
+        pats = loop.leak_patterns()
+        own = [
+            tool_use("ls /workspace/code/rsi-phase4/arm-a/outputs"),
+            tool_use("cat /workspace/tmp/rsi_phase4_arm-a/x.py"),
+        ]
+        self.assertEqual(loop.leaks_in(own, pats), [])
+        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-a2/STATE.md")], pats), ["sibling"])
+        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/code/rsi-phase4/arm-b/x")], pats), ["sibling"])
+        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/tmp/rsi_phase4_A/attrib.py")], pats), ["scratch"])
+        self.assertEqual(loop.leaks_in([tool_use("cat /workspace/tmp/p4_table.md")], pats), ["scratch"])
+
     def test_only_tool_inputs_count(self):
         text = '{"type":"user","message":{"content":"do not read /workspace/code/origin or ~/.claude"}}'
         self.assertEqual(loop.leaks_in([text], loop.leak_patterns()), [])
