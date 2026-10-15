@@ -73,6 +73,12 @@ class StructuredOutput(unittest.TestCase):
                 loop.transcript = saved
 
 
+class Labels(unittest.TestCase):
+    def test_every_way_a_reviewer_names_a_start_is_one_label(self):
+        for x in ("sonic_s47000_01", "bfm_s47000_01", "s47000_01"):
+            self.assertEqual(loop.start_label(x), "sonic_s47000_01")
+
+
 class Restore(unittest.TestCase):
     def test_rejected_edits_go_back_and_tracked_files_survive(self):
         import subprocess

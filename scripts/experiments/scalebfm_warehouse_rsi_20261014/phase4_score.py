@@ -20,6 +20,8 @@ from pathlib import Path
 SANDBOX = Path("/workspace/code/rsi-phase4")
 REL = Path("scripts/experiments/scalebfm_warehouse_rsi_20261014")
 LOOP = Path("outputs/scalebfm_warehouse_rsi_20261014/loop")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from loop import start_label  # noqa: E402
 
 
 def sandbox_loop(arm: str):
@@ -93,9 +95,12 @@ def table() -> None:
                         f"| {arm} | {n} | {r['id']} | {delta} | {len(h['predicted_fixed'])} | – | – | {r['error'][:60]} |"
                     )
                     continue
+                # hits recomputed from the stored flips: Reviewers name starts sonic_/bfm_/bare (start_label)
+                pf = {start_label(x) for x in h["predicted_fixed"]}
+                hit = len(pf & set(r["fixed"]))
                 rows.append(
-                    f"| {arm} | {n} | {r['id']} | {delta} | {r['predicted_fixed_n']} | {r['ok_before']} → {r['ok_after']} "
-                    f"(+{len(r['fixed'])} / −{len(r['broken'])}) | {r['predicted_fixed_hit']}/{r['observed_fixed_n']} | |"
+                    f"| {arm} | {n} | {r['id']} | {delta} | {len(pf)} | {r['ok_before']} → {r['ok_after']} "
+                    f"(+{len(r['fixed'])} / −{len(r['broken'])}) | {hit}/{len(r['fixed'])} | |"
                 )
     print("| arm | iter | id | delta | predicted fixed | diagnostic pool | hits / observed fixed | note |")
     print("|---|---|---|---|---|---|---|---|")

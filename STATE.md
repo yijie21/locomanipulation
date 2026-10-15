@@ -1,8 +1,8 @@
-# STATE — 2026-10-15 03:25 UTC（25.9.1.6 第 4 阶段 A、B 两臂在跑；25.9 待用户）
+# STATE — 2026-10-15 09:20 UTC（25.9.1.6 第 4 阶段做完；25.9 和第 4 阶段的后续待用户）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 03:25）：origin/main = `a2cfb23`；本地多 18 个提交，**都没推送**（用户没说推）。
-已确认（10-15 03:21）：两臂闭环驱动在跑（`loop.py run --arm A --gpu 1`、`--arm B --gpu 0`，各最多 4 个 ScaleBFM 进程，约 4.7 GB 内存 / 进程）。没有 SONIC 栈和 CuRobo 服务。
+已确认（10-15 09:20）：两臂驱动都已停，没有 SONIC 栈、ScaleBFM 局、CuRobo 服务在跑；GPU 0 / 1 空。
 已确认：机器 10-14 约 09:44 UTC 重启过一次（原因不明，内核版本变了）；/workspace 上的产物都在。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
@@ -29,14 +29,14 @@
   - 默认 `straight` 逐拍不变（50/50）。
 - 假设 / 待验证：带路线后"箱子倾斜"大减（11 → 1）的原因没隔离（25.9.1.7.2）；箱子最后举得更低（12 → 8 cm）没查（25.9.1.7.1）。
 - 已确认：封存集已用四次（final、start、phase1_best、final_route），都是事先定的固定配置。
-- 进行中（25.9.1.6，§17.1）：两臂各在隔离副本 `/workspace/code/rsi-phase4/arm-{a,b}` 里冷启动，10-15 03:20 UTC 开跑，预算各 12 次验收 / 36 h / 400 USD。
-  - 副本基于 `e9f0530`，剔除第 1–3 阶段答案；两臂诊断池 50 局和主检出逐拍一致（含 GPU 0）。角色读主检出、`~/.claude`、`third_party/..` 就整臂停。
-  - 已确认：臂 A 06:52 停（验收池 52/60 ≥ SONIC 27 + 5，3 次验收，20.73 USD）；封存集 68/80 对 SONIC 30、对 final 48（25 / 5，p 0.0003）。配置只改了 `root_z_min 0.74` + `carry.base_anchor: reference`。臂 B 在跑（验收池 28/60）。
+- 已确认（25.9.1.6，§17、§19）：冷启动两臂在隔离副本 `/workspace/code/rsi-phase4/arm-{a,b}` 里跑完。封存集 A 68、B 57、final 48、SONIC 30；A 对 B 18 / 7（p 0.043），A 模型费 20.7 USD、B 55.8 USD。
+  - A 只改两个现成字段：`root_z_min 0.74` + `carry.base_anchor: reference`。两臂 Reviewer 读轨迹的预测精确度都只有 15–17%，A 靠干预选对。
+  - B 第 6 轮 Engineer 自己跑了 102 局对照才交候选，B 的 57 里含这次实验。每臂只跑了一次。
 
 ## 下一步（编号见 `TODO.md`）
 
 - 25.9 待用户：整体判定（warehouse 已过；bottle 标称 39 对 40）。可选的 25.9.3：bottle 专家同法重调。
-- 25.9.1.6：盯两臂到停（`loop.py status`，在副本里跑）；停后补跑 B 的预测（.3），两臂最终配置上封存集（.4），写 §19。
+- 25.9.1.6.5–.8 待用户：每臂再跑一次；A 叠加 CuRobo 路线；RoboRSI 代码行为的臂 C；Engineer / Reviewer 提示词缺口。
 - 25.9.1.7.3：SONIC 生产线要不要也接路线（实时栈等 6 s 规划，要另外验证）。
 
 ## 未解决 / 卡点

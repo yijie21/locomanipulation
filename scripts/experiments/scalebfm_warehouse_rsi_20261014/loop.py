@@ -371,6 +371,11 @@ def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path, gpu: str = "1")
     return probe_results(hyps, base, it_dir, failed)
 
 
+def start_label(x: str) -> str:
+    """A Reviewer names a start as sonic_s47000_01, bfm_s47000_01 or s47000_01; outcomes() keys are sonic_<start>."""
+    return "sonic_" + re.sub(r"^(sonic|bfm)_", "", x)
+
+
 def probe_jobs(hyps: list[dict], inc: dict, it_dir: Path) -> list[tuple]:
     """run_batch jobs for the hypotheses' interventions (rounds land in it_dir/probe/<id>)."""
     jobs = []
@@ -396,7 +401,7 @@ def probe_results(hyps: list[dict], base: Path, it_dir: Path, failed: str | None
             continue
         fixed = sorted(k for k in after if after[k] and not before.get(k))
         broken = sorted(k for k in after if before.get(k) and not after[k])
-        pf, pb = set(h["predicted_fixed"]), set(h["predicted_broken"])
+        pf, pb = {start_label(x) for x in h["predicted_fixed"]}, {start_label(x) for x in h["predicted_broken"]}
         res.append(dict(
             id=h["id"], n=len(after), ok_before=sum(before.values()), ok_after=sum(after.values()),
             fixed=fixed, broken=broken,
