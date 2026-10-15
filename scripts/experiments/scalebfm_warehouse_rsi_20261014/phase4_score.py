@@ -58,9 +58,11 @@ def shadow(arm: str, gpu: str, procs: int) -> None:
             continue
         inc = json.loads((it / "reviewer_context.json").read_text())["incumbent"]
         hyps = json.loads((it / "hypotheses.json").read_text())["hypotheses"]
-        runnable = [h for h in hyps if set(h["delta"].get("extensions", {})) <= hooks]
+        # a proposal whose delta is empty describes code in prose only; one naming an unregistered hook needs code too
+        runnable = [h for h in hyps if h["delta"] and set(h["delta"].get("extensions", {})) <= hooks]
         unscored = [dict(id=h["id"], error="needs extension code that was never written: " +
-                         ", ".join(sorted(set(h["delta"].get("extensions", {})) - hooks))) for h in hyps if h not in runnable]  # fmt: skip
+                         (", ".join(sorted(set(h["delta"].get("extensions", {})) - hooks)) or "empty delta, mechanism in prose"))
+                    for h in hyps if h not in runnable]  # fmt: skip
         out.mkdir(exist_ok=True)
         jobs += loop.probe_jobs(runnable, inc, out)
         todo.append((it, out, runnable, unscored, loop.LOOP / "diag" / f"incumbent_{inc['hash']}"))
@@ -90,6 +92,8 @@ def table() -> None:
             for r in json.loads(pj.read_text()):
                 h = hyps[r["id"]]
                 delta = json.dumps(h["delta"], ensure_ascii=False)[:70]
+                if not h["delta"] and "error" not in r:  # scored before empty deltas were excluded
+                    r = dict(r, error="needs extension code that was never written: empty delta, mechanism in prose")
                 if "error" in r:
                     rows.append(
                         f"| {arm} | {n} | {r['id']} | {delta} | {len(h['predicted_fixed'])} | – | – | {r['error'][:60]} |"

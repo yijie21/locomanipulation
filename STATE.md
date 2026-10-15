@@ -2,7 +2,7 @@
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 03:25）：origin/main = `a2cfb23`；本地多 18 个提交，**都没推送**（用户没说推）。
-进行中（10-15）：第 4 阶段重复（25.9.1.6.5，§19.1）。A2 在 GPU 1、B2 在 GPU 0，各 6 个 ScaleBFM 进程；副本 `/workspace/code/rsi-phase4/arm-{a2,b2}`。没有 SONIC 栈和 CuRobo 服务。
+已确认（10-15 11:50）：第 4 阶段四个臂都停了，没有 ScaleBFM 局、SONIC 栈、CuRobo 服务在跑；GPU 0 / 1 空。副本在 `/workspace/code/rsi-phase4/arm-{a,b,a2,b2}`（约 10 GB）。
 已确认：机器 10-14 约 09:44 UTC 重启过一次（原因不明，内核版本变了）；/workspace 上的产物都在。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
@@ -36,7 +36,7 @@
 ## 下一步（编号见 `TODO.md`）
 
 - 25.9 待用户：整体判定（warehouse 已过；bottle 标称 39 对 40）。可选的 25.9.3：bottle 专家同法重调。
-- 25.9.1.6.5：盯 A2 / B2 到停，然后上封存集（`phase4_sealed.py run A2`）、B2 补跑打分（`phase4_score.py shadow B2`），写 §19.1 的结果。
+- 已确认（25.9.1.6.5，§19.1）：重复一次后，封存集 A 68 / A2 68（同一配置，逐拍相同）、B 57 / B2 40；B 的 Engineer 两次都自己跑闭环对照。
 - 25.9.1.6.6–.8 待用户：A 叠加 CuRobo 路线；RoboRSI 代码行为的臂 C；提示词缺口。
 - 25.9.1.7.3：SONIC 生产线要不要也接路线（实时栈等 6 s 规划，要另外验证）。
 
