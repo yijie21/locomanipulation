@@ -960,26 +960,28 @@
   - [-] 26.3.4 封存集 + bottle 对比视频 + 进化视频（同上，见 26.5.4）
 - [ ] 26.5 （用户 2026-10-15：不要分段式抓取，只用 CuRobo 做规划器；两边都用 CuRobo；bottle 规划到举起位；先 warehouse；暂缓启动，等用户说开始）全 CuRobo 重做对比视频和 RSI 进化视频
   - [x] 26.5.1 （2026-10-15，方案 §20：开路线缓存后 6 进程 / 4 进程两遍、换分片换服务实例，12/12 局逐拍相同；不开缓存时规划器本身正序 / 倒序 49/50 逐位相同）CuRobo 路线局的确定性：同一批诊断局单进程 / 双进程交错各跑一遍，逐拍比 qpos（验收门的配对和哨兵靠它）
-  - [ ] 26.5.2 warehouse：路线接进 SONIC 生产专家（`expert.py:532` 构造 CoordinatedReach、跳过原地抬手、配 ReachRoutePlanner；25.9.1.7.3），小批量试跑
-  - [ ] 26.5.3 warehouse：从"原样移植 + CuRobo 路线"冷启动 RSI（副本基于 HEAD，`visual.reach_route` 冻结为 planned），SONIC + CuRobo 跑验收池 / 封存集，导出对比和进化视频
+  - [-] 26.5.2 （2026-10-15，见 26.5.6.1：接上了，成功率掉，停）warehouse：路线接进 SONIC 生产专家（`expert.py:532` 构造 CoordinatedReach、跳过原地抬手、配 ReachRoutePlanner；25.9.1.7.3），小批量试跑
+  - [~] 26.5.3 （2026-10-15：冷启动 RSI 做完，封存集 54；SONIC 侧和对比视频没做，见 26.5.6）warehouse：从"原样移植 + CuRobo 路线"冷启动 RSI（副本基于 HEAD，`visual.reach_route` 冻结为 planned），SONIC + CuRobo 跑验收池 / 封存集，导出对比和进化视频
   - [ ] 26.5.4 bottle：ScaleBFM 的 bottle 专家移植 `reach.simple.arm_route: curobo`（规划到举起位，同 22.3.5），SONIC 用同一开关重跑起点池，RSI，导出视频
   - [~] 26.5.5 RSI 提速（用户 2026-10-15 要评估；用户同日定：先做两个测量，再一起做 A 组（.1 .2）和 B 组（.3））。A2 臂 172 min 的分解：Reviewer 61（API 时间占 96%）、探针 54、验收门 25、Engineer 21（其中约 13 是它自己重跑冒烟局）、Manager 5、接受后重跑新 incumbent 诊断局 5；仿真约 57%，LLM 约 43%。CuRobo 服务 349 次规划 p50 6.1 s（p10 5.5，基本是固定开销），单进程 REP 串行，`use_cuda_graph=False`
     - [x] 26.5.5.0 （2026-10-15，方案 §20）测量（`outputs/rsi_speed_20261015/`）：① 进程数 × OMP（`proc_scaling.sh`）；② CuRobo 设置离线比较（`bench_all.sh`、`bench_compare.py`，诊断池 50 个请求 × 5 组设置）
     - [x] 26.5.5.1 （2026-10-15：`arm_route` 缓存 + `TF_CUROBO_PORTS` 多实例 + 服务默认 `--no-self-collision-opt`，端到端 12/12 逐拍相同）只影响墙钟：CuRobo 结果按请求内容哈希缓存（重跑必命中，顺带让 26.5.1 的配对 / 哨兵成立）；多开路线服务实例（两张卡、多个端口）
     - [x] 26.5.5.2 （2026-10-15：`batch.py`；默认 12 进程，OMP 保持 2（OMP 1 改结局、吞吐只多 1–3%）；解析 IK 后用 `--gpu 0,1`，吞吐 1.74 倍；验收门合批、候选诊断局与验收门并行）只影响墙钟：每臂进程 6 → 10–12（先量单进程 CPU，考虑 `OMP_NUM_THREADS=1`）；逐局派发的常驻进程池代替静态分片；验收门的哨兵和第一段并行；候选的 50 局诊断局和验收门同时跑，接受后直接当新 incumbent 的诊断局
     - [x] 26.5.5.3 （2026-10-15：`carry.ik_jacobian: analytic`，诊断池 50 局 37 → 33 与 OMP 浮点对照 33 分不开，掉物 3 → 6 待观察；CuRobo 改设置不必改结局，见 .1）改每局结局，只能在冷启动前定死：全身 IK 解析雅可比 + 旋转转换绕开 scipy（= 25.9.1.6.10）；CuRobo 开 CUDA graph、障碍全是盒子时换 PRIMITIVE 检查器、调迭代数，先在诊断池的请求上离线比能规划数、离箱距离和耗时
-    - [ ] 26.5.5.6 冷启动配置：26.5.3 副本基线写死 `carry.ik_jacobian: analytic` + `visual.reach_route: planned`，闭环 `--gpu 0,1`，起闭环前 `route_service.sh` 并 export `TF_CUROBO_PORTS`
+    - [x] 26.5.5.6 （2026-10-15，`scalebfm_warehouse_curobo_task_20261015.yaml` + curobo_sandbox.py）冷启动配置：26.5.3 副本基线写死 `carry.ik_jacobian: analytic` + `visual.reach_route: planned`，闭环 `--gpu 0,1`，起闭环前 `route_service.sh` 并 export `TF_CUROBO_PORTS`
     - [ ] 26.5.5.7 bottle 闭环驱动的 `run_batch` 换成 `batch.py`（26.5.4 时）
     - [ ] 26.5.5.4 改方法（角色看到 / 做的事变了）：只改配置的候选由驱动机械生成，Engineer 只处理代码改动；验收门跑时投机地起下一轮 Reviewer（接受 / 拒绝两支）；探针变便宜后每轮多给 Reviewer 几条假设名额
     - [ ] 26.5.5.5 排程：SONIC 起点池用 2–3 条采集通道（要先解决路线服务并发和规划等待时的 1 s 超时）；两边 SONIC 池跑完后，warehouse 和 bottle 两个 RSI 各占一张卡同时跑
   - [~] 26.5.6 过夜计划（用户 2026-10-15 睡前：做完剩下的，要看 CuRobo 版 SONIC 对 ScaleBFM 的搬箱对比视频，和 ScaleBFM 从 0 开始 RSI 进化的视频；用户同日确认"按建议"：SONIC 诊断池也重跑；过夜上限墙钟 6 h 或 150 USD；SONIC 跟不上路线先降速到 0.5 rad/s 再试，仍不行停下写报告、不做对比视频；bottle 和改方法今晚不做；做完发私有查看页；允许本地提交不推送）
-    - [ ] 26.5.6.0 本地提交 26.5.5（不推送）
-    - [ ] 26.5.6.1 SONIC 接路线（= 26.5.2）：expert.py 的 assisted 分支跳过原地抬手、挂 ReachRoutePlanner，规划时保持发帧，默认关闭；10 局冒烟
-    - [ ] 26.5.6.2 SONIC + CuRobo 跑诊断池 50、验收池 60、封存集 80（同种子，起点由这次运行重新生成；实时栈独占机器）
-    - [ ] 26.5.6.3 冷启动副本基于 HEAD（= 26.5.5.6），剔除第 1–4 阶段的答案；起点 = 原样移植 + reach_route planned + ik_jacobian analytic
-    - [ ] 26.5.6.4 RSI 闭环（臂 A 流程，提示词 / 规则 / 验收门不变），过夜上限待定
-    - [ ] 26.5.6.5 封存集：ScaleBFM start 与 final 各 80 局，配对 SONIC + CuRobo
-    - [ ] 26.5.6.6 对比视频（compare.py 新任务）+ 进化视频（evolution.py 跑新副本），预览 ≤ 500 KB
+    - [x] 26.5.6.0 本地提交 26.5.5（不推送）（2026-10-15 `6b017b6`）
+    - [-] 26.5.6.1 （2026-10-15：接上了但成功率掉：同种子分段式 3/10，路线下垂先验 0/10、降速 0/10、抬手先验 1/10；按约定停，不做对比视频；方案 §21.1）SONIC 接路线（= 26.5.2）：expert.py 的 assisted 分支跳过原地抬手、挂 ReachRoutePlanner，规划时保持发帧，默认关闭；10 局冒烟
+    - [-] 26.5.6.2 （2026-10-15：因 .1 没做；冷启动改用 §4 的池子，SONIC 是生产版）SONIC + CuRobo 跑诊断池 50、验收池 60、封存集 80（同种子，起点由这次运行重新生成；实时栈独占机器）
+    - [x] 26.5.6.3 （2026-10-15 `/workspace/code/rsi-curobo/arm-c`，curobo_sandbox.py）冷启动副本基于 HEAD（= 26.5.5.6），剔除第 1–4 阶段的答案；起点 = 原样移植 + reach_route planned + ik_jacobian analytic
+    - [x] 26.5.6.4 （2026-10-15 17:54–20:40：验收池 5 → 21 → 43 停，38.3 USD，插手 1 次；方案 §21.3）RSI 闭环（臂 A 流程，提示词 / 规则 / 验收门不变），过夜上限待定
+    - [x] 26.5.6.5 （2026-10-15：起点 5、终版 54、生产版 SONIC 30；`curobo_sealed.py`）封存集：ScaleBFM start 与 final 各 80 局，配对 SONIC + CuRobo
+    - [~] 26.5.6.6 （2026-10-15：进化视频 4 段 133–342 KB，`outputs/rsi_demo_20261015/warehouse_curobo/evolution/`；对比视频按约定不做）对比视频（compare.py 新任务）+ 进化视频（evolution.py 跑新副本），预览 ≤ 500 KB
     - [ ] 26.5.6.7 收尾：方案文档、TODO / STATE / DECISIONS、本地提交；查看页（待定）
+    - [ ] 26.5.6.8 待用户定：SONIC 走路线时腰为什么更弯（抬手先验也没压下来），要不要查；冷启动停在"比 SONIC 多 5 局"，要不要提高停止线续跑到 68 那一档
+    - [ ] 26.5.6.9 待用户定：bottle（26.5.4）和改方法（26.5.5.4）
 - [ ] 26.6 `make check` 跑新代码（`0836c29`、`f62721d` 用 --no-verify 提交，当时 SONIC 独占机器，检查推迟）
 - [ ] 26.4 交付：全部预览清单（大小、时长、内容），一个查看页

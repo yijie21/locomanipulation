@@ -1,4 +1,4 @@
-# STATE — 2026-10-15 17:45 UTC（过夜计划 26.5.6：SONIC 接路线失败按约定停；ScaleBFM 冷启动进行中）
+# STATE — 2026-10-15 20:50 UTC（过夜计划 26.5.6 做完：SONIC 接路线按约定停；ScaleBFM 冷启动封存集 54；等用户看）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 16:10）：origin/main = `a2cfb23`；本地多 31 个提交，**都没推送**（用户没说推）。
@@ -23,27 +23,22 @@
   - `carry.ik_jacobian: analytic`：单进程 3.4 倍；诊断池 37 → 33，与 OMP 浮点对照（33）分不开；会改结局，只在冷启动用。
   - `batch.py` + 12 进程 + `--gpu 0,1`：吞吐 3.15 → 12.1 仿真秒 / 秒；OMP 必须保持 2（OMP 1 改结局）。
 
-## 过夜进度（26.5.6，用户 10-15 确认"按建议"）
+## 过夜进度（26.5.6，用户 10-15 确认"按建议"；方案 §21）
 
-- [x] 提交 26.5.5（`6b017b6`）。
-- [~] SONIC 接路线：代码已改（`expert.py` 的 StreamedRoute / route_planner_for，`visual.reach_route_fallback`、`visual.reach_route_prior`），未提交。
-  - 冒烟 10 局（种子 46000/46100，2 通道）：下垂先验 0/10，降速 0.5 rad/s 也 0/10。路线都规划成功（0.34–0.38 s），失败在路线之后。
-  - 到达姿态腰更弯（俯仰中位 0.36 对分段式 0.21 rad），SONIC 腰只交付约 0.6。
-  - 加试（超出约定，是我的判断）：`reach_route_prior: lifted` 1/10；同种子分段式基线 3/10。路线 3 种合计 1/30，腰仍弯（0.38 rad），原因未查清。
-  - **按约定停下：不做 SONIC + CuRobo 对比视频。** ScaleBFM 冷启动改用现有起点池，停止条件对生产版 SONIC（验收池 27）。
-- [~] 冷启动闭环（`/workspace/code/rsi-curobo/arm-c`，17:54 起；起点诊断池 3/50、封存集 5/80）：第 0 轮拒（验收 15，掉物超护栏），第 1 轮接受（验收 21，增益 1 + 姿态上限 40° + 骨盆下限 0.70）；停止线 32。
-- [ ] 封存集终版 → 进化视频 → 查看页。
+- SONIC 接 CuRobo 路线：接上了，但同种子分段式 3/10，路线三种变体合计 1/30（腰更弯，原因未查清）。**按约定停，没做对比视频。**
+- ScaleBFM 冷启动（`/workspace/code/rsi-curobo/arm-c`，17:54–20:40，38.3 USD，插手 1 次）：验收池 5 → 21 → 43 停。
+  - 封存集：起点 5、终版 54、生产版 SONIC 30；比人工修法 + 路线（68）少 14（p 0.02）。
+  - 进化视频 4 段（133–342 KB）：`outputs/rsi_demo_20261015/warehouse_curobo/evolution/previews/`。
+- 路线服务 5795 / 5796 已停。
 
-## 下一步（编号见 `TODO.md`；用户说开始后才动）
+## 下一步（编号见 `TODO.md`；都待用户定）
 
-- 26.5.5.6 冷启动配置：`carry.ik_jacobian: analytic` + `visual.reach_route: planned`，`--gpu 0,1`，先起 `route_service.sh` 再 export `TF_CUROBO_PORTS`。
-- 26.5.2 路线接进 SONIC warehouse 生产专家（`src/locomani/tasks/crate/expert.py:532` 构造 CoordinatedReach），小批量试跑。
-- 26.5.3 warehouse 从"原样移植 + CuRobo"冷启动 RSI，SONIC + CuRobo 跑验收池 / 封存集，导出对比和进化视频。
+- 26.5.6.8：查不查 SONIC 走路线时腰更弯的原因；冷启动要不要提高停止线续跑（现在停在 SONIC + 5）。
+- 26.5.6.9：bottle（26.5.4）和改方法（26.5.5.4）。
 
 ## 未解决 / 卡点
 
-- 待验证：SONIC 实时栈接路线后规划约 0.34 s（原 6 s），腰只交付一半，路线跟得好不好（25.9.1.7.3 = 26.5.2）。
-- 待观察：解析 IK 在诊断池掉物 3 → 6 局（对照 3），冷启动后看验收门的掉物护栏。
+- 已确认（10-15）：解析 IK 下冷启动终版封存集掉物 4（SONIC 15）；第 0 轮候选因掉物 5 > 3 被验收门拒。
 - 已确认：这台机器上 bottle 栈的实时率不管录不录制都在 0.80–0.86；bottle 池的有效线是 0.80（bottle 方案 §4）。
 - 已确认：`make check` 里 `tests/test_stack_start_failure.py::test_down_kills...` 在全量负载下偶发超时，单独跑 3/3 通过，和本次改动无关。
 - 已确认（10-15 17:00）：auto-memory 的 MEMORY.md 正好 200 行（上限），再加一条就要先合并或删一条。
