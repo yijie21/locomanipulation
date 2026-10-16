@@ -170,5 +170,159 @@ class RoleLeftovers(unittest.TestCase):
         self.assertTrue(killed and "sleep" in killed[0])
 
 
+def _fresh(name: str, file: str):
+    """Load one of this loop's scripts under its own module name, leaving sys.modules as it was."""
+    saved = {k: sys.modules.pop(k, None) for k in _names}
+    sys.path.insert(0, str(HERE))
+    try:
+        return _load(name, HERE / file)
+    finally:
+        sys.path.remove(str(HERE))
+        for k, v in saved.items():
+            sys.modules.pop(k, None)
+            if v is not None:
+                sys.modules[k] = v
+
+
+class SuccessRuleVersion(unittest.TestCase):
+    """TODO 27.9: a round judged under an older success rule is not done; it is set aside, not overwritten."""
+
+    def test_old_rule_rounds_are_set_aside(self):
+        bt = _fresh("scene_rsi_batch_rule", "batch.py")
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "mug_pickup_s1.json"
+            f.write_text(json.dumps({"ok": True}))  # rule 1 rounds carry no rule
+            f.with_suffix(".npz").write_bytes(b"x")
+            self.assertFalse(bt.done(f))
+            bt.retire(f)
+            self.assertFalse(f.exists())
+            self.assertTrue((Path(d) / "_rule1_mug_pickup_s1.json").exists())
+            self.assertTrue((Path(d) / "_rule1_mug_pickup_s1.npz").exists())
+            self.assertEqual(bt.outcomes(Path(d)), {})
+            f.write_text(json.dumps({"ok": False, "rule": bt.SUCCESS_RULE}))
+            self.assertTrue(bt.done(f))
+
+
+class Infeasibility(unittest.TestCase):
+    """D13 (plan section 8): claims need all their parts, parks need the check and the attempts, parks reopen when the
+    incumbent finishes a parked start, the stop rule's second number leaves task-wide parks out, exits group by
+    capability."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _fresh("scene_rsi_loop_d13", "loop.py")
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.diag = ["book_pickup_s1", "book_pickup_s2", "mug_pickup_s3", "mug_pickup_s4"]
+        (root / "pool_diag").mkdir()
+        (root / "pool_accept").mkdir()
+        for x in self.diag:
+            (root / "pool_diag" / f"{x}.json").write_text(json.dumps({"task": x.rsplit("_s", 1)[0], "start": {"n": 1}}))
+        self.check = root / "check.py"
+        self.check.write_text(
+            "def check(start, meta):\n    return dict(holds=start['task'] == 'book_pickup', value=1)\n"
+        )
+        self.patches = [mock.patch.multiple(self.lp, LOOP=root, STATE=root / "state", GATE_DIR=root / "gate",
+                                            HIDDEN=root, FAMILY="pick_single", PROCS=1)]  # fmt: skip
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        self.tmp.cleanup()
+
+    def claim(self, **kw):
+        c = dict(id="book wedged", task="book_pickup", kind="current_skills", starts=["book_pickup_s1", "book_pickup_s2"],
+                 actions_assumed="side and top-down grasps only", bound=dict(statement="10.4 cm < 18.5 cm", check=str(self.check)),
+                 exits=[dict(capability="Pre-grasp tilt", how="tip the book out first")], refuted_by="any real lift",
+                 attempts=[dict(name="top", set={"pick.TOP_FLAT_M": 0.2})])  # fmt: skip
+        c.update(kw)
+        return c
+
+    def test_a_claim_needs_every_part(self):
+        self.assertEqual(self.lp.claim_problems(self.claim(), self.diag), [])
+        self.assertTrue(any("exits" in x for x in self.lp.claim_problems(self.claim(exits=[]), self.diag)))
+        physical = self.claim(kind="physical", exits=[], no_exit_reason="out of reach for any posture")
+        self.assertEqual(self.lp.claim_problems(physical, self.diag), [])
+        self.assertTrue(self.lp.claim_problems(self.claim(starts=["mug_pickup_s3"]), self.diag))
+        self.assertTrue(self.lp.claim_problems(self.claim(attempts=[]), self.diag))
+        self.assertTrue(self.lp.claim_problems(self.claim(refuted_by=" "), self.diag))
+        self.assertTrue(self.lp.claim_problems(self.claim(bound=dict(statement="x", check="/nope.py")), self.diag))
+
+    def _fake_rounds(self, ok_labels=()):
+        lp = self.lp
+
+        def run_jobs(jobs, *a, **k):
+            for job in jobs:
+                job.out.mkdir(parents=True, exist_ok=True)
+                for x in job.labels:
+                    rec = dict(task=x.rsplit("_s", 1)[0], ok=x in ok_labels, why="", rule=lp.B.SUCCESS_RULE)
+                    (job.out / f"{x}.json").write_text(json.dumps(rec))
+            return {}
+
+        return run_jobs
+
+    def test_check_and_attempts_park_a_task_and_success_reopens_it(self):
+        from unittest import mock
+
+        lp, it = self.lp, Path(self.tmp.name) / "state" / "iter_00"
+        inc = dict(dir=str(Path(self.tmp.name) / "inc"), set={})
+        claims = [self.claim(), self.claim(id="mug", task="mug_pickup", starts=["mug_pickup_s3"])]
+        with mock.patch.object(lp.B, "run_jobs", self._fake_rounds()):
+            res = lp.verify_claims(claims, inc, it)
+        self.assertEqual([r["parked"] for r in res], [True, False])  # the mug's check does not hold
+        self.assertEqual(res[0]["scope"], "task")
+        lp.park(res, claims, 0)
+        self.assertEqual(list(lp.jload(lp.STATE / "parked.json")), ["book_wedged"])
+        with mock.patch.object(lp.B, "run_jobs", self._fake_rounds(ok_labels={"book_pickup_s1"})):
+            res = lp.verify_claims(claims[:1], inc, it)
+        self.assertFalse(res[0]["parked"])  # an attempt that succeeds refutes the claim
+        base = Path(self.tmp.name) / "base"
+        self._fake_rounds(ok_labels={"book_pickup_s2"})([lp.B.Job(Path("."), base, None, tuple(self.diag))])
+        self.assertEqual(lp.unpark(base, 1), ["book_wedged"])
+        self.assertEqual(lp.jload(lp.STATE / "parked.json"), {})
+        self.assertTrue(any(e.get("step") == "unpark" and e["claim_wrong"] for e in lp.entries()))
+
+    def test_unparked_view_and_gap_candidates(self):
+        lp, root = self.lp, Path(self.tmp.name)
+        accept = ["book_pickup_s7", "mug_pickup_s8", "mug_pickup_s9"]
+        for x in accept:
+            (root / "pool_accept" / f"{x}.json").write_text("{}")
+        rounds = root / "inc_rounds"
+        self._fake_rounds(ok_labels={"mug_pickup_s8", "mug_pickup_s9"})(
+            [lp.B.Job(Path("."), rounds, None, tuple(accept))]
+        )
+        self.assertIsNone(lp.unparked_view(rounds))  # no parks
+        lp.jdump(lp.STATE / "parked.json", {"book": dict(task="book_pickup", scope="task", starts=["book_pickup_s1"],
+                 exits=[dict(capability="Pre-grasp tilt ", how="tip it")]),
+                 "mug": dict(task="mug_pickup", scope="starts", starts=["mug_pickup_s3"],
+                 exits=[dict(capability="pre-grasp tilt", how="tip the mug")])})  # fmt: skip
+        v = lp.unparked_view(rounds)
+        self.assertEqual((v["ok"], v["n"], v["all_ok"], v["all_n"]), (2, 2, 2, 3))
+        lp.jdump(root / "gate" / "incumbent.json", dict(rounds=str(rounds)))
+        self.assertIn("outside the parked tasks", lp.stop_reason(dict(started_s=lp.time.time())))
+        g = lp.gap_candidates()
+        self.assertEqual(list(g), ["pre-grasp tilt"])
+        self.assertEqual(
+            (g["pre-grasp tilt"]["tasks"], g["pre-grasp tilt"]["starts"]), (["book_pickup", "mug_pickup"], 2)
+        )
+
+
+class ClaimCheck(unittest.TestCase):
+    def test_a_broken_check_does_not_hold(self):
+        cc = _fresh("scene_rsi_claim_check", "claim_check.py")
+        with tempfile.TemporaryDirectory() as d:
+            chk = Path(d) / "c.py"
+            chk.write_text(
+                "def check(start, meta):\n    return dict(holds=meta['top'] > start['start']['z'], value=1)\n"
+            )
+            st = Path(d) / "a_s1.json"
+            st.write_text(json.dumps({"task": "a", "start": {"z": 1}}))
+            self.assertEqual(cc.run(chk, {"top": 2}, [st]), {"a_s1": {"holds": True, "value": 1}})
+            self.assertIn("error", cc.run(chk, {}, [st])["a_s1"])
+
+
 if __name__ == "__main__":
     unittest.main()

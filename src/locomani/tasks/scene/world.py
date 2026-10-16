@@ -2,8 +2,8 @@
 state the goal predicates read (TODO 27.2.3).
 
 The state is the predicates' format (scene_discovery/predicates.py): `objects[key]` = pos (body origin = the box
-centre, world), quat (wxyz) and `touching` (the hands whose fingers touch it); static objects carry their scene-file
-pose; `pelvis` = pos, quat; `fallen`.
+centre, world), quat (wxyz), `touching` (the hands with a finger on it) and `gripped` (the hands with both fingers on
+it); static objects carry their scene-file pose; `pelvis` = pos, quat; `fallen`.
 """
 
 from __future__ import annotations
@@ -149,7 +149,8 @@ class SceneWorld:
         for k in keys:
             pos, quat = self.object_pose(k)
             touching = sorted(self.motor.touching(self.free[k])) if k in self.free else []
-            objects[k] = dict(pos=pos, quat=quat, touching=touching)
+            gripped = sorted(self.motor.gripping(self.free[k])) if k in self.free else []
+            objects[k] = dict(pos=pos, quat=quat, touching=touching, gripped=gripped)
         d = self.sim.d
         return dict(
             objects=objects, pelvis=dict(pos=d.qpos[:3].copy(), quat=d.qpos[3:7].copy()), fallen=self.sim.fallen()

@@ -1,7 +1,8 @@
 """TODO 27.2.4: round batches for the scene loop and its gate (the warehouse loop's batch.py, for scene_round.py): every
 job -- one skills directory with its overrides, on some starts of a pool -- is cut into shards of SHARD_ROUNDS starts,
 and all shards share one pool of `procs` processes spread over the GPUs, so a slot takes the next shard as soon as it
-frees. Rounds already written are skipped (a batch resumes)."""
+frees. Rounds already written under the current success rule are skipped (a batch resumes); a round judged under an
+older rule is set aside as `_rule<n>_<label>.*` and run again."""
 
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 SHARD_ROUNDS = 2
+# 1: held(X) = a finger touches it, off its surface (to 2026-10-16); 2: both fingers of one hand, or both hands (TODO 27.9)
+SUCCESS_RULE = 2
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,26 @@ class Job:
     overrides: dict | None = None
     labels: tuple[str, ...] | None = None  # None = the whole pool
     npz: bool = False
+
+
+def done(f: Path) -> bool:
+    """A round file judged under the current success rule."""
+    if not f.exists():
+        return False
+    try:
+        return json.loads(f.read_text()).get("rule", 1) == SUCCESS_RULE
+    except (OSError, ValueError):
+        return False
+
+
+def retire(f: Path) -> None:
+    """Keep an older rule's round beside the new one, out of `outcomes` (underscore names are skipped)."""
+    if not f.exists():
+        return
+    rule = json.loads(f.read_text()).get("rule", 1)
+    for p in (f, f.with_suffix(".npz")):
+        if p.exists():
+            p.rename(p.with_name(f"_rule{rule}_{p.name}"))
 
 
 def pool_labels(pool: Path) -> list[str]:
@@ -48,7 +71,10 @@ def run_jobs(
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
     env.setdefault("TMPDIR", "/workspace/tmp")
     every = pool_labels(pool)
-    todo = {k: [x for x in (job.labels or every) if not (job.out / f"{x}.json").exists()] for k, job in enumerate(jobs)}
+    todo = {k: [x for x in (job.labels or every) if not done(job.out / f"{x}.json")] for k, job in enumerate(jobs)}
+    for k, job in enumerate(jobs):
+        for x in todo[k]:
+            retire(job.out / f"{x}.json")
     queue = []
     for k, job in enumerate(jobs):
         for i in range(math.ceil(len(todo[k]) / SHARD_ROUNDS)):
@@ -74,7 +100,7 @@ def run_jobs(
                 running.append((p, d))
             time.sleep(0.5)
             running = [(p, d) for p, d in running if p.poll() is None]
-    return {k: [x for x in todo[k] if not (jobs[k].out / f"{x}.json").exists()] for k in todo}
+    return {k: [x for x in todo[k] if not done(jobs[k].out / f"{x}.json")] for k in todo}
 
 
 def outcomes(out: Path) -> dict:

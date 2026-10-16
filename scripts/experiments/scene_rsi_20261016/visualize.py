@@ -127,6 +127,7 @@ def why_zh(why: str) -> str:
         (r"no bilateral pad contact", "合爪后两指没夹住"),
         (r"lost pad contact during the lift", "举起时滑脱"),
         (r"no hand touches it", "手没碰到物体"),
+        (r"not between two fingers", "没夹在两指之间"),
     ]
     for pat, rep in rules:
         m = re.search(pat, why)

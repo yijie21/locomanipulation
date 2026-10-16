@@ -40,7 +40,7 @@ SCHEMA = {
 SYSTEM = """You discover manipulation tasks for a Unitree G1 humanoid (two Dex1 two-finger grippers, a whole-body
 walking controller) in one simulated apartment. A task is a goal: a conjunction of predicates over the scene's keys,
 judged from simulator state, never by you:
-  held(X)            X lifted off its surface in the robot's hand
+  held(X)            X lifted off its surface, between two fingers of one hand (or held by both hands)
   on(X, S)           X resting on surface S (a key from `surfaces`)
   in(X, C)           X inside the open container C
   upright(X)         X standing within 15 deg of its upright axis

@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 1, 2026-10-16)
+# Rules for the scene RSI loop (TODO 27, version 2, 2026-10-16)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -50,3 +50,17 @@ rule is a new version of this file, committed, and counted as one human interven
 19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children.
 20. Stop and write an escalation instead of acting when a step needs the scene, the controller or its training, the
     motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget.
+
+## Infeasibility (code; plan section 8, D13; version 2)
+
+21. A claim that starts cannot be done names the actions it assumed, a hard constraint as a check file the driver runs,
+    exits (a new capability that would open them) or, only for a physical claim, why there are none, what would
+    refute it, and 1-3 closed-loop attempts. Code refuses a claim missing any part. "Cannot with the present actions"
+    is not "impossible"; only the user confirms impossible.
+22. A claim parks its starts only if the check holds on every claimed start and every attempt fails. Parked starts
+    still count as failures in every pool and are no longer repair targets. A park reopens, and is recorded as wrong,
+    as soon as an incumbent finishes one of its starts. A skill too big for one Engineer call goes to the outer loop
+    as a gap proposal.
+23. `held(X)` needs both fingers of one hand on X (or both hands) and X off every surface (success rule 2,
+    2026-10-16). Under rule 1 one finger was enough: a mug hanging on closed fingers counted. Rounds judged under rule 1
+    are set aside as `_rule1_*` and run again.

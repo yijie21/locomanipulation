@@ -64,12 +64,13 @@ META = {
 }
 
 
-def state(mug=(0.0, 0.0, 0.80), mug_quat=(1, 0, 0, 0), touching=(), bowl=(0.3, 0.3, 0.79), pelvis=(0.0, -1.0, 0.79)):
+def state(mug=(0.0, 0.0, 0.80), mug_quat=(1, 0, 0, 0), touching=(), bowl=(0.3, 0.3, 0.79), pelvis=(0.0, -1.0, 0.79),
+          gripped=()):  # fmt: skip
     return {
         "fallen": False,
         "pelvis": {"pos": list(pelvis)},
         "objects": {
-            "Mug_1": {"pos": list(mug), "quat": list(mug_quat), "touching": list(touching)},
+            "Mug_1": {"pos": list(mug), "quat": list(mug_quat), "touching": list(touching), "gripped": list(gripped)},
             "WhiteBowl": {"pos": list(bowl), "quat": [1, 0, 0, 0], "touching": []},
         },
     }
@@ -141,8 +142,10 @@ def test_in_held_upright_near_in_room():
     assert predicates.compile_goal(["in(Mug_1, WhiteBowl)"], META)(state(mug=(0.3, 0.3, 0.80)))[0]
     assert not predicates.compile_goal(["in(Mug_1, WhiteBowl)"], META)(state())[0]
     held = predicates.compile_goal(["held(Mug_1)"], META)
-    assert held(state(mug=(0.0, 0.0, 0.95), touching=["right"]))[0]
-    assert "resting on table" in held(state(mug=(0.0, 0.0, 0.80), touching=["right"]))[1]
+    assert held(state(mug=(0.0, 0.0, 0.95), touching=["right"], gripped=["right"]))[0]
+    assert held(state(mug=(0.0, 0.0, 0.95), touching=["left", "right"]))[0]  # a two-hand carry
+    assert "between two fingers" in held(state(mug=(0.0, 0.0, 0.95), touching=["right"]))[1]  # hanging on one finger
+    assert "resting on table" in held(state(mug=(0.0, 0.0, 0.80), touching=["right"], gripped=["right"]))[1]
     assert "no hand" in held(state(mug=(0.0, 0.0, 0.95)))[1]
     upright = predicates.compile_goal(["upright(Mug_1)"], META)
     assert upright(state(mug_quat=_quat_about_x(10)))[0]

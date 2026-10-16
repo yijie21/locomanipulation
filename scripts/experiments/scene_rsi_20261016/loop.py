@@ -12,7 +12,15 @@ The Engineer may change only the sandbox's skills package (src/locomani/tasks/sc
 voids the call and is restored. On a rejection the package goes back to the incumbent's snapshot.
 
 Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, gate calls >= 12,
-wall clock >= MAX_WALL_H, model cost >= COST_CAP, 3 rejections in a row with no new hypothesis, a Manager `stop`.
+wall clock >= MAX_WALL_H, model cost >= COST_CAP, 3 rejections in a row with no new hypothesis, a Manager `stop`; and
+(D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers.
+
+Infeasibility (plan §8, D13): a Reviewer's claim that some starts cannot be done with the present actions must give the
+actions it assumed, a hard constraint as a check file (claim_check.py), exits, what would refute it, and 1-3 attempts.
+The driver runs the check and the attempts (closed loop); both must hold to park the starts. Parked starts keep
+counting as failures everywhere; each iteration's incumbent diagnostic rounds reopen any park whose start it finishes
+(the claim is recorded as wrong). The parks' exits, grouped by capability, are the Manager's gap candidates; its
+`gap_proposals` (skills too big for one Engineer call) go to gaps.jsonl for the outer loop.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     nohup setsid $PY scripts/experiments/scene_rsi_20261016/loop.py run pick_single > /dev/null 2>&1 &
@@ -52,6 +60,7 @@ MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", "6"))
 MAX_GATE_CALLS = 12
 MAX_REJECT_STREAK = 3
 MAX_HYPOTHESES = 4
+MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
 STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
 PROCS = 12
 GPUS = "0,1"
@@ -66,12 +75,47 @@ ISOLATION = (
 FAMILY = ""
 LOOP = HIDDEN = STATE = GATE_DIR = Path()
 
+CLAIM_SCHEMA = {  # D13.2: an infeasibility claim
+    "type": "object",
+    "required": ["id", "task", "kind", "starts", "actions_assumed", "bound", "exits", "refuted_by", "attempts"],
+    "properties": {
+        "id": {"type": "string"},
+        "task": {"type": "string"},
+        "kind": {"enum": ["current_skills", "physical"]},
+        "starts": {"type": "array", "items": {"type": "string"}},
+        "actions_assumed": {"type": "string"},
+        "bound": {
+            "type": "object",
+            "required": ["statement", "check"],
+            "properties": {"statement": {"type": "string"}, "check": {"type": "string"}},
+        },
+        "exits": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["capability", "how"],
+                "properties": {"capability": {"type": "string"}, "how": {"type": "string"}},
+            },
+        },
+        "no_exit_reason": {"type": "string"},
+        "refuted_by": {"type": "string"},
+        "attempts": {
+            "type": "array",
+            "maxItems": MAX_ATTEMPTS,
+            "items": {
+                "type": "object",
+                "required": ["name", "set"],
+                "properties": {"name": {"type": "string"}, "set": {"type": "object"}},
+            },
+        },
+    },
+}
 HYPOTHESES_SCHEMA = {
     "type": "object",
     "required": ["hypotheses", "notes"],
     "properties": {
         "notes": {"type": "string"},
-        "infeasible": {"type": "string"},
+        "infeasible": {"type": "array", "items": CLAIM_SCHEMA},
         "hypotheses": {
             "type": "array",
             "maxItems": MAX_HYPOTHESES,
@@ -101,6 +145,20 @@ MANAGER_SCHEMA = {
         "reason": {"type": "string"},
         "escalation": {"type": "string"},
         "infeasible": {"type": "string"},
+        "gap_proposals": {  # D13.6: skills too big for one Engineer call, for the outer loop
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "capability", "why", "tasks"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "capability": {"type": "string"},
+                    "why": {"type": "string"},
+                    "tasks": {"type": "array", "items": {"type": "string"}},
+                    "est_cost": {"type": "string"},
+                },
+            },
+        },
         "summary_zh": {"type": "string"},
     },
 }
@@ -178,7 +236,174 @@ def stop_reason(meta: dict) -> str | None:
     m = [e for e in es if e.get("step") == "manager"]
     if m and m[-1].get("decision") == "stop":
         return "manager: stop"
+    inc = jload(GATE_DIR / "incumbent.json")
+    v = unparked_view(Path(inc["rounds"])) if inc else None
+    if v and v["ok"] >= STOP_RATE * v["n"]:
+        return (f"the incumbent wins {v['ok']}/{v['n']} >= {STOP_RATE:.0%} of the acceptance starts outside the parked "
+                f"tasks {v['parked_tasks']} ({v['all_ok']}/{v['all_n']} of all): sealed set")  # fmt: skip
     return None
+
+
+# -- infeasibility claims and parks (D13, plan §8) -----------------------------------------------------------------
+
+
+def task_of(label: str) -> str:
+    return label.rsplit("_s", 1)[0]
+
+
+def claim_problems(c: dict, diag: list[str]) -> list[str]:
+    """What a claim lacks (D13.2): the actions it assumed, a hard constraint code can recompute (a check file), exits
+    or -- for a physical claim -- why there are none, what would refute it, 1..MAX_ATTEMPTS attempts. Any problem
+    and the claim is refused."""
+    out = []
+    if not c.get("starts"):
+        out.append("no starts")
+    bad = [x for x in c.get("starts") or [] if x not in diag or task_of(x) != c.get("task")]
+    if bad:
+        out.append(f"not diagnostic starts of {c.get('task')}: {bad}")
+    if len((c.get("actions_assumed") or "").strip()) < 10:
+        out.append("actions_assumed is empty")
+    b = c.get("bound") or {}
+    if not (b.get("statement") or "").strip():
+        out.append("bound.statement is empty")
+    chk = Path(b.get("check") or "")
+    if chk.suffix != ".py" or not chk.is_file():
+        out.append(f"bound.check {b.get('check')!r} is not a Python file")
+    exits = [e for e in c.get("exits") or [] if (e.get("capability") or "").strip() and (e.get("how") or "").strip()]
+    if not exits and not (c.get("kind") == "physical" and (c.get("no_exit_reason") or "").strip()):
+        out.append("no exits (only a physical claim may give no_exit_reason instead)")
+    if not (c.get("refuted_by") or "").strip():
+        out.append("refuted_by is empty")
+    n = len([a for a in c.get("attempts") or [] if a.get("set")])
+    if not 1 <= n <= MAX_ATTEMPTS:
+        out.append(f"{n} attempts with a non-empty set (need 1-{MAX_ATTEMPTS})")
+    return out
+
+
+def claim_id(c: dict) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(c.get("id") or "claim"))[:60]
+
+
+def verify_claims(claims: list[dict], inc: dict, it_dir: Path) -> list[dict]:
+    """D13.3: a claim parks its starts only if its hard constraint holds on every one of them (claim_check.py, run by
+    the driver on the family's diagnostic starts of that task) and none of its attempts -- the incumbent plus the
+    attempt's overrides, closed loop on the claimed starts -- succeeds."""
+    diag = B.pool_labels(LOOP / "pool_diag")
+    meta = REPO / F.load(FAMILY)["scene"] / "scene_meta.json"
+    res, jobs, owner = [], [], []
+    for c in claims:
+        r = dict(id=claim_id(c), task=c.get("task"), kind=c.get("kind"), problems=claim_problems(c, diag))
+        res.append(r)
+        if r["problems"]:
+            continue
+        d = it_dir / "claims" / r["id"]
+        d.mkdir(parents=True, exist_ok=True)
+        shutil.copy(c["bound"]["check"], d / "check.py")  # the version that was judged
+        task_starts = [x for x in diag if task_of(x) == c["task"]]
+        cmd = [str(SIM_PY), str(HERE / "claim_check.py"), str(d / "check.py"), str(meta),
+               *[str(LOOP / "pool_diag" / f"{x}.json") for x in task_starts]]  # fmt: skip
+        try:
+            out = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=300,
+                                 env=dict(os.environ, PYTHONPATH=str(REPO / "src")))  # fmt: skip
+            r["bound"] = json.loads(out.stdout.strip().splitlines()[-1])
+        except (subprocess.TimeoutExpired, ValueError, IndexError) as e:
+            r["bound"] = {}
+            r["problems"].append(f"bound.check did not run: {type(e).__name__}")
+            continue
+        for k, a in enumerate([a for a in c["attempts"] if a.get("set")][:MAX_ATTEMPTS]):
+            jobs.append(B.Job(Path(inc["dir"]) / "skills", d / f"attempt_{k}", {**inc["set"], **a["set"]},
+                              tuple(c["starts"])))  # fmt: skip
+            owner.append((r, a.get("name") or f"attempt {k}"))
+    if jobs:
+        B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
+    for (r, name), job in zip(owner, jobs):
+        out = B.outcomes(job.out)
+        whys = collections.Counter((x.get("plan_why") or x["why"] or "?")[:60] for x in out.values() if not x["ok"])
+        r.setdefault("attempts", {})[name] = dict(n=len(out), ok=sorted(k for k, x in out.items() if x["ok"]),
+                                                  missing=sorted(set(job.labels) - set(out)), why=dict(whys))  # fmt: skip
+    for r, c in zip(res, claims):
+        if r["problems"]:
+            r["parked"] = False
+            continue
+        r["bound_ok"] = all(r["bound"].get(x, {}).get("holds") for x in c["starts"])
+        atts = list(r.get("attempts", {}).values())
+        r["loop_ok"] = bool(atts) and all(not a["ok"] and not a["missing"] for a in atts)
+        r["parked"] = r["bound_ok"] and r["loop_ok"]
+        r["scope"] = "task" if set(c["starts"]) == {x for x in diag if task_of(x) == c["task"]} else "starts"
+    return res
+
+
+def park(results: list[dict], claims: list[dict], n: int) -> None:
+    """Record the verified claims as parks (a claim with the same id replaces the old one) and every other claim as
+    refused (a part missing) or unproven (the check or the attempts said otherwise)."""
+    parked = jload(STATE / "parked.json", {})
+    for r, c in zip(results, claims):
+        if r.get("parked"):
+            parked[r["id"]] = dict(iter=n, task=c["task"], kind=c["kind"], scope=r["scope"], starts=sorted(c["starts"]),
+                                   statement=c["bound"]["statement"], actions_assumed=c["actions_assumed"],
+                                   exits=c.get("exits") or [], no_exit_reason=c.get("no_exit_reason"),
+                                   refuted_by=c["refuted_by"], user_confirmed=False, since=now())  # fmt: skip
+            ledger(dict(step="park", iter=n, claim=r["id"], task=c["task"], kind=c["kind"], scope=r["scope"],
+                        starts=sorted(c["starts"])))  # fmt: skip
+        else:
+            ledger(dict(step="claim_refused" if r["problems"] else "claim_unproven", iter=n, claim=r["id"],
+                        task=r.get("task"), problems=r["problems"], bound_ok=r.get("bound_ok"),
+                        loop_ok=r.get("loop_ok"), attempts=r.get("attempts")))  # fmt: skip
+    jdump(STATE / "parked.json", parked)
+
+
+def parked_labels(parked: dict, labels) -> dict:
+    """{label: claim id} for the labels a park covers (a task-wide park: every start of its task)."""
+    out = {}
+    for cid, p in parked.items():
+        for x in labels:
+            if (p["scope"] == "task" and task_of(x) == p["task"]) or x in p["starts"]:
+                out[x] = cid
+    return out
+
+
+def unpark(base: Path, n: int) -> list[str]:
+    """D13.5: a parked start the incumbent now finishes reopens its claim, recorded as wrong. `base` holds the
+    incumbent's diagnostic rounds, run at the start of every iteration (so after every accepted skill)."""
+    parked = jload(STATE / "parked.json", {})
+    out = B.outcomes(base)
+    wins: dict = {}
+    for x, cid in parked_labels(parked, out).items():
+        if out[x]["ok"]:
+            wins.setdefault(cid, []).append(x)
+    for cid, won in sorted(wins.items()):
+        p = parked.pop(cid)
+        ledger(dict(step="unpark", iter=n, claim=cid, task=p["task"], won=sorted(won), claim_wrong=True))
+    if wins:
+        jdump(STATE / "parked.json", parked)
+    return sorted(wins)
+
+
+def unparked_view(rounds: Path) -> dict | None:
+    """D13.4's second number on the acceptance pool: successes on the starts outside the task-wide parks (a park of
+    some starts names diagnostic starts and says nothing about a hidden pool). None without such parks or rounds."""
+    tasks = sorted({p["task"] for p in jload(STATE / "parked.json", {}).values() if p["scope"] == "task"})
+    labels = B.pool_labels(accept_pool())
+    out = {k: v for k, v in B.outcomes(rounds).items() if v.get("rule", 1) == B.SUCCESS_RULE}
+    if not tasks or not labels or any(x not in out for x in labels):
+        return None
+    keep = [x for x in labels if task_of(x) not in tasks]
+    return dict(ok=sum(out[x]["ok"] for x in keep), n=len(keep), parked_tasks=tasks,
+                all_ok=sum(out[x]["ok"] for x in labels), all_n=len(labels))  # fmt: skip
+
+
+def gap_candidates() -> dict:
+    """D13.7: the parks' exits by capability, most tasks first -- what each would reopen."""
+    out: dict = {}
+    for cid, p in jload(STATE / "parked.json", {}).items():
+        for e in p.get("exits") or []:
+            g = out.setdefault(e["capability"].strip().lower(), dict(tasks=set(), starts=0, claims=[], how=[]))
+            g["tasks"].add(p["task"])
+            g["starts"] += len(p["starts"])
+            g["claims"].append(cid)
+            g["how"].append(e["how"][:300])
+    ranked = sorted(out.items(), key=lambda kv: (-len(kv[1]["tasks"]), -kv[1]["starts"], kv[0]))
+    return {k: dict(v, tasks=sorted(v["tasks"])) for k, v in ranked}
 
 
 # -- model calls (the warehouse loop's) ----------------------------------------------------------------------------
@@ -444,9 +669,12 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
+    unpark(base, n)
     common = dict(RULES=RULES, PLAN=PLAN, LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
-                  FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"])  # fmt: skip
-    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}))
+                  FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
+                  TMP=role_tmp())  # fmt: skip
+    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
+                 parked=jload(STATE / "parked.json", {}))  # fmt: skip
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
@@ -457,7 +685,9 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     )
     jdump(it_dir / "hypotheses.json", hyps)
     leaks = transcript_leaks(acct["session"])
-    ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), void=bool(leaks), leaks=leaks, **acct))
+    n_claims = len(hyps["infeasible"]) if isinstance(hyps.get("infeasible"), list) else 0
+    ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), n_claims=n_claims, void=bool(leaks),
+                leaks=leaks, **acct))  # fmt: skip
     if leaks:
         return f"reviewer of iteration {n} named off-limits paths ({', '.join(leaks)})"
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
@@ -468,8 +698,15 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
     jdump(it_dir / "probe.json", pr)
     ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr]))
+    claims = [c for c in hyps.get("infeasible") or [] if isinstance(c, dict)]  # older hypotheses carry a string
+    cr = verify_claims(claims, inc, it_dir) if claims else []
+    jdump(it_dir / "claims.json", cr)
+    park(cr, claims, n)
+    gaps = gap_candidates()
+    jdump(STATE / "gap_candidates.json", gaps)
     ctx = it_dir / "manager_context.json"
-    jdump(ctx, context(inc, dict(extra, hypotheses=hyps, probe=pr)))
+    jdump(ctx, context(inc, dict(extra, hypotheses=hyps, probe=pr, claims=cr, parked=jload(STATE / "parked.json", {}),
+                                 gap_candidates=gaps)))  # fmt: skip
     prompt = fill((HERE / "prompts" / "manager.md").read_text(), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
     dec, acct = claude(
@@ -479,7 +716,11 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     leaks = transcript_leaks(acct["session"])
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"), reason=dec["reason"],
                 summary_zh=dec["summary_zh"], escalation=dec.get("escalation"), infeasible=dec.get("infeasible"),
-                leaks=leaks, **acct))  # fmt: skip
+                gap_proposals=dec.get("gap_proposals"), leaks=leaks, **acct))  # fmt: skip
+    if dec.get("gap_proposals") and not leaks:
+        with (STATE / "gaps.jsonl").open("a") as fh:
+            for g in dec["gap_proposals"]:
+                fh.write(json.dumps(dict(t=now(), iter=n, **g), ensure_ascii=False) + "\n")
     if leaks:
         return f"manager of iteration {n} named off-limits paths ({', '.join(leaks)})"
     if dec["decision"] == "stop":
@@ -559,8 +800,10 @@ def after_engineer(
         if not verdict["accepted"]:
             stop.set()
         side.join()
+    rounds = GATE_DIR / f"{verdict.get('call', 0):02d}_{verdict['hash']}" / "candidate"
     ledger(dict(step="gate", iter=n, accepted=verdict["accepted"], reason=verdict["reason"], hash=verdict["hash"],
-                result=verdict.get("result"), stage1=verdict.get("stage1"), void=stub))  # fmt: skip
+                result=verdict.get("result"), stage1=verdict.get("stage1"), unparked=unparked_view(rounds),
+                void=stub))  # fmt: skip
     return None
 
 
@@ -585,9 +828,12 @@ def reprobe(n: int, stub: bool) -> str | None:
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
+    unpark(base, n)
     common = dict(RULES=RULES, PLAN=PLAN, LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
-                  FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"])  # fmt: skip
-    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus={})
+                  FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
+                  TMP=role_tmp())  # fmt: skip
+    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus={},
+                 parked=jload(STATE / "parked.json", {}))  # fmt: skip
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
@@ -630,6 +876,13 @@ def cmd_status(_a) -> int:
           f"cost {sum(e.get('cost_usd', 0) for e in es):.2f} USD")  # fmt: skip
     for e in es[-12:]:
         print(json.dumps({k: v for k, v in e.items() if k not in ("usage", "results")}, ensure_ascii=False)[:300])
+    parked = jload(STATE / "parked.json", {})
+    for cid, p in parked.items():
+        print(f"parked {cid}: {p['task']} ({p['scope']}, {len(p['starts'])} diag starts, {p['kind']})")
+    inc = jload(GATE_DIR / "incumbent.json")
+    v = unparked_view(Path(inc["rounds"])) if inc else None
+    if v:
+        print(f"acceptance: {v['all_ok']}/{v['all_n']} of all starts, {v['ok']}/{v['n']} outside {v['parked_tasks']}")
     return 0
 
 

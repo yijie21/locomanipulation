@@ -4,7 +4,8 @@ candidate -- a skills package directory (a snapshot of src/locomani/tasks/scene/
 motor trace) per start into --out. One process loads the policy and the scene once; batch.py runs many of these.
 
 Round record: label, task, ok, why (the goal's), fell, dropped (a task object ended more than DROP_M below where it
-started), plan_ok / plan_why, steps (every skill step's outcome), skills (the package's content hash), set, wall_s.
+started), plan_ok / plan_why, steps (every skill step's outcome), skills (the package's content hash), set, wall_s,
+rule (batch.SUCCESS_RULE: which `held` judged it).
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src $PY scripts/experiments/scene_rsi_20261016/scene_round.py pick_single \\
@@ -27,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+import batch as B  # noqa: E402
 import family as F  # noqa: E402
 
 from locomani.backends.scalebfm import runtime as R  # noqa: E402
@@ -78,8 +80,9 @@ def run(fam_name: str, pool: Path, skills_dir: Path, out: Path, labels: list[str
     out.mkdir(parents=True, exist_ok=True)
     for label in labels:
         f = out / f"{label}.json"
-        if f.exists():
+        if B.done(f):
             continue
+        B.retire(f)
         row = json.loads((pool / f"{label}.json").read_text())
         task = F.task(fam, row["task"])
         start = Start.from_dict(row["start"])
@@ -98,7 +101,7 @@ def run(fam_name: str, pool: Path, skills_dir: Path, out: Path, labels: list[str
                        t_end=ex["t_end"])  # fmt: skip
             if npz:
                 np.savez_compressed(out / f"{label}.npz", **arrays)
-        rec.update(skills=h, set=overrides, wall_s=round(time.time() - t0, 1))
+        rec.update(skills=h, set=overrides, wall_s=round(time.time() - t0, 1), rule=B.SUCCESS_RULE)
         tmp = f.with_suffix(".tmp")
         tmp.write_text(json.dumps(rec, indent=1, default=float))
         tmp.rename(f)  # a killed process never leaves a half-written round

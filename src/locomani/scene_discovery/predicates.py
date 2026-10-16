@@ -121,8 +121,14 @@ def _in(scene: _Scene, obj: str, container: str, state: dict) -> tuple[bool, str
 
 
 def _held(scene: _Scene, obj: str, state: dict) -> tuple[bool, str]:
-    if not {"left", "right"} & set(state["objects"][obj].get("touching") or ()):
+    """Off every surface and gripped: both fingers of one hand on it, or both hands on it (a two-hand carry). One
+    finger is not a grip -- a mug hanging on closed fingers rose 2.5 cm and was scored held (TODO 27.9, 2026-10-16)."""
+    o = state["objects"][obj]
+    touching, gripped = set(o.get("touching") or ()), set(o.get("gripped") or ())
+    if not touching:
         return False, "no hand touches it"
+    if not gripped and touching != {"left", "right"}:
+        return False, f"not between two fingers ({'/'.join(sorted(touching))} hand touches it)"
     xy, bottom = scene.underside(obj, state)
     for key, s in scene.surfaces.items():
         half = np.asarray(s.get("flat_half_extent") or s["half_extent"], dtype=float)

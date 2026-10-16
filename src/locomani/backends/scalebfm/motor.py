@@ -254,6 +254,10 @@ class Motor:
         f1, f2 = self.fingers[side]
         return touch[f1] & touch[f2]
 
+    def gripping(self, body: int) -> set[str]:
+        """Sides whose two fingers both touch `body` (what `held(X)` needs, TODO 27.9)."""
+        return {s for s in SIDES if body in self.between_fingers(s)}
+
     def touching(self, body: int) -> set[str]:
         """Sides whose fingers touch `body`."""
         m, d = self.sim.m, self.sim.d
