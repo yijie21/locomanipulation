@@ -387,7 +387,7 @@ class Motor:
 
     # -- locomotion -------------------------------------------------------------------------------------------------
     def walk_to(self, xy, yaw: float | None = None, *, speed: float | None = None, face: str = "travel") -> Outcome:
-        """Walk the pelvis to `xy` and end facing `yaw` (None: as now). face "travel": turn toward the goal first when
+        """Walk the pelvis to `xy` and end facing `yaw` (None: the heading it walked on). face "travel": turn toward the goal first when
         it is farther than face_travel_min_m and off the heading by face_travel_deg; "fixed": keep the heading while
         moving (a sidestep or a step back)."""
         cfg = self.cfg
@@ -398,12 +398,12 @@ class Motor:
         q_stand = self.ref(self.t).joints.copy()
         delta = goal - p0[:2]
         dist = float(np.linalg.norm(delta))
-        yaw_end = yaw0 if yaw is None else float(yaw)
         heading = yaw0
         if face == "travel" and dist > cfg.face_travel_min_m:
             travel = float(np.arctan2(delta[1], delta[0]))
             if abs(R.wrap(travel - yaw0)) > np.radians(cfg.face_travel_deg):
                 heading = travel
+        yaw_end = heading if yaw is None else float(yaw)  # None: keep the walking heading (a path's inner corner)
         segments = []  # (kind, duration, fn(u) -> (xy, yaw))
         if abs(R.wrap(heading - yaw0)) > 1e-3:
             a = R.wrap(heading - yaw0)
