@@ -3,8 +3,10 @@ the paired tally counts wins, losses, falls and drops over the shared starts; th
 candidate's hash covers its code and its overrides and ignores byte caches."""
 
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -131,6 +133,41 @@ class RunCount(unittest.TestCase):
     def test_reprobe_counts_as_an_iteration(self):
         self.assertEqual(self.calls(1, reprobe=0), [("reprobe", 0)])
         self.assertEqual(self.calls(2, reprobe=0), [("reprobe", 0), ("iterate", 0)])
+
+
+class RoleLeftovers(unittest.TestCase):
+    """A role that has answered but waits on a shell it left running is unblocked: the driver kills the leftover after
+    the grace period and still gets the role's output (iteration 2, 2026-10-16, stalled on a self-matching pgrep)."""
+
+    def test_leftover_child_is_killed_after_the_answer(self):
+        from unittest import mock
+
+        _saved = {k: sys.modules.pop(k, None) for k in _names}
+        sys.path.insert(0, str(HERE))
+        try:
+            lp = _load("scene_rsi_loop_roles", HERE / "loop.py")
+        finally:
+            sys.path.remove(str(HERE))
+            for _k, _v in _saved.items():
+                sys.modules.pop(_k, None)
+                if _v is not None:
+                    sys.modules[_k] = _v
+        role = (
+            "import json, subprocess, sys\n"
+            "sys.stdin.read()\n"
+            "open(sys.argv[1], 'w').write('Structured output provided successfully')\n"
+            "subprocess.Popen(['sleep', '600']).wait()\n"
+            "print(json.dumps({'ok': 1}))\n"
+        )
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d) / "transcript.jsonl"
+            with mock.patch.object(lp, "transcript", lambda s: t if t.exists() else None):
+                t0 = time.time()
+                out, _err, rc, killed = lp.run_role([sys.executable, "-c", role, str(t)], "prompt", dict(os.environ),
+                                                    "s", grace=1.0, poll=0.2)  # fmt: skip
+        self.assertLess(time.time() - t0, 30)
+        self.assertEqual((json.loads(out), rc), ({"ok": 1}, 0))
+        self.assertTrue(killed and "sleep" in killed[0])
 
 
 if __name__ == "__main__":

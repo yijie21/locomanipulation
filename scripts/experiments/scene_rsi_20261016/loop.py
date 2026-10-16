@@ -32,6 +32,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -56,6 +57,7 @@ PROCS = 12
 GPUS = "0,1"
 ORIGIN = (REPO / "third_party").resolve().parent  # a sandbox links third_party to the origin checkout
 SCRATCH_ROOT = Path("/workspace/tmp")
+ROLE_GRACE_S = 120  # after a role answers, its leftover processes get this long before the driver kills them
 ISOLATION = (
     "\n\nThis checkout ({REPO}) and your scratch directory ({TMP}) are the whole world for this run. Do not read "
     "anything outside them: no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
@@ -210,21 +212,71 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
         "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
         "--max-budget-usd", str(max(1.0, COST_CAP / 8)),
     ]  # fmt: skip
+    session = str(uuid.uuid4())
     t0 = time.time()
-    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=REPO, env=env, timeout=4 * 3600)
-    (it_dir / f"{role}_raw.json").write_text(r.stdout or r.stderr)
+    stdout, stderr, rc, killed = run_role([*cmd, "--session-id", session], prompt, env, session)
+    (it_dir / f"{role}_raw.json").write_text(stdout or stderr)
     try:
-        out = json.loads(r.stdout)
+        out = json.loads(stdout)
     except json.JSONDecodeError as e:
-        raise RoleFailed(f"{role}: no JSON from claude -p (rc {r.returncode}): {(r.stderr or r.stdout)[-300:]}") from e
+        raise RoleFailed(f"{role}: no JSON from claude -p (rc {rc}): {(stderr or stdout)[-300:]}") from e
     if out.get("is_error"):
         raise RoleFailed(f"{role}: {out.get('subtype')} {str(out.get('result'))[-300:]}")
     acct = dict(cost_usd=float(out.get("total_cost_usd") or 0.0), session=out.get("session_id"),
-                seconds=round(time.time() - t0), usage=out.get("usage"))  # fmt: skip
+                seconds=round(time.time() - t0), usage=out.get("usage"), killed_leftovers=killed)  # fmt: skip
     so = out.get("structured_output") or structured_from_transcript(acct["session"])
     if so is None:
         raise RoleFailed(f"{role}: no structured output; result: {str(out.get('result'))[-300:]}")
     return so, acct
+
+
+def run_role(
+    cmd: list[str], prompt: str, env: dict, session: str, grace: float = ROLE_GRACE_S, poll: float = 10.0
+) -> tuple[str, str, int, list[str]]:
+    """Run a role's `claude -p` to its end. claude -p does not exit while a background shell it started still runs,
+    and a role once left `until ! pgrep -f "<dir>"; do sleep 10; done`, which matches itself and never ends (iteration
+    2, 2026-10-16: the driver stalled until a human killed it). So once the transcript shows the structured answer,
+    the role's leftover processes get `grace` seconds, then the driver kills them (listed in the ledger)."""
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            cwd=REPO, env=env)  # fmt: skip
+    t0, answered, killed, feed = time.time(), None, [], prompt
+    while True:
+        try:
+            stdout, stderr = proc.communicate(input=feed, timeout=poll)
+            return stdout, stderr, proc.returncode, killed
+        except subprocess.TimeoutExpired:
+            feed = None
+        if time.time() - t0 > 4 * 3600:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            return stdout, stderr or "timed out after 4 h", proc.returncode, killed
+        if answered is None:
+            p = transcript(session)
+            if p is not None and "Structured output provided successfully" in p.read_text(errors="replace"):
+                answered = time.time()
+        elif time.time() - answered > grace:
+            for pid in descendants(proc.pid):
+                try:
+                    args = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+                    os.kill(pid, 15)
+                    killed.append(args.strip()[:200])
+                except OSError:
+                    pass
+            answered = time.time()
+
+
+def descendants(pid: int) -> list[int]:
+    """Every process below pid, children first."""
+    kids = collections.defaultdict(list)
+    for line in subprocess.run(["ps", "-e", "-o", "pid=,ppid="], capture_output=True, text=True).stdout.splitlines():
+        p, pp = (int(x) for x in line.split())
+        kids[pp].append(p)
+    out, todo = [], [pid]
+    while todo:
+        for c in kids[todo.pop(0)]:
+            out.append(c)
+            todo.append(c)
+    return out
 
 
 def transcript(session: str | None) -> Path | None:
@@ -543,6 +595,7 @@ def cmd_run(a) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
     meta = jload(STATE / "meta.json") or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL,
                                               family=FAMILY, max_wall_h=MAX_WALL_H)  # fmt: skip
+    meta.update(cost_cap_usd=COST_CAP, model=MODEL, max_wall_h=MAX_WALL_H)  # this run's limits (roles read meta.json)
     jdump(STATE / "meta.json", meta)
     if not (LOOP / "pool_diag").exists() or not accept_pool().exists():
         raise SystemExit("draw the pools first (family.py draw ... diag / accept)")
