@@ -1,4 +1,4 @@
-# STATE — 2026-10-15 20:50 UTC（过夜计划 26.5.6 做完：SONIC 接路线按约定停；ScaleBFM 冷启动封存集 54；等用户看）
+# STATE — 2026-10-16（场景驱动 RSI 方案 D1–D12 已定，第 0 阶段等用户说开工；过夜 26.5.6 结果见下）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 16:10）：origin/main = `a2cfb23`；本地多 31 个提交，**都没推送**（用户没说推）。
@@ -34,6 +34,7 @@
 
 ## 下一步（编号见 `TODO.md`；都待用户定）
 
+- 27（方案 `docs/handoff/scene-rsi-plan-20261016.md`，D1–D12 用户 10-16 全部按推荐定）：mars + ScaleBFM，先 ADT 公寓；第 0 阶段（27.2）等用户说开工。RSI 进化 slides（私有）：https://claude.ai/artifact/N9rLqruxRDpjDzwNKyzaeS
 - 26.5.6.8：查不查 SONIC 走路线时腰更弯的原因；冷启动要不要提高停止线续跑（现在停在 SONIC + 5）。
 - 26.5.6.9：bottle（26.5.4）和改方法（26.5.5.4）。
 

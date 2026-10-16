@@ -42,6 +42,7 @@
 - [GraspNet 物体上 IK 规划与 SIMPLE 的 CuRobo 规划对比](handoff/graspnet-bottle-planner-comparison-20261008.md)：graspnet-baseline 抓取、bottle 专家执行、65 个物体的左右对比视频（2026-10-08，TODO 21.3.4）；10-09 补了 ghost 和固定抓取对比。
 - [离线抓取缓存替代 graspnet 感知](handoff/grasp-cache-20261010.md)：物体网格上采反向法线抓取、只有手的 MuJoCo 模型合爪抬晃验证、在线按测得位姿变换；65 个物体 × 3 朝向的验收对照 21.3.4（2026-10-10，TODO 23.2）。
 - [SONIC 对 ScaleBFM 控制器对比](handoff/wbc-compare-20261012.md)：只换全身控制器重跑 65 物体抓取线；五个范围决定、手指律统一、27 格开环探针与偏置常数、手程序移植到 ScaleBFM；结果：受控臂 129 局配对 SONIC 48 对 ScaleBFM 77（p < 0.001），SONIC 的偏置常数和腰限修复都不改成功率；ScaleBFM 的姿态交付包络（156 姿态探针，31 可交付）预测它的成败，按包络选抓取的放开臂 104/129（§8）；空地终点线刹车（§9）：越线惯性 ScaleBFM 0.5–4.5 cm 对 SONIC 4–25 cm，不越线程序脚尖停线前 4–8 对 13–22 cm
+- [场景驱动的 RSI 方案](handoff/scene-rsi-plan-20261016.md)：只给场景和 WBC（mars + ScaleBFM），外环发现任务、分桶、选缺口，内环用 warehouse 的闭环写技能并统计验收；D1–D12 用户 2026-10-16 全部按推荐定
 - [ScaleBFM warehouse 专家自主重标定方案](handoff/scalebfm-warehouse-rsi-20261014.md)：TODO 25.9.1，借 RoboRSI 的骨架，补控制器包络、干预归因和配对统计验收三环；三个起点池（诊断 / 验收 / 封存）；待用户定 D1–D7
 - [ScaleBFM bottle 专家自主重标定](handoff/scalebfm-bottle-rsi-20261015.md)：TODO 26.3，warehouse 那套 RSI 闭环换到 bottle 任务的第二个实例；适配层、起点池、停止线（比 SONIC 多成 ≥ 3）和视频导出
 - [SONIC → ScaleBFM 替换评测计划](handoff/controller-compare-20261013.md)：用户逐轮定的 35 个决定与开跑前冻结的判据；范围是仿真采集、仿真评测和真机；L1 原语层（bottle B1–B8、warehouse W0–W8、复杂动作 C1–C7、mode 扫描与切换、真机扰动 a–h、估计位姿）是关口，过了才移植专家跑 L2 配对（每场景 ≥ 40 局）；最后是部署程序和真机冒烟
