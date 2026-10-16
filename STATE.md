@@ -1,8 +1,8 @@
-# STATE — 2026-10-16（场景 RSI 第 0 阶段：motor 层、家具碰撞、任务运行器、单手种子、内环已提交；内环第一轮真迭代在跑）
+# STATE — 2026-10-16（场景 RSI 第 0 阶段完成：内环第一轮真迭代验收通过；第 1 阶段等用户说）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 16:10）：origin/main = `a2cfb23`；本地多 31 个提交，**都没推送**（用户没说推）。
-在跑（10-16 03:40 起）：沙盒 `/workspace/code/rsi-scene/pick-a` 里 `loop.py run pick_single --max-iters 1`（12 进程，GPU 0/1，日志 `/workspace/tmp/loop_pick_a.log`；查看：在沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py status pick_single`）。
+已确认（10-16 05:22）：机器空闲。沙盒 `/workspace/code/rsi-scene/pick-a` 的内环停在第 1 轮 Reviewer 之后（假设已写，探针没跑）；续跑在沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py run pick_single --reprobe 1`，查看 `... loop.py status pick_single`。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
 ## 提交与磁盘
@@ -34,7 +34,7 @@
 
 ## 下一步（编号见 `TODO.md`；都待用户定）
 
-- 27（方案 `docs/handoff/scene-rsi-plan-20261016.md` §7）：第 0 阶段 27.2.1–27.2.6 已提交（`f5f453b`…`a2369d1`）；出口 27.2.7 = 内环在 `pick_single` 族上跑通一轮真迭代（在跑）。种子在诊断池 1/50。之后第 1 阶段（能力探针）等用户说。
+- 27（方案 `docs/handoff/scene-rsi-plan-20261016.md` §7）：第 0 阶段已完成（27.2.1–27.2.7）。第 0 轮验收通过：验收池 7 vs 0 / 60，p 0.008，只调了 7 个参数；模型费累计 18.58 USD，插手 2 次（都是驱动 bug，§7.7）。第 1 阶段（能力探针）和内环续跑都等用户说。
 - RSI 进化 slides（私有）：https://claude.ai/artifact/N9rLqruxRDpjDzwNKyzaeS
 - 26.5.6.8：查不查 SONIC 走路线时腰更弯的原因；冷启动要不要提高停止线续跑（现在停在 SONIC + 5）。
 - 26.5.6.9：bottle（26.5.4）和改方法（26.5.5.4）。

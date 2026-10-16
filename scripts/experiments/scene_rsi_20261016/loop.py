@@ -461,8 +461,8 @@ def after_engineer(
         shutil.rmtree(cand)
     shutil.copytree(SKILLS, cand / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (cand / "candidate.json").write_text(json.dumps({"set": eng.get("set") or {}}, indent=1))
-    patch = subprocess.run(["git", "diff", "--no-index", "--", str(Path(inc["dir"]) / "skills"), str(cand / "skills")],
-                           capture_output=True, text=True).stdout  # fmt: skip
+    patch = subprocess.run(["diff", "-ruN", "-x", "__pycache__", "-x", "*.pyc", str(Path(inc["dir"]) / "skills"),
+                            str(cand / "skills")], capture_output=True, text=True).stdout  # fmt: skip
     (it_dir / "code.patch").write_text(patch)
     for f in stray:  # back as they were
         if (
@@ -546,13 +546,15 @@ def cmd_run(a) -> int:
     if not (LOOP / "pool_diag").exists() or not accept_pool().exists():
         raise SystemExit("draw the pools first (family.py draw ... diag / accept)")
     n = len(list(STATE.glob("iter_*")))
-    if a.reprobe is not None:
+    iters = a.max_iters
+    if a.reprobe is not None:  # the re-probed iteration counts as one of --max-iters
         why = reprobe(a.reprobe, a.stub)
         if why:
             ledger(dict(step="stop", reason=why))
             print("stop:", why)
             return 0
-        a.max_iters -= 1
+        iters -= 1
+    for _ in range(iters):
         why = stop_reason(meta)
         if why is None:
             try:

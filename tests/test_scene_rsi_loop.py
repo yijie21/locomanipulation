@@ -75,10 +75,6 @@ class CandidateHash(unittest.TestCase):
             self.assertNotEqual(gate.candidate_hash(c), h1)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class Overrides(unittest.TestCase):
     def test_long_inline_overrides_parse_as_json_not_as_a_path(self):
         _saved = {k: sys.modules.pop(k, None) for k in _names}
@@ -99,3 +95,43 @@ class Overrides(unittest.TestCase):
             f.write_text('{"A": 1}')
             self.assertEqual(sr.parse_set(str(f)), {"A": 1})
         self.assertEqual(sr.parse_set(""), {})
+
+
+class RunCount(unittest.TestCase):
+    """`loop.py run` does --max-iters iterations, and a re-probed iteration counts as one of them (0597b20 dropped
+    the loop: a plain run did nothing and --reprobe always went on to one more iteration)."""
+
+    def calls(self, max_iters, reprobe=None):
+        import argparse
+        from unittest import mock
+
+        _saved = {k: sys.modules.pop(k, None) for k in _names}
+        sys.path.insert(0, str(HERE))
+        try:
+            lp = _load("scene_rsi_loop", HERE / "loop.py")
+        finally:
+            sys.path.remove(str(HERE))
+            for _k, _v in _saved.items():
+                sys.modules.pop(_k, None)
+                if _v is not None:
+                    sys.modules[_k] = _v
+        seen = []
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "pool_diag").mkdir()
+            with mock.patch.multiple(lp, STATE=Path(d) / "state", LOOP=Path(d), accept_pool=lambda: Path(d),
+                                     ledger=lambda e: None, stop_reason=lambda m: None,
+                                     iterate=lambda n, m, s: seen.append(("iterate", n)),
+                                     reprobe=lambda n, s: seen.append(("reprobe", n))):  # fmt: skip
+                lp.cmd_run(argparse.Namespace(max_iters=max_iters, reprobe=reprobe, stub=True))
+        return seen
+
+    def test_plain_run_iterates_max_iters_times(self):
+        self.assertEqual(self.calls(2), [("iterate", 0), ("iterate", 1)])
+
+    def test_reprobe_counts_as_an_iteration(self):
+        self.assertEqual(self.calls(1, reprobe=0), [("reprobe", 0)])
+        self.assertEqual(self.calls(2, reprobe=0), [("reprobe", 0), ("iterate", 0)])
+
+
+if __name__ == "__main__":
+    unittest.main()
