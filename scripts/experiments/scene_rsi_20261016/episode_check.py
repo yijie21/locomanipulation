@@ -23,6 +23,7 @@ from locomani.backends.scalebfm import runtime as R  # noqa: E402
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
 from locomani.tasks.scene.episode import run_episode  # noqa: E402
 from locomani.tasks.scene.skills import plan_for  # noqa: E402
+from locomani.tasks.scene.skills.pick import pick_simple  # noqa: E402
 from locomani.tasks.scene.start import sample_start  # noqa: E402
 from locomani.tasks.scene.world import SceneWorld, Task  # noqa: E402
 
@@ -36,15 +37,19 @@ def main(argv=None) -> int:
     ap.add_argument("--task", default="canister_pickup")
     ap.add_argument("--rounds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--pick", choices=("program", "simple"), default="program", help="held(X): the seed pick variant")
     a = ap.parse_args(argv)
     rows = {json.loads(x)["id"]: json.loads(x) for x in TASKS.read_text().splitlines() if x.strip()}
     policy = R.Policy("cuda", ScaleBfmBackendConfig())
     world = SceneWorld(ADT, policy)
     task = Task.from_row(rows[a.task], world.meta)
     plan = plan_for(task)
+    if a.pick == "simple" and plan is not None:
+        key = task.objects[0]
+        plan = lambda ctx: pick_simple(ctx, key)  # noqa: E731
     if plan is None:
         raise SystemExit(f"no seed plan covers {task.goal}")
-    out = OUT / a.task
+    out = OUT / f"{a.task}_{a.pick}"
     out.mkdir(parents=True, exist_ok=True)
     wins = 0
     for i in range(a.rounds):

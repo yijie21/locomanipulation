@@ -211,6 +211,8 @@ class Motor:
         self.servo: dict = {}
         self.servo_on = {s: False for s in SIDES}
         self.servo_target: dict = {}
+        self.hand_override: dict = {}  # side -> (jaw centre, wrist rotation, velocity): `hand`
+        self.last_fut: dict = {}
         self.trace: list[dict] = []
         self.primitive = ""
         self.fell_at: float | None = None
@@ -278,7 +280,7 @@ class Motor:
         self.pol.reset(st)
         self.k, self.trace, self.fell_at = 0, [], None
         self.jaw[:] = JAW_OPEN
-        self.servo, self.servo_target = {}, {}
+        self.servo, self.servo_target, self.hand_override = {}, {}, {}
         self.servo_on = {s: False for s in SIDES}
         self._stand()
         self.stand_pose = self.ref(0.0)
@@ -317,8 +319,23 @@ class Motor:
                 out.setdefault(n, ([], []))
                 out[n][0].append(p)
                 out[n][1].append(q)
-        fut = {n: (np.array(v[0]), np.array(v[1])) for n, v in out.items()}
-        return self._servo(fut)
+        fut = self._servo({n: (np.array(v[0]), np.array(v[1])) for n, v in out.items()})
+        for side, (jaw, rot, vel) in self.hand_override.items():
+            lead = np.array([j * R.DT for j in self.pol.fidx])[:, None] * vel[None]
+            fut[WRIST[side]] = (np.repeat((jaw - rot @ R.OFF)[None], self.pol.F, 0) + lead,
+                                np.repeat(R.quat_wxyz(rot)[None], self.pol.F, 0))  # fmt: skip
+        return fut
+
+    def hand(self, side: str, jaw_centre=None, rotation=None, velocity=None) -> None:
+        """Drive `side`'s wrist keypoint directly from the next tick on: the jaw centre at `jaw_centre` (world) with
+        wrist rotation `rotation`, the future frames led along `velocity` (m/s); a closed-loop hand program (the seed
+        grasp's entry, skills/grasp_program.py) sets it every tick. jaw_centre None hands the wrist back to the
+        reference. Mode 2 and 4 read only the wrist of the arm, so this is what an IK solution would deliver."""
+        if jaw_centre is None:
+            self.hand_override.pop(side, None)
+            return
+        vel = np.zeros(3) if velocity is None else np.asarray(velocity, float)
+        self.hand_override[side] = (np.asarray(jaw_centre, float), np.asarray(rotation, float), vel)
 
     def _servo(self, fut: dict) -> dict:
         """The jaw-centre + wrist-attitude integral (bfm_expert_warehouse.pad_servo) on the sides that have it on:
@@ -370,8 +387,15 @@ class Motor:
             )
         )
         sim.step(self.pol(sim.state(), fut))
+        self.last_fut = fut
         self.k += 1
         return True
+
+    def commanded_jaw(self, side: str) -> np.ndarray:
+        """The jaw centre the last tick commanded (reference + servo lead): where a hand program taking over must
+        start its command, or the servo's lead is dropped in one step."""
+        p, q = self.last_fut[WRIST[side]]
+        return p[0] + R.mat(q[0]) @ R.OFF
 
     def _run(self, name: str, update, timeout: float) -> Outcome:
         """Tick until `update(t)` returns an Outcome, the robot falls, or `timeout` s pass."""
@@ -700,6 +724,23 @@ class Motor:
             return None
 
         return self._run("reach", update, total + cfg.reach_settle_s + 1.0)
+
+    def adopt_hand(self, side: str) -> None:
+        """Make the reference carry `side`'s wrist where `hand` drives it now, then release the override: a walk after
+        a hand program then carries the hand with the body instead of snapping the wrist back to the last IK pose."""
+        jaw, rot, _ = self.hand_override[side]
+        solver = self._solver()
+        cur = {s: self.jaw_centre(s) for s in SIDES}
+        tp = np.array([jaw if s == side else cur[s][0] for s in SIDES])
+        tr = np.array([rot if s == side else cur[s][1] for s in SIDES])
+        ik_pose = self._solve(solver, tp, tr, weights=tuple(1.0 if s == side else 0.3 for s in SIDES))
+        pose = self._pose_of(ik_pose, self.yaw())
+        self._stand(pose)
+        self.hand_override.pop(side, None)
+        self.servo_on[side] = True
+        self.servo_target.pop(side, None)
+        self.servo.pop(("pos", side), None)
+        self.servo.pop(("turn", side), None)
 
     # -- hands ------------------------------------------------------------------------------------------------------
     def grip(self, side: str, *, seconds: float | None = None, target: float | None = None) -> Outcome:

@@ -123,3 +123,38 @@ class TasksAndPick(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GraspProgram(unittest.TestCase):
+    """The ported hand program's laws (skills/grasp_program.py = bfm_grasp's)."""
+
+    def test_entry_command_stops_past_the_grip_by_the_overshoot(self):
+        from locomani.tasks.scene.skills.grasp_program import entry_captured, entry_command
+
+        d = np.array([1.0, 0.0, 0.0])
+        cmd, grip = np.zeros(3), np.array([0.05, 0.0, 0.0])
+        for _ in range(200):
+            cmd = entry_command(cmd, grip, d, 0.06, 0.02, 0.02)
+        np.testing.assert_allclose(cmd, [0.07, 0.0, 0.0])
+        self.assertTrue(entry_captured(np.array([0.045, 0, 0]), grip, d, 0.01))
+        self.assertFalse(entry_captured(np.array([0.035, 0, 0]), grip, d, 0.01))
+
+    def test_tracking_keeps_its_origin_and_moves_at_most_its_speed(self):
+        from locomani.tasks.scene.skills.grasp_program import TRACKING, Tracking
+
+        tr = Tracking()
+        first = tr.step(np.array([0.1, 0, 0]), np.zeros(3), 0.02)
+        np.testing.assert_allclose(first, [0.1, 0, 0])  # the first error is the origin, kept
+        prev = first.copy()
+        for _ in range(50):  # the hand now lags 3 cm more: the feedback follows, no faster than its speed
+            fb = tr.step(np.array([0.1, 0, 0]), np.array([-0.03, 0, 0]), 0.02)
+            self.assertLessEqual(np.linalg.norm(fb - prev), TRACKING["speed"] * 0.02 + 1e-12)
+            prev = fb.copy()
+        self.assertGreater(prev[0], 0.1)
+
+    def test_span_across_the_jaw(self):
+        from locomani.tasks.scene.skills.pick import span
+
+        half = [0.06, 0.04, 0.09]
+        self.assertAlmostEqual(span(yaw_quat(0.0), half, 0.0), 0.08)  # approach along x: closes across y (8 cm)
+        self.assertAlmostEqual(span(yaw_quat(0.0), half, np.pi / 2), 0.12)

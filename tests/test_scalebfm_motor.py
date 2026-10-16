@@ -125,3 +125,22 @@ class WalkProfile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HandProgram(unittest.TestCase):
+    def test_hand_drives_the_wrist_keypoint_with_its_lead(self):
+        m = motor()
+        m.tick()
+        jaw, rot = np.array([0.0, -0.2, 0.9]), np.eye(3)
+        m.hand("right", jaw, rot, velocity=np.array([0.1, 0.0, 0.0]))
+        fut = m._futures()
+        lead = np.array([j * R.DT for j in m.pol.fidx])[:, None] * np.array([0.1, 0.0, 0.0])
+        np.testing.assert_allclose(fut[WRIST["right"]][0], (jaw - R.OFF)[None] + lead)
+        m.hand("right")
+        self.assertNotIn("right", m.hand_override)
+
+    def test_commanded_jaw_is_the_last_ticks_wrist_plus_offset(self):
+        m = motor()
+        m.tick()
+        p, q = m.last_fut[WRIST["left"]]
+        np.testing.assert_allclose(m.commanded_jaw("left"), p[0] + R.mat(q[0]) @ R.OFF)
