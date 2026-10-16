@@ -513,8 +513,9 @@ def after_engineer(
 
 
 def reprobe(n: int, stub: bool) -> str | None:
-    """Re-run iteration n's probes on its Reviewer's unchanged hypotheses and continue from the Manager: for a probe
-    lost to the harness (the hypotheses never saw a probe result, so they stand). The earlier Manager call is voided
+    """Re-run iteration n's probes on its Reviewer's unchanged hypotheses and continue from the Manager: for probes
+    lost to the harness or never run because a driver bug stopped the loop (the hypotheses never saw a probe result,
+    so they stand). The earlier Manager call is voided
     in the ledger; the human fix that made this necessary goes in interventions.jsonl."""
     it_dir = STATE / f"iter_{n:02d}"
     hyps = jload(it_dir / "hypotheses.json")
@@ -527,7 +528,7 @@ def reprobe(n: int, stub: bool) -> str | None:
         elif p.exists():
             p.rename(p.with_name(p.name + ".void"))
     (STATE / "focus.json").unlink(missing_ok=True)
-    ledger(dict(step="void", iter=n, reason="probe lost to the harness; re-probing the same hypotheses"))
+    ledger(dict(step="void", iter=n, reason="re-probing the same hypotheses after a driver fix (interventions.jsonl)"))
     inc = incumbent()
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
@@ -586,7 +587,9 @@ def main(argv=None) -> int:
     r.add_argument("family")
     r.add_argument("--max-iters", type=int, default=100)
     r.add_argument("--stub", action="store_true", help="canned role outputs, gate --dry-run: plumbing only")
-    r.add_argument("--reprobe", type=int, default=None, help="re-probe iteration N's hypotheses first (harness loss)")
+    r.add_argument(
+        "--reprobe", type=int, default=None, help="re-probe iteration N's hypotheses first (probes lost or not run)"
+    )
     s = sub.add_parser("status")
     s.add_argument("family")
     a = ap.parse_args(argv)
