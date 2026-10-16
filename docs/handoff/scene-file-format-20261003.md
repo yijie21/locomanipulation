@@ -1,7 +1,7 @@
 # 场景文件与任务文件格式（2026-10-03 定）
 
 TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery-plan-20261002.md) #4、#5），输出是任务文件（#7、#10）。
-本页定字段（用户 2026-10-03 过目，§9 三处按推荐定）；读取、校验与谓词判定的代码在 `src/locomani/scene_discovery/`。能力说明在 `configs/scene_discovery/capability.yaml`（#8）。
+本页定字段（用户 2026-10-03 过目，§9 三处按推荐定）；读取、校验与谓词判定的代码在 `src/locomani/scene_discovery/`。能力说明在 `configs/scene_discovery/capability.yaml`（#8，G1 + Dex1 + SONIC）；mars + ScaleBFM 的实测表是 `capability_mars_scalebfm.yaml`（场景 RSI 方案 §9，键相同，`scripts/scene_feasibility.py --capability` 选一张）。
 
 ## 0. 原则
 

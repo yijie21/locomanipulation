@@ -240,3 +240,69 @@ def test_upright_beside_a_move_is_a_constraint_on_the_move():
     assert gaps_of(["upright(bottle)"], meta)[3] == "upright(bottle): already upright"  # nothing moves it
     meta["objects"]["bottle"]["init_quat"] = [0.7071, 0.7071, 0, 0]  # lying on its side
     assert "reorient" in gaps_of(["on(bottle, CART)", "upright(bottle)"], meta)[1]
+
+
+def _mars_cap(**reach):
+    """The 10-03 table with the mars + ScaleBFM table's new keys (capability_mars_scalebfm.yaml, TODO 27.3)."""
+    cap = copy.deepcopy(CAP)
+    cap["reach_single_arm"].update(reach)
+    return cap
+
+
+def test_a_measured_hand_envelope_blocks_outside_it_and_a_lift_limit_blocks_above_it():
+    meta = _envelope_meta()
+    cap = _mars_cap(grip_height_accepted=[0.75, 1.25], grip_height_blocked_outside=True, mass_lifted_max=2.0)
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["held(bottle)"]})
+    assert r.bucket() == 3 and any("outside the hand's measured reach" in b for b in r.blocked)
+    meta["objects"]["light_brick"] = obj([-0.3, -0.24], 0.70, [0.0225, 0.0225, 0.08], mass=2.2, surface="CART")
+    cap = _mars_cap(grip_height_accepted=[0.15, 1.25], grip_height_blocked_outside=True, mass_lifted_max=2.0)
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["held(light_brick)"]})
+    assert any("heavier than any mass the hand lifted" in b for b in r.blocked)
+
+
+def test_a_failed_task_names_its_object_and_untested_skills_are_gaps():
+    meta = _envelope_meta()
+    cap = _mars_cap(grasp_failures=[dict(name="pick_single.bottle", gap="grasp_single.bottle_pickup", objects=["bottle"],
+                                         pilots=["bottle_pickup"], success="2/10")])  # fmt: skip
+    gaps = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["held(bottle)"]}).gaps
+    assert "grasp_single.bottle_pickup" in gaps
+    cap["place"]["into_container_single_arm"] = dict(status="untested")
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["in(canister, basket)"]})
+    assert "place_into.single" in r.gaps
+
+
+def test_the_body_radius_comes_from_the_table():
+    c = feasibility.Checker(copy.deepcopy(META), dict(CAP, robot=dict(CAP["robot"], body_radius=0.35)))
+    stand, _ = c.edge_stand("T", [0.0, -0.24])
+    assert stand[1] == pytest.approx(-0.3 - 0.35 - feasibility.STAND_OUT)
+    assert feasibility.Checker(copy.deepcopy(META), CAP).edge_stand("T", [0.0, -0.24])[0][1] == pytest.approx(-0.66)
+
+
+def test_a_task_measured_on_its_own_object_is_bucket_1_whatever_the_proxies_say():
+    meta = _envelope_meta()
+    meta["objects"]["walled_bottle"] = obj([0.0, 2.2], 0.62, [0.0225, 0.0225, 0.08], surface="WALLED")  # no edge
+    goal = {"id": "t", "goal": ["held(walled_bottle)"]}
+    assert feasibility.Checker(copy.deepcopy(meta), CAP).check(goal).bucket() == 3
+    cap = _mars_cap(grasp_settings=[dict(name="pick_single.walled", objects=["walled_bottle"], surface="WALLED",
+                                         success="9/10", stance_xy=[0.0, 1.5], support_top=[0.62, 0.62],
+                     object_width=[0.045, 0.045], object_height=[0.16, 0.16], mass_max=0.3, inboard=[0.0, 0.0])] + CAP["reach_single_arm"]["grasp_settings"])  # fmt: skip
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check(goal)
+    assert r.bucket() == 1 and any(c.name == "measured_task" for c in r.checks)
+    meta["objects"]["walled_bottle"]["surface"] = "T"  # moved to another surface: the measurement no longer applies
+    assert not any(c.name == "measured_task" for c in feasibility.Checker(copy.deepcopy(meta), cap).check(goal).checks)
+
+
+def test_a_passage_only_a_tighter_body_fits_is_a_gap_not_a_block():
+    meta = _envelope_meta()
+    meta["room"]["walls"] = [
+        [[-3.0, 1.0], [-0.4, 1.0]],
+        [[0.4, 1.0], [3.0, 1.0]],
+    ]  # a 0.80 m doorway (wall cells eat into it)
+    meta["surfaces"]["FAR"] = surface([1.8, 2.3], 0.62, [0.3, 0.2])
+    goal = {"id": "t", "goal": ["on(bottle, FAR)"]}
+    wide = dict(CAP, robot=dict(CAP["robot"], body_radius=0.35))
+    r = feasibility.Checker(copy.deepcopy(meta), wide).check(goal)
+    assert any("no route in the occupancy map" in b for b in r.blocked)
+    tight = dict(CAP, robot=dict(CAP["robot"], body_radius=0.35, body_radius_tight=0.26))
+    r = feasibility.Checker(copy.deepcopy(meta), tight).check(goal)
+    assert not r.blocked and "navigate.narrow_passage" in r.gaps

@@ -97,9 +97,12 @@ class Checker:
         self.meta, self.cap = meta, capability
         self.objects, self.surfaces = meta["objects"], meta["surfaces"]
         self.rooms = (meta.get("room") or {}).get("rooms") or {}
-        self._nav = None
+        self._navs: dict = {}
         self._navigator_factory = navigator_factory
         self._routes: dict = {}
+        # occupancy inflation and stand offset: SONIC's navigator radius in the 10-03 table; the scene runner's 0.35 m
+        # in the mars + ScaleBFM table (tasks/scene/world.py BODY_RADIUS_M)
+        self.radius = float((capability.get("robot") or {}).get("body_radius", 0.26))
 
     # -- scene lookups --------------------------------------------------------------------------
     def box(self, key: str):
@@ -134,7 +137,7 @@ class Checker:
         half = np.asarray(s["half_extent"], dtype=float)
         inboard = float(half[ax] - sgn * local[ax])
         out = np.zeros(2)
-        out[ax] = sgn * (half[ax] + 0.26 + STAND_OUT)
+        out[ax] = sgn * (half[ax] + self.radius + STAND_OUT)
         out[1 - ax] = np.clip(local[1 - ax], -half[1 - ax], half[1 - ax])
         c, sn = np.cos(s.get("yaw", 0.0)), np.sin(s.get("yaw", 0.0))
         world = np.asarray(s["xy"], dtype=float) + np.array([c * out[0] - sn * out[1], sn * out[0] + c * out[1]])
@@ -143,7 +146,7 @@ class Checker:
     def ring_stand(self, key: str) -> tuple[np.ndarray, float]:
         """A floor-standing object (a bin): its centre and a ring radius just outside its footprint."""
         half, _ = self.box(key)
-        return self.xy(key), float(np.hypot(*half[:2]) + 0.26 + STAND_OUT)
+        return self.xy(key), float(np.hypot(*half[:2]) + self.radius + STAND_OUT)
 
     def headroom(self, surface: str, points) -> float:
         """Least clearance from `surface`'s top up to the underside of another surface's slab over any of `points`
@@ -172,28 +175,30 @@ class Checker:
                      "" if h >= bound else gap)  # fmt: skip
 
     # -- routes ---------------------------------------------------------------------------------
-    def navigator(self):
-        if self._nav is None:
+    def navigator(self, radius: float | None = None):
+        radius = self.radius if radius is None else radius
+        if radius not in self._navs:
             if self._navigator_factory is not None:
-                self._nav = self._navigator_factory(self.meta)
+                self._navs[radius] = self._navigator_factory(self.meta)
             else:
                 from locomani.primitives.navigator import Navigator, OccupancyMap
 
-                occ = OccupancyMap(self.meta)
+                occ = OccupancyMap(self.meta, body_radius=radius)
                 for key, o in self.objects.items():  # static floor objects collide but are not in room.obstacles
                     if not o.get("free") and o.get("surface") is None and self.underside(key) < FLOOR_OBSTACLE_TOP:
                         half, centre = self.box(key)
                         if (o.get("semantic") or {}).get("movable"):
                             occ.add_box(self.xy(key) + centre[:2], half[:2])
                 occ.recompute()
-                self._nav = Navigator(occ)
-        return self._nav
+                self._navs[radius] = Navigator(occ)
+        return self._navs[radius]
 
-    def route(self, start, goal, goal_ring: float | None = None) -> float:
-        """Geodesic length start -> goal (point, or ring of that radius around it); inf when unreachable."""
-        key = (tuple(np.round(start, 2)), tuple(np.round(goal, 2)), goal_ring)
+    def route(self, start, goal, goal_ring: float | None = None, radius: float | None = None) -> float:
+        """Geodesic length start -> goal (point, or ring of that radius around it) for a body of `radius` (default the
+        table's); inf when unreachable."""
+        key = (tuple(np.round(start, 2)), tuple(np.round(goal, 2)), goal_ring, radius)
         if key not in self._routes:
-            nav = self.navigator()
+            nav = self.navigator(radius)
             # here_xy opens the escape corridor the follower uses when it starts inside the inflated region
             ok = (
                 nav.set_goal_ring(goal, goal_ring - 0.07, goal_ring + 0.07, here_xy=start)
@@ -234,6 +239,13 @@ class Checker:
         s_key = o.get("surface")
         support = self.surfaces[s_key]["top"]
         stand, inboard = self.edge_stand(s_key, self.xy(x))
+        if hands == "single":  # a grasp measured on this very object where it rests: the measurement decides
+            for s in self.cap["reach_single_arm"].get("grasp_settings") or ():
+                if x in s.get("objects", ()) and s.get("surface") == s_key:
+                    out.append(Check(step, "measured_task", OK, s.get("success"), s["name"]))
+                    if stand is None and s.get("stance_xy") is not None:
+                        stand = np.asarray(s["stance_xy"], dtype=float)
+                    return stand
         if stand is None:
             out.append(Check(step, "approach_edge", BLOCKED, s_key, why="no edge of its surface has room to stand"))
             return None
@@ -243,16 +255,24 @@ class Checker:
             c = self.cap["reach_single_arm"]
             grip = float(self.objects[x]["init_pos"][2] + self.box(x)[1][2])  # the bottle line grips at the centre
             lo, hi = c["grip_height_accepted"]
-            if not lo <= grip <= hi:
+            if not lo <= grip <= hi and c.get("grip_height_blocked_outside"):  # a measured hand envelope, not a skill's
+                out.append(Check(step, "grip_height", BLOCKED, round(grip, 3), [lo, hi], why="outside the hand's measured reach"))  # fmt: skip
+            elif not lo <= grip <= hi:
                 out.append(Check(step, "grip_height", UNTESTED, round(grip, 3), [lo, hi], "grasp_single.grip_height"))
             mass = float(sem.get("mass_kg", 0.0))
             limits = []
             limit = 2 * 20.0 * float(sem.get("friction", 0.5)) / 9.81  # both pads at the 20 N clamp
             if mass > limit:
                 limits.append(Check(step, "mass", BLOCKED, round(mass, 3), round(limit, 3), why="heavier than the jaw can hold at its force clamp"))  # fmt: skip
+            elif mass > c.get("mass_lifted_max", np.inf):
+                limits.append(Check(step, "mass", BLOCKED, round(mass, 3), c["mass_lifted_max"], why="heavier than any mass the hand lifted"))  # fmt: skip
             if inboard > c["inboard_max"]:
                 limits.append(Check(step, "inboard", BLOCKED, round(inboard, 3), c["inboard_max"], why="beyond the hand's reach from the edge"))  # fmt: skip
             for f in c.get("grasp_failures") or ():
+                if "objects" in f:  # a measured task below the bucket-1 rate: that object, as it rests, is a gap
+                    if x in f["objects"]:
+                        out.append(Check(step, f["name"], UNTESTED, f.get("success"), f.get("pilots"), f["gap"]))
+                    continue
                 if inboard >= f["inboard_min"] and grip - support <= f.get("grip_above_support_max", np.inf):
                     out.append(Check(step, f["name"], UNTESTED, [round(inboard, 3), round(grip - support, 3)],
                                      f["pilots"], f["gap"]))  # fmt: skip
@@ -266,6 +286,8 @@ class Checker:
             out.extend(
                 limits + [k for k in self._grasp_setting(step, dims, c["grasp_settings"]) if k.name not in blocked]
             )
+        elif self.cap["reach_bimanual"]["box_grasp"].get("status") == "untested":
+            out.append(Check(step, "skill", UNTESTED, gap="grasp_bimanual.skill"))
         else:
             c = self.cap["reach_bimanual"]["box_grasp"]
             dims = sorted((2 * half[:2]).tolist())
@@ -304,6 +326,7 @@ class Checker:
             if goal is None:
                 out.append(Check(step, "approach_edge", BLOCKED, on, why="no edge of the target has room to stand"))
                 return None
+            ring = None
             d = self.route(start, goal)
         elif self.underside(target) < FLOOR_OBSTACLE_TOP:  # a floor object (a bin): a ring just outside it
             centre, ring = self.ring_stand(target)
@@ -312,6 +335,12 @@ class Checker:
             out.append(Check(step, "target_support", BLOCKED, round(self.underside(target), 2),
                              why="rests on no surface the robot can stand at and is off the floor"))  # fmt: skip
             return None
+        tight = (self.cap.get("robot") or {}).get("body_radius_tight")
+        if not np.isfinite(d) and tight is not None and tight < self.radius:  # the planner's margin, not the body
+            d_tight = self.route(start, goal, ring, tight)
+            if np.isfinite(d_tight):
+                out.append(Check(step, "route", UNTESTED, round(d_tight, 2), tight, gap="navigate.narrow_passage"))
+                d = d_tight
         if not np.isfinite(d):
             out.append(Check(step, "route", BLOCKED, why="no route in the occupancy map"))
             return None
@@ -360,6 +389,9 @@ class Checker:
         if self.objects[c].get("surface") is not None:
             out.append(self._overhead(step, self.objects[c]["surface"], [self.xy(c)], "place_into.covered"))
         p = self.cap["place"]["into_container_single_arm"]
+        if p.get("status") == "untested":
+            out.append(Check(step, "skill", UNTESTED, gap="place_into.single"))
+            return
         out.append(self._range(step, "rim_height", self.top(c), p["rim_height_measured"], "place_into.rim_height"))
         measured = np.sort(np.asarray(p["opening_measured"], dtype=float))
         ok = bool(np.all(opening >= measured - TOL))
@@ -376,7 +408,9 @@ class Checker:
             return
         hands = (self.objects[x].get("semantic") or {}).get("graspable")
         out.append(self._overhead(step, s, self.spots(s), f"{'put_down_bimanual' if hands == 'bimanual' else 'place_on_surface'}.covered"))  # fmt: skip
-        if hands == "bimanual":
+        if hands == "bimanual" and self.cap["place"]["put_down_bimanual"].get("status") == "untested":
+            out.append(Check(step, "skill", UNTESTED, gap="put_down_bimanual.skill"))
+        elif hands == "bimanual":
             p = self.cap["place"]["put_down_bimanual"]
             out.append(
                 self._range(
@@ -472,8 +506,9 @@ class Checker:
         return best[1]
 
     def _range(self, step, name, value, lo_hi, gap, tol: float = TOL) -> Check:
-        ok = _range(float(value), lo_hi, tol)
-        return Check(step, name, OK if ok else UNTESTED, round(float(value), 3), list(lo_hi), "" if ok else gap)
+        ok = lo_hi is not None and _range(float(value), lo_hi, tol)  # None: the setting has no such measurement
+        bound = None if lo_hi is None else list(lo_hi)
+        return Check(step, name, OK if ok else UNTESTED, round(float(value), 3), bound, "" if ok else gap)
 
     def _max(self, step, name, value, bound, gap, tol: float = TOL) -> Check:
         ok = float(value) <= float(bound) + tol

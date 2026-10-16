@@ -1,0 +1,562 @@
+# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scene RSI plan D10, TODO 27.3; phase 1, 2026-10-16).
+# Written by scripts/experiments/scene_rsi_20261016/capability_write.py from the phase-1 probes and the inner loops'
+# sealed results -- edit the probes or the writer, not this file. The SONIC table of 2026-10-03 stays in
+# capability.yaml; scripts/scene_feasibility.py --capability picks one.
+#
+# Same keys and status words as capability.yaml (measured / measured_one / untested). Differences in meaning:
+#   reach_single_arm.grip_height_accepted is the hand's measured level-wrist envelope, not a skill's stance templates;
+#     with grip_height_blocked_outside the checker blocks a grip outside it (the probe tried and missed there).
+#   reach_single_arm.grasp_settings are the inner loop's tasks at >= 50 % sealed success (D8); the tasks below it are
+#     grasp_failures naming their objects (a skill gap for that object as it rests).
+#   reach_single_arm.mass_lifted_max (when set): the probe failed above it.
+#   Every skill the library does not have yet (place, place into, bimanual) is untested: a gap, never bucket 1.
+
+robot:
+  hands: dex1 two-finger parallel gripper on each arm
+  single_arm_side: right; the left hand was probed too (reach_single_arm.hand_envelope)
+  body_radius: 0.35
+  pelvis_height_standing: 0.79
+  ego_camera:
+    name: head_camera
+    fovy_deg: 70.0
+  controller: ScaleBFM (mode 2 walking, mode 4 standing)
+  model: mars
+  body_radius_source: src/locomani/tasks/scene/world.py BODY_RADIUS_M (0.26 let a swinging arm catch the kitchen island)
+  body_radius_tight: 0.26
+  body_radius_tight_note: 'a route that exists only at this radius (SONIC''s navigator, arms tucked) is a gap, navigate.narrow_passage:
+    never walked on mars + ScaleBFM, never shown impossible'
+locomotion:
+  walk:
+    status: measured
+    setting: walk_mars flat floor, walk_to from a standing reset, 0.5-4 m and one 1.8 m diagonal ending turned 90 deg
+    n: 5
+    ok: 5
+    fell: 0
+    pos_err_cm:
+    - 1.5
+    - 7.4
+    yaw_err_deg:
+    - 0.1
+    - 1.9
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+  step_back:
+    status: measured
+    n: 2
+    ok: 2
+    fell: 0
+    pos_err_cm:
+    - 2.7
+    - 5.0
+    yaw_err_deg:
+    - 0.0
+    - 0.6
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+  sidestep:
+    status: measured
+    n: 6
+    ok: 6
+    fell: 0
+    pos_err_cm:
+    - 3.1
+    - 6.3
+    yaw_err_deg:
+    - 1.0
+    - 3.8
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+  turn_in_place:
+    status: measured
+    n: 5
+    ok: 5
+    fell: 0
+    pos_err_cm:
+    - 2.3
+    - 6.3
+    yaw_err_deg:
+    - 0.9
+    - 5.9
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+  stand_30s:
+    status: measured
+    ok: true
+    drift_cm: 0.6
+    feet_cm: 31.0
+    note: mode 4 pins the ankles; mode 2 standing spreads the feet (plan 7.1)
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+  navigation:
+    status: measured_one
+    setting: ADT apartment, occupancy-map routes at body radius 0.35 m from a random spawn 1-3 m from the object to its stand
+      (pick_single sealed pool, 80 rounds, 0 falls)
+    route_max_measured: 6.34
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10)
+  cross_room:
+    status: untested
+    note: the bedroom's spawn region had no reachable point at body radius 0.35 m (pick_single mouse_pickup unavailable)
+reach_single_arm:
+  jaw_opening: 0.095
+  hand_envelope:
+    status: measured
+    setting: walk_mars, standing or after a squat to 0.62 / 0.52 m, jaw centre 0.15 m to the side, forward 0.30-0.90 m; counted
+      within 2.0 cm and 10.0 deg after a 1.5 s hold
+    right_level:
+      heights_reached:
+      - 0.25
+      - 1.25
+      heights_tested:
+      - 0.05
+      - 1.55
+      forward_max_standing:
+        '0.25': 0.5
+        '0.35': 0.5
+        '0.45': 0.6
+        '0.55': 0.7
+        '0.65': 0.7
+        '0.75': 0.7
+        '0.85': 0.7
+        '0.95': 0.7
+        '1.05': 0.7
+        '1.15': 0.6
+        '1.25': 0.5
+      cells: 202
+      ok: 106
+    right_down:
+      heights_reached:
+      - 0.15
+      - 0.55
+      heights_tested:
+      - 0.05
+      - 1.55
+      forward_max_standing:
+        '0.05': 0.3
+        '0.15': 0.4
+        '0.25': 0.4
+        '0.35': 0.4
+        '0.45': 0.4
+        '0.55': 0.4
+        '0.65': 0.3
+      cells: 180
+      ok: 24
+    left_level:
+      heights_reached:
+      - 0.25
+      - 1.25
+      heights_tested:
+      - 0.05
+      - 1.55
+      forward_max_standing:
+        '0.25': 0.5
+        '0.35': 0.5
+        '0.45': 0.6
+        '0.55': 0.7
+        '0.65': 0.7
+        '0.75': 0.7
+        '0.85': 0.7
+        '0.95': 0.7
+        '1.05': 0.7
+        '1.15': 0.6
+        '1.25': 0.5
+      cells: 202
+      ok: 105
+    left_down:
+      heights_reached:
+      - 0.15
+      - 0.25
+      heights_tested:
+      - 0.05
+      - 1.55
+      forward_max_standing:
+        '0.05': 0.3
+        '0.15': 0.3
+        '0.25': 0.3
+        '0.35': 0.3
+        '0.45': 0.3
+        '0.55': 0.3
+        '0.65': 0.3
+      cells: 180
+      ok: 20
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/reach/
+  grip_height_accepted:
+  - 0.25
+  - 1.25
+  grip_height_blocked_outside: true
+  grip_height_source: 'hand_envelope.right_level: the probe reached nothing level below or above this band (tested 0.05-1.55
+    m)'
+  mass_lifted_max: 1.5
+  grasp_settings:
+  - name: pick_single.canister_pickup
+    status: measured
+    objects:
+    - CoffeeCanisterLarge
+    surface: UtilityCart__2
+    setting: 'ADT apartment (mars): CoffeeCanisterLarge on UtilityCart__2, placement and yaw random on that surface, robot
+      spawned 1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    success: 10/10
+    support_top:
+    - 0.702
+    - 0.702
+    object_width:
+    - 0.082
+    - 0.082
+    object_height:
+    - 0.196
+    - 0.196
+    mass_max: 0.6
+    inboard:
+    - 0.067
+    - 0.077
+    stance_xy:
+    - -0.875
+    - -1.115
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: pick_single.dish_soap_pickup
+    status: measured
+    objects:
+    - DishSoap_1
+    surface: ApartmentEnv__6
+    setting: 'ADT apartment (mars): DishSoap_1 on ApartmentEnv__6, placement and yaw random on that surface, robot spawned
+      1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    success: 6/10
+    support_top:
+    - 0.918
+    - 0.918
+    object_width:
+    - 0.084
+    - 0.084
+    object_height:
+    - 0.28
+    - 0.28
+    mass_max: 0.7
+    inboard:
+    - 0.097
+    - 0.249
+    stance_xy:
+    - 2.02
+    - -2.129
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: pick_single.jam_pickup
+    status: measured
+    objects:
+    - Jam_Anon
+    surface: KitchIsland__0
+    setting: 'ADT apartment (mars): Jam_Anon on KitchIsland__0, placement and yaw random on that surface, robot spawned 1-3
+      m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    success: 9/10
+    support_top:
+    - 0.896
+    - 0.896
+    object_width:
+    - 0.059
+    - 0.059
+    object_height:
+    - 0.187
+    - 0.187
+    mass_max: 0.5
+    inboard:
+    - 0.267
+    - 0.608
+    stance_xy:
+    - 1.409
+    - -2.539
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: pick_single.tv_remote_pickup
+    status: measured
+    objects:
+    - TvRemote_1
+    surface: BlackCoffeeTable__1
+    setting: 'ADT apartment (mars): TvRemote_1 on BlackCoffeeTable__1, placement and yaw random on that surface, robot spawned
+      1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    success: 10/10
+    support_top:
+    - 0.454
+    - 0.454
+    object_width:
+    - 0.036
+    - 0.036
+    object_height:
+    - 0.025
+    - 0.025
+    mass_max: 0.11
+    inboard: null
+    stance_xy:
+    - -1.264
+    - 1.741
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  grasp_failures:
+  - name: pick_single.mug_pickup
+    gap: grasp_single.mug_pickup
+    objects:
+    - Mug_2
+    pilots:
+    - mug_pickup
+    success: 2/10
+    setting: 'ADT apartment (mars): Mug_2 on ExtendableTable__0, placement and yaw random on that surface, robot spawned 1-3
+      m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: pick_single.orange_pickup
+    gap: grasp_single.orange_pickup
+    objects:
+    - Orange_A
+    pilots:
+    - orange_pickup
+    success: 4/10
+    setting: 'ADT apartment (mars): Orange_A on KitchIsland__0, placement and yaw random on that surface, robot spawned 1-3
+      m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: pick_single.thick_novel_pickup
+    gap: grasp_single.thick_novel_pickup
+    objects:
+    - BookFiction1_01
+    pilots:
+    - thick_novel_pickup
+    success: 0/10
+    setting: 'ADT apartment (mars): BookFiction1_01 on DisplayShelves_1__0, placement and yaw random on that surface, robot
+      spawned 1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: pick_single.wallet_pickup
+    gap: grasp_single.wallet_pickup
+    objects:
+    - Wallet_1
+    pilots:
+    - wallet_pickup
+    success: 0/10
+    setting: 'ADT apartment (mars): Wallet_1 on DisplayShelves_1__2, placement and yaw random on that surface, robot spawned
+      1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  inboard_max: 0.61
+  inboard_source: 'the larger of: hand_envelope.right_level.forward_max_standing at 0.65-1.15 m minus the 0.28 m the grip
+    probes stood from the edge (0.42); the deepest start a grasp setting won, as the checker measures inboard (0.608: the
+    checker''s nearest-approach-edge proxy can read deeper than the edge a skill used)'
+  motor_grasp:
+    status: measured
+    setting: 'probe table, object box placed 0.28 m + inboard ahead and 0.15 m right of the pelvis, wrist level, pre-grasp
+      12 cm short, entry, grip, lift 10 cm, hold 3 s; three placement jitters per value; base: top 0.75 m, 6 cm wide, 15 cm
+      tall, 0.3 kg, friction 0.6, inboard 0.10 m'
+    width:
+      '0.015': 3/3
+      '0.020': 3/3
+      '0.030': 3/3
+      '0.045': 3/3
+      '0.060': 3/3
+      '0.075': 3/3
+      '0.085': 3/3
+      '0.090': 2/3
+      '0.095': 0/3
+    width_lifted:
+    - 0.015
+    - 0.09
+    mass:
+      '0.2': 3/3
+      '0.5': 3/3
+      '1.0': 3/3
+      '1.5': 3/3
+      '2.0': 0/3
+      '2.5': 0/3
+      '3.0': 0/3
+      '4.0': 0/3
+    mass_lifted:
+    - 0.2
+    - 1.5
+    support_top:
+      '0.30': 3/3
+      '0.40': 3/3
+      '0.50': 3/3
+      '0.60': 3/3
+      '0.70': 3/3
+      '0.80': 3/3
+      '0.90': 1/3
+      '1.00': 1/3
+      '1.10': 0/3
+      '1.20': 0/3
+      '1.30': 1/3
+    support_top_lifted:
+    - 0.3
+    - 0.8
+    inboard:
+      '0.04': 3/3
+      '0.08': 3/3
+      '0.12': 3/3
+      '0.16': 3/3
+      '0.20': 3/3
+      '0.25': 3/3
+      '0.30': 3/3
+      '0.35': 3/3
+    inboard_lifted:
+    - 0.04
+    - 0.35
+    object_height:
+      '0.03': 3/3
+      '0.05': 3/3
+      '0.08': 3/3
+      '0.12': 3/3
+      '0.20': 3/3
+      '0.30': 3/3
+    object_height_lifted:
+    - 0.03
+    - 0.3
+    top_down:
+      0.40/0.02: 0/3
+      0.40/0.05: 0/3
+      0.60/0.02: 0/3
+      0.60/0.05: 0/3
+      0.75/0.02: 0/3
+      0.75/0.05: 0/3
+      0.90/0.02: 0/3
+      0.90/0.05: 0/3
+      1.10/0.02: 0/3
+      1.10/0.05: 0/3
+    note: 'the motor layer under an ideal placement, no skill: the hard limits of bucket 3; what a skill reaches is in grasp_settings'
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
+reach_bimanual:
+  box_grasp:
+    status: untested
+    note: no bimanual skill in the mars + ScaleBFM library (D4 starts single-hand); the warehouse box line (ScaleBFM, docs/handoff/scalebfm-warehouse-rsi-20261014.md)
+      runs on its own runner. ADT holds one bimanual object.
+carry:
+  single_arm:
+    status: measured_one
+    setting: 'the motor grasp''s mass sweep: after the lift, step back 0.5 m, turn 90 deg, walk 1 m with the jaw closed; flat
+      floor'
+    straight_or_backward:
+      distance:
+      - 0.5
+      - 1.0
+      success:
+        0.2 kg: 3/3
+        0.5 kg: 3/3
+        1.0 kg: 3/3
+        1.5 kg: 3/3
+        2.0 kg: 0/3
+        2.5 kg: 0/3
+        3.0 kg: 0/3
+        4.0 kg: 0/3
+    carried_mass:
+    - 0.2
+    - 1.5
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
+  bimanual_box:
+    status: untested
+    usable_distance: 0.0
+    note: no bimanual skill
+place:
+  into_container_single_arm:
+    status: untested
+    note: 'no place skill in the library yet (D4: the loop writes it)'
+  put_down_bimanual:
+    status: untested
+    note: no bimanual skill
+  on_surface_single:
+    status: untested
+    note: no place skill in the library yet; the motor layer put the probe box back down where it was lifted (motor_put_back)
+  motor_put_back:
+    status: measured_one
+    setting: 'the motor grasp''s support-top sweep: lower 9.5 cm back onto the same table, release, retract; counted when
+      the box rests upright on the table and nothing touches it'
+    support_top:
+      '0.30': 3/3
+      '0.40': 3/3
+      '0.50': 3/3
+      '0.60': 3/3
+      '0.70': 3/3
+      '0.80': 3/3
+      '0.90': 1/3
+      '1.00': 1/3
+      '1.10': 0/3
+      '1.20': 0/3
+      '1.30': 1/3
+    support_top_placed:
+    - 0.3
+    - 0.8
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
+posture:
+  squat:
+    status: measured
+    setting: walk_mars, posture(pelvis_z) by whole-body IK with the torso reference upright, mode 4; held 10 s, then stood
+      up
+    per_pelvis_ref:
+      '0.74':
+        delivered: 0.765
+        torso_pitch_deg: 7.4
+        fell: false
+      '0.70':
+        delivered: 0.724
+        torso_pitch_deg: 15.1
+        fell: false
+      '0.66':
+        delivered: 0.679
+        torso_pitch_deg: 20.1
+        fell: false
+      '0.62':
+        delivered: 0.638
+        torso_pitch_deg: 24.8
+        fell: false
+      '0.58':
+        delivered: 0.609
+        torso_pitch_deg: 54.0
+        fell: false
+      '0.54':
+        delivered: 0.61
+        torso_pitch_deg: 55.0
+        fell: false
+      '0.50':
+        delivered: 0.611
+        torso_pitch_deg: 55.3
+        fell: false
+      '0.46':
+        delivered: 0.611
+        torso_pitch_deg: 55.4
+        fell: false
+      '0.42':
+        delivered: 0.611
+        torso_pitch_deg: 55.5
+        fell: false
+      '0.38':
+        delivered: 0.611
+        torso_pitch_deg: 55.6
+        fell: false
+    lowest_pelvis_delivered: 0.609
+    hands_lowest: 0.15
+    hands_lowest_source: 'reach_single_arm.hand_envelope: the lowest jaw height any probed attitude and posture reached'
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/posture/
+  lean:
+    status: measured
+    per_ref_deg:
+      '10':
+        delivered_deg: 1.7
+        fell: false
+      '20':
+        delivered_deg: 4.0
+        fell: false
+      '30':
+        delivered_deg: 6.8
+        fell: false
+      '40':
+        delivered_deg: 10.2
+        fell: false
+      '50':
+        delivered_deg: 17.8
+        fell: false
+    note: 'mode 4 tracks no torso keypoint: the controller sets the waist'
+    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/posture/
+overhead:
+  status: untested
+  open_above: 0.6
+  note: 'every measured grasp and put-down had nothing above it (table, cart top, round table). A spot under another surface''s
+    slab closer than this -- a bookcase or display-cabinet cell -- is outside every measured setting: put_down_single crosses
+    over the spot at carry height before it squats, and the slab above collides in MuJoCo. Only extracted surfaces count (they
+    are the furniture''s only collision geometry); boards that were not extracted are visual-only in MuJoCo and are not seen
+    by this check.'
+  source: TODO 19.9.9 (the bookcase cell Bookcase__1 has Bookcase__2's slab 0.30 m above it)
+inner_loops:
+  pick_single:
+    final_incumbent: 04_0109bde905a8
+    sealed_rate: 0.512
+    per_task:
+      canister_pickup: 10/10
+      dish_soap_pickup: 6/10
+      jam_pickup: 9/10
+      mug_pickup: 2/10
+      orange_pickup: 4/10
+      thick_novel_pickup: 0/10
+      tv_remote_pickup: 10/10
+      wallet_pickup: 0/10
+    bucket1: true
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10)
