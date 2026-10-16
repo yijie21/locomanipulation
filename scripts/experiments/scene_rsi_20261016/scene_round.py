@@ -3,8 +3,8 @@ candidate -- a skills package directory (a snapshot of src/locomani/tasks/scene/
 `scene_skills`) plus parameter overrides (`--set`, skills.apply_set keys) -- and write one JSON (and, with --npz, the
 motor trace) per start into --out. One process loads the policy and the scene once; batch.py runs many of these.
 
-Round record: label, task, ok, why (the goal's), fell, dropped (a task object ended more than DROP_M below where it
-started), plan_ok / plan_why, steps (every skill step's outcome), skills (the package's content hash), set, wall_s,
+Round record: label, task, ok, why (the goal's), fell, dropped (the goal missed and a task object ended more than DROP_M
+below where it started), plan_ok / plan_why, steps (every skill step's outcome), skills (the package's content hash), set, wall_s,
 rule (batch.SUCCESS_RULE: which `held` judged it).
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -93,7 +93,9 @@ def run(fam_name: str, pool: Path, skills_dir: Path, out: Path, labels: list[str
         else:
             res, arrays = run_episode(world, task, start, plan)
             ex = res.execution
-            dropped = any(
+            # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start
+            # (the clock onto the console table) counted as one (r1_on_single, human intervention 2, 2026-10-16)
+            dropped = not res.ok and any(
                 float(world.object_pose(k)[0][2]) < float(start.placements[k][0][2]) - DROP_M for k in task.objects
             )
             rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
