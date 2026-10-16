@@ -2,7 +2,8 @@
 """Claude proposes a scene's tasks, the feasibility checker answers, Claude revises (TODO 19.10; plan decision 8).
 
     $VENV_SIM_PY scripts/scene_discover_tasks.py --scene outputs/scene_discovery/adt_apartment/scene_meta.json \\
-        [--model opus] [--iterations 2] [--per-room 30] [--out <dir>]
+        [--model opus] [--iterations 2] [--per-room 30] [--capability <table.yaml>] [--approach-edges <overlay.json>] \\
+        [--out <dir>]
 
 Writes into `<out>` (default `<scene dir>/discovery/<UTC stamp>`): `claude_io.jsonl` (every exchange),
 `iteration_NN.jsonl` (the tasks and verdicts of each round), `tasks.jsonl` (the final list, task file format
@@ -25,7 +26,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from locomani.scene_discovery import properties, proposals  # noqa: E402
+from locomani.scene_discovery import properties, proposals, scene_file  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -35,10 +36,13 @@ def main(argv=None) -> int:
     ap.add_argument("--model", default="opus")
     ap.add_argument("--iterations", type=int, default=2, help="revision rounds after the first proposal")
     ap.add_argument("--per-room", type=int, default=30)
+    ap.add_argument("--approach-edges", help="overlay of each surface's standable edges (TODO 27.3.1)")
     ap.add_argument("--out")
     args = ap.parse_args(argv)
     scene = Path(args.scene)
     meta = json.loads(scene.read_text())
+    if args.approach_edges:
+        meta = scene_file.with_approach_edges(meta, args.approach_edges)
     capability = yaml.safe_load(Path(args.capability).read_text())
     out = Path(args.out) if args.out else scene.parent / "discovery" / time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     out.mkdir(parents=True, exist_ok=True)

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from locomani.scene_discovery import feasibility
+from locomani.scene_discovery import feasibility, scene_file
 
 CAP = yaml.safe_load((Path(__file__).resolve().parents[1] / "configs/scene_discovery/capability.yaml").read_text())
 DROP_OK = {"ok": True}
@@ -306,3 +306,17 @@ def test_a_passage_only_a_tighter_body_fits_is_a_gap_not_a_block():
     tight = dict(CAP, robot=dict(CAP["robot"], body_radius=0.35, body_radius_tight=0.26))
     r = feasibility.Checker(copy.deepcopy(meta), tight).check(goal)
     assert not r.blocked and "navigate.narrow_passage" in r.gaps
+
+
+def test_an_approach_edge_overlay_replaces_the_scene_files_edges():
+    overlay = {"surfaces": {"WALLED": {"approach_edges": ["-y"]}}}  # TODO 27.3.1: the runner's stance search
+    meta = scene_file.with_approach_edges(META, overlay)
+    assert meta["surfaces"]["WALLED"]["approach_edges"] == ["-y"] and META["surfaces"]["WALLED"]["approach_edges"] == []
+    assert meta["surfaces"]["T"]["approach_edges"] == ["-y"]  # not in the overlay: kept
+    assert gaps_of(["held(sofa_cushion)"])[0] == 3
+    assert gaps_of(["held(sofa_cushion)"], meta)[0] != 3
+    assert any("put_bottle_on_WALLED" == t["id"] for t in feasibility.templates(meta))
+    with pytest.raises(ValueError, match="not in the scene"):
+        scene_file.with_approach_edges(META, {"surfaces": {"NOPE": {"approach_edges": []}}})
+    with pytest.raises(ValueError, match="not in"):
+        scene_file.with_approach_edges(META, {"surfaces": {"T": {"approach_edges": ["up"]}}})

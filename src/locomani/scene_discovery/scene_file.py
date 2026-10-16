@@ -151,6 +151,27 @@ def load(path) -> dict:
     return meta
 
 
+def with_approach_edges(meta: dict, overlay) -> dict:
+    """A copy of `meta` whose surfaces take `approach_edges` from `overlay` (a path to, or the dict of, a
+    `{"surfaces": {key: {"approach_edges": [...]}}}` file; scripts/experiments/scene_rsi_20261016/stance_edges.py
+    writes one from the scene runner's stance search, TODO 27.3.1). Which edges a robot can stand at depends on the
+    robot and the runner, not only the scene, so the file stays as it is and the checker and the proposer read the
+    overlay; surfaces it leaves out keep their own. Raises ValueError on a surface the scene lacks or an unknown edge."""
+    if not isinstance(overlay, dict):
+        overlay = json.loads(Path(overlay).read_text())
+    out = json.loads(json.dumps(meta))
+    problems = [f"surfaces.{k}: not in the scene" for k in sorted(set(overlay["surfaces"]) - set(out["surfaces"]))]
+    for key, row in sorted(overlay["surfaces"].items()):
+        bad = set(row["approach_edges"]) - EDGES
+        if bad:
+            problems.append(f"surfaces.{key}: approach_edges {sorted(bad)} not in {sorted(EDGES)}")
+        elif key in out["surfaces"]:
+            out["surfaces"][key]["approach_edges"] = list(row["approach_edges"])
+    if problems:
+        raise ValueError(f"approach-edge overlay: {len(problems)} problem(s):\n  " + "\n  ".join(problems))
+    return out
+
+
 def to_surface_frame(xy, surf: dict) -> np.ndarray:
     """World xy -> the surface's own frame (origin at its centre, axes turned by its yaw)."""
     d = np.asarray(xy, dtype=float)[:2] - np.asarray(surf["xy"], dtype=float)

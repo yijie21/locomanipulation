@@ -53,7 +53,7 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 |---|---|---|
 | `yaw` | adt / rule | 台面朝向。旧场景都是 0；ADT 家具有任意朝向 |
 | `of_object` | rule | 由哪个物体的顶面得来（一个书架可以有好几层台面） |
-| `approach_edges` | rule | 哪几条边前面有 ≥ 机器人身宽 + 余量的空地，可以从那条边走近 |
+| `approach_edges` | rule | 哪几条边前面有 ≥ 机器人身宽 + 余量的空地，可以从那条边走近（10-03 按 SONIC 的规则算；mars + ScaleBFM 用场景运行器的站位搜索重算成覆盖文件，场景文件不改，检查器和提任务用 `--approach-edges` 读，见 scene-rsi 方案 §9.2） |
 | `room` | rule | 所在房间 |
 | `provenance` | — | 同上 |
 
@@ -66,7 +66,7 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 | `bounds` | rule | `{x: [min, max], y: [min, max]}`，整个场景的范围；替换导航里写死的 `ROOM_XLIM` / `ROOM_YLIM` |
 | `walls` | rule | 墙的线段 `[[x0,y0],[x1,y1]]`，从 `ApartmentEnv` 在 0.1–1.5 m 高度切片得到 |
 | `obstacles` | rule | 挡路家具的轮廓多边形（占 0.05–1.8 m 高度带的固定物体，ADT 包围盒的凸包）；导航把它们画进占用图 |
-| `doors` | adt + rule | 门洞线段和对应的门实例（`Apartment_BedroomDoor` 等）；第一轮门按"开着"处理 |
+| `doors` | adt + rule | 门洞线段和对应的门实例（`Apartment_BedroomDoor` 等）；第一轮门按"开着"处理：占用图里不算障碍，MuJoCo 里也没有碰撞体（D3 曾给门加了凸包，浴室门半开堵住半个门洞，2026-10-16 去掉） |
 | `rooms` | rule + claude | `{<名字>: {polygon: [[x, y], ...], name_source: claude}}`：多边形是墙 + 门洞围成的连通区域（规则算），名字由 Claude 按里面的家具起（"kitchen"） |
 | `spawn` | rule | `{<房间>: [多边形, ...]}`，能出生的区域（离墙和家具 ≥ `body_radius` + 余量） |
 

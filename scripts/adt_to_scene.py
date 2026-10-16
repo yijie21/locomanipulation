@@ -524,8 +524,12 @@ def mujoco(args) -> None:
             ET.SubElement(env, "geom", name=name, type="mesh", mesh=name, pos=mjcf.fmt(o["init_pos"]),
                           quat=mjcf.fmt(o["init_quat"]), contype="0", conaffinity="0", group="1", density="0", rgba=rgba)  # fmt: skip
             solid = furniture_solid(body_mesh, hosts.get(key), float(o["init_pos"][2]))
+            # no door gets a collider: the scene format treats every door as open (format §4) and the occupancy map
+            # leaves doors out (obstacle_polygons); the bathroom door's hull (a leaf ajar) closed half its doorway
+            # off the map and the robot fell walking into it (TODO 27.3.1, 2026-10-16)
             if (
                 args.furniture_collision == "robot"
+                and a.category != "door"
                 and 2 * o["box"]["half_extent"][2] >= FURNITURE_MIN_THICKNESS_M
                 and solid
             ):
