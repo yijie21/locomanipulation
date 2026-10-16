@@ -1,8 +1,8 @@
-# STATE — 2026-10-16（场景 RSI 第 0 阶段完成；内环 5 轮，验收池 0 → 43.3%，封存集 51.2%；之后等用户说）
+# STATE — 2026-10-16（场景 RSI：内环 6 轮，验收池 0 → 43.3%，封存集 51.2%；D13 和 held 改判已实现并跑了第 5 轮；之后等用户说）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 16:10）：origin/main = `a2cfb23`；本地多 31 个提交，**都没推送**（用户没说推）。
-已确认（10-16 09:31）：机器空闲。沙盒 `/workspace/code/rsi-scene/pick-a` 的内环跑完第 4 轮停了（`--max-iters 3`）；继续在沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py run pick_single --max-iters N`，查看 `... loop.py status pick_single`。
+已确认（10-16 13:40）：机器空闲。沙盒 `/workspace/code/rsi-scene/pick-a` 的内环跑完第 5 轮停了（`--max-iters 1`，墙钟上限 16 小时到 19:38 UTC）；继续在沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py run pick_single --max-iters N`，查看 `... loop.py status pick_single`。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
 ## 提交与磁盘
@@ -34,7 +34,7 @@
 
 ## 下一步（编号见 `TODO.md`；都待用户定）
 
-- 27（方案 `docs/handoff/scene-rsi-plan-20261016.md` §7）：第 0 阶段已完成（27.2.1–27.2.7）。内环第 0–3 轮都过了验收门，第 4 轮被拒：验收池 0 → 7 → 13 → 21 → 26 / 60（§7.7–7.9）；第 1–3 轮采纳的是 Engineer 写的代码。书和钱包 14 局判做不到。封存集 80 局 0 → 11 → 24 → 35 → 41（51.2%，刚过 D8 第 1 桶线，每版都没少成一局，§7.10）。模型费 57.26 USD，门 5 / 12 次，插手 3 次（都是驱动或进程问题）。D13（做不到的任务，方案 §8）用户已定、全部按推荐，实现是 TODO 27.8（约半天）。下一步（27.8 / 第 1 阶段 / 碰撞检查层 / 换模型对照 / 合回主仓库 / 27.9 `held` 假成功）等用户说。
+- 27（方案 `docs/handoff/scene-rsi-plan-20261016.md` §7）：第 0 阶段已完成（27.2.1–27.2.7）。内环第 0–3 轮都过了验收门，第 4 轮被拒：验收池 0 → 7 → 13 → 21 → 26 / 60（§7.7–7.9）；第 1–3 轮采纳的是 Engineer 写的代码。书和钱包 14 局判做不到。封存集 80 局 0 → 11 → 24 → 35 → 41（51.2%，刚过 D8 第 1 桶线，每版都没少成一局，§7.10）。D13（做不到的任务）和 27.9（`held` 要两指夹住）已实现（`483b690`）；新判据下封存集 400 局、诊断 50 局一局没变。第 5 轮（方案 §8.1）：书、钱包按任务搁置，杯子 s100029 按起点搁置，橙子的声明被闭环推翻；缺口提议 `slide_then_grasp`（交外环）；门 29 vs 26（b 3、c 0）被拒；未搁置部分 26 / 46 → 候选 29 / 46。模型费 73.26 / 150 USD，门 6 / 12 次，插手 4 次。下一步（27.8.7 小技能归属 / 第 1 阶段 / 碰撞检查层 / 换模型对照 / 合回主仓库）等用户说。
 - RSI 进化 slides（私有）：https://claude.ai/artifact/N9rLqruxRDpjDzwNKyzaeS；pick_single 进化图解（线索图 + 前后对比视频，私有）：https://claude.ai/artifact/FPhdLToZ7ebhzVtPHM73Zv ，源 `outputs/scene_rsi_20261016/visual/`（`visualize.py`）
 - 26.5.6.8：查不查 SONIC 走路线时腰更弯的原因；冷启动要不要提高停止线续跑（现在停在 SONIC + 5）。
 - 26.5.6.9：bottle（26.5.4）和改方法（26.5.5.4）。
