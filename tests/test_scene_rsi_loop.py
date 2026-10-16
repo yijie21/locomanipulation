@@ -77,3 +77,25 @@ class CandidateHash(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Overrides(unittest.TestCase):
+    def test_long_inline_overrides_parse_as_json_not_as_a_path(self):
+        _saved = {k: sys.modules.pop(k, None) for k in _names}
+        sys.path.insert(0, str(HERE))
+        try:
+            sr = _load("scene_rsi_round", HERE / "scene_round.py")
+        finally:
+            sys.path.remove(str(HERE))
+            for _k, _v in _saved.items():
+                sys.modules.pop(_k, None)
+                if _v is not None:
+                    sys.modules[_k] = _v
+        long = json.dumps({f"grasp_program.SIMPLE.key_{i}": 0.001 * i for i in range(40)})
+        self.assertGreater(len(long), 255)
+        self.assertEqual(len(sr.parse_set(long)), 40)
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "set.json"
+            f.write_text('{"A": 1}')
+            self.assertEqual(sr.parse_set(str(f)), {"A": 1})
+        self.assertEqual(sr.parse_set(""), {})

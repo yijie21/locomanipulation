@@ -58,10 +58,14 @@ def load_skills(root: Path, name: str = "scene_skills"):
 
 
 def parse_set(text: str | None) -> dict:
+    """Inline JSON (what batch.py passes) or a JSON file. Inline first: a long override set is not a file name, and
+    asking the filesystem about one over 255 bytes raises ENAMETOOLONG (iteration 0's probes all died on it,
+    2026-10-16)."""
     if not text:
         return {}
-    p = Path(text)
-    return json.loads(p.read_text()) if p.exists() else json.loads(text)
+    if text.lstrip().startswith("{"):
+        return json.loads(text)
+    return json.loads(Path(text).read_text())
 
 
 def run(fam_name: str, pool: Path, skills_dir: Path, out: Path, labels: list[str], overrides: dict, npz: bool) -> None:

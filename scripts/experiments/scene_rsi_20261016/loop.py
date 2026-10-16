@@ -408,6 +408,11 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), void=bool(leaks), leaks=leaks, **acct))
     if leaks:
         return f"reviewer of iteration {n} named off-limits paths ({', '.join(leaks)})"
+    return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
+
+
+def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
+    """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`)."""
     pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
     jdump(it_dir / "probe.json", pr)
     ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr]))
@@ -507,6 +512,32 @@ def after_engineer(
     return None
 
 
+def reprobe(n: int, stub: bool) -> str | None:
+    """Re-run iteration n's probes on its Reviewer's unchanged hypotheses and continue from the Manager: for a probe
+    lost to the harness (the hypotheses never saw a probe result, so they stand). The earlier Manager call is voided
+    in the ledger; the human fix that made this necessary goes in interventions.jsonl."""
+    it_dir = STATE / f"iter_{n:02d}"
+    hyps = jload(it_dir / "hypotheses.json")
+    if hyps is None:
+        raise SystemExit(f"{it_dir} has no hypotheses")
+    for f in ("probe", "manager.json", "probe.json"):
+        p = it_dir / f
+        if p.is_dir():
+            shutil.rmtree(p)
+        elif p.exists():
+            p.rename(p.with_name(p.name + ".void"))
+    (STATE / "focus.json").unlink(missing_ok=True)
+    ledger(dict(step="void", iter=n, reason="probe lost to the harness; re-probing the same hypotheses"))
+    inc = incumbent()
+    put_skills(Path(inc["dir"]) / "skills")
+    base_changes = changed_files()
+    base = diag_incumbent(inc, it_dir)
+    common = dict(RULES=RULES, PLAN=PLAN, LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+                  FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"])  # fmt: skip
+    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus={})
+    return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
+
+
 def cmd_run(a) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
     meta = jload(STATE / "meta.json") or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL,
@@ -515,7 +546,13 @@ def cmd_run(a) -> int:
     if not (LOOP / "pool_diag").exists() or not accept_pool().exists():
         raise SystemExit("draw the pools first (family.py draw ... diag / accept)")
     n = len(list(STATE.glob("iter_*")))
-    for _ in range(a.max_iters):
+    if a.reprobe is not None:
+        why = reprobe(a.reprobe, a.stub)
+        if why:
+            ledger(dict(step="stop", reason=why))
+            print("stop:", why)
+            return 0
+        a.max_iters -= 1
         why = stop_reason(meta)
         if why is None:
             try:
@@ -547,6 +584,7 @@ def main(argv=None) -> int:
     r.add_argument("family")
     r.add_argument("--max-iters", type=int, default=100)
     r.add_argument("--stub", action="store_true", help="canned role outputs, gate --dry-run: plumbing only")
+    r.add_argument("--reprobe", type=int, default=None, help="re-probe iteration N's hypotheses first (harness loss)")
     s = sub.add_parser("status")
     s.add_argument("family")
     a = ap.parse_args(argv)
