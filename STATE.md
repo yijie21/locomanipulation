@@ -35,7 +35,7 @@
 ## 下一步（编号见 `TODO.md`；都待用户定）
 
 - 27（方案 `docs/handoff/scene-rsi-plan-20261016.md` §7）：第 0 阶段已完成（27.2.1–27.2.7）。内环第 0–3 轮都过了验收门，第 4 轮被拒：验收池 0 → 7 → 13 → 21 → 26 / 60（§7.7–7.9）；第 1–3 轮采纳的是 Engineer 写的代码。书和钱包 14 局判做不到。封存集 80 局 0 → 11 → 24 → 35 → 41（51.2%，刚过 D8 第 1 桶线，每版都没少成一局，§7.10）。模型费 57.26 USD，门 5 / 12 次，插手 3 次（都是驱动或进程问题）。下一步（建夹爪碰撞检查层 / 70% 停止线要不要去掉判做不到的起点 / 第 1 阶段 / 换模型对照 / 合回主仓库）等用户说。
-- RSI 进化 slides（私有）：https://claude.ai/artifact/N9rLqruxRDpjDzwNKyzaeS
+- RSI 进化 slides（私有）：https://claude.ai/artifact/N9rLqruxRDpjDzwNKyzaeS；pick_single 进化图解（线索图 + 前后对比视频，私有）：https://claude.ai/artifact/FPhdLToZ7ebhzVtPHM73Zv ，源 `outputs/scene_rsi_20261016/visual/`（`visualize.py`）
 - 26.5.6.8：查不查 SONIC 走路线时腰更弯的原因；冷启动要不要提高停止线续跑（现在停在 SONIC + 5）。
 - 26.5.6.9：bottle（26.5.4）和改方法（26.5.5.4）。
 
