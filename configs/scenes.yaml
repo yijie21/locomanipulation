@@ -272,7 +272,9 @@ warehouse_box_45x32x33_mars_d435:  # warehouse_box_45x32x33_mars with the D435 e
 # here), and this scene is its `mujoco` stage on mars, with every free object drawn with its own textured mesh. The
 # Unreal level is a copy of the apartment's own room level (`room_level`, built once by `room_build`: its meshes and
 # ceiling lights baked by scripts/adt_to_usd.py --unreal) with the robot and the 64 free objects imported; after a
-# change to the MuJoCo scene only, `build` rebuilds the import alone.
+# change to the MuJoCo scene only, `build` rebuilds the import alone. Furniture collides with the robot only
+# (`--furniture-collision robot`, the default since TODO 27.2.5: a convex hull, or for a piece holding surfaces the hull
+# of its part under the lowest one; free objects still rest on the surface slabs).
 adt_apartment_mars:
   dir: outputs/scene_discovery/adt_apartment_mars
   build: >-

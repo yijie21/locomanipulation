@@ -13,7 +13,8 @@ names, mass, friction, containers and room names and applies the rules of `scene
 every exchange is in `<out>/claude_properties.jsonl`, what the rules changed in `<out>/properties_report.json`.
 `mujoco --scene <out>/scene_meta.json` writes `<out>/scene_locomani.xml` (robot from `--base`, made the lab's
 real G1 with `--robot mars`, `make_dex1_model.apply_mars`) and `<out>/env_only.xml` (no robot, for
-`scripts/scene_drop_test.py`), meshes under `<out>/mesh/`: the shell and furniture as scenery, support surfaces as
+`scripts/scene_drop_test.py`), meshes under `<out>/mesh/`: the shell and furniture as scenery (furniture also as a
+convex hull that only the robot collides with, `--furniture-collision`), support surfaces as
 slabs, every movable object as a hull (containers as five boxes), free bodies only for `--free` (default: every
 graspable movable object resting on a surface). A free body is drawn with its own textured mesh (`free_visuals`);
 its hull only collides. A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
@@ -352,6 +353,12 @@ def preview(meta, grid, wall_img, labels, path) -> None:
 
 
 FURNITURE_FACES = 60_000  # above this a furniture visual is its hull: MuJoCo only previews, Isaac/Unreal render
+# TODO 27.2.5 (scene RSI plan D3): furniture collides with the robot only. Its convex hull fills a shelf or a cabinet
+# interior, so it must not touch the free objects resting there (they stay on their surface slabs): the hull takes a
+# contype bit nothing else sets and only the robot's collision geoms gain it in conaffinity (1 | 4 = 5).
+ROBOT_ONLY_BIT = 4
+FURNITURE_MIN_THICKNESS_M = 0.05  # flatter furniture (rugs, mats) is walked over, not bumped into
+SURFACE_CLEAR_M = 0.02  # a holding piece's collider stops this far under its lowest surface
 
 
 def colour(mesh: trimesh.Trimesh) -> list[float]:
@@ -425,8 +432,25 @@ def export(mesh: trimesh.Trimesh, path: Path) -> str:
     return str(path)
 
 
+def furniture_solid(body_mesh, lowest_top: float | None, origin_z: float):
+    """The furniture piece's robot collider (TODO 27.2.5): its convex hull, or for a piece that holds surfaces the hull
+    of its part below the lowest one (2 cm under it). A whole hull fills the space above a tier up to the piece's top
+    -- the utility cart's handles stand 9 cm over its top tier and the hull swallowed the coffee canister standing
+    there (2026-10-16) -- so pieces with surfaces only keep the feet and legs out. None when nothing is left."""
+    if lowest_top is None:
+        return body_mesh.convex_hull
+    below = body_mesh.vertices[body_mesh.vertices[:, 2] < lowest_top - SURFACE_CLEAR_M - origin_z]
+    if len(below) < 4:
+        return None
+    try:
+        return trimesh.convex.convex_hull(below)
+    except Exception:  # degenerate (flat) point set: no solid below the surfaces
+        return None
+
+
 def mujoco(args) -> None:
-    """Scene file -> MJCF: scenery, slabs, static and free objects; the robot tree comes from --base untouched."""
+    """Scene file -> MJCF: scenery, slabs, furniture hulls (robot only), static and free objects; the robot tree comes
+    from --base, its colliding geoms gaining the furniture bit."""
     import xml.etree.ElementTree as ET
 
     path = Path(args.scene).resolve()  # MuJoCo resolves mesh files from its own cwd: write absolute paths
@@ -478,7 +502,11 @@ def mujoco(args) -> None:
         sl = mjcf.slab(s)
         ET.SubElement(env, "geom", name=f"adt_slab_{key}", type="box", pos=mjcf.fmt(sl["pos"]), quat=mjcf.fmt(sl["quat"]),
                       size=mjcf.fmt(sl["size"]), rgba="0.5 0.5 0.9 0.25", group="3")  # fmt: skip
-    n_free = 0
+    # the lowest surface each furniture piece holds (furniture_solid keeps only what is under it)
+    hosts: dict[str, float] = {}
+    for sf in meta["surfaces"].values():
+        hosts[sf["of_object"]] = min(hosts.get(sf["of_object"], np.inf), float(sf["top"]))
+    n_free = n_hull = 0
     for key, o in sorted(meta["objects"].items()):
         if key == adt.SHELL:
             continue
@@ -489,12 +517,24 @@ def mujoco(args) -> None:
         # object frame -> body frame: z up at the initial pose, origin at the box centre (adt.AdtObject.body)
         body_mesh.vertices = raw.vertices @ a.body_axes.T + np.asarray(a.body()["mesh_offset"])
         sem = o["semantic"]
-        if not sem["movable"]:  # furniture: scenery only, contact comes from its surface slabs
+        if not sem["movable"]:  # furniture: objects rest on its surface slabs; the robot also bumps its hull
             vis = body_mesh if len(body_mesh.faces) <= FURNITURE_FACES else body_mesh.convex_hull
             name = f"adt_fix_{key}"
             mesh_asset(name, export(vis, out / "mesh" / f"{name}.obj"))
             ET.SubElement(env, "geom", name=name, type="mesh", mesh=name, pos=mjcf.fmt(o["init_pos"]),
                           quat=mjcf.fmt(o["init_quat"]), contype="0", conaffinity="0", group="1", density="0", rgba=rgba)  # fmt: skip
+            solid = furniture_solid(body_mesh, hosts.get(key), float(o["init_pos"][2]))
+            if (
+                args.furniture_collision == "robot"
+                and 2 * o["box"]["half_extent"][2] >= FURNITURE_MIN_THICKNESS_M
+                and solid
+            ):
+                hull = f"adt_fixcol_{key}"
+                mesh_asset(hull, export(solid, out / "mesh" / f"{hull}.obj"))
+                ET.SubElement(env, "geom", name=hull, type="mesh", mesh=hull, pos=mjcf.fmt(o["init_pos"]),
+                              quat=mjcf.fmt(o["init_quat"]), contype=str(ROBOT_ONLY_BIT), conaffinity="0", group="3",
+                              density="0", rgba="0.9 0.3 0.3 0.15")  # fmt: skip
+                n_hull += 1
             continue
         hull = body_mesh.convex_hull
         name = f"adt_obj_{key}"
@@ -549,6 +589,11 @@ def mujoco(args) -> None:
                           rgba=rgba, **({"group": "3"} if is_free else {}), **at)  # fmt: skip
     meta["scene_xml"] = str(out / "scene_locomani.xml")
     meta["robot"] = args.robot  # robot_look.scene_robot; the Unreal level and Isaac stage builders record it
+    meta["furniture_collision"] = args.furniture_collision
+    if args.furniture_collision == "robot":
+        for g in pelvis.iter("geom"):  # the robot's colliding geoms (default contype / conaffinity 1) gain the bit
+            if g.get("contype", "1") != "0" and g.get("conaffinity", "1") != "0":
+                g.set("conaffinity", str(int(g.get("conaffinity", "1")) | ROBOT_ONLY_BIT))
     meta.pop("ego_camera", None)
     if ego_camera:
         meta["ego_camera"] = ego_camera
@@ -574,7 +619,8 @@ def mujoco(args) -> None:
     ET.ElementTree(env_root).write(out / "env_only.xml")
     path.write_text(json.dumps(meta, indent=1))
     print(
-        f"[mujoco] {out / 'scene_locomani.xml'}: {len(meta['surfaces'])} slabs, {n_free} free bodies; env_only.xml for the drop test"
+        f"[mujoco] {out / 'scene_locomani.xml'}: {len(meta['surfaces'])} slabs, {n_free} free bodies, {n_hull} furniture "
+        "hulls (robot only); env_only.xml for the drop test"
     )
 
 
@@ -640,6 +686,12 @@ def main() -> None:
     j.add_argument("--base", default=str(REPO / "outputs/scene/walk/scene_locomani.xml"))
     j.add_argument("--robot", choices=("stock", "mars"), default="stock", help="mars: the lab's real G1 (apply_mars)")
     j.add_argument("--ego-camera", choices=("d455_head", "d435_head"), default=None, help="mars only: the ego camera")
+    j.add_argument(
+        "--furniture-collision",
+        choices=("robot", "none"),
+        default="robot",
+        help="robot: each furniture piece's convex hull collides with the robot only (TODO 27.2.5); none: scenery only",
+    )
     j.add_argument(
         "--free",
         nargs="*",

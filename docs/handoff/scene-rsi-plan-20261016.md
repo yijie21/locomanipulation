@@ -121,3 +121,9 @@ ScaleBFM 已知的实测（controller-compare §22、§21、S1）：
 ### 7.2 MolmoSpaces 评估（27.2.6，初查）
 
 子任务报告 `outputs/scene_rsi_20261016/molmospaces_report.md` 的要点（未经我复核的标“未核”）：代码 Apache 2.0，场景与物体 CC BY 4.0（Objaverse 子集 ODC-BY，少数资产非商用，可过滤）；MJCF 原生，铰链是真的 hinge / slide 关节；ProcTHOR 房子 `train_1` 10 个房间、15.8 × 17.5 m、114 个自由体、31 个铰链 + 13 个滑轨、家具都有碰撞，2 s 静置 0 / 114 移动超过 2 cm；但单套房子里落在 G1 抓取范围的小物体（< 1 kg、宽 4–9.5 cm、放在 0.6–0.95 m 高）只有 8–17 个（粗估），远少于 100 的门槛；门洞净宽未核。下载器按整套 10000 个房子解压（> 34 GB），已裁到 5 套（3.3 GB，`/workspace/datasets/molmospaces/`）。
+
+### 7.3 ADT 家具碰撞（27.2.5，2026-10-16）
+
+- `scripts/adt_to_scene.py mujoco --furniture-collision robot`（默认）：每件家具加一个凸包碰撞体，碰撞位 `contype 4 / conaffinity 0`，机器人的 42 个碰撞体 `conaffinity` 1 → 5。于是凸包只和机器人碰，自由物体照旧放在台面板上（凸包会填满柜格，物体不能和它碰）。
+- **上面放东西的家具（36 件）只保留最低那层台面以下 2 cm 的凸包**：整体凸包把推车顶层上方 9 cm 的扶手空间也包进去，罐子被吞，抓取失败、罐子掉地。这比 D3 写的“凸包或包围盒”更细一步：挡住脚和腿，台面以上仍然没有碰撞（手可以穿过柜子侧板）。CoACD（单独装在 `/workspace/tools/coacd_venv`）对推车只分出 1 块，没用上。
+- 重建后：128 个凸包；机器人在起点不碰任何凸包；推车前复位抓罐子同前（抬起 7.6 cm）；从起点直线走过去这次没摔，但伸到罐子差 3.5 cm、没抓住（单次）。
