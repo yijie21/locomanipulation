@@ -30,6 +30,7 @@ SIMPLE = dict(
     contact_timeout_s=0.8,
     lift_seconds=2.0,
     disturb_limit_m=0.05,
+    settle_abort_m=None,  # a settle ending farther than this from the pre-grasp retreats and fails (None: never)
 )
 TRACKING = dict(deadband=0.002, speed=0.04, acceleration=0.2, clip=0.08)  # SupportedMotion's translation feedback
 # grasp_planned.ENTRY_GATE (lateral 0.015 m, hold 2.0 s until the pick_single loop's set)
@@ -157,8 +158,20 @@ def run(ctx, key: str, side: str, R_c, tool_c, width: float) -> Outcome:
             err = float(np.linalg.norm(tool_m - pregrasp))
             if (err <= SIMPLE["settle_tolerance_m"] and elapsed > 0.3) or elapsed >= SIMPLE["settle_timeout_s"]:
                 rec["settle_error_m"] = round(err, 4)
-                entry_cmd = target.copy()
-                enter("entry", stamp)
+                if SIMPLE["settle_abort_m"] is not None and err > SIMPLE["settle_abort_m"]:
+                    # back out from where the hand is, the feedback zeroed: a hand stalled on a neighbour winds the
+                    # feedback up to its clip, and a retreat from the unreached target then swept the vase off its shelf
+                    target = retreat_from = tool_m.copy()
+                    retreat_to = retreat_from - SIMPLE["retreat_m"] * direction
+                    tracking, corrected_prev, prev_target = Tracking(), tool_m.copy(), tool_m.copy()
+                    enter("abort", stamp)
+                else:
+                    entry_cmd = target.copy()
+                    enter("entry", stamp)
+        elif phase == "abort":  # a missed pre-grasp backs out before any entry (a miss then knocked the target)
+            target = retreat_from + minjerk(elapsed / SIMPLE["retreat_seconds"]) * (retreat_to - retreat_from)
+            if elapsed >= SIMPLE["retreat_seconds"]:
+                return done(False, f"pregrasp missed by {rec['settle_error_m'] * 100:.1f} cm")
         elif phase == "entry":
             off = object_in_palm(palm, tool_m, grip)
             if (

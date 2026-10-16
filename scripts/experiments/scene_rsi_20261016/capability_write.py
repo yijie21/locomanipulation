@@ -7,8 +7,13 @@ numbers here are all measured on mars + ScaleBFM, or marked untested.
 A reach cell counts when the robot stood, the jaw centre was within REACH_TOL_CM of the target after a 1.5 s hold and
 the wrist within REACH_ATT_DEG of the asked attitude. A sweep value counts when >= 2 of its 3 jittered rounds did.
 A pick_single task enters `grasp_settings` when its sealed success is >= BUCKET1_RATE (D8), else `grasp_failures`.
+A put-down family's on(X, S) task (`--place-loop <sandbox>:<family>`, phase 2) enters
+`place.on_surface_single.measured_tasks` the same way (else `failed_tasks`); the objects its rounds lifted and carried away in >= BUCKET1_RATE of them enter
+`grasp_settings` where pick_single did not measure them, and its longest carry route among successes is
+`carry.single_arm.route_measured_max`.
 
-    $PY scripts/experiments/scene_rsi_20261016/capability_write.py --loop-root /workspace/code/rsi-scene/pick-a
+    $PY scripts/experiments/scene_rsi_20261016/capability_write.py --loop-root /workspace/code/rsi-scene/pick-a \
+        [--place-loop /workspace/code/rsi-scene/r1-on-a:r1_on_single]
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 from capability_probe import EDGE_M, OUT, load  # noqa: E402
 
 from locomani.scene_discovery import feasibility, scene_file  # noqa: E402
+from locomani.scene_discovery.predicates import parse  # noqa: E402
 
 DST = REPO / "configs" / "scene_discovery" / "capability_mars_scalebfm.yaml"
 OLD = REPO / "configs" / "scene_discovery" / "capability.yaml"
@@ -162,7 +168,62 @@ def pick_single(loop_root: Path, checker) -> tuple[list, list, dict]:
     return settings, failures, dict(final=final, rate=summ["final_rate"], per_task=per, deepest_success=deepest)
 
 
-def build(loop_root: Path) -> dict:
+def put_on(loop_root: Path, family: str, checker, picked: set) -> tuple[list, list, list, float, dict]:
+    """A put-down family's final incumbent on its sealed pool, per one-object on(X, S) task: (put-down settings,
+    put-down failures, grasp settings for the objects it lifted and carried in >= BUCKET1_RATE of the rounds and
+    `picked` lacks, the longest occupancy-map route from the pick stance to the put-down stance among successes,
+    summary). A task with two objects gives no (object, surface) setting."""
+    hidden = loop_root / "outputs" / "scene_rsi_20261016_hidden" / family
+    summ = json.loads((hidden / "sealed" / "summary.json").read_text())
+    final = summ["final"]
+    per = summ["versions"][final]["per_task"]
+    fam = json.loads((loop_root / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
+    rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
+    src = f"{PLAN_SRC.replace('§9', '§10')} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
+    settings, failures, grasps, longest = [], [], [], 0.0
+    for tid, frac_s in sorted(per.items()):
+        ons = [p for p in map(parse, rows[tid]["goal"]) if p.name == "on"]
+        if len(ons) != 1:
+            continue
+        x, s_key = ons[0].args
+        o = checker.objects[x]
+        half, _ = checker.box(x)
+        ok, n = map(int, frac_s.split("/"))
+        lifted, routes = 0, []
+        for f in sorted((hidden / "sealed" / final).glob(f"{tid}_s*.json")):
+            r = json.loads(f.read_text())
+            steps = r.get("steps") or []
+            walk = next((w for w in steps if w.get("step") == "walk" and w.get("stance")), None)
+            carry = next((w for w in steps if w.get("step") == "carry" and w.get("stance")), None)
+            lifted += carry is not None  # the put-down carries only an object it holds
+            if r.get("ok") and walk is not None and carry is not None:
+                d = checker.route(np.asarray(walk["stance"], float), np.asarray(carry["stance"], float))
+                if np.isfinite(d):
+                    routes.append(float(d))
+        longest = max([longest, *routes])
+        setting = f"ADT apartment (mars): {x} from {o['surface']} onto {s_key}, placement and yaw random on its surface, robot spawned 1-3 m away ({family} sealed pool); the loop's final incumbent {final}"
+        entry = dict(name=f"{family}.{tid}", status="measured", objects=[x], surface=s_key, from_surface=o["surface"],
+                     setting=setting, success=f"{ok}/{n}", support_top=[round(float(checker.surfaces[s_key]["top"]), 3)] * 2,
+                     object_height=[round(float(2 * half[2]), 3)] * 2,
+                     carry_route=[round(min(routes), 2), round(max(routes), 2)] if routes else None, source=src)  # fmt: skip
+        if n and ok / n >= BUCKET1_RATE:
+            settings.append(entry)
+        else:
+            failures.append(dict(name=entry["name"], gap=f"place_on_surface.{tid}", objects=[x], surface=s_key,
+                                 pilots=[tid], success=entry["success"], setting=setting, source=src))  # fmt: skip
+        if x not in picked and n and lifted / n >= BUCKET1_RATE:
+            picked.add(x)
+            grasps.append(dict(name=f"{family}.{tid}.pick", status="measured", objects=[x], surface=o["surface"],
+                               setting=f"{setting}: lifted and carried away", success=f"{lifted}/{n}",
+                               support_top=[round(float(checker.surfaces[o['surface']]["top"]), 3)] * 2,
+                               object_width=[round(float(2 * min(half[:2])), 3)] * 2,
+                               object_height=[round(float(2 * half[2]), 3)] * 2,
+                               mass_max=float((o.get("semantic") or {}).get("mass_kg", 0.0)), inboard=None,
+                               stance_xy=None, source=src))  # fmt: skip
+    return settings, failures, grasps, longest, dict(final=final, rate=summ["final_rate"], per_task=per)
+
+
+def build(loop_root: Path, place_loops: list[tuple[Path, str]] = ()) -> dict:
     old = yaml.safe_load(OLD.read_text())
     meta = scene_file.load(str(ADT / "scene_meta.json"))
     checker = feasibility.Checker(meta, dict(old, robot=dict(old["robot"], body_radius=0.35)))
@@ -172,6 +233,14 @@ def build(loop_root: Path) -> dict:
     inboard, height, topdown = sweep(grip, "inboard"), sweep(grip, "height"), sweep(grip, "top_down")
     posture, loco = load("posture"), load("loco")
     settings, failures, ps = pick_single(loop_root, checker)
+    picked = {x for e in settings for x in e["objects"]}
+    placed, place_failed, carry_max, loops = [], [], 0.0, {}
+    for root, family in place_loops:
+        ok, bad, grasps, longest, summ = put_on(root, family, checker, picked)
+        placed, place_failed, carry_max = placed + ok, place_failed + bad, max(carry_max, longest)
+        settings = settings + grasps
+        loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
+                             bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
 
     lvl = reach["right_level"]
     lows = [v["heights_reached"][0] for v in reach.values() if v["heights_reached"]]
@@ -282,6 +351,8 @@ def build(loop_root: Path) -> dict:
                     distance=[0.5, 1.0], success={f"{k:.1f} kg": frac(v, "carried") for k, v in mass.items()}
                 ),
                 carried_mass=[min(carried_ok), max(carried_ok)] if carried_ok else None,
+                route_measured_max=round(carry_max, 2) if carry_max else None,
+                route_measured_source="the longest occupancy-map route from the pick stance to the put-down stance among a put-down family's sealed successes (place.on_surface_single.measured_tasks)",
                 source=PROBE_SRC + "grip/",
             ),  # fmt: skip
             "bimanual_box": dict(status="untested", usable_distance=0.0, note="no bimanual skill"),
@@ -292,8 +363,25 @@ def build(loop_root: Path) -> dict:
             ),
             "put_down_bimanual": dict(status="untested", note="no bimanual skill"),
             "on_surface_single": dict(
+                status="measured",
+                setting="the put-down families' sealed pools: each setting is one object onto one surface (the checker takes it for that pair whatever the ranges say); the ranges span the settings",
+                support_top_measured=[
+                    min(e["support_top"][0] for e in placed),
+                    max(e["support_top"][0] for e in placed),
+                ],
+                object_height_measured=[
+                    min(e["object_height"][0] for e in placed),
+                    max(e["object_height"][0] for e in placed),
+                ],
+                measured_tasks=placed,
+                failed_tasks=place_failed,
+                source=PLAN_SRC.replace("§9", "§10"),
+            )
+            if placed
+            else dict(
                 status="untested",
                 note="no place skill in the library yet; the motor layer put the probe box back down where it was lifted (motor_put_back)",
+                failed_tasks=place_failed,
             ),
             "motor_put_back": dict(
                 status="measured_one",
@@ -338,7 +426,8 @@ def build(loop_root: Path) -> dict:
                 per_task=ps["per_task"],
                 bucket1=ps["rate"] >= BUCKET1_RATE,
                 source=f"{PLAN_SRC} (7.10)",
-            )
+            ),
+            **loops,
         ),  # fmt: skip
     }
     return cap
@@ -376,18 +465,22 @@ HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scen
 #   reach_single_arm.grasp_settings are the inner loop's tasks at >= 50 % sealed success (D8); the tasks below it are
 #     grasp_failures naming their objects (a skill gap for that object as it rests).
 #   reach_single_arm.mass_lifted_max (when set): the probe failed above it.
-#   Every skill the library does not have yet (place, place into, bimanual) is untested: a gap, never bucket 1.
+#   place.on_surface_single.measured_tasks are put-down families' tasks at >= 50 % sealed success, one object onto one
+#     surface each (failed_tasks below it); grasp_settings also hold the objects those rounds lifted and carried away.
+#   Every skill the library does not have yet (place into, bimanual) is untested: a gap, never bucket 1.
 """
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--loop-root", type=Path, required=True, help="the pick_single loop's sandbox checkout")
+    ap.add_argument("--place-loop", action="append", default=[], metavar="SANDBOX:FAMILY",
+                    help="a finished put-down family's sandbox and name (repeatable)")  # fmt: skip
     ap.add_argument("--out", type=Path, default=DST)
     a = ap.parse_args(argv)
     import datetime
 
-    cap = build(a.loop_root)
+    cap = build(a.loop_root, [(Path(v.rsplit(":", 1)[0]), v.rsplit(":", 1)[1]) for v in a.place_loop])
 
     class NoAlias(yaml.SafeDumper):  # the same list in two places stays two lists, not an anchor
         def ignore_aliases(self, data):

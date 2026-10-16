@@ -22,7 +22,11 @@ Fallback plans (`plan_hand`, loop iteration 3) only where the planner above find
 out to TOP_MAX_DEPTH_M, then the other hand from the mirrored stance (on the kitchen island's free west side every
 right-hand stance stands against a bar stool; the left hand's stance is on the stool's far side). A fallback plan is
 refused when the robot starts against a floor object (a mug start spawns with its wrist inside a trash bin's footprint
-and falls on the first step whatever the plan)."""
+and falls on the first step whatever the plan).
+
+A default-off switch the put-down (place.py, r1_on_single loop iteration 4) turns on around its pick, so held(X)'s pick
+is unchanged: SIDE_AHEAD_M stands the pelvis farther back for a right-hand side grasp on a surface above
+SIDE_AHEAD_TOP_MIN_M (`stand_ahead`); the left-hand fallback and the top-down pinch keep STAND_AHEAD_M."""
 
 from __future__ import annotations
 
@@ -64,6 +68,8 @@ TOP_ABOVE_M = 0.10  # ... from a pre-grasp this far above the grasp
 TOP_DESCENT_SPEED = 0.05
 TOP_MAX_DEPTH_M = 0.39  # a top-down pinch's depth limit (fallback pass; MAX_DEPTH_M stays the side grasps')
 SPAWN_CLEAR_M = 0.08  # a fallback plan needs the start pelvis this far from every floor object footprint
+SIDE_AHEAD_M = None  # default-off switch (place.py's pick): object this far ahead for a right-hand side grasp ...
+SIDE_AHEAD_TOP_MIN_M = 0.6  # ... on a surface whose top is above this (None: STAND_AHEAD_M, held(X)'s pick)
 _NAV: dict = {}  # id(meta) -> (meta, occupancy, navigator, floor boxes): one map per scene and process
 _CLEAR: dict = {}  # (id(occupancy), furniture) -> (occupancy, clearance grid without that furniture's surfaces)
 
@@ -221,7 +227,7 @@ def plan_approach(world, start_xy, key: str, side: str, max_depth: float | None 
     the surface's own furniture: the kitchen island's unlisted west side stands against a bar stool) and has a path on
     the skill's map; the stance is STAND_SIDE_M toward the hand, else each of STAND_SIDE_RETRY_M. The utility cart's
     crowded top leaves the canister lying along one edge: only the edge at its end faces its narrow side. The object
-    centre is at most `max_depth` (default MAX_DEPTH_M) in from the edge."""
+    centre is at most `max_depth` (default MAX_DEPTH_M) in from the edge and `stand_ahead` ahead of the stance."""
     obj = world.meta["objects"][key]
     surf = world.meta["surfaces"][obj["surface"]]
     pos, quat = world.object_pose(key)
@@ -231,16 +237,18 @@ def plan_approach(world, start_xy, key: str, side: str, max_depth: float | None 
     sign = -1.0 if side == "right" else 1.0
     edges = [(f, dep, True) for f, dep in facings(surf, pos, listed)]
     edges += [(f, dep, False) for f, dep in (facings(surf, pos, others) if others else [])]
-    fit = _nearest_closing_yaw if is_top(world, key) else grasp_yaw
+    top_pinch = is_top(world, key)
+    fit = _nearest_closing_yaw if top_pinch else grasp_yaw
     why = "no side fits the jaw within reach of an approachable edge"
     max_depth = MAX_DEPTH_M if max_depth is None else max_depth
+    ahead = stand_ahead(float(surf["top"]), side, top_pinch)
     for f, dep, is_listed in edges:
         psi = fit(quat, obj["box"]["half_extent"], f) if dep <= max_depth else None
         if psi is None:
             continue
         why = "no clear stance with a path at an edge where a side fits the jaw"
         for lateral in (STAND_SIDE_M, *STAND_SIDE_RETRY_M):
-            stance = pos[:2] - (R.rot_z(f) @ np.array([STAND_AHEAD_M, sign * lateral, 0.0]))[:2]
+            stance = pos[:2] - (R.rot_z(f) @ np.array([ahead, sign * lateral, 0.0]))[:2]
             if floor_clearance(boxes, stance) < STANCE_CLEAR_M:
                 continue
             if not is_listed and other_clearance(world, obj["surface"], stance) < OTHER_EDGE_CLEAR_M:
@@ -249,6 +257,15 @@ def plan_approach(world, start_xy, key: str, side: str, max_depth: float | None 
                 continue
             return (f, dep, psi, stance, pos[:2] - dep * np.array([np.cos(f), np.sin(f)])), ""
     return None, why
+
+
+def stand_ahead(top: float, side: str, top_pinch: bool) -> float:
+    """How far ahead of the pick stance the object is: SIDE_AHEAD_M for a right-hand side grasp on a surface whose top is
+    above SIDE_AHEAD_TOP_MIN_M when the switch is set (from 0.40 m the soap's reach on the bathroom sink counter missed
+    the pre-grasp by 13-22 cm), else STAND_AHEAD_M."""
+    if SIDE_AHEAD_M is None or side != "right" or top_pinch or top <= SIDE_AHEAD_TOP_MIN_M:
+        return STAND_AHEAD_M
+    return float(SIDE_AHEAD_M)
 
 
 def plan_hand(world, start_xy, key: str, side: str):

@@ -320,3 +320,24 @@ def test_an_approach_edge_overlay_replaces_the_scene_files_edges():
         scene_file.with_approach_edges(META, {"surfaces": {"NOPE": {"approach_edges": []}}})
     with pytest.raises(ValueError, match="not in"):
         scene_file.with_approach_edges(META, {"surfaces": {"T": {"approach_edges": ["up"]}}})
+
+
+def test_a_put_down_measured_on_its_own_object_and_surface_decides_the_put_and_its_carry():
+    meta = _envelope_meta()
+    meta["surfaces"]["FAR"] = surface([2.6, -2.4], 0.95, [0.3, 0.2])  # outside the 10-03 put-down's measured tops
+    goal = {"id": "t", "goal": ["on(bottle, FAR)"]}
+    cap = copy.deepcopy(CAP)
+    before = feasibility.Checker(copy.deepcopy(meta), cap).check(goal)
+    assert before.bucket() == 2 and not any(c.name == "measured_task" for c in before.checks)
+    cap["place"]["on_surface_single"]["measured_tasks"] = [dict(name="r1_on_single.t", objects=["bottle"], surface="FAR",
+                                                          success="7/8")]  # fmt: skip
+    after = feasibility.Checker(copy.deepcopy(meta), cap).check(goal)
+    assert [c.step for c in after.checks if c.name == "measured_task"] == [
+        "carry(bottle -> FAR)",
+        "put_on(bottle on FAR)",
+    ]
+    assert not any(g.startswith(("place_on_surface", "carry_single", "navigate")) for g in after.gaps)
+    cap["place"]["on_surface_single"]["measured_tasks"] = []
+    cap["place"]["on_surface_single"]["failed_tasks"] = [dict(name="r1_on_single.t", gap="place_on_surface.t",
+                                                          objects=["bottle"], surface="FAR", success="0/8")]  # fmt: skip
+    assert "place_on_surface.t" in feasibility.Checker(copy.deepcopy(meta), cap).check(goal).gaps

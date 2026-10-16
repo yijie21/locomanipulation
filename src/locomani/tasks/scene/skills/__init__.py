@@ -11,19 +11,33 @@ from __future__ import annotations
 
 from locomani.scene_discovery.predicates import parse
 
-from . import grasp_program, pick  # noqa: F401  (apply_set reaches modules through the package)
+from . import clearance, grasp_program, pick, place  # noqa: F401  (apply_set reaches modules through the package)
 
 PLAN_HELD = "pick"  # held(X): "pick" (the ported closed-loop program, plan D4) or "pick_simple"
 
 
 def plan_for(task):
-    """The plan for a task's goal, or None when no skill covers it. Covered: held(X)."""
+    """The plan for a task's goal, or None when no skill covers it. Covered: held(X); a conjunction of on(X, S) and
+    upright(X) only (`place.place_on` for each on(X, S) in goal order, stopping at the first failure)."""
     preds = [parse(g) for g in task.goal]
     if len(preds) == 1 and preds[0].name == "held":
         key = preds[0].args[0]
         skill = getattr(pick, PLAN_HELD)
         return lambda ctx: skill(ctx, key)
+    ons = [tuple(p.args) for p in preds if p.name == "on"]
+    if ons and all(p.name in ("on", "upright") for p in preds):
+        return lambda ctx: place_all(ctx, ons)
     return None
+
+
+def place_all(ctx, ons):
+    """`place.place_on` for each (object, surface) in order; the first failure ends the plan."""
+    out = None
+    for key, surface in ons:
+        out = place.place_on(ctx, key, surface)
+        if not out.ok:
+            return out
+    return out
 
 
 def apply_set(package, overrides: dict) -> list[str]:
@@ -53,7 +67,7 @@ def apply_set(package, overrides: dict) -> list[str]:
 def parameters(package) -> dict:
     """Every overridable parameter: upper-case module constants (numbers, strings, dicts of them), by `apply_set` key."""
     out = {k: v for k, v in vars(package).items() if k.isupper() and isinstance(v, (int, float, str, dict))}
-    for name in ("pick", "grasp_program"):
+    for name in ("pick", "grasp_program", "place", "clearance"):
         mod = getattr(package, name)
         for k, v in vars(mod).items():
             if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):

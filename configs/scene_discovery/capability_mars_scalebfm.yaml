@@ -9,7 +9,9 @@
 #   reach_single_arm.grasp_settings are the inner loop's tasks at >= 50 % sealed success (D8); the tasks below it are
 #     grasp_failures naming their objects (a skill gap for that object as it rests).
 #   reach_single_arm.mass_lifted_max (when set): the probe failed above it.
-#   Every skill the library does not have yet (place, place into, bimanual) is untested: a gap, never bucket 1.
+#   place.on_surface_single.measured_tasks are put-down families' tasks at >= 50 % sealed success, one object onto one
+#     surface each (failed_tasks below it); grasp_settings also hold the objects those rounds lifted and carried away.
+#   Every skill the library does not have yet (place into, bimanual) is untested: a gap, never bucket 1.
 
 robot:
   hands: dex1 two-finger parallel gripper on each arm
@@ -280,6 +282,50 @@ reach_single_arm:
     - -1.264
     - 1.741
     source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: r1_on_single.hand_soap_to_bathroom_sink.pick
+    status: measured
+    objects:
+    - HandSoap_1
+    surface: ApartmentEnv__6
+    setting: 'ADT apartment (mars): HandSoap_1 from ApartmentEnv__6 onto ApartmentEnv__3, placement and yaw random on its
+      surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4: lifted and
+      carried away'
+    success: 7/8
+    support_top:
+    - 0.918
+    - 0.918
+    object_width:
+    - 0.07
+    - 0.07
+    object_height:
+    - 0.183
+    - 0.183
+    mass_max: 0.4
+    inboard: null
+    stance_xy: null
+    source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+  - name: r1_on_single.vase_centerpiece.pick
+    status: measured
+    objects:
+    - WhiteVaseMedium_1
+    surface: DisplayUnit_1__1
+    setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
+      on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4: lifted
+      and carried away'
+    success: 6/8
+    support_top:
+    - 0.727
+    - 0.727
+    object_width:
+    - 0.083
+    - 0.083
+    object_height:
+    - 0.124
+    - 0.124
+    mass_max: 0.3
+    inboard: null
+    stance_xy: null
+    source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
   grasp_failures:
   - name: pick_single.mug_pickup
     gap: grasp_single.mug_pickup
@@ -431,6 +477,9 @@ carry:
     carried_mass:
     - 0.2
     - 1.5
+    route_measured_max: 3.63
+    route_measured_source: the longest occupancy-map route from the pick stance to the put-down stance among a put-down family's
+      sealed successes (place.on_surface_single.measured_tasks)
     source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
   bimanual_box:
     status: untested
@@ -444,8 +493,149 @@ place:
     status: untested
     note: no bimanual skill
   on_surface_single:
-    status: untested
-    note: no place skill in the library yet; the motor layer put the probe box back down where it was lifted (motor_put_back)
+    status: measured
+    setting: 'the put-down families'' sealed pools: each setting is one object onto one surface (the checker takes it for
+      that pair whatever the ranges say); the ranges span the settings'
+    support_top_measured:
+    - 0.512
+    - 0.817
+    object_height_measured:
+    - 0.025
+    - 0.187
+    measured_tasks:
+    - name: r1_on_single.hand_soap_to_bathroom_sink
+      status: measured
+      objects:
+      - HandSoap_1
+      surface: ApartmentEnv__3
+      from_surface: ApartmentEnv__6
+      setting: 'ADT apartment (mars): HandSoap_1 from ApartmentEnv__6 onto ApartmentEnv__3, placement and yaw random on its
+        surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      success: 6/8
+      support_top:
+      - 0.817
+      - 0.817
+      object_height:
+      - 0.183
+      - 0.183
+      carry_route:
+      - 2.16
+      - 3.16
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.jam_to_dining_table
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: ExtendableTable__0
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto ExtendableTable__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      success: 4/8
+      support_top:
+      - 0.747
+      - 0.747
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 1.54
+      - 3.63
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.tv_remote_to_tv_stand
+      status: measured
+      objects:
+      - TvRemote_1
+      surface: TVUnit__2
+      from_surface: BlackCoffeeTable__1
+      setting: 'ADT apartment (mars): TvRemote_1 from BlackCoffeeTable__1 onto TVUnit__2, placement and yaw random on its
+        surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      success: 7/8
+      support_top:
+      - 0.512
+      - 0.512
+      object_height:
+      - 0.025
+      - 0.025
+      carry_route:
+      - 1.18
+      - 1.43
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.vase_centerpiece
+      status: measured
+      objects:
+      - WhiteVaseMedium_1
+      surface: ExtendableTable__0
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      success: 5/8
+      support_top:
+      - 0.747
+      - 0.747
+      object_height:
+      - 0.124
+      - 0.124
+      carry_route:
+      - 0.83
+      - 1.11
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    failed_tasks:
+    - name: r1_on_single.clock_to_console_table
+      gap: place_on_surface.clock_to_console_table
+      objects:
+      - RedClock
+      surface: ConsoleTable__1
+      pilots:
+      - clock_to_console_table
+      success: 0/8
+      setting: 'ADT apartment (mars): RedClock from KitchIsland__0 onto ConsoleTable__1, placement and yaw random on its surface,
+        robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.novel_to_nightstand_middle_shelf
+      gap: place_on_surface.novel_to_nightstand_middle_shelf
+      objects:
+      - BookFiction1_01
+      surface: NightStand__1
+      pilots:
+      - novel_to_nightstand_middle_shelf
+      success: 0/8
+      setting: 'ADT apartment (mars): BookFiction1_01 from DisplayShelves_1__0 onto NightStand__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.novel_to_top_display_shelf
+      gap: place_on_surface.novel_to_top_display_shelf
+      objects:
+      - BookFiction1_00
+      surface: DisplayShelves_1__2
+      pilots:
+      - novel_to_top_display_shelf
+      success: 0/8
+      setting: 'ADT apartment (mars): BookFiction1_00 from DisplayShelves_1__0 onto DisplayShelves_1__2, placement and yaw
+        random on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.plant_to_top_display_shelf
+      gap: place_on_surface.plant_to_top_display_shelf
+      objects:
+      - Plant2_5
+      surface: DisplayShelves_1__2
+      pilots:
+      - plant_to_top_display_shelf
+      success: 0/8
+      setting: 'ADT apartment (mars): Plant2_5 from DisplayShelves_1__0 onto DisplayShelves_1__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    - name: r1_on_single.wallet_to_bed
+      gap: place_on_surface.wallet_to_bed
+      objects:
+      - Wallet_1
+      surface: HybridMattress__0
+      pilots:
+      - wallet_to_bed
+      success: 0/8
+      setting: 'ADT apartment (mars): Wallet_1 from DisplayShelves_1__2 onto HybridMattress__0, placement and yaw random on
+        its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
+    source: docs/handoff/scene-rsi-plan-20261016.md §10
   motor_put_back:
     status: measured_one
     setting: 'the motor grasp''s support-top sweep: lower 9.5 cm back onto the same table, release, retract; counted when
@@ -560,3 +750,19 @@ inner_loops:
       wallet_pickup: 0/10
     bucket1: true
     source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10)
+  r1_on_single:
+    final_incumbent: 06_9da5a5e404f4
+    sealed_rate: 0.275
+    per_task:
+      clock_to_console_table: 0/8
+      hand_soap_to_bathroom_sink: 6/8
+      jam_to_dining_table: 4/8
+      novel_to_nightstand_middle_shelf: 0/8
+      novel_to_top_display_shelf: 0/8
+      plant_to_top_display_shelf: 0/8
+      tv_remote_to_tv_stand: 7/8
+      two_novels_to_nightstand: 0/8
+      vase_centerpiece: 5/8
+      wallet_to_bed: 0/8
+    bucket1: false
+    source: docs/handoff/scene-rsi-plan-20261016.md §10

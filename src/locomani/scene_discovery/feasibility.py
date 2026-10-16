@@ -344,6 +344,10 @@ class Checker:
         if not np.isfinite(d):
             out.append(Check(step, "route", BLOCKED, why="no route in the occupancy map"))
             return None
+        if on is not None and target in self.surfaces and self.placed(x, target)[0] is not None:
+            # this very carry was part of a measured put-down (its room change and distance included)
+            out.append(Check(step, "measured_task", OK, round(d, 2), self.placed(x, target)[0]["name"]))
+            return goal
         if self.room_of(x) != self.room_of(target):
             out.append(
                 Check(step, "room", UNTESTED, [self.room_of(x), self.room_of(target)], gap="navigate.cross_room")
@@ -360,8 +364,9 @@ class Checker:
                     )
                 )
         else:
-            out.append(self._max(step, "carry_distance", d, max(self.cap["carry"]["single_arm"]["straight_or_backward"]["distance"]),
-                                 "carry_single.distance"))  # fmt: skip
+            c = self.cap["carry"]["single_arm"]
+            longest = max([*c["straight_or_backward"]["distance"], c.get("route_measured_max") or 0.0])
+            out.append(self._max(step, "carry_distance", d, longest, "carry_single.distance"))
         return goal
 
     def place_into(self, x: str, c: str, out: list) -> None:
@@ -400,6 +405,14 @@ class Checker:
         if self.top(c) < low:
             out.append(Check(step, "hand_height", BLOCKED, round(self.top(c), 3), low, why="the rim is below the lowest hand position ever reached"))  # fmt: skip
 
+    def placed(self, x: str, s: str) -> tuple[dict | None, dict | None]:
+        """(setting, failure) of the single-hand put-down measured on this very object onto this very surface (an
+        inner loop's sealed result, capability_write.py), or None for each."""
+        p = (self.cap.get("place") or {}).get("on_surface_single") or {}
+        hit = [e for e in p.get("measured_tasks") or () if x in e.get("objects", ()) and e.get("surface") == s]
+        miss = [e for e in p.get("failed_tasks") or () if x in e.get("objects", ()) and e.get("surface") == s]
+        return (hit[0] if hit else None), (miss[0] if miss else None)
+
     def put_on(self, x: str, s: str, out: list) -> None:
         step = f"put_on({x} on {s})"
         half = np.asarray(self.surfaces[s]["half_extent"], dtype=float)
@@ -407,6 +420,10 @@ class Checker:
             out.append(Check(step, "fits", BLOCKED, why="the surface is smaller than the object"))
             return
         hands = (self.objects[x].get("semantic") or {}).get("graspable")
+        hit, miss = self.placed(x, s) if hands != "bimanual" else (None, None)
+        if hit is not None:  # measured on this object onto this surface: the measurement decides (as grasps do)
+            out.append(Check(step, "measured_task", OK, hit.get("success"), hit["name"]))
+            return
         out.append(self._overhead(step, s, self.spots(s), f"{'put_down_bimanual' if hands == 'bimanual' else 'place_on_surface'}.covered"))  # fmt: skip
         if hands == "bimanual" and self.cap["place"]["put_down_bimanual"].get("status") == "untested":
             out.append(Check(step, "skill", UNTESTED, gap="put_down_bimanual.skill"))
@@ -423,6 +440,9 @@ class Checker:
             )
         else:  # put_down_single (docs/handoff/put-down-single-20261003.md); without a measurement it is a skill gap
             p = self.cap["place"].get("on_surface_single")
+            if miss is not None:
+                out.append(Check(step, miss["name"], UNTESTED, miss.get("success"), miss.get("pilots"), miss["gap"]))
+                return
             if p is None or p.get("status") == "untested":
                 out.append(Check(step, "skill", UNTESTED, gap="place_on_surface.single"))
                 return
@@ -430,9 +450,10 @@ class Checker:
             out.append(self._range(step, "support_top", top, p["support_top_measured"], "place_on_surface.support_top"))
             height = float(2 * self.box(x)[0][2])
             out.append(self._range(step, "object_height", height, p["object_height_measured"], "place_on_surface.object_height", 0.01))  # fmt: skip
+            # the jaw sets the object down holding it at its centre, half its height over the top (a pick grips there)
             low = self.cap["posture"]["squat"]["hands_lowest"]
-            if top < low:
-                out.append(Check(step, "hand_height", BLOCKED, round(top, 3), low, why="the top is below the lowest hand position ever reached"))  # fmt: skip
+            if top + height / 2 < low:
+                out.append(Check(step, "hand_height", BLOCKED, round(top + height / 2, 3), low, why="the hand would set the object down below the lowest hand position ever reached"))  # fmt: skip
 
     # -- tasks ----------------------------------------------------------------------------------
     def check(self, task: dict) -> Result:
