@@ -1,0 +1,8 @@
+{
+ "name": "pick_single",
+ "about": "held(X), one hand, every single-hand pick Claude proposed for the ADT apartment (Demo 1, opus_20261005b): surfaces from a 0.4 m coffee table to a 1.1 m shelf",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/tasks.jsonl",
+ "tasks": ["canister_pickup", "mug_pickup", "jam_pickup", "orange_pickup", "dish_soap_pickup", "tv_remote_pickup", "thick_novel_pickup", "wallet_pickup", "mouse_pickup"],
+ "pools": {"diag": {"seed": 100000, "n": 50}, "accept": {"seed": 200000, "n": 60}, "sealed": {"seed": 300000, "n": 80}}
+}

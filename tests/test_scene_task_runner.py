@@ -158,3 +158,25 @@ class GraspProgram(unittest.TestCase):
         half = [0.06, 0.04, 0.09]
         self.assertAlmostEqual(span(yaw_quat(0.0), half, 0.0), 0.08)  # approach along x: closes across y (8 cm)
         self.assertAlmostEqual(span(yaw_quat(0.0), half, np.pi / 2), 0.12)
+
+
+class SkillParameters(unittest.TestCase):
+    def test_apply_set_reaches_modules_and_dict_entries_and_refuses_typos(self):
+        import importlib
+
+        import locomani.tasks.scene.skills as skills
+
+        try:
+            done = skills.apply_set(skills, {"PLAN_HELD": "pick_simple", "pick.STAND_AHEAD_M": 0.38,
+                                             "grasp_program.ENTRY_GATE.lateral_m": 0.008})  # fmt: skip
+            self.assertEqual(len(done), 3)
+            self.assertEqual(skills.PLAN_HELD, "pick_simple")
+            self.assertEqual(skills.pick.STAND_AHEAD_M, 0.38)
+            self.assertEqual(skills.grasp_program.ENTRY_GATE["lateral_m"], 0.008)
+            for bad in ("pick.STAND_AHEAD", "grasp_program.ENTRY_GATE.lateral", "NOPE"):
+                with self.assertRaises(KeyError):
+                    skills.apply_set(skills, {bad: 1})
+            self.assertIn("grasp_program.DASH_SPEED", skills.parameters(skills))
+        finally:
+            for m in (skills.grasp_program, skills.pick, skills):
+                importlib.reload(m)

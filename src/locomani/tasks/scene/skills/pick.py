@@ -11,7 +11,8 @@ import numpy as np
 from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.motor import Outcome
 from locomani.tasks.scene.navigate import walk_path
-from locomani.tasks.scene.skills import grasp_program
+
+from . import grasp_program
 
 JAW_SPAN_M = 0.085  # widest side the open Dex1 jaw (9.5 cm) closes across with a margin
 STAND_AHEAD_M = 0.40  # object this far ahead of the pelvis ...

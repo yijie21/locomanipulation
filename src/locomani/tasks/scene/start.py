@@ -131,8 +131,9 @@ def sample_start(meta: dict, occ, nav, objects, rng, *, seed: int, room: str | N
             taken.append(footprint(o, o["init_pos"], o["init_quat"]))
     for k in objects:
         spot = place_on_surface(meta, k, rng, taken)
-        if spot is None:
-            raise RuntimeError(f"no free spot for {k} on {meta['objects'][k]['surface']}")
+        if spot is None:  # a crowded top (the bedroom's display shelves): the scene file's own spot is a valid start
+            o = meta["objects"][k]
+            spot = (np.asarray(o["init_pos"], float), np.asarray(o["init_quat"], float))
         placements[k] = spot
         taken.append(footprint(meta["objects"][k], spot[0], spot[1]))
     anchor = placements[objects[0]][0][:2] if objects else None

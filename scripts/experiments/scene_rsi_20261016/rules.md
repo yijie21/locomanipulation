@@ -1,0 +1,52 @@
+# Rules for the scene RSI loop (TODO 27, version 1, 2026-10-16)
+
+The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
+rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
+rule is a new version of this file, committed, and counted as one human intervention.
+
+## The task and its limits (code)
+
+1. The scene, the controller (ScaleBFM M 22200), the motor layer, the simulator, the goal predicates and the success
+   rule are frozen. Making a task easier is not an improvement. The Engineer may change only the skills package
+   (`src/locomani/tasks/scene/skills/`); any other changed file voids the candidate (the driver checks and restores).
+2. A start is never removed from a pool. A start a skill refuses ("no side fits the jaw...") still counts as a failure.
+3. A candidate is accepted only by `gate.py` on the hidden acceptance pool. Nothing else counts as evidence that a
+   change helps. The gate's per-round files are off limits; its verdict JSON is what a role may read.
+4. A candidate is the skills package plus parameter overrides (`candidate.json` {"set": ...}, `skills.apply_set` keys:
+   "NAME", "module.NAME", "module.NAME.key"). An unknown key is refused (code).
+
+## Evidence (prompt; code where marked)
+
+5. Read the per-round records and the 50 Hz traces, not the failure strings. A failure string names where the code gave
+   up, not the cause.
+6. Use per-round statistics (the value at the deciding moment, a round's min or max), then aggregate across rounds.
+   Per-frame aggregates are weighted by dwell time; stalled rounds dominate them.
+7. Only closed-loop re-runs from a start are evidence (the Prober's). Replaying commands or re-solving IK offline is not.
+8. A diagnostic pool of 50 starts measures direction only; the same configuration has moved 6/10 to 2/10 on repeats.
+9. Subsets picked because they succeeded fall back towards the mean. Do not tune on the rounds that succeed now.
+10. Before saying information is absent, look for it for a few minutes. Before calling a constant decisive, find every
+    caller of it.
+11. When a list of fixes keeps growing, the layer is probably wrong: say so instead of adding item N+1.
+
+## The robot and the controller (prompt)
+
+12. mars G1 with Dex1 two-finger grippers: the jaw opens 9.5 cm, fingers close along the wrist's y axis, the jaw centre
+    sits 0.1515 m ahead of the wrist along its x axis, finger force is the PD depth into the object (about 20 N max).
+13. ScaleBFM follows keypoint targets (pelvis, wrists, ankles in the motor layer's modes 2 and 4; the torso only in
+    mode 7). It crouches and leans when the hands ask for it. In mode 4 the waist is the controller's choice: a 20 deg
+    reference lean came out as 8 deg, a squat with an upright reference leaned 21-56 deg.
+14. Open loop, ScaleBFM's hands land 2-9 cm and 10-30 deg off at grasp poses; the motor layer's reach servo (jaw centre
+    + wrist attitude integral) brings them to about 1 cm. During a fast entry the hand lags the command by up to 10 cm.
+15. Standing in mode 2 the feet slide apart (27.7 -> 36.1 cm in 15 s); mode 4 pins them.
+16. Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks straight lines only;
+    `navigate.walk_path` plans around furniture on the occupancy map (body radius 0.35 m: at 0.26 m an arm caught the
+    kitchen island and the robot fell).
+17. Furniture collides with the robot only below its lowest surface; free objects rest on surface slabs.
+
+## Operations (code where marked)
+
+18. ScaleBFM rounds run through `batch.py` (12 processes, GPUs 0 and 1, OMP 2). For your own one-round checks use one
+    process: `CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src OMP_NUM_THREADS=2 <sim python> scripts/experiments/scene_rsi_20261016/scene_round.py ...`.
+19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children.
+20. Stop and write an escalation instead of acting when a step needs the scene, the controller or its training, the
+    motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget.

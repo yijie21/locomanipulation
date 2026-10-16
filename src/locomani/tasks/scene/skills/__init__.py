@@ -1,12 +1,19 @@
 """The scene RSI loop's skill library (TODO 27, plan docs/handoff/scene-rsi-plan-20261016.md D4, D6): task-level
-functions `skill(ctx, ...) -> Outcome` over the motor layer and the privileged scene state. The loop's Engineer adds and
-changes skills here; the motor layer below only takes default-off switches. `PLANS` maps a goal shape to the plan that
-achieves it."""
+functions `skill(ctx, ...) -> Outcome` over the motor layer and the privileged scene state, and `plan_for(task)`, the
+plan for a goal shape. The loop's Engineer adds and changes skills here; the motor layer below only takes default-off
+switches.
+
+The package is loaded both as `locomani.tasks.scene.skills` and, by the loop, from a candidate's snapshot directory
+under another name (scripts/experiments/scene_rsi_20261016/scene_round.py), so modules here import each other
+relatively. `apply_set` is how a probe or a candidate overrides a parameter without editing code."""
 
 from __future__ import annotations
 
 from locomani.scene_discovery.predicates import parse
-from locomani.tasks.scene.skills.pick import pick
+
+from . import grasp_program, pick  # noqa: F401  (apply_set reaches modules through the package)
+
+PLAN_HELD = "pick"  # held(X): "pick" (the ported closed-loop program, plan D4) or "pick_simple"
 
 
 def plan_for(task):
@@ -14,5 +21,41 @@ def plan_for(task):
     preds = [parse(g) for g in task.goal]
     if len(preds) == 1 and preds[0].name == "held":
         key = preds[0].args[0]
-        return lambda ctx: pick(ctx, key)
+        skill = getattr(pick, PLAN_HELD)
+        return lambda ctx: skill(ctx, key)
     return None
+
+
+def apply_set(package, overrides: dict) -> list[str]:
+    """Set parameters on a loaded skills package: "NAME" (the package's own), "module.NAME", or "module.NAME.key"
+    (an entry of a dict parameter). Unknown names raise (a typo must not run silently). Returns the keys set."""
+    done = []
+    for key, value in (overrides or {}).items():
+        parts = key.split(".")
+        target = package
+        if len(parts) > 1 and hasattr(package, parts[0]) and not hasattr(package, key):
+            target, parts = getattr(package, parts[0]), parts[1:]
+        if not hasattr(target, parts[0]):
+            raise KeyError(f"{key}: no parameter {parts[0]!r} in {getattr(target, '__name__', target)}")
+        if len(parts) == 1:
+            setattr(target, parts[0], value)
+        elif len(parts) == 2 and isinstance(getattr(target, parts[0]), dict):
+            d = getattr(target, parts[0])
+            if parts[1] not in d:
+                raise KeyError(f"{key}: no entry {parts[1]!r} in {parts[0]}")
+            d[parts[1]] = value
+        else:
+            raise KeyError(f"{key}: expected NAME, module.NAME or module.NAME.key")
+        done.append(key)
+    return done
+
+
+def parameters(package) -> dict:
+    """Every overridable parameter: upper-case module constants (numbers, strings, dicts of them), by `apply_set` key."""
+    out = {k: v for k, v in vars(package).items() if k.isupper() and isinstance(v, (int, float, str, dict))}
+    for name in ("pick", "grasp_program"):
+        mod = getattr(package, name)
+        for k, v in vars(mod).items():
+            if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):
+                out[f"{name}.{k}"] = v
+    return out

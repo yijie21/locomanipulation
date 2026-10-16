@@ -48,8 +48,61 @@ class Task:
         return cls(str(row["id"]), goal, tuple(row.get("prompts") or ()), row.get("room"), tuple(movable))
 
 
+def physics_scene(scene_dir) -> Path:
+    """`<scene_dir>_physics/`: the scene's MJCF without the visual-only geoms outside the robot (contype and
+    conaffinity 0: no contact, no mass) and the meshes / materials / textures nothing references any more, plus
+    `robot.xml` (the robot alone, for whole-body IK) and a copy of scene_meta.json. The ADT apartment's full MJCF is
+    5.1 GB in memory (9.6 M mesh vertices, nearly all visual) and the IK loaded a second copy: 12 round processes ran
+    the container out of memory (15 OOM kills, 2026-10-16). Physics is unchanged; renders replay the trace on the full
+    scene. Rebuilt when the source is newer."""
+    import xml.etree.ElementTree as ET
+
+    src = Path(scene_dir)
+    dst = src.parent / f"{src.name}_physics"
+    xml = src / "scene_locomani.xml"
+    if (dst / "robot.xml").exists() and (dst / "robot.xml").stat().st_mtime >= xml.stat().st_mtime:
+        return dst
+    dst.mkdir(exist_ok=True)
+
+    def prune_assets(root) -> None:
+        geoms = list(root.iter("geom"))
+        meshes = {g.get("mesh") for g in geoms if g.get("mesh")}
+        mats = {g.get("material") for g in geoms if g.get("material")}
+        asset = root.find("asset")
+        for el in list(asset):
+            if el.tag == "mesh" and el.get("name") not in meshes:
+                asset.remove(el)
+            elif el.tag == "material" and el.get("name") not in mats:
+                asset.remove(el)
+        texs = {m.get("texture") for m in asset.iter("material") if m.get("texture")}
+        for el in list(asset):
+            if el.tag == "texture" and el.get("type") != "skybox" and el.get("name") not in texs:
+                asset.remove(el)
+
+    tree = ET.parse(xml)
+    root = tree.getroot()
+    world = root.find("worldbody")
+    robot = world.find("body[@name='pelvis']")
+    robot_geoms = {id(g) for g in robot.iter("geom")}
+    for parent in list(root.iter()):
+        for g in [c for c in parent if c.tag == "geom"]:
+            if id(g) not in robot_geoms and g.get("contype") == "0" and g.get("conaffinity") == "0":
+                parent.remove(g)
+    prune_assets(root)
+    tree.write(dst / "scene_locomani.xml")
+    for el in [c for c in world if c.tag == "body" and c.get("name") != "pelvis"]:
+        world.remove(el)
+    prune_assets(root)
+    tree.write(dst / "robot.xml")
+    meta = json.loads((src / "scene_meta.json").read_text())
+    meta["physics_of"] = str(src)
+    (dst / "scene_meta.json").write_text(json.dumps(meta))
+    return dst
+
+
 class SceneWorld:
-    """`scene_dir` holds scene_meta.json + scene_locomani.xml (scripts/adt_to_scene.py mujoco)."""
+    """`scene_dir` holds scene_meta.json + scene_locomani.xml (scripts/adt_to_scene.py mujoco); the sim runs its
+    physics copy (`physics_scene`)."""
 
     def __init__(
         self,
@@ -61,15 +114,14 @@ class SceneWorld:
         grip_law: dict | None = None,
     ):
         self.dir = Path(scene_dir)
+        self.physics = physics_scene(self.dir)
         self.meta = json.loads((self.dir / "scene_meta.json").read_text())
         # the finger law: the SONIC line's (kp 1.5, kd 0.1, ctrl clamp 20), which the 65-object comparison ran on both
         # controllers and the ported hand program (skills/grasp_program.py) closes with
         law = GRIP_LAW if grip_law is None else grip_law
-        backend = ScaleBfmBackendConfig(scene_dir=str(self.dir), object_name="", **law)
+        backend = ScaleBfmBackendConfig(scene_dir=str(self.physics), object_name="", **law)
         self.sim = R.Sim(policy.meta, backend=backend)
-        self.motor = Motor(
-            self.sim, policy, motor_config, model_xml=str(self.dir / "scene_locomani.xml"), jacobian=jacobian
-        )
+        self.motor = Motor(self.sim, policy, motor_config, model_xml=str(self.physics / "robot.xml"), jacobian=jacobian)
         m = self.sim.m
         self.free = {k: m.body(o["body"]).id for k, o in self.meta["objects"].items() if o.get("free")}
         self.occ, self.nav = build_navigation(self.meta, body_radius=BODY_RADIUS_M)
