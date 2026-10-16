@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 2, 2026-10-16)
+# Rules for the scene RSI loop (TODO 27, version 3, 2026-10-16)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -51,7 +51,7 @@ rule is a new version of this file, committed, and counted as one human interven
 20. Stop and write an escalation instead of acting when a step needs the scene, the controller or its training, the
     motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget.
 
-## Infeasibility (code; plan section 8, D13; version 2)
+## Infeasibility (code; plan section 8, D13; version 3)
 
 21. A claim that starts cannot be done names the actions it assumed, a hard constraint as a check file the driver runs,
     exits (a new capability that would open them) or, only for a physical claim, why there are none, what would
@@ -60,7 +60,9 @@ rule is a new version of this file, committed, and counted as one human interven
 22. A claim parks its starts only if the check holds on every claimed start and every attempt fails. Parked starts
     still count as failures in every pool and are no longer repair targets. A park reopens, and is recorded as wrong,
     as soon as an incumbent finishes one of its starts. A skill too big for one Engineer call goes to the outer loop
-    as a gap proposal.
+    as a gap proposal. An exit that fits one Engineer call is built on the Manager's `reopen` (version 3): the
+    candidate runs on that park's diagnostic starts only, and goes to the gate only if it finishes one of them (the
+    park then lifts).
 23. `held(X)` needs both fingers of one hand on X (or both hands) and X off every surface (success rule 2,
     2026-10-16). Under rule 1 one finger was enough: a mug hanging on closed fingers counted. Rounds judged under rule 1
     are set aside as `_rule1_*` and run again.

@@ -285,6 +285,40 @@ class Infeasibility(unittest.TestCase):
         self.assertEqual(lp.jload(lp.STATE / "parked.json"), {})
         self.assertTrue(any(e.get("step") == "unpark" and e["claim_wrong"] for e in lp.entries()))
 
+    def test_reopen_runs_only_the_parked_starts_and_lifts_on_a_win(self):
+        """TODO 27.8.7: a candidate built for a park's exit runs on that park's starts; a win lifts the park without
+        calling the claim wrong, no win drops the candidate, an unknown park is refused."""
+        from unittest import mock
+
+        lp, root = self.lp, Path(self.tmp.name)
+        cand = root / "cand"
+        (cand / "skills").mkdir(parents=True)
+        (cand / "candidate.json").write_text(json.dumps({"set": {"pick.X": 1}}))
+        starts = ["book_pickup_s1", "book_pickup_s2"]
+        lp.jdump(lp.STATE / "parked.json", {"book": dict(task="book_pickup", scope="task", starts=starts, exits=[])})
+        ran = []
+
+        def spy(ok):
+            fake = self._fake_rounds(ok_labels=ok)
+
+            def run_jobs(jobs, *a, **k):
+                ran.extend(j.labels for j in jobs)
+                return fake(jobs, *a, **k)
+
+            return run_jobs
+
+        with mock.patch.object(lp.B, "run_jobs", spy(set())):
+            self.assertFalse(lp.reopen_test(5, root / "it5", cand, "book"))
+        self.assertEqual(ran, [tuple(starts)])
+        self.assertIn("book", lp.jload(lp.STATE / "parked.json"))
+        with mock.patch.object(lp.B, "run_jobs", spy({"book_pickup_s2"})):
+            self.assertTrue(lp.reopen_test(6, root / "it6", cand, "book"))
+        self.assertEqual(lp.jload(lp.STATE / "parked.json"), {})
+        up = [e for e in lp.entries() if e["step"] == "unpark"]
+        self.assertEqual((up[-1]["by"], up[-1]["claim_wrong"], up[-1]["won"]), ("reopen", False, ["book_pickup_s2"]))
+        self.assertFalse(lp.reopen_test(7, root / "it7", cand, "book"))
+        self.assertEqual(lp.entries()[-1]["error"], "no such park")
+
     def test_unparked_view_and_gap_candidates(self):
         lp, root = self.lp, Path(self.tmp.name)
         accept = ["book_pickup_s7", "mug_pickup_s8", "mug_pickup_s9"]

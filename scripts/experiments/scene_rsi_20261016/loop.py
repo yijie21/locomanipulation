@@ -20,7 +20,9 @@ actions it assumed, a hard constraint as a check file (claim_check.py), exits, w
 The driver runs the check and the attempts (closed loop); both must hold to park the starts. Parked starts keep
 counting as failures everywhere; each iteration's incumbent diagnostic rounds reopen any park whose start it finishes
 (the claim is recorded as wrong). The parks' exits, grouped by capability, are the Manager's gap candidates; its
-`gap_proposals` (skills too big for one Engineer call) go to gaps.jsonl for the outer loop.
+`gap_proposals` (skills too big for one Engineer call) go to gaps.jsonl for the outer loop. An exit that fits one
+Engineer call (TODO 27.8.7) is the Manager's `reopen`: the Engineer builds it, the candidate runs on that park's
+diagnostic starts only (no gate call), and a finished start lifts the park and sends the candidate to the gate as usual.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     nohup setsid $PY scripts/experiments/scene_rsi_20261016/loop.py run pick_single > /dev/null 2>&1 &
@@ -139,8 +141,9 @@ MANAGER_SCHEMA = {
     "type": "object",
     "required": ["decision", "reason", "summary_zh"],
     "properties": {
-        "decision": {"enum": ["engineer", "review", "stop"]},
+        "decision": {"enum": ["engineer", "reopen", "review", "stop"]},
         "hypothesis": {"type": "string"},
+        "reopen_claim": {"type": "string"},  # 27.8.7: the park whose exit the Engineer builds
         "focus": {"type": "string"},
         "reason": {"type": "string"},
         "escalation": {"type": "string"},
@@ -377,6 +380,29 @@ def unpark(base: Path, n: int) -> list[str]:
     if wins:
         jdump(STATE / "parked.json", parked)
     return sorted(wins)
+
+
+def reopen_test(n: int, it_dir: Path, cand: Path, cid: str) -> bool:
+    """TODO 27.8.7: a candidate built for park `cid`'s exit runs on that park's diagnostic starts only, before any gate
+    call. A finished start lifts the park -- the exit held; the claim was about the present skills and stands, so it is
+    not recorded as wrong -- and the candidate goes to the gate as usual. None finished: the candidate is dropped."""
+    parked = jload(STATE / "parked.json", {})
+    p = parked.get(cid)
+    out_dir = it_dir / "reopen" / cid
+    if p is not None:
+        B.run_jobs([B.Job(cand / "skills", out_dir, overrides(cand), tuple(p["starts"]))], FAMILY, LOOP / "pool_diag",
+                   PROCS, it_dir / "prober.log", GPUS)  # fmt: skip
+    out = B.outcomes(out_dir) if p is not None else {}
+    won = sorted(k for k, x in out.items() if x["ok"])
+    whys = collections.Counter((x.get("plan_why") or x["why"] or "?")[:60] for x in out.values() if not x["ok"])
+    ledger(dict(step="reopen_test", iter=n, claim=cid, n=len(out), ok=won, why=dict(whys),
+                error=None if p is not None else "no such park"))  # fmt: skip
+    if not won:
+        return False
+    parked.pop(cid)
+    jdump(STATE / "parked.json", parked)
+    ledger(dict(step="unpark", iter=n, claim=cid, task=p["task"], won=won, claim_wrong=False, by="reopen"))
+    return True
 
 
 def unparked_view(rounds: Path) -> dict | None:
@@ -728,19 +754,27 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if dec["decision"] == "review":
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
         return None
+    reopen = dec.get("reopen_claim") if dec["decision"] == "reopen" else None
+    park_ = jload(STATE / "parked.json", {}).get(reopen) if reopen else None
+    if reopen and park_ is None:
+        ledger(dict(step="reopen_test", iter=n, claim=reopen, n=0, ok=[], why={}, error="no such park"))
+        return None
     chosen = next((h for h in hyps["hypotheses"] if h["id"] == dec.get("hypothesis")), None)
     ctx = it_dir / "engineer_context.json"
-    jdump(ctx, context(inc, dict(hypothesis=chosen, probe=[p for p in pr if p.get("id") == dec.get("hypothesis")],
-                                 manager=dec)))  # fmt: skip
+    claims_of = STATE / f"iter_{int(park_['iter']):02d}" / "claims.json" if reopen else None
+    tried = [r for r in jload(claims_of, []) if r.get("id") == reopen] if reopen else []
+    jdump(ctx, context(inc, dict(hypothesis=None if reopen else chosen, manager=dec,
+                                 probe=[] if reopen else [p for p in pr if p.get("id") == dec.get("hypothesis")],
+                                 park=dict(park_, id=reopen, checked=tried) if reopen else None)))  # fmt: skip
     prompt = fill((HERE / "prompts" / "engineer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **common)
     stub_e = dict(mechanism="stub", files_changed=[], set={**inc["set"], **(chosen or {}).get("delta", {}).get("set", {})},
                   tests="none")  # fmt: skip
     eng, acct = claude("engineer", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_e if stub else None)
-    return after_engineer(n, it_dir, inc, eng, acct, base_changes, stub)
+    return after_engineer(n, it_dir, inc, eng, acct, base_changes, stub, reopen)
 
 
 def after_engineer(
-    n: int, it_dir: Path, inc: dict, eng: dict, acct: dict, base_changes: list, stub: bool
+    n: int, it_dir: Path, inc: dict, eng: dict, acct: dict, base_changes: list, stub: bool, reopen: str | None = None
 ) -> str | None:
     rel = SKILLS.relative_to(REPO).as_posix() + "/"
     now_changed = changed_files()
@@ -778,6 +812,8 @@ def after_engineer(
                 reason=f"engineer changed files outside the skills package: {stray}",
             )
         )
+        return None
+    if reopen and not reopen_test(n, it_dir, cand, reopen):
         return None
     gate_args = [str(SIM_PY), str(HERE / "gate.py"), FAMILY, "--gate", str(GATE_DIR), "--pool", str(accept_pool()),
                  "--candidate", str(cand), "--gpus", GPUS]  # fmt: skip

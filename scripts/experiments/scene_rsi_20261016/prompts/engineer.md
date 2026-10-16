@@ -9,4 +9,6 @@ After a change run `make test TESTS="tests/test_scene_task_runner.py"` and a one
 CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src OMP_NUM_THREADS=2 {SIM_PY} scripts/experiments/scene_rsi_20261016/scene_round.py {FAMILY} --pool {POOL} --skills {SKILLS} --out {ITER}/smoke --labels <label> --set '<your set as JSON>'
 Never open anything under a directory named scene_rsi_20261016_hidden. Do not run the gate; the loop does.
 
+When the Manager's decision is `reopen`, the context holds `park` (the claim, its exits, what code checked) instead of a hypothesis: build the exit the Manager names as a skill path that the parked starts take, and smoke it on one of them. The loop first runs the candidate on that park's diagnostic starts; only if it finishes one does the candidate reach the gate, where it must still not lose other starts.
+
 Keep the candidate as small as the evidence supports: one mechanism per candidate. Return `mechanism` (what changed and why), `files_changed`, `set`, and `tests` (what you ran and what it showed).
