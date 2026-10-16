@@ -1,8 +1,8 @@
-# STATE — 2026-10-17（场景 RSI 第 2 阶段第 1 轮外环：内环 1/5 `r1_on_single` 完成并写回；2/5 `r1_held_single` 在跑）
+# STATE — 2026-10-16（场景 RSI 第 2 阶段第 1 轮外环：内环 1/5 `r1_on_single` 完成并写回；2/5 `r1_held_single` 在跑）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-15 16:10）：origin/main = `a2cfb23`；本地多 31 个提交，**都没推送**（用户没说推）。
-已确认（10-17 00:20 UTC）：**内环 `r1_held_single` 在跑**（沙盒 `/workspace/code/rsi-scene/r1-held-a`，`/workspace/tmp/run_r1_held.sh` 起的，6 h / 150 USD 上限，两卡 12 进程）；跑时不要另起仿真批次。查看：沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py status r1_held_single`，日志 `.../r1_held_single/loop/driver.log`。已结束的沙盒：`pick-a`（pick_single）、`r1-on-a`（r1_on_single），都已写回主仓库技能目录。
+已确认（10-16 23:20 UTC）：**内环 `r1_held_single` 在跑**（沙盒 `/workspace/code/rsi-scene/r1-held-a`，`/workspace/tmp/run_r1_held.sh` 起的，6 h / 150 USD 上限，两卡 12 进程）；跑时不要另起仿真批次。查看：沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py status r1_held_single`，日志 `.../r1_held_single/loop/driver.log`。已结束的沙盒：`pick-a`（pick_single）、`r1-on-a`（r1_on_single），都已写回主仓库技能目录。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
 ## 提交与磁盘
