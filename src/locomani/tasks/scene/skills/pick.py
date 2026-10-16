@@ -2,19 +2,44 @@
 furniture to a stance at an approachable edge from which a side of the object fits the jaw (its own box, `grasp_yaw`),
 reach the jaw to the pre-grasp with the motor layer (whole-body IK + servo), then the 65-object line's closed-loop hand
 program (grasp_program.py: settle, gated entry with lateral correction and retry, close, lift, hold; plan D4, user
-2026-10-16). v0 (motor reaches + grip, no closed loop) stays as `pick_simple` for comparison."""
+2026-10-16). v0 (motor reaches + grip, no closed loop) stays as `pick_simple` for comparison.
+
+This is the pick_single loop's final incumbent (0109bde905a8: the code of iterations 1-3, the parameter set of every
+accepted candidate folded into the constants here and in grasp_program.py), written back to the skill catalog for the
+outer loop (plan §2 step 5, TODO 27.4): sealed pool 41/80.
+
+The approach (`plan_approach`, loop iteration 1): the scene file's approach_edges first, the surface's other edges only
+when those refuse or have no path; walks on the skill's own map, which adds the static floor objects the scene's map
+leaves out (a step stool next to the utility cart and a trash bin at the kitchen island's end were behind both walk
+falls); a stance too close to one of them, or without a path, shifts sideways. The reach to the pre-grasp rises outside
+the surface's edge first when its fingertips would otherwise cross the edge below the top (they hooked the slab's lip
+from below: pre-grasp misses of 10-30 cm).
+
+A low flat object on a low surface (the TV remote on the coffee table, `is_top`, loop iteration 2) has no workable side
+grasp: `pick_top` pinches it from above, wrist x down, closing across its narrow side.
+
+Fallback plans (`plan_hand`, loop iteration 3) only where the planner above finds none for the hand: a top-down pinch
+out to TOP_MAX_DEPTH_M, then the other hand from the mirrored stance (on the kitchen island's free west side every
+right-hand stance stands against a bar stool; the left hand's stance is on the stool's far side). A fallback plan is
+refused when the robot starts against a floor object (a mug start spawns with its wrist inside a trash bin's footprint
+and falls on the first step whatever the plan)."""
 
 from __future__ import annotations
 
+import copy
+
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 
 from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.motor import Outcome
-from locomani.tasks.scene.navigate import walk_path
+from locomani.primitives.navigator import Navigator
+from locomani.primitives.navigator import build as build_navigation
+from locomani.tasks.scene.navigate import path as nav_path
 
 from . import grasp_program
 
-JAW_SPAN_M = 0.085  # widest side the open Dex1 jaw (9.5 cm) closes across with a margin
+JAW_SPAN_M = 0.092  # widest side the open Dex1 jaw (9.5 cm) closes across (0.085 until the pick_single loop's set)
 STAND_AHEAD_M = 0.40  # object this far ahead of the pelvis ...
 STAND_SIDE_M = 0.12  # ... and this far toward the grasping hand
 PREGRASP_BACK_M = 0.12  # jaw centre short of the object centre before the entry
@@ -22,18 +47,36 @@ ENTRY_PAST_M = 0.01
 ENTRY_SPEED = 0.08
 LIFT_M = 0.10
 FACE_TOLERANCE_DEG = 40.0
-MAX_DEPTH_M = 0.30  # object centre at most this far in from the edge the robot stands at
+MAX_DEPTH_M = 0.35  # object centre at most this far in from the edge the robot stands at (0.30 until the loop's set)
 NORMALS = {"-x": (-1.0, 0.0), "+x": (1.0, 0.0), "-y": (0.0, -1.0), "+y": (0.0, 1.0)}
+FLOOR_BOTTOM_M = 0.30  # the skill's map adds static floor objects whose bottom is below this ...
+FLOOR_MAPPED_MAX = 0.5  # ... and whose footprint the scene's map covers less than this (furniture is on it already)
+STANCE_CLEAR_M = 0.12  # pelvis at least this far from those footprints
+STAND_SIDE_RETRY_M = (0.22, 0.30)  # lateral offsets tried after STAND_SIDE_M when a stance is not clear or unreachable
+OTHER_EDGE_CLEAR_M = 0.25  # a stance at an edge the scene file does not list: this clear of all but its own furniture
+VIA_OUT_M = 0.08  # a reach whose fingertips would cross the edge below the top rises this far outside the edge first
+VIA_JAW_ABOVE_TOP_M = 0.03  # only reaches that start with the jaw below the top + this
+FINGERTIP_M = 0.033  # fingertips ahead of the jaw centre along the wrist x
+TOP_FLAT_M = 0.02  # an object with box half-height below this on a surface below TOP_SURFACE_MAX_M: top-down pinch
+TOP_SURFACE_MAX_M = 0.6  # (the wallet's 1.12 m shelf: the IK sits at its limit, 48 deg off, iteration 1)
+TOP_TIP_CLEAR_M = 0.004  # top-down pinch: fingertips this far above the surface top
+TOP_ABOVE_M = 0.10  # ... from a pre-grasp this far above the grasp
+TOP_DESCENT_SPEED = 0.05
+TOP_MAX_DEPTH_M = 0.39  # a top-down pinch's depth limit (fallback pass; MAX_DEPTH_M stays the side grasps')
+SPAWN_CLEAR_M = 0.08  # a fallback plan needs the start pelvis this far from every floor object footprint
+_NAV: dict = {}  # id(meta) -> (meta, occupancy, navigator, floor boxes): one map per scene and process
+_CLEAR: dict = {}  # (id(occupancy), furniture) -> (occupancy, clearance grid without that furniture's surfaces)
 
 
-def facings(surface: dict, xy) -> list[tuple[float, float]]:
-    """(robot yaw into the surface, that edge's distance to `xy`) per approachable edge, nearest first."""
+def facings(surface: dict, xy, edges=None) -> list[tuple[float, float]]:
+    """(robot yaw into the surface, that edge's distance to `xy`) per approachable edge (or per edge of `edges`),
+    nearest first."""
     yaw_s = float(surface.get("yaw", 0.0))
     Rs = R.rot_z(yaw_s)[:2, :2]
     local = Rs.T @ (np.asarray(xy, float)[:2] - np.asarray(surface["xy"], float))
     half = np.asarray(surface["half_extent"], float)
     out = []
-    for e in surface.get("approach_edges") or NORMALS:
+    for e in edges or surface.get("approach_edges") or NORMALS:
         n = np.asarray(NORMALS[e])
         w = Rs @ n
         out.append((float(np.arctan2(-w[1], -w[0])), float(half[0 if "x" in e else 1] - n @ local)))
@@ -62,6 +105,7 @@ def pick_simple(ctx, key: str, side: str = "right") -> Outcome:
     plan = approach(ctx, key, side)
     if not plan.ok:
         return plan
+    side = plan.info["side"]
     pos, quat = world.object_pose(key)  # the object as it is now
     Rg = R.rot_z(plan.info["psi"])
     out = ctx.note("pregrasp", m.reach(side, pos - Rg @ np.array([PREGRASP_BACK_M, 0.0, 0.0]), Rg))
@@ -79,15 +123,21 @@ def pick_simple(ctx, key: str, side: str = "right") -> Outcome:
 
 
 def pick(ctx, key: str, side: str = "right") -> Outcome:
-    """Walk, reach the pre-grasp, then the ported closed-loop hand program (grasp_program.run)."""
+    """Walk, reach the pre-grasp, then the ported closed-loop hand program (grasp_program.run); a low flat object
+    (`is_top`) is pinched from above instead (`pick_top`)."""
     world, m = ctx.world, ctx.motor
     plan = approach(ctx, key, side)
     if not plan.ok:
         return plan
+    side = plan.info["side"]
+    if is_top(world, key):
+        return pick_top(ctx, key, side, plan)
     pos, quat = world.object_pose(key)
     psi = plan.info["psi"]
     Rg = R.rot_z(psi)
-    out = ctx.note("pregrasp", m.reach(side, pos - Rg @ np.array([grasp_program.PREGRASP_BACK, 0.0, 0.0]), Rg))
+    pre = pos - Rg @ np.array([grasp_program.PREGRASP_BACK, 0.0, 0.0])
+    via = edge_via(ctx, key, side, plan, pre)
+    out = ctx.note("pregrasp", m.reach(side, pre, Rg, via=via), via=[np.round(v, 3).tolist() for v in via])
     if m.fell_at is not None:
         return out
     pos, _ = world.object_pose(key)
@@ -102,24 +152,221 @@ def span(quat, half, psi: float) -> float:
     return float(2 * (abs(np.sin(a)) * half[0] + abs(np.cos(a)) * half[1]))
 
 
-def approach(ctx, key: str, side: str) -> Outcome:
-    """Choose the edge and grasp yaw, walk to the stance. info: psi (approach yaw), edge_depth_m."""
-    world, m = ctx.world, ctx.motor
+def floor_boxes(meta: dict, occ) -> list[tuple]:
+    """(centre xy, half extent xy, yaw) of the static floor objects `occ` (the scene's map: walls and surfaces) leaves
+    out: bottom below FLOOR_BOTTOM_M and less than FLOOR_MAPPED_MAX of the footprint occupied (in the ADT apartment the
+    step stool, the trash bins, a speaker, a laundry basket and a cat bowl)."""
+    out = []
+    for k, o in meta["objects"].items():
+        if o.get("free") or o.get("surface") is not None or k.startswith("Apartment"):
+            continue
+        p, he = np.asarray(o["init_pos"], float), np.asarray(o["box"]["half_extent"], float)
+        if p[2] - he[2] > FLOOR_BOTTOM_M:
+            continue
+        yaw = R.yaw_of(np.asarray(o["init_quat"], float))
+        Ro = R.rot_z(yaw)[:2, :2]
+        grid = np.linspace(-1.0, 1.0, 9)
+        cells = [occ.cell_of(p[:2] + Ro @ (he[:2] * [u, v])) for u in grid for v in grid]
+        mapped = np.mean([not occ.in_bounds(c) or occ.occupied[c[0], c[1]] for c in cells])
+        if mapped < FLOOR_MAPPED_MAX:
+            out.append((p[:2], he[:2], yaw))
+    return out
+
+
+def nav_map(world):
+    """(occupancy, navigator, floor boxes): the scene's map plus `floor_boxes`, built once per scene."""
+    meta = world.meta
+    hit = _NAV.get(id(meta))
+    if hit is None or hit[0] is not meta:
+        occ, _ = build_navigation(meta, body_radius=world.occ.body_radius)
+        boxes = floor_boxes(meta, occ)
+        for c, he, yaw in boxes:
+            occ.add_box(c, he, yaw)
+        occ.recompute()
+        hit = _NAV[id(meta)] = (meta, occ, Navigator(occ), boxes)
+    return hit[1:]
+
+
+def floor_clearance(boxes, xy) -> float:
+    """Distance from `xy` to the nearest floor box footprint (inf without any)."""
+    d = np.inf
+    for c, he, yaw in boxes:
+        q = np.maximum(np.abs(R.rot_z(yaw)[:2, :2].T @ (np.asarray(xy, float)[:2] - c)) - he, 0.0)
+        d = min(d, float(np.linalg.norm(q)))
+    return d
+
+
+def other_clearance(world, surface_key: str, xy) -> float:
+    """Distance from `xy` to the nearest occupied cell of the skill's map that is not one of the surfaces of
+    `surface_key`'s furniture (keys "<furniture>__<n>"): walls, other furniture, the floor objects."""
+    occ, _, _ = nav_map(world)
+    furniture = surface_key.split("__")[0]
+    hit = _CLEAR.get((id(occ), furniture))
+    if hit is None or hit[0] is not occ:
+        own = copy.copy(occ)
+        own.occupied = np.zeros_like(occ.occupied)
+        for k, s in world.meta["surfaces"].items():
+            if k.split("__")[0] == furniture and s.get("half_extent") is not None:
+                own.add_box(s["xy"], s["half_extent"], s.get("yaw", 0.0))
+        grid = distance_transform_edt(~(occ.occupied & ~own.occupied), sampling=occ.res)
+        hit = _CLEAR[(id(occ), furniture)] = (occ, grid)
+    c = occ.clip_cell(occ.cell_of(xy))
+    return float(hit[1][c[0], c[1]])
+
+
+def plan_approach(world, start_xy, key: str, side: str, max_depth: float | None = None):
+    """((face, edge depth, psi, stance xy, edge xy) or None, why): the first edge -- the surface's approach_edges
+    nearest first, then its other edges nearest first -- from which a side of the object fits the jaw (`grasp_yaw`) with
+    a stance that is STANCE_CLEAR_M clear of the floor objects (at another edge also OTHER_EDGE_CLEAR_M clear of all but
+    the surface's own furniture: the kitchen island's unlisted west side stands against a bar stool) and has a path on
+    the skill's map; the stance is STAND_SIDE_M toward the hand, else each of STAND_SIDE_RETRY_M. The utility cart's
+    crowded top leaves the canister lying along one edge: only the edge at its end faces its narrow side. The object
+    centre is at most `max_depth` (default MAX_DEPTH_M) in from the edge."""
     obj = world.meta["objects"][key]
     surf = world.meta["surfaces"][obj["surface"]]
     pos, quat = world.object_pose(key)
-    # the nearest approachable edge from which a side of the object fits the jaw (the utility cart's crowded top
-    # leaves the canister lying along one edge: only the edge at its end faces its narrow side)
-    face = depth = psi = None
-    for f, dep in facings(surf, pos):
-        y = grasp_yaw(quat, obj["box"]["half_extent"], f) if dep <= MAX_DEPTH_M else None
-        if y is not None:
-            face, depth, psi = f, dep, y
-            break
-    if psi is None:
-        return ctx.note("pick", Outcome(False, "no side fits the jaw within reach of an approachable edge", m.t, m.t))
-    lateral = -STAND_SIDE_M if side == "right" else STAND_SIDE_M
-    stance = pos[:2] - (R.rot_z(face) @ np.array([STAND_AHEAD_M, lateral, 0.0]))[:2]
-    out = ctx.note("walk", walk_path(m, world.occ, world.nav, stance, face), edge_depth_m=round(depth, 3))
-    out.info.update(psi=psi, edge_depth_m=depth)
+    occ, nav, boxes = nav_map(world)
+    listed = list(surf.get("approach_edges") or NORMALS)
+    others = [e for e in NORMALS if e not in listed]
+    sign = -1.0 if side == "right" else 1.0
+    edges = [(f, dep, True) for f, dep in facings(surf, pos, listed)]
+    edges += [(f, dep, False) for f, dep in (facings(surf, pos, others) if others else [])]
+    fit = _nearest_closing_yaw if is_top(world, key) else grasp_yaw
+    why = "no side fits the jaw within reach of an approachable edge"
+    max_depth = MAX_DEPTH_M if max_depth is None else max_depth
+    for f, dep, is_listed in edges:
+        psi = fit(quat, obj["box"]["half_extent"], f) if dep <= max_depth else None
+        if psi is None:
+            continue
+        why = "no clear stance with a path at an edge where a side fits the jaw"
+        for lateral in (STAND_SIDE_M, *STAND_SIDE_RETRY_M):
+            stance = pos[:2] - (R.rot_z(f) @ np.array([STAND_AHEAD_M, sign * lateral, 0.0]))[:2]
+            if floor_clearance(boxes, stance) < STANCE_CLEAR_M:
+                continue
+            if not is_listed and other_clearance(world, obj["surface"], stance) < OTHER_EDGE_CLEAR_M:
+                continue
+            if route(occ, nav, start_xy, stance) is None:
+                continue
+            return (f, dep, psi, stance, pos[:2] - dep * np.array([np.cos(f), np.sin(f)])), ""
+    return None, why
+
+
+def plan_hand(world, start_xy, key: str, side: str):
+    """(plan, hand, why): `plan_approach` for `side`; only when that finds none, the fallback passes -- the same hand
+    with a top-down pinch out to TOP_MAX_DEPTH_M, then the other hand (stance mirrored) -- whose plan is refused when
+    the start is less than SPAWN_CLEAR_M from a floor object. A start no pass plans keeps the first pass's why."""
+    plan, why = plan_approach(world, start_xy, key, side)
+    if plan is not None:
+        return plan, side, ""
+    depth = TOP_MAX_DEPTH_M if is_top(world, key) else MAX_DEPTH_M
+    other = "left" if side == "right" else "right"
+    for hand, limit in ([(side, depth)] if depth > MAX_DEPTH_M else []) + [(other, depth)]:
+        fallback, _ = plan_approach(world, start_xy, key, hand, limit)
+        if fallback is None:
+            continue
+        if floor_clearance(nav_map(world)[2], start_xy) < SPAWN_CLEAR_M:
+            return None, hand, "start against a floor object"
+        return fallback, hand, ""
+    return None, side, why
+
+
+def route(occ, nav, start_xy, goal_xy) -> list | None:
+    """navigate.path, or -- when the start is inside a floor object's inflation, where the field cannot start -- a
+    straight leg out to the nearest free cell first."""
+    corners = nav_path(occ, nav, start_xy, goal_xy)
+    if corners is None and not occ.is_free(start_xy):
+        out = occ.xy_of(occ.nearest_free(start_xy))
+        rest = nav_path(occ, nav, out, goal_xy)
+        corners = None if rest is None else [np.asarray(start_xy, float)[:2], *rest]
+    return corners
+
+
+def walk_route(m, occ, nav, goal_xy, goal_yaw: float) -> Outcome:
+    """navigate.walk_path on the skill's map, with `route`'s way out of an inflation."""
+    corners = route(occ, nav, m.sim.d.qpos[:2].copy(), goal_xy)
+    if corners is None:
+        return Outcome(False, "no path on the occupancy map", m.t, m.t)
+    out = None
+    for k, c in enumerate(corners[1:], start=1):
+        out = m.walk_to(c, goal_yaw if k == len(corners) - 1 else None)
+        if not out.ok:
+            return out
+    out.info["legs"] = len(corners) - 1
     return out
+
+
+def approach(ctx, key: str, side: str) -> Outcome:
+    """Choose the hand, edge, grasp yaw and stance (`plan_hand`), walk there. info: side (the hand), psi (approach
+    yaw), edge_depth_m, face (the robot's yaw into the surface), edge_xy (where the object's line along `face` crosses
+    that edge)."""
+    world, m = ctx.world, ctx.motor
+    plan, side, why = plan_hand(world, m.sim.d.qpos[:2].copy(), key, side)
+    if plan is None:
+        return ctx.note("pick", Outcome(False, why, m.t, m.t))
+    face, depth, psi, stance, edge = plan
+    occ, nav, _ = nav_map(world)
+    out = ctx.note("walk", walk_route(m, occ, nav, stance, face), edge_depth_m=round(depth, 3),
+                   face_deg=round(float(np.degrees(face)), 1), stance=np.round(stance, 3), side=side)  # fmt: skip
+    out.info.update(side=side, psi=psi, edge_depth_m=depth, face=face, edge_xy=edge)
+    return out
+
+
+def edge_via(ctx, key: str, side: str, plan: Outcome, pre) -> tuple:
+    """The via point for the reach to the pre-grasp `pre`, or (): when the jaw starts below the surface top +
+    VIA_JAW_ABOVE_TOP_M, the pre-grasp is above the top, and the straight leg's fingertips (the jaw + FINGERTIP_M along
+    the starting wrist x) would cross the edge's plane below the top, go first to the jaw's xy moved VIA_OUT_M outside
+    the edge (or where it is, when farther out) at the pre-grasp's height; the last leg goes in level."""
+    world, m = ctx.world, ctx.motor
+    surf = world.meta["surfaces"][world.meta["objects"][key]["surface"]]
+    top = float(surf["top"])
+    jaw, rot = m.jaw_centre(side)
+    if jaw[2] > top + VIA_JAW_ABOVE_TOP_M or pre[2] < top:
+        return ()
+    f, edge = plan.info["face"], plan.info["edge_xy"]
+    n_in = np.array([np.cos(f), np.sin(f)])
+    tips = [jaw + u * (pre - jaw) + FINGERTIP_M * rot[:, 0] for u in np.linspace(0.0, 1.0, 51)]
+    if not any(float((t[:2] - edge) @ n_in) >= 0.0 and t[2] < top for t in tips):
+        return ()
+    s_jaw = float((jaw[:2] - edge) @ n_in)
+    return (np.r_[jaw[:2] - n_in * max(0.0, s_jaw + VIA_OUT_M), pre[2]],)
+
+
+def is_top(world, key: str) -> bool:
+    """A low flat object on a low surface (box half-height below TOP_FLAT_M, surface top below TOP_SURFACE_MAX_M): the
+    TV remote on the coffee table. Its only side that fits the jaw is its 3.6 cm width, so a side entry runs along its
+    16.4 cm length and the palm meets its near end about 12 cm short."""
+    o = world.meta["objects"][key]
+    top = float(world.meta["surfaces"][o["surface"]]["top"])
+    return o["box"]["half_extent"][2] < TOP_FLAT_M and top < TOP_SURFACE_MAX_M
+
+
+def _nearest_closing_yaw(quat, half, face: float) -> float:
+    """The wrist yaw of a top-down pinch closing across the object's local y when that fits the jaw, else across its
+    local x, nearest `face` (no FACE_TOLERANCE_DEG: the hand comes from above)."""
+    yaw_o = R.yaw_of(quat)
+    cands = [yaw_o, yaw_o + np.pi] if 2 * half[1] <= JAW_SPAN_M else [yaw_o + np.pi / 2, yaw_o - np.pi / 2]
+    return float(min(cands, key=lambda a: abs(R.wrap(a - face))))
+
+
+def pick_top(ctx, key: str, side: str, plan: Outcome) -> Outcome:
+    """Top-down pinch after `approach`: wrist x down, closing across the narrow side (plan psi); the pre-grasp
+    TOP_ABOVE_M above the grasp (fingertips TOP_TIP_CLEAR_M above the surface top), descend, grip, lift."""
+    world, m = ctx.world, ctx.motor
+    pos, _ = world.object_pose(key)
+    surf = world.meta["surfaces"][world.meta["objects"][key]["surface"]]
+    Rg = R.rot_z(plan.info["psi"]) @ R.rot_y(np.pi / 2)
+    grasp = np.r_[pos[:2], float(surf["top"]) + FINGERTIP_M + TOP_TIP_CLEAR_M]
+    above = grasp + np.array([0.0, 0.0, TOP_ABOVE_M])
+    via = edge_via(ctx, key, side, plan, above)
+    out = ctx.note("pregrasp", m.reach(side, above, Rg, via=via), via=[np.round(v, 3).tolist() for v in via])
+    if m.fell_at is not None:
+        return out
+    out = ctx.note("descend", m.reach(side, grasp, Rg, speed=TOP_DESCENT_SPEED))
+    if m.fell_at is not None:
+        return out
+    out = ctx.note("grip", m.grip(side))
+    if not out.ok:
+        return out
+    out = ctx.note("lift", m.reach(side, m.jaw_centre(side)[0] + np.array([0.0, 0.0, LIFT_M]), Rg, speed=ENTRY_SPEED))
+    held = world.free[key] in m.between_fingers(side)
+    return Outcome(held, "" if held else "not between the fingers after the lift", out.t0, out.t1)

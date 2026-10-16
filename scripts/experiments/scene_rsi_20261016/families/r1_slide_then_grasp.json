@@ -1,0 +1,24 @@
+{
+ "name": "r1_slide_then_grasp",
+ "about": "outer round 1, gap slide_then_grasp (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/loop/gaps.jsonl): 2 of its 3 discovered tasks, spread over how far they are from the measured settings; new skills ['slide_then_grasp']",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round1/tasks.jsonl",
+ "tasks": [
+  "pick_thick_novel",
+  "pick_wallet"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 150000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 250000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 350000,
+   "n": 80
+  }
+ }
+}

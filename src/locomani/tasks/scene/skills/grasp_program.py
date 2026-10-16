@@ -20,9 +20,9 @@ SIMPLE = dict(
     settle_timeout_s=1.5,
     lateral_correction_speed_m_s=0.03,
     lateral_correction_max_m=0.04,
-    entry_overshoot_m=0.02,
-    entry_capture_depth_m=0.01,
-    entry_timeout_s=6.0,
+    entry_overshoot_m=-0.01,  # 0.02 (bfm_grasp) until the pick_single loop's set, as the three below
+    entry_capture_depth_m=0.025,
+    entry_timeout_s=9.0,
     entry_attempts=2,
     retreat_m=0.08,
     retreat_seconds=1.0,
@@ -32,9 +32,10 @@ SIMPLE = dict(
     disturb_limit_m=0.05,
 )
 TRACKING = dict(deadband=0.002, speed=0.04, acceleration=0.2, clip=0.08)  # SupportedMotion's translation feedback
-ENTRY_GATE = {"on": True, "lateral_m": 0.015, "hold_s": 2.0}  # grasp_planned.ENTRY_GATE
+# grasp_planned.ENTRY_GATE (lateral 0.015 m, hold 2.0 s until the pick_single loop's set)
+ENTRY_GATE = {"on": True, "lateral_m": 0.006, "hold_s": 3.0}
 DASH_SPEED = 0.06  # grasp_planned
-PREGRASP_BACK = 0.10  # grasp_planned
+PREGRASP_BACK = 0.14  # grasp_planned 0.10 until the pick_single loop's set
 PAD_Y, PAD_Z = 0.0475, 0.014  # grasp_planned: open-pad half span across, pad half height
 LIFT_M = 0.10  # grasp_planned
 HOLD_S = 2.0  # bfm_grasp (decision 3 of the controller comparison)

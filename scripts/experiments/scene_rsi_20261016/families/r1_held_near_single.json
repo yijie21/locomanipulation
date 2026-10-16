@@ -1,0 +1,26 @@
+{
+ "name": "r1_held_near_single",
+ "about": "outer round 1, gap held+near_single (checker): 4 of its 4 discovered tasks, spread over how far they are from the measured settings; new skills none",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round1/tasks.jsonl",
+ "tasks": [
+  "bring_canister_to_island",
+  "bring_remote_to_sofa",
+  "bring_novel_to_chair",
+  "bring_novel_to_bed"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 140000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 240000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 340000,
+   "n": 80
+  }
+ }
+}

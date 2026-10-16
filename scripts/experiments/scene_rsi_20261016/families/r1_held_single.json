@@ -1,0 +1,32 @@
+{
+ "name": "r1_held_single",
+ "about": "outer round 1, gap held_single (checker): 10 of its 10 discovered tasks, spread over how far they are from the measured settings; new skills none",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round1/tasks.jsonl",
+ "tasks": [
+  "pick_coffee_can",
+  "pick_white_mug",
+  "pick_wolf_figurine",
+  "pick_thick_novel",
+  "pick_top_shelf_candle",
+  "pick_candle_coffee_table",
+  "pick_car_key",
+  "pick_supply_bin_top_shelf",
+  "pick_wallet",
+  "pick_shelf_plant"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 120000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 220000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 320000,
+   "n": 80
+  }
+ }
+}

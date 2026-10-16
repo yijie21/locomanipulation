@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 3, 2026-10-16)
+# Rules for the scene RSI loop (TODO 27, version 4, 2026-10-16)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -66,3 +66,7 @@ rule is a new version of this file, committed, and counted as one human interven
 23. `held(X)` needs both fingers of one hand on X (or both hands) and X off every surface (success rule 2,
     2026-10-16). Under rule 1 one finger was enough: a mug hanging on closed fingers counted. Rounds judged under rule 1
     are set aside as `_rule1_*` and run again.
+24. A family the outer loop made for a gap (its file's `about` names the new skills, e.g. `r1_on_single`: no skill
+    puts an object down) exists to build those skills here: the first candidates may be a plain end-to-end version
+    (`plan_for` covering the goal, the existing pick reused), improved one Engineer call at a time. They are not gap
+    proposals for the outer loop; only a further skill outside the family's gap is (version 4, phase 2).

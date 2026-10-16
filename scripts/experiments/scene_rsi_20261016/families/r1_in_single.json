@@ -1,0 +1,30 @@
+{
+ "name": "r1_in_single",
+ "about": "outer round 1, gap in_single (checker): 8 of its 8 discovered tasks, spread over how far they are from the measured settings; new skills ['place_into.single']",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round1/tasks.jsonl",
+ "tasks": [
+  "coffee_can_in_trash",
+  "apple_in_black_bowl",
+  "banana_in_wooden_bowl",
+  "supply_bin_in_wooden_box",
+  "wallet_in_wooden_box",
+  "spoon_in_large_pot",
+  "car_key_in_dish",
+  "candle_in_small_dish"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 130000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 230000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 330000,
+   "n": 80
+  }
+ }
+}
