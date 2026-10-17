@@ -1,4 +1,4 @@
-# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scene RSI plan D10, TODO 27.3; phase 1, 2026-10-16).
+# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scene RSI plan D10, TODO 27.3; phase 1, 2026-10-17).
 # Written by scripts/experiments/scene_rsi_20261016/capability_write.py from the phase-1 probes and the inner loops'
 # sealed results -- edit the probes or the writer, not this file. The SONIC table of 2026-10-03 stays in
 # capability.yaml; scripts/scene_feasibility.py --capability picks one.
@@ -88,7 +88,7 @@ locomotion:
     status: measured_one
     setting: ADT apartment, occupancy-map routes at body radius 0.35 m from a random spawn 1-3 m from the object to its stand
       (pick_single sealed pool, 80 rounds, 0 falls)
-    route_max_measured: 6.34
+    route_max_measured: 6.71
     source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10)
   cross_room:
     status: untested
@@ -190,7 +190,7 @@ reach_single_arm:
     - CoffeeCanisterLarge
     surface: UtilityCart__2
     setting: 'ADT apartment (mars): CoffeeCanisterLarge on UtilityCart__2, placement and yaw random on that surface, robot
-      spawned 1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+      spawned 1-3 m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
     success: 10/10
     support_top:
     - 0.702
@@ -208,15 +208,15 @@ reach_single_arm:
     stance_xy:
     - -0.875
     - -1.115
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
   - name: pick_single.dish_soap_pickup
     status: measured
     objects:
     - DishSoap_1
     surface: ApartmentEnv__6
     setting: 'ADT apartment (mars): DishSoap_1 on ApartmentEnv__6, placement and yaw random on that surface, robot spawned
-      1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
-    success: 6/10
+      1-3 m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
+    success: 9/10
     support_top:
     - 0.918
     - 0.918
@@ -233,14 +233,14 @@ reach_single_arm:
     stance_xy:
     - 2.02
     - -2.129
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
   - name: pick_single.jam_pickup
     status: measured
     objects:
     - Jam_Anon
     surface: KitchIsland__0
     setting: 'ADT apartment (mars): Jam_Anon on KitchIsland__0, placement and yaw random on that surface, robot spawned 1-3
-      m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+      m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
     success: 9/10
     support_top:
     - 0.896
@@ -258,14 +258,14 @@ reach_single_arm:
     stance_xy:
     - 1.409
     - -2.539
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
   - name: pick_single.tv_remote_pickup
     status: measured
     objects:
     - TvRemote_1
     surface: BlackCoffeeTable__1
     setting: 'ADT apartment (mars): TvRemote_1 on BlackCoffeeTable__1, placement and yaw random on that surface, robot spawned
-      1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
+      1-3 m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
     success: 10/10
     support_top:
     - 0.454
@@ -281,15 +281,111 @@ reach_single_arm:
     stance_xy:
     - -1.264
     - 1.741
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: r1_held_single.pick_candle_coffee_table
+    status: measured
+    objects:
+    - CandlePattern03_1
+    surface: BlackCoffeeTable__1
+    setting: 'ADT apartment (mars): CandlePattern03_1 on BlackCoffeeTable__1, placement and yaw random on that surface, robot
+      spawned 1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    success: 7/8
+    support_top:
+    - 0.454
+    - 0.454
+    object_width:
+    - 0.077
+    - 0.077
+    object_height:
+    - 0.05
+    - 0.05
+    mass_max: 0.2
+    inboard: null
+    stance_xy:
+    - -1.283
+    - 1.639
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_car_key
+    status: measured
+    objects:
+    - CarKey_2
+    surface: ApartmentEnv__6
+    setting: 'ADT apartment (mars): CarKey_2 on ApartmentEnv__6, placement and yaw random on that surface, robot spawned 1-3
+      m away (r1_held_single sealed pool); 05_498b72b75889'
+    success: 6/8
+    support_top:
+    - 0.918
+    - 0.918
+    object_width:
+    - 0.037
+    - 0.037
+    object_height:
+    - 0.015
+    - 0.015
+    mass_max: 0.04
+    inboard:
+    - 0.075
+    - 0.233
+    stance_xy:
+    - 2.125
+    - -1.701
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_coffee_can
+    status: measured
+    objects:
+    - NIT_CoffeeCan_Anon
+    surface: ExtendableTable__0
+    setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon on ExtendableTable__0, placement and yaw random on that surface, robot
+      spawned 1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    success: 6/8
+    support_top:
+    - 0.747
+    - 0.747
+    object_width:
+    - 0.067
+    - 0.067
+    object_height:
+    - 0.159
+    - 0.159
+    mass_max: 0.35
+    inboard:
+    - 0.066
+    - 0.667
+    stance_xy:
+    - -1.526
+    - -3.777
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_wolf_figurine
+    status: measured
+    objects:
+    - DisplayWolf
+    surface: CornerDisplayShelves_1__1
+    setting: 'ADT apartment (mars): DisplayWolf on CornerDisplayShelves_1__1, placement and yaw random on that surface, robot
+      spawned 1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    success: 8/8
+    support_top:
+    - 0.839
+    - 0.839
+    object_width:
+    - 0.068
+    - 0.068
+    object_height:
+    - 0.095
+    - 0.095
+    mass_max: 0.15
+    inboard: null
+    stance_xy:
+    - -0.556
+    - 0.885
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
   - name: r1_on_single.hand_soap_to_bathroom_sink.pick
     status: measured
     objects:
     - HandSoap_1
     surface: ApartmentEnv__6
     setting: 'ADT apartment (mars): HandSoap_1 from ApartmentEnv__6 onto ApartmentEnv__3, placement and yaw random on its
-      surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4: lifted and
-      carried away'
+      surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held):
+      lifted and carried away'
     success: 7/8
     support_top:
     - 0.918
@@ -310,8 +406,8 @@ reach_single_arm:
     - WhiteVaseMedium_1
     surface: DisplayUnit_1__1
     setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
-      on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4: lifted
-      and carried away'
+      on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held):
+      lifted and carried away'
     success: 6/8
     support_top:
     - 0.727
@@ -335,8 +431,8 @@ reach_single_arm:
     - mug_pickup
     success: 2/10
     setting: 'ADT apartment (mars): Mug_2 on ExtendableTable__0, placement and yaw random on that surface, robot spawned 1-3
-      m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+      m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
   - name: pick_single.orange_pickup
     gap: grasp_single.orange_pickup
     objects:
@@ -345,8 +441,8 @@ reach_single_arm:
     - orange_pickup
     success: 4/10
     setting: 'ADT apartment (mars): Orange_A on KitchIsland__0, placement and yaw random on that surface, robot spawned 1-3
-      m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+      m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
   - name: pick_single.thick_novel_pickup
     gap: grasp_single.thick_novel_pickup
     objects:
@@ -355,8 +451,8 @@ reach_single_arm:
     - thick_novel_pickup
     success: 0/10
     setting: 'ADT apartment (mars): BookFiction1_01 on DisplayShelves_1__0, placement and yaw random on that surface, robot
-      spawned 1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+      spawned 1-3 m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
   - name: pick_single.wallet_pickup
     gap: grasp_single.wallet_pickup
     objects:
@@ -365,11 +461,71 @@ reach_single_arm:
     - wallet_pickup
     success: 0/10
     setting: 'ADT apartment (mars): Wallet_1 on DisplayShelves_1__2, placement and yaw random on that surface, robot spawned
-      1-3 m away (pick_single sealed pool); the loop''s final incumbent 04_0109bde905a8'
-    source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
-  inboard_max: 0.61
+      1-3 m away (pick_single sealed pool); catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (pick_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+  - name: r1_held_single.pick_shelf_plant
+    gap: grasp_single.pick_shelf_plant
+    objects:
+    - Plant2_5
+    pilots:
+    - pick_shelf_plant
+    success: 0/8
+    setting: 'ADT apartment (mars): Plant2_5 on DisplayShelves_1__0, placement and yaw random on that surface, robot spawned
+      1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_supply_bin_top_shelf
+    gap: grasp_single.pick_supply_bin_top_shelf
+    objects:
+    - SupplyBinAccessory_00
+    pilots:
+    - pick_supply_bin_top_shelf
+    success: 0/8
+    setting: 'ADT apartment (mars): SupplyBinAccessory_00 on DisplayShelves_1__2, placement and yaw random on that surface,
+      robot spawned 1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_thick_novel
+    gap: grasp_single.pick_thick_novel
+    objects:
+    - BookFiction1_01
+    pilots:
+    - pick_thick_novel
+    success: 0/8
+    setting: 'ADT apartment (mars): BookFiction1_01 on DisplayShelves_1__0, placement and yaw random on that surface, robot
+      spawned 1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_top_shelf_candle
+    gap: grasp_single.pick_top_shelf_candle
+    objects:
+    - CandlePattern04_2
+    pilots:
+    - pick_top_shelf_candle
+    success: 1/8
+    setting: 'ADT apartment (mars): CandlePattern04_2 on DisplayUnit_1__2, placement and yaw random on that surface, robot
+      spawned 1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_wallet
+    gap: grasp_single.pick_wallet
+    objects:
+    - Wallet_1
+    pilots:
+    - pick_wallet
+    success: 0/8
+    setting: 'ADT apartment (mars): Wallet_1 on DisplayShelves_1__2, placement and yaw random on that surface, robot spawned
+      1-3 m away (r1_held_single sealed pool); 05_498b72b75889'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  - name: r1_held_single.pick_white_mug
+    gap: grasp_single.pick_white_mug
+    objects:
+    - Mug_2
+    pilots:
+    - pick_white_mug
+    success: 3/8
+    setting: 'ADT apartment (mars): Mug_2 on ExtendableTable__0, placement and yaw random on that surface, robot spawned 1-3
+      m away (r1_held_single sealed pool); 05_498b72b75889'
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_held_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_held_single/sealed/summary.json
+  inboard_max: 0.67
   inboard_source: 'the larger of: hand_envelope.right_level.forward_max_standing at 0.65-1.15 m minus the 0.28 m the grip
-    probes stood from the edge (0.42); the deepest start a grasp setting won, as the checker measures inboard (0.608: the
+    probes stood from the edge (0.42); the deepest start a grasp setting won, as the checker measures inboard (0.667: the
     checker''s nearest-approach-edge proxy can read deeper than the edge a skill used)'
   motor_grasp:
     status: measured
@@ -510,7 +666,7 @@ place:
       surface: ApartmentEnv__3
       from_surface: ApartmentEnv__6
       setting: 'ADT apartment (mars): HandSoap_1 from ApartmentEnv__6 onto ApartmentEnv__3, placement and yaw random on its
-        surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       success: 6/8
       support_top:
       - 0.817
@@ -529,7 +685,7 @@ place:
       surface: ExtendableTable__0
       from_surface: KitchIsland__0
       setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto ExtendableTable__0, placement and yaw random on its
-        surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       success: 4/8
       support_top:
       - 0.747
@@ -548,7 +704,7 @@ place:
       surface: TVUnit__2
       from_surface: BlackCoffeeTable__1
       setting: 'ADT apartment (mars): TvRemote_1 from BlackCoffeeTable__1 onto TVUnit__2, placement and yaw random on its
-        surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       success: 7/8
       support_top:
       - 0.512
@@ -567,8 +723,8 @@ place:
       surface: ExtendableTable__0
       from_surface: DisplayUnit_1__1
       setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
-        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
-      success: 5/8
+        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
+      success: 6/8
       support_top:
       - 0.747
       - 0.747
@@ -589,7 +745,7 @@ place:
       - clock_to_console_table
       success: 0/8
       setting: 'ADT apartment (mars): RedClock from KitchIsland__0 onto ConsoleTable__1, placement and yaw random on its surface,
-        robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
     - name: r1_on_single.novel_to_nightstand_middle_shelf
       gap: place_on_surface.novel_to_nightstand_middle_shelf
@@ -600,7 +756,7 @@ place:
       - novel_to_nightstand_middle_shelf
       success: 0/8
       setting: 'ADT apartment (mars): BookFiction1_01 from DisplayShelves_1__0 onto NightStand__1, placement and yaw random
-        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
     - name: r1_on_single.novel_to_top_display_shelf
       gap: place_on_surface.novel_to_top_display_shelf
@@ -611,7 +767,7 @@ place:
       - novel_to_top_display_shelf
       success: 0/8
       setting: 'ADT apartment (mars): BookFiction1_00 from DisplayShelves_1__0 onto DisplayShelves_1__2, placement and yaw
-        random on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        random on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
     - name: r1_on_single.plant_to_top_display_shelf
       gap: place_on_surface.plant_to_top_display_shelf
@@ -622,7 +778,7 @@ place:
       - plant_to_top_display_shelf
       success: 0/8
       setting: 'ADT apartment (mars): Plant2_5 from DisplayShelves_1__0 onto DisplayShelves_1__2, placement and yaw random
-        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
     - name: r1_on_single.wallet_to_bed
       gap: place_on_surface.wallet_to_bed
@@ -633,7 +789,7 @@ place:
       - wallet_to_bed
       success: 0/8
       setting: 'ADT apartment (mars): Wallet_1 from DisplayShelves_1__2 onto HybridMattress__0, placement and yaw random on
-        its surface, robot spawned 1-3 m away (r1_on_single sealed pool); the loop''s final incumbent 06_9da5a5e404f4'
+        its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
     source: docs/handoff/scene-rsi-plan-20261016.md §10
   motor_put_back:
@@ -737,11 +893,11 @@ overhead:
   source: TODO 19.9.9 (the bookcase cell Bookcase__1 has Bookcase__2's slab 0.30 m above it)
 inner_loops:
   pick_single:
-    final_incumbent: 04_0109bde905a8
-    sealed_rate: 0.512
+    final_incumbent: catalog re-run (/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016_hidden/pick_single/sealed/catalog_after_r1_held)
+    sealed_rate: 0.55
     per_task:
       canister_pickup: 10/10
-      dish_soap_pickup: 6/10
+      dish_soap_pickup: 9/10
       jam_pickup: 9/10
       mug_pickup: 2/10
       orange_pickup: 4/10
@@ -750,9 +906,25 @@ inner_loops:
       wallet_pickup: 0/10
     bucket1: true
     source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10)
+  r1_held_single:
+    final_incumbent: 05_498b72b75889
+    sealed_rate: 0.388
+    per_task:
+      pick_candle_coffee_table: 7/8
+      pick_car_key: 6/8
+      pick_coffee_can: 6/8
+      pick_shelf_plant: 0/8
+      pick_supply_bin_top_shelf: 0/8
+      pick_thick_novel: 0/8
+      pick_top_shelf_candle: 1/8
+      pick_wallet: 0/8
+      pick_white_mug: 3/8
+      pick_wolf_figurine: 8/8
+    bucket1: false
+    source: docs/handoff/scene-rsi-plan-20261016.md §10
   r1_on_single:
-    final_incumbent: 06_9da5a5e404f4
-    sealed_rate: 0.275
+    final_incumbent: catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/catalog_after_r1_held)
+    sealed_rate: 0.287
     per_task:
       clock_to_console_table: 0/8
       hand_soap_to_bathroom_sink: 6/8
@@ -762,7 +934,7 @@ inner_loops:
       plant_to_top_display_shelf: 0/8
       tv_remote_to_tv_stand: 7/8
       two_novels_to_nightstand: 0/8
-      vase_centerpiece: 5/8
+      vase_centerpiece: 6/8
       wallet_to_bed: 0/8
     bucket1: false
     source: docs/handoff/scene-rsi-plan-20261016.md §10

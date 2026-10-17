@@ -5,8 +5,8 @@ offset out along the fingers, the surface a failed carry sets it down on; the cr
 lift-to-release time, the pad margin, the plan made before the pick -- and the pick's settle abort, inert unless set,
 backing out from the measured jaw; the put-down's pick switches (inert at None), its stance and the spot rule for a
 side-grasped versus a top-pinched object; the release -- a side-grasped object levelled before it is lowered, unloaded,
-centred, retracted level, a top-pinched one released as before. Lives in the skills package because the loop's Engineer
-may change nothing outside it; run with
+centred, retracted level, a top-pinched one released as before (held(X) after the pick and the pick's gripper shape:
+test_held.py). Lives in the skills package because the loop's Engineer may change nothing outside it; run with
 `make test TESTS="src/locomani/tasks/scene/skills/test_plan_for.py"`."""
 
 import unittest
@@ -19,7 +19,7 @@ import locomani.tasks.scene.skills as skills
 from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.motor import FF_SHORT, MotorConfig, Outcome, Profile, expmap, turn_seconds
 from locomani.primitives.navigator import build
-from locomani.tasks.scene.skills import clearance, grasp_program, pick, place
+from locomani.tasks.scene.skills import clearance, grasp_program, held, pick, place
 
 
 def yaw_quat(y):
@@ -77,12 +77,15 @@ class World:
 
 
 class PlanFor(unittest.TestCase):
-    def test_held_stays_on_the_pick_and_other_goals_have_no_plan(self):
-        with mock.patch.object(pick, "pick", return_value=Outcome(True)) as p:
+    def test_held_alone_or_with_upright_of_the_same_object_goes_to_the_pick_and_other_goals_have_no_plan(self):
+        with mock.patch.object(held, "pick_held", return_value=Outcome(True)) as h:
             skills.plan_for(SimpleNamespace(goal=["held(Can)"]))("ctx")
-        p.assert_called_once_with("ctx", "Can")
+            skills.plan_for(SimpleNamespace(goal=["upright(Can)", "held(Can)"]))("ctx")
+        self.assertEqual(h.call_args_list, [mock.call("ctx", "Can", pick.pick, False),
+                                            mock.call("ctx", "Can", pick.pick, True)])  # fmt: skip
         for goal in (
             ["upright(Can)"],
+            ["held(Can)", "upright(Book)"],
             ["on(Can, T)", "held(Can)"],
             ["in(Can, Bowl)"],
             ["on(Can, T)", "near(Can, T, 1)"],
@@ -337,6 +340,12 @@ class Hand:
 
     def jaw_centre(self, side):
         return self.jaw.copy(), self.rot.copy()
+
+    def pelvis(self):
+        return np.zeros(3), np.array([1.0, 0.0, 0.0, 0.0])
+
+    def yaw(self):
+        return 0.0
 
     def reach(self, side, pos, rot=None, **kw):
         self.calls.append(("reach", np.asarray(pos, float), None if rot is None else np.asarray(rot, float)))

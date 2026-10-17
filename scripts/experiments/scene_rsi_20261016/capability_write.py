@@ -121,62 +121,94 @@ def frac(row: dict, what: str = "lifted") -> str:
     return f"{row[what]}/{row['n']}"
 
 
-def pick_single(loop_root: Path, checker) -> tuple[list, list, dict]:
-    """The inner loop's final incumbent on its sealed pool, per task: a measured grasp setting or a failure. A setting
-    names its object and surface: the checker takes that measurement for that object where it rests, whatever its
-    geometric proxies say (the coffee table has no approach edge in the scene file, yet the remote went 10/10). The
+def sealed_rounds(sandbox: Path, family: str, rounds: Path | None = None) -> tuple[dict, Path, Path, str, float]:
+    """(per task "ok/n", rounds dir, pool dir, version, rate): the family's final incumbent on its sealed pool, or
+    `rounds` -- the same pool run again under a later skill catalog (a write-back's regression), which then decides:
+    the table says what the catalog does now."""
+    hidden = sandbox / "outputs" / "scene_rsi_20261016_hidden" / family
+    if rounds is None:
+        summ = json.loads((hidden / "sealed" / "summary.json").read_text())
+        final = summ["final"]
+        return (
+            summ["versions"][final]["per_task"],
+            hidden / "sealed" / final,
+            hidden / "pool_sealed",
+            final,
+            summ["final_rate"],
+        )
+    per = collections.defaultdict(lambda: [0, 0])
+    for f in sorted(rounds.glob("*_s*.json")):
+        if f.name.startswith("_"):  # an older success rule's copy
+            continue
+        r = json.loads(f.read_text())
+        per[r["task"]][0] += bool(r["ok"])
+        per[r["task"]][1] += 1
+    ok, n = sum(v[0] for v in per.values()), sum(v[1] for v in per.values())
+    return (
+        {t: f"{a}/{b}" for t, (a, b) in sorted(per.items())},
+        rounds,
+        hidden / "pool_sealed",
+        f"catalog re-run ({rounds})",
+        round(ok / n, 3) if n else 0.0,
+    )
+
+
+def held(sandbox: Path, family: str, checker, rounds: Path | None = None) -> tuple[list, list, dict]:
+    """A pick family's sealed pool (`sealed_rounds`), per held(X) task: a measured grasp setting or a failure. A
+    setting names its object and surface: the checker takes that measurement for that object where it rests, whatever
+    its geometric proxies say (the coffee table has no approach edge in the scene file, yet the remote went 10/10). The
     inboard range and `stance_xy` come from the successful rounds."""
-    hidden = loop_root / "outputs" / "scene_rsi_20261016_hidden" / "pick_single"
-    summ = json.loads((hidden / "sealed" / "summary.json").read_text())
-    final = summ["final"]
-    per = summ["versions"][final]["per_task"]
-    fam = json.loads((HERE / "families" / "pick_single.json").read_text())
+    per, rdir, pool, version, rate = sealed_rounds(sandbox, family, rounds)
+    fam = json.loads((sandbox / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
     rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
-    settings, failures, deepest = [], [], 0.0
+    src = f"{PLAN_SRC} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
+    settings, failures, deepest, routes = [], [], 0.0, []
     for tid, frac_s in sorted(per.items()):
-        x = rows[tid]["goal"][0].split("(", 1)[1].rstrip(")")
+        x = next(p for p in map(parse, rows[tid]["goal"]) if p.name == "held").args[0]
         o = checker.objects[x]
         half, _ = checker.box(x)
         s_key = o["surface"]
         inboards, stances = [], []
-        for f in sorted((hidden / "sealed" / final).glob(f"{tid}_s*.json")):
+        for f in sorted(rdir.glob(f"{tid}_s*.json")):
             r = json.loads(f.read_text())
             if not r.get("ok"):
                 continue
-            st = json.loads((hidden / "pool_sealed" / f.name).read_text())["start"]
+            st = json.loads((pool / f.name).read_text())["start"]
             d = checker.edge_stand(s_key, np.asarray(st["placements"][x][0][:2], float))[1]
             if np.isfinite(d):
                 inboards.append(float(d))
             walk = next((w for w in r.get("steps", []) if w.get("step") == "walk" and w.get("stance")), None)
             if walk is not None:
                 stances.append([round(float(v), 3) for v in walk["stance"]])
+                d = checker.route(np.asarray(st["robot_xy"], float), np.asarray(walk["stance"], float))
+                if np.isfinite(d):
+                    routes.append(float(d))
         deepest = max([deepest, *inboards])
         ok, n = map(int, frac_s.split("/"))
-        entry = dict(name=f"pick_single.{tid}", status="measured", objects=[x], surface=s_key,
-                     setting=f"ADT apartment (mars): {x} on {s_key}, placement and yaw random on that surface, robot spawned 1-3 m away (pick_single sealed pool); the loop's final incumbent {final}",
+        entry = dict(name=f"{family}.{tid}", status="measured", objects=[x], surface=s_key,
+                     setting=f"ADT apartment (mars): {x} on {s_key}, placement and yaw random on that surface, robot spawned 1-3 m away ({family} sealed pool); {version}",
                      success=f"{ok}/{n}", support_top=[round(float(checker.surfaces[s_key]["top"]), 3)] * 2,
                      object_width=[round(float(2 * min(half[:2])), 3)] * 2, object_height=[round(float(2 * half[2]), 3)] * 2,
                      mass_max=float((o.get("semantic") or {}).get("mass_kg", 0.0)),
                      inboard=[round(min(inboards), 3), round(max(inboards), 3)] if inboards else None,
-                     stance_xy=stances[0] if stances else None,
-                     source=f"{PLAN_SRC} (7.10, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json")  # fmt: skip
+                     stance_xy=stances[0] if stances else None, source=src)  # fmt: skip
         if n and ok / n >= BUCKET1_RATE:
             settings.append(entry)
         else:
             failures.append(dict(name=entry["name"], gap=f"grasp_single.{tid}", objects=[x], pilots=[tid],
                                  success=entry["success"], setting=entry["setting"], source=entry["source"]))  # fmt: skip
-    return settings, failures, dict(final=final, rate=summ["final_rate"], per_task=per, deepest_success=deepest)
+    summary = dict(final=version, rate=rate, per_task=per, deepest_success=deepest, route_max=max(routes, default=0.0))
+    return settings, failures, summary
 
 
-def put_on(loop_root: Path, family: str, checker, picked: set) -> tuple[list, list, list, float, dict]:
+def put_on(
+    loop_root: Path, family: str, checker, picked: set, rounds: Path | None = None
+) -> tuple[list, list, list, float, dict]:
     """A put-down family's final incumbent on its sealed pool, per one-object on(X, S) task: (put-down settings,
     put-down failures, grasp settings for the objects it lifted and carried in >= BUCKET1_RATE of the rounds and
     `picked` lacks, the longest occupancy-map route from the pick stance to the put-down stance among successes,
     summary). A task with two objects gives no (object, surface) setting."""
-    hidden = loop_root / "outputs" / "scene_rsi_20261016_hidden" / family
-    summ = json.loads((hidden / "sealed" / "summary.json").read_text())
-    final = summ["final"]
-    per = summ["versions"][final]["per_task"]
+    per, rdir, _pool, final, rate = sealed_rounds(loop_root, family, rounds)
     fam = json.loads((loop_root / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
     rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
     src = f"{PLAN_SRC.replace('§9', '§10')} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
@@ -190,7 +222,7 @@ def put_on(loop_root: Path, family: str, checker, picked: set) -> tuple[list, li
         half, _ = checker.box(x)
         ok, n = map(int, frac_s.split("/"))
         lifted, routes = 0, []
-        for f in sorted((hidden / "sealed" / final).glob(f"{tid}_s*.json")):
+        for f in sorted(rdir.glob(f"{tid}_s*.json")):
             r = json.loads(f.read_text())
             steps = r.get("steps") or []
             walk = next((w for w in steps if w.get("step") == "walk" and w.get("stance")), None)
@@ -201,7 +233,7 @@ def put_on(loop_root: Path, family: str, checker, picked: set) -> tuple[list, li
                 if np.isfinite(d):
                     routes.append(float(d))
         longest = max([longest, *routes])
-        setting = f"ADT apartment (mars): {x} from {o['surface']} onto {s_key}, placement and yaw random on its surface, robot spawned 1-3 m away ({family} sealed pool); the loop's final incumbent {final}"
+        setting = f"ADT apartment (mars): {x} from {o['surface']} onto {s_key}, placement and yaw random on its surface, robot spawned 1-3 m away ({family} sealed pool); {final}"
         entry = dict(name=f"{family}.{tid}", status="measured", objects=[x], surface=s_key, from_surface=o["surface"],
                      setting=setting, success=f"{ok}/{n}", support_top=[round(float(checker.surfaces[s_key]["top"]), 3)] * 2,
                      object_height=[round(float(2 * half[2]), 3)] * 2,
@@ -220,10 +252,12 @@ def put_on(loop_root: Path, family: str, checker, picked: set) -> tuple[list, li
                                object_height=[round(float(2 * half[2]), 3)] * 2,
                                mass_max=float((o.get("semantic") or {}).get("mass_kg", 0.0)), inboard=None,
                                stance_xy=None, source=src))  # fmt: skip
-    return settings, failures, grasps, longest, dict(final=final, rate=summ["final_rate"], per_task=per)
+    return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per)
 
 
-def build(loop_root: Path, place_loops: list[tuple[Path, str]] = ()) -> dict:
+def build(loop_root: Path, place_loops=(), held_loops=(), pick_rounds: Path | None = None) -> dict:
+    """`place_loops` / `held_loops`: (sandbox, family, rounds dir or None) per finished family; `pick_rounds`: the
+    pick_single sealed pool re-run under the current catalog (None: its final incumbent's rounds)."""
     old = yaml.safe_load(OLD.read_text())
     meta = scene_file.load(str(ADT / "scene_meta.json"))
     checker = feasibility.Checker(meta, dict(old, robot=dict(old["robot"], body_radius=0.35)))
@@ -232,11 +266,19 @@ def build(loop_root: Path, place_loops: list[tuple[Path, str]] = ()) -> dict:
     width, mass, top = sweep(grip, "width"), sweep(grip, "mass"), sweep(grip, "top")
     inboard, height, topdown = sweep(grip, "inboard"), sweep(grip, "height"), sweep(grip, "top_down")
     posture, loco = load("posture"), load("loco")
-    settings, failures, ps = pick_single(loop_root, checker)
+    settings, failures, ps = held(loop_root, "pick_single", checker, pick_rounds)
+    loops = {}
+    for root, family, rounds in held_loops:
+        ok, bad, summ = held(root, family, checker, rounds)
+        settings, failures = settings + ok, failures + bad
+        ps["deepest_success"] = max(ps["deepest_success"], summ["deepest_success"])
+        ps["route_max"] = max(ps["route_max"], summ["route_max"])
+        loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
+                             bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
     picked = {x for e in settings for x in e["objects"]}
-    placed, place_failed, carry_max, loops = [], [], 0.0, {}
-    for root, family in place_loops:
-        ok, bad, grasps, longest, summ = put_on(root, family, checker, picked)
+    placed, place_failed, carry_max = [], [], 0.0
+    for root, family, rounds in place_loops:
+        ok, bad, grasps, longest, summ = put_on(root, family, checker, picked, rounds)
         placed, place_failed, carry_max = placed + ok, place_failed + bad, max(carry_max, longest)
         settings = settings + grasps
         loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
@@ -295,7 +337,7 @@ def build(loop_root: Path, place_loops: list[tuple[Path, str]] = ()) -> dict:
             "navigation": dict(
                 status="measured_one",
                 setting="ADT apartment, occupancy-map routes at body radius 0.35 m from a random spawn 1-3 m from the object to its stand (pick_single sealed pool, 80 rounds, 0 falls)",
-                route_max_measured=round(float(_route_max(loop_root, checker)), 2),
+                route_max_measured=round(float(ps["route_max"]), 2),
                 source=f"{PLAN_SRC} (7.10)",
             ),  # fmt: skip
             "cross_room": dict(
@@ -433,27 +475,6 @@ def build(loop_root: Path, place_loops: list[tuple[Path, str]] = ()) -> dict:
     return cap
 
 
-def _route_max(loop_root: Path, checker) -> float:
-    """Longest occupancy-map route from a spawn to the stand among the final incumbent's sealed successes."""
-    hidden = loop_root / "outputs" / "scene_rsi_20261016_hidden" / "pick_single"
-    final = json.loads((hidden / "sealed" / "summary.json").read_text())["final"]
-    best = 0.0
-    for f in sorted((hidden / "sealed" / final).glob("*.json")):
-        if f.name.startswith("_"):  # rounds of an older success rule
-            continue
-        r = json.loads(f.read_text())
-        if not r.get("ok"):
-            continue
-        st = json.loads((hidden / "pool_sealed" / f.name).read_text())["start"]
-        walk = next((s for s in r.get("steps", []) if s.get("step") == "walk" and s.get("stance")), None)
-        if walk is None:
-            continue
-        d = checker.route(np.asarray(st["robot_xy"], float), np.asarray(walk["stance"], float))
-        if np.isfinite(d):
-            best = max(best, d)
-    return best
-
-
 HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scene RSI plan D10, TODO 27.3; phase 1, {date}).
 # Written by scripts/experiments/scene_rsi_20261016/capability_write.py from the phase-1 probes and the inner loops'
 # sealed results -- edit the probes or the writer, not this file. The SONIC table of 2026-10-03 stays in
@@ -474,13 +495,20 @@ HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scen
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--loop-root", type=Path, required=True, help="the pick_single loop's sandbox checkout")
-    ap.add_argument("--place-loop", action="append", default=[], metavar="SANDBOX:FAMILY",
-                    help="a finished put-down family's sandbox and name (repeatable)")  # fmt: skip
+    ap.add_argument("--place-loop", action="append", default=[], metavar="SANDBOX:FAMILY[:ROUNDS]",
+                    help="a finished put-down family's sandbox and name (repeatable); ROUNDS: its sealed pool re-run under the current catalog")  # fmt: skip
+    ap.add_argument("--held-loop", action="append", default=[], metavar="SANDBOX:FAMILY[:ROUNDS]",
+                    help="a finished pick family besides pick_single (repeatable)")  # fmt: skip
+    ap.add_argument("--pick-rounds", type=Path, help="pick_single's sealed pool re-run under the current catalog")
     ap.add_argument("--out", type=Path, default=DST)
     a = ap.parse_args(argv)
     import datetime
 
-    cap = build(a.loop_root, [(Path(v.rsplit(":", 1)[0]), v.rsplit(":", 1)[1]) for v in a.place_loop])
+    def loop(v: str) -> tuple:
+        parts = v.split(":")
+        return Path(parts[0]), parts[1], Path(parts[2]) if len(parts) > 2 else None
+
+    cap = build(a.loop_root, [loop(v) for v in a.place_loop], [loop(v) for v in a.held_loop], a.pick_rounds)
 
     class NoAlias(yaml.SafeDumper):  # the same list in two places stays two lists, not an anchor
         def ignore_aliases(self, data):
