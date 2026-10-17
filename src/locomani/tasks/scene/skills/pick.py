@@ -35,7 +35,13 @@ housing into the slab: the hand stalled at the coffee table's edge and rode on t
 pitches the wrist GRASP_PITCH_DEG nose-down, which lifts the housing behind the jaw, and holds the jaw at least
 `min_jaw` above the top. An object under another shelf stays level (pitched, the shelf plant was knocked off its shelf),
 and its pre-grasp reach rises COVERED_VIA_OUT_M outside the edge instead of VIA_OUT_M (the wolf under the corner
-display's top shelf; farther out everywhere, it broke pitched top-shelf grasps).
+display's top shelf; farther out everywhere, it broke pitched top-shelf grasps). The wrist and forearm hang lower still
+(WRIST_LOW_POINT, r1_in_single loop iteration 3), and count where they lie over the support (WRIST_OVER_M in from the
+edge, an apple 0.17 m in on a straight approach): a level grasp of an apple (centre 4.0-4.1 cm above the dining table)
+deeper than that laid right_wrist_yaw on the slab's edge, which pitched the hand 10-22 deg nose-up and stalled the entry
+6-15 cm short (3 of 8 apples 0.18-0.31 m in); pitched, the wrist rises 3.4-3.9 cm and all 8 were grasped. Shallower
+(0.09-0.16 m), the wrist is off the slab and the level grasp took all 4 apples, while pitched ones carried to the bowl
+0.65 m ahead slipped out of the jaw in 2 of 3 (the hand 23-34 deg off its pitched attitude at the reach limit).
 
 The pinch (r1_held_single loop iteration 2, `pick_pinch`): a pitched grasp whose pads would still pass over the object
 (`needs_pinch`, the 1.5 cm car key on the 0.92 m counter: the closed jaw's fingers ended 0.4 cm above it, and where the
@@ -101,6 +107,9 @@ SIDE_AHEAD_M = None  # default-off switch (place.py's pick): object this far ahe
 SIDE_AHEAD_TOP_MIN_M = 0.6  # ... on a surface whose top is above this (None: STAND_AHEAD_M, held(X)'s pick)
 GRIPPER_LOW_POINTS = ((-0.049, -0.034), (-0.0407, -0.031), (0.0333, -0.0145))  # (x along the approach, z up) in the
 # jaw frame, robot.xml: the housing cylinder's and the housing mesh's front-bottom, the fingertip's front-bottom
+WRIST_LOW_POINT = (-0.15, -0.045)  # the wrist and forearm (robot.xml right_wrist_yaw/pitch/roll and elbow links hang
+# 2.9-3.5 cm below the jaw axis from 4 to 37 cm behind the jaw centre), with about 5 deg of nose-up attitude error ...
+WRIST_OVER_M = 0.02  # ... counted where that point lies at least this far in from the edge (over the support)
 GRASP_CLEAR_M = 0.005  # a pitched side grasp keeps those points this far above the support top ...
 GRASP_PITCH_DEG = 15.0  # ... pitching the wrist this far nose-down when level they would be below it
 PINCH_OVERLAP_M = 0.005  # a pitched grasp whose pads' lower edge at the object centre overlaps its top less: pinch
@@ -270,7 +279,7 @@ def pick_once(ctx, key: str, side: str = "right", rest: dict | None = None) -> O
     pos, quat = world.object_pose(key)
     psi = plan.info["psi"]
     Rg = R.rot_z(psi)
-    pitch, rise = grasp_pitch(world, key, pos)
+    pitch, rise = grasp_pitch(world, key, pos, wrist_in(plan.info))
     if pitch and needs_pinch(world, key, pos, pitch, rise):
         return pick_pinch(ctx, key, side, plan)
     pitched = {}
@@ -292,24 +301,40 @@ def pick_once(ctx, key: str, side: str = "right", rest: dict | None = None) -> O
 def min_jaw(pitch: float, points=None, clear: float | None = None) -> float:
     """The least jaw-centre height (m) above the support top of a side grasp pitched nose-down by `pitch` (rad) that
     keeps every point of `points` (default GRIPPER_LOW_POINTS) `clear` (default GRASP_CLEAR_M) above the top
-    (rot_y(pitch) puts the point (x, z) at -x sin + z cos): 3.9 cm level, 2.76 cm at 15 deg; with PINCH_LOW_POINTS 2.13
-    cm at 25 deg."""
+    (rot_y(pitch) puts the point (x, z) at -x sin + z cos): 3.9 cm level, 2.76 cm at 15 deg; with WRIST_LOW_POINT too
+    5.0 cm level and still 2.76 cm at 15 deg; with PINCH_LOW_POINTS 2.13 cm at 25 deg."""
     s, c = np.sin(pitch), np.cos(pitch)
     low = float(max(x * s - z * c for x, z in (GRIPPER_LOW_POINTS if points is None else points)))
     return low + (GRASP_CLEAR_M if clear is None else clear)
 
 
-def grasp_pitch(world, key: str, pos) -> tuple[float, float]:
-    """(pitch nose-down (rad), jaw rise (m)) of a side grasp at the object centre `pos`: (0, 0) unless the level jaw
-    there would put the gripper below the support top (centre less than min_jaw(0) - GRASP_CLEAR_M above it) and no
-    surface covers the object (`cover.overhead`); then GRASP_PITCH_DEG, the jaw raised to the top +
-    min_jaw(GRASP_PITCH_DEG) where the centre is lower."""
+def low_points(wrist_in: float | None = None) -> tuple:
+    """The gripper's low outline for `min_jaw`: GRIPPER_LOW_POINTS, and WRIST_LOW_POINT when it lies `wrist_in` (m) in
+    from the edge, at least WRIST_OVER_M (None: not known, not counted)."""
+    over = wrist_in is not None and wrist_in >= WRIST_OVER_M
+    return (*GRIPPER_LOW_POINTS, WRIST_LOW_POINT) if over else tuple(GRIPPER_LOW_POINTS)
+
+
+def wrist_in(info: dict) -> float | None:
+    """How far (m) in from the edge WRIST_LOW_POINT lies for the approach `info` (approach's: edge_depth_m, psi, face)
+    with the jaw at the object centre; None without an edge depth."""
+    if info.get("edge_depth_m") is None:
+        return None
+    return float(info["edge_depth_m"]) + WRIST_LOW_POINT[0] * float(np.cos(info["psi"] - info["face"]))
+
+
+def grasp_pitch(world, key: str, pos, wrist: float | None = None) -> tuple[float, float]:
+    """(pitch nose-down (rad), jaw rise (m)) of a side grasp at the object centre `pos`, the wrist point `wrist` m in
+    from the edge (`low_points`): (0, 0) unless the level jaw there would put the gripper below the support top (centre
+    less than min_jaw(0) - GRASP_CLEAR_M above it) and no surface covers the object (`cover.overhead`); then
+    GRASP_PITCH_DEG, the jaw raised to the top + min_jaw(GRASP_PITCH_DEG) where the centre is lower."""
     top = float(world.meta["surfaces"][world.meta["objects"][key]["surface"]]["top"])
     h = float(pos[2]) - top
-    if h >= min_jaw(0.0) - GRASP_CLEAR_M or cover.overhead(world, key):
+    points = low_points(wrist)
+    if h >= min_jaw(0.0, points) - GRASP_CLEAR_M or cover.overhead(world, key):
         return 0.0, 0.0
     pitch = float(np.radians(GRASP_PITCH_DEG))
-    return pitch, max(0.0, min_jaw(pitch) - h)
+    return pitch, max(0.0, min_jaw(pitch, points) - h)
 
 
 def needs_pinch(world, key: str, pos, pitch: float, rise: float) -> bool:

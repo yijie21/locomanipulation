@@ -136,8 +136,13 @@ class GripperShape(unittest.TestCase):
             world.meta["surfaces"]["U"] = dict(xy=[2.0, 2.0], half_extent=[0.2, 0.2], yaw=0.0, top=0.9)
         return world
 
-    def test_min_jaw_is_3_9_cm_level_and_2_76_cm_at_15_deg(self):
+    def test_min_jaw_is_3_9_cm_level_and_2_76_cm_at_15_deg_5_0_level_with_the_wrist(self):
         self.assertAlmostEqual(pick.min_jaw(0.0), 0.039, places=6)
+        self.assertAlmostEqual(pick.min_jaw(np.radians(15.0)), 0.0276, places=4)
+        wrist = pick.low_points(pick.WRIST_OVER_M)
+        self.assertEqual(wrist, (*pick.GRIPPER_LOW_POINTS, pick.WRIST_LOW_POINT))
+        self.assertAlmostEqual(pick.min_jaw(0.0, wrist), 0.050, places=6)
+        self.assertEqual(pick.min_jaw(np.radians(15.0), wrist), pick.min_jaw(np.radians(15.0)))  # the fingertip's
         self.assertAlmostEqual(pick.min_jaw(np.radians(15.0)), 0.0276, places=4)
 
     def test_only_a_short_object_under_no_other_surface_is_pitched(self):
@@ -157,10 +162,29 @@ class GripperShape(unittest.TestCase):
         world = self._world(0.03, 0.03)  # pitched, the centre already above min_jaw(pitch): no rise
         self.assertEqual(pick.grasp_pitch(world, "Can", world.object_pose("Can")[0]), (pitch, 0.0))
 
-    def _pick(self, world):
+    def test_the_apple_is_pitched_only_where_its_wrist_lies_over_the_support(self):
+        pitch = np.radians(pick.GRASP_PITCH_DEG)
+        world = self._world(0.0413, 0.0405)  # the apple, centre 4.05 cm above the dining table
+        pos = world.object_pose("Can")[0]
+        for wrist, want in (
+            (None, (0.0, 0.0)),
+            (pick.WRIST_OVER_M - 1e-3, (0.0, 0.0)),
+            (pick.WRIST_OVER_M, (pitch, 0.0)),
+        ):
+            self.assertEqual(pick.grasp_pitch(world, "Can", pos, wrist), want, msg=str(wrist))
+        world = self._world(0.0794, 0.0794)  # the coffee can stays level with its wrist over the table
+        self.assertEqual(pick.grasp_pitch(world, "Can", world.object_pose("Can")[0], 0.2), (0.0, 0.0))
+
+    def test_the_wrist_lies_its_distance_behind_the_jaw_along_the_approach_in_from_the_edge(self):
+        x = pick.WRIST_LOW_POINT[0]
+        self.assertAlmostEqual(pick.wrist_in(dict(edge_depth_m=0.228, psi=1.6, face=1.6)), 0.228 + x)
+        self.assertAlmostEqual(pick.wrist_in(dict(edge_depth_m=0.10, psi=0.0, face=np.pi / 3)), 0.10 + 0.5 * x)
+        self.assertIsNone(pick.wrist_in(dict(psi=0.0, face=0.0)))
+
+    def _pick(self, world, **info):
         """pick.pick with the walk, the via and the hand program stubbed: (grasp_program.run's args, the reaches)."""
         m = Hand([1.7, 2.0, 0.45], np.eye(3))
-        plan = Outcome(True, info=dict(side="right", psi=0.3, face=0.0, edge_xy=np.array([1.8, 2.0])))
+        plan = Outcome(True, info=dict(side="right", psi=0.3, face=0.0, edge_xy=np.array([1.8, 2.0]), **info))
         with (
             mock.patch.object(pick, "approach", return_value=plan),
             mock.patch.object(pick, "edge_via", return_value=()),
@@ -186,6 +210,13 @@ class GripperShape(unittest.TestCase):
         np.testing.assert_allclose(tool, [2.0, 2.0, 0.4 + pick.min_jaw(pitch)], atol=1e-12)
         np.testing.assert_allclose(calls[0][1], tool - want_R @ [grasp_program.PREGRASP_BACK, 0.0, 0.0], atol=1e-12)
         np.testing.assert_allclose(calls[0][2], want_R, atol=1e-12)
+
+    def test_the_pick_pitches_the_apple_from_the_approach_depth_of_its_wrist(self):
+        world = self._world(0.0413, 0.0405)
+        (_, _, _, Rg, _, _), _ = self._pick(world, edge_depth_m=0.25)  # the wrist 0.11 m in from the edge (psi 0.3)
+        np.testing.assert_allclose(Rg, R.rot_z(0.3) @ R.rot_y(np.radians(pick.GRASP_PITCH_DEG)), atol=1e-12)
+        (_, _, _, Rg, _, _), _ = self._pick(world, edge_depth_m=0.15)  # 0.007 m in: off the slab, level
+        np.testing.assert_array_equal(Rg, R.rot_z(0.3))
 
     def test_the_via_rises_farther_outside_the_edge_for_a_covered_object(self):
         plan = Outcome(True, info=dict(face=0.0, edge_xy=np.array([1.8, 2.0])))

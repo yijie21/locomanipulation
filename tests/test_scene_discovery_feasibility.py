@@ -341,3 +341,17 @@ def test_a_put_down_measured_on_its_own_object_and_surface_decides_the_put_and_i
     cap["place"]["on_surface_single"]["failed_tasks"] = [dict(name="r1_on_single.t", gap="place_on_surface.t",
                                                           objects=["bottle"], surface="FAR", success="0/8")]  # fmt: skip
     assert "place_on_surface.t" in feasibility.Checker(copy.deepcopy(meta), cap).check(goal).gaps
+
+
+def test_a_put_in_measured_on_its_own_object_and_container_decides_the_put():
+    goal = {"id": "t", "goal": ["in(bottle, bin)"]}  # the floor bin: a ring stand, no measured put-in
+    cap = copy.deepcopy(CAP)
+    cap["place"]["into_container_single_arm"]["measured_tasks"] = [dict(name="r1_in_single.t", objects=["bottle"],
+                                                                       surface="bin", success="6/8")]  # fmt: skip
+    r = feasibility.Checker(copy.deepcopy(META), cap).check(goal)
+    assert [c.step for c in r.checks if c.name == "measured_task"] == ["carry(bottle -> bin)", "place(bottle in bin)"]
+    assert not any(g.startswith(("place_into", "carry_single", "navigate")) for g in r.gaps)
+    cap["place"]["into_container_single_arm"]["measured_tasks"] = []
+    cap["place"]["into_container_single_arm"]["failed_tasks"] = [dict(name="r1_in_single.t", gap="place_into.t",
+                                                                     objects=["bottle"], surface="bin", success="1/8")]  # fmt: skip
+    assert "place_into.t" in feasibility.Checker(copy.deepcopy(META), cap).check(goal).gaps

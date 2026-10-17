@@ -255,9 +255,65 @@ def put_on(
     return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per)
 
 
-def build(loop_root: Path, place_loops=(), held_loops=(), pick_rounds: Path | None = None) -> dict:
-    """`place_loops` / `held_loops`: (sandbox, family, rounds dir or None) per finished family; `pick_rounds`: the
-    pick_single sealed pool re-run under the current catalog (None: its final incumbent's rounds)."""
+def into(
+    loop_root: Path, family: str, checker, picked: set, rounds: Path | None = None
+) -> tuple[list, list, list, float, dict]:
+    """`put_on` for a put-in family's one-object in(X, C) tasks: (put-in settings, put-in failures, grasp settings for
+    the objects lifted in >= BUCKET1_RATE of the rounds and `picked` lacks, the longest pick-to-drop route among
+    successes, summary). A round lifted its object when it reached the carry or the move over the container (a drop
+    next to the pick stance skips the carry)."""
+    per, rdir, _pool, final, rate = sealed_rounds(loop_root, family, rounds)
+    fam = json.loads((loop_root / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
+    rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
+    src = f"{PLAN_SRC.replace('§9', '§10')} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
+    settings, failures, grasps, longest = [], [], [], 0.0
+    for tid, frac_s in sorted(per.items()):
+        ins = [p for p in map(parse, rows[tid]["goal"]) if p.name == "in"]
+        if len(ins) != 1:
+            continue
+        x, c = ins[0].args
+        o = checker.objects[x]
+        half, _ = checker.box(x)
+        hc = checker.box(c)[0]
+        wall = float(checker.objects[c]["box"].get("wall", 0.01))
+        ok, n = map(int, frac_s.split("/"))
+        lifted, routes = 0, []
+        for f in sorted(rdir.glob(f"{tid}_s*.json")):
+            r = json.loads(f.read_text())
+            steps = r.get("steps") or []
+            walk = next((w for w in steps if w.get("step") == "walk" and w.get("stance")), None)
+            carry = next((w for w in steps if w.get("step") == "carry" and w.get("stance")), None)
+            lifted += any(w.get("step") in ("carry", "over") for w in steps)
+            if r.get("ok") and walk is not None and carry is not None:
+                d = checker.route(np.asarray(walk["stance"], float), np.asarray(carry["stance"], float))
+                if np.isfinite(d):
+                    routes.append(float(d))
+        longest = max([longest, *routes])
+        setting = f"ADT apartment (mars): {x} from {o['surface']} into {c}, placement and yaw random on its surface, robot spawned 1-3 m away ({family} sealed pool); {final}"
+        entry = dict(name=f"{family}.{tid}", status="measured", objects=[x], surface=c, from_surface=o["surface"],
+                     setting=setting, success=f"{ok}/{n}", rim_height=[round(float(checker.top(c)), 3)] * 2,
+                     opening=np.sort(2 * (hc[:2] - wall)).round(3).tolist(),
+                     carry_route=[round(min(routes), 2), round(max(routes), 2)] if routes else None, source=src)  # fmt: skip
+        if n and ok / n >= BUCKET1_RATE:
+            settings.append(entry)
+        else:
+            failures.append(dict(name=entry["name"], gap=f"place_into.{tid}", objects=[x], surface=c, pilots=[tid],
+                                 success=entry["success"], setting=setting, source=src))  # fmt: skip
+        if x not in picked and n and lifted / n >= BUCKET1_RATE:
+            picked.add(x)
+            grasps.append(dict(name=f"{family}.{tid}.pick", status="measured", objects=[x], surface=o["surface"],
+                               setting=f"{setting}: lifted and carried away", success=f"{lifted}/{n}",
+                               support_top=[round(float(checker.surfaces[o['surface']]["top"]), 3)] * 2,
+                               object_width=[round(float(2 * min(half[:2])), 3)] * 2,
+                               object_height=[round(float(2 * half[2]), 3)] * 2,
+                               mass_max=float((o.get("semantic") or {}).get("mass_kg", 0.0)), inboard=None,
+                               stance_xy=None, source=src))  # fmt: skip
+    return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per)
+
+
+def build(loop_root: Path, place_loops=(), held_loops=(), pick_rounds: Path | None = None, into_loops=()) -> dict:
+    """`place_loops` / `held_loops` / `into_loops`: (sandbox, family, rounds dir or None) per finished family;
+    `pick_rounds`: the pick_single sealed pool re-run under the current catalog (None: its final incumbent's rounds)."""
     old = yaml.safe_load(OLD.read_text())
     meta = scene_file.load(str(ADT / "scene_meta.json"))
     checker = feasibility.Checker(meta, dict(old, robot=dict(old["robot"], body_radius=0.35)))
@@ -280,6 +336,13 @@ def build(loop_root: Path, place_loops=(), held_loops=(), pick_rounds: Path | No
     for root, family, rounds in place_loops:
         ok, bad, grasps, longest, summ = put_on(root, family, checker, picked, rounds)
         placed, place_failed, carry_max = placed + ok, place_failed + bad, max(carry_max, longest)
+        settings = settings + grasps
+        loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
+                             bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
+    put_in, put_in_failed = [], []
+    for root, family, rounds in into_loops:
+        ok, bad, grasps, longest, summ = into(root, family, checker, picked, rounds)
+        put_in, put_in_failed, carry_max = put_in + ok, put_in_failed + bad, max(carry_max, longest)
         settings = settings + grasps
         loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
                              bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
@@ -401,7 +464,19 @@ def build(loop_root: Path, place_loops=(), held_loops=(), pick_rounds: Path | No
         },
         "place": {
             "into_container_single_arm": dict(
-                status="untested", note="no place skill in the library yet (D4: the loop writes it)"
+                status="measured",
+                setting="the put-in families' sealed pools: each setting is one object into one container (the checker takes it for that pair whatever the ranges say); the rim range spans the settings, the opening is the smallest one measured",
+                rim_height_measured=[min(e["rim_height"][0] for e in put_in), max(e["rim_height"][0] for e in put_in)],
+                opening_measured=[min(e["opening"][0] for e in put_in), min(e["opening"][1] for e in put_in)],
+                measured_tasks=put_in,
+                failed_tasks=put_in_failed,
+                source=PLAN_SRC.replace("§9", "§10"),
+            )
+            if put_in
+            else dict(
+                status="untested",
+                note="no place skill in the library yet (D4: the loop writes it)",
+                failed_tasks=put_in_failed,
             ),
             "put_down_bimanual": dict(status="untested", note="no bimanual skill"),
             "on_surface_single": dict(
@@ -488,7 +563,8 @@ HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scen
 #   reach_single_arm.mass_lifted_max (when set): the probe failed above it.
 #   place.on_surface_single.measured_tasks are put-down families' tasks at >= 50 % sealed success, one object onto one
 #     surface each (failed_tasks below it); grasp_settings also hold the objects those rounds lifted and carried away.
-#   Every skill the library does not have yet (place into, bimanual) is untested: a gap, never bucket 1.
+#   place.into_container_single_arm.measured_tasks are the same for put-in families (one object into one container).
+#   Every skill the library does not have yet (bimanual) is untested: a gap, never bucket 1.
 """
 
 
@@ -499,6 +575,8 @@ def main(argv=None) -> int:
                     help="a finished put-down family's sandbox and name (repeatable); ROUNDS: its sealed pool re-run under the current catalog")  # fmt: skip
     ap.add_argument("--held-loop", action="append", default=[], metavar="SANDBOX:FAMILY[:ROUNDS]",
                     help="a finished pick family besides pick_single (repeatable)")  # fmt: skip
+    ap.add_argument("--into-loop", action="append", default=[], metavar="SANDBOX:FAMILY[:ROUNDS]",
+                    help="a finished put-in family (repeatable)")  # fmt: skip
     ap.add_argument("--pick-rounds", type=Path, help="pick_single's sealed pool re-run under the current catalog")
     ap.add_argument("--out", type=Path, default=DST)
     a = ap.parse_args(argv)
@@ -508,7 +586,8 @@ def main(argv=None) -> int:
         parts = v.split(":")
         return Path(parts[0]), parts[1], Path(parts[2]) if len(parts) > 2 else None
 
-    cap = build(a.loop_root, [loop(v) for v in a.place_loop], [loop(v) for v in a.held_loop], a.pick_rounds)
+    cap = build(a.loop_root, [loop(v) for v in a.place_loop], [loop(v) for v in a.held_loop], a.pick_rounds,
+                [loop(v) for v in a.into_loop])  # fmt: skip
 
     class NoAlias(yaml.SafeDumper):  # the same list in two places stays two lists, not an anchor
         def ignore_aliases(self, data):
