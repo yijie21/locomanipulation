@@ -355,3 +355,12 @@ def test_a_put_in_measured_on_its_own_object_and_container_decides_the_put():
     cap["place"]["into_container_single_arm"]["failed_tasks"] = [dict(name="r1_in_single.t", gap="place_into.t",
                                                                      objects=["bottle"], surface="bin", success="1/8")]  # fmt: skip
     assert "place_into.t" in feasibility.Checker(copy.deepcopy(META), cap).check(goal).gaps
+
+
+def test_a_goal_measured_end_to_end_decides_its_near():
+    goal = {"id": "t", "goal": ["held(bottle)", "near(bottle, HIGH, 0.8)"]}
+    assert "goal.near" in feasibility.Checker(copy.deepcopy(META), CAP).check(goal).gaps
+    cap = dict(copy.deepcopy(CAP), goals_measured=[dict(name="r1_held_near_single.t", success="7/10",
+                                                        goal=["near(bottle,  HIGH, 0.8)", "held(bottle)"])])  # fmt: skip
+    r = feasibility.Checker(copy.deepcopy(META), cap).check(goal)
+    assert "goal.near" not in r.gaps and any(c.name == "measured_task" for c in r.checks)

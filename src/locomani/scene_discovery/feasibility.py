@@ -417,6 +417,15 @@ class Checker:
         if self.top(c) + hx[2] < low:
             out.append(Check(step, "hand_height", BLOCKED, round(self.top(c) + hx[2], 3), low, why="the hand would let the object go below the lowest hand position ever reached"))  # fmt: skip
 
+    def goal_measured(self, goal) -> dict | None:
+        """The measured setting whose goal is this very goal (capability `goals_measured`, written from an inner
+        loop's sealed result by capability_write.py), or None."""
+        want = sorted(" ".join(str(g).split()) for g in goal)
+        for e in self.cap.get("goals_measured") or ():
+            if sorted(" ".join(str(g).split()) for g in e["goal"]) == want:
+                return e
+        return None
+
     def placed(self, x: str, s: str, kind: str = "on_surface_single") -> tuple[dict | None, dict | None]:
         """(setting, failure) of the single-hand put-down (`kind` "into_container_single_arm": put-in) measured on
         this very object onto this very surface (into this container): an inner loop's sealed result
@@ -510,7 +519,11 @@ class Checker:
                 else:  # held, or set down by a put-down (put_down_single lands at 0.3-0.4 deg, put_down_bimanual <= 2.5)
                     r.checks.append(Check(f"{moved}({x})", "keeps_upright", OK))
             else:  # near / in_room: the robot (or a carried object) going somewhere
-                r.checks.append(Check(f"{p.name}{p.args}", "skill", UNTESTED, gap=f"goal.{p.name}"))
+                hit = self.goal_measured(task["goal"])
+                if hit is not None:  # this very goal measured end to end (a carry-to family's sealed result)
+                    r.checks.append(Check(f"{p.name}{p.args}", "measured_task", OK, hit.get("success"), hit["name"]))
+                else:
+                    r.checks.append(Check(f"{p.name}{p.args}", "skill", UNTESTED, gap=f"goal.{p.name}"))
         return r
 
     def _grasp_setting(self, step, dims: dict, settings: list) -> list[Check]:

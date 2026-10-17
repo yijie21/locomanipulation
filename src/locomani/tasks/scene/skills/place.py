@@ -113,6 +113,8 @@ PICK_DISTURB_LIMIT_M = 0.02  # grasp_program's disturb limit during the put-down
 HELD_OUT_MAX_M = 0.03  # object centre at most this far out along the fingers after the lift, else set back
 UPRIGHT_TILT_DEG = 10.0  # reference pelvis tilt above which the robot stands up before its first walk
 CLEAR_BACK_M = 0.20  # ... after pulling the jaw this far straight back, level
+PULL_FOLLOW_M = 0.02  # `_handoff(follow=True)`: a pull-back short of its target is stuck only when the jaw-to-object
+#                       distance changed more than this (s140016: 18.4 of 18.5 cm followed, 3.0 cm off; s140017: 15.0 of 17.0)
 SET_DOWN_MARGIN_M = 0.03  # set_down: the object's centre this far inside the surface's footprint
 CREEP_RATE_M_S = 0.0009  # (0.0012 until r1_in_single's set) side grasps: the object slides down the pads this fast from the lift to the release
 LEG_SETTLE_S = 3.0  # lift_to_release_s: per walk leg after its profile (walk_to: settle_s, up to its stop_timeout)
@@ -542,14 +544,18 @@ def centre_move(d: float) -> float:
     return clearance.centre_move(d, CENTRE_MIN_M, CENTRE_MAX_M)
 
 
-def _handoff(ctx, key: str, side: str, lifted, ahead: dict, home: dict) -> Outcome | None:
+def _handoff(ctx, key: str, side: str, lifted, ahead: dict, home: dict, fail=None, follow: bool = False
+             ) -> Outcome | None:  # fmt: skip
     """From the pick stance to standing clear with the object, ready to carry: the fingertip check (`held_out`) and, for a
     side grasp, the grip margin measured in the jaw against the creep over the rest of T_est; after a low pick the level
     pull-back and the stand-up, the grip checked after each step and after the back-off; the back-off (and the stand-up
-    when the pelvis is still low). None when ready, else the failure (`_fail`, object set down)."""
+    when the pelvis is still low). None when ready, else the failure (`fail`, default `_fail`: object set down). With
+    `follow` a pull-back that ends outside the reach's tolerance goes on when the object came with the jaw (their
+    distance changed at most PULL_FOLLOW_M) and the hand still grips it; without, it is stuck."""
+    fail = fail or _fail
     world, m = ctx.world, ctx.motor
     body = world.free[key]
-    failed = _grip_checks(ctx, key, side, lifted, ahead, home)
+    failed = _grip_checks(ctx, key, side, lifted, ahead, home, fail)
     if failed is not None:
         return failed
 
@@ -557,44 +563,53 @@ def _handoff(ctx, key: str, side: str, lifted, ahead: dict, home: dict) -> Outco
     low_pick = tilt_deg > UPRIGHT_TILT_DEG
     if low_pick:
         jaw, rot = m.jaw_centre(side)
+        gap = float(np.linalg.norm(world.object_pose(key)[0] - jaw)) if follow else None
         back = jaw - CLEAR_BACK_M * np.array([np.cos(m.yaw()), np.sin(m.yaw()), 0.0])
-        out = ctx.note("pull_back", m.reach(side, back, rot), ref_tilt_deg=round(tilt_deg, 1))
+        out = m.reach(side, back, rot)
+        followed = None
+        if follow and not out.ok and m.fell_at is None:
+            moved = float(np.linalg.norm(world.object_pose(key)[0] - m.jaw_centre(side)[0])) - gap
+            followed = dict(gap_change_cm=round(100 * moved, 2), followed=bool(abs(moved) <= PULL_FOLLOW_M
+                                                                               and side in m.gripping(body)))  # fmt: skip
+        ctx.note("pull_back", out, ref_tilt_deg=round(tilt_deg, 1), **(followed or {}))
         if m.fell_at is not None:
-            return _fail(ctx, key, f"carry: {out.why}")
-        if not out.ok:
-            return _fail(ctx, key, f"pick failed: stuck after the lift ({out.why})", lifted, home)
+            return fail(ctx, key, f"carry: {out.why}")
+        if not out.ok and not (followed or {}).get("followed"):
+            return fail(ctx, key, f"pick failed: stuck after the lift ({out.why})", lifted, home)
         if side not in m.gripping(body):
-            return _fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the pull_back", lifted)
+            return fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the pull_back", lifted)
         out = m.posture()
         ctx.note("stand", out, ref_tilt_after_deg=round(float(np.degrees(tilt(m.ref(m.t).quat))), 1))
         if m.fell_at is not None:
-            return _fail(ctx, key, f"carry: {out.why}")
+            return fail(ctx, key, f"carry: {out.why}")
         if side not in m.gripping(body):
-            return _fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the stand", lifted)
+            return fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the stand", lifted)
 
     k0 = len(m.trace)
     out = ctx.note("back_off", m.sidestep(forward=-BACK_AFTER_PICK_M), ref_wrist_jump_cm=_ref_jump(m, side, k0))
     if m.fell_at is not None:
-        return _fail(ctx, key, f"carry: {out.why}")
+        return fail(ctx, key, f"carry: {out.why}")
     if low_pick and side not in m.gripping(body):
-        return _fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the back_off", lifted)
+        return fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the back_off", lifted)
     if float(m.sim.d.qpos[2]) < STAND_UP_BELOW_M:
         out = ctx.note("stand", m.posture())
         if m.fell_at is not None:
-            return _fail(ctx, key, f"carry: {out.why}")
+            return fail(ctx, key, f"carry: {out.why}")
     return None
 
 
-def _grip_checks(ctx, key: str, side: str, lifted, ahead: dict, home: dict) -> Outcome | None:
+def _grip_checks(ctx, key: str, side: str, lifted, ahead: dict, home: dict, fail=None) -> Outcome | None:
     """`_handoff`'s checks after the lift, no motion: the fingertip check (`held_out`) and, for a side grasp, the grip
-    margin measured in the jaw against the creep over the rest of T_est. None when both pass, else the failure."""
+    margin measured in the jaw against the creep over the rest of T_est. None when both pass, else the failure (`fail`,
+    default `_fail`)."""
+    fail = fail or _fail
     world, m = ctx.world, ctx.motor
     jaw, rot = m.jaw_centre(side)
     pos, quat = world.object_pose(key)
     out_m = held_out(jaw, rot, pos)
     ctx.note("held_out", Outcome(out_m <= HELD_OUT_MAX_M, "", m.t, m.t), cm=round(100 * out_m, 2))
     if out_m > HELD_OUT_MAX_M:
-        return _fail(ctx, key, f"pick failed: held at the fingertips ({100 * out_m:.1f} cm out)", lifted, home)
+        return fail(ctx, key, f"pick failed: held at the fingertips ({100 * out_m:.1f} cm out)", lifted, home)
     if not ahead["top"]:
         margin = grip_margin_now(jaw, rot, pos, quat, world.meta["objects"][key]["box"])
         rest = ahead["t_est"] - grasp_program.SIMPLE["lift_seconds"] - grasp_program.HOLD_S
@@ -602,8 +617,8 @@ def _grip_checks(ctx, key: str, side: str, lifted, ahead: dict, home: dict) -> O
         ctx.note("grip_margin", Outcome(not short, "", m.t, m.t), cm=round(100 * margin, 2),
                  creep_cm=round(100 * CREEP_RATE_M_S * rest, 2), rest_s=round(rest, 1))  # fmt: skip
         if short:
-            return _fail(ctx, key, f"pick failed: grip margin {100 * margin:.1f} cm < creep over {rest:.0f} s", lifted,
-                         home)  # fmt: skip
+            return fail(ctx, key, f"pick failed: grip margin {100 * margin:.1f} cm < creep over {rest:.0f} s", lifted,
+                        home)  # fmt: skip
     return None
 
 
