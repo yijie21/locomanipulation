@@ -120,6 +120,35 @@ class AdtObject:
         return self.category not in FIXED_CATEGORIES and self.size <= FIXED_SIZE
 
 
+UPRIGHT_OFF_DEG = 30.0  # an ADT upright axis this far off the object's resting up is replaced (resting_upright)
+
+
+def resting_upright(objects: dict, max_deg: float = UPRIGHT_OFF_DEG) -> dict[str, tuple[list, list]]:
+    """Free objects whose `upright_axis` (ADT's canonical up) is more than `max_deg` off the up they rest with at
+    `init_quat` get, in place, the body axis (+-x, +-y, +-z) nearest to that resting up (TODO 19.15, user
+    2026-10-18): ADT's canonical up had 28 of the 64 free objects lying down at rest -- every book standing in a
+    shelf, the potted plants, fruit, keys, remotes, the wallet -- so `upright(X)` failed even where X never moved.
+    Returns {key: (old axis, new axis)}; the old one stays as `semantic.upright_axis_adt`."""
+    out = {}
+    for key, o in sorted(objects.items()):
+        sem = o.get("semantic") or {}
+        if not o.get("free") or not sem:
+            continue
+        ax = np.asarray(sem.get("upright_axis") or (0.0, 0.0, 1.0), dtype=float)
+        ax = ax / np.linalg.norm(ax)
+        up = quat_to_matrix(o["init_quat"]).T @ np.array([0.0, 0.0, 1.0])  # world up in the body frame
+        if np.degrees(np.arccos(np.clip(float(ax @ up), -1.0, 1.0))) <= max_deg:
+            continue
+        i = int(np.argmax(np.abs(up)))
+        new = [0.0, 0.0, 0.0]
+        new[i] = float(np.sign(up[i]))
+        out[key] = (sem.get("upright_axis"), new)
+        sem["upright_axis_adt"] = sem.get("upright_axis")
+        sem["upright_axis"] = new
+        (o.setdefault("provenance", {}))["upright_axis"] = "rule (resting pose)"
+    return out
+
+
 def read_sequence(seq_dir) -> list[AdtObject]:
     """Every object instance of a sequence at its first recorded pose, in the sim frame."""
     seq_dir = Path(seq_dir)

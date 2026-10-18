@@ -34,3 +34,20 @@ def test_a_tipped_object_keeps_its_box_centre_in_the_world():
     b = tipped.body()
     world_corners = tipped.corners() @ tipped.rot.T + tipped.pos
     assert b["init_pos"] == pytest.approx(world_corners.mean(axis=0).round(4).tolist())
+
+
+def test_an_upright_axis_far_off_the_resting_up_takes_the_nearest_body_axis():
+    turn = adt.matrix_to_quat(np.array([[1.0, 0, 0], [0, np.cos(0.4), -np.sin(0.4)], [0, np.sin(0.4), np.cos(0.4)]]))
+    objects = {
+        "book": dict(free=True, init_quat=[1.0, 0, 0, 0], semantic=dict(upright_axis=[0.0, 1.0, 0.0])),  # stands
+        "mug": dict(free=True, init_quat=[1.0, 0, 0, 0], semantic=dict(upright_axis=[0.0, 0.1, 1.0])),  # 6 deg: kept
+        "leaning": dict(free=True, init_quat=turn, semantic=dict(upright_axis=[1.0, 0.0, 0.0])),  # 23 deg about x
+        "table": dict(free=False, init_quat=[1.0, 0, 0, 0], semantic=dict(upright_axis=[0.0, 1.0, 0.0])),
+    }
+    fixed = adt.resting_upright(objects)
+    assert sorted(fixed) == ["book", "leaning"]
+    assert objects["book"]["semantic"]["upright_axis"] == [0.0, 0.0, 1.0]
+    assert objects["book"]["semantic"]["upright_axis_adt"] == [0.0, 1.0, 0.0]
+    assert objects["leaning"]["semantic"]["upright_axis"] == [0.0, 0.0, 1.0]  # the body axis nearest its resting up
+    assert objects["mug"]["semantic"]["upright_axis"] == [0.0, 0.1, 1.0]
+    assert objects["table"]["semantic"]["upright_axis"] == [0.0, 1.0, 0.0]  # furniture: not a free object

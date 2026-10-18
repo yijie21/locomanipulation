@@ -24,11 +24,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import tempfile
 from pathlib import Path
 
 import mujoco
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from locomani.scene_discovery import adt  # noqa: E402
 
 DT = 0.005  # the ScaleBFM runner's physics step (backends/scalebfm/runtime.py)
 DAMPING = 5.0  # N s/m on every free object's translation while settling
@@ -115,8 +120,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--scene", type=Path, required=True)
     ap.add_argument("--write", action="store_true", help="write the settled poses into the scene's three files")
+    ap.add_argument("--upright-only", action="store_true", help="no simulation: only correct the upright axes of an "
+                    "already settled scene_meta.json (adt.resting_upright)")  # fmt: skip
     a = ap.parse_args(argv)
     meta = json.loads((a.scene / "scene_meta.json").read_text())
+    if a.upright_only:
+        fixed = adt.resting_upright(meta["objects"])
+        (a.scene / "scene_meta.json").write_text(json.dumps(meta, indent=1))
+        (a.scene / "upright.json").write_text(json.dumps(fixed, indent=1))
+        print(f"[settle] upright axes corrected for {len(fixed)} objects: {sorted(fixed)}")
+        return 0
     settled, report = settle(load(a.scene))
     for key, (p, _) in settled.items():
         report[key]["on_surface"] = on_surface(meta, key, p)
@@ -131,6 +144,10 @@ def main(argv=None) -> int:
     print(f"[settle] not resting or off their surface after the check: {[(k, report[k]) for k in bad]}")
     if a.write:
         write(a.scene, meta, settled)
+        fixed = adt.resting_upright(meta["objects"])  # the resting pose decides what upright is (TODO 19.15)
+        (a.scene / "scene_meta.json").write_text(json.dumps(meta, indent=1))
+        (a.scene / "upright.json").write_text(json.dumps(fixed, indent=1))
+        print(f"[settle] upright axes corrected for {len(fixed)} objects")
         print(f"[settle] wrote the settled poses into {a.scene}/scene_meta.json, scene_locomani.xml, env_only.xml")
     return 0
 
