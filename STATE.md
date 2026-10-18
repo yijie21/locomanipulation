@@ -1,8 +1,8 @@
-# STATE — 2026-10-18（场景 RSI：第 2 阶段完成；用户定的门 / 物理修改已做完；第 3 阶段第 2 轮外环开跑）
+# STATE — 2026-10-18（场景 RSI 第 3 阶段第 2 轮外环：内环 1/6 `r2_on_single` 在跑）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-18 05:48）：origin/main = `a2cfb23`；本地多 73 个提交（含本次），**都没推送**（用户没说推）。
-已确认（10-18 05:48 UTC）：没有内环或批次在跑，机器空闲。已结束的沙盒（都已写回）：`/workspace/code/rsi-scene/{pick-a,r1-on-a,r1-held-a,r1-in-a,r1-near-a,r1-slide-a}`。
+已确认（10-18 07:56）：origin/main = `a2cfb23`；本地多 76 个提交（含本次），**都没推送**（用户没说推）。
+已确认（10-18 07:56 UTC）：**内环 `r2_on_single` 在跑**（沙盒 `/workspace/code/rsi-scene/r2-on-a`，`/workspace/tmp/run_r2_on.sh` 起的，6 h / 150 USD / 门 12 次）；跑时不要另起仿真批次。查看：沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py status r2_on_single`。第 1 轮沙盒 `pick-a`、`r1-{on,held,in,near,slide}-a` 都已写回。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
 ## 提交与磁盘
