@@ -218,6 +218,9 @@ def geometry(args) -> None:
                 "fill": r["fill"],
                 "provenance": {"yaw": "rule", "of_object": "rule", "approach_edges": "rule", "room": "rule"},
             }
+    for key, over in surfaces.shadowed(surfs).items():  # cabinet tops under a counter top: nothing rests there
+        print(f"[adt] {key} lies under {over}: not a surface", flush=True)
+        del surfs[key]
     print(
         f"[adt] {len(surfs)} surfaces from {len(mesh_check)} furniture meshes; "
         f"mesh vs ADT box max mismatch {max(mesh_check):.3f} m",

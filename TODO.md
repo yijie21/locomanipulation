@@ -1014,6 +1014,7 @@
     - [x] 27.5.1 新能力表重新发现（`/workspace/tmp/discover_r2.sh`，结果 `outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/`）：56 个任务，12 / 36 / 8，4.30 USD
     - [x] 27.5.2 选缺口（`outer.py select outputs/scene_rsi_20261016/outer/round2 --loops <6 个沙盒>`），族文件 `r2_*`：`on_single`、`in_single`、`held+near_single`、`held_single`、`relay_regrasp`、`in_room_none`，估 750 USD；`select` 修了提议计数、已建技能、同名合并（方案 §11）
     - [ ] 27.5.3 内环一组一组跑并写回（同 27.4.4）
+    - [ ] 27.5.5 用户定（10-18）：删掉被长台面盖住的短、中厨房台面（`surfaces.shadowed`，`scripts/scene_drop_shadowed.py`）；`r2_on_single` 跑完、抽完封存集后再改场景（跑着改会让门的哨兵失效），它的盘架任务写回时判无效
     - [ ] 27.5.4 报里程碑 2：两轮的第 1 桶增长曲线、花费、插手
   - [ ] 27.6 第 4 阶段：两组对照（D12）
   - [ ] 27.7 第 5 阶段：演示视频（预览版 ≤ 500 KB）与查看页

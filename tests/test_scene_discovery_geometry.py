@@ -131,3 +131,12 @@ def test_an_edge_needs_a_runup_not_just_a_stand():
     clear = floorplan.clearance(walls | chair)
     assert "-x" in floorplan.approach_edges(rect, clear, grid, body_radius=0.26)
     assert "-x" not in floorplan.approach_edges(rect, clear, grid, body_radius=0.26, runup=0.6)
+
+
+def test_a_surface_a_slightly_higher_one_covers_is_shadowed():
+    counter = {"xy": [0.0, 0.0], "half_extent": [1.5, 0.33], "yaw": 0.0, "top": 0.918}
+    cabinet = {"xy": [0.3, 0.0], "half_extent": [0.7, 0.3], "yaw": np.pi, "top": 0.882}  # under the counter top
+    shelf = {"xy": [0.3, 0.0], "half_extent": [0.7, 0.3], "yaw": 0.0, "top": 0.60}  # 32 cm under it: room to rest
+    side = {"xy": [1.6, 0.0], "half_extent": [0.4, 0.3], "yaw": 0.0, "top": 0.88}  # a quarter under it only
+    found = surfaces.shadowed({"counter": counter, "cabinet": cabinet, "shelf": shelf, "side": side})
+    assert found == {"cabinet": "counter"}

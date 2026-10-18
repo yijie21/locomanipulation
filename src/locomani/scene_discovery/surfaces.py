@@ -124,3 +124,34 @@ def drop_stairs(
         if len(flight) >= min_steps and all(linked[a][b] for a, b in zip(flight, flight[1:])):
             stairs |= comp
     return [r for k, r in enumerate(regions) if k not in stairs]
+
+
+SHADOW_SHARE = 0.9  # of a surface's area under another surface ...
+SHADOW_GAP = 0.10  # ... less than this many metres higher: nothing can rest on it
+
+
+def shadowed(surfaces: dict) -> dict[str, str]:
+    """{key: the key of the surface over it} for every surface of `surfaces` (scene-file rows: xy, half_extent, yaw,
+    top) that lies SHADOW_SHARE or more under another one less than SHADOW_GAP higher (2026-10-18): the ADT kitchen's
+    short and medium counters are cabinet tops 3.6 cm under the long counter top, which covers them whole. An object
+    put there rests on the higher surface, and on(X, lower) held at the start of 3 of 5 starts of a round-2 task."""
+    out = {}
+    u = (np.arange(20) + 0.5) / 20 * 2 - 1
+    gu, gv = np.meshgrid(u, u)
+    for key, s in sorted(surfaces.items()):
+        hx, hy = (float(v) for v in s["half_extent"][:2])
+        c, sn = np.cos(float(s.get("yaw", 0.0))), np.sin(float(s.get("yaw", 0.0)))
+        lx, ly = gu.ravel() * hx, gv.ravel() * hy
+        pts = np.stack([s["xy"][0] + c * lx - sn * ly, s["xy"][1] + sn * lx + c * ly], axis=1)
+        for k2, t in sorted(surfaces.items()):
+            if k2 == key or not 0 < float(t["top"]) - float(s["top"]) < SHADOW_GAP:
+                continue
+            c2, s2 = np.cos(-float(t.get("yaw", 0.0))), np.sin(-float(t.get("yaw", 0.0)))
+            dx, dy = pts[:, 0] - t["xy"][0], pts[:, 1] - t["xy"][1]
+            inside = (np.abs(c2 * dx - s2 * dy) <= t["half_extent"][0]) & (
+                np.abs(s2 * dx + c2 * dy) <= t["half_extent"][1]
+            )
+            if inside.mean() >= SHADOW_SHARE:
+                out[key] = k2
+                break
+    return out
