@@ -1,0 +1,25 @@
+{
+ "name": "r2_held_single",
+ "about": "outer round 2, gap held_single (checker): 2 of its 2 discovered tasks, spread over how far they are from the measured settings; new skills none",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/tasks.jsonl",
+ "tasks": [
+  "pick_third_thick_novel",
+  "hand_me_wallet"
+ ],
+ "new_skills": [],
+ "pools": {
+  "diag": {
+   "seed": 1140000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 1240000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 1340000,
+   "n": 80
+  }
+ }
+}

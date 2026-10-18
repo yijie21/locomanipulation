@@ -1,0 +1,26 @@
+{
+ "name": "r2_held_near_single",
+ "about": "outer round 2, gap held+near_single (checker): 3 of its 3 discovered tasks, spread over how far they are from the measured settings; new skills none",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/tasks.jsonl",
+ "tasks": [
+  "bring_second_novel_to_bed",
+  "bring_pear_to_sofa",
+  "bring_cookbook_to_kitchen"
+ ],
+ "new_skills": [],
+ "pools": {
+  "diag": {
+   "seed": 1130000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 1230000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 1330000,
+   "n": 80
+  }
+ }
+}

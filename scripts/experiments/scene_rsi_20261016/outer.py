@@ -27,8 +27,10 @@ block of their own.
 from __future__ import annotations
 
 import argparse
+import ast
 import collections
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -50,7 +52,13 @@ SEED_BLOCK = 10000  # family k: diag 100000 + k block, accept 200000 + .., seale
 ROUND_SEEDS = 1_000_000  # per round after the first (until 2026-10-18 round r added 10 blocks per round: round 2's diag
 # seeds were round 1's acceptance seeds, its acceptance seeds round 1's sealed ones)
 # gaps the checker reports when no skill exists (feasibility.py: an untested skill or a step without one)
-NEW_SKILL = ("place_on_surface.single", "place_into.single", "grasp_bimanual.skill", "put_down_bimanual.skill")
+NEW_SKILL = (
+    "place_on_surface.single",
+    "place_into.single",
+    "grasp_bimanual.skill",
+    "put_down_bimanual.skill",
+    "goal.in_room",
+)
 CONSTRAINTS = {"upright", "in_room"}  # predicates that ride along with a move (near is one: held + near = a carry)
 
 
@@ -68,7 +76,17 @@ def shape(row: dict, meta: dict) -> str:
         if isinstance(x, str) and x in meta["objects"]:
             hands.add(((meta["objects"][x].get("semantic") or {}).get("graspable")) or "none")
     h = hands.pop() if len(hands) == 1 else ("mixed" if hands else "none")
-    return f"{'+'.join(sorted(moves)) or 'none'}_{h}"
+    if not moves:  # a goal of constraints only (in_room(robot, bedroom)): named by them
+        moves = sorted({parse(g).name for g in row["goal"]})
+    return f"{'+'.join(sorted(moves))}_{h}"
+
+
+def family_skills(fam: dict) -> list[str]:
+    """The new skills a family was made to build: its `new_skills`, or (round 1's files) the list its `about` names."""
+    if "new_skills" in fam:
+        return list(fam["new_skills"])
+    m = re.search(r"new skills (\[[^\]]*\])", fam.get("about", ""))
+    return list(ast.literal_eval(m.group(1))) if m else []
 
 
 def select(round_dir: Path, loops: list[Path]) -> dict:
@@ -88,6 +106,13 @@ def select(round_dir: Path, loops: list[Path]) -> dict:
                          new_skills=new, est_usd=cost, per_usd=round(len(tasks) / cost, 4),
                          checker_gaps=dict(gap_count.most_common())))  # fmt: skip
     goals = {json.dumps(sorted(r["goal"])): r["id"] for r in rows}
+    bucket = {r["id"]: r["bucket"] for r in rows}
+    # a skill an earlier round's family was made to build is not proposed again; a proposal counts only this round's
+    # tasks still in bucket 2, and the same skill proposed by several loops is one gap (until 2026-10-18 each loop's
+    # proposal stood alone and counted its own round's tasks: round 2 re-selected slide_then_grasp, which round 1 had
+    # built, for tasks two of which were in bucket 1 already)
+    built = {k for f in sorted((HERE / "families").glob("*.json")) for k in family_skills(json.loads(f.read_text()))}
+    proposals: dict = {}
     for root in loops:
         for f in sorted((root / "outputs" / "scene_rsi_20261016").glob("*/loop/gaps.jsonl")):
             fam = json.loads(
@@ -101,9 +126,22 @@ def select(round_dir: Path, loops: list[Path]) -> dict:
             for line in f.read_text().splitlines():
                 p = json.loads(line)
                 named = [goals.get(json.dumps(sorted(frows[t]["goal"]))) for t in p["tasks"] if t in frows]
-                gaps.append(dict(name=p["name"], source=str(f), tasks=sorted(t for t in named if t), n=len(p["tasks"]),
-                                 new_skills=[p["name"]], est_usd=EST_USD_NEW * 2, per_usd=round(len(p["tasks"]) / (2 * EST_USD_NEW), 4),
-                                 capability=p.get("capability", ""), loop_estimate=p.get("est_cost", "")))  # fmt: skip
+                g = proposals.setdefault(p["name"], dict(name=p["name"], source=[], tasks=set(), proposed=0,
+                                                         capability=[], loop_estimate=[]))  # fmt: skip
+                g["source"].append(str(f))
+                g["tasks"] |= {t for t in named if t and bucket[t] == 2}
+                g["proposed"] += len(p["tasks"])
+                g["capability"].append(p.get("capability", ""))
+                g["loop_estimate"].append(p.get("est_cost", ""))
+    skipped = []
+    for name, g in sorted(proposals.items()):
+        if name in built or not g["tasks"]:
+            skipped.append(dict(name=name, why="built by an earlier family" if name in built else "no bucket-2 task here",
+                                proposed=g["proposed"]))  # fmt: skip
+            continue
+        n = len(g["tasks"])
+        gaps.append(dict(g, tasks=sorted(g["tasks"]), n=n, new_skills=[name], est_usd=EST_USD_NEW * 2,
+                         per_usd=round(n / (2 * EST_USD_NEW), 4)))  # fmt: skip
     gaps.sort(key=lambda g: (-g["per_usd"], -g["n"], g["name"]))
     chosen, spent = [], 0.0
     for g in gaps:
@@ -111,7 +149,7 @@ def select(round_dir: Path, loops: list[Path]) -> dict:
             chosen.append(g["name"])
             spent += g["est_usd"]
     out = dict(round=round_dir.name, discovered=len(rows), buckets=dict(sorted(buckets.items())), gaps=gaps,
-               selected=chosen, est_usd=spent, rule=f"tasks / estimated USD (extend {EST_USD_EXTEND}, new skill "
+               skipped_proposals=skipped, selected=chosen, est_usd=spent, rule=f"tasks / estimated USD (extend {EST_USD_EXTEND}, new skill "
                f"{EST_USD_NEW} each); first {MAX_GAPS} within {ROUND_BUDGET_USD} USD")  # fmt: skip
     (round_dir / "selection.json").write_text(json.dumps(out, indent=1))
     return out
@@ -142,6 +180,7 @@ def family(round_dir: Path, gap: str) -> Path:
         # links to it
         tasks_file=str((round_dir / "discovery" / "tasks.jsonl").resolve().relative_to(REPO)),
         tasks=tasks,
+        new_skills=g["new_skills"],
         pools={p: {"seed": base + block, "n": n} for (p, n), base in zip(POOLS.items(), (100000, 200000, 300000))},
     )
     path = HERE / "families" / f"{name}.json"

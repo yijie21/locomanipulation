@@ -1,0 +1,27 @@
+{
+ "name": "r2_relay_regrasp",
+ "about": "outer round 2, gap relay_regrasp (['/workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/loop/gaps.jsonl']): 2 of its 2 discovered tasks, spread over how far they are from the measured settings; new skills ['relay_regrasp']",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/tasks.jsonl",
+ "tasks": [
+  "apple_in_black_bowl",
+  "car_key_in_dish"
+ ],
+ "new_skills": [
+  "relay_regrasp"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 1150000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 1250000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 1350000,
+   "n": 80
+  }
+ }
+}

@@ -603,3 +603,25 @@ grip 用固定的理想做法（站在桌边 0.28 m 外，预抓 12 cm → 进�
 | Demo 1 的 49 个 | 10 → 10 | 36 → 34 | 3 → 5 |
 
 2830 个模板里第 3 桶多出 176 个。其中 133 个是新加的 `under_rim` 规则判掉的：小说放进 2 cm 深的松饼烤盘，咖啡罐、洗洁精放进 2.7 cm 深的猫碗，蜡烛放进烛碟，等等。物体以最薄的一面躺在里面，中心也高过容器沿，按冻结的 `in()` 永远不成立。另外 43 个是书柜最底层的大白花瓶：它原来悬在板上方约 8 mm，沉降后落下 7 mm，中心高度从 0.2502 m 变成 0.243 m，跨过了手测过的最低抓取高度 0.25 m，于是拿起它的模板都判成够不着。
+
+## 11. 第 3 阶段：第 2 轮外环（TODO 27.5，用户 2026-10-18 按推荐开）
+
+**发现**（`/workspace/tmp/discover_r2.sh`：新物理下的场景、新能力表、可站边覆盖文件，Opus，2 次修改）：56 个任务，分桶 12 / 36 / 8，4.30 USD，17 min。17 个任务的目标和第 1 轮的某个任务完全相同。结果在 `outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/`，`outputs/scene_rsi_20261016/outer/round2/discovery` 链接到那里。
+
+**选缺口**（`outer.py select .../round2 --loops <第 1 轮的 6 个沙盒>`）：先修了 `select` 的三处（记一次插手）：
+- 内环提的缺口提议，原来按提议自己那一轮的任务计数；现在只算本轮还在第 2 桶的任务。
+- 前几轮已经为它建过族的技能（族文件的 `new_skills`，第 1 轮的族从 `about` 里读）不再被提出。原来第 2 轮又选中了第 1 轮做过的 `slide_then_grasp`，它的 4 个任务里有 2 个已经在第 1 桶。
+- 几个环提了同一个技能，合成一个缺口。
+
+另外，只有约束谓词的目标（`in_room(robot, bedroom)`）原来被命名成 `none_none`，现在用约束谓词起名；检查器报的 `goal.in_room` 算新技能。
+
+| 顺序 | 缺口 | 本轮第 2 桶任务 | 族里的任务 | 新技能 | 估计 USD |
+|---|---|---|---|---|---|
+| 1 | `on_single` 放到台面上 | 25 | 10 | — | 75 |
+| 2 | `in_single` 放进容器 | 5 | 5 | — | 75 |
+| 3 | `held+near_single` 拿着走到某物旁 | 3 | 3 | — | 75 |
+| 4 | `held_single` 拿起（钱包、第三本厚小说） | 2 | 2 | — | 75 |
+| 5 | `relay_regrasp` 中途放下再换手位重抓（`r1_in_single` 提的） | 2 | 2 | relay_regrasp | 300 |
+| 6 | `in_room_none` 走到某个房间 | 1 | 1 | goal.in_room | 150 |
+
+被排除的提议（`selection.json` 的 `skipped_proposals`）：`slide_then_grasp`（第 1 轮做过）；`book_from_row`、`pull_from_row_then_grasp`、`step_clear_first` 等 7 个，本轮没有对得上的第 2 桶任务。`relay_regrasp` 的两个任务也在 `in_single` 里：`in_single` 写回后，如果这两个任务都进了第 1 桶，就跳过 `relay_regrasp`。族文件 `families/r2_*.json`，种子从 1,110,000 起（§10.2）。

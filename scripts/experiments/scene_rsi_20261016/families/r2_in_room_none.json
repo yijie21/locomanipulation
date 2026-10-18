@@ -1,0 +1,26 @@
+{
+ "name": "r2_in_room_none",
+ "about": "outer round 2, gap in_room_none (checker): 1 of its 1 discovered tasks, spread over how far they are from the measured settings; new skills ['goal.in_room']",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/tasks.jsonl",
+ "tasks": [
+  "go_to_bedroom"
+ ],
+ "new_skills": [
+  "goal.in_room"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 1160000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 1260000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 1360000,
+   "n": 80
+  }
+ }
+}

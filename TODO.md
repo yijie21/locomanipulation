@@ -1011,8 +1011,8 @@
     - [x] 27.4.5 写回能力表、重新分桶，报里程碑 1（第 1 桶：第 1 轮发现的 60 个 4 → 16，2830 个模板 4 → 41；模型费 309.46 USD（估 750）；内环墙钟 24.8 h；插手：内环中 1 次、开跑前规则 1 次、写回时改检查器 / 能力表程序 4 次，用户 0 次；方案 §10.1）
     - [x] 27.4.6 用户定（2026-10-18，方案 §10.2）：门第一阶段按任务分层，现任 0 成功时掉物上限放宽到候选成功数的一半，D13.4 要求未搁置部分至少占验收池一半（规则第 5 版）；蜡烛放进小盘确认做不到，检查器加 `under_rim`；静置物体自转靠台面板 1 mm 接触余量修好（转速超过 0.1°/s 的物体 33 → 5）；书、胡萝卜自己掉下去，靠家具面板（`scene_add_panels.py`，52 块）加沉降（`scene_settle.py`）修好（掉下去的 5 → 0）；外环种子块修好（第 2 轮不再撞第 1 轮）；新物理下的基线 6 族 201 → 198（b 12、c 15），第 1 轮 60 个第 1 桶 16 → 16
   - [~] 27.5 第 3 阶段：第 2 轮外环，第 1 桶增长曲线（用户 2026-10-18 按推荐开）
-    - [ ] 27.5.1 新能力表重新发现（`/workspace/tmp/discover_r2.sh`，结果 `outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/`）
-    - [ ] 27.5.2 选缺口（`outer.py select outputs/scene_rsi_20261016/outer/round2 --loops <6 个沙盒>`），族文件 `r2_*`
+    - [x] 27.5.1 新能力表重新发现（`/workspace/tmp/discover_r2.sh`，结果 `outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/`）：56 个任务，12 / 36 / 8，4.30 USD
+    - [x] 27.5.2 选缺口（`outer.py select outputs/scene_rsi_20261016/outer/round2 --loops <6 个沙盒>`），族文件 `r2_*`：`on_single`、`in_single`、`held+near_single`、`held_single`、`relay_regrasp`、`in_room_none`，估 750 USD；`select` 修了提议计数、已建技能、同名合并（方案 §11）
     - [ ] 27.5.3 内环一组一组跑并写回（同 27.4.4）
     - [ ] 27.5.4 报里程碑 2：两轮的第 1 桶增长曲线、花费、插手
   - [ ] 27.6 第 4 阶段：两组对照（D12）

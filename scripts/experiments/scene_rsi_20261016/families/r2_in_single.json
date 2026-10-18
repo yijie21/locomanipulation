@@ -1,0 +1,28 @@
+{
+ "name": "r2_in_single",
+ "about": "outer round 2, gap in_single (checker): 5 of its 5 discovered tasks, spread over how far they are from the measured settings; new skills none",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/tasks.jsonl",
+ "tasks": [
+  "apple_in_black_bowl",
+  "car_key_in_dish",
+  "plant_in_bedroom_trash",
+  "orange_in_wooden_bowl",
+  "wallet_in_wooden_box"
+ ],
+ "new_skills": [],
+ "pools": {
+  "diag": {
+   "seed": 1120000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 1220000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 1320000,
+   "n": 80
+  }
+ }
+}

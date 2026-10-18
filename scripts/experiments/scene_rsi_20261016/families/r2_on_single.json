@@ -1,0 +1,33 @@
+{
+ "name": "r2_on_single",
+ "about": "outer round 2, gap on_single (checker): 10 of its 25 discovered tasks, spread over how far they are from the measured settings; new skills none",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round2/tasks.jsonl",
+ "tasks": [
+  "novel_on_bed",
+  "novel_upright_middle_shelf",
+  "wolf_to_coffee_table",
+  "coffee_can_to_cart",
+  "canister_to_island",
+  "novel_to_nightstand_bottom_shelf",
+  "plant_to_middle_shelf",
+  "big_white_vase_to_tv_stand",
+  "top_shelf_candle_to_dining_table",
+  "plate_holder_to_medium_counter"
+ ],
+ "new_skills": [],
+ "pools": {
+  "diag": {
+   "seed": 1110000,
+   "n": 50
+  },
+  "accept": {
+   "seed": 1210000,
+   "n": 60
+  },
+  "sealed": {
+   "seed": 1310000,
+   "n": 80
+  }
+ }
+}
