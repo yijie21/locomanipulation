@@ -391,6 +391,13 @@ class Checker:
                 )
             )
             return
+        # in(X, C) holds with X's centre at most at C's rim (C's top). Lying on its thinnest side on C's floor, X's
+        # centre is as low as it gets: above the rim, no action can make the goal true (the candle in the small dish,
+        # rim 1.4 cm over the floor, the candle 5 cm thick; r1_in_single's physical park, user-confirmed 2026-10-18).
+        lowest = self.top(c) - 2 * cx[2] + wall + float(np.min(hx))
+        if lowest > self.top(c) + 1e-3:
+            out.append(Check(step, "under_rim", BLOCKED, round(lowest, 3), round(self.top(c), 3), why="its centre cannot get under the rim"))  # fmt: skip
+            return
         hands = (self.objects[x].get("semantic") or {}).get("graspable")
         if hands == "bimanual":
             out.append(Check(step, "skill", UNTESTED, gap="place_into.bimanual"))

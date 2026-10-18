@@ -13,7 +13,8 @@ voids the call and is restored. On a rejection the package goes back to the incu
 
 Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, gate calls >= 12,
 wall clock >= MAX_WALL_H, model cost >= COST_CAP, 3 rejections in a row with no new hypothesis, a Manager `stop`; and
-(D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers.
+(D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
+least UNPARKED_MIN of the pool.
 
 Infeasibility (plan §8, D13): a Reviewer's claim that some starts cannot be done with the present actions must give the
 actions it assumed, a hard constraint as a check file (claim_check.py), exits, what would refute it, and 1-3 attempts.
@@ -64,6 +65,8 @@ MAX_REJECT_STREAK = 3
 MAX_HYPOTHESES = 4
 MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
 STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
+UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
+# (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
 PROCS = 12
 GPUS = "0,1"
 ORIGIN = (REPO / "third_party").resolve().parent  # a sandbox links third_party to the origin checkout
@@ -241,7 +244,7 @@ def stop_reason(meta: dict) -> str | None:
         return "manager: stop"
     inc = jload(GATE_DIR / "incumbent.json")
     v = unparked_view(Path(inc["rounds"])) if inc else None
-    if v and v["ok"] >= STOP_RATE * v["n"]:
+    if v and v["n"] >= UNPARKED_MIN * v["all_n"] and v["ok"] >= STOP_RATE * v["n"]:
         return (f"the incumbent wins {v['ok']}/{v['n']} >= {STOP_RATE:.0%} of the acceptance starts outside the parked "
                 f"tasks {v['parked_tasks']} ({v['all_ok']}/{v['all_n']} of all): sealed set")  # fmt: skip
     return None

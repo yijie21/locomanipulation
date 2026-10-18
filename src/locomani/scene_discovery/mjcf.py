@@ -58,5 +58,69 @@ def box_inertia(mass: float, box: dict) -> dict:
     }
 
 
+PANEL_PROBE = (0.01, 0.04)  # m: an end's probe runs from this far inside the slab's end to this far beyond it
+PANEL_MAX_H = 0.25  # m above the surface (or up to the surface above it, when that is lower)
+PANEL_COVERAGE = 0.5  # share of the probe's face the furniture's surface must fill to count as a side panel
+PANEL_T = 0.01  # m: the wall's thickness
+
+
+def ceiling(surfaces: dict, key: str) -> float | None:
+    """The top of the lowest surface of the same furniture over `key` (above it by more than 5 cm, its centre within
+    half of `key`'s larger half extent), None when open above."""
+    s = surfaces[key]
+    tops = [
+        float(t["top"])
+        for t in surfaces.values()
+        if t.get("of_object") == s.get("of_object")
+        and float(t["top"]) > float(s["top"]) + 0.05
+        and np.hypot(t["xy"][0] - s["xy"][0], t["xy"][1] - s["xy"][1]) < 0.5 * max(s["half_extent"])
+    ]
+    return min(tops) if tops else None
+
+
+def side_panels(
+    surface: dict, points: np.ndarray, area_per_point: float, ceiling: float | None, open_edges=()
+) -> list[dict]:
+    """The panels around a surface that the furniture's own mesh shows (2026-10-18): a row of books rests against the
+    shelf's sides and back, but the furniture's collider is the robot's only and stops under its lowest surface, so
+    the end book of a row stood out over the slab's end and the row fell end to end, and books crept off the back.
+    `points`: the furniture's mesh surface sampled uniformly (world frame), each worth `area_per_point` m^2;
+    `ceiling`: the top of the surface above (None: open above); `open_edges`: edges ("+x", "-y", ...: the slab's local
+    frame, as approach edges) the robot works from, which keep no panel along the long sides (the front of a cabinet
+    is open or a door, and the scene treats doors as open); the short ends ("+x", "-x") get theirs wherever the mesh
+    has one. Returns box geoms (edge, cover, pos, quat, size) on the edges where the mesh fills PANEL_COVERAGE of the
+    probe's face."""
+    x, y = surface["xy"]
+    half = np.asarray(surface["half_extent"][:2], float)
+    top, yaw = float(surface["top"]), float(surface.get("yaw", 0.0))
+    high = top + PANEL_MAX_H if ceiling is None else min(top + PANEL_MAX_H, float(ceiling) - SLAB - 0.01)
+    if high <= top + 0.03:
+        return []
+    c, s = np.cos(-yaw), np.sin(-yaw)
+    d = np.asarray(points, float)
+    loc = np.stack([c * (d[:, 0] - x) - s * (d[:, 1] - y), s * (d[:, 0] - x) + c * (d[:, 1] - y)], axis=1)
+    band = (d[:, 2] >= top + 0.01) & (d[:, 2] <= high)
+    out = []
+    for axis, name in ((0, "x"), (1, "y")):
+        other = 1 - axis
+        for sign in (1.0, -1.0):
+            edge = f"{'+' if sign > 0 else '-'}{name}"
+            if axis == 1 and edge in open_edges:
+                continue
+            probe = band & (np.abs(loc[:, other]) <= half[other])
+            probe &= (sign * loc[:, axis] >= half[axis] - PANEL_PROBE[0]) & (sign * loc[:, axis] <= half[axis] + PANEL_PROBE[1])  # fmt: skip
+            cover = float(probe.sum()) * area_per_point / (2 * half[other] * (high - top - 0.01))
+            if cover < PANEL_COVERAGE:
+                continue
+            off = np.zeros(2)
+            off[axis] = sign * (half[axis] + PANEL_T / 2)
+            size = [0.0, 0.0, round((high - top) / 2, 4)]
+            size[axis], size[other] = PANEL_T / 2, round(float(half[other]), 4)
+            out.append(dict(edge=edge, cover=round(cover, 2), quat=yaw_quat(yaw), size=size,
+                            pos=[round(float(x + np.cos(yaw) * off[0] - np.sin(yaw) * off[1]), 4),
+                                 round(float(y + np.sin(yaw) * off[0] + np.cos(yaw) * off[1]), 4), round((top + high) / 2, 4)]))  # fmt: skip
+    return out
+
+
 def fmt(values) -> str:
     return " ".join(f"{float(v):.6g}" for v in values)

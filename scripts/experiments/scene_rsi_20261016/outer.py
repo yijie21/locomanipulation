@@ -46,7 +46,9 @@ MAX_GAPS = 6  # D9
 ROUND_BUDGET_USD = 1000.0  # D9: 2000 USD over two rounds
 MAX_TASKS = 10  # per family: 8 sealed starts per task at 80
 POOLS = {"diag": 50, "accept": 60, "sealed": 80}
-SEED_BLOCK = 10000  # family k of round r: diag 100000 + block, accept 200000 + block, sealed 300000 + block
+SEED_BLOCK = 10000  # family k: diag 100000 + k block, accept 200000 + .., sealed 300000 + ..; round r adds ROUND_SEEDS
+ROUND_SEEDS = 1_000_000  # per round after the first (until 2026-10-18 round r added 10 blocks per round: round 2's diag
+# seeds were round 1's acceptance seeds, its acceptance seeds round 1's sealed ones)
 # gaps the checker reports when no skill exists (feasibility.py: an untested skill or a step without one)
 NEW_SKILL = ("place_on_surface.single", "place_into.single", "grasp_bimanual.skill", "put_down_bimanual.skill")
 CONSTRAINTS = {"upright", "in_room"}  # predicates that ride along with a move (near is one: held + near = a carry)
@@ -129,7 +131,7 @@ def family(round_dir: Path, gap: str) -> Path:
         step = (len(tasks) - 1) / (MAX_TASKS - 1)
         tasks = [tasks[round(i * step)] for i in range(MAX_TASKS)]
     r = int("".join(c for c in round_dir.name if c.isdigit()) or 1)
-    block = SEED_BLOCK * (10 * (r - 1) + k)
+    block = SEED_BLOCK * k + ROUND_SEEDS * (r - 1)
     name = f"r{r}_{gap.replace('+', '_')}"
     fam = dict(
         name=name,

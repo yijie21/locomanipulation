@@ -10,10 +10,13 @@ Steps, stopping at the first rejection:
 1. static: the skills package loads and the overrides apply; the hash was never rejected; it is not the incumbent.
 2. sentinel: SENTINELS incumbent rounds re-run must reproduce its stored outcomes (ok and end time) -- the motor
    layer and the scene are shared code, a change there must not move the incumbent.
-3. stage 1: the first STAGE1 starts; reject when the candidate's net wins (b - c) <= 0.
+3. stage 1: STAGE1 starts drawn from every task in proportion to its share of the pool (`stage1_labels`); reject
+   when the candidate's net wins (b - c) <= 0. (Until 2026-10-18 the first STAGE1 labels by name: about half of a
+   multi-task family's tasks, so a candidate that changed only a later task was rejected without one round of it.)
 4. stage 2: the rest of the pool.
 5. verdict: accept iff b - c >= MIN_NET, one-sided exact McNemar p <= ALPHA, falls <= incumbent + 1,
-   drops <= incumbent + 1.
+   drops <= incumbent + 1 -- or, against an incumbent with no success on the pool, drops <= half the candidate's
+   successes when that is more (`drop_limit`; user 2026-10-18: a family starting from zero has no drops to compare).
 On acceptance the candidate's rounds become the incumbent's. The verdict JSON is the only output a loop role reads.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -64,6 +67,25 @@ def snapshot(src: Path, dst: Path) -> None:
     shutil.copytree(src / "skills", dst / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     spec = (src / "candidate.json").read_text() if (src / "candidate.json").exists() else '{"set": {}}'
     (dst / "candidate.json").write_text(spec)
+
+
+def stage1_labels(labels: list[str], n: int = STAGE1) -> list[str]:
+    """`n` of the pool's labels, every task (`<task>_s<seed>`) by its share of the pool: largest remainder, ties to
+    the task first by name; within a task the first by name."""
+    by: dict[str, list[str]] = {}
+    for x in sorted(labels):
+        by.setdefault(x.rsplit("_s", 1)[0], []).append(x)
+    quota = {t: n * len(v) / len(labels) for t, v in by.items()}
+    take = {t: int(q) for t, q in quota.items()}
+    for t in sorted(by, key=lambda t: (-(quota[t] - take[t]), t))[: n - sum(take.values())]:
+        take[t] += 1
+    return sorted(x for t, v in by.items() for x in v[: take[t]])
+
+
+def drop_limit(t: dict) -> int:
+    """The most drops a candidate may have on the pool (verdict step 5)."""
+    limit = t["incumbent_dropped"] + 1
+    return max(limit, t["candidate_ok"] // 2) if t["incumbent_ok"] == 0 else limit
 
 
 def overrides(cand: Path) -> dict:
@@ -141,7 +163,7 @@ def main(argv=None) -> int:
     jobs = [
         B.Job(inc_dir / "skills", inc_rounds, overrides(inc_dir)),  # the incumbent's own rounds, once per incumbent
         B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(labels[:SENTINELS])),
-        B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(labels[:STAGE1])),
+        B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(stage1_labels(labels))),
     ]
     B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus)
     inc_out = B.outcomes(inc_rounds)
@@ -162,8 +184,8 @@ def main(argv=None) -> int:
         fails.append(f"one-sided McNemar p {t['p_one_sided']} > {ALPHA}")
     if t["candidate_fell"] > t["incumbent_fell"] + 1:
         fails.append(f"falls {t['candidate_fell']} > {t['incumbent_fell']} + 1")
-    if t["candidate_dropped"] > t["incumbent_dropped"] + 1:
-        fails.append(f"drops {t['candidate_dropped']} > {t['incumbent_dropped']} + 1")
+    if t["candidate_dropped"] > drop_limit(t):
+        fails.append(f"drops {t['candidate_dropped']} > {drop_limit(t)}")
     if fails:
         return finish(False, "; ".join(fails), stage1=t1, result=t)
     inc_state.write_text(

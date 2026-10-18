@@ -364,3 +364,11 @@ def test_a_goal_measured_end_to_end_decides_its_near():
                                                         goal=["near(bottle,  HIGH, 0.8)", "held(bottle)"])])  # fmt: skip
     r = feasibility.Checker(copy.deepcopy(META), cap).check(goal)
     assert "goal.near" not in r.gaps and any(c.name == "measured_task" for c in r.checks)
+
+
+def test_an_object_whose_centre_cannot_get_under_the_rim_is_bucket_3():
+    meta = copy.deepcopy(META)  # a 2.4 cm dish: its floor 1.4 cm under the rim; the bottle lying down is 4.5 cm thick
+    meta["objects"]["dish"] = obj([0.35, -0.15], 0.62, [0.08, 0.08, 0.012], grasp="none", container=True)
+    bucket, _, blocked, _ = gaps_of(["in(bottle, dish)"], meta)
+    assert bucket == 3 and blocked == ["place(bottle in dish): its centre cannot get under the rim"]
+    assert gaps_of(["in(bottle, basket)"])[0] != 3  # the deep basket: the rule leaves it to the put-in checks

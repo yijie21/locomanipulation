@@ -54,6 +54,24 @@ class Tally(unittest.TestCase):
         self.assertEqual((t["candidate_fell"], t["incumbent_dropped"]), (1, 1))
         self.assertEqual(t["candidate_why"], {"x": 1})
 
+    def test_stage1_draws_every_task_by_its_share(self):
+        labels = [f"book_s{i}" for i in range(30)] + [f"wallet_s{i}" for i in range(30)]
+        s1 = gate.stage1_labels(labels)
+        self.assertEqual((len(s1), sum(x.startswith("wallet") for x in s1)), (30, 15))
+        self.assertEqual(s1, sorted(s1))
+        labels = [f"t{k}_s{i}" for k in range(8) for i in range(7 if k < 4 else 8)]  # 60 starts over 8 tasks
+        s1 = gate.stage1_labels(labels)
+        per = {k: sum(x.startswith(f"t{k}_") for x in s1) for k in range(8)}
+        self.assertEqual(len(s1), 30)
+        self.assertEqual(set(per.values()), {3, 4})  # every task in, none more than one above another
+        self.assertEqual([per[k] for k in range(8)], [4, 4, 3, 3, 4, 4, 4, 4])  # 3.5 each: remainders by name
+
+    def test_drop_limit_from_a_zero_start(self):
+        t = dict(incumbent_ok=0, incumbent_dropped=0, candidate_ok=15)
+        self.assertEqual(gate.drop_limit(t), 7)
+        self.assertEqual(gate.drop_limit(dict(t, candidate_ok=2)), 1)  # never below incumbent + 1
+        self.assertEqual(gate.drop_limit(dict(t, incumbent_ok=9)), 1)  # an incumbent with successes: + 1 as before
+
     def test_mcnemar(self):
         self.assertEqual(gate.mcnemar_one_sided(0, 0), 1.0)
         self.assertAlmostEqual(gate.mcnemar_one_sided(5, 0), 1 / 32)
@@ -320,6 +338,8 @@ class Infeasibility(unittest.TestCase):
         self.assertEqual(lp.entries()[-1]["error"], "no such park")
 
     def test_unparked_view_and_gap_candidates(self):
+        from unittest import mock
+
         lp, root = self.lp, Path(self.tmp.name)
         accept = ["book_pickup_s7", "mug_pickup_s8", "mug_pickup_s9"]
         for x in accept:
@@ -337,6 +357,8 @@ class Infeasibility(unittest.TestCase):
         self.assertEqual((v["ok"], v["n"], v["all_ok"], v["all_n"]), (2, 2, 2, 3))
         lp.jdump(root / "gate" / "incumbent.json", dict(rounds=str(rounds)))
         self.assertIn("outside the parked tasks", lp.stop_reason(dict(started_s=lp.time.time())))
+        with mock.patch.object(lp, "UNPARKED_MIN", 0.8):  # 2 of 3 starts outside the parks: too few for D13.4
+            self.assertIsNone(lp.stop_reason(dict(started_s=lp.time.time())))
         g = lp.gap_candidates()
         self.assertEqual(list(g), ["pre-grasp tilt"])
         self.assertEqual(

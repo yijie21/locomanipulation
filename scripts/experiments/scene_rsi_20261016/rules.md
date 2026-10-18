@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 4, 2026-10-16)
+# Rules for the scene RSI loop (TODO 27, version 5, 2026-10-18)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -70,3 +70,10 @@ rule is a new version of this file, committed, and counted as one human interven
     puts an object down) exists to build those skills here: the first candidates may be a plain end-to-end version
     (`plan_for` covering the goal, the existing pick reused), improved one Engineer call at a time. They are not gap
     proposals for the outer loop; only a further skill outside the family's gap is (version 4, phase 2).
+
+## The gate and the stops (code; version 5, user 2026-10-18)
+
+25. The gate's stage 1 takes its 30 starts from every task in proportion to the task's share of the acceptance pool,
+    so a candidate that changes one task is judged on that task's starts too. Against an incumbent with no success
+    on the pool, a candidate may drop up to half its successes (otherwise, as before, the incumbent's drops + 1). The
+    D13.4 stop counts only when the starts outside the parked tasks are at least half the acceptance pool.

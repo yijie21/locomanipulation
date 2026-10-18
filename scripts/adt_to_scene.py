@@ -17,7 +17,8 @@ real G1 with `--robot mars`, `make_dex1_model.apply_mars`) and `<out>/env_only.x
 convex hull that only the robot collides with, `--furniture-collision`), support surfaces as
 slabs, every movable object as a hull (containers as five boxes), free bodies only for `--free` (default: every
 graspable movable object resting on a surface). A free body is drawn with its own textured mesh (`free_visuals`);
-its hull only collides. A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
+its hull only collides. Then `scripts/scene_add_panels.py` (the furniture panels free objects rest against) and
+`scripts/scene_settle.py --write` (poses the simulator keeps) finish the scene (format §3). A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
 estimate stages do not depend on the robot) and run this stage there. The output is ADT-derived and stays under
 `outputs/` (plan decision 17).
 """
@@ -359,6 +360,14 @@ FURNITURE_FACES = 60_000  # above this a furniture visual is its hull: MuJoCo on
 ROBOT_ONLY_BIT = 4
 FURNITURE_MIN_THICKNESS_M = 0.05  # flatter furniture (rugs, mats) is walked over, not bumped into
 SURFACE_CLEAR_M = 0.02  # a holding piece's collider stops this far under its lowest surface
+# Contact margin (m) of the surface slabs. Without it an object's hull on a slab gets 1-4 contacts that change from step
+# to step at the runner's 5 ms, and resting objects turned by themselves (the wallet 2 deg/s, potted plants 4 deg/s;
+# torsional friction, elliptic cones and noslip did not stop it). Contacts found 1 mm early keep a steady set: it rests
+# 0.8 mm above the slab instead of 0.75 mm in it. On the slabs, not the objects, so jaw-object contacts are unchanged
+# (a contact takes the larger margin of its two geoms). scripts/experiments/scene_rsi_20261016/spin_check.py measures it.
+SLAB_MARGIN = "0.001"
+OBJECT_ONLY_BIT = 2  # side panels (contype; scripts/scene_add_panels.py) and free objects (conaffinity): a contact the
+# robot never makes
 
 
 def colour(mesh: trimesh.Trimesh) -> list[float]:
@@ -501,7 +510,7 @@ def mujoco(args) -> None:
         s["body"] = "adt_env"  # every slab lives in the env body: contacts with it read as furniture contacts
         sl = mjcf.slab(s)
         ET.SubElement(env, "geom", name=f"adt_slab_{key}", type="box", pos=mjcf.fmt(sl["pos"]), quat=mjcf.fmt(sl["quat"]),
-                      size=mjcf.fmt(sl["size"]), rgba="0.5 0.5 0.9 0.25", group="3")  # fmt: skip
+                      size=mjcf.fmt(sl["size"]), rgba="0.5 0.5 0.9 0.25", group="3", margin=SLAB_MARGIN)  # fmt: skip
     # the lowest surface each furniture piece holds (furniture_solid keeps only what is under it)
     hosts: dict[str, float] = {}
     for sf in meta["surfaces"].values():
@@ -585,12 +594,13 @@ def mujoco(args) -> None:
                     pos = (np.asarray(o["init_pos"]) + rot @ np.asarray(pos)).tolist()
                     extra = {"quat": mjcf.fmt(o["init_quat"])}
                 else:
-                    extra = {}
+                    extra = {"conaffinity": str(1 | OBJECT_ONLY_BIT)}  # a free container meets the side panels too
                 ET.SubElement(holder, "geom", name=f"{name}_{b['name']}", type="box", pos=mjcf.fmt(pos), size=mjcf.fmt(b["size"]),
                               friction=friction, density="0", group="3", rgba="0.9 0.5 0.2 0.3", **extra)  # fmt: skip
         else:
+            free_bits = {"group": "3", "conaffinity": str(1 | OBJECT_ONLY_BIT)} if is_free else {}
             ET.SubElement(holder, "geom", name=f"{name}_col", type="mesh", mesh=name, friction=friction, density="0",
-                          rgba=rgba, **({"group": "3"} if is_free else {}), **at)  # fmt: skip
+                          rgba=rgba, **free_bits, **at)  # fmt: skip
     meta["scene_xml"] = str(out / "scene_locomani.xml")
     meta["robot"] = args.robot  # robot_look.scene_robot; the Unreal level and Isaac stage builders record it
     meta["furniture_collision"] = args.furniture_collision
