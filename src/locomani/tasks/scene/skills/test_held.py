@@ -108,6 +108,36 @@ class HeldAfterPick(unittest.TestCase):
         self.assertFalse(out.ok)
         self.assertIn("resting on ['U']", out.why)
 
+    def test_a_pick_with_its_own_pull_pulls_that_far_and_on_to_its_max_only_while_still_under(self):
+        pick_out = Outcome(True, "", 1.0, 2.0, dict(withdraw=dict(pull_m=0.20, max_m=0.30)))
+        for x, steps in ((1.99, [("pull_out", [], 1.0, 20.0)]),  # out, 1 cm past the edge: no second pull
+                         (2.05, [("pull_out", ["U"], -5.0, 20.0), ("pull_on", [], 5.0, 30.0)])):  # fmt: skip
+            world = self._world([x, 2.0, 0.59])  # S's and U's front edge, facing +x, at x 1.8
+            m = Gripper(world, [x - 0.02, 2.0, 0.59], np.eye(3))
+            ctx = Ctx(world, m)
+            out = held.pick_held(ctx, "Can", lambda c, k: pick_out)
+            self.assertTrue(out.ok, out.why)
+            self.assertEqual([(r["step"], r["under"], r["past_edge_cm"], r["jaw_back_cm"]) for r in ctx.log], steps)
+            pulls = [x - 0.02 - d for d in (0.20, 0.30)[: len(steps)]]  # both from the jaw where the pull began
+            np.testing.assert_allclose([c[1] for c in m.calls], [[p, 2.0, 0.59] for p in pulls])
+
+    def test_past_edge_is_outside_the_edge_a_robot_faces_least_over_the_surfaces(self):
+        world = self._world([1.75, 2.0, 0.59])
+        self.assertAlmostEqual(cover.past_edge(world, "Can", ["S", "U"], 0.0), 0.05)
+        world.meta["surfaces"]["U"]["xy"] = [1.98, 2.0]  # U's front edge 2 cm farther out
+        self.assertAlmostEqual(cover.past_edge(world, "Can", ["S", "U"], 0.0), 0.03)
+        # the display shelves' frame: turned 90 deg, approached from its -y edge by a robot facing -x
+        world.meta["surfaces"]["D"] = dict(xy=[0.0, 0.0], half_extent=[0.36, 0.177], yaw=np.pi / 2, top=0.4)
+        world.poses["Can"] = ([0.20, 0.1, 0.5], yaw_quat(0.0))
+        self.assertAlmostEqual(cover.past_edge(world, "Can", ["D"], np.pi - 0.03), 0.023)
+
+    def test_only_a_covered_object_whose_one_fitting_side_is_narrow_takes_the_narrow_grasp(self):
+        book, wallet, can = [0.0831, 0.0233, 0.1196], [0.054, 0.0434, 0.0138], [0.03, 0.03, 0.09]
+        for half, upper, want in ((book, True, True), (book, False, False), (wallet, True, False), (can, True, False)):
+            world = self._world([2.0, 2.0, 0.49], upper=upper)
+            world.meta["objects"]["Can"]["box"]["half_extent"] = half
+            self.assertEqual(pick.narrow_covered(world, "Can"), want, (half, upper))
+
     def test_upright_levels_a_side_grasp_about_the_object_centre(self):
         tip = expmap([np.radians(12.0), 0.0, 0.0])
         pos = np.array([0.1, -0.1, 0.95])

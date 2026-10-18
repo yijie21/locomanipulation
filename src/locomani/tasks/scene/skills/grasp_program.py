@@ -98,13 +98,30 @@ def object_in_palm(palm_R, tool, obj_pos):
     return palm_R.T @ (obj_pos - tool)
 
 
-def run(ctx, key: str, side: str, R_c, tool_c, width: float, entry_frame=None) -> Outcome:
+def run(
+    ctx,
+    key: str,
+    side: str,
+    R_c,
+    tool_c,
+    width: float,
+    entry_frame=None,
+    simple: dict | None = None,
+    gate: dict | None = None,
+    jaw: tuple | None = None,
+    rise_min: float | None = None,
+) -> Outcome:
     """The closed loop from the pre-grasp: `R_c` = the grasp's wrist rotation (x = approach), `tool_c` = its jaw
     centre (world, at the object's pose now), `width` = the object's span across the jaw. ctx.note logs the phases.
     `entry_frame` (a rotation in the wrist frame, None: the wrist's own): the entry runs along R_c @ entry_frame's x and
     the gate, the lateral correction and the alignment read the offsets in that planned frame, not the measured wrist's
     (the pinch's level entry with a pitched wrist, pick.pick_pinch: a wrist pitched 40 deg instead of 20 leaked the
-    12 cm still to go into a 4-10 cm "vertical" offset, and the correction drove the jaw the wrong way)."""
+    12 cm still to go into a 4-10 cm "vertical" offset, and the correction drove the jaw the wrong way).
+    `simple` and `gate` (entries over SIMPLE and ENTRY_GATE), `jaw` ((open, closed) for JAW_OPEN, JAW_CLOSED) and
+    `rise_min` (for RISE_MIN): one grasp's own values (pick.NARROW, the covered book), the module's where None."""
+    simple, gate = {**SIMPLE, **(simple or {})}, {**ENTRY_GATE, **(gate or {})}
+    jaw_open, jaw_closed = (JAW_OPEN, JAW_CLOSED) if jaw is None else jaw
+    rise_min = RISE_MIN if rise_min is None else rise_min
     world, m = ctx.world, ctx.motor
     sim, body = m.sim, world.free[key]
     i = SIDES.index(side)
@@ -162,54 +179,50 @@ def run(ctx, key: str, side: str, R_c, tool_c, width: float, entry_frame=None) -
         pregrasp = grip - PREGRASP_BACK * direction
         if phase in ("settle", "entry", "retreat"):
             knocked = float(np.linalg.norm(obj_p[:2] - obj0[:2]))
-            if knocked > SIMPLE["disturb_limit_m"]:
+            if knocked > simple["disturb_limit_m"]:
                 return done(False, f"target knocked {knocked * 100:.0f} cm in {phase}")
         if phase == "settle":
             target = pregrasp
             err = float(np.linalg.norm(tool_m - pregrasp))
-            if (err <= SIMPLE["settle_tolerance_m"] and elapsed > 0.3) or elapsed >= SIMPLE["settle_timeout_s"]:
+            if (err <= simple["settle_tolerance_m"] and elapsed > 0.3) or elapsed >= simple["settle_timeout_s"]:
                 rec["settle_error_m"] = round(err, 4)
-                if SIMPLE["settle_abort_m"] is not None and err > SIMPLE["settle_abort_m"]:
+                if simple["settle_abort_m"] is not None and err > simple["settle_abort_m"]:
                     # back out from where the hand is, the feedback zeroed: a hand stalled on a neighbour winds the
                     # feedback up to its clip, and a retreat from the unreached target then swept the vase off its shelf
                     target = retreat_from = tool_m.copy()
-                    retreat_to = retreat_from - SIMPLE["retreat_m"] * direction
+                    retreat_to = retreat_from - simple["retreat_m"] * direction
                     tracking, corrected_prev, prev_target = Tracking(), tool_m.copy(), tool_m.copy()
                     enter("abort", stamp)
                 else:
                     entry_cmd = target.copy()
                     enter("entry", stamp)
         elif phase == "abort":  # a missed pre-grasp backs out before any entry (a miss then knocked the target)
-            target = retreat_from + minjerk(elapsed / SIMPLE["retreat_seconds"]) * (retreat_to - retreat_from)
-            if elapsed >= SIMPLE["retreat_seconds"]:
+            target = retreat_from + minjerk(elapsed / simple["retreat_seconds"]) * (retreat_to - retreat_from)
+            if elapsed >= simple["retreat_seconds"]:
                 return done(False, f"pregrasp missed by {rec['settle_error_m'] * 100:.1f} cm")
         elif phase == "entry":
             off = object_in_palm(frame, tool_m, grip)
-            if (
-                ENTRY_GATE["on"]
-                and max(abs(off[1]), abs(off[2])) > ENTRY_GATE["lateral_m"]
-                and gate_held < ENTRY_GATE["hold_s"]
-            ):
+            if gate["on"] and max(abs(off[1]), abs(off[2])) > gate["lateral_m"] and gate_held < gate["hold_s"]:
                 gate_held += dt
             else:
-                entry_cmd = entry_command(entry_cmd, grip, direction, DASH_SPEED, dt, SIMPLE["entry_overshoot_m"])
+                entry_cmd = entry_command(entry_cmd, grip, direction, DASH_SPEED, dt, simple["entry_overshoot_m"])
             wanted = shift + frame[:, 1] * off[1] + frame[:, 2] * off[2]
             delta = wanted - shift
             norm = float(np.linalg.norm(delta))
             if norm > 1e-9:
-                shift = shift + delta * min(1.0, SIMPLE["lateral_correction_speed_m_s"] * dt / norm)
+                shift = shift + delta * min(1.0, simple["lateral_correction_speed_m_s"] * dt / norm)
             total = float(np.linalg.norm(shift))
-            if total > SIMPLE["lateral_correction_max_m"]:
-                shift *= SIMPLE["lateral_correction_max_m"] / total
+            if total > simple["lateral_correction_max_m"]:
+                shift *= simple["lateral_correction_max_m"] / total
             target = entry_cmd + shift
-            arrived = entry_captured(tool_m, grip, direction, SIMPLE["entry_capture_depth_m"])
+            arrived = entry_captured(tool_m, grip, direction, simple["entry_capture_depth_m"])
             if arrived or bilateral:
                 off = object_in_palm(frame, tool_m, grip)
                 lateral_tol = max(0.005, (2 * PAD_Y - width) / 2 + 0.005)
                 aligned = abs(off[1]) <= lateral_tol and abs(off[2]) <= PAD_Z
                 entries.append(dict(arrived=bool(arrived), bilateral=bool(bilateral), aligned=bool(aligned),
                                     offset_in_palm=[round(float(v), 4) for v in off]))  # fmt: skip
-                if aligned or bilateral or len(entries) >= max(2, int(SIMPLE["entry_attempts"])):
+                if aligned or bilateral or len(entries) >= max(2, int(simple["entry_attempts"])):
                     rec.update(
                         entries=entries, gate_held_s=round(gate_held, 2), shift_m=round(float(np.linalg.norm(shift)), 4)
                     )
@@ -221,29 +234,29 @@ def run(ctx, key: str, side: str, R_c, tool_c, width: float, entry_frame=None) -
                     enter("close", stamp)
                 else:
                     retreat_from = target.copy()
-                    retreat_to = retreat_from - SIMPLE["retreat_m"] * direction
+                    retreat_to = retreat_from - simple["retreat_m"] * direction
                     shift = shift + frame[:, 1] * off[1] + np.array([0.0, 0.0, off[2]])
                     enter("retreat", stamp)
-            elif elapsed > SIMPLE["entry_timeout_s"]:
+            elif elapsed > simple["entry_timeout_s"]:
                 return done(False, f"entry timed out {np.linalg.norm(tool_m - grip) * 100:.1f} cm from the grasp")
         elif phase == "retreat":
-            target = retreat_from + minjerk(elapsed / SIMPLE["retreat_seconds"]) * (retreat_to - retreat_from)
-            if elapsed >= SIMPLE["retreat_seconds"]:
+            target = retreat_from + minjerk(elapsed / simple["retreat_seconds"]) * (retreat_to - retreat_from)
+            if elapsed >= simple["retreat_seconds"]:
                 entry_cmd = target.copy() - shift
                 enter("entry", stamp)
         elif phase == "close":
-            closure = min(1.0, elapsed / SIMPLE["close_seconds"])
-            if elapsed >= SIMPLE["close_seconds"]:
+            closure = min(1.0, elapsed / simple["close_seconds"])
+            if elapsed >= simple["close_seconds"]:
                 if bilateral:
                     lift_from = target.copy() if continuous else tool_m.copy()
                     z_before = float(obj_p[2])
                     rec["close_offset_in_palm"] = [round(float(v), 4) for v in object_in_palm(frame, tool_m, grip)]
                     enter("lift", stamp)
-                elif elapsed >= SIMPLE["close_seconds"] + SIMPLE["contact_timeout_s"]:
+                elif elapsed >= simple["close_seconds"] + simple["contact_timeout_s"]:
                     return done(False, "no bilateral pad contact after the close")
         elif phase == "lift":
-            target = lift_from + [0.0, 0.0, LIFT_M * minjerk(elapsed / SIMPLE["lift_seconds"])]
-            if elapsed >= SIMPLE["lift_seconds"]:
+            target = lift_from + [0.0, 0.0, LIFT_M * minjerk(elapsed / simple["lift_seconds"])]
+            if elapsed >= simple["lift_seconds"]:
                 hold_offset0 = object_in_palm(palm, tool_m, obj_p)
                 enter("recover", stamp)
         elif phase == "recover":
@@ -254,7 +267,7 @@ def run(ctx, key: str, side: str, R_c, tool_c, width: float, entry_frame=None) -
                 rec.update(rise_m=round(rise, 4), hold_slip_m=round(float(np.linalg.norm(slip)), 4))
                 if not bilateral:
                     return done(False, f"lost pad contact during the lift (rise {rise * 100:.1f} cm)")
-                if rise < RISE_MIN:
+                if rise < rise_min:
                     return done(False, f"not lifted (rise {rise * 100:.1f} cm)")
                 return done(True, "")
         fb = tracking.step(corrected_prev, tool_m, dt)
@@ -263,7 +276,7 @@ def run(ctx, key: str, side: str, R_c, tool_c, width: float, entry_frame=None) -
         prev_target = target.copy()
         corrected_prev = corrected.copy()
         m.hand(side, corrected, R_cmd, v_cmd)
-        m.jaw[i] = JAW_OPEN + closure * (JAW_CLOSED - JAW_OPEN)
+        m.jaw[i] = jaw_open + closure * (jaw_closed - jaw_open)
         if not m.tick():
             return done(False, f"fell in {phase}")
 

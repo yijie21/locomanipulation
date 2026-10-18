@@ -60,7 +60,17 @@ leaving the object on its own support, under no other surface and between no fin
 (`back_out`) and plans and runs again from the object's pose now, up to RETRY_ATTEMPTS times. Part of what fails is
 one attempt, not the start: a coffee-table candle knocked 5 cm in the settle by the controller's lunge after a 3.2 cm
 pre-grasp, a top-shelf candle whose entry timed out 4.7 cm short; a second attempt finished both. Planning refusals
-and the top-down pinch are not retried; a success never reaches the retry, so its steps are unchanged."""
+and the top-down pinch are not retried; a success never reaches the retry, so its steps are unchanged.
+
+The narrow covered grasp (r1_slide_then_grasp loop iteration 1, `narrow_covered`): an object under another surface
+whose only side that fits the jaw is narrower than NARROW_SIDE_MAX_M (the 4.7 cm thick novel packed in a row on the
+bedroom display's bottom shelf, 16.6 cm deep, 23.9 cm tall) runs the same level grasp with NARROW's values. The
+module's jaw closed 7-8 cm in front of the book's centre with about 10 N: a two-point hinge about which the lift
+pivoted the book on its rear-bottom edge (it toppled, or rose 2 cm on an arc as the pads slid up). A narrower open jaw,
+an entry stopping 5 cm short instead of 2.5 (the jaw 3-4.6 cm from the centre), no lateral correction, twice the
+squeeze (about 20 N), a 1.5 cm rise threshold for a pivoted book, and held.pick_held's pull out to NARROW pull_m
+(NARROW max_m in all when the book is still under the shelves above) turn the pivot into a slide-out that ends held.
+The pull travels on the pick's outcome (info "withdraw")."""
 
 from __future__ import annotations
 
@@ -130,6 +140,19 @@ YAWED_TOP_MAX_M = 1.0  # ... on a surface whose top is at most this (both 1.12 m
 RETRY_ATTEMPTS = 1  # a failed attempt `retry_ok` admits runs again this many times at most, after `back_out`:
 RETRY_OUT_M = 0.15  # the jaw pulls this far straight back, level, the robot steps RETRY_BACK_M back when that point
 RETRY_BACK_M = 0.25  # is free on the skill's map, and the arm returns to the pose it walked with
+NARROW_SIDE_MAX_M = 0.06  # an object under another surface whose only side fitting the jaw is narrower: NARROW
+NARROW = dict(  # the narrow covered grasp's own values (grasp_program.run's and held.pick_held's)
+    jaw_open=0.004,  # grasp_program.JAW_OPEN 0.0245
+    jaw_closed=-0.06,  # JAW_CLOSED -0.02: the PD depth into the book, about 20 N instead of 10
+    entry_capture_depth_m=0.05,  # SIMPLE's 0.025: the entry ends 5 cm short of the centre ...
+    entry_overshoot_m=-0.05,  # ... and its command stops there (-0.01)
+    disturb_limit_m=0.10,  # 0.05
+    lateral_correction_max_m=0.0,  # 0.04
+    gate_hold_s=0.0,  # ENTRY_GATE hold_s 3.0
+    rise_min=0.015,  # RISE_MIN 0.05: a pivoted book still goes on to the pull
+    pull_m=0.30,  # held.WITHDRAW_PULL_M 0.20
+    max_m=0.35,  # the pull in all when after pull_m X is still under the shelves above
+)
 _NAV: dict = {}  # id(meta) -> (meta, occupancy, navigator, floor boxes): one map per scene and process
 _CLEAR: dict = {}  # (id(occupancy), furniture) -> (occupancy, clearance grid without that furniture's surfaces)
 
@@ -262,9 +285,10 @@ def back_out(ctx, rest: dict) -> Outcome:
 
 def pick_once(ctx, key: str, side: str = "right", rest: dict | None = None) -> Outcome:
     """Walk, reach the pre-grasp, then the ported closed-loop hand program (grasp_program.run), the wrist pitched and
-    the jaw raised for a short object (`grasp_pitch`); a low flat object (`is_top`) is pinched from above instead
-    (`pick_top`). A side grasp or pinch records the hand and its walking jaw pose (relative to the pelvis, in its yaw
-    frame) in `rest` before the pre-grasp, for `back_out`."""
+    the jaw raised for a short object (`grasp_pitch`), with NARROW's values for a `narrow_covered` one (its outcome's
+    info "withdraw" carries NARROW's pull for held.pick_held); a low flat object (`is_top`) is pinched from above
+    instead (`pick_top`). A side grasp or pinch records the hand and its walking jaw pose (relative to the pelvis, in
+    its yaw frame) in `rest` before the pre-grasp, for `back_out`."""
     world, m = ctx.world, ctx.motor
     plan = approach(ctx, key, side)
     if not plan.ok:
@@ -282,6 +306,7 @@ def pick_once(ctx, key: str, side: str = "right", rest: dict | None = None) -> O
     pitch, rise = grasp_pitch(world, key, pos, wrist_in(plan.info))
     if pitch and needs_pinch(world, key, pos, pitch, rise):
         return pick_pinch(ctx, key, side, plan)
+    narrow = narrow_covered(world, key)
     pitched = {}
     if pitch:
         Rg = Rg @ R.rot_y(pitch)
@@ -293,9 +318,25 @@ def pick_once(ctx, key: str, side: str = "right", rest: dict | None = None) -> O
     if m.fell_at is not None:
         return out
     pos, _ = world.object_pose(key)
-    return grasp_program.run(
-        ctx, key, side, Rg, pos + up, span(quat, world.meta["objects"][key]["box"]["half_extent"], psi)
-    )
+    width = span(quat, world.meta["objects"][key]["box"]["half_extent"], psi)
+    if not narrow:
+        return grasp_program.run(ctx, key, side, Rg, pos + up, width)
+    n = NARROW
+    simple = {k: n[k] for k in ("entry_capture_depth_m", "entry_overshoot_m", "disturb_limit_m",
+                                "lateral_correction_max_m")}  # fmt: skip
+    out = grasp_program.run(ctx, key, side, Rg, pos + up, width, simple=simple, gate=dict(hold_s=n["gate_hold_s"]),
+                            jaw=(n["jaw_open"], n["jaw_closed"]), rise_min=n["rise_min"])  # fmt: skip
+    withdraw = {k: n[k] for k in ("pull_m", "max_m")}
+    return Outcome(out.ok, out.why, out.t0, out.t1, dict(out.info, withdraw=withdraw))
+
+
+def narrow_covered(world, key: str) -> bool:
+    """X is under another surface (cover.overhead) and the only side of its box that fits the jaw (JAW_SPAN_M) is
+    narrower than NARROW_SIDE_MAX_M: the thick novel (4.7 cm; 16.6 cm along the other side), not the wallet (8.7 cm,
+    under no shelf)."""
+    half = world.meta["objects"][key]["box"]["half_extent"]
+    fits = [2 * float(h) for h in half[:2] if 2 * float(h) <= JAW_SPAN_M]
+    return len(fits) == 1 and fits[0] < NARROW_SIDE_MAX_M and bool(cover.overhead(world, key))
 
 
 def min_jaw(pitch: float, points=None, clear: float | None = None) -> float:
