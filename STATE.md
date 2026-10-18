@@ -1,8 +1,8 @@
-# STATE — 2026-10-18（场景 RSI 第 3 阶段第 2 轮外环：内环 1/6 `r2_on_single` 在跑）
+# STATE — 2026-10-18（场景 RSI 第 3 阶段第 2 轮外环：内环 1/6 `r2_on_single` 完成并写回；2/6 `r2_in_single` 在跑）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-18 07:56）：origin/main = `a2cfb23`；本地多 76 个提交（含本次），**都没推送**（用户没说推）。
-已确认（10-18 07:56 UTC）：**内环 `r2_on_single` 在跑**（沙盒 `/workspace/code/rsi-scene/r2-on-a`，`/workspace/tmp/run_r2_on.sh` 起的，6 h / 150 USD / 门 12 次）；跑时不要另起仿真批次。查看：沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py status r2_on_single`。第 1 轮沙盒 `pick-a`、`r1-{on,held,in,near,slide}-a` 都已写回。
+已确认（10-18 16:31 UTC）：**内环 `r2_in_single` 在跑**（沙盒 `/workspace/code/rsi-scene/r2-in-a`，`/workspace/tmp/run_r2_in.sh` 起的，6 h / 150 USD / 门 12 次）；跑时不要另起仿真批次，也不要改场景（门的哨兵会失效）。查看：沙盒里 `$PY scripts/experiments/scene_rsi_20261016/loop.py status r2_in_single`。已写回：第 1 轮全部、`r2_on-a`（`ec07947`）。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
 ## 提交与磁盘
