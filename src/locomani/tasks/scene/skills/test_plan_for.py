@@ -1,13 +1,13 @@
-"""The put-down's pure parts (place.py): `plan_for` sends a goal of on(...) and upright(...) to `place.place_on` once per
-on(X, S) in goal order and keeps held(X) on the pick; a spot sees what rests on the target by its pose, not by the
-scene file's `surface` field; the drop guards -- a neighbour overlapping the object refuses the pick, the object's
-offset out along the fingers, the surface a failed carry sets it down on; the creep budget -- the planned
-lift-to-release time, the pad margin, the plan made before the pick -- and the pick's settle abort, inert unless set,
-backing out from the measured jaw; the put-down's pick switches (inert at None), its stance and the spot rule for a
-side-grasped versus a top-pinched object; the release -- a side-grasped object levelled before it is lowered, unloaded,
-centred, retracted level, a top-pinched one released as before (held(X) after the pick and the pick's gripper shape:
-test_held.py). Lives in the skills package because the loop's Engineer may change nothing outside it; run with
-`make test TESTS="src/locomani/tasks/scene/skills/test_plan_for.py"`."""
+"""The put-down's pure parts (place.py): `plan_for` sends a goal of on(...) and upright(...) to `place.place_on` once
+per on(X, S) in goal order (nothing when the goal already holds) and keeps held(X) on the pick; a spot sees what
+rests on the target by its pose, not by the scene file's `surface` field; the drop guards -- a neighbour overlapping
+the object refuses the pick, the object's offset out along the fingers, the surface a failed carry sets it down on;
+the creep budget -- the planned lift-to-release time, the pad margin, the plan made before the pick -- and the pick's
+settle abort, inert unless set, backing out from the measured jaw; the put-down's pick switches (inert at None), its
+stance and the spot rule for a side-grasped versus a top-pinched object; the release -- a side-grasped object
+levelled before it is lowered, unloaded, centred, retracted level, a top-pinched one released as before (held(X)
+after the pick and the pick's gripper shape: test_held.py). Lives in the skills package because the loop's Engineer
+may change nothing outside it; run with `make test TESTS="src/locomani/tasks/scene/skills/test_plan_for.py"`."""
 
 import unittest
 from types import SimpleNamespace
@@ -98,16 +98,52 @@ class PlanFor(unittest.TestCase):
             calls.append((key, surface))
             return Outcome(key != "Fail", "" if key != "Fail" else "pick refused: no side fits")
 
+        def run(goal):
+            return skills.plan_for(SimpleNamespace(goal=goal))(goal_ctx(goal, holds=False))
+
         with mock.patch.object(place, "place_on", side_effect=place_on):
-            out = skills.plan_for(SimpleNamespace(goal=["on(Can, T)", "upright(Can)"]))("ctx")
+            out = run(["on(Can, T)", "upright(Can)"])
             self.assertTrue(out.ok)
             self.assertEqual(calls, [("Can", "T")])
             calls.clear()
-            out = skills.plan_for(SimpleNamespace(goal=["on(Book, S)", "on(Can, T)"]))("ctx")
+            out = run(["on(Book, S)", "on(Can, T)"])
             self.assertEqual(calls, [("Book", "S"), ("Can", "T")])
             calls.clear()
-            out = skills.plan_for(SimpleNamespace(goal=["on(Fail, S)", "on(Can, T)"]))("ctx")
+            out = run(["on(Fail, S)", "on(Can, T)"])
             self.assertEqual((calls, out.ok, out.why), ([("Fail", "S")], False, "pick refused: no side fits"))
+
+    def test_on_goal_that_already_holds_succeeds_without_acting_judged_on_the_goal_objects(self):
+        goal = ["on(Can, T)", "upright(Can)"]
+        with mock.patch.object(place, "place_on") as place_on:
+            ctx = goal_ctx(goal, holds=True)
+            out = skills.plan_for(SimpleNamespace(goal=goal))(ctx)
+            self.assertEqual((out.ok, out.why, place_on.call_count), (True, "goal already holds", 0))
+            self.assertEqual([r["step"] for r in ctx.log], ["goal_holds"])
+            self.assertEqual((ctx.world.checked, ctx.world.keys), ([tuple(goal)], [["Can", "T"]]))
+
+
+def goal_ctx(goal, holds: bool):
+    """A context whose world judges `goal` as `holds` and records the goal checked and the keys whose state it read."""
+
+    class GoalWorld(World):
+        def __init__(self):
+            super().__init__()
+            self.checked, self.keys = [], []
+
+        def check(self, g):
+            self.checked.append(tuple(g))
+            return lambda state: (holds, "" if holds else "not on T")
+
+        def state(self, keys):
+            self.keys.append(list(keys))
+            return {}
+
+    world = GoalWorld()
+    world.meta["objects"]["T"] = dict(surface=None, free=False, init_pos=[0.0, 0.0, 0.35], init_quat=yaw_quat(0.0),
+                                      box=dict(half_extent=[0.4, 0.3, 0.35]))  # fmt: skip
+    ctx = SimpleNamespace(world=world, task=SimpleNamespace(goal=goal), motor=SimpleNamespace(t=1.0), log=[])
+    ctx.note = lambda name, out, **kw: (ctx.log.append(dict(step=name, ok=out.ok, why=out.why)), out)[1]
+    return ctx
 
 
 class Spot(unittest.TestCase):
@@ -127,13 +163,98 @@ class Spot(unittest.TestCase):
             self.assertEqual((spot["edge"], spot["depth"]), ("-y", 0.06))
             self.assertAlmostEqual(float(spot["xy"][1]), -0.24, places=6)
             self.assertAlmostEqual(spot["face"], np.pi / 2)
-            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, pick.STAND_AHEAD_M], atol=1e-9)
+            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, place.PLACE_AHEAD_M], atol=1e-9)
             full = World({"Book": ([0.0, 0.0, 0.83], yaw_quat(0.0)), "Can": ([2.0, 2.0, 0.49], yaw_quat(0.0))})
             full.meta["objects"]["Book"]["box"]["half_extent"] = [0.42, 0.32, 0.13]
             full.occ = occ
             spot, why = place.plan_spot(full, "Can", "T", "right", np.array([0.0, -2.0]), 0.0)
             self.assertIsNone(spot)
             self.assertTrue(why.startswith("no spot: "), why)
+
+    def test_a_target_with_no_free_spot_is_searched_again_at_the_fallback_clearances_only(self):
+        start = np.array([0.0, -2.0])
+        world = World({"Book": ([0.0, 0.09, 0.83], yaw_quat(0.0))})  # 3 cm from the first -y spot: under 4, over 2
+        occ, _ = build(world.meta, body_radius=0.35)
+        world.occ = occ
+        present = (place.SPOT_CLEAR_M, place.PLACE_SIDE_MIN_M)
+        with mock.patch.dict(pick._NAV, {}, clear=True):
+            spot, why = place.free_spot(world, "Can", "T", "right", start, 0.0, *present)
+            self.assertIsNone(spot)
+            self.assertTrue(why.startswith("no spot: "), why)
+            spot, why = place.plan_spot(world, "Can", "T", "right", start, 0.0)
+            self.assertTrue(spot["fallback"], why)
+            self.assertEqual((spot["edge"], spot["depth"]), ("-y", 0.06))
+            world.poses["Book"] = ([0.0, 0.11, 0.83], yaw_quat(0.0))  # free at 4 cm: as before, no fallback
+            spot, why = place.plan_spot(world, "Can", "T", "right", start, 0.0)
+            same, _ = place.free_spot(world, "Can", "T", "right", start, 0.0, *present, ahead=place.PLACE_AHEAD_M)
+            self.assertNotIn("fallback", spot)
+            self.assertEqual(spot.keys() - {"ahead"}, same.keys())
+            for k in same:
+                np.testing.assert_array_equal(spot[k], same[k], err_msg=k)
+
+    @mock.patch.object(
+        place, "SPOT_CLEAR_M", 0.04
+    )  # the clearance this geometry was built for (r2_on_single's set folds 0.035)
+    def test_a_round_object_whose_turned_box_has_no_spot_takes_its_round_footprint_first_at_present_clears(self):
+        start = np.array([0.0, -2.0])
+        world = World({"Book": ([0.0, 0.11, 0.83], yaw_quat(0.0))})  # 4 cm from the square Can's first -y spot
+        occ, _ = build(world.meta, body_radius=0.35)
+        world.occ = occ
+        present = (place.SPOT_CLEAR_M, place.PLACE_SIDE_MIN_M)
+        with mock.patch.dict(pick._NAV, {}, clear=True):
+            self.assertTrue(place.round_object(world, "Can"))
+            spot, why = place.free_spot(world, "Can", "T", "right", start, np.pi / 4, *present)  # 4.2 cm turned
+            self.assertIsNone(spot)
+            self.assertTrue(why.startswith("no spot: "), why)
+            spot, why = place.plan_spot(world, "Can", "T", "right", start, np.pi / 4)
+            got = (spot["round"], spot["fallback"], spot["edge"], spot["depth"])
+            self.assertEqual(got, (True, False, "-y", 0.06), why)
+            again, _ = place.plan_spot(world, "Can", "T", "right", start, 1.0)  # any carried yaw: the same spot
+            np.testing.assert_array_equal(again["xy"], spot["xy"])
+            world.poses["Book"] = ([0.0, 0.0, 0.83], yaw_quat(0.0))
+            world.meta["objects"]["Book"]["box"]["half_extent"] = [0.42, 0.32, 0.13]  # the top full: every pass looked
+            calls = []
+            free = place.free_spot
+
+            def spy(*a, **kw):
+                calls.append(a[6:])
+                return free(*a, **kw)
+
+            with mock.patch.object(place, "free_spot", side_effect=spy):
+                spot, why = place.plan_spot(world, "Can", "T", "right", start, 0.0)
+                self.assertIsNone(spot)
+                fallback = (place.FALLBACK_SPOT_CLEAR_M, place.FALLBACK_SIDE_MIN_M)
+                self.assertEqual(calls, [present, (*present, True), (*fallback, True)] * 2)  # far stance, then near
+                self.assertEqual(why.count("no spot: "), 3, why)
+                calls.clear()
+                world.meta["objects"]["Can"]["box"]["half_extent"] = [0.03, 0.04, 0.09]  # not round: its box only
+                self.assertFalse(place.round_object(world, "Can"))
+                place.plan_spot(world, "Can", "T", "right", start, 0.0)
+                self.assertEqual(calls, [present, (*fallback, False)] * 2)
+
+    def test_a_target_above_place_ahead_top_min_takes_the_far_stance_unless_none_is_clear_and_routed(self):
+        start = np.array([0.0, -2.0])
+        world = World({"Book": ([0.0, 0.11, 0.83], yaw_quat(0.0))})
+        occ, _ = build(world.meta, body_radius=0.35)
+        world.occ = occ
+        with mock.patch.dict(pick._NAV, {}, clear=True):
+            near, _ = place.spot_passes(world, "Can", "T", "right", start, 0.0, pick.STAND_AHEAD_M)
+            spot, why = place.plan_spot(world, "Can", "T", "right", start, 0.0)  # top 0.7 m
+            self.assertEqual(spot["ahead"], place.PLACE_AHEAD_M, why)
+            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, place.PLACE_AHEAD_M], atol=1e-9)
+            np.testing.assert_array_equal(spot["xy"], near["xy"])
+            passes = place.spot_passes
+
+            def no_far(*a):  # no clear, routed stance at the far distance
+                return (None, "no stance or route: ...") if a[-1] == place.PLACE_AHEAD_M else passes(*a)
+
+            for top, stub in ((place.PLACE_AHEAD_TOP_MIN_M, passes), (0.7, no_far)):
+                world.meta["surfaces"]["T"]["top"] = top
+                with mock.patch.object(place, "spot_passes", side_effect=stub):
+                    spot, why = place.plan_spot(world, "Can", "T", "right", start, 0.0)
+                self.assertEqual(spot.keys(), near.keys(), top)  # exactly the near plan
+                for k in near:
+                    np.testing.assert_array_equal(spot[k], near[k], err_msg=k)
 
 
 class DropGuards(unittest.TestCase):
@@ -273,10 +394,43 @@ class SettleAbort(unittest.TestCase):
         self.assertLessEqual(max(xs[k:]), 1e-9)
 
 
+class LateralAbort(unittest.TestCase):
+    """grasp_program.run with the grasp point 4 cm across a jaw that stays put: lateral_abort_m None (every grasp but
+    pick.low_grasp's) goes on into the entry until it times out; set at 3 cm, the entry fails on its first tick."""
+
+    def run_program(self, limit):
+        body, jaw = 7, np.array([0.05, 0.0, 1.0])
+        sim = SimpleNamespace(d=SimpleNamespace(xpos={body: np.array([0.19, 0.04, 1.0])}, ncon=0), m=None)
+        m = SimpleNamespace(sim=sim, servo_on={}, servo={}, fingers={"right": (1, 2)}, jaw=np.zeros(2),
+                            jaw_centre=lambda side: (jaw, np.eye(3)), commanded_jaw=lambda side: jaw.copy(),
+                            hand=lambda side, pos=None, *a: None, adopt_hand=lambda side: None)  # fmt: skip
+        m.t = 0.0
+
+        def tick():
+            m.t += R.DT
+            return True
+
+        m.tick = tick
+        notes = []
+        ctx = SimpleNamespace(world=SimpleNamespace(free={"Can": body}), motor=m,
+                              note=lambda name, out, **kw: notes.append((name, out, kw)) or out)  # fmt: skip
+        out = grasp_program.run(ctx, "Can", "right", np.eye(3), np.array([0.19, 0.04, 1.0]), 0.06,
+                                simple=dict(lateral_abort_m=limit))  # fmt: skip
+        return out, notes[-1][2]["phases"], m.t
+
+    def test_inert_at_none_and_failing_on_the_entrys_first_tick_when_set(self):
+        self.assertIsNone(grasp_program.SIMPLE["lateral_abort_m"])
+        out, phases, _ = self.run_program(None)
+        self.assertTrue(out.why.startswith("entry timed out"), out.why)
+        out, phases, t = self.run_program(0.03)
+        self.assertEqual((out.ok, out.why, phases), (False, "entry 4.0 cm across the jaw", ["settle", "entry"]))
+        self.assertAlmostEqual(t, grasp_program.SIMPLE["settle_timeout_s"], delta=2 * R.DT)
+
+
 class PutDownPick(unittest.TestCase):
     """The put-down's switches: off (held(X)'s pick) unless place_on turns them on; on, a right-hand side grasp on a
-    surface above 0.6 m stands at PICK_SIDE_AHEAD_M, the left hand, a top-down pinch and every put-down stance at
-    pick.STAND_AHEAD_M."""
+    surface above 0.6 m stands at PICK_SIDE_AHEAD_M, the left hand and a top-down pinch at pick.STAND_AHEAD_M; the
+    put-down stance on that surface at place.PLACE_AHEAD_M."""
 
     def test_switches_are_inert_at_none_and_restored_after_the_put_down(self):
         self.assertIsNone(pick.SIDE_AHEAD_M)
@@ -303,7 +457,7 @@ class PutDownPick(unittest.TestCase):
                 self.assertIsNotNone(plan, why)
                 self.assertAlmostEqual(float(-0.2 - plan[3][1]), ahead, msg=side)
             spot, why = place.plan_spot(world, "Can", "T", "right", np.array([0.0, -2.0]), 0.0)
-            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, pick.STAND_AHEAD_M], atol=1e-9)
+            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, place.PLACE_AHEAD_M], atol=1e-9)
 
     def test_a_side_grasped_spot_sits_off_the_ends_and_inside_the_top_a_pinched_one_keeps_the_old_rule(self):
         world = World({"Book": ([0.0, 0.2, 0.83], yaw_quat(0.0))})  # free along -y to 0.13 m deep
@@ -430,6 +584,67 @@ class Release(unittest.TestCase):
         corr = m.calls[-1][2] @ rot0.T
         centre = m.calls[-1][1] + corr @ (pos - jaw0)  # where the levelled object's centre ends
         np.testing.assert_allclose(centre, [0.1, -0.1, 0.7 + 0.09 + place.PLACE_CLEAR_M], atol=1e-9)
+
+    def test_the_levelling_turns_at_most_level_max_given_else_level_max_deg(self):
+        tip = expmap([np.radians(45.0), 0.0, 0.0])
+        pos = np.array([0.1, -0.1, 0.95])
+        for level_max, want in ((None, place.LEVEL_MAX_DEG), (place.LOW_LEVEL_MAX_DEG, 45.0), (30.0, 30.0)):
+            world = World({"Can": (pos, R.quat_wxyz(tip))})
+            world.free = {"Can": 7}
+            m = Hand(pos - tip @ R.rot_z(np.pi / 2) @ [0.02, 0.0, 0.0], tip @ R.rot_z(np.pi / 2))
+            args = (Ctx(world, m), "Can", "right", [0.1, -0.1], "T", [0.1, -0.3], np.pi / 2)
+            _, level = place._lower_onto(*args) if level_max is None else place._lower_onto(*args, level_max)
+            self.assertAlmostEqual(level, want)
+
+    def test_place_on_levels_by_up_to_low_level_max_after_a_low_grasp_only(self):
+        world, m, _, _ = self._held(top=False)
+        m.sim, m.cfg = SimpleNamespace(d=SimpleNamespace(qpos=np.zeros(3))), MotorConfig()
+        m.gripping = lambda body: {"right"}
+        spot = dict(xy=[0.1, -0.1], edge_xy=[0.1, -0.3], face=np.pi / 2, edge="-y", stance=np.zeros(2), depth=0.06)
+        ahead = dict(stance=np.zeros(2), face=0.0, xy=np.zeros(2), edge_xy=np.zeros(2), spot=spot, corners=None)
+        for info, want in (({"low": True}, place.LOW_LEVEL_MAX_DEG), ({}, place.LEVEL_MAX_DEG)):
+            with (
+                mock.patch.object(place, "blocking_neighbour", return_value=None),
+                mock.patch.object(place, "plan_ahead", return_value=ahead),
+                mock.patch.object(place, "_refusal", return_value=None),
+                mock.patch.object(pick, "pick", return_value=Outcome(True, info=info)),
+                mock.patch.object(place, "_handoff", return_value=None) as handoff,
+                mock.patch.object(place, "plan_spot", return_value=(spot, "")),
+                mock.patch.object(pick, "nav_map", return_value=(None, None, None)),
+                mock.patch.object(pick, "walk_route", return_value=Outcome(True)),
+                mock.patch.object(clearance, "sweep", return_value=None),
+                mock.patch.object(place, "_put_down", return_value=Outcome(True)) as put_down,
+            ):
+                self.assertTrue(place.place_on(Ctx(world, m), "Can", "T").ok)
+            self.assertEqual(put_down.call_args.args[-1], want)
+            home = handoff.call_args.args[-1]  # a failure's set-down levels it alike (set_down)
+            self.assertEqual(home.get("level_max"), place.LOW_LEVEL_MAX_DEG if info else None)
+
+    def test_a_set_down_with_home_level_max_levels_it_about_its_centre_else_lowers_as_carried(self):
+        tip = expmap([np.radians(13.0), 0.0, 0.0])
+        pos = np.array([2.0, 2.0, 0.6])  # over its shelf S (top 0.4 m)
+        for home in (None, dict(level_max=place.LOW_LEVEL_MAX_DEG)):
+            world = World({"Can": (pos, R.quat_wxyz(tip))})
+            world.free = {"Can": 7}
+            rot0 = tip @ R.rot_z(np.pi / 2)
+            m = Hand(pos - rot0 @ [0.02, 0.0, 0.0], rot0)
+            m.gripping = m.touching = lambda body: {"right"}
+            ctx = Ctx(world, m)
+            with mock.patch.object(place, "_release", return_value=Outcome(True)) as release, \
+                    mock.patch.object(place, "resting", return_value=(True, "")):  # fmt: skip
+                self.assertEqual(place.set_down(ctx, "Can", ("S",), home), "set down on S")
+            _, goal, rot = m.calls[0]
+            drop = 0.6 - 0.09 - 0.4 - place.PLACE_CLEAR_M
+            if home is None:
+                self.assertIsNone(rot)
+                np.testing.assert_allclose(goal, pos - rot0 @ [0.02, 0.0, 0.0] - [0.0, 0.0, drop], atol=1e-12)
+                self.assertIsNone(release.call_args.args[-1])
+            else:
+                corr = rot @ rot0.T
+                np.testing.assert_allclose(corr @ tip @ [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], atol=1e-9)
+                rel = rot0 @ [0.02, 0.0, 0.0]  # the object centre from the jaw, as carried
+                np.testing.assert_allclose(goal + corr @ rel, pos - [0.0, 0.0, drop], atol=1e-12)  # straight down
+                self.assertAlmostEqual(release.call_args.args[-1], 13.0)
 
     def test_a_top_pinch_is_lowered_with_the_carried_wrist(self):
         world, m, pos, _ = self._held(top=True)

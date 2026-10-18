@@ -257,6 +257,180 @@ class GripperShape(unittest.TestCase):
             np.testing.assert_allclose(via, [1.8 - out, 2.0, 0.45], atol=1e-12, err_msg=str(upper))
 
 
+class LowGrasp(unittest.TestCase):
+    """A level side grasp whose pads would meet a hull wider than LOW_SPAN_M closes at the highest jaw below the centre
+    where the collision hull spans at most LOW_WIDTH_M over the pads' height (pick.low_grasp, the round vase), and when
+    its straight approach sweeps an object fixed on the support it comes in CLEAR_YAW_DEG turned away with the far
+    hand (pick.clear_pass); every other grasp and plan is unchanged."""
+
+    _world, _pick = GripperShape._world, GripperShape._pick
+    A, C = 0.046, 0.08  # the vase's equator radius and half height
+
+    def _vase(self, top=0.4):
+        """The Can as a 9.2 x 9.2 x 16 cm box on the shelf S (top `top`), its hull an ellipsoid of rings: (world,
+        verts)."""
+        world = self._world(self.C, self.C)
+        world.meta["objects"]["Can"]["box"]["half_extent"] = [self.A, self.A, self.C]
+        world.meta["surfaces"]["S"]["top"] = top
+        world.free, world.motor = {"Can": 7}, None
+        t, a = np.linspace(-1.0, 1.0, 33), np.radians(np.arange(0.0, 360.0, 15.0))
+        ring = [(self.A * np.sqrt(1 - u * u) * np.cos(b), self.A * np.sqrt(1 - u * u) * np.sin(b), self.C * u)
+                for u in t for b in a]  # fmt: skip
+        return world, world.object_pose("Can")[0] + np.asarray(ring)
+
+    def test_band_width_is_the_hull_extent_between_the_planes(self):
+        r, h = 0.05, 0.1
+        diamond = np.array([[r, 0, 0], [-r, 0, 0], [0, r, 0], [0, -r, 0], [0, 0, h], [0, 0, -h]])
+        self.assertAlmostEqual(pick.band_width(diamond, -0.5 * h, -0.25 * h, [1.0, 0.0, 0.0]), 1.5 * r)
+        self.assertAlmostEqual(pick.band_width(diamond, -0.1 * h, 0.1 * h, [0.0, 1.0, 0.0]), 2 * r)
+        self.assertEqual(pick.band_width(diamond, 1.1 * h, 1.2 * h, [1.0, 0.0, 0.0]), 0.0)
+
+    def test_the_vase_closes_at_the_highest_jaw_whose_pads_span_at_most_low_width(self):
+        world, verts = self._vase()
+        pos, quat = world.object_pose("Can")
+        across = R.rot_z(0.3)[:, 1]
+        with mock.patch.object(pick, "object_vertices", return_value=verts):
+            pitch, rise, width = pick.low_grasp(world, "Can", pos, quat, 0.3)
+            self.assertEqual(pitch, np.radians(pick.LOW_PITCH_DEG))
+            exact = -self.C * np.sqrt(1 - (pick.LOW_WIDTH_M / (2 * self.A)) ** 2) - grasp_program.PAD_Z  # the ellipsoid
+            self.assertTrue(exact - pick.LOW_STEP_M - 0.004 < rise < exact + 0.004, (rise, exact))
+            self.assertLessEqual(width, pick.LOW_WIDTH_M)
+            z = pos[2] + rise + pick.LOW_STEP_M  # one step up the pads span more
+            self.assertGreater(pick.band_width(verts, z - grasp_program.PAD_Z, z + grasp_program.PAD_Z, across),
+                               pick.LOW_WIDTH_M)  # fmt: skip
+            self.assertGreaterEqual(pos[2] + rise, 0.4 + pick.min_jaw(pitch))
+            high, verts = self._vase(top=0.4 + 0.07)  # the gripper would reach below the top: none
+            self.assertIsNone(pick.low_grasp(high, "Can", pos, quat, 0.3))
+            world.meta["surfaces"]["U"] = dict(xy=[2.0, 2.0], half_extent=[0.2, 0.2], yaw=0.0, top=0.9)
+            self.assertIsNone(pick.low_grasp(world, "Can", pos, quat, 0.3))  # under a shelf: none
+        world = self._world(0.0794, 0.0794)  # the coffee can's 6 cm: none, its mesh never read
+        self.assertIsNone(pick.low_grasp(world, "Can", *world.object_pose("Can"), 0.3))
+        world, verts = self._vase()  # a round can whose 6.7 cm box spans 9.5 cm at 45 deg: its hull, 6.7 cm, fits
+        world.meta["objects"]["Can"]["box"]["half_extent"] = [0.0335, 0.0335, self.C]
+        can = pos + (verts - pos) * np.array([0.0335 / self.A, 0.0335 / self.A, 1.0])
+        with mock.patch.object(pick, "object_vertices", return_value=can):
+            self.assertGreater(pick.span(quat, [0.0335, 0.0335], np.pi / 4), pick.LOW_SPAN_M)
+            self.assertIsNone(pick.low_grasp(world, "Can", pos, quat, np.pi / 4))
+
+    def test_the_lowest_jaw_the_gripper_allows_closes_when_every_step_above_it_is_too_wide(self):
+        world, verts = self._vase()
+        pos, quat = world.object_pose("Can")
+        across = R.rot_z(0.3)[:, 1]
+
+        def width(z):
+            return pick.band_width(verts, z - grasp_program.PAD_Z, z + grasp_program.PAD_Z, across)
+
+        with mock.patch.object(pick, "object_vertices", return_value=verts):
+            _, rise, _ = pick.low_grasp(world, "Can", pos, quat, 0.3)
+            step = pos[2] + rise  # the first step that fits; the one above it is too wide
+            hi, lo = step + pick.LOW_STEP_M, step
+            for _ in range(30):  # the highest jaw that fits, between them
+                mid = 0.5 * (hi + lo)
+                hi, lo = (hi, mid) if width(mid) <= pick.LOW_WIDTH_M else (mid, lo)
+            mj = pick.min_jaw(np.radians(pick.LOW_PITCH_DEG))
+            for floor, fits in ((0.5 * (lo + step), True), (0.5 * (hi + step + pick.LOW_STEP_M), False)):
+                world.meta["surfaces"]["S"]["top"] = floor - mj  # the steps stop above `step`
+                low = pick.low_grasp(world, "Can", pos, quat, 0.3)
+                if fits:
+                    self.assertAlmostEqual(low[1], floor - pos[2])
+                    self.assertLessEqual(low[2], pick.LOW_WIDTH_M)
+                else:
+                    self.assertIsNone(low)
+
+    def _fixed(self, world, xy, half=0.048):
+        """A fixed (not free) round-ish object on the shelf S, its box `half` wide, at `xy`."""
+        world.meta["objects"]["Small"] = dict(surface="S", free=False, init_pos=[*xy, 0.4 + half],
+                                              init_quat=yaw_quat(0.0),
+                                              box=dict(half_extent=[half, half, half]))  # fmt: skip
+
+    def test_the_strip_meets_a_fixed_object_behind_the_jaw_only(self):
+        world, _ = self._vase()
+        self.assertIsNone(pick.strip_blocker(world, "Can", np.pi / 2))  # nothing fixed on S
+        self._fixed(world, (2.06, 1.88))  # 12 cm back toward the robot (approach +y), 6 cm to the right
+        self.assertAlmostEqual(pick.strip_blocker(world, "Can", np.pi / 2), -0.06)
+        self.assertIsNone(pick.strip_blocker(world, "Can", 0.0))  # approached along +x it is ahead and aside
+        world.meta["objects"]["Small"]["free"] = True  # a free neighbour is not a blocker
+        self.assertIsNone(pick.strip_blocker(world, "Can", np.pi / 2))
+
+    def test_a_blocked_low_grasp_plans_turned_away_with_the_far_hand_any_other_plan_stands(self):
+        world, _ = self._vase()
+        plan = (np.pi / 2, 0.2, np.pi / 2, np.array([2.12, 1.6]), np.array([2.0, 1.8]))
+        yaw = np.pi / 2 - np.radians(pick.CLEAR_YAW_DEG)
+        turned = (np.pi / 2, 0.2, yaw, np.array([2.0, 1.6]), np.array([2.0, 1.8]))
+        with (
+            mock.patch.object(pick, "low_grasp", return_value=(0.0, -0.03, 0.09)),
+            mock.patch.object(pick, "plan_approach", return_value=(turned, "")) as pa,
+        ):
+            self.assertIsNone(pick.clear_pass(world, np.zeros(2), "Can", plan))  # nothing in the strip
+            self._fixed(world, (2.06, 1.88))  # on the approach's right
+            self.assertEqual(pick.clear_pass(world, np.zeros(2), "Can", plan), (turned, "left", ""))
+            self.assertEqual(pa.call_args.args[3:], ("left", None, True, -np.radians(pick.CLEAR_YAW_DEG)))
+            world.meta["objects"]["Small"]["init_pos"][0] = 1.94  # on its left: the right hand, turned the other way
+            self.assertEqual(pick.clear_pass(world, np.zeros(2), "Can", plan)[1], "right")
+            self.assertEqual(pa.call_args.args[3:], ("right", None, True, np.radians(pick.CLEAR_YAW_DEG)))
+        with mock.patch.object(pick, "low_grasp", return_value=None):  # no low grasp: the straight plan stands
+            self.assertIsNone(pick.clear_pass(world, np.zeros(2), "Can", plan))
+
+    def test_plan_approach_turns_by_yaw_off_only_a_box_that_fits_both_ways(self):
+        world, _ = self._vase()
+        occ, _ = build(world.meta, body_radius=0.35)
+        world.occ = occ
+        with mock.patch.dict(pick._NAV, {}, clear=True):
+            plan, why = pick.plan_approach(world, np.array([2.0, 0.0]), "Can", "left", None, True, -0.6)
+            self.assertIsNotNone(plan, why)
+            self.assertAlmostEqual(plan[2], plan[0] - 0.6)
+            world.meta["objects"]["Can"]["box"]["half_extent"] = [self.A, 0.06, self.C]  # one way only: no plan
+            self.assertIsNone(pick.plan_approach(world, np.array([2.0, 0.0]), "Can", "left", None, True, -0.6)[0])
+
+    def test_the_pick_enters_the_low_grasp_lowered_and_pitched_across_its_span(self):
+        world, _ = self._vase()
+        pitch = np.radians(pick.GRASP_PITCH_DEG)
+        with mock.patch.object(pick, "low_grasp", return_value=(pitch, -0.05, 0.086)):
+            (_, _, _, Rg, tool, width), calls = self._pick(world)
+        want_R = R.rot_z(0.3) @ R.rot_y(pitch)
+        np.testing.assert_allclose(Rg, want_R, atol=1e-12)
+        np.testing.assert_allclose(tool, world.object_pose("Can")[0] - [0.0, 0.0, 0.05], atol=1e-12)
+        np.testing.assert_allclose(calls[0][1], tool - want_R @ [grasp_program.PREGRASP_BACK, 0.0, 0.0], atol=1e-12)
+        self.assertEqual(width, 0.086)
+
+    def test_a_low_grasp_whose_pre_grasp_ends_off_fails_low_without_the_hand_program(self):
+        world, _ = self._vase()
+        plan = Outcome(True, info=dict(side="right", psi=0.3, face=0.0, edge_xy=np.array([1.8, 2.0])))
+        for off, ran in ((pick.LOW_PREGRASP_MISS_M - 0.005, True), (pick.LOW_PREGRASP_MISS_M + 0.005, False)):
+            m = Hand([1.7, 2.0, 0.45], np.eye(3))
+            reach = m.reach
+
+            def short(side, pos, rot=None, **kw):  # the pre-grasp ends `off` short along -x
+                out = reach(side, pos, rot, **kw)
+                m.jaw = m.jaw - [off, 0.0, 0.0]
+                return out
+
+            m.reach = short
+            with (
+                mock.patch.object(pick, "approach", return_value=plan),
+                mock.patch.object(pick, "edge_via", return_value=()),
+                mock.patch.object(pick, "low_grasp", return_value=(0.0, -0.03, 0.0908)),
+                mock.patch.object(grasp_program, "run", return_value=Outcome(True)) as run,
+            ):
+                out = pick.pick_once(Ctx(world, m), "Can", "right", {})
+            self.assertEqual((run.called, out.ok, out.info.get("low")), (ran, ran, True))
+            if not ran:
+                self.assertTrue(out.why.startswith(f"pregrasp missed by {100 * off:.1f} cm"), out.why)
+
+    def test_a_low_grasp_marks_its_outcome_low_any_other_grasp_keeps_the_hand_programs(self):
+        world, _ = self._vase()
+        plan = Outcome(True, info=dict(side="right", psi=0.3, face=0.0, edge_xy=np.array([1.8, 2.0])))
+        for low, want in (((0.0, -0.03, 0.0908), dict(shift_m=0.01, low=True)), (None, dict(shift_m=0.01))):
+            with (
+                mock.patch.object(pick, "approach", return_value=plan),
+                mock.patch.object(pick, "edge_via", return_value=()),
+                mock.patch.object(pick, "low_grasp", return_value=low),
+                mock.patch.object(grasp_program, "run", return_value=Outcome(False, "x", 1.0, 2.0, dict(shift_m=0.01))),
+            ):
+                out = pick.pick_once(Ctx(world, Hand([1.7, 2.0, 0.45], np.eye(3))), "Can", "right", {})
+            self.assertEqual((out.ok, out.why, out.t0, out.t1, out.info), (False, "x", 1.0, 2.0, want))
+
+
 class Pinch(unittest.TestCase):
     """A pitched grasp whose pads would pass over the object (pick.needs_pinch: the car key) pinches it instead
     (pick.pick_pinch): wrist pitched PINCH_PITCH_DEG with the jaw at min_jaw over PINCH_LOW_POINTS, aimed at the part
@@ -571,6 +745,10 @@ class Retry(unittest.TestCase):
         ctx.world.meta["surfaces"]["U"] = dict(xy=[2.0, 2.0], half_extent=[0.2, 0.2], yaw=0.0, top=0.9)  # over S
         self.assertEqual(cover.overhead(ctx.world, "Can"), ["U"])
         self.assertEqual(self._attempts(ctx, [Outcome(False, "entry timed out"), Outcome(True)])[:2], (1, 0))
+
+    def test_no_retry_after_a_failed_low_grasp(self):
+        low = Outcome(False, "target knocked 2 cm in settle", info=dict(low=True))
+        self.assertEqual(self._attempts(self._ctx(), [low, Outcome(True)])[:2], (1, 0))
 
     def test_a_fall_while_backing_out_ends_the_pick(self):
         ctx = self._ctx()

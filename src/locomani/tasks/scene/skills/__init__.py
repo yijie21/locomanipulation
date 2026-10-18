@@ -9,6 +9,7 @@ relatively. `apply_set` is how a probe or a candidate overrides a parameter with
 
 from __future__ import annotations
 
+from locomani.backends.scalebfm.motor import Outcome
 from locomani.scene_discovery.predicates import parse
 
 from . import clearance, cover, grasp_program, held, into, near, pick, place  # noqa: F401  (apply_set reaches them)
@@ -20,8 +21,8 @@ def plan_for(task):
     """The plan for a task's goal, or None when no skill covers it. Covered: held(X), alone or with upright(X) of the
     same X (`held.pick_held` over the PLAN_HELD pick); held(X) and exactly one near(X, T, d), with upright(X) or not,
     all of the same X (`near.bring_near` over the PLAN_HELD pick); exactly one in(X, C), alone or with upright(X) of
-    the same X (`into.place_into`); a conjunction of on(X, S) and upright(X) only (`place.place_on` for each on(X, S)
-    in goal order, stopping at the first failure)."""
+    the same X (`into.place_into`); a conjunction of on(X, S) and upright(X) only (`place_all`: `place.place_on` for
+    each on(X, S) in goal order, stopping at the first failure; nothing when the goal already holds)."""
     preds = [parse(g) for g in task.goal]
     names, keys = {p.name for p in preds}, {p.args[0] for p in preds}
     if "held" in names and names <= {"held", "upright"} and len(keys) == 1:
@@ -57,13 +58,30 @@ def bring_near(ctx, key, target, d, skill, upright):
 
 
 def place_all(ctx, ons):
-    """`place.place_on` for each (object, surface) in order; the first failure ends the plan."""
+    """`place.place_on` for each (object, surface) in order; the first failure ends the plan. Nothing is done when the
+    task's whole goal already holds (`goal_holds`): plate holder starts where it does succeeded only because the pick
+    was refused before contact, a margin 2% of the creep rate wide (r2_on_single iteration 0)."""
+    done = goal_holds(ctx)
+    if done is not None:
+        return done
     out = None
     for key, surface in ons:
         out = place.place_on(ctx, key, surface)
         if not out.ok:
             return out
     return out
+
+
+def goal_holds(ctx):
+    """A success Outcome, logged (step "goal_holds"), when the task's goal predicates hold on the state now, as the
+    episode judges them at the end; else None. Reads the state only."""
+    world, m = ctx.world, ctx.motor
+    keys = list(dict.fromkeys(a for g in ctx.task.goal for a in parse(g).args
+                              if isinstance(a, str) and a in world.meta["objects"]))  # fmt: skip
+    ok, _ = world.check(ctx.task.goal)(world.state(keys))
+    if not ok:
+        return None
+    return ctx.note("goal_holds", Outcome(True, "goal already holds", m.t, m.t))
 
 
 def apply_set(package, overrides: dict) -> list[str]:

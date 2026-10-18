@@ -74,7 +74,12 @@ all of them put-downs that toppled on release or retract -- a jam or soap lying 
   on one finger); the open jaw moves onto the object's centre along the wrist y (clearance.centre_move), backs out
   RETRACT_M along the fingers level, then rises RETRACT_RISE_M (the rising retract dragged leaning objects over).
 - The put-down, `set_down` and `_put_back` (through `_lower_onto`) all release this way. A top-down-pinched object
-  (pick.is_top, the remote) keeps the open-loop lowering, release and rising retract."""
+  (pick.is_top, the remote) keeps the open-loop lowering, release and rising retract.
+
+Final turn clear of the target's top (r2_on_single loop, iteration 4; iterations 2 and 3 each won 6-0 and were rejected
+on 3 drops, one a right-hand carry drop): on a target whose top is above PLACE_AHEAD_TOP_MIN_M the put-down stance is
+PLACE_AHEAD_M from the spot (`plan_spot`), so the carry's in-place turn to face it sweeps the held object farther from
+what stands on that top. The pick stance, the spot, and every put-down on a lower target are unchanged."""
 
 from __future__ import annotations
 
@@ -92,7 +97,7 @@ from . import clearance, grasp_program, pick
 
 BACK_AFTER_PICK_M = 0.30  # step back this far after the pick ...
 STAND_UP_BELOW_M = 0.72  # ... and stand up when the pelvis is still lower than this
-SPOT_CLEAR_M = 0.04  # the object's footprint at the spot this clear of every object resting on the target
+SPOT_CLEAR_M = 0.035  # (0.04 until r2_on_single's set) the object's footprint at the spot this clear of every object resting on the target
 SPOT_EDGE_M = 0.03  # spot depth in from its edge: from the object's smaller half extent + this ...
 SPOT_DEPTH_MAX_M = 0.30  # ... to this (and the spot centre stays as far from the opposite edge)
 SPOT_SIDE_M = 0.02  # spot centre at least this far in from the ends of its edge
@@ -101,7 +106,7 @@ RESTING_BAND_M = 0.05  # an object whose underside is this close to the target's
 MAX_ROUTE_TRIES = 40  # stances tried for a route, best first
 CARRY_TURN_RATE = 0.4  # rad/s peak in-place turn while carrying (the motor's 0.8 restored after the carry)
 PLACE_CLEAR_M = 0.015  # object underside this far above the top at the end of the descent
-ABOVE_M = 0.06  # the descent starts this far above that
+ABOVE_M = 0.12  # (0.06 until r2_on_single's set) the descent starts this far above that
 VIA_OUT_M = 0.10  # the reach over the top passes with the object this far outside the edge, at the descent's start
 DESCENT_SPEED = 0.04
 RETRACT_M = 0.12  # after the release the jaw backs out this far along -wrist x ...
@@ -116,19 +121,25 @@ CLEAR_BACK_M = 0.20  # ... after pulling the jaw this far straight back, level
 PULL_FOLLOW_M = 0.02  # `_handoff(follow=True)`: a pull-back short of its target is stuck only when the jaw-to-object
 #                       distance changed more than this (s140016: 18.4 of 18.5 cm followed, 3.0 cm off; s140017: 15.0 of 17.0)
 SET_DOWN_MARGIN_M = 0.03  # set_down: the object's centre this far inside the surface's footprint
-CREEP_RATE_M_S = 0.0009  # (0.0012 until r1_in_single's set) side grasps: the object slides down the pads this fast from the lift to the release
+CREEP_RATE_M_S = 0.00062  # (0.0012 until r1_in_single's set, 0.0009 until r2_on_single's) side grasps: the object slides down the pads this fast from the lift to the release
 LEG_SETTLE_S = 3.0  # lift_to_release_s: per walk leg after its profile (walk_to: settle_s, up to its stop_timeout)
 PICK_SETTLE_ABORT_M = 0.035  # grasp_program's settle_abort_m during the put-down's pick only (held(X)'s stays None)
 LOWER_RETRY_OFF_M = 0.015  # a lowering that ends farther than this from its target ...
 LOWER_RETRY_UP_M = 0.03  # ... rises this far and lowers once more
 PICK_SIDE_AHEAD_M = 0.46  # pick.SIDE_AHEAD_M during the put-down (held(X)'s stays None)
-PICK_CAPTURE_DEPTH_M = 0.015  # grasp_program's entry_capture_depth_m during the put-down's pick (held(X)'s stays 0.025)
+PICK_CAPTURE_DEPTH_M = 0.025  # (0.015 until r2_on_single's set) grasp_program's entry_capture_depth_m during the put-down's pick (held(X)'s stays 0.025)
 PLACE_SIDE_MIN_M = 0.06  # a side-grasped object's spot centre at least this far in from the ends of its edge ...
 SPOT_INSIDE_M = 0.015  # ... and its footprint at the carried yaw this far inside the flat top on every side
+FALLBACK_SPOT_CLEAR_M = 0.02  # a target with no free spot at SPOT_CLEAR_M and PLACE_SIDE_MIN_M is searched again
+FALLBACK_SIDE_MIN_M = 0.03  # at these (`plan_spot`)
+ROUND_RATIO = 1.03  # an object whose box half extents are within this ratio is round (`round_object`)
 LEVEL_MAX_DEG = 25.0  # side grasps: the wrist levels the object's measured up axis by at most this before lowering
+LOW_LEVEL_MAX_DEG = 60.0  # ... and by at most this after a pick.low_grasp (the vase leaned 41-55 deg in the hand)
 CENTRE_MIN_M = 0.002  # after the release the open jaw moves onto the object's centre (wrist y) when off more ...
 CENTRE_MAX_M = 0.03  # ... than this, by at most this
 RETRACT_RISE_M = 0.05  # side grasps: the jaw backs out RETRACT_M level, then rises this far
+PLACE_AHEAD_M = 0.50  # put-down stance: the spot this far ahead of the pelvis on a target whose top is above ...
+PLACE_AHEAD_TOP_MIN_M = 0.6  # ... this (`plan_spot`; else, or with no free routable stance there, pick.STAND_AHEAD_M)
 
 
 def neighbours(world, surface_key: str, exclude: str) -> dict[str, tuple]:
@@ -248,11 +259,60 @@ def surface_below(world, key: str, surfaces, margin: float = SET_DOWN_MARGIN_M) 
 
 
 def plan_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: float):
+    """`spot_passes` with the stance PLACE_AHEAD_M from the spot on a target whose top is above PLACE_AHEAD_TOP_MIN_M
+    (the spot carries "ahead"); with pick.STAND_AHEAD_M on any other target, or when the far stance gives no spot (then
+    exactly the plan without it). The canister
+    (r2_on_single iteration 4): carried leaning 30-45 deg with its lowest point at 0.94-0.97 m, it ended the carry 0.40
+    m from its island spot, and the about 90 deg final turn swept it into the WoodenBowl's wall (rim 1.028 m) on 4 of 5
+    diag carries; every slip over 1 cm in 13 canister carries came with that contact, and one dropped it. From 0.50 m
+    the gripper passed the bowl 13.0 cm clear instead of 5.9 (s35). The coffee table and TV stand (0.454 / 0.512 m)
+    keep 0.40 m: from 0.50 m a wolf toppled on release at the low table."""
+    top = float(world.meta["surfaces"][surface_key]["top"])
+    if top > PLACE_AHEAD_TOP_MIN_M:
+        spot, why = spot_passes(world, key, surface_key, side, start_xy, yaw_rel, PLACE_AHEAD_M)
+        if spot is not None:
+            return dict(spot, ahead=PLACE_AHEAD_M), why
+    return spot_passes(world, key, surface_key, side, start_xy, yaw_rel, pick.STAND_AHEAD_M)
+
+
+def spot_passes(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: float, ahead: float):
+    """`free_spot` (stance `ahead` from the spot) at SPOT_CLEAR_M and PLACE_SIDE_MIN_M with the box footprint; only
+    while a pass finds no free spot (a why "no spot: ..."), the next: for a `round_object`, its round footprint at those
+    clearances, then at FALLBACK_SPOT_CLEAR_M and FALLBACK_SIDE_MIN_M; for any other, its box at the fallback
+    clearances. A later pass's spot carries "round" (its footprint) and "fallback" (its clearances). The big white
+    vase's TV stand (r2_on_single iterations 1-2): the TV and the other objects on it leave no spot 4 cm clear on any
+    diag start; 2 cm clear and 3 cm from the edge's ends there is one (-0.286, 2.302), but for its box only within
+    about 12 deg of a box axis at the carried yaw (4 of 5 diag starts), for its round footprint at every yaw. (spot or
+    None, why: the passes' joined when none has one)."""
+    present, fallback = (SPOT_CLEAR_M, PLACE_SIDE_MIN_M), (FALLBACK_SPOT_CLEAR_M, FALLBACK_SIDE_MIN_M)
+    later = [(present, True), (fallback, True)] if round_object(world, key) else [(fallback, False)]
+    spot, why = free_spot(world, key, surface_key, side, start_xy, yaw_rel, *present, ahead=ahead)
+    whys = [why]
+    for clears, rnd in later:
+        if spot is not None or not why.startswith("no spot: "):
+            break
+        spot, why = free_spot(world, key, surface_key, side, start_xy, yaw_rel, *clears, rnd, ahead=ahead)
+        if spot is not None:
+            return dict(spot, round=rnd, fallback=clears == fallback), ""
+        whys.append(f"{'round' if rnd else 'box'} at {clears[0]} m: {why}")
+    return spot, "; ".join(whys) if spot is None else why
+
+
+def round_object(world, key: str) -> bool:
+    """X's box is about as wide both ways (half extents within ROUND_RATIO): the round vase, candle, coffee can and
+    plant pot, whose footprint does not turn with their yaw (`free_spot`'s round footprint); not the wolf (1.92)."""
+    hx, hy = (float(v) for v in world.meta["objects"][key]["box"]["half_extent"][:2])
+    return max(hx, hy) <= ROUND_RATIO * min(hx, hy)
+
+
+def free_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: float, clear: float, side_min: float,
+              round_fp: bool = False, ahead: float | None = None):  # fmt: skip
     """(spot or None, why). Spots: per edge of the target -- approach_edges first, then the others -- depths from the
     object's smaller half extent + SPOT_EDGE_M to SPOT_DEPTH_MAX_M and offsets along the edge, SPOT_STEP_M apart, the
-    centre SPOT_SIDE_M from the edge's ends (a side-grasped object: PLACE_SIDE_MIN_M, and its footprint `inside` the
-    flat top by SPOT_INSIDE_M); the object's footprint there, at yaw face + `yaw_rel` (its yaw relative to the robot's
-    now, clearance.carried_footprint), SPOT_CLEAR_M clear of `resting_on`. Stance: the spot at pick.STAND_AHEAD_M ahead,
+    centre SPOT_SIDE_M from the edge's ends (a side-grasped object: `side_min`, and its footprint `inside` the flat
+    top by SPOT_INSIDE_M); the object's footprint there, at yaw face + `yaw_rel` (its yaw relative to the robot's now,
+    clearance.carried_footprint; `round_fp`: the square of its larger half extent aligned with the target, whatever
+    the yaw), `clear` clear of `resting_on`. Stance: the spot `ahead` (None: pick.STAND_AHEAD_M) ahead,
     pick.STAND_SIDE_M toward the hand `side`, with pick's floor-object and other-edge clearances (the latter at every
     edge of a surface that lists none: the TV stand's walled north end, where a remote's carry fell turning). Best first
     by listed edge, depth, distance from `start_xy`; the first of MAX_ROUTE_TRIES with a route on pick's map wins. spot:
@@ -260,6 +320,8 @@ def plan_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: f
     meta = world.meta
     s = meta["surfaces"][surface_key]
     hx, hy = (float(v) for v in meta["objects"][key]["box"]["half_extent"][:2])
+    if round_fp:
+        hx = hy = max(hx, hy)
     taken = resting_on(world, surface_key, key)
     Rs = R.rot_z(float(s.get("yaw", 0.0)))[:2, :2]
     half = np.asarray(s.get("flat_half_extent") or s["half_extent"], float)
@@ -269,6 +331,7 @@ def plan_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: f
     boxed = not s.get("approach_edges")  # every edge counts as listed, and every stance needs the other-edge clearance
     edges = [(e, True) for e in listed] + [(e, False) for e in pick.NORMALS if e not in listed]
     sign = -1.0 if side == "right" else 1.0
+    ahead = pick.STAND_AHEAD_M if ahead is None else ahead
     d_min = min(hx, hy) + SPOT_EDGE_M
     side_grasp = not pick.is_top(world, key)
     n_inside, n_free, cands = 0, 0, []
@@ -276,7 +339,7 @@ def plan_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: f
         n = np.asarray(pick.NORMALS[e])  # outward normal, surface frame
         t = np.array([-n[1], n[0]])
         ax = 0 if "x" in e else 1
-        along = half[1 - ax] - (PLACE_SIDE_MIN_M if side_grasp else SPOT_SIDE_M)
+        along = half[1 - ax] - (side_min if side_grasp else SPOT_SIDE_M)
         d_max = min(SPOT_DEPTH_MAX_M, 2 * half[ax] - d_min)
         if along < 0 or d_max < d_min:
             continue
@@ -285,14 +348,17 @@ def plan_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: f
         for depth in np.arange(d_min, d_max + 1e-9, SPOT_STEP_M):
             for u in np.arange(-along, along + 1e-9, SPOT_STEP_M):
                 xy = c + Rs @ (n * (half[ax] - depth) + t * u)
-                fp = clearance.carried_footprint(xy, (hx, hy), face, yaw_rel)
+                if round_fp:
+                    fp = clearance.carried_footprint(xy, (hx, hy), float(s.get("yaw", 0.0)), 0.0)
+                else:
+                    fp = clearance.carried_footprint(xy, (hx, hy), face, yaw_rel)
                 if side_grasp and not clearance.inside(fp, s, SPOT_INSIDE_M):
                     continue
                 n_inside += 1
-                if any(overlap(fp, tk, SPOT_CLEAR_M) for tk in taken):
+                if any(overlap(fp, tk, clear) for tk in taken):
                     continue
                 n_free += 1
-                stance = xy - (R.rot_z(face) @ np.array([pick.STAND_AHEAD_M, sign * pick.STAND_SIDE_M, 0.0]))[:2]
+                stance = xy - (R.rot_z(face) @ np.array([ahead, sign * pick.STAND_SIDE_M, 0.0]))[:2]
                 if pick.floor_clearance(boxes, stance) < pick.STANCE_CLEAR_M:
                     continue
                 if (not is_listed or boxed) and pick.other_clearance(
@@ -319,18 +385,23 @@ def plan_ahead(world, key: str, surface_key: str, side: str, start_xy, cfg) -> d
     else dict(hand, face, stance, edge_xy (pick.plan_hand, as pick.pick will make it), xy (the object's now), top (a
     top-down pinch), spot, why (plan_spot from the back-off's end, the object's yaw on the robot predicted from the
     grasp: its yaw in the hand, yaw - psi, plus the hand's on the body, psi - face), corners (the carry route),
-    t_est (`lift_to_release_s`, motor config `cfg`), margin (`grip_margin`))."""
+    t_est (`lift_to_release_s`, motor config `cfg`), margin (`grip_margin`, at the jaw height of a pick.low_grasp
+    where pick.pick_once takes it))."""
     plan, hand, _ = pick.plan_hand(world, start_xy, key, side)
     if plan is None:
         return None
-    face, _, psi, stance, edge_xy = plan
+    face, depth, psi, stance, edge_xy = plan
     pos, quat = world.object_pose(key)
     obj = world.meta["objects"][key]
+    wrist = pick.wrist_in(dict(edge_depth_m=depth, psi=psi, face=face))
+    level = not pick.is_top(world, key) and not pick.grasp_pitch(world, key, pos, wrist)[0]
+    low = pick.low_grasp(world, key, pos, quat, psi, wrist) if level and not pick.narrow_covered(world, key) else None
     back = stance - BACK_AFTER_PICK_M * np.array([np.cos(face), np.sin(face)])
     spot, why = plan_spot(world, key, surface_key, hand, back, R.wrap(R.yaw_of(quat) - face))
     out = dict(hand=hand, face=face, stance=stance, edge_xy=edge_xy, xy=pos[:2].copy(), top=pick.is_top(world, key),
                spot=spot, why=why, corners=None, t_est=None,
-               margin=grip_margin(obj["box"]["half_extent"][2], (obj["box"].get("centre") or (0, 0, 0))[2]))  # fmt: skip
+               margin=grip_margin(obj["box"]["half_extent"][2], (obj["box"].get("centre") or (0, 0, 0))[2],
+                                  0.0 if low is None else low[1]))  # fmt: skip
     if spot is None:
         return out
     occ, nav, _ = pick.nav_map(world)
@@ -396,6 +467,8 @@ def place_on(ctx, key: str, surface_key: str, side: str = "right") -> Outcome:
     if not out.ok:
         refused = not any(r["step"] == "walk" for r in ctx.log[n0:])
         return _fail(ctx, key, f"{'pick refused' if refused else 'pick failed'}: {out.why}")
+    low = bool(out.info.get("low"))
+    level_max = LOW_LEVEL_MAX_DEG if low else LEVEL_MAX_DEG
     hands = sorted(m.gripping(body)) or sorted(m.touching(body))
     if not hands:
         return _fail(ctx, key, "pick failed: the object is not in the hand after the pick")
@@ -403,6 +476,8 @@ def place_on(ctx, key: str, surface_key: str, side: str = "right") -> Outcome:
     source = world.meta["objects"][key]["surface"]
     lifted = (source, surface_key)  # where a failure from here on sets it down
     home = dict(stance=ahead["stance"], face=ahead["face"], xy=ahead["xy"], edge_xy=ahead["edge_xy"], surface=source)
+    if low:  # a failure's set-down or put-back levels it as the put-down does (`set_down`)
+        home["level_max"] = LOW_LEVEL_MAX_DEG
     failed = _handoff(ctx, key, side, lifted, ahead, home)
     if failed is not None:
         return failed
@@ -420,21 +495,24 @@ def place_on(ctx, key: str, surface_key: str, side: str = "right") -> Outcome:
             walked = pick.walk_route(m, occ, nav, spot["stance"], spot["face"])
         else:
             walked = walk_corners(m, corners, spot["face"])
+    passed = {k: spot[k] for k in ("round", "fallback", "ahead") if k in spot}  # a later pass's spot, a far stance
     out = ctx.note("carry", walked, spot=spot["xy"], edge=spot["edge"], depth=spot["depth"], stance=spot["stance"],
-                   face_deg=round(float(np.degrees(spot["face"])), 1), sweep=clearance.sweep(world, m, side, k0))  # fmt: skip
+                   face_deg=round(float(np.degrees(spot["face"])), 1), sweep=clearance.sweep(world, m, side, k0),
+                   **passed)  # fmt: skip
     if not out.ok or m.fell_at is not None:
         return _fail(ctx, key, f"carry: {out.why}", lifted, home)
     if side not in m.gripping(body):
         return _fail(ctx, key, f"dropped during the carry: the {side} hand no longer grips it", lifted)
-    return _put_down(ctx, key, surface_key, side, spot, lifted, home)
+    return _put_down(ctx, key, surface_key, side, spot, lifted, home, level_max)
 
 
-def _put_down(ctx, key: str, surface_key: str, side: str, spot: dict, lifted, home: dict) -> Outcome:
-    """At the place stance: lower the object over the spot (`_lower_onto`), release over the target only, retract, step
-    back; done only with no finger on it and it resting on the target's own top."""
+def _put_down(ctx, key: str, surface_key: str, side: str, spot: dict, lifted, home: dict,
+              level_max: float | None = None) -> Outcome:  # fmt: skip
+    """At the place stance: lower the object over the spot (`_lower_onto`, levelled by at most `level_max`), release
+    over the target only, retract, step back; done only with no finger on it and it resting on the target's own top."""
     world, m = ctx.world, ctx.motor
     body = world.free[key]
-    off, level = _lower_onto(ctx, key, side, spot["xy"], surface_key, spot["edge_xy"], spot["face"])
+    off, level = _lower_onto(ctx, key, side, spot["xy"], surface_key, spot["edge_xy"], spot["face"], level_max)
     if m.fell_at is not None:
         return _fail(ctx, key, f"place reach failed: {'; '.join(off)}")
     if surface_below(world, key, (surface_key,), margin=0.0) is None:
@@ -458,13 +536,15 @@ def _put_down(ctx, key: str, surface_key: str, side: str, spot: dict, lifted, ho
     return Outcome(True, "", out.t0, out.t1, info=dict(spot=np.round(spot["xy"], 3).tolist(), edge=spot["edge"]))
 
 
-def _lower_onto(ctx, key: str, side: str, xy, surface_key: str, edge_xy, face: float) -> tuple[list[str], float | None]:
+def _lower_onto(ctx, key: str, side: str, xy, surface_key: str, edge_xy, face: float, level_max: float | None = None
+                ) -> tuple[list[str], float | None]:  # fmt: skip
     """Reach the held object over `xy` on `surface_key` through a point VIA_OUT_M outside the edge point `edge_xy` (the
     robot facing `face`) and lower it to PLACE_CLEAR_M above the surface's own top at DESCENT_SPEED; a lowering that
     ends more than LOWER_RETRY_OFF_M off rises LOWER_RETRY_UP_M and lowers once more. A side-grasped object is levelled
-    first: every leg holds the wrist turned by clearance.level_rotation (at most LEVEL_MAX_DEG) of its measured up
-    axis; a top-down-pinched one keeps the wrist as carried. (the reaches that failed, the levelling turn in deg or None
-    for a pinch; the caller checks m.fell_at)."""
+    first: every leg holds the wrist turned by clearance.level_rotation (at most `level_max`, None: LEVEL_MAX_DEG;
+    place_on's after a pick.low_grasp: LOW_LEVEL_MAX_DEG) of its measured up axis; a top-down-pinched one keeps the
+    wrist as carried. (the reaches that failed, the levelling turn in deg or None for a pinch; the caller checks
+    m.fell_at)."""
     world, m = ctx.world, ctx.motor
     top = float(world.meta["surfaces"][surface_key]["top"])
     obj = world.meta["objects"][key]
@@ -474,7 +554,8 @@ def _lower_onto(ctx, key: str, side: str, xy, surface_key: str, edge_xy, face: f
     rel = pos - jaw  # object centre from the jaw centre, as carried
     rot_goal, level = None, None
     if not pick.is_top(world, key):
-        corr, level = clearance.level_rotation(clearance.up_axis(quat, obj["init_quat"]), LEVEL_MAX_DEG)
+        cap = LEVEL_MAX_DEG if level_max is None else level_max
+        corr, level = clearance.level_rotation(clearance.up_axis(quat, obj["init_quat"]), cap)
         rot_goal, rel = corr @ rot, corr @ rel
     target = np.r_[xy, top + box["half_extent"][2] - (box.get("centre") or (0, 0, 0))[2] + PLACE_CLEAR_M] - rel
     above = target + np.array([0.0, 0.0, ABOVE_M])
@@ -663,8 +744,11 @@ def set_down(ctx, key: str, surfaces, home: dict | None = None) -> str:
     """Lower the held object onto `surface_below` among `surfaces` (underside PLACE_CLEAR_M above its top), open every
     hand that touches it, retract the holding one as the put-down does (a side grasp: `_release`). Over neither, while a
     hand still grips it and `home` (the pick's stance, face, edge point, the object's start xy and support) is given:
-    walk back there and put it back where it was first (`_put_back`). Over none: just open. Returns what happened, for
-    the failure string."""
+    walk back there and put it back where it was first (`_put_back`). Over none: just open. With `home`'s "level_max"
+    (place_on's after a pick.low_grasp) both level it as the put-down does, the set-down turning the wrist about the
+    object's centre (clearance.level_rotation): a fresh vase start's (r2_on_single iteration 2) held at the
+    fingertips and set down leaning 13 deg toppled as the jaw opened and fell off its shelf. Returns what happened,
+    for the failure string."""
     world, m = ctx.world, ctx.motor
     body = world.free[key]
     hands = sorted(m.gripping(body)) or sorted(m.touching(body))
@@ -674,20 +758,27 @@ def set_down(ctx, key: str, surfaces, home: dict | None = None) -> str:
         under, back = _put_back(ctx, key, hands[0], home)
         if m.fell_at is not None:
             return f"fell {back}"
+    level = None
     if under is not None:
-        pos, _ = world.object_pose(key)
-        box = world.meta["objects"][key]["box"]
+        pos, quat = world.object_pose(key)
+        obj = world.meta["objects"][key]
+        box = obj["box"]
         bottom = float(pos[2] + (box.get("centre") or (0, 0, 0))[2] - box["half_extent"][2])
         drop = max(0.0, bottom - float(world.meta["surfaces"][under]["top"]) - PLACE_CLEAR_M)
-        jaw, _ = m.jaw_centre(hands[0])
-        ctx.note("set_down", m.reach(hands[0], jaw - np.array([0.0, 0.0, drop]), None, speed=DESCENT_SPEED),
-                 surface=under, drop_cm=round(100 * drop, 1))  # fmt: skip
+        jaw, rot = m.jaw_centre(hands[0])
+        goal, goal_rot, levelled = jaw - np.array([0.0, 0.0, drop]), None, {}
+        if (home or {}).get("level_max") is not None and not pick.is_top(world, key):
+            corr, level = clearance.level_rotation(clearance.up_axis(quat, obj["init_quat"]), home["level_max"])
+            goal, goal_rot = pos - np.array([0.0, 0.0, drop]) - corr @ (pos - jaw), corr @ rot
+            levelled = dict(level_deg=round(level, 1))
+        ctx.note("set_down", m.reach(hands[0], goal, goal_rot, speed=DESCENT_SPEED), surface=under,
+                 drop_cm=round(100 * drop, 1), **levelled)  # fmt: skip
         if m.fell_at is not None:
             return f"fell setting it down on {under}"
     if under is not None and not pick.is_top(world, key):
         for s in sorted(m.touching(body) - {hands[0]}):
             ctx.note("let_go", m.release(s))
-        _release(ctx, key, hands[0], None)
+        _release(ctx, key, hands[0], level)
     else:
         for s in sorted(m.touching(body)):
             ctx.note("let_go", m.release(s))
@@ -711,7 +802,8 @@ def _put_back(ctx, key: str, side: str, home: dict) -> tuple[str | None, str]:
         return None, f"walking back: {out.why}"
     if side not in m.gripping(world.free[key]):
         return None, "lost it walking back"
-    off, _ = _lower_onto(ctx, key, side, home["xy"], home["surface"], home["edge_xy"], home["face"])
+    off, _ = _lower_onto(ctx, key, side, home["xy"], home["surface"], home["edge_xy"], home["face"],
+                         home.get("level_max"))  # fmt: skip
     if m.fell_at is not None:
         return None, f"putting it back: {'; '.join(off)}"
     return surface_below(world, key, (home["surface"],), margin=0.0), "walked back"

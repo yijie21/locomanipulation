@@ -31,6 +31,7 @@ SIMPLE = dict(
     lift_seconds=2.0,
     disturb_limit_m=0.05,
     settle_abort_m=None,  # a settle ending farther than this from the pre-grasp retreats and fails (None: never)
+    lateral_abort_m=None,  # an entry whose grasp point sits more than this across the jaw (wrist y) fails (None: never)
 )
 TRACKING = dict(deadband=0.002, speed=0.04, acceleration=0.2, clip=0.08)  # SupportedMotion's translation feedback
 # grasp_planned.ENTRY_GATE (lateral 0.015 m, hold 2.0 s until the pick_single loop's set)
@@ -202,6 +203,8 @@ def run(
                 return done(False, f"pregrasp missed by {rec['settle_error_m'] * 100:.1f} cm")
         elif phase == "entry":
             off = object_in_palm(frame, tool_m, grip)
+            if simple["lateral_abort_m"] is not None and abs(off[1]) > simple["lateral_abort_m"]:
+                return done(False, f"entry {abs(off[1]) * 100:.1f} cm across the jaw")
             if gate["on"] and max(abs(off[1]), abs(off[2])) > gate["lateral_m"] and gate_held < gate["hold_s"]:
                 gate_held += dt
             else:
