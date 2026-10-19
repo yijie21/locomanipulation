@@ -138,6 +138,9 @@ def test_cross_room_and_unknown_or_satisfied_goals():
     assert gaps_of(["held(teapot)"])[3].startswith("held(teapot)")
     assert gaps_of(["on(bottle, T)"])[3] == "on(bottle, T): already on it"
     assert gaps_of(["upright(bottle)"])[3] == "upright(bottle): already upright"
+    covered = copy.deepcopy(META)  # a cabinet top 3 cm under the table, as the ADT kitchen's (plan section 12)
+    covered["surfaces"]["UNDER"] = dict(covered["surfaces"]["T"], top=0.59)
+    assert gaps_of(["on(bottle, UNDER)"], covered)[3] == "the goal holds at the scene pose"
 
 
 def test_the_pilot_policy_attempts_untested_but_never_blocked_tasks():

@@ -50,6 +50,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
+import digest as DG  # noqa: E402
 import family as F  # noqa: E402
 from gate import candidate_hash, overrides  # noqa: E402
 
@@ -699,9 +700,11 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
     unpark(base, n)
+    digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
+    digest.write_text(DG.build(base, FAMILY))
     common = dict(RULES=RULES, PLAN=PLAN, LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
-                  TMP=role_tmp())  # fmt: skip
+                  TMP=role_tmp(), DIGEST=digest)  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
     ctx = it_dir / "reviewer_context.json"

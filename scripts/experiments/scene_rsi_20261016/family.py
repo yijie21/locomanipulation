@@ -1,8 +1,8 @@
 """TODO 27.2.4 (plan docs/handoff/scene-rsi-plan-20261016.md D7): a task family (families/<name>.json -- the scene, the
 tasks file, the task ids, the pools' seeds and sizes) and its start pools. A pool is a directory of one JSON per start,
 `<task>_s<seed>.json` = {"task", "start"}: start i of a pool takes the family's task i mod n and seed `seed + i`
-(start.sample_start; a start the scene cannot give -- no free spot, no reachable spawn -- moves on to the next seed and
-is recorded). The diagnostic pool lives in the loop's tree, the acceptance and sealed pools in its hidden tree, and the
+(start.sample_start; a start the scene cannot give -- no free spot, no reachable spawn -- or one where the goal already
+holds (scene_discovery.lint.goal_holds, plan §12) moves on to the next seed and is recorded). The diagnostic pool lives in the loop's tree, the acceptance and sealed pools in its hidden tree, and the
 sealed pool is drawn only after the loop ends.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -23,6 +23,7 @@ REPO = HERE.parents[2]
 sys.path[:0] = [str(REPO / "src")]
 
 from locomani.primitives.navigator import build  # noqa: E402
+from locomani.scene_discovery.lint import goal_holds  # noqa: E402
 from locomani.tasks.scene.start import sample_start  # noqa: E402
 from locomani.tasks.scene.world import BODY_RADIUS_M, Task  # noqa: E402
 
@@ -59,8 +60,11 @@ def draw(fam: dict, pool: str, out: Path) -> dict:
                 st = sample_start(
                     fam["meta"], occ, nav, list(t.objects), np.random.default_rng(seed), seed=seed, room=t.room
                 )
+                if goal_holds(fam["rows"][t.id]["goal"], fam["meta"], st.to_dict()):
+                    raise RuntimeError("the goal holds at the start")
                 break
             except RuntimeError as e:
+                st = None
                 skipped.append((t.id, seed, str(e)))
                 seed += 1
         if st is None:  # the scene cannot give this task a start (no reachable spawn): out of the pool, recorded

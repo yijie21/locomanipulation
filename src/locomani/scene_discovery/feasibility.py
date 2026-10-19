@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from locomani.scene_discovery import predicates
+from locomani.scene_discovery import lint, predicates
 from locomani.scene_discovery.mjcf import SLAB
 from locomani.scene_discovery.scene_file import to_surface_frame
 
@@ -531,6 +531,8 @@ class Checker:
                     r.checks.append(Check(f"{p.name}{p.args}", "measured_task", OK, hit.get("success"), hit["name"]))
                 else:
                     r.checks.append(Check(f"{p.name}{p.args}", "skill", UNTESTED, gap=f"goal.{p.name}"))
+        if lint.goal_holds(task["goal"], self.meta):  # what the rules above miss: on(X, a surface X's covers) (§12)
+            r.invalid = "the goal holds at the scene pose"
         return r
 
     def _grasp_setting(self, step, dims: dict, settings: list) -> list[Check]:

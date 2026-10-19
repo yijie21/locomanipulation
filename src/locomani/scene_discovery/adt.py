@@ -142,6 +142,8 @@ def resting_upright(objects: dict, max_deg: float = UPRIGHT_OFF_DEG) -> dict[str
         i = int(np.argmax(np.abs(up)))
         new = [0.0, 0.0, 0.0]
         new[i] = float(np.sign(up[i]))
+        if np.allclose(new, ax):  # it rests tilted from every body axis (the supply bins, 36 deg): nothing nearer
+            continue
         out[key] = (sem.get("upright_axis"), new)
         sem["upright_axis_adt"] = sem.get("upright_axis")
         sem["upright_axis"] = new

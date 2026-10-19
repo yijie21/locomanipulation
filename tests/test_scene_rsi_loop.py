@@ -380,5 +380,58 @@ class ClaimCheck(unittest.TestCase):
             self.assertIn("error", cc.run(chk, {}, [st])["a_s1"])
 
 
+class Digest(unittest.TestCase):
+    """The Reviewer's digest (digest.py, plan section 12): failure stages, separating numbers, slip in the hand."""
+
+    def test_separators_rank_the_numbers_that_split_successes_from_failures(self):
+        dg = _fresh("scene_rsi_digest", "digest.py")
+        rows = [dict(ok=ok, steps=[dict(step="walk", ok=True, stop_err_cm=e, legs=2)]) for ok, e in
+                [(True, 1.0), (True, 1.2), (False, 4.0), (False, 5.0)]]  # fmt: skip
+        sep = dg.separators(rows)
+        self.assertEqual(len(sep), 1)  # legs is the same everywhere
+        self.assertIn("walk.stop_err_cm: successes 1.10 (n 2), failures 4.50 (n 2), rank-biserial -1.00", sep[0])
+
+    def test_first_fail_and_the_slip_between_grasp_and_release(self):
+        import numpy as np
+
+        dg = _fresh("scene_rsi_digest", "digest.py")
+        steps = [dict(step="plan_ahead", ok=True, hand="right", t0=1.0, t1=1.0),
+                 dict(step="grasp", ok=True, t0=2.0, t1=3.0), dict(step="carry", ok=False, why="lost it", t0=3.0, t1=5.0),
+                 dict(step="release", ok=True, t0=5.0, t1=6.0)]  # fmt: skip
+        r = dict(label="x_s1", task="x", ok=False, steps=steps)
+        self.assertEqual(dg.first_fail(r), ("carry", "lost it"))
+        t = np.arange(0, 7, 0.02, dtype=np.float32)
+        obj = np.zeros((len(t), 7), np.float32)
+        obj[:, 2] = np.where(t > 3, 1.0, 0.7)
+        obj[:, 0] = np.where(t >= 4, 0.05, 0.0)  # 5 cm away from the wrist during the carry
+        wrists = np.zeros((len(t), 2, 3), np.float32)
+        wrists[:, 1, 2] = np.where(t > 3, 1.0, 0.7)
+        with tempfile.TemporaryDirectory() as d:
+            np.savez(Path(d) / "x_s1.npz", t=t, wrists=wrists, obj_box_object=obj)
+            tr = dg.trace(Path(d) / "x_s1.npz", r, ["box"], {"objects": {"box": {"body": "box_object"}}})
+        self.assertEqual(tr["box"]["lift_cm"], 30.0)
+        self.assertEqual(tr["box"]["slip_cm"], 5.0)
+        self.assertNotIn("knocked_cm", tr["box"])
+
+
+class Calibrate(unittest.TestCase):
+    """The checker's calibration sample (calibrate.py, plan section 12.3)."""
+
+    def test_allocation_follows_stratum_size_with_one_each(self):
+        cal = _fresh("scene_rsi_calibrate", "calibrate.py")
+        self.assertEqual(
+            cal.allocate({"in": 55, "on": 30, "held": 10, "near": 5}, 10), {"held": 1, "in": 5, "near": 1, "on": 3}
+        )
+        self.assertEqual(sum(cal.allocate({"a": 1, "b": 1, "c": 1}, 2).values()), 2)
+        self.assertEqual(cal.allocate({"a": 2, "b": 50}, 30), {"a": 1, "b": 29})  # 1.15 and 28.85
+
+    def test_wilson_interval(self):
+        cal = _fresh("scene_rsi_calibrate", "calibrate.py")
+        self.assertEqual(cal.wilson(0, 0), [0.0, 1.0])
+        lo, hi = cal.wilson(8, 8)
+        self.assertTrue(0.6 < lo < 0.7 and hi == 1.0)
+        self.assertEqual(cal.kind(["held(x)", "near(x, y, 0.3)", "upright(x)"]), "held+near+upright")
+
+
 if __name__ == "__main__":
     unittest.main()

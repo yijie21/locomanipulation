@@ -4,6 +4,7 @@ Read first, in this order:
 1. {RULES} -- the only project rules you get. Follow them.
 2. {PLAN} sections 0, 2, 3, 7 and 8 -- what the loop is for, what the layers below the skills deliver, and how infeasibility is handled (D13).
 3. {CONTEXT} -- this iteration's inputs: the incumbent (its skills snapshot and overrides), the diagnostic summary per task and per failure, every overridable parameter with its current value, earlier iterations' hypotheses, probe results and gate verdicts, and the Manager's focus if it sent you back.
+4. {DIGEST} -- the driver's digest of the incumbent's 50 diagnostic rounds: per task the goal, the objects' and targets' sizes from the scene file (how flat an object rests against a finger pad, a container's inner box, depth and rim), where the failures first fail, and the step numbers that best separate successes from failures; per round every step's numbers and, from the trace, the object's lift, any move before the grasp and its slip in the hand. Start from it rather than re-deriving these views; open a round's .json / .npz for what it does not show.
 
 Data you may read:
 - {DIAG_INC}/<task>_s<seed>.json and .npz: the incumbent's rounds on the 50 diagnostic starts. JSON: ok, why (the goal predicate's verdict), plan_why, steps (every skill step with its outcome and numbers), fell, dropped. NPZ (50 Hz): t, mode, robot (pelvis xyz + quat), joints (MuJoCo order), ref_pelvis, ref_wrists, wrists, jaw, primitive (index into `primitives`), obj_<body> (the task object's xyz + quat).

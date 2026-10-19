@@ -38,7 +38,7 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 | `movable` | rule + claude | 仿真里是否做成自由体。ADT 的 `static` 只表示录制时没动过（书架上的书也是 `static`），所以按类别判：家具、柜体部件、墙饰 → 固定；其余 → 可移动 |
 | `part_of` | rule | 柜门 / 抽屉这类部件属于哪个家具（按名字前缀和位姿归属）；第一轮只记录，不做关节（#6） |
 | `mass_kg`、`friction` | claude → measured | Claude 按类别和尺寸估，设上下界；掉落测试后实测稳定才算通过 |
-| `upright_axis` | adt / rule | 物体系里朝上的轴，判 `upright` 用。原来取 ADT 的 `canonical_pose.up_vector`，但 64 个自由物体里有 28 个照它算是躺着的：书架里竖着的书、盆栽、水果、钥匙、遥控器、钱包，都比它们静置的姿态偏了 80–126°。所以 2026-10-18（用户定，TODO 19.15）起，凡是偏离静置朝上方向超过 30° 的，改取离静置朝上方向最近的物体轴（±x、±y、±z）。见 `adt.resting_upright`；沉降之后由 `scene_settle.py` 做，已沉降的场景用 `--upright-only`。ADT 原来的值留在 `upright_axis_adt` |
+| `upright_axis` | adt / rule | 物体系里朝上的轴，判 `upright` 用。原来取 ADT 的 `canonical_pose.up_vector`，但 64 个自由物体里有 28 个照它算是躺着的：书架里竖着的书、盆栽、水果、钥匙、遥控器、钱包，都比它们静置的姿态偏了 80–126°。所以 2026-10-18（用户定，TODO 19.15）起，凡是偏离静置朝上方向超过 30° 的，改取离静置朝上方向最近的物体轴（±x、±y、±z）。见 `adt.resting_upright`；沉降之后由 `scene_settle.py` 做，已沉降的场景用 `--upright-only`。ADT 原来的值留在 `upright_axis_adt`。物体斜着放、离哪根轴都超过 30° 的（ADT 里就斜着 36° 的两个收纳盒），轴不变，由 `scripts/scene_lint.py` 报警告 |
 | `graspable` | rule | `single` / `bimanual` / `none`，按 `capability.yaml` 的夹爪开口、箱宽、重量算 |
 | `container` | claude + rule | `{is: bool, opening_half_extent, rim_height}`；Claude 判"是不是容器"，规则核对包围盒和开口尺寸 |
 | `support` | rule | 这个物体本身能不能当台面（顶面够平够大），能的话在 `surfaces` 里有对应项 |
@@ -61,9 +61,10 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 
 MuJoCo 里每个台面是一块 1 cm 厚的板（`adt_slab_<key>`），只和物体碰。板带 1 mm 接触余量（`adt_to_scene.py` 的 `SLAB_MARGIN`，2026-10-18）。没有余量时，物体凸包落在板上只有 1–4 个接触点，在运行器的 5 ms 步长下每步都变，静置的物体会自己转：钱包 2°/s，盆栽 4°/s；加扭转摩擦、椭圆摩擦锥、noslip 都止不住。有了余量，接触点集稳定，物体停在板上方约 0.8 mm，原来是陷进去 0.75 mm。余量只加在板上，不加在物体上：一次接触取两个 geom 中较大的余量，所以爪和物体的接触不变。`scripts/experiments/scene_rsi_20261016/spin_check.py` 测每个物体静置 30 s 转过的角度和滑动的距离，结果在 `outputs/scene_rsi_20261016/physics/`。
 
-建完 MuJoCo 场景后还有两步（2026-10-18，方案 §10.2）：
+建完 MuJoCo 场景后还有三步（2026-10-18，方案 §10.2；检查 2026-10-19）：
 - **家具面板**（`scripts/scene_add_panels.py`，`/venv/main`）：家具碰撞体只和机器人碰，而且只到最低台面以下，所以书架上一排书在端头没有东西挡，往外倒；往后也一直滑，最后从背面掉下去。脚本在每个台面周围的家具网格里找面板：两个短端只要网格有面板就加；两条长边只在机器人不从那边靠近时才加（场景文件和可站边覆盖文件的 `approach_edges`，机器人干活的那一面保持敞开，和“门按开着处理”一致）。每块面板是 1 cm 厚的盒子，只和自由物体碰（contype 2；自由物体的碰撞体 conaffinity 3）。视觉被换成凸包的家具（`FURNITURE_FACES` 以上）不加面板。现在这个场景有 52 块，分在 15 件家具上，见 `<场景目录>/panels.json`。
 - **沉降**（`scripts/scene_settle.py`，sim venv）：ADT 位姿配上比物体略大的凸包，成排的书互相嵌进最多 1.3 cm，物体嵌进台面板最多 8 mm，砧板悬在岛台上方。先对平移加重阻尼、对转动加轻阻尼跑 4 s，嵌入被慢慢推开，物体不会获得速度，圆的东西（胡萝卜）还能滚到自己稳的那一面；再撤掉阻尼跑 20 s 检查，最后把落定的位姿写回 `scene_meta.json`（`init_pos`、`init_quat`）和两个 XML。报告在 `<场景目录>/settle.json`。
+- **检查**（`scripts/scene_lint.py`，sim venv，2026-10-19，方案 §12）：任何内环开跑前跑一次。竖直轴偏离静置姿态、被盖住的台面、静置 30 s 掉下去、目标开局就成立是错误，退出码 1；静置漂移、斜着放、扁物体是警告。结果写在 `<场景目录>/lint.json`（或 `--out`）。
 
 ## 4. 房间 `room`
 

@@ -51,3 +51,10 @@ def test_an_upright_axis_far_off_the_resting_up_takes_the_nearest_body_axis():
     assert objects["leaning"]["semantic"]["upright_axis"] == [0.0, 0.0, 1.0]  # the body axis nearest its resting up
     assert objects["mug"]["semantic"]["upright_axis"] == [0.0, 0.1, 1.0]
     assert objects["table"]["semantic"]["upright_axis"] == [0.0, 1.0, 0.0]  # furniture: not a free object
+
+
+def test_an_object_tilted_off_every_body_axis_keeps_its_axis():
+    a = np.radians(36)  # the supply bins rest 36 deg tilted: z is still the body axis nearest up
+    turn = adt.matrix_to_quat(np.array([[1.0, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]]))
+    objects = {"bin": dict(free=True, init_quat=turn, semantic=dict(upright_axis=[0.0, 0.0, 1.0]))}
+    assert adt.resting_upright(objects) == {}
