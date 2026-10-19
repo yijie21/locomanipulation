@@ -17,7 +17,8 @@ real G1 with `--robot mars`, `make_dex1_model.apply_mars`) and `<out>/env_only.x
 convex hull that only the robot collides with, `--furniture-collision`), support surfaces as
 slabs, every movable object as a hull (containers as five boxes), free bodies only for `--free` (default: every
 graspable movable object resting on a surface). A free body is drawn with its own textured mesh (`free_visuals`);
-its hull only collides. Then `scripts/scene_add_panels.py` (the furniture panels free objects rest against) and
+its hull only collides. Then `scripts/scene_add_panels.py` (the furniture panels free objects rest against),
+`scripts/scene_add_colliders.py` (boxes for the walls and the furniture above its lowest surface) and
 `scripts/scene_settle.py --write` (poses the simulator keeps) finish the scene (format §3). A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
 estimate stages do not depend on the robot) and run this stage there. The output is ADT-derived and stays under
 `outputs/` (plan decision 17).
