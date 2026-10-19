@@ -573,6 +573,45 @@ class CalibrationRegistry(unittest.TestCase):
         self.assertIn("--place-loop", args)
 
 
+class Successes(unittest.TestCase):
+    """The tasks the loop has made work (successes.py, plan section 13; user 2026-10-19)."""
+
+    def test_a_goal_pools_its_families_and_low_rate_successes_are_kept_apart(self):
+        from unittest import mock
+
+        saved = {k: sys.modules.pop(k, None) for k in ("gate", "regress", "calibrate")}
+        try:
+            su = _fresh("scene_rsi_successes", "successes.py")
+        finally:
+            for k, v in saved.items():
+                sys.modules.pop(k, None)
+                if v is not None:
+                    sys.modules[k] = v
+        reg = {
+            "a": dict(kind="place", last="t"),
+            "b": dict(kind="place", last="t"),
+            "c": dict(kind="calibration", last="t"),
+        }
+        tasks = {"a": {"x": dict(goal=["on(Jam, Table)"])}, "b": {"y": dict(goal=["on(Jam, Table)"])},
+                 "c": {"z": dict(goal=["held(Cup)"]), "w": dict(goal=["held(Box)"])}}  # fmt: skip
+        rounds = {("a", "t"): [("x", 1, True), ("x", 2, True)], ("a", "seed"): [("x", 1, False), ("x", 9, True)],
+                  ("b", "t"): [("y", 3, False), ("y", 4, False)], ("b", "seed"): [],
+                  ("c", "t"): [("z", 5, True), ("z", 6, False), ("z", 7, False), ("w", 8, False)]}  # fmt: skip
+        with tempfile.TemporaryDirectory() as d:
+            for (f, tag), recs in rounds.items():
+                (Path(d) / f / tag).mkdir(parents=True)
+                for task, i, ok in recs:
+                    (Path(d) / f / tag / f"{task}_s{i}.json").write_text(json.dumps(dict(task=task, ok=ok)))
+            with mock.patch.multiple(su.R, load=lambda: reg, rounds_dir=lambda f, row, tag: Path(d) / f / tag):
+                with mock.patch.object(su, "tasks_of", lambda f: tasks[f]):
+                    gs = su.goals()
+        jam, cup, box = (gs[su.norm(g)] for g in (["on(Jam, Table)"], ["held(Cup)"], ["held(Box)"]))
+        self.assertEqual((jam["ok"], jam["n"], jam["seed_ok"], jam["seed_n"]), (2, 4, 0, 1))  # seed paired by start
+        self.assertEqual((jam["status"], jam["trained"], len(jam["runs"])), ("works", True, 2))
+        self.assertEqual((cup["status"], cup["trained"], cup["seed_n"]), ("low", False, 0))
+        self.assertEqual(box["status"], "none")
+
+
 class Calibrate(unittest.TestCase):
     """The checker's calibration sample (calibrate.py, plan section 12.3)."""
 

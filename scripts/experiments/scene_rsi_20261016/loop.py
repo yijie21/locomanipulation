@@ -12,7 +12,8 @@ The Engineer may change only the sandbox's skills package (src/locomani/tasks/sc
 voids the call and is restored. On a rejection the package goes back to the incumbent's snapshot.
 
 Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, gate calls >= 12,
-wall clock >= MAX_WALL_H, model cost >= COST_CAP, 3 rejections in a row with no new hypothesis, a Manager `stop`; and
+wall clock >= MAX_WALL_H, 3 rejections in a row with no new hypothesis, a Manager `stop` (model cost has no cap since
+the user lifted it on 2026-10-19; RSI_COST_CAP_USD sets one); and
 (D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
 least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
 tasks (`accept_pool`, rule 26).
@@ -61,7 +62,7 @@ SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 PLAN = REPO / "docs" / "handoff" / "scene-rsi-plan-20261016.md"
 RULES = HERE / "rules.md"
 MODEL = os.environ.get("RSI_MODEL", "claude-opus-5-5")
-COST_CAP = float(os.environ.get("RSI_COST_CAP_USD", "150"))
+COST_CAP = float(os.environ["RSI_COST_CAP_USD"]) if "RSI_COST_CAP_USD" in os.environ else None  # user 10-19: no cap
 MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", "6"))
 MAX_GATE_CALLS = 12
 MAX_REJECT_STREAK = 3
@@ -266,7 +267,7 @@ def stop_reason(meta: dict) -> str | None:
     if (time.time() - meta["started_s"]) / 3600 >= MAX_WALL_H:
         return f"wall clock >= {MAX_WALL_H} h"
     cost = sum(e.get("cost_usd", 0.0) for e in es)
-    if cost >= COST_CAP:
+    if COST_CAP is not None and cost >= COST_CAP:
         return f"model cost {cost:.0f} >= {COST_CAP:.0f} USD"
     streak = 0
     for e in reversed(es):
@@ -502,7 +503,7 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
         "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
-        "--max-budget-usd", str(max(1.0, COST_CAP / 8)),
+        *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
     ]  # fmt: skip
     session = str(uuid.uuid4())
     t0 = time.time()

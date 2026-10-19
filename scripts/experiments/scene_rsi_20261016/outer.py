@@ -10,9 +10,9 @@ goal shape and hand count: every bucket-2 task whose goal is held(X) with a sing
 held(X) + near(X, Y) a third (`held+near_single`: carry it there), and so on; upright rides along. The inner loops' gap proposals (`loop/gaps.jsonl` of every
 finished family under --loops) are gaps too, with the tasks they name. Ranked by tasks unlocked / estimated cost:
 EST_USD_EXTEND for a gap whose skill exists (the pick_single loop spent 73 USD of model fees on its first five
-iterations), EST_USD_NEW per skill the checker says is missing; the first MAX_GAPS within ROUND_BUDGET_USD are
-selected (D9: two rounds, 2000 USD), and they run one after another, each on the catalog the previous one wrote back
-(no merge of two loops' edits to one skill). Writes `<round dir>/selection.json`.
+iterations), EST_USD_NEW per skill the checker says is missing; the first MAX_GAPS are selected (D9; its 2000 USD
+budget was lifted by the user on 2026-10-19, so the estimate only ranks), and they run one after another, each on
+the catalog the previous one wrote back (no merge of two loops' edits to one skill). Writes `<round dir>/selection.json`.
 
 `family <round dir> <gap>`: families/<name>.json for a selected gap -- at most MAX_TASKS tasks, spread over the gap's
 range (sorted by how far outside the measured settings they are, then every k-th), pools 50 / 60 / 80 with seeds in a
@@ -45,7 +45,6 @@ SCENE = "outputs/scene_discovery/adt_apartment_mars"
 EST_USD_EXTEND = 75.0
 EST_USD_NEW = 150.0
 MAX_GAPS = 6  # D9
-ROUND_BUDGET_USD = 1000.0  # D9: 2000 USD over two rounds
 MAX_TASKS = 10  # per family: 8 sealed starts per task at 80
 POOLS = {"diag": 50, "accept": 60, "sealed": 80}
 SEED_BLOCK = 10000  # family k: diag 100000 + k block, accept 200000 + .., sealed 300000 + ..; round r adds ROUND_SEEDS
@@ -157,12 +156,12 @@ def select(round_dir: Path, loops: list[Path]) -> dict:
     gaps.sort(key=lambda g: (-g["per_usd"], -g["n"], g["name"]))
     chosen, spent = [], 0.0
     for g in gaps:
-        if len(chosen) < MAX_GAPS and spent + g["est_usd"] <= ROUND_BUDGET_USD and g["n"] > 0:
+        if len(chosen) < MAX_GAPS and g["n"] > 0:
             chosen.append(g["name"])
             spent += g["est_usd"]
     out = dict(round=round_dir.name, discovered=len(rows), buckets=dict(sorted(buckets.items())), gaps=gaps,
                skipped_proposals=skipped, selected=chosen, est_usd=spent, rule=f"tasks / estimated USD (extend {EST_USD_EXTEND}, new skill "
-               f"{EST_USD_NEW} each); first {MAX_GAPS} within {ROUND_BUDGET_USD} USD")  # fmt: skip
+               f"{EST_USD_NEW} each); first {MAX_GAPS}")  # fmt: skip
     (round_dir / "selection.json").write_text(json.dumps(out, indent=1))
     return out
 
