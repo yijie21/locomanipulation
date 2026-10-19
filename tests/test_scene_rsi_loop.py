@@ -441,6 +441,23 @@ class Digest(unittest.TestCase):
         self.assertNotIn("knocked_cm", tr["box"])
 
 
+class SimSlots(unittest.TestCase):
+    def test_slots_are_shared_and_freed_with_their_holder(self):
+        from unittest import mock
+
+        bt = _fresh("scene_rsi_batch_slots", "batch.py")
+        with tempfile.TemporaryDirectory() as d, mock.patch.multiple(bt, SIM_SLOTS=2, SLOTS_DIR=Path(d)):
+            a, b = bt.take_slot(), bt.take_slot()
+            self.assertIsNotNone(a)
+            self.assertIsNotNone(b)
+            self.assertIsNone(bt.take_slot())  # both held
+            a.close()
+            c = bt.take_slot()
+            self.assertIsNotNone(c)
+            b.close()
+            c.close()
+
+
 class OuterGroups(unittest.TestCase):
     def test_a_task_whose_pick_has_a_gap_joins_the_pick_family(self):
         sys.path.insert(0, str(HERE))
@@ -455,6 +472,37 @@ class OuterGroups(unittest.TestCase):
         self.assertEqual(outer.group(row, meta), "held_single")
         row["checks"][0].update(outcome="ok", gap="")
         self.assertEqual(outer.group(row, meta), "in_single")
+
+
+class OuterRun(unittest.TestCase):
+    def setUp(self):
+        self.run_mod = _fresh("scene_rsi_outer_run", "outer_run.py")
+
+    def test_kind_follows_the_goals(self):
+        k = self.run_mod.kind_of
+        self.assertEqual([k(f) for f in ("r2_held_near_single", "r2_in_single", "r2_on_single", "r2_held_single",
+                                         "r2_in_room_none")], ["near", "into", "place", "held", "none"])  # fmt: skip
+
+    def test_a_blocked_step_stops_the_family_and_resumes_after(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as d:
+            f = self.run_mod.Family(Path(d), "r2_on_single")
+            calls = []
+            ok = lambda name: lambda: calls.append(name)  # noqa: E731
+
+            def lint():
+                raise self.run_mod.Blocked("lint: a goal holds at every start")
+
+            with mock.patch.multiple(f, sandbox_=ok("sandbox"), lint_=lint, loop_=ok("loop")):
+                self.assertFalse(f.advance("writeback"))
+            self.assertEqual((f.state["step"], calls), ("lint", ["sandbox"]))
+            self.assertIn("goal holds", json.loads(f.state_file.read_text())["blocked"])
+            g = self.run_mod.Family(Path(d), "r2_on_single")  # a restarted driver reads the state
+            with mock.patch.multiple(g, lint_=ok("lint"), loop_=ok("loop"), sealed_=ok("sealed")):
+                self.assertTrue(g.advance("writeback"))
+            self.assertEqual((g.state["step"], g.state["blocked"]), ("writeback", None))
+            self.assertEqual(calls, ["sandbox", "lint", "loop", "sealed"])
 
 
 class Calibrate(unittest.TestCase):

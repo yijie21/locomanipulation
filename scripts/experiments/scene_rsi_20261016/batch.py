@@ -2,10 +2,17 @@
 job -- one skills directory with its overrides, on some starts of a pool -- is cut into shards of SHARD_ROUNDS starts,
 and all shards share one pool of `procs` processes spread over the GPUs, so a slot takes the next shard as soon as it
 frees. Rounds already written under the current success rule are skipped (a batch resumes); a round judged under an
-older rule is set aside as `_rule<n>_<label>.*` and run again."""
+older rule is set aside as `_rule<n>_<label>.*` and run again.
+
+Every shard also holds one of SIM_SLOTS machine-wide slots (a locked file under SLOTS_DIR) while it runs, so batches
+from several sandboxes at once -- two families' loops side by side (TODO 27.10.7, plan §12.6) -- share the machine
+instead of each taking `procs` (12 processes of OMP 2 already fill the container's 15.36 cores). The lock goes with
+the process holding it. A round's outcome does not depend on the schedule (the 2026-10-19 regression re-ran every
+family's sealed pool with 2 processes against records made with 12: identical)."""
 
 from __future__ import annotations
 
+import fcntl
 import json
 import math
 import os
@@ -19,6 +26,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 SHARD_ROUNDS = 2
+SIM_SLOTS = int(os.environ.get("RSI_SIM_SLOTS", "12"))  # simulation processes across all sandboxes at once; 0: no cap
+SLOTS_DIR = Path(os.environ.get("RSI_SIM_SLOTS_DIR", "/workspace/tmp/rsi_sim_slots"))
 # 1: held(X) = a finger touches it, off its surface (to 2026-10-16); 2: both fingers of one hand, or both hands (TODO 27.9)
 SUCCESS_RULE = 2
 
@@ -50,6 +59,19 @@ def retire(f: Path) -> None:
     for p in (f, f.with_suffix(".npz")):
         if p.exists():
             p.rename(p.with_name(f"_rule{rule}_{p.name}"))
+
+
+def take_slot():
+    """A free machine-wide slot (its locked file, held open), or None when all SIM_SLOTS are taken."""
+    SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    for i in range(SIM_SLOTS):
+        fh = open(SLOTS_DIR / f"slot_{i:02d}", "w")
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except BlockingIOError:
+            fh.close()
+    return None
 
 
 def pool_labels(pool: Path) -> list[str]:
@@ -84,22 +106,30 @@ def run_jobs(
             if job.npz:
                 cmd.append("--npz")
             queue.append(cmd)
-    running: list[tuple[subprocess.Popen, str]] = []
+    running: list[tuple[subprocess.Popen, str, object]] = []  # (process, GPU, its slot)
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a") as fh:
         while queue or running:
             if stop is not None and stop.is_set():
-                for p, _ in running:
+                for p, _, slot in running:
                     p.kill()
                     p.wait()
+                    if slot is not None:
+                        slot.close()
                 break
             while queue and len(running) < procs:
-                d = min(devices, key=lambda x: sum(g == x for _, g in running))
+                slot = take_slot() if SIM_SLOTS else None
+                if SIM_SLOTS and slot is None:  # another sandbox's batch holds every slot
+                    break
+                d = min(devices, key=lambda x: sum(g == x for _, g, _ in running))
                 p = subprocess.Popen(queue.pop(0), cwd=REPO, env={**env, "CUDA_VISIBLE_DEVICES": d}, stdout=fh,
                                      stderr=subprocess.STDOUT)  # fmt: skip
-                running.append((p, d))
+                running.append((p, d, slot))
             time.sleep(0.5)
-            running = [(p, d) for p, d in running if p.poll() is None]
+            for p, _, slot in running:
+                if p.poll() is not None and slot is not None:
+                    slot.close()
+            running = [(p, d, slot) for p, d, slot in running if p.poll() is None]
     return {k: [x for x in todo[k] if not done(jobs[k].out / f"{x}.json")] for k in todo}
 
 

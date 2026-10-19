@@ -129,6 +129,7 @@ def main(argv=None) -> int:
     if "rest" in rep:
         errors += [f"{k} falls or leaves its surface at rest: {v}" for k, v in rep["rest"]["fell"].items()]
         warnings += [f"{k} drifts at rest: {v}" for k, v in rep["rest"]["drifts"].items()]
+    scene_errors = list(errors)
     for f, res in rep["tasks"].items():
         for tid, r in res.items():
             if r["scene_pose"]:
@@ -137,7 +138,8 @@ def main(argv=None) -> int:
                 errors.append(f"{Path(f).parent.name}/{tid}: the goal holds at all {r['starts']} drawn starts")
             elif r["holds"]:
                 warnings.append(f"{Path(f).parent.name}/{tid}: the goal holds at {len(r['holds'])} of {r['starts']} drawn starts")  # fmt: skip
-    rep.update(errors=errors, warnings=warnings, seconds=round(time.time() - t0))
+    rep.update(errors=errors, scene_errors=scene_errors, task_errors=errors[len(scene_errors) :], warnings=warnings,
+               seconds=round(time.time() - t0))  # fmt: skip
     out = a.out or a.scene
     out.mkdir(parents=True, exist_ok=True)
     (out / "lint.json").write_text(json.dumps(rep, indent=1, default=float))
