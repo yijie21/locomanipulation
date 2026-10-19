@@ -523,6 +523,11 @@ class ReviewReplay(unittest.TestCase):
         prompt = (HERE / "prompts" / "reviewer.md").read_text()
         self.assertIn("{DIGEST}", prompt)
         self.assertNotIn("{DIGEST}", rr.DIGEST_ITEM.sub("", prompt))
+        lib = rr.DIGEST_ITEM.sub(lambda m: m.group(0) + rr.LIBRARY_ITEM, prompt)  # the library arm: item 5 after 4
+        self.assertLess(lib.index("4. {DIGEST}"), lib.index("5. {LIBRARY}"))
+        cmd = "cd /workspace/code/rsi-scene/replay2-r2on; sed -n 1,9p /workspace/code/locomanipulation/docs/x.md | head"
+        self.assertEqual(rr.PATH.findall(cmd), ["/workspace/code/rsi-scene/replay2-r2on",
+                                                "/workspace/code/locomanipulation/docs/x.md"])  # fmt: skip
 
 
 class CreepSection(unittest.TestCase):

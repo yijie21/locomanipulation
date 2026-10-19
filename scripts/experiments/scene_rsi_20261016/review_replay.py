@@ -16,7 +16,9 @@ iteration:
 recorded diagnostic rounds (`replay/recorded_diag`, what the Reviewer reads) and the diagnostic pool, and the
 original hypotheses and their cost as tag `orig`. `review` puts the incumbent's skills in place and runs the Reviewer
 with the loop's own call (`loop.claude`): `plain` is reviewer.md without the digest item, `digest` is reviewer.md with
-the digest built from the recorded rounds. `probe` re-runs the incumbent on the diagnostic pool in this scene once
+the digest built from the recorded rounds, `library` adds item 5, an experience library (`--library`), after the
+digest. Every review records the absolute paths it named outside this sandbox (`outside`): a replay sandbox must hold
+only what the replayed iteration had (build it from that run's own sandbox commit, plus this tooling). `probe` re-runs the incumbent on the diagnostic pool in this scene once
 (the baseline) and each distinct parameter set the tags' hypotheses ask for, as the loop's Prober does,
 then scores every tag's hypotheses against the baseline. `report` writes `replay/report.json`: per tag the
 cost, minutes, turns, tool calls, mean context per turn, hypotheses, and the probes' best and summed gains and
@@ -43,6 +45,13 @@ import loop as L  # noqa: E402
 
 DIGEST_ITEM = re.compile(r"^4\. \{DIGEST\}.*\n", re.M)
 CONTEXT_KEYS = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")  # what a turn re-reads
+LIBRARY_ITEM = (
+    "5. {LIBRARY} -- the experience library: what earlier families established about this robot, its skills and the "
+    "scene, one entry per trigger (when it applies; the rule and its numbers; the evidence; its limits). Check a failure "
+    "against it before re-deriving its mechanism. It was true when written: where the code or a round disagrees, trust "
+    "them and say which entry is wrong.\n"
+)
+PATH = re.compile(r"(?:/workspace|/home)/[^\s\"'`;|&)]+")
 
 
 def replay_dir() -> Path:
@@ -78,7 +87,24 @@ def setup(src: Path, family: str, n: int) -> None:
     )
 
 
-def review(family: str, arm: str, tag: str) -> None:
+def outside_reads(session: str | None, allowed: list[Path]) -> list[str]:
+    """Absolute paths a session's tool calls named outside `allowed` (this sandbox, its scratch dir): another checkout's
+    docs are knowledge the replayed iteration never had."""
+    p = L.transcript(session)
+    if p is None:
+        return []
+    roots, found = [str(a) for a in allowed], set()
+    for line in p.open():
+        e = json.loads(line)
+        if e.get("type") != "assistant":
+            continue
+        for b in e["message"].get("content") or ():
+            if b.get("type") == "tool_use":
+                found |= {m for m in PATH.findall(json.dumps(b["input"])) if not m.startswith(tuple(roots))}
+    return sorted(found)
+
+
+def review(family: str, arm: str, tag: str, library: Path | None = None) -> None:
     L.configure(family)
     out = replay_dir()
     ctx = out / "reviewer_context.json"
@@ -89,21 +115,25 @@ def review(family: str, arm: str, tag: str) -> None:
     base = out / "recorded_diag"
     template = (HERE / "prompts" / "reviewer.md").read_text()
     digest = it_dir / "diag_digest.md"
-    if arm == "digest":
+    if arm in ("digest", "library"):
         digest.write_text(DG.build(base, family))
     else:
         template = DIGEST_ITEM.sub("", template)
+    if arm == "library":  # the digest's item, then the library's
+        shutil.copy(library, it_dir / "library.md")
+        template = DIGEST_ITEM.sub(lambda m: m.group(0) + LIBRARY_ITEM, template)
     common = dict(RULES=L.RULES, PLAN=L.PLAN, LOOP=L.LOOP, SIM_PY=L.SIM_PY, DIAG_INC=base, SKILLS=L.SKILLS,
                   FAMILY=family, FAMILY_FILE=HERE / "families" / f"{family}.json", POOL=L.LOOP / "pool_diag",
-                  INC_DIR=inc["dir"], TMP=L.role_tmp(), DIGEST=digest)  # fmt: skip
+                  INC_DIR=inc["dir"], TMP=L.role_tmp(), DIGEST=digest, LIBRARY=it_dir / "library.md")  # fmt: skip
     prompt = L.fill(template, CONTEXT=ctx, **common)
     hyps, acct = L.claude("reviewer", prompt, L.HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent")
     (it_dir / "hypotheses.json").write_text(json.dumps(hyps, indent=1))
     acct["leaks"] = L.transcript_leaks(acct["session"])
+    acct["outside"] = outside_reads(acct["session"], [REPO, L.role_tmp(), Path("/workspace/tmp")])
     acct["arm"] = arm
     (it_dir / "acct.json").write_text(json.dumps(acct, indent=1, default=str))
     print(f"[replay] {tag} ({arm}): {len(hyps['hypotheses'])} hypotheses, {acct['cost_usd']:.2f} USD, "
-          f"{acct['seconds'] / 60:.0f} min, leaks {acct['leaks']}")  # fmt: skip
+          f"{acct['seconds'] / 60:.0f} min, leaks {acct['leaks']}, outside reads {acct['outside']}")  # fmt: skip
 
 
 def delta_key(h: dict) -> str:
@@ -189,7 +219,7 @@ def report(family: str) -> None:
             hypotheses=len(hyps["hypotheses"]), claims=len(hyps.get("infeasible") or []),
             probe_ok_before=pr[0]["ok_before"] if pr and "ok_before" in pr[0] else None,
             best_gain=max(gains) if gains else None, gains=gains, predicted_fixed_hit=f"{hit}/{pred}",
-            leaks=acct.get("leaks"), claims_text=[h["claim"][:160] for h in hyps["hypotheses"]],
+            leaks=acct.get("leaks"), outside=acct.get("outside"), claims_text=[h["claim"][:160] for h in hyps["hypotheses"]],
         )  # fmt: skip
     (out / "report.json").write_text(json.dumps(rows, indent=1))
     for k, r in rows.items():
@@ -206,8 +236,9 @@ def main(argv=None) -> int:
     s.add_argument("iter", type=int)
     r = sub.add_parser("review")
     r.add_argument("family")
-    r.add_argument("--arm", choices=("plain", "digest"), required=True)
+    r.add_argument("--arm", choices=("plain", "digest", "library"), required=True)
     r.add_argument("--tag", required=True)
+    r.add_argument("--library", type=Path, help="the experience library (arm library)")
     p = sub.add_parser("probe")
     p.add_argument("family")
     p.add_argument("tags", nargs="+")
@@ -218,7 +249,9 @@ def main(argv=None) -> int:
     if a.cmd == "setup":
         setup(a.src, a.family, a.iter)
     elif a.cmd == "review":
-        review(a.family, a.arm, a.tag)
+        if a.arm == "library" and a.library is None:
+            ap.error("--arm library needs --library")
+        review(a.family, a.arm, a.tag, a.library.resolve() if a.library else None)
     elif a.cmd == "probe":
         probe(a.family, a.tags, [t for t in a.skip.split(",") if t])
     else:
