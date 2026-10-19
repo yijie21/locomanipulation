@@ -505,6 +505,26 @@ class OuterRun(unittest.TestCase):
             self.assertEqual(calls, ["sandbox", "lint", "loop", "sealed"])
 
 
+class ReviewReplay(unittest.TestCase):
+    """The digest replay (review_replay.py, plan section 12.2)."""
+
+    def test_one_probe_per_parameter_set_and_the_plain_arm_drops_the_digest(self):
+        saved = {k: sys.modules.pop(k, None) for k in ("loop", "digest")}
+        try:
+            rr = _fresh("scene_rsi_review_replay", "review_replay.py")
+        finally:
+            for k, v in saved.items():
+                sys.modules.pop(k, None)
+                if v is not None:
+                    sys.modules[k] = v
+        key = rr.delta_key
+        self.assertEqual(key(dict(delta={"set": {"a.X": 1, "a.Y": 2}})), key(dict(delta={"set": {"a.Y": 2, "a.X": 1}})))
+        self.assertNotEqual(key(dict(delta={"set": {"a.X": 1}})), key(dict(delta={"set": {"a.X": 1.0001}})))
+        prompt = (HERE / "prompts" / "reviewer.md").read_text()
+        self.assertIn("{DIGEST}", prompt)
+        self.assertNotIn("{DIGEST}", rr.DIGEST_ITEM.sub("", prompt))
+
+
 class Calibrate(unittest.TestCase):
     """The checker's calibration sample (calibrate.py, plan section 12.3)."""
 

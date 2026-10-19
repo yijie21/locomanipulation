@@ -17,13 +17,16 @@ recorded diagnostic rounds (`replay/recorded_diag`, what the Reviewer reads) and
 original hypotheses and their cost as tag `orig`. `review` puts the incumbent's skills in place and runs the Reviewer
 with the loop's own call (`loop.claude`): `plain` is reviewer.md without the digest item, `digest` is reviewer.md with
 the digest built from the recorded rounds. `probe` re-runs the incumbent on the diagnostic pool in this scene once
-(the baseline) and each tag's hypotheses as the loop's Prober does. `report` writes `replay/report.json`: per tag the
-cost, minutes, tool calls, hypotheses, and the probes' best and summed gains and prediction hit rates.
+(the baseline) and each distinct parameter set the tags' hypotheses ask for, as the loop's Prober does,
+then scores every tag's hypotheses against the baseline. `report` writes `replay/report.json`: per tag the
+cost, minutes, turns, tool calls, mean context per turn, hypotheses, and the probes' best and summed gains and
+prediction hit rates.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -34,10 +37,12 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+import batch as B  # noqa: E402
 import digest as DG  # noqa: E402
 import loop as L  # noqa: E402
 
 DIGEST_ITEM = re.compile(r"^4\. \{DIGEST\}.*\n", re.M)
+CONTEXT_KEYS = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")  # what a turn re-reads
 
 
 def replay_dir() -> Path:
@@ -101,26 +106,70 @@ def review(family: str, arm: str, tag: str) -> None:
           f"{acct['seconds'] / 60:.0f} min, leaks {acct['leaks']}")  # fmt: skip
 
 
-def probe(family: str, tags: list[str]) -> None:
+def delta_key(h: dict) -> str:
+    return hashlib.sha1(json.dumps(h["delta"].get("set", {}), sort_keys=True).encode()).hexdigest()[:12]
+
+
+def probe(family: str, tags: list[str], skip: list[str]) -> None:
+    """The loop's probe (loop.probe) once per distinct parameter set over all tags (tags repeat each other's
+    deltas), on the diagnostic starts minus those of the tasks in `skip` (tasks the scene no longer has)."""
     L.configure(family)
     out = replay_dir()
     inc = json.loads((out / "reviewer_context.json").read_text())["incumbent"]
-    L.put_skills(Path(inc["dir"]) / "skills")
-    base_dir = out / "baseline"
-    base_dir.mkdir(exist_ok=True)
-    base = L.diag_incumbent(inc, base_dir)  # this scene's incumbent rounds on the same starts
-    for tag in tags:
-        hyps = json.loads((out / tag / "hypotheses.json").read_text())["hypotheses"]
-        res = L.probe(hyps, inc, base, out / tag)
+    skills = Path(inc["dir"]) / "skills"
+    L.put_skills(skills)
+    pool = L.LOOP / "pool_diag"
+    labels = tuple(x for x in B.pool_labels(pool) if not any(x.startswith(f"{t}_s") for t in skip))
+    hyps = {tag: json.loads((out / tag / "hypotheses.json").read_text())["hypotheses"] for tag in tags}
+    sets = {delta_key(h): h["delta"].get("set", {}) for hs in hyps.values() for h in hs}
+    base, shared = out / "baseline", out / "probes"
+    jobs = [B.Job(skills, base, inc["set"], labels)]
+    jobs += [B.Job(skills, shared / k, {**inc["set"], **s}, labels) for k, s in sorted(sets.items())]
+    (out / "probes.json").write_text(json.dumps(dict(skip=skip, labels=len(labels), sets=sets), indent=1))
+    B.run_jobs(jobs, family, pool, L.PROCS, out / "prober.log", L.GPUS)
+    recorded = {k: r["ok"] for k, r in B.outcomes(out / "recorded_diag").items() if k in labels}
+    before = {k: r["ok"] for k, r in B.outcomes(base).items() if k in labels}
+    differ = sorted(k for k in before if recorded.get(k) != before[k])
+    print(f"[replay] baseline {sum(before.values())}/{len(before)}, recorded {sum(recorded.values())}/{len(recorded)}, "
+          f"rounds that differ {differ}")  # fmt: skip
+    for tag, hs in hyps.items():
+        res = []
+        for h in hs:
+            after = {k: r["ok"] for k, r in B.outcomes(shared / delta_key(h)).items() if k in labels}
+            if not after:
+                res.append(dict(id=h["id"], error="no rounds ran (an unknown parameter? see prober.log)"))
+                continue
+            fixed = sorted(k for k in after if after[k] and not before.get(k))
+            broken = sorted(k for k in after if before.get(k) and not after[k])
+            pf, pb = set(h["predicted_fixed"]) & set(labels), set(h["predicted_broken"]) & set(labels)
+            res.append(dict(id=h["id"], key=delta_key(h), n=len(after), ok_before=sum(before.values()),
+                            ok_after=sum(after.values()), fixed=fixed, broken=broken,
+                            predicted_fixed_hit=len(pf & set(fixed)), predicted_fixed_n=len(pf),
+                            predicted_broken_hit=len(pb & set(broken)), predicted_broken_n=len(pb),
+                            summary=L.summarize(shared / delta_key(h))))  # fmt: skip
         (out / tag / "probe.json").write_text(json.dumps(res, indent=1))
         print(f"[replay] {tag}: " + ", ".join(f"{r['id']} {r.get('ok_before')}->{r.get('ok_after')}" for r in res))
 
 
-def tool_calls(session: str | None) -> int | None:
-    p = L.transcript(session)
-    if p is None:
-        return None
-    return sum(line.count('"type":"tool_use"') + line.count('"type": "tool_use"') for line in p.open())
+def turns(session: str | None) -> dict:
+    """Model turns, tool calls and the context each turn re-read (k tokens), from the session's transcript; `orig`'s
+    lives under the finished sandbox's project."""
+    p = L.transcript(session) or next(iter((Path.home() / ".claude" / "projects").glob(f"*/{session}.jsonl")), None)
+    if not session or p is None:
+        return dict(turns=None, tool_calls=None, context_k_mean=None, context_k_max=None)
+    seen, ctx, tools = set(), [], 0
+    for line in p.open():
+        e = json.loads(line)
+        if e.get("type") != "assistant":
+            continue
+        m = e["message"]
+        tools += sum(b.get("type") == "tool_use" for b in m.get("content") or ())
+        if m.get("id") not in seen:
+            seen.add(m.get("id"))
+            u = m.get("usage") or {}
+            ctx.append(sum(u.get(k, 0) for k in CONTEXT_KEYS))
+    return dict(turns=len(ctx), tool_calls=tools, context_k_mean=round(sum(ctx) / len(ctx) / 1000) if ctx else None,
+                context_k_max=round(max(ctx) / 1000) if ctx else None)  # fmt: skip
 
 
 def report(family: str) -> None:
@@ -136,7 +185,7 @@ def report(family: str) -> None:
         pred = sum(r.get("predicted_fixed_n", 0) for r in pr)
         rows[d.name] = dict(
             arm=acct.get("arm", "plain (original)"), cost_usd=round(float(acct.get("cost_usd") or 0), 2),
-            minutes=round(float(acct.get("seconds") or 0) / 60, 1), tool_calls=tool_calls(acct.get("session")),
+            minutes=round(float(acct.get("seconds") or 0) / 60, 1), **turns(acct.get("session")),
             hypotheses=len(hyps["hypotheses"]), claims=len(hyps.get("infeasible") or []),
             probe_ok_before=pr[0]["ok_before"] if pr and "ok_before" in pr[0] else None,
             best_gain=max(gains) if gains else None, gains=gains, predicted_fixed_hit=f"{hit}/{pred}",
@@ -144,7 +193,8 @@ def report(family: str) -> None:
         )  # fmt: skip
     (out / "report.json").write_text(json.dumps(rows, indent=1))
     for k, r in rows.items():
-        print(k, {x: r[x] for x in ("arm", "cost_usd", "minutes", "tool_calls", "hypotheses", "best_gain", "gains")})
+        print(k, {x: r[x] for x in ("arm", "cost_usd", "minutes", "turns", "tool_calls", "context_k_mean", "hypotheses",
+                                    "best_gain", "gains", "predicted_fixed_hit")})  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -161,6 +211,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("probe")
     p.add_argument("family")
     p.add_argument("tags", nargs="+")
+    p.add_argument("--skip", default="", help="comma-separated tasks to leave out (gone from the scene)")
     q = sub.add_parser("report")
     q.add_argument("family")
     a = ap.parse_args(argv)
@@ -169,7 +220,7 @@ def main(argv=None) -> int:
     elif a.cmd == "review":
         review(a.family, a.arm, a.tag)
     elif a.cmd == "probe":
-        probe(a.family, a.tags)
+        probe(a.family, a.tags, [t for t in a.skip.split(",") if t])
     else:
         report(a.family)
     return 0
