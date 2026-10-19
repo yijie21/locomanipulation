@@ -389,3 +389,34 @@ def test_a_flat_object_above_every_measured_flat_pick_is_a_pick_gap():
     r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["held(card)"]})
     assert "grasp_single.flat" not in r.gaps  # a flat pick measured at this height
     assert "grasp_single.flat" not in gaps_of(["held(bottle)"])[1]
+
+
+CREEP = dict(rate_m_s=0.00062, pad_half_m=0.014, put_in=True, top_pinch=dict(half_height_max=0.02, support_top_max=0.6),
+             t_est_s=dict(base=32.1, per_m=8.13, put_in=25.3, near_drop=22.6))  # fmt: skip
+
+
+def test_a_carry_longer_than_the_pad_margin_allows_is_a_creep_gap():
+    meta = copy.deepcopy(META)
+    meta["objects"]["candle"] = obj([0.1, -0.24], 0.62, [0.03, 0.03, 0.025])  # 1.1 cm of pad margin
+    meta["objects"]["remote"] = obj([-2.0, -0.24], 0.10, [0.02, 0.08, 0.01], surface="LOW")  # the top-down pinch
+    cap = copy.deepcopy(CAP)
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["on(candle, HIGH)"]})
+    assert not any(c.name == "creep_margin" for c in r.checks)  # a table without the creep section: no rule
+    cap["carry"]["single_arm"]["creep"] = CREEP
+    check = feasibility.Checker(copy.deepcopy(meta), cap).check
+    r = check({"id": "t", "goal": ["on(candle, HIGH)"]})
+    (c,) = [c for c in r.checks if c.name == "creep_margin"]
+    assert c.step == "carry(candle -> HIGH)" and c.outcome == feasibility.UNTESTED and c.measured[0] == 0.011
+    assert "carry_single.creep" in r.gaps and r.bucket() == 2
+    seconds = 32.1 + 8.13 * next(k.measured for k in r.checks if k.name == "carry_distance")
+    assert c.measured[1] == round(seconds, 1) and c.bound == round(0.00062 * seconds, 4)
+    r = check({"id": "t", "goal": ["on(bottle, HIGH)"]})  # 6.6 cm of margin
+    assert [k.outcome for k in r.checks if k.name == "creep_margin"] == [feasibility.OK]
+    r = check({"id": "t", "goal": ["in(candle, basket)"]})  # the near drop on its own table: 22.6 s, 1.4 cm
+    (c,) = [c for c in r.checks if c.name == "creep_margin"]
+    assert c.step == "place(candle in basket)" and c.measured == [0.011, 22.6] and "carry_single.creep" in r.gaps
+    r = check({"id": "t", "goal": ["on(remote, T)"]})  # carried, but exempt
+    assert any(c.name == "carry_distance" for c in r.checks) and not any(c.name == "creep_margin" for c in r.checks)
+    cap["carry"]["single_arm"]["creep"] = dict(CREEP, put_in=False)  # into.CREEP off: put-ins are not refused
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["in(candle, basket)"]})
+    assert "carry_single.creep" not in r.gaps

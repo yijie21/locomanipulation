@@ -12,7 +12,9 @@ A single-hand grasp is matched against the measured settings whole (`reach_singl
 come from the setting it misses on fewest dimensions, and they all pass only inside one setting. A grasp at least as
 hard as a failed pilot (`grasp_failures`) carries that failure's skill gap. Every measured grasp and put-down had
 nothing above it; a spot under another surface's slab closer than `overhead.open_above` (a bookcase or cabinet cell)
-is outside them all. Only the extracted surfaces count: they are the furniture's collision geometry in MuJoCo.
+is outside them all. Only the extracted surfaces count: they are the furniture's collision geometry in MuJoCo. A
+side-grasped object whose pad margin is short of the creep over the planned carry is refused by the put-down's skill
+before contact (`carry.single_arm.creep`, gap `carry_single.creep`).
 
 Bucket 3 = any blocked check; bucket 2 = any untested (the strict rule the user approved: an extrapolation never
 counts as composable); bucket 1 = everything ok. `bucket(..., policy="pilot")` is the alternative where untested
@@ -378,7 +380,26 @@ class Checker:
             c = self.cap["carry"]["single_arm"]
             longest = max([*c["straight_or_backward"]["distance"], c.get("route_measured_max") or 0.0])
             out.append(self._max(step, "carry_distance", d, longest, "carry_single.distance"))
+            self.creep(x, d, "on" if target in self.surfaces else "in", step, out)
         return goal
+
+    def creep(self, x: str, d: float | None, move: str, step: str, out: list) -> None:
+        """A side-grasped object slides down the pads while it is carried: the put-down's pick is refused before contact
+        when X's pad margin is short of the creep over the planned lift-to-release time (`carry.single_arm.creep`;
+        place._refusal in the skills). The time comes from the route `d` (None: a put-in on X's own surface, into's
+        near drop). A top-down pinch is exempt."""
+        c = ((self.cap.get("carry") or {}).get("single_arm") or {}).get("creep")
+        if not c or (move == "in" and not c["put_in"]):
+            return
+        half, centre = self.box(x)
+        support = float(self.surfaces[self.objects[x]["surface"]]["top"])
+        if half[2] < c["top_pinch"]["half_height_max"] and support < c["top_pinch"]["support_top_max"]:
+            return
+        t = c["t_est_s"]
+        seconds = t["near_drop"] if d is None else t["base"] + t["per_m"] * d + (t["put_in"] if move == "in" else 0.0)
+        margin, slide = float(half[2] + centre[2] - c["pad_half_m"]), c["rate_m_s"] * seconds
+        out.append(Check(step, "creep_margin", OK if margin >= slide else UNTESTED, [round(margin, 4), round(seconds, 1)],
+                         round(slide, 4), "" if margin >= slide else "carry_single.creep"))  # fmt: skip
 
     def place_into(self, x: str, c: str, out: list) -> None:
         step = f"place({x} in {c})"
@@ -515,6 +536,9 @@ class Checker:
                     return r
                 if not same_surface and self.carry(x, stand, target, r.checks) is None:
                     continue
+                single = (self.objects[x].get("semantic") or {}).get("graspable") == "single"
+                if same_surface and single and self.placed(x, target, "into_container_single_arm")[0] is None:
+                    self.creep(x, None, "in", f"place({x} in {target})", r.checks)
                 (self.place_into if p.name == "in" else self.put_on)(x, target, r.checks)
             elif p.name == "upright":
                 x = p.args[0]

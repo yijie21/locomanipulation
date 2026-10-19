@@ -13,9 +13,11 @@ a measured number.
     PYTHONPATH=src $PY scripts/experiments/scene_rsi_20261016/calibrate.py report cal_r2 <rounds>
 
 `sample` writes the tasks to outputs/scene_rsi_20261016_hidden/calibration/<name>/ (tasks.jsonl, sample.json) and
-the family file families/<name>.json (one pool, `sealed`, from CAL_SEED). `report` writes report.json beside them:
-per task the success rate; bucket 1's precision (tasks at >= BUCKET1_RATE among those with at least MIN_N rounds)
-and mean success with Wilson intervals, per goal kind and per source; the same for the bucket-2 control.
+the family file families/<name>.json (one pool, `sealed`, from --pool-seed). Goals a family or an earlier sample
+ran are left out. `report` writes report.json beside them: per task the success rate; bucket 1's precision (tasks
+at >= BUCKET1_RATE among those with at least MIN_N rounds) and mean success with Wilson intervals, per goal kind and
+per source; the same for the bucket-2 control. cal_r3 (after the checker's carry_single.creep rule, plan §12.3) is
+drawn from the creep_* runs with --pool-seed 8100000.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from gate import wilson  # noqa: E402
 
 from locomani.scene_discovery.predicates import parse  # noqa: E402
 
-CAL_SEED = 8_000_000  # no pool's block comes near it (rounds' blocks are 1,1x0,000 + 1,000,000 per round)
+CAL_SEED = 8_000_000  # no pool's block comes near it (rounds: 1,1x0,000 + 1,000,000 per round); cal_r3 8,100,000
 OUT = REPO / "outputs" / "scene_rsi_20261016_hidden" / "calibration"
 SCENE = "outputs/scene_discovery/adt_apartment_mars"
 BUCKET1_RATE = 0.50
@@ -52,12 +54,13 @@ def kind(goal) -> str:
     return "+".join(sorted({parse(g).name for g in goal}))
 
 
-def measured_goals() -> set:
-    """Every goal a family ran (its tasks' goals): measured, not predicted."""
+def measured_goals(name: str = "") -> set:
+    """Every goal a family or an earlier calibration sample ran (its tasks' goals): measured, not predicted. The
+    sample `name` itself is left out, so it can be drawn again."""
     out = set()
     for f in sorted((HERE / "families").glob("*.json")):
         fam = json.loads(f.read_text())
-        if fam["name"].startswith("cal_"):
+        if fam["name"] == name:
             continue
         rows = {json.loads(x)["id"]: json.loads(x) for x in (REPO / fam["tasks_file"]).read_text().splitlines() if x.strip()}  # fmt: skip
         out |= {norm(rows[t]["goal"]) for t in fam["tasks"] if t in rows}
@@ -83,8 +86,8 @@ def allocate(sizes: dict, n: int) -> dict:
     return out
 
 
-def sample(name: str, runs: list[Path], n1: int, n2: int, per_task: int, seed: int) -> dict:
-    measured = measured_goals()
+def sample(name: str, runs: list[Path], n1: int, n2: int, per_task: int, seed: int, pool_seed: int = CAL_SEED) -> dict:
+    measured = measured_goals(name)
     seen, cands = set(), {1: collections.defaultdict(list), 2: collections.defaultdict(list)}
     for run in runs:
         for line in (run / "tasks.jsonl").read_text().splitlines():
@@ -118,7 +121,7 @@ def sample(name: str, runs: list[Path], n1: int, n2: int, per_task: int, seed: i
     (out / "sample.json").write_text(json.dumps(summary, indent=1))
     fam = dict(name=name, about=f"checker calibration (plan §12.3): {n1} bucket-1 and {n2} bucket-2 tasks no family ran",
                scene=SCENE, tasks_file=str((out / "tasks.jsonl").relative_to(REPO)), tasks=tasks, new_skills=[],
-               pools={"sealed": {"seed": CAL_SEED, "n": per_task * len(tasks)}})  # fmt: skip
+               pools={"sealed": {"seed": pool_seed, "n": per_task * len(tasks)}})  # fmt: skip
     (HERE / "families" / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
     print(f"[cal] {len(picked)} tasks ({sum(t['bucket'] == 1 for t in picked)} bucket 1) of candidates "
           f"{summary['candidates']}; measured goals left out {len(measured)}")  # fmt: skip
@@ -179,12 +182,13 @@ def main(argv=None) -> int:
     s.add_argument("--n2", type=int, default=12)
     s.add_argument("--per-task", type=int, default=8)
     s.add_argument("--seed", type=int, default=20261019)
+    s.add_argument("--pool-seed", type=int, default=CAL_SEED, help="the pool's first start seed (one block per sample)")
     r = sub.add_parser("report")
     r.add_argument("name")
     r.add_argument("rounds", type=Path)
     a = ap.parse_args(argv)
     if a.cmd == "sample":
-        sample(a.name, a.runs, a.n1, a.n2, a.per_task, a.seed)
+        sample(a.name, a.runs, a.n1, a.n2, a.per_task, a.seed, a.pool_seed)
     else:
         report(a.name, a.rounds)
     return 0

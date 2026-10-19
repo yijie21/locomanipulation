@@ -32,6 +32,7 @@ REPO = HERE.parents[2]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 from capability_probe import EDGE_M, OUT, load  # noqa: E402
+from carry_time import section as creep  # noqa: E402
 
 from locomani.scene_discovery import feasibility, scene_file  # noqa: E402
 from locomani.scene_discovery.predicates import parse  # noqa: E402
@@ -485,6 +486,7 @@ def build(
                 carried_mass=[min(carried_ok), max(carried_ok)] if carried_ok else None,
                 route_measured_max=round(carry_max, 2) if carry_max else None,
                 route_measured_source="the longest occupancy-map route from the pick stance to the put-down stance among a put-down family's sealed successes (place.on_surface_single.measured_tasks)",
+                creep=creep(),
                 source=PROBE_SRC + "grip/",
             ),  # fmt: skip
             "bimanual_box": dict(status="untested", usable_distance=0.0, note="no bimanual skill"),
@@ -594,6 +596,8 @@ HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scen
 #     surface each (failed_tasks below it); grasp_settings also hold the objects those rounds lifted and carried away.
 #   place.into_container_single_arm.measured_tasks are the same for put-in families (one object into one container).
 #   goals_measured are whole goals the checker has no step for (held + near: a carry-to), measured end to end.
+#   carry.single_arm.creep is the put-down's creep refusal (a skill's rule, not a measurement) with carry_time.py's
+#     planned lift-to-release time from the route: the checker's carry_single.creep gap.
 #   Every skill the library does not have yet (bimanual) is untested: a gap, never bucket 1.
 """
 

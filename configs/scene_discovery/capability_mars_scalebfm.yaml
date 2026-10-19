@@ -13,6 +13,8 @@
 #     surface each (failed_tasks below it); grasp_settings also hold the objects those rounds lifted and carried away.
 #   place.into_container_single_arm.measured_tasks are the same for put-in families (one object into one container).
 #   goals_measured are whole goals the checker has no step for (held + near: a carry-to), measured end to end.
+#   carry.single_arm.creep is the put-down's creep refusal (a skill's rule, not a measurement) with carry_time.py's
+#     planned lift-to-release time from the route: the checker's carry_single.creep gap.
 #   Every skill the library does not have yet (bimanual) is untested: a gap, never bucket 1.
 
 robot:
@@ -762,6 +764,27 @@ carry:
     route_measured_max: 7.51
     route_measured_source: the longest occupancy-map route from the pick stance to the put-down stance among a put-down family's
       sealed successes (place.on_surface_single.measured_tasks)
+    creep:
+      rule: 'a side-grasped object''s pad margin (box half height + centre z - pad_half_m) under rate_m_s x T_est: the put-down''s
+        pick is refused before contact (place._refusal); T_est = base + per_m x route + put_in for in(X, C), near_drop for
+        a put-in on X''s own surface'
+      rate_m_s: 0.00062
+      pad_half_m: 0.014
+      put_in: true
+      top_pinch:
+        half_height_max: 0.02
+        support_top_max: 0.6
+      t_est_s:
+        base: 32.1
+        per_m: 8.13
+        put_in: 25.3
+        near_drop: 22.6
+      t_est_fit:
+        tasks: 43
+        near_tasks: 6
+        residual_sd_s: 19.3
+      source: src/locomani/tasks/scene/skills/{place,grasp_program,pick,into}.py; outputs/scene_rsi_20261016/capability/carry_time/fit.json
+        (carry_time.py, plan §12.3)
     source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
   bimanual_box:
     status: untested

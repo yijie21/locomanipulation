@@ -525,6 +525,28 @@ class ReviewReplay(unittest.TestCase):
         self.assertNotIn("{DIGEST}", rr.DIGEST_ITEM.sub("", prompt))
 
 
+class CreepSection(unittest.TestCase):
+    """The checker's creep rule as the capability table carries it (carry_time.section and fit, plan section 12.3)."""
+
+    def test_skill_constants_are_read_from_the_catalog_and_the_fit_adds_a_put_in_term(self):
+        ct = _fresh("scene_rsi_carry_time", "carry_time.py")
+        self.assertEqual(ct.skill_constant("grasp_program", "PAD_Z"), 0.014)  # PAD_Y, PAD_Z = 0.0475, 0.014
+        with self.assertRaises(KeyError):
+            ct.skill_constant("place", "NO_SUCH_CONSTANT")
+        rows = [dict(d=d, move=m, t_med=30 + 8 * d + (25 if m == "in" else 0), same_surface=False)
+                for d, m in [(1, "on"), (3, "on"), (5, "on"), (2, "in"), (4, "in")]]  # fmt: skip
+        rows.append(dict(d=None, move="in", t_med=22.0, same_surface=True))
+        m = ct.fit(rows)
+        self.assertEqual((m["base"], m["per_m"], m["put_in"], m["near_drop"]), (30.0, 8.0, 25.0, 22.0))
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "fit.json").write_text(json.dumps(dict(model=m)))
+            c = ct.section(fit=Path(d) / "fit.json")
+            self.assertIsNone(ct.section(fit=Path(d) / "missing.json"))
+        self.assertEqual((c["rate_m_s"], c["pad_half_m"]), (ct.skill_constant("place", "CREEP_RATE_M_S"), 0.014))
+        self.assertEqual(c["put_in"], bool(ct.skill_constant("into", "CREEP")))
+        self.assertEqual(c["t_est_s"], dict(base=30.0, per_m=8.0, put_in=25.0, near_drop=22.0))
+
+
 class Calibrate(unittest.TestCase):
     """The checker's calibration sample (calibrate.py, plan section 12.3)."""
 

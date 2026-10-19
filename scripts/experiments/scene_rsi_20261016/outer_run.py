@@ -18,8 +18,8 @@ where it stopped:
 6. `tests`: the scene runner's and the catalog's own tests;
 7. `regress`: the family enters regress.py's registry; every registered family's sealed pool re-runs under the
    catalog (tag `after_<family>`); a family worse at p <= 0.05 blocks;
-8. `capability`: capability_write.py from the registry, then every task set re-bucketed
-   (capability/feasibility/after_<family>_<set>).
+8. `capability`: carry_time.py (the put-down's planned carry time against the route, for the creep rule), then
+   capability_write.py from the registry, then every task set re-bucketed (capability/feasibility/after_<family>_<set>).
 
 Up to `--parallel` families run steps 1-4 at once (the simulation slots in batch.py share the machine); steps 5-8
 take one family at a time, in the order the loops end, and merge three-way, so the second family keeps the first's
@@ -180,6 +180,9 @@ class Family:
             raise Blocked(f"regression: worse at p <= {regress.WORSE_P}: {out['worse']}")
 
     def capability_(self) -> None:
+        rc = sh([str(SIM_PY), str(HERE / "carry_time.py")], REPO, self.logs / "capability.log")  # the new rounds' T_est
+        if rc:
+            raise Blocked(f"carry_time.py exited {rc}")
         rc = sh([str(SIM_PY), str(HERE / "capability_write.py"), *regress.capability_args()], REPO,
                 self.logs / "capability.log")  # fmt: skip
         if rc:
