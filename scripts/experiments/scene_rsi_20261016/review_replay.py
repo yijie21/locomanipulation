@@ -14,7 +14,8 @@ iteration:
 
 `setup` copies the iteration's Reviewer context (paths moved into this sandbox), the incumbent's skills snapshot, its
 recorded diagnostic rounds (`replay/recorded_diag`, what the Reviewer reads) and the diagnostic pool, and the
-original hypotheses and their cost as tag `orig`. `review` puts the incumbent's skills in place and runs the Reviewer
+original hypotheses and their cost as tag `orig` -- into the hidden tree (`record_dir`), with each finished tag, so no
+review reads another's answer. `review` puts the incumbent's skills in place and runs the Reviewer
 with the loop's own call (`loop.claude`): `plain` is reviewer.md without the digest item, `digest` is reviewer.md with
 the digest built from the recorded rounds, `library` adds item 5, an experience library (`--library`), after the
 digest. Every review records the absolute paths it named outside this sandbox (`outside`): a replay sandbox must hold
@@ -55,7 +56,14 @@ PATH = re.compile(r"(?:/workspace|/home)/[^\s\"'`;|&)]+")
 
 
 def replay_dir() -> Path:
+    """The Reviewer's inputs (its context, the recorded rounds, the running tag's prompt, digest and library)."""
     return L.LOOP / "replay"
+
+
+def record_dir() -> Path:
+    """Everything a Reviewer must not see, in the hidden tree it never opens: the original iteration's hypotheses
+    (`orig`), where the replay came from, every finished tag, the probes."""
+    return L.HIDDEN / "replay"
 
 
 def setup(src: Path, family: str, n: int) -> None:
@@ -75,13 +83,13 @@ def setup(src: Path, family: str, n: int) -> None:
     if pool.exists():
         shutil.rmtree(pool)
     shutil.copytree(src_fam / "pool_diag", pool)
-    orig = out / "orig"
-    orig.mkdir(exist_ok=True)
+    orig = record_dir() / "orig"
+    orig.mkdir(parents=True, exist_ok=True)
     shutil.copy(it / "hypotheses.json", orig / "hypotheses.json")
     acct = next(e for e in map(json.loads, (src_loop / "ledger.jsonl").read_text().splitlines())
                 if e.get("step") == "review" and e.get("iter") == n)  # fmt: skip
     (orig / "acct.json").write_text(json.dumps({k: acct.get(k) for k in ("cost_usd", "seconds", "session", "usage")}))
-    (out / "source.json").write_text(json.dumps(dict(sandbox=str(src), family=family, iter=n, incumbent=inc)))
+    (record_dir() / "source.json").write_text(json.dumps(dict(sandbox=str(src), family=family, iter=n, incumbent=inc)))
     print(
         f"[replay] {family} iteration {n} from {src}: incumbent {inc['hash']}, {len(list(pool.glob('*.json')))} starts"
     )
@@ -94,13 +102,15 @@ def outside_reads(session: str | None, allowed: list[Path]) -> list[str]:
     if p is None:
         return []
     roots, found = [str(a) for a in allowed], set()
+    own = re.compile(r"/\.claude/projects/[^/]+/" + re.escape(str(session)) + r"/tool-results/")  # its saved outputs
     for line in p.open():
         e = json.loads(line)
         if e.get("type") != "assistant":
             continue
         for b in e["message"].get("content") or ():
             if b.get("type") == "tool_use":
-                found |= {m for m in PATH.findall(json.dumps(b["input"])) if not m.startswith(tuple(roots))}
+                found |= {m for m in PATH.findall(json.dumps(b["input"]))
+                          if not m.startswith(tuple(roots)) and not own.search(m)}  # fmt: skip
     return sorted(found)
 
 
@@ -132,6 +142,8 @@ def review(family: str, arm: str, tag: str, library: Path | None = None) -> None
     acct["outside"] = outside_reads(acct["session"], [REPO, L.role_tmp(), Path("/workspace/tmp")])
     acct["arm"] = arm
     (it_dir / "acct.json").write_text(json.dumps(acct, indent=1, default=str))
+    record_dir().mkdir(parents=True, exist_ok=True)
+    shutil.move(str(it_dir), str(record_dir() / tag))  # out of sight of the next review in this sandbox
     print(f"[replay] {tag} ({arm}): {len(hyps['hypotheses'])} hypotheses, {acct['cost_usd']:.2f} USD, "
           f"{acct['seconds'] / 60:.0f} min, leaks {acct['leaks']}, outside reads {acct['outside']}")  # fmt: skip
 
@@ -144,19 +156,19 @@ def probe(family: str, tags: list[str], skip: list[str]) -> None:
     """The loop's probe (loop.probe) once per distinct parameter set over all tags (tags repeat each other's
     deltas), on the diagnostic starts minus those of the tasks in `skip` (tasks the scene no longer has)."""
     L.configure(family)
-    out = replay_dir()
+    out, rec = replay_dir(), record_dir()
     inc = json.loads((out / "reviewer_context.json").read_text())["incumbent"]
     skills = Path(inc["dir"]) / "skills"
     L.put_skills(skills)
     pool = L.LOOP / "pool_diag"
     labels = tuple(x for x in B.pool_labels(pool) if not any(x.startswith(f"{t}_s") for t in skip))
-    hyps = {tag: json.loads((out / tag / "hypotheses.json").read_text())["hypotheses"] for tag in tags}
+    hyps = {tag: json.loads((rec / tag / "hypotheses.json").read_text())["hypotheses"] for tag in tags}
     sets = {delta_key(h): h["delta"].get("set", {}) for hs in hyps.values() for h in hs}
-    base, shared = out / "baseline", out / "probes"
+    base, shared = rec / "baseline", rec / "probes"
     jobs = [B.Job(skills, base, inc["set"], labels)]
     jobs += [B.Job(skills, shared / k, {**inc["set"], **s}, labels) for k, s in sorted(sets.items())]
-    (out / "probes.json").write_text(json.dumps(dict(skip=skip, labels=len(labels), sets=sets), indent=1))
-    B.run_jobs(jobs, family, pool, L.PROCS, out / "prober.log", L.GPUS)
+    (rec / "probes.json").write_text(json.dumps(dict(skip=skip, labels=len(labels), sets=sets), indent=1))
+    B.run_jobs(jobs, family, pool, L.PROCS, rec / "prober.log", L.GPUS)
     recorded = {k: r["ok"] for k, r in B.outcomes(out / "recorded_diag").items() if k in labels}
     before = {k: r["ok"] for k, r in B.outcomes(base).items() if k in labels}
     differ = sorted(k for k in before if recorded.get(k) != before[k])
@@ -177,7 +189,7 @@ def probe(family: str, tags: list[str], skip: list[str]) -> None:
                             predicted_fixed_hit=len(pf & set(fixed)), predicted_fixed_n=len(pf),
                             predicted_broken_hit=len(pb & set(broken)), predicted_broken_n=len(pb),
                             summary=L.summarize(shared / delta_key(h))))  # fmt: skip
-        (out / tag / "probe.json").write_text(json.dumps(res, indent=1))
+        (rec / tag / "probe.json").write_text(json.dumps(res, indent=1))
         print(f"[replay] {tag}: " + ", ".join(f"{r['id']} {r.get('ok_before')}->{r.get('ok_after')}" for r in res))
 
 
@@ -204,7 +216,7 @@ def turns(session: str | None) -> dict:
 
 def report(family: str) -> None:
     L.configure(family)
-    out = replay_dir()
+    out = record_dir()
     rows = {}
     for d in sorted(p for p in out.iterdir() if (p / "acct.json").exists()):
         acct = json.loads((d / "acct.json").read_text())

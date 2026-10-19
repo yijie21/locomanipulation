@@ -2,7 +2,7 @@
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-19 03:20）：origin/main = `a2cfb23`；本地多 84 个提交（含本次），**都没推送**（用户没说推）。
-已确认（10-19）：**第 2 轮暂停**（用户：“现在先暂停所有的尝试”）。`r2_on_single` 写回，`r2_in_single` 5 门全拒（种子 15/80，不写回）；后面 `r2_held_near_single`、`r2_held_single`、`r2_relay_regrasp` 没跑，`r2_in_room_none` 无效（“走到卧室”开局就成立）。Reviewer 回放（27.10.6）跑完：带摘要省 13% 费用、34% 时间，诊断不变差（方案 §12.2）；现在没有在跑的。
+已确认（10-19）：**第 2 轮暂停**（用户：“现在先暂停所有的尝试”）。`r2_on_single` 写回，`r2_in_single` 5 门全拒（种子 15/80，不写回）；后面 `r2_held_near_single`、`r2_held_single`、`r2_relay_regrasp` 没跑，`r2_in_room_none` 无效（“走到卧室”开局就成立）。Reviewer 回放（27.10.6）第一次有泄漏，结论撤回；经验库对比（27.10.6.1）10-19 跑完，不接（贵 17%，探针 31 对 32）；干净沙盒 `/workspace/code/rsi-scene/replay2-r2{in,on}{,-b,-c}`（共 8.4 GB）作证据保留，结果在各沙盒 `outputs/scene_rsi_20261016_hidden/<族>/replay/`。
 已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
 
 ## 提交与磁盘
